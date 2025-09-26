@@ -1,22 +1,40 @@
-# Binaries
-xg2g
+# --- Go build ---
+# Binaries for programs and plugins
 *.exe
+*.exe~
 *.dll
+*.so
+*.dylib
 
-# Data
+# Test binary, build output
+*.test
+*.out
+
+# Go workspace
+bin/
+pkg/
+*.log
+
+# Go modules cache
+go.work
+go.work.sum
+
+# --- Docker ---
+# Docker build artifacts
+*.bak
+*.tmp
+*.swp
+docker-compose.override.yml
+.env
+
+# --- Project specific ---
+# Local data (M3U, XMLTV, Cache)
 data/
 *.m3u
 *.xml
-*.log
+*.gz
 
-# IDE
+# IDE/Editor
 .vscode/
 .idea/
-*.swp
-*.swo
-
-# Go
-/bin/
-/pkg/
-/tmp/
-/go.sum
+.DS_Store
