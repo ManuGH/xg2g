@@ -43,3 +43,6 @@ data/
 data/
 *.m3u
 *.xml
+
+xg2g
+daemon
