@@ -1,87 +1,81 @@
-# .github/workflows/ci.yml
 name: CI
 
 on:
   push:
   pull_request:
 
+permissions:
+  id-token: write   # Falls OIDC Token benötigt werden (z.B. für Signierungen)
+  contents: read
+
 jobs:
   build-test-integration:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      # Check out the source code
+      - name: Checkout source code
         uses: actions/checkout@v4
 
+      # Set up Go environment based on go.mod version
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
           cache: true
 
-      - name: Build
+      # Download modules and build the project
+      - name: Build project
         run: |
           go mod download
           go build -v ./...
 
-      - name: Unit tests
-        run: |
-          go test -v ./...
+      # Run unit tests
+      - name: Run unit tests
+        run: go test -v ./...
 
-      - name: Start stub OpenWebIF
+      # Start stub OpenWebIF server in background for integration tests
+      - name: Start OpenWebIF stub server
         run: |
-          cat > /tmp/stub_openwebif.go <<'EOF'
+          cat > /tmp/stub_openwebif.go << 'EOF'
           package main
-
-          import (
-            "encoding/json"
-            "log"
-            "net/http"
-          )
+          import ("encoding/json"; "log"; "net/http")
 
           func main() {
             mux := http.NewServeMux()
-
-            // /api/bouquets -> [["<ref>","Premium"], ...]
             mux.HandleFunc("/api/bouquets", func(w http.ResponseWriter, r *http.Request) {
-              resp := map[string]any{
+              json.NewEncoder(w).Encode(map[string]any{
                 "bouquets": [][]string{
                   {"1:7:1:0:0:0:0:0:0:0:FROM BOUQUET \"userbouquet.premium.tv\" ORDER BY bouquet", "Premium"},
                 },
-              }
-              _ = json.NewEncoder(w).Encode(resp)
+              })
             })
-
-            // /api/getallservices?bRef=<ref>
             mux.HandleFunc("/api/getallservices", func(w http.ResponseWriter, r *http.Request) {
-              resp := map[string]any{
+              json.NewEncoder(w).Encode(map[string]any{
                 "services": []map[string]string{
                   {"servicename": "ORF1 HD", "servicereference": "1:0:19:132F:3EF:1:C00000:0:0:0:"},
                   {"servicename": "ORF2N HD", "servicereference": "1:0:19:1334:3EF:1:C00000:0:0:0:"},
                 },
-              }
-              _ = json.NewEncoder(w).Encode(resp)
+              })
             })
-
-            // kompatibel zu /api/getservices?sRef=<ref> (Fallback)
             mux.HandleFunc("/api/getservices", func(w http.ResponseWriter, r *http.Request) {
-              resp := map[string]any{
+              json.NewEncoder(w).Encode(map[string]any{
                 "services": []map[string]string{
                   {"servicename": "ORF1 HD", "servicereference": "1:0:19:132F:3EF:1:C00000:0:0:0:"},
                   {"servicename": "ORF2N HD", "servicereference": "1:0:19:1334:3EF:1:C00000:0:0:0:"},
                 },
-              }
-              _ = json.NewEncoder(w).Encode(resp)
+              })
             })
-
             log.Fatal(http.ListenAndServe("127.0.0.1:18080", mux))
           }
           EOF
-          nohup bash -c "go run /tmp/stub_openwebif.go >/tmp/stub.log 2>&1" &
-          # kleine Wartezeit, bis der Port lauscht
-          for i in {1..20}; do nc -z 127.0.0.1 18080 && break; sleep 0.2; done
+
+          nohup go run /tmp/stub_openwebif.go > /tmp/stub_openwebif.log 2>&1 &
+          # Warten bis Server auf Port 18080 bereit ist
+          for i in {1..20}; do nc -z 127.0.0.1 18080 && break || sleep 0.2; done
           nc -z 127.0.0.1 18080
 
+      # Build daemon, start und Ausführen von Integrationstests
       - name: Integration: build daemon and run refresh
         env:
           XG2G_DATA: ./data
@@ -90,18 +84,31 @@ jobs:
           XG2G_XMLTV: ./data/guide.xml
           XG2G_PICON_BASE: http://127.0.0.1:18080/picon
         run: |
+          set -e
           mkdir -p ./data
           go build -o bin/xg2g ./cmd/daemon
-          nohup ./bin/xg2g >/tmp/daemon.log 2>&1 &
+
+          # Starte Daemon im Hintergrund
+          nohup ./bin/xg2g > /tmp/daemon.log 2>&1 &
           DAEMON_PID=$!
-          # warten, bis HTTP lauscht
-          for i in {1..30}; do curl -fsS http://127.0.0.1:34400/api/status && break || sleep 0.2; done
+
+          # Warten bis Daemon auf Port 34400 antwortet
+          for i in {1..30}; do
+            curl -fsS http://127.0.0.1:34400/api/status && break || sleep 0.2
+          done
+
+          # API Refresh und Status prüfen
           curl -fsS -X POST http://127.0.0.1:34400/api/refresh
           curl -fsS http://127.0.0.1:34400/api/status
+
+          # Überprüfe generierte Dateien
           ls -lh ./data/playlist.m3u ./data/guide.xml
+
+          # Sauberes Beenden des Daemon
           kill $DAEMON_PID
 
-      - name: Grep checks
+      # Überprüfen der generierten Dateien mit grep
+      - name: Validierung der Output-Dateien
         run: |
           set -e
           test "$(grep -c '^#EXTINF' ./data/playlist.m3u)" -ge 2
