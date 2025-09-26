@@ -13,7 +13,6 @@ import (
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/playlist"
 
-	epg "github.com/ManuGH/xg2g/internal/epg"
 	"log"
 )
 
