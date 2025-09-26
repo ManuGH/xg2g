@@ -114,3 +114,12 @@ jobs:
           test "$(grep -c '^#EXTINF' ./data/playlist.m3u)" -ge 2
           test "$(grep -c '<channel ' ./data/guide.xml)" -ge 2
           ! grep -q 'FROM BOUQUET' ./data/playlist.m3u
+
+      - name: Install golangci-lint
+        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+
+      - name: Lint
+        run: $(go env GOPATH)/bin/golangci-lint run ./...
+
+      - name: Test
+        run: go test ./... -v
