@@ -22,12 +22,21 @@ jobs:
         
     - name: Build binaries
       run: |
+        set -e
         mkdir -p dist
         GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/xg2g-linux-amd64 ./cmd/daemon
         GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o dist/xg2g-linux-arm64 ./cmd/daemon
         GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o dist/xg2g-darwin-amd64 ./cmd/daemon
         GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o dist/xg2g-windows-amd64.exe ./cmd/daemon
-        
+
+    - name: Zip binaries
+      run: |
+        cd dist
+        zip xg2g-linux-amd64.zip xg2g-linux-amd64
+        zip xg2g-linux-arm64.zip xg2g-linux-arm64
+        zip xg2g-darwin-amd64.zip xg2g-darwin-amd64
+        zip xg2g-windows-amd64.zip xg2g-windows-amd64.exe
+
     - name: Create checksums
       run: |
         cd dist && sha256sum * > checksums.txt
@@ -36,8 +45,8 @@ jobs:
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          dist/xg2g-linux-amd64
-          dist/xg2g-linux-arm64
-          dist/xg2g-darwin-amd64
-          dist/xg2g-windows-amd64.exe
+          dist/xg2g-linux-amd64.zip
+          dist/xg2g-linux-arm64.zip
+          dist/xg2g-darwin-amd64.zip
+          dist/xg2g-windows-amd64.zip
           dist/checksums.txt
