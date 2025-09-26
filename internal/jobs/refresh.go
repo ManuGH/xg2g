@@ -32,11 +32,11 @@ type Status struct {
 
 func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 	cl := openwebif.New(cfg.OWIBase)
+
 	bqs, err := cl.Bouquets(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("bouquets: %w", err)
 	}
-
 	ref, ok := bqs[cfg.Bouquet]
 	if !ok {
 		return nil, fmt.Errorf("bouquet not found: %s", cfg.Bouquet)
@@ -47,12 +47,13 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 		return nil, fmt.Errorf("services: %w", err)
 	}
 
-	// 1) Items mit Picons bauen
 	items := make([]playlist.Item, 0, len(svcs))
 	for i, s := range svcs {
+		if len(s) < 2 {
+			continue
+		}
 		name, sref := s[0], s[1]
 
-		// Picon-URL automatisch generieren
 		logo := ""
 		if cfg.PiconBase != "" {
 			logo = strings.TrimRight(cfg.PiconBase, "/") + "/" + url.PathEscape(sref) + ".png"
@@ -62,7 +63,7 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 
 		items = append(items, playlist.Item{
 			Name:    name,
-			TvgID:   "",
+			TvgID:   makeStableID(name),
 			TvgChNo: i + 1,
 			URL:     openwebif.StreamURL(cfg.OWIBase, sref),
 			Group:   cfg.Bouquet,
@@ -70,50 +71,29 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 		})
 	}
 
-	// 2) XMLTV-Mapping: exakt + fuzzy
-	if cfg.XMLTVPath != "" {
-		if nameToID, err := epg.BuildNameToIDMap(cfg.XMLTVPath); err == nil {
-			for i := range items {
-				if cfg.FuzzyMax > 0 {
-					// Fuzzy Matching aktiviert
-					if id, ok := epg.FindBest(items[i].Name, nameToID, cfg.FuzzyMax); ok {
-						items[i].TvgID = id
-					}
-				} else {
-					// Nur exaktes Matching
-					key := epg.NameKey(items[i].Name)
-					if id, ok := nameToID[key]; ok {
-						items[i].TvgID = id
-					}
-				}
-			}
-		}
+	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
+		return nil, fmt.Errorf("mkdir datadir: %w", err)
 	}
 
-	// 3) M3U schreiben
-	_ = os.MkdirAll(cfg.DataDir, 0o755)
-	out := filepath.Join(cfg.DataDir, "playlist.m3u")
-	f, err := os.Create(out)
+	m3u := filepath.Join(cfg.DataDir, "playlist.m3u")
+	f, err := os.Create(m3u)
 	if err != nil {
 		return nil, fmt.Errorf("create m3u: %w", err)
 	}
-	defer f.Close()
-
 	if err := playlist.WriteM3U(f, items); err != nil {
+		_ = f.Close()
 		return nil, fmt.Errorf("write m3u: %w", err)
 	}
+	_ = f.Close()
 
-	// 4) NEU: XMLTV generieren (nur Channel-Liste)
 	if cfg.XMLTVPath != "" {
 		xmlCh := make([]epg.Channel, 0, len(items))
 		for _, it := range items {
-			if it.TvgID != "" {
-				ch := epg.Channel{ID: it.TvgID, DisplayName: []string{it.Name}}
-				if it.TvgLogo != "" {
-					ch.Icon = &epg.Icon{Src: it.TvgLogo}
-				}
-				xmlCh = append(xmlCh, ch)
+			ch := epg.Channel{ID: it.TvgID, DisplayName: []string{it.Name}}
+			if it.TvgLogo != "" {
+				ch.Icon = &epg.Icon{Src: it.TvgLogo}
 			}
+			xmlCh = append(xmlCh, ch)
 		}
 		if err := epg.WriteXMLTV(xmlCh, cfg.XMLTVPath); err != nil {
 			log.Printf("WARN: XMLTV generation failed: %v", err)
@@ -122,8 +102,23 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 		}
 	}
 
-	return &Status{
-		LastRun:  time.Now(),
-		Channels: len(items),
-	}, nil
+	return &Status{LastRun: time.Now(), Channels: len(items)}, nil
+}
+
+func makeStableID(name string) string {
+	s := strings.ToLower(strings.TrimSpace(name))
+	r := strings.NewReplacer(" ", ".", "/", ".", "\\", ".", "&", "and", "+", "plus")
+	s = r.Replace(s)
+	var b strings.Builder
+	for _, c := range s {
+		switch {
+		case c >= 'a' && c <= 'z', c >= '0' && c <= '9', c == '.', c == '_', c == '-':
+			b.WriteRune(c)
+		}
+	}
+	id := strings.Trim(b.String(), "._-")
+	if id == "" {
+		id = "ch"
+	}
+	return id
 }
