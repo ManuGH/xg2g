@@ -28,7 +28,7 @@ func main() {
 
 	log.Printf("Starting xg2g v%s on %s", Version, addr)
 	log.Printf("Config: data=%s, owi=%s, bouquet=%s, xmltv=%s, fuzzy=%d",
-		cfg.DataDir, cfg.OWIBase, cfg.Bouquet, cfg.XMLTVPath, cfg.FuzzyMax)
+		cfg.DataDir, cfg.OWIBase, cfg.Bouquet, cfg.XMLTVPath, cfg.FuzzyMax, cfg.PiconBase)
 
 	log.Fatal(http.ListenAndServe(addr, s.Handler()))
 }
