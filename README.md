@@ -1,3 +1,17 @@
+# xg2g - OpenWebIF to M3U/XMLTV Proxy
+
+![CI](https://github.com/ManuGH/xg2g/actions/workflows/ci.yml/badge.svg)
+![Docker](https://github.com/ManuGH/xg2g/actions/workflows/docker.yml/badge.svg)
+![License](https://img.shields.io/github/license/ManuGH/xg2g)
+
+## Quick Start
+```yaml
+# docker-compose.yml
+services:
+  xg2g:
+    image: ghcr.io/manugh/xg2g:latest
+    ports: ["34400:34400"]
+
 owi2xg2g ist ein Go-basierter Microservice, der OpenWebIF-Bouquets (z. B. von VU+ Receivern) in moderne IPTV-Feeds transformiert. Er generiert automatisch:
 	•	M3U-Playlists mit korrekten tvg-id, tvg-chno und tvg-logo-Attributen
 	•	XMLTV-Dateien (EPG) aus OpenWebIF oder externen Quellen
