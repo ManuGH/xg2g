@@ -1,7 +1,6 @@
 package openwebif
 
 import (
-	"os"
 	"strings"
 	"testing"
 )
