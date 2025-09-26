@@ -4,17 +4,20 @@ COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
 COPY . .
+ARG GIT_REF
 RUN --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=0 GOOS=linux \
     go build -buildvcs=false -trimpath \
       -ldflags="-s -w -X 'main.Version=${GIT_REF:-dev}'" \
       -o /out/xg2g ./cmd/daemon
 
-FROM alpine:3.20
+FROM alpine:3.20.1
 RUN adduser -D -H -s /sbin/nologin -u 1000 app && \
     apk add --no-cache ca-certificates tzdata curl
 WORKDIR /app
 COPY --from=builder /out/xg2g /app/xg2g
 USER app
 EXPOSE 34400
+HEALTHCHECK --interval=30s --timeout=3s --retries=3 --start-period=10s \
+  CMD curl -fsS http://127.0.0.1:34400/api/status >/dev/null || exit 1
 ENTRYPOINT ["/app/xg2g"]
