@@ -57,6 +57,4 @@ func BuildNameToIDMap(xmltvPath string) (map[string]string, error) {
 	return out, nil
 }
 
-func NameKey(s string) string {
-	return norm(s)
-}
+func NameKey(s string) string { return norm(s) }
