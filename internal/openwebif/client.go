@@ -6,18 +6,29 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 )
 
 type Client struct {
 	base string
+	port int
 	http *http.Client
 }
 
 func New(base string) *Client {
+	// Default-Streamport
+	port := 8001
+	if v := os.Getenv("XG2G_STREAM_PORT"); v != "" {
+		if p, err := strconv.Atoi(v); err == nil && p > 0 {
+			port = p
+		}
+	}
 	return &Client{
 		base: strings.TrimRight(base, "/"),
+		port: port,
 		http: &http.Client{Timeout: 30 * time.Second},
 	}
 }
@@ -80,6 +91,11 @@ func (c *Client) Services(ctx context.Context, bouquetRef string) ([][2]string, 
 	return [][2]string{}, nil
 }
 
+func (c *Client) StreamURL(ref string) string {
+	return fmt.Sprintf("%s:%d/%s", c.base, c.port, url.PathEscape(ref))
+}
+
+// Beibehaltener Helfer (nutzt jetzt New, damit ENV wirkt)
 func StreamURL(base, ref string) string {
-	return strings.TrimRight(base, "/") + ":8001/" + url.PathEscape(ref)
+	return New(base).StreamURL(ref)
 }
