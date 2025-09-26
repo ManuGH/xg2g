@@ -1,82 +1,61 @@
 package epg
 
-// FindBest sucht in nameToID nach dem Eintrag, der am nächsten an name (unscharf) dran ist.
-// maxDist gibt die maximale zulässige Editierdistanz an.
+// FindBest: exaktes oder fuzzy Matching (Levenshtein) bis maxDist
 func FindBest(name string, nameToID map[string]string, maxDist int) (string, bool) {
 	key := NameKey(name)
-	
-	// Exakter Treffer
+
 	if id, ok := nameToID[key]; ok {
 		return id, true
 	}
 
-	// Fuzzy-Suche
 	bestID := ""
-	bestDist := maxDist + 1
-
+	best := maxDist + 1
 	for k, id := range nameToID {
-		dist := levenshtein(key, k)
-		if dist < bestDist {
-			bestDist = dist
-			bestID = id
+		if d := levenshtein(key, k); d < best {
+			best, bestID = d, id
 		}
 	}
-
-	if bestDist <= maxDist {
+	if best <= maxDist {
 		return bestID, true
 	}
 	return "", false
 }
 
-// Levenshtein-Distanz Berechnung
 func levenshtein(a, b string) int {
 	ra, rb := []rune(a), []rune(b)
-	lenA, lenB := len(ra), len(rb)
-
-	// Edge cases
-	if lenA == 0 {
-		return lenB
+	la, lb := len(ra), len(rb)
+	if la == 0 {
+		return lb
 	}
-	if lenB == 0 {
-		return lenA
+	if lb == 0 {
+		return la
 	}
-
-	// DP Matrix
-	dp := make([][]int, lenA+1)
-	for i := range dp {
-		dp[i] = make([]int, lenB+1)
-		dp[i][0] = i
+	dp := make([]int, (la+1)*(lb+1))
+	idx := func(i, j int) int { return i*(lb+1) + j }
+	for i := 0; i <= la; i++ {
+		dp[idx(i, 0)] = i
 	}
-	for j := 0; j <= lenB; j++ {
-		dp[0][j] = j
+	for j := 0; j <= lb; j++ {
+		dp[idx(0, j)] = j
 	}
-
-	// Berechnung
-	for i := 1; i <= lenA; i++ {
-		for j := 1; j <= lenB; j++ {
+	for i := 1; i <= la; i++ {
+		for j := 1; j <= lb; j++ {
 			cost := 0
 			if ra[i-1] != rb[j-1] {
 				cost = 1
 			}
-			dp[i][j] = min(
-				dp[i-1][j]+1,    // deletion
-				dp[i][j-1]+1,    // insertion
-				dp[i-1][j-1]+cost, // substitution
-			)
+			del := dp[idx(i-1, j)] + 1
+			ins := dp[idx(i, j-1)] + 1
+			sub := dp[idx(i-1, j-1)] + cost
+			m := del
+			if ins < m {
+				m = ins
+			}
+			if sub < m {
+				m = sub
+			}
+			dp[idx(i, j)] = m
 		}
 	}
-	return dp[lenA][lenB]
-}
-
-func min(x, y, z int) int {
-	if x < y {
-		if x < z {
-			return x
-		}
-		return z
-	}
-	if y < z {
-		return y
-	}
-	return z
+	return dp[idx(la, lb)]
 }
