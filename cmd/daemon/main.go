@@ -10,7 +10,6 @@ import (
 	"github.com/ManuGH/xg2g/internal/jobs"
 )
 
-// wird via -ldflags gesetzt (siehe Dockerfile)
 var Version = "dev"
 
 func main() {
@@ -27,7 +26,7 @@ func main() {
 	addr := env("XG2G_LISTEN", ":34400")
 
 	log.Printf("Starting xg2g v%s on %s", Version, addr)
-	log.Printf("Config: data=%s, owi=%s, bouquet=%s, xmltv=%s, fuzzy=%d",
+	log.Printf("Config: data=%s, owi=%s, bouquet=%s, xmltv=%s, fuzzy=%d, picon=%s",
 		cfg.DataDir, cfg.OWIBase, cfg.Bouquet, cfg.XMLTVPath, cfg.FuzzyMax, cfg.PiconBase)
 
 	log.Fatal(http.ListenAndServe(addr, s.Handler()))
