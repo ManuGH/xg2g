@@ -16,29 +16,15 @@ type Item struct {
 }
 
 func WriteM3U(w io.Writer, items []Item) error {
-	var b bytes.Buffer
-	b.WriteString("#EXTM3U\n")
-	
+	buf := &bytes.Buffer{}
+	buf.WriteString("#EXTM3U\n")
 	for _, it := range items {
-		// Attribute nur schreiben, wenn gesetzt
-		line := "#EXTINF:-1"
-		if it.TvgChNo > 0 {
-			line += fmt.Sprintf(` tvg-chno="%d"`, it.TvgChNo)
-		}
-		if it.TvgID != "" {
-			line += fmt.Sprintf(` tvg-id="%s"`, it.TvgID)
-		}
-		if it.TvgLogo != "" {
-			line += fmt.Sprintf(` tvg-logo="%s"`, it.TvgLogo)
-		}
-		if it.Group != "" {
-			line += fmt.Sprintf(` group-title="%s"`, it.Group)
-		}
-		line += fmt.Sprintf(",%s\n", it.Name)
-		b.WriteString(line)
-		b.WriteString(it.URL + "\n")
+		buf.WriteString(fmt.Sprintf(
+			`#EXTINF:-1 tvg-chno="%d" tvg-id="%s" tvg-logo="%s" group-title="%s",%s`+"\n",
+			it.TvgChNo, it.TvgID, it.TvgLogo, it.Group, it.Name,
+		))
+		buf.WriteString(it.URL + "\n")
 	}
-	
-	_, err := w.Write(b.Bytes())
+	_, err := io.Copy(w, buf)
 	return err
 }
