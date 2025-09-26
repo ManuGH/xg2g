@@ -1,0 +1,27 @@
+# Go
+bin/
+pkg/
+*.exe
+*.test
+
+# Development
+.git/
+.github/
+.vscode/
+.idea/
+*.md
+Dockerfile*
+docker-compose*
+
+# Data
+data/
+*.m3u
+*.xml
+*.log
+
+# Ignore everything except what we need
+*
+!cmd/
+!internal/
+!go.mod
+!go.sum
