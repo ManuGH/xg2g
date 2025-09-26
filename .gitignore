@@ -38,3 +38,8 @@ data/
 .vscode/
 .idea/
 .DS_Store
+# local data
+/data/
+data/
+*.m3u
+*.xml
