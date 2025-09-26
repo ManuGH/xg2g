@@ -1,22 +1,22 @@
 package jobs
 
 import (
-    "context"
-    "fmt"
-    "log"
-    "net/url"
-    "os"
-    "path/filepath"
-    "strings"
-    "time"
-    epg "github.com/ManuGH/xg2g/internal/epg"
-    "github.com/ManuGH/xg2g/internal/openwebif"
-    "github.com/ManuGH/xg2g/internal/playlist"
+	"context"
+	"fmt"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/ManuGH/xg2g/internal/epg"
+	"github.com/ManuGH/xg2g/internal/openwebif"
+	"github.com/ManuGH/xg2g/internal/playlist"
+
+	epg "github.com/ManuGH/xg2g/internal/epg"
+	"log"
 )
-package jobs
-import (
-package jobs
-import (
+
 type Config struct {
 	DataDir   string
 	OWIBase   string
@@ -102,38 +102,3 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 
 	return &Status{LastRun: time.Now(), Channels: len(items)}, nil
 }
-// NEU: XMLTV generieren (nur Channel-Liste)
-if cfg.XMLTVPath != "" {
-    xmlCh := make([]epg.Channel, 0, len(items))
-    for _, it := range items {
-        if it.TvgID != "" {
-            ch := epg.Channel{ID: it.TvgID, DisplayName: []string{it.Name}}
-            if it.TvgLogo != "" {
-                ch.Icon = &epg.Icon{Src: it.TvgLogo}
-            }
-            xmlCh = append(xmlCh, ch)
-        }
-    }
-    if err := epg.WriteXMLTV(xmlCh, cfg.XMLTVPath); err != nil {
-        log.Printf("WARN: XMLTV generation failed: %v", err)
-    } else {
-        log.Printf("XMLTV generated at %s (%d channels)", cfg.XMLTVPath, len(xmlCh))
-    }
-}
-
-	// NEU: XMLTV generieren (nur Channel-Liste)
-	if cfg.XMLTVPath != "" {
-		xmlCh := make([]epg.Channel, 0, len(items))
-		for _, it := range items {
-			if it.TvgID != "" {
-				ch := epg.Channel{ID: it.TvgID, DisplayName: []string{it.Name}}
-				if it.TvgLogo != "" { ch.Icon = &epg.Icon{Src: it.TvgLogo} }
-				xmlCh = append(xmlCh, ch)
-			}
-		}
-		if err := epg.WriteXMLTV(xmlCh, cfg.XMLTVPath); err != nil {
-			log.Printf("WARN: XMLTV generation failed: %v", err)
-		} else {
-			log.Printf("XMLTV generated at %s (%d channels)", cfg.XMLTVPath, len(xmlCh))
-		}
-	}
