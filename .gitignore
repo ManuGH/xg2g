@@ -33,6 +33,7 @@ data/
 *.m3u
 *.xml
 *.gz
+!internal/epg/testdata/xmltv.golden.xml
 
 # Ensure generated artifacts aren't committed
 /data/
@@ -51,3 +52,4 @@ data/
 
 xg2g
 daemon
+!internal/epg/testdata/xmltv.golden.xml
