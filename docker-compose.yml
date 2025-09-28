@@ -1,17 +1,3 @@
-<<<<<<< HEAD
-services:
-  refresher:
-    image: curlimages/curl:8.12.1
-    container_name: xg2g-refresher
-    depends_on:
-      - xg2g
-    restart: unless-stopped
-    logging:n      driver: json-filen      options:n        max-size: "10m"n        max-file: "3"
-    entrypoint: ["sh","-lc","while :; do curl -fsS -X POST http://xg2g:34400/api/refresh || true; sleep ${XG2G_REFRESH_INTERVAL:-21600}; done"]
-
-=======
-version: "3.8"
-
 version: "3.8"
 
 services:
@@ -57,3 +43,4 @@ services:
     entrypoint: >
       sh -lc "while :; do curl -fsS -X POST http://xg2g:34400/api/refresh || true; sleep ${XG2G_REFRESH_INTERVAL:-21600}; done"
     restart: unless-stopped
+    
