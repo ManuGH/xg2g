@@ -114,8 +114,9 @@ func TestTitleOmitEmptyLang(t *testing.T) {
 func TestGoldenXMLTV(t *testing.T) {
 	// Build a TV object that matches the golden file
 	tv := TV{
-		Generator: "xg2g",
-		Channels:  []Channel{{ID: "c1", DisplayName: []string{"Chan1"}}},
+		Generator:    "xg2g",
+		GeneratorURL: "https://example.invalid/xg2g",
+		Channels:     []Channel{{ID: "c1", DisplayName: []string{"Chan1"}}},
 		Programs: []Programme{
 			{Start: "202501010000 +0000", Stop: "202501010100 +0000", Channel: "c1", Title: Title{Lang: "en", Value: "Show1"}, Desc: "Description1"},
 			{Start: "202501010100 +0000", Stop: "202501010200 +0000", Channel: "c1", Title: Title{Value: "Show2"}},

@@ -34,6 +34,11 @@ data/
 *.xml
 *.gz
 
+# Ensure generated artifacts aren't committed
+/data/
+playlist.m3u
+guide.xml
+
 # IDE/Editor
 .vscode/
 .idea/

@@ -18,6 +18,13 @@ type Client struct {
 	http *http.Client
 }
 
+// ClientInterface defines the subset used by other packages and tests.
+type ClientInterface interface {
+	Bouquets(ctx context.Context) (map[string]string, error)
+	Services(ctx context.Context, bouquetRef string) ([][2]string, error)
+	StreamURL(ref string) string
+}
+
 func New(base string) *Client {
 	// Default-Streamport
 	port := 8001
@@ -109,7 +116,7 @@ func (c *Client) Services(ctx context.Context, bouquetRef string) ([][2]string, 
 	if out, err := try("/api/getservices?sRef=" + url.QueryEscape(bouquetRef)); err == nil && len(out) > 0 {
 		return out, nil
 	}
-	// 3) notfalls leer zurück
+	// 3) fallback: return empty list if nothing found
 	return [][2]string{}, nil
 }
 

@@ -1,0 +1,77 @@
+openapi: 3.1.0
+info:
+  title: xg2g API
+  description: OpenWebIF → M3U / XMLTV conversion API
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:34400
+    description: Local development instance
+  - url: http://receiver.local:34400
+    description: Typical production instance
+
+paths:
+  /api/status:
+    get:
+      summary: Current service status
+      description: >-
+        Returns status information such as last refresh time, number of channels
+        and any error message
+      responses:
+        "200":
+          description: Status retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        "500":
+          description: Internal server error
+
+  /api/refresh:
+    post:
+      summary: Trigger refresh
+      description: >-
+        Starts a full refresh (read bouquets, generate M3U and optional XMLTV)
+      responses:
+        "200":
+          description: Refresh completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        "500":
+          description: Refresh failed
+
+  /files/{filename}:
+    get:
+      summary: Retrieve generated file
+      description: >-
+        Download one of the generated artifacts (playlist.m3u, guide.xml, picons)
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Filename (e.g. playlist.m3u, guide.xml)
+      responses:
+        "200":
+          description: File retrieved successfully
+        "404":
+          description: File not found
+
+components:
+  schemas:
+    Status:
+      type: object
+      properties:
+        lastRun:
+          type: string
+          format: date-time
+          description: Timestamp of the last refresh
+        channels:
+          type: integer
+          description: Number of channels found
+        error:
+          type: string
+          description: Error message (if any)

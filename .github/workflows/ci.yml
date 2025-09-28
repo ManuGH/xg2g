@@ -5,7 +5,7 @@ on:
   pull_request:
 
 permissions:
-  id-token: write   # Falls OIDC Token benötigt werden (z.B. für Signierungen)
+  id-token: write   # If OIDC tokens are needed (e.g. for signing)
   contents: read
 
 jobs:
@@ -34,7 +34,7 @@ jobs:
       - name: Run unit tests
         run: go test -v ./...
 
-      # Start stub OpenWebIF server in background for integration tests
+  # Start stub OpenWebIF server in background for integration tests
       - name: Start OpenWebIF stub server
         run: |
           cat > /tmp/stub_openwebif.go << 'EOF'
@@ -71,11 +71,11 @@ jobs:
           EOF
 
           nohup go run /tmp/stub_openwebif.go > /tmp/stub_openwebif.log 2>&1 &
-          # Warten bis Server auf Port 18080 bereit ist
+          # Wait until the stub server is listening on port 18080
           for i in {1..20}; do nc -z 127.0.0.1 18080 && break || sleep 0.2; done
           nc -z 127.0.0.1 18080
 
-      # Build daemon, start und Ausführen von Integrationstests
+  # Build daemon, start and run integration tests
       - name: Integration: build daemon and run refresh
         env:
           XG2G_DATA: ./data
@@ -88,26 +88,26 @@ jobs:
           mkdir -p ./data
           go build -o bin/xg2g ./cmd/daemon
 
-          # Starte Daemon im Hintergrund
+          # Start daemon in background
           nohup ./bin/xg2g > /tmp/daemon.log 2>&1 &
           DAEMON_PID=$!
 
-          # Warten bis Daemon auf Port 34400 antwortet
+          # Wait until daemon responds on port 34400
           for i in {1..30}; do
             curl -fsS http://127.0.0.1:34400/api/status && break || sleep 0.2
           done
 
-          # API Refresh und Status prüfen
+          # Trigger API refresh and check status
           curl -fsS -X POST http://127.0.0.1:34400/api/refresh
           curl -fsS http://127.0.0.1:34400/api/status
 
-          # Überprüfe generierte Dateien
+          # Verify generated files
           ls -lh ./data/playlist.m3u ./data/guide.xml
 
-          # Sauberes Beenden des Daemon
+          # Gracefully stop the daemon
           kill $DAEMON_PID
 
-      # Überprüfen der generierten Dateien mit grep
+  # Validate generated files with grep
       - name: Validierung der Output-Dateien
         run: |
           set -e
