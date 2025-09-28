@@ -5,12 +5,9 @@ import (
 	"os"
 	"strconv"
 
-	"time"
-
 	"github.com/ManuGH/xg2g/internal/api"
 	"github.com/ManuGH/xg2g/internal/jobs"
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
+	xglog "github.com/ManuGH/xg2g/internal/log"
 )
 
 var Version = "dev"
@@ -28,15 +25,19 @@ func main() {
 	s := api.New(cfg)
 	addr := env("XG2G_LISTEN", ":34400")
 
-	// Configure zerolog to use RFC3339 timestamps for readability
-	zerolog.TimeFieldFormat = time.RFC3339
-	log.Info().Str("version", Version).Str("addr", addr).Msg("starting xg2g")
-	log.Info().Str("data", cfg.DataDir).Str("owi", cfg.OWIBase).Str("bouquet", cfg.Bouquet).
-		Str("xmltv", cfg.XMLTVPath).Int("fuzzy", cfg.FuzzyMax).Str("picon", cfg.PiconBase).
+	logger := xglog.WithComponent("daemon")
+	logger.Info().Str("version", Version).Str("addr", addr).Msg("starting xg2g")
+	logger.Info().
+		Str("data", cfg.DataDir).
+		Str("owi", cfg.OWIBase).
+		Str("bouquet", cfg.Bouquet).
+		Str("xmltv", cfg.XMLTVPath).
+		Int("fuzzy", cfg.FuzzyMax).
+		Str("picon", cfg.PiconBase).
 		Msg("config")
 
 	if err := http.ListenAndServe(addr, s.Handler()); err != nil {
-		log.Fatal().Err(err).Msg("server failed")
+		logger.Fatal().Err(err).Msg("server failed")
 	}
 }
 

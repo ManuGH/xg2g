@@ -78,3 +78,29 @@ func TestRefreshWithClient_ServicesError(t *testing.T) {
 		t.Fatalf("expected 0 channels, got %d", st.Channels)
 	}
 }
+
+func TestValidateConfig(t *testing.T) {
+	testcases := []struct {
+		name    string
+		cfg     Config
+		wantErr bool
+	}{
+		{name: "http ok", cfg: Config{OWIBase: "http://example.com"}},
+		{name: "https ok", cfg: Config{OWIBase: "https://example.com"}},
+		{name: "empty", cfg: Config{OWIBase: ""}, wantErr: true},
+		{name: "missing scheme", cfg: Config{OWIBase: "example.com"}, wantErr: true},
+		{name: "unsupported scheme", cfg: Config{OWIBase: "ftp://example.com"}, wantErr: true},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateConfig(tc.cfg)
+			if tc.wantErr && err == nil {
+				t.Fatalf("expected error, got nil")
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
