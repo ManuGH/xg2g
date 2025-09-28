@@ -59,9 +59,7 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	if err != nil {
-		recordRefreshMetrics(duration, 0)
 		s.mu.Lock()
-		s.status.LastRun = time.Now() // NEW: record time even on errors
 		s.status.Error = err.Error()
 		s.status.Channels = 0 // NEW: reset channel count on error
 		s.mu.Unlock()
