@@ -32,6 +32,11 @@ type Status struct {
 }
 
 func Refresh(ctx context.Context, cfg Config) (*Status, error) {
+	cfg.OWIBase = strings.TrimSpace(cfg.OWIBase)
+	if err := validateConfig(cfg); err != nil {
+		return nil, err
+	}
+
 	cl := openwebif.New(cfg.OWIBase)
 	return refreshWithClient(ctx, cfg, cl)
 }
@@ -127,4 +132,25 @@ func makeStableID(name string) string {
 		id = "ch"
 	}
 	return id
+}
+
+func validateConfig(cfg Config) error {
+	if cfg.OWIBase == "" {
+		return fmt.Errorf("openwebif base URL is empty")
+	}
+
+	u, err := url.Parse(cfg.OWIBase)
+	if err != nil {
+		return fmt.Errorf("invalid openwebif base URL %q: %w", cfg.OWIBase, err)
+	}
+
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("unsupported openwebif base URL scheme %q", u.Scheme)
+	}
+
+	if u.Host == "" {
+		return fmt.Errorf("openwebif base URL %q is missing host", cfg.OWIBase)
+	}
+
+	return nil
 }
