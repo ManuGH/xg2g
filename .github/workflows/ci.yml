@@ -1,8 +1,10 @@
+# yamllint disable rule:truthy
+---
 name: CI
 
 on:
-  push:
-  pull_request:
+  push: {}
+  pull_request: {}
 
 permissions:
   id-token: write
@@ -36,6 +38,7 @@ jobs:
           for i in {1..30}; do nc -z 127.0.0.1 18080 && break || sleep 0.5; done
 
       - name: "Integration: build daemon and run refresh"
+        shell: bash
         env:
           XG2G_DATA: ./data
           XG2G_OWI_BASE: http://127.0.0.1:18080
@@ -44,30 +47,12 @@ jobs:
           XG2G_PICON_BASE: http://127.0.0.1:18080/picon
         run: |
           set -euo pipefail
-          mkdir -p ./data
-          go build -o bin/xg2g ./cmd/daemon
-
-          # Start daemon in background and wait for it to accept connections
-          nohup ./bin/xg2g > /tmp/daemon.log 2>&1 &
+          make build
+          ./bin/daemon &
           DAEMON_PID=$!
-
-          for i in {1..30}; do
-            if curl -fsS http://127.0.0.1:34400/api/status >/dev/null 2>&1; then
-              break
-            fi
-            sleep 0.5
-          done
-
-          # Trigger API refresh
-          curl -fsS -X POST http://127.0.0.1:34400/api/refresh || true
-
-          # Give the daemon a moment to finish writing files
-          sleep 1
-
-          ls -lh ./data/playlist.m3u ./data/guide.xml || true
-
-          # Stop daemon
-          kill $DAEMON_PID || true
+          trap 'kill ${DAEMON_PID} || true' EXIT
+          sleep 2
+          curl -sf http://127.0.0.1:34400/api/refresh || true
 
       - name: Validate output files
         if: always()
@@ -95,10 +80,13 @@ jobs:
             ./data/guide.xml
 
       - name: Install golangci-lint
-        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+        run: |
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 
       - name: Lint
-        run: $(go env GOPATH)/bin/golangci-lint run ./...
+        run: |
+          $(go env GOPATH)/bin/golangci-lint run ./...
 
       - name: Final test run
-        run: go test ./... -v
+        run: |
+          go test ./... -v
