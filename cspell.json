@@ -1,28 +1,25 @@
 {
   "version": "0.2",
   "language": "en,de",
-  "ignorePaths": [
-    "node_modules/**",
-    "dist/**",
-    ".git/**"
-  ],
   "words": [
-    "xg2g",
     "OpenWebIF",
+    "manugh",
+    "IPTV",
+    "picons",
     "Bouquet",
-    "XMLTV",
-    "Picon",
     "Favourites",
-    "SRef",
-    "Levenshtein",
-    "EXTINF",
-    "CORS",
-    "Buildx",
-    "ghcr",
-    "semver",
-    "metadata",
-    "GitHub",
-    "dockerfile",
-    "workflow"
+    "XMLTV",
+    "PICON",
+    "bouquets",
+    "tvg",
+    "xteve",
+    "zerolog",
+    "EXTINF"
+  ],
+  "ignorePaths": [
+    "go.sum",
+    "go.mod",
+    "**/vendor/**",
+    ".git/**"
   ]
 }

@@ -8,6 +8,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/gorilla/mux"
+	"github.com/rs/zerolog"
 )
 
 type Server struct {
@@ -15,12 +16,14 @@ type Server struct {
 	refreshMu sync.Mutex // NEW: serialize refreshes
 	cfg       jobs.Config
 	status    jobs.Status
+	log       *zerolog.Logger
 }
 
 func New(cfg jobs.Config) *Server {
 	return &Server{
 		cfg:    cfg,
 		status: jobs.Status{},
+		log:    logger("api"),
 	}
 }
 
@@ -50,20 +53,26 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	defer s.refreshMu.Unlock()
 
 	ctx := r.Context()
+	start := time.Now()
 	st, err := jobs.Refresh(ctx, s.cfg)
+	duration := time.Since(start)
 
 	w.Header().Set("Content-Type", "application/json")
 	if err != nil {
+		recordRefreshMetrics(duration, 0)
 		s.mu.Lock()
 		s.status.LastRun = time.Now() // NEW: record time even on errors
 		s.status.Error = err.Error()
 		s.status.Channels = 0 // NEW: reset channel count on error
 		s.mu.Unlock()
 
+		s.log.Error().Err(err).Msg("refresh failed")
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
+	recordRefreshMetrics(duration, st.Channels)
+	s.log.Info().Int("channels", st.Channels).Dur("duration", duration).Msg("refresh completed")
 	s.mu.Lock()
 	s.status = *st
 	s.mu.Unlock()
@@ -74,5 +83,5 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) Handler() http.Handler {
-	return s.routes()
+	return withMiddlewares(s.routes())
 }

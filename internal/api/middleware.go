@@ -1,4 +1,3 @@
-//nolint:unused
 package api
 
 import (
@@ -17,6 +16,16 @@ var (
 	trustedCIDRs     []*net.IPNet
 	trustedCIDRsOnce sync.Once
 )
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (sr *statusRecorder) WriteHeader(code int) {
+	sr.status = code
+	sr.ResponseWriter.WriteHeader(code)
+}
 
 func loadTrustedCIDRs() {
 	trustedCIDRsOnce.Do(func() {
@@ -148,6 +157,14 @@ func (rl *rateLimiter) middleware(next http.Handler) http.Handler {
 	})
 }
 
+func metricsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(recorder, r)
+		recordHTTPMetric(r.URL.Path, recorder.status)
+	})
+}
+
 // corsMiddleware fügt CORS-Header hinzu
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -184,4 +201,9 @@ func chain(h http.Handler, mws ...func(http.Handler) http.Handler) http.Handler 
 		h = mws[i](h)
 	}
 	return h
+}
+
+func withMiddlewares(h http.Handler) http.Handler {
+	rl := newRateLimiter(rate.Limit(10), 20)
+	return chain(h, metricsMiddleware, corsMiddleware, securityHeaders, rl.middleware)
 }
