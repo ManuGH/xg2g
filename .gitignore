@@ -53,3 +53,4 @@ data/
 xg2g
 daemon
 !internal/epg/testdata/xmltv.golden.xml
+.codex_patch.diff

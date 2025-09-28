@@ -1,3 +1,4 @@
+# cSpell:ignore healthcheck curlimages
 services:
   xg2g:
     build:
