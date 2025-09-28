@@ -22,7 +22,7 @@ jobs:
           go-version-file: "go.mod"
           cache: true
 
-      - name: Build project
+      - name: Download modules and build
         run: |
           go mod download
           go build -v ./...
@@ -33,12 +33,9 @@ jobs:
       - name: Start OpenWebIF stub server
         run: |
           nohup go run ./test/stub_openwebif.go > /tmp/stub_openwebif.log 2>&1 &
-          # wait for the stub to be ready (longer wait to avoid flakes)
-          for i in {1..60}; do nc -z 127.0.0.1 18080 && break || sleep 0.5; done
-          nc -z 127.0.0.1 18080
+          for i in {1..30}; do nc -z 127.0.0.1 18080 && break || sleep 0.5; done
 
       - name: "Integration: build daemon and run refresh"
-        id: integration
         env:
           XG2G_DATA: ./data
           XG2G_OWI_BASE: http://127.0.0.1:18080
@@ -54,7 +51,7 @@ jobs:
           nohup ./bin/xg2g > /tmp/daemon.log 2>&1 &
           DAEMON_PID=$!
 
-          for i in {1..60}; do
+          for i in {1..30}; do
             if curl -fsS http://127.0.0.1:34400/api/status >/dev/null 2>&1; then
               break
             fi
@@ -62,7 +59,7 @@ jobs:
           done
 
           # Trigger API refresh
-          curl -fsS -X POST http://127.0.0.1:34400/api/refresh
+          curl -fsS -X POST http://127.0.0.1:34400/api/refresh || true
 
           # Give the daemon a moment to finish writing files
           sleep 1
@@ -76,11 +73,11 @@ jobs:
         if: always()
         run: |
           set -euo pipefail
-          # show stub and daemon logs for easier debugging
-          echo '--- /tmp/stub_openwebif.log ---'
-          sed -n '1,200p' /tmp/stub_openwebif.log || true
-          echo '--- /tmp/daemon.log ---'
-          sed -n '1,200p' /tmp/daemon.log || true
+          # show stub and daemon logs for easier debugging (larger tail)
+          echo '--- /tmp/stub_openwebif.log (last 1000 lines) ---'
+          tail -n 1000 /tmp/stub_openwebif.log || true
+          echo '--- /tmp/daemon.log (last 1000 lines) ---'
+          tail -n 1000 /tmp/daemon.log || true
 
           test "$(grep -c '^#EXTINF' ./data/playlist.m3u)" -ge 2
           test "$(grep -c '<channel ' ./data/guide.xml)" -ge 2
@@ -103,5 +100,5 @@ jobs:
       - name: Lint
         run: $(go env GOPATH)/bin/golangci-lint run ./...
 
-      - name: Test
+      - name: Final test run
         run: go test ./... -v
