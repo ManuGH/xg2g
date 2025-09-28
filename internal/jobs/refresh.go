@@ -9,6 +9,11 @@ import (
 	"strings"
 	"time"
 
+<<<<<<< HEAD
+=======
+	xglog "github.com/ManuGH/xg2g/internal/log"
+
+>>>>>>> 749940c (Migrate internal/jobs to use internal/log utilities)
 	"github.com/ManuGH/xg2g/internal/epg"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
@@ -43,6 +48,8 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 // refreshWithClient performs the refresh flow using the provided OpenWebIF client.
 // Separated for easier testing.
 func refreshWithClient(ctx context.Context, cfg Config, cl openwebif.ClientInterface) (*Status, error) {
+	logger := xglog.WithComponentFromContext(ctx, "jobs")
+
 	bqs, err := cl.Bouquets(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("bouquets: %w", err)
@@ -106,6 +113,7 @@ func refreshWithClient(ctx context.Context, cfg Config, cl openwebif.ClientInter
 			xmlCh = append(xmlCh, ch)
 		}
 		if err := epg.WriteXMLTV(xmlCh, cfg.XMLTVPath); err != nil {
+<<<<<<< HEAD
 			logger := log.WithComponentFromContext(ctx, "jobs")
 			logger.Warn().
 				Err(err).
@@ -120,6 +128,11 @@ func refreshWithClient(ctx context.Context, cfg Config, cl openwebif.ClientInter
 				Str("path", cfg.XMLTVPath).
 				Int("channels", len(xmlCh)).
 				Msg("XMLTV generated")
+=======
+			logger.Warn().Err(err).Msg("XMLTV generation failed")
+		} else {
+			logger.Info().Str("path", cfg.XMLTVPath).Int("channels", len(xmlCh)).Msg("XMLTV generated")
+>>>>>>> 749940c (Migrate internal/jobs to use internal/log utilities)
 		}
 	}
 
