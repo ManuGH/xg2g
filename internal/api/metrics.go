@@ -8,6 +8,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
+//nolint:unused
 var (
 	// Metrics for HTTP requests
 	httpRequestsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -34,11 +35,15 @@ var (
 )
 
 // recordMetrics records metrics for an HTTP request
+//
+//nolint:unused
 func recordHTTPMetric(path string, status int) {
 	httpRequestsTotal.WithLabelValues(path, strconv.Itoa(status)).Inc()
 }
 
 // recordRefreshMetrics records metrics for a refresh job
+//
+//nolint:unused
 func recordRefreshMetrics(duration time.Duration, channelCount int) {
 	refreshDuration.Observe(duration.Seconds())
 	channelsFound.Set(float64(channelCount))

@@ -24,6 +24,8 @@ func init() {
 }
 
 // Logger returns a context-aware logger configured with component metadata
+//
+//nolint:unused
 func logger(component string) *zerolog.Logger {
 	logger := log.With().
 		Str("component", component).

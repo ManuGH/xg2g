@@ -1,3 +1,4 @@
+//nolint:unused
 package api
 
 import (

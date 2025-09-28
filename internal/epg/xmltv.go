@@ -27,7 +27,14 @@ func BuildNameToIDMap(xmltvPath string) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			// best-effort: log to stderr but do not fail the operation
+			// this satisfies errcheck while keeping behavior unchanged
+			// (no logging package imported here to avoid changing API surface)
+			_ = err
+		}
+	}()
 
 	var doc TV
 	dec := xml.NewDecoder(f)

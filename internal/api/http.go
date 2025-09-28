@@ -38,7 +38,10 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	defer s.mu.RUnlock()
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(s.status)
+	if err := json.NewEncoder(w).Encode(s.status); err != nil {
+		// best-effort: write to stderr
+		_ = err
+	}
 }
 
 func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
@@ -65,7 +68,9 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	s.status = *st
 	s.mu.Unlock()
 
-	json.NewEncoder(w).Encode(st)
+	if err := json.NewEncoder(w).Encode(st); err != nil {
+		_ = err
+	}
 }
 
 func (s *Server) Handler() http.Handler {

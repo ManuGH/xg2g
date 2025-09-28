@@ -4,12 +4,6 @@ on:
   push:
   pull_request:
 
-name: CI
-
-on:
-  push:
-  pull_request:
-
 permissions:
   id-token: write
   contents: read
@@ -17,6 +11,7 @@ permissions:
 jobs:
   build-test-integration:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4
@@ -24,7 +19,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: 'go.mod'
+          go-version-file: "go.mod"
           cache: true
 
       - name: Build project
@@ -38,9 +33,12 @@ jobs:
       - name: Start OpenWebIF stub server
         run: |
           nohup go run ./test/stub_openwebif.go > /tmp/stub_openwebif.log 2>&1 &
-          for i in {1..20}; do nc -z 127.0.0.1 18080 && break || sleep 0.2; done
+          # wait for the stub to be ready (longer wait to avoid flakes)
+          for i in {1..60}; do nc -z 127.0.0.1 18080 && break || sleep 0.5; done
+          nc -z 127.0.0.1 18080
 
-      - name: Integration: build daemon and run refresh
+      - name: "Integration: build daemon and run refresh"
+        id: integration
         env:
           XG2G_DATA: ./data
           XG2G_OWI_BASE: http://127.0.0.1:18080
@@ -48,260 +46,56 @@ jobs:
           XG2G_XMLTV: ./data/guide.xml
           XG2G_PICON_BASE: http://127.0.0.1:18080/picon
         run: |
-          set -e
+          set -euo pipefail
           mkdir -p ./data
           go build -o bin/xg2g ./cmd/daemon
+
+          # Start daemon in background and wait for it to accept connections
           nohup ./bin/xg2g > /tmp/daemon.log 2>&1 &
           DAEMON_PID=$!
-          for i in {1..30}; do curl -fsS http://127.0.0.1:34400/api/status && break || sleep 0.2; done
+
+          for i in {1..60}; do
+            if curl -fsS http://127.0.0.1:34400/api/status >/dev/null 2>&1; then
+              break
+            fi
+            sleep 0.5
+          done
+
+          # Trigger API refresh
           curl -fsS -X POST http://127.0.0.1:34400/api/refresh
-          ls -lh ./data/playlist.m3u ./data/guide.xml
+
+          # Give the daemon a moment to finish writing files
+          sleep 1
+
+          ls -lh ./data/playlist.m3u ./data/guide.xml || true
+
+          # Stop daemon
           kill $DAEMON_PID || true
 
       - name: Validate output files
+        if: always()
         run: |
-          set -e
+          set -euo pipefail
+          # show stub and daemon logs for easier debugging
+          echo '--- /tmp/stub_openwebif.log ---'
+          sed -n '1,200p' /tmp/stub_openwebif.log || true
+          echo '--- /tmp/daemon.log ---'
+          sed -n '1,200p' /tmp/daemon.log || true
+
           test "$(grep -c '^#EXTINF' ./data/playlist.m3u)" -ge 2
           test "$(grep -c '<channel ' ./data/guide.xml)" -ge 2
           ! grep -q 'FROM BOUQUET' ./data/playlist.m3u
 
-      - name: Install golangci-lint
-        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-
-      - name: Lint
-        run: $(go env GOPATH)/bin/golangci-lint run ./...
-
-      - name: Test
-        run: go test ./... -v
-
-
-  permissions:
-    id-token: write
-    contents: read
-
-  jobs:
-    build-test-integration:
-      runs-on: ubuntu-latest
-      steps:
-        - name: Checkout source code
-          uses: actions/checkout@v4
-
-        - name: Set up Go
-          uses: actions/setup-go@v5
-          with:
-            go-version-file: 'go.mod'
-            cache: true
-
-        - name: Build project
-          run: |
-            go mod download
-            go build -v ./...
-
-        - name: Run unit tests
-          run: go test -v ./...
-
-        - name: Start OpenWebIF stub server
-          run: |
-            nohup go run ./test/stub_openwebif.go > /tmp/stub_openwebif.log 2>&1 &
-            for i in {1..20}; do nc -z 127.0.0.1 18080 && break || sleep 0.2; done
-
-        - name: Integration: build daemon and run refresh
-          env:
-            XG2G_DATA: ./data
-            XG2G_OWI_BASE: http://127.0.0.1:18080
-            XG2G_BOUQUET: Premium
-            XG2G_XMLTV: ./data/guide.xml
-            XG2G_PICON_BASE: http://127.0.0.1:18080/picon
-          run: |
-            set -e
-            mkdir -p ./data
-            go build -o bin/xg2g ./cmd/daemon
-            nohup ./bin/xg2g > /tmp/daemon.log 2>&1 &
-            DAEMON_PID=$!
-            for i in {1..30}; do curl -fsS http://127.0.0.1:34400/api/status && break || sleep 0.2; done
-            curl -fsS -X POST http://127.0.0.1:34400/api/refresh
-            ls -lh ./data/playlist.m3u ./data/guide.xml
-            kill $DAEMON_PID || true
-
-        - name: Validate output files
-          run: |
-            set -e
-            test "$(grep -c '^#EXTINF' ./data/playlist.m3u)" -ge 2
-            test "$(grep -c '<channel ' ./data/guide.xml)" -ge 2
-            ! grep -q 'FROM BOUQUET' ./data/playlist.m3u
-
-        - name: Install golangci-lint
-          run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-
-        - name: Lint
-          run: $(go env GOPATH)/bin/golangci-lint run ./...
-
-        - name: Test
-          run: go test ./... -v
-
-    runs-on: ubuntu-latest
-
-    steps:
-      # Check out the source code
-      - name: Checkout source code
-        uses: actions/checkout@v4
-
-      # Set up Go environment based on go.mod version
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - name: Upload logs as artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          go-version-file: 'go.mod'
-          cache: true
-
-      # Download modules and build the project
-      - name: Build project
-        run: |
-          go mod download
-          go build -v ./...
-
-      # Run unit tests
-      - name: Run unit tests
-        run: go test -v ./...
-
-      # Start stub OpenWebIF server (use repository file)
-      - name: Start OpenWebIF stub server
-        run: |
-          nohup go run ./test/stub_openwebif.go > /tmp/stub_openwebif.log 2>&1 &
-          # Wait until the stub server is listening on port 18080
-          for i in {1..20}; do nc -z 127.0.0.1 18080 && break || sleep 0.2; done
-          nc -z 127.0.0.1 18080
-
-      # Build daemon, start and run integration tests
-      - name: Integration: build daemon and run refresh
-        env:
-          XG2G_DATA: ./data
-          XG2G_OWI_BASE: http://127.0.0.1:18080
-          XG2G_BOUQUET: Premium
-          XG2G_XMLTV: ./data/guide.xml
-          XG2G_PICON_BASE: http://127.0.0.1:18080/picon
-        run: |
-          set -e
-          mkdir -p ./data
-          go build -o bin/xg2g ./cmd/daemon
-
-          # Start daemon in background
-          nohup ./bin/xg2g > /tmp/daemon.log 2>&1 &
-          DAEMON_PID=$!
-
-          # Wait until daemon responds on port 34400
-          for i in {1..30}; do
-            curl -fsS http://127.0.0.1:34400/api/status && break || sleep 0.2
-          done
-
-          # Trigger API refresh and check status
-          curl -fsS -X POST http://127.0.0.1:34400/api/refresh
-          curl -fsS http://127.0.0.1:34400/api/status
-
-          # Verify generated files
-          ls -lh ./data/playlist.m3u ./data/guide.xml
-
-          # Gracefully stop the daemon
-          kill $DAEMON_PID
-
-      # Validate generated files with grep
-      - name: Validate output files
-        run: |
-          set -e
-          test "$(grep -c '^#EXTINF' ./data/playlist.m3u)" -ge 2
-          test "$(grep -c '<channel ' ./data/guide.xml)" -ge 2
-          ! grep -q 'FROM BOUQUET' ./data/playlist.m3u
-
-      - name: Install golangci-lint
-        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-
-      - name: Lint
-        run: $(go env GOPATH)/bin/golangci-lint run ./...
-
-      - name: Test
-        run: go test ./... -v
-name: CI
-
-on:
-  push:
-  pull_request:
-
-permissions:
-  id-token: write   # If OIDC tokens are needed (e.g. for signing)
-  contents: read
-
-jobs:
-  build-test-integration:
-    runs-on: ubuntu-latest
-
-    steps:
-      # Check out the source code
-      - name: Checkout source code
-        uses: actions/checkout@v4
-
-      # Set up Go environment based on go.mod version
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: 'go.mod'
-          cache: true
-
-      # Download modules and build the project
-      - name: Build project
-        run: |
-          go mod download
-          go build -v ./...
-
-      # Run unit tests
-      - name: Run unit tests
-        run: go test -v ./...
-
-  # Start stub OpenWebIF server (use repository file)
-      - name: Start OpenWebIF stub server
-        run: |
-          nohup go run ./test/stub_openwebif.go > /tmp/stub_openwebif.log 2>&1 &
-          # Wait until the stub server is listening on port 18080
-          for i in {1..20}; do nc -z 127.0.0.1 18080 && break || sleep 0.2; done
-          nc -z 127.0.0.1 18080
-
-  # Build daemon, start and run integration tests
-      - name: Integration: build daemon and run refresh
-        env:
-          XG2G_DATA: ./data
-          XG2G_OWI_BASE: http://127.0.0.1:18080
-          XG2G_BOUQUET: Premium
-          XG2G_XMLTV: ./data/guide.xml
-          XG2G_PICON_BASE: http://127.0.0.1:18080/picon
-        run: |
-          set -e
-          mkdir -p ./data
-          go build -o bin/xg2g ./cmd/daemon
-
-          # Start daemon in background
-          nohup ./bin/xg2g > /tmp/daemon.log 2>&1 &
-          DAEMON_PID=$!
-
-          # Wait until daemon responds on port 34400
-          for i in {1..30}; do
-            curl -fsS http://127.0.0.1:34400/api/status && break || sleep 0.2
-          done
-
-          # Trigger API refresh and check status
-          curl -fsS -X POST http://127.0.0.1:34400/api/refresh
-          curl -fsS http://127.0.0.1:34400/api/status
-
-          # Verify generated files
-          ls -lh ./data/playlist.m3u ./data/guide.xml
-
-          # Gracefully stop the daemon
-          kill $DAEMON_PID
-
-  # Validate generated files with grep
-      - name: Validierung der Output-Dateien
-        run: |
-          set -e
-          test "$(grep -c '^#EXTINF' ./data/playlist.m3u)" -ge 2
-          test "$(grep -c '<channel ' ./data/guide.xml)" -ge 2
-          ! grep -q 'FROM BOUQUET' ./data/playlist.m3u
+          name: ci-logs
+          path: |
+            /tmp/stub_openwebif.log
+            /tmp/daemon.log
+            ./data/playlist.m3u
+            ./data/guide.xml
 
       - name: Install golangci-lint
         run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest

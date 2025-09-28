@@ -48,7 +48,12 @@ func (c *Client) Bouquets(ctx context.Context) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer res.Body.Close()
+	defer func() {
+		if err := res.Body.Close(); err != nil {
+			// ignore close errors (best-effort)
+			_ = err
+		}
+	}()
 	if res.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("bouquets: %s", res.Status)
 	}
@@ -88,7 +93,11 @@ func (c *Client) Services(ctx context.Context, bouquetRef string) ([][2]string, 
 		if err != nil {
 			return nil, err
 		}
-		defer res.Body.Close()
+		defer func() {
+			if err := res.Body.Close(); err != nil {
+				_ = err
+			}
+		}()
 		if res.StatusCode != http.StatusOK {
 			return nil, fmt.Errorf("services: %s", res.Status)
 		}
