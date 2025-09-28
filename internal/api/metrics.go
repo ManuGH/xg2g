@@ -32,7 +32,7 @@ var (
 		Help: "Timestamp of the last successful refresh (Unix timestamp)",
 	})
 )
- 
+
 // recordMetrics records metrics for an HTTP request
 func recordHTTPMetric(path string, status int) {
 	httpRequestsTotal.WithLabelValues(path, strconv.Itoa(status)).Inc()
