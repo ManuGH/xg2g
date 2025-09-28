@@ -7,7 +7,7 @@ import (
 
 type TV struct {
 	XMLName   xml.Name    `xml:"tv"`
-	Generator string      `xml:"generator-info-name,attr"`
+	Generator string      `xml:"generator-info-name,attr,omitempty"`
 	Channels  []Channel   `xml:"channel"`
 	Programs  []Programme `xml:"programme"`
 }
@@ -31,7 +31,9 @@ type Programme struct {
 }
 
 type Title struct {
-	Lang  string `xml:"lang,attr"`
+	// Lang contains the language code for the title (optional).
+	Lang string `xml:"lang,attr,omitempty"`
+	// Value is the character data of the title element.
 	Value string `xml:",chardata"`
 }
 
@@ -49,6 +51,9 @@ func WriteXMLTV(channels []Channel, path string) error {
 	if err != nil {
 		return err
 	}
-	h := []byte(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
-	return os.WriteFile(path, append(h, out...), 0644)
+
+	xmlHeader := `<?xml version="1.0" encoding="UTF-8"?>` + "\n"
+	completeXML := xmlHeader + string(out)
+
+	return os.WriteFile(path, []byte(completeXML), 0644)
 }
