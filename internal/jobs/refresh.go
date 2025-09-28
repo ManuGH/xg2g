@@ -3,12 +3,13 @@ package jobs
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/rs/zerolog/log"
 
 	"github.com/ManuGH/xg2g/internal/epg"
 	"github.com/ManuGH/xg2g/internal/openwebif"
@@ -32,7 +33,12 @@ type Status struct {
 
 func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 	cl := openwebif.New(cfg.OWIBase)
+	return refreshWithClient(ctx, cfg, cl)
+}
 
+// refreshWithClient performs the refresh flow using the provided OpenWebIF client.
+// Separated for easier testing.
+func refreshWithClient(ctx context.Context, cfg Config, cl openwebif.ClientInterface) (*Status, error) {
 	bqs, err := cl.Bouquets(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("bouquets: %w", err)
@@ -65,7 +71,7 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 			Name:    name,
 			TvgID:   makeStableID(name),
 			TvgChNo: i + 1,
-			URL:     openwebif.StreamURL(cfg.OWIBase, sref),
+			URL:     cl.StreamURL(sref),
 			Group:   cfg.Bouquet,
 			TvgLogo: logo,
 		})
@@ -96,9 +102,9 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 			xmlCh = append(xmlCh, ch)
 		}
 		if err := epg.WriteXMLTV(xmlCh, cfg.XMLTVPath); err != nil {
-			log.Printf("WARN: XMLTV generation failed: %v", err)
+			log.Warn().Err(err).Msg("XMLTV generation failed")
 		} else {
-			log.Printf("XMLTV generated at %s (%d channels)", cfg.XMLTVPath, len(xmlCh))
+			log.Info().Str("path", cfg.XMLTVPath).Int("channels", len(xmlCh)).Msg("XMLTV generated")
 		}
 	}
 

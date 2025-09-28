@@ -1,36 +1,45 @@
+# cSpell:ignore healthcheck curlimages
 services:
-  refresher:
-    image: curlimages/curl:8.12.1
-    container_name: xg2g-refresher
-    depends_on:
-      - xg2g
-    restart: unless-stopped
-    logging:n      driver: json-filen      options:n        max-size: "10m"n        max-file: "3"
-    entrypoint: ["sh","-lc","while :; do curl -fsS -X POST http://xg2g:34400/api/refresh || true; sleep ${XG2G_REFRESH_INTERVAL:-21600}; done"]
-
   xg2g:
     build:
       context: .
       dockerfile: Dockerfile
       args:
-        GIT_REF: ${GIT_REF:-dev}
+        VERSION: "${VERSION:-dev}"
     image: xg2g:local
     ports:
       - "34400:34400"
+      - "17999:17999"
     volumes:
-      - ./data:/data:rw
+      - ./data:/data
     environment:
-      - XG2G_STREAM_PORT=${XG2G_STREAM_PORT}
-      - XG2G_OWI_BASE=http://10.10.55.57
-      - XG2G_BOUQUET=Premium
-      - XG2G_DATA=/data
-      - XG2G_XMLTV=/data/guide.xml
-      - XG2G_FUZZY_MAX=2
-    restart: unless-stopped
-    logging:n      driver: json-filen      options:n        max-size: "10m"n        max-file: "3"
+      XG2G_DATA: /data
+      XG2G_LISTEN: ":34400"
+      XG2G_OWI_BASE: "${XG2G_OWI_BASE:-}"
+      XG2G_BOUQUET: "${XG2G_BOUQUET:-}"
+      XG2G_FUZZY_MAX: "${XG2G_FUZZY_MAX:-2}"
+      XG2G_STREAM_PORT: "${XG2G_STREAM_PORT:-17999}"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:34400/api/status"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+      test: ["CMD-SHELL", "wget -qO- http://localhost:34400/api/status || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+    user: "1000:1000"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  xg2g-refresher:
+    image: curlimages/curl:latest
+    depends_on:
+      xg2g:
+        condition: service_healthy
+    environment:
+      XG2G_REFRESH_INTERVAL: "${XG2G_REFRESH_INTERVAL:-21600}"
+    entrypoint: >
+      sh -lc "while :; do curl -fsS -X POST http://xg2g:34400/api/refresh || true; sleep ${XG2G_REFRESH_INTERVAL:-21600}; done"
+    restart: unless-stopped

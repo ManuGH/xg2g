@@ -1,21 +1,21 @@
 # Contributing to xg2g
 
-Vielen Dank, dass du zu **xg2g** beitragen möchtest!  
-Dieses Projekt ist aktuell noch in der frühen Phase. Pull Requests und Issues sind willkommen.
+Thanks for your interest in contributing to **xg2g**!
+This project is in an early stage. Pull requests and issues are welcome.
 
 ## Development Setup
 
 ```bash
-# Repository klonen
+# Clone the repository
 git clone https://github.com/ManuGH/xg2g.git
 cd xg2g
 
-# Abhängigkeiten laden
+# Download dependencies
 go mod download
 
 # Build
 go build ./cmd/daemon
 
-# Start (lokal)
+# Run locally
 ./xg2g
 ```

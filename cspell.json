@@ -1,0 +1,25 @@
+{
+  "version": "0.2",
+  "language": "en,de",
+  "words": [
+    "OpenWebIF",
+    "manugh",
+    "IPTV",
+    "picons",
+    "Bouquet",
+    "Favourites",
+    "XMLTV",
+    "PICON",
+    "bouquets",
+    "tvg",
+    "xteve",
+    "zerolog",
+    "EXTINF"
+  ],
+  "ignorePaths": [
+    "go.sum",
+    "go.mod",
+    "**/vendor/**",
+    ".git/**"
+  ]
+}

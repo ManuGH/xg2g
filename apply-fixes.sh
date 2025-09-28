@@ -58,7 +58,7 @@ func WriteXMLTV(channels []Channel, path string) error {
 }
 GENEOF
 
-# 2. API mit Mutex patchen
+# 2. Patch API to add mutex protection
 echo "🔧 Patching API for thread safety..."
 cat > internal/api/http_fixed.go <<'APIFIX'
 package api
@@ -75,7 +75,7 @@ import (
 
 type Server struct {
 	mu        sync.RWMutex
-	refreshMu sync.Mutex  // NEU: Refresh serialisieren
+	refreshMu sync.Mutex  // NEW: serialize refreshes
 	cfg       jobs.Config
 	status    jobs.Status
 }
@@ -90,7 +90,7 @@ func New(cfg jobs.Config) *Server {
 func (s *Server) routes() http.Handler {
 	r := mux.NewRouter()
 	r.HandleFunc("/api/status", s.handleStatus).Methods("GET")
-	r.HandleFunc("/api/refresh", s.handleRefresh).Methods("GET", "POST") // GEÄNDERT
+	r.HandleFunc("/api/refresh", s.handleRefresh).Methods("GET", "POST") // CHANGED
 	r.PathPrefix("/files/").Handler(http.StripPrefix("/files/", 
 		http.FileServer(http.Dir(s.cfg.DataDir))))
 	return r
@@ -105,7 +105,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
-	// NEU: Nur ein Refresh gleichzeitig
+	// NEW: only allow a single refresh at a time
 	s.refreshMu.Lock()
 	defer s.refreshMu.Unlock()
 
@@ -115,9 +115,9 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if err != nil {
 		s.mu.Lock()
-		s.status.LastRun = time.Now()  // NEU: Zeit auch bei Fehlern
+	s.status.LastRun = time.Now()  // NEW: record time even on errors
 		s.status.Error = err.Error()
-		s.status.Channels = 0          // NEU: Reset bei Fehler
+	s.status.Channels = 0          // NEW: reset channel count on error
 		s.mu.Unlock()
 		
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -139,11 +139,11 @@ APIFIX
 # Alte API ersetzen
 mv internal/api/http_fixed.go internal/api/http.go
 
-# 3. Jobs für XMLTV erweitern
+# 3. Extend jobs to generate XMLTV
 echo "🔧 Adding XMLTV generation to jobs..."
 cat >> internal/jobs/refresh.go <<'JOBSFIX'
 
-	// NEU: XMLTV generieren (nur Channel-Liste)
+	// NEW: generate XMLTV (channels only)
 	if cfg.XMLTVPath != "" {
 		xmlCh := make([]epg.Channel, 0, len(items))
 		for _, it := range items {
@@ -161,12 +161,12 @@ cat >> internal/jobs/refresh.go <<'JOBSFIX'
 	}
 JOBSFIX
 
-# 4. Main logging verbessern
+# 4. Improve main logging
 echo "🔧 Improving main logging..."
 sed -i '' 's/log.Printf("Config: data=%s, owi=%s, bouquet=%s, xmltv=%s, fuzzy=%d", /log.Printf("Config: data=%s, owi=%s, bouquet=%s, xmltv=%s, fuzzy=%d, picon=%s", /' cmd/daemon/main.go
 sed -i '' 's/cfg.DataDir, cfg.OWIBase, cfg.Bouquet, cfg.XMLTVPath, cfg.FuzzyMax)/cfg.DataDir, cfg.OWIBase, cfg.Bouquet, cfg.XMLTVPath, cfg.FuzzyMax, cfg.PiconBase)/' cmd/daemon/main.go
 
-# 5. Aufräumen
+# 5. Cleanup
 echo "🧹 Cleaning up..."
 rm -f test/test data/test 2>/dev/null || true
 echo "# Test files" > test/README.md

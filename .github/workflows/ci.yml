@@ -76,13 +76,7 @@ jobs:
           nc -z 127.0.0.1 18080
 
       # Build daemon, start und Ausführen von Integrationstests
-      - name: Integration: build daemon and run refresh
-        env:
-          XG2G_DATA: ./data
-          XG2G_OWI_BASE: http://127.0.0.1:18080
-          XG2G_BOUQUET: Premium
-          XG2G_XMLTV: ./data/guide.xml
-          XG2G_PICON_BASE: http://127.0.0.1:18080/picon
+      - name: Integration
         run: |
           set -e
           mkdir -p ./data
@@ -106,6 +100,12 @@ jobs:
 
           # Sauberes Beenden des Daemon
           kill $DAEMON_PID
+        env:
+          XG2G_DATA: ./data
+          XG2G_OWI_BASE: http://127.0.0.1:18080
+          XG2G_BOUQUET: Premium
+          XG2G_XMLTV: ./data/guide.xml
+          XG2G_PICON_BASE: http://127.0.0.1:18080/picon
 
       # Überprüfen der generierten Dateien mit grep
       - name: Validierung der Output-Dateien

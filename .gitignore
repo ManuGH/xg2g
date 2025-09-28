@@ -33,6 +33,12 @@ data/
 *.m3u
 *.xml
 *.gz
+!internal/epg/testdata/xmltv.golden.xml
+
+# Ensure generated artifacts aren't committed
+/data/
+playlist.m3u
+guide.xml
 
 # IDE/Editor
 .vscode/
@@ -46,3 +52,5 @@ data/
 
 xg2g
 daemon
+!internal/epg/testdata/xmltv.golden.xml
+.codex_patch.diff
