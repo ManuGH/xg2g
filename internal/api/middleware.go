@@ -9,7 +9,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"golang.org/x/time/rate"
+
+	"github.com/ManuGH/xg2g/internal/log"
 )
 
 var (
@@ -160,8 +163,21 @@ func (rl *rateLimiter) middleware(next http.Handler) http.Handler {
 func metricsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		start := time.Now()
+
 		next.ServeHTTP(recorder, r)
+
+		duration := time.Since(start)
 		recordHTTPMetric(r.URL.Path, recorder.status)
+
+		// Log metrics with context if available
+		logger := log.WithComponentFromContext(r.Context(), "api")
+		logger.Debug().
+			Str("event", "http.metrics").
+			Str("path", r.URL.Path).
+			Int("status", recorder.status).
+			Int64("duration_ms", duration.Milliseconds()).
+			Msg("http metrics recorded")
 	})
 }
 
@@ -180,6 +196,39 @@ func corsMiddleware(next http.Handler) http.Handler {
 		}
 
 		next.ServeHTTP(w, r)
+	})
+}
+
+// requestIDMiddleware generates or uses existing X-Request-ID header and propagates it through context and response
+func requestIDMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Get request ID from header or generate new one
+		reqID := r.Header.Get("X-Request-ID")
+		if reqID == "" {
+			reqID = uuid.New().String()
+		}
+
+		// Add request ID to context
+		ctx := log.ContextWithRequestID(r.Context(), reqID)
+
+		// Set response header
+		w.Header().Set("X-Request-ID", reqID)
+
+		// Create logger with request ID and component
+		logger := log.WithComponentFromContext(ctx, "api")
+		start := time.Now()
+
+		next.ServeHTTP(w, r.WithContext(ctx))
+
+		// Log request completion with standardized fields
+		duration := time.Since(start).Milliseconds()
+		logger.Info().
+			Str("event", "request.complete").
+			Str("method", r.Method).
+			Str("path", r.URL.Path).
+			Int64("duration_ms", duration).
+			Str("remote_addr", clientIP(r)).
+			Msg("request completed")
 	})
 }
 
@@ -205,5 +254,5 @@ func chain(h http.Handler, mws ...func(http.Handler) http.Handler) http.Handler 
 
 func withMiddlewares(h http.Handler) http.Handler {
 	rl := newRateLimiter(rate.Limit(10), 20)
-	return chain(h, metricsMiddleware, corsMiddleware, securityHeaders, rl.middleware)
+	return chain(h, requestIDMiddleware, metricsMiddleware, corsMiddleware, securityHeaders, rl.middleware)
 }

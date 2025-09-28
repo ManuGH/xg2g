@@ -26,18 +26,26 @@ func main() {
 	addr := env("XG2G_LISTEN", ":34400")
 
 	logger := xglog.WithComponent("daemon")
-	logger.Info().Str("version", Version).Str("addr", addr).Msg("starting xg2g")
 	logger.Info().
+		Str("event", "startup").
+		Str("version", Version).
+		Str("addr", addr).
+		Msg("starting xg2g")
+	logger.Info().
+		Str("event", "config").
 		Str("data", cfg.DataDir).
 		Str("owi", cfg.OWIBase).
 		Str("bouquet", cfg.Bouquet).
 		Str("xmltv", cfg.XMLTVPath).
 		Int("fuzzy", cfg.FuzzyMax).
 		Str("picon", cfg.PiconBase).
-		Msg("config")
+		Msg("configuration loaded")
 
 	if err := http.ListenAndServe(addr, s.Handler()); err != nil {
-		logger.Fatal().Err(err).Msg("server failed")
+		logger.Fatal().
+			Err(err).
+			Str("event", "server.failed").
+			Msg("server failed")
 	}
 }
 

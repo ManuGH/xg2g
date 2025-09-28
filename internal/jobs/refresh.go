@@ -9,9 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rs/zerolog/log"
-
 	"github.com/ManuGH/xg2g/internal/epg"
+	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/playlist"
 )
@@ -107,9 +106,20 @@ func refreshWithClient(ctx context.Context, cfg Config, cl openwebif.ClientInter
 			xmlCh = append(xmlCh, ch)
 		}
 		if err := epg.WriteXMLTV(xmlCh, cfg.XMLTVPath); err != nil {
-			log.Warn().Err(err).Msg("XMLTV generation failed")
+			logger := log.WithComponentFromContext(ctx, "jobs")
+			logger.Warn().
+				Err(err).
+				Str("event", "xmltv.failed").
+				Str("path", cfg.XMLTVPath).
+				Int("channels", len(xmlCh)).
+				Msg("XMLTV generation failed")
 		} else {
-			log.Info().Str("path", cfg.XMLTVPath).Int("channels", len(xmlCh)).Msg("XMLTV generated")
+			logger := log.WithComponentFromContext(ctx, "jobs")
+			logger.Info().
+				Str("event", "xmltv.success").
+				Str("path", cfg.XMLTVPath).
+				Int("channels", len(xmlCh)).
+				Msg("XMLTV generated")
 		}
 	}
 

@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/jobs"
+	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/gorilla/mux"
-	"github.com/rs/zerolog"
 )
 
 type Server struct {
@@ -16,14 +16,12 @@ type Server struct {
 	refreshMu sync.Mutex // NEW: serialize refreshes
 	cfg       jobs.Config
 	status    jobs.Status
-	log       *zerolog.Logger
 }
 
 func New(cfg jobs.Config) *Server {
 	return &Server{
 		cfg:    cfg,
 		status: jobs.Status{},
-		log:    logger("api"),
 	}
 }
 
@@ -37,17 +35,30 @@ func (s *Server) routes() http.Handler {
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
+	logger := log.WithComponentFromContext(r.Context(), "api")
+
 	s.mu.RLock()
-	defer s.mu.RUnlock()
+	status := s.status
+	s.mu.RUnlock()
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(s.status); err != nil {
-		// best-effort: write to stderr
-		_ = err
+	if err := json.NewEncoder(w).Encode(status); err != nil {
+		logger.Error().Err(err).Str("event", "status.encode_error").Msg("failed to encode status response")
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
 	}
+
+	logger.Debug().
+		Str("event", "status.success").
+		Time("last_run", status.LastRun).
+		Int("channels", status.Channels).
+		Str("status", "ok").
+		Msg("status request handled")
 }
 
 func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
+	logger := log.WithComponentFromContext(r.Context(), "api")
+
 	// NEW: only allow a single refresh at a time
 	s.refreshMu.Lock()
 	defer s.refreshMu.Unlock()
@@ -64,19 +75,32 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		s.status.Channels = 0 // NEW: reset channel count on error
 		s.mu.Unlock()
 
-		s.log.Error().Err(err).Msg("refresh failed")
+		logger.Error().
+			Err(err).
+			Str("event", "refresh.failed").
+			Int64("duration_ms", duration.Milliseconds()).
+			Str("status", "error").
+			Msg("refresh failed")
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	recordRefreshMetrics(duration, st.Channels)
-	s.log.Info().Int("channels", st.Channels).Dur("duration", duration).Msg("refresh completed")
+	logger.Info().
+		Str("event", "refresh.success").
+		Int("channels", st.Channels).
+		Int64("duration_ms", duration.Milliseconds()).
+		Str("status", "success").
+		Msg("refresh completed")
+
 	s.mu.Lock()
 	s.status = *st
 	s.mu.Unlock()
 
 	if err := json.NewEncoder(w).Encode(st); err != nil {
-		_ = err
+		logger.Error().Err(err).Str("event", "refresh.encode_error").Msg("failed to encode refresh response")
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
 	}
 }
 
