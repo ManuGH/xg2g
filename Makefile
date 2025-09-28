@@ -1,4 +1,8 @@
-.PHONY: lint test
+.PHONY: build lint test
+
+build:
+	mkdir -p bin
+	go build -o bin/daemon ./cmd/daemon
 
 lint:
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
