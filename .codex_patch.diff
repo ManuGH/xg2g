@@ -1,0 +1,156 @@
+*** Begin Patch
+*** Update File: internal/api/http.go
+@@
+-    srv.Handler = mux
++    srv.Handler = withMiddlewares(mux)
+*** End Patch
+
+*** Begin Patch
+*** Update File: internal/api/middleware.go
+@@
+ func metricsMiddleware(next http.Handler) http.Handler {
+     return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+-        recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+-        start := time.Now()
+-        next.ServeHTTP(recorder, r)
+-        recordHTTPMetric(r.URL.Path, recorder.status, time.Since(start))
++        // OPTIONS nicht latenz-messen (nur zählen, falls recordHTTPMetric das unterstützt)
++        if r.Method == http.MethodOptions {
++            next.ServeHTTP(w, r)
++            return
++        }
++        rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
++        start := time.Now()
++        next.ServeHTTP(rec, r)
++        recordHTTPMetric(r.Method, r.URL.Path, rec.status, time.Since(start))
+     })
+ }
+*** End Patch
+
+*** Begin Patch
+*** Update File: internal/api/metrics.go
+@@
+-import (
+-    "strconv"
+-    "time"
+-    "github.com/ManuGH/xg2g/internal/jobs"
+-    "github.com/prometheus/client_golang/prometheus"
+-)
++import (
++    "strconv"
++    "strings"
++    "time"
++    "unicode"
++    "github.com/ManuGH/xg2g/internal/jobs"
++    "github.com/prometheus/client_golang/prometheus"
++    "github.com/prometheus/client_golang/prometheus/promauto"
++)
+@@
+-// Metrics for HTTP requests
+- httpRequestsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+-     Name: "xg2g_http_requests_total",
+-     Help: "Number of HTTP requests, by path and status",
+- }, []string{"path", "status"})
+- httpRequestDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+-     Name:    "xg2g_http_request_duration_seconds",
+-     Help:    "Duration of HTTP requests",
+-     Buckets: prometheus.DefBuckets,
+- }, []string{"path", "status"})
+- // Metrics für Refresh-Jobs
+- refreshDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+-     Name: "xg2g_refresh_errors_total",
+-     Help: "Number of refresh jobs that resulted in an error",
+- })
++ // HTTP
++ httpRequestsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
++     Name: "xg2g_http_requests_total",
++     Help: "Number of HTTP requests, by method, path and status",
++ }, []string{"method", "path", "status"})
++ httpRequestDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
++     Name:    "xg2g_http_request_duration_seconds",
++     Help:    "Duration of HTTP requests",
++     Buckets: prometheus.LinearBuckets(0.01, 0.01, 20),
++ }, []string{"method", "path", "status"})
++ rateLimitedTotal = promauto.NewCounter(prometheus.CounterOpts{
++     Name: "xg2g_http_rate_limited_total",
++     Help: "Number of requests rejected by the rate limiter",
++ })
++ // Refresh
++ refreshDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
++     Name:    "xg2g_refresh_duration_seconds",
++     Help:    "Duration of refresh jobs",
++     Buckets: prometheus.LinearBuckets(0.1, 0.1, 20),
++ })
++ refreshErrorsTotal = promauto.NewCounter(prometheus.CounterOpts{
++     Name: "xg2g_refresh_errors_total",
++     Help: "Number of refresh jobs that resulted in an error",
++ })
++ refreshChannelsGauge = promauto.NewGauge(prometheus.GaugeOpts{
++     Name: "xg2g_refresh_channels",
++     Help: "Channels processed in last refresh",
++ })
+@@
+-func recordHTTPMetric(path string, status int, duration time.Duration) {
+-    labels := []string{path, strconv.Itoa(status)}
+-    httpRequestsTotal.WithLabelValues(labels...).Inc()
+-    httpRequestDuration.WithLabelValues(labels...).Observe(duration.Seconds())
++func recordHTTPMetric(method, path string, status int, duration time.Duration) {
++    nPath := normalizePath(path)
++    labels := []string{method, nPath, strconv.Itoa(status)}
++    httpRequestsTotal.WithLabelValues(labels...).Inc()
++    if duration > 0 {
++        httpRequestDuration.WithLabelValues(labels...).Observe(duration.Seconds())
++    }
+ }
+@@
+-    refreshErrorsTotal.Inc()
++    refreshDurationSeconds.Observe(duration.Seconds())
++    refreshChannelsGauge.Set(float64(channelCount))
++    if err != nil {
++        refreshErrorsTotal.Inc()
++    }
+ }
++
++func recordRateLimited() { rateLimitedTotal.Inc() }
++
++func normalizePath(p string) string {
++    if p == "" { return "/" }
++    parts := strings.Split(p, "/")
++    for i, part := range parts {
++        if part == "" { continue }
++        if isLikelyIdentifier(part) { parts[i] = "{id}" }
++    }
++    out := strings.Join(parts, "/")
++    if !strings.HasPrefix(out, "/") { out = "/" + out }
++    return out
++}
++func isLikelyIdentifier(s string) bool {
++    if len(s) == 0 { return false }
++    alnum := true
++    for _, r := range s {
++        if !(unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-' || r == '_') { alnum = false; break }
++    }
++    if !alnum { return false }
++    // numeric id
++    digitOnly := true
++    hexOnly := true
++    for _, r := range s {
++        if r < '0' || r > '9' { digitOnly = false }
++        if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) { hexOnly = false }
++    }
++    if digitOnly && len(s) >= 3 { return true }
++    if hexOnly && len(s) >= 8 { return true }
++    if len(s) == 36 && strings.Count(s, "-") == 4 { return true } // uuid
++    return false
++}
+*** End Patch
+
+*** Begin Patch
+*** Update File: internal/jobs/refresh.go
+@@
+-    // ... bestehende Logik
++    // ... bestehende Logik
++    start := time.Now()
++    channels, err := doRefresh(ctx, client) // exemplarisch: deine bestehende Sammellogik
++    recordRefreshMetrics(time.Since(start), len(channels), err)
+*** End Patch
