@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"sync"
-	"time"
 
 	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/gorilla/mux"
@@ -52,7 +51,6 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if err != nil {
 		s.mu.Lock()
-		s.status.LastRun = time.Now() // NEU: Zeit auch bei Fehlern
 		s.status.Error = err.Error()
 		s.status.Channels = 0 // NEU: Reset bei Fehler
 		s.mu.Unlock()
