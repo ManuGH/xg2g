@@ -33,6 +33,9 @@ services:
 
 xg2g is a small Go microservice that converts OpenWebIF bouquets (for example from VU+ receivers) into IPTV-friendly artifacts. It exposes a tiny HTTP API and writes generated files into the directory specified by `XG2G_DATA`.
 
+> **Note**
+> xg2g is a converter that produces the M3U/XMLTV basis for downstream middleware (xTeVe, Threadfin, Plex, Jellyfin, …). It does not replace those middleware components; instead it feeds them with preprocessed data from OpenWebIF.
+
 Generated artifacts
 
 - `playlist.m3u` — M3U playlist with `#EXTINF` attributes: `tvg-id`, `tvg-name`, `group-title`, `tvg-logo` and stable tvg ids.
