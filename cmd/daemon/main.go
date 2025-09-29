@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -60,6 +61,15 @@ func main() {
 		OWIRetries:    owiRetries,
 		OWIBackoff:    owiBackoff,
 		OWIMaxBackoff: owiMaxBackoff,
+	}
+
+	// Ensure data directory is created and validated at startup
+	if err := ensureDataDir(cfg.DataDir); err != nil {
+		logger.Fatal().
+			Err(err).
+			Str("event", "config.invalid").
+			Str("data_dir", cfg.DataDir).
+			Msg("data directory validation failed")
 	}
 
 	s := api.New(cfg)
@@ -271,4 +281,85 @@ func positiveIntFromEnv(key string, def, max int) (int, error) {
 		return 0, fmt.Errorf("%s must be <= %d", key, max)
 	}
 	return val, nil
+}
+
+// ensureDataDir validates and creates the data directory at startup with symlink policy enforcement.
+// This prevents runtime errors when the /files/* handler is accessed and blocks symlink escape attacks.
+func ensureDataDir(dataDir string) error {
+	if dataDir == "" {
+		return fmt.Errorf("data directory is empty")
+	}
+
+	// Check for basic path traversal patterns
+	if strings.Contains(dataDir, "..") {
+		return fmt.Errorf("data directory contains path traversal sequences")
+	}
+
+	// Convert to absolute path and validate
+	absDataDir, err := filepath.Abs(dataDir)
+	if err != nil {
+		return fmt.Errorf("invalid data directory path: %w", err)
+	}
+
+	// Check if the path exists and what type it is
+	info, err := os.Lstat(absDataDir)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("cannot access data directory: %w", err)
+	}
+
+	// If it exists and is a symlink, validate the symlink target
+	if err == nil && info.Mode()&os.ModeSymlink != 0 {
+
+		// The directory itself is a symlink - resolve it and check boundaries
+		realDataDir, err := filepath.EvalSymlinks(absDataDir)
+		if err != nil {
+			return fmt.Errorf("cannot resolve data directory symlinks: %w", err)
+		}
+
+		// For security, we'll be strict about symlinks - they should generally be avoided for data directories
+		// Block symlinks that point to system directories or outside expected areas
+		cleanReal := filepath.Clean(realDataDir)
+
+		// Block obvious system directories (but allow temp/user areas)
+		// Be specific about dangerous directories, not broad categories
+		systemDirs := []string{"/etc", "/usr", "/bin", "/sbin", "/sys", "/proc", "/dev", "/root",
+			"/private/etc"}
+		for _, sysDir := range systemDirs {
+			if strings.HasPrefix(cleanReal, sysDir+"/") || cleanReal == sysDir {
+				return fmt.Errorf("data directory symlink points to system directory")
+			}
+		}
+
+		// For maximum security, we could block all symlinks for XG2G_DATA itself
+		// However, for now we'll allow symlinks to user directories (/tmp, /home, etc.)
+
+		// Use the resolved path for further checks
+		absDataDir = cleanReal
+	}
+
+	// Ensure the directory exists (create if needed)
+	if err := os.MkdirAll(absDataDir, 0755); err != nil {
+		return fmt.Errorf("cannot create data directory: %w", err)
+	}
+
+	// Final verification of the resolved directory
+	realDataDir := absDataDir
+
+	// Verify directory exists and is actually a directory
+	info, err = os.Stat(realDataDir)
+	if err != nil {
+		return fmt.Errorf("cannot access data directory: %w", err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("data directory path is not a directory")
+	}
+
+	// Verify we can write to the directory
+	testFile := filepath.Join(realDataDir, ".write-test")
+	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
+		return fmt.Errorf("data directory is not writable: %w", err)
+	}
+	os.Remove(testFile) // Clean up test file
+
+	return nil
 }

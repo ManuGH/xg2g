@@ -1,9 +1,14 @@
+//go:build security || !ignore_security
+
 package api
 
 import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -102,5 +107,190 @@ func TestHandleReady(t *testing.T) {
 	}
 	if body := rr.Body.String(); body != "{\"status\":\"ready\"}\n" {
 		t.Fatalf("unexpected ready body: %q", body)
+	}
+}
+
+func TestSecureFileHandlerSymlinkPolicy(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Create test directory structure
+	dataDir := filepath.Join(tempDir, "data")
+	outsideDir := filepath.Join(tempDir, "outside")
+	subDir := filepath.Join(dataDir, "subdir")
+
+	err := os.MkdirAll(dataDir, 0755)
+	if err != nil {
+		t.Fatalf("Failed to create data dir: %v", err)
+	}
+	err = os.MkdirAll(outsideDir, 0755)
+	if err != nil {
+		t.Fatalf("Failed to create outside dir: %v", err)
+	}
+	err = os.MkdirAll(subDir, 0755)
+	if err != nil {
+		t.Fatalf("Failed to create subdir: %v", err)
+	}
+
+	// Create test files
+	testFile := filepath.Join(dataDir, "test.m3u")
+	subFile := filepath.Join(subDir, "sub.m3u")
+	outsideFile := filepath.Join(outsideDir, "secret.txt")
+
+	err = os.WriteFile(testFile, []byte("#EXTM3U\ntest content"), 0644)
+	if err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+	err = os.WriteFile(subFile, []byte("#EXTM3U\nsub content"), 0644)
+	if err != nil {
+		t.Fatalf("Failed to create sub file: %v", err)
+	}
+	err = os.WriteFile(outsideFile, []byte("sensitive data"), 0644)
+	if err != nil {
+		t.Fatalf("Failed to create outside file: %v", err)
+	}
+
+	// Create server with test data directory
+	cfg := jobs.Config{DataDir: dataDir}
+	server := New(cfg)
+
+	tests := []struct {
+		name           string
+		setupFunc      func() string // Returns the URL path to test
+		expectedStatus int
+		expectedBody   string
+		shouldContain  string
+	}{
+		{
+			name: "B6: valid file access",
+			setupFunc: func() string {
+				return "/files/test.m3u"
+			},
+			expectedStatus: http.StatusOK,
+			shouldContain:  "test content",
+		},
+		{
+			name: "B7: subdirectory file access",
+			setupFunc: func() string {
+				return "/files/subdir/sub.m3u"
+			},
+			expectedStatus: http.StatusOK,
+			shouldContain:  "sub content",
+		},
+		{
+			name: "B8: symlink to outside file",
+			setupFunc: func() string {
+				symlinkPath := filepath.Join(dataDir, "evil_symlink")
+				err := os.Symlink(outsideFile, symlinkPath)
+				if err != nil {
+					t.Fatalf("Failed to create evil symlink: %v", err)
+				}
+				return "/files/evil_symlink"
+			},
+			expectedStatus: http.StatusForbidden,
+			expectedBody:   "Forbidden\n",
+		},
+		{
+			name: "B9: symlink chain to outside",
+			setupFunc: func() string {
+				// Create chain: link1 -> link2 -> outside
+				link1 := filepath.Join(dataDir, "link1")
+				link2 := filepath.Join(dataDir, "link2")
+				err := os.Symlink(outsideFile, link2)
+				if err != nil {
+					t.Fatalf("Failed to create link2: %v", err)
+				}
+				err = os.Symlink(link2, link1)
+				if err != nil {
+					t.Fatalf("Failed to create link1: %v", err)
+				}
+				return "/files/link1"
+			},
+			expectedStatus: http.StatusForbidden,
+			expectedBody:   "Forbidden\n",
+		},
+		{
+			name: "B10: path traversal with ..",
+			setupFunc: func() string {
+				return "/files/../outside/secret.txt"
+			},
+			expectedStatus: http.StatusMovedPermanently, // Router normalizes paths
+			expectedBody:   "",
+		},
+		{
+			name: "B11: symlink directory traversal",
+			setupFunc: func() string {
+				symlinkDir := filepath.Join(dataDir, "evil_dir")
+				err := os.Symlink(outsideDir, symlinkDir)
+				if err != nil {
+					t.Fatalf("Failed to create evil dir symlink: %v", err)
+				}
+				return "/files/evil_dir/secret.txt"
+			},
+			expectedStatus: http.StatusForbidden,
+			expectedBody:   "Forbidden\n",
+		},
+		{
+			name: "B12: URL-encoded traversal %2e%2e",
+			setupFunc: func() string {
+				return "/files/%2e%2e/outside/secret.txt"
+			},
+			expectedStatus: http.StatusMovedPermanently, // Router normalizes encoded paths
+			expectedBody:   "",
+		},
+		{
+			name: "directory access blocked",
+			setupFunc: func() string {
+				return "/files/subdir/"
+			},
+			expectedStatus: http.StatusForbidden,
+			expectedBody:   "Forbidden\n",
+		},
+		{
+			name: "nonexistent file",
+			setupFunc: func() string {
+				return "/files/nonexistent.txt"
+			},
+			expectedStatus: http.StatusNotFound,
+			expectedBody:   "Not found\n",
+		},
+		{
+			name: "method not allowed",
+			setupFunc: func() string {
+				return "/files/test.m3u"
+			},
+			expectedStatus: http.StatusMethodNotAllowed,
+			expectedBody:   "Method not allowed\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			urlPath := tt.setupFunc()
+
+			method := "GET"
+			if strings.Contains(tt.name, "method not allowed") {
+				method = "POST"
+			}
+
+			req := httptest.NewRequest(method, urlPath, nil)
+			rr := httptest.NewRecorder()
+
+			// Use the server's handler to test the full routing
+			handler := server.Handler()
+			handler.ServeHTTP(rr, req)
+
+			if rr.Code != tt.expectedStatus {
+				t.Errorf("Expected status %d, got %d", tt.expectedStatus, rr.Code)
+			}
+
+			body := rr.Body.String()
+			if tt.expectedBody != "" && body != tt.expectedBody {
+				t.Errorf("Expected body %q, got %q", tt.expectedBody, body)
+			}
+
+			if tt.shouldContain != "" && !strings.Contains(body, tt.shouldContain) {
+				t.Errorf("Expected body to contain %q, got %q", tt.shouldContain, body)
+			}
+		})
 	}
 }

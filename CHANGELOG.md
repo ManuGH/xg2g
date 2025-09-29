@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2025-09-29
+
+### Added
+
+#### 🛡️ Comprehensive Security Framework
+- **Symlink boundary protection**: Real-time validation prevents symlink escape attacks
+- **Path traversal protection**: Comprehensive input validation blocks directory traversal attempts  
+- **HTTP method restrictions**: Only GET/HEAD allowed for file endpoints, 405 for others
+- **Directory listing prevention**: All directory access attempts return 403 Forbidden
+
+#### 📊 Production Monitoring Stack
+- **Prometheus metrics integration**: Comprehensive performance and security metrics
+- **Grafana dashboards**: Real-time security and operational visibility  
+- **AlertManager integration**: Automatic alerting for security events and operational issues
+- **Docker Compose monitoring**: Complete production-ready monitoring stack
+
+#### 🚨 Security Metrics & Alerting
+- **Real-time security tracking**: Metrics for denied requests by attack type
+- **Performance monitoring**: Request latencies, retry counts, success/failure rates
+- **Automated alerts**: SymlinkAttackSpike, HTTPErrorRateHigh, HighLatencyP95
+- **Security dashboards**: 6-panel Grafana dashboard with security focus
+
+#### ⚡ Automated Security Testing  
+- **Comprehensive penetration testing**: 20+ attack vectors in automated test suite
+- **CI/CD security validation**: Quick 4-test validation for deployment pipelines
+- **Attack pattern coverage**: Path traversal, symlink escapes, method restrictions, edge cases
+- **JSON result tracking**: Detailed test results with timestamps and response analysis
+
+### Security
+
+#### 🔒 Defense-in-Depth Implementation
+- **Multiple security layers**: Application, middleware, and filesystem-level protection
+- **Attack vector coverage**: Addresses CWE-22 (Path Traversal), CWE-59 (Symlink Following)
+- **Real-time detection**: Immediate blocking with structured logging and metrics
+- **Zero false positives**: Legitimate file access unaffected by security measures
+
 ## [1.0.0] - 2025-09-29
 
 ### Added

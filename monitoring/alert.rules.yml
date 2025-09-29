@@ -1,0 +1,81 @@
+groups:
+  - name: xg2g-security-alerts
+    rules:
+      - alert: SymlinkAttackSpike
+        expr: increase(xg2g_file_requests_denied_total{reason="boundary_escape"}[5m]) > 5
+        for: 1m
+        labels:
+          severity: critical
+          service: xg2g
+          category: security
+        annotations:
+          summary: "High volume of symlink escape attempts detected"
+          description: "{{ $value }} symlink boundary escape attempts in the last 5 minutes. Possible attack in progress."
+
+      - alert: FileAccessDeniedSpike
+        expr: rate(xg2g_file_requests_denied_total[5m]) > 0.5
+        for: 2m
+        labels:
+          severity: warning
+          service: xg2g
+          category: security
+        annotations:
+          summary: "High rate of file access denials"
+          description: "File access denial rate is {{ $value }} requests/sec over 5 minutes."
+
+      - alert: HTTPErrorRateHigh
+        expr: rate(xg2g_http_requests_total{status=~"5.."}[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: critical
+          service: xg2g
+          category: availability
+        annotations:
+          summary: "High 5xx error rate detected"
+          description: "HTTP 5xx error rate is {{ $value }} requests/sec over 5 minutes."
+
+      - alert: HighLatencyP95
+        expr: histogram_quantile(0.95, rate(xg2g_refresh_duration_seconds_bucket[5m])) > 30
+        for: 3m
+        labels:
+          severity: warning
+          service: xg2g
+          category: performance
+        annotations:
+          summary: "High refresh operation latency"
+          description: "95th percentile refresh duration is {{ $value }}s, exceeding 30s threshold."
+
+      - alert: ServiceDown
+        expr: up{job="xg2g-app"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: xg2g
+          category: availability
+        annotations:
+          summary: "xg2g service is down"
+          description: "xg2g application has been down for more than 1 minute."
+
+  - name: xg2g-operational-alerts
+    rules:
+      - alert: NoRecentRefresh
+        expr: time() - xg2g_last_refresh_timestamp > 3600
+        for: 5m
+        labels:
+          severity: warning
+          service: xg2g
+          category: operational
+        annotations:
+          summary: "No recent successful refresh"
+          description: "Last successful refresh was {{ $value }}s ago, exceeding 1 hour threshold."
+
+      - alert: LowChannelCount
+        expr: xg2g_channels < 10
+        for: 5m
+        labels:
+          severity: warning
+          service: xg2g
+          category: data-quality
+        annotations:
+          summary: "Unusually low channel count"
+          description: "Only {{ $value }} channels found during refresh, expected >10."

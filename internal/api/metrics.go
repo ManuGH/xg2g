@@ -31,6 +31,17 @@ var (
 		Name: "xg2g_last_refresh_timestamp",
 		Help: "Timestamp of the last successful refresh (Unix timestamp)",
 	})
+
+	// Security metrics
+	fileRequestsDeniedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "xg2g_file_requests_denied_total",
+		Help: "Number of file requests denied for security reasons",
+	}, []string{"reason"}) // boundary_escape, method_not_allowed, broken_symlink
+
+	fileRequestsAllowedTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "xg2g_file_requests_allowed_total",
+		Help: "Number of file requests allowed",
+	})
 )
 
 // recordMetrics records metrics for an HTTP request
@@ -43,4 +54,13 @@ func recordRefreshMetrics(duration time.Duration, channelCount int) {
 	refreshDuration.Observe(duration.Seconds())
 	channelsFound.Set(float64(channelCount))
 	lastRefreshTime.Set(float64(time.Now().Unix()))
+}
+
+// recordFileRequestMetrics records metrics for file requests
+func recordFileRequestAllowed() {
+	fileRequestsAllowedTotal.Inc()
+}
+
+func recordFileRequestDenied(reason string) {
+	fileRequestsDeniedTotal.WithLabelValues(reason).Inc()
 }

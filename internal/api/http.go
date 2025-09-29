@@ -3,6 +3,9 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -31,8 +34,7 @@ func (s *Server) routes() http.Handler {
 	r.HandleFunc("/api/refresh", s.handleRefresh).Methods("GET", "POST") // CHANGED: allow GET and POST
 	r.HandleFunc("/healthz", s.handleHealth).Methods("GET")
 	r.HandleFunc("/readyz", s.handleReady).Methods("GET")
-	r.PathPrefix("/files/").Handler(http.StripPrefix("/files/",
-		http.FileServer(http.Dir(s.cfg.DataDir))))
+	r.PathPrefix("/files/").Handler(http.StripPrefix("/files/", s.secureFileHandler()))
 	return r
 }
 
@@ -79,8 +81,8 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if err != nil {
 		s.mu.Lock()
-		s.status.Error = err.Error()
-		s.status.Channels = 0 // NEW: reset channel count on error
+		s.status.Error = "refresh operation failed" // Security: don't expose internal error details
+		s.status.Channels = 0                       // NEW: reset channel count on error
 		s.mu.Unlock()
 
 		logger.Error().
@@ -155,6 +157,160 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 		Str("state", "ready").
 		Time("lastRun", status.LastRun).
 		Msg("readiness probe")
+}
+
+// secureFileHandler creates a secure file serving handler with symlink protection
+func (s *Server) secureFileHandler() http.Handler {
+	return http.HandlerFunc(s.handleSecureFile)
+}
+
+// handleSecureFile serves files with symlink escape protection and boundary checks
+func (s *Server) handleSecureFile(w http.ResponseWriter, r *http.Request) {
+	logger := log.WithComponentFromContext(r.Context(), "api")
+
+	// Only allow GET and HEAD methods
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		logger.Warn().
+			Str("event", "file_req").
+			Str("method", r.Method).
+			Str("reason", "method_not_allowed").
+			Msg("file request denied")
+		recordFileRequestDenied("method_not_allowed")
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Get the requested file path
+	requestedPath := r.URL.Path
+	if requestedPath == "" {
+		requestedPath = "/"
+	}
+
+	// Clean and normalize the path to prevent basic traversal
+	cleanPath := filepath.Clean(requestedPath)
+	if strings.Contains(cleanPath, "..") {
+		logger.Warn().
+			Str("event", "file_req").
+			Str("path", requestedPath).
+			Str("reason", "path_traversal").
+			Bool("allowed", false).
+			Msg("file request denied")
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+
+	// Get canonical data directory path
+	dataRealPath, err := filepath.EvalSymlinks(s.cfg.DataDir)
+	if err != nil {
+		logger.Error().
+			Err(err).
+			Str("event", "file_req").
+			Str("reason", "data_dir_error").
+			Msg("cannot resolve data directory")
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Build the full file path
+	fullPath := filepath.Join(dataRealPath, cleanPath)
+
+	// Resolve all symlinks in the final path
+	realPath, err := filepath.EvalSymlinks(fullPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			logger.Debug().
+				Str("event", "file_req").
+				Str("path", requestedPath).
+				Str("reason", "not_found").
+				Bool("allowed", false).
+				Msg("file request denied")
+			http.Error(w, "Not found", http.StatusNotFound)
+		} else {
+			// Could be broken symlink, circular symlink, etc.
+			logger.Warn().
+				Err(err).
+				Str("event", "file_req").
+				Str("path", requestedPath).
+				Str("reason", "broken_symlink").
+				Bool("allowed", false).
+				Msg("file request denied")
+			recordFileRequestDenied("broken_symlink")
+			http.Error(w, "Bad request", http.StatusBadRequest)
+		}
+		return
+	}
+
+	// Verify the resolved path is within our data directory boundary
+	cleanDataPath := filepath.Clean(dataRealPath)
+	cleanRealPath := filepath.Clean(realPath)
+
+	if !strings.HasPrefix(cleanRealPath+"/", cleanDataPath+"/") && cleanRealPath != cleanDataPath {
+		logger.Warn().
+			Str("event", "file_req").
+			Str("path", requestedPath).
+			Str("reason", "boundary_escape").
+			Bool("allowed", false).
+			Msg("file request denied")
+		recordFileRequestDenied("boundary_escape")
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	// Check if path exists and get file info
+	info, err := os.Stat(realPath)
+	if err != nil {
+		logger.Debug().
+			Str("event", "file_req").
+			Str("path", requestedPath).
+			Str("reason", "stat_error").
+			Bool("allowed", false).
+			Msg("file request denied")
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+
+	// Block directory access (no directory listings)
+	if info.IsDir() {
+		logger.Debug().
+			Str("event", "file_req").
+			Str("path", requestedPath).
+			Str("reason", "directory_access").
+			Bool("allowed", false).
+			Msg("file request denied")
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	// Serve the file securely
+	file, err := os.Open(realPath)
+	if err != nil {
+		logger.Error().
+			Err(err).
+			Str("event", "file_req").
+			Str("path", requestedPath).
+			Str("reason", "open_error").
+			Bool("allowed", false).
+			Msg("file request denied")
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	defer file.Close()
+
+	// Log successful access and record metrics
+	logger.Info().
+		Str("event", "file_req").
+		Str("path", requestedPath).
+		Bool("allowed", true).
+		Int64("size", info.Size()).
+		Msg("file request allowed")
+	recordFileRequestAllowed()
+
+	// Set security headers
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("X-Frame-Options", "DENY")
+
+	// Serve the file content with size limit
+	http.ServeContent(w, r, filepath.Base(realPath), info.ModTime(), file)
 }
 
 func (s *Server) Handler() http.Handler {
