@@ -154,7 +154,7 @@ jobs:
 
           healthy=false
           for i in {1..60}; do
-            if curl -fsS --max-time 1 "$daemon_base/api/status" >/dev/null; then
+            if curl --fail --show-error --silent --max-time 1 "$daemon_base/api/status" >/dev/null; then
               healthy=true
               break
             fi
@@ -205,6 +205,7 @@ jobs:
             echo "- Playlist-Einträge (#EXTINF): ${EXTINF}"
             echo "- XMLTV Channels: ${CHANNELS}"
             echo "- Artefakte: logs-and-reports"
+            echo "- Daemon base: http://127.0.0.1${XG2G_LISTEN:-:8080}"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Lint
