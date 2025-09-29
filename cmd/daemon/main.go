@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 package main
 
 import (
@@ -359,7 +360,7 @@ func ensureDataDir(dataDir string) error {
 	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
 		return fmt.Errorf("data directory is not writable: %w", err)
 	}
-	os.Remove(testFile) // Clean up test file
+	_ = os.Remove(testFile) // Clean up test file (ignore errors - best effort)
 
 	return nil
 }

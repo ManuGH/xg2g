@@ -9,6 +9,9 @@
 # Test binary, build output
 *.test
 *.out
+coverage.out
+coverage.html
+*.prof
 
 # Go workspace
 bin/
@@ -50,7 +53,13 @@ data/
 *.m3u
 *.xml
 
+# Build artifacts
 xg2g
 daemon
-!internal/epg/testdata/xmltv.golden.xml
+daemon-*
+
+# Temporary files
 .codex_patch.diff
+
+# Keep test golden files
+!internal/epg/testdata/xmltv.golden.xml

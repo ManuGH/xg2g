@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 package api
 
 import (
@@ -284,9 +285,7 @@ func (s *Server) handleSecureFile(w http.ResponseWriter, r *http.Request) {
 	// Serve the file securely
 	file, err := os.Open(realPath)
 	if err != nil {
-		logger.Error().
-			Err(err).
-			Str("event", "file_req").
+		logger.Error().Err(err).
 			Str("path", requestedPath).
 			Str("reason", "open_error").
 			Bool("allowed", false).
@@ -294,7 +293,12 @@ func (s *Server) handleSecureFile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
-	defer file.Close()
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil {
+			logger.Error().Err(closeErr).Str("path", requestedPath).
+				Msg("failed to close file")
+		}
+	}()
 
 	// Log successful access and record metrics
 	logger.Info().

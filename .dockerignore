@@ -1,23 +1,43 @@
-# Go
+# Build artifacts and binaries
 bin/
 pkg/
 *.exe
 *.test
+*.out
+daemon
+daemon-*
+coverage.*
+*.prof
 
-# Development
+# Development tools and configs
 .git/
 .github/
 .vscode/
 .idea/
+.cache/
+node_modules/
 *.md
+README*
+LICENSE*
+CHANGELOG*
 Dockerfile*
 docker-compose*
+Makefile
 
-# Data
+# Runtime data and logs
 data/
 *.m3u
 *.xml
 *.log
+.env
+.env.*
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~
+.DS_Store
 
 # Ignore everything except what we need
 *

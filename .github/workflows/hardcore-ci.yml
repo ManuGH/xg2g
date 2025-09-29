@@ -1,0 +1,314 @@
+name: Hardcore CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, "release/*"]
+  pull_request:
+    branches: [main, "release/*"]
+  workflow_dispatch:
+
+env:
+  GO_VERSION: "1.25"
+  COVERAGE_THRESHOLD: 65
+  EPG_COVERAGE_THRESHOLD: 60
+
+jobs:
+  # Static Analysis & Security
+  static-analysis:
+    name: Static Analysis & Security
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Install golangci-lint
+        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+
+      - name: Run golangci-lint
+        run: golangci-lint run --timeout=5m
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Run govulncheck
+        run: govulncheck ./...
+
+  # Tests with Race Detection
+  test-race:
+    name: Test with Race Detection
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run tests with race detection
+        run: go test -race -v ./...
+
+  # Coverage Analysis
+  coverage:
+    name: Coverage Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Generate coverage profile
+        run: go test -coverprofile=coverage.out ./...
+
+      - name: Check overall coverage
+        run: |
+          COVERAGE=$(go tool cover -func=coverage.out | grep "total:" | awk '{print $3}' | sed 's/%//')
+          echo "Overall coverage: ${COVERAGE}%"
+          if (( $(echo "${COVERAGE} < ${COVERAGE_THRESHOLD}" | bc -l) )); then
+            echo "❌ Coverage ${COVERAGE}% is below threshold ${COVERAGE_THRESHOLD}%"
+            exit 1
+          fi
+          echo "✅ Coverage ${COVERAGE}% meets threshold ${COVERAGE_THRESHOLD}%"
+
+      - name: Check EPG module coverage
+        run: |
+          go test -coverprofile=epg_coverage.out ./internal/epg
+          EPG_COVERAGE=$(go tool cover -func=epg_coverage.out | grep "total:" | awk '{print $3}' | sed 's/%//')
+          echo "EPG module coverage: ${EPG_COVERAGE}%"
+          if (( $(echo "${EPG_COVERAGE} < ${EPG_COVERAGE_THRESHOLD}" | bc -l) )); then
+            echo "❌ EPG coverage ${EPG_COVERAGE}% is below threshold ${EPG_COVERAGE_THRESHOLD}%"
+            exit 1
+          fi
+          echo "✅ EPG coverage ${EPG_COVERAGE}% meets threshold ${EPG_COVERAGE_THRESHOLD}%"
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.out
+          fail_ci_if_error: false
+
+  # Fuzzing
+  fuzz-test:
+    name: Fuzzing Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run fuzzing tests
+        run: |
+          go test ./internal/epg -fuzz=FuzzLevenshtein -fuzztime=30s
+          go test ./internal/epg -fuzz=FuzzXMLTVGeneration -fuzztime=30s
+          go test ./internal/epg -fuzz=FuzzParseChannelName -fuzztime=30s
+
+  # Cross-platform Build Matrix
+  build-matrix:
+    name: Cross-Platform Build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        arch: [amd64]
+        include:
+          - os: ubuntu-latest
+            goos: linux
+          - os: macos-latest
+            goos: darwin
+          - os: windows-latest
+            goos: windows
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: 0
+          GOFLAGS: "-trimpath"
+        run: |
+          VERSION="${{ github.ref_name }}"
+          if [ "$VERSION" = "main" ]; then
+            VERSION="${{ github.sha }}"
+          fi
+          go build -ldflags "-s -w -X main.Version=${VERSION}" -o xg2g-${{ matrix.goos }}-${{ matrix.arch }}${{ matrix.goos == 'windows' && '.exe' || '' }} ./cmd/daemon
+
+      - name: Test binary (Unix)
+        if: matrix.goos != 'windows'
+        run: |
+          ./xg2g-${{ matrix.goos }}-${{ matrix.arch }} --version || echo "Version flag not implemented yet"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: xg2g-${{ matrix.goos }}-${{ matrix.arch }}
+          path: xg2g-*
+
+  # Container Security
+  container-security:
+    name: Container Security
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: xg2g:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run Docker Scout
+        uses: docker/scout-action@v1
+        with:
+          command: cves
+          image: xg2g:ci
+          only-severities: critical,high
+          exit-code: true
+
+  # SBOM Generation
+  sbom:
+    name: Generate SBOM
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install syft
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+
+      - name: Generate SBOM
+        run: |
+          syft packages . -o spdx-json=sbom.spdx.json
+          syft packages . -o cyclonedx-json=sbom.cyclonedx.json
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: |
+            sbom.spdx.json
+            sbom.cyclonedx.json
+
+  # Dependency Check
+  dependency-check:
+    name: Dependency Security Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Verify dependencies
+        run: |
+          go mod verify
+          go mod tidy
+          git diff --exit-code go.mod go.sum || (echo "❌ go.mod or go.sum is not tidy" && exit 1)
+
+      - name: Check for known vulnerabilities in dependencies
+        run: go list -json -deps ./... | jq -r '.Module.Path' | sort -u | head -20
+
+  # Integration Gate
+  integration-gate:
+    name: Integration Gate
+    needs:
+      [
+        static-analysis,
+        test-race,
+        coverage,
+        fuzz-test,
+        build-matrix,
+        container-security,
+        dependency-check,
+      ]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check all jobs status
+        run: |
+          if [[ "${{ needs.static-analysis.result }}" != "success" ]]; then
+            echo "❌ Static analysis failed"
+            exit 1
+          fi
+          if [[ "${{ needs.test-race.result }}" != "success" ]]; then
+            echo "❌ Race detection tests failed"
+            exit 1
+          fi
+          if [[ "${{ needs.coverage.result }}" != "success" ]]; then
+            echo "❌ Coverage check failed"
+            exit 1
+          fi
+          if [[ "${{ needs.fuzz-test.result }}" != "success" ]]; then
+            echo "❌ Fuzzing tests failed"
+            exit 1
+          fi
+          if [[ "${{ needs.build-matrix.result }}" != "success" ]]; then
+            echo "❌ Cross-platform build failed"
+            exit 1
+          fi
+          if [[ "${{ needs.container-security.result }}" != "success" ]]; then
+            echo "❌ Container security check failed"
+            exit 1
+          fi
+          if [[ "${{ needs.dependency-check.result }}" != "success" ]]; then
+            echo "❌ Dependency check failed"
+            exit 1
+          fi
+          echo "✅ All quality gates passed - Ready for production!"

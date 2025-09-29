@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //go:build security || !ignore_security
 
 package api

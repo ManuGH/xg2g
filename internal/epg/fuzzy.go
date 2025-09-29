@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 package epg
 
 // FindBest: exaktes oder fuzzy Matching (Levenshtein) bis maxDist
