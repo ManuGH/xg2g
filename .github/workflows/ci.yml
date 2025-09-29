@@ -2,56 +2,83 @@ name: CI
 
 on:
   push:
+    branches: [ main ]
   pull_request:
+    branches: [ main ]
+    paths:
+      - '**/*.go'
+      - go.mod
+      - go.sum
+      - .github/workflows/ci.yml
 
 permissions:
-  id-token: write   # Falls OIDC Token benötigt werden (z.B. für Signierungen)
   contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-test-integration:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
-      # Check out the source code
-      - name: Checkout source code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      # Set up Go environment based on go.mod version
-      - name: Set up Go
+      - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: 'go.mod'
+          go-version-file: go.mod
           cache: true
 
-      # Download modules and build the project
-      - name: Build project
+      - name: Verify modules
         run: |
+          set -euo pipefail
           go mod download
-          go build -v ./...
+          go mod verify
 
-      # Run unit tests
-      - name: Run unit tests
-        run: go test -v ./...
-
-      # Start stub OpenWebIF server in background for integration tests
-      - name: Start OpenWebIF stub server
+      - name: Build
         run: |
-          cat > /tmp/stub_openwebif.go << 'EOF'
+          set -euo pipefail
+          go build -v -trimpath -mod=readonly -buildvcs=false ./...
+
+      - name: Unit tests
+        run: |
+          set -euo pipefail
+          go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Integration (stub + daemon)
+        env:
+          XG2G_DATA: ./data
+          XG2G_OWI_BASE: http://127.0.0.1:18080
+          XG2G_BOUQUET: Premium
+          XG2G_XMLTV: ./data/guide.xml
+          XG2G_PICON_BASE: http://127.0.0.1:18080/picon
+        run: |
+          set -euo pipefail
+
+          cat > /tmp/stub_openwebif.go <<'STUB'
           package main
-          import ("encoding/json"; "log"; "net/http")
+
+          import (
+            "encoding/json"
+            "log"
+            "net/http"
+          )
 
           func main() {
             mux := http.NewServeMux()
             mux.HandleFunc("/api/bouquets", func(w http.ResponseWriter, r *http.Request) {
-              json.NewEncoder(w).Encode(map[string]any{
+              _ = json.NewEncoder(w).Encode(map[string]any{
                 "bouquets": [][]string{
                   {"1:7:1:0:0:0:0:0:0:0:FROM BOUQUET \"userbouquet.premium.tv\" ORDER BY bouquet", "Premium"},
                 },
               })
             })
             mux.HandleFunc("/api/getallservices", func(w http.ResponseWriter, r *http.Request) {
-              json.NewEncoder(w).Encode(map[string]any{
+              _ = json.NewEncoder(w).Encode(map[string]any{
                 "services": []map[string]string{
                   {"servicename": "ORF1 HD", "servicereference": "1:0:19:132F:3EF:1:C00000:0:0:0:"},
                   {"servicename": "ORF2N HD", "servicereference": "1:0:19:1334:3EF:1:C00000:0:0:0:"},
@@ -59,7 +86,7 @@ jobs:
               })
             })
             mux.HandleFunc("/api/getservices", func(w http.ResponseWriter, r *http.Request) {
-              json.NewEncoder(w).Encode(map[string]any{
+              _ = json.NewEncoder(w).Encode(map[string]any{
                 "services": []map[string]string{
                   {"servicename": "ORF1 HD", "servicereference": "1:0:19:132F:3EF:1:C00000:0:0:0:"},
                   {"servicename": "ORF2N HD", "servicereference": "1:0:19:1334:3EF:1:C00000:0:0:0:"},
@@ -68,58 +95,74 @@ jobs:
             })
             log.Fatal(http.ListenAndServe("127.0.0.1:18080", mux))
           }
-          EOF
+          STUB
+
+          trap 'kill 0 || true' EXIT
 
           nohup go run /tmp/stub_openwebif.go > /tmp/stub_openwebif.log 2>&1 &
-          # Warten bis Server auf Port 18080 bereit ist
-          for i in {1..20}; do nc -z 127.0.0.1 18080 && break || sleep 0.2; done
-          nc -z 127.0.0.1 18080
 
-      # Build daemon, start und Ausführen von Integrationstests
-      - name: Integration
-        run: |
-          set -e
-          mkdir -p ./data
-          go build -o bin/xg2g ./cmd/daemon
-
-          # Starte Daemon im Hintergrund
-          nohup ./bin/xg2g > /tmp/daemon.log 2>&1 &
-          DAEMON_PID=$!
-
-          # Warten bis Daemon auf Port 34400 antwortet
-          for i in {1..30}; do
-            curl -fsS http://127.0.0.1:34400/api/status && break || sleep 0.2
+          ready=false
+          for i in {1..50}; do
+            if curl -fsS --max-time 1 http://127.0.0.1:18080/api/bouquets >/dev/null; then
+              ready=true
+              break
+            fi
+            sleep 0.2
           done
+          if [ "$ready" != "true" ]; then
+            echo "OpenWebIF stub did not become ready" >&2
+            exit 1
+          fi
 
-          # API Refresh und Status prüfen
-          curl -fsS -X POST http://127.0.0.1:34400/api/refresh
-          curl -fsS http://127.0.0.1:34400/api/status
+          mkdir -p "$XG2G_DATA"
+          go build -trimpath -mod=readonly -o bin/xg2g ./cmd/daemon
 
-          # Überprüfe generierte Dateien
-          ls -lh ./data/playlist.m3u ./data/guide.xml
+          nohup ./bin/xg2g > /tmp/daemon.log 2>&1 &
 
-          # Sauberes Beenden des Daemon
-          kill $DAEMON_PID
-        env:
-          XG2G_DATA: ./data
-          XG2G_OWI_BASE: http://127.0.0.1:18080
-          XG2G_BOUQUET: Premium
-          XG2G_XMLTV: ./data/guide.xml
-          XG2G_PICON_BASE: http://127.0.0.1:18080/picon
+          healthy=false
+          for i in {1..60}; do
+            if curl -fsS --max-time 1 http://127.0.0.1:34400/api/status >/dev/null; then
+              healthy=true
+              break
+            fi
+            sleep 0.2
+          done
+          if [ "$healthy" != "true" ]; then
+            echo "Daemon did not become ready" >&2
+            exit 1
+          fi
 
-      # Überprüfen der generierten Dateien mit grep
-      - name: Validierung der Output-Dateien
+          curl -fsS --retry 10 --retry-all-errors --retry-delay 0 --max-time 2 -X POST http://127.0.0.1:34400/api/refresh
+          curl -fsS --retry 10 --retry-all-errors --retry-delay 0 --max-time 2 http://127.0.0.1:34400/api/status
+
+          ls -lh "$XG2G_DATA"/playlist.m3u "$XG2G_DATA"/guide.xml
+
+      - name: Output validation
         run: |
-          set -e
+          set -euo pipefail
           test "$(grep -c '^#EXTINF' ./data/playlist.m3u)" -ge 2
           test "$(grep -c '<channel ' ./data/guide.xml)" -ge 2
           ! grep -q 'FROM BOUQUET' ./data/playlist.m3u
 
-      - name: Install golangci-lint
-        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-
       - name: Lint
-        run: $(go env GOPATH)/bin/golangci-lint run ./...
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout=5m ./...
 
-      - name: Test
-        run: go test ./... -v
+      - name: Go test (repeat)
+        run: |
+          set -euo pipefail
+          go test -race ./... -v
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-and-reports
+          path: |
+            coverage.out
+            /tmp/stub_openwebif.log
+            /tmp/daemon.log
+            ./data/*
+          if-no-files-found: ignore
