@@ -327,42 +327,89 @@ jobs:
 
       - name: Setup OpenWebIF stub server
         run: |
-          echo "Starting OpenWebIF stub server..."
+          echo "🚀 Starting OpenWebIF stub server setup..."
+          
+          # Verify stub file exists and copy it
+          if [ ! -f "test/stub_openwebif.go" ]; then
+            echo "❌ stub_openwebif.go not found!"
+            ls -la test/
+            exit 1
+          fi
+          
           cp test/stub_openwebif.go /tmp/stub_openwebif.go
+          echo "✅ Copied stub to /tmp/stub_openwebif.go"
           
-          # Start stub in background with proper error handling
-          nohup go run /tmp/stub_openwebif.go > /tmp/stub.log 2>&1 &
+          # Check if port 18080 is already in use
+          if netstat -tuln | grep ':18080 '; then
+            echo "⚠️  Port 18080 is already in use:"
+            netstat -tuln | grep ':18080 '
+            echo "Attempting to kill any existing processes..."
+            pkill -f 18080 || true
+            sleep 2
+          fi
+          
+          # Start stub server with enhanced logging
+          echo "🔧 Starting stub server..."
+          nohup go run /tmp/stub_openwebif.go > /tmp/stub_openwebif.log 2>&1 &
           STUB_PID=$!
-          echo "Stub PID: $STUB_PID"
+          echo "📝 Stub PID: $STUB_PID"
           
-          # Wait for stub to be ready (up to 10 seconds)
-          echo "Waiting for stub to be ready..."
-          for i in {1..10}; do
-            if curl --silent --fail http://127.0.0.1:18080/api/bouquets > /dev/null 2>&1; then
-              echo "✅ Stub server is ready on port 18080"
+          # Give process a moment to initialize
+          sleep 2
+          
+          # Check if process is still running
+          if ! kill -0 $STUB_PID 2>/dev/null; then
+            echo "❌ Stub process died immediately after start"
+            echo "📋 Stub log contents:"
+            cat /tmp/stub_openwebif.log 2>/dev/null || echo "No log file found"
+            exit 1
+          fi
+          
+          echo "🔍 Process is running, checking server readiness..."
+          
+          # Wait for stub to be ready (up to 15 seconds with more detailed feedback)
+          for i in {1..15}; do
+            echo "⏳ Checking readiness (attempt $i/15)..."
+            
+            # Try health check endpoint first
+            if curl --fail --show-error --silent --max-time 1 "http://127.0.0.1:18080/api/status" > /dev/null 2>&1; then
+              echo "✅ Stub server is ready on port 18080!"
+              curl --silent "http://127.0.0.1:18080/api/status" | jq '.' || echo "Health check successful"
               break
             fi
-            if [ $i -eq 10 ]; then
-              echo "❌ Stub server failed to start"
-              echo "Stub log:"
-              cat /tmp/stub.log || true
-              ps aux | grep stub_openwebif || true
-              netstat -tulnp | grep 18080 || true
-              kill $STUB_PID || true
+            
+            # If we reach max attempts, show debug info
+            if [ $i -eq 15 ]; then
+              echo "❌ Stub server failed to become ready after 15 seconds"
+              echo ""
+              echo "🔍 Debug information:"
+              echo "📋 Stub log contents:"
+              cat /tmp/stub_openwebif.log 2>/dev/null || echo "No log file found"
+              echo ""
+              echo "🔍 Process status:"
+              ps aux | grep -E "(stub_openwebif|18080)" | grep -v grep || echo "No stub processes found"
+              echo ""
+              echo "🔍 Network status:"
+              netstat -tuln | grep 18080 || echo "Port 18080 not bound"
+              echo ""
+              echo "🔍 Go processes:"
+              ps aux | grep go | grep -v grep || echo "No go processes found"
+              echo ""
+              kill $STUB_PID 2>/dev/null || true
               exit 1
             fi
-            echo "Waiting... ($i/10)"
+            
             sleep 1
           done
 
-      - name: Run integration smoke test  
+      - name: Run integration smoke test
         run: |
           echo "Running integration smoke test with real stub..."
-          
+
           # Create temp data directory
           TEMP_DATA=$(mktemp -d)
           echo "Using data directory: $TEMP_DATA"
-          
+
           # Start daemon with stub backend
           XG2G_DATA="$TEMP_DATA" \
           XG2G_OWI_BASE=http://127.0.0.1:18080 \
@@ -371,10 +418,10 @@ jobs:
           XG2G_METRICS_LISTEN=:0 \
           timeout 10 ./daemon > /tmp/daemon.log 2>&1 &
           DAEMON_PID=$!
-          
+
           # Give daemon time to start and process
           sleep 3
-          
+
           # Check if daemon is still running 
           if ! kill -0 $DAEMON_PID 2>/dev/null; then
             echo "❌ Daemon exited prematurely"
@@ -382,10 +429,10 @@ jobs:
             cat /tmp/daemon.log || true
             exit 1
           fi
-          
+
           echo "✅ Integration smoke test passed - daemon started successfully"
           kill $DAEMON_PID || true
-          
+
           # Cleanup
           pkill -f stub_openwebif || true
 

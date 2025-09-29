@@ -4,12 +4,29 @@ package main
 import (
 	"encoding/json"
 	"log"
+	"net"
 	"net/http"
+	"os"
 )
 
 func main() {
-	log.Println("Starting OpenWebIF stub server...")
-	
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	log.Println("🚀 Starting OpenWebIF stub server...")
+	log.Printf("📍 PID: %d", os.Getpid())
+	log.Printf("📍 Working Directory: %s", func() string {
+		wd, _ := os.Getwd()
+		return wd
+	}())
+
+	// Check if port is available before starting
+	log.Println("🔍 Checking if port 18080 is available...")
+	conn, err := net.Dial("tcp", "127.0.0.1:18080")
+	if err == nil {
+		conn.Close()
+		log.Fatal("❌ Port 18080 is already in use!")
+	}
+	log.Println("✅ Port 18080 is available")
+
 	mux := http.NewServeMux()
 
 	// Add health check endpoint
@@ -17,7 +34,7 @@ func main() {
 		log.Printf("Health check request from %s", r.RemoteAddr)
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"status": "ok",
+			"status":  "ok",
 			"version": "stub-1.0.0",
 		})
 	})
@@ -66,12 +83,12 @@ func main() {
 	log.Println("stub_openwebif listening on 127.0.0.1:18080")
 	log.Println("Available endpoints:")
 	log.Println("  GET /api/status")
-	log.Println("  GET /api/bouquets") 
+	log.Println("  GET /api/bouquets")
 	log.Println("  GET /api/getallservices")
 	log.Println("  GET /api/getservices")
-	
-	err := http.ListenAndServe("127.0.0.1:18080", mux)
-	if err != nil {
-		log.Fatalf("Failed to start OpenWebIF stub server: %v", err)
+
+	log.Println("🎯 Starting HTTP server...")
+	if err = http.ListenAndServe("127.0.0.1:18080", mux); err != nil {
+		log.Fatalf("❌ Failed to start OpenWebIF stub server: %v", err)
 	}
 }
