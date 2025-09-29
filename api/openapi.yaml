@@ -3,6 +3,9 @@ info:
   title: xg2g API
   description: OpenWebIF → M3U / XMLTV conversion API
   version: 1.0.0
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
 
 servers:
   - url: http://localhost:34400
@@ -25,6 +28,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Status"
+        "400":
+          description: Bad request
         "500":
           description: Internal server error
 
