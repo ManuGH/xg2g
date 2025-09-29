@@ -144,7 +144,7 @@ jobs:
         run: |
           set -e
           echo "Running fuzzing tests..."
-          
+
           # Check if fuzz functions exist before running
           if go test ./internal/epg -list=FuzzLevenshtein >/dev/null 2>&1; then
             echo "Running FuzzLevenshtein..."
@@ -153,7 +153,7 @@ jobs:
             echo "❌ FuzzLevenshtein not found"
             exit 1
           fi
-          
+
           if go test ./internal/epg -list=FuzzXMLTVGeneration >/dev/null 2>&1; then
             echo "Running FuzzXMLTVGeneration..."  
             go test ./internal/epg -fuzz=FuzzXMLTVGeneration -fuzztime=10s -run '^$' -v
@@ -161,7 +161,7 @@ jobs:
             echo "❌ FuzzXMLTVGeneration not found"
             exit 1
           fi
-          
+
           if go test ./internal/epg -list=FuzzParseChannelName >/dev/null 2>&1; then
             echo "Running FuzzParseChannelName..."
             go test ./internal/epg -fuzz=FuzzParseChannelName -fuzztime=10s -run '^$' -v
@@ -169,7 +169,7 @@ jobs:
             echo "❌ FuzzParseChannelName not found"
             exit 1
           fi
-          
+
           echo "✅ All fuzz tests completed successfully"
 
   # Cross-platform Build Matrix
@@ -325,14 +325,69 @@ jobs:
       - name: Build daemon
         run: go build -o daemon ./cmd/daemon
 
-      - name: Run smoke test
+      - name: Setup OpenWebIF stub server
         run: |
-          XG2G_DATA=$(mktemp -d) \
-          XG2G_OWI_BASE=http://fake.local \
-          XG2G_BOUQUET=Test \
+          echo "Starting OpenWebIF stub server..."
+          cp test/stub_openwebif.go /tmp/stub_openwebif.go
+          
+          # Start stub in background with proper error handling
+          nohup go run /tmp/stub_openwebif.go > /tmp/stub.log 2>&1 &
+          STUB_PID=$!
+          echo "Stub PID: $STUB_PID"
+          
+          # Wait for stub to be ready (up to 10 seconds)
+          echo "Waiting for stub to be ready..."
+          for i in {1..10}; do
+            if curl --silent --fail http://127.0.0.1:18080/api/bouquets > /dev/null 2>&1; then
+              echo "✅ Stub server is ready on port 18080"
+              break
+            fi
+            if [ $i -eq 10 ]; then
+              echo "❌ Stub server failed to start"
+              echo "Stub log:"
+              cat /tmp/stub.log || true
+              ps aux | grep stub_openwebif || true
+              netstat -tulnp | grep 18080 || true
+              kill $STUB_PID || true
+              exit 1
+            fi
+            echo "Waiting... ($i/10)"
+            sleep 1
+          done
+
+      - name: Run integration smoke test  
+        run: |
+          echo "Running integration smoke test with real stub..."
+          
+          # Create temp data directory
+          TEMP_DATA=$(mktemp -d)
+          echo "Using data directory: $TEMP_DATA"
+          
+          # Start daemon with stub backend
+          XG2G_DATA="$TEMP_DATA" \
+          XG2G_OWI_BASE=http://127.0.0.1:18080 \
+          XG2G_BOUQUET=Premium \
           XG2G_LISTEN=:0 \
           XG2G_METRICS_LISTEN=:0 \
-          timeout 3 ./daemon || true
+          timeout 10 ./daemon > /tmp/daemon.log 2>&1 &
+          DAEMON_PID=$!
+          
+          # Give daemon time to start and process
+          sleep 3
+          
+          # Check if daemon is still running 
+          if ! kill -0 $DAEMON_PID 2>/dev/null; then
+            echo "❌ Daemon exited prematurely"
+            echo "Daemon log:"
+            cat /tmp/daemon.log || true
+            exit 1
+          fi
+          
+          echo "✅ Integration smoke test passed - daemon started successfully"
+          kill $DAEMON_PID || true
+          
+          # Cleanup
+          pkill -f stub_openwebif || true
 
   # Integration Gate
   integration-gate:
