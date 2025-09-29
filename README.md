@@ -45,10 +45,8 @@ curl http://<host>:8080/api/status
 
 Optional: Dockge or other orchestration front-ends can point to the same compose stack — just keep `/opt/xg2g/data` mounted so the generated files persist.
 
-xg2g is a small Go microservice that converts OpenWebIF bouquets (for example from VU+ receivers) into IPTV-friendly artifacts. It exposes a tiny HTTP API and writes generated files into the directory specified by `XG2G_DATA`.
-
 > **Note**
-> xg2g is a converter that produces the M3U/XMLTV basis for downstream middleware (xTeVe, Threadfin, Plex, Jellyfin, …). It does not replace those middleware components; instead it feeds them with preprocessed data from OpenWebIF.
+> xg2g is a converter that produces the M3U/XMLTV basis for downstream middleware (e.g. xTeVe, Threadfin). It does not replace those middleware components; instead it feeds them with preprocessed data from OpenWebIF.
 
 Generated artifacts
 
