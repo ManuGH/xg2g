@@ -328,17 +328,17 @@ jobs:
       - name: Setup OpenWebIF stub server
         run: |
           echo "🚀 Starting OpenWebIF stub server setup..."
-          
+
           # Verify stub file exists and copy it
           if [ ! -f "test/stub_openwebif.go" ]; then
             echo "❌ stub_openwebif.go not found!"
             ls -la test/
             exit 1
           fi
-          
+
           cp test/stub_openwebif.go /tmp/stub_openwebif.go
           echo "✅ Copied stub to /tmp/stub_openwebif.go"
-          
+
           # Check if port 18080 is already in use
           if netstat -tuln | grep ':18080 '; then
             echo "⚠️  Port 18080 is already in use:"
@@ -347,16 +347,16 @@ jobs:
             pkill -f 18080 || true
             sleep 2
           fi
-          
+
           # Start stub server with enhanced logging
           echo "🔧 Starting stub server..."
           nohup go run /tmp/stub_openwebif.go > /tmp/stub_openwebif.log 2>&1 &
           STUB_PID=$!
           echo "📝 Stub PID: $STUB_PID"
-          
+
           # Give process a moment to initialize
           sleep 2
-          
+
           # Check if process is still running
           if ! kill -0 $STUB_PID 2>/dev/null; then
             echo "❌ Stub process died immediately after start"
@@ -364,9 +364,9 @@ jobs:
             cat /tmp/stub_openwebif.log 2>/dev/null || echo "No log file found"
             exit 1
           fi
-          
+
           echo "🔍 Process is running, checking server readiness..."
-          
+
           # Wait for stub to be ready (up to 15 seconds with more detailed feedback)
           for i in {1..15}; do
             echo "⏳ Checking readiness (attempt $i/15)..."
@@ -419,9 +419,9 @@ jobs:
           timeout 10 ./daemon > /tmp/daemon.log 2>&1 &
           DAEMON_PID=$!
 
-          # Give daemon time to start and process
-          sleep 3
-
+          # Give daemon time to start  
+          sleep 2
+          
           # Check if daemon is still running 
           if ! kill -0 $DAEMON_PID 2>/dev/null; then
             echo "❌ Daemon exited prematurely"
@@ -429,11 +429,88 @@ jobs:
             cat /tmp/daemon.log || true
             exit 1
           fi
-
-          echo "✅ Integration smoke test passed - daemon started successfully"
-          kill $DAEMON_PID || true
-
+          
+          # Find the actual daemon port
+          echo "🔍 Discovering daemon port..."
+          DAEMON_PORT=$(ps aux | grep './daemon' | grep -v grep | sed -n 's/.*XG2G_LISTEN=:\([0-9]*\).*/\1/p' | head -1)
+          if [ -z "$DAEMON_PORT" ]; then
+            # Fallback: search for listening ports
+            DAEMON_PORT=$(netstat -tuln | grep '127.0.0.1:' | grep -v ':18080' | awk '{print $4}' | cut -d: -f2 | head -1)
+          fi
+          
+          if [ -z "$DAEMON_PORT" ]; then
+            echo "❌ Could not determine daemon port"
+            echo "Daemon log:"
+            cat /tmp/daemon.log || true
+            netstat -tuln | grep '127.0.0.1'
+            exit 1
+          fi
+          
+          DAEMON_BASE="http://127.0.0.1:${DAEMON_PORT}"
+          echo "📡 Daemon base: $DAEMON_BASE"
+          
+          # Test health endpoints
+          echo "🏥 Testing health endpoints..."
+          if ! curl --fail --silent "$DAEMON_BASE/healthz" > /dev/null; then
+            echo "❌ Health check failed"
+            echo "Daemon log:"
+            cat /tmp/daemon.log || true
+            kill $DAEMON_PID || true
+            exit 1
+          fi
+          echo "✅ Health check passed"
+          
+          # Trigger refresh
+          echo "🔄 Triggering refresh operation..."
+          if ! curl --fail --silent -X POST "$DAEMON_BASE/api/refresh" > /dev/null; then
+            echo "❌ Refresh trigger failed"
+            echo "Daemon log:"
+            cat /tmp/daemon.log || true
+            kill $DAEMON_PID || true
+            exit 1
+          fi
+          echo "✅ Refresh triggered successfully"
+          
+          # Give refresh time to complete
+          sleep 3
+          
+          # Check generated files
+          echo "📋 Checking generated artifacts..."
+          
+          # Check M3U file
+          M3U_FILE="$TEMP_DATA/playlist.m3u"
+          if [ -f "$M3U_FILE" ]; then
+            M3U_SIZE=$(wc -c < "$M3U_FILE")
+            M3U_ENTRIES=$(grep -c "^#EXTINF" "$M3U_FILE" 2>/dev/null || echo "0")
+            echo "📺 M3U file: ${M3U_SIZE} bytes, ${M3U_ENTRIES} entries"
+          else
+            echo "⚠️  No M3U file generated"
+          fi
+          
+          # Check XMLTV file  
+          XMLTV_FILE="$TEMP_DATA/xmltv.xml"
+          if [ -f "$XMLTV_FILE" ]; then
+            XMLTV_SIZE=$(wc -c < "$XMLTV_FILE")
+            XMLTV_CHANNELS=$(grep -c "<channel " "$XMLTV_FILE" 2>/dev/null || echo "0")
+            echo "📡 XMLTV file: ${XMLTV_SIZE} bytes, ${XMLTV_CHANNELS} channels"
+          else
+            echo "⚠️  No XMLTV file generated"
+          fi
+          
+          # Final status check
+          echo "📊 Final status check..."
+          FINAL_STATUS=$(curl --fail --silent "$DAEMON_BASE/api/status" || echo "FAILED")
+          echo "Status response: $FINAL_STATUS"
+          
+          echo "✅ Integration smoke test completed successfully"
+          echo "📋 Summary:"
+          echo "  - Coverage: $(go tool cover -func=coverage.out 2>/dev/null | grep total | awk '{print $3}' || echo 'N/A')"
+          echo "  - Playlist entries (#EXTINF): ${M3U_ENTRIES:-0}"
+          echo "  - XMLTV Channels: ${XMLTV_CHANNELS:-0}"
+          echo "  - Daemon base: $DAEMON_BASE"
+          
           # Cleanup
+          kill $DAEMON_PID || true
           pkill -f stub_openwebif || true
 
   # Integration Gate

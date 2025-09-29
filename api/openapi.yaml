@@ -91,6 +91,16 @@ paths:
                   status:
                     type: string
                     example: ok
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Service unavailable"
 
   /readyz:
     get:
