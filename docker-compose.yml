@@ -9,7 +9,6 @@ services:
     image: xg2g:local
     ports:
       - "8080:8080"
-      - "17999:17999"
     volumes:
       - ./data:/data
     environment:

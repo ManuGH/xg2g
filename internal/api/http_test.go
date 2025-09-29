@@ -62,3 +62,45 @@ func TestHandleRefresh_SuccessUpdatesLastRun(t *testing.T) {
 	// to verify our fix.
 	t.Skip("Skipping success test as it requires mocking infrastructure")
 }
+
+func TestHandleHealth(t *testing.T) {
+	server := New(jobs.Config{})
+	req := httptest.NewRequest("GET", "/healthz", nil)
+	rr := httptest.NewRecorder()
+
+	server.handleHealth(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("unexpected status code: got %d, want %d", rr.Code, http.StatusOK)
+	}
+	if body := rr.Body.String(); body != "{\"status\":\"ok\"}\n" {
+		t.Fatalf("unexpected response body: %q", body)
+	}
+}
+
+func TestHandleReady(t *testing.T) {
+	server := New(jobs.Config{})
+
+	// Not ready: no successful refresh yet
+	req := httptest.NewRequest("GET", "/readyz", nil)
+	rr := httptest.NewRecorder()
+	server.handleReady(rr, req)
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 for not ready, got %d", rr.Code)
+	}
+
+	// Ready: simulate successful refresh
+	server.mu.Lock()
+	server.status.LastRun = time.Now()
+	server.status.Error = ""
+	server.mu.Unlock()
+
+	rr = httptest.NewRecorder()
+	server.handleReady(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 for ready, got %d", rr.Code)
+	}
+	if body := rr.Body.String(); body != "{\"status\":\"ready\"}\n" {
+		t.Fatalf("unexpected ready body: %q", body)
+	}
+}

@@ -16,32 +16,48 @@ import (
 	"github.com/ManuGH/xg2g/internal/playlist"
 )
 
+const defaultStreamPort = 8001
+
 // Status represents the current state of the refresh job
 type Status struct {
-	LastRun  time.Time `json:"last_run"`
+	LastRun  time.Time `json:"lastRun"`
 	Channels int       `json:"channels"`
 	Error    string    `json:"error,omitempty"`
 }
 
 // Config holds configuration for refresh operations
 type Config struct {
-	DataDir    string
-	OWIBase    string
-	Bouquet    string
-	XMLTVPath  string
-	PiconBase  string
-	FuzzyMax   int
-	StreamPort int
+	DataDir       string
+	OWIBase       string
+	Bouquet       string
+	XMLTVPath     string
+	PiconBase     string
+	FuzzyMax      int
+	StreamPort    int
+	OWITimeout    time.Duration
+	OWIRetries    int
+	OWIBackoff    time.Duration
+	OWIMaxBackoff time.Duration
 }
 
 // Refresh performs the complete refresh cycle: fetch bouquets → services → write M3U + XMLTV
 func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 	cfg.OWIBase = strings.TrimSpace(cfg.OWIBase)
+	if cfg.StreamPort == 0 {
+		cfg.StreamPort = defaultStreamPort
+	} else if cfg.StreamPort < 1 || cfg.StreamPort > 65535 {
+		return nil, fmt.Errorf("invalid stream port %d", cfg.StreamPort)
+	}
 	if err := validateConfig(cfg); err != nil {
 		return nil, err
 	}
 
-	cl := openwebif.New(cfg.OWIBase)
+	cl := openwebif.NewWithPort(cfg.OWIBase, cfg.StreamPort, openwebif.Options{
+		Timeout:    cfg.OWITimeout,
+		MaxRetries: cfg.OWIRetries,
+		Backoff:    cfg.OWIBackoff,
+		MaxBackoff: cfg.OWIMaxBackoff,
+	})
 	return refreshWithClient(ctx, cfg, cl)
 }
 
@@ -77,8 +93,13 @@ func refreshWithClient(ctx context.Context, cfg Config, cl openwebif.ClientInter
 			TvgID:   makeStableID(name),
 			TvgChNo: i + 1,
 			Group:   cfg.Bouquet,
-			URL:     cl.StreamURL(sref),
 		}
+
+		streamURL, err := cl.StreamURL(sref, name)
+		if err != nil {
+			return nil, fmt.Errorf("stream url for %q: %w", name, err)
+		}
+		item.URL = streamURL
 
 		if cfg.PiconBase != "" {
 			item.TvgLogo = strings.TrimRight(cfg.PiconBase, "/") + "/" + url.PathEscape(sref) + ".png"
@@ -192,6 +213,10 @@ func validateConfig(cfg Config) error {
 
 	if u.Host == "" {
 		return fmt.Errorf("openwebif base URL %q is missing host", cfg.OWIBase)
+	}
+
+	if cfg.StreamPort <= 0 || cfg.StreamPort > 65535 {
+		return fmt.Errorf("invalid stream port %d", cfg.StreamPort)
 	}
 
 	return nil

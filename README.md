@@ -117,7 +117,52 @@ XG2G_LISTEN=:8080 \
 go run ./cmd/daemon
 ```
 
-## Notes
+## Stability & Tuning
+
+xg2g includes comprehensive retry and timeout mechanisms for reliable operation with potentially unreliable OpenWebIF receivers.
+
+### Default Configuration
+
+| Parameter | Default | Range | Description |
+|-----------|---------|--------|-------------|
+| `XG2G_OWI_TIMEOUT_MS` | 10000 | 1000-60000 | Request timeout per attempt (ms) |
+| `XG2G_OWI_RETRIES` | 3 | 0-10 | Maximum retry attempts |
+| `XG2G_OWI_BACKOFF_MS` | 500 | 100-5000 | Base backoff delay (ms) |
+| `XG2G_OWI_MAX_BACKOFF_MS` | 2000 | 500-30000 | Maximum backoff delay (ms) |
+
+### When to Adjust Settings
+
+**Slow or Overloaded Receiver:**
+
+- Increase timeout: `XG2G_OWI_TIMEOUT_MS=20000`
+- Increase backoff: `XG2G_OWI_BACKOFF_MS=1000`
+
+**Fast Local Network:**
+
+- Decrease timeout: `XG2G_OWI_TIMEOUT_MS=5000`
+- Decrease backoff: `XG2G_OWI_BACKOFF_MS=200`
+
+**Unreliable Network:**
+
+- Increase retries: `XG2G_OWI_RETRIES=5`
+- Increase max backoff: `XG2G_OWI_MAX_BACKOFF_MS=5000`
+
+### Monitoring
+
+The application exposes Prometheus metrics for observability:
+
+- `xg2g_openwebif_request_duration_seconds` - Request latencies (p50/p95/p99)
+- `xg2g_openwebif_request_retries_total` - Retry attempts by operation  
+- `xg2g_openwebif_request_failures_total` - Failures by error class
+- `xg2g_openwebif_request_success_total` - Successful requests
+
+Use structured logs with consistent fields (`attempt`, `duration_ms`, `error_class`) for debugging.
+
+## Contributing
+
+> **English-only Policy**: All communication in this repository (issues, pull requests, documentation, code comments) must be in English to ensure accessibility for the global community.
 
 - XMLTV currently only contains channel definitions by default; the fuzzy matcher exists for later EPG integration.
 - Configuration is ENV-only (no config files). See `cmd/daemon/main.go` and `internal/jobs/refresh.go` for how ENV variables are read.
+
+Please refer to [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.

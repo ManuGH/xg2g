@@ -20,16 +20,19 @@ func (m *mockOWI) Services(ctx context.Context, bouquetRef string) ([][2]string,
 	return m.services[bouquetRef], nil
 }
 
-func (m *mockOWI) StreamURL(ref string) string { return "http://stream/" + ref }
+func (m *mockOWI) StreamURL(ref, name string) (string, error) {
+	return "http://stream/" + ref, nil
+}
 
 func TestRefreshWithClient_Success(t *testing.T) {
 	tmpdir := t.TempDir()
 	cfg := Config{
-		DataDir:   tmpdir,
-		OWIBase:   "http://mock",
-		Bouquet:   "Favourites",
-		PiconBase: "",
-		XMLTVPath: filepath.Join(tmpdir, "xmltv.xml"),
+		DataDir:    tmpdir,
+		OWIBase:    "http://mock",
+		Bouquet:    "Favourites",
+		PiconBase:  "",
+		XMLTVPath:  filepath.Join(tmpdir, "xmltv.xml"),
+		StreamPort: 8001,
 	}
 
 	mock := &mockOWI{
@@ -55,7 +58,7 @@ func TestRefreshWithClient_Success(t *testing.T) {
 
 func TestRefreshWithClient_BouquetNotFound(t *testing.T) {
 	tmpdir := t.TempDir()
-	cfg := Config{DataDir: tmpdir, OWIBase: "http://mock", Bouquet: "NonExistent"}
+	cfg := Config{DataDir: tmpdir, OWIBase: "http://mock", Bouquet: "NonExistent", StreamPort: 8001}
 	mock := &mockOWI{bouquets: map[string]string{"Favourites": "bref1"}, services: map[string][][2]string{}}
 
 	_, err := refreshWithClient(context.Background(), cfg, mock)
@@ -66,7 +69,7 @@ func TestRefreshWithClient_BouquetNotFound(t *testing.T) {
 
 func TestRefreshWithClient_ServicesError(t *testing.T) {
 	tmpdir := t.TempDir()
-	cfg := Config{DataDir: tmpdir, OWIBase: "http://mock", Bouquet: "Favourites"}
+	cfg := Config{DataDir: tmpdir, OWIBase: "http://mock", Bouquet: "Favourites", StreamPort: 8001}
 	// mock that has bouquets but no services entry -> Services returns nil slice (treated as zero channels)
 	mock := &mockOWI{bouquets: map[string]string{"Favourites": "bref1"}, services: map[string][][2]string{}}
 
@@ -85,11 +88,13 @@ func TestValidateConfig(t *testing.T) {
 		cfg     Config
 		wantErr bool
 	}{
-		{name: "http ok", cfg: Config{OWIBase: "http://example.com"}},
-		{name: "https ok", cfg: Config{OWIBase: "https://example.com"}},
-		{name: "empty", cfg: Config{OWIBase: ""}, wantErr: true},
-		{name: "missing scheme", cfg: Config{OWIBase: "example.com"}, wantErr: true},
-		{name: "unsupported scheme", cfg: Config{OWIBase: "ftp://example.com"}, wantErr: true},
+		{name: "http ok", cfg: Config{OWIBase: "http://example.com", StreamPort: 8001}},
+		{name: "https ok", cfg: Config{OWIBase: "https://example.com", StreamPort: 8001}},
+		{name: "empty", cfg: Config{OWIBase: "", StreamPort: 8001}, wantErr: true},
+		{name: "missing scheme", cfg: Config{OWIBase: "example.com", StreamPort: 8001}, wantErr: true},
+		{name: "unsupported scheme", cfg: Config{OWIBase: "ftp://example.com", StreamPort: 8001}, wantErr: true},
+		{name: "invalid port", cfg: Config{OWIBase: "http://example.com", StreamPort: -1}, wantErr: true},
+		{name: "port too large", cfg: Config{OWIBase: "http://example.com", StreamPort: 70000}, wantErr: true},
 	}
 
 	for _, tc := range testcases {

@@ -75,6 +75,50 @@ paths:
         "500":
           description: Refresh failed
 
+  /healthz:
+    get:
+      summary: Liveness probe
+      description: Returns `ok` if the API process is running.
+      operationId: getHealthz
+      responses:
+        "200":
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /readyz:
+    get:
+      summary: Readiness probe
+      description: Reports readiness once a successful refresh has completed.
+      operationId: getReadyz
+      responses:
+        "200":
+          description: Service is ready to serve refreshes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ready
+        "503":
+          description: Service has not completed a successful refresh yet
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: not-ready
+
   /files/{filename}:
     get:
       summary: Retrieve generated file
@@ -109,3 +153,7 @@ components:
         error:
           type: string
           description: Error message (if any)
+      example:
+        lastRun: "2025-01-01T12:34:56Z"
+        channels: 42
+        error: ""
