@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rs/zerolog/log"
+	xglog "github.com/ManuGH/xg2g/internal/log"
 
 	"github.com/ManuGH/xg2g/internal/epg"
 	"github.com/ManuGH/xg2g/internal/openwebif"
@@ -47,7 +47,8 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 
 // refreshWithClient is separated for easier testing
 func refreshWithClient(ctx context.Context, cfg Config, cl openwebif.ClientInterface) (*Status, error) {
-	log.Info().Msg("starting refresh")
+	logger := xglog.WithComponentFromContext(ctx, "jobs")
+	logger.Info().Str("event", "refresh.start").Msg("starting refresh")
 
 	bqs, err := cl.Bouquets(ctx)
 	if err != nil {
@@ -104,7 +105,8 @@ func refreshWithClient(ctx context.Context, cfg Config, cl openwebif.ClientInter
 		return nil, fmt.Errorf("write playlist: %w", err)
 	}
 
-	log.Info().
+	logger.Info().
+		Str("event", "playlist.write").
 		Str("path", playlistPath).
 		Int("channels", len(items)).
 		Msg("playlist written")
@@ -120,13 +122,15 @@ func refreshWithClient(ctx context.Context, cfg Config, cl openwebif.ClientInter
 			xmlCh = append(xmlCh, ch)
 		}
 		if err := epg.WriteXMLTV(xmlCh, cfg.XMLTVPath); err != nil {
-			log.Warn().
+			logger.Warn().
 				Err(err).
+				Str("event", "xmltv.failed").
 				Str("path", cfg.XMLTVPath).
 				Int("channels", len(xmlCh)).
 				Msg("XMLTV generation failed")
 		} else {
-			log.Info().
+			logger.Info().
+				Str("event", "xmltv.success").
 				Str("path", cfg.XMLTVPath).
 				Int("channels", len(xmlCh)).
 				Msg("XMLTV generated")
@@ -134,6 +138,10 @@ func refreshWithClient(ctx context.Context, cfg Config, cl openwebif.ClientInter
 	}
 
 	status := &Status{LastRun: time.Now(), Channels: len(items)}
+	logger.Info().
+		Str("event", "refresh.success").
+		Int("channels", status.Channels).
+		Msg("refresh completed")
 	return status, nil
 }
 
