@@ -86,6 +86,7 @@ jobs:
           XG2G_BOUQUET: Premium
           XG2G_XMLTV: ./data/guide.xml
           XG2G_PICON_BASE: http://127.0.0.1:18080/picon
+          XG2G_LISTEN: :8080
         run: |
           set -euo pipefail
 
@@ -149,9 +150,11 @@ jobs:
 
           nohup ./bin/xg2g > /tmp/daemon.log 2>&1 &
 
+          daemon_base="http://127.0.0.1${XG2G_LISTEN}"
+
           healthy=false
           for i in {1..60}; do
-            if curl -fsS --max-time 1 http://127.0.0.1:34400/api/status >/dev/null; then
+            if curl -fsS --max-time 1 "$daemon_base/api/status" >/dev/null; then
               healthy=true
               break
             fi
@@ -162,9 +165,9 @@ jobs:
             exit 1
           fi
 
-          curl -fsS --retry 10 --retry-all-errors --retry-delay 0 --max-time 2 -X POST http://127.0.0.1:34400/api/refresh
-          curl -fsS --retry 10 --retry-all-errors --retry-delay 0 --max-time 2      http://127.0.0.1:34400/api/refresh
-          curl -fsS --retry 10 --retry-all-errors --retry-delay 0 --max-time 2 http://127.0.0.1:34400/api/status
+          curl -fsS --retry 10 --retry-all-errors --retry-delay 0 --max-time 2 -X POST "$daemon_base/api/refresh"
+          curl -fsS --retry 10 --retry-all-errors --retry-delay 0 --max-time 2      "$daemon_base/api/refresh"
+          curl -fsS --retry 10 --retry-all-errors --retry-delay 0 --max-time 2 "$daemon_base/api/status"
 
           ls -lh "$XG2G_DATA"/playlist.m3u "$XG2G_DATA"/guide.xml
 
