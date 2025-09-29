@@ -3,6 +3,8 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -18,14 +20,20 @@ func main() {
 		return wd
 	}())
 
+	// Flags for host/port configuration
+	host := flag.String("host", "127.0.0.1", "host/IP to bind to")
+	port := flag.Int("port", 18080, "port to listen on")
+	flag.Parse()
+	addr := fmt.Sprintf("%s:%d", *host, *port)
+
 	// Check if port is available before starting
-	log.Println("🔍 Checking if port 18080 is available...")
-	listener, err := net.Listen("tcp", "127.0.0.1:18080")
+	log.Printf("🔍 Checking if address %s is available...", addr)
+	listener, err := net.Listen("tcp", addr)
 	if err != nil {
-		log.Fatalf("❌ Failed to bind to port 18080: %v", err)
+		log.Fatalf("❌ Failed to bind to %s: %v", addr, err)
 	}
-	log.Println("✅ Port 18080 is available and bound")
-	
+	log.Printf("✅ Address %s is available and bound", addr)
+
 	// Close the test listener to reuse the port for HTTP server
 	if closeErr := listener.Close(); closeErr != nil {
 		log.Printf("⚠️  Failed to close test listener: %v", closeErr)
@@ -86,24 +94,24 @@ func main() {
 		}
 	})
 
-	log.Println("stub_openwebif listening on 127.0.0.1:18080")
+	log.Printf("stub_openwebif listening on %s", addr)
 	log.Println("Available endpoints:")
 	log.Println("  GET /api/status")
 	log.Println("  GET /api/bouquets")
 	log.Println("  GET /api/getallservices")
 	log.Println("  GET /api/getservices")
 
-	log.Println("🎯 Starting HTTP server on 127.0.0.1:18080...")
-	
+	log.Printf("🎯 Starting HTTP server on %s...", addr)
+
 	// Create server with explicit configuration
 	server := &http.Server{
-		Addr:    "127.0.0.1:18080",
+		Addr:    addr,
 		Handler: mux,
 	}
-	
-	log.Println("✅ OpenWebIF stub server is now listening on http://127.0.0.1:18080")
+
+	log.Printf("✅ OpenWebIF stub server is now listening on http://%s", addr)
 	log.Println("📡 Server ready to accept connections")
-	
+
 	if err := server.ListenAndServe(); err != nil {
 		log.Fatalf("❌ Failed to start OpenWebIF stub server: %v", err)
 	}
