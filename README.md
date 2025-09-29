@@ -153,17 +153,20 @@ xg2g includes comprehensive retry and timeout mechanisms for reliable operation 
 The application exposes comprehensive Prometheus metrics for observability and security:
 
 **Performance Metrics:**
+
 - `xg2g_openwebif_request_duration_seconds` - Request latencies (p50/p95/p99)
 - `xg2g_openwebif_request_retries_total` - Retry attempts by operation  
 - `xg2g_openwebif_request_failures_total` - Failures by error class
 - `xg2g_openwebif_request_success_total` - Successful requests
 
 **Security Metrics (v1.2.0+):**
+
 - `xg2g_file_requests_denied_total{reason}` - Blocked requests by attack type
 - `xg2g_file_requests_allowed_total` - Successful file serves
 - `xg2g_http_requests_total{status,endpoint}` - HTTP responses by status code
 
 **Production Monitoring:**
+
 ```bash
 # Deploy full monitoring stack (Prometheus + Grafana + AlertManager)
 docker-compose -f docker-compose.monitoring.yml up -d
@@ -175,6 +178,7 @@ docker-compose -f docker-compose.monitoring.yml up -d
 ```
 
 **Security Testing:**
+
 ```bash
 # Comprehensive penetration testing
 ./scripts/security-test.sh

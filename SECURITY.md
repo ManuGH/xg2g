@@ -160,6 +160,7 @@ Automated security validation suite:
 ```
 
 **Test Coverage**:
+
 - Path traversal (8 encoding variants)
 - Symlink escape attempts (chains, directories)  
 - HTTP method restrictions (POST/PUT/DELETE/PATCH)
@@ -179,9 +180,10 @@ docker-compose -f docker-compose.monitoring.yml up -d
 ```
 
 **Dashboards**:
-- Grafana security dashboard: http://localhost:3000/d/xg2g-main
-- Real-time metrics: http://localhost:9091/targets
-- Alert status: http://localhost:9093/#/alerts
+
+- Grafana security dashboard: <http://localhost:3000/d/xg2g-main>
+- Real-time metrics: <http://localhost:9091/targets>
+- Alert status: <http://localhost:9093/#/alerts>
 
 ## Dependencies
 
