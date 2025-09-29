@@ -198,6 +198,11 @@ jobs:
             CHANNELS=$(grep -c '<channel ' ./data/guide.xml || echo 0)
           fi
 
+          GOLD_HASH="n/a"
+          if [ -f internal/epg/testdata/xmltv.golden.xml ]; then
+            GOLD_HASH=$(shasum -a 256 internal/epg/testdata/xmltv.golden.xml | awk '{print $1}')
+          fi
+
           {
             echo "## CI-Ergebnis"
             echo ""
@@ -206,6 +211,7 @@ jobs:
             echo "- XMLTV Channels: ${CHANNELS}"
             echo "- Artefakte: logs-and-reports"
             echo "- Daemon base: http://127.0.0.1${XG2G_LISTEN:-:8080}"
+            echo "- xmltv.golden.xml (sha256): ${GOLD_HASH}"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Lint
