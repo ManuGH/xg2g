@@ -162,6 +162,12 @@ func (rl *rateLimiter) middleware(next http.Handler) http.Handler {
 
 func metricsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Skip metrics middleware for /metrics endpoint to avoid interference
+		if r.URL.Path == "/metrics" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		start := time.Now()
 
@@ -181,7 +187,7 @@ func metricsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// corsMiddleware fügt CORS-Header hinzu
+// corsMiddleware adds CORS headers
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -233,13 +239,13 @@ func requestIDMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// securityHeaders setzt gängige Sicherheitsheader für API-Responses
+// securityHeaders sets common security headers for API responses
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Cross-Origin-Resource-Policy", "same-site")
-		// HSTS nur sinnvoll über HTTPS; harmless wenn HTTP
+		// HSTS only sensible via HTTPS; harmless when HTTP
 		w.Header().Set("Strict-Transport-Security", "max-age=15552000; includeSubDomains")
 		next.ServeHTTP(w, r)
 	})
@@ -256,4 +262,23 @@ func chain(h http.Handler, mws ...func(http.Handler) http.Handler) http.Handler 
 func withMiddlewares(h http.Handler) http.Handler {
 	rl := newRateLimiter(rate.Limit(10), 20)
 	return chain(h, requestIDMiddleware, metricsMiddleware, corsMiddleware, securityHeaders, rl.middleware)
+}
+
+func withMiddlewaresExcept(h http.Handler, skipPaths ...string) http.Handler {
+	rl := newRateLimiter(rate.Limit(10), 20)
+
+	skipMap := make(map[string]bool)
+	for _, path := range skipPaths {
+		skipMap[path] = true
+	}
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if skipMap[r.URL.Path] {
+			// Skip middleware for specified paths
+			h.ServeHTTP(w, r)
+			return
+		}
+		// Apply middleware chain for all other paths
+		chain(h, requestIDMiddleware, metricsMiddleware, corsMiddleware, securityHeaders, rl.middleware).ServeHTTP(w, r)
+	})
 }

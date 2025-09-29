@@ -208,12 +208,12 @@ jobs:
           fi
 
           {
-            echo "## CI-Ergebnis"
+            echo "## CI Result"
             echo ""
             echo "- Coverage: ${COV}"
-            echo "- Playlist-Einträge (#EXTINF): ${EXTINF}"
+            echo "- Playlist entries (#EXTINF): ${EXTINF}"
             echo "- XMLTV Channels: ${CHANNELS}"
-            echo "- Artefakte: logs-and-reports"
+            echo "- Artifacts: logs-and-reports"
             echo "- Daemon base: http://127.0.0.1${XG2G_LISTEN:-:8080}"
             echo "- xmltv.golden.xml (sha256): ${GOLD_HASH}"
           } >> "$GITHUB_STEP_SUMMARY"

@@ -10,6 +10,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/api"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	xglog "github.com/ManuGH/xg2g/internal/log"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 var Version = "dev"
@@ -79,6 +80,30 @@ func main() {
 		Dur("owi_backoff", cfg.OWIBackoff).
 		Msg("configuration loaded")
 
+	// Start metrics server on separate port
+	metricsAddr := ":9090"
+	if metricsPort := os.Getenv("XG2G_METRICS_PORT"); metricsPort != "" {
+		metricsAddr = ":" + metricsPort
+	}
+
+	go func() {
+		logger.Info().
+			Str("addr", metricsAddr).
+			Str("event", "metrics.start").
+			Msg("starting metrics server")
+		if err := http.ListenAndServe(metricsAddr, promhttp.Handler()); err != nil {
+			logger.Error().
+				Err(err).
+				Str("event", "metrics.failed").
+				Msg("metrics server failed")
+		}
+	}()
+
+	// Start main API server
+	logger.Info().
+		Str("addr", addr).
+		Str("event", "server.start").
+		Msg("starting main server")
 	if err := http.ListenAndServe(addr, s.Handler()); err != nil {
 		logger.Fatal().
 			Err(err).

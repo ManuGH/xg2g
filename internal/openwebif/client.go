@@ -267,7 +267,7 @@ func (c *Client) StreamURL(ref, name string) (string, error) {
 	return u.String(), nil
 }
 
-// Beibehaltener Helfer (nutzt jetzt New, damit ENV wirkt)
+// Preserved helper (now uses New, so ENV variables take effect)
 func StreamURL(base, ref, name string) (string, error) {
 	return NewWithPort(base, 0, Options{}).StreamURL(ref, name)
 }
