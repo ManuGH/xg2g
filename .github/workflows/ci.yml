@@ -97,7 +97,7 @@ jobs:
           }
           STUB
 
-          trap 'kill 0 || true' EXIT
+          trap 'jobs -pr | xargs -r kill 2>/dev/null || true' EXIT
 
           nohup go run /tmp/stub_openwebif.go > /tmp/stub_openwebif.log 2>&1 &
 
