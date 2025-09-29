@@ -18,7 +18,7 @@ go run ./cmd/daemon
 
 ## Usage Notes
 
-xg2g converts OpenWebIF bouquets into M3U and XMLTV artifacts and exposes a small HTTP API. It acts as a pre-processing fetcher/generator and does **not** replace middleware such as xTeVe, Threadfin, Plex, or Jellyfin — those services still handle channel mapping, EPG merging, proxy streaming, and any transcoding.
+xg2g converts OpenWebIF bouquets into M3U and XMLTV artifacts and exposes a small HTTP API. It acts as a pre-processing fetcher/generator and does not replace middleware (e.g. xTeVe, Threadfin) which remain responsible for channel mapping, EPG merging, proxy streaming, and transcoding.
 
 ## Deployment with Docker
 
