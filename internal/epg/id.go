@@ -34,4 +34,3 @@ func makeStableID(input string) string {
 
 	return normalized
 }
-

@@ -22,7 +22,9 @@ func main() {
 	log.Println("🔍 Checking if port 18080 is available...")
 	conn, err := net.Dial("tcp", "127.0.0.1:18080")
 	if err == nil {
-		conn.Close()
+		if closeErr := conn.Close(); closeErr != nil {
+			log.Printf("⚠️  Failed to close connection: %v", closeErr)
+		}
 		log.Fatal("❌ Port 18080 is already in use!")
 	}
 	log.Println("✅ Port 18080 is available")
@@ -77,7 +79,9 @@ func main() {
 			log.Printf("Unknown request: %s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
 		}
 		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte("Not Found"))
+		if _, err := w.Write([]byte("Not Found")); err != nil {
+			log.Printf("⚠️  Failed to write response: %v", err)
+		}
 	})
 
 	log.Println("stub_openwebif listening on 127.0.0.1:18080")
