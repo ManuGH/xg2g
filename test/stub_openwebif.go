@@ -20,14 +20,16 @@ func main() {
 
 	// Check if port is available before starting
 	log.Println("🔍 Checking if port 18080 is available...")
-	conn, err := net.Dial("tcp", "127.0.0.1:18080")
-	if err == nil {
-		if closeErr := conn.Close(); closeErr != nil {
-			log.Printf("⚠️  Failed to close connection: %v", closeErr)
-		}
-		log.Fatal("❌ Port 18080 is already in use!")
+	listener, err := net.Listen("tcp", "127.0.0.1:18080")
+	if err != nil {
+		log.Fatalf("❌ Failed to bind to port 18080: %v", err)
 	}
-	log.Println("✅ Port 18080 is available")
+	log.Println("✅ Port 18080 is available and bound")
+	
+	// Close the test listener to reuse the port for HTTP server
+	if closeErr := listener.Close(); closeErr != nil {
+		log.Printf("⚠️  Failed to close test listener: %v", closeErr)
+	}
 
 	mux := http.NewServeMux()
 
@@ -91,8 +93,18 @@ func main() {
 	log.Println("  GET /api/getallservices")
 	log.Println("  GET /api/getservices")
 
-	log.Println("🎯 Starting HTTP server...")
-	if err = http.ListenAndServe("127.0.0.1:18080", mux); err != nil {
+	log.Println("🎯 Starting HTTP server on 127.0.0.1:18080...")
+	
+	// Create server with explicit configuration
+	server := &http.Server{
+		Addr:    "127.0.0.1:18080",
+		Handler: mux,
+	}
+	
+	log.Println("✅ OpenWebIF stub server is now listening on http://127.0.0.1:18080")
+	log.Println("📡 Server ready to accept connections")
+	
+	if err := server.ListenAndServe(); err != nil {
 		log.Fatalf("❌ Failed to start OpenWebIF stub server: %v", err)
 	}
 }

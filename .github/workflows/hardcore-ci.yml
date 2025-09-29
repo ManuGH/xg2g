@@ -369,24 +369,35 @@ jobs:
           echo "📍 Working directory: $(pwd)"
           echo "� Go version: $(go version)"
 
-          # Start stub server from project directory to maintain module context
-          nohup go run test/stub_openwebif.go > /tmp/stub_openwebif.log 2>&1 &
+          # Build stub server first to avoid race conditions
+          echo "🔧 Building stub server..."
+          go build -o /tmp/stub_openwebif test/stub_openwebif.go
+          
+          # Start pre-built stub server
+          echo "🚀 Starting stub server..."
+          nohup /tmp/stub_openwebif > /tmp/stub_openwebif.log 2>&1 &
           STUB_PID=$!
           echo "📝 Stub PID: $STUB_PID"
 
-          # Give process a moment to initialize
-          sleep 1
+          # Give process more time to initialize and bind to port
+          sleep 3
 
           # Monitor stub startup with detailed logging
           echo "🔍 Monitoring stub startup..."
-          for attempt in {1..5}; do
+          for attempt in {1..10}; do
             if kill -0 $STUB_PID 2>/dev/null; then
-              echo "✅ Stub process is running (attempt $attempt/5)"
-              break
+              echo "✅ Stub process is running (attempt $attempt/10)"
+              # Check if port is bound
+              if netstat -tuln | grep ':18080 ' > /dev/null 2>&1; then
+                echo "✅ Port 18080 is bound by stub server"
+                break
+              else
+                echo "⏳ Waiting for port binding (attempt $attempt/10)..."
+              fi
             else
-              echo "⚠️  Stub process check failed (attempt $attempt/5)"
-              if [ $attempt -eq 5 ]; then
-                echo "❌ Stub process died immediately after start"
+              echo "⚠️  Stub process check failed (attempt $attempt/10)"
+              if [ $attempt -eq 10 ]; then
+                echo "❌ Stub process died or failed to start"
                 echo "📋 Stub log contents:"
                 cat /tmp/stub_openwebif.log 2>/dev/null || echo "No log file found"
                 echo "📋 Go module status:"
@@ -395,51 +406,78 @@ jobs:
                 ls -la test/
                 exit 1
               fi
-              sleep 1
             fi
+            sleep 1
           done
 
-          echo "🔍 Process is running, checking server readiness..."
+          echo "🔍 Verifying server readiness..."
 
-          # Wait for stub to be ready (up to 15 seconds with more detailed feedback)
-          for i in {1..15}; do
-            echo "⏳ Checking readiness (attempt $i/15)..."
+          # Wait for stub to be ready (up to 20 seconds with progressive checks)
+          for i in {1..20}; do
+            echo "⏳ Testing HTTP endpoint (attempt $i/20)..."
             
-            # Show current stub log for debugging
-            if [ $i -eq 1 ] || [ $((i % 5)) -eq 0 ]; then
-              echo "📋 Current stub log (last 10 lines):"
-              tail -10 /tmp/stub_openwebif.log 2>/dev/null || echo "No log entries yet"
+            # Show current stub log for debugging on key attempts
+            if [ $i -eq 1 ] || [ $i -eq 5 ] || [ $i -eq 10 ] || [ $i -eq 15 ]; then
+              echo "📋 Current stub log (last 15 lines):"
+              tail -15 /tmp/stub_openwebif.log 2>/dev/null || echo "No log entries yet"
+              echo "🔍 Port binding status:"
+              netstat -tuln | grep 18080 || echo "Port 18080 not bound yet"
             fi
             
-            # Try health check endpoint first
-            if curl --fail --show-error --silent --max-time 1 "http://127.0.0.1:18080/api/status" > /dev/null 2>&1; then
+            # Try health check with more forgiving curl options
+            if curl --fail --silent --connect-timeout 2 --max-time 3 "http://127.0.0.1:18080/api/status" > /dev/null 2>&1; then
               echo "✅ Stub server is ready on port 18080!"
-              curl --silent "http://127.0.0.1:18080/api/status" | jq '.' 2>/dev/null || echo "Health check successful"
+              echo "📋 Testing response content:"
+              curl --silent --connect-timeout 2 --max-time 3 "http://127.0.0.1:18080/api/status" | jq '.' 2>/dev/null || echo "Health check successful (no jq available)"
+              echo "🔍 Final port status:"
+              netstat -tuln | grep 18080 || echo "Port status check failed"
               break
             fi
             
-            # If we reach max attempts, show debug info
-            if [ $i -eq 15 ]; then
-              echo "❌ Stub server failed to become ready after 15 seconds"
+            # If we reach max attempts, show comprehensive debug info
+            if [ $i -eq 20 ]; then
+              echo "❌ OpenWebIF stub did not become ready on port 18080"
               echo ""
-              echo "🔍 Debug information:"
-              echo "📋 Stub log contents:"
-              cat /tmp/stub_openwebif.log 2>/dev/null || echo "No log file found"
+              echo "🔍 COMPREHENSIVE DEBUG INFORMATION:"
+              echo "======================================"
               echo ""
-              echo "🔍 Process status:"
-              ps aux | grep -E "(stub_openwebif|18080)" | grep -v grep || echo "No stub processes found"
+              echo "📋 Complete stub log:"
+              cat /tmp/stub_openwebif.log 2>/dev/null || echo "❌ No log file found at /tmp/stub_openwebif.log"
               echo ""
-              echo "🔍 Network status:"
-              netstat -tuln | grep 18080 || echo "Port 18080 not bound"
+              echo "🔍 Process information:"
+              echo "Process list (stub related):"
+              ps aux | grep -E "(stub|18080)" | grep -v grep || echo "❌ No stub processes found"
+              echo "All Go processes:"
+              ps aux | grep go | grep -v grep || echo "❌ No Go processes found"
               echo ""
-              echo "🔍 Go processes:"
-              ps aux | grep go | grep -v grep || echo "No go processes found"
+              echo "🔍 Network information:"
+              echo "All listening ports:"
+              netstat -tuln | head -20
+              echo "Port 18080 specifically:"
+              netstat -tuln | grep 18080 || echo "❌ Port 18080 not bound"
+              echo ""
+              echo "🔍 System information:"
+              echo "Available memory:"
+              free -h 2>/dev/null || echo "Memory info unavailable"
+              echo "Load average:"
+              uptime
+              echo ""
+              echo "🔍 Connection test details:"
+              echo "Testing direct connection..."
+              nc -zv 127.0.0.1 18080 2>&1 || echo "❌ Direct connection test failed"
               echo ""
               kill $STUB_PID 2>/dev/null || true
               exit 1
             fi
             
-            sleep 1
+            # Progressive sleep with backoff
+            if [ $i -le 5 ]; then
+              sleep 0.5  # Quick checks initially
+            elif [ $i -le 10 ]; then
+              sleep 1    # Standard checks
+            else
+              sleep 2    # Slower checks for patience
+            fi
           done
 
       - name: Run integration smoke test
