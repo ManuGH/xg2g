@@ -56,7 +56,7 @@ Key environment variables:
 API endpoints
 
 - `GET /api/status` — Returns simple status JSON.
-- `POST /api/refresh` — Trigger a refresh (fetch bouquets/services → write playlist ± xmltv).
+- `GET, POST /api/refresh` — Trigger a refresh (fetch bouquets/services → write playlist ± xmltv).
 - `GET /files/*` — Static serving of generated artifacts from `XG2G_DATA`.
 
 Testing & development
