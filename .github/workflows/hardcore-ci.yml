@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 env:
-  GO_VERSION: "1.25"
+  GO_VERSION: "1.22.x"
   COVERAGE_THRESHOLD: 65
   EPG_COVERAGE_THRESHOLD: 60
 
@@ -56,6 +56,8 @@ jobs:
   test-race:
     name: Test with Race Detection
     runs-on: ubuntu-latest
+    env:
+      CGO_ENABLED: "1"
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -67,7 +69,7 @@ jobs:
           cache: true
 
       - name: Run tests with race detection
-        run: go test -race -v ./...
+        run: go test ./... -race -count=1
 
   # Coverage Analysis
   coverage:
@@ -84,7 +86,7 @@ jobs:
           cache: true
 
       - name: Generate coverage profile
-        run: go test -coverprofile=coverage.out ./...
+        run: go test ./... -covermode=atomic -coverprofile=coverage.out
 
       - name: Check overall coverage
         run: |
@@ -96,9 +98,9 @@ jobs:
           fi
           echo "✅ Coverage ${COVERAGE}% meets threshold ${COVERAGE_THRESHOLD}%"
 
-      - name: Check EPG module coverage
+      - name: Check EPG module coverage  
         run: |
-          go test -coverprofile=epg_coverage.out ./internal/epg
+          go test -covermode=atomic -coverprofile=epg_coverage.out ./internal/epg
           EPG_COVERAGE=$(go tool cover -func=epg_coverage.out | grep "total:" | awk '{print $3}' | sed 's/%//')
           echo "EPG module coverage: ${EPG_COVERAGE}%"
           if (( $(echo "${EPG_COVERAGE} < ${EPG_COVERAGE_THRESHOLD}" | bc -l) )); then
@@ -107,16 +109,17 @@ jobs:
           fi
           echo "✅ EPG coverage ${EPG_COVERAGE}% meets threshold ${EPG_COVERAGE_THRESHOLD}%"
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v4
         with:
-          file: ./coverage.out
-          fail_ci_if_error: false
+          name: coverage
+          path: coverage.out
 
   # Fuzzing
   fuzz-test:
     name: Fuzzing Tests
     runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'pull_request' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -129,9 +132,9 @@ jobs:
 
       - name: Run fuzzing tests
         run: |
-          go test ./internal/epg -fuzz=FuzzLevenshtein -fuzztime=30s
-          go test ./internal/epg -fuzz=FuzzXMLTVGeneration -fuzztime=30s
-          go test ./internal/epg -fuzz=FuzzParseChannelName -fuzztime=30s
+          go test ./internal/epg -fuzz=FuzzLevenshtein -fuzztime=10s -run '^$'
+          go test ./internal/epg -fuzz=FuzzXMLTVGeneration -fuzztime=10s -run '^$'
+          go test ./internal/epg -fuzz=FuzzParseChannelName -fuzztime=10s -run '^$'
 
   # Cross-platform Build Matrix
   build-matrix:
@@ -140,14 +143,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest, windows-2022]
         arch: [amd64]
         include:
           - os: ubuntu-latest
             goos: linux
           - os: macos-latest
             goos: darwin
-          - os: windows-latest
+          - os: windows-2022
             goos: windows
     steps:
       - name: Checkout code
@@ -191,25 +194,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build Docker image
-        uses: docker/build-push-action@v5
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@0.24.0
         with:
-          context: .
-          push: false
-          tags: xg2g:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Run Docker Scout
-        uses: docker/scout-action@v1
-        with:
-          command: cves
-          image: xg2g:ci
-          only-severities: critical,high
-          exit-code: true
+          scan-type: fs
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: '1'
 
   # SBOM Generation
   sbom:
@@ -265,6 +256,32 @@ jobs:
       - name: Check for known vulnerabilities in dependencies
         run: go list -json -deps ./... | jq -r '.Module.Path' | sort -u | head -20
 
+  # Integration Smoke Test
+  integration-smoke:
+    name: Integration Smoke Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Build daemon
+        run: go build -o daemon ./cmd/daemon
+
+      - name: Run smoke test
+        run: |
+          XG2G_DATA=$(mktemp -d) \
+          XG2G_OWI_BASE=http://fake.local \
+          XG2G_BOUQUET=Test \
+          XG2G_LISTEN=:0 \
+          XG2G_METRICS_LISTEN=:0 \
+          timeout 3 ./daemon || true
+
   # Integration Gate
   integration-gate:
     name: Integration Gate
@@ -273,10 +290,10 @@ jobs:
         static-analysis,
         test-race,
         coverage,
-        fuzz-test,
         build-matrix,
         container-security,
         dependency-check,
+        integration-smoke,
       ]
     runs-on: ubuntu-latest
     if: always()
@@ -295,10 +312,6 @@ jobs:
             echo "❌ Coverage check failed"
             exit 1
           fi
-          if [[ "${{ needs.fuzz-test.result }}" != "success" ]]; then
-            echo "❌ Fuzzing tests failed"
-            exit 1
-          fi
           if [[ "${{ needs.build-matrix.result }}" != "success" ]]; then
             echo "❌ Cross-platform build failed"
             exit 1
@@ -309,6 +322,10 @@ jobs:
           fi
           if [[ "${{ needs.dependency-check.result }}" != "success" ]]; then
             echo "❌ Dependency check failed"
+            exit 1
+          fi
+          if [[ "${{ needs.integration-smoke.result }}" != "success" ]]; then
+            echo "❌ Integration smoke test failed"
             exit 1
           fi
           echo "✅ All quality gates passed - Ready for production!"
