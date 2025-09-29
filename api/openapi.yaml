@@ -8,11 +8,19 @@ info:
     url: https://opensource.org/licenses/MIT
 
 servers:
-  - url: https://example.com/xg2g
-    description: Production instance
+  - url: "{scheme}://{host}"
+    description: Deployment endpoint (override host for local development)
+    variables:
+      scheme:
+        default: https
+        enum:
+          - http
+          - https
+      host:
+        default: api.xg2g.test
+        description: Set to localhost:34400 for local runs
 
-security:
-  - {}
+security: []
 
 paths:
   /api/status:
@@ -92,11 +100,6 @@ paths:
           description: File not found
 
 components:
-  securitySchemes:
-    ApiKeyAuth:
-      type: apiKey
-      in: header
-      name: X-API-Key
   schemas:
     Status:
       type: object
