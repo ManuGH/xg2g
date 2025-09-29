@@ -52,7 +52,7 @@ jobs:
           set -euo pipefail
           go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
 
-      - name: Integration (stub + daemon)
+      - name: "Integration (stub + daemon)"
         env:
           XG2G_DATA: ./data
           XG2G_OWI_BASE: http://127.0.0.1:18080
