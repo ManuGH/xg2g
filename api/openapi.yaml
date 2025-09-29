@@ -8,10 +8,11 @@ info:
     url: https://opensource.org/licenses/MIT
 
 servers:
-  - url: http://localhost:34400
-    description: Local development instance
-  - url: http://receiver.local:34400
-    description: Typical production instance
+  - url: https://example.com/xg2g
+    description: Production instance
+
+security:
+  - {}
 
 paths:
   /api/status:
@@ -91,6 +92,11 @@ paths:
           description: File not found
 
 components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
   schemas:
     Status:
       type: object
