@@ -20,7 +20,11 @@
     "ldflags",
     "adduser",
     "nologin",
-    "tzdata"
+    "tzdata",
+    "behaviour",
+    "getallservices",
+    "getservices",
+    "Errorf"
   ],
   "ignorePaths": [
     "go.sum",
