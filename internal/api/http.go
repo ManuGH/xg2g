@@ -57,6 +57,12 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
+		w.Header().Set("Allow", "GET, POST, OPTIONS")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
 	logger := log.WithComponentFromContext(r.Context(), "api")
 
 	// NEW: only allow a single refresh at a time
@@ -78,6 +84,7 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		logger.Error().
 			Err(err).
 			Str("event", "refresh.failed").
+			Str("method", r.Method).
 			Int64("duration_ms", duration.Milliseconds()).
 			Str("status", "error").
 			Msg("refresh failed")
@@ -88,6 +95,7 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	recordRefreshMetrics(duration, st.Channels)
 	logger.Info().
 		Str("event", "refresh.success").
+		Str("method", r.Method).
 		Int("channels", st.Channels).
 		Int64("duration_ms", duration.Milliseconds()).
 		Str("status", "success").

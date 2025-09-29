@@ -136,6 +136,7 @@ jobs:
           fi
 
           curl -fsS --retry 10 --retry-all-errors --retry-delay 0 --max-time 2 -X POST http://127.0.0.1:34400/api/refresh
+          curl -fsS --retry 10 --retry-all-errors --retry-delay 0 --max-time 2      http://127.0.0.1:34400/api/refresh
           curl -fsS --retry 10 --retry-all-errors --retry-delay 0 --max-time 2 http://127.0.0.1:34400/api/status
 
           ls -lh "$XG2G_DATA"/playlist.m3u "$XG2G_DATA"/guide.xml
