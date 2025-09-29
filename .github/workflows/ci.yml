@@ -93,47 +93,14 @@ jobs:
         run: |
           set -euo pipefail
 
-          cat > /tmp/stub_openwebif.go <<'STUB'
-          package main
-
-          import (
-            "encoding/json"
-            "log"
-            "net/http"
-          )
-
-          func main() {
-            mux := http.NewServeMux()
-            mux.HandleFunc("/api/bouquets", func(w http.ResponseWriter, r *http.Request) {
-              _ = json.NewEncoder(w).Encode(map[string]any{
-                "bouquets": [][]string{
-                  {"1:7:1:0:0:0:0:0:0:0:FROM BOUQUET \"userbouquet.premium.tv\" ORDER BY bouquet", "Premium"},
-                },
-              })
-            })
-            mux.HandleFunc("/api/getallservices", func(w http.ResponseWriter, r *http.Request) {
-              _ = json.NewEncoder(w).Encode(map[string]any{
-                "services": []map[string]string{
-                  {"servicename": "ORF1 HD", "servicereference": "1:0:19:132F:3EF:1:C00000:0:0:0:"},
-                  {"servicename": "ORF2N HD", "servicereference": "1:0:19:1334:3EF:1:C00000:0:0:0:"},
-                },
-              })
-            })
-            mux.HandleFunc("/api/getservices", func(w http.ResponseWriter, r *http.Request) {
-              _ = json.NewEncoder(w).Encode(map[string]any{
-                "services": []map[string]string{
-                  {"servicename": "ORF1 HD", "servicereference": "1:0:19:132F:3EF:1:C00000:0:0:0:"},
-                  {"servicename": "ORF2N HD", "servicereference": "1:0:19:1334:3EF:1:C00000:0:0:0:"},
-                },
-              })
-            })
-            log.Fatal(http.ListenAndServe("127.0.0.1:18080", mux))
-          }
-          STUB
-
+          echo "🔧 Starting OpenWebIF stub server from project context..."
+          
           trap 'jobs -pr | xargs -r kill 2>/dev/null || true' EXIT
 
-          nohup go run /tmp/stub_openwebif.go > /tmp/stub_openwebif.log 2>&1 &
+          # Use existing stub server from test directory to maintain module context
+          nohup go run test/stub_openwebif.go > /tmp/stub_openwebif.log 2>&1 &
+          STUB_PID=$!
+          echo "🔧 Stub server started with PID: $STUB_PID"
 
           ready=false
           for i in {1..50}; do
@@ -144,9 +111,12 @@ jobs:
             sleep 0.2
           done
           if [ "$ready" != "true" ]; then
-            echo "OpenWebIF stub did not become ready" >&2
+            echo "❌ OpenWebIF stub did not become ready on port 18080" >&2
+            echo "📋 Stub server log:" >&2
+            cat /tmp/stub_openwebif.log || echo "No log available"
             exit 1
           fi
+          echo "✅ OpenWebIF stub server ready on port 18080"
 
           mkdir -p "$XG2G_DATA"
           BUILD_REF="${GITHUB_SHA:-dev}"

@@ -65,3 +65,4 @@ daemon-*
 !internal/epg/testdata/xmltv.golden.xml
 !internal/epg/testdata/multi_channel.golden.xml
 !internal/epg/testdata/empty.golden.xml
+.cache/

@@ -33,14 +33,23 @@ func FuzzParseChannelName(f *testing.F) {
 		// Test that makeStableID doesn't panic and produces valid IDs
 		id := makeStableID(channelName)
 
-		// Basic validation
-		if len(channelName) > 0 && len(id) == 0 {
-			t.Errorf("Non-empty channel name %q produced empty ID", channelName)
+		// Basic validation: should never return empty ID
+		// Empty or whitespace-only inputs should return "unknown"
+		if len(id) == 0 {
+			t.Errorf("Channel name %q produced empty ID, expected non-empty", channelName)
 		}
 
 		// ID should be safe for XML attributes
 		if strings.Contains(id, " ") || strings.Contains(id, "'") || strings.Contains(id, "\"") {
 			t.Errorf("ID %q contains unsafe characters for XML", id)
+		}
+
+		// Should not contain XML-unsafe characters
+		// Note: makeStableID only replaces spaces, dots, and hyphens, other chars are preserved
+		for _, forbidden := range []string{" ", "'", "\"", "<", ">", "&"} {
+			if strings.Contains(id, forbidden) {
+				t.Errorf("ID %q contains XML-unsafe character %q", id, forbidden)
+			}
 		}
 	})
 }
@@ -78,54 +87,24 @@ func FuzzXMLTVGeneration(f *testing.F) {
 }
 
 // makeStableID creates a stable identifier from a channel name
-// This is extracted from internal/jobs/refresh.go for testing
+// This mirrors the implementation from internal/jobs/refresh.go for testing
 func makeStableID(name string) string {
-	if name == "" {
-		return ""
-	}
-
+	// Normalize: lowercase, replace spaces/special chars with underscores
 	id := strings.ToLower(name)
-	// Replace common separators and spaces
-	replacements := map[string]string{
-		" ":  ".",
-		"_":  ".",
-		"-":  ".",
-		"(":  "",
-		")":  "",
-		"[":  "",
-		"]":  "",
-		"!":  "",
-		"@":  "",
-		"#":  "",
-		"$":  "",
-		"%":  "",
-		"&":  "",
-		"*":  "",
-		"+":  "",
-		"=":  "",
-		"?":  "",
-		"^":  "",
-		"|":  "",
-		"\\": "",
-		"/":  "",
-		":":  "",
-		";":  "",
-		"'":  "",
-		"\"": "",
-		",":  "",
-		"<":  "",
-		">":  "",
+	id = strings.ReplaceAll(id, " ", "_")
+	id = strings.ReplaceAll(id, ".", "_")
+	id = strings.ReplaceAll(id, "-", "_")
+
+	// Remove consecutive underscores
+	for strings.Contains(id, "__") {
+		id = strings.ReplaceAll(id, "__", "_")
 	}
 
-	for old, new := range replacements {
-		id = strings.ReplaceAll(id, old, new)
-	}
+	// Trim leading/trailing underscores
+	id = strings.Trim(id, "_")
 
-	// Remove consecutive dots and trim
-	for strings.Contains(id, "..") {
-		id = strings.ReplaceAll(id, "..", ".")
+	if id == "" {
+		return "unknown"
 	}
-	id = strings.Trim(id, ".")
-
 	return id
 }

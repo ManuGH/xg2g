@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 env:
-  GO_VERSION: "1.22.x"
+  GO_VERSION: "1.25.x"
   COVERAGE_THRESHOLD: 65
   EPG_COVERAGE_THRESHOLD: 60
 
@@ -26,6 +26,11 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
+
+      - name: Clean Go module cache
+        run: |
+          rm -rf ~/.cache/go-build ~/go/pkg/mod
+          mkdir -p ~/.cache/go-build ~/go/pkg/mod
 
       - name: Cache Go modules
         uses: actions/cache@v4
@@ -73,6 +78,11 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
+      - name: Clean Go module cache
+        run: |
+          rm -rf ~/.cache/go-build ~/go/pkg/mod || true
+          mkdir -p ~/.cache/go-build ~/go/pkg/mod
+
       - name: Run tests with race detection
         run: |
           echo "Running tests with race detection (CGO_ENABLED=1)..."
@@ -91,6 +101,11 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
+
+      - name: Clean Go module cache  
+        run: |
+          rm -rf ~/.cache/go-build ~/go/pkg/mod || true
+          mkdir -p ~/.cache/go-build ~/go/pkg/mod
 
       - name: Generate coverage profile
         run: go test ./... -covermode=atomic -coverprofile=coverage.out
@@ -350,7 +365,7 @@ jobs:
           echo "🔧 Starting stub server in project context..."
           echo "📍 Working directory: $(pwd)"
           echo "� Go version: $(go version)"
-          
+
           # Start stub server from project directory to maintain module context
           nohup go run test/stub_openwebif.go > /tmp/stub_openwebif.log 2>&1 &
           STUB_PID=$!
@@ -358,7 +373,7 @@ jobs:
 
           # Give process a moment to initialize
           sleep 1
-          
+
           # Monitor stub startup with detailed logging
           echo "🔍 Monitoring stub startup..."
           for attempt in {1..5}; do
@@ -436,8 +451,8 @@ jobs:
           XG2G_DATA="$TEMP_DATA" \
           XG2G_OWI_BASE=http://127.0.0.1:18080 \
           XG2G_BOUQUET=Premium \
-          XG2G_LISTEN=:0 \
-          XG2G_METRICS_LISTEN=:0 \
+          XG2G_LISTEN=:8080 \
+          XG2G_METRICS_LISTEN=:9090 \
           timeout 10 ./daemon > /tmp/daemon.log 2>&1 &
           DAEMON_PID=$!
 
@@ -452,46 +467,21 @@ jobs:
             exit 1
           fi
 
-          # Find the actual daemon port
-          echo "🔍 Discovering daemon port..."
+          # Use fixed daemon port 8080
+          DAEMON_PORT=8080
+          echo "🔍 Using fixed daemon port: $DAEMON_PORT"
 
-          # Wait a bit more for daemon to fully start and bind port
+          # Wait for daemon to fully start and bind port
           sleep 3
 
           # Debug: Show daemon process and ports
           echo "📊 Debug info:"
           ps aux | grep daemon | grep -v grep || echo "No daemon process found"
-          netstat -tuln | grep '127.0.0.1' || echo "No listening ports found"
+          netstat -tuln | grep ':8080' || echo "Port 8080 not bound"
 
-          # Try multiple methods to find the daemon port
-          DAEMON_PORT=""
-
-          # Method 1: Parse daemon log for actual port
-          if [ -f "/tmp/daemon.log" ]; then
-            DAEMON_PORT=$(grep -o 'listen.*:[0-9]*' /tmp/daemon.log 2>/dev/null | grep -o '[0-9]*$' | head -1)
-            echo "📋 Method 1 (log parsing): ${DAEMON_PORT:-'not found'}"
-          fi
-
-          # Method 2: Find non-18080 listening ports
-          if [ -z "$DAEMON_PORT" ]; then
-            DAEMON_PORT=$(netstat -tuln 2>/dev/null | grep '127.0.0.1:' | grep -v ':18080' | awk '{print $4}' | cut -d: -f2 | head -1)
-            echo "📋 Method 2 (netstat): ${DAEMON_PORT:-'not found'}"
-          fi
-
-          # Method 3: Try common ephemeral ports
-          if [ -z "$DAEMON_PORT" ]; then
-            for port in 8080 8081 9000 9001 $(seq 32768 32778); do
-              if curl --connect-timeout 1 --max-time 1 --silent "http://127.0.0.1:${port}/healthz" >/dev/null 2>&1; then
-                DAEMON_PORT=$port
-                echo "📋 Method 3 (port scan): found on $port"
-                break
-              fi
-            done
-          fi
-
-          # If still no port found, try to read from daemon process info
-          if [ -z "$DAEMON_PORT" ]; then
-            echo "❌ Could not determine daemon port using any method"
+          # Verify daemon is listening on expected port
+          if ! netstat -tuln | grep ':8080' >/dev/null; then
+            echo "❌ Daemon is not listening on port 8080"
             echo "📋 Daemon log contents:"
             cat /tmp/daemon.log || echo "No daemon log found"
             echo "📋 Network status:"
