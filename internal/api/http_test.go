@@ -23,7 +23,7 @@ func TestHandleStatus(t *testing.T) {
 		DataDir: "/tmp/test",
 	}
 	server := New(cfg)
-	
+
 	// Set a known LastRun time for testing
 	testTime := time.Date(2023, 10, 15, 12, 30, 45, 0, time.UTC)
 	server.status.LastRun = testTime
@@ -104,7 +104,7 @@ func TestRecordRefreshMetrics(t *testing.T) {
 	// Test recordRefreshMetrics function coverage
 	duration := 1500 * time.Millisecond
 	channelCount := 42
-	
+
 	// This function has no return value, but we can call it for coverage
 	recordRefreshMetrics(duration, channelCount)
 	// Success if no panic occurs
