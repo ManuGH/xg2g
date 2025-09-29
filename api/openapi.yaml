@@ -8,14 +8,9 @@ info:
     url: https://opensource.org/licenses/MIT
 
 servers:
-  - url: "{scheme}://{host}"
+  - url: https://{host}
     description: Deployment endpoint (override host for local development)
     variables:
-      scheme:
-        default: https
-        enum:
-          - http
-          - https
       host:
         default: api.xg2g.test
         description: Set to localhost:34400 for local runs
