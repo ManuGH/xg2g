@@ -23,11 +23,12 @@ services:
   xg2g:
     image: ghcr.io/manugh/xg2g:latest
     ports:
-      - "34400:34400"
+      - "8080:8080"
     environment:
       - XG2G_DATA=/data
       - XG2G_OWI_BASE=http://receiver.local
       - XG2G_BOUQUET=Favourites
+      - XG2G_LISTEN=:8080
 
 ```
 
@@ -65,8 +66,8 @@ API endpoints
 Example refresh calls:
 
 ```bash
-curl -X POST http://127.0.0.1:34400/api/refresh
-curl      http://127.0.0.1:34400/api/refresh
+curl -X POST http://127.0.0.1:8080/api/refresh
+curl      http://127.0.0.1:8080/api/refresh
 ```
 
 Testing & development

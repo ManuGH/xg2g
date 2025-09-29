@@ -13,7 +13,7 @@ servers:
     variables:
       host:
         default: api.xg2g.test
-        description: Set to localhost:34400 for local runs
+        description: Set to localhost:8080 for local runs
 
 security: []
 
