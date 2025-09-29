@@ -135,21 +135,47 @@ func TestHandleHealth(t *testing.T) {
 }
 
 func TestHandleReady(t *testing.T) {
-	server := New(jobs.Config{})
+	tempDir := t.TempDir()
+	cfg := jobs.Config{DataDir: tempDir, XMLTVPath: "xmltv.xml"} // Set XMLTVPath to enable check
+	server := New(cfg)
 
-	// Not ready: no successful refresh yet
+	// Not ready: no successful refresh yet, no files
 	req := httptest.NewRequest("GET", "/readyz", nil)
 	rr := httptest.NewRecorder()
 	server.handleReady(rr, req)
 	if rr.Code != http.StatusServiceUnavailable {
-		t.Fatalf("expected 503 for not ready, got %d", rr.Code)
+		t.Fatalf("expected 503 for not ready (initial state), got %d", rr.Code)
 	}
 
-	// Ready: simulate successful refresh
+	// Simulate successful refresh, but files are still missing
 	server.mu.Lock()
 	server.status.LastRun = time.Now()
 	server.status.Error = ""
 	server.mu.Unlock()
+
+	rr = httptest.NewRecorder()
+	server.handleReady(rr, req)
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 for not ready (files missing), got %d", rr.Code)
+	}
+
+	// Create playlist file, but XMLTV is still missing
+	playlistPath := filepath.Join(tempDir, "playlist.m3u")
+	if err := os.WriteFile(playlistPath, []byte("m3u"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	rr = httptest.NewRecorder()
+	server.handleReady(rr, req)
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 for not ready (xmltv missing), got %d", rr.Code)
+	}
+
+	// Create XMLTV file, now it should be ready
+	xmltvPath := filepath.Join(tempDir, "xmltv.xml")
+	if err := os.WriteFile(xmltvPath, []byte("xml"), 0600); err != nil {
+		t.Fatal(err)
+	}
 
 	rr = httptest.NewRecorder()
 	server.handleReady(rr, req)

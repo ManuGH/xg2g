@@ -2,6 +2,7 @@
 package api
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -74,8 +75,10 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		token := parts[1]
-		if token != s.cfg.APIToken {
+		// Use constant-time comparison to prevent timing attacks
+		token := []byte(parts[1])
+		expectedToken := []byte(s.cfg.APIToken)
+		if subtle.ConstantTimeCompare(token, expectedToken) != 1 {
 			logger.Warn().Str("event", "auth.invalid_token").Msg("invalid api token")
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
@@ -174,7 +177,14 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 	status := s.status
 	s.mu.RUnlock()
 
-	ready := !status.LastRun.IsZero() && status.Error == ""
+	// Check if artifacts exist and are readable
+	playlistOK := checkFile(filepath.Join(s.cfg.DataDir, "playlist.m3u"))
+	xmltvOK := true // Assume OK if not configured
+	if s.cfg.XMLTVPath != "" {
+		xmltvOK = checkFile(filepath.Join(s.cfg.DataDir, s.cfg.XMLTVPath))
+	}
+
+	ready := !status.LastRun.IsZero() && status.Error == "" && playlistOK && xmltvOK
 	w.Header().Set("Content-Type", "application/json")
 	if !ready {
 		w.WriteHeader(http.StatusServiceUnavailable)
@@ -186,6 +196,8 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 			Str("state", "not-ready").
 			Time("lastRun", status.LastRun).
 			Str("error", status.Error).
+			Bool("playlistOK", playlistOK).
+			Bool("xmltvOK", xmltvOK).
 			Msg("readiness probe")
 		return
 	}
@@ -201,10 +213,33 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 		Msg("readiness probe")
 }
 
+// checkFile verifies if a file exists and is readable.
+func checkFile(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	if info.IsDir() {
+		return false
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	f.Close()
+	return true
+}
+
 // secureFileServer creates a handler that serves files from the data directory
 // with several security checks in place.
 func (s *Server) secureFileServer() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Apply security headers to all file responses
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("Cache-Control", "public, max-age=300, must-revalidate")
+
 		logger := log.WithComponentFromContext(r.Context(), "api")
 
 		if r.Method != "GET" {

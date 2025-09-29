@@ -51,6 +51,26 @@ const (
 )
 
 var (
+	// Shared, hardened HTTP transport for all OpenWebIF clients.
+	transport = &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   10,
+		IdleConnTimeout:       30 * time.Second,
+		TLSHandshakeTimeout:   5 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+		ResponseHeaderTimeout: 10 * time.Second,
+		DialContext: (&net.Dialer{
+			Timeout: 5 * time.Second,
+		}).DialContext,
+	}
+
+	// Shared, hardened HTTP client. Timeout is controlled by context per-request.
+	httpClient = &http.Client{
+		Transport: transport,
+		Timeout:   0, // Explicitly disable client-side timeout in favor of context-based timeouts
+	}
+
 	requestDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "xg2g_openwebif_request_duration_seconds",
 		Help:    "Duration of OpenWebIF HTTP requests per attempt",
@@ -93,7 +113,7 @@ func NewWithPort(base string, streamPort int, opts Options) *Client {
 	return &Client{
 		base:       trimmedBase,
 		port:       port,
-		http:       &http.Client{},
+		http:       httpClient,
 		log:        logger,
 		host:       host,
 		timeout:    nopts.Timeout,

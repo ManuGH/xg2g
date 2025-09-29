@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -41,6 +42,18 @@ const (
 	serverMaxHeaderBytes = 1 << 20 // 1 MB
 	shutdownTimeout      = 15 * time.Second
 )
+
+// maskURL removes user info from a URL string for safe logging.
+func maskURL(rawURL string) string {
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil {
+		// If parsing fails, return a redacted string to avoid leaking anything.
+		return "invalid-url-redacted"
+	}
+	// Clear user info
+	parsedURL.User = nil
+	return parsedURL.String()
+}
 
 func main() {
 	logger := xglog.WithComponent("daemon")
@@ -99,7 +112,7 @@ func main() {
 	logger.Info().
 		Str("event", "config").
 		Str("data", cfg.DataDir).
-		Str("owi", cfg.OWIBase).
+		Str("owi", maskURL(cfg.OWIBase)).
 		Str("bouquet", cfg.Bouquet).
 		Str("xmltv", cfg.XMLTVPath).
 		Int("fuzzy", cfg.FuzzyMax).

@@ -1,6 +1,6 @@
 services:
   xg2g:
-    build: .
+    image: ghcr.io/manugh/xg2g:latest # Replace with specific digest for production
     container_name: xg2g-app
     restart: unless-stopped
     ports:
@@ -9,6 +9,10 @@ services:
     volumes:
       - xg2g_data:/data
       - /etc/localtime:/etc/localtime:ro
+    deploy:
+      resources:
+        limits: { cpus: "0.50", memory: "256M" }
+        reservations: { cpus: "0.10", memory: "64M" }
     environment:
       # Core Configuration
       XG2G_DATA: /data
@@ -31,11 +35,16 @@ services:
       LOG_SERVICE: xg2g-prod
       VERSION: v1.0.0
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/readyz"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - monitoring
     labels:

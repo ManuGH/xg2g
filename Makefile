@@ -24,6 +24,9 @@ LDFLAGS := -ldflags "-X main.Version=$(VERSION) -X main.CommitHash=$(COMMIT_HASH
 # Build configuration
 BINARY_NAME := daemon
 BUILD_DIR := bin
+# Reproducible build flags
+BUILD_FLAGS := -trimpath -buildvcs=false
+LDFLAGS := -ldflags "-s -w -buildid= -X 'main.Version=$(VERSION)'"
 DOCKER_IMAGE := xg2g
 DOCKER_REGISTRY ?= 
 PLATFORMS := linux/amd64,linux/arm64,darwin/amd64,darwin/arm64
@@ -115,7 +118,7 @@ help: ## Show this help message
 build: ## Build the main daemon binary
 	@echo "Building xg2g daemon..."
 	@mkdir -p $(BUILD_DIR)
-	go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/daemon
+	go build $(BUILD_FLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/daemon
 	@echo "✅ Build complete: $(BUILD_DIR)/$(BINARY_NAME)"
 
 build-all: ## Build binaries for all supported platforms
@@ -127,7 +130,7 @@ build-all: ## Build binaries for all supported platforms
 		output="$(BUILD_DIR)/$(BINARY_NAME)-$$os-$$arch"; \
 		if [ "$$os" = "windows" ]; then output="$$output.exe"; fi; \
 		echo "Building for $$os/$$arch..."; \
-		GOOS=$$os GOARCH=$$arch go build $(LDFLAGS) -o $$output ./cmd/daemon || exit 1; \
+		GOOS=$$os GOARCH=$$arch go build $(BUILD_FLAGS) $(LDFLAGS) -o $$output ./cmd/daemon || exit 1; \
 	done
 	@echo "✅ Multi-platform build complete"
 	@ls -la $(BUILD_DIR)/
