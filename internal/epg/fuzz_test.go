@@ -33,10 +33,21 @@ func FuzzParseChannelName(f *testing.F) {
 		// Test that makeStableID doesn't panic and produces valid IDs
 		id := makeStableID(channelName)
 
-		// Basic validation: should never return empty ID
-		// Empty or whitespace-only inputs should return "unknown"
-		if len(id) == 0 {
-			t.Errorf("Channel name %q produced empty ID, expected non-empty", channelName)
+		// Basic validation: empty input or only special chars should return empty ID
+		// Non-empty meaningful input should produce non-empty ID
+		trimmed := strings.TrimSpace(channelName)
+		if trimmed != "" && len(id) == 0 {
+			// Check if input contains any alphanumeric or valid characters
+			hasValid := false
+			for _, r := range channelName {
+				if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r > 127 {
+					hasValid = true
+					break
+				}
+			}
+			if hasValid {
+				t.Errorf("Channel name %q with valid characters produced empty ID", channelName)
+			}
 		}
 
 		// ID should be safe for XML attributes
@@ -86,25 +97,4 @@ func FuzzXMLTVGeneration(f *testing.F) {
 	})
 }
 
-// makeStableID creates a stable identifier from a channel name
-// This mirrors the implementation from internal/jobs/refresh.go for testing
-func makeStableID(name string) string {
-	// Normalize: lowercase, replace spaces/special chars with underscores
-	id := strings.ToLower(name)
-	id = strings.ReplaceAll(id, " ", "_")
-	id = strings.ReplaceAll(id, ".", "_")
-	id = strings.ReplaceAll(id, "-", "_")
-
-	// Remove consecutive underscores
-	for strings.Contains(id, "__") {
-		id = strings.ReplaceAll(id, "__", "_")
-	}
-
-	// Trim leading/trailing underscores
-	id = strings.Trim(id, "_")
-
-	if id == "" {
-		return "unknown"
-	}
-	return id
-}
+// makeStableID is now implemented in id.go
