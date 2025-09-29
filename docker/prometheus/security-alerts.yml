@@ -1,0 +1,53 @@
+# Security-focused Prometheus alerting rules for xg2g
+groups:
+  - name: xg2g_security
+    rules:
+      - alert: HighRateLimitViolations
+        expr: rate(http_requests_total{status_code="429"}[5m]) > 0.5
+        for: 2m
+        labels:
+          severity: warning
+          component: security
+        annotations:
+          summary: "High rate of 429 responses detected"
+          description: "Rate limit violations exceed 0.5/sec over 5min window"
+
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status_code=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.05
+        for: 3m
+        labels:
+          severity: critical
+          component: reliability
+        annotations:
+          summary: "Error rate exceeds 5%"
+          description: "HTTP 5xx error rate: {{ $value | humanizePercentage }}"
+
+      - alert: SecurityHeaderMissing
+        expr: increase(http_requests_total{handler!~".*(security|cors).*"}[1m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+          component: security
+        annotations:
+          summary: "Requests potentially missing security headers"
+          description: "Check middleware chain configuration"
+
+      - alert: RefreshTimeoutSpike
+        expr: histogram_quantile(0.95, rate(refresh_duration_seconds_bucket[5m])) > 30
+        for: 2m
+        labels:
+          severity: warning
+          component: performance
+        annotations:
+          summary: "Refresh operations taking too long"
+          description: "95th percentile refresh time: {{ $value }}s"
+
+      - alert: ConcurrentRefreshAttempts
+        expr: refresh_concurrent_attempts > 1
+        for: 30s
+        labels:
+          severity: warning
+          component: security
+        annotations:
+          summary: "Multiple refresh attempts detected"
+          description: "Potential DoS or race condition"

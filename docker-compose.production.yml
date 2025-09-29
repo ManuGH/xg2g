@@ -1,0 +1,111 @@
+services:
+  xg2g:
+    build: .
+    container_name: xg2g-app
+    restart: unless-stopped
+    ports:
+      - "8080:8080" # Main HTTP API
+      - "9090:9090" # Prometheus metrics (optional)
+    volumes:
+      - xg2g_data:/data
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      # Core Configuration
+      XG2G_DATA: /data
+      XG2G_LISTEN: :8080
+      XG2G_METRICS_LISTEN: :9090
+
+      # OpenWebIF Integration (customize these)
+      XG2G_OWI_BASE: http://10.10.55.57
+      XG2G_BOUQUET: Premium
+      XG2G_XMLTV: "true"
+      XG2G_FUZZY_MAX: 2
+
+      # Security & Performance
+      XG2G_OWI_TIMEOUT_MS: 30000
+      XG2G_OWI_RETRIES: 3
+      XG2G_OWI_BACKOFF_MS: 1000
+
+      # Logging
+      LOG_LEVEL: info
+      LOG_SERVICE: xg2g-prod
+      VERSION: v1.0.0
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - monitoring
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.xg2g.rule=Host(`iptv.yourdomain.com`)"
+      - "traefik.http.services.xg2g.loadbalancer.server.port=8080"
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: xg2g-prometheus
+    restart: unless-stopped
+    ports:
+      - "9091:9090" # Avoid conflict with xg2g metrics port
+    volumes:
+      - ./docker/prometheus:/etc/prometheus
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+      - "--web.enable-lifecycle"
+      - "--web.enable-admin-api"
+    networks:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: xg2g-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./docker/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./docker/grafana/datasources:/etc/grafana/provisioning/datasources
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin123}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SECURITY_DISABLE_GRAVATAR: "true"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    networks:
+      - monitoring
+
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: xg2g-alertmanager
+    restart: unless-stopped
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./docker/alertmanager:/etc/alertmanager
+      - alertmanager_data:/alertmanager
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+    networks:
+      - monitoring
+
+networks:
+  monitoring:
+    driver: bridge
+
+volumes:
+  xg2g_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  alertmanager_data:
+    driver: local

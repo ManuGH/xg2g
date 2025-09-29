@@ -219,5 +219,26 @@ func validateConfig(cfg Config) error {
 		return fmt.Errorf("invalid stream port %d", cfg.StreamPort)
 	}
 
+	// Validate DataDir to prevent path traversal attacks
+	if cfg.DataDir == "" {
+		return fmt.Errorf("data directory is empty")
+	}
+
+	// Convert to absolute path and validate
+	absDataDir, err := filepath.Abs(cfg.DataDir)
+	if err != nil {
+		return fmt.Errorf("invalid data directory %q: %w", cfg.DataDir, err)
+	}
+
+	// Ensure the directory exists or can be created
+	if err := os.MkdirAll(absDataDir, 0755); err != nil {
+		return fmt.Errorf("cannot create data directory %q: %w", absDataDir, err)
+	}
+
+	// Check for directory traversal patterns
+	if strings.Contains(cfg.DataDir, "..") {
+		return fmt.Errorf("data directory %q contains path traversal sequences", cfg.DataDir)
+	}
+
 	return nil
 }

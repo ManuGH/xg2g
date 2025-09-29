@@ -2,9 +2,12 @@ package main
 
 import (
 	"fmt"
+	"log"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/api"
@@ -80,24 +83,25 @@ func main() {
 		Dur("owi_backoff", cfg.OWIBackoff).
 		Msg("configuration loaded")
 
-	// Start metrics server on separate port
-	metricsAddr := ":9090"
-	if metricsPort := os.Getenv("XG2G_METRICS_PORT"); metricsPort != "" {
-		metricsAddr = ":" + metricsPort
-	}
-
-	go func() {
+	// Start metrics server on separate port if configured
+	if metricsAddr := resolveMetricsListen(); metricsAddr != "" {
+		go func() {
+			logger.Info().
+				Str("addr", metricsAddr).
+				Str("event", "metrics.start").
+				Msg("starting metrics server")
+			if err := http.ListenAndServe(metricsAddr, promhttp.Handler()); err != nil {
+				logger.Error().
+					Err(err).
+					Str("event", "metrics.failed").
+					Msg("metrics server failed")
+			}
+		}()
+	} else {
 		logger.Info().
-			Str("addr", metricsAddr).
-			Str("event", "metrics.start").
-			Msg("starting metrics server")
-		if err := http.ListenAndServe(metricsAddr, promhttp.Handler()); err != nil {
-			logger.Error().
-				Err(err).
-				Str("event", "metrics.failed").
-				Msg("metrics server failed")
-		}
-	}()
+			Str("event", "metrics.disabled").
+			Msg("metrics server disabled (no XG2G_METRICS_LISTEN configured)")
+	}
 
 	// Start main API server
 	logger.Info().
@@ -117,6 +121,71 @@ func env(k, def string) string {
 		return v
 	}
 	return def
+}
+
+// resolveMetricsListen validates and returns the metrics server listen address.
+// Returns empty string to disable metrics server.
+func resolveMetricsListen() string {
+	addr := os.Getenv("XG2G_METRICS_LISTEN")
+
+	// Check if explicitly set (even if empty for disable)
+	if _, exists := os.LookupEnv("XG2G_METRICS_LISTEN"); exists {
+		if addr == "" {
+			// Explicitly disabled
+			return ""
+		}
+	} else {
+		// Fallback to legacy XG2G_METRICS_PORT for compatibility
+		if port := os.Getenv("XG2G_METRICS_PORT"); port != "" {
+			addr = port
+		} else {
+			// Default: metrics enabled on :9090
+			addr = ":9090"
+		}
+	}
+
+	// Validate listen address format
+	if err := validateListenAddr(addr); err != nil {
+		log.Fatalf("invalid metrics listen address %q: %v", addr, err)
+	}
+
+	return addr
+}
+
+// validateListenAddr performs strict validation of listen addresses.
+// Accepts: :port, host:port, [ipv6]:port
+// Rejects: port (missing :), invalid formats, out-of-range ports
+func validateListenAddr(addr string) error {
+	if addr == "" {
+		return nil // Empty = disabled
+	}
+
+	// Must contain at least one colon
+	if !strings.Contains(addr, ":") {
+		return fmt.Errorf("missing colon (use :port or host:port)")
+	}
+
+	// Try to resolve as listen address
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return fmt.Errorf("invalid format: %w", err)
+	}
+
+	// Validate port range
+	if portNum, err := strconv.Atoi(port); err != nil {
+		return fmt.Errorf("invalid port %q: %w", port, err)
+	} else if portNum < 0 || portNum > 65535 {
+		return fmt.Errorf("port %d out of range [0-65535]", portNum)
+	}
+
+	// Validate IPv6 addresses (if host is specified)
+	if host != "" && strings.Contains(host, ":") {
+		if net.ParseIP(host) == nil {
+			return fmt.Errorf("invalid IPv6 address %q", host)
+		}
+	}
+
+	return nil
 }
 
 func atoi(s string) int {

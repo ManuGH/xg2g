@@ -155,7 +155,10 @@
     "checksums",
     "compat",
     "configurability",
-    "versioning"
+    "versioning",
+    "promhttp",
+    "Prometheus",
+    "METRICS"
   ],
   "ignorePaths": [
     "go.sum",

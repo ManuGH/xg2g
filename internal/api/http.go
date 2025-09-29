@@ -90,7 +90,8 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 			Int64("duration_ms", duration.Milliseconds()).
 			Str("status", "error").
 			Msg("refresh failed")
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		// Security: Never expose internal error details to client
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 

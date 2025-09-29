@@ -2,17 +2,19 @@
 
 # xg2g — Copilot instructions (concise)
 
+> **English-only policy**: All code, comments, documentation, and communication in this project must be in English.
+
 Purpose: xg2g translates Enigma2/OpenWebIF bouquets into IPTV artifacts (M3U + XMLTV) and exposes a tiny HTTP API to trigger refreshes and serve generated files.
 
 Read these files first
 - `cmd/daemon/main.go` — application entry, ENV → jobs.Config, starts HTTP server.
 - `internal/jobs/refresh.go` — central work: fetch bouquets → services → build playlist items → write M3U and optional XMLTV.
 - `internal/openwebif/client.go` — OpenWebIF API calls, stream & picon URL helpers, HTTP timeouts and port override (`XG2G_STREAM_PORT`).
-- `internal/api/http.go` — API endpoints (`/api/status`, `/api/refresh`) and `/files/*` static serving.
+- `internal/api/http.go` — API endpoints (`/api/status`, `/api/refresh`, `/healthz`, `/readyz`) and `/files/*` static serving.
 - `internal/playlist/m3u.go` and `internal/epg/*.go` — file format writers.
 
 Quick actionable conventions (project-specific)
-- Configuration is ENV-only (prefix `XG2G_`). Key variables: `XG2G_DATA`, `XG2G_OWI_BASE`, `XG2G_BOUQUET`, `XG2G_XMLTV`, `XG2G_PICON_BASE`, `XG2G_FUZZY_MAX`, `XG2G_STREAM_PORT`.
+- Configuration is ENV-only (prefix `XG2G_`). Key variables: `XG2G_DATA`, `XG2G_OWI_BASE`, `XG2G_BOUQUET`, `XG2G_XMLTV`, `XG2G_PICON_BASE`, `XG2G_FUZZY_MAX`, `XG2G_STREAM_PORT`, `XG2G_OWI_TIMEOUT_MS`, `XG2G_OWI_RETRIES`, `XG2G_OWI_BACKOFF_MS`, `XG2G_METRICS_PORT`.
 - The single exported operation is `jobs.Refresh(ctx, jobs.Config)` — most changes touch this flow. Prefer extracting small helpers (fetch/builder/writer) to make unit tests easier.
 - Deterministic tvg-id creation lives in `makeStableID` inside `internal/jobs/refresh.go`; keep its behaviour when changing channel naming to avoid breaking existing EPG mappings.
 - OpenWebIF: code prefers `/api/getallservices?bRef=` and falls back to `/api/getservices?sRef=`; the client filters bouquet-containers (`1:7:` prefix).
@@ -30,6 +32,8 @@ go run ./cmd/daemon
 Trigger a refresh and inspect outputs:
 ```bash
 curl -X POST http://localhost:8080/api/refresh
+curl http://localhost:8080/healthz
+curl http://localhost:8080/readyz
 ls ./data/playlist.m3u ./data/xmltv.xml
 ```
 
@@ -65,7 +69,10 @@ Goal: enable quick productivity. Focus on build/test workflows, architecture, co
 - HTTP layer: `internal/api/http.go` provides:
   - `GET /api/status` – simple health/status.
   - `POST /api/refresh` – triggers end-to-end refresh.
+  - `GET /healthz` – Kubernetes health check endpoint.
+  - `GET /readyz` – Kubernetes readiness check endpoint.
   - `GET /files/*` – serves generated artifacts from `XG2G_DATA` (e.g. `playlist.m3u`, `xmltv.xml`, picons).
+- Metrics: Separate Prometheus metrics server on port `:9090` with `GET /metrics` endpoint.
 - Integrations:
   - OpenWebIF client: `internal/openwebif/*` (`getallservices` fallback to `getservices`, picons, SRef handling).
   - Playlist: `internal/playlist/m3u.go` (write M3U, attributes, grouping).
@@ -88,29 +95,39 @@ Goal: enable quick productivity. Focus on build/test workflows, architecture, co
   Manual end-to-end check:
   ```bash
   curl -X POST http://localhost:8080/api/refresh
+  curl http://localhost:8080/healthz
+  curl http://localhost:8080/readyz
   ls ./data/playlist.m3u ./data/xmltv.xml
   ```
 
 ### Important Environment Variables
 - `XG2G_DATA` target directory for artifacts and /files serving.
 - `XG2G_LISTEN` HTTP listen address, e.g. `:8080`.
+- `XG2G_METRICS_LISTEN` Prometheus metrics server listen address, e.g. `:9090` (empty = disabled).
 - `XG2G_OWI_BASE` base URL of OpenWebIF (no trailing slash).
 - `XG2G_BOUQUET` bouquet name/ID for filtering.
 - `XG2G_XMLTV` true|false to generate XMLTV.
 - `XG2G_PICON_BASE` external/relative base for picon URLs.
-- `XG2G_FUZZY_MAX` max Levenshtein distance for EPG matching.
+- `XG2G_FUZZY_MAX` max Levenshtein distance for EPG matching (max 10).
 - `XG2G_STREAM_PORT` port override for stream URLs (if receiver port ≠ 8001).
+- `XG2G_OWI_TIMEOUT_MS` OpenWebIF HTTP timeout in milliseconds.
+- `XG2G_OWI_RETRIES` maximum retry attempts for OpenWebIF calls.
+- `XG2G_OWI_BACKOFF_MS` initial backoff delay for exponential retry.
 
-| Variable         | Type     | Default | Required | Description                                      |
-|------------------|----------|---------|----------|------------------------------------------------|
-| XG2G_DATA        | Path     | ./data  | yes      | Target folder for artifacts and /files serving |
-| XG2G_LISTEN      | Address  | :8080   | no       | HTTP listen address                             |
-| XG2G_OWI_BASE    | URL      | —       | yes      | Base URL of OpenWebIF                           |
-| XG2G_BOUQUET     | String   | —       | yes      | Bouquet name/ID for filtering                   |
-| XG2G_XMLTV       | bool     | false   | no       | Enable XMLTV generation                         |
-| XG2G_PICON_BASE  | URL/Path | —       | no       | Base for picon URLs                             |
-| XG2G_FUZZY_MAX   | int      | 2       | no       | Max Levenshtein distance for EPG matching      |
-| XG2G_STREAM_PORT | int      | 8001    | no       | Port override for stream URLs                   |
+| Variable            | Type     | Default | Required | Description                                      |
+|---------------------|----------|---------|----------|------------------------------------------------|
+| XG2G_DATA           | Path     | ./data  | yes      | Target folder for artifacts and /files serving |
+| XG2G_LISTEN         | Address  | :8080   | no       | HTTP listen address                             |
+| XG2G_METRICS_LISTEN | Address  | :9090   | no       | Prometheus metrics server address (empty=off)  |
+| XG2G_OWI_BASE       | URL      | —       | yes      | Base URL of OpenWebIF                           |
+| XG2G_BOUQUET        | String   | —       | yes      | Bouquet name/ID for filtering                   |
+| XG2G_XMLTV          | bool     | false   | no       | Enable XMLTV generation                         |
+| XG2G_PICON_BASE     | URL/Path | —       | no       | Base for picon URLs                             |
+| XG2G_FUZZY_MAX      | int      | 2       | no       | Max Levenshtein distance for EPG matching (≤10)|
+| XG2G_STREAM_PORT    | int      | 8001    | no       | Port override for stream URLs                   |
+| XG2G_OWI_TIMEOUT_MS | int      | 30000   | no       | OpenWebIF HTTP timeout in milliseconds         |
+| XG2G_OWI_RETRIES    | int      | 3       | no       | Maximum retry attempts for OpenWebIF calls     |
+| XG2G_OWI_BACKOFF_MS | int      | 1000    | no       | Initial backoff delay for exponential retry    |
 
 Example `.env` for local development:
 ```env
@@ -127,6 +144,8 @@ XG2G_XMLTV=true
 |--------|---------------|----------------------------|----------------------------|
 | GET    | /api/status   | Health/status              | no parameters              |
 | POST   | /api/refresh  | Trigger refresh (jobs)     | idempotent; 200 on success |
+| GET    | /healthz      | Kubernetes health check    | no parameters              |
+| GET    | /readyz       | Kubernetes readiness check | no parameters              |
 | GET    | /files/*      | Static artifacts           | served from `XG2G_DATA`    |
 
 Example response for `GET /api/status`:
@@ -142,7 +161,7 @@ Example response for `GET /api/status`:
 - Stability: service IDs via helper (e.g. `makeStableID` in job) for deterministic #EXTINF IDs.
 - OpenWebIF:
   - First `/api/getallservices`, fallback `/api/getservices?sRef=<bouquetRef>`.
-  - Stream URL example: `openwebif.StreamURL(base, sRef)` → `http://host:8001/<sRef>`
+  - Stream URL example: `openwebif.StreamURL(ctx, base, sRef, streamPort)` → `http://host:port/<sRef>`
   - Picon URL: `openwebif.PiconURL(base, sRef)` or filename derived from SRef.
 - Playlist:
   - Write M3U with `playlist.WriteM3U(w, []playlist.Item)`; group from bouquet, normalized channel name.

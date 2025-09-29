@@ -89,6 +89,7 @@ Key environment variables:
 | `XG2G_PICON_BASE`  | url/path | `(empty)` | no       | Base URL or path for picon images; defaults to OpenWebIF derivation                         |
 | `XG2G_FUZZY_MAX`   | int      | `2`      | no       | Max Levenshtein distance for fuzzy matching EPG names                                       |
 | `XG2G_STREAM_PORT` | int      | `8001`   | no       | Override for the OpenWebIF stream port (defaults to 8001)                                   |
+| `XG2G_METRICS_LISTEN` | address | `:9090` | no      | Prometheus metrics server listen address (empty = disabled, IPv6 needs brackets)            |
 
 ## API Endpoints
 

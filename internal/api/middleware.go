@@ -190,9 +190,32 @@ func metricsMiddleware(next http.Handler) http.Handler {
 // corsMiddleware adds CORS headers
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		// Security: Restrict CORS to localhost and common dev origins only
+		origin := r.Header.Get("Origin")
+		allowed := false
+		allowedOrigins := []string{
+			"http://localhost",
+			"https://localhost",
+			"http://127.0.0.1",
+			"https://127.0.0.1",
+		}
+
+		for _, allowed_origin := range allowedOrigins {
+			if strings.HasPrefix(origin, allowed_origin) {
+				allowed = true
+				break
+			}
+		}
+
+		if allowed {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+		} else if origin == "" {
+			// Allow direct access (no origin header, e.g., curl, tests)
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+		}
+
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Request-ID")
 		w.Header().Set("Access-Control-Max-Age", "600")
 		w.Header().Set("Vary", "Origin, Access-Control-Request-Method, Access-Control-Request-Headers")
 
@@ -262,23 +285,4 @@ func chain(h http.Handler, mws ...func(http.Handler) http.Handler) http.Handler 
 func withMiddlewares(h http.Handler) http.Handler {
 	rl := newRateLimiter(rate.Limit(10), 20)
 	return chain(h, requestIDMiddleware, metricsMiddleware, corsMiddleware, securityHeaders, rl.middleware)
-}
-
-func withMiddlewaresExcept(h http.Handler, skipPaths ...string) http.Handler {
-	rl := newRateLimiter(rate.Limit(10), 20)
-
-	skipMap := make(map[string]bool)
-	for _, path := range skipPaths {
-		skipMap[path] = true
-	}
-
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if skipMap[r.URL.Path] {
-			// Skip middleware for specified paths
-			h.ServeHTTP(w, r)
-			return
-		}
-		// Apply middleware chain for all other paths
-		chain(h, requestIDMiddleware, metricsMiddleware, corsMiddleware, securityHeaders, rl.middleware).ServeHTTP(w, r)
-	})
 }

@@ -83,18 +83,22 @@ func TestRefreshWithClient_ServicesError(t *testing.T) {
 }
 
 func TestValidateConfig(t *testing.T) {
+	tempDir := t.TempDir()
+
 	testcases := []struct {
 		name    string
 		cfg     Config
 		wantErr bool
 	}{
-		{name: "http ok", cfg: Config{OWIBase: "http://example.com", StreamPort: 8001}},
-		{name: "https ok", cfg: Config{OWIBase: "https://example.com", StreamPort: 8001}},
-		{name: "empty", cfg: Config{OWIBase: "", StreamPort: 8001}, wantErr: true},
-		{name: "missing scheme", cfg: Config{OWIBase: "example.com", StreamPort: 8001}, wantErr: true},
-		{name: "unsupported scheme", cfg: Config{OWIBase: "ftp://example.com", StreamPort: 8001}, wantErr: true},
-		{name: "invalid port", cfg: Config{OWIBase: "http://example.com", StreamPort: -1}, wantErr: true},
-		{name: "port too large", cfg: Config{OWIBase: "http://example.com", StreamPort: 70000}, wantErr: true},
+		{name: "http ok", cfg: Config{OWIBase: "http://example.com", StreamPort: 8001, DataDir: tempDir}},
+		{name: "https ok", cfg: Config{OWIBase: "https://example.com", StreamPort: 8001, DataDir: tempDir}},
+		{name: "empty owiabase", cfg: Config{OWIBase: "", StreamPort: 8001, DataDir: tempDir}, wantErr: true},
+		{name: "missing scheme", cfg: Config{OWIBase: "example.com", StreamPort: 8001, DataDir: tempDir}, wantErr: true},
+		{name: "unsupported scheme", cfg: Config{OWIBase: "ftp://example.com", StreamPort: 8001, DataDir: tempDir}, wantErr: true},
+		{name: "invalid port", cfg: Config{OWIBase: "http://example.com", StreamPort: -1, DataDir: tempDir}, wantErr: true},
+		{name: "port too large", cfg: Config{OWIBase: "http://example.com", StreamPort: 70000, DataDir: tempDir}, wantErr: true},
+		{name: "empty datadir", cfg: Config{OWIBase: "http://example.com", StreamPort: 8001, DataDir: ""}, wantErr: true},
+		{name: "path traversal", cfg: Config{OWIBase: "http://example.com", StreamPort: 8001, DataDir: "../../../etc/passwd"}, wantErr: true},
 	}
 
 	for _, tc := range testcases {

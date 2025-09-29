@@ -7,8 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2025-09-29
+
 ### Added
 
+- **NEW**: Separate Prometheus metrics server with configurable address (`XG2G_METRICS_LISTEN`)
+- **NEW**: IPv6 address validation with proper bracket notation support ([::]:9090)
+- **NEW**: Metrics server deactivation option (empty `XG2G_METRICS_LISTEN`)
 - Comprehensive retry and timeout configuration for OpenWebIF requests
 - Exponential backoff with configurable limits
 - Prometheus metrics for request latencies, retry counts, and error classification
@@ -16,18 +21,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - English-only policy for all project communication
 - GitHub issue and pull request templates
 - Comprehensive test suite for configuration validation and retry scenarios
+- Table-driven tests for address validation covering IPv4, IPv6, hostnames
 
 ### Changed
 
+- **BREAKING**: Metrics server now runs on separate port (:9090) instead of main API server
+- **BREAKING**: `XG2G_METRICS_PORT` deprecated in favor of `XG2G_METRICS_LISTEN`
 - **BEHAVIOR CHANGE**: Request retry logic now uses exponential backoff (previously immediate retry)
 - **BEHAVIOR CHANGE**: Default timeout increased from 5s to 10s per request attempt
 - **BEHAVIOR CHANGE**: Maximum retry attempts reduced from unlimited to 3 by default
 - Improved structured logging with consistent field names (`attempt`, `duration_ms`, `error_class`)
 - Enhanced CI pipeline with markdownlint and comprehensive quality checks
+- Docker Compose now exposes metrics port 9090 optionally
 
 ### Fixed
 
+- **CRITICAL**: IPv6 address parsing error causing metrics server startup failures
+- **CRITICAL**: Address validation now properly handles IPv6 bracket notation
 - Context cancellation now properly prevents goroutine leaks
+- Removed unused middleware function causing linting errors
+- Fixed port range validation (0-65535) with proper error messages
 - Race conditions in concurrent request handling
 - Code quality issues (go vet lostcancel warnings, formatting)
 

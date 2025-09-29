@@ -9,11 +9,13 @@ services:
     image: xg2g:local
     ports:
       - "8080:8080"
+      - "9090:9090" # Optional: Prometheus metrics
     volumes:
       - ./data:/data
     environment:
       XG2G_DATA: /data
       XG2G_LISTEN: ":8080"
+      XG2G_METRICS_LISTEN: "${XG2G_METRICS_LISTEN:-:9090}"
       XG2G_OWI_BASE: "${XG2G_OWI_BASE:-}"
       XG2G_BOUQUET: "${XG2G_BOUQUET:-}"
       XG2G_FUZZY_MAX: "${XG2G_FUZZY_MAX:-2}"
