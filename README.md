@@ -16,21 +16,34 @@ XG2G_LISTEN=:8080 \
 go run ./cmd/daemon
 ```
 
-Or via Docker (docker-compose snippet):
+## Usage Notes
 
-```yaml
-services:
-  xg2g:
-    image: ghcr.io/manugh/xg2g:latest
-    ports:
-      - "8080:8080"
-    environment:
-      - XG2G_DATA=/data
-      - XG2G_OWI_BASE=http://receiver.local
-      - XG2G_BOUQUET=Favourites
-      - XG2G_LISTEN=:8080
+xg2g converts OpenWebIF bouquets into M3U and XMLTV artifacts and exposes a small HTTP API. It acts as a pre-processing fetcher/generator and does **not** replace middleware such as xTeVe, Threadfin, Plex, or Jellyfin — those services still handle channel mapping, EPG merging, proxy streaming, and any transcoding.
 
+## Deployment with Docker
+
+Recommended structure on Linux hosts (e.g. under `/opt`):
+
+- `/opt/xg2g/config` — store `docker-compose.yml`, `.env`, and other configuration files here.
+- `/opt/xg2g/data` — bind mount that directory to persist generated artifacts (`playlist.m3u`, `xmltv.xml`, picons, …).
+
+Example setup:
+
+```bash
+sudo mkdir -p /opt/xg2g/{config,data}
+cp docker-compose.yml /opt/xg2g/config/
+# edit docker-compose.yml: port mapping, XG2G_OWI_BASE, XG2G_BOUQUET, XG2G_LISTEN, etc.
+cd /opt/xg2g/config
+docker compose up -d
 ```
+
+Check status:
+
+```bash
+curl http://<host>:8080/api/status
+```
+
+Optional: Dockge or other orchestration front-ends can point to the same compose stack — just keep `/opt/xg2g/data` mounted so the generated files persist.
 
 xg2g is a small Go microservice that converts OpenWebIF bouquets (for example from VU+ receivers) into IPTV-friendly artifacts. It exposes a tiny HTTP API and writes generated files into the directory specified by `XG2G_DATA`.
 

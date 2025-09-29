@@ -24,7 +24,8 @@
     "behaviour",
     "getallservices",
     "getservices",
-    "Errorf"
+    "Errorf",
+    "Dockge"
   ],
   "ignorePaths": [
     "go.sum",
