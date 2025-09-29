@@ -99,7 +99,15 @@ func refreshWithClient(ctx context.Context, cfg Config, cl openwebif.ClientInter
 	if err != nil {
 		return nil, fmt.Errorf("create playlist: %w", err)
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); cerr != nil {
+			logger.Error().
+				Err(cerr).
+				Str("event", "playlist.close_error").
+				Str("path", playlistPath).
+				Msg("failed to close playlist file")
+		}
+	}()
 
 	if err := playlist.WriteM3U(f, items); err != nil {
 		return nil, fmt.Errorf("write playlist: %w", err)
