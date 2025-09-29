@@ -76,8 +76,9 @@ test_basic_file_access() {
     
     # Test 1: Valid file access (should work if files exist)
     response=$(curl -s -w "HTTPSTATUS:%{http_code}" "$BASE_URL/files/playlist.m3u" 2>/dev/null)
-    body=$(echo "$response" | sed 's/HTTPSTATUS:.*$//')
-    status=$(echo "$response" | tr -d '\n' | sed 's/.*HTTPSTATUS://')
+    body="${response%HTTPSTATUS:*}"
+    status="${response##*HTTPSTATUS:}"
+    status="${status//$'\n'/}"
     
     # Accept both 200 (file exists) and 404 (file doesn't exist) as valid
     if [[ "$status" == "200" || "$status" == "404" ]]; then
@@ -88,15 +89,17 @@ test_basic_file_access() {
     
     # Test 2: Nonexistent file
     response=$(curl -s -w "HTTPSTATUS:%{http_code}" "$BASE_URL/files/nonexistent.txt" 2>/dev/null)
-    body=$(echo "$response" | sed 's/HTTPSTATUS:.*$//')
-    status=$(echo "$response" | tr -d '\n' | sed 's/.*HTTPSTATUS://')
+    body="${response%HTTPSTATUS:*}"
+    status="${response##*HTTPSTATUS:}"
+    status="${status//$'\n'/}"
     log_result "nonexistent_file" "404" "$status" "$([ "$status" == "404" ] && echo "true" || echo "false")" "$body"
     
     # Test 3: Method restrictions
     for method in POST PUT DELETE PATCH; do
         response=$(curl -s -X "$method" -w "HTTPSTATUS:%{http_code}" "$BASE_URL/files/test.txt" 2>/dev/null)
-        body=$(echo "$response" | sed 's/HTTPSTATUS:.*$//')
-        status=$(echo "$response" | tr -d '\n' | sed 's/.*HTTPSTATUS://')
+        body="${response%HTTPSTATUS:*}"
+        status="${response##*HTTPSTATUS:}"
+        status="${status//$'\n'/}"
         log_result "${method,,}_method_blocked" "405" "$status" "$([ "$status" == "405" ] && echo "true" || echo "false")" "$body"
     done
 }
@@ -121,8 +124,9 @@ test_path_traversal() {
     
     for pattern in "${patterns[@]}"; do
         response=$(curl -s -w "HTTPSTATUS:%{http_code}" "$BASE_URL/files/$pattern" 2>/dev/null)
-        body=$(echo "$response" | sed 's/HTTPSTATUS:.*$//')
-        status=$(echo "$response" | tr -d '\n' | sed 's/.*HTTPSTATUS://')
+        body="${response%HTTPSTATUS:*}"
+        status="${response##*HTTPSTATUS:}"
+        status="${status//$'\n'/}"
         
         # Should be blocked (403/404) or normalized (301)
         if [[ "$status" == "403" || "$status" == "404" || "$status" == "301" ]]; then
@@ -152,8 +156,9 @@ test_symlink_attacks() {
         
         # Test the symlink attack via HTTP (should be blocked)
         response=$(curl -s -w "HTTPSTATUS:%{http_code}" "$BASE_URL/files/$link_name" 2>/dev/null)
-        body=$(echo "$response" | sed 's/HTTPSTATUS:.*$//')
-        status=$(echo "$response" | tr -d '\n' | sed 's/.*HTTPSTATUS://')
+        body="${response%HTTPSTATUS:*}"
+        status="${response##*HTTPSTATUS:}"
+        status="${status//$'\n'/}"
         
         # Should be blocked with 403 Forbidden
         log_result "symlink_escape_$link_name" "403" "$status" "$([ "$status" == "403" ] && echo "true" || echo "false")" "$body"
@@ -161,8 +166,9 @@ test_symlink_attacks() {
     
     # Test symlink chains (A -> B -> outside)
     response=$(curl -s -w "HTTPSTATUS:%{http_code}" "$BASE_URL/files/chain_link" 2>/dev/null)
-    body=$(echo "$response" | sed 's/HTTPSTATUS:.*$//')
-    status=$(echo "$response" | tr -d '\n' | sed 's/.*HTTPSTATUS://')
+    body="${response%HTTPSTATUS:*}"
+    status="${response##*HTTPSTATUS:}"
+    status="${status//$'\n'/}"
     log_result "symlink_chain_attack" "403" "$status" "$([ "$status" == "403" ] && echo "true" || echo "false")" "$body"
 }
 
@@ -181,8 +187,9 @@ test_directory_protection() {
     
     for dir in "${dir_tests[@]}"; do
         response=$(curl -s -w "HTTPSTATUS:%{http_code}" "$BASE_URL/files$dir" 2>/dev/null)
-        body=$(echo "$response" | sed 's/HTTPSTATUS:.*$//')
-        status=$(echo "$response" | tr -d '\n' | sed 's/.*HTTPSTATUS://')
+        body="${response%HTTPSTATUS:*}"
+        status="${response##*HTTPSTATUS:}"
+        status="${status//$'\n'/}"
         
         # Directory access should be blocked (403) or redirected (301)
         if [[ "$status" == "403" || "$status" == "301" ]]; then
@@ -204,7 +211,8 @@ test_volume_attacks() {
     for ((i=1; i<=CONCURRENT_ATTACKS; i++)); do
         (
             response=$(curl -s -w "HTTPSTATUS:%{http_code}" "$BASE_URL/files/../../etc/passwd" 2>/dev/null)
-            status=$(echo "$response" | tr -d '\n' | sed 's/.*HTTPSTATUS://')
+            status="${response##*HTTPSTATUS:}"
+            status="${status//$'\n'/}"
             echo "Attack_$i: $status"
         ) &
     done
@@ -212,8 +220,9 @@ test_volume_attacks() {
     
     # Check if service is still responsive
     response=$(curl -s -w "HTTPSTATUS:%{http_code}" "$BASE_URL/healthz" 2>/dev/null)
-    body=$(echo "$response" | sed 's/HTTPSTATUS:.*$//')
-    status=$(echo "$response" | tr -d '\n' | sed 's/.*HTTPSTATUS://')
+    body="${response%HTTPSTATUS:*}"
+    status="${response##*HTTPSTATUS:}"
+    status="${status//$'\n'/}"
     log_result "service_resilience_after_attack" "200" "$status" "$([ "$status" == "200" ] && echo "true" || echo "false")" "$body"
 }
 
@@ -227,21 +236,24 @@ test_edge_cases() {
     local large_path
     large_path=$(python3 -c "print('a' * 1000)")
     response=$(curl -s -w "HTTPSTATUS:%{http_code}" "$BASE_URL/files/$large_path" 2>/dev/null)
-    body=$(echo "$response" | sed 's/HTTPSTATUS:.*$//')
-    status=$(echo "$response" | tr -d '\n' | sed 's/.*HTTPSTATUS://')
+    body="${response%HTTPSTATUS:*}"
+    status="${response##*HTTPSTATUS:}"
+    status="${status//$'\n'/}"
     log_result "large_path_handling" "404" "$status" "$([ "$status" == "404" ] && echo "true" || echo "false")" "$body"
     
     # Unicode/Special characters
     local special_chars="%00%2e%2e%2f%2e%2e%2fetc%2fpasswd"
     response=$(curl -s -w "HTTPSTATUS:%{http_code}" "$BASE_URL/files/$special_chars" 2>/dev/null)
-    body=$(echo "$response" | sed 's/HTTPSTATUS:.*$//')
-    status=$(echo "$response" | tr -d '\n' | sed 's/.*HTTPSTATUS://')
+    body="${response%HTTPSTATUS:*}"
+    status="${response##*HTTPSTATUS:}"
+    status="${status//$'\n'/}"
     log_result "special_chars_handling" "403_or_404" "$status" "$( [[ "$status" == "403" || "$status" == "404" ]] && echo "true" || echo "false")" "$body"
     
     # Empty path
     response=$(curl -s -w "HTTPSTATUS:%{http_code}" "$BASE_URL/files/" 2>/dev/null)
-    body=$(echo "$response" | sed 's/HTTPSTATUS:.*$//')
-    status=$(echo "$response" | tr -d '\n' | sed 's/.*HTTPSTATUS://')
+    body="${response%HTTPSTATUS:*}"
+    status="${response##*HTTPSTATUS:}"
+    status="${status//$'\n'/}"
     log_result "empty_path_handling" "403_or_301" "$status" "$( [[ "$status" == "403" || "$status" == "301" ]] && echo "true" || echo "false")" "$body"
 }
 
