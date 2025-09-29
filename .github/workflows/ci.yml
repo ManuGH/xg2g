@@ -1,6 +1,9 @@
 name: CI
 
 on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 2 * * *'
   push:
     branches: [ main ]
   pull_request:
@@ -144,6 +147,35 @@ jobs:
           test "$(grep -c '<channel ' ./data/guide.xml)" -ge 2
           ! grep -q 'FROM BOUQUET' ./data/playlist.m3u
 
+      - name: Job summary
+        if: always()
+        run: |
+          set -euo pipefail
+
+          COV="n/a"
+          if [ -f coverage.out ]; then
+            COV=$(go tool cover -func=coverage.out | awk '/total:/ {print $3}')
+          fi
+
+          EXTINF=0
+          if [ -f ./data/playlist.m3u ]; then
+            EXTINF=$(grep -c '^#EXTINF' ./data/playlist.m3u || echo 0)
+          fi
+
+          CHANNELS=0
+          if [ -f ./data/guide.xml ]; then
+            CHANNELS=$(grep -c '<channel ' ./data/guide.xml || echo 0)
+          fi
+
+          {
+            echo "## CI-Ergebnis"
+            echo ""
+            echo "- Coverage: ${COV}"
+            echo "- Playlist-Einträge (#EXTINF): ${EXTINF}"
+            echo "- XMLTV Channels: ${CHANNELS}"
+            echo "- Artefakte: logs-and-reports"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Lint
         uses: golangci/golangci-lint-action@v6
         with:
@@ -166,3 +198,4 @@ jobs:
             /tmp/daemon.log
             ./data/*
           if-no-files-found: ignore
+          retention-days: 14
