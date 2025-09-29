@@ -4,6 +4,8 @@ package log
 import (
 	"context"
 	"testing"
+
+	"github.com/rs/zerolog"
 )
 
 func TestContextWithRequestID(t *testing.T) {
@@ -139,10 +141,33 @@ func TestWithContext(t *testing.T) {
 }
 
 func TestWithComponentFromContext(t *testing.T) {
-	ctx := ContextWithRequestID(context.Background(), "test-req-id")
-	logger := WithComponentFromContext(ctx, "api")
+	logger := WithComponentFromContext(context.Background(), "test-component")
+	// Verify it returns a logger (basic smoke test)
+	if logger.GetLevel() > zerolog.PanicLevel {
+		t.Error("Expected valid logger from WithComponentFromContext")
+	}
+}
 
-	// Should not panic and should return valid logger
-	// The logger level check doesn't work as expected, so we just check it doesn't panic
-	_ = logger
+func TestBase(t *testing.T) {
+	baseLogger := Base()
+	// Verify we get a valid logger instance (basic smoke test)
+	if baseLogger.GetLevel() > zerolog.PanicLevel {
+		t.Error("Expected valid base logger with reasonable log level")
+	}
+}
+
+func TestDerive(t *testing.T) {
+	// Test with nil builder function
+	logger1 := Derive(nil)
+	if logger1.GetLevel() > zerolog.PanicLevel {
+		t.Error("Expected valid logger from Derive with nil builder")
+	}
+
+	// Test with custom builder function
+	logger2 := Derive(func(ctx *zerolog.Context) {
+		ctx.Str("custom_field", "test_value")
+	})
+	if logger2.GetLevel() > zerolog.PanicLevel {
+		t.Error("Expected valid logger from Derive with custom builder")
+	}
 }

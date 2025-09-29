@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -83,33 +84,146 @@ func TestRefreshWithClient_ServicesError(t *testing.T) {
 	}
 }
 
-func TestValidateConfig(t *testing.T) {
-	tempDir := t.TempDir()
+func TestRefresh_InvalidStreamPort(t *testing.T) {
+	ctx := context.Background()
+	cfg := Config{
+		OWIBase:    "http://test.local",
+		DataDir:    "/tmp/test",
+		StreamPort: 70000, // Invalid port
+	}
 
-	testcases := []struct {
+	_, err := Refresh(ctx, cfg)
+	if err == nil {
+		t.Error("Expected error for invalid stream port")
+	}
+	if !strings.Contains(err.Error(), "invalid stream port") {
+		t.Errorf("Expected stream port error, got: %v", err)
+	}
+}
+
+func TestRefresh_ConfigValidation(t *testing.T) {
+	ctx := context.Background()
+	cfg := Config{
+		OWIBase: "", // Invalid empty base URL
+		DataDir: "/tmp/test",
+	}
+
+	_, err := Refresh(ctx, cfg)
+	if err == nil {
+		t.Error("Expected error for invalid config")
+	}
+}
+
+func TestValidateConfig(t *testing.T) {
+	tests := []struct {
 		name    string
 		cfg     Config
 		wantErr bool
 	}{
-		{name: "http ok", cfg: Config{OWIBase: "http://example.com", StreamPort: 8001, DataDir: tempDir}},
-		{name: "https ok", cfg: Config{OWIBase: "https://example.com", StreamPort: 8001, DataDir: tempDir}},
-		{name: "empty owiabase", cfg: Config{OWIBase: "", StreamPort: 8001, DataDir: tempDir}, wantErr: true},
-		{name: "missing scheme", cfg: Config{OWIBase: "example.com", StreamPort: 8001, DataDir: tempDir}, wantErr: true},
-		{name: "unsupported scheme", cfg: Config{OWIBase: "ftp://example.com", StreamPort: 8001, DataDir: tempDir}, wantErr: true},
-		{name: "invalid port", cfg: Config{OWIBase: "http://example.com", StreamPort: -1, DataDir: tempDir}, wantErr: true},
-		{name: "port too large", cfg: Config{OWIBase: "http://example.com", StreamPort: 70000, DataDir: tempDir}, wantErr: true},
-		{name: "empty datadir", cfg: Config{OWIBase: "http://example.com", StreamPort: 8001, DataDir: ""}, wantErr: true},
-		{name: "path traversal", cfg: Config{OWIBase: "http://example.com", StreamPort: 8001, DataDir: "../../../etc/passwd"}, wantErr: true},
+		{
+			name: "http_ok",
+			cfg: Config{
+				OWIBase:    "http://test.local",
+				DataDir:    "/tmp",
+				StreamPort: 8001,
+			},
+			wantErr: false,
+		},
+		{
+			name: "https_ok",
+			cfg: Config{
+				OWIBase:    "https://test.local:8080",
+				DataDir:    "/tmp",
+				StreamPort: 8001,
+			},
+			wantErr: false,
+		},
+		{
+			name: "empty_owiabase",
+			cfg: Config{
+				DataDir:    "/tmp",
+				StreamPort: 8001,
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing_scheme",
+			cfg: Config{
+				OWIBase:    "test.local",
+				DataDir:    "/tmp",
+				StreamPort: 8001,
+			},
+			wantErr: true,
+		},
+		{
+			name: "unsupported_scheme",
+			cfg: Config{
+				OWIBase:    "ftp://test.local",
+				DataDir:    "/tmp",
+				StreamPort: 8001,
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid_port",
+			cfg: Config{
+				OWIBase:    "http://test.local:abc",
+				DataDir:    "/tmp",
+				StreamPort: 8001,
+			},
+			wantErr: true,
+		},
+		{
+			name: "port_too_large",
+			cfg: Config{
+				OWIBase:    "http://test.local",
+				DataDir:    "/tmp",
+				StreamPort: 99999, // Invalid stream port
+			},
+			wantErr: true,
+		},
+		{
+			name: "empty_datadir",
+			cfg: Config{
+				OWIBase:    "http://test.local",
+				StreamPort: 8001,
+			},
+			wantErr: true,
+		},
+		{
+			name: "path_traversal",
+			cfg: Config{
+				OWIBase:    "http://test.local",
+				DataDir:    "../../../etc",
+				StreamPort: 8001,
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid_stream_port_zero",
+			cfg: Config{
+				OWIBase:    "http://test.local",
+				DataDir:    "/tmp",
+				StreamPort: 0,
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid_stream_port_negative",
+			cfg: Config{
+				OWIBase:    "http://test.local",
+				DataDir:    "/tmp",
+				StreamPort: -1,
+			},
+			wantErr: true,
+		},
 	}
 
-	for _, tc := range testcases {
-		t.Run(tc.name, func(t *testing.T) {
-			err := validateConfig(tc.cfg)
-			if tc.wantErr && err == nil {
-				t.Fatalf("expected error, got nil")
-			}
-			if !tc.wantErr && err != nil {
-				t.Fatalf("unexpected error: %v", err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateConfig(tt.cfg)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateConfig() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}

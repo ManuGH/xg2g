@@ -16,6 +16,46 @@ import (
 	"github.com/ManuGH/xg2g/internal/jobs"
 )
 
+func TestHandleStatus(t *testing.T) {
+	cfg := jobs.Config{
+		OWIBase: "http://test.local",
+		Bouquet: "test",
+		DataDir: "/tmp/test",
+	}
+	server := New(cfg)
+	
+	// Set a known LastRun time for testing
+	testTime := time.Date(2023, 10, 15, 12, 30, 45, 0, time.UTC)
+	server.status.LastRun = testTime
+
+	req, err := http.NewRequestWithContext(context.Background(), "GET", "/api/status", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rr := httptest.NewRecorder()
+	server.handleStatus(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, rr.Code)
+	}
+
+	// Check content type
+	contentType := rr.Header().Get("Content-Type")
+	if contentType != "application/json" {
+		t.Errorf("Expected Content-Type application/json, got %s", contentType)
+	}
+
+	// Check that response contains expected fields
+	body := rr.Body.String()
+	if !strings.Contains(body, "\"lastRun\"") {
+		t.Error("Response should contain lastRun field")
+	}
+	if !strings.Contains(body, "\"channels\"") {
+		t.Error("Response should contain channels field")
+	}
+}
+
 func TestHandleRefresh_ErrorDoesNotUpdateLastRun(t *testing.T) {
 	// Create a server with invalid config to force an error
 	cfg := jobs.Config{
@@ -58,6 +98,16 @@ func TestHandleRefresh_ErrorDoesNotUpdateLastRun(t *testing.T) {
 	if server.status.Channels != 0 {
 		t.Errorf("Channels should be reset to 0 on error, got %d", server.status.Channels)
 	}
+}
+
+func TestRecordRefreshMetrics(t *testing.T) {
+	// Test recordRefreshMetrics function coverage
+	duration := 1500 * time.Millisecond
+	channelCount := 42
+	
+	// This function has no return value, but we can call it for coverage
+	recordRefreshMetrics(duration, channelCount)
+	// Success if no panic occurs
 }
 
 func TestHandleRefresh_SuccessUpdatesLastRun(t *testing.T) {
