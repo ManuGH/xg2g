@@ -28,10 +28,12 @@ paths:
           description: Internal server error
 
   /api/refresh:
-    post:
+    get:
       summary: Trigger refresh
       description: >-
-        Starts a full refresh (read bouquets, generate M3U and optional XMLTV)
+        Starts a full refresh (read bouquets, generate M3U and optional XMLTV).
+        The operation is idempotent; repeated calls do not trigger additional work
+        if a refresh is already in progress.
       responses:
         "200":
           description: Refresh completed successfully
@@ -39,6 +41,25 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Status"
+        "405":
+          description: Method not allowed
+        "500":
+          description: Refresh failed
+    post:
+      summary: Trigger refresh
+      description: >-
+        Starts a full refresh (read bouquets, generate M3U and optional XMLTV).
+        The operation is idempotent; repeated calls do not trigger additional work
+        if a refresh is already in progress.
+      responses:
+        "200":
+          description: Refresh completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        "405":
+          description: Method not allowed
         "500":
           description: Refresh failed
 
