@@ -3,6 +3,7 @@ package jobs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -18,6 +19,9 @@ import (
 )
 
 const defaultStreamPort = 8001
+
+// ErrInvalidStreamPort marks an invalid stream port configuration.
+var ErrInvalidStreamPort = errors.New("invalid stream port")
 
 // Status represents the current state of the refresh job
 type Status struct {
@@ -47,7 +51,7 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 	if cfg.StreamPort == 0 {
 		cfg.StreamPort = defaultStreamPort
 	} else if cfg.StreamPort < 1 || cfg.StreamPort > 65535 {
-		return nil, fmt.Errorf("invalid stream port %d", cfg.StreamPort)
+		return nil, fmt.Errorf("%w: %d", ErrInvalidStreamPort, cfg.StreamPort)
 	}
 	if err := validateConfig(cfg); err != nil {
 		return nil, err
@@ -217,7 +221,7 @@ func validateConfig(cfg Config) error {
 	}
 
 	if cfg.StreamPort <= 0 || cfg.StreamPort > 65535 {
-		return fmt.Errorf("invalid stream port %d", cfg.StreamPort)
+		return fmt.Errorf("%w: %d", ErrInvalidStreamPort, cfg.StreamPort)
 	}
 
 	// Validate DataDir to prevent path traversal attacks

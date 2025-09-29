@@ -3,9 +3,9 @@ package jobs
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -96,8 +96,8 @@ func TestRefresh_InvalidStreamPort(t *testing.T) {
 	if err == nil {
 		t.Error("Expected error for invalid stream port")
 	}
-	if !strings.Contains(err.Error(), "invalid stream port") {
-		t.Errorf("Expected stream port error, got: %v", err)
+	if !errors.Is(err, ErrInvalidStreamPort) {
+		t.Errorf("Expected ErrInvalidStreamPort, got: %v", err)
 	}
 }
 

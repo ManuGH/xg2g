@@ -4,6 +4,7 @@ package epg
 import (
 	"regexp"
 	"strings"
+	"unicode"
 )
 
 // makeStableID creates a stable identifier from a channel name for EPG use.
@@ -15,22 +16,35 @@ func makeStableID(input string) string {
 	}
 
 	// Convert to lowercase first
-	result := strings.ToLower(input)
+	lower := strings.ToLower(input)
 
-	// Remove all non-alphanumeric characters except spaces, dots, hyphens, and basic separators
-	// Keep umlauts and other Unicode letters for international channel names
-	cleaned := regexp.MustCompile(`[^a-zA-ZÀ-ÿ0-9\s.\-_]`).ReplaceAllString(result, "")
+	// Keep:
+	// - all ASCII letters and digits
+	// - any rune > 127 (full Unicode; allows umlauts, fractions like ½, etc.)
+	// - separators: space, dot, hyphen, underscore
+	cleaned := strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || unicode.IsLetter(r) || unicode.IsNumber(r) || r > 127 || r == ' ' || r == '.' || r == '-' || r == '_' {
+			return r
+		}
+		return -1
+	}, lower)
 
 	// If after cleaning we only have separators/spaces, return empty
-	if regexp.MustCompile(`^[\s.\-_]*$`).MatchString(cleaned) {
+	if reOnlySeparators.MatchString(cleaned) {
 		return ""
 	}
 
 	// Replace consecutive spaces, dots, hyphens, and underscores with single dots
-	normalized := regexp.MustCompile(`[\s.\-_]+`).ReplaceAllString(cleaned, ".")
+	normalized := reSepNormalize.ReplaceAllString(cleaned, ".")
 
 	// Trim leading/trailing dots
 	normalized = strings.Trim(normalized, ".")
 
 	return normalized
 }
+
+// Precompiled regexes for normalization
+var (
+	reOnlySeparators = regexp.MustCompile(`^[\s.\-_]*$`)
+	reSepNormalize   = regexp.MustCompile(`[\s.\-_]+`)
+)

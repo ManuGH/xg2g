@@ -66,3 +66,4 @@ daemon-*
 !internal/epg/testdata/multi_channel.golden.xml
 !internal/epg/testdata/empty.golden.xml
 .cache/
+/tmp/

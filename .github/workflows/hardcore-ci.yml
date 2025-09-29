@@ -54,8 +54,15 @@ jobs:
 
       - name: gofmt check
         run: |
-          bad=$(gofmt -l .); if [ -n "$bad" ]; then
-            echo "Files need gofmt:"; echo "$bad"; exit 1; fi
+          set -euo pipefail
+          files=$(git ls-files '*.go' || true)
+          if [ -z "${files}" ]; then
+            echo "No Go files to format-check."
+            exit 0
+          fi
+          bad=$(gofmt -l ${files})
+          if [ -n "${bad}" ]; then
+            echo "Files need gofmt:"; echo "${bad}"; exit 1; fi
 
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
