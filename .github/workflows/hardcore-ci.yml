@@ -29,8 +29,9 @@ jobs:
 
       - name: Clean Go module cache
         run: |
-          rm -rf ~/.cache/go-build ~/go/pkg/mod
-          mkdir -p ~/.cache/go-build ~/go/pkg/mod
+          go clean -modcache
+          rm -rf ~/.cache/go-build || true
+          mkdir -p ~/.cache/go-build
 
       - name: Cache Go modules
         uses: actions/cache@v4
@@ -80,8 +81,9 @@ jobs:
 
       - name: Clean Go module cache
         run: |
-          rm -rf ~/.cache/go-build ~/go/pkg/mod || true
-          mkdir -p ~/.cache/go-build ~/go/pkg/mod
+          go clean -modcache
+          rm -rf ~/.cache/go-build || true
+          mkdir -p ~/.cache/go-build
 
       - name: Run tests with race detection
         run: |
@@ -104,8 +106,9 @@ jobs:
 
       - name: Clean Go module cache  
         run: |
-          rm -rf ~/.cache/go-build ~/go/pkg/mod || true
-          mkdir -p ~/.cache/go-build ~/go/pkg/mod
+          go clean -modcache
+          rm -rf ~/.cache/go-build || true
+          mkdir -p ~/.cache/go-build
 
       - name: Generate coverage profile
         run: go test ./... -covermode=atomic -coverprofile=coverage.out

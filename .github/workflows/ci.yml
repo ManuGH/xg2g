@@ -94,7 +94,7 @@ jobs:
           set -euo pipefail
 
           echo "🔧 Starting OpenWebIF stub server from project context..."
-          
+
           trap 'jobs -pr | xargs -r kill 2>/dev/null || true' EXIT
 
           # Use existing stub server from test directory to maintain module context
