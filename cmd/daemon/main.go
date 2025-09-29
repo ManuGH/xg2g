@@ -23,7 +23,7 @@ func main() {
 	}
 
 	s := api.New(cfg)
-	addr := env("XG2G_LISTEN", ":34400")
+	addr := env("XG2G_LISTEN", ":8080")
 
 	logger := xglog.WithComponent("daemon")
 	logger.Info().

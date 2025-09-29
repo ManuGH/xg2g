@@ -17,11 +17,11 @@ USER app
 WORKDIR /app
 COPY --from=builder --chown=app:app /out/xg2g .
 VOLUME ["/data"]
-EXPOSE 34400
+EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD wget -qO- http://localhost:34400/api/status || exit 1
+  CMD wget -qO- http://localhost:8080/api/status || exit 1
 ENV XG2G_DATA=/data \
-  XG2G_LISTEN=:34400 \
+  XG2G_LISTEN=:8080 \
   XG2G_OWI_BASE=http://10.10.55.57 \
   XG2G_BOUQUET=Premium \
   XG2G_FUZZY_MAX=2

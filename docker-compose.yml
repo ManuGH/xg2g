@@ -8,19 +8,20 @@ services:
         VERSION: "${VERSION:-dev}"
     image: xg2g:local
     ports:
-      - "34400:34400"
+      - "8080:8080"
       - "17999:17999"
     volumes:
       - ./data:/data
     environment:
       XG2G_DATA: /data
-      XG2G_LISTEN: ":34400"
+      XG2G_LISTEN: ":8080"
       XG2G_OWI_BASE: "${XG2G_OWI_BASE:-}"
       XG2G_BOUQUET: "${XG2G_BOUQUET:-}"
       XG2G_FUZZY_MAX: "${XG2G_FUZZY_MAX:-2}"
       XG2G_STREAM_PORT: "${XG2G_STREAM_PORT:-17999}"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:34400/api/status || exit 1"]
+      test:
+        ["CMD-SHELL", "wget -qO- http://localhost:8080/api/status || exit 1"]
       interval: 15s
       timeout: 3s
       retries: 5
@@ -41,5 +42,5 @@ services:
     environment:
       XG2G_REFRESH_INTERVAL: "${XG2G_REFRESH_INTERVAL:-21600}"
     entrypoint: >
-      sh -lc "while :; do curl -fsS -X POST http://xg2g:34400/api/refresh || true; sleep ${XG2G_REFRESH_INTERVAL:-21600}; done"
+      sh -lc "while :; do curl -fsS -X POST http://xg2g:8080/api/refresh || true; sleep ${XG2G_REFRESH_INTERVAL:-21600}; done"
     restart: unless-stopped

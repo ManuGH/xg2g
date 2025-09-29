@@ -14,7 +14,13 @@
     "tvg",
     "xteve",
     "zerolog",
-    "EXTINF"
+    "EXTINF",
+    "buildvcs",
+    "trimpath",
+    "ldflags",
+    "adduser",
+    "nologin",
+    "tzdata"
   ],
   "ignorePaths": [
     "go.sum",
