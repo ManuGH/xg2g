@@ -18,16 +18,14 @@ go run ./cmd/daemon
 
 ## Usage Notes
 
-- Converts OpenWebIF bouquets into M3U and XMLTV artifacts and exposes a small HTTP API.
-- Acts as a pre-processing fetcher/generator and does not replace middleware such as xTeVe or Threadfin.
-- Middleware tools remain responsible for channel mapping, EPG merging, proxy streaming, and transcoding.
+xg2g converts OpenWebIF bouquets into M3U and XMLTV artifacts and exposes a small HTTP API. It acts as a preprocessing fetcher/generator and does not replace middleware such as xTeVe or Threadfin. Those tools still handle channel mapping, EPG merging, proxy streaming, and transcoding.
 
 ## Docker Deployment
 
 Recommended structure on Linux hosts (example under `/opt`):
 
-- `/opt/xg2g/config` — store `docker-compose.yml`, `.env`, and other configuration files.
-- `/opt/xg2g/data` — bind mount for generated artifacts (`playlist.m3u`, `xmltv.xml`, picons, ...).
+- `/opt/xg2g/config` - store `docker-compose.yml`, `.env`, and other configuration files.
+- `/opt/xg2g/data` - bind mount for generated artifacts (`playlist.m3u`, `xmltv.xml`, picons ...).
 
 Example setup:
 
@@ -36,6 +34,7 @@ sudo mkdir -p /opt/xg2g/{config,data}
 cp docker-compose.yml /opt/xg2g/config/
 # edit docker-compose.yml: port mapping, XG2G_OWI_BASE, XG2G_BOUQUET, XG2G_LISTEN, etc.
 cd /opt/xg2g/config
+docker compose config    # validate file
 docker compose up -d
 ```
 
@@ -50,8 +49,7 @@ Optional: Dockge or other orchestration front ends can point to the same compose
 ### Example docker-compose.yml
 
 ```yaml
-version: "3.8"
-
+# Using the Compose Specification; no version field required
 services:
   xg2g:
     image: ghcr.io/manugh/xg2g:latest
@@ -74,8 +72,8 @@ xg2g produces the M3U/XMLTV basis for downstream middleware. It does not perform
 
 ## Generated Artifacts
 
-- `playlist.m3u` — M3U playlist with `#EXTINF` attributes: `tvg-id`, `tvg-name`, `group-title`, `tvg-logo` and stable tvg ids.
-- `xmltv.xml` — XMLTV channel definitions (programmes are currently not populated by default).
+- `playlist.m3u` — M3U playlist with `#EXTINF` attributes (tvg-id, tvg-name, group-title, tvg-logo) and stable tvg-id values.
+- `xmltv.xml` — XMLTV channel definitions (programs currently not populated by default).
 - `/files/*` — served by the HTTP API from the `XG2G_DATA` folder (e.g. `/files/playlist.m3u`).
 
 ## Configuration (ENV)
@@ -88,7 +86,7 @@ Key environment variables:
 | `XG2G_OWI_BASE`    | url      | `-`      | yes      | Base URL of the OpenWebIF instance (receiver)                                               |
 | `XG2G_BOUQUET`     | string   | `-`      | yes      | Bouquet name or ID to fetch (e.g. `Favourites`)                                             |
 | `XG2G_XMLTV`       | string   | `(empty)` | no       | If set, path to write `xmltv.xml` inside `XG2G_DATA` (or absolute path)                     |
-| `XG2G_PICON_BASE`  | url/path | `(empty)` | no       | Base URL or path for picon images; if empty, OpenWebIF picon derivation is used             |
+| `XG2G_PICON_BASE`  | url/path | `(empty)` | no       | Base URL or path for picon images; defaults to OpenWebIF derivation                         |
 | `XG2G_FUZZY_MAX`   | int      | `2`      | no       | Max Levenshtein distance for fuzzy matching EPG names                                       |
 | `XG2G_STREAM_PORT` | int      | `8001`   | no       | Override for the OpenWebIF stream port (defaults to 8001)                                   |
 
