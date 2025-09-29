@@ -432,17 +432,51 @@ jobs:
           
           # Find the actual daemon port
           echo "🔍 Discovering daemon port..."
-          DAEMON_PORT=$(ps aux | grep './daemon' | grep -v grep | sed -n 's/.*XG2G_LISTEN=:\([0-9]*\).*/\1/p' | head -1)
-          if [ -z "$DAEMON_PORT" ]; then
-            # Fallback: search for listening ports
-            DAEMON_PORT=$(netstat -tuln | grep '127.0.0.1:' | grep -v ':18080' | awk '{print $4}' | cut -d: -f2 | head -1)
+          
+          # Wait a bit more for daemon to fully start and bind port
+          sleep 3
+          
+          # Debug: Show daemon process and ports
+          echo "📊 Debug info:"
+          ps aux | grep daemon | grep -v grep || echo "No daemon process found"
+          netstat -tuln | grep '127.0.0.1' || echo "No listening ports found"
+          
+          # Try multiple methods to find the daemon port
+          DAEMON_PORT=""
+          
+          # Method 1: Parse daemon log for actual port
+          if [ -f "/tmp/daemon.log" ]; then
+            DAEMON_PORT=$(grep -o 'listen.*:[0-9]*' /tmp/daemon.log 2>/dev/null | grep -o '[0-9]*$' | head -1)
+            echo "📋 Method 1 (log parsing): ${DAEMON_PORT:-'not found'}"
           fi
           
+          # Method 2: Find non-18080 listening ports
           if [ -z "$DAEMON_PORT" ]; then
-            echo "❌ Could not determine daemon port"
-            echo "Daemon log:"
-            cat /tmp/daemon.log || true
-            netstat -tuln | grep '127.0.0.1'
+            DAEMON_PORT=$(netstat -tuln 2>/dev/null | grep '127.0.0.1:' | grep -v ':18080' | awk '{print $4}' | cut -d: -f2 | head -1)
+            echo "📋 Method 2 (netstat): ${DAEMON_PORT:-'not found'}"
+          fi
+          
+          # Method 3: Try common ephemeral ports
+          if [ -z "$DAEMON_PORT" ]; then
+            for port in 8080 8081 9000 9001 $(seq 32768 32778); do
+              if curl --connect-timeout 1 --max-time 1 --silent "http://127.0.0.1:${port}/healthz" >/dev/null 2>&1; then
+                DAEMON_PORT=$port
+                echo "📋 Method 3 (port scan): found on $port"
+                break
+              fi
+            done
+          fi
+          
+          # If still no port found, try to read from daemon process info
+          if [ -z "$DAEMON_PORT" ]; then
+            echo "❌ Could not determine daemon port using any method"
+            echo "📋 Daemon log contents:"
+            cat /tmp/daemon.log || echo "No daemon log found"
+            echo "📋 Network status:"
+            netstat -tuln | grep '127.0.0.1' || echo "No local listeners"
+            echo "📋 Process info:"
+            ps aux | grep daemon | grep -v grep || echo "No daemon process"
+            kill $DAEMON_PID 2>/dev/null || true
             exit 1
           fi
           
