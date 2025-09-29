@@ -17,6 +17,7 @@ paths:
       description: >-
         Returns status information such as last refresh time, number of channels
         and any error message
+      operationId: getStatus
       responses:
         "200":
           description: Status retrieved successfully
@@ -34,6 +35,7 @@ paths:
         Starts a full refresh (read bouquets, generate M3U and optional XMLTV).
         The operation is idempotent; repeated calls do not trigger additional work
         if a refresh is already in progress.
+      operationId: triggerRefreshGet
       responses:
         "200":
           description: Refresh completed successfully
@@ -51,6 +53,7 @@ paths:
         Starts a full refresh (read bouquets, generate M3U and optional XMLTV).
         The operation is idempotent; repeated calls do not trigger additional work
         if a refresh is already in progress.
+      operationId: triggerRefreshPost
       responses:
         "200":
           description: Refresh completed successfully
@@ -68,6 +71,7 @@ paths:
       summary: Retrieve generated file
       description: >-
         Download one of the generated artifacts (playlist.m3u, guide.xml, picons)
+      operationId: getGeneratedFile
       parameters:
         - name: filename
           in: path
