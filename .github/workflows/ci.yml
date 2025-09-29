@@ -56,15 +56,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 'lts/*'
-          cache: 'npm'
-
-      - name: Install Redocly CLI
-        run: npm i -g @redocly/cli@latest
 
       - name: Lint OpenAPI
         run: |
           set -euo pipefail
-          redocly lint api/openapi.yaml --format=stylish | tee /tmp/openapi-lint.txt
+          npx --yes @redocly/cli@latest lint api/openapi.yaml --format=stylish | tee /tmp/openapi-lint.txt
 
       - name: Attach OpenAPI lint report
         if: always()
