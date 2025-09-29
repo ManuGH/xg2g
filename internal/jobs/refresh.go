@@ -18,8 +18,6 @@ import (
 	"github.com/ManuGH/xg2g/internal/playlist"
 )
 
-const defaultStreamPort = 8001
-
 // ErrInvalidStreamPort marks an invalid stream port configuration.
 var ErrInvalidStreamPort = errors.New("invalid stream port")
 
@@ -39,6 +37,7 @@ type Config struct {
 	PiconBase     string
 	FuzzyMax      int
 	StreamPort    int
+	APIToken      string // Optional: for securing the /api/refresh endpoint
 	OWITimeout    time.Duration
 	OWIRetries    int
 	OWIBackoff    time.Duration
@@ -47,98 +46,63 @@ type Config struct {
 
 // Refresh performs the complete refresh cycle: fetch bouquets → services → write M3U + XMLTV
 func Refresh(ctx context.Context, cfg Config) (*Status, error) {
-	cfg.OWIBase = strings.TrimSpace(cfg.OWIBase)
-	if cfg.StreamPort == 0 {
-		cfg.StreamPort = defaultStreamPort
-	} else if cfg.StreamPort < 1 || cfg.StreamPort > 65535 {
-		return nil, fmt.Errorf("%w: %d", ErrInvalidStreamPort, cfg.StreamPort)
-	}
+	logger := xglog.WithComponentFromContext(ctx, "jobs")
+	logger.Info().Str("event", "refresh.start").Msg("starting refresh")
+
 	if err := validateConfig(cfg); err != nil {
 		return nil, err
 	}
 
-	cl := openwebif.NewWithPort(cfg.OWIBase, cfg.StreamPort, openwebif.Options{
+	opts := openwebif.Options{
 		Timeout:    cfg.OWITimeout,
 		MaxRetries: cfg.OWIRetries,
 		Backoff:    cfg.OWIBackoff,
 		MaxBackoff: cfg.OWIMaxBackoff,
-	})
-	return refreshWithClient(ctx, cfg, cl)
-}
-
-// refreshWithClient is separated for easier testing
-func refreshWithClient(ctx context.Context, cfg Config, cl openwebif.ClientInterface) (*Status, error) {
-	logger := xglog.WithComponentFromContext(ctx, "jobs")
-	logger.Info().Str("event", "refresh.start").Msg("starting refresh")
-
-	bqs, err := cl.Bouquets(ctx)
+	}
+	client := openwebif.NewWithPort(cfg.OWIBase, cfg.StreamPort, opts)
+	bouquets, err := client.Bouquets(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("bouquets: %w", err)
+		return nil, fmt.Errorf("failed to fetch bouquets: %w", err)
 	}
 
-	ref, ok := bqs[cfg.Bouquet]
+	bouquetRef, ok := bouquets[cfg.Bouquet]
 	if !ok {
 		return nil, fmt.Errorf("bouquet %q not found", cfg.Bouquet)
 	}
 
-	services, err := cl.Services(ctx, ref)
+	services, err := client.Services(ctx, bouquetRef)
 	if err != nil {
-		return nil, fmt.Errorf("services for bouquet %q: %w", cfg.Bouquet, err)
+		return nil, fmt.Errorf("failed to fetch services for bouquet %q: %w", cfg.Bouquet, err)
 	}
 
 	items := make([]playlist.Item, 0, len(services))
-	for i, svc := range services {
-		if len(svc) < 2 {
+	for _, s := range services {
+		name, ref := s[0], s[1]
+		streamURL, err := client.StreamURL(ref, name)
+		if err != nil {
+			logger.Warn().Err(err).Str("service", name).Msg("failed to build stream URL")
 			continue
 		}
-		name, sref := svc[0], svc[1]
 
-		item := playlist.Item{
+		piconURL := ""
+		if cfg.PiconBase != "" {
+			piconURL = openwebif.PiconURL(cfg.PiconBase, ref)
+		}
+
+		items = append(items, playlist.Item{
 			Name:    name,
 			TvgID:   makeStableID(name),
-			TvgChNo: i + 1,
+			TvgLogo: piconURL,
 			Group:   cfg.Bouquet,
-		}
-
-		streamURL, err := cl.StreamURL(sref, name)
-		if err != nil {
-			return nil, fmt.Errorf("stream url for %q: %w", name, err)
-		}
-		item.URL = streamURL
-
-		if cfg.PiconBase != "" {
-			item.TvgLogo = strings.TrimRight(cfg.PiconBase, "/") + "/" + url.PathEscape(sref) + ".png"
-		} else {
-			item.TvgLogo = openwebif.PiconURL(cfg.OWIBase, sref)
-		}
-
-		items = append(items, item)
+			URL:     streamURL,
+		})
 	}
 
 	// Write M3U playlist
 	playlistPath := filepath.Join(cfg.DataDir, "playlist.m3u")
-	if err := os.MkdirAll(cfg.DataDir, 0755); err != nil {
-		return nil, fmt.Errorf("create data dir: %w", err)
+	if err := writeM3U(playlistPath, items); err != nil {
+		return nil, fmt.Errorf("failed to write M3U playlist: %w", err)
 	}
-
-	f, err := os.Create(playlistPath)
-	if err != nil {
-		return nil, fmt.Errorf("create playlist: %w", err)
-	}
-	defer func() {
-		if cerr := f.Close(); cerr != nil {
-			logger.Error().
-				Err(cerr).
-				Str("event", "playlist.close_error").
-				Str("path", playlistPath).
-				Msg("failed to close playlist file")
-		}
-	}()
-
-	if err := playlist.WriteM3U(f, items); err != nil {
-		return nil, fmt.Errorf("write playlist: %w", err)
-	}
-
 	logger.Info().
 		Str("event", "playlist.write").
 		Str("path", playlistPath).
@@ -155,7 +119,7 @@ func refreshWithClient(ctx context.Context, cfg Config, cl openwebif.ClientInter
 			}
 			xmlCh = append(xmlCh, ch)
 		}
-		if err := epg.WriteXMLTV(xmlCh, cfg.XMLTVPath); err != nil {
+		if err := epg.WriteXMLTV(xmlCh, filepath.Join(cfg.DataDir, cfg.XMLTVPath)); err != nil {
 			logger.Warn().
 				Err(err).
 				Str("event", "xmltv.failed").
@@ -177,6 +141,34 @@ func refreshWithClient(ctx context.Context, cfg Config, cl openwebif.ClientInter
 		Int("channels", status.Channels).
 		Msg("refresh completed")
 	return status, nil
+}
+
+// writeM3U safely writes the playlist to a temporary file and renames it on success.
+func writeM3U(path string, items []playlist.Item) error {
+	dir := filepath.Dir(path)
+	tmpFile, err := os.CreateTemp(dir, "playlist-*.m3u.tmp")
+	if err != nil {
+		return fmt.Errorf("create temporary M3U file: %w", err)
+	}
+	defer func() {
+		tmpFile.Close()
+		os.Remove(tmpFile.Name()) // Clean up temp file on error
+	}()
+
+	if err := playlist.WriteM3U(tmpFile, items); err != nil {
+		return fmt.Errorf("write to temporary M3U file: %w", err)
+	}
+
+	if err := tmpFile.Close(); err != nil {
+		return fmt.Errorf("close temporary M3U file: %w", err)
+	}
+
+	// Atomically rename the temporary file to the final destination
+	if err := os.Rename(tmpFile.Name(), path); err != nil {
+		return fmt.Errorf("rename temporary M3U file: %w", err)
+	}
+
+	return nil
 }
 
 // makeStableID creates deterministic tvg-id from channel name

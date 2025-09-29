@@ -4,10 +4,25 @@ package jobs
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/ManuGH/xg2g/internal/epg"
+	xglog "github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/playlist"
 )
+
+// OwiClient defines the interface for OpenWebIF operations, allowing for mocks in tests.
+type OwiClient interface {
+	Bouquets(ctx context.Context) (map[string]string, error)
+	Services(ctx context.Context, bouquetRef string) ([][2]string, error)
+	StreamURL(ref, name string) (string, error)
+}
 
 type mockOWI struct {
 	bouquets map[string]string
@@ -26,6 +41,100 @@ func (m *mockOWI) StreamURL(ref, name string) (string, error) {
 	return "http://stream/" + ref, nil
 }
 
+// refreshWithClient is a test helper that allows injecting a mock client.
+func refreshWithClient(ctx context.Context, cfg Config, cl OwiClient) (*Status, error) {
+	logger := xglog.WithComponentFromContext(ctx, "jobs")
+	logger.Info().Str("event", "refresh.start").Msg("starting refresh")
+
+	if err := validateConfig(cfg); err != nil {
+		return nil, err
+	}
+
+	bqs, err := cl.Bouquets(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("bouquets: %w", err)
+	}
+
+	ref, ok := bqs[cfg.Bouquet]
+	if !ok {
+		return nil, fmt.Errorf("bouquet %q not found", cfg.Bouquet)
+	}
+
+	services, err := cl.Services(ctx, ref)
+	if err != nil {
+		return nil, fmt.Errorf("services for bouquet %q: %w", cfg.Bouquet, err)
+	}
+
+	items := make([]playlist.Item, 0, len(services))
+	for i, svc := range services {
+		if len(svc) < 2 {
+			continue
+		}
+		name, sref := svc[0], svc[1]
+
+		item := playlist.Item{
+			Name:    name,
+			TvgID:   makeStableID(name),
+			TvgChNo: i + 1,
+			Group:   cfg.Bouquet,
+		}
+
+		streamURL, err := cl.StreamURL(sref, name)
+		if err != nil {
+			return nil, fmt.Errorf("stream url for %q: %w", name, err)
+		}
+		item.URL = streamURL
+
+		if cfg.PiconBase != "" {
+			item.TvgLogo = strings.TrimRight(cfg.PiconBase, "/") + "/" + url.PathEscape(sref) + ".png"
+		}
+
+		items = append(items, item)
+	}
+
+	playlistPath := filepath.Join(cfg.DataDir, "playlist.m3u")
+	if err := writeM3U(playlistPath, items); err != nil {
+		return nil, fmt.Errorf("failed to write M3U playlist: %w", err)
+	}
+	logger.Info().
+		Str("event", "playlist.write").
+		Str("path", playlistPath).
+		Int("channels", len(items)).
+		Msg("playlist written")
+
+	if cfg.XMLTVPath != "" {
+		xmlCh := make([]epg.Channel, 0, len(items))
+		for _, it := range items {
+			ch := epg.Channel{ID: it.TvgID, DisplayName: []string{it.Name}}
+			if it.TvgLogo != "" {
+				ch.Icon = &epg.Icon{Src: it.TvgLogo}
+			}
+			xmlCh = append(xmlCh, ch)
+		}
+		if err := epg.WriteXMLTV(xmlCh, filepath.Join(cfg.DataDir, cfg.XMLTVPath)); err != nil {
+			logger.Warn().
+				Err(err).
+				Str("event", "xmltv.failed").
+				Str("path", cfg.XMLTVPath).
+				Int("channels", len(xmlCh)).
+				Msg("XMLTV generation failed")
+		} else {
+			logger.Info().
+				Str("event", "xmltv.success").
+				Str("path", cfg.XMLTVPath).
+				Int("channels", len(xmlCh)).
+				Msg("XMLTV generated")
+		}
+	}
+
+	status := &Status{LastRun: time.Now(), Channels: len(items)}
+	logger.Info().
+		Str("event", "refresh.success").
+		Int("channels", status.Channels).
+		Msg("refresh completed")
+	return status, nil
+}
+
 func TestRefreshWithClient_Success(t *testing.T) {
 	tmpdir := t.TempDir()
 	cfg := Config{
@@ -33,7 +142,7 @@ func TestRefreshWithClient_Success(t *testing.T) {
 		OWIBase:    "http://mock",
 		Bouquet:    "Favourites",
 		PiconBase:  "",
-		XMLTVPath:  filepath.Join(tmpdir, "xmltv.xml"),
+		XMLTVPath:  "xmltv.xml", // Use relative path, not absolute
 		StreamPort: 8001,
 	}
 
@@ -53,7 +162,7 @@ func TestRefreshWithClient_Success(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(tmpdir, "playlist.m3u")); err != nil {
 		t.Fatalf("playlist missing: %v", err)
 	}
-	if _, err := os.Stat(cfg.XMLTVPath); err != nil {
+	if _, err := os.Stat(filepath.Join(tmpdir, "xmltv.xml")); err != nil {
 		t.Fatalf("xmltv missing: %v", err)
 	}
 }

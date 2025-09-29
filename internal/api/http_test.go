@@ -161,6 +161,84 @@ func TestHandleReady(t *testing.T) {
 	}
 }
 
+func TestAuthMiddleware(t *testing.T) {
+	// Handler that will be protected by the middleware
+	protectedHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	})
+
+	tests := []struct {
+		name          string
+		tokenInCfg    string
+		tokenInHeader string
+		wantStatus    int
+		wantBody      string
+	}{
+		{
+			name:          "no_token_configured_access_granted",
+			tokenInCfg:    "",
+			tokenInHeader: "",
+			wantStatus:    http.StatusOK,
+			wantBody:      "OK",
+		},
+		{
+			name:          "token_configured_no_header_unauthorized",
+			tokenInCfg:    "secret-token",
+			tokenInHeader: "",
+			wantStatus:    http.StatusUnauthorized,
+			wantBody:      "Unauthorized\n",
+		},
+		{
+			name:          "token_configured_wrong_header_format_unauthorized",
+			tokenInCfg:    "secret-token",
+			tokenInHeader: "Token secret-token", // Wrong format
+			wantStatus:    http.StatusUnauthorized,
+			wantBody:      "Unauthorized\n",
+		},
+		{
+			name:          "token_configured_wrong_token_forbidden",
+			tokenInCfg:    "secret-token",
+			tokenInHeader: "Bearer wrong-token",
+			wantStatus:    http.StatusForbidden,
+			wantBody:      "Forbidden\n",
+		},
+		{
+			name:          "token_configured_correct_token_access_granted",
+			tokenInCfg:    "secret-token",
+			tokenInHeader: "Bearer secret-token",
+			wantStatus:    http.StatusOK,
+			wantBody:      "OK",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := jobs.Config{APIToken: tt.tokenInCfg}
+			server := New(cfg)
+
+			// Create the middleware chain
+			handlerToTest := server.authMiddleware(protectedHandler)
+
+			req := httptest.NewRequest("GET", "/test", nil)
+			if tt.tokenInHeader != "" {
+				req.Header.Set("Authorization", tt.tokenInHeader)
+			}
+
+			rr := httptest.NewRecorder()
+			handlerToTest.ServeHTTP(rr, req)
+
+			if rr.Code != tt.wantStatus {
+				t.Errorf("handler returned wrong status code: got %v want %v", rr.Code, tt.wantStatus)
+			}
+
+			if rr.Body.String() != tt.wantBody {
+				t.Errorf("handler returned unexpected body: got %q want %q", rr.Body.String(), tt.wantBody)
+			}
+		})
+	}
+}
+
 func TestSecureFileHandlerSymlinkPolicy(t *testing.T) {
 	tempDir := t.TempDir()
 

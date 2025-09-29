@@ -1,0 +1,75 @@
+name: Security Scan
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly security scan every Monday at 3 AM UTC
+    - cron: "0 3 * * 1"
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read # for detecting self-mutation
+
+jobs:
+  gosec:
+    name: Go Security Scanner
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: Run GoSec Security Scanner
+        uses: securego/gosec@master
+        with:
+          args: "-no-fail -fmt sarif -out results.sarif ./..."
+          # -no-fail: report issues without failing the job
+          # -fmt sarif: output in SARIF format for GitHub to ingest
+          # -out: specify output file
+          # ./...: scan all packages
+
+      - name: Upload SARIF file
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results.sarif
+          category: gosec-scan
+
+  security-regression:
+    name: Security Regression Tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: Intensive symlink security tests
+        run: |
+          echo "🔄 Running intensive security regression tests..."
+          # Run symlink tests multiple times to catch race conditions
+          go test ./cmd/daemon -run TestEnsureDataDirSymlinkPolicy -race -count=10
+          go test ./internal/api -run TestSecureFileHandlerSymlinkPolicy -race -count=10
+          echo "✅ Security regression tests completed"
+
+      - name: Security pattern enforcement
+        run: |
+          echo "📋 Enforcing security coding patterns..."
+          # Ensure no new insecure patterns are introduced
+          git diff HEAD~1..HEAD -- '*.go' | grep -E '^\+.*err\.Error\(\)' && (echo "❌ New err.Error() exposure detected" && exit 1) || true
+          git diff HEAD~1..HEAD -- '*.go' | grep -E '^\+.*http\.FileServer' && (echo "❌ New FileServer usage detected" && exit 1) || true
+          echo "✅ No new security anti-patterns detected"

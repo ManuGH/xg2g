@@ -3,10 +3,12 @@ package log
 
 import (
 	"io"
+	"net/http"
 	"os"
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 )
 
@@ -67,6 +69,58 @@ func logger() zerolog.Logger {
 // Base returns the configured base logger instance.
 func Base() zerolog.Logger {
 	return logger()
+}
+
+// L provides access to the global logger instance.
+func L() *zerolog.Logger {
+	return &base
+}
+
+// Middleware returns a new http.Handler middleware that logs requests using zerolog.
+func Middleware() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			start := time.Now()
+			// Create a logger with a unique request ID
+			reqID := uuid.New().String()
+			l := base.With().
+				Str("req_id", reqID).
+				Str("method", r.Method).
+				Str("path", r.URL.Path).
+				Str("remote_addr", r.RemoteAddr).
+				Str("user_agent", r.UserAgent()).
+				Logger()
+
+			// Add the logger to the request context
+			ctx := l.WithContext(r.Context())
+			r = r.WithContext(ctx)
+
+			// Use a status recorder to capture the response status
+			sr := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+
+			// Process the request
+			next.ServeHTTP(sr, r)
+
+			// Log the request details
+			l.Info().
+				Str("event", "request.handled").
+				Int("status", sr.status).
+				Dur("duration", time.Since(start)).
+				Msg("http request")
+		})
+	}
+}
+
+// statusRecorder wraps http.ResponseWriter to capture the status code.
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+// WriteHeader captures the status code before writing it to the response.
+func (sr *statusRecorder) WriteHeader(code int) {
+	sr.status = code
+	sr.ResponseWriter.WriteHeader(code)
 }
 
 // WithComponent returns a child logger annotated with the given component name.

@@ -42,12 +42,12 @@ type Options struct {
 
 const (
 	defaultStreamPort = 8001
-	defaultTimeout    = 5 * time.Second
-	defaultRetries    = 2
-	defaultBackoff    = 250 * time.Millisecond
+	defaultTimeout    = 10 * time.Second
+	defaultRetries    = 3
+	defaultBackoff    = 500 * time.Millisecond
 	maxTimeout        = 60 * time.Second
 	maxRetries        = 10
-	maxBackoff        = 10 * time.Second
+	maxBackoff        = 30 * time.Second
 )
 
 var (
@@ -120,7 +120,7 @@ func normalizeOptions(opts Options) Options {
 		opts.Backoff = maxBackoff
 	}
 	if opts.MaxBackoff <= 0 {
-		opts.MaxBackoff = 2 * time.Second // Default from spec
+		opts.MaxBackoff = 2 * time.Second
 	}
 	if opts.MaxBackoff > maxBackoff {
 		opts.MaxBackoff = maxBackoff

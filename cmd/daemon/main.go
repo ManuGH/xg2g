@@ -2,14 +2,18 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/api"
@@ -29,10 +33,21 @@ const (
 	maxOWITimeout        = 60 * time.Second
 	maxOWIRetries        = 10
 	maxOWIBackoff        = 30 * time.Second // Updated to match spec (30s max)
+
+	// Server hardening defaults
+	serverReadTimeout    = 5 * time.Second
+	serverWriteTimeout   = 10 * time.Second
+	serverIdleTimeout    = 120 * time.Second
+	serverMaxHeaderBytes = 1 << 20 // 1 MB
+	shutdownTimeout      = 15 * time.Second
 )
 
 func main() {
 	logger := xglog.WithComponent("daemon")
+
+	// Create a context that listens for the interrupt signal from the OS.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
 	streamPort, err := resolveStreamPort()
 	if err != nil {
@@ -58,6 +73,7 @@ func main() {
 		XMLTVPath:     env("XG2G_XMLTV", ""),
 		FuzzyMax:      atoi(env("XG2G_FUZZY_MAX", "2")),
 		StreamPort:    streamPort,
+		APIToken:      env("XG2G_API_TOKEN", ""), // Read API token from environment
 		OWITimeout:    owiTimeout,
 		OWIRetries:    owiRetries,
 		OWIBackoff:    owiBackoff,
@@ -89,23 +105,39 @@ func main() {
 		Int("fuzzy", cfg.FuzzyMax).
 		Str("picon", cfg.PiconBase).
 		Int("stream_port", cfg.StreamPort).
+		Bool("api_token_set", cfg.APIToken != ""). // Log if token is set, not the token itself
 		Dur("owi_timeout", cfg.OWITimeout).
 		Int("owi_retries", cfg.OWIRetries).
 		Dur("owi_backoff", cfg.OWIBackoff).
 		Msg("configuration loaded")
 
 	// Start metrics server on separate port if configured
-	if metricsAddr := resolveMetricsListen(); metricsAddr != "" {
+	metricsAddr := resolveMetricsListen()
+	if metricsAddr != "" {
+		metricsSrv := &http.Server{
+			Addr:              metricsAddr,
+			Handler:           promhttp.Handler(),
+			ReadHeaderTimeout: serverReadTimeout,
+		}
 		go func() {
 			logger.Info().
 				Str("addr", metricsAddr).
 				Str("event", "metrics.start").
 				Msg("starting metrics server")
-			if err := http.ListenAndServe(metricsAddr, promhttp.Handler()); err != nil {
+			if err := metricsSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				logger.Error().
 					Err(err).
 					Str("event", "metrics.failed").
 					Msg("metrics server failed")
+			}
+		}()
+		// Graceful shutdown for metrics server
+		go func() {
+			<-ctx.Done()
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := metricsSrv.Shutdown(shutdownCtx); err != nil {
+				logger.Warn().Err(err).Msg("metrics server shutdown failed")
 			}
 		}()
 	} else {
@@ -114,17 +146,47 @@ func main() {
 			Msg("metrics server disabled (no XG2G_METRICS_LISTEN configured)")
 	}
 
-	// Start main API server
-	logger.Info().
-		Str("addr", addr).
-		Str("event", "server.start").
-		Msg("starting main server")
-	if err := http.ListenAndServe(addr, s.Handler()); err != nil {
-		logger.Fatal().
-			Err(err).
-			Str("event", "server.failed").
-			Msg("server failed")
+	// Configure main API server with hardening
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           s.Handler(),
+		ReadTimeout:       serverReadTimeout,
+		WriteTimeout:      serverWriteTimeout,
+		IdleTimeout:       serverIdleTimeout,
+		MaxHeaderBytes:    serverMaxHeaderBytes,
+		ReadHeaderTimeout: serverReadTimeout,
 	}
+
+	// Start main API server
+	go func() {
+		logger.Info().
+			Str("addr", addr).
+			Str("event", "server.start").
+			Msg("starting main server")
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logger.Fatal().
+				Err(err).
+				Str("event", "server.failed").
+				Msg("server failed")
+		}
+	}()
+
+	// Wait for interrupt signal
+	<-ctx.Done()
+
+	// Restore default behavior on the interrupt signal and notify user of shutdown.
+	stop()
+	logger.Info().Msg("shutting down gracefully, press Ctrl+C again to force")
+
+	// The context is used to inform the server it has 5 seconds to finish
+	// the request it is currently handling
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		logger.Fatal().Err(err).Msg("server forced to shutdown")
+	}
+
+	logger.Info().Msg("server exiting")
 }
 
 func env(k, def string) string {
