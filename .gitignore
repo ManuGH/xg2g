@@ -36,7 +36,7 @@ data/
 *.m3u
 *.xml
 *.gz
-!internal/epg/testdata/xmltv.golden.xml
+!internal/epg/testdata/*.golden.xml
 
 # Ensure generated artifacts aren't committed
 /data/
@@ -63,3 +63,5 @@ daemon-*
 
 # Keep test golden files
 !internal/epg/testdata/xmltv.golden.xml
+!internal/epg/testdata/multi_channel.golden.xml
+!internal/epg/testdata/empty.golden.xml
