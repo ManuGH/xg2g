@@ -62,6 +62,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Install build essentials
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential gcc
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -69,7 +74,9 @@ jobs:
           cache: true
 
       - name: Run tests with race detection
-        run: go test ./... -race -count=1
+        run: |
+          echo "Running tests with race detection (CGO_ENABLED=1)..."
+          go test ./... -race -count=1 -v
 
   # Coverage Analysis
   coverage:
@@ -92,18 +99,21 @@ jobs:
         run: |
           COVERAGE=$(go tool cover -func=coverage.out | grep "total:" | awk '{print $3}' | sed 's/%//')
           echo "Overall coverage: ${COVERAGE}%"
-          if (( $(echo "${COVERAGE} < ${COVERAGE_THRESHOLD}" | bc -l) )); then
+          COVERAGE_INT=${COVERAGE%.*}
+          if [ "${COVERAGE_INT}" -lt "${COVERAGE_THRESHOLD}" ]; then
             echo "❌ Coverage ${COVERAGE}% is below threshold ${COVERAGE_THRESHOLD}%"
             exit 1
           fi
           echo "✅ Coverage ${COVERAGE}% meets threshold ${COVERAGE_THRESHOLD}%"
 
-      - name: Check EPG module coverage  
+      - name: Check EPG module coverage
         run: |
           go test -covermode=atomic -coverprofile=epg_coverage.out ./internal/epg
           EPG_COVERAGE=$(go tool cover -func=epg_coverage.out | grep "total:" | awk '{print $3}' | sed 's/%//')
           echo "EPG module coverage: ${EPG_COVERAGE}%"
-          if (( $(echo "${EPG_COVERAGE} < ${EPG_COVERAGE_THRESHOLD}" | bc -l) )); then
+          EPG_COVERAGE_INT=$(printf "%.0f" "${EPG_COVERAGE}")
+          EPG_THRESHOLD_INT=$(printf "%.0f" "${EPG_COVERAGE_THRESHOLD}")
+          if [ "${EPG_COVERAGE_INT}" -lt "${EPG_THRESHOLD_INT}" ]; then
             echo "❌ EPG coverage ${EPG_COVERAGE}% is below threshold ${EPG_COVERAGE_THRESHOLD}%"
             exit 1
           fi
@@ -132,9 +142,35 @@ jobs:
 
       - name: Run fuzzing tests
         run: |
-          go test ./internal/epg -fuzz=FuzzLevenshtein -fuzztime=10s -run '^$'
-          go test ./internal/epg -fuzz=FuzzXMLTVGeneration -fuzztime=10s -run '^$'
-          go test ./internal/epg -fuzz=FuzzParseChannelName -fuzztime=10s -run '^$'
+          set -e
+          echo "Running fuzzing tests..."
+          
+          # Check if fuzz functions exist before running
+          if go test ./internal/epg -list=FuzzLevenshtein >/dev/null 2>&1; then
+            echo "Running FuzzLevenshtein..."
+            go test ./internal/epg -fuzz=FuzzLevenshtein -fuzztime=10s -run '^$' -v
+          else
+            echo "❌ FuzzLevenshtein not found"
+            exit 1
+          fi
+          
+          if go test ./internal/epg -list=FuzzXMLTVGeneration >/dev/null 2>&1; then
+            echo "Running FuzzXMLTVGeneration..."  
+            go test ./internal/epg -fuzz=FuzzXMLTVGeneration -fuzztime=10s -run '^$' -v
+          else
+            echo "❌ FuzzXMLTVGeneration not found"
+            exit 1
+          fi
+          
+          if go test ./internal/epg -list=FuzzParseChannelName >/dev/null 2>&1; then
+            echo "Running FuzzParseChannelName..."
+            go test ./internal/epg -fuzz=FuzzParseChannelName -fuzztime=10s -run '^$' -v
+          else
+            echo "❌ FuzzParseChannelName not found"
+            exit 1
+          fi
+          
+          echo "✅ All fuzz tests completed successfully"
 
   # Cross-platform Build Matrix
   build-matrix:
@@ -162,7 +198,8 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
-      - name: Build binary
+      - name: Build binary (Unix)
+        if: matrix.goos != 'windows'
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.arch }}
@@ -173,7 +210,22 @@ jobs:
           if [ "$VERSION" = "main" ]; then
             VERSION="${{ github.sha }}"
           fi
-          go build -ldflags "-s -w -X main.Version=${VERSION}" -o xg2g-${{ matrix.goos }}-${{ matrix.arch }}${{ matrix.goos == 'windows' && '.exe' || '' }} ./cmd/daemon
+          go build -ldflags "-s -w -X main.Version=${VERSION}" -o xg2g-${{ matrix.goos }}-${{ matrix.arch }} ./cmd/daemon
+
+      - name: Build binary (Windows)
+        if: matrix.goos == 'windows'
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: 0
+          GOFLAGS: "-trimpath"
+        shell: pwsh
+        run: |
+          $VERSION = "${{ github.ref_name }}"
+          if ($VERSION -eq "main") {
+            $VERSION = "${{ github.sha }}"
+          }
+          go build -ldflags "-s -w -X main.Version=$VERSION" -o xg2g-${{ matrix.goos }}-${{ matrix.arch }}.exe ./cmd/daemon
 
       - name: Test binary (Unix)
         if: matrix.goos != 'windows'
@@ -200,7 +252,7 @@ jobs:
           scan-type: fs
           format: table
           severity: CRITICAL,HIGH
-          exit-code: '1'
+          exit-code: "1"
 
   # SBOM Generation
   sbom:
