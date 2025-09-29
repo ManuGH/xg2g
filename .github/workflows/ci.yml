@@ -52,6 +52,37 @@ jobs:
           set -euo pipefail
           go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
 
+      - name: Setup Node for OpenAPI lint
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+          cache: 'npm'
+
+      - name: Install Redocly CLI
+        run: npm i -g @redocly/cli@latest
+
+      - name: Lint OpenAPI
+        run: |
+          set -euo pipefail
+          redocly lint api/openapi.yaml --format=stylish | tee /tmp/openapi-lint.txt
+
+      - name: Attach OpenAPI lint report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openapi-lint
+          path: /tmp/openapi-lint.txt
+          retention-days: 14
+
+      - name: OpenAPI lint summary
+        if: always()
+        run: |
+          echo "## OpenAPI Lint" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          tail -n 200 /tmp/openapi-lint.txt >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
       - name: "Integration (stub + daemon)"
         env:
           XG2G_DATA: ./data
