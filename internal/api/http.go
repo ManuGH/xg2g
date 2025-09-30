@@ -25,8 +25,10 @@ type Server struct {
 
 func New(cfg jobs.Config) *Server {
 	return &Server{
-		cfg:    cfg,
-		status: jobs.Status{},
+		cfg: cfg,
+		status: jobs.Status{
+			Version: cfg.Version, // Initialize version from config
+		},
 	}
 }
 
@@ -105,6 +107,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 
 	logger.Debug().
 		Str("event", "status.success").
+		Str("version", status.Version).
 		Time("lastRun", status.LastRun).
 		Int("channels", status.Channels).
 		Str("status", "ok").

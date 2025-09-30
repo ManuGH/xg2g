@@ -23,6 +23,7 @@ var ErrInvalidStreamPort = errors.New("invalid stream port")
 
 // Status represents the current state of the refresh job
 type Status struct {
+	Version  string    `json:"version"`
 	LastRun  time.Time `json:"lastRun"`
 	Channels int       `json:"channels"`
 	Error    string    `json:"error,omitempty"`
@@ -30,6 +31,7 @@ type Status struct {
 
 // Config holds configuration for refresh operations
 type Config struct {
+	Version       string
 	DataDir       string
 	OWIBase       string
 	Bouquet       string

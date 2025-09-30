@@ -79,6 +79,7 @@ func main() {
 	}
 
 	cfg := jobs.Config{
+		Version:       Version,
 		DataDir:       env("XG2G_DATA", "/data"),
 		OWIBase:       env("XG2G_OWI_BASE", "http://10.10.55.57"),
 		Bouquet:       env("XG2G_BOUQUET", "Premium"),

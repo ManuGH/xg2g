@@ -1,6 +1,6 @@
 services:
   xg2g:
-    image: ghcr.io/manugh/xg2g:latest # Replace with specific digest for production
+    image: ghcr.io/manugh/xg2g@sha256:a8d795aca7908711fa579147e787d6947d17bf815b017d07969c7f607fd218bb
     container_name: xg2g-app
     restart: unless-stopped
     ports:
