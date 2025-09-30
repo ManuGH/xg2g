@@ -123,7 +123,7 @@ jobs:
           mkdir -p ~/.cache/go-build
 
       - name: Generate coverage profile
-        run: go test ./... -covermode=atomic -coverprofile=coverage.out
+        run: go test -tags=security ./... -covermode=atomic -coverprofile=coverage.out
 
       - name: Check overall coverage
         run: |
