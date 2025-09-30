@@ -446,3 +446,17 @@ k8s-apply-alpine: ## Apply Alpine Kubernetes manifest (set NS=namespace)
 
 k8s-apply-distroless: ## Apply Distroless Kubernetes manifest (set NS=namespace)
 	kubectl apply -n "$${NS:-default}" -f deploy/k8s-distroless.yaml
+
+# --- K8s Secret helpers ---
+.PHONY: k8s-secret-apply k8s-secret-delete
+
+k8s-secret-apply: ## Apply xg2g secret (set NS and TOKEN; TOKEN will be base64-encoded by kubectl if using --from-literal)
+	@if [ -z "$$TOKEN" ]; then echo "❌ Set TOKEN=your-api-token"; exit 1; fi
+	kubectl -n "$${NS:-default}" create secret generic xg2g-secrets \
+	  --from-literal=api-token="$$TOKEN" \
+	  --dry-run=client -o yaml | kubectl -n "$${NS:-default}" apply -f -
+	@echo "✅ Secret applied in namespace $$\{NS:-default\}"
+
+k8s-secret-delete: ## Delete xg2g secret
+	kubectl -n "$${NS:-default}" delete secret xg2g-secrets --ignore-not-found
+	@echo "✅ Secret deleted (if existed) in namespace $$\{NS:-default\}"
