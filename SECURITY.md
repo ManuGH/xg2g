@@ -1,4 +1,4 @@
-# Security Policy
+## Reporting a Vulnerability
 ...existing code ab zweitem # Security Policy...
 # Security Policy
 

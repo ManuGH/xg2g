@@ -1,3 +1,5 @@
+root = true
+
 ...existing code up to line 54...
 indent_size = 2
 
