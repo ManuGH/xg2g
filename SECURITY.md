@@ -75,7 +75,7 @@ The security pipeline runs on every commit and includes:
 
 If you discover a security vulnerability, please report it to:
 
-- **Contact**: [Maintainer's secure contact method]
+- **Contact**: security@manugh.dev (PGP key available on request)
 - **Scope**: xg2g codebase, dependencies, and deployment configurations
 - **Response Time**: We aim to respond within 48 hours
 

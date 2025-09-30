@@ -5,6 +5,8 @@ This project is in an early stage. Pull requests and issues are welcome.
 
 ## Development Setup
 
+> ℹ️  Please review the branch protection rules in [`.github/BRANCH_POLICY.md`](.github/BRANCH_POLICY.md) before opening a pull request.
+
 ```bash
 # Clone the repository
 git clone https://github.com/ManuGH/xg2g.git

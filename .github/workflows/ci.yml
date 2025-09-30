@@ -84,12 +84,13 @@ jobs:
 
       - name: "Integration (stub + daemon)"
         env:
-          XG2G_DATA: ./data
+          XG2G_DATA: /home/runner/work/xg2g/xg2g/data
           XG2G_OWI_BASE: http://127.0.0.1:18080
           XG2G_BOUQUET: Premium
-          XG2G_XMLTV: ./data/guide.xml
+          XG2G_XMLTV: xmltv.xml
           XG2G_PICON_BASE: http://127.0.0.1:18080/picon
           XG2G_LISTEN: :8080
+          XG2G_API_TOKEN: ci-ci
         run: |
           set -euo pipefail
 
@@ -139,17 +140,17 @@ jobs:
             exit 1
           fi
 
-          curl -fsS --retry 10 --retry-all-errors --retry-delay 0 --max-time 2 -X POST "$daemon_base/api/refresh"
-          curl -fsS --retry 10 --retry-all-errors --retry-delay 0 --max-time 2      "$daemon_base/api/refresh"
+          curl -fsS --retry 10 --retry-all-errors --retry-delay 0 --max-time 2 -H "X-API-Token: ${XG2G_API_TOKEN}" -X POST "$daemon_base/api/refresh"
+          curl -fsS --retry 10 --retry-all-errors --retry-delay 0 --max-time 2      "$daemon_base/api/status"
           curl -fsS --retry 10 --retry-all-errors --retry-delay 0 --max-time 2 "$daemon_base/api/status"
 
-          ls -lh "$XG2G_DATA"/playlist.m3u "$XG2G_DATA"/guide.xml
+          ls -lh "$XG2G_DATA"/playlist.m3u "$XG2G_DATA"/xmltv.xml
 
       - name: Output validation
         run: |
           set -euo pipefail
           test "$(grep -c '^#EXTINF' ./data/playlist.m3u)" -ge 2
-          test "$(grep -c '<channel ' ./data/guide.xml)" -ge 2
+          test "$(grep -c '<channel ' ./data/xmltv.xml)" -ge 2
           ! grep -q 'FROM BOUQUET' ./data/playlist.m3u
 
       - name: Job summary
@@ -188,14 +189,18 @@ jobs:
             echo "- xmltv.golden.xml (sha256): ${GOLD_HASH}"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Lint
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: latest
-          args: --timeout=5m --verbose ./...
+      - name: Install golangci-lint (built with runner Go)
+        run: |
+          set -euo pipefail
+          # Build golangci-lint from source using the runner's Go toolchain
+          # to avoid version mismatch errors with prebuilt binaries.
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
+          golangci-lint --version
 
-      - name: golangci-lint version
-        run: golangci-lint --version
+      - name: Lint
+        run: |
+          set -euo pipefail
+          golangci-lint run --timeout=5m --verbose ./...
 
       - name: Lint Markdown
         run: |

@@ -355,6 +355,15 @@ func TestValidateConfig(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "missing_host",
+			cfg: Config{
+				OWIBase:    "http:///", // scheme present but host missing
+				DataDir:    "/tmp",
+				StreamPort: 8001,
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -364,5 +373,20 @@ func TestValidateConfig(t *testing.T) {
 				t.Errorf("validateConfig() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestMakeStableIDFromSRef(t *testing.T) {
+	a := makeStableIDFromSRef("1:0:19:132F:3EF:1:C00000:0:0:0:")
+	b := makeStableIDFromSRef("1:0:19:132F:3EF:1:C00000:0:0:0:")
+	c := makeStableIDFromSRef("1:0:19:1334:3EF:1:C00000:0:0:0:")
+	if a != b {
+		t.Fatalf("stable ID should be deterministic; got %q and %q", a, b)
+	}
+	if a == c {
+		t.Fatalf("different sRefs should yield different IDs; got %q == %q", a, c)
+	}
+	if wantPrefix := "sref-"; len(a) < len(wantPrefix) || a[:len(wantPrefix)] != wantPrefix {
+		t.Fatalf("stable ID must be prefixed with %q; got %q", wantPrefix, a)
 	}
 }

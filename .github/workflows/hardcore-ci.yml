@@ -123,7 +123,7 @@ jobs:
           mkdir -p ~/.cache/go-build
 
       - name: Generate coverage profile
-        run: go test ./... -covermode=atomic -coverprofile=coverage.out
+        run: go test -tags=security ./... -covermode=atomic -coverprofile=coverage.out
 
       - name: Check overall coverage
         run: |
@@ -375,12 +375,16 @@ jobs:
           TEMP_DATA=$(mktemp -d)
           echo "Using data directory: $TEMP_DATA"
 
+          # Create API token for authenticated endpoints
+          API_TOKEN="ci-integration-token"
+
           # Start daemon with stub backend
           XG2G_DATA="$TEMP_DATA" \
           XG2G_OWI_BASE=http://127.0.0.1:18080 \
           XG2G_BOUQUET=Premium \
           XG2G_LISTEN=:8080 \
           XG2G_METRICS_LISTEN=:9090 \
+          XG2G_API_TOKEN="$API_TOKEN" \
           timeout 10 ./daemon > /tmp/daemon.log 2>&1 &
           DAEMON_PID=$!
 
@@ -405,15 +409,21 @@ jobs:
           # Debug: Show daemon process and ports
           echo "📊 Debug info:"
           ps aux | grep daemon | grep -v grep || echo "No daemon process found"
-          netstat -tuln | grep ':8080' || echo "Port 8080 not bound"
+          ss -ltn | grep ':8080' || echo "Port 8080 not bound yet"
 
-          # Verify daemon is listening on expected port
-          if ! netstat -tuln | grep ':8080' >/dev/null; then
+          # Verify daemon is listening on expected port (with brief retry)
+          for i in $(seq 1 10); do
+            if ss -ltn sport = :8080 | grep -q ':8080'; then
+              break
+            fi
+            sleep 0.5
+          done
+          if ! ss -ltn sport = :8080 | grep -q ':8080'; then
             echo "❌ Daemon is not listening on port 8080"
             echo "📋 Daemon log contents:"
             cat /tmp/daemon.log || echo "No daemon log found"
             echo "📋 Network status:"
-            netstat -tuln | grep '127.0.0.1' || echo "No local listeners"
+            ss -ltn || echo "No local listeners"
             echo "📋 Process info:"
             ps aux | grep daemon | grep -v grep || echo "No daemon process"
             kill $DAEMON_PID 2>/dev/null || true
@@ -436,7 +446,7 @@ jobs:
 
           # Trigger refresh
           echo "🔄 Triggering refresh operation..."
-          if ! curl --fail --silent -X POST "$DAEMON_BASE/api/refresh" > /dev/null; then
+          if ! curl --fail --silent -H "X-API-Token: $API_TOKEN" -X POST "$DAEMON_BASE/api/refresh" > /dev/null; then
             echo "❌ Refresh trigger failed"
             echo "Daemon log:"
             cat /tmp/daemon.log || true

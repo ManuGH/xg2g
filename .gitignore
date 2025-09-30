@@ -54,10 +54,10 @@ data/
 *.m3u
 *.xml
 
-# Build artifacts
-xg2g
-daemon
-daemon-*
+# Build artifacts (binaries at repo root only)
+/xg2g
+/daemon
+/daemon-*
 
 # Temporary files
 .codex_patch.diff
