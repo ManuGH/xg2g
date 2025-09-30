@@ -48,26 +48,33 @@ jobs:
         id: severity
         run: |
           set -euo pipefail
-          if [ ! -s govulncheck.json ]; then echo "high_crit_count=0" >> "$GITHUB_OUTPUT"; echo "fail=false" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if [ ! -s govulncheck.json ]; then
+            echo "high_crit_count=0" >> "$GITHUB_OUTPUT"
+            echo "fail=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Compute a single integer: number of vulns with severity >= HIGH (7)
           count=$(jq -r '
-            [ .vulns[]? 
-              | ((.osv.database_specific.severity? // "") | ascii_upcase) as $lab
-              | (if $lab=="CRITICAL" then 9 elif $lab=="HIGH" then 7 else 0 end) as $labelScore
-              | ((.osv.severity? // [])
-                  | (map((.score // "")
-                         | tostring
-                         | (if test("^[0-9.]+$") then tonumber
-                            elif test("CRITICAL";"i") then 9
-                            elif test("HIGH";"i") then 7
-                            else 0 end))
-                     | max) // 0) as $cvssScore
-              | ([ $labelScore, $cvssScore ] | max) as $maxSev
-              | select($maxSev >= 7)
-            ] | length
-          ' govulncheck.json)
+            ( .vulns // [] )
+            | map(
+                ( .osv.database_specific.severity? // "" ) as $lab
+                | (if ($lab | ascii_upcase) == "CRITICAL" then 9 elif ($lab | ascii_upcase) == "HIGH" then 7 else 0 end) as $labelScore
+                | ( ( .osv.severity? // [] )
+                    | map( (.score // 0) as $s
+                          | ( ($s|type) == "number" )
+                            and $s or ( ($s|tostring) | (if test("^[0-9.]+$") then tonumber elif test("CRITICAL";"i") then 9 elif test("HIGH";"i") then 7 else 0 end) ) )
+                    | (if length>0 then max else 0 end)
+                  ) as $cvssScore
+                | ([ $labelScore, $cvssScore ] | max) as $maxSev
+                | select($maxSev >= 7)
+              )
+            | length
+          ' govulncheck.json | tr -d '\n' )
+          # Fallback safety: default to 0 if empty or non-numeric
+          if ! printf '%s' "$count" | grep -Eq '^[0-9]+$'; then count=0; fi
           echo "High/Critical vulnerabilities: ${count}" >> "$GITHUB_STEP_SUMMARY"
-          echo "high_crit_count=${count}" >> "$GITHUB_OUTPUT"
-          if [ "${count}" -gt 0 ]; then echo "fail=true" >> "$GITHUB_OUTPUT"; else echo "fail=false" >> "$GITHUB_OUTPUT"; fi
+          printf 'high_crit_count=%s\n' "$count" >> "$GITHUB_OUTPUT"
+          if [ "$count" -gt 0 ]; then printf 'fail=true\n' >> "$GITHUB_OUTPUT"; else printf 'fail=false\n' >> "$GITHUB_OUTPUT"; fi
 
       - name: Fail on High/Critical
         if: steps.severity.outputs.fail == 'true'
