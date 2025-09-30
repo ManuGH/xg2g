@@ -177,6 +177,14 @@ docker-compose -f docker-compose.monitoring.yml up -d
 # AlertManager: http://localhost:9093
 ```
 
+Prometheus scrapes the in-cluster service via annotations on port `9090`. For Kubernetes clusters with a Prometheus Operator, you can switch to a `ServiceMonitor` if preferred. Core alerts and runbooks:
+
+- HTTP 5xx rate / API failures – [docs/runbooks/http-5xx.md](docs/runbooks/http-5xx.md)
+- Refresh latency (p95/p99) – [docs/runbooks/latency.md](docs/runbooks/latency.md)
+- Refresh endpoint errors / stalled refresh – [docs/runbooks/refresh-failures.md](docs/runbooks/refresh-failures.md)
+- Metrics scrape or pod outage – [docs/runbooks/metrics-scrape.md](docs/runbooks/metrics-scrape.md)
+- Low `/data` free space – [docs/runbooks/data-capacity.md](docs/runbooks/data-capacity.md)
+
 **Security Testing:**
 
 ```bash
@@ -198,6 +206,17 @@ Use structured logs with consistent fields (`attempt`, `duration_ms`, `error_cla
 
 Please refer to [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
 
+### Pull Request checks (required)
+
+All PRs must pass the full CI gate before merge:
+
+- Build
+- Tests (incl. -race)
+- Lint (golangci-lint)
+- Security: CodeQL + govulncheck (govulncheck fails on High/Critical; Low/Medium reported as warnings)
+
+Keep your branch up to date with `main` to satisfy required checks and avoid stale base failures.
+
 ## Docker images
 
 The default Dockerfile uses Alpine (multi-stage) and includes an HTTP healthcheck via wget.
@@ -217,4 +236,3 @@ Hardened deployment templates are available in `deploy/`:
 - `deploy/docker-compose.alpine.yml` — Alpine with built-in healthcheck, non-root, read-only FS, caps dropped.
 - `deploy/docker-compose.distroless.yml` — Distroless, non-root, read-only FS; probes via orchestrator.
 - `deploy/k8s-alpine.yaml` and `deploy/k8s-distroless.yaml` — Kubernetes manifests with digest pins, securityContext and probes (`/healthz`, `/readyz`).
-
