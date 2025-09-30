@@ -84,10 +84,10 @@ jobs:
 
       - name: "Integration (stub + daemon)"
         env:
-          XG2G_DATA: ./data
+          XG2G_DATA: /home/runner/work/xg2g/xg2g/data
           XG2G_OWI_BASE: http://127.0.0.1:18080
           XG2G_BOUQUET: Premium
-          XG2G_XMLTV: ./data/guide.xml
+          XG2G_XMLTV: /home/runner/work/xg2g/xg2g/data/guide.xml
           XG2G_PICON_BASE: http://127.0.0.1:18080/picon
           XG2G_LISTEN: :8080
           XG2G_API_TOKEN: ci-ci
