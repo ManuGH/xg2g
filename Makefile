@@ -9,7 +9,8 @@
         docker docker-build docker-security docker-tag docker-push docker-clean \
         sbom deps deps-update deps-tidy deps-verify deps-licenses \
         security security-scan security-audit security-vulncheck \
-        hardcore-test quality-gates pre-commit install dev-tools check-tools \
+	hardcore-test quality-gates pre-commit install dev-tools check-tools \
+	pin-digests compose-up-alpine compose-up-distroless k8s-apply-alpine k8s-apply-distroless \
         release-check release-build release-tag release-notes
 
 # ===================================================================================================
@@ -99,6 +100,13 @@ help: ## Show this help message
 	@echo "  dev-tools      Install all development tools"
 	@echo "  check-tools    Verify development tools are installed"
 	@echo "  pre-commit     Run pre-commit validation checks"
+	@echo ""
+	@echo "Deployment Helpers:"
+	@echo "  pin-digests            Replace <OWNER> and digest placeholders in deploy/ templates"
+	@echo "  compose-up-alpine      Start Alpine image via docker compose (deploy/docker-compose.alpine.yml)"
+	@echo "  compose-up-distroless  Start Distroless image via docker compose (deploy/docker-compose.distroless.yml)"
+	@echo "  k8s-apply-alpine       Apply Kubernetes Alpine manifest (deploy/k8s-alpine.yaml)"
+	@echo "  k8s-apply-distroless   Apply Kubernetes Distroless manifest (deploy/k8s-distroless.yaml)"
 	@echo ""
 	@echo "Release Management:"
 	@echo "  release-check  Validate release readiness"
@@ -416,3 +424,25 @@ release-notes: ## Generate release notes
 	@echo "**Changes:**" >> dist/RELEASE_NOTES.md
 	@git log --oneline --since="1 month ago" >> dist/RELEASE_NOTES.md || echo "- See git history for changes" >> dist/RELEASE_NOTES.md
 	@echo "✅ Release notes generated: dist/RELEASE_NOTES.md"
+
+# ===================================================================================================
+# Deployment Helpers
+# ===================================================================================================
+
+pin-digests: ## Replace <OWNER> and digest placeholders in deploy templates
+	@OWNER="$${OWNER:?Set OWNER=your-gh-org-or-user}"; \
+	ALPINE_DIGEST="$${ALPINE_DIGEST:-}"; \
+	DISTROLESS_DIGEST="$${DISTROLESS_DIGEST:-}"; \
+	./scripts/pin-digests.sh "$$OWNER" "$$ALPINE_DIGEST" "$$DISTROLESS_DIGEST"
+
+compose-up-alpine: ## Start Alpine variant via docker compose
+	docker compose -f deploy/docker-compose.alpine.yml up -d
+
+compose-up-distroless: ## Start Distroless variant via docker compose
+	docker compose -f deploy/docker-compose.distroless.yml up -d
+
+k8s-apply-alpine: ## Apply Alpine Kubernetes manifest (set NS=namespace)
+	kubectl apply -n "$${NS:-default}" -f deploy/k8s-alpine.yaml
+
+k8s-apply-distroless: ## Apply Distroless Kubernetes manifest (set NS=namespace)
+	kubectl apply -n "$${NS:-default}" -f deploy/k8s-distroless.yaml
