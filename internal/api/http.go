@@ -36,6 +36,9 @@ func New(cfg jobs.Config) *Server {
 
 func (s *Server) routes() http.Handler {
 	r := mux.NewRouter()
+	// Do not auto-clean or redirect paths; keep encoded path for security checks
+	r.SkipClean(true)
+	r.UseEncodedPath()
 	r.Use(log.Middleware()) // Apply structured logging to all routes
 	r.Use(securityHeadersMiddleware)
 
@@ -103,7 +106,14 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	s.mu.RUnlock()
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(status); err != nil {
+	// Include an explicit status indicator alongside current status fields
+	resp := map[string]any{
+		"status":   "ok",
+		"version":  status.Version,
+		"lastRun":  status.LastRun,
+		"channels": status.Channels,
+	}
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		logger.Error().Err(err).Str("event", "status.encode_error").Msg("failed to encode status response")
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
@@ -254,6 +264,14 @@ func (s *Server) secureFileServer() http.Handler {
 		}
 
 		path := r.URL.Path
+		// Early traversal detection including URL-encoded attempts
+		lower := strings.ToLower(path)
+		if strings.Contains(path, "..") || strings.Contains(lower, "%2e%2e") {
+			logger.Warn().Str("event", "file_req.denied").Str("path", r.URL.Path).Str("reason", "path_escape").Msg("detected traversal sequence")
+			recordFileRequestDenied("path_escape")
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
 		if strings.HasSuffix(path, "/") || path == "" {
 			logger.Warn().Str("event", "file_req.denied").Str("path", r.URL.Path).Str("reason", "directory_listing").Msg("directory listing forbidden")
 			recordFileRequestDenied("directory_listing")

@@ -259,6 +259,8 @@ func requestIDMiddleware(next http.Handler) http.Handler {
 			Str("path", r.URL.Path).
 			Int64("duration_ms", duration).
 			Str("remote_addr", clientIP(r)).
+			// Duplicate request ID under key req_id for compatibility with other log middleware/tests
+			Str("req_id", reqID).
 			Msg("request completed")
 	})
 }

@@ -223,6 +223,9 @@ func env(key, defaultValue string) string {
 		// For sensitive vars, just log that it was set
 		if strings.Contains(strings.ToLower(key), "token") || strings.Contains(strings.ToLower(key), "password") {
 			log.Printf("config: using %s from environment (set)", key)
+		} else if value == "" {
+			log.Printf("config: using default for %s (%q) because environment variable is empty", key, defaultValue)
+			return defaultValue
 		} else {
 			log.Printf("config: using %s from environment (%q)", key, value)
 		}
@@ -304,39 +307,82 @@ func resolveOWISettings() (time.Duration, int, time.Duration, time.Duration, err
 	return timeout, retries, backoff, maxBackoff, nil
 }
 
-// ensureDataDir checks if the data directory exists and is writable.
-// If it doesn't exist, it attempts to create it.
-func ensureDataDir(dir string) error {
-	// Check if the directory exists
-	info, err := os.Stat(dir)
-	if os.IsNotExist(err) {
-		// Directory does not exist, try to create it.
-		log.Printf("config: data directory %q does not exist, attempting to create it", dir)
-		if err := os.MkdirAll(dir, 0750); err != nil {
-			return fmt.Errorf("failed to create data directory %q: %w", dir, err)
-		}
-		log.Printf("config: successfully created data directory %q", dir)
-		// After creation, stat again to verify.
-		info, err = os.Stat(dir)
+// ensureDataDir checks if the data directory is valid and writable.
+// It creates the directory if it doesn't exist.
+// For security, it enforces several policies:
+// - The path must be absolute.
+// - It must not be a symlink to a sensitive system directory.
+// - The final resolved path must be writable.
+func ensureDataDir(path string) error {
+	if path == "" {
+		return errors.New("data directory path cannot be empty")
 	}
+
+	// Security: Ensure the path is absolute to prevent traversal attacks like "../"
+	if !filepath.IsAbs(path) {
+		return fmt.Errorf("data directory path %q must be absolute", path)
+	}
+
+	// If 'path' itself is a symlink, ensure it resolves cleanly (catch broken symlinks early)
+	if fi, lerr := os.Lstat(path); lerr == nil && (fi.Mode()&os.ModeSymlink) != 0 {
+		if _, err := filepath.EvalSymlinks(path); err != nil {
+			return fmt.Errorf("cannot resolve data directory symlinks for %q: %w", path, err)
+		}
+	}
+
+	// Follow symlinks to get the real path
+	realDataDir, err := filepath.EvalSymlinks(path)
 	if err != nil {
-		// For any other error (e.g., permission denied)
-		return fmt.Errorf("failed to stat data directory %q: %w", dir, err)
+		// If the path doesn't exist, EvalSymlinks fails. This is okay if we can create it.
+		// If it's another error (like a broken symlink), we should fail.
+		if !os.IsNotExist(err) {
+			return fmt.Errorf("cannot resolve data directory symlinks for %q: %w", path, err)
+		}
+		// Path does not exist, so we will try to create it.
+		realDataDir = path
+	}
+
+	// Security check for system directories
+	systemDirs := []string{"/etc", "/bin", "/sbin", "/usr", "/var", "/root", "/System"}
+	for _, sysDir := range systemDirs {
+		// Resolve potential symlinks in system dirs (e.g., /etc -> /private/etc on macOS)
+		resolvedSysDir, rerr := filepath.EvalSymlinks(sysDir)
+		if rerr != nil {
+			resolvedSysDir = sysDir
+		}
+		if realDataDir == sysDir || realDataDir == resolvedSysDir {
+			return fmt.Errorf("data directory %q resolves to a system directory %q, which is forbidden", path, realDataDir)
+		}
+	}
+
+	// Check if the directory exists. If not, create it.
+	info, err := os.Stat(realDataDir)
+	if os.IsNotExist(err) {
+		log.Printf("config: data directory %q does not exist, attempting to create it", realDataDir)
+		if err := os.MkdirAll(realDataDir, 0750); err != nil {
+			return fmt.Errorf("failed to create data directory %q: %w", realDataDir, err)
+		}
+		log.Printf("config: successfully created data directory %q", realDataDir)
+		info, err = os.Stat(realDataDir) // Stat again after creation
+		if err != nil {
+			return fmt.Errorf("failed to stat data directory %q after creation: %w", realDataDir, err)
+		}
+	} else if err != nil {
+		return fmt.Errorf("could not stat data directory %q: %w", realDataDir, err)
 	}
 
 	if !info.IsDir() {
-		return fmt.Errorf("path %q exists but is not a directory", dir)
+		return fmt.Errorf("data directory path %q is a file, not a directory", realDataDir)
 	}
 
 	// Check for write permissions by creating a temporary file.
-	// This is a more reliable check than inspecting permission bits.
-	tmpFile, err := os.Create(filepath.Join(dir, ".writable-check"))
-	if err != nil {
-		return fmt.Errorf("data directory %q is not writable: %w", dir, err)
+	// This is more reliable than checking permission bits.
+	tmpFile := filepath.Join(realDataDir, ".writable-check")
+	if err := os.WriteFile(tmpFile, []byte(""), 0600); err != nil {
+		return fmt.Errorf("data directory %q is not writable: %w", realDataDir, err)
 	}
-	_ = tmpFile.Close()
-	_ = os.Remove(tmpFile.Name())
+	_ = os.Remove(tmpFile) // Clean up the check file, ignore error
 
-	log.Printf("config: data directory %q is valid and writable", dir)
+	log.Printf("config: data directory %q is valid and writable", realDataDir)
 	return nil
 }

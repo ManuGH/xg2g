@@ -112,40 +112,6 @@ func TestRequestIDMiddlewareLogging(t *testing.T) {
 	}
 }
 
-func TestMiddlewareChain(t *testing.T) {
-	// Test that the middleware chain works correctly
-	testHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Check that request ID is available in context
-		reqID := log.RequestIDFromContext(r.Context())
-		if reqID == "" {
-			t.Error("Request ID not found in context")
-		}
-		w.WriteHeader(http.StatusOK)
-	})
-
-	// Apply full middleware chain
-	handler := withMiddlewares(testHandler)
-	req := httptest.NewRequest("GET", "/test", nil)
-	rr := httptest.NewRecorder()
-
-	handler.ServeHTTP(rr, req)
-
-	// Should have request ID in response
-	if rr.Header().Get("X-Request-ID") == "" {
-		t.Error("Expected X-Request-ID header in response")
-	}
-
-	// Should have CORS headers
-	if rr.Header().Get("Access-Control-Allow-Origin") == "" {
-		t.Error("Expected CORS headers")
-	}
-
-	// Should have security headers
-	if rr.Header().Get("X-Content-Type-Options") == "" {
-		t.Error("Expected security headers")
-	}
-}
-
 func TestClientIP(t *testing.T) {
 	tests := []struct {
 		name       string

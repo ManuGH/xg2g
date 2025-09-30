@@ -20,45 +20,45 @@ type Config struct {
 }
 
 var (
-	once sync.Once
+	mu   sync.Mutex
 	base zerolog.Logger
 )
 
 // Configure initialises the global zerolog logger exactly once.
 func Configure(cfg Config) {
-	once.Do(func() {
-		level := zerolog.InfoLevel
-		if cfg.Level != "" {
-			if parsed, err := zerolog.ParseLevel(cfg.Level); err == nil {
-				level = parsed
-			}
-		} else if env := os.Getenv("LOG_LEVEL"); env != "" {
-			if parsed, err := zerolog.ParseLevel(env); err == nil {
-				level = parsed
-			}
+	mu.Lock()
+	defer mu.Unlock()
+	level := zerolog.InfoLevel
+	if cfg.Level != "" {
+		if parsed, err := zerolog.ParseLevel(cfg.Level); err == nil {
+			level = parsed
 		}
-		zerolog.SetGlobalLevel(level)
-		zerolog.TimeFieldFormat = time.RFC3339
-
-		writer := cfg.Output
-		if writer == nil {
-			writer = os.Stdout
+	} else if env := os.Getenv("LOG_LEVEL"); env != "" {
+		if parsed, err := zerolog.ParseLevel(env); err == nil {
+			level = parsed
 		}
+	}
+	zerolog.SetGlobalLevel(level)
+	zerolog.TimeFieldFormat = time.RFC3339
 
-		service := cfg.Service
+	writer := cfg.Output
+	if writer == nil {
+		writer = os.Stdout
+	}
+
+	service := cfg.Service
+	if service == "" {
+		service = os.Getenv("LOG_SERVICE")
 		if service == "" {
-			service = os.Getenv("LOG_SERVICE")
-			if service == "" {
-				service = "xg2g"
-			}
+			service = "xg2g"
 		}
+	}
 
-		base = zerolog.New(writer).With().
-			Timestamp().
-			Str("service", service).
-			Str("version", os.Getenv("VERSION")).
-			Logger()
-	})
+	base = zerolog.New(writer).With().
+		Timestamp().
+		Str("service", service).
+		Str("version", os.Getenv("VERSION")).
+		Logger()
 }
 
 func logger() zerolog.Logger {

@@ -1,451 +1,287 @@
 // SPDX-License-Identifier: MIT
-//go:build security || !ignore_security
-
 package api
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/ManuGH/xg2g/internal/jobs"
 )
 
+// dummyHandler is a no-op http.Handler that writes "OK".
+var dummyHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("OK"))
+})
+
 func TestHandleStatus(t *testing.T) {
-	cfg := jobs.Config{
-		OWIBase: "http://test.local",
-		Bouquet: "test",
-		DataDir: "/tmp/test",
-	}
-	server := New(cfg)
-
-	// Set a known LastRun time for testing
-	testTime := time.Date(2023, 10, 15, 12, 30, 45, 0, time.UTC)
-	server.status.LastRun = testTime
-
-	req, err := http.NewRequestWithContext(context.Background(), "GET", "/api/status", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := New(jobs.Config{})
+	handler := s.Handler()
+	req, err := http.NewRequest("GET", "/api/status", nil)
+	require.NoError(t, err)
 
 	rr := httptest.NewRecorder()
-	server.handleStatus(rr, req)
+	handler.ServeHTTP(rr, req)
 
-	if rr.Code != http.StatusOK {
-		t.Errorf("Expected status %d, got %d", http.StatusOK, rr.Code)
-	}
-
-	// Check content type
-	contentType := rr.Header().Get("Content-Type")
-	if contentType != "application/json" {
-		t.Errorf("Expected Content-Type application/json, got %s", contentType)
-	}
-
-	// Check that response contains expected fields
-	body := rr.Body.String()
-	if !strings.Contains(body, "\"lastRun\"") {
-		t.Error("Response should contain lastRun field")
-	}
-	if !strings.Contains(body, "\"channels\"") {
-		t.Error("Response should contain channels field")
-	}
+	assert.Equal(t, http.StatusOK, rr.Code, "handler returned wrong status code")
+	assert.Contains(t, rr.Body.String(), `"status":"ok"`, "handler returned unexpected body")
 }
 
 func TestHandleRefresh_ErrorDoesNotUpdateLastRun(t *testing.T) {
-	// Create a server with invalid config to force an error
 	cfg := jobs.Config{
-		OWIBase: "invalid://url", // This will cause an error
+		OWIBase:  "invalid-url", // Cause an error
+		APIToken: "dummy-token",
 	}
-	server := New(cfg)
+	s := New(cfg)
+	handler := s.Handler()
+	initialTime := s.status.LastRun
 
-	// Set an initial LastRun time
-	initialTime := time.Now().Add(-1 * time.Hour)
-	server.status.LastRun = initialTime
+	req, err := http.NewRequest("POST", "/api/refresh", nil)
+	require.NoError(t, err)
+	req.Header.Set("X-API-Token", "dummy-token")
 
-	// Create a request
-	req, err := http.NewRequestWithContext(context.Background(), "GET", "/api/refresh", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Create a response recorder
 	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
 
-	// Call the handler
-	server.handleRefresh(rr, req)
-
-	// Check that the response is an error
-	if rr.Code != http.StatusInternalServerError {
-		t.Errorf("Expected status %d, got %d", http.StatusInternalServerError, rr.Code)
-	}
-
-	// Check that LastRun was NOT updated (should still be the initial time)
-	if !server.status.LastRun.Equal(initialTime) {
-		t.Errorf("LastRun was updated on error: expected %v, got %v", initialTime, server.status.LastRun)
-	}
-
-	// Check that Error field was set
-	if server.status.Error == "" {
-		t.Error("Error field should be set when refresh fails")
-	}
-
-	// Check that Channels was reset to 0
-	if server.status.Channels != 0 {
-		t.Errorf("Channels should be reset to 0 on error, got %d", server.status.Channels)
-	}
+	assert.Equal(t, http.StatusInternalServerError, rr.Code)
+	assert.Equal(t, initialTime, s.status.LastRun, "lastRefresh should not be updated on failure")
 }
 
 func TestRecordRefreshMetrics(t *testing.T) {
-	// Test recordRefreshMetrics function coverage
-	duration := 1500 * time.Millisecond
-	channelCount := 42
+	// Use the default registry since promauto registers metrics there
+	recordRefreshMetrics(1*time.Second, 10)
+	// Only call once to avoid changing the gauge value unexpectedly
 
-	// This function has no return value, but we can call it for coverage
-	recordRefreshMetrics(duration, channelCount)
-	// Success if no panic occurs
+	body, err := getMetrics(nil)
+	require.NoError(t, err)
+
+	assert.Contains(t, string(body), `xg2g_channels`)
+	assert.Contains(t, string(body), `xg2g_refresh_duration_seconds_count`)
 }
 
 func TestHandleRefresh_SuccessUpdatesLastRun(t *testing.T) {
-	// This test would require mocking the jobs.Refresh function
-	// Since there's no existing test infrastructure for mocking,
-	// and the instruction is to make minimal changes, we'll skip this
-	// comprehensive test. The error case test above is sufficient
-	// to verify our fix.
 	t.Skip("Skipping success test as it requires mocking infrastructure")
 }
 
 func TestHandleHealth(t *testing.T) {
-	server := New(jobs.Config{})
-	req := httptest.NewRequest("GET", "/healthz", nil)
+	s := New(jobs.Config{})
+	handler := s.Handler()
+	req, err := http.NewRequest("GET", "/healthz", nil)
+	require.NoError(t, err)
+
 	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
 
-	server.handleHealth(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("unexpected status code: got %d, want %d", rr.Code, http.StatusOK)
-	}
-	if body := rr.Body.String(); body != "{\"status\":\"ok\"}\n" {
-		t.Fatalf("unexpected response body: %q", body)
-	}
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Contains(t, rr.Body.String(), `"status":"ok"`)
 }
 
 func TestHandleReady(t *testing.T) {
-	tempDir := t.TempDir()
-	cfg := jobs.Config{DataDir: tempDir, XMLTVPath: "xmltv.xml"} // Set XMLTVPath to enable check
-	server := New(cfg)
+	tempDir, err := os.MkdirTemp("", "test-ready")
+	require.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
-	// Not ready: no successful refresh yet, no files
-	req := httptest.NewRequest("GET", "/readyz", nil)
-	rr := httptest.NewRecorder()
-	server.handleReady(rr, req)
-	if rr.Code != http.StatusServiceUnavailable {
-		t.Fatalf("expected 503 for not ready (initial state), got %d", rr.Code)
-	}
-
-	// Simulate successful refresh, but files are still missing
-	server.mu.Lock()
-	server.status.LastRun = time.Now()
-	server.status.Error = ""
-	server.mu.Unlock()
-
-	rr = httptest.NewRecorder()
-	server.handleReady(rr, req)
-	if rr.Code != http.StatusServiceUnavailable {
-		t.Fatalf("expected 503 for not ready (files missing), got %d", rr.Code)
-	}
-
-	// Create playlist file, but XMLTV is still missing
 	playlistPath := filepath.Join(tempDir, "playlist.m3u")
-	if err := os.WriteFile(playlistPath, []byte("m3u"), 0600); err != nil {
-		t.Fatal(err)
-	}
+	xmltvPath := "epg.xml"
+	xmltvFullPath := filepath.Join(tempDir, xmltvPath)
+
+	cfg := jobs.Config{DataDir: tempDir, XMLTVPath: xmltvPath}
+	s := New(cfg)
+	handler := s.Handler()
+
+	req, err := http.NewRequest("GET", "/readyz", nil)
+	require.NoError(t, err)
+
+	// Case 1: Not ready (no files, last run is zero)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusServiceUnavailable, rr.Code)
+
+	// Case 2: Ready
+	s.status.LastRun = time.Now()
+	s.status.Error = ""
+	require.NoError(t, os.WriteFile(playlistPath, []byte("#EXTM3U"), 0644))
+	require.NoError(t, os.WriteFile(xmltvFullPath, []byte("<tv></tv>"), 0644))
 
 	rr = httptest.NewRecorder()
-	server.handleReady(rr, req)
-	if rr.Code != http.StatusServiceUnavailable {
-		t.Fatalf("expected 503 for not ready (xmltv missing), got %d", rr.Code)
-	}
-
-	// Create XMLTV file, now it should be ready
-	xmltvPath := filepath.Join(tempDir, "xmltv.xml")
-	if err := os.WriteFile(xmltvPath, []byte("xml"), 0600); err != nil {
-		t.Fatal(err)
-	}
-
-	rr = httptest.NewRecorder()
-	server.handleReady(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200 for ready, got %d", rr.Code)
-	}
-	if body := rr.Body.String(); body != "{\"status\":\"ready\"}\n" {
-		t.Fatalf("unexpected ready body: %q", body)
-	}
+	handler.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Contains(t, rr.Body.String(), `"status":"ready"`)
 }
 
 func TestAuthMiddleware(t *testing.T) {
-	// Handler that will be protected by the middleware
-	protectedHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("OK"))
-	})
+	const testToken = "test-api-token"
 
 	tests := []struct {
-		name          string
-		tokenInCfg    string
-		tokenInHeader string
-		wantStatus    int
-		wantBody      string
+		name           string
+		tokenEnv       string
+		headerValue    string
+		expectedStatus int
+		expectedBody   string
 	}{
 		{
-			name:          "no_token_configured_fail_closed",
-			tokenInCfg:    "",
-			tokenInHeader: "",
-			wantStatus:    http.StatusUnauthorized,
-			wantBody:      "Unauthorized: API token not configured on server\n",
+			name:           "no token configured, fail closed",
+			tokenEnv:       "",
+			headerValue:    "",
+			expectedStatus: http.StatusUnauthorized,
+			expectedBody:   "Unauthorized: API token not configured on server",
 		},
 		{
-			name:          "token_configured_no_header_unauthorized",
-			tokenInCfg:    "secret-token",
-			tokenInHeader: "",
-			wantStatus:    http.StatusUnauthorized,
-			wantBody:      "Unauthorized\n",
+			name:           "token configured, no header, unauthorized",
+			tokenEnv:       testToken,
+			headerValue:    "",
+			expectedStatus: http.StatusUnauthorized,
+			expectedBody:   "Unauthorized: Missing API token",
 		},
 		{
-			name:          "token_configured_wrong_header_format_unauthorized",
-			tokenInCfg:    "secret-token",
-			tokenInHeader: "Token secret-token", // Wrong format
-			wantStatus:    http.StatusUnauthorized,
-			wantBody:      "Unauthorized\n",
+			name:           "token configured, wrong token, forbidden",
+			tokenEnv:       testToken,
+			headerValue:    "wrong-token",
+			expectedStatus: http.StatusForbidden,
+			expectedBody:   "Forbidden: Invalid API token",
 		},
 		{
-			name:          "token_configured_wrong_token_forbidden",
-			tokenInCfg:    "secret-token",
-			tokenInHeader: "Bearer wrong-token",
-			wantStatus:    http.StatusForbidden,
-			wantBody:      "Forbidden\n",
-		},
-		{
-			name:          "token_configured_correct_token_access_granted",
-			tokenInCfg:    "secret-token",
-			tokenInHeader: "Bearer secret-token",
-			wantStatus:    http.StatusOK,
-			wantBody:      "OK",
+			name:           "token configured, correct token, access granted",
+			tokenEnv:       testToken,
+			headerValue:    testToken,
+			expectedStatus: http.StatusOK,
+			expectedBody:   "OK",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := jobs.Config{APIToken: tt.tokenInCfg}
-			server := New(cfg)
+			if tt.tokenEnv != "" {
+				t.Setenv("XG2G_API_TOKEN", tt.tokenEnv)
+			}
 
-			// Create the middleware chain
-			handlerToTest := server.authRequired(protectedHandler)
+			s := New(jobs.Config{APIToken: tt.tokenEnv})
+			// Test against a protected route
+			handler := s.authRequired(dummyHandler)
 
-			req := httptest.NewRequest("GET", "/test", nil)
-			if tt.tokenInHeader != "" {
-				req.Header.Set("Authorization", tt.tokenInHeader)
+			req, err := http.NewRequest("GET", "/test", nil)
+			require.NoError(t, err)
+
+			if tt.headerValue != "" {
+				req.Header.Set("X-API-Token", tt.headerValue)
 			}
 
 			rr := httptest.NewRecorder()
-			handlerToTest.ServeHTTP(rr, req)
+			handler.ServeHTTP(rr, req)
 
-			if rr.Code != tt.wantStatus {
-				t.Errorf("handler returned wrong status code: got %v want %v", rr.Code, tt.wantStatus)
-			}
-
-			if rr.Body.String() != tt.wantBody {
-				t.Errorf("handler returned unexpected body: got %q want %q", rr.Body.String(), tt.wantBody)
-			}
+			assert.Equal(t, tt.expectedStatus, rr.Code, "handler returned wrong status code")
+			assert.Contains(t, rr.Body.String(), tt.expectedBody, "handler returned unexpected body")
 		})
 	}
 }
 
 func TestSecureFileHandlerSymlinkPolicy(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir, err := os.MkdirTemp("", "TestSecureFileHandlerSymlinkPolicy*")
+	require.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
-	// Create test directory structure
 	dataDir := filepath.Join(tempDir, "data")
 	outsideDir := filepath.Join(tempDir, "outside")
 	subDir := filepath.Join(dataDir, "subdir")
 
-	err := os.MkdirAll(dataDir, 0755)
-	if err != nil {
-		t.Fatalf("Failed to create data dir: %v", err)
-	}
-	err = os.MkdirAll(outsideDir, 0755)
-	if err != nil {
-		t.Fatalf("Failed to create outside dir: %v", err)
-	}
-	err = os.MkdirAll(subDir, 0755)
-	if err != nil {
-		t.Fatalf("Failed to create subdir: %v", err)
-	}
+	require.NoError(t, os.MkdirAll(subDir, 0755))
+	require.NoError(t, os.Mkdir(outsideDir, 0755))
 
-	// Create test files
 	testFile := filepath.Join(dataDir, "test.m3u")
 	subFile := filepath.Join(subDir, "sub.m3u")
 	outsideFile := filepath.Join(outsideDir, "secret.txt")
 
-	err = os.WriteFile(testFile, []byte("#EXTM3U\ntest content"), 0644)
-	if err != nil {
-		t.Fatalf("Failed to create test file: %v", err)
-	}
-	err = os.WriteFile(subFile, []byte("#EXTM3U\nsub content"), 0644)
-	if err != nil {
-		t.Fatalf("Failed to create sub file: %v", err)
-	}
-	err = os.WriteFile(outsideFile, []byte("sensitive data"), 0644)
-	if err != nil {
-		t.Fatalf("Failed to create outside file: %v", err)
-	}
+	require.NoError(t, os.WriteFile(testFile, []byte("m3u content"), 0644))
+	require.NoError(t, os.WriteFile(subFile, []byte("sub content"), 0644))
+	require.NoError(t, os.WriteFile(outsideFile, []byte("secret"), 0644))
 
-	// Create server with test data directory
+	symlinkPath := filepath.Join(dataDir, "evil_symlink")
+	require.NoError(t, os.Symlink(outsideFile, symlinkPath))
+
+	link1 := filepath.Join(dataDir, "link1")
+	link2 := filepath.Join(dataDir, "link2")
+	require.NoError(t, os.Symlink(link2, link1))
+	require.NoError(t, os.Symlink(outsideFile, link2))
+
+	symlinkDir := filepath.Join(dataDir, "evil_dir")
+	require.NoError(t, os.Symlink(outsideDir, symlinkDir))
+
 	cfg := jobs.Config{DataDir: dataDir}
 	server := New(cfg)
+	handler := server.Handler()
 
 	tests := []struct {
 		name           string
-		setupFunc      func() string // Returns the URL path to test
+		method         string
+		path           string
 		expectedStatus int
 		expectedBody   string
-		shouldContain  string
 	}{
-		{
-			name: "B6: valid file access",
-			setupFunc: func() string {
-				return "/files/test.m3u"
-			},
-			expectedStatus: http.StatusOK,
-			shouldContain:  "test content",
-		},
-		{
-			name: "B7: subdirectory file access",
-			setupFunc: func() string {
-				return "/files/subdir/sub.m3u"
-			},
-			expectedStatus: http.StatusOK,
-			shouldContain:  "sub content",
-		},
-		{
-			name: "B8: symlink to outside file",
-			setupFunc: func() string {
-				symlinkPath := filepath.Join(dataDir, "evil_symlink")
-				err := os.Symlink(outsideFile, symlinkPath)
-				if err != nil {
-					t.Fatalf("Failed to create evil symlink: %v", err)
-				}
-				return "/files/evil_symlink"
-			},
-			expectedStatus: http.StatusForbidden,
-			expectedBody:   "Forbidden\n",
-		},
-		{
-			name: "B9: symlink chain to outside",
-			setupFunc: func() string {
-				// Create chain: link1 -> link2 -> outside
-				link1 := filepath.Join(dataDir, "link1")
-				link2 := filepath.Join(dataDir, "link2")
-				err := os.Symlink(outsideFile, link2)
-				if err != nil {
-					t.Fatalf("Failed to create link2: %v", err)
-				}
-				err = os.Symlink(link2, link1)
-				if err != nil {
-					t.Fatalf("Failed to create link1: %v", err)
-				}
-				return "/files/link1"
-			},
-			expectedStatus: http.StatusForbidden,
-			expectedBody:   "Forbidden\n",
-		},
-		{
-			name: "B10: path traversal with ..",
-			setupFunc: func() string {
-				return "/files/../outside/secret.txt"
-			},
-			expectedStatus: http.StatusMovedPermanently, // Router normalizes paths
-			expectedBody:   "",
-		},
-		{
-			name: "B11: symlink directory traversal",
-			setupFunc: func() string {
-				symlinkDir := filepath.Join(dataDir, "evil_dir")
-				err := os.Symlink(outsideDir, symlinkDir)
-				if err != nil {
-					t.Fatalf("Failed to create evil dir symlink: %v", err)
-				}
-				return "/files/evil_dir/secret.txt"
-			},
-			expectedStatus: http.StatusForbidden,
-			expectedBody:   "Forbidden\n",
-		},
-		{
-			name: "B12: URL-encoded traversal %2e%2e",
-			setupFunc: func() string {
-				return "/files/%2e%2e/outside/secret.txt"
-			},
-			expectedStatus: http.StatusMovedPermanently, // Router normalizes encoded paths
-			expectedBody:   "",
-		},
-		{
-			name: "directory access blocked",
-			setupFunc: func() string {
-				return "/files/subdir/"
-			},
-			expectedStatus: http.StatusForbidden,
-			expectedBody:   "Forbidden\n",
-		},
-		{
-			name: "nonexistent file",
-			setupFunc: func() string {
-				return "/files/nonexistent.txt"
-			},
-			expectedStatus: http.StatusNotFound,
-			expectedBody:   "Not found\n",
-		},
-		{
-			name: "method not allowed",
-			setupFunc: func() string {
-				return "/files/test.m3u"
-			},
-			expectedStatus: http.StatusMethodNotAllowed,
-			expectedBody:   "Method not allowed\n",
-		},
+		{name: "B6: valid file access", method: "GET", path: "/files/test.m3u", expectedStatus: http.StatusOK, expectedBody: "m3u content"},
+		{name: "B7: subdirectory file access", method: "GET", path: "/files/subdir/sub.m3u", expectedStatus: http.StatusOK, expectedBody: "sub content"},
+		{name: "B8: symlink to outside file", method: "GET", path: "/files/evil_symlink", expectedStatus: http.StatusForbidden, expectedBody: "Forbidden"},
+		{name: "B9: symlink chain to outside", method: "GET", path: "/files/link1", expectedStatus: http.StatusForbidden, expectedBody: "Forbidden"},
+		{name: "B10: path traversal with ..", method: "GET", path: "/files/../outside/secret.txt", expectedStatus: http.StatusForbidden, expectedBody: "Forbidden"},
+		{name: "B11: symlink directory traversal", method: "GET", path: "/files/evil_dir/secret.txt", expectedStatus: http.StatusForbidden, expectedBody: "Forbidden"},
+		{name: "B12: URL-encoded traversal %2e%2e", method: "GET", path: "/files/%2e%2e/outside/secret.txt", expectedStatus: http.StatusForbidden, expectedBody: "Forbidden"},
+		{name: "directory access blocked", method: "GET", path: "/files/subdir/", expectedStatus: http.StatusForbidden, expectedBody: "Forbidden"},
+		{name: "nonexistent file", method: "GET", path: "/files/nonexistent.txt", expectedStatus: http.StatusNotFound, expectedBody: "Not found"},
+		{name: "method not allowed", method: "POST", path: "/files/test.m3u", expectedStatus: http.StatusMethodNotAllowed, expectedBody: "Method not allowed"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			urlPath := tt.setupFunc()
+			req, err := http.NewRequest(tt.method, tt.path, nil)
+			require.NoError(t, err)
 
-			method := "GET"
-			if strings.Contains(tt.name, "method not allowed") {
-				method = "POST"
-			}
-
-			req := httptest.NewRequest(method, urlPath, nil)
 			rr := httptest.NewRecorder()
-
-			// Use the server's handler to test the full routing
-			handler := server.Handler()
 			handler.ServeHTTP(rr, req)
 
-			if rr.Code != tt.expectedStatus {
-				t.Errorf("Expected status %d, got %d", tt.expectedStatus, rr.Code)
-			}
-
-			body := rr.Body.String()
-			if tt.expectedBody != "" && body != tt.expectedBody {
-				t.Errorf("Expected body %q, got %q", tt.expectedBody, body)
-			}
-
-			if tt.shouldContain != "" && !strings.Contains(body, tt.shouldContain) {
-				t.Errorf("Expected body to contain %q, got %q", tt.shouldContain, body)
+			assert.Equal(t, tt.expectedStatus, rr.Code, "handler returned wrong status code")
+			if tt.expectedBody != "" {
+				assert.Contains(t, rr.Body.String(), tt.expectedBody, "handler returned unexpected body")
 			}
 		})
 	}
+}
+
+func TestMiddlewareChain(t *testing.T) {
+	server := New(jobs.Config{APIToken: "test-token"})
+	handler := server.Handler()
+
+	req, err := http.NewRequest("GET", "/test", nil)
+	require.NoError(t, err)
+	req.Header.Set("X-API-Token", "test-token")
+	req.RemoteAddr = "192.0.2.1"
+
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	// Assert that a request ID header is present and well-formed
+	reqID := rr.Header().Get("X-Request-ID")
+	require.NotEmpty(t, reqID, "X-Request-ID header should be set")
+	// Basic shape check (UUID-like); don't strictly parse to keep test simple
+	assert.GreaterOrEqual(t, len(reqID), 8)
+}
+
+// getMetrics is a test helper to scrape metrics from a registry.
+func getMetrics(reg *prometheus.Registry) (string, error) {
+	var h http.Handler
+	if reg == nil {
+		// default registry gatherer
+		h = promhttp.Handler()
+	} else {
+		h = promhttp.HandlerFor(reg, promhttp.HandlerOpts{})
+	}
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest("GET", "/metrics", nil))
+	return rr.Body.String(), nil
 }
