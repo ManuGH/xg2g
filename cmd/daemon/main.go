@@ -25,14 +25,13 @@ import (
 var Version = "dev"
 
 const (
-	defaultStreamPort    = 8001
-	defaultOWITimeout    = 10 * time.Second       // Updated to match spec
-	defaultOWIRetries    = 3                      // Updated to match spec
-	defaultOWIBackoff    = 500 * time.Millisecond // Updated to match spec
-	defaultOWIMaxBackoff = 2 * time.Second        // Updated to match spec
-	maxOWITimeout        = 60 * time.Second
-	maxOWIRetries        = 10
-	maxOWIBackoff        = 30 * time.Second // Updated to match spec (30s max)
+	defaultStreamPort = 8001
+	defaultOWITimeout = 10 * time.Second       // Updated to match spec
+	defaultOWIRetries = 3                      // Updated to match spec
+	defaultOWIBackoff = 500 * time.Millisecond // Updated to match spec
+	maxOWITimeout     = 60 * time.Second
+	maxOWIRetries     = 10
+	maxOWIBackoff     = 30 * time.Second // Updated to match spec (30s max)
 
 	// Server hardening defaults
 	serverReadTimeout    = 5 * time.Second
