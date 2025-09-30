@@ -85,16 +85,19 @@ Key environment variables:
 | `XG2G_DATA`        | path     | `./data` | yes      | Target folder for generated artifacts and `/files` serving                                   |
 | `XG2G_OWI_BASE`    | url      | `-`      | yes      | Base URL of the OpenWebIF instance (receiver)                                               |
 | `XG2G_BOUQUET`     | string   | `-`      | yes      | Bouquet name or ID to fetch (e.g. `Favourites`)                                             |
-| `XG2G_XMLTV`       | string   | `(empty)` | no       | If set, path to write `xmltv.xml` inside `XG2G_DATA` (or absolute path)                     |
+| `XG2G_XMLTV`       | string   | `(empty)` | no       | Optional output path for XMLTV. If set, writes to this path. Relative paths are resolved against `XG2G_DATA`. |
 | `XG2G_PICON_BASE`  | url/path | `(empty)` | no       | Base URL or path for picon images; defaults to OpenWebIF derivation                         |
 | `XG2G_FUZZY_MAX`   | int      | `2`      | no       | Max Levenshtein distance for fuzzy matching EPG names                                       |
 | `XG2G_STREAM_PORT` | int      | `8001`   | no       | Override for the OpenWebIF stream port (defaults to 8001)                                   |
-| `XG2G_METRICS_LISTEN` | address | `:9090` | no      | Prometheus metrics server listen address (empty = disabled, IPv6 needs brackets)            |
+| `XG2G_METRICS_LISTEN` | address | `(empty)` | no      | Prometheus metrics server listen address (e.g. `:9090`). Empty disables metrics. IPv6 needs brackets. |
 
 ## API Endpoints
 
 - `GET /api/status` — Returns simple status JSON.
-- `GET, POST /api/refresh` — Trigger a refresh (fetch bouquets/services → write playlist ± xmltv). The operation is idempotent; repeated calls have the same effect.
+- `POST /api/refresh` — Trigger a refresh (fetch bouquets/services → write playlist ± xmltv). The operation is idempotent; repeated calls have the same effect.
+- `GET /healthz` — Liveness/health endpoint.
+- `GET /readyz` — Readiness endpoint (becomes 200 once the first successful refresh has occurred).
+- `GET /metrics` — Prometheus metrics endpoint (only when `XG2G_METRICS_LISTEN` is configured).
 - `GET /files/*` — Static serving of generated artifacts from `XG2G_DATA`.
 
 Example refresh calls:
