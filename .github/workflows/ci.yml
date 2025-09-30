@@ -87,7 +87,7 @@ jobs:
           XG2G_DATA: /home/runner/work/xg2g/xg2g/data
           XG2G_OWI_BASE: http://127.0.0.1:18080
           XG2G_BOUQUET: Premium
-          XG2G_XMLTV: /home/runner/work/xg2g/xg2g/data/guide.xml
+          XG2G_XMLTV: xmltv.xml
           XG2G_PICON_BASE: http://127.0.0.1:18080/picon
           XG2G_LISTEN: :8080
           XG2G_API_TOKEN: ci-ci
@@ -144,13 +144,13 @@ jobs:
           curl -fsS --retry 10 --retry-all-errors --retry-delay 0 --max-time 2      "$daemon_base/api/status"
           curl -fsS --retry 10 --retry-all-errors --retry-delay 0 --max-time 2 "$daemon_base/api/status"
 
-          ls -lh "$XG2G_DATA"/playlist.m3u "$XG2G_DATA"/guide.xml
+          ls -lh "$XG2G_DATA"/playlist.m3u "$XG2G_DATA"/xmltv.xml
 
       - name: Output validation
         run: |
           set -euo pipefail
           test "$(grep -c '^#EXTINF' ./data/playlist.m3u)" -ge 2
-          test "$(grep -c '<channel ' ./data/guide.xml)" -ge 2
+          test "$(grep -c '<channel ' ./data/xmltv.xml)" -ge 2
           ! grep -q 'FROM BOUQUET' ./data/playlist.m3u
 
       - name: Job summary
