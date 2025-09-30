@@ -45,3 +45,9 @@ data/
 !internal/
 !go.mod
 !go.sum
+
+# Re-exclude tests and fixtures inside included directories
+cmd/**/*_test.go
+internal/**/*_test.go
+cmd/**/testdata/**
+internal/**/testdata/**

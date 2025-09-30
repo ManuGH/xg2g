@@ -197,3 +197,17 @@ Use structured logs with consistent fields (`attempt`, `duration_ms`, `error_cla
 - Configuration is ENV-only (no config files). See `cmd/daemon/main.go` and `internal/jobs/refresh.go` for how ENV variables are read.
 
 Please refer to [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
+
+## Docker images
+
+The default Dockerfile uses Alpine (multi-stage) and includes an HTTP healthcheck via wget.
+
+For a lean runtime image, a distroless variant is available as `Dockerfile.distroless` (no shell/tools, no built-in HEALTHCHECK; rely on orchestrator probes):
+
+```bash
+# Build default (Alpine)
+docker build -t xg2g:latest -f Dockerfile .
+
+# Build distroless
+docker build -t xg2g:distroless -f Dockerfile.distroless .
+```
