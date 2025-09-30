@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: xg2g
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: xg2g
+  template:
+    metadata:
+      labels:
+        app: xg2g
+    spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: xg2g
+          image: ghcr.io/<OWNER>/xg2g@sha256:<ALPINE_DIGEST>
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: XG2G_DATA
+              value: /data
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: data
+              mountPath: /data
+              readOnly: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 20
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: xg2g
+spec:
+  selector:
+    app: xg2g
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

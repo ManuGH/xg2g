@@ -211,3 +211,10 @@ docker build -t xg2g:latest -f Dockerfile .
 # Build distroless
 docker build -t xg2g:distroless -f Dockerfile.distroless .
 ```
+
+Hardened deployment templates are available in `deploy/`:
+
+- `deploy/docker-compose.alpine.yml` — Alpine with built-in healthcheck, non-root, read-only FS, caps dropped.
+- `deploy/docker-compose.distroless.yml` — Distroless, non-root, read-only FS; probes via orchestrator.
+- `deploy/k8s-alpine.yaml` and `deploy/k8s-distroless.yaml` — Kubernetes manifests with digest pins, securityContext and probes (`/healthz`, `/readyz`).
+
