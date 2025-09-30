@@ -405,15 +405,21 @@ jobs:
           # Debug: Show daemon process and ports
           echo "📊 Debug info:"
           ps aux | grep daemon | grep -v grep || echo "No daemon process found"
-          netstat -tuln | grep ':8080' || echo "Port 8080 not bound"
+          ss -ltn | grep ':8080' || echo "Port 8080 not bound yet"
 
-          # Verify daemon is listening on expected port
-          if ! netstat -tuln | grep ':8080' >/dev/null; then
+          # Verify daemon is listening on expected port (with brief retry)
+          for i in $(seq 1 10); do
+            if ss -ltn sport = :8080 | grep -q ':8080'; then
+              break
+            fi
+            sleep 0.5
+          done
+          if ! ss -ltn sport = :8080 | grep -q ':8080'; then
             echo "❌ Daemon is not listening on port 8080"
             echo "📋 Daemon log contents:"
             cat /tmp/daemon.log || echo "No daemon log found"
             echo "📋 Network status:"
-            netstat -tuln | grep '127.0.0.1' || echo "No local listeners"
+            ss -ltn || echo "No local listeners"
             echo "📋 Process info:"
             ps aux | grep daemon | grep -v grep || echo "No daemon process"
             kill $DAEMON_PID 2>/dev/null || true
