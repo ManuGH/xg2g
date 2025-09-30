@@ -14,7 +14,7 @@ Read these files first
 - `internal/playlist/m3u.go` and `internal/epg/*.go` — file format writers.
 
 Quick actionable conventions (project-specific)
-- Configuration is ENV-only (prefix `XG2G_`). Key variables: `XG2G_DATA`, `XG2G_OWI_BASE`, `XG2G_BOUQUET`, `XG2G_XMLTV`, `XG2G_PICON_BASE`, `XG2G_FUZZY_MAX`, `XG2G_STREAM_PORT`, `XG2G_OWI_TIMEOUT_MS`, `XG2G_OWI_RETRIES`, `XG2G_OWI_BACKOFF_MS`, `XG2G_METRICS_PORT`.
+- Configuration is ENV-only (prefix `XG2G_`). Key variables: `XG2G_DATA`, `XG2G_OWI_BASE`, `XG2G_BOUQUET`, `XG2G_XMLTV`, `XG2G_PICON_BASE`, `XG2G_FUZZY_MAX`, `XG2G_STREAM_PORT`, `XG2G_OWI_TIMEOUT_MS`, `XG2G_OWI_RETRIES`, `XG2G_OWI_BACKOFF_MS`, `XG2G_METRICS_LISTEN`.
 - The single exported operation is `jobs.Refresh(ctx, jobs.Config)` — most changes touch this flow. Prefer extracting small helpers (fetch/builder/writer) to make unit tests easier.
 - Deterministic tvg-id creation lives in `makeStableID` inside `internal/jobs/refresh.go`; keep its behaviour when changing channel naming to avoid breaking existing EPG mappings.
 - OpenWebIF: code prefers `/api/getallservices?bRef=` and falls back to `/api/getservices?sRef=`; the client filters bouquet-containers (`1:7:` prefix).
@@ -106,7 +106,7 @@ Goal: enable quick productivity. Focus on build/test workflows, architecture, co
 - `XG2G_METRICS_LISTEN` Prometheus metrics server listen address, e.g. `:9090` (empty = disabled).
 - `XG2G_OWI_BASE` base URL of OpenWebIF (no trailing slash).
 - `XG2G_BOUQUET` bouquet name/ID for filtering.
-- `XG2G_XMLTV` true|false to generate XMLTV.
+- `XG2G_XMLTV` optional output path for XMLTV; if empty, XMLTV generation is disabled.
 - `XG2G_PICON_BASE` external/relative base for picon URLs.
 - `XG2G_FUZZY_MAX` max Levenshtein distance for EPG matching (max 10).
 - `XG2G_STREAM_PORT` port override for stream URLs (if receiver port ≠ 8001).
@@ -118,16 +118,17 @@ Goal: enable quick productivity. Focus on build/test workflows, architecture, co
 |---------------------|----------|---------|----------|------------------------------------------------|
 | XG2G_DATA           | Path     | ./data  | yes      | Target folder for artifacts and /files serving |
 | XG2G_LISTEN         | Address  | :8080   | no       | HTTP listen address                             |
-| XG2G_METRICS_LISTEN | Address  | :9090   | no       | Prometheus metrics server address (empty=off)  |
+| XG2G_METRICS_LISTEN | Address  | (empty) | no       | Prometheus metrics server address (empty=off)  |
 | XG2G_OWI_BASE       | URL      | —       | yes      | Base URL of OpenWebIF                           |
 | XG2G_BOUQUET        | String   | —       | yes      | Bouquet name/ID for filtering                   |
-| XG2G_XMLTV          | bool     | false   | no       | Enable XMLTV generation                         |
+| XG2G_XMLTV          | String   | (empty) | no       | Path for XMLTV output; empty disables           |
 | XG2G_PICON_BASE     | URL/Path | —       | no       | Base for picon URLs                             |
 | XG2G_FUZZY_MAX      | int      | 2       | no       | Max Levenshtein distance for EPG matching (≤10)|
 | XG2G_STREAM_PORT    | int      | 8001    | no       | Port override for stream URLs                   |
-| XG2G_OWI_TIMEOUT_MS | int      | 30000   | no       | OpenWebIF HTTP timeout in milliseconds         |
+| XG2G_OWI_TIMEOUT_MS | int      | 10000   | no       | OpenWebIF HTTP timeout in milliseconds         |
 | XG2G_OWI_RETRIES    | int      | 3       | no       | Maximum retry attempts for OpenWebIF calls     |
-| XG2G_OWI_BACKOFF_MS | int      | 1000    | no       | Initial backoff delay for exponential retry    |
+| XG2G_OWI_BACKOFF_MS | int      | 500     | no       | Initial backoff delay for exponential retry    |
+| XG2G_OWI_MAX_BACKOFF_MS | int  | 2000    | no       | Maximum backoff delay for exponential retry    |
 
 Example `.env` for local development:
 ```env
@@ -135,7 +136,8 @@ XG2G_DATA=./data
 XG2G_OWI_BASE=http://receiver.local
 XG2G_BOUQUET=Favourites
 XG2G_LISTEN=:8080
-XG2G_XMLTV=true
+XG2G_XMLTV=xmltv.xml
+XG2G_METRICS_LISTEN=:9090
 ```
 
 ## API Endpoints
