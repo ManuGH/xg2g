@@ -76,5 +76,21 @@ func WithContext(ctx context.Context, logger zerolog.Logger) zerolog.Logger {
 // WithComponentFromContext returns a logger that is annotated with the component
 // name and enriched with correlation fields from ctx.
 func WithComponentFromContext(ctx context.Context, component string) zerolog.Logger {
-	return WithContext(ctx, WithComponent(component))
+	l := FromContext(ctx)
+	return l.With().Str("component", component).Logger()
+}
+
+// FromContext returns a logger from the context, or a new one if not present.
+func FromContext(ctx context.Context) *zerolog.Logger {
+	if ctx == nil {
+		l := Base()
+		return &l
+	}
+	l := zerolog.Ctx(ctx)
+	if l.GetLevel() == zerolog.Disabled {
+		// If no logger is in the context, return the base logger.
+		b := Base()
+		return &b
+	}
+	return l
 }

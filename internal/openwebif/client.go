@@ -34,10 +34,11 @@ type Client struct {
 }
 
 type Options struct {
-	Timeout    time.Duration
-	MaxRetries int
-	Backoff    time.Duration
-	MaxBackoff time.Duration
+	Timeout               time.Duration
+	ResponseHeaderTimeout time.Duration
+	MaxRetries            int
+	Backoff               time.Duration
+	MaxBackoff            time.Duration
 }
 
 const (
@@ -51,26 +52,6 @@ const (
 )
 
 var (
-	// Shared, hardened HTTP transport for all OpenWebIF clients.
-	transport = &http.Transport{
-		Proxy:                 http.ProxyFromEnvironment,
-		MaxIdleConns:          100,
-		MaxIdleConnsPerHost:   10,
-		IdleConnTimeout:       30 * time.Second,
-		TLSHandshakeTimeout:   5 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
-		ResponseHeaderTimeout: 10 * time.Second,
-		DialContext: (&net.Dialer{
-			Timeout: 5 * time.Second,
-		}).DialContext,
-	}
-
-	// Shared, hardened HTTP client. Timeout is controlled by context per-request.
-	httpClient = &http.Client{
-		Transport: transport,
-		Timeout:   0, // Explicitly disable client-side timeout in favor of context-based timeouts
-	}
-
 	requestDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "xg2g_openwebif_request_duration_seconds",
 		Help:    "Duration of OpenWebIF HTTP requests per attempt",
@@ -110,10 +91,37 @@ func NewWithPort(base string, streamPort int, opts Options) *Client {
 	host := extractHost(trimmedBase)
 	logger := xglog.WithComponent("openwebif").With().Str("host", host).Logger()
 	nopts := normalizeOptions(opts)
+
+	dialerTimeout := 5 * time.Second
+	tlsHandshakeTimeout := 5 * time.Second
+	responseHeaderTimeout := 10 * time.Second
+	if opts.ResponseHeaderTimeout > 0 {
+		responseHeaderTimeout = opts.ResponseHeaderTimeout
+	}
+
+	// Create a dedicated, hardened transport.
+	transport := &http.Transport{
+		DialContext: (&net.Dialer{
+			Timeout:   dialerTimeout, // Connection timeout
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		TLSHandshakeTimeout:   tlsHandshakeTimeout,
+		ResponseHeaderTimeout: responseHeaderTimeout, // Time to receive headers
+		MaxIdleConns:          10,
+		IdleConnTimeout:       90 * time.Second,
+		MaxIdleConnsPerHost:   2,
+	}
+
+	// Create a client with the hardened transport.
+	// The per-request timeout is handled by the context passed to Do().
+	hardenedClient := &http.Client{
+		Transport: transport,
+	}
+
 	return &Client{
 		base:       trimmedBase,
 		port:       port,
-		http:       httpClient,
+		http:       hardenedClient,
 		log:        logger,
 		host:       host,
 		timeout:    nopts.Timeout,

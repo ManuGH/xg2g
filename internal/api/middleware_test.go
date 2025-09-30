@@ -185,3 +185,36 @@ func TestClientIP(t *testing.T) {
 		})
 	}
 }
+
+func TestSecurityHeadersMiddleware(t *testing.T) {
+	// A simple handler to be wrapped by the middleware
+	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	// Create a request to test with
+	req := httptest.NewRequest("GET", "/", nil)
+
+	// Create a ResponseRecorder to record the response
+	rr := httptest.NewRecorder()
+
+	// Create the middleware handler
+	handler := securityHeadersMiddleware(nextHandler)
+
+	// Serve the HTTP request to our handler
+	handler.ServeHTTP(rr, req)
+
+	// Check the headers
+	expectedHeaders := map[string]string{
+		"Content-Security-Policy": "default-src 'self'; frame-ancestors 'none'",
+		"Referrer-Policy":         "no-referrer",
+		"X-Content-Type-Options":  "nosniff",
+		"X-Frame-Options":         "DENY",
+	}
+
+	for key, value := range expectedHeaders {
+		if got := rr.Header().Get(key); got != value {
+			t.Errorf("Expected header %s: %q, got: %q", key, value, got)
+		}
+	}
+}

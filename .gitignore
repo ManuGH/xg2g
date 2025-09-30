@@ -9,6 +9,7 @@
 # Test binary, build output
 *.test
 *.out
+*.out
 coverage.out
 coverage.html
 *.prof

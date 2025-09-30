@@ -191,7 +191,7 @@ func TestAuthMiddleware(t *testing.T) {
 	// Handler that will be protected by the middleware
 	protectedHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	})
 
 	tests := []struct {
@@ -202,11 +202,11 @@ func TestAuthMiddleware(t *testing.T) {
 		wantBody      string
 	}{
 		{
-			name:          "no_token_configured_access_granted",
+			name:          "no_token_configured_fail_closed",
 			tokenInCfg:    "",
 			tokenInHeader: "",
-			wantStatus:    http.StatusOK,
-			wantBody:      "OK",
+			wantStatus:    http.StatusUnauthorized,
+			wantBody:      "Unauthorized: API token not configured on server\n",
 		},
 		{
 			name:          "token_configured_no_header_unauthorized",
@@ -244,7 +244,7 @@ func TestAuthMiddleware(t *testing.T) {
 			server := New(cfg)
 
 			// Create the middleware chain
-			handlerToTest := server.authMiddleware(protectedHandler)
+			handlerToTest := server.authRequired(protectedHandler)
 
 			req := httptest.NewRequest("GET", "/test", nil)
 			if tt.tokenInHeader != "" {

@@ -158,6 +158,8 @@
     "versioning",
     "promhttp",
     "Prometheus",
+    "curlimages",
+    "healthcheck",
     "METRICS"
   ],
   "ignorePaths": [

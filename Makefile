@@ -26,6 +26,7 @@ BINARY_NAME := daemon
 BUILD_DIR := bin
 # Reproducible build flags
 BUILD_FLAGS := -trimpath -buildvcs=false
+VERSION := $(shell git describe --tags --always --dirty)
 LDFLAGS := -ldflags "-s -w -buildid= -X 'main.Version=$(VERSION)'"
 DOCKER_IMAGE := xg2g
 DOCKER_REGISTRY ?= 
@@ -148,12 +149,16 @@ clean: ## Remove build artifacts and temporary files
 # Quality Assurance Targets
 # ===================================================================================================
 
-lint: dev-tools ## Run golangci-lint with all checks
+lint: ## Run golangci-lint with all checks
+	@echo "Ensuring golangci-lint is installed..."
+	@command -v $(GOLANGCI_LINT) >/dev/null 2>&1 || go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 	@echo "Running golangci-lint..."
 	@"$(GOLANGCI_LINT)" run ./... --timeout=5m
 	@echo "✅ Lint checks passed"
 
-lint-fix: dev-tools ## Run golangci-lint with automatic fixes
+lint-fix: ## Run golangci-lint with automatic fixes
+	@echo "Ensuring golangci-lint is installed..."
+	@command -v $(GOLANGCI_LINT) >/dev/null 2>&1 || go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 	@echo "Running golangci-lint with fixes..."
 	@"$(GOLANGCI_LINT)" run ./... --fix --timeout=5m
 	@echo "✅ Lint fixes applied"
@@ -232,11 +237,8 @@ hardcore-test: dev-tools ## Run enterprise-grade comprehensive test suite
 	@echo "🎉 Hardcore Test Suite PASSED - Enterprise Quality Validated!"
 	@echo "=================================================================="
 
-quality-gates: ## Validate all quality gates
+quality-gates: lint test-cover security-vulncheck ## Validate all quality gates
 	@echo "Validating quality gates..."
-	@$(MAKE) lint
-	@$(MAKE) test-cover
-	@$(MAKE) security-vulncheck
 	@echo "✅ All quality gates passed"
 
 # ===================================================================================================
@@ -309,7 +311,9 @@ security-audit: ## Run dependency vulnerability audit
 	@go list -json -deps ./... | nancy sleuth || echo "⚠️  Nancy audit completed with findings"
 	@echo "✅ Dependency audit completed"
 
-security-vulncheck: dev-tools ## Run Go vulnerability checker
+security-vulncheck: ## Run Go vulnerability checker
+	@echo "Ensuring govulncheck is installed..."
+	@command -v $(GOVULNCHECK) >/dev/null 2>&1 || go install golang.org/x/vuln/cmd/govulncheck@latest
 	@echo "Running Go vulnerability check..."
 	@"$(GOVULNCHECK)" ./...
 	@echo "✅ Go vulnerability check passed"

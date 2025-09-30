@@ -74,7 +74,7 @@ func refreshWithClient(ctx context.Context, cfg Config, cl OwiClient) (*Status, 
 
 		item := playlist.Item{
 			Name:    name,
-			TvgID:   makeStableID(name),
+			TvgID:   makeStableIDFromSRef(sref),
 			TvgChNo: i + 1,
 			Group:   cfg.Bouquet,
 		}
@@ -93,7 +93,7 @@ func refreshWithClient(ctx context.Context, cfg Config, cl OwiClient) (*Status, 
 	}
 
 	playlistPath := filepath.Join(cfg.DataDir, "playlist.m3u")
-	if err := writeM3U(playlistPath, items); err != nil {
+	if err := writeM3U(ctx, playlistPath, items); err != nil {
 		return nil, fmt.Errorf("failed to write M3U playlist: %w", err)
 	}
 	logger.Info().
@@ -220,6 +220,35 @@ func TestRefresh_ConfigValidation(t *testing.T) {
 	_, err := Refresh(ctx, cfg)
 	if err == nil {
 		t.Error("Expected error for invalid config")
+	}
+}
+
+func TestRefresh_M3UWriteError(t *testing.T) {
+	// Create a read-only directory to force a write error
+	tmpdir := t.TempDir()
+	readonlyDir := filepath.Join(tmpdir, "readonly")
+	if err := os.Mkdir(readonlyDir, 0555); err != nil {
+		t.Fatalf("failed to create read-only dir: %v", err)
+	}
+
+	cfg := Config{
+		DataDir:    readonlyDir,
+		OWIBase:    "http://mock",
+		Bouquet:    "Favourites",
+		StreamPort: 8001,
+	}
+
+	mock := &mockOWI{
+		bouquets: map[string]string{"Favourites": "bref1"},
+		services: map[string][][2]string{"bref1": {{"Channel A", "1:0:1"}}},
+	}
+
+	_, err := refreshWithClient(context.Background(), cfg, mock)
+	if err == nil {
+		t.Fatal("expected an error when writing M3U to a read-only directory, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to write M3U playlist") {
+		t.Errorf("expected error to contain 'failed to write M3U playlist', got: %v", err)
 	}
 }
 

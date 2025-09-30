@@ -1,6 +1,6 @@
 services:
   xg2g:
-    image: ghcr.io/manugh/xg2g@sha256:a8d795aca7908711fa579147e787d6947d17bf815b017d07969c7f607fd218bb
+    image: ghcr.io/manugh/xg2g@sha256:<your-digest-here>
     container_name: xg2g-app
     restart: unless-stopped
     ports:
@@ -11,8 +11,12 @@ services:
       - /etc/localtime:/etc/localtime:ro
     deploy:
       resources:
-        limits: { cpus: "0.50", memory: "256M" }
-        reservations: { cpus: "0.10", memory: "64M" }
+        limits:
+          cpus: "0.5"
+          memory: 128M
+        reservations:
+          cpus: "0.1"
+          memory: 64M
     environment:
       # Core Configuration
       XG2G_DATA: /data

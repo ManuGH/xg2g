@@ -3,6 +3,8 @@ package jobs
 
 import (
 	"context"
+	"crypto/sha1"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/url"
@@ -93,7 +95,7 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 
 		items = append(items, playlist.Item{
 			Name:    name,
-			TvgID:   makeStableID(name),
+			TvgID:   makeStableIDFromSRef(ref),
 			TvgLogo: piconURL,
 			Group:   cfg.Bouquet,
 			URL:     streamURL,
@@ -102,7 +104,7 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 
 	// Write M3U playlist
 	playlistPath := filepath.Join(cfg.DataDir, "playlist.m3u")
-	if err := writeM3U(playlistPath, items); err != nil {
+	if err := writeM3U(ctx, playlistPath, items); err != nil {
 		return nil, fmt.Errorf("failed to write M3U playlist: %w", err)
 	}
 	logger.Info().
@@ -121,20 +123,18 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 			}
 			xmlCh = append(xmlCh, ch)
 		}
-		if err := epg.WriteXMLTV(xmlCh, filepath.Join(cfg.DataDir, cfg.XMLTVPath)); err != nil {
-			logger.Warn().
-				Err(err).
-				Str("event", "xmltv.failed").
-				Str("path", cfg.XMLTVPath).
-				Int("channels", len(xmlCh)).
-				Msg("XMLTV generation failed")
-		} else {
-			logger.Info().
-				Str("event", "xmltv.success").
-				Str("path", cfg.XMLTVPath).
-				Int("channels", len(xmlCh)).
-				Msg("XMLTV generated")
+
+		xmltvFullPath := filepath.Join(cfg.DataDir, cfg.XMLTVPath)
+		if err := epg.WriteXMLTV(xmlCh, xmltvFullPath); err != nil {
+			// Return the error to signal a failed job instead of just logging it.
+			return nil, fmt.Errorf("failed to write XMLTV file to %q: %w", xmltvFullPath, err)
 		}
+
+		logger.Info().
+			Str("event", "xmltv.success").
+			Str("path", xmltvFullPath).
+			Int("channels", len(xmlCh)).
+			Msg("XMLTV generated")
 	}
 
 	status := &Status{LastRun: time.Now(), Channels: len(items)}
@@ -146,24 +146,38 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 }
 
 // writeM3U safely writes the playlist to a temporary file and renames it on success.
-func writeM3U(path string, items []playlist.Item) error {
+func writeM3U(ctx context.Context, path string, items []playlist.Item) error {
+	logger := xglog.FromContext(ctx)
 	dir := filepath.Dir(path)
 	tmpFile, err := os.CreateTemp(dir, "playlist-*.m3u.tmp")
 	if err != nil {
 		return fmt.Errorf("create temporary M3U file: %w", err)
 	}
+	// Defer a function to handle cleanup, logging any errors.
+	closed := false
 	defer func() {
-		tmpFile.Close()
-		os.Remove(tmpFile.Name()) // Clean up temp file on error
+		if !closed {
+			if err := tmpFile.Close(); err != nil {
+				logger.Warn().Err(err).Str("path", tmpFile.Name()).Msg("failed to close temporary file on error path")
+			}
+		}
+		// Only remove the temp file if it still exists (i.e., rename failed).
+		if _, statErr := os.Stat(tmpFile.Name()); !os.IsNotExist(statErr) {
+			if err := os.Remove(tmpFile.Name()); err != nil {
+				logger.Warn().Err(err).Str("path", tmpFile.Name()).Msg("failed to remove temporary file")
+			}
+		}
 	}()
 
 	if err := playlist.WriteM3U(tmpFile, items); err != nil {
 		return fmt.Errorf("write to temporary M3U file: %w", err)
 	}
 
+	// Explicitly close before rename.
 	if err := tmpFile.Close(); err != nil {
-		return fmt.Errorf("close temporary M3U file: %w", err)
+		return fmt.Errorf("close temporary M3U file before rename: %w", err)
 	}
+	closed = true
 
 	// Atomically rename the temporary file to the final destination
 	if err := os.Rename(tmpFile.Name(), path); err != nil {
@@ -173,27 +187,12 @@ func writeM3U(path string, items []playlist.Item) error {
 	return nil
 }
 
-// makeStableID creates deterministic tvg-id from channel name
-// Keep behavior stable to avoid breaking existing EPG mappings
-func makeStableID(name string) string {
-	// Normalize: lowercase, replace spaces/special chars with underscores
-	id := strings.ToLower(name)
-	id = strings.ReplaceAll(id, " ", "_")
-	id = strings.ReplaceAll(id, ".", "_")
-	id = strings.ReplaceAll(id, "-", "_")
-
-	// Remove consecutive underscores
-	for strings.Contains(id, "__") {
-		id = strings.ReplaceAll(id, "__", "_")
-	}
-
-	// Trim leading/trailing underscores
-	id = strings.Trim(id, "_")
-
-	if id == "" {
-		return "unknown"
-	}
-	return id
+// makeStableIDFromSRef creates a deterministic, collision-resistant tvg-id from a service reference.
+// Using a hash ensures the ID is stable even if the channel name changes and avoids issues
+// with special characters in the sRef.
+func makeStableIDFromSRef(sref string) string {
+	sum := sha1.Sum([]byte(sref))
+	return "sref-" + hex.EncodeToString(sum[:])
 }
 
 func validateConfig(cfg Config) error {

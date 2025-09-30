@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -165,10 +164,10 @@ func main() {
 		Addr:              addr,
 		Handler:           s.Handler(),
 		ReadTimeout:       serverReadTimeout,
+		ReadHeaderTimeout: 2 * time.Second, // Add ReadHeaderTimeout
 		WriteTimeout:      serverWriteTimeout,
 		IdleTimeout:       serverIdleTimeout,
 		MaxHeaderBytes:    serverMaxHeaderBytes,
-		ReadHeaderTimeout: serverReadTimeout,
 	}
 
 	// Start main API server
@@ -196,6 +195,20 @@ func main() {
 	// the request it is currently handling
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
+
+	// Perform an initial refresh on startup if the `XG2G_INITIAL_REFRESH` env var is set to "true"
+	if strings.ToLower(env("XG2G_INITIAL_REFRESH", "false")) == "true" {
+		go func() {
+			logger.Info().Msg("performing initial data refresh on startup")
+			// Use a background context for the initial refresh to avoid being canceled by shutdown
+			if _, err := jobs.Refresh(context.Background(), cfg); err != nil {
+				logger.Error().Err(err).Msg("initial data refresh failed")
+			} else {
+				logger.Info().Msg("initial data refresh completed successfully")
+			}
+		}()
+	}
+
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Fatal().Err(err).Msg("server forced to shutdown")
 	}
@@ -203,240 +216,127 @@ func main() {
 	logger.Info().Msg("server exiting")
 }
 
-func env(k, def string) string {
-	if v := os.Getenv(k); v != "" {
-		return v
-	}
-	return def
-}
-
-// resolveMetricsListen validates and returns the metrics server listen address.
-// Returns empty string to disable metrics server.
-func resolveMetricsListen() string {
-	addr := os.Getenv("XG2G_METRICS_LISTEN")
-
-	// Check if explicitly set (even if empty for disable)
-	if _, exists := os.LookupEnv("XG2G_METRICS_LISTEN"); exists {
-		if addr == "" {
-			// Explicitly disabled
-			return ""
-		}
-	} else {
-		// Fallback to legacy XG2G_METRICS_PORT for compatibility
-		if port := os.Getenv("XG2G_METRICS_PORT"); port != "" {
-			addr = port
+// env reads an environment variable or returns a default value.
+// It also logs the source of the value (default or environment).
+func env(key, defaultValue string) string {
+	if value, exists := os.LookupEnv(key); exists {
+		// For sensitive vars, just log that it was set
+		if strings.Contains(strings.ToLower(key), "token") || strings.Contains(strings.ToLower(key), "password") {
+			log.Printf("config: using %s from environment (set)", key)
 		} else {
-			// Default: metrics enabled on :9090
-			addr = ":9090"
+			log.Printf("config: using %s from environment (%q)", key, value)
 		}
+		return value
 	}
-
-	// Validate listen address format
-	if err := validateListenAddr(addr); err != nil {
-		log.Fatalf("invalid metrics listen address %q: %v", addr, err)
-	}
-
-	return addr
+	log.Printf("config: using default for %s (%q)", key, defaultValue)
+	return defaultValue
 }
 
-// validateListenAddr performs strict validation of listen addresses.
-// Accepts: :port, host:port, [ipv6]:port
-// Rejects: port (missing :), invalid formats, out-of-range ports
-func validateListenAddr(addr string) error {
-	if addr == "" {
-		return nil // Empty = disabled
-	}
-
-	// Must contain at least one colon
-	if !strings.Contains(addr, ":") {
-		return fmt.Errorf("missing colon (use :port or host:port)")
-	}
-
-	// Try to resolve as listen address
-	host, port, err := net.SplitHostPort(addr)
-	if err != nil {
-		return fmt.Errorf("invalid format: %w", err)
-	}
-
-	// Validate port range
-	if portNum, err := strconv.Atoi(port); err != nil {
-		return fmt.Errorf("invalid port %q: %w", port, err)
-	} else if portNum < 0 || portNum > 65535 {
-		return fmt.Errorf("port %d out of range [0-65535]", portNum)
-	}
-
-	// Validate IPv6 addresses (if host is specified)
-	if host != "" && strings.Contains(host, ":") {
-		if net.ParseIP(host) == nil {
-			return fmt.Errorf("invalid IPv6 address %q", host)
-		}
-	}
-
-	return nil
-}
-
+// atoi is a wrapper for strconv.Atoi that panics on error.
+// Used for parsing environment variables that are expected to be integers.
 func atoi(s string) int {
-	if v, err := strconv.Atoi(s); err == nil {
-		return v
+	i, err := strconv.Atoi(s)
+	if err != nil {
+		// Use the logger from the main package
+		log.Fatalf("config: failed to parse integer from string %q: %v", s, err)
 	}
-	return 0
+	return i
 }
 
+// resolveStreamPort gets the stream port from ENV, validates it, and returns it.
+// It returns an error if the port is invalid.
 func resolveStreamPort() (int, error) {
-	raw := os.Getenv("XG2G_STREAM_PORT")
-	if raw == "" {
-		return defaultStreamPort, nil
-	}
-	port, err := strconv.Atoi(raw)
+	portStr := env("XG2G_STREAM_PORT", strconv.Itoa(defaultStreamPort))
+	port, err := strconv.Atoi(portStr)
 	if err != nil {
-		return 0, fmt.Errorf("parse XG2G_STREAM_PORT: %w", err)
+		return 0, fmt.Errorf("invalid port %q: %w", portStr, err)
 	}
 	if port <= 0 || port > 65535 {
-		return 0, fmt.Errorf("XG2G_STREAM_PORT must be between 1 and 65535 (got %d)", port)
+		return 0, fmt.Errorf("%w: %d", jobs.ErrInvalidStreamPort, port)
 	}
 	return port, nil
 }
 
+// resolveMetricsListen gets the metrics listen address from ENV.
+// Returns an empty string if not set, disabling the metrics server.
+func resolveMetricsListen() string {
+	return env("XG2G_METRICS_LISTEN", "")
+}
+
+// resolveOWISettings reads, validates, and returns all OpenWebIF client settings.
 func resolveOWISettings() (time.Duration, int, time.Duration, time.Duration, error) {
-	timeout, err := durationFromEnv("XG2G_OWI_TIMEOUT_MS", defaultOWITimeout, maxOWITimeout)
+	timeoutMsStr := env("XG2G_OWI_TIMEOUT_MS", fmt.Sprintf("%d", defaultOWITimeout.Milliseconds()))
+	timeoutMs, err := strconv.ParseInt(timeoutMsStr, 10, 64)
 	if err != nil {
-		return 0, 0, 0, 0, err
+		return 0, 0, 0, 0, fmt.Errorf("invalid timeout %q: %w", timeoutMsStr, err)
 	}
-	retries, err := positiveIntFromEnv("XG2G_OWI_RETRIES", defaultOWIRetries, maxOWIRetries)
-	if err != nil {
-		return 0, 0, 0, 0, err
-	}
-	backoff, err := durationFromEnv("XG2G_OWI_BACKOFF_MS", defaultOWIBackoff, maxOWIBackoff)
-	if err != nil {
-		return 0, 0, 0, 0, err
-	}
-	maxBackoff, err := durationFromEnv("XG2G_OWI_MAX_BACKOFF_MS", defaultOWIMaxBackoff, maxOWIBackoff)
-	if err != nil {
-		return 0, 0, 0, 0, err
+	timeout := time.Duration(timeoutMs) * time.Millisecond
+	if timeout <= 0 || timeout > maxOWITimeout {
+		return 0, 0, 0, 0, fmt.Errorf("timeout %v out of range (0, %v]", timeout, maxOWITimeout)
 	}
 
-	// Validate that max backoff >= base backoff
-	if maxBackoff < backoff {
-		return 0, 0, 0, 0, fmt.Errorf("XG2G_OWI_MAX_BACKOFF_MS (%s) must be >= XG2G_OWI_BACKOFF_MS (%s)", maxBackoff, backoff)
+	retriesStr := env("XG2G_OWI_RETRIES", fmt.Sprintf("%d", defaultOWIRetries))
+	retries, err := strconv.Atoi(retriesStr)
+	if err != nil {
+		return 0, 0, 0, 0, fmt.Errorf("invalid retries %q: %w", retriesStr, err)
+	}
+	if retries < 0 || retries > maxOWIRetries {
+		return 0, 0, 0, 0, fmt.Errorf("retries %d out of range [0, %d]", retries, maxOWIRetries)
+	}
+
+	backoffMsStr := env("XG2G_OWI_BACKOFF_MS", fmt.Sprintf("%d", defaultOWIBackoff.Milliseconds()))
+	backoffMs, err := strconv.ParseInt(backoffMsStr, 10, 64)
+	if err != nil {
+		return 0, 0, 0, 0, fmt.Errorf("invalid backoff %q: %w", backoffMsStr, err)
+	}
+	backoff := time.Duration(backoffMs) * time.Millisecond
+	if backoff <= 0 || backoff > maxOWIBackoff {
+		return 0, 0, 0, 0, fmt.Errorf("backoff %v out of range (0, %v]", backoff, maxOWIBackoff)
+	}
+
+	// Max backoff is derived from base backoff, not independently configured.
+	// This ensures a reasonable ceiling.
+	maxBackoff := time.Duration(1<<retries) * backoff
+	if maxBackoff > maxOWIBackoff {
+		maxBackoff = maxOWIBackoff
 	}
 
 	return timeout, retries, backoff, maxBackoff, nil
 }
 
-func durationFromEnv(key string, def, max time.Duration) (time.Duration, error) {
-	raw := os.Getenv(key)
-	if raw == "" {
-		return def, nil
-	}
-	ms, err := strconv.Atoi(raw)
-	if err != nil {
-		return 0, fmt.Errorf("parse %s: %w", key, err)
-	}
-	if ms <= 0 {
-		return 0, fmt.Errorf("%s must be greater than 0", key)
-	}
-	d := time.Duration(ms) * time.Millisecond
-	if d > max {
-		return 0, fmt.Errorf("%s must be <= %s", key, max)
-	}
-	return d, nil
-}
-
-func positiveIntFromEnv(key string, def, max int) (int, error) {
-	raw := os.Getenv(key)
-	if raw == "" {
-		return def, nil
-	}
-	val, err := strconv.Atoi(raw)
-	if err != nil {
-		return 0, fmt.Errorf("parse %s: %w", key, err)
-	}
-	if val < 0 {
-		return 0, fmt.Errorf("%s must be >= 0", key)
-	}
-	if val > max {
-		return 0, fmt.Errorf("%s must be <= %d", key, max)
-	}
-	return val, nil
-}
-
-// ensureDataDir validates and creates the data directory at startup with symlink policy enforcement.
-// This prevents runtime errors when the /files/* handler is accessed and blocks symlink escape attacks.
-func ensureDataDir(dataDir string) error {
-	if dataDir == "" {
-		return fmt.Errorf("data directory is empty")
-	}
-
-	// Check for basic path traversal patterns
-	if strings.Contains(dataDir, "..") {
-		return fmt.Errorf("data directory contains path traversal sequences")
-	}
-
-	// Convert to absolute path and validate
-	absDataDir, err := filepath.Abs(dataDir)
-	if err != nil {
-		return fmt.Errorf("invalid data directory path: %w", err)
-	}
-
-	// Check if the path exists and what type it is
-	info, err := os.Lstat(absDataDir)
-	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("cannot access data directory: %w", err)
-	}
-
-	// If it exists and is a symlink, validate the symlink target
-	if err == nil && info.Mode()&os.ModeSymlink != 0 {
-
-		// The directory itself is a symlink - resolve it and check boundaries
-		realDataDir, err := filepath.EvalSymlinks(absDataDir)
-		if err != nil {
-			return fmt.Errorf("cannot resolve data directory symlinks: %w", err)
+// ensureDataDir checks if the data directory exists and is writable.
+// If it doesn't exist, it attempts to create it.
+func ensureDataDir(dir string) error {
+	// Check if the directory exists
+	info, err := os.Stat(dir)
+	if os.IsNotExist(err) {
+		// Directory does not exist, try to create it.
+		log.Printf("config: data directory %q does not exist, attempting to create it", dir)
+		if err := os.MkdirAll(dir, 0750); err != nil {
+			return fmt.Errorf("failed to create data directory %q: %w", dir, err)
 		}
-
-		// For security, we'll be strict about symlinks - they should generally be avoided for data directories
-		// Block symlinks that point to system directories or outside expected areas
-		cleanReal := filepath.Clean(realDataDir)
-
-		// Block obvious system directories (but allow temp/user areas)
-		// Be specific about dangerous directories, not broad categories
-		systemDirs := []string{"/etc", "/usr", "/bin", "/sbin", "/sys", "/proc", "/dev", "/root",
-			"/private/etc"}
-		for _, sysDir := range systemDirs {
-			if strings.HasPrefix(cleanReal, sysDir+"/") || cleanReal == sysDir {
-				return fmt.Errorf("data directory symlink points to system directory")
-			}
-		}
-
-		// For maximum security, we could block all symlinks for XG2G_DATA itself
-		// However, for now we'll allow symlinks to user directories (/tmp, /home, etc.)
-
-		// Use the resolved path for further checks
-		absDataDir = cleanReal
+		log.Printf("config: successfully created data directory %q", dir)
+		// After creation, stat again to verify.
+		info, err = os.Stat(dir)
 	}
-
-	// Ensure the directory exists (create if needed)
-	if err := os.MkdirAll(absDataDir, 0755); err != nil {
-		return fmt.Errorf("cannot create data directory: %w", err)
-	}
-
-	// Final verification of the resolved directory
-	realDataDir := absDataDir
-
-	// Verify directory exists and is actually a directory
-	info, err = os.Stat(realDataDir)
 	if err != nil {
-		return fmt.Errorf("cannot access data directory: %w", err)
+		// For any other error (e.g., permission denied)
+		return fmt.Errorf("failed to stat data directory %q: %w", dir, err)
 	}
+
 	if !info.IsDir() {
-		return fmt.Errorf("data directory path is not a directory")
+		return fmt.Errorf("path %q exists but is not a directory", dir)
 	}
 
-	// Verify we can write to the directory
-	testFile := filepath.Join(realDataDir, ".write-test")
-	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
-		return fmt.Errorf("data directory is not writable: %w", err)
+	// Check for write permissions by creating a temporary file.
+	// This is a more reliable check than inspecting permission bits.
+	tmpFile, err := os.Create(filepath.Join(dir, ".writable-check"))
+	if err != nil {
+		return fmt.Errorf("data directory %q is not writable: %w", dir, err)
 	}
-	_ = os.Remove(testFile) // Clean up test file (ignore errors - best effort)
+	_ = tmpFile.Close()
+	_ = os.Remove(tmpFile.Name())
 
+	log.Printf("config: data directory %q is valid and writable", dir)
 	return nil
 }

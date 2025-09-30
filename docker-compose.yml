@@ -7,41 +7,34 @@ services:
       args:
         VERSION: "${VERSION:-dev}"
     image: xg2g:local
+    container_name: xg2g-1-xg2g-1
     ports:
       - "8080:8080"
-      - "9090:9090" # Optional: Prometheus metrics
+      - "9090:9090"
     volumes:
       - ./data:/data
+      - ./test/picons:/data/picons # Mount test picons
     environment:
-      XG2G_DATA: /data
-      XG2G_LISTEN: ":8080"
-      XG2G_METRICS_LISTEN: "${XG2G_METRICS_LISTEN:-:9090}"
-      XG2G_OWI_BASE: "${XG2G_OWI_BASE:-}"
-      XG2G_BOUQUET: "${XG2G_BOUQUET:-}"
-      XG2G_FUZZY_MAX: "${XG2G_FUZZY_MAX:-2}"
-      XG2G_STREAM_PORT: "${XG2G_STREAM_PORT:-17999}"
+      - XG2G_DATA=/data
+      - XG2G_OWI_BASE=http://10.10.55.57
+      - XG2G_OWI_TIMEOUT_MS=30000
+      - XG2G_BOUQUET=Premium
+      - XG2G_LISTEN=:8080
+      - XG2G_METRICS_LISTEN=:9090
+      - XG2G_API_TOKEN=super-secret-token-do-not-use-in-prod
+      - XG2G_XMLTV_PATH=xmltv.xml
+      - XG2G_PICON_BASE_URL=http://localhost:8080/files/picons
+      - XG2G_DEBUG=true
+      - XG2G_INITIAL_REFRESH=true
     healthcheck:
-      test:
-        ["CMD-SHELL", "wget -qO- http://localhost:8080/api/status || exit 1"]
+      test: >
+        wget -q --spider -T 5 -O /dev/null http://localhost:8080/readyz || exit 1
       interval: 15s
-      timeout: 3s
-      retries: 5
-      start_period: 20s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
     restart: unless-stopped
-    user: "1000:1000"
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  xg2g-refresher:
-    image: curlimages/curl:latest
-    depends_on:
-      xg2g:
-        condition: service_healthy
-    environment:
-      XG2G_REFRESH_INTERVAL: "${XG2G_REFRESH_INTERVAL:-21600}"
-    entrypoint: >
-      sh -lc "while :; do curl -fsS -X POST http://xg2g:8080/api/refresh || true; sleep ${XG2G_REFRESH_INTERVAL:-21600}; done"
-    restart: unless-stopped
+    user: "1000"
+    read_only: true
+    tmpfs:
+      - /tmp:size=16M,mode=1777
