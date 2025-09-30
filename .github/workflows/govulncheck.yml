@@ -54,18 +54,20 @@ jobs:
               | ((.osv.database_specific.severity? // "") | ascii_upcase) as $lab
               | (if $lab=="CRITICAL" then 9 elif $lab=="HIGH" then 7 else 0 end) as $labelScore
               | ((.osv.severity? // [])
-                  | map((.score // "") as $s
-                        | if ($s|test("^[0-9.]+$")) then ($s|tonumber)
-                          elif ($s|test("CRITICAL";"i")) then 9
-                          elif ($s|test("HIGH";"i")) then 7
-                          else 0 end)
-                  | max // 0) as $cvssScore
+                  | (map((.score // "")
+                         | tostring
+                         | (if test("^[0-9.]+$") then tonumber
+                            elif test("CRITICAL";"i") then 9
+                            elif test("HIGH";"i") then 7
+                            else 0 end))
+                     | max) // 0) as $cvssScore
               | ([ $labelScore, $cvssScore ] | max) as $maxSev
               | select($maxSev >= 7)
-            ] | length' govulncheck.json)
-          echo "High/Critical vulnerabilities: $count" >> "$GITHUB_STEP_SUMMARY"
-          echo "high_crit_count=$count" >> "$GITHUB_OUTPUT"
-          if [ "$count" -gt 0 ]; then echo "fail=true" >> "$GITHUB_OUTPUT"; else echo "fail=false" >> "$GITHUB_OUTPUT"; fi
+            ] | length
+          ' govulncheck.json)
+          echo "High/Critical vulnerabilities: ${count}" >> "$GITHUB_STEP_SUMMARY"
+          echo "high_crit_count=${count}" >> "$GITHUB_OUTPUT"
+          if [ "${count}" -gt 0 ]; then echo "fail=true" >> "$GITHUB_OUTPUT"; else echo "fail=false" >> "$GITHUB_OUTPUT"; fi
 
       - name: Fail on High/Critical
         if: steps.severity.outputs.fail == 'true'

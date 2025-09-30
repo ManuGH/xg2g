@@ -194,7 +194,10 @@ jobs:
         with:
           version: latest
           args: --timeout=5m --verbose ./...
-
+          # Build golangci-lint from source using the runner's Go (1.25)
+          # to avoid version mismatch errors when the prebuilt binary was
+          # compiled with an older Go version.
+          install-mode: go
       - name: golangci-lint version
         run: golangci-lint --version
 
