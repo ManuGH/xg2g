@@ -375,12 +375,16 @@ jobs:
           TEMP_DATA=$(mktemp -d)
           echo "Using data directory: $TEMP_DATA"
 
+          # Create API token for authenticated endpoints
+          API_TOKEN="ci-integration-token"
+
           # Start daemon with stub backend
           XG2G_DATA="$TEMP_DATA" \
           XG2G_OWI_BASE=http://127.0.0.1:18080 \
           XG2G_BOUQUET=Premium \
           XG2G_LISTEN=:8080 \
           XG2G_METRICS_LISTEN=:9090 \
+          XG2G_API_TOKEN="$API_TOKEN" \
           timeout 10 ./daemon > /tmp/daemon.log 2>&1 &
           DAEMON_PID=$!
 
@@ -442,7 +446,7 @@ jobs:
 
           # Trigger refresh
           echo "🔄 Triggering refresh operation..."
-          if ! curl --fail --silent -X POST "$DAEMON_BASE/api/refresh" > /dev/null; then
+          if ! curl --fail --silent -H "X-API-Token: $API_TOKEN" -X POST "$DAEMON_BASE/api/refresh" > /dev/null; then
             echo "❌ Refresh trigger failed"
             echo "Daemon log:"
             cat /tmp/daemon.log || true

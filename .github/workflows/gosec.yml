@@ -27,13 +27,12 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Install gosec (pinned)
+        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.19.0
+
       - name: Run GoSec Security Scanner (SARIF)
-        uses: securego/gosec@v2
-        with:
-          args: "-no-fail -fmt sarif -out gosec.sarif ./..."
-          # -no-fail: report issues without failing the job (informational)
-          # -fmt sarif: native SARIF output
-          # -out: SARIF file path
+        run: |
+          gosec -fmt sarif -out gosec.sarif ./...
 
       - name: Upload SARIF file
         uses: github/codeql-action/upload-sarif@v3
