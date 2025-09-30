@@ -127,8 +127,7 @@ Goal: enable quick productivity. Focus on build/test workflows, architecture, co
 | XG2G_STREAM_PORT    | int      | 8001    | no       | Port override for stream URLs                   |
 | XG2G_OWI_TIMEOUT_MS | int      | 10000   | no       | OpenWebIF HTTP timeout in milliseconds         |
 | XG2G_OWI_RETRIES    | int      | 3       | no       | Maximum retry attempts for OpenWebIF calls     |
-| XG2G_OWI_BACKOFF_MS | int      | 500     | no       | Initial backoff delay for exponential retry    |
-| XG2G_OWI_MAX_BACKOFF_MS | int  | 2000    | no       | Maximum backoff delay for exponential retry    |
+| XG2G_OWI_BACKOFF_MS | int      | 500     | no       | Initial backoff delay for exponential retry. Max backoff is calculated as min(2^retries * backoff, 30s) and cannot be configured independently. |
 
 Example `.env` for local development:
 ```env
