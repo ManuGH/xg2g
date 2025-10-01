@@ -1,0 +1,48 @@
+services:
+  xg2g:
+    build: .
+    container_name: xg2g-test
+    ports:
+      - "8083:8080"
+      - "9093:9090"
+    volumes:
+      - ./data:/data
+    environment:
+      # OpenWebIF Configuration (läuft auf Port 80, NICHT 8001!)
+      XG2G_OWI_BASE: "http://10.10.55.57"
+
+      # Streaming Port (17999 wie gewünscht)
+      XG2G_STREAM_PORT: "17999"
+
+      XG2G_BOUQUET: "Premium"
+
+      # Picon Configuration (auch über Port 80)
+      XG2G_PICON_BASE: "http://10.10.55.57"
+
+      # EPG Configuration (vollständig auslesen - 7 Tage)
+      XG2G_EPG_ENABLED: "true"
+      XG2G_EPG_DAYS: "7"
+      XG2G_EPG_MAX_CONCURRENCY: "10"
+      XG2G_EPG_TIMEOUT_MS: "10000"
+      XG2G_EPG_RETRIES: "2"
+
+      # Output Configuration
+      XG2G_DATA: "/data"
+      XG2G_XMLTV: "xmltv.xml"
+      XG2G_X_TVG_URL: "http://10.10.55.57:8080/files/xmltv.xml"
+
+      # API Token
+      XG2G_API_TOKEN: "17c68be703c54b52f52ddec88a52590d"
+
+      # Server
+      XG2G_LISTEN: ":8080"
+      XG2G_METRICS_LISTEN: ":9090"
+
+      # OpenWebIF Robustness
+      XG2G_OWI_TIMEOUT_MS: "20000"
+      XG2G_OWI_RETRIES: "5"
+      XG2G_OWI_BACKOFF_MS: "500"
+
+      # Logging
+      LOG_LEVEL: "debug"
+      LOG_SERVICE: "xg2g-test"
