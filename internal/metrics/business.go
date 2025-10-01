@@ -62,6 +62,28 @@ var (
 		Name: "xg2g_refresh_failures_total",
 		Help: "Total number of refresh failures by stage",
 	}, []string{"stage"}) // stage=config|bouquets|services|streamurl|write_m3u|xmltv
+
+	// EPG metrics
+	epgRequestsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "xg2g_epg_requests_total",
+		Help: "Total number of EPG requests made",
+	}, []string{"status"}) // status=success|error|timeout
+
+	epgProgrammesCollected = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "xg2g_epg_programmes_collected",
+		Help: "Total number of EPG programmes collected in last refresh",
+	})
+
+	epgChannelsWithData = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "xg2g_epg_channels_with_data",
+		Help: "Number of channels that have EPG data",
+	})
+
+	epgCollectionDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "xg2g_epg_collection_duration_seconds",
+		Help:    "Time spent collecting EPG data for all channels",
+		Buckets: prometheus.DefBuckets,
+	})
 )
 
 func RecordBouquetsCount(n int) { bouquetsTotal.Set(float64(n)) }
@@ -98,3 +120,18 @@ func RecordXMLTV(enabled bool, channels int, writeErr error) {
 
 func IncConfigValidationError()      { configValidationErrors.Inc() }
 func IncRefreshFailure(stage string) { refreshFailuresTotal.WithLabelValues(stage).Inc() }
+
+// EPG metrics functions
+func IncEPGChannelError() {
+	epgRequestsTotal.WithLabelValues("error").Inc()
+}
+
+func RecordEPGChannelSuccess(programmes int) {
+	epgRequestsTotal.WithLabelValues("success").Inc()
+}
+
+func RecordEPGCollection(totalProgrammes, channelsWithData int, duration float64) {
+	epgProgrammesCollected.Set(float64(totalProgrammes))
+	epgChannelsWithData.Set(float64(channelsWithData))
+	epgCollectionDurationSeconds.Observe(duration)
+}

@@ -14,6 +14,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/epg"
 	xglog "github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/playlist"
 )
 
@@ -22,6 +23,7 @@ type OwiClient interface {
 	Bouquets(ctx context.Context) (map[string]string, error)
 	Services(ctx context.Context, bouquetRef string) ([][2]string, error)
 	StreamURL(ref, name string) (string, error)
+	GetEPG(ctx context.Context, sRef string, days int) ([]openwebif.EPGEvent, error)
 }
 
 type mockOWI struct {
@@ -39,6 +41,20 @@ func (m *mockOWI) Services(ctx context.Context, bouquetRef string) ([][2]string,
 
 func (m *mockOWI) StreamURL(ref, name string) (string, error) {
 	return "http://stream/" + ref, nil
+}
+
+func (m *mockOWI) GetEPG(ctx context.Context, sRef string, days int) ([]openwebif.EPGEvent, error) {
+	// Return mock EPG data for tests
+	return []openwebif.EPGEvent{
+		{
+			ID:          "1",
+			Title:       "Test Programme",
+			Description: "Test Description",
+			Begin:       time.Now().Unix(),
+			Duration:    3600,
+			SRef:        sRef,
+		},
+	}, nil
 }
 
 // refreshWithClient is a test helper that allows injecting a mock client.

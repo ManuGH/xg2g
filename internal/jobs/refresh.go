@@ -47,6 +47,13 @@ type Config struct {
 	OWIRetries    int
 	OWIBackoff    time.Duration
 	OWIMaxBackoff time.Duration
+
+	// EPG Configuration
+	EPGEnabled        bool
+	EPGDays           int // Number of days to fetch EPG data (1-14)
+	EPGMaxConcurrency int // Max parallel EPG requests (1-10)
+	EPGTimeoutMS      int // Timeout per EPG request in milliseconds
+	EPGRetries        int // Retry attempts for EPG requests
 }
 
 // Refresh performs the complete refresh cycle: fetch bouquets → services → write M3U + XMLTV
@@ -158,11 +165,59 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 
 		xmltvFullPath := filepath.Join(cfg.DataDir, cfg.XMLTVPath)
 		var xmlErr error
-		xmlErr = epg.WriteXMLTV(xmlCh, xmltvFullPath)
+		var allProgrammes []epg.Programme
+
+		// EPG Programme collection (if enabled)
+		if cfg.EPGEnabled {
+			logger.Info().
+				Str("event", "epg.start").
+				Int("channels", len(items)).
+				Int("days", cfg.EPGDays).
+				Msg("starting EPG collection")
+
+			startTime := time.Now()
+			programmes, epgErr := collectEPGProgrammes(ctx, client, items, cfg)
+			duration := time.Since(startTime).Seconds()
+
+			if epgErr != nil {
+				logger.Warn().
+					Err(epgErr).
+					Str("event", "epg.partial_failure").
+					Msg("EPG collection had errors, continuing with available data")
+				// Continue with partial data instead of failing completely
+			}
+			allProgrammes = programmes
+
+			// Count channels with EPG data
+			channelsWithData := 0
+			if len(allProgrammes) > 0 {
+				channelMap := make(map[string]bool)
+				for _, prog := range allProgrammes {
+					channelMap[prog.Channel] = true
+				}
+				channelsWithData = len(channelMap)
+			}
+
+			metrics.RecordEPGCollection(len(allProgrammes), channelsWithData, duration)
+
+			logger.Info().
+				Str("event", "epg.collected").
+				Int("programmes", len(allProgrammes)).
+				Int("channels_with_data", channelsWithData).
+				Float64("duration_seconds", duration).
+				Msg("EPG collection completed")
+		}
+
+		// Write XMLTV with or without programmes
+		if cfg.EPGEnabled && len(allProgrammes) > 0 {
+			xmlErr = epg.WriteXMLTVWithProgrammes(xmlCh, allProgrammes, xmltvFullPath)
+		} else {
+			xmlErr = epg.WriteXMLTV(xmlCh, xmltvFullPath)
+		}
+
 		metrics.RecordXMLTV(true, len(xmlCh), xmlErr)
 		if xmlErr != nil {
 			metrics.IncRefreshFailure("xmltv")
-			// Return the error to signal a failed job instead of just logging it.
 			return nil, fmt.Errorf("failed to write XMLTV file to %q: %w", xmltvFullPath, xmlErr)
 		}
 
@@ -170,6 +225,7 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 			Str("event", "xmltv.success").
 			Str("path", xmltvFullPath).
 			Int("channels", len(xmlCh)).
+			Int("programmes", len(allProgrammes)).
 			Msg("XMLTV generated")
 	} else {
 		metrics.RecordXMLTV(false, 0, nil)
@@ -277,4 +333,147 @@ func validateConfig(cfg Config) error {
 	}
 
 	return nil
+}
+
+// collectEPGProgrammes fetches EPG data using bouquet-wide approach
+func collectEPGProgrammes(ctx context.Context, client *openwebif.Client, items []playlist.Item, cfg Config) ([]epg.Programme, error) {
+	logger := xglog.FromContext(ctx)
+
+	// Get bouquet reference - need to fetch this to get the correct bouquet ref
+	bouquets, err := client.Bouquets(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch bouquets: %w", err)
+	}
+
+	bouquetRef, exists := bouquets[cfg.Bouquet]
+	if !exists {
+		return nil, fmt.Errorf("bouquet %q not found in available bouquets", cfg.Bouquet)
+	}
+
+	// Create timeout context for bouquet EPG request
+	epgCtx, cancel := context.WithTimeout(ctx, time.Duration(cfg.EPGTimeoutMS)*time.Millisecond)
+	defer cancel()
+
+	logger.Debug().
+		Str("bouquet", cfg.Bouquet).
+		Str("bouquet_ref", bouquetRef).
+		Int("days", cfg.EPGDays).
+		Msg("fetching bouquet EPG")
+
+	// Fetch all EPG events for the bouquet at once
+	var allEvents []openwebif.EPGEvent
+	var fetchErr error
+
+	for attempt := 0; attempt <= cfg.EPGRetries; attempt++ {
+		if attempt > 0 {
+			// Exponential backoff
+			backoff := time.Duration(attempt*attempt*500) * time.Millisecond
+			select {
+			case <-time.After(backoff):
+			case <-epgCtx.Done():
+				return nil, epgCtx.Err()
+			}
+			logger.Debug().Int("attempt", attempt+1).Msg("retrying bouquet EPG fetch")
+		}
+
+		allEvents, fetchErr = client.GetBouquetEPG(epgCtx, bouquetRef, cfg.EPGDays)
+		if fetchErr == nil {
+			break
+		}
+	}
+
+	if fetchErr != nil {
+		return nil, fmt.Errorf("bouquet EPG request failed after %d retries: %w", cfg.EPGRetries, fetchErr)
+	}
+
+	logger.Info().
+		Int("events", len(allEvents)).
+		Msg("fetched bouquet EPG events")
+
+	// Create a mapping from service reference to channel ID
+	srefToChannelID := make(map[string]string)
+	for _, item := range items {
+		sRef := extractSRefFromStreamURL(item.URL)
+		if sRef != "" {
+			srefToChannelID[sRef] = item.TvgID
+		}
+	}
+
+	// Group events by channel and convert to programmes
+	var allProgrammes []epg.Programme
+	channelsWithData := make(map[string]int)
+
+	for _, event := range allEvents {
+		if channelID, exists := srefToChannelID[event.SRef]; exists {
+			programmes := epg.ProgrammesFromEPG([]openwebif.EPGEvent{event}, channelID)
+			allProgrammes = append(allProgrammes, programmes...)
+			channelsWithData[channelID]++
+		}
+	}
+
+	logger.Info().
+		Int("total_programmes", len(allProgrammes)).
+		Int("channels_with_data", len(channelsWithData)).
+		Msg("mapped EPG events to channels")
+
+	metrics.RecordEPGChannelSuccess(len(allProgrammes))
+
+	return allProgrammes, nil
+}
+
+type epgResult struct {
+	channelID string
+	events    []openwebif.EPGEvent
+	err       error
+}
+
+func fetchEPGWithRetry(ctx context.Context, client *openwebif.Client, streamURL string, cfg Config) ([]openwebif.EPGEvent, error) {
+	// Extract sRef from streamURL - adjust based on your stream URL format
+	sRef := extractSRefFromStreamURL(streamURL)
+	if sRef == "" {
+		return nil, fmt.Errorf("cannot extract sRef from stream URL: %s", streamURL)
+	}
+
+	var lastErr error
+	for attempt := 0; attempt <= cfg.EPGRetries; attempt++ {
+		if attempt > 0 {
+			// Exponential backoff
+			backoff := time.Duration(attempt*attempt*500) * time.Millisecond
+			select {
+			case <-time.After(backoff):
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+
+		events, err := client.GetEPG(ctx, sRef, cfg.EPGDays)
+		if err == nil {
+			return events, nil
+		}
+		lastErr = err
+	}
+
+	return nil, fmt.Errorf("EPG request failed after %d retries: %w", cfg.EPGRetries, lastErr)
+}
+
+// extractSRefFromStreamURL extracts service reference from stream URL
+func extractSRefFromStreamURL(streamURL string) string {
+	// Expected format: http://host:port/web/stream.m3u?device=etc&fname=...&ref=ENCODED_SREF
+	u, err := url.Parse(streamURL)
+	if err != nil {
+		return ""
+	}
+
+	// Get the 'ref' parameter and URL-decode it
+	encodedRef := u.Query().Get("ref")
+	if encodedRef == "" {
+		return ""
+	}
+
+	decodedRef, err := url.QueryUnescape(encodedRef)
+	if err != nil {
+		return ""
+	}
+
+	return decodedRef
 }

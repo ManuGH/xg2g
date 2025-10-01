@@ -90,6 +90,12 @@ func main() {
 		OWIRetries:    owiRetries,
 		OWIBackoff:    owiBackoff,
 		OWIMaxBackoff: owiMaxBackoff,
+		// EPG Configuration
+		EPGEnabled:        env("XG2G_EPG_ENABLED", "false") == "true",
+		EPGDays:           atoi(env("XG2G_EPG_DAYS", "7")),
+		EPGMaxConcurrency: atoi(env("XG2G_EPG_MAX_CONCURRENCY", "5")),
+		EPGTimeoutMS:      atoi(env("XG2G_EPG_TIMEOUT_MS", "15000")),
+		EPGRetries:        atoi(env("XG2G_EPG_RETRIES", "2")),
 	}
 
 	// Ensure data directory is created and validated at startup

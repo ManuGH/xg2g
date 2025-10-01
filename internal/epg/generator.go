@@ -49,8 +49,61 @@ func GenerateXMLTV(channels []Channel) *TV {
 	}
 }
 
+// GenerateXMLTVWithProgrammes creates a TV struct with both channels and programmes
+func GenerateXMLTVWithProgrammes(channels []Channel, programmes []Programme) *TV {
+	return &TV{
+		Generator:    "xg2g",
+		GeneratorURL: "https://example.invalid/xg2g",
+		Channels:     channels,
+		Programs:     programmes,
+	}
+}
+
 func WriteXMLTV(channels []Channel, path string) error {
 	tv := GenerateXMLTV(channels)
+	out, err := xml.MarshalIndent(tv, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	xmlHeader := `<?xml version="1.0" encoding="UTF-8"?>` + "\n"
+	completeXML := xmlHeader + string(out)
+
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+
+	tmp, err := os.CreateTemp(dir, "xmltv-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.WriteString(completeXML); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		return err
+	}
+
+	if err := os.Rename(tmpName, path); err != nil {
+		_ = os.Remove(tmpName)
+		return err
+	}
+	return nil
+}
+
+// WriteXMLTVWithProgrammes writes XMLTV with both channels and programmes to path
+func WriteXMLTVWithProgrammes(channels []Channel, programmes []Programme, path string) error {
+	tv := GenerateXMLTVWithProgrammes(channels, programmes)
 	out, err := xml.MarshalIndent(tv, "", "  ")
 	if err != nil {
 		return err
