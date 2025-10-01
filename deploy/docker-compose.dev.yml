@@ -1,7 +1,10 @@
 services:
-  xg2g:
-    image: xg2g:dev  # Using locally built image for testing
-    container_name: xg2g
+  xg2g-dev:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: xg2g:dev
+    container_name: xg2g-dev
     ports:
       - "8080:8080"
       - "9090:9090"
