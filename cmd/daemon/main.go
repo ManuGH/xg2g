@@ -123,6 +123,16 @@ func main() {
 		Dur("owi_backoff", cfg.OWIBackoff).
 		Msg("configuration loaded")
 
+	// Optional initial refresh before starting servers to avoid shutdown races.
+	if strings.ToLower(env("XG2G_INITIAL_REFRESH", "false")) == "true" {
+		logger.Info().Msg("performing initial data refresh on startup")
+		if _, err := jobs.Refresh(ctx, cfg); err != nil {
+			logger.Error().Err(err).Msg("initial data refresh failed")
+		} else {
+			logger.Info().Msg("initial data refresh completed successfully")
+		}
+	}
+
 	// Start metrics server on separate port if configured
 	metricsAddr := resolveMetricsListen()
 	if metricsAddr != "" {
@@ -194,19 +204,6 @@ func main() {
 	// the request it is currently handling
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
-
-	// Perform an initial refresh on startup if the `XG2G_INITIAL_REFRESH` env var is set to "true"
-	if strings.ToLower(env("XG2G_INITIAL_REFRESH", "false")) == "true" {
-		go func() {
-			logger.Info().Msg("performing initial data refresh on startup")
-			// Use a background context for the initial refresh to avoid being canceled by shutdown
-			if _, err := jobs.Refresh(context.Background(), cfg); err != nil {
-				logger.Error().Err(err).Msg("initial data refresh failed")
-			} else {
-				logger.Info().Msg("initial data refresh completed successfully")
-			}
-		}()
-	}
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Fatal().Err(err).Msg("server forced to shutdown")

@@ -116,6 +116,8 @@ func NewWithPort(base string, streamPort int, opts Options) *Client {
 	// The per-request timeout is handled by the context passed to Do().
 	hardenedClient := &http.Client{
 		Transport: transport,
+		// Safety net: overall cap per attempt to prevent slow body hangs.
+		Timeout: 30 * time.Second,
 	}
 
 	return &Client{
