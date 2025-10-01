@@ -32,7 +32,7 @@ func TestStreamURLScenarios(t *testing.T) {
 			port:       17999,
 			wantHost:   "127.0.0.1:17999",
 			wantScheme: "http",
-			wantPath:   "/web/stream.m3u",
+			wantPath:   "/" + ref,
 		},
 		{
 			name:       "existing port preserved",
@@ -40,7 +40,7 @@ func TestStreamURLScenarios(t *testing.T) {
 			port:       19000,
 			wantHost:   "127.0.0.1:5555",
 			wantScheme: "http",
-			wantPath:   "/web/stream.m3u",
+			wantPath:   "/" + ref,
 		},
 		{
 			name:       "ipv6 without port",
@@ -48,7 +48,7 @@ func TestStreamURLScenarios(t *testing.T) {
 			port:       17999,
 			wantHost:   "[fd00::57]:17999",
 			wantScheme: "http",
-			wantPath:   "/web/stream.m3u",
+			wantPath:   "/" + ref,
 		},
 		{
 			name:       "ipv6 with port",
@@ -56,7 +56,7 @@ func TestStreamURLScenarios(t *testing.T) {
 			port:       17999,
 			wantHost:   "[fd00::57]:8001",
 			wantScheme: "http",
-			wantPath:   "/web/stream.m3u",
+			wantPath:   "/" + ref,
 		},
 		{
 			name:       "trailing slash",
@@ -64,7 +64,7 @@ func TestStreamURLScenarios(t *testing.T) {
 			port:       17999,
 			wantHost:   "example.com:17999",
 			wantScheme: "http",
-			wantPath:   "/base/web/stream.m3u",
+			wantPath:   "/" + ref,
 		},
 		{
 			name:       "env fallback",
@@ -73,7 +73,7 @@ func TestStreamURLScenarios(t *testing.T) {
 			envValue:   "19000",
 			wantHost:   "example.com:19000",
 			wantScheme: "http",
-			wantPath:   "/web/stream.m3u",
+			wantPath:   "/" + ref,
 		},
 		{
 			name:       "env invalid falls back to default",
@@ -82,7 +82,7 @@ func TestStreamURLScenarios(t *testing.T) {
 			envValue:   "abc",
 			wantHost:   "example.com:8001",
 			wantScheme: "http",
-			wantPath:   "/web/stream.m3u",
+			wantPath:   "/" + ref,
 		},
 	}
 
@@ -114,15 +114,9 @@ func TestStreamURLScenarios(t *testing.T) {
 				t.Fatalf("path: want %q, got %q", tc.wantPath, parsed.Path)
 			}
 
-			q := parsed.Query()
-			if q.Get("ref") != ref {
-				t.Fatalf("ref query mismatch: want %q, got %q", ref, q.Get("ref"))
-			}
-			if q.Get("name") != name || q.Get("fname") != name {
-				t.Fatalf("name/fname mismatch: want %q, got name=%q fname=%q", name, q.Get("name"), q.Get("fname"))
-			}
-			if q.Get("device") != "etc" {
-				t.Fatalf("device query mismatch: want %q, got %q", "etc", q.Get("device"))
+			// Direct streaming format has no query parameters
+			if len(parsed.RawQuery) > 0 {
+				t.Fatalf("expected no query parameters for direct streaming, got: %s", parsed.RawQuery)
 			}
 		})
 	}

@@ -365,33 +365,15 @@ func (c *Client) StreamURL(ref, name string) (string, error) {
 		host = net.JoinHostPort(strings.Trim(host, "[]"), strconv.Itoa(c.port))
 	}
 
-	basePath := strings.TrimSuffix(parsed.Path, "/")
-	if basePath == "" {
-		basePath = ""
-	}
-
-	path := "/web/stream.m3u"
-	if basePath != "" {
-		if !strings.HasPrefix(basePath, "/") {
-			basePath = "/" + basePath
-		}
-		path = basePath + "/web/stream.m3u"
-	}
-
+	// Use direct Service Reference streaming (OpenATV/Enigma2 standard)
+	// Format: http://<host>:<streamport>/<service_ref>
+	// Works with VLC, Kodi, Threadfin, and all standard IPTV players
 	u := &url.URL{
 		Scheme: parsed.Scheme,
 		Host:   host,
-		Path:   path,
+		Path:   "/" + ref,
 	}
 
-	q := url.Values{}
-	q.Set("ref", ref)
-	q.Set("device", "etc")
-	if name != "" {
-		q.Set("name", name)
-		q.Set("fname", name)
-	}
-	u.RawQuery = q.Encode()
 	return u.String(), nil
 }
 
