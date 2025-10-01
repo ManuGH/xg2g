@@ -129,5 +129,5 @@ groups:
           category: capacity
         annotations:
           summary: "Less than 10% free space on /data"
-          description: "Free space on /data is below 10%. Threshold crossed with {{ $value | humanizePercentage }} remaining. Ensure Node Exporter exposes filesystem metrics for /data."
+          description: "Free space on /data is below 10%. Threshold crossed with {{ $value | humanizePercentage }} remaining. NOTE: Requires node-exporter to be deployed and exposing filesystem metrics."
           runbook: https://github.com/ManuGH/xg2g/blob/main/docs/runbooks/data-capacity.md

@@ -2,6 +2,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -70,6 +71,61 @@ func TestRecordRefreshMetrics(t *testing.T) {
 
 func TestHandleRefresh_SuccessUpdatesLastRun(t *testing.T) {
 	t.Skip("Skipping success test as it requires mocking infrastructure")
+}
+
+func TestHandleRefresh_ConflictOnConcurrent(t *testing.T) {
+	cfg := jobs.Config{APIToken: "dummy-token"}
+	s := New(cfg)
+
+	// Install a slow refresh function to force overlap
+	startCh := make(chan struct{})
+	releaseCh := make(chan struct{})
+	s.refreshFn = func(ctx context.Context, cfg jobs.Config) (*jobs.Status, error) {
+		close(startCh) // signal that refresh started
+		<-releaseCh    // block until allowed to finish
+		return &jobs.Status{Channels: 1, LastRun: time.Now()}, nil
+	}
+
+	handler := s.Handler()
+
+	// First request starts and blocks
+	req1 := httptest.NewRequest(http.MethodPost, "/api/refresh", nil)
+	req1.Header.Set("X-API-Token", "dummy-token")
+	rr1 := httptest.NewRecorder()
+
+	// Run first request in a goroutine
+	done1 := make(chan struct{})
+	go func() {
+		handler.ServeHTTP(rr1, req1)
+		close(done1)
+	}()
+
+	// Wait until the refresh actually started
+	select {
+	case <-startCh:
+	case <-time.After(1 * time.Second):
+		t.Fatal("first refresh did not start in time")
+	}
+
+	// Second request should get 409 Conflict
+	req2 := httptest.NewRequest(http.MethodPost, "/api/refresh", nil)
+	req2.Header.Set("X-API-Token", "dummy-token")
+	rr2 := httptest.NewRecorder()
+	handler.ServeHTTP(rr2, req2)
+
+	assert.Equal(t, http.StatusConflict, rr2.Code)
+	assert.Contains(t, rr2.Body.String(), "refresh operation is already in progress")
+	assert.Equal(t, "30", rr2.Header().Get("Retry-After"))
+
+	// Unblock first request and ensure it succeeds with 200
+	close(releaseCh)
+	select {
+	case <-done1:
+		// ok
+	case <-time.After(1 * time.Second):
+		t.Fatal("first refresh did not complete in time")
+	}
+	assert.Equal(t, http.StatusOK, rr1.Code)
 }
 
 func TestHandleHealth(t *testing.T) {

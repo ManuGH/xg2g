@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/jobs"
@@ -19,19 +20,24 @@ import (
 )
 
 type Server struct {
-	mu        sync.RWMutex
-	refreshMu sync.Mutex // NEW: serialize refreshes
-	cfg       jobs.Config
-	status    jobs.Status
+	mu         sync.RWMutex
+	refreshing atomic.Bool // serialize refreshes via atomic flag
+	cfg        jobs.Config
+	status     jobs.Status
+	// refreshFn allows tests to stub the refresh operation; defaults to jobs.Refresh
+	refreshFn func(context.Context, jobs.Config) (*jobs.Status, error)
 }
 
 func New(cfg jobs.Config) *Server {
-	return &Server{
+	s := &Server{
 		cfg: cfg,
 		status: jobs.Status{
 			Version: cfg.Version, // Initialize version from config
 		},
 	}
+	// Default refresh function
+	s.refreshFn = jobs.Refresh
+	return s
 }
 
 func (s *Server) routes() http.Handler {
@@ -131,13 +137,27 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	logger := log.WithComponentFromContext(r.Context(), "api")
 
-	// NEW: only allow a single refresh at a time
-	s.refreshMu.Lock()
-	defer s.refreshMu.Unlock()
+	// Try to acquire the refresh flag atomically; fail fast if already running
+	if !s.refreshing.CompareAndSwap(false, true) {
+		logger.Warn().
+			Str("event", "refresh.conflict").
+			Str("method", r.Method).
+			Msg("refresh already in progress")
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Retry-After", "30") // suggest retry after 30s
+		w.WriteHeader(http.StatusConflict)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"error":  "conflict",
+			"detail": "A refresh operation is already in progress",
+		})
+		return
+	}
+	defer s.refreshing.Store(false)
 
 	ctx := r.Context()
 	start := time.Now()
-	st, err := jobs.Refresh(ctx, s.cfg)
+	st, err := s.refreshFn(ctx, s.cfg)
 	duration := time.Since(start)
 
 	w.Header().Set("Content-Type", "application/json")

@@ -188,35 +188,36 @@ func metricsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// corsMiddleware adds CORS headers
+// corsMiddleware adds CORS headers with strict origin validation
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Security: Restrict CORS to localhost and common dev origins only
 		origin := r.Header.Get("Origin")
-		allowed := false
-		allowedOrigins := []string{
-			"http://localhost",
-			"https://localhost",
-			"http://127.0.0.1",
-			"https://127.0.0.1",
+
+		// Strict whitelist: exact match with common dev ports
+		allowedOrigins := map[string]bool{
+			"http://localhost:3000":  true,
+			"http://localhost:8080":  true,
+			"http://localhost:5173":  true, // Vite default
+			"https://localhost:3000": true,
+			"https://localhost:8080": true,
+			"http://127.0.0.1:3000":  true,
+			"http://127.0.0.1:8080":  true,
+			"https://127.0.0.1:3000": true,
+			"https://127.0.0.1:8080": true,
 		}
 
-		for _, allowed_origin := range allowedOrigins {
-			if strings.HasPrefix(origin, allowed_origin) {
-				allowed = true
-				break
-			}
-		}
-
-		if allowed {
+		if origin != "" && allowedOrigins[origin] {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 		} else if origin == "" {
-			// Allow direct access (no origin header, e.g., curl, tests)
+			// Allow direct API access (curl, tests, same-origin)
+			// This is safe for APIs that don't rely on cookies
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 		}
+		// If origin is present but not allowed, no CORS header is set
+		// Browser will block the response
 
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Request-ID")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Request-ID, X-API-Token")
 		w.Header().Set("Access-Control-Max-Age", "600")
 		w.Header().Set("Vary", "Origin, Access-Control-Request-Method, Access-Control-Request-Headers")
 

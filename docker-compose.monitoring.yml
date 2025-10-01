@@ -13,7 +13,8 @@ services:
       - XG2G_METRICS_LISTEN=:9090
       - XG2G_OWI_BASE=${XG2G_OWI_BASE:-http://receiver.local}
       - XG2G_BOUQUET=${XG2G_BOUQUET:-Favourites}
-      - XG2G_XMLTV=true
+      # XMLTV expects a file path per app config; set to enable
+      - XG2G_XMLTV=xmltv.xml
       - XG2G_PICON_BASE=${XG2G_PICON_BASE:-}
     volumes:
       - xg2g_data:/data
@@ -43,10 +44,26 @@ services:
       - "--web.console.templates=/usr/share/prometheus/consoles"
       - "--web.enable-lifecycle"
       - "--web.enable-admin-api"
-      - "--rule-files.enabled"
     networks:
       - monitoring
     restart: unless-stopped
+
+  # Node Exporter for filesystem and system metrics
+  node-exporter:
+    image: prom/node-exporter:v1.7.0
+    container_name: xg2g-node-exporter
+    command:
+      - "--path.rootfs=/host"
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
+    volumes:
+      - /:/host:ro,rslave
+      - xg2g_data:/host/data:ro
+    networks:
+      - monitoring
+    restart: unless-stopped
+    pid: host
 
   grafana:
     image: grafana/grafana:10.1.0
@@ -54,8 +71,9 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
-      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+      # Require admin password via env; fail if missing
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_PASSWORD:?ERROR: set GRAFANA_PASSWORD in .env.production or environment}"
+      GF_INSTALL_PLUGINS: grafana-piechart-panel
     volumes:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
