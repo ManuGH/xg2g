@@ -341,12 +341,12 @@ func TestAdvancedPathTraversal(t *testing.T) {
 	handler := server.Handler()
 
 	attacks := []string{
-		"%252e%252e%252f",     // double encoded ../
-		"%252E%252E%252F",     // double encoded uppercase
+		"%252e%252e%252f",      // double encoded ../
+		"%252E%252E%252F",      // double encoded uppercase
 		"..%00.txt",            // null byte injection (literal)
-		"%00..%00/",           // encoded NUL around traversal
-		"\u002e\u002e/",       // unicode dots (escape in string literal)
-		"%c0%ae%c0%ae/",       // overlong UTF-8 for '..'
+		"%00..%00/",            // encoded NUL around traversal
+		"\u002e\u002e/",        // unicode dots (escape in string literal)
+		"%c0%ae%c0%ae/",        // overlong UTF-8 for '..'
 		"%2E%2E/%2E%2E/secret", // mixed case single-encoded
 	}
 

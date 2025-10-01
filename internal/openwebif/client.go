@@ -99,7 +99,7 @@ func NewWithPort(base string, streamPort int, opts Options) *Client {
 		responseHeaderTimeout = opts.ResponseHeaderTimeout
 	}
 
-	// Create a dedicated, hardened transport.
+	// Create a dedicated, hardened transport with optimized pooling.
 	transport := &http.Transport{
 		DialContext: (&net.Dialer{
 			Timeout:   dialerTimeout, // Connection timeout
@@ -107,9 +107,14 @@ func NewWithPort(base string, streamPort int, opts Options) *Client {
 		}).DialContext,
 		TLSHandshakeTimeout:   tlsHandshakeTimeout,
 		ResponseHeaderTimeout: responseHeaderTimeout, // Time to receive headers
-		MaxIdleConns:          10,
-		IdleConnTimeout:       90 * time.Second,
-		MaxIdleConnsPerHost:   2,
+
+		// Connection pooling / reuse
+		DisableKeepAlives:   false,          // allow keep-alive
+		ForceAttemptHTTP2:   true,           // prefer HTTP/2 when available
+		MaxIdleConns:        100,            // global idle pool
+		MaxIdleConnsPerHost: 20,             // per-host idle limit (bursty traffic)
+		MaxConnsPerHost:     50,             // cap total per-host conns to avoid exhaustion
+		IdleConnTimeout:     90 * time.Second,
 	}
 
 	// Create a client with the hardened transport.

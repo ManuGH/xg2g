@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+    "unicode/utf8"
 
 	"github.com/google/uuid"
 	"golang.org/x/time/rate"
@@ -175,13 +176,18 @@ func metricsMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(recorder, r)
 
 		duration := time.Since(start)
-		recordHTTPMetric(r.URL.Path, recorder.status)
+		// Ensure Prometheus labels are valid UTF-8; replace invalid bytes
+		pathLabel := r.URL.Path
+		if !utf8.ValidString(pathLabel) {
+			pathLabel = strings.ToValidUTF8(pathLabel, "�")
+		}
+		recordHTTPMetric(pathLabel, recorder.status)
 
 		// Log metrics with context if available
 		logger := log.WithComponentFromContext(r.Context(), "api")
 		logger.Debug().
 			Str("event", "http.metrics").
-			Str("path", r.URL.Path).
+			Str("path", pathLabel).
 			Int("status", recorder.status).
 			Int64("duration_ms", duration.Milliseconds()).
 			Msg("http metrics recorded")
