@@ -26,6 +26,7 @@ type Server struct {
 	refreshing atomic.Bool // serialize refreshes via atomic flag
 	cfg        jobs.Config
 	status     jobs.Status
+	cb         *CircuitBreaker
 	// refreshFn allows tests to stub the refresh operation; defaults to jobs.Refresh
 	refreshFn func(context.Context, jobs.Config) (*jobs.Status, error)
 }
@@ -39,6 +40,8 @@ func New(cfg jobs.Config) *Server {
 	}
 	// Default refresh function
 	s.refreshFn = jobs.Refresh
+	// Initialize a conservative default circuit breaker (3 failures -> 30s open)
+	s.cb = NewCircuitBreaker(3, 30*time.Second)
 	return s
 }
 
@@ -159,11 +162,31 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	start := time.Now()
-	st, err := s.refreshFn(ctx, s.cfg)
+	var st *jobs.Status
+	// Run the refresh via circuit breaker; it will mark failures and handle panics
+	err := s.cb.Call(func() error {
+		var err error
+		st, err = s.refreshFn(ctx, s.cfg)
+		return err
+	})
 	duration := time.Since(start)
 
 	w.Header().Set("Content-Type", "application/json")
 	if err != nil {
+		// Distinguish open circuit (fast-fail) from internal error
+		if err == errCircuitOpen {
+			logger.Warn().
+				Str("event", "refresh.circuit_open").
+				Int64("duration_ms", duration.Milliseconds()).
+				Msg("circuit breaker open for refresh; rejecting request")
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"error":  "unavailable",
+				"detail": "Refresh temporarily disabled due to repeated failures",
+			})
+			return
+		}
 		s.mu.Lock()
 		s.status.Error = "refresh operation failed" // Security: don't expose internal error details
 		s.status.Channels = 0                       // NEW: reset channel count on error
@@ -297,11 +320,11 @@ func isPathTraversal(p string) bool {
 	lower := strings.ToLower(decoded)
 	// Immediate dangerous byte patterns, independent of platform
 	dangerSubstrings := []string{
-		"..",       // parent traversal
-		"..\\",     // windows-style backslash
-		"%00",     // encoded NUL
-		"\x00",    // literal NUL escape (defense-in-depth; may not appear literally)
-		"%c0%ae",  // overlong UTF-8 for '.'
+		"..",        // parent traversal
+		"..\\",      // windows-style backslash
+		"%00",       // encoded NUL
+		"\x00",      // literal NUL escape (defense-in-depth; may not appear literally)
+		"%c0%ae",    // overlong UTF-8 for '.'
 		"%e0%80%ae", // another overlong variant
 	}
 	for _, pat := range dangerSubstrings {
