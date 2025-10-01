@@ -2,8 +2,10 @@
 package openwebif
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -195,16 +197,15 @@ func normalizeOptions(opts Options) Options {
 }
 func (c *Client) Bouquets(ctx context.Context) (map[string]string, error) {
 	const path = "/api/bouquets"
-	resp, err := c.get(ctx, path, "bouquets", nil)
+	body, err := c.get(ctx, path, "bouquets", nil)
 	if err != nil {
 		return nil, err
 	}
-	defer closeBody(resp.Body)
 
 	var payload struct {
 		Bouquets [][]string `json:"bouquets"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+	if err := json.Unmarshal(body, &payload); err != nil {
 		c.loggerFor(ctx).Error().Err(err).Str("event", "openwebif.decode").Str("operation", "bouquets").Msg("failed to decode bouquets response")
 		return nil, err
 	}
@@ -228,20 +229,84 @@ type svcPayload struct {
 	} `json:"services"`
 }
 
+// svcPayloadFlat models the getallservices shape where the bouquet container
+// contains a "subservices" array with the actual channel entries.
+type svcPayloadFlat struct {
+	Services []struct {
+		ServiceName string `json:"servicename"`
+		ServiceRef  string `json:"servicereference"`
+		Subservices []struct {
+			ServiceName string `json:"servicename"`
+			ServiceRef  string `json:"servicereference"`
+		} `json:"subservices"`
+	} `json:"services"`
+}
+
+// EPGEvent represents a single programme entry from OpenWebIF EPG API
+type EPGEvent struct {
+	ID          int    `json:"id"` // Changed from string to int
+	Title       string `json:"title"`
+	Description string `json:"shortdesc"`
+	LongDesc    string `json:"longdesc"`
+	Begin       int64  `json:"begin_timestamp"`
+	Duration    int64  `json:"duration_sec"`
+	SRef        string `json:"sref"`
+}
+
+// EPGResponse represents the OpenWebIF EPG API response structure
+type EPGResponse struct {
+	Events []EPGEvent `json:"events"`
+	Result bool       `json:"result"`
+}
+
 func (c *Client) Services(ctx context.Context, bouquetRef string) ([][2]string, error) {
 	maskedRef := maskValue(bouquetRef)
 	decorate := func(zc *zerolog.Context) {
 		zc.Str("bouquet_ref", maskedRef)
 	}
 	try := func(urlPath, operation string) ([][2]string, error) {
-		resp, err := c.get(ctx, urlPath, operation, decorate)
+		body, err := c.get(ctx, urlPath, operation, decorate)
 		if err != nil {
 			return nil, err
 		}
-		defer closeBody(resp.Body)
 
+		// For flat endpoint, decode directly into svcPayloadFlat to preserve subservices
+		if operation == "services.flat" {
+			var flat svcPayloadFlat
+			if err := json.Unmarshal(body, &flat); err != nil {
+				c.loggerFor(ctx).Error().Err(err).
+					Str("event", "openwebif.decode").
+					Str("operation", operation).
+					Str("bouquet_ref", maskedRef).
+					Msg("failed to decode services response (flat)")
+				return nil, err
+			}
+			out := make([][2]string, 0, len(flat.Services)*4)
+			for _, s := range flat.Services {
+				// Check if this is a bouquet container with subservices
+				if len(s.Subservices) > 0 {
+					c.loggerFor(ctx).Debug().
+						Str("container", s.ServiceName).
+						Int("subservices_count", len(s.Subservices)).
+						Msg("expanding bouquet container")
+					for _, ch := range s.Subservices {
+						// Skip any nested containers or invalid entries
+						if strings.HasPrefix(ch.ServiceRef, "1:7:") || ch.ServiceRef == "" {
+							continue
+						}
+						out = append(out, [2]string{ch.ServiceName, ch.ServiceRef})
+					}
+				} else if !strings.HasPrefix(s.ServiceRef, "1:7:") && s.ServiceRef != "" {
+					// Regular service (not a container)
+					out = append(out, [2]string{s.ServiceName, s.ServiceRef})
+				}
+			}
+			return out, nil
+		}
+
+		// Nested endpoint: standard decode
 		var p svcPayload
-		if err := json.NewDecoder(resp.Body).Decode(&p); err != nil {
+		if err := json.Unmarshal(body, &p); err != nil {
 			c.loggerFor(ctx).Error().Err(err).
 				Str("event", "openwebif.decode").
 				Str("operation", operation).
@@ -251,7 +316,7 @@ func (c *Client) Services(ctx context.Context, bouquetRef string) ([][2]string, 
 		}
 		out := make([][2]string, 0, len(p.Services))
 		for _, s := range p.Services {
-			// 1:7:* = Bouquet-Container; 1:0:* = TV/Radio Services
+			// 1:7:* = Bouquet-Container; skip these in nested endpoint
 			if strings.HasPrefix(s.ServiceRef, "1:7:") {
 				continue
 			}
@@ -477,7 +542,7 @@ func recordAttemptMetrics(operation string, attempt, status int, duration time.D
 	}
 }
 
-func (c *Client) get(ctx context.Context, path, operation string, decorate func(*zerolog.Context)) (*http.Response, error) {
+func (c *Client) get(ctx context.Context, path, operation string, decorate func(*zerolog.Context)) ([]byte, error) {
 	maxAttempts := c.maxRetries + 1
 	var lastErr error
 	var lastStatus int
@@ -486,6 +551,7 @@ func (c *Client) get(ctx context.Context, path, operation string, decorate func(
 		var err error
 		var status int
 		var duration time.Duration
+		var data []byte
 
 		func() {
 			attemptCtx := ctx
@@ -511,6 +577,15 @@ func (c *Client) get(ctx context.Context, path, operation string, decorate func(
 			if res != nil {
 				status = res.StatusCode
 			}
+
+			if err == nil && status == http.StatusOK {
+				// Read body fully while attemptCtx is still active
+				var readErr error
+				data, readErr = io.ReadAll(res.Body)
+				if readErr != nil {
+					err = fmt.Errorf("read response body: %w", readErr)
+				}
+			}
 		}()
 
 		// Handle early return from request building
@@ -524,7 +599,11 @@ func (c *Client) get(ctx context.Context, path, operation string, decorate func(
 		recordAttemptMetrics(operation, attempt, status, duration, err == nil && status == http.StatusOK, errClass, retry)
 
 		if err == nil && status == http.StatusOK {
-			return res, nil
+			// Ensure body is closed now that we've read it
+			if res != nil && res.Body != nil {
+				closeBody(res.Body)
+			}
+			return data, nil
 		}
 
 		if res != nil {
@@ -584,4 +663,143 @@ func maskValue(v string) string {
 		return v[:2] + "***" + v[len(v)-2:]
 	}
 	return v[:4] + "***" + v[len(v)-3:]
+}
+
+// GetEPG retrieves EPG data for a specific service reference over specified days
+func (c *Client) GetEPG(ctx context.Context, sRef string, days int) ([]EPGEvent, error) {
+	if days < 1 || days > 14 {
+		return nil, fmt.Errorf("invalid EPG days: %d (must be 1-14)", days)
+	}
+
+	endTime := time.Now().Add(time.Duration(days) * 24 * time.Hour).Unix()
+
+	// Try primary endpoint: /api/epgservice
+	primaryURL := fmt.Sprintf("/api/epgservice?sRef=%s&time=-1&endTime=%d",
+		url.QueryEscape(sRef), endTime)
+
+	events, err := c.fetchEPGFromURL(ctx, primaryURL)
+	if err == nil && len(events) > 0 {
+		return events, nil
+	}
+
+	// Log primary failure and try fallback
+	c.log.Debug().
+		Err(err).
+		Str("sref", maskValue(sRef)).
+		Str("endpoint", "api").
+		Msg("primary EPG endpoint failed, trying fallback")
+
+	// Fallback: /web/epgservice
+	fallbackURL := fmt.Sprintf("/web/epgservice?sRef=%s&time=-1&endTime=%d",
+		url.QueryEscape(sRef), endTime)
+
+	events, fallbackErr := c.fetchEPGFromURL(ctx, fallbackURL)
+	if fallbackErr != nil {
+		return nil, fmt.Errorf("both EPG endpoints failed - api: %w, web: %v", err, fallbackErr)
+	}
+
+	return events, nil
+}
+
+// GetBouquetEPG fetches EPG events for an entire bouquet
+func (c *Client) GetBouquetEPG(ctx context.Context, bouquetRef string, days int) ([]EPGEvent, error) {
+	if bouquetRef == "" {
+		return nil, fmt.Errorf("bouquet reference cannot be empty")
+	}
+	if days < 1 || days > 14 {
+		return nil, fmt.Errorf("invalid EPG days: %d (must be 1-14)", days)
+	}
+
+	// Use bouquet EPG endpoint
+	epgURL := fmt.Sprintf("/api/epgbouquet?bRef=%s", url.QueryEscape(bouquetRef))
+
+	events, err := c.fetchEPGFromURL(ctx, epgURL)
+	if err != nil {
+		return nil, fmt.Errorf("bouquet EPG request failed: %w", err)
+	}
+
+	return events, nil
+}
+
+func (c *Client) fetchEPGFromURL(ctx context.Context, urlPath string) ([]EPGEvent, error) {
+	decorate := func(zc *zerolog.Context) {
+		zc.Str("path", urlPath)
+	}
+
+	body, err := c.get(ctx, urlPath, "epg", decorate)
+	if err != nil {
+		return nil, fmt.Errorf("EPG request failed: %w", err)
+	}
+
+	// Check if response starts with JSON or XML
+	trimmed := bytes.TrimLeft(body, " \t\n\r")
+	if len(trimmed) == 0 {
+		return nil, fmt.Errorf("empty response")
+	}
+
+	// If it starts with '<', it's XML (web endpoint)
+	if trimmed[0] == '<' {
+		return c.parseEPGXML(body)
+	}
+
+	// Otherwise try JSON (api endpoint)
+	var epgResp EPGResponse
+	if err := json.Unmarshal(body, &epgResp); err != nil {
+		return nil, fmt.Errorf("parsing EPG response: %w", err)
+	}
+
+	if !epgResp.Result {
+		return nil, fmt.Errorf("EPG API returned result: false")
+	}
+
+	// Filter out invalid events
+	validEvents := make([]EPGEvent, 0, len(epgResp.Events))
+	for _, event := range epgResp.Events {
+		if event.Title != "" && event.Begin > 0 {
+			validEvents = append(validEvents, event)
+		}
+	}
+
+	return validEvents, nil
+}
+
+// XML structures for /web/epgservice response
+type xmlEPGResponse struct {
+	XMLName xml.Name      `xml:"e2eventlist"`
+	Events  []xmlEPGEvent `xml:"e2event"`
+}
+
+type xmlEPGEvent struct {
+	ID          int    `xml:"e2eventid"`
+	Title       string `xml:"e2eventtitle"`
+	Description string `xml:"e2eventdescription"`
+	Start       int64  `xml:"e2eventstart"`
+	Duration    int    `xml:"e2eventduration"`
+	ServiceRef  string `xml:"e2eventservicereference"`
+	Genre       string `xml:"e2eventgenre"`
+}
+
+func (c *Client) parseEPGXML(body []byte) ([]EPGEvent, error) {
+	var xmlResp xmlEPGResponse
+	if err := xml.Unmarshal(body, &xmlResp); err != nil {
+		return nil, fmt.Errorf("parsing XML EPG response: %w", err)
+	}
+
+	// Convert XML events to EPGEvent format
+	events := make([]EPGEvent, 0, len(xmlResp.Events))
+	for _, xmlEvent := range xmlResp.Events {
+		if xmlEvent.Title != "" && xmlEvent.Start > 0 {
+			event := EPGEvent{
+				ID:          xmlEvent.ID,
+				Title:       xmlEvent.Title,
+				Description: xmlEvent.Description,
+				Begin:       xmlEvent.Start,
+				Duration:    int64(xmlEvent.Duration),
+				SRef:        xmlEvent.ServiceRef,
+			}
+			events = append(events, event)
+		}
+	}
+
+	return events, nil
 }

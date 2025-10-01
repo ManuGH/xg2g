@@ -9,11 +9,18 @@ services:
       - XG2G_DATA=/data
       - XG2G_OWI_BASE=${XG2G_OWI_BASE}
       - XG2G_BOUQUET=${XG2G_BOUQUET}
+      - XG2G_API_TOKEN=${XG2G_API_TOKEN}
+      - XG2G_XMLTV=${XG2G_XMLTV:-xmltv.xml}
       - XG2G_LISTEN=:8080
       - XG2G_METRICS_LISTEN=:9090
-      - XG2G_API_TOKEN=${XG2G_API_TOKEN:-}
+      # EPG Configuration
+      - XG2G_EPG_ENABLED=${XG2G_EPG_ENABLED:-false}
+      - XG2G_EPG_DAYS=${XG2G_EPG_DAYS:-7}
+      - XG2G_EPG_MAX_CONCURRENCY=${XG2G_EPG_MAX_CONCURRENCY:-5}
+      - XG2G_EPG_TIMEOUT_MS=${XG2G_EPG_TIMEOUT_MS:-15000}
+      - XG2G_EPG_RETRIES=${XG2G_EPG_RETRIES:-2}
     volumes:
-      - ./data:/data
+      - ../data:/data
     user: "1000:1000"
     read_only: true
     tmpfs:
