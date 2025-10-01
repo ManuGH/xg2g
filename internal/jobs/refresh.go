@@ -334,7 +334,7 @@ func validateConfig(cfg Config) error {
 	}
 
 	return nil
-}
+	}
 
 // collectEPGProgrammes fetches EPG data using per-service requests with bounded concurrency
 func collectEPGProgrammes(ctx context.Context, client *openwebif.Client, items []playlist.Item, cfg Config) ([]epg.Programme, error) {
