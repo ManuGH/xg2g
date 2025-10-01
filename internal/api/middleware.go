@@ -2,13 +2,17 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
+	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"golang.org/x/time/rate"
@@ -76,10 +80,12 @@ type visitor struct {
 }
 
 type rateLimiter struct {
-	visitors map[string]*visitor
-	mtx      sync.RWMutex
-	rate     rate.Limit
-	burst    int
+	visitors     map[string]*visitor
+	mtx          sync.RWMutex
+	rate         rate.Limit
+	burst        int
+	enabled      bool
+	whitelistIPs []string
 }
 
 func newRateLimiter(r rate.Limit, b int) *rateLimiter {
@@ -87,6 +93,7 @@ func newRateLimiter(r rate.Limit, b int) *rateLimiter {
 		visitors: make(map[string]*visitor),
 		rate:     r,
 		burst:    b,
+		enabled:  true,
 	}
 	go rl.janitor(1*time.Hour, 10*time.Minute)
 	return rl
@@ -145,7 +152,18 @@ func (rl *rateLimiter) getLimiter(ip string) *rate.Limiter {
 // rateLimitMiddleware limits the number of requests per IP
 func (rl *rateLimiter) middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !rl.enabled {
+			next.ServeHTTP(w, r)
+			return
+		}
 		ip := clientIP(r)
+		// Whitelist check
+		for _, wip := range rl.whitelistIPs {
+			if wip == ip {
+				next.ServeHTTP(w, r)
+				return
+			}
+		}
 		limiter := rl.getLimiter(ip)
 
 		// Best-effort RateLimit headers (limit per second, remaining tokens now)
@@ -175,48 +193,104 @@ func metricsMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(recorder, r)
 
 		duration := time.Since(start)
-		recordHTTPMetric(r.URL.Path, recorder.status)
+		// Ensure Prometheus labels are valid UTF-8; replace invalid bytes
+		pathLabel := r.URL.Path
+		if !utf8.ValidString(pathLabel) {
+			pathLabel = strings.ToValidUTF8(pathLabel, "�")
+		}
+		recordHTTPMetric(pathLabel, recorder.status)
 
 		// Log metrics with context if available
 		logger := log.WithComponentFromContext(r.Context(), "api")
 		logger.Debug().
 			Str("event", "http.metrics").
-			Str("path", r.URL.Path).
+			Str("path", pathLabel).
 			Int("status", recorder.status).
 			Int64("duration_ms", duration.Milliseconds()).
 			Msg("http metrics recorded")
 	})
 }
 
-// corsMiddleware adds CORS headers
+// panicRecoveryMiddleware ensures that panics inside any downstream handler
+// do not crash the process. It logs the panic with context and returns a 500 JSON.
+func panicRecoveryMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				// Build stack trace
+				buf := make([]byte, 8192)
+				n := runtime.Stack(buf, false)
+				stack := string(buf[:n])
+
+				// Correlate with request ID if present
+				reqID := log.RequestIDFromContext(r.Context())
+
+				// Sanitize path label for metrics/logging
+				pathLabel := r.URL.Path
+				if !utf8.ValidString(pathLabel) {
+					pathLabel = strings.ToValidUTF8(pathLabel, "�")
+				}
+
+				// Log with structured fields
+				logger := log.WithComponentFromContext(r.Context(), "panic-recovery")
+				logger.Error().
+					Str("event", "panic.recovered").
+					Str("method", r.Method).
+					Str("path", pathLabel).
+					Str("remote_addr", clientIP(r)).
+					Str("request_id", reqID).
+					Interface("panic_value", rec).
+					Str("stack_trace", stack).
+					Msg("panic recovered in HTTP handler")
+
+				// Record metric
+				recordHTTPPanic(pathLabel)
+
+				// Best-effort JSON error response
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusInternalServerError)
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"error":      "Internal server error",
+					"request_id": reqID,
+					"message":    "An unexpected error occurred. Please try again later.",
+				})
+			}
+		}()
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// corsMiddleware adds CORS headers with strict origin validation
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Security: Restrict CORS to localhost and common dev origins only
 		origin := r.Header.Get("Origin")
-		allowed := false
-		allowedOrigins := []string{
-			"http://localhost",
-			"https://localhost",
-			"http://127.0.0.1",
-			"https://127.0.0.1",
+
+		// Strict whitelist: exact match with common dev ports
+		allowedOrigins := map[string]bool{
+			"http://localhost:3000":  true,
+			"http://localhost:8080":  true,
+			"http://localhost:5173":  true, // Vite default
+			"https://localhost:3000": true,
+			"https://localhost:8080": true,
+			"http://127.0.0.1:3000":  true,
+			"http://127.0.0.1:8080":  true,
+			"https://127.0.0.1:3000": true,
+			"https://127.0.0.1:8080": true,
 		}
 
-		for _, allowed_origin := range allowedOrigins {
-			if strings.HasPrefix(origin, allowed_origin) {
-				allowed = true
-				break
-			}
-		}
-
-		if allowed {
+		if origin != "" && allowedOrigins[origin] {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 		} else if origin == "" {
-			// Allow direct access (no origin header, e.g., curl, tests)
+			// Allow direct API access (curl, tests, same-origin)
+			// This is safe for APIs that don't rely on cookies
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 		}
+		// If origin is present but not allowed, no CORS header is set
+		// Browser will block the response
 
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Request-ID")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Request-ID, X-API-Token")
 		w.Header().Set("Access-Control-Max-Age", "600")
 		w.Header().Set("Vary", "Origin, Access-Control-Request-Method, Access-Control-Request-Headers")
 
@@ -286,6 +360,36 @@ func chain(h http.Handler, mws ...func(http.Handler) http.Handler) http.Handler 
 }
 
 func withMiddlewares(h http.Handler) http.Handler {
-	rl := newRateLimiter(rate.Limit(10), 20)
-	return chain(h, requestIDMiddleware, metricsMiddleware, corsMiddleware, securityHeaders, rl.middleware)
+	// Make rate limiter configurable via environment
+	rpsStr := os.Getenv("XG2G_RATELIMIT_RPS")
+	burstStr := os.Getenv("XG2G_RATELIMIT_BURST")
+	enabledStr := os.Getenv("XG2G_RATELIMIT_ENABLED")
+	whitelistStr := os.Getenv("XG2G_RATELIMIT_WHITELIST")
+
+	rps := 10.0
+	if rpsStr != "" {
+		if v, err := strconv.ParseFloat(rpsStr, 64); err == nil && v > 0 {
+			rps = v
+		}
+	}
+	burst := 20
+	if burstStr != "" {
+		if v, err := strconv.Atoi(burstStr); err == nil && v > 0 {
+			burst = v
+		}
+	}
+	rl := newRateLimiter(rate.Limit(rps), burst)
+	rl.enabled = strings.ToLower(enabledStr) != "false"
+	if whitelistStr != "" {
+		parts := strings.Split(whitelistStr, ",")
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				rl.whitelistIPs = append(rl.whitelistIPs, p)
+			}
+		}
+	}
+	// Order matters: panic recovery first, then request ID for correlation,
+	// then metrics and the rest.
+	return chain(h, panicRecoveryMiddleware, requestIDMiddleware, metricsMiddleware, corsMiddleware, securityHeaders, rl.middleware)
 }

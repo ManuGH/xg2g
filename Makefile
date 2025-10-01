@@ -303,8 +303,12 @@ sbom: dev-tools ## Generate Software Bill of Materials
 	@echo "Generating SBOM..."
 	@mkdir -p dist
 	@"$(SYFT)" packages dir:. -o spdx-json=dist/sbom.spdx.json
-	@"$(SYFT)" packages dir:. -o syft-table=dist/sbom.txt
-	@echo "✅ SBOM generated: dist/sbom.spdx.json, dist/sbom.txt"
+	@"$(SYFT)" packages dir:. -o cyclonedx-json=dist/sbom.cyclonedx.json
+	@"$(SYFT)" packages dir:. -o table=dist/sbom.txt
+	@echo "✅ SBOM generated:"
+	@echo "   - SPDX: dist/sbom.spdx.json"
+	@echo "   - CycloneDX: dist/sbom.cyclonedx.json"
+	@echo "   - Table: dist/sbom.txt"
 
 security: security-vulncheck security-audit sbom ## Run comprehensive security analysis
 	@echo "✅ Comprehensive security analysis completed"

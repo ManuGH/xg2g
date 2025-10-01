@@ -33,12 +33,12 @@ const (
 	maxOWIRetries     = 10
 	maxOWIBackoff     = 30 * time.Second // Updated to match spec (30s max)
 
-	// Server hardening defaults
-	serverReadTimeout    = 5 * time.Second
-	serverWriteTimeout   = 10 * time.Second
-	serverIdleTimeout    = 120 * time.Second
-	serverMaxHeaderBytes = 1 << 20 // 1 MB
-	shutdownTimeout      = 15 * time.Second
+	// Server hardening defaults (can be overridden by ENV)
+	defaultServerReadTimeout    = 5 * time.Second
+	defaultServerWriteTimeout   = 10 * time.Second
+	defaultServerIdleTimeout    = 120 * time.Second
+	defaultServerMaxHeaderBytes = 1 << 20 // 1 MB
+	defaultShutdownTimeout      = 15 * time.Second
 )
 
 // maskURL removes user info from a URL string for safe logging.
@@ -123,15 +123,40 @@ func main() {
 		Dur("owi_backoff", cfg.OWIBackoff).
 		Msg("configuration loaded")
 
+	// Optional initial refresh before starting servers to avoid shutdown races.
+	if strings.ToLower(env("XG2G_INITIAL_REFRESH", "false")) == "true" {
+		logger.Info().Msg("performing initial data refresh on startup")
+		if _, err := jobs.Refresh(ctx, cfg); err != nil {
+			logger.Error().Err(err).Msg("initial data refresh failed")
+		} else {
+			logger.Info().Msg("initial data refresh completed successfully")
+		}
+	}
+
+	// Resolve server tuning from environment
+	serverReadTimeout := envDuration("XG2G_SERVER_READ_TIMEOUT", defaultServerReadTimeout)
+	serverWriteTimeout := envDuration("XG2G_SERVER_WRITE_TIMEOUT", defaultServerWriteTimeout)
+	serverIdleTimeout := envDuration("XG2G_SERVER_IDLE_TIMEOUT", defaultServerIdleTimeout)
+	serverMaxHeaderBytes := envIntDefault("XG2G_SERVER_MAX_HEADER_BYTES", defaultServerMaxHeaderBytes)
+	shutdownTimeout := envDuration("XG2G_SERVER_SHUTDOWN_TIMEOUT", defaultShutdownTimeout)
+
 	// Start metrics server on separate port if configured
 	metricsAddr := resolveMetricsListen()
 	if metricsAddr != "" {
 		metricsSrv := &http.Server{
 			Addr:              metricsAddr,
 			Handler:           promhttp.Handler(),
-			ReadHeaderTimeout: serverReadTimeout,
+			ReadHeaderTimeout: serverReadTimeout / 2,
 		}
 		go func() {
+			defer func() {
+				if rec := recover(); rec != nil {
+					logger.Error().
+						Str("event", "metrics.panic").
+						Interface("panic_value", rec).
+						Msg("panic recovered in metrics server goroutine")
+				}
+			}()
 			logger.Info().
 				Str("addr", metricsAddr).
 				Str("event", "metrics.start").
@@ -163,7 +188,7 @@ func main() {
 		Addr:              addr,
 		Handler:           s.Handler(),
 		ReadTimeout:       serverReadTimeout,
-		ReadHeaderTimeout: 2 * time.Second, // Add ReadHeaderTimeout
+		ReadHeaderTimeout: serverReadTimeout / 2,
 		WriteTimeout:      serverWriteTimeout,
 		IdleTimeout:       serverIdleTimeout,
 		MaxHeaderBytes:    serverMaxHeaderBytes,
@@ -194,19 +219,6 @@ func main() {
 	// the request it is currently handling
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
-
-	// Perform an initial refresh on startup if the `XG2G_INITIAL_REFRESH` env var is set to "true"
-	if strings.ToLower(env("XG2G_INITIAL_REFRESH", "false")) == "true" {
-		go func() {
-			logger.Info().Msg("performing initial data refresh on startup")
-			// Use a background context for the initial refresh to avoid being canceled by shutdown
-			if _, err := jobs.Refresh(context.Background(), cfg); err != nil {
-				logger.Error().Err(err).Msg("initial data refresh failed")
-			} else {
-				logger.Info().Msg("initial data refresh completed successfully")
-			}
-		}()
-	}
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Fatal().Err(err).Msg("server forced to shutdown")
@@ -243,6 +255,43 @@ func atoi(s string) int {
 		log.Fatalf("config: failed to parse integer from string %q: %v", s, err)
 	}
 	return i
+}
+
+// envDuration reads a duration from ENV in Go duration format (e.g. "5s").
+// Falls back to default on parse errors or empty variables and logs the choice.
+func envDuration(key string, def time.Duration) time.Duration {
+	if v, ok := os.LookupEnv(key); ok {
+		if v == "" {
+			log.Printf("config: using default for %s (%s) because environment variable is empty", key, def)
+			return def
+		}
+		if d, err := time.ParseDuration(v); err == nil {
+			log.Printf("config: using %s from environment (%s)", key, d)
+			return d
+		}
+		log.Printf("config: invalid duration for %s (%q), using default %s", key, v, def)
+		return def
+	}
+	log.Printf("config: using default for %s (%s)", key, def)
+	return def
+}
+
+// envIntDefault reads an int from ENV and falls back to the default on error.
+func envIntDefault(key string, def int) int {
+	if v, ok := os.LookupEnv(key); ok {
+		if v == "" {
+			log.Printf("config: using default for %s (%d) because environment variable is empty", key, def)
+			return def
+		}
+		if i, err := strconv.Atoi(v); err == nil {
+			log.Printf("config: using %s from environment (%d)", key, i)
+			return i
+		}
+		log.Printf("config: invalid int for %s (%q), using default %d", key, v, def)
+		return def
+	}
+	log.Printf("config: using default for %s (%d)", key, def)
+	return def
 }
 
 // resolveStreamPort gets the stream port from ENV, validates it, and returns it.

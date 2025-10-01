@@ -7,31 +7,42 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/gorilla/mux"
+	"golang.org/x/text/unicode/norm"
 )
 
 type Server struct {
-	mu        sync.RWMutex
-	refreshMu sync.Mutex // NEW: serialize refreshes
-	cfg       jobs.Config
-	status    jobs.Status
+	mu         sync.RWMutex
+	refreshing atomic.Bool // serialize refreshes via atomic flag
+	cfg        jobs.Config
+	status     jobs.Status
+	cb         *CircuitBreaker
+	// refreshFn allows tests to stub the refresh operation; defaults to jobs.Refresh
+	refreshFn func(context.Context, jobs.Config) (*jobs.Status, error)
 }
 
 func New(cfg jobs.Config) *Server {
-	return &Server{
+	s := &Server{
 		cfg: cfg,
 		status: jobs.Status{
 			Version: cfg.Version, // Initialize version from config
 		},
 	}
+	// Default refresh function
+	s.refreshFn = jobs.Refresh
+	// Initialize a conservative default circuit breaker (3 failures -> 30s open)
+	s.cb = NewCircuitBreaker(3, 30*time.Second)
+	return s
 }
 
 func (s *Server) routes() http.Handler {
@@ -131,17 +142,51 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	logger := log.WithComponentFromContext(r.Context(), "api")
 
-	// NEW: only allow a single refresh at a time
-	s.refreshMu.Lock()
-	defer s.refreshMu.Unlock()
+	// Try to acquire the refresh flag atomically; fail fast if already running
+	if !s.refreshing.CompareAndSwap(false, true) {
+		logger.Warn().
+			Str("event", "refresh.conflict").
+			Str("method", r.Method).
+			Msg("refresh already in progress")
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Retry-After", "30") // suggest retry after 30s
+		w.WriteHeader(http.StatusConflict)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"error":  "conflict",
+			"detail": "A refresh operation is already in progress",
+		})
+		return
+	}
+	defer s.refreshing.Store(false)
 
 	ctx := r.Context()
 	start := time.Now()
-	st, err := jobs.Refresh(ctx, s.cfg)
+	var st *jobs.Status
+	// Run the refresh via circuit breaker; it will mark failures and handle panics
+	err := s.cb.Call(func() error {
+		var err error
+		st, err = s.refreshFn(ctx, s.cfg)
+		return err
+	})
 	duration := time.Since(start)
 
 	w.Header().Set("Content-Type", "application/json")
 	if err != nil {
+		// Distinguish open circuit (fast-fail) from internal error
+		if err == errCircuitOpen {
+			logger.Warn().
+				Str("event", "refresh.circuit_open").
+				Int64("duration_ms", duration.Milliseconds()).
+				Msg("circuit breaker open for refresh; rejecting request")
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"error":  "unavailable",
+				"detail": "Refresh temporarily disabled due to repeated failures",
+			})
+			return
+		}
 		s.mu.Lock()
 		s.status.Error = "refresh operation failed" // Security: don't expose internal error details
 		s.status.Channels = 0                       // NEW: reset channel count on error
@@ -195,7 +240,11 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 	s.mu.RUnlock()
 
 	// Check if artifacts exist and are readable
-	playlistOK := checkFile(r.Context(), filepath.Join(s.cfg.DataDir, "playlist.m3u"))
+	playlistName := os.Getenv("XG2G_PLAYLIST_FILENAME")
+	if strings.TrimSpace(playlistName) == "" {
+		playlistName = "playlist.m3u"
+	}
+	playlistOK := checkFile(r.Context(), filepath.Join(s.cfg.DataDir, playlistName))
 	xmltvOK := true // Assume OK if not configured
 	if s.cfg.XMLTVPath != "" {
 		xmltvOK = checkFile(r.Context(), filepath.Join(s.cfg.DataDir, s.cfg.XMLTVPath))
@@ -250,6 +299,57 @@ func checkFile(ctx context.Context, path string) bool {
 	return true
 }
 
+// isPathTraversal performs robust checks against path traversal attempts.
+// It decodes the input multiple times to catch double-encoding, applies
+// Unicode normalization, and searches for dangerous sequences including NULs.
+func isPathTraversal(p string) bool {
+	// Work on a copy
+	decoded := p
+	// Attempt multiple decode passes to catch double/triple encodings
+	for i := 0; i < 3; i++ {
+		prev := decoded
+		if d, err := url.PathUnescape(decoded); err == nil {
+			decoded = d
+		} else {
+			// As a fallback, try query unescape in case of stray '+' or query-like encoding
+			if d2, err2 := url.QueryUnescape(decoded); err2 == nil {
+				decoded = d2
+			}
+		}
+		if decoded == prev {
+			break
+		}
+	}
+
+	lower := strings.ToLower(decoded)
+	// Immediate dangerous byte patterns, independent of platform
+	dangerSubstrings := []string{
+		"..",        // parent traversal
+		"..\\",      // windows-style backslash
+		"%00",       // encoded NUL
+		"\x00",      // literal NUL escape (defense-in-depth; may not appear literally)
+		"%c0%ae",    // overlong UTF-8 for '.'
+		"%e0%80%ae", // another overlong variant
+	}
+	for _, pat := range dangerSubstrings {
+		if strings.Contains(lower, pat) {
+			return true
+		}
+	}
+	// Literal NUL after decoding
+	if strings.Contains(decoded, "\x00") || strings.IndexByte(decoded, 0x00) >= 0 {
+		return true
+	}
+
+	// Normalize and check again for dot-dot
+	normalized := strings.ToLower(norm.NFC.String(decoded))
+	if strings.Contains(normalized, "..") || strings.Contains(normalized, "..\\") {
+		return true
+	}
+
+	return false
+}
+
 // secureFileServer creates a handler that serves files from the data directory
 // with several security checks in place.
 func (s *Server) secureFileServer() http.Handler {
@@ -264,9 +364,9 @@ func (s *Server) secureFileServer() http.Handler {
 		}
 
 		path := r.URL.Path
-		// Early traversal detection including URL-encoded attempts
-		lower := strings.ToLower(path)
-		if strings.Contains(path, "..") || strings.Contains(lower, "%2e%2e") {
+		// Enhanced traversal detection including multiple URL-decode passes,
+		// Unicode normalization, mixed-case encodings, and NUL bytes.
+		if isPathTraversal(path) {
 			logger.Warn().Str("event", "file_req.denied").Str("path", r.URL.Path).Str("reason", "path_escape").Msg("detected traversal sequence")
 			recordFileRequestDenied("path_escape")
 			http.Error(w, "Forbidden", http.StatusForbidden)
@@ -369,6 +469,7 @@ func (s *Server) secureFileServer() http.Handler {
 		// Check if the client already has the same version of the file.
 		if match := r.Header.Get("If-None-Match"); match != "" {
 			if match == etag {
+				recordFileCacheHit()
 				w.WriteHeader(http.StatusNotModified)
 				return
 			}
@@ -380,6 +481,7 @@ func (s *Server) secureFileServer() http.Handler {
 		// Content-Length, and Last-Modified headers correctly.
 		logger.Info().Str("event", "file_req.allowed").Str("path", path).Msg("serving file")
 		recordFileRequestAllowed()
+		recordFileCacheMiss()
 		http.ServeContent(w, r, info.Name(), info.ModTime(), f)
 	})
 }

@@ -2,6 +2,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -182,5 +183,51 @@ func TestSecurityHeadersMiddleware(t *testing.T) {
 		if got := rr.Header().Get(key); got != value {
 			t.Errorf("Expected header %s: %q, got: %q", key, value, got)
 		}
+	}
+}
+
+func TestPanicRecoveryMiddleware(t *testing.T) {
+	// Handler that panics
+	panicHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		panic("test panic")
+	})
+
+	handler := panicRecoveryMiddleware(panicHandler)
+
+	req := httptest.NewRequest("GET", "/trigger-panic", nil)
+	rr := httptest.NewRecorder()
+
+	// Should not panic; should return 500 and JSON body
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
+	}
+
+	// Validate JSON structure contains error and request_id
+	var body map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("response is not valid JSON: %v", err)
+	}
+	if body["error"] == nil {
+		t.Errorf("expected 'error' field in response body")
+	}
+}
+
+func TestPanicRecoveryMiddlewareNormalFlow(t *testing.T) {
+	okHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
+
+	handler := panicRecoveryMiddleware(okHandler)
+
+	req := httptest.NewRequest("GET", "/ok", nil)
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rr.Code)
 	}
 }

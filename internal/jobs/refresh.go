@@ -16,6 +16,7 @@ import (
 	xglog "github.com/ManuGH/xg2g/internal/log"
 
 	"github.com/ManuGH/xg2g/internal/epg"
+	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/playlist"
 )
@@ -54,6 +55,8 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 	logger.Info().Str("event", "refresh.start").Msg("starting refresh")
 
 	if err := validateConfig(cfg); err != nil {
+		metrics.IncConfigValidationError()
+		metrics.IncRefreshFailure("config")
 		return nil, err
 	}
 
@@ -66,31 +69,54 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 	client := openwebif.NewWithPort(cfg.OWIBase, cfg.StreamPort, opts)
 	bouquets, err := client.Bouquets(ctx)
 	if err != nil {
+		metrics.IncRefreshFailure("bouquets")
 		return nil, fmt.Errorf("failed to fetch bouquets: %w", err)
 	}
+	metrics.RecordBouquetsCount(len(bouquets))
 
 	bouquetRef, ok := bouquets[cfg.Bouquet]
 	if !ok {
+		metrics.IncRefreshFailure("bouquets")
 		return nil, fmt.Errorf("bouquet %q not found", cfg.Bouquet)
 	}
 
 	services, err := client.Services(ctx, bouquetRef)
 	if err != nil {
+		metrics.IncRefreshFailure("services")
 		return nil, fmt.Errorf("failed to fetch services for bouquet %q: %w", cfg.Bouquet, err)
 	}
+	metrics.RecordServicesCount(cfg.Bouquet, len(services))
 
 	items := make([]playlist.Item, 0, len(services))
+	// Channel type counters for the last refresh
+	hd, sd, radio, unknown := 0, 0, 0, 0
 	for _, s := range services {
 		name, ref := s[0], s[1]
 		streamURL, err := client.StreamURL(ref, name)
 		if err != nil {
 			logger.Warn().Err(err).Str("service", name).Msg("failed to build stream URL")
+			metrics.IncStreamURLBuild("failure")
+			metrics.IncRefreshFailure("streamurl")
 			continue
 		}
+		metrics.IncStreamURLBuild("success")
 
 		piconURL := ""
 		if cfg.PiconBase != "" {
 			piconURL = openwebif.PiconURL(cfg.PiconBase, ref)
+		}
+
+		// Naive channel type classification based on name/ref hints.
+		lr := strings.ToLower(name + " " + ref)
+		switch {
+		case strings.Contains(lr, "radio") || strings.HasPrefix(ref, "1:0:2:"):
+			radio++
+		case strings.Contains(lr, "hd"):
+			hd++
+		case strings.Contains(lr, "sd"):
+			sd++
+		default:
+			unknown++
 		}
 
 		items = append(items, playlist.Item{
@@ -101,10 +127,16 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 			URL:     streamURL,
 		})
 	}
+	metrics.RecordChannelTypeCounts(hd, sd, radio, unknown)
 
-	// Write M3U playlist
-	playlistPath := filepath.Join(cfg.DataDir, "playlist.m3u")
+	// Write M3U playlist (filename configurable via ENV)
+	playlistName := os.Getenv("XG2G_PLAYLIST_FILENAME")
+	if strings.TrimSpace(playlistName) == "" {
+		playlistName = "playlist.m3u"
+	}
+	playlistPath := filepath.Join(cfg.DataDir, playlistName)
 	if err := writeM3U(ctx, playlistPath, items); err != nil {
+		metrics.IncRefreshFailure("write_m3u")
 		return nil, fmt.Errorf("failed to write M3U playlist: %w", err)
 	}
 	logger.Info().
@@ -125,9 +157,13 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 		}
 
 		xmltvFullPath := filepath.Join(cfg.DataDir, cfg.XMLTVPath)
-		if err := epg.WriteXMLTV(xmlCh, xmltvFullPath); err != nil {
+		var xmlErr error
+		xmlErr = epg.WriteXMLTV(xmlCh, xmltvFullPath)
+		metrics.RecordXMLTV(true, len(xmlCh), xmlErr)
+		if xmlErr != nil {
+			metrics.IncRefreshFailure("xmltv")
 			// Return the error to signal a failed job instead of just logging it.
-			return nil, fmt.Errorf("failed to write XMLTV file to %q: %w", xmltvFullPath, err)
+			return nil, fmt.Errorf("failed to write XMLTV file to %q: %w", xmltvFullPath, xmlErr)
 		}
 
 		logger.Info().
@@ -135,6 +171,8 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 			Str("path", xmltvFullPath).
 			Int("channels", len(xmlCh)).
 			Msg("XMLTV generated")
+	} else {
+		metrics.RecordXMLTV(false, 0, nil)
 	}
 
 	status := &Status{LastRun: time.Now(), Channels: len(items)}

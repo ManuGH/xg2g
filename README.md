@@ -80,16 +80,40 @@ xg2g produces the M3U/XMLTV basis for downstream middleware. It does not perform
 
 Key environment variables:
 
-| Variable           | Type     | Default  | Required | Description                                                                                 |
-| ------------------ | -------- | -------- | -------- | ------------------------------------------------------------------------------------------- |
-| `XG2G_DATA`        | path     | `./data` | yes      | Target folder for generated artifacts and `/files` serving                                   |
-| `XG2G_OWI_BASE`    | url      | `-`      | yes      | Base URL of the OpenWebIF instance (receiver)                                               |
-| `XG2G_BOUQUET`     | string   | `-`      | yes      | Bouquet name or ID to fetch (e.g. `Favourites`)                                             |
-| `XG2G_XMLTV`       | string   | `(empty)` | no       | Optional output path for XMLTV. If set, writes to this path. Relative paths are resolved against `XG2G_DATA`. |
-| `XG2G_PICON_BASE`  | url/path | `(empty)` | no       | Base URL or path for picon images; defaults to OpenWebIF derivation                         |
-| `XG2G_FUZZY_MAX`   | int      | `2`      | no       | Max Levenshtein distance for fuzzy matching EPG names                                       |
-| `XG2G_STREAM_PORT` | int      | `8001`   | no       | Override for the OpenWebIF stream port (defaults to 8001)                                   |
-| `XG2G_METRICS_LISTEN` | address | `(empty)` | no      | Prometheus metrics server listen address (e.g. `:9090`). Empty disables metrics. IPv6 needs brackets. |
+| Variable              | Type     | Default   | Required | Description                                                                                 |
+| --------------------- | -------- | --------- | -------- | ------------------------------------------------------------------------------------------- |
+| `XG2G_DATA`           | path     | `./data`  | yes      | Target folder for generated artifacts and `/files` serving                                  |
+| `XG2G_OWI_BASE`       | url      | `-`       | yes      | Base URL of the OpenWebIF instance (receiver)                                               |
+| `XG2G_BOUQUET`        | string   | `-`       | yes      | Bouquet name or ID to fetch (e.g. `Favourites`)                                             |
+| `XG2G_XMLTV`          | string   | `(empty)` | no       | Optional output path for XMLTV. If set, writes to this path. Relative paths resolved against `XG2G_DATA`. |
+| `XG2G_PICON_BASE`     | url/path | `(empty)` | no       | Base URL or path for picon images; defaults to OpenWebIF derivation                         |
+| `XG2G_FUZZY_MAX`      | int      | `2`       | no       | Max Levenshtein distance for fuzzy matching EPG names                                       |
+| `XG2G_STREAM_PORT`    | int      | `8001`    | no       | Override for the OpenWebIF stream port (defaults to 8001)                                   |
+| `XG2G_METRICS_LISTEN` | address  | `(empty)` | no       | Prometheus metrics server listen address (e.g. `:9090`). Empty disables metrics. IPv6 needs brackets. |
+| `XG2G_PLAYLIST_FILENAME` | string | `playlist.m3u` | no | Filename for the generated playlist (used by readiness check)                               |
+
+Server timeouts and limits (HTTP listener):
+
+- `XG2G_SERVER_READ_TIMEOUT` (default: `15s`)
+- `XG2G_SERVER_WRITE_TIMEOUT` (default: `15s`)
+- `XG2G_SERVER_IDLE_TIMEOUT` (default: `60s`)
+- `XG2G_SERVER_MAX_HEADER_BYTES` (default: `1048576`) — in bytes
+- `XG2G_SERVER_SHUTDOWN_TIMEOUT` (default: `10s`) — graceful shutdown timeout
+
+Rate limiting (per-process, token bucket):
+
+- `XG2G_RATELIMIT_ENABLED` (default: `false`)
+- `XG2G_RATELIMIT_RPS` (default: `5`) — steady-state requests per second
+- `XG2G_RATELIMIT_BURST` (default: `10`) — burst capacity
+- `XG2G_RATELIMIT_WHITELIST` (default: empty) — comma-separated IPs/CIDRs bypassing limits
+
+OpenWebIF HTTP client pooling (transport tuning):
+
+- `XG2G_HTTP_MAX_IDLE_CONNS` (default: `100`)
+- `XG2G_HTTP_MAX_IDLE_CONNS_PER_HOST` (default: `10`)
+- `XG2G_HTTP_MAX_CONNS_PER_HOST` (default: `0` = unlimited)
+- `XG2G_HTTP_IDLE_TIMEOUT` (default: `90s`)
+- `XG2G_HTTP_ENABLE_HTTP2` (default: `true`)
 
 ## API Endpoints
 
@@ -97,6 +121,7 @@ Key environment variables:
 - `POST /api/refresh` — Trigger a refresh (fetch bouquets/services → write playlist ± xmltv). The operation is idempotent; repeated calls have the same effect.
 - `GET /healthz` — Liveness/health endpoint.
 - `GET /readyz` — Readiness endpoint (becomes 200 once the first successful refresh has occurred).
+  - Details: readiness flips to 200 after a successful refresh and when the playlist file exists in `XG2G_DATA` under `XG2G_PLAYLIST_FILENAME` (default `playlist.m3u`).
 - `GET /metrics` — Prometheus metrics endpoint (only when `XG2G_METRICS_LISTEN` is configured).
 - `GET /files/*` — Static serving of generated artifacts from `XG2G_DATA`.
 

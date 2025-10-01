@@ -99,7 +99,14 @@ func NewWithPort(base string, streamPort int, opts Options) *Client {
 		responseHeaderTimeout = opts.ResponseHeaderTimeout
 	}
 
-	// Create a dedicated, hardened transport.
+	// Resolve transport pool knobs from environment (optional overrides)
+	maxIdleConns := getenvInt("XG2G_HTTP_MAX_IDLE_CONNS", 100)
+	maxIdlePerHost := getenvInt("XG2G_HTTP_MAX_IDLE_CONNS_PER_HOST", 20)
+	maxConnsPerHost := getenvInt("XG2G_HTTP_MAX_CONNS_PER_HOST", 50)
+	idleConnTimeout := getenvDuration("XG2G_HTTP_IDLE_TIMEOUT", 90*time.Second)
+	forceHTTP2 := strings.ToLower(os.Getenv("XG2G_HTTP_ENABLE_HTTP2")) != "false"
+
+	// Create a dedicated, hardened transport with optimized pooling.
 	transport := &http.Transport{
 		DialContext: (&net.Dialer{
 			Timeout:   dialerTimeout, // Connection timeout
@@ -107,15 +114,22 @@ func NewWithPort(base string, streamPort int, opts Options) *Client {
 		}).DialContext,
 		TLSHandshakeTimeout:   tlsHandshakeTimeout,
 		ResponseHeaderTimeout: responseHeaderTimeout, // Time to receive headers
-		MaxIdleConns:          10,
-		IdleConnTimeout:       90 * time.Second,
-		MaxIdleConnsPerHost:   2,
+
+		// Connection pooling / reuse
+		DisableKeepAlives:   false,        // allow keep-alive
+		ForceAttemptHTTP2:   forceHTTP2,   // prefer HTTP/2 when enabled
+		MaxIdleConns:        maxIdleConns, // global idle pool
+		MaxIdleConnsPerHost: maxIdlePerHost,
+		MaxConnsPerHost:     maxConnsPerHost, // cap total per-host conns to avoid exhaustion
+		IdleConnTimeout:     idleConnTimeout,
 	}
 
 	// Create a client with the hardened transport.
 	// The per-request timeout is handled by the context passed to Do().
 	hardenedClient := &http.Client{
 		Transport: transport,
+		// Safety net: overall cap per attempt to prevent slow body hangs.
+		Timeout: 30 * time.Second,
 	}
 
 	return &Client{
@@ -129,6 +143,26 @@ func NewWithPort(base string, streamPort int, opts Options) *Client {
 		backoff:    nopts.Backoff,
 		maxBackoff: nopts.MaxBackoff,
 	}
+}
+
+// getenvInt returns an int from ENV or the default if unset/invalid.
+func getenvInt(key string, def int) int {
+	if v := os.Getenv(key); v != "" {
+		if i, err := strconv.Atoi(v); err == nil {
+			return i
+		}
+	}
+	return def
+}
+
+// getenvDuration returns a duration from ENV or the default.
+func getenvDuration(key string, def time.Duration) time.Duration {
+	if v := os.Getenv(key); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
+		}
+	}
+	return def
 }
 
 func normalizeOptions(opts Options) Options {

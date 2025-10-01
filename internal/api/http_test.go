@@ -2,6 +2,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -70,6 +71,61 @@ func TestRecordRefreshMetrics(t *testing.T) {
 
 func TestHandleRefresh_SuccessUpdatesLastRun(t *testing.T) {
 	t.Skip("Skipping success test as it requires mocking infrastructure")
+}
+
+func TestHandleRefresh_ConflictOnConcurrent(t *testing.T) {
+	cfg := jobs.Config{APIToken: "dummy-token"}
+	s := New(cfg)
+
+	// Install a slow refresh function to force overlap
+	startCh := make(chan struct{})
+	releaseCh := make(chan struct{})
+	s.refreshFn = func(ctx context.Context, cfg jobs.Config) (*jobs.Status, error) {
+		close(startCh) // signal that refresh started
+		<-releaseCh    // block until allowed to finish
+		return &jobs.Status{Channels: 1, LastRun: time.Now()}, nil
+	}
+
+	handler := s.Handler()
+
+	// First request starts and blocks
+	req1 := httptest.NewRequest(http.MethodPost, "/api/refresh", nil)
+	req1.Header.Set("X-API-Token", "dummy-token")
+	rr1 := httptest.NewRecorder()
+
+	// Run first request in a goroutine
+	done1 := make(chan struct{})
+	go func() {
+		handler.ServeHTTP(rr1, req1)
+		close(done1)
+	}()
+
+	// Wait until the refresh actually started
+	select {
+	case <-startCh:
+	case <-time.After(1 * time.Second):
+		t.Fatal("first refresh did not start in time")
+	}
+
+	// Second request should get 409 Conflict
+	req2 := httptest.NewRequest(http.MethodPost, "/api/refresh", nil)
+	req2.Header.Set("X-API-Token", "dummy-token")
+	rr2 := httptest.NewRecorder()
+	handler.ServeHTTP(rr2, req2)
+
+	assert.Equal(t, http.StatusConflict, rr2.Code)
+	assert.Contains(t, rr2.Body.String(), "refresh operation is already in progress")
+	assert.Equal(t, "30", rr2.Header().Get("Retry-After"))
+
+	// Unblock first request and ensure it succeeds with 200
+	close(releaseCh)
+	select {
+	case <-done1:
+		// ok
+	case <-time.After(1 * time.Second):
+		t.Fatal("first refresh did not complete in time")
+	}
+	assert.Equal(t, http.StatusOK, rr1.Code)
 }
 
 func TestHandleHealth(t *testing.T) {
@@ -270,6 +326,39 @@ func TestMiddlewareChain(t *testing.T) {
 	require.NotEmpty(t, reqID, "X-Request-ID header should be set")
 	// Basic shape check (UUID-like); don't strictly parse to keep test simple
 	assert.GreaterOrEqual(t, len(reqID), 8)
+}
+
+func TestAdvancedPathTraversal(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "TestAdvancedPathTraversal*")
+	require.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	// Create a benign file to make data dir non-empty
+	require.NoError(t, os.WriteFile(filepath.Join(tempDir, "ok.txt"), []byte("ok"), 0644))
+
+	cfg := jobs.Config{DataDir: tempDir}
+	server := New(cfg)
+	handler := server.Handler()
+
+	attacks := []string{
+		"%252e%252e%252f",      // double encoded ../
+		"%252E%252E%252F",      // double encoded uppercase
+		"..%00.txt",            // null byte injection (literal)
+		"%00..%00/",            // encoded NUL around traversal
+		"\u002e\u002e/",        // unicode dots (escape in string literal)
+		"%c0%ae%c0%ae/",        // overlong UTF-8 for '..'
+		"%2E%2E/%2E%2E/secret", // mixed case single-encoded
+	}
+
+	for _, attack := range attacks {
+		t.Run(attack, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/files/"+attack, nil)
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, req)
+
+			assert.Equal(t, http.StatusForbidden, rr.Code, "expected 403 for attack vector")
+		})
+	}
 }
 
 // getMetrics is a test helper to scrape metrics from a registry.

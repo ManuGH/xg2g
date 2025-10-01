@@ -26,13 +26,17 @@ services:
       # OpenWebIF Integration (customize these)
       XG2G_OWI_BASE: http://10.10.55.57
       XG2G_BOUQUET: Premium
-      XG2G_XMLTV: "true"
+      XG2G_XMLTV: "xmltv.xml"
       XG2G_FUZZY_MAX: 2
 
       # Security & Performance
       XG2G_OWI_TIMEOUT_MS: 30000
       XG2G_OWI_RETRIES: 3
       XG2G_OWI_BACKOFF_MS: 1000
+
+      # Rate Limiting (configurable)
+      XG2G_RATE_LIMIT_RPS: ${XG2G_RATE_LIMIT_RPS:-5}
+      XG2G_RATE_LIMIT_BURST: ${XG2G_RATE_LIMIT_BURST:-10}
 
       # Logging
       LOG_LEVEL: info
@@ -83,16 +87,36 @@ services:
       - "3000:3000"
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./docker/grafana/dashboards:/etc/grafana/provisioning/dashboards
-      - ./docker/grafana/datasources:/etc/grafana/provisioning/datasources
+      - ./docker/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./docker/grafana/datasources:/etc/grafana/provisioning/datasources:ro
     environment:
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin123}
+      # SECURITY: require explicit admin password (no default)
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_PASSWORD:?ERROR: GRAFANA_PASSWORD environment variable is required. Set it in .env.production or pass via environment}"
+
+      # Additional security hardening
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_SECURITY_DISABLE_GRAVATAR: "true"
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_SECURITY_ADMIN_USER: "admin"
+
+      # Login/UI
+      GF_AUTH_DISABLE_LOGIN_FORM: "false"
+      GF_USERS_DEFAULT_THEME: "dark"
+
+      # Session/Cookie security
+      GF_SESSION_COOKIE_SECURE: "true"
+      GF_SESSION_COOKIE_SAMESITE: "strict"
+      GF_SECURITY_COOKIE_SECURE: "true"
+      GF_SECURITY_STRICT_TRANSPORT_SECURITY: "true"
     networks:
       - monitoring
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   alertmanager:
     image: prom/alertmanager:latest
