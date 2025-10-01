@@ -730,9 +730,8 @@ func (c *Client) fetchEPGFromURL(ctx context.Context, urlPath string) ([]EPGEven
 		return nil, fmt.Errorf("parsing EPG response: %w", err)
 	}
 
-	if !epgResp.Result {
-		return nil, fmt.Errorf("EPG API returned result: false")
-	}
+	// Note: Some OpenWebIF endpoints don't return a "result" field at all
+	// so we check for events directly rather than validating Result
 
 	// Filter out invalid events
 	validEvents := make([]EPGEvent, 0, len(epgResp.Events))

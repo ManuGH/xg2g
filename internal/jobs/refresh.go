@@ -459,13 +459,19 @@ func fetchEPGWithRetry(ctx context.Context, client *openwebif.Client, streamURL 
 
 // extractSRefFromStreamURL extracts service reference from stream URL
 func extractSRefFromStreamURL(streamURL string) string {
-	// Expected format: http://host:port/web/stream.m3u?device=etc&fname=...&ref=ENCODED_SREF
 	u, err := url.Parse(streamURL)
 	if err != nil {
 		return ""
 	}
 
-	// Get the 'ref' parameter and URL-decode it
+	// New format (direct service reference): http://host:port/1:0:19:132F:3EF:1:C00000:0:0:0:
+	// Service reference is in the path
+	path := strings.TrimPrefix(u.Path, "/")
+	if path != "" && strings.Contains(path, ":") {
+		return path
+	}
+
+	// Old format (fallback): http://host:port/web/stream.m3u?ref=ENCODED_SREF
 	encodedRef := u.Query().Get("ref")
 	if encodedRef == "" {
 		return ""
