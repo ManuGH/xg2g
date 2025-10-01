@@ -146,6 +146,38 @@ XG2G_LISTEN=:8080 \
 go run ./cmd/daemon
 ```
 
+## Full EPG smoke test
+
+To verify end-to-end Service-EPG (per-channel, multi-day) and generate a sizable XMLTV with many `<programme>` entries, use the helper script:
+
+```bash
+# Optional: set your environment
+export XG2G_DATA=./data
+export XG2G_OWI_BASE=http://receiver.local
+export XG2G_BOUQUET=Premium
+export XG2G_XMLTV=xmltv.xml
+
+export XG2G_EPG_ENABLED=true
+export XG2G_EPG_DAYS=7
+export XG2G_EPG_MAX_CONCURRENCY=6
+export XG2G_EPG_TIMEOUT_MS=20000
+export XG2G_METRICS_LISTEN=:9090
+
+# Thresholds (fail build if smaller)
+export EPG_MIN_BYTES=$((5 * 1024 * 1024))
+export EPG_MIN_PROGRAMMES=5000
+
+./scripts/epg-full-refresh.sh
+```
+
+The script will:
+- Start the daemon, trigger a refresh, and wait for the XMLTV to appear
+- Print the XMLTV size and the number of `<programme>` entries (+ a small sample)
+- Optionally show filtered Prometheus metrics (if `XG2G_METRICS_LISTEN` is set)
+- Exit non-zero (2) when thresholds are not met, which is useful for CI smoke checks
+
+Tip: if the file is still small, increase `XG2G_EPG_DAYS` (e.g. 10–14) and temporarily raise `XG2G_EPG_MAX_CONCURRENCY` (8–10), then tune back down to protect the receiver.
+
 ## Stability & Tuning
 
 xg2g includes comprehensive retry and timeout mechanisms for reliable operation with potentially unreliable OpenWebIF receivers.

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	xglog "github.com/ManuGH/xg2g/internal/log"
@@ -335,88 +336,88 @@ func validateConfig(cfg Config) error {
 	return nil
 }
 
-// collectEPGProgrammes fetches EPG data using bouquet-wide approach
+// collectEPGProgrammes fetches EPG data using per-service requests with bounded concurrency
 func collectEPGProgrammes(ctx context.Context, client *openwebif.Client, items []playlist.Item, cfg Config) ([]epg.Programme, error) {
 	logger := xglog.FromContext(ctx)
 
-	// Get bouquet reference - need to fetch this to get the correct bouquet ref
-	bouquets, err := client.Bouquets(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch bouquets: %w", err)
+	// Clamp concurrency to sane bounds [1,10]
+	maxPar := cfg.EPGMaxConcurrency
+	if maxPar < 1 {
+		maxPar = 1
+	}
+	if maxPar > 10 {
+		maxPar = 10
 	}
 
-	bouquetRef, exists := bouquets[cfg.Bouquet]
-	if !exists {
-		return nil, fmt.Errorf("bouquet %q not found in available bouquets", cfg.Bouquet)
-	}
+	// Worker pool semaphore
+	sem := make(chan struct{}, maxPar)
+	results := make(chan epgResult, len(items))
+	var wg sync.WaitGroup
 
-	// Create timeout context for bouquet EPG request
-	epgCtx, cancel := context.WithTimeout(ctx, time.Duration(cfg.EPGTimeoutMS)*time.Millisecond)
-	defer cancel()
-
-	logger.Debug().
-		Str("bouquet", cfg.Bouquet).
-		Str("bouquet_ref", bouquetRef).
-		Int("days", cfg.EPGDays).
-		Msg("fetching bouquet EPG")
-
-	// Fetch all EPG events for the bouquet at once
-	var allEvents []openwebif.EPGEvent
-	var fetchErr error
-
-	for attempt := 0; attempt <= cfg.EPGRetries; attempt++ {
-		if attempt > 0 {
-			// Exponential backoff
-			backoff := time.Duration(attempt*attempt*500) * time.Millisecond
-			select {
-			case <-time.After(backoff):
-			case <-epgCtx.Done():
-				return nil, epgCtx.Err()
-			}
-			logger.Debug().Int("attempt", attempt+1).Msg("retrying bouquet EPG fetch")
-		}
-
-		allEvents, fetchErr = client.GetBouquetEPG(epgCtx, bouquetRef, cfg.EPGDays)
-		if fetchErr == nil {
-			break
-		}
-	}
-
-	if fetchErr != nil {
-		return nil, fmt.Errorf("bouquet EPG request failed after %d retries: %w", cfg.EPGRetries, fetchErr)
-	}
-
-	logger.Info().
-		Int("events", len(allEvents)).
-		Msg("fetched bouquet EPG events")
-
-	// Create a mapping from service reference to channel ID
-	srefToChannelID := make(map[string]string)
+	// Schedule per-channel EPG fetches
 	for _, item := range items {
-		sRef := extractSRefFromStreamURL(item.URL)
-		if sRef != "" {
-			srefToChannelID[sRef] = item.TvgID
+		it := item // capture
+		// Validate sRef presence early to avoid spinning up a goroutine needlessly
+		if sref := extractSRefFromStreamURL(it.URL); sref == "" {
+			logger.Debug().Str("channel", it.Name).Msg("skipping EPG: could not extract sRef from stream URL")
+			continue
 		}
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// Acquire semaphore
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			// Deadline per request
+			reqCtx, cancel := context.WithTimeout(ctx, time.Duration(cfg.EPGTimeoutMS)*time.Millisecond)
+			defer cancel()
+
+			events, err := fetchEPGWithRetry(reqCtx, client, it.URL, cfg)
+			if err != nil {
+				logger.Debug().Err(err).
+					Str("channel", it.Name).
+					Str("tvg_id", it.TvgID).
+					Msg("EPG fetch failed for channel")
+				results <- epgResult{channelID: it.TvgID, events: nil, err: err}
+				return
+			}
+			results <- epgResult{channelID: it.TvgID, events: events, err: nil}
+		}()
 	}
 
-	// Group events by channel and convert to programmes
-	var allProgrammes []epg.Programme
-	channelsWithData := make(map[string]int)
+	// Close results when all goroutines complete
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
 
-	for _, event := range allEvents {
-		if channelID, exists := srefToChannelID[event.SRef]; exists {
-			programmes := epg.ProgrammesFromEPG([]openwebif.EPGEvent{event}, channelID)
-			allProgrammes = append(allProgrammes, programmes...)
-			channelsWithData[channelID]++
+	// Aggregate results
+	var allProgrammes []epg.Programme
+	channelsWithData := 0
+
+	for res := range results {
+		if res.err != nil {
+			// already logged
+			continue
+		}
+		if len(res.events) > 0 {
+			channelsWithData++
+		}
+		progs := epg.ProgrammesFromEPG(res.events, res.channelID)
+		if len(progs) > 0 {
+			allProgrammes = append(allProgrammes, progs...)
 		}
 	}
 
 	logger.Info().
 		Int("total_programmes", len(allProgrammes)).
-		Int("channels_with_data", len(channelsWithData)).
-		Msg("mapped EPG events to channels")
+		Int("channels_with_data", channelsWithData).
+		Int("concurrency", maxPar).
+		Msg("EPG collected via service endpoints")
 
-	metrics.RecordEPGChannelSuccess(len(allProgrammes))
+	metrics.RecordEPGChannelSuccess(channelsWithData)
 
 	return allProgrammes, nil
 }
