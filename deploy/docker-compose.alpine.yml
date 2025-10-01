@@ -1,6 +1,6 @@
 services:
   xg2g:
-    image: xg2g:dev  # Using locally built image for testing
+    image: ghcr.io/manugh/xg2g@sha256:e2fb2f4ad2e22a1616d73973654554b1a4027a5c36ef6c36db4c9c082321379f
     container_name: xg2g
     ports:
       - "8080:8080"
