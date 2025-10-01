@@ -653,11 +653,13 @@ func (c *Client) GetEPG(ctx context.Context, sRef string, days int) ([]EPGEvent,
 		return nil, fmt.Errorf("invalid EPG days: %d (must be 1-14)", days)
 	}
 
-	endTime := time.Now().Add(time.Duration(days) * 24 * time.Hour).Unix()
+	// Note: OpenWebIF /web/epgservice doesn't properly support endTime parameter
+	// Using time=-1 returns all available EPG data (typically 7-14 days)
+	// We rely on the receiver's EPG database having sufficient data
 
 	// Try primary endpoint: /api/epgservice
-	primaryURL := fmt.Sprintf("/api/epgservice?sRef=%s&time=-1&endTime=%d",
-		url.QueryEscape(sRef), endTime)
+	primaryURL := fmt.Sprintf("/api/epgservice?sRef=%s&time=-1",
+		url.QueryEscape(sRef))
 
 	events, err := c.fetchEPGFromURL(ctx, primaryURL)
 	if err == nil && len(events) > 0 {
@@ -672,8 +674,8 @@ func (c *Client) GetEPG(ctx context.Context, sRef string, days int) ([]EPGEvent,
 		Msg("primary EPG endpoint failed, trying fallback")
 
 	// Fallback: /web/epgservice
-	fallbackURL := fmt.Sprintf("/web/epgservice?sRef=%s&time=-1&endTime=%d",
-		url.QueryEscape(sRef), endTime)
+	fallbackURL := fmt.Sprintf("/web/epgservice?sRef=%s&time=-1",
+		url.QueryEscape(sRef))
 
 	events, fallbackErr := c.fetchEPGFromURL(ctx, fallbackURL)
 	if fallbackErr != nil {
