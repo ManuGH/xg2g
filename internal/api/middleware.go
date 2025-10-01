@@ -2,12 +2,13 @@
 package api
 
 import (
-    "encoding/json"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
-    "runtime"
+	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -79,10 +80,12 @@ type visitor struct {
 }
 
 type rateLimiter struct {
-	visitors map[string]*visitor
-	mtx      sync.RWMutex
-	rate     rate.Limit
-	burst    int
+	visitors     map[string]*visitor
+	mtx          sync.RWMutex
+	rate         rate.Limit
+	burst        int
+	enabled      bool
+	whitelistIPs []string
 }
 
 func newRateLimiter(r rate.Limit, b int) *rateLimiter {
@@ -90,6 +93,7 @@ func newRateLimiter(r rate.Limit, b int) *rateLimiter {
 		visitors: make(map[string]*visitor),
 		rate:     r,
 		burst:    b,
+		enabled:  true,
 	}
 	go rl.janitor(1*time.Hour, 10*time.Minute)
 	return rl
@@ -148,7 +152,18 @@ func (rl *rateLimiter) getLimiter(ip string) *rate.Limiter {
 // rateLimitMiddleware limits the number of requests per IP
 func (rl *rateLimiter) middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !rl.enabled {
+			next.ServeHTTP(w, r)
+			return
+		}
 		ip := clientIP(r)
+		// Whitelist check
+		for _, wip := range rl.whitelistIPs {
+			if wip == ip {
+				next.ServeHTTP(w, r)
+				return
+			}
+		}
 		limiter := rl.getLimiter(ip)
 
 		// Best-effort RateLimit headers (limit per second, remaining tokens now)
@@ -345,7 +360,35 @@ func chain(h http.Handler, mws ...func(http.Handler) http.Handler) http.Handler 
 }
 
 func withMiddlewares(h http.Handler) http.Handler {
-	rl := newRateLimiter(rate.Limit(10), 20)
+	// Make rate limiter configurable via environment
+	rpsStr := os.Getenv("XG2G_RATELIMIT_RPS")
+	burstStr := os.Getenv("XG2G_RATELIMIT_BURST")
+	enabledStr := os.Getenv("XG2G_RATELIMIT_ENABLED")
+	whitelistStr := os.Getenv("XG2G_RATELIMIT_WHITELIST")
+
+	rps := 10.0
+	if rpsStr != "" {
+		if v, err := strconv.ParseFloat(rpsStr, 64); err == nil && v > 0 {
+			rps = v
+		}
+	}
+	burst := 20
+	if burstStr != "" {
+		if v, err := strconv.Atoi(burstStr); err == nil && v > 0 {
+			burst = v
+		}
+	}
+	rl := newRateLimiter(rate.Limit(rps), burst)
+	rl.enabled = strings.ToLower(enabledStr) != "false"
+	if whitelistStr != "" {
+		parts := strings.Split(whitelistStr, ",")
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				rl.whitelistIPs = append(rl.whitelistIPs, p)
+			}
+		}
+	}
 	// Order matters: panic recovery first, then request ID for correlation,
 	// then metrics and the rest.
 	return chain(h, panicRecoveryMiddleware, requestIDMiddleware, metricsMiddleware, corsMiddleware, securityHeaders, rl.middleware)

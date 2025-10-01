@@ -17,15 +17,37 @@ services:
     environment:
       - XG2G_DATA=/data
       - XG2G_OWI_BASE=http://10.10.55.57
-      - XG2G_OWI_TIMEOUT_MS=30000
       - XG2G_BOUQUET=Premium
       - XG2G_LISTEN=:8080
       - XG2G_METRICS_LISTEN=:9090
       - XG2G_API_TOKEN=super-secret-token-do-not-use-in-prod
-      - XG2G_XMLTV_PATH=xmltv.xml
-      - XG2G_PICON_BASE_URL=http://localhost:8080/files/picons
-      - XG2G_DEBUG=true
-      - XG2G_INITIAL_REFRESH=true
+      - XG2G_XMLTV=xmltv.xml
+      - XG2G_PICON_BASE=http://localhost:8080/files/picons
+    # Optional: OpenWebIF request settings
+    # - XG2G_OWI_TIMEOUT_MS=10000
+    # - XG2G_OWI_RETRIES=3
+    # - XG2G_OWI_BACKOFF_MS=500
+    # Optional: stream port override
+    # - XG2G_STREAM_PORT=8001
+    # Optional: playlist filename (default playlist.m3u)
+    # - XG2G_PLAYLIST_FILENAME=playlist.m3u
+    # Optional: server timeouts and limits
+    # - XG2G_SERVER_READ_TIMEOUT=15s
+    # - XG2G_SERVER_WRITE_TIMEOUT=15s
+    # - XG2G_SERVER_IDLE_TIMEOUT=60s
+    # - XG2G_SERVER_MAX_HEADER_BYTES=1048576
+    # - XG2G_SERVER_SHUTDOWN_TIMEOUT=10s
+    # Optional: rate limiter
+    # - XG2G_RATELIMIT_ENABLED=true
+    # - XG2G_RATELIMIT_RPS=5
+    # - XG2G_RATELIMIT_BURST=10
+    # - XG2G_RATELIMIT_WHITELIST=127.0.0.1,192.168.0.0/16
+    # Optional: OpenWebIF HTTP client pool
+    # - XG2G_HTTP_MAX_IDLE_CONNS=100
+    # - XG2G_HTTP_MAX_IDLE_CONNS_PER_HOST=10
+    # - XG2G_HTTP_MAX_CONNS_PER_HOST=0
+    # - XG2G_HTTP_IDLE_TIMEOUT=90s
+    # - XG2G_HTTP_ENABLE_HTTP2=true
     healthcheck:
       test: >
         wget -q --spider -T 5 -O /dev/null http://localhost:8080/readyz || exit 1

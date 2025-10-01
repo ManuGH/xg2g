@@ -240,7 +240,11 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 	s.mu.RUnlock()
 
 	// Check if artifacts exist and are readable
-	playlistOK := checkFile(r.Context(), filepath.Join(s.cfg.DataDir, "playlist.m3u"))
+	playlistName := os.Getenv("XG2G_PLAYLIST_FILENAME")
+	if strings.TrimSpace(playlistName) == "" {
+		playlistName = "playlist.m3u"
+	}
+	playlistOK := checkFile(r.Context(), filepath.Join(s.cfg.DataDir, playlistName))
 	xmltvOK := true // Assume OK if not configured
 	if s.cfg.XMLTVPath != "" {
 		xmltvOK = checkFile(r.Context(), filepath.Join(s.cfg.DataDir, s.cfg.XMLTVPath))
@@ -465,6 +469,7 @@ func (s *Server) secureFileServer() http.Handler {
 		// Check if the client already has the same version of the file.
 		if match := r.Header.Get("If-None-Match"); match != "" {
 			if match == etag {
+				recordFileCacheHit()
 				w.WriteHeader(http.StatusNotModified)
 				return
 			}
@@ -476,6 +481,7 @@ func (s *Server) secureFileServer() http.Handler {
 		// Content-Length, and Last-Modified headers correctly.
 		logger.Info().Str("event", "file_req.allowed").Str("path", path).Msg("serving file")
 		recordFileRequestAllowed()
+		recordFileCacheMiss()
 		http.ServeContent(w, r, info.Name(), info.ModTime(), f)
 	})
 }

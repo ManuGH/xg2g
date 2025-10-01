@@ -99,6 +99,13 @@ func NewWithPort(base string, streamPort int, opts Options) *Client {
 		responseHeaderTimeout = opts.ResponseHeaderTimeout
 	}
 
+	// Resolve transport pool knobs from environment (optional overrides)
+	maxIdleConns := getenvInt("XG2G_HTTP_MAX_IDLE_CONNS", 100)
+	maxIdlePerHost := getenvInt("XG2G_HTTP_MAX_IDLE_CONNS_PER_HOST", 20)
+	maxConnsPerHost := getenvInt("XG2G_HTTP_MAX_CONNS_PER_HOST", 50)
+	idleConnTimeout := getenvDuration("XG2G_HTTP_IDLE_TIMEOUT", 90*time.Second)
+	forceHTTP2 := strings.ToLower(os.Getenv("XG2G_HTTP_ENABLE_HTTP2")) != "false"
+
 	// Create a dedicated, hardened transport with optimized pooling.
 	transport := &http.Transport{
 		DialContext: (&net.Dialer{
@@ -109,12 +116,12 @@ func NewWithPort(base string, streamPort int, opts Options) *Client {
 		ResponseHeaderTimeout: responseHeaderTimeout, // Time to receive headers
 
 		// Connection pooling / reuse
-		DisableKeepAlives:   false,          // allow keep-alive
-		ForceAttemptHTTP2:   true,           // prefer HTTP/2 when available
-		MaxIdleConns:        100,            // global idle pool
-		MaxIdleConnsPerHost: 20,             // per-host idle limit (bursty traffic)
-		MaxConnsPerHost:     50,             // cap total per-host conns to avoid exhaustion
-		IdleConnTimeout:     90 * time.Second,
+		DisableKeepAlives:   false,        // allow keep-alive
+		ForceAttemptHTTP2:   forceHTTP2,   // prefer HTTP/2 when enabled
+		MaxIdleConns:        maxIdleConns, // global idle pool
+		MaxIdleConnsPerHost: maxIdlePerHost,
+		MaxConnsPerHost:     maxConnsPerHost, // cap total per-host conns to avoid exhaustion
+		IdleConnTimeout:     idleConnTimeout,
 	}
 
 	// Create a client with the hardened transport.
@@ -136,6 +143,26 @@ func NewWithPort(base string, streamPort int, opts Options) *Client {
 		backoff:    nopts.Backoff,
 		maxBackoff: nopts.MaxBackoff,
 	}
+}
+
+// getenvInt returns an int from ENV or the default if unset/invalid.
+func getenvInt(key string, def int) int {
+	if v := os.Getenv(key); v != "" {
+		if i, err := strconv.Atoi(v); err == nil {
+			return i
+		}
+	}
+	return def
+}
+
+// getenvDuration returns a duration from ENV or the default.
+func getenvDuration(key string, def time.Duration) time.Duration {
+	if v := os.Getenv(key); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
+		}
+	}
+	return def
 }
 
 func normalizeOptions(opts Options) Options {
