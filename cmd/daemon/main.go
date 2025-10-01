@@ -142,6 +142,14 @@ func main() {
 			ReadHeaderTimeout: serverReadTimeout,
 		}
 		go func() {
+			defer func() {
+				if rec := recover(); rec != nil {
+					logger.Error().
+						Str("event", "metrics.panic").
+						Interface("panic_value", rec).
+						Msg("panic recovered in metrics server goroutine")
+				}
+			}()
 			logger.Info().
 				Str("addr", metricsAddr).
 				Str("event", "metrics.start").

@@ -2,14 +2,16 @@
 package api
 
 import (
+    "encoding/json"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
+    "runtime"
 	"strings"
 	"sync"
 	"time"
-    "unicode/utf8"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"golang.org/x/time/rate"
@@ -194,6 +196,56 @@ func metricsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// panicRecoveryMiddleware ensures that panics inside any downstream handler
+// do not crash the process. It logs the panic with context and returns a 500 JSON.
+func panicRecoveryMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				// Build stack trace
+				buf := make([]byte, 8192)
+				n := runtime.Stack(buf, false)
+				stack := string(buf[:n])
+
+				// Correlate with request ID if present
+				reqID := log.RequestIDFromContext(r.Context())
+
+				// Sanitize path label for metrics/logging
+				pathLabel := r.URL.Path
+				if !utf8.ValidString(pathLabel) {
+					pathLabel = strings.ToValidUTF8(pathLabel, "�")
+				}
+
+				// Log with structured fields
+				logger := log.WithComponentFromContext(r.Context(), "panic-recovery")
+				logger.Error().
+					Str("event", "panic.recovered").
+					Str("method", r.Method).
+					Str("path", pathLabel).
+					Str("remote_addr", clientIP(r)).
+					Str("request_id", reqID).
+					Interface("panic_value", rec).
+					Str("stack_trace", stack).
+					Msg("panic recovered in HTTP handler")
+
+				// Record metric
+				recordHTTPPanic(pathLabel)
+
+				// Best-effort JSON error response
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusInternalServerError)
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"error":      "Internal server error",
+					"request_id": reqID,
+					"message":    "An unexpected error occurred. Please try again later.",
+				})
+			}
+		}()
+
+		next.ServeHTTP(w, r)
+	})
+}
+
 // corsMiddleware adds CORS headers with strict origin validation
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -294,5 +346,7 @@ func chain(h http.Handler, mws ...func(http.Handler) http.Handler) http.Handler 
 
 func withMiddlewares(h http.Handler) http.Handler {
 	rl := newRateLimiter(rate.Limit(10), 20)
-	return chain(h, requestIDMiddleware, metricsMiddleware, corsMiddleware, securityHeaders, rl.middleware)
+	// Order matters: panic recovery first, then request ID for correlation,
+	// then metrics and the rest.
+	return chain(h, panicRecoveryMiddleware, requestIDMiddleware, metricsMiddleware, corsMiddleware, securityHeaders, rl.middleware)
 }

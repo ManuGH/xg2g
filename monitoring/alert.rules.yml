@@ -1,6 +1,17 @@
 groups:
   - name: xg2g-security-alerts
     rules:
+      - alert: HighPanicRate
+        expr: rate(xg2g_http_panics_total[5m]) > 0.01
+        for: 2m
+        labels:
+          severity: critical
+          service: xg2g
+          category: reliability
+        annotations:
+          summary: "High panic rate detected"
+          description: "{{ $value }} panics per second recovered in the last 5 minutes. Investigate recent deployments and logs."
+
       - alert: SymlinkAttackSpike
         expr: increase(xg2g_file_requests_denied_total{reason="boundary_escape"}[5m]) > 5
         for: 1m

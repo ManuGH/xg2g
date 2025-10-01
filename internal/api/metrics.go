@@ -43,6 +43,12 @@ var (
 		Name: "xg2g_file_requests_allowed_total",
 		Help: "Number of file requests allowed",
 	})
+
+	// Panic recovery metrics
+	httpPanicsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "xg2g_http_panics_total",
+		Help: "Total number of panics recovered in HTTP handlers",
+	}, []string{"path"})
 )
 
 // recordMetrics records metrics for an HTTP request
@@ -64,4 +70,9 @@ func recordFileRequestAllowed() {
 
 func recordFileRequestDenied(reason string) {
 	fileRequestsDeniedTotal.WithLabelValues(reason).Inc()
+}
+
+// recordHTTPPanic increments the panic counter for the given path.
+func recordHTTPPanic(path string) {
+	httpPanicsTotal.WithLabelValues(path).Inc()
 }
