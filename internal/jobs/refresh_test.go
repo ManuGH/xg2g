@@ -47,7 +47,7 @@ func (m *mockOWI) GetEPG(ctx context.Context, sRef string, days int) ([]openwebi
 	// Return mock EPG data for tests
 	return []openwebif.EPGEvent{
 		{
-			ID:          "1",
+			ID:          1,
 			Title:       "Test Programme",
 			Description: "Test Description",
 			Begin:       time.Now().Unix(),

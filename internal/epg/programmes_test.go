@@ -4,7 +4,7 @@ package epg
 import (
 	"testing"
 	"time"
-	
+
 	"github.com/ManuGH/xg2g/internal/openwebif"
 )
 
@@ -12,7 +12,7 @@ func TestProgrammesFromEPG(t *testing.T) {
 	now := time.Now()
 	events := []openwebif.EPGEvent{
 		{
-			ID:          "123",
+			ID:          123,
 			Title:       "Test Programme",
 			Description: "Short desc",
 			LongDesc:    "Long description",
@@ -21,13 +21,13 @@ func TestProgrammesFromEPG(t *testing.T) {
 			SRef:        "1:0:1:123::",
 		},
 		{
-			ID:       "124",
+			ID:       124,
 			Title:    "", // Invalid - should be skipped
 			Begin:    now.Unix(),
 			Duration: 1800,
 		},
 		{
-			ID:          "125",
+			ID:          125,
 			Title:       "No Duration",
 			Description: "Test",
 			Begin:       now.Unix() + 3600,
@@ -35,26 +35,26 @@ func TestProgrammesFromEPG(t *testing.T) {
 			SRef:        "1:0:1:125::",
 		},
 	}
-	
+
 	programmes := ProgrammesFromEPG(events, "test.channel")
-	
+
 	if len(programmes) != 2 {
 		t.Fatalf("expected 2 programmes, got %d", len(programmes))
 	}
-	
+
 	prog1 := programmes[0]
 	if prog1.Title.Value != "Test Programme" {
 		t.Errorf("expected title 'Test Programme', got %q", prog1.Title.Value)
 	}
-	
+
 	if prog1.Channel != "test.channel" {
 		t.Errorf("expected channel 'test.channel', got %q", prog1.Channel)
 	}
-	
+
 	if prog1.Desc != "Long description" {
 		t.Errorf("expected long description, got %q", prog1.Desc)
 	}
-	
+
 	// Test programme with default duration
 	prog2 := programmes[1]
 	if prog2.Title.Value != "No Duration" {
@@ -65,7 +65,7 @@ func TestProgrammesFromEPG(t *testing.T) {
 func TestFormatXMLTVTime(t *testing.T) {
 	testTime := time.Date(2024, 1, 15, 20, 30, 0, 0, time.UTC)
 	expected := "20240115203000 +0000"
-	
+
 	result := formatXMLTVTime(testTime)
 	if result != expected {
 		t.Errorf("expected %q, got %q", expected, result)
@@ -111,7 +111,7 @@ func TestBuildDescription(t *testing.T) {
 			expected: "",
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := buildDescription(tt.event)
