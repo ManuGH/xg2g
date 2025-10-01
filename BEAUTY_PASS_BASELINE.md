@@ -7,13 +7,13 @@ Current commit: a3b2924
 
 ## Build Status
 
-\n```
+\n```text
 EXIT_CODE=0
-```
+```text
 
 ## Test Status
 
-\n```
+\n```text
 === RUN   TestResolveOWISettingsValidation
 === RUN   TestResolveOWISettingsValidation/negative_timeout
 2025/10/01 01:19:31 config: using XG2G_OWI_TIMEOUT_MS from environment ("-1000")
@@ -101,7 +101,7 @@ EXIT_CODE=0
 2025/10/01 01:19:31 config: data directory "/private/var/folders/99/p3_dnc890xbcy_8qdw4024wh0000gn/T/TestEnsureDataDir490572410/001" is valid and writable
 --- PASS: TestEnsureDataDir (0.00s)
 PASS
-ok  	github.com/ManuGH/xg2g/cmd/daemon	(cached)
+ok    github.com/ManuGH/xg2g/cmd/daemon (cached)
 === RUN   TestHandleStatus
 {"level":"info","service":"xg2g","version":"","req_id":"11127b55-cab8-4f16-9f1e-b6e5b38fa51e","method":"GET","path":"/api/status","remote_addr":"","user_agent":"","event":"request.handled","status":200,"duration":0.158208,"time":"2025-09-30T16:32:21+02:00","message":"http request"}
 {"level":"info","service":"xg2g","version":"","component":"api","event":"request.complete","method":"GET","path":"/api/status","duration_ms":0,"remote_addr":"","req_id":"7bd20620-5029-4325-a863-c69ff0480ff8","time":"2025-09-30T16:32:21+02:00","message":"request completed"}
@@ -215,7 +215,7 @@ ok  	github.com/ManuGH/xg2g/cmd/daemon	(cached)
 === RUN   TestSecurityHeadersMiddleware
 --- PASS: TestSecurityHeadersMiddleware (0.00s)
 PASS
-ok  	github.com/ManuGH/xg2g/internal/api	(cached)
+ok    github.com/ManuGH/xg2g/internal/api (cached)
 === RUN   TestXMLTVParsingRoundTrip
 === RUN   TestXMLTVParsingRoundTrip/single_channel_basic
 === RUN   TestXMLTVParsingRoundTrip/multiple_channels_with_icons
@@ -375,7 +375,7 @@ ok  	github.com/ManuGH/xg2g/internal/api	(cached)
     --- PASS: FuzzLevenshtein/seed#2 (0.00s)
     --- PASS: FuzzLevenshtein/seed#3 (0.00s)
 PASS
-ok  	github.com/ManuGH/xg2g/internal/epg	(cached)
+ok    github.com/ManuGH/xg2g/internal/epg (cached)
 === RUN   TestMakeStableIDFromSRef_Properties
 --- PASS: TestMakeStableIDFromSRef_Properties (0.00s)
 === RUN   TestRefresh_IntegrationSuccess
@@ -440,7 +440,7 @@ ok  	github.com/ManuGH/xg2g/internal/epg	(cached)
 === RUN   TestMakeStableIDFromSRef
 --- PASS: TestMakeStableIDFromSRef (0.00s)
 PASS
-ok  	github.com/ManuGH/xg2g/internal/jobs	(cached)
+ok    github.com/ManuGH/xg2g/internal/jobs  (cached)
 === RUN   TestContextWithRequestID
 === RUN   TestContextWithRequestID/nil_context
 === RUN   TestContextWithRequestID/background_context
@@ -472,7 +472,7 @@ ok  	github.com/ManuGH/xg2g/internal/jobs	(cached)
 === RUN   TestDerive
 --- PASS: TestDerive (0.00s)
 PASS
-ok  	github.com/ManuGH/xg2g/internal/log	(cached)
+ok    github.com/ManuGH/xg2g/internal/log (cached)
 === RUN   TestClientBouquets5xx
 {"level":"error","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1:51062","event":"openwebif.request","operation":"bouquets","method":"GET","endpoint":"/api/bouquets","attempt":1,"max_attempts":1,"duration_ms":1,"error_class":"http_5xx","status":502,"time":"2025-09-30T16:23:46+02:00","message":"openwebif request failed"}
 --- PASS: TestClientBouquets5xx (0.00s)
@@ -532,7 +532,7 @@ ok  	github.com/ManuGH/xg2g/internal/log	(cached)
     --- PASS: TestPiconURL/empty_sref (0.00s)
     --- PASS: TestPiconURL/ipv6_address (0.00s)
 PASS
-ok  	github.com/ManuGH/xg2g/internal/openwebif	(cached)
+ok    github.com/ManuGH/xg2g/internal/openwebif (cached)
 === RUN   TestWriteM3UTable
 === RUN   TestWriteM3UTable/basic_with_logo_and_channel_number
 === RUN   TestWriteM3UTable/missing_logo_keeps_stable_tvg-id
@@ -540,16 +540,16 @@ ok  	github.com/ManuGH/xg2g/internal/openwebif	(cached)
     --- PASS: TestWriteM3UTable/basic_with_logo_and_channel_number (0.00s)
     --- PASS: TestWriteM3UTable/missing_logo_keeps_stable_tvg-id (0.00s)
 PASS
-ok  	github.com/ManuGH/xg2g/internal/playlist	(cached)
-?   	github.com/ManuGH/xg2g/test	[no test files]
+ok    github.com/ManuGH/xg2g/internal/playlist  (cached)
+?     github.com/ManuGH/xg2g/test [no test files]
 EXIT_CODE=0
-```
+```text
 
 ## Linter Status (golangci-lint)
 
-\n```
+\n```text
 golangci-lint not installed
-```
+```text
 
 ## File Count
 
@@ -569,7 +569,7 @@ golangci-lint not installed
 
 ## Quick Scan Results
 
-\n```
+\n```text
 gofmt (files needing format):
 
 goimports (files needing import fix):
@@ -584,5 +584,5 @@ yamllint not installed
 GitHub Actions floating tags (@main/@master):
 No @main tags
 No @master tags
-```
+```text
 
