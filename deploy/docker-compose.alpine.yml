@@ -1,14 +1,17 @@
 services:
   xg2g:
-    image: ghcr.io/<OWNER>/xg2g@sha256:<ALPINE_DIGEST>
+    image: ghcr.io/manugh/xg2g@sha256:b12f0a8ed9049f7497d8be7515a5666ebd570cf1e9faa6dcec1fab3ce7165eab
     container_name: xg2g
     ports:
       - "8080:8080"
+      - "9090:9090"
     environment:
       - XG2G_DATA=/data
-      # - XG2G_OWI_BASE=http://receiver.local
-      # - XG2G_BOUQUET=Favourites
-      # - XG2G_LISTEN=:8080
+      - XG2G_OWI_BASE=${XG2G_OWI_BASE}
+      - XG2G_BOUQUET=${XG2G_BOUQUET}
+      - XG2G_LISTEN=:8080
+      - XG2G_METRICS_LISTEN=:9090
+      - XG2G_API_TOKEN=${XG2G_API_TOKEN:-}
     volumes:
       - ./data:/data
     user: "1000:1000"
@@ -19,5 +22,4 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
-      - seccomp=runtime/default
     restart: unless-stopped
