@@ -38,7 +38,9 @@ type Config struct {
 	Version       string
 	DataDir       string
 	OWIBase       string
-	Bouquet       string
+	OWIUsername   string // Optional: HTTP Basic Auth username
+	OWIPassword   string // Optional: HTTP Basic Auth password
+	Bouquet       string // Comma-separated list of bouquets (e.g., "Premium,Favourites")
 	XMLTVPath     string
 	PiconBase     string
 	FuzzyMax      int
@@ -73,6 +75,8 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 		MaxRetries: cfg.OWIRetries,
 		Backoff:    cfg.OWIBackoff,
 		MaxBackoff: cfg.OWIMaxBackoff,
+		Username:   cfg.OWIUsername,
+		Password:   cfg.OWIPassword,
 	}
 	client := openwebif.NewWithPort(cfg.OWIBase, cfg.StreamPort, opts)
 	bouquets, err := client.Bouquets(ctx)
@@ -82,58 +86,71 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 	}
 	metrics.RecordBouquetsCount(len(bouquets))
 
-	bouquetRef, ok := bouquets[cfg.Bouquet]
-	if !ok {
-		metrics.IncRefreshFailure("bouquets")
-		return nil, fmt.Errorf("bouquet %q not found", cfg.Bouquet)
+	// Support comma-separated bouquet list (e.g., "Premium,Favourites,Sports")
+	requestedBouquets := strings.Split(cfg.Bouquet, ",")
+	for i := range requestedBouquets {
+		requestedBouquets[i] = strings.TrimSpace(requestedBouquets[i])
 	}
 
-	services, err := client.Services(ctx, bouquetRef)
-	if err != nil {
-		metrics.IncRefreshFailure("services")
-		return nil, fmt.Errorf("failed to fetch services for bouquet %q: %w", cfg.Bouquet, err)
-	}
-	metrics.RecordServicesCount(cfg.Bouquet, len(services))
-
-	items := make([]playlist.Item, 0, len(services))
+	var items []playlist.Item
 	// Channel type counters for the last refresh
 	hd, sd, radio, unknown := 0, 0, 0, 0
-	for _, s := range services {
-		name, ref := s[0], s[1]
-		streamURL, err := client.StreamURL(ref, name)
-		if err != nil {
-			logger.Warn().Err(err).Str("service", name).Msg("failed to build stream URL")
-			metrics.IncStreamURLBuild("failure")
-			metrics.IncRefreshFailure("streamurl")
+
+	for _, bouquetName := range requestedBouquets {
+		if bouquetName == "" {
 			continue
 		}
-		metrics.IncStreamURLBuild("success")
 
-		piconURL := ""
-		if cfg.PiconBase != "" {
-			piconURL = openwebif.PiconURL(cfg.PiconBase, ref)
+		bouquetRef, ok := bouquets[bouquetName]
+		if !ok {
+			metrics.IncRefreshFailure("bouquets")
+			return nil, fmt.Errorf("bouquet %q not found", bouquetName)
 		}
 
-		// Naive channel type classification based on name/ref hints.
-		lr := strings.ToLower(name + " " + ref)
-		switch {
-		case strings.Contains(lr, "radio") || strings.HasPrefix(ref, "1:0:2:"):
-			radio++
-		case strings.Contains(lr, "hd"):
-			hd++
-		case strings.Contains(lr, "sd"):
-			sd++
-		default:
-			unknown++
+		services, err := client.Services(ctx, bouquetRef)
+		if err != nil {
+			metrics.IncRefreshFailure("services")
+			return nil, fmt.Errorf("failed to fetch services for bouquet %q: %w", bouquetName, err)
 		}
+		metrics.RecordServicesCount(bouquetName, len(services))
 
-		items = append(items, playlist.Item{
-			Name:    name,
-			TvgID:   makeStableIDFromSRef(ref),
-			TvgLogo: piconURL,
-			Group:   cfg.Bouquet,
-			URL:     streamURL,
-		})
+		for _, s := range services {
+			name, ref := s[0], s[1]
+			streamURL, err := client.StreamURL(ref, name)
+			if err != nil {
+				logger.Warn().Err(err).Str("service", name).Msg("failed to build stream URL")
+				metrics.IncStreamURLBuild("failure")
+				metrics.IncRefreshFailure("streamurl")
+				continue
+			}
+			metrics.IncStreamURLBuild("success")
+
+			piconURL := ""
+			if cfg.PiconBase != "" {
+				piconURL = openwebif.PiconURL(cfg.PiconBase, ref)
+			}
+
+			// Naive channel type classification based on name/ref hints.
+			lr := strings.ToLower(name + " " + ref)
+			switch {
+			case strings.Contains(lr, "radio") || strings.HasPrefix(ref, "1:0:2:"):
+				radio++
+			case strings.Contains(lr, "hd"):
+				hd++
+			case strings.Contains(lr, "sd"):
+				sd++
+			default:
+				unknown++
+			}
+
+			items = append(items, playlist.Item{
+				Name:    name,
+				TvgID:   makeStableIDFromSRef(ref),
+				TvgLogo: piconURL,
+				Group:   bouquetName, // Use actual bouquet name as group
+				URL:     streamURL,
+			})
+		}
 	}
 	metrics.RecordChannelTypeCounts(hd, sd, radio, unknown)
 

@@ -80,6 +80,8 @@ func main() {
 		Version:       Version,
 		DataDir:       env("XG2G_DATA", "/data"),
 		OWIBase:       env("XG2G_OWI_BASE", "http://10.10.55.57"),
+		OWIUsername:   env("XG2G_OWI_USER", ""),
+		OWIPassword:   env("XG2G_OWI_PASS", ""),
 		Bouquet:       env("XG2G_BOUQUET", "Premium"),
 		PiconBase:     env("XG2G_PICON_BASE", ""),
 		XMLTVPath:     env("XG2G_XMLTV", ""),
@@ -118,6 +120,7 @@ func main() {
 		Str("event", "config").
 		Str("data", cfg.DataDir).
 		Str("owi", maskURL(cfg.OWIBase)).
+		Bool("owi_auth", cfg.OWIUsername != ""). // Log if auth is enabled
 		Str("bouquet", cfg.Bouquet).
 		Str("xmltv", cfg.XMLTVPath).
 		Int("fuzzy", cfg.FuzzyMax).

@@ -16,6 +16,18 @@ XG2G_LISTEN=:8080 \
 go run ./cmd/daemon
 ```
 
+With HTTP Basic Auth and multiple bouquets:
+
+```bash
+XG2G_DATA=./data \
+XG2G_OWI_BASE=http://receiver.local \
+XG2G_OWI_USER=root \
+XG2G_OWI_PASS=secret \
+XG2G_BOUQUET="Premium,Favourites,Sports" \
+XG2G_LISTEN=:8080 \
+go run ./cmd/daemon
+```
+
 ## Usage Notes
 
 xg2g converts OpenWebIF bouquets into M3U and XMLTV artifacts and exposes a small HTTP API. It acts as a preprocessing fetcher/generator and does not replace middleware such as xTeVe or Threadfin. Those tools still handle channel mapping, EPG merging, proxy streaming, and transcoding.
@@ -84,7 +96,9 @@ Key environment variables:
 | --------------------- | -------- | --------- | -------- | ------------------------------------------------------------------------------------------- |
 | `XG2G_DATA`           | path     | `./data`  | yes      | Target folder for generated artifacts and `/files` serving                                  |
 | `XG2G_OWI_BASE`       | url      | `-`       | yes      | Base URL of the OpenWebIF instance (receiver)                                               |
-| `XG2G_BOUQUET`        | string   | `-`       | yes      | Bouquet name or ID to fetch (e.g. `Favourites`)                                             |
+| `XG2G_OWI_USER`       | string   | `(empty)` | no       | HTTP Basic Auth username for OpenWebIF (optional)                                           |
+| `XG2G_OWI_PASS`       | string   | `(empty)` | no       | HTTP Basic Auth password for OpenWebIF (optional)                                           |
+| `XG2G_BOUQUET`        | string   | `-`       | yes      | Bouquet name(s) to fetch (e.g. `Favourites` or `Premium,Sports` for multiple)              |
 | `XG2G_XMLTV`          | string   | `(empty)` | no       | Optional output path for XMLTV. If set, writes to this path. Relative paths resolved against `XG2G_DATA`. |
 | `XG2G_PICON_BASE`     | url/path | `(empty)` | no       | Base URL or path for picon images; defaults to OpenWebIF derivation                         |
 | `XG2G_FUZZY_MAX`      | int      | `2`       | no       | Max Levenshtein distance for fuzzy matching EPG names                                       |

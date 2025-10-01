@@ -33,6 +33,8 @@ type Client struct {
 	maxRetries int
 	backoff    time.Duration
 	maxBackoff time.Duration
+	username   string
+	password   string
 }
 
 type Options struct {
@@ -41,6 +43,8 @@ type Options struct {
 	MaxRetries            int
 	Backoff               time.Duration
 	MaxBackoff            time.Duration
+	Username              string
+	Password              string
 }
 
 const (
@@ -144,6 +148,8 @@ func NewWithPort(base string, streamPort int, opts Options) *Client {
 		maxRetries: nopts.MaxRetries,
 		backoff:    nopts.Backoff,
 		maxBackoff: nopts.MaxBackoff,
+		username:   opts.Username,
+		password:   opts.Password,
 	}
 }
 
@@ -551,6 +557,11 @@ func (c *Client) get(ctx context.Context, path, operation string, decorate func(
 					Msg("failed to build OpenWebIF request")
 				err = reqErr
 				return
+			}
+
+			// Add HTTP Basic Auth if credentials are provided
+			if c.username != "" && c.password != "" {
+				req.SetBasicAuth(c.username, c.password)
 			}
 
 			start := time.Now()
