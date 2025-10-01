@@ -328,6 +328,39 @@ func TestMiddlewareChain(t *testing.T) {
 	assert.GreaterOrEqual(t, len(reqID), 8)
 }
 
+func TestAdvancedPathTraversal(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "TestAdvancedPathTraversal*")
+	require.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	// Create a benign file to make data dir non-empty
+	require.NoError(t, os.WriteFile(filepath.Join(tempDir, "ok.txt"), []byte("ok"), 0644))
+
+	cfg := jobs.Config{DataDir: tempDir}
+	server := New(cfg)
+	handler := server.Handler()
+
+	attacks := []string{
+		"%252e%252e%252f",     // double encoded ../
+		"%252E%252E%252F",     // double encoded uppercase
+		"..%00.txt",            // null byte injection (literal)
+		"%00..%00/",           // encoded NUL around traversal
+		"\u002e\u002e/",       // unicode dots (escape in string literal)
+		"%c0%ae%c0%ae/",       // overlong UTF-8 for '..'
+		"%2E%2E/%2E%2E/secret", // mixed case single-encoded
+	}
+
+	for _, attack := range attacks {
+		t.Run(attack, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/files/"+attack, nil)
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, req)
+
+			assert.Equal(t, http.StatusForbidden, rr.Code, "expected 403 for attack vector")
+		})
+	}
+}
+
 // getMetrics is a test helper to scrape metrics from a registry.
 func getMetrics(reg *prometheus.Registry) (string, error) {
 	var h http.Handler

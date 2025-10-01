@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/gorilla/mux"
+	"golang.org/x/text/unicode/norm"
 )
 
 type Server struct {
@@ -270,6 +272,57 @@ func checkFile(ctx context.Context, path string) bool {
 	return true
 }
 
+// isPathTraversal performs robust checks against path traversal attempts.
+// It decodes the input multiple times to catch double-encoding, applies
+// Unicode normalization, and searches for dangerous sequences including NULs.
+func isPathTraversal(p string) bool {
+	// Work on a copy
+	decoded := p
+	// Attempt multiple decode passes to catch double/triple encodings
+	for i := 0; i < 3; i++ {
+		prev := decoded
+		if d, err := url.PathUnescape(decoded); err == nil {
+			decoded = d
+		} else {
+			// As a fallback, try query unescape in case of stray '+' or query-like encoding
+			if d2, err2 := url.QueryUnescape(decoded); err2 == nil {
+				decoded = d2
+			}
+		}
+		if decoded == prev {
+			break
+		}
+	}
+
+	lower := strings.ToLower(decoded)
+	// Immediate dangerous byte patterns, independent of platform
+	dangerSubstrings := []string{
+		"..",       // parent traversal
+		"..\\",     // windows-style backslash
+		"%00",     // encoded NUL
+		"\x00",    // literal NUL escape (defense-in-depth; may not appear literally)
+		"%c0%ae",  // overlong UTF-8 for '.'
+		"%e0%80%ae", // another overlong variant
+	}
+	for _, pat := range dangerSubstrings {
+		if strings.Contains(lower, pat) {
+			return true
+		}
+	}
+	// Literal NUL after decoding
+	if strings.Contains(decoded, "\x00") || strings.IndexByte(decoded, 0x00) >= 0 {
+		return true
+	}
+
+	// Normalize and check again for dot-dot
+	normalized := strings.ToLower(norm.NFC.String(decoded))
+	if strings.Contains(normalized, "..") || strings.Contains(normalized, "..\\") {
+		return true
+	}
+
+	return false
+}
+
 // secureFileServer creates a handler that serves files from the data directory
 // with several security checks in place.
 func (s *Server) secureFileServer() http.Handler {
@@ -284,9 +337,9 @@ func (s *Server) secureFileServer() http.Handler {
 		}
 
 		path := r.URL.Path
-		// Early traversal detection including URL-encoded attempts
-		lower := strings.ToLower(path)
-		if strings.Contains(path, "..") || strings.Contains(lower, "%2e%2e") {
+		// Enhanced traversal detection including multiple URL-decode passes,
+		// Unicode normalization, mixed-case encodings, and NUL bytes.
+		if isPathTraversal(path) {
 			logger.Warn().Str("event", "file_req.denied").Str("path", r.URL.Path).Str("reason", "path_escape").Msg("detected traversal sequence")
 			recordFileRequestDenied("path_escape")
 			http.Error(w, "Forbidden", http.StatusForbidden)
