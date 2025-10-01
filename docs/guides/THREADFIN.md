@@ -3,7 +3,7 @@
 ## 🎯 Quick Setup für Threadfin
 
 **xg2g Service URLs:**
-```
+```text
 M3U Playlist:  http://localhost:8080/files/playlist.m3u
 XMLTV EPG:     http://localhost:8080/files/xmltv.xml
 ```
@@ -11,14 +11,14 @@ XMLTV EPG:     http://localhost:8080/files/xmltv.xml
 ## 🔧 Threadfin Konfiguration
 
 ### 1. M3U Playlist hinzufügen
-```
+```text
 Name: xg2g Premium Bouquet
 URL:  http://localhost:8080/files/playlist.m3u
 Type: M3U
 ```
 
-### 2. XMLTV EPG hinzufügen  
-```
+### 2. XMLTV EPG hinzufügen
+```text
 Name: xg2g EPG Data
 URL:  http://localhost:8080/files/xmltv.xml
 Type: XMLTV
@@ -65,9 +65,9 @@ curl -X POST http://localhost:8080/api/refresh \
 ## 📊 Monitoring
 
 **Health-Check URLs:**
-```
+```text
 Status:     http://localhost:8080/api/status
-Health:     http://localhost:8080/healthz  
+Health:     http://localhost:8080/healthz
 Readiness:  http://localhost:8080/readyz
 Metrics:    http://localhost:9090/metrics
 ```
@@ -80,7 +80,7 @@ Metrics:    http://localhost:9090/metrics
 ## 🎯 Production Setup
 
 **Für Remote-Access:**
-```
+```text
 M3U:   http://<your-server-ip>:8080/files/playlist.m3u
 XMLTV: http://<your-server-ip>:8080/files/xmltv.xml
 ```

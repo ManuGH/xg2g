@@ -1,5 +1,4 @@
 # xg2g Production Operations Quick Reference
-# ===========================================
 
 ## 🚀 Go-Live (3 Steps)
 ```bash

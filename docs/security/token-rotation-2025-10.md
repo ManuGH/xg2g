@@ -3,12 +3,12 @@
 ## 🔐 API Token Rotation (Required)
 
 **Old Token (INVALIDATED):**
-```
+```text
 84a4a0474a35594af3777129bbade1c1
 ```
 
 **New Production Token:**
-```
+```text
 17c68be703c54b52f52ddec88a52590d
 ```
 
