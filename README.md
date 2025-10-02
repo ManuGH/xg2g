@@ -2,8 +2,8 @@
 
 ![CI](https://github.com/ManuGH/xg2g/actions/workflows/ci.yml/badge.svg)
 ![Docker](https://github.com/ManuGH/xg2g/actions/workflows/docker.yml/badge.svg)
-![Docker Pulls](https://img.shields.io/docker/pulls/manugh/xg2g)
 ![Go Version](https://img.shields.io/github/go-mod/go-version/ManuGH/xg2g)
+![Release](https://img.shields.io/github/v/release/ManuGH/xg2g)
 ![License](https://img.shields.io/github/license/ManuGH/xg2g)
 
 **Convert OpenWebIF bouquets to IPTV-ready M3U playlists and XMLTV EPG files.**
