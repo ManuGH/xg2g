@@ -1,48 +1,48 @@
-# Docker Compose Setup für xg2g
-# Konvertiert OpenWebIF Bouquets in M3U/XMLTV Dateien
+# Docker Compose Setup for xg2g
+# Converts OpenWebIF bouquets to M3U/XMLTV files
 
 services:
   xg2g:
     image: ghcr.io/manugh/xg2g:latest
     container_name: xg2g
     ports:
-      - "8080:8080"  # API und File-Server
+      - "8080:8080"  # API and file server
     environment:
-      # Pflichtfelder - BITTE ANPASSEN!
+      # Required - ADJUST THESE!
       - XG2G_DATA=/data
-      - XG2G_OWI_BASE=http://192.168.1.100  # IP deines VU+ Receivers
-      - XG2G_BOUQUET=Favourites             # Name des Bouquets
+      - XG2G_OWI_BASE=http://192.168.1.100  # Your receiver IP
+      - XG2G_BOUQUET=Favourites             # Bouquet name
       - XG2G_LISTEN=:8080
 
-      # XMLTV generieren (empfohlen!)
+      # Generate XMLTV (recommended!)
       - XG2G_XMLTV=xmltv.xml
 
-      # EPG (TV-Programm) aktivieren - lädt vollständige Programmdaten
-      - XG2G_EPG_ENABLED=true           # EPG aktivieren
-      - XG2G_EPG_DAYS=7                 # Anzahl Tage (1-14)
-      - XG2G_EPG_MAX_CONCURRENCY=5      # Parallel-Requests (1-10)
-      - XG2G_EPG_TIMEOUT_MS=15000       # Timeout pro Request in ms
-      - XG2G_EPG_RETRIES=2              # Retry-Versuche
+      # Enable EPG (TV program guide) - loads full program data
+      - XG2G_EPG_ENABLED=true           # Enable EPG
+      - XG2G_EPG_DAYS=7                 # Number of days (1-14)
+      - XG2G_EPG_MAX_CONCURRENCY=5      # Parallel requests (1-10)
+      - XG2G_EPG_TIMEOUT_MS=15000       # Timeout per request in ms
+      - XG2G_EPG_RETRIES=2              # Retry attempts
 
-      # Optional: Picon Base URL (Channel-Logos)
+      # Optional: Picon base URL (channel logos)
       # - XG2G_PICON_BASE=http://192.168.1.100/picon
 
-      # Optional: Fuzzy Matching für EPG-Namen
+      # Optional: Fuzzy matching for EPG names
       - XG2G_FUZZY_MAX=2
 
-      # Optional: Stream Port (Standard: 8001)
+      # Optional: Stream port (default: 8001)
       # - XG2G_STREAM_PORT=8001
 
-      # Optional: Prometheus Metriken
+      # Optional: Prometheus metrics
       - XG2G_METRICS_LISTEN=:9090
 
-      # Optional: Retry-Konfiguration
+      # Optional: Retry configuration
       - XG2G_OWI_TIMEOUT_MS=10000  # Request timeout in ms
       - XG2G_OWI_RETRIES=3         # Number of retry attempts
       - XG2G_OWI_BACKOFF_MS=500    # Base backoff delay in ms
 
     volumes:
-      - ./data:/data  # Hier werden M3U und XMLTV gespeichert
+      - ./data:/data  # M3U and XMLTV files stored here
 
     restart: unless-stopped
 
