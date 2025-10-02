@@ -85,7 +85,7 @@ xg2g produces the M3U/XMLTV basis for downstream middleware. It does not perform
 ## Generated Artifacts
 
 - `playlist.m3u` — M3U playlist with `#EXTINF` attributes (tvg-id, tvg-name, group-title, tvg-logo) and stable tvg-id values.
-- `xmltv.xml` — XMLTV channel definitions (programs currently not populated by default).
+- `xmltv.xml` — XMLTV file with channel definitions and optionally full EPG programme data (enable via `XG2G_EPG_ENABLED=true`).
 - `/files/*` — served by the HTTP API from the `XG2G_DATA` folder (e.g. `/files/playlist.m3u`).
 
 ## Configuration (ENV)
@@ -105,6 +105,16 @@ Key environment variables:
 | `XG2G_STREAM_PORT`    | int      | `8001`    | no       | Override for the OpenWebIF stream port (defaults to 8001)                                   |
 | `XG2G_METRICS_LISTEN` | address  | `(empty)` | no       | Prometheus metrics server listen address (e.g. `:9090`). Empty disables metrics. IPv6 needs brackets. |
 | `XG2G_PLAYLIST_FILENAME` | string | `playlist.m3u` | no | Filename for the generated playlist (used by readiness check)                               |
+
+EPG (Electronic Program Guide) configuration:
+
+| Variable                  | Type    | Default | Required | Description                                                                                 |
+| ------------------------- | ------- | ------- | -------- | ------------------------------------------------------------------------------------------- |
+| `XG2G_EPG_ENABLED`        | bool    | `false` | no       | Enable EPG programme data collection (adds `<programme>` entries to XMLTV)                  |
+| `XG2G_EPG_DAYS`           | int     | `3`     | no       | Number of days to fetch EPG data (1-14 days)                                                |
+| `XG2G_EPG_MAX_CONCURRENCY`| int     | `3`     | no       | Maximum parallel EPG requests (1-10, tune based on receiver capacity)                       |
+| `XG2G_EPG_TIMEOUT_MS`     | int     | `15000` | no       | Timeout per EPG request in milliseconds (5000-60000)                                        |
+| `XG2G_EPG_RETRIES`        | int     | `2`     | no       | Retry attempts for failed EPG requests (0-5)                                                |
 
 Server timeouts and limits (HTTP listener):
 
@@ -275,7 +285,7 @@ Use structured logs with consistent fields (`attempt`, `duration_ms`, `error_cla
 
 > **English-only Policy**: All communication in this repository (issues, pull requests, documentation, code comments) must be in English to ensure accessibility for the global community.
 
-- XMLTV currently only contains channel definitions by default; the fuzzy matcher exists for later EPG integration.
+- XMLTV generation supports both channel definitions and full EPG programme data (see `XG2G_EPG_ENABLED` and related ENV variables).
 - Configuration is ENV-only (no config files). See `cmd/daemon/main.go` and `internal/jobs/refresh.go` for how ENV variables are read.
 
 Please refer to [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
