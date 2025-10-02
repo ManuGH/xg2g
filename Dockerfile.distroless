@@ -17,10 +17,10 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
   -ldflags="-s -w -X 'main.Version=${BUILD_REF}'" \
   -o /out/xg2g ./cmd/daemon
 
-# Runtime stage (distroless with CA certs, non-root)
-FROM gcr.io/distroless/base-debian12:nonroot
+# Runtime stage (distroless with CA certs, running as root for volume compatibility)
+FROM gcr.io/distroless/base-debian12:latest
 WORKDIR /app
-# Copy binary; default user is nonroot in this image
+# Copy binary
 COPY --from=builder /out/xg2g /app/xg2g
 
 # Data volume for runtime artifacts (playlist, xmltv, picons)

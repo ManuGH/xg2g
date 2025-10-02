@@ -13,11 +13,10 @@ RUN BUILD_REF="${GIT_REF:-${VERSION:-dev}}" && \
   -o /out/xg2g ./cmd/daemon
 
 FROM alpine:3.20.1
-RUN adduser -D -H -s /sbin/nologin -u 1000 app && \
-  apk add --no-cache ca-certificates tzdata wget
-USER app
+RUN apk add --no-cache ca-certificates tzdata wget
 WORKDIR /app
-COPY --from=builder --chown=app:app /out/xg2g .
+COPY --from=builder /out/xg2g .
+RUN chmod +x /app/xg2g
 VOLUME ["/data"]
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
