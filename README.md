@@ -4,9 +4,51 @@
 ![Docker](https://github.com/ManuGH/xg2g/actions/workflows/docker.yml/badge.svg)
 ![License](https://img.shields.io/github/license/ManuGH/xg2g)
 
-## Quick Start
+**Convert OpenWebIF bouquets to IPTV-ready M3U playlists and XMLTV EPG files.**
 
-Run locally:
+---
+
+## 🚀 Quick Start
+
+### Docker (Recommended)
+
+```bash
+docker run -d \
+  --name xg2g \
+  -p 8080:8080 \
+  -e XG2G_OWI_BASE=http://192.168.1.100 \
+  -e XG2G_BOUQUET=Favourites \
+  -e XG2G_DATA=/data \
+  -e XG2G_XMLTV=xmltv.xml \
+  -v $(pwd)/data:/data \
+  ghcr.io/manugh/xg2g:latest
+```
+
+**Your files are ready at:**
+- M3U: `http://localhost:8080/files/playlist.m3u`
+- XMLTV: `http://localhost:8080/files/xmltv.xml`
+
+### Docker Compose
+
+See [docker-compose.yml](docker-compose.yml) in repo root, or use:
+
+```yaml
+services:
+  xg2g:
+    image: ghcr.io/manugh/xg2g:latest
+    ports:
+      - "8080:8080"
+    environment:
+      - XG2G_DATA=/data
+      - XG2G_OWI_BASE=http://192.168.1.100
+      - XG2G_BOUQUET=Favourites
+      - XG2G_XMLTV=xmltv.xml
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+```
+
+### Local Development
 
 ```bash
 XG2G_DATA=./data \
@@ -16,71 +58,25 @@ XG2G_LISTEN=:8080 \
 go run ./cmd/daemon
 ```
 
-With HTTP Basic Auth and multiple bouquets:
-
-```bash
-XG2G_DATA=./data \
-XG2G_OWI_BASE=http://receiver.local \
-XG2G_OWI_USER=root \
-XG2G_OWI_PASS=secret \
-XG2G_BOUQUET="Premium,Favourites,Sports" \
-XG2G_LISTEN=:8080 \
-go run ./cmd/daemon
-```
+---
 
 ## Usage Notes
 
 xg2g converts OpenWebIF bouquets into M3U and XMLTV artifacts and exposes a small HTTP API. It acts as a preprocessing fetcher/generator and does not replace middleware such as xTeVe or Threadfin. Those tools still handle channel mapping, EPG merging, proxy streaming, and transcoding.
 
-## Docker Deployment
+## Production Deployment
 
-Recommended structure on Linux hosts (example under `/opt`):
+For production setups, see:
+- [DEPLOYMENT.md](docs/DEPLOYMENT.md) - Production deployment guides
+- [PRODUCTION_OPS.md](docs/PRODUCTION_OPS.md) - Operations and monitoring
+- [docker-compose.production.yml](docker-compose.production.yml) - Production compose example
 
-- `/opt/xg2g/config` - store `docker-compose.yml`, `.env`, and other configuration files.
-- `/opt/xg2g/data` - bind mount for generated artifacts (`playlist.m3u`, `xmltv.xml`, picons ...).
-
-Example setup:
-
+Recommended directory structure for Linux hosts:
 ```bash
-sudo mkdir -p /opt/xg2g/{config,data}
-cp docker-compose.yml /opt/xg2g/config/
-# edit docker-compose.yml: port mapping, XG2G_OWI_BASE, XG2G_BOUQUET, XG2G_LISTEN, etc.
-cd /opt/xg2g/config
-docker compose config    # validate file
-docker compose up -d
+/opt/xg2g/
+├── config/          # docker-compose.yml, .env
+└── data/            # Generated files (playlist.m3u, xmltv.xml)
 ```
-
-Check status:
-
-```bash
-curl http://<host>:8080/api/status
-```
-
-Optional: Dockge or other orchestration front ends can point to the same compose stack — keep `/opt/xg2g/data` mounted so the generated files persist.
-
-### Example docker-compose.yml
-
-```yaml
-# Using the Compose Specification; no version field required
-services:
-  xg2g:
-    image: ghcr.io/manugh/xg2g:latest
-    container_name: xg2g
-    ports:
-      - "8080:8080"          # host:container (adjust if needed)
-    environment:
-      - XG2G_DATA=/data
-      - XG2G_OWI_BASE=http://receiver.local
-      - XG2G_BOUQUET=Favourites
-      - XG2G_LISTEN=:8080    # optional, defaults to :8080
-    volumes:
-      - /opt/xg2g/data:/data
-    restart: unless-stopped
-```
-
-## Reminder
-
-xg2g produces the M3U/XMLTV basis for downstream middleware. It does not perform channel mapping, EPG merging, proxy streaming, or transcoding by itself.
 
 ## Generated Artifacts
 
