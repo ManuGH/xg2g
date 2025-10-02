@@ -89,6 +89,12 @@ go run ./cmd/daemon
 
 xg2g converts OpenWebIF bouquets into M3U and XMLTV artifacts and exposes a small HTTP API. It acts as a preprocessing fetcher/generator and does not replace middleware such as xTeVe or Threadfin. Those tools still handle channel mapping, EPG merging, proxy streaming, and transcoding.
 
+**Multiple Bouquets:** xg2g supports loading multiple bouquets in a single instance. Use a comma-separated list:
+```bash
+XG2G_BOUQUET="Premium,Favourites,Sports"
+```
+All channels from all specified bouquets will be merged into one M3U playlist and one XMLTV file.
+
 ## Production Deployment
 
 For production setups, see:
