@@ -9,7 +9,6 @@
 # Test binary, build output
 *.test
 *.out
-*.out
 coverage.out
 coverage.html
 *.prof
@@ -37,34 +36,24 @@ data/
 *.m3u
 *.xml
 *.gz
-!internal/epg/testdata/*.golden.xml
-
-# Ensure generated artifacts aren't committed
-/data/
-playlist.m3u
-guide.xml
-
-# IDE/Editor
-.vscode/
-.idea/
-.DS_Store
-# local data
-/data/
-data/
-*.m3u
-*.xml
 
 # Build artifacts (binaries at repo root only)
 /xg2g
 /daemon
 /daemon-*
 
-# Temporary files
+# IDE/Editor
+.vscode/
+.idea/
+.DS_Store
+
+# Cache and temporary files
+.cache/
+/tmp/
 .codex_patch.diff
 
-# Keep test golden files
+# Keep test golden files (exceptions to *.xml rule)
+!internal/epg/testdata/*.golden.xml
 !internal/epg/testdata/xmltv.golden.xml
 !internal/epg/testdata/multi_channel.golden.xml
 !internal/epg/testdata/empty.golden.xml
-.cache/
-/tmp/
