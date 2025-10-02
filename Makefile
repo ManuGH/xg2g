@@ -11,7 +11,9 @@
         security security-scan security-audit security-vulncheck \
 	hardcore-test quality-gates pre-commit install dev-tools check-tools \
 	pin-digests compose-up-alpine compose-up-distroless k8s-apply-alpine k8s-apply-distroless \
-        release-check release-build release-tag release-notes
+        release-check release-build release-tag release-notes \
+        dev up down status prod-up prod-down mon-up mon-down logs prod-logs mon-logs \
+        restart prod-restart ps prod-ps mon-ps k8s-secret-apply k8s-secret-delete
 
 # ===================================================================================================
 # Configuration and Variables
@@ -101,12 +103,36 @@ help: ## Show this help message
 	@echo "  check-tools    Verify development tools are installed"
 	@echo "  pre-commit     Run pre-commit validation checks"
 	@echo ""
+	@echo "Development & Local:"
+	@echo "  dev            Run daemon locally with .env configuration"
+	@echo "  up             Start docker-compose.yml stack"
+	@echo "  down           Stop docker-compose.yml stack"
+	@echo "  status         Check API status endpoint"
+	@echo "  logs           Show service logs (SVC=name to filter)"
+	@echo "  restart        Restart service (SVC=name, defaults to xg2g)"
+	@echo "  ps             Show running containers"
+	@echo ""
+	@echo "Production Operations:"
+	@echo "  prod-up        Start production docker-compose stack"
+	@echo "  prod-down      Stop production stack"
+	@echo "  prod-logs      Show production logs"
+	@echo "  prod-restart   Restart production service"
+	@echo "  prod-ps        Show production containers"
+	@echo ""
+	@echo "Monitoring:"
+	@echo "  mon-up         Start monitoring stack (Prometheus + Grafana + AlertManager)"
+	@echo "  mon-down       Stop monitoring stack"
+	@echo "  mon-logs       Show monitoring logs"
+	@echo "  mon-ps         Show monitoring containers"
+	@echo ""
 	@echo "Deployment Helpers:"
 	@echo "  pin-digests            Replace <OWNER> and digest placeholders in deploy/ templates"
 	@echo "  compose-up-alpine      Start Alpine image via docker compose (deploy/docker-compose.alpine.yml)"
 	@echo "  compose-up-distroless  Start Distroless image via docker compose (deploy/docker-compose.distroless.yml)"
 	@echo "  k8s-apply-alpine       Apply Kubernetes Alpine manifest (deploy/k8s-alpine.yaml)"
 	@echo "  k8s-apply-distroless   Apply Kubernetes Distroless manifest (deploy/k8s-distroless.yaml)"
+	@echo "  k8s-secret-apply       Apply xg2g K8s secret (set NS and TOKEN)"
+	@echo "  k8s-secret-delete      Delete xg2g K8s secret"
 	@echo ""
 	@echo "Release Management:"
 	@echo "  release-check  Validate release readiness"
@@ -464,3 +490,105 @@ k8s-secret-apply: ## Apply xg2g secret (set NS and TOKEN; TOKEN will be base64-e
 k8s-secret-delete: ## Delete xg2g secret
 	kubectl -n "$${NS:-default}" delete secret xg2g-secrets --ignore-not-found
 	@echo "✅ Secret deleted (if existed) in namespace $$\{NS:-default\}"
+
+# ===================================================================================================
+# Development & Local Orchestration
+# ===================================================================================================
+
+dev: ## Run daemon locally with .env configuration
+	@echo "Starting xg2g in development mode..."
+	@if [ ! -f .env ]; then \
+		echo "⚠️  No .env file found. Creating from .env.example..."; \
+		cp .env.example .env; \
+		echo "📝 Please edit .env with your settings"; \
+		exit 1; \
+	fi
+	@echo "Loading configuration from .env..."
+	@set -a; . ./.env; set +a; \
+	XG2G_DATA=$${XG2G_DATA:-./data} \
+	XG2G_OWI_BASE=$${XG2G_OWI_BASE:?Set XG2G_OWI_BASE in .env} \
+	XG2G_BOUQUET=$${XG2G_BOUQUET:?Set XG2G_BOUQUET in .env} \
+	XG2G_LISTEN=$${XG2G_LISTEN:-:8080} \
+	go run ./cmd/daemon
+
+up: ## Start docker-compose.yml stack
+	@echo "Starting xg2g via docker compose..."
+	@docker compose up -d
+	@echo "✅ Stack started. Access at http://localhost:8080"
+	@echo "📊 Check status: make status"
+
+down: ## Stop docker-compose.yml stack
+	@echo "Stopping xg2g stack..."
+	@docker compose down
+	@echo "✅ Stack stopped"
+
+status: ## Check API status endpoint
+	@echo "Checking xg2g API status..."
+	@curl -s http://localhost:8080/api/status | jq . || \
+		curl -s http://localhost:8080/api/status || \
+		echo "❌ Service not responding. Is it running? (make up / make dev)"
+
+logs: ## Show service logs (use SVC=service-name to filter)
+	@if [ -n "$$SVC" ]; then \
+		echo "Showing logs for service: $$SVC"; \
+		docker compose logs -f $$SVC; \
+	else \
+		echo "Showing logs for all services..."; \
+		docker compose logs -f; \
+	fi
+
+restart: ## Restart service (use SVC=service-name, defaults to xg2g)
+	@SVC=$${SVC:-xg2g}; \
+	echo "Restarting service: $$SVC"; \
+	docker compose restart $$SVC; \
+	echo "✅ Service $$SVC restarted"
+
+ps: ## Show running containers
+	@docker compose ps
+
+# ===================================================================================================
+# Production Operations & Monitoring
+# ===================================================================================================
+
+prod-up: ## Start production docker-compose stack
+	@echo "Starting production stack..."
+	@docker compose -f docker-compose.production.yml up -d
+	@echo "✅ Production stack started"
+	@echo "📊 Metrics: http://localhost:9090/metrics"
+
+prod-down: ## Stop production stack
+	@echo "Stopping production stack..."
+	@docker compose -f docker-compose.production.yml down
+	@echo "✅ Production stack stopped"
+
+prod-logs: ## Show production stack logs
+	@echo "Showing production logs..."
+	@docker compose -f docker-compose.production.yml logs -f
+
+prod-restart: ## Restart production service
+	@echo "Restarting production service..."
+	@docker compose -f docker-compose.production.yml restart xg2g
+	@echo "✅ Production service restarted"
+
+prod-ps: ## Show production containers
+	@docker compose -f docker-compose.production.yml ps
+
+mon-up: ## Start monitoring stack (Prometheus + Grafana + AlertManager)
+	@echo "Starting monitoring stack..."
+	@docker compose -f docker-compose.monitoring.yml up -d
+	@echo "✅ Monitoring stack started"
+	@echo "📊 Grafana: http://localhost:3000 (admin/admin)"
+	@echo "📈 Prometheus: http://localhost:9091"
+	@echo "🔔 AlertManager: http://localhost:9093"
+
+mon-down: ## Stop monitoring stack
+	@echo "Stopping monitoring stack..."
+	@docker compose -f docker-compose.monitoring.yml down
+	@echo "✅ Monitoring stack stopped"
+
+mon-logs: ## Show monitoring stack logs
+	@echo "Showing monitoring logs..."
+	@docker compose -f docker-compose.monitoring.yml logs -f
+
+mon-ps: ## Show monitoring containers
+	@docker compose -f docker-compose.monitoring.yml ps
