@@ -327,10 +327,13 @@ docker-clean: ## Remove Docker build cache
 sbom: dev-tools ## Generate Software Bill of Materials
 	@echo "Generating SBOM..."
 	@mkdir -p dist
-	@"$(SYFT)" packages dir:. -o spdx-json=dist/sbom.spdx.json
-	@"$(SYFT)" packages dir:. -o cyclonedx-json=dist/sbom.cyclonedx.json
-	@"$(SYFT)" packages dir:. -o table=dist/sbom.txt
-	@echo "✅ SBOM generated:"
+	@"$(SYFT)" scan dir:. -o spdx-json --source-name xg2g --source-version $(VERSION) > dist/sbom.spdx.json
+	@"$(SYFT)" scan dir:. -o cyclonedx-json --source-name xg2g --source-version $(VERSION) > dist/sbom.cyclonedx.json
+	@"$(SYFT)" scan dir:. -o syft-table --source-name xg2g --source-version $(VERSION) > dist/sbom.txt
+	@echo "Validating SBOM files..."
+	@jq -e '.spdxVersion' dist/sbom.spdx.json > /dev/null || (echo "❌ SPDX SBOM validation failed"; exit 1)
+	@jq -e '.bomFormat == "CycloneDX"' dist/sbom.cyclonedx.json > /dev/null || (echo "❌ CycloneDX SBOM validation failed"; exit 1)
+	@echo "✅ SBOM generated and validated:"
 	@echo "   - SPDX: dist/sbom.spdx.json"
 	@echo "   - CycloneDX: dist/sbom.cyclonedx.json"
 	@echo "   - Table: dist/sbom.txt"
