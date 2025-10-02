@@ -67,6 +67,8 @@ services:
     volumes:
       - ./data:/data
     restart: unless-stopped
+    # Optional: Run as non-root for additional security (requires proper data dir permissions)
+    # user: "1000:1000"
 ```
 
 ### Local Development
@@ -431,7 +433,9 @@ Keep your branch up to date with `main` to satisfy required checks and avoid sta
 
 ## Docker images
 
-The default Dockerfile uses Alpine (multi-stage) and includes an HTTP healthcheck via wget.
+The default Dockerfile uses Alpine (multi-stage) and includes an HTTP healthcheck via wget. By default, containers run as **root** for maximum compatibility with volume mounts (works out-of-the-box without permission issues).
+
+**Security Note:** For hardened deployments, add `user: "1000:1000"` to your compose file and ensure the data directory has proper permissions (`chown 1000:1000 ./data`).
 
 For a lean runtime image, a distroless variant is available as `Dockerfile.distroless` (no shell/tools, no built-in HEALTHCHECK; rely on orchestrator probes):
 
