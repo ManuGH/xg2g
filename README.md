@@ -281,6 +281,67 @@ Prometheus scrapes the in-cluster service via annotations on port `9090`. For Ku
 
 Use structured logs with consistent fields (`attempt`, `duration_ms`, `error_class`) for debugging.
 
+## Quality Gates & Engineering Standards
+
+This project enforces enterprise-grade quality standards through automated CI/CD gates:
+
+### Required Checks (Branch Protection)
+
+All pull requests to `main` must pass:
+
+- ✅ **Static Analysis & Security** - golangci-lint, go vet, gofmt
+- ✅ **Test with Race Detection** - Full test suite with `-race` flag
+- ✅ **Coverage Analysis** - Minimum 57% overall, 55% EPG module
+- ✅ **Dependency Security Check** - go mod verify, vulnerability audit
+- ✅ **Generate SBOM** - Software Bill of Materials (SPDX + CycloneDX)
+- ✅ **govulncheck** - Go vulnerability scanner (High/Critical = fail)
+- ✅ **CodeQL** - GitHub Advanced Security scanning
+- ✅ **Conventional Commits** - PR title must follow conventional commits format
+
+### Commit Convention
+
+PR titles must follow [Conventional Commits](https://www.conventionalcommits.org/):
+
+```
+type(scope): description
+
+Types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert
+```
+
+**Examples:**
+- `feat(api): add health check endpoint`
+- `fix(epg): handle empty programme list`
+- `docs: update deployment guide`
+- `chore(deps): bump Go to 1.24.4`
+
+### Code Review Requirements
+
+- ✅ All changes via Pull Request (no direct commits to `main`)
+- ✅ At least 1 approving review required
+- ✅ CODEOWNERS review for critical paths (CI, security, core logic)
+- ✅ Stale reviews automatically dismissed on new commits
+- ✅ Linear history enforced (no merge commits)
+- ✅ All conversations must be resolved
+
+### Dependency Management
+
+- 🤖 **Dependabot** automatically creates PRs for:
+  - Go module updates (weekly, Monday 03:00)
+  - GitHub Actions updates (weekly)
+  - Docker base image updates (weekly)
+- 📋 All dependency PRs labeled: `dependencies`, `go`/`ci`/`docker`
+
+### Release Process
+
+Releases include complete transparency and verification:
+
+- 📦 Multi-platform binaries (Linux, macOS, Windows - amd64/arm64)
+- 📄 SBOM (SPDX + CycloneDX + human-readable)
+- 🔐 SHA256 checksums for all artifacts
+- 📝 Auto-generated release notes from git history
+
+See [Makefile](Makefile) for local quality checks: `make test`, `make lint`, `make security`, `make hardcore-test`
+
 ## Contributing
 
 > **English-only Policy**: All communication in this repository (issues, pull requests, documentation, code comments) must be in English to ensure accessibility for the global community.
