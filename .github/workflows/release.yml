@@ -65,4 +65,5 @@ jobs:
             dist/xg2g-windows-amd64.zip
             dist/checksums.txt
             dist/sbom.spdx.json
+            dist/sbom.cyclonedx.json
             dist/sbom.txt
