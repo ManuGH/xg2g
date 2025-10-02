@@ -94,18 +94,35 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "🔧 Starting OpenWebIF stub server from project context..."
+          echo "🔧 Building OpenWebIF stub server..."
+          go build -v -o bin/stub_openwebif test/stub_openwebif.go
+
+          echo "🚀 Starting OpenWebIF stub server..."
 
           trap 'jobs -pr | xargs -r kill 2>/dev/null || true' EXIT
 
-          # Use existing stub server from test directory to maintain module context
-          nohup go run test/stub_openwebif.go > /tmp/stub_openwebif.log 2>&1 &
+          # Start stub server and capture output
+          ./bin/stub_openwebif > /tmp/stub_openwebif.log 2>&1 &
           STUB_PID=$!
           echo "🔧 Stub server started with PID: $STUB_PID"
 
+          # Give it a moment to start
+          sleep 1
+
+          # Check if process is still running
+          if ! kill -0 $STUB_PID 2>/dev/null; then
+            echo "❌ Stub server process died immediately" >&2
+            echo "📋 Stub server log:" >&2
+            cat /tmp/stub_openwebif.log || echo "No log available"
+            exit 1
+          fi
+
+          echo "📋 Initial stub server output:"
+          cat /tmp/stub_openwebif.log || echo "No log yet"
+
           ready=false
           for i in {1..50}; do
-            if curl -fsS --max-time 1 http://127.0.0.1:18080/api/bouquets >/dev/null; then
+            if curl -fsS --max-time 1 http://127.0.0.1:18080/api/bouquets >/dev/null 2>&1; then
               ready=true
               break
             fi
@@ -115,6 +132,8 @@ jobs:
             echo "❌ OpenWebIF stub did not become ready on port 18080" >&2
             echo "📋 Stub server log:" >&2
             cat /tmp/stub_openwebif.log || echo "No log available"
+            echo "🔍 Checking if port 18080 is in use:" >&2
+            netstat -tuln | grep 18080 || echo "Port not bound"
             exit 1
           fi
           echo "✅ OpenWebIF stub server ready on port 18080"

@@ -326,7 +326,7 @@ gh api repos/ManuGH/xg2g/branches/main/protection | jq '.required_status_checks'
 
 PR titles must follow [Conventional Commits](https://www.conventionalcommits.org/):
 
-```
+```text
 type(scope): description
 
 Types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert
