@@ -13,6 +13,9 @@ nano docker-compose.yml
 # Change:
 #   - XG2G_OWI_BASE=http://YOUR_RECEIVER_IP
 #   - XG2G_BOUQUET=YOUR_BOUQUET_NAME
+# If your receiver requires authentication, uncomment:
+#   - XG2G_OWI_USER=root
+#   - XG2G_OWI_PASS=your-password
 
 # 3. Start the service
 docker compose up -d

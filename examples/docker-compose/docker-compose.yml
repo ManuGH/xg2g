@@ -14,6 +14,10 @@ services:
       - XG2G_BOUQUET=Favourites             # Bouquet name
       - XG2G_LISTEN=:8080
 
+      # OpenWebIF Authentication (if your receiver requires login)
+      # - XG2G_OWI_USER=root                # Default username is often 'root'
+      # - XG2G_OWI_PASS=your-password       # Your receiver password
+
       # Generate XMLTV (recommended!)
       - XG2G_XMLTV=xmltv.xml
 
