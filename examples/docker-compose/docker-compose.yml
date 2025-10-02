@@ -14,13 +14,20 @@ services:
       - XG2G_BOUQUET=Favourites             # Name des Bouquets
       - XG2G_LISTEN=:8080
 
-      # Optional: XMLTV generieren
+      # XMLTV generieren (empfohlen!)
       - XG2G_XMLTV=xmltv.xml
 
-      # Optional: Picon Base URL
+      # EPG (TV-Programm) aktivieren - lädt vollständige Programmdaten
+      - XG2G_EPG_ENABLED=true           # EPG aktivieren
+      - XG2G_EPG_DAYS=7                 # Anzahl Tage (1-14)
+      - XG2G_EPG_MAX_CONCURRENCY=5      # Parallel-Requests (1-10)
+      - XG2G_EPG_TIMEOUT_MS=15000       # Timeout pro Request in ms
+      - XG2G_EPG_RETRIES=2              # Retry-Versuche
+
+      # Optional: Picon Base URL (Channel-Logos)
       # - XG2G_PICON_BASE=http://192.168.1.100/picon
 
-      # Optional: Fuzzy Matching für EPG
+      # Optional: Fuzzy Matching für EPG-Namen
       - XG2G_FUZZY_MAX=2
 
       # Optional: Stream Port (Standard: 8001)
