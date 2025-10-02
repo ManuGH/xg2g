@@ -1,0 +1,48 @@
+# Docker Compose Setup für xg2g
+# Konvertiert OpenWebIF Bouquets in M3U/XMLTV Dateien
+
+services:
+  xg2g:
+    image: ghcr.io/manugh/xg2g:latest
+    container_name: xg2g
+    ports:
+      - "8080:8080"  # API und File-Server
+    environment:
+      # Pflichtfelder - BITTE ANPASSEN!
+      - XG2G_DATA=/data
+      - XG2G_OWI_BASE=http://192.168.1.100  # IP deines VU+ Receivers
+      - XG2G_BOUQUET=Favourites             # Name des Bouquets
+      - XG2G_LISTEN=:8080
+
+      # Optional: XMLTV generieren
+      - XG2G_XMLTV=xmltv.xml
+
+      # Optional: Picon Base URL
+      # - XG2G_PICON_BASE=http://192.168.1.100/picon
+
+      # Optional: Fuzzy Matching für EPG
+      - XG2G_FUZZY_MAX=2
+
+      # Optional: Stream Port (Standard: 8001)
+      # - XG2G_STREAM_PORT=8001
+
+      # Optional: Prometheus Metriken
+      - XG2G_METRICS_LISTEN=:9090
+
+      # Optional: Retry-Konfiguration
+      - XG2G_OWI_TIMEOUT_MS=10000
+      - XG2G_OWI_RETRIES=3
+      - XG2G_OWI_BACKOFF_MS=500
+      - XG2G_OWI_MAX_BACKOFF_MS=2000
+
+    volumes:
+      - ./data:/data  # Hier werden M3U und XMLTV gespeichert
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/api/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s

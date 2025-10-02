@@ -51,7 +51,9 @@ docker run -d \
 
 ### Docker Compose
 
-See [docker-compose.yml](docker-compose.yml) in repo root, or use:
+**Quick Start:** Download ready-to-use template from [examples/docker-compose/](examples/docker-compose/)
+
+Or use this minimal example:
 
 ```yaml
 services:
