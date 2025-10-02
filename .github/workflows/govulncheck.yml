@@ -36,6 +36,30 @@ jobs:
         run: |
           govulncheck -format sarif ./... > govulncheck.sarif || echo '{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"govulncheck","informationUri":"https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck"}},"results":[]}]}' > govulncheck.sarif
 
+      - name: Fix SARIF duplicate tags
+        run: |
+          # Deduplicate tags in rules to fix GitHub SARIF validation
+          jq '
+            if .runs then
+              .runs |= map(
+                if .tool.driver.rules then
+                  .tool.driver.rules |= map(
+                    if .properties.tags then
+                      .properties.tags |= unique
+                    else
+                      .
+                    end
+                  )
+                else
+                  .
+                end
+              )
+            else
+              .
+            end
+          ' govulncheck.sarif > govulncheck.fixed.sarif
+          mv govulncheck.fixed.sarif govulncheck.sarif
+
       - name: Upload SARIF to code scanning
         if: always()
         uses: github/codeql-action/upload-sarif@v3

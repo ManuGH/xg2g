@@ -372,19 +372,63 @@ jobs:
       - name: Build daemon
         run: go build -o daemon ./cmd/daemon
 
-      - name: Build OpenWebIF stub
-        run: go build -o openwebif_stub ./test/stub_openwebif.go
-
-      - name: Start OpenWebIF stub
+      - name: Test version flag
         run: |
-          ./openwebif_stub --port 18080 > /tmp/openwebif_stub.log 2>&1 &
+          VERSION_OUTPUT=$(./daemon --version)
+          echo "Version: $VERSION_OUTPUT"
+          if [ -z "$VERSION_OUTPUT" ]; then
+            echo "❌ Version output is empty"
+            exit 1
+          fi
+          echo "✅ Version flag works"
+
+      - name: Start OpenWebIF stub + wait
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # 1) Build stub binary explicitly (clearer than go run)
+          go build -o /tmp/owi-stub ./test/stub_openwebif.go
+
+          # 2) Start in background with dedicated log
+          /tmp/owi-stub --port 18080 > /tmp/owi.log 2>&1 &
+          echo $! > /tmp/owi.pid
+          sleep 0.2
+
+          # 3) Verify process is alive
+          if ! kill -0 "$(cat /tmp/owi.pid)" 2>/dev/null; then
+            echo "❌ stub process died immediately"
+            sed -n '1,200p' /tmp/owi.log || true
+            exit 1
+          fi
+
+          # 4) Wait for readiness (max 30s)
           for i in {1..30}; do
-            curl -fsS http://127.0.0.1:18080/api/status >/dev/null && break
+            if curl -fsS http://127.0.0.1:18080/api/status >/dev/null 2>&1; then
+              echo "✅ stub ready after ${i}s"
+              break
+            fi
             sleep 1
+            # Check if process died during wait
+            if ! kill -0 "$(cat /tmp/owi.pid)" 2>/dev/null; then
+              echo "❌ stub terminated during wait"
+              sed -n '1,200p' /tmp/owi.log || true
+              exit 1
+            fi
+            if [[ $i -eq 30 ]]; then
+              echo "❌ stub not ready after 30s"
+              echo "Network status:"
+              ss -ltn || true
+              echo "Stub log:"
+              sed -n '1,200p' /tmp/owi.log || true
+              exit 1
+            fi
           done
-          curl -fsS http://127.0.0.1:18080/api/status || (echo "=== STUB LOG ==="; cat /tmp/openwebif_stub.log; exit 1)
+
+          echo "✅ OpenWebIF stub running on :18080 (PID $(cat /tmp/owi.pid))"
 
       - name: Run integration smoke test
+        timeout-minutes: 5
         run: |
           echo "Running integration smoke test with real stub..."
 
@@ -402,7 +446,7 @@ jobs:
           XG2G_LISTEN=:8080 \
           XG2G_METRICS_LISTEN=:9090 \
           XG2G_API_TOKEN="$API_TOKEN" \
-          timeout 10 ./daemon > /tmp/daemon.log 2>&1 &
+          ./daemon > /tmp/daemon.log 2>&1 &
           DAEMON_PID=$!
 
           # Give daemon time to start  
@@ -429,14 +473,26 @@ jobs:
           ss -ltn | grep ':8080' || echo "Port 8080 not bound yet"
 
           # Verify daemon is listening on expected port (with brief retry)
-          for i in $(seq 1 10); do
+          echo "⏳ Waiting for daemon to bind port 8080..."
+          PORT_BOUND=false
+          for i in $(seq 1 20); do
             if ss -ltn sport = :8080 | grep -q ':8080'; then
+              PORT_BOUND=true
+              echo "✅ Port 8080 is bound (attempt $i)"
               break
+            fi
+            # Check if daemon process is still alive
+            if ! kill -0 $DAEMON_PID 2>/dev/null; then
+              echo "❌ Daemon process died before binding port"
+              echo "📋 Daemon log:"
+              cat /tmp/daemon.log || echo "No daemon log found"
+              exit 1
             fi
             sleep 0.5
           done
-          if ! ss -ltn sport = :8080 | grep -q ':8080'; then
-            echo "❌ Daemon is not listening on port 8080"
+
+          if [ "$PORT_BOUND" = "false" ]; then
+            echo "❌ Daemon is not listening on port 8080 after 10 seconds"
             echo "📋 Daemon log contents:"
             cat /tmp/daemon.log || echo "No daemon log found"
             echo "📋 Network status:"
@@ -511,8 +567,10 @@ jobs:
           echo "  - Daemon base: $DAEMON_BASE"
 
           # Cleanup
-          kill $DAEMON_PID || true
-          pkill -f stub_openwebif || true
+          kill $DAEMON_PID 2>/dev/null || true
+          if [ -f /tmp/owi.pid ]; then
+            kill "$(cat /tmp/owi.pid)" 2>/dev/null || true
+          fi
 
   # Integration Gate
   integration-gate:

@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
@@ -54,6 +55,14 @@ func maskURL(rawURL string) string {
 }
 
 func main() {
+	// Handle --version flag
+	showVersion := flag.Bool("version", false, "print version and exit")
+	flag.Parse()
+	if *showVersion {
+		fmt.Println(Version)
+		os.Exit(0)
+	}
+
 	logger := xglog.WithComponent("daemon")
 
 	// Create a context that listens for the interrupt signal from the OS.

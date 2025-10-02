@@ -298,6 +298,30 @@ All pull requests to `main` must pass:
 - ✅ **CodeQL** - GitHub Advanced Security scanning
 - ✅ **Conventional Commits** - PR title must follow conventional commits format
 
+**Adding New Required Checks**:
+
+When adding a new CI job that should be required for PR merges:
+
+```bash
+# View current required checks
+gh api repos/ManuGH/xg2g/branches/main/protection | jq '.required_status_checks.contexts'
+
+# Add new check (must include all existing checks)
+gh api -X PATCH repos/ManuGH/xg2g/branches/main/protection/required_status_checks \
+  -f strict=true \
+  -f contexts[]='Static Analysis & Security' \
+  -f contexts[]='Test with Race Detection' \
+  -f contexts[]='Coverage Analysis' \
+  -f contexts[]='Dependency Security Check' \
+  -f contexts[]='Generate SBOM' \
+  -f contexts[]='New Job Name'  # Add your new check here
+
+# Verify the change
+gh api repos/ManuGH/xg2g/branches/main/protection | jq '.required_status_checks'
+```
+
+⚠️ **Important**: All existing checks must be included when adding a new one, as the API replaces the entire array.
+
 ### Commit Convention
 
 PR titles must follow [Conventional Commits](https://www.conventionalcommits.org/):
@@ -339,6 +363,32 @@ Releases include complete transparency and verification:
 - 📄 SBOM (SPDX + CycloneDX + human-readable)
 - 🔐 SHA256 checksums for all artifacts
 - 📝 Auto-generated release notes from git history
+
+#### Release Runbook
+
+**Standard Release Flow:**
+
+1. **Prepare**: `make release-build` - Build and verify locally
+2. **CI Validation**: All changes must pass full CI suite on PR
+3. **Merge**: PR merged to `main` after required reviews and checks
+4. **Tag**: Create semver tag (`git tag -a v1.2.3 -m "Release v1.2.3"`)
+5. **Push**: `git push origin v1.2.3` - Triggers release workflow
+6. **Verify**: Check GitHub Release for all assets (binaries, SBOM, checksums)
+7. **Deploy**: Update production deployment with new tag
+
+**Revert Path:**
+
+- **Standard**: `git revert <commit-sha>` → Create PR → Merge after CI
+- **Emergency**: Deploy previous tag directly: `kubectl set image deployment/xg2g xg2g=ghcr.io/manugh/xg2g:<previous-tag>`
+- **Hotfix**: Create `hotfix/<issue>` branch → Fix → PR → Tag as patch version
+
+**Release Asset Checklist:**
+
+- ✅ Multi-platform binaries (8 platforms)
+- ✅ `checksums.txt` (SHA256 for all binaries)
+- ✅ `sbom.spdx.json` (SPDX format)
+- ✅ `sbom.cyclonedx.json` (CycloneDX format)
+- ✅ `sbom.txt` (human-readable)
 
 See [Makefile](Makefile) for local quality checks: `make test`, `make lint`, `make security`, `make hardcore-test`
 

@@ -19,17 +19,16 @@
 # Configuration and Variables
 # ===================================================================================================
 
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-COMMIT_HASH ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
-BUILD_DATE ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
-LDFLAGS := -ldflags "-X main.Version=$(VERSION) -X main.CommitHash=$(COMMIT_HASH) -X main.BuildDate=$(BUILD_DATE)"
+# Version information
+VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+COMMIT_HASH := $(shell git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)
+BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 # Build configuration
 BINARY_NAME := daemon
 BUILD_DIR := bin
 # Reproducible build flags
 BUILD_FLAGS := -trimpath -buildvcs=false
-VERSION := $(shell git describe --tags --always --dirty)
 LDFLAGS := -ldflags "-s -w -buildid= -X 'main.Version=$(VERSION)'"
 DOCKER_IMAGE := xg2g
 DOCKER_REGISTRY ?= 
