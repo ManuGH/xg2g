@@ -56,7 +56,8 @@ services:
       retries: 3
       start_period: 5s
     restart: unless-stopped
-    user: "1000"
-    read_only: true
+    # Uncomment for hardened security (requires proper data dir permissions)
+    # user: "1000"
+    # read_only: true
     tmpfs:
       - /tmp:size=16M,mode=1777
