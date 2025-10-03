@@ -11,22 +11,28 @@ func TestPiconURL(t *testing.T) {
 		want    string
 	}{
 		{
-			name:    "basic_url",
+			name:    "sd_service",
 			owiBase: "http://receiver.local",
 			sref:    "1:0:1:1234:5678:9ABC:DEF0:0:0:0:",
-			want:    "http://receiver.local/picon/1:0:1:1234:5678:9ABC:DEF0:0:0:0:.png",
+			want:    "http://receiver.local/picon/1_0_1_1234_5678_9ABC_DEF0_0_0_0.png",
+		},
+		{
+			name:    "hd_service_type_19_normalized_to_sd",
+			owiBase: "http://receiver.local",
+			sref:    "1:0:19:132F:3EF:1:C00000:0:0:0:",
+			want:    "http://receiver.local/picon/1_0_1_132F_3EF_1_C00000_0_0_0.png",
 		},
 		{
 			name:    "base_with_trailing_slash",
 			owiBase: "http://receiver.local/",
 			sref:    "1:0:1:1234:5678:9ABC:DEF0:0:0:0:",
-			want:    "http://receiver.local/picon/1:0:1:1234:5678:9ABC:DEF0:0:0:0:.png",
+			want:    "http://receiver.local/picon/1_0_1_1234_5678_9ABC_DEF0_0_0_0.png",
 		},
 		{
-			name:    "sref_with_special_chars",
-			owiBase: "https://receiver.local:8080",
-			sref:    "1:0:1:ABC#:DEF%:9ABC:DEF0:0:0:0:",
-			want:    "https://receiver.local:8080/picon/1:0:1:ABC%23:DEF%25:9ABC:DEF0:0:0:0:.png",
+			name:    "hd_service_type_1f_hevc",
+			owiBase: "http://receiver.local",
+			sref:    "1:0:1F:1234:5678:9ABC:DEF0:0:0:0:",
+			want:    "http://receiver.local/picon/1_0_1_1234_5678_9ABC_DEF0_0_0_0.png",
 		},
 		{
 			name:    "empty_sref",
@@ -38,7 +44,7 @@ func TestPiconURL(t *testing.T) {
 			name:    "ipv6_address",
 			owiBase: "http://[::1]:8080",
 			sref:    "1:0:1:1234:5678:9ABC:DEF0:0:0:0:",
-			want:    "http://[::1]:8080/picon/1:0:1:1234:5678:9ABC:DEF0:0:0:0:.png",
+			want:    "http://[::1]:8080/picon/1_0_1_1234_5678_9ABC_DEF0_0_0_0.png",
 		},
 	}
 
