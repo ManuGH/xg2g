@@ -95,6 +95,9 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 	var items []playlist.Item
 	// Channel type counters for the last refresh
 	hd, sd, radio, unknown := 0, 0, 0, 0
+	// Channel counter for tvg-chno (position across all bouquets)
+	// This ensures Threadfin/Plex display channels in bouquet order
+	channelNumber := 1
 
 	for _, bouquetName := range requestedBouquets {
 		if bouquetName == "" {
@@ -146,10 +149,12 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 			items = append(items, playlist.Item{
 				Name:    name,
 				TvgID:   makeStableIDFromSRef(ref),
+				TvgChNo: channelNumber, // Sequential numbering based on bouquet position
 				TvgLogo: piconURL,
 				Group:   bouquetName, // Use actual bouquet name as group
 				URL:     streamURL,
 			})
+			channelNumber++
 		}
 	}
 	metrics.RecordChannelTypeCounts(hd, sd, radio, unknown)
