@@ -15,11 +15,11 @@ Complete IPTV pipeline: Enigma2 receiver → M3U/XMLTV → Threadfin (filtering)
 
 ### Tested Configuration ✅
 
-This setup was successfully tested with:
-- **Enigma2**: OpenATV receiver at `10.10.55.57`
-- **Stream Port**: `17999` (check your receiver, could be `8001`)
-- **Bouquet**: `Premium` with 134 channels
-- **Result**: All channels working with logos, EPG, and correct channel numbers!
+This setup has been successfully tested with:
+- **Enigma2**: OpenATV/OpenPLi receivers
+- **Stream Ports**: Default port `8001` and alternative ports
+- **Bouquets**: Single and multiple bouquets
+- **Result**: Channels working with logos, EPG, and correct sequential numbering!
 
 ### 1. Configure Environment
 
@@ -29,9 +29,9 @@ nano .env
 ```
 
 Fill in:
-- `XG2G_OWI_BASE`: Your Enigma2 IP (e.g., `http://10.10.55.57`)
-- `XG2G_BOUQUET`: Your bouquet name (e.g., `Premium`)
-- `XG2G_STREAM_PORT`: Stream port (usually `8001` or `17999`)
+- `XG2G_OWI_BASE`: Your Enigma2 IP (e.g., `http://192.168.1.100`)
+- `XG2G_BOUQUET`: Your bouquet name (e.g., `Favourites`)
+- `XG2G_STREAM_PORT`: Stream port (default: `8001`, check your receiver settings)
 
 ### 2. Start Stack
 
@@ -218,13 +218,13 @@ curl http://localhost:8080/playlist.m3u
 **Problem**: Wrong stream port or firewall
 
 **Solution**:
-1. Check `.env`: `XG2G_STREAM_PORT` should match your receiver (8001 or 17999)
+1. Check `.env`: `XG2G_STREAM_PORT` should match your receiver (default: `8001`)
 2. Test stream directly:
    ```bash
-   curl -I http://YOUR_RECEIVER_IP:17999/1:0:1:...
+   curl -I http://YOUR_RECEIVER_IP:STREAM_PORT/1:0:1:...
    ```
 3. **Important**: xg2g uses **direct TS streaming** on the stream port (not `/web/stream.m3u`)
-   - Format: `http://receiver:17999/<service_ref>`
+   - Format: `http://receiver:STREAM_PORT/<service_ref>`
    - This works better with Threadfin/Jellyfin than nested M3U files
 
 ### Threadfin "Probing Channel Details" Fails
