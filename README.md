@@ -1,10 +1,8 @@
 # xg2g - OpenWebIF to M3U/XMLTV Converter
 
-![CI](https://github.com/ManuGH/xg2g/actions/workflows/ci.yml/badge.svg)
-![Docker](https://github.com/ManuGH/xg2g/actions/workflows/docker.yml/badge.svg)
-![Go Version](https://img.shields.io/github/go-mod/go-version/ManuGH/xg2g)
-![Release](https://img.shields.io/github/v/release/ManuGH/xg2g)
-![License](https://img.shields.io/github/license/ManuGH/xg2g)
+[![CI](https://github.com/ManuGH/xg2g/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ManuGH/xg2g/actions/workflows/ci.yml)
+[![Docker](https://github.com/ManuGH/xg2g/actions/workflows/docker.yml/badge.svg?branch=main)](https://github.com/ManuGH/xg2g/actions/workflows/docker.yml)
+[![License](https://img.shields.io/github/license/ManuGH/xg2g)](LICENSE)
 
 **Convert Enigma2 OpenWebIF bouquets to M3U playlists and XMLTV EPG for use with Threadfin, Jellyfin, Plex, and other IPTV players.**
 
