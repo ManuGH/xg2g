@@ -11,6 +11,7 @@ services:
     image: ghcr.io/manugh/xg2g:latest
     container_name: xg2g
     restart: unless-stopped
+    user: "0:0"  # Run as root to avoid permission issues with volumes
     ports:
       - "8080:8080"
     environment:
@@ -20,7 +21,7 @@ services:
       - XG2G_STREAM_PORT=${XG2G_STREAM_PORT}
       - XG2G_OWI_USER=${XG2G_OWI_USER:-}
       - XG2G_OWI_PASS=${XG2G_OWI_PASS:-}
-      - XG2G_PICON_BASE=${XG2G_OWI_BASE}/picon
+      - XG2G_PICON_BASE=${XG2G_OWI_BASE}
 
       # Automatic settings
       - XG2G_DATA=/data
@@ -33,14 +34,16 @@ services:
       - XG2G_EPG_RETRIES=2
       - XG2G_FUZZY_MAX=2
       - XG2G_METRICS_LISTEN=:9090
+      - XG2G_INITIAL_REFRESH=true
     volumes:
       - xg2g-data:/data
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/api/status"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
+    # Healthcheck disabled for now - image doesn't have curl/wget
+    # healthcheck:
+    #   test: ["CMD-SHELL", "curl -f http://localhost:8080/api/status || exit 1"]
+    #   interval: 10s
+    #   timeout: 5s
+    #   retries: 3
+    #   start_period: 5s
 
   # ──────────────────────────────────────────────────────────────────────────
   # Threadfin: IPTV proxy and filter (xTeve successor)
@@ -57,8 +60,7 @@ services:
       - threadfin-config:/home/threadfin/conf
       - threadfin-data:/tmp/threadfin
     depends_on:
-      xg2g:
-        condition: service_healthy
+      - xg2g
 
   # ──────────────────────────────────────────────────────────────────────────
   # Jellyfin: Media server with Live TV support

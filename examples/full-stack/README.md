@@ -13,6 +13,14 @@ Complete IPTV pipeline: Enigma2 receiver → M3U/XMLTV → Threadfin (filtering)
 
 ## Quick Start
 
+### Tested Configuration ✅
+
+This setup was successfully tested with:
+- **Enigma2**: OpenATV receiver at `10.10.55.57`
+- **Stream Port**: `17999` (check your receiver, could be `8001`)
+- **Bouquet**: `Premium` with 134 channels
+- **Result**: All channels working with logos, EPG, and correct channel numbers!
+
 ### 1. Configure Environment
 
 ```bash
@@ -90,20 +98,25 @@ curl http://localhost:8080/api/status
 1. Go to **Filter**
 2. Click **Add Filter**
 3. Fill in:
-   - **Filter Name**: `Jellyfin Live TV`
-   - **M3U Source**: Select `xg2g (Enigma2)`
-   - **XMLTV Source**: Select `xg2g EPG`
+   - **Filter Name**: `threadfin` (lowercase, used in URLs!)
+   - **M3U Source**: Select `xg2g (Enigma2)` or similar
+   - **XMLTV Source**: Select `xg2g EPG` or similar
    - **Tuner Count**: `8` (or how many concurrent streams you want)
 4. Under **Channels**:
-   - Select all channels you want to include
-   - Use **Auto-Map** to match M3U with XMLTV automatically
+   - Click **Select All** to include all channels
+   - Click **Auto-Map** button to match M3U with XMLTV automatically
+   - Verify that channels show EPG data in the preview
 5. Click **Save**
+
+**Note**: "Probing Channel Details" may fail with timeout - this is NORMAL for live streams. Just ignore it and save anyway!
 
 #### 2.5 Get Threadfin URLs for Jellyfin
 1. Go to **Settings** → **General**
 2. Note down:
-   - **M3U URL**: `http://threadfin:34400/m3u/jellyfin.m3u`
-   - **XMLTV URL**: `http://threadfin:34400/xmltv/jellyfin.xml`
+   - **M3U URL**: `http://threadfin:34400/m3u/threadfin.m3u` (the filter name from 2.4)
+   - **XMLTV URL**: `http://threadfin:34400/xmltv/threadfin.xml`
+
+**Note**: The M3U filename matches your filter name. If you named your filter "Jellyfin Live TV", the URL would be `http://threadfin:34400/m3u/jellyfin_live_tv.m3u`
 
 ---
 
@@ -128,10 +141,12 @@ curl http://localhost:8080/api/status
 #### 3.4 Add Threadfin as Tuner
 1. Select **M3U Tuner**
 2. Fill in:
-   - **Name**: `Enigma2 (via Threadfin)`
-   - **M3U URL**: `http://threadfin:34400/m3u/jellyfin.m3u`
-   - **Tuner Count**: `8`
+   - **File or URL**: `http://threadfin:34400/m3u/threadfin.m3u`
+   - **User Agent**: Leave empty
+   - **Simultaneous Stream Limit**: `8` (optional)
 3. Click **Save**
+
+**Important**: Jellyfin does NOT auto-discover Threadfin. You must manually add it as shown above.
 
 #### 3.5 Add EPG Source
 1. Still in Live TV settings
@@ -208,6 +223,17 @@ curl http://localhost:8080/playlist.m3u
    ```bash
    curl -I http://YOUR_RECEIVER_IP:17999/1:0:1:...
    ```
+3. **Important**: xg2g uses **direct TS streaming** on the stream port (not `/web/stream.m3u`)
+   - Format: `http://receiver:17999/<service_ref>`
+   - This works better with Threadfin/Jellyfin than nested M3U files
+
+### Threadfin "Probing Channel Details" Fails
+**Problem**: Threadfin can't analyze streams
+
+**This is NORMAL and can be ignored!**
+- Live streams are infinite, so probing times out
+- Streams will still work in Jellyfin
+- Just save the filter and continue with Jellyfin configuration
 
 ### Channel Order Wrong
 **Problem**: Channels not in bouquet order

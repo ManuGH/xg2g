@@ -354,29 +354,28 @@ func (c *Client) StreamURL(ref, name string) (string, error) {
 		return "", fmt.Errorf("parse openwebif base URL %q: %w", base, err)
 	}
 
-	host := parsed.Host
-	if host == "" && parsed.Path != "" {
-		host = parsed.Path
-		parsed.Path = ""
-	}
-	if host == "" {
-		return "", fmt.Errorf("openwebif base URL %q missing host", base)
-	}
-
+	// Use direct TS streaming (works best with IPTV players)
+	// Format: http://<host>:<stream_port>/<service_ref>
+	// This is the direct MPEG-TS stream from the Enigma2 receiver
 	if parsed.Scheme == "" {
 		parsed.Scheme = "http"
 	}
 
-	if _, _, err := net.SplitHostPort(host); err != nil && c.port > 0 {
-		host = net.JoinHostPort(strings.Trim(host, "[]"), strconv.Itoa(c.port))
+	// Extract hostname without port
+	hostname := parsed.Hostname()
+	if hostname == "" {
+		return "", fmt.Errorf("openwebif base URL %q missing hostname", base)
 	}
 
-	// Use direct Service Reference streaming (OpenATV/Enigma2 standard)
-	// Format: http://<host>:<streamport>/<service_ref>
-	// Works with VLC, Kodi, Threadfin, and all standard IPTV players
+	// Use stream port for direct TS streaming
+	streamPort := c.port
+	if streamPort <= 0 {
+		streamPort = 8001 // Default Enigma2 stream port
+	}
+
 	u := &url.URL{
 		Scheme: parsed.Scheme,
-		Host:   host,
+		Host:   net.JoinHostPort(hostname, strconv.Itoa(streamPort)),
 		Path:   "/" + ref,
 	}
 
