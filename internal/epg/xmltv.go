@@ -1,0 +1,60 @@
+// SPDX-License-Identifier: MIT
+package epg
+
+import (
+	"encoding/xml"
+	"io"
+	"os"
+	"regexp"
+	"strings"
+)
+
+var (
+	suffix = regexp.MustCompile(`\s+(hd|uhd|4k|austria|österreich|oesterreich|at|de|ch)$`)
+	space  = regexp.MustCompile(`\s+`)
+)
+
+func norm(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	s = suffix.ReplaceAllString(s, "")
+	s = space.ReplaceAllString(s, " ")
+	return strings.TrimSpace(s)
+}
+
+// BuildNameToIDMap reads an XMLTV file and returns a map[nameKey]=channelID.
+// It expects elements matching the `Channel` type defined in generator.go.
+func BuildNameToIDMap(xmltvPath string) (map[string]string, error) {
+	f, err := os.Open(xmltvPath)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := f.Close(); err != nil {
+			// best-effort: log to stderr but do not fail the operation
+			// this satisfies errcheck while keeping behavior unchanged
+			// (no logging package imported here to avoid changing API surface)
+			_ = err
+		}
+	}()
+
+	var doc TV
+	dec := xml.NewDecoder(f)
+	dec.Strict = false
+	if err := dec.Decode(&doc); err != nil && err != io.EOF {
+		return nil, err
+	}
+
+	out := make(map[string]string, len(doc.Channels))
+	for _, ch := range doc.Channels {
+		if ch.ID == "" || len(ch.DisplayName) == 0 {
+			continue
+		}
+		key := norm(ch.DisplayName[0])
+		if key != "" {
+			out[key] = ch.ID
+		}
+	}
+	return out, nil
+}
+
+func NameKey(s string) string { return norm(s) }

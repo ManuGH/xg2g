@@ -1,0 +1,60 @@
+# --- Go build ---
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, build output
+*.test
+*.out
+coverage.out
+coverage.html
+*.prof
+
+# Go workspace
+bin/
+pkg/
+*.log
+
+# Go modules cache
+go.work
+go.work.sum
+
+# --- Docker ---
+# Docker build artifacts
+*.bak
+*.tmp
+*.swp
+docker-compose.override.yml
+.env
+
+# --- Project specific ---
+# Local data (M3U, XMLTV, Cache)
+data/
+*.m3u
+*.xml
+*.gz
+
+# Build artifacts (binaries at repo root only)
+/xg2g
+/daemon
+/daemon-*
+
+# IDE/Editor
+.vscode/
+.idea/
+.DS_Store
+
+# Cache and temporary files
+.cache/
+/tmp/
+.codex_patch.diff
+
+# Keep test golden files (exceptions to *.xml rule)
+!internal/epg/testdata/*.golden.xml
+!internal/epg/testdata/xmltv.golden.xml
+!internal/epg/testdata/multi_channel.golden.xml
+!internal/epg/testdata/empty.golden.xml
+.copilot-instructions.md

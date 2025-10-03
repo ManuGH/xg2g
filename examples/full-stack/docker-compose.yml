@@ -1,0 +1,102 @@
+# ============================================================================
+# xg2g → Threadfin → Jellyfin Full Stack
+# Complete IPTV pipeline from Enigma2 to Jellyfin
+# ============================================================================
+
+services:
+  # ──────────────────────────────────────────────────────────────────────────
+  # xg2g: Converts Enigma2 OpenWebif to M3U + XMLTV
+  # ──────────────────────────────────────────────────────────────────────────
+  xg2g:
+    image: ghcr.io/manugh/xg2g:latest
+    container_name: xg2g
+    restart: unless-stopped
+    user: "0:0"  # Run as root to avoid permission issues with volumes
+    ports:
+      - "8080:8080"
+    environment:
+      # Load from .env file
+      - XG2G_OWI_BASE=${XG2G_OWI_BASE}
+      - XG2G_BOUQUET=${XG2G_BOUQUET}
+      - XG2G_STREAM_PORT=${XG2G_STREAM_PORT}
+      - XG2G_OWI_USER=${XG2G_OWI_USER:-}
+      - XG2G_OWI_PASS=${XG2G_OWI_PASS:-}
+      - XG2G_PICON_BASE=${XG2G_OWI_BASE}
+
+      # Automatic settings
+      - XG2G_DATA=/data
+      - XG2G_LISTEN=:8080
+      - XG2G_XMLTV=xmltv.xml
+      - XG2G_EPG_ENABLED=true
+      - XG2G_EPG_DAYS=7
+      - XG2G_EPG_MAX_CONCURRENCY=5
+      - XG2G_EPG_TIMEOUT_MS=15000
+      - XG2G_EPG_RETRIES=2
+      - XG2G_FUZZY_MAX=2
+      - XG2G_METRICS_LISTEN=:9090
+      - XG2G_INITIAL_REFRESH=true
+    volumes:
+      - xg2g-data:/data
+    # Healthcheck disabled for now - image doesn't have curl/wget
+    # healthcheck:
+    #   test: ["CMD-SHELL", "curl -f http://localhost:8080/api/status || exit 1"]
+    #   interval: 10s
+    #   timeout: 5s
+    #   retries: 3
+    #   start_period: 5s
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Threadfin: IPTV proxy and filter (xTeve successor)
+  # ──────────────────────────────────────────────────────────────────────────
+  threadfin:
+    image: fyb3roptik/threadfin:latest
+    container_name: threadfin
+    restart: unless-stopped
+    ports:
+      - "34400:34400"
+    environment:
+      - TZ=Europe/Vienna
+    volumes:
+      - threadfin-config:/home/threadfin/conf
+      - threadfin-data:/tmp/threadfin
+    depends_on:
+      - xg2g
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Jellyfin: Media server with Live TV support
+  # ──────────────────────────────────────────────────────────────────────────
+  jellyfin:
+    image: jellyfin/jellyfin:latest
+    container_name: jellyfin
+    restart: unless-stopped
+    ports:
+      - "8096:8096"
+      - "8920:8920"  # HTTPS
+      - "7359:7359/udp"  # Service discovery
+      - "1900:1900/udp"  # DLNA
+    environment:
+      - TZ=Europe/Vienna
+      - JELLYFIN_PublishedServerUrl=http://localhost:8096
+    volumes:
+      - jellyfin-config:/config
+      - jellyfin-cache:/cache
+      # Optional: Add your media library
+      # - /path/to/media:/media
+    depends_on:
+      - threadfin
+
+volumes:
+  xg2g-data:
+    driver: local
+  threadfin-config:
+    driver: local
+  threadfin-data:
+    driver: local
+  jellyfin-config:
+    driver: local
+  jellyfin-cache:
+    driver: local
+
+networks:
+  default:
+    name: iptv-stack

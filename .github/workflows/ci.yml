@@ -1,0 +1,274 @@
+name: CI
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 2 * * *"
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    paths:
+      - "**/*.go"
+      - go.mod
+      - go.sum
+      - .github/workflows/ci.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Verify modules
+        run: |
+          set -euo pipefail
+          go mod tidy
+          go mod download
+          go mod verify
+          git diff --exit-code -- go.mod go.sum
+
+      - name: Build
+        run: |
+          set -euo pipefail
+          BUILD_REF="${GITHUB_SHA:-dev}"
+          go build -v -trimpath -mod=readonly -buildvcs=false -ldflags "-X main.Version=${BUILD_REF}" ./...
+
+      - name: Unit tests
+        run: |
+          set -euo pipefail
+          go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Setup Node for OpenAPI lint
+        uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+
+      - name: Lint OpenAPI
+        run: |
+          set -euo pipefail
+          npx --yes @redocly/cli@latest lint api/openapi.yaml --format=stylish | tee /tmp/openapi-lint.txt
+
+      - name: Attach OpenAPI lint report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openapi-lint
+          path: /tmp/openapi-lint.txt
+          retention-days: 14
+
+      - name: OpenAPI lint summary
+        if: always()
+        run: |
+          echo "## OpenAPI Lint" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          tail -n 200 /tmp/openapi-lint.txt >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: "Integration (stub + daemon)"
+        env:
+          XG2G_DATA: /home/runner/work/xg2g/xg2g/data
+          XG2G_OWI_BASE: http://127.0.0.1:18080
+          XG2G_BOUQUET: Premium
+          XG2G_XMLTV: xmltv.xml
+          XG2G_PICON_BASE: http://127.0.0.1:18080/picon
+          XG2G_LISTEN: :8080
+          XG2G_API_TOKEN: ci-ci
+        run: |
+          set -euo pipefail
+
+          echo "🔧 Building OpenWebIF stub server..."
+          go build -v -o bin/stub_openwebif test/stub_openwebif.go
+
+          echo "🚀 Starting OpenWebIF stub server..."
+
+          trap 'jobs -pr | xargs -r kill 2>/dev/null || true' EXIT
+
+          # Start stub server and capture output
+          ./bin/stub_openwebif > /tmp/stub_openwebif.log 2>&1 &
+          STUB_PID=$!
+          echo "🔧 Stub server started with PID: $STUB_PID"
+
+          # Give it a moment to start
+          sleep 1
+
+          # Check if process is still running
+          if ! kill -0 $STUB_PID 2>/dev/null; then
+            echo "❌ Stub server process died immediately" >&2
+            echo "📋 Stub server log:" >&2
+            cat /tmp/stub_openwebif.log || echo "No log available"
+            exit 1
+          fi
+
+          echo "📋 Initial stub server output:"
+          cat /tmp/stub_openwebif.log || echo "No log yet"
+
+          ready=false
+          for i in {1..50}; do
+            if curl -fsS --max-time 1 http://127.0.0.1:18080/api/bouquets >/dev/null 2>&1; then
+              ready=true
+              break
+            fi
+            sleep 0.2
+          done
+          if [ "$ready" != "true" ]; then
+            echo "❌ OpenWebIF stub did not become ready on port 18080" >&2
+            echo "📋 Stub server log:" >&2
+            cat /tmp/stub_openwebif.log || echo "No log available"
+            echo "🔍 Checking if port 18080 is in use:" >&2
+            netstat -tuln | grep 18080 || echo "Port not bound"
+            exit 1
+          fi
+          echo "✅ OpenWebIF stub server ready on port 18080"
+
+          mkdir -p "$XG2G_DATA"
+          BUILD_REF="${GITHUB_SHA:-dev}"
+          go build -v -trimpath -mod=readonly -ldflags "-X main.Version=${BUILD_REF}" -o bin/xg2g ./cmd/daemon
+
+          nohup ./bin/xg2g > /tmp/daemon.log 2>&1 &
+
+          daemon_base="http://127.0.0.1${XG2G_LISTEN}"
+
+          healthy=false
+          for i in {1..60}; do
+            if curl --fail --show-error --silent --max-time 1 "$daemon_base/api/status" >/dev/null; then
+              healthy=true
+              break
+            fi
+            sleep 0.2
+          done
+          if [ "$healthy" != "true" ]; then
+            echo "Daemon did not become ready" >&2
+            exit 1
+          fi
+
+          curl -fsS --retry 10 --retry-all-errors --retry-delay 0 --max-time 2 -H "X-API-Token: ${XG2G_API_TOKEN}" -X POST "$daemon_base/api/refresh"
+          curl -fsS --retry 10 --retry-all-errors --retry-delay 0 --max-time 2      "$daemon_base/api/status"
+          curl -fsS --retry 10 --retry-all-errors --retry-delay 0 --max-time 2 "$daemon_base/api/status"
+
+          ls -lh "$XG2G_DATA"/playlist.m3u "$XG2G_DATA"/xmltv.xml
+
+      - name: Output validation
+        run: |
+          set -euo pipefail
+          test "$(grep -c '^#EXTINF' ./data/playlist.m3u)" -ge 2
+          test "$(grep -c '<channel ' ./data/xmltv.xml)" -ge 2
+          ! grep -q 'FROM BOUQUET' ./data/playlist.m3u
+
+      - name: Job summary
+        if: always()
+        run: |
+          set -euo pipefail
+
+          COV="n/a"
+          if [ -f coverage.out ]; then
+            COV=$(go tool cover -func=coverage.out | awk '/total:/ {print $3}')
+          fi
+
+          EXTINF=0
+          if [ -f ./data/playlist.m3u ]; then
+            EXTINF=$(grep -c '^#EXTINF' ./data/playlist.m3u || echo 0)
+          fi
+
+          CHANNELS=0
+          if [ -f ./data/guide.xml ]; then
+            CHANNELS=$(grep -c '<channel ' ./data/guide.xml || echo 0)
+          fi
+
+          GOLD_HASH="n/a"
+          if [ -f internal/epg/testdata/xmltv.golden.xml ]; then
+            GOLD_HASH=$(shasum -a 256 internal/epg/testdata/xmltv.golden.xml | awk '{print $1}')
+          fi
+
+          {
+            echo "## CI Result"
+            echo ""
+            echo "- Coverage: ${COV}"
+            echo "- Playlist entries (#EXTINF): ${EXTINF}"
+            echo "- XMLTV Channels: ${CHANNELS}"
+            echo "- Artifacts: logs-and-reports"
+            echo "- Daemon base: http://127.0.0.1${XG2G_LISTEN:-:8080}"
+            echo "- xmltv.golden.xml (sha256): ${GOLD_HASH}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install golangci-lint (built with runner Go)
+        run: |
+          set -euo pipefail
+          # Build golangci-lint from source using the runner's Go toolchain
+          # to avoid version mismatch errors with prebuilt binaries.
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
+          golangci-lint --version
+
+      - name: Lint
+        run: |
+          set -euo pipefail
+          golangci-lint run --timeout=5m --verbose ./...
+
+      - name: Lint Markdown
+        run: |
+          set -euo pipefail
+          npx --yes markdownlint-cli2 "docs/**/*.md" ".github/**/*.md" "*.md"
+
+      - name: Go test (repeat)
+        run: |
+          set -euo pipefail
+          go test -race ./... -v
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-and-reports
+          path: |
+            coverage.out
+            /tmp/stub_openwebif.log
+            /tmp/daemon.log
+            ./data/*
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # Optional: Full EPG smoke test against a real receiver (requires secrets)
+  # full-epg-smoke:
+  #   runs-on: ubuntu-latest
+  #   timeout-minutes: 30
+  #   if: ${{ github.event_name == 'workflow_dispatch' }}
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@v4
+  #     - name: Setup Go
+  #       uses: actions/setup-go@v5
+  #       with:
+  #         go-version-file: go.mod
+  #         cache: true
+  #     - name: Run full EPG smoke test
+  #       env:
+  #         XG2G_OWI_BASE: ${{ secrets.XG2G_OWI_BASE }}
+  #         XG2G_BOUQUET: Premium
+  #         XG2G_XMLTV: xmltv.xml
+  #         XG2G_EPG_ENABLED: "true"
+  #         XG2G_EPG_DAYS: "7"
+  #         XG2G_EPG_MAX_CONCURRENCY: "6"
+  #         XG2G_EPG_TIMEOUT_MS: "20000"
+  #         XG2G_API_TOKEN: ${{ secrets.XG2G_API_TOKEN }}
+  #         EPG_MIN_BYTES: $((5 * 1024 * 1024))
+  #         EPG_MIN_PROGRAMMES: "5000"
+  #       run: |
+  #         set -euo pipefail
+  #         ./scripts/epg-full-refresh.sh

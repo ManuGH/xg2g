@@ -1,0 +1,53 @@
+# Build artifacts and binaries
+bin/
+pkg/
+*.exe
+*.test
+*.out
+daemon
+daemon-*
+coverage.*
+*.prof
+
+# Development tools and configs
+.git/
+.github/
+.vscode/
+.idea/
+.cache/
+node_modules/
+*.md
+README*
+LICENSE*
+CHANGELOG*
+Dockerfile*
+docker-compose*
+Makefile
+
+# Runtime data and logs
+data/
+*.m3u
+*.xml
+*.log
+.env
+.env.*
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~
+.DS_Store
+
+# Ignore everything except what we need
+*
+!cmd/
+!internal/
+!go.mod
+!go.sum
+
+# Re-exclude tests and fixtures inside included directories
+cmd/**/*_test.go
+internal/**/*_test.go
+cmd/**/testdata/**
+internal/**/testdata/**

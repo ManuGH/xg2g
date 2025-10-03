@@ -1,0 +1,83 @@
+# Set default behavior to automatically normalize line endings.
+* text=auto
+
+# Force Unix-style line endings for specific files
+*.md text eol=lf
+*.sh text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.go text eol=lf
+*.mod text eol=lf
+*.sum text eol=lf
+
+# Ensure Windows scripts have CRLF line endings in working directory
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary files (explicitly marked to avoid text processing)
+*.exe binary
+*.dll binary
+*.so binary
+*.dylib binary
+*.tar binary
+*.gz binary
+*.zip binary
+*.jar binary
+*.war binary
+*.7z binary
+*.rar binary
+*.iso binary
+*.msi binary
+*.msm binary
+*.msp binary
+
+# Images
+*.jpg binary
+*.jpeg binary
+*.png binary
+*.gif binary
+*.ico binary
+*.svg binary
+
+# Archives
+*.tar.gz binary
+*.tgz binary
+
+# Certificates
+*.p12 binary
+*.der binary
+*.crt binary
+*.pem binary
+
+# Font files
+*.ttf binary
+*.eot binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+
+# Documents
+*.pdf binary
+*.doc binary
+*.docx binary
+*.xls binary
+*.xlsx binary
+*.ppt binary
+*.pptx binary
+
+# Other
+*.mp3 binary
+*.mp4 binary
+*.avi binary
+*.mov binary
+*.wmv binary
+*.flv binary
+
+# Linguist overrides (for GitHub language detection)
+*.md linguist-detectable=true
+*.yml linguist-detectable=true
+*.yaml linguist-detectable=true
+docs/ linguist-documentation=true
+scripts/ linguist-vendored=false
+tools/ linguist-vendored=false

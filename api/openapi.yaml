@@ -1,0 +1,173 @@
+openapi: 3.1.0
+info:
+  title: xg2g API
+  description: OpenWebIF → M3U / XMLTV conversion API
+  version: 1.0.0
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: https://{host}
+    description: Deployment endpoint (override host for local development)
+    variables:
+      host:
+        default: api.xg2g.test
+        description: Set to localhost:8080 for local runs
+
+security: []
+
+paths:
+  /api/status:
+    get:
+      summary: Current service status
+      description: >-
+        Returns status information such as last refresh time, number of channels
+        and any error message
+      operationId: getStatus
+      responses:
+        "200":
+          description: Status retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        "400":
+          description: Bad request
+        "500":
+          description: Internal server error
+
+  /api/refresh:
+    get:
+      summary: Trigger refresh
+      description: >-
+        Starts a full refresh (read bouquets, generate M3U and optional XMLTV).
+        The operation is idempotent; repeated calls do not trigger additional work
+        if a refresh is already in progress.
+      operationId: triggerRefreshGet
+      responses:
+        "200":
+          description: Refresh completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        "405":
+          description: Method not allowed
+        "500":
+          description: Refresh failed
+    post:
+      summary: Trigger refresh
+      description: >-
+        Starts a full refresh (read bouquets, generate M3U and optional XMLTV).
+        The operation is idempotent; repeated calls do not trigger additional work
+        if a refresh is already in progress.
+      operationId: triggerRefreshPost
+      responses:
+        "200":
+          description: Refresh completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        "405":
+          description: Method not allowed
+        "500":
+          description: Refresh failed
+
+  /healthz:
+    get:
+      summary: Liveness probe
+      description: Returns `ok` if the API process is running.
+      operationId: getHealthz
+      responses:
+        "200":
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+        "503":
+          description: Service unavailable
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Service unavailable"
+        "400":
+          description: Bad request
+
+  /readyz:
+    get:
+      summary: Readiness probe
+      description: Reports readiness once a successful refresh has completed.
+      operationId: getReadyz
+      responses:
+        "200":
+          description: Service is ready to serve refreshes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ready
+        "503":
+          description: Service has not completed a successful refresh yet
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: not-ready
+        "400":
+          description: Bad request
+
+  /files/{filename}:
+    get:
+      summary: Retrieve generated file
+      description: >-
+        Download one of the generated artifacts (playlist.m3u, guide.xml, picons)
+      operationId: getGeneratedFile
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Filename (e.g. playlist.m3u, guide.xml)
+      responses:
+        "200":
+          description: File retrieved successfully
+        "404":
+          description: File not found
+
+components:
+  schemas:
+    Status:
+      type: object
+      properties:
+        lastRun:
+          type: string
+          format: date-time
+          description: Timestamp of the last refresh
+        channels:
+          type: integer
+          description: Number of channels found
+        error:
+          type: string
+          description: Error message (if any)
+      example:
+        lastRun: "2025-01-01T12:34:56Z"
+        channels: 42
+        error: ""

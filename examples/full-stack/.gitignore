@@ -1,0 +1,9 @@
+# Environment configuration
+.env
+
+# Backup files
+backup/
+*.tar.gz
+
+# Test data
+test-data/

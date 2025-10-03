@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<tv generator-info-name="xg2g" generator-info-url="https://example.invalid/xg2g">
+  <channel id="orf1.at">
+    <display-name>ORF1 HD</display-name>
+    <icon src="http://example.com/orf1.png"></icon>
+  </channel>
+  <channel id="orf2.at">
+    <display-name>ORF 2</display-name>
+    <icon src="http://example.com/orf2.png"></icon>
+  </channel>
+  <channel id="rtl.de">
+    <display-name>RTL Television</display-name>
+  </channel>
+</tv>
