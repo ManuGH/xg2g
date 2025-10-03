@@ -361,21 +361,31 @@ func (c *Client) StreamURL(ref, name string) (string, error) {
 		parsed.Scheme = "http"
 	}
 
-	// Extract hostname without port
-	hostname := parsed.Hostname()
-	if hostname == "" {
-		return "", fmt.Errorf("openwebif base URL %q missing hostname", base)
+	host := parsed.Host
+	if host == "" {
+		return "", fmt.Errorf("openwebif base URL %q missing host", base)
 	}
 
-	// Use stream port for direct TS streaming
-	streamPort := c.port
-	if streamPort <= 0 {
-		streamPort = 8001 // Default Enigma2 stream port
+	// If base URL already has a port, preserve it
+	// Otherwise, add the stream port
+	_, existingPort, err := net.SplitHostPort(host)
+	if err != nil || existingPort == "" {
+		// No port in base URL, add stream port
+		hostname := parsed.Hostname()
+		if hostname == "" {
+			return "", fmt.Errorf("openwebif base URL %q missing hostname", base)
+		}
+
+		streamPort := c.port
+		if streamPort <= 0 {
+			streamPort = 8001 // Default Enigma2 stream port
+		}
+		host = net.JoinHostPort(hostname, strconv.Itoa(streamPort))
 	}
 
 	u := &url.URL{
 		Scheme: parsed.Scheme,
-		Host:   net.JoinHostPort(hostname, strconv.Itoa(streamPort)),
+		Host:   host,
 		Path:   "/" + ref,
 	}
 
