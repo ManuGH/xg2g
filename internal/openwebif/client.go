@@ -331,10 +331,7 @@ func (c *Client) Services(ctx context.Context, bouquetRef string) ([][2]string, 
 		return out, nil
 	}
 
-	if out, err := try("/api/getallservices?bRef="+url.QueryEscape(bouquetRef), "services.flat"); err == nil && len(out) > 0 {
-		c.loggerFor(ctx).Info().Str("event", "openwebif.services").Str("bouquet_ref", maskedRef).Int("count", len(out)).Msg("fetched services via flat endpoint")
-		return out, nil
-	}
+	// Try bouquet-specific endpoint (more reliable than getallservices)
 	if out, err := try("/api/getservices?sRef="+url.QueryEscape(bouquetRef), "services.nested"); err == nil && len(out) > 0 {
 		c.loggerFor(ctx).Info().Str("event", "openwebif.services").Str("bouquet_ref", maskedRef).Int("count", len(out)).Msg("fetched services via nested endpoint")
 		return out, nil
