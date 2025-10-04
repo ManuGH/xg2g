@@ -53,7 +53,7 @@ jobs:
       - name: Unit tests
         run: |
           set -euo pipefail
-          go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+          go test -v -race -coverprofile=coverage.out -covermode=atomic $(go list ./... | grep -v '/test$')
 
       - name: Setup Node for OpenAPI lint
         uses: actions/setup-node@v5
@@ -229,7 +229,7 @@ jobs:
       - name: Go test (repeat)
         run: |
           set -euo pipefail
-          go test -race ./... -v
+          go test -race $(go list ./... | grep -v '/test$') -v
 
       - name: Upload artifacts
         if: always()

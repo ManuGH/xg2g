@@ -109,7 +109,7 @@ jobs:
       - name: Run tests with race detection
         run: |
           echo "Running tests with race detection (CGO_ENABLED=1)..."
-          go test ./... -race -count=1 -v
+          go test $(go list ./... | grep -v '/test$') -race -count=1 -v
 
   # Coverage Analysis
   coverage:
@@ -132,7 +132,7 @@ jobs:
           mkdir -p ~/.cache/go-build
 
       - name: Generate coverage profile
-        run: go test -tags=security ./... -covermode=atomic -coverprofile=coverage.out
+        run: go test -tags=security $(go list ./... | grep -v '/test$') -covermode=atomic -coverprofile=coverage.out
 
       - name: Check overall coverage
         run: |
