@@ -24,12 +24,12 @@ func TestRefresh_IntegrationSuccess(t *testing.T) {
 		})
 	})
 
-	// getallservices must check bouquet ref
-	mux.HandleFunc("/api/getallservices", func(w http.ResponseWriter, r *http.Request) {
+	// getservices must check bouquet ref (uses sRef parameter)
+	mux.HandleFunc("/api/getservices", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		bref := r.URL.Query().Get("bRef")
-		if bref == "" {
-			t.Fatalf("missing bRef in request")
+		sref := r.URL.Query().Get("sRef")
+		if sref == "" {
+			t.Fatalf("missing sRef in request")
 		}
 		// Respond with two services
 		_ = json.NewEncoder(w).Encode(map[string]any{
