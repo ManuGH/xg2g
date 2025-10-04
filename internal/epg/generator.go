@@ -70,7 +70,7 @@ func WriteXMLTV(channels []Channel, path string) error {
 	completeXML := xmlHeader + string(out)
 
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return err
 	}
 
@@ -113,7 +113,7 @@ func WriteXMLTVWithProgrammes(channels []Channel, programmes []Programme, path s
 	completeXML := xmlHeader + string(out)
 
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return err
 	}
 

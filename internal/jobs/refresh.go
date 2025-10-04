@@ -3,7 +3,7 @@ package jobs
 
 import (
 	"context"
-	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -308,7 +308,7 @@ func writeM3U(ctx context.Context, path string, items []playlist.Item) error {
 // Using a hash ensures the ID is stable even if the channel name changes and avoids issues
 // with special characters in the sRef.
 func makeStableIDFromSRef(sref string) string {
-	sum := sha1.Sum([]byte(sref))
+	sum := sha256.Sum256([]byte(sref))
 	return "sref-" + hex.EncodeToString(sum[:])
 }
 
@@ -346,7 +346,7 @@ func validateConfig(cfg Config) error {
 	}
 
 	// Ensure the directory exists or can be created
-	if err := os.MkdirAll(absDataDir, 0755); err != nil {
+	if err := os.MkdirAll(absDataDir, 0750); err != nil {
 		return fmt.Errorf("cannot create data directory %q: %w", absDataDir, err)
 	}
 

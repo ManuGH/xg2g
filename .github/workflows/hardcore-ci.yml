@@ -17,7 +17,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GO_VERSION: "1.24.4"
+  GO_VERSION: "1.25.0"
   COVERAGE_THRESHOLD: 57 # temporary floor; measured ~57.9% locally; raise to 65 after tests
   EPG_COVERAGE_THRESHOLD: 55
 

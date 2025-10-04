@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"time"
 )
 
 func main() {
@@ -105,8 +106,9 @@ func main() {
 
 	// Create server with explicit configuration
 	server := &http.Server{
-		Addr:    addr,
-		Handler: mux,
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	log.Printf("✅ OpenWebIF stub server is now listening on http://%s", addr)
