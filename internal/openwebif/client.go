@@ -381,9 +381,9 @@ func (c *Client) StreamURL(ref, name string) (string, error) {
 		}
 
 		u := &url.URL{
-			Scheme: parsed.Scheme,
-			Host:   host,
-			Path:   "/web/stream.m3u",
+			Scheme:   parsed.Scheme,
+			Host:     host,
+			Path:     "/web/stream.m3u",
 			RawQuery: fmt.Sprintf("ref=%s&name=%s", url.QueryEscape(ref), url.QueryEscape(name)),
 		}
 		return u.String(), nil
