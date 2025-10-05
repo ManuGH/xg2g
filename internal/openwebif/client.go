@@ -351,9 +351,6 @@ func (c *Client) StreamURL(ref, name string) (string, error) {
 		return "", fmt.Errorf("parse openwebif base URL %q: %w", base, err)
 	}
 
-	// Use direct TS streaming (works best with IPTV players)
-	// Format: http://<host>:<stream_port>/<service_ref>
-	// This is the direct MPEG-TS stream from the Enigma2 receiver
 	if parsed.Scheme == "" {
 		parsed.Scheme = "http"
 	}
@@ -362,6 +359,39 @@ func (c *Client) StreamURL(ref, name string) (string, error) {
 	if host == "" {
 		return "", fmt.Errorf("openwebif base URL %q missing host", base)
 	}
+
+	// Check if WebIF streaming should be used (works in standby mode)
+	// Set XG2G_USE_WEBIF_STREAMS=true to use /web/stream.m3u URLs
+	useWebIF := os.Getenv("XG2G_USE_WEBIF_STREAMS") == "true"
+
+	if useWebIF {
+		// Use WebIF streaming endpoint (works in standby mode)
+		// Format: http://<host>/web/stream.m3u?ref=<service_ref>&name=<channel_name>
+		hostname := parsed.Hostname()
+		if hostname == "" {
+			return "", fmt.Errorf("openwebif base URL %q missing hostname", base)
+		}
+
+		// Use base URL port (typically 80) for WebIF
+		basePort := parsed.Port()
+		if basePort != "" {
+			host = net.JoinHostPort(hostname, basePort)
+		} else {
+			host = hostname
+		}
+
+		u := &url.URL{
+			Scheme: parsed.Scheme,
+			Host:   host,
+			Path:   "/web/stream.m3u",
+			RawQuery: fmt.Sprintf("ref=%s&name=%s", url.QueryEscape(ref), url.QueryEscape(name)),
+		}
+		return u.String(), nil
+	}
+
+	// Use direct TS streaming (works best with IPTV players when receiver is active)
+	// Format: http://<host>:<stream_port>/<service_ref>
+	// This is the direct MPEG-TS stream from the Enigma2 receiver
 
 	// If base URL already has a port, preserve it
 	// Otherwise, add the stream port
