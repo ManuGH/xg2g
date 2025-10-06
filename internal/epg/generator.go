@@ -61,13 +61,6 @@ func GenerateXMLTVWithProgrammes(channels []Channel, programmes []Programme) *TV
 
 func WriteXMLTV(channels []Channel, path string) error {
 	tv := GenerateXMLTV(channels)
-	out, err := xml.MarshalIndent(tv, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	xmlHeader := `<?xml version="1.0" encoding="UTF-8"?>` + "\n"
-	completeXML := xmlHeader + string(out)
 
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o750); err != nil {
@@ -79,11 +72,23 @@ func WriteXMLTV(channels []Channel, path string) error {
 		return err
 	}
 	tmpName := tmp.Name()
-	if _, err := tmp.WriteString(completeXML); err != nil {
+
+	// Write XML header with UTF-8 encoding
+	if _, err := tmp.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n"); err != nil {
 		_ = tmp.Close()
 		_ = os.Remove(tmpName)
 		return err
 	}
+
+	// Use xml.Encoder to ensure proper UTF-8 encoding
+	encoder := xml.NewEncoder(tmp)
+	encoder.Indent("", "  ")
+	if err := encoder.Encode(tv); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return err
+	}
+
 	if err := tmp.Sync(); err != nil {
 		_ = tmp.Close()
 		_ = os.Remove(tmpName)
@@ -104,13 +109,6 @@ func WriteXMLTV(channels []Channel, path string) error {
 // WriteXMLTVWithProgrammes writes XMLTV with both channels and programmes to path
 func WriteXMLTVWithProgrammes(channels []Channel, programmes []Programme, path string) error {
 	tv := GenerateXMLTVWithProgrammes(channels, programmes)
-	out, err := xml.MarshalIndent(tv, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	xmlHeader := `<?xml version="1.0" encoding="UTF-8"?>` + "\n"
-	completeXML := xmlHeader + string(out)
 
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o750); err != nil {
@@ -122,11 +120,23 @@ func WriteXMLTVWithProgrammes(channels []Channel, programmes []Programme, path s
 		return err
 	}
 	tmpName := tmp.Name()
-	if _, err := tmp.WriteString(completeXML); err != nil {
+
+	// Write XML header with UTF-8 encoding
+	if _, err := tmp.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n"); err != nil {
 		_ = tmp.Close()
 		_ = os.Remove(tmpName)
 		return err
 	}
+
+	// Use xml.Encoder to ensure proper UTF-8 encoding
+	encoder := xml.NewEncoder(tmp)
+	encoder.Indent("", "  ")
+	if err := encoder.Encode(tv); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return err
+	}
+
 	if err := tmp.Sync(); err != nil {
 		_ = tmp.Close()
 		_ = os.Remove(tmpName)
