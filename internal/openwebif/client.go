@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	xglog "github.com/ManuGH/xg2g/internal/log"
 	"github.com/prometheus/client_golang/prometheus"
@@ -610,9 +611,23 @@ func (c *Client) get(ctx context.Context, path, operation string, decorate func(
 			if err == nil && status == http.StatusOK {
 				// Read body fully while attemptCtx is still active
 				var readErr error
-				data, readErr = io.ReadAll(res.Body)
+
+				// Check Content-Type header for charset
+				contentType := res.Header.Get("Content-Type")
+
+				// Read raw bytes first
+				rawData, readErr := io.ReadAll(res.Body)
 				if readErr != nil {
 					err = fmt.Errorf("read response body: %w", readErr)
+				} else {
+					// Convert from ISO-8859-1/Latin-1 to UTF-8 if needed
+					// Many OpenWebIF implementations send ISO-8859-1 but don't declare it properly
+					// Check if data looks like it might be ISO-8859-1 encoded
+					if needsLatin1Conversion(rawData, contentType) {
+						data = convertLatin1ToUTF8(rawData)
+					} else {
+						data = rawData
+					}
 				}
 			}
 		}()
@@ -750,6 +765,55 @@ func (c *Client) GetBouquetEPG(ctx context.Context, bouquetRef string, days int)
 	}
 
 	return events, nil
+}
+
+// needsLatin1Conversion checks if data needs to be converted from Latin-1/ISO-8859-1 to UTF-8
+func needsLatin1Conversion(data []byte, contentType string) bool {
+	// If Content-Type explicitly mentions UTF-8, don't convert
+	if strings.Contains(strings.ToLower(contentType), "utf-8") {
+		return false
+	}
+
+	// If Content-Type explicitly mentions ISO-8859-1 or Latin-1, convert
+	ct := strings.ToLower(contentType)
+	if strings.Contains(ct, "iso-8859-1") || strings.Contains(ct, "latin1") {
+		return true
+	}
+
+	// Heuristic: Check for invalid UTF-8 sequences that look like Latin-1
+	// Look for byte patterns like 0xF6 (ö in Latin-1) that would be invalid in UTF-8
+	for _, b := range data {
+		// Bytes 0x80-0xFF in Latin-1 are single-byte characters
+		// But in UTF-8, they must be part of multi-byte sequences
+		if b >= 0x80 {
+			// Check if this is a valid UTF-8 continuation
+			if !utf8.Valid(data) {
+				return true
+			}
+			break
+		}
+	}
+
+	return false
+}
+
+// convertLatin1ToUTF8 converts Latin-1/ISO-8859-1 encoded bytes to UTF-8
+func convertLatin1ToUTF8(latin1 []byte) []byte {
+	// Allocate buffer with enough space (worst case: every byte becomes 2 bytes in UTF-8)
+	buf := make([]byte, 0, len(latin1)*2)
+
+	for _, b := range latin1 {
+		if b < 0x80 {
+			// ASCII range, copy directly
+			buf = append(buf, b)
+		} else {
+			// Latin-1 byte 0x80-0xFF maps to Unicode U+0080-U+00FF
+			// In UTF-8, these are encoded as two bytes: 110xxxxx 10xxxxxx
+			buf = append(buf, 0xC0|(b>>6), 0x80|(b&0x3F))
+		}
+	}
+
+	return buf
 }
 
 func (c *Client) fetchEPGFromURL(ctx context.Context, urlPath string) ([]EPGEvent, error) {
