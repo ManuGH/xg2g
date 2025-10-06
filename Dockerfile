@@ -12,7 +12,7 @@ RUN BUILD_REF="${GIT_REF:-${VERSION:-dev}}" && \
   -ldflags="-s -w -X 'main.Version=${BUILD_REF}'" \
   -o /out/xg2g ./cmd/daemon
 
-FROM alpine:3.20.1
+FROM alpine:3.22.1
 RUN apk add --no-cache ca-certificates tzdata wget
 WORKDIR /app
 COPY --from=builder /out/xg2g .
