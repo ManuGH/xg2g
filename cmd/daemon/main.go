@@ -85,6 +85,14 @@ func main() {
 			Msg("invalid OpenWebIF client configuration")
 	}
 
+	// Determine XMLTV path: if EPG is enabled and no explicit path is set, default to "xmltv.xml"
+	epgEnabled := env("XG2G_EPG_ENABLED", "false") == "true"
+	xmltvPath := env("XG2G_XMLTV", "")
+	if epgEnabled && xmltvPath == "" {
+		xmltvPath = "xmltv.xml"
+		log.Printf("config: EPG enabled but XG2G_XMLTV not set, using default %q", xmltvPath)
+	}
+
 	cfg := jobs.Config{
 		Version:       Version,
 		DataDir:       env("XG2G_DATA", "/data"),
@@ -93,7 +101,7 @@ func main() {
 		OWIPassword:   env("XG2G_OWI_PASS", ""),
 		Bouquet:       env("XG2G_BOUQUET", "Premium"),
 		PiconBase:     env("XG2G_PICON_BASE", ""),
-		XMLTVPath:     env("XG2G_XMLTV", ""),
+		XMLTVPath:     xmltvPath,
 		FuzzyMax:      atoi(env("XG2G_FUZZY_MAX", "2")),
 		StreamPort:    streamPort,
 		APIToken:      env("XG2G_API_TOKEN", ""), // Read API token from environment
@@ -102,7 +110,7 @@ func main() {
 		OWIBackoff:    owiBackoff,
 		OWIMaxBackoff: owiMaxBackoff,
 		// EPG Configuration
-		EPGEnabled:        env("XG2G_EPG_ENABLED", "false") == "true",
+		EPGEnabled:        epgEnabled,
 		EPGDays:           atoi(env("XG2G_EPG_DAYS", "7")),
 		EPGMaxConcurrency: atoi(env("XG2G_EPG_MAX_CONCURRENCY", "5")),
 		EPGTimeoutMS:      atoi(env("XG2G_EPG_TIMEOUT_MS", "15000")),
