@@ -479,6 +479,14 @@ func (s *Server) secureFileServer() http.Handler {
 		// http.ServeContent is preferred over http.ServeFile when we already have an
 		// open file, as it handles Range requests and sets Content-Type,
 		// Content-Length, and Last-Modified headers correctly.
+
+		// Set explicit charset for XML/M3U files to ensure proper UTF-8 handling
+		if strings.HasSuffix(strings.ToLower(info.Name()), ".xml") {
+			w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+		} else if strings.HasSuffix(strings.ToLower(info.Name()), ".m3u") {
+			w.Header().Set("Content-Type", "audio/x-mpegurl; charset=utf-8")
+		}
+
 		logger.Info().Str("event", "file_req.allowed").Str("path", path).Msg("serving file")
 		recordFileRequestAllowed()
 		recordFileCacheMiss()
