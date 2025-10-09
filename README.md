@@ -80,7 +80,8 @@ services:
 |----------|---------|-------------|
 | `XG2G_EPG_ENABLED` | `false` | Enable EPG data collection |
 | `XG2G_EPG_DAYS` | `7` | Days of EPG to fetch (1-14) |
-| `XG2G_XMLTV` | `xmltv.xml` | XMLTV output filename |
+| `XG2G_XMLTV` | `xmltv.xml` | XMLTV output filename (auto-set when EPG enabled) |
+| `XG2G_USE_WEBIF_STREAMS` | `false` | Use `/web/stream.m3u` URLs (recommended for Threadfin) |
 | `XG2G_OWI_USER` | - | OpenWebif username (if auth required) |
 | `XG2G_OWI_PASS` | - | OpenWebif password (if auth required) |
 
@@ -93,6 +94,23 @@ XG2G_BOUQUET="Favourites,Movies,Sports"
 ```
 
 All channels will be merged with sequential numbering.
+
+### Threadfin Integration
+
+For optimal compatibility with [Threadfin](https://github.com/Threadfin/Threadfin):
+
+```yaml
+environment:
+  - XG2G_EPG_ENABLED=true
+  - XG2G_USE_WEBIF_STREAMS=true  # Enables stream health checks
+```
+
+**Why `XG2G_USE_WEBIF_STREAMS=true`?**
+- ✅ Stream health checks work (HEAD requests return 200 OK)
+- ✅ Works even when receiver is in standby mode
+- ✅ Auto-mapping works (tvg-name = display-name)
+
+Without this setting, Threadfin may show streams as unhealthy (red) because direct TS streams don't support HEAD requests.
 
 ---
 
