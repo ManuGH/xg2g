@@ -137,6 +137,23 @@ environment:
 
 This order enables automatic channel mapping between M3U and XMLTV (tvg-name ↔ display-name).
 
+#### 💡 Tip: Bulk Enable All Channels
+
+After mapping, activate all channels at once without clicking each one individually:
+
+```bash
+# Stop Threadfin container
+docker stop threadfin
+
+# Enable all channels in the mapping file
+sudo sed -i 's/"x-active": false/"x-active": true/g' /path/to/threadfin/data/xepg.json
+
+# Start Threadfin container
+docker start threadfin
+```
+
+For Dockge/Docker Compose, replace `/path/to/threadfin/data` with your actual Threadfin data volume path (e.g., `/opt/stacks/threadfin/data/conf`).
+
 ---
 
 ## API Endpoints
