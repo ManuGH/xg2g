@@ -97,20 +97,31 @@ All channels will be merged with sequential numbering.
 
 ### Threadfin Integration
 
-For optimal compatibility with [Threadfin](https://github.com/Threadfin/Threadfin):
+**Recommended configuration for [Threadfin](https://github.com/Threadfin/Threadfin):**
 
 ```yaml
 environment:
   - XG2G_EPG_ENABLED=true
-  - XG2G_USE_WEBIF_STREAMS=true  # Enables stream health checks
+  - XG2G_STREAM_PORT=8001  # Your Enigma2 stream port
+  # Don't set XG2G_USE_WEBIF_STREAMS - use direct TS streams
 ```
 
-**Why `XG2G_USE_WEBIF_STREAMS=true`?**
-- ✅ Stream health checks work (HEAD requests return 200 OK)
-- ✅ Works even when receiver is in standby mode
-- ✅ Auto-mapping works (tvg-name = display-name)
+**Stream URL Types:**
 
-Without this setting, Threadfin may show streams as unhealthy (red) because direct TS streams don't support HEAD requests.
+**Direct TS Streams (Default - Recommended):**
+- Format: `http://host:8001/1:0:19:132F:3EF:1:C00000:0:0:0:`
+- ✅ **Works with Threadfin stream probing** (ffmpeg can analyze the stream)
+- ✅ Better performance (direct MPEG-TS stream)
+- ✅ Works in normal standby mode
+- ⚠️ Requires receiver to NOT be in deep standby
+
+**WebIF Streams (`XG2G_USE_WEBIF_STREAMS=true`):**
+- Format: `http://host/web/stream.m3u?ref=...&name=...`
+- ❌ **Does NOT work with Threadfin stream probing** (returns M3U file, not stream)
+- ✅ Supports HTTP HEAD requests
+- ⚠️ Also requires receiver to NOT be in deep standby
+
+**Important:** Keep your Enigma2 receiver in **normal standby** (not deep standby) for streaming to work.
 
 **Setup in Threadfin:**
 
