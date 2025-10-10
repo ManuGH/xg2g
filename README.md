@@ -112,6 +112,20 @@ environment:
 
 Without this setting, Threadfin may show streams as unhealthy (red) because direct TS streams don't support HEAD requests.
 
+**Setup in Threadfin:**
+
+⚠️ **Important:** Add sources in this order for proper EPG mapping:
+
+1. **First:** Add XMLTV/EPG source
+   - URL: `http://your-xg2g-host:8080/files/xmltv.xml` (or `epg.xml` if you set `XG2G_XMLTV=epg.xml`)
+   - Type: XMLTV
+
+2. **Second:** Add M3U Playlist source
+   - URL: `http://your-xg2g-host:8080/files/playlist.m3u`
+   - Type: M3U
+
+This order enables automatic channel mapping between M3U and XMLTV (tvg-name ↔ display-name).
+
 ---
 
 ## API Endpoints
