@@ -105,9 +105,27 @@ All channels will be merged with sequential numbering.
 - `GET /files/playlist.m3u` - Generated M3U playlist
 - `GET /files/xmltv.xml` - Generated XMLTV EPG
 - `GET /api/status` - Service status
-- `POST /api/refresh` - Trigger manual refresh
+- `POST /api/refresh` - Trigger manual refresh (requires API token)
 - `GET /healthz` - Health check
 - `GET /readyz` - Readiness check
+
+### API Token for Manual Refresh
+
+The `/api/refresh` endpoint requires authentication to prevent unauthorized refreshes:
+
+```bash
+# Generate a secure token
+openssl rand -hex 16
+
+# Set in environment or .env file
+XG2G_API_TOKEN=your-generated-token-here
+
+# Use with curl
+curl -X POST http://localhost:8080/api/refresh \
+  -H "X-API-Token: your-generated-token-here"
+```
+
+**Note:** If `XG2G_API_TOKEN` is not set, the `/api/refresh` endpoint will be disabled (returns 401).
 
 ---
 

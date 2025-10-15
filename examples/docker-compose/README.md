@@ -8,22 +8,26 @@ This is a ready-to-use Docker Compose setup for xg2g.
 # 1. Copy the example file
 cp docker-compose.yml /path/to/your/setup/
 
-# 2. Edit and adjust for your receiver
+# 2. Generate an API token (required for /api/refresh endpoint)
+openssl rand -hex 16
+
+# 3. Edit and adjust for your receiver
 nano docker-compose.yml
 # Change:
 #   - XG2G_OWI_BASE=http://YOUR_RECEIVER_IP
 #   - XG2G_BOUQUET=YOUR_BOUQUET_NAME
+#   - XG2G_API_TOKEN=your-generated-token  # Add this!
 # If your receiver requires authentication, uncomment:
 #   - XG2G_OWI_USER=root
 #   - XG2G_OWI_PASS=your-password
 
-# 3. Start the service
+# 4. Start the service
 docker compose up -d
 
-# 4. Check logs
+# 5. Check logs
 docker compose logs -f xg2g
 
-# 5. Access your files
+# 6. Access your files
 # M3U:  http://localhost:8080/files/playlist.m3u
 # XMLTV: http://localhost:8080/files/xmltv.xml
 ```
