@@ -33,6 +33,7 @@ docker-compose.override.yml
 # --- Project specific ---
 # Local data (M3U, XMLTV, Cache)
 data/
+livetest-data/
 *.m3u
 *.xml
 *.gz

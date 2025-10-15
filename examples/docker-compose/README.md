@@ -77,4 +77,4 @@ The container runs as root by default, so this should work out of the box.
 
 - Add to xTeVe/Threadfin with the M3U and XMLTV URLs
 - Enable Prometheus metrics for monitoring
-- See [Production Deployment](../../docs/DEPLOYMENT.md) for advanced setups
+- See [Production Deployment](../../docs/PRODUCTION.md) for advanced setups

@@ -145,7 +145,7 @@ XG2G_METRICS_LISTEN=:9090
 Deploy complete monitoring with Grafana and AlertManager:
 
 ```bash
-docker-compose -f docker-compose.monitoring.yml up -d
+docker-compose -f deploy/monitoring/docker-compose.yml up -d
 ```
 
 Access:
@@ -157,7 +157,7 @@ Access:
 
 ## Production Deployment
 
-See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed production deployment guides.
+See [PRODUCTION.md](PRODUCTION.md) for detailed production deployment guides.
 
 ### Recommended Directory Structure
 
@@ -308,6 +308,4 @@ XG2G_HTTP_IDLE_TIMEOUT=60s
 
 ## Further Reading
 
-- [DEPLOYMENT.md](DEPLOYMENT.md) - Production deployment
-- [PRODUCTION_OPS.md](PRODUCTION_OPS.md) - Operations guide
-- [STABILITY_REQUIREMENTS.md](STABILITY_REQUIREMENTS.md) - Stability testing
+- [PRODUCTION.md](PRODUCTION.md) - Production deployment & operations

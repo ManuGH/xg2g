@@ -175,7 +175,7 @@ Deploy with monitoring stack:
 
 ```bash
 # Start production monitoring
-docker-compose -f docker-compose.monitoring.yml up -d
+docker-compose -f deploy/monitoring/docker-compose.yml up -d
 
 # Verify security posture
 ./scripts/security-test.sh http://production:8080

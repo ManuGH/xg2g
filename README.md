@@ -43,6 +43,7 @@ docker run -d \
 See complete examples:
 - **Simple Setup**: [examples/docker-compose/](examples/docker-compose/) - Just xg2g
 - **Full Stack**: [examples/full-stack/](examples/full-stack/) - xg2g → Threadfin → Jellyfin
+- **Live Test**: [examples/live-test/](examples/live-test/) - Complete test environment for Mac
 
 Minimal example:
 
@@ -219,7 +220,7 @@ XG2G_EPG_DAYS=7
 
 For production deployments, monitoring, and performance tuning, see:
 - [docs/ADVANCED.md](docs/ADVANCED.md) - Advanced configuration and tuning
-- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) - Production deployment guides
+- [docs/PRODUCTION.md](docs/PRODUCTION.md) - Production deployment & operations
 
 ---
 

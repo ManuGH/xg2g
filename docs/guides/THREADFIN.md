@@ -99,6 +99,32 @@ services:
       # ... weitere Config via .env
 ```
 
+## 💡 Tipps
+
+### EPG validieren
+
+```bash
+curl -s http://localhost:8080/files/xmltv.xml | grep -c '<programme'
+# Sollte > 0 sein
+```
+
+### Stream-Port Troubleshooting
+
+Standard ist Port **8001**. Falls Streams nicht funktionieren, versuche Port **17999** (Stream Relay):
+
+```bash
+XG2G_STREAM_PORT=17999
+```
+
+### Empfohlene Konfiguration
+
+```bash
+XG2G_STREAM_PORT=8001            # Standard Stream Port
+XG2G_USE_WEBIF_STREAMS=false     # Direkte TS Streams
+XG2G_EPG_ENABLED=true            # EPG aktiviert
+XG2G_EPG_DAYS=7                  # 7 Tage EPG-Daten
+```
+
 ---
 **Status: ✅ READY FOR THREADFIN INTEGRATION**
 **Performance: 133 Kanäle, 129 Programme, ~100ms Refresh**
