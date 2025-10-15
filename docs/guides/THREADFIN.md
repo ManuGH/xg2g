@@ -125,6 +125,47 @@ XG2G_EPG_ENABLED=true            # EPG aktiviert
 XG2G_EPG_DAYS=7                  # 7 Tage EPG-Daten
 ```
 
+## 🔧 Troubleshooting
+
+### Streams brechen sofort ab (Linux/Debian)
+
+**Symptom:**
+- Threadfin Logs zeigen "Stream ends prematurely"
+- Streams starten aber stoppen nach wenigen Sekunden
+- FFmpeg Fehler in Threadfin Logs
+
+**Ursache:**
+Enigma2 HTTP/1.0 Streams benötigen spezielle FFmpeg-Parameter auf manchen Linux-Systemen.
+
+**Lösung:**
+
+1. **Threadfin Settings öffnen:** http://localhost:34400/web/
+2. **Settings → FFmpeg → Options**
+3. **Buffer Settings ändern:**
+   ```
+   -re -fflags +genpts -analyzeduration 3000000 -probesize 3000000
+   ```
+4. **Audio Mapping ändern:**
+   ```
+   -map 0:a -c copy
+   ```
+   (statt `-map 0:a:0 -c:a aac`)
+
+**Was bewirken die Parameter:**
+- `-re`: Real-time reading für Live-Streams
+- `-fflags +genpts`: Generiert fehlende Timestamps
+- Höhere `analyzeduration`/`probesize`: Mehr Zeit zum Stream-Analysieren
+- `-map 0:a`: Alle Audio-Streams statt nur den ersten
+- `-c copy`: Kein Audio-Reencoding (behält Original AC3/MP2)
+
+**Getestet auf:** Debian Linux mit Enigma2 OpenATV
+
+### Jellyfin zeigt "Server undefined"
+
+**Lösung:**
+- Jellyfin Dashboard → Networking → Base URL auf leer setzen (nicht `localhost`)
+- Server neu starten
+
 ---
 **Status: ✅ READY FOR THREADFIN INTEGRATION**
 **Performance: 133 Kanäle, 129 Programme, ~100ms Refresh**
