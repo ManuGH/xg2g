@@ -11,8 +11,8 @@ services:
       # OpenWebIF Configuration (läuft auf Port 80, NICHT 8001!)
       XG2G_OWI_BASE: "http://10.10.55.57"
 
-      # Streaming Port (17999 wie gewünscht)
-      XG2G_STREAM_PORT: "17999"
+      # Streaming Port
+      XG2G_STREAM_PORT: "8001"
 
       XG2G_BOUQUET: "Premium"
 
