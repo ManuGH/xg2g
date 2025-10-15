@@ -142,11 +142,11 @@ Enigma2 HTTP/1.0 Streams benötigen spezielle FFmpeg-Parameter auf manchen Linux
 1. **Threadfin Settings öffnen:** http://localhost:34400/web/
 2. **Settings → FFmpeg → Options**
 3. **Buffer Settings ändern:**
-   ```
+   ```text
    -re -fflags +genpts -analyzeduration 3000000 -probesize 3000000
    ```
 4. **Audio Mapping ändern:**
-   ```
+   ```text
    -map 0:a -c copy
    ```
    (statt `-map 0:a:0 -c:a aac`)
