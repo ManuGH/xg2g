@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: "xg2g-dashboards"
+    orgId: 1
+    folder: "xg2g"
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards

@@ -1,0 +1,34 @@
+{
+  "title": "xg2g Overview",
+  "uid": "xg2g-overview",
+  "editable": true,
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Channels",
+      "targets": [
+        {
+          "expr": "xg2g_channels"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Last Refresh (s ago)",
+      "targets": [
+        {
+          "expr": "time() - xg2g_last_refresh_timestamp"
+        }
+      ]
+    },
+    {
+      "type": "graph",
+      "title": "Refresh Duration (s)",
+      "targets": [
+        {
+          "expr": "rate(xg2g_refresh_duration_seconds_sum[5m]) / rate(xg2g_refresh_duration_seconds_count[5m])"
+        }
+      ]
+    }
+  ]
+}
