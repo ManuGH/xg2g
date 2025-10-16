@@ -1,4 +1,4 @@
-# 📺 Threadfin Integration - xg2g v0.3.0 EPG Ready
+# 📺 Threadfin Integration - xg2g v1.1.0
 
 ## 🎯 Quick Setup für Threadfin
 
@@ -90,7 +90,7 @@ XMLTV: http://<your-server-ip>:8080/files/xmltv.xml
 # docker-compose.yml
 services:
   xg2g:
-    image: ghcr.io/manugh/xg2g:v0.3.0
+    image: ghcr.io/manugh/xg2g:latest
     ports:
       - "8080:8080"
       - "9090:9090"  # Metrics
@@ -116,13 +116,67 @@ Standard ist Port **8001**. Falls Streams nicht funktionieren, versuche Port **1
 XG2G_STREAM_PORT=17999
 ```
 
+#### Problem mit Port 17999 (Enigma2 Stream Relay)
+
+Einige Enigma2 Stream Relay Implementierungen unterstützen keine HTTP HEAD-Requests, was zu "EOF" Fehlern in Threadfin/Jellyfin führt.
+
+#### Lösung: Integrierter Stream Proxy (NEU in v1.1.0)
+
+xg2g hat jetzt einen eingebauten Reverse Proxy der HEAD-Requests abfängt:
+
+```bash
+# Aktiviere integrierten Proxy
+XG2G_ENABLE_STREAM_PROXY=true
+XG2G_PROXY_PORT=18000
+XG2G_PROXY_TARGET=http://192.168.1.100:17999
+XG2G_STREAM_BASE=http://your-host-ip:18000
+```
+
+#### Docker Compose Beispiel
+
+```yaml
+services:
+  xg2g:
+    image: ghcr.io/manugh/xg2g:latest
+    ports:
+      - "8080:8080"
+      - "18000:18000"  # Proxy Port
+    environment:
+      - XG2G_ENABLE_STREAM_PROXY=true
+      - XG2G_PROXY_PORT=18000
+      - XG2G_PROXY_TARGET=http://192.168.1.100:17999
+      - XG2G_STREAM_BASE=http://192.168.1.50:18000
+```
+
+#### Vorteile
+
+- Kein separater nginx Container nötig
+- Automatisches HEAD-Request-Handling
+- Transparentes Proxying für GET/POST Requests
+- Nur ~5MB Memory Overhead
+
+Siehe [STREAM_CONFIGURATION.md](../../examples/live-test/STREAM_CONFIGURATION.md) für Details.
+
 ### Empfohlene Konfiguration
+
+#### Option A: Direkte Streams (Standard, Port 8001)
 
 ```bash
 XG2G_STREAM_PORT=8001            # Standard Stream Port
 XG2G_USE_WEBIF_STREAMS=false     # Direkte TS Streams
 XG2G_EPG_ENABLED=true            # EPG aktiviert
 XG2G_EPG_DAYS=7                  # 7 Tage EPG-Daten
+```
+
+#### Option B: Mit Proxy (Port 17999 + HEAD-Support)
+
+```bash
+XG2G_ENABLE_STREAM_PROXY=true
+XG2G_PROXY_PORT=18000
+XG2G_PROXY_TARGET=http://192.168.1.100:17999
+XG2G_STREAM_BASE=http://192.168.1.50:18000
+XG2G_EPG_ENABLED=true
+XG2G_EPG_DAYS=7
 ```
 
 ## 🔧 Troubleshooting

@@ -10,6 +10,7 @@
 ## Features
 
 - ✅ **Direct TS Streaming** - Uses native Enigma2 stream URLs for best compatibility
+- ✅ **Integrated Stream Proxy** - Built-in HEAD request handler for Threadfin/Jellyfin compatibility (no nginx needed!)
 - ✅ **Sequential Channel Numbers** - Channels numbered by bouquet order (1, 2, 3...)
 - ✅ **Channel Logos** - Automatically fetched from your receiver
 - ✅ **EPG Data** - Full 7-day electronic program guide support
@@ -86,6 +87,19 @@ services:
 | `XG2G_OWI_USER` | - | OpenWebif username (if auth required) |
 | `XG2G_OWI_PASS` | - | OpenWebif password (if auth required) |
 
+### Stream Proxy Settings (Advanced)
+
+Only needed if Enigma2 Stream Relay (port 17999) doesn't support HEAD requests, causing EOF errors in Threadfin/Jellyfin.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `XG2G_ENABLE_STREAM_PROXY` | `false` | Enable integrated stream proxy |
+| `XG2G_PROXY_PORT` | `18000` | Proxy listen port |
+| `XG2G_PROXY_TARGET` | - | Target Enigma2 URL (e.g., `http://192.168.1.100:17999`) |
+| `XG2G_STREAM_BASE` | - | Override stream URLs (e.g., `http://your-host:18000`) |
+
+**When to use:** If you see "EOF" errors in Threadfin/Jellyfin logs when using port 17999, enable the integrated proxy. See [examples/live-test/STREAM_CONFIGURATION.md](examples/live-test/STREAM_CONFIGURATION.md) for detailed setup.
+
 ### Multiple Bouquets
 
 Combine multiple bouquets into one playlist:
@@ -159,12 +173,20 @@ curl http://192.168.1.100/api/bouquets
 
 ### Streams Don't Play
 
-1. Verify stream port (usually `8001`, sometimes alternative ports)
+1. Verify stream port (usually `8001`, sometimes alternative ports like `17999`)
 2. Test direct stream:
    ```bash
    curl -I http://192.168.1.100:8001/1:0:1:...
    ```
-3. Check firewall settings on your receiver
+3. If you see "EOF" or "Empty reply" errors with port `17999`, you may need the integrated proxy:
+   ```bash
+   XG2G_ENABLE_STREAM_PROXY=true
+   XG2G_PROXY_TARGET=http://192.168.1.100:17999
+   XG2G_STREAM_BASE=http://your-host-ip:18000
+   ```
+4. Check firewall settings on your receiver
+
+See [STREAM_CONFIGURATION.md](examples/live-test/STREAM_CONFIGURATION.md) for detailed troubleshooting.
 
 ### No EPG Data
 
