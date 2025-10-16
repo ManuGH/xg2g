@@ -48,11 +48,6 @@ func NewStreamDetector(receiverHost string, logger zerolog.Logger) *StreamDetect
 	proxyEnabled := os.Getenv("XG2G_ENABLE_STREAM_PROXY") == "true"
 	proxyHost := os.Getenv("XG2G_STREAM_BASE") // e.g., http://host:18000
 
-	// Extract host from proxy base URL if set
-	if proxyHost != "" {
-		// Parse will happen in getProxyURL
-	}
-
 	return &StreamDetector{
 		cache: make(map[string]*StreamInfo),
 		httpClient: &http.Client{
@@ -194,7 +189,11 @@ func (sd *StreamDetector) testEndpoint(ctx context.Context, candidate streamCand
 			Msg("stream endpoint HEAD test failed")
 		return false
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			sd.logger.Debug().Err(err).Msg("failed to close response body")
+		}
+	}()
 
 	// Accept 200 OK or 206 Partial Content (streaming)
 	success := resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusPartialContent
