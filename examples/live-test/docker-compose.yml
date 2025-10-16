@@ -12,6 +12,30 @@
 
 services:
   # ──────────────────────────────────────────────────────────────────────────
+  # nginx: Stream Proxy für Enigma2 (HEAD-Request-Handling)
+  # ──────────────────────────────────────────────────────────────────────────
+  # Benötigt für: Enigma2 Stream Relay (Port 17999) HEAD-Request Support
+  # Funktion: Beantwortet HEAD-Requests mit HTTP 200 + Content-Type: video/mp2t
+  #           Leitet GET-Requests transparent an Enigma2 weiter
+  # Nur nötig wenn XG2G_STREAM_BASE gesetzt ist!
+  nginx-stream-proxy:
+    image: nginx:alpine
+    container_name: nginx-stream-proxy-livetest
+    restart: unless-stopped
+    ports:
+      - "17999:17999"   # Enigma2 Stream Relay Proxy (intercepts 10.10.55.57:17999)
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - iptv-livetest
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider -O- --method=HEAD http://localhost:17999/test || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  # ──────────────────────────────────────────────────────────────────────────
   # xg2g: Enigma2 → M3U + XMLTV Converter
   # ──────────────────────────────────────────────────────────────────────────
   xg2g:
@@ -27,7 +51,26 @@ services:
       - XG2G_OWI_BASE=${XG2G_OWI_BASE:-http://192.168.1.100}
       - XG2G_OWI_USER=${XG2G_OWI_USER:-}
       - XG2G_OWI_PASS=${XG2G_OWI_PASS:-}
-      - XG2G_STREAM_PORT=${XG2G_STREAM_PORT:-8001}
+      # ── Stream URLs Configuration ──
+      # Wähle eine der beiden Optionen:
+      #
+      # Option A: Direkter TS Stream (Port 8001)
+      #   - Empfohlen wenn Enigma2 HEAD-Requests unterstützt
+      #   - Geringste Latenz, keine Zwischenproxy
+      #   - Konfiguration:
+      #     - XG2G_STREAM_PORT=8001
+      #     - XG2G_STREAM_BASE nicht setzen (oder leer lassen)
+      #
+      # Option B: Via nginx Proxy (Port 17999)
+      #   - Benötigt wenn Enigma2 Stream Relay keine HEAD-Requests unterstützt
+      #   - nginx fängt HEAD-Requests ab → Threadfin kompatibel
+      #   - Konfiguration:
+      #     - XG2G_STREAM_PORT=17999 (beliebig, wird überschrieben)
+      #     - XG2G_STREAM_BASE=http://<host-ip>:17999
+      #
+      # Aktuell: Option B (nginx proxy mode)
+      - XG2G_STREAM_PORT=17999
+      - XG2G_STREAM_BASE=http://10.10.55.193:17999
 
       # ── Bouquet Auswahl ──
       - XG2G_BOUQUET=${XG2G_BOUQUET:-Favourites}
@@ -40,7 +83,7 @@ services:
       - XG2G_EPG_RETRIES=3
 
       # ── Stream URLs ──
-      # false = Direkte TS Streams (empfohlen)
+      # false = Direkte TS Streams vom Enigma2 Port 8001 (empfohlen für Threadfin)
       - XG2G_USE_WEBIF_STREAMS=false
 
       # ── Picons ──

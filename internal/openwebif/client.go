@@ -394,6 +394,20 @@ func (c *Client) StreamURL(ref, name string) (string, error) {
 	// Format: http://<host>:<stream_port>/<service_ref>
 	// This is the direct MPEG-TS stream from the Enigma2 receiver
 
+	// Check if custom stream base URL is configured (e.g., for nginx proxy)
+	// XG2G_STREAM_BASE=http://10.10.55.193:17999 overrides the stream host/port
+	if streamBase := os.Getenv("XG2G_STREAM_BASE"); streamBase != "" {
+		streamParsed, err := url.Parse(streamBase)
+		if err == nil && streamParsed.Host != "" {
+			u := &url.URL{
+				Scheme: streamParsed.Scheme,
+				Host:   streamParsed.Host,
+				Path:   "/" + ref,
+			}
+			return u.String(), nil
+		}
+	}
+
 	// If base URL already has a port, preserve it
 	// Otherwise, add the stream port
 	_, existingPort, err := net.SplitHostPort(host)
