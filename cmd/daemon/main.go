@@ -150,7 +150,61 @@ func main() {
 		Dur("owi_backoff", cfg.OWIBackoff).
 		Msg("configuration loaded")
 
-	// Optional initial refresh before starting servers to avoid shutdown races.
+	// Resolve server tuning from environment
+	serverReadTimeout := envDuration("XG2G_SERVER_READ_TIMEOUT", defaultServerReadTimeout)
+	serverWriteTimeout := envDuration("XG2G_SERVER_WRITE_TIMEOUT", defaultServerWriteTimeout)
+	serverIdleTimeout := envDuration("XG2G_SERVER_IDLE_TIMEOUT", defaultServerIdleTimeout)
+	serverMaxHeaderBytes := envIntDefault("XG2G_SERVER_MAX_HEADER_BYTES", defaultServerMaxHeaderBytes)
+	shutdownTimeout := envDuration("XG2G_SERVER_SHUTDOWN_TIMEOUT", defaultShutdownTimeout)
+
+	// Start optional stream proxy server BEFORE initial refresh to support smart stream detection
+	var proxySrv *proxy.Server
+	if proxy.IsEnabled() {
+		targetURL := proxy.GetTargetURL()
+		if targetURL == "" {
+			logger.Fatal().
+				Str("event", "proxy.config.invalid").
+				Msg("XG2G_ENABLE_STREAM_PROXY is true but XG2G_PROXY_TARGET is not set")
+		}
+
+		proxyLogger := xglog.WithComponent("proxy")
+		var err error
+		proxySrv, err = proxy.New(proxy.Config{
+			ListenAddr: proxy.GetListenAddr(),
+			TargetURL:  targetURL,
+			Logger:     proxyLogger,
+		})
+		if err != nil {
+			logger.Fatal().
+				Err(err).
+				Str("event", "proxy.init.failed").
+				Msg("failed to create stream proxy server")
+		}
+
+		// Start proxy server in background
+		go func() {
+			if err := proxySrv.Start(); err != nil {
+				logger.Error().
+					Err(err).
+					Str("event", "proxy.failed").
+					Msg("stream proxy server failed")
+			}
+		}()
+
+		// Give proxy a moment to start listening before smart stream detection runs
+		time.Sleep(100 * time.Millisecond)
+
+		// Ensure proxy server is shut down on exit
+		defer func() {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := proxySrv.Shutdown(shutdownCtx); err != nil {
+				logger.Warn().Err(err).Msg("proxy server shutdown failed")
+			}
+		}()
+	}
+
+	// Optional initial refresh after proxy is ready (for smart stream detection).
 	if strings.ToLower(env("XG2G_INITIAL_REFRESH", "false")) == "true" {
 		logger.Info().Msg("performing initial data refresh on startup")
 		if _, err := jobs.Refresh(ctx, cfg); err != nil {
@@ -159,13 +213,6 @@ func main() {
 			logger.Info().Msg("initial data refresh completed successfully")
 		}
 	}
-
-	// Resolve server tuning from environment
-	serverReadTimeout := envDuration("XG2G_SERVER_READ_TIMEOUT", defaultServerReadTimeout)
-	serverWriteTimeout := envDuration("XG2G_SERVER_WRITE_TIMEOUT", defaultServerWriteTimeout)
-	serverIdleTimeout := envDuration("XG2G_SERVER_IDLE_TIMEOUT", defaultServerIdleTimeout)
-	serverMaxHeaderBytes := envIntDefault("XG2G_SERVER_MAX_HEADER_BYTES", defaultServerMaxHeaderBytes)
-	shutdownTimeout := envDuration("XG2G_SERVER_SHUTDOWN_TIMEOUT", defaultShutdownTimeout)
 
 	// Start metrics server on separate port if configured
 	metricsAddr := resolveMetricsListen()
@@ -208,50 +255,6 @@ func main() {
 		logger.Info().
 			Str("event", "metrics.disabled").
 			Msg("metrics server disabled (no XG2G_METRICS_LISTEN configured)")
-	}
-
-	// Start optional stream proxy server if enabled
-	var proxySrv *proxy.Server
-	if proxy.IsEnabled() {
-		targetURL := proxy.GetTargetURL()
-		if targetURL == "" {
-			logger.Fatal().
-				Str("event", "proxy.config.invalid").
-				Msg("XG2G_ENABLE_STREAM_PROXY is true but XG2G_PROXY_TARGET is not set")
-		}
-
-		proxyLogger := xglog.WithComponent("proxy")
-		var err error
-		proxySrv, err = proxy.New(proxy.Config{
-			ListenAddr: proxy.GetListenAddr(),
-			TargetURL:  targetURL,
-			Logger:     proxyLogger,
-		})
-		if err != nil {
-			logger.Fatal().
-				Err(err).
-				Str("event", "proxy.init.failed").
-				Msg("failed to create stream proxy server")
-		}
-
-		// Start proxy server in background
-		go func() {
-			if err := proxySrv.Start(); err != nil {
-				logger.Error().
-					Err(err).
-					Str("event", "proxy.failed").
-					Msg("stream proxy server failed")
-			}
-		}()
-
-		// Ensure proxy server is shut down on exit
-		defer func() {
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			if err := proxySrv.Shutdown(shutdownCtx); err != nil {
-				logger.Warn().Err(err).Msg("proxy server shutdown failed")
-			}
-		}()
 	}
 
 	// Configure main API server with hardening
