@@ -9,6 +9,7 @@
 
 ## Features
 
+- ✅ **Smart Stream Detection** (v1.2.0) - Automatically detects optimal stream endpoint per channel (zero config!)
 - ✅ **Direct TS Streaming** - Uses native Enigma2 stream URLs for best compatibility
 - ✅ **Integrated Stream Proxy** - Built-in HEAD request handler for Threadfin/Jellyfin compatibility (no nginx needed!)
 - ✅ **Sequential Channel Numbers** - Channels numbered by bouquet order (1, 2, 3...)
@@ -86,9 +87,25 @@ services:
 | `XG2G_OWI_USER` | - | OpenWebif username (if auth required) |
 | `XG2G_OWI_PASS` | - | OpenWebif password (if auth required) |
 
+### Smart Stream Detection (v1.2.0, Experimental)
+
+**NEW:** Automatically detects the optimal stream port (8001 vs 17999) for each channel!
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `XG2G_SMART_STREAM_DETECTION` | `false` | Enable automatic per-channel stream detection |
+
+**How it works:**
+- Tests each channel with HEAD requests on ports 8001 and 17999
+- Uses direct streams where possible (best performance, zero latency)
+- Automatically uses proxy only for channels that need it
+- Results are cached for 24 hours
+
+**When to use:** If you have mixed content (some channels on 8001, some on 17999) or want zero-configuration streaming.
+
 ### Stream Proxy Settings (Advanced)
 
-Only needed if Enigma2 Stream Relay (port 17999) doesn't support HEAD requests, causing EOF errors in Threadfin/Jellyfin.
+Only needed if you're **not** using Smart Stream Detection and Enigma2 Stream Relay (port 17999) doesn't support HEAD requests.
 
 | Variable | Default | Description |
 |----------|---------|-------------|

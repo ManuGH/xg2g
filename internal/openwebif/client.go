@@ -36,6 +36,9 @@ type Client struct {
 	maxBackoff time.Duration
 	username   string
 	password   string
+
+	// Smart stream detection (v1.2.0+)
+	streamDetector *StreamDetector
 }
 
 type Options struct {
@@ -139,7 +142,7 @@ func NewWithPort(base string, streamPort int, opts Options) *Client {
 		Timeout: 30 * time.Second,
 	}
 
-	return &Client{
+	client := &Client{
 		base:       trimmedBase,
 		port:       port,
 		http:       hardenedClient,
@@ -152,6 +155,14 @@ func NewWithPort(base string, streamPort int, opts Options) *Client {
 		username:   opts.Username,
 		password:   opts.Password,
 	}
+
+	// Initialize smart stream detection if enabled (v1.2.0+)
+	if IsEnabled() {
+		client.streamDetector = NewStreamDetector(host, logger)
+		logger.Info().Msg("smart stream detection enabled")
+	}
+
+	return client
 }
 
 // getenvInt returns an int from ENV or the default if unset/invalid.
@@ -342,6 +353,26 @@ func (c *Client) Services(ctx context.Context, bouquetRef string) ([][2]string, 
 }
 
 func (c *Client) StreamURL(ref, name string) (string, error) {
+	// NEW in v1.2.0: Smart Stream Detection
+	// Automatically detects optimal stream endpoint per channel
+	if c.streamDetector != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		info, err := c.streamDetector.DetectStreamURL(ctx, ref, name)
+		if err == nil && info != nil {
+			return info.URL, nil
+		}
+
+		// Log detection failure but continue with fallback
+		c.log.Warn().
+			Err(err).
+			Str("service_ref", maskServiceRef(ref)).
+			Str("channel", name).
+			Msg("smart stream detection failed, using fallback")
+	}
+
+	// Fallback: Original logic (manual configuration)
 	base := strings.TrimSpace(c.base)
 	if base == "" {
 		return "", fmt.Errorf("openwebif base URL is empty")
