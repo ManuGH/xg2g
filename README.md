@@ -74,12 +74,12 @@ services:
 |----------|---------|-------------|
 | `XG2G_OWI_BASE` | `http://192.168.1.100` | Your Enigma2 receiver IP |
 | `XG2G_BOUQUET` | `Favourites` | Bouquet name (find in OpenWebif → EPG) |
-| `XG2G_STREAM_PORT` | `8001` | Stream port (default: 8001) |
 
 ### Optional Settings
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `XG2G_STREAM_PORT` | `8001` | Stream port (8001 for direct streams, 17999 for Stream Relay) |
 | `XG2G_EPG_ENABLED` | `false` | Enable EPG data collection |
 | `XG2G_EPG_DAYS` | `7` | Days of EPG to fetch (1-14) |
 | `XG2G_XMLTV` | `xmltv.xml` | XMLTV output filename (auto-set when EPG enabled) |
