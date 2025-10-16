@@ -122,7 +122,9 @@ func TestHandleGetRequest(t *testing.T) {
 			t.Errorf("got path %s, want %s", r.URL.Path, "/test/stream")
 		}
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("stream data"))
+		if _, err := w.Write([]byte("stream data")); err != nil {
+			t.Errorf("Write failed: %v", err)
+		}
 	}))
 	defer target.Close()
 
@@ -182,8 +184,14 @@ func TestIsEnabled(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			os.Setenv("XG2G_ENABLE_STREAM_PROXY", tt.envValue)
-			defer os.Unsetenv("XG2G_ENABLE_STREAM_PROXY")
+			if err := os.Setenv("XG2G_ENABLE_STREAM_PROXY", tt.envValue); err != nil {
+				t.Fatalf("Setenv failed: %v", err)
+			}
+			defer func() {
+				if err := os.Unsetenv("XG2G_ENABLE_STREAM_PROXY"); err != nil {
+					t.Errorf("Unsetenv failed: %v", err)
+				}
+			}()
 
 			if got := IsEnabled(); got != tt.want {
 				t.Errorf("IsEnabled() = %v, want %v", got, tt.want)
@@ -213,8 +221,14 @@ func TestGetListenAddr(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.envValue != "" {
-				os.Setenv("XG2G_PROXY_PORT", tt.envValue)
-				defer os.Unsetenv("XG2G_PROXY_PORT")
+				if err := os.Setenv("XG2G_PROXY_PORT", tt.envValue); err != nil {
+					t.Fatalf("Setenv failed: %v", err)
+				}
+				defer func() {
+					if err := os.Unsetenv("XG2G_PROXY_PORT"); err != nil {
+						t.Errorf("Unsetenv failed: %v", err)
+					}
+				}()
 			}
 
 			if got := GetListenAddr(); got != tt.want {
@@ -245,8 +259,14 @@ func TestGetTargetURL(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.envValue != "" {
-				os.Setenv("XG2G_PROXY_TARGET", tt.envValue)
-				defer os.Unsetenv("XG2G_PROXY_TARGET")
+				if err := os.Setenv("XG2G_PROXY_TARGET", tt.envValue); err != nil {
+					t.Fatalf("Setenv failed: %v", err)
+				}
+				defer func() {
+					if err := os.Unsetenv("XG2G_PROXY_TARGET"); err != nil {
+						t.Errorf("Unsetenv failed: %v", err)
+					}
+				}()
 			}
 
 			if got := GetTargetURL(); got != tt.want {
