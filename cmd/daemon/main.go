@@ -20,6 +20,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/api"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	xglog "github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/proxy"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -207,6 +208,50 @@ func main() {
 		logger.Info().
 			Str("event", "metrics.disabled").
 			Msg("metrics server disabled (no XG2G_METRICS_LISTEN configured)")
+	}
+
+	// Start optional stream proxy server if enabled
+	var proxySrv *proxy.Server
+	if proxy.IsEnabled() {
+		targetURL := proxy.GetTargetURL()
+		if targetURL == "" {
+			logger.Fatal().
+				Str("event", "proxy.config.invalid").
+				Msg("XG2G_ENABLE_STREAM_PROXY is true but XG2G_PROXY_TARGET is not set")
+		}
+
+		proxyLogger := xglog.WithComponent("proxy")
+		var err error
+		proxySrv, err = proxy.New(proxy.Config{
+			ListenAddr: proxy.GetListenAddr(),
+			TargetURL:  targetURL,
+			Logger:     proxyLogger,
+		})
+		if err != nil {
+			logger.Fatal().
+				Err(err).
+				Str("event", "proxy.init.failed").
+				Msg("failed to create stream proxy server")
+		}
+
+		// Start proxy server in background
+		go func() {
+			if err := proxySrv.Start(); err != nil {
+				logger.Error().
+					Err(err).
+					Str("event", "proxy.failed").
+					Msg("stream proxy server failed")
+			}
+		}()
+
+		// Ensure proxy server is shut down on exit
+		defer func() {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := proxySrv.Shutdown(shutdownCtx); err != nil {
+				logger.Warn().Err(err).Msg("proxy server shutdown failed")
+			}
+		}()
 	}
 
 	// Configure main API server with hardening
