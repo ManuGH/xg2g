@@ -83,7 +83,6 @@ services:
 | `XG2G_EPG_ENABLED` | `false` | Enable EPG data collection |
 | `XG2G_EPG_DAYS` | `7` | Days of EPG to fetch (1-14) |
 | `XG2G_XMLTV` | `xmltv.xml` | XMLTV output filename (auto-set when EPG enabled) |
-| `XG2G_USE_WEBIF_STREAMS` | `false` | Use `/web/stream.m3u` URLs (keep false for best compatibility) |
 | `XG2G_OWI_USER` | - | OpenWebif username (if auth required) |
 | `XG2G_OWI_PASS` | - | OpenWebif password (if auth required) |
 

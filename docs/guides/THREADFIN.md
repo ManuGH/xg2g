@@ -163,7 +163,6 @@ Siehe [STREAM_CONFIGURATION.md](../../examples/live-test/STREAM_CONFIGURATION.md
 
 ```bash
 XG2G_STREAM_PORT=8001            # Standard Stream Port
-XG2G_USE_WEBIF_STREAMS=false     # Direkte TS Streams
 XG2G_EPG_ENABLED=true            # EPG aktiviert
 XG2G_EPG_DAYS=7                  # 7 Tage EPG-Daten
 ```

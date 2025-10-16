@@ -361,8 +361,11 @@ func (c *Client) StreamURL(ref, name string) (string, error) {
 		return "", fmt.Errorf("openwebif base URL %q missing host", base)
 	}
 
-	// Check if WebIF streaming should be used (works in standby mode)
-	// Set XG2G_USE_WEBIF_STREAMS=true to use /web/stream.m3u URLs
+	// DEPRECATED: XG2G_USE_WEBIF_STREAMS
+	// This setting is deprecated as of v1.1.0 and may be removed in v2.0.0.
+	// WebIF streaming (/web/stream.m3u) is rarely needed and less compatible.
+	// Prefer direct TS streams (port 8001) or the integrated proxy for port 17999.
+	// Only use this if you specifically need standby-mode streaming.
 	useWebIF := os.Getenv("XG2G_USE_WEBIF_STREAMS") == "true"
 
 	if useWebIF {
