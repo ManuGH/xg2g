@@ -35,6 +35,13 @@ services:
       - XG2G_FUZZY_MAX=2
       - XG2G_METRICS_LISTEN=:9090
       - XG2G_INITIAL_REFRESH=true
+
+      # Optional: Audio transcoding for better Jellyfin compatibility
+      # Transcodes MP2/AC3 audio to AAC for Direct Play support
+      # - XG2G_ENABLE_AUDIO_TRANSCODING=true
+      # - XG2G_AUDIO_CODEC=aac          # aac or mp3 (default: aac)
+      # - XG2G_AUDIO_BITRATE=192k       # Audio bitrate (default: 192k)
+      # - XG2G_AUDIO_CHANNELS=2         # Stereo (default: 2)
     volumes:
       - xg2g-data:/data
     # Healthcheck disabled for now - image doesn't have curl/wget

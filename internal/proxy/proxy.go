@@ -20,6 +20,7 @@ type Server struct {
 	proxy      *httputil.ReverseProxy
 	httpServer *http.Server
 	logger     zerolog.Logger
+	transcoder *Transcoder // Optional audio transcoder
 }
 
 // Config holds the configuration for the proxy server.
@@ -55,6 +56,17 @@ func New(cfg Config) (*Server, error) {
 		logger:    cfg.Logger,
 	}
 
+	// Initialize optional transcoder
+	if IsTranscodingEnabled() {
+		transcoderCfg := GetTranscoderConfig()
+		s.transcoder = NewTranscoder(transcoderCfg, cfg.Logger)
+		cfg.Logger.Info().
+			Str("codec", transcoderCfg.Codec).
+			Str("bitrate", transcoderCfg.Bitrate).
+			Int("channels", transcoderCfg.Channels).
+			Msg("audio transcoding enabled")
+	}
+
 	// Create reverse proxy with custom director
 	s.proxy = httputil.NewSingleHostReverseProxy(target)
 	s.proxy.ErrorLog = nil // We handle errors ourselves
@@ -85,7 +97,8 @@ func New(cfg Config) (*Server, error) {
 
 // handleRequest handles incoming HTTP requests.
 // HEAD requests are answered directly without proxying to avoid EOF errors from Enigma2.
-// GET/POST requests are proxied to the target URL.
+// GET requests may be transcoded if audio transcoding is enabled.
+// POST requests are proxied directly to the target URL.
 func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	// Log the request
 	s.logger.Debug().
@@ -100,7 +113,27 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Proxy GET/POST requests to target
+	// Handle GET requests with optional transcoding
+	if r.Method == http.MethodGet && s.transcoder != nil {
+		// Build target URL for this request
+		targetURL := s.targetURL.String() + r.URL.Path
+		if r.URL.RawQuery != "" {
+			targetURL += "?" + r.URL.RawQuery
+		}
+
+		// Transcode the stream
+		if err := s.transcoder.TranscodeStream(r.Context(), w, r, targetURL); err != nil {
+			s.logger.Error().
+				Err(err).
+				Str("path", r.URL.Path).
+				Msg("transcoding failed, falling back to direct proxy")
+			// Fall back to direct proxy on error
+			s.proxy.ServeHTTP(w, r)
+		}
+		return
+	}
+
+	// Proxy GET/POST requests to target (no transcoding)
 	s.proxy.ServeHTTP(w, r)
 }
 

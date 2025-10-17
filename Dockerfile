@@ -13,7 +13,7 @@ RUN BUILD_REF="${GIT_REF:-${VERSION:-dev}}" && \
   -o /out/xg2g ./cmd/daemon
 
 FROM alpine:3.22.2
-RUN apk add --no-cache ca-certificates tzdata wget
+RUN apk add --no-cache ca-certificates tzdata wget ffmpeg
 WORKDIR /app
 COPY --from=builder /out/xg2g .
 RUN chmod +x /app/xg2g

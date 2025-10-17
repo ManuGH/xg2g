@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2025-01-XX
+
+### Added
+
+#### 🎵 Audio Transcoding Feature
+
+- **Real-time audio transcoding**: Converts MP2/AC3 audio to AAC for Direct Play support in Jellyfin/Plex
+- **Configurable transcoding**: Support for AAC and MP3 codecs with adjustable bitrate and channels
+- **FFmpeg integration**: Built-in FFmpeg support in Docker image for audio processing
+- **Environment configuration**: New `XG2G_ENABLE_AUDIO_TRANSCODING`, `XG2G_AUDIO_CODEC`, `XG2G_AUDIO_BITRATE`, `XG2G_AUDIO_CHANNELS`
+- **Performance optimized**: ~10-15% CPU per stream, only audio transcoding (video passthrough)
+- **Comprehensive documentation**: New [AUDIO_TRANSCODING.md](features/AUDIO_TRANSCODING.md) guide
+
+### Fixed
+
+- **Audio/Video desynchronization in Jellyfin**: Eliminated "Mixed-Mode Remuxing" delays by providing AAC audio
+- **Browser compatibility**: AAC audio ensures Direct Play support in all modern browsers
+- **Mobile streaming**: Enables synchronized AV1+AAC transcoding for remote playback
+
+### Changed
+
+- **Docker image**: Now includes FFmpeg (~20MB image size increase)
+- **Proxy behavior**: GET requests now support optional transcoding pipeline
+- **Stream quality**: Consistent AAC audio across all channels for better compatibility
+
+### Migration Guide
+
+To enable audio transcoding in v1.3.0:
+
+1. **Update to v1.3.0**:
+   ```bash
+   docker pull ghcr.io/manugh/xg2g:latest
+   ```
+
+2. **Add environment variables**:
+   ```yaml
+   environment:
+     - XG2G_ENABLE_AUDIO_TRANSCODING=true
+     - XG2G_AUDIO_CODEC=aac
+     - XG2G_AUDIO_BITRATE=192k
+   ```
+
+3. **Verify in Jellyfin**: Audio should show "AAC (direct)" in playback info
+
+**Note**: Audio transcoding requires the integrated proxy (`XG2G_ENABLE_STREAM_PROXY=true`)
+
 ## [1.2.0] - 2025-09-29
 
 ### Added

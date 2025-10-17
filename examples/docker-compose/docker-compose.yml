@@ -47,6 +47,15 @@ services:
       - XG2G_OWI_RETRIES=3         # Number of retry attempts
       - XG2G_OWI_BACKOFF_MS=500    # Base backoff delay in ms
 
+      # Optional: Audio transcoding for better Jellyfin/Media Server compatibility
+      # Transcodes MP2/AC3 audio to AAC for wider device support and Direct Play
+      # Requires ffmpeg in the container (included in the image)
+      # - XG2G_ENABLE_AUDIO_TRANSCODING=true
+      # - XG2G_AUDIO_CODEC=aac          # Target codec: aac or mp3 (default: aac)
+      # - XG2G_AUDIO_BITRATE=192k       # Audio bitrate (default: 192k)
+      # - XG2G_AUDIO_CHANNELS=2         # Audio channels: 1 (mono) or 2 (stereo, default)
+      # - XG2G_FFMPEG_PATH=ffmpeg       # Path to ffmpeg (default: ffmpeg)
+
     volumes:
       - ./data:/data  # M3U and XMLTV files stored here
 

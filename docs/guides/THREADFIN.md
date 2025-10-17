@@ -178,6 +178,61 @@ XG2G_EPG_ENABLED=true
 XG2G_EPG_DAYS=7
 ```
 
+## 🎵 Audio Transcoding (v1.3.0+)
+
+### Problem: Audio/Video Desynchronisierung in Jellyfin
+
+**Symptom:**
+- Audio ist 3-6 Sekunden verzögert
+- VLC spielt Streams perfekt synchron ab
+- Jellyfin zeigt "Mixed-Mode Remuxing" (Video Copy + Audio Transcode)
+
+**Ursache:**
+Enigma2 Streams verwenden oft MP2 oder AC3 Audio, die von Browsern nicht unterstützt werden. Jellyfin kopiert dann das H264 Video (keine Verzögerung) aber transkodiert das Audio zu AAC (mit Verzögerung), was zu Asynchronität führt.
+
+**Lösung: xg2g Audio Transcoding aktivieren**
+
+xg2g kann Audio direkt in AAC transkodieren, sodass Jellyfin alles per Direct Play abspielen kann (keine Verzögerung) oder für Mobil komplett zu AV1+AAC transkodiert (synchron).
+
+**Konfiguration:**
+
+```bash
+# Aktiviere Audio Transcoding
+XG2G_ENABLE_AUDIO_TRANSCODING=true
+
+# Optional: Codec-Einstellungen (Defaults sind optimal)
+XG2G_AUDIO_CODEC=aac          # aac (empfohlen) oder mp3
+XG2G_AUDIO_BITRATE=192k       # Audio Bitrate
+XG2G_AUDIO_CHANNELS=2         # Stereo (2) oder Mono (1)
+```
+
+**Docker Compose Beispiel:**
+
+```yaml
+services:
+  xg2g:
+    image: ghcr.io/manugh/xg2g:latest
+    environment:
+      # ... andere Settings
+      - XG2G_ENABLE_STREAM_PROXY=true
+      - XG2G_PROXY_TARGET=http://192.168.1.100:17999
+      - XG2G_ENABLE_AUDIO_TRANSCODING=true  # ← Neu
+      - XG2G_AUDIO_CODEC=aac
+      - XG2G_AUDIO_BITRATE=192k
+```
+
+**Vorteile:**
+
+- ✅ **Lokales Netzwerk**: Jellyfin Direct Play → Keine Verzögerung → Perfekte Synchronisation
+- ✅ **Mobile/Remote**: Jellyfin transkodiert beides zu AV1+AAC → Synchron → Effizient
+- ✅ **Browser-Kompatibilität**: AAC wird von allen Browsern unterstützt
+- ✅ **Geringer Overhead**: ~10-15% CPU für Audio-Transcoding
+
+**Performance:**
+- CPU-Last: ~10-15% pro Stream (Audio-only Transcoding)
+- Latenz: +100-200ms (vernachlässigbar)
+- Memory: ~20MB pro aktiven Stream
+
 ## 🔧 Troubleshooting
 
 ### Streams brechen sofort ab (Linux/Debian)
