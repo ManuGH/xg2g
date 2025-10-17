@@ -4,7 +4,7 @@ Complete IPTV pipeline: Enigma2 receiver → M3U/XMLTV → Threadfin → Jellyfi
 
 ## Architecture
 
-```
+```text
 ┌─────────────┐      ┌─────────┐      ┌───────────┐      ┌──────────┐
 │  Enigma2    │──────▶│  xg2g   │──────▶│ Threadfin │──────▶│ Jellyfin │
 │  OpenWebif  │ HTTP │ M3U+XML │ File  │  Proxy    │ M3U  │  Live TV │

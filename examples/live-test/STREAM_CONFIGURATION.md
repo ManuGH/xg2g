@@ -20,14 +20,15 @@ environment:
 ```
 
 **Ergebnis:**
-```
+
+```text
 Stream-URL: http://10.10.55.57:8001/1:0:19:81:6:85:C00000:0:0:0:
 Flow: Jellyfin → Threadfin → Enigma2 (Port 8001)
 ```
 
 ---
 
-### Option B: Mit integriertem Stream Proxy 🚀 NEU!
+### Option B: Mit integriertem Stream Proxy (NEU)
 
 **Wann nutzen:**
 - Enigma2 Stream Relay (Port 17999) unterstützt **keine** HEAD-Requests
@@ -63,7 +64,8 @@ services:
 ```
 
 **Ergebnis:**
-```
+
+```text
 Stream-URL: http://10.10.55.50:18000/1:0:19:81:6:85:C00000:0:0:0:
 Flow: Jellyfin → Threadfin → xg2g Proxy (HEAD support) → Enigma2 (Port 17999)
 ```
@@ -95,7 +97,8 @@ if r.Method == http.MethodHead {
 }
 ```
 
-2. **GET-Requests werden an Enigma2 weitergeleitet:**
+**GET-Requests werden an Enigma2 weitergeleitet:**
+
 ```go
 proxy := httputil.NewSingleHostReverseProxy(targetURL)
 proxy.ServeHTTP(w, r)

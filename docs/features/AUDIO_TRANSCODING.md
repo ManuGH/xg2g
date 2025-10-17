@@ -40,7 +40,7 @@ xg2g transcodes audio to AAC **before** it reaches Jellyfin:
 
 ## How It Works
 
-```
+```text
 Enigma2 (Port 17999)
   ↓
   MPEG-TS: H.264 + MP2/AC3
@@ -179,7 +179,7 @@ The latency increase is negligible for live TV use cases.
 
 ### Before Audio Transcoding
 
-```
+```text
 Jellyfin Playback Info:
 ┌─────────────────────────────────┐
 │ Video: H264 (direct)            │  ← No transcoding
@@ -191,7 +191,7 @@ Jellyfin Playback Info:
 
 ### After Audio Transcoding
 
-```
+```text
 Jellyfin Playback Info:
 ┌─────────────────────────────────┐
 │ Video: H264 (direct)            │  ← No transcoding
@@ -279,7 +279,7 @@ Common issues:
 
 ### Component Flow
 
-```
+```text
 ┌─────────────────────────────────────────────────────┐
 │ xg2g Proxy Server (Port 18000)                      │
 ├─────────────────────────────────────────────────────┤
@@ -371,7 +371,8 @@ curl http://localhost:8080/api/status | jq '.features.audio_transcoding'
 ```
 
 **Metrics (Prometheus):**
-```
+
+```promql
 # CPU usage per stream
 process_cpu_seconds_total{job="xg2g"}
 
@@ -428,13 +429,15 @@ process_resident_memory_bytes{job="xg2g"}
 You can now remove nginx and use xg2g's integrated solution:
 
 **Before (v1.2.0 + nginx):**
-```
+
+```text
 Enigma2:17999 → nginx:18000 → xg2g:8080 → Jellyfin
                  (HEAD proxy)
 ```
 
 **After (v1.3.0):**
-```
+
+```text
 Enigma2:17999 → xg2g:18000 → Jellyfin
                 (HEAD + Audio transcoding)
 ```

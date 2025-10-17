@@ -190,7 +190,7 @@ XG2G_EPG_DAYS=7
 **Ursache:**
 Enigma2 Streams verwenden oft MP2 oder AC3 Audio, die von Browsern nicht unterstützt werden. Jellyfin kopiert dann das H264 Video (keine Verzögerung) aber transkodiert das Audio zu AAC (mit Verzögerung), was zu Asynchronität führt.
 
-**Lösung: xg2g Audio Transcoding aktivieren**
+### Lösung: xg2g Audio Transcoding aktivieren
 
 xg2g kann Audio direkt in AAC transkodieren, sodass Jellyfin alles per Direct Play abspielen kann (keine Verzögerung) oder für Mobil komplett zu AV1+AAC transkodiert (synchron).
 
