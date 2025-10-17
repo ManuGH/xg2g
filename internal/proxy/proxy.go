@@ -123,12 +123,17 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 		// Transcode the stream
 		if err := s.transcoder.TranscodeStream(r.Context(), w, r, targetURL); err != nil {
-			s.logger.Error().
-				Err(err).
-				Str("path", r.URL.Path).
-				Msg("transcoding failed, falling back to direct proxy")
-			// Fall back to direct proxy on error
-			s.proxy.ServeHTTP(w, r)
+			// Only log error if it's not a context cancellation (client disconnect)
+			if r.Context().Err() == nil {
+				s.logger.Error().
+					Err(err).
+					Str("path", r.URL.Path).
+					Msg("transcoding failed")
+			} else {
+				s.logger.Debug().
+					Str("path", r.URL.Path).
+					Msg("transcoding stopped (client disconnected)")
+			}
 		}
 		return
 	}
