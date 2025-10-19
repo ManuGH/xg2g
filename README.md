@@ -1,65 +1,147 @@
-# xg2g - OpenWebIF to M3U/XMLTV Converter
+# xg2g
 
 [![CI](https://github.com/ManuGH/xg2g/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ManuGH/xg2g/actions/workflows/ci.yml)
 [![Docker](https://github.com/ManuGH/xg2g/actions/workflows/docker.yml/badge.svg?branch=main)](https://github.com/ManuGH/xg2g/actions/workflows/docker.yml)
 
-**Convert Enigma2 OpenWebIF bouquets to M3U playlists and XMLTV EPG for use with Threadfin, Jellyfin, Plex, and other IPTV players.**
+**Stream your Enigma2 satellite/cable receiver channels directly to Plex, Jellyfin, or any IPTV player.**
+
+Convert OpenWebIF bouquets to M3U playlists and XMLTV EPG. HDHomeRun emulation for automatic discovery.
 
 ---
 
-## Features
+## What it does
 
-- ✅ **Smart Stream Detection** (v1.2.0) - Automatically detects optimal stream endpoint per channel (zero config!)
-- ✅ **Direct TS Streaming** - Uses native Enigma2 stream URLs for best compatibility
-- ✅ **Integrated Stream Proxy** - Built-in HEAD request handler for Threadfin/Jellyfin compatibility (no nginx needed!)
-- ✅ **Sequential Channel Numbers** - Channels numbered by bouquet order (1, 2, 3...)
-- ✅ **Channel Logos** - Automatically fetched from your receiver
-- ✅ **EPG Data** - Full 7-day electronic program guide support
-- ✅ **Multiple Bouquets** - Combine multiple bouquets in one playlist
-- ✅ **Docker Ready** - Pre-built images available
+- **Converts** Enigma2 bouquets to M3U playlists
+- **Generates** XMLTV EPG (Electronic Program Guide)
+- **Emulates** HDHomeRun for auto-discovery in Plex/Jellyfin
+- **Streams** directly from your satellite/cable receiver
+- **Transcodes** audio on-the-fly (optional)
 
 ---
 
 ## Quick Start
 
-### Docker (Recommended)
-
 ```bash
 docker run -d \
   --name xg2g \
   -p 8080:8080 \
+  -p 1900:1900/udp \
   -e XG2G_OWI_BASE=http://192.168.1.100 \
   -e XG2G_BOUQUET=Favourites \
-  -e XG2G_STREAM_PORT=8001 \
   -e XG2G_EPG_ENABLED=true \
+  -e XG2G_HDHR_ENABLED=true \
   -v ./data:/data \
   ghcr.io/manugh/xg2g:latest
 ```
 
-**Access your files:**
-- M3U Playlist: `http://localhost:8080/files/playlist.m3u`
-- XMLTV EPG: `http://localhost:8080/files/xmltv.xml`
+**URLs:**
+- M3U: `http://localhost:8080/files/playlist.m3u`
+- EPG: `http://localhost:8080/xmltv.xml`
+- HDHomeRun discovery: automatic (if enabled)
 
-### Docker Compose
+---
 
-See complete examples:
-- **Simple Setup**: [examples/docker-compose/](examples/docker-compose/) - Just xg2g
-- **Full Stack**: [examples/full-stack/](examples/full-stack/) - xg2g → Threadfin → Jellyfin
-- **Live Test**: [examples/live-test/](examples/live-test/) - Complete test environment for Mac
+## Features
 
-Minimal example:
+### Core
+- ✅ M3U playlist generation
+- ✅ XMLTV EPG (7 days)
+- ✅ Channel logos (picons)
+- ✅ Multiple bouquets support
+- ✅ Smart stream detection
+- ✅ Docker ready
+
+### HDHomeRun Emulation (v1.4.0)
+- ✅ Auto-discovery via SSDP/UPnP
+- ✅ Plex/Jellyfin native integration
+- ✅ No manual M3U configuration needed
+- ✅ Perfect EPG matching
+
+### Advanced
+- ✅ Audio transcoding (MP2/AC3 → AAC)
+- ✅ Integrated stream proxy
+- ✅ Prometheus metrics
+- ✅ Health checks
+
+---
+
+## Configuration
+
+### Required
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `XG2G_OWI_BASE` | Enigma2 receiver URL | `http://192.168.1.100` |
+| `XG2G_BOUQUET` | Bouquet name(s) | `Favourites` or `Movies,Sports` |
+
+### Optional
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `XG2G_EPG_ENABLED` | `false` | Enable EPG collection |
+| `XG2G_EPG_DAYS` | `7` | Days of EPG (1-14) |
+| `XG2G_HDHR_ENABLED` | `false` | Enable HDHomeRun emulation |
+| `XG2G_HDHR_FRIENDLY_NAME` | `xg2g` | Name shown in Plex/Jellyfin |
+| `XG2G_ENABLE_AUDIO_TRANSCODING` | `false` | Transcode audio to AAC |
+| `XG2G_SMART_STREAM_DETECTION` | `false` | Auto-detect optimal stream port |
+
+### OpenWebIF Authentication (if needed)
+
+```bash
+XG2G_OWI_USER=root
+XG2G_OWI_PASS=yourpassword
+```
+
+---
+
+## Usage
+
+### With Plex/Jellyfin (HDHomeRun Mode)
+
+1. Enable HDHomeRun emulation:
+   ```bash
+   XG2G_HDHR_ENABLED=true
+   ```
+
+2. Plex/Jellyfin will **automatically discover** xg2g as a TV tuner
+
+3. EPG is automatically matched and populated
+
+**No manual M3U configuration needed!**
+
+### With Threadfin/xTeve (M3U Mode)
+
+Add these URLs:
+- **M3U**: `http://your-host:8080/files/playlist.m3u`
+- **XMLTV**: `http://your-host:8080/xmltv.xml`
+
+---
+
+## Docker Compose
 
 ```yaml
 services:
   xg2g:
     image: ghcr.io/manugh/xg2g:latest
+    container_name: xg2g
     ports:
-      - "8080:8080"
+      - "8080:8080"      # HTTP API
+      - "1900:1900/udp"  # SSDP discovery
     environment:
+      # Required
       - XG2G_OWI_BASE=http://192.168.1.100
       - XG2G_BOUQUET=Favourites
-      - XG2G_STREAM_PORT=8001
+
+      # EPG
       - XG2G_EPG_ENABLED=true
+      - XG2G_EPG_DAYS=7
+
+      # HDHomeRun
+      - XG2G_HDHR_ENABLED=true
+      - XG2G_HDHR_FRIENDLY_NAME=Enigma2 xg2g
+
+      # Optional: Audio transcoding
+      - XG2G_ENABLE_AUDIO_TRANSCODING=false
     volumes:
       - ./data:/data
     restart: unless-stopped
@@ -67,200 +149,75 @@ services:
 
 ---
 
-## Configuration
-
-### Required Settings
-
-| Variable | Example | Description |
-|----------|---------|-------------|
-| `XG2G_OWI_BASE` | `http://192.168.1.100` | Your Enigma2 receiver IP |
-| `XG2G_BOUQUET` | `Favourites` | Bouquet name (find in OpenWebif → EPG) |
-
-### Optional Settings
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `XG2G_STREAM_PORT` | `8001` | Stream port (8001 for direct streams, 17999 for Stream Relay) |
-| `XG2G_EPG_ENABLED` | `false` | Enable EPG data collection |
-| `XG2G_EPG_DAYS` | `7` | Days of EPG to fetch (1-14) |
-| `XG2G_XMLTV` | `xmltv.xml` | XMLTV output filename (auto-set when EPG enabled) |
-| `XG2G_OWI_USER` | - | OpenWebif username (if auth required) |
-| `XG2G_OWI_PASS` | - | OpenWebif password (if auth required) |
-
-### Smart Stream Detection (v1.2.0, Experimental)
-
-**NEW:** Automatically detects the optimal stream port (8001 vs 17999) for each channel!
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `XG2G_SMART_STREAM_DETECTION` | `false` | Enable automatic per-channel stream detection |
-
-**How it works:**
-- Tests each channel with HEAD requests on ports 8001 and 17999
-- Uses direct streams where possible (best performance, zero latency)
-- Automatically uses proxy only for channels that need it
-- Results are cached for 24 hours
-
-**When to use:** If you have mixed content (some channels on 8001, some on 17999) or want zero-configuration streaming.
-
-### Stream Proxy Settings (Advanced)
-
-Only needed if you're **not** using Smart Stream Detection and Enigma2 Stream Relay (port 17999) doesn't support HEAD requests.
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `XG2G_ENABLE_STREAM_PROXY` | `false` | Enable integrated stream proxy |
-| `XG2G_PROXY_PORT` | `18000` | Proxy listen port |
-| `XG2G_PROXY_TARGET` | - | Target Enigma2 URL (e.g., `http://192.168.1.100:17999`) |
-| `XG2G_STREAM_BASE` | - | Override stream URLs (e.g., `http://your-host:18000`) |
-
-**When to use:** If you see "EOF" errors in Threadfin/Jellyfin logs when using port 17999, enable the integrated proxy. See [examples/live-test/STREAM_CONFIGURATION.md](examples/live-test/STREAM_CONFIGURATION.md) for detailed setup.
-
-### Audio Transcoding Settings (Advanced)
-
-Fixes audio delay issues in browsers that don't natively support MP2/AC3 audio (e.g., Safari, Chrome).
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `XG2G_ENABLE_AUDIO_TRANSCODING` | `false` | Enable audio transcoding (MP2/AC3 → AAC) |
-| `XG2G_AUDIO_CODEC` | `aac` | Target audio codec |
-| `XG2G_AUDIO_BITRATE` | `192k` | Audio bitrate |
-| `XG2G_AUDIO_CHANNELS` | `2` | Number of audio channels (2 for stereo) |
-| `XG2G_FFMPEG_PATH` | `ffmpeg` | Path to ffmpeg binary |
-
-**When to use:** If you experience 3-6 second audio delays in Jellyfin/Plex when using Safari or other browsers. This transcodes audio upfront, preventing sync issues. See [docs/AUDIO_DELAY_FIX.md](docs/AUDIO_DELAY_FIX.md) for detailed troubleshooting.
-
-### HDHomeRun Emulation (NEW in v1.4.0, Experimental)
-
-**NEW:** xg2g can emulate an HDHomeRun TV tuner, allowing Plex/Jellyfin to discover it as native hardware!
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `XG2G_HDHR_ENABLED` | `false` | Enable HDHomeRun emulation |
-| `XG2G_HDHR_DEVICE_ID` | `XG2G1234` | Device ID for discovery |
-| `XG2G_HDHR_FRIENDLY_NAME` | `xg2g` | Friendly name shown in Plex/Jellyfin |
-| `XG2G_HDHR_MODEL` | `HDHR-xg2g` | Model name |
-| `XG2G_HDHR_FIRMWARE` | `xg2g-1.4.0` | Firmware version |
-| `XG2G_HDHR_BASE_URL` | - | Base URL for discovery (auto-detected if empty) |
-| `XG2G_HDHR_TUNER_COUNT` | `4` | Number of tuners to report |
-
-**How it works:**
-- xg2g responds to HDHomeRun discovery protocol
-- Plex/Jellyfin automatically detect it as a TV tuner
-- Provides `/discover.json`, `/lineup.json`, and `/lineup_status.json` endpoints
-- Better integration than M3U (no manual URL entry needed)
-
-**When to use:** If you want Plex/Jellyfin to auto-discover xg2g or prefer HDHomeRun-style integration over M3U playlists.
-
-### Multiple Bouquets
-
-Combine multiple bouquets into one playlist:
-
-```bash
-XG2G_BOUQUET="Favourites,Movies,Sports"
-```
-
-All channels will be merged with sequential numbering.
-
-**For Threadfin users:** See detailed setup guide at [docs/guides/THREADFIN.md](docs/guides/THREADFIN.md)
-
----
-
 ## API Endpoints
 
-- `GET /files/playlist.m3u` - Generated M3U playlist
-- `GET /files/xmltv.xml` - Generated XMLTV EPG
-- `GET /api/status` - Service status
-- `POST /api/refresh` - Trigger manual refresh (requires API token)
-- `GET /healthz` - Health check
-- `GET /readyz` - Readiness check
-
-### API Token for Manual Refresh
-
-The `/api/refresh` endpoint requires authentication to prevent unauthorized refreshes:
-
-```bash
-# Generate a secure token
-openssl rand -hex 16
-
-# Set in environment or .env file
-XG2G_API_TOKEN=your-generated-token-here
-
-# Use with curl
-curl -X POST http://localhost:8080/api/refresh \
-  -H "X-API-Token: your-generated-token-here"
-```
-
-**Note:** If `XG2G_API_TOKEN` is not set, the `/api/refresh` endpoint will be disabled (returns 401).
-
----
-
-## Using with IPTV Software
-
-Use xg2g with any IPTV software that supports M3U and XMLTV:
-
-**M3U URL:** `http://your-host:8080/files/playlist.m3u`
-**XMLTV URL:** `http://your-host:8080/files/xmltv.xml`
-
-### Popular Software
-
-- **Jellyfin/Plex**: Add as M3U Tuner + XMLTV Guide
-- **Threadfin/xTeve**: Add as M3U + XMLTV source
-- **Kodi**: Add via PVR IPTV Simple Client
-- **VLC**: Open M3U playlist directly
-
-For detailed setup guides, see [examples/](examples/) directory.
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/files/playlist.m3u` | GET | M3U playlist |
+| `/files/xmltv.xml` | GET | XMLTV EPG (legacy) |
+| `/xmltv.xml` | GET | XMLTV EPG (remapped for Plex) |
+| `/discover.json` | GET | HDHomeRun discovery |
+| `/lineup.json` | GET | HDHomeRun channel lineup |
+| `/device.xml` | GET | UPnP device description |
+| `/api/status` | GET | Service status |
+| `/api/refresh` | POST | Trigger manual refresh (auth required) |
+| `/healthz` | GET | Health check |
+| `/readyz` | GET | Readiness check |
 
 ---
 
 ## Troubleshooting
 
-### No Channels Found
+### Plex/Jellyfin doesn't find the tuner
 
-Check your bouquet name:
+1. Make sure UDP port 1900 is accessible:
+   ```bash
+   docker run -p 1900:1900/udp ...
+   ```
+
+2. Check if SSDP announcer is running:
+   ```bash
+   docker logs xg2g | grep -i ssdp
+   ```
+
+3. Manually add tuner in Plex with: `http://your-host:8080`
+
+### Channels show "Unknown Program"
+
+- Enable EPG: `XG2G_EPG_ENABLED=true`
+- Use the remapped XMLTV endpoint: `http://your-host:8080/xmltv.xml`
+
+### Audio/Video out of sync in Jellyfin
+
+Enable audio transcoding:
 ```bash
-# List available bouquets
-curl http://192.168.1.100/api/bouquets
+XG2G_ENABLE_AUDIO_TRANSCODING=true
 ```
 
-### Streams Don't Play
+See [docs/AUDIO_DELAY_FIX.md](docs/AUDIO_DELAY_FIX.md) for details.
 
-1. Verify stream port (usually `8001`, sometimes alternative ports like `17999`)
-2. Test direct stream:
+### Streams don't play
+
+1. Test direct stream:
    ```bash
    curl -I http://192.168.1.100:8001/1:0:1:...
    ```
-3. If you see "EOF" or "Empty reply" errors with port `17999`, you may need the integrated proxy:
+
+2. Enable smart detection:
+   ```bash
+   XG2G_SMART_STREAM_DETECTION=true
+   ```
+
+3. Or enable integrated proxy if needed:
    ```bash
    XG2G_ENABLE_STREAM_PROXY=true
    XG2G_PROXY_TARGET=http://192.168.1.100:17999
-   XG2G_STREAM_BASE=http://your-host-ip:18000
+   XG2G_STREAM_BASE=http://your-host:18000
    ```
-4. Check firewall settings on your receiver
-
-See [STREAM_CONFIGURATION.md](examples/live-test/STREAM_CONFIGURATION.md) for detailed troubleshooting.
-
-### No EPG Data
-
-Enable EPG collection:
-```bash
-XG2G_EPG_ENABLED=true
-XG2G_EPG_DAYS=7
-```
 
 ---
 
-## Advanced Topics
-
-For production deployments, monitoring, and performance tuning, see:
-- [docs/ADVANCED.md](docs/ADVANCED.md) - Advanced configuration and tuning
-- [docs/PRODUCTION.md](docs/PRODUCTION.md) - Production deployment & operations
-
----
-
-## Development
-
-### Build from Source
+## Building from Source
 
 ```bash
 git clone https://github.com/ManuGH/xg2g.git
@@ -268,26 +225,10 @@ cd xg2g
 go build ./cmd/daemon
 ```
 
-### Run Tests
-
+Run:
 ```bash
-go test ./...
+./daemon
 ```
-
-### Local Development
-
-```bash
-XG2G_DATA=./data \
-XG2G_OWI_BASE=http://receiver.local \
-XG2G_BOUQUET=Favourites \
-go run ./cmd/daemon
-```
-
----
-
-## Contributing
-
-Contributions welcome! See [CONTRIBUTING.md](docs/CONTRIBUTING.md)
 
 ---
 
@@ -299,5 +240,5 @@ MIT License - See [LICENSE](LICENSE)
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/ManuGH/xg2g/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/ManuGH/xg2g/discussions)
+- [GitHub Issues](https://github.com/ManuGH/xg2g/issues)
+- [GitHub Discussions](https://github.com/ManuGH/xg2g/discussions)
