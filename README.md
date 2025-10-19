@@ -187,7 +187,7 @@ services:
 - Enable EPG: `XG2G_EPG_ENABLED=true`
 - Use the remapped XMLTV endpoint: `http://your-host:8080/xmltv.xml`
 
-### Audio/Video out of sync in Jellyfin
+### Audio/Video out of sync
 
 Enable audio transcoding:
 ```bash
