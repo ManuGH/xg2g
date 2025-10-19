@@ -71,6 +71,7 @@ func (s *Server) routes() http.Handler {
 	r.HandleFunc("/api/status", s.handleStatus).Methods("GET")
 	r.HandleFunc("/healthz", s.handleHealth).Methods("GET")
 	r.HandleFunc("/readyz", s.handleReady).Methods("GET")
+	r.HandleFunc("/xmltv.xml", s.handleXMLTV).Methods("GET")
 
 	// HDHomeRun emulation endpoints (if enabled)
 	if s.hdhr != nil {
@@ -300,6 +301,34 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 		Str("state", "ready").
 		Time("lastRun", status.LastRun).
 		Msg("readiness probe")
+}
+
+func (s *Server) handleXMLTV(w http.ResponseWriter, r *http.Request) {
+	logger := log.WithComponentFromContext(r.Context(), "api")
+
+	// Get XMLTV file path
+	xmltvPath := filepath.Join(s.cfg.DataDir, s.cfg.XMLTVPath)
+
+	// Check if file exists
+	if !checkFile(r.Context(), xmltvPath) {
+		logger.Warn().
+			Str("event", "xmltv.not_found").
+			Str("path", xmltvPath).
+			Msg("XMLTV file not found or not readable")
+		http.Error(w, "XMLTV file not available", http.StatusNotFound)
+		return
+	}
+
+	// Serve the file
+	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=300") // Cache for 5 minutes
+
+	http.ServeFile(w, r, xmltvPath)
+
+	logger.Debug().
+		Str("event", "xmltv.served").
+		Str("path", xmltvPath).
+		Msg("XMLTV file served successfully")
 }
 
 // checkFile verifies if a file exists and is readable.
