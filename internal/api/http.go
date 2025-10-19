@@ -71,7 +71,7 @@ func (s *Server) routes() http.Handler {
 	r.HandleFunc("/api/status", s.handleStatus).Methods("GET")
 	r.HandleFunc("/healthz", s.handleHealth).Methods("GET")
 	r.HandleFunc("/readyz", s.handleReady).Methods("GET")
-	r.HandleFunc("/xmltv.xml", s.handleXMLTV).Methods("GET")
+	r.HandleFunc("/xmltv.xml", s.handleXMLTV).Methods("GET", "HEAD")
 
 	// HDHomeRun emulation endpoints (if enabled)
 	if s.hdhr != nil {
