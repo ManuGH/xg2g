@@ -116,6 +116,20 @@ Only needed if you're **not** using Smart Stream Detection and Enigma2 Stream Re
 
 **When to use:** If you see "EOF" errors in Threadfin/Jellyfin logs when using port 17999, enable the integrated proxy. See [examples/live-test/STREAM_CONFIGURATION.md](examples/live-test/STREAM_CONFIGURATION.md) for detailed setup.
 
+### Audio Transcoding Settings (Advanced)
+
+Fixes audio delay issues in browsers that don't natively support MP2/AC3 audio (e.g., Safari, Chrome).
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `XG2G_ENABLE_AUDIO_TRANSCODING` | `false` | Enable audio transcoding (MP2/AC3 → AAC) |
+| `XG2G_AUDIO_CODEC` | `aac` | Target audio codec |
+| `XG2G_AUDIO_BITRATE` | `192k` | Audio bitrate |
+| `XG2G_AUDIO_CHANNELS` | `2` | Number of audio channels (2 for stereo) |
+| `XG2G_FFMPEG_PATH` | `ffmpeg` | Path to ffmpeg binary |
+
+**When to use:** If you experience 3-6 second audio delays in Jellyfin/Plex when using Safari or other browsers. This transcodes audio upfront, preventing sync issues. See [docs/AUDIO_DELAY_FIX.md](docs/AUDIO_DELAY_FIX.md) for detailed troubleshooting.
+
 ### Multiple Bouquets
 
 Combine multiple bouquets into one playlist:
