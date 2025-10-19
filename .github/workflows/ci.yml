@@ -213,7 +213,7 @@ jobs:
           set -euo pipefail
           # Build golangci-lint from source using the runner's Go toolchain
           # to avoid version mismatch errors with prebuilt binaries.
-          go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@v2.5.0
           golangci-lint --version
 
       - name: Lint
