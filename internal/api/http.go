@@ -319,16 +319,75 @@ func (s *Server) handleXMLTV(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Serve the file
+	// Read XMLTV file
+	xmltvData, err := os.ReadFile(xmltvPath)
+	if err != nil {
+		logger.Error().Err(err).Msg("failed to read XMLTV file")
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	// Read M3U to build tvg-id to tvg-chno mapping
+	m3uPath := filepath.Join(s.cfg.DataDir, "playlist.m3u")
+	m3uData, err := os.ReadFile(m3uPath)
+	if err != nil {
+		logger.Error().Err(err).Msg("failed to read M3U file")
+		// Serve original XMLTV if M3U not available
+		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+		w.Header().Set("Cache-Control", "public, max-age=300")
+		w.Write(xmltvData)
+		return
+	}
+
+	// Build mapping from tvg-id (sref-...) to tvg-chno (1, 2, 3...)
+	idToNumber := make(map[string]string)
+	m3uLines := strings.Split(string(m3uData), "\n")
+	for _, line := range m3uLines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "#EXTINF:") {
+			var tvgID, tvgChno string
+
+			// Extract tvg-id
+			if idx := strings.Index(line, `tvg-id="`); idx != -1 {
+				start := idx + 8
+				if end := strings.Index(line[start:], `"`); end != -1 {
+					tvgID = line[start : start+end]
+				}
+			}
+
+			// Extract tvg-chno
+			if idx := strings.Index(line, `tvg-chno="`); idx != -1 {
+				start := idx + 10
+				if end := strings.Index(line[start:], `"`); end != -1 {
+					tvgChno = line[start : start+end]
+				}
+			}
+
+			if tvgID != "" && tvgChno != "" {
+				idToNumber[tvgID] = tvgChno
+			}
+		}
+	}
+
+	// Replace all channel IDs in XMLTV
+	xmltvString := string(xmltvData)
+	for oldID, newID := range idToNumber {
+		// Replace in channel elements: <channel id="sref-...">
+		xmltvString = strings.ReplaceAll(xmltvString, `id="`+oldID+`"`, `id="`+newID+`"`)
+		// Replace in programme elements: <programme channel="sref-...">
+		xmltvString = strings.ReplaceAll(xmltvString, `channel="`+oldID+`"`, `channel="`+newID+`"`)
+	}
+
+	// Serve the modified XMLTV
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=300") // Cache for 5 minutes
-
-	http.ServeFile(w, r, xmltvPath)
+	w.Write([]byte(xmltvString))
 
 	logger.Debug().
 		Str("event", "xmltv.served").
 		Str("path", xmltvPath).
-		Msg("XMLTV file served successfully")
+		Int("mappings", len(idToNumber)).
+		Msg("XMLTV file served with channel ID remapping")
 }
 
 // checkFile verifies if a file exists and is readable.
@@ -601,26 +660,18 @@ func (s *Server) handleLineupJSON(w http.ResponseWriter, r *http.Request) {
 	lines := strings.Split(string(data), "\n")
 	var currentChannel hdhr.LineupEntry
 
-	channelNumber := 0
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "#EXTINF:") {
 			// Parse channel info from EXTINF line
 			// Format: #EXTINF:-1 tvg-chno="X" tvg-id="sref-..." tvg-name="Channel Name",Display Name
 
-			channelNumber++
-
-			// Extract tvg-id (XMLTV channel ID) - this is what Plex uses for EPG matching
-			if idx := strings.Index(line, `tvg-id="`); idx != -1 {
-				start := idx + 8
+			// Extract tvg-chno (channel number) - Plex uses this for EPG matching with XMLTV
+			if idx := strings.Index(line, `tvg-chno="`); idx != -1 {
+				start := idx + 10
 				if end := strings.Index(line[start:], `"`); end != -1 {
 					currentChannel.GuideNumber = line[start : start+end]
 				}
-			}
-
-			// Fallback to sequential number if no tvg-id
-			if currentChannel.GuideNumber == "" {
-				currentChannel.GuideNumber = fmt.Sprintf("%d", channelNumber)
 			}
 
 			// Extract channel name (after the last comma)
