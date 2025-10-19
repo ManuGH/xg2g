@@ -74,9 +74,9 @@ type DiscoverResponse struct {
 
 // LineupStatus represents tuner status
 type LineupStatus struct {
-	ScanInProgress int    `json:"ScanInProgress"`
-	ScanPossible   int    `json:"ScanPossible"`
-	Source         string `json:"Source"`
+	ScanInProgress int      `json:"ScanInProgress"`
+	ScanPossible   int      `json:"ScanPossible"`
+	Source         string   `json:"Source"`
 	SourceList     []string `json:"SourceList"`
 }
 
@@ -112,7 +112,9 @@ func (s *Server) HandleDiscover(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		s.logger.Error().Err(err).Str("endpoint", "/discover.json").Msg("failed to encode HDHomeRun discovery response")
+	}
 
 	s.logger.Info().
 		Str("endpoint", "/discover.json").
@@ -130,7 +132,9 @@ func (s *Server) HandleLineupStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		s.logger.Error().Err(err).Str("endpoint", "/lineup_status.json").Msg("failed to encode HDHomeRun lineup status response")
+	}
 
 	s.logger.Debug().
 		Str("endpoint", "/lineup_status.json").
@@ -143,7 +147,9 @@ func (s *Server) HandleLineup(w http.ResponseWriter, r *http.Request) {
 	// This will be populated by the main API server with actual channels
 	// For now, return empty array
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode([]LineupEntry{})
+	if err := json.NewEncoder(w).Encode([]LineupEntry{}); err != nil {
+		s.logger.Error().Err(err).Str("endpoint", "/lineup.json").Msg("failed to encode HDHomeRun lineup response")
+	}
 
 	s.logger.Debug().
 		Str("endpoint", "/lineup.json").
@@ -231,7 +237,9 @@ func (s *Server) StartSSDPAnnouncer(ctx context.Context) error {
 
 	// Wait for context cancellation
 	<-ctx.Done()
-	conn.Close()
+	if err := conn.Close(); err != nil {
+		s.logger.Warn().Err(err).Msg("failed to close SSDP connection")
+	}
 	return nil
 }
 
@@ -244,7 +252,10 @@ func (s *Server) handleSSDPRequests(ctx context.Context, conn net.PacketConn, mu
 		case <-ctx.Done():
 			return
 		default:
-			conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+			if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+				s.logger.Error().Err(err).Msg("failed to set SSDP read deadline")
+				continue
+			}
 			n, remoteAddr, err := conn.ReadFrom(buf)
 			if err != nil {
 				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
@@ -258,8 +269,8 @@ func (s *Server) handleSSDPRequests(ctx context.Context, conn net.PacketConn, mu
 
 			// Check if it's an M-SEARCH request for HDHomeRun
 			if strings.Contains(msg, "M-SEARCH") &&
-			   (strings.Contains(msg, "ssdp:all") ||
-			    strings.Contains(msg, "urn:schemas-upnp-org:device:MediaServer:1")) {
+				(strings.Contains(msg, "ssdp:all") ||
+					strings.Contains(msg, "urn:schemas-upnp-org:device:MediaServer:1")) {
 
 				s.logger.Debug().
 					Str("from", remoteAddr.String()).
@@ -286,13 +297,13 @@ func (s *Server) sendSSDPResponse(conn net.PacketConn, addr net.Addr) {
 
 	response := fmt.Sprintf(
 		"HTTP/1.1 200 OK\r\n"+
-		"CACHE-CONTROL: max-age=1800\r\n"+
-		"EXT:\r\n"+
-		"LOCATION: %s/device.xml\r\n"+
-		"SERVER: Linux/2.6 UPnP/1.0 xg2g/1.4.0\r\n"+
-		"ST: urn:schemas-upnp-org:device:MediaServer:1\r\n"+
-		"USN: uuid:%s::urn:schemas-upnp-org:device:MediaServer:1\r\n"+
-		"\r\n",
+			"CACHE-CONTROL: max-age=1800\r\n"+
+			"EXT:\r\n"+
+			"LOCATION: %s/device.xml\r\n"+
+			"SERVER: Linux/2.6 UPnP/1.0 xg2g/1.4.0\r\n"+
+			"ST: urn:schemas-upnp-org:device:MediaServer:1\r\n"+
+			"USN: uuid:%s::urn:schemas-upnp-org:device:MediaServer:1\r\n"+
+			"\r\n",
 		baseURL,
 		s.config.DeviceID,
 	)
@@ -337,14 +348,14 @@ func (s *Server) sendSSDPNotify(conn net.PacketConn, addr *net.UDPAddr) {
 
 	notify := fmt.Sprintf(
 		"NOTIFY * HTTP/1.1\r\n"+
-		"HOST: 239.255.255.250:1900\r\n"+
-		"CACHE-CONTROL: max-age=1800\r\n"+
-		"LOCATION: %s/device.xml\r\n"+
-		"NT: urn:schemas-upnp-org:device:MediaServer:1\r\n"+
-		"NTS: ssdp:alive\r\n"+
-		"SERVER: Linux/2.6 UPnP/1.0 xg2g/1.4.0\r\n"+
-		"USN: uuid:%s::urn:schemas-upnp-org:device:MediaServer:1\r\n"+
-		"\r\n",
+			"HOST: 239.255.255.250:1900\r\n"+
+			"CACHE-CONTROL: max-age=1800\r\n"+
+			"LOCATION: %s/device.xml\r\n"+
+			"NT: urn:schemas-upnp-org:device:MediaServer:1\r\n"+
+			"NTS: ssdp:alive\r\n"+
+			"SERVER: Linux/2.6 UPnP/1.0 xg2g/1.4.0\r\n"+
+			"USN: uuid:%s::urn:schemas-upnp-org:device:MediaServer:1\r\n"+
+			"\r\n",
 		baseURL,
 		s.config.DeviceID,
 	)
@@ -412,7 +423,9 @@ func (s *Server) HandleDeviceXML(w http.ResponseWriter, r *http.Request) {
 	)
 
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
-	w.Write([]byte(xml))
+	if _, err := w.Write([]byte(xml)); err != nil {
+		s.logger.Error().Err(err).Str("endpoint", "/device.xml").Msg("failed to write HDHomeRun device XML response")
+	}
 
 	s.logger.Debug().
 		Str("endpoint", "/device.xml").

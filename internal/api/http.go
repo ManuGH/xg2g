@@ -341,7 +341,9 @@ func (s *Server) handleXMLTV(w http.ResponseWriter, r *http.Request) {
 		// Serve original XMLTV if M3U not available
 		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 		w.Header().Set("Cache-Control", "public, max-age=300")
-		w.Write(xmltvData)
+		if _, err := w.Write(xmltvData); err != nil {
+			logger.Error().Err(err).Msg("failed to write raw XMLTV response")
+		}
 		return
 	}
 
@@ -387,7 +389,10 @@ func (s *Server) handleXMLTV(w http.ResponseWriter, r *http.Request) {
 	// Serve the modified XMLTV
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=300") // Cache for 5 minutes
-	w.Write([]byte(xmltvString))
+	if _, err := w.Write([]byte(xmltvString)); err != nil {
+		logger.Error().Err(err).Msg("failed to write XMLTV response")
+		return
+	}
 
 	logger.Debug().
 		Str("event", "xmltv.served").

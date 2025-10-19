@@ -267,8 +267,6 @@ func TestHandleDeviceXML(t *testing.T) {
 }
 
 func TestGetConfigFromEnv(t *testing.T) {
-	// Backup original environment
-	originalEnvs := make(map[string]string)
 	envVars := []string{
 		"XG2G_HDHR_ENABLED",
 		"XG2G_HDHR_DEVICE_ID",
@@ -278,24 +276,6 @@ func TestGetConfigFromEnv(t *testing.T) {
 		"XG2G_HDHR_BASE_URL",
 		"XG2G_HDHR_TUNER_COUNT",
 	}
-
-	for _, env := range envVars {
-		if val := os.Getenv(env); val != "" {
-			originalEnvs[env] = val
-		}
-		os.Unsetenv(env)
-	}
-
-	// Restore environment after test
-	defer func() {
-		for _, env := range envVars {
-			os.Unsetenv(env)
-			if val, exists := originalEnvs[env]; exists {
-				os.Setenv(env, val)
-			}
-		}
-	}()
-
 	logger := zerolog.New(os.Stdout)
 
 	tests := []struct {
@@ -359,9 +339,12 @@ func TestGetConfigFromEnv(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Set environment variables
+			for _, env := range envVars {
+				t.Setenv(env, "")
+			}
+
 			for key, value := range tt.envVars {
-				os.Setenv(key, value)
+				t.Setenv(key, value)
 			}
 
 			config := GetConfigFromEnv(logger)
@@ -374,10 +357,6 @@ func TestGetConfigFromEnv(t *testing.T) {
 			assert.Equal(t, tt.expected.BaseURL, config.BaseURL)
 			assert.Equal(t, tt.expected.TunerCount, config.TunerCount)
 
-			// Cleanup for next iteration
-			for key := range tt.envVars {
-				os.Unsetenv(key)
-			}
 		})
 	}
 }
@@ -389,15 +368,13 @@ func TestUtilityFunctions(t *testing.T) {
 		assert.Equal(t, "default", result)
 
 		// Test with existing env var
-		os.Setenv("TEST_VAR_XG2G", "test_value")
-		defer os.Unsetenv("TEST_VAR_XG2G")
+		t.Setenv("TEST_VAR_XG2G", "test_value")
 
 		result = getEnvDefault("TEST_VAR_XG2G", "default")
 		assert.Equal(t, "test_value", result)
 
 		// Test with empty env var
-		os.Setenv("EMPTY_VAR_XG2G", "")
-		defer os.Unsetenv("EMPTY_VAR_XG2G")
+		t.Setenv("EMPTY_VAR_XG2G", "")
 
 		result = getEnvDefault("EMPTY_VAR_XG2G", "default")
 		assert.Equal(t, "default", result)
@@ -409,15 +386,13 @@ func TestUtilityFunctions(t *testing.T) {
 		assert.Equal(t, 42, result)
 
 		// Test with valid integer
-		os.Setenv("TEST_INT_VAR", "123")
-		defer os.Unsetenv("TEST_INT_VAR")
+		t.Setenv("TEST_INT_VAR", "123")
 
 		result = getEnvInt("TEST_INT_VAR", 42)
 		assert.Equal(t, 123, result)
 
 		// Test with invalid integer
-		os.Setenv("INVALID_INT_VAR", "not_an_int")
-		defer os.Unsetenv("INVALID_INT_VAR")
+		t.Setenv("INVALID_INT_VAR", "not_an_int")
 
 		result = getEnvInt("INVALID_INT_VAR", 42)
 		assert.Equal(t, 42, result)

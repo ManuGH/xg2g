@@ -46,6 +46,7 @@ func TestNewStreamDetector(t *testing.T) {
 
 	if detector == nil {
 		t.Fatal("NewStreamDetector returned nil")
+		return
 	}
 
 	if detector.receiverHost != receiverHost {
@@ -184,6 +185,7 @@ func TestStreamDetector_DetectStreamURL(t *testing.T) {
 
 	if info == nil {
 		t.Fatal("DetectStreamURL() returned nil info")
+		return
 	}
 
 	// Should return fallback URL

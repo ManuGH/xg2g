@@ -22,7 +22,7 @@ func WriteM3U(w io.Writer, items []Item) error {
 	// Optional x-tvg-url header attribute for clients that auto-load EPG
 	if epgURL := os.Getenv("XG2G_X_TVG_URL"); epgURL != "" {
 		// Some players support x-tvg-url (unofficial but widely used)
-		buf.WriteString(fmt.Sprintf(`#EXTM3U x-tvg-url="%s"`+"\n", epgURL))
+		fmt.Fprintf(buf, `#EXTM3U x-tvg-url="%s"`+"\n", epgURL)
 	} else {
 		buf.WriteString("#EXTM3U\n")
 	}
@@ -31,15 +31,15 @@ func WriteM3U(w io.Writer, items []Item) error {
 		attrs := bytes.Buffer{}
 		// tvg-chno only when > 0
 		if it.TvgChNo > 0 {
-			attrs.WriteString(fmt.Sprintf(`tvg-chno="%d" `, it.TvgChNo))
+			fmt.Fprintf(&attrs, `tvg-chno="%d" `, it.TvgChNo)
 		}
-		attrs.WriteString(fmt.Sprintf(`tvg-id="%s" `, it.TvgID))
-		attrs.WriteString(fmt.Sprintf(`tvg-logo="%s" `, it.TvgLogo))
-		attrs.WriteString(fmt.Sprintf(`group-title="%s" `, it.Group))
+		fmt.Fprintf(&attrs, `tvg-id="%s" `, it.TvgID)
+		fmt.Fprintf(&attrs, `tvg-logo="%s" `, it.TvgLogo)
+		fmt.Fprintf(&attrs, `group-title="%s" `, it.Group)
 		// tvg-name duplicates channel name to improve EPG mapping in some clients
-		attrs.WriteString(fmt.Sprintf(`tvg-name="%s"`, it.Name))
+		fmt.Fprintf(&attrs, `tvg-name="%s"`, it.Name)
 
-		buf.WriteString(fmt.Sprintf(`#EXTINF:-1 %s,%s`+"\n", attrs.String(), it.Name))
+		fmt.Fprintf(buf, `#EXTINF:-1 %s,%s`+"\n", attrs.String(), it.Name)
 		buf.WriteString(it.URL + "\n")
 	}
 	_, err := io.Copy(w, buf)
