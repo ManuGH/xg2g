@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/hdhr"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/gorilla/mux"
@@ -27,6 +28,7 @@ type Server struct {
 	cfg        jobs.Config
 	status     jobs.Status
 	cb         *CircuitBreaker
+	hdhr       *hdhr.Server // HDHomeRun emulation server
 	// refreshFn allows tests to stub the refresh operation; defaults to jobs.Refresh
 	refreshFn func(context.Context, jobs.Config) (*jobs.Status, error)
 }
@@ -42,6 +44,18 @@ func New(cfg jobs.Config) *Server {
 	s.refreshFn = jobs.Refresh
 	// Initialize a conservative default circuit breaker (3 failures -> 30s open)
 	s.cb = NewCircuitBreaker(3, 30*time.Second)
+
+	// Initialize HDHomeRun emulation if enabled
+	logger := log.WithComponent("api")
+	hdhrCfg := hdhr.GetConfigFromEnv(logger)
+	if hdhrCfg.Enabled {
+		s.hdhr = hdhr.NewServer(hdhrCfg)
+		logger.Info().
+			Bool("hdhr_enabled", true).
+			Str("device_id", hdhrCfg.DeviceID).
+			Msg("HDHomeRun emulation enabled")
+	}
+
 	return s
 }
 
@@ -57,6 +71,15 @@ func (s *Server) routes() http.Handler {
 	r.HandleFunc("/api/status", s.handleStatus).Methods("GET")
 	r.HandleFunc("/healthz", s.handleHealth).Methods("GET")
 	r.HandleFunc("/readyz", s.handleReady).Methods("GET")
+
+	// HDHomeRun emulation endpoints (if enabled)
+	if s.hdhr != nil {
+		r.HandleFunc("/discover.json", s.hdhr.HandleDiscover).Methods("GET")
+		r.HandleFunc("/lineup_status.json", s.hdhr.HandleLineupStatus).Methods("GET")
+		r.HandleFunc("/lineup.json", s.handleLineupJSON).Methods("GET")
+		r.HandleFunc("/lineup.json", s.hdhr.HandleLineupPost).Methods("POST")
+		r.HandleFunc("/lineup.post", s.hdhr.HandleLineupPost).Methods("GET", "POST")
+	}
 
 	// Authenticated routes - only protect mutative endpoints
 	r.HandleFunc("/api/refresh", s.authRequired(s.handleRefresh)).Methods("POST")
@@ -528,6 +551,62 @@ func AuthMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+// handleLineupJSON handles /lineup.json endpoint for HDHomeRun emulation
+// It reads the M3U playlist and converts it to HDHomeRun lineup format
+func (s *Server) handleLineupJSON(w http.ResponseWriter, r *http.Request) {
+	logger := log.WithComponentFromContext(r.Context(), "hdhr")
+
+	// Read the M3U playlist file
+	m3uPath := filepath.Join(s.cfg.DataDir, "playlist.m3u")
+	data, err := os.ReadFile(m3uPath)
+	if err != nil {
+		logger.Error().Err(err).Str("path", m3uPath).Msg("failed to read playlist file")
+		http.Error(w, "Lineup not available", http.StatusInternalServerError)
+		return
+	}
+
+	// Parse M3U content to extract channels
+	var lineup []hdhr.LineupEntry
+	lines := strings.Split(string(data), "\n")
+	var currentChannel hdhr.LineupEntry
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "#EXTINF:") {
+			// Parse channel info from EXTINF line
+			// Format: #EXTINF:-1 tvg-chno="1" ... tvg-name="Channel Name",Display Name
+
+			// Extract channel number
+			if idx := strings.Index(line, `tvg-chno="`); idx != -1 {
+				start := idx + 10
+				if end := strings.Index(line[start:], `"`); end != -1 {
+					currentChannel.GuideNumber = line[start : start+end]
+				}
+			}
+
+			// Extract channel name (after the last comma)
+			if idx := strings.LastIndex(line, ","); idx != -1 {
+				currentChannel.GuideName = strings.TrimSpace(line[idx+1:])
+			}
+		} else if len(line) > 0 && !strings.HasPrefix(line, "#") && currentChannel.GuideName != "" {
+			// This is the stream URL
+			currentChannel.URL = line
+			lineup = append(lineup, currentChannel)
+			currentChannel = hdhr.LineupEntry{} // Reset for next channel
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(lineup); err != nil {
+		logger.Error().Err(err).Msg("failed to encode lineup")
+		return
+	}
+
+	logger.Debug().
+		Int("channels", len(lineup)).
+		Msg("HDHomeRun lineup served")
 }
 
 // NewRouter creates and configures a new router with all middlewares and handlers.

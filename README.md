@@ -130,6 +130,28 @@ Fixes audio delay issues in browsers that don't natively support MP2/AC3 audio (
 
 **When to use:** If you experience 3-6 second audio delays in Jellyfin/Plex when using Safari or other browsers. This transcodes audio upfront, preventing sync issues. See [docs/AUDIO_DELAY_FIX.md](docs/AUDIO_DELAY_FIX.md) for detailed troubleshooting.
 
+### HDHomeRun Emulation (NEW in v1.4.0, Experimental)
+
+**NEW:** xg2g can emulate an HDHomeRun TV tuner, allowing Plex/Jellyfin to discover it as native hardware!
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `XG2G_HDHR_ENABLED` | `false` | Enable HDHomeRun emulation |
+| `XG2G_HDHR_DEVICE_ID` | `XG2G1234` | Device ID for discovery |
+| `XG2G_HDHR_FRIENDLY_NAME` | `xg2g` | Friendly name shown in Plex/Jellyfin |
+| `XG2G_HDHR_MODEL` | `HDHR-xg2g` | Model name |
+| `XG2G_HDHR_FIRMWARE` | `xg2g-1.4.0` | Firmware version |
+| `XG2G_HDHR_BASE_URL` | - | Base URL for discovery (auto-detected if empty) |
+| `XG2G_HDHR_TUNER_COUNT` | `4` | Number of tuners to report |
+
+**How it works:**
+- xg2g responds to HDHomeRun discovery protocol
+- Plex/Jellyfin automatically detect it as a TV tuner
+- Provides `/discover.json`, `/lineup.json`, and `/lineup_status.json` endpoints
+- Better integration than M3U (no manual URL entry needed)
+
+**When to use:** If you want Plex/Jellyfin to auto-discover xg2g or prefer HDHomeRun-style integration over M3U playlists.
+
 ### Multiple Bouquets
 
 Combine multiple bouquets into one playlist:
