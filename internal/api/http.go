@@ -59,6 +59,11 @@ func New(cfg jobs.Config) *Server {
 	return s
 }
 
+// HDHomeRunServer returns the HDHomeRun server instance if enabled
+func (s *Server) HDHomeRunServer() *hdhr.Server {
+	return s.hdhr
+}
+
 func (s *Server) routes() http.Handler {
 	r := mux.NewRouter()
 	// Do not auto-clean or redirect paths; keep encoded path for security checks
@@ -80,6 +85,7 @@ func (s *Server) routes() http.Handler {
 		r.HandleFunc("/lineup.json", s.handleLineupJSON).Methods("GET")
 		r.HandleFunc("/lineup.json", s.hdhr.HandleLineupPost).Methods("POST")
 		r.HandleFunc("/lineup.post", s.hdhr.HandleLineupPost).Methods("GET", "POST")
+		r.HandleFunc("/device.xml", s.hdhr.HandleDeviceXML).Methods("GET")
 	}
 
 	// Authenticated routes - only protect mutative endpoints

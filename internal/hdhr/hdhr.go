@@ -2,11 +2,14 @@
 package hdhr
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/rs/zerolog"
 )
@@ -189,4 +192,229 @@ func getEnvInt(key string, defaultValue int) int {
 		}
 	}
 	return defaultValue
+}
+
+// StartSSDPAnnouncer starts SSDP announcements for automatic discovery
+func (s *Server) StartSSDPAnnouncer(ctx context.Context) error {
+	// SSDP multicast address
+	multicastAddr := "239.255.255.250:1900"
+
+	// Resolve multicast address
+	addr, err := net.ResolveUDPAddr("udp4", multicastAddr)
+	if err != nil {
+		return fmt.Errorf("failed to resolve multicast address: %w", err)
+	}
+
+	// Create UDP connection
+	conn, err := net.ListenPacket("udp4", ":1900")
+	if err != nil {
+		return fmt.Errorf("failed to listen on UDP port 1900: %w", err)
+	}
+
+	// Join multicast group
+	if p, ok := conn.(*net.UDPConn); ok {
+		if err := p.SetReadBuffer(2048); err != nil {
+			s.logger.Warn().Err(err).Msg("failed to set read buffer size")
+		}
+	}
+
+	s.logger.Info().
+		Str("multicast_addr", multicastAddr).
+		Str("device_id", s.config.DeviceID).
+		Msg("SSDP announcer started")
+
+	// Listen for M-SEARCH requests
+	go s.handleSSDPRequests(ctx, conn, addr)
+
+	// Send periodic announcements
+	go s.sendPeriodicAnnouncements(ctx, conn, addr)
+
+	// Wait for context cancellation
+	<-ctx.Done()
+	conn.Close()
+	return nil
+}
+
+// handleSSDPRequests listens for SSDP M-SEARCH requests
+func (s *Server) handleSSDPRequests(ctx context.Context, conn net.PacketConn, multicastAddr *net.UDPAddr) {
+	buf := make([]byte, 2048)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+			n, remoteAddr, err := conn.ReadFrom(buf)
+			if err != nil {
+				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+					continue
+				}
+				s.logger.Error().Err(err).Msg("failed to read SSDP packet")
+				continue
+			}
+
+			msg := string(buf[:n])
+
+			// Check if it's an M-SEARCH request for HDHomeRun
+			if strings.Contains(msg, "M-SEARCH") &&
+			   (strings.Contains(msg, "ssdp:all") ||
+			    strings.Contains(msg, "urn:schemas-upnp-org:device:MediaServer:1")) {
+
+				s.logger.Debug().
+					Str("from", remoteAddr.String()).
+					Msg("received SSDP M-SEARCH request")
+
+				// Send response
+				s.sendSSDPResponse(conn, remoteAddr)
+			}
+		}
+	}
+}
+
+// sendSSDPResponse sends SSDP response to M-SEARCH
+func (s *Server) sendSSDPResponse(conn net.PacketConn, addr net.Addr) {
+	baseURL := s.config.BaseURL
+	if baseURL == "" {
+		// Get local IP
+		if localIP := s.getLocalIP(); localIP != "" {
+			baseURL = fmt.Sprintf("http://%s:8080", localIP)
+		} else {
+			baseURL = "http://localhost:8080"
+		}
+	}
+
+	response := fmt.Sprintf(
+		"HTTP/1.1 200 OK\r\n"+
+		"CACHE-CONTROL: max-age=1800\r\n"+
+		"EXT:\r\n"+
+		"LOCATION: %s/device.xml\r\n"+
+		"SERVER: Linux/2.6 UPnP/1.0 xg2g/1.4.0\r\n"+
+		"ST: urn:schemas-upnp-org:device:MediaServer:1\r\n"+
+		"USN: uuid:%s::urn:schemas-upnp-org:device:MediaServer:1\r\n"+
+		"\r\n",
+		baseURL,
+		s.config.DeviceID,
+	)
+
+	if _, err := conn.WriteTo([]byte(response), addr); err != nil {
+		s.logger.Error().Err(err).Msg("failed to send SSDP response")
+	} else {
+		s.logger.Debug().
+			Str("to", addr.String()).
+			Msg("sent SSDP response")
+	}
+}
+
+// sendPeriodicAnnouncements sends NOTIFY announcements periodically
+func (s *Server) sendPeriodicAnnouncements(ctx context.Context, conn net.PacketConn, addr *net.UDPAddr) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	// Send initial announcement
+	s.sendSSDPNotify(conn, addr)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.sendSSDPNotify(conn, addr)
+		}
+	}
+}
+
+// sendSSDPNotify sends SSDP NOTIFY announcement
+func (s *Server) sendSSDPNotify(conn net.PacketConn, addr *net.UDPAddr) {
+	baseURL := s.config.BaseURL
+	if baseURL == "" {
+		if localIP := s.getLocalIP(); localIP != "" {
+			baseURL = fmt.Sprintf("http://%s:8080", localIP)
+		} else {
+			return // Can't announce without IP
+		}
+	}
+
+	notify := fmt.Sprintf(
+		"NOTIFY * HTTP/1.1\r\n"+
+		"HOST: 239.255.255.250:1900\r\n"+
+		"CACHE-CONTROL: max-age=1800\r\n"+
+		"LOCATION: %s/device.xml\r\n"+
+		"NT: urn:schemas-upnp-org:device:MediaServer:1\r\n"+
+		"NTS: ssdp:alive\r\n"+
+		"SERVER: Linux/2.6 UPnP/1.0 xg2g/1.4.0\r\n"+
+		"USN: uuid:%s::urn:schemas-upnp-org:device:MediaServer:1\r\n"+
+		"\r\n",
+		baseURL,
+		s.config.DeviceID,
+	)
+
+	if _, err := conn.WriteTo([]byte(notify), addr); err != nil {
+		s.logger.Error().Err(err).Msg("failed to send SSDP NOTIFY")
+	} else {
+		s.logger.Debug().Msg("sent SSDP NOTIFY announcement")
+	}
+}
+
+// getLocalIP gets the local IP address
+func (s *Server) getLocalIP() string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return ""
+	}
+
+	for _, addr := range addrs {
+		if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+			if ipnet.IP.To4() != nil {
+				return ipnet.IP.String()
+			}
+		}
+	}
+	return ""
+}
+
+// HandleDeviceXML handles /device.xml endpoint for UPnP/SSDP discovery
+func (s *Server) HandleDeviceXML(w http.ResponseWriter, r *http.Request) {
+	baseURL := s.config.BaseURL
+	if baseURL == "" {
+		scheme := "http"
+		if r.TLS != nil {
+			scheme = "https"
+		}
+		baseURL = fmt.Sprintf("%s://%s", scheme, r.Host)
+	}
+
+	xml := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<root xmlns="urn:schemas-upnp-org:device-1-0">
+  <specVersion>
+    <major>1</major>
+    <minor>0</minor>
+  </specVersion>
+  <device>
+    <deviceType>urn:schemas-upnp-org:device:MediaServer:1</deviceType>
+    <friendlyName>%s</friendlyName>
+    <manufacturer>Silicondust</manufacturer>
+    <manufacturerURL>http://www.silicondust.com/</manufacturerURL>
+    <modelDescription>HDHomeRun ATSC Tuner</modelDescription>
+    <modelName>%s</modelName>
+    <modelNumber>%s</modelNumber>
+    <modelURL>http://www.silicondust.com/</modelURL>
+    <serialNumber></serialNumber>
+    <UDN>uuid:%s</UDN>
+    <presentationURL>%s</presentationURL>
+  </device>
+</root>`,
+		s.config.FriendlyName,
+		s.config.ModelName,
+		s.config.ModelName,
+		s.config.DeviceID,
+		baseURL,
+	)
+
+	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+	w.Write([]byte(xml))
+
+	s.logger.Debug().
+		Str("endpoint", "/device.xml").
+		Msg("HDHomeRun device.xml request")
 }

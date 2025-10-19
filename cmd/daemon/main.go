@@ -282,6 +282,18 @@ func main() {
 		}
 	}()
 
+	// Start SSDP announcer for HDHomeRun auto-discovery if enabled
+	if hdhrSrv := s.HDHomeRunServer(); hdhrSrv != nil {
+		go func() {
+			if err := hdhrSrv.StartSSDPAnnouncer(ctx); err != nil {
+				logger.Error().
+					Err(err).
+					Str("event", "ssdp.failed").
+					Msg("SSDP announcer failed")
+			}
+		}()
+	}
+
 	// Wait for interrupt signal
 	<-ctx.Done()
 
