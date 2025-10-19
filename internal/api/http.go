@@ -601,18 +601,26 @@ func (s *Server) handleLineupJSON(w http.ResponseWriter, r *http.Request) {
 	lines := strings.Split(string(data), "\n")
 	var currentChannel hdhr.LineupEntry
 
+	channelNumber := 0
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "#EXTINF:") {
 			// Parse channel info from EXTINF line
-			// Format: #EXTINF:-1 tvg-chno="1" ... tvg-name="Channel Name",Display Name
+			// Format: #EXTINF:-1 tvg-chno="X" tvg-id="sref-..." tvg-name="Channel Name",Display Name
 
-			// Extract channel number
-			if idx := strings.Index(line, `tvg-chno="`); idx != -1 {
-				start := idx + 10
+			channelNumber++
+
+			// Extract tvg-id (XMLTV channel ID) - this is what Plex uses for EPG matching
+			if idx := strings.Index(line, `tvg-id="`); idx != -1 {
+				start := idx + 8
 				if end := strings.Index(line[start:], `"`); end != -1 {
 					currentChannel.GuideNumber = line[start : start+end]
 				}
+			}
+
+			// Fallback to sequential number if no tvg-id
+			if currentChannel.GuideNumber == "" {
+				currentChannel.GuideNumber = fmt.Sprintf("%d", channelNumber)
 			}
 
 			// Extract channel name (after the last comma)
