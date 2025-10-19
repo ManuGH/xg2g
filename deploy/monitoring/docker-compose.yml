@@ -2,19 +2,36 @@ version: "3.8"
 
 services:
   xg2g:
-    build: .
+    image: ghcr.io/manugh/xg2g:latest
     container_name: xg2g-app
     ports:
-      - "8080:8080" # Main HTTP API
-      - "9090:9090" # Prometheus metrics
+      - "8080:8080"      # Main HTTP API
+      - "9090:9090"      # Prometheus metrics
+      - "1900:1900/udp"  # SSDP discovery (HDHomeRun)
     environment:
+      # Core
       - XG2G_DATA=/data
       - XG2G_LISTEN=:8080
       - XG2G_METRICS_LISTEN=:9090
       - XG2G_OWI_BASE=${XG2G_OWI_BASE:-http://receiver.local}
+      - XG2G_OWI_USER=${XG2G_OWI_USER:-}
+      - XG2G_OWI_PASS=${XG2G_OWI_PASS:-}
       - XG2G_BOUQUET=${XG2G_BOUQUET:-Favourites}
-      # XMLTV expects a file path per app config; set to enable
+
+      # EPG
+      - XG2G_EPG_ENABLED=${XG2G_EPG_ENABLED:-true}
+      - XG2G_EPG_DAYS=${XG2G_EPG_DAYS:-7}
       - XG2G_XMLTV=xmltv.xml
+
+      # HDHomeRun Emulation (v1.4.0)
+      - XG2G_HDHR_ENABLED=${XG2G_HDHR_ENABLED:-true}
+      - XG2G_HDHR_FRIENDLY_NAME=${XG2G_HDHR_FRIENDLY_NAME:-xg2g Monitoring}
+      - XG2G_HDHR_DEVICE_ID=${XG2G_HDHR_DEVICE_ID:-XG2G1234}
+
+      # Audio Transcoding (optional)
+      - XG2G_ENABLE_AUDIO_TRANSCODING=${XG2G_ENABLE_AUDIO_TRANSCODING:-false}
+
+      # Other
       - XG2G_PICON_BASE=${XG2G_PICON_BASE:-}
     volumes:
       - xg2g_data:/data
@@ -32,7 +49,7 @@ services:
     image: prom/prometheus:v2.47.0
     container_name: xg2g-prometheus
     ports:
-      - "9091:9090" # Avoid conflict with xg2g metrics
+      - "9091:9090" # External access to Prometheus UI
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./monitoring/alert.rules.yml:/etc/prometheus/alert.rules.yml:ro
