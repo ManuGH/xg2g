@@ -67,7 +67,7 @@ Successfully implemented and deployed a production-ready GPU transcoding service
 
 ## 🔧 Technical Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                   Enigma2 DVB-S2 Receiver                   │
 │                  (10.10.55.57:17999)                        │
@@ -274,7 +274,7 @@ Current deployment status on `10.10.55.50`:
 
 ## 🎉 Final Status
 
-**STATUS: PRODUCTION READY ✅**
+### STATUS: PRODUCTION READY ✅
 
 The xg2g GPU Transcoder is fully implemented, tested, documented, and deployed.
 All critical bugs have been fixed, performance targets exceeded, and production

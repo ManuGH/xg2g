@@ -240,7 +240,7 @@ ffmpeg -hide_banner -loglevel error \
 
 ### Architecture
 
-```
+```text
 Enigma2 DVB-S2 Receiver
     ↓ (HTTP MPEG-TS)
 Rust Transcoder (CPU Decode)

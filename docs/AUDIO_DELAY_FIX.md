@@ -30,7 +30,7 @@
 
 **Before:**
 
-```
+```text
 Enigma2:17999 (MP2)
     ↓
 Jellyfin (Audio transcoding MP2→AAC live)
@@ -40,7 +40,7 @@ Safari (3-6s audio delay)
 
 **After:**
 
-```
+```text
 Enigma2:17999 (MP2)
     ↓
 xg2g:18000 (Audio transcoding MP2→AAC upfront)
@@ -128,7 +128,7 @@ XG2G_AUDIO_CHANNELS=2
 
 **720p Progressive (e.g., Das Erste HD):**
 
-```
+```text
 Playback Info:
 ├── Method: Direct Play
 ├── Video: H264 (copy)
@@ -139,7 +139,7 @@ Performance: Minimal (only remuxing)
 
 **1080i Interlaced (e.g., Sky Sport News):**
 
-```
+```text
 Playback Info:
 ├── Method: Transcoding
 ├── Video: H264 (h264_vaapi + yadif)
