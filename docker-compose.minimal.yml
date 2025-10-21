@@ -63,6 +63,7 @@ services:
       XG2G_ENABLE_STREAM_PROXY: "true"
       XG2G_PROXY_PORT: 18000
       XG2G_PROXY_TARGET: http://10.10.55.57:17999
+      XG2G_STREAM_BASE: http://10.10.55.50:18000
 
       # GPU Transcoding via Rust service
       XG2G_ENABLE_AUDIO_TRANSCODING: "true"
