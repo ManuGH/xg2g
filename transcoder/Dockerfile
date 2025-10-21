@@ -22,17 +22,25 @@ RUN apt-get update && \
 # Copy Cargo files
 COPY Cargo.toml ./
 
+# Build arguments for CPU optimization
+ARG RUST_TARGET_CPU=x86-64-v3
+ARG RUST_OPT_LEVEL=3
+
 # Create dummy main to cache dependencies
 RUN mkdir src && \
     echo "fn main() {}" > src/main.rs && \
+    RUSTFLAGS="-C target-cpu=${RUST_TARGET_CPU} -C opt-level=${RUST_OPT_LEVEL}" \
     cargo build --release && \
     rm -rf src target/release/xg2g-transcoder* target/release/.fingerprint/xg2g-transcoder-*
 
 # Copy source code
 COPY src ./src
 
-# Build release binary
-RUN cargo build --release && \
+# Build release binary with optimizations
+# Default: x86-64-v3 (AVX2, FMA, BMI2) - works on Intel Haswell+ and AMD Zen+
+# For your system: override with --build-arg RUST_TARGET_CPU=znver4
+RUN RUSTFLAGS="-C target-cpu=${RUST_TARGET_CPU} -C opt-level=${RUST_OPT_LEVEL}" \
+    cargo build --release && \
     strip /build/target/release/xg2g-transcoder
 
 # Runtime image

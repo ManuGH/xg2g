@@ -181,11 +181,20 @@ impl VaapiTranscoder {
             "h264_vaapi".to_string(),
             "-b:v".to_string(),
             self.config.video_bitrate.clone(),
-            // Audio: Simple AAC encoding
+            // Audio: Simple AAC encoding with sync
             "-c:a".to_string(),
             self.config.audio_codec.clone(),
             "-b:a".to_string(),
             self.config.audio_bitrate.clone(),
+            "-ac".to_string(),
+            self.config.audio_channels.to_string(),
+            // Audio/Video sync fixes
+            "-async".to_string(),
+            "1".to_string(),
+            "-vsync".to_string(),
+            "1".to_string(),
+            "-max_muxing_queue_size".to_string(),
+            "9999".to_string(),
             // Output format
             "-f".to_string(),
             "mpegts".to_string(),

@@ -1,4 +1,9 @@
 FROM golang:1.25-alpine AS builder
+
+# Build arguments for CPU optimization
+ARG GO_AMD64_LEVEL=v2
+ARG GO_GCFLAGS=""
+
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -7,9 +12,10 @@ COPY . .
 ARG GIT_REF
 ARG VERSION
 RUN BUILD_REF="${GIT_REF:-${VERSION:-dev}}" && \
-  CGO_ENABLED=0 GOOS=linux \
+  CGO_ENABLED=0 GOOS=linux GOAMD64=${GO_AMD64_LEVEL} \
   go build -buildvcs=false -trimpath \
   -ldflags="-s -w -X 'main.Version=${BUILD_REF}'" \
+  ${GO_GCFLAGS:+-gcflags="${GO_GCFLAGS}"} \
   -o /out/xg2g ./cmd/daemon
 
 FROM alpine:3.22.2

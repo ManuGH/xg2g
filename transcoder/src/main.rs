@@ -121,7 +121,11 @@ async fn async_main() -> anyhow::Result<()> {
         .layer(tower_http::cors::CorsLayer::permissive());
 
     // Start server
-    let addr = SocketAddr::from(([0, 0, 0, 0], 8081));
+    let port = std::env::var("PORT")
+        .ok()
+        .and_then(|p| p.parse::<u16>().ok())
+        .unwrap_or(8085);
+    let addr = SocketAddr::from(([0, 0, 0, 0], port));
     info!("Transcoder listening on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;

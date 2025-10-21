@@ -24,6 +24,7 @@ services:
       AUDIO_CHANNELS: 2
       ANALYZE_DURATION: 500000
       PROBE_SIZE: 500000
+      PORT: 8085
     logging:
       driver: "json-file"
       options:
@@ -42,12 +43,17 @@ services:
     environment:
       # Enigma2 Receiver
       XG2G_OWI_BASE: http://10.10.55.57
+      XG2G_OWI_USER: root
+      XG2G_OWI_PASS: Kiddy99
       XG2G_BOUQUET: Premium
       XG2G_FUZZY_MAX: 2
 
       # EPG
       XG2G_EPG_ENABLED: "true"
       XG2G_EPG_DAYS: 7
+
+      # Auto-refresh channels on startup
+      XG2G_INITIAL_REFRESH: "true"
 
       # HDHomeRun
       XG2G_HDHR_ENABLED: "true"
@@ -61,7 +67,7 @@ services:
       # GPU Transcoding via Rust service
       XG2G_ENABLE_AUDIO_TRANSCODING: "true"
       XG2G_GPU_TRANSCODE: "true"
-      XG2G_TRANSCODER_URL: http://localhost:8081
+      XG2G_TRANSCODER_URL: http://localhost:8085
 
       # Logging
       XG2G_LOG_LEVEL: info
