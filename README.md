@@ -84,6 +84,8 @@ docker run -d \
 | `XG2G_HDHR_ENABLED` | `false` | Enable HDHomeRun emulation |
 | `XG2G_HDHR_FRIENDLY_NAME` | `xg2g` | Name shown in Plex/Jellyfin |
 | `XG2G_ENABLE_AUDIO_TRANSCODING` | `false` | Transcode audio to AAC |
+| `XG2G_GPU_TRANSCODE` | `false` | Enable GPU transcoding (full video+audio) |
+| `XG2G_TRANSCODER_URL` | `http://localhost:8085` | GPU transcoder service URL |
 | `XG2G_SMART_STREAM_DETECTION` | `false` | Auto-detect optimal stream port |
 
 ### OpenWebIF Authentication (if needed)
