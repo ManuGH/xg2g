@@ -77,17 +77,17 @@ func (t *Transcoder) TranscodeStream(ctx context.Context, w http.ResponseWriter,
 		"-hide_banner",
 		"-loglevel", "error",
 		"-fflags", "+genpts+igndts", // Generate PTS, ignore broken DTS
-		"-i", "pipe:0",               // Read from stdin
+		"-i", "pipe:0", // Read from stdin
 		"-map", "0:v", "-c:v", "copy", // Copy video stream
 		"-map", "0:a", "-c:a", t.config.Codec, // Transcode audio
-		"-b:a", t.config.Bitrate,                           // Audio bitrate
-		"-ac", fmt.Sprintf("%d", t.config.Channels),        // Audio channels
-		"-async", "1",                                      // Audio-video sync
-		"-start_at_zero",                                   // Start timestamps at zero
-		"-avoid_negative_ts", "make_zero",                  // Fix negative timestamps
-		"-muxdelay", "0",                                   // No mux delay
-		"-muxpreload", "0",                                 // No mux preload
-		"-f", "mpegts",                                     // Output format
+		"-b:a", t.config.Bitrate, // Audio bitrate
+		"-ac", fmt.Sprintf("%d", t.config.Channels), // Audio channels
+		"-async", "1", // Audio-video sync
+		"-start_at_zero",                  // Start timestamps at zero
+		"-avoid_negative_ts", "make_zero", // Fix negative timestamps
+		"-muxdelay", "0", // No mux delay
+		"-muxpreload", "0", // No mux preload
+		"-f", "mpegts", // Output format
 		"pipe:1", // Write to stdout
 	}
 
