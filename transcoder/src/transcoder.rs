@@ -80,6 +80,9 @@ pub struct TranscoderConfig {
     /// VAAPI device path (e.g., /dev/dri/renderD128)
     pub vaapi_device: String,
 
+    /// Video codec (e.g., "h264", "hevc")
+    pub video_codec: String,
+
     /// Video bitrate (e.g., "5000k")
     pub video_bitrate: String,
 
@@ -106,6 +109,7 @@ impl Default for TranscoderConfig {
     fn default() -> Self {
         Self {
             vaapi_device: "/dev/dri/renderD128".to_string(),
+            video_codec: "h264".to_string(),
             video_bitrate: "5000k".to_string(),
             audio_codec: "aac".to_string(),
             audio_bitrate: "192k".to_string(),
@@ -123,6 +127,7 @@ impl TranscoderConfig {
         Self {
             vaapi_device: std::env::var("VAAPI_DEVICE")
                 .unwrap_or_else(|_| "/dev/dri/renderD128".to_string()),
+            video_codec: std::env::var("VIDEO_CODEC").unwrap_or_else(|_| "h264".to_string()),
             video_bitrate: std::env::var("VIDEO_BITRATE").unwrap_or_else(|_| "5000k".to_string()),
             audio_codec: std::env::var("AUDIO_CODEC").unwrap_or_else(|_| "aac".to_string()),
             audio_bitrate: std::env::var("AUDIO_BITRATE").unwrap_or_else(|_| "192k".to_string()),
@@ -178,7 +183,7 @@ impl VaapiTranscoder {
             "-vf".to_string(),
             "yadif,format=nv12,hwupload".to_string(),
             "-c:v".to_string(),
-            "h264_vaapi".to_string(),
+            format!("{}_vaapi", self.config.video_codec),
             "-b:v".to_string(),
             self.config.video_bitrate.clone(),
             // Audio: Simple AAC encoding with sync
