@@ -3,6 +3,7 @@ package proxy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httputil"
@@ -60,11 +61,18 @@ func New(cfg Config) (*Server, error) {
 	if IsTranscodingEnabled() {
 		transcoderCfg := GetTranscoderConfig()
 		s.transcoder = NewTranscoder(transcoderCfg, cfg.Logger)
-		cfg.Logger.Info().
-			Str("codec", transcoderCfg.Codec).
-			Str("bitrate", transcoderCfg.Bitrate).
-			Int("channels", transcoderCfg.Channels).
-			Msg("audio transcoding enabled")
+
+		if transcoderCfg.GPUEnabled {
+			cfg.Logger.Info().
+				Str("transcoder_url", transcoderCfg.TranscoderURL).
+				Msg("GPU transcoding enabled (full video+audio)")
+		} else {
+			cfg.Logger.Info().
+				Str("codec", transcoderCfg.Codec).
+				Str("bitrate", transcoderCfg.Bitrate).
+				Int("channels", transcoderCfg.Channels).
+				Msg("audio transcoding enabled (audio-only)")
+		}
 	}
 
 	// Create reverse proxy with custom director
@@ -121,18 +129,39 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 			targetURL += "?" + r.URL.RawQuery
 		}
 
-		// Transcode the stream
+		// Priority 1: GPU transcoding (if enabled)
+		if s.transcoder.IsGPUEnabled() {
+			s.logger.Debug().
+				Str("path", r.URL.Path).
+				Str("target", targetURL).
+				Msg("routing stream through GPU transcoder")
+
+			if err := s.transcoder.ProxyToGPUTranscoder(r.Context(), w, r, targetURL); err != nil {
+				// Only log error if it's not a context cancellation (client disconnect)
+				if !errors.Is(err, context.Canceled) {
+					s.logger.Error().
+						Err(err).
+						Str("path", r.URL.Path).
+						Msg("GPU transcoding failed, falling back to direct proxy")
+				}
+				// Fallback to direct proxy on error
+				s.proxy.ServeHTTP(w, r)
+			}
+			return
+		}
+
+		// Priority 2: Audio-only transcoding (existing behavior)
 		if err := s.transcoder.TranscodeStream(r.Context(), w, r, targetURL); err != nil {
 			// Only log error if it's not a context cancellation (client disconnect)
 			if r.Context().Err() == nil {
 				s.logger.Error().
 					Err(err).
 					Str("path", r.URL.Path).
-					Msg("transcoding failed")
+					Msg("audio transcoding failed")
 			} else {
 				s.logger.Debug().
 					Str("path", r.URL.Path).
-					Msg("transcoding stopped (client disconnected)")
+					Msg("audio transcoding stopped (client disconnected)")
 			}
 		}
 		return
