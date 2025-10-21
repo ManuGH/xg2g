@@ -1,0 +1,95 @@
+# docker-compose.minimal.yml - Minimal Production Setup
+# xg2g (Go) + Rust GPU Transcoder only
+# Optimized for root@10.10.55.50 with AMD Radeon RX 7000
+
+version: '3.8'
+
+services:
+  # Rust GPU Transcoder Service
+  transcoder:
+    image: xg2g-gpu-transcoder:production
+    container_name: xg2g-transcoder
+    restart: unless-stopped
+    network_mode: host
+    stdin_open: true
+    tty: true
+    devices:
+      - /dev/dri:/dev/dri
+    environment:
+      RUST_LOG: debug
+      VAAPI_DEVICE: /dev/dri/renderD128
+      VIDEO_BITRATE: 5000k
+      AUDIO_CODEC: aac
+      AUDIO_BITRATE: 192k
+      AUDIO_CHANNELS: 2
+      ANALYZE_DURATION: 500000
+      PROBE_SIZE: 500000
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # xg2g Main Service (Go)
+  xg2g:
+    image: xg2g:latest
+    container_name: xg2g
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - xg2g-data:/data
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      # Enigma2 Receiver
+      XG2G_OWI_BASE: http://10.10.55.57
+      XG2G_BOUQUET: Premium
+      XG2G_FUZZY_MAX: 2
+
+      # EPG
+      XG2G_EPG_ENABLED: "true"
+      XG2G_EPG_DAYS: 7
+
+      # HDHomeRun
+      XG2G_HDHR_ENABLED: "true"
+      XG2G_HDHR_FRIENDLY_NAME: xg2g-gpu
+
+      # Stream Proxy with GPU Transcoding
+      XG2G_ENABLE_STREAM_PROXY: "true"
+      XG2G_PROXY_PORT: 18000
+      XG2G_PROXY_TARGET: http://10.10.55.57:17999
+
+      # GPU Transcoding via Rust service
+      XG2G_ENABLE_AUDIO_TRANSCODING: "true"
+      XG2G_GPU_TRANSCODE: "true"
+      XG2G_TRANSCODER_URL: http://localhost:8081
+
+      # Logging
+      XG2G_LOG_LEVEL: info
+      XG2G_LOG_FORMAT: json
+    depends_on:
+      - transcoder
+
+volumes:
+  xg2g-data:
+    driver: local
+
+# ===========================================
+# Deployment Instructions
+# ===========================================
+#
+# 1. Copy to server:
+#    scp docker-compose.minimal.yml root@10.10.55.50:/opt/stacks/xg2g-gpu/
+#
+# 2. Start services:
+#    cd /opt/stacks/xg2g-gpu
+#    docker compose -f docker-compose.minimal.yml up -d
+#
+# 3. Check health:
+#    docker ps
+#    curl http://localhost:8085/health
+#    curl http://localhost:8080/api/status
+#
+# 4. Watch logs:
+#    docker compose -f docker-compose.minimal.yml logs -f
+#
+# ===========================================
