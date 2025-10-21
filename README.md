@@ -59,6 +59,7 @@ docker run -d \
 
 ### Advanced
 - ✅ Audio transcoding (MP2/AC3 → AAC)
+- ✅ **GPU transcoding** with VAAPI (AMD/Intel) - [See Production Deployment Guide](PRODUCTION_DEPLOYMENT.md)
 - ✅ Integrated stream proxy
 - ✅ Prometheus metrics
 - ✅ Health checks
