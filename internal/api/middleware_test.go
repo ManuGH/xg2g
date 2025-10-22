@@ -45,7 +45,7 @@ func TestRequestIDMiddleware(t *testing.T) {
 			handler := requestIDMiddleware(testHandler)
 
 			// Create request
-			req := httptest.NewRequest("GET", "/test", nil)
+			req := httptest.NewRequest(http.MethodGet, "/test", nil)
 			if tt.existingID != "" {
 				req.Header.Set("X-Request-ID", tt.existingID)
 			}
@@ -96,7 +96,7 @@ func TestRequestIDMiddlewareLogging(t *testing.T) {
 	})
 
 	handler := requestIDMiddleware(testHandler)
-	req := httptest.NewRequest("GET", "/api/test", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
 	rr := httptest.NewRecorder()
 
 	handler.ServeHTTP(rr, req)
@@ -160,7 +160,7 @@ func TestSecurityHeadersMiddleware(t *testing.T) {
 	})
 
 	// Create a request to test with
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 
 	// Create a ResponseRecorder to record the response
 	rr := httptest.NewRecorder()
@@ -194,7 +194,7 @@ func TestPanicRecoveryMiddleware(t *testing.T) {
 
 	handler := panicRecoveryMiddleware(panicHandler)
 
-	req := httptest.NewRequest("GET", "/trigger-panic", nil)
+	req := httptest.NewRequest(http.MethodGet, "/trigger-panic", nil)
 	rr := httptest.NewRecorder()
 
 	// Should not panic; should return 500 and JSON body
@@ -222,7 +222,7 @@ func TestPanicRecoveryMiddlewareNormalFlow(t *testing.T) {
 
 	handler := panicRecoveryMiddleware(okHandler)
 
-	req := httptest.NewRequest("GET", "/ok", nil)
+	req := httptest.NewRequest(http.MethodGet, "/ok", nil)
 	rr := httptest.NewRecorder()
 
 	handler.ServeHTTP(rr, req)

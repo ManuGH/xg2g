@@ -25,11 +25,11 @@ func TestBackwardCompatibility(t *testing.T) {
 
 	t.Run("StatusResponseStructure", func(t *testing.T) {
 		// Both endpoints should return identical JSON structure
-		legacyReq := httptest.NewRequest("GET", "/api/status", nil)
+		legacyReq := httptest.NewRequest(http.MethodGet, "/api/status", nil)
 		legacyRec := httptest.NewRecorder()
 		handler.ServeHTTP(legacyRec, legacyReq)
 
-		v1Req := httptest.NewRequest("GET", "/api/v1/status", nil)
+		v1Req := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
 		v1Rec := httptest.NewRecorder()
 		handler.ServeHTTP(v1Rec, v1Req)
 
@@ -63,7 +63,7 @@ func TestBackwardCompatibility(t *testing.T) {
 
 	t.Run("StatusFieldTypes", func(t *testing.T) {
 		// Ensure field types haven't changed
-		req := httptest.NewRequest("GET", "/api/v1/status", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
 
@@ -105,7 +105,7 @@ func TestBackwardCompatibility(t *testing.T) {
 				name:       "StatusEndpoint",
 				legacyPath: "/api/status",
 				v1Path:     "/api/v1/status",
-				method:     "GET",
+				method: http.MethodGet,
 				wantCode:   http.StatusOK,
 			},
 		}
@@ -139,11 +139,11 @@ func TestBackwardCompatibility(t *testing.T) {
 	})
 
 	t.Run("ContentTypeHeaders", func(t *testing.T) {
-		legacyReq := httptest.NewRequest("GET", "/api/status", nil)
+		legacyReq := httptest.NewRequest(http.MethodGet, "/api/status", nil)
 		legacyRec := httptest.NewRecorder()
 		handler.ServeHTTP(legacyRec, legacyReq)
 
-		v1Req := httptest.NewRequest("GET", "/api/v1/status", nil)
+		v1Req := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
 		v1Rec := httptest.NewRecorder()
 		handler.ServeHTTP(v1Rec, v1Req)
 
@@ -161,11 +161,11 @@ func TestBackwardCompatibility(t *testing.T) {
 
 	t.Run("SecurityHeaders", func(t *testing.T) {
 		// Security headers should be identical
-		legacyReq := httptest.NewRequest("GET", "/api/status", nil)
+		legacyReq := httptest.NewRequest(http.MethodGet, "/api/status", nil)
 		legacyRec := httptest.NewRecorder()
 		handler.ServeHTTP(legacyRec, legacyReq)
 
-		v1Req := httptest.NewRequest("GET", "/api/v1/status", nil)
+		v1Req := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
 		v1Rec := httptest.NewRecorder()
 		handler.ServeHTTP(v1Rec, v1Req)
 
@@ -201,7 +201,7 @@ func TestNoRegressions(t *testing.T) {
 
 	t.Run("LegacyStatusStillWorks", func(t *testing.T) {
 		// Simulate an old client that doesn't know about versioning
-		req := httptest.NewRequest("GET", "/api/status", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
 		rec := httptest.NewRecorder()
 
 		handler.ServeHTTP(rec, req)
@@ -251,7 +251,7 @@ func TestNoRegressions(t *testing.T) {
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				req := httptest.NewRequest("POST", tt.path, nil)
+				req := httptest.NewRequest(http.MethodPost, tt.path, nil)
 				if tt.token != "" {
 					req.Header.Set("X-API-Token", tt.token)
 				}
@@ -292,7 +292,7 @@ func TestAPIVersionHeader(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", tt.path, nil)
+			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
 			rec := httptest.NewRecorder()
 
 			handler.ServeHTTP(rec, req)

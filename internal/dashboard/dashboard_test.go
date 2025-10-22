@@ -70,7 +70,7 @@ func TestHandleAPIStats(t *testing.T) {
 	dashboard.RecordRefresh(true, 10, 2, 200)
 	dashboard.RecordRequest(25 * time.Millisecond)
 
-	req := httptest.NewRequest("GET", "/api/stats", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/stats", nil)
 	w := httptest.NewRecorder()
 
 	dashboard.HandleAPIStats(w, req)

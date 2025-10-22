@@ -73,8 +73,8 @@ func (s *Server) routes() http.Handler {
 	r.Use(securityHeadersMiddleware)
 
 	// Health checks (versionless - infrastructure endpoints)
-	r.HandleFunc("/healthz", s.handleHealth).Methods("GET")
-	r.HandleFunc("/readyz", s.handleReady).Methods("GET")
+	r.HandleFunc("/healthz", s.handleHealth).Methods(http.MethodGet)
+	r.HandleFunc("/readyz", s.handleReady).Methods(http.MethodGet)
 
 	// Legacy API endpoints (deprecated - maintain backward compatibility)
 	// These will be removed in a future major version
@@ -84,8 +84,8 @@ func (s *Server) routes() http.Handler {
 		SunsetDate:    "2025-12-31T23:59:59Z",
 		SuccessorPath: "/api/v1",
 	}))
-	legacyAPI.HandleFunc("/status", s.handleStatus).Methods("GET")
-	legacyAPI.HandleFunc("/refresh", s.authRequired(s.handleRefresh)).Methods("POST")
+	legacyAPI.HandleFunc("/status", s.handleStatus).Methods(http.MethodGet)
+	legacyAPI.HandleFunc("/refresh", s.authRequired(s.handleRefresh)).Methods(http.MethodPost)
 
 	// V1 API (current stable version)
 	s.registerV1Routes(r)
@@ -97,12 +97,12 @@ func (s *Server) routes() http.Handler {
 
 	// HDHomeRun emulation endpoints (versionless - hardware emulation protocol)
 	if s.hdhr != nil {
-		r.HandleFunc("/discover.json", s.hdhr.HandleDiscover).Methods("GET")
-		r.HandleFunc("/lineup_status.json", s.hdhr.HandleLineupStatus).Methods("GET")
-		r.HandleFunc("/lineup.json", s.handleLineupJSON).Methods("GET")
-		r.HandleFunc("/lineup.json", s.hdhr.HandleLineupPost).Methods("POST")
+		r.HandleFunc("/discover.json", s.hdhr.HandleDiscover).Methods(http.MethodGet)
+		r.HandleFunc("/lineup_status.json", s.hdhr.HandleLineupStatus).Methods(http.MethodGet)
+		r.HandleFunc("/lineup.json", s.handleLineupJSON).Methods(http.MethodGet)
+		r.HandleFunc("/lineup.json", s.hdhr.HandleLineupPost).Methods(http.MethodPost)
 		r.HandleFunc("/lineup.post", s.hdhr.HandleLineupPost).Methods("GET", "POST")
-		r.HandleFunc("/device.xml", s.hdhr.HandleDeviceXML).Methods("GET")
+		r.HandleFunc("/device.xml", s.hdhr.HandleDeviceXML).Methods(http.MethodGet)
 	}
 
 	// XMLTV endpoint (versionless - standard format)
@@ -581,7 +581,7 @@ func (s *Server) secureFileServer() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		logger := log.WithComponentFromContext(r.Context(), "api")
 
-		if r.Method != "GET" {
+		if r.Method != http.MethodGet {
 			logger.Warn().Str("event", "file_req.denied").Str("path", r.URL.Path).Str("reason", "method_not_allowed").Msg("method not allowed")
 			recordFileRequestDenied("method_not_allowed")
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -824,8 +824,8 @@ func (s *Server) registerV1Routes(r *mux.Router) {
 	// Import the v1 package handler
 	// Note: This will be done after we fix the import cycle
 	v1Router := r.PathPrefix("/api/v1").Subrouter()
-	v1Router.HandleFunc("/status", s.handleStatusV1).Methods("GET")
-	v1Router.HandleFunc("/refresh", s.authRequired(s.handleRefreshV1)).Methods("POST")
+	v1Router.HandleFunc("/status", s.handleStatusV1).Methods(http.MethodGet)
+	v1Router.HandleFunc("/refresh", s.authRequired(s.handleRefreshV1)).Methods(http.MethodPost)
 }
 
 // registerV2Routes registers all v2 API endpoints (placeholder for future)
@@ -833,7 +833,7 @@ func (s *Server) registerV2Routes(r *mux.Router) {
 	// V2 API implementation will go here
 	// Example: different path structure, enhanced response formats, etc.
 	v2Router := r.PathPrefix("/api/v2").Subrouter()
-	v2Router.HandleFunc("/status", s.handleStatusV2Placeholder).Methods("GET")
+	v2Router.HandleFunc("/status", s.handleStatusV2Placeholder).Methods(http.MethodGet)
 }
 
 // handleStatusV1 wraps the v1 handler

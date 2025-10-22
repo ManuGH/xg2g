@@ -27,7 +27,7 @@ var dummyHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request)
 func TestHandleStatus(t *testing.T) {
 	s := New(jobs.Config{})
 	handler := s.Handler()
-	req, err := http.NewRequest("GET", "/api/status", nil)
+	req, err := http.NewRequest(http.MethodGet, "/api/status", nil)
 	require.NoError(t, err)
 
 	rr := httptest.NewRecorder()
@@ -46,7 +46,7 @@ func TestHandleRefresh_ErrorDoesNotUpdateLastRun(t *testing.T) {
 	handler := s.Handler()
 	initialTime := s.status.LastRun
 
-	req, err := http.NewRequest("POST", "/api/refresh", nil)
+	req, err := http.NewRequest(http.MethodPost, "/api/refresh", nil)
 	require.NoError(t, err)
 	req.Header.Set("X-API-Token", "dummy-token")
 
@@ -131,7 +131,7 @@ func TestHandleRefresh_ConflictOnConcurrent(t *testing.T) {
 func TestHandleHealth(t *testing.T) {
 	s := New(jobs.Config{})
 	handler := s.Handler()
-	req, err := http.NewRequest("GET", "/healthz", nil)
+	req, err := http.NewRequest(http.MethodGet, "/healthz", nil)
 	require.NoError(t, err)
 
 	rr := httptest.NewRecorder()
@@ -154,7 +154,7 @@ func TestHandleReady(t *testing.T) {
 	s := New(cfg)
 	handler := s.Handler()
 
-	req, err := http.NewRequest("GET", "/readyz", nil)
+	req, err := http.NewRequest(http.MethodGet, "/readyz", nil)
 	require.NoError(t, err)
 
 	// Case 1: Not ready (no files, last run is zero)
@@ -224,7 +224,7 @@ func TestAuthMiddleware(t *testing.T) {
 			// Test against a protected route
 			handler := s.authRequired(dummyHandler)
 
-			req, err := http.NewRequest("GET", "/test", nil)
+			req, err := http.NewRequest(http.MethodGet, "/test", nil)
 			require.NoError(t, err)
 
 			if tt.headerValue != "" {
@@ -282,16 +282,16 @@ func TestSecureFileHandlerSymlinkPolicy(t *testing.T) {
 		expectedStatus int
 		expectedBody   string
 	}{
-		{name: "B6: valid file access", method: "GET", path: "/files/test.m3u", expectedStatus: http.StatusOK, expectedBody: "m3u content"},
-		{name: "B7: subdirectory file access", method: "GET", path: "/files/subdir/sub.m3u", expectedStatus: http.StatusOK, expectedBody: "sub content"},
-		{name: "B8: symlink to outside file", method: "GET", path: "/files/evil_symlink", expectedStatus: http.StatusForbidden, expectedBody: "Forbidden"},
-		{name: "B9: symlink chain to outside", method: "GET", path: "/files/link1", expectedStatus: http.StatusForbidden, expectedBody: "Forbidden"},
-		{name: "B10: path traversal with ..", method: "GET", path: "/files/../outside/secret.txt", expectedStatus: http.StatusForbidden, expectedBody: "Forbidden"},
-		{name: "B11: symlink directory traversal", method: "GET", path: "/files/evil_dir/secret.txt", expectedStatus: http.StatusForbidden, expectedBody: "Forbidden"},
-		{name: "B12: URL-encoded traversal %2e%2e", method: "GET", path: "/files/%2e%2e/outside/secret.txt", expectedStatus: http.StatusForbidden, expectedBody: "Forbidden"},
-		{name: "directory access blocked", method: "GET", path: "/files/subdir/", expectedStatus: http.StatusForbidden, expectedBody: "Forbidden"},
-		{name: "nonexistent file", method: "GET", path: "/files/nonexistent.txt", expectedStatus: http.StatusNotFound, expectedBody: "Not found"},
-		{name: "method not allowed", method: "POST", path: "/files/test.m3u", expectedStatus: http.StatusMethodNotAllowed, expectedBody: "Method not allowed"},
+		{name: "B6: valid file access", method: http.MethodGet, path: "/files/test.m3u", expectedStatus: http.StatusOK, expectedBody: "m3u content"},
+		{name: "B7: subdirectory file access", method: http.MethodGet, path: "/files/subdir/sub.m3u", expectedStatus: http.StatusOK, expectedBody: "sub content"},
+		{name: "B8: symlink to outside file", method: http.MethodGet, path: "/files/evil_symlink", expectedStatus: http.StatusForbidden, expectedBody: "Forbidden"},
+		{name: "B9: symlink chain to outside", method: http.MethodGet, path: "/files/link1", expectedStatus: http.StatusForbidden, expectedBody: "Forbidden"},
+		{name: "B10: path traversal with ..", method: http.MethodGet, path: "/files/../outside/secret.txt", expectedStatus: http.StatusForbidden, expectedBody: "Forbidden"},
+		{name: "B11: symlink directory traversal", method: http.MethodGet, path: "/files/evil_dir/secret.txt", expectedStatus: http.StatusForbidden, expectedBody: "Forbidden"},
+		{name: "B12: URL-encoded traversal %2e%2e", method: http.MethodGet, path: "/files/%2e%2e/outside/secret.txt", expectedStatus: http.StatusForbidden, expectedBody: "Forbidden"},
+		{name: "directory access blocked", method: http.MethodGet, path: "/files/subdir/", expectedStatus: http.StatusForbidden, expectedBody: "Forbidden"},
+		{name: "nonexistent file", method: http.MethodGet, path: "/files/nonexistent.txt", expectedStatus: http.StatusNotFound, expectedBody: "Not found"},
+		{name: "method not allowed", method: http.MethodPost, path: "/files/test.m3u", expectedStatus: http.StatusMethodNotAllowed, expectedBody: "Method not allowed"},
 	}
 
 	for _, tt := range tests {
@@ -314,7 +314,7 @@ func TestMiddlewareChain(t *testing.T) {
 	server := New(jobs.Config{APIToken: "test-token"})
 	handler := server.Handler()
 
-	req, err := http.NewRequest("GET", "/test", nil)
+	req, err := http.NewRequest(http.MethodGet, "/test", nil)
 	require.NoError(t, err)
 	req.Header.Set("X-API-Token", "test-token")
 	req.RemoteAddr = "192.0.2.1"
@@ -552,6 +552,6 @@ func getMetrics(reg *prometheus.Registry) (string, error) {
 		h = promhttp.HandlerFor(reg, promhttp.HandlerOpts{})
 	}
 	rr := httptest.NewRecorder()
-	h.ServeHTTP(rr, httptest.NewRequest("GET", "/metrics", nil))
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 	return rr.Body.String(), nil
 }

@@ -111,7 +111,7 @@ func TestHandleDiscover(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			server.config.BaseURL = tt.baseURL
 
-			req := httptest.NewRequest("GET", tt.requestURL, nil)
+			req := httptest.NewRequest(http.MethodGet, tt.requestURL, nil)
 			w := httptest.NewRecorder()
 
 			server.HandleDiscover(w, req)
@@ -139,7 +139,7 @@ func TestHandleLineupStatus(t *testing.T) {
 	logger := zerolog.New(os.Stdout)
 	server := NewServer(Config{Logger: logger})
 
-	req := httptest.NewRequest("GET", "/lineup_status.json", nil)
+	req := httptest.NewRequest(http.MethodGet, "/lineup_status.json", nil)
 	w := httptest.NewRecorder()
 
 	server.HandleLineupStatus(w, req)
@@ -161,7 +161,7 @@ func TestHandleLineup(t *testing.T) {
 	logger := zerolog.New(os.Stdout)
 	server := NewServer(Config{Logger: logger})
 
-	req := httptest.NewRequest("GET", "/lineup.json", nil)
+	req := httptest.NewRequest(http.MethodGet, "/lineup.json", nil)
 	w := httptest.NewRecorder()
 
 	server.HandleLineup(w, req)
@@ -195,7 +195,7 @@ func TestHandleLineupPost(t *testing.T) {
 				url += "?scan=" + tt.action
 			}
 
-			req := httptest.NewRequest("POST", url, nil)
+			req := httptest.NewRequest(http.MethodPost, url, nil)
 			w := httptest.NewRecorder()
 
 			server.HandleLineupPost(w, req)
@@ -240,7 +240,7 @@ func TestHandleDeviceXML(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			server.config.BaseURL = tt.baseURL
 
-			req := httptest.NewRequest("GET", tt.requestURL, nil)
+			req := httptest.NewRequest(http.MethodGet, tt.requestURL, nil)
 			if tt.https {
 				req.TLS = &tls.ConnectionState{} // Mock TLS
 			}
@@ -463,7 +463,7 @@ func BenchmarkHandleDiscover(b *testing.B) {
 	logger := zerolog.New(os.Stdout)
 	server := NewServer(Config{Logger: logger})
 
-	req := httptest.NewRequest("GET", "/discover.json", nil)
+	req := httptest.NewRequest(http.MethodGet, "/discover.json", nil)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -477,7 +477,7 @@ func BenchmarkHandleDeviceXML(b *testing.B) {
 	logger := zerolog.New(os.Stdout)
 	server := NewServer(Config{Logger: logger})
 
-	req := httptest.NewRequest("GET", "/device.xml", nil)
+	req := httptest.NewRequest(http.MethodGet, "/device.xml", nil)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

@@ -23,7 +23,7 @@ func TestAPIVersioning(t *testing.T) {
 	handler := server.Handler()
 
 	t.Run("V1StatusEndpoint", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/api/v1/status", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
 		rec := httptest.NewRecorder()
 
 		handler.ServeHTTP(rec, req)
@@ -51,7 +51,7 @@ func TestAPIVersioning(t *testing.T) {
 	})
 
 	t.Run("LegacyStatusEndpoint", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/api/status", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
 		rec := httptest.NewRecorder()
 
 		handler.ServeHTTP(rec, req)
@@ -80,12 +80,12 @@ func TestAPIVersioning(t *testing.T) {
 
 	t.Run("LegacyAndV1ResponseCompatibility", func(t *testing.T) {
 		// Legacy endpoint
-		legacyReq := httptest.NewRequest("GET", "/api/status", nil)
+		legacyReq := httptest.NewRequest(http.MethodGet, "/api/status", nil)
 		legacyRec := httptest.NewRecorder()
 		handler.ServeHTTP(legacyRec, legacyReq)
 
 		// V1 endpoint
-		v1Req := httptest.NewRequest("GET", "/api/v1/status", nil)
+		v1Req := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
 		v1Rec := httptest.NewRecorder()
 		handler.ServeHTTP(v1Rec, v1Req)
 
@@ -110,7 +110,7 @@ func TestAPIVersioning(t *testing.T) {
 	})
 
 	t.Run("V2PreviewDisabledByDefault", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/api/v2/status", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/v2/status", nil)
 		rec := httptest.NewRecorder()
 
 		handler.ServeHTTP(rec, req)
@@ -136,7 +136,7 @@ func TestDeprecationMiddleware(t *testing.T) {
 		w.Write([]byte("OK"))
 	}))
 
-	req := httptest.NewRequest("GET", "/test", nil)
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)

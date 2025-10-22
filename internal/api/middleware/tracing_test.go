@@ -37,7 +37,7 @@ func TestTracing_Success(t *testing.T) {
 	tracedHandler := Tracing("test-tracer")(handler)
 
 	// Create test request
-	req := httptest.NewRequest("GET", "/api/v1/status", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
 	rec := httptest.NewRecorder()
 
 	// Execute request
@@ -73,7 +73,7 @@ func TestTracing_Error(t *testing.T) {
 	tracedHandler := Tracing("test-tracer")(handler)
 
 	// Create test request
-	req := httptest.NewRequest("GET", "/api/v1/error", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/error", nil)
 	rec := httptest.NewRecorder()
 
 	// Execute request
@@ -105,7 +105,7 @@ func TestTracing_ClientError(t *testing.T) {
 	tracedHandler := Tracing("test-tracer")(handler)
 
 	// Create test request
-	req := httptest.NewRequest("GET", "/api/v1/notfound", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/notfound", nil)
 	rec := httptest.NewRecorder()
 
 	// Execute request
@@ -136,7 +136,7 @@ func TestTracing_WithUserAgent(t *testing.T) {
 	tracedHandler := Tracing("test-tracer")(handler)
 
 	// Create test request with User-Agent
-	req := httptest.NewRequest("GET", "/api/v1/status", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
 	req.Header.Set("User-Agent", "TestClient/1.0")
 	rec := httptest.NewRecorder()
 
@@ -169,7 +169,7 @@ func TestTracing_MultipleRequests(t *testing.T) {
 
 	// Execute multiple requests
 	for i := 0; i < 10; i++ {
-		req := httptest.NewRequest("GET", "/api/v1/status", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
 		rec := httptest.NewRecorder()
 		tracedHandler.ServeHTTP(rec, req)
 
