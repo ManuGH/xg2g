@@ -137,10 +137,10 @@ func (v *Validator) Port(field string, port int) {
 }
 
 // Range validates that an integer is within a specified range (inclusive)
-func (v *Validator) Range(field string, value, min, max int) {
-	if value < min || value > max {
+func (v *Validator) Range(field string, value, minVal, maxVal int) {
+	if value < minVal || value > maxVal {
 		v.AddError(field,
-			fmt.Sprintf("value must be between %d and %d, got %d", min, max, value),
+			fmt.Sprintf("value must be between %d and %d, got %d", minVal, maxVal, value),
 			value)
 	}
 }

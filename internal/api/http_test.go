@@ -19,7 +19,7 @@ import (
 )
 
 // dummyHandler is a no-op http.Handler that writes "OK".
-var dummyHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+var dummyHandler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("OK"))
 })
@@ -65,8 +65,8 @@ func TestRecordRefreshMetrics(t *testing.T) {
 	body, err := getMetrics(nil)
 	require.NoError(t, err)
 
-	assert.Contains(t, string(body), `xg2g_channels`)
-	assert.Contains(t, string(body), `xg2g_refresh_duration_seconds_count`)
+	assert.Contains(t, body, `xg2g_channels`)
+	assert.Contains(t, body, `xg2g_refresh_duration_seconds_count`)
 }
 
 func TestHandleRefresh_SuccessUpdatesLastRun(t *testing.T) {
@@ -80,7 +80,7 @@ func TestHandleRefresh_ConflictOnConcurrent(t *testing.T) {
 	// Install a slow refresh function to force overlap
 	startCh := make(chan struct{})
 	releaseCh := make(chan struct{})
-	s.refreshFn = func(ctx context.Context, cfg jobs.Config) (*jobs.Status, error) {
+	s.refreshFn = func(_ context.Context, cfg jobs.Config) (*jobs.Status, error) {
 		close(startCh) // signal that refresh started
 		<-releaseCh    // block until allowed to finish
 		return &jobs.Status{Channels: 1, LastRun: time.Now()}, nil

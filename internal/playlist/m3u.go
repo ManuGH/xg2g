@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: MIT
+
+// Package playlist provides M3U playlist generation and manipulation.
 package playlist
 
 import (
@@ -8,6 +10,7 @@ import (
 	"os"
 )
 
+// Item represents an M3U playlist entry with channel metadata.
 type Item struct {
 	Name    string
 	TvgID   string
@@ -17,6 +20,7 @@ type Item struct {
 	URL     string
 }
 
+// WriteM3U writes an M3U playlist to the given writer.
 func WriteM3U(w io.Writer, items []Item) error {
 	buf := &bytes.Buffer{}
 	// Optional x-tvg-url header attribute for clients that auto-load EPG

@@ -356,7 +356,6 @@ func TestGetConfigFromEnv(t *testing.T) {
 			assert.Equal(t, tt.expected.FirmwareName, config.FirmwareName)
 			assert.Equal(t, tt.expected.BaseURL, config.BaseURL)
 			assert.Equal(t, tt.expected.TunerCount, config.TunerCount)
-
 		})
 	}
 }

@@ -77,10 +77,10 @@ func TestJobStatus_IsTerminal(t *testing.T) {
 
 func TestJobStatus_CanTransitionTo(t *testing.T) {
 	tests := []struct {
-		name   string
-		from   JobStatus
-		to     JobStatus
-		want   bool
+		name string
+		from JobStatus
+		to   JobStatus
+		want bool
 	}{
 		// Valid transitions from Pending
 		{"pending to running", JobStatusPending, JobStatusRunning, true},

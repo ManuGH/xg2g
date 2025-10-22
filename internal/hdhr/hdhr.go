@@ -273,7 +273,6 @@ func (s *Server) handleSSDPRequests(ctx context.Context, conn net.PacketConn, _ 
 			if strings.Contains(msg, "M-SEARCH") &&
 				(strings.Contains(msg, "ssdp:all") ||
 					strings.Contains(msg, "urn:schemas-upnp-org:device:MediaServer:1")) {
-
 				s.logger.Debug().
 					Str("from", remoteAddr.String()).
 					Msg("received SSDP M-SEARCH request")
