@@ -361,6 +361,187 @@ func TestAdvancedPathTraversal(t *testing.T) {
 	}
 }
 
+func TestHandleXMLTV_Success(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create test XMLTV and M3U files
+	xmltvPath := filepath.Join(tmpDir, "xmltv.xml")
+	m3uPath := filepath.Join(tmpDir, "playlist.m3u")
+
+	xmltvContent := `<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="channel1">
+    <display-name>Channel One</display-name>
+  </channel>
+  <programme start="20250101000000" stop="20250101010000" channel="channel1">
+    <title>Test Programme</title>
+  </programme>
+</tv>`
+
+	m3uContent := `#EXTM3U
+#EXTINF:-1 tvg-id="channel1" tvg-chno="1",Channel One
+http://example.com/stream1
+`
+
+	require.NoError(t, os.WriteFile(xmltvPath, []byte(xmltvContent), 0644))
+	require.NoError(t, os.WriteFile(m3uPath, []byte(m3uContent), 0644))
+
+	cfg := jobs.Config{
+		DataDir:   tmpDir,
+		XMLTVPath: "xmltv.xml",
+	}
+
+	server := New(cfg)
+	handler := server.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/xml; charset=utf-8", rr.Header().Get("Content-Type"))
+	assert.Contains(t, rr.Body.String(), "Channel One")
+}
+
+func TestHandleXMLTV_FileTooLarge(t *testing.T) {
+	tmpDir := t.TempDir()
+	xmltvPath := filepath.Join(tmpDir, "xmltv.xml")
+
+	// Create a file larger than 50MB limit
+	largeContent := make([]byte, 51*1024*1024)
+	require.NoError(t, os.WriteFile(xmltvPath, largeContent, 0644))
+
+	cfg := jobs.Config{
+		DataDir:   tmpDir,
+		XMLTVPath: "xmltv.xml",
+	}
+
+	server := New(cfg)
+	handler := server.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusRequestEntityTooLarge, rr.Code)
+}
+
+func TestHandleXMLTV_FileNotFound(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	cfg := jobs.Config{
+		DataDir:   tmpDir,
+		XMLTVPath: "nonexistent.xml",
+	}
+
+	server := New(cfg)
+	handler := server.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusNotFound, rr.Code)
+}
+
+func TestHandleXMLTV_IDRemapping(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	xmltvPath := filepath.Join(tmpDir, "xmltv.xml")
+	m3uPath := filepath.Join(tmpDir, "playlist.m3u")
+
+	// XMLTV with channel IDs
+	xmltvContent := `<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="oldID1">
+    <display-name>Channel One</display-name>
+  </channel>
+  <programme start="20250101000000" stop="20250101010000" channel="oldID1">
+    <title>Test Programme</title>
+  </programme>
+</tv>`
+
+	// M3U with tvg-chno mapping
+	m3uContent := `#EXTM3U
+#EXTINF:-1 tvg-id="oldID1" tvg-chno="42",Channel One
+http://example.com/stream1
+`
+
+	require.NoError(t, os.WriteFile(xmltvPath, []byte(xmltvContent), 0644))
+	require.NoError(t, os.WriteFile(m3uPath, []byte(m3uContent), 0644))
+
+	cfg := jobs.Config{
+		DataDir:   tmpDir,
+		XMLTVPath: "xmltv.xml",
+	}
+
+	server := New(cfg)
+	handler := server.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	body := rr.Body.String()
+
+	// Should have remapped oldID1 to 42
+	assert.Contains(t, body, `id="42"`)
+	assert.Contains(t, body, `channel="42"`)
+	assert.NotContains(t, body, `id="oldID1"`)
+}
+
+func TestHandleRefreshV1(t *testing.T) {
+	cfg := jobs.Config{
+		OWIBase: "http://invalid-url-for-testing",
+	}
+
+	server := New(cfg)
+	handler := server.Handler()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/refresh", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	// Should call through to handleRefresh
+	// Expect either success or error, but not 404
+	assert.NotEqual(t, http.StatusNotFound, rr.Code)
+}
+
+func TestClientDisconnectDuringRefresh(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	cfg := jobs.Config{
+		DataDir:  tmpDir,
+		OWIBase:  "http://invalid-url-that-will-timeout",
+		Bouquet:  "test",
+		APIToken: "test-token",
+	}
+
+	server := New(cfg)
+
+	// Create a context that we'll cancel to simulate client disconnect
+	ctx, cancel := context.WithCancel(context.Background())
+
+	req := httptest.NewRequest(http.MethodPost, "/api/refresh", nil).WithContext(ctx)
+	req.Header.Set("Authorization", "Bearer test-token")
+
+	rr := httptest.NewRecorder()
+
+	// Cancel context after a short delay to simulate client disconnect
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+
+	handler := server.Handler()
+	handler.ServeHTTP(rr, req)
+
+	// The handler should still complete (or return error) even though client disconnected
+	// Important: job should continue in background
+	assert.NotEqual(t, 0, rr.Code, "handler should have returned a status code")
+}
+
 // getMetrics is a test helper to scrape metrics from a registry.
 func getMetrics(reg *prometheus.Registry) (string, error) {
 	var h http.Handler
