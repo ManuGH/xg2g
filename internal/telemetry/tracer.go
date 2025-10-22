@@ -14,6 +14,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 )
 
 // Config holds telemetry configuration.
@@ -49,7 +50,7 @@ type Provider struct {
 func NewProvider(ctx context.Context, cfg Config) (*Provider, error) {
 	if !cfg.Enabled {
 		// Return a noop provider when telemetry is disabled
-		otel.SetTracerProvider(trace.NewNoopTracerProvider())
+		otel.SetTracerProvider(noop.NewTracerProvider())
 		return &Provider{tp: nil}, nil
 	}
 

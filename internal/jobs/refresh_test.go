@@ -243,7 +243,7 @@ func TestRefresh_M3UWriteError(t *testing.T) {
 	// Create a read-only directory to force a write error
 	tmpdir := t.TempDir()
 	readonlyDir := filepath.Join(tmpdir, "readonly")
-	if err := os.Mkdir(readonlyDir, 0555); err != nil {
+	if err := os.Mkdir(readonlyDir, 0o500); err != nil {
 		t.Fatalf("failed to create read-only dir: %v", err)
 	}
 

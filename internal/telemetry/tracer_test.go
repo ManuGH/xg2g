@@ -28,9 +28,11 @@ func TestNewProvider_Disabled(t *testing.T) {
 
 	// Verify global tracer is noop
 	tracer := otel.Tracer("test")
-	if _, ok := tracer.(trace.Tracer); !ok {
-		t.Error("Expected noop tracer")
+	_, span := tracer.Start(context.Background(), "noop-check")
+	if span.IsRecording() {
+		t.Error("Expected noop tracer span to be non-recording")
 	}
+	span.End()
 }
 
 func TestNewProvider_InvalidExporter(t *testing.T) {
@@ -151,12 +153,12 @@ func TestTracer(t *testing.T) {
 
 func TestConfig_DefaultValues(t *testing.T) {
 	cfg := Config{
-		ServiceName:  "xg2g",
+		ServiceName:    "xg2g",
 		ServiceVersion: "1.0.0",
-		Environment:  "test",
-		ExporterType: "grpc",
-		Endpoint:     "localhost:4317",
-		SamplingRate: 1.0,
+		Environment:    "test",
+		ExporterType:   "grpc",
+		Endpoint:       "localhost:4317",
+		SamplingRate:   1.0,
 	}
 
 	if cfg.ServiceName != "xg2g" {
@@ -180,21 +182,26 @@ func TestConfig_DefaultValues(t *testing.T) {
 }
 
 func TestProvider_ConcurrentShutdown(t *testing.T) {
+	t.Helper()
 	provider := &Provider{tp: nil}
 
 	// Concurrent shutdowns should not panic
-	done := make(chan bool)
+	done := make(chan struct{}, 5)
 	for i := 0; i < 5; i++ {
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 			defer cancel()
 			_ = provider.Shutdown(ctx)
-			done <- true
+			done <- struct{}{}
 		}()
 	}
 
 	// Wait for all goroutines
 	for i := 0; i < 5; i++ {
-		<-done
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Fatal("timeout waiting for concurrent shutdown")
+		}
 	}
 }

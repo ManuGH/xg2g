@@ -55,6 +55,7 @@ func TestGoldenFiles(t *testing.T) {
 			}
 
 			// Read generated content
+			// #nosec G304 -- outputPath is derived from t.TempDir and always controlled
 			generated, err := os.ReadFile(outputPath)
 			if err != nil {
 				t.Fatalf("Failed to read generated file: %v", err)
@@ -62,6 +63,7 @@ func TestGoldenFiles(t *testing.T) {
 
 			// Read golden file
 			goldenPath := filepath.Join("testdata", tt.goldenFile)
+			// #nosec G304 -- golden fixtures reside in version-controlled testdata
 			expected, err := os.ReadFile(goldenPath)
 			if err != nil {
 				t.Fatalf("Failed to read golden file %s: %v", goldenPath, err)

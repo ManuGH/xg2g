@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -122,8 +123,15 @@ func (t *Transcoder) TranscodeStream(ctx context.Context, w http.ResponseWriter,
 		Strs("args", args).
 		Msg("starting ffmpeg transcoding")
 
+	// Ensure the ffmpeg path is clean and absolute before execution
+	ffmpegPath := filepath.Clean(t.config.FFmpegPath)
+	if !filepath.IsAbs(ffmpegPath) {
+		return fmt.Errorf("ffmpeg path must be absolute: %s", ffmpegPath)
+	}
+
 	// Create ffmpeg command
-	cmd := exec.CommandContext(ctx, t.config.FFmpegPath, args...)
+	// #nosec G204 -- ffmpegPath is sanitized above and args contain only predefined options
+	cmd := exec.CommandContext(ctx, ffmpegPath, args...)
 
 	// Connect pipes
 	stdin, err := cmd.StdinPipe()

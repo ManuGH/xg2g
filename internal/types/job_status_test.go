@@ -41,7 +41,7 @@ func TestJobStatus_IsValid(t *testing.T) {
 		{"cancelled valid", JobStatusCancelled, true},
 		{"invalid empty", JobStatus(""), false},
 		{"invalid unknown", JobStatus("unknown"), false},
-		{"invalid typo", JobStatus("runing"), false},
+		{"invalid typo", JobStatus("runing"), false}, // cspell:disable-line
 	}
 
 	for _, tt := range tests {
@@ -182,7 +182,7 @@ func TestParseJobStatus(t *testing.T) {
 		{"cancelled", "cancelled", JobStatusCancelled, false},
 		{"invalid empty", "", "", true},
 		{"invalid unknown", "unknown", "", true},
-		{"invalid typo", "runing", "", true},
+		{"invalid typo", "runing", "", true}, // cspell:disable-line
 	}
 
 	for _, tt := range tests {

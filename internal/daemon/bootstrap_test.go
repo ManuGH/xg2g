@@ -46,7 +46,7 @@ func TestDaemon_StartShutdown(t *testing.T) {
 	// Setup
 	cfg := Config{
 		Version:         "test-1.0.0",
-		ConfigPath:      "", // No config file
+		ConfigPath:      "",            // No config file
 		ListenAddr:      "127.0.0.1:0", // Random port
 		ReadTimeout:     1 * time.Second,
 		WriteTimeout:    1 * time.Second,
@@ -122,6 +122,7 @@ func TestDaemon_Shutdown(t *testing.T) {
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		}),
+		ReadHeaderTimeout: time.Second,
 	}
 
 	// Start server in background
