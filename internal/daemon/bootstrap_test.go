@@ -25,7 +25,7 @@ func TestNew(t *testing.T) {
 	// Create temporary data directory
 	tmpDir := t.TempDir()
 	_ = os.Setenv("XG2G_DATA", tmpDir)
-	defer os.Unsetenv("XG2G_DATA")
+	defer func() { _ = os.Unsetenv("XG2G_DATA") }()
 
 	// Create daemon
 	d, err := New(cfg)
@@ -57,11 +57,11 @@ func TestDaemon_StartShutdown(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	_ = os.Setenv("XG2G_DATA", tmpDir)
-	defer os.Unsetenv("XG2G_DATA")
+	defer func() { _ = os.Unsetenv("XG2G_DATA") }()
 
 	// Disable telemetry for test
 	_ = os.Setenv("XG2G_TELEMETRY_ENABLED", "false")
-	defer os.Unsetenv("XG2G_TELEMETRY_ENABLED")
+	defer func() { _ = os.Unsetenv("XG2G_TELEMETRY_ENABLED") }()
 
 	d, err := New(cfg)
 	if err != nil {
@@ -71,7 +71,7 @@ func TestDaemon_StartShutdown(t *testing.T) {
 	// Create test handler
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	})
 
 	// Start daemon in goroutine
@@ -109,7 +109,7 @@ func TestDaemon_Shutdown(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	_ = os.Setenv("XG2G_DATA", tmpDir)
-	defer os.Unsetenv("XG2G_DATA")
+	defer func() { _ = os.Unsetenv("XG2G_DATA") }()
 
 	d, err := New(cfg)
 	if err != nil {
@@ -168,7 +168,7 @@ func TestGetEnvOrDefault(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.envValue != "" {
 				_ = os.Setenv(tt.key, tt.envValue)
-				defer os.Unsetenv(tt.key)
+				defer func() { _ = os.Unsetenv(tt.key) }()
 			}
 
 			got := getEnvOrDefault(tt.key, tt.defaultValue)

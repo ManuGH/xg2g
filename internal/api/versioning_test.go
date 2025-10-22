@@ -133,7 +133,7 @@ func TestDeprecationMiddleware(t *testing.T) {
 
 	handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	}))
 
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
