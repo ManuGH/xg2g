@@ -245,7 +245,7 @@ func (s *Server) StartSSDPAnnouncer(ctx context.Context) error {
 }
 
 // handleSSDPRequests listens for SSDP M-SEARCH requests
-func (s *Server) handleSSDPRequests(ctx context.Context, conn net.PacketConn, multicastAddr *net.UDPAddr) {
+func (s *Server) handleSSDPRequests(ctx context.Context, conn net.PacketConn, _ *net.UDPAddr) {
 	buf := make([]byte, 2048)
 
 	for {
