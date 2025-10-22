@@ -357,7 +357,7 @@ func validateConfig(cfg Config) error {
 	v.Directory("DataDir", cfg.DataDir, false)
 
 	if !v.IsValid() {
-		return v
+		return v.Err()
 	}
 
 	return nil
@@ -509,7 +509,7 @@ func sanitizeFilename(name string) (string, error) {
 	// Validate extension
 	ext := filepath.Ext(cleaned)
 	if ext != ".m3u" && ext != ".m3u8" {
-		cleaned = cleaned + ".m3u"
+		cleaned += ".m3u"
 	}
 
 	return cleaned, nil

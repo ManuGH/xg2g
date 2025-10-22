@@ -305,13 +305,15 @@ func main() {
 // It also logs the source of the value (default or environment).
 func env(key, defaultValue string) string {
 	if value, exists := os.LookupEnv(key); exists {
-		// For sensitive vars, just log that it was set
-		if strings.Contains(strings.ToLower(key), "token") || strings.Contains(strings.ToLower(key), "password") {
+		lowerKey := strings.ToLower(key)
+		switch {
+		case strings.Contains(lowerKey, "token") || strings.Contains(lowerKey, "password"):
+			// For sensitive vars, just log that it was set
 			log.Printf("config: using %s from environment (set)", key)
-		} else if value == "" {
+		case value == "":
 			log.Printf("config: using default for %s (%q) because environment variable is empty", key, defaultValue)
 			return defaultValue
-		} else {
+		default:
 			log.Printf("config: using %s from environment (%q)", key, value)
 		}
 		return value

@@ -35,7 +35,7 @@ func TestValidator_URL(t *testing.T) {
 				t.Errorf("expected error, got none")
 			}
 			if !tt.wantErr && !v.IsValid() {
-				t.Errorf("unexpected error: %v", v.Error())
+				t.Errorf("unexpected error: %v", v.Err())
 			}
 		})
 	}
@@ -66,7 +66,7 @@ func TestValidator_Port(t *testing.T) {
 				t.Errorf("expected error, got none")
 			}
 			if !tt.wantErr && !v.IsValid() {
-				t.Errorf("unexpected error: %v", v.Error())
+				t.Errorf("unexpected error: %v", v.Err())
 			}
 		})
 	}
@@ -97,7 +97,7 @@ func TestValidator_Range(t *testing.T) {
 				t.Errorf("expected error, got none")
 			}
 			if !tt.wantErr && !v.IsValid() {
-				t.Errorf("unexpected error: %v", v.Error())
+				t.Errorf("unexpected error: %v", v.Err())
 			}
 		})
 	}
@@ -130,7 +130,7 @@ func TestValidator_Directory(t *testing.T) {
 				t.Errorf("expected error, got none")
 			}
 			if !tt.wantErr && !v.IsValid() {
-				t.Errorf("unexpected error: %v", v.Error())
+				t.Errorf("unexpected error: %v", v.Err())
 			}
 		})
 	}
@@ -158,7 +158,7 @@ func TestValidator_NotEmpty(t *testing.T) {
 				t.Errorf("expected error, got none")
 			}
 			if !tt.wantErr && !v.IsValid() {
-				t.Errorf("unexpected error: %v", v.Error())
+				t.Errorf("unexpected error: %v", v.Err())
 			}
 		})
 	}
@@ -188,7 +188,7 @@ func TestValidator_OneOf(t *testing.T) {
 				t.Errorf("expected error, got none")
 			}
 			if !tt.wantErr && !v.IsValid() {
-				t.Errorf("unexpected error: %v", v.Error())
+				t.Errorf("unexpected error: %v", v.Err())
 			}
 		})
 	}
@@ -215,7 +215,7 @@ func TestValidator_Positive(t *testing.T) {
 				t.Errorf("expected error, got none")
 			}
 			if !tt.wantErr && !v.IsValid() {
-				t.Errorf("unexpected error: %v", v.Error())
+				t.Errorf("unexpected error: %v", v.Err())
 			}
 		})
 	}
@@ -241,7 +241,7 @@ func TestValidator_NonNegative(t *testing.T) {
 				t.Errorf("expected error, got none")
 			}
 			if !tt.wantErr && !v.IsValid() {
-				t.Errorf("unexpected error: %v", v.Error())
+				t.Errorf("unexpected error: %v", v.Err())
 			}
 		})
 	}
@@ -258,7 +258,10 @@ func TestValidator_Custom(t *testing.T) {
 			name:  "passes custom validation",
 			value: "hello",
 			validator: func(v interface{}) error {
-				s := v.(string)
+				s, ok := v.(string)
+				if !ok {
+					return errors.New("expected string value")
+				}
 				if len(s) >= 3 {
 					return nil
 				}
@@ -270,7 +273,10 @@ func TestValidator_Custom(t *testing.T) {
 			name:  "fails custom validation",
 			value: "hi",
 			validator: func(v interface{}) error {
-				s := v.(string)
+				s, ok := v.(string)
+				if !ok {
+					return errors.New("expected string value")
+				}
 				if len(s) >= 3 {
 					return nil
 				}
@@ -289,7 +295,7 @@ func TestValidator_Custom(t *testing.T) {
 				t.Errorf("expected error, got none")
 			}
 			if !tt.wantErr && !v.IsValid() {
-				t.Errorf("unexpected error: %v", v.Error())
+				t.Errorf("unexpected error: %v", v.Err())
 			}
 		})
 	}
@@ -298,9 +304,9 @@ func TestValidator_Custom(t *testing.T) {
 func TestValidator_MultipleErrors(t *testing.T) {
 	v := New()
 
-	v.Port("port", 0)           // Invalid
+	v.Port("port", 0)                  // Invalid
 	v.URL("url", "", []string{"http"}) // Invalid
-	v.NotEmpty("name", "")      // Invalid
+	v.NotEmpty("name", "")             // Invalid
 
 	if v.IsValid() {
 		t.Fatal("expected errors, got none")
@@ -311,7 +317,11 @@ func TestValidator_MultipleErrors(t *testing.T) {
 		t.Errorf("expected 3 errors, got %d", len(errors))
 	}
 
-	errorMsg := v.Error()
+	err := v.Err()
+	if err == nil {
+		t.Fatal("expected validation error, got nil")
+	}
+	errorMsg := err.Error()
 	if !strings.Contains(errorMsg, "port") {
 		t.Error("error message should mention 'port'")
 	}
@@ -333,7 +343,7 @@ func TestValidator_Chaining(t *testing.T) {
 	v.NotEmpty("bouquet", "Favourites")
 
 	if !v.IsValid() {
-		t.Errorf("unexpected errors: %v", v.Error())
+		t.Errorf("unexpected errors: %v", v.Err())
 	}
 }
 
@@ -345,7 +355,7 @@ func TestValidator_DirectoryCreation(t *testing.T) {
 	v.Directory("testDir", newDir, false)
 
 	if !v.IsValid() {
-		t.Errorf("unexpected error: %v", v.Error())
+		t.Errorf("unexpected error: %v", v.Err())
 	}
 
 	// Check that directory was actually created
@@ -468,14 +478,17 @@ func TestValidatePath_Security(t *testing.T) {
 				if v.IsValid() {
 					t.Errorf("expected validation to fail, but it passed")
 				} else {
-					err := v.Error()
-					if !strings.Contains(err, tt.errMsg) {
+					err := v.Err()
+					if err == nil {
+						t.Fatal("expected validation error, got nil")
+					}
+					if !strings.Contains(err.Error(), tt.errMsg) {
 						t.Errorf("expected error to contain %q, got %q", tt.errMsg, err)
 					}
 				}
 			} else {
 				if !v.IsValid() {
-					t.Errorf("expected validation to pass, got error: %v", v.Error())
+					t.Errorf("expected validation to pass, got error: %v", v.Err())
 				}
 			}
 		})
@@ -513,14 +526,14 @@ func TestPathWithinRoot_Security(t *testing.T) {
 
 	// Create a file inside tmpDir
 	validFile := filepath.Join(tmpDir, "valid.xml")
-	if err := os.WriteFile(validFile, []byte("test"), 0644); err != nil {
+	if err := os.WriteFile(validFile, []byte("test"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	// Create a file outside tmpDir
 	outsideDir := t.TempDir()
 	outsideFile := filepath.Join(outsideDir, "secret.txt")
-	if err := os.WriteFile(outsideFile, []byte("secret"), 0644); err != nil {
+	if err := os.WriteFile(outsideFile, []byte("secret"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -575,14 +588,17 @@ func TestPathWithinRoot_Security(t *testing.T) {
 				if v.IsValid() {
 					t.Errorf("expected validation to fail, but it passed")
 				} else {
-					err := v.Error()
-					if !strings.Contains(err, tt.errMsg) {
+					err := v.Err()
+					if err == nil {
+						t.Fatal("expected validation error, got nil")
+					}
+					if !strings.Contains(err.Error(), tt.errMsg) {
 						t.Errorf("expected error to contain %q, got %q", tt.errMsg, err)
 					}
 				}
 			} else {
 				if !v.IsValid() {
-					t.Errorf("expected validation to pass, got error: %v", v.Error())
+					t.Errorf("expected validation to pass, got error: %v", v.Err())
 				}
 			}
 		})

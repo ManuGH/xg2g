@@ -4,6 +4,7 @@ package hdhr
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -258,7 +259,8 @@ func (s *Server) handleSSDPRequests(ctx context.Context, conn net.PacketConn, mu
 			}
 			n, remoteAddr, err := conn.ReadFrom(buf)
 			if err != nil {
-				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				var netErr net.Error
+				if errors.As(err, &netErr) && netErr.Timeout() {
 					continue
 				}
 				s.logger.Error().Err(err).Msg("failed to read SSDP packet")

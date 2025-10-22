@@ -397,7 +397,7 @@ func (c *Client) StreamURL(ref, name string) (string, error) {
 	// WebIF streaming (/web/stream.m3u) is rarely needed and less compatible.
 	// Prefer direct TS streams (port 8001) or the integrated proxy for port 17999.
 	// Only use this if you specifically need standby-mode streaming.
-	useWebIF := os.Getenv("XG2G_USE_WEBIF_STREAMS") == "true"
+	useWebIF, _ := strconv.ParseBool(os.Getenv("XG2G_USE_WEBIF_STREAMS"))
 
 	if useWebIF {
 		// Use WebIF streaming endpoint (works in standby mode)
@@ -794,7 +794,8 @@ func (c *Client) GetEPG(ctx context.Context, sRef string, days int) ([]EPGEvent,
 
 	events, fallbackErr := c.fetchEPGFromURL(ctx, fallbackURL)
 	if fallbackErr != nil {
-		return nil, fmt.Errorf("both EPG endpoints failed - api: %w, web: %v", err, fallbackErr)
+		combinedErr := errors.Join(err, fallbackErr)
+		return nil, fmt.Errorf("both EPG endpoints failed: %w", combinedErr)
 	}
 
 	return events, nil

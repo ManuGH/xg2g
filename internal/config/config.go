@@ -32,7 +32,7 @@ type OpenWebIFConfig struct {
 	BaseURL    string `yaml:"baseUrl"`
 	Username   string `yaml:"username,omitempty"`
 	Password   string `yaml:"password,omitempty"`
-	Timeout    string `yaml:"timeout,omitempty"`    // e.g. "10s"
+	Timeout    string `yaml:"timeout,omitempty"` // e.g. "10s"
 	Retries    int    `yaml:"retries,omitempty"`
 	Backoff    string `yaml:"backoff,omitempty"`    // e.g. "500ms"
 	MaxBackoff string `yaml:"maxBackoff,omitempty"` // e.g. "30s"
@@ -135,6 +135,8 @@ func (l *Loader) setDefaults(cfg *jobs.Config) {
 
 // loadFile loads configuration from a YAML file
 func (l *Loader) loadFile(path string) (*FileConfig, error) {
+	path = filepath.Clean(path)
+
 	// Check file extension
 	ext := strings.ToLower(filepath.Ext(path))
 	if ext != ".yaml" && ext != ".yml" {
@@ -142,6 +144,7 @@ func (l *Loader) loadFile(path string) (*FileConfig, error) {
 	}
 
 	// Read file
+	// #nosec G304 -- configuration file paths are provided by the operator via CLI/ENV
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read file: %w", err)

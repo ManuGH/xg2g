@@ -3,8 +3,10 @@ package epg
 
 import (
 	"encoding/xml"
+	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -24,6 +26,8 @@ func norm(s string) string {
 // BuildNameToIDMap reads an XMLTV file and returns a map[nameKey]=channelID.
 // It expects elements matching the `Channel` type defined in generator.go.
 func BuildNameToIDMap(xmltvPath string) (map[string]string, error) {
+	xmltvPath = filepath.Clean(xmltvPath)
+	// #nosec G304 -- xmltvPath is cleaned and originates from controlled configuration
 	f, err := os.Open(xmltvPath)
 	if err != nil {
 		return nil, err
@@ -40,7 +44,7 @@ func BuildNameToIDMap(xmltvPath string) (map[string]string, error) {
 	var doc TV
 	dec := xml.NewDecoder(f)
 	dec.Strict = false
-	if err := dec.Decode(&doc); err != nil && err != io.EOF {
+	if err := dec.Decode(&doc); err != nil && !errors.Is(err, io.EOF) {
 		return nil, err
 	}
 

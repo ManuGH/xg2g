@@ -63,7 +63,7 @@ picons:
   baseUrl: http://picons.local
 `, customDataDir)
 
-	if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0o600); err != nil {
 		t.Fatalf("failed to write test config: %v", err)
 	}
 
@@ -97,7 +97,7 @@ openWebIF:
   streamPort: 9001
 `, fileDataDir)
 
-	if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0o600); err != nil {
 		t.Fatalf("failed to write test config: %v", err)
 	}
 
@@ -135,7 +135,7 @@ epg:
   days: 10
 `, fileDataDir)
 
-	if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0o600); err != nil {
 		t.Fatalf("failed to write test config: %v", err)
 	}
 

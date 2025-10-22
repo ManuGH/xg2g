@@ -38,11 +38,6 @@ func Tracing(tracerName string) func(http.Handler) http.Handler {
 				0, // Will be set after response
 			)...)
 
-			// Add user agent if present
-			if userAgent := r.Header.Get("User-Agent"); userAgent != "" {
-				span.SetAttributes(telemetry.HTTPAttributes("", "", "", 0)...)
-			}
-
 			// Process request
 			next.ServeHTTP(rw, r.WithContext(ctx))
 
@@ -57,10 +52,8 @@ func Tracing(tracerName string) func(http.Handler) http.Handler {
 			// Mark span as error if status code >= 500
 			if rw.statusCode >= 500 {
 				span.SetStatus(codes.Error, http.StatusText(rw.statusCode))
-			} else if rw.statusCode >= 400 {
-				// 4xx errors are client errors, not server errors
-				span.SetStatus(codes.Ok, "")
 			} else {
+				// Treat 4xx as client-side issues to avoid noisy error signal
 				span.SetStatus(codes.Ok, "")
 			}
 		})

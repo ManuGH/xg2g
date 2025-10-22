@@ -165,8 +165,8 @@ func TestHandleReady(t *testing.T) {
 	// Case 2: Ready
 	s.status.LastRun = time.Now()
 	s.status.Error = ""
-	require.NoError(t, os.WriteFile(playlistPath, []byte("#EXTM3U"), 0644))
-	require.NoError(t, os.WriteFile(xmltvFullPath, []byte("<tv></tv>"), 0644))
+	require.NoError(t, os.WriteFile(playlistPath, []byte("#EXTM3U"), 0o600))
+	require.NoError(t, os.WriteFile(xmltvFullPath, []byte("<tv></tv>"), 0o600))
 
 	rr = httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
@@ -249,16 +249,16 @@ func TestSecureFileHandlerSymlinkPolicy(t *testing.T) {
 	outsideDir := filepath.Join(tempDir, "outside")
 	subDir := filepath.Join(dataDir, "subdir")
 
-	require.NoError(t, os.MkdirAll(subDir, 0755))
-	require.NoError(t, os.Mkdir(outsideDir, 0755))
+	require.NoError(t, os.MkdirAll(subDir, 0o750))
+	require.NoError(t, os.Mkdir(outsideDir, 0o750))
 
 	testFile := filepath.Join(dataDir, "test.m3u")
 	subFile := filepath.Join(subDir, "sub.m3u")
 	outsideFile := filepath.Join(outsideDir, "secret.txt")
 
-	require.NoError(t, os.WriteFile(testFile, []byte("m3u content"), 0644))
-	require.NoError(t, os.WriteFile(subFile, []byte("sub content"), 0644))
-	require.NoError(t, os.WriteFile(outsideFile, []byte("secret"), 0644))
+	require.NoError(t, os.WriteFile(testFile, []byte("m3u content"), 0o600))
+	require.NoError(t, os.WriteFile(subFile, []byte("sub content"), 0o600))
+	require.NoError(t, os.WriteFile(outsideFile, []byte("secret"), 0o600))
 
 	symlinkPath := filepath.Join(dataDir, "evil_symlink")
 	require.NoError(t, os.Symlink(outsideFile, symlinkPath))
@@ -334,7 +334,7 @@ func TestAdvancedPathTraversal(t *testing.T) {
 	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	// Create a benign file to make data dir non-empty
-	require.NoError(t, os.WriteFile(filepath.Join(tempDir, "ok.txt"), []byte("ok"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(tempDir, "ok.txt"), []byte("ok"), 0o600))
 
 	cfg := jobs.Config{DataDir: tempDir}
 	server := New(cfg)
@@ -383,8 +383,8 @@ func TestHandleXMLTV_Success(t *testing.T) {
 http://example.com/stream1
 `
 
-	require.NoError(t, os.WriteFile(xmltvPath, []byte(xmltvContent), 0644))
-	require.NoError(t, os.WriteFile(m3uPath, []byte(m3uContent), 0644))
+	require.NoError(t, os.WriteFile(xmltvPath, []byte(xmltvContent), 0o600))
+	require.NoError(t, os.WriteFile(m3uPath, []byte(m3uContent), 0o600))
 
 	cfg := jobs.Config{
 		DataDir:   tmpDir,
@@ -409,7 +409,7 @@ func TestHandleXMLTV_FileTooLarge(t *testing.T) {
 
 	// Create a file larger than 50MB limit
 	largeContent := make([]byte, 51*1024*1024)
-	require.NoError(t, os.WriteFile(xmltvPath, largeContent, 0644))
+	require.NoError(t, os.WriteFile(xmltvPath, largeContent, 0o600))
 
 	cfg := jobs.Config{
 		DataDir:   tmpDir,
@@ -467,8 +467,8 @@ func TestHandleXMLTV_IDRemapping(t *testing.T) {
 http://example.com/stream1
 `
 
-	require.NoError(t, os.WriteFile(xmltvPath, []byte(xmltvContent), 0644))
-	require.NoError(t, os.WriteFile(m3uPath, []byte(m3uContent), 0644))
+	require.NoError(t, os.WriteFile(xmltvPath, []byte(xmltvContent), 0o600))
+	require.NoError(t, os.WriteFile(m3uPath, []byte(m3uContent), 0o600))
 
 	cfg := jobs.Config{
 		DataDir:   tmpDir,

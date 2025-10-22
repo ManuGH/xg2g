@@ -41,7 +41,7 @@ func Validate(cfg jobs.Config) error {
 	v.Path("XMLTVPath", cfg.XMLTVPath)
 
 	if !v.IsValid() {
-		return v
+		return v.Err()
 	}
 
 	return nil

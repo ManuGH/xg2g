@@ -216,6 +216,7 @@ func TestXMLTVStructValidation(t *testing.T) {
 		}
 
 		// Verify XML structure by parsing with standard library
+		// #nosec G304 -- xmlPath is derived from t.TempDir, ensuring a trusted location
 		data, err := os.ReadFile(xmlPath)
 		if err != nil {
 			t.Fatalf("Failed to read XMLTV file: %v", err)
@@ -235,6 +236,7 @@ func TestXMLTVStructValidation(t *testing.T) {
 
 // parseXMLTVFile is a helper to parse XMLTV files for testing
 func parseXMLTVFile(path string) (*TV, error) {
+	// #nosec G304 -- path is always provided by test fixtures within the repository
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err

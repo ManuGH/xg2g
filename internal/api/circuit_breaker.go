@@ -16,11 +16,17 @@ type CircuitBreaker struct {
 	failures  int
 	threshold int
 	timeout   time.Duration
-	state     string // "closed", "open", "half-open"
+	state     string // circuitStateClosed, circuitStateOpen, circuitStateHalfOpen
 	openedAt  time.Time
 }
 
 var errCircuitOpen = errors.New("circuit breaker is open")
+
+const (
+	circuitStateClosed   = "closed"
+	circuitStateOpen     = "open"
+	circuitStateHalfOpen = "half-open"
+)
 
 func NewCircuitBreaker(threshold int, timeout time.Duration) *CircuitBreaker {
 	if threshold <= 0 {
@@ -29,7 +35,7 @@ func NewCircuitBreaker(threshold int, timeout time.Duration) *CircuitBreaker {
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}
-	return &CircuitBreaker{threshold: threshold, timeout: timeout, state: "closed"}
+	return &CircuitBreaker{threshold: threshold, timeout: timeout, state: circuitStateClosed}
 }
 
 // Call executes fn respecting the breaker state. It records failures and panics.
@@ -40,17 +46,17 @@ func (cb *CircuitBreaker) Call(fn func() error) (err error) {
 
 	cb.mu.Lock()
 	switch cb.state {
-	case "open":
+	case circuitStateOpen:
 		if time.Since(cb.openedAt) >= cb.timeout {
-			cb.state = "half-open"
+			cb.state = circuitStateHalfOpen
 		} else {
 			cb.mu.Unlock()
 			return errCircuitOpen
 		}
-	case "half-open", "closed":
+	case circuitStateHalfOpen, circuitStateClosed:
 		// proceed
 	default:
-		cb.state = "closed"
+		cb.state = circuitStateClosed
 	}
 	cb.mu.Unlock()
 
@@ -76,8 +82,8 @@ func (cb *CircuitBreaker) recordFailure() {
 	defer cb.mu.Unlock()
 	cb.failures++
 	// If in half-open, any failure opens immediately
-	if cb.state == "half-open" || cb.failures >= cb.threshold {
-		cb.state = "open"
+	if cb.state == circuitStateHalfOpen || cb.failures >= cb.threshold {
+		cb.state = circuitStateOpen
 		cb.openedAt = time.Now()
 	}
 }
@@ -86,7 +92,7 @@ func (cb *CircuitBreaker) recordSuccess() {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
 	cb.failures = 0
-	cb.state = "closed"
+	cb.state = circuitStateClosed
 }
 
 // State returns the current state (for debugging/metrics if needed).

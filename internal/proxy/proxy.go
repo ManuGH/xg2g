@@ -9,6 +9,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -209,7 +210,8 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 // IsEnabled checks if the proxy is enabled via environment variable.
 func IsEnabled() bool {
-	return os.Getenv("XG2G_ENABLE_STREAM_PROXY") == "true"
+	enabled, _ := strconv.ParseBool(os.Getenv("XG2G_ENABLE_STREAM_PROXY"))
+	return enabled
 }
 
 // GetListenAddr returns the listen address from environment or default.

@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -31,6 +32,60 @@ type Server struct {
 	hdhr       *hdhr.Server // HDHomeRun emulation server
 	// refreshFn allows tests to stub the refresh operation; defaults to jobs.Refresh
 	refreshFn func(context.Context, jobs.Config) (*jobs.Status, error)
+}
+
+// dataFilePath resolves a relative path inside the configured data directory while
+// protecting against path traversal and symlink escapes. The returned path points to
+// the real location on disk and is safe to open.
+func (s *Server) dataFilePath(rel string) (string, error) {
+	clean := filepath.Clean(rel)
+	if filepath.IsAbs(clean) {
+		return "", fmt.Errorf("data file path must be relative: %s", rel)
+	}
+	if strings.Contains(clean, "..") {
+		return "", fmt.Errorf("data file path contains traversal: %s", rel)
+	}
+
+	root, err := filepath.Abs(s.cfg.DataDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve data directory: %w", err)
+	}
+
+	full := filepath.Join(root, clean)
+	resolvedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		resolvedRoot = root
+	}
+
+	resolved := full
+	if info, statErr := os.Stat(full); statErr == nil {
+		if info.IsDir() {
+			return "", fmt.Errorf("data file path points to directory: %s", rel)
+		}
+		if real, evalErr := filepath.EvalSymlinks(full); evalErr == nil {
+			resolved = real
+		}
+	} else if !errors.Is(statErr, os.ErrNotExist) {
+		return "", fmt.Errorf("stat data file: %w", statErr)
+	} else {
+		// File might be generated later; still ensure parent directories stay within root.
+		dir := filepath.Dir(full)
+		if _, dirErr := os.Stat(dir); dirErr == nil {
+			if realDir, evalErr := filepath.EvalSymlinks(dir); evalErr == nil {
+				resolved = filepath.Join(realDir, filepath.Base(full))
+			}
+		}
+	}
+
+	relToRoot, err := filepath.Rel(resolvedRoot, resolved)
+	if err != nil {
+		return "", fmt.Errorf("resolve relative path: %w", err)
+	}
+	if strings.HasPrefix(relToRoot, "..") || filepath.IsAbs(relToRoot) {
+		return "", fmt.Errorf("data file escapes data directory: %s", rel)
+	}
+
+	return resolved, nil
 }
 
 func New(cfg jobs.Config) *Server {
@@ -249,7 +304,7 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if err != nil {
 		// Distinguish open circuit (fast-fail) from internal error
-		if err == errCircuitOpen {
+		if errors.Is(err, errCircuitOpen) {
 			logger.Warn().
 				Str("event", "refresh.circuit_open").
 				Int64("duration_ms", duration.Milliseconds()).
@@ -331,10 +386,21 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(playlistName) == "" {
 		playlistName = "playlist.m3u"
 	}
-	playlistOK := checkFile(r.Context(), filepath.Join(s.cfg.DataDir, playlistName))
+	playlistOK := false
+	if playlistPath, err := s.dataFilePath(playlistName); err != nil {
+		logger.Warn().Err(err).Str("event", "ready.invalid_playlist_path").Msg("playlist path outside data directory")
+	} else {
+		playlistOK = checkFile(r.Context(), playlistPath)
+	}
+
 	xmltvOK := true // Assume OK if not configured
-	if s.cfg.XMLTVPath != "" {
-		xmltvOK = checkFile(r.Context(), filepath.Join(s.cfg.DataDir, s.cfg.XMLTVPath))
+	if strings.TrimSpace(s.cfg.XMLTVPath) != "" {
+		if xmltvPath, err := s.dataFilePath(s.cfg.XMLTVPath); err != nil {
+			xmltvOK = false
+			logger.Warn().Err(err).Str("event", "ready.invalid_xmltv_path").Msg("xmltv path outside data directory")
+		} else {
+			xmltvOK = checkFile(r.Context(), xmltvPath)
+		}
 	}
 
 	ready := !status.LastRun.IsZero() && status.Error == "" && playlistOK && xmltvOK
@@ -369,8 +435,19 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleXMLTV(w http.ResponseWriter, r *http.Request) {
 	logger := log.WithComponentFromContext(r.Context(), "api")
 
-	// Get XMLTV file path
-	xmltvPath := filepath.Join(s.cfg.DataDir, s.cfg.XMLTVPath)
+	if strings.TrimSpace(s.cfg.XMLTVPath) == "" {
+		logger.Warn().Str("event", "xmltv.not_configured").Msg("XMLTV path not configured")
+		http.Error(w, "XMLTV file not available", http.StatusNotFound)
+		return
+	}
+
+	// Get XMLTV file path with traversal protection
+	xmltvPath, err := s.dataFilePath(s.cfg.XMLTVPath)
+	if err != nil {
+		logger.Error().Err(err).Str("event", "xmltv.invalid_path").Msg("XMLTV path rejected")
+		http.Error(w, "XMLTV file not available", http.StatusNotFound)
+		return
+	}
 
 	// Check if file exists
 	fileInfo, err := os.Stat(xmltvPath)
@@ -400,6 +477,7 @@ func (s *Server) handleXMLTV(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Read XMLTV file
+	// #nosec G304 -- xmltvPath is validated by dataFilePath and confined to the data directory
 	xmltvData, err := os.ReadFile(xmltvPath)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to read XMLTV file")
@@ -408,7 +486,16 @@ func (s *Server) handleXMLTV(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Read M3U to build tvg-id to tvg-chno mapping
-	m3uPath := filepath.Join(s.cfg.DataDir, "playlist.m3u")
+	m3uPath, err := s.dataFilePath("playlist.m3u")
+	if err != nil {
+		logger.Warn().Err(err).Msg("playlist path rejected, serving raw XMLTV")
+		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+		w.Header().Set("Cache-Control", "public, max-age=300")
+		if _, writeErr := w.Write(xmltvData); writeErr != nil {
+			logger.Error().Err(writeErr).Msg("failed to write raw XMLTV response")
+		}
+		return
+	}
 
 	// Check M3U file size
 	m3uInfo, err := os.Stat(m3uPath)
@@ -438,6 +525,7 @@ func (s *Server) handleXMLTV(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// #nosec G304 -- m3uPath is validated by dataFilePath and confined to the data directory
 	m3uData, err := os.ReadFile(m3uPath)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to read M3U file")
@@ -513,6 +601,7 @@ func checkFile(ctx context.Context, path string) bool {
 	if info.IsDir() {
 		return false
 	}
+	// #nosec G304 -- callers must provide paths checked by dataFilePath
 	f, err := os.Open(path)
 	if err != nil {
 		return false
@@ -670,6 +759,7 @@ func (s *Server) secureFileServer() http.Handler {
 		}
 
 		// --- ETag Caching Implementation ---
+		// #nosec G304 -- realPath is validated to reside inside the data directory
 		f, err := os.Open(realPath)
 		if err != nil {
 			logger.Error().Err(err).Str("event", "file_req.internal_error").Str("path", realPath).Msg("could not open real path for serving")
@@ -769,7 +859,14 @@ func (s *Server) handleLineupJSON(w http.ResponseWriter, r *http.Request) {
 	logger := log.WithComponentFromContext(r.Context(), "hdhr")
 
 	// Read the M3U playlist file
-	m3uPath := filepath.Join(s.cfg.DataDir, "playlist.m3u")
+	m3uPath, err := s.dataFilePath("playlist.m3u")
+	if err != nil {
+		logger.Error().Err(err).Str("event", "lineup.invalid_path").Msg("playlist path rejected")
+		http.Error(w, "Lineup not available", http.StatusInternalServerError)
+		return
+	}
+
+	// #nosec G304 -- m3uPath is validated by dataFilePath and confined to the data directory
 	data, err := os.ReadFile(m3uPath)
 	if err != nil {
 		logger.Error().Err(err).Str("path", m3uPath).Msg("failed to read playlist file")

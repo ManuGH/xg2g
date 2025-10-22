@@ -11,6 +11,8 @@ import (
 	"github.com/ManuGH/xg2g/internal/jobs"
 )
 
+const headerValueTrue = "true"
+
 func TestAPIVersioning(t *testing.T) {
 	cfg := jobs.Config{
 		Version:    "1.4.0-test",
@@ -61,7 +63,7 @@ func TestAPIVersioning(t *testing.T) {
 		}
 
 		// Check for deprecation headers
-		if deprecation := rec.Header().Get("Deprecation"); deprecation != "true" {
+		if deprecation := rec.Header().Get("Deprecation"); deprecation != headerValueTrue {
 			t.Errorf("expected Deprecation header, got %s", deprecation)
 		}
 
@@ -141,7 +143,7 @@ func TestDeprecationMiddleware(t *testing.T) {
 
 	handler.ServeHTTP(rec, req)
 
-	if deprecation := rec.Header().Get("Deprecation"); deprecation != "true" {
+	if deprecation := rec.Header().Get("Deprecation"); deprecation != headerValueTrue {
 		t.Errorf("expected Deprecation: true, got %s", deprecation)
 	}
 

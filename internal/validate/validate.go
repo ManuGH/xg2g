@@ -21,8 +21,13 @@ func (e Error) Error() string {
 	return fmt.Sprintf("validation failed for %s: %s", e.Field, e.Message)
 }
 
-// Validator accumulates validation errors
+// Validator accumulates validation errors and can produce a ValidationError when invalid.
 type Validator struct {
+	errors []Error
+}
+
+// ValidationError bundles multiple validation errors into a single error value.
+type ValidationError struct {
 	errors []Error
 }
 
@@ -52,21 +57,37 @@ func (v *Validator) Errors() []Error {
 	return v.errors
 }
 
-// Error implements the error interface
-// Returns all errors combined into a single error message
-func (v *Validator) Error() string {
+// Err converts the accumulated validation errors into an error value.
+func (v *Validator) Err() error {
 	if len(v.errors) == 0 {
+		return nil
+	}
+
+	copied := make([]Error, len(v.errors))
+	copy(copied, v.errors)
+
+	return ValidationError{errors: copied}
+}
+
+// Errors returns the individual validation errors making up the validation failure.
+func (e ValidationError) Errors() []Error {
+	return e.errors
+}
+
+// Error implements the error interface for ValidationError.
+func (e ValidationError) Error() string {
+	if len(e.errors) == 0 {
 		return ""
 	}
 
-	if len(v.errors) == 1 {
-		return v.errors[0].Error()
+	if len(e.errors) == 1 {
+		return e.errors[0].Error()
 	}
 
 	// Multiple errors - format as list
-	msgs := make([]string, len(v.errors))
-	for i, e := range v.errors {
-		msgs[i] = e.Error()
+	msgs := make([]string, len(e.errors))
+	for i, err := range e.errors {
+		msgs[i] = err.Error()
 	}
 	return strings.Join(msgs, "; ")
 }
