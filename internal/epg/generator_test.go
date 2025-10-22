@@ -175,6 +175,7 @@ func TestUmlautsAndUTF8Encoding(t *testing.T) {
 	}
 
 	// Read back and verify UTF-8 encoding
+	// #nosec G304 -- p originates from t.TempDir and is controlled by the test
 	content, err := os.ReadFile(p)
 	if err != nil {
 		t.Fatalf("failed to read file: %v", err)
