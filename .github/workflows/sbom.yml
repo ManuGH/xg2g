@@ -36,7 +36,7 @@ jobs:
             -o xg2g ./cmd/daemon
 
       - name: Install Syft
-        uses: anchore/sbom-action/download-syft@v0.17.12
+        uses: anchore/sbom-action/download-syft@v0.20.0
 
       - name: Generate CycloneDX SBOM (JSON)
         run: |
@@ -142,7 +142,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Install Syft
-        uses: anchore/sbom-action/download-syft@v0.17.12
+        uses: anchore/sbom-action/download-syft@v0.20.0
 
       - name: Generate Docker image SBOM
         run: |
