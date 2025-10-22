@@ -665,6 +665,7 @@ func (c *Client) get(ctx context.Context, path, operation string, decorate func(
 
 				// Read raw bytes first
 				rawData, readErr := io.ReadAll(res.Body)
+				_ = res.Body.Close() // Close body immediately after reading
 				if readErr != nil {
 					err = fmt.Errorf("read response body: %w", readErr)
 				} else {
@@ -677,6 +678,8 @@ func (c *Client) get(ctx context.Context, path, operation string, decorate func(
 						data = rawData
 					}
 				}
+			} else if res != nil && res.Body != nil {
+				_ = res.Body.Close() // Close body on error or non-200 status
 			}
 		}()
 

@@ -176,7 +176,7 @@ func (m *MockServer) handleBouquets(w http.ResponseWriter, r *http.Request) {
 		"bouquets": bouquets,
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // handleServices handles /api/getservices
@@ -218,7 +218,7 @@ func (m *MockServer) handleServices(w http.ResponseWriter, r *http.Request) {
 
 	resp := ServicesResponse{Services: servicesList}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // handleEPG handles /api/epgservice
@@ -237,14 +237,14 @@ func (m *MockServer) handleEPG(w http.ResponseWriter, r *http.Request) {
 		// Return empty EPG if no events configured
 		resp := EPGResponse{Events: []EPGEvent{}}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 		return
 	}
 
 	// Build response - use the events directly as they match EPGEvent struct
 	resp := EPGResponse{Events: events}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // handleZap handles /api/zap (channel switching)
@@ -260,7 +260,7 @@ func (m *MockServer) handleZap(w http.ResponseWriter, r *http.Request) {
 		"message": "Channel switched successfully",
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // handleAbout handles /api/about
@@ -277,7 +277,7 @@ func (m *MockServer) handleAbout(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // Reset clears all mock data and resets to defaults.

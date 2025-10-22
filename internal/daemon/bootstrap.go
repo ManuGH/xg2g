@@ -191,6 +191,6 @@ func getEnvOrDefault(key, defaultValue string) string {
 
 func parseFloat(s string) float64 {
 	var f float64
-	fmt.Sscanf(s, "%f", &f)
+	_, _ = fmt.Sscanf(s, "%f", &f)
 	return f
 }

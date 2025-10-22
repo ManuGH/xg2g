@@ -24,7 +24,7 @@ func TestNew(t *testing.T) {
 
 	// Create temporary data directory
 	tmpDir := t.TempDir()
-	os.Setenv("XG2G_DATA", tmpDir)
+	_ = os.Setenv("XG2G_DATA", tmpDir)
 	defer os.Unsetenv("XG2G_DATA")
 
 	// Create daemon
@@ -56,11 +56,11 @@ func TestDaemon_StartShutdown(t *testing.T) {
 	}
 
 	tmpDir := t.TempDir()
-	os.Setenv("XG2G_DATA", tmpDir)
+	_ = os.Setenv("XG2G_DATA", tmpDir)
 	defer os.Unsetenv("XG2G_DATA")
 
 	// Disable telemetry for test
-	os.Setenv("XG2G_TELEMETRY_ENABLED", "false")
+	_ = os.Setenv("XG2G_TELEMETRY_ENABLED", "false")
 	defer os.Unsetenv("XG2G_TELEMETRY_ENABLED")
 
 	d, err := New(cfg)
@@ -108,7 +108,7 @@ func TestDaemon_Shutdown(t *testing.T) {
 	}
 
 	tmpDir := t.TempDir()
-	os.Setenv("XG2G_DATA", tmpDir)
+	_ = os.Setenv("XG2G_DATA", tmpDir)
 	defer os.Unsetenv("XG2G_DATA")
 
 	d, err := New(cfg)
@@ -167,7 +167,7 @@ func TestGetEnvOrDefault(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.envValue != "" {
-				os.Setenv(tt.key, tt.envValue)
+				_ = os.Setenv(tt.key, tt.envValue)
 				defer os.Unsetenv(tt.key)
 			}
 
