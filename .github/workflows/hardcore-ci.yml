@@ -17,7 +17,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GO_VERSION: "1.25.0"
+  GO_VERSION: "1.25.3"
   COVERAGE_THRESHOLD: 57 # temporary floor; measured ~57.9% locally; raise to 65 after tests
   EPG_COVERAGE_THRESHOLD: 55
 
@@ -184,30 +184,19 @@ jobs:
           set -e
           echo "Running fuzzing tests..."
 
-          # Check if fuzz functions exist before running
-          if go test ./internal/epg -list=FuzzLevenshtein >/dev/null 2>&1; then
-            echo "Running FuzzLevenshtein..."
-            go test ./internal/epg -fuzz=FuzzLevenshtein -fuzztime=10s -run '^$' -v
-          else
-            echo "❌ FuzzLevenshtein not found"
-            exit 1
-          fi
+          # List all fuzz tests to verify they exist
+          echo "Available fuzz tests:"
+          go test ./internal/epg -list 'Fuzz.*' || true
 
-          if go test ./internal/epg -list=FuzzXMLTVGeneration >/dev/null 2>&1; then
-            echo "Running FuzzXMLTVGeneration..."  
-            go test ./internal/epg -fuzz=FuzzXMLTVGeneration -fuzztime=10s -run '^$' -v
-          else
-            echo "❌ FuzzXMLTVGeneration not found"
-            exit 1
-          fi
+          # Run each fuzz test with short duration
+          echo "Running FuzzLevenshtein..."
+          go test ./internal/epg -fuzz=FuzzLevenshtein -fuzztime=10s -run '^$' -v
 
-          if go test ./internal/epg -list=FuzzParseChannelName >/dev/null 2>&1; then
-            echo "Running FuzzParseChannelName..."
-            go test ./internal/epg -fuzz=FuzzParseChannelName -fuzztime=10s -run '^$' -v
-          else
-            echo "❌ FuzzParseChannelName not found"
-            exit 1
-          fi
+          echo "Running FuzzXMLTVGeneration..."
+          go test ./internal/epg -fuzz=FuzzXMLTVGeneration -fuzztime=10s -run '^$' -v
+
+          echo "Running FuzzParseChannelName..."
+          go test ./internal/epg -fuzz=FuzzParseChannelName -fuzztime=10s -run '^$' -v
 
           echo "✅ All fuzz tests completed successfully"
 
