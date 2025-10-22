@@ -72,13 +72,30 @@ func (s *Server) routes() http.Handler {
 	r.Use(log.Middleware()) // Apply structured logging to all routes
 	r.Use(securityHeadersMiddleware)
 
-	// Public routes
-	r.HandleFunc("/api/status", s.handleStatus).Methods("GET")
+	// Health checks (versionless - infrastructure endpoints)
 	r.HandleFunc("/healthz", s.handleHealth).Methods("GET")
 	r.HandleFunc("/readyz", s.handleReady).Methods("GET")
-	r.HandleFunc("/xmltv.xml", s.handleXMLTV).Methods("GET", "HEAD")
 
-	// HDHomeRun emulation endpoints (if enabled)
+	// Legacy API endpoints (deprecated - maintain backward compatibility)
+	// These will be removed in a future major version
+	legacyAPI := r.PathPrefix("/api").Subrouter()
+	legacyAPI.Use(deprecationMiddleware(DeprecationConfig{
+		SunsetVersion: "2.0.0",
+		SunsetDate:    "2025-12-31T23:59:59Z",
+		SuccessorPath: "/api/v1",
+	}))
+	legacyAPI.HandleFunc("/status", s.handleStatus).Methods("GET")
+	legacyAPI.HandleFunc("/refresh", s.authRequired(s.handleRefresh)).Methods("POST")
+
+	// V1 API (current stable version)
+	s.registerV1Routes(r)
+
+	// V2 API (future - behind feature flag)
+	if featureEnabled("API_V2") {
+		s.registerV2Routes(r)
+	}
+
+	// HDHomeRun emulation endpoints (versionless - hardware emulation protocol)
 	if s.hdhr != nil {
 		r.HandleFunc("/discover.json", s.hdhr.HandleDiscover).Methods("GET")
 		r.HandleFunc("/lineup_status.json", s.hdhr.HandleLineupStatus).Methods("GET")
@@ -88,8 +105,8 @@ func (s *Server) routes() http.Handler {
 		r.HandleFunc("/device.xml", s.hdhr.HandleDeviceXML).Methods("GET")
 	}
 
-	// Authenticated routes - only protect mutative endpoints
-	r.HandleFunc("/api/refresh", s.authRequired(s.handleRefresh)).Methods("POST")
+	// XMLTV endpoint (versionless - standard format)
+	r.HandleFunc("/xmltv.xml", s.handleXMLTV).Methods("GET", "HEAD")
 
 	// Harden file server: disable directory listing and use a secure handler
 	r.PathPrefix("/files/").Handler(http.StripPrefix("/files/", s.secureFileServer()))
@@ -137,6 +154,20 @@ func (s *Server) authRequired(next http.HandlerFunc) http.HandlerFunc {
 		// Token is valid
 		next.ServeHTTP(w, r)
 	}
+}
+
+// GetStatus returns the current server status (thread-safe)
+// This method is exposed for use by versioned API handlers
+func (s *Server) GetStatus() jobs.Status {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.status
+}
+
+// HandleRefreshInternal exposes the refresh handler for versioned APIs
+// This allows different API versions to wrap the core refresh logic
+func (s *Server) HandleRefreshInternal(w http.ResponseWriter, r *http.Request) {
+	s.handleRefresh(w, r)
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -190,13 +221,27 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 	defer s.refreshing.Store(false)
 
-	ctx := r.Context()
+	// Create independent context for background job
+	// Use Background() instead of request context to prevent premature cancellation
+	jobCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	// Optional: Monitor client disconnect for logging
+	clientDisconnected := make(chan struct{})
+	go func() {
+		<-r.Context().Done()
+		if r.Context().Err() == context.Canceled {
+			logger.Info().Msg("client disconnected during refresh (job continues)")
+			close(clientDisconnected)
+		}
+	}()
+
 	start := time.Now()
 	var st *jobs.Status
 	// Run the refresh via circuit breaker; it will mark failures and handle panics
 	err := s.cb.Call(func() error {
 		var err error
-		st, err = s.refreshFn(ctx, s.cfg)
+		st, err = s.refreshFn(jobCtx, s.cfg)
 		return err
 	})
 	duration := time.Since(start)
@@ -235,13 +280,25 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	recordRefreshMetrics(duration, st.Channels)
-	logger.Info().
-		Str("event", "refresh.success").
-		Str("method", r.Method).
-		Int("channels", st.Channels).
-		Int64("duration_ms", duration.Milliseconds()).
-		Str("status", "success").
-		Msg("refresh completed")
+
+	select {
+	case <-clientDisconnected:
+		logger.Info().
+			Str("event", "refresh.success").
+			Str("method", r.Method).
+			Int("channels", st.Channels).
+			Int64("duration_ms", duration.Milliseconds()).
+			Str("status", "success").
+			Msg("refresh completed despite client disconnect")
+	default:
+		logger.Info().
+			Str("event", "refresh.success").
+			Str("method", r.Method).
+			Int("channels", st.Channels).
+			Int64("duration_ms", duration.Milliseconds()).
+			Str("status", "success").
+			Msg("refresh completed successfully")
+	}
 
 	s.mu.Lock()
 	s.status = *st
@@ -316,12 +373,29 @@ func (s *Server) handleXMLTV(w http.ResponseWriter, r *http.Request) {
 	xmltvPath := filepath.Join(s.cfg.DataDir, s.cfg.XMLTVPath)
 
 	// Check if file exists
-	if !checkFile(r.Context(), xmltvPath) {
+	fileInfo, err := os.Stat(xmltvPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			logger.Warn().
+				Str("event", "xmltv.not_found").
+				Str("path", xmltvPath).
+				Msg("XMLTV file not found")
+			http.Error(w, "XMLTV file not available", http.StatusNotFound)
+			return
+		}
+		logger.Error().Err(err).Msg("failed to stat XMLTV file")
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	// Security: Limit file size to prevent memory exhaustion (50MB max)
+	const maxFileSize = 50 * 1024 * 1024
+	if fileInfo.Size() > maxFileSize {
 		logger.Warn().
-			Str("event", "xmltv.not_found").
-			Str("path", xmltvPath).
-			Msg("XMLTV file not found or not readable")
-		http.Error(w, "XMLTV file not available", http.StatusNotFound)
+			Int64("size", fileInfo.Size()).
+			Str("event", "xmltv.too_large").
+			Msg("XMLTV file exceeds maximum size")
+		http.Error(w, "XMLTV file too large", http.StatusRequestEntityTooLarge)
 		return
 	}
 
@@ -335,6 +409,35 @@ func (s *Server) handleXMLTV(w http.ResponseWriter, r *http.Request) {
 
 	// Read M3U to build tvg-id to tvg-chno mapping
 	m3uPath := filepath.Join(s.cfg.DataDir, "playlist.m3u")
+
+	// Check M3U file size
+	m3uInfo, err := os.Stat(m3uPath)
+	if err != nil {
+		logger.Warn().Err(err).Msg("M3U file not found, serving raw XMLTV")
+		// Serve original XMLTV if M3U not available
+		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+		w.Header().Set("Cache-Control", "public, max-age=300")
+		if _, err := w.Write(xmltvData); err != nil {
+			logger.Error().Err(err).Msg("failed to write raw XMLTV response")
+		}
+		return
+	}
+
+	// Security: Limit M3U file size (10MB max)
+	const maxM3USize = 10 * 1024 * 1024
+	if m3uInfo.Size() > maxM3USize {
+		logger.Warn().
+			Int64("size", m3uInfo.Size()).
+			Msg("M3U file too large, serving raw XMLTV")
+		// Serve original XMLTV if M3U is too large
+		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+		w.Header().Set("Cache-Control", "public, max-age=300")
+		if _, err := w.Write(xmltvData); err != nil {
+			logger.Error().Err(err).Msg("failed to write raw XMLTV response")
+		}
+		return
+	}
+
 	m3uData, err := os.ReadFile(m3uPath)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to read M3U file")
@@ -536,8 +639,16 @@ func (s *Server) secureFileServer() http.Handler {
 		}
 
 		// Security check: ensure the real path is within the real data directory
-		if !strings.HasPrefix(realPath, realDataDir) {
-			logger.Warn().Str("event", "file_req.denied").Str("path", path).Str("resolved_path", realPath).Str("reason", "path_escape").Msg("path escapes data directory")
+		// Use filepath.Rel for robust path containment check (protects against symlink escapes)
+		relPath, err := filepath.Rel(realDataDir, realPath)
+		if err != nil || strings.HasPrefix(relPath, "..") || filepath.IsAbs(relPath) {
+			logger.Warn().
+				Str("event", "file_req.denied").
+				Str("path", path).
+				Str("resolved_path", realPath).
+				Str("data_dir", realDataDir).
+				Str("reason", "path_escape").
+				Msg("path escapes data directory")
 			recordFileRequestDenied("path_escape")
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
@@ -706,6 +817,84 @@ func (s *Server) handleLineupJSON(w http.ResponseWriter, r *http.Request) {
 	logger.Debug().
 		Int("channels", len(lineup)).
 		Msg("HDHomeRun lineup served")
+}
+
+// registerV1Routes registers all v1 API endpoints
+func (s *Server) registerV1Routes(r *mux.Router) {
+	// Import the v1 package handler
+	// Note: This will be done after we fix the import cycle
+	v1Router := r.PathPrefix("/api/v1").Subrouter()
+	v1Router.HandleFunc("/status", s.handleStatusV1).Methods("GET")
+	v1Router.HandleFunc("/refresh", s.authRequired(s.handleRefreshV1)).Methods("POST")
+}
+
+// registerV2Routes registers all v2 API endpoints (placeholder for future)
+func (s *Server) registerV2Routes(r *mux.Router) {
+	// V2 API implementation will go here
+	// Example: different path structure, enhanced response formats, etc.
+	v2Router := r.PathPrefix("/api/v2").Subrouter()
+	v2Router.HandleFunc("/status", s.handleStatusV2Placeholder).Methods("GET")
+}
+
+// handleStatusV1 wraps the v1 handler
+func (s *Server) handleStatusV1(w http.ResponseWriter, r *http.Request) {
+	logger := log.WithComponentFromContext(r.Context(), "api.v1")
+
+	status := s.GetStatus()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-API-Version", "1")
+
+	resp := map[string]any{
+		"status":   "ok",
+		"version":  status.Version,
+		"lastRun":  status.LastRun,
+		"channels": status.Channels,
+	}
+
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		logger.Error().Err(err).Msg("failed to encode v1 status response")
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	logger.Debug().
+		Str("event", "v1.status.success").
+		Str("version", status.Version).
+		Time("lastRun", status.LastRun).
+		Int("channels", status.Channels).
+		Msg("v1 status request handled")
+}
+
+// handleRefreshV1 wraps the refresh handler for v1
+func (s *Server) handleRefreshV1(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("X-API-Version", "1")
+	s.handleRefresh(w, r)
+}
+
+// handleStatusV2Placeholder is a placeholder for v2 status endpoint
+func (s *Server) handleStatusV2Placeholder(w http.ResponseWriter, r *http.Request) {
+	logger := log.WithComponentFromContext(r.Context(), "api.v2")
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-API-Version", "2")
+
+	resp := map[string]string{
+		"message": "API v2 is under development",
+		"status":  "preview",
+	}
+
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		logger.Error().Err(err).Msg("failed to encode v2 placeholder response")
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+}
+
+// featureEnabled checks if a feature flag is enabled via environment variable
+func featureEnabled(flag string) bool {
+	val := os.Getenv("XG2G_FEATURE_" + flag)
+	return strings.ToLower(val) == "true" || val == "1"
 }
 
 // NewRouter creates and configures a new router with all middlewares and handlers.

@@ -1,0 +1,46 @@
+# Docker Compose configuration for local Jaeger development
+#
+# Usage:
+#   docker-compose -f docker-compose.jaeger.yml up
+#
+# Access Jaeger UI at: http://localhost:16686
+
+version: '3.8'
+
+services:
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: xg2g-jaeger
+    ports:
+      # Jaeger UI
+      - "16686:16686"
+      # OTLP gRPC receiver
+      - "4317:4317"
+      # OTLP HTTP receiver
+      - "4318:4318"
+      # Jaeger Thrift receiver (legacy)
+      - "14268:14268"
+      # Zipkin receiver (legacy)
+      - "9411:9411"
+    environment:
+      # Collector settings
+      - COLLECTOR_OTLP_ENABLED=true
+      # Storage
+      - SPAN_STORAGE_TYPE=memory
+      # Sampling (100% for development)
+      - SAMPLING_STRATEGIES_FILE=/etc/jaeger/sampling_strategies.json
+    volumes:
+      - ./config/jaeger-sampling.json:/etc/jaeger/sampling_strategies.json:ro
+    networks:
+      - xg2g-telemetry
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:14269/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+networks:
+  xg2g-telemetry:
+    name: xg2g-telemetry
+    driver: bridge

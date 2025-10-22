@@ -12,7 +12,11 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/ManuGH/xg2g/internal/telemetry"
 	"github.com/rs/zerolog"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // TranscoderConfig holds configuration for audio transcoding.
@@ -44,9 +48,25 @@ func NewTranscoder(config TranscoderConfig, logger zerolog.Logger) *Transcoder {
 // It proxies the request to the target, pipes it through ffmpeg for audio transcoding,
 // and streams the result back to the client.
 func (t *Transcoder) TranscodeStream(ctx context.Context, w http.ResponseWriter, r *http.Request, targetURL string) error {
+	// Start tracing span
+	tracer := telemetry.Tracer("xg2g.proxy")
+	ctx, span := tracer.Start(ctx, "transcode.cpu",
+		trace.WithSpanKind(trace.SpanKindInternal),
+	)
+	defer span.End()
+
+	// Add transcoding attributes
+	span.SetAttributes(
+		attribute.String(telemetry.TranscodeCodecKey, t.config.Codec),
+		attribute.String(telemetry.TranscodeDeviceKey, "cpu"),
+		attribute.Bool(telemetry.TranscodeGPUEnabledKey, false),
+	)
+
 	// Create request to target
 	proxyReq, err := http.NewRequestWithContext(ctx, http.MethodGet, targetURL, nil)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to create proxy request")
 		return fmt.Errorf("create proxy request: %w", err)
 	}
 
@@ -58,9 +78,12 @@ func (t *Transcoder) TranscodeStream(ctx context.Context, w http.ResponseWriter,
 	}
 
 	// Execute request to target
+	span.AddEvent("fetching source stream")
 	client := &http.Client{}
 	resp, err := client.Do(proxyReq)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "proxy request failed")
 		return fmt.Errorf("proxy request failed: %w", err)
 	}
 	defer func() {
@@ -119,7 +142,10 @@ func (t *Transcoder) TranscodeStream(ctx context.Context, w http.ResponseWriter,
 	}
 
 	// Start ffmpeg
+	span.AddEvent("starting ffmpeg")
 	if err := cmd.Start(); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to start ffmpeg")
 		return fmt.Errorf("start ffmpeg: %w", err)
 	}
 
@@ -190,6 +216,21 @@ func (t *Transcoder) TranscodeStream(ctx context.Context, w http.ResponseWriter,
 // ProxyToGPUTranscoder forwards the stream request to the GPU transcoder service.
 // The GPU transcoder handles full video+audio transcoding with VAAPI hardware acceleration.
 func (t *Transcoder) ProxyToGPUTranscoder(ctx context.Context, w http.ResponseWriter, r *http.Request, sourceURL string) error {
+	// Start tracing span
+	tracer := telemetry.Tracer("xg2g.proxy")
+	ctx, span := tracer.Start(ctx, "transcode.gpu",
+		trace.WithSpanKind(trace.SpanKindInternal),
+	)
+	defer span.End()
+
+	// Add transcoding attributes
+	span.SetAttributes(
+		attribute.String(telemetry.TranscodeCodecKey, "hevc"), // GPU typically uses HEVC
+		attribute.String(telemetry.TranscodeDeviceKey, "vaapi"),
+		attribute.Bool(telemetry.TranscodeGPUEnabledKey, true),
+		attribute.String("transcoder.url", t.config.TranscoderURL),
+	)
+
 	// Build GPU transcoder URL with source_url parameter
 	transcoderURL := fmt.Sprintf("%s/transcode?source_url=%s",
 		t.config.TranscoderURL,
@@ -203,6 +244,8 @@ func (t *Transcoder) ProxyToGPUTranscoder(ctx context.Context, w http.ResponseWr
 	// Create request to GPU transcoder
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, transcoderURL, nil)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to create GPU transcoder request")
 		return fmt.Errorf("create GPU transcoder request: %w", err)
 	}
 
@@ -212,11 +255,14 @@ func (t *Transcoder) ProxyToGPUTranscoder(ctx context.Context, w http.ResponseWr
 	}
 
 	// Execute request with no timeout (streaming)
+	span.AddEvent("connecting to GPU transcoder")
 	client := &http.Client{
 		Timeout: 0,
 	}
 	resp, err := client.Do(req)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "GPU transcoder request failed")
 		return fmt.Errorf("GPU transcoder request failed: %w", err)
 	}
 	defer func() {
@@ -227,6 +273,8 @@ func (t *Transcoder) ProxyToGPUTranscoder(ctx context.Context, w http.ResponseWr
 
 	// Check response status
 	if resp.StatusCode != http.StatusOK {
+		span.SetAttributes(attribute.Int("http.status_code", resp.StatusCode))
+		span.SetStatus(codes.Error, fmt.Sprintf("GPU transcoder returned status %d", resp.StatusCode))
 		return fmt.Errorf("GPU transcoder returned status %d", resp.StatusCode)
 	}
 
@@ -247,11 +295,15 @@ func (t *Transcoder) ProxyToGPUTranscoder(ctx context.Context, w http.ResponseWr
 	}
 
 	// Stream response body from GPU transcoder to client
+	span.AddEvent("streaming transcoded output")
 	_, err = io.Copy(w, resp.Body)
 	if err != nil && !isContextCancelled(ctx) && !isBrokenPipe(err) {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to stream GPU transcoder output")
 		return fmt.Errorf("failed to stream GPU transcoder output: %w", err)
 	}
 
+	span.SetStatus(codes.Ok, "GPU transcode completed successfully")
 	return nil
 }
 

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/api"
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	xglog "github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/proxy"
@@ -56,9 +57,11 @@ func maskURL(rawURL string) string {
 }
 
 func main() {
-	// Handle --version flag
+	// Handle command-line flags
 	showVersion := flag.Bool("version", false, "print version and exit")
+	configPath := flag.String("config", "", "path to config file (YAML)")
 	flag.Parse()
+
 	if *showVersion {
 		fmt.Println(Version)
 		os.Exit(0)
@@ -70,52 +73,37 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	streamPort, err := resolveStreamPort()
+	// Load configuration with precedence: ENV > File > Defaults
+	loader := config.NewLoader(*configPath, Version)
+	cfg, err := loader.Load()
 	if err != nil {
 		logger.Fatal().
 			Err(err).
-			Str("event", "config.invalid").
-			Msg("invalid stream port configuration")
+			Str("event", "config.load_failed").
+			Str("config_path", *configPath).
+			Msg("failed to load configuration")
 	}
 
-	owiTimeout, owiRetries, owiBackoff, owiMaxBackoff, err := resolveOWISettings()
-	if err != nil {
-		logger.Fatal().
-			Err(err).
-			Str("event", "config.invalid").
-			Msg("invalid OpenWebIF client configuration")
+	// Log config source
+	if *configPath != "" {
+		logger.Info().
+			Str("event", "config.loaded").
+			Str("source", "file").
+			Str("path", *configPath).
+			Msg("loaded configuration from file")
+	} else {
+		logger.Info().
+			Str("event", "config.loaded").
+			Str("source", "env+defaults").
+			Msg("loaded configuration from environment and defaults")
 	}
 
-	// Determine XMLTV path: if EPG is enabled and no explicit path is set, default to "xmltv.xml"
-	epgEnabled := env("XG2G_EPG_ENABLED", "false") == "true"
-	xmltvPath := env("XG2G_XMLTV", "")
-	if epgEnabled && xmltvPath == "" {
-		xmltvPath = "xmltv.xml"
-		log.Printf("config: EPG enabled but XG2G_XMLTV not set, using default %q", xmltvPath)
-	}
-
-	cfg := jobs.Config{
-		Version:       Version,
-		DataDir:       env("XG2G_DATA", "/data"),
-		OWIBase:       env("XG2G_OWI_BASE", "http://10.10.55.57"),
-		OWIUsername:   env("XG2G_OWI_USER", ""),
-		OWIPassword:   env("XG2G_OWI_PASS", ""),
-		Bouquet:       env("XG2G_BOUQUET", "Premium"),
-		PiconBase:     env("XG2G_PICON_BASE", ""),
-		XMLTVPath:     xmltvPath,
-		FuzzyMax:      atoi(env("XG2G_FUZZY_MAX", "2")),
-		StreamPort:    streamPort,
-		APIToken:      env("XG2G_API_TOKEN", ""), // Read API token from environment
-		OWITimeout:    owiTimeout,
-		OWIRetries:    owiRetries,
-		OWIBackoff:    owiBackoff,
-		OWIMaxBackoff: owiMaxBackoff,
-		// EPG Configuration
-		EPGEnabled:        epgEnabled,
-		EPGDays:           atoi(env("XG2G_EPG_DAYS", "7")),
-		EPGMaxConcurrency: atoi(env("XG2G_EPG_MAX_CONCURRENCY", "5")),
-		EPGTimeoutMS:      atoi(env("XG2G_EPG_TIMEOUT_MS", "15000")),
-		EPGRetries:        atoi(env("XG2G_EPG_RETRIES", "2")),
+	// Legacy: Determine XMLTV path if EPG is enabled and no explicit path is set
+	if cfg.EPGEnabled && cfg.XMLTVPath == "" {
+		cfg.XMLTVPath = "xmltv.xml"
+		logger.Info().
+			Str("xmltv_path", cfg.XMLTVPath).
+			Msg("EPG enabled but no XMLTV path set, using default")
 	}
 
 	// Ensure data directory is created and validated at startup

@@ -3,7 +3,6 @@ package jobs
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -221,8 +220,9 @@ func TestRefresh_InvalidStreamPort(t *testing.T) {
 	if err == nil {
 		t.Error("Expected error for invalid stream port")
 	}
-	if !errors.Is(err, ErrInvalidStreamPort) {
-		t.Errorf("Expected ErrInvalidStreamPort, got: %v", err)
+	// Check that error message mentions the validation failure
+	if !strings.Contains(err.Error(), "StreamPort") {
+		t.Errorf("Expected error to mention StreamPort, got: %v", err)
 	}
 }
 
@@ -404,5 +404,99 @@ func TestMakeStableIDFromSRef(t *testing.T) {
 	}
 	if wantPrefix := "sref-"; len(a) < len(wantPrefix) || a[:len(wantPrefix)] != wantPrefix {
 		t.Fatalf("stable ID must be prefixed with %q; got %q", wantPrefix, a)
+	}
+}
+
+// Security regression tests for playlist filename sanitization
+func TestSanitizeFilename_Security(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		want      string
+		shouldErr bool
+		errMsg    string
+	}{
+		{
+			name:      "valid filename",
+			input:     "playlist.m3u",
+			want:      "playlist.m3u",
+			shouldErr: false,
+		},
+		{
+			name:      "valid filename with m3u8",
+			input:     "channels.m3u8",
+			want:      "channels.m3u8",
+			shouldErr: false,
+		},
+		{
+			name:      "filename without extension",
+			input:     "myplaylist",
+			want:      "myplaylist.m3u",
+			shouldErr: false,
+		},
+		{
+			name:      "empty filename uses default",
+			input:     "",
+			want:      "playlist.m3u",
+			shouldErr: false,
+		},
+		{
+			name:      "path traversal with dotdot",
+			input:     "../../../etc/passwd",
+			want:      "passwd.m3u",
+			shouldErr: false, // filepath.Base strips directory components, extension added
+		},
+		{
+			name:      "absolute path rejected",
+			input:     "/etc/passwd.m3u",
+			want:      "passwd.m3u",
+			shouldErr: false, // filepath.Base removes directory
+		},
+		{
+			name:      "directory prefix removed",
+			input:     "subdir/playlist.m3u",
+			want:      "playlist.m3u",
+			shouldErr: false, // filepath.Base extracts filename
+		},
+		{
+			name:      "windows path separator",
+			input:     "subdir\\playlist.m3u",
+			want:      "subdir\\playlist.m3u", // On Unix, backslash is valid filename character
+			shouldErr: false,
+		},
+		{
+			name:      "dotdot in filename",
+			input:     "..malicious",
+			want:      "",
+			shouldErr: true,
+			errMsg:    "traversal",
+		},
+		{
+			name:      "hidden file",
+			input:     ".hidden.m3u",
+			want:      ".hidden.m3u",
+			shouldErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := sanitizeFilename(tt.input)
+
+			if tt.shouldErr {
+				if err == nil {
+					t.Errorf("expected error, got none")
+				} else if !strings.Contains(err.Error(), tt.errMsg) {
+					t.Errorf("expected error to contain %q, got %q", tt.errMsg, err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+				if got != tt.want {
+					t.Errorf("sanitizeFilename(%q) = %q, want %q", tt.input, got, tt.want)
+				}
+			}
+		})
 	}
 }

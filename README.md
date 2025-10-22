@@ -1,7 +1,12 @@
 # xg2g
 
 [![CI](https://github.com/ManuGH/xg2g/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ManuGH/xg2g/actions/workflows/ci.yml)
+[![Hardcore CI](https://github.com/ManuGH/xg2g/actions/workflows/hardcore-ci.yml/badge.svg)](https://github.com/ManuGH/xg2g/actions/workflows/hardcore-ci.yml)
 [![Docker](https://github.com/ManuGH/xg2g/actions/workflows/docker.yml/badge.svg?branch=main)](https://github.com/ManuGH/xg2g/actions/workflows/docker.yml)
+[![CodeQL](https://github.com/ManuGH/xg2g/actions/workflows/codeql.yml/badge.svg)](https://github.com/ManuGH/xg2g/actions/workflows/codeql.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/ManuGH/xg2g)](https://goreportcard.com/report/github.com/ManuGH/xg2g)
+[![Go Reference](https://pkg.go.dev/badge/github.com/ManuGH/xg2g.svg)](https://pkg.go.dev/github.com/ManuGH/xg2g)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **Stream your Enigma2 satellite/cable receiver channels directly to Plex, Jellyfin, or any IPTV player.**
 
@@ -68,14 +73,66 @@ docker run -d \
 
 ## Configuration
 
-### Required
+xg2g supports multiple configuration methods with **precedence** (highest to lowest):
+
+1. **Environment Variables** (highest priority)
+2. **Configuration File** (YAML)
+3. **Defaults** (lowest priority)
+
+### Using Configuration Files (v1.5.0+)
+
+**Recommended for production deployments.**
+
+```bash
+# Start with config file
+xg2g --config /etc/xg2g/config.yaml
+
+# Docker with config file
+docker run -v /path/to/config.yaml:/config.yaml \
+  ghcr.io/manugh/xg2g:latest --config /config.yaml
+```
+
+**Example config file** ([examples/config.example.yaml](examples/config.example.yaml)):
+
+```yaml
+dataDir: /data
+
+openWebIF:
+  baseUrl: http://192.168.1.100
+  username: root
+  password: ${XG2G_OWI_PASSWORD}  # Use ENV for secrets
+  streamPort: 8001
+
+bouquets:
+  - Favourites
+  - Premium
+
+epg:
+  enabled: true
+  days: 7
+  maxConcurrency: 5
+
+api:
+  token: ${XG2G_API_TOKEN}
+  listenAddr: :8080
+```
+
+**See also:**
+- [examples/config.minimal.yaml](examples/config.minimal.yaml) - Minimal setup
+- [examples/config.production.yaml](examples/config.production.yaml) - Production-ready template
+
+### Environment Variables (Legacy)
+
+**Still fully supported** - ENV vars override config file values.
+
+#### Required
 
 | Variable | Description | Example |
 |----------|-------------|---------|
 | `XG2G_OWI_BASE` | Enigma2 receiver URL | `http://192.168.1.100` |
 | `XG2G_BOUQUET` | Bouquet name(s) | `Favourites` or `Movies,Sports` |
 
-### Optional
+#### Optional
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -87,13 +144,16 @@ docker run -d \
 | `XG2G_GPU_TRANSCODE` | `false` | Enable GPU transcoding (full video+audio) |
 | `XG2G_TRANSCODER_URL` | `http://localhost:8085` | GPU transcoder service URL |
 | `XG2G_SMART_STREAM_DETECTION` | `false` | Auto-detect optimal stream port |
+| `XG2G_API_TOKEN` | - | API authentication token |
 
-### OpenWebIF Authentication (if needed)
+#### OpenWebIF Authentication
 
 ```bash
 XG2G_OWI_USER=root
 XG2G_OWI_PASS=yourpassword
 ```
+
+**Best Practice:** Use config file for static settings, ENV vars for secrets and environment-specific overrides.
 
 ---
 
@@ -121,6 +181,44 @@ Add these URLs:
 ---
 
 ## Docker Compose
+
+### Option 1: Using Config File (Recommended)
+
+```yaml
+services:
+  xg2g:
+    image: ghcr.io/manugh/xg2g:latest
+    container_name: xg2g
+    command: ["--config", "/config/config.yaml"]
+    ports:
+      - "8080:8080"      # HTTP API
+      - "1900:1900/udp"  # SSDP discovery
+    environment:
+      # Secrets (override config file)
+      - XG2G_OWI_PASSWORD=${XG2G_OWI_PASSWORD}
+      - XG2G_API_TOKEN=${XG2G_API_TOKEN}
+    volumes:
+      - ./data:/data
+      - ./config.yaml:/config/config.yaml:ro
+    restart: unless-stopped
+```
+
+**config.yaml:**
+```yaml
+openWebIF:
+  baseUrl: http://192.168.1.100
+  username: root
+  password: ${XG2G_OWI_PASSWORD}
+bouquets:
+  - Favourites
+epg:
+  enabled: true
+  days: 7
+api:
+  token: ${XG2G_API_TOKEN}
+```
+
+### Option 2: Using Environment Variables (Legacy)
 
 ```yaml
 services:
@@ -154,16 +252,53 @@ services:
 
 ## API Endpoints
 
+### Versioned API (v1.5.0+)
+
+xg2g now supports versioned APIs for better stability and backwards compatibility.
+
+**Current stable version**: `/api/v1`
+
+| Endpoint | Method | Auth | Description |
+|----------|--------|------|-------------|
+| `/api/v1/status` | GET | No | Service status |
+| `/api/v1/refresh` | POST | Yes | Trigger manual refresh |
+
+**Authentication**: Use `X-API-Token` header with your configured token.
+
+**Example**:
+```bash
+# Get status
+curl http://localhost:8080/api/v1/status | jq .
+
+# Trigger refresh (requires token)
+curl -X POST http://localhost:8080/api/v1/refresh \
+  -H "X-API-Token: $XG2G_API_TOKEN"
+```
+
+📚 **Full API documentation**: [docs/API_V1_CONTRACT.md](docs/API_V1_CONTRACT.md)
+
+### Legacy Endpoints (Deprecated)
+
+⚠️ **Deprecated**: The following endpoints are deprecated and will be removed in v2.0.0 (sunset: 2025-12-31).
+
+| Endpoint | Method | Replacement |
+|----------|--------|-------------|
+| `/api/status` | GET | `/api/v1/status` |
+| `/api/refresh` | POST | `/api/v1/refresh` |
+
+Legacy endpoints return deprecation headers (`Deprecation`, `Sunset`, `Link`) per [RFC 8594](https://datatracker.ietf.org/doc/html/rfc8594).
+
+**Migration guide**: Replace `/api/` with `/api/v1/` in all your integrations.
+
+### Other Endpoints
+
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/files/playlist.m3u` | GET | M3U playlist |
-| `/files/xmltv.xml` | GET | XMLTV EPG (legacy) |
 | `/xmltv.xml` | GET | XMLTV EPG (remapped for Plex) |
 | `/discover.json` | GET | HDHomeRun discovery |
 | `/lineup.json` | GET | HDHomeRun channel lineup |
 | `/device.xml` | GET | UPnP device description |
-| `/api/status` | GET | Service status |
-| `/api/refresh` | POST | Trigger manual refresh (auth required) |
 | `/healthz` | GET | Health check |
 | `/readyz` | GET | Readiness check |
 

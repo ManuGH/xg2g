@@ -1,0 +1,50 @@
+# xg2g Configuration Example with OpenTelemetry Tracing
+#
+# This example shows how to configure OpenTelemetry distributed tracing
+# for monitoring HTTP requests, GPU transcoding, and EPG refresh jobs.
+#
+# Copy to xg2g.yaml and adjust values as needed:
+#   cp config/xg2g.example-telemetry.yaml xg2g.yaml
+
+# OpenTelemetry Configuration
+telemetry:
+  # Enable/disable telemetry (default: false)
+  enabled: true
+
+  # Service identification (appears in traces)
+  service_name: xg2g
+  service_version: 1.0.0
+  environment: production  # or "development", "staging"
+
+  # Exporter type: "grpc" or "http"
+  exporter_type: grpc
+
+  # OTLP endpoint
+  # For Jaeger (gRPC): localhost:4317
+  # For Jaeger (HTTP): localhost:4318
+  # For Grafana Tempo: tempo:4317
+  endpoint: localhost:4317
+
+  # Sampling rate (0.0 to 1.0)
+  # 1.0 = 100% (recommended for development)
+  # 0.1 = 10% (recommended for high-traffic production)
+  sampling_rate: 1.0
+
+# Core Configuration
+owi_base: http://192.168.1.100
+stream_port: 8001
+bouquet: Favourites
+data_dir: /data
+
+# EPG Configuration
+epg:
+  enabled: true
+  days: 7
+  max_concurrency: 5
+  timeout_ms: 5000
+  retries: 3
+
+# GPU Transcoding (optional)
+gpu_transcode:
+  enabled: true
+  transcoder_url: http://localhost:8085

@@ -20,6 +20,11 @@ import (
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/playlist"
+	"github.com/ManuGH/xg2g/internal/telemetry"
+	"github.com/ManuGH/xg2g/internal/validate"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // ErrInvalidStreamPort marks an invalid stream port configuration.
@@ -61,12 +66,23 @@ type Config struct {
 
 // Refresh performs the complete refresh cycle: fetch bouquets → services → write M3U + XMLTV
 func Refresh(ctx context.Context, cfg Config) (*Status, error) {
+	// Start tracing span for the entire refresh job
+	tracer := telemetry.Tracer("xg2g.jobs")
+	ctx, span := tracer.Start(ctx, "job.refresh",
+		trace.WithSpanKind(trace.SpanKindInternal),
+	)
+	defer span.End()
+
+	startTime := time.Now()
+
 	logger := xglog.WithComponentFromContext(ctx, "jobs")
 	logger.Info().Str("event", "refresh.start").Msg("starting refresh")
 
 	if err := validateConfig(cfg); err != nil {
 		metrics.IncConfigValidationError()
 		metrics.IncRefreshFailure("config")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "config validation failed")
 		return nil, err
 	}
 
@@ -79,12 +95,18 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 		Password:   cfg.OWIPassword,
 	}
 	client := openwebif.NewWithPort(cfg.OWIBase, cfg.StreamPort, opts)
+
+	// Fetch bouquets with tracing
+	span.AddEvent("fetching bouquets")
 	bouquets, err := client.Bouquets(ctx)
 	if err != nil {
 		metrics.IncRefreshFailure("bouquets")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to fetch bouquets")
 		return nil, fmt.Errorf("failed to fetch bouquets: %w", err)
 	}
 	metrics.RecordBouquetsCount(len(bouquets))
+	span.SetAttributes(attribute.Int("bouquets.count", len(bouquets)))
 
 	// Support comma-separated bouquet list (e.g., "Premium,Favourites,Sports")
 	requestedBouquets := strings.Split(cfg.Bouquet, ",")
@@ -164,7 +186,13 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 	if strings.TrimSpace(playlistName) == "" {
 		playlistName = "playlist.m3u"
 	}
-	playlistPath := filepath.Join(cfg.DataDir, playlistName)
+	// Sanitize filename for security
+	safeName, err := sanitizeFilename(playlistName)
+	if err != nil {
+		metrics.IncRefreshFailure("sanitize_filename")
+		return nil, fmt.Errorf("invalid playlist filename: %w", err)
+	}
+	playlistPath := filepath.Join(cfg.DataDir, safeName)
 	if err := writeM3U(ctx, playlistPath, items); err != nil {
 		metrics.IncRefreshFailure("write_m3u")
 		return nil, fmt.Errorf("failed to write M3U playlist: %w", err)
@@ -255,6 +283,14 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 	}
 
 	status := &Status{LastRun: time.Now(), Channels: len(items)}
+	// Calculate job duration and add attributes
+	duration := time.Since(startTime)
+	span.SetAttributes(
+		attribute.Int("channels.total", status.Channels),
+		attribute.Int64("duration_ms", duration.Milliseconds()),
+	)
+	span.SetStatus(codes.Ok, "refresh completed successfully")
+
 	logger.Info().
 		Str("event", "refresh.success").
 		Int("channels", status.Channels).
@@ -313,46 +349,15 @@ func makeStableIDFromSRef(sref string) string {
 }
 
 func validateConfig(cfg Config) error {
-	if cfg.OWIBase == "" {
-		return fmt.Errorf("openwebif base URL is empty")
-	}
+	// Use centralized validation package
+	v := validate.New()
 
-	u, err := url.Parse(cfg.OWIBase)
-	if err != nil {
-		return fmt.Errorf("invalid openwebif base URL %q: %w", cfg.OWIBase, err)
-	}
+	v.URL("OWIBase", cfg.OWIBase, []string{"http", "https"})
+	v.Port("StreamPort", cfg.StreamPort)
+	v.Directory("DataDir", cfg.DataDir, false)
 
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return fmt.Errorf("unsupported openwebif base URL scheme %q", u.Scheme)
-	}
-
-	if u.Host == "" {
-		return fmt.Errorf("openwebif base URL %q is missing host", cfg.OWIBase)
-	}
-
-	if cfg.StreamPort <= 0 || cfg.StreamPort > 65535 {
-		return fmt.Errorf("%w: %d", ErrInvalidStreamPort, cfg.StreamPort)
-	}
-
-	// Validate DataDir to prevent path traversal attacks
-	if cfg.DataDir == "" {
-		return fmt.Errorf("data directory is empty")
-	}
-
-	// Convert to absolute path and validate
-	absDataDir, err := filepath.Abs(cfg.DataDir)
-	if err != nil {
-		return fmt.Errorf("invalid data directory %q: %w", cfg.DataDir, err)
-	}
-
-	// Ensure the directory exists or can be created
-	if err := os.MkdirAll(absDataDir, 0750); err != nil {
-		return fmt.Errorf("cannot create data directory %q: %w", absDataDir, err)
-	}
-
-	// Check for directory traversal patterns
-	if strings.Contains(cfg.DataDir, "..") {
-		return fmt.Errorf("data directory %q contains path traversal sequences", cfg.DataDir)
+	if !v.IsValid() {
+		return v
 	}
 
 	return nil
@@ -477,6 +482,37 @@ func fetchEPGWithRetry(ctx context.Context, client *openwebif.Client, streamURL 
 	}
 
 	return nil, fmt.Errorf("EPG request failed after %d retries: %w", cfg.EPGRetries, lastErr)
+}
+
+// sanitizeFilename sanitizes a playlist filename to prevent path traversal attacks
+func sanitizeFilename(name string) (string, error) {
+	if name == "" {
+		return "playlist.m3u", nil
+	}
+
+	// Strip any directory components
+	base := filepath.Base(name)
+
+	// Reject if still contains traversal
+	if strings.Contains(base, "..") {
+		return "", fmt.Errorf("invalid filename: contains traversal")
+	}
+
+	// Clean the filename
+	cleaned := filepath.Clean(base)
+
+	// Ensure it's local
+	if !filepath.IsLocal(cleaned) {
+		return "", fmt.Errorf("invalid filename: not local")
+	}
+
+	// Validate extension
+	ext := filepath.Ext(cleaned)
+	if ext != ".m3u" && ext != ".m3u8" {
+		cleaned = cleaned + ".m3u"
+	}
+
+	return cleaned, nil
 }
 
 // extractSRefFromStreamURL extracts service reference from stream URL
