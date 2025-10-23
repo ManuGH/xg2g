@@ -1,11 +1,14 @@
 package epg
 
 import (
+	"fmt"
+	"path/filepath"
 	"testing"
 )
 
-// BenchmarkFindBestMatchSimple benchmarks FindBestMatch with simple inputs
-func BenchmarkFindBestMatchSimple(b *testing.B) {
+// BenchmarkFindBestSimple benchmarks FindBest with simple inputs.
+func BenchmarkFindBestSimple(b *testing.B) {
+	b.Helper()
 	candidates := []string{
 		"Das Erste HD",
 		"ZDF HD",
@@ -14,36 +17,23 @@ func BenchmarkFindBestMatchSimple(b *testing.B) {
 		"SAT.1 HD",
 	}
 
-	target := "Das Erste"
-
-	b.ResetTimer()
-	b.ReportAllocs()
-
-	for i := 0; i < b.N; i++ {
-		_, _ = FindBestMatch(target, candidates)
-	}
+	benchmarkFindBest(b, "Das Erste", candidates)
 }
 
-// BenchmarkFindBestMatchLarge benchmarks FindBestMatch with many candidates
-func BenchmarkFindBestMatchLarge(b *testing.B) {
-	// Simulate real-world scenario with 100+ channels
+// BenchmarkFindBestLarge benchmarks FindBest with many candidates.
+func BenchmarkFindBestLarge(b *testing.B) {
+	b.Helper()
 	candidates := make([]string, 100)
 	for i := 0; i < 100; i++ {
 		candidates[i] = "Channel " + string(rune('A'+i%26)) + string(rune('0'+i%10))
 	}
 
-	target := "Channel X5"
-
-	b.ResetTimer()
-	b.ReportAllocs()
-
-	for i := 0; i < b.N; i++ {
-		_, _ = FindBestMatch(target, candidates)
-	}
+	benchmarkFindBest(b, "Channel X5", candidates)
 }
 
-// BenchmarkFindBestMatchUnicode benchmarks with Unicode characters
-func BenchmarkFindBestMatchUnicode(b *testing.B) {
+// BenchmarkFindBestUnicode benchmarks FindBest with Unicode characters.
+func BenchmarkFindBestUnicode(b *testing.B) {
+	b.Helper()
 	candidates := []string{
 		"Das Erste HD",
 		"ZDF HD",
@@ -57,30 +47,46 @@ func BenchmarkFindBestMatchUnicode(b *testing.B) {
 		"BR Fernsehen Süd HD",
 	}
 
-	target := "ProSieben MAXX"
-
-	b.ResetTimer()
-	b.ReportAllocs()
-
-	for i := 0; i < b.N; i++ {
-		_, _ = FindBestMatch(target, candidates)
-	}
+	benchmarkFindBest(b, "ProSieben MAXX", candidates)
 }
 
-// BenchmarkBuildNameToIDMap benchmarks map building
+// BenchmarkBuildNameToIDMap benchmarks reading channel metadata from XMLTV.
 func BenchmarkBuildNameToIDMap(b *testing.B) {
 	channels := make([]Channel, 50)
 	for i := 0; i < 50; i++ {
 		channels[i] = Channel{
-			ID:          string(rune('A' + i%26)),
-			DisplayName: []DisplayName{{Value: "Channel " + string(rune('A'+i%26))}},
+			ID:          fmt.Sprintf("channel-%d", i),
+			DisplayName: []string{fmt.Sprintf("Channel %c%d", 'A'+rune(i%26), i%10)},
 		}
+	}
+
+	tempDir := b.TempDir()
+	xmlPath := filepath.Join(tempDir, "channels.xml")
+	if err := WriteXMLTV(channels, xmlPath); err != nil {
+		b.Fatalf("WriteXMLTV: %v", err)
 	}
 
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		_ = BuildNameToIDMap(channels)
+		if _, err := BuildNameToIDMap(xmlPath); err != nil {
+			b.Fatalf("BuildNameToIDMap: %v", err)
+		}
+	}
+}
+
+func benchmarkFindBest(b *testing.B, target string, candidates []string) {
+	b.Helper()
+	nameToID := make(map[string]string, len(candidates))
+	for i, candidate := range candidates {
+		nameToID[NameKey(candidate)] = fmt.Sprintf("id-%d", i)
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		_, _ = FindBest(target, nameToID, 2)
 	}
 }
