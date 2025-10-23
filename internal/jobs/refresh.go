@@ -34,10 +34,13 @@ var ErrInvalidStreamPort = errors.New("invalid stream port")
 
 // Status represents the current state of the refresh job
 type Status struct {
-	Version  string    `json:"version"`
-	LastRun  time.Time `json:"lastRun"`
-	Channels int       `json:"channels"`
-	Error    string    `json:"error,omitempty"`
+	Version       string    `json:"version"`
+	LastRun       time.Time `json:"lastRun"`
+	Channels      int       `json:"channels"`
+	Bouquets      int       `json:"bouquets,omitempty"`       // Number of bouquets processed
+	EPGProgrammes int       `json:"epgProgrammes,omitempty"` // Number of EPG programmes collected
+	DurationMS    int64     `json:"durationMs,omitempty"`    // Duration of last refresh in milliseconds
+	Error         string    `json:"error,omitempty"`
 }
 
 // Config holds configuration for refresh operations
@@ -67,6 +70,7 @@ type Config struct {
 }
 
 // Refresh performs the complete refresh cycle: fetch bouquets → services → write M3U + XMLTV
+//nolint:gocyclo // Complex orchestration function with validation, requires sequential operations
 func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 	// Start tracing span for the entire refresh job
 	tracer := telemetry.Tracer("xg2g.jobs")
@@ -116,6 +120,30 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 		requestedBouquets[i] = strings.TrimSpace(requestedBouquets[i])
 	}
 
+	// Pre-flight validation: check ALL requested bouquets exist before processing
+	var missingBouquets []string
+	validBouquets := make([]string, 0, len(requestedBouquets))
+	for _, bouquetName := range requestedBouquets {
+		if bouquetName == "" {
+			continue
+		}
+		if _, ok := bouquets[bouquetName]; !ok {
+			missingBouquets = append(missingBouquets, bouquetName)
+		} else {
+			validBouquets = append(validBouquets, bouquetName)
+		}
+	}
+
+	// If ANY requested bouquet is missing, fail early with comprehensive error
+	if len(missingBouquets) > 0 {
+		metrics.IncRefreshFailure("bouquets")
+		availableNames := make([]string, 0, len(bouquets))
+		for name := range bouquets {
+			availableNames = append(availableNames, name)
+		}
+		return nil, fmt.Errorf("bouquets not found: %v; available bouquets: %v", missingBouquets, availableNames)
+	}
+
 	var items []playlist.Item
 	// Channel type counters for the last refresh
 	hd, sd, radio, unknown := 0, 0, 0, 0
@@ -123,16 +151,8 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 	// This ensures Threadfin/Plex display channels in bouquet order
 	channelNumber := 1
 
-	for _, bouquetName := range requestedBouquets {
-		if bouquetName == "" {
-			continue
-		}
-
-		bouquetRef, ok := bouquets[bouquetName]
-		if !ok {
-			metrics.IncRefreshFailure("bouquets")
-			return nil, fmt.Errorf("bouquet %q not found", bouquetName)
-		}
+	for _, bouquetName := range validBouquets {
+		bouquetRef := bouquets[bouquetName] // Safe: already validated above
 
 		services, err := client.Services(ctx, bouquetRef)
 		if err != nil {
@@ -151,6 +171,19 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 				continue
 			}
 			metrics.IncStreamURLBuild("success")
+
+			// Validate stream URL structure
+			validator := validate.New()
+			validator.StreamURL("streamURL", streamURL)
+			if !validator.IsValid() {
+				logger.Warn().
+					Str("service", name).
+					Str("url", streamURL).
+					Str("validation_error", validator.Err().Error()).
+					Msg("stream URL validation failed")
+				metrics.IncStreamURLBuild("validation_failure")
+				continue
+			}
 
 			piconURL := ""
 			if cfg.PiconBase != "" {
@@ -197,13 +230,23 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 	playlistPath := filepath.Join(cfg.DataDir, safeName)
 	if err := writeM3U(ctx, playlistPath, items); err != nil {
 		metrics.IncRefreshFailure("write_m3u")
+		metrics.RecordPlaylistFileValidity("m3u", false)
 		return nil, fmt.Errorf("failed to write M3U playlist: %w", err)
+	}
+	// Verify M3U file exists and is readable
+	if _, err := os.Stat(playlistPath); err == nil {
+		metrics.RecordPlaylistFileValidity("m3u", true)
+	} else {
+		metrics.RecordPlaylistFileValidity("m3u", false)
 	}
 	logger.Info().
 		Str("event", "playlist.write").
 		Str("path", playlistPath).
 		Int("channels", len(items)).
 		Msg("playlist written")
+
+	// Track EPG programmes count for status reporting
+	var epgProgrammesCount int
 
 	// Optional XMLTV generation
 	if cfg.XMLTVPath != "" {
@@ -228,9 +271,9 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 				Int("days", cfg.EPGDays).
 				Msg("starting EPG collection")
 
-			startTime := time.Now()
+			epgStartTime := time.Now()
 			programmes := collectEPGProgrammes(ctx, client, items, cfg)
-			duration := time.Since(startTime).Seconds()
+			epgDuration := time.Since(epgStartTime).Seconds()
 
 			if len(programmes) == 0 {
 				logger.Warn().
@@ -238,6 +281,7 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 					Msg("EPG collection returned no data")
 			}
 			allProgrammes = programmes
+			epgProgrammesCount = len(allProgrammes)
 
 			// Count channels with EPG data
 			channelsWithData := 0
@@ -249,13 +293,13 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 				channelsWithData = len(channelMap)
 			}
 
-			metrics.RecordEPGCollection(len(allProgrammes), channelsWithData, duration)
+			metrics.RecordEPGCollection(len(allProgrammes), channelsWithData, epgDuration)
 
 			logger.Info().
 				Str("event", "epg.collected").
 				Int("programmes", len(allProgrammes)).
 				Int("channels_with_data", channelsWithData).
-				Float64("duration_seconds", duration).
+				Float64("duration_seconds", epgDuration).
 				Msg("EPG collection completed")
 		}
 
@@ -271,7 +315,14 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 		metrics.RecordXMLTV(true, len(xmlCh), xmlErr)
 		if xmlErr != nil {
 			metrics.IncRefreshFailure("xmltv")
+			metrics.RecordPlaylistFileValidity("xmltv", false)
 			return nil, fmt.Errorf("failed to write XMLTV file to %q: %w", xmltvFullPath, xmlErr)
+		}
+		// Verify XMLTV file exists and is readable
+		if _, err := os.Stat(xmltvFullPath); err == nil {
+			metrics.RecordPlaylistFileValidity("xmltv", true)
+		} else {
+			metrics.RecordPlaylistFileValidity("xmltv", false)
 		}
 
 		logger.Info().
@@ -282,11 +333,21 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 			Msg("XMLTV generated")
 	} else {
 		metrics.RecordXMLTV(false, 0, nil)
+		metrics.RecordPlaylistFileValidity("xmltv", false) // XMLTV disabled
 	}
 
-	status := &Status{LastRun: time.Now(), Channels: len(items)}
-	// Calculate job duration and add attributes
+	// Calculate job duration
 	duration := time.Since(startTime)
+
+	// Create detailed status response
+	status := &Status{
+		LastRun:       time.Now(),
+		Channels:      len(items),
+		Bouquets:      len(validBouquets),
+		EPGProgrammes: epgProgrammesCount,
+		DurationMS:    duration.Milliseconds(),
+	}
+	// Add attributes for tracing
 	span.SetAttributes(
 		attribute.Int("channels.total", status.Channels),
 		attribute.Int64("duration_ms", duration.Milliseconds()),

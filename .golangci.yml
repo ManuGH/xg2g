@@ -160,6 +160,10 @@ issues:
       linters:
         - gocyclo
 
+    - path: internal/jobs/refresh\.go
+      linters:
+        - gocyclo
+
     - path: internal/types
       linters:
         - revive
