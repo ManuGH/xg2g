@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -112,7 +113,7 @@ func TestConcurrentStartShutdown(t *testing.T) {
 	select {
 	case err := <-errCh:
 		// Context cancellation is expected
-		if err != nil && err != context.Canceled && err != http.ErrServerClosed {
+		if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, http.ErrServerClosed) {
 			t.Errorf("Start error: %v", err)
 		}
 	case <-time.After(3 * time.Second):
