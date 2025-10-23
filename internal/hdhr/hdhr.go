@@ -1,4 +1,5 @@
 // Package hdhr implements HDHomeRun protocol compatibility for the xg2g gateway.
+// Package hdhr implements HDHomeRun protocol compatibility for the xg2g gateway.
 
 // SPDX-License-Identifier: MIT
 package hdhr

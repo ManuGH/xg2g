@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-package types //nolint:revive // "types" is a standard and acceptable package name
+package types
 
 import (
 	"encoding/json"
