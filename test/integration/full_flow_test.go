@@ -132,7 +132,8 @@ func TestAPIRefreshEndpoint(t *testing.T) {
 
 	bodyStr := string(body)
 	assert.Contains(t, bodyStr, "channels", "Response should contain channels count")
-	assert.Contains(t, bodyStr, "last_run", "Response should contain last_run timestamp")
+	// API uses camelCase (lastRun), not snake_case (last_run)
+	assert.Contains(t, bodyStr, "lastRun", "Response should contain lastRun timestamp")
 
 	// Verify: Files were created
 	playlistPath := filepath.Join(tmpDir, "playlist.m3u")
@@ -152,7 +153,8 @@ func TestAPIRefreshEndpoint(t *testing.T) {
 
 	statusBody, _ := io.ReadAll(statusResp.Body)
 	statusStr := string(statusBody)
-	assert.Contains(t, statusStr, "last_run", "Status should show last refresh")
+	// API uses camelCase (lastRun), not snake_case (last_run)
+	assert.Contains(t, statusStr, "lastRun", "Status should show last refresh")
 
 	t.Logf("✅ API refresh endpoint flow completed successfully")
 }
@@ -374,8 +376,8 @@ func TestHealthCheckFlow(t *testing.T) {
 		{
 			name:           "readiness check before refresh",
 			endpoint:       "/readyz",
-			expectedStatus: http.StatusOK,
-			shouldContain:  "ready",
+			expectedStatus: http.StatusServiceUnavailable, // Not ready before first refresh - correct behavior
+			shouldContain:  "not-ready",
 		},
 		{
 			name:           "status before refresh",
