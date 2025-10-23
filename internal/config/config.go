@@ -290,6 +290,11 @@ func (l *Loader) mergeEnvConfig(cfg *jobs.Config) {
 			cfg.OWIBackoff = time.Duration(ms) * time.Millisecond
 		}
 	}
+	if v := os.Getenv("XG2G_OWI_MAX_BACKOFF_MS"); v != "" {
+		if ms, err := strconv.ParseInt(v, 10, 64); err == nil {
+			cfg.OWIMaxBackoff = time.Duration(ms) * time.Millisecond
+		}
+	}
 
 	// Bouquet
 	if v := os.Getenv("XG2G_BOUQUET"); v != "" {

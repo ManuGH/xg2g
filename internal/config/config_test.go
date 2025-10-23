@@ -294,6 +294,286 @@ func TestValidateEPGBounds(t *testing.T) {
 	}
 }
 
+// TestOWIMaxBackoffFromENV tests that XG2G_OWI_MAX_BACKOFF_MS is read correctly
+func TestOWIMaxBackoffFromENV(t *testing.T) {
+	tests := []struct {
+		name            string
+		envValue        string
+		expectedBackoff time.Duration
+		description     string
+	}{
+		{
+			name:            "default_value",
+			envValue:        "",
+			expectedBackoff: 30 * time.Second,
+			description:     "Default maxBackoff when ENV not set",
+		},
+		{
+			name:            "custom_value_2s",
+			envValue:        "2000",
+			expectedBackoff: 2 * time.Second,
+			description:     "Custom 2s maxBackoff from ENV",
+		},
+		{
+			name:            "custom_value_5s",
+			envValue:        "5000",
+			expectedBackoff: 5 * time.Second,
+			description:     "Custom 5s maxBackoff from ENV",
+		},
+		{
+			name:            "custom_value_10s",
+			envValue:        "10000",
+			expectedBackoff: 10 * time.Second,
+			description:     "Custom 10s maxBackoff from ENV",
+		},
+		{
+			name:            "custom_value_30s",
+			envValue:        "30000",
+			expectedBackoff: 30 * time.Second,
+			description:     "Maximum 30s maxBackoff from ENV",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Clean environment
+			os.Unsetenv("XG2G_OWI_MAX_BACKOFF_MS")
+
+			// Set required OWIBase
+			t.Setenv("XG2G_OWI_BASE", "http://example.com")
+
+			// Set test-specific ENV
+			if tt.envValue != "" {
+				t.Setenv("XG2G_OWI_MAX_BACKOFF_MS", tt.envValue)
+			}
+
+			loader := NewLoader("", "test-version")
+			cfg, err := loader.Load()
+			if err != nil {
+				t.Fatalf("Load() failed: %v", err)
+			}
+
+			if cfg.OWIMaxBackoff != tt.expectedBackoff {
+				t.Errorf("%s: expected OWIMaxBackoff=%v, got %v",
+					tt.description, tt.expectedBackoff, cfg.OWIMaxBackoff)
+			}
+		})
+	}
+}
+
+// TestOWIMaxBackoffFromFile tests that maxBackoff from YAML config is read correctly
+func TestOWIMaxBackoffFromFile(t *testing.T) {
+	tests := []struct {
+		name            string
+		yamlBackoff     string
+		expectedBackoff time.Duration
+		description     string
+	}{
+		{
+			name:            "2_seconds",
+			yamlBackoff:     "2s",
+			expectedBackoff: 2 * time.Second,
+			description:     "2s maxBackoff from YAML",
+		},
+		{
+			name:            "5_seconds",
+			yamlBackoff:     "5s",
+			expectedBackoff: 5 * time.Second,
+			description:     "5s maxBackoff from YAML",
+		},
+		{
+			name:            "10_seconds",
+			yamlBackoff:     "10s",
+			expectedBackoff: 10 * time.Second,
+			description:     "10s maxBackoff from YAML",
+		},
+		{
+			name:            "30_seconds",
+			yamlBackoff:     "30s",
+			expectedBackoff: 30 * time.Second,
+			description:     "30s maxBackoff from YAML",
+		},
+		{
+			name:            "milliseconds",
+			yamlBackoff:     "2500ms",
+			expectedBackoff: 2500 * time.Millisecond,
+			description:     "2.5s maxBackoff from YAML (in ms)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			configPath := filepath.Join(tmpDir, "config.yaml")
+
+			yamlContent := fmt.Sprintf(`
+dataDir: %s
+openWebIF:
+  baseUrl: http://test.local
+  maxBackoff: %s
+`, tmpDir, tt.yamlBackoff)
+
+			if err := os.WriteFile(configPath, []byte(yamlContent), 0o600); err != nil {
+				t.Fatalf("failed to write test config: %v", err)
+			}
+
+			loader := NewLoader(configPath, "1.0.0")
+			cfg, err := loader.Load()
+			if err != nil {
+				t.Fatalf("Load() failed: %v", err)
+			}
+
+			if cfg.OWIMaxBackoff != tt.expectedBackoff {
+				t.Errorf("%s: expected OWIMaxBackoff=%v, got %v",
+					tt.description, tt.expectedBackoff, cfg.OWIMaxBackoff)
+			}
+		})
+	}
+}
+
+// TestOWIMaxBackoffENVOverridesFile tests precedence: ENV > File > Default
+func TestOWIMaxBackoffENVOverridesFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	// File config: 5s maxBackoff
+	yamlContent := fmt.Sprintf(`
+dataDir: %s
+openWebIF:
+  baseUrl: http://test.local
+  maxBackoff: 5s
+  backoff: 500ms
+`, tmpDir)
+
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0o600); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	// ENV config: 10s maxBackoff (should override file)
+	t.Setenv("XG2G_OWI_MAX_BACKOFF_MS", "10000")
+
+	loader := NewLoader(configPath, "1.0.0")
+	cfg, err := loader.Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	// Verify ENV overrides file
+	if cfg.OWIMaxBackoff != 10*time.Second {
+		t.Errorf("expected ENV to override file: OWIMaxBackoff=10s, got %v", cfg.OWIMaxBackoff)
+	}
+
+	// Verify backoff from file is still loaded
+	if cfg.OWIBackoff != 500*time.Millisecond {
+		t.Errorf("expected backoff from file: 500ms, got %v", cfg.OWIBackoff)
+	}
+}
+
+// TestOWIBackoffConfigConsistency tests that all OWI timing configs work together
+func TestOWIBackoffConfigConsistency(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	yamlContent := fmt.Sprintf(`
+dataDir: %s
+openWebIF:
+  baseUrl: http://test.local
+  timeout: 15s
+  retries: 5
+  backoff: 300ms
+  maxBackoff: 5s
+`, tmpDir)
+
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0o600); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	loader := NewLoader(configPath, "1.0.0")
+	cfg, err := loader.Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	// Verify all timing configs
+	if cfg.OWITimeout != 15*time.Second {
+		t.Errorf("expected OWITimeout=15s, got %v", cfg.OWITimeout)
+	}
+	if cfg.OWIRetries != 5 {
+		t.Errorf("expected OWIRetries=5, got %d", cfg.OWIRetries)
+	}
+	if cfg.OWIBackoff != 300*time.Millisecond {
+		t.Errorf("expected OWIBackoff=300ms, got %v", cfg.OWIBackoff)
+	}
+	if cfg.OWIMaxBackoff != 5*time.Second {
+		t.Errorf("expected OWIMaxBackoff=5s, got %v", cfg.OWIMaxBackoff)
+	}
+}
+
+// TestOWIMaxBackoffInvalidValues tests handling of invalid maxBackoff values
+func TestOWIMaxBackoffInvalidValues(t *testing.T) {
+	tests := []struct {
+		name          string
+		envValue      string
+		expectDefault bool
+		description   string
+	}{
+		{
+			name:          "invalid_string",
+			envValue:      "not-a-number",
+			expectDefault: true,
+			description:   "Invalid string should use default",
+		},
+		{
+			name:          "negative_value",
+			envValue:      "-1000",
+			expectDefault: false, // Will parse as negative duration
+			description:   "Negative value should parse (validation happens elsewhere)",
+		},
+		{
+			name:          "zero_value",
+			envValue:      "0",
+			expectDefault: false, // Will parse as 0
+			description:   "Zero value should parse (validation happens elsewhere)",
+		},
+		{
+			name:          "empty_string",
+			envValue:      "",
+			expectDefault: true,
+			description:   "Empty string should use default",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Clean environment
+			os.Unsetenv("XG2G_OWI_MAX_BACKOFF_MS")
+
+			// Set required OWIBase
+			t.Setenv("XG2G_OWI_BASE", "http://example.com")
+
+			// Set test-specific ENV
+			if tt.envValue != "" {
+				t.Setenv("XG2G_OWI_MAX_BACKOFF_MS", tt.envValue)
+			}
+
+			loader := NewLoader("", "test-version")
+			cfg, err := loader.Load()
+			if err != nil {
+				t.Fatalf("Load() failed: %v", err)
+			}
+
+			if tt.expectDefault {
+				if cfg.OWIMaxBackoff != 30*time.Second {
+					t.Errorf("%s: expected default OWIMaxBackoff=30s, got %v",
+						tt.description, cfg.OWIMaxBackoff)
+				}
+			}
+			// Note: For non-default cases, we just verify it parses without error
+			// Validation of logical ranges happens in the validate package
+		})
+	}
+}
+
 func containsString(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && findSubstring(s, substr))
 }
