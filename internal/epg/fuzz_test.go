@@ -71,7 +71,7 @@ func FuzzXMLTVGeneration(f *testing.F) {
 	f.Add("", "", "")
 	f.Add("Ümlauts äöü", "special.id", "Special")
 
-	f.Fuzz(func(t *testing.T, name, id, group string) {
+	f.Fuzz(func(t *testing.T, name, id, _ string) {
 		channels := []Channel{
 			{
 				ID:          id,

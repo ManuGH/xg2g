@@ -60,15 +60,16 @@ func GenerateXMLTV(channels []Channel, programs []Programme) TV {
 // WriteXMLTV writes XMLTV data to a file.
 func WriteXMLTV(tv TV, outputPath string) error {
 	dir := filepath.Dir(outputPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0750); err != nil {
 		return err
 	}
 
+	// #nosec G304 -- outputPath is controlled by the application configuration
 	f, err := os.Create(outputPath)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	_, _ = f.WriteString(xml.Header)
 	_, _ = f.WriteString(`<!DOCTYPE tv SYSTEM "xmltv.dtd">` + "\n")

@@ -64,5 +64,4 @@ func BuildNameToIDMap(xmltvPath string) (map[string]string, error) {
 }
 
 // NameKey generates a normalized key from a channel name for matching.
-
 func NameKey(s string) string { return norm(s) }
