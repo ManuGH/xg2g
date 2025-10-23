@@ -486,47 +486,6 @@ func resolveMetricsListen() string {
 	return env("XG2G_METRICS_LISTEN", "")
 }
 
-// resolveOWISettings reads, validates, and returns all OpenWebIF client settings.
-func resolveOWISettings() (time.Duration, int, time.Duration, time.Duration, error) {
-	timeoutMsStr := env("XG2G_OWI_TIMEOUT_MS", fmt.Sprintf("%d", defaultOWITimeout.Milliseconds()))
-	timeoutMs, err := strconv.ParseInt(timeoutMsStr, 10, 64)
-	if err != nil {
-		return 0, 0, 0, 0, fmt.Errorf("invalid timeout %q: %w", timeoutMsStr, err)
-	}
-	timeout := time.Duration(timeoutMs) * time.Millisecond
-	if timeout <= 0 || timeout > maxOWITimeout {
-		return 0, 0, 0, 0, fmt.Errorf("timeout %v out of range (0, %v]", timeout, maxOWITimeout)
-	}
-
-	retriesStr := env("XG2G_OWI_RETRIES", fmt.Sprintf("%d", defaultOWIRetries))
-	retries, err := strconv.Atoi(retriesStr)
-	if err != nil {
-		return 0, 0, 0, 0, fmt.Errorf("invalid retries %q: %w", retriesStr, err)
-	}
-	if retries < 0 || retries > maxOWIRetries {
-		return 0, 0, 0, 0, fmt.Errorf("retries %d out of range [0, %d]", retries, maxOWIRetries)
-	}
-
-	backoffMsStr := env("XG2G_OWI_BACKOFF_MS", fmt.Sprintf("%d", defaultOWIBackoff.Milliseconds()))
-	backoffMs, err := strconv.ParseInt(backoffMsStr, 10, 64)
-	if err != nil {
-		return 0, 0, 0, 0, fmt.Errorf("invalid backoff %q: %w", backoffMsStr, err)
-	}
-	backoff := time.Duration(backoffMs) * time.Millisecond
-	if backoff <= 0 || backoff > maxOWIBackoff {
-		return 0, 0, 0, 0, fmt.Errorf("backoff %v out of range (0, %v]", backoff, maxOWIBackoff)
-	}
-
-	// Max backoff is derived from base backoff, not independently configured.
-	// This ensures a reasonable ceiling.
-	maxBackoff := time.Duration(1<<retries) * backoff
-	if maxBackoff > maxOWIBackoff {
-		maxBackoff = maxOWIBackoff
-	}
-
-	return timeout, retries, backoff, maxBackoff, nil
-}
-
 // ensureDataDir checks if the data directory is valid and writable.
 // It creates the directory if it doesn't exist.
 // For security, it enforces several policies:

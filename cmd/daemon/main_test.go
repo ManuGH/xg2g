@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
-	"time"
 )
 
 func TestAtoi(t *testing.T) {
@@ -59,75 +58,6 @@ func TestResolveMetricsListen(t *testing.T) {
 	t.Setenv("XG2G_METRICS_LISTEN", ":9090")
 	if got := resolveMetricsListen(); got != ":9090" {
 		t.Fatalf("resolveMetricsListen set got %q, want :9090", got)
-	}
-}
-
-func TestResolveOWISettings_DefaultsAndErrors(t *testing.T) {
-	// Clear variables to hit defaults
-	if err := os.Unsetenv("XG2G_OWI_TIMEOUT_MS"); err != nil {
-		t.Fatalf("failed to unset env: %v", err)
-	}
-	if err := os.Unsetenv("XG2G_OWI_RETRIES"); err != nil {
-		t.Fatalf("failed to unset env: %v", err)
-	}
-	if err := os.Unsetenv("XG2G_OWI_BACKOFF_MS"); err != nil {
-		t.Fatalf("failed to unset env: %v", err)
-	}
-
-	timeout, retries, backoff, maxBackoff, err := resolveOWISettings()
-	if err != nil {
-		t.Fatalf("resolveOWISettings unexpected error: %v", err)
-	}
-	if timeout != defaultOWITimeout {
-		t.Fatalf("timeout got %v, want %v", timeout, defaultOWITimeout)
-	}
-	if retries != defaultOWIRetries {
-		t.Fatalf("retries got %d, want %d", retries, defaultOWIRetries)
-	}
-	if backoff != defaultOWIBackoff {
-		t.Fatalf("backoff got %v, want %v", backoff, defaultOWIBackoff)
-	}
-	// With defaults (retries=3, backoff=500ms) → 8*500ms = 4s (well below the global 30s cap)
-	if maxBackoff != 4*time.Second {
-		t.Fatalf("maxBackoff got %v, want %v", maxBackoff, 4*time.Second)
-	}
-
-	// Invalid timeout
-	t.Setenv("XG2G_OWI_TIMEOUT_MS", "-1")
-	if _, _, _, _, err := resolveOWISettings(); err == nil {
-		t.Fatalf("resolveOWISettings should fail for negative timeout")
-	}
-
-	// Invalid retries (non-numeric)
-	t.Setenv("XG2G_OWI_TIMEOUT_MS", "1000") // valid
-	t.Setenv("XG2G_OWI_RETRIES", "abc")
-	if _, _, _, _, err := resolveOWISettings(); err == nil {
-		t.Fatalf("resolveOWISettings should fail for non-numeric retries")
-	}
-
-	// Invalid retries (out of range)
-	t.Setenv("XG2G_OWI_RETRIES", "20")
-	if _, _, _, _, err := resolveOWISettings(); err == nil {
-		t.Fatalf("resolveOWISettings should fail for retries > max")
-	}
-
-	// Invalid backoff (non-numeric)
-	t.Setenv("XG2G_OWI_RETRIES", "3") // valid
-	t.Setenv("XG2G_OWI_BACKOFF_MS", "not-a-number")
-	if _, _, _, _, err := resolveOWISettings(); err == nil {
-		t.Fatalf("resolveOWISettings should fail for non-numeric backoff")
-	}
-
-	// Invalid backoff (<=0)
-	t.Setenv("XG2G_OWI_BACKOFF_MS", "0")
-	if _, _, _, _, err := resolveOWISettings(); err == nil {
-		t.Fatalf("resolveOWISettings should fail for zero backoff")
-	}
-
-	// Invalid backoff (>max)
-	t.Setenv("XG2G_OWI_BACKOFF_MS", "40000") // 40s > 30s max
-	if _, _, _, _, err := resolveOWISettings(); err == nil {
-		t.Fatalf("resolveOWISettings should fail for backoff > max")
 	}
 }
 
