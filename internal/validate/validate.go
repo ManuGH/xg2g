@@ -343,3 +343,36 @@ func (v *Validator) PathWithinRoot(field, path, rootDir string) {
 	}
 	// If file doesn't exist yet, that's okay - just validate the path structure
 }
+
+// StreamURL validates a stream URL for IPTV/streaming purposes
+// Checks: valid URL syntax, http/https scheme, host present, path not empty
+func (v *Validator) StreamURL(field, streamURL string) {
+	if streamURL == "" {
+		v.AddError(field, "stream URL cannot be empty", streamURL)
+		return
+	}
+
+	// Parse URL
+	u, err := url.Parse(streamURL)
+	if err != nil {
+		v.AddError(field, fmt.Sprintf("invalid URL syntax: %v", err), streamURL)
+		return
+	}
+
+	// Validate scheme
+	if u.Scheme != "http" && u.Scheme != "https" {
+		v.AddError(field, fmt.Sprintf("unsupported scheme %q (must be http or https)", u.Scheme), streamURL)
+		return
+	}
+
+	// Validate host
+	if u.Host == "" {
+		v.AddError(field, "stream URL must have a host", streamURL)
+		return
+	}
+
+	// Validate path (stream URLs should have a path component)
+	if u.Path == "" || u.Path == "/" {
+		v.AddError(field, "stream URL must have a path component", streamURL)
+	}
+}

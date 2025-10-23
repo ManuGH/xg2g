@@ -172,6 +172,19 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 			}
 			metrics.IncStreamURLBuild("success")
 
+			// Validate stream URL structure
+			validator := validate.New()
+			validator.StreamURL("streamURL", streamURL)
+			if !validator.IsValid() {
+				logger.Warn().
+					Str("service", name).
+					Str("url", streamURL).
+					Str("validation_error", validator.Err().Error()).
+					Msg("stream URL validation failed")
+				metrics.IncStreamURLBuild("validation_failure")
+				continue
+			}
+
 			piconURL := ""
 			if cfg.PiconBase != "" {
 				piconURL = openwebif.PiconURL(cfg.PiconBase, ref)
