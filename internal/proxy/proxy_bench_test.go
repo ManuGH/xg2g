@@ -1,3 +1,4 @@
+//nolint:noctx // Benchmarks don't require context in HTTP requests
 package proxy
 
 import (
