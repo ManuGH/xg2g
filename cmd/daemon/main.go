@@ -6,7 +6,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -23,6 +22,7 @@ import (
 	xglog "github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/proxy"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/rs/zerolog"
 )
 
 var Version = "dev"
@@ -304,43 +304,78 @@ func main() {
 // env reads an environment variable or returns a default value.
 // It also logs the source of the value (default or environment).
 func env(key, defaultValue string) string {
+	return envWithLogger(xglog.WithComponent("config"), key, defaultValue)
+}
+
+// envWithLogger reads an environment variable or returns a default value with custom logger.
+func envWithLogger(logger zerolog.Logger, key, defaultValue string) string {
 	if value, exists := os.LookupEnv(key); exists {
 		lowerKey := strings.ToLower(key)
 		switch {
 		case strings.Contains(lowerKey, "token") || strings.Contains(lowerKey, "password"):
 			// For sensitive vars, just log that it was set
-			log.Printf("config: using %s from environment (set)", key)
+			logger.Debug().
+				Str("key", key).
+				Str("source", "environment").
+				Bool("sensitive", true).
+				Msg("using environment variable")
 		case value == "":
-			log.Printf("config: using default for %s (%q) because environment variable is empty", key, defaultValue)
+			logger.Debug().
+				Str("key", key).
+				Str("default", defaultValue).
+				Str("source", "default").
+				Msg("using default value (environment variable is empty)")
 			return defaultValue
 		default:
-			log.Printf("config: using %s from environment (%q)", key, value)
+			logger.Debug().
+				Str("key", key).
+				Str("value", value).
+				Str("source", "environment").
+				Msg("using environment variable")
 		}
 		return value
 	}
-	log.Printf("config: using default for %s (%q)", key, defaultValue)
+	logger.Debug().
+		Str("key", key).
+		Str("default", defaultValue).
+		Str("source", "default").
+		Msg("using default value")
 	return defaultValue
 }
 
 // envInt reads an integer from ENV with fallback on parse errors.
 // Returns the parsed value and true if successful, or defaultVal and false on error.
 func envInt(key string, defaultVal int) (int, bool) {
+	logger := xglog.WithComponent("config")
 	v, ok := os.LookupEnv(key)
 	if !ok {
 		return defaultVal, false
 	}
 	if v == "" {
-		log.Printf("config: using default for %s (%d) because environment variable is empty", key, defaultVal)
+		logger.Debug().
+			Str("key", key).
+			Int("default", defaultVal).
+			Str("source", "default").
+			Msg("using default value (environment variable is empty)")
 		return defaultVal, false
 	}
 
 	i, err := strconv.Atoi(v)
 	if err != nil {
-		log.Printf("config: invalid integer for %s (%q), using default %d: %v", key, v, defaultVal, err)
+		logger.Warn().
+			Err(err).
+			Str("key", key).
+			Str("value", v).
+			Int("default", defaultVal).
+			Msg("invalid integer in environment variable, using default")
 		return defaultVal, false
 	}
 
-	log.Printf("config: using %s from environment (%d)", key, i)
+	logger.Debug().
+		Str("key", key).
+		Int("value", i).
+		Str("source", "environment").
+		Msg("using environment variable")
 	return i, true
 }
 
@@ -348,9 +383,13 @@ func envInt(key string, defaultVal int) (int, bool) {
 // Kept for backward compatibility but will log warning.
 // TODO: Remove after migrating all callers to envInt.
 func atoi(s string) int {
+	logger := xglog.WithComponent("config")
 	i, err := strconv.Atoi(s)
 	if err != nil {
-		log.Printf("DEPRECATED: atoi() called with invalid value %q - returning 0. Use envInt() instead.", s)
+		logger.Warn().
+			Err(err).
+			Str("value", s).
+			Msg("DEPRECATED: atoi() called with invalid value - returning 0. Use envInt() instead")
 		return 0
 	}
 	return i
@@ -359,37 +398,71 @@ func atoi(s string) int {
 // envDuration reads a duration from ENV in Go duration format (e.g. "5s").
 // Falls back to default on parse errors or empty variables and logs the choice.
 func envDuration(key string, def time.Duration) time.Duration {
+	logger := xglog.WithComponent("config")
 	if v, ok := os.LookupEnv(key); ok {
 		if v == "" {
-			log.Printf("config: using default for %s (%s) because environment variable is empty", key, def)
+			logger.Debug().
+				Str("key", key).
+				Dur("default", def).
+				Str("source", "default").
+				Msg("using default value (environment variable is empty)")
 			return def
 		}
 		if d, err := time.ParseDuration(v); err == nil {
-			log.Printf("config: using %s from environment (%s)", key, d)
+			logger.Debug().
+				Str("key", key).
+				Dur("value", d).
+				Str("source", "environment").
+				Msg("using environment variable")
 			return d
 		}
-		log.Printf("config: invalid duration for %s (%q), using default %s", key, v, def)
+		logger.Warn().
+			Str("key", key).
+			Str("value", v).
+			Dur("default", def).
+			Msg("invalid duration in environment variable, using default")
 		return def
 	}
-	log.Printf("config: using default for %s (%s)", key, def)
+	logger.Debug().
+		Str("key", key).
+		Dur("default", def).
+		Str("source", "default").
+		Msg("using default value")
 	return def
 }
 
 // envIntDefault reads an int from ENV and falls back to the default on error.
 func envIntDefault(key string, def int) int {
+	logger := xglog.WithComponent("config")
 	if v, ok := os.LookupEnv(key); ok {
 		if v == "" {
-			log.Printf("config: using default for %s (%d) because environment variable is empty", key, def)
+			logger.Debug().
+				Str("key", key).
+				Int("default", def).
+				Str("source", "default").
+				Msg("using default value (environment variable is empty)")
 			return def
 		}
 		if i, err := strconv.Atoi(v); err == nil {
-			log.Printf("config: using %s from environment (%d)", key, i)
+			logger.Debug().
+				Str("key", key).
+				Int("value", i).
+				Str("source", "environment").
+				Msg("using environment variable")
 			return i
 		}
-		log.Printf("config: invalid int for %s (%q), using default %d", key, v, def)
+		logger.Warn().
+			Str("key", key).
+			Str("value", v).
+			Int("default", def).
+			Msg("invalid integer in environment variable, using default")
 		return def
 	}
-	log.Printf("config: using default for %s (%d)", key, def)
+	logger.Debug().
+		Str("key", key).
+		Int("default", def).
+		Str("source", "default").
+		Msg("using default value")
 	return def
 }
 
@@ -461,6 +534,8 @@ func resolveOWISettings() (time.Duration, int, time.Duration, time.Duration, err
 // - It must not be a symlink to a sensitive system directory.
 // - The final resolved path must be writable.
 func ensureDataDir(path string) error {
+	logger := xglog.WithComponent("config")
+
 	if path == "" {
 		return errors.New("data directory path cannot be empty")
 	}
@@ -505,11 +580,15 @@ func ensureDataDir(path string) error {
 	// Check if the directory exists. If not, create it.
 	info, err := os.Stat(realDataDir)
 	if os.IsNotExist(err) {
-		log.Printf("config: data directory %q does not exist, attempting to create it", realDataDir)
+		logger.Info().
+			Str("path", realDataDir).
+			Msg("data directory does not exist, attempting to create it")
 		if err := os.MkdirAll(realDataDir, 0750); err != nil {
 			return fmt.Errorf("failed to create data directory %q: %w", realDataDir, err)
 		}
-		log.Printf("config: successfully created data directory %q", realDataDir)
+		logger.Info().
+			Str("path", realDataDir).
+			Msg("successfully created data directory")
 		info, err = os.Stat(realDataDir) // Stat again after creation
 		if err != nil {
 			return fmt.Errorf("failed to stat data directory %q after creation: %w", realDataDir, err)
@@ -530,6 +609,8 @@ func ensureDataDir(path string) error {
 	}
 	_ = os.Remove(tmpFile) // Clean up the check file, ignore error
 
-	log.Printf("config: data directory %q is valid and writable", realDataDir)
+	logger.Debug().
+		Str("path", realDataDir).
+		Msg("data directory is valid and writable")
 	return nil
 }
