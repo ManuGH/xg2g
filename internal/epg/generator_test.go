@@ -27,7 +27,7 @@ func TestWriteXMLTV(t *testing.T) {
 	tmp := t.TempDir()
 	p := filepath.Join(tmp, "test.xml")
 	channels := []Channel{{ID: "c1", DisplayName: []string{"C1"}}}
-	if err := WriteXMLTV(channels, p); err != nil {
+	if err := WriteXMLTV(GenerateXMLTV(channels, nil), p); err != nil {
 		t.Fatalf("WriteXMLTV failed: %v", err)
 	}
 	if _, err := os.Stat(p); err != nil {
@@ -47,14 +47,14 @@ func TestXMLStructureValidation(t *testing.T) {
 				Start:   "202501010000 +0000",
 				Stop:    "202501010100 +0000",
 				Channel: "c1",
-				Title:   Title{Lang: "en", Value: "Show1"},
+				Title:   Title{Lang: "en", Text: "Show1"},
 				Desc:    "Description1",
 			},
 			{
 				Start:   "202501010100 +0000",
 				Stop:    "202501010200 +0000",
 				Channel: "c1",
-				Title:   Title{Value: "Show2"},
+				Title:   Title{Text: "Show2"},
 			},
 		},
 	}
@@ -103,7 +103,7 @@ func TestXMLStructureValidation(t *testing.T) {
 }
 
 func TestTitleOmitEmptyLang(t *testing.T) {
-	b, err := xml.Marshal(Title{Value: "Foo"})
+	b, err := xml.Marshal(Title{Text: "Foo"})
 	if err != nil {
 		t.Fatalf("marshal failed: %v", err)
 	}
@@ -119,8 +119,8 @@ func TestGoldenXMLTV(t *testing.T) {
 		GeneratorURL: "https://example.invalid/xg2g",
 		Channels:     []Channel{{ID: "c1", DisplayName: []string{"Chan1"}}},
 		Programs: []Programme{
-			{Start: "202501010000 +0000", Stop: "202501010100 +0000", Channel: "c1", Title: Title{Lang: "en", Value: "Show1"}, Desc: "Description1"},
-			{Start: "202501010100 +0000", Stop: "202501010200 +0000", Channel: "c1", Title: Title{Value: "Show2"}},
+			{Start: "202501010000 +0000", Stop: "202501010100 +0000", Channel: "c1", Title: Title{Lang: "en", Text: "Show1"}, Desc: "Description1"},
+			{Start: "202501010100 +0000", Stop: "202501010200 +0000", Channel: "c1", Title: Title{Text: "Show2"}},
 		},
 	}
 
@@ -157,14 +157,14 @@ func TestUmlautsAndUTF8Encoding(t *testing.T) {
 			Start:   "202501010000 +0000",
 			Stop:    "202501010100 +0000",
 			Channel: "orf1",
-			Title:   Title{Value: "Tagesschau"},
+			Title:   Title{Text: "Tagesschau"},
 			Desc:    "Aktuelle Nachrichten aus Österreich",
 		},
 		{
 			Start:   "202501010100 +0000",
 			Stop:    "202501010200 +0000",
 			Channel: "ard",
-			Title:   Title{Value: "Fußball-Bundesliga"},
+			Title:   Title{Text: "Fußball-Bundesliga"},
 			Desc:    "München spielt gegen Köln",
 		},
 	}
