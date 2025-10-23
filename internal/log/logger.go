@@ -22,11 +22,12 @@ type Config struct {
 }
 
 var (
-	mu   sync.Mutex
+	mu   sync.RWMutex
 	base zerolog.Logger
+	once sync.Once
 )
 
-// Configure initialises the global zerolog logger exactly once.
+// Configure initialises the global zerolog logger.
 func Configure(cfg Config) {
 	mu.Lock()
 	defer mu.Unlock()
@@ -64,7 +65,11 @@ func Configure(cfg Config) {
 }
 
 func logger() zerolog.Logger {
-	Configure(Config{})
+	once.Do(func() {
+		Configure(Config{})
+	})
+	mu.RLock()
+	defer mu.RUnlock()
 	return base
 }
 
@@ -75,6 +80,11 @@ func Base() zerolog.Logger {
 
 // L provides access to the global logger instance.
 func L() *zerolog.Logger {
+	once.Do(func() {
+		Configure(Config{})
+	})
+	mu.RLock()
+	defer mu.RUnlock()
 	return &base
 }
 
@@ -85,7 +95,7 @@ func Middleware() func(http.Handler) http.Handler {
 			start := time.Now()
 			// Create a logger with a unique request ID
 			reqID := uuid.New().String()
-			l := base.With().
+			l := logger().With().
 				Str("req_id", reqID).
 				Str("method", r.Method).
 				Str("path", r.URL.Path).

@@ -27,6 +27,10 @@ func TestNew(t *testing.T) {
 	_ = os.Setenv("XG2G_DATA", tmpDir)
 	defer func() { _ = os.Unsetenv("XG2G_DATA") }()
 
+	// Set required OWI configuration for validation
+	_ = os.Setenv("XG2G_OWI_BASE", "http://localhost:8080")
+	defer func() { _ = os.Unsetenv("XG2G_OWI_BASE") }()
+
 	// Create daemon
 	d, err := New(cfg)
 	if err != nil {
@@ -58,6 +62,10 @@ func TestDaemon_StartShutdown(t *testing.T) {
 	tmpDir := t.TempDir()
 	_ = os.Setenv("XG2G_DATA", tmpDir)
 	defer func() { _ = os.Unsetenv("XG2G_DATA") }()
+
+	// Set required OWI configuration for validation
+	_ = os.Setenv("XG2G_OWI_BASE", "http://localhost:8080")
+	defer func() { _ = os.Unsetenv("XG2G_OWI_BASE") }()
 
 	// Disable telemetry for test
 	_ = os.Setenv("XG2G_TELEMETRY_ENABLED", "false")
@@ -110,6 +118,10 @@ func TestDaemon_Shutdown(t *testing.T) {
 	tmpDir := t.TempDir()
 	_ = os.Setenv("XG2G_DATA", tmpDir)
 	defer func() { _ = os.Unsetenv("XG2G_DATA") }()
+
+	// Set required OWI configuration for validation
+	_ = os.Setenv("XG2G_OWI_BASE", "http://localhost:8080")
+	defer func() { _ = os.Unsetenv("XG2G_OWI_BASE") }()
 
 	d, err := New(cfg)
 	if err != nil {
