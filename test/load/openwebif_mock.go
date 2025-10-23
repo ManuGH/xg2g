@@ -101,7 +101,7 @@ func NewMockServer(config MockConfig) *MockServer {
 	return &MockServer{
 		config:  config,
 		metrics: &Metrics{},
-		rng:     rand.New(rand.NewSource(time.Now().UnixNano())),
+		rng:     rand.New(rand.NewSource(time.Now().UnixNano())), //nolint:gosec // Test mock does not need crypto/rand
 	}
 }
 
