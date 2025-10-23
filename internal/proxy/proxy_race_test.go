@@ -51,7 +51,7 @@ func TestConcurrentRequests(t *testing.T) {
 				errors <- err
 				return
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != http.StatusOK {
 				t.Errorf("Request %d: expected status 200, got %d", id, resp.StatusCode)
@@ -153,7 +153,7 @@ func TestContextCancellation(t *testing.T) {
 	client := &http.Client{Timeout: 200 * time.Millisecond}
 	resp, err := client.Do(req)
 	if err == nil {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		t.Error("Expected timeout error, got nil")
 	}
 }
@@ -235,7 +235,7 @@ func TestConcurrentHeadRequests(t *testing.T) {
 				errors <- err
 				return
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != http.StatusOK {
 				t.Errorf("Expected status 200, got %d", resp.StatusCode)

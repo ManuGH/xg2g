@@ -13,8 +13,8 @@ import (
 
 func TestLoadDefaults(t *testing.T) {
 	// Set required OWIBase since it no longer has a default
-	os.Setenv("XG2G_OWI_BASE", "http://example.com")
-	defer os.Unsetenv("XG2G_OWI_BASE")
+	_ = os.Setenv("XG2G_OWI_BASE", "http://example.com")
+	defer func() { _ = os.Unsetenv("XG2G_OWI_BASE") }()
 
 	loader := NewLoader("", "test-version")
 	cfg, err := loader.Load()
@@ -337,7 +337,7 @@ func TestOWIMaxBackoffFromENV(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Clean environment
-			os.Unsetenv("XG2G_OWI_MAX_BACKOFF_MS")
+			_ = os.Unsetenv("XG2G_OWI_MAX_BACKOFF_MS")
 
 			// Set required OWIBase
 			t.Setenv("XG2G_OWI_BASE", "http://example.com")
@@ -546,7 +546,7 @@ func TestOWIMaxBackoffInvalidValues(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Clean environment
-			os.Unsetenv("XG2G_OWI_MAX_BACKOFF_MS")
+			_ = os.Unsetenv("XG2G_OWI_MAX_BACKOFF_MS")
 
 			// Set required OWIBase
 			t.Setenv("XG2G_OWI_BASE", "http://example.com")

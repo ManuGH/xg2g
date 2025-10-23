@@ -39,7 +39,7 @@ func TestProxyWithQueryParameters(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if receivedQuery != "foo=bar&baz=qux" {
 		t.Errorf("Expected query 'foo=bar&baz=qux', got '%s'", receivedQuery)
@@ -73,7 +73,7 @@ func TestProxyWithLargeResponse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -121,7 +121,7 @@ func TestProxyBackendErrors(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Request failed: %v", err)
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != tt.expectedStatus {
 				t.Errorf("Expected status %d, got %d", tt.expectedStatus, resp.StatusCode)
@@ -162,7 +162,7 @@ func TestProxyWithCustomHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if receivedHeaders.Get("X-Custom-Header") != "test-value" {
 		t.Error("Custom header not forwarded")
@@ -204,7 +204,7 @@ func TestProxyUnsupportedMethods(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Request failed: %v", err)
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// All methods should be proxied successfully
 			if resp.StatusCode != http.StatusOK {
@@ -242,7 +242,7 @@ func TestHeadRequestHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Verify headers
 	if ct := resp.Header.Get("Content-Type"); ct != "video/mp2t" {
@@ -296,7 +296,7 @@ func TestShutdownWithActiveConnections(t *testing.T) {
 		defer close(requestDone)
 		resp, err := http.Get(proxyServer.URL + "/slow")
 		if err == nil {
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			_, _ = io.ReadAll(resp.Body)
 		}
 	}()

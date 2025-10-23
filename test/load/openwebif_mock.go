@@ -197,7 +197,7 @@ func (m *MockServer) calculateLatency() time.Duration {
 
 func (m *MockServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":  "ok",
 		"version": "mock-1.0.0",
 	})
@@ -212,7 +212,7 @@ func (m *MockServer) handleBouquets(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"bouquets": bouquets,
 	})
 }
@@ -232,7 +232,7 @@ func (m *MockServer) handleGetServices(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"services": services,
 	})
 }
@@ -369,7 +369,7 @@ func (e *EPGMockServer) handleEPG(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"events": events,
 	})
 }
