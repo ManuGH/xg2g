@@ -1,7 +1,8 @@
 # xg2g
 
 [![CI](https://github.com/ManuGH/xg2g/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ManuGH/xg2g/actions/workflows/ci.yml)
-[![Hardcore CI](https://github.com/ManuGH/xg2g/actions/workflows/hardcore-ci.yml/badge.svg)](https://github.com/ManuGH/xg2g/actions/workflows/hardcore-ci.yml)
+[![Coverage](https://github.com/ManuGH/xg2g/actions/workflows/coverage.yml/badge.svg)](https://github.com/ManuGH/xg2g/actions/workflows/coverage.yml)
+[![Integration Tests](https://github.com/ManuGH/xg2g/actions/workflows/integration-tests.yml/badge.svg)](https://github.com/ManuGH/xg2g/actions/workflows/integration-tests.yml)
 [![Docker](https://github.com/ManuGH/xg2g/actions/workflows/docker.yml/badge.svg?branch=main)](https://github.com/ManuGH/xg2g/actions/workflows/docker.yml)
 [![CodeQL](https://github.com/ManuGH/xg2g/actions/workflows/codeql.yml/badge.svg)](https://github.com/ManuGH/xg2g/actions/workflows/codeql.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/ManuGH/xg2g)](https://goreportcard.com/report/github.com/ManuGH/xg2g)

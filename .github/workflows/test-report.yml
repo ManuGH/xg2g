@@ -1,0 +1,207 @@
+# Test Report Workflow
+# Generates detailed test reports with annotations and summaries
+
+name: Test Report
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+jobs:
+  test-report:
+    name: Generate Test Report
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Run tests with JSON output
+        continue-on-error: true
+        run: |
+          # Run tests and capture JSON output
+          go test -v -json -covermode=atomic -coverprofile=coverage.out ./... 2>&1 | tee test-results.json
+
+          # Also generate human-readable output
+          go test -v ./... 2>&1 | tee test-output.txt
+
+      - name: Parse test results
+        id: test-results
+        run: |
+          # Count test results
+          TOTAL=$(grep -c '"Action":"pass"\|"Action":"fail"\|"Action":"skip"' test-results.json || echo "0")
+          PASSED=$(grep -c '"Action":"pass"' test-results.json || echo "0")
+          FAILED=$(grep -c '"Action":"fail"' test-results.json || echo "0")
+          SKIPPED=$(grep -c '"Action":"skip"' test-results.json || echo "0")
+
+          echo "total=$TOTAL" >> $GITHUB_OUTPUT
+          echo "passed=$PASSED" >> $GITHUB_OUTPUT
+          echo "failed=$FAILED" >> $GITHUB_OUTPUT
+          echo "skipped=$SKIPPED" >> $GITHUB_OUTPUT
+
+          # Calculate pass rate
+          if [ "$TOTAL" -gt 0 ]; then
+            PASS_RATE=$(echo "scale=2; ($PASSED / $TOTAL) * 100" | bc)
+          else
+            PASS_RATE="0"
+          fi
+          echo "pass_rate=$PASS_RATE" >> $GITHUB_OUTPUT
+
+          echo "Test Results: $PASSED/$TOTAL passed ($PASS_RATE%)"
+
+      - name: Generate test summary
+        if: always()
+        run: |
+          cat > test-summary.md <<EOF
+          ## 🧪 Test Results Summary
+
+          | Metric | Value |
+          |--------|-------|
+          | **Total Tests** | ${{ steps.test-results.outputs.total }} |
+          | **✅ Passed** | ${{ steps.test-results.outputs.passed }} |
+          | **❌ Failed** | ${{ steps.test-results.outputs.failed }} |
+          | **⏭️ Skipped** | ${{ steps.test-results.outputs.skipped }} |
+          | **Pass Rate** | ${{ steps.test-results.outputs.pass_rate }}% |
+
+          EOF
+
+          # Add failed tests if any
+          if [ "${{ steps.test-results.outputs.failed }}" -gt 0 ]; then
+            echo "### ❌ Failed Tests" >> test-summary.md
+            echo '```' >> test-summary.md
+            grep '"Action":"fail"' test-results.json | jq -r '.Test' | sort -u >> test-summary.md || true
+            echo '```' >> test-summary.md
+          fi
+
+          # Add test timing analysis
+          echo "" >> test-summary.md
+          echo "### ⏱️ Slowest Tests (Top 10)" >> test-summary.md
+          echo '```' >> test-summary.md
+          grep '"Action":"pass"\|"Action":"fail"' test-results.json | \
+            jq -r 'select(.Elapsed != null) | "\(.Elapsed)s - \(.Test)"' | \
+            sort -rn | head -10 >> test-summary.md || true
+          echo '```' >> test-summary.md
+
+      - name: Add test summary to job output
+        if: always()
+        run: |
+          cat test-summary.md >> $GITHUB_STEP_SUMMARY
+
+      - name: Comment test results on PR
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const summary = fs.readFileSync('test-summary.md', 'utf8');
+
+            // Add emoji based on results
+            const failed = parseInt('${{ steps.test-results.outputs.failed }}');
+            const emoji = failed === 0 ? '✅' : '❌';
+            const finalSummary = `${emoji} **Test Results**\n\n${summary}`;
+
+            // Find and update/create comment
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.data.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body.includes('🧪 Test Results Summary')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: finalSummary
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: finalSummary
+              });
+            }
+
+      - name: Create annotations for failed tests
+        if: failure()
+        run: |
+          # Parse failed tests and create annotations
+          grep '"Action":"fail"' test-results.json | while read -r line; do
+            TEST_NAME=$(echo "$line" | jq -r '.Test')
+            PACKAGE=$(echo "$line" | jq -r '.Package')
+            echo "::error title=Test Failed::$PACKAGE - $TEST_NAME"
+          done || true
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            test-results.json
+            test-output.txt
+            test-summary.md
+            coverage.out
+          retention-days: 30
+
+      - name: Publish test results
+        if: always()
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        with:
+          files: test-results.json
+          check_name: Test Results
+          comment_mode: always
+          compare_to_earlier_commit: true
+
+  benchmark-report:
+    name: Benchmark Report
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Run benchmarks
+        run: |
+          go test -bench=. -benchmem -benchtime=1s ./... 2>&1 | tee benchmark-results.txt
+
+      - name: Parse benchmark results
+        run: |
+          echo "## ⚡ Benchmark Results" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat benchmark-results.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmark-results.txt
+          retention-days: 30

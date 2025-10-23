@@ -236,6 +236,50 @@ test-fuzz: ## Run comprehensive fuzzing tests
 	@echo "✅ Fuzzing tests completed"
 
 test-all: test-race test-cover test-fuzz ## Run complete test suite
+
+test-integration: ## Run integration tests
+	@echo "Running integration tests..."
+	@go test -tags=integration -v -timeout=5m ./test/integration/...
+	@echo "✅ Integration tests passed"
+
+test-integration-fast: ## Run fast integration smoke tests
+	@echo "Running fast integration smoke tests..."
+	@go test -tags=integration_fast -v -timeout=3m ./test/integration/... -run="^TestSmoke"
+	@echo "✅ Smoke tests passed"
+
+test-integration-slow: ## Run slow integration tests
+	@echo "Running slow integration tests..."
+	@go test -tags=integration_slow -v -timeout=10m ./test/integration/... -run="^TestSlow"
+	@echo "✅ Slow tests passed"
+
+coverage: ## Generate and view coverage report locally
+	@echo "Generating coverage report..."
+	@go test -covermode=atomic -coverprofile=coverage.out -coverpkg=./... ./...
+	@go tool cover -html=coverage.out -o coverage.html
+	@echo "Coverage report generated: coverage.html"
+	@COVERAGE=$$(go tool cover -func=coverage.out | grep total | awk '{print $$3}' | sed 's/%//'); \
+	echo "Overall Coverage: $$COVERAGE%"; \
+	if command -v open >/dev/null 2>&1; then \
+		open coverage.html; \
+	elif command -v xdg-open >/dev/null 2>&1; then \
+		xdg-open coverage.html; \
+	else \
+		echo "Open coverage.html in your browser to view the report"; \
+	fi
+
+coverage-check: ## Check if coverage meets threshold
+	@echo "Checking coverage threshold..."
+	@go test -covermode=atomic -coverprofile=coverage.out ./...
+	@COVERAGE=$$(go tool cover -func=coverage.out | grep total | awk '{print $$3}' | sed 's/%//'); \
+	THRESHOLD=50; \
+	echo "Current coverage: $$COVERAGE%"; \
+	echo "Threshold: $$THRESHOLD%"; \
+	if (( $$(echo "$$COVERAGE < $$THRESHOLD" | bc -l) )); then \
+		echo "❌ Coverage $$COVERAGE% is below threshold $$THRESHOLD%"; \
+		exit 1; \
+	else \
+		echo "✅ Coverage $$COVERAGE% meets threshold $$THRESHOLD%"; \
+	fi
 	@echo "✅ All tests completed successfully"
 
 # ===================================================================================================
