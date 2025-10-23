@@ -86,6 +86,12 @@ var (
 		Help:    "Time spent collecting EPG data for all channels",
 		Buckets: prometheus.DefBuckets,
 	})
+
+	// Playlist validity metrics
+	playlistFileValid = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "xg2g_playlist_file_valid",
+		Help: "Whether playlist files exist and are readable (1=valid, 0=invalid)",
+	}, []string{"type"}) // type=m3u|xmltv
 )
 
 // RecordBouquetsCount records the total number of bouquets discovered.
@@ -150,4 +156,13 @@ func RecordEPGCollection(totalProgrammes, channelsWithData int, duration float64
 	epgProgrammesCollected.Set(float64(totalProgrammes))
 	epgChannelsWithData.Set(float64(channelsWithData))
 	epgCollectionDurationSeconds.Observe(duration)
+}
+
+// RecordPlaylistFileValidity records whether playlist files are valid (exist and readable).
+func RecordPlaylistFileValidity(fileType string, valid bool) {
+	if valid {
+		playlistFileValid.WithLabelValues(fileType).Set(1)
+	} else {
+		playlistFileValid.WithLabelValues(fileType).Set(0)
+	}
 }

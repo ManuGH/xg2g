@@ -57,24 +57,52 @@ func GenerateXMLTV(channels []Channel, programs []Programme) TV {
 	}
 }
 
-// WriteXMLTV writes XMLTV data to a file.
+// WriteXMLTV writes XMLTV data to a file atomically using temp file + rename.
 func WriteXMLTV(tv TV, outputPath string) error {
 	dir := filepath.Dir(outputPath)
 	if err := os.MkdirAll(dir, 0750); err != nil {
 		return err
 	}
 
-	// #nosec G304 -- outputPath is controlled by the application configuration
-	f, err := os.Create(outputPath)
+	// Create temporary file in same directory for atomic rename
+	tmpFile, err := os.CreateTemp(dir, "xmltv-*.xml.tmp")
 	if err != nil {
 		return err
 	}
-	defer func() { _ = f.Close() }()
 
-	_, _ = f.WriteString(xml.Header)
-	_, _ = f.WriteString(`<!DOCTYPE tv SYSTEM "xmltv.dtd">` + "\n")
+	// Cleanup: close and remove temp file on error
+	closed := false
+	defer func() {
+		if !closed {
+			_ = tmpFile.Close()
+		}
+		// Only remove if rename failed (file still exists)
+		if _, statErr := os.Stat(tmpFile.Name()); !os.IsNotExist(statErr) {
+			_ = os.Remove(tmpFile.Name())
+		}
+	}()
 
-	enc := xml.NewEncoder(f)
+	// Write XML content to temporary file
+	if _, err := tmpFile.WriteString(xml.Header); err != nil {
+		return err
+	}
+	if _, err := tmpFile.WriteString(`<!DOCTYPE tv SYSTEM "xmltv.dtd">` + "\n"); err != nil {
+		return err
+	}
+
+	enc := xml.NewEncoder(tmpFile)
 	enc.Indent("", "  ")
-	return enc.Encode(tv)
+	if err := enc.Encode(tv); err != nil {
+		return err
+	}
+
+	// Explicitly close before rename
+	if err := tmpFile.Close(); err != nil {
+		return err
+	}
+	closed = true
+
+	// Atomically rename to final destination
+	// #nosec G304 -- outputPath is controlled by the application configuration
+	return os.Rename(tmpFile.Name(), outputPath)
 }
