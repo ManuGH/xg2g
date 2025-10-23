@@ -62,7 +62,7 @@ func BenchmarkBuildNameToIDMap(b *testing.B) {
 
 	tempDir := b.TempDir()
 	xmlPath := filepath.Join(tempDir, "channels.xml")
-	if err := WriteXMLTV(channels, xmlPath); err != nil {
+	if err := WriteXMLTV(GenerateXMLTV(channels, nil), xmlPath); err != nil {
 		b.Fatalf("WriteXMLTV: %v", err)
 	}
 
