@@ -89,31 +89,25 @@ var (
 )
 
 // RecordBouquetsCount records the total number of bouquets discovered.
+func RecordBouquetsCount(n int) { bouquetsTotal.Set(float64(n)) }
 
 // IncBouquetDiscoveryError increments the bouquet discovery error counter.
-
-func RecordBouquetsCount(n int) { bouquetsTotal.Set(float64(n)) }
-// RecordServicesCount records the number of services discovered for a bouquet.
-
 func IncBouquetDiscoveryError() { bouquetDiscoveryErrors.Inc() }
 
-// IncServicesResolution increments the services resolution counter by outcome.
-
+// RecordServicesCount records the number of services discovered for a bouquet.
 func RecordServicesCount(bouquet string, n int) {
 	servicesDiscovered.WithLabelValues(bouquet).Set(float64(n))
 }
-// IncStreamURLBuild increments the stream URL build counter by outcome.
 
+// IncServicesResolution increments the services resolution counter by outcome.
 func IncServicesResolution(bouquet, outcome string) {
-// RecordChannelTypeCounts records the distribution of channel types.
-
 	servicesResolutionTotal.WithLabelValues(bouquet, outcome).Inc()
 }
 
+// IncStreamURLBuild increments the stream URL build counter by outcome.
 func IncStreamURLBuild(outcome string) { streamURLBuildTotal.WithLabelValues(outcome).Inc() }
 
-// RecordXMLTV records XMLTV generation status and metrics.
-
+// RecordChannelTypeCounts records the distribution of channel types.
 func RecordChannelTypeCounts(hd, sd, radio, unknown int) {
 	channelTypes.WithLabelValues("hd").Set(float64(hd))
 	channelTypes.WithLabelValues("sd").Set(float64(sd))
@@ -121,39 +115,37 @@ func RecordChannelTypeCounts(hd, sd, radio, unknown int) {
 	channelTypes.WithLabelValues("unknown").Set(float64(unknown))
 }
 
+// RecordXMLTV records XMLTV generation status and metrics.
 func RecordXMLTV(enabled bool, channels int, writeErr error) {
 	if enabled {
 		xmltvEnabled.Set(1)
 		xmltvChannelsWritten.Set(float64(channels))
 		if writeErr != nil {
 			xmltvWriteErrors.Inc()
-// IncConfigValidationError increments the config validation error counter.
-
-// IncRefreshFailure increments the refresh failure counter by stage.
-
 		}
 	} else {
 		xmltvEnabled.Set(0)
 		xmltvChannelsWritten.Set(0)
 	}
-// RecordEPGChannelSuccess records successful EPG channel operations.
-
 }
 
-// RecordEPGCollection records EPG collection metrics including events and duration.
+// IncConfigValidationError increments the config validation error counter.
+func IncConfigValidationError() { configValidationErrors.Inc() }
 
-func IncConfigValidationError()      { configValidationErrors.Inc() }
+// IncRefreshFailure increments the refresh failure counter by stage.
 func IncRefreshFailure(stage string) { refreshFailuresTotal.WithLabelValues(stage).Inc() }
 
-// EPG metrics functions
+// IncEPGChannelError increments the EPG error counter.
 func IncEPGChannelError() {
 	epgRequestsTotal.WithLabelValues("error").Inc()
 }
 
+// RecordEPGChannelSuccess records successful EPG channel operations.
 func RecordEPGChannelSuccess(programmes int) {
 	epgRequestsTotal.WithLabelValues("success").Inc()
 }
 
+// RecordEPGCollection records EPG collection metrics including events and duration.
 func RecordEPGCollection(totalProgrammes, channelsWithData int, duration float64) {
 	epgProgrammesCollected.Set(float64(totalProgrammes))
 	epgChannelsWithData.Set(float64(channelsWithData))

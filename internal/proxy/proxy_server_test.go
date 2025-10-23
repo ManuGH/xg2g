@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: MIT
+
+//nolint:noctx // Test code uses simplified HTTP calls for readability
 package proxy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -49,7 +52,8 @@ func TestServerStart_ErrorPaths(t *testing.T) {
 			var existingListener net.Listener
 			if tt.name == "address_already_in_use" {
 				var err error
-				existingListener, err = net.Listen("tcp", "127.0.0.1:0")
+				lc := &net.ListenConfig{}
+				existingListener, err = lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
 				if err != nil {
 					t.Fatalf("Failed to create existing listener: %v", err)
 				}
@@ -118,7 +122,7 @@ func TestServerStart_Success(t *testing.T) {
 	}
 
 	// Check that Start() returned no error (or http.ErrServerClosed)
-	if err := <-startErr; err != nil && err != http.ErrServerClosed {
+	if err := <-startErr; err != nil && !errors.Is(err, http.ErrServerClosed) {
 		t.Errorf("Start() returned error: %v", err)
 	}
 }
@@ -230,7 +234,7 @@ func TestServerShutdown_ContextTimeout(t *testing.T) {
 
 	err = srv.Shutdown(ctx)
 	// We expect either no error (shutdown completed) or context deadline exceeded
-	if err != nil && err != context.DeadlineExceeded {
+	if err != nil && !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("Shutdown() returned unexpected error: %v", err)
 	}
 }
@@ -401,14 +405,15 @@ func TestServerIntegration_HTTPClientTimeouts(t *testing.T) {
 
 	// Test with short timeout
 	client := &http.Client{Timeout: 100 * time.Millisecond}
-	_, err = client.Get(fmt.Sprintf("http://%s/test", testAddr))
+	resp, err := client.Get(fmt.Sprintf("http://%s/test", testAddr))
 	if err == nil {
+		_ = resp.Body.Close()
 		t.Error("Expected timeout error, got nil")
 	}
 
 	// Test with sufficient timeout
 	client = &http.Client{Timeout: 1 * time.Second}
-	resp, err := client.Get(fmt.Sprintf("http://%s/test", testAddr))
+	resp, err = client.Get(fmt.Sprintf("http://%s/test", testAddr))
 	if err != nil {
 		t.Errorf("Request with sufficient timeout failed: %v", err)
 	}
