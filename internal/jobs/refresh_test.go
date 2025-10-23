@@ -126,7 +126,7 @@ func refreshWithClient(ctx context.Context, cfg Config, cl OwiClient) (*Status, 
 			}
 			xmlCh = append(xmlCh, ch)
 		}
-		if err := epg.WriteXMLTV(xmlCh, filepath.Join(cfg.DataDir, cfg.XMLTVPath)); err != nil {
+		if err := epg.WriteXMLTV(GenerateXMLTV(xmlCh, nil), filepath.Join(cfg.DataDir, cfg.XMLTVPath)); err != nil {
 			logger.Warn().
 				Err(err).
 				Str("event", "xmltv.failed").
