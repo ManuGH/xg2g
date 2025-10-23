@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: MIT
+
+//nolint:revive // Package name "types" is standard for shared type definitions
 package types
 
 import (
@@ -41,7 +43,7 @@ func TestJobStatus_IsValid(t *testing.T) {
 		{"cancelled valid", JobStatusCancelled, true},
 		{"invalid empty", JobStatus(""), false},
 		{"invalid unknown", JobStatus("unknown"), false},
-		{"invalid typo", JobStatus("runing"), false}, // cspell:disable-line
+		{"invalid typo", JobStatus("runing"), false}, //nolint:misspell // cspell:disable-line
 	}
 
 	for _, tt := range tests {
@@ -182,7 +184,7 @@ func TestParseJobStatus(t *testing.T) {
 		{"cancelled", "cancelled", JobStatusCancelled, false},
 		{"invalid empty", "", "", true},
 		{"invalid unknown", "unknown", "", true},
-		{"invalid typo", "runing", "", true}, // cspell:disable-line
+		{"invalid typo", "runing", "", true}, //nolint:misspell // cspell:disable-line
 	}
 
 	for _, tt := range tests {

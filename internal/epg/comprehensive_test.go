@@ -78,7 +78,7 @@ func TestXMLTVParsingRoundTrip(t *testing.T) {
 			xmlPath := filepath.Join(tmpDir, "test.xml")
 
 			// Generate XMLTV
-			err := WriteXMLTV(tt.channels, xmlPath)
+			err := WriteXMLTV(GenerateXMLTV(tt.channels, nil), xmlPath)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("WriteXMLTV() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -136,7 +136,7 @@ func TestXMLTVErrorCases(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			channels := []Channel{{ID: "test.id", DisplayName: []string{"Test"}}}
 
-			err := WriteXMLTV(channels, tt.xmlPath)
+			err := WriteXMLTV(GenerateXMLTV(channels, nil), tt.xmlPath)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("WriteXMLTV() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -210,7 +210,7 @@ func TestXMLTVStructValidation(t *testing.T) {
 		tmpDir := t.TempDir()
 		xmlPath := filepath.Join(tmpDir, "structure_test.xml")
 
-		err := WriteXMLTV(channels, xmlPath)
+		err := WriteXMLTV(GenerateXMLTV(channels, nil), xmlPath)
 		if err != nil {
 			t.Fatalf("WriteXMLTV failed: %v", err)
 		}

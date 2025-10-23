@@ -1,3 +1,4 @@
+//nolint:noctx // Benchmarks don't require context in HTTP requests
 package proxy
 
 import (
@@ -40,7 +41,7 @@ func BenchmarkProxyRequest(b *testing.B) {
 			b.Fatalf("Request failed: %v", err)
 		}
 		_, _ = io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 }
 
@@ -73,7 +74,7 @@ func BenchmarkProxyHeadRequest(b *testing.B) {
 		if err != nil {
 			b.Fatalf("Request failed: %v", err)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 }
 
@@ -110,7 +111,7 @@ func BenchmarkProxyLargeResponse(b *testing.B) {
 			b.Fatalf("Request failed: %v", err)
 		}
 		_, _ = io.Copy(io.Discard, resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 }
 
@@ -144,7 +145,7 @@ func BenchmarkProxyConcurrent(b *testing.B) {
 				b.Fatalf("Request failed: %v", err)
 			}
 			_, _ = io.ReadAll(resp.Body)
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 	})
 }

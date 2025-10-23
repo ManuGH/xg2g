@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<tv generator-info-name="xg2g" generator-info-url="https://example.invalid/xg2g">
+<tv generator-info-name="xg2g" generator-info-url="https://github.com/ManuGH/xg2g">
   <channel id="c1">
     <display-name>Chan1</display-name>
   </channel>

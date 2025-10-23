@@ -345,39 +345,6 @@ func envWithLogger(logger zerolog.Logger, key, defaultValue string) string {
 
 // envInt reads an integer from ENV with fallback on parse errors.
 // Returns the parsed value and true if successful, or defaultVal and false on error.
-func envInt(key string, defaultVal int) (int, bool) {
-	logger := xglog.WithComponent("config")
-	v, ok := os.LookupEnv(key)
-	if !ok {
-		return defaultVal, false
-	}
-	if v == "" {
-		logger.Debug().
-			Str("key", key).
-			Int("default", defaultVal).
-			Str("source", "default").
-			Msg("using default value (environment variable is empty)")
-		return defaultVal, false
-	}
-
-	i, err := strconv.Atoi(v)
-	if err != nil {
-		logger.Warn().
-			Err(err).
-			Str("key", key).
-			Str("value", v).
-			Int("default", defaultVal).
-			Msg("invalid integer in environment variable, using default")
-		return defaultVal, false
-	}
-
-	logger.Debug().
-		Str("key", key).
-		Int("value", i).
-		Str("source", "environment").
-		Msg("using environment variable")
-	return i, true
-}
 
 // atoi is deprecated - use envInt instead.
 // Kept for backward compatibility but will log warning.

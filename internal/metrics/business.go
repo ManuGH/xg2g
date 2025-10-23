@@ -88,18 +88,26 @@ var (
 	})
 )
 
+// RecordBouquetsCount records the total number of bouquets discovered.
 func RecordBouquetsCount(n int) { bouquetsTotal.Set(float64(n)) }
+
+// IncBouquetDiscoveryError increments the bouquet discovery error counter.
 func IncBouquetDiscoveryError() { bouquetDiscoveryErrors.Inc() }
 
+// RecordServicesCount records the number of services discovered for a bouquet.
 func RecordServicesCount(bouquet string, n int) {
 	servicesDiscovered.WithLabelValues(bouquet).Set(float64(n))
 }
+
+// IncServicesResolution increments the services resolution counter by outcome.
 func IncServicesResolution(bouquet, outcome string) {
 	servicesResolutionTotal.WithLabelValues(bouquet, outcome).Inc()
 }
 
+// IncStreamURLBuild increments the stream URL build counter by outcome.
 func IncStreamURLBuild(outcome string) { streamURLBuildTotal.WithLabelValues(outcome).Inc() }
 
+// RecordChannelTypeCounts records the distribution of channel types.
 func RecordChannelTypeCounts(hd, sd, radio, unknown int) {
 	channelTypes.WithLabelValues("hd").Set(float64(hd))
 	channelTypes.WithLabelValues("sd").Set(float64(sd))
@@ -107,6 +115,7 @@ func RecordChannelTypeCounts(hd, sd, radio, unknown int) {
 	channelTypes.WithLabelValues("unknown").Set(float64(unknown))
 }
 
+// RecordXMLTV records XMLTV generation status and metrics.
 func RecordXMLTV(enabled bool, channels int, writeErr error) {
 	if enabled {
 		xmltvEnabled.Set(1)
@@ -120,18 +129,23 @@ func RecordXMLTV(enabled bool, channels int, writeErr error) {
 	}
 }
 
-func IncConfigValidationError()      { configValidationErrors.Inc() }
+// IncConfigValidationError increments the config validation error counter.
+func IncConfigValidationError() { configValidationErrors.Inc() }
+
+// IncRefreshFailure increments the refresh failure counter by stage.
 func IncRefreshFailure(stage string) { refreshFailuresTotal.WithLabelValues(stage).Inc() }
 
-// EPG metrics functions
+// IncEPGChannelError increments the EPG error counter.
 func IncEPGChannelError() {
 	epgRequestsTotal.WithLabelValues("error").Inc()
 }
 
-func RecordEPGChannelSuccess(programmes int) {
+// RecordEPGChannelSuccess records successful EPG channel operations.
+func RecordEPGChannelSuccess(_ int) {
 	epgRequestsTotal.WithLabelValues("success").Inc()
 }
 
+// RecordEPGCollection records EPG collection metrics including events and duration.
 func RecordEPGCollection(totalProgrammes, channelsWithData int, duration float64) {
 	epgProgrammesCollected.Set(float64(totalProgrammes))
 	epgChannelsWithData.Set(float64(channelsWithData))

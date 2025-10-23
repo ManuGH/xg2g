@@ -71,7 +71,7 @@ func FuzzXMLTVGeneration(f *testing.F) {
 	f.Add("", "", "")
 	f.Add("Ümlauts äöü", "special.id", "Special")
 
-	f.Fuzz(func(t *testing.T, name, id, group string) {
+	f.Fuzz(func(t *testing.T, name, id, _ string) {
 		channels := []Channel{
 			{
 				ID:          id,
@@ -84,7 +84,7 @@ func FuzzXMLTVGeneration(f *testing.F) {
 		xmlPath := filepath.Join(tmpDir, "test.xml")
 
 		// Test XMLTV generation doesn't panic
-		err := WriteXMLTV(channels, xmlPath)
+		err := WriteXMLTV(GenerateXMLTV(channels, nil), xmlPath)
 		if err != nil {
 			t.Logf("XMLTV generation failed for name=%q, id=%q: %v", name, id, err)
 			return // Don't fail on expected errors with invalid input

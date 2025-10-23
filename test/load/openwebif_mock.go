@@ -101,7 +101,7 @@ func NewMockServer(config MockConfig) *MockServer {
 	return &MockServer{
 		config:  config,
 		metrics: &Metrics{},
-		rng:     rand.New(rand.NewSource(time.Now().UnixNano())),
+		rng:     rand.New(rand.NewSource(time.Now().UnixNano())), //nolint:gosec // Test mock does not need crypto/rand
 	}
 }
 
@@ -195,15 +195,15 @@ func (m *MockServer) calculateLatency() time.Duration {
 	return m.config.MinLatency + time.Duration(m.rng.Int63n(int64(diff)))
 }
 
-func (m *MockServer) handleStatus(w http.ResponseWriter, r *http.Request) {
+func (m *MockServer) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":  "ok",
 		"version": "mock-1.0.0",
 	})
 }
 
-func (m *MockServer) handleBouquets(w http.ResponseWriter, r *http.Request) {
+func (m *MockServer) handleBouquets(w http.ResponseWriter, _ *http.Request) {
 	bouquets := make([][]string, 0, m.config.BouquetCount)
 	for i := 0; i < m.config.BouquetCount; i++ {
 		ref := fmt.Sprintf("1:7:1:0:0:0:0:0:0:0:FROM BOUQUET \"userbouquet.%d.tv\" ORDER BY bouquet", i)
@@ -212,12 +212,12 @@ func (m *MockServer) handleBouquets(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"bouquets": bouquets,
 	})
 }
 
-func (m *MockServer) handleGetServices(w http.ResponseWriter, r *http.Request) {
+func (m *MockServer) handleGetServices(w http.ResponseWriter, _ *http.Request) {
 	services := make([]map[string]string, 0, m.config.ChannelsPerBouquet)
 
 	for i := 0; i < m.config.ChannelsPerBouquet; i++ {
@@ -232,7 +232,7 @@ func (m *MockServer) handleGetServices(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"services": services,
 	})
 }
@@ -369,7 +369,7 @@ func (e *EPGMockServer) handleEPG(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"events": events,
 	})
 }

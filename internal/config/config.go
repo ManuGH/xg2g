@@ -250,6 +250,7 @@ func (l *Loader) mergeFileConfig(dst *jobs.Config, src *FileConfig) error {
 
 // mergeEnvConfig merges environment variables into jobs.Config
 // ENV variables have the highest precedence
+//nolint:gocyclo // This function handles many environment variables but is straightforward
 func (l *Loader) mergeEnvConfig(cfg *jobs.Config) {
 	if v := os.Getenv("XG2G_VERSION"); v != "" {
 		cfg.Version = v

@@ -30,19 +30,19 @@ type mockOWI struct {
 	services map[string][][2]string
 }
 
-func (m *mockOWI) Bouquets(ctx context.Context) (map[string]string, error) {
+func (m *mockOWI) Bouquets(_ context.Context) (map[string]string, error) {
 	return m.bouquets, nil
 }
 
-func (m *mockOWI) Services(ctx context.Context, bouquetRef string) ([][2]string, error) {
+func (m *mockOWI) Services(_ context.Context, bouquetRef string) ([][2]string, error) {
 	return m.services[bouquetRef], nil
 }
 
-func (m *mockOWI) StreamURL(ref, name string) (string, error) {
+func (m *mockOWI) StreamURL(ref, _ string) (string, error) {
 	return "http://stream/" + ref, nil
 }
 
-func (m *mockOWI) GetEPG(ctx context.Context, sRef string, days int) ([]openwebif.EPGEvent, error) {
+func (m *mockOWI) GetEPG(_ context.Context, sRef string, _ int) ([]openwebif.EPGEvent, error) {
 	// Return mock EPG data for tests
 	return []openwebif.EPGEvent{
 		{
@@ -126,7 +126,7 @@ func refreshWithClient(ctx context.Context, cfg Config, cl OwiClient) (*Status, 
 			}
 			xmlCh = append(xmlCh, ch)
 		}
-		if err := epg.WriteXMLTV(xmlCh, filepath.Join(cfg.DataDir, cfg.XMLTVPath)); err != nil {
+		if err := epg.WriteXMLTV(epg.GenerateXMLTV(xmlCh, nil), filepath.Join(cfg.DataDir, cfg.XMLTVPath)); err != nil {
 			logger.Warn().
 				Err(err).
 				Str("event", "xmltv.failed").

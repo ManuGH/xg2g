@@ -1,3 +1,4 @@
+//nolint:noctx // Tests don't require context in HTTP requests
 package proxy
 
 import (
@@ -39,7 +40,7 @@ func TestProxyWithQueryParameters(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if receivedQuery != "foo=bar&baz=qux" {
 		t.Errorf("Expected query 'foo=bar&baz=qux', got '%s'", receivedQuery)
@@ -73,7 +74,7 @@ func TestProxyWithLargeResponse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -121,7 +122,7 @@ func TestProxyBackendErrors(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Request failed: %v", err)
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != tt.expectedStatus {
 				t.Errorf("Expected status %d, got %d", tt.expectedStatus, resp.StatusCode)
@@ -155,16 +156,16 @@ func TestProxyWithCustomHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create request: %v", err)
 	}
-	req.Header.Set("X-Custom-Header", "test-value")
+	req.Header.Set("X-Custom-Header", testHeaderValue)
 	req.Header.Set("User-Agent", "xg2g-test/1.0")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
-	if receivedHeaders.Get("X-Custom-Header") != "test-value" {
+	if receivedHeaders.Get("X-Custom-Header") != testHeaderValue {
 		t.Error("Custom header not forwarded")
 	}
 	if receivedHeaders.Get("User-Agent") != "xg2g-test/1.0" {
@@ -204,7 +205,7 @@ func TestProxyUnsupportedMethods(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Request failed: %v", err)
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// All methods should be proxied successfully
 			if resp.StatusCode != http.StatusOK {
@@ -216,7 +217,7 @@ func TestProxyUnsupportedMethods(t *testing.T) {
 
 // TestHeadRequestHeaders tests that HEAD requests return correct headers
 func TestHeadRequestHeaders(t *testing.T) {
-	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	backend := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("Backend should not be called for HEAD requests")
 	}))
 	defer backend.Close()
@@ -242,7 +243,7 @@ func TestHeadRequestHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Verify headers
 	if ct := resp.Header.Get("Content-Type"); ct != "video/mp2t" {
@@ -296,7 +297,7 @@ func TestShutdownWithActiveConnections(t *testing.T) {
 		defer close(requestDone)
 		resp, err := http.Get(proxyServer.URL + "/slow")
 		if err == nil {
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			_, _ = io.ReadAll(resp.Body)
 		}
 	}()

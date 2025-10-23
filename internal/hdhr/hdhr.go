@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: MIT
+
+// Package hdhr implements HDHomeRun protocol compatibility for the xg2g gateway.
 package hdhr
 
 import (
@@ -124,7 +126,7 @@ func (s *Server) HandleDiscover(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleLineupStatus handles /lineup_status.json endpoint
-func (s *Server) HandleLineupStatus(w http.ResponseWriter, r *http.Request) {
+func (s *Server) HandleLineupStatus(w http.ResponseWriter, _ *http.Request) {
 	response := LineupStatus{
 		ScanInProgress: 0,
 		ScanPossible:   1,
@@ -144,7 +146,7 @@ func (s *Server) HandleLineupStatus(w http.ResponseWriter, r *http.Request) {
 
 // HandleLineup handles /lineup.json endpoint
 // This needs to be implemented to return actual channels
-func (s *Server) HandleLineup(w http.ResponseWriter, r *http.Request) {
+func (s *Server) HandleLineup(w http.ResponseWriter, _ *http.Request) {
 	// This will be populated by the main API server with actual channels
 	// For now, return empty array
 	w.Header().Set("Content-Type", "application/json")

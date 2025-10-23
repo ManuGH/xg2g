@@ -260,11 +260,13 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 		}
 
 		// Write XMLTV with or without programmes
+		var tv epg.TV
 		if cfg.EPGEnabled && len(allProgrammes) > 0 {
-			xmlErr = epg.WriteXMLTVWithProgrammes(xmlCh, allProgrammes, xmltvFullPath)
+			tv = epg.GenerateXMLTV(xmlCh, allProgrammes)
 		} else {
-			xmlErr = epg.WriteXMLTV(xmlCh, xmltvFullPath)
+			tv = epg.GenerateXMLTV(xmlCh, nil)
 		}
+		xmlErr = epg.WriteXMLTV(tv, xmltvFullPath)
 
 		metrics.RecordXMLTV(true, len(xmlCh), xmlErr)
 		if xmlErr != nil {

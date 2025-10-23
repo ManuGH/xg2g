@@ -1,7 +1,9 @@
+//nolint:noctx // Tests don't require context in HTTP requests
 package proxy
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -51,7 +53,7 @@ func TestConcurrentRequests(t *testing.T) {
 				errors <- err
 				return
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != http.StatusOK {
 				t.Errorf("Request %d: expected status 200, got %d", id, resp.StatusCode)
@@ -112,7 +114,7 @@ func TestConcurrentStartShutdown(t *testing.T) {
 	select {
 	case err := <-errCh:
 		// Context cancellation is expected
-		if err != nil && err != context.Canceled && err != http.ErrServerClosed {
+		if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, http.ErrServerClosed) {
 			t.Errorf("Start error: %v", err)
 		}
 	case <-time.After(3 * time.Second):
@@ -153,7 +155,7 @@ func TestContextCancellation(t *testing.T) {
 	client := &http.Client{Timeout: 200 * time.Millisecond}
 	resp, err := client.Do(req)
 	if err == nil {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		t.Error("Expected timeout error, got nil")
 	}
 }
@@ -235,7 +237,7 @@ func TestConcurrentHeadRequests(t *testing.T) {
 				errors <- err
 				return
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != http.StatusOK {
 				t.Errorf("Expected status 200, got %d", resp.StatusCode)

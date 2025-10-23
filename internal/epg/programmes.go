@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: MIT
+
+// Package epg provides Electronic Program Guide (EPG) functionality including fuzzy matching and XMLTV generation.
 package epg
 
 import (
@@ -32,7 +34,7 @@ func ProgrammesFromEPG(events []openwebif.EPGEvent, channelID string) []Programm
 			Channel: channelID,
 			Title: Title{
 				Lang:  "", // No lang attribute for xg2g
-				Value: event.Title,
+				Text: event.Title,
 			},
 			Desc: buildDescription(event),
 		}

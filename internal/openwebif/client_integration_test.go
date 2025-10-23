@@ -12,7 +12,7 @@ import (
 
 func TestHardenedClient_ResponseHeaderTimeout(t *testing.T) {
 	// Create a test server that delays writing headers.
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		// This delay should be longer than the client's ResponseHeaderTimeout.
 		time.Sleep(100 * time.Millisecond)
 		w.WriteHeader(http.StatusOK)
