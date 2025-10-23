@@ -14,7 +14,7 @@ import (
 
 func TestGenerateXMLTV(t *testing.T) {
 	channels := []Channel{{ID: "c1", DisplayName: []string{"Test Channel"}}}
-	tv := GenerateXMLTV(channels)
+	tv := GenerateXMLTV(channels, nil)
 	if tv.Generator != "xg2g" {
 		t.Fatalf("expected generator xg2g, got %s", tv.Generator)
 	}
