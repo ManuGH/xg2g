@@ -79,7 +79,7 @@ func TestHandleRefresh_ConflictOnConcurrent(t *testing.T) {
 	// Install a slow refresh function to force overlap
 	startCh := make(chan struct{})
 	releaseCh := make(chan struct{})
-	s.refreshFn = func(_ context.Context, cfg jobs.Config) (*jobs.Status, error) {
+	s.refreshFn = func(_ context.Context, _ jobs.Config) (*jobs.Status, error) {
 		close(startCh) // signal that refresh started
 		<-releaseCh    // block until allowed to finish
 		return &jobs.Status{Channels: 1, LastRun: time.Now()}, nil

@@ -64,7 +64,7 @@ func TestTracing_Error(t *testing.T) {
 	}
 
 	// Create test handler that returns error
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("Internal Server Error"))
 	})
@@ -96,7 +96,7 @@ func TestTracing_ClientError(t *testing.T) {
 	}
 
 	// Create test handler that returns 404
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		_, _ = w.Write([]byte("Not Found"))
 	})

@@ -1,3 +1,4 @@
+//nolint:noctx // Tests don't require context in HTTP requests
 package proxy
 
 import (
