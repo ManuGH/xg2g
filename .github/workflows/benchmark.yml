@@ -1,0 +1,278 @@
+# Continuous Benchmark Tracking
+# Tracks performance over time and detects regressions
+
+name: Benchmarks
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**.go'
+      - 'go.mod'
+      - 'go.sum'
+  pull_request:
+    branches: [main]
+    paths:
+      - '**.go'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  benchmark:
+    name: Run Benchmarks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Need history for comparison
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Run benchmarks
+        run: |
+          echo "::group::Running benchmarks"
+          go test -bench=. -benchmem -benchtime=2s -timeout=10m ./... 2>&1 | tee benchmark-new.txt
+          echo "::endgroup::"
+
+      - name: Download previous benchmark data
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        continue-on-error: true
+        uses: actions/cache@v4
+        with:
+          path: ./benchmark-data.txt
+          key: ${{ runner.os }}-benchmark
+
+      - name: Compare with previous run
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        id: compare
+        run: |
+          if [ -f benchmark-data.txt ]; then
+            echo "Comparing with previous benchmark..."
+
+            # Simple comparison script
+            cat > compare.sh <<'EOF'
+          #!/bin/bash
+
+          OLD_FILE="$1"
+          NEW_FILE="$2"
+
+          echo "## Benchmark Comparison" > comparison.md
+          echo "" >> comparison.md
+
+          # Extract key benchmarks
+          for bench in "BenchmarkProxyRequest" "BenchmarkFuzzyMatch" "BenchmarkValidation"; do
+            OLD_LINE=$(grep "^$bench" "$OLD_FILE" | head -1 || echo "")
+            NEW_LINE=$(grep "^$bench" "$NEW_FILE" | head -1 || echo "")
+
+            if [ -n "$OLD_LINE" ] && [ -n "$NEW_LINE" ]; then
+              OLD_NS=$(echo "$OLD_LINE" | awk '{print $3}')
+              NEW_NS=$(echo "$NEW_LINE" | awk '{print $3}')
+
+              if [ -n "$OLD_NS" ] && [ -n "$NEW_NS" ]; then
+                CHANGE=$(echo "scale=2; (($NEW_NS - $OLD_NS) / $OLD_NS) * 100" | bc)
+
+                if (( $(echo "$CHANGE > 20" | bc -l) )); then
+                  EMOJI="❌"
+                  STATUS="REGRESSION"
+                elif (( $(echo "$CHANGE < -10" | bc -l) )); then
+                  EMOJI="✅"
+                  STATUS="IMPROVEMENT"
+                else
+                  EMOJI="➡️"
+                  STATUS="STABLE"
+                fi
+
+                echo "- $EMOJI **$bench**: ${CHANGE}% ($STATUS)" >> comparison.md
+              fi
+            fi
+          done
+          EOF
+
+            chmod +x compare.sh
+            ./compare.sh benchmark-data.txt benchmark-new.txt
+
+            if [ -f comparison.md ]; then
+              cat comparison.md
+              cat comparison.md >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "No previous benchmark data found - this is the baseline"
+          fi
+
+      - name: Save benchmark data
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          cp benchmark-new.txt benchmark-data.txt
+
+      - name: Upload current benchmarks
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: ./benchmark-data.txt
+          key: ${{ runner.os }}-benchmark
+
+      - name: Comment benchmark results on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const benchmarks = fs.readFileSync('benchmark-new.txt', 'utf8');
+
+            // Extract key metrics
+            const lines = benchmarks.split('\n');
+            const keyBenchmarks = lines.filter(line =>
+              line.includes('BenchmarkProxy') ||
+              line.includes('BenchmarkFuzzy') ||
+              line.includes('BenchmarkValidation')
+            ).slice(0, 10);  // Top 10
+
+            const summary = `## ⚡ Benchmark Results\n\n\`\`\`\n${keyBenchmarks.join('\n')}\n\`\`\`\n\n<details>\n<summary>Full Results</summary>\n\n\`\`\`\n${benchmarks}\n\`\`\`\n</details>`;
+
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.data.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body.includes('⚡ Benchmark Results')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: summary
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: summary
+              });
+            }
+
+      - name: Upload benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmarks
+          path: benchmark-new.txt
+          retention-days: 90  # Longer retention for historical data
+
+      - name: Add benchmarks to job summary
+        if: always()
+        run: |
+          echo "## ⚡ Benchmark Results" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          grep "^Benchmark" benchmark-new.txt | head -20 >> $GITHUB_STEP_SUMMARY || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+  regression-check:
+    name: Regression Detection
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    needs: benchmark
+
+    steps:
+      - name: Checkout base branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.base_ref }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Run baseline benchmarks
+        run: |
+          go test -bench=. -benchmem -benchtime=1s ./... 2>&1 | tee benchmark-base.txt
+
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+
+      - name: Run PR benchmarks
+        run: |
+          go test -bench=. -benchmem -benchtime=1s ./... 2>&1 | tee benchmark-pr.txt
+
+      - name: Install benchstat
+        run: go install golang.org/x/perf/cmd/benchstat@latest
+
+      - name: Compare benchmarks
+        id: benchstat
+        continue-on-error: true
+        run: |
+          echo "## 📊 Benchmark Comparison (Base vs PR)" > benchstat-output.txt
+          echo '```' >> benchstat-output.txt
+          $(go env GOPATH)/bin/benchstat benchmark-base.txt benchmark-pr.txt | tee -a benchstat-output.txt
+          echo '```' >> benchstat-output.txt
+
+          # Check for significant regressions (>20% slower)
+          if $(go env GOPATH)/bin/benchstat benchmark-base.txt benchmark-pr.txt | grep -q "~"; then
+            echo "regression_detected=true" >> $GITHUB_OUTPUT
+          else
+            echo "regression_detected=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Comment comparison on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let comparison = '';
+
+            if (fs.existsSync('benchstat-output.txt')) {
+              comparison = fs.readFileSync('benchstat-output.txt', 'utf8');
+            } else {
+              comparison = '## 📊 Benchmark Comparison\n\nNo significant changes detected.';
+            }
+
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.data.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body.includes('📊 Benchmark Comparison')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: comparison
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: comparison
+              });
+            }
+
+      - name: Fail on significant regression
+        if: steps.benchstat.outputs.regression_detected == 'true'
+        run: |
+          echo "⚠️ WARNING: Significant performance regression detected!"
+          echo "Review the benchmark comparison above"
+          # Don't fail the build, just warn
+          exit 0

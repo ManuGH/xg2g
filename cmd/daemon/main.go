@@ -322,13 +322,36 @@ func env(key, defaultValue string) string {
 	return defaultValue
 }
 
-// atoi is a wrapper for strconv.Atoi that panics on error.
-// Used for parsing environment variables that are expected to be integers.
+// envInt reads an integer from ENV with fallback on parse errors.
+// Returns the parsed value and true if successful, or defaultVal and false on error.
+func envInt(key string, defaultVal int) (int, bool) {
+	v, ok := os.LookupEnv(key)
+	if !ok {
+		return defaultVal, false
+	}
+	if v == "" {
+		log.Printf("config: using default for %s (%d) because environment variable is empty", key, defaultVal)
+		return defaultVal, false
+	}
+
+	i, err := strconv.Atoi(v)
+	if err != nil {
+		log.Printf("config: invalid integer for %s (%q), using default %d: %v", key, v, defaultVal, err)
+		return defaultVal, false
+	}
+
+	log.Printf("config: using %s from environment (%d)", key, i)
+	return i, true
+}
+
+// atoi is deprecated - use envInt instead.
+// Kept for backward compatibility but will log warning.
+// TODO: Remove after migrating all callers to envInt.
 func atoi(s string) int {
 	i, err := strconv.Atoi(s)
 	if err != nil {
-		// Use the logger from the main package
-		log.Fatalf("config: failed to parse integer from string %q: %v", s, err)
+		log.Printf("DEPRECATED: atoi() called with invalid value %q - returning 0. Use envInt() instead.", s)
+		return 0
 	}
 	return i
 }
