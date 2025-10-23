@@ -86,16 +86,16 @@ func TestXMLStructureValidation(t *testing.T) {
 	if p0.Channel != "c1" {
 		t.Fatalf("expected programme 0 channel c1, got %s", p0.Channel)
 	}
-	if p0.Title.Value != "Show1" {
-		t.Fatalf("expected programme 0 title Show1, got %s", p0.Title.Value)
+	if p0.Title.Text != "Show1" {
+		t.Fatalf("expected programme 0 title Show1, got %s", p0.Title.Text)
 	}
 	if p0.Title.Lang != "en" {
 		t.Fatalf("expected programme 0 title lang en, got %s", p0.Title.Lang)
 	}
 
 	p1 := got.Programs[1]
-	if p1.Title.Value != "Show2" {
-		t.Fatalf("expected programme 1 title Show2, got %s", p1.Title.Value)
+	if p1.Title.Text != "Show2" {
+		t.Fatalf("expected programme 1 title Show2, got %s", p1.Title.Text)
 	}
 	if p1.Title.Lang != "" {
 		t.Fatalf("expected programme 1 title lang empty, got %s", p1.Title.Lang)
@@ -116,7 +116,7 @@ func TestGoldenXMLTV(t *testing.T) {
 	// Build a TV object that matches the golden file
 	tv := TV{
 		Generator:    "xg2g",
-		GeneratorURL: "https://example.invalid/xg2g",
+		GeneratorURL: "https://github.com/ManuGH/xg2g",
 		Channels:     []Channel{{ID: "c1", DisplayName: []string{"Chan1"}}},
 		Programs: []Programme{
 			{Start: "202501010000 +0000", Stop: "202501010100 +0000", Channel: "c1", Title: Title{Lang: "en", Text: "Show1"}, Desc: "Description1"},
@@ -170,8 +170,8 @@ func TestUmlautsAndUTF8Encoding(t *testing.T) {
 	}
 
 	// Write XMLTV with umlauts
-	if err := WriteXMLTVWithProgrammes(channels, programmes, p); err != nil {
-		t.Fatalf("WriteXMLTVWithProgrammes failed: %v", err)
+	if err := WriteXMLTV(GenerateXMLTV(channels, programmes), p); err != nil {
+		t.Fatalf("WriteXMLTV failed: %v", err)
 	}
 
 	// Read back and verify UTF-8 encoding
@@ -233,7 +233,7 @@ func TestUmlautsAndUTF8Encoding(t *testing.T) {
 		t.Errorf("expected umlaut in description, got %q", tv.Programs[0].Desc)
 	}
 
-	if tv.Programs[1].Title.Value != "Fußball-Bundesliga" {
-		t.Errorf("expected ß in title, got %q", tv.Programs[1].Title.Value)
+	if tv.Programs[1].Title.Text != "Fußball-Bundesliga" {
+		t.Errorf("expected ß in title, got %q", tv.Programs[1].Title.Text)
 	}
 }

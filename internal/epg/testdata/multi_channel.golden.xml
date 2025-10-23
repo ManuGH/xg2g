@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<tv generator-info-name="xg2g" generator-info-url="https://example.invalid/xg2g">
+<!DOCTYPE tv SYSTEM "xmltv.dtd">
+<tv generator-info-name="xg2g" generator-info-url="https://github.com/ManuGH/xg2g">
   <channel id="orf1.at">
     <display-name>ORF1 HD</display-name>
     <icon src="http://example.com/orf1.png"></icon>

@@ -43,8 +43,8 @@ func TestProgrammesFromEPG(t *testing.T) {
 	}
 
 	prog1 := programmes[0]
-	if prog1.Title.Value != "Test Programme" {
-		t.Errorf("expected title 'Test Programme', got %q", prog1.Title.Value)
+	if prog1.Title.Text != "Test Programme" {
+		t.Errorf("expected title 'Test Programme', got %q", prog1.Title.Text)
 	}
 
 	if prog1.Channel != "test.channel" {
@@ -57,8 +57,8 @@ func TestProgrammesFromEPG(t *testing.T) {
 
 	// Test programme with default duration
 	prog2 := programmes[1]
-	if prog2.Title.Value != "No Duration" {
-		t.Errorf("expected title 'No Duration', got %q", prog2.Title.Value)
+	if prog2.Title.Text != "No Duration" {
+		t.Errorf("expected title 'No Duration', got %q", prog2.Title.Text)
 	}
 }
 

@@ -1,2 +1,3 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<tv generator-info-name="xg2g" generator-info-url="https://example.invalid/xg2g"></tv>
+<!DOCTYPE tv SYSTEM "xmltv.dtd">
+<tv generator-info-name="xg2g" generator-info-url="https://github.com/ManuGH/xg2g"></tv>

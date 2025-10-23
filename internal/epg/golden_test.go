@@ -49,7 +49,7 @@ func TestGoldenFiles(t *testing.T) {
 			tmpDir := t.TempDir()
 			outputPath := filepath.Join(tmpDir, "output.xml")
 
-			err := WriteXMLTV(tt.channels, outputPath)
+			err := WriteXMLTV(GenerateXMLTV(tt.channels, nil), outputPath)
 			if err != nil {
 				t.Fatalf("WriteXMLTV failed: %v", err)
 			}
@@ -117,7 +117,7 @@ func TestXMLTVBenchmark(t *testing.T) {
 
 	// Time the generation
 	start := time.Now()
-	err := WriteXMLTV(channels, xmlPath)
+	err := WriteXMLTV(GenerateXMLTV(channels, nil), xmlPath)
 	duration := time.Since(start)
 
 	if err != nil {
