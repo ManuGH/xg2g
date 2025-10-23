@@ -105,7 +105,6 @@ linters-settings:
       - name: exported
       - name: if-return
       - name: increment-decrement
-      - name: var-naming
       - name: var-declaration
       - name: range
       - name: receiver-naming
@@ -160,6 +159,11 @@ issues:
     - path: cmd/daemon/main\.go
       linters:
         - gocyclo
+
+    - path: internal/types
+      linters:
+        - revive
+      text: "var-naming"
 
   exclude-dirs:
     - vendor

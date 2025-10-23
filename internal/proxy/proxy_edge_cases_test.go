@@ -156,7 +156,7 @@ func TestProxyWithCustomHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create request: %v", err)
 	}
-	req.Header.Set("X-Custom-Header", "test-value")
+	req.Header.Set("X-Custom-Header", testHeaderValue)
 	req.Header.Set("User-Agent", "xg2g-test/1.0")
 
 	resp, err := http.DefaultClient.Do(req)
@@ -165,7 +165,7 @@ func TestProxyWithCustomHeaders(t *testing.T) {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if receivedHeaders.Get("X-Custom-Header") != "test-value" {
+	if receivedHeaders.Get("X-Custom-Header") != testHeaderValue {
 		t.Error("Custom header not forwarded")
 	}
 	if receivedHeaders.Get("User-Agent") != "xg2g-test/1.0" {

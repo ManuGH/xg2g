@@ -141,7 +141,7 @@ func IncEPGChannelError() {
 }
 
 // RecordEPGChannelSuccess records successful EPG channel operations.
-func RecordEPGChannelSuccess(programmes int) {
+func RecordEPGChannelSuccess(_ int) {
 	epgRequestsTotal.WithLabelValues("success").Inc()
 }
 

@@ -17,6 +17,8 @@ import (
 	"github.com/rs/zerolog"
 )
 
+const testHeaderValue = "test-value"
+
 // TestServerStart_ErrorPaths tests Server.Start() error scenarios
 func TestServerStart_ErrorPaths(t *testing.T) {
 	logger := zerolog.New(io.Discard)
@@ -319,7 +321,7 @@ func TestServerIntegration_ReverseProxyHeaders(t *testing.T) {
 	var receivedHeaders http.Header
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedHeaders = r.Header.Clone()
-		w.Header().Set("X-Custom-Response", "test-value")
+		w.Header().Set("X-Custom-Response", testHeaderValue)
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("response"))
 	}))
@@ -350,7 +352,7 @@ func TestServerIntegration_ReverseProxyHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRequest failed: %v", err)
 	}
-	req.Header.Set("X-Custom-Header", "test-value")
+	req.Header.Set("X-Custom-Header", testHeaderValue)
 	req.Header.Set("User-Agent", "test-agent")
 
 	client := &http.Client{Timeout: 2 * time.Second}
@@ -361,12 +363,12 @@ func TestServerIntegration_ReverseProxyHeaders(t *testing.T) {
 	defer func() { _ = resp.Body.Close() }()
 
 	// Verify request headers were forwarded
-	if receivedHeaders.Get("X-Custom-Header") != "test-value" {
+	if receivedHeaders.Get("X-Custom-Header") != testHeaderValue {
 		t.Errorf("Custom header not forwarded: got %q", receivedHeaders.Get("X-Custom-Header"))
 	}
 
 	// Verify response headers were returned
-	if resp.Header.Get("X-Custom-Response") != "test-value" {
+	if resp.Header.Get("X-Custom-Response") != testHeaderValue {
 		t.Errorf("Response header not returned: got %q", resp.Header.Get("X-Custom-Response"))
 	}
 }
