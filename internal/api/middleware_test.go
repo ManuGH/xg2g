@@ -91,7 +91,7 @@ func TestRequestIDMiddleware(t *testing.T) {
 
 func TestRequestIDMiddlewareLogging(t *testing.T) {
 	// This test checks that the middleware logs with proper fields
-	testHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	testHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
