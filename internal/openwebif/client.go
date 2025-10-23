@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: MIT
+
+// Package openwebif provides a client for interacting with Enigma2 OpenWebIF API.
 package openwebif
 
 import (

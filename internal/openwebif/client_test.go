@@ -136,7 +136,7 @@ func TestBouquetsTimeout(t *testing.T) {
 
 func TestBouquetsRetrySuccess(t *testing.T) {
 	var calls int32
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		count := atomic.AddInt32(&calls, 1)
 		if count == 1 {
 			w.WriteHeader(http.StatusBadGateway)
@@ -158,7 +158,7 @@ func TestBouquetsRetrySuccess(t *testing.T) {
 }
 
 func TestBouquetsRetryFailure(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusBadGateway)
 	}))
 	t.Cleanup(ts.Close)
@@ -173,7 +173,7 @@ func TestContextCancellationCleanup(t *testing.T) {
 	// Test that cancelled contexts don't leak goroutines
 	requestReceived := make(chan struct{})
 
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		close(requestReceived)
 		// Simulate slow response that would exceed context deadline
 		time.Sleep(200 * time.Millisecond)

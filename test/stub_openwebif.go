@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -29,7 +30,8 @@ func main() {
 
 	// Check if port is available before starting
 	log.Printf("🔍 Checking if address %s is available...", addr)
-	listener, err := net.Listen("tcp", addr)
+	lc := &net.ListenConfig{}
+	listener, err := lc.Listen(context.Background(), "tcp", addr)
 	if err != nil {
 		log.Fatalf("❌ Failed to bind to %s: %v", addr, err)
 	}

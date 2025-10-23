@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: MIT
+
+// Package openwebif provides OpenWebIF client functionality for Enigma2 receivers.
 package openwebif
 
 import (
 	"strings"
 )
 
+// PiconURL generates the URL for a channel's picon image based on the service reference.
 func PiconURL(owiBase, sref string) string {
 	// Normalize service reference for picon lookup:
 	// HD channels (type 19, 1F, 16, etc.) should fall back to SD (type 1)

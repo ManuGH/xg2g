@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: MIT
+
+// Package api provides HTTP server functionality for the xg2g application.
 package api
 
 import (
@@ -23,6 +25,7 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
+// Server represents the HTTP API server for xg2g.
 type Server struct {
 	mu         sync.RWMutex
 	refreshing atomic.Bool // serialize refreshes via atomic flag
@@ -62,8 +65,8 @@ func (s *Server) dataFilePath(rel string) (string, error) {
 		if info.IsDir() {
 			return "", fmt.Errorf("data file path points to directory: %s", rel)
 		}
-		if real, evalErr := filepath.EvalSymlinks(full); evalErr == nil {
-			resolved = real
+		if resolvedPath, evalErr := filepath.EvalSymlinks(full); evalErr == nil {
+			resolved = resolvedPath
 		}
 	} else if !errors.Is(statErr, os.ErrNotExist) {
 		return "", fmt.Errorf("stat data file: %w", statErr)
@@ -88,6 +91,7 @@ func (s *Server) dataFilePath(rel string) (string, error) {
 	return resolved, nil
 }
 
+// New creates and initializes a new HTTP API server.
 func New(cfg jobs.Config) *Server {
 	s := &Server{
 		cfg: cfg,
@@ -817,6 +821,7 @@ func (s *Server) secureFileServer() http.Handler {
 	})
 }
 
+// Handler returns the configured HTTP handler with all routes and middleware applied.
 func (s *Server) Handler() http.Handler {
 	return withMiddlewares(s.routes())
 }

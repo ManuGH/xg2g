@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: MIT
+
+// Package telemetry provides OpenTelemetry tracing utilities for the xg2g application.
 package telemetry
 
 import (
@@ -102,7 +104,7 @@ func JobAttributes(jobType, status string, durationMS int64) []attribute.KeyValu
 }
 
 // ErrorAttributes creates error-related span attributes.
-func ErrorAttributes(err error, errorType string) []attribute.KeyValue {
+func ErrorAttributes(_ error, errorType string) []attribute.KeyValue {
 	return []attribute.KeyValue{
 		attribute.Bool(ErrorKey, true),
 		attribute.String(ErrorTypeKey, errorType),

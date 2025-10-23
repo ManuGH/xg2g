@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: MIT
+
+// Package dashboard provides a web-based dashboard for xg2g.
 package dashboard
 
 import (

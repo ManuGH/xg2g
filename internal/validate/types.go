@@ -1,13 +1,20 @@
 // SPDX-License-Identifier: MIT
+
+// Package validate provides configuration validation utilities for the xg2g application.
 package validate
 
 // LogLevel represents valid log levels
 type LogLevel string
 
+// Log level constants define the available logging severity levels.
 const (
+	// LogLevelDebug enables debug-level logging
 	LogLevelDebug LogLevel = "debug"
-	LogLevelInfo  LogLevel = "info"
-	LogLevelWarn  LogLevel = "warn"
+	// LogLevelInfo enables info-level logging
+	LogLevelInfo LogLevel = "info"
+	// LogLevelWarn enables warn-level logging
+	LogLevelWarn LogLevel = "warn"
+	// LogLevelError enables error-level logging
 	LogLevelError LogLevel = "error"
 )
 

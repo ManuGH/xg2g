@@ -331,7 +331,7 @@ func isBrokenPipe(err error) bool {
 		strings.Contains(err.Error(), "connection reset")
 }
 
-// IsEnabled checks if audio transcoding is enabled via environment variable.
+// IsTranscodingEnabled checks if audio transcoding is enabled via environment variable.
 func IsTranscodingEnabled() bool {
 	return strings.ToLower(os.Getenv("XG2G_ENABLE_AUDIO_TRANSCODING")) == "true"
 }

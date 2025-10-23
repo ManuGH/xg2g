@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: MIT
+
+// Package log provides structured logging utilities.
 package log
 
 import (
@@ -138,6 +140,7 @@ func Derive(build func(*zerolog.Context)) zerolog.Logger {
 	return ctx.Logger()
 }
 
+//nolint:gochecknoinits // Required to ensure logger is initialized before any usage
 func init() {
 	Configure(Config{})
 }

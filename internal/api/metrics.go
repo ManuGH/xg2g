@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: MIT
+
+// Package api provides HTTP server functionality for the xg2g application.
 package api
 
 import (

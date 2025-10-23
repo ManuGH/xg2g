@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: MIT
+
+// Package jobs provides background job execution functionality.
 package jobs
 
 import (
@@ -227,15 +229,13 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 				Msg("starting EPG collection")
 
 			startTime := time.Now()
-			programmes, epgErr := collectEPGProgrammes(ctx, client, items, cfg)
+			programmes := collectEPGProgrammes(ctx, client, items, cfg)
 			duration := time.Since(startTime).Seconds()
 
-			if epgErr != nil {
+			if len(programmes) == 0 {
 				logger.Warn().
-					Err(epgErr).
-					Str("event", "epg.partial_failure").
-					Msg("EPG collection had errors, continuing with available data")
-				// Continue with partial data instead of failing completely
+					Str("event", "epg.no_data").
+					Msg("EPG collection returned no data")
 			}
 			allProgrammes = programmes
 
@@ -364,7 +364,7 @@ func validateConfig(cfg Config) error {
 }
 
 // collectEPGProgrammes fetches EPG data using per-service requests with bounded concurrency
-func collectEPGProgrammes(ctx context.Context, client *openwebif.Client, items []playlist.Item, cfg Config) ([]epg.Programme, error) {
+func collectEPGProgrammes(ctx context.Context, client *openwebif.Client, items []playlist.Item, cfg Config) []epg.Programme {
 	logger := xglog.FromContext(ctx)
 
 	// Clamp concurrency to sane bounds [1,10]
@@ -446,7 +446,7 @@ func collectEPGProgrammes(ctx context.Context, client *openwebif.Client, items [
 
 	metrics.RecordEPGChannelSuccess(channelsWithData)
 
-	return allProgrammes, nil
+	return allProgrammes
 }
 
 type epgResult struct {

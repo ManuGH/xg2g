@@ -213,7 +213,8 @@ func (s *Server) StartSSDPAnnouncer(ctx context.Context) error {
 	}
 
 	// Create UDP connection
-	conn, err := net.ListenPacket("udp4", ":1900")
+	lc := &net.ListenConfig{}
+	conn, err := lc.ListenPacket(ctx, "udp4", ":1900")
 	if err != nil {
 		return fmt.Errorf("failed to listen on UDP port 1900: %w", err)
 	}
@@ -290,7 +291,7 @@ func (s *Server) sendSSDPResponse(conn net.PacketConn, addr net.Addr) {
 	if baseURL == "" {
 		// Get local IP
 		if localIP := s.getLocalIP(); localIP != "" {
-			baseURL = fmt.Sprintf("http://%s:8080", localIP)
+			baseURL = "http://" + net.JoinHostPort(localIP, "8080")
 		} else {
 			baseURL = "http://localhost:8080"
 		}
@@ -341,7 +342,7 @@ func (s *Server) sendSSDPNotify(conn net.PacketConn, addr *net.UDPAddr) {
 	baseURL := s.config.BaseURL
 	if baseURL == "" {
 		if localIP := s.getLocalIP(); localIP != "" {
-			baseURL = fmt.Sprintf("http://%s:8080", localIP)
+			baseURL = "http://" + net.JoinHostPort(localIP, "8080")
 		} else {
 			return // Can't announce without IP
 		}

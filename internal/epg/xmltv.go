@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: MIT
+
+// Package epg provides Electronic Program Guide functionality.
 package epg
 
 import (

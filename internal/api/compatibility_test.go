@@ -227,7 +227,7 @@ func TestNoRegressions(t *testing.T) {
 		mockServer.cfg.APIToken = "test-token"
 
 		// Mock the refresh function to avoid actual network calls
-		mockServer.refreshFn = func(ctx context.Context, cfg jobs.Config) (*jobs.Status, error) {
+		mockServer.refreshFn = func(_ context.Context, _ jobs.Config) (*jobs.Status, error) {
 			return &jobs.Status{
 				Version:  "1.5.0-test",
 				Channels: 42,

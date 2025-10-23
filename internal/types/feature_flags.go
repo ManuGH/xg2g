@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: MIT
+
+// Package types provides common data types used across the xg2g application.
 package types
 
 // FeatureFlag represents a feature toggle in the application.

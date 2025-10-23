@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: MIT
+
+// Package metrics provides Prometheus metrics collection.
 package metrics
 
 import (

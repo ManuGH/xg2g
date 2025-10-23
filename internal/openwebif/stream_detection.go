@@ -3,6 +3,7 @@ package openwebif
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"sync"
@@ -120,7 +121,7 @@ func (sd *StreamDetector) DetectStreamURL(ctx context.Context, serviceRef, chann
 
 	// No working endpoint found - return best guess (port 8001)
 	fallback := &StreamInfo{
-		URL:       fmt.Sprintf("http://%s:8001/%s", sd.receiverHost, serviceRef),
+		URL:       "http://" + net.JoinHostPort(sd.receiverHost, "8001") + "/" + serviceRef,
 		Port:      8001,
 		TestedAt:  time.Now(),
 		TestError: fmt.Errorf("no working endpoint found, using fallback"),
@@ -148,13 +149,13 @@ func (sd *StreamDetector) buildCandidates(serviceRef string) []streamCandidate {
 	candidates := []streamCandidate{
 		// Priority 1: Direct port 8001 (most common, best performance)
 		{
-			URL:      fmt.Sprintf("http://%s:8001/%s", sd.receiverHost, serviceRef),
+			URL:      "http://" + net.JoinHostPort(sd.receiverHost, "8001") + "/" + serviceRef,
 			Port:     8001,
 			Priority: 1,
 		},
 		// Priority 2: Direct port 17999 (if it supports HEAD)
 		{
-			URL:      fmt.Sprintf("http://%s:17999/%s", sd.receiverHost, serviceRef),
+			URL:      "http://" + net.JoinHostPort(sd.receiverHost, "17999") + "/" + serviceRef,
 			Port:     17999,
 			Priority: 2,
 		},

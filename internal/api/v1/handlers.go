@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: MIT
+
+// Package v1 provides version 1 API handlers.
 package v1
 
 import (

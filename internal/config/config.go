@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: MIT
+
+// Package config provides configuration management for xg2g.
 package config
 
 import (

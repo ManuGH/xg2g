@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: MIT
+
+// Package log provides structured logging utilities.
 package log
 
 import (

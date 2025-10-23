@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: MIT
+
+// Package api provides HTTP server functionality for the xg2g application.
 package api
 
 import (
@@ -28,6 +30,7 @@ const (
 	circuitStateHalfOpen = "half-open"
 )
 
+// NewCircuitBreaker creates a new circuit breaker with the specified threshold and timeout.
 func NewCircuitBreaker(threshold int, timeout time.Duration) *CircuitBreaker {
 	if threshold <= 0 {
 		threshold = 3

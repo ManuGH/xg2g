@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: MIT
+
+// Package telemetry provides OpenTelemetry tracing utilities for the xg2g application.
 package telemetry
 
 import (

@@ -71,7 +71,7 @@ func TestHandleHeadRequest(t *testing.T) {
 	logger := zerolog.New(io.Discard)
 
 	// Create a test target server
-	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	target := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		// This should NOT be called for HEAD requests
 		t.Error("HEAD request was proxied to target (should be handled locally)")
 	}))
@@ -279,7 +279,7 @@ func TestGetTargetURL(t *testing.T) {
 func TestShutdown(t *testing.T) {
 	logger := zerolog.New(io.Discard)
 
-	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer target.Close()

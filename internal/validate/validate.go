@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: MIT
+
+// Package validate provides configuration validation utilities for the xg2g application.
 package validate
 
 import (

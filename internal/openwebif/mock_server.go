@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: MIT
+
+// Package openwebif provides OpenWebIF client functionality for Enigma2 receivers.
 package openwebif
 
 import (
@@ -6,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sync"
+	"time"
 )
 
 // MockServer provides a configurable OpenWebIF mock server for testing.
@@ -145,7 +148,7 @@ func (m *MockServer) SetFailures(endpoint string, count int) {
 }
 
 // handleBouquets handles /api/bouquets and /api/getallservices
-func (m *MockServer) handleBouquets(w http.ResponseWriter, r *http.Request) {
+func (m *MockServer) handleBouquets(w http.ResponseWriter, _ *http.Request) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -162,7 +165,7 @@ func (m *MockServer) handleBouquets(w http.ResponseWriter, r *http.Request) {
 
 	// Apply artificial delay
 	if delay, ok := m.delay["/api/bouquets"]; ok && delay > 0 {
-		// Time sleep simulation would go here in real implementation
+		time.Sleep(time.Duration(delay) * time.Millisecond)
 	}
 
 	// Build response in OpenWebIF format: [["<ref>", "<name>"], ...]
@@ -264,7 +267,7 @@ func (m *MockServer) handleZap(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleAbout handles /api/about
-func (m *MockServer) handleAbout(w http.ResponseWriter, r *http.Request) {
+func (m *MockServer) handleAbout(w http.ResponseWriter, _ *http.Request) {
 	resp := map[string]interface{}{
 		"info": map[string]interface{}{
 			"model":      "Mock Receiver",

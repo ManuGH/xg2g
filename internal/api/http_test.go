@@ -27,7 +27,7 @@ var dummyHandler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request)
 func TestHandleStatus(t *testing.T) {
 	s := New(jobs.Config{})
 	handler := s.Handler()
-	req, err := http.NewRequest(http.MethodGet, "/api/status", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "/api/status", nil)
 	require.NoError(t, err)
 
 	rr := httptest.NewRecorder()
@@ -46,7 +46,7 @@ func TestHandleRefresh_ErrorDoesNotUpdateLastRun(t *testing.T) {
 	handler := s.Handler()
 	initialTime := s.status.LastRun
 
-	req, err := http.NewRequest(http.MethodPost, "/api/refresh", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "/api/refresh", nil)
 	require.NoError(t, err)
 	req.Header.Set("X-API-Token", "dummy-token")
 
@@ -62,8 +62,7 @@ func TestRecordRefreshMetrics(t *testing.T) {
 	recordRefreshMetrics(1*time.Second, 10)
 	// Only call once to avoid changing the gauge value unexpectedly
 
-	body, err := getMetrics(nil)
-	require.NoError(t, err)
+	body := getMetrics(nil)
 
 	assert.Contains(t, body, `xg2g_channels`)
 	assert.Contains(t, body, `xg2g_refresh_duration_seconds_count`)
@@ -131,7 +130,7 @@ func TestHandleRefresh_ConflictOnConcurrent(t *testing.T) {
 func TestHandleHealth(t *testing.T) {
 	s := New(jobs.Config{})
 	handler := s.Handler()
-	req, err := http.NewRequest(http.MethodGet, "/healthz", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "/healthz", nil)
 	require.NoError(t, err)
 
 	rr := httptest.NewRecorder()
@@ -154,7 +153,7 @@ func TestHandleReady(t *testing.T) {
 	s := New(cfg)
 	handler := s.Handler()
 
-	req, err := http.NewRequest(http.MethodGet, "/readyz", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "/readyz", nil)
 	require.NoError(t, err)
 
 	// Case 1: Not ready (no files, last run is zero)
@@ -224,7 +223,7 @@ func TestAuthMiddleware(t *testing.T) {
 			// Test against a protected route
 			handler := s.authRequired(dummyHandler)
 
-			req, err := http.NewRequest(http.MethodGet, "/test", nil)
+			req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "/test", nil)
 			require.NoError(t, err)
 
 			if tt.headerValue != "" {
@@ -296,7 +295,7 @@ func TestSecureFileHandlerSymlinkPolicy(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req, err := http.NewRequest(tt.method, tt.path, nil)
+			req, err := http.NewRequestWithContext(context.Background(), tt.method, tt.path, nil)
 			require.NoError(t, err)
 
 			rr := httptest.NewRecorder()
@@ -314,7 +313,7 @@ func TestMiddlewareChain(t *testing.T) {
 	server := New(jobs.Config{APIToken: "test-token"})
 	handler := server.Handler()
 
-	req, err := http.NewRequest(http.MethodGet, "/test", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "/test", nil)
 	require.NoError(t, err)
 	req.Header.Set("X-API-Token", "test-token")
 	req.RemoteAddr = "192.0.2.1"
@@ -543,7 +542,7 @@ func TestClientDisconnectDuringRefresh(t *testing.T) {
 }
 
 // getMetrics is a test helper to scrape metrics from a registry.
-func getMetrics(reg *prometheus.Registry) (string, error) {
+func getMetrics(reg *prometheus.Registry) string {
 	var h http.Handler
 	if reg == nil {
 		// default registry gatherer
@@ -553,5 +552,5 @@ func getMetrics(reg *prometheus.Registry) (string, error) {
 	}
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/metrics", nil))
-	return rr.Body.String(), nil
+	return rr.Body.String()
 }
