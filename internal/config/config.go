@@ -118,7 +118,7 @@ func (l *Loader) Load() (jobs.Config, error) {
 // setDefaults sets default values for configuration
 func (l *Loader) setDefaults(cfg *jobs.Config) {
 	cfg.DataDir = "/tmp" // Use /tmp as default to pass validation in tests
-	cfg.OWIBase = "http://10.10.55.57"
+	cfg.OWIBase = "" // No default - must be explicitly configured
 	cfg.Bouquet = "Premium"
 	cfg.StreamPort = 8001
 	cfg.OWITimeout = 10 * time.Second

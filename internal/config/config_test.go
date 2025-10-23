@@ -12,6 +12,10 @@ import (
 )
 
 func TestLoadDefaults(t *testing.T) {
+	// Set required OWIBase since it no longer has a default
+	os.Setenv("XG2G_OWI_BASE", "http://example.com")
+	defer os.Unsetenv("XG2G_OWI_BASE")
+
 	loader := NewLoader("", "test-version")
 	cfg, err := loader.Load()
 	if err != nil {
@@ -130,6 +134,7 @@ func TestPrecedenceOrder(t *testing.T) {
 	yamlContent := fmt.Sprintf(`
 dataDir: %s
 openWebIF:
+  baseUrl: http://example.com
   streamPort: 9001
 epg:
   days: 10
@@ -159,8 +164,8 @@ epg:
 		t.Errorf("expected EPGDays from ENV: 5, got %d", cfg.EPGDays)
 	}
 
-	if cfg.OWIBase != "http://10.10.55.57" {
-		t.Errorf("expected OWIBase from default: http://10.10.55.57, got %s", cfg.OWIBase)
+	if cfg.OWIBase != "http://example.com" {
+		t.Errorf("expected OWIBase from file: http://example.com, got %s", cfg.OWIBase)
 	}
 }
 
