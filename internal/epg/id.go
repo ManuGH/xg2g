@@ -1,3 +1,5 @@
+// Package epg provides Electronic Program Guide (EPG) functionality including fuzzy matching and XMLTV generation.
+
 // SPDX-License-Identifier: MIT
 package epg
 

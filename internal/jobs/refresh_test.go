@@ -38,11 +38,11 @@ func (m *mockOWI) Services(_ context.Context, bouquetRef string) ([][2]string, e
 	return m.services[bouquetRef], nil
 }
 
-func (m *mockOWI) StreamURL(ref, name string) (string, error) {
+func (m *mockOWI) StreamURL(ref, _ string) (string, error) {
 	return "http://stream/" + ref, nil
 }
 
-func (m *mockOWI) GetEPG(_ context.Context, sRef string, days int) ([]openwebif.EPGEvent, error) {
+func (m *mockOWI) GetEPG(_ context.Context, sRef string, _ int) ([]openwebif.EPGEvent, error) {
 	// Return mock EPG data for tests
 	return []openwebif.EPGEvent{
 		{

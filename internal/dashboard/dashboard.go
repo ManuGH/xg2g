@@ -88,7 +88,7 @@ func (d *Dashboard) RecordRequest(duration time.Duration) {
 }
 
 // HandleDashboard serves the HTML dashboard
-func (d *Dashboard) HandleDashboard(w http.ResponseWriter, r *http.Request) {
+func (d *Dashboard) HandleDashboard(w http.ResponseWriter, _ *http.Request) {
 	d.UpdateStats()
 
 	dashboardHTML := `
@@ -380,7 +380,7 @@ func (d *Dashboard) HandleDashboard(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleAPIStats serves JSON stats for API consumption
-func (d *Dashboard) HandleAPIStats(w http.ResponseWriter, r *http.Request) {
+func (d *Dashboard) HandleAPIStats(w http.ResponseWriter, _ *http.Request) {
 	d.UpdateStats()
 
 	w.Header().Set("Content-Type", "application/json")

@@ -1,7 +1,11 @@
+// Package epg provides Electronic Program Guide (EPG) functionality including fuzzy matching and XMLTV generation.
+
 // SPDX-License-Identifier: MIT
 package epg
 
 // FindBest: exaktes oder fuzzy Matching (Levenshtein) bis maxDist
+// FindBest finds the best matching channel name using fuzzy string matching.
+
 func FindBest(name string, nameToID map[string]string, maxDist int) (string, bool) {
 	key := NameKey(name)
 

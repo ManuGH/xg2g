@@ -195,7 +195,7 @@ func (m *MockServer) calculateLatency() time.Duration {
 	return m.config.MinLatency + time.Duration(m.rng.Int63n(int64(diff)))
 }
 
-func (m *MockServer) handleStatus(w http.ResponseWriter, r *http.Request) {
+func (m *MockServer) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":  "ok",
@@ -203,7 +203,7 @@ func (m *MockServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (m *MockServer) handleBouquets(w http.ResponseWriter, r *http.Request) {
+func (m *MockServer) handleBouquets(w http.ResponseWriter, _ *http.Request) {
 	bouquets := make([][]string, 0, m.config.BouquetCount)
 	for i := 0; i < m.config.BouquetCount; i++ {
 		ref := fmt.Sprintf("1:7:1:0:0:0:0:0:0:0:FROM BOUQUET \"userbouquet.%d.tv\" ORDER BY bouquet", i)
@@ -217,7 +217,7 @@ func (m *MockServer) handleBouquets(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (m *MockServer) handleGetServices(w http.ResponseWriter, r *http.Request) {
+func (m *MockServer) handleGetServices(w http.ResponseWriter, _ *http.Request) {
 	services := make([]map[string]string, 0, m.config.ChannelsPerBouquet)
 
 	for i := 0; i < m.config.ChannelsPerBouquet; i++ {

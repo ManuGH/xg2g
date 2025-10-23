@@ -77,7 +77,7 @@ func TestDaemon_StartShutdown(t *testing.T) {
 	}
 
 	// Create test handler
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("OK"))
 	})
@@ -131,7 +131,7 @@ func TestDaemon_Shutdown(t *testing.T) {
 	// Create test server
 	d.server = &http.Server{
 		Addr: "127.0.0.1:0",
-		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		}),
 		ReadHeaderTimeout: time.Second,

@@ -155,7 +155,7 @@ func TestClientIP(t *testing.T) {
 
 func TestSecurityHeadersMiddleware(t *testing.T) {
 	// A simple handler to be wrapped by the middleware
-	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -188,7 +188,7 @@ func TestSecurityHeadersMiddleware(t *testing.T) {
 
 func TestPanicRecoveryMiddleware(t *testing.T) {
 	// Handler that panics
-	panicHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	panicHandler := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		panic("test panic")
 	})
 
@@ -215,7 +215,7 @@ func TestPanicRecoveryMiddleware(t *testing.T) {
 }
 
 func TestPanicRecoveryMiddlewareNormalFlow(t *testing.T) {
-	okHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	okHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})

@@ -26,6 +26,8 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// Client is an OpenWebIF HTTP client for communicating with Enigma2 receivers.
+
 type Client struct {
 	base       string
 	port       int
@@ -42,6 +44,8 @@ type Client struct {
 	// Smart stream detection (v1.2.0+)
 	streamDetector *StreamDetector
 }
+
+// Options configures the OpenWebIF client behavior.
 
 type Options struct {
 	Timeout               time.Duration
@@ -93,9 +97,13 @@ type ClientInterface interface {
 	StreamURL(ref, name string) (string, error)
 }
 
+// New creates a new OpenWebIF client with the given options.
+
 func New(base string) *Client {
 	return NewWithPort(base, 0, Options{})
 }
+
+// NewWithPort creates a new OpenWebIF client with a specific port.
 
 func NewWithPort(base string, streamPort int, opts Options) *Client {
 	trimmedBase := strings.TrimRight(strings.TrimSpace(base), "/")
@@ -215,6 +223,8 @@ func normalizeOptions(opts Options) Options {
 	}
 	return opts
 }
+// Bouquets retrieves all available bouquets from the receiver.
+
 func (c *Client) Bouquets(ctx context.Context) (map[string]string, error) {
 	const path = "/api/bouquets"
 	body, err := c.get(ctx, path, "bouquets", nil)
@@ -278,6 +288,8 @@ type EPGResponse struct {
 	Events []EPGEvent `json:"events"`
 	Result bool       `json:"result"`
 }
+
+// Services retrieves all services for a given bouquet.
 
 func (c *Client) Services(ctx context.Context, bouquetRef string) ([][2]string, error) {
 	maskedRef := maskValue(bouquetRef)
@@ -353,6 +365,8 @@ func (c *Client) Services(ctx context.Context, bouquetRef string) ([][2]string, 
 	c.loggerFor(ctx).Warn().Str("event", "openwebif.services").Str("bouquet_ref", maskedRef).Msg("no services found for bouquet")
 	return [][2]string{}, nil
 }
+
+// StreamURL builds a streaming URL for the given service reference.
 
 func (c *Client) StreamURL(ref, name string) (string, error) {
 	// NEW in v1.2.0: Smart Stream Detection
@@ -471,6 +485,8 @@ func (c *Client) StreamURL(ref, name string) (string, error) {
 }
 
 // Preserved helper (now uses New, so ENV variables take effect)
+// StreamURL constructs a streaming URL from base URL and service reference.
+
 func StreamURL(base, ref, name string) (string, error) {
 	return NewWithPort(base, 0, Options{}).StreamURL(ref, name)
 }

@@ -1,3 +1,5 @@
+// Package epg provides Electronic Program Guide (EPG) functionality including fuzzy matching and XMLTV generation.
+
 // SPDX-License-Identifier: MIT
 package epg
 
@@ -7,6 +9,8 @@ import (
 	"path/filepath"
 )
 
+// TV represents the root XMLTV document structure.
+
 type TV struct {
 	XMLName      xml.Name    `xml:"tv"`
 	Generator    string      `xml:"generator-info-name,attr,omitempty"`
@@ -15,15 +19,21 @@ type TV struct {
 	Programs     []Programme `xml:"programme"`
 }
 
+// Channel represents an XMLTV channel with its metadata.
+
 type Channel struct {
 	ID          string   `xml:"id,attr"`
 	DisplayName []string `xml:"display-name"`
 	Icon        *Icon    `xml:"icon,omitempty"`
 }
 
+// Icon represents a channel icon in XMLTV format.
+
 type Icon struct {
 	Src string `xml:"src,attr"`
 }
+
+// Programme represents a TV programme in XMLTV format.
 
 type Programme struct {
 	Start   string `xml:"start,attr"`
@@ -33,12 +43,16 @@ type Programme struct {
 	Desc    string `xml:"desc,omitempty"`
 }
 
+// Title represents a programme title with language support.
+
 type Title struct {
 	// Lang contains the language code for the title (optional).
 	Lang string `xml:"lang,attr,omitempty"`
 	// Value is the character data of the title element.
 	Value string `xml:",chardata"`
 }
+
+// GenerateXMLTV generates an XMLTV document from channel and EPG data.
 
 func GenerateXMLTV(channels []Channel) *TV {
 	return &TV{
@@ -50,6 +64,8 @@ func GenerateXMLTV(channels []Channel) *TV {
 }
 
 // GenerateXMLTVWithProgrammes creates a TV struct with both channels and programmes
+// GenerateXMLTV generates an XMLTV document from channel and EPG data.
+
 func GenerateXMLTVWithProgrammes(channels []Channel, programmes []Programme) *TV {
 	return &TV{
 		Generator:    "xg2g",
@@ -58,6 +74,8 @@ func GenerateXMLTVWithProgrammes(channels []Channel, programmes []Programme) *TV
 		Programs:     programmes,
 	}
 }
+
+// WriteXMLTV writes XMLTV data to a file.
 
 func WriteXMLTV(channels []Channel, path string) error {
 	tv := GenerateXMLTV(channels)
@@ -107,6 +125,8 @@ func WriteXMLTV(channels []Channel, path string) error {
 }
 
 // WriteXMLTVWithProgrammes writes XMLTV with both channels and programmes to path
+// WriteXMLTV writes XMLTV data to a file.
+
 func WriteXMLTVWithProgrammes(channels []Channel, programmes []Programme, path string) error {
 	tv := GenerateXMLTVWithProgrammes(channels, programmes)
 

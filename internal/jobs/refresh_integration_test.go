@@ -17,7 +17,7 @@ func TestRefresh_IntegrationSuccess(t *testing.T) {
 	mux := http.NewServeMux()
 
 	// Bouquets endpoint returns a single bouquet named "Favourites"
-	mux.HandleFunc("/api/bouquets", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/bouquets", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"bouquets": [][]string{{"1:7:TEST:REF:", "Favourites"}},

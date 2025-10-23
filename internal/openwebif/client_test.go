@@ -123,7 +123,7 @@ func TestStreamURLScenarios(t *testing.T) {
 }
 
 func TestBouquetsTimeout(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		time.Sleep(200 * time.Millisecond)
 	}))
 	t.Cleanup(ts.Close)

@@ -217,7 +217,7 @@ func TestProxyUnsupportedMethods(t *testing.T) {
 
 // TestHeadRequestHeaders tests that HEAD requests return correct headers
 func TestHeadRequestHeaders(t *testing.T) {
-	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	backend := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("Backend should not be called for HEAD requests")
 	}))
 	defer backend.Close()
