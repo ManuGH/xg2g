@@ -7,8 +7,8 @@ This document explains how xg2g handles stream ports for Enigma2 receivers with 
 | Port | Service | Used For |
 |------|---------|----------|
 | `80` | OpenWebIF | API calls (channel lists, EPG) |
-| `8001` | Enigma2 Stream Server | FTA (unencrypted) channels |
-| `17999` | OSCam Streamrelay | Encrypted channels (requires OSCam EMU) |
+| `8001` | Enigma2 Stream Server | Standard channels |
+| `17999` | OSCam Streamrelay | Channels routed through OSCam (requires OSCam EMU) |
 
 ---
 
@@ -24,8 +24,8 @@ XG2G_SMART_STREAM_DETECTION=true
 
 **How it works:**
 1. xg2g fetches `/etc/enigma2/whitelist_streamrelay` from your receiver
-2. Channels in the whitelist use port `17999` (OSCam Streamrelay)
-3. Other channels use port `8001` (standard Enigma2)
+2. Channels in the whitelist are routed to port `17999` (OSCam Streamrelay)
+3. Other channels are routed to port `8001` (standard Enigma2)
 4. No manual configuration needed
 
 **Requirements:**
@@ -43,7 +43,7 @@ XG2G_SMART_STREAM_DETECTION=true
 # config.yaml
 openWebIF:
   baseUrl: "http://192.168.1.100"  # ⚠️ NO PORT HERE!
-  streamPort: 8001  # or 17999 for encrypted channels
+  streamPort: 8001  # or 17999 for OSCam channels
 ```
 
 ### Method 2: Override Specific Channels
@@ -67,10 +67,10 @@ streamPortOverrides:
 
 **Test which port works:**
 ```bash
-# Test FTA channel
+# Test standard channel
 curl -I http://192.168.1.100:8001/1:0:19:132F:3EF:1:C00000:0:0:0:
 
-# Test encrypted channel (requires OSCam)
+# Test OSCam Streamrelay channel
 curl -I http://192.168.1.100:17999/1:0:19:EF10:421:1:C00000:0:0:0:
 ```
 
@@ -125,11 +125,11 @@ If Smart Stream Detection is enabled but all channels use the same port:
 - No Smart Stream Detection needed
 - Configuration: `streamPort: 8001`
 
-### Scenario 2: OSCam Streamrelay for All Encrypted Channels
+### Scenario 2: OSCam Streamrelay (Recommended)
 - Enable Smart Stream Detection
 - xg2g reads `/etc/enigma2/whitelist_streamrelay`
 - Automatic mixed playlist (8001 + 17999)
-- **This is the recommended setup**
+- Channels routed to correct port based on whitelist
 
 ### Scenario 3: Manual Port Assignment
 - Use `streamPortOverrides` in config

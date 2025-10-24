@@ -71,12 +71,12 @@ docker run -d \
 - ✅ Health checks
 
 ### OSCam Streamrelay Support
-- ✅ **Automatic encryption detection** via whitelist_streamrelay
-- ✅ **Smart port selection**: Encrypted channels use port 17999, FTA channels use port 8001
+- ✅ **Automatic channel detection** via whitelist_streamrelay
+- ✅ **Smart port selection**: Channels requiring OSCam use port 17999, others use port 8001
 - ✅ **Zero configuration** - Works out of the box if OSCam is configured on your receiver
 - ✅ **Deterministic** - No race conditions, reliable port assignment
 
-> **Note:** xg2g automatically detects OSCam Streamrelay on your receiver and routes encrypted channels through it. You don't need to manually specify which channels need encryption - it reads the receiver's whitelist_streamrelay file.
+> **Note:** xg2g automatically detects which channels are routed through OSCam Streamrelay on your receiver. It reads the receiver's whitelist_streamrelay file to determine the correct port for each channel.
 
 ---
 
@@ -349,19 +349,19 @@ See [docs/AUDIO_DELAY_FIX.md](docs/AUDIO_DELAY_FIX.md) for details.
 ```bash
 XG2G_SMART_STREAM_DETECTION=true
 ```
-xg2g automatically detects which channels are encrypted and routes them through OSCam Streamrelay (port 17999).
+xg2g automatically detects which channels use OSCam Streamrelay and routes them to port 17999.
 
 **Manual port configuration** (if needed):
 ```yaml
 openWebIF:
   baseUrl: "http://192.168.1.100"  # ⚠️ NO PORT HERE!
-  streamPort: 8001  # FTA channels
+  streamPort: 8001  # or 17999 for OSCam channels
 ```
 
 **Troubleshooting**:
-- FTA channels not working? They use port 8001
-- Encrypted channels not working? OSCam Streamrelay must be active on port 17999
-- Check receiver's `/etc/enigma2/whitelist_streamrelay` for encrypted channel list
+- Standard channels use port 8001
+- OSCam Streamrelay channels use port 17999
+- Check receiver's `/etc/enigma2/whitelist_streamrelay` for channel routing
 
 **📚 See [Stream Port Configuration Guide](docs/STREAM_PORTS.md) for detailed explanation.**
 
