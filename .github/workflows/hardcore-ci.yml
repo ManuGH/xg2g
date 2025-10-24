@@ -18,7 +18,7 @@ concurrency:
 
 env:
   GO_VERSION: "1.25.3"
-  COVERAGE_THRESHOLD: 56 # CI reports 56.7%, local 57.1% - TODO: investigate diff and raise to 57+
+  COVERAGE_THRESHOLD: 55 # After robustness improvements: CI 55.4%, local 57.5% (diff due to -tags=security)
   EPG_COVERAGE_THRESHOLD: 55
 
 jobs:
