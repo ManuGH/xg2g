@@ -122,21 +122,16 @@ func main() {
 		Str("version", Version).
 		Str("addr", addr).
 		Msg("starting xg2g")
-	logger.Info().
-		Str("event", "config").
-		Str("data", cfg.DataDir).
-		Str("owi", maskURL(cfg.OWIBase)).
-		Bool("owi_auth", cfg.OWIUsername != ""). // Log if auth is enabled
-		Str("bouquet", cfg.Bouquet).
-		Str("xmltv", cfg.XMLTVPath).
-		Int("fuzzy", cfg.FuzzyMax).
-		Str("picon", cfg.PiconBase).
-		Int("stream_port", cfg.StreamPort).
-		Bool("api_token_set", cfg.APIToken != ""). // Log if token is set, not the token itself
-		Dur("owi_timeout", cfg.OWITimeout).
-		Int("owi_retries", cfg.OWIRetries).
-		Dur("owi_backoff", cfg.OWIBackoff).
-		Msg("configuration loaded")
+
+	// Log key configuration (separate lines for readability)
+	logger.Info().Msgf("→ Receiver: %s (auth: %v)", maskURL(cfg.OWIBase), cfg.OWIUsername != "")
+	logger.Info().Msgf("→ Bouquet: %s", cfg.Bouquet)
+	logger.Info().Msgf("→ Stream port: %d", cfg.StreamPort)
+	logger.Info().Msgf("→ EPG: %s (%d days)", cfg.XMLTVPath, cfg.EPGDays)
+	if cfg.APIToken != "" {
+		logger.Info().Msg("→ API token: configured")
+	}
+	logger.Info().Msgf("→ Data dir: %s", cfg.DataDir)
 
 	// Resolve server tuning from environment
 	serverReadTimeout := envDuration("XG2G_SERVER_READ_TIMEOUT", defaultServerReadTimeout)
