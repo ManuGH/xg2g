@@ -337,22 +337,27 @@ See [docs/AUDIO_DELAY_FIX.md](docs/AUDIO_DELAY_FIX.md) for details.
 
 ### Streams don't play
 
-1. Test direct stream:
+**Quick fixes**:
+
+1. **Test which port works**:
    ```bash
-   curl -I http://192.168.1.100:8001/1:0:1:...
+   curl -I http://192.168.1.100:8001/1:0:19:...   # Standard Enigma2
+   curl -I http://192.168.1.100:17999/1:0:19:...  # OSCam Streamrelay
    ```
 
-2. Enable smart detection:
+2. **Configure correct port in `config.yaml`**:
+   ```yaml
+   openWebIF:
+     baseUrl: "http://192.168.1.100"  # ⚠️ NO PORT HERE!
+     streamPort: 17999  # Use working port from step 1
+   ```
+
+3. **Or enable automatic detection**:
    ```bash
    XG2G_SMART_STREAM_DETECTION=true
    ```
 
-3. Or enable integrated proxy if needed:
-   ```bash
-   XG2G_ENABLE_STREAM_PROXY=true
-   XG2G_PROXY_TARGET=http://192.168.1.100:17999
-   XG2G_STREAM_BASE=http://your-host:18000
-   ```
+**📚 See [Stream Port Configuration Guide](docs/STREAM_PORTS.md) for detailed explanation of OSCam Streamrelay support.**
 
 ---
 

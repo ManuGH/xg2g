@@ -22,8 +22,11 @@ logLevel: "info"
 # OpenWebIF Configuration (Enigma2 Receiver)
 openWebIF:
   # Base URL of your Enigma2 receiver (required)
+  # ⚠️  IMPORTANT: Do NOT include port if using streamPort below!
+  #     ✅ Correct:  "http://192.168.1.100"
+  #     ❌ Wrong:    "http://192.168.1.100:80" (will ignore streamPort)
   # ENV: XG2G_OWI_BASE
-  baseUrl: "http://192.168.1.100:80"
+  baseUrl: "http://192.168.1.100"
 
   # Optional authentication
   # ENV: XG2G_OWI_USERNAME, XG2G_OWI_PASSWORD
@@ -46,7 +49,11 @@ openWebIF:
   # ENV: XG2G_OWI_MAX_BACKOFF_MS
   maxBackoff: "30s"
 
-  # Stream port (usually 8001 for Enigma2)
+  # Stream port for M3U playlist URLs
+  # Common values:
+  #   8001  - Standard Enigma2 stream server (FTA channels)
+  #   17999 - OSCam Streamrelay (encrypted channels: Sky, HD+, etc.)
+  # See docs/STREAM_PORTS.md for detailed configuration guide
   # ENV: XG2G_STREAM_PORT
   streamPort: 8001
 
@@ -236,10 +243,20 @@ picons:
 # ==============================================================================
 #
 # - If OpenWebIF connection fails, verify the baseUrl is accessible:
-#     curl http://192.168.1.100:80/api/statusinfo
+#     curl http://192.168.1.100/api/statusinfo
 #
 # - For EPG issues, check Enigma2 supports EPG API:
-#     curl http://192.168.1.100:80/api/epgservice?sRef=REFERENCE
+#     curl http://192.168.1.100/api/epgservice?sRef=REFERENCE
+#
+# - Streams don't play? Test which port works:
+#     curl -I http://192.168.1.100:8001/1:0:19:...   (Standard Enigma2)
+#     curl -I http://192.168.1.100:17999/1:0:19:...  (OSCam Streamrelay)
+#   Then configure streamPort accordingly. See docs/STREAM_PORTS.md
+#
+# - OSCam Streamrelay for encrypted channels (Sky, HD+):
+#     1. Check if port 17999 responds: curl -I http://192.168.1.100:17999/
+#     2. If yes, set: streamPort: 17999
+#     3. If no, enable streamrelay in /etc/tuxbox/config/oscam.conf
 #
 # - Enable debug logging for detailed information:
 #     XG2G_LOG_LEVEL=debug ./xg2g-daemon --config config.yaml
