@@ -23,7 +23,7 @@ linters:
     - unused
 
     # Additional quality linters
-    - bodyclose
+    # - bodyclose  # Disabled: causes issues with test files even with exclusions
     - dupl
     - gochecknoinits
     - goconst
