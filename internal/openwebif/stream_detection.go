@@ -80,8 +80,12 @@ func NewStreamDetector(receiverHost string, logger zerolog.Logger) *StreamDetect
 }
 
 // IsEnabled checks if smart stream detection is enabled.
+// Default: enabled for automatic OSCam Streamrelay detection
+// Can be disabled with XG2G_SMART_STREAM_DETECTION=false
 func IsEnabled() bool {
-	return os.Getenv("XG2G_SMART_STREAM_DETECTION") == "true"
+	env := os.Getenv("XG2G_SMART_STREAM_DETECTION")
+	// If not set or set to anything other than "false", enable by default
+	return env != "false"
 }
 
 // DetectStreamURL determines the optimal stream URL for a given service reference.

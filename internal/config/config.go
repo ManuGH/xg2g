@@ -127,8 +127,8 @@ func (l *Loader) setDefaults(cfg *jobs.Config) {
 	cfg.OWIMaxBackoff = 30 * time.Second
 	cfg.FuzzyMax = 2
 
-	// EPG defaults
-	cfg.EPGEnabled = false
+	// EPG defaults - enabled by default for complete out-of-the-box experience
+	cfg.EPGEnabled = true
 	cfg.EPGDays = 7
 	cfg.EPGMaxConcurrency = 5
 	cfg.EPGTimeoutMS = 15000

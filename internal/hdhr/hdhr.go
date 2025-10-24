@@ -172,7 +172,9 @@ func (s *Server) HandleLineupPost(w http.ResponseWriter, r *http.Request) {
 
 // GetConfigFromEnv creates Config from environment variables
 func GetConfigFromEnv(logger zerolog.Logger) Config {
-	enabled := strings.ToLower(os.Getenv("XG2G_HDHR_ENABLED")) == "true"
+	// Default to enabled for out-of-the-box Plex/Jellyfin discovery
+	// Can be disabled with XG2G_HDHR_ENABLED=false
+	enabled := getEnvDefault("XG2G_HDHR_ENABLED", "true") == "true"
 
 	return Config{
 		Enabled:      enabled,

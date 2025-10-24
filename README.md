@@ -17,27 +17,7 @@ M3U playlists · XMLTV EPG · HDHomeRun emulation · OSCam Streamrelay support
 
 ## Quick Start
 
-**Minimal Setup** - Only 2 parameters required:
-
-```bash
-docker run -d \
-  --name xg2g \
-  -p 8080:8080 \
-  -e XG2G_OWI_BASE=http://192.168.1.100 \
-  -e XG2G_BOUQUET=Favourites \
-  ghcr.io/manugh/xg2g:latest
-```
-
-**Get your playlist:**
-```bash
-curl http://localhost:8080/files/playlist.m3u
-```
-
-That's it! Your channels are streaming.
-
----
-
-**Recommended Setup** - Add EPG + Smart Stream Detection:
+**Only 2 parameters required:**
 
 ```bash
 docker run -d \
@@ -46,18 +26,21 @@ docker run -d \
   -p 1900:1900/udp \
   -e XG2G_OWI_BASE=http://192.168.1.100 \
   -e XG2G_BOUQUET=Favourites \
-  -e XG2G_EPG_ENABLED=true \
-  -e XG2G_SMART_STREAM_DETECTION=true \
-  -e XG2G_HDHR_ENABLED=true \
   -v ./data:/data \
   ghcr.io/manugh/xg2g:latest
 ```
 
-**What you get:**
+**That's it!** Everything works out of the box:
+- ✅ M3U playlist with channel logos
+- ✅ 7-day EPG guide (XMLTV)
+- ✅ HDHomeRun emulation (Plex/Jellyfin auto-discovery)
+- ✅ Smart stream detection (OSCam port 8001/17999)
+- ✅ Authentication support
+
+**Access:**
 - M3U: `http://localhost:8080/files/playlist.m3u`
 - EPG: `http://localhost:8080/xmltv.xml`
-- HDHomeRun: Auto-discovered by Plex/Jellyfin
-- OSCam: Automatic port detection (8001/17999)
+- Plex/Jellyfin: Automatically discovered as TV tuner
 
 ---
 
@@ -146,35 +129,37 @@ api:
 
 ### Environment Variables
 
-**Only 2 required, everything else is optional:**
-
-#### Required
+**Only 2 required:**
 
 ```bash
 XG2G_OWI_BASE=http://192.168.1.100   # Your Enigma2 receiver
 XG2G_BOUQUET=Favourites              # Bouquet name
 ```
 
-#### Recommended (but optional)
+**Everything else is enabled by default:**
+- ✅ EPG collection (7 days)
+- ✅ Smart stream detection (OSCam auto-detection)
+- ✅ HDHomeRun emulation (Plex/Jellyfin)
+- ✅ Channel logos
+
+#### Disable features (if needed)
 
 ```bash
-XG2G_EPG_ENABLED=true                     # EPG data
-XG2G_SMART_STREAM_DETECTION=true          # Auto port selection (8001/17999)
-XG2G_HDHR_ENABLED=true                    # Plex/Jellyfin auto-discovery
+XG2G_EPG_ENABLED=false                    # Disable EPG
+XG2G_SMART_STREAM_DETECTION=false         # Disable auto port detection
+XG2G_HDHR_ENABLED=false                   # Disable HDHomeRun emulation
 ```
 
-#### Authentication (if needed)
+#### Authentication (standard 2025)
 
 ```bash
 XG2G_OWI_USER=root
 XG2G_OWI_PASS=yourpassword
 ```
 
-#### All other variables
+#### Advanced configuration
 
-See [config.example.yaml](config.example.yaml) for complete list of 30+ options.
-
-**Best Practice:** Start with minimal setup, add features as needed.
+See [config.example.yaml](config.example.yaml) for 30+ tuning options.
 
 ---
 
@@ -203,23 +188,6 @@ Add these URLs:
 
 ## Docker Compose
 
-**Minimal setup** (only 2 variables):
-
-```yaml
-services:
-  xg2g:
-    image: ghcr.io/manugh/xg2g:latest
-    container_name: xg2g
-    ports:
-      - "8080:8080"
-    environment:
-      - XG2G_OWI_BASE=http://192.168.1.100
-      - XG2G_BOUQUET=Favourites
-    restart: unless-stopped
-```
-
-**Recommended setup** (add EPG + OSCam auto-detection + HDHomeRun):
-
 ```yaml
 services:
   xg2g:
@@ -231,15 +199,18 @@ services:
     environment:
       - XG2G_OWI_BASE=http://192.168.1.100
       - XG2G_BOUQUET=Favourites
-      - XG2G_EPG_ENABLED=true
-      - XG2G_SMART_STREAM_DETECTION=true
-      - XG2G_HDHR_ENABLED=true
+      # Optional: Add authentication
+      # - XG2G_OWI_USER=root
+      # - XG2G_OWI_PASS=yourpassword
     volumes:
       - ./data:/data
     restart: unless-stopped
 ```
 
-**Using config file** (for production):
+**All features enabled by default:**
+- EPG (7 days), HDHomeRun, Smart stream detection, Channel logos
+
+**Using config file** (advanced):
 
 See [examples/config.production.yaml](examples/config.production.yaml)
 
