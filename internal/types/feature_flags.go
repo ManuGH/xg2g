@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 //nolint:revive // Package name "types" is standard for shared type definitions
+//nolint:revive,nolintlint // Package name "types" is standard for shared type definitions
 package types
 
 // FeatureFlag represents a feature toggle in the application.

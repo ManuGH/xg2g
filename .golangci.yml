@@ -164,10 +164,6 @@ issues:
       linters:
         - gocyclo
 
-    - path: internal/types/
-      linters:
-        - revive
-
   exclude-dirs:
     - vendor
     - third_party

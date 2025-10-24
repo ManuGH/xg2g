@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 // Package types provides common data types used across the xg2g application.
+//nolint:revive,nolintlint // Package name "types" is standard for shared type definitions
 package types
 
 import (

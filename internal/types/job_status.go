@@ -4,6 +4,7 @@
 //
 // This package centralizes all typed constants, enums, and state types
 // to prevent string-based bugs and improve code maintainability.
+//nolint:revive,nolintlint // Package name "types" is standard for shared type definitions
 package types
 
 import (
