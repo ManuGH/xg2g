@@ -1,63 +1,71 @@
-# cSpell:ignore healthcheck curlimages
+# xg2g - Enigma2 to IPTV Gateway
+# Standard 2025 Setup - Everything enabled by default
+#
+# Features included:
+# - M3U playlist with channel logos
+# - 7-day EPG guide (XMLTV)
+# - HDHomeRun emulation (Plex/Jellyfin auto-discovery)
+# - Smart stream detection (OSCam port 8001/17999)
+# - Enigma2 authentication
+
 services:
   xg2g:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        VERSION: "${VERSION:-dev}"
-    image: xg2g:local
-    container_name: xg2g-1-xg2g-1
+    image: ghcr.io/manugh/xg2g:latest
+    container_name: xg2g
     ports:
-      - "8080:8080"
-      - "9090:9090"
+      - "8080:8080"      # HTTP API & M3U/EPG
+      - "1900:1900/udp"  # SSDP for Plex/Jellyfin discovery
+      - "9090:9090"      # Prometheus metrics (optional)
+    environment:
+      # ============================================================================
+      # Required Configuration
+      # ============================================================================
+      - XG2G_OWI_BASE=http://192.168.1.100
+      - XG2G_OWI_USER=root
+      - XG2G_OWI_PASS=yourpassword
+      - XG2G_BOUQUET=Favourites
+
+      # ============================================================================
+      # Optional: Disable Features (all enabled by default)
+      # ============================================================================
+      # - XG2G_EPG_ENABLED=false                  # Disable EPG collection
+      # - XG2G_SMART_STREAM_DETECTION=false       # Disable OSCam auto-detection
+      # - XG2G_HDHR_ENABLED=false                 # Disable HDHomeRun emulation
+
+      # ============================================================================
+      # Optional: Advanced Configuration
+      # ============================================================================
+      # - XG2G_DATA=/data                         # Data directory
+      # - XG2G_EPG_DAYS=7                         # EPG days (1-14)
+      # - XG2G_API_TOKEN=your-token-here          # API authentication
+      # - XG2G_PICON_BASE=http://picons-url       # Custom picons URL
     volumes:
       - ./data:/data
-      - ./test/picons:/data/picons # Mount test picons
-    environment:
-      - XG2G_DATA=/data
-      - XG2G_OWI_BASE=http://192.168.1.100  # Replace with your receiver IP
-      - XG2G_BOUQUET=Favourites  # Replace with your bouquet name
-      - XG2G_LISTEN=:8080
-      - XG2G_METRICS_LISTEN=:9090
-      - XG2G_API_TOKEN=super-secret-token-do-not-use-in-prod
-      - XG2G_XMLTV=xmltv.xml
-      - XG2G_PICON_BASE=http://localhost:8080/files/picons
-    # Optional: OpenWebIF request settings
-    # - XG2G_OWI_TIMEOUT_MS=10000
-    # - XG2G_OWI_RETRIES=3
-    # - XG2G_OWI_BACKOFF_MS=500
-    # Optional: stream port override
-    # - XG2G_STREAM_PORT=8001
-    # Optional: playlist filename (default playlist.m3u)
-    # - XG2G_PLAYLIST_FILENAME=playlist.m3u
-    # Optional: server timeouts and limits
-    # - XG2G_SERVER_READ_TIMEOUT=15s
-    # - XG2G_SERVER_WRITE_TIMEOUT=15s
-    # - XG2G_SERVER_IDLE_TIMEOUT=60s
-    # - XG2G_SERVER_MAX_HEADER_BYTES=1048576
-    # - XG2G_SERVER_SHUTDOWN_TIMEOUT=10s
-    # Optional: rate limiter
-    # - XG2G_RATELIMIT_ENABLED=true
-    # - XG2G_RATELIMIT_RPS=5
-    # - XG2G_RATELIMIT_BURST=10
-    # - XG2G_RATELIMIT_WHITELIST=127.0.0.1,192.168.0.0/16
-    # Optional: OpenWebIF HTTP client pool
-    # - XG2G_HTTP_MAX_IDLE_CONNS=100
-    # - XG2G_HTTP_MAX_IDLE_CONNS_PER_HOST=10
-    # - XG2G_HTTP_MAX_CONNS_PER_HOST=0
-    # - XG2G_HTTP_IDLE_TIMEOUT=90s
-    # - XG2G_HTTP_ENABLE_HTTP2=true
     healthcheck:
-      test: >
-        wget -q --spider -T 5 -O /dev/null http://localhost:8080/readyz || exit 1
-      interval: 15s
+      test: wget -q --spider -T 5 -O /dev/null http://localhost:8080/readyz || exit 1
+      interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 5s
+      start_period: 10s
     restart: unless-stopped
-    # Uncomment for hardened security (requires proper data dir permissions)
-    # user: "1000"
-    # read_only: true
-    tmpfs:
-      - /tmp:size=16M,mode=1777
+
+# ============================================================================
+# Access URLs
+# ============================================================================
+#
+# M3U Playlist:  http://localhost:8080/files/playlist.m3u
+# EPG (XMLTV):   http://localhost:8080/xmltv.xml
+# API Status:    http://localhost:8080/api/v1/status
+# Prometheus:    http://localhost:9090/metrics
+#
+# Plex/Jellyfin: Automatically discovered via SSDP (port 1900/udp)
+#
+# ============================================================================
+# For Development
+# ============================================================================
+#
+# To build locally instead of using the published image:
+#   docker compose -f docker-compose.dev.yml up --build
+#
+# See: docker-compose.dev.yml, docker-compose.test.yml
+#
