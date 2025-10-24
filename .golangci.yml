@@ -150,6 +150,7 @@ issues:
         - gosec
         - goconst
         - noctx
+        - bodyclose
 
     - path: test/
       linters:
