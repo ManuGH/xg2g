@@ -14,11 +14,9 @@ func TestPromhttpExposure(t *testing.T) {
 	srv := httptest.NewServer(promhttp.Handler())
 	defer srv.Close()
 
-	resp, err := srv.Client().Get(srv.URL)
-	if err != nil {
+	if _, err := srv.Client().Get(srv.URL); err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
 }
 
 func TestRecordPlaylistFileValidity(t *testing.T) {
