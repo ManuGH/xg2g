@@ -751,6 +751,12 @@ func extractHost(base string) string {
 	}
 	if strings.Contains(base, "://") {
 		if u, err := url.Parse(base); err == nil && u.Host != "" {
+			// Extract only hostname, strip port if present
+			// This ensures smart stream detection can add ports correctly
+			hostname := u.Hostname()
+			if hostname != "" {
+				return hostname
+			}
 			return u.Host
 		}
 	}
