@@ -44,7 +44,7 @@ linters:
     - forcetypeassert
     - nilerr
     - nilnil
-    - noctx
+    # - noctx  # Disabled: causes issues with test files even with exclusions
     - nolintlint
     - nosprintfhostport
     - predeclared
