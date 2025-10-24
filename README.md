@@ -17,6 +17,28 @@ M3U playlists · XMLTV EPG · HDHomeRun emulation · OSCam Streamrelay support
 
 ## Quick Start
 
+**Minimal Setup** - Only 2 parameters required:
+
+```bash
+docker run -d \
+  --name xg2g \
+  -p 8080:8080 \
+  -e XG2G_OWI_BASE=http://192.168.1.100 \
+  -e XG2G_BOUQUET=Favourites \
+  ghcr.io/manugh/xg2g:latest
+```
+
+**Get your playlist:**
+```bash
+curl http://localhost:8080/files/playlist.m3u
+```
+
+That's it! Your channels are streaming.
+
+---
+
+**Recommended Setup** - Add EPG + Smart Stream Detection:
+
 ```bash
 docker run -d \
   --name xg2g \
@@ -25,15 +47,17 @@ docker run -d \
   -e XG2G_OWI_BASE=http://192.168.1.100 \
   -e XG2G_BOUQUET=Favourites \
   -e XG2G_EPG_ENABLED=true \
+  -e XG2G_SMART_STREAM_DETECTION=true \
   -e XG2G_HDHR_ENABLED=true \
   -v ./data:/data \
   ghcr.io/manugh/xg2g:latest
 ```
 
-**URLs:**
+**What you get:**
 - M3U: `http://localhost:8080/files/playlist.m3u`
 - EPG: `http://localhost:8080/xmltv.xml`
-- HDHomeRun discovery: automatic (if enabled)
+- HDHomeRun: Auto-discovered by Plex/Jellyfin
+- OSCam: Automatic port detection (8001/17999)
 
 ---
 
@@ -120,39 +144,37 @@ api:
 - [examples/config.minimal.yaml](examples/config.minimal.yaml) - Minimal setup
 - [examples/config.production.yaml](examples/config.production.yaml) - Production-ready template
 
-### Environment Variables (Legacy)
+### Environment Variables
 
-**Still fully supported** - ENV vars override config file values.
+**Only 2 required, everything else is optional:**
 
 #### Required
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `XG2G_OWI_BASE` | Enigma2 receiver URL | `http://192.168.1.100` |
-| `XG2G_BOUQUET` | Bouquet name(s) | `Favourites` or `Movies,Sports` |
+```bash
+XG2G_OWI_BASE=http://192.168.1.100   # Your Enigma2 receiver
+XG2G_BOUQUET=Favourites              # Bouquet name
+```
 
-#### Optional
+#### Recommended (but optional)
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `XG2G_EPG_ENABLED` | `false` | Enable EPG collection |
-| `XG2G_EPG_DAYS` | `7` | Days of EPG (1-14) |
-| `XG2G_HDHR_ENABLED` | `false` | Enable HDHomeRun emulation |
-| `XG2G_HDHR_FRIENDLY_NAME` | `xg2g` | Name shown in Plex/Jellyfin |
-| `XG2G_ENABLE_AUDIO_TRANSCODING` | `false` | Transcode audio to AAC |
-| `XG2G_GPU_TRANSCODE` | `false` | Enable GPU transcoding (full video+audio) |
-| `XG2G_TRANSCODER_URL` | `http://localhost:8085` | GPU transcoder service URL |
-| `XG2G_SMART_STREAM_DETECTION` | `false` | Auto-detect optimal stream port |
-| `XG2G_API_TOKEN` | - | API authentication token |
+```bash
+XG2G_EPG_ENABLED=true                     # EPG data
+XG2G_SMART_STREAM_DETECTION=true          # Auto port selection (8001/17999)
+XG2G_HDHR_ENABLED=true                    # Plex/Jellyfin auto-discovery
+```
 
-#### OpenWebIF Authentication
+#### Authentication (if needed)
 
 ```bash
 XG2G_OWI_USER=root
 XG2G_OWI_PASS=yourpassword
 ```
 
-**Best Practice:** Use config file for static settings, ENV vars for secrets and environment-specific overrides.
+#### All other variables
+
+See [config.example.yaml](config.example.yaml) for complete list of 30+ options.
+
+**Best Practice:** Start with minimal setup, add features as needed.
 
 ---
 
@@ -181,43 +203,7 @@ Add these URLs:
 
 ## Docker Compose
 
-### Option 1: Using Config File (Recommended)
-
-```yaml
-services:
-  xg2g:
-    image: ghcr.io/manugh/xg2g:latest
-    container_name: xg2g
-    command: ["--config", "/config/config.yaml"]
-    ports:
-      - "8080:8080"      # HTTP API
-      - "1900:1900/udp"  # SSDP discovery
-    environment:
-      # Secrets (override config file)
-      - XG2G_OWI_PASSWORD=${XG2G_OWI_PASSWORD}
-      - XG2G_API_TOKEN=${XG2G_API_TOKEN}
-    volumes:
-      - ./data:/data
-      - ./config.yaml:/config/config.yaml:ro
-    restart: unless-stopped
-```
-
-**config.yaml:**
-```yaml
-openWebIF:
-  baseUrl: http://192.168.1.100
-  username: root
-  password: ${XG2G_OWI_PASSWORD}
-bouquets:
-  - Favourites
-epg:
-  enabled: true
-  days: 7
-api:
-  token: ${XG2G_API_TOKEN}
-```
-
-### Option 2: Using Environment Variables (Legacy)
+**Minimal setup** (only 2 variables):
 
 ```yaml
 services:
@@ -225,27 +211,37 @@ services:
     image: ghcr.io/manugh/xg2g:latest
     container_name: xg2g
     ports:
-      - "8080:8080"      # HTTP API
-      - "1900:1900/udp"  # SSDP discovery
+      - "8080:8080"
     environment:
-      # Required
       - XG2G_OWI_BASE=http://192.168.1.100
       - XG2G_BOUQUET=Favourites
+    restart: unless-stopped
+```
 
-      # EPG
+**Recommended setup** (add EPG + OSCam auto-detection + HDHomeRun):
+
+```yaml
+services:
+  xg2g:
+    image: ghcr.io/manugh/xg2g:latest
+    container_name: xg2g
+    ports:
+      - "8080:8080"
+      - "1900:1900/udp"  # For Plex/Jellyfin discovery
+    environment:
+      - XG2G_OWI_BASE=http://192.168.1.100
+      - XG2G_BOUQUET=Favourites
       - XG2G_EPG_ENABLED=true
-      - XG2G_EPG_DAYS=7
-
-      # HDHomeRun
+      - XG2G_SMART_STREAM_DETECTION=true
       - XG2G_HDHR_ENABLED=true
-      - XG2G_HDHR_FRIENDLY_NAME=Enigma2 xg2g
-
-      # Optional: Audio transcoding
-      - XG2G_ENABLE_AUDIO_TRANSCODING=false
     volumes:
       - ./data:/data
     restart: unless-stopped
 ```
+
+**Using config file** (for production):
+
+See [examples/config.production.yaml](examples/config.production.yaml)
 
 ---
 

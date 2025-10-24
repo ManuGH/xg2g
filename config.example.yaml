@@ -22,9 +22,9 @@ logLevel: "info"
 # OpenWebIF Configuration (Enigma2 Receiver)
 openWebIF:
   # Base URL of your Enigma2 receiver (required)
-  # ⚠️  IMPORTANT: Do NOT include port if using streamPort below!
-  #     ✅ Correct:  "http://192.168.1.100"
-  #     ❌ Wrong:    "http://192.168.1.100:80" (will ignore streamPort)
+  # ⚠️  NEVER include :80 or :8001 here! Those are different services.
+  #     ✅ CORRECT:  "http://192.168.1.100"
+  #     ❌ WRONG:    "http://192.168.1.100:80"
   # ENV: XG2G_OWI_BASE
   baseUrl: "http://192.168.1.100"
 
@@ -133,15 +133,14 @@ picons:
 # Example 1: Minimal configuration (OpenWebIF only)
 # ---
 # openWebIF:
-#   baseUrl: "http://192.168.1.100:80"
+#   baseUrl: "http://192.168.1.100"
 
 # Example 2: Full EPG setup with authentication
 # ---
 # openWebIF:
-#   baseUrl: "http://dreambox.local:80"
+#   baseUrl: "http://dreambox.local"
 #   username: "admin"
 #   password: "secret"
-#   streamPort: 8001
 # epg:
 #   enabled: true
 #   days: 7
@@ -151,7 +150,7 @@ picons:
 # Example 3: Multiple bouquets with custom API token
 # ---
 # openWebIF:
-#   baseUrl: "http://192.168.1.100:80"
+#   baseUrl: "http://192.168.1.100"
 # bouquets:
 #   - "1:7:1:0:0:0:0:0:0:0:FROM BOUQUET \"favorites.tv\" ORDER BY bouquet"
 #   - "1:7:1:0:0:0:0:0:0:0:FROM BOUQUET \"sports.tv\" ORDER BY bouquet"
@@ -165,7 +164,7 @@ picons:
 # Example 4: High-performance EPG collection
 # ---
 # openWebIF:
-#   baseUrl: "http://192.168.1.100:80"
+#   baseUrl: "http://192.168.1.100"
 #   timeout: "30s"
 #   retries: 5
 #   maxBackoff: "60s"
@@ -248,20 +247,15 @@ picons:
 # - For EPG issues, check Enigma2 supports EPG API:
 #     curl http://192.168.1.100/api/epgservice?sRef=REFERENCE
 #
-# - Streams don't play? Test which port works:
-#     curl -I http://192.168.1.100:8001/1:0:19:...   (Standard Enigma2)
-#     curl -I http://192.168.1.100:17999/1:0:19:...  (OSCam Streamrelay)
-#   Then configure streamPort accordingly. See docs/STREAM_PORTS.md
-#
-# - OSCam Streamrelay for encrypted channels (Sky, HD+):
-#     1. Check if port 17999 responds: curl -I http://192.168.1.100:17999/
-#     2. If yes, set: streamPort: 17999
-#     3. If no, enable streamrelay in /etc/tuxbox/config/oscam.conf
+# - Streams don't play? Enable Smart Stream Detection (automatic):
+#     XG2G_SMART_STREAM_DETECTION=true
+#   This automatically detects port 8001 vs 17999 (OSCam) per channel.
+#   See docs/STREAM_PORTS.md for details.
 #
 # - Enable debug logging for detailed information:
 #     XG2G_LOG_LEVEL=debug ./xg2g-daemon --config config.yaml
 #
 # - Check metrics at: http://localhost:9090/metrics
 #
-# - API health check: curl http://localhost:8080/api/status
+# - API health check: curl http://localhost:8080/api/v1/status
 #
