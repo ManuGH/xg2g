@@ -9,19 +9,9 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/ManuGH/xg2g.svg)](https://pkg.go.dev/github.com/ManuGH/xg2g)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**Stream your Enigma2 satellite/cable receiver channels directly to Plex, Jellyfin, or any IPTV player.**
+**Enigma2 to IPTV Gateway** - Stream your satellite/cable receiver to Plex, Jellyfin, or any IPTV player.
 
-Convert OpenWebIF bouquets to M3U playlists and XMLTV EPG. HDHomeRun emulation for automatic discovery.
-
----
-
-## What it does
-
-- **Converts** Enigma2 bouquets to M3U playlists
-- **Generates** XMLTV EPG (Electronic Program Guide)
-- **Emulates** HDHomeRun for auto-discovery in Plex/Jellyfin
-- **Streams** directly from your satellite/cable receiver
-- **Transcodes** audio on-the-fly (optional)
+M3U playlists · XMLTV EPG · HDHomeRun emulation · OSCam Streamrelay support
 
 ---
 
