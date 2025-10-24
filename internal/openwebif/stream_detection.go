@@ -174,11 +174,34 @@ func (sd *StreamDetector) buildCandidates(serviceRef string) []streamCandidate {
 	return candidates
 }
 
-// testEndpoint tests if a stream endpoint is working by sending a HEAD request.
+// testEndpoint tests if a stream endpoint is working.
+// It first tries a HEAD request for efficiency, then falls back to GET with Range
+// header if HEAD fails (Enigma2 compatibility).
 func (sd *StreamDetector) testEndpoint(ctx context.Context, candidate streamCandidate) bool {
-	req, err := http.NewRequestWithContext(ctx, http.MethodHead, candidate.URL, nil)
+	// Try HEAD first (fast, minimal bandwidth)
+	if sd.tryRequest(ctx, http.MethodHead, candidate, false) {
+		return true
+	}
+
+	// Fallback to GET with Range header (Enigma2 doesn't support HEAD properly)
+	sd.logger.Debug().
+		Str("url", candidate.URL).
+		Int("port", candidate.Port).
+		Msg("HEAD failed, retrying with GET")
+
+	return sd.tryRequest(ctx, http.MethodGet, candidate, true)
+}
+
+// tryRequest attempts a single HTTP request to test the stream endpoint.
+func (sd *StreamDetector) tryRequest(ctx context.Context, method string, candidate streamCandidate, useRange bool) bool {
+	req, err := http.NewRequestWithContext(ctx, method, candidate.URL, nil)
 	if err != nil {
 		return false
+	}
+
+	// For GET requests, use Range header to minimize data transfer
+	if useRange && method == http.MethodGet {
+		req.Header.Set("Range", "bytes=0-0")
 	}
 
 	resp, err := sd.httpClient.Do(req)
@@ -187,7 +210,8 @@ func (sd *StreamDetector) testEndpoint(ctx context.Context, candidate streamCand
 			Err(err).
 			Str("url", candidate.URL).
 			Int("port", candidate.Port).
-			Msg("stream endpoint HEAD test failed")
+			Str("method", method).
+			Msg("stream endpoint test failed")
 		return false
 	}
 	defer func() {
@@ -202,9 +226,10 @@ func (sd *StreamDetector) testEndpoint(ctx context.Context, candidate streamCand
 	sd.logger.Debug().
 		Str("url", candidate.URL).
 		Int("port", candidate.Port).
+		Str("method", method).
 		Int("status", resp.StatusCode).
 		Bool("success", success).
-		Msg("stream endpoint HEAD test result")
+		Msg("stream endpoint test result")
 
 	return success
 }

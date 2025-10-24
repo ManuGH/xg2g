@@ -134,8 +134,9 @@ func TestStreamDetector_TestEndpoint(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create test server
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.Method != http.MethodHead {
-					t.Errorf("expected HEAD request, got %s", r.Method)
+				// Accept both HEAD and GET (fallback)
+				if r.Method != http.MethodHead && r.Method != http.MethodGet {
+					t.Errorf("expected HEAD or GET request, got %s", r.Method)
 				}
 				w.WriteHeader(tt.statusCode)
 			}))
@@ -153,6 +154,102 @@ func TestStreamDetector_TestEndpoint(t *testing.T) {
 
 			if got != tt.want {
 				t.Errorf("testEndpoint() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestStreamDetector_TestEndpoint_HEADtoGETFallback(t *testing.T) {
+	logger := zerolog.New(io.Discard)
+
+	tests := []struct {
+		name           string
+		headStatus     int
+		getStatus      int
+		wantSuccess    bool
+		wantGETCalled  bool
+		description    string
+	}{
+		{
+			name:          "HEAD succeeds - no GET fallback",
+			headStatus:    http.StatusOK,
+			getStatus:     http.StatusOK,
+			wantSuccess:   true,
+			wantGETCalled: false,
+			description:   "When HEAD works, GET should not be called",
+		},
+		{
+			name:          "HEAD fails with 400 - GET succeeds",
+			headStatus:    http.StatusBadRequest,
+			getStatus:     http.StatusOK,
+			wantSuccess:   true,
+			wantGETCalled: true,
+			description:   "Enigma2 compatibility: HEAD 400 → retry with GET",
+		},
+		{
+			name:          "HEAD fails with 404 - GET succeeds",
+			headStatus:    http.StatusNotFound,
+			getStatus:     http.StatusOK,
+			wantSuccess:   true,
+			wantGETCalled: true,
+			description:   "HEAD fails → fallback to GET works",
+		},
+		{
+			name:          "Both HEAD and GET fail",
+			headStatus:    http.StatusBadRequest,
+			getStatus:     http.StatusBadRequest,
+			wantSuccess:   false,
+			wantGETCalled: true,
+			description:   "Both methods fail → endpoint unavailable",
+		},
+		{
+			name:          "HEAD fails - GET returns 206",
+			headStatus:    http.StatusBadRequest,
+			getStatus:     http.StatusPartialContent,
+			wantSuccess:   true,
+			wantGETCalled: true,
+			description:   "GET with Range header returns 206 Partial Content",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			getCalled := false
+
+			// Create test server that behaves like Enigma2
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodHead {
+					w.WriteHeader(tt.headStatus)
+				} else if r.Method == http.MethodGet {
+					getCalled = true
+					// Verify Range header is set
+					if r.Header.Get("Range") != "bytes=0-0" {
+						t.Errorf("expected Range header 'bytes=0-0', got '%s'", r.Header.Get("Range"))
+					}
+					w.WriteHeader(tt.getStatus)
+				} else {
+					t.Errorf("unexpected method: %s", r.Method)
+					w.WriteHeader(http.StatusMethodNotAllowed)
+				}
+			}))
+			defer server.Close()
+
+			detector := NewStreamDetector("192.168.1.100", logger)
+
+			candidate := streamCandidate{
+				URL:  server.URL,
+				Port: 8001,
+			}
+
+			ctx := context.Background()
+			got := detector.testEndpoint(ctx, candidate)
+
+			if got != tt.wantSuccess {
+				t.Errorf("testEndpoint() = %v, want %v (%s)", got, tt.wantSuccess, tt.description)
+			}
+
+			if getCalled != tt.wantGETCalled {
+				t.Errorf("GET called = %v, want %v (%s)", getCalled, tt.wantGETCalled, tt.description)
 			}
 		})
 	}
