@@ -164,10 +164,9 @@ issues:
       linters:
         - gocyclo
 
-    - path: internal/types
+    - path: internal/types/
       linters:
         - revive
-      text: "var-naming"
 
   exclude-dirs:
     - vendor
