@@ -72,8 +72,9 @@ func NewStreamDetector(receiverHost string, logger zerolog.Logger) *StreamDetect
 		encryptedChannels: make(map[string]bool),
 	}
 
-	// Load encrypted channels whitelist from receiver (async, non-blocking)
-	go sd.loadEncryptedChannelsWhitelist()
+	// Load encrypted channels whitelist from receiver (synchronous)
+	// This must complete before stream detection starts to ensure correct port selection
+	sd.loadEncryptedChannelsWhitelist()
 
 	return sd
 }
@@ -97,7 +98,32 @@ func (sd *StreamDetector) DetectStreamURL(ctx context.Context, serviceRef, chann
 		return cached, nil
 	}
 
-	// Test endpoints in order of preference
+	// For encrypted channels in whitelist, use port 17999 directly without testing
+	// Both ports may return HTTP 200, but only 17999 provides decrypted streams
+	if sd.isEncrypted(serviceRef) {
+		info := &StreamInfo{
+			URL:          "http://" + net.JoinHostPort(sd.receiverHost, "17999") + "/" + serviceRef,
+			Port:         17999,
+			SupportsHEAD: false,
+			UseProxy:     false,
+			TestedAt:     time.Now(),
+		}
+
+		// Cache the result
+		sd.cacheMu.Lock()
+		sd.cache[serviceRef] = info
+		sd.cacheMu.Unlock()
+
+		sd.logger.Info().
+			Str("service_ref", maskServiceRef(serviceRef)).
+			Str("channel", channelName).
+			Int("port", 17999).
+			Msg("encrypted channel - using OSCam Streamrelay (port 17999)")
+
+		return info, nil
+	}
+
+	// Test endpoints in order of preference for FTA channels
 	candidates := sd.buildCandidates(serviceRef)
 
 	for _, candidate := range candidates {
