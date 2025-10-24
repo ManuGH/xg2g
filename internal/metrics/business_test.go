@@ -1,6 +1,7 @@
 package metrics_test
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -13,9 +14,11 @@ func TestPromhttpExposure(t *testing.T) {
 	srv := httptest.NewServer(promhttp.Handler())
 	defer srv.Close()
 
-	if _, err := srv.Client().Get(srv.URL); err != nil {
+	resp, err := srv.Client().Get(srv.URL)
+	if err != nil {
 		t.Fatal(err)
 	}
+	defer resp.Body.Close()
 }
 
 func TestRecordPlaylistFileValidity(t *testing.T) {
@@ -53,7 +56,7 @@ func TestRecordPlaylistFileValidity(t *testing.T) {
 
 			// Verify the metric was recorded by scraping the metrics endpoint
 			recorder := httptest.NewRecorder()
-			req := httptest.NewRequest("GET", "/metrics", nil)
+			req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 			promhttp.Handler().ServeHTTP(recorder, req)
 
 			body := recorder.Body.String()
@@ -79,7 +82,7 @@ func TestRecordPlaylistFileValidity_MultipleTypes(t *testing.T) {
 
 	// Scrape metrics
 	recorder := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/metrics", nil)
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	promhttp.Handler().ServeHTTP(recorder, req)
 
 	body := recorder.Body.String()
