@@ -1,11 +1,13 @@
 package openwebif
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -38,10 +40,12 @@ type StreamDetector struct {
 	logger     zerolog.Logger
 
 	// Configuration
-	receiverHost string // e.g., "192.168.1.100"
-	proxyEnabled bool
-	proxyHost    string // e.g., "192.168.1.50:18000"
-	cacheTTL     time.Duration
+	receiverHost       string            // e.g., "192.168.1.100"
+	proxyEnabled       bool
+	proxyHost          string            // e.g., "192.168.1.50:18000"
+	cacheTTL           time.Duration
+	encryptedChannels  map[string]bool   // Whitelist of service refs requiring port 17999
+	whitelistMu        sync.RWMutex
 }
 
 // NewStreamDetector creates a new smart stream detector.
@@ -49,7 +53,7 @@ func NewStreamDetector(receiverHost string, logger zerolog.Logger) *StreamDetect
 	proxyEnabled := os.Getenv("XG2G_ENABLE_STREAM_PROXY") == "true"
 	proxyHost := os.Getenv("XG2G_STREAM_BASE") // e.g., http://host:18000
 
-	return &StreamDetector{
+	sd := &StreamDetector{
 		cache: make(map[string]*StreamInfo),
 		httpClient: &http.Client{
 			Timeout: 3 * time.Second,
@@ -60,12 +64,18 @@ func NewStreamDetector(receiverHost string, logger zerolog.Logger) *StreamDetect
 				TLSHandshakeTimeout: 2 * time.Second,
 			},
 		},
-		logger:       logger,
-		receiverHost: receiverHost,
-		proxyEnabled: proxyEnabled,
-		proxyHost:    proxyHost,
-		cacheTTL:     24 * time.Hour, // Cache results for 24 hours
+		logger:            logger,
+		receiverHost:      receiverHost,
+		proxyEnabled:      proxyEnabled,
+		proxyHost:         proxyHost,
+		cacheTTL:          24 * time.Hour, // Cache results for 24 hours
+		encryptedChannels: make(map[string]bool),
 	}
+
+	// Load encrypted channels whitelist from receiver (async, non-blocking)
+	go sd.loadEncryptedChannelsWhitelist()
+
+	return sd
 }
 
 // IsEnabled checks if smart stream detection is enabled.
@@ -145,20 +155,45 @@ type streamCandidate struct {
 }
 
 // buildCandidates creates an ordered list of stream endpoints to test.
+// Encrypted channels (from whitelist_streamrelay) prioritize port 17999 (OSCam Streamrelay).
 func (sd *StreamDetector) buildCandidates(serviceRef string) []streamCandidate {
-	candidates := []streamCandidate{
-		// Priority 1: Direct port 8001 (most common, best performance)
-		{
-			URL:      "http://" + net.JoinHostPort(sd.receiverHost, "8001") + "/" + serviceRef,
-			Port:     8001,
-			Priority: 1,
-		},
-		// Priority 2: Direct port 17999 (if it supports HEAD)
-		{
-			URL:      "http://" + net.JoinHostPort(sd.receiverHost, "17999") + "/" + serviceRef,
-			Port:     17999,
-			Priority: 2,
-		},
+	// Check if this channel is encrypted and requires port 17999
+	isEncrypted := sd.isEncrypted(serviceRef)
+
+	var candidates []streamCandidate
+
+	if isEncrypted {
+		// Encrypted channels: Try port 17999 first (OSCam Streamrelay)
+		candidates = []streamCandidate{
+			// Priority 1: Port 17999 for encrypted streams
+			{
+				URL:      "http://" + net.JoinHostPort(sd.receiverHost, "17999") + "/" + serviceRef,
+				Port:     17999,
+				Priority: 1,
+			},
+			// Priority 2: Port 8001 as fallback (may work if decrypted by CAM)
+			{
+				URL:      "http://" + net.JoinHostPort(sd.receiverHost, "8001") + "/" + serviceRef,
+				Port:     8001,
+				Priority: 2,
+			},
+		}
+	} else {
+		// FTA channels: Try port 8001 first (standard Enigma2)
+		candidates = []streamCandidate{
+			// Priority 1: Port 8001 for FTA streams
+			{
+				URL:      "http://" + net.JoinHostPort(sd.receiverHost, "8001") + "/" + serviceRef,
+				Port:     8001,
+				Priority: 1,
+			},
+			// Priority 2: Port 17999 as fallback (shouldn't be needed for FTA)
+			{
+				URL:      "http://" + net.JoinHostPort(sd.receiverHost, "17999") + "/" + serviceRef,
+				Port:     17999,
+				Priority: 2,
+			},
+		}
 	}
 
 	// Priority 3: Proxy for port 17999 (if proxy is enabled)
@@ -299,4 +334,66 @@ func (sd *StreamDetector) ClearCache() {
 	defer sd.cacheMu.Unlock()
 	sd.cache = make(map[string]*StreamInfo)
 	sd.logger.Info().Msg("stream detection cache cleared")
+}
+
+// loadEncryptedChannelsWhitelist fetches the whitelist_streamrelay file from the receiver.
+// This file contains service references for encrypted channels that require port 17999 (OSCam Streamrelay).
+func (sd *StreamDetector) loadEncryptedChannelsWhitelist() {
+	// Construct URL to fetch whitelist file via OpenWebIF
+	url := fmt.Sprintf("http://%s/file?file=/etc/enigma2/whitelist_streamrelay", sd.receiverHost)
+
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		sd.logger.Warn().Err(err).Msg("failed to create whitelist request")
+		return
+	}
+
+	resp, err := sd.httpClient.Do(req)
+	if err != nil {
+		sd.logger.Debug().Err(err).Msg("whitelist_streamrelay not available (normal for receivers without OSCam)")
+		return
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			sd.logger.Debug().Err(err).Msg("failed to close whitelist response body")
+		}
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		sd.logger.Debug().
+			Int("status", resp.StatusCode).
+			Msg("whitelist_streamrelay not found (normal for receivers without OSCam)")
+		return
+	}
+
+	// Read and parse whitelist
+	scanner := bufio.NewScanner(resp.Body)
+	count := 0
+
+	sd.whitelistMu.Lock()
+	defer sd.whitelistMu.Unlock()
+
+	for scanner.Scan() {
+		serviceRef := strings.TrimSpace(scanner.Text())
+		if serviceRef != "" && !strings.HasPrefix(serviceRef, "#") {
+			sd.encryptedChannels[serviceRef] = true
+			count++
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		sd.logger.Warn().Err(err).Msg("error reading whitelist_streamrelay")
+		return
+	}
+
+	sd.logger.Info().
+		Int("encrypted_channels", count).
+		Msg("loaded encrypted channels whitelist for smart port selection")
+}
+
+// isEncrypted checks if a service reference is in the encrypted channels whitelist.
+func (sd *StreamDetector) isEncrypted(serviceRef string) bool {
+	sd.whitelistMu.RLock()
+	defer sd.whitelistMu.RUnlock()
+	return sd.encryptedChannels[serviceRef]
 }
