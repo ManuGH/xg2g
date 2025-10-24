@@ -1,290 +1,63 @@
 # Stream Port Configuration
 
-This document explains how xg2g handles stream ports for Enigma2 receivers, including support for OSCam Streamrelay.
+This document explains how xg2g handles stream ports for Enigma2 receivers with OSCam Streamrelay support.
 
-## Overview
+## Quick Reference
 
-Enigma2 receivers typically provide streams on multiple ports:
-
-| Port | Service | Description |
-|------|---------|-------------|
-| `80` | OpenWebIF | Web interface and API (metadata only) |
-| `8001` | Enigma2 Stream Server | Direct transport streams (unencrypted or already decrypted) |
-| `17999` | OSCam Streamrelay | Decrypted streams for encrypted channels (Sky, HD+, etc.) |
-
-**Important**: xg2g uses port `80` for OpenWebIF API calls (channel lists, EPG data), but the **stream URLs in the M3U playlist** will use either `8001` or `17999` depending on your configuration.
+| Port | Service | Used For |
+|------|---------|----------|
+| `80` | OpenWebIF | API calls (channel lists, EPG) |
+| `8001` | Enigma2 Stream Server | FTA (unencrypted) channels |
+| `17999` | OSCam Streamrelay | Encrypted channels (requires OSCam EMU) |
 
 ---
 
-## OSCam Streamrelay
+## OSCam Streamrelay Support
 
-### What is OSCam Streamrelay?
+### Automatic Detection (Recommended)
 
-OSCam Streamrelay is a feature of OSCam EMU that runs **directly on your receiver** and provides decrypted streams for encrypted channels.
-
-**How it works**:
-1. Enigma2 receives encrypted satellite/cable signal
-2. OSCam EMU decrypts the signal using softcam keys
-3. OSCam Streamrelay serves the decrypted stream on port `17999`
-4. xg2g generates M3U URLs pointing to port `17999`
-
-**Benefits**:
-- ✅ Encrypted channels (Sky, HD+, etc.) work seamlessly
-- ✅ No additional hardware needed
-- ✅ Runs entirely on the receiver
-
-### Checking if OSCam Streamrelay is Active
-
-Test if port 17999 is accessible:
+xg2g automatically detects OSCam Streamrelay and routes encrypted channels through it:
 
 ```bash
-# Test from xg2g host
-curl -I http://YOUR_RECEIVER_IP:17999/
-
-# Expected response: HTTP 200 or 404 (both mean the port is listening)
-# No response = OSCam Streamrelay is not active
+XG2G_SMART_STREAM_DETECTION=true
 ```
 
-If port 17999 is **not accessible**, check OSCam configuration on your receiver:
+**How it works:**
+1. xg2g fetches `/etc/enigma2/whitelist_streamrelay` from your receiver
+2. Channels in the whitelist use port `17999` (OSCam Streamrelay)
+3. Other channels use port `8001` (standard Enigma2)
+4. No manual configuration needed
 
-```bash
-# On the receiver (SSH)
-cat /etc/tuxbox/config/oscam.conf | grep -A 3 "\[streamrelay\]"
-```
-
-Expected configuration:
-```ini
-[streamrelay]
-enabled = 1
-port = 17999
-```
-
-If `enabled = 0` or the section is missing, enable it and restart OSCam.
+**Requirements:**
+- OSCam EMU installed and configured on your receiver
+- Streamrelay enabled in OSCam config
+- `/etc/enigma2/whitelist_streamrelay` file exists
 
 ---
 
-## Configuration Methods
+## Manual Configuration
 
-xg2g provides three ways to configure stream ports, listed from simplest to most advanced:
-
-### Method 1: Automatic Detection (Recommended)
-
-**Enable Smart Stream Detection** to automatically test ports for each channel:
+### Method 1: Single Port for All Channels
 
 ```yaml
 # config.yaml
 openWebIF:
   baseUrl: "http://192.168.1.100"  # ⚠️ NO PORT HERE!
-  username: "root"
-  password: "secret"
+  streamPort: 8001  # or 17999 for encrypted channels
 ```
 
-```bash
-# Enable via environment variable
-XG2G_SMART_STREAM_DETECTION=true
-```
-
-**How it works**:
-1. For each channel, xg2g tests multiple ports: `8001`, `17999`
-2. The first working port is selected and cached
-3. FTA channels → usually port `8001`
-4. Encrypted channels → usually port `17999` (if OSCam Streamrelay is active)
-
-**Advantages**:
-- ✅ Fully automatic
-- ✅ Optimal port per channel
-- ✅ Works with mixed FTA/encrypted bouquets
-
-**Performance**: Initial refresh is slower (~10-15 seconds) because each channel is tested. Subsequent refreshes use cached results.
-
----
-
-### Method 2: Manual Port Configuration (Simple)
-
-**Use a fixed port for all streams:**
+### Method 2: Override Specific Channels
 
 ```yaml
-# config.yaml
-openWebIF:
-  baseUrl: "http://192.168.1.100"  # ⚠️ IMPORTANT: NO :80 PORT!
-  username: "root"
-  password: "secret"
-  streamPort: 17999  # All streams will use this port
-```
-
-**⚠️ Critical**: Do **NOT** include a port in `baseUrl`!
-
-❌ **Wrong**:
-```yaml
-baseUrl: "http://192.168.1.100:80"  # Port in baseUrl
-streamPort: 17999  # This will be IGNORED!
-```
-
-✅ **Correct**:
-```yaml
-baseUrl: "http://192.168.1.100"  # No port
-streamPort: 17999  # This will be used
-```
-
-**Why?** If `baseUrl` contains a port, xg2g preserves it and ignores `streamPort`. This is by design to avoid conflicts.
-
-**Use cases**:
-- All channels are encrypted → use port `17999`
-- All channels are FTA → use port `8001`
-- Mixed setup with OSCam Streamrelay active → use port `17999` (works for both)
-
----
-
-### Method 3: Stream Base Override (Advanced)
-
-**Override the entire stream base URL:**
-
-```bash
-# Environment variable
-XG2G_STREAM_BASE=http://192.168.1.100:17999
-```
-
-Or via systemd:
-```ini
-[Service]
-Environment="XG2G_STREAM_BASE=http://192.168.1.100:17999"
-```
-
-**This completely overrides** `baseUrl` and `streamPort` for stream URLs.
-
-**Use cases**:
-- Nginx reverse proxy in front of receiver
-- Custom streaming infrastructure
-- Testing different ports without changing config file
-
-**Priority**: `XG2G_STREAM_BASE` > `streamPort` > default (`8001`)
-
----
-
-## Decision Flow
-
-```
-┌─────────────────────────────────────┐
-│ Do you have OSCam Streamrelay?      │
-└──────────┬──────────────────────────┘
-           │
-     ┌─────┴─────┐
-     │   Yes     │
-     └─────┬─────┘
-           │
-     ┌─────▼──────────────────────────┐
-     │ Is it working? (curl port 17999)│
-     └─────┬──────────────────────────┘
-           │
-     ┌─────┴─────┐
-     │   Yes     │
-     └─────┬─────┘
-           │
-     ┌─────▼──────────────────────────────┐
-     │ Use Method 2: streamPort: 17999     │
-     │ (works for FTA + encrypted channels)│
-     └─────────────────────────────────────┘
-
-     ┌─────┴─────┐
-     │   No      │
-     └─────┬─────┘
-           │
-     ┌─────▼──────────────────────────┐
-     │ Use Method 1: Smart Detection   │
-     │ XG2G_SMART_STREAM_DETECTION=true│
-     └─────────────────────────────────┘
-```
-
----
-
-## Examples
-
-### Example 1: Vu+ Receiver with OSCam Streamrelay
-
-**Scenario**: Vu+ Uno 4K with OSCam EMU, mixed FTA and Sky channels.
-
-**Solution**: Use port 17999 for all channels:
-
-```yaml
-# config.yaml
-openWebIF:
-  baseUrl: "http://10.10.55.57"  # NO PORT
-  username: "root"
-  password: "secret"
-  streamPort: 17999  # OSCam Streamrelay port
-
-bouquets:
-  - "Premium"  # Contains both FTA and encrypted channels
-
-epg:
-  enabled: true
-  days: 3
-```
-
-**Result**: All stream URLs in M3U will use `http://10.10.55.57:17999/...`
-
----
-
-### Example 2: Dreambox with FTA Only
-
-**Scenario**: Dreambox 920 UHD, only FTA channels, no OSCam.
-
-**Solution**: Use standard Enigma2 stream port:
-
-```yaml
-# config.yaml
-openWebIF:
-  baseUrl: "http://192.168.1.50"
-  streamPort: 8001  # Standard Enigma2 stream server
-
-bouquets:
-  - "Favourites"
-```
-
-**Result**: All stream URLs use `http://192.168.1.50:8001/...`
-
----
-
-### Example 3: Smart Detection for Mixed Setup
-
-**Scenario**: Unknown receiver configuration, want automatic optimization.
-
-```yaml
-# config.yaml
 openWebIF:
   baseUrl: "http://192.168.1.100"
+  streamPort: 8001  # Default for most channels
 
-bouquets:
-  - "All Channels"
+# Override specific service references
+streamPortOverrides:
+  "1:0:19:EF10:421:1:C00000:0:0:0:": 17999  # RTL HD
+  "1:0:19:EF74:3F9:1:C00000:0:0:0:": 17999  # SAT.1 HD
 ```
-
-```bash
-# Enable smart detection
-XG2G_SMART_STREAM_DETECTION=true xg2g --config config.yaml
-```
-
-**Result**: xg2g tests each channel and selects optimal port.
-
----
-
-### Example 4: Nginx Reverse Proxy
-
-**Scenario**: Nginx proxy with SSL termination in front of receiver.
-
-```yaml
-# config.yaml
-openWebIF:
-  baseUrl: "http://192.168.1.100:80"  # OpenWebIF API
-```
-
-```bash
-# Override stream base for proxy
-XG2G_STREAM_BASE=https://receiver.example.com:443
-```
-
-**Result**:
-- API calls go to `http://192.168.1.100:80`
-- Stream URLs use `https://receiver.example.com:443/...`
 
 ---
 
@@ -292,69 +65,99 @@ XG2G_STREAM_BASE=https://receiver.example.com:443
 
 ### Streams don't play
 
-1. **Test direct stream access**:
+**Test which port works:**
+```bash
+# Test FTA channel
+curl -I http://192.168.1.100:8001/1:0:19:132F:3EF:1:C00000:0:0:0:
+
+# Test encrypted channel (requires OSCam)
+curl -I http://192.168.1.100:17999/1:0:19:EF10:421:1:C00000:0:0:0:
+```
+
+### OSCam Streamrelay not working
+
+1. **Check OSCam is running:**
    ```bash
-   # Get a service reference from the M3U file
-   curl -I http://YOUR_RECEIVER_IP:8001/1:0:19:...
-   curl -I http://YOUR_RECEIVER_IP:17999/1:0:19:...
+   ps aux | grep oscam
    ```
 
-2. **Check which port responds** with HTTP 200
+2. **Check Streamrelay is enabled:**
+   ```bash
+   cat /etc/tuxbox/config/oscam-emu/oscam.conf | grep -A 5 "\[streamrelay\]"
+   ```
 
-3. **Configure xg2g** to use the working port
+3. **Check whitelist exists:**
+   ```bash
+   cat /etc/enigma2/whitelist_streamrelay
+   ```
 
-### Encrypted channels show black screen
+4. **Test port 17999 manually:**
+   ```bash
+   curl -I http://192.168.1.100:17999/1:0:19:EF10:421:1:C00000:0:0:0:
+   ```
 
-**Problem**: Stream URLs use port `8001` but OSCam Streamrelay is on `17999`.
+### Mixed playlist not working
 
-**Solution**: Configure `streamPort: 17999` (see Method 2 above)
+If Smart Stream Detection is enabled but all channels use the same port:
 
-### baseUrl with port breaks streamPort
+1. **Check logs:**
+   ```bash
+   docker logs xg2g | grep "whitelist"
+   ```
 
-**Problem**:
-```yaml
-baseUrl: "http://192.168.1.100:80"
-streamPort: 17999  # IGNORED!
-```
+2. **Verify whitelist was loaded:**
+   ```
+   loaded encrypted channels whitelist for smart port selection
+   encrypted_channels=88
+   ```
 
-**Solution**: Remove port from baseUrl:
-```yaml
-baseUrl: "http://192.168.1.100"
-streamPort: 17999  # NOW WORKS!
-```
-
-### Smart detection is slow
-
-**Expected behavior**: First refresh with smart detection takes 10-15 seconds as each channel is tested.
-
-**Optimization**: Results are cached. Subsequent refreshes are fast (< 1 second).
-
-**Alternative**: If you know all channels work on `17999`, use Manual Port Configuration instead.
-
----
-
-## Environment Variables Reference
-
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `XG2G_STREAM_PORT` | Default stream port (overrides config file) | `17999` |
-| `XG2G_STREAM_BASE` | Complete stream base URL override | `http://192.168.1.100:17999` |
-| `XG2G_SMART_STREAM_DETECTION` | Enable automatic port detection | `true` |
+3. **Clear cache and refresh:**
+   ```bash
+   curl -X POST http://localhost:8080/api/refresh
+   ```
 
 ---
 
-## Best Practices
+## Common Scenarios
 
-1. ✅ **Always omit port** from `openWebIF.baseUrl` if using `streamPort`
-2. ✅ **Test OSCam Streamrelay** before configuring port 17999
-3. ✅ **Use Smart Detection** if unsure about your setup
-4. ✅ **Use fixed port** (Method 2) for better performance if all channels work on same port
-5. ⚠️ **Don't mix** methods - choose one and stick with it
+### Scenario 1: FTA Only (No OSCam)
+- Use port `8001`
+- No Smart Stream Detection needed
+- Configuration: `streamPort: 8001`
+
+### Scenario 2: OSCam Streamrelay for All Encrypted Channels
+- Enable Smart Stream Detection
+- xg2g reads `/etc/enigma2/whitelist_streamrelay`
+- Automatic mixed playlist (8001 + 17999)
+- **This is the recommended setup**
+
+### Scenario 3: Manual Port Assignment
+- Use `streamPortOverrides` in config
+- Specify each encrypted channel manually
+- More control, but requires maintenance
+
+---
+
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `XG2G_SMART_STREAM_DETECTION` | `false` | Enable automatic OSCam Streamrelay detection |
+| `XG2G_STREAM_PORT` | `8001` | Default stream port (if detection disabled) |
+
+---
+
+## Notes
+
+- **Port 80 vs Port 8001**: Port 80 is for OpenWebIF API only. Stream URLs always use 8001 or 17999.
+- **Whitelist Location**: The whitelist file is read from your receiver via HTTP: `http://receiver/file?file=/etc/enigma2/whitelist_streamrelay`
+- **No OSCam?**: If OSCam is not installed, Smart Stream Detection gracefully falls back to port 8001 for all channels.
+- **Deterministic**: Once the whitelist is loaded, port selection is deterministic and reliable.
 
 ---
 
 ## See Also
 
-- [Configuration Examples](../config.example.yaml)
-- [Production Deployment Guide](PRODUCTION_DEPLOYMENT.md)
-- [Troubleshooting](../README.md#troubleshooting)
+- [Main README](../README.md) - General configuration
+- [Audio Transcoding](AUDIO_TRANSCODING.md) - Audio format conversion
+- [Production Deployment](../PRODUCTION_DEPLOYMENT.md) - Production setup guide
