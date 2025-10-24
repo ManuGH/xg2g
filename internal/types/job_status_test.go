@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 
-//nolint:revive // Package name "types" is standard for shared type definitions
 package types
 
 import (

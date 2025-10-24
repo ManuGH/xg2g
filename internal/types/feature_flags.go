@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-// Package types provides common data types used across the xg2g application.
+//nolint:revive // Package name "types" is standard for shared type definitions
 package types
 
 // FeatureFlag represents a feature toggle in the application.
