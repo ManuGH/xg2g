@@ -17,14 +17,14 @@ M3U playlists · XMLTV EPG · HDHomeRun emulation · OSCam Streamrelay support
 
 ## Quick Start
 
-**Only 2 parameters required:**
-
 ```bash
 docker run -d \
   --name xg2g \
   -p 8080:8080 \
   -p 1900:1900/udp \
   -e XG2G_OWI_BASE=http://192.168.1.100 \
+  -e XG2G_OWI_USER=root \
+  -e XG2G_OWI_PASS=yourpassword \
   -e XG2G_BOUQUET=Favourites \
   -v ./data:/data \
   ghcr.io/manugh/xg2g:latest
@@ -35,12 +35,14 @@ docker run -d \
 - ✅ 7-day EPG guide (XMLTV)
 - ✅ HDHomeRun emulation (Plex/Jellyfin auto-discovery)
 - ✅ Smart stream detection (OSCam port 8001/17999)
-- ✅ Authentication support
+- ✅ Enigma2 authentication
 
 **Access:**
 - M3U: `http://localhost:8080/files/playlist.m3u`
 - EPG: `http://localhost:8080/xmltv.xml`
 - Plex/Jellyfin: Automatically discovered as TV tuner
+
+**Note:** Most Enigma2 receivers use `root` as username. Remove auth lines if your receiver has no password.
 
 ---
 
@@ -129,10 +131,12 @@ api:
 
 ### Environment Variables
 
-**Only 2 required:**
+**Required:**
 
 ```bash
 XG2G_OWI_BASE=http://192.168.1.100   # Your Enigma2 receiver
+XG2G_OWI_USER=root                   # Enigma2 username (standard: root)
+XG2G_OWI_PASS=yourpassword           # Enigma2 password
 XG2G_BOUQUET=Favourites              # Bouquet name
 ```
 
@@ -148,13 +152,6 @@ XG2G_BOUQUET=Favourites              # Bouquet name
 XG2G_EPG_ENABLED=false                    # Disable EPG
 XG2G_SMART_STREAM_DETECTION=false         # Disable auto port detection
 XG2G_HDHR_ENABLED=false                   # Disable HDHomeRun emulation
-```
-
-#### Authentication (standard 2025)
-
-```bash
-XG2G_OWI_USER=root
-XG2G_OWI_PASS=yourpassword
 ```
 
 #### Advanced configuration
@@ -198,17 +195,16 @@ services:
       - "1900:1900/udp"  # For Plex/Jellyfin discovery
     environment:
       - XG2G_OWI_BASE=http://192.168.1.100
+      - XG2G_OWI_USER=root
+      - XG2G_OWI_PASS=yourpassword
       - XG2G_BOUQUET=Favourites
-      # Optional: Add authentication
-      # - XG2G_OWI_USER=root
-      # - XG2G_OWI_PASS=yourpassword
     volumes:
       - ./data:/data
     restart: unless-stopped
 ```
 
 **All features enabled by default:**
-- EPG (7 days), HDHomeRun, Smart stream detection, Channel logos
+- EPG (7 days), HDHomeRun, Smart stream detection, Channel logos, Authentication
 
 **Using config file** (advanced):
 
