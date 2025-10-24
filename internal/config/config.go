@@ -118,7 +118,7 @@ func (l *Loader) Load() (jobs.Config, error) {
 // setDefaults sets default values for configuration
 func (l *Loader) setDefaults(cfg *jobs.Config) {
 	cfg.DataDir = "/tmp" // Use /tmp as default to pass validation in tests
-	cfg.OWIBase = "" // No default - must be explicitly configured
+	cfg.OWIBase = ""     // No default - must be explicitly configured
 	cfg.Bouquet = "Premium"
 	cfg.StreamPort = 8001
 	cfg.OWITimeout = 10 * time.Second
@@ -250,6 +250,7 @@ func (l *Loader) mergeFileConfig(dst *jobs.Config, src *FileConfig) error {
 
 // mergeEnvConfig merges environment variables into jobs.Config
 // ENV variables have the highest precedence
+//
 //nolint:gocyclo // This function handles many environment variables but is straightforward
 func (l *Loader) mergeEnvConfig(cfg *jobs.Config) {
 	if v := os.Getenv("XG2G_VERSION"); v != "" {

@@ -37,7 +37,7 @@ type Status struct {
 	Version       string    `json:"version"`
 	LastRun       time.Time `json:"lastRun"`
 	Channels      int       `json:"channels"`
-	Bouquets      int       `json:"bouquets,omitempty"`       // Number of bouquets processed
+	Bouquets      int       `json:"bouquets,omitempty"`      // Number of bouquets processed
 	EPGProgrammes int       `json:"epgProgrammes,omitempty"` // Number of EPG programmes collected
 	DurationMS    int64     `json:"durationMs,omitempty"`    // Duration of last refresh in milliseconds
 	Error         string    `json:"error,omitempty"`
@@ -70,6 +70,7 @@ type Config struct {
 }
 
 // Refresh performs the complete refresh cycle: fetch bouquets → services → write M3U + XMLTV
+//
 //nolint:gocyclo // Complex orchestration function with validation, requires sequential operations
 func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 	// Start tracing span for the entire refresh job

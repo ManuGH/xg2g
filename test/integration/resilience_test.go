@@ -201,13 +201,13 @@ func TestGracefulDegradation(t *testing.T) {
 	defer selectiveServer.Close()
 
 	cfg := jobs.Config{
-		DataDir:            tmpDir,
-		OWIBase:   selectiveServer.URL,
+		DataDir:           tmpDir,
+		OWIBase:           selectiveServer.URL,
 		StreamPort:        8001,
 		Bouquet:           "Premium",
-		EPGEnabled:         true,  // Enable EPG
-		EPGDays:            1,
-		EPGMaxConcurrency:  1,
+		EPGEnabled:        true, // Enable EPG
+		EPGDays:           1,
+		EPGMaxConcurrency: 1,
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -260,11 +260,11 @@ func TestRecoveryAfterFailure(t *testing.T) {
 	defer recoveryServer.Close()
 
 	cfg := jobs.Config{
-		DataDir:            tmpDir,
-		OWIBase:   recoveryServer.URL,
-		StreamPort:        8001,
-		Bouquet:           "Premium",
-		EPGEnabled:         false,
+		DataDir:    tmpDir,
+		OWIBase:    recoveryServer.URL,
+		StreamPort: 8001,
+		Bouquet:    "Premium",
+		EPGEnabled: false,
 	}
 
 	// Execute Phase 1: Try while unhealthy
@@ -403,11 +403,11 @@ func TestContextCancellationFlow(t *testing.T) {
 	defer slowServer.Close()
 
 	cfg := jobs.Config{
-		DataDir:            tmpDir,
-		OWIBase:   slowServer.URL,
-		StreamPort:        8001,
-		Bouquet:           "Premium",
-		EPGEnabled:         false,
+		DataDir:    tmpDir,
+		OWIBase:    slowServer.URL,
+		StreamPort: 8001,
+		Bouquet:    "Premium",
+		EPGEnabled: false,
 	}
 
 	// Execute: Start refresh then cancel

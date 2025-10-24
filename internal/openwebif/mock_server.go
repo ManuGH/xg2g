@@ -29,7 +29,7 @@ type BouquetsResponse struct {
 }
 
 // ServicesResponse matches OpenWebIF API structure.
-type ServicesResponse struct{
+type ServicesResponse struct {
 	Services []map[string]interface{} `json:"services"`
 }
 
@@ -48,8 +48,8 @@ func NewMockServer() *MockServer {
 
 	// Create HTTP server
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/bouquets", mock.handleBouquets)           // Modern endpoint
-	mux.HandleFunc("/api/getallservices", mock.handleBouquets)     // Legacy endpoint
+	mux.HandleFunc("/api/bouquets", mock.handleBouquets)       // Modern endpoint
+	mux.HandleFunc("/api/getallservices", mock.handleBouquets) // Legacy endpoint
 	mux.HandleFunc("/api/getservices", mock.handleServices)
 	mux.HandleFunc("/api/epgservice", mock.handleEPG)
 	mux.HandleFunc("/api/zap", mock.handleZap)
@@ -72,8 +72,8 @@ func (m *MockServer) setDefaultDataNoLock() {
 	// Add bouquets
 	m.bouquets = map[string]string{
 		"1:7:1:0:0:0:0:0:0:0:FROM BOUQUET \"userbouquet.favourites.tv\" ORDER BY bouquet": "Favourites (TV)",
-		"1:7:1:0:0:0:0:0:0:0:FROM BOUQUET \"userbouquet.premium.tv\" ORDER BY bouquet":     "Premium",
-		"1:7:1:0:0:0:0:0:0:0:FROM BOUQUET \"userbouquet.hd.tv\" ORDER BY bouquet":           "HD Channels",
+		"1:7:1:0:0:0:0:0:0:0:FROM BOUQUET \"userbouquet.premium.tv\" ORDER BY bouquet":    "Premium",
+		"1:7:1:0:0:0:0:0:0:0:FROM BOUQUET \"userbouquet.hd.tv\" ORDER BY bouquet":         "HD Channels",
 	}
 
 	// Add services for Premium bouquet
@@ -259,7 +259,7 @@ func (m *MockServer) handleZap(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := map[string]interface{}{
-		"result": true,
+		"result":  true,
 		"message": "Channel switched successfully",
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -270,13 +270,13 @@ func (m *MockServer) handleZap(w http.ResponseWriter, r *http.Request) {
 func (m *MockServer) handleAbout(w http.ResponseWriter, _ *http.Request) {
 	resp := map[string]interface{}{
 		"info": map[string]interface{}{
-			"model":      "Mock Receiver",
-			"brand":      "MockBrand",
-			"boxtype":    "mockbox",
-			"enigmaver":  "OpenWebIF Mock 1.0.0",
-			"webifver":   "OWIF 1.4.9",
-			"imagever":   "Test Image",
-			"kernelver":  "5.10.0",
+			"model":     "Mock Receiver",
+			"brand":     "MockBrand",
+			"boxtype":   "mockbox",
+			"enigmaver": "OpenWebIF Mock 1.0.0",
+			"webifver":  "OWIF 1.4.9",
+			"imagever":  "Test Image",
+			"kernelver": "5.10.0",
 		},
 	}
 	w.Header().Set("Content-Type", "application/json")

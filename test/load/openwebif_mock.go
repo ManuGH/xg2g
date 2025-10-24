@@ -20,12 +20,12 @@ type MockConfig struct {
 	MaxLatency time.Duration // Maximum response latency
 
 	// Failure simulation
-	ErrorRate      float64       // Probability of returning 500 error (0.0-1.0)
-	TimeoutRate    float64       // Probability of timing out (0.0-1.0)
+	ErrorRate       float64       // Probability of returning 500 error (0.0-1.0)
+	TimeoutRate     float64       // Probability of timing out (0.0-1.0)
 	TimeoutDuration time.Duration // How long to block on timeout
 
 	// Data generation
-	BouquetCount int // Number of bouquets to generate
+	BouquetCount       int // Number of bouquets to generate
 	ChannelsPerBouquet int // Channels per bouquet
 
 	// Rate limiting
@@ -38,45 +38,45 @@ type MockConfig struct {
 // DefaultMockConfig returns a realistic OpenWebIF mock configuration
 func DefaultMockConfig() MockConfig {
 	return MockConfig{
-		MinLatency:          10 * time.Millisecond,
-		MaxLatency:          50 * time.Millisecond,
-		ErrorRate:           0.0,
-		TimeoutRate:         0.0,
-		TimeoutDuration:     30 * time.Second,
-		BouquetCount:        5,
-		ChannelsPerBouquet:  50,
+		MinLatency:           10 * time.Millisecond,
+		MaxLatency:           50 * time.Millisecond,
+		ErrorRate:            0.0,
+		TimeoutRate:          0.0,
+		TimeoutDuration:      30 * time.Second,
+		BouquetCount:         5,
+		ChannelsPerBouquet:   50,
 		MaxRequestsPerSecond: 0,
-		EnableMetrics:       true,
+		EnableMetrics:        true,
 	}
 }
 
 // HighLoadConfig returns configuration for high-load scenarios
 func HighLoadConfig() MockConfig {
 	return MockConfig{
-		MinLatency:          50 * time.Millisecond,
-		MaxLatency:          200 * time.Millisecond,
-		ErrorRate:           0.05, // 5% error rate
-		TimeoutRate:         0.01, // 1% timeout rate
-		TimeoutDuration:     10 * time.Second,
-		BouquetCount:        10,
-		ChannelsPerBouquet:  100,
+		MinLatency:           50 * time.Millisecond,
+		MaxLatency:           200 * time.Millisecond,
+		ErrorRate:            0.05, // 5% error rate
+		TimeoutRate:          0.01, // 1% timeout rate
+		TimeoutDuration:      10 * time.Second,
+		BouquetCount:         10,
+		ChannelsPerBouquet:   100,
 		MaxRequestsPerSecond: 50,
-		EnableMetrics:       true,
+		EnableMetrics:        true,
 	}
 }
 
 // UnstableConfig returns configuration for resilience testing
 func UnstableConfig() MockConfig {
 	return MockConfig{
-		MinLatency:          100 * time.Millisecond,
-		MaxLatency:          500 * time.Millisecond,
-		ErrorRate:           0.20, // 20% error rate
-		TimeoutRate:         0.05, // 5% timeout rate
-		TimeoutDuration:     5 * time.Second,
-		BouquetCount:        3,
-		ChannelsPerBouquet:  30,
+		MinLatency:           100 * time.Millisecond,
+		MaxLatency:           500 * time.Millisecond,
+		ErrorRate:            0.20, // 20% error rate
+		TimeoutRate:          0.05, // 5% timeout rate
+		TimeoutDuration:      5 * time.Second,
+		BouquetCount:         3,
+		ChannelsPerBouquet:   30,
 		MaxRequestsPerSecond: 0,
-		EnableMetrics:       true,
+		EnableMetrics:        true,
 	}
 }
 
@@ -239,8 +239,8 @@ func (m *MockServer) handleGetServices(w http.ResponseWriter, _ *http.Request) {
 
 // RealisticChannelGenerator generates realistic channel data
 type RealisticChannelGenerator struct {
-	hdChannels []string
-	sdChannels []string
+	hdChannels    []string
+	sdChannels    []string
 	radioChannels []string
 }
 
@@ -271,11 +271,11 @@ func NewRealisticChannelGenerator() *RealisticChannelGenerator {
 func (g *RealisticChannelGenerator) GenerateChannel(index int) (name string, ref string, channelType string) {
 	// Distribute: 60% HD, 30% SD, 10% Radio
 	switch {
-	case index % 10 < 6: // 60% HD
+	case index%10 < 6: // 60% HD
 		idx := index % len(g.hdChannels)
 		name = g.hdChannels[idx]
 		channelType = "HD"
-	case index % 10 < 9: // 30% SD
+	case index%10 < 9: // 30% SD
 		idx := index % len(g.sdChannels)
 		name = g.sdChannels[idx]
 		channelType = "SD"
@@ -353,12 +353,12 @@ func (e *EPGMockServer) handleEPG(w http.ResponseWriter, r *http.Request) {
 		start := now.Add(time.Duration(i) * e.epgConfig.EventDuration)
 
 		event := map[string]interface{}{
-			"id":          strconv.Itoa(1000 + i),
+			"id":              strconv.Itoa(1000 + i),
 			"begin_timestamp": start.Unix(),
 			"duration_sec":    int(e.epgConfig.EventDuration.Seconds()),
-			"title":          fmt.Sprintf("Program %d", i),
-			"shortdesc":      fmt.Sprintf("Description for program %d", i),
-			"longdesc":       fmt.Sprintf("Long description for program %d with more details", i),
+			"title":           fmt.Sprintf("Program %d", i),
+			"shortdesc":       fmt.Sprintf("Description for program %d", i),
+			"longdesc":        fmt.Sprintf("Long description for program %d with more details", i),
 		}
 
 		if e.epgConfig.EnableImages {

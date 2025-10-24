@@ -149,13 +149,13 @@ func (d *Daemon) initTelemetry(ctx context.Context) error {
 
 	// Build telemetry config
 	telCfg := telemetry.Config{
-		Enabled:      true,
-		ServiceName:  getEnvOrDefault("XG2G_SERVICE_NAME", "xg2g"),
+		Enabled:        true,
+		ServiceName:    getEnvOrDefault("XG2G_SERVICE_NAME", "xg2g"),
 		ServiceVersion: d.config.Version,
-		Environment:  getEnvOrDefault("XG2G_ENVIRONMENT", "production"),
-		ExporterType: getEnvOrDefault("XG2G_TELEMETRY_EXPORTER", "grpc"),
-		Endpoint:     getEnvOrDefault("XG2G_OTLP_ENDPOINT", "localhost:4317"),
-		SamplingRate: parseFloat(getEnvOrDefault("XG2G_SAMPLING_RATE", "1.0")),
+		Environment:    getEnvOrDefault("XG2G_ENVIRONMENT", "production"),
+		ExporterType:   getEnvOrDefault("XG2G_TELEMETRY_EXPORTER", "grpc"),
+		Endpoint:       getEnvOrDefault("XG2G_OTLP_ENDPOINT", "localhost:4317"),
+		SamplingRate:   parseFloat(getEnvOrDefault("XG2G_SAMPLING_RATE", "1.0")),
 	}
 
 	// Initialize telemetry provider

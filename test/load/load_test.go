@@ -8,7 +8,7 @@ package load
 import (
 	"context"
 	"fmt"
-	
+
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -229,15 +229,15 @@ func TestLoadUnstableBackend(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	cfg := jobs.Config{
-		Version:    "test",
-		DataDir:    tmpDir,
-		OWIBase:    server.URL,
-		Bouquet:    "Bouquet_0",
-		StreamPort: 8001,
-		XMLTVPath:  "xmltv.xml",
-		OWITimeout: 2 * time.Second,
-		OWIRetries: 5, // More retries for unstable backend
-		OWIBackoff: 200 * time.Millisecond,
+		Version:       "test",
+		DataDir:       tmpDir,
+		OWIBase:       server.URL,
+		Bouquet:       "Bouquet_0",
+		StreamPort:    8001,
+		XMLTVPath:     "xmltv.xml",
+		OWITimeout:    2 * time.Second,
+		OWIRetries:    5, // More retries for unstable backend
+		OWIBackoff:    200 * time.Millisecond,
 		OWIMaxBackoff: 2 * time.Second,
 	}
 

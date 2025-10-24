@@ -105,7 +105,7 @@ func TestBackwardCompatibility(t *testing.T) {
 				name:       "StatusEndpoint",
 				legacyPath: "/api/status",
 				v1Path:     "/api/v1/status",
-				method: http.MethodGet,
+				method:     http.MethodGet,
 				wantCode:   http.StatusOK,
 			},
 		}

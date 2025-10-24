@@ -175,11 +175,11 @@ func TestRefreshWithBackendError(t *testing.T) {
 	defer failingServer.Close()
 
 	cfg := jobs.Config{
-		DataDir:            tmpDir,
-		OWIBase:   failingServer.URL,
-		StreamPort:        8001,
-		Bouquet:           "Premium",
-		EPGEnabled:         false,
+		DataDir:    tmpDir,
+		OWIBase:    failingServer.URL,
+		StreamPort: 8001,
+		Bouquet:    "Premium",
+		EPGEnabled: false,
 	}
 
 	// Execute: Refresh should handle error gracefully
@@ -207,11 +207,11 @@ func TestRefreshWithTimeout(t *testing.T) {
 	defer slowServer.Close()
 
 	cfg := jobs.Config{
-		DataDir:            tmpDir,
-		OWIBase:   slowServer.URL,
-		StreamPort:        8001,
-		Bouquet:           "Premium",
-		EPGEnabled:         false,
+		DataDir:    tmpDir,
+		OWIBase:    slowServer.URL,
+		StreamPort: 8001,
+		Bouquet:    "Premium",
+		EPGEnabled: false,
 	}
 
 	// Execute: Refresh with very short timeout
@@ -224,7 +224,7 @@ func TestRefreshWithTimeout(t *testing.T) {
 	assert.Error(t, err, "Should timeout")
 	assert.True(t,
 		strings.Contains(err.Error(), "context deadline exceeded") ||
-		strings.Contains(err.Error(), "timeout"),
+			strings.Contains(err.Error(), "timeout"),
 		"Error should indicate timeout: %v", err)
 
 	t.Logf("✅ Timeout handled correctly: %v", err)
@@ -257,11 +257,11 @@ func TestRefreshWithPartialFailure(t *testing.T) {
 	defer partialFailServer.Close()
 
 	cfg := jobs.Config{
-		DataDir:            tmpDir,
-		OWIBase:   partialFailServer.URL,
-		StreamPort:        8001,
-		Bouquet:           "Premium",
-		EPGEnabled:         false,
+		DataDir:    tmpDir,
+		OWIBase:    partialFailServer.URL,
+		StreamPort: 8001,
+		Bouquet:    "Premium",
+		EPGEnabled: false,
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -354,10 +354,10 @@ func TestHealthCheckFlow(t *testing.T) {
 	defer mock.Close()
 
 	cfg := jobs.Config{
-		DataDir:            tmpDir,
-		OWIBase:   mock.URL(),
-		StreamPort:        8001,
-		Bouquet:           "Premium",
+		DataDir:    tmpDir,
+		OWIBase:    mock.URL(),
+		StreamPort: 8001,
+		Bouquet:    "Premium",
 	}
 
 	apiServer := api.New(cfg)
@@ -438,10 +438,10 @@ http://example.com/stream`
 	defer mock.Close()
 
 	cfg := jobs.Config{
-		DataDir:            tmpDir,
-		OWIBase:   mock.URL(),
-		StreamPort:        8001,
-		Bouquet:           "Premium",
+		DataDir:    tmpDir,
+		OWIBase:    mock.URL(),
+		StreamPort: 8001,
+		Bouquet:    "Premium",
 	}
 
 	apiServer := api.New(cfg)

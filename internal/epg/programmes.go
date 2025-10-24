@@ -33,7 +33,7 @@ func ProgrammesFromEPG(events []openwebif.EPGEvent, channelID string) []Programm
 			Stop:    formatXMLTVTime(stopTime),
 			Channel: channelID,
 			Title: Title{
-				Lang:  "", // No lang attribute for xg2g
+				Lang: "", // No lang attribute for xg2g
 				Text: event.Title,
 			},
 			Desc: buildDescription(event),
