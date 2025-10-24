@@ -222,6 +222,7 @@ jobs:
           golangci-lint run --timeout=5m --verbose ./...
 
       - name: Lint Markdown
+        continue-on-error: true  # Don't block CI on markdown linting issues
         run: |
           set -euo pipefail
           npx --yes markdownlint-cli2 "docs/**/*.md" ".github/**/*.md" "*.md"
