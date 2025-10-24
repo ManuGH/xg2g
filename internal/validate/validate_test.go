@@ -604,3 +604,132 @@ func TestPathWithinRoot_Security(t *testing.T) {
 		})
 	}
 }
+
+func TestValidator_StreamURL(t *testing.T) {
+	tests := []struct {
+		name    string
+		url     string
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name:    "valid http stream with path",
+			url:     "http://example.com:8001/stream/123.ts",
+			wantErr: false,
+		},
+		{
+			name:    "valid https stream with query params",
+			url:     "https://stream.example.com/live?channel=123&auth=token",
+			wantErr: false,
+		},
+		{
+			name:    "valid stream with port and path",
+			url:     "http://192.168.1.100:8080/channels/HD/1",
+			wantErr: false,
+		},
+		{
+			name:    "empty URL",
+			url:     "",
+			wantErr: true,
+			errMsg:  "cannot be empty",
+		},
+		{
+			name:    "invalid URL syntax",
+			url:     "ht!tp://invalid",
+			wantErr: true,
+			errMsg:  "invalid URL syntax",
+		},
+		{
+			name:    "unsupported scheme ftp",
+			url:     "ftp://example.com/stream.ts",
+			wantErr: true,
+			errMsg:  "unsupported scheme",
+		},
+		{
+			name:    "unsupported scheme rtsp",
+			url:     "rtsp://example.com/stream",
+			wantErr: true,
+			errMsg:  "unsupported scheme",
+		},
+		{
+			name:    "missing host",
+			url:     "http:///stream/123",
+			wantErr: true,
+			errMsg:  "must have a host",
+		},
+		{
+			name:    "missing path",
+			url:     "http://example.com",
+			wantErr: true,
+			errMsg:  "must have a path",
+		},
+		{
+			name:    "root path only",
+			url:     "http://example.com/",
+			wantErr: true,
+			errMsg:  "must have a path",
+		},
+		{
+			name:    "no scheme",
+			url:     "example.com/stream",
+			wantErr: true,
+			errMsg:  "unsupported scheme",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			v := New()
+			v.StreamURL("streamURL", tt.url)
+
+			if tt.wantErr {
+				if v.IsValid() {
+					t.Errorf("expected validation to fail for %q, but it passed", tt.url)
+				} else {
+					err := v.Err()
+					if err == nil {
+						t.Fatal("expected validation error, got nil")
+					}
+					if !strings.Contains(err.Error(), tt.errMsg) {
+						t.Errorf("expected error to contain %q, got %q", tt.errMsg, err.Error())
+					}
+				}
+			} else {
+				if !v.IsValid() {
+					t.Errorf("expected validation to pass for %q, got error: %v", tt.url, v.Err())
+				}
+			}
+		})
+	}
+}
+
+func TestValidator_StreamURL_Integration(t *testing.T) {
+	// Test StreamURL validation with multiple URLs in a single validator
+	v := New()
+
+	v.StreamURL("stream1", "http://example.com:8001/live/channel1.ts")
+	v.StreamURL("stream2", "https://secure.stream.tv/hls/playlist.m3u8")
+	v.StreamURL("stream3", "ftp://invalid.com/stream") // Invalid scheme
+	v.StreamURL("stream4", "http://nopath.com")        // Missing path
+
+	if v.IsValid() {
+		t.Fatal("expected validation to fail")
+	}
+
+	errors := v.Errors()
+	if len(errors) != 2 {
+		t.Errorf("expected exactly 2 errors, got %d: %v", len(errors), errors)
+	}
+
+	// Verify error fields
+	errorFields := make(map[string]bool)
+	for _, e := range errors {
+		errorFields[e.Field] = true
+	}
+	if !errorFields["stream3"] {
+		t.Error("expected error for 'stream3' (ftp scheme)")
+	}
+	if !errorFields["stream4"] {
+		t.Error("expected error for 'stream4' (missing path)")
+	}
+}
