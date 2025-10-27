@@ -58,7 +58,7 @@ jobs:
 
       - name: Upload race detector output
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: race-detector-output
           path: /tmp/race-output.txt
@@ -144,7 +144,7 @@ jobs:
 
       - name: Upload memory profiles
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: memory-profiles
           path: |
@@ -207,7 +207,7 @@ jobs:
 
       - name: Upload benchmark profiles
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: benchmark-profiles
           path: |
@@ -260,7 +260,7 @@ jobs:
 
       - name: Upload leak detector output
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: goroutine-leak-output
           path: /tmp/leak-output.txt
@@ -332,7 +332,7 @@ jobs:
 
       - name: Upload coverage reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: coverage-reports
           path: |

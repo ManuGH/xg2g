@@ -69,7 +69,7 @@ jobs:
             --file sbom.txt
 
       - name: Upload SBOM artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: sbom-${{ github.sha }}
           path: |
@@ -163,7 +163,7 @@ jobs:
             --file docker-sbom.txt
 
       - name: Upload Docker SBOM artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: docker-sbom-${{ github.sha }}
           path: |
@@ -213,7 +213,7 @@ jobs:
             --file vulnerabilities.json || echo "Vulnerabilities found"
 
       - name: Upload vulnerability report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: vulnerability-report-${{ github.sha }}
           path: |
