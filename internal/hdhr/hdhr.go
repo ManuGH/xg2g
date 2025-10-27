@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+	"golang.org/x/net/ipv4"
 )
 
 // Config holds HDHomeRun emulation configuration
@@ -223,11 +224,77 @@ func (s *Server) StartSSDPAnnouncer(ctx context.Context) error {
 		return fmt.Errorf("failed to listen on UDP port 1900: %w", err)
 	}
 
-	// Join multicast group
-	if p, ok := conn.(*net.UDPConn); ok {
-		if err := p.SetReadBuffer(2048); err != nil {
-			s.logger.Warn().Err(err).Msg("failed to set read buffer size")
+	// Join multicast group using ipv4.PacketConn
+	udpConn, ok := conn.(*net.UDPConn)
+	if !ok {
+		return fmt.Errorf("failed to cast connection to *net.UDPConn")
+	}
+
+	// Set read buffer size
+	if err := udpConn.SetReadBuffer(2048); err != nil {
+		s.logger.Warn().Err(err).Msg("failed to set read buffer size")
+	}
+
+	// Wrap in ipv4.PacketConn for multicast operations
+	p := ipv4.NewPacketConn(udpConn)
+
+	// Set multicast options for better compatibility
+	if err := p.SetMulticastTTL(2); err != nil {
+		s.logger.Warn().Err(err).Msg("failed to set multicast TTL")
+	}
+	if err := p.SetMulticastLoopback(true); err != nil {
+		s.logger.Warn().Err(err).Msg("failed to set multicast loopback")
+	}
+
+	// Get all network interfaces and join multicast group on each
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return fmt.Errorf("failed to get network interfaces: %w", err)
+	}
+
+	// Parse multicast group IP
+	groupIP := net.IPv4(239, 255, 255, 250)
+
+	joinedCount := 0
+	for _, iface := range ifaces {
+		// Skip loopback and down interfaces
+		if iface.Flags&net.FlagLoopback != 0 || iface.Flags&net.FlagUp == 0 {
+			continue
 		}
+
+		// Skip interfaces without multicast support
+		if iface.Flags&net.FlagMulticast == 0 {
+			s.logger.Debug().
+				Str("interface", iface.Name).
+				Msg("skipping interface without multicast support")
+			continue
+		}
+
+		// Try to join multicast group on this interface
+		if err := p.JoinGroup(&iface, &net.UDPAddr{IP: groupIP}); err != nil {
+			s.logger.Debug().
+				Err(err).
+				Str("interface", iface.Name).
+				Msg("failed to join multicast group on interface")
+		} else {
+			s.logger.Info().
+				Str("interface", iface.Name).
+				Str("multicast_addr", multicastAddr).
+				Msg("joined SSDP multicast group")
+			joinedCount++
+
+			// Set interface for multicast sending
+			if err := p.SetMulticastInterface(&iface); err != nil {
+				s.logger.Warn().
+					Err(err).
+					Str("interface", iface.Name).
+					Msg("failed to set multicast interface")
+			}
+		}
+	}
+
+	if joinedCount == 0 {
+		s.logger.Warn().Msg("failed to join multicast group on any interface, SSDP discovery may not work")
 	}
 
 	s.logger.Info().
