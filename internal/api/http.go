@@ -674,7 +674,7 @@ func (s *Server) secureFileServer() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		logger := log.WithComponentFromContext(r.Context(), "api")
 
-		if r.Method != http.MethodGet {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			logger.Warn().Str("event", "file_req.denied").Str("path", r.URL.Path).Str("reason", "method_not_allowed").Msg("method not allowed")
 			recordFileRequestDenied("method_not_allowed")
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
