@@ -159,7 +159,7 @@ jobs:
           echo "✅ EPG coverage ${EPG_COVERAGE}% meets threshold ${EPG_COVERAGE_THRESHOLD}%"
 
       - name: Upload coverage artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: coverage
           path: coverage.out
@@ -265,7 +265,7 @@ jobs:
           ./xg2g-${{ matrix.goos }}-${{ matrix.arch }} --version || echo "Version flag not implemented yet"
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: xg2g-${{ matrix.goos }}-${{ matrix.arch }}
           path: xg2g-*
@@ -311,7 +311,7 @@ jobs:
           syft packages . -o cyclonedx-json=sbom.cyclonedx.json
 
       - name: Upload SBOM
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: sbom
           path: |
