@@ -37,12 +37,20 @@ docker run -d \
 - ✅ Smart stream detection (OSCam port 8001/17999)
 - ✅ Enigma2 authentication
 
-**Access:**
-- M3U: `http://localhost:8080/files/playlist.m3u`
-- EPG: `http://localhost:8080/xmltv.xml`
-- Plex/Jellyfin: Automatically discovered as TV tuner
+**Access Your Streams:**
 
-**Note:** Most Enigma2 receivers use `root` as username. Remove auth lines if your receiver has no password.
+| Method | URL | Port | Use Case |
+|--------|-----|------|----------|
+| **M3U Playlist** | `http://YOUR_IP:8080/files/playlist.m3u` | 8080 | VLC, Kodi, any IPTV player |
+| **XMLTV EPG** | `http://YOUR_IP:8080/xmltv.xml` | 8080 | Electronic Program Guide |
+| **HDHomeRun (Auto)** | Auto-discovered via SSDP | 1900/udp | Plex/Jellyfin (bare-metal/VM) |
+| **HDHomeRun (Manual)** | `YOUR_IP:8080` | 8080 | Plex/Jellyfin (containers) |
+| **Device Info** | `http://YOUR_IP:8080/discover.json` | 8080 | HDHomeRun device details |
+| **Channel Lineup** | `http://YOUR_IP:8080/lineup.json` | 8080 | HDHomeRun channel list |
+
+**Container Note:** HDHomeRun auto-discovery via SSDP multicast may not work reliably in LXC/Docker environments. Use manual configuration in Plex/Jellyfin with the IP address above.
+
+**Authentication Note:** Most Enigma2 receivers use `root` as username. Remove auth lines if your receiver has no password.
 
 ---
 
