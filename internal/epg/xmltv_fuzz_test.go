@@ -72,8 +72,9 @@ func FuzzBuildNameToIDMap(f *testing.F) {
 
 			// All keys should be normalized (lowercase, no trailing spaces)
 			for key := range nameMap {
-				if key != norm(key) {
-					t.Errorf("key %q is not normalized", key)
+				normalized := norm(key)
+				if key != normalized {
+					t.Errorf("key %q is not normalized (norm returns %q, XML preview: %.100s...)", key, normalized, string(data))
 				}
 			}
 		}
