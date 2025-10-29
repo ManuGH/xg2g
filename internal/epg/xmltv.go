@@ -24,7 +24,16 @@ func normalize(s string) string {
 	// Normalize Unicode to NFC form (composed form)
 	s = unorm.NFC.String(s)
 	s = strings.ToLower(strings.TrimSpace(s))
-	s = suffix.ReplaceAllString(s, "")
+
+	// Remove suffixes repeatedly until none remain (handles cases like "Ch HD")
+	for {
+		before := s
+		s = suffix.ReplaceAllString(s, "")
+		if s == before {
+			break // No more suffixes to remove
+		}
+	}
+
 	s = space.ReplaceAllString(s, " ")
 	return strings.TrimSpace(s)
 }
