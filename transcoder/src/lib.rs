@@ -6,6 +6,7 @@
 pub mod audio_remux;
 pub mod decoder;
 pub mod demux;
+pub mod encoder;
 pub mod ffi;
 pub mod transcoder;
 pub mod metrics;
