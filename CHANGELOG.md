@@ -8,18 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- OpenSSF Scorecard workflow for automated security scoring
+- Renovate configuration for intelligent dependency updates
 - Actionlint workflow for GitHub Actions validation
 - Conftest OPA policies for Dockerfile and Kubernetes security enforcement
 - XMLTV fuzzing tests with weekly scheduled runs
 - Cosign signature verification for container images
 - SLSA provenance attestation for supply chain security
-- Automated dependency updates via Dependabot
+- Automated dependency updates via Dependabot and Renovate
 - Graceful shutdown tests for SIGTERM/SIGINT handling
 - Audio transcoder coverage tests
+- Comprehensive supply chain security tools documentation
 
 ### Changed
 - Container runtime hardening: enabled read-only root filesystem in docker-compose.yml
-- Docker compose now uses tmpfs for /data directory (500MB)
+- Removed conflicting tmpfs mount for /data to allow persistent storage
 
 ### Security
 - Automated policy enforcement for container security best practices
@@ -27,9 +30,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive capability dropping (cap_drop: ALL)
 - Read-only root filesystem protection
 - No-new-privileges security option
+- Dependency digest pinning for GitHub Actions and Docker images
 
 ### Fixed
 - Conftest CI workflow now uses dockerfile-parse instead of non-existent dockerfile-json
+- Docker Compose tmpfs/volume mount conflict resolved
 - Test expectations aligned with v1.4.0+ default behavior
 - HDHR SSDP multicast group joining in container environments (#22)
 - HEAD requests now allowed for /files/ endpoint (#23)

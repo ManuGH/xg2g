@@ -1,0 +1,104 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits",
+    ":separateMajorReleases",
+    "group:monorepos",
+    "group:recommended",
+    "replacements:all",
+    "workarounds:all"
+  ],
+  "schedule": ["before 3am on Monday"],
+  "timezone": "UTC",
+  "labels": ["dependencies", "renovate"],
+  "rangeStrategy": "bump",
+  "semanticCommits": "enabled",
+  "commitMessagePrefix": "chore(deps):",
+  "prConcurrentLimit": 10,
+  "prHourlyLimit": 0,
+  "stabilityDays": 3,
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "labels": ["security"],
+    "stabilityDays": 0,
+    "schedule": ["at any time"]
+  },
+  "packageRules": [
+    {
+      "description": "Group Go dependencies together",
+      "matchManagers": ["gomod"],
+      "groupName": "Go dependencies",
+      "semanticCommitType": "chore",
+      "semanticCommitScope": "deps"
+    },
+    {
+      "description": "Group GitHub Actions updates",
+      "matchManagers": ["github-actions"],
+      "groupName": "GitHub Actions",
+      "semanticCommitType": "chore",
+      "semanticCommitScope": "ci",
+      "pinDigests": true
+    },
+    {
+      "description": "Automerge minor and patch updates for GitHub Actions",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true
+    },
+    {
+      "description": "Automerge patch updates for Go dependencies",
+      "matchManagers": ["gomod"],
+      "matchUpdateTypes": ["patch"],
+      "automerge": true
+    },
+    {
+      "description": "Security updates get immediate attention",
+      "matchDatasources": ["go"],
+      "matchUpdateTypes": ["major", "minor", "patch"],
+      "labels": ["security", "priority"],
+      "vulnerabilityAlerts": {
+        "enabled": true
+      },
+      "stabilityDays": 0
+    },
+    {
+      "description": "Docker base images updates",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["golang", "alpine", "gcr.io/distroless/static-debian12"],
+      "groupName": "Docker base images",
+      "semanticCommitType": "chore",
+      "semanticCommitScope": "docker",
+      "stabilityDays": 7
+    },
+    {
+      "description": "Pin Dockerfile base images to digest",
+      "matchDatasources": ["docker"],
+      "matchFiles": ["Dockerfile"],
+      "pinDigests": true
+    }
+  ],
+  "golang": {
+    "enabled": true,
+    "commitMessageTopic": "module {{depName}}"
+  },
+  "docker": {
+    "enabled": true,
+    "pinDigests": true
+  },
+  "github-actions": {
+    "enabled": true,
+    "pinDigests": true
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "fileMatch": ["^Dockerfile$"],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>.*?) depName=(?<depName>.*?)( versioning=(?<versioning>.*?))?\\s+ARG .*?_VERSION=(?<currentValue>.*)\\s"
+      ],
+      "versioningTemplate": "{{#if versioning}}{{{versioning}}}{{else}}semver{{/if}}"
+    }
+  ]
+}
