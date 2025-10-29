@@ -1,24 +1,21 @@
-# Dependabot configuration for automated dependency updates
-# https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
-
 version: 2
 updates:
-  # Go modules
+  # Go dependencies
   - package-ecosystem: "gomod"
     directory: "/"
     schedule:
       interval: "weekly"
       day: "monday"
-      time: "03:00"
+      time: "04:00"
     open-pull-requests-limit: 5
-    reviewers:
-      - "ManuGH"
     labels:
       - "dependencies"
       - "go"
     commit-message:
       prefix: "chore(deps)"
       include: "scope"
+    reviewers:
+      - "ManuGH"
 
   # GitHub Actions
   - package-ecosystem: "github-actions"
@@ -26,30 +23,28 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
-      time: "03:00"
+      time: "04:00"
     open-pull-requests-limit: 5
-    reviewers:
-      - "ManuGH"
     labels:
       - "dependencies"
       - "ci"
     commit-message:
-      prefix: "chore(ci)"
-      include: "scope"
+      prefix: "chore(ci)(deps)"
+    reviewers:
+      - "ManuGH"
 
-  # Docker
+  # Docker base images
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
       interval: "weekly"
       day: "monday"
-      time: "03:00"
+      time: "04:00"
     open-pull-requests-limit: 3
-    reviewers:
-      - "ManuGH"
     labels:
       - "dependencies"
       - "docker"
     commit-message:
-      prefix: "chore(docker)"
-      include: "scope"
+      prefix: "chore(docker)(deps)"
+    reviewers:
+      - "ManuGH"
