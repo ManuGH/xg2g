@@ -259,8 +259,8 @@ impl AdtsHeader {
 /// Encodes PCM audio to AAC-LC with ADTS headers using ac-ffmpeg.
 /// Implements proper AAC-LC encoding for iOS Safari compatibility.
 pub struct FfmpegAacEncoder {
-    /// FFmpeg encoder
-    encoder: ac_ffmpeg::codec::Encoder,
+    /// FFmpeg audio encoder
+    encoder: ac_ffmpeg::codec::audio::AudioEncoder,
 
     /// Encoder configuration
     config: AacEncoderConfig,
@@ -270,6 +270,9 @@ pub struct FfmpegAacEncoder {
 
     /// Frame counter for statistics
     frames_encoded: u64,
+
+    /// PTS counter
+    pts_counter: i64,
 }
 
 impl FfmpegAacEncoder {
@@ -282,26 +285,24 @@ impl FfmpegAacEncoder {
             config.sample_rate, config.channels, config.bitrate, config.profile
         );
 
-        // Create codec parameters for AAC
-        let mut params = ac_ffmpeg::codec::CodecParameters::new();
-        params.set_codec_id(ac_ffmpeg::codec::Id::AAC);
-        params.set_sample_rate(config.sample_rate as i32);
-        params.set_channels(config.channels as i32);
-        params.set_bit_rate(config.bitrate as i64);
+        // Create channel layout (stereo = 2 channels)
+        let channel_layout = ac_ffmpeg::codec::audio::ChannelLayout::from_channels(config.channels as u16)
+            .context("Failed to create channel layout")?;
 
-        // Create encoder
-        let mut encoder = ac_ffmpeg::codec::Encoder::new(&params)
-            .context("Failed to create AAC encoder")?;
+        // Create codec parameters for AAC using builder pattern
+        let codec_params = ac_ffmpeg::codec::AudioCodecParameters::builder("aac")
+            .context("Failed to create AAC codec parameters")?
+            .bit_rate(config.bitrate as u64)
+            .sample_rate(config.sample_rate)
+            .channel_layout(&channel_layout)
+            .build();
 
-        // Set AAC-LC profile
-        encoder
+        // Create encoder using builder pattern
+        let encoder = ac_ffmpeg::codec::audio::AudioEncoder::from_codec_parameters(&codec_params)
+            .context("Failed to create AAC encoder builder")?
             .set_option("profile", config.profile.ffmpeg_name())
-            .context("Failed to set AAC profile")?;
-
-        // Open encoder
-        encoder
-            .open(None)
-            .context("Failed to open AAC encoder")?;
+            .build()
+            .context("Failed to build AAC encoder")?;
 
         debug!("AAC-LC encoder initialized successfully");
 
@@ -310,28 +311,46 @@ impl FfmpegAacEncoder {
             config,
             sample_buffer: Vec::with_capacity(2048),
             frames_encoded: 0,
+            pts_counter: 0,
         })
     }
 
     /// Create audio frame from PCM samples
-    fn create_audio_frame(&self, samples: &[f32]) -> Result<ac_ffmpeg::codec::audio::AudioFrame> {
+    fn create_audio_frame(&mut self, samples: &[f32]) -> Result<ac_ffmpeg::codec::audio::AudioFrameMut> {
+        use ac_ffmpeg::codec::audio::SampleFormat;
+
         let samples_per_channel = samples.len() / self.config.channels as usize;
 
-        // Create audio frame with f32 format
-        let mut frame = ac_ffmpeg::codec::audio::AudioFrame::new(
-            self.config.channels as i32,
-            self.config.sample_rate as i32,
-            ac_ffmpeg::format::sample::Type::F32,
-        )
-        .context("Failed to create audio frame")?;
+        // Create channel layout
+        let channel_layout = ac_ffmpeg::codec::audio::ChannelLayout::from_channels(self.config.channels as u16)
+            .context("Failed to create channel layout")?;
+
+        // Create audio frame with f32 planar format (most common for AAC encoding)
+        let sample_format = SampleFormat::f32(ac_ffmpeg::codec::audio::PlanarType::Planar);
+
+        let mut frame = ac_ffmpeg::codec::audio::AudioFrameMut::silence(
+            &channel_layout,
+            sample_format,
+            self.config.sample_rate,
+            samples_per_channel,
+        );
 
         // Set PTS (presentation timestamp)
-        frame.set_pts(self.frames_encoded as i64 * 1024);
+        frame.set_pts(ac_ffmpeg::time::Timestamp::new(
+            self.pts_counter,
+            ac_ffmpeg::time::TimeBase::new(1, self.config.sample_rate as i32),
+        ));
+        self.pts_counter += samples_per_channel as i64;
 
-        // Copy PCM data into frame (interleaved)
-        frame
-            .copy_from_interleaved(samples)
-            .context("Failed to copy PCM data to frame")?;
+        // Copy PCM data into frame
+        // Convert interleaved samples to planar format
+        let mut planes = frame.planes_mut();
+        for ch in 0..self.config.channels as usize {
+            let plane_data = planes.plane_mut::<f32>(ch);
+            for sample_idx in 0..samples_per_channel {
+                plane_data[sample_idx] = samples[sample_idx * self.config.channels as usize + ch];
+            }
+        }
 
         Ok(frame)
     }
@@ -341,44 +360,34 @@ impl FfmpegAacEncoder {
         // Create audio frame from PCM samples
         let frame = self.create_audio_frame(pcm)?;
 
-        // Send frame to encoder
-        self.encoder
-            .send_frame(&frame)
-            .context("Failed to send frame to AAC encoder")?;
+        // Push frame to encoder
+        self.encoder.try_push(frame.freeze())
+            .map_err(|e| anyhow::anyhow!("Failed to push frame to AAC encoder: {:?}", e))?;
 
         let mut output = Vec::new();
 
-        // Receive all encoded packets
-        loop {
-            match self.encoder.receive_packet() {
-                Ok(packet) => {
-                    // Add ADTS header to packet
-                    let aac_with_adts = self.add_adts_header(&packet)?;
-                    output.extend(aac_with_adts);
+        // Take all encoded packets
+        while let Some(packet) = self.encoder.take()
+            .map_err(|e| anyhow::anyhow!("Failed to take packet from AAC encoder: {:?}", e))? {
 
-                    self.frames_encoded += 1;
+            // Add ADTS header to packet
+            let aac_with_adts = self.add_adts_header(&packet)?;
+            output.extend(aac_with_adts);
 
-                    trace!(
-                        "Encoded AAC frame: {} PCM samples → {} bytes (with ADTS)",
-                        pcm.len(),
-                        aac_with_adts.len()
-                    );
-                }
-                Err(ac_ffmpeg::Error::Again) => {
-                    // No more packets available
-                    break;
-                }
-                Err(e) => {
-                    return Err(e).context("Failed to receive packet from AAC encoder");
-                }
-            }
+            self.frames_encoded += 1;
+
+            trace!(
+                "Encoded AAC frame: {} PCM samples → {} bytes (with ADTS)",
+                pcm.len(),
+                aac_with_adts.len()
+            );
         }
 
         Ok(output)
     }
 
     /// Add ADTS header to AAC packet (7 bytes)
-    fn add_adts_header(&self, packet: &ac_ffmpeg::codec::Packet) -> Result<Vec<u8>> {
+    fn add_adts_header(&self, packet: &ac_ffmpeg::packet::Packet) -> Result<Vec<u8>> {
         let aac_data = packet.data();
         let aac_len = aac_data.len();
 
