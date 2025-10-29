@@ -240,15 +240,16 @@ func TestRefresh_ConfigValidation(t *testing.T) {
 }
 
 func TestRefresh_M3UWriteError(t *testing.T) {
-	// Create a read-only directory to force a write error
+	t.Setenv("XG2G_PLAYLIST_FILENAME", "playlist.m3u")
+
 	tmpdir := t.TempDir()
-	readonlyDir := filepath.Join(tmpdir, "readonly")
-	if err := os.Mkdir(readonlyDir, 0o500); err != nil {
-		t.Fatalf("failed to create read-only dir: %v", err)
+	blocker := filepath.Join(tmpdir, "playlist.m3u")
+	if err := os.Mkdir(blocker, 0o755); err != nil {
+		t.Fatalf("failed to create blocker directory: %v", err)
 	}
 
 	cfg := Config{
-		DataDir:    readonlyDir,
+		DataDir:    tmpdir,
 		OWIBase:    "http://mock",
 		Bouquet:    "Favourites",
 		StreamPort: 8001,
@@ -261,7 +262,7 @@ func TestRefresh_M3UWriteError(t *testing.T) {
 
 	_, err := refreshWithClient(context.Background(), cfg, mock)
 	if err == nil {
-		t.Fatal("expected an error when writing M3U to a read-only directory, got nil")
+		t.Fatal("expected an error when writing M3U to a blocked path, got nil")
 	}
 	if !strings.Contains(err.Error(), "failed to write M3U playlist") {
 		t.Errorf("expected error to contain 'failed to write M3U playlist', got: %v", err)
