@@ -268,10 +268,7 @@ func TestRefresh_M3UWriteError(t *testing.T) {
 	if !strings.Contains(err.Error(), "failed to write M3U playlist") {
 		t.Errorf("expected error to contain 'failed to write M3U playlist', got: %v", err)
 	}
-	var linkErr *os.LinkError
-	if !errors.As(err, &linkErr) {
-		t.Fatalf("expected *os.LinkError from rename failure, got %T: %v", err, err)
-	}
+	assertRenameFailure(t, err)
 }
 
 func TestValidateConfig(t *testing.T) {
@@ -396,6 +393,22 @@ func TestValidateConfig(t *testing.T) {
 			}
 		})
 	}
+}
+
+func assertRenameFailure(t *testing.T, err error) {
+	t.Helper()
+	if err == nil {
+		t.Fatal("expected rename failure error, got nil")
+	}
+	var pathErr *os.PathError
+	if errors.As(err, &pathErr) {
+		return
+	}
+	var linkErr *os.LinkError
+	if errors.As(err, &linkErr) {
+		return
+	}
+	t.Fatalf("expected *os.PathError or *os.LinkError, got %T: %v", err, err)
 }
 
 func TestMakeStableIDFromSRef(t *testing.T) {

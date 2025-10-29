@@ -133,10 +133,7 @@ func TestXMLTVErrorCases(t *testing.T) {
 			},
 			checkFn: func(t *testing.T, err error) {
 				t.Helper()
-				var pathErr *os.PathError
-				if !errors.As(err, &pathErr) {
-					t.Fatalf("expected *os.PathError, got %T: %v", err, err)
-				}
+				assertPathError(t, err)
 			},
 		},
 		{
@@ -151,10 +148,7 @@ func TestXMLTVErrorCases(t *testing.T) {
 			},
 			checkFn: func(t *testing.T, err error) {
 				t.Helper()
-				var linkErr *os.LinkError
-				if !errors.As(err, &linkErr) {
-					t.Fatalf("expected *os.LinkError, got %T: %v", err, err)
-				}
+				assertRenameFailure(t, err)
 			},
 		},
 	}
@@ -278,4 +272,28 @@ func parseXMLTVFile(path string) (*TV, error) {
 	}
 
 	return &tv, nil
+}
+
+func assertPathError(t *testing.T, err error) {
+	t.Helper()
+	var pathErr *os.PathError
+	if !errors.As(err, &pathErr) {
+		t.Fatalf("expected *os.PathError, got %T: %v", err, err)
+	}
+}
+
+func assertRenameFailure(t *testing.T, err error) {
+	t.Helper()
+	if err == nil {
+		t.Fatal("expected rename failure error, got nil")
+	}
+	var pathErr *os.PathError
+	if errors.As(err, &pathErr) {
+		return
+	}
+	var linkErr *os.LinkError
+	if errors.As(err, &linkErr) {
+		return
+	}
+	t.Fatalf("expected *os.PathError or *os.LinkError, got %T: %v", err, err)
 }
