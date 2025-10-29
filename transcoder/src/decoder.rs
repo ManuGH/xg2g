@@ -280,52 +280,226 @@ impl Default for Mp2Decoder {
     }
 }
 
-/// AC3 Audio Decoder (Dolby Digital)
+/// AC3 Audio Decoder (Dolby Digital via FFmpeg)
 ///
-/// **TEMPORARY PASSTHROUGH IMPLEMENTATION**
-/// TODO: Implement proper ac-ffmpeg 0.19 integration after API research
-///
-/// Currently returns silent PCM samples as placeholder.
+/// Decodes AC3 audio (including 5.1 surround) to PCM stereo using ac-ffmpeg.
+/// Implements proper AC3 → PCM decoding with automatic 5.1 → stereo downmix.
 pub struct Ac3Decoder {
+    /// FFmpeg decoder (lazy-initialized)
+    decoder: Option<ac_ffmpeg::codec::Decoder>,
+
     /// Detected sample rate (Hz)
     sample_rate: u32,
 
-    /// Detected channel count
+    /// Output channels (always 2 for stereo)
     channels: u16,
 
     /// Frame counter for statistics
     frames_decoded: u64,
+
+    /// Initialization flag
+    initialized: bool,
 }
 
 impl Ac3Decoder {
-    /// Create a new AC3 decoder (passthrough)
+    /// Create a new AC3 decoder
     pub fn new() -> Result<Self> {
-        warn!("AC3Decoder: Using temporary passthrough implementation");
+        debug!("Creating AC3 decoder (FFmpeg-based, will initialize on first packet)");
         Ok(Self {
-            sample_rate: 48000, // Standard broadcast sample rate
-            channels: 2,        // Stereo
+            decoder: None,
+            sample_rate: 48000, // Default, updated from stream
+            channels: 2,        // Always output stereo
             frames_decoded: 0,
+            initialized: false,
         })
+    }
+
+    /// Initialize decoder on first packet
+    fn init_decoder(&mut self) -> Result<()> {
+        if self.initialized {
+            return Ok(());
+        }
+
+        debug!("Initializing AC3 decoder with FFmpeg");
+
+        // Create codec parameters for AC3
+        let mut codec_params = ac_ffmpeg::codec::CodecParameters::new();
+        codec_params.set_codec_id(ac_ffmpeg::codec::Id::AC3);
+        codec_params.set_sample_rate(48000); // Default, will be updated from stream
+        codec_params.set_channels(6); // AC3 5.1 input (6 channels)
+
+        // Create decoder
+        let decoder = ac_ffmpeg::codec::Decoder::new(&codec_params)
+            .context("Failed to create AC3 decoder")?;
+
+        self.decoder = Some(decoder);
+        self.initialized = true;
+
+        debug!("AC3 decoder initialized successfully");
+        Ok(())
+    }
+
+    /// Downmix multi-channel audio to stereo
+    fn downmix_to_stereo(&self, samples: Vec<f32>, input_channels: usize) -> Vec<f32> {
+        if input_channels == 2 {
+            return samples; // Already stereo
+        }
+
+        if input_channels == 1 {
+            // Mono to stereo: duplicate
+            let mut stereo = Vec::with_capacity(samples.len() * 2);
+            for sample in samples {
+                stereo.push(sample);
+                stereo.push(sample);
+            }
+            return stereo;
+        }
+
+        // 5.1 to stereo downmix
+        // Standard layout: FL, FR, FC, LFE, BL, BR
+        let frame_count = samples.len() / input_channels;
+        let mut stereo = Vec::with_capacity(frame_count * 2);
+
+        for frame_idx in 0..frame_count {
+            let base = frame_idx * input_channels;
+
+            let fl = samples[base];
+            let fr = samples[base + 1];
+            let fc = samples.get(base + 2).copied().unwrap_or(0.0);
+            let bl = samples.get(base + 4).copied().unwrap_or(0.0);
+            let br = samples.get(base + 5).copied().unwrap_or(0.0);
+
+            // Downmix formula: L = FL + 0.7*FC + 0.5*BL
+            let left = fl + (fc * 0.7) + (bl * 0.5);
+            let right = fr + (fc * 0.7) + (br * 0.5);
+
+            // Prevent clipping
+            stereo.push(left.clamp(-1.0, 1.0));
+            stereo.push(right.clamp(-1.0, 1.0));
+        }
+
+        stereo
+    }
+
+    /// Convert audio frame to PCM f32 samples (interleaved)
+    fn frame_to_pcm(&self, frame: &ac_ffmpeg::codec::audio::AudioFrame) -> Result<Vec<f32>> {
+        let channels = frame.channels() as usize;
+        let samples_per_channel = frame.samples() as usize;
+        let total_samples = samples_per_channel * channels;
+
+        let mut pcm = Vec::with_capacity(total_samples);
+
+        // Handle different sample formats
+        // ac-ffmpeg typically outputs planar f32 for AC3
+        match frame.format() {
+            ac_ffmpeg::codec::audio::AudioSampleFormat::FloatPlanar => {
+                // Planar f32: each channel is separate
+                for sample_idx in 0..samples_per_channel {
+                    for ch in 0..channels {
+                        let sample = frame.plane::<f32>(ch)[sample_idx];
+                        pcm.push(sample);
+                    }
+                }
+            }
+            ac_ffmpeg::codec::audio::AudioSampleFormat::Float => {
+                // Interleaved f32
+                let data = frame.plane::<f32>(0);
+                pcm.extend_from_slice(&data[..total_samples]);
+            }
+            ac_ffmpeg::codec::audio::AudioSampleFormat::S16Planar => {
+                // Planar s16
+                for sample_idx in 0..samples_per_channel {
+                    for ch in 0..channels {
+                        let sample = frame.plane::<i16>(ch)[sample_idx];
+                        pcm.push(sample as f32 / 32768.0);
+                    }
+                }
+            }
+            ac_ffmpeg::codec::audio::AudioSampleFormat::S16 => {
+                // Interleaved s16
+                let data = frame.plane::<i16>(0);
+                for &sample in &data[..total_samples] {
+                    pcm.push(sample as f32 / 32768.0);
+                }
+            }
+            format => {
+                warn!("Unsupported AC3 sample format: {:?}, returning silence", format);
+                pcm.resize(total_samples, 0.0);
+            }
+        }
+
+        Ok(pcm)
     }
 }
 
 impl AudioDecoder for Ac3Decoder {
     fn decode(&mut self, data: &[u8]) -> Result<Vec<PcmSample>> {
-        // TEMPORARY: Return silent PCM samples
-        // AC3 typically has 1536 samples per frame
-        let samples_per_frame = 1536;
-        let total_samples = samples_per_frame * self.channels as usize;
+        // Initialize decoder on first call
+        if !self.initialized {
+            self.init_decoder()?;
+        }
 
-        self.frames_decoded += 1;
+        let decoder = self.decoder.as_mut()
+            .context("AC3 decoder not initialized")?;
+
+        // Create packet from raw AC3 PES data
+        let packet = ac_ffmpeg::codec::Packet::new(data)
+            .context("Failed to create packet from AC3 data")?;
+
+        // Send packet to decoder
+        decoder.send_packet(&packet)
+            .context("Failed to send packet to AC3 decoder")?;
+
+        let mut all_samples = Vec::new();
+
+        // Receive all decoded frames
+        loop {
+            match decoder.receive_frame() {
+                Ok(frame) => {
+                    // Update sample rate from stream
+                    self.sample_rate = frame.sample_rate() as u32;
+
+                    let input_channels = frame.channels() as usize;
+
+                    trace!(
+                        "Decoded AC3 frame: {} samples/channel, {} channels, {}Hz",
+                        frame.samples(),
+                        input_channels,
+                        self.sample_rate
+                    );
+
+                    // Convert frame to PCM
+                    let pcm = self.frame_to_pcm(&frame)?;
+
+                    // Downmix to stereo if needed
+                    let stereo = if input_channels != 2 {
+                        trace!("Downmixing {} channels to stereo", input_channels);
+                        self.downmix_to_stereo(pcm, input_channels)
+                    } else {
+                        pcm
+                    };
+
+                    all_samples.extend(stereo);
+                    self.frames_decoded += 1;
+                }
+                Err(ac_ffmpeg::Error::Again) => {
+                    // Need more data - normal for fragmented packets
+                    break;
+                }
+                Err(e) => {
+                    return Err(e).context("Failed to receive frame from AC3 decoder");
+                }
+            }
+        }
 
         trace!(
-            "AC3 passthrough: {} bytes in, {} silent PCM samples out",
+            "AC3 decode complete: {} PCM samples from {} bytes (frame #{})",
+            all_samples.len(),
             data.len(),
-            total_samples
+            self.frames_decoded
         );
 
-        // Return silent audio (zeros) in interleaved stereo format
-        Ok(vec![0.0; total_samples])
+        Ok(all_samples)
     }
 
     fn sample_rate(&self) -> u32 {
@@ -337,11 +511,13 @@ impl AudioDecoder for Ac3Decoder {
     }
 
     fn reset(&mut self) {
+        self.decoder = None;
         self.frames_decoded = 0;
+        self.initialized = false;
     }
 
     fn name(&self) -> &str {
-        "AC3 (Passthrough)"
+        "AC3 (FFmpeg)"
     }
 }
 
