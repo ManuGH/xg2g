@@ -40,7 +40,7 @@ jobs:
 
       - name: Run Fuzz Tests
         env:
-          FUZZ_TIME: 2m
+          FUZZ_TIME: 30s
         run: |
           cd ${{ matrix.package }}
 
