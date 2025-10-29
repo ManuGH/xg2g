@@ -143,6 +143,22 @@ jobs:
           go build -v -trimpath -mod=readonly -ldflags "-X main.Version=${BUILD_REF}" -o bin/xg2g ./cmd/daemon
 
           nohup ./bin/xg2g > /tmp/daemon.log 2>&1 &
+          DAEMON_PID=$!
+          echo "🔧 Daemon started with PID: $DAEMON_PID"
+
+          # Give it a moment to start
+          sleep 1
+
+          # Check if daemon process is still running
+          if ! kill -0 $DAEMON_PID 2>/dev/null; then
+            echo "❌ Daemon process died immediately" >&2
+            echo "📋 Daemon log:" >&2
+            cat /tmp/daemon.log || echo "No log available"
+            exit 1
+          fi
+
+          echo "📋 Initial daemon output:"
+          cat /tmp/daemon.log || echo "No log yet"
 
           daemon_base="http://127.0.0.1${XG2G_LISTEN}"
 
@@ -155,9 +171,20 @@ jobs:
             sleep 0.2
           done
           if [ "$healthy" != "true" ]; then
-            echo "Daemon did not become ready" >&2
+            echo "❌ Daemon did not become ready after 60 attempts (12 seconds)" >&2
+            echo "📋 Daemon log:" >&2
+            cat /tmp/daemon.log || echo "No log available"
+            echo "🔍 Checking if daemon process is still running:" >&2
+            if kill -0 $DAEMON_PID 2>/dev/null; then
+              echo "Process $DAEMON_PID is still running"
+            else
+              echo "Process $DAEMON_PID has exited"
+            fi
+            echo "🔍 Checking if port 8080 is in use:" >&2
+            netstat -tuln | grep 8080 || echo "Port not bound"
             exit 1
           fi
+          echo "✅ Daemon ready on ${daemon_base}"
 
           curl -fsS --retry 10 --retry-all-errors --retry-delay 0 --max-time 2 -H "X-API-Token: ${XG2G_API_TOKEN}" -X POST "$daemon_base/api/refresh"
           curl -fsS --retry 10 --retry-all-errors --retry-delay 0 --max-time 2      "$daemon_base/api/status"
