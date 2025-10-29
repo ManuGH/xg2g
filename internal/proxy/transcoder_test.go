@@ -3,6 +3,7 @@ package proxy
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -178,8 +179,8 @@ func isExecError(err error) bool {
 	if err == nil {
 		return false
 	}
-	_, ok := err.(*exec.Error)
-	return ok
+	var execErr *exec.Error
+	return errors.As(err, &execErr)
 }
 
 // TestProxyToGPUTranscoder_Disabled verifies GPU path is not taken when disabled

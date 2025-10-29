@@ -3,6 +3,7 @@ package test
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -105,10 +106,9 @@ func TestGracefulShutdown(t *testing.T) {
 
 				// Verify exit code (0 = clean shutdown)
 				if err != nil {
-					if exitErr, ok := err.(*exec.ExitError); ok {
-						if exitErr.ExitCode() != 0 {
-							t.Errorf("daemon exited with code %d, want 0", exitErr.ExitCode())
-						}
+					var exitErr *exec.ExitError
+					if errors.As(err, &exitErr) && exitErr.ExitCode() != 0 {
+						t.Errorf("daemon exited with code %d, want 0", exitErr.ExitCode())
 					}
 				}
 
