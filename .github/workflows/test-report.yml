@@ -63,9 +63,9 @@ jobs:
           if [ "$TOTAL" -gt 0 ]; then
             PASS_RATE=$(echo "scale=2; ($PASSED / $TOTAL) * 100" | bc)
           else
-            PASS_RATE="0"
+            PASS_RATE="0.00"
           fi
-          echo "pass_rate=$PASS_RATE" >> $GITHUB_OUTPUT
+          echo "pass_rate=$PASS_RATE" >> "$GITHUB_OUTPUT"
 
           echo "Test Results: $PASSED/$TOTAL passed ($PASS_RATE%)"
 
@@ -203,8 +203,16 @@ jobs:
         run: |
           echo "## ⚡ Benchmark Results" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          cat benchmark-results.txt >> $GITHUB_STEP_SUMMARY
+          # Limit output to first 100 lines to avoid exceeding 1MB limit
+          head -n 100 benchmark-results.txt >> $GITHUB_STEP_SUMMARY
+          # Check if file is longer and add note
+          if [ $(wc -l < benchmark-results.txt) -gt 100 ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "... (output truncated - full results available in artifacts)" >> $GITHUB_STEP_SUMMARY
+          fi
           echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📦 Full benchmark results available in artifacts" >> $GITHUB_STEP_SUMMARY
 
       - name: Upload benchmark results
         uses: actions/upload-artifact@v5
