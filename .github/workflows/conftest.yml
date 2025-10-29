@@ -31,45 +31,9 @@ jobs:
           sudo mv conftest /usr/local/bin/
           conftest --version
 
-      - name: Install dockerfile-parser
-        run: |
-          pip install dockerfile-parse
-
-      - name: Parse Dockerfile for Conftest
-        run: |
-          python3 << 'EOF'
-          import json
-          from dockerfile_parse import DockerfileParser
-
-          with open('Dockerfile', 'r') as f:
-              dfp = DockerfileParser()
-              dfp.content = f.read()
-
-          # Convert to format conftest can work with
-          # Conftest expects a single object, not an array
-          instructions = []
-          for insn in dfp.structure:
-              # Handle both tag and digest formats (alpine:3.22.2@sha256:abc...)
-              value = insn['value']
-              if value and '@sha256:' in value:
-                  # Split at @ to separate tag from digest
-                  value = value.split('@')[0]
-
-              instructions.append({
-                  "Cmd": insn['instruction'].lower(),
-                  "Value": value.split() if value else []
-              })
-
-          # Wrap in an object instead of array
-          output = {"instructions": instructions}
-
-          with open('dockerfile.json', 'w') as f:
-              json.dump(output, f, indent=2)
-          EOF
-
       - name: Test Dockerfile policies
         run: |
-          conftest test dockerfile.json \
+          conftest test Dockerfile \
             --policy policy/dockerfile.rego \
             --namespace main \
             --all-namespaces
