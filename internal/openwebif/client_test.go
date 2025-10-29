@@ -13,6 +13,8 @@ import (
 
 func TestStreamURLScenarios(t *testing.T) {
 	t.Setenv("XG2G_STREAM_PORT", "")
+	// Disable smart stream detection to test explicit port configuration
+	t.Setenv("XG2G_SMART_STREAM_DETECTION", "false")
 
 	ref := "1:0:19:1334:3EF:1:C00000:0:0:0:"
 	name := "ORF1 HD"

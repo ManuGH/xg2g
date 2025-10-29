@@ -81,7 +81,7 @@ func TestIsEnabled(t *testing.T) {
 		{
 			name:     "not set",
 			envValue: "",
-			want:     false,
+			want:     true, // Default enabled for v1.2.0+ out-of-the-box functionality
 		},
 	}
 
@@ -218,16 +218,17 @@ func TestStreamDetector_TestEndpoint_HEADtoGETFallback(t *testing.T) {
 
 			// Create test server that behaves like Enigma2
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.Method == http.MethodHead {
+				switch r.Method {
+				case http.MethodHead:
 					w.WriteHeader(tt.headStatus)
-				} else if r.Method == http.MethodGet {
+				case http.MethodGet:
 					getCalled = true
 					// Verify Range header is set
 					if r.Header.Get("Range") != "bytes=0-0" {
 						t.Errorf("expected Range header 'bytes=0-0', got '%s'", r.Header.Get("Range"))
 					}
 					w.WriteHeader(tt.getStatus)
-				} else {
+				default:
 					t.Errorf("unexpected method: %s", r.Method)
 					w.WriteHeader(http.StatusMethodNotAllowed)
 				}

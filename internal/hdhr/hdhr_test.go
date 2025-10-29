@@ -287,7 +287,7 @@ func TestGetConfigFromEnv(t *testing.T) {
 			name:    "default values",
 			envVars: map[string]string{},
 			expected: Config{
-				Enabled:      false,
+				Enabled:      true, // Default since v1.4.0 for out-of-the-box Plex/Jellyfin discovery
 				DeviceID:     "",
 				FriendlyName: "xg2g",
 				ModelName:    "HDHR-xg2g",
@@ -325,7 +325,7 @@ func TestGetConfigFromEnv(t *testing.T) {
 				"XG2G_HDHR_TUNER_COUNT": "invalid",
 			},
 			expected: Config{
-				Enabled:      false,
+				Enabled:      true, // Default since v1.4.0 for out-of-the-box Plex/Jellyfin discovery
 				DeviceID:     "",
 				FriendlyName: "xg2g",
 				ModelName:    "HDHR-xg2g",
