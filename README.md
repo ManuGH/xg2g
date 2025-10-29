@@ -17,6 +17,25 @@ M3U playlists · XMLTV EPG · HDHomeRun emulation · OSCam Streamrelay support
 
 ## Quick Start
 
+### Verify Image Signature (Recommended)
+
+All container images are signed with [cosign](https://github.com/sigstore/cosign) and include SLSA provenance attestation:
+
+```bash
+# Verify signature (requires cosign v2+)
+cosign verify \
+  --certificate-identity-regexp="https://github.com/ManuGH/xg2g" \
+  ghcr.io/manugh/xg2g:latest
+
+# View SLSA build provenance
+cosign verify-attestation --type slsaprovenance \
+  ghcr.io/manugh/xg2g:latest | jq '.payload | @base64d | fromjson'
+```
+
+**Why verify?** Ensures the image you're running was built by our official GitHub Actions workflow and hasn't been tampered with.
+
+### Run Container
+
 ```bash
 docker run -d \
   --name xg2g \
