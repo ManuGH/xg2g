@@ -215,6 +215,7 @@ jobs:
     needs: coverage
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    continue-on-error: true  # GitHub Pages deployment is optional
 
     environment:
       name: github-pages
@@ -223,6 +224,7 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
+        continue-on-error: true  # Don't fail if GitHub Pages is not configured
         uses: actions/deploy-pages@v4
 
   coverage-guard:
