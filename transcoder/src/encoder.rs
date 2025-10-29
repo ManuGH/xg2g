@@ -368,11 +368,6 @@ impl AacEncoder for FfmpegAacEncoder {
             warn!("Flushed encoder with {} padding samples", remaining);
         }
 
-        // Flush encoder
-        if let Some(encoder) = &mut self.encoder {
-            let _ = encoder.flush();
-        }
-
         debug!("Encoder flushed, total frames encoded: {}", self.frames_encoded);
 
         Ok(output)
@@ -385,13 +380,10 @@ impl AacEncoder for FfmpegAacEncoder {
     fn reset(&mut self) {
         self.sample_buffer.clear();
         self.frames_encoded = 0;
-        if let Some(encoder) = &mut self.encoder {
-            let _ = encoder.flush();
-        }
     }
 
     fn name(&self) -> &str {
-        "AAC-LC (FFmpeg)"
+        "AAC-LC (Passthrough)"
     }
 }
 
