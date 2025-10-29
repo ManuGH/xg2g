@@ -21,9 +21,11 @@ var (
 )
 
 func normalize(s string) string {
-	// Normalize Unicode to NFC form (composed form)
+	// Normalize Unicode to NFC form (composed form) before processing
 	s = unorm.NFC.String(s)
 	s = strings.ToLower(strings.TrimSpace(s))
+	// Re-normalize after case conversion (lowercase may create new combining sequences)
+	s = unorm.NFC.String(s)
 
 	// Remove suffixes repeatedly until none remain (handles cases like "Ch HD")
 	for {
