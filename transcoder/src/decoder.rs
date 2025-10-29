@@ -29,6 +29,7 @@ use tracing::{debug, trace, warn};
 
 // ac-ffmpeg imports for AC3 decoder
 use ac_ffmpeg::codec::audio::{AudioDecoder as FfmpegAudioDecoder, AudioFrame};
+use ac_ffmpeg::codec::Decoder;
 use ac_ffmpeg::packet::Packet;
 
 /// Audio sample format

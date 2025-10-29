@@ -29,6 +29,7 @@ use tracing::{debug, trace, warn};
 
 // ac-ffmpeg imports for AAC encoder
 use ac_ffmpeg::codec::audio::{AudioEncoder as FfmpegAudioEncoder, AudioFrame};
+use ac_ffmpeg::codec::Encoder;
 use ac_ffmpeg::packet::Packet;
 
 /// AAC Profile
