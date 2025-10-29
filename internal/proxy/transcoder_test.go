@@ -27,8 +27,8 @@ func TestNewTranscoder(t *testing.T) {
 	if transcoder == nil {
 		t.Fatal("NewTranscoder returned nil")
 	}
-	if transcoder.config.Codec != "aac" {
-		t.Errorf("expected codec 'aac', got '%s'", transcoder.config.Codec)
+	if transcoder.Config.Codec != "aac" {
+		t.Errorf("expected codec 'aac', got '%s'", transcoder.Config.Codec)
 	}
 }
 
