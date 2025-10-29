@@ -5,7 +5,7 @@
 # All targets are designed with enterprise-grade quality assurance and CI/CD integration in mind.
 # ===================================================================================================
 
-.PHONY: help build build-all clean lint lint-fix test test-race test-cover test-fuzz test-all \
+.PHONY: help build build-all build-rust build-ffi clean clean-rust lint lint-fix test test-race test-cover test-fuzz test-all test-ffi \
         docker docker-build docker-security docker-tag docker-push docker-clean \
         sbom deps deps-update deps-tidy deps-verify deps-licenses \
         security security-scan security-audit security-vulncheck \
@@ -60,7 +60,10 @@ help: ## Show this help message
 	@echo "Build Targets:"
 	@echo "  build          Build the main daemon binary"
 	@echo "  build-all      Build binaries for all supported platforms"
+	@echo "  build-rust     Build Rust transcoder library"
+	@echo "  build-ffi      Build single binary with embedded Rust library (CGO)"
 	@echo "  clean          Remove build artifacts and temporary files"
+	@echo "  clean-rust     Clean Rust build artifacts"
 	@echo ""
 	@echo "Quality Assurance:"
 	@echo "  lint           Run golangci-lint with all checks"
@@ -70,6 +73,7 @@ help: ## Show this help message
 	@echo "  test-cover     Run tests with coverage reporting"
 	@echo "  test-fuzz      Run comprehensive fuzzing tests"
 	@echo "  test-all       Run complete test suite (unit + race + fuzz)"
+	@echo "  test-ffi       Test Rust FFI integration (requires Rust library)"
 	@echo ""
 	@echo "Enterprise Testing:"
 	@echo "  hardcore-test  Run enterprise-grade comprehensive test suite"
@@ -155,6 +159,27 @@ build: ## Build the main daemon binary
 	go build $(BUILD_FLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/daemon
 	@echo "✅ Build complete: $(BUILD_DIR)/$(BINARY_NAME)"
 
+build-rust: ## Build Rust transcoder library
+	@echo "Building Rust transcoder library..."
+	@cd transcoder && cargo build --release
+	@echo "✅ Rust library built: transcoder/target/release/libxg2g_transcoder.a"
+
+build-ffi: build-rust ## Build single binary with embedded Rust library (requires CGO)
+	@echo "Building xg2g daemon with embedded Rust library..."
+	@mkdir -p $(BUILD_DIR)
+	@if [ "$$(uname)" = "Darwin" ]; then \
+		echo "Building for macOS with Rust FFI..."; \
+		CGO_ENABLED=1 go build $(BUILD_FLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-ffi ./cmd/daemon; \
+	elif [ "$$(uname)" = "Linux" ]; then \
+		echo "Building for Linux with Rust FFI..."; \
+		CGO_ENABLED=1 go build $(BUILD_FLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-ffi ./cmd/daemon; \
+	else \
+		echo "❌ Unsupported platform for FFI build"; \
+		exit 1; \
+	fi
+	@echo "✅ FFI build complete: $(BUILD_DIR)/$(BINARY_NAME)-ffi"
+	@echo "   This binary includes the Rust audio remuxer!"
+
 build-all: ## Build binaries for all supported platforms
 	@echo "Building for all platforms..."
 	@mkdir -p $(BUILD_DIR)
@@ -177,6 +202,11 @@ clean: ## Remove build artifacts and temporary files
 	@rm -rf dist/
 	@go clean -cache -testcache -modcache
 	@echo "✅ Clean complete"
+
+clean-rust: ## Clean Rust build artifacts
+	@echo "Cleaning Rust build artifacts..."
+	@cd transcoder && cargo clean
+	@echo "✅ Rust clean complete"
 
 # ===================================================================================================
 # Quality Assurance Targets
@@ -236,6 +266,14 @@ test-fuzz: ## Run comprehensive fuzzing tests
 	@echo "✅ Fuzzing tests completed"
 
 test-all: test-race test-cover test-fuzz ## Run complete test suite
+
+test-ffi: build-rust ## Test Rust FFI integration
+	@echo "Running FFI integration tests..."
+	@echo "Building Rust library first..."
+	@cd transcoder && cargo build --release
+	@echo "Running Go tests with CGO enabled..."
+	@CGO_ENABLED=1 go test -v ./internal/transcoder -tags ffi
+	@echo "✅ FFI integration tests passed"
 
 test-integration: ## Run integration tests
 	@echo "Running integration tests..."
