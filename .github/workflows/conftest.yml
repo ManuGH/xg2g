@@ -31,17 +31,31 @@ jobs:
           sudo mv conftest /usr/local/bin/
           conftest --version
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
+      - name: Install dockerfile-parser
+        run: |
+          pip install dockerfile-parse
 
       - name: Parse Dockerfile for Conftest
         run: |
-          # Install dockerfile-json (requires Node.js)
-          npm install -g dockerfile-json
-          # Convert Dockerfile to JSON for conftest
-          dockerfile-json < Dockerfile > dockerfile.json
+          python3 << 'EOF'
+          import json
+          from dockerfile_parse import DockerfileParser
+
+          with open('Dockerfile', 'r') as f:
+              dfp = DockerfileParser()
+              dfp.content = f.read()
+
+          # Convert to format conftest can work with
+          output = []
+          for insn in dfp.structure:
+              output.append({
+                  "Cmd": insn['instruction'].lower(),
+                  "Value": insn['value'].split() if insn['value'] else []
+              })
+
+          with open('dockerfile.json', 'w') as f:
+              json.dump(output, f, indent=2)
+          EOF
 
       - name: Test Dockerfile policies
         run: |
