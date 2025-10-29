@@ -24,6 +24,7 @@ func TestGracefulShutdown(t *testing.T) {
 
 	// Build the daemon binary for testing
 	binaryPath := filepath.Join(t.TempDir(), "xg2g-test")
+	// #nosec G204 -- Test code: building test binary with controlled arguments
 	buildCmd := exec.Command("go", "build", "-o", binaryPath, "../../cmd/daemon")
 	if out, err := buildCmd.CombinedOutput(); err != nil {
 		t.Fatalf("failed to build daemon: %v\n%s", err, out)
@@ -59,6 +60,7 @@ func TestGracefulShutdown(t *testing.T) {
 			defer cancel()
 
 			// Start daemon
+			// #nosec G204 -- Test code: executing test binary with controlled path
 			cmd := exec.CommandContext(ctx, binaryPath)
 			cmd.Env = env
 			cmd.Stdout = io.Discard
@@ -133,6 +135,7 @@ func TestShutdownWithActiveRequests(t *testing.T) {
 
 	// Build the daemon binary
 	binaryPath := filepath.Join(t.TempDir(), "xg2g-test")
+	// #nosec G204 -- Test code: building test binary with controlled arguments
 	buildCmd := exec.Command("go", "build", "-o", binaryPath, "../../cmd/daemon")
 	if out, err := buildCmd.CombinedOutput(); err != nil {
 		t.Fatalf("failed to build daemon: %v\n%s", err, out)
@@ -154,6 +157,7 @@ func TestShutdownWithActiveRequests(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	// #nosec G204 -- Test code: executing test binary with controlled path
 	cmd := exec.CommandContext(ctx, binaryPath)
 	cmd.Env = env
 	cmd.Stdout = io.Discard

@@ -122,6 +122,7 @@ func TestXMLTVErrorCases(t *testing.T) {
 		{
 			name: "parent_path_is_file",
 			path: func(t *testing.T) string {
+				t.Helper()
 				tmpDir := t.TempDir()
 				blocker := filepath.Join(tmpDir, "obstacle")
 				if err := os.WriteFile(blocker, []byte("noop"), 0o600); err != nil {
@@ -133,9 +134,10 @@ func TestXMLTVErrorCases(t *testing.T) {
 		{
 			name: "target_path_is_directory",
 			path: func(t *testing.T) string {
+				t.Helper()
 				tmpDir := t.TempDir()
 				blocker := filepath.Join(tmpDir, "xmltv.xml")
-				if err := os.Mkdir(blocker, 0o755); err != nil {
+				if err := os.Mkdir(blocker, 0o750); err != nil {
 					t.Fatalf("failed to create blocker directory: %v", err)
 				}
 				return blocker

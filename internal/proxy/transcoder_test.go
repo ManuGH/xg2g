@@ -98,7 +98,7 @@ func TestTranscodeStream_FFmpegNotFound(t *testing.T) {
 	transcoder := NewTranscoder(config, logger)
 
 	// Create test request
-	req := httptest.NewRequest("GET", "/stream", nil)
+	req := httptest.NewRequest(http.MethodGet, "/stream", nil)
 	w := httptest.NewRecorder()
 
 	// Execute: Should fail gracefully
@@ -127,7 +127,9 @@ func TestTranscodeStream_ContextCancellation(t *testing.T) {
 		// Stream slowly
 		for i := 0; i < 100; i++ {
 			_, _ = w.Write([]byte("streaming data chunk\n"))
-			w.(http.Flusher).Flush()
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
 			select {
 			case <-r.Context().Done():
 				return
@@ -149,7 +151,7 @@ func TestTranscodeStream_ContextCancellation(t *testing.T) {
 	// Create cancellable context
 	ctx, cancel := context.WithCancel(context.Background())
 
-	req := httptest.NewRequest("GET", "/stream", nil)
+	req := httptest.NewRequest(http.MethodGet, "/stream", nil)
 	w := httptest.NewRecorder()
 
 	// Start transcoding in background
@@ -162,15 +164,14 @@ func TestTranscodeStream_ContextCancellation(t *testing.T) {
 	cancel()
 
 	// Wait for completion
-	select {
-	case err := <-done:
-		if err == nil {
-			t.Log("Transcoding completed without error (acceptable)")
-		} else if err == context.Canceled {
-			t.Log("Context was cancelled as expected")
-		} else {
-			t.Logf("Got error: %v (acceptable for cancelled context)", err)
-		}
+	err := <-done
+	switch {
+	case err == nil:
+		t.Log("Transcoding completed without error (acceptable)")
+	case err == context.Canceled:
+		t.Log("Context was cancelled as expected")
+	default:
+		t.Logf("Got error: %v (acceptable for cancelled context)", err)
 	}
 }
 
@@ -199,7 +200,7 @@ func TestProxyToGPUTranscoder_Disabled(t *testing.T) {
 	}))
 	defer target.Close()
 
-	req := httptest.NewRequest("GET", "/stream", nil)
+	req := httptest.NewRequest(http.MethodGet, "/stream", nil)
 	w := httptest.NewRecorder()
 
 	// GPU transcoding should not be attempted (function should return error or skip)

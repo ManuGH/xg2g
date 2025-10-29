@@ -18,6 +18,7 @@ func TestParseServerConfig(t *testing.T) {
 			name:    "defaults when no env vars set",
 			envVars: map[string]string{},
 			validate: func(t *testing.T, cfg ServerConfig) {
+				t.Helper()
 				if cfg.ListenAddr != ":8080" {
 					t.Errorf("ListenAddr = %v, want :8080", cfg.ListenAddr)
 				}
@@ -49,6 +50,7 @@ func TestParseServerConfig(t *testing.T) {
 				"XG2G_SERVER_SHUTDOWN_TIMEOUT": "30s",
 			},
 			validate: func(t *testing.T, cfg ServerConfig) {
+				t.Helper()
 				if cfg.ListenAddr != ":9000" {
 					t.Errorf("ListenAddr = %v, want :9000", cfg.ListenAddr)
 				}
@@ -76,6 +78,7 @@ func TestParseServerConfig(t *testing.T) {
 				"XG2G_SERVER_MAX_HEADER_BYTES": "not-a-number",
 			},
 			validate: func(t *testing.T, cfg ServerConfig) {
+				t.Helper()
 				if cfg.ReadTimeout != 5*time.Second {
 					t.Errorf("ReadTimeout = %v, want 5s (default)", cfg.ReadTimeout)
 				}

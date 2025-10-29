@@ -244,7 +244,7 @@ func TestRefresh_M3UWriteError(t *testing.T) {
 
 	tmpdir := t.TempDir()
 	blocker := filepath.Join(tmpdir, "playlist.m3u")
-	if err := os.Mkdir(blocker, 0o755); err != nil {
+	if err := os.Mkdir(blocker, 0o750); err != nil {
 		t.Fatalf("failed to create blocker directory: %v", err)
 	}
 

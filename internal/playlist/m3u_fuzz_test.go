@@ -51,7 +51,7 @@ func FuzzWriteM3U(f *testing.F) {
 			t.Error("output is empty")
 		}
 		if len(output) > 0 && output[0:7] != "#EXTM3U" {
-			t.Errorf("output doesn't start with #EXTM3U: %s", output[:min(50, len(output))])
+			t.Errorf("output doesn't start with #EXTM3U: %s", output[:minInt(50, len(output))])
 		}
 
 		// Must contain #EXTINF if items are present
@@ -61,7 +61,7 @@ func FuzzWriteM3U(f *testing.F) {
 	})
 }
 
-func min(a, b int) int {
+func minInt(a, b int) int {
 	if a < b {
 		return a
 	}
