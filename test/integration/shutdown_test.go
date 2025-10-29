@@ -72,7 +72,7 @@ func TestGracefulShutdown(t *testing.T) {
 			for i := 0; i < 50; i++ {
 				resp, err := http.Get("http://127.0.0.1:18888/healthz")
 				if err == nil && resp.StatusCode == http.StatusOK {
-					resp.Body.Close()
+					_ = resp.Body.Close()
 					ready = true
 					break
 				}
@@ -169,7 +169,7 @@ func TestShutdownWithActiveRequests(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		resp, err := http.Get("http://127.0.0.1:18889/healthz")
 		if err == nil && resp.StatusCode == http.StatusOK {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			ready = true
 			break
 		}
@@ -187,7 +187,7 @@ func TestShutdownWithActiveRequests(t *testing.T) {
 			requestDone <- err
 			return
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		body, _ := io.ReadAll(resp.Body)
 		if resp.StatusCode != http.StatusOK {
 			requestDone <- io.EOF

@@ -1,0 +1,60 @@
+name: Policy Checks (Conftest)
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - 'Dockerfile'
+      - 'policy/**'
+      - '.github/workflows/conftest.yml'
+  pull_request:
+    paths:
+      - 'Dockerfile'
+      - 'policy/**'
+      - '.github/workflows/conftest.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  conftest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Conftest
+        run: |
+          wget https://github.com/open-policy-agent/conftest/releases/download/v0.51.0/conftest_0.51.0_Linux_x86_64.tar.gz
+          tar xzf conftest_0.51.0_Linux_x86_64.tar.gz
+          sudo mv conftest /usr/local/bin/
+          conftest --version
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Parse Dockerfile for Conftest
+        run: |
+          # Install dockerfile-json (requires Node.js)
+          npm install -g dockerfile-json
+          # Convert Dockerfile to JSON for conftest
+          dockerfile-json < Dockerfile > dockerfile.json
+
+      - name: Test Dockerfile policies
+        run: |
+          conftest test dockerfile.json \
+            --policy policy/dockerfile.rego \
+            --namespace main \
+            --all-namespaces
+
+      - name: Test Kubernetes manifests (if exist)
+        if: hashFiles('k8s/**/*.yaml') != ''
+        run: |
+          conftest test k8s/ \
+            --policy policy/kubernetes.rego \
+            --namespace main \
+            --all-namespaces \
+            --recursive
