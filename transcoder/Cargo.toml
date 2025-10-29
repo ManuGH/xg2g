@@ -55,7 +55,7 @@ mpeg2ts-reader = "0.18"  # MPEG-TS demuxer/parser
 symphonia = { version = "0.5", features = ["mp2"] }
 
 # AC3 Decoder + AAC Encoder (FFmpeg bindings)
-ac-ffmpeg = { version = "0.19", features = ["audio"] }
+ac-ffmpeg = "0.19"
 
 # Audio Processing Utilities
 dasp = "0.11"      # Sample format conversion, channel mixing
