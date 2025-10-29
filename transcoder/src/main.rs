@@ -28,6 +28,7 @@ use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod audio_remux;
+pub mod ffi;  // Public for FFI exports
 mod metrics;
 mod transcoder;
 

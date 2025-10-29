@@ -5,6 +5,10 @@ edition = "2021"
 authors = ["Manuel"]
 description = "High-performance GPU transcoder for xg2g using VAAPI"
 
+[lib]
+name = "xg2g_transcoder"
+crate-type = ["cdylib", "rlib", "bin"]  # cdylib for FFI, rlib for Rust, bin for standalone
+
 [dependencies]
 # Async runtime
 tokio = { version = "1", features = ["full"] }
