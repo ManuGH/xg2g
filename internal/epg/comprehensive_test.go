@@ -3,6 +3,7 @@ package epg
 
 import (
 	"encoding/xml"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -117,18 +118,44 @@ func TestXMLTVParsingRoundTrip(t *testing.T) {
 func TestXMLTVErrorCases(t *testing.T) {
 	tests := []struct {
 		name    string
-		xmlPath string
-		wantErr bool
+		path    func(t *testing.T) string
+		checkFn func(t *testing.T, err error)
 	}{
 		{
-			name:    "invalid_directory",
-			xmlPath: "/nonexistent/dir/test.xml",
-			wantErr: true,
+			name: "parent_path_is_file",
+			path: func(t *testing.T) string {
+				tmpDir := t.TempDir()
+				blocker := filepath.Join(tmpDir, "obstacle")
+				if err := os.WriteFile(blocker, []byte("noop"), 0o600); err != nil {
+					t.Fatalf("failed to create blocker file: %v", err)
+				}
+				return filepath.Join(blocker, "test.xml")
+			},
+			checkFn: func(t *testing.T, err error) {
+				t.Helper()
+				var pathErr *os.PathError
+				if !errors.As(err, &pathErr) {
+					t.Fatalf("expected *os.PathError, got %T: %v", err, err)
+				}
+			},
 		},
 		{
-			name:    "readonly_directory",
-			xmlPath: "/test.xml", // Root directory (should be readonly)
-			wantErr: true,
+			name: "target_path_is_directory",
+			path: func(t *testing.T) string {
+				tmpDir := t.TempDir()
+				blocker := filepath.Join(tmpDir, "xmltv.xml")
+				if err := os.Mkdir(blocker, 0o755); err != nil {
+					t.Fatalf("failed to create blocker directory: %v", err)
+				}
+				return blocker
+			},
+			checkFn: func(t *testing.T, err error) {
+				t.Helper()
+				var linkErr *os.LinkError
+				if !errors.As(err, &linkErr) {
+					t.Fatalf("expected *os.LinkError, got %T: %v", err, err)
+				}
+			},
 		},
 	}
 
@@ -136,9 +163,12 @@ func TestXMLTVErrorCases(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			channels := []Channel{{ID: "test.id", DisplayName: []string{"Test"}}}
 
-			err := WriteXMLTV(GenerateXMLTV(channels, nil), tt.xmlPath)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("WriteXMLTV() error = %v, wantErr %v", err, tt.wantErr)
+			err := WriteXMLTV(GenerateXMLTV(channels, nil), tt.path(t))
+			if err == nil {
+				t.Fatal("WriteXMLTV() expected error, got nil")
+			}
+			if tt.checkFn != nil {
+				tt.checkFn(t, err)
 			}
 		})
 	}
