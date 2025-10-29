@@ -142,6 +142,7 @@ jobs:
 
       - name: Update coverage badge
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        continue-on-error: true  # Badge is optional - don't fail if gist doesn't exist
         uses: schneegans/dynamic-badges-action@v1.7.0
         with:
           auth: ${{ secrets.GIST_SECRET }}
