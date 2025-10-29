@@ -126,7 +126,7 @@ struct TsPacketParser {
 }
 
 impl TsPacketParser {
-    fn parse_packet(&mut self, data: &[u8; 188]) -> Result<TsPacket> {
+    fn parse_packet<'a>(&mut self, data: &'a [u8; 188]) -> Result<TsPacket<'a>> {
         // Sync byte must be 0x47
         if data[0] != 0x47 {
             anyhow::bail!("Invalid sync byte: expected 0x47, got 0x{:02x}", data[0]);
