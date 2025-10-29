@@ -55,9 +55,12 @@ func BuildNameToIDMap(xmltvPath string) (map[string]string, error) {
 		if ch.ID == "" || len(ch.DisplayName) == 0 {
 			continue
 		}
-		key := norm(ch.DisplayName[0])
-		if key != "" {
-			out[key] = ch.ID
+		// Normalize all display names and add them to the map
+		for _, displayName := range ch.DisplayName {
+			key := norm(displayName)
+			if key != "" {
+				out[key] = ch.ID
+			}
 		}
 	}
 	return out, nil

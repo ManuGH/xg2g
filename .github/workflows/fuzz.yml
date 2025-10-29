@@ -25,8 +25,9 @@ jobs:
     timeout-minutes: 30
     strategy:
       matrix:
-        package:
-          - internal/epg
+        include:
+          - package: internal/epg
+            package_name: internal-epg
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -61,7 +62,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: fuzz-crashes-${{ matrix.package }}
+          name: fuzz-crashes-${{ matrix.package_name }}
           path: |
             ${{ matrix.package }}/testdata/fuzz/*/
           retention-days: 30
