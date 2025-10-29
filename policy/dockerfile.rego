@@ -72,8 +72,3 @@ deny[msg] {
     input[_].Cmd == "add"
     msg = "Use COPY instead of ADD unless you need tar extraction or URL support"
 }
-
-# Helper function to convert string to lowercase
-lower(s) = output {
-    output := lower(s)
-}
