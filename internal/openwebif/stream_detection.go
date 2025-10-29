@@ -40,12 +40,12 @@ type StreamDetector struct {
 	logger     zerolog.Logger
 
 	// Configuration
-	receiverHost       string            // e.g., "192.168.1.100"
-	proxyEnabled       bool
-	proxyHost          string            // e.g., "192.168.1.50:18000"
-	cacheTTL           time.Duration
-	encryptedChannels  map[string]bool   // Whitelist of service refs requiring port 17999
-	whitelistMu        sync.RWMutex
+	receiverHost      string // e.g., "192.168.1.100"
+	proxyEnabled      bool
+	proxyHost         string // e.g., "192.168.1.50:18000"
+	cacheTTL          time.Duration
+	encryptedChannels map[string]bool // Whitelist of service refs requiring port 17999
+	whitelistMu       sync.RWMutex
 }
 
 // NewStreamDetector creates a new smart stream detector.

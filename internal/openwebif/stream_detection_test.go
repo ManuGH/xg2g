@@ -163,12 +163,12 @@ func TestStreamDetector_TestEndpoint_HEADtoGETFallback(t *testing.T) {
 	logger := zerolog.New(io.Discard)
 
 	tests := []struct {
-		name           string
-		headStatus     int
-		getStatus      int
-		wantSuccess    bool
-		wantGETCalled  bool
-		description    string
+		name          string
+		headStatus    int
+		getStatus     int
+		wantSuccess   bool
+		wantGETCalled bool
+		description   string
 	}{
 		{
 			name:          "HEAD succeeds - no GET fallback",

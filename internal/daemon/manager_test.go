@@ -230,7 +230,7 @@ func TestManager_WithMetrics(t *testing.T) {
 
 	deps := Deps{
 		Logger:         log.WithComponent("test"),
-		Config:     jobs.Config{},
+		Config:         jobs.Config{},
 		APIHandler:     apiHandler,
 		MetricsHandler: metricsHandler,
 	}

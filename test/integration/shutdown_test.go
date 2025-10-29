@@ -39,10 +39,10 @@ func TestGracefulShutdown(t *testing.T) {
 		"XG2G_LISTEN=:18888",
 		"XG2G_OWI_BASE=http://127.0.0.1:19999", // Non-existent (no backend needed for shutdown test)
 		"XG2G_BOUQUET=Test",
-		"XG2G_EPG_ENABLED=false",                // Disable EPG to simplify test
-		"XG2G_HDHR_ENABLED=false",               // Disable HDHR
-		"XG2G_SMART_STREAM_DETECTION=false",     // Disable detection
-		"XG2G_SERVER_SHUTDOWN_TIMEOUT=5s",       // 5s graceful shutdown window
+		"XG2G_EPG_ENABLED=false",            // Disable EPG to simplify test
+		"XG2G_HDHR_ENABLED=false",           // Disable HDHR
+		"XG2G_SMART_STREAM_DETECTION=false", // Disable detection
+		"XG2G_SERVER_SHUTDOWN_TIMEOUT=5s",   // 5s graceful shutdown window
 		"PATH=" + os.Getenv("PATH"),
 	}
 
