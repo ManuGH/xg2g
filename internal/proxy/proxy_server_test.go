@@ -19,6 +19,33 @@ import (
 
 const testHeaderValue = "test-value"
 
+// getFreeAddr returns an available local address by binding to ":0" and closing the listener.
+// It reduces collisions with hard-coded ports.
+func getFreeAddr(t *testing.T) string {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to get free addr: %v", err)
+	}
+	addr := l.Addr().String()
+	_ = l.Close()
+	return addr
+}
+
+// waitForServer waits until the TCP port at addr accepts connections or the timeout elapses.
+func waitForServer(addr string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp", addr, 100*time.Millisecond)
+		if err == nil {
+			_ = conn.Close()
+			return nil
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	return fmt.Errorf("server not listening on %s (after %v)", addr, timeout)
+}
+
 // TestServerStart_ErrorPaths tests Server.Start() error scenarios
 func TestServerStart_ErrorPaths(t *testing.T) {
 	logger := zerolog.New(io.Discard)
@@ -133,8 +160,7 @@ func TestServerStart_Success(t *testing.T) {
 func TestServerShutdown_GracefulShutdown(t *testing.T) {
 	logger := zerolog.New(io.Discard)
 
-	// Use a fixed high port that's less likely to conflict
-	testAddr := "127.0.0.1:58888"
+	testAddr := getFreeAddr(t)
 
 	// Track if target handler completes
 	handlerDone := make(chan struct{})
@@ -155,10 +181,13 @@ func TestServerShutdown_GracefulShutdown(t *testing.T) {
 	}
 
 	// Start server
-	go func() {
-		_ = srv.Start()
-	}()
-	time.Sleep(100 * time.Millisecond) // Give more time for server to start
+	startErr := make(chan error, 1)
+	go func() { startErr <- srv.Start() }()
+
+	// Wait until server is listening
+	if err := waitForServer(testAddr, 1*time.Second); err != nil {
+		t.Fatalf("server did not start: %v", err)
+	}
 
 	// Make a request that will take time
 	reqStarted := make(chan struct{})
@@ -181,6 +210,11 @@ func TestServerShutdown_GracefulShutdown(t *testing.T) {
 		t.Errorf("Shutdown() failed: %v", err)
 	}
 
+	// Check Start() error
+	if err := <-startErr; err != nil && !errors.Is(err, http.ErrServerClosed) {
+		t.Errorf("Start() returned error: %v", err)
+	}
+
 	// Verify handler completed
 	select {
 	case <-handlerDone:
@@ -194,7 +228,7 @@ func TestServerShutdown_GracefulShutdown(t *testing.T) {
 func TestServerShutdown_ContextTimeout(t *testing.T) {
 	logger := zerolog.New(io.Discard)
 
-	testAddr := "127.0.0.1:58889"
+	testAddr := getFreeAddr(t)
 
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		time.Sleep(2 * time.Second) // Long-running handler
@@ -212,10 +246,13 @@ func TestServerShutdown_ContextTimeout(t *testing.T) {
 	}
 
 	// Start server
-	go func() {
-		_ = srv.Start()
-	}()
-	time.Sleep(100 * time.Millisecond)
+	startErr := make(chan error, 1)
+	go func() { startErr <- srv.Start() }()
+
+	// Wait until server is listening
+	if err := waitForServer(testAddr, 1*time.Second); err != nil {
+		t.Fatalf("server did not start: %v", err)
+	}
 
 	// Make a long-running request
 	reqStarted := make(chan struct{})
@@ -238,6 +275,11 @@ func TestServerShutdown_ContextTimeout(t *testing.T) {
 	// We expect either no error (shutdown completed) or context deadline exceeded
 	if err != nil && !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("Shutdown() returned unexpected error: %v", err)
+	}
+
+	// Check Start() error - ignore http.ErrServerClosed
+	if err := <-startErr; err != nil && !errors.Is(err, http.ErrServerClosed) {
+		t.Logf("Start() returned error (acceptable after forced shutdown): %v", err)
 	}
 }
 
@@ -315,7 +357,7 @@ func TestNew_InvalidListenAddr(t *testing.T) {
 func TestServerIntegration_ReverseProxyHeaders(t *testing.T) {
 	logger := zerolog.New(io.Discard)
 
-	testAddr := "127.0.0.1:58890"
+	testAddr := getFreeAddr(t)
 
 	// Track headers received by target
 	var receivedHeaders http.Header
@@ -337,14 +379,22 @@ func TestServerIntegration_ReverseProxyHeaders(t *testing.T) {
 	}
 
 	// Start server
-	go func() {
-		_ = srv.Start()
-	}()
-	time.Sleep(100 * time.Millisecond)
+	startErr := make(chan error, 1)
+	go func() { startErr <- srv.Start() }()
+
+	// Wait until server is listening
+	if err := waitForServer(testAddr, 1*time.Second); err != nil {
+		t.Fatalf("server did not start: %v", err)
+	}
+
 	defer func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(ctx)
+		// Check Start() error
+		if err := <-startErr; err != nil && !errors.Is(err, http.ErrServerClosed) {
+			t.Errorf("Start() returned error: %v", err)
+		}
 	}()
 
 	// Make request with custom headers
@@ -377,7 +427,7 @@ func TestServerIntegration_ReverseProxyHeaders(t *testing.T) {
 func TestServerIntegration_HTTPClientTimeouts(t *testing.T) {
 	logger := zerolog.New(io.Discard)
 
-	testAddr := "127.0.0.1:58891"
+	testAddr := getFreeAddr(t)
 
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		time.Sleep(500 * time.Millisecond) // Simulate slow response
@@ -395,14 +445,22 @@ func TestServerIntegration_HTTPClientTimeouts(t *testing.T) {
 	}
 
 	// Start server
-	go func() {
-		_ = srv.Start()
-	}()
-	time.Sleep(100 * time.Millisecond)
+	startErr := make(chan error, 1)
+	go func() { startErr <- srv.Start() }()
+
+	// Wait until server is listening
+	if err := waitForServer(testAddr, 1*time.Second); err != nil {
+		t.Fatalf("server did not start: %v", err)
+	}
+
 	defer func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(ctx)
+		// Check Start() error
+		if err := <-startErr; err != nil && !errors.Is(err, http.ErrServerClosed) {
+			t.Errorf("Start() returned error: %v", err)
+		}
 	}()
 
 	// Test with short timeout
