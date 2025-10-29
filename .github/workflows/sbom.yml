@@ -11,8 +11,9 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write  # For uploading SBOM as release asset
-  packages: write  # For Docker image SBOM
+  contents: write        # For uploading SBOM as release asset
+  packages: write        # For Docker image SBOM
+  pull-requests: write   # For commenting on PRs with vulnerability scan results
 
 jobs:
   generate-sbom:

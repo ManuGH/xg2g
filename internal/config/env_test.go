@@ -54,8 +54,8 @@ func TestParseString(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Setup
 			if tt.envSet {
-				os.Setenv(tt.key, tt.envValue)
-				defer os.Unsetenv(tt.key)
+				_ = os.Setenv(tt.key, tt.envValue)
+				defer func() { _ = os.Unsetenv(tt.key) }()
 			}
 
 			// Test
@@ -113,8 +113,8 @@ func TestParseInt(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Setup
 			if tt.envSet {
-				os.Setenv(tt.key, tt.envValue)
-				defer os.Unsetenv(tt.key)
+				_ = os.Setenv(tt.key, tt.envValue)
+				defer func() { _ = os.Unsetenv(tt.key) }()
 			}
 
 			// Test
@@ -180,8 +180,8 @@ func TestParseDuration(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Setup
 			if tt.envSet {
-				os.Setenv(tt.key, tt.envValue)
-				defer os.Unsetenv(tt.key)
+				_ = os.Setenv(tt.key, tt.envValue)
+				defer func() { _ = os.Unsetenv(tt.key) }()
 			}
 
 			// Test
@@ -287,8 +287,8 @@ func TestParseBool(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Setup
 			if tt.envSet {
-				os.Setenv(tt.key, tt.envValue)
-				defer os.Unsetenv(tt.key)
+				_ = os.Setenv(tt.key, tt.envValue)
+				defer func() { _ = os.Unsetenv(tt.key) }()
 			}
 
 			// Test

@@ -90,7 +90,7 @@ func TestManager_StartStop_OK(t *testing.T) {
 	// Create a simple test handler
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	})
 
 	deps := Deps{

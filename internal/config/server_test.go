@@ -90,8 +90,8 @@ func TestParseServerConfig(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Setup environment
 			for key, value := range tt.envVars {
-				os.Setenv(key, value)
-				defer os.Unsetenv(key)
+				_ = os.Setenv(key, value)
+				defer func(k string) { _ = os.Unsetenv(k) }(key)
 			}
 
 			// Test
@@ -138,8 +138,8 @@ func TestParseMetricsAddr(t *testing.T) {
 			// Setup
 			key := "XG2G_METRICS_LISTEN"
 			if tt.envSet {
-				os.Setenv(key, tt.envValue)
-				defer os.Unsetenv(key)
+				_ = os.Setenv(key, tt.envValue)
+				defer func() { _ = os.Unsetenv(key) }()
 			}
 
 			// Test
