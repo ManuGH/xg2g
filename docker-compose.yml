@@ -26,7 +26,6 @@ services:
     read_only: true              # Read-only root filesystem for security
     tmpfs:
       - /tmp:noexec,nosuid,nodev,size=100m
-      - /data:exec,suid,dev,size=500m  # Writable data directory
     ulimits:
       nofile:
         soft: 4096
