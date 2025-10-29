@@ -370,6 +370,7 @@ impl FfmpegAacEncoder {
 
             // Add ADTS header to packet
             let aac_with_adts = self.add_adts_header(&packet)?;
+            let adts_len = aac_with_adts.len();
             output.extend(aac_with_adts);
 
             self.frames_encoded += 1;
@@ -377,7 +378,7 @@ impl FfmpegAacEncoder {
             trace!(
                 "Encoded AAC frame: {} PCM samples → {} bytes (with ADTS)",
                 pcm.len(),
-                aac_with_adts.len()
+                adts_len
             );
         }
 
