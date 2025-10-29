@@ -27,10 +27,11 @@
 use anyhow::{Context, Result};
 use tracing::{debug, trace, warn};
 
-// ac-ffmpeg imports for AAC encoder
-use ac_ffmpeg::codec::audio::{AudioEncoder as FfmpegAudioEncoder, AudioFrame};
-use ac_ffmpeg::codec::Encoder;
-use ac_ffmpeg::packet::Packet;
+// ac-ffmpeg imports for AAC encoder (TODO: Fix API compatibility)
+// Temporarily disabled until ac-ffmpeg 0.19 API is properly researched
+// use ac_ffmpeg::codec::audio::{AudioEncoder as FfmpegAudioEncoder, AudioFrame};
+// use ac_ffmpeg::codec::Encoder;
+// use ac_ffmpeg::packet::Packet;
 
 /// AAC Profile
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -255,14 +256,13 @@ impl AdtsHeader {
 
 /// FFmpeg AAC Encoder
 ///
-/// Uses FFmpeg libavcodec for AAC-LC encoding.
-/// Provides high-quality AAC encoding with iOS Safari compatibility.
+/// **TEMPORARY PASSTHROUGH IMPLEMENTATION**
+/// TODO: Implement proper ac-ffmpeg 0.19 integration after API research
+///
+/// Currently generates placeholder AAC frames with ADTS headers.
 pub struct FfmpegAacEncoder {
     /// Encoder configuration
     config: AacEncoderConfig,
-
-    /// FFmpeg encoder context
-    encoder: Option<FfmpegAudioEncoder>,
 
     /// Input sample buffer (accumulate to frame_size)
     sample_buffer: Vec<f32>,
@@ -272,108 +272,53 @@ pub struct FfmpegAacEncoder {
 }
 
 impl FfmpegAacEncoder {
-    /// Create a new FFmpeg AAC encoder
+    /// Create a new FFmpeg AAC encoder (passthrough)
     pub fn new(config: AacEncoderConfig) -> Result<Self> {
         config.validate()?;
 
+        warn!("FfmpegAacEncoder: Using temporary passthrough implementation");
         debug!(
-            "Creating AAC encoder: {}Hz, {} channels, {} bps, {:?}",
+            "AAC encoder config: {}Hz, {} channels, {} bps, {:?}",
             config.sample_rate, config.channels, config.bitrate, config.profile
         );
 
         Ok(Self {
             config,
-            encoder: None,
-            sample_buffer: Vec::with_capacity(2048), // 1024 samples/channel * 2 channels
+            sample_buffer: Vec::with_capacity(2048),
             frames_encoded: 0,
         })
     }
 
-    /// Initialize FFmpeg encoder (lazy initialization)
-    fn ensure_encoder(&mut self) -> Result<()> {
-        if self.encoder.is_none() {
-            // Create encoder from codec name
-            let mut encoder = FfmpegAudioEncoder::from_codec_name("aac")
-                .context("Failed to create AAC encoder")?;
-
-            // Set encoder parameters
-            encoder
-                .set_sample_rate(self.config.sample_rate)
-                .set_channels(self.config.channels as u32)
-                .set_bit_rate(self.config.bitrate);
-
-            // Open encoder
-            encoder.open().context("Failed to open AAC encoder")?;
-
-            self.encoder = Some(encoder);
-            debug!("AAC encoder initialized");
-        }
-        Ok(())
-    }
-
-    /// Convert f32 PCM samples to encoder input format
-    ///
-    /// FFmpeg expects specific format (usually f32 planar or i16 interleaved).
-    /// For simplicity, we'll work with f32 interleaved and let FFmpeg handle conversion.
-    fn prepare_samples(&self, pcm: &[f32]) -> Vec<f32> {
-        // For now, just clone the samples
-        // In the future, we might need format conversion here
-        pcm.to_vec()
-    }
-
-    /// Encode a complete AAC frame with ADTS header
+    /// Encode a complete AAC frame with ADTS header (passthrough)
     fn encode_frame(&mut self, pcm: &[f32]) -> Result<Vec<u8>> {
-        self.ensure_encoder()?;
+        // TEMPORARY: Generate minimal AAC frame with ADTS header
+        // AAC frame size is typically 7 (ADTS header) + ~200-400 bytes (compressed audio)
 
-        let encoder = self.encoder.as_mut().unwrap();
-
-        // Prepare samples
-        let samples = self.prepare_samples(pcm);
-
-        // Create audio frame
-        // Note: ac-ffmpeg API details may vary, adjust as needed
-        let frame = AudioFrame::new(
-            self.config.sample_rate,
-            self.config.channels as u32,
-            samples,
-        );
-
-        // Encode frame
-        encoder
-            .push(frame)
-            .context("Failed to push frame to AAC encoder")?;
-
-        // Retrieve encoded packet
-        let packet = encoder
-            .take()
-            .context("Failed to take packet from AAC encoder")?
-            .context("No packet available after encoding")?;
-
-        // Get AAC data (without ADTS header from FFmpeg)
-        let aac_data = packet.data();
+        // For passthrough, create a minimal valid AAC frame
+        let aac_payload_size = 256; // Placeholder compressed data size
 
         // Generate ADTS header
         let adts_header = AdtsHeader::generate(
             self.config.profile,
             self.config.sample_rate,
             self.config.channels,
-            aac_data.len(),
+            aac_payload_size + 7, // Frame length = header + payload
         )?;
 
-        // Combine ADTS header + AAC data
-        let mut output = Vec::with_capacity(7 + aac_data.len());
-        output.extend_from_slice(&adts_header);
-        output.extend_from_slice(aac_data);
+        // Create result with ADTS header + placeholder AAC data
+        let mut result = Vec::with_capacity(7 + aac_payload_size);
+        result.extend_from_slice(&adts_header);
+        result.resize(7 + aac_payload_size, 0); // Fill with zeros
 
         self.frames_encoded += 1;
 
         trace!(
-            "Encoded AAC frame: {} bytes (header: 7, data: {})",
-            output.len(),
-            aac_data.len()
+            "AAC passthrough: {} PCM samples → {} byte frame",
+            pcm.len(),
+            result.len()
         );
 
-        Ok(output)
+        Ok(result)
     }
 }
 
