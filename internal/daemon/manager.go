@@ -107,6 +107,8 @@ func (m *manager) Start(ctx context.Context) error {
 }
 
 // startAPIServer starts the main API HTTP server.
+//
+//nolint:unparam // error return kept for consistency with other start methods
 func (m *manager) startAPIServer(_ context.Context, errChan chan<- error) error {
 	m.apiServer = &http.Server{
 		Addr:              m.serverCfg.ListenAddr,
@@ -136,6 +138,8 @@ func (m *manager) startAPIServer(_ context.Context, errChan chan<- error) error 
 }
 
 // startMetricsServer starts the Prometheus metrics HTTP server.
+//
+//nolint:unparam // error return kept for consistency with other start methods
 func (m *manager) startMetricsServer(_ context.Context, errChan chan<- error) error {
 	metricsAddr := config.ParseMetricsAddr()
 	if metricsAddr == "" {

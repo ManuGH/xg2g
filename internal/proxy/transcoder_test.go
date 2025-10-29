@@ -80,7 +80,7 @@ func TestTranscodeStream_FFmpegNotFound(t *testing.T) {
 	logger := zerolog.New(io.Discard)
 
 	// Create test HTTP server (target)
-	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "video/mp2t")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("fake stream data"))
@@ -195,7 +195,7 @@ func TestProxyToGPUTranscoder_Disabled(t *testing.T) {
 	}
 	transcoder := NewTranscoder(config, logger)
 
-	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer target.Close()
