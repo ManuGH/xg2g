@@ -4,10 +4,17 @@
 [![Coverage](https://github.com/ManuGH/xg2g/actions/workflows/coverage.yml/badge.svg)](https://github.com/ManuGH/xg2g/actions/workflows/coverage.yml)
 [![Integration Tests](https://github.com/ManuGH/xg2g/actions/workflows/integration-tests.yml/badge.svg)](https://github.com/ManuGH/xg2g/actions/workflows/integration-tests.yml)
 [![Docker](https://github.com/ManuGH/xg2g/actions/workflows/docker.yml/badge.svg?branch=main)](https://github.com/ManuGH/xg2g/actions/workflows/docker.yml)
-[![CodeQL](https://github.com/ManuGH/xg2g/actions/workflows/codeql.yml/badge.svg)](https://github.com/ManuGH/xg2g/actions/workflows/codeql.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/ManuGH/xg2g)](https://goreportcard.com/report/github.com/ManuGH/xg2g)
 [![Go Reference](https://pkg.go.dev/badge/github.com/ManuGH/xg2g.svg)](https://pkg.go.dev/github.com/ManuGH/xg2g)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+**Supply Chain Security:**
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/ManuGH/xg2g/badge)](https://securityscorecards.dev/viewer/?uri=github.com/ManuGH/xg2g)
+[![CodeQL](https://github.com/ManuGH/xg2g/actions/workflows/codeql.yml/badge.svg)](https://github.com/ManuGH/xg2g/actions/workflows/codeql.yml)
+[![SBOM](https://github.com/ManuGH/xg2g/actions/workflows/sbom.yml/badge.svg)](https://github.com/ManuGH/xg2g/actions/workflows/sbom.yml)
+[![Conftest](https://github.com/ManuGH/xg2g/actions/workflows/conftest.yml/badge.svg)](https://github.com/ManuGH/xg2g/actions/workflows/conftest.yml)
+[![Fuzzing](https://github.com/ManuGH/xg2g/actions/workflows/fuzz.yml/badge.svg)](https://github.com/ManuGH/xg2g/actions/workflows/fuzz.yml)
+[![Container Security](https://github.com/ManuGH/xg2g/actions/workflows/container-security.yml/badge.svg)](https://github.com/ManuGH/xg2g/actions/workflows/container-security.yml)
 
 **Enigma2 to IPTV Gateway** - Stream your satellite/cable receiver to Plex, Jellyfin, or any IPTV player.
 

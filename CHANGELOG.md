@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Graceful shutdown tests for SIGTERM/SIGINT handling
 - Audio transcoder coverage tests
 - Comprehensive supply chain security tools documentation
+- Security badge section in README with OpenSSF Scorecard, SBOM, Conftest, Fuzzing, and Container Security badges
+- Complete Renovate activation and usage guide
 
 ### Changed
 - Container runtime hardening: enabled read-only root filesystem in docker-compose.yml
