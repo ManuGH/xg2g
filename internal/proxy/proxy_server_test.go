@@ -33,6 +33,8 @@ func getFreeAddr(t *testing.T) string {
 }
 
 // waitForServer waits until the TCP port at addr accepts connections or the timeout elapses.
+//
+//nolint:unparam // timeout parameter kept for test flexibility
 func waitForServer(addr string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
