@@ -317,16 +317,14 @@ impl FfmpegAacEncoder {
 
     /// Create audio frame from PCM samples
     fn create_audio_frame(&mut self, samples: &[f32]) -> Result<ac_ffmpeg::codec::audio::AudioFrameMut> {
-        use ac_ffmpeg::codec::audio::SampleFormat;
-
         let samples_per_channel = samples.len() / self.config.channels as usize;
 
         // Create channel layout
         let channel_layout = ac_ffmpeg::codec::audio::ChannelLayout::from_channels(self.config.channels as u16)
             .context("Failed to create channel layout")?;
 
-        // Create audio frame with f32 planar format (most common for AAC encoding)
-        let sample_format = SampleFormat::f32(ac_ffmpeg::codec::audio::PlanarType::Planar);
+        // Create audio frame with f32 planar format using string format name
+        let sample_format = ac_ffmpeg::codec::audio::frame::get_sample_format("fltp");
 
         let mut frame = ac_ffmpeg::codec::audio::AudioFrameMut::silence(
             &channel_layout,
@@ -346,9 +344,15 @@ impl FfmpegAacEncoder {
         // Convert interleaved samples to planar format
         let mut planes = frame.planes_mut();
         for ch in 0..self.config.channels as usize {
-            let plane_data = planes.plane_mut::<f32>(ch);
+            let plane_bytes = planes[ch].data_mut();
+            let plane_f32 = unsafe {
+                std::slice::from_raw_parts_mut(
+                    plane_bytes.as_mut_ptr() as *mut f32,
+                    samples_per_channel,
+                )
+            };
             for sample_idx in 0..samples_per_channel {
-                plane_data[sample_idx] = samples[sample_idx * self.config.channels as usize + ch];
+                plane_f32[sample_idx] = samples[sample_idx * self.config.channels as usize + ch];
             }
         }
 

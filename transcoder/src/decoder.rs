@@ -385,63 +385,82 @@ impl Ac3Decoder {
 
     /// Convert audio frame to PCM f32 samples (interleaved)
     fn frame_to_pcm(&self, frame: &ac_ffmpeg::codec::audio::AudioFrame) -> Result<Vec<f32>> {
-        use ac_ffmpeg::codec::audio::SampleFormat;
-
         let channel_layout = frame.channel_layout();
-        let channels = channel_layout.channels();
+        let channels = channel_layout.channels() as usize;
         let samples_per_channel = frame.samples();
-        let total_samples = (samples_per_channel * channels) as usize;
+        let total_samples = samples_per_channel * (channels as usize);
 
         let mut pcm = Vec::with_capacity(total_samples);
 
         // Get sample format
         let format = frame.sample_format();
+        let format_name = format.name();
+        let is_planar = format.is_planar();
+
+        // Get planes
+        let planes = frame.planes();
 
         // Handle different sample formats
-        // Use planes() to access audio data
-        match format {
-            SampleFormat::F32(planar_type) => {
-                // Check if planar or interleaved
-                if planar_type.is_planar() {
-                    // Planar f32: each channel is separate
-                    let planes = frame.planes();
-                    for sample_idx in 0..samples_per_channel as usize {
-                        for ch in 0..channels as usize {
-                            let plane_data = planes.plane::<f32>(ch);
-                            pcm.push(plane_data[sample_idx]);
-                        }
-                    }
-                } else {
-                    // Interleaved f32
-                    let planes = frame.planes();
-                    let plane_data = planes.plane::<f32>(0);
-                    pcm.extend_from_slice(&plane_data[..total_samples]);
-                }
-            }
-            SampleFormat::I16(planar_type) => {
-                if planar_type.is_planar() {
-                    // Planar s16
-                    let planes = frame.planes();
-                    for sample_idx in 0..samples_per_channel as usize {
-                        for ch in 0..channels as usize {
-                            let plane_data = planes.plane::<i16>(ch);
-                            let sample = plane_data[sample_idx];
-                            pcm.push(sample as f32 / 32768.0);
-                        }
-                    }
-                } else {
-                    // Interleaved s16
-                    let planes = frame.planes();
-                    let plane_data = planes.plane::<i16>(0);
-                    for &sample in &plane_data[..total_samples] {
-                        pcm.push(sample as f32 / 32768.0);
+        // Common formats: fltp (f32 planar), s16p (i16 planar), flt (f32 packed), s16 (i16 packed)
+        if format_name.starts_with("fltp") || format_name == "flt" {
+            // Float format
+            if is_planar {
+                // Planar f32: each channel in separate plane
+                for sample_idx in 0..samples_per_channel {
+                    for ch in 0..channels {
+                        let plane_bytes = planes[ch].data();
+                        let samples_f32 = unsafe {
+                            std::slice::from_raw_parts(
+                                plane_bytes.as_ptr() as *const f32,
+                                samples_per_channel,
+                            )
+                        };
+                        pcm.push(samples_f32[sample_idx]);
                     }
                 }
+            } else {
+                // Interleaved f32: all channels in one plane
+                let plane_bytes = planes[0].data();
+                let samples_f32 = unsafe {
+                    std::slice::from_raw_parts(
+                        plane_bytes.as_ptr() as *const f32,
+                        total_samples,
+                    )
+                };
+                pcm.extend_from_slice(samples_f32);
             }
-            _ => {
-                warn!("Unsupported AC3 sample format: {:?}, returning silence", format);
-                pcm.resize(total_samples, 0.0);
+        } else if format_name.starts_with("s16p") || format_name == "s16" {
+            // i16 format
+            if is_planar {
+                // Planar i16: each channel in separate plane
+                for sample_idx in 0..samples_per_channel {
+                    for ch in 0..channels {
+                        let plane_bytes = planes[ch].data();
+                        let samples_i16 = unsafe {
+                            std::slice::from_raw_parts(
+                                plane_bytes.as_ptr() as *const i16,
+                                samples_per_channel,
+                            )
+                        };
+                        pcm.push(samples_i16[sample_idx] as f32 / 32768.0);
+                    }
+                }
+            } else {
+                // Interleaved i16: all channels in one plane
+                let plane_bytes = planes[0].data();
+                let samples_i16 = unsafe {
+                    std::slice::from_raw_parts(
+                        plane_bytes.as_ptr() as *const i16,
+                        total_samples,
+                    )
+                };
+                for &sample in samples_i16 {
+                    pcm.push(sample as f32 / 32768.0);
+                }
             }
+        } else {
+            warn!("Unsupported AC3 sample format: {}, returning silence", format_name);
+            pcm.resize(total_samples, 0.0);
         }
 
         Ok(pcm)
