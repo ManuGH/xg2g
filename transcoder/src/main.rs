@@ -27,9 +27,11 @@ use tokio::process::Command;
 use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+mod audio_remux;
 mod metrics;
 mod transcoder;
 
+use audio_remux::{AudioRemuxConfig, AudioRemuxer};
 use metrics::{MetricsGuard, record_bytes_transcoded, record_ffmpeg_startup, set_active_sessions};
 use transcoder::{TranscoderConfig, VaapiTranscoder};
 

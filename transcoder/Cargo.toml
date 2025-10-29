@@ -43,6 +43,16 @@ metrics-exporter-prometheus = "0.16"
 deadpool = "0.12"
 async-trait = "0.1"
 
+# MPEG-TS Processing (Native Audio Remuxing)
+mpeg2ts-reader = "0.17"  # MPEG-TS demuxer/parser
+
+# Audio Decoding (Native)
+symphonia = { version = "0.5", features = ["mp2", "aac", "ac3"] }
+symphonia-codec-aac = "0.5"
+
+# Audio Encoding (AAC)
+fdk-aac = { version = "0.6", features = ["encode"] }
+
 # Memory allocator - REMOVED due to Tokio runtime incompatibility
 # jemalloc conflicts with manual runtime initialization
 # For GPU transcoding, performance is GPU/IO bound, not allocation bound
