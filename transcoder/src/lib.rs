@@ -8,5 +8,6 @@ pub mod decoder;
 pub mod demux;
 pub mod encoder;
 pub mod ffi;
+pub mod muxer;
 pub mod transcoder;
 pub mod metrics;
