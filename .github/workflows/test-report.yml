@@ -48,33 +48,39 @@ jobs:
       - name: Parse test results
         id: test-results
         run: |
+          set -euo pipefail
+
           # Count test results - ensure we get numeric values
           TOTAL=$(grep -c '"Action":"pass"\|"Action":"fail"\|"Action":"skip"' test-results.json 2>/dev/null || echo "0")
           PASSED=$(grep -c '"Action":"pass"' test-results.json 2>/dev/null || echo "0")
           FAILED=$(grep -c '"Action":"fail"' test-results.json 2>/dev/null || echo "0")
           SKIPPED=$(grep -c '"Action":"skip"' test-results.json 2>/dev/null || echo "0")
 
-          # Ensure variables are integers
+          # Ensure numeric and remove whitespace
           TOTAL=${TOTAL:-0}
           PASSED=${PASSED:-0}
           FAILED=${FAILED:-0}
           SKIPPED=${SKIPPED:-0}
+          TOTAL=$(echo "$TOTAL" | tr -d '[:space:]')
+          PASSED=$(echo "$PASSED" | tr -d '[:space:]')
+          FAILED=$(echo "$FAILED" | tr -d '[:space:]')
+          SKIPPED=$(echo "$SKIPPED" | tr -d '[:space:]')
 
-          # Write outputs using delimiter format to avoid format issues
-          cat >> "$GITHUB_OUTPUT" << EOF
-          total=${TOTAL}
-          passed=${PASSED}
-          failed=${FAILED}
-          skipped=${SKIPPED}
-          EOF
-
-          # Calculate pass rate
+          # Safe pass rate calculation (integer division to avoid bc and decimal issues)
           if [ "$TOTAL" -gt 0 ]; then
-            PASS_RATE=$(echo "scale=2; ($PASSED / $TOTAL) * 100" | bc)
+            PASS_RATE=$((100 * PASSED / TOTAL))
           else
-            PASS_RATE="0.00"
+            PASS_RATE=0
           fi
-          echo "pass_rate=${PASS_RATE}" >> "$GITHUB_OUTPUT"
+
+          # Write outputs - must be valid key=value per line with no leading spaces
+          {
+            echo "total=${TOTAL}"
+            echo "passed=${PASSED}"
+            echo "failed=${FAILED}"
+            echo "skipped=${SKIPPED}"
+            echo "pass_rate=${PASS_RATE}"
+          } >> "$GITHUB_OUTPUT"
 
           echo "Test Results: $PASSED/$TOTAL passed ($PASS_RATE%)"
 
