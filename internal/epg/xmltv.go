@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	unorm "golang.org/x/text/unicode/norm"
 )
 
 var (
@@ -18,11 +20,18 @@ var (
 	space  = regexp.MustCompile(`\s+`)
 )
 
-func norm(s string) string {
+func normalize(s string) string {
+	// Normalize Unicode to NFC form (composed form)
+	s = unorm.NFC.String(s)
 	s = strings.ToLower(strings.TrimSpace(s))
 	s = suffix.ReplaceAllString(s, "")
 	s = space.ReplaceAllString(s, " ")
 	return strings.TrimSpace(s)
+}
+
+// norm is a wrapper for normalize for backwards compatibility with tests.
+func norm(s string) string {
+	return normalize(s)
 }
 
 // BuildNameToIDMap reads an XMLTV file and returns a map[nameKey]=channelID.
@@ -57,7 +66,7 @@ func BuildNameToIDMap(xmltvPath string) (map[string]string, error) {
 		}
 		// Normalize all display names and add them to the map
 		for _, displayName := range ch.DisplayName {
-			key := norm(displayName)
+			key := normalize(displayName)
 			if key != "" {
 				out[key] = ch.ID
 			}
@@ -67,4 +76,4 @@ func BuildNameToIDMap(xmltvPath string) (map[string]string, error) {
 }
 
 // NameKey generates a normalized key from a channel name for matching.
-func NameKey(s string) string { return norm(s) }
+func NameKey(s string) string { return normalize(s) }
