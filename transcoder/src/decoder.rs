@@ -27,7 +27,8 @@ use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 use tracing::{debug, trace, warn};
 
-// ac-ffmpeg imports for AC3 decoder (TODO: Fix API compatibility)
+// ac-ffmpeg imports for AC3 decoder
+use ac_ffmpeg::codec::Decoder; // Trait for decoder methods
 // Temporarily disabled until ac-ffmpeg 0.19 API is properly researched
 // use ac_ffmpeg::codec::audio::{AudioDecoder as FfmpegAudioDecoder, AudioFrame};
 // use ac_ffmpeg::codec::Decoder;
@@ -477,20 +478,20 @@ impl AudioDecoder for Ac3Decoder {
         let decoder = self.decoder.as_mut()
             .context("AC3 decoder not initialized")?;
 
-        // Create packet from raw AC3 PES data using builder pattern
-        let packet = ac_ffmpeg::packet::Packet::builder()
-            .data(data)
-            .build();
+        // Create packet from raw AC3 PES data
+        let mut packet_mut = ac_ffmpeg::packet::PacketMut::new(data.len());
+        packet_mut.data_mut().copy_from_slice(data);
+        let packet = packet_mut.freeze();
 
-        // Push packet to decoder (returns error if decoder can't accept more packets)
-        decoder.try_push(packet)
-            .map_err(|e| anyhow::anyhow!("Failed to push packet to AC3 decoder: {:?}", e))?;
+        // Push packet to decoder
+        decoder.push(packet)
+            .context("Failed to push packet to AC3 decoder")?;
 
         let mut all_samples = Vec::new();
 
         // Take all decoded frames
         while let Some(frame) = decoder.take()
-            .map_err(|e| anyhow::anyhow!("Failed to take frame from AC3 decoder: {:?}", e))? {
+            .context("Failed to take frame from AC3 decoder")? {
 
             // Update sample rate from stream
             self.sample_rate = frame.sample_rate();
