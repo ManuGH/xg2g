@@ -116,19 +116,30 @@ func TestXMLTVParsingRoundTrip(t *testing.T) {
 
 func TestXMLTVErrorCases(t *testing.T) {
 	tests := []struct {
-		name    string
-		xmlPath string
-		wantErr bool
+		name string
+		path func(t *testing.T) string
 	}{
 		{
-			name:    "invalid_directory",
-			xmlPath: "/nonexistent/dir/test.xml",
-			wantErr: true,
+			name: "parent_path_is_file",
+			path: func(t *testing.T) string {
+				tmpDir := t.TempDir()
+				blocker := filepath.Join(tmpDir, "obstacle")
+				if err := os.WriteFile(blocker, []byte("noop"), 0o600); err != nil {
+					t.Fatalf("failed to create blocker file: %v", err)
+				}
+				return filepath.Join(blocker, "test.xml")
+			},
 		},
 		{
-			name:    "readonly_directory",
-			xmlPath: "/test.xml", // Root directory (should be readonly)
-			wantErr: true,
+			name: "target_path_is_directory",
+			path: func(t *testing.T) string {
+				tmpDir := t.TempDir()
+				blocker := filepath.Join(tmpDir, "xmltv.xml")
+				if err := os.Mkdir(blocker, 0o755); err != nil {
+					t.Fatalf("failed to create blocker directory: %v", err)
+				}
+				return blocker
+			},
 		},
 	}
 
@@ -136,9 +147,9 @@ func TestXMLTVErrorCases(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			channels := []Channel{{ID: "test.id", DisplayName: []string{"Test"}}}
 
-			err := WriteXMLTV(GenerateXMLTV(channels, nil), tt.xmlPath)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("WriteXMLTV() error = %v, wantErr %v", err, tt.wantErr)
+			err := WriteXMLTV(GenerateXMLTV(channels, nil), tt.path(t))
+			if err == nil {
+				t.Fatal("WriteXMLTV() expected error, got nil")
 			}
 		})
 	}
