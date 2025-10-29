@@ -48,17 +48,25 @@ jobs:
       - name: Parse test results
         id: test-results
         run: |
-          # Count test results
-          TOTAL=$(grep -c '"Action":"pass"\|"Action":"fail"\|"Action":"skip"' test-results.json || echo "0")
-          PASSED=$(grep -c '"Action":"pass"' test-results.json || echo "0")
-          FAILED=$(grep -c '"Action":"fail"' test-results.json || echo "0")
-          SKIPPED=$(grep -c '"Action":"skip"' test-results.json || echo "0")
+          # Count test results - ensure we get numeric values
+          TOTAL=$(grep -c '"Action":"pass"\|"Action":"fail"\|"Action":"skip"' test-results.json 2>/dev/null || echo "0")
+          PASSED=$(grep -c '"Action":"pass"' test-results.json 2>/dev/null || echo "0")
+          FAILED=$(grep -c '"Action":"fail"' test-results.json 2>/dev/null || echo "0")
+          SKIPPED=$(grep -c '"Action":"skip"' test-results.json 2>/dev/null || echo "0")
 
-          # Write outputs individually
-          echo "total=$TOTAL" >> "$GITHUB_OUTPUT"
-          echo "passed=$PASSED" >> "$GITHUB_OUTPUT"
-          echo "failed=$FAILED" >> "$GITHUB_OUTPUT"
-          echo "skipped=$SKIPPED" >> "$GITHUB_OUTPUT"
+          # Ensure variables are integers
+          TOTAL=${TOTAL:-0}
+          PASSED=${PASSED:-0}
+          FAILED=${FAILED:-0}
+          SKIPPED=${SKIPPED:-0}
+
+          # Write outputs using delimiter format to avoid format issues
+          cat >> "$GITHUB_OUTPUT" << EOF
+          total=${TOTAL}
+          passed=${PASSED}
+          failed=${FAILED}
+          skipped=${SKIPPED}
+          EOF
 
           # Calculate pass rate
           if [ "$TOTAL" -gt 0 ]; then
@@ -66,7 +74,7 @@ jobs:
           else
             PASS_RATE="0.00"
           fi
-          echo "pass_rate=$PASS_RATE" >> "$GITHUB_OUTPUT"
+          echo "pass_rate=${PASS_RATE}" >> "$GITHUB_OUTPUT"
 
           echo "Test Results: $PASSED/$TOTAL passed ($PASS_RATE%)"
 
