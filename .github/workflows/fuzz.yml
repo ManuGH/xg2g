@@ -60,7 +60,7 @@ jobs:
 
       - name: Upload Crash Artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: fuzz-crashes-${{ matrix.package_name }}
           path: |
