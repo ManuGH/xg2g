@@ -12,6 +12,7 @@ services:
   xg2g:
     image: ghcr.io/manugh/xg2g:latest
     container_name: xg2g
+    user: "65532:65532"  # Run as non-root for security
     ports:
       - "8080:8080"      # HTTP API & M3U/EPG
       - "1900:1900/udp"  # SSDP for Plex/Jellyfin discovery

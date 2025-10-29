@@ -198,6 +198,7 @@ services:
   xg2g:
     image: ghcr.io/manugh/xg2g:latest
     container_name: xg2g
+    user: "65532:65532"  # Run as non-root for security
     ports:
       - "8080:8080"
       - "1900:1900/udp"  # For Plex/Jellyfin discovery
@@ -211,7 +212,15 @@ services:
     restart: unless-stopped
 ```
 
+**Note:** Ensure the `./data` directory is writable by UID 65532:
+
+```bash
+mkdir -p data && chown -R 65532:65532 data
+# Or use current user: sudo chown -R $(id -u):$(id -g) data
+```
+
 **All features enabled by default:**
+
 - EPG (7 days), HDHomeRun, Smart stream detection, Channel logos, Authentication
 
 **Using config file** (advanced):

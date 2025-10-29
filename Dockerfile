@@ -19,10 +19,15 @@ RUN BUILD_REF="${GIT_REF:-${VERSION:-dev}}" && \
   -o /out/xg2g ./cmd/daemon
 
 FROM alpine:3.22.2
-RUN apk add --no-cache ca-certificates tzdata wget ffmpeg
+RUN apk add --no-cache ca-certificates tzdata wget ffmpeg && \
+  addgroup -g 65532 -S xg2g && \
+  adduser -u 65532 -S -G xg2g -h /app -s /bin/false xg2g && \
+  mkdir -p /data && \
+  chown -R xg2g:xg2g /data
 WORKDIR /app
 COPY --from=builder /out/xg2g .
-RUN chmod +x /app/xg2g
+RUN chmod +x /app/xg2g && \
+  chown xg2g:xg2g /app/xg2g
 VOLUME ["/data"]
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
@@ -32,4 +37,5 @@ ENV XG2G_DATA=/data \
   XG2G_OWI_BASE=http://192.168.1.100 \
   XG2G_BOUQUET=Favourites \
   XG2G_FUZZY_MAX=2
+USER xg2g:xg2g
 ENTRYPOINT ["/app/xg2g"]
