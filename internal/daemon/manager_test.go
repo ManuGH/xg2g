@@ -4,6 +4,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -88,7 +89,7 @@ func TestNewManager_MissingAPIHandler(t *testing.T) {
 
 func TestManager_StartStop_OK(t *testing.T) {
 	// Create a simple test handler
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("OK"))
 	})
@@ -141,7 +142,7 @@ func TestManager_StartStop_OK(t *testing.T) {
 
 func TestManager_Shutdown_TimesOut(t *testing.T) {
 	// Create a handler that blocks on shutdown
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		time.Sleep(10 * time.Second) // Block longer than shutdown timeout
 		w.WriteHeader(http.StatusOK)
 	})
@@ -211,20 +212,20 @@ func TestManager_Shutdown_NotStarted(t *testing.T) {
 
 	// Try to shutdown without starting
 	err = mgr.Shutdown(context.Background())
-	if err != ErrManagerNotStarted {
+	if !errors.Is(err, ErrManagerNotStarted) {
 		t.Errorf("Shutdown() error = %v, want %v", err, ErrManagerNotStarted)
 	}
 }
 
 func TestManager_WithMetrics(t *testing.T) {
 	// Create test handlers
-	apiHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	apiHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	metricsHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	metricsHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("# HELP test_metric\n"))
+		_, _ = w.Write([]byte("# HELP test_metric\n"))
 	})
 
 	deps := Deps{

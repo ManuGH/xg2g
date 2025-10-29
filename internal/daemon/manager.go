@@ -107,7 +107,7 @@ func (m *manager) Start(ctx context.Context) error {
 }
 
 // startAPIServer starts the main API HTTP server.
-func (m *manager) startAPIServer(ctx context.Context, errChan chan<- error) error {
+func (m *manager) startAPIServer(_ context.Context, errChan chan<- error) error {
 	m.apiServer = &http.Server{
 		Addr:              m.serverCfg.ListenAddr,
 		Handler:           m.deps.APIHandler,
@@ -136,7 +136,7 @@ func (m *manager) startAPIServer(ctx context.Context, errChan chan<- error) erro
 }
 
 // startMetricsServer starts the Prometheus metrics HTTP server.
-func (m *manager) startMetricsServer(ctx context.Context, errChan chan<- error) error {
+func (m *manager) startMetricsServer(_ context.Context, errChan chan<- error) error {
 	metricsAddr := config.ParseMetricsAddr()
 	if metricsAddr == "" {
 		return nil // Metrics disabled
@@ -166,7 +166,7 @@ func (m *manager) startMetricsServer(ctx context.Context, errChan chan<- error) 
 }
 
 // startProxyServer starts the optional stream proxy server.
-func (m *manager) startProxyServer(ctx context.Context, errChan chan<- error) error {
+func (m *manager) startProxyServer(_ context.Context, errChan chan<- error) error {
 	if m.deps.ProxyConfig == nil {
 		return nil // Proxy disabled
 	}

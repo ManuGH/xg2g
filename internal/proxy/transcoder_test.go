@@ -168,7 +168,7 @@ func TestTranscodeStream_ContextCancellation(t *testing.T) {
 	switch {
 	case err == nil:
 		t.Log("Transcoding completed without error (acceptable)")
-	case err == context.Canceled:
+	case errors.Is(err, context.Canceled):
 		t.Log("Context was cancelled as expected")
 	default:
 		t.Logf("Got error: %v (acceptable for cancelled context)", err)
