@@ -434,7 +434,7 @@ mod tests {
         assert!(decoder.is_ok());
 
         let decoder = decoder.unwrap();
-        assert_eq!(decoder.name(), "AC3 (FFmpeg)");
+        assert_eq!(decoder.name(), "AC3 (Passthrough)");
     }
 
     #[test]
