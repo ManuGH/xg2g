@@ -47,15 +47,22 @@ metrics-exporter-prometheus = "0.16"
 deadpool = "0.12"
 async-trait = "0.1"
 
-# MPEG-TS Processing (Native Audio Remuxing)
-mpeg2ts-reader = "0.18"  # MPEG-TS demuxer/parser (updated for crates.io)
+# ===================================
+# Phase 4: Native Audio Remuxing
+# ===================================
 
-# Audio Decoding (Phase 4 - To be added)
-# symphonia = { version = "0.5", features = ["mp2", "aac"] }
-# symphonia-codec-aac = "0.5"
+# MPEG-TS Processing
+mpeg2ts-reader = "0.18"  # MPEG-TS demuxer/parser
 
-# Audio Encoding (Phase 4 - To be added)
-# fdk-aac = "0.6"
+# MP2 Audio Decoder (pure Rust)
+symphonia = { version = "0.5", features = ["mp2"] }
+
+# AC3 Decoder + AAC Encoder (FFmpeg bindings)
+ac-ffmpeg = { version = "0.19", features = ["audio"] }
+
+# Audio Processing Utilities
+dasp = "0.11"      # Sample format conversion, channel mixing
+rubato = "0.15"    # High-quality sample rate conversion
 
 # Memory allocator - REMOVED due to Tokio runtime incompatibility
 # jemalloc conflicts with manual runtime initialization
