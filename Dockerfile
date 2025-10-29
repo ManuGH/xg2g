@@ -18,7 +18,7 @@ RUN BUILD_REF="${GIT_REF:-${VERSION:-dev}}" && \
   ${GO_GCFLAGS:+-gcflags="${GO_GCFLAGS}"} \
   -o /out/xg2g ./cmd/daemon
 
-FROM alpine:3.22.2
+FROM alpine:3.22.2@sha256:4b7ce07002c69e8f3d704a9c5d6fd3053be500b7f1c69fc0d80990c2ad8dd412
 RUN apk add --no-cache ca-certificates tzdata wget ffmpeg && \
   addgroup -g 65532 -S xg2g && \
   adduser -u 65532 -S -G xg2g -h /app -s /bin/false xg2g && \

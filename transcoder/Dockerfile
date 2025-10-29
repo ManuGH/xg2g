@@ -44,7 +44,7 @@ RUN RUSTFLAGS="-C target-cpu=${RUST_TARGET_CPU} -C opt-level=${RUST_OPT_LEVEL}" 
     strip /build/target/release/xg2g-transcoder
 
 # Runtime image
-FROM debian:bookworm-slim
+FROM debian:bookworm-slim@sha256:78d2f66e0fec9e5a39fb2c72ea5e052b548df75602b5215ed01a17171529f706
 
 # Install runtime dependencies
 RUN apt-get update && \
