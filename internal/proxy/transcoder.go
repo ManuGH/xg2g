@@ -36,14 +36,14 @@ type TranscoderConfig struct {
 
 // Transcoder handles audio transcoding for streams.
 type Transcoder struct {
-	config TranscoderConfig
+	Config TranscoderConfig // Public for access from proxy handler
 	logger zerolog.Logger
 }
 
 // NewTranscoder creates a new audio transcoder.
 func NewTranscoder(config TranscoderConfig, logger zerolog.Logger) *Transcoder {
 	return &Transcoder{
-		config: config,
+		Config: config,
 		logger: logger,
 	}
 }
@@ -61,7 +61,7 @@ func (t *Transcoder) TranscodeStream(ctx context.Context, w http.ResponseWriter,
 
 	// Add transcoding attributes
 	span.SetAttributes(
-		attribute.String(telemetry.TranscodeCodecKey, t.config.Codec),
+		attribute.String(telemetry.TranscodeCodecKey, t.Config.Codec),
 		attribute.String(telemetry.TranscodeDeviceKey, "cpu"),
 		attribute.Bool(telemetry.TranscodeGPUEnabledKey, false),
 	)
@@ -109,9 +109,9 @@ func (t *Transcoder) TranscodeStream(ctx context.Context, w http.ResponseWriter,
 		"-fflags", "+genpts+igndts", // Generate PTS, ignore broken DTS
 		"-i", "pipe:0",                // Read from stdin
 		"-map", "0:v", "-c:v", "copy", // Copy video stream
-		"-map", "0:a", "-c:a", t.config.Codec, // Transcode audio
-		"-b:a", t.config.Bitrate,                              // Audio bitrate
-		"-ac", fmt.Sprintf("%d", t.config.Channels),           // Audio channels
+		"-map", "0:a", "-c:a", t.Config.Codec, // Transcode audio
+		"-b:a", t.Config.Bitrate,                              // Audio bitrate
+		"-ac", fmt.Sprintf("%d", t.Config.Channels),           // Audio channels
 		"-async", "1",                                         // Audio-video sync
 		"-start_at_zero",                                      // Start timestamps at zero
 		"-avoid_negative_ts", "make_zero",                     // Fix negative timestamps
@@ -127,12 +127,12 @@ func (t *Transcoder) TranscodeStream(ctx context.Context, w http.ResponseWriter,
 	}
 
 	t.logger.Debug().
-		Str("ffmpeg_path", t.config.FFmpegPath).
+		Str("ffmpeg_path", t.Config.FFmpegPath).
 		Strs("args", args).
 		Msg("starting ffmpeg transcoding")
 
 	// Ensure the ffmpeg path is clean and absolute before execution
-	ffmpegPath := filepath.Clean(t.config.FFmpegPath)
+	ffmpegPath := filepath.Clean(t.Config.FFmpegPath)
 	if !filepath.IsAbs(ffmpegPath) {
 		return fmt.Errorf("ffmpeg path must be absolute: %s", ffmpegPath)
 	}
@@ -244,12 +244,12 @@ func (t *Transcoder) ProxyToGPUTranscoder(ctx context.Context, w http.ResponseWr
 		attribute.String(telemetry.TranscodeCodecKey, "hevc"), // GPU typically uses HEVC
 		attribute.String(telemetry.TranscodeDeviceKey, "vaapi"),
 		attribute.Bool(telemetry.TranscodeGPUEnabledKey, true),
-		attribute.String("transcoder.url", t.config.TranscoderURL),
+		attribute.String("transcoder.url", t.Config.TranscoderURL),
 	)
 
 	// Build GPU transcoder URL with source_url parameter
 	transcoderURL := fmt.Sprintf("%s/transcode?source_url=%s",
-		t.config.TranscoderURL,
+		t.Config.TranscoderURL,
 		url.QueryEscape(sourceURL))
 
 	t.logger.Debug().
@@ -325,7 +325,7 @@ func (t *Transcoder) ProxyToGPUTranscoder(ctx context.Context, w http.ResponseWr
 
 // IsGPUEnabled returns whether GPU transcoding is enabled.
 func (t *Transcoder) IsGPUEnabled() bool {
-	return t.config.GPUEnabled
+	return t.Config.GPUEnabled
 }
 
 // isContextCancelled checks if the context was cancelled (client disconnect).
@@ -423,8 +423,8 @@ func (t *Transcoder) TranscodeStreamRust(ctx context.Context, w http.ResponseWri
 
 	// Parse bitrate from config string (e.g., "192k" -> 192000)
 	bitrate := 192000
-	if t.config.Bitrate != "" {
-		bitrateStr := strings.TrimSuffix(strings.ToLower(t.config.Bitrate), "k")
+	if t.Config.Bitrate != "" {
+		bitrateStr := strings.TrimSuffix(strings.ToLower(t.Config.Bitrate), "k")
 		if parsedBitrate, err := strconv.Atoi(bitrateStr); err == nil {
 			bitrate = parsedBitrate * 1000
 		}
@@ -432,7 +432,7 @@ func (t *Transcoder) TranscodeStreamRust(ctx context.Context, w http.ResponseWri
 
 	// Initialize Rust audio remuxer
 	span.AddEvent("initializing rust remuxer")
-	remuxer, err := transcoder.NewRustAudioRemuxer(sampleRate, t.config.Channels, bitrate)
+	remuxer, err := transcoder.NewRustAudioRemuxer(sampleRate, t.Config.Channels, bitrate)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "failed to initialize rust remuxer")
@@ -443,7 +443,7 @@ func (t *Transcoder) TranscodeStreamRust(ctx context.Context, w http.ResponseWri
 
 	t.logger.Info().
 		Int("sample_rate", sampleRate).
-		Int("channels", t.config.Channels).
+		Int("channels", t.Config.Channels).
 		Int("bitrate", bitrate).
 		Msg("rust remuxer initialized")
 

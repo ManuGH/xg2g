@@ -154,7 +154,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		// Priority 2: Audio-only transcoding
 		// Use Rust remuxer if enabled, otherwise fall back to FFmpeg
 		var transcodeFn func(context.Context, http.ResponseWriter, *http.Request, string) error
-		if s.config.TranscoderConfig.UseRustRemuxer {
+		if s.transcoder.Config.UseRustRemuxer {
 			transcodeFn = s.transcoder.TranscodeStreamRust
 			s.logger.Debug().Str("method", "rust").Msg("using native rust remuxer")
 		} else {
