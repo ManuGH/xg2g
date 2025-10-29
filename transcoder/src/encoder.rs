@@ -27,6 +27,10 @@
 use anyhow::{Context, Result};
 use tracing::{debug, trace, warn};
 
+// ac-ffmpeg imports for AAC encoder
+use ac_ffmpeg::codec::audio::{AudioEncoder as FfmpegAudioEncoder, AudioFrame};
+use ac_ffmpeg::packet::Packet;
+
 /// AAC Profile
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AacProfile {
@@ -257,7 +261,7 @@ pub struct FfmpegAacEncoder {
     config: AacEncoderConfig,
 
     /// FFmpeg encoder context
-    encoder: Option<ac_ffmpeg::codec::AudioEncoder>,
+    encoder: Option<FfmpegAudioEncoder>,
 
     /// Input sample buffer (accumulate to frame_size)
     sample_buffer: Vec<f32>,
@@ -288,7 +292,7 @@ impl FfmpegAacEncoder {
     fn ensure_encoder(&mut self) -> Result<()> {
         if self.encoder.is_none() {
             // Create encoder from codec name
-            let mut encoder = ac_ffmpeg::codec::AudioEncoder::from_codec_name("aac")
+            let mut encoder = FfmpegAudioEncoder::from_codec_name("aac")
                 .context("Failed to create AAC encoder")?;
 
             // Set encoder parameters
@@ -327,7 +331,7 @@ impl FfmpegAacEncoder {
 
         // Create audio frame
         // Note: ac-ffmpeg API details may vary, adjust as needed
-        let frame = ac_ffmpeg::codec::AudioFrame::new(
+        let frame = AudioFrame::new(
             self.config.sample_rate,
             self.config.channels as u32,
             samples,

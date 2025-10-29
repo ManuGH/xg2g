@@ -7,7 +7,7 @@ description = "High-performance GPU transcoder for xg2g using VAAPI"
 
 [lib]
 name = "xg2g_transcoder"
-crate-type = ["cdylib", "rlib", "bin"]  # cdylib for FFI, rlib for Rust, bin for standalone
+crate-type = ["cdylib", "rlib"]  # cdylib for FFI, rlib for Rust libraries
 
 [dependencies]
 # Async runtime

@@ -52,12 +52,15 @@ pub extern "C" fn xg2g_audio_remux_init(
     let result = catch_unwind(|| {
         let config = AudioRemuxConfig {
             aac_bitrate: bitrate as u32,
-            channels: channels as u8,
+            channels: channels as u16,
             sample_rate: sample_rate as u32,
-            aac_profile: 2, // AAC-LC
+            aac_profile: crate::encoder::AacProfile::AacLc,
         };
 
-        let remuxer = AudioRemuxer::new(config);
+        let remuxer = match AudioRemuxer::new(config) {
+            Ok(r) => r,
+            Err(_) => return ptr::null_mut(),
+        };
         let handle = Box::new(RemuxerHandle { remuxer });
 
         Box::into_raw(handle) as *mut c_void

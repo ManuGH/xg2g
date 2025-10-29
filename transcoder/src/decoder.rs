@@ -27,6 +27,10 @@ use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 use tracing::{debug, trace, warn};
 
+// ac-ffmpeg imports for AC3 decoder
+use ac_ffmpeg::codec::audio::{AudioDecoder as FfmpegAudioDecoder, AudioFrame};
+use ac_ffmpeg::packet::Packet;
+
 /// Audio sample format
 ///
 /// PCM samples are represented as f32 in the range [-1.0, 1.0].
@@ -162,8 +166,9 @@ impl Mp2Decoder {
 
 impl AudioDecoder for Mp2Decoder {
     fn decode(&mut self, data: &[u8]) -> Result<Vec<PcmSample>> {
-        // Create a cursor from the input data
-        let cursor = Cursor::new(data);
+        // Create a cursor from owned data (required for 'static lifetime)
+        let owned_data = data.to_vec();
+        let cursor = Cursor::new(owned_data);
         let mss = MediaSourceStream::new(Box::new(cursor), Default::default());
 
         // Create a hint for the format probe
@@ -280,7 +285,7 @@ impl Default for Mp2Decoder {
 /// **Note:** This requires FFmpeg libraries to be installed on the system.
 pub struct Ac3Decoder {
     /// FFmpeg decoder context
-    decoder: Option<ac_ffmpeg::codec::AudioDecoder>,
+    decoder: Option<FfmpegAudioDecoder>,
 
     /// Detected sample rate (Hz)
     sample_rate: u32,
@@ -306,7 +311,7 @@ impl Ac3Decoder {
     /// Initialize FFmpeg decoder (lazy initialization)
     fn ensure_decoder(&mut self) -> Result<()> {
         if self.decoder.is_none() {
-            let decoder = ac_ffmpeg::codec::AudioDecoder::from_codec_name("ac3")
+            let decoder = FfmpegAudioDecoder::from_codec_name("ac3")
                 .context("Failed to create AC3 decoder")?;
             self.decoder = Some(decoder);
             debug!("Initialized AC3 decoder");
@@ -315,7 +320,7 @@ impl Ac3Decoder {
     }
 
     /// Convert FFmpeg audio frame to f32 PCM samples
-    fn convert_frame_to_pcm(frame: &ac_ffmpeg::codec::AudioFrame) -> Result<Vec<PcmSample>> {
+    fn convert_frame_to_pcm(frame: &AudioFrame) -> Result<Vec<PcmSample>> {
         let mut samples = Vec::new();
 
         // Get audio parameters
@@ -352,7 +357,7 @@ impl AudioDecoder for Ac3Decoder {
         let decoder = self.decoder.as_mut().unwrap();
 
         // Create packet from data
-        let packet = ac_ffmpeg::codec::Packet::new(data);
+        let packet = Packet::with_data(data);
 
         // Decode packet
         decoder
