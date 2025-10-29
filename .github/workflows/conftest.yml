@@ -46,7 +46,8 @@ jobs:
               dfp.content = f.read()
 
           # Convert to format conftest can work with
-          output = []
+          # Conftest expects a single object, not an array
+          instructions = []
           for insn in dfp.structure:
               # Handle both tag and digest formats (alpine:3.22.2@sha256:abc...)
               value = insn['value']
@@ -54,10 +55,13 @@ jobs:
                   # Split at @ to separate tag from digest
                   value = value.split('@')[0]
 
-              output.append({
+              instructions.append({
                   "Cmd": insn['instruction'].lower(),
                   "Value": value.split() if value else []
               })
+
+          # Wrap in an object instead of array
+          output = {"instructions": instructions}
 
           with open('dockerfile.json', 'w') as f:
               json.dump(output, f, indent=2)
