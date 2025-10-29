@@ -54,10 +54,13 @@ jobs:
           FAILED=$(grep -c '"Action":"fail"' test-results.json || echo "0")
           SKIPPED=$(grep -c '"Action":"skip"' test-results.json || echo "0")
 
-          echo "total=$TOTAL" >> $GITHUB_OUTPUT
-          echo "passed=$PASSED" >> $GITHUB_OUTPUT
-          echo "failed=$FAILED" >> $GITHUB_OUTPUT
-          echo "skipped=$SKIPPED" >> $GITHUB_OUTPUT
+          # Write outputs using proper syntax
+          {
+            echo "total=$TOTAL"
+            echo "passed=$PASSED"
+            echo "failed=$FAILED"
+            echo "skipped=$SKIPPED"
+          } >> "$GITHUB_OUTPUT"
 
           # Calculate pass rate
           if [ "$TOTAL" -gt 0 ]; then
