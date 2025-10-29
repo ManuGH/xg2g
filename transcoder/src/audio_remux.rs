@@ -1,229 +1,408 @@
-//! Native Audio Remuxing Module
+//! Native Audio Remuxing Pipeline
 //!
-//! This module provides zero-latency audio remuxing from MP2/AC3 to AAC
-//! using native Rust libraries without ffmpeg.
+//! This module provides the complete end-to-end audio remuxing pipeline,
+//! integrating all components (demuxer, decoder, encoder, muxer) into a
+//! unified, high-performance audio processing system.
 //!
-//! Architecture:
-//! 1. MPEG-TS Demuxer (mpeg2ts-reader) - Extract audio PES packets
-//! 2. Audio Decoder (Symphonia) - Decode MP2/AC3 to PCM
-//! 3. Audio Encoder (fdk-aac) - Encode PCM to AAC
-//! 4. MPEG-TS Muxer (native) - Package AAC into MPEG-TS
+//! # Architecture
 //!
-//! Performance Goals:
-//! - Latency: <50ms (vs 200-500ms with ffmpeg)
-//! - CPU: <5%
-//! - Memory: <30MB
-//! - Zero-copy where possible
+//! ```text
+//! Input MPEG-TS (MP2/AC3)
+//!         ↓
+//!    [Demuxer]  ← Extract PES packets, detect codec
+//!         ↓
+//!    [Decoder]  ← MP2/AC3 → PCM (f32)
+//!         ↓
+//!    [Encoder]  ← PCM → AAC-LC + ADTS
+//!         ↓
+//!     [Muxer]   ← AAC → MPEG-TS packets
+//!         ↓
+//! Output MPEG-TS (AAC)
+//! ```
+//!
+//! # Performance Goals
+//!
+//! - **Latency:** <50ms (vs 200-500ms with ffmpeg)
+//! - **CPU:** <5% (vs 15-20% with ffmpeg)
+//! - **Memory:** <30MB (vs 80-100MB with ffmpeg)
+//! - **Throughput:** 500+ Mbps
+//!
+//! # Usage
+//!
+//! ```rust,ignore
+//! use crate::audio_remux::{AudioRemuxer, AudioRemuxConfig};
+//!
+//! let config = AudioRemuxConfig::default();
+//! let mut remuxer = AudioRemuxer::new(config)?;
+//!
+//! // Process MPEG-TS stream
+//! remuxer.remux(input_stream, output_stream).await?;
+//! ```
 
 use anyhow::{Context, Result};
-use bytes::{Bytes, BytesMut};
-use std::io::Read;
-use tracing::{debug, error, info, warn};
+use std::io::{Read, Write};
+use tracing::{debug, error, info, trace, warn};
 
-/// Configuration for audio remuxing
+use crate::decoder::{AudioDecoder, AutoDecoder};
+use crate::demux::{AudioCodec, TsDemuxer, TS_PACKET_SIZE};
+use crate::encoder::{AacEncoder, AacEncoderConfig, AacProfile, FfmpegAacEncoder};
+use crate::muxer::{TsMuxer, TsMuxerConfig};
+
+/// Audio Remuxing Configuration
 #[derive(Debug, Clone)]
 pub struct AudioRemuxConfig {
-    /// Target AAC bitrate (e.g., 192000 for 192kbps)
+    /// Target AAC bitrate in bits per second (e.g., 192000 for 192kbps)
     pub aac_bitrate: u32,
 
-    /// Number of audio channels (2 for stereo)
-    pub channels: u8,
+    /// Number of audio channels (1 = mono, 2 = stereo)
+    pub channels: u16,
 
-    /// Sample rate (typically 48000 for broadcast)
+    /// Sample rate in Hz (typically 48000 for broadcast)
     pub sample_rate: u32,
 
-    /// AAC profile (2 = LC, Low Complexity)
-    pub aac_profile: u8,
+    /// AAC profile (AAC-LC for iOS Safari compatibility)
+    pub aac_profile: AacProfile,
 }
 
 impl Default for AudioRemuxConfig {
     fn default() -> Self {
         Self {
-            aac_bitrate: 192_000,  // 192 kbps
-            channels: 2,            // Stereo
-            sample_rate: 48_000,    // 48 kHz
-            aac_profile: 2,         // AAC-LC
+            aac_bitrate: 192_000,        // 192 kbps (high quality)
+            channels: 2,                  // Stereo
+            sample_rate: 48_000,          // 48 kHz (broadcast standard)
+            aac_profile: AacProfile::AacLc, // iOS Safari compatible
         }
     }
 }
 
-/// Native audio remuxer
+/// Audio Remuxing Statistics
+#[derive(Debug, Default, Clone)]
+pub struct AudioRemuxStats {
+    /// Total TS packets processed
+    pub packets_processed: u64,
+
+    /// Audio TS packets processed
+    pub audio_packets: u64,
+
+    /// Audio frames decoded
+    pub frames_decoded: u64,
+
+    /// Audio frames encoded
+    pub frames_encoded: u64,
+
+    /// TS packets output
+    pub packets_output: u64,
+
+    /// Bytes processed (input)
+    pub bytes_input: u64,
+
+    /// Bytes output
+    pub bytes_output: u64,
+
+    /// Errors encountered
+    pub errors: u64,
+}
+
+/// Native Audio Remuxer
+///
+/// Provides complete end-to-end audio remuxing from MP2/AC3 to AAC-LC.
 pub struct AudioRemuxer {
+    /// Configuration
     config: AudioRemuxConfig,
+
+    /// MPEG-TS Demuxer
+    demuxer: TsDemuxer,
+
+    /// Audio Decoder (created after codec detection)
+    decoder: Option<AutoDecoder>,
+
+    /// AAC Encoder
+    encoder: FfmpegAacEncoder,
+
+    /// MPEG-TS Muxer
+    muxer: TsMuxer,
+
+    /// PCM sample buffer (for frame alignment)
+    pcm_buffer: Vec<f32>,
+
+    /// Current PTS (Presentation Time Stamp) in 90 kHz
+    current_pts: u64,
+
+    /// PTS increment per audio frame
+    pts_increment: u64,
+
+    /// Statistics
+    stats: AudioRemuxStats,
+
+    /// Initialization flag
+    initialized: bool,
 }
 
 impl AudioRemuxer {
     /// Create a new audio remuxer
-    pub fn new(config: AudioRemuxConfig) -> Self {
-        Self { config }
+    pub fn new(config: AudioRemuxConfig) -> Result<Self> {
+        info!(
+            "Creating audio remuxer: {}Hz, {} channels, {} bps, {:?}",
+            config.sample_rate, config.channels, config.aac_bitrate, config.aac_profile
+        );
+
+        // Create encoder config from remux config
+        let encoder_config = AacEncoderConfig {
+            sample_rate: config.sample_rate,
+            channels: config.channels,
+            bitrate: config.aac_bitrate,
+            profile: config.aac_profile,
+        };
+
+        // Create encoder
+        let encoder = FfmpegAacEncoder::new(encoder_config)
+            .context("Failed to create AAC encoder")?;
+
+        // Create muxer
+        let muxer = TsMuxer::new(TsMuxerConfig::default());
+
+        // Calculate PTS increment per audio frame (90 kHz timebase)
+        // AAC frame size = 1024 samples per channel
+        // PTS increment = (1024 * 90000) / sample_rate
+        let pts_increment = (1024 * 90000) / config.sample_rate as u64;
+
+        Ok(Self {
+            config,
+            demuxer: TsDemuxer::new(),
+            decoder: None,
+            encoder,
+            muxer,
+            pcm_buffer: Vec::with_capacity(2048 * 2), // 2 channels
+            current_pts: 0,
+            pts_increment,
+            stats: AudioRemuxStats::default(),
+            initialized: false,
+        })
     }
 
-    /// Remux audio from MP2/AC3 to AAC
+    /// Process MPEG-TS stream (main entry point)
     ///
-    /// This is the main entry point for audio remuxing.
-    /// It processes an MPEG-TS stream and outputs a new MPEG-TS stream
-    /// with AAC audio instead of MP2/AC3.
+    /// Reads input TS packets, remuxes audio from MP2/AC3 to AAC,
+    /// and writes output TS packets.
     ///
     /// # Arguments
     ///
-    /// * `input` - MPEG-TS stream with MP2/AC3 audio
-    /// * `output` - Writer for output MPEG-TS stream with AAC audio
-    ///
-    /// # Performance
-    ///
-    /// This function is designed for low-latency streaming:
-    /// - Zero-copy packet processing where possible
-    /// - Streaming mode (no buffering of entire stream)
-    /// - Async-friendly (can be wrapped in tokio::spawn)
-    pub async fn remux<R, W>(&self, mut input: R, mut output: W) -> Result<()>
+    /// * `input` - Input stream (MPEG-TS)
+    /// * `output` - Output stream (MPEG-TS)
+    pub async fn remux<R, W>(&mut self, mut input: R, mut output: W) -> Result<()>
     where
         R: Read + Send,
-        W: std::io::Write + Send,
+        W: Write + Send,
     {
-        info!(
-            "Starting native audio remux: {} Hz, {} channels, {} kbps",
-            self.config.sample_rate,
-            self.config.channels,
-            self.config.aac_bitrate / 1000
-        );
+        info!("Starting audio remuxing");
 
-        // TODO Phase 2 Implementation:
-        // 1. Parse MPEG-TS with mpeg2ts-reader
-        // 2. Extract audio PES packets
-        // 3. Decode MP2/AC3 with Symphonia
-        // 4. Encode to AAC with fdk-aac
-        // 5. Mux into new MPEG-TS
+        let mut ts_packet = [0u8; TS_PACKET_SIZE];
+        let mut output_buffer = Vec::new();
 
-        // Placeholder: Direct passthrough for now
-        warn!("Native audio remuxing not yet implemented - using passthrough");
-        std::io::copy(&mut input, &mut output)
-            .context("Failed to copy stream")?;
+        loop {
+            // Read TS packet from input
+            match input.read_exact(&mut ts_packet) {
+                Ok(_) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                    debug!("End of input stream");
+                    break;
+                }
+                Err(e) => {
+                    return Err(e).context("Failed to read input TS packet");
+                }
+            }
+
+            self.stats.bytes_input += TS_PACKET_SIZE as u64;
+
+            // Process TS packet through pipeline
+            match self.process_ts_packet(&ts_packet) {
+                Ok(packets) => {
+                    // Write output packets
+                    for packet in packets {
+                        output.write_all(&packet).context("Failed to write output packet")?;
+                        output_buffer.push(packet);
+                        self.stats.bytes_output += TS_PACKET_SIZE as u64;
+                    }
+                }
+                Err(e) => {
+                    warn!("Error processing packet: {}", e);
+                    self.stats.errors += 1;
+
+                    // On error, pass through original packet
+                    output.write_all(&ts_packet).context("Failed to write passthrough packet")?;
+                    self.stats.bytes_output += TS_PACKET_SIZE as u64;
+                }
+            }
+
+            self.stats.packets_processed += 1;
+
+            // Periodic logging
+            if self.stats.packets_processed % 10000 == 0 {
+                self.log_stats();
+            }
+        }
+
+        // Flush remaining data
+        let final_packets = self.flush()?;
+        for packet in final_packets {
+            output.write_all(&packet).context("Failed to write final packet")?;
+            self.stats.bytes_output += TS_PACKET_SIZE as u64;
+        }
+
+        info!("Audio remuxing completed");
+        self.log_stats();
 
         Ok(())
     }
 
-    /// Process a single MPEG-TS packet (188 bytes)
-    ///
-    /// This is the low-level packet processing function.
-    /// It will be called for each TS packet in the stream.
-    fn process_ts_packet(&self, packet: &[u8; 188]) -> Result<Option<Vec<u8>>> {
-        // TODO: Implement MPEG-TS packet processing
-        // 1. Parse TS header
-        // 2. Check if it's audio stream
-        // 3. Extract PES payload
-        // 4. Decode and re-encode audio
-        // 5. Create new TS packet with AAC
+    /// Process a single TS packet through the remuxing pipeline
+    fn process_ts_packet(&mut self, ts_packet: &[u8]) -> Result<Vec<[u8; 188]>> {
+        let mut output_packets = Vec::new();
 
-        Ok(None)
-    }
-}
+        // Step 1: Demux - Extract PES packet if this is audio
+        match self.demuxer.process_packet(ts_packet)? {
+            Some(pes_data) => {
+                // Complete audio PES packet received
+                self.stats.audio_packets += 1;
 
-/// MPEG-TS packet parser
-///
-/// Parses MPEG-TS packets according to ISO/IEC 13818-1
-struct TsPacketParser {
-    // TODO: Add fields for state machine
-}
+                // Initialize decoder if not already done
+                self.ensure_decoder_initialized()?;
 
-impl TsPacketParser {
-    fn parse_packet<'a>(&mut self, data: &'a [u8; 188]) -> Result<TsPacket<'a>> {
-        // Sync byte must be 0x47
-        if data[0] != 0x47 {
-            anyhow::bail!("Invalid sync byte: expected 0x47, got 0x{:02x}", data[0]);
+                // Step 2: Decode - MP2/AC3 → PCM
+                let decoder = self.decoder.as_mut().unwrap();
+                let pcm_samples = decoder
+                    .decode(&pes_data)
+                    .context("Failed to decode audio")?;
+
+                if !pcm_samples.is_empty() {
+                    self.stats.frames_decoded += 1;
+
+                    // Add PCM samples to buffer
+                    self.pcm_buffer.extend(pcm_samples);
+
+                    // Step 3: Encode - PCM → AAC (process complete frames)
+                    let aac_data = self
+                        .encoder
+                        .encode(&self.pcm_buffer)
+                        .context("Failed to encode AAC")?;
+
+                    // Encoder returns data only when it has complete frames
+                    if !aac_data.is_empty() {
+                        self.stats.frames_encoded += 1;
+
+                        // Step 4: Mux - AAC → TS packets
+                        let pts = self.current_pts;
+                        let dts = pts; // For audio, DTS = PTS
+
+                        let ts_packets = self
+                            .muxer
+                            .mux_audio(&aac_data, pts, dts)
+                            .context("Failed to mux AAC")?;
+
+                        output_packets.extend(ts_packets);
+                        self.stats.packets_output += output_packets.len() as u64;
+
+                        // Increment PTS for next frame
+                        self.current_pts += self.pts_increment;
+                    }
+                }
+            }
+            None => {
+                // Not audio or incomplete PES - check if video passthrough needed
+                // For now, we'll only output when we have audio to mux
+                // Video passthrough would be added here
+            }
         }
 
-        // Parse TS header (first 4 bytes)
-        let transport_error = (data[1] & 0x80) != 0;
-        let payload_start = (data[1] & 0x40) != 0;
-        let priority = (data[1] & 0x20) != 0;
-        let pid = (((data[1] & 0x1F) as u16) << 8) | (data[2] as u16);
-        let scrambling = (data[3] & 0xC0) >> 6;
-        let has_adaptation = (data[3] & 0x20) != 0;
-        let has_payload = (data[3] & 0x10) != 0;
-        let continuity = data[3] & 0x0F;
-
-        Ok(TsPacket {
-            pid,
-            payload_start,
-            continuity,
-            payload: &data[4..],
-        })
-    }
-}
-
-/// Parsed MPEG-TS packet
-struct TsPacket<'a> {
-    pid: u16,
-    payload_start: bool,
-    continuity: u8,
-    payload: &'a [u8],
-}
-
-/// Audio decoder using Symphonia
-///
-/// Decodes MP2, AC3, and AAC to PCM
-struct AudioDecoder {
-    // TODO: Add Symphonia decoder state
-}
-
-impl AudioDecoder {
-    fn decode_frame(&mut self, data: &[u8]) -> Result<Vec<f32>> {
-        // TODO: Use Symphonia to decode audio frame
-        // Returns PCM samples as f32 (32-bit float)
-        Ok(vec![])
-    }
-}
-
-/// AAC encoder using fdk-aac
-///
-/// Encodes PCM to AAC
-struct AacEncoder {
-    config: AudioRemuxConfig,
-    // TODO: Add fdk-aac encoder state
-}
-
-impl AacEncoder {
-    fn new(config: AudioRemuxConfig) -> Result<Self> {
-        // TODO: Initialize fdk-aac encoder
-        Ok(Self { config })
+        Ok(output_packets)
     }
 
-    fn encode_frame(&mut self, pcm: &[f32]) -> Result<Vec<u8>> {
-        // TODO: Use fdk-aac to encode PCM to AAC
-        Ok(vec![])
+    /// Ensure decoder is initialized with detected codec
+    fn ensure_decoder_initialized(&mut self) -> Result<()> {
+        if self.decoder.is_none() {
+            let codec = self.demuxer.audio_codec();
+
+            if codec == AudioCodec::Unknown {
+                anyhow::bail!("Audio codec not yet detected");
+            }
+
+            debug!("Initializing decoder for codec: {:?}", codec);
+
+            let decoder = AutoDecoder::new(codec).context("Failed to create audio decoder")?;
+
+            self.decoder = Some(decoder);
+            self.initialized = true;
+
+            info!(
+                "Audio remuxer initialized: codec {:?}, sample rate {}Hz, channels {}",
+                codec,
+                self.config.sample_rate,
+                self.config.channels
+            );
+        }
+
+        Ok(())
     }
-}
 
-/// MPEG-TS muxer
-///
-/// Creates MPEG-TS packets with AAC audio
-struct TsMuxer {
-    audio_pid: u16,
-    continuity: u8,
-}
+    /// Flush remaining data at end of stream
+    fn flush(&mut self) -> Result<Vec<[u8; 188]>> {
+        debug!("Flushing audio remuxer");
 
-impl TsMuxer {
-    fn new(audio_pid: u16) -> Self {
-        Self {
-            audio_pid,
-            continuity: 0,
+        let mut output_packets = Vec::new();
+
+        // Flush encoder (encode remaining PCM samples)
+        if !self.pcm_buffer.is_empty() {
+            let aac_data = self.encoder.flush().context("Failed to flush encoder")?;
+
+            if !aac_data.is_empty() {
+                let pts = self.current_pts;
+                let dts = pts;
+
+                let ts_packets = self.muxer.mux_audio(&aac_data, pts, dts)?;
+                output_packets.extend(ts_packets);
+                self.stats.packets_output += output_packets.len() as u64;
+            }
+        }
+
+        Ok(output_packets)
+    }
+
+    /// Log current statistics
+    fn log_stats(&self) {
+        info!(
+            "Remuxing stats: processed {} packets ({} audio), decoded {} frames, encoded {} frames, output {} packets, errors: {}",
+            self.stats.packets_processed,
+            self.stats.audio_packets,
+            self.stats.frames_decoded,
+            self.stats.frames_encoded,
+            self.stats.packets_output,
+            self.stats.errors
+        );
+
+        if self.stats.bytes_input > 0 {
+            let ratio = self.stats.bytes_output as f64 / self.stats.bytes_input as f64;
+            debug!(
+                "Size ratio: {:.2}% (input: {} bytes, output: {} bytes)",
+                ratio * 100.0,
+                self.stats.bytes_input,
+                self.stats.bytes_output
+            );
         }
     }
 
-    fn create_packet(&mut self, aac_data: &[u8], pts: u64) -> Result<[u8; 188]> {
-        // TODO: Create MPEG-TS packet with AAC payload
-        // 1. Create TS header
-        // 2. Create PES header with PTS
-        // 3. Add AAC data
-        // 4. Pad to 188 bytes
+    /// Get current statistics
+    pub fn stats(&self) -> &AudioRemuxStats {
+        &self.stats
+    }
 
-        let mut packet = [0xFF; 188];
-        packet[0] = 0x47; // Sync byte
+    /// Get remuxer configuration
+    pub fn config(&self) -> &AudioRemuxConfig {
+        &self.config
+    }
 
-        // Increment continuity counter
-        self.continuity = (self.continuity + 1) & 0x0F;
-
-        Ok(packet)
+    /// Check if remuxer is initialized
+    pub fn is_initialized(&self) -> bool {
+        self.initialized
     }
 }
 
@@ -231,28 +410,43 @@ impl TsMuxer {
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn test_audio_remuxer_creation() {
+    #[test]
+    fn test_config_default() {
         let config = AudioRemuxConfig::default();
-        let remuxer = AudioRemuxer::new(config);
-        assert_eq!(remuxer.config.sample_rate, 48_000);
+        assert_eq!(config.aac_bitrate, 192_000);
+        assert_eq!(config.channels, 2);
+        assert_eq!(config.sample_rate, 48_000);
     }
 
     #[test]
-    fn test_ts_packet_parser() {
-        // Test parsing a valid TS packet
-        let mut packet = [0u8; 188];
-        packet[0] = 0x47; // Sync byte
-        packet[1] = 0x40; // Payload start
-        packet[2] = 0x11; // PID = 0x0011
-        packet[3] = 0x10; // Has payload
+    fn test_remuxer_creation() {
+        let config = AudioRemuxConfig::default();
+        let remuxer = AudioRemuxer::new(config);
+        assert!(remuxer.is_ok());
 
-        let mut parser = TsPacketParser {};
-        let result = parser.parse_packet(&packet);
-        assert!(result.is_ok());
+        let remuxer = remuxer.unwrap();
+        assert!(!remuxer.is_initialized());
+        assert_eq!(remuxer.stats().packets_processed, 0);
+    }
 
-        let parsed = result.unwrap();
-        assert_eq!(parsed.pid, 0x0011);
-        assert!(parsed.payload_start);
+    #[test]
+    fn test_pts_increment_calculation() {
+        let config = AudioRemuxConfig {
+            sample_rate: 48000,
+            ..Default::default()
+        };
+
+        let remuxer = AudioRemuxer::new(config).unwrap();
+
+        // PTS increment = (1024 * 90000) / 48000 = 1920
+        assert_eq!(remuxer.pts_increment, 1920);
+    }
+
+    #[test]
+    fn test_stats_default() {
+        let stats = AudioRemuxStats::default();
+        assert_eq!(stats.packets_processed, 0);
+        assert_eq!(stats.frames_decoded, 0);
+        assert_eq!(stats.errors, 0);
     }
 }
