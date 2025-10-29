@@ -23,9 +23,10 @@ services:
       - ALL                     # Drop all capabilities
     cap_add:
       - NET_BIND_SERVICE        # Allow binding to ports < 1024 if needed
-    read_only: false             # Set to true if /data is mounted externally
+    read_only: true              # Read-only root filesystem for security
     tmpfs:
       - /tmp:noexec,nosuid,nodev,size=100m
+      - /data:exec,suid,dev,size=500m  # Writable data directory
     ulimits:
       nofile:
         soft: 4096
