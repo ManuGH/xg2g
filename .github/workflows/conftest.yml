@@ -48,9 +48,15 @@ jobs:
           # Convert to format conftest can work with
           output = []
           for insn in dfp.structure:
+              # Handle both tag and digest formats (alpine:3.22.2@sha256:abc...)
+              value = insn['value']
+              if value and '@sha256:' in value:
+                  # Split at @ to separate tag from digest
+                  value = value.split('@')[0]
+
               output.append({
                   "Cmd": insn['instruction'].lower(),
-                  "Value": insn['value'].split() if insn['value'] else []
+                  "Value": value.split() if value else []
               })
 
           with open('dockerfile.json', 'w') as f:

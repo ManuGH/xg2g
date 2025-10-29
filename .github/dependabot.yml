@@ -29,7 +29,7 @@ updates:
       - "dependencies"
       - "ci"
     commit-message:
-      prefix: "chore(ci)(deps)"
+      prefix: "chore(deps)"
     reviewers:
       - "ManuGH"
 
@@ -45,6 +45,6 @@ updates:
       - "dependencies"
       - "docker"
     commit-message:
-      prefix: "chore(docker)(deps)"
+      prefix: "chore(deps)"
     reviewers:
       - "ManuGH"
