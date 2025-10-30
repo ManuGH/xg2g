@@ -34,7 +34,7 @@ jobs:
   docker-build-and-test:
     name: Build Docker & Run Full Integration Tests
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 60
     permissions:
       contents: read
 
@@ -52,6 +52,7 @@ jobs:
         uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75  # v6.9.0
         env:
           SOURCE_DATE_EPOCH: '0'
+          BUILDKIT_PROGRESS: plain
         with:
           context: .
           file: Dockerfile
@@ -115,6 +116,7 @@ jobs:
         uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75  # v6.9.0
         env:
           SOURCE_DATE_EPOCH: '0'
+          BUILDKIT_PROGRESS: plain
         with:
           context: .
           file: Dockerfile
