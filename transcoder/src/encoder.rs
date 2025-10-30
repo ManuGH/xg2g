@@ -286,19 +286,17 @@ impl FfmpegAacEncoder {
         let channel_layout = ac_ffmpeg::codec::audio::ChannelLayout::from_channels(config.channels as u32)
             .context("Failed to create channel layout")?;
 
-        // Create codec parameters for AAC using builder pattern
-        // Let FFmpeg automatically determine the best sample format for AAC
-        let codec_params = ac_ffmpeg::codec::AudioCodecParameters::builder("aac")
-            .context("Failed to create AAC codec parameters")?
-            .bit_rate(config.bitrate as u64)
+        // Get sample format for fltp (f32 planar)
+        // Try to use the frame module's get_sample_format if it exists
+        let sample_format = ac_ffmpeg::codec::audio::frame::get_sample_format("fltp");
+
+        // Create encoder using direct builder pattern (type-safe API)
+        let encoder = ac_ffmpeg::codec::audio::AudioEncoder::builder("aac")
+            .context("Failed to create AAC encoder builder")?
+            .sample_format(sample_format)
             .sample_rate(config.sample_rate)
             .channel_layout(&channel_layout)
-            .build();
-
-        // Create encoder using builder pattern
-        // Let FFmpeg choose the sample format automatically
-        let encoder = ac_ffmpeg::codec::audio::AudioEncoder::from_codec_parameters(&codec_params)
-            .context("Failed to create AAC encoder builder")?
+            .bit_rate(config.bitrate as u64)
             .set_option("profile", config.profile.ffmpeg_name())
             .build()
             .context("Failed to build AAC encoder")?;
