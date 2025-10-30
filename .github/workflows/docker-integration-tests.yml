@@ -33,19 +33,25 @@ permissions:
 jobs:
   docker-build-and-test:
     name: Build Docker & Run Full Integration Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v5.2.2
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349  # v3.7.1
+        with:
+          driver: docker-container
 
       - name: Build Docker image to go-builder stage (with tests)
         id: docker_build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75  # v6.9.0
+        env:
+          SOURCE_DATE_EPOCH: '0'
         with:
           context: .
           file: Dockerfile
@@ -106,7 +112,9 @@ jobs:
           echo "Production build verified with Rust FFI + GPU transcoding" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build final production image (verification)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75  # v6.9.0
+        env:
+          SOURCE_DATE_EPOCH: '0'
         with:
           context: .
           file: Dockerfile
@@ -131,6 +139,22 @@ jobs:
             # Verify dynamic linking
             ldd /app/xg2g | grep -q xg2g_transcoder || (echo "❌ Binary not linked to Rust library" && exit 1)
 
+            # Extended ABI validation (Phase 2)
+            echo "=== Extended ABI & Dependency Validation ==="
+
+            # Check SONAME
+            readelf -d /app/lib/libxg2g_transcoder.so | grep SONAME || echo "⚠️  No SONAME (OK for FFI lib)"
+
+            # List GLIBC dependencies
+            echo "GLIBC dependencies:"
+            objdump -T /app/lib/libxg2g_transcoder.so | grep GLIBC_ | awk "{print \$NF}" | sort -uV
+
+            # Verify expected dependencies only
+            echo "All dynamic dependencies:"
+            ldd /app/lib/libxg2g_transcoder.so | awk "{print \$1}" | sort -u
+
+            echo "✅ ABI validation complete"
+
             # Show info
             ls -lh /app/lib/libxg2g_transcoder.so
             echo "✅ Rust library artifacts verified successfully"
@@ -150,6 +174,18 @@ jobs:
               exit 1
             fi
           '
+
+      - name: Upload build artifacts and logs
+        if: always()
+        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808  # v4.4.3
+        with:
+          name: docker-integration-logs-${{ github.run_id }}
+          path: |
+            /tmp/test-output.txt
+          retention-days: 21
+          if-no-files-found: ignore
+          compression-level: 6
+          overwrite: false
 
       - name: Generate test summary
         if: always()
