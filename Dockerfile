@@ -20,9 +20,11 @@ COPY transcoder/src ./src
 # Build Rust remuxer library (cdylib for FFI)
 # This creates libxg2g_transcoder.so that Go can load via CGO
 # Note: Cargo.lock is generated if missing (not committed to avoid library best practices)
+# Note: On Alpine/musl, must disable crt-static to enable cdylib generation
+# Note: Building without --lib to ensure Cargo.toml crate-type=[cdylib, rlib] is respected
 ARG RUST_TARGET_CPU=x86-64-v2
-RUN RUSTFLAGS="-C target-cpu=${RUST_TARGET_CPU} -C opt-level=3" \
-    cargo build --release --lib
+RUN RUSTFLAGS="-C target-cpu=${RUST_TARGET_CPU} -C opt-level=3 -C target-feature=-crt-static" \
+    cargo build --release
 # Note: strip = true in Cargo.toml profile.release already strips the library
 
 # =============================================================================

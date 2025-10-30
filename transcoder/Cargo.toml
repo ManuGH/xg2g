@@ -7,7 +7,7 @@ description = "High-performance GPU transcoder for xg2g using VAAPI"
 
 [lib]
 name = "xg2g_transcoder"
-crate-type = ["cdylib", "rlib"]  # cdylib for FFI, rlib for Rust libraries
+crate-type = ["cdylib"]  # cdylib for FFI - rlib removed to fix .so generation with binary target
 
 [[bin]]
 name = "xg2g-transcoder"
