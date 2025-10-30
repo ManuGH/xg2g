@@ -296,14 +296,22 @@ impl FfmpegAacEncoder {
             .build();
 
         // Create encoder using builder pattern
+        // Let FFmpeg choose the sample format automatically
         let encoder = ac_ffmpeg::codec::audio::AudioEncoder::from_codec_parameters(&codec_params)
             .context("Failed to create AAC encoder builder")?
             .set_option("profile", config.profile.ffmpeg_name())
-            .set_option("sample_fmt", "fltp")  // Explicitly set f32 planar format
             .build()
             .context("Failed to build AAC encoder")?;
 
-        debug!("AAC-LC encoder initialized successfully");
+        // Introspect encoder to see what sample format FFmpeg chose
+        let actual_format = encoder.codec_parameters().sample_format();
+        debug!(
+            "AAC-LC encoder initialized: format={} (planar={}), channels={}, sample_rate={}",
+            actual_format.name(),
+            actual_format.is_planar(),
+            encoder.codec_parameters().channel_layout().channels(),
+            encoder.codec_parameters().sample_rate()
+        );
 
         Ok(Self {
             encoder,
