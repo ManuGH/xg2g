@@ -20,7 +20,6 @@ use std::panic::catch_unwind;
 use std::ptr;
 
 use crate::audio_remux::{AudioRemuxConfig, AudioRemuxer};
-use tracing_subscriber::layer::SubscriberExt;
 
 /// Opaque handle to AudioRemuxer
 /// This is passed between Go and Rust as a void pointer
@@ -423,18 +422,18 @@ async fn run_gpu_server(
 
     // Initialize tracing (only if not already initialized by main binary)
     // When embedded via FFI, tracing may already be initialized by the Go daemon
-    let _ = tracing_subscriber::registry()
-        .with(
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "xg2g_transcoder=info".into()),
         )
-        .with(tracing_subscriber::fmt::layer().with_ansi(false))
-        .try_init(); // Use try_init() instead of init() to avoid panic if already initialized
+        .with_ansi(false)
+        .try_init(); // Use try_init() to avoid panic if already initialized
 
     tracing::info!("GPU server initializing...");
 
     // Check VAAPI availability
-    let vaapi_available = crate::main::check_vaapi().await;
+    let vaapi_available = crate::server::check_vaapi().await;
     if !vaapi_available {
         tracing::warn!("VAAPI not available - GPU transcoding will not work!");
     }
@@ -443,7 +442,7 @@ async fn run_gpu_server(
     let config = TranscoderConfig::from_env();
     let metrics_handle = crate::metrics::init_metrics();
 
-    let app_state = Arc::new(crate::main::AppState {
+    let app_state = Arc::new(crate::server::AppState {
         config,
         vaapi_available,
         metrics_handle,
@@ -452,9 +451,9 @@ async fn run_gpu_server(
     // Build router (same as main.rs)
     use axum::{routing::get, Router};
     let app = Router::new()
-        .route("/health", get(crate::main::health_handler))
-        .route("/metrics", get(crate::main::metrics_handler))
-        .route("/transcode", get(crate::main::transcode_handler))
+        .route("/health", get(crate::server::health_handler))
+        .route("/metrics", get(crate::server::metrics_handler))
+        .route("/transcode", get(crate::server::transcode_handler))
         .with_state(app_state);
 
     // Parse listen address

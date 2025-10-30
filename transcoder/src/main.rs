@@ -12,46 +12,22 @@
 
 use axum::{
     body::Body,
-    extract::Query,
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
-use bytes::Bytes;
-use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::process::Command;
 use tracing::{error, info, warn};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-// Import from the library crate instead of re-declaring modules
-use xg2g_transcoder::audio_remux::{AudioRemuxConfig, AudioRemuxer};
-use xg2g_transcoder::metrics::{MetricsGuard, record_bytes_transcoded, record_ffmpeg_startup, set_active_sessions};
+// Import from the library crate
+use xg2g_transcoder::metrics;
+use xg2g_transcoder::server::{
+    AppState, ErrorResponse, HealthResponse, TranscodeParams,
+    check_vaapi, health_handler, metrics_handler, transcode_handler,
+};
 use xg2g_transcoder::transcoder::{TranscoderConfig, VaapiTranscoder};
-
-#[derive(Debug, Deserialize)]
-struct TranscodeParams {
-    source_url: String,
-    #[serde(default)]
-    video_bitrate: Option<String>,
-    #[serde(default)]
-    audio_bitrate: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-struct HealthResponse {
-    status: String,
-    vaapi_available: bool,
-    version: String,
-}
-
-#[derive(Debug, Serialize)]
-struct ErrorResponse {
-    error: String,
-}
 
 fn main() -> anyhow::Result<()> {
     // Early debug output to verify binary starts
@@ -69,16 +45,13 @@ async fn async_main() -> anyhow::Result<()> {
     eprintln!("[STARTUP] Async runtime started successfully");
 
     // Initialize tracing with explicit stdout target
-    tracing_subscriber::registry()
-        .with(
+    tracing_subscriber::fmt()
+        .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "xg2g_transcoder=info".into()),
         )
-        .with(
-            tracing_subscriber::fmt::layer()
-                .with_writer(std::io::stdout)
-                .with_ansi(false)
-        )
+        .with_writer(std::io::stdout)
+        .with_ansi(false)
         .init();
 
     info!("xg2g GPU Transcoder starting...");
@@ -133,93 +106,6 @@ async fn async_main() -> anyhow::Result<()> {
     Ok(())
 }
 
-pub struct AppState {
-    pub config: TranscoderConfig,
-    pub vaapi_available: bool,
-    pub metrics_handle: metrics_exporter_prometheus::PrometheusHandle,
-}
-
-pub async fn health_handler(
-    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
-) -> Json<HealthResponse> {
-    Json(HealthResponse {
-        status: "ok".to_string(),
-        vaapi_available: state.vaapi_available,
-        version: env!("CARGO_PKG_VERSION").to_string(),
-    })
-}
-
-pub async fn metrics_handler(
-    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
-) -> Response {
-    let metrics = state.metrics_handle.render();
-    (
-        StatusCode::OK,
-        [(header::CONTENT_TYPE, "text/plain; version=0.0.4")],
-        metrics,
-    )
-        .into_response()
-}
-
-pub async fn transcode_handler(
-    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
-    Query(params): Query<TranscodeParams>,
-) -> Response {
-    let _guard = MetricsGuard::new();
-    info!("Transcode request: source_url={}", params.source_url);
-
-    if !state.vaapi_available {
-        warn!("VAAPI not available, cannot transcode");
-        _guard.error();
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(ErrorResponse {
-                error: "GPU acceleration not available".to_string(),
-            }),
-        )
-            .into_response();
-    }
-
-    // Override config with request params
-    let mut config = state.config.clone();
-    if let Some(vb) = params.video_bitrate {
-        config.video_bitrate = vb;
-    }
-    if let Some(ab) = params.audio_bitrate {
-        config.audio_bitrate = ab;
-    }
-
-    // Create transcoder
-    let transcoder = VaapiTranscoder::new(config);
-
-    // Start transcoding
-    match transcoder.transcode_stream(&params.source_url).await {
-        Ok(stream) => {
-            _guard.success();
-
-            // Set appropriate headers
-            let headers = [
-                (header::CONTENT_TYPE, "video/mp2t"),
-                (header::CACHE_CONTROL, "no-cache, no-store, must-revalidate"),
-                (header::CONNECTION, "close"),
-            ];
-
-            (StatusCode::OK, headers, Body::from_stream(stream)).into_response()
-        }
-        Err(e) => {
-            error!("Transcode error: {}", e);
-            _guard.error();
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: format!("Transcode failed: {}", e),
-                }),
-            )
-                .into_response()
-        }
-    }
-}
-
 async fn transcode_stream_handler(
     axum::extract::State(state): axum::extract::State<Arc<AppState>>,
     headers: HeaderMap,
@@ -258,22 +144,6 @@ async fn transcode_stream_handler(
                 }),
             )
                 .into_response()
-        }
-    }
-}
-
-pub async fn check_vaapi() -> bool {
-    let output = Command::new("vainfo").output().await;
-
-    match output {
-        Ok(output) if output.status.success() => {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            info!("VAAPI check output:\n{}", stdout);
-            true
-        }
-        _ => {
-            warn!("vainfo command failed - VAAPI might not be available");
-            false
         }
     }
 }
