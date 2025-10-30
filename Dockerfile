@@ -22,7 +22,7 @@ COPY transcoder/src ./src
 # Note: Cargo.lock is generated if missing (not committed to avoid library best practices)
 ARG RUST_TARGET_CPU=x86-64-v2
 RUN RUSTFLAGS="-C target-cpu=${RUST_TARGET_CPU} -C opt-level=3" \
-    cargo build --release && \
+    cargo build --release --lib && \
     strip target/release/libxg2g_transcoder.so
 
 # =============================================================================

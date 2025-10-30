@@ -24,7 +24,7 @@ use tracing::{error, info, warn};
 // Import from the library crate
 use xg2g_transcoder::metrics;
 use xg2g_transcoder::server::{
-    AppState, ErrorResponse, HealthResponse, TranscodeParams,
+    AppState, ErrorResponse,
     check_vaapi, health_handler, metrics_handler, transcode_handler,
 };
 use xg2g_transcoder::transcoder::{TranscoderConfig, VaapiTranscoder};
@@ -108,7 +108,7 @@ async fn async_main() -> anyhow::Result<()> {
 
 async fn transcode_stream_handler(
     axum::extract::State(state): axum::extract::State<Arc<AppState>>,
-    headers: HeaderMap,
+    _headers: HeaderMap,
     body: Body,
 ) -> Response {
     info!("Stream transcode request (POST with body)");
