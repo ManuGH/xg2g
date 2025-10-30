@@ -57,7 +57,7 @@ jobs:
       - name: Run fast integration tests
         run: |
           echo "::group::Smoke Tests (< 2min)"
-          go test -v -tags=integration_fast -timeout=3m ./test/integration/... \
+          go test -v -tags=integration_fast,nogpu -timeout=3m ./test/integration/... \
             -run="^TestSmoke" \
             2>&1 | tee test-output.log
           echo "::endgroup::"
@@ -95,7 +95,7 @@ jobs:
       - name: Run all integration tests
         run: |
           echo "::group::Full Integration Suite"
-          go test -v -tags=integration -timeout=5m ./test/integration/... \
+          go test -v -tags=integration,nogpu -timeout=5m ./test/integration/... \
             2>&1 | tee full-test-output.log
           echo "::endgroup::"
 
@@ -159,7 +159,7 @@ jobs:
       - name: Run slow integration tests
         run: |
           echo "::group::Slow Tests (Deep Validation)"
-          go test -v -tags=integration_slow -timeout=10m ./test/integration/... \
+          go test -v -tags=integration_slow,nogpu -timeout=10m ./test/integration/... \
             -run="^TestSlow" \
             2>&1 | tee slow-test-output.log
           echo "::endgroup::"
@@ -194,7 +194,7 @@ jobs:
 
       - name: Run smoke tests
         run: |
-          go test -tags=integration_fast -timeout=3m ./test/integration/... \
+          go test -tags=integration_fast,nogpu -timeout=3m ./test/integration/... \
             -run="^TestSmoke"
 
       - name: Report compatibility
