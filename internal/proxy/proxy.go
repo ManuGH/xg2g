@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -250,7 +251,7 @@ func (s *Server) resolveTargetURL(ctx context.Context, path, rawQuery string) st
 	}
 
 	// Last resort: Use receiver host with default port 8001
-	targetURL := fmt.Sprintf("http://%s:8001%s", s.receiverHost, path)
+	targetURL := fmt.Sprintf("http://%s%s", net.JoinHostPort(s.receiverHost, "8001"), path)
 	if rawQuery != "" {
 		targetURL += "?" + rawQuery
 	}

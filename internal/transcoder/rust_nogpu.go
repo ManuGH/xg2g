@@ -10,13 +10,13 @@ import "errors"
 type RustAudioRemuxer struct{}
 
 // NewRustAudioRemuxer returns an error when built without GPU support.
-func NewRustAudioRemuxer(sampleRate, channels, bitrate int) (*RustAudioRemuxer, error) {
-	return nil, errors.New("Rust audio remuxer not available: build with -tags=gpu")
+func NewRustAudioRemuxer(_ int, _ int, _ int) (*RustAudioRemuxer, error) {
+	return nil, errors.New("rust audio remuxer not available: build with -tags=gpu")
 }
 
 // Process returns an error (stub implementation).
-func (r *RustAudioRemuxer) Process(input []byte) ([]byte, error) {
-	return nil, errors.New("Rust audio remuxer not available: build with -tags=gpu")
+func (r *RustAudioRemuxer) Process(_ []byte) ([]byte, error) {
+	return nil, errors.New("rust audio remuxer not available: build with -tags=gpu")
 }
 
 // Close is a no-op stub.

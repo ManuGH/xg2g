@@ -22,6 +22,10 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+const (
+	envTrue = "true"
+)
+
 // TranscoderConfig holds configuration for audio transcoding.
 type TranscoderConfig struct {
 	Enabled       bool   // Whether transcoding is enabled
@@ -347,7 +351,7 @@ func IsTranscodingEnabled() bool {
 	if env == "" {
 		return defaultTranscodingEnabled() // Build-tag dependent default
 	}
-	return env == "true"
+	return env == envTrue
 }
 
 // GetTranscoderConfig builds transcoder configuration from environment variables.
@@ -375,7 +379,7 @@ func GetTranscoderConfig() TranscoderConfig {
 	}
 
 	// GPU transcoding configuration
-	gpuEnabled := strings.ToLower(os.Getenv("XG2G_GPU_TRANSCODE")) == "true"
+	gpuEnabled := strings.ToLower(os.Getenv("XG2G_GPU_TRANSCODE")) == envTrue
 	transcoderURL := os.Getenv("XG2G_TRANSCODER_URL")
 	if transcoderURL == "" {
 		transcoderURL = "http://localhost:8085" // Default GPU transcoder URL
@@ -386,7 +390,7 @@ func GetTranscoderConfig() TranscoderConfig {
 	// Set XG2G_USE_RUST_REMUXER=true/false to override
 	useRust := defaultUseRustRemuxer() // Build-tag dependent default
 	if rustEnv := strings.ToLower(os.Getenv("XG2G_USE_RUST_REMUXER")); rustEnv != "" {
-		useRust = rustEnv == "true"
+		useRust = rustEnv == envTrue
 	}
 
 	return TranscoderConfig{
@@ -450,7 +454,11 @@ func (t *Transcoder) TranscodeStreamRust(ctx context.Context, w http.ResponseWri
 		t.logger.Error().Err(err).Msg("failed to initialize rust remuxer")
 		return fmt.Errorf("initialize rust remuxer: %w", err)
 	}
-	defer remuxer.Close()
+	defer func() {
+		if err := remuxer.Close(); err != nil {
+			t.logger.Warn().Err(err).Msg("failed to close remuxer")
+		}
+	}()
 
 	t.logger.Info().
 		Int("sample_rate", sampleRate).

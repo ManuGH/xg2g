@@ -10,13 +10,13 @@ import "errors"
 type GPUServer struct{}
 
 // NewGPUServer returns a stub GPU server instance.
-func NewGPUServer(listenAddr, vaapiDevice string) *GPUServer {
+func NewGPUServer(_ string, _ string) *GPUServer {
 	return &GPUServer{}
 }
 
 // Start returns an error when built without GPU support.
 func (s *GPUServer) Start() error {
-	return errors.New("GPU server not available: build with -tags=gpu")
+	return errors.New("gpu server not available: build with -tags=gpu")
 }
 
 // Stop is a no-op stub.
