@@ -340,8 +340,14 @@ func isBrokenPipe(err error) bool {
 }
 
 // IsTranscodingEnabled checks if audio transcoding is enabled via environment variable.
+// Default: true (enabled by default for iOS Safari compatibility)
+// Set XG2G_ENABLE_AUDIO_TRANSCODING=false to disable
 func IsTranscodingEnabled() bool {
-	return strings.ToLower(os.Getenv("XG2G_ENABLE_AUDIO_TRANSCODING")) == "true"
+	env := strings.ToLower(os.Getenv("XG2G_ENABLE_AUDIO_TRANSCODING"))
+	if env == "" {
+		return true // Default: enabled for iOS Safari compatibility
+	}
+	return env == "true"
 }
 
 // GetTranscoderConfig builds transcoder configuration from environment variables.
@@ -376,7 +382,12 @@ func GetTranscoderConfig() TranscoderConfig {
 	}
 
 	// Check if Rust remuxer should be used
-	useRust := strings.ToLower(os.Getenv("XG2G_USE_RUST_REMUXER")) == "true"
+	// Default: true (use Rust remuxer by default for best performance)
+	// Set XG2G_USE_RUST_REMUXER=false to use FFmpeg instead
+	useRust := true // Default to Rust remuxer
+	if rustEnv := strings.ToLower(os.Getenv("XG2G_USE_RUST_REMUXER")); rustEnv != "" {
+		useRust = rustEnv == "true"
+	}
 
 	return TranscoderConfig{
 		Enabled:        IsTranscodingEnabled(),

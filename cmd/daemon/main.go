@@ -16,6 +16,9 @@ import (
 	"github.com/ManuGH/xg2g/internal/daemon"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	xglog "github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/openwebif"
+	"github.com/ManuGH/xg2g/internal/proxy"
+	"github.com/ManuGH/xg2g/internal/transcoder"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -124,17 +127,71 @@ func main() {
 	// Configure proxy if enabled
 	if config.ParseString("XG2G_ENABLE_STREAM_PROXY", "false") == "true" {
 		targetURL := config.ParseString("XG2G_PROXY_TARGET", "")
-		if targetURL == "" {
+		receiverHost := proxy.GetReceiverHost()
+
+		// PROXY_TARGET is now optional - if not provided, use Smart Detection
+		if targetURL == "" && receiverHost == "" {
 			logger.Fatal().
 				Str("event", "proxy.config.invalid").
-				Msg("XG2G_ENABLE_STREAM_PROXY is true but XG2G_PROXY_TARGET is not set")
+				Msg("XG2G_ENABLE_STREAM_PROXY is true but neither XG2G_PROXY_TARGET nor XG2G_OWI_BASE is set")
+		}
+
+		// Create StreamDetector if Smart Detection is enabled
+		var streamDetector *openwebif.StreamDetector
+		if receiverHost != "" && openwebif.IsEnabled() {
+			streamDetector = openwebif.NewStreamDetector(receiverHost, xglog.WithComponent("stream-detector"))
+			if targetURL == "" {
+				logger.Info().
+					Str("receiver", receiverHost).
+					Msg("Stream proxy using Smart Detection (automatic port selection)")
+			} else {
+				logger.Info().
+					Str("receiver", receiverHost).
+					Str("target", targetURL).
+					Msg("Stream proxy using Smart Detection with fallback target")
+			}
 		}
 
 		deps.ProxyConfig = &daemon.ProxyConfig{
-			ListenAddr: config.ParseString("XG2G_PROXY_LISTEN", ":8001"),
-			TargetURL:  targetURL,
-			Logger:     xglog.WithComponent("proxy"),
+			ListenAddr:     config.ParseString("XG2G_PROXY_LISTEN", ":18000"),
+			TargetURL:      targetURL,
+			ReceiverHost:   receiverHost,
+			StreamDetector: streamDetector,
+			Logger:         xglog.WithComponent("proxy"),
 		}
+	}
+
+	// Configure GPU transcoding server if enabled (MODE 3)
+	var gpuServer *transcoder.GPUServer
+	if config.ParseString("XG2G_ENABLE_GPU_TRANSCODING", "false") == "true" {
+		gpuListenAddr := config.ParseString("XG2G_GPU_LISTEN", "127.0.0.1:8085")
+		vaapiDevice := config.ParseString("XG2G_VAAPI_DEVICE", "/dev/dri/renderD128")
+
+		gpuServer = transcoder.NewGPUServer(gpuListenAddr, vaapiDevice)
+
+		logger.Info().
+			Str("listen", gpuListenAddr).
+			Str("vaapi_device", vaapiDevice).
+			Msg("Starting embedded GPU transcoding server (MODE 3)")
+
+		if err := gpuServer.Start(); err != nil {
+			logger.Fatal().
+				Err(err).
+				Str("event", "gpu.start.failed").
+				Msg("failed to start GPU transcoding server")
+		}
+
+		logger.Info().
+			Str("url", gpuServer.GetURL()).
+			Msg("GPU transcoding server started successfully")
+
+		// Ensure GPU server is stopped on exit
+		defer func() {
+			logger.Info().Msg("Shutting down GPU transcoding server...")
+			if err := gpuServer.Stop(); err != nil {
+				logger.Error().Err(err).Msg("failed to stop GPU server gracefully")
+			}
+		}()
 	}
 
 	// Create daemon manager

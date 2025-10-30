@@ -1,0 +1,139 @@
+# xg2g Production Setup (Manuel's Environment) - MODE 2: Audio Proxy
+#
+# Server: 10.10.55.14
+# VU+ Receiver: 10.10.55.64
+# Stream Ports: 8001 (FTA), 17999 (OSCam for Pay-TV)
+#
+# This is MODE 2 of 3 deployment modes:
+# 1. Standard - No audio transcoding, original streams
+# 2. Audio Proxy (this file) - For iPhone/iPad with synchronous transcoding
+# 3. GPU Transcoding (future) - Video + audio transcoding
+#
+# Features:
+# - Audio transcoding: AC3/MP2 → AAC (Rust remuxer, 0% CPU)
+# - Stream proxy on port 18000
+# - API server on port 18080
+# - Smart port selection (8001 FTA / 17999 Pay-TV)
+
+services:
+  xg2g:
+    image: ghcr.io/manugh/xg2g:latest
+    container_name: xg2g-production
+    user: "65532:65532"
+
+    # Network mode: Use host network for simplicity in production
+    # Alternative: Use bridge mode and map ports explicitly
+    network_mode: host
+
+    # Or use bridge mode with explicit port mapping:
+    # ports:
+    #   - "18080:18080"   # API Server
+    #   - "18000:18000"   # Stream Proxy
+
+    security_opt:
+      - no-new-privileges:true
+
+    cap_drop:
+      - ALL
+
+    cap_add:
+      - NET_BIND_SERVICE
+
+    # Note: read_only filesystem requires writable /tmp
+    # Disabled for now to allow daemon to work without issues
+    # read_only: true
+
+    tmpfs:
+      - /tmp:noexec,nosuid,nodev,size=200m
+
+    ulimits:
+      nofile:
+        soft: 8192
+        hard: 16384
+      nproc:
+        soft: 1024
+        hard: 2048
+
+    environment:
+      # ============================================================================
+      # Receiver Configuration
+      # ============================================================================
+      - XG2G_OWI_BASE=http://10.10.55.64:80
+      - XG2G_XCPLUGIN_BASE=http://10.10.55.64:80
+      - XG2G_BOUQUET=Favourites (TV)
+      - XG2G_STREAM_PORT=8001
+
+      # ============================================================================
+      # Server Configuration
+      # ============================================================================
+      - XG2G_LISTEN=:18080
+
+      # ============================================================================
+      # Audio Transcoding (ENABLED for iPhone/iPad Safari)
+      # ============================================================================
+      # Automatically converts AC3/MP2 → AAC-LC with ADTS headers
+      # Rust remuxer provides 0% CPU overhead vs FFmpeg 85-95%
+      - XG2G_ENABLE_AUDIO_TRANSCODING=true
+      - XG2G_USE_RUST_REMUXER=true
+      - XG2G_AUDIO_CODEC=aac
+      - XG2G_AUDIO_BITRATE=192k
+      - XG2G_AUDIO_CHANNELS=2
+
+      # ============================================================================
+      # Stream Proxy Configuration
+      # ============================================================================
+      # Stream proxy for iPhone/iPad with audio transcoding
+      # XG2G_PROXY_TARGET is OPTIONAL - Smart Detection automatically selects
+      # port 8001 (FTA) or 17999 (Pay-TV) based on whitelist_streamrelay
+      - XG2G_ENABLE_STREAM_PROXY=true
+      - XG2G_PROXY_LISTEN=:18000
+      # - XG2G_PROXY_TARGET=http://10.10.55.64:8001    # Optional: override Smart Detection
+
+      # ============================================================================
+      # Feature Flags (disable unnecessary features for production)
+      # ============================================================================
+      - XG2G_EPG_ENABLED=false      # EPG not needed for basic streaming
+      - XG2G_HDHR_ENABLED=false     # HDHomeRun discovery not needed
+
+      # ============================================================================
+      # Logging
+      # ============================================================================
+      - RUST_LOG=info
+      - XG2G_LOG_LEVEL=info
+
+    volumes:
+      - ./data:/data
+
+    healthcheck:
+      test: wget -q --spider -T 5 -O /dev/null http://localhost:18080/api/status || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+    restart: unless-stopped
+
+# ============================================================================
+# Usage
+# ============================================================================
+#
+# Start:
+#   docker compose -f docker-compose.production.yml up -d
+#
+# Stop:
+#   docker compose -f docker-compose.production.yml down
+#
+# Logs:
+#   docker compose -f docker-compose.production.yml logs -f
+#
+# Rebuild:
+#   docker compose -f docker-compose.production.yml up -d --build
+#
+# ============================================================================
+# Access URLs
+# ============================================================================
+#
+# Stream Proxy:  http://10.10.55.14:18000/1:0:19:...
+# API Server:    http://10.10.55.14:18080/api/...
+#
+# ============================================================================

@@ -1,0 +1,163 @@
+# xg2g - Enigma2 to IPTV Gateway
+# GPU Transcoding Mode: Hardware-Accelerated Video Transcoding
+#
+# This is MODE 3 of 3 deployment modes:
+# 1. Standard (docker-compose.yml) - No transcoding, original streams
+# 2. Audio Proxy (docker-compose.audio-proxy.yml) - Audio transcoding only (iPhone/iPad)
+# 3. GPU Transcoding (this file) - Full video+audio transcoding with VAAPI
+#
+# Features:
+# - Hardware-accelerated video transcoding (Intel Quick Sync, AMD VCE, etc.)
+# - GPU transcoding via embedded HTTP server (async, non-blocking)
+# - Smart port routing (automatic port selection)
+# - M3U playlist, EPG, HDHomeRun emulation included
+# - Requires host with Intel/AMD GPU supporting VAAPI
+
+services:
+  xg2g:
+    image: ghcr.io/manugh/xg2g:latest
+    container_name: xg2g-gpu-transcoding
+    user: "65532:65532"  # Run as non-root for security
+    ports:
+      - "8080:8080"      # HTTP API & M3U/EPG
+      - "18000:18000"    # Stream Proxy (audio transcoding + GPU routing)
+      - "8085:8085"      # GPU Transcoding Server (internal)
+      - "1900:1900/udp"  # SSDP for Plex/Jellyfin discovery (optional)
+      - "9090:9090"      # Prometheus metrics (optional)
+
+    # GPU Device Mapping - REQUIRED for VAAPI
+    # Intel Quick Sync: /dev/dri/renderD128
+    # AMD GPU: /dev/dri/renderD128
+    # Multiple GPUs: /dev/dri/renderD129, etc.
+    devices:
+      - /dev/dri:/dev/dri
+
+    # Allow GPU access
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+
+    # Writable /tmp for FFmpeg temp files
+    tmpfs:
+      - /tmp:noexec,nosuid,nodev,size=1g  # 1GB for transcoding buffers
+
+    ulimits:
+      nofile:
+        soft: 8192
+        hard: 16384
+      nproc:
+        soft: 1024
+        hard: 2048
+
+    environment:
+      # ============================================================================
+      # Required Configuration
+      # ============================================================================
+      - XG2G_OWI_BASE=http://192.168.1.100
+      - XG2G_OWI_USER=root
+      - XG2G_OWI_PASS=yourpassword
+      - XG2G_BOUQUET=Favourites
+
+      # ============================================================================
+      # GPU Transcoding Configuration (MODE 3)
+      # ============================================================================
+      # Enable GPU transcoding server
+      - XG2G_ENABLE_GPU_TRANSCODING=true
+      - XG2G_GPU_LISTEN=0.0.0.0:8085
+      - XG2G_VAAPI_DEVICE=/dev/dri/renderD128
+
+      # Video transcoding settings
+      - XG2G_VIDEO_BITRATE=4M       # Target video bitrate (adjust for quality/bandwidth)
+      - XG2G_AUDIO_BITRATE=192k     # AAC audio bitrate
+
+      # ============================================================================
+      # Stream Proxy (Routes to GPU Transcoding Server)
+      # ============================================================================
+      # Enable stream proxy for iPhone/iPad Safari compatibility
+      - XG2G_ENABLE_STREAM_PROXY=true
+      - XG2G_PROXY_LISTEN=:18000
+      # XG2G_PROXY_TARGET is OPTIONAL - uses Smart Detection
+      # Automatically selects port 8001 (FTA) or 17999 (Pay-TV)
+      # - XG2G_PROXY_TARGET=http://192.168.1.100:8001
+
+      # Audio transcoding (for streams not using GPU)
+      - XG2G_ENABLE_AUDIO_TRANSCODING=true
+      - XG2G_USE_RUST_REMUXER=true
+      - XG2G_AUDIO_CODEC=aac
+      - XG2G_AUDIO_CHANNELS=2
+
+      # ============================================================================
+      # Smart Detection (automatic port selection)
+      # ============================================================================
+      # Enabled by default - automatically detects optimal backend port
+      # Reads /etc/enigma2/whitelist_streamrelay from receiver
+      # No configuration needed!
+
+      # ============================================================================
+      # Optional: Disable Features
+      # ============================================================================
+      # - XG2G_EPG_ENABLED=false                  # Disable EPG collection
+      # - XG2G_SMART_STREAM_DETECTION=false       # Disable OSCam auto-detection
+      # - XG2G_HDHR_ENABLED=false                 # Disable HDHomeRun emulation
+
+      # ============================================================================
+      # Optional: Advanced Configuration
+      # ============================================================================
+      # - XG2G_DATA=/data                         # Data directory
+      # - XG2G_EPG_DAYS=7                         # EPG days (1-14)
+      # - XG2G_API_TOKEN=your-token-here          # API authentication
+      # - XG2G_PICON_BASE=http://picons-url       # Custom picons URL
+
+    volumes:
+      - ./data:/data
+
+    healthcheck:
+      test: wget -q --spider -T 5 -O /dev/null http://localhost:8080/readyz || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+    restart: unless-stopped
+
+# ============================================================================
+# Access URLs
+# ============================================================================
+#
+# Stream Proxy (transcoded):  http://localhost:18000/1:0:19:...
+# GPU Transcoder (direct):    http://localhost:8085/transcode?source_url=...
+# M3U Playlist:               http://localhost:8080/files/playlist.m3u
+# EPG (XMLTV):                http://localhost:8080/xmltv.xml
+# API Status:                 http://localhost:8080/api/v1/status
+# GPU Health:                 http://localhost:8085/health
+# Prometheus:                 http://localhost:9090/metrics
+#
+# Note: GPU transcoding requires host with Intel Quick Sync or AMD GPU
+#       Use vainfo command to verify VAAPI support on your host
+#
+# ============================================================================
+# GPU Requirements
+# ============================================================================
+#
+# Intel:
+#   - 6th gen Core (Skylake) or newer for H.264/HEVC hardware encode
+#   - Install intel-media-driver or i965-va-driver on host
+#   - Verify: vainfo (should show VAEntrypointEncSlice)
+#
+# AMD:
+#   - Radeon RX 400 series or newer for VAAPI support
+#   - Install mesa-va-drivers on host
+#   - Verify: vainfo (should list AMD encoders)
+#
+# Container needs access to /dev/dri/renderD128 (or renderD129 for 2nd GPU)
+#
+# ============================================================================
+# For Development
+# ============================================================================
+#
+# To build locally instead of using the published image:
+#   docker compose -f docker-compose.gpu.yml up --build
+#

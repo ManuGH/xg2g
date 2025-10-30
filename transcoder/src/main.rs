@@ -137,13 +137,13 @@ async fn async_main() -> anyhow::Result<()> {
     Ok(())
 }
 
-struct AppState {
-    config: TranscoderConfig,
-    vaapi_available: bool,
-    metrics_handle: metrics_exporter_prometheus::PrometheusHandle,
+pub struct AppState {
+    pub config: TranscoderConfig,
+    pub vaapi_available: bool,
+    pub metrics_handle: metrics_exporter_prometheus::PrometheusHandle,
 }
 
-async fn health_handler(
+pub async fn health_handler(
     axum::extract::State(state): axum::extract::State<Arc<AppState>>,
 ) -> Json<HealthResponse> {
     Json(HealthResponse {
@@ -153,7 +153,7 @@ async fn health_handler(
     })
 }
 
-async fn metrics_handler(
+pub async fn metrics_handler(
     axum::extract::State(state): axum::extract::State<Arc<AppState>>,
 ) -> Response {
     let metrics = state.metrics_handle.render();
@@ -165,7 +165,7 @@ async fn metrics_handler(
         .into_response()
 }
 
-async fn transcode_handler(
+pub async fn transcode_handler(
     axum::extract::State(state): axum::extract::State<Arc<AppState>>,
     Query(params): Query<TranscodeParams>,
 ) -> Response {
@@ -266,7 +266,7 @@ async fn transcode_stream_handler(
     }
 }
 
-async fn check_vaapi() -> bool {
+pub async fn check_vaapi() -> bool {
     let output = Command::new("vainfo").output().await;
 
     match output {

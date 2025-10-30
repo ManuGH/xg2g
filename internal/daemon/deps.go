@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/ManuGH/xg2g/internal/jobs"
+	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/rs/zerolog"
 )
 
@@ -30,11 +31,17 @@ type Deps struct {
 
 // ProxyConfig holds proxy server configuration.
 type ProxyConfig struct {
-	// ListenAddr is the proxy listen address (e.g., ":8001")
+	// ListenAddr is the proxy listen address (e.g., ":18000")
 	ListenAddr string
 
-	// TargetURL is the upstream target URL
+	// TargetURL is the upstream target URL (optional if StreamDetector is provided)
 	TargetURL string
+
+	// ReceiverHost is the receiver hostname/IP for Smart Detection fallback
+	ReceiverHost string
+
+	// StreamDetector enables smart port detection (8001 vs 17999)
+	StreamDetector *openwebif.StreamDetector
 
 	// Logger is the logger for the proxy
 	Logger zerolog.Logger

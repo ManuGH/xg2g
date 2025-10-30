@@ -177,19 +177,24 @@ func (m *manager) startProxyServer(_ context.Context, errChan chan<- error) erro
 
 	var err error
 	m.proxyServer, err = proxy.New(proxy.Config{
-		ListenAddr: m.deps.ProxyConfig.ListenAddr,
-		TargetURL:  m.deps.ProxyConfig.TargetURL,
-		Logger:     m.deps.ProxyConfig.Logger,
+		ListenAddr:     m.deps.ProxyConfig.ListenAddr,
+		TargetURL:      m.deps.ProxyConfig.TargetURL,
+		ReceiverHost:   m.deps.ProxyConfig.ReceiverHost,
+		StreamDetector: m.deps.ProxyConfig.StreamDetector,
+		Logger:         m.deps.ProxyConfig.Logger,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create proxy: %w", err)
 	}
 
 	go func() {
-		m.logger.Info().
-			Str("addr", m.deps.ProxyConfig.ListenAddr).
-			Str("target", m.deps.ProxyConfig.TargetURL).
-			Msg("Proxy server listening")
+		logEvent := m.logger.Info().Str("addr", m.deps.ProxyConfig.ListenAddr)
+		if m.deps.ProxyConfig.TargetURL != "" {
+			logEvent.Str("target", m.deps.ProxyConfig.TargetURL)
+		} else if m.deps.ProxyConfig.ReceiverHost != "" {
+			logEvent.Str("receiver", m.deps.ProxyConfig.ReceiverHost).Str("mode", "smart_detection")
+		}
+		logEvent.Msg("Proxy server listening")
 
 		if err := m.proxyServer.Start(); err != nil {
 			m.logger.Error().

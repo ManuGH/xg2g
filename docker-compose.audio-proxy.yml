@@ -1,26 +1,27 @@
 # xg2g - Enigma2 to IPTV Gateway
-# Standard Mode: Desktop Players (VLC, Kodi, Plex, Jellyfin)
+# Audio Proxy Mode: iPhone/iPad Safari Support
 #
-# This is MODE 1 of 3 deployment modes:
-# 1. Standard (this file) - No audio transcoding, original streams
-# 2. Audio Proxy (docker-compose.audio-proxy.yml) - For iPhone/iPad
+# This is MODE 2 of 3 deployment modes:
+# 1. Standard (docker-compose.yml) - No audio transcoding, original streams
+# 2. Audio Proxy (this file) - For iPhone/iPad with audio transcoding
 # 3. GPU Transcoding (future) - Video + audio transcoding
 #
 # Features:
-# - M3U playlist with channel logos
-# - 7-day EPG guide (XMLTV)
-# - HDHomeRun emulation (Plex/Jellyfin auto-discovery)
-# - Smart stream detection (automatic port selection)
-# - Original audio (AC3/MP2) - no transcoding needed
+# - Stream proxy on port 18000 with synchronous audio transcoding
+# - Rust remuxer (ac-ffmpeg) provides 0% CPU overhead
+# - AC3/MP2 → AAC-LC with ADTS headers for Safari compatibility
+# - Smart port routing (automatic port selection)
+# - M3U playlist, EPG, HDHomeRun emulation included
 
 services:
   xg2g:
     image: ghcr.io/manugh/xg2g:latest
-    container_name: xg2g
+    container_name: xg2g-audio-proxy
     user: "65532:65532"  # Run as non-root for security
     ports:
       - "8080:8080"      # HTTP API & M3U/EPG
-      - "1900:1900/udp"  # SSDP for Plex/Jellyfin discovery
+      - "18000:18000"    # Stream Proxy with audio transcoding
+      - "1900:1900/udp"  # SSDP for Plex/Jellyfin discovery (optional)
       - "9090:9090"      # Prometheus metrics (optional)
     security_opt:
       - no-new-privileges:true  # Prevent privilege escalation
@@ -48,11 +49,29 @@ services:
       - XG2G_BOUQUET=Favourites
 
       # ============================================================================
-      # Stream Detection (automatic port selection)
+      # Stream Proxy with Audio Transcoding (MODE 2)
       # ============================================================================
-      # Automatically detects optimal streaming port for each channel
-      # Smart detection enabled by default
-      # Uncomment to disable: - XG2G_SMART_STREAM_DETECTION=false
+      # Enable stream proxy for iPhone/iPad Safari compatibility
+      - XG2G_ENABLE_STREAM_PROXY=true
+      - XG2G_PROXY_LISTEN=:18000
+      # XG2G_PROXY_TARGET is OPTIONAL - if not set, uses Smart Detection
+      # Stream proxy automatically selects port 8001 (FTA) or 17999 (Pay-TV)
+      # based on whitelist_streamrelay from your receiver
+      # - XG2G_PROXY_TARGET=http://192.168.1.100:8001  # Optional: override Smart Detection
+
+      # Audio transcoding with Rust remuxer (synchronous, 0% CPU overhead)
+      - XG2G_ENABLE_AUDIO_TRANSCODING=true
+      - XG2G_USE_RUST_REMUXER=true
+      - XG2G_AUDIO_CODEC=aac
+      - XG2G_AUDIO_BITRATE=192k
+      - XG2G_AUDIO_CHANNELS=2
+
+      # ============================================================================
+      # Smart Detection (automatic port selection)
+      # ============================================================================
+      # Enabled by default - automatically detects optimal backend port
+      # Reads /etc/enigma2/whitelist_streamrelay from receiver
+      # No configuration needed!
 
       # ============================================================================
       # Optional: Disable Features
@@ -82,19 +101,19 @@ services:
 # Access URLs
 # ============================================================================
 #
-# M3U Playlist:  http://localhost:8080/files/playlist.m3u
-# EPG (XMLTV):   http://localhost:8080/xmltv.xml
-# API Status:    http://localhost:8080/api/v1/status
-# Prometheus:    http://localhost:9090/metrics
+# Stream Proxy (iPhone/iPad):  http://localhost:18000/1:0:19:...
+# M3U Playlist:                http://localhost:8080/files/playlist.m3u
+# EPG (XMLTV):                 http://localhost:8080/xmltv.xml
+# API Status:                  http://localhost:8080/api/v1/status
+# Prometheus:                  http://localhost:9090/metrics
 #
-# Plex/Jellyfin: Automatically discovered via SSDP (port 1900/udp)
+# Note: Use port 18000 for iPhone/iPad streams (audio transcoding)
+#       Use port 8080 for M3U playlists (smart port detection in URLs)
 #
 # ============================================================================
 # For Development
 # ============================================================================
 #
 # To build locally instead of using the published image:
-#   docker compose -f docker-compose.dev.yml up --build
-#
-# See: docker-compose.dev.yml, docker-compose.test.yml
+#   docker compose -f docker-compose.audio-proxy.yml up --build
 #

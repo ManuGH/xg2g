@@ -1,151 +1,334 @@
-# xg2g Security Test Suite
+# xg2g Deployment Scripts
 
-This directory contains security testing tools for validating xg2g's file serving protections.
+This directory contains deployment and management scripts for all xg2g modes.
 
-## Test Scripts
+## Scripts Overview
 
-### `security-test.sh` - Comprehensive Security Test Suite
+### MODE 3: GPU Transcoding Scripts
 
-Complete penetration testing framework with 6 test categories:
+#### test-gpu-mode.sh
 
-1. **Basic File Access** - Valid requests, nonexistent files, method restrictions
-2. **Path Traversal Attacks** - Various traversal patterns and encoding attempts  
-3. **Symlink Escape Attacks** - Symlink-based directory escape attempts
-4. **Directory Listing Protection** - Directory access and listing prevention
-5. **High-Volume Attack Simulation** - Concurrent attack resilience testing
-6. **Edge Cases** - Large paths, special characters, malformed requests
+Automated testing script for GPU Transcoding implementation (MODE 3).
 
-#### Usage
+**Features:**
+- Docker image build verification
+- FFI symbol checking
+- Container startup tests (with/without GPU)
+- Health endpoint validation
+- Metrics endpoint testing
+- Production GPU testing
 
+**Usage:**
 ```bash
-# Test against default local instance
-./scripts/security-test.sh
+# Full test (build + all phases)
+./scripts/test-gpu-mode.sh
 
-# Test against custom target
-./scripts/security-test.sh http://staging.example.com:8080
+# Skip build (use existing image)
+./scripts/test-gpu-mode.sh --skip-build
 
-# Test with custom temp directory and concurrency
-./scripts/security-test.sh http://localhost:8080 /tmp/my-tests 20
+# Production test (requires GPU)
+./scripts/test-gpu-mode.sh --production
 ```
 
-#### Output
+#### deploy-gpu-mode.sh
 
-- Real-time test results with colored pass/fail indicators
-- JSON results file with detailed response data
-- Summary report with pass/fail counts
-- References to Grafana metrics dashboard
+Production deployment script for GPU transcoding mode.
 
-### `quick-security-check.sh` - Fast Security Validation  
+**Features:**
+- SSH connection verification
+- GPU hardware detection (VAAPI)
+- Automatic port configuration
+- Health checks after deployment
+- Rollback to MODE 2 capability
 
-Lightweight security validation for CI/CD pipelines and quick checks.
-
-Tests core security features:
-
-- Symlink escape protection (403 expected)
-- Path traversal protection (403/404 expected)
-- HTTP method restrictions (405 expected)
-- Service health (200 expected)
-
-#### Usage
-
+**Usage:**
 ```bash
-# Quick validation of local instance
-./scripts/quick-security-check.sh
+# Deploy MODE 3 to production
+./scripts/deploy-gpu-mode.sh
 
-# Quick validation of remote instance  
-./scripts/quick-security-check.sh http://production.example.com:8080
+# Rollback to MODE 2
+./scripts/deploy-gpu-mode.sh --rollback
 ```
 
-## Test Categories Explained
+### MODE 2: Audio Proxy Scripts
 
-### Path Traversal Patterns
+#### deploy-stream-proxy.sh
 
-The test suite validates protection against common traversal attacks:
+Automated deployment script for xg2g stream proxy with configurable backend routing (MODE 2).
 
-- Basic patterns: `../`, `../../`, `../../../`
-- Encoded variants: `%2e%2e%2f`, `%252F`
-- Double encoding: `%252e%252e%252f`
-- Alternative encodings: `%c0%af`, `....//`
+**Features:**
+- Configurable backend port (default: 8001, alternative: 17999)
+- Automatic process cleanup
+- Health checks and validation
+- Environment-based configuration
 
-### Symlink Attack Vectors
+## Quick Start
 
-Tests symlink-based escape attempts:
+### Standard Deployment (Direct Tuner - Port 8001)
 
-- Direct symlinks pointing outside data directory
-- Symlink chains (A → B → outside)
-- Directory symlinks
-- Mixed symlink/traversal combinations
+```bash
+# Export receiver IP
+export RECEIVER_IP=192.168.1.100
 
-### Expected Security Responses
+# Deploy with default backend port (8001)
+./scripts/deploy-stream-proxy.sh
+```
 
-| Attack Type | Expected Response | Meaning |
-|-------------|------------------|---------|
-| Path Traversal | 403 Forbidden | Security middleware blocks request |
-| Symlink Escape | 403 Forbidden | Symlink resolution detects boundary violation |
-| Invalid Method | 405 Method Not Allowed | HTTP method restriction enforced |
-| Directory Access | 403/301 | Directory listing blocked or redirected |
-| Nonexistent File | 404 Not Found | Normal file not found behavior |
+### Alternative Backend Deployment (Port 17999)
 
-## Metrics Integration
+```bash
+# Export receiver IP
+export RECEIVER_IP=192.168.1.100
 
-Security tests trigger metrics that can be monitored in Grafana:
+# Deploy with alternative backend port (17999)
+./scripts/deploy-stream-proxy.sh 17999
+```
 
-- `xg2g_file_requests_denied_total{reason="boundary_escape"}` - Symlink/traversal blocks
-- `xg2g_file_requests_denied_total{reason="method_not_allowed"}` - Method restrictions
-- `xg2g_file_requests_allowed_total` - Successful file serves
-- `xg2g_http_requests_total{status="403"}` - Security violations
+## Configuration
 
-## Continuous Integration
+### Required Environment Variables
 
-Add security testing to CI/CD pipelines:
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `RECEIVER_IP` | VU+ Enigma2 receiver IP address | `192.168.1.100` |
 
-```yaml
-# .github/workflows/security.yml
-- name: Security Tests
-  run: |
-    # Start xg2g in background
-    XG2G_DATA=./testdata XG2G_OWI_BASE=http://stub XG2G_BOUQUET=test ./xg2g-daemon &
-    sleep 2
-    
-    # Run security validation
-    ./scripts/quick-security-check.sh
-    
-    # Optional: Full test suite
-    ./scripts/security-test.sh
+### Optional Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `PROXY_LISTEN_PORT` | Public proxy listen port | `18000` |
+| `API_LISTEN_PORT` | API server listen port | `18080` |
+| `XG2G_INSTALL_DIR` | xg2g installation directory | `/root/xg2g` |
+| `XG2G_BOUQUET` | Bouquet name | `Favourites (TV)` |
+| `RUST_LIB_PATH` | Rust library path | `$XG2G_INSTALL_DIR/transcoder/target/release` |
+
+## Detailed Examples
+
+### Example 1: Standard Setup
+
+```bash
+#!/bin/bash
+export RECEIVER_IP=192.168.1.100
+./scripts/deploy-stream-proxy.sh
+```
+
+**Result:**
+- Proxy Listen: `:18000`
+- Backend Target: `http://192.168.1.100:8001`
+- API Server: `:18080`
+
+### Example 2: Alternative Backend
+
+```bash
+#!/bin/bash
+export RECEIVER_IP=192.168.1.100
+./scripts/deploy-stream-proxy.sh 17999
+```
+
+**Result:**
+- Proxy Listen: `:18000`
+- Backend Target: `http://192.168.1.100:17999`
+- API Server: `:18080`
+
+### Example 3: Custom Ports
+
+```bash
+#!/bin/bash
+export RECEIVER_IP=192.168.1.100
+export PROXY_LISTEN_PORT=19000
+export API_LISTEN_PORT=19080
+./scripts/deploy-stream-proxy.sh
+```
+
+**Result:**
+- Proxy Listen: `:19000`
+- Backend Target: `http://192.168.1.100:8001`
+- API Server: `:19080`
+
+### Example 4: Custom Installation Directory
+
+```bash
+#!/bin/bash
+export RECEIVER_IP=192.168.1.100
+export XG2G_INSTALL_DIR=/opt/xg2g
+export RUST_LIB_PATH=/opt/xg2g/transcoder/target/release
+./scripts/deploy-stream-proxy.sh 17999
+```
+
+## Usage Patterns
+
+### Development Testing
+
+```bash
+# Quick deploy for testing
+export RECEIVER_IP=192.168.1.100
+./scripts/deploy-stream-proxy.sh
+
+# View logs
+tail -f /tmp/xg2g-stream-proxy.log
+
+# Test streaming
+curl -I http://localhost:18000/1:0:19:132F:3EF:1:C00000:0:0:0:
+```
+
+### Production Deployment
+
+```bash
+# Create deployment script
+cat > /opt/xg2g/start.sh << 'EOF'
+#!/bin/bash
+export RECEIVER_IP=192.168.1.100
+export XG2G_INSTALL_DIR=/opt/xg2g
+export RUST_LIB_PATH=/opt/xg2g/transcoder/target/release
+exec /opt/xg2g/scripts/deploy-stream-proxy.sh 17999
+EOF
+
+chmod +x /opt/xg2g/start.sh
+
+# Create systemd service
+cat > /etc/systemd/system/xg2g.service << 'EOF'
+[Unit]
+Description=xg2g Stream Proxy
+After=network.target
+
+[Service]
+Type=forking
+ExecStart=/opt/xg2g/start.sh
+Restart=on-failure
+RestartSec=10s
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Enable and start
+systemctl daemon-reload
+systemctl enable xg2g
+systemctl start xg2g
+```
+
+### Multi-Instance Deployment
+
+```bash
+# Instance 1: Direct tuner (port 8001)
+export RECEIVER_IP=192.168.1.100
+export PROXY_LISTEN_PORT=18000
+export API_LISTEN_PORT=18080
+./scripts/deploy-stream-proxy.sh &
+
+# Instance 2: Alternative backend (port 17999)
+export RECEIVER_IP=192.168.1.100
+export PROXY_LISTEN_PORT=18001
+export API_LISTEN_PORT=18081
+./scripts/deploy-stream-proxy.sh 17999 &
+
+wait
+```
+
+## Management
+
+### Check Status
+
+```bash
+# Process status
+ps aux | grep xg2g-daemon
+
+# View logs
+tail -f /tmp/xg2g-stream-proxy.log
+
+# Health check
+curl http://localhost:18080/api/status
+```
+
+### Stop Service
+
+```bash
+pkill -9 xg2g
+```
+
+### Restart Service
+
+```bash
+pkill -9 xg2g
+sleep 2
+export RECEIVER_IP=192.168.1.100
+./scripts/deploy-stream-proxy.sh
 ```
 
 ## Troubleshooting
 
-### Common Issues
+### Deployment Fails
 
-- **Connection refused**: Ensure xg2g is running on the target URL
-- **jq not found**: Install jq for JSON result processing
-- **Permission denied**: Ensure scripts are executable (`chmod +x scripts/*.sh`)
+**Check logs:**
+```bash
+tail -50 /tmp/xg2g-stream-proxy.log
+```
 
-### Debugging Failed Tests
+**Common issues:**
+- Missing `RECEIVER_IP` environment variable
+- xg2g binary not found in installation directory
+- Rust library path incorrect
 
-1. Check the JSON results file for detailed response bodies
-2. Review Grafana dashboards for metrics during test execution  
-3. Check xg2g logs for security event details
-4. Verify test environment setup (directories, permissions)
+### Streams Not Working
 
-### Custom Test Development
+**Test backend connectivity:**
+```bash
+curl -I http://RECEIVER_IP:BACKEND_PORT/1:0:19:132F:3EF:1:C00000:0:0:0:
+```
 
-To add new security tests:
+**Check proxy logs:**
+```bash
+grep "error" /tmp/xg2g-stream-proxy.log
+```
 
-1. Add test function following naming pattern `test_category_name()`
-2. Use `log_result()` helper for consistent result tracking
-3. Include expected vs actual status code validation
-4. Add test category to main execution flow
-5. Update this README with new test descriptions
+### Audio-Video Desync
 
-## Security Test Philosophy
+**Verify Rust remuxer is enabled:**
+```bash
+grep "rust remuxer" /tmp/xg2g-stream-proxy.log
+```
 
-These tests validate defense-in-depth security:
+**Check library path:**
+```bash
+ls -la $RUST_LIB_PATH/libac_remuxer.so
+```
 
-- **Application layer**: HTTP method restrictions, input validation
-- **Middleware layer**: Path traversal detection and blocking  
-- **Filesystem layer**: Symlink resolution and boundary checking
-- **Monitoring layer**: Real-time security event tracking
+## Backend Port Selection Guide
 
-The goal is comprehensive validation that xg2g properly protects against common web application security vulnerabilities while maintaining usability for legitimate file access.
+| Use Case | Port | Rationale |
+|----------|------|-----------|
+| Standard streaming | 8001 | Direct tuner access, minimal latency (5-10ms) |
+| Alternative backend | 17999 | Custom routing for specialized setups (10-20ms) |
+| Development | 8001 | Standard default configuration |
+| Testing | Both | Test different routing paths |
+
+## Performance Expectations
+
+### Resource Usage
+
+```
+CPU Usage:    0.0% (idle), <5% (streaming)
+Memory:       ~39 MB RSS
+Throughput:   0.96 MB/s (input-limited by tuner)
+```
+
+### Latency
+
+```
+Backend Port 8001:  5-10 ms overhead
+Backend Port 17999: 10-20 ms overhead
+
+Note: Both latencies are imperceptible for streaming
+      (iOS Safari buffer: 2-4 seconds)
+```
+
+## See Also
+
+- [STREAM_PROXY_ROUTING.md](../docs/STREAM_PROXY_ROUTING.md) - Architecture documentation
+- [PHASE_5_IMPLEMENTATION_PLAN.md](../docs/PHASE_5_IMPLEMENTATION_PLAN.md) - AC3→AAC transcoding
+- [RUST_REMUXER_INTEGRATION.md](../docs/RUST_REMUXER_INTEGRATION.md) - Rust remuxer details
+- [SECURITY_TESTS.md](./SECURITY_TESTS.md) - Security testing documentation
+
+## License
+
+MIT License - See LICENSE file for details

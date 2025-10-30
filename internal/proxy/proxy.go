@@ -10,19 +10,23 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/rs/zerolog"
 )
 
 // Server represents a reverse proxy server for Enigma2 streams.
 type Server struct {
-	addr       string
-	targetURL  *url.URL
-	proxy      *httputil.ReverseProxy
-	httpServer *http.Server
-	logger     zerolog.Logger
-	transcoder *Transcoder // Optional audio transcoder
+	addr           string
+	targetURL      *url.URL      // Fallback target URL (optional)
+	proxy          *httputil.ReverseProxy
+	httpServer     *http.Server
+	logger         zerolog.Logger
+	transcoder     *Transcoder                   // Optional audio transcoder
+	streamDetector *openwebif.StreamDetector     // Smart stream detection
+	receiverHost   string                        // Receiver host for fallback
 }
 
 // Config holds the configuration for the proxy server.
@@ -31,7 +35,16 @@ type Config struct {
 	ListenAddr string
 
 	// TargetURL is the URL to proxy requests to (e.g., "http://10.10.55.57:17999")
+	// Optional: If not provided, uses StreamDetector with ReceiverHost
 	TargetURL string
+
+	// ReceiverHost is the receiver hostname/IP for Smart Detection fallback
+	// Required if TargetURL is not provided
+	ReceiverHost string
+
+	// StreamDetector enables smart port detection (8001 vs 17999)
+	// Optional: If provided, overrides TargetURL for optimal routing
+	StreamDetector *openwebif.StreamDetector
 
 	// Logger is the logger instance to use
 	Logger zerolog.Logger
@@ -43,19 +56,36 @@ func New(cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("listen address is required")
 	}
 
-	if cfg.TargetURL == "" {
-		return nil, fmt.Errorf("target URL is required")
-	}
-
-	target, err := url.Parse(cfg.TargetURL)
-	if err != nil {
-		return nil, fmt.Errorf("parse target URL %q: %w", cfg.TargetURL, err)
+	// Validate configuration: Need either TargetURL or ReceiverHost
+	if cfg.TargetURL == "" && cfg.ReceiverHost == "" {
+		return nil, fmt.Errorf("either TargetURL or ReceiverHost is required")
 	}
 
 	s := &Server{
-		addr:      cfg.ListenAddr,
-		targetURL: target,
-		logger:    cfg.Logger,
+		addr:           cfg.ListenAddr,
+		logger:         cfg.Logger,
+		streamDetector: cfg.StreamDetector,
+		receiverHost:   cfg.ReceiverHost,
+	}
+
+	// Parse target URL if provided (used as fallback)
+	if cfg.TargetURL != "" {
+		target, err := url.Parse(cfg.TargetURL)
+		if err != nil {
+			return nil, fmt.Errorf("parse target URL %q: %w", cfg.TargetURL, err)
+		}
+		s.targetURL = target
+
+		// Create reverse proxy for fallback (when Smart Detection is not available)
+		s.proxy = httputil.NewSingleHostReverseProxy(target)
+		s.proxy.ErrorLog = nil // We handle errors ourselves
+
+		// Customize the director to preserve the original path
+		originalDirector := s.proxy.Director
+		s.proxy.Director = func(req *http.Request) {
+			originalDirector(req)
+			req.Host = target.Host
+		}
 	}
 
 	// Initialize optional transcoder
@@ -76,15 +106,15 @@ func New(cfg Config) (*Server, error) {
 		}
 	}
 
-	// Create reverse proxy with custom director
-	s.proxy = httputil.NewSingleHostReverseProxy(target)
-	s.proxy.ErrorLog = nil // We handle errors ourselves
-
-	// Customize the director to preserve the original path
-	originalDirector := s.proxy.Director
-	s.proxy.Director = func(req *http.Request) {
-		originalDirector(req)
-		req.Host = target.Host
+	// Log Smart Detection status
+	if s.streamDetector != nil {
+		cfg.Logger.Info().
+			Str("receiver", s.receiverHost).
+			Msg("Smart stream detection enabled (automatic port selection)")
+	} else if s.targetURL != nil {
+		cfg.Logger.Info().
+			Str("target", s.targetURL.String()).
+			Msg("Using fixed target URL (Smart Detection disabled)")
 	}
 
 	// Create HTTP server
@@ -124,11 +154,8 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	// Handle GET requests with optional transcoding
 	if r.Method == http.MethodGet && s.transcoder != nil {
-		// Build target URL for this request
-		targetURL := s.targetURL.String() + r.URL.Path
-		if r.URL.RawQuery != "" {
-			targetURL += "?" + r.URL.RawQuery
-		}
+		// Build target URL for this request using Smart Detection or fallback
+		targetURL := s.resolveTargetURL(r.Context(), r.URL.Path, r.URL.RawQuery)
 
 		// Priority 1: GPU transcoding (if enabled)
 		if s.transcoder.IsGPUEnabled() {
@@ -182,6 +209,59 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	s.proxy.ServeHTTP(w, r)
 }
 
+// resolveTargetURL resolves the target URL for a request using Smart Detection or fallback.
+// It extracts the service reference from the path and uses StreamDetector to find the optimal backend.
+func (s *Server) resolveTargetURL(ctx context.Context, path, rawQuery string) string {
+	// Extract service reference from path (e.g., /1:0:19:132F:3EF:1:C00000:0:0:0:)
+	serviceRef := strings.TrimPrefix(path, "/")
+
+	// Try Smart Detection first (if available and enabled)
+	if s.streamDetector != nil && serviceRef != "" && openwebif.IsEnabled() {
+		streamInfo, err := s.streamDetector.DetectStreamURL(ctx, serviceRef, "")
+		if err == nil && streamInfo != nil {
+			targetURL := streamInfo.URL
+			if rawQuery != "" {
+				targetURL += "?" + rawQuery
+			}
+
+			s.logger.Debug().
+				Str("service_ref", serviceRef).
+				Int("port", streamInfo.Port).
+				Str("target", targetURL).
+				Msg("using smart detection for backend URL")
+
+			return targetURL
+		}
+
+		// Log detection failure but continue with fallback
+		s.logger.Debug().
+			Err(err).
+			Str("service_ref", serviceRef).
+			Msg("smart detection failed, using fallback target")
+	}
+
+	// Fallback to configured target URL or receiver host
+	if s.targetURL != nil {
+		targetURL := s.targetURL.String() + path
+		if rawQuery != "" {
+			targetURL += "?" + rawQuery
+		}
+		return targetURL
+	}
+
+	// Last resort: Use receiver host with default port 8001
+	targetURL := fmt.Sprintf("http://%s:8001%s", s.receiverHost, path)
+	if rawQuery != "" {
+		targetURL += "?" + rawQuery
+	}
+
+	s.logger.Debug().
+		Str("target", targetURL).
+		Msg("using receiver host fallback")
+
+	return targetURL
+}
+
 // handleHeadRequest handles HEAD requests by returning a 200 OK response
 // with appropriate headers without proxying to the target.
 func (s *Server) handleHeadRequest(w http.ResponseWriter, r *http.Request) {
@@ -200,10 +280,15 @@ func (s *Server) handleHeadRequest(w http.ResponseWriter, r *http.Request) {
 
 // Start starts the proxy server.
 func (s *Server) Start() error {
-	s.logger.Info().
-		Str("addr", s.addr).
-		Str("target", s.targetURL.String()).
-		Msg("starting stream proxy server")
+	logEvent := s.logger.Info().Str("addr", s.addr)
+
+	if s.targetURL != nil {
+		logEvent.Str("target", s.targetURL.String())
+	} else if s.receiverHost != "" {
+		logEvent.Str("receiver", s.receiverHost).Str("mode", "smart_detection")
+	}
+
+	logEvent.Msg("starting stream proxy server")
 
 	if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		return fmt.Errorf("proxy server failed: %w", err)
@@ -232,7 +317,25 @@ func GetListenAddr() string {
 	return ":18000" // Default proxy port
 }
 
-// GetTargetURL returns the target URL from environment.
+// GetTargetURL returns the target URL from environment (optional).
+// If not provided, proxy will use Smart Detection with receiver host.
 func GetTargetURL() string {
 	return os.Getenv("XG2G_PROXY_TARGET")
+}
+
+// GetReceiverHost returns the receiver host from XG2G_OWI_BASE.
+// Extracts hostname/IP from base URL (e.g., "http://10.10.55.64" -> "10.10.55.64")
+func GetReceiverHost() string {
+	baseURL := os.Getenv("XG2G_OWI_BASE")
+	if baseURL == "" {
+		return ""
+	}
+
+	// Parse URL to extract host
+	parsed, err := url.Parse(baseURL)
+	if err != nil {
+		return ""
+	}
+
+	return parsed.Hostname()
 }
