@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1.7
+
 # =============================================================================
 # Stage 1: Build Rust Remuxer (ac-ffmpeg library for audio transcoding)
 # =============================================================================
@@ -13,6 +15,10 @@ RUN apk add --no-cache \
     clang-dev \
     llvm-dev
 
+# Set Cargo environment variables for caching
+ENV CARGO_HOME=/usr/local/cargo \
+    CARGO_TARGET_DIR=/build/target
+
 # Copy Rust transcoder source
 COPY transcoder/Cargo.toml ./
 COPY transcoder/src ./src
@@ -23,8 +29,10 @@ COPY transcoder/src ./src
 # Note: On Alpine/musl, must disable crt-static to enable cdylib generation
 # Note: Building without --lib to ensure Cargo.toml crate-type=[cdylib, rlib] is respected
 # Note: BuildKit cache mounts dramatically speed up subsequent builds (40+ min → 5-10 min)
+# Note: Three cache mounts: registry (crates), git (git deps), target (build artifacts)
 ARG RUST_TARGET_CPU=x86-64-v2
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/build/target \
     mkdir -p /output && \
     RUSTFLAGS="-C target-cpu=${RUST_TARGET_CPU} -C opt-level=3 -C target-feature=-crt-static" \
