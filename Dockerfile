@@ -22,8 +22,8 @@ COPY transcoder/src ./src
 # Note: Cargo.lock is generated if missing (not committed to avoid library best practices)
 ARG RUST_TARGET_CPU=x86-64-v2
 RUN RUSTFLAGS="-C target-cpu=${RUST_TARGET_CPU} -C opt-level=3" \
-    cargo build --release --lib && \
-    strip target/release/libxg2g_transcoder.so
+    cargo build --release --lib
+# Note: strip = true in Cargo.toml profile.release already strips the library
 
 # =============================================================================
 # Stage 2: Build Go Daemon with CGO (required for Rust FFI) + Run Tests
