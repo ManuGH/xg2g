@@ -69,7 +69,7 @@ jobs:
 
           # Run tests with gpu tags inside the go-builder container
           # This tests the ACTUAL production configuration with all dependencies
-          docker run --rm xg2g:test-builder sh -c '
+          docker run --rm --entrypoint sh xg2g:test-builder -c '
             set -euo pipefail
             cd /src
             echo "Testing with GPU tags (Rust FFI enabled)..."
@@ -115,7 +115,7 @@ jobs:
 
       - name: Verify Rust library is present in production image
         run: |
-          docker run --rm xg2g:prod sh -c '
+          docker run --rm --entrypoint sh xg2g:prod -c '
             ls -lh /app/lib/
             file /app/lib/libxg2g_transcoder.so
             ldd /app/xg2g | grep xg2g_transcoder || echo "✅ Dynamically linked to Rust library"
