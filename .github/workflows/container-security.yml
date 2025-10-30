@@ -5,13 +5,11 @@ on:
     branches: [ main, develop ]
     paths:
       - 'Dockerfile'
-      - 'transcoder/Dockerfile'
       - '.github/workflows/container-security.yml'
   pull_request:
     branches: [ main, develop ]
     paths:
       - 'Dockerfile'
-      - 'transcoder/Dockerfile'
       - '.github/workflows/container-security.yml'
   schedule:
     # Run daily at 2 AM UTC to catch new vulnerabilities
@@ -24,8 +22,8 @@ permissions:
   pull-requests: write
 
 jobs:
-  scan-go-image:
-    name: Scan Go Daemon Container
+  scan-production-image:
+    name: Scan Production Container (Go + Rust)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -34,7 +32,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build Go daemon image
+      - name: Build production image (multi-stage: Rust + Go)
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -50,7 +48,7 @@ jobs:
         with:
           image-ref: xg2g:${{ github.sha }}
           format: 'sarif'
-          output: 'trivy-go-results.sarif'
+          output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH,MEDIUM'
           vuln-type: 'os,library'
           ignore-unfixed: false
@@ -59,8 +57,8 @@ jobs:
         uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
-          sarif_file: 'trivy-go-results.sarif'
-          category: 'container-go-daemon'
+          sarif_file: 'trivy-results.sarif'
+          category: 'container-production'
 
       - name: Run Trivy for PR comment
         uses: aquasecurity/trivy-action@master
@@ -68,19 +66,19 @@ jobs:
         with:
           image-ref: xg2g:${{ github.sha }}
           format: 'table'
-          output: 'trivy-go-table.txt'
+          output: 'trivy-table.txt'
           severity: 'CRITICAL,HIGH'
           exit-code: '0'
 
-      - name: Comment PR with Go scan results
+      - name: Comment PR with scan results
         if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
-            const output = fs.readFileSync('trivy-go-table.txt', 'utf8');
+            const output = fs.readFileSync('trivy-table.txt', 'utf8');
 
-            const comment = `## 🔒 Container Security Scan: Go Daemon
+            const comment = `## 🔒 Container Security Scan: Production Image (Go + Rust)
 
             <details>
             <summary>Trivy Vulnerability Report</summary>
@@ -91,7 +89,7 @@ jobs:
 
             </details>
 
-            _Scanned image: \`xg2g:${{ github.sha }}\`_
+            _Scanned image: \`xg2g:${{ github.sha }}\` (multi-stage build with Rust + Go)_
             `;
 
             github.rest.issues.createComment({
@@ -105,92 +103,6 @@ jobs:
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: xg2g:${{ github.sha }}
-          format: 'table'
-          severity: 'CRITICAL'
-          exit-code: '1'
-          ignore-unfixed: true
-
-  scan-rust-transcoder:
-    name: Scan Rust Transcoder Container
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build Rust transcoder image
-        uses: docker/build-push-action@v6
-        with:
-          context: ./transcoder
-          file: ./transcoder/Dockerfile
-          push: false
-          load: true
-          tags: xg2g-transcoder:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: xg2g-transcoder:${{ github.sha }}
-          format: 'sarif'
-          output: 'trivy-rust-results.sarif'
-          severity: 'CRITICAL,HIGH,MEDIUM'
-          vuln-type: 'os,library'
-          ignore-unfixed: false
-
-      - name: Upload Trivy results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          sarif_file: 'trivy-rust-results.sarif'
-          category: 'container-rust-transcoder'
-
-      - name: Run Trivy for PR comment
-        uses: aquasecurity/trivy-action@master
-        if: github.event_name == 'pull_request'
-        with:
-          image-ref: xg2g-transcoder:${{ github.sha }}
-          format: 'table'
-          output: 'trivy-rust-table.txt'
-          severity: 'CRITICAL,HIGH'
-          exit-code: '0'
-
-      - name: Comment PR with Rust scan results
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const output = fs.readFileSync('trivy-rust-table.txt', 'utf8');
-
-            const comment = `## 🔒 Container Security Scan: Rust Transcoder
-
-            <details>
-            <summary>Trivy Vulnerability Report</summary>
-
-            \`\`\`
-            ${output}
-            \`\`\`
-
-            </details>
-
-            _Scanned image: \`xg2g-transcoder:${{ github.sha }}\`_
-            `;
-
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: comment
-            });
-
-      - name: Fail on critical vulnerabilities
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: xg2g-transcoder:${{ github.sha }}
           format: 'table'
           severity: 'CRITICAL'
           exit-code: '1'
@@ -206,7 +118,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build Go daemon image
+      - name: Build production image
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -215,41 +127,21 @@ jobs:
           load: true
           tags: xg2g:${{ github.sha }}
 
-      - name: Run Trivy config scanner on Go image
+      - name: Run Trivy config scanner
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: xg2g:${{ github.sha }}
           scan-type: 'config'
           format: 'table'
-          output: 'trivy-config-go.txt'
-          exit-code: '0'
-
-      - name: Build Rust transcoder image
-        uses: docker/build-push-action@v6
-        with:
-          context: ./transcoder
-          file: ./transcoder/Dockerfile
-          push: false
-          load: true
-          tags: xg2g-transcoder:${{ github.sha }}
-
-      - name: Run Trivy config scanner on Rust image
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: xg2g-transcoder:${{ github.sha }}
-          scan-type: 'config'
-          format: 'table'
-          output: 'trivy-config-rust.txt'
+          output: 'trivy-config.txt'
           exit-code: '0'
 
       - name: Upload configuration scan results
         uses: actions/upload-artifact@v5
         if: always()
         with:
-          name: trivy-config-reports
-          path: |
-            trivy-config-go.txt
-            trivy-config-rust.txt
+          name: trivy-config-report
+          path: trivy-config.txt
           retention-days: 30
 
   scan-filesystem:
@@ -277,7 +169,7 @@ jobs:
           category: 'filesystem-secrets'
 
   generate-sbom:
-    name: Generate and Scan SBOMs
+    name: Generate and Scan SBOM
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -286,7 +178,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build Go daemon image
+      - name: Build production image
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -295,54 +187,26 @@ jobs:
           load: true
           tags: xg2g:${{ github.sha }}
 
-      - name: Generate SBOM for Go image
+      - name: Generate SBOM for production image
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: xg2g:${{ github.sha }}
           format: 'cyclonedx'
-          output: 'sbom-go.json'
+          output: 'sbom-production.json'
           scan-type: 'image'
 
-      - name: Build Rust transcoder image
-        uses: docker/build-push-action@v6
-        with:
-          context: ./transcoder
-          file: ./transcoder/Dockerfile
-          push: false
-          load: true
-          tags: xg2g-transcoder:${{ github.sha }}
-
-      - name: Generate SBOM for Rust image
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: xg2g-transcoder:${{ github.sha }}
-          format: 'cyclonedx'
-          output: 'sbom-rust.json'
-          scan-type: 'image'
-
-      - name: Upload SBOMs
+      - name: Upload SBOM
         uses: actions/upload-artifact@v5
         with:
-          name: container-sboms
-          path: |
-            sbom-go.json
-            sbom-rust.json
+          name: container-sbom
+          path: sbom-production.json
           retention-days: 90
 
-      - name: Scan Go SBOM for vulnerabilities
+      - name: Scan SBOM for vulnerabilities
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: 'sbom'
-          input: 'sbom-go.json'
-          format: 'table'
-          severity: 'CRITICAL,HIGH'
-          exit-code: '0'
-
-      - name: Scan Rust SBOM for vulnerabilities
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: 'sbom'
-          input: 'sbom-rust.json'
+          input: 'sbom-production.json'
           format: 'table'
           severity: 'CRITICAL,HIGH'
           exit-code: '0'
