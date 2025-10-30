@@ -28,14 +28,14 @@ const (
 
 // TranscoderConfig holds configuration for audio transcoding.
 type TranscoderConfig struct {
-	Enabled       bool   // Whether transcoding is enabled
-	Codec         string // Target audio codec (aac, mp3)
-	Bitrate       string // Audio bitrate (e.g., "192k")
-	Channels      int    // Number of audio channels (2 for stereo)
-	FFmpegPath    string // Path to ffmpeg binary
-	GPUEnabled    bool   // Whether GPU transcoding is enabled
-	TranscoderURL string // URL of the GPU transcoder service
-	UseRustRemuxer bool  // Whether to use native Rust remuxer instead of FFmpeg
+	Enabled        bool   // Whether transcoding is enabled
+	Codec          string // Target audio codec (aac, mp3)
+	Bitrate        string // Audio bitrate (e.g., "192k")
+	Channels       int    // Number of audio channels (2 for stereo)
+	FFmpegPath     string // Path to ffmpeg binary
+	GPUEnabled     bool   // Whether GPU transcoding is enabled
+	TranscoderURL  string // URL of the GPU transcoder service
+	UseRustRemuxer bool   // Whether to use native Rust remuxer instead of FFmpeg
 }
 
 // Transcoder handles audio transcoding for streams.
@@ -111,22 +111,22 @@ func (t *Transcoder) TranscodeStream(ctx context.Context, w http.ResponseWriter,
 		"-hide_banner",
 		"-loglevel", "error",
 		"-fflags", "+genpts+igndts", // Generate PTS, ignore broken DTS
-		"-i", "pipe:0",                // Read from stdin
+		"-i", "pipe:0", // Read from stdin
 		"-map", "0:v", "-c:v", "copy", // Copy video stream
 		"-map", "0:a", "-c:a", t.Config.Codec, // Transcode audio
-		"-b:a", t.Config.Bitrate,                              // Audio bitrate
-		"-ac", fmt.Sprintf("%d", t.Config.Channels),           // Audio channels
-		"-async", "1",                                         // Audio-video sync
-		"-start_at_zero",                                      // Start timestamps at zero
-		"-avoid_negative_ts", "make_zero",                     // Fix negative timestamps
-		"-muxdelay", "0",                                      // No mux delay
-		"-muxpreload", "0",                                    // No mux preload
-		"-mpegts_copyts", "1",                                 // Preserve timestamps in MPEG-TS
+		"-b:a", t.Config.Bitrate, // Audio bitrate
+		"-ac", fmt.Sprintf("%d", t.Config.Channels), // Audio channels
+		"-async", "1", // Audio-video sync
+		"-start_at_zero",                  // Start timestamps at zero
+		"-avoid_negative_ts", "make_zero", // Fix negative timestamps
+		"-muxdelay", "0", // No mux delay
+		"-muxpreload", "0", // No mux preload
+		"-mpegts_copyts", "1", // Preserve timestamps in MPEG-TS
 		"-mpegts_flags", "resend_headers+initial_discontinuity", // Regenerate PAT/PMT
-		"-pcr_period", "20",                                   // Insert PCR every 20ms
-		"-pat_period", "0.1",                                  // Regenerate PAT every 100ms
-		"-sdt_period", "0.5",                                  // Regenerate SDT every 500ms
-		"-f", "mpegts",                                        // Output format
+		"-pcr_period", "20", // Insert PCR every 20ms
+		"-pat_period", "0.1", // Regenerate PAT every 100ms
+		"-sdt_period", "0.5", // Regenerate SDT every 500ms
+		"-f", "mpegts", // Output format
 		"pipe:1", // Write to stdout
 	}
 
@@ -409,9 +409,10 @@ func GetTranscoderConfig() TranscoderConfig {
 // This provides zero-latency audio remuxing without spawning external processes.
 //
 // Architecture:
-//   Input: MPEG-TS with MP2/AC3 audio from Enigma2
-//   Pipeline: Demux → Decode → Encode (AAC-LC) → Mux
-//   Output: MPEG-TS with AAC audio for iOS Safari
+//
+//	Input: MPEG-TS with MP2/AC3 audio from Enigma2
+//	Pipeline: Demux → Decode → Encode (AAC-LC) → Mux
+//	Output: MPEG-TS with AAC audio for iOS Safari
 //
 // Performance:
 //   - Latency: ~39µs per 192KB chunk (vs 200-500ms with FFmpeg)

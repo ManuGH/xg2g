@@ -45,11 +45,11 @@ import (
 // This struct manages the lifecycle of a Rust AudioRemuxer instance,
 // providing memory-safe access to native audio remuxing functionality.
 type RustAudioRemuxer struct {
-	handle       C.xg2g_remuxer_handle
-	sampleRate   int
-	channels     int
-	bitrate      int
-	isClosed     bool
+	handle     C.xg2g_remuxer_handle
+	sampleRate int
+	channels   int
+	bitrate    int
+	isClosed   bool
 }
 
 // NewRustAudioRemuxer creates a new audio remuxer instance.

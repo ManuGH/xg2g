@@ -21,13 +21,13 @@ import (
 // Server represents a reverse proxy server for Enigma2 streams.
 type Server struct {
 	addr           string
-	targetURL      *url.URL      // Fallback target URL (optional)
+	targetURL      *url.URL // Fallback target URL (optional)
 	proxy          *httputil.ReverseProxy
 	httpServer     *http.Server
 	logger         zerolog.Logger
-	transcoder     *Transcoder                   // Optional audio transcoder
-	streamDetector *openwebif.StreamDetector     // Smart stream detection
-	receiverHost   string                        // Receiver host for fallback
+	transcoder     *Transcoder               // Optional audio transcoder
+	streamDetector *openwebif.StreamDetector // Smart stream detection
+	receiverHost   string                    // Receiver host for fallback
 }
 
 // Config holds the configuration for the proxy server.
