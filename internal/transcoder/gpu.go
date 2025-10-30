@@ -1,3 +1,6 @@
+//go:build gpu
+// +build gpu
+
 // SPDX-License-Identifier: MIT
 
 package transcoder

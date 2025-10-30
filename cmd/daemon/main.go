@@ -18,7 +18,6 @@ import (
 	xglog "github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/proxy"
-	"github.com/ManuGH/xg2g/internal/transcoder"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -162,34 +161,16 @@ func main() {
 	}
 
 	// Configure GPU transcoding server if enabled (MODE 3)
-	var gpuServer *transcoder.GPUServer
-	if config.ParseString("XG2G_ENABLE_GPU_TRANSCODING", "false") == "true" {
-		gpuListenAddr := config.ParseString("XG2G_GPU_LISTEN", "127.0.0.1:8085")
-		vaapiDevice := config.ParseString("XG2G_VAAPI_DEVICE", "/dev/dri/renderD128")
-
-		gpuServer = transcoder.NewGPUServer(gpuListenAddr, vaapiDevice)
-
-		logger.Info().
-			Str("listen", gpuListenAddr).
-			Str("vaapi_device", vaapiDevice).
-			Msg("Starting embedded GPU transcoding server (MODE 3)")
-
-		if err := gpuServer.Start(); err != nil {
-			logger.Fatal().
-				Err(err).
-				Str("event", "gpu.start.failed").
-				Msg("failed to start GPU transcoding server")
-		}
-
-		logger.Info().
-			Str("url", gpuServer.GetURL()).
-			Msg("GPU transcoding server started successfully")
-
-		// Ensure GPU server is stopped on exit
+	// Implementation in gpu.go (build tag: gpu) or gpu_stub.go (build tag: !gpu)
+	gpuServer := initGPUServer()
+	if gpuServer != nil {
 		defer func() {
 			logger.Info().Msg("Shutting down GPU transcoding server...")
-			if err := gpuServer.Stop(); err != nil {
-				logger.Error().Err(err).Msg("failed to stop GPU server gracefully")
+			// Type assertion needed because stub returns interface{}
+			if srv, ok := gpuServer.(interface{ Stop() error }); ok {
+				if err := srv.Stop(); err != nil {
+					logger.Error().Err(err).Msg("failed to stop GPU server gracefully")
+				}
 			}
 		}()
 	}
