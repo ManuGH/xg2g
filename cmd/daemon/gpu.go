@@ -11,7 +11,8 @@ import (
 )
 
 // initGPUServer initializes and starts the GPU transcoding server if enabled
-func initGPUServer() *transcoder.GPUServer {
+// Returns interface{} to match gpu_stub.go and allow type assertion in main.go
+func initGPUServer() interface{} {
 	if config.ParseString("XG2G_ENABLE_GPU_TRANSCODING", "false") != "true" {
 		return nil
 	}
