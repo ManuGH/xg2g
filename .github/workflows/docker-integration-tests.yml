@@ -159,20 +159,44 @@ jobs:
             echo "✅ Rust library artifacts verified successfully"
           '
 
-      - name: Run smoke test of production binary
+      - name: Ensure curl present
+        run: sudo apt-get update && sudo apt-get install -y curl
+
+      - name: Run smoke test of production binary (host-side timeout)
         run: |
-          docker run --rm -e XG2G_DATA=/tmp/test -e XG2G_OWI_BASE=http://example.com xg2g:prod sh -c '
-            timeout 5s /app/xg2g || exit_code=$?
-            # Exit code 124 = timeout (expected, daemon runs forever)
-            # Exit code 1 = config error (also acceptable for this test)
-            if [ "${exit_code:-0}" -eq 124 ] || [ "${exit_code:-0}" -eq 1 ]; then
-              echo "✅ Binary starts correctly"
+          set -euo pipefail
+          cname=xg2g-smoke-test
+          trap 'docker rm -f "$cname" >/dev/null 2>&1 || true' EXIT
+
+          # Start container and publish service port to host
+          docker run -d --name "$cname" \
+            -p 127.0.0.1:18080:8080 \
+            -e XG2G_DATA=/tmp/test \
+            -e XG2G_OWI_BASE=http://example.com \
+            --stop-timeout=3 \
+            xg2g:prod
+
+          # Wait up to 15s for readiness by polling from the host
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:18080/api/status >/dev/null; then
+              echo "✅ Binary started"
               exit 0
-            else
-              echo "❌ Binary failed with unexpected exit code: $exit_code"
-              exit 1
             fi
-          '
+            sleep 0.5
+          done
+
+          echo "❌ Not ready in time"
+          docker logs "$cname" || true
+          exit 1
+
+      - name: Upload smoke-test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808  # v4.4.3
+        with:
+          name: smoke-test-logs-${{ github.run_id }}
+          path: |
+            /var/lib/docker/containers/**/**-json.log
+          retention-days: 7
 
       - name: Upload build artifacts and logs
         if: always()
