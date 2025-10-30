@@ -2,6 +2,24 @@
 
 This guide helps you validate the Go + Rust FFI integration on your system.
 
+## Automated Testing (CI/CD)
+
+### Docker Integration Tests (Recommended)
+
+**xg2g has automated Rust FFI testing via GitHub Actions!**
+
+The `.github/workflows/docker-integration-tests.yml` workflow runs on every push/PR and verifies:
+- ✅ Rust library compilation
+- ✅ Go + Rust FFI integration
+- ✅ All tests with `-tags=gpu`
+- ✅ Production build verification
+
+**This is the ONLY automated test that validates Rust FFI before deployment.**
+
+**View Results**: Check the "Docker Integration Tests" workflow in GitHub Actions.
+
+### Local Testing (Manual)
+
 ## Prerequisites Check
 
 ### 1. Verify Rust Installation
@@ -93,7 +111,7 @@ test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured
 cd /Users/manuel/xg2g
 
 # Run Go tests with FFI (requires Rust library)
-make test-ffi
+make test-ffi  # Uses -tags=gpu internally
 ```
 
 **Expected output:**

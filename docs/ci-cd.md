@@ -9,6 +9,7 @@ xg2g uses GitHub Actions for CI/CD with multiple specialized workflows:
 | Workflow | Purpose | Trigger | Badge |
 |----------|---------|---------|-------|
 | **ci.yml** | Standard CI with tests | Push/PR to main | [![CI](https://github.com/ManuGH/xg2g/actions/workflows/ci.yml/badge.svg)](https://github.com/ManuGH/xg2g/actions/workflows/ci.yml) |
+| **docker-integration-tests.yml** | Full Rust FFI + GPU tests | Push/PR to main | [![Docker Integration Tests](https://github.com/ManuGH/xg2g/actions/workflows/docker-integration-tests.yml/badge.svg)](https://github.com/ManuGH/xg2g/actions/workflows/docker-integration-tests.yml) |
 | **hardcore-ci.yml** | Comprehensive quality checks | Push/PR to main | [![Hardcore CI](https://github.com/ManuGH/xg2g/actions/workflows/hardcore-ci.yml/badge.svg)](https://github.com/ManuGH/xg2g/actions/workflows/hardcore-ci.yml) |
 | **codeql.yml** | Security analysis | Push/PR/Schedule | [![CodeQL](https://github.com/ManuGH/xg2g/actions/workflows/codeql.yml/badge.svg)](https://github.com/ManuGH/xg2g/actions/workflows/codeql.yml) |
 | **gosec.yml** | Go security scanner | Push/PR | ![gosec](https://github.com/ManuGH/xg2g/actions/workflows/gosec.yml/badge.svg) |
@@ -23,7 +24,42 @@ xg2g uses GitHub Actions for CI/CD with multiple specialized workflows:
 
 ### 1. Standard CI (`ci.yml`)
 
-**Purpose**: Fast feedback on code changes
+**Purpose**: Fast feedback on code changes (nogpu builds)
+
+### 2. Docker Integration Tests (`docker-integration-tests.yml`)
+
+**Purpose**: Full production validation with Rust FFI + GPU support
+
+**CRITICAL**: These tests verify the actual production build including Rust FFI, which is NOT tested in standard CI.
+
+**Steps**:
+1. **Build Docker image** to `go-builder` stage (includes all dependencies)
+2. **Run tests inside Docker** with `-tags=gpu` (full Rust FFI)
+3. **Verify Rust library** is present and linked
+4. **Build final production image** (verification)
+5. **Run smoke test** of production binary
+
+**Why This Matters**:
+- Standard CI uses `-tags=nogpu` (stub implementations, fast)
+- Docker tests use `-tags=gpu` (real Rust FFI, slower but comprehensive)
+- This is the ONLY place Rust FFI integration is actually tested before deployment
+
+**Environment**:
+```yaml
+- Rust library: libxg2g_transcoder.so
+- CGO: Enabled
+- Build tags: gpu
+- Test all packages including internal/transcoder
+```
+
+**Test Output**:
+```
+✅ Rust library built: transcoder/target/release/libxg2g_transcoder.so
+✅ All tests passed with Rust FFI
+✅ Production build verified
+```
+
+### 3. Standard CI (continued)
 
 **Steps**:
 1. **Module Verification**: `go mod tidy && go mod download && go mod verify`

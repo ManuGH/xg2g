@@ -18,7 +18,7 @@ concurrency:
 
 env:
   GO_VERSION: "1.25.3"
-  COVERAGE_THRESHOLD: 55 # After robustness improvements: CI 55.4%, local 57.5% (diff due to -tags=security)
+  COVERAGE_THRESHOLD: 55 # After robustness improvements: CI 55.4%, local 57.5% (nogpu builds)
   EPG_COVERAGE_THRESHOLD: 55
 
 jobs:
@@ -133,7 +133,7 @@ jobs:
           mkdir -p ~/.cache/go-build
 
       - name: Generate coverage profile
-        run: go test -tags=security $(go list ./... | grep -v '/test$') -covermode=atomic -coverprofile=coverage.out
+        run: go test -tags=nogpu $(go list -tags=nogpu ./... | grep -v '/test$') -covermode=atomic -coverprofile=coverage.out
 
       - name: Check overall coverage
         run: |
@@ -148,7 +148,7 @@ jobs:
 
       - name: Check EPG module coverage
         run: |
-          go test -covermode=atomic -coverprofile=epg_coverage.out ./internal/epg
+          go test -tags=nogpu -covermode=atomic -coverprofile=epg_coverage.out ./internal/epg
           EPG_COVERAGE=$(go tool cover -func=epg_coverage.out | grep "total:" | awk '{print $3}' | sed 's/%//')
           echo "EPG module coverage: ${EPG_COVERAGE}%"
           EPG_COVERAGE_INT=$(printf "%.0f" "${EPG_COVERAGE}")

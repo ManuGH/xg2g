@@ -132,6 +132,32 @@ Compatibility Matrix (Go 1.23, 1.24, 1.25)
 | `integration_fast` | Critical smoke tests | Every PR | < 2 min |
 | `integration` | Full integration suite | Main push, nightly | < 5 min |
 | `integration_slow` | Deep validation | Nightly only | 5-10 min |
+| `nogpu` | CI builds without Rust FFI | All CI workflows | N/A (build tag) |
+| `gpu` | Production builds with Rust FFI | Docker builds only | N/A (build tag) |
+
+### Build Tags
+
+xg2g uses Go build tags to conditionally compile Rust FFI code:
+
+**`nogpu` (CI/Testing)**
+- Fast compilation without CGO
+- Stub implementations for Rust FFI
+- Transcoding disabled by default
+- Used in all GitHub Actions workflows
+
+**`gpu` (Production)**
+- Full Rust FFI compilation (requires CGO)
+- Real audio remuxing via Rust
+- GPU transcoding support
+- Used in Docker builds and production
+
+```bash
+# CI builds (fast, no dependencies)
+go test -tags=nogpu ./...
+
+# Production builds (full features)
+go build -tags=gpu ./cmd/daemon
+```
 
 ## Local Development
 

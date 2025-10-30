@@ -272,22 +272,22 @@ test-ffi: build-rust ## Test Rust FFI integration
 	@echo "Building Rust library first..."
 	@cd transcoder && cargo build --release
 	@echo "Running Go tests with CGO enabled..."
-	@CGO_ENABLED=1 go test -v ./internal/transcoder -tags ffi
+	@CGO_ENABLED=1 go test -v ./internal/transcoder -tags gpu
 	@echo "✅ FFI integration tests passed"
 
 test-integration: ## Run integration tests
 	@echo "Running integration tests..."
-	@go test -tags=integration -v -timeout=5m ./test/integration/...
+	@go test -tags=integration,nogpu -v -timeout=5m ./test/integration/...
 	@echo "✅ Integration tests passed"
 
 test-integration-fast: ## Run fast integration smoke tests
 	@echo "Running fast integration smoke tests..."
-	@go test -tags=integration_fast -v -timeout=3m ./test/integration/... -run="^TestSmoke"
+	@go test -tags=integration_fast,nogpu -v -timeout=3m ./test/integration/... -run="^TestSmoke"
 	@echo "✅ Smoke tests passed"
 
 test-integration-slow: ## Run slow integration tests
 	@echo "Running slow integration tests..."
-	@go test -tags=integration_slow -v -timeout=10m ./test/integration/... -run="^TestSlow"
+	@go test -tags=integration_slow,nogpu -v -timeout=10m ./test/integration/... -run="^TestSlow"
 	@echo "✅ Slow tests passed"
 
 coverage: ## Generate and view coverage report locally
