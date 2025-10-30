@@ -289,12 +289,15 @@ impl FfmpegAacEncoder {
 
         // Create codec parameters for AAC using builder pattern
         // AAC encoder expects fltp (f32 planar) sample format
+        let sample_format = SampleFormat::from_name("fltp")
+            .context("Failed to create sample format 'fltp'")?;
+
         let codec_params = ac_ffmpeg::codec::AudioCodecParameters::builder("aac")
             .context("Failed to create AAC codec parameters")?
             .bit_rate(config.bitrate as u64)
             .sample_rate(config.sample_rate)
             .channel_layout(&channel_layout)
-            .sample_format(SampleFormat::FLTP)
+            .sample_format(sample_format)
             .build();
 
         // Create encoder using builder pattern
