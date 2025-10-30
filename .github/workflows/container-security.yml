@@ -42,6 +42,7 @@ jobs:
           tags: xg2g:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          provenance: false
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
@@ -126,6 +127,7 @@ jobs:
           push: false
           load: true
           tags: xg2g:${{ github.sha }}
+          provenance: false
 
       - name: Run Trivy config scanner
         uses: aquasecurity/trivy-action@master
@@ -186,6 +188,7 @@ jobs:
           push: false
           load: true
           tags: xg2g:${{ github.sha }}
+          provenance: false
 
       - name: Generate SBOM for production image
         uses: aquasecurity/trivy-action@master

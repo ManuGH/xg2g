@@ -54,6 +54,7 @@ jobs:
           tags: xg2g:test-builder
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          provenance: false
 
       - name: Verify Docker image was built
         run: |
@@ -112,13 +113,27 @@ jobs:
           load: true
           tags: xg2g:prod
           cache-from: type=gha
+          provenance: false
 
       - name: Verify Rust library is present in production image
         run: |
           docker run --rm --entrypoint sh xg2g:prod -c '
-            ls -lh /app/lib/
-            file /app/lib/libxg2g_transcoder.so
-            ldd /app/xg2g | grep xg2g_transcoder || echo "✅ Dynamically linked to Rust library"
+            set -e
+            echo "=== Verifying Rust library artifacts ==="
+
+            # Verify .so file exists and has content
+            test -f /app/lib/libxg2g_transcoder.so || (echo "❌ libxg2g_transcoder.so not found" && exit 1)
+            test -s /app/lib/libxg2g_transcoder.so || (echo "❌ libxg2g_transcoder.so is empty" && exit 1)
+
+            # Check file type
+            file /app/lib/libxg2g_transcoder.so | grep -q "ELF.*shared object" || (echo "❌ Not a valid shared library" && exit 1)
+
+            # Verify dynamic linking
+            ldd /app/xg2g | grep -q xg2g_transcoder || (echo "❌ Binary not linked to Rust library" && exit 1)
+
+            # Show info
+            ls -lh /app/lib/libxg2g_transcoder.so
+            echo "✅ Rust library artifacts verified successfully"
           '
 
       - name: Run smoke test of production binary
