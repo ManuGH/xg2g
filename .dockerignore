@@ -43,6 +43,7 @@ data/
 *
 !cmd/
 !internal/
+!transcoder/
 !go.mod
 !go.sum
 
