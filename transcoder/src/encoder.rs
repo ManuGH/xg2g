@@ -287,11 +287,13 @@ impl FfmpegAacEncoder {
             .context("Failed to create channel layout")?;
 
         // Create codec parameters for AAC using builder pattern
+        // Note: AAC encoder in FFmpeg typically expects fltp (f32 planar) format
         let codec_params = ac_ffmpeg::codec::AudioCodecParameters::builder("aac")
             .context("Failed to create AAC codec parameters")?
             .bit_rate(config.bitrate as u64)
             .sample_rate(config.sample_rate)
             .channel_layout(&channel_layout)
+            .sample_format("fltp")
             .build();
 
         // Create encoder using builder pattern
@@ -316,12 +318,14 @@ impl FfmpegAacEncoder {
     fn create_audio_frame(&mut self, samples: &[f32]) -> Result<ac_ffmpeg::codec::audio::AudioFrameMut> {
         let samples_per_channel = samples.len() / self.config.channels as usize;
 
+        // Get the sample format expected by the encoder
+        let encoder_params = self.encoder.codec_parameters();
+        let sample_format = encoder_params.sample_format()
+            .context("Encoder has no sample format configured")?;
+
         // Create channel layout
         let channel_layout = ac_ffmpeg::codec::audio::ChannelLayout::from_channels(self.config.channels as u32)
             .context("Failed to create channel layout")?;
-
-        // Create audio frame with f32 planar format using string format name
-        let sample_format = ac_ffmpeg::codec::audio::frame::get_sample_format("fltp");
 
         let mut frame = ac_ffmpeg::codec::audio::AudioFrameMut::silence(
             &channel_layout,
