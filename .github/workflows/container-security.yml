@@ -34,7 +34,7 @@ jobs:
           fetch-depth: 0  # Full history for Gitleaks
 
       - name: Run Gitleaks
-        uses: gitleaks/gitleaks-action@73af25c1387c655f84e644a7a88460afdcd16e37  # v2.3.6
+        uses: gitleaks/gitleaks-action@44c470ffc35caa8b1eb3e8012ca53c2f9bea4eb5  # v2.3.6
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -269,7 +269,7 @@ jobs:
         uses: aquasecurity/trivy-action@6e7b7d1fd3e4fef0c5fa8cce1229c54b2c9bd0d8  # 0.24.0
         with:
           scan-type: 'sbom'
-          input: 'sbom-production.json'
+          scan-ref: 'sbom-production.json'
           format: 'table'
           severity: 'CRITICAL,HIGH'
           exit-code: '0'
