@@ -295,7 +295,7 @@ impl FfmpegAacEncoder {
             .context("Failed to create AAC encoder builder")?
             .sample_format(sample_format)
             .sample_rate(config.sample_rate)
-            .channel_layout(&channel_layout)
+            .channel_layout(channel_layout)  // Takes ownership
             .bit_rate(config.bitrate as u64)
             .set_option("profile", config.profile.ffmpeg_name())
             .build()
