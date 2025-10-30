@@ -52,8 +52,10 @@ jobs:
           echo "⏭️  Skipping direct Go build (requires Rust library)"
           echo "✅ Docker build tested in separate workflow"
 
-          # Verify Go syntax only
-          go build -v -trimpath -mod=readonly -buildvcs=false -tags=nogpu -o /dev/null ./cmd/daemon || true
+          # Verify Go compilation (nogpu build must succeed)
+          echo "🔍 Verifying nogpu build compiles..."
+          go build -v -trimpath -mod=readonly -buildvcs=false -tags=nogpu -o /dev/null ./cmd/daemon
+          echo "✅ nogpu build successful"
 
       - name: Unit tests
         run: |
