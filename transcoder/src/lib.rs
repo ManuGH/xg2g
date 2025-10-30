@@ -12,5 +12,10 @@ pub mod muxer;
 pub mod transcoder;
 pub mod metrics;
 
+// Re-export main types for convenience
+pub use transcoder::{TranscoderConfig, VaapiTranscoder};
+pub use audio_remux::{AudioRemuxConfig, AudioRemuxer};
+pub use metrics::{MetricsGuard, init_metrics};
+
 #[cfg(test)]
 mod ffi_test;

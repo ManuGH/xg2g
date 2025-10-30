@@ -9,6 +9,10 @@ description = "High-performance GPU transcoder for xg2g using VAAPI"
 name = "xg2g_transcoder"
 crate-type = ["cdylib", "rlib"]  # cdylib for FFI, rlib for Rust libraries
 
+[[bin]]
+name = "xg2g-transcoder"
+path = "src/main.rs"
+
 [dependencies]
 # Async runtime
 tokio = { version = "1", features = ["full"] }

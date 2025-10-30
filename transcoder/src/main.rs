@@ -27,14 +27,10 @@ use tokio::process::Command;
 use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-mod audio_remux;
-pub mod ffi;  // Public for FFI exports
-mod metrics;
-mod transcoder;
-
-use audio_remux::{AudioRemuxConfig, AudioRemuxer};
-use metrics::{MetricsGuard, record_bytes_transcoded, record_ffmpeg_startup, set_active_sessions};
-use transcoder::{TranscoderConfig, VaapiTranscoder};
+// Import from the library crate instead of re-declaring modules
+use xg2g_transcoder::audio_remux::{AudioRemuxConfig, AudioRemuxer};
+use xg2g_transcoder::metrics::{MetricsGuard, record_bytes_transcoded, record_ffmpeg_startup, set_active_sessions};
+use xg2g_transcoder::transcoder::{TranscoderConfig, VaapiTranscoder};
 
 #[derive(Debug, Deserialize)]
 struct TranscodeParams {
