@@ -20,6 +20,7 @@ use std::panic::catch_unwind;
 use std::ptr;
 
 use crate::audio_remux::{AudioRemuxConfig, AudioRemuxer};
+use tracing_subscriber::layer::SubscriberExt;
 
 /// Opaque handle to AudioRemuxer
 /// This is passed between Go and Rust as a void pointer
