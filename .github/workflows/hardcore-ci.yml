@@ -109,7 +109,8 @@ jobs:
       - name: Run tests with race detection
         run: |
           echo "Running tests with race detection (CGO_ENABLED=1)..."
-          go test $(go list ./... | grep -v '/test$') -race -count=1 -v
+          # Skip packages requiring Rust FFI (internal/daemon, internal/transcoder, internal/proxy)
+          go test $(go list ./... | grep -v '/test$' | grep -v 'internal/daemon' | grep -v 'internal/transcoder' | grep -v 'internal/proxy') -race -count=1 -v
 
   # Coverage Analysis
   coverage:

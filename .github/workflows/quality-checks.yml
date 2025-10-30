@@ -44,8 +44,8 @@ jobs:
           echo "## Race Detector Results" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
-          # Run with race detector and capture output
-          if go test -race -timeout=10m $(go list ./... | grep -v '/test$') -v 2>&1 | tee /tmp/race-output.txt; then
+          # Run with race detector and capture output (skip FFI packages)
+          if go test -race -timeout=10m $(go list ./... | grep -v '/test$' | grep -v 'internal/daemon' | grep -v 'internal/transcoder' | grep -v 'internal/proxy') -v 2>&1 | tee /tmp/race-output.txt; then
             echo "✅ **No data races detected**" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "❌ **Data races detected!**" >> "$GITHUB_STEP_SUMMARY"
