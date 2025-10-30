@@ -39,8 +39,9 @@ func TestGetTranscoderConfig(t *testing.T) {
 		t.Setenv("XG2G_GPU_TRANSCODER_URL", "")
 
 		config := GetTranscoderConfig()
-		if config.Enabled {
-			t.Error("expected transcoding disabled by default")
+		// Transcoding is enabled by default for iOS Safari compatibility
+		if !config.Enabled {
+			t.Error("expected transcoding enabled by default (for iOS Safari compatibility)")
 		}
 	})
 
