@@ -159,9 +159,6 @@ jobs:
             echo "✅ Rust library artifacts verified successfully"
           '
 
-      - name: Ensure curl present
-        run: sudo apt-get update && sudo apt-get install -y curl
-
       - name: Run smoke test of production binary (host-side timeout)
         run: |
           set -euo pipefail
@@ -178,7 +175,7 @@ jobs:
 
           # Wait up to 15s for readiness by polling from the host
           for i in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:18080/api/status >/dev/null; then
+            if wget -qO- http://127.0.0.1:18080/api/status >/dev/null 2>&1; then
               echo "✅ Binary started"
               exit 0
             fi
