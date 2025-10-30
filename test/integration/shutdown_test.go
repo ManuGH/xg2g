@@ -22,10 +22,10 @@ func TestGracefulShutdown(t *testing.T) {
 		t.Skip("skipping graceful shutdown test in short mode")
 	}
 
-	// Build the daemon binary for testing
+	// Build the daemon binary for testing (with nogpu tag to skip Rust FFI)
 	binaryPath := filepath.Join(t.TempDir(), "xg2g-test")
 	// #nosec G204 -- Test code: building test binary with controlled arguments
-	buildCmd := exec.Command("go", "build", "-o", binaryPath, "../../cmd/daemon")
+	buildCmd := exec.Command("go", "build", "-tags=nogpu", "-o", binaryPath, "../../cmd/daemon")
 	if out, err := buildCmd.CombinedOutput(); err != nil {
 		t.Fatalf("failed to build daemon: %v\n%s", err, out)
 	}
@@ -133,10 +133,10 @@ func TestShutdownWithActiveRequests(t *testing.T) {
 		t.Skip("skipping shutdown with active requests test in short mode")
 	}
 
-	// Build the daemon binary
+	// Build the daemon binary (with nogpu tag to skip Rust FFI)
 	binaryPath := filepath.Join(t.TempDir(), "xg2g-test")
 	// #nosec G204 -- Test code: building test binary with controlled arguments
-	buildCmd := exec.Command("go", "build", "-o", binaryPath, "../../cmd/daemon")
+	buildCmd := exec.Command("go", "build", "-tags=nogpu", "-o", binaryPath, "../../cmd/daemon")
 	if out, err := buildCmd.CombinedOutput(); err != nil {
 		t.Fatalf("failed to build daemon: %v\n%s", err, out)
 	}
