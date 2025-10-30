@@ -59,7 +59,10 @@ pub extern "C" fn xg2g_audio_remux_init(
 
         let remuxer = match AudioRemuxer::new(config) {
             Ok(r) => r,
-            Err(_) => return ptr::null_mut(),
+            Err(e) => {
+                eprintln!("[RUST FFI ERROR] Failed to create AudioRemuxer: {:#}", e);
+                return ptr::null_mut();
+            }
         };
         let handle = Box::new(RemuxerHandle { remuxer });
 
@@ -68,7 +71,10 @@ pub extern "C" fn xg2g_audio_remux_init(
 
     match result {
         Ok(ptr) => ptr,
-        Err(_) => ptr::null_mut(),
+        Err(e) => {
+            eprintln!("[RUST FFI PANIC] AudioRemuxer initialization panicked: {:?}", e);
+            ptr::null_mut()
+        }
     }
 }
 

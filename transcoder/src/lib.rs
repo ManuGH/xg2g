@@ -11,3 +11,6 @@ pub mod ffi;
 pub mod muxer;
 pub mod transcoder;
 pub mod metrics;
+
+#[cfg(test)]
+mod ffi_test;
