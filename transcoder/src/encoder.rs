@@ -29,6 +29,7 @@ use tracing::{debug, trace, warn};
 
 // ac-ffmpeg imports for AAC encoder
 use ac_ffmpeg::codec::Encoder; // Trait for encoder methods
+use ac_ffmpeg::codec::audio::SampleFormat;
 
 /// AAC Profile
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -287,13 +288,13 @@ impl FfmpegAacEncoder {
             .context("Failed to create channel layout")?;
 
         // Create codec parameters for AAC using builder pattern
-        // Note: AAC encoder in FFmpeg typically expects fltp (f32 planar) format
+        // AAC encoder expects fltp (f32 planar) sample format
         let codec_params = ac_ffmpeg::codec::AudioCodecParameters::builder("aac")
             .context("Failed to create AAC codec parameters")?
             .bit_rate(config.bitrate as u64)
             .sample_rate(config.sample_rate)
             .channel_layout(&channel_layout)
-            .sample_format("fltp")
+            .sample_format(SampleFormat::FLTP)
             .build();
 
         // Create encoder using builder pattern
@@ -320,8 +321,7 @@ impl FfmpegAacEncoder {
 
         // Get the sample format expected by the encoder
         let encoder_params = self.encoder.codec_parameters();
-        let sample_format = encoder_params.sample_format()
-            .context("Encoder has no sample format configured")?;
+        let sample_format = encoder_params.sample_format();
 
         // Create channel layout
         let channel_layout = ac_ffmpeg::codec::audio::ChannelLayout::from_channels(self.config.channels as u32)
