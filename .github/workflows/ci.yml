@@ -58,9 +58,9 @@ jobs:
       - name: Unit tests
         run: |
           set -euo pipefail
-          # Skip packages requiring Rust FFI (internal/daemon, internal/transcoder)
+          # Skip packages requiring Rust FFI (internal/daemon, internal/transcoder, internal/proxy)
           # These are tested in integration tests with full Docker build
-          go test -v -race -coverprofile=coverage.out -covermode=atomic $(go list ./... | grep -v '/test$' | grep -v 'internal/daemon' | grep -v 'internal/transcoder')
+          go test -v -race -coverprofile=coverage.out -covermode=atomic $(go list ./... | grep -v '/test$' | grep -v 'internal/daemon' | grep -v 'internal/transcoder' | grep -v 'internal/proxy')
 
       - name: Setup Node for OpenAPI lint
         uses: actions/setup-node@v6
@@ -267,8 +267,8 @@ jobs:
       - name: Go test (repeat)
         run: |
           set -euo pipefail
-          # Skip packages requiring Rust FFI (internal/daemon, internal/transcoder)
-          go test -race $(go list ./... | grep -v '/test$' | grep -v 'internal/daemon' | grep -v 'internal/transcoder') -v
+          # Skip packages requiring Rust FFI (internal/daemon, internal/transcoder, internal/proxy)
+          go test -race $(go list ./... | grep -v '/test$' | grep -v 'internal/daemon' | grep -v 'internal/transcoder' | grep -v 'internal/proxy') -v
 
       - name: Upload artifacts
         if: always()
