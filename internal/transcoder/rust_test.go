@@ -1,3 +1,6 @@
+//go:build gpu
+// +build gpu
+
 package transcoder
 
 import (

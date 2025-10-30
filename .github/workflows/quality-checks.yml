@@ -44,8 +44,8 @@ jobs:
           echo "## Race Detector Results" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
-          # Run with race detector and capture output (skip FFI packages)
-          if go test -race -timeout=10m $(go list ./... | grep -v '/test$' | grep -v 'internal/daemon' | grep -v 'internal/transcoder' | grep -v 'internal/proxy') -v 2>&1 | tee /tmp/race-output.txt; then
+          # Run with race detector and nogpu tag (uses stub implementations for FFI)
+          if go test -race -tags=nogpu -timeout=10m $(go list -tags=nogpu ./... | grep -v '/test$') -v 2>&1 | tee /tmp/race-output.txt; then
             echo "✅ **No data races detected**" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "❌ **Data races detected!**" >> "$GITHUB_STEP_SUMMARY"
@@ -242,9 +242,9 @@ jobs:
           # Install leak detector (using uber-go/goleak)
           go get go.uber.org/goleak@latest || true
 
-          # Run tests with leak detection
+          # Run tests with leak detection and nogpu tag
           # Note: This requires tests to use goleak.VerifyNone(t) or similar
-          if go test -v $(go list ./... | grep -v '/test$') 2>&1 | tee /tmp/leak-output.txt; then
+          if go test -v -tags=nogpu $(go list -tags=nogpu ./... | grep -v '/test$') 2>&1 | tee /tmp/leak-output.txt; then
 
             # Check for leaked goroutines in output
             if grep -q "goroutine.*leaked" /tmp/leak-output.txt; then
@@ -287,8 +287,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Run tests with coverage (skip FFI packages)
-          go test -coverprofile=coverage.out -covermode=atomic $(go list ./... | grep -v '/test$' | grep -v 'internal/daemon' | grep -v 'internal/transcoder' | grep -v 'internal/proxy')
+          # Run tests with coverage using nogpu tag (stub implementations for FFI)
+          go test -tags=nogpu -coverprofile=coverage.out -covermode=atomic $(go list -tags=nogpu ./... | grep -v '/test$')
 
           # Generate coverage report
           go tool cover -func=coverage.out > /tmp/coverage-detailed.txt

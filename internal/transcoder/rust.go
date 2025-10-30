@@ -1,3 +1,6 @@
+//go:build gpu
+// +build gpu
+
 // Package transcoder provides Go bindings for the Rust audio remuxer via CGO/FFI.
 //
 // This package wraps the native Rust audio remuxer, allowing Go code to perform
