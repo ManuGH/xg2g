@@ -14,11 +14,12 @@ RUN apk add --no-cache \
     llvm-dev
 
 # Copy Rust transcoder source
-COPY transcoder/Cargo.toml transcoder/Cargo.lock ./
+COPY transcoder/Cargo.toml ./
 COPY transcoder/src ./src
 
 # Build Rust remuxer library (cdylib for FFI)
 # This creates libxg2g_transcoder.so that Go can load via CGO
+# Note: Cargo.lock is generated if missing (not committed to avoid library best practices)
 ARG RUST_TARGET_CPU=x86-64-v2
 RUN RUSTFLAGS="-C target-cpu=${RUST_TARGET_CPU} -C opt-level=3" \
     cargo build --release && \

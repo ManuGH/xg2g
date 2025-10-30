@@ -1,6 +1,7 @@
 # Rust
 target/
-Cargo.lock
+# Cargo.lock should be committed for applications/binaries
+# (uncommented to ensure reproducible Docker builds)
 
 # IDE
 .vscode/
