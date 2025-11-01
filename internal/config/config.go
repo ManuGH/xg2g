@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -250,101 +249,51 @@ func (l *Loader) mergeFileConfig(dst *jobs.Config, src *FileConfig) error {
 
 // mergeEnvConfig merges environment variables into jobs.Config
 // ENV variables have the highest precedence
-//
-//nolint:gocyclo // This function handles many environment variables but is straightforward
+// Uses consistent ParseBool/ParseInt/ParseDuration helpers from env.go
 func (l *Loader) mergeEnvConfig(cfg *jobs.Config) {
-	if v := os.Getenv("XG2G_VERSION"); v != "" {
-		cfg.Version = v
-	}
-	if v := os.Getenv("XG2G_DATA"); v != "" {
-		cfg.DataDir = v
-	}
+	// String values (direct assignment)
+	cfg.Version = ParseString("XG2G_VERSION", cfg.Version)
+	cfg.DataDir = ParseString("XG2G_DATA", cfg.DataDir)
 
 	// OpenWebIF
-	if v := os.Getenv("XG2G_OWI_BASE"); v != "" {
-		cfg.OWIBase = v
-	}
-	if v := os.Getenv("XG2G_OWI_USER"); v != "" {
-		cfg.OWIUsername = v
-	}
-	if v := os.Getenv("XG2G_OWI_PASS"); v != "" {
-		cfg.OWIPassword = v
-	}
-	if v := os.Getenv("XG2G_STREAM_PORT"); v != "" {
-		if port, err := strconv.Atoi(v); err == nil {
-			cfg.StreamPort = port
-		}
-	}
+	cfg.OWIBase = ParseString("XG2G_OWI_BASE", cfg.OWIBase)
+	cfg.OWIUsername = ParseString("XG2G_OWI_USER", cfg.OWIUsername)
+	cfg.OWIPassword = ParseString("XG2G_OWI_PASS", cfg.OWIPassword)
+	cfg.StreamPort = ParseInt("XG2G_STREAM_PORT", cfg.StreamPort)
 
 	// OpenWebIF timeouts/retries
+	// Convert millisecond ENV values to time.Duration
 	if v := os.Getenv("XG2G_OWI_TIMEOUT_MS"); v != "" {
-		if ms, err := strconv.ParseInt(v, 10, 64); err == nil {
-			cfg.OWITimeout = time.Duration(ms) * time.Millisecond
-		}
+		ms := ParseInt("XG2G_OWI_TIMEOUT_MS", int(cfg.OWITimeout.Milliseconds()))
+		cfg.OWITimeout = time.Duration(ms) * time.Millisecond
 	}
-	if v := os.Getenv("XG2G_OWI_RETRIES"); v != "" {
-		if retries, err := strconv.Atoi(v); err == nil {
-			cfg.OWIRetries = retries
-		}
-	}
+	cfg.OWIRetries = ParseInt("XG2G_OWI_RETRIES", cfg.OWIRetries)
 	if v := os.Getenv("XG2G_OWI_BACKOFF_MS"); v != "" {
-		if ms, err := strconv.ParseInt(v, 10, 64); err == nil {
-			cfg.OWIBackoff = time.Duration(ms) * time.Millisecond
-		}
+		ms := ParseInt("XG2G_OWI_BACKOFF_MS", int(cfg.OWIBackoff.Milliseconds()))
+		cfg.OWIBackoff = time.Duration(ms) * time.Millisecond
 	}
 	if v := os.Getenv("XG2G_OWI_MAX_BACKOFF_MS"); v != "" {
-		if ms, err := strconv.ParseInt(v, 10, 64); err == nil {
-			cfg.OWIMaxBackoff = time.Duration(ms) * time.Millisecond
-		}
+		ms := ParseInt("XG2G_OWI_MAX_BACKOFF_MS", int(cfg.OWIMaxBackoff.Milliseconds()))
+		cfg.OWIMaxBackoff = time.Duration(ms) * time.Millisecond
 	}
 
 	// Bouquet
-	if v := os.Getenv("XG2G_BOUQUET"); v != "" {
-		cfg.Bouquet = v
-	}
+	cfg.Bouquet = ParseString("XG2G_BOUQUET", cfg.Bouquet)
 
 	// EPG
-	if v := os.Getenv("XG2G_EPG_ENABLED"); v != "" {
-		cfg.EPGEnabled = strings.ToLower(v) == "true"
-	}
-	if v := os.Getenv("XG2G_EPG_DAYS"); v != "" {
-		if days, err := strconv.Atoi(v); err == nil {
-			cfg.EPGDays = days
-		}
-	}
-	if v := os.Getenv("XG2G_EPG_MAX_CONCURRENCY"); v != "" {
-		if conc, err := strconv.Atoi(v); err == nil {
-			cfg.EPGMaxConcurrency = conc
-		}
-	}
-	if v := os.Getenv("XG2G_EPG_TIMEOUT_MS"); v != "" {
-		if ms, err := strconv.Atoi(v); err == nil {
-			cfg.EPGTimeoutMS = ms
-		}
-	}
-	if v := os.Getenv("XG2G_EPG_RETRIES"); v != "" {
-		if retries, err := strconv.Atoi(v); err == nil {
-			cfg.EPGRetries = retries
-		}
-	}
-	if v := os.Getenv("XG2G_FUZZY_MAX"); v != "" {
-		if fuzzy, err := strconv.Atoi(v); err == nil {
-			cfg.FuzzyMax = fuzzy
-		}
-	}
-	if v := os.Getenv("XG2G_XMLTV"); v != "" {
-		cfg.XMLTVPath = v
-	}
+	cfg.EPGEnabled = ParseBool("XG2G_EPG_ENABLED", cfg.EPGEnabled)
+	cfg.EPGDays = ParseInt("XG2G_EPG_DAYS", cfg.EPGDays)
+	cfg.EPGMaxConcurrency = ParseInt("XG2G_EPG_MAX_CONCURRENCY", cfg.EPGMaxConcurrency)
+	cfg.EPGTimeoutMS = ParseInt("XG2G_EPG_TIMEOUT_MS", cfg.EPGTimeoutMS)
+	cfg.EPGRetries = ParseInt("XG2G_EPG_RETRIES", cfg.EPGRetries)
+	cfg.FuzzyMax = ParseInt("XG2G_FUZZY_MAX", cfg.FuzzyMax)
+	cfg.XMLTVPath = ParseString("XG2G_XMLTV", cfg.XMLTVPath)
 
 	// API
-	if v := os.Getenv("XG2G_API_TOKEN"); v != "" {
-		cfg.APIToken = v
-	}
+	cfg.APIToken = ParseString("XG2G_API_TOKEN", cfg.APIToken)
 
 	// Picons
-	if v := os.Getenv("XG2G_PICON_BASE"); v != "" {
-		cfg.PiconBase = v
-	}
+	cfg.PiconBase = ParseString("XG2G_PICON_BASE", cfg.PiconBase)
 }
 
 // expandEnv expands environment variables in the format ${VAR} or $VAR

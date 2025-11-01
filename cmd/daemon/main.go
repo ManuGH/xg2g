@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	"github.com/ManuGH/xg2g/internal/api"
@@ -103,7 +102,7 @@ func main() {
 	logger.Info().Msgf("→ Data dir: %s", cfg.DataDir)
 
 	// Optional initial refresh before starting servers
-	if strings.ToLower(config.ParseString("XG2G_INITIAL_REFRESH", "false")) == "true" {
+	if config.ParseBool("XG2G_INITIAL_REFRESH", false) {
 		logger.Info().Msg("performing initial data refresh on startup")
 		if _, err := jobs.Refresh(ctx, cfg); err != nil {
 			logger.Error().Err(err).Msg("initial data refresh failed")
@@ -124,7 +123,7 @@ func main() {
 	}
 
 	// Configure proxy if enabled
-	if config.ParseString("XG2G_ENABLE_STREAM_PROXY", "false") == "true" {
+	if config.ParseBool("XG2G_ENABLE_STREAM_PROXY", false) {
 		targetURL := config.ParseString("XG2G_PROXY_TARGET", "")
 		receiverHost := proxy.GetReceiverHost()
 
