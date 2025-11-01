@@ -86,12 +86,7 @@ release:
   header: |
     ## xg2g {{ .Tag }} - Sprint 1-4 Features 🚀
 
-    {{if .IsPrerelease}}
-    ### ⚠️ Pre-Release
-    This is a pre-release version. Use with caution in production.
-    {{else}}
     ### 🎉 Production Release
-    {{end}}
 
     ### 📦 Installation
 
