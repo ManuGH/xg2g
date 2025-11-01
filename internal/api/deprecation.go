@@ -6,8 +6,6 @@ package api
 import (
 	"fmt"
 	"net/http"
-
-	"github.com/gorilla/mux"
 )
 
 // DeprecationConfig holds configuration for API deprecation warnings
@@ -19,7 +17,7 @@ type DeprecationConfig struct {
 
 // deprecationMiddleware adds deprecation headers to responses
 // This follows RFC 8594 (Sunset header) and standard deprecation practices
-func deprecationMiddleware(cfg DeprecationConfig) mux.MiddlewareFunc {
+func deprecationMiddleware(cfg DeprecationConfig) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Add deprecation headers

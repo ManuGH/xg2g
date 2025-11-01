@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	"github.com/ManuGH/xg2g/internal/api"
@@ -21,7 +20,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-var Version = "dev"
+var Version = "1.7.0"
 
 // maskURL removes user info from a URL string for safe logging.
 func maskURL(rawURL string) string {
@@ -103,7 +102,7 @@ func main() {
 	logger.Info().Msgf("→ Data dir: %s", cfg.DataDir)
 
 	// Optional initial refresh before starting servers
-	if strings.ToLower(config.ParseString("XG2G_INITIAL_REFRESH", "false")) == "true" {
+	if config.ParseBool("XG2G_INITIAL_REFRESH", false) {
 		logger.Info().Msg("performing initial data refresh on startup")
 		if _, err := jobs.Refresh(ctx, cfg); err != nil {
 			logger.Error().Err(err).Msg("initial data refresh failed")
@@ -124,7 +123,7 @@ func main() {
 	}
 
 	// Configure proxy if enabled
-	if config.ParseString("XG2G_ENABLE_STREAM_PROXY", "false") == "true" {
+	if config.ParseBool("XG2G_ENABLE_STREAM_PROXY", false) {
 		targetURL := config.ParseString("XG2G_PROXY_TARGET", "")
 		receiverHost := proxy.GetReceiverHost()
 
@@ -194,6 +193,13 @@ func main() {
 					Msg("SSDP announcer failed")
 			}
 		}()
+
+		// Register shutdown hook for SSDP cleanup
+		mgr.RegisterShutdownHook("ssdp_announcer", func(shutdownCtx context.Context) error {
+			logger.Info().Msg("Stopping SSDP announcer")
+			// SSDP announcer stops when context is cancelled
+			return nil
+		})
 	}
 
 	// Start daemon manager (blocks until shutdown)

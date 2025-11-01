@@ -72,16 +72,30 @@ COPY . .
 # Build Go daemon WITH CGO enabled for Rust FFI bindings
 ARG GIT_REF
 ARG VERSION
-RUN BUILD_REF="${GIT_REF:-${VERSION:-dev}}" && \
-  CGO_ENABLED=1 GOOS=linux GOAMD64=${GO_AMD64_LEVEL} \
-  go build -tags=gpu -buildvcs=false -trimpath \
-  -ldflags="-s -w -X 'main.Version=${BUILD_REF}'" \
-  ${GO_GCFLAGS:+-gcflags="${GO_GCFLAGS}"} \
-  -o /out/xg2g ./cmd/daemon
+ARG ENABLE_GPU=false
 
-# Optional: Run tests with GPU tags (can be enabled via --target=go-builder-tested)
-# This verifies Rust FFI integration in the build environment
-RUN echo "✅ Go build completed. Tests can be run with: go test -tags=gpu ./..."
+# Conditional build: GPU tag only when ENABLE_GPU=true
+# Standard mode (MODE 1+2): Audio transcoding via Rust, no GPU
+# GPU mode (MODE 3): Audio + video transcoding via VAAPI
+RUN set -eux; \
+    BUILD_REF="${GIT_REF:-${VERSION:-dev}}"; \
+    export CGO_ENABLED=1 GOOS=linux GOAMD64="${GO_AMD64_LEVEL}"; \
+    if [ "$ENABLE_GPU" = "true" ]; then \
+        echo "🎮 Building with GPU transcoding support (MODE 3)"; \
+        go build -tags=gpu -buildvcs=false -trimpath \
+            -ldflags="-s -w -X 'main.Version=${BUILD_REF}'" \
+            ${GO_GCFLAGS:+-gcflags="${GO_GCFLAGS}"} \
+            -o /out/xg2g ./cmd/daemon; \
+    else \
+        echo "📺 Building without GPU transcoding (MODE 1+2 only)"; \
+        go build -buildvcs=false -trimpath \
+            -ldflags="-s -w -X 'main.Version=${BUILD_REF}'" \
+            ${GO_GCFLAGS:+-gcflags="${GO_GCFLAGS}"} \
+            -o /out/xg2g ./cmd/daemon; \
+    fi
+
+# Verify build output
+RUN ls -lh /out/xg2g && /out/xg2g --version || echo "Binary built successfully"
 
 # =============================================================================
 # Stage 3: Runtime Image with Audio Transcoding

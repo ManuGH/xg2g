@@ -85,7 +85,7 @@ func TestEndToEndStreamURLGeneration(t *testing.T) {
 	// Test stream URL generation
 	serviceRef := "1:0:19:283D:3FB:1:C00000:0:0:0:"
 	serviceName := "ARD HD"
-	streamURL, err := client.StreamURL(serviceRef, serviceName)
+	streamURL, err := client.StreamURL(context.Background(), serviceRef, serviceName)
 	require.NoError(t, err, "Should generate stream URL successfully")
 	assert.Contains(t, streamURL, serviceRef, "Stream URL should contain service reference")
 }

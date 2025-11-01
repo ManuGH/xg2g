@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -42,13 +41,14 @@ type OpenWebIFConfig struct {
 }
 
 // EPGConfig holds EPG configuration
+// Uses pointers for optional fields to distinguish between "not set" and "explicitly set to zero/false"
 type EPGConfig struct {
-	Enabled        bool   `yaml:"enabled"`
-	Days           int    `yaml:"days,omitempty"`
-	MaxConcurrency int    `yaml:"maxConcurrency,omitempty"`
-	TimeoutMS      int    `yaml:"timeoutMs,omitempty"`
-	Retries        int    `yaml:"retries,omitempty"`
-	FuzzyMax       int    `yaml:"fuzzyMax,omitempty"`
+	Enabled        *bool  `yaml:"enabled,omitempty"`
+	Days           *int   `yaml:"days,omitempty"`
+	MaxConcurrency *int   `yaml:"maxConcurrency,omitempty"`
+	TimeoutMS      *int   `yaml:"timeoutMs,omitempty"`
+	Retries        *int   `yaml:"retries,omitempty"`
+	FuzzyMax       *int   `yaml:"fuzzyMax,omitempty"`
 	XMLTVPath      string `yaml:"xmltvPath,omitempty"`
 }
 
@@ -59,8 +59,9 @@ type APIConfig struct {
 }
 
 // MetricsConfig holds Prometheus metrics configuration
+// Uses pointer for Enabled to distinguish between "not set" and "explicitly disabled"
 type MetricsConfig struct {
-	Enabled    bool   `yaml:"enabled"`
+	Enabled    *bool  `yaml:"enabled,omitempty"`
 	ListenAddr string `yaml:"listenAddr,omitempty"`
 }
 
@@ -212,24 +213,24 @@ func (l *Loader) mergeFileConfig(dst *jobs.Config, src *FileConfig) error {
 		dst.Bouquet = strings.Join(src.Bouquets, ",")
 	}
 
-	// EPG
-	if src.EPG.Enabled {
-		dst.EPGEnabled = true
+	// EPG - use pointer types to allow false/0 values from YAML
+	if src.EPG.Enabled != nil {
+		dst.EPGEnabled = *src.EPG.Enabled
 	}
-	if src.EPG.Days > 0 {
-		dst.EPGDays = src.EPG.Days
+	if src.EPG.Days != nil {
+		dst.EPGDays = *src.EPG.Days
 	}
-	if src.EPG.MaxConcurrency > 0 {
-		dst.EPGMaxConcurrency = src.EPG.MaxConcurrency
+	if src.EPG.MaxConcurrency != nil {
+		dst.EPGMaxConcurrency = *src.EPG.MaxConcurrency
 	}
-	if src.EPG.TimeoutMS > 0 {
-		dst.EPGTimeoutMS = src.EPG.TimeoutMS
+	if src.EPG.TimeoutMS != nil {
+		dst.EPGTimeoutMS = *src.EPG.TimeoutMS
 	}
-	if src.EPG.Retries > 0 {
-		dst.EPGRetries = src.EPG.Retries
+	if src.EPG.Retries != nil {
+		dst.EPGRetries = *src.EPG.Retries
 	}
-	if src.EPG.FuzzyMax > 0 {
-		dst.FuzzyMax = src.EPG.FuzzyMax
+	if src.EPG.FuzzyMax != nil {
+		dst.FuzzyMax = *src.EPG.FuzzyMax
 	}
 	if src.EPG.XMLTVPath != "" {
 		dst.XMLTVPath = src.EPG.XMLTVPath
@@ -250,101 +251,51 @@ func (l *Loader) mergeFileConfig(dst *jobs.Config, src *FileConfig) error {
 
 // mergeEnvConfig merges environment variables into jobs.Config
 // ENV variables have the highest precedence
-//
-//nolint:gocyclo // This function handles many environment variables but is straightforward
+// Uses consistent ParseBool/ParseInt/ParseDuration helpers from env.go
 func (l *Loader) mergeEnvConfig(cfg *jobs.Config) {
-	if v := os.Getenv("XG2G_VERSION"); v != "" {
-		cfg.Version = v
-	}
-	if v := os.Getenv("XG2G_DATA"); v != "" {
-		cfg.DataDir = v
-	}
+	// String values (direct assignment)
+	cfg.Version = ParseString("XG2G_VERSION", cfg.Version)
+	cfg.DataDir = ParseString("XG2G_DATA", cfg.DataDir)
 
 	// OpenWebIF
-	if v := os.Getenv("XG2G_OWI_BASE"); v != "" {
-		cfg.OWIBase = v
-	}
-	if v := os.Getenv("XG2G_OWI_USER"); v != "" {
-		cfg.OWIUsername = v
-	}
-	if v := os.Getenv("XG2G_OWI_PASS"); v != "" {
-		cfg.OWIPassword = v
-	}
-	if v := os.Getenv("XG2G_STREAM_PORT"); v != "" {
-		if port, err := strconv.Atoi(v); err == nil {
-			cfg.StreamPort = port
-		}
-	}
+	cfg.OWIBase = ParseString("XG2G_OWI_BASE", cfg.OWIBase)
+	cfg.OWIUsername = ParseString("XG2G_OWI_USER", cfg.OWIUsername)
+	cfg.OWIPassword = ParseString("XG2G_OWI_PASS", cfg.OWIPassword)
+	cfg.StreamPort = ParseInt("XG2G_STREAM_PORT", cfg.StreamPort)
 
 	// OpenWebIF timeouts/retries
+	// Convert millisecond ENV values to time.Duration
 	if v := os.Getenv("XG2G_OWI_TIMEOUT_MS"); v != "" {
-		if ms, err := strconv.ParseInt(v, 10, 64); err == nil {
-			cfg.OWITimeout = time.Duration(ms) * time.Millisecond
-		}
+		ms := ParseInt("XG2G_OWI_TIMEOUT_MS", int(cfg.OWITimeout.Milliseconds()))
+		cfg.OWITimeout = time.Duration(ms) * time.Millisecond
 	}
-	if v := os.Getenv("XG2G_OWI_RETRIES"); v != "" {
-		if retries, err := strconv.Atoi(v); err == nil {
-			cfg.OWIRetries = retries
-		}
-	}
+	cfg.OWIRetries = ParseInt("XG2G_OWI_RETRIES", cfg.OWIRetries)
 	if v := os.Getenv("XG2G_OWI_BACKOFF_MS"); v != "" {
-		if ms, err := strconv.ParseInt(v, 10, 64); err == nil {
-			cfg.OWIBackoff = time.Duration(ms) * time.Millisecond
-		}
+		ms := ParseInt("XG2G_OWI_BACKOFF_MS", int(cfg.OWIBackoff.Milliseconds()))
+		cfg.OWIBackoff = time.Duration(ms) * time.Millisecond
 	}
 	if v := os.Getenv("XG2G_OWI_MAX_BACKOFF_MS"); v != "" {
-		if ms, err := strconv.ParseInt(v, 10, 64); err == nil {
-			cfg.OWIMaxBackoff = time.Duration(ms) * time.Millisecond
-		}
+		ms := ParseInt("XG2G_OWI_MAX_BACKOFF_MS", int(cfg.OWIMaxBackoff.Milliseconds()))
+		cfg.OWIMaxBackoff = time.Duration(ms) * time.Millisecond
 	}
 
 	// Bouquet
-	if v := os.Getenv("XG2G_BOUQUET"); v != "" {
-		cfg.Bouquet = v
-	}
+	cfg.Bouquet = ParseString("XG2G_BOUQUET", cfg.Bouquet)
 
 	// EPG
-	if v := os.Getenv("XG2G_EPG_ENABLED"); v != "" {
-		cfg.EPGEnabled = strings.ToLower(v) == "true"
-	}
-	if v := os.Getenv("XG2G_EPG_DAYS"); v != "" {
-		if days, err := strconv.Atoi(v); err == nil {
-			cfg.EPGDays = days
-		}
-	}
-	if v := os.Getenv("XG2G_EPG_MAX_CONCURRENCY"); v != "" {
-		if conc, err := strconv.Atoi(v); err == nil {
-			cfg.EPGMaxConcurrency = conc
-		}
-	}
-	if v := os.Getenv("XG2G_EPG_TIMEOUT_MS"); v != "" {
-		if ms, err := strconv.Atoi(v); err == nil {
-			cfg.EPGTimeoutMS = ms
-		}
-	}
-	if v := os.Getenv("XG2G_EPG_RETRIES"); v != "" {
-		if retries, err := strconv.Atoi(v); err == nil {
-			cfg.EPGRetries = retries
-		}
-	}
-	if v := os.Getenv("XG2G_FUZZY_MAX"); v != "" {
-		if fuzzy, err := strconv.Atoi(v); err == nil {
-			cfg.FuzzyMax = fuzzy
-		}
-	}
-	if v := os.Getenv("XG2G_XMLTV"); v != "" {
-		cfg.XMLTVPath = v
-	}
+	cfg.EPGEnabled = ParseBool("XG2G_EPG_ENABLED", cfg.EPGEnabled)
+	cfg.EPGDays = ParseInt("XG2G_EPG_DAYS", cfg.EPGDays)
+	cfg.EPGMaxConcurrency = ParseInt("XG2G_EPG_MAX_CONCURRENCY", cfg.EPGMaxConcurrency)
+	cfg.EPGTimeoutMS = ParseInt("XG2G_EPG_TIMEOUT_MS", cfg.EPGTimeoutMS)
+	cfg.EPGRetries = ParseInt("XG2G_EPG_RETRIES", cfg.EPGRetries)
+	cfg.FuzzyMax = ParseInt("XG2G_FUZZY_MAX", cfg.FuzzyMax)
+	cfg.XMLTVPath = ParseString("XG2G_XMLTV", cfg.XMLTVPath)
 
 	// API
-	if v := os.Getenv("XG2G_API_TOKEN"); v != "" {
-		cfg.APIToken = v
-	}
+	cfg.APIToken = ParseString("XG2G_API_TOKEN", cfg.APIToken)
 
 	// Picons
-	if v := os.Getenv("XG2G_PICON_BASE"); v != "" {
-		cfg.PiconBase = v
-	}
+	cfg.PiconBase = ParseString("XG2G_PICON_BASE", cfg.PiconBase)
 }
 
 // expandEnv expands environment variables in the format ${VAR} or $VAR

@@ -7,7 +7,9 @@ import (
 	"net/http"
 
 	"github.com/ManuGH/xg2g/internal/telemetry"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -17,8 +19,9 @@ func Tracing(tracerName string) func(http.Handler) http.Handler {
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Extract trace context from incoming request (if present)
-			ctx := r.Context()
+			// Extract trace context from incoming request headers (W3C Trace Context)
+			// This enables distributed tracing across service boundaries
+			ctx := otel.GetTextMapPropagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
 
 			// Start a new span for this request
 			ctx, span := tracer.Start(ctx, r.Method+" "+r.URL.Path,

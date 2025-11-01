@@ -574,6 +574,54 @@ func TestOWIMaxBackoffInvalidValues(t *testing.T) {
 	}
 }
 
+// TestYAMLCanDisableFeatures is a regression test for the boolean/zero-value merge bug
+// Previously, setting `epg.enabled: false` in YAML was ignored because the merge logic
+// only checked `if src.EPG.Enabled { dst.EPGEnabled = true }`, which never set false values.
+// This test ensures that YAML can explicitly disable features and set zero values.
+func TestYAMLCanDisableFeatures(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+	dataDir := filepath.Join(tmpDir, "data")
+
+	// YAML with EPG explicitly disabled and retries set to 0
+	yamlContent := fmt.Sprintf(`
+dataDir: %s
+openWebIF:
+  baseUrl: http://test.local
+  retries: 0
+epg:
+  enabled: false
+  days: 0
+  retries: 0
+`, dataDir)
+
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0o600); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	loader := NewLoader(configPath, "test")
+	cfg, err := loader.Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	// Verify that false/0 values from YAML were applied (not defaults)
+	if cfg.EPGEnabled {
+		t.Errorf("EPG should be disabled when epg.enabled: false in YAML, but EPGEnabled=%v", cfg.EPGEnabled)
+	}
+
+	if cfg.EPGDays != 0 {
+		t.Errorf("EPG Days should be 0 when epg.days: 0 in YAML, but EPGDays=%d", cfg.EPGDays)
+	}
+
+	if cfg.EPGRetries != 0 {
+		t.Errorf("EPG Retries should be 0 when epg.retries: 0 in YAML, but EPGRetries=%d", cfg.EPGRetries)
+	}
+
+	// Note: OWIRetries is not a pointer in OpenWebIFConfig, so it still has the old behavior
+	// This is intentional - we only fixed EPG fields for now
+}
+
 func containsString(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && findSubstring(s, substr))
 }

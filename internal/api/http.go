@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,23 +17,47 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/api/middleware"
 	"github.com/ManuGH/xg2g/internal/hdhr"
+	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/ManuGH/xg2g/internal/log"
-	"github.com/gorilla/mux"
-	"golang.org/x/text/unicode/norm"
+	"github.com/go-chi/chi/v5"
+	chimiddleware "github.com/go-chi/chi/v5/middleware"
 )
 
 // Server represents the HTTP API server for xg2g.
 type Server struct {
-	mu         sync.RWMutex
-	refreshing atomic.Bool // serialize refreshes via atomic flag
-	cfg        jobs.Config
-	status     jobs.Status
-	cb         *CircuitBreaker
-	hdhr       *hdhr.Server // HDHomeRun emulation server
+	mu            sync.RWMutex
+	refreshing    atomic.Bool // serialize refreshes via atomic flag
+	cfg           jobs.Config
+	status        jobs.Status
+	cb            *CircuitBreaker
+	hdhr          *hdhr.Server         // HDHomeRun emulation server
+	configHolder  ConfigHolder         // Optional: for hot config reload support
+	auditLogger   AuditLogger          // Optional: for audit logging
+	healthManager *health.Manager      // Health and readiness checks
 	// refreshFn allows tests to stub the refresh operation; defaults to jobs.Refresh
 	refreshFn func(context.Context, jobs.Config) (*jobs.Status, error)
+}
+
+// AuditLogger interface for audit logging (optional).
+type AuditLogger interface {
+	ConfigReload(actor, result string, details map[string]string)
+	RefreshStart(actor string, bouquets []string)
+	RefreshComplete(actor string, channels, bouquets int, durationMS int64)
+	RefreshError(actor, reason string)
+	AuthSuccess(remoteAddr, endpoint string)
+	AuthFailure(remoteAddr, endpoint, reason string)
+	AuthMissing(remoteAddr, endpoint string)
+	RateLimitExceeded(remoteAddr, endpoint string)
+}
+
+// ConfigHolder interface allows hot configuration reloading without import cycles.
+// Implemented by config.ConfigHolder.
+type ConfigHolder interface {
+	Get() jobs.Config
+	Reload(ctx context.Context) error
 }
 
 // dataFilePath resolves a relative path inside the configured data directory while
@@ -115,6 +138,28 @@ func New(cfg jobs.Config) *Server {
 			Msg("HDHomeRun emulation enabled")
 	}
 
+	// Initialize health manager
+	s.healthManager = health.NewManager(cfg.Version)
+
+	// Register health checkers
+	playlistName := os.Getenv("XG2G_PLAYLIST_FILENAME")
+	if strings.TrimSpace(playlistName) == "" {
+		playlistName = "playlist.m3u"
+	}
+	playlistPath := filepath.Join(cfg.DataDir, playlistName)
+	s.healthManager.RegisterChecker(health.NewFileChecker("playlist", playlistPath))
+
+	if strings.TrimSpace(cfg.XMLTVPath) != "" {
+		xmltvPath := filepath.Join(cfg.DataDir, cfg.XMLTVPath)
+		s.healthManager.RegisterChecker(health.NewFileChecker("xmltv", xmltvPath))
+	}
+
+	s.healthManager.RegisterChecker(health.NewLastRunChecker(func() (time.Time, string) {
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		return s.status.LastRun, s.status.Error
+	}))
+
 	return s
 }
 
@@ -122,29 +167,42 @@ func New(cfg jobs.Config) *Server {
 func (s *Server) HDHomeRunServer() *hdhr.Server {
 	return s.hdhr
 }
-
 func (s *Server) routes() http.Handler {
-	r := mux.NewRouter()
-	// Do not auto-clean or redirect paths; keep encoded path for security checks
-	r.SkipClean(true)
-	r.UseEncodedPath()
-	r.Use(log.Middleware()) // Apply structured logging to all routes
+	r := chi.NewRouter()
+
+	// Apply middleware stack (order matters for correctness and performance)
+	// 1. RequestID - generate unique ID for request correlation
+	r.Use(chimiddleware.RequestID)
+	// 2. Recoverer - panic recovery to prevent server crashes
+	r.Use(chimiddleware.Recoverer)
+	// 3. Global Rate Limiting - protect all endpoints from DoS (OWASP 2025)
+	r.Use(middleware.APIRateLimit())
+	// 4. Metrics - track all requests (before tracing for accurate timing)
+	r.Use(middleware.Metrics())
+	// 5. Tracing - distributed tracing with OpenTelemetry (with context propagation)
+	r.Use(middleware.Tracing("xg2g-api"))
+	// 6. Logging - structured request/response logging
+	r.Use(log.Middleware())
+	// 7. Security headers - add security headers to all responses
 	r.Use(securityHeadersMiddleware)
 
 	// Health checks (versionless - infrastructure endpoints)
-	r.HandleFunc("/healthz", s.handleHealth).Methods(http.MethodGet)
-	r.HandleFunc("/readyz", s.handleReady).Methods(http.MethodGet)
+	r.Get("/healthz", s.handleHealth)
+	r.Get("/readyz", s.handleReady)
 
 	// Legacy API endpoints (deprecated - maintain backward compatibility)
 	// These will be removed in a future major version
-	legacyAPI := r.PathPrefix("/api").Subrouter()
-	legacyAPI.Use(deprecationMiddleware(DeprecationConfig{
-		SunsetVersion: "2.0.0",
-		SunsetDate:    "2025-12-31T23:59:59Z",
-		SuccessorPath: "/api/v1",
-	}))
-	legacyAPI.HandleFunc("/status", s.handleStatus).Methods(http.MethodGet)
-	legacyAPI.HandleFunc("/refresh", s.authRequired(s.handleRefresh)).Methods(http.MethodPost)
+	r.Route("/api", func(r chi.Router) {
+		r.Use(deprecationMiddleware(DeprecationConfig{
+			SunsetVersion: "2.0.0",
+			SunsetDate:    "2025-12-31T23:59:59Z",
+			SuccessorPath: "/api/v1",
+		}))
+		r.Get("/status", s.handleStatus)
+		// Apply rate limiting and CSRF protection to expensive refresh operation
+		r.With(middleware.RefreshRateLimit(), middleware.CSRFProtection()).
+			Post("/refresh", s.authRequired(s.handleRefresh))
+	})
 
 	// V1 API (current stable version)
 	s.registerV1Routes(r)
@@ -156,19 +214,20 @@ func (s *Server) routes() http.Handler {
 
 	// HDHomeRun emulation endpoints (versionless - hardware emulation protocol)
 	if s.hdhr != nil {
-		r.HandleFunc("/discover.json", s.hdhr.HandleDiscover).Methods(http.MethodGet)
-		r.HandleFunc("/lineup_status.json", s.hdhr.HandleLineupStatus).Methods(http.MethodGet)
-		r.HandleFunc("/lineup.json", s.handleLineupJSON).Methods(http.MethodGet)
-		r.HandleFunc("/lineup.json", s.hdhr.HandleLineupPost).Methods(http.MethodPost)
-		r.HandleFunc("/lineup.post", s.hdhr.HandleLineupPost).Methods("GET", "POST")
-		r.HandleFunc("/device.xml", s.hdhr.HandleDeviceXML).Methods(http.MethodGet)
+		r.Get("/discover.json", s.hdhr.HandleDiscover)
+		r.Get("/lineup_status.json", s.hdhr.HandleLineupStatus)
+		r.Get("/lineup.json", s.handleLineupJSON)
+		r.Post("/lineup.json", s.hdhr.HandleLineupPost)
+		r.HandleFunc("/lineup.post", s.hdhr.HandleLineupPost) // supports both GET and POST
+		r.Get("/device.xml", s.hdhr.HandleDeviceXML)
 	}
 
 	// XMLTV endpoint (versionless - standard format)
-	r.HandleFunc("/xmltv.xml", s.handleXMLTV).Methods("GET", "HEAD")
+	r.Method(http.MethodGet, "/xmltv.xml", http.HandlerFunc(s.handleXMLTV))
+	r.Method(http.MethodHead, "/xmltv.xml", http.HandlerFunc(s.handleXMLTV))
 
 	// Harden file server: disable directory listing and use a secure handler
-	r.PathPrefix("/files/").Handler(http.StripPrefix("/files/", s.secureFileServer()))
+	r.Handle("/files/*", http.StripPrefix("/files/", s.secureFileServer()))
 	return r
 }
 
@@ -199,6 +258,11 @@ func (s *Server) authRequired(next http.HandlerFunc) http.HandlerFunc {
 		reqToken := r.Header.Get("X-API-Token")
 		if reqToken == "" {
 			logger.Warn().Str("event", "auth.missing_header").Msg("authorization header missing")
+
+			// Audit log: missing authentication
+			if s.auditLogger != nil {
+				s.auditLogger.AuthMissing(clientIP(r), r.URL.Path)
+			}
 			http.Error(w, "Unauthorized: Missing API token", http.StatusUnauthorized)
 			return
 		}
@@ -206,8 +270,18 @@ func (s *Server) authRequired(next http.HandlerFunc) http.HandlerFunc {
 		// Use constant-time comparison to prevent timing attacks
 		if subtle.ConstantTimeCompare([]byte(reqToken), []byte(token)) != 1 {
 			logger.Warn().Str("event", "auth.invalid_token").Msg("invalid api token")
+
+			// Audit log: authentication failure
+			if s.auditLogger != nil {
+				s.auditLogger.AuthFailure(clientIP(r), r.URL.Path, "invalid token")
+			}
 			http.Error(w, "Forbidden: Invalid API token", http.StatusForbidden)
 			return
+		}
+
+		// Audit log: authentication success
+		if s.auditLogger != nil {
+			s.auditLogger.AuthSuccess(clientIP(r), r.URL.Path)
 		}
 
 		// Token is valid
@@ -261,6 +335,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	logger := log.WithComponentFromContext(r.Context(), "api")
+	actor := r.RemoteAddr
 
 	// Try to acquire the refresh flag atomically; fail fast if already running
 	if !s.refreshing.CompareAndSwap(false, true) {
@@ -279,6 +354,12 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer s.refreshing.Store(false)
+
+	// Audit log: refresh started
+	bouquets := strings.Split(s.cfg.Bouquet, ",")
+	if s.auditLogger != nil {
+		s.auditLogger.RefreshStart(actor, bouquets)
+	}
 
 	// Create independent context for background job
 	// Use Background() instead of request context to prevent premature cancellation
@@ -307,6 +388,11 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	if err != nil {
+		// Audit log: refresh error
+		if s.auditLogger != nil {
+			s.auditLogger.RefreshError(actor, err.Error())
+		}
+
 		// Distinguish open circuit (fast-fail) from internal error
 		if errors.Is(err, errCircuitOpen) {
 			logger.Warn().
@@ -336,6 +422,11 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		// Security: Never expose internal error details to client
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
+	}
+
+	// Audit log: refresh completed successfully
+	if s.auditLogger != nil {
+		s.auditLogger.RefreshComplete(actor, st.Channels, st.Bouquets, duration.Milliseconds())
 	}
 
 	recordRefreshMetrics(duration, st.Channels)
@@ -371,69 +462,11 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	logger := log.WithComponentFromContext(r.Context(), "api")
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(map[string]string{"status": "ok"}); err != nil {
-		logger.Error().Err(err).Str("event", "health.encode_error").Msg("failed to encode health response")
-	}
+	s.healthManager.ServeHealth(w, r)
 }
 
 func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
-	logger := log.WithComponentFromContext(r.Context(), "api")
-	s.mu.RLock()
-	status := s.status
-	s.mu.RUnlock()
-
-	// Check if artifacts exist and are readable
-	playlistName := os.Getenv("XG2G_PLAYLIST_FILENAME")
-	if strings.TrimSpace(playlistName) == "" {
-		playlistName = "playlist.m3u"
-	}
-	playlistOK := false
-	if playlistPath, err := s.dataFilePath(playlistName); err != nil {
-		logger.Warn().Err(err).Str("event", "ready.invalid_playlist_path").Msg("playlist path outside data directory")
-	} else {
-		playlistOK = checkFile(r.Context(), playlistPath)
-	}
-
-	xmltvOK := true // Assume OK if not configured
-	if strings.TrimSpace(s.cfg.XMLTVPath) != "" {
-		if xmltvPath, err := s.dataFilePath(s.cfg.XMLTVPath); err != nil {
-			xmltvOK = false
-			logger.Warn().Err(err).Str("event", "ready.invalid_xmltv_path").Msg("xmltv path outside data directory")
-		} else {
-			xmltvOK = checkFile(r.Context(), xmltvPath)
-		}
-	}
-
-	ready := !status.LastRun.IsZero() && status.Error == "" && playlistOK && xmltvOK
-	w.Header().Set("Content-Type", "application/json")
-	if !ready {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		if err := json.NewEncoder(w).Encode(map[string]string{"status": "not-ready"}); err != nil {
-			logger.Error().Err(err).Str("event", "ready.encode_error").Msg("failed to encode readiness response")
-		}
-		logger.Debug().
-			Str("event", "ready.status").
-			Str("state", "not-ready").
-			Time("lastRun", status.LastRun).
-			Str("error", status.Error).
-			Bool("playlistOK", playlistOK).
-			Bool("xmltvOK", xmltvOK).
-			Msg("readiness probe")
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(map[string]string{"status": "ready"}); err != nil {
-		logger.Error().Err(err).Str("event", "ready.encode_error").Msg("failed to encode readiness response")
-	}
-	logger.Debug().
-		Str("event", "ready.status").
-		Str("state", "ready").
-		Time("lastRun", status.LastRun).
-		Msg("readiness probe")
+	s.healthManager.ServeReady(w, r)
 }
 
 func (s *Server) handleXMLTV(w http.ResponseWriter, r *http.Request) {
@@ -596,233 +629,11 @@ func (s *Server) handleXMLTV(w http.ResponseWriter, r *http.Request) {
 		Msg("XMLTV file served with channel ID remapping")
 }
 
-// checkFile verifies if a file exists and is readable.
-func checkFile(ctx context.Context, path string) bool {
-	info, err := os.Stat(path)
-	if err != nil {
-		return false
-	}
-	if info.IsDir() {
-		return false
-	}
-	// #nosec G304 -- callers must provide paths checked by dataFilePath
-	f, err := os.Open(path)
-	if err != nil {
-		return false
-	}
-	if err := f.Close(); err != nil {
-		// Log the error, but the function's outcome is already determined.
-		log.FromContext(ctx).Warn().Err(err).Str("path", path).Msg("failed to close file during check")
-	}
-	return true
-}
-
-// isPathTraversal performs robust checks against path traversal attempts.
-// It decodes the input multiple times to catch double-encoding, applies
-// Unicode normalization, and searches for dangerous sequences including NULs.
-func isPathTraversal(p string) bool {
-	// Work on a copy
-	decoded := p
-	// Attempt multiple decode passes to catch double/triple encodings
-	for i := 0; i < 3; i++ {
-		prev := decoded
-		if d, err := url.PathUnescape(decoded); err == nil {
-			decoded = d
-		} else {
-			// As a fallback, try query unescape in case of stray '+' or query-like encoding
-			if d2, err2 := url.QueryUnescape(decoded); err2 == nil {
-				decoded = d2
-			}
-		}
-		if decoded == prev {
-			break
-		}
-	}
-
-	lower := strings.ToLower(decoded)
-	// Immediate dangerous byte patterns, independent of platform
-	dangerSubstrings := []string{
-		"..",        // parent traversal
-		"..\\",      // windows-style backslash
-		"%00",       // encoded NUL
-		"\x00",      // literal NUL escape (defense-in-depth; may not appear literally)
-		"%c0%ae",    // overlong UTF-8 for '.'
-		"%e0%80%ae", // another overlong variant
-	}
-	for _, pat := range dangerSubstrings {
-		if strings.Contains(lower, pat) {
-			return true
-		}
-	}
-	// Literal NUL after decoding
-	if strings.Contains(decoded, "\x00") || strings.IndexByte(decoded, 0x00) >= 0 {
-		return true
-	}
-
-	// Normalize and check again for dot-dot
-	normalized := strings.ToLower(norm.NFC.String(decoded))
-	if strings.Contains(normalized, "..") || strings.Contains(normalized, "..\\") {
-		return true
-	}
-
-	return false
-}
-
-// secureFileServer creates a handler that serves files from the data directory
-// with several security checks in place.
-func (s *Server) secureFileServer() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		logger := log.WithComponentFromContext(r.Context(), "api")
-
-		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			logger.Warn().Str("event", "file_req.denied").Str("path", r.URL.Path).Str("reason", "method_not_allowed").Msg("method not allowed")
-			recordFileRequestDenied("method_not_allowed")
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		path := r.URL.Path
-		// Enhanced traversal detection including multiple URL-decode passes,
-		// Unicode normalization, mixed-case encodings, and NUL bytes.
-		if isPathTraversal(path) {
-			logger.Warn().Str("event", "file_req.denied").Str("path", r.URL.Path).Str("reason", "path_escape").Msg("detected traversal sequence")
-			recordFileRequestDenied("path_escape")
-			http.Error(w, "Forbidden", http.StatusForbidden)
-			return
-		}
-		if strings.HasSuffix(path, "/") || path == "" {
-			logger.Warn().Str("event", "file_req.denied").Str("path", r.URL.Path).Str("reason", "directory_listing").Msg("directory listing forbidden")
-			recordFileRequestDenied("directory_listing")
-			http.Error(w, "Forbidden", http.StatusForbidden)
-			return
-		}
-
-		absDataDir, err := filepath.Abs(s.cfg.DataDir)
-		if err != nil {
-			logger.Error().Err(err).Str("event", "file_req.internal_error").Msg("could not get absolute data dir")
-			recordFileRequestDenied("internal_error")
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-
-		fullPath := filepath.Join(absDataDir, path)
-
-		// Evaluate symlinks and clean the path
-		realPath, err := filepath.EvalSymlinks(fullPath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				logger.Info().Str("event", "file_req.not_found").Str("path", fullPath).Msg("file not found")
-				recordFileRequestDenied("not_found")
-				http.Error(w, "Not found", http.StatusNotFound)
-				return
-			}
-			logger.Error().Err(err).Str("event", "file_req.internal_error").Str("path", fullPath).Msg("could not evaluate symlinks")
-			recordFileRequestDenied("internal_error")
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-
-		// Also evaluate symlinks on the data directory itself to get a consistent base path.
-		realDataDir, err := filepath.EvalSymlinks(absDataDir)
-		if err != nil {
-			logger.Error().Err(err).Str("event", "file_req.internal_error").Msg("could not evaluate symlinks on data dir")
-			recordFileRequestDenied("internal_error")
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-
-		// Security check: ensure the real path is within the real data directory
-		// Use filepath.Rel for robust path containment check (protects against symlink escapes)
-		relPath, err := filepath.Rel(realDataDir, realPath)
-		if err != nil || strings.HasPrefix(relPath, "..") || filepath.IsAbs(relPath) {
-			logger.Warn().
-				Str("event", "file_req.denied").
-				Str("path", path).
-				Str("resolved_path", realPath).
-				Str("data_dir", realDataDir).
-				Str("reason", "path_escape").
-				Msg("path escapes data directory")
-			recordFileRequestDenied("path_escape")
-			http.Error(w, "Forbidden", http.StatusForbidden)
-			return
-		}
-
-		// Security check: ensure we are not serving a directory
-		info, err := os.Stat(realPath)
-		if err != nil {
-			logger.Error().Err(err).Str("event", "file_req.internal_error").Str("path", realPath).Msg("could not stat real path")
-			recordFileRequestDenied("internal_error")
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-		if info.IsDir() {
-			logger.Warn().Str("event", "file_req.denied").Str("path", path).Str("reason", "directory_listing").Msg("resolved path is a directory")
-			recordFileRequestDenied("directory_listing")
-			http.Error(w, "Forbidden", http.StatusForbidden)
-			return
-		}
-
-		// --- ETag Caching Implementation ---
-		// #nosec G304 -- realPath is validated to reside inside the data directory
-		f, err := os.Open(realPath)
-		if err != nil {
-			logger.Error().Err(err).Str("event", "file_req.internal_error").Str("path", realPath).Msg("could not open real path for serving")
-			recordFileRequestDenied("internal_error")
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-		defer func() {
-			if err := f.Close(); err != nil {
-				logger.Warn().Err(err).Str("path", realPath).Msg("failed to close file")
-			}
-		}()
-
-		// Re-fetch stat info from the opened file handle
-		info, err = f.Stat()
-		if err != nil {
-			logger.Error().Err(err).Str("event", "file_req.internal_error").Str("path", realPath).Msg("could not stat opened file")
-			recordFileRequestDenied("internal_error")
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-
-		// Generate a weak ETag based on file modtime and size.
-		// W/ prefix indicates a weak validator, suitable for content that is semantically
-		// equivalent but not necessarily byte-for-byte identical.
-		etag := fmt.Sprintf(`W/"%x-%x"`, info.ModTime().UnixNano(), info.Size())
-		w.Header().Set("ETag", etag)
-		w.Header().Set("Cache-Control", "public, max-age=3600") // Also set cache-control
-
-		// Check if the client already has the same version of the file.
-		if match := r.Header.Get("If-None-Match"); match != "" {
-			if match == etag {
-				recordFileCacheHit()
-				w.WriteHeader(http.StatusNotModified)
-				return
-			}
-		}
-
-		// All checks passed, serve the file content.
-		// http.ServeContent is preferred over http.ServeFile when we already have an
-		// open file, as it handles Range requests and sets Content-Type,
-		// Content-Length, and Last-Modified headers correctly.
-
-		// Set explicit charset for XML/M3U files to ensure proper UTF-8 handling
-		if strings.HasSuffix(strings.ToLower(info.Name()), ".xml") {
-			w.Header().Set("Content-Type", "application/xml; charset=utf-8")
-		} else if strings.HasSuffix(strings.ToLower(info.Name()), ".m3u") {
-			w.Header().Set("Content-Type", "audio/x-mpegurl; charset=utf-8")
-		}
-
-		logger.Info().Str("event", "file_req.allowed").Str("path", path).Msg("serving file")
-		recordFileRequestAllowed()
-		recordFileCacheMiss()
-		http.ServeContent(w, r, info.Name(), info.ModTime(), f)
-	})
-}
-
 // Handler returns the configured HTTP handler with all routes and middleware applied.
 func (s *Server) Handler() http.Handler {
+	if s.auditLogger != nil {
+		return withMiddlewares(s.routes(), s.auditLogger)
+	}
 	return withMiddlewares(s.routes())
 }
 
@@ -922,20 +733,29 @@ func (s *Server) handleLineupJSON(w http.ResponseWriter, r *http.Request) {
 }
 
 // registerV1Routes registers all v1 API endpoints
-func (s *Server) registerV1Routes(r *mux.Router) {
+func (s *Server) registerV1Routes(r chi.Router) {
 	// Import the v1 package handler
 	// Note: This will be done after we fix the import cycle
-	v1Router := r.PathPrefix("/api/v1").Subrouter()
-	v1Router.HandleFunc("/status", s.handleStatusV1).Methods(http.MethodGet)
-	v1Router.HandleFunc("/refresh", s.authRequired(s.handleRefreshV1)).Methods(http.MethodPost)
+	r.Route("/api/v1", func(r chi.Router) {
+		r.Get("/status", s.handleStatusV1)
+		// Apply rate limiting and CSRF protection to expensive refresh operation
+		r.With(middleware.RefreshRateLimit(), middleware.CSRFProtection()).
+			Post("/refresh", s.authRequired(s.handleRefreshV1))
+		// Config management endpoints
+		r.Route("/config", func(r chi.Router) {
+			r.With(middleware.CSRFProtection()).
+				Post("/reload", s.authRequired(s.handleConfigReloadV1))
+		})
+	})
 }
 
 // registerV2Routes registers all v2 API endpoints (placeholder for future)
-func (s *Server) registerV2Routes(r *mux.Router) {
+func (s *Server) registerV2Routes(r chi.Router) {
 	// V2 API implementation will go here
 	// Example: different path structure, enhanced response formats, etc.
-	v2Router := r.PathPrefix("/api/v2").Subrouter()
-	v2Router.HandleFunc("/status", s.handleStatusV2Placeholder).Methods(http.MethodGet)
+	r.Route("/api/v2", func(r chi.Router) {
+		r.Get("/status", s.handleStatusV2Placeholder)
+	})
 }
 
 // handleStatusV1 wraps the v1 handler
@@ -972,6 +792,82 @@ func (s *Server) handleStatusV1(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRefreshV1(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-API-Version", "1")
 	s.handleRefresh(w, r)
+}
+
+// handleConfigReloadV1 handles POST /api/v1/config/reload - triggers config file reload.
+func (s *Server) handleConfigReloadV1(w http.ResponseWriter, r *http.Request) {
+	logger := log.WithComponentFromContext(r.Context(), "api.v1")
+	w.Header().Set("X-API-Version", "1")
+
+	actor := r.RemoteAddr // Default actor
+
+	// Check if config holder is available
+	if s.configHolder == nil {
+		if s.auditLogger != nil {
+			s.auditLogger.ConfigReload(actor, "failure", map[string]string{
+				"error": "hot reload not enabled",
+			})
+		}
+		RespondError(w, r, http.StatusServiceUnavailable, ErrServiceUnavailable,
+			map[string]string{"reason": "hot reload not enabled"})
+		logger.Warn().
+			Str("event", "config.reload_unavailable").
+			Msg("config reload requested but hot reload not enabled")
+		return
+	}
+
+	// Trigger reload
+	if err := s.configHolder.Reload(r.Context()); err != nil {
+		if s.auditLogger != nil {
+			s.auditLogger.ConfigReload(actor, "failure", map[string]string{
+				"error": err.Error(),
+			})
+		}
+		RespondError(w, r, http.StatusInternalServerError, ErrInternalServer,
+			map[string]string{"error": err.Error()})
+		logger.Error().
+			Err(err).
+			Str("event", "config.reload_failed").
+			Msg("config reload failed")
+		return
+	}
+
+	// Update server config from holder
+	s.mu.Lock()
+	s.cfg = s.configHolder.Get()
+	s.mu.Unlock()
+
+	// Audit log success
+	if s.auditLogger != nil {
+		s.auditLogger.ConfigReload(actor, "success", map[string]string{
+			"method": "api",
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	resp := map[string]any{
+		"status":  "ok",
+		"message": "configuration reloaded successfully",
+	}
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		logger.Error().Err(err).Msg("failed to encode config reload response")
+		return
+	}
+
+	logger.Info().
+		Str("event", "config.reload_success").
+		Msg("configuration reloaded via API")
+}
+
+// SetConfigHolder sets the config holder for hot reload support (optional).
+// Must be called before routes are registered if hot reload is desired.
+func (s *Server) SetConfigHolder(holder ConfigHolder) {
+	s.configHolder = holder
+}
+
+// SetAuditLogger sets the audit logger for security event logging (optional).
+func (s *Server) SetAuditLogger(logger AuditLogger) {
+	s.auditLogger = logger
 }
 
 // handleStatusV2Placeholder is a placeholder for v2 status endpoint
