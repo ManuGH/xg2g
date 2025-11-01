@@ -15,6 +15,10 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// ShutdownHook is a function that performs cleanup during graceful shutdown.
+// Hooks are executed in reverse registration order (LIFO).
+type ShutdownHook func(ctx context.Context) error
+
 // Manager manages the daemon lifecycle: starting servers, handling shutdown.
 type Manager interface {
 	// Start starts all configured servers and blocks until shutdown
@@ -22,6 +26,9 @@ type Manager interface {
 
 	// Shutdown gracefully shuts down all servers
 	Shutdown(ctx context.Context) error
+
+	// RegisterShutdownHook registers a function to be called during shutdown
+	RegisterShutdownHook(name string, hook ShutdownHook)
 }
 
 // manager implements the Manager interface.
@@ -35,12 +42,21 @@ type manager struct {
 	metricsServer *http.Server
 	proxyServer   *proxy.Server
 
+	// Shutdown hooks (LIFO order)
+	shutdownHooks []namedHook
+
 	// State
 	started bool
 	mu      sync.Mutex
 
 	// Logger
 	logger zerolog.Logger
+}
+
+// namedHook represents a shutdown hook with a name for logging
+type namedHook struct {
+	name string
+	hook ShutdownHook
 }
 
 // NewManager creates a new daemon manager with the given configuration and dependencies.
@@ -50,9 +66,10 @@ func NewManager(serverCfg config.ServerConfig, deps Deps) (Manager, error) {
 	}
 
 	return &manager{
-		serverCfg: serverCfg,
-		deps:      deps,
-		logger:    deps.Logger.With().Str("component", "manager").Logger(),
+		serverCfg:     serverCfg,
+		deps:          deps,
+		logger:        deps.Logger.With().Str("component", "manager").Logger(),
+		shutdownHooks: make([]namedHook, 0),
 	}, nil
 }
 
@@ -252,6 +269,28 @@ func (m *manager) Shutdown(ctx context.Context) error {
 		}
 	}
 
+	// Execute shutdown hooks in reverse order (LIFO)
+	m.logger.Debug().Int("hooks", len(m.shutdownHooks)).Msg("Executing shutdown hooks")
+	for i := len(m.shutdownHooks) - 1; i >= 0; i-- {
+		hook := m.shutdownHooks[i]
+		m.logger.Debug().Str("hook", hook.name).Msg("Executing shutdown hook")
+
+		hookStart := time.Now()
+		if err := hook.hook(shutdownCtx); err != nil {
+			m.logger.Error().
+				Err(err).
+				Str("hook", hook.name).
+				Dur("duration", time.Since(hookStart)).
+				Msg("Shutdown hook failed")
+			errs = append(errs, fmt.Errorf("hook %s: %w", hook.name, err))
+		} else {
+			m.logger.Debug().
+				Str("hook", hook.name).
+				Dur("duration", time.Since(hookStart)).
+				Msg("Shutdown hook completed")
+		}
+	}
+
 	if len(errs) > 0 {
 		m.logger.Error().
 			Int("error_count", len(errs)).
@@ -261,4 +300,18 @@ func (m *manager) Shutdown(ctx context.Context) error {
 
 	m.logger.Info().Msg("Daemon manager stopped cleanly")
 	return nil
+}
+
+// RegisterShutdownHook registers a cleanup function to be called during shutdown.
+// Hooks are executed in reverse registration order (LIFO).
+func (m *manager) RegisterShutdownHook(name string, hook ShutdownHook) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.shutdownHooks = append(m.shutdownHooks, namedHook{
+		name: name,
+		hook: hook,
+	})
+
+	m.logger.Debug().Str("hook", name).Msg("Registered shutdown hook")
 }

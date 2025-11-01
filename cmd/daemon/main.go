@@ -193,6 +193,13 @@ func main() {
 					Msg("SSDP announcer failed")
 			}
 		}()
+
+		// Register shutdown hook for SSDP cleanup
+		mgr.RegisterShutdownHook("ssdp_announcer", func(shutdownCtx context.Context) error {
+			logger.Info().Msg("Stopping SSDP announcer")
+			// SSDP announcer stops when context is cancelled
+			return nil
+		})
 	}
 
 	// Start daemon manager (blocks until shutdown)
