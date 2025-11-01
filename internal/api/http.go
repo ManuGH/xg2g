@@ -17,10 +17,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/api/middleware"
 	"github.com/ManuGH/xg2g/internal/hdhr"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/ManuGH/xg2g/internal/log"
-	"github.com/ManuGH/xg2g/internal/api/middleware"
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 )
@@ -34,8 +34,21 @@ type Server struct {
 	cb           *CircuitBreaker
 	hdhr         *hdhr.Server // HDHomeRun emulation server
 	configHolder ConfigHolder // Optional: for hot config reload support
+	auditLogger  AuditLogger  // Optional: for audit logging
 	// refreshFn allows tests to stub the refresh operation; defaults to jobs.Refresh
 	refreshFn func(context.Context, jobs.Config) (*jobs.Status, error)
+}
+
+// AuditLogger interface for audit logging (optional).
+type AuditLogger interface {
+	ConfigReload(actor, result string, details map[string]string)
+	RefreshStart(actor string, bouquets []string)
+	RefreshComplete(actor string, channels, bouquets int, durationMS int64)
+	RefreshError(actor, reason string)
+	AuthSuccess(remoteAddr, endpoint string)
+	AuthFailure(remoteAddr, endpoint, reason string)
+	AuthMissing(remoteAddr, endpoint string)
+	RateLimitExceeded(remoteAddr, endpoint string)
 }
 
 // ConfigHolder interface allows hot configuration reloading without import cycles.
@@ -234,6 +247,11 @@ func (s *Server) authRequired(next http.HandlerFunc) http.HandlerFunc {
 		reqToken := r.Header.Get("X-API-Token")
 		if reqToken == "" {
 			logger.Warn().Str("event", "auth.missing_header").Msg("authorization header missing")
+
+			// Audit log: missing authentication
+			if s.auditLogger != nil {
+				s.auditLogger.AuthMissing(clientIP(r), r.URL.Path)
+			}
 			http.Error(w, "Unauthorized: Missing API token", http.StatusUnauthorized)
 			return
 		}
@@ -241,8 +259,18 @@ func (s *Server) authRequired(next http.HandlerFunc) http.HandlerFunc {
 		// Use constant-time comparison to prevent timing attacks
 		if subtle.ConstantTimeCompare([]byte(reqToken), []byte(token)) != 1 {
 			logger.Warn().Str("event", "auth.invalid_token").Msg("invalid api token")
+
+			// Audit log: authentication failure
+			if s.auditLogger != nil {
+				s.auditLogger.AuthFailure(clientIP(r), r.URL.Path, "invalid token")
+			}
 			http.Error(w, "Forbidden: Invalid API token", http.StatusForbidden)
 			return
+		}
+
+		// Audit log: authentication success
+		if s.auditLogger != nil {
+			s.auditLogger.AuthSuccess(clientIP(r), r.URL.Path)
 		}
 
 		// Token is valid
@@ -296,6 +324,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	logger := log.WithComponentFromContext(r.Context(), "api")
+	actor := r.RemoteAddr
 
 	// Try to acquire the refresh flag atomically; fail fast if already running
 	if !s.refreshing.CompareAndSwap(false, true) {
@@ -314,6 +343,12 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer s.refreshing.Store(false)
+
+	// Audit log: refresh started
+	bouquets := strings.Split(s.cfg.Bouquet, ",")
+	if s.auditLogger != nil {
+		s.auditLogger.RefreshStart(actor, bouquets)
+	}
 
 	// Create independent context for background job
 	// Use Background() instead of request context to prevent premature cancellation
@@ -342,6 +377,11 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	if err != nil {
+		// Audit log: refresh error
+		if s.auditLogger != nil {
+			s.auditLogger.RefreshError(actor, err.Error())
+		}
+
 		// Distinguish open circuit (fast-fail) from internal error
 		if errors.Is(err, errCircuitOpen) {
 			logger.Warn().
@@ -371,6 +411,11 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		// Security: Never expose internal error details to client
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
+	}
+
+	// Audit log: refresh completed successfully
+	if s.auditLogger != nil {
+		s.auditLogger.RefreshComplete(actor, st.Channels, st.Bouquets, duration.Milliseconds())
 	}
 
 	recordRefreshMetrics(duration, st.Channels)
@@ -633,6 +678,9 @@ func (s *Server) handleXMLTV(w http.ResponseWriter, r *http.Request) {
 
 // Handler returns the configured HTTP handler with all routes and middleware applied.
 func (s *Server) Handler() http.Handler {
+	if s.auditLogger != nil {
+		return withMiddlewares(s.routes(), s.auditLogger)
+	}
 	return withMiddlewares(s.routes())
 }
 
@@ -798,8 +846,15 @@ func (s *Server) handleConfigReloadV1(w http.ResponseWriter, r *http.Request) {
 	logger := log.WithComponentFromContext(r.Context(), "api.v1")
 	w.Header().Set("X-API-Version", "1")
 
+	actor := r.RemoteAddr // Default actor
+
 	// Check if config holder is available
 	if s.configHolder == nil {
+		if s.auditLogger != nil {
+			s.auditLogger.ConfigReload(actor, "failure", map[string]string{
+				"error": "hot reload not enabled",
+			})
+		}
 		RespondError(w, r, http.StatusServiceUnavailable, ErrServiceUnavailable,
 			map[string]string{"reason": "hot reload not enabled"})
 		logger.Warn().
@@ -810,6 +865,11 @@ func (s *Server) handleConfigReloadV1(w http.ResponseWriter, r *http.Request) {
 
 	// Trigger reload
 	if err := s.configHolder.Reload(r.Context()); err != nil {
+		if s.auditLogger != nil {
+			s.auditLogger.ConfigReload(actor, "failure", map[string]string{
+				"error": err.Error(),
+			})
+		}
 		RespondError(w, r, http.StatusInternalServerError, ErrInternalServer,
 			map[string]string{"error": err.Error()})
 		logger.Error().
@@ -823,6 +883,13 @@ func (s *Server) handleConfigReloadV1(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	s.cfg = s.configHolder.Get()
 	s.mu.Unlock()
+
+	// Audit log success
+	if s.auditLogger != nil {
+		s.auditLogger.ConfigReload(actor, "success", map[string]string{
+			"method": "api",
+		})
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	resp := map[string]any{
@@ -843,6 +910,11 @@ func (s *Server) handleConfigReloadV1(w http.ResponseWriter, r *http.Request) {
 // Must be called before routes are registered if hot reload is desired.
 func (s *Server) SetConfigHolder(holder ConfigHolder) {
 	s.configHolder = holder
+}
+
+// SetAuditLogger sets the audit logger for security event logging (optional).
+func (s *Server) SetAuditLogger(logger AuditLogger) {
+	s.auditLogger = logger
 }
 
 // handleStatusV2Placeholder is a placeholder for v2 status endpoint

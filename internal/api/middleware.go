@@ -81,6 +81,11 @@ type visitor struct {
 	lastSeen time.Time
 }
 
+// RateLimitAuditor provides audit logging for rate limit events
+type RateLimitAuditor interface {
+	RateLimitExceeded(remoteAddr, endpoint string)
+}
+
 type rateLimiter struct {
 	visitors     map[string]*visitor
 	mtx          sync.RWMutex
@@ -88,6 +93,7 @@ type rateLimiter struct {
 	burst        int
 	enabled      bool
 	whitelistIPs []string
+	auditLogger  RateLimitAuditor // Optional: for audit logging
 }
 
 func newRateLimiter(r rate.Limit, b int) *rateLimiter {
@@ -173,6 +179,11 @@ func (rl *rateLimiter) middleware(next http.Handler) http.Handler {
 		w.Header().Set("X-RateLimit-Remaining", fmt.Sprintf("%.0f", limiter.Tokens()))
 
 		if !limiter.Allow() {
+			// Audit log: rate limit exceeded
+			if rl.auditLogger != nil {
+				rl.auditLogger.RateLimitExceeded(ip, r.URL.Path)
+			}
+
 			w.Header().Set("Retry-After", "1")
 			http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
 			return
@@ -361,7 +372,7 @@ func chain(h http.Handler, mws ...func(http.Handler) http.Handler) http.Handler 
 	return h
 }
 
-func withMiddlewares(h http.Handler) http.Handler {
+func withMiddlewares(h http.Handler, auditLogger ...RateLimitAuditor) http.Handler {
 	// Make rate limiter configurable via environment
 	rpsStr := os.Getenv("XG2G_RATELIMIT_RPS")
 	burstStr := os.Getenv("XG2G_RATELIMIT_BURST")
@@ -391,6 +402,12 @@ func withMiddlewares(h http.Handler) http.Handler {
 			}
 		}
 	}
+
+	// Set audit logger if provided
+	if len(auditLogger) > 0 {
+		rl.auditLogger = auditLogger[0]
+	}
+
 	// Order matters: panic recovery first, then request ID for correlation,
 	// then metrics and the rest.
 	return chain(h, panicRecoveryMiddleware, requestIDMiddleware, metricsMiddleware, corsMiddleware, securityHeaders, rl.middleware)
