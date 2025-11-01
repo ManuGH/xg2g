@@ -48,6 +48,8 @@ func TestHandleRefresh_ErrorDoesNotUpdateLastRun(t *testing.T) {
 
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "/api/refresh", nil)
 	require.NoError(t, err)
+	req.Host = "example.com" // Required for CSRF validation
+	req.Header.Set("Origin", "http://example.com") // Add Origin for CSRF protection
 	req.Header.Set("X-API-Token", "dummy-token")
 
 	rr := httptest.NewRecorder()
@@ -89,6 +91,8 @@ func TestHandleRefresh_ConflictOnConcurrent(t *testing.T) {
 
 	// First request starts and blocks
 	req1 := httptest.NewRequest(http.MethodPost, "/api/refresh", nil)
+	req1.Host = "example.com" // Required for CSRF validation
+	req1.Header.Set("Origin", "http://example.com") // Add Origin for CSRF protection
 	req1.Header.Set("X-API-Token", "dummy-token")
 	rr1 := httptest.NewRecorder()
 
@@ -108,6 +112,8 @@ func TestHandleRefresh_ConflictOnConcurrent(t *testing.T) {
 
 	// Second request should get 409 Conflict
 	req2 := httptest.NewRequest(http.MethodPost, "/api/refresh", nil)
+	req2.Host = "example.com" // Required for CSRF validation
+	req2.Header.Set("Origin", "http://example.com") // Add Origin for CSRF protection
 	req2.Header.Set("X-API-Token", "dummy-token")
 	rr2 := httptest.NewRecorder()
 	handler.ServeHTTP(rr2, req2)

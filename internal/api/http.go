@@ -165,7 +165,9 @@ func (s *Server) routes() http.Handler {
 			SuccessorPath: "/api/v1",
 		}))
 		r.Get("/status", s.handleStatus)
-		r.Post("/refresh", s.authRequired(s.handleRefresh))
+		// Apply rate limiting and CSRF protection to expensive refresh operation
+		r.With(middleware.RefreshRateLimit(), middleware.CSRFProtection()).
+			Post("/refresh", s.authRequired(s.handleRefresh))
 	})
 
 	// V1 API (current stable version)
@@ -725,7 +727,9 @@ func (s *Server) registerV1Routes(r chi.Router) {
 	// Note: This will be done after we fix the import cycle
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Get("/status", s.handleStatusV1)
-		r.Post("/refresh", s.authRequired(s.handleRefreshV1))
+		// Apply rate limiting and CSRF protection to expensive refresh operation
+		r.With(middleware.RefreshRateLimit(), middleware.CSRFProtection()).
+			Post("/refresh", s.authRequired(s.handleRefreshV1))
 	})
 }
 
