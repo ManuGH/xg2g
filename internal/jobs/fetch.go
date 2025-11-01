@@ -45,9 +45,8 @@ func collectEPGProgrammes(ctx context.Context, client *openwebif.Client, items [
 			continue
 		}
 
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		// Use Go 1.25 WaitGroup.Go() for safer goroutine management
+		wg.Go(func() {
 			// Acquire semaphore
 			sem <- struct{}{}
 			defer func() { <-sem }()
@@ -66,7 +65,7 @@ func collectEPGProgrammes(ctx context.Context, client *openwebif.Client, items [
 				return
 			}
 			results <- epgResult{channelID: it.TvgID, events: events, err: nil}
-		}()
+		})
 	}
 
 	// Close results when all goroutines complete

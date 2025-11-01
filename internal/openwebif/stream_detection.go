@@ -331,9 +331,10 @@ func (sd *StreamDetector) DetectBatch(ctx context.Context, services [][2]string)
 		serviceRef := svc[1]
 		channelName := svc[0]
 
-		wg.Add(1)
-		go func(ref, name string) {
-			defer wg.Done()
+		// Use Go 1.25 WaitGroup.Go() for safer goroutine management
+		wg.Go(func() {
+			ref := serviceRef   // capture
+			name := channelName // capture
 
 			// Acquire semaphore
 			sem <- struct{}{}
@@ -345,7 +346,7 @@ func (sd *StreamDetector) DetectBatch(ctx context.Context, services [][2]string)
 				results[ref] = info
 				resultsMu.Unlock()
 			}
-		}(serviceRef, channelName)
+		})
 	}
 
 	wg.Wait()
