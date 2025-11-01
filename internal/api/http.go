@@ -20,7 +20,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/hdhr"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/ManuGH/xg2g/internal/log"
-	"github.com/gorilla/mux"
+	"github.com/go-chi/chi/v5"
 )
 
 // Server represents the HTTP API server for xg2g.
@@ -134,27 +134,27 @@ func (s *Server) SetRefreshFunc(fn func(context.Context, jobs.Config) (*jobs.Sta
 }
 
 func (s *Server) routes() http.Handler {
-	r := mux.NewRouter()
-	// Do not auto-clean or redirect paths; keep encoded path for security checks
-	r.SkipClean(true)
-	r.UseEncodedPath()
-	r.Use(log.Middleware()) // Apply structured logging to all routes
+	r := chi.NewRouter()
+
+	// Apply structured logging and security headers to all routes
+	r.Use(log.Middleware())
 	r.Use(securityHeadersMiddleware)
 
 	// Health checks (versionless - infrastructure endpoints)
-	r.HandleFunc("/healthz", s.handleHealth).Methods(http.MethodGet)
-	r.HandleFunc("/readyz", s.handleReady).Methods(http.MethodGet)
+	r.Get("/healthz", s.handleHealth)
+	r.Get("/readyz", s.handleReady)
 
 	// Legacy API endpoints (deprecated - maintain backward compatibility)
 	// These will be removed in a future major version
-	legacyAPI := r.PathPrefix("/api").Subrouter()
-	legacyAPI.Use(deprecationMiddleware(DeprecationConfig{
-		SunsetVersion: "2.0.0",
-		SunsetDate:    "2025-12-31T23:59:59Z",
-		SuccessorPath: "/api/v1",
-	}))
-	legacyAPI.HandleFunc("/status", s.handleStatus).Methods(http.MethodGet)
-	legacyAPI.HandleFunc("/refresh", s.authRequired(s.handleRefresh)).Methods(http.MethodPost)
+	r.Route("/api", func(r chi.Router) {
+		r.Use(deprecationMiddleware(DeprecationConfig{
+			SunsetVersion: "2.0.0",
+			SunsetDate:    "2025-12-31T23:59:59Z",
+			SuccessorPath: "/api/v1",
+		}))
+		r.Get("/status", s.handleStatus)
+		r.Post("/refresh", s.authRequired(s.handleRefresh))
+	})
 
 	// V1 API (current stable version)
 	s.registerV1Routes(r)
@@ -166,19 +166,20 @@ func (s *Server) routes() http.Handler {
 
 	// HDHomeRun emulation endpoints (versionless - hardware emulation protocol)
 	if s.hdhr != nil {
-		r.HandleFunc("/discover.json", s.hdhr.HandleDiscover).Methods(http.MethodGet)
-		r.HandleFunc("/lineup_status.json", s.hdhr.HandleLineupStatus).Methods(http.MethodGet)
-		r.HandleFunc("/lineup.json", s.handleLineupJSON).Methods(http.MethodGet)
-		r.HandleFunc("/lineup.json", s.hdhr.HandleLineupPost).Methods(http.MethodPost)
-		r.HandleFunc("/lineup.post", s.hdhr.HandleLineupPost).Methods("GET", "POST")
-		r.HandleFunc("/device.xml", s.hdhr.HandleDeviceXML).Methods(http.MethodGet)
+		r.Get("/discover.json", s.hdhr.HandleDiscover)
+		r.Get("/lineup_status.json", s.hdhr.HandleLineupStatus)
+		r.Get("/lineup.json", s.handleLineupJSON)
+		r.Post("/lineup.json", s.hdhr.HandleLineupPost)
+		r.HandleFunc("/lineup.post", s.hdhr.HandleLineupPost) // supports both GET and POST
+		r.Get("/device.xml", s.hdhr.HandleDeviceXML)
 	}
 
 	// XMLTV endpoint (versionless - standard format)
-	r.HandleFunc("/xmltv.xml", s.handleXMLTV).Methods("GET", "HEAD")
+	r.Method(http.MethodGet, "/xmltv.xml", http.HandlerFunc(s.handleXMLTV))
+	r.Method(http.MethodHead, "/xmltv.xml", http.HandlerFunc(s.handleXMLTV))
 
 	// Harden file server: disable directory listing and use a secure handler
-	r.PathPrefix("/files/").Handler(http.StripPrefix("/files/", s.secureFileServer()))
+	r.Handle("/files/*", http.StripPrefix("/files/", s.secureFileServer()))
 	return r
 }
 
@@ -707,20 +708,22 @@ func (s *Server) handleLineupJSON(w http.ResponseWriter, r *http.Request) {
 }
 
 // registerV1Routes registers all v1 API endpoints
-func (s *Server) registerV1Routes(r *mux.Router) {
+func (s *Server) registerV1Routes(r chi.Router) {
 	// Import the v1 package handler
 	// Note: This will be done after we fix the import cycle
-	v1Router := r.PathPrefix("/api/v1").Subrouter()
-	v1Router.HandleFunc("/status", s.handleStatusV1).Methods(http.MethodGet)
-	v1Router.HandleFunc("/refresh", s.authRequired(s.handleRefreshV1)).Methods(http.MethodPost)
+	r.Route("/api/v1", func(r chi.Router) {
+		r.Get("/status", s.handleStatusV1)
+		r.Post("/refresh", s.authRequired(s.handleRefreshV1))
+	})
 }
 
 // registerV2Routes registers all v2 API endpoints (placeholder for future)
-func (s *Server) registerV2Routes(r *mux.Router) {
+func (s *Server) registerV2Routes(r chi.Router) {
 	// V2 API implementation will go here
 	// Example: different path structure, enhanced response formats, etc.
-	v2Router := r.PathPrefix("/api/v2").Subrouter()
-	v2Router.HandleFunc("/status", s.handleStatusV2Placeholder).Methods(http.MethodGet)
+	r.Route("/api/v2", func(r chi.Router) {
+		r.Get("/status", s.handleStatusV2Placeholder)
+	})
 }
 
 // handleStatusV1 wraps the v1 handler
