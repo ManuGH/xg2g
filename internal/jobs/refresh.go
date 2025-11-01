@@ -300,14 +300,14 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 				Msg("EPG collection completed")
 		}
 
-		// Write XMLTV with or without programmes
+		// Write XMLTV with or without programmes (atomically via temp file)
 		var tv epg.TV
 		if cfg.EPGEnabled && len(allProgrammes) > 0 {
 			tv = epg.GenerateXMLTV(xmlCh, allProgrammes)
 		} else {
 			tv = epg.GenerateXMLTV(xmlCh, nil)
 		}
-		xmlErr = epg.WriteXMLTV(tv, xmltvFullPath)
+		xmlErr = writeXMLTV(ctx, xmltvFullPath, tv)
 
 		metrics.RecordXMLTV(true, len(xmlCh), xmlErr)
 		if xmlErr != nil {
