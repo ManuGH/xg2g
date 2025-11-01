@@ -191,6 +191,7 @@ services:
 
 ## Help
 
+- **API Documentation:** [API Reference](https://manugh.github.io/xg2g/api.html)
 - **How-to guides:** [docs/](docs/)
 - **Questions:** [Discussions](https://github.com/ManuGH/xg2g/discussions)
 - **Problems:** [Issues](https://github.com/ManuGH/xg2g/issues)
