@@ -252,7 +252,7 @@ func TestNoRegressions(t *testing.T) {
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				req := httptest.NewRequest(http.MethodPost, tt.path, nil)
-				req.Host = "example.com" // Required for CSRF validation
+				req.Host = "example.com"                       // Required for CSRF validation
 				req.Header.Set("Origin", "http://example.com") // Add Origin for CSRF protection
 				if tt.token != "" {
 					req.Header.Set("X-API-Token", tt.token)

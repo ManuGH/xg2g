@@ -501,10 +501,11 @@ func TestSanitizeFilename_Security(t *testing.T) {
 		})
 	}
 }
+
 // Regression test: version field must persist across refreshes
 func TestRefresh_VersionPersistence(t *testing.T) {
 	tmpDir := t.TempDir()
-	
+
 	cfg := Config{
 		Version:    "v1.2.3-test",
 		DataDir:    tmpDir,
@@ -512,21 +513,21 @@ func TestRefresh_VersionPersistence(t *testing.T) {
 		StreamPort: 8001,
 		OWITimeout: time.Second,
 	}
-	
+
 	ctx := context.Background()
-	
+
 	// Mock successful refresh (minimal setup)
 	status, err := Refresh(ctx, cfg)
-	
+
 	// We expect validation errors since we don't have a real OWI server,
 	// but the important part is that if Status is returned, it must contain the version
 	if err == nil && status != nil {
 		if status.Version != cfg.Version {
-			t.Errorf("Status.Version = %q, want %q (version must persist from config)", 
+			t.Errorf("Status.Version = %q, want %q (version must persist from config)",
 				status.Version, cfg.Version)
 		}
 	}
-	
+
 	// This test primarily serves as documentation and catches future regressions
 	// where Status construction forgets to copy cfg.Version
 }

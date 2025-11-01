@@ -63,26 +63,26 @@ type Deps struct {
 
 // Artifacts represents the output of a refresh operation
 type Artifacts struct {
-	Bouquets      map[string]string  // Bouquet name -> reference
-	Services      [][]string         // Raw services from OpenWebIF
-	PlaylistItems []playlist.Item    // Processed playlist items
-	EPGProgrammes int                // Number of EPG programmes collected
+	Bouquets      map[string]string // Bouquet name -> reference
+	Services      [][]string        // Raw services from OpenWebIF
+	PlaylistItems []playlist.Item   // Processed playlist items
+	EPGProgrammes int               // Number of EPG programmes collected
 	Stats         RefreshStats
 }
 
 // RefreshStats contains statistics about the refresh operation
 type RefreshStats struct {
-	StartTime        time.Time
-	EndTime          time.Time
-	DurationMS       int64
-	ChannelsTotal    int
-	BouquetsTotal    int
-	EPGProgrammes    int
-	HDChannels       int
-	SDChannels       int
-	RadioChannels    int
-	UnknownChannels  int
-	Errors           []string
+	StartTime       time.Time
+	EndTime         time.Time
+	DurationMS      int64
+	ChannelsTotal   int
+	BouquetsTotal   int
+	EPGProgrammes   int
+	HDChannels      int
+	SDChannels      int
+	RadioChannels   int
+	UnknownChannels int
+	Errors          []string
 }
 
 // DefaultOptions returns sensible default options

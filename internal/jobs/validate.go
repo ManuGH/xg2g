@@ -27,6 +27,7 @@ func validateConfig(cfg Config) error {
 }
 
 // validateOptions validates the options for refresh operations
+//
 //nolint:unused // Validation helper - kept for future use
 func validateOptions(opts Options) error {
 	if opts.Parallelism < 0 {

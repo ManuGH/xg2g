@@ -509,7 +509,7 @@ jobs:
 
           # Trigger refresh
           echo "🔄 Triggering refresh operation..."
-          if ! curl --fail --silent -H "X-API-Token: $API_TOKEN" -X POST "$DAEMON_BASE/api/refresh" > /dev/null; then
+          if ! curl --fail --silent -H "X-API-Token: $API_TOKEN" -H "Origin: http://127.0.0.1:8080" -X POST "$DAEMON_BASE/api/refresh" > /dev/null; then
             echo "❌ Refresh trigger failed"
             echo "Daemon log:"
             cat /tmp/daemon.log || true

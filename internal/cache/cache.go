@@ -119,7 +119,7 @@ func (c *memoryCache) Clear() {
 func (c *memoryCache) Stats() CacheStats {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	
+
 	stats := c.stats
 	stats.CurrentSize = len(c.entries)
 	return stats
@@ -179,8 +179,8 @@ func NewNoOpCache() Cache {
 	return &noOpCache{}
 }
 
-func (c *noOpCache) Get(key string) (any, bool)                  { return nil, false }
+func (c *noOpCache) Get(key string) (any, bool)                   { return nil, false }
 func (c *noOpCache) Set(key string, value any, ttl time.Duration) {}
 func (c *noOpCache) Delete(key string)                            {}
-func (c *noOpCache) Clear()                                        {}
+func (c *noOpCache) Clear()                                       {}
 func (c *noOpCache) Stats() CacheStats                            { return CacheStats{} }

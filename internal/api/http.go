@@ -33,10 +33,10 @@ type Server struct {
 	cfg           jobs.Config
 	status        jobs.Status
 	cb            *CircuitBreaker
-	hdhr          *hdhr.Server         // HDHomeRun emulation server
-	configHolder  ConfigHolder         // Optional: for hot config reload support
-	auditLogger   AuditLogger          // Optional: for audit logging
-	healthManager *health.Manager      // Health and readiness checks
+	hdhr          *hdhr.Server    // HDHomeRun emulation server
+	configHolder  ConfigHolder    // Optional: for hot config reload support
+	auditLogger   AuditLogger     // Optional: for audit logging
+	healthManager *health.Manager // Health and readiness checks
 	// refreshFn allows tests to stub the refresh operation; defaults to jobs.Refresh
 	refreshFn func(context.Context, jobs.Config) (*jobs.Status, error)
 }
