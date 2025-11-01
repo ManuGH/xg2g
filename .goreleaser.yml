@@ -108,12 +108,13 @@ release:
 
     **Full Changelog**: https://github.com/ManuGH/xg2g/compare/{{ .PreviousTag }}...{{ .Tag }}
 
-# Generate SBOM
-sboms:
-  - id: default
-    artifacts: archive
-    documents:
-      - "{{ .ProjectName }}_{{ .Version }}_sbom.spdx.json"
+# SBOM generation disabled (syft not installed in workflow)
+# To enable: install syft in goreleaser.yml workflow before running goreleaser
+# sboms:
+#   - id: default
+#     artifacts: archive
+#     documents:
+#       - "{{ .ProjectName }}_{{ .Version }}_sbom.spdx.json"
 
 # Sign artifacts
 signs:
