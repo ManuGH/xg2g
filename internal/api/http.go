@@ -167,19 +167,6 @@ func New(cfg jobs.Config) *Server {
 func (s *Server) HDHomeRunServer() *hdhr.Server {
 	return s.hdhr
 }
-
-// SetStatus updates the server status (test helper)
-func (s *Server) SetStatus(status jobs.Status) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.status = status
-}
-
-// SetRefreshFunc sets a custom refresh function (test helper)
-func (s *Server) SetRefreshFunc(fn func(context.Context, jobs.Config) (*jobs.Status, error)) {
-	s.refreshFn = fn
-}
-
 func (s *Server) routes() http.Handler {
 	r := chi.NewRouter()
 
