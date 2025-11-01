@@ -37,7 +37,6 @@ builds:
 archives:
   - id: default
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    format: tar.gz
     format_overrides:
       - goos: windows
         format: zip
@@ -51,7 +50,7 @@ checksum:
   algorithm: sha256
 
 snapshot:
-  name_template: "{{ .Version }}-next"
+  version_template: "{{ .Version }}-next"
 
 changelog:
   sort: asc
