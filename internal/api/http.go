@@ -19,6 +19,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/api/middleware"
 	"github.com/ManuGH/xg2g/internal/hdhr"
+	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/go-chi/chi/v5"
@@ -27,14 +28,15 @@ import (
 
 // Server represents the HTTP API server for xg2g.
 type Server struct {
-	mu           sync.RWMutex
-	refreshing   atomic.Bool // serialize refreshes via atomic flag
-	cfg          jobs.Config
-	status       jobs.Status
-	cb           *CircuitBreaker
-	hdhr         *hdhr.Server // HDHomeRun emulation server
-	configHolder ConfigHolder // Optional: for hot config reload support
-	auditLogger  AuditLogger  // Optional: for audit logging
+	mu            sync.RWMutex
+	refreshing    atomic.Bool // serialize refreshes via atomic flag
+	cfg           jobs.Config
+	status        jobs.Status
+	cb            *CircuitBreaker
+	hdhr          *hdhr.Server         // HDHomeRun emulation server
+	configHolder  ConfigHolder         // Optional: for hot config reload support
+	auditLogger   AuditLogger          // Optional: for audit logging
+	healthManager *health.Manager      // Health and readiness checks
 	// refreshFn allows tests to stub the refresh operation; defaults to jobs.Refresh
 	refreshFn func(context.Context, jobs.Config) (*jobs.Status, error)
 }
@@ -135,6 +137,28 @@ func New(cfg jobs.Config) *Server {
 			Str("device_id", hdhrCfg.DeviceID).
 			Msg("HDHomeRun emulation enabled")
 	}
+
+	// Initialize health manager
+	s.healthManager = health.NewManager(cfg.Version)
+
+	// Register health checkers
+	playlistName := os.Getenv("XG2G_PLAYLIST_FILENAME")
+	if strings.TrimSpace(playlistName) == "" {
+		playlistName = "playlist.m3u"
+	}
+	playlistPath := filepath.Join(cfg.DataDir, playlistName)
+	s.healthManager.RegisterChecker(health.NewFileChecker("playlist", playlistPath))
+
+	if strings.TrimSpace(cfg.XMLTVPath) != "" {
+		xmltvPath := filepath.Join(cfg.DataDir, cfg.XMLTVPath)
+		s.healthManager.RegisterChecker(health.NewFileChecker("xmltv", xmltvPath))
+	}
+
+	s.healthManager.RegisterChecker(health.NewLastRunChecker(func() (time.Time, string) {
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		return s.status.LastRun, s.status.Error
+	}))
 
 	return s
 }
@@ -451,69 +475,11 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	logger := log.WithComponentFromContext(r.Context(), "api")
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(map[string]string{"status": "ok"}); err != nil {
-		logger.Error().Err(err).Str("event", "health.encode_error").Msg("failed to encode health response")
-	}
+	s.healthManager.ServeHealth(w, r)
 }
 
 func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
-	logger := log.WithComponentFromContext(r.Context(), "api")
-	s.mu.RLock()
-	status := s.status
-	s.mu.RUnlock()
-
-	// Check if artifacts exist and are readable
-	playlistName := os.Getenv("XG2G_PLAYLIST_FILENAME")
-	if strings.TrimSpace(playlistName) == "" {
-		playlistName = "playlist.m3u"
-	}
-	playlistOK := false
-	if playlistPath, err := s.dataFilePath(playlistName); err != nil {
-		logger.Warn().Err(err).Str("event", "ready.invalid_playlist_path").Msg("playlist path outside data directory")
-	} else {
-		playlistOK = checkFile(r.Context(), playlistPath)
-	}
-
-	xmltvOK := true // Assume OK if not configured
-	if strings.TrimSpace(s.cfg.XMLTVPath) != "" {
-		if xmltvPath, err := s.dataFilePath(s.cfg.XMLTVPath); err != nil {
-			xmltvOK = false
-			logger.Warn().Err(err).Str("event", "ready.invalid_xmltv_path").Msg("xmltv path outside data directory")
-		} else {
-			xmltvOK = checkFile(r.Context(), xmltvPath)
-		}
-	}
-
-	ready := !status.LastRun.IsZero() && status.Error == "" && playlistOK && xmltvOK
-	w.Header().Set("Content-Type", "application/json")
-	if !ready {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		if err := json.NewEncoder(w).Encode(map[string]string{"status": "not-ready"}); err != nil {
-			logger.Error().Err(err).Str("event", "ready.encode_error").Msg("failed to encode readiness response")
-		}
-		logger.Debug().
-			Str("event", "ready.status").
-			Str("state", "not-ready").
-			Time("lastRun", status.LastRun).
-			Str("error", status.Error).
-			Bool("playlistOK", playlistOK).
-			Bool("xmltvOK", xmltvOK).
-			Msg("readiness probe")
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(map[string]string{"status": "ready"}); err != nil {
-		logger.Error().Err(err).Str("event", "ready.encode_error").Msg("failed to encode readiness response")
-	}
-	logger.Debug().
-		Str("event", "ready.status").
-		Str("state", "ready").
-		Time("lastRun", status.LastRun).
-		Msg("readiness probe")
+	s.healthManager.ServeReady(w, r)
 }
 
 func (s *Server) handleXMLTV(w http.ResponseWriter, r *http.Request) {

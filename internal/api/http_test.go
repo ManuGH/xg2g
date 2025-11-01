@@ -143,7 +143,7 @@ func TestHandleHealth(t *testing.T) {
 	handler.ServeHTTP(rr, req)
 
 	assert.Equal(t, http.StatusOK, rr.Code)
-	assert.Contains(t, rr.Body.String(), `"status":"ok"`)
+	assert.Contains(t, rr.Body.String(), `"status":"healthy"`)
 }
 
 func TestHandleReady(t *testing.T) {
@@ -176,7 +176,7 @@ func TestHandleReady(t *testing.T) {
 	rr = httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
-	assert.Contains(t, rr.Body.String(), `"status":"ready"`)
+	assert.Contains(t, rr.Body.String(), `"ready":true`)
 }
 
 func TestAuthMiddleware(t *testing.T) {
