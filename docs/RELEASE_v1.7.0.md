@@ -1,7 +1,7 @@
-# Release Checklist v1.0.0
+# Release Checklist v1.7.0
 
-**Release Type**: Major Release (Production-Ready)
-**Version**: 1.0.0
+**Release Type**: Minor Release (Sprint 1-4 Features)
+**Version**: 1.7.0
 **Date**: TBD
 **Release Manager**: @ManuGH
 
@@ -9,7 +9,7 @@
 
 ## 🎯 Release Goals
 
-v1.0.0 marks the first production-ready stable release of xg2g with:
+v1.7.0 builds on the stable v1.6.x foundation with Sprint 1-4 enhancements:
 - Complete Sprint 1-4 implementation
 - Production-grade reliability and monitoring
 - Comprehensive documentation
@@ -40,14 +40,14 @@ v1.0.0 marks the first production-ready stable release of xg2g with:
 - [x] BACKUP_RESTORE.md complete
 - [x] MIGRATIONS.md complete
 - [x] Grafana dashboards documented
-- [ ] Update README.md with v1.0.0 features
-- [ ] Create CHANGELOG.md for v1.0.0
+- [ ] Update README.md with v1.7.0 features
+- [ ] Create CHANGELOG.md for v1.7.0
 - [ ] Review all inline code documentation
 - [ ] Generate API documentation (if applicable)
 
 ### 3. Version Bumping
 
-- [ ] Update version in `cmd/daemon/main.go` (Version = "1.0.0")
+- [ ] Update version in `cmd/daemon/main.go` (Version = "1.7.0")
 - [ ] Update version in `go.mod`
 - [ ] Update Docker image tags
 - [ ] Update Helm chart version (if exists)
@@ -87,14 +87,14 @@ v1.0.0 marks the first production-ready stable release of xg2g with:
 
 ### 7. Container & Deployment
 
-- [ ] Build Docker image: `docker build -t xg2g:1.0.0 .`
+- [ ] Build Docker image: `docker build -t xg2g:1.7.0 .`
 - [ ] Test Docker image locally
 - [ ] Health checks working in Docker
 - [ ] Multi-arch images built (amd64, arm64)
 - [ ] Image size optimized (target: < 50MB)
 - [ ] Scan image for vulnerabilities:
   ```bash
-  trivy image xg2g:1.0.0
+  trivy image xg2g:1.7.0
   ```
 - [ ] Test Kubernetes deployment
 - [ ] Verify health/readiness probes in K8s
@@ -111,7 +111,7 @@ v1.0.0 marks the first production-ready stable release of xg2g with:
 git status
 
 # Create release branch
-git checkout -b release/v1.0.0
+git checkout -b release/v1.7.0
 
 # Final test run
 go test ./... -race -count=1 -timeout=10m
@@ -121,11 +121,11 @@ go test ./... -race -count=1 -timeout=10m
 
 ```bash
 # Update version strings
-sed -i 's/var Version = "dev"/var Version = "1.0.0"/' cmd/daemon/main.go
+sed -i 's/var Version = "dev"/var Version = "1.7.0"/' cmd/daemon/main.go
 
 # Commit version bump
 git add cmd/daemon/main.go
-git commit -m "chore: bump version to v1.0.0"
+git commit -m "chore: bump version to v1.7.0"
 ```
 
 ### Step 3: Generate Release Artifacts
@@ -136,19 +136,19 @@ mkdir -p dist/
 
 # Linux amd64
 GOOS=linux GOARCH=amd64 go build -o dist/xg2g-linux-amd64 \
-  -ldflags="-s -w -X main.Version=1.0.0" ./cmd/daemon
+  -ldflags="-s -w -X main.Version=1.7.0" ./cmd/daemon
 
 # Linux arm64
 GOOS=linux GOARCH=arm64 go build -o dist/xg2g-linux-arm64 \
-  -ldflags="-s -w -X main.Version=1.0.0" ./cmd/daemon
+  -ldflags="-s -w -X main.Version=1.7.0" ./cmd/daemon
 
 # macOS amd64
 GOOS=darwin GOARCH=amd64 go build -o dist/xg2g-darwin-amd64 \
-  -ldflags="-s -w -X main.Version=1.0.0" ./cmd/daemon
+  -ldflags="-s -w -X main.Version=1.7.0" ./cmd/daemon
 
 # macOS arm64 (M1/M2)
 GOOS=darwin GOARCH=arm64 go build -o dist/xg2g-darwin-arm64 \
-  -ldflags="-s -w -X main.Version=1.0.0" ./cmd/daemon
+  -ldflags="-s -w -X main.Version=1.7.0" ./cmd/daemon
 
 # Create checksums
 cd dist/
@@ -163,14 +163,14 @@ cd ..
 docker buildx create --use --name multiarch --driver docker-container
 
 docker buildx build --platform linux/amd64,linux/arm64 \
-  -t ghcr.io/manugh/xg2g:1.0.0 \
-  -t ghcr.io/manugh/xg2g:1.0 \
+  -t ghcr.io/manugh/xg2g:1.7.0 \
+  -t ghcr.io/manugh/xg2g:1.7 \
   -t ghcr.io/manugh/xg2g:1 \
   -t ghcr.io/manugh/xg2g:latest \
   --push .
 
 # Verify image
-docker run --rm ghcr.io/manugh/xg2g:1.0.0 --version
+docker run --rm ghcr.io/manugh/xg2g:1.7.0 --version
 ```
 
 ### Step 5: Create Git Tag
@@ -178,12 +178,12 @@ docker run --rm ghcr.io/manugh/xg2g:1.0.0 --version
 ```bash
 # Merge release branch to main
 git checkout main
-git merge release/v1.0.0
+git merge release/v1.7.0
 
 # Create annotated tag
-git tag -a v1.0.0 -m "Release v1.0.0 - Production Ready
+git tag -a v1.7.0 -m "Release v1.7.0 - Sprint 1-4 Features
 
-Major release including:
+Minor release including:
 - Sprint 1: Code quality & error handling
 - Sprint 2: Hot config reload & monitoring
 - Sprint 3: Performance & observability (caching, audit logging)
@@ -192,7 +192,7 @@ Major release including:
 See docs/SPRINT_SUMMARY.md for full details."
 
 # Push tag
-git push origin v1.0.0
+git push origin v1.7.0
 git push origin main
 ```
 
@@ -200,20 +200,20 @@ git push origin main
 
 ```bash
 # Using GitHub CLI
-gh release create v1.0.0 \
-  --title "v1.0.0 - Production Ready" \
-  --notes-file docs/RELEASE_NOTES_v1.0.0.md \
+gh release create v1.7.0 \
+  --title "v1.7.0 - Sprint 1-4 Features" \
+  --notes-file docs/RELEASE_NOTES_v1.7.0.md \
   dist/xg2g-* \
   dist/checksums.txt \
   sbom.spdx.json
 ```
 
-**Release Notes Template** (`docs/RELEASE_NOTES_v1.0.0.md`):
+**Release Notes Template** (`docs/RELEASE_NOTES_v1.7.0.md`):
 
 ```markdown
-# xg2g v1.0.0 - Production Ready 🚀
+# xg2g v1.7.0 - Sprint 1-4 Features 🚀
 
-First stable production-ready release of xg2g with enterprise-grade features.
+Minor release building on v1.6.x with enterprise-grade production features.
 
 ## 🎉 Highlights
 
@@ -256,7 +256,7 @@ First stable production-ready release of xg2g with enterprise-grade features.
 ## 🐳 Docker Images
 
 ```bash
-docker pull ghcr.io/manugh/xg2g:1.0.0
+docker pull ghcr.io/manugh/xg2g:1.7.0
 ```
 
 Multi-arch support: `linux/amd64`, `linux/arm64`
@@ -270,10 +270,10 @@ Multi-arch support: `linux/amd64`, `linux/arm64`
 
 ## ⬆️ Upgrading
 
-From dev/unstable versions:
+From v1.6.x:
 
 ```bash
-docker pull ghcr.io/manugh/xg2g:1.0.0
+docker pull ghcr.io/manugh/xg2g:1.7.0
 docker stop xg2g
 docker rm xg2g
 # Restart with new image
@@ -303,14 +303,14 @@ Built with [Claude Code](https://claude.com/claude-code)
 
 ### 1. Verification
 
-- [ ] Verify release on GitHub: https://github.com/ManuGH/xg2g/releases/v1.0.0
-- [ ] Test Docker image pull: `docker pull ghcr.io/manugh/xg2g:1.0.0`
+- [ ] Verify release on GitHub: https://github.com/ManuGH/xg2g/releases/v1.7.0
+- [ ] Test Docker image pull: `docker pull ghcr.io/manugh/xg2g:1.7.0`
 - [ ] Verify checksums of release binaries
 - [ ] Test deployment on clean environment
 
 ### 2. Documentation Updates
 
-- [ ] Update main README.md with v1.0.0 badge
+- [ ] Update main README.md with v1.7.0 badge
 - [ ] Update documentation site (if exists)
 - [ ] Announce release on GitHub Discussions
 - [ ] Update any external references (wiki, docs site)
@@ -321,8 +321,8 @@ Built with [Claude Code](https://claude.com/claude-code)
   - [ ] GitHub Discussions
   - [ ] Project README
   - [ ] Social media (if applicable)
-- [ ] Notify users of major features
-- [ ] Update support channels with v1.0.0 info
+- [ ] Notify users of Sprint 1-4 features
+- [ ] Update support channels with v1.7.0 info
 
 ### 4. Monitoring
 
@@ -339,14 +339,14 @@ If critical issues are discovered post-release:
 
 ```bash
 # Revert Docker image tags
-docker tag ghcr.io/manugh/xg2g:0.9.0 ghcr.io/manugh/xg2g:latest
+docker tag ghcr.io/manugh/xg2g:1.6.1 ghcr.io/manugh/xg2g:latest
 docker push ghcr.io/manugh/xg2g:latest
 
 # Yank release (mark as pre-release)
-gh release edit v1.0.0 --prerelease
+gh release edit v1.7.0 --prerelease
 
 # Create hotfix branch
-git checkout -b hotfix/v1.0.1 v1.0.0
+git checkout -b hotfix/v1.7.1 v1.7.0
 ```
 
 ---
