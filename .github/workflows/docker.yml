@@ -70,7 +70,7 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository_owner }}/xg2g
           tags: |
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             type=ref,event=tag
             type=sha
 
@@ -191,7 +191,7 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository_owner }}/xg2g
           tags: |
-            type=raw,value=distroless-latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=distroless-latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             type=raw,value=distroless-{{tag}},enable=${{ startsWith(github.ref, 'refs/tags/') }}
             type=raw,value=distroless-${{ github.sha }}
 

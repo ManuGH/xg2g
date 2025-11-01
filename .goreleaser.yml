@@ -85,10 +85,41 @@ release:
   header: |
     ## xg2g v{{ .Version }}
 
-    **Note:** These binaries are built **without audio transcoding support** (nogpu builds).
-    For full functionality including iOS/Safari audio support, use the Docker images:
-    - `ghcr.io/manugh/xg2g:{{ .Version }}`
-    - `ghcr.io/manugh/xg2g:latest`
+    ### 📦 Release Variants
+
+    | Variant | Distribution | Audio Transcoding | Use Case |
+    |---------|-------------|-------------------|----------|
+    | **Lite** | CLI Binaries (below) | ❌ No | Linux servers, macOS, simple setups |
+    | **Full** | Docker Images | ✅ Yes (Rust+FFmpeg) | iOS/Safari, production, all features |
+
+    ### 🚀 Quick Start
+
+    **Lite (CLI Binary):**
+    ```bash
+    # Download for your platform below, then:
+    ./xg2g
+    ```
+
+    **Full (Docker - Recommended):**
+    ```bash
+    docker pull ghcr.io/manugh/xg2g:{{ .Version }}
+    # or
+    docker pull ghcr.io/manugh/xg2g:latest
+    ```
+
+    ### ⚠️ Lite vs Full Feature Matrix
+
+    | Feature | Lite (Binaries) | Full (Docker) |
+    |---------|----------------|---------------|
+    | M3U Playlist Generation | ✅ | ✅ |
+    | XMLTV EPG | ✅ | ✅ |
+    | HDHomeRun Emulation | ✅ | ✅ |
+    | Audio Transcoding (AC3/MP2 → AAC) | ❌ | ✅ |
+    | iOS/Safari Compatibility | ❌ | ✅ |
+    | Multi-arch Support | ✅ | ✅ |
+    | Platforms | Linux, macOS, Windows | linux/amd64, linux/arm64 |
+
+    **Need audio transcoding?** Use Docker images instead of CLI binaries.
 
     ### What's Changed
   footer: |
