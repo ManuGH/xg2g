@@ -143,13 +143,15 @@ func (s *Server) routes() http.Handler {
 	r.Use(chimiddleware.RequestID)
 	// 2. Recoverer - panic recovery to prevent server crashes
 	r.Use(chimiddleware.Recoverer)
-	// 3. Metrics - track all requests (before tracing for accurate timing)
+	// 3. Global Rate Limiting - protect all endpoints from DoS (OWASP 2025)
+	r.Use(middleware.APIRateLimit())
+	// 4. Metrics - track all requests (before tracing for accurate timing)
 	r.Use(middleware.Metrics())
-	// 4. Tracing - distributed tracing with OpenTelemetry (with context propagation)
+	// 5. Tracing - distributed tracing with OpenTelemetry (with context propagation)
 	r.Use(middleware.Tracing("xg2g-api"))
-	// 5. Logging - structured request/response logging
+	// 6. Logging - structured request/response logging
 	r.Use(log.Middleware())
-	// 6. Security headers - add security headers to all responses
+	// 7. Security headers - add security headers to all responses
 	r.Use(securityHeadersMiddleware)
 
 	// Health checks (versionless - infrastructure endpoints)
