@@ -22,6 +22,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/api/middleware"
 	"github.com/go-chi/chi/v5"
+	chimiddleware "github.com/go-chi/chi/v5/middleware"
 )
 
 // Server represents the HTTP API server for xg2g.
@@ -137,14 +138,18 @@ func (s *Server) SetRefreshFunc(fn func(context.Context, jobs.Config) (*jobs.Sta
 func (s *Server) routes() http.Handler {
 	r := chi.NewRouter()
 
-	// Apply middleware stack (order matters)
-	// 1. Metrics - track all requests
+	// Apply middleware stack (order matters for correctness and performance)
+	// 1. RequestID - generate unique ID for request correlation
+	r.Use(chimiddleware.RequestID)
+	// 2. Recoverer - panic recovery to prevent server crashes
+	r.Use(chimiddleware.Recoverer)
+	// 3. Metrics - track all requests (before tracing for accurate timing)
 	r.Use(middleware.Metrics())
-	// 2. Tracing - distributed tracing with OpenTelemetry
+	// 4. Tracing - distributed tracing with OpenTelemetry (with context propagation)
 	r.Use(middleware.Tracing("xg2g-api"))
-	// 3. Logging - structured request/response logging
+	// 5. Logging - structured request/response logging
 	r.Use(log.Middleware())
-	// 4. Security headers - add security headers to all responses
+	// 6. Security headers - add security headers to all responses
 	r.Use(securityHeadersMiddleware)
 
 	// Health checks (versionless - infrastructure endpoints)
