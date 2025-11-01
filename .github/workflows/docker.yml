@@ -71,6 +71,7 @@ jobs:
           images: ghcr.io/${{ github.repository_owner }}/xg2g
           tags: |
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=ref,event=tag
             type=sha
 
       - uses: docker/build-push-action@v6
@@ -78,7 +79,7 @@ jobs:
         with:
           context: .
           file: Dockerfile
-          push: ${{ github.ref == 'refs/heads/main' }}
+          push: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') }}
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -191,6 +192,7 @@ jobs:
           images: ghcr.io/${{ github.repository_owner }}/xg2g
           tags: |
             type=raw,value=distroless-latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=distroless-{{tag}},enable=${{ startsWith(github.ref, 'refs/tags/') }}
             type=raw,value=distroless-${{ github.sha }}
 
       - uses: docker/build-push-action@v6
@@ -198,7 +200,7 @@ jobs:
         with:
           context: .
           file: Dockerfile.distroless
-          push: ${{ github.ref == 'refs/heads/main' }}
+          push: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') }}
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta_dist.outputs.tags }}
           labels: ${{ steps.meta_dist.outputs.labels }}
