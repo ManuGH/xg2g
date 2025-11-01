@@ -7,94 +7,69 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"github.com/ManuGH/xg2g/internal/epg"
 	xglog "github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/playlist"
+	"github.com/google/renameio/v2"
 )
 
-// writeM3U safely writes the playlist to a temporary file and renames it on success
-// This ensures atomic writes - either the full file is written or nothing changes
+// writeM3U safely writes the playlist with full durability guarantees using renameio
+// This ensures atomic + durable writes: fsync before rename prevents data loss on power failure
 func writeM3U(ctx context.Context, path string, items []playlist.Item) error {
 	logger := xglog.FromContext(ctx)
-	dir := filepath.Dir(path)
-	tmpFile, err := os.CreateTemp(dir, "playlist-*.m3u.tmp")
+
+	// renameio handles: temp file creation, fsync, atomic rename, cleanup on error
+	pendingFile, err := renameio.NewPendingFile(path)
 	if err != nil {
-		return fmt.Errorf("create temporary M3U file: %w", err)
+		return fmt.Errorf("create pending M3U file: %w", err)
 	}
-	// Defer a function to handle cleanup, logging any errors.
-	closed := false
 	defer func() {
-		if !closed {
-			if err := tmpFile.Close(); err != nil {
-				logger.Warn().Err(err).Str("path", tmpFile.Name()).Msg("failed to close temporary file on error path")
-			}
-		}
-		// Only remove the temp file if it still exists (i.e., rename failed).
-		if _, statErr := os.Stat(tmpFile.Name()); !os.IsNotExist(statErr) {
-			if err := os.Remove(tmpFile.Name()); err != nil {
-				logger.Warn().Err(err).Str("path", tmpFile.Name()).Msg("failed to remove temporary file")
-			}
+		// Cleanup on error - renameio removes temp file if not committed
+		if err := pendingFile.Cleanup(); err != nil {
+			logger.Debug().Err(err).Msg("cleanup pending M3U file")
 		}
 	}()
 
-	if err := playlist.WriteM3U(tmpFile, items); err != nil {
-		return fmt.Errorf("write to temporary M3U file: %w", err)
+	// Write playlist to pending file
+	if err := playlist.WriteM3U(pendingFile, items); err != nil {
+		return fmt.Errorf("write M3U data: %w", err)
 	}
 
-	// Explicitly close before rename.
-	if err := tmpFile.Close(); err != nil {
-		return fmt.Errorf("close temporary M3U file before rename: %w", err)
-	}
-	closed = true
-
-	// Atomically rename the temporary file to the final destination
-	if err := os.Rename(tmpFile.Name(), path); err != nil {
-		return fmt.Errorf("rename temporary M3U file: %w", err)
+	// CloseAtomicallyReplace: fsync + rename (durable + atomic)
+	if err := pendingFile.CloseAtomicallyReplace(); err != nil {
+		return fmt.Errorf("atomically replace M3U file: %w", err)
 	}
 
 	return nil
 }
 
-// writeXMLTV writes XMLTV data atomically to the specified path
+// writeXMLTV writes XMLTV data with full durability guarantees using renameio
+// This ensures atomic + durable writes: fsync before rename prevents data loss on power failure
 func writeXMLTV(ctx context.Context, path string, tv epg.TV) error {
 	logger := xglog.FromContext(ctx)
-	dir := filepath.Dir(path)
-	tmpFile, err := os.CreateTemp(dir, "xmltv-*.xml.tmp")
-	if err != nil {
-		return fmt.Errorf("create temporary XMLTV file: %w", err)
-	}
 
-	closed := false
+	// renameio handles: temp file creation, fsync, atomic rename, cleanup on error
+	pendingFile, err := renameio.NewPendingFile(path)
+	if err != nil {
+		return fmt.Errorf("create pending XMLTV file: %w", err)
+	}
 	defer func() {
-		if !closed {
-			if err := tmpFile.Close(); err != nil {
-				logger.Warn().Err(err).Str("path", tmpFile.Name()).Msg("failed to close temporary XMLTV file")
-			}
-		}
-		if _, statErr := os.Stat(tmpFile.Name()); !os.IsNotExist(statErr) {
-			if err := os.Remove(tmpFile.Name()); err != nil {
-				logger.Warn().Err(err).Str("path", tmpFile.Name()).Msg("failed to remove temporary XMLTV file")
-			}
+		// Cleanup on error - renameio removes temp file if not committed
+		if err := pendingFile.Cleanup(); err != nil {
+			logger.Debug().Err(err).Msg("cleanup pending XMLTV file")
 		}
 	}()
 
-	// Write XMLTV to temp file
-	if err := epg.WriteXMLTV(tv, tmpFile.Name()); err != nil {
+	// epg.WriteXMLTV needs a file path, so write to pending file path
+	tmpPath := pendingFile.Name()
+	if err := epg.WriteXMLTV(tv, tmpPath); err != nil {
 		return fmt.Errorf("write XMLTV data: %w", err)
 	}
 
-	// Close temp file
-	if err := tmpFile.Close(); err != nil {
-		return fmt.Errorf("close temporary XMLTV file: %w", err)
-	}
-	closed = true
-
-	// Atomically rename
-	if err := os.Rename(tmpFile.Name(), path); err != nil {
-		return fmt.Errorf("rename temporary XMLTV file: %w", err)
+	// CloseAtomicallyReplace: fsync + rename (durable + atomic)
+	if err := pendingFile.CloseAtomicallyReplace(); err != nil {
+		return fmt.Errorf("atomically replace XMLTV file: %w", err)
 	}
 
 	return nil
