@@ -112,7 +112,7 @@ func (m *Manager) Health(ctx context.Context, verbose bool) HealthResponse {
 
 // Ready performs a readiness check (readiness probe)
 // Returns 200 if services are initialized and ready to serve traffic
-func (m *Manager) Ready(ctx context.Context, verbose bool) ReadinessResponse {
+func (m *Manager) Ready(ctx context.Context, _ bool) ReadinessResponse {
 	resp := ReadinessResponse{
 		Ready:     true,
 		Status:    StatusHealthy,

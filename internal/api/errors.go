@@ -13,6 +13,7 @@ import (
 )
 
 // writeJSON writes a JSON response with the given status code
+//nolint:unused // Legacy function - kept for future use
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
@@ -20,31 +21,37 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 }
 
 // writeError writes a generic error response
+//nolint:unused // Legacy function - kept for future use
 func writeError(w http.ResponseWriter, err error) {
 	writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 }
 
 // writeUnauthorized writes a 401 Unauthorized response
+//nolint:unused // Legacy function - kept for future use
 func writeUnauthorized(w http.ResponseWriter) {
 	writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 }
 
 // writeForbidden writes a 403 Forbidden response
+//nolint:unused // Legacy function - kept for future use
 func writeForbidden(w http.ResponseWriter) {
 	writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
 }
 
 // writeNotFound writes a 404 Not Found response
+//nolint:unused // Legacy function - kept for future use
 func writeNotFound(w http.ResponseWriter) {
 	writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 }
 
 // writeServiceUnavailable writes a 503 Service Unavailable response
+//nolint:unused // Legacy function - kept for future use
 func writeServiceUnavailable(w http.ResponseWriter, err error) {
 	writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
 }
 
 // setDownloadHeaders sets appropriate headers for file downloads
+//nolint:unused // Legacy function - kept for future use
 func setDownloadHeaders(w http.ResponseWriter, name string, size int64, mod time.Time) {
 	w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
 	w.Header().Set("Last-Modified", mod.UTC().Format(http.TimeFormat))

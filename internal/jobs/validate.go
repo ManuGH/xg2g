@@ -27,6 +27,7 @@ func validateConfig(cfg Config) error {
 }
 
 // validateOptions validates the options for refresh operations
+//nolint:unused // Validation helper - kept for future use
 func validateOptions(opts Options) error {
 	if opts.Parallelism < 0 {
 		return fmt.Errorf("parallelism must be >= 0, got %d", opts.Parallelism)
@@ -65,16 +66,16 @@ func sanitizeFilename(name string) (string, error) {
 	return cleaned, nil
 }
 
-// clampConcurrency ensures concurrency is within sane bounds [1, max]
-func clampConcurrency(value, defaultValue, max int) int {
+// clampConcurrency ensures concurrency is within sane bounds [1, maxVal]
+func clampConcurrency(value, defaultValue, maxVal int) int {
 	if value < 1 {
 		if defaultValue < 1 {
 			return 1
 		}
 		return defaultValue
 	}
-	if value > max {
-		return max
+	if value > maxVal {
+		return maxVal
 	}
 	return value
 }

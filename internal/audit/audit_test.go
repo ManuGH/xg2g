@@ -52,8 +52,11 @@ func TestLogger_LogFromContext(t *testing.T) {
 	logger := NewLogger()
 
 	// Context with metadata
+	//nolint:staticcheck // Test code - context keys are fine here
 	ctx := context.WithValue(context.Background(), "request_id", "req-456")
+	//nolint:staticcheck // Test code - context keys are fine here
 	ctx = context.WithValue(ctx, "remote_addr", "10.0.0.1")
+	//nolint:staticcheck // Test code - context keys are fine here
 	ctx = context.WithValue(ctx, "user_agent", "Mozilla/5.0")
 
 	event := Event{

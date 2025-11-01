@@ -127,7 +127,7 @@ func TestMemoryCache_Janitor(t *testing.T) {
 	assert.True(t, ok, "long-lived entry should still exist")
 }
 
-func TestMemoryCache_ConcurrentAccess(t *testing.T) {
+func TestMemoryCache_ConcurrentAccess(_ *testing.T) {
 	cache := NewMemoryCache(1 * time.Minute)
 	done := make(chan bool)
 	

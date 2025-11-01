@@ -307,7 +307,7 @@ func (m *mockChecker) Name() string {
 	return m.name
 }
 
-func (m *mockChecker) Check(ctx context.Context) CheckResult {
+func (m *mockChecker) Check(_ context.Context) CheckResult {
 	return CheckResult{
 		Status:  m.status,
 		Message: m.message,

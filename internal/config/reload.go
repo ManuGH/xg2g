@@ -52,7 +52,7 @@ func (h *ConfigHolder) Get() jobs.Config {
 // If validation fails, the old configuration is kept and an error is returned.
 // This ensures atomic config updates - either the full config is valid and applied,
 // or the old config remains unchanged.
-func (h *ConfigHolder) Reload(ctx context.Context) error {
+func (h *ConfigHolder) Reload(_ context.Context) error {
 	h.logger.Info().Str("event", "config.reload_start").Msg("reloading configuration")
 
 	// Load new configuration
@@ -112,7 +112,7 @@ func (h *ConfigHolder) StartWatcher(ctx context.Context) error {
 
 	// Add config file to watcher
 	if err := watcher.Add(h.configPath); err != nil {
-		watcher.Close()
+		_ = watcher.Close()  // Ignore close error in error path
 		return fmt.Errorf("watch config file: %w", err)
 	}
 
@@ -138,7 +138,7 @@ func (h *ConfigHolder) watchLoop(ctx context.Context) {
 		case <-ctx.Done():
 			h.logger.Info().Str("event", "config.watcher_stopped").Msg("config watcher stopped")
 			if h.watcher != nil {
-				h.watcher.Close()
+				_ = h.watcher.Close()  // Ignore close error in error path
 			}
 			return
 
@@ -183,7 +183,7 @@ func (h *ConfigHolder) watchLoop(ctx context.Context) {
 // Stop stops the config watcher (if running).
 func (h *ConfigHolder) Stop() {
 	if h.watcher != nil {
-		h.watcher.Close()
+		_ = h.watcher.Close()  // Ignore close error in error path
 	}
 }
 
@@ -214,35 +214,35 @@ func (h *ConfigHolder) notifyListeners(newCfg jobs.Config) {
 }
 
 // logChanges logs the differences between old and new configuration.
-func (h *ConfigHolder) logChanges(old, new jobs.Config) {
-	if old.Bouquet != new.Bouquet {
+func (h *ConfigHolder) logChanges(old, newCfg jobs.Config) {
+	if old.Bouquet != newCfg.Bouquet {
 		h.logger.Info().
 			Str("old", old.Bouquet).
-			Str("new", new.Bouquet).
+			Str("new", newCfg.Bouquet).
 			Msg("config changed: Bouquet")
 	}
-	if old.EPGEnabled != new.EPGEnabled {
+	if old.EPGEnabled != newCfg.EPGEnabled {
 		h.logger.Info().
 			Bool("old", old.EPGEnabled).
-			Bool("new", new.EPGEnabled).
+			Bool("new", newCfg.EPGEnabled).
 			Msg("config changed: EPGEnabled")
 	}
-	if old.EPGDays != new.EPGDays {
+	if old.EPGDays != newCfg.EPGDays {
 		h.logger.Info().
 			Int("old", old.EPGDays).
-			Int("new", new.EPGDays).
+			Int("new", newCfg.EPGDays).
 			Msg("config changed: EPGDays")
 	}
-	if old.StreamPort != new.StreamPort {
+	if old.StreamPort != newCfg.StreamPort {
 		h.logger.Info().
 			Int("old", old.StreamPort).
-			Int("new", new.StreamPort).
+			Int("new", newCfg.StreamPort).
 			Msg("config changed: StreamPort")
 	}
-	if old.OWIBase != new.OWIBase {
+	if old.OWIBase != newCfg.OWIBase {
 		h.logger.Info().
 			Str("old", maskURL(old.OWIBase)).
-			Str("new", maskURL(new.OWIBase)).
+			Str("new", maskURL(newCfg.OWIBase)).
 			Msg("config changed: OWIBase")
 	}
 }

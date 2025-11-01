@@ -171,6 +171,7 @@ func (s *Server) secureFileServer() http.Handler {
 }
 
 // checkFile verifies that a file exists and is readable
+//nolint:unused // Helper function - kept for future use
 func checkFile(ctx context.Context, path string) bool {
 	info, err := os.Stat(path)
 	if err != nil {
