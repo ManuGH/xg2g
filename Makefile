@@ -6,7 +6,7 @@
 # ===================================================================================================
 
 .PHONY: help build build-all build-rust build-ffi clean clean-rust lint lint-fix test test-race test-cover test-fuzz test-all test-ffi \
-        docker docker-build docker-security docker-tag docker-push docker-clean \
+        docker docker-build docker-build-cpu docker-build-gpu docker-build-all docker-security docker-tag docker-push docker-clean \
         sbom deps deps-update deps-tidy deps-verify deps-licenses \
         security security-scan security-audit security-vulncheck \
 	hardcore-test quality-gates pre-commit install dev-tools check-tools \
@@ -80,12 +80,15 @@ help: ## Show this help message
 	@echo "  quality-gates  Validate all quality gates (coverage, lint, security)"
 	@echo ""
 	@echo "Docker Operations:"
-	@echo "  docker         Build Docker image"
-	@echo "  docker-build   Build multi-platform Docker images"
-	@echo "  docker-security Run Docker security scanning"
-	@echo "  docker-tag     Tag Docker image with version"
-	@echo "  docker-push    Push Docker image to registry"
-	@echo "  docker-clean   Remove Docker build cache"
+	@echo "  docker              Build Docker image"
+	@echo "  docker-build        Build CPU-only Docker image (default, MODE 1+2)"
+	@echo "  docker-build-cpu    Build CPU-only Docker image (MODE 1+2: Audio transcoding)"
+	@echo "  docker-build-gpu    Build GPU-enabled Docker image (MODE 3: VAAPI transcoding)"
+	@echo "  docker-build-all    Build both CPU and GPU variants"
+	@echo "  docker-security     Run Docker security scanning"
+	@echo "  docker-tag          Tag Docker image with version"
+	@echo "  docker-push         Push Docker image to registry"
+	@echo "  docker-clean        Remove Docker build cache"
 	@echo ""
 	@echo "Security and Compliance:"
 	@echo "  sbom           Generate Software Bill of Materials"
@@ -365,11 +368,32 @@ docker: ## Build Docker image
 	@docker build -t $(DOCKER_IMAGE):$(VERSION) -t $(DOCKER_IMAGE):latest .
 	@echo "✅ Docker image built: $(DOCKER_IMAGE):$(VERSION)"
 
-docker-build: ## Build multi-platform Docker images
-	@echo "Building multi-platform Docker images..."
+docker-build: docker-build-cpu ## Build Docker image (default: CPU-only, MODE 1+2)
+
+docker-build-cpu: ## Build CPU-only Docker image (MODE 1+2: Audio transcoding only)
+	@echo "🚀 Building CPU-only Docker image (MODE 1+2)..."
 	@docker buildx create --use --name xg2g-builder 2>/dev/null || true
-	@docker buildx build --platform $(PLATFORMS) -t $(DOCKER_IMAGE):$(VERSION) -t $(DOCKER_IMAGE):latest .
-	@echo "✅ Multi-platform Docker images built"
+	@docker buildx build --build-arg ENABLE_GPU=false \
+		--platform $(PLATFORMS) \
+		-t $(DOCKER_IMAGE):$(VERSION) \
+		-t $(DOCKER_IMAGE):latest \
+		-t $(DOCKER_IMAGE):$(VERSION)-cpu \
+		-t $(DOCKER_IMAGE):latest-cpu \
+		.
+	@echo "✅ CPU-only Docker image built"
+
+docker-build-gpu: ## Build GPU-enabled Docker image (MODE 3: VAAPI video transcoding)
+	@echo "🎮 Building GPU-enabled Docker image (MODE 3)..."
+	@docker buildx create --use --name xg2g-builder 2>/dev/null || true
+	@docker buildx build --build-arg ENABLE_GPU=true \
+		--platform linux/amd64,linux/arm64 \
+		-t $(DOCKER_IMAGE):$(VERSION)-gpu \
+		-t $(DOCKER_IMAGE):latest-gpu \
+		.
+	@echo "✅ GPU-enabled Docker image built"
+
+docker-build-all: docker-build-cpu docker-build-gpu ## Build both CPU and GPU variants
+	@echo "✅ All Docker image variants built successfully"
 
 docker-security: docker ## Run Docker security scanning
 	@echo "Running Docker security scan..."
