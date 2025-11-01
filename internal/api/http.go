@@ -20,6 +20,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/hdhr"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/api/middleware"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -136,8 +137,14 @@ func (s *Server) SetRefreshFunc(fn func(context.Context, jobs.Config) (*jobs.Sta
 func (s *Server) routes() http.Handler {
 	r := chi.NewRouter()
 
-	// Apply structured logging and security headers to all routes
+	// Apply middleware stack (order matters)
+	// 1. Metrics - track all requests
+	r.Use(middleware.Metrics())
+	// 2. Tracing - distributed tracing with OpenTelemetry
+	r.Use(middleware.Tracing("xg2g-api"))
+	// 3. Logging - structured request/response logging
 	r.Use(log.Middleware())
+	// 4. Security headers - add security headers to all responses
 	r.Use(securityHeadersMiddleware)
 
 	// Health checks (versionless - infrastructure endpoints)

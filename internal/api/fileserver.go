@@ -156,9 +156,10 @@ func (s *Server) secureFileServer() http.Handler {
 		// Content-Length, and Last-Modified headers correctly.
 
 		// Set explicit charset for XML/M3U files to ensure proper UTF-8 handling
-		if strings.HasSuffix(strings.ToLower(info.Name()), ".xml") {
+		lowerName := strings.ToLower(info.Name())
+		if strings.HasSuffix(lowerName, ".xml") {
 			w.Header().Set("Content-Type", "application/xml; charset=utf-8")
-		} else if strings.HasSuffix(strings.ToLower(info.Name()), ".m3u") {
+		} else if strings.HasSuffix(lowerName, ".m3u") || strings.HasSuffix(lowerName, ".m3u8") {
 			w.Header().Set("Content-Type", "audio/x-mpegurl; charset=utf-8")
 		}
 
