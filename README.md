@@ -1,6 +1,7 @@
 # xg2g
 
 [![CI](https://github.com/ManuGH/xg2g/actions/workflows/ci.yml/badge.svg)](https://github.com/ManuGH/xg2g/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/badge/release-v1.7.0-blue.svg)](https://github.com/ManuGH/xg2g/releases/tag/v1.7.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **Stream your satellite/cable receiver to any device.**
