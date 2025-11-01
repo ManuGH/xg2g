@@ -92,7 +92,7 @@ var (
 type ClientInterface interface {
 	Bouquets(ctx context.Context) (map[string]string, error)
 	Services(ctx context.Context, bouquetRef string) ([][2]string, error)
-	StreamURL(ref, name string) (string, error)
+	StreamURL(ctx context.Context, ref, name string) (string, error)
 }
 
 // New creates a new OpenWebIF client with the given options.
@@ -362,14 +362,15 @@ func (c *Client) Services(ctx context.Context, bouquetRef string) ([][2]string, 
 }
 
 // StreamURL builds a streaming URL for the given service reference.
-func (c *Client) StreamURL(ref, name string) (string, error) {
+// Context is used for smart stream detection and tracing.
+func (c *Client) StreamURL(ctx context.Context, ref, name string) (string, error) {
 	// NEW in v1.2.0: Smart Stream Detection
 	// Automatically detects optimal stream endpoint per channel
 	if c.streamDetector != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		detectionCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
 
-		info, err := c.streamDetector.DetectStreamURL(ctx, ref, name)
+		info, err := c.streamDetector.DetectStreamURL(detectionCtx, ref, name)
 		if err == nil && info != nil {
 			return info.URL, nil
 		}
@@ -480,8 +481,9 @@ func (c *Client) StreamURL(ref, name string) (string, error) {
 
 // StreamURL constructs a streaming URL from base URL and service reference.
 // Preserved helper that now uses New, so ENV variables take effect.
+// Deprecated: Use client.StreamURL(ctx, ref, name) for proper context propagation.
 func StreamURL(base, ref, name string) (string, error) {
-	return NewWithPort(base, 0, Options{}).StreamURL(ref, name)
+	return NewWithPort(base, 0, Options{}).StreamURL(context.Background(), ref, name)
 }
 
 func resolveStreamPort(port int) int {

@@ -97,7 +97,7 @@ func TestStreamURLScenarios(t *testing.T) {
 			}
 
 			client := NewWithPort(tc.base, tc.port, Options{Timeout: time.Second})
-			got, err := client.StreamURL(ref, name)
+			got, err := client.StreamURL(context.Background(), ref, name)
 			if err != nil {
 				t.Fatalf("StreamURL returned error: %v", err)
 			}

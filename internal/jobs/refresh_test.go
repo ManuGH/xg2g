@@ -21,7 +21,7 @@ import (
 type OwiClient interface {
 	Bouquets(ctx context.Context) (map[string]string, error)
 	Services(ctx context.Context, bouquetRef string) ([][2]string, error)
-	StreamURL(ref, name string) (string, error)
+	StreamURL(ctx context.Context, ref, name string) (string, error)
 	GetEPG(ctx context.Context, sRef string, days int) ([]openwebif.EPGEvent, error)
 }
 
@@ -38,7 +38,7 @@ func (m *mockOWI) Services(_ context.Context, bouquetRef string) ([][2]string, e
 	return m.services[bouquetRef], nil
 }
 
-func (m *mockOWI) StreamURL(ref, _ string) (string, error) {
+func (m *mockOWI) StreamURL(_ context.Context, ref, _ string) (string, error) {
 	return "http://stream/" + ref, nil
 }
 
@@ -94,7 +94,7 @@ func refreshWithClient(ctx context.Context, cfg Config, cl OwiClient) (*Status, 
 			Group:   cfg.Bouquet,
 		}
 
-		streamURL, err := cl.StreamURL(sref, name)
+		streamURL, err := cl.StreamURL(ctx, sref, name)
 		if err != nil {
 			return nil, fmt.Errorf("stream url for %q: %w", name, err)
 		}

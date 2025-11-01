@@ -160,7 +160,7 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 
 		for _, s := range services {
 			name, ref := s[0], s[1]
-			streamURL, err := client.StreamURL(ref, name)
+			streamURL, err := client.StreamURL(ctx, ref, name)
 			if err != nil {
 				logger.Warn().Err(err).Str("service", name).Msg("failed to build stream URL")
 				metrics.IncStreamURLBuild("failure")

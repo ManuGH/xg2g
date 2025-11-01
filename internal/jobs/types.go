@@ -22,7 +22,7 @@ type Logger interface {
 type OpenWebIFClient interface {
 	Bouquets(ctx context.Context) (map[string]string, error)
 	Services(ctx context.Context, bouquetRef string) ([][]string, error)
-	StreamURL(serviceRef, serviceName string) (string, error)
+	StreamURL(ctx context.Context, serviceRef, serviceName string) (string, error)
 }
 
 // MetricsRecorder defines the interface for recording metrics
