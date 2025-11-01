@@ -92,9 +92,10 @@ func (m *Manager) Health(ctx context.Context, verbose bool) HealthResponse {
 			result := checker.Check(ctx)
 			resp.Checks[checker.Name()] = result
 
-			if result.Status == StatusUnhealthy {
+			switch result.Status {
+			case StatusUnhealthy:
 				hasUnhealthy = true
-			} else if result.Status == StatusDegraded {
+			case StatusDegraded:
 				hasDegraded = true
 			}
 		}
@@ -132,10 +133,11 @@ func (m *Manager) Ready(ctx context.Context, _ bool) ReadinessResponse {
 		result := checker.Check(ctx)
 		resp.Checks[checker.Name()] = result
 
-		if result.Status == StatusUnhealthy {
+		switch result.Status {
+		case StatusUnhealthy:
 			hasUnhealthy = true
 			resp.Ready = false
-		} else if result.Status == StatusDegraded {
+		case StatusDegraded:
 			hasDegraded = true
 		}
 	}
