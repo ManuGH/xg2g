@@ -27,14 +27,22 @@ import (
 
 // Server represents the HTTP API server for xg2g.
 type Server struct {
-	mu         sync.RWMutex
-	refreshing atomic.Bool // serialize refreshes via atomic flag
-	cfg        jobs.Config
-	status     jobs.Status
-	cb         *CircuitBreaker
-	hdhr       *hdhr.Server // HDHomeRun emulation server
+	mu           sync.RWMutex
+	refreshing   atomic.Bool // serialize refreshes via atomic flag
+	cfg          jobs.Config
+	status       jobs.Status
+	cb           *CircuitBreaker
+	hdhr         *hdhr.Server // HDHomeRun emulation server
+	configHolder ConfigHolder // Optional: for hot config reload support
 	// refreshFn allows tests to stub the refresh operation; defaults to jobs.Refresh
 	refreshFn func(context.Context, jobs.Config) (*jobs.Status, error)
+}
+
+// ConfigHolder interface allows hot configuration reloading without import cycles.
+// Implemented by config.ConfigHolder.
+type ConfigHolder interface {
+	Get() jobs.Config
+	Reload(ctx context.Context) error
 }
 
 // dataFilePath resolves a relative path inside the configured data directory while
@@ -732,6 +740,11 @@ func (s *Server) registerV1Routes(r chi.Router) {
 		// Apply rate limiting and CSRF protection to expensive refresh operation
 		r.With(middleware.RefreshRateLimit(), middleware.CSRFProtection()).
 			Post("/refresh", s.authRequired(s.handleRefreshV1))
+		// Config management endpoints
+		r.Route("/config", func(r chi.Router) {
+			r.With(middleware.CSRFProtection()).
+				Post("/reload", s.authRequired(s.handleConfigReloadV1))
+		})
 	})
 }
 
@@ -778,6 +791,58 @@ func (s *Server) handleStatusV1(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRefreshV1(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-API-Version", "1")
 	s.handleRefresh(w, r)
+}
+
+// handleConfigReloadV1 handles POST /api/v1/config/reload - triggers config file reload.
+func (s *Server) handleConfigReloadV1(w http.ResponseWriter, r *http.Request) {
+	logger := log.WithComponentFromContext(r.Context(), "api.v1")
+	w.Header().Set("X-API-Version", "1")
+
+	// Check if config holder is available
+	if s.configHolder == nil {
+		RespondError(w, r, http.StatusServiceUnavailable, ErrServiceUnavailable,
+			map[string]string{"reason": "hot reload not enabled"})
+		logger.Warn().
+			Str("event", "config.reload_unavailable").
+			Msg("config reload requested but hot reload not enabled")
+		return
+	}
+
+	// Trigger reload
+	if err := s.configHolder.Reload(r.Context()); err != nil {
+		RespondError(w, r, http.StatusInternalServerError, ErrInternalServer,
+			map[string]string{"error": err.Error()})
+		logger.Error().
+			Err(err).
+			Str("event", "config.reload_failed").
+			Msg("config reload failed")
+		return
+	}
+
+	// Update server config from holder
+	s.mu.Lock()
+	s.cfg = s.configHolder.Get()
+	s.mu.Unlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	resp := map[string]any{
+		"status":  "ok",
+		"message": "configuration reloaded successfully",
+	}
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		logger.Error().Err(err).Msg("failed to encode config reload response")
+		return
+	}
+
+	logger.Info().
+		Str("event", "config.reload_success").
+		Msg("configuration reloaded via API")
+}
+
+// SetConfigHolder sets the config holder for hot reload support (optional).
+// Must be called before routes are registered if hot reload is desired.
+func (s *Server) SetConfigHolder(holder ConfigHolder) {
+	s.configHolder = holder
 }
 
 // handleStatusV2Placeholder is a placeholder for v2 status endpoint
