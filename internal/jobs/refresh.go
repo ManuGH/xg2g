@@ -338,6 +338,7 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 
 	// Create detailed status response
 	status := &Status{
+		Version:       cfg.Version,
 		LastRun:       time.Now(),
 		Channels:      len(items),
 		Bouquets:      len(validBouquets),
