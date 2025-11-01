@@ -135,7 +135,3 @@ release:
 
     🤖 Built with [Claude Code](https://claude.com/claude-code)
 
-sboms:
-  - artifacts: archive
-    documents:
-      - "{{ .ProjectName }}_{{ .Version }}_sbom.spdx.json"
