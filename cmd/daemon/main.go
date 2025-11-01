@@ -184,16 +184,19 @@ func main() {
 			Msg("failed to create daemon manager")
 	}
 
-	// Start SSDP announcer for HDHomeRun auto-discovery if enabled
-	if hdhrSrv := s.HDHomeRunServer(); hdhrSrv != nil {
-		go func() {
-			if err := hdhrSrv.StartSSDPAnnouncer(ctx); err != nil {
-				logger.Error().
-					Err(err).
-					Str("event", "ssdp.failed").
-					Msg("SSDP announcer failed")
-			}
-		}()
+	// Start SSDP announcer for HDHomeRun auto-discovery if enabled (not in proxy-only mode)
+	proxyOnlyMode := config.ParseString("XG2G_PROXY_ONLY_MODE", "false") == "true"
+	if !proxyOnlyMode {
+		if hdhrSrv := s.HDHomeRunServer(); hdhrSrv != nil {
+			go func() {
+				if err := hdhrSrv.StartSSDPAnnouncer(ctx); err != nil {
+					logger.Error().
+						Err(err).
+						Str("event", "ssdp.failed").
+						Msg("SSDP announcer failed")
+				}
+			}()
+		}
 	}
 
 	// Start daemon manager (blocks until shutdown)
