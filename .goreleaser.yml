@@ -1,0 +1,132 @@
+version: 2
+
+project_name: xg2g
+
+before:
+  hooks:
+    - go mod tidy
+    - go mod verify
+
+builds:
+  - id: xg2g-nogpu
+    main: ./cmd/daemon
+    binary: xg2g
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+      - -mod=readonly
+      - -buildvcs=false
+    ldflags:
+      - -s -w
+      - -X main.Version={{.Version}}
+    tags:
+      - nogpu
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    # Skip unsupported combinations
+    ignore:
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - id: default
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - LICENSE
+      - CHANGELOG.md
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+snapshot:
+  name_template: "{{ .Version }}-next"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "merge conflict"
+      - "Merge pull request"
+  groups:
+    - title: "New Features"
+      regexp: "^feat.*"
+      order: 0
+    - title: "Bug Fixes"
+      regexp: "^fix.*"
+      order: 1
+    - title: "Performance Improvements"
+      regexp: "^perf.*"
+      order: 2
+    - title: "Other Changes"
+      order: 999
+
+release:
+  github:
+    owner: ManuGH
+    name: xg2g
+  draft: false
+  prerelease: auto
+  name_template: "{{.ProjectName}} v{{.Version}}"
+  header: |
+    ## xg2g v{{ .Version }}
+
+    **Note:** These binaries are built **without audio transcoding support** (nogpu builds).
+    For full functionality including iOS/Safari audio support, use the Docker images:
+    - `ghcr.io/manugh/xg2g:{{ .Version }}`
+    - `ghcr.io/manugh/xg2g:latest`
+
+    ### What's Changed
+  footer: |
+    ---
+
+    **Installation:**
+
+    Download the appropriate binary for your platform, extract it, and run:
+    ```bash
+    ./xg2g
+    ```
+
+    **Docker (recommended for full features):**
+    ```bash
+    docker pull ghcr.io/manugh/xg2g:{{ .Version }}
+    ```
+
+    **Full Changelog**: https://github.com/ManuGH/xg2g/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+# Generate SBOM
+sboms:
+  - id: default
+    artifacts: archive
+    documents:
+      - "{{ .ProjectName }}_{{ .Version }}_sbom.spdx.json"
+
+# Sign artifacts
+signs:
+  - cmd: cosign
+    env:
+      - COSIGN_EXPERIMENTAL=1
+    certificate: '${artifact}.pem'
+    args:
+      - sign-blob
+      - '--output-certificate=${certificate}'
+      - '--output-signature=${signature}'
+      - '${artifact}'
+      - "--yes"
+    artifacts: checksum
+    output: true
