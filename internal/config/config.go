@@ -41,13 +41,14 @@ type OpenWebIFConfig struct {
 }
 
 // EPGConfig holds EPG configuration
+// Uses pointers for optional fields to distinguish between "not set" and "explicitly set to zero/false"
 type EPGConfig struct {
-	Enabled        bool   `yaml:"enabled"`
-	Days           int    `yaml:"days,omitempty"`
-	MaxConcurrency int    `yaml:"maxConcurrency,omitempty"`
-	TimeoutMS      int    `yaml:"timeoutMs,omitempty"`
-	Retries        int    `yaml:"retries,omitempty"`
-	FuzzyMax       int    `yaml:"fuzzyMax,omitempty"`
+	Enabled        *bool  `yaml:"enabled,omitempty"`
+	Days           *int   `yaml:"days,omitempty"`
+	MaxConcurrency *int   `yaml:"maxConcurrency,omitempty"`
+	TimeoutMS      *int   `yaml:"timeoutMs,omitempty"`
+	Retries        *int   `yaml:"retries,omitempty"`
+	FuzzyMax       *int   `yaml:"fuzzyMax,omitempty"`
 	XMLTVPath      string `yaml:"xmltvPath,omitempty"`
 }
 
@@ -58,8 +59,9 @@ type APIConfig struct {
 }
 
 // MetricsConfig holds Prometheus metrics configuration
+// Uses pointer for Enabled to distinguish between "not set" and "explicitly disabled"
 type MetricsConfig struct {
-	Enabled    bool   `yaml:"enabled"`
+	Enabled    *bool  `yaml:"enabled,omitempty"`
 	ListenAddr string `yaml:"listenAddr,omitempty"`
 }
 
@@ -211,24 +213,24 @@ func (l *Loader) mergeFileConfig(dst *jobs.Config, src *FileConfig) error {
 		dst.Bouquet = strings.Join(src.Bouquets, ",")
 	}
 
-	// EPG
-	if src.EPG.Enabled {
-		dst.EPGEnabled = true
+	// EPG - use pointer types to allow false/0 values from YAML
+	if src.EPG.Enabled != nil {
+		dst.EPGEnabled = *src.EPG.Enabled
 	}
-	if src.EPG.Days > 0 {
-		dst.EPGDays = src.EPG.Days
+	if src.EPG.Days != nil {
+		dst.EPGDays = *src.EPG.Days
 	}
-	if src.EPG.MaxConcurrency > 0 {
-		dst.EPGMaxConcurrency = src.EPG.MaxConcurrency
+	if src.EPG.MaxConcurrency != nil {
+		dst.EPGMaxConcurrency = *src.EPG.MaxConcurrency
 	}
-	if src.EPG.TimeoutMS > 0 {
-		dst.EPGTimeoutMS = src.EPG.TimeoutMS
+	if src.EPG.TimeoutMS != nil {
+		dst.EPGTimeoutMS = *src.EPG.TimeoutMS
 	}
-	if src.EPG.Retries > 0 {
-		dst.EPGRetries = src.EPG.Retries
+	if src.EPG.Retries != nil {
+		dst.EPGRetries = *src.EPG.Retries
 	}
-	if src.EPG.FuzzyMax > 0 {
-		dst.FuzzyMax = src.EPG.FuzzyMax
+	if src.EPG.FuzzyMax != nil {
+		dst.FuzzyMax = *src.EPG.FuzzyMax
 	}
 	if src.EPG.XMLTVPath != "" {
 		dst.XMLTVPath = src.EPG.XMLTVPath
