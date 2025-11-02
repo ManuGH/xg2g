@@ -30,6 +30,8 @@ COPY transcoder/src ./src
 # Note: Building without --lib to ensure Cargo.toml crate-type=[cdylib, rlib] is respected
 # Note: BuildKit cache mounts dramatically speed up subsequent builds (40+ min → 5-10 min)
 # Note: Three cache mounts: registry (crates), git (git deps), target (build artifacts)
+# AMD64 CPU targets: x86-64 (v1), x86-64-v2, x86-64-v3, x86-64-v4
+# ARM64: Use generic target (no specific CPU level)
 ARG RUST_TARGET_CPU=x86-64-v2
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
@@ -54,6 +56,8 @@ RUN apk add --no-cache \
     ffmpeg-dev
 
 # Build arguments for CPU optimization
+# AMD64 levels: v1 (baseline 2003+), v2 (2009+, default), v3 (2015+, AVX2), v4 (2017+, AVX-512)
+# ARM64: These arguments are ignored
 ARG GO_AMD64_LEVEL=v2
 ARG GO_GCFLAGS=""
 

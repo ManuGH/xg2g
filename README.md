@@ -217,22 +217,72 @@ services:
 
 ## Docker Image Tags
 
-xg2g provides multiple image tags for different use cases:
+xg2g provides multiple image tags for different use cases and CPU architectures:
+
+### Standard Tags (Multi-Arch: AMD64-v2 + ARM64)
 
 | Tag | Description | Use Case | Updated |
 |-----|-------------|----------|---------|
 | `latest` | Stable releases | **Production** | On version tags (`v*`) |
 | `main` | Latest development | **Staging/Testing** | Every push to main |
-| `sha-<hash>` | Specific commit | **Reproducible builds** | Every commit |
 | `v1.2.3` | Specific version | **Pinned deployments** | On version tags |
-| `distroless-latest` | Minimal distroless | **Security-focused** | On version tags |
-| `distroless-main` | Latest distroless dev | **Staging distroless** | Every push to main |
+
+### CPU-Optimized Tags (AMD64 only)
+
+xg2g supports different x86-64 microarchitecture levels for optimal performance on your hardware:
+
+| Tag | CPU Level | Min CPU Year | Target CPUs | Performance | Compatibility |
+|-----|-----------|--------------|-------------|-------------|---------------|
+| `v1-compat` | x86-64-v1 | 2003+ | Any AMD64 CPU | Baseline | ✅ Maximum |
+| `latest` | x86-64-v2 | 2009+ | Nehalem, Bulldozer+ | Good | ✅ **Recommended** |
+| `v3-performance` | x86-64-v3 | 2015+ | Haswell, Zen+ (AVX2) | Excellent | ⚠️ Modern only |
+
+**CPU Level Details:**
+- **v1** (x86-64): SSE2 only - runs on any 64-bit CPU (Pentium 4+, Athlon 64+)
+- **v2** (x86-64-v2): +SSE3, SSE4.1, SSE4.2, POPCNT - **default**, best balance
+- **v3** (x86-64-v3): +AVX, AVX2, BMI1/2, FMA - 10-20% faster for audio/video
+
+### Architecture-Specific Tags
+
+| Tag | Architecture | Description |
+|-----|--------------|-------------|
+| `main-arm64` | ARM64 | Latest dev for ARM |
+| `v1.2.3-arm64` | ARM64 | Version for ARM |
+| `sha-abc123-amd64-v2` | AMD64 | Specific commit + CPU level |
+
+### Choosing the Right Image
+
+**How to check your CPU level:**
+```bash
+# On Linux
+grep -o 'avx2\|avx\|sse4_2' /proc/cpuinfo | sort -u
+
+# Result interpretation:
+# - avx2 present → Use :v3-performance
+# - sse4_2 present (no avx2) → Use :latest (v2)
+# - neither → Use :v1-compat
+```
+
+**Recommendation by hardware:**
+- 🖥️ **Modern server** (2015+): `v3-performance` - Best performance
+- 🏠 **Home server/NAS** (2010+): `latest` - Balanced (default)
+- 📦 **Old hardware** (<2010): `v1-compat` - Maximum compatibility
+- 🍇 **Raspberry Pi / ARM**: `latest` - Auto-selects ARM64
 
 ### Production Deployment
 
-Use `latest` for stable, tested releases:
+Use `latest` for stable, tested releases (multi-arch, auto-detects AMD64-v2 or ARM64):
 ```yaml
 image: ghcr.io/manugh/xg2g:latest
+```
+
+For specific CPU optimization (AMD64 only):
+```yaml
+# High-performance (Intel Haswell+, AMD Zen+)
+image: ghcr.io/manugh/xg2g:v3-performance
+
+# Legacy compatibility (any 64-bit CPU)
+image: ghcr.io/manugh/xg2g:v1-compat
 ```
 
 See: [docker-compose.production.yml](docker-compose.production.yml)
