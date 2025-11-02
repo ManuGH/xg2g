@@ -1,12 +1,22 @@
 # xg2g
 
+<div align="center">
+
+**🛰️ Turn your Enigma2 receiver into a universal IPTV server**
+
 [![CI](https://github.com/ManuGH/xg2g/actions/workflows/ci.yml/badge.svg)](https://github.com/ManuGH/xg2g/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/badge/release-v1.7.0-blue.svg)](https://github.com/ManuGH/xg2g/releases/tag/v1.7.0)
+[![codecov](https://codecov.io/gh/ManuGH/xg2g/branch/main/graph/badge.svg)](https://codecov.io/gh/ManuGH/xg2g)
+[![Go Report Card](https://goreportcard.com/badge/github.com/ManuGH/xg2g)](https://goreportcard.com/report/github.com/ManuGH/xg2g)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/ManuGH/xg2g/badge)](https://scorecard.dev/viewer/?uri=github.com/ManuGH/xg2g)
+[![Latest Release](https://img.shields.io/github/v/release/ManuGH/xg2g)](https://github.com/ManuGH/xg2g/releases/latest)
+[![Docker Pulls](https://img.shields.io/docker/pulls/manugh/xg2g)](https://hub.docker.com/r/manugh/xg2g)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**Stream your satellite/cable receiver to any device.**
+Stream satellite/cable TV to **any device** - Plex, Jellyfin, iPhone, VLC, Kodi - **everything works**.
 
-Works with Plex, Jellyfin, iPhone, VLC, Kodi - everything.
+[Quick Start](#install) • [Features](#what-it-does) • [Documentation](docs/) • [Helm Chart](deploy/helm/xg2g/)
+
+</div>
 
 ---
 
@@ -26,11 +36,26 @@ docker run -d \
 
 ## What It Does
 
-✅ Converts your receiver into an IPTV server
-✅ Works with iPhone/iPad Safari (audio fixed automatically)
-✅ Includes TV guide (7 days)
-✅ Auto-discovery in Plex/Jellyfin
-✅ Channel logos included
+✅ **Universal Compatibility** - Works with Plex, Jellyfin, VLC, Kodi, iPhone Safari
+✅ **Zero-CPU Audio Transcoding** - Rust remuxer converts AC3/MP2 → AAC with <1% overhead
+✅ **7-Day EPG** - Full electronic program guide in XMLTV format
+✅ **HDHomeRun Emulation** - Auto-discovery in Plex/Jellyfin (no manual setup)
+✅ **GPU Transcoding** - Hardware-accelerated video transcoding (AMD/Intel/NVIDIA)
+✅ **Enterprise-Grade** - Prometheus metrics, OpenTelemetry tracing, health checks
+✅ **Production-Ready** - SLSA L3 attestation, SBOM, Cosign signing, Helm charts
+
+---
+
+## Why xg2g?
+
+| Feature | xg2g | Traditional IPTV Proxy |
+|---------|------|------------------------|
+| iPhone Safari Audio | ✅ Auto-fixed | ❌ Broken AC3/MP2 |
+| GPU Acceleration | ✅ Hardware transcode | ❌ CPU only |
+| Plex Auto-Discovery | ✅ HDHomeRun emulation | ❌ Manual M3U |
+| Security | ✅ SLSA L3, SBOM, signed | ❌ No attestation |
+| Observability | ✅ Metrics, tracing, logs | ❌ Basic logging |
+| Production Ops | ✅ Helm, K8s, health checks | ❌ DIY deployment |
 
 ---
 

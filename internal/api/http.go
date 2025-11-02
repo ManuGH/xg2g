@@ -297,6 +297,13 @@ func (s *Server) GetStatus() jobs.Status {
 	return s.status
 }
 
+// GetConfig returns the server's current configuration
+func (s *Server) GetConfig() jobs.Config {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.cfg
+}
+
 // HandleRefreshInternal exposes the refresh handler for versioned APIs
 // This allows different API versions to wrap the core refresh logic
 func (s *Server) HandleRefreshInternal(w http.ResponseWriter, r *http.Request) {
