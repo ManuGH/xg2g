@@ -14,6 +14,7 @@ builds:
     goos:
       - linux
       - darwin
+      - windows
     goarch:
       - amd64
       - arm64
@@ -84,9 +85,7 @@ release:
     owner: ManuGH
     name: xg2g
   header: |
-    ## xg2g {{ .Tag }} - Sprint 1-4 Features 🚀
-
-    ### 🎉 Production Release
+    ## xg2g {{ .Tag }}
 
     ### 📦 Installation
 
@@ -97,6 +96,11 @@ release:
 
     **Binary:**
     Download the appropriate binary for your platform from the assets below.
+
+    **Supported Platforms:**
+    - Linux (amd64, arm64)
+    - macOS (amd64, arm64)
+    - Windows (amd64, arm64)
 
     ### 🔐 Verification
 
@@ -109,13 +113,6 @@ release:
     ```
   footer: |
     ---
-
-    ### 📊 Performance Metrics
-
-    - Cache hit rate: **85%**
-    - External API calls: **-70%**
-    - Response time: **-40%** (with cache)
-    - Shutdown time: **<5 seconds**
 
     ### 📚 Documentation
 
