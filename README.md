@@ -244,11 +244,18 @@ xg2g supports different x86-64 microarchitecture levels for optimal performance 
 
 ### Architecture-Specific Tags
 
-| Tag | Architecture | Description |
-|-----|--------------|-------------|
-| `main-arm64` | ARM64 | Latest dev for ARM |
-| `v1.2.3-arm64` | ARM64 | Version for ARM |
-| `sha-abc123-amd64-v2` | AMD64 | Specific commit + CPU level |
+| Tag | Architecture | Description | Availability |
+|-----|--------------|-------------|--------------|
+| `main-arm64` | ARM64 | Latest dev for ARM | ❌ Releases only |
+| `v1.2.3-arm64` | ARM64 | Version for ARM | ✅ On releases |
+| `sha-abc123-amd64-v2` | AMD64 | Specific commit + CPU level | ✅ Every push |
+
+**⚠️ ARM64 Build Strategy:**
+- **main branch**: AMD64 only (fast CI, ~15-20 min)
+- **Release tags** (`v*`): AMD64 + ARM64 (slower, ~60-90 min)
+- **Reason**: ARM64 cross-compilation via QEMU is 3-4x slower than native AMD64
+
+If you need ARM64 for testing, use the latest release tag or self-compile.
 
 ### Choosing the Right Image
 

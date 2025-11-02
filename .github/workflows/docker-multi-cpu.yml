@@ -149,7 +149,11 @@ jobs:
   # =============================================================================
   # ARM64 Build (no CPU-level variants)
   # =============================================================================
+  # ⚠️ ARM64 builds via QEMU are VERY slow (60-90 min vs 15-20 min native)
+  # Strategy: Only build ARM64 on releases to keep main-branch CI fast
+  # TODO: Implement cross-compilation (Option 2) for faster ARM64 builds
   build-arm64:
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -232,11 +236,54 @@ jobs:
           echo "ARM64 digest: ${{ steps.build.outputs.digest }}" | tee -a "$GITHUB_STEP_SUMMARY"
 
   # =============================================================================
+  # ARM64 Cross-Compilation (OPTION 2 - PREPARED, DISABLED)
+  # =============================================================================
+  # TODO: Enable this for fast ARM64 builds (5-10 min vs 60-90 min QEMU)
+  # Uncomment when ready to test cross-compilation
+  #
+  # build-arm64-cross:
+  #   if: startsWith(github.ref, 'refs/tags/v')
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v5
+  #
+  #     - uses: dtolnay/rust-toolchain@stable
+  #       with:
+  #         targets: aarch64-unknown-linux-musl
+  #
+  #     - name: Install cross-compilation tools
+  #       run: |
+  #         cargo install cargo-zigbuild
+  #         sudo apt-get update
+  #         sudo apt-get install -y gcc-aarch64-linux-gnu
+  #
+  #     - name: Build Rust library for ARM64
+  #       run: |
+  #         cd transcoder
+  #         cargo zigbuild --release --target aarch64-unknown-linux-musl
+  #
+  #     - name: Build Go binary for ARM64
+  #       run: |
+  #         GOOS=linux GOARCH=arm64 CGO_ENABLED=0 \
+  #           go build -trimpath -ldflags="-s -w" -o xg2g-arm64 ./cmd/daemon
+  #
+  #     - name: Build Docker image
+  #       uses: docker/build-push-action@v6
+  #       with:
+  #         context: .
+  #         file: Dockerfile.cross-arm64
+  #         platforms: linux/arm64
+  #         push: true
+  #         tags: ghcr.io/manugh/xg2g:main-arm64-cross
+
+  # =============================================================================
   # Create Multi-Arch Manifests
   # =============================================================================
+  # For main: AMD64-only (ARM64 skipped for speed)
+  # For releases: AMD64 + ARM64 multi-arch
   create-manifests:
     runs-on: ubuntu-latest
-    needs: [build-amd64, build-arm64]
+    needs: [build-amd64]
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
     steps:
       - uses: docker/login-action@v3
@@ -249,7 +296,7 @@ jobs:
         run: |
           REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
 
-          # For :latest (v2 amd64 + arm64)
+          # For :latest (v2 amd64 + arm64) - ONLY ON RELEASES
           if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF#refs/tags/}"
 
@@ -258,14 +305,11 @@ jobs:
               ghcr.io/${REPO_OWNER}/xg2g:${VERSION} \
               ghcr.io/${REPO_OWNER}/xg2g:${VERSION}-arm64
 
-            echo "✅ Created multi-arch manifest: ghcr.io/${REPO_OWNER}/xg2g:latest" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "✅ Created multi-arch manifest: ghcr.io/${REPO_OWNER}/xg2g:latest (AMD64-v2 + ARM64)" | tee -a "$GITHUB_STEP_SUMMARY"
           fi
 
-          # For :main (v2 amd64 + arm64)
+          # For :main (AMD64-v2 ONLY on main branch, ARM64 skipped for speed)
           if [ "${{ github.ref }}" = "refs/heads/main" ]; then
-            docker buildx imagetools create -t ghcr.io/${REPO_OWNER}/xg2g:main \
-              ghcr.io/${REPO_OWNER}/xg2g:main \
-              ghcr.io/${REPO_OWNER}/xg2g:main-arm64
-
-            echo "✅ Created multi-arch manifest: ghcr.io/${REPO_OWNER}/xg2g:main" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "ℹ️  :main tag points to AMD64-v2 only (ARM64 builds only on releases)" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "✅ Image available: ghcr.io/${REPO_OWNER}/xg2g:main (AMD64-v2)" | tee -a "$GITHUB_STEP_SUMMARY"
           fi
