@@ -12,6 +12,8 @@ on:
       - go.mod
       - go.sum
       - .github/workflows/docker-multi-cpu.yml
+  schedule:
+    - cron: '17 2 * * *'  # Daily at 02:17 UTC - ARM64 canary test
   workflow_dispatch:
 
 concurrency:
@@ -234,6 +236,87 @@ jobs:
         if: always()
         run: |
           echo "ARM64 digest: ${{ steps.build.outputs.digest }}" | tee -a "$GITHUB_STEP_SUMMARY"
+
+  # =============================================================================
+  # ARM64 Canary (Nightly Cross-Compile Test - No Push)
+  # =============================================================================
+  # Daily ARM64 cross-compile test to catch breakages early without blocking main
+  # Runs at 02:17 UTC, builds ARM64 binaries natively (no QEMU), uploads artifacts
+  arm64-canary:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Install Rust with ARM64 target
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+
+      # Install cargo-zigbuild for cross-compilation
+      - name: Install cargo-zigbuild
+        run: |
+          cargo install cargo-zigbuild --locked
+          echo "$(cargo install --list | grep cargo-zigbuild)" >> "$GITHUB_STEP_SUMMARY"
+
+      # Build Rust library for ARM64 (no QEMU needed)
+      - name: Cross-compile Rust library for ARM64
+        run: |
+          cd transcoder
+          cargo zigbuild --release --target aarch64-unknown-linux-gnu
+          file target/aarch64-unknown-linux-gnu/release/libxg2g_transcoder.so
+          ls -lh target/aarch64-unknown-linux-gnu/release/libxg2g_transcoder.so
+          echo "### Rust ARM64 Binary" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          file target/aarch64-unknown-linux-gnu/release/libxg2g_transcoder.so >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      # Build Go binary for ARM64 (CGO disabled for static build)
+      - name: Cross-compile Go binary for ARM64
+        run: |
+          mkdir -p dist
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 \
+            go build -trimpath -ldflags="-s -w -X main.Version=canary-$(date +%Y%m%d)" \
+            -o dist/xg2g-arm64 ./cmd/daemon
+          file dist/xg2g-arm64
+          ls -lh dist/xg2g-arm64
+          echo "### Go ARM64 Binary" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          file dist/xg2g-arm64 >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      # Verify binaries are statically linked (preferred for portability)
+      - name: Verify static linking
+        run: |
+          echo "### Link Analysis" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "Rust library:" >> "$GITHUB_STEP_SUMMARY"
+          ldd transcoder/target/aarch64-unknown-linux-gnu/release/libxg2g_transcoder.so || echo "Static (no dynamic deps)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Go binary:" >> "$GITHUB_STEP_SUMMARY"
+          file dist/xg2g-arm64 | grep -q "statically linked" && echo "✅ Static" >> "$GITHUB_STEP_SUMMARY" || echo "⚠️ Dynamic" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      # Upload ARM64 binaries as artifacts (no Docker push)
+      - name: Upload ARM64 canary binaries
+        uses: actions/upload-artifact@v5
+        with:
+          name: canary-arm64-binaries-${{ github.run_number }}
+          path: |
+            transcoder/target/aarch64-unknown-linux-gnu/release/libxg2g_transcoder.so
+            dist/xg2g-arm64
+          retention-days: 7
+
+      - name: Summary
+        run: |
+          echo "✅ ARM64 canary build completed successfully" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Purpose**: Validate ARM64 cross-compile without blocking main branch" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Next step**: Enable cross-compile for releases when ARM64 usage increases" >> "$GITHUB_STEP_SUMMARY"
 
   # =============================================================================
   # ARM64 Cross-Compilation (OPTION 2 - PREPARED, DISABLED)

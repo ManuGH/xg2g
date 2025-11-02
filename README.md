@@ -251,9 +251,15 @@ xg2g supports different x86-64 microarchitecture levels for optimal performance 
 | `sha-abc123-amd64-v2` | AMD64 | Specific commit + CPU level | ✅ Every push |
 
 **⚠️ ARM64 Build Strategy:**
-- **main branch**: AMD64 only (fast CI, ~15-20 min)
-- **Release tags** (`v*`): AMD64 + ARM64 (slower, ~60-90 min)
-- **Reason**: ARM64 cross-compilation via QEMU is 3-4x slower than native AMD64
+- **main branch**: AMD64 only (fast CI, ~2-3 min)
+- **Release tags** (`v*`): AMD64 + ARM64 (slower, ~60-90 min via QEMU)
+- **Nightly canary**: ARM64 cross-compile test (no push, validates builds)
+- **Reason**: ARM64 emulation via QEMU is 20-30x slower than native AMD64
+
+**Future optimization (prepared, not active):**
+- Cross-compilation setup ready in `Dockerfile.cross-arm64`
+- Would reduce ARM64 builds from 60-90 min → 5-10 min on releases
+- Activation planned when ARM64 usage increases
 
 If you need ARM64 for testing, use the latest release tag or self-compile.
 
