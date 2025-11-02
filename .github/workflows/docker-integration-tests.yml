@@ -124,6 +124,8 @@ jobs:
           tags: xg2g:prod
           cache-from: type=gha
           provenance: false
+          build-args: |
+            ENABLE_GPU=true
 
       - name: Verify Rust library is present in production image
         run: |
