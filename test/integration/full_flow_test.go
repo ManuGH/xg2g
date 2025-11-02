@@ -122,6 +122,7 @@ func TestAPIRefreshEndpoint(t *testing.T) {
 		nil,
 	)
 	require.NoError(t, err, "Should create request")
+	req.Header.Set("Origin", testServer.URL) // CSRF protection
 	req.Header.Set("X-API-Token", "test-token")
 
 	resp, err := http.DefaultClient.Do(req)
@@ -309,6 +310,7 @@ func TestConcurrentRefreshRequests(t *testing.T) {
 				testServer.URL+"/api/v1/refresh",
 				nil,
 			)
+			req.Header.Set("Origin", testServer.URL) // CSRF protection
 			req.Header.Set("X-API-Token", "test-token")
 
 			resp, err := http.DefaultClient.Do(req)
