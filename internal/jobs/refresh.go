@@ -59,10 +59,11 @@ type Config struct {
 
 	// EPG Configuration
 	EPGEnabled        bool
-	EPGDays           int // Number of days to fetch EPG data (1-14)
-	EPGMaxConcurrency int // Max parallel EPG requests (1-10)
-	EPGTimeoutMS      int // Timeout per EPG request in milliseconds
-	EPGRetries        int // Retry attempts for EPG requests
+	EPGDays           int    // Number of days to fetch EPG data (1-14)
+	EPGMaxConcurrency int    // Max parallel EPG requests (1-10)
+	EPGTimeoutMS      int    // Timeout per EPG request in milliseconds
+	EPGRetries        int    // Retry attempts for EPG requests
+	EPGSource         string // EPG fetch strategy: "bouquet" (fast, single request) or "per-service" (default, per-channel requests)
 }
 
 // Refresh performs the complete refresh cycle: fetch bouquets → services → write M3U + XMLTV

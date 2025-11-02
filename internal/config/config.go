@@ -50,6 +50,7 @@ type EPGConfig struct {
 	Retries        *int   `yaml:"retries,omitempty"`
 	FuzzyMax       *int   `yaml:"fuzzyMax,omitempty"`
 	XMLTVPath      string `yaml:"xmltvPath,omitempty"`
+	Source         string `yaml:"source,omitempty"` // "bouquet" or "per-service" (default)
 }
 
 // APIConfig holds API server configuration
@@ -134,6 +135,7 @@ func (l *Loader) setDefaults(cfg *jobs.Config) {
 	cfg.EPGMaxConcurrency = 5
 	cfg.EPGTimeoutMS = 15000
 	cfg.EPGRetries = 2
+	cfg.EPGSource = "per-service" // Default to per-service for backward compatibility
 }
 
 // loadFile loads configuration from a YAML file
@@ -235,6 +237,9 @@ func (l *Loader) mergeFileConfig(dst *jobs.Config, src *FileConfig) error {
 	if src.EPG.XMLTVPath != "" {
 		dst.XMLTVPath = src.EPG.XMLTVPath
 	}
+	if src.EPG.Source != "" {
+		dst.EPGSource = src.EPG.Source
+	}
 
 	// API
 	if src.API.Token != "" {
@@ -287,6 +292,7 @@ func (l *Loader) mergeEnvConfig(cfg *jobs.Config) {
 	cfg.EPGDays = ParseInt("XG2G_EPG_DAYS", cfg.EPGDays)
 	cfg.EPGMaxConcurrency = ParseInt("XG2G_EPG_MAX_CONCURRENCY", cfg.EPGMaxConcurrency)
 	cfg.EPGTimeoutMS = ParseInt("XG2G_EPG_TIMEOUT_MS", cfg.EPGTimeoutMS)
+	cfg.EPGSource = ParseString("XG2G_EPG_SOURCE", cfg.EPGSource)
 	cfg.EPGRetries = ParseInt("XG2G_EPG_RETRIES", cfg.EPGRetries)
 	cfg.FuzzyMax = ParseInt("XG2G_FUZZY_MAX", cfg.FuzzyMax)
 	cfg.XMLTVPath = ParseString("XG2G_XMLTV", cfg.XMLTVPath)

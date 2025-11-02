@@ -24,8 +24,122 @@ type epgResult struct {
 	err       error
 }
 
-// collectEPGProgrammes fetches EPG data using per-service requests with bounded concurrency
+// collectEPGProgrammes is the main entry point for EPG collection.
+// It routes to either bouquet-based or per-service fetching based on cfg.EPGSource
 func collectEPGProgrammes(ctx context.Context, client *openwebif.Client, items []playlist.Item, cfg Config) []epg.Programme {
+	logger := xglog.FromContext(ctx)
+
+	// Route to appropriate EPG collection strategy
+	if cfg.EPGSource == "bouquet" {
+		logger.Info().Msg("Using bouquet-based EPG fetch strategy")
+		return collectEPGFromBouquet(ctx, client, items, cfg)
+	}
+
+	// Default: per-service strategy
+	logger.Info().Msg("Using per-service EPG fetch strategy")
+	return collectEPGPerService(ctx, client, items, cfg)
+}
+
+// collectEPGFromBouquet fetches EPG for all channels in one request (faster, single API call)
+func collectEPGFromBouquet(ctx context.Context, client *openwebif.Client, items []playlist.Item, cfg Config) []epg.Programme {
+	logger := xglog.FromContext(ctx)
+
+	// Extract bouquet reference from first channel's stream URL
+	// All channels in the same bouquet share the bouquet reference
+	var bouquetRef string
+	for _, item := range items {
+		sRef := extractSRefFromStreamURL(item.URL)
+		if sRef != "" {
+			// Extract bouquet ref from service ref (format: 1:7:1:0:0:0:0:0:0:0:FROM BOUQUET "userbouquet.xxx.tv" ORDER BY bouquet)
+			// For now, we'll use cfg.Bouquet to look up the bouquet ref
+			break
+		}
+	}
+
+	// Fetch EPG for entire bouquet in one request
+	reqCtx, cancel := context.WithTimeout(ctx, time.Duration(cfg.EPGTimeoutMS*len(items))*time.Millisecond)
+	defer cancel()
+
+	// Get bouquets to find the reference
+	bouquets, err := client.Bouquets(reqCtx)
+	if err != nil {
+		logger.Error().Err(err).Msg("Failed to fetch bouquets for EPG")
+		return nil
+	}
+
+	// Find the bouquet reference for the configured bouquet name
+	for name, ref := range bouquets {
+		if name == cfg.Bouquet {
+			bouquetRef = ref
+			break
+		}
+	}
+
+	if bouquetRef == "" {
+		logger.Warn().Str("bouquet", cfg.Bouquet).Msg("Bouquet not found, falling back to per-service EPG")
+		return collectEPGPerService(ctx, client, items, cfg)
+	}
+
+	logger.Debug().Str("bouquet_ref", bouquetRef).Msg("Fetching EPG for bouquet")
+
+	// Fetch all EPG events for the bouquet
+	events, err := client.GetBouquetEPG(reqCtx, bouquetRef, cfg.EPGDays)
+	if err != nil {
+		logger.Error().Err(err).Str("bouquet", cfg.Bouquet).Msg("Failed to fetch bouquet EPG")
+		return nil
+	}
+
+	logger.Info().Int("raw_events", len(events)).Msg("Received EPG events from bouquet")
+
+	// Now we need to match EPG events to playlist items using SRef
+	// Build a map of service references for exact matching
+	srefMap := make(map[string]string) // sref -> tvg-id
+	for _, item := range items {
+		sref := extractSRefFromStreamURL(item.URL)
+		if sref != "" {
+			srefMap[sref] = item.TvgID
+		}
+	}
+
+	// Match events to channels and convert to XMLTV programmes
+	var allProgrammes []epg.Programme
+	eventsByChannel := make(map[string][]openwebif.EPGEvent)
+
+	for _, event := range events {
+		// Match by service reference (exact match)
+		tvgID, found := srefMap[event.SRef]
+
+		if !found {
+			logger.Debug().Str("sref", event.SRef).Msg("No channel match for EPG event")
+			continue
+		}
+
+		eventsByChannel[tvgID] = append(eventsByChannel[tvgID], event)
+	}
+
+	// Convert grouped events to programmes
+	channelsWithData := 0
+	for channelID, channelEvents := range eventsByChannel {
+		if len(channelEvents) > 0 {
+			channelsWithData++
+		}
+		progs := epg.ProgrammesFromEPG(channelEvents, channelID)
+		allProgrammes = append(allProgrammes, progs...)
+	}
+
+	logger.Info().
+		Int("total_programmes", len(allProgrammes)).
+		Int("channels_with_data", channelsWithData).
+		Int("total_channels", len(items)).
+		Msg("EPG collected via bouquet endpoint")
+
+	metrics.RecordEPGChannelSuccess(channelsWithData)
+
+	return allProgrammes
+}
+
+// collectEPGPerService fetches EPG data using per-service requests with bounded concurrency
+func collectEPGPerService(ctx context.Context, client *openwebif.Client, items []playlist.Item, cfg Config) []epg.Programme {
 	logger := xglog.FromContext(ctx)
 
 	// Clamp concurrency to sane bounds [1,10]
@@ -131,6 +245,86 @@ func fetchEPGWithRetry(ctx context.Context, client *openwebif.Client, streamURL 
 	}
 
 	return nil, fmt.Errorf("EPG request failed after %d retries: %w", cfg.EPGRetries, lastErr)
+}
+
+// fuzzyMatchChannel attempts to match a service name to a playlist item using fuzzy string matching
+func fuzzyMatchChannel(serviceName string, items []playlist.Item, maxDistance int) string {
+	if maxDistance <= 0 {
+		return "" // Fuzzy matching disabled
+	}
+
+	bestMatch := ""
+	bestDistance := maxDistance + 1
+
+	for _, item := range items {
+		distance := levenshteinDistance(strings.ToLower(serviceName), strings.ToLower(item.Name))
+		if distance < bestDistance {
+			bestDistance = distance
+			bestMatch = item.TvgID
+		}
+	}
+
+	if bestDistance <= maxDistance {
+		return bestMatch
+	}
+
+	return ""
+}
+
+// levenshteinDistance calculates the Levenshtein distance between two strings
+func levenshteinDistance(s1, s2 string) int {
+	if len(s1) == 0 {
+		return len(s2)
+	}
+	if len(s2) == 0 {
+		return len(s1)
+	}
+
+	// Create matrix
+	matrix := make([][]int, len(s1)+1)
+	for i := range matrix {
+		matrix[i] = make([]int, len(s2)+1)
+	}
+
+	// Initialize first column and row
+	for i := 0; i <= len(s1); i++ {
+		matrix[i][0] = i
+	}
+	for j := 0; j <= len(s2); j++ {
+		matrix[0][j] = j
+	}
+
+	// Fill matrix
+	for i := 1; i <= len(s1); i++ {
+		for j := 1; j <= len(s2); j++ {
+			cost := 0
+			if s1[i-1] != s2[j-1] {
+				cost = 1
+			}
+
+			matrix[i][j] = min(
+				matrix[i-1][j]+1,      // deletion
+				matrix[i][j-1]+1,      // insertion
+				matrix[i-1][j-1]+cost, // substitution
+			)
+		}
+	}
+
+	return matrix[len(s1)][len(s2)]
+}
+
+// min returns the minimum of three integers
+func min(a, b, c int) int {
+	if a < b {
+		if a < c {
+			return a
+		}
+		return c
+	}
+	if b < c {
+		return b
+	}
+	return c
 }
 
 // extractSRefFromStreamURL extracts service reference from stream URL
