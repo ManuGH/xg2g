@@ -360,6 +360,30 @@ Find commit SHAs at: [github.com/ManuGH/xg2g/commits/main](https://github.com/Ma
 - Go/Rust toolchains: Pinned to patch version for reproducibility
 - Cross-compilation: cargo-zigbuild 0.19.7
 
+**FFmpeg Linking Strategy:**
+
+| Approach | Advantages | Trade-offs | Status |
+|----------|-----------|------------|--------|
+| **Dynamic (Alpine packages)** | Smaller images, system updates | ABI drift risk, runtime deps | ✅ **Current** |
+| **Static (pre-built)** | Portable, no runtime deps | Larger images, manual updates | ⚠️ Prepared |
+
+**Current implementation:**
+- Uses Alpine's `ffmpeg-libs` package (dynamic linking)
+- Pinned to Alpine 3.22.2 for ABI stability
+- Rust remuxer links against system FFmpeg libraries
+- Runtime dependencies: `libavcodec`, `libavformat`, `libavutil`
+
+**Static linking considerations:**
+- Would eliminate runtime FFmpeg dependencies
+- Requires pre-built static FFmpeg binaries with musl
+- Image size increase: ~50-100 MB
+- Activation: Set `FFMPEG_STATIC=true` in Dockerfile (prepared, not active)
+
+**Decision rationale:**
+- Alpine package updates via `apk upgrade` more convenient than manual static binaries
+- ABI stability ensured by pinning Alpine base version
+- Static linking reserved for specialized deployments (airgapped, embedded)
+
 ### CI/CD Validation
 
 **Main Branch:**
@@ -374,10 +398,12 @@ Find commit SHAs at: [github.com/ManuGH/xg2g/commits/main](https://github.com/Ma
 - ✅ SBOM + Provenance attestation
 - ✅ Cosign signing
 
-**Nightly:**
+**Nightly (02:17 UTC):**
+- ✅ Cache warming (cargo-chef + Go modules)
 - ✅ ARM64 cross-compile canary (no push)
 - ✅ Validates cargo-zigbuild toolchain
 - ✅ Artifact retention: 14 days
+- ⚠️ Failure alerting (optional): Set `SLACK_WEBHOOK` repository secret
 
 ---
 

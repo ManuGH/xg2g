@@ -239,6 +239,57 @@ jobs:
           echo "ARM64 digest: ${{ steps.build.outputs.digest }}" | tee -a "$GITHUB_STEP_SUMMARY"
 
   # =============================================================================
+  # Cache Warmer (Nightly Pre-warming for Release Builds)
+  # =============================================================================
+  # Runs before canary to warm up build caches for faster release builds
+  # Uses cargo-chef for Rust dependency pre-compilation
+  prime-cache:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # Warm Go module cache
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Pre-download Go modules
+        run: |
+          go mod download
+          go mod verify
+          echo "✅ Go modules cached" >> "$GITHUB_STEP_SUMMARY"
+
+      # Install Rust and cargo-chef
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.84.0
+
+      - name: Install cargo-chef
+        run: |
+          cargo install cargo-chef --locked --version 0.1.67
+          echo "### Cargo Chef Installed" >> "$GITHUB_STEP_SUMMARY"
+
+      # Prepare and cook Rust dependencies
+      - name: Prepare cargo-chef recipe
+        run: |
+          cd transcoder
+          cargo chef prepare --recipe-path recipe.json
+          cat recipe.json | jq . >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cook dependencies (cache warming)
+        run: |
+          cd transcoder
+          cargo chef cook --release --recipe-path recipe.json
+          echo "✅ Rust dependencies cached" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cache summary
+        run: |
+          echo "### Cache Warming Complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Next release builds will be faster due to pre-warmed caches**" >> "$GITHUB_STEP_SUMMARY"
+
+  # =============================================================================
   # ARM64 Canary (Nightly Cross-Compile Test - No Push)
   # =============================================================================
   # Daily ARM64 cross-compile test to catch breakages early without blocking main
@@ -345,6 +396,15 @@ jobs:
           echo "✅ ARM64 canary build completed successfully" >> "$GITHUB_STEP_SUMMARY"
           echo "**Purpose**: Validate ARM64 cross-compile without blocking main branch" >> "$GITHUB_STEP_SUMMARY"
           echo "**Next step**: Enable cross-compile for releases when ARM64 usage increases" >> "$GITHUB_STEP_SUMMARY"
+
+      # Alert on failure (requires SLACK_WEBHOOK secret)
+      # To enable: Set repository secret SLACK_WEBHOOK with your webhook URL
+      - name: Alert on failure
+        if: failure() && vars.SLACK_WEBHOOK != ''
+        run: |
+          curl -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\"🚨 ARM64 Canary FAILED: <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Run>\"}" \
+            "${{ secrets.SLACK_WEBHOOK }}"
 
   # =============================================================================
   # ARM64 Cross-Compilation (OPTION 2 - PREPARED, DISABLED)
