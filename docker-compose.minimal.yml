@@ -1,6 +1,6 @@
 # docker-compose.minimal.yml - Minimal Production Setup
 # xg2g (Go) + Rust GPU Transcoder only
-# Optimized for root@10.10.55.50 with AMD Radeon RX 7000
+# Example configuration for AMD Radeon RX 7000 series
 
 version: '3.8'
 
@@ -43,10 +43,10 @@ services:
       - /etc/localtime:/etc/localtime:ro
     environment:
       # Enigma2 Receiver
-      XG2G_OWI_BASE: http://10.10.55.57
+      XG2G_OWI_BASE: http://your-receiver-ip
       XG2G_OWI_USER: root
-      XG2G_OWI_PASS: Kiddy99
-      XG2G_BOUQUET: Premium
+      XG2G_OWI_PASS: YOUR_PASSWORD_HERE
+      XG2G_BOUQUET: YourBouquetName
       XG2G_FUZZY_MAX: 2
 
       # EPG
@@ -63,8 +63,8 @@ services:
       # Stream Proxy with GPU Transcoding
       XG2G_ENABLE_STREAM_PROXY: "true"
       XG2G_PROXY_PORT: 18000
-      XG2G_PROXY_TARGET: http://10.10.55.57:17999
-      XG2G_STREAM_BASE: http://10.10.55.50:18000
+      XG2G_PROXY_TARGET: http://your-receiver-ip:17999
+      XG2G_STREAM_BASE: http://your-server-ip:18000
 
       # GPU Transcoding via Rust service
       XG2G_ENABLE_AUDIO_TRANSCODING: "true"
@@ -86,7 +86,7 @@ volumes:
 # ===========================================
 #
 # 1. Copy to server:
-#    scp docker-compose.minimal.yml root@10.10.55.50:/opt/stacks/xg2g-gpu/
+#    scp docker-compose.minimal.yml root@your-server:/opt/stacks/xg2g-gpu/
 #
 # 2. Start services:
 #    cd /opt/stacks/xg2g-gpu
