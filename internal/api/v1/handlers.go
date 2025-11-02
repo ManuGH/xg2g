@@ -120,8 +120,8 @@ func (h *Handler) checkReceiverHealth(r *http.Request) *ReceiverStatus {
 	}
 
 	// Add basic auth if configured
-	if cfg.OWIUser != "" && cfg.OWIPass != "" {
-		req.SetBasicAuth(cfg.OWIUser, cfg.OWIPass)
+	if cfg.OWIUsername != "" && cfg.OWIPassword != "" {
+		req.SetBasicAuth(cfg.OWIUsername, cfg.OWIPassword)
 	}
 
 	resp, err := client.Do(req)
