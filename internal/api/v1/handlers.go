@@ -27,11 +27,11 @@ func NewHandler(srv *api.Server) *Handler {
 // StatusResponse defines the v1 status contract
 // This structure is STABLE and must not change in backwards-incompatible ways
 type StatusResponse struct {
-	Status   string           `json:"status"`
-	Version  string           `json:"version"`
-	LastRun  time.Time        `json:"lastRun"`
-	Channels int              `json:"channels"`
-	Receiver *ReceiverStatus  `json:"receiver,omitempty"` // Optional receiver health check
+	Status   string          `json:"status"`
+	Version  string          `json:"version"`
+	LastRun  time.Time       `json:"lastRun"`
+	Channels int             `json:"channels"`
+	Receiver *ReceiverStatus `json:"receiver,omitempty"` // Optional receiver health check
 }
 
 // ReceiverStatus provides receiver connectivity information

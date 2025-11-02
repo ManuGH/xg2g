@@ -26,9 +26,9 @@ func TestHandleStatus(t *testing.T) {
 		wantStatus     string
 		wantStatusCode int
 	}{
-                {
-                        name:           "successful status response",
-                        version:        "1.7.0",
+		{
+			name:           "successful status response",
+			version:        "1.7.0",
 			lastRun:        time.Date(2025, 11, 1, 10, 0, 0, 0, time.UTC),
 			channels:       42,
 			wantStatus:     "ok",
@@ -122,13 +122,13 @@ func TestHandleStatus_JSONStructure(t *testing.T) {
 	t.Parallel()
 
 	// Ensure v1 API contract stability
-        cfg := jobs.Config{
-                Version: "1.7.0",
+	cfg := jobs.Config{
+		Version: "1.7.0",
 		DataDir: t.TempDir(),
 	}
 	srv := api.New(cfg)
-        srv.SetStatus(jobs.Status{
-                Version:  "1.7.0",
+	srv.SetStatus(jobs.Status{
+		Version:  "1.7.0",
 		LastRun:  time.Date(2025, 11, 1, 10, 0, 0, 0, time.UTC),
 		Channels: 42,
 	})
@@ -188,16 +188,16 @@ func TestHandleRefresh(t *testing.T) {
 			t.Parallel()
 
 			// Create test server
-                        cfg := jobs.Config{
-                                Version: "1.7.0",
+			cfg := jobs.Config{
+				Version: "1.7.0",
 				DataDir: t.TempDir(),
 			}
 			srv := api.New(cfg)
 
 			// Set mock refresh function to avoid actual refresh
 			srv.SetRefreshFunc(func(ctx context.Context, cfg jobs.Config) (*jobs.Status, error) {
-                                return &jobs.Status{
-                                        Version:  "1.7.0",
+				return &jobs.Status{
+					Version:  "1.7.0",
 					LastRun:  time.Now(),
 					Channels: 42,
 				}, nil
@@ -226,8 +226,8 @@ func TestHandleRefresh_Concurrency(t *testing.T) {
 	t.Parallel()
 
 	// Create test server
-        cfg := jobs.Config{
-                Version: "1.7.0",
+	cfg := jobs.Config{
+		Version: "1.7.0",
 		DataDir: t.TempDir(),
 	}
 	srv := api.New(cfg)
@@ -237,8 +237,8 @@ func TestHandleRefresh_Concurrency(t *testing.T) {
 	srv.SetRefreshFunc(func(ctx context.Context, cfg jobs.Config) (*jobs.Status, error) {
 		refreshCalled++
 		time.Sleep(50 * time.Millisecond) // Simulate work
-                return &jobs.Status{
-                        Version:  "1.7.0",
+		return &jobs.Status{
+			Version:  "1.7.0",
 			LastRun:  time.Now(),
 			Channels: 42,
 		}, nil
@@ -273,8 +273,8 @@ func TestHandleRefresh_Concurrency(t *testing.T) {
 func TestHandleStatus_MethodNotAllowed(t *testing.T) {
 	t.Parallel()
 
-        cfg := jobs.Config{
-                Version: "1.7.0",
+	cfg := jobs.Config{
+		Version: "1.7.0",
 		DataDir: t.TempDir(),
 	}
 	srv := api.New(cfg)
