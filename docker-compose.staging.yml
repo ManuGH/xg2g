@@ -1,0 +1,117 @@
+# xg2g Staging Setup - :main tag from GHCR
+#
+# This compose file uses the :main tag which is automatically built
+# on every push to main branch. Use this for testing latest development
+# changes before they are released.
+#
+# Image Tags Strategy:
+# - ghcr.io/manugh/xg2g:latest      → Production (only v* releases)
+# - ghcr.io/manugh/xg2g:main         → Staging (every main push)
+# - ghcr.io/manugh/xg2g:sha-<hash>   → Specific commits
+
+services:
+  xg2g:
+    image: ghcr.io/manugh/xg2g:main
+    container_name: xg2g-staging
+    user: "65532:65532"
+
+    # Network mode: Use host network for simplicity
+    network_mode: host
+
+    security_opt:
+      - no-new-privileges:true
+
+    cap_drop:
+      - ALL
+
+    cap_add:
+      - NET_BIND_SERVICE
+
+    tmpfs:
+      - /tmp:noexec,nosuid,nodev,size=200m
+
+    ulimits:
+      nofile:
+        soft: 8192
+        hard: 16384
+      nproc:
+        soft: 1024
+        hard: 2048
+
+    environment:
+      # ============================================================================
+      # Receiver Configuration
+      # ============================================================================
+      - XG2G_OWI_BASE=http://10.10.55.64:80
+      - XG2G_XCPLUGIN_BASE=http://10.10.55.64:80
+      - XG2G_BOUQUET=Premium
+      - XG2G_STREAM_PORT=8001
+
+      # ============================================================================
+      # Server Configuration
+      # ============================================================================
+      - XG2G_LISTEN=:18080
+
+      # ============================================================================
+      # Audio Transcoding (ENABLED for iPhone/iPad Safari)
+      # ============================================================================
+      - XG2G_ENABLE_AUDIO_TRANSCODING=true
+      - XG2G_USE_RUST_REMUXER=true
+      - XG2G_AUDIO_CODEC=aac
+      - XG2G_AUDIO_BITRATE=192k
+      - XG2G_AUDIO_CHANNELS=2
+
+      # ============================================================================
+      # Stream Proxy Configuration (Smart Detection)
+      # ============================================================================
+      - XG2G_ENABLE_STREAM_PROXY=true
+      - XG2G_PROXY_LISTEN=:18000
+      # Smart Detection enabled - automatic port selection (8001/17999)
+
+      # ============================================================================
+      # Feature Flags
+      # ============================================================================
+      - XG2G_EPG_ENABLED=false
+      - XG2G_HDHR_ENABLED=false
+
+      # ============================================================================
+      # Logging
+      # ============================================================================
+      - RUST_LOG=info
+      - XG2G_LOG_LEVEL=info
+
+    volumes:
+      - ./data-staging:/data
+
+    healthcheck:
+      test: wget -q --spider -T 5 -O /dev/null http://localhost:18080/api/status || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+    restart: unless-stopped
+
+# ============================================================================
+# Usage
+# ============================================================================
+#
+# Pull latest main image and start:
+#   docker compose -f docker-compose.staging.yml pull
+#   docker compose -f docker-compose.staging.yml up -d
+#
+# View logs:
+#   docker compose -f docker-compose.staging.yml logs -f
+#
+# Stop:
+#   docker compose -f docker-compose.staging.yml down
+#
+# ============================================================================
+# Rollback to specific commit
+# ============================================================================
+#
+# If the :main image is broken, pin to a specific commit:
+#   1. Find working commit SHA on GitHub
+#   2. Edit this file: image: ghcr.io/manugh/xg2g:sha-abc123
+#   3. Pull and restart
+#

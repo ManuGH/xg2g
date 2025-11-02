@@ -215,6 +215,50 @@ services:
 
 ---
 
+## Docker Image Tags
+
+xg2g provides multiple image tags for different use cases:
+
+| Tag | Description | Use Case | Updated |
+|-----|-------------|----------|---------|
+| `latest` | Stable releases | **Production** | On version tags (`v*`) |
+| `main` | Latest development | **Staging/Testing** | Every push to main |
+| `sha-<hash>` | Specific commit | **Reproducible builds** | Every commit |
+| `v1.2.3` | Specific version | **Pinned deployments** | On version tags |
+| `distroless-latest` | Minimal distroless | **Security-focused** | On version tags |
+| `distroless-main` | Latest distroless dev | **Staging distroless** | Every push to main |
+
+### Production Deployment
+
+Use `latest` for stable, tested releases:
+```yaml
+image: ghcr.io/manugh/xg2g:latest
+```
+
+See: [docker-compose.production.yml](docker-compose.production.yml)
+
+### Staging/Testing Deployment
+
+Use `main` to test latest development changes:
+```yaml
+image: ghcr.io/manugh/xg2g:main
+```
+
+See: [docker-compose.staging.yml](docker-compose.staging.yml)
+
+**⚠️ Note:** The `:main` tag is automatically updated on every push to main. Use for testing only.
+
+### Rollback to Specific Commit
+
+Pin to a specific commit SHA for reproducibility:
+```yaml
+image: ghcr.io/manugh/xg2g:sha-abc1234
+```
+
+Find commit SHAs at: [github.com/ManuGH/xg2g/commits/main](https://github.com/ManuGH/xg2g/commits/main)
+
+---
+
 ## Help
 
 - **API Documentation:** [API Reference](https://manugh.github.io/xg2g/api.html)
