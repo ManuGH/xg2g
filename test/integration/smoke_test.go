@@ -103,6 +103,9 @@ func TestSmoke_RefreshEndpointAuth(t *testing.T) {
 			)
 			require.NoError(t, err)
 
+			// Set Origin header for CSRF protection (same-origin request)
+			req.Header.Set("Origin", testServer.URL)
+
 			if tt.token != "" {
 				req.Header.Set("X-API-Token", tt.token)
 			}
@@ -180,6 +183,8 @@ func TestSmoke_ConcurrentAPIRequests(t *testing.T) {
 				testServer.URL+"/api/v1/refresh",
 				nil,
 			)
+			// Set Origin header for CSRF protection (same-origin request)
+			req.Header.Set("Origin", testServer.URL)
 			req.Header.Set("X-API-Token", "test-token")
 
 			resp, err := http.DefaultClient.Do(req)
