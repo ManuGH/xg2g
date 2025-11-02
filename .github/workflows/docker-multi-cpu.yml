@@ -33,15 +33,15 @@ jobs:
       matrix:
         cpu_level:
           - name: v1
-            rust_target: x86-64
+            rust_features: ""
             suffix: v1-compat
             description: "Legacy compatibility (CPUs ≥2003)"
           - name: v2
-            rust_target: x86-64-v2
+            rust_features: "-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt"
             suffix: ""
             description: "Standard (CPUs ≥2009, default)"
           - name: v3
-            rust_target: x86-64-v3
+            rust_features: "-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+avx2,+bmi1,+bmi2,+fma"
             suffix: v3-performance
             description: "High performance (CPUs ≥2015, AVX2)"
     steps:
@@ -127,7 +127,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           build-args: |
             GO_AMD64_LEVEL=${{ matrix.cpu_level.name }}
-            RUST_TARGET_CPU=${{ matrix.cpu_level.rust_target }}
+            RUST_TARGET_FEATURES=${{ matrix.cpu_level.rust_features }}
             GIT_REF=${{ github.sha }}
           labels: |
             org.opencontainers.image.title=xg2g

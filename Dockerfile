@@ -30,14 +30,17 @@ COPY transcoder/src ./src
 # Note: Building without --lib to ensure Cargo.toml crate-type=[cdylib, rlib] is respected
 # Note: BuildKit cache mounts dramatically speed up subsequent builds (40+ min → 5-10 min)
 # Note: Three cache mounts: registry (crates), git (git deps), target (build artifacts)
-# AMD64 CPU targets: x86-64 (v1), x86-64-v2, x86-64-v3, x86-64-v4
+# AMD64 CPU targets via feature flags (x86-64 microarchitecture levels)
+# - v1 (baseline): SSE2 (no extra flags needed, default)
+# - v2: +SSE3, SSSE3, SSE4.1, SSE4.2, POPCNT
+# - v3: v2 + AVX, AVX2, BMI1, BMI2, FMA
 # ARM64: Use generic target (no specific CPU level)
-ARG RUST_TARGET_CPU=x86-64-v2
+ARG RUST_TARGET_FEATURES=""
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/build/target \
     mkdir -p /output && \
-    RUSTFLAGS="-C target-cpu=${RUST_TARGET_CPU} -C opt-level=3 -C target-feature=-crt-static" \
+    RUSTFLAGS="-C target-cpu=generic ${RUST_TARGET_FEATURES} -C opt-level=3 -C target-feature=-crt-static" \
     cargo build --release && \
     cp target/release/libxg2g_transcoder.so /output/ && \
     cp target/release/libxg2g_transcoder.rlib /output/
