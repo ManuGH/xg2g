@@ -24,6 +24,70 @@ type epgResult struct {
 	err       error
 }
 
+// epgAggregator handles common EPG event aggregation logic.
+// It builds service reference maps, matches events to channels,
+// and converts them to XMLTV programmes.
+type epgAggregator struct {
+	ctx   context.Context
+	items []playlist.Item
+}
+
+// newEPGAggregator creates a new EPG aggregator
+func newEPGAggregator(ctx context.Context, items []playlist.Item) *epgAggregator {
+	return &epgAggregator{
+		ctx:   ctx,
+		items: items,
+	}
+}
+
+// buildSRefMap creates a mapping from service reference to tvg-id
+func (a *epgAggregator) buildSRefMap() map[string]string {
+	srefMap := make(map[string]string)
+	for _, item := range a.items {
+		if sref := extractSRefFromStreamURL(item.URL); sref != "" {
+			srefMap[sref] = item.TvgID
+		}
+	}
+	return srefMap
+}
+
+// aggregateEvents matches EPG events to channels and converts them to programmes
+func (a *epgAggregator) aggregateEvents(events []openwebif.EPGEvent, srefMap map[string]string) []epg.Programme {
+	logger := xglog.FromContext(a.ctx)
+
+	// Group events by channel
+	eventsByChannel := make(map[string][]openwebif.EPGEvent)
+	for _, event := range events {
+		tvgID, found := srefMap[event.SRef]
+		if !found {
+			logger.Debug().Str("sref", event.SRef).Msg("No channel match for EPG event")
+			continue
+		}
+		eventsByChannel[tvgID] = append(eventsByChannel[tvgID], event)
+	}
+
+	// Convert to programmes and collect metrics
+	var allProgrammes []epg.Programme
+	channelsWithData := 0
+	for channelID, channelEvents := range eventsByChannel {
+		if len(channelEvents) > 0 {
+			channelsWithData++
+		}
+		progs := epg.ProgrammesFromEPG(channelEvents, channelID)
+		allProgrammes = append(allProgrammes, progs...)
+	}
+
+	metrics.RecordEPGChannelSuccess(channelsWithData)
+
+	logger.Info().
+		Int("total_programmes", len(allProgrammes)).
+		Int("channels_with_data", channelsWithData).
+		Int("total_channels", len(a.items)).
+		Msg("EPG aggregation completed")
+
+	return allProgrammes
+}
+
 // collectEPGProgrammes is the main entry point for EPG collection.
 // It routes to either bouquet-based or per-service fetching based on cfg.EPGSource
 func collectEPGProgrammes(ctx context.Context, client *openwebif.Client, items []playlist.Item, cfg Config) []epg.Programme {
@@ -91,50 +155,12 @@ func collectEPGFromBouquet(ctx context.Context, client *openwebif.Client, items 
 
 	logger.Info().Int("raw_events", len(events)).Msg("Received EPG events from bouquet")
 
-	// Now we need to match EPG events to playlist items using SRef
-	// Build a map of service references for exact matching
-	srefMap := make(map[string]string) // sref -> tvg-id
-	for _, item := range items {
-		sref := extractSRefFromStreamURL(item.URL)
-		if sref != "" {
-			srefMap[sref] = item.TvgID
-		}
-	}
+	// Use aggregator to match events to channels and convert to programmes
+	aggregator := newEPGAggregator(ctx, items)
+	srefMap := aggregator.buildSRefMap()
+	allProgrammes := aggregator.aggregateEvents(events, srefMap)
 
-	// Match events to channels and convert to XMLTV programmes
-	var allProgrammes []epg.Programme
-	eventsByChannel := make(map[string][]openwebif.EPGEvent)
-
-	for _, event := range events {
-		// Match by service reference (exact match)
-		tvgID, found := srefMap[event.SRef]
-
-		if !found {
-			logger.Debug().Str("sref", event.SRef).Msg("No channel match for EPG event")
-			continue
-		}
-
-		eventsByChannel[tvgID] = append(eventsByChannel[tvgID], event)
-	}
-
-	// Convert grouped events to programmes
-	channelsWithData := 0
-	for channelID, channelEvents := range eventsByChannel {
-		if len(channelEvents) > 0 {
-			channelsWithData++
-		}
-		progs := epg.ProgrammesFromEPG(channelEvents, channelID)
-		allProgrammes = append(allProgrammes, progs...)
-	}
-
-	logger.Info().
-		Int("total_programmes", len(allProgrammes)).
-		Int("channels_with_data", channelsWithData).
-		Int("total_channels", len(items)).
-		Msg("EPG collected via bouquet endpoint")
-
-	metrics.RecordEPGChannelSuccess(channelsWithData)
-
+	logger.Info().Msg("EPG collected via bouquet endpoint")
 	return allProgrammes
 }
 
@@ -188,31 +214,24 @@ func collectEPGPerService(ctx context.Context, client *openwebif.Client, items [
 		close(results)
 	}()
 
-	// Aggregate results
-	var allProgrammes []epg.Programme
-	channelsWithData := 0
-
+	// Aggregate results - collect all events first
+	var allEvents []openwebif.EPGEvent
 	for res := range results {
 		if res.err != nil {
 			// already logged
 			continue
 		}
-		if len(res.events) > 0 {
-			channelsWithData++
-		}
-		progs := epg.ProgrammesFromEPG(res.events, res.channelID)
-		if len(progs) > 0 {
-			allProgrammes = append(allProgrammes, progs...)
-		}
+		allEvents = append(allEvents, res.events...)
 	}
 
+	// Use aggregator for consistent event processing
+	aggregator := newEPGAggregator(ctx, items)
+	srefMap := aggregator.buildSRefMap()
+	allProgrammes := aggregator.aggregateEvents(allEvents, srefMap)
+
 	logger.Info().
-		Int("total_programmes", len(allProgrammes)).
-		Int("channels_with_data", channelsWithData).
 		Int("concurrency", maxPar).
 		Msg("EPG collected via service endpoints")
-
-	metrics.RecordEPGChannelSuccess(channelsWithData)
 
 	return allProgrammes
 }

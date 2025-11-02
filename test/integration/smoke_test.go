@@ -8,13 +8,12 @@ package test
 import (
 	"context"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/api"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/ManuGH/xg2g/internal/openwebif"
+	"github.com/ManuGH/xg2g/test/helpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -23,18 +22,10 @@ import (
 // Tag: critical, fast
 // Risk Level: HIGH - production health checks depend on this
 func TestSmoke_HealthEndpoints(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	cfg := jobs.Config{
-		DataDir:    tmpDir,
-		OWIBase:    "http://test.local",
-		StreamPort: 8001,
-	}
-
-	apiServer := api.New(cfg)
-	handler := apiServer.Handler()
-	testServer := httptest.NewServer(handler)
-	defer testServer.Close()
+	ts := helpers.NewTestServer(t, helpers.TestServerOptions{
+		DataDir: t.TempDir(),
+	})
+	defer ts.Close()
 
 	tests := []struct {
 		name           string
@@ -48,16 +39,10 @@ func TestSmoke_HealthEndpoints(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req, err := http.NewRequestWithContext(
-				context.Background(),
-				http.MethodGet,
-				testServer.URL+tt.endpoint,
-				nil,
-			)
-			require.NoError(t, err)
-
-			resp, err := http.DefaultClient.Do(req)
-			require.NoError(t, err)
+			resp := helpers.DoRequest(t, ts.Server.URL, helpers.RequestOptions{
+				Method: http.MethodGet,
+				Path:   tt.endpoint,
+			})
 			defer resp.Body.Close()
 
 			assert.Equal(t, tt.expectedStatus, resp.StatusCode,
@@ -70,19 +55,11 @@ func TestSmoke_HealthEndpoints(t *testing.T) {
 // Tag: critical, fast, security
 // Risk Level: HIGH - authentication bypass would be critical
 func TestSmoke_RefreshEndpointAuth(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	cfg := jobs.Config{
-		DataDir:    tmpDir,
-		OWIBase:    "http://test.local",
-		StreamPort: 8001,
-		APIToken:   "test-token",
-	}
-
-	apiServer := api.New(cfg)
-	handler := apiServer.Handler()
-	testServer := httptest.NewServer(handler)
-	defer testServer.Close()
+	ts := helpers.NewTestServer(t, helpers.TestServerOptions{
+		DataDir:  t.TempDir(),
+		APIToken: "test-token",
+	})
+	defer ts.Close()
 
 	tests := []struct {
 		name           string
@@ -95,23 +72,11 @@ func TestSmoke_RefreshEndpointAuth(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req, err := http.NewRequestWithContext(
-				context.Background(),
-				http.MethodPost,
-				testServer.URL+"/api/v1/refresh",
-				nil,
-			)
-			require.NoError(t, err)
-
-			// Set Origin header for CSRF protection (same-origin request)
-			req.Header.Set("Origin", testServer.URL)
-
-			if tt.token != "" {
-				req.Header.Set("X-API-Token", tt.token)
-			}
-
-			resp, err := http.DefaultClient.Do(req)
-			require.NoError(t, err)
+			resp := helpers.DoRequest(t, ts.Server.URL, helpers.RequestOptions{
+				Method: http.MethodPost,
+				Path:   "/api/v1/refresh",
+				Token:  tt.token,
+			})
 			defer resp.Body.Close()
 
 			assert.Equal(t, tt.expectedStatus, resp.StatusCode,
@@ -152,24 +117,15 @@ func TestSmoke_BasicRefreshFlow(t *testing.T) {
 // Tag: critical, fast, concurrency
 // Risk Level: HIGH - race conditions can cause production issues
 func TestSmoke_ConcurrentAPIRequests(t *testing.T) {
-	tmpDir := t.TempDir()
-
 	mock := openwebif.NewMockServer()
 	defer mock.Close()
 
-	cfg := jobs.Config{
-		DataDir:    tmpDir,
-		OWIBase:    mock.URL(),
-		StreamPort: 8001,
-		Bouquet:    "Premium",
-		APIToken:   "test-token",
-		EPGEnabled: false,
-	}
-
-	apiServer := api.New(cfg)
-	handler := apiServer.Handler()
-	testServer := httptest.NewServer(handler)
-	defer testServer.Close()
+	ts := helpers.NewTestServer(t, helpers.TestServerOptions{
+		DataDir:  t.TempDir(),
+		OWIBase:  mock.URL(),
+		APIToken: "test-token",
+	})
+	defer ts.Close()
 
 	// Make 3 concurrent requests (fast smoke test, not load test)
 	const numRequests = 3
@@ -177,21 +133,11 @@ func TestSmoke_ConcurrentAPIRequests(t *testing.T) {
 
 	for i := 0; i < numRequests; i++ {
 		go func() {
-			req, _ := http.NewRequestWithContext(
-				context.Background(),
-				http.MethodPost,
-				testServer.URL+"/api/v1/refresh",
-				nil,
-			)
-			// Set Origin header for CSRF protection (same-origin request)
-			req.Header.Set("Origin", testServer.URL)
-			req.Header.Set("X-API-Token", "test-token")
-
-			resp, err := http.DefaultClient.Do(req)
-			if err != nil {
-				results <- 0
-				return
-			}
+			resp := helpers.DoRequest(t, ts.Server.URL, helpers.RequestOptions{
+				Method: http.MethodPost,
+				Path:   "/api/v1/refresh",
+				Token:  "test-token",
+			})
 			defer resp.Body.Close()
 			results <- resp.StatusCode
 		}()
