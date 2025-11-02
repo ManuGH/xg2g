@@ -72,6 +72,7 @@ jobs:
         id: meta
         run: |
           TAGS=""
+          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
 
           # Version tags (on v* releases)
           if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
@@ -79,14 +80,14 @@ jobs:
 
             # Standard build (v2) gets :latest and :v1.2.3
             if [ "${{ matrix.cpu_level.name }}" = "v2" ]; then
-              TAGS="ghcr.io/${{ github.repository_owner }}/xg2g:latest"
-              TAGS="${TAGS},ghcr.io/${{ github.repository_owner }}/xg2g:${VERSION}"
+              TAGS="ghcr.io/${REPO_OWNER}/xg2g:latest"
+              TAGS="${TAGS},ghcr.io/${REPO_OWNER}/xg2g:${VERSION}"
             fi
 
             # All builds get versioned CPU-specific tags
             if [ -n "${{ matrix.cpu_level.suffix }}" ]; then
-              TAGS="${TAGS},ghcr.io/${{ github.repository_owner }}/xg2g:${VERSION}-${{ matrix.cpu_level.suffix }}"
-              TAGS="${TAGS},ghcr.io/${{ github.repository_owner }}/xg2g:${{ matrix.cpu_level.suffix }}"
+              TAGS="${TAGS},ghcr.io/${REPO_OWNER}/xg2g:${VERSION}-${{ matrix.cpu_level.suffix }}"
+              TAGS="${TAGS},ghcr.io/${REPO_OWNER}/xg2g:${{ matrix.cpu_level.suffix }}"
             fi
           fi
 
@@ -94,17 +95,17 @@ jobs:
           if [ "${{ github.ref }}" = "refs/heads/main" ]; then
             # Standard build (v2) gets :main
             if [ "${{ matrix.cpu_level.name }}" = "v2" ]; then
-              TAGS="${TAGS},ghcr.io/${{ github.repository_owner }}/xg2g:main"
+              TAGS="${TAGS},ghcr.io/${REPO_OWNER}/xg2g:main"
             fi
 
             # CPU-specific main tags
             if [ -n "${{ matrix.cpu_level.suffix }}" ]; then
-              TAGS="${TAGS},ghcr.io/${{ github.repository_owner }}/xg2g:main-${{ matrix.cpu_level.suffix }}"
+              TAGS="${TAGS},ghcr.io/${REPO_OWNER}/xg2g:main-${{ matrix.cpu_level.suffix }}"
             fi
           fi
 
           # SHA tags for all builds
-          TAGS="${TAGS},ghcr.io/${{ github.repository_owner }}/xg2g:sha-${GITHUB_SHA::7}-amd64-${{ matrix.cpu_level.name }}"
+          TAGS="${TAGS},ghcr.io/${REPO_OWNER}/xg2g:sha-${GITHUB_SHA::7}-amd64-${{ matrix.cpu_level.name }}"
 
           # Remove leading comma if present
           TAGS="${TAGS#,}"
@@ -178,20 +179,21 @@ jobs:
         id: meta
         run: |
           TAGS=""
+          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
 
           # Version tags (on v* releases)
           if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF#refs/tags/}"
-            TAGS="ghcr.io/${{ github.repository_owner }}/xg2g:${VERSION}-arm64"
+            TAGS="ghcr.io/${REPO_OWNER}/xg2g:${VERSION}-arm64"
           fi
 
           # Main branch tags
           if [ "${{ github.ref }}" = "refs/heads/main" ]; then
-            TAGS="${TAGS},ghcr.io/${{ github.repository_owner }}/xg2g:main-arm64"
+            TAGS="${TAGS},ghcr.io/${REPO_OWNER}/xg2g:main-arm64"
           fi
 
           # SHA tags
-          TAGS="${TAGS},ghcr.io/${{ github.repository_owner }}/xg2g:sha-${GITHUB_SHA::7}-arm64"
+          TAGS="${TAGS},ghcr.io/${REPO_OWNER}/xg2g:sha-${GITHUB_SHA::7}-arm64"
 
           # Remove leading comma if present
           TAGS="${TAGS#,}"
@@ -245,23 +247,25 @@ jobs:
 
       - name: Create multi-arch manifests
         run: |
+          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+
           # For :latest (v2 amd64 + arm64)
           if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF#refs/tags/}"
 
             # Create :latest manifest (amd64-v2 + arm64)
-            docker buildx imagetools create -t ghcr.io/${{ github.repository_owner }}/xg2g:latest \
-              ghcr.io/${{ github.repository_owner }}/xg2g:${VERSION} \
-              ghcr.io/${{ github.repository_owner }}/xg2g:${VERSION}-arm64
+            docker buildx imagetools create -t ghcr.io/${REPO_OWNER}/xg2g:latest \
+              ghcr.io/${REPO_OWNER}/xg2g:${VERSION} \
+              ghcr.io/${REPO_OWNER}/xg2g:${VERSION}-arm64
 
-            echo "✅ Created multi-arch manifest: ghcr.io/${{ github.repository_owner }}/xg2g:latest" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "✅ Created multi-arch manifest: ghcr.io/${REPO_OWNER}/xg2g:latest" | tee -a "$GITHUB_STEP_SUMMARY"
           fi
 
           # For :main (v2 amd64 + arm64)
           if [ "${{ github.ref }}" = "refs/heads/main" ]; then
-            docker buildx imagetools create -t ghcr.io/${{ github.repository_owner }}/xg2g:main \
-              ghcr.io/${{ github.repository_owner }}/xg2g:main \
-              ghcr.io/${{ github.repository_owner }}/xg2g:main-arm64
+            docker buildx imagetools create -t ghcr.io/${REPO_OWNER}/xg2g:main \
+              ghcr.io/${REPO_OWNER}/xg2g:main \
+              ghcr.io/${REPO_OWNER}/xg2g:main-arm64
 
-            echo "✅ Created multi-arch manifest: ghcr.io/${{ github.repository_owner }}/xg2g:main" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "✅ Created multi-arch manifest: ghcr.io/${REPO_OWNER}/xg2g:main" | tee -a "$GITHUB_STEP_SUMMARY"
           fi
