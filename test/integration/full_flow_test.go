@@ -383,7 +383,7 @@ func TestHealthCheckFlow(t *testing.T) {
 			name:           "readiness check before refresh",
 			endpoint:       "/readyz",
 			expectedStatus: http.StatusServiceUnavailable, // Not ready before first refresh - correct behavior
-			shouldContain:  "unhealthy", // JSON response: {"ready":false,"status":"unhealthy",...}
+			shouldContain:  "unhealthy",                   // JSON response: {"ready":false,"status":"unhealthy",...}
 		},
 		{
 			name:           "status before refresh",
