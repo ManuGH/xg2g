@@ -1,0 +1,29 @@
+apiVersion: v2
+name: xg2g
+description: Enigma2 to IPTV Gateway with M3U and XMLTV support
+type: application
+version: 1.7.1
+appVersion: "1.7.1"
+
+keywords:
+  - iptv
+  - enigma2
+  - m3u
+  - xmltv
+  - hdhr
+  - plex
+  - jellyfin
+
+home: https://github.com/ManuGH/xg2g
+sources:
+  - https://github.com/ManuGH/xg2g
+
+maintainers:
+  - name: ManuGH
+    url: https://github.com/ManuGH
+
+icon: https://raw.githubusercontent.com/ManuGH/xg2g/main/docs/logo.png
+
+annotations:
+  category: Streaming
+  licenses: MIT
