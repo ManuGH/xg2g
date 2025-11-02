@@ -135,7 +135,11 @@ func (h *Handler) checkReceiverHealth(r *http.Request) *ReceiverStatus {
 			Error:        err.Error(),
 		}
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			logger.Debug().Err(closeErr).Msg("failed to close response body")
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return &ReceiverStatus{
