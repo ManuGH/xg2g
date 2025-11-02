@@ -377,13 +377,13 @@ func TestHealthCheckFlow(t *testing.T) {
 			name:           "health check",
 			endpoint:       "/healthz",
 			expectedStatus: http.StatusOK,
-			shouldContain:  "ok",
+			shouldContain:  "healthy", // JSON response: {"status":"healthy",...}
 		},
 		{
 			name:           "readiness check before refresh",
 			endpoint:       "/readyz",
 			expectedStatus: http.StatusServiceUnavailable, // Not ready before first refresh - correct behavior
-			shouldContain:  "not-ready",
+			shouldContain:  "unhealthy", // JSON response: {"ready":false,"status":"unhealthy",...}
 		},
 		{
 			name:           "status before refresh",
