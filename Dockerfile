@@ -77,19 +77,20 @@ ARG ENABLE_GPU=false
 # Conditional build: GPU tag only when ENABLE_GPU=true
 # Standard mode (MODE 1+2): Audio transcoding via Rust, no GPU
 # GPU mode (MODE 3): Audio + video transcoding via VAAPI
+# Note: -extldflags='-Wl,-rpath,/app/lib' sets runtime library search path
 RUN set -eux; \
     BUILD_REF="${GIT_REF:-${VERSION:-dev}}"; \
     export CGO_ENABLED=1 GOOS=linux GOAMD64="${GO_AMD64_LEVEL}"; \
     if [ "$ENABLE_GPU" = "true" ]; then \
         echo "🎮 Building with GPU transcoding support (MODE 3)"; \
         go build -tags=gpu -buildvcs=false -trimpath \
-            -ldflags="-s -w -X 'main.Version=${BUILD_REF}'" \
+            -ldflags="-s -w -X 'main.Version=${BUILD_REF}' -extldflags='-Wl,-rpath,/app/lib'" \
             ${GO_GCFLAGS:+-gcflags="${GO_GCFLAGS}"} \
             -o /out/xg2g ./cmd/daemon; \
     else \
         echo "📺 Building without GPU transcoding (MODE 1+2 only)"; \
         go build -buildvcs=false -trimpath \
-            -ldflags="-s -w -X 'main.Version=${BUILD_REF}'" \
+            -ldflags="-s -w -X 'main.Version=${BUILD_REF}' -extldflags='-Wl,-rpath,/app/lib'" \
             ${GO_GCFLAGS:+-gcflags="${GO_GCFLAGS}"} \
             -o /out/xg2g ./cmd/daemon; \
     fi
