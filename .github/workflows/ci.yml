@@ -196,7 +196,7 @@ jobs:
           echo "✅ Daemon ready on ${daemon_base}"
 
           echo "🔄 Triggering refresh..."
-          curl -fsS --retry 5 --retry-all-errors --retry-delay 1 --max-time 30 -H "X-API-Token: ${XG2G_API_TOKEN}" -X POST "$daemon_base/api/refresh"
+          curl -fsS --retry 5 --retry-all-errors --retry-delay 1 --max-time 30 -H "X-API-Token: ${XG2G_API_TOKEN}" -H "Origin: http://127.0.0.1:8080" -X POST "$daemon_base/api/refresh"
 
           echo "📊 Checking status..."
           curl -fsS --retry 3 --retry-all-errors --retry-delay 0 --max-time 5 "$daemon_base/api/status"

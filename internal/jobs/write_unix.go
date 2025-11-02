@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MIT
 
+//go:build !windows
+// +build !windows
+
 package jobs
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 
 	"github.com/ManuGH/xg2g/internal/epg"
@@ -73,12 +74,4 @@ func writeXMLTV(ctx context.Context, path string, tv epg.TV) error {
 	}
 
 	return nil
-}
-
-// makeStableIDFromSRef creates a deterministic, collision-resistant tvg-id from a service reference
-// Using a hash ensures the ID is stable even if the channel name changes and avoids issues
-// with special characters in the sRef.
-func makeStableIDFromSRef(sref string) string {
-	sum := sha256.Sum256([]byte(sref))
-	return "sref-" + hex.EncodeToString(sum[:])
 }

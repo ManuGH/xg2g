@@ -29,12 +29,12 @@ func TestSecureFileServer_RangeRequests(t *testing.T) {
 	srv := New(cfg)
 
 	tests := []struct {
-		name           string
-		rangeHeader    string
-		wantStatus     int
-		wantPartial    bool
-		wantBody       string
-		wantHeaders    map[string]string
+		name        string
+		rangeHeader string
+		wantStatus  int
+		wantPartial bool
+		wantBody    string
+		wantHeaders map[string]string
 	}{
 		{
 			name:        "No Range header - full content",
@@ -229,10 +229,10 @@ func TestSecureFileServer_ContentType(t *testing.T) {
 
 	// Create test files with different extensions
 	files := map[string]string{
-		"playlist.m3u":  "#EXTM3U\n",
-		"channels.xml":  "<?xml version=\"1.0\"?>\n",
-		"epg.m3u8":      "#EXTM3U\n",
-		"data.txt":      "test data\n",
+		"playlist.m3u": "#EXTM3U\n",
+		"channels.xml": "<?xml version=\"1.0\"?>\n",
+		"epg.m3u8":     "#EXTM3U\n",
+		"data.txt":     "test data\n",
 	}
 
 	for name, content := range files {

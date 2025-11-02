@@ -32,20 +32,20 @@ type CheckResult struct {
 
 // HealthResponse represents the full health check response
 type HealthResponse struct {
-	Status     Status                  `json:"status"`
-	Version    string                  `json:"version,omitempty"`
-	Timestamp  time.Time               `json:"timestamp"`
-	Checks     map[string]CheckResult  `json:"checks,omitempty"`
-	Details    map[string]interface{}  `json:"details,omitempty"`
+	Status    Status                 `json:"status"`
+	Version   string                 `json:"version,omitempty"`
+	Timestamp time.Time              `json:"timestamp"`
+	Checks    map[string]CheckResult `json:"checks,omitempty"`
+	Details   map[string]interface{} `json:"details,omitempty"`
 }
 
 // ReadinessResponse represents the readiness check response
 type ReadinessResponse struct {
-	Ready      bool                    `json:"ready"`
-	Status     Status                  `json:"status"`
-	Timestamp  time.Time               `json:"timestamp"`
-	Checks     map[string]CheckResult  `json:"checks,omitempty"`
-	Details    map[string]interface{}  `json:"details,omitempty"`
+	Ready     bool                   `json:"ready"`
+	Status    Status                 `json:"status"`
+	Timestamp time.Time              `json:"timestamp"`
+	Checks    map[string]CheckResult `json:"checks,omitempty"`
+	Details   map[string]interface{} `json:"details,omitempty"`
 }
 
 // Checker defines the interface for health checks
@@ -92,9 +92,10 @@ func (m *Manager) Health(ctx context.Context, verbose bool) HealthResponse {
 			result := checker.Check(ctx)
 			resp.Checks[checker.Name()] = result
 
-			if result.Status == StatusUnhealthy {
+			switch result.Status {
+			case StatusUnhealthy:
 				hasUnhealthy = true
-			} else if result.Status == StatusDegraded {
+			case StatusDegraded:
 				hasDegraded = true
 			}
 		}
@@ -132,10 +133,11 @@ func (m *Manager) Ready(ctx context.Context, _ bool) ReadinessResponse {
 		result := checker.Check(ctx)
 		resp.Checks[checker.Name()] = result
 
-		if result.Status == StatusUnhealthy {
+		switch result.Status {
+		case StatusUnhealthy:
 			hasUnhealthy = true
 			resp.Ready = false
-		} else if result.Status == StatusDegraded {
+		case StatusDegraded:
 			hasDegraded = true
 		}
 	}
@@ -233,15 +235,15 @@ func (c *FileChecker) Check(ctx context.Context) CheckResult {
 			}
 		}
 		return CheckResult{
-			Status:  StatusUnhealthy,
-			Error:   err.Error(),
+			Status: StatusUnhealthy,
+			Error:  err.Error(),
 		}
 	}
 
 	if info.IsDir() {
 		return CheckResult{
-			Status:  StatusUnhealthy,
-			Error:   "expected file, got directory",
+			Status: StatusUnhealthy,
+			Error:  "expected file, got directory",
 		}
 	}
 

@@ -33,10 +33,10 @@ type Server struct {
 	cfg           jobs.Config
 	status        jobs.Status
 	cb            *CircuitBreaker
-	hdhr          *hdhr.Server         // HDHomeRun emulation server
-	configHolder  ConfigHolder         // Optional: for hot config reload support
-	auditLogger   AuditLogger          // Optional: for audit logging
-	healthManager *health.Manager      // Health and readiness checks
+	hdhr          *hdhr.Server    // HDHomeRun emulation server
+	configHolder  ConfigHolder    // Optional: for hot config reload support
+	auditLogger   AuditLogger     // Optional: for audit logging
+	healthManager *health.Manager // Health and readiness checks
 	// refreshFn allows tests to stub the refresh operation; defaults to jobs.Refresh
 	refreshFn func(context.Context, jobs.Config) (*jobs.Status, error)
 }
@@ -167,19 +167,6 @@ func New(cfg jobs.Config) *Server {
 func (s *Server) HDHomeRunServer() *hdhr.Server {
 	return s.hdhr
 }
-
-// SetStatus updates the server status (test helper)
-func (s *Server) SetStatus(status jobs.Status) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.status = status
-}
-
-// SetRefreshFunc sets a custom refresh function (test helper)
-func (s *Server) SetRefreshFunc(fn func(context.Context, jobs.Config) (*jobs.Status, error)) {
-	s.refreshFn = fn
-}
-
 func (s *Server) routes() http.Handler {
 	r := chi.NewRouter()
 

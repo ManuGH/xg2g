@@ -12,6 +12,7 @@ import (
 )
 
 // ctxPrincipalKey is used to store the authenticated principal in context
+//
 //nolint:unused // Legacy types - kept for future use
 type ctxPrincipalKey struct{}
 
@@ -19,6 +20,7 @@ type ctxPrincipalKey struct{}
 
 // authenticate is a middleware that validates API tokens
 // If no token is configured in the environment, authentication is disabled (open access)
+//
 //nolint:unused // Legacy auth function
 func authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -59,6 +61,7 @@ func authenticate(next http.Handler) http.Handler {
 }
 
 // parseBearer extracts the token from a "Bearer <token>" authorization header
+//
 //nolint:unused // Helper function - kept for future use
 func parseBearer(auth string) string {
 	const prefix = "Bearer "
@@ -69,6 +72,7 @@ func parseBearer(auth string) string {
 }
 
 // principalFrom extracts the authenticated principal from the request context
+//
 //nolint:unused // Helper function - kept for future use
 func principalFrom(ctx context.Context) string {
 	if p := ctx.Value(ctxPrincipalKey{}); p != nil {
@@ -78,5 +82,6 @@ func principalFrom(ctx context.Context) string {
 }
 
 // serverConfigKey is used to pass server config through context
+//
 //nolint:unused // Legacy type - kept for future use
 type serverConfigKey struct{}

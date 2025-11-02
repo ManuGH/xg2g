@@ -26,7 +26,7 @@ type ConfigHolder struct {
 	logger     zerolog.Logger
 
 	// Reload notifications
-	reloadMu      sync.RWMutex
+	reloadMu        sync.RWMutex
 	reloadListeners []chan<- jobs.Config
 }
 
@@ -112,7 +112,7 @@ func (h *ConfigHolder) StartWatcher(ctx context.Context) error {
 
 	// Add config file to watcher
 	if err := watcher.Add(h.configPath); err != nil {
-		_ = watcher.Close()  // Ignore close error in error path
+		_ = watcher.Close() // Ignore close error in error path
 		return fmt.Errorf("watch config file: %w", err)
 	}
 
@@ -138,7 +138,7 @@ func (h *ConfigHolder) watchLoop(ctx context.Context) {
 		case <-ctx.Done():
 			h.logger.Info().Str("event", "config.watcher_stopped").Msg("config watcher stopped")
 			if h.watcher != nil {
-				_ = h.watcher.Close()  // Ignore close error in error path
+				_ = h.watcher.Close() // Ignore close error in error path
 			}
 			return
 
@@ -183,7 +183,7 @@ func (h *ConfigHolder) watchLoop(ctx context.Context) {
 // Stop stops the config watcher (if running).
 func (h *ConfigHolder) Stop() {
 	if h.watcher != nil {
-		_ = h.watcher.Close()  // Ignore close error in error path
+		_ = h.watcher.Close() // Ignore close error in error path
 	}
 }
 

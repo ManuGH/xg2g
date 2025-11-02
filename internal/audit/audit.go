@@ -40,13 +40,13 @@ const (
 type Event struct {
 	Timestamp  time.Time         `json:"timestamp"`
 	Type       EventType         `json:"type"`
-	Actor      string            `json:"actor"`       // WHO: username, IP, or "system"
-	Action     string            `json:"action"`      // WHAT: human-readable action description
-	Resource   string            `json:"resource"`    // Resource affected (e.g., endpoint, config file)
-	Result     string            `json:"result"`      // success, failure, denied
-	RemoteAddr string            `json:"remote_addr"` // Client IP address
-	UserAgent  string            `json:"user_agent"`  // Client user agent
-	RequestID  string            `json:"request_id"`  // Correlation ID
+	Actor      string            `json:"actor"`             // WHO: username, IP, or "system"
+	Action     string            `json:"action"`            // WHAT: human-readable action description
+	Resource   string            `json:"resource"`          // Resource affected (e.g., endpoint, config file)
+	Result     string            `json:"result"`            // success, failure, denied
+	RemoteAddr string            `json:"remote_addr"`       // Client IP address
+	UserAgent  string            `json:"user_agent"`        // Client user agent
+	RequestID  string            `json:"request_id"`        // Correlation ID
 	Details    map[string]string `json:"details,omitempty"` // Additional context
 }
 
@@ -284,25 +284,25 @@ func formatInt64(i int64) string {
 	if i == 0 {
 		return "0"
 	}
-	
+
 	neg := i < 0
 	if neg {
 		i = -i
 	}
-	
+
 	var buf [20]byte
 	pos := len(buf)
-	
+
 	for i > 0 {
 		pos--
 		buf[pos] = byte('0' + i%10)
 		i /= 10
 	}
-	
+
 	if neg {
 		pos--
 		buf[pos] = '-'
 	}
-	
+
 	return string(buf[pos:])
 }
