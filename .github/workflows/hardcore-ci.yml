@@ -189,15 +189,15 @@ jobs:
           echo "Available fuzz tests:"
           go test ./internal/epg -list 'Fuzz.*' || true
 
-          # Run each fuzz test with short duration (5s to avoid timeouts)
+          # Run each fuzz test with short duration (10s with headroom for fuzzer overhead)
           echo "Running FuzzLevenshtein..."
-          go test ./internal/epg -fuzz=FuzzLevenshtein -fuzztime=5s -run '^$' -v
+          go test ./internal/epg -fuzz=FuzzLevenshtein -fuzztime=10s -run '^$' -v
 
           echo "Running FuzzXMLTVGeneration..."
-          go test ./internal/epg -fuzz=FuzzXMLTVGeneration -fuzztime=5s -run '^$' -v
+          go test ./internal/epg -fuzz=FuzzXMLTVGeneration -fuzztime=10s -run '^$' -v
 
           echo "Running FuzzParseChannelName..."
-          go test ./internal/epg -fuzz=FuzzParseChannelName -fuzztime=5s -run '^$' -v
+          go test ./internal/epg -fuzz=FuzzParseChannelName -fuzztime=10s -run '^$' -v
 
           echo "✅ All fuzz tests completed successfully"
 
