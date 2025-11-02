@@ -32,6 +32,7 @@ jobs:
   build-amd64:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         cpu_level:
           - name: v1
@@ -253,16 +254,22 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # Install Rust with ARM64 target
+      # Install Rust with ARM64 target (pinned version for reproducibility)
       - uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: 1.84.0
           targets: aarch64-unknown-linux-gnu
 
-      # Install cargo-zigbuild for cross-compilation
+      # Install cargo-zigbuild for cross-compilation (pinned version)
       - name: Install cargo-zigbuild
         run: |
-          cargo install cargo-zigbuild --locked
-          echo "$(cargo install --list | grep cargo-zigbuild)" >> "$GITHUB_STEP_SUMMARY"
+          cargo install cargo-zigbuild --locked --version 0.19.7
+          echo "### Toolchain Versions" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          rustc --version >> "$GITHUB_STEP_SUMMARY"
+          cargo --version >> "$GITHUB_STEP_SUMMARY"
+          cargo zigbuild --version >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
 
       # Build Rust library for ARM64 (no QEMU needed)
       - name: Cross-compile Rust library for ARM64
@@ -291,18 +298,39 @@ jobs:
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
       # Verify binaries are statically linked (preferred for portability)
-      - name: Verify static linking
+      # Also check ABI/CPU tags to ensure no accidental glibc dependencies
+      - name: Verify static linking and ABI
         run: |
-          echo "### Link Analysis" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Link Analysis & ABI Sanity" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
-          echo "Rust library:" >> "$GITHUB_STEP_SUMMARY"
-          ldd transcoder/target/aarch64-unknown-linux-gnu/release/libxg2g_transcoder.so || echo "Static (no dynamic deps)" >> "$GITHUB_STEP_SUMMARY"
+          echo "=== Rust library ===" >> "$GITHUB_STEP_SUMMARY"
+          file transcoder/target/aarch64-unknown-linux-gnu/release/libxg2g_transcoder.so >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Go binary:" >> "$GITHUB_STEP_SUMMARY"
-          file dist/xg2g-arm64 | grep -q "statically linked" && echo "✅ Static" >> "$GITHUB_STEP_SUMMARY" || echo "⚠️ Dynamic" >> "$GITHUB_STEP_SUMMARY"
+
+          # Check dynamic dependencies (should fail for static builds)
+          echo "Dynamic dependencies:" >> "$GITHUB_STEP_SUMMARY"
+          ldd transcoder/target/aarch64-unknown-linux-gnu/release/libxg2g_transcoder.so 2>&1 || echo "✅ Static (no ldd)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          # ABI tags check (ensure ARM64, no x86 contamination)
+          if command -v readelf &> /dev/null; then
+            echo "ABI/CPU tags:" >> "$GITHUB_STEP_SUMMARY"
+            readelf -A transcoder/target/aarch64-unknown-linux-gnu/release/libxg2g_transcoder.so | grep -E 'Tag_ABI|Tag_CPU|Machine' || true >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "=== Go binary ===" >> "$GITHUB_STEP_SUMMARY"
+          file dist/xg2g-arm64 >> "$GITHUB_STEP_SUMMARY"
+          if file dist/xg2g-arm64 | grep -q "statically linked"; then
+            echo "✅ Go binary: statically linked" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "⚠️ Go binary: dynamically linked" >> "$GITHUB_STEP_SUMMARY"
+            ldd dist/xg2g-arm64 2>&1 || true >> "$GITHUB_STEP_SUMMARY"
+          fi
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
       # Upload ARM64 binaries as artifacts (no Docker push)
+      # Retention: 14 days to allow rollback testing across 2-week sprint cycles
       - name: Upload ARM64 canary binaries
         uses: actions/upload-artifact@v5
         with:
@@ -310,7 +338,7 @@ jobs:
           path: |
             transcoder/target/aarch64-unknown-linux-gnu/release/libxg2g_transcoder.so
             dist/xg2g-arm64
-          retention-days: 7
+          retention-days: 14
 
       - name: Summary
         run: |

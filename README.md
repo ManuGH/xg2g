@@ -322,6 +322,65 @@ Find commit SHAs at: [github.com/ManuGH/xg2g/commits/main](https://github.com/Ma
 
 ---
 
+## Support Policy
+
+### Supported Platforms
+
+| Platform | Architecture | Minimum CPU | Status | Notes |
+|----------|-------------|-------------|--------|-------|
+| **Linux (Alpine)** | AMD64-v2 | Intel Nehalem (2009+) | ✅ **Recommended** | Default `:latest` tag |
+| **Linux (Alpine)** | AMD64-v3 | Intel Haswell (2015+) | ✅ Supported | `:v3-performance` tag |
+| **Linux (Alpine)** | AMD64-v1 | Any 64-bit CPU (2003+) | ✅ Supported | `:v1-compat` tag |
+| **Linux (Alpine)** | ARM64 | ARMv8-A+ | ✅ Supported | Release tags only |
+| **macOS** | AMD64/ARM64 | macOS 11+ | ⚠️ Best-effort | Build from source |
+| **Windows** | AMD64 | Windows 10+ | ⚠️ Best-effort | Build from source |
+
+### Image Matrix
+
+| Use Case | Image Tag | CPU Arch | CPU Level | Build Frequency |
+|----------|-----------|----------|-----------|-----------------|
+| **Production (stable)** | `:latest` | AMD64 + ARM64 | v2 (SSE4.2) | On version tags |
+| **Staging/Testing** | `:main` | AMD64 only | v2 (SSE4.2) | Every main push |
+| **High Performance** | `:v3-performance` | AMD64 only | v3 (AVX2) | On version tags |
+| **Legacy Compatibility** | `:v1-compat` | AMD64 only | v1 (SSE2) | On version tags |
+| **Pinned Version** | `:v1.2.3` | AMD64 + ARM64 | v2 (SSE4.2) | Per release |
+| **Specific Commit** | `:sha-abc1234` | AMD64 only | v2 (SSE4.2) | Every push |
+| **ARM64 Specific** | `:v1.2.3-arm64` | ARM64 only | Generic | On version tags |
+
+### Toolchain Versions
+
+**Current (2025):**
+- Go: 1.25
+- Rust: 1.84
+- Alpine: 3.22.2
+- FFmpeg: 7.x (Alpine package)
+
+**Pinning Strategy:**
+- Docker base images: Pinned to minor version
+- Go/Rust toolchains: Pinned to patch version for reproducibility
+- Cross-compilation: cargo-zigbuild 0.19.7
+
+### CI/CD Validation
+
+**Main Branch:**
+- ✅ AMD64 builds (v1, v2, v3): ~2-3 min
+- ✅ Tests + linting: ~5 min
+- ❌ ARM64 builds: Disabled (releases only)
+
+**Release Tags:**
+- ✅ AMD64 builds (v1, v2, v3): ~2-3 min
+- ✅ ARM64 builds via QEMU: 60-90 min
+- ✅ Multi-arch manifests
+- ✅ SBOM + Provenance attestation
+- ✅ Cosign signing
+
+**Nightly:**
+- ✅ ARM64 cross-compile canary (no push)
+- ✅ Validates cargo-zigbuild toolchain
+- ✅ Artifact retention: 14 days
+
+---
+
 ## Help
 
 - **API Documentation:** [API Reference](https://manugh.github.io/xg2g/api.html)
