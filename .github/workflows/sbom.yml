@@ -85,8 +85,8 @@ jobs:
       - name: Verify SBOM completeness
         run: |
           # Check that SBOM contains expected Go dependencies
-          if ! grep -q "github.com/gorilla/mux" sbom.cyclonedx.json; then
-            echo "ERROR: SBOM missing expected dependency (gorilla/mux)"
+          if ! grep -q "github.com/go-chi/chi" sbom.cyclonedx.json; then
+            echo "ERROR: SBOM missing expected dependency (go-chi/chi)"
             exit 1
           fi
           echo "✅ SBOM verification passed"
