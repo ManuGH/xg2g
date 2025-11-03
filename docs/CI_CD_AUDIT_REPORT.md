@@ -411,4 +411,152 @@ The xg2g CI/CD pipeline demonstrates:
 
 **Report Generated:** 2025-11-02
 **CI/CD Pipeline Version:** 1.0
-**Commits Reviewed:** 037fa92, 2e46091, 6fb3661, 7e0d980, 0eb1363, 54cf0d3
+**Commits Reviewed:** 037fa92, 2e46091, 6fb3661, 7e0d980, 0eb1363, 54cf0d3, 0e837c1
+
+---
+
+## Appendix A: Codecov Integration (Added 2025-11-02)
+
+### Configuration Summary
+
+**codecov.yml** added with comprehensive coverage tracking:
+- 6 component-specific targets (daemon, api, epg, playlist, proxy, owi)
+- 3 flag-based test segmentation (unittests, integration, contract)
+- PR status checks (project, patch, component-level)
+- Automated PR comments with coverage diff
+
+### Coverage Targets
+
+| Component | Project | Patch | Rationale |
+|-----------|---------|-------|-----------|
+| Overall | 55% | 90% | CI alignment |
+| Daemon | 60% | 95% | Core logic |
+| API Layer | 70% | 95% | Critical path |
+| EPG Module | 55% | 90% | Fuzzy matching complexity |
+| Playlist | 60% | 90% | M3U generation |
+| Stream Proxy | 50% | 85% | FFI complexity |
+| OWI Client | 65% | 90% | External API |
+
+### Maintenance Schedule
+
+**After 5 PRs (Initial Validation):**
+```bash
+# Check if 90% patch target is achievable
+# Review codecov.io dashboard → Flags → Patch coverage trend
+# If consistently < 85%, adjust threshold in codecov.yml:
+#   coverage.status.patch.default.target: 85%
+```
+
+**Monthly:**
+```bash
+# Review component coverage trends
+# Identify components falling below targets
+# Add focused tests for low-coverage modules
+```
+
+**Quarterly (with CI/CD Audit):**
+```bash
+# Export coverage metrics
+codecov cli report --flags integration --format json > metrics.json
+
+# Review trends:
+# - Overall project coverage (target: steady or increasing)
+# - Per-component coverage (compare against targets)
+# - Flag-based coverage (unit vs integration balance)
+```
+
+### Optional Enhancements
+
+**1. Slack Alerting (Immediate Visibility):**
+
+Uncomment in `codecov.yml`:
+```yaml
+slack:
+  url: "secret:SLACK_WEBHOOK"
+  threshold: 1%
+  only_pulls: false
+  message: "Coverage changed for {{owner}}/{{repo}}"
+  branches:
+    - main
+```
+
+Set secret (reuse canary webhook):
+```bash
+# Codecov will use GitHub secret SLACK_WEBHOOK
+gh secret set SLACK_WEBHOOK --body "https://hooks.slack.com/..."
+```
+
+**2. Rust Transcoder Coverage (Future):**
+
+If Rust coverage needed:
+```bash
+# Generate Rust coverage (requires llvm-cov)
+cd transcoder
+cargo llvm-cov --lcov --output-path lcov.info
+
+# Upload with separate flag
+codecov upload-file --file lcov.info --flags rust
+```
+
+Add to `codecov.yml`:
+```yaml
+flags:
+  rust:
+    paths:
+      - "transcoder/"
+    carryforward: true
+```
+
+### Operational Procedures
+
+**Complete runbook available:** [COVERAGE_OPERATIONS.md](COVERAGE_OPERATIONS.md)
+
+Key procedures:
+- GitHub branch protection setup (required status checks)
+- Weekly/Monthly/Quarterly monitoring KPIs
+- Threshold validation after 5 PRs
+- Troubleshooting guide (upload failures, carryforward issues)
+- Rust transcoder coverage integration (future)
+
+### Technical Validation
+
+**Configuration validated via Codecov API:**
+```bash
+curl -X POST --data-binary @codecov.yml https://codecov.io/validate
+# Result: Valid! ✅
+```
+
+**Coverage mode audit (all workflows):**
+```bash
+grep -r "covermode" .github/workflows/*.yml
+# Result: -covermode=atomic in all 8 workflows ✅
+```
+
+**No coverage merge needed:**
+- Single-job coverage workflow (no matrix)
+- Unified coverage.out per upload
+- Carryforward handles partial runs
+
+### Known Limitations
+
+1. **Rust Transcoder Excluded**: Currently ignored in `codecov.yml` (not Go)
+2. **Generated Code**: Protobuf, mocks excluded (standard practice)
+3. **Test Files**: Excluded from coverage calculation
+
+### Monitoring Checklist
+
+- [ ] **Week 1**: Verify PR status checks appear on first PR
+- [ ] **Week 2**: Review PR comments quality (diff, components visible)
+- [ ] **Month 1**: Check component trends (all above 50%)
+- [ ] **Month 3**: Quarterly audit (export metrics, adjust targets)
+- [ ] **Ongoing**: Monitor coverage badge (should be ≥ 55%)
+
+---
+
+## Change Log (Appendix)
+
+| Date | Version | Changes | Commit |
+|------|---------|---------|--------|
+| 2025-11-02 | 1.0 | Initial audit report | 2ff4d83 |
+| 2025-11-02 | 1.1 | Added Codecov integration | 0e837c1 |
+| 2025-11-03 | 1.2 | Added operational runbook, technical validation | TBD |
