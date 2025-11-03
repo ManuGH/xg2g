@@ -1,125 +1,157 @@
 package api
 
 import (
-	"context"
+	"errors"
 	"testing"
 	"time"
 )
 
-// Clock interface allows injecting test time for deterministic tests.
-// TODO: Extract this to a shared package if needed by other components.
-type clock interface {
-	Now() time.Time
-	After(d time.Duration) <-chan time.Time
-}
-
-// realClock uses actual system time.
-type realClock struct{}
-
-func (realClock) Now() time.Time                        { return time.Now() }
-func (realClock) After(d time.Duration) <-chan time.Time { return time.After(d) }
-
 // fakeClock allows controlling time in tests.
 type fakeClock struct {
-	now   time.Time
-	timer chan time.Time
+	now time.Time
 }
 
 func newFakeClock(start time.Time) *fakeClock {
-	return &fakeClock{
-		now:   start,
-		timer: make(chan time.Time, 1),
-	}
+	return &fakeClock{now: start}
 }
 
-func (f *fakeClock) Now() time.Time                        { return f.now }
-func (f *fakeClock) After(d time.Duration) <-chan time.Time { return f.timer }
+func (f *fakeClock) Now() time.Time { return f.now }
+
 func (f *fakeClock) Advance(d time.Duration) {
 	f.now = f.now.Add(d)
-	select {
-	case f.timer <- f.now:
-	default:
-	}
 }
 
 // TestCircuitBreaker_StateMachine tests circuit breaker state transitions.
-// TODO: Implement these test cases once circuit breaker supports clock injection.
 func TestCircuitBreaker_StateMachine(t *testing.T) {
-	tests := []struct {
-		name        string
-		failures    int
-		expectState string
-		description string
-	}{
-		{
-			name:        "closed_remains_closed_under_threshold",
-			failures:    2,
-			expectState: "closed",
-			description: "Circuit should remain closed when failures < threshold",
-		},
-		{
-			name:        "closed_to_open_on_threshold",
-			failures:    5,
-			expectState: "open",
-			description: "Circuit opens when failures >= threshold",
-		},
-		{
-			name:        "open_remains_open_during_timeout",
-			failures:    0,
-			expectState: "open",
-			description: "Circuit stays open during timeout period",
-		},
-		{
-			name:        "open_to_half_open_after_timeout",
-			failures:    0,
-			expectState: "half-open",
-			description: "Circuit transitions to half-open after timeout",
-		},
-		{
-			name:        "half_open_to_closed_on_success",
-			failures:    0,
-			expectState: "closed",
-			description: "Successful request in half-open state closes circuit",
-		},
-		{
-			name:        "half_open_to_open_on_failure",
-			failures:    1,
-			expectState: "open",
-			description: "Failed request in half-open state reopens circuit",
-		},
-	}
+	t.Run("closed_remains_closed_under_threshold", func(t *testing.T) {
+		clk := newFakeClock(time.Now())
+		cb := NewCircuitBreaker(3, 5*time.Second, WithClock(clk))
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Skip("TODO: Implement once CircuitBreaker supports clock injection")
+		// Fail twice (threshold is 3)
+		_ = cb.Call(func() error { return errors.New("fail") })
+		_ = cb.Call(func() error { return errors.New("fail") })
 
-			// Example implementation structure:
-			// clock := newFakeClock(time.Now())
-			// cb := NewCircuitBreaker(CircuitBreakerConfig{
-			//     Threshold: 3,
-			//     Timeout:   5 * time.Second,
-			//     Clock:     clock,
-			// })
-			//
-			// ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
-			// defer cancel()
-			//
-			// // Simulate tc.failures
-			// for i := 0; i < tc.failures; i++ {
-			//     _ = cb.Call(ctx, func() error { return errors.New("simulated failure") })
-			// }
-			//
-			// // Advance clock if needed
-			// if tc.expectState == "half-open" {
-			//     clock.Advance(6 * time.Second)
-			// }
-			//
-			// // Assert state
-			// if cb.State() != tc.expectState {
-			//     t.Errorf("expected state %s, got %s", tc.expectState, cb.State())
-			// }
-		})
-	}
+		if cb.State() != "closed" {
+			t.Errorf("expected state closed, got %s", cb.State())
+		}
+	})
+
+	t.Run("closed_to_open_on_threshold", func(t *testing.T) {
+		clk := newFakeClock(time.Now())
+		cb := NewCircuitBreaker(3, 5*time.Second, WithClock(clk))
+
+		// Fail 3 times (threshold is 3)
+		_ = cb.Call(func() error { return errors.New("fail") })
+		_ = cb.Call(func() error { return errors.New("fail") })
+		_ = cb.Call(func() error { return errors.New("fail") })
+
+		if cb.State() != "open" {
+			t.Errorf("expected state open, got %s", cb.State())
+		}
+
+		// Next call should return circuit open error
+		err := cb.Call(func() error { return nil })
+		if !errors.Is(err, errCircuitOpen) {
+			t.Errorf("expected errCircuitOpen, got %v", err)
+		}
+	})
+
+	t.Run("open_remains_open_during_timeout", func(t *testing.T) {
+		clk := newFakeClock(time.Now())
+		cb := NewCircuitBreaker(3, 5*time.Second, WithClock(clk))
+
+		// Open circuit
+		_ = cb.Call(func() error { return errors.New("fail") })
+		_ = cb.Call(func() error { return errors.New("fail") })
+		_ = cb.Call(func() error { return errors.New("fail") })
+
+		// Advance time but not enough to exceed timeout
+		clk.Advance(3 * time.Second)
+
+		// Should still be open
+		err := cb.Call(func() error { return nil })
+		if !errors.Is(err, errCircuitOpen) {
+			t.Errorf("expected errCircuitOpen during timeout, got %v", err)
+		}
+		if cb.State() != "open" {
+			t.Errorf("expected state open, got %s", cb.State())
+		}
+	})
+
+	t.Run("open_to_half_open_after_timeout", func(t *testing.T) {
+		clk := newFakeClock(time.Now())
+		cb := NewCircuitBreaker(3, 5*time.Second, WithClock(clk))
+
+		// Open circuit
+		_ = cb.Call(func() error { return errors.New("fail") })
+		_ = cb.Call(func() error { return errors.New("fail") })
+		_ = cb.Call(func() error { return errors.New("fail") })
+
+		// Advance past timeout
+		clk.Advance(6 * time.Second)
+
+		// Next call should transition to half-open
+		// Use a successful function to test state transition
+		err := cb.Call(func() error { return nil })
+		if err != nil {
+			t.Errorf("expected success in half-open, got %v", err)
+		}
+
+		// After success in half-open, should be closed
+		if cb.State() != "closed" {
+			t.Errorf("expected state closed after success, got %s", cb.State())
+		}
+	})
+
+	t.Run("half_open_to_closed_on_success", func(t *testing.T) {
+		clk := newFakeClock(time.Now())
+		cb := NewCircuitBreaker(3, 5*time.Second, WithClock(clk))
+
+		// Open circuit
+		_ = cb.Call(func() error { return errors.New("fail") })
+		_ = cb.Call(func() error { return errors.New("fail") })
+		_ = cb.Call(func() error { return errors.New("fail") })
+
+		// Advance past timeout to reach half-open
+		clk.Advance(6 * time.Second)
+
+		// Success should close circuit
+		err := cb.Call(func() error { return nil })
+		if err != nil {
+			t.Errorf("expected success, got %v", err)
+		}
+		if cb.State() != "closed" {
+			t.Errorf("expected state closed, got %s", cb.State())
+		}
+
+		// Subsequent call should work (circuit is closed)
+		err = cb.Call(func() error { return nil })
+		if err != nil {
+			t.Errorf("expected success after close, got %v", err)
+		}
+	})
+
+	t.Run("half_open_to_open_on_failure", func(t *testing.T) {
+		clk := newFakeClock(time.Now())
+		cb := NewCircuitBreaker(3, 5*time.Second, WithClock(clk))
+
+		// Open circuit
+		_ = cb.Call(func() error { return errors.New("fail") })
+		_ = cb.Call(func() error { return errors.New("fail") })
+		_ = cb.Call(func() error { return errors.New("fail") })
+
+		// Advance past timeout to reach half-open
+		clk.Advance(6 * time.Second)
+
+		// Failure in half-open should reopen circuit
+		err := cb.Call(func() error { return errors.New("fail") })
+		if err == nil || err.Error() != "fail" {
+			t.Errorf("expected failure error, got %v", err)
+		}
+		if cb.State() != "open" {
+			t.Errorf("expected state open after half-open failure, got %s", cb.State())
+		}
+	})
 }
 
 // TestCircuitBreaker_ConcurrentCalls tests thread safety.
@@ -134,12 +166,7 @@ func TestCircuitBreaker_ConcurrentCalls(t *testing.T) {
 // TestCircuitBreaker_ContextCancellation tests context handling.
 // TODO: Implement once circuit breaker supports context.
 func TestCircuitBreaker_ContextCancellation(t *testing.T) {
-	t.Skip("TODO: Implement context cancellation handling")
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // Cancel immediately
-
-	// Verify circuit breaker respects canceled context
-	// Should return context.Canceled error
-	_ = ctx
+	t.Skip("TODO: Circuit breaker does not currently use context")
+	// Future enhancement: Pass context to Call() method
+	// and check context.Done() before executing function
 }
