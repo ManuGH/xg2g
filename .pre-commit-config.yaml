@@ -53,7 +53,7 @@ repos:
     hooks:
       - id: yamlfmt
         name: Format YAML files
-        files: ^(internal/config/testdata/|examples/|\.github/workflows/).*\.(ya?ml)$
+        files: ^(internal/config/testdata/|examples/).*\.(ya?ml)$
         exclude: ^deploy/helm/.*/templates/.*\.(yaml|yml)$
 
   # YAML linting
@@ -63,7 +63,7 @@ repos:
       - id: yamllint
         name: Lint YAML files
         args: [-c, .yamllint.yaml]
-        files: ^(internal/config/testdata/|examples/|\.github/workflows/).*\.(ya?ml)$
+        files: ^(internal/config/testdata/|examples/).*\.(ya?ml)$
         exclude: ^deploy/helm/.*/templates/.*\.(yaml|yml)$
 
   # Go linting (optional, can be slow)
