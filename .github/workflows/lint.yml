@@ -58,7 +58,7 @@ jobs:
         run: go run ./tools/schema-docs ./docs/config.schema.json ./docs/config.md
 
       - name: Upload generated docs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: config-docs
           path: docs/config.md
