@@ -195,6 +195,16 @@ jobs:
           comment_mode: always
           compare_to_earlier_commit: true
 
+      - name: Upload test results to Codecov
+        if: always()
+        uses: codecov/test-results-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: test-results.xml
+          flags: unittests
+          fail_ci_if_error: false
+          verbose: true
+
   benchmark-report:
     name: Benchmark Report
     runs-on: ubuntu-latest

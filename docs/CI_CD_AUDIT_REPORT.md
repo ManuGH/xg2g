@@ -516,6 +516,7 @@ Key procedures:
 - Weekly/Monthly/Quarterly monitoring KPIs
 - Threshold validation after 5 PRs
 - Troubleshooting guide (upload failures, carryforward issues)
+- **Test Analytics integration** (failed test reporting, flaky test detection)
 - Rust transcoder coverage integration (future)
 
 ### Technical Validation
@@ -559,4 +560,5 @@ grep -r "covermode" .github/workflows/*.yml
 |------|---------|---------|--------|
 | 2025-11-02 | 1.0 | Initial audit report | 2ff4d83 |
 | 2025-11-02 | 1.1 | Added Codecov integration | 0e837c1 |
-| 2025-11-03 | 1.2 | Added operational runbook, technical validation | TBD |
+| 2025-11-03 | 1.2 | Added operational runbook, technical validation | 975ba5f |
+| 2025-11-03 | 1.3 | Added Test Analytics integration (test-results-action@v1) | TBD |

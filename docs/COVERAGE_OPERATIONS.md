@@ -414,11 +414,223 @@ docs/CI_CD_AUDIT_REPORT.md → Appendix A → Known Issues
 
 ---
 
-## 8. Changelog
+## 8. Test Analytics (Advanced)
+
+**Status:** ✅ Active (test-results-action@v1 in test-report.yml)
+
+### Overview
+
+Codecov Test Analytics provides additional insights beyond code coverage:
+
+| Feature | Description | Benefit |
+|---------|-------------|---------|
+| **Failed Test Reporting** | Lists failed tests in PR comments with stack traces | Faster debugging |
+| **Flaky Test Detection** | Identifies tests that fail intermittently | Improve test reliability |
+| **Test Performance Tracking** | Monitors test run times over time | Identify slow tests |
+| **Test History** | View test results across commits | Trend analysis |
+
+### Current Integration
+
+**test-report.yml** already uploads JUnit XML to Codecov:
+
+```yaml
+- name: Upload test results to Codecov
+  if: always()
+  uses: codecov/test-results-action@v1
+  with:
+    token: ${{ secrets.CODECOV_TOKEN }}
+    files: test-results.xml
+    flags: unittests
+    fail_ci_if_error: false
+    verbose: true
+```
+
+**Data flow:**
+1. `gotestsum` generates `test-results.xml` (JUnit format)
+2. `codecov/test-results-action@v1` uploads to Codecov
+3. Codecov processes test history and failures
+4. Results appear in:
+   - Codecov Dashboard → Tests tab
+   - PR comments (if tests fail)
+   - Flaky test reports
+
+### Monitoring Test Analytics
+
+**Weekly Review (Codecov Dashboard → Tests):**
+
+1. **Failed Test Rate**
+   - Target: <5% failure rate
+   - Alert: >10% failure rate sustained over 3 days
+
+2. **Flaky Test Detection**
+   - Check "Flaky Tests" tab
+   - Investigate tests with >20% flakiness
+   - Add to flaky test suppression list or fix
+
+3. **Slow Test Performance**
+   - Review "Test Duration" metrics
+   - Target: P95 test time <5s per test
+   - Optimize or parallelize tests >10s
+
+**Monthly Flaky Test Audit:**
+
+```bash
+# Export flaky tests from Codecov
+# (Via UI: Tests → Flaky Tests → Export CSV)
+
+# Review flaky test list
+# For each flaky test:
+# 1. Check flakiness percentage (>20% = investigate)
+# 2. Review test implementation
+# 3. Common causes:
+#    - Race conditions (use -race flag)
+#    - External dependencies (mock or skip in unit tests)
+#    - Timing-sensitive assertions (use Eventually/Consistently)
+#    - Resource leaks (check goroutine/file handle cleanup)
+```
+
+### Test Analytics Best Practices
+
+**1. JUnit XML Quality:**
+
+```yaml
+# Ensure test names are descriptive
+func TestAPIEndpoint_WithValidToken_ReturnsSuccess(t *testing.T) {
+  // Test name appears in Codecov UI
+}
+
+# Not recommended:
+func TestAPI1(t *testing.T) {
+  // Unclear in analytics
+}
+```
+
+**2. Test Isolation:**
+
+```go
+// Good: Each test is independent
+func TestCache_Get(t *testing.T) {
+  cache := NewCache()
+  defer cache.Close()
+  // Test logic
+}
+
+// Bad: Shared state causes flakiness
+var globalCache = NewCache()
+func TestCache_Get(t *testing.T) {
+  // Flaky due to shared state
+}
+```
+
+**3. Timeout Configuration:**
+
+```go
+// Use context with timeout for network tests
+func TestHTTPClient_Timeout(t *testing.T) {
+  ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+  defer cancel()
+  // Test with ctx
+}
+```
+
+### Troubleshooting
+
+**Issue: Tests not appearing in Codecov**
+
+**Solutions:**
+
+1. Verify JUnit XML is valid:
+   ```bash
+   # Check XML structure
+   head -20 test-results.xml
+
+   # Validate XML syntax
+   xmllint --noout test-results.xml
+   ```
+
+2. Check upload logs:
+   ```bash
+   # In GitHub Actions log, look for:
+   # "Uploading test results to Codecov"
+   # "Successfully uploaded test results"
+   ```
+
+3. Verify token is set:
+   ```bash
+   gh secret list | grep CODECOV_TOKEN
+   ```
+
+**Issue: Flaky test detection not working**
+
+**Requirements:**
+- Test must run multiple times (at least 3 commits)
+- Test must fail at least once
+- Test name must be consistent across runs
+
+**If flaky test not detected:**
+1. Check test name consistency
+2. Ensure test runs on main branch (not just PRs)
+3. Wait for 5+ commits with test execution
+
+### Integration with Coverage
+
+Test Analytics uses the same `flags` as coverage:
+
+```yaml
+# coverage.yml
+flags:
+  unittests:
+    paths: ["internal/"]
+    carryforward: true
+
+# test-report.yml
+- uses: codecov/test-results-action@v1
+  with:
+    flags: unittests  # Same flag name
+```
+
+**Benefits:**
+- Unified view of coverage + test health per flag
+- Carryforward applies to both coverage and test results
+- Component-level insights include test failures
+
+### Future Enhancements
+
+**1. Integration Tests:**
+
+```yaml
+# Add to integration-tests.yml (when created)
+- uses: codecov/test-results-action@v1
+  with:
+    flags: integration
+    files: integration-results.xml
+```
+
+**2. Contract Tests:**
+
+```yaml
+# Add to contract-tests.yml (when created)
+- uses: codecov/test-results-action@v1
+  with:
+    flags: contract
+    files: contract-results.xml
+```
+
+**3. Performance Benchmarks:**
+
+```yaml
+# Convert benchmark output to JUnit XML
+# (Requires custom tooling or gotestsum enhancement)
+```
+
+---
+
+## 9. Changelog
 
 | Date | Version | Changes |
 |------|---------|---------|
 | 2025-11-02 | 1.0 | Initial runbook (commit 0e837c1) |
+| 2025-11-03 | 1.1 | Added Test Analytics section, test-results-action integration | TBD |
 
 ---
 
