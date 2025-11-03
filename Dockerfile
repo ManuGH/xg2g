@@ -3,7 +3,7 @@
 # =============================================================================
 # Stage 1: Build Rust Remuxer (ac-ffmpeg library for audio transcoding)
 # =============================================================================
-FROM rust:1.84-alpine AS rust-builder
+FROM rust:1.91-alpine AS rust-builder
 
 WORKDIR /build
 
