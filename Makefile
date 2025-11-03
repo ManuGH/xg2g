@@ -703,7 +703,7 @@ mon-ps: ## Show monitoring containers [TODO: docker-compose.monitoring.yml not y
 # Pre-Commit Hooks und Linting
 # ============================================================================
 
-.PHONY: hooks lint-yaml validate
+.PHONY: hooks lint-yaml validate schema-docs schema-validate
 
 hooks:
 	@pre-commit install
@@ -713,6 +713,22 @@ lint-yaml:
 	@yamllint -c .yamllint.yaml internal/config/testdata examples .github/workflows
 	@yamlfmt -lint internal/config/testdata examples .github/workflows
 
-
 validate:
 	@test -f config.yaml && go run ./cmd/validate -f config.yaml || go run ./cmd/validate -f config.example.yaml
+
+schema-docs: ## Generate docs/config.md from JSON Schema
+	@echo "Generating config documentation from JSON Schema..."
+	@go run ./tools/schema-docs ./docs/config.schema.json ./docs/config.md
+	@echo "✓ Generated docs/config.md"
+
+schema-validate: ## Validate all YAML config files against JSON Schema
+	@echo "Validating config files against JSON Schema..."
+	@if command -v check-jsonschema >/dev/null 2>&1; then \
+		check-jsonschema --schemafile docs/config.schema.json config.example.yaml; \
+		find internal/config/testdata -name 'valid-*.yaml' -type f -print0 2>/dev/null | xargs -0 -I{} check-jsonschema --schemafile docs/config.schema.json {} || true; \
+		if [ -d examples ]; then find examples -name '*.ya?ml' -type f -print0 | xargs -0 -I{} check-jsonschema --schemafile docs/config.schema.json {} || true; fi; \
+		echo "✓ Schema validation complete"; \
+	else \
+		echo "⚠  check-jsonschema not installed, skipping schema validation"; \
+		echo "   Install with: pip install check-jsonschema"; \
+	fi

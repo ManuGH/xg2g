@@ -54,6 +54,16 @@ jobs:
           find internal/config/testdata -name 'valid*.yaml' -maxdepth 1 -type f -print0 | xargs -0 -I{} check-jsonschema --schemafile docs/config.schema.json {}
           if [ -d examples ]; then find examples -name '*.ya?ml' -type f -print0 | xargs -0 -I{} check-jsonschema --schemafile docs/config.schema.json {}; fi
 
+      - name: Generate config docs from schema
+        run: go run ./tools/schema-docs ./docs/config.schema.json ./docs/config.md
+
+      - name: Upload generated docs
+        uses: actions/upload-artifact@v4
+        with:
+          name: config-docs
+          path: docs/config.md
+          retention-days: 30
+
       - name: Build validate
         run: go build -o validate ./cmd/validate
 
