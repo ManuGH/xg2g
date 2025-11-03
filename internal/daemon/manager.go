@@ -100,16 +100,23 @@ func (m *manager) Start(ctx context.Context) error {
 		}
 	}
 
-	// Start metrics server if configured
-	if m.deps.MetricsHandler != nil {
+	// Check if running in proxy-only mode
+	proxyOnlyMode := config.ParseString("XG2G_PROXY_ONLY_MODE", "false") == "true"
+
+	// Start metrics server if configured (skip in proxy-only mode)
+	if !proxyOnlyMode && m.deps.MetricsHandler != nil {
 		if err := m.startMetricsServer(ctx, errChan); err != nil {
 			return fmt.Errorf("failed to start metrics server: %w", err)
 		}
 	}
 
-	// Start main API server
-	if err := m.startAPIServer(ctx, errChan); err != nil {
-		return fmt.Errorf("failed to start API server: %w", err)
+	// Start main API server (skip in proxy-only mode)
+	if !proxyOnlyMode {
+		if err := m.startAPIServer(ctx, errChan); err != nil {
+			return fmt.Errorf("failed to start API server: %w", err)
+		}
+	} else {
+		m.logger.Info().Msg("Running in proxy-only mode (API server disabled)")
 	}
 
 	// Wait for shutdown signal or server error
