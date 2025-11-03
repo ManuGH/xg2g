@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -408,6 +409,54 @@ func TestHDHomeRunServer(t *testing.T) {
 	}
 }
 
+// TestHandler tests the Handler method with and without audit logger.
+func TestHandler(t *testing.T) {
+	t.Run("without_audit_logger", func(t *testing.T) {
+		cfg := jobs.Config{
+			DataDir: t.TempDir(),
+			Bouquet: "test",
+		}
+		s := New(cfg)
+		handler := s.Handler()
+
+		if handler == nil {
+			t.Fatal("expected handler, got nil")
+		}
+
+		// Test basic endpoint
+		req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
+		}
+	})
+
+	t.Run("with_audit_logger", func(t *testing.T) {
+		cfg := jobs.Config{
+			DataDir: t.TempDir(),
+			Bouquet: "test",
+		}
+		s := New(cfg)
+		s.SetAuditLogger(fakeAuditLogger{})
+		handler := s.Handler()
+
+		if handler == nil {
+			t.Fatal("expected handler, got nil")
+		}
+
+		// Test basic endpoint
+		req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
+		}
+	})
+}
+
 // TestNewRouter tests the NewRouter function.
 func TestNewRouter(t *testing.T) {
 	cfg := jobs.Config{
@@ -428,6 +477,117 @@ func TestNewRouter(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
 	}
+}
+
+// TestAuthMiddleware_Standalone tests AuthMiddleware directly (auth disabled, valid, missing, invalid).
+func TestAuthMiddleware_Standalone(t *testing.T) {
+	mockHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("authenticated"))
+	})
+
+	t.Run("auth_disabled_no_env_token", func(t *testing.T) {
+		// Clear any existing token
+		oldToken := os.Getenv("XG2G_API_TOKEN")
+		os.Unsetenv("XG2G_API_TOKEN")
+		defer func() {
+			if oldToken != "" {
+				os.Setenv("XG2G_API_TOKEN", oldToken)
+			}
+		}()
+
+		wrapped := AuthMiddleware(mockHandler)
+		req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
+		req = req.WithContext(context.Background())
+		rr := httptest.NewRecorder()
+
+		wrapped.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected status %d when auth disabled, got %d", http.StatusOK, rr.Code)
+		}
+		if body := rr.Body.String(); body != "authenticated" {
+			t.Errorf("expected body %q, got %q", "authenticated", body)
+		}
+	})
+
+	t.Run("auth_enabled_valid_token", func(t *testing.T) {
+		oldToken := os.Getenv("XG2G_API_TOKEN")
+		os.Setenv("XG2G_API_TOKEN", "secret-test-token")
+		defer func() {
+			if oldToken != "" {
+				os.Setenv("XG2G_API_TOKEN", oldToken)
+			} else {
+				os.Unsetenv("XG2G_API_TOKEN")
+			}
+		}()
+
+		wrapped := AuthMiddleware(mockHandler)
+		req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
+		req.Header.Set("X-API-Token", "secret-test-token")
+		req = req.WithContext(context.Background())
+		rr := httptest.NewRecorder()
+
+		wrapped.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected status %d with valid token, got %d", http.StatusOK, rr.Code)
+		}
+	})
+
+	t.Run("auth_enabled_missing_token", func(t *testing.T) {
+		oldToken := os.Getenv("XG2G_API_TOKEN")
+		os.Setenv("XG2G_API_TOKEN", "secret-test-token")
+		defer func() {
+			if oldToken != "" {
+				os.Setenv("XG2G_API_TOKEN", oldToken)
+			} else {
+				os.Unsetenv("XG2G_API_TOKEN")
+			}
+		}()
+
+		wrapped := AuthMiddleware(mockHandler)
+		req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
+		// No X-API-Token header
+		req = req.WithContext(context.Background())
+		rr := httptest.NewRecorder()
+
+		wrapped.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusUnauthorized {
+			t.Errorf("expected status %d with missing token, got %d", http.StatusUnauthorized, rr.Code)
+		}
+		if !strings.Contains(rr.Body.String(), "Missing API token") {
+			t.Errorf("expected body to contain 'Missing API token', got: %s", rr.Body.String())
+		}
+	})
+
+	t.Run("auth_enabled_invalid_token", func(t *testing.T) {
+		oldToken := os.Getenv("XG2G_API_TOKEN")
+		os.Setenv("XG2G_API_TOKEN", "secret-test-token")
+		defer func() {
+			if oldToken != "" {
+				os.Setenv("XG2G_API_TOKEN", oldToken)
+			} else {
+				os.Unsetenv("XG2G_API_TOKEN")
+			}
+		}()
+
+		wrapped := AuthMiddleware(mockHandler)
+		req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
+		req.Header.Set("X-API-Token", "wrong-token")
+		req = req.WithContext(context.Background())
+		rr := httptest.NewRecorder()
+
+		wrapped.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusForbidden {
+			t.Errorf("expected status %d with invalid token, got %d", http.StatusForbidden, rr.Code)
+		}
+		if !strings.Contains(rr.Body.String(), "Invalid API token") {
+			t.Errorf("expected body to contain 'Invalid API token', got: %s", rr.Body.String())
+		}
+	})
 }
 
 // TestHandlerWithMockUpstream shows how to test handlers with fake upstream services.
