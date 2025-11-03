@@ -293,3 +293,263 @@ func TestHandleStatus_MethodNotAllowed(t *testing.T) {
 		t.Error("HandleStatus() did not write a response")
 	}
 }
+
+func TestHandleStatus_WithReceiverCheck(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name               string
+		receiverStatus     int
+		receiverResponse   string
+		wantOverallStatus  string
+		wantReceiverStatus bool
+	}{
+		{
+			name:               "receiver reachable",
+			receiverStatus:     http.StatusOK,
+			receiverResponse:   `{"e2currenttime":"123456"}`,
+			wantOverallStatus:  "ok",
+			wantReceiverStatus: true,
+		},
+		{
+			name:               "receiver unreachable - bad status",
+			receiverStatus:     http.StatusInternalServerError,
+			receiverResponse:   `{}`,
+			wantOverallStatus:  "degraded",
+			wantReceiverStatus: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Create mock receiver server
+			mockReceiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/api/statusinfo" {
+					w.WriteHeader(tt.receiverStatus)
+					_, _ = w.Write([]byte(tt.receiverResponse))
+				}
+			}))
+			defer mockReceiver.Close()
+
+			// Create test server with OWI config
+			cfg := jobs.Config{
+				Version: "1.7.0",
+				DataDir: t.TempDir(),
+				OWIBase: mockReceiver.URL,
+			}
+			srv := api.New(cfg)
+			srv.SetStatus(jobs.Status{
+				Version:  "1.7.0",
+				LastRun:  time.Date(2025, 11, 1, 10, 0, 0, 0, time.UTC),
+				Channels: 42,
+			})
+
+			handler := v1.NewHandler(srv)
+
+			// Create test request with check_receiver query param
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/status?check_receiver=true", nil)
+			req = req.WithContext(context.Background())
+			w := httptest.NewRecorder()
+
+			// Execute handler
+			handler.HandleStatus(w, req)
+
+			// Assert response code
+			if w.Code != http.StatusOK {
+				t.Errorf("HandleStatus() status = %v, want %v", w.Code, http.StatusOK)
+			}
+
+			// Parse response
+			var resp v1.StatusResponse
+			if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+				t.Fatalf("HandleStatus() failed to decode response: %v", err)
+			}
+
+			// Assert overall status
+			if resp.Status != tt.wantOverallStatus {
+				t.Errorf("HandleStatus() status = %v, want %v", resp.Status, tt.wantOverallStatus)
+			}
+
+			// Assert receiver status included
+			if resp.Receiver == nil {
+				t.Fatal("HandleStatus() receiver status is nil, want non-nil")
+			}
+
+			// Assert receiver reachability
+			if resp.Receiver.Reachable != tt.wantReceiverStatus {
+				t.Errorf("HandleStatus() receiver.reachable = %v, want %v", resp.Receiver.Reachable, tt.wantReceiverStatus)
+			}
+		})
+	}
+}
+
+func TestHandleStatus_ReceiverNotConfigured(t *testing.T) {
+	t.Parallel()
+
+	// Create test server without OWI config
+	cfg := jobs.Config{
+		Version: "1.7.0",
+		DataDir: t.TempDir(),
+	}
+	srv := api.New(cfg)
+	srv.SetStatus(jobs.Status{
+		Version:  "1.7.0",
+		LastRun:  time.Date(2025, 11, 1, 10, 0, 0, 0, time.UTC),
+		Channels: 42,
+	})
+
+	handler := v1.NewHandler(srv)
+
+	// Create test request with check_receiver query param
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/status?check_receiver=true", nil)
+	req = req.WithContext(context.Background())
+	w := httptest.NewRecorder()
+
+	// Execute handler
+	handler.HandleStatus(w, req)
+
+	// Parse response
+	var resp v1.StatusResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("HandleStatus() failed to decode response: %v", err)
+	}
+
+	// Assert receiver status included
+	if resp.Receiver == nil {
+		t.Fatal("HandleStatus() receiver status is nil, want non-nil")
+	}
+
+	// Assert receiver unreachable with appropriate error
+	if resp.Receiver.Reachable {
+		t.Error("HandleStatus() receiver.reachable = true, want false for unconfigured receiver")
+	}
+
+	if resp.Receiver.Error != "receiver not configured" {
+		t.Errorf("HandleStatus() receiver.error = %q, want 'receiver not configured'", resp.Receiver.Error)
+	}
+}
+
+func TestHandleStatus_ReceiverTimeout(t *testing.T) {
+	t.Parallel()
+
+	// Create mock receiver that delays response
+	mockReceiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Sleep longer than the 5-second timeout
+		time.Sleep(6 * time.Second)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer mockReceiver.Close()
+
+	// Create test server with OWI config
+	cfg := jobs.Config{
+		Version: "1.7.0",
+		DataDir: t.TempDir(),
+		OWIBase: mockReceiver.URL,
+	}
+	srv := api.New(cfg)
+	srv.SetStatus(jobs.Status{
+		Version:  "1.7.0",
+		LastRun:  time.Date(2025, 11, 1, 10, 0, 0, 0, time.UTC),
+		Channels: 42,
+	})
+
+	handler := v1.NewHandler(srv)
+
+	// Create test request with check_receiver query param
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/status?check_receiver=true", nil)
+	req = req.WithContext(context.Background())
+	w := httptest.NewRecorder()
+
+	// Execute handler (should timeout)
+	handler.HandleStatus(w, req)
+
+	// Parse response
+	var resp v1.StatusResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("HandleStatus() failed to decode response: %v", err)
+	}
+
+	// Assert receiver unreachable due to timeout
+	if resp.Receiver == nil {
+		t.Fatal("HandleStatus() receiver status is nil, want non-nil")
+	}
+
+	if resp.Receiver.Reachable {
+		t.Error("HandleStatus() receiver.reachable = true, want false for timeout")
+	}
+
+	// Overall status should be degraded
+	if resp.Status != "degraded" {
+		t.Errorf("HandleStatus() status = %v, want degraded", resp.Status)
+	}
+}
+
+func TestHandleStatus_ReceiverWithAuth(t *testing.T) {
+	t.Parallel()
+
+	// Track if auth was provided
+	authProvided := false
+
+	// Create mock receiver that requires auth
+	mockReceiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/statusinfo" {
+			// Check for basic auth
+			user, pass, ok := r.BasicAuth()
+			if ok && user == "testuser" && pass == "testpass" {
+				authProvided = true
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"e2currenttime":"123456"}`))
+			} else {
+				w.WriteHeader(http.StatusUnauthorized)
+			}
+		}
+	}))
+	defer mockReceiver.Close()
+
+	// Create test server with OWI config including auth
+	cfg := jobs.Config{
+		Version:     "1.7.0",
+		DataDir:     t.TempDir(),
+		OWIBase:     mockReceiver.URL,
+		OWIUsername: "testuser",
+		OWIPassword: "testpass",
+	}
+	srv := api.New(cfg)
+	srv.SetStatus(jobs.Status{
+		Version:  "1.7.0",
+		LastRun:  time.Date(2025, 11, 1, 10, 0, 0, 0, time.UTC),
+		Channels: 42,
+	})
+
+	handler := v1.NewHandler(srv)
+
+	// Create test request with check_receiver query param
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/status?check_receiver=true", nil)
+	req = req.WithContext(context.Background())
+	w := httptest.NewRecorder()
+
+	// Execute handler
+	handler.HandleStatus(w, req)
+
+	// Verify auth was used
+	if !authProvided {
+		t.Error("HandleStatus() did not provide basic auth to receiver")
+	}
+
+	// Parse response
+	var resp v1.StatusResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("HandleStatus() failed to decode response: %v", err)
+	}
+
+	// Assert receiver reachable with auth
+	if resp.Receiver == nil {
+		t.Fatal("HandleStatus() receiver status is nil, want non-nil")
+	}
+
+	if !resp.Receiver.Reachable {
+		t.Errorf("HandleStatus() receiver.reachable = false, want true with valid auth")
+	}
+}

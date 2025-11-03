@@ -154,6 +154,60 @@ func TestCircuitBreaker_StateMachine(t *testing.T) {
 	})
 }
 
+func TestNewCircuitBreaker_DefaultValues(t *testing.T) {
+	tests := []struct {
+		name            string
+		threshold       int
+		timeout         time.Duration
+		expectThreshold int
+		expectTimeout   time.Duration
+	}{
+		{
+			name:            "zero threshold and timeout",
+			threshold:       0,
+			timeout:         0,
+			expectThreshold: 3,
+			expectTimeout:   30 * time.Second,
+		},
+		{
+			name:            "negative threshold",
+			threshold:       -1,
+			timeout:         10 * time.Second,
+			expectThreshold: 3,
+			expectTimeout:   10 * time.Second,
+		},
+		{
+			name:            "negative timeout",
+			threshold:       5,
+			timeout:         -5 * time.Second,
+			expectThreshold: 5,
+			expectTimeout:   30 * time.Second,
+		},
+		{
+			name:            "valid values",
+			threshold:       10,
+			timeout:         60 * time.Second,
+			expectThreshold: 10,
+			expectTimeout:   60 * time.Second,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cb := NewCircuitBreaker(tt.threshold, tt.timeout)
+			if cb.threshold != tt.expectThreshold {
+				t.Errorf("expected threshold %d, got %d", tt.expectThreshold, cb.threshold)
+			}
+			if cb.timeout != tt.expectTimeout {
+				t.Errorf("expected timeout %v, got %v", tt.expectTimeout, cb.timeout)
+			}
+			if cb.state != circuitStateClosed {
+				t.Errorf("expected initial state closed, got %s", cb.State())
+			}
+		})
+	}
+}
+
 // TestCircuitBreaker_ConcurrentCalls tests thread safety.
 // TODO: Implement once circuit breaker is ready for testing.
 func TestCircuitBreaker_ConcurrentCalls(t *testing.T) {

@@ -132,6 +132,53 @@ func TestClientIP(t *testing.T) {
 			headers:    map[string]string{},
 			expected:   "invalid",
 		},
+		{
+			name:       "X-Forwarded-For header (untrusted)",
+			remoteAddr: "192.168.1.1:12345",
+			headers: map[string]string{
+				"X-Forwarded-For": "203.0.113.1",
+			},
+			// Since 192.168.1.1 is not in XG2G_TRUSTED_PROXIES, ignore header
+			expected: "192.168.1.1",
+		},
+		{
+			name:       "X-Real-IP header (untrusted)",
+			remoteAddr: "192.168.1.1:12345",
+			headers: map[string]string{
+				"X-Real-IP": "203.0.113.5",
+			},
+			// Since 192.168.1.1 is not in XG2G_TRUSTED_PROXIES, ignore header
+			expected: "192.168.1.1",
+		},
+		{
+			name:       "X-Forwarded-For multiple IPs",
+			remoteAddr: "10.0.0.1:8080",
+			headers: map[string]string{
+				"X-Forwarded-For": "203.0.113.1, 198.51.100.1, 192.0.2.1",
+			},
+			// Takes first IP if trusted, otherwise remoteAddr
+			expected: "10.0.0.1",
+		},
+		{
+			name:       "X-Forwarded-For with spaces",
+			remoteAddr: "10.0.0.1:8080",
+			headers: map[string]string{
+				"X-Forwarded-For": "  203.0.113.1  ",
+			},
+			expected: "10.0.0.1",
+		},
+		{
+			name:       "IPv6 address",
+			remoteAddr: "[::1]:8080",
+			headers:    map[string]string{},
+			expected:   "::1",
+		},
+		{
+			name:       "remote addr without port",
+			remoteAddr: "203.0.113.1",
+			headers:    map[string]string{},
+			expected:   "203.0.113.1",
+		},
 	}
 
 	for _, tt := range tests {
@@ -229,5 +276,143 @@ func TestPanicRecoveryMiddlewareNormalFlow(t *testing.T) {
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, rr.Code)
+	}
+}
+
+func TestCORSMiddleware(t *testing.T) {
+	okHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	tests := []struct {
+		name         string
+		method       string
+		origin       string
+		expectOrigin string
+		expectStatus int
+	}{
+		{
+			name:         "allowed origin localhost:3000",
+			method:       http.MethodGet,
+			origin:       "http://localhost:3000",
+			expectOrigin: "http://localhost:3000",
+			expectStatus: http.StatusOK,
+		},
+		{
+			name:         "no origin header",
+			method:       http.MethodGet,
+			origin:       "",
+			expectOrigin: "*",
+			expectStatus: http.StatusOK,
+		},
+		{
+			name:         "disallowed origin",
+			method:       http.MethodGet,
+			origin:       "http://evil.com",
+			expectOrigin: "",
+			expectStatus: http.StatusOK,
+		},
+		{
+			name:         "OPTIONS preflight allowed origin",
+			method:       http.MethodOptions,
+			origin:       "http://localhost:8080",
+			expectOrigin: "http://localhost:8080",
+			expectStatus: http.StatusNoContent,
+		},
+		{
+			name:         "OPTIONS preflight no origin",
+			method:       http.MethodOptions,
+			origin:       "",
+			expectOrigin: "*",
+			expectStatus: http.StatusNoContent,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := corsMiddleware(okHandler)
+			req := httptest.NewRequest(tt.method, "/", nil)
+			if tt.origin != "" {
+				req.Header.Set("Origin", tt.origin)
+			}
+			rr := httptest.NewRecorder()
+
+			handler.ServeHTTP(rr, req)
+
+			if rr.Code != tt.expectStatus {
+				t.Errorf("expected status %d, got %d", tt.expectStatus, rr.Code)
+			}
+
+			gotOrigin := rr.Header().Get("Access-Control-Allow-Origin")
+			if gotOrigin != tt.expectOrigin {
+				t.Errorf("expected origin %q, got %q", tt.expectOrigin, gotOrigin)
+			}
+
+			// Verify common CORS headers are present
+			if rr.Header().Get("Access-Control-Allow-Methods") == "" {
+				t.Error("expected Access-Control-Allow-Methods header")
+			}
+			if rr.Header().Get("Access-Control-Allow-Headers") == "" {
+				t.Error("expected Access-Control-Allow-Headers header")
+			}
+		})
+	}
+}
+
+func TestRemoteIsTrusted(t *testing.T) {
+	// Note: trustedCIDRs is loaded once from XG2G_TRUSTED_PROXIES env var
+	// These tests verify the logic paths regardless of env config
+
+	tests := []struct {
+		name   string
+		remote string
+		// We can't predict result without knowing env, but we can test all branches
+		testLogic bool
+	}{
+		{
+			name:      "valid IP with port",
+			remote:    "192.168.1.100:8080",
+			testLogic: true,
+		},
+		{
+			name:      "valid IP without port",
+			remote:    "10.0.0.1",
+			testLogic: true,
+		},
+		{
+			name:      "localhost with port",
+			remote:    "127.0.0.1:12345",
+			testLogic: true,
+		},
+		{
+			name:      "invalid IP format",
+			remote:    "not-an-ip",
+			testLogic: true,
+		},
+		{
+			name:      "empty string",
+			remote:    "",
+			testLogic: true,
+		},
+		{
+			name:      "IPv6 with port",
+			remote:    "[::1]:8080",
+			testLogic: true,
+		},
+		{
+			name:      "IPv6 without port",
+			remote:    "::1",
+			testLogic: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Call the function to exercise all code paths
+			result := remoteIsTrusted(tt.remote)
+			// Result depends on XG2G_TRUSTED_PROXIES env var
+			// We just verify it doesn't panic and returns a bool
+			_ = result
+		})
 	}
 }

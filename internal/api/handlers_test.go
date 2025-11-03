@@ -13,6 +13,8 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/hdhr"
 	"github.com/ManuGH/xg2g/internal/jobs"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestGetConfig tests the GetConfig method.
@@ -489,10 +491,10 @@ func TestAuthMiddleware_Standalone(t *testing.T) {
 	t.Run("auth_disabled_no_env_token", func(t *testing.T) {
 		// Clear any existing token
 		oldToken := os.Getenv("XG2G_API_TOKEN")
-		os.Unsetenv("XG2G_API_TOKEN")
+		_ = os.Unsetenv("XG2G_API_TOKEN")
 		defer func() {
 			if oldToken != "" {
-				os.Setenv("XG2G_API_TOKEN", oldToken)
+				_ = os.Setenv("XG2G_API_TOKEN", oldToken)
 			}
 		}()
 
@@ -513,12 +515,12 @@ func TestAuthMiddleware_Standalone(t *testing.T) {
 
 	t.Run("auth_enabled_valid_token", func(t *testing.T) {
 		oldToken := os.Getenv("XG2G_API_TOKEN")
-		os.Setenv("XG2G_API_TOKEN", "secret-test-token")
+		_ = os.Setenv("XG2G_API_TOKEN", "secret-test-token")
 		defer func() {
 			if oldToken != "" {
-				os.Setenv("XG2G_API_TOKEN", oldToken)
+				_ = os.Setenv("XG2G_API_TOKEN", oldToken)
 			} else {
-				os.Unsetenv("XG2G_API_TOKEN")
+				_ = os.Unsetenv("XG2G_API_TOKEN")
 			}
 		}()
 
@@ -537,12 +539,12 @@ func TestAuthMiddleware_Standalone(t *testing.T) {
 
 	t.Run("auth_enabled_missing_token", func(t *testing.T) {
 		oldToken := os.Getenv("XG2G_API_TOKEN")
-		os.Setenv("XG2G_API_TOKEN", "secret-test-token")
+		_ = os.Setenv("XG2G_API_TOKEN", "secret-test-token")
 		defer func() {
 			if oldToken != "" {
-				os.Setenv("XG2G_API_TOKEN", oldToken)
+				_ = os.Setenv("XG2G_API_TOKEN", oldToken)
 			} else {
-				os.Unsetenv("XG2G_API_TOKEN")
+				_ = os.Unsetenv("XG2G_API_TOKEN")
 			}
 		}()
 
@@ -564,12 +566,12 @@ func TestAuthMiddleware_Standalone(t *testing.T) {
 
 	t.Run("auth_enabled_invalid_token", func(t *testing.T) {
 		oldToken := os.Getenv("XG2G_API_TOKEN")
-		os.Setenv("XG2G_API_TOKEN", "secret-test-token")
+		_ = os.Setenv("XG2G_API_TOKEN", "secret-test-token")
 		defer func() {
 			if oldToken != "" {
-				os.Setenv("XG2G_API_TOKEN", oldToken)
+				_ = os.Setenv("XG2G_API_TOKEN", oldToken)
 			} else {
-				os.Unsetenv("XG2G_API_TOKEN")
+				_ = os.Unsetenv("XG2G_API_TOKEN")
 			}
 		}()
 
@@ -629,4 +631,76 @@ func TestHandlerWithTimeout(t *testing.T) {
 
 	// TODO: Test that handler respects context timeout
 	// Should return 504 Gateway Timeout or similar
+}
+
+// checkFile Tests
+
+func TestCheckFile_RegularFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "test.txt")
+	require.NoError(t, os.WriteFile(filePath, []byte("test content"), 0644))
+
+	result := checkFile(context.Background(), filePath)
+	assert.True(t, result)
+}
+
+func TestCheckFile_Directory(t *testing.T) {
+	tmpDir := t.TempDir()
+	result := checkFile(context.Background(), tmpDir)
+	assert.False(t, result)
+}
+
+func TestCheckFile_NotExist(t *testing.T) {
+	result := checkFile(context.Background(), "/nonexistent/file.txt")
+	assert.False(t, result)
+}
+
+func TestCheckFile_NoPermission(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "restricted.txt")
+	require.NoError(t, os.WriteFile(filePath, []byte("test"), 0000))
+
+	// Clean up permissions after test
+	t.Cleanup(func() {
+		_ = os.Chmod(filePath, 0644)
+	})
+
+	result := checkFile(context.Background(), filePath)
+	assert.False(t, result)
+}
+
+// V2 Routes Tests
+
+func TestRegisterV2Routes_StatusEndpoint(t *testing.T) {
+	// Enable API_V2 feature flag
+	t.Setenv("XG2G_FEATURE_API_V2", "true")
+
+	cfg := jobs.Config{
+		DataDir: t.TempDir(),
+		Version: "test-v2",
+	}
+
+	srv := New(cfg)
+	srv.SetStatus(jobs.Status{
+		Version:  "test-v2",
+		Channels: 100,
+		LastRun:  time.Now(),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/status", nil)
+	w := httptest.NewRecorder()
+
+	// The server's routes() method includes registerV2Routes when feature flag is enabled
+	srv.routes().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
+	assert.Equal(t, "2", w.Header().Get("X-API-Version"))
+
+	var resp map[string]interface{}
+	err := json.NewDecoder(w.Body).Decode(&resp)
+	require.NoError(t, err)
+
+	assert.Equal(t, "API v2 is under development", resp["message"])
+	assert.Equal(t, "preview", resp["status"])
 }

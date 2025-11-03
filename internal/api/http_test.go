@@ -3,6 +3,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -494,6 +495,180 @@ http://example.com/stream1
 	assert.Contains(t, body, `id="42"`)
 	assert.Contains(t, body, `channel="42"`)
 	assert.NotContains(t, body, `id="oldID1"`)
+}
+
+func TestHandleXMLTV_EmptyPath(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	cfg := jobs.Config{
+		DataDir:   tmpDir,
+		XMLTVPath: "", // Empty path - not configured
+	}
+
+	server := New(cfg)
+	handler := server.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusNotFound, rr.Code)
+	assert.Contains(t, rr.Body.String(), "XMLTV file not available")
+}
+
+func TestHandleXMLTV_M3UNotFound(t *testing.T) {
+	tmpDir := t.TempDir()
+	xmltvPath := filepath.Join(tmpDir, "xmltv.xml")
+
+	xmltvContent := `<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="channel1">
+    <display-name>Channel One</display-name>
+  </channel>
+</tv>`
+
+	require.NoError(t, os.WriteFile(xmltvPath, []byte(xmltvContent), 0o600))
+	// No M3U file created - should serve raw XMLTV
+
+	cfg := jobs.Config{
+		DataDir:   tmpDir,
+		XMLTVPath: "xmltv.xml",
+	}
+
+	server := New(cfg)
+	handler := server.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/xml; charset=utf-8", rr.Header().Get("Content-Type"))
+	assert.Contains(t, rr.Body.String(), "channel1") // Original ID preserved
+}
+
+func TestHandleXMLTV_M3UTooLarge(t *testing.T) {
+	tmpDir := t.TempDir()
+	xmltvPath := filepath.Join(tmpDir, "xmltv.xml")
+	m3uPath := filepath.Join(tmpDir, "playlist.m3u")
+
+	xmltvContent := `<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="channel1">
+    <display-name>Channel One</display-name>
+  </channel>
+</tv>`
+
+	// Create M3U larger than 10MB limit
+	largeM3UContent := make([]byte, 11*1024*1024)
+	require.NoError(t, os.WriteFile(xmltvPath, []byte(xmltvContent), 0o600))
+	require.NoError(t, os.WriteFile(m3uPath, largeM3UContent, 0o600))
+
+	cfg := jobs.Config{
+		DataDir:   tmpDir,
+		XMLTVPath: "xmltv.xml",
+	}
+
+	server := New(cfg)
+	handler := server.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/xml; charset=utf-8", rr.Header().Get("Content-Type"))
+	assert.Contains(t, rr.Body.String(), "channel1") // Original ID preserved
+}
+
+func TestHandleXMLTV_HEADRequest(t *testing.T) {
+	tmpDir := t.TempDir()
+	xmltvPath := filepath.Join(tmpDir, "xmltv.xml")
+
+	xmltvContent := `<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="channel1">
+    <display-name>Channel One</display-name>
+  </channel>
+</tv>`
+
+	require.NoError(t, os.WriteFile(xmltvPath, []byte(xmltvContent), 0o600))
+
+	cfg := jobs.Config{
+		DataDir:   tmpDir,
+		XMLTVPath: "xmltv.xml",
+	}
+
+	server := New(cfg)
+	handler := server.Handler()
+
+	req := httptest.NewRequest(http.MethodHead, "/xmltv.xml", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/xml; charset=utf-8", rr.Header().Get("Content-Type"))
+	assert.Equal(t, "public, max-age=300", rr.Header().Get("Cache-Control"))
+}
+
+func TestHandleStatusV1(t *testing.T) {
+	cfg := jobs.Config{
+		DataDir: t.TempDir(),
+		Version: "1.2.3",
+	}
+
+	server := New(cfg)
+	server.SetStatus(jobs.Status{
+		Version:  "1.2.3",
+		Channels: 42,
+		LastRun:  time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC),
+	})
+
+	handler := server.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
+	assert.Equal(t, "1", rr.Header().Get("X-API-Version"))
+
+	var resp map[string]interface{}
+	err := json.NewDecoder(rr.Body).Decode(&resp)
+	require.NoError(t, err)
+
+	assert.Equal(t, "ok", resp["status"])
+	assert.Equal(t, "1.2.3", resp["version"])
+	assert.Equal(t, float64(42), resp["channels"])
+}
+
+func TestHandleStatusV2Placeholder_Complete(t *testing.T) {
+	// Enable API_V2 feature flag
+	t.Setenv("XG2G_FEATURE_API_V2", "true")
+
+	cfg := jobs.Config{
+		DataDir: t.TempDir(),
+		Version: "2.0.0",
+	}
+
+	server := New(cfg)
+	handler := server.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/status", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
+	assert.Equal(t, "2", rr.Header().Get("X-API-Version"))
+
+	var resp map[string]interface{}
+	err := json.NewDecoder(rr.Body).Decode(&resp)
+	require.NoError(t, err)
+
+	assert.Equal(t, "API v2 is under development", resp["message"])
+	assert.Equal(t, "preview", resp["status"])
 }
 
 func TestHandleRefreshV1(t *testing.T) {
