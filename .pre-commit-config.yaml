@@ -11,8 +11,6 @@ repos:
       - id: go-fmt
         name: Format Go code (gofmt)
         args: [-w, -s]
-      - id: go-imports
-        name: Organize Go imports
       - id: go-mod-tidy
         name: Tidy Go modules
       - id: go-build
