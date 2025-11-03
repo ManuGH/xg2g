@@ -707,12 +707,14 @@ flags:
 
 **Goal:** API ≥70% (short-term), Proxy 30-40% (mid-term), Overall 60-62% (5-8 PRs)
 
-**Current Baseline (2025-11-03):**
-- Overall: 57.6% (target: 55% ✅)
-- API: 64.4% (target: 70%, gap: -5.6%)
-- Proxy: 16.0% (target: 50%, gap: -34%)
-- Daemon: 80.5% (target: 60% ✅)
-- EPG: 68.5% (target: 55% ✅)
+**Current Baseline (2025-11-03, updated post-PR-1.5):**
+- Overall: 60.2% (target: 55% ✅, was 57.6%)
+- API: 72.1% (target: 70% ✅, was 64.4%) **TARGET REACHED**
+- Proxy: 43.0% (target: 50%, gap: -7%, was incorrectly listed as 16.0%)
+- Config: 64.5% (reload.go at 0% drags down average)
+- Jobs: 40.6% (fetch.go at 0% drags down average)
+- Daemon: 60.7% (target: 60% ✅)
+- EPG: 93.7% (target: 55% ✅)
 - Playlist: 93.8% (target: 60% ✅)
 
 **Philosophy:** No policy changes - improve coverage through targeted testing, not by lowering standards.
@@ -872,6 +874,7 @@ go tool cover -func=coverage.out | grep -E "internal/(api|proxy)"
 | 2025-11-03 | 1.2 | Added CODECOV_TOKEN configuration, prerequisites section |
 | 2025-11-03 | 1.3 | Added biannual secret rotation schedule, security best practices |
 | 2025-11-03 | 1.4 | Added Coverage Improvement Strategy (API & Proxy), baseline metrics, scaffolding guide |
+| 2025-11-03 | 1.5 | **PR-1.5 completed**: API 58.8% → 72.1% ✅ (commits bfef578, d9bd284). Updated baselines from Codecov API: Overall 60.2%, Proxy corrected to 43.0% |
 
 ---
 
