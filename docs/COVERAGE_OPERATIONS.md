@@ -1,8 +1,8 @@
 # Coverage Operations Runbook
 
 **Project:** xg2g
-**Version:** 1.0
-**Last Updated:** 2025-11-02
+**Version:** 1.2
+**Last Updated:** 2025-11-03
 
 ---
 
@@ -12,9 +12,68 @@ This runbook provides operational procedures for maintaining and monitoring code
 
 **Current Status:**
 - ✅ Codecov integration active (commit 0e837c1)
+- ✅ CODECOV_TOKEN configured (2025-11-03)
 - ✅ Coverage targets: Project 55%, Patch 90%
 - ✅ 6 component-specific gates configured
 - ✅ Atomic coverage mode in all workflows
+
+---
+
+## 0. Prerequisites and Setup
+
+### Codecov Token Configuration
+
+**Status:** ✅ **Configured** (2025-11-03)
+
+The repository upload token is configured in GitHub Secrets for enhanced security and reliability.
+
+**Token Purpose:**
+- Authenticates coverage uploads to Codecov
+- Required for private repositories
+- Provides better control over fork PRs
+- Avoids rate limits on public repos
+
+**Current Configuration:**
+```bash
+# Token is stored in GitHub Secrets
+gh secret list | grep CODECOV_TOKEN
+# Output: CODECOV_TOKEN	2025-11-03T03:06:31Z
+```
+
+**Token Management:**
+
+1. **View Token** (Codecov Dashboard):
+   ```
+   https://app.codecov.io/github/manugh/xg2g
+   → Settings → General → Repository Upload Token
+   ```
+
+2. **Regenerate Token** (if compromised):
+   ```bash
+   # 1. Regenerate in Codecov Dashboard (click "Regenerate")
+   # 2. Update GitHub Secret:
+   gh secret set CODECOV_TOKEN --body "NEW_TOKEN_HERE"
+   ```
+
+3. **Verify Token Usage**:
+   ```bash
+   # Check workflow logs for successful uploads
+   gh run list --workflow=coverage.yml --limit 1
+   gh run view <RUN_ID> --log | grep "Process Upload complete"
+   ```
+
+**Static Analysis Token (BETA):**
+- **Status:** Not configured (not needed for coverage-only setup)
+- **Use case:** Required only for Codecov Static Analysis features
+- **Token:** Available in Codecov Dashboard → Settings → Static Analysis
+
+**Tokenless Uploads:**
+
+For public repositories, Codecov supports tokenless uploads via GitHub App. However, using CODECOV_TOKEN provides:
+- More reliable uploads
+- Better security audit trails
+- Support for private repos (if visibility changes)
+- Reduced dependency on GitHub App permissions
 
 ---
 
@@ -630,7 +689,8 @@ flags:
 | Date | Version | Changes |
 |------|---------|---------|
 | 2025-11-02 | 1.0 | Initial runbook (commit 0e837c1) |
-| 2025-11-03 | 1.1 | Added Test Analytics section, test-results-action integration | TBD |
+| 2025-11-03 | 1.1 | Added Test Analytics section, test-results-action integration |
+| 2025-11-03 | 1.2 | Added CODECOV_TOKEN configuration, prerequisites section |
 
 ---
 
