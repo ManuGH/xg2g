@@ -1,0 +1,50 @@
+name: lint-and-validate
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+jobs:
+  pre-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install pre-commit
+        run: pip install pre-commit
+
+      - name: Run pre-commit
+        uses: pre-commit/action@v3.0.1
+
+  validate-config:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build validate
+        run: go build -o validate ./cmd/validate
+
+      - name: Validate example configs
+        run: |
+          set -euo pipefail
+          if [ -f config.yaml ]; then ./validate -f config.yaml; fi
+          find internal/config/testdata -name 'valid*.yaml' -maxdepth 1 -type f -print0 | xargs -0 -I{} ./validate -f {}
+          if [ -d examples ]; then find examples -name '*.ya?ml' -type f -print0 | xargs -0 -I{} ./validate -f {}; fi

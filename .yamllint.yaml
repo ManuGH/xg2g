@@ -1,0 +1,27 @@
+extends: default
+
+rules:
+  indentation:
+    indent: 2
+    indent-sequences: consistent
+    check-multi-line-strings: true
+
+  line-length:
+    # Lange Zeilen erlauben (URLs, Base64, GitHub Actions)
+    max: 200
+    allow-non-breakable-words: true
+    ignore: |
+      ^\.github/workflows/.*$
+
+  truthy:
+    # YAML 1.2: "yes/no/on/off" nicht als Bool interpretieren
+    allowed-values: ["true", "false", "True", "False"]
+    check-keys: true
+
+  document-start: disable   # kein '---' für Einzel-Dokumente erzwingen
+  comments:
+    require-starting-space: true
+
+  trailing-spaces: enable
+  new-lines: enable
+  empty-lines: enable

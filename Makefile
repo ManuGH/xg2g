@@ -698,3 +698,21 @@ mon-logs: ## Show monitoring stack logs [TODO: docker-compose.monitoring.yml not
 mon-ps: ## Show monitoring containers [TODO: docker-compose.monitoring.yml not yet created]
 	@echo "⚠️  Monitoring stack not yet configured"
 	@exit 1
+
+# ============================================================================
+# Pre-Commit Hooks und Linting
+# ============================================================================
+
+.PHONY: hooks lint-yaml validate
+
+hooks:
+	@pre-commit install
+	@pre-commit install --hook-type pre-push
+
+lint-yaml:
+	@yamllint -c .yamllint.yaml internal/config/testdata examples .github/workflows
+	@yamlfmt -lint internal/config/testdata examples .github/workflows
+
+
+validate:
+	@test -f config.yaml && go run ./cmd/validate -f config.yaml || go run ./cmd/validate -f config.example.yaml

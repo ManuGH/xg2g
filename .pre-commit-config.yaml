@@ -11,6 +11,8 @@ repos:
       - id: go-fmt
         name: Format Go code (gofmt)
         args: [-w, -s]
+      - id: go-imports
+        name: Organize Go imports
       - id: go-mod-tidy
         name: Tidy Go modules
       - id: go-build
@@ -35,20 +37,8 @@ repos:
         name: Check for case conflicts
       - id: check-merge-conflict
         name: Check for merge conflicts
-      - id: detect-private-key
-        name: Detect private keys
-      - id: mixed-line-ending
-        name: Check line endings
 
-  # Markdown linting
-  - repo: https://github.com/igorshubovych/markdownlint-cli
-    rev: v0.42.0
-    hooks:
-      - id: markdownlint
-        name: Lint Markdown files
-        args: [--config, .markdownlint.json]
-
-  # Security checks
+  # Secret detection
   - repo: https://github.com/Yelp/detect-secrets
     rev: v1.5.0
     hooks:
@@ -57,10 +47,47 @@ repos:
         args: [--baseline, .secrets.baseline]
         exclude: go.sum
 
+  # YAML formatting
+  - repo: https://github.com/google/yamlfmt
+    rev: v0.13.0
+    hooks:
+      - id: yamlfmt
+        name: Format YAML files
+        files: ^(internal/config/testdata/|examples/|\.github/workflows/).*\.(ya?ml)$
+
   # YAML linting
   - repo: https://github.com/adrienverge/yamllint
     rev: v1.35.1
     hooks:
       - id: yamllint
         name: Lint YAML files
-        args: [-c=.yamllint.yml]
+        args: [-c, .yamllint.yaml]
+        files: ^(internal/config/testdata/|examples/|\.github/workflows/).*\.(ya?ml)$
+
+  # Go linting (optional, can be slow)
+  - repo: https://github.com/golangci/golangci-lint
+    rev: v1.61.0
+    hooks:
+      - id: golangci-lint
+        name: Lint Go code
+        args: ["run", "--out-format=colored-line-number", "--timeout=3m"]
+        stages: [push]  # Only on push to avoid slowing down commits
+
+# Global settings
+default_stages: [commit]
+ci:
+  autofix_prs: true
+  autoupdate_schedule: quarterly
+
+# Exclusions (Generated, Third-Party, Binary artifacts)
+exclude: |
+  (?x)(
+    ^vendor/|
+    ^dist/|
+    ^build/|
+    ^docs/generated/|
+    \.snap$|
+    \.svg$|
+    \.png$|
+    \.jpg$
+  )
