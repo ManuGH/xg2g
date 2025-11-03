@@ -42,13 +42,13 @@ services:
       # - XG2G_AUDIO_CHANNELS=2         # Stereo (default: 2)
     volumes:
       - xg2g-data:/data
-    # Healthcheck disabled for now - image doesn't have curl/wget
-    # healthcheck:
-    #   test: ["CMD-SHELL", "curl -f http://localhost:8080/api/status || exit 1"]
-    #   interval: 10s
-    #   timeout: 5s
-    #   retries: 3
-    #   start_period: 5s
+      # Healthcheck disabled for now - image doesn't have curl/wget
+      # healthcheck:
+      #   test: ["CMD-SHELL", "curl -f http://localhost:8080/api/status || exit 1"]
+      #   interval: 10s
+      #   timeout: 5s
+      #   retries: 3
+      #   start_period: 5s
   # ──────────────────────────────────────────────────────────────────────────
   # Threadfin: IPTV proxy and filter (xTeve successor)
   # ──────────────────────────────────────────────────────────────────────────

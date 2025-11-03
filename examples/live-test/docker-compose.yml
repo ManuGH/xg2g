@@ -72,14 +72,14 @@ services:
       - ./livetest-data/xg2g:/data
     networks:
       - iptv-livetest
-    # Health check deaktiviert - distroless image hat kein wget/curl
-    # xg2g läuft wenn der Container läuft
-    # healthcheck:
-    #   test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/healthz || exit 1"]
-    #   interval: 30s
-    #   timeout: 10s
-    #   retries: 3
-    #   start_period: 15s
+      # Health check deaktiviert - distroless image hat kein wget/curl
+      # xg2g läuft wenn der Container läuft
+      # healthcheck:
+      #   test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/healthz || exit 1"]
+      #   interval: 30s
+      #   timeout: 10s
+      #   retries: 3
+      #   start_period: 15s
   # ──────────────────────────────────────────────────────────────────────────
   # Threadfin: IPTV Proxy & Filter (xTeve Nachfolger)
   # ──────────────────────────────────────────────────────────────────────────

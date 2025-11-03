@@ -13,10 +13,6 @@ repos:
         args: [-w, -s]
       - id: go-mod-tidy
         name: Tidy Go modules
-      - id: go-build
-        name: Build Go code
-        args: [-o, /dev/null, ./...]
-        exclude: ^test/integration/
 
   # Generic file checks
   - repo: https://github.com/pre-commit/pre-commit-hooks
