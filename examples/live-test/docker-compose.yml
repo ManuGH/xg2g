@@ -15,14 +15,14 @@ services:
   # xg2g: Enigma2 → M3U + XMLTV Converter (mit integriertem Stream-Proxy!)
   # ──────────────────────────────────────────────────────────────────────────
   xg2g:
-    image: xg2g:livetest  # Local build with latest EPG features
+    image: xg2g:livetest # Local build with latest EPG features
     container_name: xg2g-livetest
     restart: unless-stopped
-    user: "0:0"  # Root für Mac Volume Permissions
+    user: "0:0" # Root für Mac Volume Permissions
     ports:
-      - "8080:8080"    # Web UI & API
-      - "9090:9090"    # Prometheus Metrics
-      - "18000:18000"  # Integrierter Stream Proxy (optional, siehe unten)
+      - "8080:8080" # Web UI & API
+      - "9090:9090" # Prometheus Metrics
+      - "18000:18000" # Integrierter Stream Proxy (optional, siehe unten)
     environment:
       # ── Enigma2 Receiver Konfiguration ──
       - XG2G_OWI_BASE=${XG2G_OWI_BASE:-http://192.168.1.100}
@@ -48,20 +48,16 @@ services:
       - XG2G_PROXY_PORT=18000
       - XG2G_PROXY_TARGET=http://your-receiver-ip:17999
       - XG2G_STREAM_BASE=http://your-server-ip:18000
-
       # ── Bouquet Auswahl ──
       - XG2G_BOUQUET=${XG2G_BOUQUET:-Favourites}
-
       # ── EPG Konfiguration ──
       - XG2G_EPG_ENABLED=true
       - XG2G_EPG_DAYS=${XG2G_EPG_DAYS:-7}
       - XG2G_EPG_MAX_CONCURRENCY=10
       - XG2G_EPG_TIMEOUT_MS=20000
       - XG2G_EPG_RETRIES=3
-
       # ── Picons ──
       - XG2G_PICON_BASE=${XG2G_OWI_BASE:-http://192.168.1.100}
-
       # ── Interne Settings ──
       - XG2G_DATA=/data
       - XG2G_LISTEN=:8080
@@ -69,10 +65,8 @@ services:
       - XG2G_FUZZY_MAX=2
       - XG2G_METRICS_LISTEN=:9090
       - XG2G_INITIAL_REFRESH=true
-
       # ── Logging ──
       - XG2G_LOG_LEVEL=${XG2G_LOG_LEVEL:-info}
-
     volumes:
       # Lokales Verzeichnis für einfachen Zugriff während Tests
       - ./livetest-data/xg2g:/data
@@ -86,7 +80,6 @@ services:
     #   timeout: 10s
     #   retries: 3
     #   start_period: 15s
-
   # ──────────────────────────────────────────────────────────────────────────
   # Threadfin: IPTV Proxy & Filter (xTeve Nachfolger)
   # ──────────────────────────────────────────────────────────────────────────
@@ -95,7 +88,7 @@ services:
     container_name: threadfin-livetest
     restart: unless-stopped
     ports:
-      - "34400:34400"   # Web UI
+      - "34400:34400" # Web UI
     environment:
       - TZ=${TZ:-Europe/Vienna}
       - THREADFIN_PORT=34400
@@ -113,7 +106,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 20s
-
   # ──────────────────────────────────────────────────────────────────────────
   # Jellyfin: Media Server mit Live TV Support
   # ──────────────────────────────────────────────────────────────────────────
@@ -122,10 +114,10 @@ services:
     container_name: jellyfin-livetest
     restart: unless-stopped
     ports:
-      - "8096:8096"           # HTTP Web UI
-      - "8920:8920"           # HTTPS (optional)
-      - "7359:7359/udp"       # Service Discovery
-      - "1900:1900/udp"       # DLNA Discovery
+      - "8096:8096" # HTTP Web UI
+      - "8920:8920" # HTTPS (optional)
+      - "7359:7359/udp" # Service Discovery
+      - "1900:1900/udp" # DLNA Discovery
     environment:
       - TZ=${TZ:-Europe/Vienna}
       - JELLYFIN_PublishedServerUrl=http://localhost:8096
@@ -150,7 +142,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
-
 # ============================================================================
 # Networks
 # ============================================================================

@@ -1,15 +1,12 @@
 # Invalid: passes YAML parsing but fails validation (EPG days out of range)
 version: "1"
 dataDir: /tmp/xg2g-test
-
 openWebIF:
   baseUrl: http://receiver.local
   username: testuser
   password: testpass
-
 bouquets:
   - userbouquet.favourites.tv
-
 epg:
   enabled: true
-  days: 99  # Out of range: validation expects 1-14
+  days: 99 # Out of range: validation expects 1-14

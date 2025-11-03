@@ -11,7 +11,7 @@ services:
     image: ghcr.io/manugh/xg2g:latest
     container_name: xg2g
     restart: unless-stopped
-    user: "0:0"  # Run as root to avoid permission issues with volumes
+    user: "0:0" # Run as root to avoid permission issues with volumes
     ports:
       - "8080:8080"
     environment:
@@ -22,7 +22,6 @@ services:
       - XG2G_OWI_USER=${XG2G_OWI_USER:-}
       - XG2G_OWI_PASS=${XG2G_OWI_PASS:-}
       - XG2G_PICON_BASE=${XG2G_OWI_BASE}
-
       # Automatic settings
       - XG2G_DATA=/data
       - XG2G_LISTEN=:8080
@@ -35,7 +34,6 @@ services:
       - XG2G_FUZZY_MAX=2
       - XG2G_METRICS_LISTEN=:9090
       - XG2G_INITIAL_REFRESH=true
-
       # Optional: Audio transcoding for better Jellyfin compatibility
       # Transcodes MP2/AC3 audio to AAC for Direct Play support
       # - XG2G_ENABLE_AUDIO_TRANSCODING=true
@@ -51,7 +49,6 @@ services:
     #   timeout: 5s
     #   retries: 3
     #   start_period: 5s
-
   # ──────────────────────────────────────────────────────────────────────────
   # Threadfin: IPTV proxy and filter (xTeve successor)
   # ──────────────────────────────────────────────────────────────────────────
@@ -68,7 +65,6 @@ services:
       - threadfin-data:/tmp/threadfin
     depends_on:
       - xg2g
-
   # ──────────────────────────────────────────────────────────────────────────
   # Jellyfin: Media server with Live TV support
   # ──────────────────────────────────────────────────────────────────────────
@@ -78,9 +74,9 @@ services:
     restart: unless-stopped
     ports:
       - "8096:8096"
-      - "8920:8920"  # HTTPS
-      - "7359:7359/udp"  # Service discovery
-      - "1900:1900/udp"  # DLNA
+      - "8920:8920" # HTTPS
+      - "7359:7359/udp" # Service discovery
+      - "1900:1900/udp" # DLNA
     environment:
       - TZ=Europe/Vienna
       - JELLYFIN_PublishedServerUrl=http://localhost:8096
@@ -91,7 +87,6 @@ services:
       # - /path/to/media:/media
     depends_on:
       - threadfin
-
 volumes:
   xg2g-data:
     driver: local
@@ -103,7 +98,6 @@ volumes:
     driver: local
   jellyfin-cache:
     driver: local
-
 networks:
   default:
     name: iptv-stack

@@ -2,15 +2,12 @@
 # Valid minimal xg2g configuration
 version: "1"
 dataDir: /tmp/xg2g-config-test
-
 openWebIF:
   baseUrl: http://receiver.local
   username: testuser
   password: testpass
-
 bouquets:
   - userbouquet.favourites.tv
-
 epg:
   enabled: true
   days: 7

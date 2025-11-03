@@ -3,9 +3,7 @@
 
 openWebIF:
   baseUrl: http://192.168.1.100
-
 bouquets:
   - Favourites
-
 epg:
   enabled: true

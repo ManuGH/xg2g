@@ -7,75 +7,57 @@
 # Data directory for storing playlists and EPG files
 # Can use environment variables: ${XG2G_DATA_DIR}
 dataDir: /data
-
 # Log level (debug, info, warn, error)
 logLevel: info
-
 # OpenWebIF Configuration
 openWebIF:
   # Enigma2 receiver base URL (required)
   baseUrl: http://192.168.1.100
-
   # Authentication (optional)
   # Can reference environment variables: ${XG2G_OWI_PASSWORD}
   username: root
   password: ${XG2G_OWI_PASSWORD}
-
   # Stream port (default: 8001)
   streamPort: 8001
-
   # Timeouts and retries
   timeout: 10s
   retries: 3
   backoff: 500ms
   maxBackoff: 30s
-
 # Bouquets to include (can specify multiple)
 bouquets:
   - Favourites
   - Premium
   - Sports
-
 # EPG Configuration
 epg:
   # Enable EPG collection
   enabled: true
-
   # Number of days to fetch (1-14)
   days: 7
-
   # Maximum concurrent EPG requests
   maxConcurrency: 5
-
   # Timeout per EPG request (milliseconds)
   timeoutMs: 15000
-
   # Retry attempts for failed requests
   retries: 2
-
   # Fuzzy matching max distance for channel names
   fuzzyMax: 2
-
   # XMLTV output filename (relative to dataDir)
   xmltvPath: xmltv.xml
-
 # API Configuration
 api:
   # API authentication token (strongly recommended)
   # Use environment variable for security: ${XG2G_API_TOKEN}
   token: ${XG2G_API_TOKEN}
-
   # Listen address
   listenAddr: :8080
-
 # Metrics Configuration
 metrics:
   # Enable Prometheus metrics
   enabled: true
-
   # Metrics listen address (separate from main API)
   listenAddr: :9090
-
 # Picon/Logo Configuration
 picons:
   # Base URL for channel logos (optional)
