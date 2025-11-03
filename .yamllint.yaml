@@ -2,7 +2,7 @@ extends: default
 
 rules:
   indentation:
-    indent: 2
+    spaces: 2
     indent-sequences: consistent
     check-multi-line-strings: true
 
