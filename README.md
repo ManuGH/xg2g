@@ -117,6 +117,15 @@ XG2G_EPG_ENABLED=false      # No TV guide
 XG2G_HDHR_ENABLED=false     # No Plex/Jellyfin auto-discovery
 ```
 
+### Advanced
+
+```bash
+XG2G_PROXY_ONLY_MODE=true   # Run as dedicated transcoding proxy only
+                            # Disables: API server, metrics, SSDP discovery
+                            # Use case: Multi-container deployments with separate
+                            # transcoding instances to avoid port conflicts
+```
+
 Everything else works automatically.
 
 ---
@@ -211,6 +220,44 @@ services:
       - XG2G_BOUQUET=Favourites
       - XG2G_ENABLE_GPU_TRANSCODING=true
       - XG2G_ENABLE_STREAM_PROXY=true
+```
+
+**Proxy-Only mode** (multi-container with dedicated transcoding instances):
+```yaml
+services:
+  # Main xg2g instance (full features)
+  xg2g-main:
+    image: ghcr.io/manugh/xg2g:latest
+    ports:
+      - "8080:8080"
+    environment:
+      - XG2G_OWI_BASE=http://192.168.1.100
+      - XG2G_BOUQUET=Favourites
+      - XG2G_HDHR_ENABLED=true
+
+  # Dedicated audio transcoding proxy
+  xg2g-audio-proxy:
+    image: ghcr.io/manugh/xg2g:latest
+    ports:
+      - "18000:18000"
+    environment:
+      - XG2G_OWI_BASE=http://192.168.1.100
+      - XG2G_ENABLE_STREAM_PROXY=true
+      - XG2G_PROXY_TARGET=http://192.168.1.100:8001
+      - XG2G_PROXY_ONLY_MODE=true
+
+  # Dedicated GPU transcoding proxy
+  xg2g-gpu-proxy:
+    image: ghcr.io/manugh/xg2g:latest
+    ports:
+      - "18001:18000"
+    devices:
+      - /dev/dri:/dev/dri
+    environment:
+      - XG2G_OWI_BASE=http://192.168.1.100
+      - XG2G_ENABLE_GPU_TRANSCODING=true
+      - XG2G_ENABLE_STREAM_PROXY=true
+      - XG2G_PROXY_ONLY_MODE=true
 ```
 
 ---
