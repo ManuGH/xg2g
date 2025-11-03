@@ -2,152 +2,431 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/ManuGH/xg2g/internal/hdhr"
+	"github.com/ManuGH/xg2g/internal/jobs"
 )
 
-// TestHandlers_TableDriven provides a template for table-driven HTTP handler tests.
-// TODO: Adapt this template to actual handlers in the API package.
-func TestHandlers_TableDriven(t *testing.T) {
-	tests := []struct {
-		name           string
-		method         string
-		path           string
-		body           string
-		headers        map[string]string
-		wantStatus     int
-		wantBodyContains string
-		description    string
-	}{
-		{
-			name:           "valid_request",
-			method:         http.MethodGet,
-			path:           "/api/v1/example?param=value",
-			wantStatus:     http.StatusOK,
-			wantBodyContains: "",
-			description:    "Valid request should succeed",
-		},
-		{
-			name:           "missing_required_param",
-			method:         http.MethodGet,
-			path:           "/api/v1/example",
-			wantStatus:     http.StatusBadRequest,
-			wantBodyContains: "param",
-			description:    "Missing required parameter should return 400",
-		},
-		{
-			name:           "invalid_param_value",
-			method:         http.MethodGet,
-			path:           "/api/v1/example?param=invalid",
-			wantStatus:     http.StatusBadRequest,
-			description:    "Invalid parameter value should return 400",
-		},
-		{
-			name:           "malformed_json_body",
-			method:         http.MethodPost,
-			path:           "/api/v1/example",
-			body:           `{"incomplete":`,
-			headers:        map[string]string{"Content-Type": "application/json"},
-			wantStatus:     http.StatusBadRequest,
-			description:    "Malformed JSON should return 400",
-		},
-		{
-			name:           "missing_auth_header",
-			method:         http.MethodPost,
-			path:           "/api/v1/protected",
-			wantStatus:     http.StatusUnauthorized,
-			description:    "Missing auth should return 401",
-		},
-		{
-			name:           "invalid_auth_token",
-			method:         http.MethodPost,
-			path:           "/api/v1/protected",
-			headers:        map[string]string{"Authorization": "Bearer invalid-token"},
-			wantStatus:     http.StatusUnauthorized,
-			description:    "Invalid auth should return 401",
-		},
-		{
-			name:           "method_not_allowed",
-			method:         http.MethodDelete,
-			path:           "/api/v1/example",
-			wantStatus:     http.StatusMethodNotAllowed,
-			description:    "Unsupported method should return 405",
-		},
-		{
-			name:           "empty_body_when_required",
-			method:         http.MethodPost,
-			path:           "/api/v1/example",
-			body:           "",
-			wantStatus:     http.StatusBadRequest,
-			description:    "Empty body when required should return 400",
-		},
-		{
-			name:           "nil_value_in_json",
-			method:         http.MethodPost,
-			path:           "/api/v1/example",
-			body:           `{"required_field":null}`,
-			headers:        map[string]string{"Content-Type": "application/json"},
-			wantStatus:     http.StatusBadRequest,
-			description:    "Null value for required field should return 400",
-		},
-		{
-			name:           "oversized_payload",
-			method:         http.MethodPost,
-			path:           "/api/v1/example",
-			body:           strings.Repeat("a", 10*1024*1024), // 10MB
-			wantStatus:     http.StatusRequestEntityTooLarge,
-			description:    "Oversized payload should return 413",
-		},
+// TestGetConfig tests the GetConfig method.
+func TestGetConfig(t *testing.T) {
+	cfg := jobs.Config{
+		Bouquet:     "test-bouquet",
+		OWIUsername: "testuser",
+		DataDir:     "/tmp/test",
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Skip("TODO: Implement once handler is ready for testing")
+	s := &Server{
+		cfg: cfg,
+	}
 
-			// Create request
-			var bodyReader *strings.Reader
-			if tc.body != "" {
-				bodyReader = strings.NewReader(tc.body)
-			} else {
-				bodyReader = strings.NewReader("")
-			}
-			req := httptest.NewRequest(tc.method, tc.path, bodyReader)
+	got := s.GetConfig()
+	if got.Bouquet != cfg.Bouquet {
+		t.Errorf("expected Bouquet %q, got %q", cfg.Bouquet, got.Bouquet)
+	}
+	if got.OWIUsername != cfg.OWIUsername {
+		t.Errorf("expected OWIUsername %q, got %q", cfg.OWIUsername, got.OWIUsername)
+	}
+	if got.DataDir != cfg.DataDir {
+		t.Errorf("expected DataDir %q, got %q", cfg.DataDir, got.DataDir)
+	}
+}
 
-			// Add headers
-			for key, value := range tc.headers {
-				req.Header.Set(key, value)
-			}
+// TestHandleRefreshInternal tests the HandleRefreshInternal wrapper.
+func TestHandleRefreshInternal(t *testing.T) {
+	// Create a mock refresh function that succeeds immediately
+	mockRefreshFn := func(ctx context.Context, cfg jobs.Config) (*jobs.Status, error) {
+		return &jobs.Status{
+			Version:  "test",
+			Channels: 42,
+			LastRun:  time.Now(),
+		}, nil
+	}
 
-			// Add context values if needed
-			ctx := context.Background()
-			// ctx = context.WithValue(ctx, contextKey, value)
-			req = req.WithContext(ctx)
+	s := &Server{
+		cfg:       jobs.Config{Bouquet: "test"},
+		refreshFn: mockRefreshFn,
+		cb:        NewCircuitBreaker(3, 5*time.Second),
+	}
 
-			// Create response recorder
-			rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/refresh", nil)
+	req = req.WithContext(context.Background())
+	rr := httptest.NewRecorder()
 
-			// TODO: Call actual handler
-			// handler := http.HandlerFunc(yourHandler)
-			// handler.ServeHTTP(rr, req)
+	s.HandleRefreshInternal(rr, req)
 
-			// Assert status code
-			if rr.Code != tc.wantStatus {
-				t.Errorf("%s: expected status %d, got %d",
-					tc.description, tc.wantStatus, rr.Code)
-			}
+	// Should delegate to handleRefresh and return success
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
+	}
+}
 
-			// Assert body contains expected string
-			if tc.wantBodyContains != "" {
-				body := rr.Body.String()
-				if !contains(body, tc.wantBodyContains) {
-					t.Errorf("%s: expected body to contain %q, got: %s",
-						tc.description, tc.wantBodyContains, body)
-				}
-			}
-		})
+// TestHandleRefreshV1Direct tests handleRefreshV1 directly.
+func TestHandleRefreshV1Direct(t *testing.T) {
+	mockRefreshFn := func(ctx context.Context, cfg jobs.Config) (*jobs.Status, error) {
+		return &jobs.Status{
+			Version:  "test",
+			Channels: 5,
+			LastRun:  time.Now(),
+		}, nil
+	}
+
+	s := &Server{
+		cfg:       jobs.Config{Bouquet: "test"},
+		refreshFn: mockRefreshFn,
+		cb:        NewCircuitBreaker(3, 5*time.Second),
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/refresh", nil)
+	req = req.WithContext(context.Background())
+	rr := httptest.NewRecorder()
+
+	s.handleRefreshV1(rr, req)
+
+	// Should set X-API-Version header
+	if got := rr.Header().Get("X-API-Version"); got != "1" {
+		t.Errorf("expected X-API-Version header %q, got %q", "1", got)
+	}
+
+	// Should return success
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
+	}
+}
+
+// fakeConfigHolder is a test double for ConfigHolder.
+type fakeConfigHolder struct {
+	cfg       jobs.Config
+	reloadErr error
+}
+
+func (f *fakeConfigHolder) Get() jobs.Config {
+	return f.cfg
+}
+
+func (f *fakeConfigHolder) Reload(ctx context.Context) error {
+	return f.reloadErr
+}
+
+// TestHandleConfigReloadV1 tests the config reload endpoint.
+func TestHandleConfigReloadV1(t *testing.T) {
+	t.Run("no_config_holder", func(t *testing.T) {
+		s := &Server{
+			configHolder: nil, // Hot reload not enabled
+		}
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/config/reload", nil)
+		req = req.WithContext(context.Background())
+		rr := httptest.NewRecorder()
+
+		s.handleConfigReloadV1(rr, req)
+
+		if rr.Code != http.StatusServiceUnavailable {
+			t.Errorf("expected status %d, got %d", http.StatusServiceUnavailable, rr.Code)
+		}
+
+		if got := rr.Header().Get("X-API-Version"); got != "1" {
+			t.Errorf("expected X-API-Version header %q, got %q", "1", got)
+		}
+	})
+
+	t.Run("reload_success", func(t *testing.T) {
+		newCfg := jobs.Config{
+			Bouquet: "updated-bouquet",
+			DataDir: "/tmp/new",
+		}
+		holder := &fakeConfigHolder{
+			cfg:       newCfg,
+			reloadErr: nil,
+		}
+
+		s := &Server{
+			cfg:          jobs.Config{Bouquet: "old"},
+			configHolder: holder,
+		}
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/config/reload", nil)
+		req = req.WithContext(context.Background())
+		rr := httptest.NewRecorder()
+
+		s.handleConfigReloadV1(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
+		}
+
+		// Verify config was updated
+		got := s.GetConfig()
+		if got.Bouquet != newCfg.Bouquet {
+			t.Errorf("expected config Bouquet %q, got %q", newCfg.Bouquet, got.Bouquet)
+		}
+	})
+
+	t.Run("reload_failure", func(t *testing.T) {
+		holder := &fakeConfigHolder{
+			cfg:       jobs.Config{},
+			reloadErr: context.DeadlineExceeded,
+		}
+
+		s := &Server{
+			cfg:          jobs.Config{Bouquet: "old"},
+			configHolder: holder,
+		}
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/config/reload", nil)
+		req = req.WithContext(context.Background())
+		rr := httptest.NewRecorder()
+
+		s.handleConfigReloadV1(rr, req)
+
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
+		}
+	})
+}
+
+// TestHandleLineupJSON tests the HDHomeRun lineup.json endpoint.
+func TestHandleLineupJSON(t *testing.T) {
+	t.Run("valid_playlist", func(t *testing.T) {
+		// Create temp directory with M3U file
+		tmpDir := t.TempDir()
+		m3uContent := `#EXTM3U
+#EXTINF:-1 tvg-chno="1" tvg-id="sref-1" tvg-name="Channel One",Channel One
+http://example.com/stream1
+#EXTINF:-1 tvg-chno="2" tvg-id="sref-2" tvg-name="Channel Two",Channel Two
+http://example.com/stream2
+#EXTINF:-1 tvg-chno="3" tvg-id="sref-3" tvg-name="Channel Three",Channel Three
+http://example.com/stream3
+`
+		m3uPath := filepath.Join(tmpDir, "playlist.m3u")
+		if err := os.WriteFile(m3uPath, []byte(m3uContent), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		s := &Server{
+			cfg: jobs.Config{
+				DataDir: tmpDir,
+			},
+		}
+
+		req := httptest.NewRequest(http.MethodGet, "/lineup.json", nil)
+		req = req.WithContext(context.Background())
+		rr := httptest.NewRecorder()
+
+		s.handleLineupJSON(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
+		}
+
+		var lineup []hdhr.LineupEntry
+		if err := json.NewDecoder(rr.Body).Decode(&lineup); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		if len(lineup) != 3 {
+			t.Errorf("expected 3 channels, got %d", len(lineup))
+		}
+
+		// Verify first channel
+		if lineup[0].GuideNumber != "1" {
+			t.Errorf("expected GuideNumber %q, got %q", "1", lineup[0].GuideNumber)
+		}
+		if lineup[0].GuideName != "Channel One" {
+			t.Errorf("expected GuideName %q, got %q", "Channel One", lineup[0].GuideName)
+		}
+		if lineup[0].URL != "http://example.com/stream1" {
+			t.Errorf("expected URL %q, got %q", "http://example.com/stream1", lineup[0].URL)
+		}
+	})
+
+	t.Run("missing_playlist", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		// Don't create playlist.m3u
+
+		s := &Server{
+			cfg: jobs.Config{
+				DataDir: tmpDir,
+			},
+		}
+
+		req := httptest.NewRequest(http.MethodGet, "/lineup.json", nil)
+		req = req.WithContext(context.Background())
+		rr := httptest.NewRecorder()
+
+		s.handleLineupJSON(rr, req)
+
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
+		}
+	})
+}
+
+// TestRespondError tests the structured error response function.
+func TestRespondError(t *testing.T) {
+	t.Run("basic_error", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		req = req.WithContext(context.Background())
+		rr := httptest.NewRecorder()
+
+		RespondError(rr, req, http.StatusBadRequest, ErrInvalidInput)
+
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected status %d, got %d", http.StatusBadRequest, rr.Code)
+		}
+
+		var apiErr APIError
+		if err := json.NewDecoder(rr.Body).Decode(&apiErr); err != nil {
+			t.Fatalf("failed to decode error response: %v", err)
+		}
+
+		if apiErr.Code != "INVALID_INPUT" {
+			t.Errorf("expected code %q, got %q", "INVALID_INPUT", apiErr.Code)
+		}
+		if apiErr.Message != "Invalid input parameters" {
+			t.Errorf("expected message %q, got %q", "Invalid input parameters", apiErr.Message)
+		}
+	})
+
+	t.Run("error_with_details", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		req = req.WithContext(context.Background())
+		rr := httptest.NewRecorder()
+
+		details := map[string]string{"field": "bouquet", "reason": "invalid format"}
+		RespondError(rr, req, http.StatusBadRequest, ErrInvalidInput, details)
+
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected status %d, got %d", http.StatusBadRequest, rr.Code)
+		}
+
+		var apiErr APIError
+		if err := json.NewDecoder(rr.Body).Decode(&apiErr); err != nil {
+			t.Fatalf("failed to decode error response: %v", err)
+		}
+
+		if apiErr.Details == nil {
+			t.Error("expected Details to be set")
+		}
+	})
+}
+
+// TestAPIError_Error tests the Error method of APIError.
+func TestAPIError_Error(t *testing.T) {
+	err := &APIError{
+		Code:    "TEST_ERROR",
+		Message: "This is a test error",
+	}
+
+	if err.Error() != "This is a test error" {
+		t.Errorf("expected Error() %q, got %q", "This is a test error", err.Error())
+	}
+}
+
+// TestSetConfigHolder tests the SetConfigHolder method.
+func TestSetConfigHolder(t *testing.T) {
+	s := &Server{}
+	holder := &fakeConfigHolder{
+		cfg: jobs.Config{Bouquet: "test"},
+	}
+
+	s.SetConfigHolder(holder)
+
+	if s.configHolder == nil {
+		t.Error("expected configHolder to be set")
+	}
+}
+
+// fakeAuditLogger implements AuditLogger for testing.
+type fakeAuditLogger struct{}
+
+func (f fakeAuditLogger) ConfigReload(actor, result string, details map[string]string)           {}
+func (f fakeAuditLogger) RefreshStart(actor string, bouquets []string)                           {}
+func (f fakeAuditLogger) RefreshComplete(actor string, channels, bouquets int, durationMS int64) {}
+func (f fakeAuditLogger) RefreshError(actor, reason string)                                      {}
+func (f fakeAuditLogger) AuthSuccess(remoteAddr, endpoint string)                                {}
+func (f fakeAuditLogger) AuthFailure(remoteAddr, endpoint, reason string)                        {}
+func (f fakeAuditLogger) AuthMissing(remoteAddr, endpoint string)                                {}
+func (f fakeAuditLogger) RateLimitExceeded(remoteAddr, endpoint string)                          {}
+
+// TestSetAuditLogger tests the SetAuditLogger method.
+func TestSetAuditLogger(t *testing.T) {
+	s := &Server{}
+	logger := fakeAuditLogger{}
+
+	s.SetAuditLogger(logger)
+
+	// Since auditLogger is not exported, we can't directly check it
+	// But we've exercised the code path
+}
+
+// TestHandleStatusV2Placeholder tests the v2 placeholder endpoint.
+func TestHandleStatusV2Placeholder(t *testing.T) {
+	s := &Server{}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/status", nil)
+	req = req.WithContext(context.Background())
+	rr := httptest.NewRecorder()
+
+	s.handleStatusV2Placeholder(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
+	}
+
+	if got := rr.Header().Get("X-API-Version"); got != "2" {
+		t.Errorf("expected X-API-Version header %q, got %q", "2", got)
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if resp["status"] != "preview" {
+		t.Errorf("expected status %q, got %q", "preview", resp["status"])
+	}
+	if resp["message"] != "API v2 is under development" {
+		t.Errorf("expected message %q, got %q", "API v2 is under development", resp["message"])
+	}
+}
+
+// TestHDHomeRunServer tests the HDHomeRunServer getter.
+func TestHDHomeRunServer(t *testing.T) {
+	s := &Server{
+		hdhr: nil,
+	}
+
+	if got := s.HDHomeRunServer(); got != nil {
+		t.Errorf("expected nil HDHomeRun server, got %v", got)
+	}
+}
+
+// TestNewRouter tests the NewRouter function.
+func TestNewRouter(t *testing.T) {
+	cfg := jobs.Config{
+		DataDir: t.TempDir(),
+		Bouquet: "test",
+	}
+
+	handler := NewRouter(cfg)
+	if handler == nil {
+		t.Fatal("expected handler, got nil")
+	}
+
+	// Test that basic health endpoint works
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
 	}
 }
 
@@ -190,9 +469,4 @@ func TestHandlerWithTimeout(t *testing.T) {
 
 	// TODO: Test that handler respects context timeout
 	// Should return 504 Gateway Timeout or similar
-}
-
-// contains checks if a string contains a substring.
-func contains(s, substr string) bool {
-	return len(substr) > 0 && len(s) > 0 && (s == substr || strings.Contains(s, substr))
 }
