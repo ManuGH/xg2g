@@ -15,7 +15,7 @@
 # =============================================================================
 # Stage 1: Build Rust Library for ARM64 (on AMD64 host, no QEMU)
 # =============================================================================
-FROM --platform=linux/amd64 rust:1.84-alpine AS rust-builder
+FROM --platform=linux/amd64 rust:1.91-alpine AS rust-builder
 
 WORKDIR /build
 
