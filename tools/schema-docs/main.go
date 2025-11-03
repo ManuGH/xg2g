@@ -50,8 +50,8 @@ func main() {
 	check(json.Unmarshal(data, &root))
 
 	buf := &bytes.Buffer{}
-	fmt.Fprintln(buf, "# xg2g Konfiguration\n")
-	fmt.Fprintln(buf, "> Quelle: `docs/config.schema.json` (Draft 2020-12)\n")
+	fmt.Fprintln(buf, "# xg2g Konfiguration")
+	fmt.Fprintln(buf, "> Quelle: `docs/config.schema.json` (Draft 2020-12)")
 
 	// Root required
 	reqSet := map[string]bool{}
@@ -65,7 +65,7 @@ func main() {
 	props := getMap(root, "properties")
 	keys := sortedKeys(props)
 
-	fmt.Fprintln(buf, "## Übersicht\n")
+	fmt.Fprintln(buf, "## Übersicht")
 	fmt.Fprintln(buf, "| Feld | Typ | Pflicht | Beschreibung |")
 	fmt.Fprintln(buf, "|---|---|:---:|---|")
 	for _, k := range keys {
@@ -123,7 +123,7 @@ func renderNode(buf *bytes.Buffer, name string, node Schema, required bool, h in
 		if len(props) == 0 {
 			return
 		}
-		fmt.Fprintln(buf, "\n**Felder:**\n")
+		fmt.Fprintln(buf, "\n**Felder:**")
 		fmt.Fprintln(buf, "| Feld | Typ | Pflicht | Beschreibung |")
 		fmt.Fprintln(buf, "|---|---|:---:|---|")
 		keys := sortedKeys(props)
