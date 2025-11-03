@@ -106,10 +106,10 @@ Add security testing to CI/CD pipelines:
     # Start xg2g in background
     XG2G_DATA=./testdata XG2G_OWI_BASE=http://stub XG2G_BOUQUET=test ./xg2g-daemon &
     sleep 2
-    
+
     # Run security validation
     ./scripts/quick-security-check.sh
-    
+
     # Optional: Full test suite
     ./scripts/security-test.sh
 ```

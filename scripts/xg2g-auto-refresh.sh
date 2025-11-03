@@ -22,7 +22,7 @@ refresh_xg2g() {
     local response
     response=$(curl -sf -X POST "http://$XG2G_HOST/api/refresh" \
         -H "X-API-Token: $API_TOKEN" 2>&1)
-    
+
     if [[ $? -eq 0 ]]; then
         local channels=$(echo "$response" | jq -r '.channels // 0' 2>/dev/null || echo "unknown")
         echo "$(date): SUCCESS - Refresh completed, channels: $channels"
@@ -35,14 +35,14 @@ refresh_xg2g() {
 # Main execution
 {
     echo "$(date): Starting xg2g auto-refresh..."
-    
+
     # Health check first
     if ! curl -sf "http://$XG2G_HOST/healthz" >/dev/null; then
         echo "$(date): ERROR - Health check failed, xg2g service unreachable"
         exit 1
     fi
-    
+
     # Perform refresh
     refresh_xg2g
-    
+
 } >> "$LOG_FILE" 2>&1

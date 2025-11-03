@@ -19,7 +19,7 @@
 ## `api`
 
 **Typ:** `object`  
-**Pflicht:**   
+**Pflicht:**  
 
 HTTP API server configuration for runtime control
 
@@ -33,7 +33,7 @@ HTTP API server configuration for runtime control
 ### `api.listenAddr`
 
 **Typ:** `string`  
-**Pflicht:**   
+**Pflicht:**  
 **Default:** `:8080`  
 
 API server listen address (host:port)
@@ -47,7 +47,7 @@ API server listen address (host:port)
 ### `api.token`
 
 **Typ:** `string`  
-**Pflicht:**   
+**Pflicht:**  
 
 Bearer token for API authentication. Can also be provided via environment variable XG2G_API_TOKEN. Never logged in plaintext. Environment variables are expanded.
 
@@ -72,7 +72,7 @@ List of Enigma2 bouquet references (filenames or service references)
 
 **Elementtyp:**
 **Typ:** `string`  
-**Pflicht:**   
+**Pflicht:**  
 
 **Beispiel:**
 
@@ -116,7 +116,7 @@ Electronic Program Guide (EPG) fetching and generation configuration
 ### `epg.days`
 
 **Typ:** `integer`  
-**Pflicht:**   
+**Pflicht:**  
 **Default:** `7`  
 
 Number of days of EPG data to fetch (1-14)
@@ -130,7 +130,7 @@ Number of days of EPG data to fetch (1-14)
 ### `epg.enabled`
 
 **Typ:** `boolean`  
-**Pflicht:**   
+**Pflicht:**  
 **Default:** `true`  
 
 Enable or disable EPG fetching and XMLTV generation
@@ -138,7 +138,7 @@ Enable or disable EPG fetching and XMLTV generation
 ### `epg.fuzzyMax`
 
 **Typ:** `integer`  
-**Pflicht:**   
+**Pflicht:**  
 **Default:** `2`  
 
 Maximum Levenshtein distance for fuzzy matching service names (0-10)
@@ -152,7 +152,7 @@ Maximum Levenshtein distance for fuzzy matching service names (0-10)
 ### `epg.maxConcurrency`
 
 **Typ:** `integer`  
-**Pflicht:**   
+**Pflicht:**  
 **Default:** `5`  
 
 Maximum concurrent EPG requests to the receiver (1-10)
@@ -166,7 +166,7 @@ Maximum concurrent EPG requests to the receiver (1-10)
 ### `epg.retries`
 
 **Typ:** `integer`  
-**Pflicht:**   
+**Pflicht:**  
 **Default:** `2`  
 
 Number of retry attempts for failed EPG requests (0-5)
@@ -180,7 +180,7 @@ Number of retry attempts for failed EPG requests (0-5)
 ### `epg.source`
 
 **Typ:** `string`  
-**Pflicht:**   
+**Pflicht:**  
 **Default:** `per-service`  
 **Erlaubte Werte:** `bouquet`, `per-service`  
 
@@ -195,7 +195,7 @@ per-service
 ### `epg.timeoutMs`
 
 **Typ:** `integer`  
-**Pflicht:**   
+**Pflicht:**  
 **Default:** `15000`  
 
 Timeout in milliseconds for individual EPG requests (100-60000ms)
@@ -209,7 +209,7 @@ Timeout in milliseconds for individual EPG requests (100-60000ms)
 ### `epg.xmltvPath`
 
 **Typ:** `string`  
-**Pflicht:**   
+**Pflicht:**  
 
 Output path for generated XMLTV file (relative to dataDir or absolute)
 
@@ -222,7 +222,7 @@ guide.xml
 ## `logLevel`
 
 **Typ:** `string`  
-**Pflicht:**   
+**Pflicht:**  
 **Default:** `info`  
 **Erlaubte Werte:** `debug`, `info`, `warn`, `error`  
 
@@ -231,7 +231,7 @@ Logging verbosity level
 ## `metrics`
 
 **Typ:** `object`  
-**Pflicht:**   
+**Pflicht:**  
 
 Prometheus metrics exporter configuration
 
@@ -245,7 +245,7 @@ Prometheus metrics exporter configuration
 ### `metrics.enabled`
 
 **Typ:** `boolean`  
-**Pflicht:**   
+**Pflicht:**  
 **Default:** `false`  
 
 Enable or disable Prometheus metrics endpoint
@@ -253,7 +253,7 @@ Enable or disable Prometheus metrics endpoint
 ### `metrics.listenAddr`
 
 **Typ:** `string`  
-**Pflicht:**   
+**Pflicht:**  
 **Default:** `:9090`  
 
 Metrics server listen address (host:port)
@@ -287,7 +287,7 @@ OpenWebIF API configuration for Enigma2 receiver
 ### `openWebIF.backoff`
 
 **Typ:** `string`  
-**Pflicht:**   
+**Pflicht:**  
 **Default:** `500ms`  
 
 Initial backoff duration between retries (Go duration format)
@@ -315,7 +315,7 @@ http://receiver.local
 ### `openWebIF.maxBackoff`
 
 **Typ:** `string`  
-**Pflicht:**   
+**Pflicht:**  
 **Default:** `30s`  
 
 Maximum backoff duration for exponential backoff (Go duration format)
@@ -329,7 +329,7 @@ Maximum backoff duration for exponential backoff (Go duration format)
 ### `openWebIF.password`
 
 **Typ:** `string`  
-**Pflicht:**   
+**Pflicht:**  
 
 OpenWebIF authentication password (if required). Can also be provided via environment variable XG2G_OWI_PASS. Never logged in plaintext. Environment variables like ${PASS} are expanded.
 
@@ -342,7 +342,7 @@ dreambox
 ### `openWebIF.retries`
 
 **Typ:** `integer`  
-**Pflicht:**   
+**Pflicht:**  
 **Default:** `3`  
 
 Number of retry attempts for failed HTTP requests
@@ -356,7 +356,7 @@ Number of retry attempts for failed HTTP requests
 ### `openWebIF.streamPort`
 
 **Typ:** `integer`  
-**Pflicht:**   
+**Pflicht:**  
 **Default:** `8001`  
 
 Port number for IPTV streaming URLs
@@ -370,7 +370,7 @@ Port number for IPTV streaming URLs
 ### `openWebIF.timeout`
 
 **Typ:** `string`  
-**Pflicht:**   
+**Pflicht:**  
 **Default:** `10s`  
 
 HTTP request timeout duration (Go duration format: 10s, 500ms, 1m)
@@ -384,7 +384,7 @@ HTTP request timeout duration (Go duration format: 10s, 500ms, 1m)
 ### `openWebIF.username`
 
 **Typ:** `string`  
-**Pflicht:**   
+**Pflicht:**  
 
 OpenWebIF authentication username (if required). Environment variables like ${USER} are expanded.
 
@@ -397,7 +397,7 @@ root
 ## `picons`
 
 **Typ:** `object`  
-**Pflicht:**   
+**Pflicht:**  
 
 Picon/channel logo configuration
 
@@ -410,7 +410,7 @@ Picon/channel logo configuration
 ### `picons.baseUrl`
 
 **Typ:** `string`  
-**Pflicht:**   
+**Pflicht:**  
 
 Base URL for picon/logo images. Environment variables are expanded.
 
@@ -433,4 +433,3 @@ Configuration version identifier
 ```yaml
 1
 ```
-

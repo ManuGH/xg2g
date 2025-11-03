@@ -128,7 +128,7 @@ Security events are tracked via comprehensive metrics:
 
 ```prometheus
 # Security denials by attack type
-xg2g_file_requests_denied_total{reason="boundary_escape"} 
+xg2g_file_requests_denied_total{reason="boundary_escape"}
 xg2g_file_requests_denied_total{reason="method_not_allowed"}
 xg2g_file_requests_denied_total{reason="path_traversal"}
 

@@ -439,10 +439,10 @@ jobs:
           ./daemon > /tmp/daemon.log 2>&1 &
           DAEMON_PID=$!
 
-          # Give daemon time to start  
+          # Give daemon time to start
           sleep 2
 
-          # Check if daemon is still running 
+          # Check if daemon is still running
           if ! kill -0 $DAEMON_PID 2>/dev/null; then
             echo "❌ Daemon exited prematurely"
             echo "Daemon log:"
@@ -534,7 +534,7 @@ jobs:
             echo "⚠️  No M3U file generated"
           fi
 
-          # Check XMLTV file  
+          # Check XMLTV file
           XMLTV_FILE="$TEMP_DATA/xmltv.xml"
           if [ -f "$XMLTV_FILE" ]; then
             XMLTV_SIZE=$(wc -c < "$XMLTV_FILE")

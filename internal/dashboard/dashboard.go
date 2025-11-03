@@ -100,15 +100,15 @@ func (d *Dashboard) HandleDashboard(w http.ResponseWriter, _ *http.Request) {
     <title>xg2g Dashboard</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { 
+        body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             padding: 20px;
         }
-        .container { 
-            max-width: 1200px; 
-            margin: 0 auto; 
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
             background: rgba(255, 255, 255, 0.95);
             border-radius: 15px;
             backdrop-filter: blur(10px);
@@ -121,8 +121,8 @@ func (d *Dashboard) HandleDashboard(w http.ResponseWriter, _ *http.Request) {
             padding: 30px;
             text-align: center;
         }
-        .header h1 { 
-            font-size: 2.5em; 
+        .header h1 {
+            font-size: 2.5em;
             margin-bottom: 10px;
             text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
         }
@@ -153,7 +153,7 @@ func (d *Dashboard) HandleDashboard(w http.ResponseWriter, _ *http.Request) {
         .stat-card.warning { border-left-color: #f59e0b; }
         .stat-card.danger { border-left-color: #ef4444; }
         .stat-card.info { border-left-color: #8b5cf6; }
-        
+
         .stat-value {
             font-size: 2.2em;
             font-weight: bold;
@@ -164,7 +164,7 @@ func (d *Dashboard) HandleDashboard(w http.ResponseWriter, _ *http.Request) {
         .stat-card.warning .stat-value { color: #f59e0b; }
         .stat-card.danger .stat-value { color: #ef4444; }
         .stat-card.info .stat-value { color: #8b5cf6; }
-        
+
         .stat-label {
             color: #6b7280;
             font-weight: 500;
@@ -182,13 +182,13 @@ func (d *Dashboard) HandleDashboard(w http.ResponseWriter, _ *http.Request) {
         }
         .status-online { background-color: #10b981; }
         .status-offline { background-color: #ef4444; }
-        
+
         @keyframes pulse {
             0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
             70% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
             100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
         }
-        
+
         .refresh-btn {
             background: linear-gradient(45deg, #4f46e5, #7c3aed);
             color: white;
@@ -205,7 +205,7 @@ func (d *Dashboard) HandleDashboard(w http.ResponseWriter, _ *http.Request) {
             transform: scale(1.05);
             box-shadow: 0 4px 15px rgba(79, 70, 229, 0.4);
         }
-        
+
         .config-section {
             margin: 20px 30px;
             padding: 25px;
@@ -231,14 +231,14 @@ func (d *Dashboard) HandleDashboard(w http.ResponseWriter, _ *http.Request) {
             border-bottom: 1px solid #e2e8f0;
         }
         .config-key { font-weight: 500; color: #475569; }
-        .config-value { 
+        .config-value {
             color: #1e293b;
             font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
             font-size: 0.9em;
         }
-        
+
         @media (max-width: 768px) {
-            .stats-grid { 
+            .stats-grid {
                 grid-template-columns: 1fr;
                 padding: 20px;
             }
@@ -250,17 +250,17 @@ func (d *Dashboard) HandleDashboard(w http.ResponseWriter, _ *http.Request) {
         function refreshData() {
             location.reload();
         }
-        
+
         function formatUptime(seconds) {
             const days = Math.floor(seconds / 86400);
             const hours = Math.floor((seconds % 86400) / 3600);
             const minutes = Math.floor((seconds % 3600) / 60);
-            
+
             if (days > 0) return days + "d " + hours + "h " + minutes + "m";
             if (hours > 0) return hours + "h " + minutes + "m";
             return minutes + "m " + (seconds % 60) + "s";
         }
-        
+
         // Auto-refresh every 30 seconds
         setTimeout(refreshData, 30000);
     </script>
@@ -274,56 +274,56 @@ func (d *Dashboard) HandleDashboard(w http.ResponseWriter, _ *http.Request) {
                 Version {{.Config.Version}} • Running since {{.Stats.StartTime.Format "2006-01-02 15:04:05"}}
             </div>
         </div>
-        
+
         <div class="stats-grid">
             <div class="stat-card success">
                 <div class="stat-value">{{.Stats.ChannelsActive}}</div>
                 <div class="stat-label">Active Channels</div>
             </div>
-            
+
             <div class="stat-card info">
                 <div class="stat-value">{{.Stats.BouquetsActive}}</div>
                 <div class="stat-label">Bouquets</div>
             </div>
-            
+
             <div class="stat-card primary">
                 <div class="stat-value">{{.Stats.EPGProgrammes}}</div>
                 <div class="stat-label">EPG Programmes</div>
             </div>
-            
+
             <div class="stat-card warning">
                 <div class="stat-value">{{printf "%.1f" .Stats.MemoryUsageMB}} MB</div>
                 <div class="stat-label">Memory Usage</div>
             </div>
-            
+
             <div class="stat-card info">
                 <div class="stat-value">{{.Stats.GoroutineCount}}</div>
                 <div class="stat-label">Goroutines</div>
             </div>
-            
+
             <div class="stat-card success">
                 <div class="stat-value">{{.Stats.RefreshCount}}</div>
                 <div class="stat-label">Total Refreshes</div>
             </div>
-            
+
             <div class="stat-card {{if gt .Stats.ErrorCount 0}}danger{{else}}success{{end}}">
                 <div class="stat-value">{{.Stats.ErrorCount}}</div>
                 <div class="stat-label">Errors</div>
             </div>
-            
+
             <div class="stat-card primary">
                 <div class="stat-value">{{.Stats.RequestsServed}}</div>
                 <div class="stat-label">Requests Served</div>
             </div>
-            
+
             <div class="stat-card info">
                 <div class="stat-value">{{printf "%.1f" .Stats.AvgResponseTime}}ms</div>
                 <div class="stat-label">Avg Response Time</div>
             </div>
         </div>
-        
+
         <button class="refresh-btn" onclick="refreshData()">🔄 Refresh Now</button>
-        
+
         <div class="config-section">
             <div class="config-title">📋 Configuration</div>
             <div class="config-grid">

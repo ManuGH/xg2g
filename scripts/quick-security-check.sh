@@ -17,7 +17,7 @@ else
     echo "❌ FAIL (Got: $response, Expected: 403)"
 fi
 
-# Test 2: Path traversal attempt  
+# Test 2: Path traversal attempt
 echo -n "Testing path traversal protection... "
 response=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/files/../../../etc/passwd")
 if [[ "$response" == "403" || "$response" == "404" ]]; then

@@ -36,7 +36,7 @@ log_result() {
     local actual_status="$3"
     local success="$4"
     local response_body="$5"
-    
+
     # Append to JSON results
     jq --arg test "$test_name" \
        --arg expected "$expected_status" \
@@ -51,7 +51,7 @@ log_result() {
            "timestamp": now,
            "response_body": $body
        }]' "$RESULTS_FILE" > "$RESULTS_FILE.tmp" && mv "$RESULTS_FILE.tmp" "$RESULTS_FILE"
-       
+
     if [[ "$success" == "true" ]]; then
         echo -e "  ${GREEN}✅ $test_name${NC} (Expected: $expected_status, Got: $actual_status)"
     else
@@ -63,7 +63,7 @@ log_result() {
 # Create test files and symlinks
 echo -e "${BLUE}🔧 Creating test attack vectors...${NC}"
 
-# Create files outside the data directory 
+# Create files outside the data directory
 echo "SECRET_DATA_1" > outside/secret.txt
 echo "SYSTEM_FILE" > outside/passwd
 echo "CONFIG_DATA" > outside/config.json
@@ -73,27 +73,27 @@ echo -e "\n${YELLOW}📁 Category 1: Basic File Access${NC}"
 
 test_basic_file_access() {
     echo "Testing basic file access patterns..."
-    
+
     # Test 1: Valid file access (should work if files exist)
     response=$(curl -s -w "HTTPSTATUS:%{http_code}" "$BASE_URL/files/playlist.m3u" 2>/dev/null)
     body="${response%HTTPSTATUS:*}"
     status="${response##*HTTPSTATUS:}"
     status="${status//$'\n'/}"
-    
+
     # Accept both 200 (file exists) and 404 (file doesn't exist) as valid
     if [[ "$status" == "200" || "$status" == "404" ]]; then
         log_result "valid_file_access" "200_or_404" "$status" "true" "$body"
     else
         log_result "valid_file_access" "200_or_404" "$status" "false" "$body"
     fi
-    
+
     # Test 2: Nonexistent file
     response=$(curl -s -w "HTTPSTATUS:%{http_code}" "$BASE_URL/files/nonexistent.txt" 2>/dev/null)
     body="${response%HTTPSTATUS:*}"
     status="${response##*HTTPSTATUS:}"
     status="${status//$'\n'/}"
     log_result "nonexistent_file" "404" "$status" "$([ "$status" == "404" ] && echo "true" || echo "false")" "$body"
-    
+
     # Test 3: Method restrictions
     for method in POST PUT DELETE PATCH; do
         response=$(curl -s -X "$method" -w "HTTPSTATUS:%{http_code}" "$BASE_URL/files/test.txt" 2>/dev/null)
@@ -109,11 +109,11 @@ echo -e "\n${YELLOW}🗂️ Category 2: Path Traversal Attacks${NC}"
 
 test_path_traversal() {
     echo "Testing path traversal attack patterns..."
-    
+
     # Basic traversal patterns
     local patterns=(
         "../etc/passwd"
-        "../../etc/passwd" 
+        "../../etc/passwd"
         "../../../etc/passwd"
         "....//....//etc/passwd"
         "..%2F..%2Fetc%2Fpasswd"
@@ -121,13 +121,13 @@ test_path_traversal() {
         "/%2e%2e/%2e%2e/etc/passwd"
         "/..%c0%af../etc/passwd"
     )
-    
+
     for pattern in "${patterns[@]}"; do
         response=$(curl -s -w "HTTPSTATUS:%{http_code}" "$BASE_URL/files/$pattern" 2>/dev/null)
         body="${response%HTTPSTATUS:*}"
         status="${response##*HTTPSTATUS:}"
         status="${status//$'\n'/}"
-        
+
         # Should be blocked (403/404) or normalized (301)
         if [[ "$status" == "403" || "$status" == "404" || "$status" == "301" ]]; then
             log_result "path_traversal_${pattern//\//_}" "403_or_404_or_301" "$status" "true" "$body"
@@ -142,7 +142,7 @@ echo -e "\n${YELLOW}🔗 Category 3: Symlink Escape Attacks${NC}"
 
 test_symlink_attacks() {
     echo "Testing symlink escape attack patterns..."
-    
+
     # Create malicious symlinks (these should be blocked at runtime)
     local symlink_tests=(
         "evil_secret:$TARGET_DIR/outside/secret.txt"
@@ -150,20 +150,20 @@ test_symlink_attacks() {
         "evil_config:$TARGET_DIR/outside/config.json"
         "evil_dir:$TARGET_DIR/outside"
     )
-    
+
     for test_case in "${symlink_tests[@]}"; do
         IFS=':' read -r link_name _ <<< "$test_case"
-        
+
         # Test the symlink attack via HTTP (should be blocked)
         response=$(curl -s -w "HTTPSTATUS:%{http_code}" "$BASE_URL/files/$link_name" 2>/dev/null)
         body="${response%HTTPSTATUS:*}"
         status="${response##*HTTPSTATUS:}"
         status="${status//$'\n'/}"
-        
+
         # Should be blocked with 403 Forbidden
         log_result "symlink_escape_$link_name" "403" "$status" "$([ "$status" == "403" ] && echo "true" || echo "false")" "$body"
     done
-    
+
     # Test symlink chains (A -> B -> outside)
     response=$(curl -s -w "HTTPSTATUS:%{http_code}" "$BASE_URL/files/chain_link" 2>/dev/null)
     body="${response%HTTPSTATUS:*}"
@@ -177,20 +177,20 @@ echo -e "\n${YELLOW}📂 Category 4: Directory Listing Protection${NC}"
 
 test_directory_protection() {
     echo "Testing directory access protection..."
-    
+
     local dir_tests=(
         ""           # Root directory
         "/"          # Explicit root
         "/subdir/"   # Subdirectory with trailing slash
         "/subdir"    # Subdirectory without trailing slash
     )
-    
+
     for dir in "${dir_tests[@]}"; do
         response=$(curl -s -w "HTTPSTATUS:%{http_code}" "$BASE_URL/files$dir" 2>/dev/null)
         body="${response%HTTPSTATUS:*}"
         status="${response##*HTTPSTATUS:}"
         status="${status//$'\n'/}"
-        
+
         # Directory access should be blocked (403) or redirected (301)
         if [[ "$status" == "403" || "$status" == "301" ]]; then
             log_result "directory_access_${dir//\//_}" "403_or_301" "$status" "true" "$body"
@@ -205,7 +205,7 @@ echo -e "\n${YELLOW}⚡ Category 5: High-Volume Attack Simulation${NC}"
 
 test_volume_attacks() {
     echo "Testing high-volume attack scenarios..."
-    
+
     # Parallel symlink escape attempts
     echo "Launching $CONCURRENT_ATTACKS concurrent symlink attacks..."
     for ((i=1; i<=CONCURRENT_ATTACKS; i++)); do
@@ -217,7 +217,7 @@ test_volume_attacks() {
         ) &
     done
     wait
-    
+
     # Check if service is still responsive
     response=$(curl -s -w "HTTPSTATUS:%{http_code}" "$BASE_URL/healthz" 2>/dev/null)
     body="${response%HTTPSTATUS:*}"
@@ -231,7 +231,7 @@ echo -e "\n${YELLOW}🎯 Category 6: Edge Cases${NC}"
 
 test_edge_cases() {
     echo "Testing edge cases and error handling..."
-    
+
     # Large path
     local large_path
     large_path=$(python3 -c "print('a' * 1000)")
@@ -240,7 +240,7 @@ test_edge_cases() {
     status="${response##*HTTPSTATUS:}"
     status="${status//$'\n'/}"
     log_result "large_path_handling" "404" "$status" "$([ "$status" == "404" ] && echo "true" || echo "false")" "$body"
-    
+
     # Unicode/Special characters
     local special_chars="%00%2e%2e%2f%2e%2e%2fetc%2fpasswd"
     response=$(curl -s -w "HTTPSTATUS:%{http_code}" "$BASE_URL/files/$special_chars" 2>/dev/null)
@@ -248,7 +248,7 @@ test_edge_cases() {
     status="${response##*HTTPSTATUS:}"
     status="${status//$'\n'/}"
     log_result "special_chars_handling" "403_or_404" "$status" "$( [[ "$status" == "403" || "$status" == "404" ]] && echo "true" || echo "false")" "$body"
-    
+
     # Empty path
     response=$(curl -s -w "HTTPSTATUS:%{http_code}" "$BASE_URL/files/" 2>/dev/null)
     body="${response%HTTPSTATUS:*}"
@@ -259,7 +259,7 @@ test_edge_cases() {
 
 # Run all test categories
 test_basic_file_access
-test_path_traversal  
+test_path_traversal
 test_symlink_attacks
 test_directory_protection
 test_volume_attacks

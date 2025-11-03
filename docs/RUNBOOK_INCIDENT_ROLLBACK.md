@@ -156,7 +156,7 @@ kubectl set image deployment/xg2g xg2g=ghcr.io/manugh/xg2g:v1.6.1
    ```bash
    # Prometheus Alertmanager
    curl http://alertmanager:9093/api/v2/alerts
-   
+
    # Grafana dashboards
    open https://grafana.example.com/d/xg2g-overview
    ```
@@ -239,7 +239,7 @@ kubectl logs -l app=xg2g --tail=100 | grep -E 'ERROR|FATAL' || echo "No errors"
 1. **Update Status Page:**
    ```
    ✅ RESOLVED: xg2g Service Restored
-   
+
    Rollback to v1.6.1 completed at [TIME].
    All health checks passing.
    Post-mortem scheduled for [DATE].
@@ -249,7 +249,7 @@ kubectl logs -l app=xg2g --tail=100 | grep -E 'ERROR|FATAL' || echo "No errors"
    ```bash
    # Save logs
    kubectl logs -l app=xg2g --since=1h > incident-logs-$(date +%Y%m%d-%H%M).log
-   
+
    # Export metrics
    curl "http://prometheus:9090/api/v1/query_range?query=xg2g_up&start=$(date -u -d '1 hour ago' +%s)&end=$(date +%s)&step=15s" \
      > incident-metrics-$(date +%Y%m%d-%H%M).json
