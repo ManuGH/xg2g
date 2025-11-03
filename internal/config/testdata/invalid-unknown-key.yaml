@@ -1,0 +1,18 @@
+# Invalid: contains unknown root key (should trigger strict parsing error)
+version: "1"
+dataDir: /tmp/xg2g-test
+
+openWebIF:
+  baseUrl: http://receiver.local
+  username: testuser
+  password: testpass
+
+bouquets:
+  - userbouquet.favourites.tv
+
+epg:
+  enabled: true
+  days: 7
+
+# This key doesn't exist in FileConfig struct
+unexpectedRootKey: true

@@ -4,6 +4,7 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -155,10 +156,12 @@ func (l *Loader) loadFile(path string) (*FileConfig, error) {
 		return nil, fmt.Errorf("read file: %w", err)
 	}
 
-	// Parse YAML
+	// Parse YAML with strict mode (unknown fields cause errors)
 	var fileCfg FileConfig
-	if err := yaml.Unmarshal(data, &fileCfg); err != nil {
-		return nil, fmt.Errorf("parse YAML: %w", err)
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true) // Reject unknown fields
+	if err := dec.Decode(&fileCfg); err != nil {
+		return nil, fmt.Errorf("parse YAML (strict): %w", err)
 	}
 
 	return &fileCfg, nil
