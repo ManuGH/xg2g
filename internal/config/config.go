@@ -156,6 +156,9 @@ func (l *Loader) loadFile(path string) (*FileConfig, error) {
 		return nil, fmt.Errorf("read file: %w", err)
 	}
 
+	// Check for deprecated fields before parsing (logs warnings)
+	checkDeprecations(data)
+
 	// Parse YAML with strict mode (unknown fields cause errors)
 	var fileCfg FileConfig
 	dec := yaml.NewDecoder(bytes.NewReader(data))

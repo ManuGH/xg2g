@@ -329,3 +329,145 @@ func TestConfigHolder_StartWatcher_EmptyPath(t *testing.T) {
 	// Clean up
 	holder.Stop()
 }
+
+// TestConfigHolder_Reload_StrictParseFailure tests reload with YAML strict parsing errors.
+// Verifies that invalid YAML (unknown fields) preserves the old config.
+func TestConfigHolder_Reload_StrictParseFailure(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	// Write valid initial config
+	writeValidConfig(t, configPath, "stable-bouquet")
+
+	loader := NewLoader(configPath, "test")
+	initial, err := loader.Load()
+	if err != nil {
+		t.Fatalf("failed to load initial config: %v", err)
+	}
+
+	holder := NewConfigHolder(initial, loader, configPath)
+
+	// Write config with unknown field (strict parsing should reject)
+	invalidContent := `
+dataDir: /tmp/test
+openWebIF:
+  baseUrl: http://test.example.com
+bouquets:
+  - test-bouquet
+epg:
+  enabled: true
+  days: 7
+unknownField: this-should-be-rejected
+`
+	if err := os.WriteFile(configPath, []byte(invalidContent), 0644); err != nil {
+		t.Fatalf("failed to write invalid config: %v", err)
+	}
+
+	// Reload should fail due to strict parsing
+	ctx := context.Background()
+	err = holder.Reload(ctx)
+	if err == nil {
+		t.Fatal("expected Reload() to fail with strict parsing error, got nil")
+	}
+
+	// Verify old config is unchanged
+	got := holder.Get()
+	if got.Bouquet != "stable-bouquet" {
+		t.Errorf("expected old config to be preserved after parse error, got Bouquet %q", got.Bouquet)
+	}
+}
+
+// TestConfigHolder_Reload_TypeMismatch tests reload with YAML type errors.
+// Verifies that type mismatches preserve the old config.
+func TestConfigHolder_Reload_TypeMismatch(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	// Write valid initial config
+	writeValidConfig(t, configPath, "stable-bouquet")
+
+	loader := NewLoader(configPath, "test")
+	initial, err := loader.Load()
+	if err != nil {
+		t.Fatalf("failed to load initial config: %v", err)
+	}
+
+	holder := NewConfigHolder(initial, loader, configPath)
+
+	// Write config with type mismatch (days should be int, not string)
+	invalidContent := `
+dataDir: /tmp/test
+openWebIF:
+  baseUrl: http://test.example.com
+bouquets:
+  - test-bouquet
+epg:
+  enabled: true
+  days: "seven"
+`
+	if err := os.WriteFile(configPath, []byte(invalidContent), 0644); err != nil {
+		t.Fatalf("failed to write invalid config: %v", err)
+	}
+
+	// Reload should fail due to type mismatch
+	ctx := context.Background()
+	err = holder.Reload(ctx)
+	if err == nil {
+		t.Fatal("expected Reload() to fail with type mismatch error, got nil")
+	}
+
+	// Verify old config is unchanged
+	got := holder.Get()
+	if got.Bouquet != "stable-bouquet" {
+		t.Errorf("expected old config to be preserved after type error, got Bouquet %q", got.Bouquet)
+	}
+}
+
+// TestConfigHolder_Reload_BusinessLogicFailure tests reload with business logic validation errors.
+// Verifies that configs that pass parsing but fail business validation preserve the old config.
+func TestConfigHolder_Reload_BusinessLogicFailure(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	// Write valid initial config
+	writeValidConfig(t, configPath, "stable-bouquet")
+
+	loader := NewLoader(configPath, "test")
+	initial, err := loader.Load()
+	if err != nil {
+		t.Fatalf("failed to load initial config: %v", err)
+	}
+
+	holder := NewConfigHolder(initial, loader, configPath)
+
+	// Write config that parses but fails validation (epg.days out of range)
+	invalidContent := `
+dataDir: /tmp/test
+openWebIF:
+  baseUrl: http://test.example.com
+bouquets:
+  - test-bouquet
+epg:
+  enabled: true
+  days: 99
+`
+	if err := os.WriteFile(configPath, []byte(invalidContent), 0644); err != nil {
+		t.Fatalf("failed to write invalid config: %v", err)
+	}
+
+	// Reload should fail due to validation (days out of range 1-14)
+	ctx := context.Background()
+	err = holder.Reload(ctx)
+	if err == nil {
+		t.Fatal("expected Reload() to fail with validation error, got nil")
+	}
+
+	// Verify old config is unchanged
+	got := holder.Get()
+	if got.Bouquet != "stable-bouquet" {
+		t.Errorf("expected old config to be preserved after validation error, got Bouquet %q", got.Bouquet)
+	}
+	if got.EPGDays != 7 {
+		t.Errorf("expected old EPGDays=7 to be preserved, got %d", got.EPGDays)
+	}
+}
