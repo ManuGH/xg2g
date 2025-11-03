@@ -1,7 +1,7 @@
 # Coverage Operations Runbook
 
 **Project:** xg2g
-**Version:** 1.2
+**Version:** 1.3
 **Last Updated:** 2025-11-03
 
 ---
@@ -55,7 +55,26 @@ gh secret list | grep CODECOV_TOKEN
    gh secret set CODECOV_TOKEN --body "NEW_TOKEN_HERE"
    ```
 
-3. **Verify Token Usage**:
+3. **Secret Rotation Schedule** (Security Best Practice):
+   ```bash
+   # Biannual token rotation (every 6 months)
+   # Schedule: January 1st and July 1st
+
+   # Step 1: Regenerate in Codecov Dashboard
+   # https://app.codecov.io/github/manugh/xg2g → Settings → General → Regenerate
+
+   # Step 2: Update GitHub Secret
+   gh secret set CODECOV_TOKEN --body "NEW_TOKEN_FROM_DASHBOARD"
+
+   # Step 3: Verify next workflow run
+   gh run list --workflow=coverage.yml --limit 1
+   ```
+
+   **Rotation History:**
+   - 2025-11-03: Initial configuration
+   - Next rotation: 2026-01-01 (Q1 2026)
+
+4. **Verify Token Usage**:
    ```bash
    # Check workflow logs for successful uploads
    gh run list --workflow=coverage.yml --limit 1
@@ -691,6 +710,7 @@ flags:
 | 2025-11-02 | 1.0 | Initial runbook (commit 0e837c1) |
 | 2025-11-03 | 1.1 | Added Test Analytics section, test-results-action integration |
 | 2025-11-03 | 1.2 | Added CODECOV_TOKEN configuration, prerequisites section |
+| 2025-11-03 | 1.3 | Added biannual secret rotation schedule, security best practices |
 
 ---
 
