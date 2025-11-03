@@ -1,7 +1,7 @@
 # Coverage Operations Runbook
 
 **Project:** xg2g
-**Version:** 1.3
+**Version:** 1.4
 **Last Updated:** 2025-11-03
 
 ---
@@ -703,7 +703,167 @@ flags:
 
 ---
 
-## 9. Changelog
+## 9. Coverage Improvement Strategy (API & Proxy)
+
+**Goal:** API ≥70% (short-term), Proxy 30-40% (mid-term), Overall 60-62% (5-8 PRs)
+
+**Current Baseline (2025-11-03):**
+- Overall: 57.6% (target: 55% ✅)
+- API: 64.4% (target: 70%, gap: -5.6%)
+- Proxy: 16.0% (target: 50%, gap: -34%)
+- Daemon: 80.5% (target: 60% ✅)
+- EPG: 68.5% (target: 55% ✅)
+- Playlist: 93.8% (target: 60% ✅)
+
+**Philosophy:** No policy changes - improve coverage through targeted testing, not by lowering standards.
+
+### 9.1 Quick Wins (1-2 PRs)
+
+**API Component (+5-8% expected):**
+
+1. **Circuit Breaker State Machine Tests**
+   - Test state transitions: Closed → Open → Half-Open → Closed
+   - Timer/Clock injection for deterministic tests
+   - Test cases: threshold exceeded, timeout recovery, success resets
+   - Implementation: Extract `type Clock interface { Now() time.Time }` for injection
+
+2. **HTTP Handler Table-Driven Tests**
+   - Success cases: 2xx responses with valid inputs
+   - Error cases: 4xx (invalid params, malformed JSON, missing auth)
+   - Edge cases: empty bodies, nil values, oversized payloads
+   - Use `httptest.NewRecorder()` and `httptest.NewRequest()`
+
+   ```go
+   func TestHandler_Cases(t *testing.T) {
+       tests := []struct {
+           name       string
+           method     string
+           path       string
+           body       string
+           wantStatus int
+       }{
+           {"valid_request", "GET", "/api/v1/items?limit=10", "", 200},
+           {"invalid_limit", "GET", "/api/v1/items?limit=0", "", 400},
+           // 10-15 cases
+       }
+   }
+   ```
+
+**Proxy Component (+10-15% expected):**
+
+1. **Dependency Inversion**
+   - Extract interfaces: `Transcoder`, `Prober`
+   - Production: FFmpeg implementation
+   - Test: Fake implementations (no real FFmpeg binary)
+
+2. **Fake FFmpeg for Tests**
+   - Script-based stub: `test/fixtures/fake-ffmpeg.sh`
+   - Environment variables control behavior (`FAKE_FFPEG_EXIT`)
+   - Simulates success, failure, version check
+
+### 9.2 Mid-Term Improvements (3-6 PRs)
+
+**Proxy Deep Testing:**
+
+1. **I/O Abstraction**
+   - Inject `io.Reader`/`io.Writer` instead of direct file/network access
+   - Tests use `bytes.Buffer`/`io.NopCloser`
+   - Error paths: empty streams, interrupted reads, write failures
+
+2. **FFmpeg Error Simulation**
+   - Exit code ≠ 0
+   - SIGPIPE handling
+   - Incomplete header parsing
+   - Stream format mismatches
+
+3. **Contract Tests (Flag=contract)**
+   - Mock OpenWebIF service (Docker container in CI)
+   - Validate API contract stability
+   - Only runs in CI, not locally blocking
+
+**Chaos-Adjacent Unit Tests:**
+
+- Inject latency via custom `http.RoundTripper`
+- Timeout simulation with `context.WithTimeout`
+- Upstream failures with fake servers returning 5xx
+
+### 9.3 Implementation Scaffolding
+
+**Note:** Interface extraction deferred to avoid naming conflicts with existing `Transcoder` struct. Tests can use fakes and dependency injection directly.
+
+**1. Test Fakes** (`internal/proxy/fake/transcoder_fake_test.go`):
+```go
+//go:build test
+
+package fake
+
+type FakeTranscoder struct { Err error }
+func (f *FakeTranscoder) Start(ctx, in, out) error { ... }
+```
+
+**3. Fake FFmpeg** (`test/fixtures/fake-ffmpeg.sh`):
+```bash
+#!/bin/sh
+[ "$1" = "-version" ] && echo "ffmpeg version 6.0-test" >&2
+exit "${FAKE_FFPEG_EXIT:-0}"
+```
+
+**4. Circuit Breaker Test Template** (`internal/api/circuit_breaker_test.go`):
+```go
+func TestCircuitBreaker_StateMachine(t *testing.T) {
+    cases := []struct{
+        name        string
+        failures    int
+        expectState string
+    }{
+        {"closed_to_open_on_threshold", 5, "open"},
+        {"half_open_resets_on_success", 0, "closed"},
+    }
+    // Inject test clock for deterministic timing
+}
+```
+
+### 9.4 KPI & Governance
+
+**No Policy Changes:**
+- Patch coverage gate remains **90%** (enforces quality on new code)
+- Project minimum remains **55%** (defensive baseline)
+- Component targets remain **informative only** (not blocking)
+
+**Review Trigger (After 5 PRs):**
+- If API component stable at <68%, consider lowering target 70% → 65%
+- If Proxy reaches 40%, celebrate and document best practices
+- If overall hits 62%, update baseline in this document
+
+**Measurement:**
+```bash
+# Before starting work
+go tool cover -func=coverage.out | grep "total:"
+# After each PR
+go tool cover -func=coverage.out | grep -E "internal/(api|proxy)"
+```
+
+**Success Criteria:**
+- ✅ API: 70%+ (Quick Wins implemented)
+- ✅ Proxy: 30-40% (Interfaces + Fakes deployed)
+- ✅ Overall: 60-62% (5-8 PRs completed)
+- ✅ Patch coverage: Maintained at 90%+
+- ✅ Flaky rate: <5% (Test Analytics monitoring)
+
+**Tracking:**
+- Use GitHub Issues with label `coverage-improvement`
+- Template: `.github/ISSUE_TEMPLATE/coverage_improvement.md`
+- Link PRs to issues for audit trail
+
+**Downstream Benefits:**
+- Better testability (interfaces enable mocking)
+- Faster CI (no real FFmpeg in unit tests)
+- Reduced flakiness (deterministic clocks/timers)
+- Easier onboarding (clear test patterns)
+
+---
+
+## 10. Changelog
 
 | Date | Version | Changes |
 |------|---------|---------|
@@ -711,6 +871,7 @@ flags:
 | 2025-11-03 | 1.1 | Added Test Analytics section, test-results-action integration |
 | 2025-11-03 | 1.2 | Added CODECOV_TOKEN configuration, prerequisites section |
 | 2025-11-03 | 1.3 | Added biannual secret rotation schedule, security best practices |
+| 2025-11-03 | 1.4 | Added Coverage Improvement Strategy (API & Proxy), baseline metrics, scaffolding guide |
 
 ---
 
