@@ -50,7 +50,8 @@
         },
         "password": {
           "type": "string",
-          "description": "OpenWebIF authentication password (if required). Environment variables like ${PASS} are expanded.",
+          "writeOnly": true,
+          "description": "OpenWebIF authentication password (if required). Can also be provided via environment variable XG2G_OWI_PASS. Never logged in plaintext. Environment variables like ${PASS} are expanded.",
           "examples": ["dreambox", "${ENIGMA_PASSWORD}"]
         },
         "timeout": {
@@ -183,7 +184,8 @@
       "properties": {
         "token": {
           "type": "string",
-          "description": "Bearer token for API authentication. Environment variables are expanded.",
+          "writeOnly": true,
+          "description": "Bearer token for API authentication. Can also be provided via environment variable XG2G_API_TOKEN. Never logged in plaintext. Environment variables are expanded.",
           "examples": ["my-secret-token", "${API_TOKEN}"]
         },
         "listenAddr": {

@@ -28,7 +28,7 @@ HTTP API server configuration for runtime control
 | Feld | Typ | Pflicht | Beschreibung |
 |---|---|:---:|---|
 | `listenAddr` | `string` |  | API server listen address (host:port) |
-| `token` | `string` |  | Bearer token for API authentication. Environment variables are expanded. |
+| `token` | `string` |  | Bearer token for API authentication. Can also be provided via environment variable XG2G_API_TOKEN. Never logged in plaintext. Environment variables are expanded. |
 
 ### `api.listenAddr`
 
@@ -49,7 +49,7 @@ API server listen address (host:port)
 **Typ:** `string`  
 **Pflicht:**   
 
-Bearer token for API authentication. Environment variables are expanded.
+Bearer token for API authentication. Can also be provided via environment variable XG2G_API_TOKEN. Never logged in plaintext. Environment variables are expanded.
 
 **Beispiel:**
 
@@ -278,7 +278,7 @@ OpenWebIF API configuration for Enigma2 receiver
 | `backoff` | `string` |  | Initial backoff duration between retries (Go duration format) |
 | `baseUrl` | `string` | ✓ | Base URL of the Enigma2 receiver's OpenWebIF interface |
 | `maxBackoff` | `string` |  | Maximum backoff duration for exponential backoff (Go duration format) |
-| `password` | `string` |  | OpenWebIF authentication password (if required). Environment variables like ${PASS} are expanded. |
+| `password` | `string` |  | OpenWebIF authentication password (if required). Can also be provided via environment variable XG2G_OWI_PASS. Never logged in plaintext. Environment variables like ${PASS} are expanded. |
 | `retries` | `integer` |  | Number of retry attempts for failed HTTP requests |
 | `streamPort` | `integer` |  | Port number for IPTV streaming URLs |
 | `timeout` | `string` |  | HTTP request timeout duration (Go duration format: 10s, 500ms, 1m) |
@@ -331,7 +331,7 @@ Maximum backoff duration for exponential backoff (Go duration format)
 **Typ:** `string`  
 **Pflicht:**   
 
-OpenWebIF authentication password (if required). Environment variables like ${PASS} are expanded.
+OpenWebIF authentication password (if required). Can also be provided via environment variable XG2G_OWI_PASS. Never logged in plaintext. Environment variables like ${PASS} are expanded.
 
 **Beispiel:**
 
