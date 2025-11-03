@@ -5,7 +5,7 @@
 # All targets are designed with enterprise-grade quality assurance and CI/CD integration in mind.
 # ===================================================================================================
 
-.PHONY: help build build-all build-rust build-ffi clean clean-rust lint lint-fix test test-race test-cover test-fuzz test-all test-ffi \
+.PHONY: help build build-all build-rust build-ffi clean clean-rust lint lint-fix test test-race test-cover cover test-fuzz test-all test-ffi \
         docker docker-build docker-build-cpu docker-build-gpu docker-build-all docker-security docker-tag docker-push docker-clean \
         sbom deps deps-update deps-tidy deps-verify deps-licenses \
         security security-scan security-audit security-vulncheck \
@@ -257,6 +257,8 @@ test-cover: ## Run tests with coverage reporting
 		echo "❌ Coverage thresholds not met"; \
 		exit 1; \
 	fi
+
+cover: test-cover ## Alias for test-cover
 
 test-fuzz: ## Run comprehensive fuzzing tests
 	@echo "Running fuzzing tests..."

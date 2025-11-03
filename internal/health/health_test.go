@@ -128,6 +128,17 @@ func TestManager_ServeHealth(t *testing.T) {
 	assert.Len(t, resp.Checks, 1)
 }
 
+func TestManager_ServeHealth_EncodingError(t *testing.T) {
+	m := NewManager("v1.0.0")
+
+	// Use a broken ResponseWriter that fails to write
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	w := &brokenWriter{header: make(http.Header)}
+
+	// Should not panic even if encoding fails
+	m.ServeHealth(w, req)
+}
+
 func TestManager_ServeReady(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -172,6 +183,22 @@ func TestManager_ServeReady(t *testing.T) {
 			assert.Equal(t, tt.expectedReady, resp.Ready)
 		})
 	}
+}
+
+func TestManager_ServeReady_EncodingError(t *testing.T) {
+	m := NewManager("v1.0.0")
+
+	// Use a broken ResponseWriter that fails to write
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	w := &brokenWriter{header: make(http.Header)}
+
+	// Should not panic even if encoding fails
+	m.ServeReady(w, req)
+}
+
+func TestFileChecker_Name(t *testing.T) {
+	checker := NewFileChecker("xmltv-file", "/path/to/file.xml")
+	assert.Equal(t, "xmltv-file", checker.Name())
 }
 
 func TestFileChecker(t *testing.T) {
@@ -226,6 +253,28 @@ func TestFileChecker(t *testing.T) {
 			},
 			expectedStatus: StatusHealthy,
 		},
+		{
+			name: "permission denied or other stat error",
+			setup: func() string {
+				// Create a file in a directory, then remove read permissions on parent
+				dirPath := filepath.Join(tempDir, "restricted")
+				require.NoError(t, os.Mkdir(dirPath, 0755))
+				filePath := filepath.Join(dirPath, "file.txt")
+				require.NoError(t, os.WriteFile(filePath, []byte("test"), 0644))
+
+				// Remove all permissions on directory (will cause stat to fail on some systems)
+				require.NoError(t, os.Chmod(dirPath, 0000))
+
+				// Clean up after test
+				t.Cleanup(func() {
+					_ = os.Chmod(dirPath, 0755) // Restore permissions for cleanup
+				})
+
+				return filePath
+			},
+			expectedStatus: StatusUnhealthy,
+			expectedError:  "", // Error message varies by system (permission denied or other)
+		},
 	}
 
 	for _, tt := range tests {
@@ -240,6 +289,13 @@ func TestFileChecker(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestLastRunChecker_Name(t *testing.T) {
+	checker := NewLastRunChecker(func() (time.Time, string) {
+		return time.Now(), ""
+	})
+	assert.Equal(t, "last_job_run", checker.Name())
 }
 
 func TestLastRunChecker(t *testing.T) {
@@ -313,4 +369,21 @@ func (m *mockChecker) Check(_ context.Context) CheckResult {
 		Message: m.message,
 		Error:   m.err,
 	}
+}
+
+// brokenWriter is a mock ResponseWriter that always fails to write
+type brokenWriter struct {
+	header http.Header
+}
+
+func (w *brokenWriter) Header() http.Header {
+	return w.header
+}
+
+func (w *brokenWriter) Write([]byte) (int, error) {
+	return 0, assert.AnError // Always fail
+}
+
+func (w *brokenWriter) WriteHeader(statusCode int) {
+	// No-op
 }

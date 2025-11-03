@@ -100,7 +100,7 @@ func renderNode(buf *bytes.Buffer, name string, node Schema, required bool, h in
 	if pi.Default != "" {
 		fmt.Fprintf(buf, "**Default:** `%s`  \n", mdSan(pi.Default))
 	}
-	if pi.Enum != nil && len(pi.Enum) > 0 {
+	if len(pi.Enum) > 0 {
 		fmt.Fprintf(buf, "**Erlaubte Werte:** %s  \n", strings.Join(wrapBackticks(pi.Enum), ", "))
 	}
 	if pi.Description != "" {

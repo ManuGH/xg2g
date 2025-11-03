@@ -16,7 +16,7 @@ func TestLoad_ValidMinimal(t *testing.T) {
 	if err := os.MkdirAll(testDir, 0755); err != nil {
 		t.Fatalf("failed to create test directory: %v", err)
 	}
-	defer os.RemoveAll(testDir)
+	defer func() { _ = os.RemoveAll(testDir) }()
 
 	loader := NewLoader(filepath.Join("testdata", "valid-minimal.yaml"), "test")
 	cfg, err := loader.Load()

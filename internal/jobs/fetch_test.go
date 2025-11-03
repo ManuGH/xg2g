@@ -185,9 +185,10 @@ func TestAggregateEvents(t *testing.T) {
 	ch1Count := 0
 	ch2Count := 0
 	for _, prog := range programmes {
-		if prog.Channel == "ch1" {
+		switch prog.Channel {
+		case "ch1":
 			ch1Count++
-		} else if prog.Channel == "ch2" {
+		case "ch2":
 			ch2Count++
 		}
 	}
