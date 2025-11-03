@@ -1,0 +1,271 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ManuGH/xg2g/config.schema.json",
+  "title": "xg2g Configuration",
+  "description": "YAML configuration schema for xg2g - XMLTV EPG generator for Enigma2 receivers",
+  "type": "object",
+  "required": ["version", "dataDir", "openWebIF", "bouquets", "epg"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Configuration version identifier",
+      "default": "1",
+      "examples": ["1"]
+    },
+    "dataDir": {
+      "type": "string",
+      "description": "Base directory for generated XMLTV files and cache. Environment variables like ${HOME} are expanded.",
+      "examples": [
+        "/var/lib/xg2g",
+        "${HOME}/.local/share/xg2g",
+        "/tmp/xg2g"
+      ]
+    },
+    "logLevel": {
+      "type": "string",
+      "description": "Logging verbosity level",
+      "enum": ["debug", "info", "warn", "error"],
+      "default": "info"
+    },
+    "openWebIF": {
+      "type": "object",
+      "description": "OpenWebIF API configuration for Enigma2 receiver",
+      "required": ["baseUrl"],
+      "properties": {
+        "baseUrl": {
+          "type": "string",
+          "description": "Base URL of the Enigma2 receiver's OpenWebIF interface",
+          "format": "uri",
+          "pattern": "^https?://",
+          "examples": [
+            "http://receiver.local",
+            "http://192.168.1.100",
+            "https://enigma2.example.com"
+          ]
+        },
+        "username": {
+          "type": "string",
+          "description": "OpenWebIF authentication username (if required). Environment variables like ${USER} are expanded.",
+          "examples": ["root", "${ENIGMA_USER}"]
+        },
+        "password": {
+          "type": "string",
+          "description": "OpenWebIF authentication password (if required). Environment variables like ${PASS} are expanded.",
+          "examples": ["dreambox", "${ENIGMA_PASSWORD}"]
+        },
+        "timeout": {
+          "type": "string",
+          "description": "HTTP request timeout duration (Go duration format: 10s, 500ms, 1m)",
+          "pattern": "^[0-9]+(ns|us|µs|ms|s|m|h)$",
+          "default": "10s",
+          "examples": ["10s", "5s", "30s"]
+        },
+        "retries": {
+          "type": "integer",
+          "description": "Number of retry attempts for failed HTTP requests",
+          "minimum": 0,
+          "maximum": 10,
+          "default": 3,
+          "examples": [3, 5, 0]
+        },
+        "backoff": {
+          "type": "string",
+          "description": "Initial backoff duration between retries (Go duration format)",
+          "pattern": "^[0-9]+(ns|us|µs|ms|s|m|h)$",
+          "default": "500ms",
+          "examples": ["500ms", "1s", "100ms"]
+        },
+        "maxBackoff": {
+          "type": "string",
+          "description": "Maximum backoff duration for exponential backoff (Go duration format)",
+          "pattern": "^[0-9]+(ns|us|µs|ms|s|m|h)$",
+          "default": "30s",
+          "examples": ["30s", "1m", "10s"]
+        },
+        "streamPort": {
+          "type": "integer",
+          "description": "Port number for IPTV streaming URLs",
+          "minimum": 1,
+          "maximum": 65535,
+          "default": 8001,
+          "examples": [8001, 8002]
+        }
+      }
+    },
+    "bouquets": {
+      "type": "array",
+      "description": "List of Enigma2 bouquet references (filenames or service references)",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "examples": [
+          "userbouquet.favourites.tv",
+          "userbouquet.dbe00.tv",
+          "1:7:1:0:0:0:0:0:0:0:FROM BOUQUET \"userbouquet.favourites.tv\" ORDER BY bouquet"
+        ]
+      },
+      "examples": [
+        ["userbouquet.favourites.tv"],
+        ["userbouquet.dbe00.tv", "userbouquet.dbe01.tv"]
+      ]
+    },
+    "epg": {
+      "type": "object",
+      "description": "Electronic Program Guide (EPG) fetching and generation configuration",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable or disable EPG fetching and XMLTV generation",
+          "default": true
+        },
+        "days": {
+          "type": "integer",
+          "description": "Number of days of EPG data to fetch (1-14)",
+          "minimum": 1,
+          "maximum": 14,
+          "default": 7,
+          "examples": [7, 3, 14]
+        },
+        "maxConcurrency": {
+          "type": "integer",
+          "description": "Maximum concurrent EPG requests to the receiver (1-10)",
+          "minimum": 1,
+          "maximum": 10,
+          "default": 5,
+          "examples": [5, 3, 8]
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "description": "Timeout in milliseconds for individual EPG requests (100-60000ms)",
+          "minimum": 100,
+          "maximum": 60000,
+          "default": 15000,
+          "examples": [15000, 10000, 30000]
+        },
+        "retries": {
+          "type": "integer",
+          "description": "Number of retry attempts for failed EPG requests (0-5)",
+          "minimum": 0,
+          "maximum": 5,
+          "default": 2,
+          "examples": [2, 3, 0]
+        },
+        "fuzzyMax": {
+          "type": "integer",
+          "description": "Maximum Levenshtein distance for fuzzy matching service names (0-10)",
+          "minimum": 0,
+          "maximum": 10,
+          "default": 2,
+          "examples": [2, 3, 0]
+        },
+        "xmltvPath": {
+          "type": "string",
+          "description": "Output path for generated XMLTV file (relative to dataDir or absolute)",
+          "examples": [
+            "guide.xml",
+            "xmltv/epg.xml",
+            "/var/www/epg/guide.xml"
+          ]
+        },
+        "source": {
+          "type": "string",
+          "description": "EPG data source: 'bouquet' (fetch full bouquet EPG) or 'per-service' (fetch per service)",
+          "enum": ["bouquet", "per-service"],
+          "default": "per-service",
+          "examples": ["per-service", "bouquet"]
+        }
+      }
+    },
+    "api": {
+      "type": "object",
+      "description": "HTTP API server configuration for runtime control",
+      "properties": {
+        "token": {
+          "type": "string",
+          "description": "Bearer token for API authentication. Environment variables are expanded.",
+          "examples": ["my-secret-token", "${API_TOKEN}"]
+        },
+        "listenAddr": {
+          "type": "string",
+          "description": "API server listen address (host:port)",
+          "pattern": "^([a-zA-Z0-9.-]+)?:[0-9]+$",
+          "default": ":8080",
+          "examples": [":8080", "127.0.0.1:8080", "0.0.0.0:9090"]
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "description": "Prometheus metrics exporter configuration",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable or disable Prometheus metrics endpoint",
+          "default": false
+        },
+        "listenAddr": {
+          "type": "string",
+          "description": "Metrics server listen address (host:port)",
+          "pattern": "^([a-zA-Z0-9.-]+)?:[0-9]+$",
+          "default": ":9090",
+          "examples": [":9090", "127.0.0.1:9090", "0.0.0.0:2112"]
+        }
+      }
+    },
+    "picons": {
+      "type": "object",
+      "description": "Picon/channel logo configuration",
+      "properties": {
+        "baseUrl": {
+          "type": "string",
+          "description": "Base URL for picon/logo images. Environment variables are expanded.",
+          "examples": [
+            "http://receiver.local/picon",
+            "https://picons.example.com",
+            "${PICON_URL}"
+          ]
+        }
+      }
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "version": "1",
+      "dataDir": "/var/lib/xg2g",
+      "openWebIF": {
+        "baseUrl": "http://receiver.local",
+        "username": "root",
+        "password": "dreambox",
+        "timeout": "10s",
+        "retries": 3,
+        "streamPort": 8001
+      },
+      "bouquets": [
+        "userbouquet.favourites.tv"
+      ],
+      "epg": {
+        "enabled": true,
+        "days": 7,
+        "maxConcurrency": 5,
+        "timeoutMs": 15000,
+        "retries": 2,
+        "fuzzyMax": 2,
+        "xmltvPath": "guide.xml",
+        "source": "per-service"
+      },
+      "api": {
+        "token": "${API_TOKEN}",
+        "listenAddr": ":8080"
+      },
+      "metrics": {
+        "enabled": false,
+        "listenAddr": ":9090"
+      },
+      "picons": {
+        "baseUrl": "http://receiver.local/picon"
+      }
+    }
+  ]
+}

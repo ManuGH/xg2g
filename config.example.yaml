@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=./docs/config.schema.json
 # xg2g Configuration Example
 #
 # This file demonstrates all available configuration options.

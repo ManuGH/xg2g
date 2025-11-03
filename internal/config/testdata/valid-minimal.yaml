@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../docs/config.schema.json
 # Valid minimal xg2g configuration
 version: "1"
 dataDir: /tmp/xg2g-config-test
