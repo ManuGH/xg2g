@@ -592,47 +592,6 @@ func TestAuthMiddleware_Standalone(t *testing.T) {
 	})
 }
 
-// TestHandlerWithMockUpstream shows how to test handlers with fake upstream services.
-// TODO: Implement once handlers with upstream dependencies are identified.
-func TestHandlerWithMockUpstream(t *testing.T) {
-	t.Skip("TODO: Implement mock upstream testing")
-
-	// Create fake upstream server
-	fakeUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Simulate upstream response
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
-	}))
-	defer fakeUpstream.Close()
-
-	// TODO: Configure handler to use fakeUpstream.URL
-	// Test handler behavior with controlled upstream responses
-}
-
-// TestHandlerWithTimeout shows how to test timeout handling.
-// TODO: Implement once timeout-sensitive handlers are identified.
-func TestHandlerWithTimeout(t *testing.T) {
-	t.Skip("TODO: Implement timeout handling tests")
-
-	// Create fake slow upstream
-	slowUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Simulate slow response
-		// time.Sleep(5 * time.Second)
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer slowUpstream.Close()
-
-	// Create request with short timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	defer cancel()
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/slow", nil)
-	req = req.WithContext(ctx)
-
-	// TODO: Test that handler respects context timeout
-	// Should return 504 Gateway Timeout or similar
-}
-
 // checkFile Tests
 
 func TestCheckFile_RegularFile(t *testing.T) {

@@ -80,6 +80,10 @@ pub extern "C" fn xg2g_audio_remux_init(
 
 /// Process audio data through the remuxer
 ///
+/// Processes MPEG-TS input stream with AC3/MP2 audio and transcodes it to AAC.
+/// The function extracts audio packets, decodes them, re-encodes to AAC-LC,
+/// and remuxes them back into MPEG-TS format.
+///
 /// # Arguments
 ///
 /// * `handle` - Opaque handle from `xg2g_audio_remux_init`
@@ -118,12 +122,57 @@ pub extern "C" fn xg2g_audio_remux_process(
         let input_slice = unsafe { std::slice::from_raw_parts(input, input_len) };
         let output_slice = unsafe { std::slice::from_raw_parts_mut(output, output_capacity) };
 
-        // TODO: Actual remuxing implementation
-        // For now, just copy (placeholder)
-        let bytes_to_copy = input_len.min(output_capacity);
-        output_slice[..bytes_to_copy].copy_from_slice(&input_slice[..bytes_to_copy]);
+        const TS_PACKET_SIZE: usize = 188;
 
-        bytes_to_copy as c_int
+        // Process input as TS packets (MPEG-TS packets are always 188 bytes)
+        if input_len % TS_PACKET_SIZE != 0 {
+            eprintln!(
+                "[RUST FFI WARNING] Input length {} is not a multiple of TS packet size ({})",
+                input_len, TS_PACKET_SIZE
+            );
+        }
+
+        let mut output_offset = 0;
+        let packet_count = input_len / TS_PACKET_SIZE;
+
+        // Process each TS packet through the remuxing pipeline
+        for i in 0..packet_count {
+            let packet_start = i * TS_PACKET_SIZE;
+            let packet_end = packet_start + TS_PACKET_SIZE;
+            let ts_packet = &input_slice[packet_start..packet_end];
+
+            // Process this TS packet (returns 0 or more output TS packets)
+            match handle.remuxer.process_ts_packet(ts_packet) {
+                Ok(output_packets) => {
+                    // Write output packets to output buffer
+                    for out_packet in output_packets {
+                        if output_offset + TS_PACKET_SIZE > output_capacity {
+                            eprintln!("[RUST FFI ERROR] Output buffer too small");
+                            return -1;
+                        }
+
+                        output_slice[output_offset..output_offset + TS_PACKET_SIZE]
+                            .copy_from_slice(&out_packet);
+                        output_offset += TS_PACKET_SIZE;
+                    }
+                }
+                Err(e) => {
+                    eprintln!("[RUST FFI ERROR] Failed to process TS packet: {:#}", e);
+                    // Continue processing other packets (non-fatal error)
+                }
+            }
+        }
+
+        // Handle remaining bytes (< TS_PACKET_SIZE) if any
+        let remaining = input_len % TS_PACKET_SIZE;
+        if remaining > 0 {
+            eprintln!(
+                "[RUST FFI WARNING] Ignoring {} trailing bytes (incomplete TS packet)",
+                remaining
+            );
+        }
+
+        output_offset as c_int
     });
 
     match result {

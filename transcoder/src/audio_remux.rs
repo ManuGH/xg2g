@@ -256,7 +256,10 @@ impl AudioRemuxer {
     }
 
     /// Process a single TS packet through the remuxing pipeline
-    fn process_ts_packet(&mut self, ts_packet: &[u8]) -> Result<Vec<[u8; 188]>> {
+    ///
+    /// This method can be used for chunk-based processing (e.g., FFI bindings)
+    /// instead of the streaming `remux()` method.
+    pub fn process_ts_packet(&mut self, ts_packet: &[u8]) -> Result<Vec<[u8; 188]>> {
         let mut output_packets = Vec::new();
 
         // Step 1: Demux - Extract PES packet if this is audio

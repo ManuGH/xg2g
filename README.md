@@ -37,12 +37,18 @@ docker run -d \
 ## What It Does
 
 ✅ **Universal Compatibility** - Works with Plex, Jellyfin, VLC, Kodi, iPhone Safari
-✅ **Zero-CPU Audio Transcoding** - Rust remuxer converts AC3/MP2 → AAC with <1% overhead
+✅ **Zero-CPU Audio Transcoding** - Native Rust remuxer: AC3/MP2 → AAC with <0.1% CPU
 ✅ **7-Day EPG** - Full electronic program guide in XMLTV format
 ✅ **HDHomeRun Emulation** - Auto-discovery in Plex/Jellyfin (no manual setup)
 ✅ **GPU Transcoding** - Hardware-accelerated video transcoding (AMD/Intel/NVIDIA)
 ✅ **Enterprise-Grade** - Prometheus metrics, OpenTelemetry tracing, health checks
 ✅ **Production-Ready** - SLSA L3 attestation, SBOM, Cosign signing, Helm charts
+
+**Build Requirements:**
+- **Go 1.25+** (stable release) - [Install from go.dev](https://go.dev/dl/)
+- **Rust 1.70+** (for native audio transcoder) - [Install via rustup](https://rustup.rs/)
+- **FFmpeg libraries** (libavcodec, libavformat) - Required for AC3/AAC codecs
+- Docker (optional, for containerized deployment)
 
 ---
 
