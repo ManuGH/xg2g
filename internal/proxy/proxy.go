@@ -87,6 +87,22 @@ func New(cfg Config) (*Server, error) {
 			originalDirector(req)
 			req.Host = target.Host
 		}
+	} else if cfg.ReceiverHost != "" {
+		// Create a dynamic reverse proxy for Smart Detection mode
+		// The Director function will resolve the target URL on each request
+		s.proxy = &httputil.ReverseProxy{
+			Director: func(req *http.Request) {
+				targetURL := s.resolveTargetURL(req.Context(), req.URL.Path, req.URL.RawQuery)
+				target, _ := url.Parse(targetURL)
+				if target != nil {
+					req.URL.Scheme = target.Scheme
+					req.URL.Host = target.Host
+					req.URL.Path = target.Path
+					req.Host = target.Host
+				}
+			},
+			ErrorLog: nil,
+		}
 	}
 
 	// Initialize optional transcoder
