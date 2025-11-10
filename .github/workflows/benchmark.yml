@@ -32,7 +32,7 @@ jobs:
           fetch-depth: 0  # Need history for comparison
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v6.0.0
         with:
           go-version-file: 'go.mod'
           cache: true
@@ -194,7 +194,7 @@ jobs:
           ref: ${{ github.base_ref }}
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v6.0.0
         with:
           go-version-file: 'go.mod'
           cache: true
