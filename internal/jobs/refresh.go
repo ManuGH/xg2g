@@ -195,7 +195,7 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 				// Proxy will use Smart Detection to route to correct port (8001/17999)
 				parsedURL, err := url.Parse(streamURL)
 				if err == nil && parsedURL.Path != "" {
-					streamURL = proxyBase + "/auto" + parsedURL.Path
+					streamURL = proxyBase + parsedURL.Path
 				}
 			}
 
