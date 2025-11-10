@@ -103,8 +103,9 @@ func (r *RustAudioRemuxer) Process(input []byte) ([]byte, error) {
 		return nil, errors.New("input is empty")
 	}
 
-	// Allocate output buffer (estimate 2x input size for safety)
-	outputCapacity := len(input) * 2
+	// Allocate output buffer (20x input size for transcoding expansion)
+	// AC3→AAC transcoding can expand significantly (e.g., 16 packets → 170 packets)
+	outputCapacity := len(input) * 20
 	output := make([]byte, outputCapacity)
 
 	// Keep input alive during C call

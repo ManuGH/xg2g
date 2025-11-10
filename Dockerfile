@@ -79,6 +79,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 FROM golang:1.25-${BASE_VARIANT} AS go-builder
 
 # Install build dependencies for CGO
+# Note: Also installing runtime FFmpeg libraries to ensure matching versions for linking
 RUN if [ -f /etc/alpine-release ]; then \
         apk add --no-cache \
             gcc \
@@ -91,6 +92,11 @@ RUN if [ -f /etc/alpine-release ]; then \
             libavcodec-dev \
             libavformat-dev \
             libavfilter-dev \
+            libavcodec59 \
+            libavformat59 \
+            libavfilter8 \
+            libavutil57 \
+            libswresample4 \
             && rm -rf /var/lib/apt/lists/*; \
     fi
 
@@ -125,9 +131,11 @@ ARG ENABLE_GPU=false
 # Standard mode (MODE 1+2): Audio transcoding via Rust, no GPU
 # GPU mode (MODE 3): Audio + video transcoding via VAAPI
 # Note: -extldflags='-Wl,-rpath,/app/lib' sets runtime library search path
+# Note: CGO_LDFLAGS adds FFmpeg library path and explicit library linking
 RUN set -eux; \
     BUILD_REF="${GIT_REF:-${VERSION:-dev}}"; \
     export CGO_ENABLED=1 GOOS=linux GOAMD64="${GO_AMD64_LEVEL}"; \
+    export CGO_LDFLAGS="-L/usr/lib/x86_64-linux-gnu -lavcodec -lavformat -lavfilter -lavutil -lswresample"; \
     if [ "$ENABLE_GPU" = "true" ]; then \
         echo "🎮 Building with GPU transcoding support (MODE 3)"; \
         go build -tags=gpu -buildvcs=false -trimpath \

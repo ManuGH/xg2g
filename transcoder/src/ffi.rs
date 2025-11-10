@@ -48,6 +48,8 @@ pub extern "C" fn xg2g_audio_remux_init(
     channels: c_int,
     bitrate: c_int,
 ) -> *mut c_void {
+    eprintln!("[RUST FFI INIT] Creating AudioRemuxer with sample_rate={}, channels={}, bitrate={}", sample_rate, channels, bitrate);
+
     // Catch panics and return NULL instead of unwinding across FFI
     let result = catch_unwind(|| {
         let config = AudioRemuxConfig {
@@ -58,19 +60,27 @@ pub extern "C" fn xg2g_audio_remux_init(
         };
 
         let remuxer = match AudioRemuxer::new(config) {
-            Ok(r) => r,
+            Ok(r) => {
+                eprintln!("[RUST FFI INIT] AudioRemuxer created successfully");
+                r
+            },
             Err(e) => {
                 eprintln!("[RUST FFI ERROR] Failed to create AudioRemuxer: {:#}", e);
                 return ptr::null_mut();
             }
         };
         let handle = Box::new(RemuxerHandle { remuxer });
+        let raw_ptr = Box::into_raw(handle) as *mut c_void;
 
-        Box::into_raw(handle) as *mut c_void
+        eprintln!("[RUST FFI INIT] Returning handle: {:?}", raw_ptr);
+        raw_ptr
     });
 
     match result {
-        Ok(ptr) => ptr,
+        Ok(ptr) => {
+            eprintln!("[RUST FFI INIT] Initialization completed, handle: {:?}", ptr);
+            ptr
+        },
         Err(e) => {
             eprintln!("[RUST FFI PANIC] AudioRemuxer initialization panicked: {:?}", e);
             ptr::null_mut()
@@ -141,9 +151,23 @@ pub extern "C" fn xg2g_audio_remux_process(
             let packet_end = packet_start + TS_PACKET_SIZE;
             let ts_packet = &input_slice[packet_start..packet_end];
 
+            // Verify TS packet sync byte (0x47)
+            if i < 3 && ts_packet[0] != 0x47 {
+                eprintln!("[RUST FFI] WARNING: Packet {} has invalid sync byte: 0x{:02X}", i, ts_packet[0]);
+            }
+
+            if i < 3 {
+                eprintln!("[RUST FFI] Calling process_ts_packet for packet {} (sync: 0x{:02X})", i, ts_packet[0]);
+            }
+
             // Process this TS packet (returns 0 or more output TS packets)
             match handle.remuxer.process_ts_packet(ts_packet) {
                 Ok(output_packets) => {
+                    let num_output = output_packets.len();
+                    if num_output > 0 {
+                        eprintln!("[RUST FFI] Input packet {} produced {} output packets", i, num_output);
+                    }
+
                     // Write output packets to output buffer
                     for out_packet in output_packets {
                         if output_offset + TS_PACKET_SIZE > output_capacity {
@@ -172,6 +196,7 @@ pub extern "C" fn xg2g_audio_remux_process(
             );
         }
 
+        eprintln!("[RUST FFI] Processed {} input packets, produced {} bytes output", packet_count, output_offset);
         output_offset as c_int
     });
 

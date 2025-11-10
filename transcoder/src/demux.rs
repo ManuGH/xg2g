@@ -18,7 +18,7 @@
 
 use anyhow::{bail, Result};
 use std::collections::HashMap;
-use tracing::{debug, trace, warn};
+use tracing::{debug, info, trace, warn};
 
 /// MPEG-TS sync byte (first byte of every TS packet)
 const TS_SYNC_BYTE: u8 = 0x47;
@@ -205,11 +205,13 @@ impl PesBuffer {
 
             // Parse PES header from payload
             if packet.payload.len() < 6 {
+                eprintln!("[RUST PES] PID {}: PES header too short ({} bytes)", packet.pid, packet.payload.len());
                 bail!("PES header too short");
             }
 
             // Check PES start code (0x000001)
             if packet.payload[0] != 0x00 || packet.payload[1] != 0x00 || packet.payload[2] != 0x01 {
+                eprintln!("[RUST PES] PID {}: Invalid PES start code: {:02X} {:02X} {:02X}", packet.pid, packet.payload[0], packet.payload[1], packet.payload[2]);
                 bail!("Invalid PES start code");
             }
 
@@ -223,6 +225,7 @@ impl PesBuffer {
                 pes_length + 6 // +6 for PES header
             };
 
+            eprintln!("[RUST PES] PID {}: Started new PES packet, expected length: {} bytes (raw: {})", packet.pid, self.pes_length, pes_length);
             self.started = true;
         }
 
@@ -240,9 +243,12 @@ impl PesBuffer {
             // Check if PES packet is complete
             if self.data.len() >= self.pes_length {
                 // Extract complete PES packet
+                eprintln!("[RUST PES] PID {}: Complete PES packet ready! (size: {} bytes, expected: {})", packet.pid, self.data.len(), self.pes_length);
                 let pes_data = self.data.clone();
                 self.reset();
                 return Ok(Some(pes_data));
+            } else {
+                eprintln!("[RUST PES] PID {}: Buffering... ({}/{} bytes)", packet.pid, self.data.len(), self.pes_length);
             }
         }
 
@@ -272,6 +278,12 @@ pub struct TsDemuxer {
     /// PMT PID (detected from PAT)
     pmt_pid: Option<u16>,
 
+    /// Fallback to standard PIDs if PMT not found after this many packets
+    fallback_threshold: u64,
+
+    /// Whether fallback mode is active
+    fallback_active: bool,
+
     /// Statistics
     packets_processed: u64,
     audio_packets: u64,
@@ -285,6 +297,8 @@ impl TsDemuxer {
             audio_codec: AudioCodec::Unknown,
             pes_buffers: HashMap::new(),
             pmt_pid: None,
+            fallback_threshold: 1000, // Try fallback after 1000 packets (~5 seconds)
+            fallback_active: false,
             packets_processed: 0,
             audio_packets: 0,
         }
@@ -315,16 +329,55 @@ impl TsDemuxer {
             }
         }
 
+        // Activate fallback if no audio PID found after threshold
+        if self.audio_pid.is_none() && !self.fallback_active && self.packets_processed >= self.fallback_threshold {
+            eprintln!("[RUST DEMUX] No audio PID detected after {} packets, activating fallback mode (trying common PIDs)", self.packets_processed);
+            warn!(
+                "No audio PID detected after {} packets, activating fallback mode (trying common PIDs)",
+                self.packets_processed
+            );
+            self.fallback_active = true;
+        }
+
         // Handle audio packets
         if let Some(audio_pid) = self.audio_pid {
             if packet.pid == audio_pid {
                 self.audio_packets += 1;
+                eprintln!("[RUST DEMUX] Received audio packet on PID {} (count: {})", packet.pid, self.audio_packets);
 
                 // Get or create PES buffer for this PID
                 let buffer = self.pes_buffers.entry(packet.pid).or_insert_with(PesBuffer::new);
 
                 // Add payload to buffer
                 return buffer.add_payload(&packet);
+            }
+        } else if self.fallback_active {
+            // Try common audio PIDs: 68, 128, 256, 257, 258
+            const COMMON_AUDIO_PIDS: &[u16] = &[68, 128, 256, 257, 258];
+
+            if COMMON_AUDIO_PIDS.contains(&packet.pid) {
+                // Try to detect if this is an audio PES packet
+                if packet.payload_start && packet.payload.len() >= 4 {
+                    // Check for PES start code (00 00 01)
+                    if packet.payload[0] == 0x00 && packet.payload[1] == 0x00 && packet.payload[2] == 0x01 {
+                        let stream_id = packet.payload[3];
+                        // Audio stream IDs: 0xC0-0xDF (MPEG audio), 0xBD (private stream for AC3)
+                        if (0xC0..=0xDF).contains(&stream_id) || stream_id == 0xBD {
+                            eprintln!("[RUST DEMUX] Fallback: Detected audio stream on PID {} (stream_id: 0x{:02X})", packet.pid, stream_id);
+                            info!(
+                                "Fallback: Detected audio stream on PID {} (stream_id: 0x{:02X})",
+                                packet.pid, stream_id
+                            );
+                            self.audio_pid = Some(packet.pid);
+                            self.audio_codec = AudioCodec::Unknown; // Will be detected by decoder
+                            self.audio_packets += 1;
+
+                            // Get or create PES buffer for this PID
+                            let buffer = self.pes_buffers.entry(packet.pid).or_insert_with(PesBuffer::new);
+                            return buffer.add_payload(&packet);
+                        }
+                    }
+                }
             }
         }
 
@@ -364,6 +417,7 @@ impl TsDemuxer {
 
             if program_number != 0 {
                 // Found PMT PID
+                eprintln!("[RUST DEMUX] PAT: Detected PMT PID {} (program_number: {})", pid, program_number);
                 self.pmt_pid = Some(pid);
                 debug!("Detected PMT PID: {}", pid);
                 break;
@@ -377,21 +431,28 @@ impl TsDemuxer {
 
     /// Parse PMT (Program Map Table) to find audio PID and codec
     fn parse_pmt(&mut self, payload: &[u8]) -> Result<()> {
+        eprintln!("[RUST DEMUX] PMT: parse_pmt called, payload len: {}", payload.len());
+
         // Skip pointer field
         if payload.is_empty() {
+            eprintln!("[RUST DEMUX] PMT: payload empty, skipping");
             return Ok(());
         }
         let pointer = payload[0] as usize;
         let data = &payload[1 + pointer..];
 
         if data.len() < 12 {
+            eprintln!("[RUST DEMUX] PMT: data too short ({} bytes), skipping", data.len());
             return Ok(()); // Too short
         }
 
         // Table ID should be 0x02 for PMT
         if data[0] != 0x02 {
+            eprintln!("[RUST DEMUX] PMT: wrong table ID (0x{:02X}), expected 0x02", data[0]);
             return Ok(());
         }
+
+        eprintln!("[RUST DEMUX] PMT: valid PMT table found, parsing streams...");
 
         // Section length
         let section_length = (((data[1] & 0x0F) as usize) << 8) | (data[2] as usize);
@@ -401,16 +462,49 @@ impl TsDemuxer {
 
         // Parse stream entries
         let mut offset = 12 + program_info_length;
+        eprintln!("[RUST DEMUX] PMT: section_length={}, program_info_length={}, starting offset={}", section_length, program_info_length, offset);
+
         while offset + 5 <= section_length + 3 {
             let stream_type = data[offset];
             let pid = (((data[offset + 1] & 0x1F) as u16) << 8) | (data[offset + 2] as u16);
             let es_info_length = (((data[offset + 3] & 0x0F) as usize) << 8) | (data[offset + 4] as usize);
 
+            eprintln!("[RUST DEMUX] PMT: stream_type=0x{:02X}, PID={}, es_info_length={}", stream_type, pid, es_info_length);
+
             // Check if this is an audio stream
-            let codec = AudioCodec::from_stream_type(stream_type);
+            let mut codec = AudioCodec::from_stream_type(stream_type);
+
+            // For stream_type 0x06 (Private Data), check descriptors for AC3
+            if stream_type == 0x06 && es_info_length > 0 {
+                // Parse descriptors to find AC3 audio
+                let desc_start = offset + 5;
+                let desc_end = desc_start + es_info_length;
+                if desc_end <= data.len() {
+                    let mut desc_offset = desc_start;
+                    while desc_offset + 2 <= desc_end {
+                        let desc_tag = data[desc_offset];
+                        let desc_len = data[desc_offset + 1] as usize;
+
+                        // AC3 descriptor tags: 0x6A (AC3), 0x7A (E-AC3), 0x81 (ATSC AC3)
+                        if desc_tag == 0x6A || desc_tag == 0x7A || desc_tag == 0x81 {
+                            eprintln!("[RUST DEMUX] PMT: Found AC3 descriptor (tag=0x{:02X}) for PID {}", desc_tag, pid);
+                            codec = AudioCodec::Ac3;
+                            break;
+                        }
+
+                        desc_offset += 2 + desc_len;
+                    }
+                }
+            }
+
             if codec != AudioCodec::Unknown {
+                eprintln!("[RUST DEMUX] Detected audio PID {} with codec {:?} (stream_type: 0x{:02X})", pid, codec, stream_type);
                 self.audio_pid = Some(pid);
                 self.audio_codec = codec;
+                info!(
+                    "Detected audio PID {} with codec {:?} (stream_type: 0x{:02X})",
+                    pid, codec, stream_type
+                );
                 debug!("Detected audio: PID {}, codec {:?}", pid, codec);
                 break;
             }

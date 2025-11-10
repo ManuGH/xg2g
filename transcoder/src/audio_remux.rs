@@ -260,6 +260,13 @@ impl AudioRemuxer {
     /// This method can be used for chunk-based processing (e.g., FFI bindings)
     /// instead of the streaming `remux()` method.
     pub fn process_ts_packet(&mut self, ts_packet: &[u8]) -> Result<Vec<[u8; 188]>> {
+        static CALL_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let count = CALL_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+        if count < 3 {
+            eprintln!("[RUST PIPELINE ENTRY] process_ts_packet called (call #{}), ts_packet length: {}", count, ts_packet.len());
+        }
+
         let mut output_packets = Vec::new();
 
         // Step 1: Demux - Extract PES packet if this is audio
@@ -267,6 +274,7 @@ impl AudioRemuxer {
             Some(pes_data) => {
                 // Complete audio PES packet received
                 self.stats.audio_packets += 1;
+                eprintln!("[RUST PIPELINE] Step 1: Demuxed PES packet (size: {} bytes, total audio packets: {})", pes_data.len(), self.stats.audio_packets);
 
                 // Initialize decoder if not already done
                 self.ensure_decoder_initialized()?;
@@ -277,17 +285,22 @@ impl AudioRemuxer {
                     .decode(&pes_data)
                     .context("Failed to decode audio")?;
 
+                eprintln!("[RUST PIPELINE] Step 2: Decoded {} PCM samples", pcm_samples.len());
+
                 if !pcm_samples.is_empty() {
                     self.stats.frames_decoded += 1;
 
                     // Add PCM samples to buffer
                     self.pcm_buffer.extend(pcm_samples);
+                    eprintln!("[RUST PIPELINE] PCM buffer size: {} samples", self.pcm_buffer.len());
 
                     // Step 3: Encode - PCM → AAC (process complete frames)
                     let aac_data = self
                         .encoder
                         .encode(&self.pcm_buffer)
                         .context("Failed to encode AAC")?;
+
+                    eprintln!("[RUST PIPELINE] Step 3: Encoded AAC data (size: {} bytes)", aac_data.len());
 
                     // Encoder returns data only when it has complete frames
                     if !aac_data.is_empty() {
@@ -302,12 +315,18 @@ impl AudioRemuxer {
                             .mux_audio(&aac_data, pts, dts)
                             .context("Failed to mux AAC")?;
 
+                        eprintln!("[RUST PIPELINE] Step 4: Muxed {} TS packets", ts_packets.len());
+
                         output_packets.extend(ts_packets);
                         self.stats.packets_output += output_packets.len() as u64;
 
                         // Increment PTS for next frame
                         self.current_pts += self.pts_increment;
+                    } else {
+                        eprintln!("[RUST PIPELINE] Encoder returned empty data (waiting for complete frame)");
                     }
+                } else {
+                    eprintln!("[RUST PIPELINE] Decoder returned empty PCM samples");
                 }
             }
             None => {
