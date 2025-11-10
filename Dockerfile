@@ -1,19 +1,40 @@
 # syntax=docker/dockerfile:1.7
 
 # =============================================================================
+# Auto-detect libc variant (Alpine/musl vs Debian/glibc)
+# Usage: docker build --build-arg BASE_VARIANT=bookworm (default, glibc)
+#        docker build --build-arg BASE_VARIANT=alpine    (force Alpine, musl)
+# =============================================================================
+ARG BASE_VARIANT=bookworm
+
+# =============================================================================
 # Stage 1: Build Rust Remuxer (ac-ffmpeg library for audio transcoding)
 # =============================================================================
-FROM rust:1.91-alpine AS rust-builder
+FROM rust:1.91-${BASE_VARIANT} AS rust-builder
 
 WORKDIR /build
 
-# Install FFmpeg development libraries and build tools for Alpine
-RUN apk add --no-cache \
-    musl-dev \
-    pkgconfig \
-    ffmpeg-dev \
-    clang-dev \
-    llvm-dev
+# Install FFmpeg development libraries and build tools
+# Alpine: musl-dev, pkgconfig, ffmpeg-dev
+# Debian: build-essential, pkg-config, libavcodec-dev, libavformat-dev, etc.
+RUN if [ -f /etc/alpine-release ]; then \
+        apk add --no-cache \
+            musl-dev \
+            pkgconfig \
+            ffmpeg-dev \
+            clang-dev \
+            llvm-dev; \
+    else \
+        apt-get update && apt-get install -y \
+            build-essential \
+            pkg-config \
+            libavcodec-dev \
+            libavformat-dev \
+            libavfilter-dev \
+            libavdevice-dev \
+            clang \
+            && rm -rf /var/lib/apt/lists/*; \
+    fi
 
 # Set Cargo environment variables for caching
 ENV CARGO_HOME=/usr/local/cargo \
@@ -40,8 +61,13 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/build/target \
     mkdir -p /output && \
-    RUSTFLAGS="-C target-cpu=generic ${RUST_TARGET_FEATURES} -C opt-level=3 -C target-feature=-crt-static" \
-    cargo build --release && \
+    if [ -f /etc/alpine-release ]; then \
+        RUSTFLAGS="-C target-cpu=generic ${RUST_TARGET_FEATURES} -C opt-level=3 -C target-feature=-crt-static" \
+        cargo build --release; \
+    else \
+        RUSTFLAGS="-C target-cpu=generic ${RUST_TARGET_FEATURES} -C opt-level=3" \
+        cargo build --release; \
+    fi && \
     cp target/release/libxg2g_transcoder.so /output/ && \
     cp target/release/libxg2g_transcoder.rlib /output/
 # Note: strip = true in Cargo.toml profile.release already strips the library
@@ -50,13 +76,23 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 # =============================================================================
 # Stage 2: Build Go Daemon with CGO (required for Rust FFI) + Run Tests
 # =============================================================================
-FROM golang:1.25-alpine AS go-builder
+FROM golang:1.25-${BASE_VARIANT} AS go-builder
 
 # Install build dependencies for CGO
-RUN apk add --no-cache \
-    gcc \
-    musl-dev \
-    ffmpeg-dev
+RUN if [ -f /etc/alpine-release ]; then \
+        apk add --no-cache \
+            gcc \
+            musl-dev \
+            ffmpeg-dev; \
+    else \
+        apt-get update && apt-get install -y \
+            gcc \
+            libc6-dev \
+            libavcodec-dev \
+            libavformat-dev \
+            libavfilter-dev \
+            && rm -rf /var/lib/apt/lists/*; \
+    fi
 
 # Build arguments for CPU optimization
 # AMD64 levels: v1 (baseline 2003+), v2 (2009+, default), v3 (2015+, AVX2), v4 (2017+, AVX-512)
@@ -68,7 +104,11 @@ WORKDIR /src
 
 # Copy Rust library for CGO linking (from /output, not cache mount)
 COPY --from=rust-builder /output/libxg2g_transcoder.so /usr/local/lib/
-RUN ldconfig /usr/local/lib 2>/dev/null || true
+RUN if [ -f /etc/alpine-release ]; then \
+        ldconfig /usr/local/lib 2>/dev/null || true; \
+    else \
+        ldconfig; \
+    fi
 
 # Copy Go source
 COPY go.mod go.sum ./
@@ -108,21 +148,40 @@ RUN ls -lh /out/xg2g && /out/xg2g --version || echo "Binary built successfully"
 # =============================================================================
 # Stage 3: Runtime Image with Audio Transcoding
 # =============================================================================
-FROM alpine:3.22.2
+FROM alpine:3.22.2 AS runtime-alpine
+FROM debian:bookworm-slim AS runtime-bookworm
+
+# Select runtime based on variant
+FROM runtime-${BASE_VARIANT} AS runtime
 
 # Install runtime dependencies
-# - ffmpeg-libs: Required by Rust remuxer (libavcodec, libavformat, etc.)
-# - libgcc: Required by Rust binary
-RUN apk add --no-cache \
-    ca-certificates \
-    tzdata \
-    wget \
-    ffmpeg-libs \
-    libgcc && \
-  addgroup -g 65532 -S xg2g && \
-  adduser -u 65532 -S -G xg2g -h /app -s /bin/false xg2g && \
-  mkdir -p /data /app/lib && \
-  chown -R xg2g:xg2g /data /app
+# Alpine: ffmpeg-libs, libgcc
+# Debian: libavcodec61, libavformat61, etc. (Debian Bookworm)
+RUN if [ -f /etc/alpine-release ]; then \
+        apk add --no-cache \
+            ca-certificates \
+            tzdata \
+            wget \
+            ffmpeg-libs \
+            libgcc && \
+        addgroup -g 65532 -S xg2g && \
+        adduser -u 65532 -S -G xg2g -h /app -s /bin/false xg2g; \
+    else \
+        apt-get update && apt-get install -y \
+            ca-certificates \
+            tzdata \
+            wget \
+            libavcodec59 \
+            libavformat59 \
+            libavfilter8 \
+            libavutil57 \
+            libswresample4 \
+            && rm -rf /var/lib/apt/lists/* && \
+        groupadd -g 65532 xg2g && \
+        useradd -u 65532 -g xg2g -d /app -s /bin/false xg2g; \
+    fi && \
+    mkdir -p /data /app/lib && \
+    chown -R xg2g:xg2g /data /app
 
 WORKDIR /app
 
@@ -136,7 +195,7 @@ COPY --from=rust-builder /output/libxg2g_transcoder.so ./lib/
 ENV LD_LIBRARY_PATH=/app/lib
 
 RUN chmod +x /app/xg2g && \
-  chown -R xg2g:xg2g /app
+    chown -R xg2g:xg2g /app
 
 VOLUME ["/data"]
 
@@ -144,16 +203,16 @@ VOLUME ["/data"]
 EXPOSE 8080 18000
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD wget -qO- http://localhost:8080/api/status || exit 1
+    CMD wget -qO- http://localhost:8080/api/status || exit 1
 
 # Default configuration (minimal - standard mode)
 # Audio transcoding and stream proxy are DISABLED by default
 # Enable via environment variables for iPhone/iPad mode
 ENV XG2G_DATA=/data \
-  XG2G_LISTEN=:8080 \
-  XG2G_OWI_BASE=http://192.168.1.100 \
-  XG2G_BOUQUET=Favourites \
-  XG2G_FUZZY_MAX=2
+    XG2G_LISTEN=:8080 \
+    XG2G_OWI_BASE=http://192.168.1.100 \
+    XG2G_BOUQUET=Favourites \
+    XG2G_FUZZY_MAX=2
 
 USER xg2g:xg2g
 ENTRYPOINT ["/app/xg2g"]
