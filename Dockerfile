@@ -2,10 +2,11 @@
 
 # =============================================================================
 # Auto-detect libc variant (Alpine/musl vs Debian/glibc)
-# Usage: docker build --build-arg BASE_VARIANT=bookworm (default, glibc)
+# Usage: docker build --build-arg BASE_VARIANT=trixie   (default, glibc, FFmpeg 7.x)
+#        docker build --build-arg BASE_VARIANT=bookworm (stable, FFmpeg 5.x)
 #        docker build --build-arg BASE_VARIANT=alpine    (force Alpine, musl)
 # =============================================================================
-ARG BASE_VARIANT=bookworm
+ARG BASE_VARIANT=trixie
 
 # =============================================================================
 # Stage 1: Build Rust Remuxer (ac-ffmpeg library for audio transcoding)
@@ -80,6 +81,8 @@ FROM golang:1.25-${BASE_VARIANT} AS go-builder
 
 # Install build dependencies for CGO
 # Note: Also installing runtime FFmpeg libraries to ensure matching versions for linking
+# Bookworm: libavcodec59, libavformat59, libavfilter8, libavutil57, libswresample4
+# Trixie:   libavcodec61, libavformat61, libavfilter10, libavutil59, libswresample5
 RUN if [ -f /etc/alpine-release ]; then \
         apk add --no-cache \
             gcc \
@@ -92,11 +95,11 @@ RUN if [ -f /etc/alpine-release ]; then \
             libavcodec-dev \
             libavformat-dev \
             libavfilter-dev \
-            libavcodec59 \
-            libavformat59 \
-            libavfilter8 \
-            libavutil57 \
-            libswresample4 \
+            libavcodec61 \
+            libavformat61 \
+            libavfilter10 \
+            libavutil59 \
+            libswresample5 \
             && rm -rf /var/lib/apt/lists/*; \
     fi
 
@@ -158,13 +161,15 @@ RUN ls -lh /out/xg2g && /out/xg2g --version || echo "Binary built successfully"
 # =============================================================================
 FROM alpine:3.22.2 AS runtime-alpine
 FROM debian:bookworm-slim AS runtime-bookworm
+FROM debian:trixie-slim AS runtime-trixie
 
 # Select runtime based on variant
 FROM runtime-${BASE_VARIANT} AS runtime
 
 # Install runtime dependencies
 # Alpine: ffmpeg-libs, libgcc
-# Debian: libavcodec61, libavformat61, etc. (Debian Bookworm)
+# Debian Bookworm: libavcodec59, libavformat59, libavfilter8, libavutil57, libswresample4
+# Debian Trixie:   libavcodec61, libavformat61, libavfilter10, libavutil59, libswresample5
 RUN if [ -f /etc/alpine-release ]; then \
         apk add --no-cache \
             ca-certificates \
@@ -179,11 +184,11 @@ RUN if [ -f /etc/alpine-release ]; then \
             ca-certificates \
             tzdata \
             wget \
-            libavcodec59 \
-            libavformat59 \
-            libavfilter8 \
-            libavutil57 \
-            libswresample4 \
+            libavcodec61 \
+            libavformat61 \
+            libavfilter10 \
+            libavutil59 \
+            libswresample5 \
             && rm -rf /var/lib/apt/lists/* && \
         groupadd -g 65532 xg2g && \
         useradd -u 65532 -g xg2g -d /app -s /bin/false xg2g; \
