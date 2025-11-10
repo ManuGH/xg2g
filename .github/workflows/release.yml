@@ -46,7 +46,7 @@ jobs:
       # Build Binaries with GoReleaser
       # =============================================
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@5742e2a039330cbb23ebf35f046f814d4c6ff811 # v5
+        uses: goreleaser/goreleaser-action@9cf36111e7ea38bea30119371229bf9ad8028289 # v5
         with:
           distribution: goreleaser
           version: latest
