@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -181,6 +182,21 @@ func Refresh(ctx context.Context, cfg Config) (*Status, error) {
 					Msg("stream URL validation failed")
 				metrics.IncStreamURLBuild("validation_failure")
 				continue
+			}
+
+			// If XG2G_USE_PROXY_URLS=true, rewrite URLs to point to xg2g proxy
+			// This enables audio transcoding and smart stream detection for Plex/Jellyfin
+			if os.Getenv("XG2G_USE_PROXY_URLS") == "true" {
+				proxyBase := os.Getenv("XG2G_PROXY_BASE_URL")
+				if proxyBase == "" {
+					proxyBase = "http://localhost:18000"
+				}
+				// Extract service reference from receiver URL and create proxy URL
+				// Proxy will use Smart Detection to route to correct port (8001/17999)
+				parsedURL, err := url.Parse(streamURL)
+				if err == nil && parsedURL.Path != "" {
+					streamURL = proxyBase + "/auto" + parsedURL.Path
+				}
 			}
 
 			piconURL := ""
