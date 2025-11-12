@@ -100,6 +100,9 @@ func New(config Config) *Limiter {
 // Allow checks if a request is allowed under rate limits
 // Returns true if allowed, false if rate limited
 func (l *Limiter) Allow(clientIP, mode string) bool {
+	// Periodic cleanup of stale IP limiters (do this first)
+	l.maybeCleanup()
+
 	// 1. Check global limit
 	if !l.global.Allow() {
 		rateLimitExceeded.WithLabelValues("global", mode).Inc()
@@ -122,9 +125,6 @@ func (l *Limiter) Allow(clientIP, mode string) bool {
 		rateLimitExceeded.WithLabelValues("per_ip", mode).Inc()
 		return false
 	}
-
-	// Periodic cleanup of stale IP limiters
-	l.maybeCleanup()
 
 	return true
 }
