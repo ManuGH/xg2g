@@ -60,7 +60,7 @@ COPY transcoder/src ./src
 ARG RUST_TARGET_FEATURES=""
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/build/target \
+    --mount=type=cache,target=/build/target,id=rust-${BASE_VARIANT} \
     mkdir -p /output && \
     if [ -f /etc/alpine-release ]; then \
         RUSTFLAGS="-C target-cpu=generic ${RUST_TARGET_FEATURES} -C opt-level=3 -C target-feature=-crt-static" \
