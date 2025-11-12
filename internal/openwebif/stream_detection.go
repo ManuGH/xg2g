@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/metrics/gpu"
 	"github.com/rs/zerolog"
 )
 
@@ -243,10 +244,15 @@ func (sd *StreamDetector) buildCandidates(serviceRef string) []streamCandidate {
 // It first tries a HEAD request for efficiency, then falls back to GET with Range
 // header if HEAD fails (Enigma2 compatibility).
 func (sd *StreamDetector) testEndpoint(ctx context.Context, candidate streamCandidate) bool {
+	portStr := fmt.Sprintf("%d", candidate.Port)
+
 	// Try HEAD first (fast, minimal bandwidth)
 	if sd.tryRequest(ctx, http.MethodHead, candidate, false) {
 		return true
 	}
+
+	// Record HEAD failure for metrics
+	gpu.RecordStreamDetectionError(portStr, "head_failed")
 
 	// Fallback to GET with Range header (Enigma2 doesn't support HEAD properly)
 	sd.logger.Debug().
@@ -254,7 +260,13 @@ func (sd *StreamDetector) testEndpoint(ctx context.Context, candidate streamCand
 		Int("port", candidate.Port).
 		Msg("HEAD failed, retrying with GET")
 
-	return sd.tryRequest(ctx, http.MethodGet, candidate, true)
+	if sd.tryRequest(ctx, http.MethodGet, candidate, true) {
+		return true
+	}
+
+	// Record complete failure
+	gpu.RecordStreamDetectionError(portStr, "get_failed")
+	return false
 }
 
 // tryRequest attempts a single HTTP request to test the stream endpoint.
