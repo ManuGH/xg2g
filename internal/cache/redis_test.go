@@ -100,7 +100,7 @@ func TestRedisCache_TTL(t *testing.T) {
 	mr.FastForward(200 * time.Millisecond)
 
 	// Should be expired
-	val, found = cache.Get("ttl-key")
+	_, found = cache.Get("ttl-key")
 	if found {
 		t.Error("expected value to be expired")
 	}
