@@ -169,6 +169,7 @@ jobs:
   fuzz-test:
     name: Fuzzing Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 10  # Allow sufficient time for 3x 5s fuzz tests + overhead
     if: ${{ github.event_name != 'pull_request' }}
     steps:
       - name: Checkout code
@@ -189,15 +190,16 @@ jobs:
           echo "Available fuzz tests:"
           go test ./internal/epg -list 'Fuzz.*' || true
 
-          # Run each fuzz test with short duration (10s with headroom for fuzzer overhead)
+          # Run each fuzz test with short duration for CI (5s each)
+          # Nightly builds run longer fuzzing sessions (see fuzz.yml)
           echo "Running FuzzLevenshtein..."
-          go test ./internal/epg -fuzz=FuzzLevenshtein -fuzztime=10s -run '^$' -v
+          go test ./internal/epg -fuzz=FuzzLevenshtein -fuzztime=5s -run '^$' -v
 
           echo "Running FuzzXMLTVGeneration..."
-          go test ./internal/epg -fuzz=FuzzXMLTVGeneration -fuzztime=10s -run '^$' -v
+          go test ./internal/epg -fuzz=FuzzXMLTVGeneration -fuzztime=5s -run '^$' -v
 
           echo "Running FuzzParseChannelName..."
-          go test ./internal/epg -fuzz=FuzzParseChannelName -fuzztime=10s -run '^$' -v
+          go test ./internal/epg -fuzz=FuzzParseChannelName -fuzztime=5s -run '^$' -v
 
           echo "✅ All fuzz tests completed successfully"
 
