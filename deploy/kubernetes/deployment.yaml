@@ -188,9 +188,10 @@ spec:
 
       volumes:
         - name: data
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: xg2g-data  # Use PVC for persistent data storage
         - name: tmp
-          emptyDir: {}
+          emptyDir: {}  # Temporary files can use emptyDir
 
       # Graceful shutdown
       terminationGracePeriodSeconds: 30

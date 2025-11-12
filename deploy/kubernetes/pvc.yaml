@@ -1,0 +1,35 @@
+# xg2g PersistentVolumeClaim
+# Stores M3U playlists, XMLTV EPG data, and cache
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: xg2g-data
+  namespace: xg2g
+  labels:
+    app: xg2g
+spec:
+  accessModes:
+    - ReadWriteOnce  # Single-node access (sufficient for cache/data)
+  resources:
+    requests:
+      storage: 10Gi  # Adjust based on EPG data size and cache needs
+  storageClassName: standard  # Use your cluster's default or specify (e.g., gp3, fast-ssd)
+  # For multi-node setups with shared cache, consider:
+  # - ReadWriteMany with NFS/EFS
+  # - Separate Redis PVC for distributed cache
+---
+# Optional: Redis PVC for distributed caching across pods
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-data
+  namespace: xg2g
+  labels:
+    app: xg2g-redis
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: standard

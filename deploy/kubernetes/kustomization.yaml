@@ -6,11 +6,18 @@ namespace: xg2g
 
 resources:
   - namespace.yaml
+  - pvc.yaml  # Persistent storage for data
   - configmap.yaml
+  # - secrets.yaml  # Uncomment after creating from secrets.yaml.example
   - deployment.yaml
   - service.yaml
   - ingress.yaml
   - hpa.yaml
+  - networkpolicy.yaml  # Network security
+  # Optional resources (uncomment as needed):
+  # - redis.yaml  # Distributed cache for multi-replica setup
+  # - servicemonitor.yaml  # Prometheus metrics (requires Prometheus Operator)
+  # - backup-cronjob.yaml  # Automated backups
 
 # Add labels to all resources
 commonLabels:
