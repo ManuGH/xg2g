@@ -9,7 +9,7 @@ import (
 )
 
 // TestJSONSchemaValidation tests that check-jsonschema correctly validates
-// all YAML fixtures against docs/config.schema.json
+// all YAML fixtures against docs/guides/config.schema.json
 func TestJSONSchemaValidation(t *testing.T) {
 	// Skip if check-jsonschema is not installed
 	if _, err := exec.LookPath("check-jsonschema"); err != nil {

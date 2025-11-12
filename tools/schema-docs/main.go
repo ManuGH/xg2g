@@ -7,7 +7,7 @@
 //	go run ./tools/schema-docs [input.json] [output.md]
 //
 // Defaults:
-//   - input: docs/config.schema.json
+//   - input: docs/guides/config.schema.json
 //   - output: docs/config.md
 package main
 
@@ -34,7 +34,7 @@ type propInfo struct {
 }
 
 func main() {
-	in := "docs/config.schema.json"
+	in := "docs/guides/config.schema.json"
 	out := "docs/config.md"
 	if len(os.Args) > 1 {
 		in = os.Args[1]
@@ -51,7 +51,7 @@ func main() {
 
 	buf := &bytes.Buffer{}
 	fmt.Fprintln(buf, "# xg2g Konfiguration")
-	fmt.Fprintln(buf, "> Quelle: `docs/config.schema.json` (Draft 2020-12)")
+	fmt.Fprintln(buf, "> Quelle: `docs/guides/config.schema.json` (Draft 2020-12)")
 
 	// Root required
 	reqSet := map[string]bool{}
