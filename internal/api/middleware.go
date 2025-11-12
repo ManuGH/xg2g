@@ -418,9 +418,3 @@ func withMiddlewares(h http.Handler, auditLogger ...RateLimitAuditor) http.Handl
 	otelMiddleware := middleware.OTelHTTP("xg2g-api")
 	return chain(h, panicRecoveryMiddleware, otelMiddleware, requestIDMiddleware, metricsMiddleware, corsMiddleware, securityHeaders, rl.middleware)
 }
-
-// otelHTTPMiddleware is an alias for backward compatibility
-// Deprecated: Use middleware.OTelHTTP directly
-func otelHTTPMiddleware(serviceName string) func(http.Handler) http.Handler {
-	return middleware.OTelHTTP(serviceName)
-}

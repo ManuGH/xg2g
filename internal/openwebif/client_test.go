@@ -222,7 +222,7 @@ func TestReceiverRateLimiting(t *testing.T) {
 		requestCount.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"bouquets":[]}`))
+		_, _ = w.Write([]byte(`{"bouquets":[]}`))
 	}))
 	defer ts.Close()
 
@@ -270,7 +270,7 @@ func TestReceiverRateLimitContextCancellation(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"bouquets":[]}`))
+		_, _ = w.Write([]byte(`{"bouquets":[]}`))
 	}))
 	defer ts.Close()
 
