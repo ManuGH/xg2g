@@ -73,7 +73,7 @@ func TestCircuitBreaker_RejectsWhenOpen(t *testing.T) {
 
 	// Open the circuit
 	for i := 0; i < 2; i++ {
-		cb.Call(func() error {
+		_ = cb.Call(func() error {
 			return errors.New("test error")
 		})
 	}
@@ -107,7 +107,7 @@ func TestCircuitBreaker_HalfOpenAfterTimeout(t *testing.T) {
 
 	// Open the circuit
 	for i := 0; i < 2; i++ {
-		cb.Call(func() error {
+		_ = cb.Call(func() error {
 			return errors.New("test error")
 		})
 	}
@@ -145,7 +145,7 @@ func TestCircuitBreaker_ClosesAfterSuccessInHalfOpen(t *testing.T) {
 
 	// Open the circuit
 	for i := 0; i < 2; i++ {
-		cb.Call(func() error {
+		_ = cb.Call(func() error {
 			return errors.New("test error")
 		})
 	}
@@ -175,26 +175,26 @@ func TestCircuitBreaker_ResetsFailureCountOnSuccess(t *testing.T) {
 	cb := NewCircuitBreaker(3, 30*time.Second)
 
 	// Two failures
-	cb.Call(func() error { return errors.New("error 1") })
-	cb.Call(func() error { return errors.New("error 2") })
+	_ = cb.Call(func() error { return errors.New("error 1") })
+	_ = cb.Call(func() error { return errors.New("error 2") })
 
 	if cb.State() != stateClosed {
 		t.Errorf("expected state closed after 2 failures (threshold 3), got %s", cb.State())
 	}
 
 	// One success should reset failure count
-	cb.Call(func() error { return nil })
+	_ = cb.Call(func() error { return nil })
 
 	// Two more failures should not open circuit (count was reset)
-	cb.Call(func() error { return errors.New("error 3") })
-	cb.Call(func() error { return errors.New("error 4") })
+	_ = cb.Call(func() error { return errors.New("error 3") })
+	_ = cb.Call(func() error { return errors.New("error 4") })
 
 	if cb.State() != stateClosed {
 		t.Errorf("expected state closed (failures reset by success), got %s", cb.State())
 	}
 
 	// One more failure should open it (3rd consecutive failure)
-	cb.Call(func() error { return errors.New("error 5") })
+	_ = cb.Call(func() error { return errors.New("error 5") })
 
 	if cb.State() != stateOpen {
 		t.Errorf("expected state open after 3 consecutive failures, got %s", cb.State())
@@ -211,7 +211,7 @@ func TestCircuitBreaker_ConcurrentCalls(t *testing.T) {
 		go func(n int) {
 			defer func() { done <- true }()
 
-			cb.Call(func() error {
+			_ = cb.Call(func() error {
 				if n%2 == 0 {
 					return nil // success
 				}
@@ -237,7 +237,7 @@ func BenchmarkCircuitBreaker_Success(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cb.Call(func() error {
+		_ = cb.Call(func() error {
 			return nil
 		})
 	}
@@ -248,7 +248,7 @@ func BenchmarkCircuitBreaker_Failure(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cb.Call(func() error {
+		_ = cb.Call(func() error {
 			return errors.New("test error")
 		})
 	}
@@ -258,13 +258,13 @@ func BenchmarkCircuitBreaker_Open(b *testing.B) {
 	cb := NewCircuitBreaker(1, 30*time.Second)
 
 	// Open the circuit
-	cb.Call(func() error {
+	_ = cb.Call(func() error {
 		return errors.New("test error")
 	})
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cb.Call(func() error {
+		_ = cb.Call(func() error {
 			return nil
 		})
 	}

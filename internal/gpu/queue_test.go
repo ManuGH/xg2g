@@ -23,7 +23,7 @@ func TestQueue_Submit(t *testing.T) {
 
 	q := NewQueue(config, logger)
 	q.Start()
-	defer q.Stop()
+	defer func() { _ = q.Stop() }()
 
 	req := &TranscodeRequest{
 		ID:       "test-1",
@@ -72,7 +72,7 @@ func TestQueue_PriorityOrdering(t *testing.T) {
 	})
 
 	q.Start()
-	defer q.Stop()
+	defer func() { _ = q.Stop() }()
 
 	// Submit requests in mixed priority order
 	requests := []*TranscodeRequest{
@@ -142,7 +142,7 @@ func TestQueue_ConcurrentSubmit(t *testing.T) {
 	})
 
 	q.Start()
-	defer q.Stop()
+	defer func() { _ = q.Stop() }()
 
 	// Submit 50 concurrent requests
 	numRequests := 50
@@ -194,13 +194,13 @@ func TestQueue_Stop(t *testing.T) {
 			Priority: PriorityNormal,
 			Data:     []byte("test"),
 		}
-		q.Submit(req)
+		_ = q.Submit(req)
 	}
 
 	// Stop should not hang
 	done := make(chan bool)
 	go func() {
-		q.Stop()
+		_ = q.Stop()
 		done <- true
 	}()
 
@@ -222,7 +222,7 @@ func TestQueue_Stats(t *testing.T) {
 
 	q := NewQueue(config, logger)
 	q.Start()
-	defer q.Stop()
+	defer func() { _ = q.Stop() }()
 
 	stats := q.Stats()
 
@@ -252,7 +252,7 @@ func TestQueue_TranscoderError(t *testing.T) {
 	})
 
 	q.Start()
-	defer q.Stop()
+	defer func() { _ = q.Stop() }()
 
 	req := &TranscodeRequest{
 		ID:       "error-test",
@@ -307,7 +307,7 @@ func BenchmarkQueue_Submit(b *testing.B) {
 		return &TranscodeResult{Data: req.Data}, nil
 	})
 	q.Start()
-	defer q.Stop()
+	defer func() { _ = q.Stop() }()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -316,7 +316,7 @@ func BenchmarkQueue_Submit(b *testing.B) {
 			Priority: PriorityNormal,
 			Data:     []byte("test"),
 		}
-		q.Submit(req)
+		_ = q.Submit(req)
 		<-req.ResultChan
 	}
 }
@@ -334,7 +334,7 @@ func BenchmarkQueue_ConcurrentSubmit(b *testing.B) {
 		return &TranscodeResult{Data: req.Data}, nil
 	})
 	q.Start()
-	defer q.Stop()
+	defer func() { _ = q.Stop() }()
 
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
@@ -344,7 +344,7 @@ func BenchmarkQueue_ConcurrentSubmit(b *testing.B) {
 				Priority: PriorityNormal,
 				Data:     []byte("test"),
 			}
-			q.Submit(req)
+			_ = q.Submit(req)
 			<-req.ResultChan
 		}
 	})

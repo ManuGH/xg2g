@@ -305,7 +305,7 @@ func (q *Queue) processRequest(req *TranscodeRequest, priority Priority) {
 		Msg("processing transcode request")
 
 	// Execute transcode with timeout
-	ctx, cancel := context.WithTimeout(q.ctx, req.Deadline.Sub(time.Now()))
+	ctx, cancel := context.WithTimeout(q.ctx, time.Until(req.Deadline))
 	defer cancel()
 
 	var result *TranscodeResult
