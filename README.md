@@ -463,6 +463,7 @@ Find commit SHAs at: [github.com/ManuGH/xg2g/commits/main](https://github.com/Ma
 ## Help
 
 - **API Documentation:** [API Reference](https://manugh.github.io/xg2g/api.html)
+- **Permissions Guide:** [PERMISSIONS.md](PERMISSIONS.md) - Docker, Kubernetes, and GitHub Actions permissions
 - **How-to guides:** [docs/](docs/)
 - **Questions:** [Discussions](https://github.com/ManuGH/xg2g/discussions)
 - **Problems:** [Issues](https://github.com/ManuGH/xg2g/issues)
