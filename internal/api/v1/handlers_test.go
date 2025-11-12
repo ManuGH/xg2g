@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/api"
-	"github.com/ManuGH/xg2g/internal/api/v1"
+	v1 "github.com/ManuGH/xg2g/internal/api/v1"
 	"github.com/ManuGH/xg2g/internal/jobs"
 )
 

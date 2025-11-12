@@ -25,6 +25,8 @@ go.work.sum
 # --- Docker ---
 # Docker build artifacts
 *.bak
+*.backup
+*_backup*
 *.tmp
 *.swp
 docker-compose.override.yml
