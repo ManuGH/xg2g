@@ -107,6 +107,16 @@ permissions:
 
 **Usage:** Building, testing, linting
 
+### Quality Checks Workflow (`quality-checks.yml`)
+
+```yaml
+permissions:
+  contents: read   # Read repository content
+  checks: write    # Write check run results
+```
+
+**Usage:** Race detection, memory leak detection, benchmark profiling, goroutine leak detection
+
 ### Docker Image Publishing (`docker.yml`, `docker-multi-cpu.yml`)
 
 ```yaml
@@ -191,6 +201,37 @@ permissions:
 ```
 
 **Usage:** Run performance benchmarks, post results to PRs
+
+### PR Validation (`pr-conventional-commits.yml`)
+
+```yaml
+permissions:
+  contents: read          # Read repository content
+  pull-requests: read     # Read PR metadata
+```
+
+**Usage:** Validate PR titles follow Conventional Commits format
+
+### Test Reporting (`test-report.yml`)
+
+```yaml
+permissions:
+  contents: read   # Read repository content
+  checks: write    # Write test check results
+```
+
+**Usage:** Generate and publish test result reports
+
+### SBOM Generation (`sbom.yml`)
+
+```yaml
+permissions:
+  contents: write   # Upload SBOM as release asset
+  packages: write   # Attach SBOM to Docker images
+  id-token: write   # Sign SBOM artifacts
+```
+
+**Usage:** Generate Software Bill of Materials (SBOM) for dependencies
 
 ### Scorecard Security Assessment (`scorecard.yml`)
 
