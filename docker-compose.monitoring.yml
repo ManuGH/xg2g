@@ -1,0 +1,174 @@
+# xg2g Production Monitoring Stack
+# Complete observability setup with Prometheus, Grafana, Jaeger
+#
+# Usage:
+#   docker-compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
+#
+# Or standalone with monitoring only:
+#   docker-compose -f docker-compose.monitoring.yml up -d
+#
+# Access:
+#   xg2g:       http://localhost:8080
+#   Grafana:    http://localhost:3000 (admin/xg2g-admin)
+#   Prometheus: http://localhost:9091
+#   Jaeger:     http://localhost:16686
+
+services:
+  # ============================================================================
+  # xg2g Application
+  # ============================================================================
+  xg2g:
+    image: ghcr.io/manugh/xg2g:latest
+    container_name: xg2g
+    user: "65532:65532"
+    restart: unless-stopped
+    ports:
+      - "8080:8080"      # HTTP API & M3U/EPG
+      - "1900:1900/udp"  # SSDP for Plex/Jellyfin
+    environment:
+      # OpenWebIF Configuration
+      - XG2G_OWI_BASE=${XG2G_OWI_BASE:-http://192.168.1.100}
+      - XG2G_OWI_USERNAME=${XG2G_OWI_USERNAME:-}
+      - XG2G_OWI_PASSWORD=${XG2G_OWI_PASSWORD:-}
+      - XG2G_BOUQUET=${XG2G_BOUQUET:-Favourites}
+
+      # Smart Stream Detection
+      - XG2G_SMART_STREAM_DETECTION=true
+
+      # EPG Configuration
+      - XG2G_EPG_ENABLED=true
+      - XG2G_EPG_DAYS=7
+
+      # Security
+      - XG2G_API_TOKEN=${XG2G_API_TOKEN:-}
+
+      # Metrics (Prometheus)
+      - XG2G_METRICS_ENABLED=true
+
+      # Tracing (Jaeger)
+      - XG2G_TRACING_ENABLED=true
+      - XG2G_JAEGER_ENDPOINT=http://jaeger:14268/api/traces
+
+      # Logging (JSON for structured logs)
+      - XG2G_LOG_LEVEL=info
+      - XG2G_LOG_FORMAT=json
+    volumes:
+      - xg2g-data:/data
+    networks:
+      - monitoring
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+
+  # ============================================================================
+  # Prometheus (Metrics Collection)
+  # ============================================================================
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: xg2g-prometheus
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    ports:
+      - "9091:9090"  # Prometheus UI
+    volumes:
+      - ./deploy/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/monitoring/prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - monitoring
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ============================================================================
+  # Grafana (Visualization)
+  # ============================================================================
+  grafana:
+    image: grafana/grafana:10.2.2
+    container_name: xg2g-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-xg2g-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_SERVER_ROOT_URL=http://localhost:3000
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+    volumes:
+      - ./deploy/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    networks:
+      - monitoring
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ============================================================================
+  # Jaeger (Distributed Tracing)
+  # ============================================================================
+  jaeger:
+    image: jaegertracing/all-in-one:1.51
+    container_name: xg2g-jaeger
+    restart: unless-stopped
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "14268:14268"  # Jaeger HTTP collector
+    environment:
+      - COLLECTOR_ZIPKIN_HOST_PORT=:9411
+      - SPAN_STORAGE_TYPE=badger
+      - BADGER_EPHEMERAL=false
+      - BADGER_DIRECTORY_VALUE=/badger/data
+      - BADGER_DIRECTORY_KEY=/badger/key
+    volumes:
+      - jaeger-data:/badger
+    networks:
+      - monitoring
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:14269/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+# ============================================================================
+# Networks
+# ============================================================================
+networks:
+  monitoring:
+    driver: bridge
+
+# ============================================================================
+# Volumes
+# ============================================================================
+volumes:
+  xg2g-data:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+  jaeger-data:
+    driver: local
