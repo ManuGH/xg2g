@@ -3,6 +3,7 @@ package openwebif
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -33,6 +34,75 @@ type StreamInfo struct {
 	TestError    error     // Last test error (if any)
 }
 
+// CircuitBreaker implements a simple circuit breaker pattern for stream endpoints.
+type CircuitBreaker struct {
+	failures  int
+	threshold int
+	timeout   time.Duration
+	state     string // "closed", "open", "half-open"
+	openedAt  time.Time
+	mu        sync.Mutex
+}
+
+const (
+	stateClosed   = "closed"
+	stateOpen     = "open"
+	stateHalfOpen = "half-open"
+)
+
+// NewCircuitBreaker creates a new circuit breaker.
+func NewCircuitBreaker(threshold int, timeout time.Duration) *CircuitBreaker {
+	return &CircuitBreaker{
+		threshold: threshold,
+		timeout:   timeout,
+		state:     stateClosed,
+	}
+}
+
+// Call executes fn if the circuit is not open.
+func (cb *CircuitBreaker) Call(fn func() error) error {
+	cb.mu.Lock()
+
+	// Check if circuit should transition from open to half-open
+	if cb.state == stateOpen {
+		if time.Since(cb.openedAt) >= cb.timeout {
+			cb.state = stateHalfOpen
+		} else {
+			cb.mu.Unlock()
+			return errors.New("circuit breaker is open")
+		}
+	}
+	cb.mu.Unlock()
+
+	// Execute function
+	err := fn()
+
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
+	if err != nil {
+		cb.failures++
+		// If in half-open, any failure opens immediately
+		if cb.state == stateHalfOpen || cb.failures >= cb.threshold {
+			cb.state = stateOpen
+			cb.openedAt = time.Now()
+		}
+		return err
+	}
+
+	// Success: reset failures and close circuit
+	cb.failures = 0
+	cb.state = stateClosed
+	return nil
+}
+
+// State returns the current circuit state.
+func (cb *CircuitBreaker) State() string {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+	return cb.state
+}
+
 // StreamDetector handles smart detection of optimal stream endpoints.
 type StreamDetector struct {
 	cache      map[string]*StreamInfo // Key: ServiceRef
@@ -47,6 +117,10 @@ type StreamDetector struct {
 	cacheTTL          time.Duration
 	encryptedChannels map[string]bool // Whitelist of service refs requiring port 17999
 	whitelistMu       sync.RWMutex
+
+	// Circuit Breakers per port
+	circuitBreakers map[int]*CircuitBreaker
+	cbMu            sync.RWMutex
 }
 
 // NewStreamDetector creates a new smart stream detector.
@@ -71,7 +145,13 @@ func NewStreamDetector(receiverHost string, logger zerolog.Logger) *StreamDetect
 		proxyHost:         proxyHost,
 		cacheTTL:          24 * time.Hour, // Cache results for 24 hours
 		encryptedChannels: make(map[string]bool),
+		circuitBreakers:   make(map[int]*CircuitBreaker),
 	}
+
+	// Initialize circuit breakers for common ports
+	// Threshold: 3 failures, Timeout: 30 seconds
+	sd.circuitBreakers[8001] = NewCircuitBreaker(3, 30*time.Second)
+	sd.circuitBreakers[17999] = NewCircuitBreaker(3, 30*time.Second)
 
 	// Load encrypted channels whitelist from receiver (synchronous)
 	// This must complete before stream detection starts to ensure correct port selection
@@ -246,27 +326,57 @@ func (sd *StreamDetector) buildCandidates(serviceRef string) []streamCandidate {
 func (sd *StreamDetector) testEndpoint(ctx context.Context, candidate streamCandidate) bool {
 	portStr := fmt.Sprintf("%d", candidate.Port)
 
-	// Try HEAD first (fast, minimal bandwidth)
-	if sd.tryRequest(ctx, http.MethodHead, candidate, false) {
-		return true
+	// Get circuit breaker for this port
+	sd.cbMu.RLock()
+	cb, exists := sd.circuitBreakers[candidate.Port]
+	sd.cbMu.RUnlock()
+
+	// If no circuit breaker for this port, create one
+	if !exists {
+		sd.cbMu.Lock()
+		cb = NewCircuitBreaker(3, 30*time.Second)
+		sd.circuitBreakers[candidate.Port] = cb
+		sd.cbMu.Unlock()
 	}
 
-	// Record HEAD failure for metrics
-	gpu.RecordStreamDetectionError(portStr, "head_failed")
+	// Use circuit breaker to protect against repeated failures
+	err := cb.Call(func() error {
+		// Try HEAD first (fast, minimal bandwidth)
+		if sd.tryRequest(ctx, http.MethodHead, candidate, false) {
+			return nil
+		}
 
-	// Fallback to GET with Range header (Enigma2 doesn't support HEAD properly)
-	sd.logger.Debug().
-		Str("url", candidate.URL).
-		Int("port", candidate.Port).
-		Msg("HEAD failed, retrying with GET")
+		// Record HEAD failure for metrics
+		gpu.RecordStreamDetectionError(portStr, "head_failed")
 
-	if sd.tryRequest(ctx, http.MethodGet, candidate, true) {
-		return true
+		// Fallback to GET with Range header (Enigma2 doesn't support HEAD properly)
+		sd.logger.Debug().
+			Str("url", candidate.URL).
+			Int("port", candidate.Port).
+			Msg("HEAD failed, retrying with GET")
+
+		if sd.tryRequest(ctx, http.MethodGet, candidate, true) {
+			return nil
+		}
+
+		// Record complete failure
+		gpu.RecordStreamDetectionError(portStr, "get_failed")
+		return errors.New("endpoint test failed")
+	})
+
+	if err != nil {
+		// Log circuit breaker state when it opens
+		if cb.State() == stateOpen {
+			sd.logger.Warn().
+				Int("port", candidate.Port).
+				Str("state", cb.State()).
+				Msg("circuit breaker opened for stream endpoint")
+			gpu.RecordStreamDetectionError(portStr, "circuit_open")
+		}
+		return false
 	}
 
-	// Record complete failure
-	gpu.RecordStreamDetectionError(portStr, "get_failed")
-	return false
+	return true
 }
 
 // tryRequest attempts a single HTTP request to test the stream endpoint.
