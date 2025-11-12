@@ -1,0 +1,118 @@
+# xg2g Ingress with Load Balancing
+# NGINX Ingress Controller configuration
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: xg2g
+  namespace: xg2g
+  annotations:
+    # NGINX Ingress
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+
+    # Rate limiting
+    nginx.ingress.kubernetes.io/limit-rps: "100"
+    nginx.ingress.kubernetes.io/limit-connections: "50"
+
+    # Timeouts for streaming
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+
+    # Load balancing
+    nginx.ingress.kubernetes.io/load-balance: "least_conn"
+    nginx.ingress.kubernetes.io/upstream-hash-by: "$remote_addr"  # IP hash for sticky sessions
+
+    # Buffer settings for streaming
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+
+    # Security headers
+    nginx.ingress.kubernetes.io/enable-cors: "false"
+
+    # Certificate manager (if using cert-manager)
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+
+spec:
+  ingressClassName: nginx
+
+  tls:
+    - hosts:
+        - xg2g.example.com
+      secretName: xg2g-tls
+
+  rules:
+    - host: xg2g.example.com
+      http:
+        paths:
+          # Main application endpoints
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: xg2g
+                port:
+                  name: http
+
+          # M3U playlist endpoint
+          - path: /playlist.m3u
+            pathType: Exact
+            backend:
+              service:
+                name: xg2g
+                port:
+                  name: http
+
+          # EPG endpoint
+          - path: /epg.xml
+            pathType: Exact
+            backend:
+              service:
+                name: xg2g
+                port:
+                  name: http
+
+          # API endpoints
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: xg2g
+                port:
+                  name: http
+
+          # Stream endpoints
+          - path: /stream
+            pathType: Prefix
+            backend:
+              service:
+                name: xg2g
+                port:
+                  name: http
+
+          # Metrics endpoint (should be protected!)
+          - path: /metrics
+            pathType: Exact
+            backend:
+              service:
+                name: xg2g
+                port:
+                  name: http
+
+          # Health checks
+          - path: /healthz
+            pathType: Exact
+            backend:
+              service:
+                name: xg2g
+                port:
+                  name: http
+
+          - path: /readyz
+            pathType: Exact
+            backend:
+              service:
+                name: xg2g
+                port:
+                  name: http

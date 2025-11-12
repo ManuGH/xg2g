@@ -1,0 +1,196 @@
+# xg2g Kubernetes Deployment
+# Production-ready deployment with auto-scaling and health checks
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: xg2g
+  namespace: xg2g
+  labels:
+    app: xg2g
+    version: v1
+spec:
+  replicas: 3  # Initial replica count (HPA will adjust)
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: xg2g
+  template:
+    metadata:
+      labels:
+        app: xg2g
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: xg2g
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+
+      # Anti-affinity: Spread pods across nodes
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - xg2g
+                topologyKey: kubernetes.io/hostname
+
+      containers:
+        - name: xg2g
+          image: ghcr.io/manugh/xg2g:latest
+          imagePullPolicy: Always
+
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: ssdp
+              containerPort: 1900
+              protocol: UDP
+
+          env:
+            # OpenWebIF Configuration
+            - name: XG2G_OWI_BASE
+              valueFrom:
+                configMapKeyRef:
+                  name: xg2g-config
+                  key: owi-base
+            - name: XG2G_OWI_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: xg2g-secrets
+                  key: owi-username
+                  optional: true
+            - name: XG2G_OWI_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: xg2g-secrets
+                  key: owi-password
+                  optional: true
+            - name: XG2G_BOUQUET
+              valueFrom:
+                configMapKeyRef:
+                  name: xg2g-config
+                  key: bouquet
+
+            # Smart Stream Detection
+            - name: XG2G_SMART_STREAM_DETECTION
+              value: "true"
+
+            # EPG Configuration
+            - name: XG2G_EPG_ENABLED
+              value: "true"
+            - name: XG2G_EPG_DAYS
+              value: "7"
+
+            # Security
+            - name: XG2G_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: xg2g-secrets
+                  key: api-token
+                  optional: true
+
+            # Metrics & Tracing
+            - name: XG2G_METRICS_ENABLED
+              value: "true"
+            - name: XG2G_TRACING_ENABLED
+              value: "true"
+            - name: XG2G_JAEGER_ENDPOINT
+              value: "http://jaeger-collector.monitoring:14268/api/traces"
+
+            # Cache (Redis)
+            - name: XG2G_CACHE_BACKEND
+              value: "redis"
+            - name: XG2G_REDIS_ADDR
+              value: "redis-master.xg2g:6379"
+            - name: XG2G_REDIS_DB
+              value: "0"
+
+            # Logging
+            - name: XG2G_LOG_LEVEL
+              value: "info"
+            - name: XG2G_LOG_FORMAT
+              value: "json"
+
+          # Resource limits for auto-scaling
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 512Mi
+
+          # Health checks
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            successThreshold: 1
+            failureThreshold: 3
+
+          # Startup probe for slow startups
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 0
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 12
+
+          # Security context
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - NET_BIND_SERVICE
+
+          # Volume mounts
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+
+      volumes:
+        - name: data
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+
+      # Graceful shutdown
+      terminationGracePeriodSeconds: 30

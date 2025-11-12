@@ -1,0 +1,26 @@
+# Kustomize configuration for xg2g deployment
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: xg2g
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml
+  - hpa.yaml
+
+# Add labels to all resources
+commonLabels:
+  app: xg2g
+  managed-by: kustomize
+
+# Images to use (can be overridden with kustomize edit)
+images:
+  - name: ghcr.io/manugh/xg2g
+    newTag: latest
+
+# Configuration for different environments
+# Use with: kustomize build deploy/kubernetes | kubectl apply -f -

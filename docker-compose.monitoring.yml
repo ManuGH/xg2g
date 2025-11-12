@@ -52,6 +52,11 @@ services:
       # Logging (JSON for structured logs)
       - XG2G_LOG_LEVEL=info
       - XG2G_LOG_FORMAT=json
+
+      # Cache (Redis)
+      - XG2G_CACHE_BACKEND=redis
+      - XG2G_REDIS_ADDR=redis:6379
+      - XG2G_REDIS_DB=0
     volumes:
       - xg2g-data:/data
     networks:
@@ -153,6 +158,31 @@ services:
       timeout: 5s
       retries: 3
 
+  # ============================================================================
+  # Redis (Distributed Cache)
+  # ============================================================================
+  redis:
+    image: redis:7.2-alpine
+    container_name: xg2g-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --save 60 1000
+      --appendonly yes
+    volumes:
+      - redis-data:/data
+    networks:
+      - monitoring
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
 # ============================================================================
 # Networks
 # ============================================================================
@@ -171,4 +201,6 @@ volumes:
   grafana-data:
     driver: local
   jaeger-data:
+    driver: local
+  redis-data:
     driver: local

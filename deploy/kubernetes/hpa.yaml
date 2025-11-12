@@ -1,0 +1,84 @@
+# HorizontalPodAutoscaler for xg2g
+# Auto-scales based on CPU, Memory, and custom metrics
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: xg2g
+  namespace: xg2g
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: xg2g
+
+  minReplicas: 3
+  maxReplicas: 20
+
+  # Scaling behavior
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300  # Wait 5 minutes before scaling down
+      policies:
+        - type: Percent
+          value: 50  # Scale down max 50% of pods at once
+          periodSeconds: 60
+        - type: Pods
+          value: 2  # Or max 2 pods at once
+          periodSeconds: 60
+      selectPolicy: Min  # Use most conservative policy
+
+    scaleUp:
+      stabilizationWindowSeconds: 0  # Scale up immediately
+      policies:
+        - type: Percent
+          value: 100  # Double pods if needed
+          periodSeconds: 30
+        - type: Pods
+          value: 4  # Or add max 4 pods at once
+          periodSeconds: 30
+      selectPolicy: Max  # Use most aggressive policy
+
+  # Metrics for auto-scaling
+  metrics:
+    # CPU-based scaling
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70  # Scale at 70% CPU
+
+    # Memory-based scaling
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80  # Scale at 80% memory
+
+    # Custom metric: Active streams
+    - type: Pods
+      pods:
+        metric:
+          name: xg2g_active_streams_total
+        target:
+          type: AverageValue
+          averageValue: "50"  # Scale when avg >50 streams per pod
+
+    # Custom metric: HTTP requests per second
+    - type: Pods
+      pods:
+        metric:
+          name: http_requests_per_second
+        target:
+          type: AverageValue
+          averageValue: "100"  # Scale at >100 req/s per pod
+
+    # Custom metric: Queue size
+    - type: Pods
+      pods:
+        metric:
+          name: xg2g_gpu_queue_size
+        target:
+          type: AverageValue
+          averageValue: "30"  # Scale when queue has >30 items per pod

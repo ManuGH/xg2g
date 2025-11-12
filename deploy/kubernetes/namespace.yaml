@@ -1,0 +1,69 @@
+# xg2g Namespace and ServiceAccount
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: xg2g
+  labels:
+    name: xg2g
+    app: xg2g
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: xg2g
+  namespace: xg2g
+  labels:
+    app: xg2g
+
+---
+# PodDisruptionBudget for high availability
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: xg2g
+  namespace: xg2g
+spec:
+  minAvailable: 2  # Always keep at least 2 pods running
+  selector:
+    matchLabels:
+      app: xg2g
+
+---
+# ResourceQuota to prevent resource exhaustion
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: xg2g-quota
+  namespace: xg2g
+spec:
+  hard:
+    requests.cpu: "20"
+    requests.memory: "10Gi"
+    limits.cpu: "40"
+    limits.memory: "20Gi"
+    pods: "50"
+
+---
+# LimitRange for default resource constraints
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: xg2g-limits
+  namespace: xg2g
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: 1000m
+        memory: 512Mi
+      defaultRequest:
+        cpu: 250m
+        memory: 256Mi
+      max:
+        cpu: 2000m
+        memory: 1Gi
+      min:
+        cpu: 100m
+        memory: 128Mi
