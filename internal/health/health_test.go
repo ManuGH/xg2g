@@ -29,6 +29,7 @@ func TestManager_Health_NoCheckers(t *testing.T) {
 	resp := m.Health(context.Background(), false)
 	assert.Equal(t, StatusHealthy, resp.Status)
 	assert.Equal(t, "v1.0.0", resp.Version)
+	assert.GreaterOrEqual(t, resp.Uptime, int64(0)) // Uptime should be >= 0
 	assert.Nil(t, resp.Checks)
 }
 
@@ -59,6 +60,20 @@ func TestManager_Health_Unhealthy(t *testing.T) {
 	resp := m.Health(context.Background(), true)
 	assert.Equal(t, StatusUnhealthy, resp.Status)
 	assert.Len(t, resp.Checks, 1)
+}
+
+func TestManager_Health_Uptime(t *testing.T) {
+	m := NewManager("v1.0.0")
+
+	// Check uptime immediately
+	resp1 := m.Health(context.Background(), false)
+	assert.GreaterOrEqual(t, resp1.Uptime, int64(0))
+
+	// Wait 1 second and check again
+	time.Sleep(1 * time.Second)
+	resp2 := m.Health(context.Background(), false)
+	assert.GreaterOrEqual(t, resp2.Uptime, int64(1))
+	assert.Greater(t, resp2.Uptime, resp1.Uptime) // Uptime should increase
 }
 
 func TestManager_Ready_NoCheckers(t *testing.T) {
@@ -114,7 +129,8 @@ func TestManager_ServeHealth(t *testing.T) {
 	err := json.NewDecoder(w.Body).Decode(&resp)
 	require.NoError(t, err)
 	assert.Equal(t, StatusHealthy, resp.Status)
-	assert.Nil(t, resp.Checks) // Not verbose
+	assert.GreaterOrEqual(t, resp.Uptime, int64(0)) // Uptime should be present
+	assert.Nil(t, resp.Checks)                      // Not verbose
 
 	// Test with verbose
 	req = httptest.NewRequest(http.MethodGet, "/healthz?verbose=true", nil)
@@ -126,6 +142,7 @@ func TestManager_ServeHealth(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, resp.Checks)
 	assert.Len(t, resp.Checks, 1)
+	assert.GreaterOrEqual(t, resp.Uptime, int64(0)) // Uptime present in verbose too
 }
 
 func TestManager_ServeHealth_EncodingError(t *testing.T) {

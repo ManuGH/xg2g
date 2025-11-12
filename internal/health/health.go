@@ -34,6 +34,7 @@ type CheckResult struct {
 type HealthResponse struct {
 	Status    Status                 `json:"status"`
 	Version   string                 `json:"version,omitempty"`
+	Uptime    int64                  `json:"uptime,omitempty"` // Uptime in seconds since startup
 	Timestamp time.Time              `json:"timestamp"`
 	Checks    map[string]CheckResult `json:"checks,omitempty"`
 	Details   map[string]interface{} `json:"details,omitempty"`
@@ -56,15 +57,17 @@ type Checker interface {
 
 // Manager manages health and readiness checks
 type Manager struct {
-	version  string
-	checkers []Checker
+	version   string
+	checkers  []Checker
+	startTime time.Time // Track startup time for uptime calculation
 }
 
 // NewManager creates a new health check manager
 func NewManager(version string) *Manager {
 	return &Manager{
-		version:  version,
-		checkers: make([]Checker, 0),
+		version:   version,
+		checkers:  make([]Checker, 0),
+		startTime: time.Now(),
 	}
 }
 
@@ -76,10 +79,12 @@ func (m *Manager) RegisterChecker(checker Checker) {
 // Health performs a health check (liveness probe)
 // Returns 200 if the process is alive, regardless of service state
 func (m *Manager) Health(ctx context.Context, verbose bool) HealthResponse {
+	now := time.Now()
 	resp := HealthResponse{
 		Status:    StatusHealthy,
 		Version:   m.version,
-		Timestamp: time.Now(),
+		Uptime:    int64(now.Sub(m.startTime).Seconds()),
+		Timestamp: now,
 	}
 
 	// If verbose, include component checks
