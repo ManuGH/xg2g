@@ -142,8 +142,8 @@ If Smart Stream Detection is enabled but all channels use the same port:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `XG2G_SMART_STREAM_DETECTION` | `false` | Enable automatic OSCam Streamrelay detection |
-| `XG2G_STREAM_PORT` | `8001` | Default stream port (if detection disabled) |
+| `XG2G_SMART_STREAM_DETECTION` | `true` (enabled by default) | Automatic OSCam Streamrelay detection (set to `false` to disable) |
+| `XG2G_STREAM_PORT` | `8001` | Default stream port (used when detection is disabled) |
 
 ---
 

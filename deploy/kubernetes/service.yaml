@@ -1,0 +1,49 @@
+# xg2g Service
+# ClusterIP for internal communication and LoadBalancer for external access
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: xg2g
+  namespace: xg2g
+  labels:
+    app: xg2g
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8080"
+spec:
+  type: ClusterIP
+  sessionAffinity: ClientIP  # Sticky sessions for streaming
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 3600  # 1 hour session timeout
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+    - name: ssdp
+      port: 1900
+      targetPort: ssdp
+      protocol: UDP
+  selector:
+    app: xg2g
+
+---
+# Headless service for StatefulSet scenarios (if needed)
+apiVersion: v1
+kind: Service
+metadata:
+  name: xg2g-headless
+  namespace: xg2g
+  labels:
+    app: xg2g
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+  selector:
+    app: xg2g

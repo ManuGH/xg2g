@@ -248,9 +248,9 @@ picons:
 # - For EPG issues, check Enigma2 supports EPG API:
 #     curl http://192.168.1.100/api/epgservice?sRef=REFERENCE
 #
-# - Streams don't play? Enable Smart Stream Detection (automatic):
-#     XG2G_SMART_STREAM_DETECTION=true
-#   This automatically detects port 8001 vs 17999 (OSCam) per channel.
+# - Streams don't play? Smart Stream Detection is enabled by default!
+#   It automatically detects port 8001 vs 17999 (OSCam) per channel.
+#   To disable: XG2G_SMART_STREAM_DETECTION=false
 #   See docs/STREAM_PORTS.md for details.
 #
 # - Enable debug logging for detailed information:
