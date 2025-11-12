@@ -60,14 +60,14 @@ To enable audio transcoding in v1.3.0:
 #### 🛡️ Comprehensive Security Framework
 
 - **Symlink boundary protection**: Real-time validation prevents symlink escape attacks
-- **Path traversal protection**: Comprehensive input validation blocks directory traversal attempts  
+- **Path traversal protection**: Comprehensive input validation blocks directory traversal attempts
 - **HTTP method restrictions**: Only GET/HEAD allowed for file endpoints, 405 for others
 - **Directory listing prevention**: All directory access attempts return 403 Forbidden
 
 #### 📊 Production Monitoring Stack
 
 - **Prometheus metrics integration**: Comprehensive performance and security metrics
-- **Grafana dashboards**: Real-time security and operational visibility  
+- **Grafana dashboards**: Real-time security and operational visibility
 - **AlertManager integration**: Automatic alerting for security events and operational issues
 - **Docker Compose monitoring**: Complete production-ready monitoring stack
 
@@ -78,7 +78,7 @@ To enable audio transcoding in v1.3.0:
 - **Automated alerts**: SymlinkAttackSpike, HTTPErrorRateHigh, HighLatencyP95
 - **Security dashboards**: 6-panel Grafana dashboard with security focus
 
-#### ⚡ Automated Security Testing  
+#### ⚡ Automated Security Testing
 
 - **Comprehensive penetration testing**: 20+ attack vectors in automated test suite
 - **CI/CD security validation**: Quick 4-test validation for deployment pipelines
@@ -136,7 +136,7 @@ To enable audio transcoding in v1.3.0:
 New environment variables for stability tuning:
 
 - `XG2G_OWI_TIMEOUT_MS` (default: 10000) - Timeout per request attempt
-- `XG2G_OWI_RETRIES` (default: 3) - Maximum retry attempts  
+- `XG2G_OWI_RETRIES` (default: 3) - Maximum retry attempts
 - `XG2G_OWI_BACKOFF_MS` (default: 500) - Base backoff delay
 - `XG2G_OWI_MAX_BACKOFF_MS` (default: 2000) - Maximum backoff delay
 

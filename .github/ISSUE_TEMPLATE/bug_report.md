@@ -6,8 +6,8 @@ labels: bug
 assignees: ''
 ---
 
-> **Note**: This project follows an English-only policy.  
-> Please write your issue in English to ensure it can be understood by all  
+> **Note**: This project follows an English-only policy.
+> Please write your issue in English to ensure it can be understood by all
 > contributors.
 
 ## Describe the bug

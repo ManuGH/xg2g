@@ -13,7 +13,7 @@ This document describes the process for rotating your xg2g API token.
 - [x] Updated `.env.prod` with new token
 - [x] Old token marked for invalidation
 
-### 🔄 Required Actions  
+### 🔄 Required Actions
 - [ ] Update Kubernetes secrets with new token
 - [ ] Update any external monitoring/health-check systems
 - [ ] Invalidate old token in OpenWebIF (if applicable)

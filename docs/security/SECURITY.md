@@ -14,7 +14,7 @@ xg2g processes user-supplied configuration and serves files via HTTP. The primar
 
 ### 2. Path Traversal
 
-- **Risk**: URL paths like `../../../etc/passwd` could access system files  
+- **Risk**: URL paths like `../../../etc/passwd` could access system files
 - **Mitigation**: Router normalization + realpath validation in file handler
 - **Implementation**: HTTP 301 redirects for traversal attempts, boundary checks
 
@@ -51,7 +51,7 @@ xg2g processes user-supplied configuration and serves files via HTTP. The primar
 # Run startup symlink policy tests
 go test ./cmd/daemon -run TestEnsureDataDirSymlinkPolicy -race -v
 
-# Run HTTP handler security tests  
+# Run HTTP handler security tests
 go test ./internal/api -run TestSecureFileHandlerSymlinkPolicy -race -v
 
 # Run all security-tagged tests
@@ -69,7 +69,7 @@ go test ./... -tags security -race
 The security pipeline runs on every commit and includes:
 
 - Symlink attack prevention validation
-- Static security pattern enforcement  
+- Static security pattern enforcement
 - Security regression detection via repeated test runs
 - Lint rules preventing `err.Error()` exposure in HTTP responses
 
@@ -84,7 +84,7 @@ If you discover a security vulnerability, please report it to:
 ### Responsible Disclosure
 
 1. Report the issue privately first
-2. Allow 90 days for patch development  
+2. Allow 90 days for patch development
 3. Coordinate public disclosure timing
 4. Credit will be provided in release notes
 
@@ -93,7 +93,7 @@ If you discover a security vulnerability, please report it to:
 Security patches are released as:
 
 - **Critical**: Immediate patch releases with CVE assignment
-- **High**: Next minor release (< 30 days)  
+- **High**: Next minor release (< 30 days)
 - **Medium/Low**: Next regular release
 
 Subscribe to releases for security notifications: <https://github.com/ManuGH/xg2g/releases>
@@ -107,7 +107,7 @@ Subscribe to releases for security notifications: <https://github.com/ManuGH/xg2
 - Mount data directory with restricted permissions (`0755`)
 - Network isolation where possible
 
-### Configuration  
+### Configuration
 
 - Validate `XG2G_DATA` points to dedicated directory
 - Avoid symlinks in data directory tree
@@ -145,7 +145,7 @@ xg2g_http_requests_total{status="405",endpoint="/files"}
 Production monitoring includes automatic security alerts:
 
 - **SymlinkAttackSpike**: >5 boundary escape attempts in 5 minutes
-- **FileAccessDeniedSpike**: >10 access denials in 5 minutes  
+- **FileAccessDeniedSpike**: >10 access denials in 5 minutes
 - **HTTPErrorRateHigh**: >10% error rate indicates potential attack
 - **HighLatencyP95**: Abnormal response times may indicate DoS
 
@@ -164,7 +164,7 @@ Automated security validation suite:
 **Test Coverage**:
 
 - Path traversal (8 encoding variants)
-- Symlink escape attempts (chains, directories)  
+- Symlink escape attempts (chains, directories)
 - HTTP method restrictions (POST/PUT/DELETE/PATCH)
 - Concurrent attack resilience (10+ parallel requests)
 - Edge cases (large paths, special characters)

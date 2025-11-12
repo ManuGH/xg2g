@@ -144,12 +144,12 @@ permissions:
 ```yaml
 permissions:
   contents: read           # Global read-only access
-  
+
   # Per-job permissions
   scan-job:
     permissions:
       security-events: write   # Upload Trivy scan results
-      
+
   sbom-job:
     permissions:
       contents: write          # Upload SBOM artifacts
@@ -284,17 +284,17 @@ rules:
   - apiGroups: [""]
     resources: ["configmaps", "secrets", "services", "persistentvolumeclaims"]
     verbs: ["create", "update", "patch", "get", "list"]
-  
+
   # Workload resources
   - apiGroups: ["apps"]
     resources: ["deployments"]
     verbs: ["create", "update", "patch", "get", "list"]
-  
+
   # Networking
   - apiGroups: ["networking.k8s.io"]
     resources: ["ingresses"]
     verbs: ["create", "update", "patch", "get", "list"]
-  
+
   # Monitoring (optional)
   - apiGroups: ["monitoring.coreos.com"]
     resources: ["servicemonitors"]
@@ -462,7 +462,7 @@ spec:
   policyTypes:
     - Ingress
     - Egress
-  
+
   ingress:
     # Allow traffic from ingress controller
     - from:
@@ -472,7 +472,7 @@ spec:
       ports:
         - protocol: TCP
           port: 8080
-  
+
   egress:
     # Allow DNS
     - to:
@@ -483,7 +483,7 @@ spec:
       ports:
         - protocol: UDP
           port: 53
-    
+
     # Allow OpenWebIF access (adjust IP range)
     - to:
         - ipBlock:
@@ -495,7 +495,7 @@ spec:
           port: 443
         - protocol: TCP
           port: 8001
-    
+
     # Allow Redis access (if using)
     - to:
         - podSelector:

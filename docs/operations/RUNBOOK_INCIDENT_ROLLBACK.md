@@ -1,7 +1,7 @@
 # Incident Response & Rollback Runbook
 
-**Target Version:** v1.7.x  
-**Last Updated:** 2025-11-01  
+**Target Version:** v1.7.x
+**Last Updated:** 2025-11-01
 **Owner:** Release Engineering
 
 ---
@@ -80,7 +80,7 @@ kubectl rollout status deployment/xg2g
 kubectl exec -it deploy/xg2g -- wget -qO- http://localhost:8080/healthz
 ```
 
-**Expected Duration:** 2-5 minutes  
+**Expected Duration:** 2-5 minutes
 **Impact:** Zero-downtime if readiness probes configured
 
 ### Option 2: Helm Rollback
@@ -99,7 +99,7 @@ helm status xg2g
 kubectl get pods -l app=xg2g
 ```
 
-**Expected Duration:** 3-7 minutes  
+**Expected Duration:** 3-7 minutes
 **Impact:** Brief disruption during ConfigMap reload
 
 ### Option 3: Docker Image Revert
@@ -127,7 +127,7 @@ docker logs xg2g --tail 50
 curl http://localhost:8080/healthz
 ```
 
-**Expected Duration:** 1-3 minutes  
+**Expected Duration:** 1-3 minutes
 **Impact:** Full downtime during container restart
 
 ### Option 4: Git Revert + Redeploy
@@ -143,7 +143,7 @@ git push origin main
 kubectl set image deployment/xg2g xg2g=ghcr.io/manugh/xg2g:v1.6.1
 ```
 
-**Expected Duration:** 5-15 minutes (depends on CI/CD)  
+**Expected Duration:** 5-15 minutes (depends on CI/CD)
 **Impact:** Controlled rollout via deployment strategy
 
 ---
@@ -381,9 +381,9 @@ docker inspect xg2g  # For Docker deployments
 ```markdown
 # Post-Mortem: xg2g v1.7.x Incident
 
-**Date:** [YYYY-MM-DD]  
-**Severity:** P0/P1/P2/P3  
-**Duration:** [X minutes/hours]  
+**Date:** [YYYY-MM-DD]
+**Severity:** P0/P1/P2/P3
+**Duration:** [X minutes/hours]
 **Impact:** [User-facing impact]
 
 ## Timeline
@@ -417,5 +417,5 @@ docker inspect xg2g  # For Docker deployments
 
 ---
 
-**Last Tested:** [Run periodic rollback drills quarterly]  
+**Last Tested:** [Run periodic rollback drills quarterly]
 **Next Review:** [Schedule after each P0/P1 incident]

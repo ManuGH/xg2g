@@ -175,6 +175,6 @@ For issues or questions:
 
 ---
 
-**Generated:** 2025 Sprint 2 Implementation  
-**Version:** 1.0.0  
+**Generated:** 2025 Sprint 2 Implementation
+**Version:** 1.0.0
 **Grafana Version:** 10.0.0+

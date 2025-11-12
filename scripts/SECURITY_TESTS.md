@@ -9,7 +9,7 @@ This directory contains security testing tools for validating xg2g's file servin
 Complete penetration testing framework with 6 test categories:
 
 1. **Basic File Access** - Valid requests, nonexistent files, method restrictions
-2. **Path Traversal Attacks** - Various traversal patterns and encoding attempts  
+2. **Path Traversal Attacks** - Various traversal patterns and encoding attempts
 3. **Symlink Escape Attacks** - Symlink-based directory escape attempts
 4. **Directory Listing Protection** - Directory access and listing prevention
 5. **High-Volume Attack Simulation** - Concurrent attack resilience testing
@@ -35,7 +35,7 @@ Complete penetration testing framework with 6 test categories:
 - Summary report with pass/fail counts
 - References to Grafana metrics dashboard
 
-### `quick-security-check.sh` - Fast Security Validation  
+### `quick-security-check.sh` - Fast Security Validation
 
 Lightweight security validation for CI/CD pipelines and quick checks.
 
@@ -52,7 +52,7 @@ Tests core security features:
 # Quick validation of local instance
 ./scripts/quick-security-check.sh
 
-# Quick validation of remote instance  
+# Quick validation of remote instance
 ./scripts/quick-security-check.sh http://production.example.com:8080
 ```
 
@@ -125,7 +125,7 @@ Add security testing to CI/CD pipelines:
 ### Debugging Failed Tests
 
 1. Check the JSON results file for detailed response bodies
-2. Review Grafana dashboards for metrics during test execution  
+2. Review Grafana dashboards for metrics during test execution
 3. Check xg2g logs for security event details
 4. Verify test environment setup (directories, permissions)
 
@@ -144,7 +144,7 @@ To add new security tests:
 These tests validate defense-in-depth security:
 
 - **Application layer**: HTTP method restrictions, input validation
-- **Middleware layer**: Path traversal detection and blocking  
+- **Middleware layer**: Path traversal detection and blocking
 - **Filesystem layer**: Symlink resolution and boundary checking
 - **Monitoring layer**: Real-time security event tracking
 

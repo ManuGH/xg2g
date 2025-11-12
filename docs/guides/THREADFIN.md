@@ -42,7 +42,7 @@ Type: XMLTV
 # M3U Test
 curl -s http://localhost:8080/files/playlist.m3u | head -n 10
 
-# XMLTV Test  
+# XMLTV Test
 curl -s http://localhost:8080/files/xmltv.xml | grep -A 3 '<programme'
 
 # Kanal-Count
