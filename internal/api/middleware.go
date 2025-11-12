@@ -19,6 +19,7 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/time/rate"
 
+	"github.com/ManuGH/xg2g/internal/api/middleware"
 	"github.com/ManuGH/xg2g/internal/log"
 )
 
@@ -408,7 +409,18 @@ func withMiddlewares(h http.Handler, auditLogger ...RateLimitAuditor) http.Handl
 		rl.auditLogger = auditLogger[0]
 	}
 
-	// Order matters: panic recovery first, then request ID for correlation,
-	// then metrics and the rest.
-	return chain(h, panicRecoveryMiddleware, requestIDMiddleware, metricsMiddleware, corsMiddleware, securityHeaders, rl.middleware)
+	// Order matters:
+	// 1. Panic recovery first (catch all panics)
+	// 2. OTel tracing (creates root span, must be early for trace context propagation)
+	// 3. Request ID middleware (uses trace_id if available)
+	// 4. Metrics (can use trace context)
+	// 5. CORS, security headers, rate limiting
+	otelMiddleware := middleware.OTelHTTP("xg2g-api")
+	return chain(h, panicRecoveryMiddleware, otelMiddleware, requestIDMiddleware, metricsMiddleware, corsMiddleware, securityHeaders, rl.middleware)
+}
+
+// otelHTTPMiddleware is an alias for backward compatibility
+// Deprecated: Use middleware.OTelHTTP directly
+func otelHTTPMiddleware(serviceName string) func(http.Handler) http.Handler {
+	return middleware.OTelHTTP(serviceName)
 }

@@ -1,0 +1,39 @@
+# OpenTelemetry Collector overlay for xg2g
+# Use with: docker compose -f docker-compose.yml -f docker-compose.otel.yml up
+
+services:
+  xg2g:
+    environment:
+      # Point to OTel Collector
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_SERVICE_NAME=xg2g
+      - OTEL_SERVICE_VERSION=${VERSION:-latest}
+      # Disable tracing by setting OTEL_SDK_DISABLED=true
+
+  otel-collector:
+    image: otel/opentelemetry-collector:0.109.0
+    container_name: otel-collector
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./deploy/observability/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "4317:4317"   # OTLP gRPC receiver
+      - "4318:4318"   # OTLP HTTP receiver
+      - "8888:8888"   # Collector metrics
+      - "8889:8889"   # Prometheus exporter
+    depends_on:
+      - jaeger
+    restart: unless-stopped
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.65
+    container_name: jaeger
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+      - SPAN_STORAGE_TYPE=memory
+      - METRICS_STORAGE_TYPE=prometheus
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "4317"         # OTLP gRPC (internal)
+      - "14250"        # Jaeger gRPC (internal)
+    restart: unless-stopped
