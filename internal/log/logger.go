@@ -4,6 +4,7 @@
 package log
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"os"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Config captures options for configuring the global logger.
@@ -95,13 +97,22 @@ func Middleware() func(http.Handler) http.Handler {
 			start := time.Now()
 			// Create a logger with a unique request ID
 			reqID := uuid.New().String()
-			l := logger().With().
+			logCtx := logger().With().
 				Str("req_id", reqID).
 				Str("method", r.Method).
 				Str("path", r.URL.Path).
 				Str("remote_addr", r.RemoteAddr).
-				Str("user_agent", r.UserAgent()).
-				Logger()
+				Str("user_agent", r.UserAgent())
+
+			// Add trace context if available (OpenTelemetry integration)
+			span := trace.SpanFromContext(r.Context())
+			if span.SpanContext().IsValid() {
+				logCtx = logCtx.
+					Str("trace_id", span.SpanContext().TraceID().String()).
+					Str("span_id", span.SpanContext().SpanID().String())
+			}
+
+			l := logCtx.Logger()
 
 			// Add the logger to the request context
 			ctx := l.WithContext(r.Context())
@@ -148,6 +159,20 @@ func Derive(build func(*zerolog.Context)) zerolog.Logger {
 		build(&ctx)
 	}
 	return ctx.Logger()
+}
+
+// WithTraceContext returns a logger enriched with trace_id and span_id from the context.
+// This enables correlation between logs and distributed traces.
+func WithTraceContext(ctx context.Context) zerolog.Logger {
+	l := logger()
+	span := trace.SpanFromContext(ctx)
+	if span.SpanContext().IsValid() {
+		l = l.With().
+			Str("trace_id", span.SpanContext().TraceID().String()).
+			Str("span_id", span.SpanContext().SpanID().String()).
+			Logger()
+	}
+	return l
 }
 
 //nolint:gochecknoinits // Required to ensure logger is initialized before any usage

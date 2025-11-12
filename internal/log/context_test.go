@@ -2,10 +2,14 @@
 package log
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/rs/zerolog"
+	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 )
 
 func TestContextWithRequestID(t *testing.T) {
@@ -170,4 +174,66 @@ func TestDerive(t *testing.T) {
 	if logger2.GetLevel() > zerolog.PanicLevel {
 		t.Error("Expected valid logger from Derive with custom builder")
 	}
+}
+
+func TestWithTraceContext(t *testing.T) {
+	// Test with no trace (should return logger without trace fields)
+	ctx1 := context.Background()
+	logger1 := WithTraceContext(ctx1)
+	if logger1.GetLevel() > zerolog.PanicLevel {
+		t.Error("Expected valid logger without trace")
+	}
+
+	// Test with noop tracer (invalid span context)
+	noopTracer := noop.NewTracerProvider().Tracer("test")
+	ctx2, span := noopTracer.Start(context.Background(), "test-span")
+	defer span.End()
+
+	logger2 := WithTraceContext(ctx2)
+	if logger2.GetLevel() > zerolog.PanicLevel {
+		t.Error("Expected valid logger with noop span")
+	}
+
+	// Test that trace_id and span_id are added when valid span exists
+	// This is a smoke test - we can't easily verify the exact fields without output capture
+	t.Run("WithValidSpan", func(t *testing.T) {
+		// Create a real trace context (not noop)
+		// In production, this would come from OpenTelemetry SDK
+		// For testing, we verify the function doesn't panic
+		traceID, _ := trace.TraceIDFromHex("4bf92f3577b34da6a3ce929d0e0e4736")
+		spanID, _ := trace.SpanIDFromHex("00f067aa0ba902b7")
+		traceFlags := trace.FlagsSampled
+		spanCtx := trace.NewSpanContext(trace.SpanContextConfig{
+			TraceID:    traceID,
+			SpanID:     spanID,
+			TraceFlags: traceFlags,
+		})
+
+		ctx := trace.ContextWithSpanContext(context.Background(), spanCtx)
+
+		// Capture logger output
+		var buf bytes.Buffer
+		testLogger := zerolog.New(&buf)
+		base = testLogger // Override global for this test
+
+		logger := WithTraceContext(ctx)
+		logger.Info().Msg("test with trace")
+
+		// Parse JSON output
+		var logEntry map[string]interface{}
+		if err := json.Unmarshal(buf.Bytes(), &logEntry); err != nil {
+			t.Fatalf("Failed to parse log output: %v", err)
+		}
+
+		// Verify trace_id and span_id are present
+		if traceIDStr, ok := logEntry["trace_id"].(string); !ok || traceIDStr == "" {
+			t.Error("Expected trace_id in log output")
+		}
+		if spanIDStr, ok := logEntry["span_id"].(string); !ok || spanIDStr == "" {
+			t.Error("Expected span_id in log output")
+		}
+
+		// Restore global logger
+		Configure(Config{})
+	})
 }

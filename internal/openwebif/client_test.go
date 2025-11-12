@@ -211,3 +211,99 @@ func TestContextCancellationCleanup(t *testing.T) {
 		t.Error("request was never received by server")
 	}
 }
+
+// TestReceiverRateLimiting verifies that outbound requests to the receiver
+// are rate limited to protect the Enigma2 device from being overwhelmed.
+func TestReceiverRateLimiting(t *testing.T) {
+	t.Setenv("XG2G_SMART_STREAM_DETECTION", "false")
+
+	requestCount := atomic.Int32{}
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"bouquets":[]}`))
+	}))
+	defer ts.Close()
+
+	// Create client with strict rate limit: 5 req/s, burst 5
+	client := NewWithPort(ts.URL, 0, Options{
+		ReceiverRateLimit: 5,
+		ReceiverBurst:     5,
+	})
+
+	ctx := context.Background()
+	start := time.Now()
+
+	// Make 10 requests (should take ~1 second due to 5 req/s limit)
+	for i := 0; i < 10; i++ {
+		_, err := client.Bouquets(ctx)
+		if err != nil {
+			t.Fatalf("request %d failed: %v", i+1, err)
+		}
+	}
+
+	elapsed := time.Since(start)
+
+	// With 5 req/s and 10 requests:
+	// - First 5 requests use burst (instant)
+	// - Next 5 requests are rate limited (1 second total)
+	// Minimum time should be ~1 second
+	minExpected := 800 * time.Millisecond // Allow some tolerance
+	if elapsed < minExpected {
+		t.Errorf("requests completed too quickly (%v), rate limiting may not be working", elapsed)
+	}
+
+	// Verify all 10 requests were actually made
+	if got := requestCount.Load(); got != 10 {
+		t.Errorf("expected 10 requests, got %d", got)
+	}
+
+	t.Logf("10 requests with 5 req/s limit took %v (expected ~1s)", elapsed)
+}
+
+// TestReceiverRateLimitContextCancellation verifies that rate limiting
+// respects context cancellation and doesn't block indefinitely.
+func TestReceiverRateLimitContextCancellation(t *testing.T) {
+	t.Setenv("XG2G_SMART_STREAM_DETECTION", "false")
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"bouquets":[]}`))
+	}))
+	defer ts.Close()
+
+	// Create client with very low rate limit to ensure wait is required
+	client := NewWithPort(ts.URL, 0, Options{
+		ReceiverRateLimit: 1, // 1 req/s
+		ReceiverBurst:     1, // burst 1
+	})
+
+	// Make first request to exhaust burst
+	ctx := context.Background()
+	_, err := client.Bouquets(ctx)
+	if err != nil {
+		t.Fatalf("initial request failed: %v", err)
+	}
+
+	// Create context with immediate cancellation
+	cancelCtx, cancel := context.WithCancel(ctx)
+	cancel()
+
+	// Second request should fail immediately due to cancelled context
+	start := time.Now()
+	_, err = client.Bouquets(cancelCtx)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Error("expected error due to cancelled context, got nil")
+	}
+
+	// Should fail quickly (not wait for rate limit token)
+	if elapsed > 50*time.Millisecond {
+		t.Errorf("request took %v, expected immediate failure on cancelled context", elapsed)
+	}
+
+	t.Logf("cancelled request failed in %v (expected <50ms)", elapsed)
+}

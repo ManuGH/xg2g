@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/rs/zerolog"
+	"golang.org/x/time/rate"
 )
 
 // Client is an OpenWebIF HTTP client for communicating with Enigma2 receivers.
@@ -46,6 +47,10 @@ type Client struct {
 	// Request caching (v1.3.0+)
 	cache    Cacher
 	cacheTTL time.Duration
+
+	// Rate limiting for receiver protection (v1.7.0+)
+	// Protects the Enigma2 receiver from being overwhelmed by requests
+	receiverLimiter *rate.Limiter
 }
 
 // Cacher provides caching capabilities for OpenWebIF requests.
@@ -70,16 +75,22 @@ type Options struct {
 	// Caching options (v1.3.0+)
 	Cache    Cacher        // Optional cache implementation
 	CacheTTL time.Duration // Cache TTL (default: 5 minutes)
+
+	// Rate limiting options (v1.7.0+)
+	ReceiverRateLimit rate.Limit // Max requests/sec to receiver (default: 10)
+	ReceiverBurst     int        // Burst capacity (default: 20)
 }
 
 const (
-	defaultStreamPort = 8001
-	defaultTimeout    = 10 * time.Second
-	defaultRetries    = 3
-	defaultBackoff    = 500 * time.Millisecond
-	maxTimeout        = 60 * time.Second
-	maxRetries        = 10
-	maxBackoff        = 30 * time.Second
+	defaultStreamPort    = 8001
+	defaultTimeout       = 10 * time.Second
+	defaultRetries       = 3
+	defaultBackoff       = 500 * time.Millisecond
+	maxTimeout           = 60 * time.Second
+	maxRetries           = 10
+	maxBackoff           = 30 * time.Second
+	defaultReceiverRPS   = 10 // 10 requests/sec to receiver
+	defaultReceiverBurst = 20 // Allow bursts up to 20
 )
 
 var (
@@ -171,20 +182,31 @@ func NewWithPort(base string, streamPort int, opts Options) *Client {
 		cacheTTL = opts.CacheTTL
 	}
 
+	// Configure receiver rate limiting (v1.7.0+)
+	receiverRPS := rate.Limit(defaultReceiverRPS)
+	if opts.ReceiverRateLimit > 0 {
+		receiverRPS = opts.ReceiverRateLimit
+	}
+	receiverBurst := defaultReceiverBurst
+	if opts.ReceiverBurst > 0 {
+		receiverBurst = opts.ReceiverBurst
+	}
+
 	client := &Client{
-		base:       trimmedBase,
-		port:       port,
-		http:       hardenedClient,
-		log:        logger,
-		host:       host,
-		timeout:    nopts.Timeout,
-		maxRetries: nopts.MaxRetries,
-		backoff:    nopts.Backoff,
-		maxBackoff: nopts.MaxBackoff,
-		username:   opts.Username,
-		password:   opts.Password,
-		cache:      opts.Cache, // Optional cache (nil = no caching)
-		cacheTTL:   cacheTTL,
+		base:            trimmedBase,
+		port:            port,
+		http:            hardenedClient,
+		log:             logger,
+		host:            host,
+		timeout:         nopts.Timeout,
+		maxRetries:      nopts.MaxRetries,
+		backoff:         nopts.Backoff,
+		maxBackoff:      nopts.MaxBackoff,
+		username:        opts.Username,
+		password:        opts.Password,
+		cache:           opts.Cache, // Optional cache (nil = no caching)
+		cacheTTL:        cacheTTL,
+		receiverLimiter: rate.NewLimiter(receiverRPS, receiverBurst),
 	}
 
 	// Initialize smart stream detection if enabled (v1.2.0+)
@@ -197,6 +219,12 @@ func NewWithPort(base string, streamPort int, opts Options) *Client {
 	if client.cache != nil {
 		logger.Info().Dur("ttl", cacheTTL).Msg("request caching enabled")
 	}
+
+	// Log rate limiting configuration
+	logger.Info().
+		Float64("rate_limit_rps", float64(receiverRPS)).
+		Int("burst", receiverBurst).
+		Msg("receiver rate limiting enabled")
 
 	return client
 }
@@ -700,6 +728,16 @@ func recordAttemptMetrics(operation string, attempt, status int, duration time.D
 }
 
 func (c *Client) get(ctx context.Context, path, operation string, decorate func(*zerolog.Context)) ([]byte, error) {
+	// Apply receiver rate limiting before making request
+	if err := c.receiverLimiter.Wait(ctx); err != nil {
+		c.loggerFor(ctx).Warn().
+			Err(err).
+			Str("event", "openwebif.rate_limit").
+			Str("operation", operation).
+			Msg("rate limit wait cancelled")
+		return nil, fmt.Errorf("rate limit wait cancelled: %w", err)
+	}
+
 	maxAttempts := c.maxRetries + 1
 	var lastErr error
 	var lastStatus int
