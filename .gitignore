@@ -63,3 +63,11 @@ livetest-data/
 !internal/epg/testdata/empty.golden.xml
 .copilot-instructions.md
 dist/
+
+# Test and development artifacts (local testing)
+test-*.sh
+benchmark-*.sh
+test-config.yaml
+.env.gpu
+.env.*
+xg2g-daemon
