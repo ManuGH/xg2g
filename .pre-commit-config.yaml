@@ -63,6 +63,16 @@ repos:
         args: ["run", "--out-format=colored-line-number", "--timeout=3m"]
         stages: [manual, push]  # Only on push to avoid slowing down commits
 
+  # Local hooks
+  - repo: local
+    hooks:
+      - id: validate-healthchecks
+        name: Validate healthcheck endpoints
+        entry: scripts/validate-healthchecks.sh
+        language: script
+        files: '^(docker-compose.*\.ya?ml|deploy/docker-compose.*\.ya?ml|deploy/k8s-.*\.ya?ml|deploy/kubernetes/.*\.ya?ml)$'
+        pass_filenames: false
+
 # Global settings
 default_stages: [pre-commit]
 ci:

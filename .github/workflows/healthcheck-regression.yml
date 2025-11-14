@@ -1,0 +1,194 @@
+name: Healthcheck Regression
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'docker-compose.yml'
+      - 'deploy/docker-compose.production.yml'
+      - 'deploy/k8s-*.yaml'
+      - 'deploy/kubernetes/**'
+      - 'docs/operations/HEALTH_CHECKS.md'
+      - 'Dockerfile'
+      - 'internal/health/**'
+  pull_request:
+    paths:
+      - 'docker-compose.yml'
+      - 'deploy/docker-compose.production.yml'
+      - 'deploy/k8s-*.yaml'
+      - 'deploy/kubernetes/**'
+      - 'docs/operations/HEALTH_CHECKS.md'
+      - 'Dockerfile'
+      - 'internal/health/**'
+
+jobs:
+  healthcheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image for testing
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          tags: xg2g:test-ci
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILD_REVISION=${{ github.sha }}
+
+      - name: Create test docker-compose override
+        run: |
+          cat > docker-compose.ci.yml <<'EOF'
+          services:
+            xg2g:
+              image: xg2g:test-ci
+              environment:
+                - XG2G_OWI_BASE=http://example.com
+                - XG2G_OWI_USER=test
+                - XG2G_OWI_PASS=test
+                - XG2G_BOUQUET=test
+          EOF
+
+      - name: Start container
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d
+          echo "Container started, waiting for initialization..."
+          sleep 5
+
+      - name: Verify /healthz endpoint (liveness probe)
+        run: |
+          set -e
+          echo "Testing /healthz endpoint (should always return 200)..."
+
+          max_attempts=30
+          for i in $(seq 1 $max_attempts); do
+            if curl -fsS http://localhost:8080/healthz > /dev/null 2>&1; then
+              echo "✅ /healthz returned 200 OK (attempt $i/$max_attempts)"
+
+              # Verify response content
+              response=$(curl -sS http://localhost:8080/healthz)
+              echo "Response: $response"
+
+              if echo "$response" | grep -q '"status":"healthy"'; then
+                echo "✅ Response contains expected 'status:healthy'"
+                exit 0
+              else
+                echo "❌ Response missing 'status:healthy'"
+                exit 1
+              fi
+            fi
+
+            echo "Waiting for /healthz... (attempt $i/$max_attempts)"
+            sleep 1
+          done
+
+          echo "❌ /healthz did not return 200 within ${max_attempts}s"
+          echo "Container status:"
+          docker compose ps
+          echo "Container logs:"
+          docker compose logs
+          exit 1
+
+      - name: Verify /readyz endpoint (readiness probe)
+        run: |
+          set -e
+          echo "Testing /readyz endpoint (may return 503 until ready)..."
+
+          # /readyz should respond (200 or 503), not error
+          status_code=$(curl -sS -o /dev/null -w "%{http_code}" http://localhost:8080/readyz || echo "000")
+
+          if [ "$status_code" = "200" ] || [ "$status_code" = "503" ]; then
+            echo "✅ /readyz returned $status_code (expected 200 or 503)"
+          else
+            echo "❌ /readyz returned unexpected status: $status_code"
+            exit 1
+          fi
+
+      - name: Verify healthcheck configuration
+        run: |
+          set -e
+          echo "Verifying Docker healthcheck uses /healthz..."
+
+          # Check container healthcheck config
+          healthcheck=$(docker inspect xg2g --format='{{.Config.Healthcheck.Test}}' || echo "none")
+          echo "Container healthcheck: $healthcheck"
+
+          if echo "$healthcheck" | grep -q "/healthz"; then
+            echo "✅ Container healthcheck uses /healthz"
+          else
+            echo "❌ Container healthcheck does not use /healthz"
+            echo "Expected: /healthz"
+            echo "Got: $healthcheck"
+            exit 1
+          fi
+
+      - name: Check for /readyz in docker-compose files
+        run: |
+          set -e
+          echo "Checking for incorrect /readyz usage in docker-compose files..."
+
+          if grep -r "/readyz" docker-compose*.yml 2>/dev/null; then
+            echo "❌ Found /readyz in docker-compose files"
+            echo "Docker Compose healthchecks should use /healthz (liveness), not /readyz (readiness)"
+            exit 1
+          fi
+
+          echo "✅ No incorrect /readyz usage in docker-compose files"
+
+      - name: Verify Kubernetes probe configuration
+        run: |
+          set -e
+          echo "Verifying Kubernetes deployments use correct probes..."
+
+          # Check K8s manifests have both probes with correct endpoints
+          for manifest in deploy/k8s-*.yaml deploy/kubernetes/deployment.yaml; do
+            if [ ! -f "$manifest" ]; then
+              continue
+            fi
+
+            echo "Checking $manifest..."
+
+            # Should have livenessProbe with /healthz
+            if grep -A5 "livenessProbe:" "$manifest" | grep -q "path: /healthz"; then
+              echo "  ✅ livenessProbe uses /healthz"
+            else
+              echo "  ❌ livenessProbe does not use /healthz"
+              exit 1
+            fi
+
+            # Should have readinessProbe with /readyz
+            if grep -A5 "readinessProbe:" "$manifest" | grep -q "path: /readyz"; then
+              echo "  ✅ readinessProbe uses /readyz"
+            else
+              echo "  ❌ readinessProbe does not use /readyz"
+              exit 1
+            fi
+          done
+
+          echo "✅ All Kubernetes manifests have correct probe configuration"
+
+      - name: Container logs (on failure)
+        if: failure()
+        run: |
+          echo "=== Container Status ==="
+          docker compose ps
+          echo ""
+          echo "=== Container Logs ==="
+          docker compose logs
+          echo ""
+          echo "=== Health Check Status ==="
+          docker inspect xg2g --format='{{json .State.Health}}' | python3 -m json.tool || true
+
+      - name: Teardown
+        if: always()
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v
