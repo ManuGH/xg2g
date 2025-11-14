@@ -103,11 +103,32 @@ jobs:
           set -e
           echo "Testing /readyz endpoint (may return 503 until ready)..."
 
-          # /readyz should respond (200 or 503), not error
+          # Phase 1: /readyz should respond (200 or 503), not error
           status_code=$(curl -sS -o /dev/null -w "%{http_code}" http://localhost:8080/readyz || echo "000")
 
-          if [ "$status_code" = "200" ] || [ "$status_code" = "503" ]; then
-            echo "✅ /readyz returned $status_code (expected 200 or 503)"
+          if [ "$status_code" = "200" ]; then
+            echo "✅ /readyz returned 200 (service already ready)"
+          elif [ "$status_code" = "503" ]; then
+            echo "ℹ️  /readyz returned 503 (service not yet ready - expected during startup)"
+
+            # Phase 2: Optional - wait for readiness transition (503 → 200)
+            # Note: In CI without real Enigma2 backend, this may never become ready
+            echo "Waiting for readiness transition (503 → 200) - max 30s..."
+            ready=false
+            for i in $(seq 1 30); do
+              status_code=$(curl -sS -o /dev/null -w "%{http_code}" http://localhost:8080/readyz || echo "000")
+              if [ "$status_code" = "200" ]; then
+                echo "✅ /readyz transitioned to 200 OK after ${i}s"
+                ready=true
+                break
+              fi
+              sleep 1
+            done
+
+            if [ "$ready" = "false" ]; then
+              echo "ℹ️  /readyz remained at 503 (acceptable in CI without real backend)"
+              echo "   Service is alive but not ready - correct behavior"
+            fi
           else
             echo "❌ /readyz returned unexpected status: $status_code"
             exit 1
