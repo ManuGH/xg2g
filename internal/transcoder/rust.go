@@ -154,7 +154,7 @@ func (r *RustAudioRemuxer) Close() error {
 // This provides a safety net to prevent resource leaks.
 func (r *RustAudioRemuxer) finalize() {
 	if !r.isClosed {
-		r.Close()
+		_ = r.Close() // Ignore error in finalizer - nothing we can do here
 	}
 }
 

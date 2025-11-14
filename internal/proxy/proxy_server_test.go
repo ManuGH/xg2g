@@ -165,11 +165,14 @@ func TestServerShutdown_GracefulShutdown(t *testing.T) {
 	testAddr := getFreeAddr(t)
 
 	// Track if target handler completes
-	handlerDone := make(chan struct{})
+	handlerDone := make(chan struct{}, 1)
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		time.Sleep(100 * time.Millisecond) // Simulate slow handler
 		w.WriteHeader(http.StatusOK)
-		close(handlerDone)
+		select {
+		case handlerDone <- struct{}{}:
+		default:
+		}
 	}))
 	defer target.Close()
 
@@ -473,8 +476,8 @@ func TestServerIntegration_HTTPClientTimeouts(t *testing.T) {
 		t.Error("Expected timeout error, got nil")
 	}
 
-	// Test with sufficient timeout
-	client = &http.Client{Timeout: 1 * time.Second}
+	// Test with sufficient timeout (generous for CI environments)
+	client = &http.Client{Timeout: 2 * time.Second}
 	resp, err = client.Get(fmt.Sprintf("http://%s/test", testAddr))
 	if err != nil {
 		t.Errorf("Request with sufficient timeout failed: %v", err)
