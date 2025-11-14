@@ -43,7 +43,7 @@ services:
       LOG_SERVICE: xg2g-prod
       VERSION: v1.0.0
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/readyz"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
       interval: 15s
       timeout: 3s
       retries: 5

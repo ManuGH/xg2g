@@ -262,3 +262,99 @@ Common causes:
    ```bash
    docker logs xg2g 2>&1 | grep -i error
    ```
+
+## Best Practices
+
+### Docker Compose
+
+**Use `/healthz` for Docker healthchecks** (liveness probe):
+
+```yaml
+healthcheck:
+  test: wget -q -T 5 -O /dev/null http://localhost:8080/healthz || exit 1
+  interval: 30s
+  timeout: 10s
+  retries: 3
+  start_period: 10s
+```
+
+**Why `/healthz` and not `/readyz`?**
+- `/healthz` returns 200 OK as soon as the process is running
+- `/readyz` returns 503 until the first data refresh completes
+- Docker healthchecks should verify the container is alive, not ready for traffic
+- This prevents false "unhealthy" status during initialization
+
+### Kubernetes
+
+**Use both probes with different endpoints:**
+
+```yaml
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: 8080
+  initialDelaySeconds: 10
+  periodSeconds: 20
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: 8080
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  failureThreshold: 2
+```
+
+**Why use both?**
+- **Liveness** (`/healthz`): Restarts pod if process crashes
+- **Readiness** (`/readyz`): Removes pod from service endpoints until data is loaded
+- This prevents traffic to uninitialized pods while allowing graceful startup
+
+### Common Mistakes
+
+❌ **Don't use `/readyz` in Docker Compose:**
+```yaml
+# BAD - will show unhealthy during startup
+healthcheck:
+  test: wget -qO- http://localhost:8080/readyz
+```
+
+❌ **Don't use HEAD requests:**
+```yaml
+# BAD - endpoints expect GET, not HEAD
+healthcheck:
+  test: wget --spider http://localhost:8080/healthz
+```
+
+✅ **Correct Docker Compose healthcheck:**
+```yaml
+# GOOD - uses liveness probe with GET request
+healthcheck:
+  test: wget -q -T 5 -O /dev/null http://localhost:8080/healthz || exit 1
+```
+
+### Recommended Timeouts
+
+| Environment | initialDelay | interval | timeout | retries |
+|-------------|--------------|----------|---------|---------|
+| Development | 5s | 15s | 5s | 2 |
+| Production (Docker) | 10s | 30s | 10s | 3 |
+| Production (K8s Liveness) | 10s | 20s | 5s | 3 |
+| Production (K8s Readiness) | 5s | 10s | 5s | 2 |
+
+### Monitoring
+
+Track health check performance in Prometheus:
+
+```promql
+# Health check success rate
+rate(http_requests_total{path="/healthz",status="200"}[5m])
+
+# Readiness transitions
+changes(http_requests_total{path="/readyz",status="200"}[1h])
+
+# Average response time
+rate(http_request_duration_seconds_sum{path="/healthz"}[5m])
+/ rate(http_request_duration_seconds_count{path="/healthz"}[5m])
+```
