@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::pin::Pin;
 use std::process::Stdio;
 use std::task::{Context as TaskContext, Poll};
-use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio_util::io::ReaderStream;
 use tracing::{debug, error, info, warn};
@@ -20,7 +20,7 @@ struct ProcessStream {
 }
 
 impl ProcessStream {
-    fn new(mut child: Child, stdout: tokio::process::ChildStdout) -> Self {
+    fn new(child: Child, stdout: tokio::process::ChildStdout) -> Self {
         Self {
             child: Some(child),
             stream: ReaderStream::new(stdout),
@@ -290,7 +290,6 @@ impl VaapiTranscoder {
 
         // Pipe input body to FFmpeg stdin
         tokio::spawn(async move {
-            use http_body_util::BodyExt;
             let mut stream = input_body.into_data_stream();
 
             while let Some(chunk) = stream.next().await {

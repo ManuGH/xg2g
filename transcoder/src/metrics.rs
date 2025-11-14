@@ -1,9 +1,6 @@
 use metrics::{counter, gauge, histogram};
 use std::time::Instant;
 
-/// Metrics namespace
-const NAMESPACE: &str = "xg2g_transcoder";
-
 /// Initialize Prometheus metrics exporter and return handle
 pub fn init_metrics() -> metrics_exporter_prometheus::PrometheusHandle {
     let builder = metrics_exporter_prometheus::PrometheusBuilder::new();

@@ -30,7 +30,7 @@
 //! }
 //! ```
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use tracing::{debug, trace};
 
 use crate::demux::TS_PACKET_SIZE;
@@ -90,6 +90,7 @@ pub struct TsMuxer {
     pmt_continuity: u8,
 
     /// Current PCR value (27 MHz)
+    #[allow(dead_code)]
     pcr: u64,
 
     /// Packets muxed

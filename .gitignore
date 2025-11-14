@@ -71,3 +71,4 @@ test-config.yaml
 .env.gpu
 .env.*
 xg2g-daemon
+xg2g-daemon-linux

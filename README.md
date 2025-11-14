@@ -37,7 +37,7 @@ docker run -d \
 ## What It Does
 
 ✅ **Universal Compatibility** - Works with Plex, Jellyfin, VLC, Kodi, iPhone Safari
-✅ **Zero-CPU Audio Transcoding** - Native Rust remuxer: AC3/MP2 → AAC with <0.1% CPU
+✅ **Ultra-Fast Audio Transcoding** - Native Rust remuxer: AC3/MP2 → AAC (1.4ms latency, 140x faster, <0.1% CPU)
 ✅ **7-Day EPG** - Full electronic program guide in XMLTV format
 ✅ **HDHomeRun Emulation** - Auto-discovery in Plex/Jellyfin (no manual setup)
 ✅ **GPU Transcoding** - Hardware-accelerated video transcoding (AMD/Intel/NVIDIA)

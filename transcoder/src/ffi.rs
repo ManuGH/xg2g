@@ -422,7 +422,8 @@ pub extern "C" fn xg2g_gpu_server_start(
 #[no_mangle]
 pub extern "C" fn xg2g_gpu_server_is_running() -> c_int {
     unsafe {
-        if let Some(server) = &GPU_SERVER {
+        let gpu_server_ptr = &raw const GPU_SERVER;
+        if let Some(server) = (*gpu_server_ptr).as_ref() {
             if let Ok(handle) = server.lock() {
                 if handle.thread_handle.is_some() {
                     return 1;
@@ -446,7 +447,8 @@ pub extern "C" fn xg2g_gpu_server_is_running() -> c_int {
 pub extern "C" fn xg2g_gpu_server_stop() -> c_int {
     let result = catch_unwind(|| {
         unsafe {
-            if let Some(server) = GPU_SERVER.take() {
+            let gpu_server_ptr = &raw mut GPU_SERVER;
+            if let Some(server) = (*gpu_server_ptr).take() {
                 if let Ok(mut handle) = server.lock() {
                     eprintln!("[GPU FFI] Shutting down GPU server...");
 
@@ -486,7 +488,7 @@ pub extern "C" fn xg2g_gpu_server_stop() -> c_int {
 async fn run_gpu_server(
     listen_addr: String,
     vaapi_device: String,
-    mut shutdown_rx: tokio::sync::oneshot::Receiver<()>,
+    shutdown_rx: tokio::sync::oneshot::Receiver<()>,
 ) -> anyhow::Result<()> {
     use crate::transcoder::TranscoderConfig;
     use std::sync::Arc;

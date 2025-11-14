@@ -275,8 +275,8 @@ pub struct TsDemuxer {
     /// PES buffers for each PID
     pes_buffers: HashMap<u16, PesBuffer>,
 
-    /// PMT PID (detected from PAT)
-    pmt_pid: Option<u16>,
+    /// PMT PIDs (detected from PAT) - multi-program streams have multiple PMTs
+    pmt_pids: Vec<u16>,
 
     /// Fallback to standard PIDs if PMT not found after this many packets
     fallback_threshold: u64,
@@ -296,8 +296,8 @@ impl TsDemuxer {
             audio_pid: None,
             audio_codec: AudioCodec::Unknown,
             pes_buffers: HashMap::new(),
-            pmt_pid: None,
-            fallback_threshold: 1000, // Try fallback after 1000 packets (~5 seconds)
+            pmt_pids: Vec::new(),
+            fallback_threshold: 50, // Try fallback after 50 packets (~0.25 seconds)
             fallback_active: false,
             packets_processed: 0,
             audio_packets: 0,
@@ -311,6 +311,12 @@ impl TsDemuxer {
         let packet = TsPacket::parse(data)?;
         self.packets_processed += 1;
 
+        // Debug: Log every packet for first 100 packets
+        if self.packets_processed <= 100 {
+            eprintln!("[RUST DEMUX] Packet {}: PID={}, payload_start={}, scrambled={}, payload_len={}",
+                self.packets_processed, packet.pid, packet.payload_start, packet.is_scrambled(), packet.payload.len());
+        }
+
         // Skip scrambled packets
         if packet.is_scrambled() {
             trace!("Skipping scrambled packet (PID {})", packet.pid);
@@ -318,14 +324,27 @@ impl TsDemuxer {
         }
 
         // Handle PAT (Program Association Table)
-        if packet.pid == PAT_PID && packet.payload_start {
-            self.parse_pat(&packet.payload)?;
+        if packet.pid == PAT_PID {
+            eprintln!("[RUST DEMUX] Packet {}: Received PAT packet (payload_start={})", self.packets_processed, packet.payload_start);
+            if packet.payload_start {
+                eprintln!("[RUST DEMUX] Parsing PAT...");
+                self.parse_pat(&packet.payload)?;
+            }
         }
 
-        // Handle PMT (Program Map Table)
-        if let Some(pmt_pid) = self.pmt_pid {
-            if packet.pid == pmt_pid && packet.payload_start {
+        // Handle PMT (Program Map Table) - check all PMT PIDs
+        if self.pmt_pids.contains(&packet.pid) {
+            eprintln!("[RUST DEMUX] Packet {}: Received PMT packet on PID {} (payload_start={}, has_payload={}, payload_len={})",
+                self.packets_processed, packet.pid, packet.payload_start, packet.has_payload, packet.payload.len());
+            if packet.payload_start {
+                eprintln!("[RUST DEMUX] Parsing PMT...");
                 self.parse_pmt(&packet.payload)?;
+                // Once we found audio, stop parsing more PMTs
+                if self.audio_pid.is_some() {
+                    eprintln!("[RUST DEMUX] Audio PID found, stopping PMT parsing");
+                }
+            } else {
+                eprintln!("[RUST DEMUX] Skipping PMT packet - payload_start not set");
             }
         }
 
@@ -416,11 +435,12 @@ impl TsDemuxer {
             let pid = (((data[offset + 2] & 0x1F) as u16) << 8) | (data[offset + 3] as u16);
 
             if program_number != 0 {
-                // Found PMT PID
-                eprintln!("[RUST DEMUX] PAT: Detected PMT PID {} (program_number: {})", pid, program_number);
-                self.pmt_pid = Some(pid);
-                debug!("Detected PMT PID: {}", pid);
-                break;
+                // Found PMT PID - add to list if not already present
+                if !self.pmt_pids.contains(&pid) {
+                    eprintln!("[RUST DEMUX] PAT: Detected PMT PID {} (program_number: {})", pid, program_number);
+                    self.pmt_pids.push(pid);
+                    debug!("Detected PMT PID: {}", pid);
+                }
             }
 
             offset += 4;

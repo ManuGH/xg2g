@@ -540,7 +540,7 @@ mod tests {
         assert!(encoder.is_ok());
 
         let encoder = encoder.unwrap();
-        assert_eq!(encoder.name(), "AAC-LC (Passthrough)");
+        assert_eq!(encoder.name(), "AAC-LC (FFmpeg)");
         assert_eq!(encoder.frame_size(), 1024);
     }
 
