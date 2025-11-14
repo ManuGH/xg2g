@@ -362,7 +362,9 @@ jobs:
           cache: true
 
       - name: Build daemon
-        run: go build -o daemon ./cmd/daemon
+        env:
+          CGO_ENABLED: 0
+        run: go build -tags=nogpu -o daemon ./cmd/daemon
 
       - name: Test version flag
         run: |
