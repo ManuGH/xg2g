@@ -1,0 +1,51 @@
+# xg2g - LXC Override Configuration
+# Use this file when running Docker inside an LXC container (e.g., Proxmox)
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.lxc.yml up -d
+#
+# Why is this needed?
+# - Docker inside LXC cannot use port mappings (-p) due to sysctl restrictions
+# - LXC blocks Docker from modifying net.ipv4.ip_unprivileged_port_start
+# - This affects ALL Docker images (nginx, postgres, etc.), not just xg2g
+#
+# Solution: Use host networking instead of port mappings
+# - Container binds directly to host's network interfaces
+# - No Docker network namespace creation = no sysctl modification attempts
+# - Services listen on host ports directly (8080, 18000, etc.)
+
+services:
+  xg2g:
+    # Override network mode to use host networking
+    network_mode: host
+
+    # Remove port mappings (not compatible with host networking)
+    ports: []
+
+    # Note: With host networking, the container uses the following ports directly:
+    # - 8080:  HTTP API & M3U/EPG
+    # - 18000: Stream Proxy (MODE 2 & 3)
+    # - 8085:  GPU Transcoder (MODE 3 only, if enabled)
+    # - 1900:  SSDP for Plex/Jellyfin auto-discovery (optional)
+    # - 9090:  Prometheus metrics (optional)
+    #
+    # Make sure these ports are available on your LXC host!
+
+# =============================================================================
+# SECURITY CONSIDERATIONS
+# =============================================================================
+#
+# Host networking means:
+# - Container services are directly exposed on the host's network interfaces
+# - No network isolation between container and host
+# - All container ports are directly accessible from the network
+#
+# Recommendations for LXC environments:
+# - Only use in trusted, internal networks (not internet-facing)
+# - Use a reverse proxy (nginx, Traefik) on the LXC host for external access
+# - Configure firewall rules on the Proxmox host if needed
+# - This is safe in typical home lab / internal network scenarios
+#
+# Note: This is a known limitation of Docker-in-LXC, not specific to xg2g.
+#       The same issue occurs with nginx, postgres, or any containerized service
+#       that publishes ports inside an LXC container.
