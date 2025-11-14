@@ -1,5 +1,5 @@
-//go:build !cgo
-// +build !cgo
+//go:build !cgo || nogpu
+// +build !cgo nogpu
 
 package transcoder
 
