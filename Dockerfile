@@ -220,5 +220,8 @@ ENV XG2G_DATA=/data \
     XG2G_BOUQUET=Favourites \
     XG2G_FUZZY_MAX=2
 
-USER xg2g:xg2g
+# NOTE: Run as root for LXC compatibility (Proxmox, etc.)
+# Docker+LXC+non-root user triggers sysctl errors: "open sysctl net.ipv4.ip_unprivileged_port_start: permission denied"
+# Running as root in an LXC container is safe (container itself provides isolation)
+# USER xg2g:xg2g  # Commented out for LXC compatibility
 ENTRYPOINT ["/app/xg2g"]
