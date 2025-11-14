@@ -37,13 +37,13 @@ jobs:
         continue-on-error: true
         run: |
           # Run tests and generate JUnit XML using gotestsum
-          gotestsum --junitfile test-results.xml --format testname -- -covermode=atomic -coverprofile=coverage.out ./...
+          gotestsum --junitfile test-results.xml --format testname -- -tags=nogpu -covermode=atomic -coverprofile=coverage.out ./...
 
           # Also capture JSON output for our custom parsing
-          go test -v -json -covermode=atomic ./... 2>&1 | tee test-results.json || true
+          go test -v -json -tags=nogpu -covermode=atomic ./... 2>&1 | tee test-results.json || true
 
           # Generate human-readable output
-          go test -v ./... 2>&1 | tee test-output.txt || true
+          go test -v -tags=nogpu ./... 2>&1 | tee test-output.txt || true
 
       - name: Parse test results
         id: test-results
@@ -222,7 +222,7 @@ jobs:
 
       - name: Run benchmarks
         run: |
-          go test -bench=. -benchmem -benchtime=1s ./... 2>&1 | tee benchmark-results.txt
+          go test -tags=nogpu -bench=. -benchmem -benchtime=1s ./... 2>&1 | tee benchmark-results.txt
 
       - name: Parse benchmark results
         run: |
