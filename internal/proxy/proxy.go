@@ -219,20 +219,22 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 			err = s.transcoder.TranscodeStream(r.Context(), w, r, targetURL)
 		}
 
-		// Log final error if transcoding failed and it's not a context cancellation
-		if err != nil {
-			if r.Context().Err() == nil {
-				s.logger.Error().
-					Err(err).
-					Str("path", r.URL.Path).
-					Msg("audio transcoding failed")
-			} else {
+		// If transcoding succeeded or client disconnected, we're done
+		if err == nil || r.Context().Err() != nil {
+			if err != nil {
 				s.logger.Debug().
 					Str("path", r.URL.Path).
 					Msg("audio transcoding stopped (client disconnected)")
 			}
+			return
 		}
-		return
+
+		// If transcoding failed, log and fall back to direct proxy
+		s.logger.Warn().
+			Err(err).
+			Str("path", r.URL.Path).
+			Msg("all transcoding methods failed, falling back to direct proxy")
+		// Fall through to s.proxy.ServeHTTP below
 	}
 
 	// Proxy GET/POST requests to target (no transcoding)
