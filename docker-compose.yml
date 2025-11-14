@@ -113,6 +113,11 @@ services:
       # - XG2G_AUDIO_BITRATE=192k
 
       # IMPORTANT: Also uncomment "devices:" and port 8085 above!
+      #
+      # NOTE: If both MODE 2 and MODE 3 are enabled, GPU takes priority:
+      #   Priority 1: GPU transcoding (video + audio)
+      #   Priority 2: Rust remuxer (audio only)
+      #   Priority 3: FFmpeg fallback
 
       # =========================================================================
       # SMART STREAM DETECTION (All Modes)
@@ -122,6 +127,17 @@ services:
       #
       # To disable: - XG2G_SMART_STREAM_DETECTION=false
       # To set manual target: - XG2G_PROXY_TARGET=http://192.168.1.100:8001
+
+      # =========================================================================
+      # ADVANCED: Manual Overrides (Rarely Needed)
+      # =========================================================================
+      # These are auto-configured based on the mode you choose above:
+      #
+      # - XG2G_ENABLE_AUDIO_TRANSCODING=true  # Auto-enabled with STREAM_PROXY
+      # - XG2G_USE_RUST_REMUXER=true          # Default: true (140x faster than FFmpeg)
+      # - XG2G_FFMPEG_PATH=/usr/bin/ffmpeg    # Fallback if Rust unavailable
+      #
+      # You typically don't need to set these manually.
 
       # =========================================================================
       # OPTIONAL FEATURES (All Modes)
