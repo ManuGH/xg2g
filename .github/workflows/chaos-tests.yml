@@ -39,17 +39,53 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
+      - name: Check if Kubernetes secret exists
+        id: secret_check
+        run: |
+          if [ -z "${{ secrets.KUBE_CONFIG_STAGING }}" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "⚠️  KUBE_CONFIG_STAGING secret not found - skipping chaos tests"
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "✅ KUBE_CONFIG_STAGING secret found - proceeding with chaos tests"
+          fi
+
+      - name: Skip notification
+        if: steps.secret_check.outputs.skip == 'true'
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "Chaos Engineering Tests - SKIPPED"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+          echo "Reason: KUBE_CONFIG_STAGING secret not configured"
+          echo ""
+          echo "This is expected for:"
+          echo "  • Local development environments"
+          echo "  • CI runs without staging/production access"
+          echo "  • Repositories without chaos testing setup"
+          echo ""
+          echo "To enable chaos tests:"
+          echo "  1. Configure KUBE_CONFIG_STAGING secret in repository settings"
+          echo "  2. Ensure staging Kubernetes cluster is available"
+          echo "  3. Run manually via workflow_dispatch"
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          exit 0
+
       - name: Set up Go
+        if: steps.secret_check.outputs.skip == 'false'
         uses: actions/setup-go@d60b41a563ad535c1364609c56962e6929cce1ca # v5.2.1
         with:
           go-version: ${{ env.GO_VERSION }}
 
       - name: Install dependencies
+        if: steps.secret_check.outputs.skip == 'false'
         run: |
           sudo apt-get update
           sudo apt-get install -y jq bc
 
       - name: Configure kubectl
+        if: steps.secret_check.outputs.skip == 'false'
         env:
           KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_STAGING }}
         run: |
@@ -58,12 +94,13 @@ jobs:
           kubectl cluster-info
 
       - name: Verify xg2g deployment
+        if: steps.secret_check.outputs.skip == 'false'
         run: |
           kubectl get deployment xg2g -n default
           kubectl get pods -n default -l app=xg2g
 
       - name: Run pod-kill chaos test
-        if: contains(github.event.inputs.tests, 'pod-kill') || github.event_name == 'schedule'
+        if: steps.secret_check.outputs.skip == 'false' && (contains(github.event.inputs.tests, 'pod-kill') || github.event_name == 'schedule')
         timeout-minutes: 5
         env:
           NAMESPACE: default
@@ -74,7 +111,7 @@ jobs:
           bash scripts/chaos/pod-kill.sh
 
       - name: Run CPU-stress chaos test
-        if: contains(github.event.inputs.tests, 'cpu-stress') || github.event_name == 'schedule'
+        if: steps.secret_check.outputs.skip == 'false' && (contains(github.event.inputs.tests, 'cpu-stress') || github.event_name == 'schedule')
         timeout-minutes: 10
         env:
           NAMESPACE: default
@@ -86,7 +123,7 @@ jobs:
           bash scripts/chaos/cpu-stress.sh
 
       - name: Run upstream-timeout chaos test
-        if: contains(github.event.inputs.tests, 'upstream-timeout') || github.event_name == 'schedule'
+        if: steps.secret_check.outputs.skip == 'false' && (contains(github.event.inputs.tests, 'upstream-timeout') || github.event_name == 'schedule')
         timeout-minutes: 5
         env:
           TARGET_URL: http://xg2g.staging.svc.cluster.local:8080/api/v1/lineup.json
@@ -97,7 +134,7 @@ jobs:
           bash scripts/chaos/upstream-timeout.sh
 
       - name: Collect Prometheus metrics
-        if: always()
+        if: always() && steps.secret_check.outputs.skip == 'false'
         run: |
           # Query key metrics after chaos tests
           kubectl port-forward -n monitoring svc/prometheus 9090:9090 &
@@ -124,13 +161,13 @@ jobs:
           echo "  Circuit breaker: $(cat metrics-circuit-breaker.txt)"
 
       - name: Collect pod logs
-        if: always()
+        if: always() && steps.secret_check.outputs.skip == 'false'
         run: |
           kubectl logs -n default -l app=xg2g --tail=500 --prefix=true \
             > chaos-test-logs.txt || echo "Failed to collect logs"
 
       - name: Upload artifacts
-        if: always()
+        if: always() && steps.secret_check.outputs.skip == 'false'
         uses: actions/upload-artifact@v4
         with:
           name: chaos-test-results-${{ github.run_id }}
@@ -140,7 +177,7 @@ jobs:
           retention-days: 30
 
       - name: Check cluster health
-        if: always()
+        if: always() && steps.secret_check.outputs.skip == 'false'
         run: |
           echo "=== Deployment Status ==="
           kubectl get deployment xg2g -n default -o wide
@@ -154,7 +191,7 @@ jobs:
           kubectl get events -n default --sort-by='.lastTimestamp' --field-selector type=Warning | tail -10
 
       - name: Notify on failure
-        if: failure()
+        if: failure() && steps.secret_check.outputs.skip == 'false'
         env:
           SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
         run: |
@@ -186,7 +223,29 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
+      - name: Check if Kubernetes secret exists
+        id: secret_check
+        run: |
+          if [ -z "${{ secrets.KUBE_CONFIG_STAGING }}" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "⚠️  KUBE_CONFIG_STAGING secret not found - skipping recovery verification"
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "✅ KUBE_CONFIG_STAGING secret found - proceeding with recovery verification"
+          fi
+
+      - name: Skip notification
+        if: steps.secret_check.outputs.skip == 'true'
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "Recovery Verification - SKIPPED"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "Reason: KUBE_CONFIG_STAGING secret not configured"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          exit 0
+
       - name: Configure kubectl
+        if: steps.secret_check.outputs.skip == 'false'
         env:
           KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_STAGING }}
         run: |
@@ -194,11 +253,13 @@ jobs:
           chmod 600 $KUBECONFIG
 
       - name: Wait for system stabilization
+        if: steps.secret_check.outputs.skip == 'false'
         run: |
           echo "Waiting 60s for system to stabilize after chaos tests..."
           sleep 60
 
       - name: Health check
+        if: steps.secret_check.outputs.skip == 'false'
         run: |
           # Check if pods are healthy
           READY=$(kubectl get deployment xg2g -n default -o jsonpath='{.status.readyReplicas}')
@@ -212,6 +273,7 @@ jobs:
           fi
 
       - name: Endpoint smoke test
+        if: steps.secret_check.outputs.skip == 'false'
         run: |
           # Port forward to test endpoint
           kubectl port-forward -n default svc/xg2g 8080:8080 &
@@ -239,6 +301,7 @@ jobs:
           kill $PF_PID || true
 
       - name: Verify metrics collection
+        if: steps.secret_check.outputs.skip == 'false'
         run: |
           kubectl port-forward -n monitoring svc/prometheus 9090:9090 &
           PF_PID=$!
