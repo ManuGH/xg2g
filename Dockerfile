@@ -200,8 +200,11 @@ COPY --from=rust-builder /output/libxg2g_transcoder.so ./lib/
 # Set library path for Rust remuxer
 ENV LD_LIBRARY_PATH=/app/lib
 
+# Cache busting: BUILD_REVISION changes on every commit, forcing rebuild of final layers
+ARG BUILD_REVISION=unknown
 RUN chmod +x /app/xg2g && \
-    chown -R xg2g:xg2g /app
+    chown -R xg2g:xg2g /app && \
+    echo "Build: ${BUILD_REVISION}" > /app/.build-info
 
 VOLUME ["/data"]
 
@@ -220,8 +223,7 @@ ENV XG2G_DATA=/data \
     XG2G_BOUQUET=Favourites \
     XG2G_FUZZY_MAX=2
 
-# Image metadata - forces rebuild when source changes (CI cache busting)
-ARG BUILD_REVISION
+# Image metadata
 LABEL org.opencontainers.image.revision="${BUILD_REVISION}" \
       org.opencontainers.image.source="https://github.com/ManuGH/xg2g" \
       org.opencontainers.image.description="Enigma2 to IPTV Gateway with Rust-powered audio transcoding"
