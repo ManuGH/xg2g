@@ -654,6 +654,55 @@ Hooks validate:
 - Health check endpoint usage ([scripts/validate-healthchecks.sh](scripts/validate-healthchecks.sh))
 - File permissions and merge conflicts
 
+### CI/CD Pipeline
+
+xg2g uses a comprehensive multi-stage CI/CD pipeline to ensure code quality and reliability.
+
+#### Test Matrix
+
+| Workflow | Purpose | Trigger |
+|----------|---------|---------|
+| **Hardcore CI** | Full quality gate (linter, tests, security, coverage) | Push, PR |
+| **Smoke Tests** | Fast integration verification (`nogpu` build) | Push, PR |
+| **Chaos Tests** | Resilience testing (optional, requires K8s) | Manual, scheduled |
+
+#### Build Variants
+
+```bash
+# Standard build (no GPU, no Rust transcoder)
+make build                 # Pure Go, CGO_ENABLED=0
+
+# With Rust audio transcoder
+make build-rust            # Build Rust library first
+make build-ffi             # CGO build with Rust FFI
+
+# Cross-platform
+make build-all             # linux/darwin/windows amd64/arm64
+```
+
+#### Local Testing (CI-equivalent)
+
+Run the same checks that CI runs:
+
+```bash
+# Linter (matches CI exactly)
+golangci-lint run --timeout=5m
+
+# Tests with nogpu tag (like CI smoke tests)
+go test -tags=nogpu ./...
+
+# Tests with race detection (like CI)
+go test -race -tags=nogpu ./...
+
+# Coverage check (55% threshold)
+make test-cover
+
+# Full quality gates
+make quality-gates
+```
+
+**Tip:** Use `make hardcore-test` to run the complete enterprise test suite locally (includes linting, race detection, coverage, fuzzing, and security scans).
+
 ### Documentation
 
 - **Testing Strategy:** [docs/development/TESTING_STRATEGY.md](docs/development/TESTING_STRATEGY.md)
