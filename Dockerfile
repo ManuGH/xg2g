@@ -126,22 +126,22 @@ RUN go mod download
 COPY . .
 
 # Build Go daemon WITH CGO enabled for Rust FFI bindings
-# ALWAYS build with GPU support (-tags=gpu) - runtime decides what to use
 ARG GIT_REF
 ARG VERSION
+ARG BUILD_REVISION=unknown
 
-# Single unified build: All features compiled in, runtime auto-detection
-# - Rust remuxer: Always available (MODE 2)
-# - GPU transcoding: Available if /dev/dri exists (MODE 3)
+# Build with Rust remuxer (MODE 2) - GPU support (MODE 3) temporarily disabled
+# - Rust remuxer: Available (MODE 2) - 140x faster audio transcoding
 # - FFmpeg subprocess: Fallback for MODE 1
+# TODO: Re-enable GPU support once Rust library exports GPU functions correctly
 # Note: -extldflags='-Wl,-rpath,/app/lib' sets runtime library search path
 # Note: CGO_LDFLAGS adds FFmpeg library path and explicit library linking
 RUN set -eux; \
     BUILD_REF="${GIT_REF:-${VERSION:-dev}}"; \
     export CGO_ENABLED=1 GOOS=linux GOAMD64="${GO_AMD64_LEVEL}"; \
     export CGO_LDFLAGS="-L/usr/lib/x86_64-linux-gnu -lavcodec -lavformat -lavfilter -lavutil -lswresample"; \
-    echo "🚀 Building unified binary with all features (Rust + GPU)"; \
-    go build -tags=gpu -buildvcs=false -trimpath \
+    echo "🚀 Building binary with Rust remuxer (MODE 2)"; \
+    go build -buildvcs=false -trimpath \
         -ldflags="-s -w -X 'main.Version=${BUILD_REF}' -extldflags='-Wl,-rpath,/app/lib'" \
         ${GO_GCFLAGS:+-gcflags="${GO_GCFLAGS}"} \
         -o /out/xg2g ./cmd/daemon
@@ -219,6 +219,12 @@ ENV XG2G_DATA=/data \
     XG2G_OWI_BASE=http://192.168.1.100 \
     XG2G_BOUQUET=Favourites \
     XG2G_FUZZY_MAX=2
+
+# Image metadata - forces rebuild when source changes (CI cache busting)
+ARG BUILD_REVISION
+LABEL org.opencontainers.image.revision="${BUILD_REVISION}" \
+      org.opencontainers.image.source="https://github.com/ManuGH/xg2g" \
+      org.opencontainers.image.description="Enigma2 to IPTV Gateway with Rust-powered audio transcoding"
 
 # NOTE: Run as root for LXC compatibility (Proxmox, etc.)
 # Docker+LXC+non-root user triggers sysctl errors: "open sysctl net.ipv4.ip_unprivileged_port_start: permission denied"
