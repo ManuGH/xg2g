@@ -1,18 +1,26 @@
 # xg2g - LXC Override Configuration
-# Use this file when running Docker inside an LXC container (e.g., Proxmox)
+#
+# SCOPE: Only required when the Docker daemon itself runs inside an LXC container
+#        (Docker-in-LXC, e.g., Proxmox LXC with nested Docker)
+#
+#        NOT needed for:
+#        - Bare metal Docker installations
+#        - Docker inside VMs (KVM, VMware, VirtualBox)
+#        - Native Proxmox VM with Docker
 #
 # Usage:
 #   docker compose -f docker-compose.yml -f docker-compose.lxc.yml up -d
 #
 # Why is this needed?
 # - Docker inside LXC cannot use port mappings (-p) due to sysctl restrictions
-# - LXC blocks Docker from modifying net.ipv4.ip_unprivileged_port_start
-# - This affects ALL Docker images (nginx, postgres, etc.), not just xg2g
+# - LXC blocks Docker from modifying kernel parameters (e.g., net.ipv4.ip_unprivileged_port_start)
+# - This affects ALL Docker images (nginx, postgres, redis, etc.), not just xg2g
+# - The exact sysctl parameter may vary by Docker/kernel version, but the root cause is identical
 #
 # Solution: Use host networking instead of port mappings
-# - Container binds directly to host's network interfaces
+# - Container binds directly to LXC container's network interfaces (not Proxmox host!)
 # - No Docker network namespace creation = no sysctl modification attempts
-# - Services listen on host ports directly (8080, 18000, etc.)
+# - Services listen on LXC container ports directly (8080, 18000, etc.)
 
 services:
   xg2g:
@@ -22,30 +30,62 @@ services:
     # Remove port mappings (not compatible with host networking)
     ports: []
 
-    # Note: With host networking, the container uses the following ports directly:
+    # Note: With host networking, the container uses the following ports directly
+    #       on the LXC container's network interfaces:
     # - 8080:  HTTP API & M3U/EPG
     # - 18000: Stream Proxy (MODE 2 & 3)
     # - 8085:  GPU Transcoder (MODE 3 only, if enabled)
     # - 1900:  SSDP for Plex/Jellyfin auto-discovery (optional)
     # - 9090:  Prometheus metrics (optional)
     #
-    # Make sure these ports are available on your LXC host!
+    # IMPORTANT: Make sure these ports are available on your LXC container!
+    # If any port is already in use, you'll need to:
+    # - Stop the conflicting service, OR
+    # - Change xg2g's port via environment variables (XG2G_LISTEN, XG2G_PROXY_LISTEN), OR
+    # - Use a reverse proxy to expose xg2g on different ports
 
 # =============================================================================
-# SECURITY CONSIDERATIONS
+# SECURITY AND NETWORK ISOLATION
 # =============================================================================
 #
-# Host networking means:
-# - Container services are directly exposed on the host's network interfaces
-# - No network isolation between container and host
-# - All container ports are directly accessible from the network
+# Understanding the Isolation Layers:
 #
-# Recommendations for LXC environments:
-# - Only use in trusted, internal networks (not internet-facing)
-# - Use a reverse proxy (nginx, Traefik) on the LXC host for external access
-# - Configure firewall rules on the Proxmox host if needed
-# - This is safe in typical home lab / internal network scenarios
+# 1. LXC Container Isolation (Proxmox → LXC):
+#    - LXC provides strong isolation between the Proxmox host and the LXC container
+#    - The LXC container has its own process tree, filesystem, and network stack
+#    - This isolation is NOT affected by network_mode: host
+#
+# 2. Docker Network Isolation (LXC → xg2g container):
+#    - network_mode: host removes Docker's network namespace isolation
+#    - xg2g binds directly to the LXC container's network interfaces
+#    - This is ONLY between the Docker container and the LXC container
+#    - The LXC → Proxmox boundary remains fully isolated
+#
+# In Practice:
+# - xg2g services (8080, 18000, etc.) are exposed on the LXC container's network
+# - These ports are accessible from your network (just like any LXC service)
+# - The Proxmox host itself is still protected by LXC isolation
+#
+# Security Recommendations:
+#
+# For Internal Networks (Home Lab, Private Network):
+# - ✅ Safe to use as-is
+# - ✅ LXC provides sufficient isolation
+# - ✅ Access xg2g directly via LXC container IP
+#
+# For External Access (Internet-Facing):
+# - ⚠️  DO NOT expose LXC container ports directly to the internet
+# - ✅ Use a reverse proxy (nginx, Traefik, Caddy) on the LXC container or Proxmox host
+# - ✅ Terminate TLS at the reverse proxy
+# - ✅ Add authentication (HTTP Basic Auth, OAuth, etc.)
+# - ✅ Configure Proxmox firewall to restrict access
+#
+# Example Secure Setup:
+#   1. xg2g listens on localhost only (XG2G_LISTEN=127.0.0.1:8080)
+#   2. nginx reverse proxy on LXC container (with TLS + auth)
+#   3. Proxmox firewall allows only HTTPS (443) from internet
+#   4. All other ports blocked by firewall
 #
 # Note: This is a known limitation of Docker-in-LXC, not specific to xg2g.
-#       The same issue occurs with nginx, postgres, or any containerized service
-#       that publishes ports inside an LXC container.
+#       The same issue and solution apply to nginx, postgres, redis, or any
+#       containerized service using port mappings inside an LXC container.
