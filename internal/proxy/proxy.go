@@ -196,18 +196,31 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Priority 2: Audio-only transcoding
-		// Use Rust remuxer if enabled, otherwise fall back to FFmpeg
-		var transcodeFn func(context.Context, http.ResponseWriter, *http.Request, string) error
+		// Try Rust remuxer first (if enabled), with automatic fallback to FFmpeg
+		var err error
 		if s.transcoder.Config.UseRustRemuxer {
-			transcodeFn = s.transcoder.TranscodeStreamRust
-			s.logger.Debug().Str("method", "rust").Msg("using native rust remuxer")
+			s.logger.Debug().Str("method", "rust").Msg("attempting native rust remuxer")
+			err = s.transcoder.TranscodeStreamRust(r.Context(), w, r, targetURL)
+
+			// If Rust remuxer fails and it's not a client disconnect, fall back to FFmpeg
+			if err != nil && r.Context().Err() == nil {
+				s.logger.Warn().
+					Err(err).
+					Str("path", r.URL.Path).
+					Msg("rust remuxer failed, falling back to FFmpeg subprocess")
+
+				// Fallback: Try FFmpeg subprocess transcoding
+				s.logger.Debug().Str("method", "ffmpeg").Msg("using ffmpeg transcoding")
+				err = s.transcoder.TranscodeStream(r.Context(), w, r, targetURL)
+			}
 		} else {
-			transcodeFn = s.transcoder.TranscodeStream
+			// Rust remuxer disabled, use FFmpeg directly
 			s.logger.Debug().Str("method", "ffmpeg").Msg("using ffmpeg transcoding")
+			err = s.transcoder.TranscodeStream(r.Context(), w, r, targetURL)
 		}
 
-		if err := transcodeFn(r.Context(), w, r, targetURL); err != nil {
-			// Only log error if it's not a context cancellation (client disconnect)
+		// Log final error if transcoding failed and it's not a context cancellation
+		if err != nil {
 			if r.Context().Err() == nil {
 				s.logger.Error().
 					Err(err).

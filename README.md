@@ -64,6 +64,39 @@ docker run -d \
 | Observability | ✅ Metrics, tracing, logs | ❌ Basic logging |
 | Production Ops | ✅ Helm, K8s, health checks | ❌ DIY deployment |
 
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     xg2g Gateway                            │
+├─────────────────────────────────────────────────────────────┤
+│  HTTP API (:8080)                                           │
+│  ├─ M3U Playlist (Enigma2 → IPTV format)                   │
+│  ├─ EPG/XMLTV (7-day guide)                                 │
+│  ├─ HDHomeRun Emulation (Plex/Jellyfin auto-discovery)     │
+│  └─ Health & Metrics (/healthz, /readyz, /metrics)         │
+├─────────────────────────────────────────────────────────────┤
+│  Stream Proxy (:18000) - Optional MODE 2 & 3               │
+│  ├─ Audio Transcoding (AC3/MP2 → AAC) - Rust Remuxer      │
+│  ├─ Smart Port Selection (8001 vs 17999)                   │
+│  └─ GPU Transcoding (VAAPI) - MODE 3                       │
+├─────────────────────────────────────────────────────────────┤
+│  Background Workers                                         │
+│  ├─ Channel Refresh (periodic sync)                        │
+│  ├─ EPG Collection (7-day window)                          │
+│  └─ SSDP Announcer (network discovery)                     │
+└─────────────────────────────────────────────────────────────┘
+         ↓ OpenWebif API (HTTP/HTTPS)
+┌─────────────────────────────────────────────────────────────┐
+│              Enigma2 Receiver (VU+, Dreambox)              │
+│  ├─ Bouquet Management                                      │
+│  ├─ Live Streams (8001: clear, 17999: encrypted)          │
+│  └─ EPG Data Provider                                       │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**📖 See [Architecture Documentation](docs/ARCHITECTURE.md) for detailed component design and data flow.**
+
 ---
 
 ## Use It
@@ -516,6 +549,129 @@ Find commit SHAs at: [github.com/ManuGH/xg2g/commits/main](https://github.com/Ma
 - ✅ Validates cargo-zigbuild toolchain
 - ✅ Artifact retention: 14 days
 - ⚠️ Failure alerting (optional): Set `SLACK_WEBHOOK` repository secret
+
+---
+
+## Development
+
+Want to build xg2g from source or contribute? Here's how to get started:
+
+### Prerequisites
+
+- **Go 1.23+** - [Install Go](https://go.dev/doc/install)
+- **Rust 1.70+** - [Install Rust](https://rustup.rs/) (for audio transcoding MODE 2)
+- **Make** - Build automation (pre-installed on macOS/Linux)
+
+### Building from Source
+
+```bash
+# Clone the repository
+git clone https://github.com/ManuGH/xg2g.git
+cd xg2g
+
+# Build the daemon (MODE 1: Standard)
+make build
+# Binary: bin/daemon
+
+# Build with Rust audio transcoding (MODE 2)
+make build-ffi
+# Binary: bin/daemon-ffi (includes Rust remuxer)
+
+# Build for all platforms
+make build-all
+# Creates: bin/daemon-{linux,darwin,windows}-{amd64,arm64}
+```
+
+### Running Tests
+
+```bash
+# Quick unit tests
+make test
+
+# Tests with race detection
+make test-race
+
+# Tests with coverage report (opens in browser)
+make coverage
+
+# Full test suite (lint + race + coverage + fuzz)
+make test-all
+
+# Enterprise-grade test suite (everything + security + multi-platform build)
+make hardcore-test
+```
+
+### Development Workflow
+
+```bash
+# Run locally with .env configuration
+make dev
+
+# Or via Docker Compose
+make up        # Start services
+make logs      # View logs
+make status    # Check API status
+make down      # Stop services
+
+# Code quality checks
+make lint           # Run linter
+make lint-fix       # Auto-fix linting issues
+make security       # Security vulnerability scan
+make quality-gates  # Validate all quality gates (coverage, lint, security)
+```
+
+### Common Make Commands
+
+| Command | Description |
+|---------|-------------|
+| `make build` | Build main daemon binary |
+| `make test` | Run unit tests |
+| `make test-cover` | Tests with coverage thresholds (55%) |
+| `make lint` | Run golangci-lint |
+| `make docker` | Build Docker image locally |
+| `make dev` | Run daemon from source with `.env` config |
+| `make up` | Start docker-compose.yml stack |
+| `make help` | Show all available commands |
+
+### Pre-Commit Hooks
+
+Install pre-commit hooks to validate changes locally:
+
+```bash
+# Install pre-commit (Python)
+pip install pre-commit
+
+# Install hooks
+pre-commit install
+
+# Run manually
+pre-commit run --all-files
+```
+
+Hooks validate:
+- Go formatting (`gofmt`)
+- YAML formatting and linting
+- Health check endpoint usage ([scripts/validate-healthchecks.sh](scripts/validate-healthchecks.sh))
+- File permissions and merge conflicts
+
+### Documentation
+
+- **Testing Strategy:** [docs/development/TESTING_STRATEGY.md](docs/development/TESTING_STRATEGY.md)
+- **API Reference:** [API Documentation](https://manugh.github.io/xg2g/api.html)
+- **Health Checks:** [docs/operations/HEALTH_CHECKS.md](docs/operations/HEALTH_CHECKS.md)
+- **Configuration:** [docs/guides/config.md](docs/guides/config.md)
+
+### Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Make your changes
+4. Run tests and linting (`make test-all lint`)
+5. Commit your changes (pre-commit hooks will validate)
+6. Push to your fork (`git push origin feature/amazing-feature`)
+7. Open a Pull Request
+
+All PRs are automatically validated by CI (lint, tests, security scans, coverage thresholds).
 
 ---
 
