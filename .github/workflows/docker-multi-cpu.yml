@@ -132,6 +132,7 @@ jobs:
             GO_AMD64_LEVEL=${{ matrix.cpu_level.name }}
             RUST_TARGET_FEATURES=${{ matrix.cpu_level.rust_features }}
             GIT_REF=${{ github.sha }}
+            BUILD_REVISION=${{ github.sha }}
           labels: |
             org.opencontainers.image.title=xg2g
             org.opencontainers.image.description=xg2g - AMD64 ${{ matrix.cpu_level.description }}
@@ -222,6 +223,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           build-args: |
             GIT_REF=${{ github.sha }}
+            BUILD_REVISION=${{ github.sha }}
           labels: |
             org.opencontainers.image.title=xg2g
             org.opencontainers.image.description=xg2g - ARM64
