@@ -22,7 +22,9 @@ services:
   xg2g:
     image: ghcr.io/manugh/xg2g:latest
     container_name: xg2g
-    user: "65532:65532"
+    # NOTE: user directive removed for LXC compatibility
+    # LXC containers don't support cap_add + non-root user combination (sysctl fails)
+    # The container image defaults to non-root user "xg2g:xg2g" internally
 
     # ===========================================================================
     # PORTS - Same for all modes
@@ -42,16 +44,15 @@ services:
 
     # ===========================================================================
     # SECURITY SETTINGS - Same for all modes
+    # NOTE: Simplified for LXC compatibility (Proxmox, etc.)
+    # For full hardening on native Docker, see docker-compose.production.yml
     # ===========================================================================
     security_opt:
       - no-new-privileges:true
-    cap_drop:
-      - ALL
-    cap_add:
-      - NET_BIND_SERVICE
-    read_only: true
-    tmpfs:
-      - /tmp:noexec,nosuid,nodev,size=100m   # 100MB for MODE 1+2, use 1g for MODE 3
+    # cap_drop/cap_add removed for LXC compatibility
+    # read_only: true  # Disabled for LXC compatibility
+    # tmpfs:           # Disabled for LXC compatibility
+    #   - /tmp:noexec,nosuid,nodev,size=100m   # 100MB for MODE 1+2, use 1g for MODE 3
 
     ulimits:
       nofile:
