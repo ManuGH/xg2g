@@ -136,48 +136,61 @@ Everything else works automatically.
 
 ---
 
-## 3 Deployment Modes
+## 3 Deployment Modes (Unified Configuration!)
 
-xg2g has **3 modes** for different use cases:
+xg2g now uses **one docker-compose.yml** for all 3 modes! Simply uncomment the section you need.
 
-### MODE 1: Standard (VLC, Kodi, Plex)
+### MODE 1: Standard (VLC, Kodi, Plex) - DEFAULT
 
 **No audio transcoding.** Original AC3/MP2 audio. Desktop players handle this natively.
 
 ```bash
+# Default mode - no changes needed in docker-compose.yml
 docker compose up -d
 ```
 
-See: [docker-compose.yml](docker-compose.yml)
+### MODE 2: Audio Transcoding (iPhone/iPad)
 
-### MODE 2: Audio Proxy (iPhone/iPad)
+**Ultra-fast audio transcoding** for mobile devices. AC3/MP2 → AAC for Safari compatibility.
 
-**Audio transcoding** for mobile devices. AC3/MP2 → AAC for Safari compatibility.
-
-```bash
-docker compose -f docker-compose.audio-proxy.yml up -d
+```yaml
+# Edit docker-compose.yml and uncomment:
+environment:
+  - XG2G_ENABLE_STREAM_PROXY=true
+  - XG2G_PROXY_LISTEN=:18000
+  # Rust remuxer automatically enabled (1.4ms latency, <0.1% CPU)
 ```
+
+Then: `docker compose up -d`
 
 Access streams: `http://localhost:18000/1:0:19:...`
 
-See: [docker-compose.audio-proxy.yml](docker-compose.audio-proxy.yml)
-
 ### MODE 3: GPU Transcoding
 
-**Hardware-accelerated video + audio transcoding** using VAAPI. For low-power clients or bandwidth optimization.
+**Hardware-accelerated video + audio transcoding** using VAAPI.
 
-```bash
-docker compose -f docker-compose.gpu.yml up -d
+```yaml
+# Edit docker-compose.yml and uncomment:
+devices:
+  - /dev/dri:/dev/dri
+ports:
+  - "8085:8085"
+environment:
+  - XG2G_ENABLE_STREAM_PROXY=true
+  - XG2G_PROXY_LISTEN=:18000
+  - XG2G_GPU_TRANSCODE=true
+  - XG2G_GPU_LISTEN=0.0.0.0:8085
 ```
+
+Then: `docker compose up -d`
 
 **Requirements:**
 - Intel Quick Sync (6th gen+) or AMD GPU with VAAPI support
-- Host with `/dev/dri/renderD128` device
 - Run `vainfo` on host to verify GPU support
 
-Access streams: `http://localhost:18000/1:0:19:...` (routes through GPU transcoder)
+Access streams: `http://localhost:18000/1:0:19:...` (GPU transcoded)
 
-See: [docker-compose.gpu.yml](docker-compose.gpu.yml)
+See: [docker-compose.yml](docker-compose.yml) for complete configuration
 
 ---
 

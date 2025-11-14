@@ -126,32 +126,25 @@ RUN go mod download
 COPY . .
 
 # Build Go daemon WITH CGO enabled for Rust FFI bindings
+# ALWAYS build with GPU support (-tags=gpu) - runtime decides what to use
 ARG GIT_REF
 ARG VERSION
-ARG ENABLE_GPU=false
 
-# Conditional build: GPU tag only when ENABLE_GPU=true
-# Standard mode (MODE 1+2): Audio transcoding via Rust, no GPU
-# GPU mode (MODE 3): Audio + video transcoding via VAAPI
+# Single unified build: All features compiled in, runtime auto-detection
+# - Rust remuxer: Always available (MODE 2)
+# - GPU transcoding: Available if /dev/dri exists (MODE 3)
+# - FFmpeg subprocess: Fallback for MODE 1
 # Note: -extldflags='-Wl,-rpath,/app/lib' sets runtime library search path
 # Note: CGO_LDFLAGS adds FFmpeg library path and explicit library linking
 RUN set -eux; \
     BUILD_REF="${GIT_REF:-${VERSION:-dev}}"; \
     export CGO_ENABLED=1 GOOS=linux GOAMD64="${GO_AMD64_LEVEL}"; \
     export CGO_LDFLAGS="-L/usr/lib/x86_64-linux-gnu -lavcodec -lavformat -lavfilter -lavutil -lswresample"; \
-    if [ "$ENABLE_GPU" = "true" ]; then \
-        echo "🎮 Building with GPU transcoding support (MODE 3)"; \
-        go build -tags=gpu -buildvcs=false -trimpath \
-            -ldflags="-s -w -X 'main.Version=${BUILD_REF}' -extldflags='-Wl,-rpath,/app/lib'" \
-            ${GO_GCFLAGS:+-gcflags="${GO_GCFLAGS}"} \
-            -o /out/xg2g ./cmd/daemon; \
-    else \
-        echo "📺 Building without GPU transcoding (MODE 1+2 only)"; \
-        go build -buildvcs=false -trimpath \
-            -ldflags="-s -w -X 'main.Version=${BUILD_REF}' -extldflags='-Wl,-rpath,/app/lib'" \
-            ${GO_GCFLAGS:+-gcflags="${GO_GCFLAGS}"} \
-            -o /out/xg2g ./cmd/daemon; \
-    fi
+    echo "🚀 Building unified binary with all features (Rust + GPU)"; \
+    go build -tags=gpu -buildvcs=false -trimpath \
+        -ldflags="-s -w -X 'main.Version=${BUILD_REF}' -extldflags='-Wl,-rpath,/app/lib'" \
+        ${GO_GCFLAGS:+-gcflags="${GO_GCFLAGS}"} \
+        -o /out/xg2g ./cmd/daemon
 
 # Verify build output
 RUN ls -lh /out/xg2g && /out/xg2g --version || echo "Binary built successfully"
@@ -218,9 +211,9 @@ EXPOSE 8080 18000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD wget -qO- http://localhost:8080/api/status || exit 1
 
-# Default configuration (minimal - standard mode)
-# Audio transcoding and stream proxy are DISABLED by default
-# Enable via environment variables for iPhone/iPad mode
+# Default configuration - Standard mode (MODE 1)
+# Audio transcoding and stream proxy DISABLED by default
+# See docker-compose.yml for MODE 2 (Audio) and MODE 3 (GPU)
 ENV XG2G_DATA=/data \
     XG2G_LISTEN=:8080 \
     XG2G_OWI_BASE=http://192.168.1.100 \

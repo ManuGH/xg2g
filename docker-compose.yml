@@ -1,36 +1,58 @@
 # xg2g - Enigma2 to IPTV Gateway
-# Standard Mode: Desktop Players (VLC, Kodi, Plex, Jellyfin)
+# Unified Configuration: All 3 Modes in One File
 #
-# This is MODE 1 of 3 deployment modes:
-# 1. Standard (this file) - No audio transcoding, original streams
-# 2. Audio Proxy (docker-compose.audio-proxy.yml) - For iPhone/iPad
-# 3. GPU Transcoding (future) - Video + audio transcoding
+# Choose your mode by uncommenting the desired configuration:
 #
-# Features:
-# - M3U playlist with channel logos
-# - 7-day EPG guide (XMLTV)
-# - HDHomeRun emulation (Plex/Jellyfin auto-discovery)
-# - Smart stream detection (automatic port selection)
-# - Original audio (AC3/MP2) - no transcoding needed
+# MODE 1: Standard (Desktop Players) - DEFAULT
+#   - No audio transcoding
+#   - Original streams (AC3/MP2)
+#   - Works with: VLC, Kodi, Plex, Jellyfin on Desktop
+#
+# MODE 2: Audio Transcoding (iPhone/iPad)
+#   - Stream proxy with audio transcoding (AC3/MP2 → AAC)
+#   - Ultra-fast Rust remuxer (1.4ms latency, <0.1% CPU)
+#   - Works with: iPhone Safari, iPad Safari
+#
+# MODE 3: GPU Transcoding (Full Video+Audio)
+#   - Hardware-accelerated video transcoding (VAAPI)
+#   - Requires: Intel Quick Sync or AMD GPU
+#   - Works with: All devices, any format
 
 services:
   xg2g:
     image: ghcr.io/manugh/xg2g:latest
     container_name: xg2g
-    user: "65532:65532"  # Run as non-root for security
+    user: "65532:65532"
+
+    # ===========================================================================
+    # PORTS - Same for all modes
+    # ===========================================================================
     ports:
-      - "8080:8080"      # HTTP API & M3U/EPG
-      - "1900:1900/udp"  # SSDP for Plex/Jellyfin discovery
-      - "9090:9090"      # Prometheus metrics (optional)
+      - "8080:8080"      # HTTP API & M3U/EPG (always needed)
+      - "18000:18000"    # Stream Proxy (MODE 2 & 3 only)
+      # - "8085:8085"    # GPU Transcoder (MODE 3 only) - Uncomment for GPU mode
+      - "1900:1900/udp"  # SSDP for Plex/Jellyfin auto-discovery (optional)
+      # - "9090:9090"    # Prometheus metrics (optional)
+
+    # ===========================================================================
+    # GPU ACCESS - Uncomment for MODE 3 only
+    # ===========================================================================
+    # devices:
+    #   - /dev/dri:/dev/dri    # GPU device for VAAPI
+
+    # ===========================================================================
+    # SECURITY SETTINGS - Same for all modes
+    # ===========================================================================
     security_opt:
-      - no-new-privileges:true  # Prevent privilege escalation
+      - no-new-privileges:true
     cap_drop:
-      - ALL                     # Drop all capabilities
+      - ALL
     cap_add:
-      - NET_BIND_SERVICE        # Allow binding to ports < 1024 if needed
-    read_only: true              # Read-only root filesystem for security
+      - NET_BIND_SERVICE
+    read_only: true
     tmpfs:
-      - /tmp:noexec,nosuid,nodev,size=100m
+      - /tmp:noexec,nosuid,nodev,size=100m   # 100MB for MODE 1+2, use 1g for MODE 3
+
     ulimits:
       nofile:
         soft: 4096
@@ -38,63 +60,147 @@ services:
       nproc:
         soft: 512
         hard: 1024
+
+    # ===========================================================================
+    # ENVIRONMENT VARIABLES
+    # ===========================================================================
     environment:
-      # ============================================================================
-      # Required Configuration
-      # ============================================================================
+      # -------------------------------------------------------------------------
+      # REQUIRED CONFIGURATION (All Modes)
+      # -------------------------------------------------------------------------
       - XG2G_OWI_BASE=http://192.168.1.100
       - XG2G_OWI_USER=root
       - XG2G_OWI_PASS=yourpassword
       - XG2G_BOUQUET=Favourites
 
-      # ============================================================================
-      # Stream Detection (automatic port selection)
-      # ============================================================================
-      # Automatically detects optimal streaming port for each channel
-      # Smart detection enabled by default
-      # Uncomment to disable: - XG2G_SMART_STREAM_DETECTION=false
+      # =========================================================================
+      # MODE 1: STANDARD (DEFAULT) - Desktop Players
+      # =========================================================================
+      # No additional configuration needed!
+      # This mode is active by default.
+      # - No audio transcoding
+      # - Original streams (AC3/MP2)
+      # - Lowest CPU usage
 
-      # ============================================================================
-      # Optional: Disable Features
-      # ============================================================================
+      # =========================================================================
+      # MODE 2: AUDIO TRANSCODING - iPhone/iPad Safari
+      # =========================================================================
+      # Uncomment these lines to enable audio transcoding:
+
+      # - XG2G_ENABLE_STREAM_PROXY=true
+      # - XG2G_PROXY_LISTEN=:18000
+      # Audio transcoding is automatically enabled when proxy is enabled
+      # Rust remuxer is used automatically (1.4ms latency, <0.1% CPU)
+
+      # Optional: Audio settings (defaults shown)
+      # - XG2G_AUDIO_CODEC=aac
+      # - XG2G_AUDIO_BITRATE=192k
+      # - XG2G_AUDIO_CHANNELS=2
+
+      # =========================================================================
+      # MODE 3: GPU TRANSCODING - Full Video+Audio Hardware Acceleration
+      # =========================================================================
+      # Uncomment these lines to enable GPU transcoding:
+
+      # - XG2G_ENABLE_STREAM_PROXY=true
+      # - XG2G_PROXY_LISTEN=:18000
+      # - XG2G_GPU_TRANSCODE=true
+      # - XG2G_GPU_LISTEN=0.0.0.0:8085
+      # - XG2G_VAAPI_DEVICE=/dev/dri/renderD128
+
+      # Optional: Video settings (defaults shown)
+      # - XG2G_VIDEO_BITRATE=4M
+      # - XG2G_AUDIO_BITRATE=192k
+
+      # IMPORTANT: Also uncomment "devices:" and port 8085 above!
+
+      # =========================================================================
+      # SMART STREAM DETECTION (All Modes)
+      # =========================================================================
+      # Automatically selects optimal port (8001 vs 17999) per channel
+      # Enabled by default, no configuration needed!
+      #
+      # To disable: - XG2G_SMART_STREAM_DETECTION=false
+      # To set manual target: - XG2G_PROXY_TARGET=http://192.168.1.100:8001
+
+      # =========================================================================
+      # OPTIONAL FEATURES (All Modes)
+      # =========================================================================
       # - XG2G_EPG_ENABLED=false                  # Disable EPG collection
-      # - XG2G_SMART_STREAM_DETECTION=false       # Disable OSCam auto-detection
-      # - XG2G_HDHR_ENABLED=false                 # Disable HDHomeRun emulation
-
-      # ============================================================================
-      # Optional: Advanced Configuration
-      # ============================================================================
-      # - XG2G_DATA=/data                         # Data directory
       # - XG2G_EPG_DAYS=7                         # EPG days (1-14)
+      # - XG2G_HDHR_ENABLED=false                 # Disable HDHomeRun emulation
       # - XG2G_API_TOKEN=your-token-here          # API authentication
       # - XG2G_PICON_BASE=http://picons-url       # Custom picons URL
+
+    # ===========================================================================
+    # VOLUMES
+    # ===========================================================================
     volumes:
       - ./data:/data
+
+    # ===========================================================================
+    # HEALTH CHECK
+    # ===========================================================================
     healthcheck:
       test: wget -q --spider -T 5 -O /dev/null http://localhost:8080/readyz || exit 1
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
+
     restart: unless-stopped
 
-# ============================================================================
-# Access URLs
-# ============================================================================
+# =============================================================================
+# ACCESS URLS
+# =============================================================================
 #
-# M3U Playlist:  http://localhost:8080/files/playlist.m3u
-# EPG (XMLTV):   http://localhost:8080/xmltv.xml
-# API Status:    http://localhost:8080/api/v1/status
-# Prometheus:    http://localhost:9090/metrics
+# MODE 1 (Standard):
+#   M3U Playlist:  http://localhost:8080/files/playlist.m3u
+#   EPG (XMLTV):   http://localhost:8080/xmltv.xml
+#   API Status:    http://localhost:8080/api/v1/status
 #
-# Plex/Jellyfin: Automatically discovered via SSDP (port 1900/udp)
+# MODE 2 (Audio Transcoding):
+#   Stream Proxy:  http://localhost:18000/1:0:19:... (use in iPhone Safari)
+#   M3U Playlist:  http://localhost:8080/files/playlist.m3u
+#   EPG (XMLTV):   http://localhost:8080/xmltv.xml
 #
-# ============================================================================
-# For Development
-# ============================================================================
+# MODE 3 (GPU Transcoding):
+#   Stream Proxy:  http://localhost:18000/1:0:19:... (transcoded streams)
+#   GPU Direct:    http://localhost:8085/transcode?source_url=...
+#   GPU Health:    http://localhost:8085/health
+#   M3U Playlist:  http://localhost:8080/files/playlist.m3u
 #
-# To build locally instead of using the published image:
-#   docker compose -f docker-compose.dev.yml up --build
+# =============================================================================
+# QUICK START
+# =============================================================================
 #
-# See: docker-compose.dev.yml, docker-compose.test.yml
+# 1. Edit this file:
+#    - Set XG2G_OWI_BASE, XG2G_OWI_USER, XG2G_OWI_PASS, XG2G_BOUQUET
+#    - Uncomment the mode you want (MODE 1 is default)
+#
+# 2. Start:
+#    docker compose -f docker-compose.unified.yml up -d
+#
+# 3. Access:
+#    - MODE 1: http://localhost:8080/files/playlist.m3u
+#    - MODE 2: http://localhost:18000/1:0:19:...
+#    - MODE 3: http://localhost:18000/1:0:19:...
+#
+# =============================================================================
+# GPU REQUIREMENTS (MODE 3 only)
+# =============================================================================
+#
+# Intel:
+#   - 6th gen Core (Skylake) or newer
+#   - Install: intel-media-driver or i965-va-driver
+#   - Verify: vainfo (should show VAEntrypointEncSlice)
+#
+# AMD:
+#   - Radeon RX 400 series or newer
+#   - Install: mesa-va-drivers
+#   - Verify: vainfo (should list AMD encoders)
+#
+# Test GPU access:
+#   docker run --rm --device /dev/dri:/dev/dri debian:bookworm-slim \
+#     bash -c "apt update && apt install -y vainfo && vainfo"
 #

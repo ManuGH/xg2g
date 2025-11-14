@@ -1,0 +1,15 @@
+# ⚠️ DEPRECATED - Use docker-compose.yml instead!
+#
+# This file is deprecated. The main docker-compose.yml now supports all 3 modes
+# in a single unified configuration file.
+#
+# Migration guide:
+# 1. Copy docker-compose.yml
+# 2. Uncomment the MODE 3 section (GPU Transcoding)
+# 3. Uncomment the devices section and port 8085
+# 4. Set your OpenWebif credentials
+# 5. docker compose up -d
+#
+# See: docker-compose.yml for the new unified configuration
+#
+# This file will be removed in a future release.
