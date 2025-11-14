@@ -5,6 +5,7 @@
 **🛰️ Turn your Enigma2 receiver into a universal IPTV server**
 
 [![CI](https://github.com/ManuGH/xg2g/actions/workflows/ci.yml/badge.svg)](https://github.com/ManuGH/xg2g/actions/workflows/ci.yml)
+[![Healthcheck](https://github.com/ManuGH/xg2g/actions/workflows/healthcheck-regression.yml/badge.svg)](https://github.com/ManuGH/xg2g/actions/workflows/healthcheck-regression.yml)
 [![codecov](https://codecov.io/gh/ManuGH/xg2g/branch/main/graph/badge.svg)](https://codecov.io/gh/ManuGH/xg2g)
 [![Go Report Card](https://goreportcard.com/badge/github.com/ManuGH/xg2g)](https://goreportcard.com/report/github.com/ManuGH/xg2g)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/ManuGH/xg2g/badge)](https://scorecard.dev/viewer/?uri=github.com/ManuGH/xg2g)
@@ -278,6 +279,51 @@ services:
       - XG2G_ENABLE_STREAM_PROXY=true
       - XG2G_PROXY_ONLY_MODE=true
 ```
+
+---
+
+## Health Checks & Observability
+
+xg2g provides production-ready health and readiness endpoints for monitoring:
+
+- **`/healthz`** - Liveness probe (always returns 200 when process is running)
+- **`/readyz`** - Readiness probe (returns 503 until service is fully initialized)
+- **`/api/v1/status`** - Detailed status with channel counts and last refresh time
+- **`/metrics`** - Prometheus metrics endpoint
+
+### Docker Compose
+
+Use `/healthz` for Docker healthchecks (liveness):
+
+```yaml
+healthcheck:
+  test: wget -q -T 5 -O /dev/null http://localhost:8080/healthz || exit 1
+  interval: 30s
+  timeout: 10s
+  retries: 3
+```
+
+### Kubernetes
+
+Use both probes for sophisticated orchestration:
+
+```yaml
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: 8080
+  initialDelaySeconds: 10
+  periodSeconds: 20
+
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: 8080
+  initialDelaySeconds: 5
+  periodSeconds: 10
+```
+
+**📖 See [Health Checks Documentation](docs/operations/HEALTH_CHECKS.md) for best practices and troubleshooting.**
 
 ---
 
