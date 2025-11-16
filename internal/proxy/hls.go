@@ -2,6 +2,7 @@
 package proxy
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -144,14 +145,44 @@ func (s *HLSStreamer) Start() error {
 
 	s.cmd = exec.CommandContext(s.ctx, "ffmpeg", args...)
 	s.cmd.Stdout = nil
-	s.cmd.Stderr = nil
+
+	// Capture ffmpeg stderr for debugging
+	stderrPipe, err := s.cmd.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("create stderr pipe: %w", err)
+	}
+
+	// Monitor ffmpeg stderr in background
+	go func() {
+		scanner := bufio.NewScanner(stderrPipe)
+		// Increase buffer for long ffmpeg lines
+		buf := make([]byte, 0, 64*1024)
+		scanner.Buffer(buf, 1024*1024)
+
+		for scanner.Scan() {
+			s.logger.Debug().
+				Str("service_ref", s.serviceRef).
+				Str("ffmpeg", scanner.Text()).
+				Msg("hls ffmpeg stderr")
+		}
+
+		if err := scanner.Err(); err != nil {
+			s.logger.Debug().
+				Err(err).
+				Str("service_ref", s.serviceRef).
+				Msg("ffmpeg stderr scanner error")
+		}
+	}()
 
 	s.logger.Info().
+		Str("service_ref", s.serviceRef).
 		Str("target", s.targetURL).
 		Str("output", playlistPath).
 		Msg("starting HLS segmentation")
 
 	if err := s.cmd.Start(); err != nil {
+		// Cleanup output directory on start failure
+		_ = os.RemoveAll(s.outputDir)
 		return fmt.Errorf("start ffmpeg: %w", err)
 	}
 
@@ -161,7 +192,10 @@ func (s *HLSStreamer) Start() error {
 	go func() {
 		if err := s.cmd.Wait(); err != nil {
 			if s.ctx.Err() == nil {
-				s.logger.Error().Err(err).Msg("HLS segmentation failed")
+				s.logger.Error().
+					Err(err).
+					Str("service_ref", s.serviceRef).
+					Msg("HLS segmentation failed")
 			}
 		}
 		s.mu.Lock()
@@ -170,6 +204,7 @@ func (s *HLSStreamer) Start() error {
 	}()
 
 	// Wait a bit for first segments to be created
+	// TODO: Replace with waitForPlaylist(ctx) with timeout
 	time.Sleep(500 * time.Millisecond)
 
 	return nil
@@ -231,18 +266,25 @@ func (m *HLSManager) cleanupRoutine() {
 
 // cleanupIdleStreams removes streams that haven't been accessed recently.
 func (m *HLSManager) cleanupIdleStreams() {
+	// Collect idle streams under lock, cleanup outside lock to avoid blocking
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
+	toCleanup := make([]*HLSStreamer, 0)
 	idleTimeout := 60 * time.Second
+
 	for ref, stream := range m.streams {
 		if stream.isIdle(idleTimeout) {
 			m.logger.Info().
 				Str("service_ref", ref).
 				Msg("removing idle HLS stream")
-			stream.Stop()
+			toCleanup = append(toCleanup, stream)
 			delete(m.streams, ref)
 		}
+	}
+	m.mu.Unlock()
+
+	// Cleanup streams outside of manager lock to avoid blocking new requests
+	for _, stream := range toCleanup {
+		stream.Stop()
 	}
 }
 
