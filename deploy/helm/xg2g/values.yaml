@@ -146,7 +146,7 @@ config:
 # Liveness and readiness probes
 livenessProbe:
   httpGet:
-    path: /api/status
+    path: /healthz
     port: http
   initialDelaySeconds: 15
   periodSeconds: 30
@@ -155,7 +155,7 @@ livenessProbe:
 
 readinessProbe:
   httpGet:
-    path: /api/status
+    path: /healthz
     port: http
   initialDelaySeconds: 10
   periodSeconds: 10
