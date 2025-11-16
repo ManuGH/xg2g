@@ -725,7 +725,8 @@ func (s *Server) handleLineupJSON(w http.ResponseWriter, r *http.Request) {
 			// This is the stream URL
 			streamURL := line
 
-			// If Plex Force HLS is enabled, rewrite URL to use xg2g's /hls/ endpoint on port 8080
+			// If Plex Force HLS is enabled, rewrite URL to use /hls/ prefix for proxy's HLS handler
+			// Note: The /hls/ handler exists on the stream proxy (port 18000), not the API server (port 8080)
 			if s.hdhr != nil && s.hdhr.PlexForceHLS() {
 				// Parse the original stream URL
 				if parsedURL, err := url.Parse(streamURL); err == nil {
@@ -734,18 +735,9 @@ func (s *Server) handleLineupJSON(w http.ResponseWriter, r *http.Request) {
 						// Extract service reference from path (everything after last slash)
 						if lastSlash := strings.LastIndex(parsedURL.Path, "/"); lastSlash != -1 {
 							serviceRef := parsedURL.Path[lastSlash+1:]
-
-							// Get BaseURL from HDHomeRun config (should be http://IP:8080)
-							baseURL := s.hdhr.BaseURL()
-							if baseURL != "" {
-								// Build new URL: BaseURL/hls/serviceRef
-								streamURL = baseURL + "/hls/" + serviceRef
-							} else {
-								// Fallback: use original host but change to port 8080 and add /hls/
-								parsedURL.Host = parsedURL.Hostname() + ":8080"
-								parsedURL.Path = "/hls/" + serviceRef
-								streamURL = parsedURL.String()
-							}
+							// Prepend /hls/ to the service reference, keeping the same host:port
+							parsedURL.Path = "/hls/" + serviceRef
+							streamURL = parsedURL.String()
 						}
 					}
 				}

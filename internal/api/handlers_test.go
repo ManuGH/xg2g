@@ -738,12 +738,11 @@ http://10.10.55.14:18000/1:0:19:1334:3EF:1:C00000:0:0:0:
 	}
 	srv := New(cfg)
 
-	// Initialize HDHomeRun with PlexForceHLS=true and BaseURL
+	// Initialize HDHomeRun with PlexForceHLS=true
 	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
 	hdhrCfg := hdhr.Config{
 		Enabled:      true,
 		PlexForceHLS: true,
-		BaseURL:      "http://10.10.55.14:8080",
 		Logger:       logger,
 	}
 	srv.hdhr = hdhr.NewServer(hdhrCfg)
@@ -763,9 +762,10 @@ http://10.10.55.14:18000/1:0:19:1334:3EF:1:C00000:0:0:0:
 	require.NoError(t, err)
 	require.Len(t, lineup, 2)
 
-	// Verify URLs have /hls/ prefix AND port changed to 8080 (from 18000)
-	assert.Equal(t, "http://10.10.55.14:8080/hls/1:0:19:132F:3EF:1:C00000:0:0:0:", lineup[0].URL)
-	assert.Equal(t, "http://10.10.55.14:8080/hls/1:0:19:1334:3EF:1:C00000:0:0:0:", lineup[1].URL)
+	// Verify URLs have /hls/ prefix added (keeping original port 18000)
+	// The /hls/ handler exists on the stream proxy (port 18000), not the API server (port 8080)
+	assert.Equal(t, "http://10.10.55.14:18000/hls/1:0:19:132F:3EF:1:C00000:0:0:0:", lineup[0].URL)
+	assert.Equal(t, "http://10.10.55.14:18000/hls/1:0:19:1334:3EF:1:C00000:0:0:0:", lineup[1].URL)
 	assert.Contains(t, lineup[0].URL, "/hls/")
 	assert.Contains(t, lineup[1].URL, "/hls/")
 }
