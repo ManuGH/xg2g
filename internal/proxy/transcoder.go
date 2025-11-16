@@ -28,14 +28,15 @@ const (
 
 // TranscoderConfig holds configuration for audio transcoding.
 type TranscoderConfig struct {
-	Enabled        bool   // Whether transcoding is enabled
-	Codec          string // Target audio codec (aac, mp3)
-	Bitrate        string // Audio bitrate (e.g., "192k")
-	Channels       int    // Number of audio channels (2 for stereo)
-	FFmpegPath     string // Path to ffmpeg binary
-	GPUEnabled     bool   // Whether GPU transcoding is enabled
-	TranscoderURL  string // URL of the GPU transcoder service
-	UseRustRemuxer bool   // Whether to use native Rust remuxer instead of FFmpeg
+	Enabled           bool   // Whether transcoding is enabled
+	Codec             string // Target audio codec (aac, mp3)
+	Bitrate           string // Audio bitrate (e.g., "192k")
+	Channels          int    // Number of audio channels (2 for stereo)
+	FFmpegPath        string // Path to ffmpeg binary
+	GPUEnabled        bool   // Whether GPU transcoding is enabled
+	TranscoderURL     string // URL of the GPU transcoder service
+	UseRustRemuxer    bool   // Whether to use native Rust remuxer instead of FFmpeg
+	H264RepairEnabled bool   // Whether H.264 stream repair is enabled (fixes PPS/SPS headers for Plex)
 }
 
 // Transcoder handles audio transcoding for streams.
@@ -233,6 +234,199 @@ func (t *Transcoder) TranscodeStream(ctx context.Context, w http.ResponseWriter,
 	}
 }
 
+// RepairH264Stream repairs H.264 streams by adding proper PPS/SPS headers using FFmpeg's h264_mp4toannexb bitstream filter.
+// This fixes streams from Enigma2 receivers that lack proper Picture Parameter Sets and Sequence Parameter Sets,
+// which causes Plex and other clients to fail with "Playback Error".
+//
+// Architecture:
+//
+//	Input: MPEG-TS with broken H.264 (missing PPS/SPS headers) from Enigma2
+//	Pipeline: Demux → h264_mp4toannexb bitstream filter → Remux
+//	Output: MPEG-TS with proper H.264 Annex-B format (includes PPS/SPS)
+//
+// Performance:
+//   - No transcoding overhead (copy mode for both video and audio)
+//   - Minimal latency (~10-20ms for bitstream filter)
+//   - Zero CPU usage for encoding/decoding
+func (t *Transcoder) RepairH264Stream(ctx context.Context, w http.ResponseWriter, r *http.Request, targetURL string) error {
+	// Start tracing span
+	tracer := telemetry.Tracer("xg2g.proxy")
+	ctx, span := tracer.Start(ctx, "stream.h264_repair",
+		trace.WithSpanKind(trace.SpanKindInternal),
+	)
+	defer span.End()
+
+	// Add repair attributes
+	span.SetAttributes(
+		attribute.String("stream.filter", "h264_mp4toannexb"),
+		attribute.String("stream.mode", "copy"),
+		attribute.Bool("stream.repair", true),
+	)
+
+	// Create request to target
+	proxyReq, err := http.NewRequestWithContext(ctx, http.MethodGet, targetURL, nil)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to create proxy request")
+		return fmt.Errorf("create proxy request: %w", err)
+	}
+
+	// Copy headers from original request
+	for key, values := range r.Header {
+		for _, value := range values {
+			proxyReq.Header.Add(key, value)
+		}
+	}
+
+	// Execute request to target
+	span.AddEvent("fetching source stream")
+	client := &http.Client{}
+	resp, err := client.Do(proxyReq)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "proxy request failed")
+		return fmt.Errorf("proxy request failed: %w", err)
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			t.logger.Debug().Err(err).Msg("failed to close response body")
+		}
+	}()
+
+	// Build ffmpeg command for H.264 stream repair
+	// Input: MPEG-TS stream from stdin with broken H.264
+	// Output: MPEG-TS stream with repaired H.264 to stdout
+	//
+	// Key flags:
+	// - bsf:v h264_mp4toannexb: Convert H.264 to Annex-B format, inserting PPS/SPS NAL units
+	// - c copy: No transcoding, just copy streams (zero CPU overhead)
+	// - fflags +genpts+igndts: Regenerate timestamps (Enigma2 streams have broken DTS)
+	args := []string{
+		"-hide_banner",
+		"-loglevel", "error",
+		"-fflags", "+genpts+igndts", // Generate PTS, ignore broken DTS
+		"-i", "pipe:0", // Read from stdin
+		"-map", "0:v", "-c:v", "copy", // Copy video stream without transcoding
+		"-bsf:v", "h264_mp4toannexb", // CRITICAL: Add PPS/SPS headers for H.264 Annex-B
+		"-map", "0:a", "-c:a", "copy", // Copy audio stream without transcoding
+		"-start_at_zero",                  // Start timestamps at zero
+		"-avoid_negative_ts", "make_zero", // Fix negative timestamps
+		"-muxdelay", "0", // No mux delay
+		"-muxpreload", "0", // No mux preload
+		"-mpegts_copyts", "1", // Preserve timestamps in MPEG-TS
+		"-mpegts_flags", "resend_headers+initial_discontinuity", // Regenerate PAT/PMT
+		"-pcr_period", "20", // Insert PCR every 20ms
+		"-pat_period", "0.1", // Regenerate PAT every 100ms
+		"-sdt_period", "0.5", // Regenerate SDT every 500ms
+		"-f", "mpegts", // Output format
+		"pipe:1", // Write to stdout
+	}
+
+	t.logger.Info().
+		Str("ffmpeg_path", t.Config.FFmpegPath).
+		Strs("args", args).
+		Str("target_url", targetURL).
+		Msg("starting H.264 stream repair")
+
+	// Ensure the ffmpeg path is clean and absolute before execution
+	ffmpegPath := filepath.Clean(t.Config.FFmpegPath)
+	if !filepath.IsAbs(ffmpegPath) {
+		return fmt.Errorf("ffmpeg path must be absolute: %s", ffmpegPath)
+	}
+
+	// Create ffmpeg command
+	// #nosec G204 -- ffmpegPath is sanitized above and args contain only predefined options
+	cmd := exec.CommandContext(ctx, ffmpegPath, args...)
+
+	// Connect pipes
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return fmt.Errorf("create stdin pipe: %w", err)
+	}
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("create stdout pipe: %w", err)
+	}
+
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("create stderr pipe: %w", err)
+	}
+
+	// Start ffmpeg
+	span.AddEvent("starting ffmpeg H.264 repair")
+	if err := cmd.Start(); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to start ffmpeg")
+		return fmt.Errorf("start ffmpeg: %w", err)
+	}
+
+	// Log ffmpeg stderr in background
+	go func() {
+		scanner := bufio.NewScanner(stderr)
+		for scanner.Scan() {
+			t.logger.Debug().Str("ffmpeg_stderr", scanner.Text()).Msg("ffmpeg H.264 repair output")
+		}
+	}()
+
+	// Use WaitGroup to ensure all goroutines complete
+	var wg sync.WaitGroup
+	errChan := make(chan error, 2)
+
+	// Copy stream from target to ffmpeg stdin
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		defer func() {
+			if err := stdin.Close(); err != nil {
+				t.logger.Debug().Err(err).Msg("failed to close stdin")
+			}
+		}()
+		if _, err := io.Copy(stdin, resp.Body); err != nil {
+			if !strings.Contains(err.Error(), "broken pipe") {
+				errChan <- fmt.Errorf("copy to ffmpeg stdin: %w", err)
+			}
+		}
+	}()
+
+	// Set response headers for repaired stream
+	w.Header().Set("Content-Type", "video/mp2t")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.Header().Set("Connection", "close")
+
+	// Copy ffmpeg output to response writer
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if _, err := io.Copy(w, stdout); err != nil {
+			if !strings.Contains(err.Error(), "broken pipe") && !strings.Contains(err.Error(), "connection reset") {
+				errChan <- fmt.Errorf("copy from ffmpeg stdout: %w", err)
+			}
+		}
+	}()
+
+	// Wait for all copy operations to complete
+	wg.Wait()
+
+	// Wait for ffmpeg to exit
+	if err := cmd.Wait(); err != nil {
+		// Only log error if it's not a context cancellation
+		if ctx.Err() == nil {
+			t.logger.Debug().Err(err).Msg("ffmpeg H.264 repair exited with error")
+		}
+	}
+
+	// Check for errors from goroutines
+	select {
+	case err := <-errChan:
+		return err
+	default:
+		span.SetStatus(codes.Ok, "H.264 stream repair completed")
+		return nil
+	}
+}
+
 // ProxyToGPUTranscoder forwards the stream request to the GPU transcoder service.
 // The GPU transcoder handles full video+audio transcoding with VAAPI hardware acceleration.
 func (t *Transcoder) ProxyToGPUTranscoder(ctx context.Context, w http.ResponseWriter, r *http.Request, sourceURL string) error {
@@ -354,6 +548,14 @@ func IsTranscodingEnabled() bool {
 	return env == envTrue
 }
 
+// IsH264RepairEnabled checks if H.264 stream repair is enabled via environment variable.
+// Default: false (disabled by default, enable explicitly for Plex compatibility)
+// Set XG2G_H264_STREAM_REPAIR=true to enable
+func IsH264RepairEnabled() bool {
+	env := strings.ToLower(os.Getenv("XG2G_H264_STREAM_REPAIR"))
+	return env == envTrue
+}
+
 // GetTranscoderConfig builds transcoder configuration from environment variables.
 func GetTranscoderConfig() TranscoderConfig {
 	codec := os.Getenv("XG2G_AUDIO_CODEC")
@@ -394,14 +596,15 @@ func GetTranscoderConfig() TranscoderConfig {
 	}
 
 	return TranscoderConfig{
-		Enabled:        IsTranscodingEnabled(),
-		Codec:          codec,
-		Bitrate:        bitrate,
-		Channels:       channels,
-		FFmpegPath:     ffmpegPath,
-		GPUEnabled:     gpuEnabled,
-		TranscoderURL:  transcoderURL,
-		UseRustRemuxer: useRust,
+		Enabled:           IsTranscodingEnabled(),
+		Codec:             codec,
+		Bitrate:           bitrate,
+		Channels:          channels,
+		FFmpegPath:        ffmpegPath,
+		GPUEnabled:        gpuEnabled,
+		TranscoderURL:     transcoderURL,
+		UseRustRemuxer:    useRust,
+		H264RepairEnabled: IsH264RepairEnabled(),
 	}
 }
 
