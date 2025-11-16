@@ -577,7 +577,7 @@ func GetTranscoderConfig() TranscoderConfig {
 
 	ffmpegPath := os.Getenv("XG2G_FFMPEG_PATH")
 	if ffmpegPath == "" {
-		ffmpegPath = "ffmpeg" // Use system ffmpeg by default
+		ffmpegPath = "/usr/bin/ffmpeg" // Use system ffmpeg by default (absolute path required)
 	}
 
 	// GPU transcoding configuration
