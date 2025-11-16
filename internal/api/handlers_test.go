@@ -13,6 +13,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/hdhr"
 	"github.com/ManuGH/xg2g/internal/jobs"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -662,4 +663,155 @@ func TestRegisterV2Routes_StatusEndpoint(t *testing.T) {
 
 	assert.Equal(t, "API v2 is under development", resp["message"])
 	assert.Equal(t, "preview", resp["status"])
+}
+
+// TestHandleLineupJSON_PlexForceHLS_Disabled tests lineup.json returns direct MPEG-TS URLs when PlexForceHLS=false
+func TestHandleLineupJSON_PlexForceHLS_Disabled(t *testing.T) {
+	// Create temp directory for test data
+	tempDir := t.TempDir()
+
+	// Create test M3U playlist
+	m3uContent := `#EXTM3U
+#EXTINF:-1 tvg-chno="1" tvg-id="sref-test" tvg-name="Test Channel",Test Channel
+http://10.10.55.14:18000/1:0:19:132F:3EF:1:C00000:0:0:0:
+#EXTINF:-1 tvg-chno="2" tvg-id="sref-test2" tvg-name="Test Channel 2",Test Channel 2
+http://10.10.55.14:18000/1:0:19:1334:3EF:1:C00000:0:0:0:
+`
+	m3uPath := filepath.Join(tempDir, "playlist.m3u")
+	require.NoError(t, os.WriteFile(m3uPath, []byte(m3uContent), 0644))
+
+	// Create server with PlexForceHLS disabled
+	cfg := jobs.Config{
+		DataDir: tempDir,
+	}
+	srv := New(cfg)
+
+	// Initialize HDHomeRun with PlexForceHLS=false
+	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
+	hdhrCfg := hdhr.Config{
+		Enabled:      true,
+		PlexForceHLS: false,
+		Logger:       logger,
+	}
+	srv.hdhr = hdhr.NewServer(hdhrCfg)
+
+	// Make request
+	req := httptest.NewRequest(http.MethodGet, "/lineup.json", nil)
+	w := httptest.NewRecorder()
+
+	srv.handleLineupJSON(w, req)
+
+	// Verify response
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
+
+	var lineup []hdhr.LineupEntry
+	err := json.NewDecoder(w.Body).Decode(&lineup)
+	require.NoError(t, err)
+	require.Len(t, lineup, 2)
+
+	// Verify URLs do NOT have /hls/ prefix
+	assert.Equal(t, "http://10.10.55.14:18000/1:0:19:132F:3EF:1:C00000:0:0:0:", lineup[0].URL)
+	assert.Equal(t, "http://10.10.55.14:18000/1:0:19:1334:3EF:1:C00000:0:0:0:", lineup[1].URL)
+	assert.NotContains(t, lineup[0].URL, "/hls/")
+	assert.NotContains(t, lineup[1].URL, "/hls/")
+}
+
+// TestHandleLineupJSON_PlexForceHLS_Enabled tests lineup.json returns HLS URLs when PlexForceHLS=true
+func TestHandleLineupJSON_PlexForceHLS_Enabled(t *testing.T) {
+	// Create temp directory for test data
+	tempDir := t.TempDir()
+
+	// Create test M3U playlist
+	m3uContent := `#EXTM3U
+#EXTINF:-1 tvg-chno="1" tvg-id="sref-test" tvg-name="Test Channel",Test Channel
+http://10.10.55.14:18000/1:0:19:132F:3EF:1:C00000:0:0:0:
+#EXTINF:-1 tvg-chno="2" tvg-id="sref-test2" tvg-name="Test Channel 2",Test Channel 2
+http://10.10.55.14:18000/1:0:19:1334:3EF:1:C00000:0:0:0:
+`
+	m3uPath := filepath.Join(tempDir, "playlist.m3u")
+	require.NoError(t, os.WriteFile(m3uPath, []byte(m3uContent), 0644))
+
+	// Create server with PlexForceHLS enabled
+	cfg := jobs.Config{
+		DataDir: tempDir,
+	}
+	srv := New(cfg)
+
+	// Initialize HDHomeRun with PlexForceHLS=true
+	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
+	hdhrCfg := hdhr.Config{
+		Enabled:      true,
+		PlexForceHLS: true,
+		Logger:       logger,
+	}
+	srv.hdhr = hdhr.NewServer(hdhrCfg)
+
+	// Make request
+	req := httptest.NewRequest(http.MethodGet, "/lineup.json", nil)
+	w := httptest.NewRecorder()
+
+	srv.handleLineupJSON(w, req)
+
+	// Verify response
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
+
+	var lineup []hdhr.LineupEntry
+	err := json.NewDecoder(w.Body).Decode(&lineup)
+	require.NoError(t, err)
+	require.Len(t, lineup, 2)
+
+	// Verify URLs have /hls/ prefix
+	assert.Equal(t, "http://10.10.55.14:18000/hls/1:0:19:132F:3EF:1:C00000:0:0:0:", lineup[0].URL)
+	assert.Equal(t, "http://10.10.55.14:18000/hls/1:0:19:1334:3EF:1:C00000:0:0:0:", lineup[1].URL)
+	assert.Contains(t, lineup[0].URL, "/hls/")
+	assert.Contains(t, lineup[1].URL, "/hls/")
+}
+
+// TestHandleLineupJSON_PlexForceHLS_NoDoublePrefix tests that /hls/ is not added twice
+func TestHandleLineupJSON_PlexForceHLS_NoDoublePrefix(t *testing.T) {
+	// Create temp directory for test data
+	tempDir := t.TempDir()
+
+	// Create test M3U playlist with URL that already has /hls/ prefix
+	m3uContent := `#EXTM3U
+#EXTINF:-1 tvg-chno="1" tvg-id="sref-test" tvg-name="Test Channel",Test Channel
+http://10.10.55.14:18000/hls/1:0:19:132F:3EF:1:C00000:0:0:0:
+`
+	m3uPath := filepath.Join(tempDir, "playlist.m3u")
+	require.NoError(t, os.WriteFile(m3uPath, []byte(m3uContent), 0644))
+
+	// Create server with PlexForceHLS enabled
+	cfg := jobs.Config{
+		DataDir: tempDir,
+	}
+	srv := New(cfg)
+
+	// Initialize HDHomeRun with PlexForceHLS=true
+	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
+	hdhrCfg := hdhr.Config{
+		Enabled:      true,
+		PlexForceHLS: true,
+		Logger:       logger,
+	}
+	srv.hdhr = hdhr.NewServer(hdhrCfg)
+
+	// Make request
+	req := httptest.NewRequest(http.MethodGet, "/lineup.json", nil)
+	w := httptest.NewRecorder()
+
+	srv.handleLineupJSON(w, req)
+
+	// Verify response
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var lineup []hdhr.LineupEntry
+	err := json.NewDecoder(w.Body).Decode(&lineup)
+	require.NoError(t, err)
+	require.Len(t, lineup, 1)
+
+	// Verify URL still has only ONE /hls/ prefix (not /hls/hls/)
+	assert.Equal(t, "http://10.10.55.14:18000/hls/1:0:19:132F:3EF:1:C00000:0:0:0:", lineup[0].URL)
+	assert.NotContains(t, lineup[0].URL, "/hls/hls/")
 }

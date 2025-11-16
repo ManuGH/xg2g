@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -722,7 +723,26 @@ func (s *Server) handleLineupJSON(w http.ResponseWriter, r *http.Request) {
 			}
 		} else if len(line) > 0 && !strings.HasPrefix(line, "#") && currentChannel.GuideName != "" {
 			// This is the stream URL
-			currentChannel.URL = line
+			streamURL := line
+
+			// If Plex Force HLS is enabled, add /hls/ prefix to service reference for iOS compatibility
+			if s.hdhr != nil && s.hdhr.PlexForceHLS() {
+				// Parse URL to check if /hls/ prefix already exists
+				if parsedURL, err := url.Parse(streamURL); err == nil {
+					// Only add /hls/ if path doesn't already start with it
+					if !strings.HasPrefix(parsedURL.Path, "/hls/") {
+						// Extract base URL and service reference
+						if lastSlash := strings.LastIndex(parsedURL.Path, "/"); lastSlash != -1 {
+							basePath := parsedURL.Path[:lastSlash]
+							serviceRef := parsedURL.Path[lastSlash+1:]
+							parsedURL.Path = basePath + "/hls/" + serviceRef
+							streamURL = parsedURL.String()
+						}
+					}
+				}
+			}
+
+			currentChannel.URL = streamURL
 			lineup = append(lineup, currentChannel)
 			currentChannel = hdhr.LineupEntry{} // Reset for next channel
 		}

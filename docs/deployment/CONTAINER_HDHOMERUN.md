@@ -204,6 +204,11 @@ XG2G_HDHR_DEVICE_ID=XG2G1234                     # Device ID (default: auto-gene
 XG2G_HDHR_FRIENDLY_NAME=xg2g                     # Display name
 XG2G_HDHR_BASE_URL=http://10.10.55.14:8080       # Explicit base URL for SSDP announcements
 XG2G_HDHR_TUNER_COUNT=1                          # Number of virtual tuners (default: 4)
+
+# Plex iOS Compatibility (v1.6.0+)
+XG2G_PLEX_FORCE_HLS=false                        # Force HLS URLs in lineup.json for Plex iOS compatibility (default: false)
+                                                 # When enabled, HDHomeRun lineup returns /hls/ URLs instead of direct MPEG-TS
+                                                 # Useful when Plex Server proxies requests, hiding iOS User-Agent
 ```
 
 ---

@@ -27,6 +27,7 @@ type Config struct {
 	FirmwareName string
 	BaseURL      string
 	TunerCount   int
+	PlexForceHLS bool // Force HLS URLs in lineup.json for Plex iOS compatibility
 	Logger       zerolog.Logger
 }
 
@@ -61,6 +62,11 @@ func NewServer(config Config) *Server {
 		config: config,
 		logger: config.Logger,
 	}
+}
+
+// PlexForceHLS returns whether HLS URLs should be forced in lineup.json for Plex iOS compatibility
+func (s *Server) PlexForceHLS() bool {
+	return s.config.PlexForceHLS
 }
 
 // DiscoverResponse represents HDHomeRun discovery response
@@ -177,6 +183,9 @@ func GetConfigFromEnv(logger zerolog.Logger) Config {
 	// Can be disabled with XG2G_HDHR_ENABLED=false
 	enabled := getEnvDefault("XG2G_HDHR_ENABLED", "true") == "true"
 
+	// Parse Plex Force HLS flag
+	plexForceHLS := getEnvDefault("XG2G_PLEX_FORCE_HLS", "false") == "true"
+
 	return Config{
 		Enabled:      enabled,
 		DeviceID:     os.Getenv("XG2G_HDHR_DEVICE_ID"),
@@ -185,6 +194,7 @@ func GetConfigFromEnv(logger zerolog.Logger) Config {
 		FirmwareName: getEnvDefault("XG2G_HDHR_FIRMWARE", "xg2g-1.4.0"),
 		BaseURL:      os.Getenv("XG2G_HDHR_BASE_URL"),
 		TunerCount:   getEnvInt("XG2G_HDHR_TUNER_COUNT", 4),
+		PlexForceHLS: plexForceHLS,
 		Logger:       logger,
 	}
 }
