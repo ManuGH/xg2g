@@ -141,7 +141,7 @@ RUN set -eux; \
     export CGO_ENABLED=1 GOOS=linux GOAMD64="${GO_AMD64_LEVEL}"; \
     export CGO_LDFLAGS="-L/usr/lib/x86_64-linux-gnu -lavcodec -lavformat -lavfilter -lavutil -lswresample"; \
     echo "🚀 Building binary with Rust remuxer (MODE 2)"; \
-    go build -buildvcs=false -trimpath \
+    go build -buildvcs=false -trimpath -tags=gpu \
         -ldflags="-s -w -X 'main.Version=${BUILD_REF}' -extldflags='-Wl,-rpath,/app/lib'" \
         ${GO_GCFLAGS:+-gcflags="${GO_GCFLAGS}"} \
         -o /out/xg2g ./cmd/daemon
