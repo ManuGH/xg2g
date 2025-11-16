@@ -725,8 +725,8 @@ func (s *Server) handleLineupJSON(w http.ResponseWriter, r *http.Request) {
 			// This is the stream URL
 			streamURL := line
 
-			// If H.264 stream repair is enabled, rewrite URL to use proxy port (18000) instead of direct receiver port
-			// This ensures Plex gets properly repaired streams with PPS/SPS headers
+			// If H.264 stream repair is enabled, rewrite URL to use proxy host and port
+			// This ensures Plex gets streams from the xg2g proxy (with H.264 repair) instead of direct receiver access
 			h264RepairEnabled := os.Getenv("XG2G_H264_STREAM_REPAIR") == "true"
 			if h264RepairEnabled {
 				if parsedURL, err := url.Parse(streamURL); err == nil {
@@ -741,8 +741,16 @@ func (s *Server) handleLineupJSON(w http.ResponseWriter, r *http.Request) {
 						proxyPort = proxyPort[colonIdx+1:]
 					}
 
-					// Rewrite the URL to use proxy port
-					parsedURL.Host = strings.Split(parsedURL.Host, ":")[0] + ":" + proxyPort
+					// Get the proxy host from the request (e.g., "10.10.55.14:8080")
+					// This is the IP address that the client used to connect to the API server
+					proxyHost := r.Host
+					if colonIdx := strings.LastIndex(proxyHost, ":"); colonIdx != -1 {
+						proxyHost = proxyHost[:colonIdx] // Extract just the IP without port
+					}
+
+					// Rewrite the URL to use proxy host and port
+					// Example: http://10.10.55.64:8001/... -> http://10.10.55.14:18000/...
+					parsedURL.Host = proxyHost + ":" + proxyPort
 					streamURL = parsedURL.String()
 				}
 			} else if s.hdhr != nil && s.hdhr.PlexForceHLS() {
