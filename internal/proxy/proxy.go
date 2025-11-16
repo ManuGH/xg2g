@@ -28,6 +28,7 @@ type Server struct {
 	transcoder     *Transcoder               // Optional audio transcoder
 	streamDetector *openwebif.StreamDetector // Smart stream detection
 	receiverHost   string                    // Receiver host for fallback
+	hlsManager     *HLSManager               // HLS streaming manager for iOS
 }
 
 // Config holds the configuration for the proxy server.
@@ -134,6 +135,15 @@ func New(cfg Config) (*Server, error) {
 			Msg("Using fixed target URL (Smart Detection disabled)")
 	}
 
+	// Initialize HLS manager for iOS streaming
+	hlsManager, err := NewHLSManager(cfg.Logger.With().Str("component", "hls").Logger(), "")
+	if err != nil {
+		cfg.Logger.Warn().Err(err).Msg("failed to initialize HLS manager, HLS streaming disabled")
+	} else {
+		s.hlsManager = hlsManager
+		cfg.Logger.Info().Msg("HLS streaming enabled for iOS devices")
+	}
+
 	// Create HTTP server
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.handleRequest)
@@ -154,6 +164,7 @@ func New(cfg Config) (*Server, error) {
 // handleRequest handles incoming HTTP requests.
 // HEAD requests are answered directly without proxying to avoid EOF errors from Enigma2.
 // GET requests may be transcoded if audio transcoding is enabled.
+// HLS requests (/hls/, .m3u8, segment_*.ts) are routed to HLS manager.
 // POST requests are proxied directly to the target URL.
 func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	// Log the request
@@ -167,6 +178,21 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodHead {
 		s.handleHeadRequest(w, r)
 		return
+	}
+
+	// Handle HLS requests (iOS streaming)
+	if s.hlsManager != nil && r.Method == http.MethodGet {
+		path := r.URL.Path
+		// Check if this is an HLS request:
+		// - /hls/<service_ref> - HLS playlist request
+		// - /*.m3u8 - Playlist file
+		// - /segment_*.ts - Segment file
+		if strings.HasPrefix(path, "/hls/") ||
+			strings.HasSuffix(path, ".m3u8") ||
+			(strings.Contains(path, "segment_") && strings.HasSuffix(path, ".ts")) {
+			s.handleHLSRequest(w, r)
+			return
+		}
 	}
 
 	// Handle GET requests with optional transcoding
@@ -294,6 +320,50 @@ func (s *Server) resolveTargetURL(ctx context.Context, path, rawQuery string) st
 	return targetURL
 }
 
+// handleHLSRequest handles HLS streaming requests for iOS devices.
+func (s *Server) handleHLSRequest(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Path
+
+	// Extract service reference from path
+	var serviceRef string
+	if strings.HasPrefix(path, "/hls/") {
+		// /hls/<service_ref> format
+		serviceRef = strings.TrimPrefix(path, "/hls/")
+		// Remove any file extensions
+		serviceRef = strings.TrimSuffix(serviceRef, ".m3u8")
+		serviceRef = strings.TrimSuffix(serviceRef, "/")
+	} else {
+		// Try to extract from path (e.g., /1:0:19:132F:3EF:1:C00000:0:0:0:/playlist.m3u8)
+		parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
+		if len(parts) > 0 {
+			serviceRef = parts[0]
+		}
+	}
+
+	if serviceRef == "" {
+		http.Error(w, "service reference required", http.StatusBadRequest)
+		return
+	}
+
+	// Build target URL for this service reference
+	targetURL := s.resolveTargetURL(r.Context(), "/"+serviceRef, r.URL.RawQuery)
+
+	s.logger.Debug().
+		Str("service_ref", serviceRef).
+		Str("target", targetURL).
+		Str("path", path).
+		Msg("serving HLS stream")
+
+	// Serve HLS content
+	if err := s.hlsManager.ServeHLS(w, r, serviceRef, targetURL); err != nil {
+		s.logger.Error().
+			Err(err).
+			Str("service_ref", serviceRef).
+			Msg("HLS streaming failed")
+		http.Error(w, "HLS streaming failed", http.StatusInternalServerError)
+	}
+}
+
 // handleHeadRequest handles HEAD requests by returning a 200 OK response
 // with appropriate headers without proxying to the target.
 func (s *Server) handleHeadRequest(w http.ResponseWriter, r *http.Request) {
@@ -332,6 +402,12 @@ func (s *Server) Start() error {
 // Shutdown gracefully shuts down the proxy server.
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.logger.Info().Msg("shutting down stream proxy server")
+
+	// Shutdown HLS manager if initialized
+	if s.hlsManager != nil {
+		s.hlsManager.Shutdown()
+	}
+
 	return s.httpServer.Shutdown(ctx)
 }
 
