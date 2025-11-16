@@ -180,7 +180,36 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Handle HLS requests (iOS streaming)
+	// Auto-detect iOS clients and serve HLS instead of MPEG-TS
+	// NOTE: This only works for DIRECT iOS clients (Safari, VLC, IPTV apps)
+	// It does NOT work for Plex iOS clients, because Plex Server acts as proxy
+	// and its User-Agent is "PlexMediaServer/...", not iOS-specific.
+	if s.hlsManager != nil && r.Method == http.MethodGet && !strings.HasPrefix(r.URL.Path, "/hls/") {
+		userAgent := r.Header.Get("User-Agent")
+		isIOSClient := strings.Contains(userAgent, "iPhone") ||
+			strings.Contains(userAgent, "iPad") ||
+			strings.Contains(userAgent, "iOS") ||
+			strings.Contains(userAgent, "AppleCoreMedia") ||
+			strings.Contains(userAgent, "CFNetwork")
+
+		// Auto-upgrade iOS clients to HLS for better compatibility
+		if isIOSClient {
+			hlsPath := "/hls" + r.URL.Path
+			s.logger.Info().
+				Str("user_agent", userAgent).
+				Str("original_path", r.URL.Path).
+				Str("hls_path", hlsPath).
+				Str("client_ip", r.RemoteAddr).
+				Msg("auto-redirecting iOS client to HLS")
+
+			// Internal redirect to HLS handler
+			r.URL.Path = hlsPath
+			s.handleHLSRequest(w, r)
+			return
+		}
+	}
+
+	// Handle explicit HLS requests (iOS streaming)
 	if s.hlsManager != nil && r.Method == http.MethodGet {
 		path := r.URL.Path
 		// Check if this is an HLS request:
