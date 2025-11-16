@@ -168,6 +168,7 @@ RUN if [ -f /etc/alpine-release ]; then \
             ca-certificates \
             tzdata \
             wget \
+            ffmpeg \
             ffmpeg-libs \
             libgcc && \
         addgroup -g 65532 -S xg2g && \
@@ -177,6 +178,7 @@ RUN if [ -f /etc/alpine-release ]; then \
             ca-certificates \
             tzdata \
             wget \
+            ffmpeg \
             libavcodec61 \
             libavformat61 \
             libavfilter10 \
