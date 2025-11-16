@@ -69,6 +69,11 @@ func (s *Server) PlexForceHLS() bool {
 	return s.config.PlexForceHLS
 }
 
+// BaseURL returns the base URL for HDHomeRun API endpoints
+func (s *Server) BaseURL() string {
+	return s.config.BaseURL
+}
+
 // DiscoverResponse represents HDHomeRun discovery response
 type DiscoverResponse struct {
 	FriendlyName    string `json:"FriendlyName"`

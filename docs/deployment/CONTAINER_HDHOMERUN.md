@@ -209,7 +209,30 @@ XG2G_HDHR_TUNER_COUNT=1                          # Number of virtual tuners (def
 XG2G_PLEX_FORCE_HLS=false                        # Force HLS URLs in lineup.json for Plex iOS compatibility (default: false)
                                                  # When enabled, HDHomeRun lineup returns /hls/ URLs instead of direct MPEG-TS
                                                  # Useful when Plex Server proxies requests, hiding iOS User-Agent
+                                                 #
+                                                 # RECOMMENDED: Set to 'true' if Plex is your primary client, especially with iOS devices
+                                                 # NOTE: Direct clients (VLC, IPTV apps) are unaffected - they don't use HDHomeRun lineup
 ```
+
+### Best Practices for Plex
+
+**Recommended Configuration for Plex Users:**
+
+```bash
+XG2G_HDHR_ENABLED=true
+XG2G_PLEX_FORCE_HLS=true   # Enable for iOS compatibility and DVR/Timeshift support
+```
+
+**Why enable Force-HLS for Plex?**
+
+1. **iOS Compatibility**: Plex Server proxies iOS client requests with `PlexMediaServer/...` User-Agent, preventing auto-detection
+2. **DVR/Timeshift**: HLS provides better compatibility with Plex's DVR and timeshift features
+3. **Reliability**: Consistent streaming format across all Plex clients (Desktop, Mobile, TV apps)
+
+**Performance Impact:**
+- Adds ~2s initial buffering (HLS segment creation)
+- Desktop clients remain fully functional
+- Direct IPTV clients (VLC, GSE) unaffected (bypass HDHomeRun lineup)
 
 ---
 
