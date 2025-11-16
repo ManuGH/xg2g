@@ -33,12 +33,13 @@ type HLSStreamer struct {
 
 // HLSManager manages multiple HLS streams.
 type HLSManager struct {
-	streams    map[string]*HLSStreamer
-	mu         sync.RWMutex
-	logger     zerolog.Logger
-	outputBase string
-	cleanup    *time.Ticker
-	stopChan   chan struct{}
+	streams      map[string]*HLSStreamer
+	mu           sync.RWMutex
+	logger       zerolog.Logger
+	outputBase   string
+	cleanup      *time.Ticker
+	stopChan     chan struct{}
+	shutdownOnce sync.Once
 }
 
 // NewHLSManager creates a new HLS stream manager.
@@ -289,18 +290,21 @@ func (m *HLSManager) cleanupIdleStreams() {
 }
 
 // Shutdown stops all streams and cleanup.
+// Safe to call multiple times (idempotent).
 func (m *HLSManager) Shutdown() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.shutdownOnce.Do(func() {
+		m.mu.Lock()
+		defer m.mu.Unlock()
 
-	close(m.stopChan)
-	m.cleanup.Stop()
+		close(m.stopChan)
+		m.cleanup.Stop()
 
-	for _, stream := range m.streams {
-		stream.Stop()
-	}
+		for _, stream := range m.streams {
+			stream.Stop()
+		}
 
-	m.streams = make(map[string]*HLSStreamer)
+		m.streams = make(map[string]*HLSStreamer)
+	})
 }
 
 // ServeHLS handles HLS playlist and segment requests.
