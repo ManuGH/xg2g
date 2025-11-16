@@ -725,9 +725,29 @@ func (s *Server) handleLineupJSON(w http.ResponseWriter, r *http.Request) {
 			// This is the stream URL
 			streamURL := line
 
-			// If Plex Force HLS is enabled, rewrite URL to use /hls/ prefix for proxy's HLS handler
-			// Note: The /hls/ handler exists on the stream proxy (port 18000), not the API server (port 8080)
-			if s.hdhr != nil && s.hdhr.PlexForceHLS() {
+			// If H.264 stream repair is enabled, rewrite URL to use proxy port (18000) instead of direct receiver port
+			// This ensures Plex gets properly repaired streams with PPS/SPS headers
+			h264RepairEnabled := os.Getenv("XG2G_H264_STREAM_REPAIR") == "true"
+			if h264RepairEnabled {
+				if parsedURL, err := url.Parse(streamURL); err == nil {
+					// Get proxy listen address from environment (default :18000)
+					proxyListen := os.Getenv("XG2G_PROXY_LISTEN")
+					if proxyListen == "" {
+						proxyListen = ":18000"
+					}
+					// Extract port from proxy listen address (format is ":18000" or "0.0.0.0:18000")
+					proxyPort := strings.TrimPrefix(proxyListen, ":")
+					if colonIdx := strings.LastIndex(proxyPort, ":"); colonIdx != -1 {
+						proxyPort = proxyPort[colonIdx+1:]
+					}
+
+					// Rewrite the URL to use proxy port
+					parsedURL.Host = strings.Split(parsedURL.Host, ":")[0] + ":" + proxyPort
+					streamURL = parsedURL.String()
+				}
+			} else if s.hdhr != nil && s.hdhr.PlexForceHLS() {
+				// If Plex Force HLS is enabled, rewrite URL to use /hls/ prefix for proxy's HLS handler
+				// Note: The /hls/ handler exists on the stream proxy (port 18000), not the API server (port 8080)
 				// Parse the original stream URL
 				if parsedURL, err := url.Parse(streamURL); err == nil {
 					// Only rewrite if /hls/ prefix doesn't already exist
