@@ -17,6 +17,14 @@ import (
 	"github.com/rs/zerolog"
 )
 
+const (
+	// DefaultHLSIdleTimeout is the default timeout for idle HLS streams before cleanup
+	DefaultHLSIdleTimeout = 60 * time.Second
+
+	// DefaultHLSCleanupInterval is the default interval for checking idle streams
+	DefaultHLSCleanupInterval = 30 * time.Second
+)
+
 // HLSStreamer manages HLS segmentation for a single stream.
 type HLSStreamer struct {
 	serviceRef string
@@ -33,13 +41,15 @@ type HLSStreamer struct {
 
 // HLSManager manages multiple HLS streams.
 type HLSManager struct {
-	streams      map[string]*HLSStreamer
-	mu           sync.RWMutex
-	logger       zerolog.Logger
-	outputBase   string
-	cleanup      *time.Ticker
-	stopChan     chan struct{}
-	shutdownOnce sync.Once
+	streams       map[string]*HLSStreamer
+	mu            sync.RWMutex
+	logger        zerolog.Logger
+	outputBase    string
+	cleanup       *time.Ticker
+	stopChan      chan struct{}
+	shutdownOnce  sync.Once
+	idleTimeout   time.Duration // Configurable idle timeout for stream cleanup
+	cleanupTicker time.Duration // Configurable cleanup interval
 }
 
 // NewHLSManager creates a new HLS stream manager.
@@ -54,11 +64,13 @@ func NewHLSManager(logger zerolog.Logger, outputDir string) (*HLSManager, error)
 	}
 
 	m := &HLSManager{
-		streams:    make(map[string]*HLSStreamer),
-		logger:     logger,
-		outputBase: outputDir,
-		cleanup:    time.NewTicker(30 * time.Second),
-		stopChan:   make(chan struct{}),
+		streams:       make(map[string]*HLSStreamer),
+		logger:        logger,
+		outputBase:    outputDir,
+		cleanup:       time.NewTicker(DefaultHLSCleanupInterval),
+		stopChan:      make(chan struct{}),
+		idleTimeout:   DefaultHLSIdleTimeout,
+		cleanupTicker: DefaultHLSCleanupInterval,
 	}
 
 	// Start cleanup goroutine
@@ -270,10 +282,9 @@ func (m *HLSManager) cleanupIdleStreams() {
 	// Collect idle streams under lock, cleanup outside lock to avoid blocking
 	m.mu.Lock()
 	toCleanup := make([]*HLSStreamer, 0)
-	idleTimeout := 60 * time.Second
 
 	for ref, stream := range m.streams {
-		if stream.isIdle(idleTimeout) {
+		if stream.isIdle(m.idleTimeout) {
 			m.logger.Info().
 				Str("service_ref", ref).
 				Msg("removing idle HLS stream")
@@ -293,17 +304,23 @@ func (m *HLSManager) cleanupIdleStreams() {
 // Safe to call multiple times (idempotent).
 func (m *HLSManager) Shutdown() {
 	m.shutdownOnce.Do(func() {
-		m.mu.Lock()
-		defer m.mu.Unlock()
-
+		// Signal cleanup goroutine and stop ticker outside of lock
 		close(m.stopChan)
 		m.cleanup.Stop()
 
+		// Collect streams under lock, stop them outside lock to avoid blocking
+		m.mu.Lock()
+		streams := make([]*HLSStreamer, 0, len(m.streams))
 		for _, stream := range m.streams {
+			streams = append(streams, stream)
+		}
+		m.streams = make(map[string]*HLSStreamer)
+		m.mu.Unlock()
+
+		// Stop all streams outside of lock
+		for _, stream := range streams {
 			stream.Stop()
 		}
-
-		m.streams = make(map[string]*HLSStreamer)
 	})
 }
 
