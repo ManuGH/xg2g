@@ -103,9 +103,10 @@ func (r *RustAudioRemuxer) Process(input []byte) ([]byte, error) {
 		return nil, errors.New("input is empty")
 	}
 
-	// Allocate output buffer (20x input size for transcoding expansion)
-	// AC3→AAC transcoding can expand significantly (e.g., 16 packets → 170 packets)
-	outputCapacity := len(input) * 20
+	// Allocate output buffer (100x input size for transcoding expansion)
+	// AC3→AAC transcoding can expand significantly (e.g., 1 packet → 89 packets observed)
+	// Using 100x to handle worst-case scenarios including PMT/PAT overhead
+	outputCapacity := len(input) * 100
 	output := make([]byte, outputCapacity)
 
 	// Keep input alive during C call
