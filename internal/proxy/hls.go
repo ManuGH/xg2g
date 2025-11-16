@@ -138,7 +138,8 @@ func (s *HLSStreamer) Start() error {
 	segmentPattern := filepath.Join(s.outputDir, "segment_%03d.ts")
 
 	// ffmpeg command to convert MPEG-TS to HLS
-	// -c copy: No re-encoding (audio already AAC from Rust)
+	// -map 0:v -map 0:a: Only video and audio (exclude subtitles/other streams)
+	// -c copy: No re-encoding
 	// -f hls: HLS output format
 	// -hls_time 2: 2-second segments (low latency)
 	// -hls_list_size 6: Keep last 6 segments (12 seconds buffer)
@@ -147,6 +148,8 @@ func (s *HLSStreamer) Start() error {
 		"-hide_banner",
 		"-loglevel", "warning",
 		"-i", s.targetURL,
+		"-map", "0:v",
+		"-map", "0:a",
 		"-c", "copy",
 		"-f", "hls",
 		"-hls_time", "2",
@@ -353,12 +356,32 @@ func (m *HLSManager) ServeHLS(w http.ResponseWriter, r *http.Request, serviceRef
 	return m.servePlaylist(w, stream)
 }
 
+// ServeSegmentFromAnyStream finds and serves a segment from any active stream.
+// This handles the case where Safari requests segments with relative paths like "/segment_043.ts"
+// without the /hls/ prefix.
+func (m *HLSManager) ServeSegmentFromAnyStream(w http.ResponseWriter, segmentName string) error {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	// Try each active stream to find the segment
+	for _, stream := range m.streams {
+		segmentPath := filepath.Join(stream.GetOutputDir(), segmentName)
+		if _, err := os.Stat(segmentPath); err == nil {
+			// Found the segment, serve it
+			stream.updateAccess()
+			return m.serveSegment(w, stream, segmentName)
+		}
+	}
+
+	return fmt.Errorf("segment %s not found in any active stream", segmentName)
+}
+
 // servePlaylist serves the HLS playlist file.
 func (m *HLSManager) servePlaylist(w http.ResponseWriter, stream *HLSStreamer) error {
 	playlistPath := stream.GetPlaylistPath()
 
-	// Wait for playlist to exist
-	for i := 0; i < 10; i++ {
+	// Wait for playlist to exist (up to 10 seconds for initial segment creation)
+	for i := 0; i < 100; i++ {
 		if _, err := os.Stat(playlistPath); err == nil {
 			break
 		}
@@ -387,8 +410,8 @@ func (m *HLSManager) servePlaylist(w http.ResponseWriter, stream *HLSStreamer) e
 func (m *HLSManager) serveSegment(w http.ResponseWriter, stream *HLSStreamer, segmentName string) error {
 	segmentPath := filepath.Join(stream.GetOutputDir(), segmentName)
 
-	// Wait for segment to exist
-	for i := 0; i < 10; i++ {
+	// Wait for segment to exist (up to 10 seconds)
+	for i := 0; i < 100; i++ {
 		if _, err := os.Stat(segmentPath); err == nil {
 			break
 		}
