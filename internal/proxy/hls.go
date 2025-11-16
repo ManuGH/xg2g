@@ -400,7 +400,11 @@ func (m *HLSManager) serveSegment(w http.ResponseWriter, stream *HLSStreamer, se
 	if err != nil {
 		return fmt.Errorf("open segment: %w", err)
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			m.logger.Warn().Err(err).Msg("failed to close segment file")
+		}
+	}()
 
 	w.Header().Set("Content-Type", "video/mp2t")
 	w.Header().Set("Cache-Control", "max-age=10")

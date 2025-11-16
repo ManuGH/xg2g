@@ -112,13 +112,14 @@ func TestHLSIdleCleanupWithConcurrentAccess(t *testing.T) {
 	streamCount := len(m.streams)
 	m.mu.RUnlock()
 
-	if streamCount == 0 {
+	switch streamCount {
+	case 0:
 		// Stream might have been cleaned up if timing was unlucky
 		// This is acceptable - the important thing is no race or panic
 		t.Logf("Stream was cleaned up during test (acceptable)")
-	} else if streamCount == 1 {
+	case 1:
 		t.Logf("Stream is still active (expected)")
-	} else {
+	default:
 		t.Errorf("Unexpected stream count: %d (expected 0 or 1)", streamCount)
 	}
 }
