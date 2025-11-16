@@ -340,9 +340,29 @@ impl AudioRemuxer {
                 }
             }
             None => {
-                // Not audio or incomplete PES - check if video passthrough needed
-                // For now, we'll only output when we have audio to mux
-                // Video passthrough would be added here
+                // Not audio or incomplete audio PES
+                // Pass through video, PAT/PMT, and other non-audio packets
+                // This ensures the client receives data even while audio is buffering
+
+                // Extract PID from TS packet
+                let pid = ((ts_packet[1] as u16 & 0x1F) << 8) | (ts_packet[2] as u16);
+                let audio_pid = self.demuxer.audio_pid();
+
+                // Pass through all packets that are NOT audio
+                // This includes: video, PAT (PID 0), PMT (PID ~17), null packets, etc.
+                if audio_pid.is_none() || pid != audio_pid.unwrap() {
+                    // Copy the packet as-is for passthrough
+                    let mut packet = [0u8; 188];
+                    packet.copy_from_slice(ts_packet);
+                    output_packets.push(packet);
+                    self.stats.packets_output += 1;
+
+                    if count < 10 {
+                        eprintln!("[RUST PIPELINE] Passthrough packet: PID {} (audio PID: {:?})", pid, audio_pid);
+                    }
+                }
+                // If this IS an audio packet but PES is incomplete, we don't output anything
+                // (audio is buffering, which is expected)
             }
         }
 
