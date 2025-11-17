@@ -4,6 +4,7 @@
 package epg
 
 import (
+	"html"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/openwebif"
@@ -33,10 +34,10 @@ func ProgrammesFromEPG(events []openwebif.EPGEvent, channelID string) []Programm
 			Stop:    formatXMLTVTime(stopTime),
 			Channel: channelID,
 			Title: Title{
-				Lang: "", // No lang attribute for xg2g
-				Text: event.Title,
+				Lang: "",                               // No lang attribute for xg2g
+				Text: html.UnescapeString(event.Title), // Decode HTML entities (&#x27; -> ')
 			},
-			Desc: buildDescription(event),
+			Desc: html.UnescapeString(buildDescription(event)), // Decode HTML entities in description
 		}
 
 		programmes = append(programmes, prog)
