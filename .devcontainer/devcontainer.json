@@ -34,7 +34,7 @@
             "source.organizeImports": "explicit"
           }
         },
-        "rust-analyzer.checkOnSave.command": "clippy",
+        "rust-analyzer.check.command": "clippy",
         "files.watcherExclude": {
           "**/target/**": true,
           "**/dist/**": true
