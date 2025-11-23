@@ -83,6 +83,7 @@ services:
       - XG2G_OWI_USER=root
       - XG2G_OWI_PASS=yourpassword
       - XG2G_BOUQUET=Favourites
+      - XG2G_INITIAL_REFRESH=true         # Auto-load channels on startup
 
       # =========================================================================
       # MODE 1: STANDARD (DEFAULT) - Desktop Players
@@ -163,7 +164,7 @@ services:
     # VOLUMES
     # ===========================================================================
     volumes:
-      - ./data:/data
+      - xg2g-data:/data
 
     # ===========================================================================
     # HEALTH CHECK
@@ -231,3 +232,11 @@ services:
 #   docker run --rm --device /dev/dri:/dev/dri debian:bookworm-slim \
 #     bash -c "apt update && apt install -y vainfo && vainfo"
 #
+# =============================================================================
+# VOLUMES
+# =============================================================================
+# Named volumes (recommended for easier permission management)
+# To backup: docker run --rm -v xg2g-data:/data -v $(pwd):/backup alpine tar czf /backup/xg2g-backup.tar.gz -C /data .
+# To restore: docker run --rm -v xg2g-data:/data -v $(pwd):/backup alpine tar xzf /backup/xg2g-backup.tar.gz -C /data
+volumes:
+  xg2g-data:

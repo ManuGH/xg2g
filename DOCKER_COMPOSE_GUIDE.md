@@ -140,6 +140,7 @@ XG2G_OWI_BASE=http://192.168.1.100
 XG2G_OWI_USER=root
 XG2G_OWI_PASS=yourpassword
 XG2G_BOUQUET=Favourites
+XG2G_INITIAL_REFRESH=true
 ```
 
 **Optional:** See [`.env.example`](.env.example) for 30+ configuration options.

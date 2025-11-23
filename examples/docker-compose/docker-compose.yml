@@ -14,6 +14,7 @@ services:
       - XG2G_BOUQUET=Favourites # Single bouquet
       # For multiple bouquets, use comma-separated list:
       # - XG2G_BOUQUET=Premium,Favourites,Sports
+      - XG2G_INITIAL_REFRESH=true # Auto-load channels on startup
       - XG2G_LISTEN=:8080
       # OpenWebIF Authentication (if your receiver requires login)
       # - XG2G_OWI_USER=root                # Default username is often 'root'
@@ -50,7 +51,7 @@ services:
       # - XG2G_AUDIO_CHANNELS=2         # Audio channels: 1 (mono) or 2 (stereo, default)
       # - XG2G_FFMPEG_PATH=ffmpeg       # Path to ffmpeg (default: ffmpeg)
     volumes:
-      - ./data:/data # M3U and XMLTV files stored here
+      - xg2g-data:/data # M3U and XMLTV files stored here
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/api/status"]
@@ -58,3 +59,8 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+# Named volumes (recommended for easier permission management)
+# To backup: docker run --rm -v xg2g-data:/data -v $(pwd):/backup alpine tar czf /backup/xg2g-backup.tar.gz -C /data .
+# To restore: docker run --rm -v xg2g-data:/data -v $(pwd):/backup alpine tar xzf /backup/xg2g-backup.tar.gz -C /data
+volumes:
+  xg2g-data:

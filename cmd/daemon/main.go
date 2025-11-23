@@ -101,14 +101,19 @@ func main() {
 	}
 	logger.Info().Msgf("→ Data dir: %s", cfg.DataDir)
 
-	// Optional initial refresh before starting servers
-	if config.ParseBool("XG2G_INITIAL_REFRESH", false) {
+	// Initial refresh before starting servers (enabled by default in v2.0)
+	// Users can disable with XG2G_INITIAL_REFRESH=false if needed
+	if config.ParseBool("XG2G_INITIAL_REFRESH", true) {
 		logger.Info().Msg("performing initial data refresh on startup")
 		if _, err := jobs.Refresh(ctx, cfg); err != nil {
 			logger.Error().Err(err).Msg("initial data refresh failed")
+			logger.Warn().Msg("→ Channels will be empty until manual refresh via /api/refresh")
 		} else {
 			logger.Info().Msg("initial data refresh completed successfully")
 		}
+	} else {
+		logger.Warn().Msg("Initial refresh is disabled (XG2G_INITIAL_REFRESH=false)")
+		logger.Warn().Msg("→ No channels loaded. Trigger manual refresh via: POST /api/refresh")
 	}
 
 	// Create API handler

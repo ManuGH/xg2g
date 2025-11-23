@@ -23,6 +23,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/proxy"
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 )
@@ -727,8 +728,7 @@ func (s *Server) handleLineupJSON(w http.ResponseWriter, r *http.Request) {
 
 			// If H.264 stream repair is enabled, rewrite URL to use proxy host and port
 			// This ensures Plex gets streams from the xg2g proxy (with H.264 repair) instead of direct receiver access
-			h264RepairEnabled := os.Getenv("XG2G_H264_STREAM_REPAIR") == "true"
-			if h264RepairEnabled {
+			if proxy.IsH264RepairEnabled() {
 				if parsedURL, err := url.Parse(streamURL); err == nil {
 					// Get proxy listen address from environment (default :18000)
 					proxyListen := os.Getenv("XG2G_PROXY_LISTEN")
@@ -753,10 +753,13 @@ func (s *Server) handleLineupJSON(w http.ResponseWriter, r *http.Request) {
 					parsedURL.Host = proxyHost + ":" + proxyPort
 					streamURL = parsedURL.String()
 				}
-			} else if s.hdhr != nil && s.hdhr.PlexForceHLS() {
-				// If Plex Force HLS is enabled, rewrite URL to use /hls/ prefix for proxy's HLS handler
+			}
+
+			// If Plex Force HLS is enabled, add /hls/ prefix for proxy's HLS handler
+			// This can work together with H264 repair (host/port rewrite above, /hls/ prefix here)
+			if s.hdhr != nil && s.hdhr.PlexForceHLS() {
 				// Note: The /hls/ handler exists on the stream proxy (port 18000), not the API server (port 8080)
-				// Parse the original stream URL
+				// Parse the stream URL (possibly already rewritten by H264 repair above)
 				if parsedURL, err := url.Parse(streamURL); err == nil {
 					// Only rewrite if /hls/ prefix doesn't already exist
 					if !strings.HasPrefix(parsedURL.Path, "/hls/") {

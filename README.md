@@ -28,10 +28,13 @@ docker run -d \
   -p 8080:8080 \
   -e XG2G_OWI_BASE=http://RECEIVER_IP \
   -e XG2G_BOUQUET=Favourites \
+  -e XG2G_INITIAL_REFRESH=true \
   ghcr.io/manugh/xg2g:latest
 ```
 
 **Done!** Now open: `http://YOUR_IP:8080/files/playlist.m3u`
+
+> **Note:** `XG2G_INITIAL_REFRESH=true` loads channels at startup. Without it, you'll see 0 channels until you manually trigger a refresh via the API.
 
 ---
 
@@ -123,6 +126,7 @@ docker run -d \
   -p 18000:18000 \
   -e XG2G_OWI_BASE=http://RECEIVER_IP \
   -e XG2G_BOUQUET=Favourites \
+  -e XG2G_INITIAL_REFRESH=true \
   -e XG2G_ENABLE_STREAM_PROXY=true \
   -e XG2G_PROXY_TARGET=http://RECEIVER_IP:17999 \
   ghcr.io/manugh/xg2g:latest
@@ -167,6 +171,60 @@ XG2G_PROXY_ONLY_MODE=true   # Run as dedicated transcoding proxy only
 ```
 
 Everything else works automatically.
+
+---
+
+## Troubleshooting
+
+### Problem: 0 channels / Empty playlist
+
+**Cause:** By default, xg2g doesn't load channels at startup.
+
+**Solution:** Add `XG2G_INITIAL_REFRESH=true` to your configuration:
+
+```bash
+docker run -d \
+  -e XG2G_INITIAL_REFRESH=true \
+  ...
+```
+
+Or manually trigger a refresh (requires API token):
+
+```bash
+# Set token
+-e XG2G_API_TOKEN=$(openssl rand -hex 16)
+
+# Trigger refresh
+curl -X POST -H "X-API-Token: YOUR_TOKEN" http://localhost:8080/api/refresh
+```
+
+### Problem: Connection errors
+
+Check these common issues:
+
+```bash
+# 1. Verify receiver is reachable
+curl http://RECEIVER_IP
+
+# 2. Check OpenWebIF credentials
+curl http://USER:PASS@RECEIVER_IP/api/statusinfo
+
+# 3. View xg2g logs
+docker logs xg2g
+
+# 4. Check status endpoint
+curl http://localhost:8080/api/status
+```
+
+### Problem: Wrong bouquet name
+
+Bouquet names are **case-sensitive**. To find the correct name:
+
+1. Open `http://RECEIVER_IP` in browser
+2. Navigate to your bouquets
+3. Copy the exact name (including spaces and capitalization)
+
+For more help, see [SUPPORT.md](SUPPORT.md).
 
 ---
 

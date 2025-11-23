@@ -198,6 +198,9 @@ func TestHandleConfigReloadV1(t *testing.T) {
 // TestHandleLineupJSON tests the HDHomeRun lineup.json endpoint.
 func TestHandleLineupJSON(t *testing.T) {
 	t.Run("valid_playlist", func(t *testing.T) {
+		// Disable H264 repair for this test (testing basic lineup, not URL rewriting)
+		t.Setenv("XG2G_H264_STREAM_REPAIR", "false")
+
 		// Create temp directory with M3U file
 		tmpDir := t.TempDir()
 		m3uContent := `#EXTM3U
@@ -695,8 +698,9 @@ http://10.10.55.14:18000/1:0:19:1334:3EF:1:C00000:0:0:0:
 	}
 	srv.hdhr = hdhr.NewServer(hdhrCfg)
 
-	// Make request
+	// Make request with Host header for URL rewriting
 	req := httptest.NewRequest(http.MethodGet, "/lineup.json", nil)
+	req.Host = "10.10.55.14:8080"
 	w := httptest.NewRecorder()
 
 	srv.handleLineupJSON(w, req)
@@ -747,8 +751,9 @@ http://10.10.55.14:18000/1:0:19:1334:3EF:1:C00000:0:0:0:
 	}
 	srv.hdhr = hdhr.NewServer(hdhrCfg)
 
-	// Make request
+	// Make request with Host header for URL rewriting
 	req := httptest.NewRequest(http.MethodGet, "/lineup.json", nil)
+	req.Host = "10.10.55.14:8080"
 	w := httptest.NewRecorder()
 
 	srv.handleLineupJSON(w, req)
@@ -798,8 +803,9 @@ http://10.10.55.14:18000/hls/1:0:19:132F:3EF:1:C00000:0:0:0:
 	}
 	srv.hdhr = hdhr.NewServer(hdhrCfg)
 
-	// Make request
+	// Make request with Host header for URL rewriting
 	req := httptest.NewRequest(http.MethodGet, "/lineup.json", nil)
+	req.Host = "10.10.55.14:8080"
 	w := httptest.NewRecorder()
 
 	srv.handleLineupJSON(w, req)

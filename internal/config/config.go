@@ -268,10 +268,10 @@ func (l *Loader) mergeEnvConfig(cfg *jobs.Config) {
 	cfg.Version = ParseString("XG2G_VERSION", cfg.Version)
 	cfg.DataDir = ParseString("XG2G_DATA", cfg.DataDir)
 
-	// OpenWebIF
-	cfg.OWIBase = ParseString("XG2G_OWI_BASE", cfg.OWIBase)
-	cfg.OWIUsername = ParseString("XG2G_OWI_USER", cfg.OWIUsername)
-	cfg.OWIPassword = ParseString("XG2G_OWI_PASS", cfg.OWIPassword)
+	// OpenWebIF (with backward-compatible aliases for v2.0)
+	cfg.OWIBase = ParseStringWithAlias("XG2G_OWI_BASE", "RECEIVER_IP", cfg.OWIBase)
+	cfg.OWIUsername = ParseStringWithAlias("XG2G_OWI_USER", "RECEIVER_USER", cfg.OWIUsername)
+	cfg.OWIPassword = ParseStringWithAlias("XG2G_OWI_PASS", "RECEIVER_PASS", cfg.OWIPassword)
 	cfg.StreamPort = ParseInt("XG2G_STREAM_PORT", cfg.StreamPort)
 
 	// OpenWebIF timeouts/retries

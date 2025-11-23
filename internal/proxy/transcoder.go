@@ -549,15 +549,27 @@ func IsTranscodingEnabled() bool {
 }
 
 // IsH264RepairEnabled checks if H.264 stream repair is enabled via environment variable.
-// Default: false (disabled by default, enable explicitly for Plex compatibility)
-// Set XG2G_H264_STREAM_REPAIR=true to enable
+// Default: true (enabled by default for Plex/Jellyfin compatibility in v2.0)
+// Set XG2G_H264_STREAM_REPAIR=false to disable
 func IsH264RepairEnabled() bool {
 	env := strings.ToLower(os.Getenv("XG2G_H264_STREAM_REPAIR"))
-	return env == envTrue
+	// Default to true (v2.0), can be explicitly disabled with "false"
+	if env == "false" {
+		return false
+	}
+	return true
 }
 
 // GetTranscoderConfig builds transcoder configuration from environment variables.
 func GetTranscoderConfig() TranscoderConfig {
+	// Check for deprecated audio transcoding feature
+	if audioTranscodeEnv := strings.ToLower(os.Getenv("XG2G_ENABLE_AUDIO_TRANSCODING")); audioTranscodeEnv == envTrue {
+		// Only warn if explicitly enabled (not just using defaults)
+		fmt.Fprintf(os.Stderr, "[DEPRECATED] XG2G_ENABLE_AUDIO_TRANSCODING is deprecated and will be removed in v3.0.\n")
+		fmt.Fprintf(os.Stderr, "[DEPRECATED] Use XG2G_H264_STREAM_REPAIR=true (enabled by default in v2.0) for Plex/Jellyfin compatibility.\n")
+		fmt.Fprintf(os.Stderr, "[DEPRECATED] Plex will handle transcoding automatically with H.264 Stream Repair enabled.\n")
+	}
+
 	codec := os.Getenv("XG2G_AUDIO_CODEC")
 	if codec == "" {
 		codec = "aac" // Default to AAC
@@ -580,8 +592,13 @@ func GetTranscoderConfig() TranscoderConfig {
 		ffmpegPath = "/usr/bin/ffmpeg" // Use system ffmpeg by default (absolute path required)
 	}
 
-	// GPU transcoding configuration
+	// GPU transcoding configuration (DEPRECATED in v2.0, will be removed in v3.0)
 	gpuEnabled := strings.ToLower(os.Getenv("XG2G_GPU_TRANSCODE")) == envTrue
+	if gpuEnabled {
+		fmt.Fprintf(os.Stderr, "[DEPRECATED] XG2G_GPU_TRANSCODE is deprecated and will be removed in v3.0.\n")
+		fmt.Fprintf(os.Stderr, "[DEPRECATED] Use XG2G_H264_STREAM_REPAIR=true (enabled by default in v2.0) for Plex/Jellyfin compatibility.\n")
+		fmt.Fprintf(os.Stderr, "[DEPRECATED] Plex will handle transcoding automatically with H.264 Stream Repair enabled.\n")
+	}
 	transcoderURL := os.Getenv("XG2G_TRANSCODER_URL")
 	if transcoderURL == "" {
 		transcoderURL = "http://localhost:8085" // Default GPU transcoder URL
