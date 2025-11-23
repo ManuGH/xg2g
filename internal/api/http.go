@@ -6,6 +6,7 @@ package api
 import (
 	"context"
 	"crypto/subtle"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,6 +28,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 )
+
+//go:embed ui.html
+var uiHTML []byte
 
 // Server represents the HTTP API server for xg2g.
 type Server struct {
@@ -229,6 +233,12 @@ func (s *Server) routes() http.Handler {
 	// Health checks (versionless - infrastructure endpoints)
 	r.Get("/healthz", s.handleHealth)
 	r.Get("/readyz", s.handleReady)
+
+	// Web UI (read-only dashboard)
+	r.Get("/ui", s.handleUI)
+	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/ui", http.StatusTemporaryRedirect)
+	})
 
 	// Legacy API endpoints (deprecated - maintain backward compatibility)
 	// These will be removed in a future major version
@@ -843,6 +853,12 @@ func (s *Server) registerV1Routes(r chi.Router) {
 			r.With(middleware.CSRFProtection()).
 				Post("/reload", s.authRequired(s.handleConfigReloadV1))
 		})
+		// Web UI endpoints (read-only dashboard)
+		r.Route("/ui", func(r chi.Router) {
+			r.Get("/status", s.handleUIStatus)    // Enhanced status for dashboard
+			r.Get("/urls", s.handleUIUrls)        // M3U/XMLTV URLs
+			r.Post("/refresh", s.handleUIRefresh) // Refresh trigger (no auth for UI)
+		})
 	})
 }
 
@@ -965,6 +981,201 @@ func (s *Server) SetConfigHolder(holder ConfigHolder) {
 // SetAuditLogger sets the audit logger for security event logging (optional).
 func (s *Server) SetAuditLogger(logger AuditLogger) {
 	s.auditLogger = logger
+}
+
+// handleUIStatus handles GET /api/v1/ui/status - enhanced status for Web UI dashboard.
+// Returns aggregated status including health checks, receiver info, channels, and EPG.
+func (s *Server) handleUIStatus(w http.ResponseWriter, r *http.Request) {
+	logger := log.WithComponentFromContext(r.Context(), "api.ui")
+
+	// Get current status
+	s.mu.RLock()
+	status := s.status
+	cfg := s.cfg
+	s.mu.RUnlock()
+
+	// Get health check results (verbose mode to include all checks)
+	healthStatus := s.healthManager.Health(r.Context(), true)
+
+	// Build receiver info
+	receiverInfo := map[string]any{
+		"base_url":   cfg.OWIBase,
+		"configured": cfg.OWIBase != "",
+	}
+
+	// Try to get receiver latency from health check
+	if receiverCheck, ok := healthStatus.Checks["receiver_connection"]; ok {
+		receiverInfo["reachable"] = receiverCheck.Status == health.StatusHealthy
+		if receiverCheck.Error != "" {
+			receiverInfo["error"] = receiverCheck.Error
+		}
+	}
+
+	// Build channels info
+	channelsInfo := map[string]any{
+		"count":        status.Channels,
+		"last_updated": status.LastRun,
+	}
+
+	// Build EPG info
+	epgInfo := map[string]any{
+		"enabled":      cfg.EPGEnabled,
+		"programmes":   status.EPGProgrammes,
+		"last_updated": status.LastRun,
+	}
+
+	// Check if EPG is stale (>48h old)
+	if !status.LastRun.IsZero() {
+		age := time.Since(status.LastRun)
+		epgInfo["stale"] = age > 48*time.Hour
+		epgInfo["age_hours"] = int(age.Hours())
+	}
+
+	// Build response
+	resp := map[string]any{
+		"health": map[string]any{
+			"status": string(healthStatus.Status),
+			"checks": healthStatus.Checks,
+		},
+		"receiver": receiverInfo,
+		"channels": channelsInfo,
+		"epg":      epgInfo,
+		"version":  status.Version,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-API-Version", "1")
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		logger.Error().Err(err).Msg("failed to encode UI status response")
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	logger.Debug().
+		Str("event", "ui.status.success").
+		Str("health_status", string(healthStatus.Status)).
+		Int("channels", status.Channels).
+		Msg("UI status request handled")
+}
+
+// handleUIUrls handles GET /api/v1/ui/urls - returns M3U and XMLTV URLs.
+func (s *Server) handleUIUrls(w http.ResponseWriter, r *http.Request) {
+	logger := log.WithComponentFromContext(r.Context(), "api.ui")
+
+	s.mu.RLock()
+	cfg := s.cfg
+	s.mu.RUnlock()
+
+	// Build base URL from request (use Host header)
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	baseURL := fmt.Sprintf("%s://%s", scheme, r.Host)
+
+	// Get playlist filename from config or env
+	playlistName := os.Getenv("XG2G_PLAYLIST_FILENAME")
+	if strings.TrimSpace(playlistName) == "" {
+		playlistName = "playlist.m3u"
+	}
+
+	// Build URLs
+	m3uURL := fmt.Sprintf("%s/files/%s", baseURL, playlistName)
+	xmltvURL := ""
+	if cfg.XMLTVPath != "" {
+		xmltvURL = fmt.Sprintf("%s/%s", baseURL, cfg.XMLTVPath)
+	}
+
+	resp := map[string]any{
+		"m3u_url":   m3uURL,
+		"xmltv_url": xmltvURL,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-API-Version", "1")
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		logger.Error().Err(err).Msg("failed to encode UI urls response")
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	logger.Debug().
+		Str("event", "ui.urls.success").
+		Str("m3u_url", m3uURL).
+		Str("xmltv_url", xmltvURL).
+		Msg("UI URLs request handled")
+}
+
+// handleUIRefresh handles POST /api/v1/ui/refresh - triggers channel/EPG refresh.
+// This is a simplified refresh endpoint for the Web UI (no authentication required).
+func (s *Server) handleUIRefresh(w http.ResponseWriter, r *http.Request) {
+	logger := log.WithComponentFromContext(r.Context(), "api.ui")
+
+	// Try to acquire the refresh flag atomically
+	if !s.refreshing.CompareAndSwap(false, true) {
+		logger.Warn().Str("event", "ui.refresh.conflict").Msg("refresh already in progress")
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Retry-After", "30")
+		w.WriteHeader(http.StatusConflict)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status":       "error",
+			"message":      "A refresh operation is already in progress",
+			"triggered_at": time.Now(),
+		})
+		return
+	}
+
+	// Release the flag when done
+	defer s.refreshing.Store(false)
+
+	// Trigger refresh
+	logger.Info().Str("event", "ui.refresh.started").Msg("refresh triggered from UI")
+
+	newStatus, err := s.refreshFn(r.Context(), s.cfg)
+	if err != nil {
+		logger.Error().Err(err).Str("event", "ui.refresh.failed").Msg("refresh failed")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status":       "error",
+			"message":      "Refresh failed",
+			"error":        err.Error(),
+			"triggered_at": time.Now(),
+		})
+		return
+	}
+
+	// Update status
+	s.mu.Lock()
+	s.status = *newStatus
+	s.mu.Unlock()
+
+	logger.Info().
+		Str("event", "ui.refresh.success").
+		Int("channels", newStatus.Channels).
+		Int("bouquets", newStatus.Bouquets).
+		Msg("refresh completed successfully")
+
+	w.Header().Set("Content-Type", "application/json")
+	resp := map[string]any{
+		"status":       "success",
+		"message":      "Refresh completed successfully",
+		"triggered_at": time.Now(),
+		"channels":     newStatus.Channels,
+		"bouquets":     newStatus.Bouquets,
+	}
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		logger.Error().Err(err).Msg("failed to encode UI refresh response")
+		return
+	}
+}
+
+// handleUI serves the embedded Web UI dashboard
+func (s *Server) handleUI(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(uiHTML)
 }
 
 // handleStatusV2Placeholder is a placeholder for v2 status endpoint
