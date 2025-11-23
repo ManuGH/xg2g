@@ -169,6 +169,9 @@ services:
     # ===========================================================================
     # HEALTH CHECK
     # ===========================================================================
+    # Basic health check (liveness probe)
+    # For detailed status with component checks, use: /healthz?verbose=true
+    # Checks: receiver connectivity, channels loaded, EPG status, playlist files
     healthcheck:
       test: wget -q -T 5 -O /dev/null http://localhost:8080/healthz || exit 1
       interval: 30s

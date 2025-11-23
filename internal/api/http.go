@@ -162,6 +162,44 @@ func New(cfg jobs.Config) *Server {
 		return s.status.LastRun, s.status.Error
 	}))
 
+	// Receiver connectivity check
+	s.healthManager.RegisterChecker(health.NewReceiverChecker(func() error {
+		if cfg.OWIBase == "" {
+			return fmt.Errorf("receiver not configured")
+		}
+		// Quick HEAD request to check if receiver is reachable
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		req, err := http.NewRequestWithContext(ctx, http.MethodHead, cfg.OWIBase, nil)
+		if err != nil {
+			return err
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode >= 400 {
+			return fmt.Errorf("receiver returned HTTP %d", resp.StatusCode)
+		}
+		return nil
+	}))
+
+	// Channels loaded check
+	s.healthManager.RegisterChecker(health.NewChannelsChecker(func() int {
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		return s.status.Channels
+	}))
+
+	// EPG status check
+	s.healthManager.RegisterChecker(health.NewEPGChecker(func() (bool, time.Time) {
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		loaded := s.status.EPGProgrammes > 0
+		return loaded, s.status.LastRun
+	}))
+
 	return s
 }
 

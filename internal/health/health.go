@@ -312,3 +312,113 @@ func (c *LastRunChecker) Check(ctx context.Context) CheckResult {
 		Message: "last job run successful",
 	}
 }
+
+// ReceiverChecker checks if the OpenWebIF receiver is reachable
+type ReceiverChecker struct {
+	checkConnection func() error
+}
+
+// NewReceiverChecker creates a checker for receiver connectivity
+func NewReceiverChecker(checkConnection func() error) *ReceiverChecker {
+	return &ReceiverChecker{
+		checkConnection: checkConnection,
+	}
+}
+
+func (c *ReceiverChecker) Name() string {
+	return "receiver_connection"
+}
+
+func (c *ReceiverChecker) Check(ctx context.Context) CheckResult {
+	if err := c.checkConnection(); err != nil {
+		return CheckResult{
+			Status:  StatusUnhealthy,
+			Error:   err.Error(),
+			Message: "receiver unreachable",
+		}
+	}
+
+	return CheckResult{
+		Status:  StatusHealthy,
+		Message: "receiver connected",
+	}
+}
+
+// ChannelsChecker checks if channels are loaded in the playlist
+type ChannelsChecker struct {
+	getChannelCount func() int
+}
+
+// NewChannelsChecker creates a checker for channel availability
+func NewChannelsChecker(getChannelCount func() int) *ChannelsChecker {
+	return &ChannelsChecker{
+		getChannelCount: getChannelCount,
+	}
+}
+
+func (c *ChannelsChecker) Name() string {
+	return "channels_loaded"
+}
+
+func (c *ChannelsChecker) Check(ctx context.Context) CheckResult {
+	count := c.getChannelCount()
+
+	if count == 0 {
+		return CheckResult{
+			Status:  StatusUnhealthy,
+			Message: "no channels loaded",
+		}
+	}
+
+	return CheckResult{
+		Status:  StatusHealthy,
+		Message: "channels available",
+	}
+}
+
+// EPGChecker checks if EPG data is loaded and fresh
+type EPGChecker struct {
+	getEPGStatus func() (loaded bool, lastUpdate time.Time)
+}
+
+// NewEPGChecker creates a checker for EPG availability
+func NewEPGChecker(getEPGStatus func() (bool, time.Time)) *EPGChecker {
+	return &EPGChecker{
+		getEPGStatus: getEPGStatus,
+	}
+}
+
+func (c *EPGChecker) Name() string {
+	return "epg_status"
+}
+
+func (c *EPGChecker) Check(ctx context.Context) CheckResult {
+	loaded, lastUpdate := c.getEPGStatus()
+
+	if !loaded {
+		return CheckResult{
+			Status:  StatusDegraded,
+			Message: "EPG not loaded (optional)",
+		}
+	}
+
+	if lastUpdate.IsZero() {
+		return CheckResult{
+			Status:  StatusDegraded,
+			Message: "EPG loaded but no update timestamp",
+		}
+	}
+
+	age := time.Since(lastUpdate)
+	if age > 48*time.Hour {
+		return CheckResult{
+			Status:  StatusDegraded,
+			Message: "EPG data is stale (>48h old)",
+		}
+	}
+
+	return CheckResult{
+		Status:  StatusHealthy,
+		Message: "EPG data fresh",
+	}
+}

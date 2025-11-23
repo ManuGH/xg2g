@@ -156,7 +156,17 @@ func TestHandleReady(t *testing.T) {
 	xmltvPath := "epg.xml"
 	xmltvFullPath := filepath.Join(tempDir, xmltvPath)
 
-	cfg := jobs.Config{DataDir: tempDir, XMLTVPath: xmltvPath}
+	// Create a mock receiver server for health check
+	mockReceiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer mockReceiver.Close()
+
+	cfg := jobs.Config{
+		DataDir:   tempDir,
+		XMLTVPath: xmltvPath,
+		OWIBase:   mockReceiver.URL, // Use mock receiver for health check
+	}
 	s := New(cfg)
 	handler := s.Handler()
 
@@ -171,6 +181,8 @@ func TestHandleReady(t *testing.T) {
 	// Case 2: Ready
 	s.status.LastRun = time.Now()
 	s.status.Error = ""
+	s.status.Channels = 10       // Set some channels for health check
+	s.status.EPGProgrammes = 100 // Set EPG programmes for health check
 	require.NoError(t, os.WriteFile(playlistPath, []byte("#EXTM3U"), 0o600))
 	require.NoError(t, os.WriteFile(xmltvFullPath, []byte("<tv></tv>"), 0o600))
 

@@ -53,8 +53,11 @@ services:
     volumes:
       - xg2g-data:/data # M3U and XMLTV files stored here
     restart: unless-stopped
+    # Basic health check (liveness probe)
+    # For detailed status with component checks, use: curl http://localhost:8080/healthz?verbose=true
+    # Checks: receiver connectivity, channels loaded, EPG status, playlist files
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/api/status"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/healthz"]
       interval: 30s
       timeout: 10s
       retries: 3
