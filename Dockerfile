@@ -63,6 +63,11 @@ RUN if [ -f /etc/alpine-release ]; then \
 ENV CARGO_HOME=/usr/local/cargo \
     CARGO_TARGET_DIR=/build/target
 
+# Set FFMPEG_INCLUDE_DIR for ac-ffmpeg-build crate
+# For both Alpine and Debian, FFmpeg headers are in /usr/include
+# During cross-compilation, xx-cargo will handle the sysroot paths automatically
+ENV FFMPEG_INCLUDE_DIR=/usr/include
+
 # Copy Rust transcoder source
 COPY transcoder/Cargo.toml ./
 COPY transcoder/src ./src
