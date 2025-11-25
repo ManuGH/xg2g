@@ -96,9 +96,11 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     xx-cargo build --release --target-dir target; \
     fi && \
     # xx-cargo puts artifacts in target/<triple>/release/ or target/release/ depending on cross setup
-    # We use 'xx-verify' to find the correct artifact or just check both locations
-    (cp target/$(xx-info triple)/release/libxg2g_transcoder.so /output/ 2>/dev/null || cp target/release/libxg2g_transcoder.so /output/) && \
-    (cp target/$(xx-info triple)/release/libxg2g_transcoder.rlib /output/ 2>/dev/null || cp target/release/libxg2g_transcoder.rlib /output/)
+    # Debug: find where the artifacts actually are
+    find target -name "libxg2g_transcoder.so" -o -name "libxg2g_transcoder.rlib" && \
+    # Copy artifacts using find to locate them
+    cp $(find target -name "libxg2g_transcoder.so" | head -n1) /output/ && \
+    cp $(find target -name "libxg2g_transcoder.rlib" | head -n1) /output/
 
 # =============================================================================
 # Stage 2: Build Go Daemon with CGO (required for Rust FFI) + Run Tests
