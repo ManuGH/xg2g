@@ -86,6 +86,18 @@ func main() {
 		})
 	})
 
+	// Add EPG endpoints
+	epgHandler := func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("EPG request (%s) from %s", r.URL.Path, r.RemoteAddr)
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		// Return empty list of events for now
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"events": []any{},
+		})
+	}
+	mux.HandleFunc("/api/epgservice", epgHandler)
+	mux.HandleFunc("/web/epgservice", epgHandler)
+
 	// Add catch-all handler for debugging
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {

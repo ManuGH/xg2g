@@ -173,7 +173,7 @@ jobs:
 
           healthy=false
           for i in {1..30}; do
-            if curl --fail --show-error --silent --max-time 1 "$daemon_base/api/status" >/dev/null; then
+            if curl --fail --show-error --silent --max-time 1 "$daemon_base/api/v1/status" >/dev/null; then
               healthy=true
               break
             fi
@@ -192,16 +192,16 @@ jobs:
             echo "🔍 Checking if port 8080 is in use:" >&2
             netstat -tuln | grep 8080 || echo "Port not bound"
             echo "🔍 Curl verbose output for last attempt:" >&2
-            curl -v "$daemon_base/api/status" || true
+            curl -v "$daemon_base/api/v1/status" || true
             exit 1
           fi
           echo "✅ Daemon ready on ${daemon_base}"
 
           echo "🔄 Triggering refresh..."
-          curl -fsS --retry 5 --retry-all-errors --retry-delay 1 --max-time 30 -H "X-API-Token: ${XG2G_API_TOKEN}" -H "Origin: http://127.0.0.1:8080" -X POST "$daemon_base/api/refresh"
+          curl -fsS --retry 5 --retry-all-errors --retry-delay 1 --max-time 30 -H "X-API-Token: ${XG2G_API_TOKEN}" -H "Origin: http://127.0.0.1:8080" -X POST "$daemon_base/api/v1/refresh"
 
           echo "📊 Checking status..."
-          curl -fsS --retry 3 --retry-all-errors --retry-delay 0 --max-time 5 "$daemon_base/api/status"
+          curl -fsS --retry 3 --retry-all-errors --retry-delay 0 --max-time 5 "$daemon_base/api/v1/status"
 
           ls -lh "$XG2G_DATA"/playlist.m3u "$XG2G_DATA"/xmltv.xml
 
