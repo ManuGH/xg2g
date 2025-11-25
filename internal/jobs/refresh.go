@@ -4,7 +4,6 @@
 package jobs
 
 import (
-
 	"context"
 
 	"errors"
@@ -21,13 +20,9 @@ import (
 
 	"time"
 
-
-
 	"github.com/ManuGH/xg2g/internal/config"
 
 	xglog "github.com/ManuGH/xg2g/internal/log"
-
-
 
 	"github.com/ManuGH/xg2g/internal/epg"
 
@@ -46,38 +41,29 @@ import (
 	"go.opentelemetry.io/otel/codes"
 
 	"go.opentelemetry.io/otel/trace"
-
 )
-
-
 
 // ErrInvalidStreamPort marks an invalid stream port configuration.
 
 var ErrInvalidStreamPort = errors.New("invalid stream port")
 
-
-
 // Status represents the current state of the refresh job
 
 type Status struct {
+	Version string `json:"version"`
 
-	Version       string    `json:"version"`
+	LastRun time.Time `json:"lastRun"`
 
-	LastRun       time.Time `json:"lastRun"`
+	Channels int `json:"channels"`
 
-	Channels      int       `json:"channels"`
+	Bouquets int `json:"bouquets,omitempty"` // Number of bouquets processed
 
-	Bouquets      int       `json:"bouquets,omitempty"`      // Number of bouquets processed
+	EPGProgrammes int `json:"epgProgrammes,omitempty"` // Number of EPG programmes collected
 
-	EPGProgrammes int       `json:"epgProgrammes,omitempty"` // Number of EPG programmes collected
+	DurationMS int64 `json:"durationMs,omitempty"` // Duration of last refresh in milliseconds
 
-	DurationMS    int64     `json:"durationMs,omitempty"`    // Duration of last refresh in milliseconds
-
-	Error         string    `json:"error,omitempty"`
-
+	Error string `json:"error,omitempty"`
 }
-
-
 
 // Refresh performs the complete refresh cycle: fetch bouquets → services → write M3U + XMLTV
 

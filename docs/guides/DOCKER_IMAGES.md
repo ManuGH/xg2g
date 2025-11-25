@@ -74,6 +74,7 @@ grep -o 'avx2\|avx\|sse4_2' /proc/cpuinfo | sort -u
 - Go: 1.25
 - Rust: 1.84
 - Alpine: 3.22.2
+- Debian: 12 (Bookworm) - Stable base for reliability
 - FFmpeg: 7.x (Alpine package)
 
 **Pinning Strategy:**
