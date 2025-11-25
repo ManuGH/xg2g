@@ -106,11 +106,11 @@ RUN if [ -f /etc/alpine-release ]; then \
     libavcodec-dev \
     libavformat-dev \
     libavfilter-dev \
-    libavcodec61 \
-    libavformat61 \
-    libavfilter10 \
-    libavutil59 \
-    libswresample5 \
+    libavcodec59 \
+    libavformat59 \
+    libavfilter8 \
+    libavutil57 \
+    libswresample4 \
     && rm -rf /var/lib/apt/lists/*; \
     fi
 
@@ -196,11 +196,11 @@ RUN if [ -f /etc/alpine-release ]; then \
     tzdata \
     wget \
     ffmpeg \
-    libavcodec61 \
-    libavformat61 \
-    libavfilter10 \
-    libavutil59 \
-    libswresample5 \
+    libavcodec59 \
+    libavformat59 \
+    libavfilter8 \
+    libavutil57 \
+    libswresample4 \
     && rm -rf /var/lib/apt/lists/* && \
     groupadd -g 65532 xg2g && \
     useradd -u 65532 -g xg2g -d /app -s /bin/false xg2g && \
