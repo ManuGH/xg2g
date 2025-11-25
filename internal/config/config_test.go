@@ -7,8 +7,6 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
-
-	"github.com/ManuGH/xg2g/internal/jobs"
 )
 
 func TestLoadDefaults(t *testing.T) {
@@ -174,14 +172,14 @@ func TestValidateEPGBounds(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		cfg       func() jobs.Config
+		cfg       func() AppConfig
 		shouldErr bool
 		errMsg    string
 	}{
 		{
 			name: "valid EPG config",
-			cfg: func() jobs.Config {
-				return jobs.Config{
+			cfg: func() AppConfig {
+				return AppConfig{
 					DataDir:           tmpDir,
 					OWIBase:           "http://test.local",
 					StreamPort:        8001,
@@ -198,8 +196,8 @@ func TestValidateEPGBounds(t *testing.T) {
 		},
 		{
 			name: "EPGTimeoutMS too low",
-			cfg: func() jobs.Config {
-				return jobs.Config{
+			cfg: func() AppConfig {
+				return AppConfig{
 					DataDir:           tmpDir,
 					OWIBase:           "http://test.local",
 					StreamPort:        8001,
@@ -217,8 +215,8 @@ func TestValidateEPGBounds(t *testing.T) {
 		},
 		{
 			name: "EPGTimeoutMS too high",
-			cfg: func() jobs.Config {
-				return jobs.Config{
+			cfg: func() AppConfig {
+				return AppConfig{
 					DataDir:           tmpDir,
 					OWIBase:           "http://test.local",
 					StreamPort:        8001,
@@ -236,8 +234,8 @@ func TestValidateEPGBounds(t *testing.T) {
 		},
 		{
 			name: "EPGRetries too high",
-			cfg: func() jobs.Config {
-				return jobs.Config{
+			cfg: func() AppConfig {
+				return AppConfig{
 					DataDir:           tmpDir,
 					OWIBase:           "http://test.local",
 					StreamPort:        8001,
@@ -255,8 +253,8 @@ func TestValidateEPGBounds(t *testing.T) {
 		},
 		{
 			name: "FuzzyMax too high",
-			cfg: func() jobs.Config {
-				return jobs.Config{
+			cfg: func() AppConfig {
+				return AppConfig{
 					DataDir:           tmpDir,
 					OWIBase:           "http://test.local",
 					StreamPort:        8001,

@@ -135,6 +135,7 @@ graph LR
 **Responsibility**: Expose REST API for playlist management and status queries
 
 **Key Endpoints**:
+
 - `GET /api/v1/status` - Service health and version
 - `POST /api/v1/refresh` - Trigger playlist/EPG refresh
 - `GET /api/v1/channels` - List available channels
@@ -146,11 +147,13 @@ graph LR
 **Responsibility**: Proxy live streams from Enigma2 to clients with optional transcoding
 
 **Flow**:
+
 ```
 Client → xg2g Proxy → Enigma2 Stream → [Transcoding?] → Client
 ```
 
 **Transcoding Modes**:
+
 - **Passthrough**: Direct proxy (no transcoding)
 - **Audio Transcoding**: FFmpeg CPU-based (AAC, MP3)
 - **GPU Transcoding**: External transcoder service (VAAPI, NVENC, QSV)
@@ -162,6 +165,7 @@ Client → xg2g Proxy → Enigma2 Stream → [Transcoding?] → Client
 **Responsibility**: Periodic tasks for playlist/EPG updates
 
 **Jobs**:
+
 - **Playlist Refresh**: Fetch bouquets, generate M3U playlist
 - **EPG Refresh**: Fetch EPG data, generate XMLTV
 
@@ -174,10 +178,12 @@ Client → xg2g Proxy → Enigma2 Stream → [Transcoding?] → Client
 **Responsibility**: Emulate HDHomeRun tuner for auto-discovery in Plex/Jellyfin
 
 **Protocols**:
+
 - **SSDP**: UDP multicast discovery on 239.255.255.250:1900
 - **HTTP**: HDHomeRun JSON API responses
 
 **Endpoints**:
+
 - `GET /discover.json` - Device info
 - `GET /lineup.json` - Channel lineup
 - `GET /lineup_status.json` - Tuner status
@@ -203,6 +209,7 @@ Client → xg2g Proxy → Enigma2 Stream → [Transcoding?] → Client
 **Responsibility**: Distributed tracing with OpenTelemetry
 
 **Instrumented Components**:
+
 - HTTP API (all requests)
 - GPU Transcoding (latency, codec, device)
 - EPG Refresh Jobs (duration, channel count)
@@ -350,7 +357,7 @@ spec:
 | Component | Technology | Why |
 |-----------|------------|-----|
 | **Language** | Go 1.25+ | Performance, concurrency, static typing |
-| **HTTP Server** | `net/http` + `gorilla/mux` | Standard library + flexible routing |
+| **HTTP Server** | `net/http` + `go-chi/chi` | Standard library + flexible routing |
 | **Logging** | `rs/zerolog` | Fast, structured, zero-allocation |
 | **Metrics** | Prometheus | Industry standard, rich ecosystem |
 | **Tracing** | OpenTelemetry | Vendor-neutral, future-proof |
@@ -360,13 +367,15 @@ spec:
 ### Dependencies
 
 **Production**:
-- `github.com/gorilla/mux` - HTTP routing
+
+- `github.com/go-chi/chi` - HTTP routing
 - `github.com/rs/zerolog` - Structured logging
 - `github.com/prometheus/client_golang` - Metrics
 - `go.opentelemetry.io/otel` - Distributed tracing
 - `gopkg.in/yaml.v3` - YAML parsing
 
 **Development/Testing**:
+
 - `github.com/stretchr/testify` - Test assertions
 - `github.com/google/go-cmp` - Deep comparisons
 
@@ -411,6 +420,9 @@ spec:
 3. **Stream URLs**: May expose internal IPs
    - Mitigation: `XG2G_STREAM_BASE` URL rewriting
 
+> [!IMPORTANT]
+> **Developer Note**: The `Process` method in `internal/transcoder/rust.go` encapsulates critical safety mechanisms (`runtime.LockOSThread`, buffer limits, error retrieval). **Never** bypass this method or create custom FFI wrappers without replicating these safety guarantees. Direct CGO calls without thread locking will lead to Undefined Behavior (UB) due to Rust's `thread_local` storage.
+
 ### Security Measures
 
 - **Non-Root Containers**: User `nonroot:nonroot`
@@ -419,6 +431,14 @@ spec:
 - **Automated Scanning**: govulncheck, Trivy, CodeQL
 
 **Related**: [SECURITY.md](../SECURITY.md)
+422:
+437: 2.  **Discovery**: The server checks for VAAPI devices (`/dev/dri/renderD128`).
+438: 3.  **Permissions**: The Docker container runs as user `xg2g` (65532) but is added to `video` and `render` groups to ensure access.
+439: 4.  **Process**:
+    - Client requests stream
+    - Proxy forwards to internal GPU server (HTTP)
+    - GPU server uses `ffmpeg` (via `ac-ffmpeg` crate) to transcode using VAAPI hardware acceleration
+    - Stream returned to proxy -> client
 
 ## References
 

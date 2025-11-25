@@ -205,7 +205,7 @@ func TestParseFloat(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			got := parseFloat(tt.input)
+			got, _ := parseFloat(tt.input)
 			if got != tt.want {
 				t.Errorf("parseFloat(%s) = %v, want %v", tt.input, got, tt.want)
 			}

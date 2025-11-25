@@ -145,7 +145,7 @@ func TestAPIRateLimit_Configuration(t *testing.T) {
 
 	// Make 60 requests (at limit)
 	for i := 0; i < 60; i++ {
-		req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
 		req.RemoteAddr = "192.168.1.1:12345"
 		w := httptest.NewRecorder()
 		limitedHandler.ServeHTTP(w, req)
@@ -156,7 +156,7 @@ func TestAPIRateLimit_Configuration(t *testing.T) {
 	}
 
 	// 61st request should be rate limited
-	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
 	req.RemoteAddr = "192.168.1.1:12345"
 	w := httptest.NewRecorder()
 	limitedHandler.ServeHTTP(w, req)

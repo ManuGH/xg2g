@@ -9,32 +9,47 @@
 ARG BASE_VARIANT=trixie
 
 # =============================================================================
+# Stage 0: Cross-compilation helpers
+# =============================================================================
+FROM --platform=$BUILDPLATFORM tonistiigi/xx:1.6.1 AS xx
+
+# =============================================================================
 # Stage 1: Build Rust Remuxer (ac-ffmpeg library for audio transcoding)
 # =============================================================================
-FROM rust:1.91-${BASE_VARIANT} AS rust-builder
+FROM --platform=$BUILDPLATFORM rust:1.91-${BASE_VARIANT} AS rust-builder
+
+# Copy xx helpers
+COPY --from=xx / /
+
+# Target platform arguments provided by Docker Buildx
+ARG TARGETPLATFORM
+ARG TARGETARCH
 
 WORKDIR /build
 
-# Install FFmpeg development libraries and build tools
+# Install FFmpeg development libraries and build tools (cross-compiled)
 # Alpine: musl-dev, pkgconfig, ffmpeg-dev
 # Debian: build-essential, pkg-config, libavcodec-dev, libavformat-dev, etc.
 RUN if [ -f /etc/alpine-release ]; then \
-        apk add --no-cache \
-            musl-dev \
-            pkgconfig \
-            ffmpeg-dev \
-            clang-dev \
-            llvm-dev; \
+    # Alpine cross-compilation setup
+    xx-apk add --no-cache \
+    musl-dev \
+    pkgconfig \
+    ffmpeg-dev \
+    clang-dev \
+    llvm-dev \
+    gcc; \
     else \
-        apt-get update && apt-get install -y \
-            build-essential \
-            pkg-config \
-            libavcodec-dev \
-            libavformat-dev \
-            libavfilter-dev \
-            libavdevice-dev \
-            clang \
-            && rm -rf /var/lib/apt/lists/*; \
+    # Debian cross-compilation setup
+    xx-apt-get update && xx-apt-get install -y \
+    build-essential \
+    pkg-config \
+    libavcodec-dev \
+    libavformat-dev \
+    libavfilter-dev \
+    libavdevice-dev \
+    clang \
+    && rm -rf /var/lib/apt/lists/*; \
     fi
 
 # Set Cargo environment variables for caching
@@ -47,65 +62,59 @@ COPY transcoder/src ./src
 
 # Build Rust remuxer library (cdylib for FFI) with BuildKit cache mounts
 # This creates libxg2g_transcoder.so that Go can load via CGO
-# Note: Cargo.lock is generated if missing (not committed to avoid library best practices)
-# Note: On Alpine/musl, must disable crt-static to enable cdylib generation
-# Note: Building without --lib to ensure Cargo.toml crate-type=[cdylib, rlib] is respected
-# Note: BuildKit cache mounts dramatically speed up subsequent builds (40+ min → 5-10 min)
-# Note: Three cache mounts: registry (crates), git (git deps), target (build artifacts)
-# AMD64 CPU targets via feature flags (x86-64 microarchitecture levels)
-# - v1 (baseline): SSE2 (no extra flags needed, default)
-# - v2: +SSE3, SSSE3, SSE4.1, SSE4.2, POPCNT
-# - v3: v2 + AVX, AVX2, BMI1, BMI2, FMA
-# ARM64: Use generic target (no specific CPU level)
+# Note: xx-cargo automatically handles target architecture configuration
 ARG RUST_TARGET_FEATURES=""
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/build/target,id=rust-${BASE_VARIANT} \
+    --mount=type=cache,target=/build/target,id=rust-${BASE_VARIANT}-${TARGETARCH} \
     mkdir -p /output && \
     if [ -f /etc/alpine-release ]; then \
-        RUSTFLAGS="-C target-cpu=generic ${RUST_TARGET_FEATURES} -C opt-level=3 -C target-feature=-crt-static" \
-        cargo build --release; \
+    RUSTFLAGS="-C target-cpu=generic ${RUST_TARGET_FEATURES} -C opt-level=3 -C target-feature=-crt-static" \
+    xx-cargo build --release --target-dir target; \
     else \
-        RUSTFLAGS="-C target-cpu=generic ${RUST_TARGET_FEATURES} -C opt-level=3" \
-        cargo build --release; \
+    RUSTFLAGS="-C target-cpu=generic ${RUST_TARGET_FEATURES} -C opt-level=3" \
+    xx-cargo build --release --target-dir target; \
     fi && \
-    cp target/release/libxg2g_transcoder.so /output/ && \
-    cp target/release/libxg2g_transcoder.rlib /output/
-# Note: strip = true in Cargo.toml profile.release already strips the library
-# Note: Files must be copied out of cache mount to be available in later stages
+    # xx-cargo puts artifacts in target/<triple>/release/ or target/release/ depending on cross setup
+    # We use 'xx-verify' to find the correct artifact or just check both locations
+    (cp target/$(xx-info triple)/release/libxg2g_transcoder.so /output/ 2>/dev/null || cp target/release/libxg2g_transcoder.so /output/) && \
+    (cp target/$(xx-info triple)/release/libxg2g_transcoder.rlib /output/ 2>/dev/null || cp target/release/libxg2g_transcoder.rlib /output/)
 
 # =============================================================================
 # Stage 2: Build Go Daemon with CGO (required for Rust FFI) + Run Tests
 # =============================================================================
-FROM golang:1.25-${BASE_VARIANT} AS go-builder
+FROM --platform=$BUILDPLATFORM golang:1.25-${BASE_VARIANT} AS go-builder
 
-# Install build dependencies for CGO
+# Copy xx helpers
+COPY --from=xx / /
+
+# Target platform arguments
+ARG TARGETPLATFORM
+ARG TARGETARCH
+
+# Install build dependencies for CGO (cross-compiled)
 # Note: Also installing runtime FFmpeg libraries to ensure matching versions for linking
-# Bookworm: libavcodec59, libavformat59, libavfilter8, libavutil57, libswresample4
-# Trixie:   libavcodec61, libavformat61, libavfilter10, libavutil59, libswresample5
 RUN if [ -f /etc/alpine-release ]; then \
-        apk add --no-cache \
-            gcc \
-            musl-dev \
-            ffmpeg-dev; \
+    xx-apk add --no-cache \
+    gcc \
+    musl-dev \
+    ffmpeg-dev; \
     else \
-        apt-get update && apt-get install -y \
-            gcc \
-            libc6-dev \
-            libavcodec-dev \
-            libavformat-dev \
-            libavfilter-dev \
-            libavcodec61 \
-            libavformat61 \
-            libavfilter10 \
-            libavutil59 \
-            libswresample5 \
-            && rm -rf /var/lib/apt/lists/*; \
+    xx-apt-get update && xx-apt-get install -y \
+    gcc \
+    libc6-dev \
+    libavcodec-dev \
+    libavformat-dev \
+    libavfilter-dev \
+    libavcodec61 \
+    libavformat61 \
+    libavfilter10 \
+    libavutil59 \
+    libswresample5 \
+    && rm -rf /var/lib/apt/lists/*; \
     fi
 
 # Build arguments for CPU optimization
-# AMD64 levels: v1 (baseline 2003+), v2 (2009+, default), v3 (2015+, AVX2), v4 (2017+, AVX-512)
-# ARM64: These arguments are ignored
 ARG GO_AMD64_LEVEL=v2
 ARG GO_GCFLAGS=""
 
@@ -113,10 +122,19 @@ WORKDIR /src
 
 # Copy Rust library for CGO linking (from /output, not cache mount)
 COPY --from=rust-builder /output/libxg2g_transcoder.so /usr/local/lib/
+
+# Link library for cross-compilation context
+# We need to ensure the linker finds the library for the TARGET architecture
 RUN if [ -f /etc/alpine-release ]; then \
-        ldconfig /usr/local/lib 2>/dev/null || true; \
+    # Alpine
+    mkdir -p /usr/$(xx-info triple)/lib && \
+    cp /usr/local/lib/libxg2g_transcoder.so /usr/$(xx-info triple)/lib/ && \
+    ldconfig /usr/$(xx-info triple)/lib 2>/dev/null || true; \
     else \
-        ldconfig; \
+    # Debian
+    mkdir -p /usr/lib/$(xx-info triple) && \
+    cp /usr/local/lib/libxg2g_transcoder.so /usr/lib/$(xx-info triple)/ && \
+    ldconfig; \
     fi
 
 # Copy Go source
@@ -130,24 +148,21 @@ ARG GIT_REF
 ARG VERSION
 ARG BUILD_REVISION=unknown
 
-# Build with Rust remuxer (MODE 2) - GPU support (MODE 3) temporarily disabled
-# - Rust remuxer: Available (MODE 2) - 140x faster audio transcoding
-# - FFmpeg subprocess: Fallback for MODE 1
-# TODO: Re-enable GPU support once Rust library exports GPU functions correctly
-# Note: -extldflags='-Wl,-rpath,/app/lib' sets runtime library search path
-# Note: CGO_LDFLAGS adds FFmpeg library path and explicit library linking
+# Build with Rust remuxer (MODE 2)
+# xx-go handles GOOS, GOARCH, CC, CXX, and CGO_ENABLED automatically
 RUN set -eux; \
     BUILD_REF="${GIT_REF:-${VERSION:-dev}}"; \
-    export CGO_ENABLED=1 GOOS=linux GOAMD64="${GO_AMD64_LEVEL}"; \
-    export CGO_LDFLAGS="-L/usr/lib/x86_64-linux-gnu -lavcodec -lavformat -lavfilter -lavutil -lswresample"; \
-    echo "🚀 Building binary with Rust remuxer (MODE 2)"; \
-    go build -buildvcs=false -trimpath -tags=gpu \
-        -ldflags="-s -w -X 'main.Version=${BUILD_REF}' -extldflags='-Wl,-rpath,/app/lib'" \
-        ${GO_GCFLAGS:+-gcflags="${GO_GCFLAGS}"} \
-        -o /out/xg2g ./cmd/daemon
+    export GOAMD64="${GO_AMD64_LEVEL}"; \
+    # Explicitly set CGO_LDFLAGS to help cross-compiler find libraries
+    export CGO_LDFLAGS="-L/usr/lib/$(xx-info triple) -L/usr/$(xx-info triple)/lib -lavcodec -lavformat -lavfilter -lavutil -lswresample"; \
+    echo "🚀 Building binary with Rust remuxer (MODE 2) for $TARGETPLATFORM"; \
+    xx-go build -buildvcs=false -trimpath -tags=gpu \
+    -ldflags="-s -w -X 'main.Version=${BUILD_REF}' -extldflags='-Wl,-rpath,/app/lib'" \
+    ${GO_GCFLAGS:+-gcflags="${GO_GCFLAGS}"} \
+    -o /out/xg2g ./cmd/daemon
 
-# Verify build output
-RUN ls -lh /out/xg2g && /out/xg2g --version || echo "Binary built successfully"
+# Verify build output (check architecture)
+RUN xx-verify /out/xg2g
 
 # =============================================================================
 # Stage 3: Runtime Image with Audio Transcoding
@@ -164,29 +179,33 @@ FROM runtime-${BASE_VARIANT} AS runtime
 # Debian Bookworm: libavcodec59, libavformat59, libavfilter8, libavutil57, libswresample4
 # Debian Trixie:   libavcodec61, libavformat61, libavfilter10, libavutil59, libswresample5
 RUN if [ -f /etc/alpine-release ]; then \
-        apk add --no-cache \
-            ca-certificates \
-            tzdata \
-            wget \
-            ffmpeg \
-            ffmpeg-libs \
-            libgcc && \
-        addgroup -g 65532 -S xg2g && \
-        adduser -u 65532 -S -G xg2g -h /app -s /bin/false xg2g; \
+    apk add --no-cache \
+    ca-certificates \
+    tzdata \
+    wget \
+    ffmpeg \
+    ffmpeg-libs \
+    libgcc && \
+    addgroup -g 65532 -S xg2g && \
+    adduser -u 65532 -S -G xg2g -h /app -s /bin/false xg2g && \
+    addgroup xg2g video && \
+    addgroup xg2g render; \
     else \
-        apt-get update && apt-get install -y \
-            ca-certificates \
-            tzdata \
-            wget \
-            ffmpeg \
-            libavcodec61 \
-            libavformat61 \
-            libavfilter10 \
-            libavutil59 \
-            libswresample5 \
-            && rm -rf /var/lib/apt/lists/* && \
-        groupadd -g 65532 xg2g && \
-        useradd -u 65532 -g xg2g -d /app -s /bin/false xg2g; \
+    apt-get update && apt-get install -y \
+    ca-certificates \
+    tzdata \
+    wget \
+    ffmpeg \
+    libavcodec61 \
+    libavformat61 \
+    libavfilter10 \
+    libavutil59 \
+    libswresample5 \
+    && rm -rf /var/lib/apt/lists/* && \
+    groupadd -g 65532 xg2g && \
+    useradd -u 65532 -g xg2g -d /app -s /bin/false xg2g && \
+    usermod -aG video xg2g && \
+    usermod -aG render xg2g; \
     fi && \
     mkdir -p /data /app/lib && \
     chown -R xg2g:xg2g /data /app
@@ -227,11 +246,12 @@ ENV XG2G_DATA=/data \
 
 # Image metadata
 LABEL org.opencontainers.image.revision="${BUILD_REVISION}" \
-      org.opencontainers.image.source="https://github.com/ManuGH/xg2g" \
-      org.opencontainers.image.description="Enigma2 to IPTV Gateway with Rust-powered audio transcoding"
+    org.opencontainers.image.source="https://github.com/ManuGH/xg2g" \
+    org.opencontainers.image.description="Enigma2 to IPTV Gateway with Rust-powered audio transcoding"
 
 # NOTE: Run as root for LXC compatibility (Proxmox, etc.)
 # Docker+LXC+non-root user triggers sysctl errors: "open sysctl net.ipv4.ip_unprivileged_port_start: permission denied"
 # Running as root in an LXC container is safe (container itself provides isolation)
-# USER xg2g:xg2g  # Commented out for LXC compatibility
+# To enable root for LXC: Set 'user: root' in docker-compose.yml
+USER xg2g:xg2g
 ENTRYPOINT ["/app/xg2g"]

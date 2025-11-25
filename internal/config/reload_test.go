@@ -7,8 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/ManuGH/xg2g/internal/jobs"
 )
 
 // Test helper: create a minimal valid config file
@@ -32,7 +30,7 @@ epg:
 
 // TestNewConfigHolder tests the ConfigHolder constructor.
 func TestNewConfigHolder(t *testing.T) {
-	initial := jobs.Config{
+	initial := AppConfig{
 		Bouquet:     "test-bouquet",
 		DataDir:     "/tmp/test",
 		EPGDays:     7,
@@ -60,7 +58,7 @@ func TestNewConfigHolder(t *testing.T) {
 
 // TestConfigHolder_Get tests thread-safe config read.
 func TestConfigHolder_Get(t *testing.T) {
-	cfg := jobs.Config{
+	cfg := AppConfig{
 		Bouquet:     "initial",
 		EPGDays:     5,
 		OWIBase:     "http://test.example.com",
@@ -173,7 +171,7 @@ func TestConfigHolder_RegisterListener(t *testing.T) {
 	holder := NewConfigHolder(initial, loader, configPath)
 
 	// Register listener
-	ch := make(chan jobs.Config, 1)
+	ch := make(chan AppConfig, 1)
 	holder.RegisterListener(ch)
 
 	// Update config and reload
@@ -212,7 +210,7 @@ func TestConfigHolder_NotifyListeners_NonBlocking(t *testing.T) {
 	holder := NewConfigHolder(initial, loader, configPath)
 
 	// Register listener with no buffer (should not block)
-	ch := make(chan jobs.Config)
+	ch := make(chan AppConfig)
 	holder.RegisterListener(ch)
 
 	// Update and reload
@@ -263,7 +261,7 @@ func TestMaskURL(t *testing.T) {
 
 // TestConfigHolder_LogChanges tests config change logging.
 func TestConfigHolder_LogChanges(t *testing.T) {
-	old := jobs.Config{
+	old := AppConfig{
 		Bouquet:     "old-bouquet",
 		EPGEnabled:  false,
 		EPGDays:     3,
@@ -273,7 +271,7 @@ func TestConfigHolder_LogChanges(t *testing.T) {
 		OWIPassword: "pass",
 	}
 
-	newCfg := jobs.Config{
+	newCfg := AppConfig{
 		Bouquet:     "new-bouquet",
 		EPGEnabled:  true,
 		EPGDays:     7,
@@ -294,7 +292,7 @@ func TestConfigHolder_LogChanges(t *testing.T) {
 
 // TestConfigHolder_Stop tests Stop method.
 func TestConfigHolder_Stop(t *testing.T) {
-	cfg := jobs.Config{
+	cfg := AppConfig{
 		Bouquet:     "test",
 		OWIBase:     "http://test.example.com",
 		OWIUsername: "user",
@@ -311,7 +309,7 @@ func TestConfigHolder_Stop(t *testing.T) {
 
 // TestConfigHolder_StartWatcher_EmptyPath tests watcher with empty path.
 func TestConfigHolder_StartWatcher_EmptyPath(t *testing.T) {
-	cfg := jobs.Config{
+	cfg := AppConfig{
 		Bouquet:     "test",
 		OWIBase:     "http://test.example.com",
 		OWIUsername: "user",

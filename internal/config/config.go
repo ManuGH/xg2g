@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/jobs"
 	"gopkg.in/yaml.v3"
 )
 
@@ -72,6 +71,34 @@ type PiconsConfig struct {
 	BaseURL string `yaml:"baseUrl,omitempty"`
 }
 
+// AppConfig holds all configuration for the application
+type AppConfig struct {
+	Version       string
+	DataDir       string
+	LogLevel      string
+	OWIBase       string
+	OWIUsername   string // Optional: HTTP Basic Auth username
+	OWIPassword   string // Optional: HTTP Basic Auth password
+	Bouquet       string // Comma-separated list of bouquets (e.g., "Premium,Favourites")
+	XMLTVPath     string
+	PiconBase     string
+	FuzzyMax      int
+	StreamPort    int
+	APIToken      string // Optional: for securing the /api/refresh endpoint
+	OWITimeout    time.Duration
+	OWIRetries    int
+	OWIBackoff    time.Duration
+	OWIMaxBackoff time.Duration
+
+	// EPG Configuration
+	EPGEnabled        bool
+	EPGDays           int    // Number of days to fetch EPG data (1-14)
+	EPGMaxConcurrency int    // Max parallel EPG requests (1-10)
+	EPGTimeoutMS      int    // Timeout per EPG request in milliseconds
+	EPGRetries        int    // Retry attempts for EPG requests
+	EPGSource         string // EPG fetch strategy: "bouquet" (fast, single request) or "per-service" (default, per-channel requests)
+}
+
 // Loader handles configuration loading with precedence
 type Loader struct {
 	configPath string
@@ -87,8 +114,8 @@ func NewLoader(configPath, version string) *Loader {
 }
 
 // Load loads configuration with precedence: ENV > File > Defaults
-func (l *Loader) Load() (jobs.Config, error) {
-	cfg := jobs.Config{}
+func (l *Loader) Load() (AppConfig, error) {
+	cfg := AppConfig{}
 
 	// 1. Set defaults
 	l.setDefaults(&cfg)
@@ -119,7 +146,7 @@ func (l *Loader) Load() (jobs.Config, error) {
 }
 
 // setDefaults sets default values for configuration
-func (l *Loader) setDefaults(cfg *jobs.Config) {
+func (l *Loader) setDefaults(cfg *AppConfig) {
 	cfg.DataDir = "/tmp" // Use /tmp as default to pass validation in tests
 	cfg.OWIBase = ""     // No default - must be explicitly configured
 	cfg.Bouquet = "Premium"
@@ -129,6 +156,7 @@ func (l *Loader) setDefaults(cfg *jobs.Config) {
 	cfg.OWIBackoff = 500 * time.Millisecond
 	cfg.OWIMaxBackoff = 30 * time.Second
 	cfg.FuzzyMax = 2
+	cfg.LogLevel = "info"
 
 	// EPG defaults - enabled by default for complete out-of-the-box experience
 	cfg.EPGEnabled = true
@@ -171,9 +199,12 @@ func (l *Loader) loadFile(path string) (*FileConfig, error) {
 }
 
 // mergeFileConfig merges file configuration into jobs.Config
-func (l *Loader) mergeFileConfig(dst *jobs.Config, src *FileConfig) error {
+func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 	if src.DataDir != "" {
 		dst.DataDir = expandEnv(src.DataDir)
+	}
+	if src.LogLevel != "" {
+		dst.LogLevel = src.LogLevel
 	}
 
 	// OpenWebIF
@@ -263,10 +294,11 @@ func (l *Loader) mergeFileConfig(dst *jobs.Config, src *FileConfig) error {
 // mergeEnvConfig merges environment variables into jobs.Config
 // ENV variables have the highest precedence
 // Uses consistent ParseBool/ParseInt/ParseDuration helpers from env.go
-func (l *Loader) mergeEnvConfig(cfg *jobs.Config) {
+func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	// String values (direct assignment)
 	cfg.Version = ParseString("XG2G_VERSION", cfg.Version)
 	cfg.DataDir = ParseString("XG2G_DATA", cfg.DataDir)
+	cfg.LogLevel = ParseString("XG2G_LOG_LEVEL", cfg.LogLevel)
 
 	// OpenWebIF (with backward-compatible aliases for v2.0)
 	cfg.OWIBase = ParseStringWithAlias("XG2G_OWI_BASE", "RECEIVER_IP", cfg.OWIBase)

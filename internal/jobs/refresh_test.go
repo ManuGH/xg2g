@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/epg"
 	xglog "github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
@@ -57,7 +58,7 @@ func (m *mockOWI) GetEPG(_ context.Context, sRef string, _ int) ([]openwebif.EPG
 }
 
 // refreshWithClient is a test helper that allows injecting a mock client.
-func refreshWithClient(ctx context.Context, cfg Config, cl OwiClient) (*Status, error) {
+func refreshWithClient(ctx context.Context, cfg config.AppConfig, cl OwiClient) (*Status, error) {
 	logger := xglog.WithComponentFromContext(ctx, "jobs")
 	logger.Info().Str("event", "refresh.start").Msg("starting refresh")
 
@@ -152,7 +153,7 @@ func refreshWithClient(ctx context.Context, cfg Config, cl OwiClient) (*Status, 
 
 func TestRefreshWithClient_Success(t *testing.T) {
 	tmpdir := t.TempDir()
-	cfg := Config{
+	cfg := config.AppConfig{
 		DataDir:    tmpdir,
 		OWIBase:    "http://mock",
 		Bouquet:    "Favourites",
@@ -184,7 +185,7 @@ func TestRefreshWithClient_Success(t *testing.T) {
 
 func TestRefreshWithClient_BouquetNotFound(t *testing.T) {
 	tmpdir := t.TempDir()
-	cfg := Config{DataDir: tmpdir, OWIBase: "http://mock", Bouquet: "NonExistent", StreamPort: 8001}
+	cfg := config.AppConfig{DataDir: tmpdir, OWIBase: "http://mock", Bouquet: "NonExistent", StreamPort: 8001}
 	mock := &mockOWI{bouquets: map[string]string{"Favourites": "bref1"}, services: map[string][][2]string{}}
 
 	_, err := refreshWithClient(context.Background(), cfg, mock)
@@ -195,7 +196,7 @@ func TestRefreshWithClient_BouquetNotFound(t *testing.T) {
 
 func TestRefreshWithClient_ServicesError(t *testing.T) {
 	tmpdir := t.TempDir()
-	cfg := Config{DataDir: tmpdir, OWIBase: "http://mock", Bouquet: "Favourites", StreamPort: 8001}
+	cfg := config.AppConfig{DataDir: tmpdir, OWIBase: "http://mock", Bouquet: "Favourites", StreamPort: 8001}
 	// mock that has bouquets but no services entry -> Services returns nil slice (treated as zero channels)
 	mock := &mockOWI{bouquets: map[string]string{"Favourites": "bref1"}, services: map[string][][2]string{}}
 
@@ -210,7 +211,7 @@ func TestRefreshWithClient_ServicesError(t *testing.T) {
 
 func TestRefresh_InvalidStreamPort(t *testing.T) {
 	ctx := context.Background()
-	cfg := Config{
+	cfg := config.AppConfig{
 		OWIBase:    "http://test.local",
 		DataDir:    "/tmp/test",
 		StreamPort: 70000, // Invalid port
@@ -228,7 +229,7 @@ func TestRefresh_InvalidStreamPort(t *testing.T) {
 
 func TestRefresh_ConfigValidation(t *testing.T) {
 	ctx := context.Background()
-	cfg := Config{
+	cfg := config.AppConfig{
 		OWIBase: "", // Invalid empty base URL
 		DataDir: "/tmp/test",
 	}
@@ -248,7 +249,7 @@ func TestRefresh_M3UWriteError(t *testing.T) {
 		t.Fatalf("failed to create blocker directory: %v", err)
 	}
 
-	cfg := Config{
+	cfg := config.AppConfig{
 		DataDir:    tmpdir,
 		OWIBase:    "http://mock",
 		Bouquet:    "Favourites",
@@ -272,12 +273,12 @@ func TestRefresh_M3UWriteError(t *testing.T) {
 func TestValidateConfig(t *testing.T) {
 	tests := []struct {
 		name    string
-		cfg     Config
+		cfg     config.AppConfig
 		wantErr bool
 	}{
 		{
 			name: "http_ok",
-			cfg: Config{
+			cfg: config.AppConfig{
 				OWIBase:    "http://test.local",
 				DataDir:    "/tmp",
 				StreamPort: 8001,
@@ -286,7 +287,7 @@ func TestValidateConfig(t *testing.T) {
 		},
 		{
 			name: "https_ok",
-			cfg: Config{
+			cfg: config.AppConfig{
 				OWIBase:    "https://test.local:8080",
 				DataDir:    "/tmp",
 				StreamPort: 8001,
@@ -295,7 +296,7 @@ func TestValidateConfig(t *testing.T) {
 		},
 		{
 			name: "empty_owiabase",
-			cfg: Config{
+			cfg: config.AppConfig{
 				DataDir:    "/tmp",
 				StreamPort: 8001,
 			},
@@ -303,7 +304,7 @@ func TestValidateConfig(t *testing.T) {
 		},
 		{
 			name: "missing_scheme",
-			cfg: Config{
+			cfg: config.AppConfig{
 				OWIBase:    "test.local",
 				DataDir:    "/tmp",
 				StreamPort: 8001,
@@ -312,7 +313,7 @@ func TestValidateConfig(t *testing.T) {
 		},
 		{
 			name: "unsupported_scheme",
-			cfg: Config{
+			cfg: config.AppConfig{
 				OWIBase:    "ftp://test.local",
 				DataDir:    "/tmp",
 				StreamPort: 8001,
@@ -321,7 +322,7 @@ func TestValidateConfig(t *testing.T) {
 		},
 		{
 			name: "invalid_port",
-			cfg: Config{
+			cfg: config.AppConfig{
 				OWIBase:    "http://test.local:abc",
 				DataDir:    "/tmp",
 				StreamPort: 8001,
@@ -330,7 +331,7 @@ func TestValidateConfig(t *testing.T) {
 		},
 		{
 			name: "port_too_large",
-			cfg: Config{
+			cfg: config.AppConfig{
 				OWIBase:    "http://test.local",
 				DataDir:    "/tmp",
 				StreamPort: 99999, // Invalid stream port
@@ -339,7 +340,7 @@ func TestValidateConfig(t *testing.T) {
 		},
 		{
 			name: "empty_datadir",
-			cfg: Config{
+			cfg: config.AppConfig{
 				OWIBase:    "http://test.local",
 				StreamPort: 8001,
 			},
@@ -347,7 +348,7 @@ func TestValidateConfig(t *testing.T) {
 		},
 		{
 			name: "path_traversal",
-			cfg: Config{
+			cfg: config.AppConfig{
 				OWIBase:    "http://test.local",
 				DataDir:    "../../../etc",
 				StreamPort: 8001,
@@ -356,7 +357,7 @@ func TestValidateConfig(t *testing.T) {
 		},
 		{
 			name: "invalid_stream_port_zero",
-			cfg: Config{
+			cfg: config.AppConfig{
 				OWIBase:    "http://test.local",
 				DataDir:    "/tmp",
 				StreamPort: 0,
@@ -365,7 +366,7 @@ func TestValidateConfig(t *testing.T) {
 		},
 		{
 			name: "invalid_stream_port_negative",
-			cfg: Config{
+			cfg: config.AppConfig{
 				OWIBase:    "http://test.local",
 				DataDir:    "/tmp",
 				StreamPort: -1,
@@ -374,7 +375,7 @@ func TestValidateConfig(t *testing.T) {
 		},
 		{
 			name: "missing_host",
-			cfg: Config{
+			cfg: config.AppConfig{
 				OWIBase:    "http:///", // scheme present but host missing
 				DataDir:    "/tmp",
 				StreamPort: 8001,
@@ -506,7 +507,7 @@ func TestSanitizeFilename_Security(t *testing.T) {
 func TestRefresh_VersionPersistence(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	cfg := Config{
+	cfg := config.AppConfig{
 		Version:    "v1.2.3-test",
 		DataDir:    tmpDir,
 		OWIBase:    "http://mock",

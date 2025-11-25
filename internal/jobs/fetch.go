@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/epg"
 	xglog "github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/metrics"
@@ -90,7 +91,7 @@ func (a *epgAggregator) aggregateEvents(events []openwebif.EPGEvent, srefMap map
 
 // collectEPGProgrammes is the main entry point for EPG collection.
 // It routes to either bouquet-based or per-service fetching based on cfg.EPGSource
-func collectEPGProgrammes(ctx context.Context, client *openwebif.Client, items []playlist.Item, cfg Config) []epg.Programme {
+func collectEPGProgrammes(ctx context.Context, client *openwebif.Client, items []playlist.Item, cfg config.AppConfig) []epg.Programme {
 	logger := xglog.FromContext(ctx)
 
 	// Route to appropriate EPG collection strategy
@@ -105,7 +106,7 @@ func collectEPGProgrammes(ctx context.Context, client *openwebif.Client, items [
 }
 
 // collectEPGFromBouquet fetches EPG for all channels in one request (faster, single API call)
-func collectEPGFromBouquet(ctx context.Context, client *openwebif.Client, items []playlist.Item, cfg Config) []epg.Programme {
+func collectEPGFromBouquet(ctx context.Context, client *openwebif.Client, items []playlist.Item, cfg config.AppConfig) []epg.Programme {
 	logger := xglog.FromContext(ctx)
 
 	// Extract bouquet reference from first channel's stream URL
@@ -165,7 +166,7 @@ func collectEPGFromBouquet(ctx context.Context, client *openwebif.Client, items 
 }
 
 // collectEPGPerService fetches EPG data using per-service requests with bounded concurrency
-func collectEPGPerService(ctx context.Context, client *openwebif.Client, items []playlist.Item, cfg Config) []epg.Programme {
+func collectEPGPerService(ctx context.Context, client *openwebif.Client, items []playlist.Item, cfg config.AppConfig) []epg.Programme {
 	logger := xglog.FromContext(ctx)
 
 	// Clamp concurrency to sane bounds [1,10]
@@ -237,7 +238,7 @@ func collectEPGPerService(ctx context.Context, client *openwebif.Client, items [
 }
 
 // fetchEPGWithRetry attempts to fetch EPG data with exponential backoff retry
-func fetchEPGWithRetry(ctx context.Context, client *openwebif.Client, streamURL string, cfg Config) ([]openwebif.EPGEvent, error) {
+func fetchEPGWithRetry(ctx context.Context, client *openwebif.Client, streamURL string, cfg config.AppConfig) ([]openwebif.EPGEvent, error) {
 	// Extract sRef from streamURL - adjust based on your stream URL format
 	sRef := extractSRefFromStreamURL(streamURL)
 	if sRef == "" {

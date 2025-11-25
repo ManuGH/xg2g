@@ -48,7 +48,10 @@ pub extern "C" fn xg2g_audio_remux_init(
     channels: c_int,
     bitrate: c_int,
 ) -> *mut c_void {
-    eprintln!("[RUST FFI INIT] Creating AudioRemuxer with sample_rate={}, channels={}, bitrate={}", sample_rate, channels, bitrate);
+    eprintln!(
+        "[RUST FFI INIT] Creating AudioRemuxer with sample_rate={}, channels={}, bitrate={}",
+        sample_rate, channels, bitrate
+    );
 
     // Catch panics and return NULL instead of unwinding across FFI
     let result = catch_unwind(|| {
@@ -63,9 +66,10 @@ pub extern "C" fn xg2g_audio_remux_init(
             Ok(r) => {
                 eprintln!("[RUST FFI INIT] AudioRemuxer created successfully");
                 r
-            },
+            }
             Err(e) => {
                 eprintln!("[RUST FFI ERROR] Failed to create AudioRemuxer: {:#}", e);
+                set_last_error(e);
                 return ptr::null_mut();
             }
         };
@@ -78,11 +82,18 @@ pub extern "C" fn xg2g_audio_remux_init(
 
     match result {
         Ok(ptr) => {
-            eprintln!("[RUST FFI INIT] Initialization completed, handle: {:?}", ptr);
+            eprintln!(
+                "[RUST FFI INIT] Initialization completed, handle: {:?}",
+                ptr
+            );
             ptr
-        },
+        }
         Err(e) => {
-            eprintln!("[RUST FFI PANIC] AudioRemuxer initialization panicked: {:?}", e);
+            eprintln!(
+                "[RUST FFI PANIC] AudioRemuxer initialization panicked: {:?}",
+                e
+            );
+            set_last_error("AudioRemuxer initialization panicked");
             ptr::null_mut()
         }
     }
@@ -120,6 +131,11 @@ pub extern "C" fn xg2g_audio_remux_process(
     output: *mut u8,
     output_capacity: usize,
 ) -> c_int {
+    // Clear previous errors to ensure clean state
+    LAST_ERROR.with(|e| {
+        *e.borrow_mut() = None;
+    });
+
     if handle.is_null() || input.is_null() || output.is_null() {
         return -1;
     }
@@ -153,11 +169,17 @@ pub extern "C" fn xg2g_audio_remux_process(
 
             // Verify TS packet sync byte (0x47)
             if i < 3 && ts_packet[0] != 0x47 {
-                eprintln!("[RUST FFI] WARNING: Packet {} has invalid sync byte: 0x{:02X}", i, ts_packet[0]);
+                eprintln!(
+                    "[RUST FFI] WARNING: Packet {} has invalid sync byte: 0x{:02X}",
+                    i, ts_packet[0]
+                );
             }
 
             if i < 3 {
-                eprintln!("[RUST FFI] Calling process_ts_packet for packet {} (sync: 0x{:02X})", i, ts_packet[0]);
+                eprintln!(
+                    "[RUST FFI] Calling process_ts_packet for packet {} (sync: 0x{:02X})",
+                    i, ts_packet[0]
+                );
             }
 
             // Process this TS packet (returns 0 or more output TS packets)
@@ -165,14 +187,23 @@ pub extern "C" fn xg2g_audio_remux_process(
                 Ok(output_packets) => {
                     let num_output = output_packets.len();
                     if num_output > 0 {
-                        eprintln!("[RUST FFI] Input packet {} produced {} output packets", i, num_output);
+                        eprintln!(
+                            "[RUST FFI] Input packet {} produced {} output packets",
+                            i, num_output
+                        );
                     }
 
                     // Write output packets to output buffer
                     for out_packet in output_packets {
                         if output_offset + TS_PACKET_SIZE > output_capacity {
-                            eprintln!("[RUST FFI ERROR] Output buffer too small");
-                            return -1;
+                            let msg = format!(
+                                "Output buffer too small (capacity: {}, needed: {})",
+                                output_capacity,
+                                output_offset + TS_PACKET_SIZE
+                            );
+                            eprintln!("[RUST FFI ERROR] {}", msg);
+                            set_last_error(msg);
+                            return -2; // -2 indicates buffer too small, caller should retry with larger buffer
                         }
 
                         output_slice[output_offset..output_offset + TS_PACKET_SIZE]
@@ -196,13 +227,19 @@ pub extern "C" fn xg2g_audio_remux_process(
             );
         }
 
-        eprintln!("[RUST FFI] Processed {} input packets, produced {} bytes output", packet_count, output_offset);
+        eprintln!(
+            "[RUST FFI] Processed {} input packets, produced {} bytes output",
+            packet_count, output_offset
+        );
         output_offset as c_int
     });
 
     match result {
         Ok(n) => n,
-        Err(_) => -1,
+        Err(e) => {
+            set_last_error(format!("AudioRemuxer process panicked: {:?}", e));
+            -1
+        }
     }
 }
 
@@ -248,6 +285,29 @@ pub extern "C" fn xg2g_transcoder_version() -> *const c_char {
     VERSION.as_ptr() as *const c_char
 }
 
+use std::cell::RefCell;
+
+thread_local! {
+    static LAST_ERROR: RefCell<Option<CString>> = RefCell::new(None);
+}
+
+fn set_last_error(err: impl ToString) {
+    let err_str = err.to_string();
+    // Try to convert to CString, ignoring interior nulls by truncating if necessary
+    // In a real scenario, we might want to handle this better, but for error logs, best effort is fine.
+    let c_str = match CString::new(err_str.clone()) {
+        Ok(s) => s,
+        Err(_) => {
+            // Fallback for strings with null bytes: replace nulls
+            let safe_str = err_str.replace('\0', "(null)");
+            CString::new(safe_str).unwrap_or_default()
+        }
+    };
+    LAST_ERROR.with(|e| {
+        *e.borrow_mut() = Some(c_str);
+    });
+}
+
 /// Get last error message
 ///
 /// # Returns
@@ -259,8 +319,13 @@ pub extern "C" fn xg2g_transcoder_version() -> *const c_char {
 /// Caller must free the returned string with `xg2g_free_string`.
 #[no_mangle]
 pub extern "C" fn xg2g_last_error() -> *mut c_char {
-    // TODO: Thread-local error storage
-    ptr::null_mut()
+    LAST_ERROR.with(|e| {
+        if let Some(err) = e.borrow_mut().take() {
+            err.into_raw()
+        } else {
+            ptr::null_mut()
+        }
+    })
 }
 
 /// Free a string allocated by Rust
@@ -598,13 +663,7 @@ mod tests {
         // Should not crash with null handle
         xg2g_audio_remux_free(ptr::null_mut());
 
-        let result = xg2g_audio_remux_process(
-            ptr::null_mut(),
-            ptr::null(),
-            0,
-            ptr::null_mut(),
-            0,
-        );
+        let result = xg2g_audio_remux_process(ptr::null_mut(), ptr::null(), 0, ptr::null_mut(), 0);
         assert_eq!(result, -1);
     }
 }

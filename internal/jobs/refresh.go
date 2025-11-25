@@ -4,73 +4,88 @@
 package jobs
 
 import (
+
 	"context"
+
 	"errors"
+
 	"fmt"
+
 	"net/url"
+
 	"os"
+
 	"path/filepath"
+
 	"strings"
+
 	"time"
+
+
+
+	"github.com/ManuGH/xg2g/internal/config"
 
 	xglog "github.com/ManuGH/xg2g/internal/log"
 
+
+
 	"github.com/ManuGH/xg2g/internal/epg"
+
 	"github.com/ManuGH/xg2g/internal/metrics"
+
 	"github.com/ManuGH/xg2g/internal/openwebif"
+
 	"github.com/ManuGH/xg2g/internal/playlist"
+
 	"github.com/ManuGH/xg2g/internal/telemetry"
+
 	"github.com/ManuGH/xg2g/internal/validate"
+
 	"go.opentelemetry.io/otel/attribute"
+
 	"go.opentelemetry.io/otel/codes"
+
 	"go.opentelemetry.io/otel/trace"
+
 )
 
+
+
 // ErrInvalidStreamPort marks an invalid stream port configuration.
+
 var ErrInvalidStreamPort = errors.New("invalid stream port")
 
+
+
 // Status represents the current state of the refresh job
+
 type Status struct {
+
 	Version       string    `json:"version"`
+
 	LastRun       time.Time `json:"lastRun"`
+
 	Channels      int       `json:"channels"`
+
 	Bouquets      int       `json:"bouquets,omitempty"`      // Number of bouquets processed
+
 	EPGProgrammes int       `json:"epgProgrammes,omitempty"` // Number of EPG programmes collected
+
 	DurationMS    int64     `json:"durationMs,omitempty"`    // Duration of last refresh in milliseconds
+
 	Error         string    `json:"error,omitempty"`
+
 }
 
-// Config holds configuration for refresh operations
-type Config struct {
-	Version       string
-	DataDir       string
-	OWIBase       string
-	OWIUsername   string // Optional: HTTP Basic Auth username
-	OWIPassword   string // Optional: HTTP Basic Auth password
-	Bouquet       string // Comma-separated list of bouquets (e.g., "Premium,Favourites")
-	XMLTVPath     string
-	PiconBase     string
-	FuzzyMax      int
-	StreamPort    int
-	APIToken      string // Optional: for securing the /api/refresh endpoint
-	OWITimeout    time.Duration
-	OWIRetries    int
-	OWIBackoff    time.Duration
-	OWIMaxBackoff time.Duration
 
-	// EPG Configuration
-	EPGEnabled        bool
-	EPGDays           int    // Number of days to fetch EPG data (1-14)
-	EPGMaxConcurrency int    // Max parallel EPG requests (1-10)
-	EPGTimeoutMS      int    // Timeout per EPG request in milliseconds
-	EPGRetries        int    // Retry attempts for EPG requests
-	EPGSource         string // EPG fetch strategy: "bouquet" (fast, single request) or "per-service" (default, per-channel requests)
-}
 
 // Refresh performs the complete refresh cycle: fetch bouquets → services → write M3U + XMLTV
+
 //
+
 //nolint:gocyclo // Complex orchestration function with validation, requires sequential operations
-func Refresh(ctx context.Context, cfg Config) (*Status, error) {
+
+func Refresh(ctx context.Context, cfg config.AppConfig) (*Status, error) {
 	// Start tracing span for the entire refresh job
 	tracer := telemetry.Tracer("xg2g.jobs")
 	ctx, span := tracer.Start(ctx, "job.refresh",

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/api"
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -34,7 +35,7 @@ func TestCircuitBreakerFlow(t *testing.T) {
 	}))
 	defer failingServer.Close()
 
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir:    tmpDir,
 		OWIBase:    failingServer.URL,
 		StreamPort: 8001,
@@ -136,7 +137,7 @@ func TestRetryBehavior(t *testing.T) {
 	}))
 	defer flappingServer.Close()
 
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir:    tmpDir,
 		OWIBase:    flappingServer.URL,
 		StreamPort: 8001,
@@ -201,7 +202,7 @@ func TestGracefulDegradation(t *testing.T) {
 	}))
 	defer selectiveServer.Close()
 
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir:           tmpDir,
 		OWIBase:           selectiveServer.URL,
 		StreamPort:        8001,
@@ -260,7 +261,7 @@ func TestRecoveryAfterFailure(t *testing.T) {
 	}))
 	defer recoveryServer.Close()
 
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir:    tmpDir,
 		OWIBase:    recoveryServer.URL,
 		StreamPort: 8001,
@@ -314,7 +315,7 @@ func TestRateLimitingBehavior(t *testing.T) {
 	}))
 	defer mock.Close()
 
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir:    tmpDir,
 		OWIBase:    mock.URL,
 		StreamPort: 8001,
@@ -404,7 +405,7 @@ func TestContextCancellationFlow(t *testing.T) {
 	}))
 	defer slowServer.Close()
 
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir:    tmpDir,
 		OWIBase:    slowServer.URL,
 		StreamPort: 8001,

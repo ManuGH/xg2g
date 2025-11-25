@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/ManuGH/xg2g/internal/config"
 )
 
 func TestRefresh_IntegrationSuccess(t *testing.T) {
@@ -50,7 +52,7 @@ func TestRefresh_IntegrationSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cfg := Config{
+	cfg := config.AppConfig{
 		DataDir:    tmp,
 		OWIBase:    u.String(),
 		Bouquet:    "Favourites",

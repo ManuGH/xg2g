@@ -21,7 +21,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/api"
-	"github.com/ManuGH/xg2g/internal/jobs"
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -30,7 +30,7 @@ import (
 func TestAPIServerContract(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		Version:    "test",
 		DataDir:    tmpDir,
 		OWIBase:    "http://example.com",
@@ -210,7 +210,7 @@ func TestAPIDataFilePathContract(t *testing.T) {
 	err := os.WriteFile(testFile, []byte("#EXTM3U\n"), 0600)
 	require.NoError(t, err)
 
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		Version:    "test",
 		DataDir:    tmpDir,
 		OWIBase:    "http://example.com",
@@ -262,7 +262,7 @@ func TestAPIDataFilePathContract(t *testing.T) {
 func TestAPIVersioningContract(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		Version:    "1.2.3",
 		DataDir:    tmpDir,
 		OWIBase:    "http://example.com",
@@ -313,7 +313,7 @@ func TestAPICircuitBreakerContract(t *testing.T) {
 
 	tmpDir := t.TempDir()
 
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		Version:    "test",
 		DataDir:    tmpDir,
 		OWIBase:    "http://invalid-backend-that-will-fail.local",

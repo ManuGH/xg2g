@@ -352,38 +352,130 @@
 
     <script>
         let currentData = null;
+        let retryCount = 0;
+        const MAX_RETRIES = 3;
 
-        // Load status on page load
-        window.addEventListener('DOMContentLoaded', () => {
+        // Load status on page load - use multiple strategies
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initDashboard);
+        } else {
+            // DOM already loaded
+            initDashboard();
+        }
+
+        // Also try after a short delay as fallback
+        setTimeout(initDashboard, 100);
+
+        function initDashboard() {
+            console.log('[Dashboard] Initializing...');
             loadStatus();
             loadUrls();
             // Auto-refresh every 30 seconds
             setInterval(loadStatus, 30000);
-        });
+        }
 
-        // Load status from API
+        // Load status from API with timeout and better error handling
         async function loadStatus() {
+            const loadingEl = document.getElementById('loading');
+
             try {
-                const response = await fetch('/api/v1/ui/status');
+                console.log('[Dashboard] Fetching status from /api/v1/ui/status');
+
+                // Create abort controller for timeout
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+
+                const response = await fetch('/api/v1/ui/status', {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Cache-Control': 'no-cache'
+                    },
+                    signal: controller.signal
+                });
+
+                clearTimeout(timeoutId);
+
+                console.log('[Dashboard] Status response:', response.status, response.statusText);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
                 const data = await response.json();
+                console.log('[Dashboard] Status data loaded:', data);
+
                 currentData = data;
                 renderStatus(data);
+
                 document.getElementById('loading').style.display = 'none';
                 document.getElementById('content').style.display = 'block';
+                retryCount = 0; // Reset retry count on success
+
             } catch (error) {
-                console.error('Failed to load status:', error);
-                document.getElementById('loading').innerHTML = '<p style="color: #f87171;">Failed to load status. Please refresh the page.</p>';
+                console.error('[Dashboard] Failed to load status:', error);
+
+                retryCount++;
+                const errorMsg = error.name === 'AbortError'
+                    ? 'Request timeout (>10s)'
+                    : error.message || 'Unknown error';
+
+                if (retryCount < MAX_RETRIES) {
+                    loadingEl.innerHTML = `
+                        <div class="spinner"></div>
+                        <p style="color: #fbbf24;">⚠ ${errorMsg}</p>
+                        <p>Retrying... (${retryCount}/${MAX_RETRIES})</p>
+                    `;
+                    setTimeout(loadStatus, 2000 * retryCount); // Exponential backoff
+                } else {
+                    loadingEl.innerHTML = `
+                        <p style="color: #f87171;">❌ Failed to load status: ${errorMsg}</p>
+                        <p style="color: #888; margin-top: 10px;">Tried ${MAX_RETRIES} times.</p>
+                        <button onclick="location.reload()" style="margin-top: 20px; padding: 12px 24px; background: #2563eb; color: white; border: none; border-radius: 8px; cursor: pointer;">
+                            🔄 Reload Page
+                        </button>
+                        <button onclick="retryCount=0; loadStatus(); loadUrls();" style="margin-top: 20px; margin-left: 10px; padding: 12px 24px; background: #059669; color: white; border: none; border-radius: 8px; cursor: pointer;">
+                            ↻ Try Again
+                        </button>
+                    `;
+                }
             }
         }
 
-        // Load URLs from API
+        // Load URLs from API with better error handling
         async function loadUrls() {
             try {
-                const response = await fetch('/api/v1/ui/urls');
+                console.log('[Dashboard] Fetching URLs from /api/v1/ui/urls');
+
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+                const response = await fetch('/api/v1/ui/urls', {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Cache-Control': 'no-cache'
+                    },
+                    signal: controller.signal
+                });
+
+                clearTimeout(timeoutId);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
                 const data = await response.json();
+                console.log('[Dashboard] URLs loaded:', data);
                 renderUrls(data);
+
             } catch (error) {
-                console.error('Failed to load URLs:', error);
+                console.error('[Dashboard] Failed to load URLs:', error);
+                // Don't block the UI if URLs fail, just log it
+                const urlsEl = document.getElementById('urls');
+                if (urlsEl) {
+                    urlsEl.innerHTML = '<p style="color: #f87171;">Failed to load URLs</p>';
+                }
             }
         }
 

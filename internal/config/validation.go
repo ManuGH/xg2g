@@ -4,12 +4,11 @@
 package config
 
 import (
-	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/ManuGH/xg2g/internal/validate"
 )
 
-// Validate validates a jobs.Config using the centralized validation package
-func Validate(cfg jobs.Config) error {
+// Validate validates a AppConfig using the centralized validation package
+func Validate(cfg AppConfig) error {
 	v := validate.New()
 
 	// OpenWebIF URL

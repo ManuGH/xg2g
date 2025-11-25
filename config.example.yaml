@@ -63,8 +63,8 @@ openWebIF:
 # If empty or omitted, all bouquets are included
 # ENV: XG2G_BOUQUET_REFS (comma-separated)
 bouquets:
-  - "1:7:1:0:0:0:0:0:0:0:FROM BOUQUET \"userbouquet.favourites.tv\" ORDER BY bouquet"
-  - "1:7:1:0:0:0:0:0:0:0:FROM BOUQUET \"userbouquet.dbe01.tv\" ORDER BY bouquet"
+  - '1:7:1:0:0:0:0:0:0:0:FROM BOUQUET "userbouquet.favourites.tv" ORDER BY bouquet'
+  - '1:7:1:0:0:0:0:0:0:0:FROM BOUQUET "userbouquet.dbe01.tv" ORDER BY bouquet'
   # Add more bouquet references as needed
 
 # Electronic Program Guide (EPG) Configuration
@@ -99,6 +99,12 @@ epg:
   # ENV: XG2G_EPG_XMLTV_PATH
   xmltvPath: "xmltv.xml"
 
+  # EPG Fetch Strategy
+  # - "per-service": Fetch EPG for each channel individually (default, compatible with all receivers)
+  # - "bouquet": Fetch full bouquet EPG in one request (faster, but may fail on some receivers)
+  # ENV: XG2G_EPG_SOURCE
+  source: "per-service"
+
 # API Server Configuration
 api:
   # Bearer token for API authentication (leave empty to disable)
@@ -126,7 +132,6 @@ picons:
   # Example: https://github.com/picons/picons/raw/master/picons
   # ENV: XG2G_PICONS_BASE
   baseUrl: ""
-
 # ==============================================================================
 # Advanced Configuration Examples
 # ==============================================================================

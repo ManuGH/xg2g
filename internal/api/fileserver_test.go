@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ManuGH/xg2g/internal/jobs"
+	"github.com/ManuGH/xg2g/internal/config"
 )
 
 func TestSecureFileServer_RangeRequests(t *testing.T) {
@@ -22,7 +22,7 @@ func TestSecureFileServer_RangeRequests(t *testing.T) {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir: tmpDir,
 		Version: "test",
 	}
@@ -126,7 +126,7 @@ func TestSecureFileServer_ETagCaching(t *testing.T) {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir: tmpDir,
 		Version: "test",
 	}
@@ -166,7 +166,7 @@ func TestSecureFileServer_ETagCaching(t *testing.T) {
 
 func TestSecureFileServer_PathTraversal(t *testing.T) {
 	tmpDir := t.TempDir()
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir: tmpDir,
 		Version: "test",
 	}
@@ -242,7 +242,7 @@ func TestSecureFileServer_ContentType(t *testing.T) {
 		}
 	}
 
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir: tmpDir,
 		Version: "test",
 	}
@@ -292,7 +292,7 @@ func TestSecureFileServer_ContentType(t *testing.T) {
 
 func TestSecureFileServer_MethodNotAllowed(t *testing.T) {
 	tmpDir := t.TempDir()
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir: tmpDir,
 		Version: "test",
 	}

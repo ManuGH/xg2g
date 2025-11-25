@@ -115,7 +115,7 @@ type Server struct {
 
 **Step 3**: Initialize in New()
 ```go
-func New(cfg jobs.Config) *Server {
+func New(cfg config.AppConfig) *Server {
     s := &Server{
         // ... existing initialization
         rateLimiter: rate.NewLimiter(rate.Every(time.Minute), 5),
@@ -340,7 +340,7 @@ killall -INT xg2g  # Should shutdown quickly
 //
 // Example usage:
 //
-//	cfg := jobs.Config{
+//	cfg := config.AppConfig{
 //	    OWIBase:    "http://receiver:8080",
 //	    Bouquet:    "Favourites",
 //	    DataDir:    "/data",
@@ -421,7 +421,7 @@ func ParseAttribute(line, attrName string) string {
 ```go
 func TestHandleRefreshConcurrent(t *testing.T) {
     tmpDir := t.TempDir()
-    cfg := jobs.Config{
+    cfg := config.AppConfig{
         DataDir:    tmpDir,
         OWIBase:    "http://test",
         Bouquet:    "test",

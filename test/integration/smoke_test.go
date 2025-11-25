@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/test/helpers"
@@ -94,7 +95,7 @@ func TestSmoke_BasicRefreshFlow(t *testing.T) {
 	mock := openwebif.NewMockServer()
 	defer mock.Close()
 
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir:    tmpDir,
 		OWIBase:    mock.URL(),
 		Bouquet:    "Premium",

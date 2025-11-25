@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/ManuGH/xg2g/internal/api"
-	"github.com/ManuGH/xg2g/internal/jobs"
+	"github.com/ManuGH/xg2g/internal/config"
 )
 
 // TestServerOptions configures the test server setup
@@ -25,7 +25,7 @@ type TestServerOptions struct {
 // TestServer wraps a test HTTP server with its configuration
 type TestServer struct {
 	Server *httptest.Server
-	Config jobs.Config
+	Config config.AppConfig
 	API    *api.Server
 }
 
@@ -60,7 +60,7 @@ func NewTestServer(t *testing.T, opts TestServerOptions) *TestServer {
 		opts.Bouquet = "Favourites"
 	}
 
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir:    opts.DataDir,
 		OWIBase:    opts.OWIBase,
 		StreamPort: opts.StreamPort,
@@ -81,7 +81,7 @@ func NewTestServer(t *testing.T, opts TestServerOptions) *TestServer {
 
 // NewTestServerWithConfig creates a test server from an existing config.
 // Use this when you need full control over the config structure.
-func NewTestServerWithConfig(t *testing.T, cfg jobs.Config) *TestServer {
+func NewTestServerWithConfig(t *testing.T, cfg config.AppConfig) *TestServer {
 	t.Helper()
 
 	apiServer := api.New(cfg)

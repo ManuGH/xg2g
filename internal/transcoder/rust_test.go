@@ -190,14 +190,6 @@ func TestVersion(t *testing.T) {
 	}
 }
 
-func TestLastError(t *testing.T) {
-	// Initially there should be no error
-	err := LastError()
-	if err != "" {
-		t.Logf("LastError() returned: %s (may be from previous test)", err)
-	}
-}
-
 func BenchmarkRustAudioRemuxer_Process(b *testing.B) {
 	remuxer, err := NewRustAudioRemuxer(48000, 2, 192000)
 	if err != nil {

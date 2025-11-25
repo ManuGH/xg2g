@@ -6,6 +6,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/playlist"
 	"github.com/rs/zerolog"
 )
@@ -53,7 +54,7 @@ type Options struct {
 // Deps holds all dependencies for the refresh operation
 type Deps struct {
 	Logger      Logger
-	Config      Config
+	Config      config.AppConfig
 	Client      OpenWebIFClient
 	Metrics     MetricsRecorder
 	FileWriter  FileWriter
@@ -96,7 +97,7 @@ func DefaultOptions() Options {
 }
 
 // DefaultOptionsFromConfig creates options from config
-func DefaultOptionsFromConfig(cfg Config) Options {
+func DefaultOptionsFromConfig(cfg config.AppConfig) Options {
 	return Options{
 		Force:       false,
 		IncludeEPG:  cfg.EPGEnabled,

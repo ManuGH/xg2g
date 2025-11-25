@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -25,11 +26,11 @@ func TestJobsRefreshContract(t *testing.T) {
 
 		invalidConfigs := []struct {
 			name   string
-			config jobs.Config
+			config config.AppConfig
 		}{
 			{
 				name: "empty_data_dir",
-				config: jobs.Config{
+				config: config.AppConfig{
 					DataDir:    "",
 					OWIBase:    "http://example.com",
 					Bouquet:    "Test",
@@ -38,7 +39,7 @@ func TestJobsRefreshContract(t *testing.T) {
 			},
 			{
 				name: "empty_owi_base",
-				config: jobs.Config{
+				config: config.AppConfig{
 					DataDir:    "/tmp",
 					OWIBase:    "",
 					Bouquet:    "Test",
@@ -47,7 +48,7 @@ func TestJobsRefreshContract(t *testing.T) {
 			},
 			{
 				name: "empty_bouquet",
-				config: jobs.Config{
+				config: config.AppConfig{
 					DataDir:    "/tmp",
 					OWIBase:    "http://example.com",
 					Bouquet:    "",
@@ -56,7 +57,7 @@ func TestJobsRefreshContract(t *testing.T) {
 			},
 			{
 				name: "invalid_stream_port_zero",
-				config: jobs.Config{
+				config: config.AppConfig{
 					DataDir:    "/tmp",
 					OWIBase:    "http://example.com",
 					Bouquet:    "Test",
@@ -65,7 +66,7 @@ func TestJobsRefreshContract(t *testing.T) {
 			},
 			{
 				name: "invalid_stream_port_negative",
-				config: jobs.Config{
+				config: config.AppConfig{
 					DataDir:    "/tmp",
 					OWIBase:    "http://example.com",
 					Bouquet:    "Test",
@@ -74,7 +75,7 @@ func TestJobsRefreshContract(t *testing.T) {
 			},
 			{
 				name: "invalid_stream_port_too_high",
-				config: jobs.Config{
+				config: config.AppConfig{
 					DataDir:    "/tmp",
 					OWIBase:    "http://example.com",
 					Bouquet:    "Test",
@@ -97,7 +98,7 @@ func TestJobsRefreshContract(t *testing.T) {
 		ctx := context.Background()
 		tmpDir := t.TempDir()
 
-		cfg := jobs.Config{
+		cfg := config.AppConfig{
 			Version:    "test",
 			DataDir:    tmpDir,
 			OWIBase:    "http://invalid-backend.local",
@@ -149,7 +150,7 @@ func TestJobsRefreshContract(t *testing.T) {
 		// Contract: Refresh respects context cancellation
 		tmpDir := t.TempDir()
 
-		cfg := jobs.Config{
+		cfg := config.AppConfig{
 			Version:    "test",
 			DataDir:    tmpDir,
 			OWIBase:    "http://example.com",
@@ -179,7 +180,7 @@ func TestJobsRefreshContract(t *testing.T) {
 
 		tmpDir := t.TempDir()
 
-		cfg := jobs.Config{
+		cfg := config.AppConfig{
 			Version:    "test",
 			DataDir:    tmpDir,
 			OWIBase:    "http://example.com:9999", // Invalid port
@@ -209,7 +210,7 @@ func TestJobsRefreshContract(t *testing.T) {
 		// Contract: EPG configuration is respected
 		tmpDir := t.TempDir()
 
-		cfgWithEPG := jobs.Config{
+		cfgWithEPG := config.AppConfig{
 			Version:           "test",
 			DataDir:           tmpDir,
 			OWIBase:           "http://example.com",
@@ -240,7 +241,7 @@ func TestJobsRefreshContract(t *testing.T) {
 		// Contract: Bouquet can be comma-separated list
 		tmpDir := t.TempDir()
 
-		cfg := jobs.Config{
+		cfg := config.AppConfig{
 			Version:    "test",
 			DataDir:    tmpDir,
 			OWIBase:    "http://example.com",
@@ -296,7 +297,7 @@ func TestJobsStatusContract(t *testing.T) {
 func TestJobsConfigContract(t *testing.T) {
 	t.Run("RequiredFields", func(t *testing.T) {
 		// Contract: Config has required fields
-		cfg := jobs.Config{
+		cfg := config.AppConfig{
 			Version:    "1.2.3",
 			DataDir:    "/data",
 			OWIBase:    "http://example.com",
@@ -317,7 +318,7 @@ func TestJobsConfigContract(t *testing.T) {
 
 	t.Run("OptionalAuthFields", func(t *testing.T) {
 		// Contract: Auth fields are optional
-		cfg := jobs.Config{
+		cfg := config.AppConfig{
 			Version:     "1.2.3",
 			DataDir:     "/data",
 			OWIBase:     "http://example.com",
@@ -339,7 +340,7 @@ func TestJobsConfigContract(t *testing.T) {
 
 	t.Run("EPGFields", func(t *testing.T) {
 		// Contract: EPG fields are optional but validated when enabled
-		cfg := jobs.Config{
+		cfg := config.AppConfig{
 			Version:           "1.2.3",
 			DataDir:           "/data",
 			OWIBase:           "http://example.com",

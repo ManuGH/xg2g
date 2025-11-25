@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -34,7 +35,7 @@ func TestSlow_RefreshWithTimeout(t *testing.T) {
 	}))
 	defer slowServer.Close()
 
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir:    tmpDir,
 		OWIBase:    slowServer.URL,
 		StreamPort: 8001,
@@ -69,7 +70,7 @@ func TestSlow_ContextCancellation(t *testing.T) {
 	}))
 	defer slowServer.Close()
 
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir:    tmpDir,
 		OWIBase:    slowServer.URL,
 		StreamPort: 8001,
@@ -114,7 +115,7 @@ func TestSlow_RecoveryAfterFailure(t *testing.T) {
 	}))
 	defer recoveryServer.Close()
 
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir:    tmpDir,
 		OWIBase:    recoveryServer.URL,
 		StreamPort: 8001,

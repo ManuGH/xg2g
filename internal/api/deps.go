@@ -7,6 +7,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/rs/zerolog"
 )
@@ -49,5 +50,5 @@ type Deps struct {
 	Auth    AuthService
 	Refresh RefreshService
 	Store   Store
-	Config  jobs.Config
+	Config  config.AppConfig
 }

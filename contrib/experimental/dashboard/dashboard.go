@@ -10,13 +10,13 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/jobs"
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/rs/zerolog"
 )
 
 // Dashboard holds the dashboard service
 type Dashboard struct {
-	config jobs.Config
+	config config.AppConfig
 	logger zerolog.Logger
 	stats  *ServiceStats
 }
@@ -38,7 +38,7 @@ type ServiceStats struct {
 }
 
 // New creates a new dashboard instance
-func New(config jobs.Config, logger zerolog.Logger) *Dashboard {
+func New(config config.AppConfig, logger zerolog.Logger) *Dashboard {
 	return &Dashboard{
 		config: config,
 		logger: logger,
@@ -366,7 +366,7 @@ func (d *Dashboard) HandleDashboard(w http.ResponseWriter, _ *http.Request) {
 	}
 
 	data := struct {
-		Config jobs.Config
+		Config config.AppConfig
 		Stats  *ServiceStats
 	}{
 		Config: d.config,

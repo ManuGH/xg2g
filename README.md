@@ -1,23 +1,16 @@
 # xg2g
 
-<div align="center">
-
-**🛰️ Turn your Enigma2 receiver into a universal IPTV server**
+## 🛰️ Turn your Enigma2 receiver into a universal IPTV server
 
 [![CI](https://github.com/ManuGH/xg2g/actions/workflows/ci.yml/badge.svg)](https://github.com/ManuGH/xg2g/actions/workflows/ci.yml)
-[![Healthcheck](https://github.com/ManuGH/xg2g/actions/workflows/healthcheck-regression.yml/badge.svg)](https://github.com/ManuGH/xg2g/actions/workflows/healthcheck-regression.yml)
-[![codecov](https://codecov.io/gh/ManuGH/xg2g/branch/main/graph/badge.svg)](https://codecov.io/gh/ManuGH/xg2g)
 [![Go Report Card](https://goreportcard.com/badge/github.com/ManuGH/xg2g)](https://goreportcard.com/report/github.com/ManuGH/xg2g)
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/ManuGH/xg2g/badge)](https://scorecard.dev/viewer/?uri=github.com/ManuGH/xg2g)
 [![Latest Release](https://img.shields.io/github/v/release/ManuGH/xg2g)](https://github.com/ManuGH/xg2g/releases/latest)
 [![Docker Pulls](https://img.shields.io/docker/pulls/manugh/xg2g)](https://hub.docker.com/r/manugh/xg2g)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Stream satellite/cable TV to **any device** - Plex, Jellyfin, iPhone, VLC, Kodi - **everything works**.
 
-[Quick Start](#install) • [Features](#what-it-does) • [Documentation](docs/) • [Helm Chart](deploy/helm/xg2g/)
-
-</div>
+[Quick Start](#install) • [Features](#features) • [Documentation](docs/) • [Helm Chart](contrib/helm/xg2g/)
 
 ---
 
@@ -34,21 +27,26 @@ docker run -d \
 
 **Done!** Now open: `http://YOUR_IP:8080/files/playlist.m3u`
 
-> **Note:** `XG2G_INITIAL_REFRESH=true` loads channels at startup. Without it, you'll see 0 channels until you manually trigger a refresh via the API.
+> **Note:** `XG2G_INITIAL_REFRESH=true` loads channels at startup. Without it, you'll see 0 channels until you manually
+> trigger a refresh via the API.
 
 ---
 
-## What It Does
+## Features
 
-✅ **Universal Compatibility** - Works with Plex, Jellyfin, VLC, Kodi, iPhone Safari
-✅ **Ultra-Fast Audio Transcoding** - Native Rust remuxer: AC3/MP2 → AAC (1.4ms latency, 140x faster, <0.1% CPU)
-✅ **7-Day EPG** - Full electronic program guide in XMLTV format
-✅ **HDHomeRun Emulation** - Auto-discovery in Plex/Jellyfin (no manual setup)
-✅ **GPU Transcoding** - Hardware-accelerated video transcoding (AMD/Intel/NVIDIA)
-✅ **Enterprise-Grade** - Prometheus metrics, OpenTelemetry tracing, health checks
-✅ **Production-Ready** - SLSA L3 attestation, SBOM, Cosign signing, Helm charts
+- **Zero Config**: Auto-detects your receiver and configures everything automatically.
+- **Universal App**: One container does it all - API, M3U, XMLTV, and Stream Proxy.
+- **Plex/Jellyfin Ready**: Built-in HDHomeRun emulation and H.264 stream repair.
+- **Smart Transcoding**: Auto-detects if you need audio transcoding (iOS) or video transcoding (Bandwidth).
+- **Modern UI**: Beautiful web interface for channel management.
+- **Ultra-Fast Audio Transcoding** - Native Rust remuxer: AC3/MP2 → AAC (1.4ms latency, 140x faster, <0.1% CPU)
+- **7-Day EPG** - Full electronic program guide in XMLTV format
+- **GPU Transcoding** - Hardware-accelerated video transcoding (AMD/Intel/NVIDIA)
+- **Enterprise-Grade** - Prometheus metrics, OpenTelemetry tracing, health checks
+- **Production-Ready** - SLSA L3 attestation, SBOM, Cosign signing, Helm charts
 
 **Build Requirements:**
+
 - **Go 1.25+** (stable release) - [Install from go.dev](https://go.dev/dl/)
 - **Rust 1.70+** (for native audio transcoder) - [Install via rustup](https://rustup.rs/)
 - **FFmpeg libraries** (libavcodec, libavformat) - Required for AC3/AAC codecs
@@ -69,7 +67,7 @@ docker run -d \
 
 ### Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                     xg2g Gateway                            │
 ├─────────────────────────────────────────────────────────────┤
@@ -111,6 +109,7 @@ Open this URL: `http://YOUR_IP:8080/files/playlist.m3u`
 ### In Plex/Jellyfin
 
 Enable auto-discovery:
+
 ```bash
 -e XG2G_HDHR_ENABLED=true
 ```
@@ -120,6 +119,7 @@ Plex/Jellyfin will find it automatically.
 ### On iPhone/iPad
 
 Add stream proxy for working audio:
+
 ```bash
 docker run -d \
   -p 8080:8080 \
@@ -228,150 +228,31 @@ For more help, see [SUPPORT.md](SUPPORT.md).
 
 ---
 
-## 3 Deployment Modes (Unified Configuration!)
+## Quick Start
 
-xg2g now uses **one docker-compose.yml** for all 3 modes! Simply uncomment the section you need.
+**One command to rule them all.**
 
-### MODE 1: Standard (VLC, Kodi, Plex) - DEFAULT
-
-**No audio transcoding.** Original AC3/MP2 audio. Desktop players handle this natively.
-
-```bash
-# Default mode - no changes needed in docker-compose.yml
-docker compose up -d
-```
-
-### MODE 2: Audio Transcoding (iPhone/iPad)
-
-**Ultra-fast audio transcoding** for mobile devices. AC3/MP2 → AAC for Safari compatibility.
-
-```yaml
-# Edit docker-compose.yml and uncomment:
-environment:
-  - XG2G_ENABLE_STREAM_PROXY=true
-  - XG2G_PROXY_LISTEN=:18000
-  # Rust remuxer automatically enabled (1.4ms latency, <0.1% CPU)
-```
-
-Then: `docker compose up -d`
-
-Access streams: `http://localhost:18000/1:0:19:...`
-
-### MODE 3: GPU Transcoding
-
-**Hardware-accelerated video + audio transcoding** using VAAPI.
-
-```yaml
-# Edit docker-compose.yml and uncomment:
-devices:
-  - /dev/dri:/dev/dri
-ports:
-  - "8085:8085"
-environment:
-  - XG2G_ENABLE_STREAM_PROXY=true
-  - XG2G_PROXY_LISTEN=:18000
-  - XG2G_GPU_TRANSCODE=true
-  - XG2G_GPU_LISTEN=0.0.0.0:8085
-```
-
-Then: `docker compose up -d`
-
-**Requirements:**
-- Intel Quick Sync (6th gen+) or AMD GPU with VAAPI support
-- Run `vainfo` on host to verify GPU support
-
-Access streams: `http://localhost:18000/1:0:19:...` (GPU transcoded)
-
-See: [docker-compose.yml](docker-compose.yml) for complete configuration
-
----
-
-### Quick Setup Examples
-
-**Standard mode** (desktop players):
 ```yaml
 services:
   xg2g:
     image: ghcr.io/manugh/xg2g:latest
     ports:
-      - "8080:8080"
+      - "8080:8080"   # API & Web UI
+      - "18000:18000" # Stream Proxy (Plex/iOS)
     environment:
-      - XG2G_OWI_BASE=http://192.168.1.100
-      - XG2G_BOUQUET=Favourites
+      - XG2G_OWI_BASE=http://192.168.1.100  # Your Receiver IP
+      - XG2G_BOUQUET=Favourites             # Your Bouquet Name
 ```
 
-**Audio Proxy mode** (iPhone/iPad):
-```yaml
-services:
-  xg2g:
-    image: ghcr.io/manugh/xg2g:latest
-    ports:
-      - "8080:8080"
-      - "18000:18000"
-    environment:
-      - XG2G_OWI_BASE=http://192.168.1.100
-      - XG2G_BOUQUET=Favourites
-      - XG2G_ENABLE_STREAM_PROXY=true
-      - XG2G_PROXY_TARGET=http://192.168.1.100:8001
-```
+That's it! xg2g will:
 
-**GPU Transcoding mode** (hardware acceleration):
-```yaml
-services:
-  xg2g:
-    image: ghcr.io/manugh/xg2g:latest
-    ports:
-      - "8080:8080"
-      - "18000:18000"
-      - "8085:8085"
-    devices:
-      - /dev/dri:/dev/dri
-    environment:
-      - XG2G_OWI_BASE=http://192.168.1.100
-      - XG2G_BOUQUET=Favourites
-      - XG2G_ENABLE_GPU_TRANSCODING=true
-      - XG2G_ENABLE_STREAM_PROXY=true
-```
+1. Connect to your receiver.
+2. Generate M3U and XMLTV.
+3. Start the Stream Proxy for Plex/iOS compatibility.
+4. Enable HDHomeRun emulation for auto-discovery.
 
-**Proxy-Only mode** (multi-container with dedicated transcoding instances):
-```yaml
-services:
-  # Main xg2g instance (full features)
-  xg2g-main:
-    image: ghcr.io/manugh/xg2g:latest
-    ports:
-      - "8080:8080"
-    environment:
-      - XG2G_OWI_BASE=http://192.168.1.100
-      - XG2G_BOUQUET=Favourites
-      - XG2G_HDHR_ENABLED=true
-
-  # Dedicated audio transcoding proxy
-  xg2g-audio-proxy:
-    image: ghcr.io/manugh/xg2g:latest
-    ports:
-      - "18000:18000"
-    environment:
-      - XG2G_OWI_BASE=http://192.168.1.100
-      - XG2G_ENABLE_STREAM_PROXY=true
-      - XG2G_PROXY_TARGET=http://192.168.1.100:8001
-      - XG2G_PROXY_ONLY_MODE=true
-
-  # Dedicated GPU transcoding proxy
-  xg2g-gpu-proxy:
-    image: ghcr.io/manugh/xg2g:latest
-    ports:
-      - "18001:18000"
-    devices:
-      - /dev/dri:/dev/dri
-    environment:
-      - XG2G_OWI_BASE=http://192.168.1.100
-      - XG2G_ENABLE_GPU_TRANSCODING=true
-      - XG2G_ENABLE_STREAM_PROXY=true
-      - XG2G_PROXY_ONLY_MODE=true
-```
-
----
+**📖 [Read the full Deployment Guide](docs/guides/PRODUCTION_DEPLOYMENT.md)** for advanced configurations (GPU,
+multiple instances, etc).
 
 ## Health Checks & Observability
 
@@ -420,372 +301,76 @@ readinessProbe:
 
 ## Docker Image Tags
 
-xg2g provides multiple image tags for different use cases and CPU architectures:
+We provide optimized images for different hardware:
 
-### Standard Tags (Multi-Arch: AMD64-v2 + ARM64)
+- **`latest`**: Best for most users (Modern CPUs, Raspberry Pi 4/5)
+- **`v3-performance`**: For modern servers (Haswell/Zen+)
+- **`v1-compat`**: For old hardware (<2010)
 
-| Tag | Description | Use Case | Updated |
-|-----|-------------|----------|---------|
-| `latest` | Stable releases | **Production** | On version tags (`v*`) |
-| `main` | Latest development | **Staging/Testing** | Every push to main |
-| `v1.2.3` | Specific version | **Pinned deployments** | On version tags |
-
-### CPU-Optimized Tags (AMD64 only)
-
-xg2g supports different x86-64 microarchitecture levels for optimal performance on your hardware:
-
-| Tag | CPU Level | Min CPU Year | Target CPUs | Performance | Compatibility |
-|-----|-----------|--------------|-------------|-------------|---------------|
-| `v1-compat` | x86-64-v1 | 2003+ | Any AMD64 CPU | Baseline | ✅ Maximum |
-| `latest` | x86-64-v2 | 2009+ | Nehalem, Bulldozer+ | Good | ✅ **Recommended** |
-| `v3-performance` | x86-64-v3 | 2015+ | Haswell, Zen+ (AVX2) | Excellent | ⚠️ Modern only |
-
-**CPU Level Details:**
-- **v1** (x86-64): SSE2 only - runs on any 64-bit CPU (Pentium 4+, Athlon 64+)
-- **v2** (x86-64-v2): +SSE3, SSE4.1, SSE4.2, POPCNT - **default**, best balance
-- **v3** (x86-64-v3): +AVX, AVX2, BMI1/2, FMA - 10-20% faster for audio/video
-
-### Architecture-Specific Tags
-
-| Tag | Architecture | Description | Availability |
-|-----|--------------|-------------|--------------|
-| `main-arm64` | ARM64 | Latest dev for ARM | ❌ Releases only |
-| `v1.2.3-arm64` | ARM64 | Version for ARM | ✅ On releases |
-| `sha-abc123-amd64-v2` | AMD64 | Specific commit + CPU level | ✅ Every push |
-
-**⚠️ ARM64 Build Strategy:**
-- **main branch**: AMD64 only (fast CI, ~2-3 min)
-- **Release tags** (`v*`): AMD64 + ARM64 (slower, ~60-90 min via QEMU)
-- **Nightly canary**: ARM64 cross-compile test (no push, validates builds)
-- **Reason**: ARM64 emulation via QEMU is 20-30x slower than native AMD64
-
-**Future optimization (prepared, not active):**
-- Cross-compilation setup ready in `Dockerfile.cross-arm64`
-- Would reduce ARM64 builds from 60-90 min → 5-10 min on releases
-- Activation planned when ARM64 usage increases
-
-If you need ARM64 for testing, use the latest release tag or self-compile.
-
-### Choosing the Right Image
-
-**How to check your CPU level:**
-```bash
-# On Linux
-grep -o 'avx2\|avx\|sse4_2' /proc/cpuinfo | sort -u
-
-# Result interpretation:
-# - avx2 present → Use :v3-performance
-# - sse4_2 present (no avx2) → Use :latest (v2)
-# - neither → Use :v1-compat
-```
-
-**Recommendation by hardware:**
-- 🖥️ **Modern server** (2015+): `v3-performance` - Best performance
-- 🏠 **Home server/NAS** (2010+): `latest` - Balanced (default)
-- 📦 **Old hardware** (<2010): `v1-compat` - Maximum compatibility
-- 🍇 **Raspberry Pi / ARM**: `latest` - Auto-selects ARM64
-
-### Production Deployment
-
-Use `latest` for stable, tested releases (multi-arch, auto-detects AMD64-v2 or ARM64):
-```yaml
-image: ghcr.io/manugh/xg2g:latest
-```
-
-For specific CPU optimization (AMD64 only):
-```yaml
-# High-performance (Intel Haswell+, AMD Zen+)
-image: ghcr.io/manugh/xg2g:v3-performance
-
-# Legacy compatibility (any 64-bit CPU)
-image: ghcr.io/manugh/xg2g:v1-compat
-```
-
-See: [docker-compose.production.yml](docker-compose.production.yml)
-
-### Staging/Testing Deployment
-
-Use `main` to test latest development changes:
-```yaml
-image: ghcr.io/manugh/xg2g:main
-```
-
-See: [docker-compose.staging.yml](docker-compose.staging.yml)
-
-**⚠️ Note:** The `:main` tag is automatically updated on every push to main. Use for testing only.
-
-### Rollback to Specific Commit
-
-Pin to a specific commit SHA for reproducibility:
-```yaml
-image: ghcr.io/manugh/xg2g:sha-abc1234
-```
-
-Find commit SHAs at: [github.com/ManuGH/xg2g/commits/main](https://github.com/ManuGH/xg2g/commits/main)
-
----
-
-## Support Policy
-
-### Supported Platforms
-
-| Platform | Architecture | Minimum CPU | Status | Notes |
-|----------|-------------|-------------|--------|-------|
-| **Linux (Alpine)** | AMD64-v2 | Intel Nehalem (2009+) | ✅ **Recommended** | Default `:latest` tag |
-| **Linux (Alpine)** | AMD64-v3 | Intel Haswell (2015+) | ✅ Supported | `:v3-performance` tag |
-| **Linux (Alpine)** | AMD64-v1 | Any 64-bit CPU (2003+) | ✅ Supported | `:v1-compat` tag |
-| **Linux (Alpine)** | ARM64 | ARMv8-A+ | ✅ Supported | Release tags only |
-| **macOS** | AMD64/ARM64 | macOS 11+ | ⚠️ Best-effort | Build from source |
-| **Windows** | AMD64 | Windows 10+ | ⚠️ Best-effort | Build from source |
-
-### Image Matrix
-
-| Use Case | Image Tag | CPU Arch | CPU Level | Build Frequency |
-|----------|-----------|----------|-----------|-----------------|
-| **Production (stable)** | `:latest` | AMD64 + ARM64 | v2 (SSE4.2) | On version tags |
-| **Staging/Testing** | `:main` | AMD64 only | v2 (SSE4.2) | Every main push |
-| **High Performance** | `:v3-performance` | AMD64 only | v3 (AVX2) | On version tags |
-| **Legacy Compatibility** | `:v1-compat` | AMD64 only | v1 (SSE2) | On version tags |
-| **Pinned Version** | `:v1.2.3` | AMD64 + ARM64 | v2 (SSE4.2) | Per release |
-| **Specific Commit** | `:sha-abc1234` | AMD64 only | v2 (SSE4.2) | Every push |
-| **ARM64 Specific** | `:v1.2.3-arm64` | ARM64 only | Generic | On version tags |
-
-### Toolchain Versions
-
-**Current (2025):**
-- Go: 1.25
-- Rust: 1.84
-- Alpine: 3.22.2
-- FFmpeg: 7.x (Alpine package)
-
-**Pinning Strategy:**
-- Docker base images: Pinned to minor version
-- Go/Rust toolchains: Pinned to patch version for reproducibility
-- Cross-compilation: cargo-zigbuild 0.19.7
-
-**FFmpeg Linking Strategy:**
-
-| Approach | Advantages | Trade-offs | Status |
-|----------|-----------|------------|--------|
-| **Dynamic (Alpine packages)** | Smaller images, system updates | ABI drift risk, runtime deps | ✅ **Current** |
-| **Static (pre-built)** | Portable, no runtime deps | Larger images, manual updates | ⚠️ Prepared |
-
-**Current implementation:**
-- Uses Alpine's `ffmpeg-libs` package (dynamic linking)
-- Pinned to Alpine 3.22.2 for ABI stability
-- Rust remuxer links against system FFmpeg libraries
-- Runtime dependencies: `libavcodec`, `libavformat`, `libavutil`
-
-**Static linking considerations:**
-- Would eliminate runtime FFmpeg dependencies
-- Requires pre-built static FFmpeg binaries with musl
-- Image size increase: ~50-100 MB
-- Activation: Set `FFMPEG_STATIC=true` in Dockerfile (prepared, not active)
-
-**Decision rationale:**
-- Alpine package updates via `apk upgrade` more convenient than manual static binaries
-- ABI stability ensured by pinning Alpine base version
-- Static linking reserved for specialized deployments (airgapped, embedded)
-
-### CI/CD Validation
-
-**Main Branch:**
-- ✅ AMD64 builds (v1, v2, v3): ~2-3 min
-- ✅ Tests + linting: ~5 min
-- ❌ ARM64 builds: Disabled (releases only)
-
-**Release Tags:**
-- ✅ AMD64 builds (v1, v2, v3): ~2-3 min
-- ✅ ARM64 builds via QEMU: 60-90 min
-- ✅ Multi-arch manifests
-- ✅ SBOM + Provenance attestation
-- ✅ Cosign signing
-
-**Nightly (02:17 UTC):**
-- ✅ Cache warming (cargo-chef + Go modules)
-- ✅ ARM64 cross-compile canary (no push)
-- ✅ Validates cargo-zigbuild toolchain
-- ✅ Artifact retention: 14 days
-- ⚠️ Failure alerting (optional): Set `SLACK_WEBHOOK` repository secret
-
----
+**📖 [See the Docker Images Guide](docs/guides/DOCKER_IMAGES.md)** for deep dive into CPU levels and architecture support.
 
 ## Development
 
-Want to build xg2g from source or contribute? Here's how to get started:
+Want to build from source or contribute?
 
-### Prerequisites
+**📖 [Read the Contributing Guide](CONTRIBUTING.md)** to get started with:
 
-- **Go 1.23+** - [Install Go](https://go.dev/doc/install)
-- **Rust 1.70+** - [Install Rust](https://rustup.rs/) (for audio transcoding MODE 2)
-- **Make** - Build automation (pre-installed on macOS/Linux)
+- Building from source
+- Running tests
+- CI/CD pipeline details
 
-### Building from Source
+## KNOWN LIMITATIONS (The "Brutal Truth" Section)
 
-```bash
-# Clone the repository
-git clone https://github.com/ManuGH/xg2g.git
-cd xg2g
+While xg2g aims for a "Zero Config" experience, there are architectural and practical limitations you must be aware of before deploying in production (v2.0).
 
-# Build the daemon (MODE 1: Standard)
-make build
-# Binary: bin/daemon
+### 1. Memory Usage (EPG)
 
-# Build with Rust audio transcoding (MODE 2)
-make build-ffi
-# Binary: bin/daemon-ffi (includes Rust remuxer)
+The EPG generator is **memory hungry**. It loads the entire program guide (7 days * all channels) into RAM, converts it, and writes it out.
 
-# Build for all platforms
-make build-all
-# Creates: bin/daemon-{linux,darwin,windows}-{amd64,arm64}
-```
+- **Risk**: On low-RAM devices (Raspberry Pi Zero/3), the process may OOM (Out Of Memory) crash during EPG updates.
+- **Workaround**: Reduce `XG2G_EPG_DAYS` to 1 or 2 if you experience crashes.
 
-### Running Tests
+### 2. Stream Start Latency (Receiver WebIF Dependency)
 
-```bash
-# Quick unit tests
-make test
+xg2g queries the Enigma2 WebIF *before every stream start* (service info, codec info, scrambling state).
 
-# Tests with race detection
-make test-race
+- **Risk**: Sluggish receiver UI → slow stream start.
+- **Risk**: HDD spin-up time → 3–6 seconds blocking.
+- **Risk**: Flood of concurrent clients → WebIF overload.
+- **Risk**: Timeshift/Recording → WebIF might respond incorrectly or slowly.
 
-# Tests with coverage report (opens in browser)
-make coverage
+*xg2g cannot compensate for these hardware effects.*
 
-# Full test suite (lint + race + coverage + fuzz)
-make test-all
+### 3. iOS, macOS & Plex "False Client" Detection
 
-# Enterprise-grade test suite (everything + security + multi-platform build)
-make hardcore-test
-```
+xg2g decides based on User-Agent whether to deliver HLS or PES.
 
-### Development Workflow
+- **Limitation**: iOS → HLS (works reliably).
+- **Limitation**: macOS Safari → PES (technically correct, but users often expect HLS).
+- **Limitation**: Plex Mobile → Identifies as "Linux", not iOS.
+- **Limitation**: Plex Server → Acts as a "false" client, causing the server to transcode, which often leads to stuttering.
 
-```bash
-# Run locally with .env configuration
-make dev
+*This is technically not solvable cleanly because User-Agents are incomplete.*
 
-# Or via Docker Compose
-make up        # Start services
-make logs      # View logs
-make status    # Check API status
-make down      # Stop services
+### 4. No Built-in Authentication
 
-# Code quality checks
-make lint           # Run linter
-make lint-fix       # Auto-fix linting issues
-make security       # Security vulnerability scan
-make quality-gates  # Validate all quality gates (coverage, lint, security)
-```
+The stream proxy (`:18000`) has **no authentication**.
 
-### Common Make Commands
+- **Security Warning**: Do NOT expose this port to the internet. Anyone who finds it can tune your receiver and watch TV. Use a VPN or reverse proxy (Nginx/Traefik) with Basic Auth if remote access is needed.
 
-| Command | Description |
-|---------|-------------|
-| `make build` | Build main daemon binary |
-| `make test` | Run unit tests |
-| `make test-cover` | Tests with coverage thresholds (55%) |
-| `make lint` | Run golangci-lint |
-| `make docker` | Build Docker image locally |
-| `make dev` | Run daemon from source with `.env` config |
-| `make up` | Start docker-compose.yml stack |
-| `make help` | Show all available commands |
+### 5. Rust Transcoder GC Pressure
 
-### Pre-Commit Hooks
+The experimental Rust audio remuxer allocates new memory buffers for every audio packet.
 
-Install pre-commit hooks to validate changes locally:
-
-```bash
-# Install pre-commit (Python)
-pip install pre-commit
-
-# Install hooks
-pre-commit install
-
-# Run manually
-pre-commit run --all-files
-```
-
-Hooks validate:
-- Go formatting (`gofmt`)
-- YAML formatting and linting
-- Health check endpoint usage ([scripts/validate-healthchecks.sh](scripts/validate-healthchecks.sh))
-- File permissions and merge conflicts
-
-### CI/CD Pipeline
-
-xg2g uses a comprehensive multi-stage CI/CD pipeline to ensure code quality and reliability.
-
-#### Test Matrix
-
-| Workflow | Purpose | Trigger |
-|----------|---------|---------|
-| **Hardcore CI** | Full quality gate (linter, tests, security, coverage) | Push, PR |
-| **Smoke Tests** | Fast integration verification (`nogpu` build) | Push, PR |
-| **Chaos Tests** | Resilience testing (optional, requires K8s) | Manual, scheduled |
-
-#### Build Variants
-
-```bash
-# Standard build (no GPU, no Rust transcoder)
-make build                 # Pure Go, CGO_ENABLED=0
-
-# With Rust audio transcoder
-make build-rust            # Build Rust library first
-make build-ffi             # CGO build with Rust FFI
-
-# Cross-platform
-make build-all             # linux/darwin/windows amd64/arm64
-```
-
-#### Local Testing (CI-equivalent)
-
-Run the same checks that CI runs:
-
-```bash
-# Linter (matches CI exactly)
-golangci-lint run --timeout=5m
-
-# Tests with nogpu tag (like CI smoke tests)
-go test -tags=nogpu ./...
-
-# Tests with race detection (like CI)
-go test -race -tags=nogpu ./...
-
-# Coverage check (55% threshold)
-make test-cover
-
-# Full quality gates
-make quality-gates
-```
-
-**Tip:** Use `make hardcore-test` to run the complete enterprise test suite locally (includes linting, race detection, coverage, fuzzing, and security scans).
-
-### Documentation
-
-- **Testing Strategy:** [docs/development/TESTING_STRATEGY.md](docs/development/TESTING_STRATEGY.md)
-- **API Reference:** [API Documentation](https://manugh.github.io/xg2g/api.html)
-- **Health Checks:** [docs/operations/HEALTH_CHECKS.md](docs/operations/HEALTH_CHECKS.md)
-- **Configuration:** [docs/guides/config.md](docs/guides/config.md)
-
-### Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes
-4. Run tests and linting (`make test-all lint`)
-5. Commit your changes (pre-commit hooks will validate)
-6. Push to your fork (`git push origin feature/amazing-feature`)
-7. Open a Pull Request
-
-All PRs are automatically validated by CI (lint, tests, security scans, coverage thresholds).
-
----
+- **Performance**: While latency is low, this creates high Garbage Collector (GC) pressure in Go. On very weak CPUs, this might cause CPU spikes.
 
 ## Help
 
 - **API Documentation:** [API Reference](https://manugh.github.io/xg2g/api.html)
-- **Permissions Guide:** [PERMISSIONS.md](PERMISSIONS.md) - Docker, Kubernetes, and GitHub Actions permissions
+- **Permissions Guide:** [PERMISSIONS.md](docs/security/PERMISSIONS.md) - Docker, Kubernetes, and GitHub Actions permissions
+- **Docker Guide:** [DOCKER_COMPOSE_GUIDE.md](docs/guides/DOCKER_COMPOSE_GUIDE.md)
+- **Production Guide:** [PRODUCTION_DEPLOYMENT.md](docs/guides/PRODUCTION_DEPLOYMENT.md)
+- **Known Issues:** [KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md)
 - **How-to guides:** [docs/](docs/)
 - **Questions:** [Discussions](https://github.com/ManuGH/xg2g/discussions)
 - **Problems:** [Issues](https://github.com/ManuGH/xg2g/issues)

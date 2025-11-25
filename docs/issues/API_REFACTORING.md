@@ -228,7 +228,7 @@ internal/api/
 
 **Functions remaining:**
 - `Server` struct definition
-- `New(cfg jobs.Config) *Server` - Constructor
+- `New(cfg config.AppConfig) *Server` - Constructor
 - `HDHomeRunServer() *hdhr.Server` - Getter
 - `routes() http.Handler` - Route registration
 - `Handler() http.Handler` - Public handler

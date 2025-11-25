@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/api"
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/stretchr/testify/assert"
@@ -34,7 +35,7 @@ func TestFullRefreshFlow(t *testing.T) {
 	defer mock.Close()
 
 	// Setup: Configure jobs
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir:           tmpDir,
 		OWIBase:           mock.URL(),
 		Bouquet:           "Premium",
@@ -99,7 +100,7 @@ func TestAPIRefreshEndpoint(t *testing.T) {
 	defer mock.Close()
 
 	// Setup: API server
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir:    tmpDir,
 		OWIBase:    mock.URL(),
 		StreamPort: 8001,
@@ -175,7 +176,7 @@ func TestRefreshWithBackendError(t *testing.T) {
 	}))
 	defer failingServer.Close()
 
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir:    tmpDir,
 		OWIBase:    failingServer.URL,
 		StreamPort: 8001,
@@ -207,7 +208,7 @@ func TestRefreshWithTimeout(t *testing.T) {
 	}))
 	defer slowServer.Close()
 
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir:    tmpDir,
 		OWIBase:    slowServer.URL,
 		StreamPort: 8001,
@@ -257,7 +258,7 @@ func TestRefreshWithPartialFailure(t *testing.T) {
 	}))
 	defer partialFailServer.Close()
 
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir:    tmpDir,
 		OWIBase:    partialFailServer.URL,
 		StreamPort: 8001,
@@ -284,7 +285,7 @@ func TestConcurrentRefreshRequests(t *testing.T) {
 	mock := openwebif.NewMockServer()
 	defer mock.Close()
 
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir:    tmpDir,
 		OWIBase:    mock.URL(),
 		StreamPort: 8001,
@@ -355,7 +356,7 @@ func TestHealthCheckFlow(t *testing.T) {
 	mock := openwebif.NewMockServer()
 	defer mock.Close()
 
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir:    tmpDir,
 		OWIBase:    mock.URL(),
 		StreamPort: 8001,
@@ -439,7 +440,7 @@ http://example.com/stream`
 	mock := openwebif.NewMockServer()
 	defer mock.Close()
 
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir:    tmpDir,
 		OWIBase:    mock.URL(),
 		StreamPort: 8001,

@@ -18,6 +18,7 @@ xg2g provides multiple Docker Compose files for different use cases:
 **For:** New users, production deployments
 
 **Features:**
+
 - ✅ M3U playlist with channel logos
 - ✅ 7-day EPG guide (XMLTV)
 - ✅ HDHomeRun emulation (Plex/Jellyfin)
@@ -25,6 +26,7 @@ xg2g provides multiple Docker Compose files for different use cases:
 - ✅ Authentication support
 
 **Usage:**
+
 ```bash
 # Copy and edit environment variables
 cp .env.example .env
@@ -45,15 +47,18 @@ docker compose up -d
 **For:** Users with AMD/Intel GPUs who need hardware transcoding
 
 **Adds to standard:**
+
 - 🎬 GPU-accelerated video transcoding (VAAPI)
 - 🔊 Audio transcoding (AAC)
 - ⚡ HEVC encoding for better compression
 
 **Requirements:**
+
 - AMD Radeon or Intel GPU with `/dev/dri`
 - Host must have VAAPI drivers installed
 
 **Usage:**
+
 ```bash
 # Build GPU transcoder first
 docker build -f Dockerfile.gpu-transcoder -t xg2g-gpu-transcoder:production .
@@ -71,11 +76,13 @@ docker compose -f docker-compose.minimal.yml up -d
 **For:** Developers, performance monitoring, troubleshooting
 
 **Adds to standard:**
+
 - 📊 Jaeger tracing UI (http://localhost:16686)
 - 🔍 OpenTelemetry instrumentation
 - ⏱️ Request timing and performance metrics
 
 **Usage:**
+
 ```bash
 docker compose -f docker-compose.jaeger.yml up -d
 
@@ -92,11 +99,13 @@ open http://localhost:16686
 **For:** CI/CD pipelines, development testing
 
 **Features:**
+
 - 🧪 Isolated test environment
 - 🔄 Mock Enigma2 receiver
 - ✅ Health check validation
 
 **Usage:**
+
 ```bash
 docker compose -f docker-compose.test.yml up --build --abort-on-container-exit
 ```
@@ -135,6 +144,7 @@ docker compose -f docker-compose.minimal.yml -f docker-compose.jaeger.yml up -d
 All setups use the same environment variables from [`.env.example`](.env.example):
 
 **Required:**
+
 ```bash
 XG2G_OWI_BASE=http://192.168.1.100
 XG2G_OWI_USER=root

@@ -7,7 +7,7 @@ Thanks for your interest in contributing! This guide will help you get started.
 ### Prerequisites
 
 - **Go 1.25+** (for Go components)
-- **Rust 1.82+** (for transcoder components)
+- **Rust 1.91+** (for transcoder components)
 - **Docker** (for testing)
 - **Make** (optional, for convenience commands)
 
@@ -37,6 +37,7 @@ git checkout -b feature/your-feature-name
 ```
 
 Use prefixes:
+
 - `feature/` - New functionality
 - `fix/` - Bug fixes
 - `docs/` - Documentation changes
@@ -82,6 +83,7 @@ git commit -m "docs(readme): update Docker deployment examples"
 **Format:** `<type>(<scope>): <description>`
 
 **Types:**
+
 - `feat` - New feature
 - `fix` - Bug fix
 - `docs` - Documentation
@@ -98,6 +100,7 @@ git push origin feature/your-feature-name
 ```
 
 Then open a PR on GitHub with:
+
 - Clear description of changes
 - Link to related issues
 - Screenshots/logs (if applicable)
@@ -125,7 +128,8 @@ go tool cover -html=coverage.out
 
 ```bash
 # Docker integration tests
-make docker-integration-test
+make test-integration
+
 
 # Or manually:
 docker build -t xg2g:test .
@@ -138,6 +142,56 @@ docker run --rm xg2g:test
 # Run fuzz tests
 go test -fuzz=FuzzPlaylistParser -fuzztime=30s ./internal/playlist
 ```
+
+### CI/CD Pipeline
+
+xg2g uses a streamlined CI/CD pipeline.
+
+**Core Workflows:**
+
+| Workflow | Purpose | Trigger |
+|----------|---------|---------|
+| **CI** | Build, Test, Lint, Config Validation | Push, PR |
+| **Release** | Build & Push Docker images, GitHub Release | Tag `v*` |
+| **Security** | Vulnerability scanning (govulncheck) | Schedule, PR |
+
+**Local Testing:**
+
+```bash
+# Run tests
+go test ./...
+
+# Run linter (via golangci-lint)
+make lint
+```
+
+## Common Make Commands
+
+| Command | Description |
+|---------|-------------|
+| `make build` | Build main daemon binary |
+| `make test` | Run unit tests |
+| `make lint` | Run golangci-lint |
+| `make docker` | Build Docker image locally |
+| `make dev` | Run daemon from source with `.env` config |
+| `make up` | Start docker-compose.yml stack |
+| `make help` | Show all available commands |
+
+## Pre-Commit Hooks
+
+Install pre-commit hooks to validate changes locally:
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+Hooks validate:
+
+- Go formatting (`gofmt`)
+- YAML formatting and linting
+- Health check endpoint usage
+- File permissions and merge conflicts
 
 ## Code Standards
 
@@ -239,11 +293,15 @@ xg2g/
 │   ├── epg/             # EPG/XMLTV handling
 │   ├── hdhr/            # HDHomeRun emulation
 │   └── stream/          # Stream proxy
-├── pkg/                 # Public packages (if any)
+├── contrib/             # Community & Advanced configs
+│   ├── docker/          # Specialized Dockerfiles
+│   ├── helm/            # Helm charts
+│   ├── kubernetes/      # K8s manifests
+│   └── workflows/       # Extra CI workflows
 ├── .github/
-│   └── workflows/       # CI/CD pipelines
-├── Dockerfile           # Docker image definition
-└── docker-compose.yml   # Docker Compose example
+│   └── workflows/       # Core CI/CD pipelines
+├── Dockerfile           # Main Docker image
+└── docker-compose.yml   # Standard deployment
 ```
 
 ## Common Tasks

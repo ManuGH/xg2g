@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
-	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/rs/zerolog"
 )
@@ -25,7 +24,7 @@ func contains(s, substr string) bool {
 func TestNewManager_ValidDeps(t *testing.T) {
 	deps := Deps{
 		Logger:     log.WithComponent("test"),
-		Config:     jobs.Config{},
+		Config:     config.AppConfig{},
 		APIHandler: http.NotFoundHandler(),
 	}
 
@@ -96,7 +95,7 @@ func TestManager_StartStop_OK(t *testing.T) {
 
 	deps := Deps{
 		Logger:     log.WithComponent("test"),
-		Config:     jobs.Config{},
+		Config:     config.AppConfig{},
 		APIHandler: handler,
 	}
 
@@ -149,7 +148,7 @@ func TestManager_Shutdown_TimesOut(t *testing.T) {
 
 	deps := Deps{
 		Logger:     log.WithComponent("test"),
-		Config:     jobs.Config{},
+		Config:     config.AppConfig{},
 		APIHandler: handler,
 	}
 
@@ -196,7 +195,7 @@ func TestManager_Shutdown_TimesOut(t *testing.T) {
 func TestManager_Shutdown_NotStarted(t *testing.T) {
 	deps := Deps{
 		Logger:     log.WithComponent("test"),
-		Config:     jobs.Config{},
+		Config:     config.AppConfig{},
 		APIHandler: http.NotFoundHandler(),
 	}
 
@@ -230,7 +229,7 @@ func TestManager_WithMetrics(t *testing.T) {
 
 	deps := Deps{
 		Logger:         log.WithComponent("test"),
-		Config:         jobs.Config{},
+		Config:         config.AppConfig{},
 		APIHandler:     apiHandler,
 		MetricsHandler: metricsHandler,
 	}
@@ -288,7 +287,7 @@ func TestManager_PropagatesListenErrors(t *testing.T) {
 
 	deps := Deps{
 		Logger:     log.WithComponent("test"),
-		Config:     jobs.Config{},
+		Config:     config.AppConfig{},
 		APIHandler: http.NotFoundHandler(),
 	}
 

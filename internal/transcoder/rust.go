@@ -103,30 +103,64 @@ func (r *RustAudioRemuxer) Process(input []byte) ([]byte, error) {
 		return nil, errors.New("input is empty")
 	}
 
-	// Allocate output buffer (100x input size for transcoding expansion)
-	// AC3→AAC transcoding can expand significantly (e.g., 1 packet → 89 packets observed)
-	// Using 100x to handle worst-case scenarios including PMT/PAT overhead
-	outputCapacity := len(input) * 100
-	output := make([]byte, outputCapacity)
+	// Lock OS thread to ensure thread-local error storage works correctly across CGO calls
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 
-	// Keep input alive during C call
-	defer runtime.KeepAlive(input)
+	// Allocate output buffer (4x input size for transcoding expansion)
+	// AC3->AAC typically expands by a small factor. 4x is a safe initial guess.
+	// We implement a retry loop to handle cases where this is insufficient.
+	currentCapacity := len(input) * 4
+	maxRetries := 3
+	// Hard limit to prevent memory exhaustion (e.g., 50MB or 100x input)
+	const maxBufferSize = 50 * 1024 * 1024
 
-	// Call Rust FFI function
-	written := C.xg2g_audio_remux_process(
-		r.handle,
-		(*C.uint8_t)(unsafe.Pointer(&input[0])),
-		C.size_t(len(input)),
-		(*C.uint8_t)(unsafe.Pointer(&output[0])),
-		C.size_t(outputCapacity),
-	)
+	for i := 0; i <= maxRetries; i++ {
+		// Sanity check to prevent explosion
+		if currentCapacity > maxBufferSize {
+			return nil, fmt.Errorf("remuxing failed: required buffer size exceeds limit (%d bytes)", maxBufferSize)
+		}
 
-	if written < 0 {
+		output := make([]byte, currentCapacity)
+
+		// Keep input alive during C call
+		// Note: We must do this inside the loop because 'output' changes
+		runtime.KeepAlive(input)
+
+		// Call Rust FFI function
+		written := C.xg2g_audio_remux_process(
+			r.handle,
+			(*C.uint8_t)(unsafe.Pointer(&input[0])),
+			C.size_t(len(input)),
+			(*C.uint8_t)(unsafe.Pointer(&output[0])),
+			C.size_t(currentCapacity),
+		)
+
+		// Success
+		if written >= 0 {
+			return output[:int(written)], nil
+		}
+
+		// Handle errors
+		// -2 indicates buffer too small (see ffi.rs)
+		if written == -2 {
+			if i < maxRetries {
+				// Double capacity and retry
+				currentCapacity *= 2
+				continue
+			}
+			return nil, fmt.Errorf("remuxing failed: output buffer too small even after %d retries (final capacity: %d)", maxRetries, currentCapacity)
+		}
+
+		// Other errors
+		lastErr := lastError()
+		if lastErr != "" {
+			return nil, fmt.Errorf("remuxing failed: %s", lastErr)
+		}
 		return nil, fmt.Errorf("remuxing failed (error code: %d)", written)
 	}
 
-	// Return slice of actual written bytes
-	return output[:int(written)], nil
+	return nil, errors.New("remuxing failed: unexpected loop exit")
 }
 
 // Close releases the Rust remuxer resources.
@@ -170,10 +204,13 @@ func Version() string {
 	return C.GoString(cVersion)
 }
 
-// LastError returns the last error message from the Rust library, if any.
+// lastError returns the last error message from the Rust library, if any.
 //
 // Returns an empty string if there is no error.
-func LastError() string {
+//
+// Note: This function must be called from the same OS thread that generated the error.
+// The caller is responsible for ensuring thread safety (e.g., using runtime.LockOSThread).
+func lastError() string {
 	cError := C.xg2g_last_error()
 	if cError == nil {
 		return ""

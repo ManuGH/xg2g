@@ -11,6 +11,8 @@
 *.out
 coverage.out
 coverage.html
+coverage*.out
+validate_cov.out
 *.prof
 
 # Go workspace
@@ -31,6 +33,8 @@ go.work.sum
 *.swp
 docker-compose.override.yml
 .env
+config.yaml
+config.yml
 
 # --- Project specific ---
 # Local data (M3U, XMLTV, Cache)
@@ -45,6 +49,7 @@ livetest-data/
 /xg2g-linux
 /daemon
 /daemon-*
+transcoder.tar.gz
 
 # IDE/Editor
 .vscode/

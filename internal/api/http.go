@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/api/middleware"
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/hdhr"
 	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/jobs"
@@ -36,7 +37,7 @@ var uiHTML []byte
 type Server struct {
 	mu            sync.RWMutex
 	refreshing    atomic.Bool // serialize refreshes via atomic flag
-	cfg           jobs.Config
+	cfg           config.AppConfig
 	status        jobs.Status
 	cb            *CircuitBreaker
 	hdhr          *hdhr.Server    // HDHomeRun emulation server
@@ -44,7 +45,7 @@ type Server struct {
 	auditLogger   AuditLogger     // Optional: for audit logging
 	healthManager *health.Manager // Health and readiness checks
 	// refreshFn allows tests to stub the refresh operation; defaults to jobs.Refresh
-	refreshFn func(context.Context, jobs.Config) (*jobs.Status, error)
+	refreshFn func(context.Context, config.AppConfig) (*jobs.Status, error)
 }
 
 // AuditLogger interface for audit logging (optional).
@@ -62,7 +63,7 @@ type AuditLogger interface {
 // ConfigHolder interface allows hot configuration reloading without import cycles.
 // Implemented by config.ConfigHolder.
 type ConfigHolder interface {
-	Get() jobs.Config
+	Get() config.AppConfig
 	Reload(ctx context.Context) error
 }
 
@@ -121,7 +122,7 @@ func (s *Server) dataFilePath(rel string) (string, error) {
 }
 
 // New creates and initializes a new HTTP API server.
-func New(cfg jobs.Config) *Server {
+func New(cfg config.AppConfig) *Server {
 	s := &Server{
 		cfg: cfg,
 		status: jobs.Status{
@@ -240,20 +241,6 @@ func (s *Server) routes() http.Handler {
 		http.Redirect(w, r, "/ui", http.StatusTemporaryRedirect)
 	})
 
-	// Legacy API endpoints (deprecated - maintain backward compatibility)
-	// These will be removed in a future major version
-	r.Route("/api", func(r chi.Router) {
-		r.Use(deprecationMiddleware(DeprecationConfig{
-			SunsetVersion: "2.0.0",
-			SunsetDate:    "2025-12-31T23:59:59Z",
-			SuccessorPath: "/api/v1",
-		}))
-		r.Get("/status", s.handleStatus)
-		// Apply rate limiting and CSRF protection to expensive refresh operation
-		r.With(middleware.RefreshRateLimit(), middleware.CSRFProtection()).
-			Post("/refresh", s.authRequired(s.handleRefresh))
-	})
-
 	// V1 API (current stable version)
 	s.registerV1Routes(r)
 
@@ -348,7 +335,7 @@ func (s *Server) GetStatus() jobs.Status {
 }
 
 // GetConfig returns the server's current configuration
-func (s *Server) GetConfig() jobs.Config {
+func (s *Server) GetConfig() config.AppConfig {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.cfg
@@ -358,36 +345,6 @@ func (s *Server) GetConfig() jobs.Config {
 // This allows different API versions to wrap the core refresh logic
 func (s *Server) HandleRefreshInternal(w http.ResponseWriter, r *http.Request) {
 	s.handleRefresh(w, r)
-}
-
-func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
-	logger := log.WithComponentFromContext(r.Context(), "api")
-
-	s.mu.RLock()
-	status := s.status
-	s.mu.RUnlock()
-
-	w.Header().Set("Content-Type", "application/json")
-	// Include an explicit status indicator alongside current status fields
-	resp := map[string]any{
-		"status":   "ok",
-		"version":  status.Version,
-		"lastRun":  status.LastRun,
-		"channels": status.Channels,
-	}
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		logger.Error().Err(err).Str("event", "status.encode_error").Msg("failed to encode status response")
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	logger.Debug().
-		Str("event", "status.success").
-		Str("version", status.Version).
-		Time("lastRun", status.LastRun).
-		Int("channels", status.Channels).
-		Str("status", "ok").
-		Msg("status request handled")
 }
 
 func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
@@ -1205,7 +1162,7 @@ func featureEnabled(flag string) bool {
 
 // NewRouter creates and configures a new router with all middlewares and handlers.
 // This includes the logging middleware, security headers, and the API routes.
-func NewRouter(cfg jobs.Config) http.Handler {
+func NewRouter(cfg config.AppConfig) http.Handler {
 	server := New(cfg)
 	return withMiddlewares(server.routes())
 }

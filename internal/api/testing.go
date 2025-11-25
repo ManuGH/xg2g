@@ -5,6 +5,7 @@ package api
 import (
 	"context"
 
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/jobs"
 )
 
@@ -18,7 +19,7 @@ func (s *Server) SetStatus(status jobs.Status) {
 
 // SetRefreshFunc sets a custom refresh function for testing
 // This allows tests to stub the refresh operation
-func (s *Server) SetRefreshFunc(fn func(context.Context, jobs.Config) (*jobs.Status, error)) {
+func (s *Server) SetRefreshFunc(fn func(context.Context, config.AppConfig) (*jobs.Status, error)) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.refreshFn = fn

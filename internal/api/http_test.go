@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/jobs"
 )
 
@@ -26,9 +27,9 @@ var dummyHandler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request)
 })
 
 func TestHandleStatus(t *testing.T) {
-	s := New(jobs.Config{})
+	s := New(config.AppConfig{})
 	handler := s.Handler()
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "/api/status", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/status", nil)
 	require.NoError(t, err)
 
 	rr := httptest.NewRecorder()
@@ -39,7 +40,7 @@ func TestHandleStatus(t *testing.T) {
 }
 
 func TestHandleRefresh_ErrorDoesNotUpdateLastRun(t *testing.T) {
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		OWIBase:  "invalid-url", // Cause an error
 		APIToken: "dummy-token",
 	}
@@ -47,7 +48,7 @@ func TestHandleRefresh_ErrorDoesNotUpdateLastRun(t *testing.T) {
 	handler := s.Handler()
 	initialTime := s.status.LastRun
 
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "/api/refresh", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/refresh", nil)
 	require.NoError(t, err)
 	req.Host = "example.com"                       // Required for CSRF validation
 	req.Header.Set("Origin", "http://example.com") // Add Origin for CSRF protection
@@ -76,13 +77,13 @@ func TestHandleRefresh_SuccessUpdatesLastRun(t *testing.T) {
 }
 
 func TestHandleRefresh_ConflictOnConcurrent(t *testing.T) {
-	cfg := jobs.Config{APIToken: "dummy-token"}
+	cfg := config.AppConfig{APIToken: "dummy-token"}
 	s := New(cfg)
 
 	// Install a slow refresh function to force overlap
 	startCh := make(chan struct{})
 	releaseCh := make(chan struct{})
-	s.refreshFn = func(_ context.Context, _ jobs.Config) (*jobs.Status, error) {
+	s.refreshFn = func(_ context.Context, _ config.AppConfig) (*jobs.Status, error) {
 		close(startCh) // signal that refresh started
 		<-releaseCh    // block until allowed to finish
 		return &jobs.Status{Channels: 1, LastRun: time.Now()}, nil
@@ -91,7 +92,7 @@ func TestHandleRefresh_ConflictOnConcurrent(t *testing.T) {
 	handler := s.Handler()
 
 	// First request starts and blocks
-	req1 := httptest.NewRequest(http.MethodPost, "/api/refresh", nil)
+	req1 := httptest.NewRequest(http.MethodPost, "/api/v1/refresh", nil)
 	req1.Host = "example.com"                       // Required for CSRF validation
 	req1.Header.Set("Origin", "http://example.com") // Add Origin for CSRF protection
 	req1.Header.Set("X-API-Token", "dummy-token")
@@ -112,7 +113,7 @@ func TestHandleRefresh_ConflictOnConcurrent(t *testing.T) {
 	}
 
 	// Second request should get 409 Conflict
-	req2 := httptest.NewRequest(http.MethodPost, "/api/refresh", nil)
+	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/refresh", nil)
 	req2.Host = "example.com"                       // Required for CSRF validation
 	req2.Header.Set("Origin", "http://example.com") // Add Origin for CSRF protection
 	req2.Header.Set("X-API-Token", "dummy-token")
@@ -135,7 +136,7 @@ func TestHandleRefresh_ConflictOnConcurrent(t *testing.T) {
 }
 
 func TestHandleHealth(t *testing.T) {
-	s := New(jobs.Config{})
+	s := New(config.AppConfig{})
 	handler := s.Handler()
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "/healthz", nil)
 	require.NoError(t, err)
@@ -162,7 +163,7 @@ func TestHandleReady(t *testing.T) {
 	}))
 	defer mockReceiver.Close()
 
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir:   tempDir,
 		XMLTVPath: xmltvPath,
 		OWIBase:   mockReceiver.URL, // Use mock receiver for health check
@@ -238,7 +239,7 @@ func TestAuthMiddleware(t *testing.T) {
 				t.Setenv("XG2G_API_TOKEN", tt.tokenEnv)
 			}
 
-			s := New(jobs.Config{APIToken: tt.tokenEnv})
+			s := New(config.AppConfig{APIToken: tt.tokenEnv})
 			// Test against a protected route
 			handler := s.authRequired(dummyHandler)
 
@@ -289,7 +290,7 @@ func TestSecureFileHandlerSymlinkPolicy(t *testing.T) {
 	symlinkDir := filepath.Join(dataDir, "evil_dir")
 	require.NoError(t, os.Symlink(outsideDir, symlinkDir))
 
-	cfg := jobs.Config{DataDir: dataDir}
+	cfg := config.AppConfig{DataDir: dataDir}
 	server := New(cfg)
 	handler := server.Handler()
 
@@ -329,7 +330,7 @@ func TestSecureFileHandlerSymlinkPolicy(t *testing.T) {
 }
 
 func TestMiddlewareChain(t *testing.T) {
-	server := New(jobs.Config{APIToken: "test-token"})
+	server := New(config.AppConfig{APIToken: "test-token"})
 	handler := server.Handler()
 
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "/test", nil)
@@ -354,7 +355,7 @@ func TestAdvancedPathTraversal(t *testing.T) {
 	// Create a benign file to make data dir non-empty
 	require.NoError(t, os.WriteFile(filepath.Join(tempDir, "ok.txt"), []byte("ok"), 0o600))
 
-	cfg := jobs.Config{DataDir: tempDir}
+	cfg := config.AppConfig{DataDir: tempDir}
 	server := New(cfg)
 	handler := server.Handler()
 
@@ -404,7 +405,7 @@ http://example.com/stream1
 	require.NoError(t, os.WriteFile(xmltvPath, []byte(xmltvContent), 0o600))
 	require.NoError(t, os.WriteFile(m3uPath, []byte(m3uContent), 0o600))
 
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir:   tmpDir,
 		XMLTVPath: "xmltv.xml",
 	}
@@ -429,7 +430,7 @@ func TestHandleXMLTV_FileTooLarge(t *testing.T) {
 	largeContent := make([]byte, 51*1024*1024)
 	require.NoError(t, os.WriteFile(xmltvPath, largeContent, 0o600))
 
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir:   tmpDir,
 		XMLTVPath: "xmltv.xml",
 	}
@@ -447,7 +448,7 @@ func TestHandleXMLTV_FileTooLarge(t *testing.T) {
 func TestHandleXMLTV_FileNotFound(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir:   tmpDir,
 		XMLTVPath: "nonexistent.xml",
 	}
@@ -488,7 +489,7 @@ http://example.com/stream1
 	require.NoError(t, os.WriteFile(xmltvPath, []byte(xmltvContent), 0o600))
 	require.NoError(t, os.WriteFile(m3uPath, []byte(m3uContent), 0o600))
 
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir:   tmpDir,
 		XMLTVPath: "xmltv.xml",
 	}
@@ -512,7 +513,7 @@ http://example.com/stream1
 func TestHandleXMLTV_EmptyPath(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir:   tmpDir,
 		XMLTVPath: "", // Empty path - not configured
 	}
@@ -542,7 +543,7 @@ func TestHandleXMLTV_M3UNotFound(t *testing.T) {
 	require.NoError(t, os.WriteFile(xmltvPath, []byte(xmltvContent), 0o600))
 	// No M3U file created - should serve raw XMLTV
 
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir:   tmpDir,
 		XMLTVPath: "xmltv.xml",
 	}
@@ -576,7 +577,7 @@ func TestHandleXMLTV_M3UTooLarge(t *testing.T) {
 	require.NoError(t, os.WriteFile(xmltvPath, []byte(xmltvContent), 0o600))
 	require.NoError(t, os.WriteFile(m3uPath, largeM3UContent, 0o600))
 
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir:   tmpDir,
 		XMLTVPath: "xmltv.xml",
 	}
@@ -606,7 +607,7 @@ func TestHandleXMLTV_HEADRequest(t *testing.T) {
 
 	require.NoError(t, os.WriteFile(xmltvPath, []byte(xmltvContent), 0o600))
 
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir:   tmpDir,
 		XMLTVPath: "xmltv.xml",
 	}
@@ -624,7 +625,7 @@ func TestHandleXMLTV_HEADRequest(t *testing.T) {
 }
 
 func TestHandleStatusV1(t *testing.T) {
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir: t.TempDir(),
 		Version: "1.2.3",
 	}
@@ -659,7 +660,7 @@ func TestHandleStatusV2Placeholder_Complete(t *testing.T) {
 	// Enable API_V2 feature flag
 	t.Setenv("XG2G_FEATURE_API_V2", "true")
 
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir: t.TempDir(),
 		Version: "2.0.0",
 	}
@@ -684,7 +685,7 @@ func TestHandleStatusV2Placeholder_Complete(t *testing.T) {
 }
 
 func TestHandleRefreshV1(t *testing.T) {
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		OWIBase: "http://invalid-url-for-testing",
 	}
 
@@ -703,7 +704,7 @@ func TestHandleRefreshV1(t *testing.T) {
 func TestClientDisconnectDuringRefresh(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir:  tmpDir,
 		OWIBase:  "http://invalid-url-that-will-timeout",
 		Bouquet:  "test",
@@ -715,7 +716,7 @@ func TestClientDisconnectDuringRefresh(t *testing.T) {
 	// Create a context that we'll cancel to simulate client disconnect
 	ctx, cancel := context.WithCancel(context.Background())
 
-	req := httptest.NewRequest(http.MethodPost, "/api/refresh", nil).WithContext(ctx)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/refresh", nil).WithContext(ctx)
 	req.Header.Set("Authorization", "Bearer test-token")
 
 	rr := httptest.NewRecorder()

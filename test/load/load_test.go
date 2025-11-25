@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -39,7 +40,7 @@ func TestLoadBaseline(t *testing.T) {
 
 	// Test configuration
 	tmpDir := t.TempDir()
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		Version:    "test",
 		DataDir:    tmpDir,
 		OWIBase:    server.URL,
@@ -114,7 +115,7 @@ func TestLoadConcurrentRefreshes(t *testing.T) {
 			defer wg.Done()
 
 			tmpDir := t.TempDir()
-			cfg := jobs.Config{
+			cfg := config.AppConfig{
 				Version:    "test",
 				DataDir:    tmpDir,
 				OWIBase:    server.URL,
@@ -172,7 +173,7 @@ func TestLoadHighLoad(t *testing.T) {
 	defer server.Close()
 
 	tmpDir := t.TempDir()
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		Version:    "test",
 		DataDir:    tmpDir,
 		OWIBase:    server.URL,
@@ -228,7 +229,7 @@ func TestLoadUnstableBackend(t *testing.T) {
 	defer server.Close()
 
 	tmpDir := t.TempDir()
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		Version:       "test",
 		DataDir:       tmpDir,
 		OWIBase:       server.URL,
@@ -292,7 +293,7 @@ func TestLoadMemoryUsage(t *testing.T) {
 
 	for i := 0; i < iterations; i++ {
 		// Use fresh config each time
-		cfg := jobs.Config{
+		cfg := config.AppConfig{
 			Version:    "test",
 			DataDir:    tmpDir,
 			OWIBase:    server.URL,
@@ -339,7 +340,7 @@ func TestLoadEPGWithManyChannels(t *testing.T) {
 	defer server.Close()
 
 	tmpDir := t.TempDir()
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		Version:           "test",
 		DataDir:           tmpDir,
 		OWIBase:           server.URL,
@@ -394,7 +395,7 @@ func BenchmarkRefreshSmall(b *testing.B) {
 	defer server.Close()
 
 	tmpDir := b.TempDir()
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		Version:    "bench",
 		DataDir:    tmpDir,
 		OWIBase:    server.URL,
@@ -429,7 +430,7 @@ func BenchmarkRefreshLarge(b *testing.B) {
 	defer server.Close()
 
 	tmpDir := b.TempDir()
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		Version:    "bench",
 		DataDir:    tmpDir,
 		OWIBase:    server.URL,

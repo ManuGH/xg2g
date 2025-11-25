@@ -9,11 +9,10 @@
         docker docker-build docker-build-cpu docker-build-gpu docker-build-all docker-security docker-tag docker-push docker-clean \
         sbom deps deps-update deps-tidy deps-verify deps-licenses \
         security security-scan security-audit security-vulncheck \
-	hardcore-test quality-gates pre-commit install dev-tools check-tools \
-	pin-digests compose-up-alpine compose-up-distroless k8s-apply-alpine k8s-apply-distroless \
+	quality-gates pre-commit install dev-tools check-tools \
         release-check release-build release-tag release-notes \
-        dev up down status prod-up prod-down mon-up mon-down logs prod-logs mon-logs \
-        restart prod-restart ps prod-ps mon-ps k8s-secret-apply k8s-secret-delete
+        dev up down status prod-up prod-down prod-logs \
+        restart prod-restart ps prod-ps
 
 # ===================================================================================================
 # Configuration and Variables
@@ -76,7 +75,7 @@ help: ## Show this help message
 	@echo "  test-ffi       Test Rust FFI integration (requires Rust library)"
 	@echo ""
 	@echo "Enterprise Testing:"
-	@echo "  hardcore-test  Run enterprise-grade comprehensive test suite"
+
 	@echo "  quality-gates  Validate all quality gates (coverage, lint, security)"
 	@echo ""
 	@echo "Docker Operations:"
@@ -126,7 +125,7 @@ help: ## Show this help message
 	@echo "  prod-ps        Show production containers"
 	@echo ""
 	@echo "Monitoring:"
-	@echo "  mon-up         Start monitoring stack (Prometheus + Grafana + AlertManager)"
+	@echo "  mon-up         Start monitoring stack (Prometheus + Grafana + Jaeger)"
 	@echo "  mon-down       Stop monitoring stack"
 	@echo "  mon-logs       Show monitoring logs"
 	@echo "  mon-ps         Show monitoring containers"
@@ -329,33 +328,7 @@ coverage-check: ## Check if coverage meets threshold
 # Enterprise Testing
 # ===================================================================================================
 
-hardcore-test: dev-tools ## Run enterprise-grade comprehensive test suite
-	@echo "🚀 Starting Hardcore Test Suite - Enterprise Grade Quality Assurance"
-	@echo "=================================================================="
-	@echo ""
-	@echo "Phase 1: Static Analysis and Linting..."
-	@$(MAKE) lint
-	@echo ""
-	@echo "Phase 2: Comprehensive Testing with Race Detection..."
-	@$(MAKE) test-race
-	@echo ""
-	@echo "Phase 3: Coverage Analysis with Thresholds..."
-	@$(MAKE) test-cover
-	@echo ""
-	@echo "Phase 4: Fuzzing and Edge Cases..."
-	@$(MAKE) test-fuzz
-	@echo ""
-	@echo "Phase 5: Security Vulnerability Scanning..."
-	@$(MAKE) security-vulncheck
-	@echo ""
-	@echo "Phase 6: Dependency Verification..."
-	@$(MAKE) deps-verify
-	@echo ""
-	@echo "Phase 7: Build Verification for All Platforms..."
-	@$(MAKE) build-all
-	@echo ""
-	@echo "🎉 Hardcore Test Suite PASSED - Enterprise Quality Validated!"
-	@echo "=================================================================="
+
 
 quality-gates: lint test-cover security-vulncheck ## Validate all quality gates
 	@echo "Validating quality gates..."
@@ -375,7 +348,7 @@ docker-build: docker-build-cpu ## Build Docker image (default: CPU-only, MODE 1+
 docker-build-cpu: ## Build CPU-only Docker image (MODE 1+2: Audio transcoding only)
 	@echo "🚀 Building CPU-only Docker image (MODE 1+2)..."
 	@docker buildx create --use --name xg2g-builder 2>/dev/null || true
-	@docker buildx build --build-arg ENABLE_GPU=false \
+	@docker buildx build \
 		--platform $(PLATFORMS) \
 		-t $(DOCKER_IMAGE):$(VERSION) \
 		-t $(DOCKER_IMAGE):latest \
@@ -385,9 +358,10 @@ docker-build-cpu: ## Build CPU-only Docker image (MODE 1+2: Audio transcoding on
 	@echo "✅ CPU-only Docker image built"
 
 docker-build-gpu: ## Build GPU-enabled Docker image (MODE 3: VAAPI video transcoding)
-	@echo "🎮 Building GPU-enabled Docker image (MODE 3)..."
+	@echo "⚠️  GPU support is currently disabled in Dockerfile (MODE 3 temporarily unavailable)"
+	@echo "⚠️  Building standard CPU image instead..."
 	@docker buildx create --use --name xg2g-builder 2>/dev/null || true
-	@docker buildx build --build-arg ENABLE_GPU=true \
+	@docker buildx build \
 		--platform linux/amd64,linux/arm64 \
 		-t $(DOCKER_IMAGE):$(VERSION)-gpu \
 		-t $(DOCKER_IMAGE):latest-gpu \
@@ -511,6 +485,8 @@ dev-tools: ## Install all development tools
 	@go install github.com/anchore/syft/cmd/syft@latest
 	@echo "Installing grype for vulnerability scanning..."
 	@go install github.com/anchore/grype/cmd/grype@latest
+	@echo "Installing go-licenses for license reporting..."
+	@go install github.com/google/go-licenses@latest
 	@echo "✅ Development tools installed"
 
 check-tools: ## Verify development tools are installed
@@ -530,7 +506,7 @@ pre-commit: lint test-race ## Run pre-commit validation checks
 
 release-check: ## Validate release readiness
 	@echo "Checking release readiness..."
-	@$(MAKE) hardcore-test
+	@$(MAKE) test-all
 	@$(MAKE) build-all
 	@$(MAKE) sbom
 	@echo "✅ Release validation completed"
@@ -569,37 +545,7 @@ release-notes: ## Generate release notes
 # Deployment Helpers
 # ===================================================================================================
 
-pin-digests: ## Replace <OWNER> and digest placeholders in deploy templates
-	@OWNER="$${OWNER:?Set OWNER=your-gh-org-or-user}"; \
-	ALPINE_DIGEST="$${ALPINE_DIGEST:-}"; \
-	DISTROLESS_DIGEST="$${DISTROLESS_DIGEST:-}"; \
-	./scripts/pin-digests.sh "$$OWNER" "$$ALPINE_DIGEST" "$$DISTROLESS_DIGEST"
 
-compose-up-alpine: ## Start Alpine variant via docker compose
-	docker compose -f deploy/docker-compose.alpine.yml up -d
-
-compose-up-distroless: ## Start Distroless variant via docker compose
-	docker compose -f deploy/docker-compose.distroless.yml up -d
-
-k8s-apply-alpine: ## Apply Alpine Kubernetes manifest (set NS=namespace)
-	kubectl apply -n "$${NS:-default}" -f deploy/k8s-alpine.yaml
-
-k8s-apply-distroless: ## Apply Distroless Kubernetes manifest (set NS=namespace)
-	kubectl apply -n "$${NS:-default}" -f deploy/k8s-distroless.yaml
-
-# --- K8s Secret helpers ---
-.PHONY: k8s-secret-apply k8s-secret-delete
-
-k8s-secret-apply: ## Apply xg2g secret (set NS and TOKEN; TOKEN will be base64-encoded by kubectl if using --from-literal)
-	@if [ -z "$$TOKEN" ]; then echo "❌ Set TOKEN=your-api-token"; exit 1; fi
-	kubectl -n "$${NS:-default}" create secret generic xg2g-secrets \
-	  --from-literal=api-token="$$TOKEN" \
-	  --dry-run=client -o yaml | kubectl -n "$${NS:-default}" apply -f -
-	@echo "✅ Secret applied in namespace $$\{NS:-default\}"
-
-k8s-secret-delete: ## Delete xg2g secret
-	kubectl -n "$${NS:-default}" delete secret xg2g-secrets --ignore-not-found
-	@echo "✅ Secret deleted (if existed) in namespace $$\{NS:-default\}"
 
 # ===================================================================================================
 # Development & Local Orchestration
@@ -683,23 +629,27 @@ prod-restart: ## Restart production service
 prod-ps: ## Show production containers
 	@docker compose -f docker-compose.production.yml ps
 
-mon-up: ## Start monitoring stack (Prometheus + Grafana + AlertManager) [TODO: docker-compose.monitoring.yml not yet created]
-	@echo "⚠️  Monitoring stack not yet configured"
-	@echo "📝 TODO: Create docker-compose.monitoring.yml with Prometheus, Grafana, AlertManager"
-	@echo "💡 Metrics are exported at :9090/metrics (see docker-compose.production.yml)"
-	@exit 1
+mon-up: ## Start monitoring stack
+	@echo "Starting monitoring stack..."
+	@docker compose -f deploy/monitoring/docker-compose.yml up -d
+	@echo "✅ Monitoring stack started"
+	@echo "📊 Grafana: http://localhost:3000 (admin/admin)"
+	@echo "📈 Prometheus: http://localhost:9090"
+	@echo "🔍 Jaeger: http://localhost:16686"
 
-mon-down: ## Stop monitoring stack [TODO: docker-compose.monitoring.yml not yet created]
-	@echo "⚠️  Monitoring stack not yet configured"
-	@exit 1
+mon-down: ## Stop monitoring stack
+	@echo "Stopping monitoring stack..."
+	@docker compose -f deploy/monitoring/docker-compose.yml down
+	@echo "✅ Monitoring stack stopped"
 
-mon-logs: ## Show monitoring stack logs [TODO: docker-compose.monitoring.yml not yet created]
-	@echo "⚠️  Monitoring stack not yet configured"
-	@exit 1
+mon-logs: ## Show monitoring logs
+	@echo "Showing monitoring logs..."
+	@docker compose -f deploy/monitoring/docker-compose.yml logs -f
 
-mon-ps: ## Show monitoring containers [TODO: docker-compose.monitoring.yml not yet created]
-	@echo "⚠️  Monitoring stack not yet configured"
-	@exit 1
+mon-ps: ## Show monitoring containers
+	@docker compose -f deploy/monitoring/docker-compose.yml ps
+
+
 
 # ============================================================================
 # Pre-Commit Hooks und Linting

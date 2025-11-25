@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/hdhr"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/rs/zerolog"
@@ -20,7 +21,7 @@ import (
 
 // TestGetConfig tests the GetConfig method.
 func TestGetConfig(t *testing.T) {
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		Bouquet:     "test-bouquet",
 		OWIUsername: "testuser",
 		DataDir:     "/tmp/test",
@@ -45,7 +46,7 @@ func TestGetConfig(t *testing.T) {
 // TestHandleRefreshInternal tests the HandleRefreshInternal wrapper.
 func TestHandleRefreshInternal(t *testing.T) {
 	// Create a mock refresh function that succeeds immediately
-	mockRefreshFn := func(ctx context.Context, cfg jobs.Config) (*jobs.Status, error) {
+	mockRefreshFn := func(ctx context.Context, cfg config.AppConfig) (*jobs.Status, error) {
 		return &jobs.Status{
 			Version:  "test",
 			Channels: 42,
@@ -54,7 +55,7 @@ func TestHandleRefreshInternal(t *testing.T) {
 	}
 
 	s := &Server{
-		cfg:       jobs.Config{Bouquet: "test"},
+		cfg:       config.AppConfig{Bouquet: "test"},
 		refreshFn: mockRefreshFn,
 		cb:        NewCircuitBreaker(3, 5*time.Second),
 	}
@@ -73,7 +74,7 @@ func TestHandleRefreshInternal(t *testing.T) {
 
 // TestHandleRefreshV1Direct tests handleRefreshV1 directly.
 func TestHandleRefreshV1Direct(t *testing.T) {
-	mockRefreshFn := func(ctx context.Context, cfg jobs.Config) (*jobs.Status, error) {
+	mockRefreshFn := func(ctx context.Context, cfg config.AppConfig) (*jobs.Status, error) {
 		return &jobs.Status{
 			Version:  "test",
 			Channels: 5,
@@ -82,7 +83,7 @@ func TestHandleRefreshV1Direct(t *testing.T) {
 	}
 
 	s := &Server{
-		cfg:       jobs.Config{Bouquet: "test"},
+		cfg:       config.AppConfig{Bouquet: "test"},
 		refreshFn: mockRefreshFn,
 		cb:        NewCircuitBreaker(3, 5*time.Second),
 	}
@@ -106,11 +107,11 @@ func TestHandleRefreshV1Direct(t *testing.T) {
 
 // fakeConfigHolder is a test double for ConfigHolder.
 type fakeConfigHolder struct {
-	cfg       jobs.Config
+	cfg       config.AppConfig
 	reloadErr error
 }
 
-func (f *fakeConfigHolder) Get() jobs.Config {
+func (f *fakeConfigHolder) Get() config.AppConfig {
 	return f.cfg
 }
 
@@ -141,7 +142,7 @@ func TestHandleConfigReloadV1(t *testing.T) {
 	})
 
 	t.Run("reload_success", func(t *testing.T) {
-		newCfg := jobs.Config{
+		newCfg := config.AppConfig{
 			Bouquet: "updated-bouquet",
 			DataDir: "/tmp/new",
 		}
@@ -151,7 +152,7 @@ func TestHandleConfigReloadV1(t *testing.T) {
 		}
 
 		s := &Server{
-			cfg:          jobs.Config{Bouquet: "old"},
+			cfg:          config.AppConfig{Bouquet: "old"},
 			configHolder: holder,
 		}
 
@@ -174,12 +175,12 @@ func TestHandleConfigReloadV1(t *testing.T) {
 
 	t.Run("reload_failure", func(t *testing.T) {
 		holder := &fakeConfigHolder{
-			cfg:       jobs.Config{},
+			cfg:       config.AppConfig{},
 			reloadErr: context.DeadlineExceeded,
 		}
 
 		s := &Server{
-			cfg:          jobs.Config{Bouquet: "old"},
+			cfg:          config.AppConfig{Bouquet: "old"},
 			configHolder: holder,
 		}
 
@@ -217,7 +218,7 @@ http://example.com/stream3
 		}
 
 		s := &Server{
-			cfg: jobs.Config{
+			cfg: config.AppConfig{
 				DataDir: tmpDir,
 			},
 		}
@@ -258,7 +259,7 @@ http://example.com/stream3
 		// Don't create playlist.m3u
 
 		s := &Server{
-			cfg: jobs.Config{
+			cfg: config.AppConfig{
 				DataDir: tmpDir,
 			},
 		}
@@ -340,7 +341,7 @@ func TestAPIError_Error(t *testing.T) {
 func TestSetConfigHolder(t *testing.T) {
 	s := &Server{}
 	holder := &fakeConfigHolder{
-		cfg: jobs.Config{Bouquet: "test"},
+		cfg: config.AppConfig{Bouquet: "test"},
 	}
 
 	s.SetConfigHolder(holder)
@@ -418,7 +419,7 @@ func TestHDHomeRunServer(t *testing.T) {
 // TestHandler tests the Handler method with and without audit logger.
 func TestHandler(t *testing.T) {
 	t.Run("without_audit_logger", func(t *testing.T) {
-		cfg := jobs.Config{
+		cfg := config.AppConfig{
 			DataDir: t.TempDir(),
 			Bouquet: "test",
 		}
@@ -440,7 +441,7 @@ func TestHandler(t *testing.T) {
 	})
 
 	t.Run("with_audit_logger", func(t *testing.T) {
-		cfg := jobs.Config{
+		cfg := config.AppConfig{
 			DataDir: t.TempDir(),
 			Bouquet: "test",
 		}
@@ -465,7 +466,7 @@ func TestHandler(t *testing.T) {
 
 // TestNewRouter tests the NewRouter function.
 func TestNewRouter(t *testing.T) {
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir: t.TempDir(),
 		Bouquet: "test",
 	}
@@ -638,7 +639,7 @@ func TestRegisterV2Routes_StatusEndpoint(t *testing.T) {
 	// Enable API_V2 feature flag
 	t.Setenv("XG2G_FEATURE_API_V2", "true")
 
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir: t.TempDir(),
 		Version: "test-v2",
 	}
@@ -684,7 +685,7 @@ http://10.10.55.14:18000/1:0:19:1334:3EF:1:C00000:0:0:0:
 	require.NoError(t, os.WriteFile(m3uPath, []byte(m3uContent), 0644))
 
 	// Create server with PlexForceHLS disabled
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir: tempDir,
 	}
 	srv := New(cfg)
@@ -737,7 +738,7 @@ http://10.10.55.14:18000/1:0:19:1334:3EF:1:C00000:0:0:0:
 	require.NoError(t, os.WriteFile(m3uPath, []byte(m3uContent), 0644))
 
 	// Create server with PlexForceHLS enabled
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir: tempDir,
 	}
 	srv := New(cfg)
@@ -789,7 +790,7 @@ http://10.10.55.14:18000/hls/1:0:19:132F:3EF:1:C00000:0:0:0:
 	require.NoError(t, os.WriteFile(m3uPath, []byte(m3uContent), 0644))
 
 	// Create server with PlexForceHLS enabled
-	cfg := jobs.Config{
+	cfg := config.AppConfig{
 		DataDir: tempDir,
 	}
 	srv := New(cfg)

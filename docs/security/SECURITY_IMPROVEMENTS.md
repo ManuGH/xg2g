@@ -345,8 +345,7 @@ func TestSecureFileServer_SymlinkEscape(t *testing.T) {
     err = os.Symlink(secretFile, symlinkPath)
     require.NoError(t, err)
 
-    // Create server
-    cfg := jobs.Config{DataDir: tmpDir}
+    cfg := config.AppConfig{DataDir: tmpDir}
     server := NewServer(cfg, nil, nil, nil)
 
     // Attempt to access via symlink
@@ -368,7 +367,7 @@ func TestSecureFileServer_PathTraversal(t *testing.T) {
     err := os.WriteFile(legitFile, []byte("allowed content"), 0644)
     require.NoError(t, err)
 
-    cfg := jobs.Config{DataDir: tmpDir}
+    cfg := config.AppConfig{DataDir: tmpDir}
     server := NewServer(cfg, nil, nil, nil)
 
     tests := []struct {

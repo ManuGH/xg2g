@@ -127,8 +127,8 @@ func main() {
 		MetricsHandler: promhttp.Handler(),
 	}
 
-	// Configure proxy if enabled
-	if config.ParseBool("XG2G_ENABLE_STREAM_PROXY", false) {
+	// Configure proxy (enabled by default in v2.0 for Zero Config experience)
+	if config.ParseBool("XG2G_ENABLE_STREAM_PROXY", true) {
 		targetURL := config.ParseString("XG2G_PROXY_TARGET", "")
 		receiverHost := proxy.GetReceiverHost()
 
@@ -162,21 +162,6 @@ func main() {
 			StreamDetector: streamDetector,
 			Logger:         xglog.WithComponent("proxy"),
 		}
-	}
-
-	// Configure GPU transcoding server if enabled (MODE 3)
-	// Implementation in gpu.go (build tag: gpu) or gpu_stub.go (build tag: !gpu)
-	gpuServer := initGPUServer()
-	if gpuServer != nil {
-		defer func() {
-			logger.Info().Msg("Shutting down GPU transcoding server...")
-			// Type assertion needed because stub returns interface{}
-			if srv, ok := gpuServer.(interface{ Stop() error }); ok {
-				if err := srv.Stop(); err != nil {
-					logger.Error().Err(err).Msg("failed to stop GPU server gracefully")
-				}
-			}
-		}()
 	}
 
 	// Create daemon manager

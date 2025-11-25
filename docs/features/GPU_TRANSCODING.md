@@ -1,4 +1,9 @@
-# GPU Transcoding Integration Guide
+# GPU Transcoding
+
+> [!WARNING]
+> **GPU Transcoding is currently disabled / experimental.**
+> The instructions below describe the intended architecture but the feature is currently disabled in the official Docker image.
+ Integration Guide
 
 ## Overview
 
@@ -147,6 +152,7 @@ Client receives synchronized stream
 ### Fallback Mechanism
 
 **Priority Cascade**:
+
 1. **GPU Transcoding** (if enabled and available)
    - On error → Logs error and falls back to #2
 2. **Audio-Only Transcoding** (if enabled)
@@ -266,6 +272,7 @@ DEBUG: FFmpeg: Stream #0:1: Audio: aac
 ### Performance Metrics
 
 Check GPU usage:
+
 ```bash
 # AMD GPU
 radeontop
@@ -278,16 +285,19 @@ watch -n 1 'cat /sys/class/drm/card*/device/gpu_busy_percent'
 ```
 
 Check CPU usage:
+
 ```bash
 docker stats xg2g xg2g-transcoder
 ```
 
 Expected with GPU transcoding:
+
 - **CPU**: 5-15% per stream
 - **GPU**: 30-60% per stream
 - **Memory**: ~200MB total
 
 Without GPU (Jellyfin software transcoding):
+
 - **CPU**: 80-150% per stream ❌
 - **Memory**: ~500MB+ per stream ❌
 
@@ -298,6 +308,7 @@ Without GPU (Jellyfin software transcoding):
 **Symptom**: `docker logs xg2g-transcoder` shows errors
 
 **Check**:
+
 ```bash
 # Verify GPU device exists
 ls -la /dev/dri/renderD128
@@ -310,6 +321,7 @@ docker exec xg2g-transcoder vainfo
 ```
 
 **Solution**:
+
 - Ensure GPU drivers are installed
 - Add user to `render` group: `usermod -aG render $USER`
 - Restart Docker daemon
@@ -319,6 +331,7 @@ docker exec xg2g-transcoder vainfo
 **Symptom**: No "routing stream through GPU transcoder" in logs
 
 **Check**:
+
 ```bash
 # Verify configuration
 docker exec xg2g printenv | grep -i transcode
@@ -328,6 +341,7 @@ docker exec xg2g curl -s http://localhost:8085/health
 ```
 
 **Solution**:
+
 - Ensure `XG2G_GPU_TRANSCODE=true`
 - Ensure `XG2G_ENABLE_AUDIO_TRANSCODING=true`
 - Restart xg2g service: `docker restart xg2g`
@@ -337,11 +351,13 @@ docker exec xg2g curl -s http://localhost:8085/health
 **Symptom**: Audio delay persists in Jellyfin playback
 
 **Check**:
+
 1. Verify GPU transcoding is active (check logs)
 2. Test direct stream (bypass Jellyfin transcoding)
 3. Check Jellyfin transcoding settings
 
 **Solution**:
+
 ```bash
 # Test direct GPU transcoder stream
 timeout 30 curl -s "http://localhost:8085/transcode?source_url=http://ENIGMA2:17999/CHANNEL" | \
@@ -353,6 +369,7 @@ timeout 30 curl -s "http://localhost:8085/transcode?source_url=http://ENIGMA2:17
 ```
 
 If audio is synchronized with direct GPU transcoder but not with Jellyfin:
+
 - Disable Jellyfin transcoding for Live TV (use Direct Play)
 - Or adjust Jellyfin buffer settings
 
@@ -361,6 +378,7 @@ If audio is synchronized with direct GPU transcoder but not with Jellyfin:
 **Symptom**: CPU usage still high with GPU transcoding enabled
 
 **Check**:
+
 ```bash
 # Verify GPU is actually encoding
 radeontop  # AMD
@@ -371,6 +389,7 @@ docker exec xg2g-transcoder ps aux | grep ffmpeg
 ```
 
 **Solution**:
+
 - Ensure VAAPI device is correct: `VAAPI_DEVICE=/dev/dri/renderD128`
 - Check FFmpeg hardware encoding: Look for `h264_vaapi` in logs
 - Verify no software fallback is occurring
@@ -435,6 +454,7 @@ environment:
 ### From Audio-Only to GPU Transcoding
 
 **Current Setup**:
+
 ```yaml
 environment:
   XG2G_ENABLE_AUDIO_TRANSCODING: "true"
@@ -443,6 +463,7 @@ environment:
 ```
 
 **New Setup** (add these):
+
 ```yaml
 services:
   transcoder:
@@ -464,6 +485,7 @@ services:
 ```
 
 **Rollback** (if needed):
+
 ```yaml
 environment:
   XG2G_GPU_TRANSCODE: "false"  # Disable GPU, keep audio-only
@@ -478,6 +500,7 @@ environment:
 **Impact**: Usually harmless - initial frames until stream stabilizes
 
 **Solution**: Increase `ANALYZE_DURATION` and `PROBE_SIZE`:
+
 ```yaml
 environment:
   ANALYZE_DURATION: 1000000  # Default: 500000
@@ -489,6 +512,7 @@ environment:
 **Status**: ✅ Automatically handled with yadif deinterlacing
 
 **Verification**:
+
 ```bash
 # Check deinterlacing in logs
 docker logs xg2g-transcoder 2>&1 | grep yadif

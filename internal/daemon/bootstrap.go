@@ -9,11 +9,11 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
-	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/telemetry"
 	"github.com/rs/zerolog"
@@ -43,7 +43,7 @@ type Config struct {
 // Daemon represents the xg2g daemon instance.
 type Daemon struct {
 	config    Config
-	jobsCfg   jobs.Config
+	appCfg    config.AppConfig
 	server    *http.Server
 	logger    zerolog.Logger
 	telemetry *telemetry.Provider
@@ -51,25 +51,25 @@ type Daemon struct {
 
 // New creates a new daemon instance.
 func New(cfg Config) (*Daemon, error) {
+	// Load jobs configuration
+	loader := config.NewLoader(cfg.ConfigPath, cfg.Version)
+	appCfg, err := loader.Load()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load config: %w", err)
+	}
+
 	// Initialize logger
 	log.Configure(log.Config{
-		Level:   "info",
+		Level:   appCfg.LogLevel,
 		Output:  os.Stdout,
 		Service: "xg2g",
 	})
 	logger := log.WithComponent("daemon")
 
-	// Load jobs configuration
-	loader := config.NewLoader(cfg.ConfigPath, cfg.Version)
-	jobsCfg, err := loader.Load()
-	if err != nil {
-		return nil, fmt.Errorf("failed to load config: %w", err)
-	}
-
 	return &Daemon{
-		config:  cfg,
-		jobsCfg: jobsCfg,
-		logger:  logger,
+		config: cfg,
+		appCfg: appCfg,
+		logger: logger,
 	}, nil
 }
 
@@ -109,7 +109,7 @@ func (d *Daemon) Start(ctx context.Context, handler http.Handler) error {
 	case err := <-errChan:
 		return err
 	case <-ctx.Done():
-		return d.Shutdown(context.Background())
+		return d.Shutdown(ctx)
 	}
 }
 
@@ -147,6 +147,12 @@ func (d *Daemon) initTelemetry(ctx context.Context) error {
 		return nil
 	}
 
+	// Parse sampling rate
+	samplingRate, err := parseFloat(getEnvOrDefault("XG2G_SAMPLING_RATE", "1.0"))
+	if err != nil {
+		return fmt.Errorf("invalid sampling rate: %w", err)
+	}
+
 	// Build telemetry config
 	telCfg := telemetry.Config{
 		Enabled:        true,
@@ -155,7 +161,7 @@ func (d *Daemon) initTelemetry(ctx context.Context) error {
 		Environment:    getEnvOrDefault("XG2G_ENVIRONMENT", "production"),
 		ExporterType:   getEnvOrDefault("XG2G_TELEMETRY_EXPORTER", "grpc"),
 		Endpoint:       getEnvOrDefault("XG2G_OTLP_ENDPOINT", "localhost:4317"),
-		SamplingRate:   parseFloat(getEnvOrDefault("XG2G_SAMPLING_RATE", "1.0")),
+		SamplingRate:   samplingRate,
 	}
 
 	// Initialize telemetry provider
@@ -189,8 +195,6 @@ func getEnvOrDefault(key, defaultValue string) string {
 	return defaultValue
 }
 
-func parseFloat(s string) float64 {
-	var f float64
-	_, _ = fmt.Sscanf(s, "%f", &f)
-	return f
+func parseFloat(s string) (float64, error) {
+	return strconv.ParseFloat(s, 64)
 }

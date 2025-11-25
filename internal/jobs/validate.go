@@ -7,11 +7,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/validate"
 )
 
 // validateConfig validates the configuration for refresh operations
-func validateConfig(cfg Config) error {
+func validateConfig(cfg config.AppConfig) error {
 	// Use centralized validation package
 	v := validate.New()
 
@@ -23,16 +24,6 @@ func validateConfig(cfg Config) error {
 		return v.Err()
 	}
 
-	return nil
-}
-
-// validateOptions validates the options for refresh operations
-//
-//nolint:unused // Validation helper - kept for future use
-func validateOptions(opts Options) error {
-	if opts.Parallelism < 0 {
-		return fmt.Errorf("parallelism must be >= 0, got %d", opts.Parallelism)
-	}
 	return nil
 }
 

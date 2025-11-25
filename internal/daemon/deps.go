@@ -5,7 +5,7 @@ package daemon
 import (
 	"net/http"
 
-	"github.com/ManuGH/xg2g/internal/jobs"
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/rs/zerolog"
 )
@@ -17,7 +17,7 @@ type Deps struct {
 	Logger zerolog.Logger
 
 	// Config is the jobs configuration (OpenWebIF, EPG, etc.)
-	Config jobs.Config
+	Config config.AppConfig
 
 	// APIHandler is the HTTP handler for the API server
 	APIHandler http.Handler

@@ -1,5 +1,9 @@
 # Production Deployment Guide - xg2g GPU Transcoder
 
+> [!WARNING]
+> **GPU Transcoding is currently disabled / experimental.**
+> The instructions below describe the intended architecture but the feature is currently disabled in the official Docker image.
+
 ## 🎯 Overview
 
 This guide covers the production deployment of the xg2g GPU transcoding system with AMD VAAPI hardware acceleration.
@@ -36,6 +40,7 @@ curl http://localhost:8081/health
 ```
 
 Expected output:
+
 ```json
 {
   "status": "ok",
@@ -92,11 +97,13 @@ services:
 **GET** `/transcode?source_url=<URL>`
 
 Query Parameters:
+
 - `source_url` (required): Input stream URL
 - `video_bitrate` (optional): Override video bitrate
 - `audio_bitrate` (optional): Override audio bitrate
 
 Example:
+
 ```bash
 curl --no-buffer "http://localhost:8081/transcode?source_url=http://10.10.55.57:17999/1:0:1:445D:453:1:C00000:0:0:0:" \
   | vlc -
@@ -109,6 +116,7 @@ curl --no-buffer "http://localhost:8081/transcode?source_url=http://10.10.55.57:
 **GET** `/health`
 
 Returns:
+
 ```json
 {
   "status": "ok",
@@ -122,6 +130,7 @@ Returns:
 **GET** `/metrics`
 
 Returns Prometheus-compatible metrics:
+
 - Active transcoding sessions
 - Success/error counts
 - Request durations
@@ -170,6 +179,7 @@ Tested on AMD Radeon Graphics (gfx1103_r1):
 **Cause**: GPU device not accessible
 
 **Diagnostics**:
+
 ```bash
 docker exec xg2g-transcoder vainfo
 ls -la /dev/dri/
@@ -180,11 +190,13 @@ ls -la /dev/dri/
 ## 📝 Logging
 
 View logs:
+
 ```bash
 docker logs -f xg2g-transcoder
 ```
 
 Set debug logging:
+
 ```bash
 docker compose -f docker-compose.minimal.yml down
 RUST_LOG=debug docker compose -f docker-compose.minimal.yml up -d
@@ -234,6 +246,7 @@ ffmpeg -hide_banner -loglevel error \
 ```
 
 **Critical Points**:
+
 - `-init_hw_device` MUST come before `-i` for live streams
 - Removed problematic flags: `-async 1`, `-start_at_zero`, `-avoid_negative_ts`
 - Filter chain: CPU deinterlace (yadif) → GPU encode (hwupload)
@@ -263,6 +276,7 @@ Deployment is successful when:
 ## 📞 Support
 
 For issues or questions:
+
 - Check logs: `docker logs xg2g-transcoder`
 - Verify VAAPI: `docker exec xg2g-transcoder vainfo`
 - Test FFmpeg: See troubleshooting section

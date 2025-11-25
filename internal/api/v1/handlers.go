@@ -4,9 +4,7 @@
 package v1
 
 import (
-	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"time"
 
@@ -27,18 +25,10 @@ func NewHandler(srv *api.Server) *Handler {
 // StatusResponse defines the v1 status contract
 // This structure is STABLE and must not change in backwards-incompatible ways
 type StatusResponse struct {
-	Status   string          `json:"status"`
-	Version  string          `json:"version"`
-	LastRun  time.Time       `json:"lastRun"`
-	Channels int             `json:"channels"`
-	Receiver *ReceiverStatus `json:"receiver,omitempty"` // Optional receiver health check
-}
-
-// ReceiverStatus provides receiver connectivity information
-type ReceiverStatus struct {
-	Reachable    bool   `json:"reachable"`
-	ResponseTime int64  `json:"responseTimeMs,omitempty"` // Response time in milliseconds
-	Error        string `json:"error,omitempty"`          // Error message if unreachable
+	Status   string    `json:"status"`
+	Version  string    `json:"version"`
+	LastRun  time.Time `json:"lastRun"`
+	Channels int       `json:"channels"`
 }
 
 // HandleStatus implements GET /api/v1/status
@@ -56,17 +46,6 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 		Channels: status.Channels,
 	}
 
-	// Optional receiver health check
-	if r.URL.Query().Get("check_receiver") == "true" {
-		receiverStatus := h.checkReceiverHealth(r)
-		resp.Receiver = receiverStatus
-
-		// If receiver is unreachable, downgrade overall status to degraded
-		if !receiverStatus.Reachable {
-			resp.Status = "degraded"
-		}
-	}
-
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-API-Version", "1")
 
@@ -81,79 +60,7 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 		Str("version", status.Version).
 		Time("lastRun", status.LastRun).
 		Int("channels", status.Channels).
-		Bool("receiver_checked", resp.Receiver != nil).
 		Msg("v1 status request handled")
-}
-
-// checkReceiverHealth performs a lightweight health check on the OpenWebIF receiver
-func (h *Handler) checkReceiverHealth(r *http.Request) *ReceiverStatus {
-	logger := log.WithComponentFromContext(r.Context(), "api.v1")
-
-	// Get server config for receiver connection details
-	cfg := h.server.GetConfig()
-	if cfg.OWIBase == "" {
-		return &ReceiverStatus{
-			Reachable: false,
-			Error:     "receiver not configured",
-		}
-	}
-
-	// Create short timeout context for health check (5 seconds max)
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-
-	// Create a minimal HTTP client for health check
-	client := &http.Client{
-		Timeout: 5 * time.Second,
-	}
-
-	start := time.Now()
-
-	// Lightweight check: GET /api/statusinfo (minimal endpoint)
-	checkURL := cfg.OWIBase + "/api/statusinfo"
-	req, err := http.NewRequestWithContext(ctx, "GET", checkURL, nil)
-	if err != nil {
-		return &ReceiverStatus{
-			Reachable: false,
-			Error:     "failed to create request: " + err.Error(),
-		}
-	}
-
-	// Add basic auth if configured
-	if cfg.OWIUsername != "" && cfg.OWIPassword != "" {
-		req.SetBasicAuth(cfg.OWIUsername, cfg.OWIPassword)
-	}
-
-	resp, err := client.Do(req)
-	responseTime := time.Since(start).Milliseconds()
-
-	if err != nil {
-		logger.Debug().Err(err).Int64("responseMs", responseTime).Msg("receiver health check failed")
-		return &ReceiverStatus{
-			Reachable:    false,
-			ResponseTime: responseTime,
-			Error:        err.Error(),
-		}
-	}
-	defer func() {
-		if closeErr := resp.Body.Close(); closeErr != nil {
-			logger.Debug().Err(closeErr).Msg("failed to close response body")
-		}
-	}()
-
-	if resp.StatusCode != http.StatusOK {
-		return &ReceiverStatus{
-			Reachable:    false,
-			ResponseTime: responseTime,
-			Error:        fmt.Sprintf("unexpected status code: %d", resp.StatusCode),
-		}
-	}
-
-	logger.Debug().Int64("responseMs", responseTime).Msg("receiver health check successful")
-	return &ReceiverStatus{
-		Reachable:    true,
-		ResponseTime: responseTime,
-	}
 }
 
 // RefreshResponse defines the v1 refresh response contract

@@ -7,14 +7,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/jobs"
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func createTestDashboard() *Dashboard {
-	config := jobs.Config{
+	config := config.AppConfig{
 		Version:    "test-1.0.0",
 		OWIBase:    "http://test.example.com",
 		Bouquet:    "Test Bouquet",
@@ -29,7 +29,7 @@ func createTestDashboard() *Dashboard {
 }
 
 func TestNew(t *testing.T) {
-	config := jobs.Config{Version: "1.0.0"}
+	config := config.AppConfig{Version: "1.0.0"}
 	logger := zerolog.New(nil).With().Logger()
 
 	dashboard := New(config, logger)

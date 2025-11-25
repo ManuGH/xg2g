@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/jobs"
 	xglog "github.com/ManuGH/xg2g/internal/log"
 	"github.com/fsnotify/fsnotify"
 	"github.com/rs/zerolog"
@@ -19,7 +18,7 @@ import (
 // from file or manual trigger via API.
 type ConfigHolder struct {
 	mu         sync.RWMutex
-	current    jobs.Config
+	current    AppConfig
 	loader     *Loader
 	configPath string
 	watcher    *fsnotify.Watcher
@@ -27,22 +26,22 @@ type ConfigHolder struct {
 
 	// Reload notifications
 	reloadMu        sync.RWMutex
-	reloadListeners []chan<- jobs.Config
+	reloadListeners []chan<- AppConfig
 }
 
 // NewConfigHolder creates a new configuration holder with initial config.
-func NewConfigHolder(initial jobs.Config, loader *Loader, configPath string) *ConfigHolder {
+func NewConfigHolder(initial AppConfig, loader *Loader, configPath string) *ConfigHolder {
 	return &ConfigHolder{
 		current:         initial,
 		loader:          loader,
 		configPath:      configPath,
 		logger:          xglog.WithComponent("config"),
-		reloadListeners: make([]chan<- jobs.Config, 0),
+		reloadListeners: make([]chan<- AppConfig, 0),
 	}
 }
 
 // Get returns the current configuration (thread-safe read).
-func (h *ConfigHolder) Get() jobs.Config {
+func (h *ConfigHolder) Get() AppConfig {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.current
@@ -190,14 +189,14 @@ func (h *ConfigHolder) Stop() {
 // RegisterListener registers a channel to receive config reload notifications.
 // The channel will receive the new config whenever a reload succeeds.
 // The caller is responsible for closing the channel.
-func (h *ConfigHolder) RegisterListener(ch chan<- jobs.Config) {
+func (h *ConfigHolder) RegisterListener(ch chan<- AppConfig) {
 	h.reloadMu.Lock()
 	defer h.reloadMu.Unlock()
 	h.reloadListeners = append(h.reloadListeners, ch)
 }
 
 // notifyListeners sends the new config to all registered listeners (non-blocking).
-func (h *ConfigHolder) notifyListeners(newCfg jobs.Config) {
+func (h *ConfigHolder) notifyListeners(newCfg AppConfig) {
 	h.reloadMu.RLock()
 	defer h.reloadMu.RUnlock()
 
@@ -214,7 +213,7 @@ func (h *ConfigHolder) notifyListeners(newCfg jobs.Config) {
 }
 
 // logChanges logs the differences between old and new configuration.
-func (h *ConfigHolder) logChanges(old, newCfg jobs.Config) {
+func (h *ConfigHolder) logChanges(old, newCfg AppConfig) {
 	if old.Bouquet != newCfg.Bouquet {
 		h.logger.Info().
 			Str("old", old.Bouquet).

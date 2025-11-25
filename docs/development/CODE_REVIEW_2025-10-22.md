@@ -220,7 +220,7 @@ type Server struct {
     rateLimiter *rate.Limiter
 }
 
-func New(cfg jobs.Config) *Server {
+func New(cfg config.AppConfig) *Server {
     s := &Server{
         rateLimiter: rate.NewLimiter(rate.Every(time.Minute), 5),
     }
