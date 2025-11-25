@@ -47,7 +47,6 @@ RUN if [ -f /etc/alpine-release ]; then \
     libavcodec-dev \
     libavformat-dev \
     libavfilter-dev \
-    libavdevice-dev \
     clang \
     && rm -rf /var/lib/apt/lists/*; \
     fi
