@@ -41,15 +41,20 @@ RUN if [ -f /etc/alpine-release ]; then \
     gcc; \
     else \
     # Debian cross-compilation setup
-    xx-apt-get update && xx-apt-get install -y --no-install-recommends \
+    # 1. Install native build tools (clang, pkg-config, etc.)
+    apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     pkg-config \
+    clang \
+    && \
+    # 2. Install target libraries and cross-compiler helpers via xx
+    xx-apt-get update && xx-apt-get install -y --no-install-recommends \
+    gcc \
     libavcodec-dev \
     libavformat-dev \
     libavfilter-dev \
     libavutil-dev \
     libswresample-dev \
-    clang \
     && rm -rf /var/lib/apt/lists/*; \
     fi
 
@@ -101,6 +106,11 @@ RUN if [ -f /etc/alpine-release ]; then \
     musl-dev \
     ffmpeg-dev; \
     else \
+    # 1. Install native build tools
+    apt-get update && apt-get install -y --no-install-recommends \
+    pkg-config \
+    && \
+    # 2. Install target libraries and cross-compiler helpers
     xx-apt-get update && xx-apt-get install -y --no-install-recommends \
     gcc \
     libc6-dev \
