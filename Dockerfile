@@ -41,7 +41,7 @@ RUN if [ -f /etc/alpine-release ]; then \
     gcc; \
     else \
     # Debian cross-compilation setup
-    xx-apt-get update && xx-apt-get install -y \
+    xx-apt-get update && xx-apt-get install -y --no-install-recommends \
     build-essential \
     pkg-config \
     libavcodec-dev \
@@ -99,17 +99,14 @@ RUN if [ -f /etc/alpine-release ]; then \
     musl-dev \
     ffmpeg-dev; \
     else \
-    xx-apt-get update && xx-apt-get install -y \
+    xx-apt-get update && xx-apt-get install -y --no-install-recommends \
     gcc \
     libc6-dev \
     libavcodec-dev \
     libavformat-dev \
     libavfilter-dev \
-    libavcodec59 \
-    libavformat59 \
-    libavfilter8 \
-    libavutil57 \
-    libswresample4 \
+    libavutil-dev \
+    libswresample-dev \
     && rm -rf /var/lib/apt/lists/*; \
     fi
 
