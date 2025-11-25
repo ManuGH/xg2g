@@ -41,11 +41,16 @@ RUN if [ -f /etc/alpine-release ]; then \
     gcc; \
     else \
     # Debian cross-compilation setup
-    # 1. Install native build tools (clang, pkg-config, etc.)
+    # 1. Install native build tools and FFmpeg dev headers (for build scripts that need headers)
     apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     pkg-config \
     clang \
+    libavcodec-dev \
+    libavformat-dev \
+    libavfilter-dev \
+    libavutil-dev \
+    libswresample-dev \
     && \
     # 2. Install target libraries and cross-compiler helpers via xx
     xx-apt-get update && xx-apt-get install -y --no-install-recommends \
@@ -84,10 +89,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     RUSTFLAGS="-C target-cpu=generic ${RUST_TARGET_FEATURES} -C opt-level=3 -C target-feature=-crt-static" \
     xx-cargo build --release --target-dir target; \
     else \
-    # For Debian cross-compilation, ensure C compiler finds FFmpeg headers in target sysroot
-    # xx-cargo sets up the sysroot, but cc-rs needs explicit CFLAGS for the target architecture
-    export PKG_CONFIG_PATH=$(xx-clang --print-sysroot)/usr/lib/$(xx-info triple)/pkgconfig:$(xx-clang --print-sysroot)/usr/lib/pkgconfig && \
-    export CFLAGS="-I$(xx-clang --print-sysroot)/usr/include" && \
+    # For Debian: FFmpeg headers are installed natively, FFMPEG_INCLUDE_DIR points to them
+    # xx-cargo handles cross-compilation, linking uses target sysroot libraries
     RUSTFLAGS="-C target-cpu=generic ${RUST_TARGET_FEATURES} -C opt-level=3" \
     xx-cargo build --release --target-dir target; \
     fi && \
