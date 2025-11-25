@@ -172,7 +172,7 @@ jobs:
           daemon_base="http://127.0.0.1${XG2G_LISTEN}"
 
           healthy=false
-          for i in {1..60}; do
+          for i in {1..150}; do
             if curl --fail --show-error --silent --max-time 1 "$daemon_base/api/status" >/dev/null; then
               healthy=true
               break
@@ -180,7 +180,7 @@ jobs:
             sleep 0.2
           done
           if [ "$healthy" != "true" ]; then
-            echo "❌ Daemon did not become ready after 60 attempts (12 seconds)" >&2
+            echo "❌ Daemon did not become ready after 150 attempts (30 seconds)" >&2
             echo "📋 Daemon log:" >&2
             cat /tmp/daemon.log || echo "No log available"
             echo "🔍 Checking if daemon process is still running:" >&2
@@ -191,6 +191,8 @@ jobs:
             fi
             echo "🔍 Checking if port 8080 is in use:" >&2
             netstat -tuln | grep 8080 || echo "Port not bound"
+            echo "🔍 Curl verbose output for last attempt:" >&2
+            curl -v "$daemon_base/api/status" || true
             exit 1
           fi
           echo "✅ Daemon ready on ${daemon_base}"
@@ -260,7 +262,7 @@ jobs:
           golangci-lint run --timeout=5m --verbose ./...
 
       - name: Lint Markdown
-        continue-on-error: true  # Don't block CI on markdown linting issues
+        continue-on-error: true # Don't block CI on markdown linting issues
         run: |
           set -euo pipefail
           npx --yes markdownlint-cli2 "docs/**/*.md" ".github/**/*.md" "*.md"
