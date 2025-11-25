@@ -6,7 +6,7 @@
 #        docker build --build-arg BASE_VARIANT=bookworm (stable, FFmpeg 5.x)
 #        docker build --build-arg BASE_VARIANT=alpine    (force Alpine, musl)
 # =============================================================================
-ARG BASE_VARIANT=trixie
+ARG BASE_VARIANT=bookworm
 
 # =============================================================================
 # Stage 0: Cross-compilation helpers
