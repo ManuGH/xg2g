@@ -197,6 +197,7 @@ RUN if [ -f /etc/alpine-release ]; then \
     addgroup -g 65532 -S xg2g && \
     adduser -u 65532 -S -G xg2g -h /app -s /bin/false xg2g && \
     addgroup xg2g video && \
+    (getent group render || addgroup -S render) && \
     addgroup xg2g render; \
     else \
     apt-get update && apt-get install -y \
@@ -213,6 +214,7 @@ RUN if [ -f /etc/alpine-release ]; then \
     groupadd -g 65532 xg2g && \
     useradd -u 65532 -g xg2g -d /app -s /bin/false xg2g && \
     usermod -aG video xg2g && \
+    (getent group render || groupadd -r render) && \
     usermod -aG render xg2g; \
     fi && \
     mkdir -p /data /app/lib && \
