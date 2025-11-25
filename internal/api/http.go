@@ -183,7 +183,9 @@ func New(cfg config.AppConfig) *Server {
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+		defer func() {
+			_ = resp.Body.Close()
+		}()
 		if resp.StatusCode >= 400 {
 			return fmt.Errorf("receiver returned HTTP %d", resp.StatusCode)
 		}
