@@ -84,6 +84,10 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     RUSTFLAGS="-C target-cpu=generic ${RUST_TARGET_FEATURES} -C opt-level=3 -C target-feature=-crt-static" \
     xx-cargo build --release --target-dir target; \
     else \
+    # For Debian cross-compilation, ensure C compiler finds FFmpeg headers in target sysroot
+    # xx-cargo sets up the sysroot, but cc-rs needs explicit CFLAGS for the target architecture
+    export PKG_CONFIG_PATH=$(xx-clang --print-sysroot)/usr/lib/$(xx-info triple)/pkgconfig:$(xx-clang --print-sysroot)/usr/lib/pkgconfig && \
+    export CFLAGS="-I$(xx-clang --print-sysroot)/usr/include" && \
     RUSTFLAGS="-C target-cpu=generic ${RUST_TARGET_FEATURES} -C opt-level=3" \
     xx-cargo build --release --target-dir target; \
     fi && \
