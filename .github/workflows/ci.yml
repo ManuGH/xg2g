@@ -172,15 +172,15 @@ jobs:
           daemon_base="http://127.0.0.1${XG2G_LISTEN}"
 
           healthy=false
-          for i in {1..150}; do
+          for i in {1..30}; do
             if curl --fail --show-error --silent --max-time 1 "$daemon_base/api/status" >/dev/null; then
               healthy=true
               break
             fi
-            sleep 0.2
+            sleep 1.5
           done
           if [ "$healthy" != "true" ]; then
-            echo "❌ Daemon did not become ready after 150 attempts (30 seconds)" >&2
+            echo "❌ Daemon did not become ready after 30 attempts (45 seconds)" >&2
             echo "📋 Daemon log:" >&2
             cat /tmp/daemon.log || echo "No log available"
             echo "🔍 Checking if daemon process is still running:" >&2
