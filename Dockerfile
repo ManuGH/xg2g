@@ -50,6 +50,7 @@ RUN if [ -f /etc/alpine-release ]; then \
     # 2. Install target libraries and cross-compiler helpers via xx
     xx-apt-get update && xx-apt-get install -y --no-install-recommends \
     gcc \
+    libc6-dev \
     libavcodec-dev \
     libavformat-dev \
     libavfilter-dev \
