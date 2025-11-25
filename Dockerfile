@@ -88,12 +88,13 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     mkdir -p /output && \
     if [ -f /etc/alpine-release ]; then \
     RUSTFLAGS="-C target-cpu=generic ${RUST_TARGET_FEATURES} -C opt-level=3 -C target-feature=-crt-static" \
-    xx-cargo build --release --target-dir target; \
+    xx-cargo build --release --lib --target-dir target; \
     else \
     # For Debian: FFmpeg headers are installed natively, FFMPEG_INCLUDE_DIR points to them
     # xx-cargo handles cross-compilation, linking uses target sysroot libraries
+    # Build only the library (--lib), not the binary which needs additional deps
     RUSTFLAGS="-C target-cpu=generic ${RUST_TARGET_FEATURES} -C opt-level=3" \
-    xx-cargo build --release --target-dir target; \
+    xx-cargo build --release --lib --target-dir target; \
     fi && \
     # xx-cargo puts artifacts in target/<triple>/release/ or target/release/ depending on cross setup
     # Debug: find where the artifacts actually are
