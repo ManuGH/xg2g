@@ -6,10 +6,16 @@ Thanks for your interest in contributing! This guide will help you get started.
 
 ### Prerequisites
 
+**Required:**
+
 - **Go 1.25+** (for Go components)
-- **Rust 1.91+** (for transcoder components)
-- **Docker** (for testing)
-- **Make** (optional, for convenience commands)
+- **Docker** (for testing and deployment)
+- **Make** (recommended, for convenience commands)
+
+**Optional:**
+
+- **Rust 1.91+** (only for `make test-transcoder` or building with native transcoder)
+- **check-jsonschema** (only for `make test-schema`, install via `pip install check-jsonschema`)
 
 ### Setup Development Environment
 
@@ -107,71 +113,125 @@ Then open a PR on GitHub with:
 
 ## Testing
 
-### Unit Tests
+The project uses **Make targets** as the canonical interface for testing.
+These targets mirror the CI pipeline jobs, ensuring local development matches CI behavior.
+
+### Standard Test Run (Recommended)
+
+For most development work, use:
 
 ```bash
-# Run all tests
-go test ./...
-
-# Run specific package tests
-go test ./internal/playlist
-
-# Run with coverage
-go test -cover ./...
-
-# Generate coverage report
-go test -coverprofile=coverage.out ./...
-go tool cover -html=coverage.out
+make test
 ```
+
+This runs all unit and integration tests with the **stub transcoder** (no Rust dependency required).
+It includes:
+
+- All package tests (`go test ./...`)
+- Race detection (`-race`)
+- Coverage reporting (`-coverprofile=coverage.out`)
+
+**Internally equivalent to:**
+
+```bash
+go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+```
+
+### Transcoder Tests (Rust FFI)
+
+To test the **real Rust-based transcoder**:
+
+```bash
+make test-transcoder
+```
+
+This target:
+
+1. Builds the Rust library (`libxg2g_transcoder.a`)
+2. Sets `CGO_ENABLED=1`
+3. Runs tests with `-tags=transcoder`
+
+**Prerequisites:**
+
+- Rust toolchain (`rustup` recommended)
+- C toolchain/linker
+- FFmpeg development headers (if required locally)
+
+**Manual alternative:**
+
+```bash
+cd transcoder && cargo build --release
+CGO_ENABLED=1 go test -tags=transcoder ./internal/transcoder -v
+```
+
+### Schema Validation Tests
+
+JSON schema tests are isolated from standard tests and require the external tool `check-jsonschema`:
+
+```bash
+# Install check-jsonschema
+pip install check-jsonschema
+
+# Run schema tests
+make test-schema
+```
+
+This runs `go test -tags=schemacheck ./internal/config` - verifying config validation logic and JSON schema correctness.
+
+### Additional Test Commands
+
+```bash
+# Run tests with race detection only
+make test-race
+
+# Generate detailed coverage report
+make test-cover  # Creates coverage.html
+
+# Run fuzzing tests (EPG package)
+make test-fuzz
+
+# Complete test suite (unit + race + fuzz)
+make test-all
+```
+
+### CI Alignment
+
+The CI pipeline uses the same Make targets:
+
+| CI Job | Local Command | Purpose |
+|--------|---------------|---------|
+| `unit-tests` | `make test` | Fast tests, stub transcoder |
+| `schema-validation` | `make test-schema` | Config schema validation |
+| `transcoder-tests` | `make test-transcoder` | Rust FFI tests (nightly/main only) |
+| `lint` | `make lint` | Go/Markdown/OpenAPI linting |
+| `integration-tests` | End-to-end daemon tests | Full stack validation |
+
+**If `make test` passes locally, the core CI jobs should pass.**
 
 ### Integration Tests
 
 ```bash
-# Docker integration tests
-make test-integration
+# Run integration tests (requires building binaries)
+go test -tags=integration -v ./test/integration/...
 
-
-# Or manually:
+# Or use Docker
 docker build -t xg2g:test .
 docker run --rm xg2g:test
-```
-
-### Fuzzing
-
-```bash
-# Run fuzz tests
-go test -fuzz=FuzzPlaylistParser -fuzztime=30s ./internal/playlist
-```
-
-### CI/CD Pipeline
-
-xg2g uses a streamlined CI/CD pipeline.
-
-**Core Workflows:**
-
-| Workflow | Purpose | Trigger |
-|----------|---------|---------|
-| **CI** | Build, Test, Lint, Config Validation | Push, PR |
-| **Release** | Build & Push Docker images, GitHub Release | Tag `v*` |
-| **Security** | Vulnerability scanning (govulncheck) | Schedule, PR |
-
-**Local Testing:**
-
-```bash
-# Run tests
-go test ./...
-
-# Run linter (via golangci-lint)
-make lint
 ```
 
 ## Common Make Commands
 
 | Command | Description |
 |---------|-------------|
-| `make build` | Build main daemon binary |
-| `make test` | Run unit tests |
+| `make build` | Build main daemon binary (stub transcoder) |
+| `make build-rust` | Build Rust transcoder library |
+| `make test` | Run unit tests (stub transcoder, fast) |
+| `make test-transcoder` | Run tests with Rust transcoder (requires Rust) |
+| `make test-schema` | Run JSON schema validation tests |
+| `make test-race` | Run tests with race detection |
+| `make test-cover` | Run tests with coverage report |
 | `make lint` | Run golangci-lint |
+| `make lint-fix` | Run golangci-lint with automatic fixes |
 | `make docker` | Build Docker image locally |
 | `make dev` | Run daemon from source with `.env` config |
 | `make up` | Start docker-compose.yml stack |
