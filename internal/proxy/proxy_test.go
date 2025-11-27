@@ -31,10 +31,28 @@ func TestNew(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "valid config with custom port",
+			cfg: Config{
+				ListenAddr: "127.0.0.1:8080",
+				TargetURL:  "http://example.com:8080",
+				Logger:     logger,
+			},
+			wantErr: false,
+		},
+		{
 			name: "missing listen addr",
 			cfg: Config{
 				TargetURL: "http://example.com:17999",
 				Logger:    logger,
+			},
+			wantErr: true,
+		},
+		{
+			name: "empty listen addr",
+			cfg: Config{
+				ListenAddr: "",
+				TargetURL:  "http://example.com:17999",
+				Logger:     logger,
 			},
 			wantErr: true,
 		},
@@ -47,10 +65,46 @@ func TestNew(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "invalid target URL",
+			name: "empty target URL",
+			cfg: Config{
+				ListenAddr: ":18000",
+				TargetURL:  "",
+				Logger:     logger,
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid target URL - empty scheme",
 			cfg: Config{
 				ListenAddr: ":18000",
 				TargetURL:  "://invalid",
+				Logger:     logger,
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid target URL - just colon",
+			cfg: Config{
+				ListenAddr: ":18000",
+				TargetURL:  ":",
+				Logger:     logger,
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid target URL - invalid characters",
+			cfg: Config{
+				ListenAddr: ":18000",
+				TargetURL:  "http://exa mple.com",
+				Logger:     logger,
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid target URL - malformed scheme",
+			cfg: Config{
+				ListenAddr: ":18000",
+				TargetURL:  "ht!tp://example.com",
 				Logger:     logger,
 			},
 			wantErr: true,
@@ -105,6 +159,11 @@ func TestHandleHeadRequest(t *testing.T) {
 
 	if got := rec.Header().Get("Accept-Ranges"); got != "none" {
 		t.Errorf("got Accept-Ranges %q, want %q", got, "none")
+	}
+
+	// Verify no body is sent for HEAD requests
+	if body := rec.Body.Bytes(); len(body) != 0 {
+		t.Errorf("Expected empty body for HEAD request, got %d bytes", len(body))
 	}
 }
 

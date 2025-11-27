@@ -46,10 +46,11 @@ livetest-data/
 
 # Build artifacts (binaries at repo root only)
 /xg2g
-/xg2g-linux
+/xg2g-*
 /daemon
 /daemon-*
 transcoder.tar.gz
+test_parser.go
 
 # IDE/Editor
 .vscode/
@@ -75,5 +76,3 @@ benchmark-*.sh
 test-config.yaml
 .env.gpu
 .env.*
-xg2g-daemon
-xg2g-daemon-linux
