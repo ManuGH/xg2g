@@ -33,9 +33,11 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: "1.25"
           check-latest: true
           cache: true
+        env:
+          GOTOOLCHAIN: auto
 
       - name: Verify modules
         run: |

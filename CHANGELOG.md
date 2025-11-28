@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.8] - 2025-11-28
+
+### 🐛 Bug Fixes
+
+- **CI/CD**: Explicitly set Go version to `1.25` and `GOTOOLCHAIN=auto` in CI to force correct toolchain resolution
+
 ## [3.0.7] - 2025-11-28
 
 ### 🐛 Bug Fixes
