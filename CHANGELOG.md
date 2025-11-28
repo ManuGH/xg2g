@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.1] - 2025-11-28
+
+### 🐛 Bug Fixes
+
+- **Docker Build**: Fixed CI failure by adding Node.js build stage to Dockerfile
+- **Build Artifacts**: Removed `internal/api/ui` from git tracking (now built inside Docker)
+
 ## [3.0.0] - 2025-11-28
 
 ### 🚀 Major Features
