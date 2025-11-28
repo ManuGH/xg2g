@@ -57,6 +57,23 @@ jobs:
           go build -v -trimpath -mod=readonly -buildvcs=false -tags=nogpu -o /dev/null ./cmd/daemon
           echo "✅ nogpu build successful"
 
+      - name: Setup Node for WebUI
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: webui/package-lock.json
+
+      - name: Build WebUI
+        run: |
+          set -euo pipefail
+          cd webui
+          npm ci
+          npm run build
+          mkdir -p ../internal/api/ui
+          cp -r dist/* ../internal/api/ui/
+          ls -R ../internal/api/ui
+
       - name: Unit tests
         run: |
           set -euo pipefail

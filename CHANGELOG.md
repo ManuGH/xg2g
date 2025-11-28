@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.3] - 2025-11-28
+
+### 🐛 Bug Fixes
+
+- **CI/CD**: Fixed unit test workflow by building WebUI before running Go tests
+- **Build**: Ensured `go:embed` finds required assets in CI environment
+
 ## [3.0.2] - 2025-11-28
 
 ### 🐛 Bug Fixes
