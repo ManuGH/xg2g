@@ -12,14 +12,11 @@ linters:
     - gosec
     - govet
     - staticcheck
-    - gosimple
     - ineffassign
-    - typecheck
     - unused
     - errcheck
-
-linters-settings:
-  gosec:
-    excludes:
-      - G104 # Duplicate of errcheck
-      - G304 # File path provided by user (config/CLI) is acceptable
+  settings:
+    gosec:
+      excludes:
+        - G104 # Duplicate of errcheck
+        - G304 # File path provided by user (config/CLI) is acceptable
