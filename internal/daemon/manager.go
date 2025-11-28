@@ -145,16 +145,34 @@ func (m *manager) startAPIServer(_ context.Context, errChan chan<- error) error 
 	}
 
 	go func() {
-		m.logger.Info().
-			Str("addr", m.serverCfg.ListenAddr).
-			Msg("API server listening")
+		// Check for TLS configuration
+		tlsCert := m.deps.Config.TLSCert
+		tlsKey := m.deps.Config.TLSKey
 
-		if err := m.apiServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			m.logger.Error().
-				Err(err).
-				Str("event", "api.server.failed").
-				Msg("API server failed")
-			errChan <- fmt.Errorf("API server: %w", err)
+		if tlsCert != "" && tlsKey != "" {
+			m.logger.Info().
+				Str("addr", m.serverCfg.ListenAddr).
+				Msg("API server listening (HTTPS)")
+
+			if err := m.apiServer.ListenAndServeTLS(tlsCert, tlsKey); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				m.logger.Error().
+					Err(err).
+					Str("event", "api.server.failed").
+					Msg("API server (HTTPS) failed")
+				errChan <- fmt.Errorf("API server (HTTPS): %w", err)
+			}
+		} else {
+			m.logger.Info().
+				Str("addr", m.serverCfg.ListenAddr).
+				Msg("API server listening (HTTP)")
+
+			if err := m.apiServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				m.logger.Error().
+					Err(err).
+					Str("event", "api.server.failed").
+					Msg("API server (HTTP) failed")
+				errChan <- fmt.Errorf("API server (HTTP): %w", err)
+			}
 		}
 	}()
 
@@ -206,6 +224,8 @@ func (m *manager) startProxyServer(_ context.Context, errChan chan<- error) erro
 		ReceiverHost:   m.deps.ProxyConfig.ReceiverHost,
 		StreamDetector: m.deps.ProxyConfig.StreamDetector,
 		Logger:         m.deps.ProxyConfig.Logger,
+		TLSCert:        m.deps.ProxyConfig.TLSCert,
+		TLSKey:         m.deps.ProxyConfig.TLSKey,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create proxy: %w", err)

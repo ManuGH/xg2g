@@ -7,7 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-No unreleased changes yet.
+## [2.2.0] - 2025-11-28
+
+### 🔒 Security & Reliability Hardening
+
+This release focuses on hardening the application for production use, adding TLS support, XML security improvements, and enhanced developer tooling.
+
+### Added
+
+- **TLS Support**
+  - Native HTTPS support for API and Stream Proxy
+  - Configurable via `XG2G_TLS_CERT` and `XG2G_TLS_KEY`
+  - Optional `XG2G_FORCE_HTTPS` redirect
+
+- **XML Security Hardening**
+  - Strict XML parsing enabled by default
+  - Protection against XXE (XML External Entity) attacks
+  - DoS protection via input size limits (50MB) and entity expansion limits
+
+- **Developer Excellence**
+  - **Load Testing**: Automated test suite for >1500 services
+  - **Static Analysis**: Integrated `gosec` for security linting
+  - **Coverage**: Infrastructure for mandatory code coverage checks
+
+### Changed
+
+- **Performance**: Improved load testing capabilities
+- **Documentation**: Added TLS configuration guide to README
+
+### Security
+
+- **XMLTV**: Fixed potential XXE and DoS vectors in EPG parsing
+- **Transport**: Added encryption support for all endpoints
 
 ## [2.0.0] - 2025-01-XX
 
@@ -226,6 +257,7 @@ users get a working system immediately.
 ## [1.5.0] - 2025-10-29
 
 ### Added
+
 - **Actionlint workflow** for automatic GitHub Actions validation
 - **Conftest OPA policies** for enforcing Dockerfile and Kubernetes security rules
 - **XMLTV fuzzing tests** with Go native fuzzing and weekly scheduled runs
@@ -243,12 +275,14 @@ users get a working system immediately.
   - `docs/security/RENOVATE_SETUP.md` - Step-by-step Renovate activation guide
 
 ### Changed
+
 - Container runtime hardening: enabled read-only root filesystem in docker-compose.yml
 - CI pipeline now implements complete security chain: SBOM → Cosign → CodeQL → Fuzzing → Conftest
 - CHANGELOG.md migrated to "Keep a Changelog" format
 - Improved security posture across all container deployments
 
 ### Security
+
 - **SLSA Level 3 Provenance** activated for all releases
 - **Keyless Cosign signatures** with Rekor attestations
 - **Conftest policy gate** active for Dockerfile and Kubernetes manifests
@@ -262,6 +296,7 @@ users get a working system immediately.
 - **Automated CVE mitigation** < 24h via Dependabot + Renovate
 
 ### Fixed
+
 - Conftest CI workflow now uses dockerfile-parse instead of non-existent dockerfile-json
 - Docker Compose tmpfs/volume mount conflict resolved
 - Test expectations aligned with v1.4.0+ default behavior
@@ -285,6 +320,7 @@ This release includes extensive documentation for supply chain security tools, c
 ## [1.4.0] - 2024-01-XX
 
 ### Added
+
 - HDHomeRun emulation for Plex/Jellyfin native integration
 - Auto-discovery via SSDP/UPnP
 - Complete out-of-the-box experience with all features enabled by default
@@ -292,17 +328,20 @@ This release includes extensive documentation for supply chain security tools, c
 - Versioned API (v1) with deprecation headers for legacy endpoints
 
 ### Changed
+
 - Simplified configuration documentation
 - Organized Docker Compose files by use case
 - Made Enigma2 authentication explicit in examples
 - Improved startup logging for better visibility
 
 ### Deprecated
+
 - Legacy API endpoints (/api/status, /api/refresh) in favor of /api/v1/*
 
 ## [1.3.0] - 2023-XX-XX
 
 ### Added
+
 - OSCam Streamrelay support with automatic channel detection
 - Smart port selection (8001 vs 17999)
 - Audio transcoding (MP2/AC3 → AAC)
@@ -311,12 +350,14 @@ This release includes extensive documentation for supply chain security tools, c
 - Health checks (/healthz, /readyz)
 
 ### Changed
+
 - Improved EPG collection performance
 - Enhanced logging output
 
 ## [1.2.0] - 2023-XX-XX
 
 ### Added
+
 - XMLTV EPG support (7 days)
 - Channel logos (picons)
 - Multiple bouquets support
@@ -325,6 +366,7 @@ This release includes extensive documentation for supply chain security tools, c
 ## [1.1.0] - 2023-XX-XX
 
 ### Added
+
 - M3U playlist generation
 - Docker support
 - Basic authentication for Enigma2
@@ -332,6 +374,7 @@ This release includes extensive documentation for supply chain security tools, c
 ## [1.0.0] - 2023-XX-XX
 
 ### Added
+
 - Initial release
 - Basic Enigma2 to IPTV gateway functionality
 

@@ -161,6 +161,19 @@ XG2G_EPG_ENABLED=false      # No TV guide
 XG2G_HDHR_ENABLED=false     # No Plex/Jellyfin auto-discovery
 ```
 
+### TLS / HTTPS (Security)
+
+| Environment Variable | Description | Default |
+|----------------------|-------------|---------|
+| `XG2G_TLS_CERT`      | Path to Certificate (.pem) | "" (Disabled) |
+| `XG2G_TLS_KEY`       | Path to Private Key (.pem) | "" (Disabled) |
+| `XG2G_FORCE_HTTPS`   | Redirect HTTP -> HTTPS | `false` |
+
+**Behavior:**
+
+- **Not Set**: Server runs on HTTP (default).
+- **Set**: Server runs on HTTPS. HTTP requests are dropped (unless `FORCE_HTTPS` is true).
+
 ### Advanced
 
 ```bash

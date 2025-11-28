@@ -6,6 +6,7 @@ package epg
 import (
 	"encoding/xml"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -63,11 +64,20 @@ func BuildNameToIDMap(xmltvPath string) (map[string]string, error) {
 		}
 	}()
 
+	// Use a LimitedReader to prevent DoS via massive files
+	// 50MB limit for XMLTV files should be sufficient for most use cases
+	const maxXMLSize = 50 * 1024 * 1024
+	r := io.LimitReader(f, maxXMLSize)
+
 	var doc TV
-	dec := xml.NewDecoder(f)
-	dec.Strict = false
+	dec := xml.NewDecoder(r)
+	dec.Strict = true // Enable strict parsing for security
+
+	// Disable entity expansion to prevent XXE attacks
+	dec.Entity = make(map[string]string)
+
 	if err := dec.Decode(&doc); err != nil && !errors.Is(err, io.EOF) {
-		return nil, err
+		return nil, fmt.Errorf("decode xmltv: %w", err)
 	}
 
 	out := make(map[string]string, len(doc.Channels))

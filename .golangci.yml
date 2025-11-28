@@ -1,0 +1,23 @@
+# golangci-lint configuration file
+# see https://golangci-lint.run/usage/configuration/
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  enable:
+    - gosec
+    - govet
+    - staticcheck
+    - gosimple
+    - ineffassign
+    - typecheck
+    - unused
+    - errcheck
+
+linters-settings:
+  gosec:
+    excludes:
+      - G104 # Duplicate of errcheck
+      - G304 # File path provided by user (config/CLI) is acceptable

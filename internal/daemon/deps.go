@@ -45,6 +45,10 @@ type ProxyConfig struct {
 
 	// Logger is the logger for the proxy
 	Logger zerolog.Logger
+
+	// TLS Configuration
+	TLSCert string
+	TLSKey  string
 }
 
 // Validate checks if the dependencies are valid.

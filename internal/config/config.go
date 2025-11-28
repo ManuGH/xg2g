@@ -97,6 +97,11 @@ type AppConfig struct {
 	EPGTimeoutMS      int    // Timeout per EPG request in milliseconds
 	EPGRetries        int    // Retry attempts for EPG requests
 	EPGSource         string // EPG fetch strategy: "bouquet" (fast, single request) or "per-service" (default, per-channel requests)
+
+	// TLS Configuration
+	TLSCert    string // Path to TLS certificate file
+	TLSKey     string // Path to TLS key file
+	ForceHTTPS bool   // Redirect HTTP to HTTPS
 }
 
 // Loader handles configuration loading with precedence
@@ -340,6 +345,11 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 
 	// Picons
 	cfg.PiconBase = ParseString("XG2G_PICON_BASE", cfg.PiconBase)
+
+	// TLS
+	cfg.TLSCert = ParseString("XG2G_TLS_CERT", cfg.TLSCert)
+	cfg.TLSKey = ParseString("XG2G_TLS_KEY", cfg.TLSKey)
+	cfg.ForceHTTPS = ParseBool("XG2G_FORCE_HTTPS", cfg.ForceHTTPS)
 }
 
 // expandEnv expands environment variables in the format ${VAR} or $VAR
