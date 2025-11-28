@@ -25,6 +25,8 @@ jobs:
   build-test-integration:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      GOTOOLCHAIN: auto
 
     steps:
       - name: Checkout

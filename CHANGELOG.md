@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.9] - 2025-11-28
+
+### 🐛 Bug Fixes
+
+- **CI/CD**: Set `GOTOOLCHAIN=auto` globally in CI workflow to ensure Go 1.25 is downloaded if missing
+
 ## [3.0.8] - 2025-11-28
 
 ### 🐛 Bug Fixes
