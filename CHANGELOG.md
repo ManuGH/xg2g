@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.2] - 2025-11-28
+
+### 🐛 Bug Fixes
+
+- **Linting**: Removed unused code (`closeBody`) and fixed markdown formatting issues
+- **CI/CD**: Improved compliance with linter rules for cleaner builds
+
 ## [3.0.1] - 2025-11-28
 
 ### 🐛 Bug Fixes
@@ -44,7 +51,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🔒 Security & Reliability Hardening
 
-This release focuses on hardening the application for production use, adding TLS support, XML security improvements, and enhanced developer tooling.
+This release focuses on hardening the application for production use, adding TLS support, XML security improvements,
+and enhanced developer tooling.
 
 ### Added
 
@@ -348,7 +356,8 @@ users get a working system immediately.
 
 ### Documentation
 
-This release includes extensive documentation for supply chain security tools, configuration guides, and best practices. See `docs/security/` for details.
+This release includes extensive documentation for supply chain security tools, configuration guides, and best practices.
+See `docs/security/` for details.
 
 ## [1.4.0] - 2024-01-XX
 

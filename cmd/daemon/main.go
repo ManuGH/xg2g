@@ -20,7 +20,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-var Version = "v3.0.1"
+var Version = "v3.0.2"
 
 // maskURL removes user info from a URL string for safe logging.
 func maskURL(rawURL string) string {

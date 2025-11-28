@@ -876,16 +876,6 @@ func (c *Client) loggerFor(ctx context.Context) *zerolog.Logger {
 	return &logger
 }
 
-func closeBody(body io.ReadCloser) {
-	if body == nil {
-		return
-	}
-	if err := body.Close(); err != nil {
-		// best effort; nothing to do
-		_ = err
-	}
-}
-
 func extractHost(base string) string {
 	if base == "" {
 		return ""
