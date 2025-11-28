@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [3.0.3] - 2025-11-28
+## [3.0.7] - 2025-11-28
+
+### 🐛 Bug Fixes
+
+- **CI/CD**: Added `check-latest: true` to `setup-go` action to correctly resolve Go 1.25 release
+
+## [3.0.6] - 2025-11-28
 
 ### 🐛 Bug Fixes
 
