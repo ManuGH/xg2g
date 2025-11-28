@@ -90,7 +90,7 @@ func refreshWithClient(ctx context.Context, cfg config.AppConfig, cl OwiClient) 
 
 		item := playlist.Item{
 			Name:    name,
-			TvgID:   makeStableIDFromSRef(sref),
+			TvgID:   makeTvgID(name, sref),
 			TvgChNo: i + 1,
 			Group:   cfg.Bouquet,
 		}

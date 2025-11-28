@@ -220,8 +220,8 @@ func Refresh(ctx context.Context, cfg config.AppConfig) (*Status, error) {
 
 			items = append(items, playlist.Item{
 				Name:    name,
-				TvgID:   makeStableIDFromSRef(ref),
-				TvgChNo: channelNumber, // Sequential numbering based on bouquet position
+				TvgID:   makeTvgID(name, ref), // Human-readable IDs (e.g., "das-erste-hd-3fa92b")
+				TvgChNo: channelNumber,        // Sequential numbering based on bouquet position
 				TvgLogo: piconURL,
 				Group:   bouquetName, // Use actual bouquet name as group
 				URL:     streamURL,
