@@ -20,6 +20,10 @@ func validateConfig(cfg config.AppConfig) error {
 	v.Port("StreamPort", cfg.StreamPort)
 	v.Directory("DataDir", cfg.DataDir, false)
 
+	if cfg.PiconBase != "" {
+		v.URL("PiconBase", cfg.PiconBase, []string{"http", "https"})
+	}
+
 	if !v.IsValid() {
 		return v.Err()
 	}

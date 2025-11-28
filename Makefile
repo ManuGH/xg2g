@@ -5,7 +5,7 @@
 # All targets are designed with enterprise-grade quality assurance and CI/CD integration in mind.
 # ===================================================================================================
 
-.PHONY: help build build-all build-rust build-ffi clean clean-rust lint lint-fix test test-race test-cover cover test-fuzz test-all test-ffi \
+.PHONY: help build build-all build-rust build-ffi clean clean-rust lint lint-fix test test-transcoder test-schema test-race test-cover cover test-fuzz test-all test-ffi \
         docker docker-build docker-build-cpu docker-build-gpu docker-build-all docker-security docker-tag docker-push docker-clean \
         sbom deps deps-update deps-tidy deps-verify deps-licenses \
         security security-scan security-audit security-vulncheck \
@@ -65,14 +65,16 @@ help: ## Show this help message
 	@echo "  clean-rust     Clean Rust build artifacts"
 	@echo ""
 	@echo "Quality Assurance:"
-	@echo "  lint           Run golangci-lint with all checks"
-	@echo "  lint-fix       Run golangci-lint with automatic fixes"
-	@echo "  test           Run all unit tests"
-	@echo "  test-race      Run tests with race detection"
-	@echo "  test-cover     Run tests with coverage reporting"
-	@echo "  test-fuzz      Run comprehensive fuzzing tests"
-	@echo "  test-all       Run complete test suite (unit + race + fuzz)"
-	@echo "  test-ffi       Test Rust FFI integration (requires Rust library)"
+	@echo "  lint              Run golangci-lint with all checks"
+	@echo "  lint-fix          Run golangci-lint with automatic fixes"
+	@echo "  test              Run all unit tests (stub transcoder)"
+	@echo "  test-transcoder   Run tests with Rust transcoder enabled"
+	@echo "  test-schema       Run JSON schema validation tests"
+	@echo "  test-race         Run tests with race detection"
+	@echo "  test-cover        Run tests with coverage reporting"
+	@echo "  test-fuzz         Run comprehensive fuzzing tests"
+	@echo "  test-all          Run complete test suite (unit + race + fuzz)"
+	@echo "  test-ffi          Test Rust FFI integration (requires Rust library)"
 	@echo ""
 	@echo "Enterprise Testing:"
 
@@ -228,10 +230,20 @@ lint-fix: ## Run golangci-lint with automatic fixes
 	@"$(GOLANGCI_LINT)" run ./... --fix --timeout=5m
 	@echo "✅ Lint fixes applied"
 
-test: ## Run all unit tests
+test: ## Run all unit tests (with stub transcoder)
 	@echo "Running unit tests..."
 	@go test ./... -v
 	@echo "✅ Unit tests passed"
+
+test-transcoder: build-rust ## Run tests with Rust transcoder enabled
+	@echo "Running tests with Rust transcoder..."
+	CGO_ENABLED=1 go test -tags=transcoder ./... -v
+	@echo "✅ Transcoder tests passed"
+
+test-schema: ## Run JSON schema validation tests (requires check-jsonschema)
+	@echo "Running JSON schema validation tests..."
+	@go test -tags=schemacheck -v ./internal/config
+	@echo "✅ Schema validation tests passed"
 
 test-race: ## Run tests with race detection
 	@echo "Running tests with race detection..."
@@ -279,19 +291,19 @@ test-ffi: build-rust ## Test Rust FFI integration
 	@CGO_ENABLED=1 go test -v ./internal/transcoder -tags gpu
 	@echo "✅ FFI integration tests passed"
 
-test-integration: ## Run integration tests
+test-integration: ## Run integration tests (with stub transcoder)
 	@echo "Running integration tests..."
-	@go test -tags=integration,nogpu -v -timeout=5m ./test/integration/...
+	@go test -tags=integration -v -timeout=5m ./test/integration/...
 	@echo "✅ Integration tests passed"
 
-test-integration-fast: ## Run fast integration smoke tests
+test-integration-fast: ## Run fast integration smoke tests (with stub transcoder)
 	@echo "Running fast integration smoke tests..."
-	@go test -tags=integration_fast,nogpu -v -timeout=3m ./test/integration/... -run="^TestSmoke"
+	@go test -tags=integration_fast -v -timeout=3m ./test/integration/... -run="^TestSmoke"
 	@echo "✅ Smoke tests passed"
 
-test-integration-slow: ## Run slow integration tests
+test-integration-slow: ## Run slow integration tests (with stub transcoder)
 	@echo "Running slow integration tests..."
-	@go test -tags=integration_slow,nogpu -v -timeout=10m ./test/integration/... -run="^TestSlow"
+	@go test -tags=integration_slow -v -timeout=10m ./test/integration/... -run="^TestSlow"
 	@echo "✅ Slow tests passed"
 
 coverage: ## Generate and view coverage report locally

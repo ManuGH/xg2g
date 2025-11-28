@@ -1,5 +1,5 @@
-//go:build gpu
-// +build gpu
+//go:build cgo && transcoder
+// +build cgo,transcoder
 
 package transcoder
 

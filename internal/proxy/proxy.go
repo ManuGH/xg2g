@@ -30,6 +30,8 @@ type Server struct {
 	streamDetector *openwebif.StreamDetector // Smart stream detection
 	receiverHost   string                    // Receiver host for fallback
 	hlsManager     *HLSManager               // HLS streaming manager for iOS
+	tlsCert        string
+	tlsKey         string
 }
 
 // Config holds the configuration for the proxy server.
@@ -51,6 +53,10 @@ type Config struct {
 
 	// Logger is the logger instance to use
 	Logger zerolog.Logger
+
+	// TLS Configuration
+	TLSCert string
+	TLSKey  string
 }
 
 // New creates a new proxy server.
@@ -69,6 +75,8 @@ func New(cfg Config) (*Server, error) {
 		logger:         cfg.Logger,
 		streamDetector: cfg.StreamDetector,
 		receiverHost:   cfg.ReceiverHost,
+		tlsCert:        cfg.TLSCert,
+		tlsKey:         cfg.TLSKey,
 	}
 
 	// Parse target URL if provided (used as fallback)
@@ -462,10 +470,16 @@ func (s *Server) Start() error {
 		logEvent.Str("receiver", s.receiverHost).Str("mode", "smart_detection")
 	}
 
-	logEvent.Msg("starting stream proxy server")
-
-	if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		return fmt.Errorf("proxy server failed: %w", err)
+	if s.tlsCert != "" && s.tlsKey != "" {
+		logEvent.Msg("starting stream proxy server (HTTPS)")
+		if err := s.httpServer.ListenAndServeTLS(s.tlsCert, s.tlsKey); err != nil && err != http.ErrServerClosed {
+			return fmt.Errorf("proxy server (HTTPS) failed: %w", err)
+		}
+	} else {
+		logEvent.Msg("starting stream proxy server (HTTP)")
+		if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			return fmt.Errorf("proxy server (HTTP) failed: %w", err)
+		}
 	}
 
 	return nil

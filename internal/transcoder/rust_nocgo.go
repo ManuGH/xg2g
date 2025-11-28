@@ -1,23 +1,26 @@
-//go:build !cgo || nogpu
-// +build !cgo nogpu
+//go:build !cgo || !transcoder
+// +build !cgo !transcoder
 
 package transcoder
 
 import "errors"
 
-// RustAudioRemuxer stub for non-CGO builds.
+// RustAudioRemuxer stub for non-CGO or non-transcoder builds.
 type RustAudioRemuxer struct{}
 
-// NewRustAudioRemuxer returns an error when CGO is disabled.
+// NewRustAudioRemuxer returns an error when CGO is disabled or transcoder tag is not set.
 //
-// The Rust audio remuxer requires CGO to be enabled. When building without CGO
-// (CGO_ENABLED=0), this function returns an error indicating that the feature
-// is unavailable.
+// The Rust audio remuxer requires CGO to be enabled and the 'transcoder' build tag.
+// When building without these requirements, this function returns an error.
+//
+// To enable the transcoder:
+//   - Build Rust library: cd transcoder && cargo build --release
+//   - Build with tag: CGO_ENABLED=1 go build -tags=transcoder
 //
 // The proxy will automatically fall back to FFmpeg subprocess transcoding when
 // this error is returned.
 func NewRustAudioRemuxer(_ int, _ int, _ int) (*RustAudioRemuxer, error) {
-	return nil, errors.New("rust audio remuxer not available: build requires CGO_ENABLED=1")
+	return nil, errors.New("rust audio remuxer not available: build requires CGO_ENABLED=1 and -tags=transcoder")
 }
 
 // Process stub for non-CGO builds.

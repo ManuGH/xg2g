@@ -1,5 +1,5 @@
-//go:build cgo && !nogpu
-// +build cgo,!nogpu
+//go:build cgo && transcoder
+// +build cgo,transcoder
 
 // Package transcoder provides Go bindings for the Rust audio remuxer via CGO/FFI.
 //
@@ -8,10 +8,11 @@
 //
 // # Build Requirements
 //
-// CGO must be enabled and the Rust library must be built first:
+// CGO must be enabled, the Rust library must be built, and the 'transcoder' build tag must be specified:
 //
 //	cd transcoder && cargo build --release
-//	CGO_ENABLED=1 go build
+//	CGO_ENABLED=1 go build -tags=transcoder
+//	CGO_ENABLED=1 go test -tags=transcoder ./...
 //
 // # Usage Example
 //

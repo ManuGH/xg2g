@@ -161,6 +161,8 @@ func main() {
 			ReceiverHost:   receiverHost,
 			StreamDetector: streamDetector,
 			Logger:         xglog.WithComponent("proxy"),
+			TLSCert:        cfg.TLSCert,
+			TLSKey:         cfg.TLSKey,
 		}
 	}
 
