@@ -50,7 +50,12 @@ type Client struct {
 
 	// Rate limiting for receiver protection (v1.7.0+)
 	// Protects the Enigma2 receiver from being overwhelmed by requests
+	// Rate limiting for receiver protection (v1.7.0+)
+	// Protects the Enigma2 receiver from being overwhelmed by requests
 	receiverLimiter *rate.Limiter
+
+	// Circuit Breaker for fault tolerance (v2.2.0+)
+	cb *CircuitBreaker
 }
 
 // Cacher provides caching capabilities for OpenWebIF requests.
@@ -207,6 +212,7 @@ func NewWithPort(base string, streamPort int, opts Options) *Client {
 		cache:           opts.Cache, // Optional cache (nil = no caching)
 		cacheTTL:        cacheTTL,
 		receiverLimiter: rate.NewLimiter(receiverRPS, receiverBurst),
+		cb:              NewCircuitBreaker(5, 30*time.Second), // 5 failures, 30s reset
 	}
 
 	// Initialize smart stream detection if enabled (v1.2.0+)
@@ -738,6 +744,31 @@ func (c *Client) get(ctx context.Context, path, operation string, decorate func(
 		return nil, fmt.Errorf("rate limit wait cancelled: %w", err)
 	}
 
+	// Wrap request in Circuit Breaker
+	var result []byte
+	cbErr := c.cb.Execute(func() error {
+		var innerErr error
+		result, innerErr = c.doGet(ctx, path, operation, decorate)
+		return innerErr
+	})
+
+	if cbErr != nil {
+		if errors.Is(cbErr, ErrCircuitOpen) {
+			c.loggerFor(ctx).Warn().
+				Str("event", "circuit_breaker.open").
+				Str("operation", operation).
+				Msg("request blocked by circuit breaker")
+			return nil, cbErr
+		}
+		return nil, cbErr
+	}
+
+	return result, nil
+}
+
+// doGet performs the actual HTTP request with retries (extracted from get)
+func (c *Client) doGet(ctx context.Context, path, operation string, decorate func(*zerolog.Context)) ([]byte, error) {
+
 	maxAttempts := c.maxRetries + 1
 	var lastErr error
 	var lastStatus int
@@ -793,51 +824,50 @@ func (c *Client) get(ctx context.Context, path, operation string, decorate func(
 				// Read raw bytes first
 				rawData, readErr := io.ReadAll(res.Body)
 				if readErr != nil {
-					err = fmt.Errorf("read response body: %w", readErr)
+					err = readErr
+					return
+				}
+
+				// Handle encoding if needed (e.g., ISO-8859-1)
+				if needsLatin1Conversion(rawData, contentType) {
+					data = convertLatin1ToUTF8(rawData)
 				} else {
-					// Convert from ISO-8859-1/Latin-1 to UTF-8 if needed
-					// Many OpenWebIF implementations send ISO-8859-1 but don't declare it properly
-					// Check if data looks like it might be ISO-8859-1 encoded
-					if needsLatin1Conversion(rawData, contentType) {
-						data = convertLatin1ToUTF8(rawData)
-					} else {
-						data = rawData
-					}
+					data = rawData
 				}
 			}
 		}()
 
-		// Handle early return from request building
-		if err != nil && res == nil {
-			return nil, err
-		}
-
+		// Metrics & Logging
+		success := err == nil && status == http.StatusOK
 		errClass := classifyError(err, status)
-		retry := attempt < maxAttempts && shouldRetry(status, err)
-		c.logAttempt(ctx, operation, path, attempt, maxAttempts, status, duration, err, errClass, retry, decorate)
-		recordAttemptMetrics(operation, attempt, status, duration, err == nil && status == http.StatusOK, errClass, retry)
+		retry := !success && attempt < maxAttempts && shouldRetry(status, err)
 
-		if err == nil && status == http.StatusOK {
-			// Ensure body is closed now that we've read it
-			if res != nil && res.Body != nil {
-				closeBody(res.Body)
-			}
+		c.logAttempt(ctx, operation, path, attempt, maxAttempts, status, duration, err, errClass, retry, decorate)
+		recordAttemptMetrics(operation, attempt, status, duration, success, errClass, retry)
+
+		if success {
 			return data, nil
 		}
 
-		if res != nil {
-			closeBody(res.Body)
-		}
-
-		lastErr = wrapError(operation, err, status)
+		lastErr = err
 		lastStatus = status
 
 		if !retry {
 			break
 		}
 
-		time.Sleep(c.backoffDuration(attempt))
+		// Wait before retry
+		if attempt < maxAttempts {
+			sleep := c.backoffDuration(attempt)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(sleep):
+				continue
+			}
+		}
 	}
+
 	return nil, wrapError(operation, lastErr, lastStatus)
 }
 

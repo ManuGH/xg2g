@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0] - 2025-11-28
+
+### 🚀 Major Features
+
+- **Built-in WebUI**
+  - New React-based dashboard available at `/ui/`
+  - View system health, uptime, and component status
+  - Browse bouquets and channels with EPG status
+  - View live logs for troubleshooting
+  - Zero-config: embedded directly into the single binary
+
+### 🛡️ Reliability & Internal Improvements
+
+- **Circuit Breaker Pattern**
+  - Added circuit breaker for OpenWebIF client to prevent cascading failures
+  - Automatic fail-fast when receiver is unresponsive
+  - Graceful recovery with half-open state
+
+- **HLS Stability**
+  - Improved HLS playlist generation reliability
+  - Fixed race conditions in stream proxy
+
+- **Test Suite Consolidation**
+  - Merged and cleaned up proxy tests
+  - Reduced technical debt and improved CI execution time
+
 ## [2.2.0] - 2025-11-28
 
 ### 🔒 Security & Reliability Hardening

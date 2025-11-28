@@ -6,10 +6,11 @@ package api
 import (
 	"context"
 	"crypto/subtle"
-	_ "embed"
+	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
@@ -30,8 +31,8 @@ import (
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 )
 
-//go:embed ui.html
-var uiHTML []byte
+//go:embed ui/*
+var uiFS embed.FS
 
 // Server represents the HTTP API server for xg2g.
 type Server struct {
@@ -46,6 +47,7 @@ type Server struct {
 	healthManager *health.Manager // Health and readiness checks
 	// refreshFn allows tests to stub the refresh operation; defaults to jobs.Refresh
 	refreshFn func(context.Context, config.AppConfig) (*jobs.Status, error)
+	startTime time.Time
 }
 
 // AuditLogger interface for audit logging (optional).
@@ -128,6 +130,7 @@ func New(cfg config.AppConfig) *Server {
 		status: jobs.Status{
 			Version: cfg.Version, // Initialize version from config
 		},
+		startTime: time.Now(),
 	}
 	// Default refresh function
 	s.refreshFn = jobs.Refresh
@@ -238,9 +241,21 @@ func (s *Server) routes() http.Handler {
 	r.Get("/readyz", s.handleReady)
 
 	// Web UI (read-only dashboard)
-	r.Get("/ui", s.handleUI)
+	r.Handle("/ui/*", http.StripPrefix("/ui", s.uiHandler()))
+	r.Get("/ui", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/ui/", http.StatusMovedPermanently)
+	})
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/ui", http.StatusTemporaryRedirect)
+		http.Redirect(w, r, "/ui/", http.StatusTemporaryRedirect)
+	})
+
+	// WebUI API endpoints (v3.0.0+)
+	r.Route("/api", func(r chi.Router) {
+		r.Get("/health", s.handleAPIHealth)
+		r.Get("/config", s.handleAPIConfig)
+		r.Get("/bouquets", s.handleAPIBouquets)
+		r.Get("/channels", s.handleAPIChannels)
+		r.Get("/logs/recent", s.handleAPILogs)
 	})
 
 	// V1 API (current stable version)
@@ -1129,12 +1144,15 @@ func (s *Server) handleUIRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleUI serves the embedded Web UI dashboard
-func (s *Server) handleUI(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(uiHTML)
+// uiHandler returns a handler that serves the embedded Web UI
+func (s *Server) uiHandler() http.Handler {
+	subFS, err := fs.Sub(uiFS, "ui")
+	if err != nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "UI not available", http.StatusInternalServerError)
+		})
+	}
+	return http.FileServer(http.FS(subFS))
 }
 
 // handleStatusV2Placeholder is a placeholder for v2 status endpoint

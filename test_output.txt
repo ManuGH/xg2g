@@ -1,0 +1,203 @@
+=== RUN   TestCircuitBreaker_StateTransitions
+--- PASS: TestCircuitBreaker_StateTransitions (0.15s)
+=== RUN   TestCircuitBreaker_HalfOpenFailure
+--- PASS: TestCircuitBreaker_HalfOpenFailure (0.15s)
+=== RUN   TestCircuitBreaker_Concurrency
+--- PASS: TestCircuitBreaker_Concurrency (0.00s)
+=== RUN   TestClientBouquets5xx
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","time":"2025-11-28T22:24:12+01:00","message":"smart stream detection enabled"}
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","rate_limit_rps":10,"burst":20,"time":"2025-11-28T22:24:12+01:00","message":"receiver rate limiting enabled"}
+{"level":"warn","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","error":"rate: Wait(n=1) exceeds limiter's burst 0","event":"openwebif.rate_limit","operation":"bouquets","time":"2025-11-28T22:24:12+01:00","message":"rate limit wait cancelled"}
+--- PASS: TestClientBouquets5xx (0.00s)
+=== RUN   TestClientBouquetsInvalidJSON
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","time":"2025-11-28T22:24:12+01:00","message":"smart stream detection enabled"}
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","rate_limit_rps":10,"burst":20,"time":"2025-11-28T22:24:12+01:00","message":"receiver rate limiting enabled"}
+{"level":"warn","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","error":"rate: Wait(n=1) exceeds limiter's burst 0","event":"openwebif.rate_limit","operation":"bouquets","time":"2025-11-28T22:24:12+01:00","message":"rate limit wait cancelled"}
+--- PASS: TestClientBouquetsInvalidJSON (0.00s)
+=== RUN   TestClientGetServicesTimeout
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","time":"2025-11-28T22:24:12+01:00","message":"smart stream detection enabled"}
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","rate_limit_rps":10,"burst":20,"time":"2025-11-28T22:24:12+01:00","message":"receiver rate limiting enabled"}
+{"level":"warn","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","error":"rate: Wait(n=1) exceeds limiter's burst 0","event":"openwebif.rate_limit","operation":"services.nested","time":"2025-11-28T22:24:12+01:00","message":"rate limit wait cancelled"}
+{"level":"warn","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","event":"openwebif.services","bouquet_ref":"1:***:0","time":"2025-11-28T22:24:12+01:00","message":"no services found for bouquet"}
+--- PASS: TestClientGetServicesTimeout (0.00s)
+=== RUN   TestClientGetServicesBouquetNotFoundSchemaOK
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","time":"2025-11-28T22:24:12+01:00","message":"smart stream detection enabled"}
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","rate_limit_rps":10,"burst":20,"time":"2025-11-28T22:24:12+01:00","message":"receiver rate limiting enabled"}
+{"level":"warn","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","error":"rate: Wait(n=1) exceeds limiter's burst 0","event":"openwebif.rate_limit","operation":"services.nested","time":"2025-11-28T22:24:12+01:00","message":"rate limit wait cancelled"}
+{"level":"warn","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","event":"openwebif.services","bouquet_ref":"1:***:0","time":"2025-11-28T22:24:12+01:00","message":"no services found for bouquet"}
+--- PASS: TestClientGetServicesBouquetNotFoundSchemaOK (0.00s)
+=== RUN   TestHardenedClient_ResponseHeaderTimeout
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","time":"2025-11-28T22:24:12+01:00","message":"smart stream detection enabled"}
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","rate_limit_rps":10,"burst":20,"time":"2025-11-28T22:24:12+01:00","message":"receiver rate limiting enabled"}
+{"level":"warn","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","error":"rate: Wait(n=1) exceeds limiter's burst 0","event":"openwebif.rate_limit","operation":"bouquets","time":"2025-11-28T22:24:12+01:00","message":"rate limit wait cancelled"}
+    client_integration_test.go:43: expected a timeout error, but got: rate limit wait cancelled: rate: Wait(n=1) exceeds limiter's burst 0
+--- FAIL: TestHardenedClient_ResponseHeaderTimeout (0.00s)
+=== RUN   TestStreamURLScenarios
+=== RUN   TestStreamURLScenarios/configured_port
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","rate_limit_rps":10,"burst":20,"time":"2025-11-28T22:24:12+01:00","message":"receiver rate limiting enabled"}
+=== RUN   TestStreamURLScenarios/existing_port_preserved
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","rate_limit_rps":10,"burst":20,"time":"2025-11-28T22:24:12+01:00","message":"receiver rate limiting enabled"}
+=== RUN   TestStreamURLScenarios/ipv6_without_port
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"fd00::57","rate_limit_rps":10,"burst":20,"time":"2025-11-28T22:24:12+01:00","message":"receiver rate limiting enabled"}
+=== RUN   TestStreamURLScenarios/ipv6_with_port
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"fd00::57","rate_limit_rps":10,"burst":20,"time":"2025-11-28T22:24:12+01:00","message":"receiver rate limiting enabled"}
+=== RUN   TestStreamURLScenarios/trailing_slash
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"example.com","rate_limit_rps":10,"burst":20,"time":"2025-11-28T22:24:12+01:00","message":"receiver rate limiting enabled"}
+=== RUN   TestStreamURLScenarios/env_fallback
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"example.com","rate_limit_rps":10,"burst":20,"time":"2025-11-28T22:24:12+01:00","message":"receiver rate limiting enabled"}
+=== RUN   TestStreamURLScenarios/env_invalid_falls_back_to_default
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"example.com","rate_limit_rps":10,"burst":20,"time":"2025-11-28T22:24:12+01:00","message":"receiver rate limiting enabled"}
+--- PASS: TestStreamURLScenarios (0.00s)
+    --- PASS: TestStreamURLScenarios/configured_port (0.00s)
+    --- PASS: TestStreamURLScenarios/existing_port_preserved (0.00s)
+    --- PASS: TestStreamURLScenarios/ipv6_without_port (0.00s)
+    --- PASS: TestStreamURLScenarios/ipv6_with_port (0.00s)
+    --- PASS: TestStreamURLScenarios/trailing_slash (0.00s)
+    --- PASS: TestStreamURLScenarios/env_fallback (0.00s)
+    --- PASS: TestStreamURLScenarios/env_invalid_falls_back_to_default (0.00s)
+=== RUN   TestBouquetsTimeout
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","time":"2025-11-28T22:24:12+01:00","message":"smart stream detection enabled"}
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","rate_limit_rps":10,"burst":20,"time":"2025-11-28T22:24:12+01:00","message":"receiver rate limiting enabled"}
+{"level":"warn","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","error":"rate: Wait(n=1) exceeds limiter's burst 0","event":"openwebif.rate_limit","operation":"bouquets","time":"2025-11-28T22:24:12+01:00","message":"rate limit wait cancelled"}
+--- PASS: TestBouquetsTimeout (0.00s)
+=== RUN   TestBouquetsRetrySuccess
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","time":"2025-11-28T22:24:12+01:00","message":"smart stream detection enabled"}
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","rate_limit_rps":10,"burst":20,"time":"2025-11-28T22:24:12+01:00","message":"receiver rate limiting enabled"}
+{"level":"warn","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","error":"rate: Wait(n=1) exceeds limiter's burst 0","event":"openwebif.rate_limit","operation":"bouquets","time":"2025-11-28T22:24:12+01:00","message":"rate limit wait cancelled"}
+    client_test.go:155: unexpected error: rate limit wait cancelled: rate: Wait(n=1) exceeds limiter's burst 0
+--- FAIL: TestBouquetsRetrySuccess (0.00s)
+=== RUN   TestBouquetsRetryFailure
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","time":"2025-11-28T22:24:12+01:00","message":"smart stream detection enabled"}
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","rate_limit_rps":10,"burst":20,"time":"2025-11-28T22:24:12+01:00","message":"receiver rate limiting enabled"}
+{"level":"warn","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","error":"rate: Wait(n=1) exceeds limiter's burst 0","event":"openwebif.rate_limit","operation":"bouquets","time":"2025-11-28T22:24:12+01:00","message":"rate limit wait cancelled"}
+--- PASS: TestBouquetsRetryFailure (0.00s)
+=== RUN   TestContextCancellationCleanup
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","time":"2025-11-28T22:24:12+01:00","message":"smart stream detection enabled"}
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","rate_limit_rps":10,"burst":20,"time":"2025-11-28T22:24:12+01:00","message":"receiver rate limiting enabled"}
+{"level":"warn","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","error":"rate: Wait(n=1) exceeds limiter's burst 0","event":"openwebif.rate_limit","operation":"bouquets","time":"2025-11-28T22:24:12+01:00","message":"rate limit wait cancelled"}
+    client_test.go:211: request was never received by server
+--- FAIL: TestContextCancellationCleanup (0.10s)
+=== RUN   TestReceiverRateLimiting
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","rate_limit_rps":5,"burst":5,"time":"2025-11-28T22:24:12+01:00","message":"receiver rate limiting enabled"}
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","event":"openwebif.request","operation":"bouquets","method":"GET","endpoint":"/api/bouquets","attempt":1,"max_attempts":1,"duration_ms":0,"error_class":"ok","status":200,"time":"2025-11-28T22:24:12+01:00","message":"openwebif request completed"}
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","event":"openwebif.bouquets","count":0,"time":"2025-11-28T22:24:12+01:00","message":"fetched bouquets"}
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","event":"openwebif.request","operation":"bouquets","method":"GET","endpoint":"/api/bouquets","attempt":1,"max_attempts":1,"duration_ms":0,"error_class":"ok","status":200,"time":"2025-11-28T22:24:12+01:00","message":"openwebif request completed"}
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","event":"openwebif.bouquets","count":0,"time":"2025-11-28T22:24:12+01:00","message":"fetched bouquets"}
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","event":"openwebif.request","operation":"bouquets","method":"GET","endpoint":"/api/bouquets","attempt":1,"max_attempts":1,"duration_ms":0,"error_class":"ok","status":200,"time":"2025-11-28T22:24:12+01:00","message":"openwebif request completed"}
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","event":"openwebif.bouquets","count":0,"time":"2025-11-28T22:24:12+01:00","message":"fetched bouquets"}
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","event":"openwebif.request","operation":"bouquets","method":"GET","endpoint":"/api/bouquets","attempt":1,"max_attempts":1,"duration_ms":0,"error_class":"ok","status":200,"time":"2025-11-28T22:24:12+01:00","message":"openwebif request completed"}
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","event":"openwebif.bouquets","count":0,"time":"2025-11-28T22:24:12+01:00","message":"fetched bouquets"}
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","event":"openwebif.request","operation":"bouquets","method":"GET","endpoint":"/api/bouquets","attempt":1,"max_attempts":1,"duration_ms":0,"error_class":"ok","status":200,"time":"2025-11-28T22:24:12+01:00","message":"openwebif request completed"}
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","event":"openwebif.bouquets","count":0,"time":"2025-11-28T22:24:12+01:00","message":"fetched bouquets"}
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","event":"openwebif.request","operation":"bouquets","method":"GET","endpoint":"/api/bouquets","attempt":1,"max_attempts":1,"duration_ms":0,"error_class":"ok","status":200,"time":"2025-11-28T22:24:12+01:00","message":"openwebif request completed"}
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","event":"openwebif.bouquets","count":0,"time":"2025-11-28T22:24:12+01:00","message":"fetched bouquets"}
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","event":"openwebif.request","operation":"bouquets","method":"GET","endpoint":"/api/bouquets","attempt":1,"max_attempts":1,"duration_ms":0,"error_class":"ok","status":200,"time":"2025-11-28T22:24:13+01:00","message":"openwebif request completed"}
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","event":"openwebif.bouquets","count":0,"time":"2025-11-28T22:24:13+01:00","message":"fetched bouquets"}
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","event":"openwebif.request","operation":"bouquets","method":"GET","endpoint":"/api/bouquets","attempt":1,"max_attempts":1,"duration_ms":0,"error_class":"ok","status":200,"time":"2025-11-28T22:24:13+01:00","message":"openwebif request completed"}
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","event":"openwebif.bouquets","count":0,"time":"2025-11-28T22:24:13+01:00","message":"fetched bouquets"}
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","event":"openwebif.request","operation":"bouquets","method":"GET","endpoint":"/api/bouquets","attempt":1,"max_attempts":1,"duration_ms":0,"error_class":"ok","status":200,"time":"2025-11-28T22:24:13+01:00","message":"openwebif request completed"}
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","event":"openwebif.bouquets","count":0,"time":"2025-11-28T22:24:13+01:00","message":"fetched bouquets"}
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","event":"openwebif.request","operation":"bouquets","method":"GET","endpoint":"/api/bouquets","attempt":1,"max_attempts":1,"duration_ms":0,"error_class":"ok","status":200,"time":"2025-11-28T22:24:13+01:00","message":"openwebif request completed"}
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","event":"openwebif.bouquets","count":0,"time":"2025-11-28T22:24:13+01:00","message":"fetched bouquets"}
+    client_test.go:262: 10 requests with 5 req/s limit took 1.001425959s (expected ~1s)
+--- PASS: TestReceiverRateLimiting (1.00s)
+=== RUN   TestReceiverRateLimitContextCancellation
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","rate_limit_rps":1,"burst":1,"time":"2025-11-28T22:24:13+01:00","message":"receiver rate limiting enabled"}
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","event":"openwebif.request","operation":"bouquets","method":"GET","endpoint":"/api/bouquets","attempt":1,"max_attempts":1,"duration_ms":0,"error_class":"ok","status":200,"time":"2025-11-28T22:24:13+01:00","message":"openwebif request completed"}
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","event":"openwebif.bouquets","count":0,"time":"2025-11-28T22:24:13+01:00","message":"fetched bouquets"}
+{"level":"warn","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","error":"context canceled","event":"openwebif.rate_limit","operation":"bouquets","time":"2025-11-28T22:24:13+01:00","message":"rate limit wait cancelled"}
+    client_test.go:308: cancelled request failed in 8.791µs (expected <50ms)
+--- PASS: TestReceiverRateLimitContextCancellation (0.00s)
+=== RUN   TestConvertLatin1ToUTF8
+=== RUN   TestConvertLatin1ToUTF8/Möglichkeiten
+=== RUN   TestConvertLatin1ToUTF8/Kitzbühel
+=== RUN   TestConvertLatin1ToUTF8/Österreich
+=== RUN   TestConvertLatin1ToUTF8/ASCII_only
+=== RUN   TestConvertLatin1ToUTF8/Mixed_ASCII_and_umlauts
+--- PASS: TestConvertLatin1ToUTF8 (0.00s)
+    --- PASS: TestConvertLatin1ToUTF8/Möglichkeiten (0.00s)
+    --- PASS: TestConvertLatin1ToUTF8/Kitzbühel (0.00s)
+    --- PASS: TestConvertLatin1ToUTF8/Österreich (0.00s)
+    --- PASS: TestConvertLatin1ToUTF8/ASCII_only (0.00s)
+    --- PASS: TestConvertLatin1ToUTF8/Mixed_ASCII_and_umlauts (0.00s)
+=== RUN   TestNeedsLatin1Conversion
+=== RUN   TestNeedsLatin1Conversion/UTF-8_declared
+=== RUN   TestNeedsLatin1Conversion/ISO-8859-1_declared
+=== RUN   TestNeedsLatin1Conversion/Latin-1_declared
+=== RUN   TestNeedsLatin1Conversion/Invalid_UTF-8_without_declaration
+=== RUN   TestNeedsLatin1Conversion/Valid_UTF-8_without_declaration
+=== RUN   TestNeedsLatin1Conversion/ASCII_only
+--- PASS: TestNeedsLatin1Conversion (0.00s)
+    --- PASS: TestNeedsLatin1Conversion/UTF-8_declared (0.00s)
+    --- PASS: TestNeedsLatin1Conversion/ISO-8859-1_declared (0.00s)
+    --- PASS: TestNeedsLatin1Conversion/Latin-1_declared (0.00s)
+    --- PASS: TestNeedsLatin1Conversion/Invalid_UTF-8_without_declaration (0.00s)
+    --- PASS: TestNeedsLatin1Conversion/Valid_UTF-8_without_declaration (0.00s)
+    --- PASS: TestNeedsLatin1Conversion/ASCII_only (0.00s)
+=== RUN   TestPiconURL
+=== RUN   TestPiconURL/sd_service
+=== RUN   TestPiconURL/hd_service_type_19_normalized_to_sd
+=== RUN   TestPiconURL/base_with_trailing_slash
+=== RUN   TestPiconURL/hd_service_type_1f_hevc
+=== RUN   TestPiconURL/empty_sref
+=== RUN   TestPiconURL/ipv6_address
+--- PASS: TestPiconURL (0.00s)
+    --- PASS: TestPiconURL/sd_service (0.00s)
+    --- PASS: TestPiconURL/hd_service_type_19_normalized_to_sd (0.00s)
+    --- PASS: TestPiconURL/base_with_trailing_slash (0.00s)
+    --- PASS: TestPiconURL/hd_service_type_1f_hevc (0.00s)
+    --- PASS: TestPiconURL/empty_sref (0.00s)
+    --- PASS: TestPiconURL/ipv6_address (0.00s)
+=== RUN   TestMaskServiceRef
+=== RUN   TestMaskServiceRef/short_ref
+=== RUN   TestMaskServiceRef/long_ref
+--- PASS: TestMaskServiceRef (0.00s)
+    --- PASS: TestMaskServiceRef/short_ref (0.00s)
+    --- PASS: TestMaskServiceRef/long_ref (0.00s)
+=== RUN   TestNewStreamDetector
+--- PASS: TestNewStreamDetector (3.00s)
+=== RUN   TestIsEnabled
+=== RUN   TestIsEnabled/enabled
+=== RUN   TestIsEnabled/disabled
+=== RUN   TestIsEnabled/not_set
+--- PASS: TestIsEnabled (0.00s)
+    --- PASS: TestIsEnabled/enabled (0.00s)
+    --- PASS: TestIsEnabled/disabled (0.00s)
+    --- PASS: TestIsEnabled/not_set (0.00s)
+=== RUN   TestStreamDetector_TestEndpoint
+=== RUN   TestStreamDetector_TestEndpoint/200_OK
+=== RUN   TestStreamDetector_TestEndpoint/206_Partial_Content
+=== RUN   TestStreamDetector_TestEndpoint/404_Not_Found
+=== RUN   TestStreamDetector_TestEndpoint/500_Internal_Server_Error
+--- PASS: TestStreamDetector_TestEndpoint (12.01s)
+    --- PASS: TestStreamDetector_TestEndpoint/200_OK (3.00s)
+    --- PASS: TestStreamDetector_TestEndpoint/206_Partial_Content (3.00s)
+    --- PASS: TestStreamDetector_TestEndpoint/404_Not_Found (3.00s)
+    --- PASS: TestStreamDetector_TestEndpoint/500_Internal_Server_Error (3.00s)
+=== RUN   TestStreamDetector_TestEndpoint_HEADtoGETFallback
+=== RUN   TestStreamDetector_TestEndpoint_HEADtoGETFallback/HEAD_succeeds_-_no_GET_fallback
+=== RUN   TestStreamDetector_TestEndpoint_HEADtoGETFallback/HEAD_fails_with_400_-_GET_succeeds
+=== RUN   TestStreamDetector_TestEndpoint_HEADtoGETFallback/HEAD_fails_with_404_-_GET_succeeds
+=== RUN   TestStreamDetector_TestEndpoint_HEADtoGETFallback/Both_HEAD_and_GET_fail
+=== RUN   TestStreamDetector_TestEndpoint_HEADtoGETFallback/HEAD_fails_-_GET_returns_206
+--- PASS: TestStreamDetector_TestEndpoint_HEADtoGETFallback (15.01s)
+    --- PASS: TestStreamDetector_TestEndpoint_HEADtoGETFallback/HEAD_succeeds_-_no_GET_fallback (3.00s)
+    --- PASS: TestStreamDetector_TestEndpoint_HEADtoGETFallback/HEAD_fails_with_400_-_GET_succeeds (3.00s)
+    --- PASS: TestStreamDetector_TestEndpoint_HEADtoGETFallback/HEAD_fails_with_404_-_GET_succeeds (3.00s)
+    --- PASS: TestStreamDetector_TestEndpoint_HEADtoGETFallback/Both_HEAD_and_GET_fail (3.00s)
+    --- PASS: TestStreamDetector_TestEndpoint_HEADtoGETFallback/HEAD_fails_-_GET_returns_206 (3.00s)
+=== RUN   TestStreamDetector_DetectStreamURL
+--- PASS: TestStreamDetector_DetectStreamURL (15.00s)
+=== RUN   TestStreamDetector_Caching
+--- PASS: TestStreamDetector_Caching (3.00s)
+=== RUN   TestStreamDetector_ClearCache
+--- PASS: TestStreamDetector_ClearCache (3.00s)
+=== RUN   TestStreamDetector_BuildCandidates
+=== RUN   TestStreamDetector_BuildCandidates/no_proxy
+=== RUN   TestStreamDetector_BuildCandidates/with_proxy
+--- PASS: TestStreamDetector_BuildCandidates (0.00s)
+    --- PASS: TestStreamDetector_BuildCandidates/no_proxy (0.00s)
+    --- PASS: TestStreamDetector_BuildCandidates/with_proxy (0.00s)
+FAIL
+FAIL	github.com/ManuGH/xg2g/internal/openwebif	52.808s
+FAIL

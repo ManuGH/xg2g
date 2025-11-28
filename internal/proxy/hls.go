@@ -219,9 +219,12 @@ func (s *HLSStreamer) Start() error {
 		s.mu.Unlock()
 	}()
 
-	// Wait a bit for first segments to be created
-	// TODO: Replace with waitForPlaylist(ctx) with timeout
-	time.Sleep(500 * time.Millisecond)
+	// Wait for playlist to be created with timeout
+	if err := s.waitForPlaylist(s.ctx); err != nil {
+		// Cleanup on failure
+		s.Stop()
+		return fmt.Errorf("wait for playlist: %w", err)
+	}
 
 	return nil
 }
@@ -266,6 +269,33 @@ func (s *HLSStreamer) isIdle(timeout time.Duration) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return time.Since(s.lastAccess) > timeout
+}
+
+// waitForPlaylist waits for the HLS playlist to be created.
+func (s *HLSStreamer) waitForPlaylist(ctx context.Context) error {
+	playlistPath := s.GetPlaylistPath()
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	// Wait up to 10 seconds (typical tuning time for Enigma2 is 2-5s)
+	timeout := time.After(10 * time.Second)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-timeout:
+			return fmt.Errorf("timeout waiting for playlist creation")
+		case <-ticker.C:
+			if _, err := os.Stat(playlistPath); err == nil {
+				// Playlist exists, but let's make sure it has content
+				info, err := os.Stat(playlistPath)
+				if err == nil && info.Size() > 0 {
+					return nil
+				}
+			}
+		}
+	}
 }
 
 // cleanupRoutine periodically cleans up idle streams.

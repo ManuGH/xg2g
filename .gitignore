@@ -76,3 +76,8 @@ benchmark-*.sh
 test-config.yaml
 .env.gpu
 .env.*
+
+# WebUI
+node_modules/
+webui/dist/
+webui/node_modules/

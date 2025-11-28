@@ -44,6 +44,21 @@ docker run -d \
 - **GPU Transcoding** - Hardware-accelerated video transcoding (AMD/Intel/NVIDIA)
 - **Enterprise-Grade** - Prometheus metrics, OpenTelemetry tracing, health checks
 - **Production-Ready** - SLSA L3 attestation, SBOM, Cosign signing, Helm charts
+- **Built-in WebUI** - Manage and monitor your instance directly from the browser.
+
+## WebUI (New in v3.0.0)
+
+xg2g now includes a built-in WebUI for easier management and monitoring.
+By default, it is available at: `http://localhost:8080/ui/`
+
+**Features:**
+
+- **Dashboard:** View system health, uptime, and component status.
+- **Channels:** Browse available bouquets and channels, check EPG status.
+- **Logs:** View recent warnings and errors directly in the browser.
+- **Config:** View current configuration (read-only).
+
+To disable the WebUI, set `XG2G_WEBUI_ENABLED=false` (not yet implemented, currently always on).
 
 **Build Requirements:**
 

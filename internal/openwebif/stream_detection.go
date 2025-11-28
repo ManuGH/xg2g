@@ -34,75 +34,6 @@ type StreamInfo struct {
 	TestError    error     // Last test error (if any)
 }
 
-// CircuitBreaker implements a simple circuit breaker pattern for stream endpoints.
-type CircuitBreaker struct {
-	failures  int
-	threshold int
-	timeout   time.Duration
-	state     string // "closed", "open", "half-open"
-	openedAt  time.Time
-	mu        sync.Mutex
-}
-
-const (
-	stateClosed   = "closed"
-	stateOpen     = "open"
-	stateHalfOpen = "half-open"
-)
-
-// NewCircuitBreaker creates a new circuit breaker.
-func NewCircuitBreaker(threshold int, timeout time.Duration) *CircuitBreaker {
-	return &CircuitBreaker{
-		threshold: threshold,
-		timeout:   timeout,
-		state:     stateClosed,
-	}
-}
-
-// Call executes fn if the circuit is not open.
-func (cb *CircuitBreaker) Call(fn func() error) error {
-	cb.mu.Lock()
-
-	// Check if circuit should transition from open to half-open
-	if cb.state == stateOpen {
-		if time.Since(cb.openedAt) >= cb.timeout {
-			cb.state = stateHalfOpen
-		} else {
-			cb.mu.Unlock()
-			return errors.New("circuit breaker is open")
-		}
-	}
-	cb.mu.Unlock()
-
-	// Execute function
-	err := fn()
-
-	cb.mu.Lock()
-	defer cb.mu.Unlock()
-
-	if err != nil {
-		cb.failures++
-		// If in half-open, any failure opens immediately
-		if cb.state == stateHalfOpen || cb.failures >= cb.threshold {
-			cb.state = stateOpen
-			cb.openedAt = time.Now()
-		}
-		return err
-	}
-
-	// Success: reset failures and close circuit
-	cb.failures = 0
-	cb.state = stateClosed
-	return nil
-}
-
-// State returns the current circuit state.
-func (cb *CircuitBreaker) State() string {
-	cb.mu.Lock()
-	defer cb.mu.Unlock()
-	return cb.state
-}
-
 // StreamDetector handles smart detection of optimal stream endpoints.
 type StreamDetector struct {
 	cache      map[string]*StreamInfo // Key: ServiceRef
@@ -340,7 +271,7 @@ func (sd *StreamDetector) testEndpoint(ctx context.Context, candidate streamCand
 	}
 
 	// Use circuit breaker to protect against repeated failures
-	err := cb.Call(func() error {
+	err := cb.Execute(func() error {
 		// Try HEAD first (fast, minimal bandwidth)
 		if sd.tryRequest(ctx, http.MethodHead, candidate, false) {
 			return nil
@@ -366,10 +297,10 @@ func (sd *StreamDetector) testEndpoint(ctx context.Context, candidate streamCand
 
 	if err != nil {
 		// Log circuit breaker state when it opens
-		if cb.State() == stateOpen {
+		if cb.State() == StateOpen {
 			sd.logger.Warn().
 				Int("port", candidate.Port).
-				Str("state", cb.State()).
+				Str("state", "open").
 				Msg("circuit breaker opened for stream endpoint")
 			gpu.RecordStreamDetectionError(portStr, "circuit_open")
 		}

@@ -4,6 +4,8 @@ package openwebif
 
 import (
 	"context"
+	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -48,6 +50,9 @@ func TestHardenedClient_ResponseHeaderTimeout(t *testing.T) {
 // This is a helper to make the test more robust against different
 // underlying error messages.
 func isTimeoutError(err error) bool {
-	e, ok := err.(interface{ Timeout() bool })
-	return ok && e.Timeout()
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return netErr.Timeout()
+	}
+	return false
 }
