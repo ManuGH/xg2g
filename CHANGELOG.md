@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.4] - 2025-11-28
+
+### 🐛 Bug Fixes
+
+- **CI/CD**: Fixed build order in CI workflow to ensure WebUI assets are generated before Go compilation checks
+- **Build**: Resolved `go:embed` error in `internal/api` during initial build verification
+
 ## [3.0.3] - 2025-11-28
 
 ### 🐛 Bug Fixes

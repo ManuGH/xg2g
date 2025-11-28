@@ -44,19 +44,6 @@ jobs:
           go mod verify
           git diff --exit-code -- go.mod go.sum
 
-      - name: Build (Docker only - CGO/Rust dependency)
-        run: |
-          set -euo pipefail
-          # Skip direct Go build due to Rust FFI dependency (requires libxg2g_transcoder.so)
-          # Docker multi-stage build handles Rust → Go → Runtime compilation
-          echo "⏭️  Skipping direct Go build (requires Rust library)"
-          echo "✅ Docker build tested in separate workflow"
-
-          # Verify Go compilation (nogpu build must succeed)
-          echo "🔍 Verifying nogpu build compiles..."
-          go build -v -trimpath -mod=readonly -buildvcs=false -tags=nogpu -o /dev/null ./cmd/daemon
-          echo "✅ nogpu build successful"
-
       - name: Setup Node for WebUI
         uses: actions/setup-node@v4
         with:
@@ -73,6 +60,19 @@ jobs:
           mkdir -p ../internal/api/ui
           cp -r dist/* ../internal/api/ui/
           ls -R ../internal/api/ui
+
+      - name: Build (Docker only - CGO/Rust dependency)
+        run: |
+          set -euo pipefail
+          # Skip direct Go build due to Rust FFI dependency (requires libxg2g_transcoder.so)
+          # Docker multi-stage build handles Rust → Go → Runtime compilation
+          echo "⏭️  Skipping direct Go build (requires Rust library)"
+          echo "✅ Docker build tested in separate workflow"
+
+          # Verify Go compilation (nogpu build must succeed)
+          echo "🔍 Verifying nogpu build compiles..."
+          go build -v -trimpath -mod=readonly -buildvcs=false -tags=nogpu -o /dev/null ./cmd/daemon
+          echo "✅ nogpu build successful"
 
       - name: Unit tests
         run: |
