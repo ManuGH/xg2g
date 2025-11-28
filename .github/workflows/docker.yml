@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     tags:
-      - 'v*'
+      - "v*"
     paths:
       - Dockerfile
       - "**/*.go"
@@ -20,7 +20,7 @@ concurrency:
 permissions:
   contents: read
   packages: write
-  id-token: write  # Required for cosign keyless signing
+  id-token: write # Required for cosign keyless signing
 
 jobs:
   build-and-push:
@@ -31,7 +31,10 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+          check-latest: true
           cache: true
+        env:
+          GOTOOLCHAIN: auto
 
       - name: Verify modules
         run: |

@@ -28,6 +28,9 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version-file: "go.mod"
+          check-latest: true
+        env:
+          GOTOOLCHAIN: auto
 
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest

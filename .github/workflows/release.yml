@@ -3,12 +3,12 @@ name: Release
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - "v*.*.*"
 
 permissions:
   contents: write
   packages: write
-  id-token: write  # for cosign OIDC
+  id-token: write # for cosign OIDC
 
 env:
   REGISTRY: ghcr.io
@@ -22,13 +22,35 @@ jobs:
       - name: Checkout
         uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
         with:
-          fetch-depth: 0  # GoReleaser needs full history
+          fetch-depth: 0 # GoReleaser needs full history
 
       - name: Set up Go
         uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
         with:
-          go-version: '1.23'
+          go-version: "1.25"
+          check-latest: true
           cache: true
+        env:
+          GOTOOLCHAIN: auto
+
+      # =============================================
+      # Build WebUI (Required for Tests)
+      # =============================================
+      - name: Setup Node for WebUI
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: webui/package-lock.json
+
+      - name: Build WebUI
+        run: |
+          set -euo pipefail
+          cd webui
+          npm ci
+          npm run build
+          mkdir -p ../internal/api/ui
+          cp -r dist/* ../internal/api/ui/
 
       # =============================================
       # Pre-Release Checks
@@ -149,13 +171,13 @@ jobs:
         uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # master
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build-push.outputs.digest }}
-          format: 'sarif'
-          output: 'trivy-results.sarif'
+          format: "sarif"
+          output: "trivy-results.sarif"
 
       - name: Upload Trivy results to GitHub Security
         uses: github/codeql-action/upload-sarif@ab2e54f42aa112ff08704159b88a57517f6f0ebb # v3
         with:
-          sarif_file: 'trivy-results.sarif'
+          sarif_file: "trivy-results.sarif"
 
       # =============================================
       # Notify on Success

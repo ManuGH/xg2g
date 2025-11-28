@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.10] - 2025-11-28
+
+### 🐛 Bug Fixes
+
+- **Release Workflow**: Updated `release.yml` to use Go 1.25 and build WebUI assets before running tests
+- **CI/CD**: Applied `GOTOOLCHAIN=auto` and `check-latest: true` to all workflows (`govulncheck`, `docker`, `release`)
+
 ## [3.0.9] - 2025-11-28
 
 ### 🐛 Bug Fixes
