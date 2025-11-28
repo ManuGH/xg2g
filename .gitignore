@@ -81,3 +81,4 @@ test-config.yaml
 node_modules/
 webui/dist/
 webui/node_modules/
+internal/api/ui/

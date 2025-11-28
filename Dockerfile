@@ -104,6 +104,16 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cp $(find target -name "libxg2g_transcoder.rlib" | head -n1) /output/
 
 # =============================================================================
+# Stage 1.5: Build WebUI (React + Vite)
+# =============================================================================
+FROM --platform=$BUILDPLATFORM node:20-alpine AS node-builder
+WORKDIR /webui
+COPY webui/package*.json ./
+RUN npm ci
+COPY webui/ .
+RUN npm run build
+
+# =============================================================================
 # Stage 2: Build Go Daemon with CGO (required for Rust FFI) + Run Tests
 # =============================================================================
 FROM --platform=$BUILDPLATFORM golang:1.25-${BASE_VARIANT} AS go-builder
@@ -167,6 +177,9 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
+
+# Copy WebUI artifacts from node-builder
+COPY --from=node-builder /webui/dist ./internal/api/ui
 
 # Build Go daemon WITH CGO enabled for Rust FFI bindings
 ARG GIT_REF
