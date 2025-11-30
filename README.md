@@ -65,10 +65,18 @@ To disable the WebUI, set `XG2G_WEBUI_ENABLED=false` (not yet implemented, curre
 
 **Build Requirements:**
 
+**Core (required):**
+
 - **Go 1.25+** (stable release) - [Install from go.dev](https://go.dev/dl/)
-- **Rust 1.70+** (for native audio transcoder) - [Install via rustup](https://rustup.rs/)
+- Docker (recommended, for containerized deployment)
+
+**Optional (for native transcoder):**
+
+- **Rust 1.70+** (for Rust audio transcoder) - [Install via rustup](https://rustup.rs/)
 - **FFmpeg libraries** (libavcodec, libavformat) - Required for AC3/AAC codecs
-- Docker (optional, for containerized deployment)
+
+> **Note:** By default, xg2g builds with a **stub transcoder** (no Rust dependency).
+> Enable the native Rust transcoder with `CGO_ENABLED=1 go build -tags=transcoder` when needed.
 
 ---
 
@@ -115,6 +123,68 @@ To disable the WebUI, set `XG2G_WEBUI_ENABLED=false` (not yet implemented, curre
 ```
 
 **📖 See [Architecture Documentation](docs/ARCHITECTURE.md) for detailed component design and data flow.**
+
+---
+
+## Build Modes
+
+xg2g supports two operational modes for audio transcoding:
+
+### 1. Stub Transcoder (Default, Recommended)
+
+**Use when:** Developing, testing, or deploying without Rust requirements
+
+**Characteristics:**
+
+- ✅ No Rust toolchain required
+- ✅ Fast builds (`go build ./cmd/daemon`)
+- ✅ Zero native dependencies
+- ✅ Suitable for CI, unit tests, development
+- ⚠️ Audio transcoding disabled (fallback to FFmpeg subprocess if needed)
+
+**Build:**
+
+```bash
+go build -o xg2g ./cmd/daemon
+# or
+make build
+```
+
+### 2. Native Rust Transcoder (Production, High-Performance)
+
+**Use when:** Production deployments requiring real-time audio transcoding (AC3/MP2 → AAC)
+
+**Characteristics:**
+
+- ✅ Native Rust audio remuxer (140x faster than FFmpeg)
+- ✅ Ultra-low latency (1.4ms processing time)
+- ✅ Hardware-optimized (SIMD, zero-copy)
+- ⚠️ Requires Rust toolchain + CGO
+- ⚠️ Requires FFmpeg development headers
+
+**Build:**
+
+```bash
+# Build Rust library
+cd transcoder && cargo build --release
+
+# Build with transcoder tag
+CGO_ENABLED=1 go build -tags=transcoder -o xg2g ./cmd/daemon
+
+# or
+make build-rust
+make build-ffi
+```
+
+**Test:**
+
+```bash
+make test                # Fast, stub mode
+make test-transcoder     # Full, with Rust FFI
+```
+
+> **💡 Tip:** Start with stub mode for development. Enable the Rust transcoder only when you need
+> production-grade audio remuxing for iOS/Safari clients.
 
 ---
 
