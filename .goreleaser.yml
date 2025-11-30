@@ -1,4 +1,4 @@
-version: 1
+version: 2
 
 before:
   hooks:
@@ -28,7 +28,9 @@ builds:
 
 archives:
   - id: xg2g
-    format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
     name_template: >-
       {{ .ProjectName }}_
       {{- .Version }}_
@@ -37,23 +39,19 @@ archives:
       {{- else if eq .Arch "386" }}i386
       {{- else }}{{ .Arch }}{{ end }}
       {{- if .Arm }}v{{ .Arm }}{{ end }}
-    format_overrides:
-      - goos: windows
-        format: zip
     files:
       - README.md
       - LICENSE
-      - docs/SPRINT_SUMMARY.md
-      - docs/HEALTH_CHECKS.md
-      - docs/BACKUP_RESTORE.md
-      - docs/MIGRATIONS.md
+      - docs/README.md
+      - docs/ARCHITECTURE.md
+      - docs/guides/**/*
 
 checksum:
   name_template: 'checksums.txt'
   algorithm: sha256
 
 snapshot:
-  name_template: "{{ incpatch .Version }}-next"
+  version_template: "{{ incpatch .Version }}-next"
 
 changelog:
   use: github
@@ -116,10 +114,9 @@ release:
 
     ### 📚 Documentation
 
-    - [Sprint Summary](https://github.com/ManuGH/xg2g/blob/{{ .Tag }}/docs/SPRINT_SUMMARY.md)
-    - [Health Checks Guide](https://github.com/ManuGH/xg2g/blob/{{ .Tag }}/docs/HEALTH_CHECKS.md)
-    - [Backup & Restore](https://github.com/ManuGH/xg2g/blob/{{ .Tag }}/docs/BACKUP_RESTORE.md)
-    - [Migration Guide](https://github.com/ManuGH/xg2g/blob/{{ .Tag }}/docs/MIGRATIONS.md)
+    - [Documentation](https://github.com/ManuGH/xg2g/blob/{{ .Tag }}/docs/README.md)
+    - [Architecture](https://github.com/ManuGH/xg2g/blob/{{ .Tag }}/docs/ARCHITECTURE.md)
+    - [Guides](https://github.com/ManuGH/xg2g/tree/{{ .Tag }}/docs/guides)
 
     ---
 
