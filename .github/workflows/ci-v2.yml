@@ -49,6 +49,22 @@ jobs:
           go mod verify
           git diff --exit-code -- go.mod go.sum
 
+      - name: Setup Node for WebUI
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: webui/package-lock.json
+
+      - name: Build WebUI
+        run: |
+          set -euo pipefail
+          cd webui
+          npm ci
+          npm run build
+          mkdir -p ../internal/api/ui
+          cp -r dist/* ../internal/api/ui/
+
       - name: Build (stub transcoder)
         run: |
           set -euo pipefail
@@ -157,6 +173,22 @@ jobs:
         with:
           toolchain: stable
 
+      - name: Setup Node for WebUI
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: webui/package-lock.json
+
+      - name: Build WebUI
+        run: |
+          set -euo pipefail
+          cd webui
+          npm ci
+          npm run build
+          mkdir -p ../internal/api/ui
+          cp -r dist/* ../internal/api/ui/
+
       - name: Cache Rust dependencies
         uses: actions/cache@v4
         with:
@@ -205,6 +237,22 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+
+      - name: Setup Node for WebUI
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: webui/package-lock.json
+
+      - name: Build WebUI
+        run: |
+          set -euo pipefail
+          cd webui
+          npm ci
+          npm run build
+          mkdir -p ../internal/api/ui
+          cp -r dist/* ../internal/api/ui/
 
       - name: Install golangci-lint
         run: |
@@ -257,6 +305,22 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+
+      - name: Setup Node for WebUI
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: webui/package-lock.json
+
+      - name: Build WebUI
+        run: |
+          set -euo pipefail
+          cd webui
+          npm ci
+          npm run build
+          mkdir -p ../internal/api/ui
+          cp -r dist/* ../internal/api/ui/
 
       - name: Build stub OpenWebIF server
         run: |
