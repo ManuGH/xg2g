@@ -186,7 +186,7 @@ jobs:
       - name: Scan image with Trivy
         uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # master
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build-push.outputs.digest }}
+          image-ref: ghcr.io/manugh/xg2g@${{ steps.build-push.outputs.digest }}
           format: "sarif"
           output: "trivy-results.sarif"
 
@@ -212,12 +212,12 @@ jobs:
           echo "### Verification Commands" >> $GITHUB_STEP_SUMMARY
           echo '```bash' >> $GITHUB_STEP_SUMMARY
           echo "# Verify signature" >> $GITHUB_STEP_SUMMARY
-          echo "cosign verify ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build-push.outputs.digest }} \\" >> $GITHUB_STEP_SUMMARY
+          echo "cosign verify ghcr.io/manugh/xg2g@${{ steps.build-push.outputs.digest }} \\" >> $GITHUB_STEP_SUMMARY
           echo "  --certificate-oidc-issuer https://token.actions.githubusercontent.com \\" >> $GITHUB_STEP_SUMMARY
           echo "  --certificate-identity-regexp '^https://github.com/${{ github.repository }}'" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "# Verify SBOM attestation" >> $GITHUB_STEP_SUMMARY
-          echo "cosign verify-attestation ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build-push.outputs.digest }} \\" >> $GITHUB_STEP_SUMMARY
+          echo "cosign verify-attestation ghcr.io/manugh/xg2g@${{ steps.build-push.outputs.digest }} \\" >> $GITHUB_STEP_SUMMARY
           echo "  --type spdx \\" >> $GITHUB_STEP_SUMMARY
           echo "  --certificate-oidc-issuer https://token.actions.githubusercontent.com \\" >> $GITHUB_STEP_SUMMARY
           echo "  --certificate-identity-regexp '^https://github.com/${{ github.repository }}'" >> $GITHUB_STEP_SUMMARY
