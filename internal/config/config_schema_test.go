@@ -18,7 +18,7 @@ func TestJSONSchemaValidation(t *testing.T) {
 		t.Skip("check-jsonschema not installed, skipping schema validation tests")
 	}
 
-	schemaPath := filepath.Join("..", "..", "docs", "config.schema.json")
+	schemaPath := filepath.Join("..", "..", "docs", "guides", "config.schema.json")
 
 	tests := []struct {
 		name      string
@@ -71,7 +71,7 @@ func TestJSONSchemaAgainstAllValidFixtures(t *testing.T) {
 		t.Skip("check-jsonschema not installed, skipping schema validation tests")
 	}
 
-	schemaPath := filepath.Join("..", "..", "docs", "config.schema.json")
+	schemaPath := filepath.Join("..", "..", "docs", "guides", "config.schema.json")
 	pattern := filepath.Join("testdata", "valid-*.yaml")
 
 	matches, err := filepath.Glob(pattern)
@@ -102,7 +102,7 @@ func TestJSONSchemaRejectsInvalidFixtures(t *testing.T) {
 		t.Skip("check-jsonschema not installed, skipping schema validation tests")
 	}
 
-	schemaPath := filepath.Join("..", "..", "docs", "config.schema.json")
+	schemaPath := filepath.Join("..", "..", "docs", "guides", "config.schema.json")
 	pattern := filepath.Join("testdata", "invalid-*.yaml")
 
 	matches, err := filepath.Glob(pattern)
