@@ -106,7 +106,7 @@ func TestSmoke_BasicRefreshFlow(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	status, err := jobs.Refresh(ctx, cfg)
+	status, err := jobs.Refresh(ctx, cfg, nil)
 
 	require.NoError(t, err, "Basic refresh should succeed")
 	require.NotNil(t, status)
