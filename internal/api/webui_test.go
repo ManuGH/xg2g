@@ -18,7 +18,7 @@ func TestWebUIEndpoints(t *testing.T) {
 		OWIPassword: "secret_password",
 		APIToken:    "secret_token",
 	}
-	s := New(cfg)
+	s := New(cfg, nil)
 	s.status = jobs.Status{
 		Version:       "v2.2.0",
 		LastRun:       time.Date(2025, 11, 28, 12, 0, 0, 0, time.UTC),

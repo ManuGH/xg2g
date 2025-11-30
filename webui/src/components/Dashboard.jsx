@@ -52,7 +52,50 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      <div className="recent-logs-section" style={{ marginTop: '30px' }}>
+        <h3>Recent Logs</h3>
+        <LogList />
+      </div>
     </div>
+  );
+}
+
+function LogList() {
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    import('../api').then(({ getRecentLogs }) => {
+      getRecentLogs()
+        .then(data => setLogs(data.slice(0, 5)))
+        .catch(console.error)
+        .finally(() => setLoading(false));
+    });
+  }, []);
+
+  if (loading) return <div>Loading logs...</div>;
+  if (!logs || logs.length === 0) return <div className="no-data">No recent logs</div>;
+
+  return (
+    <table className="log-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <thead>
+        <tr style={{ textAlign: 'left', borderBottom: '1px solid #ccc' }}>
+          <th>Time</th>
+          <th>Level</th>
+          <th>Message</th>
+        </tr>
+      </thead>
+      <tbody>
+        {logs.map((log, i) => (
+          <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
+            <td>{new Date(log.timestamp).toLocaleTimeString()}</td>
+            <td className={`log-level ${log.level.toLowerCase()}`}>{log.level}</td>
+            <td>{log.message}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 

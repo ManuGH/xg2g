@@ -1,5 +1,4 @@
 //go:build cgo && transcoder
-// +build cgo,transcoder
 
 package transcoder
 

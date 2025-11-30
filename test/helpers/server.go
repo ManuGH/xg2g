@@ -68,7 +68,7 @@ func NewTestServer(t *testing.T, opts TestServerOptions) *TestServer {
 		Bouquet:    opts.Bouquet,
 	}
 
-	apiServer := api.New(cfg)
+	apiServer := api.New(cfg, nil)
 	handler := apiServer.Handler()
 	testServer := httptest.NewServer(handler)
 
@@ -84,7 +84,7 @@ func NewTestServer(t *testing.T, opts TestServerOptions) *TestServer {
 func NewTestServerWithConfig(t *testing.T, cfg config.AppConfig) *TestServer {
 	t.Helper()
 
-	apiServer := api.New(cfg)
+	apiServer := api.New(cfg, nil)
 	handler := apiServer.Handler()
 	testServer := httptest.NewServer(handler)
 

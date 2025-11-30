@@ -26,6 +26,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/proxy"
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
@@ -46,8 +47,9 @@ type Server struct {
 	auditLogger   AuditLogger     // Optional: for audit logging
 	healthManager *health.Manager // Health and readiness checks
 	// refreshFn allows tests to stub the refresh operation; defaults to jobs.Refresh
-	refreshFn func(context.Context, config.AppConfig) (*jobs.Status, error)
-	startTime time.Time
+	refreshFn      func(context.Context, config.AppConfig, *openwebif.StreamDetector) (*jobs.Status, error)
+	streamDetector *openwebif.StreamDetector
+	startTime      time.Time
 }
 
 // AuditLogger interface for audit logging (optional).
@@ -124,9 +126,10 @@ func (s *Server) dataFilePath(rel string) (string, error) {
 }
 
 // New creates and initializes a new HTTP API server.
-func New(cfg config.AppConfig) *Server {
+func New(cfg config.AppConfig, detector *openwebif.StreamDetector) *Server {
 	s := &Server{
-		cfg: cfg,
+		cfg:            cfg,
+		streamDetector: detector,
 		status: jobs.Status{
 			Version: cfg.Version, // Initialize version from config
 		},
@@ -256,6 +259,12 @@ func (s *Server) routes() http.Handler {
 		r.Get("/bouquets", s.handleAPIBouquets)
 		r.Get("/channels", s.handleAPIChannels)
 		r.Get("/logs/recent", s.handleAPILogs)
+
+		// File Management
+		r.Get("/files/status", s.handleAPIFileStatus)
+		r.Post("/m3u/regenerate", s.handleAPIRegenerate)
+		r.Get("/m3u/download", s.handleAPIPlaylistDownload)
+		r.Get("/xmltv/download", s.handleAPIXMLTVDownload)
 	})
 
 	// V1 API (current stable version)
@@ -412,7 +421,7 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	// Run the refresh via circuit breaker; it will mark failures and handle panics
 	err := s.cb.Call(func() error {
 		var err error
-		st, err = s.refreshFn(jobCtx, s.cfg)
+		st, err = s.refreshFn(jobCtx, s.cfg, s.streamDetector)
 		return err
 	})
 	duration := time.Since(start)
@@ -1105,7 +1114,7 @@ func (s *Server) handleUIRefresh(w http.ResponseWriter, r *http.Request) {
 	// Trigger refresh
 	logger.Info().Str("event", "ui.refresh.started").Msg("refresh triggered from UI")
 
-	newStatus, err := s.refreshFn(r.Context(), s.cfg)
+	newStatus, err := s.refreshFn(r.Context(), s.cfg, s.streamDetector)
 	if err != nil {
 		logger.Error().Err(err).Str("event", "ui.refresh.failed").Msg("refresh failed")
 		w.Header().Set("Content-Type", "application/json")
@@ -1183,6 +1192,6 @@ func featureEnabled(flag string) bool {
 // NewRouter creates and configures a new router with all middlewares and handlers.
 // This includes the logging middleware, security headers, and the API routes.
 func NewRouter(cfg config.AppConfig) http.Handler {
-	server := New(cfg)
+	server := New(cfg, nil)
 	return withMiddlewares(server.routes())
 }

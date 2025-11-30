@@ -23,7 +23,7 @@ epg:
   enabled: true
   days: 7
 `
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
 		t.Fatalf("failed to write config: %v", err)
 	}
 }
@@ -137,7 +137,7 @@ func TestConfigHolder_Reload_ValidationFailure(t *testing.T) {
 bouquets:
   - new-bouquet
 `
-	if err := os.WriteFile(configPath, []byte(invalidContent), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(invalidContent), 0600); err != nil {
 		t.Fatalf("failed to write invalid config: %v", err)
 	}
 
@@ -357,7 +357,7 @@ epg:
   days: 7
 unknownField: this-should-be-rejected
 `
-	if err := os.WriteFile(configPath, []byte(invalidContent), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(invalidContent), 0600); err != nil {
 		t.Fatalf("failed to write invalid config: %v", err)
 	}
 
@@ -403,7 +403,7 @@ epg:
   enabled: true
   days: "seven"
 `
-	if err := os.WriteFile(configPath, []byte(invalidContent), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(invalidContent), 0600); err != nil {
 		t.Fatalf("failed to write invalid config: %v", err)
 	}
 
@@ -449,7 +449,7 @@ epg:
   enabled: true
   days: 99
 `
-	if err := os.WriteFile(configPath, []byte(invalidContent), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(invalidContent), 0600); err != nil {
 		t.Fatalf("failed to write invalid config: %v", err)
 	}
 

@@ -101,33 +101,10 @@ func main() {
 	}
 	logger.Info().Msgf("→ Data dir: %s", cfg.DataDir)
 
-	// Initial refresh before starting servers (enabled by default in v2.0)
-	// Users can disable with XG2G_INITIAL_REFRESH=false if needed
-	if config.ParseBool("XG2G_INITIAL_REFRESH", true) {
-		logger.Info().Msg("performing initial data refresh on startup")
-		if _, err := jobs.Refresh(ctx, cfg); err != nil {
-			logger.Error().Err(err).Msg("initial data refresh failed")
-			logger.Warn().Msg("→ Channels will be empty until manual refresh via /api/refresh")
-		} else {
-			logger.Info().Msg("initial data refresh completed successfully")
-		}
-	} else {
-		logger.Warn().Msg("Initial refresh is disabled (XG2G_INITIAL_REFRESH=false)")
-		logger.Warn().Msg("→ No channels loaded. Trigger manual refresh via: POST /api/refresh")
-	}
-
-	// Create API handler
-	s := api.New(cfg)
-
-	// Build daemon dependencies
-	deps := daemon.Deps{
-		Logger:         logger,
-		Config:         cfg,
-		APIHandler:     s.Handler(),
-		MetricsHandler: promhttp.Handler(),
-	}
-
 	// Configure proxy (enabled by default in v2.0 for Zero Config experience)
+	var streamDetector *openwebif.StreamDetector
+	var proxyConfig *daemon.ProxyConfig
+
 	if config.ParseBool("XG2G_ENABLE_STREAM_PROXY", true) {
 		targetURL := config.ParseString("XG2G_PROXY_TARGET", "")
 		receiverHost := proxy.GetReceiverHost()
@@ -139,9 +116,8 @@ func main() {
 				Msg("XG2G_ENABLE_STREAM_PROXY is true but neither XG2G_PROXY_TARGET nor XG2G_OWI_BASE is set")
 		}
 
-		// Create StreamDetector if Smart Detection is enabled
-		var streamDetector *openwebif.StreamDetector
-		if receiverHost != "" && openwebif.IsEnabled() {
+		// Create StreamDetector if Smart Detection is enabled AND Instant Tune is enabled
+		if receiverHost != "" && openwebif.IsEnabled() && cfg.InstantTuneEnabled {
 			streamDetector = openwebif.NewStreamDetector(receiverHost, xglog.WithComponent("stream-detector"))
 			if targetURL == "" {
 				logger.Info().
@@ -153,9 +129,11 @@ func main() {
 					Str("target", targetURL).
 					Msg("Stream proxy using Smart Detection with fallback target")
 			}
+		} else if !cfg.InstantTuneEnabled {
+			logger.Info().Msg("Instant Tune (StreamDetector) is disabled by configuration")
 		}
 
-		deps.ProxyConfig = &daemon.ProxyConfig{
+		proxyConfig = &daemon.ProxyConfig{
 			ListenAddr:     config.ParseString("XG2G_PROXY_LISTEN", ":18000"),
 			TargetURL:      targetURL,
 			ReceiverHost:   receiverHost,
@@ -164,6 +142,34 @@ func main() {
 			TLSCert:        cfg.TLSCert,
 			TLSKey:         cfg.TLSKey,
 		}
+	}
+
+	// Initial refresh before starting servers (enabled by default in v2.0)
+	// Users can disable with XG2G_INITIAL_REFRESH=false if needed
+	if config.ParseBool("XG2G_INITIAL_REFRESH", true) {
+		logger.Info().Msg("performing initial data refresh on startup")
+		// Instant Tune: Pass streamDetector to pre-warm cache
+		if _, err := jobs.Refresh(ctx, cfg, streamDetector); err != nil {
+			logger.Error().Err(err).Msg("initial data refresh failed")
+			logger.Warn().Msg("→ Channels will be empty until manual refresh via /api/refresh")
+		} else {
+			logger.Info().Msg("initial data refresh completed successfully")
+		}
+	} else {
+		logger.Warn().Msg("Initial refresh is disabled (XG2G_INITIAL_REFRESH=false)")
+		logger.Warn().Msg("→ No channels loaded. Trigger manual refresh via: POST /api/refresh")
+	}
+
+	// Create API handler
+	s := api.New(cfg, streamDetector)
+
+	// Build daemon dependencies
+	deps := daemon.Deps{
+		Logger:         logger,
+		Config:         cfg,
+		APIHandler:     s.Handler(),
+		MetricsHandler: promhttp.Handler(),
+		ProxyConfig:    proxyConfig,
 	}
 
 	// Create daemon manager

@@ -63,8 +63,10 @@ func TestValidateCLI(t *testing.T) {
 			var cmd *exec.Cmd
 			if tt.configFile == "" {
 				// Test without -f flag
+				// #nosec G204 -- Test code: running test binary with controlled path
 				cmd = exec.Command(binaryPath)
 			} else {
+				// #nosec G204 -- Test code: running test binary with controlled arguments
 				cmd = exec.Command(binaryPath, "-f", tt.configFile)
 			}
 
@@ -105,6 +107,7 @@ func TestValidateCLI_Version(t *testing.T) {
 		t.Fatalf("failed to build validate binary: %v\n%s", err, out)
 	}
 
+	// #nosec G204 -- Test code: running test binary with controlled arguments
 	cmd := exec.Command(binaryPath, "-version")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -137,6 +140,7 @@ func TestValidateCLI_RealConfig(t *testing.T) {
 		t.Fatalf("failed to build validate binary: %v\n%s", err, out)
 	}
 
+	// #nosec G204 -- Test code: running test binary with controlled arguments
 	cmd := exec.Command(binaryPath, "-f", exampleConfig)
 	output, err := cmd.CombinedOutput()
 	if err != nil {

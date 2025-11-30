@@ -13,7 +13,7 @@ import (
 func TestLoad_ValidMinimal(t *testing.T) {
 	// Ensure test directory exists (validation checks this)
 	testDir := "/tmp/xg2g-config-test"
-	if err := os.MkdirAll(testDir, 0755); err != nil {
+	if err := os.MkdirAll(testDir, 0750); err != nil {
 		t.Fatalf("failed to create test directory: %v", err)
 	}
 	defer func() { _ = os.RemoveAll(testDir) }()

@@ -14,6 +14,7 @@ import (
 	v1 "github.com/ManuGH/xg2g/internal/api/v1"
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/jobs"
+	"github.com/ManuGH/xg2g/internal/openwebif"
 )
 
 func TestHandleStatus(t *testing.T) {
@@ -62,7 +63,7 @@ func TestHandleStatus(t *testing.T) {
 				Version: tt.version,
 				DataDir: t.TempDir(),
 			}
-			srv := api.New(cfg)
+			srv := api.New(cfg, nil)
 			srv.SetStatus(jobs.Status{
 				Version:  tt.version,
 				LastRun:  tt.lastRun,
@@ -127,7 +128,7 @@ func TestHandleStatus_JSONStructure(t *testing.T) {
 		Version: "1.7.0",
 		DataDir: t.TempDir(),
 	}
-	srv := api.New(cfg)
+	srv := api.New(cfg, nil)
 	srv.SetStatus(jobs.Status{
 		Version:  "1.7.0",
 		LastRun:  time.Date(2025, 11, 1, 10, 0, 0, 0, time.UTC),
@@ -193,10 +194,10 @@ func TestHandleRefresh(t *testing.T) {
 				Version: "1.7.0",
 				DataDir: t.TempDir(),
 			}
-			srv := api.New(cfg)
+			srv := api.New(cfg, nil)
 
 			// Set mock refresh function to avoid actual refresh
-			srv.SetRefreshFunc(func(ctx context.Context, cfg config.AppConfig) (*jobs.Status, error) {
+			srv.SetRefreshFunc(func(ctx context.Context, cfg config.AppConfig, _ *openwebif.StreamDetector) (*jobs.Status, error) {
 				return &jobs.Status{
 					Version:  "1.7.0",
 					LastRun:  time.Now(),
@@ -231,11 +232,11 @@ func TestHandleRefresh_Concurrency(t *testing.T) {
 		Version: "1.7.0",
 		DataDir: t.TempDir(),
 	}
-	srv := api.New(cfg)
+	srv := api.New(cfg, nil)
 
 	// Track refresh calls
 	refreshCalled := 0
-	srv.SetRefreshFunc(func(ctx context.Context, cfg config.AppConfig) (*jobs.Status, error) {
+	srv.SetRefreshFunc(func(ctx context.Context, cfg config.AppConfig, _ *openwebif.StreamDetector) (*jobs.Status, error) {
 		refreshCalled++
 		time.Sleep(50 * time.Millisecond) // Simulate work
 		return &jobs.Status{
@@ -278,7 +279,7 @@ func TestHandleStatus_MethodNotAllowed(t *testing.T) {
 		Version: "1.7.0",
 		DataDir: t.TempDir(),
 	}
-	srv := api.New(cfg)
+	srv := api.New(cfg, nil)
 	handler := v1.NewHandler(srv)
 
 	// Test that POST is not allowed for status endpoint

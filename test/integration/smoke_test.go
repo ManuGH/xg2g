@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 
 //go:build integration_fast || integration
-// +build integration_fast integration
 
 package test
 

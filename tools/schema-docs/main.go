@@ -84,8 +84,8 @@ func main() {
 	}
 
 	// Schreiben
-	check(os.MkdirAll("docs", 0o755))
-	check(os.WriteFile(out, buf.Bytes(), 0o644))
+	check(os.MkdirAll("docs", 0o750))
+	check(os.WriteFile(out, buf.Bytes(), 0o600))
 	fmt.Printf("generated %s from %s\n", out, in)
 }
 

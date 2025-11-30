@@ -60,12 +60,12 @@ func TestRefresh_IntegrationSuccess(t *testing.T) {
 		StreamPort: 8001,
 	}
 
-	st, err := Refresh(context.Background(), cfg)
+	status, err := Refresh(context.Background(), cfg, nil)
 	if err != nil {
 		t.Fatalf("Refresh returned error: %v", err)
 	}
-	if st == nil || st.Channels != 2 {
-		t.Fatalf("unexpected status: %#v", st)
+	if status == nil || status.Channels != 2 {
+		t.Fatalf("unexpected status: %#v", status)
 	}
 
 	// Verify files were written

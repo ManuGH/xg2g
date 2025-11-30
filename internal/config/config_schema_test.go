@@ -1,5 +1,4 @@
 //go:build schemacheck
-// +build schemacheck
 
 // SPDX-License-Identifier: MIT
 

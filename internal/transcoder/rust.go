@@ -1,5 +1,4 @@
 //go:build cgo && transcoder
-// +build cgo,transcoder
 
 // Package transcoder provides Go bindings for the Rust audio remuxer via CGO/FFI.
 //

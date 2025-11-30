@@ -49,6 +49,8 @@ livetest-data/
 /xg2g-*
 /daemon
 /daemon-*
+/api.test
+/test_output.txt
 transcoder.tar.gz
 test_parser.go
 

@@ -10,7 +10,7 @@
 
 Stream satellite/cable TV to **any device** - Plex, Jellyfin, iPhone, VLC, Kodi - **everything works**.
 
-[Quick Start](#install) • [Features](#features) • [Documentation](docs/) • [Helm Chart](contrib/helm/xg2g/)
+[Quick Start](#install) • [Features](#features) • [Documentation](docs/) • [Helm Chart](deploy/helm/xg2g/)
 
 ---
 
@@ -40,6 +40,7 @@ docker run -d \
 - **Smart Transcoding**: Auto-detects if you need audio transcoding (iOS) or video transcoding (Bandwidth).
 - **Modern UI**: Beautiful web interface for channel management.
 - **Ultra-Fast Audio Transcoding** - Native Rust remuxer: AC3/MP2 → AAC (1.4ms latency, 140x faster, <0.1% CPU)
+- **Instant Tune** - Smart caching for <1ms channel switching (New in v3.1)
 - **7-Day EPG** - Full electronic program guide in XMLTV format
 - **GPU Transcoding** - Hardware-accelerated video transcoding (AMD/Intel/NVIDIA)
 - **Enterprise-Grade** - Prometheus metrics, OpenTelemetry tracing, health checks
@@ -57,6 +58,8 @@ By default, it is available at: `http://localhost:8080/ui/`
 - **Channels:** Browse available bouquets and channels, check EPG status.
 - **Logs:** View recent warnings and errors directly in the browser.
 - **Config:** View current configuration (read-only).
+
+**📖 [Read the WebUI Guide](docs/guides/WEBUI.md)** for a full tour of features and API endpoints.
 
 To disable the WebUI, set `XG2G_WEBUI_ENABLED=false` (not yet implemented, currently always on).
 

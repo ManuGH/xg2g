@@ -285,23 +285,27 @@ Closes #123
 
 ```
 xg2g/
-├── cmd/
-│   └── daemon/          # Main application entry point
-├── internal/
-│   ├── api/             # HTTP API handlers
-│   ├── playlist/        # M3U playlist generation
-│   ├── epg/             # EPG/XMLTV handling
-│   ├── hdhr/            # HDHomeRun emulation
-│   └── stream/          # Stream proxy
-├── contrib/             # Community & Advanced configs
-│   ├── docker/          # Specialized Dockerfiles
-│   ├── helm/            # Helm charts
-│   ├── kubernetes/      # K8s manifests
-│   └── workflows/       # Extra CI workflows
+├── cmd/                     # Main applications (daemon, tools)
+│   └── daemon/              # Main application entry point
+├── internal/                # Private application code
+│   ├── api/                 # HTTP API handlers
+│   ├── playlist/            # M3U playlist generation
+│   ├── epg/                 # EPG/XMLTV handling
+│   ├── hdhr/                # HDHomeRun emulation
+│   └── stream/              # Stream proxy
+├── pkg/                     # Public library code (if any)
+├── api/                     # OpenAPI/Swagger specs
+├── webui/                   # React frontend
+├── deploy/                  # Deployment configs (Docker, K8s, Helm)
+│   ├── docker/              # Specialized Dockerfiles
+│   ├── helm/                # Helm charts
+│   └── kubernetes/          # K8s manifests
+├── docs/                    # Documentation
+├── scripts/                 # Build and maintenance scripts
 ├── .github/
-│   └── workflows/       # Core CI/CD pipelines
-├── Dockerfile           # Main Docker image
-└── docker-compose.yml   # Standard deployment
+│   └── workflows/           # Core CI/CD pipelines
+├── Dockerfile               # Main Docker image
+└── docker-compose.yml       # Standard deployment
 ```
 
 ## Common Tasks

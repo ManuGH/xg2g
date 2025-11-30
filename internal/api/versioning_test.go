@@ -20,7 +20,7 @@ func TestAPIVersioning(t *testing.T) {
 		StreamPort: 8001,
 	}
 
-	server := New(cfg)
+	server := New(cfg, nil)
 	handler := server.Handler()
 
 	t.Run("V1StatusEndpoint", func(t *testing.T) {
@@ -60,7 +60,7 @@ func TestGetStatus(t *testing.T) {
 		StreamPort: 8001,
 	}
 
-	server := New(cfg)
+	server := New(cfg, nil)
 
 	// Set some test status
 	server.mu.Lock()

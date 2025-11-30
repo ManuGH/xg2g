@@ -217,7 +217,7 @@ func TestRefresh_InvalidStreamPort(t *testing.T) {
 		StreamPort: 70000, // Invalid port
 	}
 
-	_, err := Refresh(ctx, cfg)
+	_, err := Refresh(ctx, cfg, nil)
 	if err == nil {
 		t.Error("Expected error for invalid stream port")
 	}
@@ -234,7 +234,7 @@ func TestRefresh_ConfigValidation(t *testing.T) {
 		DataDir: "/tmp/test",
 	}
 
-	_, err := Refresh(ctx, cfg)
+	_, err := Refresh(ctx, cfg, nil)
 	if err == nil {
 		t.Error("Expected error for invalid config")
 	}
@@ -518,7 +518,7 @@ func TestRefresh_VersionPersistence(t *testing.T) {
 	ctx := context.Background()
 
 	// Mock successful refresh (minimal setup)
-	status, err := Refresh(ctx, cfg)
+	status, err := Refresh(ctx, cfg, nil)
 
 	// We expect validation errors since we don't have a real OWI server,
 	// but the important part is that if Status is returned, it must contain the version

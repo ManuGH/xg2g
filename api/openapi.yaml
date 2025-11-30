@@ -18,7 +18,7 @@ servers:
 security: []
 
 paths:
-  /api/status:
+  /api/v1/status:
     get:
       summary: Current service status
       description: >-
@@ -37,7 +37,7 @@ paths:
         "500":
           description: Internal server error
 
-  /api/refresh:
+  /api/v1/refresh:
     get:
       summary: Trigger refresh
       description: >-
@@ -74,6 +74,54 @@ paths:
           description: Method not allowed
         "500":
           description: Refresh failed
+
+  /api/v1/config/reload:
+    post:
+      summary: Reload configuration
+      description: Triggers a hot reload of the configuration file.
+      operationId: reloadConfig
+      responses:
+        "200":
+          description: Configuration reloaded successfully
+        "401":
+          description: Unauthorized
+        "500":
+          description: Internal server error
+
+  /api/v1/ui/status:
+    get:
+      summary: UI Status
+      description: Enhanced status information for the Web UI dashboard.
+      operationId: getUIStatus
+      responses:
+        "200":
+          description: UI status retrieved successfully
+        "500":
+          description: Internal server error
+
+  /api/v1/ui/urls:
+    get:
+      summary: UI URLs
+      description: Returns M3U and XMLTV URLs for the UI.
+      operationId: getUIUrls
+      responses:
+        "200":
+          description: URLs retrieved successfully
+        "500":
+          description: Internal server error
+
+  /api/v1/ui/refresh:
+    post:
+      summary: UI Refresh
+      description: Simplified refresh trigger for the Web UI.
+      operationId: triggerUIRefresh
+      responses:
+        "200":
+          description: Refresh triggered successfully
+        "409":
+          description: Refresh already in progress
+        "500":
+          description: Internal server error
 
   /healthz:
     get:

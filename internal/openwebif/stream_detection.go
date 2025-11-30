@@ -100,6 +100,11 @@ func IsEnabled() bool {
 	return env != "false"
 }
 
+// SetHTTPClient allows replacing the default HTTP client (useful for testing).
+func (sd *StreamDetector) SetHTTPClient(client *http.Client) {
+	sd.httpClient = client
+}
+
 // DetectStreamURL determines the optimal stream URL for a given service reference.
 // It tests multiple endpoints and returns the best working option.
 func (sd *StreamDetector) DetectStreamURL(ctx context.Context, serviceRef, channelName string) (*StreamInfo, error) {

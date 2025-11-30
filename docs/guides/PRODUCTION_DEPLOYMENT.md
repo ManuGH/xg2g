@@ -137,6 +137,14 @@ Returns Prometheus-compatible metrics:
 
 ## 📊 Performance
 
+### Instant Tune (New in v3.1)
+
+xg2g v3.1 introduces **Instant Tune**, which pre-warms the stream detection cache during channel refresh.
+
+- **Latency**: Reduces tuning time from ~50ms+ to <1ms (cache hit).
+- **Configuration**: Enabled by default (`XG2G_INSTANT_TUNE=true`).
+- **Impact**: Instant channel switching in Plex/Jellyfin/IPTV apps.
+
 ### Expected Results
 
 - **Startup Time**: < 2 seconds

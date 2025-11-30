@@ -59,7 +59,7 @@ func NewHLSManager(logger zerolog.Logger, outputDir string) (*HLSManager, error)
 	}
 
 	// Create output directory
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
+	if err := os.MkdirAll(outputDir, 0750); err != nil {
 		return nil, fmt.Errorf("create HLS output directory: %w", err)
 	}
 
@@ -106,7 +106,7 @@ func (m *HLSManager) createStream(serviceRef, targetURL string) (*HLSStreamer, e
 	streamID := sanitizeServiceRef(serviceRef)
 	outputDir := filepath.Join(m.outputBase, streamID)
 
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
+	if err := os.MkdirAll(outputDir, 0750); err != nil {
 		return nil, fmt.Errorf("create stream output directory: %w", err)
 	}
 
@@ -159,6 +159,7 @@ func (s *HLSStreamer) Start() error {
 		playlistPath,
 	}
 
+	// #nosec G204 -- HLS transcoding: ffmpeg command with controlled arguments
 	s.cmd = exec.CommandContext(s.ctx, "ffmpeg", args...)
 	s.cmd.Stdout = nil
 

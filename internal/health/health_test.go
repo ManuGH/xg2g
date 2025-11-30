@@ -231,7 +231,7 @@ func TestFileChecker(t *testing.T) {
 			name: "file exists",
 			setup: func() string {
 				path := filepath.Join(tempDir, "test.txt")
-				require.NoError(t, os.WriteFile(path, []byte("content"), 0644))
+				require.NoError(t, os.WriteFile(path, []byte("content"), 0600))
 				return path
 			},
 			expectedStatus: StatusHealthy,
@@ -240,7 +240,7 @@ func TestFileChecker(t *testing.T) {
 			name: "empty file",
 			setup: func() string {
 				path := filepath.Join(tempDir, "empty.txt")
-				require.NoError(t, os.WriteFile(path, []byte{}, 0644))
+				require.NoError(t, os.WriteFile(path, []byte{}, 0600))
 				return path
 			},
 			expectedStatus: StatusDegraded,
@@ -257,7 +257,7 @@ func TestFileChecker(t *testing.T) {
 			name: "is directory",
 			setup: func() string {
 				path := filepath.Join(tempDir, "dir")
-				require.NoError(t, os.Mkdir(path, 0755))
+				require.NoError(t, os.Mkdir(path, 0750))
 				return path
 			},
 			expectedStatus: StatusUnhealthy,
@@ -275,16 +275,17 @@ func TestFileChecker(t *testing.T) {
 			setup: func() string {
 				// Create a file in a directory, then remove read permissions on parent
 				dirPath := filepath.Join(tempDir, "restricted")
-				require.NoError(t, os.Mkdir(dirPath, 0755))
+				require.NoError(t, os.Mkdir(dirPath, 0750))
 				filePath := filepath.Join(dirPath, "file.txt")
-				require.NoError(t, os.WriteFile(filePath, []byte("test"), 0644))
+				require.NoError(t, os.WriteFile(filePath, []byte("test"), 0600))
 
 				// Remove all permissions on directory (will cause stat to fail on some systems)
 				require.NoError(t, os.Chmod(dirPath, 0000))
 
 				// Clean up after test
 				t.Cleanup(func() {
-					_ = os.Chmod(dirPath, 0755) // Restore permissions for cleanup
+					// #nosec G302 -- Test cleanup: restoring directory permissions for cleanup
+					_ = os.Chmod(dirPath, 0750) // Restore permissions for cleanup
 				})
 
 				return filePath

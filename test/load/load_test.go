@@ -23,18 +23,18 @@ type mockOWI struct {
 }
 
 func (m *mockOWI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	switch {
-	case r.URL.Path == "/api/bouquets":
-		fmt.Fprintln(w, `{"bouquets": [["Favourites", "Favourites"]]}`)
-	case r.URL.Path == "/api/getservices":
-		fmt.Fprint(w, `{"services": [`)
+	switch r.URL.Path {
+	case "/api/bouquets":
+		_, _ = fmt.Fprintln(w, `{"bouquets": [["Favourites", "Favourites"]]}`)
+	case "/api/getservices":
+		_, _ = fmt.Fprint(w, `{"services": [`)
 		for i := 0; i < m.numServices; i++ {
 			if i > 0 {
-				fmt.Fprint(w, ",")
+				_, _ = fmt.Fprint(w, ",")
 			}
-			fmt.Fprintf(w, `{"servicename": "Channel %d", "servicereference": "1:0:1:%d:0:0:0:0:0:0:"}`, i+1, i+1)
+			_, _ = fmt.Fprintf(w, `{"servicename": "Channel %d", "servicereference": "1:0:1:%d:0:0:0:0:0:0:"}`, i+1, i+1)
 		}
-		fmt.Fprint(w, `]}`)
+		_, _ = fmt.Fprint(w, `]}`)
 	default:
 		w.WriteHeader(http.StatusNotFound)
 	}
@@ -67,7 +67,7 @@ func TestLoad_1500Services(t *testing.T) {
 	start := time.Now()
 
 	// Run refresh job
-	status, err := jobs.Refresh(context.Background(), cfg)
+	status, err := jobs.Refresh(context.Background(), cfg, nil)
 	if err != nil {
 		t.Fatalf("Refresh failed: %v", err)
 	}

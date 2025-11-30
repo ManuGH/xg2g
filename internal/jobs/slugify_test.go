@@ -154,7 +154,7 @@ func TestMakeHumanReadableTvgID(t *testing.T) {
 
 			// Check suffix is hex
 			for _, c := range parts {
-				if !((c >= 'a' && c <= 'f') || (c >= '0' && c <= '9')) {
+				if (c < 'a' || c > 'f') && (c < '0' || c > '9') {
 					t.Errorf("makeHumanReadableTvgID() suffix %q contains non-hex char %c", parts, c)
 				}
 			}

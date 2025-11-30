@@ -3,7 +3,7 @@
 package jobs
 
 import (
-	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/hex"
 	"regexp"
 	"strings"
@@ -97,7 +97,7 @@ func makeHumanReadableTvgID(name, sref string) string {
 	slug := slugify(name)
 
 	// Generate short hash from service reference for uniqueness
-	sum := sha1.Sum([]byte(sref))
+	sum := sha256.Sum256([]byte(sref))
 	suffix := hex.EncodeToString(sum[:])[:6] // First 6 chars of hash
 
 	// Combine: channel-name-suffix

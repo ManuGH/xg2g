@@ -14,6 +14,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/hdhr"
 	"github.com/ManuGH/xg2g/internal/jobs"
+	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -46,7 +47,7 @@ func TestGetConfig(t *testing.T) {
 // TestHandleRefreshInternal tests the HandleRefreshInternal wrapper.
 func TestHandleRefreshInternal(t *testing.T) {
 	// Create a mock refresh function that succeeds immediately
-	mockRefreshFn := func(ctx context.Context, cfg config.AppConfig) (*jobs.Status, error) {
+	mockRefreshFn := func(ctx context.Context, cfg config.AppConfig, _ *openwebif.StreamDetector) (*jobs.Status, error) {
 		return &jobs.Status{
 			Version:  "test",
 			Channels: 42,
@@ -74,7 +75,7 @@ func TestHandleRefreshInternal(t *testing.T) {
 
 // TestHandleRefreshV1Direct tests handleRefreshV1 directly.
 func TestHandleRefreshV1Direct(t *testing.T) {
-	mockRefreshFn := func(ctx context.Context, cfg config.AppConfig) (*jobs.Status, error) {
+	mockRefreshFn := func(ctx context.Context, cfg config.AppConfig, _ *openwebif.StreamDetector) (*jobs.Status, error) {
 		return &jobs.Status{
 			Version:  "test",
 			Channels: 5,
@@ -213,7 +214,7 @@ http://example.com/stream2
 http://example.com/stream3
 `
 		m3uPath := filepath.Join(tmpDir, "playlist.m3u")
-		if err := os.WriteFile(m3uPath, []byte(m3uContent), 0644); err != nil {
+		if err := os.WriteFile(m3uPath, []byte(m3uContent), 0600); err != nil {
 			t.Fatal(err)
 		}
 
@@ -423,7 +424,7 @@ func TestHandler(t *testing.T) {
 			DataDir: t.TempDir(),
 			Bouquet: "test",
 		}
-		s := New(cfg)
+		s := New(cfg, nil)
 		handler := s.Handler()
 
 		if handler == nil {
@@ -445,7 +446,7 @@ func TestHandler(t *testing.T) {
 			DataDir: t.TempDir(),
 			Bouquet: "test",
 		}
-		s := New(cfg)
+		s := New(cfg, nil)
 		s.SetAuditLogger(fakeAuditLogger{})
 		handler := s.Handler()
 
@@ -602,7 +603,7 @@ func TestAuthMiddleware_Standalone(t *testing.T) {
 func TestCheckFile_RegularFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "test.txt")
-	require.NoError(t, os.WriteFile(filePath, []byte("test content"), 0644))
+	require.NoError(t, os.WriteFile(filePath, []byte("test content"), 0600))
 
 	result := checkFile(context.Background(), filePath)
 	assert.True(t, result)
@@ -626,7 +627,7 @@ func TestCheckFile_NoPermission(t *testing.T) {
 
 	// Clean up permissions after test
 	t.Cleanup(func() {
-		_ = os.Chmod(filePath, 0644)
+		_ = os.Chmod(filePath, 0600)
 	})
 
 	result := checkFile(context.Background(), filePath)
@@ -644,7 +645,7 @@ func TestRegisterV2Routes_StatusEndpoint(t *testing.T) {
 		Version: "test-v2",
 	}
 
-	srv := New(cfg)
+	srv := New(cfg, nil)
 	srv.SetStatus(jobs.Status{
 		Version:  "test-v2",
 		Channels: 100,
@@ -682,13 +683,13 @@ http://10.10.55.14:18000/1:0:19:132F:3EF:1:C00000:0:0:0:
 http://10.10.55.14:18000/1:0:19:1334:3EF:1:C00000:0:0:0:
 `
 	m3uPath := filepath.Join(tempDir, "playlist.m3u")
-	require.NoError(t, os.WriteFile(m3uPath, []byte(m3uContent), 0644))
+	require.NoError(t, os.WriteFile(m3uPath, []byte(m3uContent), 0600))
 
 	// Create server with PlexForceHLS disabled
 	cfg := config.AppConfig{
 		DataDir: tempDir,
 	}
-	srv := New(cfg)
+	srv := New(cfg, nil)
 
 	// Initialize HDHomeRun with PlexForceHLS=false
 	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
@@ -735,13 +736,13 @@ http://10.10.55.14:18000/1:0:19:132F:3EF:1:C00000:0:0:0:
 http://10.10.55.14:18000/1:0:19:1334:3EF:1:C00000:0:0:0:
 `
 	m3uPath := filepath.Join(tempDir, "playlist.m3u")
-	require.NoError(t, os.WriteFile(m3uPath, []byte(m3uContent), 0644))
+	require.NoError(t, os.WriteFile(m3uPath, []byte(m3uContent), 0600))
 
 	// Create server with PlexForceHLS enabled
 	cfg := config.AppConfig{
 		DataDir: tempDir,
 	}
-	srv := New(cfg)
+	srv := New(cfg, nil)
 
 	// Initialize HDHomeRun with PlexForceHLS=true
 	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
@@ -787,13 +788,13 @@ func TestHandleLineupJSON_PlexForceHLS_NoDoublePrefix(t *testing.T) {
 http://10.10.55.14:18000/hls/1:0:19:132F:3EF:1:C00000:0:0:0:
 `
 	m3uPath := filepath.Join(tempDir, "playlist.m3u")
-	require.NoError(t, os.WriteFile(m3uPath, []byte(m3uContent), 0644))
+	require.NoError(t, os.WriteFile(m3uPath, []byte(m3uContent), 0600))
 
 	// Create server with PlexForceHLS enabled
 	cfg := config.AppConfig{
 		DataDir: tempDir,
 	}
-	srv := New(cfg)
+	srv := New(cfg, nil)
 
 	// Initialize HDHomeRun with PlexForceHLS=true
 	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()

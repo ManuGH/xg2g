@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/ManuGH/xg2g/internal/log"
 )
 
 // HealthResponse represents the overall system health
@@ -61,7 +63,9 @@ func (s *Server) handleAPIHealth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		log.L().Error().Err(err).Msg("failed to encode health response")
+	}
 }
 
 func (s *Server) handleAPIConfig(w http.ResponseWriter, r *http.Request) {
@@ -74,7 +78,9 @@ func (s *Server) handleAPIConfig(w http.ResponseWriter, r *http.Request) {
 	cfg.APIToken = "***"
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(cfg)
+	if err := json.NewEncoder(w).Encode(cfg); err != nil {
+		log.L().Error().Err(err).Msg("failed to encode config response")
+	}
 }
 
 func (s *Server) handleAPIBouquets(w http.ResponseWriter, r *http.Request) {
@@ -97,7 +103,9 @@ func (s *Server) handleAPIBouquets(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		log.L().Error().Err(err).Msg("failed to encode bouquets response")
+	}
 }
 
 func (s *Server) handleAPIChannels(w http.ResponseWriter, r *http.Request) {
@@ -106,11 +114,21 @@ func (s *Server) handleAPIChannels(w http.ResponseWriter, r *http.Request) {
 	// Since handleLineupJSON already parses M3U, we can extract that logic later.
 	// For now, return empty list to satisfy the endpoint existence.
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode([]interface{}{})
+	if err := json.NewEncoder(w).Encode([]interface{}{}); err != nil {
+		log.L().Error().Err(err).Msg("failed to encode channels response")
+	}
 }
 
 func (s *Server) handleAPILogs(w http.ResponseWriter, r *http.Request) {
-	// Phase 1: Empty logs
+	logs := log.GetRecentLogs()
+
+	// Reverse order (newest first)
+	for i, j := 0, len(logs)-1; i < j; i, j = i+1, j-1 {
+		logs[i], logs[j] = logs[j], logs[i]
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode([]interface{}{})
+	if err := json.NewEncoder(w).Encode(logs); err != nil {
+		log.L().Error().Err(err).Msg("failed to encode logs response")
+	}
 }

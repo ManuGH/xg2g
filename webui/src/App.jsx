@@ -2,6 +2,7 @@ import { useState } from 'react';
 import './App.css';
 import Channels from './components/Channels';
 import Dashboard from './components/Dashboard';
+import Files from './components/Files';
 import Logs from './components/Logs';
 
 function App() {
@@ -25,6 +26,12 @@ function App() {
             Channels
           </button>
           <button
+            className={view === 'files' ? 'active' : ''}
+            onClick={() => setView('files')}
+          >
+            Files
+          </button>
+          <button
             className={view === 'logs' ? 'active' : ''}
             onClick={() => setView('logs')}
           >
@@ -35,6 +42,7 @@ function App() {
       <main className="app-main">
         {view === 'dashboard' && <Dashboard />}
         {view === 'channels' && <Channels />}
+        {view === 'files' && <Files />}
         {view === 'logs' && <Logs />}
       </main>
     </div>

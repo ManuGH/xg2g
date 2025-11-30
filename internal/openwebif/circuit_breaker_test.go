@@ -61,7 +61,7 @@ func TestCircuitBreaker_HalfOpenFailure(t *testing.T) {
 	cb := NewCircuitBreaker(1, 100*time.Millisecond)
 
 	// Open the circuit
-	cb.Execute(func() error { return errors.New("fail") })
+	_ = cb.Execute(func() error { return errors.New("fail") })
 	if cb.State() != StateOpen {
 		t.Fatalf("Expected StateOpen")
 	}
@@ -70,7 +70,7 @@ func TestCircuitBreaker_HalfOpenFailure(t *testing.T) {
 	time.Sleep(150 * time.Millisecond)
 
 	// HalfOpen failure: Should go back to Open
-	cb.Execute(func() error { return errors.New("fail") })
+	_ = cb.Execute(func() error { return errors.New("fail") })
 	if cb.State() != StateOpen {
 		t.Errorf("Expected StateOpen after HalfOpen failure, got %v", cb.State())
 	}
@@ -85,7 +85,7 @@ func TestCircuitBreaker_Concurrency(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			cb.Execute(func() error { return nil })
+			_ = cb.Execute(func() error { return nil })
 		}()
 	}
 

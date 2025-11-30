@@ -102,6 +102,9 @@ type AppConfig struct {
 	TLSCert    string // Path to TLS certificate file
 	TLSKey     string // Path to TLS key file
 	ForceHTTPS bool   // Redirect HTTP to HTTPS
+
+	// Feature Flags
+	InstantTuneEnabled bool // Enable "Instant Tune" stream pre-warming
 }
 
 // Loader handles configuration loading with precedence
@@ -170,6 +173,9 @@ func (l *Loader) setDefaults(cfg *AppConfig) {
 	cfg.EPGTimeoutMS = 15000
 	cfg.EPGRetries = 2
 	cfg.EPGSource = "per-service" // Default to per-service for backward compatibility
+
+	// Feature Flags
+	cfg.InstantTuneEnabled = true
 }
 
 // loadFile loads configuration from a YAML file
@@ -350,6 +356,9 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	cfg.TLSCert = ParseString("XG2G_TLS_CERT", cfg.TLSCert)
 	cfg.TLSKey = ParseString("XG2G_TLS_KEY", cfg.TLSKey)
 	cfg.ForceHTTPS = ParseBool("XG2G_FORCE_HTTPS", cfg.ForceHTTPS)
+
+	// Feature Flags
+	cfg.InstantTuneEnabled = ParseBool("XG2G_INSTANT_TUNE", cfg.InstantTuneEnabled)
 }
 
 // expandEnv expands environment variables in the format ${VAR} or $VAR

@@ -63,7 +63,7 @@ func Configure(cfg Config) {
 		Timestamp().
 		Str("service", service).
 		Str("version", os.Getenv("VERSION")).
-		Logger()
+		Logger().Hook(bufferHook{})
 }
 
 func logger() zerolog.Logger {
@@ -173,6 +173,58 @@ func WithTraceContext(ctx context.Context) zerolog.Logger {
 			Logger()
 	}
 	return l
+}
+
+// LogBuffer implementation
+type LogEntry struct {
+	Timestamp time.Time              `json:"timestamp"`
+	Level     string                 `json:"level"`
+	Message   string                 `json:"message"`
+	Fields    map[string]interface{} `json:"fields,omitempty"`
+}
+
+const maxLogEntries = 100
+
+var (
+	logBufferMu sync.RWMutex
+	logBuffer   []LogEntry
+)
+
+type bufferHook struct{}
+
+func (h bufferHook) Run(e *zerolog.Event, level zerolog.Level, msg string) {
+	if level < zerolog.InfoLevel {
+		return
+	}
+
+	logBufferMu.Lock()
+	defer logBufferMu.Unlock()
+
+	// Create entry
+	entry := LogEntry{
+		Timestamp: time.Now(),
+		Level:     level.String(),
+		Message:   msg,
+		// Note: We can't easily get fields here without reflection or custom hook logic
+		// For now, simple message capture is enough for UI
+	}
+
+	// Append and trim
+	logBuffer = append(logBuffer, entry)
+	if len(logBuffer) > maxLogEntries {
+		logBuffer = logBuffer[1:]
+	}
+}
+
+// GetRecentLogs returns the most recent log entries
+func GetRecentLogs() []LogEntry {
+	logBufferMu.RLock()
+	defer logBufferMu.RUnlock()
+
+	// Return copy
+	result := make([]LogEntry, len(logBuffer))
+	copy(result, logBuffer)
+	return result
 }
 
 //nolint:gochecknoinits // Required to ensure logger is initialized before any usage

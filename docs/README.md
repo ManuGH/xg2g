@@ -10,7 +10,9 @@ Welcome to the xg2g documentation. This directory contains comprehensive documen
 ## Documentation Structure
 
 ### 📋 Operations
+
 Production deployment, monitoring, and incident management.
+
 - [Production Deployment](operations/PRODUCTION.md)
 - [Docker Deployment](operations/DOCKER_DEPLOYMENT.md)
 - [Health Checks](operations/HEALTH_CHECKS.md)
@@ -21,7 +23,9 @@ Production deployment, monitoring, and incident management.
 - [CI Load Testing](operations/CI_LOAD_TESTING.md)
 
 ### 🔧 Development
+
 Contributing guidelines, testing strategies, and code quality.
+
 - [Contributing Guide](development/CONTRIBUTING.md)
 - [Testing Strategy](development/TESTING_STRATEGY.md)
 - [Quality Checks](development/QUALITY_CHECKS.md)
@@ -32,7 +36,9 @@ Contributing guidelines, testing strategies, and code quality.
 - [CI/CD Audit](development/CI_CD_AUDIT_REPORT.md)
 
 ### 🏗️ Architecture
+
 System architecture, design decisions, and technical specifications.
+
 - [Architecture Decisions (ADR)](adr/) - Architectural Decision Records
 - [Go + Rust Hybrid](architecture/GO_RUST_HYBRID.md)
 - [Single Binary FFI](architecture/SINGLE_BINARY_FFI.md)
@@ -42,7 +48,9 @@ System architecture, design decisions, and technical specifications.
 - [Rust Remuxer Integration](architecture/RUST_REMUXER_INTEGRATION.md)
 
 ### 🚀 Features
+
 Feature documentation and implementation guides.
+
 - [GPU Transcoding](features/GPU_TRANSCODING.md)
 - [Audio Transcoding](features/AUDIO_TRANSCODING.md)
 - [EPG Optimization](features/EPG_OPTIMIZATION.md)
@@ -50,7 +58,9 @@ Feature documentation and implementation guides.
 - [Audio Delay Fix](features/AUDIO_DELAY_FIX.md)
 
 ### 📚 Guides
+
 User guides and configuration references.
+
 - [Configuration Guide](guides/CONFIGURATION.md)
 - [Default Configuration](guides/DEFAULT_CONFIGURATION.md)
 - [Configuration Schema](guides/config.schema.json)
@@ -65,7 +75,9 @@ User guides and configuration references.
 - [Telemetry Quickstart](guides/telemetry-quickstart.md)
 
 ### 🔐 Security
+
 Security documentation, audits, and hardening guides.
+
 - [Security Policy](security/SECURITY.md)
 - [Security Hardening](security/SECURITY_HARDENING.md)
 - [Security Improvements](security/SECURITY_IMPROVEMENTS.md)
@@ -78,14 +90,18 @@ Security documentation, audits, and hardening guides.
 - [Token Rotation](security/token-rotation-2025-10.md)
 
 ### 📦 Releases
+
 Release notes and version history.
+
 - [v1.7.0 Release](releases/RELEASE_v1.7.0.md)
 - [Release Checklist](releases/RELEASE_CHECKLIST.md)
 - [v0.3.0 Production Ready](releases/v0.3.0-production-ready.md)
 - [v0.3.0 EPG Deployment](releases/v0.3.0-epg-deployment.md)
 
 ### 🔄 Improvements
+
 Improvement roadmaps and implementation tracking.
+
 - [Improvement Overview](improvements/README.md)
 - [Implementation Roadmap](improvements/IMPLEMENTATION_ROADMAP.md)
 - [Existing Strengths](improvements/EXISTING_STRENGTHS.md)
@@ -97,12 +113,16 @@ Improvement roadmaps and implementation tracking.
 - [Tier 3: Features](improvements/TIER3_FEATURES.md)
 
 ### 🐛 Issues
+
 Known issues and troubleshooting.
+
 - [Issues Overview](issues/README.md)
 - [API Refactoring](issues/API_REFACTORING.md)
 
 ### 🗄️ Archive
+
 Historical documentation and completed projects.
+
 - [Archive Overview](archive/README.md)
 - [Phase 4 Completion](archive/PHASE_4_COMPLETION.md)
 - [Phase 4 Implementation](archive/PHASE_4_IMPLEMENTATION.md)
@@ -116,14 +136,16 @@ Historical documentation and completed projects.
 - [Refactoring Summary](archive/refactoring-summary.md)
 
 ### 🚢 Deployment
+
 Deployment guides for specific platforms.
+
 - [Container HDHomeRun](deployment/CONTAINER_HDHOMERUN.md)
-- [v1.3.0 Deployment](deployment/V1.3.0_DEPLOYMENT.md)
 
 ### 🔌 API
+
 API documentation and contracts.
+
 - [API v1 Contract](api/API_V1_CONTRACT.md)
-- [API Migration Guide](api/API_MIGRATION_GUIDE.md)
 - [API Health Check](api/API_HEALTH_CHECK.md)
 - [API Reference](api/api.html)
 
