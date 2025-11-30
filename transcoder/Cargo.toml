@@ -7,7 +7,11 @@ description = "High-performance GPU transcoder for xg2g using VAAPI"
 
 [lib]
 name = "xg2g_transcoder"
-crate-type = ["staticlib", "cdylib"]  # staticlib for Go static linking, cdylib for shared lib
+crate-type = [
+  "staticlib",
+  "cdylib",
+  "rlib",
+] # staticlib for Go, cdylib for shared, rlib for Rust bin
 
 [[bin]]
 name = "xg2g-transcoder"
@@ -53,7 +57,7 @@ async-trait = "0.1"
 # ===================================
 
 # MPEG-TS Processing
-mpeg2ts-reader = "0.18"  # MPEG-TS demuxer/parser
+mpeg2ts-reader = "0.18" # MPEG-TS demuxer/parser
 
 # MP2 Audio Decoder (pure Rust)
 symphonia = { version = "0.5", features = ["mp2"] }
@@ -62,8 +66,8 @@ symphonia = { version = "0.5", features = ["mp2"] }
 ac-ffmpeg = "0.19"
 
 # Audio Processing Utilities
-dasp = "0.11"      # Sample format conversion, channel mixing
-rubato = "0.15"    # High-quality sample rate conversion
+dasp = "0.11"   # Sample format conversion, channel mixing
+rubato = "0.15" # High-quality sample rate conversion
 
 # Memory allocator - REMOVED due to Tokio runtime incompatibility
 # jemalloc conflicts with manual runtime initialization
