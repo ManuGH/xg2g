@@ -29,7 +29,7 @@ package transcoder
 
 // #cgo LDFLAGS: -L${SRCDIR}/../../transcoder/target/release -lxg2g_transcoder
 // #cgo darwin LDFLAGS: -framework CoreFoundation -framework Security
-// #cgo linux LDFLAGS: -ldl -lm -lpthread
+// #cgo linux LDFLAGS: -ldl -lm -lpthread -lavcodec -lavformat -lavutil -lswresample -lswscale
 // #include <stdlib.h>
 // #include "rust_bindings.h"
 import "C"

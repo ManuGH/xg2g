@@ -207,7 +207,11 @@ jobs:
           sudo apt-get install -y libavcodec-dev libavformat-dev libavutil-dev libswresample-dev libswscale-dev pkg-config
 
       - name: Build Rust transcoder library
-        run: make build-rust
+        run: |
+          rm -rf transcoder/target
+          make build-rust
+          echo "📂 Listing build artifacts:"
+          ls -R transcoder/target/release/
 
       - name: Run transcoder tests (via make test-transcoder)
         run: make test-transcoder
