@@ -1,0 +1,420 @@
+name: CI
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 2 * * *" # Daily at 02:17 UTC
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    paths:
+      - "**/*.go"
+      - go.mod
+      - go.sum
+      - .github/workflows/ci.yml
+      - Makefile
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ============================================================================
+  # Job 1: Unit Tests (Fast, Stub Transcoder, Always Runs)
+  # ============================================================================
+  unit-tests:
+    name: Unit Tests (Stub Transcoder)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Verify modules
+        run: |
+          set -euo pipefail
+          go mod tidy
+          go mod download
+          go mod verify
+          git diff --exit-code -- go.mod go.sum
+
+      - name: Build (stub transcoder)
+        run: |
+          set -euo pipefail
+          echo "🔍 Building with stub transcoder (no Rust dependency)..."
+          go build -v -trimpath -mod=readonly -buildvcs=false -o /dev/null ./cmd/daemon
+          go build -v -trimpath -mod=readonly -buildvcs=false -o /dev/null ./cmd/validate
+          echo "✅ Build successful"
+
+      - name: Run unit tests (via make test)
+        run: make test
+
+      - name: Run unit tests with race detector
+        run: |
+          set -euo pipefail
+          go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Generate coverage report
+        run: |
+          set -euo pipefail
+          COV=$(go tool cover -func=coverage.out | awk '/total:/ {print $3}')
+          echo "## Coverage Report" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Total Coverage:** ${COV}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Top Packages" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          go tool cover -func=coverage.out | grep -E '^github.com/ManuGH/xg2g' | sort -k3 -rn | head -20 >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-unit-tests
+          path: coverage.out
+          retention-days: 14
+
+  # ============================================================================
+  # Job 2: Schema Validation Tests (Requires check-jsonschema)
+  # ============================================================================
+  schema-validation:
+    name: Schema Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.x"
+          cache: pip
+
+      - name: Install check-jsonschema
+        run: pip install check-jsonschema
+
+      - name: Run schema tests (via make test-schema)
+        run: make test-schema
+
+      - name: Validate configs with check-jsonschema
+        run: |
+          set -euo pipefail
+          check-jsonschema --schemafile docs/guides/config.schema.json config.example.yaml
+          find internal/config/testdata -name 'valid*.yaml' -maxdepth 1 -type f -print0 | \
+            xargs -0 -I{} check-jsonschema --schemafile docs/guides/config.schema.json {}
+
+      - name: Build validate tool
+        run: go build -o bin/validate ./cmd/validate
+
+      - name: Validate configs with CLI tool
+        run: |
+          set -euo pipefail
+          find internal/config/testdata -name 'valid*.yaml' -maxdepth 1 -type f -print0 | \
+            xargs -0 -I{} ./bin/validate -f {}
+
+  # ============================================================================
+  # Job 3: Transcoder Tests (Optional, Rust/CGO Required)
+  # Runs on: schedule (nightly) or manual workflow_dispatch
+  # ============================================================================
+  transcoder-tests:
+    name: Transcoder Tests (Rust FFI)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Only run on schedule or manual trigger (not on every PR)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            transcoder/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install FFmpeg development headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libavcodec-dev libavformat-dev libavutil-dev libswresample-dev pkg-config
+
+      - name: Build Rust transcoder library
+        run: make build-rust
+
+      - name: Run transcoder tests (via make test-transcoder)
+        run: make test-transcoder
+
+      - name: Upload Rust artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-library
+          path: transcoder/target/release/libxg2g_transcoder.a
+          retention-days: 7
+
+  # ============================================================================
+  # Job 4: Linting (Go, Markdown, OpenAPI)
+  # ============================================================================
+  lint:
+    name: Lint (Go, Markdown, OpenAPI)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install golangci-lint
+        run: |
+          set -euo pipefail
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.5.0
+          golangci-lint --version
+
+      - name: Run golangci-lint
+        run: make lint
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+
+      - name: Lint OpenAPI
+        run: |
+          set -euo pipefail
+          npx --yes @redocly/cli@latest lint api/openapi.yaml --format=stylish | tee /tmp/openapi-lint.txt
+
+      - name: Lint Markdown
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          npx --yes markdownlint-cli2 "docs/**/*.md" ".github/**/*.md" "*.md"
+
+      - name: Upload OpenAPI lint report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openapi-lint
+          path: /tmp/openapi-lint.txt
+          retention-days: 14
+
+  # ============================================================================
+  # Job 5: Integration Tests (Stub + Daemon)
+  # ============================================================================
+  integration-tests:
+    name: Integration Tests (Daemon + Stub OpenWebIF)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [unit-tests] # Only run after unit tests pass
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build stub OpenWebIF server
+        run: |
+          set -euo pipefail
+          echo "🔧 Building OpenWebIF stub server..."
+          go build -v -o bin/stub_openwebif test/stub_openwebif.go
+
+      - name: Build daemon (stub transcoder)
+        run: |
+          set -euo pipefail
+          BUILD_REF="${GITHUB_SHA:-dev}"
+          go build -v -trimpath -mod=readonly -buildvcs=false \
+            -ldflags "-X main.Version=${BUILD_REF}" \
+            -o bin/xg2g ./cmd/daemon
+          echo "✅ Daemon built successfully"
+
+      - name: Start OpenWebIF stub server
+        run: |
+          set -euo pipefail
+          echo "🚀 Starting OpenWebIF stub server..."
+          ./bin/stub_openwebif > /tmp/stub_openwebif.log 2>&1 &
+          STUB_PID=$!
+          echo "STUB_PID=$STUB_PID" >> "$GITHUB_ENV"
+          echo "🔧 Stub server started with PID: $STUB_PID"
+
+          # Wait for readiness
+          ready=false
+          for i in {1..50}; do
+            if curl -fsS --max-time 1 http://127.0.0.1:18080/api/bouquets >/dev/null 2>&1; then
+              ready=true
+              break
+            fi
+            sleep 0.2
+          done
+
+          if [ "$ready" != "true" ]; then
+            echo "❌ OpenWebIF stub did not become ready" >&2
+            cat /tmp/stub_openwebif.log || true
+            exit 1
+          fi
+          echo "✅ OpenWebIF stub ready on port 18080"
+
+      - name: Start xg2g daemon
+        env:
+          XG2G_DATA: ${{ github.workspace }}/data
+          XG2G_OWI_BASE: http://127.0.0.1:18080
+          XG2G_BOUQUET: Premium
+          XG2G_XMLTV: xmltv.xml
+          XG2G_PICON_BASE: http://127.0.0.1:18080/picon
+          XG2G_LISTEN: :8080
+          XG2G_API_TOKEN: ci-test-token
+        run: |
+          set -euo pipefail
+          mkdir -p "$XG2G_DATA"
+
+          echo "🚀 Starting xg2g daemon..."
+          ./bin/xg2g > /tmp/daemon.log 2>&1 &
+          DAEMON_PID=$!
+          echo "DAEMON_PID=$DAEMON_PID" >> "$GITHUB_ENV"
+          echo "🔧 Daemon started with PID: $DAEMON_PID"
+
+          # Wait for daemon readiness
+          daemon_base="http://127.0.0.1:8080"
+          healthy=false
+          for i in {1..30}; do
+            if curl --fail --show-error --silent --max-time 1 "$daemon_base/api/v1/status" >/dev/null 2>&1; then
+              healthy=true
+              break
+            fi
+            sleep 1
+          done
+
+          if [ "$healthy" != "true" ]; then
+            echo "❌ Daemon did not become ready" >&2
+            cat /tmp/daemon.log || true
+            exit 1
+          fi
+          echo "✅ Daemon ready at ${daemon_base}"
+
+      - name: Run integration tests
+        env:
+          XG2G_API_TOKEN: ci-test-token
+        run: |
+          set -euo pipefail
+          daemon_base="http://127.0.0.1:8080"
+
+          echo "🔄 Triggering data refresh..."
+          curl -fsS --retry 3 --retry-delay 1 --max-time 30 \
+            -H "X-API-Token: ${XG2G_API_TOKEN}" \
+            -H "Origin: http://127.0.0.1:8080" \
+            -X POST "$daemon_base/api/v1/refresh"
+
+          echo "📊 Checking status..."
+          curl -fsS "$daemon_base/api/v1/status" | jq .
+
+          echo "📋 Listing generated files..."
+          ls -lh ./data/playlist.m3u ./data/xmltv.xml
+
+      - name: Validate output files
+        run: |
+          set -euo pipefail
+          echo "✅ Validating M3U playlist..."
+          test "$(grep -c '^#EXTINF' ./data/playlist.m3u)" -ge 2
+          ! grep -q 'FROM BOUQUET' ./data/playlist.m3u
+
+          echo "✅ Validating XMLTV guide..."
+          test "$(grep -c '<channel ' ./data/xmltv.xml)" -ge 2
+
+      - name: Cleanup processes
+        if: always()
+        run: |
+          set +e
+          if [ -n "${DAEMON_PID:-}" ]; then
+            kill "$DAEMON_PID" 2>/dev/null || true
+          fi
+          if [ -n "${STUB_PID:-}" ]; then
+            kill "$STUB_PID" 2>/dev/null || true
+          fi
+
+      - name: Upload integration logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-logs
+          path: |
+            /tmp/stub_openwebif.log
+            /tmp/daemon.log
+            ./data/*
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # ============================================================================
+  # Summary Job (Always Runs)
+  # ============================================================================
+  ci-summary:
+    name: CI Summary
+    runs-on: ubuntu-latest
+    needs: [unit-tests, schema-validation, lint, integration-tests]
+    if: always()
+
+    steps:
+      - name: Check job results
+        run: |
+          echo "## CI Pipeline Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Job | Status |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|-----|--------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Unit Tests | ${{ needs.unit-tests.result }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Schema Validation | ${{ needs.schema-validation.result }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Lint | ${{ needs.lint.result }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Integration Tests | ${{ needs.integration-tests.result }} |" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail if any required job failed
+        if: |
+          needs.unit-tests.result == 'failure' ||
+          needs.schema-validation.result == 'failure' ||
+          needs.lint.result == 'failure' ||
+          needs.integration-tests.result == 'failure'
+        run: |
+          echo "❌ One or more required CI jobs failed"
+          exit 1
