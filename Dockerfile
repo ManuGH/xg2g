@@ -98,10 +98,16 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     fi && \
     # xx-cargo puts artifacts in target/<triple>/release/ or target/release/ depending on cross setup
     # Debug: find where the artifacts actually are
+    echo "Searching for artifacts..." && \
     find target -name "libxg2g_transcoder.so" -o -name "libxg2g_transcoder.rlib" && \
     # Copy artifacts using find to locate them
-    cp $(find target -name "libxg2g_transcoder.so" | head -n1) /output/ && \
-    cp $(find target -name "libxg2g_transcoder.rlib" | head -n1) /output/
+    SO_FILE=$(find target -name "libxg2g_transcoder.so" -type f | head -n1) && \
+    RLIB_FILE=$(find target -name "libxg2g_transcoder.rlib" -type f | head -n1) && \
+    if [ -z "$SO_FILE" ]; then echo "Error: .so file not found"; exit 1; fi && \
+    if [ -z "$RLIB_FILE" ]; then echo "Error: .rlib file not found"; exit 1; fi && \
+    echo "Copying $SO_FILE and $RLIB_FILE to /output/" && \
+    cp "$SO_FILE" /output/ && \
+    cp "$RLIB_FILE" /output/
 
 # =============================================================================
 # Stage 1.5: Build WebUI (React + Vite)
@@ -192,7 +198,7 @@ RUN set -eux; \
     BUILD_REF="${GIT_REF:-${VERSION:-dev}}"; \
     export GOAMD64="${GO_AMD64_LEVEL}"; \
     # Explicitly set CGO_LDFLAGS to help cross-compiler find libraries
-    export CGO_LDFLAGS="-L/usr/lib/$(xx-info triple) -L/usr/$(xx-info triple)/lib -lavcodec -lavformat -lavfilter -lavutil -lswresample"; \
+    export CGO_LDFLAGS="-L/usr/lib/$(xx-info triple) -L/usr/$(xx-info triple)/lib -lxg2g_transcoder -lavcodec -lavformat -lavfilter -lavutil -lswresample"; \
     echo "🚀 Building binary with Rust remuxer (MODE 2) for $TARGETPLATFORM"; \
     xx-go build -buildvcs=false -trimpath -tags=gpu \
     -ldflags="-s -w -X 'main.Version=${BUILD_REF}' -extldflags='-Wl,-rpath,/app/lib'" \
