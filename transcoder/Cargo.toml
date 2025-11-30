@@ -9,9 +9,8 @@ description = "High-performance GPU transcoder for xg2g using VAAPI"
 name = "xg2g_transcoder"
 crate-type = [
   "staticlib",
-  "cdylib",
   "rlib",
-] # staticlib for Go, cdylib for shared, rlib for Rust bin
+] # staticlib for Go static linking, rlib for Rust binary
 
 [[bin]]
 name = "xg2g-transcoder"
