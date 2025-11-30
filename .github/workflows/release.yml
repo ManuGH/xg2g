@@ -126,12 +126,20 @@ jobs:
           DIGEST: ${{ steps.build-push.outputs.digest }}
           TAGS: ${{ steps.meta.outputs.tags }}
         run: |
-          echo "Signing ${TAGS}@${DIGEST}"
-          cosign sign --yes \
-            -a "repo=${{ github.repository }}" \
-            -a "workflow=${{ github.workflow }}" \
-            -a "ref=${{ github.sha }}" \
-            "${TAGS}@${DIGEST}"
+          images=()
+          for tag in ${TAGS}; do
+            images+=("${tag}@${DIGEST}")
+          done
+
+          echo "Signing ${#images[@]} image tags..."
+          for image in "${images[@]}"; do
+            echo "Signing ${image}"
+            cosign sign --yes \
+              -a "repo=${{ github.repository }}" \
+              -a "workflow=${{ github.workflow }}" \
+              -a "ref=${{ github.sha }}" \
+              "${image}"
+          done
 
       # =============================================
       # Generate and Attest SBOM
@@ -150,11 +158,19 @@ jobs:
           DIGEST: ${{ steps.build-push.outputs.digest }}
           TAGS: ${{ steps.meta.outputs.tags }}
         run: |
-          echo "Attesting SBOM to ${TAGS}@${DIGEST}"
-          cosign attest --yes \
-            --predicate dist/sbom.spdx.json \
-            --type spdx \
-            "${TAGS}@${DIGEST}"
+          images=()
+          for tag in ${TAGS}; do
+            images+=("${tag}@${DIGEST}")
+          done
+
+          echo "Attesting SBOM to ${#images[@]} image tags..."
+          for image in "${images[@]}"; do
+            echo "Attesting ${image}"
+            cosign attest --yes \
+              --predicate dist/sbom.spdx.json \
+              --type spdx \
+              "${image}"
+          done
 
       # =============================================
       # Upload SBOM to Release
