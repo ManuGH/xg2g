@@ -9,6 +9,7 @@ permissions:
   contents: write
   packages: write
   id-token: write # for cosign OIDC
+  security-events: write # for Trivy/CodeQL
 
 env:
   REGISTRY: ghcr.io
@@ -119,7 +120,7 @@ jobs:
       # Sign Container Images with Cosign
       # =============================================
       - name: Install Cosign
-        uses: sigstore/cosign-installer@f713795cb21599bc4e5c4b58cbad1da852d7eeb9 # v3
+        uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
 
       - name: Sign container image
         env:
