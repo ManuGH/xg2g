@@ -7,7 +7,7 @@ description = "High-performance GPU transcoder for xg2g using VAAPI"
 
 [lib]
 name = "xg2g_transcoder"
-crate-type = ["cdylib", "rlib"]  # cdylib for Go FFI, rlib for Rust binary linking
+crate-type = ["staticlib", "cdylib"]  # staticlib for Go static linking, cdylib for shared lib
 
 [[bin]]
 name = "xg2g-transcoder"
