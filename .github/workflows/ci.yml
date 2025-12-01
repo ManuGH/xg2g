@@ -50,7 +50,7 @@ jobs:
           git diff --exit-code -- go.mod go.sum
 
       - name: Setup Node for WebUI
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "20"
           cache: "npm"
@@ -86,7 +86,7 @@ jobs:
           go test -v -race -tags=nogpu -coverprofile=coverage.out -covermode=atomic $(go list -tags=nogpu ./... | grep -v '/test$')
 
       - name: Setup Node for OpenAPI lint
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "lts/*"
 
