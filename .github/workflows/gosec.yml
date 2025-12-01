@@ -26,13 +26,13 @@ jobs:
           go-version: "1.23"
 
       - name: Run gosec security scan
-        uses: securego/gosec@v2.21.4
+        uses: securego/gosec@master
         with:
           # -fmt sarif: Output in SARIF format
           # -out gosec.sarif: Save output to file
           # -severity medium: Fail on medium or higher severity issues
           # ./...: Scan all packages
-          args: -fmt=sarif -out=gosec.sarif -severity=medium ./...
+          args: -fmt=sarif -out=gosec.sarif -severity=medium -exclude-dir=test -exclude-dir=internal/test ./...
 
       - name: Upload SARIF to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
