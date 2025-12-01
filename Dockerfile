@@ -223,6 +223,7 @@ FROM runtime-${BASE_VARIANT} AS runtime
 # Debian Bookworm: libavcodec59, libavformat59, libavfilter8, libavutil57, libswresample4
 # Debian Trixie:   libavcodec61, libavformat61, libavfilter10, libavutil59, libswresample5
 RUN if [ -f /etc/alpine-release ]; then \
+    apk update && apk upgrade --no-cache && \
     apk add --no-cache \
     ca-certificates \
     tzdata \
@@ -236,7 +237,7 @@ RUN if [ -f /etc/alpine-release ]; then \
     (getent group render || addgroup -S render) && \
     addgroup xg2g render; \
     else \
-    apt-get update && apt-get install -y \
+    apt-get update && apt-get upgrade -y && apt-get install -y \
     ca-certificates \
     tzdata \
     wget \
