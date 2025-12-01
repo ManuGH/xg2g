@@ -2,14 +2,16 @@ name: Container Security Scanning
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main ]
     paths:
       - 'Dockerfile'
+      - 'deploy/docker/Dockerfile.*'
       - '.github/workflows/container-security.yml'
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main ]
     paths:
       - 'Dockerfile'
+      - 'deploy/docker/Dockerfile.*'
       - '.github/workflows/container-security.yml'
   schedule:
     # Run daily at 2 AM UTC to catch new vulnerabilities
