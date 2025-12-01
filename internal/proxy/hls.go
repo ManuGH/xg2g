@@ -104,7 +104,10 @@ func (m *HLSManager) GetOrCreateStream(serviceRef, targetURL string) (*HLSStream
 func (m *HLSManager) createStream(serviceRef, targetURL string) (*HLSStreamer, error) {
 	// Create output directory for this stream
 	streamID := sanitizeServiceRef(serviceRef)
-	outputDir := filepath.Join(m.outputBase, streamID)
+	outputDir, err := secureJoin(m.outputBase, streamID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid stream path: %w", err)
+	}
 
 	if err := os.MkdirAll(outputDir, 0750); err != nil {
 		return nil, fmt.Errorf("create stream output directory: %w", err)
@@ -199,6 +202,7 @@ func (s *HLSStreamer) Start() error {
 
 	if err := s.cmd.Start(); err != nil {
 		// Cleanup output directory on start failure
+		// outputDir is already validated via secureJoin during stream creation
 		_ = os.RemoveAll(s.outputDir)
 		return fmt.Errorf("start ffmpeg: %w", err)
 	}
@@ -243,6 +247,7 @@ func (s *HLSStreamer) Stop() {
 	s.cancel()
 
 	// Clean up output directory
+	// outputDir is already validated via secureJoin during stream creation
 	if err := os.RemoveAll(s.outputDir); err != nil {
 		s.logger.Warn().Err(err).Msg("failed to clean up HLS directory")
 	}
@@ -288,6 +293,7 @@ func (s *HLSStreamer) waitForPlaylist(ctx context.Context) error {
 		case <-timeout:
 			return fmt.Errorf("timeout waiting for playlist creation")
 		case <-ticker.C:
+			// playlistPath is already validated via secureJoin (constructed from validated s.outputDir)
 			if _, err := os.Stat(playlistPath); err == nil {
 				// Playlist exists, but let's make sure it has content
 				info, err := os.Stat(playlistPath)
@@ -396,7 +402,11 @@ func (m *HLSManager) ServeSegmentFromAnyStream(w http.ResponseWriter, segmentNam
 
 	// Try each active stream to find the segment
 	for _, stream := range m.streams {
-		segmentPath := filepath.Join(stream.GetOutputDir(), segmentName)
+		// Validate segment path to prevent directory traversal
+		segmentPath, err := secureJoin(stream.GetOutputDir(), segmentName)
+		if err != nil {
+			continue // Skip invalid paths
+		}
 		if _, err := os.Stat(segmentPath); err == nil {
 			// Found the segment, serve it
 			stream.updateAccess()
@@ -413,6 +423,7 @@ func (m *HLSManager) servePlaylist(w http.ResponseWriter, stream *HLSStreamer) e
 
 	// Wait for playlist to exist (up to 10 seconds for initial segment creation)
 	for i := 0; i < 100; i++ {
+		// playlistPath is already validated via secureJoin (constructed from validated outputDir)
 		if _, err := os.Stat(playlistPath); err == nil {
 			break
 		}
@@ -420,7 +431,7 @@ func (m *HLSManager) servePlaylist(w http.ResponseWriter, stream *HLSStreamer) e
 	}
 
 	// Read playlist
-	// #nosec G304 -- playlistPath is constructed from sanitized serviceRef and fixed output directory
+	// playlistPath is constructed from validated outputDir (via secureJoin during stream creation)
 	data, err := os.ReadFile(playlistPath)
 	if err != nil {
 		return fmt.Errorf("read playlist: %w", err)
@@ -440,7 +451,11 @@ func (m *HLSManager) servePlaylist(w http.ResponseWriter, stream *HLSStreamer) e
 
 // serveSegment serves an HLS segment file.
 func (m *HLSManager) serveSegment(w http.ResponseWriter, stream *HLSStreamer, segmentName string) error {
-	segmentPath := filepath.Join(stream.GetOutputDir(), segmentName)
+	// Validate segment path to prevent directory traversal
+	segmentPath, err := secureJoin(stream.GetOutputDir(), segmentName)
+	if err != nil {
+		return fmt.Errorf("invalid segment path: %w", err)
+	}
 
 	// Wait for segment to exist (up to 10 seconds)
 	for i := 0; i < 100; i++ {
@@ -451,7 +466,7 @@ func (m *HLSManager) serveSegment(w http.ResponseWriter, stream *HLSStreamer, se
 	}
 
 	// Open segment file
-	// #nosec G304 -- segmentPath is constructed from sanitized serviceRef and fixed output directory
+	// segmentPath is validated via secureJoin above
 	file, err := os.Open(segmentPath)
 	if err != nil {
 		return fmt.Errorf("open segment: %w", err)
@@ -481,4 +496,34 @@ func sanitizeServiceRef(ref string) string {
 	// Remove any other problematic characters
 	safe = strings.ReplaceAll(safe, "/", "_")
 	return safe
+}
+
+// secureJoin safely joins a root directory with a user-provided path component.
+// It prevents path traversal attacks by ensuring the result stays within root.
+func secureJoin(root, userPath string) (string, error) {
+	// Clean the path
+	cleaned := filepath.Clean(userPath)
+
+	// Reject absolute paths
+	if filepath.IsAbs(cleaned) {
+		return "", fmt.Errorf("absolute paths are not allowed: %q", userPath)
+	}
+
+	// Reject paths starting with ..
+	if strings.HasPrefix(cleaned, "..") {
+		return "", fmt.Errorf("path traversal not allowed: %q", userPath)
+	}
+
+	// Join with root
+	full := filepath.Join(root, cleaned)
+
+	// Ensure result is within root (defense in depth)
+	rootClean := filepath.Clean(root) + string(filepath.Separator)
+	fullClean := filepath.Clean(full) + string(filepath.Separator)
+
+	if !strings.HasPrefix(fullClean, rootClean) {
+		return "", fmt.Errorf("path escapes root directory: %q", userPath)
+	}
+
+	return full, nil
 }
