@@ -11,7 +11,7 @@ ARG BASE_VARIANT=bookworm
 # =============================================================================
 # Stage 0: Cross-compilation helpers
 # =============================================================================
-FROM --platform=$BUILDPLATFORM tonistiigi/xx:1.6.1 AS xx
+FROM --platform=$BUILDPLATFORM tonistiigi/xx:1.8.0 AS xx
 
 # =============================================================================
 # Stage 1: Build Rust Remuxer (ac-ffmpeg library for audio transcoding)
