@@ -1,0 +1,40 @@
+name: Security - Gosec
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  gosec:
+    runs-on: ubuntu-latest
+    env:
+      GO111MODULE: on
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Run gosec security scan
+        uses: securego/gosec@master
+        with:
+          # -fmt sarif: Output in SARIF format
+          # -out gosec.sarif: Save output to file
+          # -severity medium: Fail on medium or higher severity issues
+          # ./...: Scan all packages
+          args: -fmt=sarif -out=gosec.sarif -severity=medium ./...
+
+      - name: Upload SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gosec.sarif

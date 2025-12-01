@@ -163,10 +163,10 @@ build: ## Build the main daemon binary
 	go build $(BUILD_FLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/daemon
 	@echo "✅ Build complete: $(BUILD_DIR)/$(BINARY_NAME)"
 
-build-rust: ## Build Rust transcoder library
-	@echo "Building Rust transcoder library..."
-	@cd transcoder && cargo build --release
-	@echo "✅ Rust library built: transcoder/target/release/libxg2g_transcoder.a"
+build-rust: ## Build Rust transcoder library (shared library for FFI)
+	@echo "Building Rust transcoder library (cdylib)..."
+	@cd transcoder && cargo build --release --lib
+	@echo "✅ Rust shared library built: transcoder/target/release/libxg2g_transcoder.so"
 
 build-ffi: build-rust ## Build single binary with embedded Rust library (requires CGO)
 	@echo "Building xg2g daemon with embedded Rust library..."
@@ -236,8 +236,8 @@ test: ## Run all unit tests (with stub transcoder)
 	@echo "✅ Unit tests passed"
 
 test-transcoder: build-rust ## Run tests with Rust transcoder enabled
-	@echo "Running tests with Rust transcoder..."
-	CGO_ENABLED=1 go test -tags=transcoder ./... -v
+	@echo "Running tests with Rust transcoder (ensure LD_LIBRARY_PATH includes Rust lib dir)..."
+	@LD_LIBRARY_PATH=$$(pwd)/transcoder/target/release CGO_ENABLED=1 go test -tags=transcoder ./... -v
 	@echo "✅ Transcoder tests passed"
 
 test-schema: ## Run JSON schema validation tests (requires check-jsonschema)

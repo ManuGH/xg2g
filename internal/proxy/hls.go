@@ -420,6 +420,7 @@ func (m *HLSManager) servePlaylist(w http.ResponseWriter, stream *HLSStreamer) e
 	}
 
 	// Read playlist
+	// #nosec G304 -- playlistPath is constructed from sanitized serviceRef and fixed output directory
 	data, err := os.ReadFile(playlistPath)
 	if err != nil {
 		return fmt.Errorf("read playlist: %w", err)
@@ -450,6 +451,7 @@ func (m *HLSManager) serveSegment(w http.ResponseWriter, stream *HLSStreamer, se
 	}
 
 	// Open segment file
+	// #nosec G304 -- segmentPath is constructed from sanitized serviceRef and fixed output directory
 	file, err := os.Open(segmentPath)
 	if err != nil {
 		return fmt.Errorf("open segment: %w", err)
