@@ -8,6 +8,9 @@ on:
   schedule:
     - cron: "23 10 * * 0"
 
+permissions:
+  contents: read
+
 jobs:
   analyze:
     name: Analyze
@@ -24,11 +27,11 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       # Setup Go for both languages (Go analysis needs it, C++ build might interact with it)
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5
         with:
           go-version: "1.23"
           cache: true
@@ -36,7 +39,7 @@ jobs:
       # Setup Rust for C/C++ analysis (since our C/C++ comes from Rust FFI/deps)
       - name: Setup Rust
         if: matrix.language == 'c-cpp'
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@6d9817901c499d6b02debbb57edb38d33daa680b # stable
         with:
           toolchain: stable
 
@@ -49,7 +52,7 @@ jobs:
 
       # Initialize CodeQL
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@497990dfed22177a82ba1bbab381bc8f6d27058f # v3
         with:
           languages: ${{ matrix.language }}
           # If you wish to specify custom queries, you can do so here or in a config file.
@@ -68,9 +71,9 @@ jobs:
       # Autobuild for Go (CodeQL handles this well usually, but we can be explicit)
       - name: Build Go (Go Analysis)
         if: matrix.language == 'go'
-        uses: github/codeql-action/autobuild@v3
+        uses: github/codeql-action/autobuild@497990dfed22177a82ba1bbab381bc8f6d27058f # v3
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@497990dfed22177a82ba1bbab381bc8f6d27058f # v3
         with:
           category: "/language:${{ matrix.language }}"

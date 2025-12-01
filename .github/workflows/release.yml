@@ -39,7 +39,7 @@ jobs:
       # Build WebUI (Required for Tests)
       # =============================================
       - name: Setup Node for WebUI
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6
         with:
           node-version: "20"
           cache: "npm"
@@ -96,7 +96,7 @@ jobs:
 
       - name: Extract metadata
         id: meta
-        uses: docker/metadata-action@318604b99e75e41977312d83839a89be02ca4893 # v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
@@ -121,7 +121,7 @@ jobs:
       # Sign Container Images with Cosign
       # =============================================
       - name: Install Cosign
-        uses: sigstore/cosign-installer@29bcfa8619aeb12eaac78d31157172c86183b05c # v3.7.0
+        uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
 
       - name: Sign container image
         env:
@@ -178,7 +178,7 @@ jobs:
       # Upload SBOM to Release
       # =============================================
       - name: Upload SBOM to release
-        uses: softprops/action-gh-release@5be0e66d93ac7ed76da52eca8bb058f665c3a5fe # v2
+        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2
         with:
           files: dist/sbom.spdx.json
 
@@ -194,7 +194,7 @@ jobs:
           trivy-config: .github/security/trivy.yaml
 
       - name: Upload Trivy results to GitHub Security
-        uses: github/codeql-action/upload-sarif@ab2e54f42aa112ff08704159b88a57517f6f0ebb # v3
+        uses: github/codeql-action/upload-sarif@497990dfed22177a82ba1bbab381bc8f6d27058f # v3
         with:
           sarif_file: "trivy-results.sarif"
 

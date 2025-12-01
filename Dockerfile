@@ -112,7 +112,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 # =============================================================================
 # Stage 1.5: Build WebUI (React + Vite)
 # =============================================================================
-FROM --platform=$BUILDPLATFORM node:25-alpine AS node-builder
+FROM --platform=$BUILDPLATFORM node:25-alpine@sha256:26ded7f450a0ad37241d2ae97ea521a59cb551a1785c8a950f74b0a291ad3aea AS node-builder
 WORKDIR /webui
 COPY webui/package*.json ./
 RUN npm ci
@@ -122,7 +122,7 @@ RUN npm run build
 # =============================================================================
 # Stage 2: Build Go Daemon with CGO (required for Rust FFI) + Run Tests
 # =============================================================================
-FROM --platform=$BUILDPLATFORM golang:1.25-${BASE_VARIANT} AS go-builder
+FROM --platform=$BUILDPLATFORM golang:1.25-${BASE_VARIANT}@sha256:d3f0cf7723f3429e3f9ed846243970b20a2de7bae6a5b66fc5914e228d831bbb AS go-builder
 
 # Copy xx helpers
 COPY --from=xx / /
