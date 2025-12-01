@@ -4,6 +4,7 @@
 # Example: Ignore specific CVEs that are false positives or accepted risks
 vulnerability:
   ignore-unfixed: true
+  severity: "CRITICAL,HIGH,MEDIUM"
 
 # Example CVE allowlist (adjust as needed):
 # ignore:
@@ -13,6 +14,6 @@ vulnerability:
 # Secret scanning exclusions
 secret:
   exclude-paths:
-    - '**/*_test.go'
-    - '**/testdata/**'
-    - '**/*.md'
+    - "**/*_test.go"
+    - "**/testdata/**"
+    - "**/*.md"

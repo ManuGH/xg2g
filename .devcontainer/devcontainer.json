@@ -3,7 +3,6 @@
   "dockerComposeFile": "docker-compose.yml",
   "service": "dev",
   "workspaceFolder": "/workspace",
-
   "customizations": {
     "vscode": {
       "extensions": [
@@ -16,14 +15,20 @@
         "eamodio.gitlens",
         "ms-vscode.makefile-tools",
         "davidanson.vscode-markdownlint",
-        "streetsidesoftware.code-spell-checker"
+        "streetsidesoftware.code-spell-checker",
+        "GitHub.vscode-codeql"
       ],
       "settings": {
         "go.toolsManagement.checkForUpdates": "local",
         "go.useLanguageServer": true,
         "go.lintTool": "golangci-lint",
-        "go.lintFlags": ["--fast"],
-        "go.testFlags": ["-v", "-race"],
+        "go.lintFlags": [
+          "--fast"
+        ],
+        "go.testFlags": [
+          "-v",
+          "-race"
+        ],
         "go.coverOnSave": true,
         "go.coverageDecorator": {
           "type": "gutter"
@@ -42,7 +47,6 @@
       }
     }
   },
-
   "features": {
     "ghcr.io/devcontainers/features/docker-in-docker:2": {
       "version": "latest",
@@ -52,17 +56,16 @@
       "version": "latest"
     }
   },
-
   "postCreateCommand": "make dev-tools && go mod download",
-
   "remoteUser": "vscode",
-
   "mounts": [
     "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
   ],
-
-  "forwardPorts": [8080, 9090, 18000],
-
+  "forwardPorts": [
+    8080,
+    9090,
+    18000
+  ],
   "portsAttributes": {
     "8080": {
       "label": "xg2g API",

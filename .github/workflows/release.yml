@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "v*.*.*"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -190,6 +191,7 @@ jobs:
           image-ref: ghcr.io/manugh/xg2g@${{ steps.build-push.outputs.digest }}
           format: "sarif"
           output: "trivy-results.sarif"
+          trivy-config: .github/security/trivy.yaml
 
       - name: Upload Trivy results to GitHub Security
         uses: github/codeql-action/upload-sarif@ab2e54f42aa112ff08704159b88a57517f6f0ebb # v3
