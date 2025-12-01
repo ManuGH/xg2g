@@ -3,6 +3,7 @@ name: Container Security Scanning
 on:
   push:
     branches: [ main ]
+    tags: ["v*.*.*"]
     paths:
       - 'Dockerfile'
       - 'deploy/docker/Dockerfile.*'
@@ -125,12 +126,12 @@ jobs:
               body: comment
             });
 
-      - name: Fail on critical vulnerabilities
+      - name: Fail on critical/high vulnerabilities
         uses: aquasecurity/trivy-action@6e7b7d1fd3e4fef0c5fa8cce1229c54b2c9bd0d8  # 0.24.0
         with:
           image-ref: xg2g:${{ github.sha }}
           format: 'table'
-          severity: 'CRITICAL'
+          severity: 'CRITICAL,HIGH'
           exit-code: '1'
           ignore-unfixed: true
 
