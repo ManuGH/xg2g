@@ -95,7 +95,7 @@ jobs:
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: coverage-unit-tests
           path: coverage.out
@@ -217,7 +217,7 @@ jobs:
         run: make test-transcoder
 
       - name: Upload Rust artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: rust-library
           path: transcoder/target/release/libxg2g_transcoder.a
@@ -284,7 +284,7 @@ jobs:
 
       - name: Upload OpenAPI lint report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: openapi-lint
           path: /tmp/openapi-lint.txt
@@ -445,7 +445,7 @@ jobs:
 
       - name: Upload integration logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: integration-logs
           path: |
