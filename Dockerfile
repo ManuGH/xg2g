@@ -112,7 +112,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 # =============================================================================
 # Stage 1.5: Build WebUI (React + Vite)
 # =============================================================================
-FROM --platform=$BUILDPLATFORM node:20-alpine AS node-builder
+FROM --platform=$BUILDPLATFORM node:25-alpine AS node-builder
 WORKDIR /webui
 COPY webui/package*.json ./
 RUN npm ci
