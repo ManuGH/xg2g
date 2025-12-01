@@ -237,7 +237,7 @@ RUN if [ -f /etc/alpine-release ]; then \
     (getent group render || addgroup -S render) && \
     addgroup xg2g render; \
     else \
-    apt-get update && apt-get upgrade -y && apt-get install -y \
+    apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     ca-certificates \
     tzdata \
     wget \
