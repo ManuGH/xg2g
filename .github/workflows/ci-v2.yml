@@ -50,7 +50,7 @@ jobs:
           git diff --exit-code -- go.mod go.sum
 
       - name: Setup Node for WebUI
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "20"
           cache: "npm"
@@ -173,7 +173,7 @@ jobs:
           toolchain: stable
 
       - name: Setup Node for WebUI
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "20"
           cache: "npm"
@@ -242,7 +242,7 @@ jobs:
           cache: true
 
       - name: Setup Node for WebUI
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "20"
           cache: "npm"
@@ -267,7 +267,7 @@ jobs:
         run: make lint
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "lts/*"
 
@@ -310,7 +310,7 @@ jobs:
           cache: true
 
       - name: Setup Node for WebUI
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "20"
           cache: "npm"
