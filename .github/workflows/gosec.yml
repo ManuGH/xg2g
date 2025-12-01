@@ -2,9 +2,9 @@ name: Security - Gosec
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
 
 permissions:
   contents: read
@@ -23,10 +23,10 @@ jobs:
       - name: Install Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: "1.23"
 
       - name: Run gosec security scan
-        uses: securego/gosec@master
+        uses: securego/gosec@v2.21.4
         with:
           # -fmt sarif: Output in SARIF format
           # -out gosec.sarif: Save output to file

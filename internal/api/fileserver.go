@@ -111,8 +111,8 @@ func (s *Server) secureFileServer() http.Handler {
 		}
 
 		// --- ETag Caching Implementation ---
-		// #nosec G304 -- realPath is validated to reside inside the data directory
-		f, err := os.Open(realPath)
+		// realPath is validated to reside inside the data directory
+		f, err := os.Open(realPath) // #nosec G304
 		if err != nil {
 			logger.Error().Err(err).Str("event", "file_req.internal_error").Str("path", realPath).Msg("could not open real path for serving")
 			recordFileRequestDenied("internal_error")
@@ -181,8 +181,8 @@ func checkFile(ctx context.Context, path string) bool {
 	if info.IsDir() {
 		return false
 	}
-	// #nosec G304 -- callers must provide paths checked by dataFilePath
-	f, err := os.Open(path)
+	// callers must provide paths checked by dataFilePath
+	f, err := os.Open(path) // #nosec G304
 	if err != nil {
 		return false
 	}

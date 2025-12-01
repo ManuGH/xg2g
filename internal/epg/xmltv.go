@@ -50,8 +50,8 @@ func norm(s string) string {
 // It expects elements matching the `Channel` type defined in generator.go.
 func BuildNameToIDMap(xmltvPath string) (map[string]string, error) {
 	xmltvPath = filepath.Clean(xmltvPath)
-	// #nosec G304 -- xmltvPath is cleaned and originates from controlled configuration
-	f, err := os.Open(xmltvPath)
+	// xmltvPath is cleaned and originates from controlled configuration
+	f, err := os.Open(xmltvPath) // #nosec G304
 	if err != nil {
 		return nil, err
 	}

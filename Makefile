@@ -445,6 +445,13 @@ security-audit: ## Run dependency vulnerability audit
 	@go list -json -deps ./... | nancy sleuth || echo "⚠️  Nancy audit completed with findings"
 	@echo "✅ Dependency audit completed"
 
+security-gosec: ## Run Gosec security scanner
+	@echo "Ensuring gosec is installed..."
+	@command -v gosec >/dev/null 2>&1 || curl -sfL https://raw.githubusercontent.com/securego/gosec/master/install.sh | sh -s -- -b $(TOOL_DIR)
+	@echo "Running Gosec..."
+	@$(TOOL_DIR)/gosec -fmt=text -severity=medium -exclude-dir=test -exclude-dir=internal/test ./...
+	@echo "✅ Gosec check passed"
+
 security-vulncheck: ## Run Go vulnerability checker
 	@echo "Ensuring govulncheck is installed..."
 	@command -v $(GOVULNCHECK) >/dev/null 2>&1 || go install golang.org/x/vuln/cmd/govulncheck@latest
