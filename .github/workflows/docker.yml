@@ -93,7 +93,7 @@ jobs:
 
       - name: Install cosign
         if: github.ref == 'refs/heads/main'
-        uses: sigstore/cosign-installer@v3.7.0
+        uses: sigstore/cosign-installer@v4.0.0
 
       - name: Sign container image (keyless)
         if: github.ref == 'refs/heads/main'
