@@ -16,6 +16,8 @@ on:
 
 permissions:
   contents: read
+  # Optional: Allow writing security events if needed (e.g. for sarif upload)
+  # security-events: write
 
 concurrency:
   group: ci-${{ github.ref }}

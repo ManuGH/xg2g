@@ -125,7 +125,7 @@ jobs:
           python-version: "3.x"
 
       - name: Install check-jsonschema
-        run: pip install check-jsonschema
+        run: pip install check-jsonschema==0.30.1
 
       - name: Run schema tests (via make test-schema)
         run: make test-schema

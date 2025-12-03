@@ -432,7 +432,8 @@ func (m *HLSManager) servePlaylist(w http.ResponseWriter, stream *HLSStreamer) e
 
 	// Read playlist
 	// playlistPath is constructed from validated outputDir (via secureJoin during stream creation)
-	data, err := os.ReadFile(playlistPath)
+	// playlistPath is constructed from validated outputDir (via secureJoin during stream creation)
+	data, err := os.ReadFile(playlistPath) // #nosec G304
 	if err != nil {
 		return fmt.Errorf("read playlist: %w", err)
 	}
@@ -467,7 +468,8 @@ func (m *HLSManager) serveSegment(w http.ResponseWriter, stream *HLSStreamer, se
 
 	// Open segment file
 	// segmentPath is validated via secureJoin above
-	file, err := os.Open(segmentPath)
+	// segmentPath is validated via secureJoin above
+	file, err := os.Open(segmentPath) // #nosec G304
 	if err != nil {
 		return fmt.Errorf("open segment: %w", err)
 	}

@@ -18,13 +18,15 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
-  packages: write
-  id-token: write # Required for cosign keyless signing
+  contents: read  # Top-level read-only
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write  # for pushing to GHCR
+      id-token: write  # for cosign keyless signing
     steps:
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6
 
