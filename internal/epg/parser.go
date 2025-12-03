@@ -18,8 +18,10 @@ type Metadata struct {
 
 var (
 	// Regex patterns for common EPG formats
+
 	// "USA 2023", "DE 1999", "France 2000"
-	yearCountryRegex = regexp.MustCompile(`\b([A-Z][a-zA-Z\s]+)\s+(19|20)\d{2}\b`)
+	// Look for "Country YYYY" pattern
+	yearCountryRegex = regexp.MustCompile(`\b([A-Z][a-zA-Z\.]+)\s+((?:19|20)\d{2})\b`)
 
 	// "Regie: Name Name", "Director: Name Name"
 	directorRegex = regexp.MustCompile(`(?i)(?:Regie|Director|Directed by)[:\s]+([^,.\n]+)`)
@@ -33,22 +35,9 @@ func ParseDescription(desc string) Metadata {
 	meta := Metadata{}
 
 	// Extract Year and Country
-	// We look for the last occurrence as it's often at the end
-	matches := yearCountryRegex.FindAllStringSubmatch(desc, -1)
-	if len(matches) > 0 {
-		lastMatch := matches[len(matches)-1]
-		meta.Country = strings.TrimSpace(lastMatch[1])
-		meta.Year = lastMatch[2] + lastMatch[0][len(lastMatch[0])-2:] // Reconstruct year
-		// The regex captures (19|20) and the full match has the rest.
-		// Actually, let's simplify the regex capture for year
-	}
-
-	// Refined Year/Country extraction
-	// Look for "Country YYYY" pattern
-	ycMatch := regexp.MustCompile(`\b([A-Z][a-zA-Z\.]+)\s+((?:19|20)\d{2})\b`).FindStringSubmatch(desc)
-	if len(ycMatch) == 3 {
-		meta.Country = strings.TrimSpace(ycMatch[1])
-		meta.Year = ycMatch[2]
+	if match := yearCountryRegex.FindStringSubmatch(desc); len(match) == 3 {
+		meta.Country = strings.TrimSpace(match[1])
+		meta.Year = match[2]
 	}
 
 	// Extract Director
