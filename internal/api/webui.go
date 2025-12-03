@@ -3,6 +3,8 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -109,12 +111,106 @@ func (s *Server) handleAPIBouquets(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAPIChannels(w http.ResponseWriter, r *http.Request) {
-	// This requires parsing the M3U or having an in-memory channel list
-	// For Phase 1, we can return empty or implement M3U parsing
-	// Since handleLineupJSON already parses M3U, we can extract that logic later.
-	// For now, return empty list to satisfy the endpoint existence.
+	s.mu.RLock()
+	cfg := s.cfg
+	s.mu.RUnlock()
+
+	// Read M3U playlist
+	playlistName := os.Getenv("XG2G_PLAYLIST_FILENAME")
+	if strings.TrimSpace(playlistName) == "" {
+		playlistName = "playlist.m3u"
+	}
+	path := filepath.Join(cfg.DataDir, playlistName)
+
+	// #nosec G304 -- path is constructed from safe config
+	data, err := os.ReadFile(path)
+	if err != nil {
+		// If file doesn't exist yet, return empty list instead of error
+		if os.IsNotExist(err) {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode([]interface{}{})
+			return
+		}
+		log.L().Error().Err(err).Msg("failed to read playlist for channels API")
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Simple M3U parser
+	type Channel struct {
+		Number string `json:"number"`
+		Name   string `json:"name"`
+		TvgID  string `json:"tvg_id"`
+		Logo   string `json:"logo"`
+		Group  string `json:"group"`
+		URL    string `json:"url"`
+		HasEPG bool   `json:"has_epg"`
+	}
+
+	var channels []Channel
+	lines := strings.Split(string(data), "\n")
+	var current Channel
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "#EXTINF:") {
+			// Parse EXTINF
+			// #EXTINF:-1 tvg-id="..." tvg-name="..." tvg-logo="..." group-title="..." tvg-chno="...",Display Name
+			current = Channel{}
+
+			// Extract attributes
+			if idx := strings.Index(line, `tvg-chno="`); idx != -1 {
+				end := strings.Index(line[idx+10:], `"`)
+				if end != -1 {
+					current.Number = line[idx+10 : idx+10+end]
+				}
+			}
+			if idx := strings.Index(line, `tvg-id="`); idx != -1 {
+				end := strings.Index(line[idx+8:], `"`)
+				if end != -1 {
+					current.TvgID = line[idx+8 : idx+8+end]
+				}
+			}
+			if idx := strings.Index(line, `tvg-logo="`); idx != -1 {
+				end := strings.Index(line[idx+10:], `"`)
+				if end != -1 {
+					current.Logo = line[idx+10 : idx+10+end]
+				}
+			}
+			if idx := strings.Index(line, `group-title="`); idx != -1 {
+				end := strings.Index(line[idx+13:], `"`)
+				if end != -1 {
+					current.Group = line[idx+13 : idx+13+end]
+				}
+			}
+
+			// Name is after the last comma
+			if idx := strings.LastIndex(line, ","); idx != -1 {
+				current.Name = strings.TrimSpace(line[idx+1:])
+			}
+		} else if len(line) > 0 && !strings.HasPrefix(line, "#") {
+			// URL line
+			current.URL = line
+			// Check if we have EPG data for this channel (simple check based on TvgID presence)
+			current.HasEPG = current.TvgID != ""
+			channels = append(channels, current)
+		}
+	}
+
+	// Filter by bouquet if requested
+	requestedBouquet := r.URL.Query().Get("bouquet")
+	if requestedBouquet != "" {
+		var filtered []Channel
+		for _, ch := range channels {
+			if ch.Group == requestedBouquet {
+				filtered = append(filtered, ch)
+			}
+		}
+		channels = filtered
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode([]interface{}{}); err != nil {
+	if err := json.NewEncoder(w).Encode(channels); err != nil {
 		log.L().Error().Err(err).Msg("failed to encode channels response")
 	}
 }

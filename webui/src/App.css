@@ -10,13 +10,13 @@
   justify-content: space-between;
   align-items: center;
   margin-bottom: 30px;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--border-color);
   padding-bottom: 20px;
 }
 
 .app-header h1 {
   margin: 0;
-  color: #333;
+  color: var(--text-color);
 }
 
 nav button {
@@ -30,8 +30,8 @@ nav button {
 }
 
 nav button.active {
-  background-color: #007bff;
-  color: white;
+  background-color: var(--active-bg);
+  color: var(--active-text);
 }
 
 .card-grid {
@@ -41,7 +41,8 @@ nav button.active {
 }
 
 .card {
-  background: #f8f9fa;
+  background: var(--card-bg);
+  color: var(--card-text);
   padding: 20px;
   border-radius: 8px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
@@ -78,7 +79,8 @@ nav button.active {
 
 .sidebar {
   width: 200px;
-  background: #f8f9fa;
+  background: var(--sidebar-bg);
+  color: var(--sidebar-text);
   padding: 15px;
   border-radius: 8px;
 }
@@ -95,7 +97,8 @@ nav button.active {
 }
 
 .sidebar li.active {
-  background-color: #e9ecef;
+  background-color: var(--active-bg);
+  color: var(--active-text);
   font-weight: bold;
 }
 
@@ -112,7 +115,7 @@ nav button.active {
 .channel-table td {
   text-align: left;
   padding: 12px;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--border-color);
 }
 
 .logs-header {
@@ -138,7 +141,7 @@ nav button.active {
 
 .logs-table td {
   padding: 8px 10px;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--border-color);
 }
 
 .log-row.error {
