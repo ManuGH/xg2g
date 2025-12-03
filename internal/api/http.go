@@ -1072,6 +1072,7 @@ func (s *Server) handleUIUrls(w http.ResponseWriter, r *http.Request) {
 	resp := map[string]any{
 		"m3u_url":   m3uURL,
 		"xmltv_url": xmltvURL,
+		"hdhr_url":  fmt.Sprintf("%s/device.xml", baseURL),
 	}
 
 	w.Header().Set("Content-Type", "application/json")

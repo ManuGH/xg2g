@@ -749,3 +749,29 @@ func getMetrics(reg *prometheus.Registry) string {
 	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 	return rr.Body.String()
 }
+
+func TestHandleUIUrls(t *testing.T) {
+	cfg := config.AppConfig{
+		DataDir:   t.TempDir(),
+		XMLTVPath: "xmltv.xml",
+	}
+
+	server := New(cfg, nil)
+	handler := server.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/ui/urls", nil)
+	req.Host = "example.com:8080"
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
+
+	var resp map[string]string
+	err := json.NewDecoder(rr.Body).Decode(&resp)
+	require.NoError(t, err)
+
+	assert.Equal(t, "http://example.com:8080/files/playlist.m3u", resp["m3u_url"])
+	assert.Equal(t, "http://example.com:8080/xmltv.xml", resp["xmltv_url"])
+	assert.Equal(t, "http://example.com:8080/device.xml", resp["hdhr_url"])
+}
