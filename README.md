@@ -400,15 +400,12 @@ readinessProbe:
 
 ---
 
-## Docker Image Tags
+## Docker Images
 
-We provide optimized images for different hardware:
+We provide a **Universal Binary** that automatically detects your CPU capabilities to provide the best performance.
+Just use the `latest` tag - it works on everything from Raspberry Pi to high-end servers.
 
-- **`latest`**: Best for most users (Modern CPUs, Raspberry Pi 4/5)
-- **`v3-performance`**: For modern servers (Haswell/Zen+)
-- **`v1-compat`**: For old hardware (<2010)
-
-**📖 [See the Docker Images Guide](docs/guides/DOCKER_IMAGES.md)** for deep dive into CPU levels and architecture support.
+- **`latest`**: The only tag you need.
 
 ## Development
 
