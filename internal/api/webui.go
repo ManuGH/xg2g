@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/m3u"
 )
 
 // HealthResponse represents the overall system health
@@ -86,11 +87,40 @@ func (s *Server) handleAPIConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAPIBouquets(w http.ResponseWriter, r *http.Request) {
-	// For now, return configured bouquets
-	// Ideally, we should fetch from receiver or cache
 	s.mu.RLock()
-	bouquets := strings.Split(s.cfg.Bouquet, ",")
+	cfg := s.cfg
 	s.mu.RUnlock()
+
+	// Read M3U playlist
+	playlistName := os.Getenv("XG2G_PLAYLIST_FILENAME")
+	if strings.TrimSpace(playlistName) == "" {
+		playlistName = "playlist.m3u"
+	}
+	path := filepath.Join(cfg.DataDir, playlistName)
+
+	var bouquets []string
+
+	// Try to read and parse M3U
+	if data, err := os.ReadFile(path); err == nil {
+		channels := m3u.Parse(string(data))
+		seen := make(map[string]bool)
+		for _, ch := range channels {
+			if ch.Group != "" && !seen[ch.Group] {
+				bouquets = append(bouquets, ch.Group)
+				seen[ch.Group] = true
+			}
+		}
+	}
+
+	// If no bouquets found in M3U (or file missing), fall back to config
+	if len(bouquets) == 0 {
+		configured := strings.Split(cfg.Bouquet, ",")
+		for _, b := range configured {
+			if trimmed := strings.TrimSpace(b); trimmed != "" {
+				bouquets = append(bouquets, trimmed)
+			}
+		}
+	}
 
 	type BouquetEntry struct {
 		Name     string `json:"name"`
@@ -99,9 +129,7 @@ func (s *Server) handleAPIBouquets(w http.ResponseWriter, r *http.Request) {
 
 	var resp []BouquetEntry
 	for _, b := range bouquets {
-		if trimmed := strings.TrimSpace(b); trimmed != "" {
-			resp = append(resp, BouquetEntry{Name: trimmed, Services: 0})
-		}
+		resp = append(resp, BouquetEntry{Name: b, Services: 0})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -136,83 +164,124 @@ func (s *Server) handleAPIChannels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Simple M3U parser
-	type Channel struct {
-		Number string `json:"number"`
-		Name   string `json:"name"`
-		TvgID  string `json:"tvg_id"`
-		Logo   string `json:"logo"`
-		Group  string `json:"group"`
-		URL    string `json:"url"`
-		HasEPG bool   `json:"has_epg"`
+	// Parse channels using shared package
+	channels := m3u.Parse(string(data))
+
+	// Enrich with enabled status
+	type ChannelWithStatus struct {
+		m3u.Channel
+		Enabled bool `json:"enabled"`
 	}
 
-	var channels []Channel
-	lines := strings.Split(string(data), "\n")
-	var current Channel
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "#EXTINF:") {
-			// Parse EXTINF
-			// #EXTINF:-1 tvg-id="..." tvg-name="..." tvg-logo="..." group-title="..." tvg-chno="...",Display Name
-			current = Channel{}
-
-			// Extract attributes
-			if idx := strings.Index(line, `tvg-chno="`); idx != -1 {
-				end := strings.Index(line[idx+10:], `"`)
-				if end != -1 {
-					current.Number = line[idx+10 : idx+10+end]
-				}
-			}
-			if idx := strings.Index(line, `tvg-id="`); idx != -1 {
-				end := strings.Index(line[idx+8:], `"`)
-				if end != -1 {
-					current.TvgID = line[idx+8 : idx+8+end]
-				}
-			}
-			if idx := strings.Index(line, `tvg-logo="`); idx != -1 {
-				end := strings.Index(line[idx+10:], `"`)
-				if end != -1 {
-					current.Logo = line[idx+10 : idx+10+end]
-				}
-			}
-			if idx := strings.Index(line, `group-title="`); idx != -1 {
-				end := strings.Index(line[idx+13:], `"`)
-				if end != -1 {
-					current.Group = line[idx+13 : idx+13+end]
-				}
-			}
-
-			// Name is after the last comma
-			if idx := strings.LastIndex(line, ","); idx != -1 {
-				current.Name = strings.TrimSpace(line[idx+1:])
-			}
-		} else if len(line) > 0 && !strings.HasPrefix(line, "#") {
-			// URL line
-			current.URL = line
-			// Check if we have EPG data for this channel (simple check based on TvgID presence)
-			current.HasEPG = current.TvgID != ""
-			channels = append(channels, current)
+	var enriched []ChannelWithStatus
+	for _, ch := range channels {
+		// Use TvgID as stable identifier, fallback to Name
+		id := ch.TvgID
+		if id == "" {
+			id = ch.Name
 		}
+
+		enabled := true
+		if s.channelManager != nil {
+			enabled = s.channelManager.IsEnabled(id)
+		}
+
+		enriched = append(enriched, ChannelWithStatus{
+			Channel: ch,
+			Enabled: enabled,
+		})
 	}
 
 	// Filter by bouquet if requested
 	requestedBouquet := r.URL.Query().Get("bouquet")
 	if requestedBouquet != "" {
-		var filtered []Channel
-		for _, ch := range channels {
+		var filtered []ChannelWithStatus
+		for _, ch := range enriched {
 			if ch.Group == requestedBouquet {
 				filtered = append(filtered, ch)
 			}
 		}
-		channels = filtered
+		enriched = filtered
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(channels); err != nil {
+	if err := json.NewEncoder(w).Encode(enriched); err != nil {
 		log.L().Error().Err(err).Msg("failed to encode channels response")
 	}
+}
+
+func (s *Server) handleAPIToggleChannel(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ID      string `json:"id"`
+		Enabled bool   `json:"enabled"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.ID == "" {
+		http.Error(w, "Channel ID required", http.StatusBadRequest)
+		return
+	}
+
+	if s.channelManager == nil {
+		http.Error(w, "Channel manager not initialized", http.StatusInternalServerError)
+		return
+	}
+
+	if err := s.channelManager.SetEnabled(req.ID, req.Enabled); err != nil {
+		log.L().Error().Err(err).Str("channel_id", req.ID).Msg("failed to toggle channel")
+		http.Error(w, "Failed to save channel state", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) handleAPIToggleAllChannels(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if s.channelManager == nil {
+		http.Error(w, "Channel manager not initialized", http.StatusInternalServerError)
+		return
+	}
+
+	// We need to get all known channels to toggle them
+	// Read M3U playlist
+	playlistName := os.Getenv("XG2G_PLAYLIST_FILENAME")
+	if strings.TrimSpace(playlistName) == "" {
+		playlistName = "playlist.m3u"
+	}
+	path := filepath.Join(s.cfg.DataDir, playlistName)
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		log.L().Error().Err(err).Msg("failed to read playlist for toggle all")
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	channels := m3u.Parse(string(data))
+	for _, ch := range channels {
+		id := ch.TvgID
+		if id == "" {
+			id = ch.Name
+		}
+		if err := s.channelManager.SetEnabled(id, req.Enabled); err != nil {
+			log.L().Error().Err(err).Str("channel_id", id).Msg("failed to toggle channel")
+		}
+	}
+
+	w.WriteHeader(http.StatusOK)
 }
 
 func (s *Server) handleAPILogs(w http.ResponseWriter, r *http.Request) {

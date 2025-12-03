@@ -36,10 +36,10 @@ services:
     # PORTS - Same for all modes
     # ===========================================================================
     ports:
-      - "8080:8080"      # HTTP API & M3U/EPG (always needed)
-      - "18000:18000"    # Stream Proxy (MODE 2 & 3 only)
+      - "8080:8080" # HTTP API & M3U/EPG (always needed)
+      - "18000:18000" # Stream Proxy (MODE 2 & 3 only)
       # - "8085:8085"    # GPU Transcoder (MODE 3 only) - Uncomment for GPU mode
-      - "1900:1900/udp"  # SSDP for Plex/Jellyfin auto-discovery (optional)
+      - "1900:1900/udp" # SSDP for Plex/Jellyfin auto-discovery (optional)
       # - "9090:9090"    # Prometheus metrics (optional)
 
     # ===========================================================================
@@ -62,7 +62,7 @@ services:
       - NET_BIND_SERVICE
     read_only: true
     tmpfs:
-      - /tmp:noexec,nosuid,nodev,size=100m   # 100MB for MODE 1+2, use 1g for MODE 3
+      - /tmp:noexec,nosuid,nodev,size=100m # 100MB for MODE 1+2, use 1g for MODE 3
 
     ulimits:
       nofile:
@@ -82,8 +82,11 @@ services:
       - XG2G_OWI_BASE=http://192.168.1.100
       - XG2G_OWI_USER=root
       - XG2G_OWI_PASS=yourpassword
+      # Comma-separated list of bouquets (e.g. "Favourites,Movies,Sports").
+      # If your M3U contains group-title attributes, they will be auto-discovered
+      # and this variable acts as a fallback or filter.
       - XG2G_BOUQUET=Favourites
-      - XG2G_INITIAL_REFRESH=true         # Auto-load channels on startup
+      - XG2G_INITIAL_REFRESH=true # Auto-load channels on startup
 
       # =========================================================================
       # MODE 1: STANDARD (DEFAULT) - Desktop Players

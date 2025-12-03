@@ -698,7 +698,7 @@ http://10.10.55.14:18000/1:0:19:1334:3EF:1:C00000:0:0:0:
 		PlexForceHLS: false,
 		Logger:       logger,
 	}
-	srv.hdhr = hdhr.NewServer(hdhrCfg)
+	srv.hdhr = hdhr.NewServer(hdhrCfg, nil)
 
 	// Make request with Host header for URL rewriting
 	req := httptest.NewRequest(http.MethodGet, "/lineup.json", nil)
@@ -751,7 +751,7 @@ http://10.10.55.14:18000/1:0:19:1334:3EF:1:C00000:0:0:0:
 		PlexForceHLS: true,
 		Logger:       logger,
 	}
-	srv.hdhr = hdhr.NewServer(hdhrCfg)
+	srv.hdhr = hdhr.NewServer(hdhrCfg, nil)
 
 	// Make request with Host header for URL rewriting
 	req := httptest.NewRequest(http.MethodGet, "/lineup.json", nil)
@@ -803,7 +803,7 @@ http://10.10.55.14:18000/hls/1:0:19:132F:3EF:1:C00000:0:0:0:
 		PlexForceHLS: true,
 		Logger:       logger,
 	}
-	srv.hdhr = hdhr.NewServer(hdhrCfg)
+	srv.hdhr = hdhr.NewServer(hdhrCfg, nil)
 
 	// Make request with Host header for URL rewriting
 	req := httptest.NewRequest(http.MethodGet, "/lineup.json", nil)

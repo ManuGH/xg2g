@@ -11,9 +11,12 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/channels"
+	"github.com/ManuGH/xg2g/internal/m3u"
 	"github.com/rs/zerolog"
 	"golang.org/x/net/ipv4"
 )
@@ -28,17 +31,19 @@ type Config struct {
 	BaseURL      string
 	TunerCount   int
 	PlexForceHLS bool // Force HLS URLs in lineup.json for Plex iOS compatibility
+	DataDir      string
 	Logger       zerolog.Logger
 }
 
 // Server implements HDHomeRun API endpoints
 type Server struct {
-	config Config
-	logger zerolog.Logger
+	config         Config
+	logger         zerolog.Logger
+	channelManager *channels.Manager
 }
 
 // NewServer creates a new HDHomeRun emulation server
-func NewServer(config Config) *Server {
+func NewServer(config Config, cm *channels.Manager) *Server {
 	// Generate device ID if not provided
 	if config.DeviceID == "" {
 		config.DeviceID = "XG2G1234"
@@ -59,8 +64,9 @@ func NewServer(config Config) *Server {
 	}
 
 	return &Server{
-		config: config,
-		logger: config.Logger,
+		config:         config,
+		logger:         config.Logger,
+		channelManager: cm,
 	}
 }
 
@@ -152,17 +158,53 @@ func (s *Server) HandleLineupStatus(w http.ResponseWriter, _ *http.Request) {
 }
 
 // HandleLineup handles /lineup.json endpoint
-// This needs to be implemented to return actual channels
 func (s *Server) HandleLineup(w http.ResponseWriter, _ *http.Request) {
-	// This will be populated by the main API server with actual channels
-	// For now, return empty array
+	// Read M3U playlist
+	playlistName := os.Getenv("XG2G_PLAYLIST_FILENAME")
+	if strings.TrimSpace(playlistName) == "" {
+		playlistName = "playlist.m3u"
+	}
+	path := filepath.Join(s.config.DataDir, playlistName)
+
+	// #nosec G304 -- path is constructed from safe config
+	data, err := os.ReadFile(path)
+	if err != nil {
+		s.logger.Error().Err(err).Msg("failed to read playlist for lineup")
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Parse channels
+	allChannels := m3u.Parse(string(data))
+	var lineup []LineupEntry
+
+	for _, ch := range allChannels {
+		// Check if channel is enabled
+		// Use TvgID as stable identifier, fallback to Name
+		id := ch.TvgID
+		if id == "" {
+			id = ch.Name
+		}
+
+		if s.channelManager != nil && !s.channelManager.IsEnabled(id) {
+			continue
+		}
+
+		lineup = append(lineup, LineupEntry{
+			GuideNumber: ch.Number,
+			GuideName:   ch.Name,
+			URL:         ch.URL,
+		})
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode([]LineupEntry{}); err != nil {
+	if err := json.NewEncoder(w).Encode(lineup); err != nil {
 		s.logger.Error().Err(err).Str("endpoint", "/lineup.json").Msg("failed to encode HDHomeRun lineup response")
 	}
 
 	s.logger.Debug().
 		Str("endpoint", "/lineup.json").
+		Int("channels", len(lineup)).
 		Msg("HDHomeRun lineup request")
 }
 
@@ -178,7 +220,7 @@ func (s *Server) HandleLineupPost(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetConfigFromEnv creates Config from environment variables
-func GetConfigFromEnv(logger zerolog.Logger) Config {
+func GetConfigFromEnv(logger zerolog.Logger, dataDir string) Config {
 	// Default to enabled for out-of-the-box Plex/Jellyfin discovery
 	// Can be disabled with XG2G_HDHR_ENABLED=false
 	enabled := getEnvDefault("XG2G_HDHR_ENABLED", "true") == "true"
@@ -195,6 +237,7 @@ func GetConfigFromEnv(logger zerolog.Logger) Config {
 		BaseURL:      os.Getenv("XG2G_HDHR_BASE_URL"),
 		TunerCount:   getEnvInt("XG2G_HDHR_TUNER_COUNT", 4),
 		PlexForceHLS: plexForceHLS,
+		DataDir:      dataDir,
 		Logger:       logger,
 	}
 }
@@ -341,6 +384,13 @@ func (s *Server) handleSSDPRequests(ctx context.Context, conn net.PacketConn, _ 
 			}
 			n, remoteAddr, err := conn.ReadFrom(buf)
 			if err != nil {
+				// Check if context is done, if so, ignore error and return
+				select {
+				case <-ctx.Done():
+					return
+				default:
+				}
+
 				var netErr net.Error
 				if errors.As(err, &netErr) && netErr.Timeout() {
 					continue

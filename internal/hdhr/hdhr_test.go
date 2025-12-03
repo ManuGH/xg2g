@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -63,7 +64,7 @@ func TestNewServer(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			server := NewServer(tt.config)
+			server := NewServer(tt.config, nil)
 
 			assert.Equal(t, tt.expected.DeviceID, server.config.DeviceID)
 			assert.Equal(t, tt.expected.FriendlyName, server.config.FriendlyName)
@@ -85,7 +86,7 @@ func TestHandleDiscover(t *testing.T) {
 		Logger:       logger,
 	}
 
-	server := NewServer(config)
+	server := NewServer(config, nil)
 
 	tests := []struct {
 		name        string
@@ -137,7 +138,7 @@ func TestHandleDiscover(t *testing.T) {
 
 func TestHandleLineupStatus(t *testing.T) {
 	logger := zerolog.New(os.Stdout)
-	server := NewServer(Config{Logger: logger})
+	server := NewServer(Config{Logger: logger}, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/lineup_status.json", nil)
 	w := httptest.NewRecorder()
@@ -159,7 +160,16 @@ func TestHandleLineupStatus(t *testing.T) {
 
 func TestHandleLineup(t *testing.T) {
 	logger := zerolog.New(os.Stdout)
-	server := NewServer(Config{Logger: logger})
+	tmpDir := t.TempDir()
+
+	// Create empty playlist
+	err := os.WriteFile(filepath.Join(tmpDir, "playlist.m3u"), []byte(""), 0600)
+	require.NoError(t, err)
+
+	server := NewServer(Config{
+		Logger:  logger,
+		DataDir: tmpDir,
+	}, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/lineup.json", nil)
 	w := httptest.NewRecorder()
@@ -170,7 +180,7 @@ func TestHandleLineup(t *testing.T) {
 	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
 
 	var response []LineupEntry
-	err := json.Unmarshal(w.Body.Bytes(), &response)
+	err = json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
 
 	assert.Empty(t, response) // Currently returns empty array
@@ -178,7 +188,7 @@ func TestHandleLineup(t *testing.T) {
 
 func TestHandleLineupPost(t *testing.T) {
 	logger := zerolog.New(os.Stdout)
-	server := NewServer(Config{Logger: logger})
+	server := NewServer(Config{Logger: logger}, nil)
 
 	tests := []struct {
 		name   string
@@ -214,7 +224,7 @@ func TestHandleDeviceXML(t *testing.T) {
 		Logger:       logger,
 	}
 
-	server := NewServer(config)
+	server := NewServer(config, nil)
 
 	tests := []struct {
 		name       string
@@ -347,7 +357,7 @@ func TestGetConfigFromEnv(t *testing.T) {
 				t.Setenv(key, value)
 			}
 
-			config := GetConfigFromEnv(logger)
+			config := GetConfigFromEnv(logger, "")
 
 			assert.Equal(t, tt.expected.Enabled, config.Enabled)
 			assert.Equal(t, tt.expected.DeviceID, config.DeviceID)
@@ -400,7 +410,7 @@ func TestUtilityFunctions(t *testing.T) {
 
 func TestServerGetLocalIP(t *testing.T) {
 	logger := zerolog.New(os.Stdout)
-	server := NewServer(Config{Logger: logger})
+	server := NewServer(Config{Logger: logger}, nil)
 
 	ip := server.getLocalIP()
 	// We can't guarantee what IP we'll get in test environment,
@@ -428,7 +438,7 @@ func TestSSDPIntegration(t *testing.T) {
 		Logger:       logger,
 	}
 
-	server := NewServer(config)
+	server := NewServer(config, nil)
 
 	// Create a context with timeout for the test
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -460,7 +470,7 @@ func TestSSDPIntegration(t *testing.T) {
 // BenchmarkHandleDiscover benchmarks the discover endpoint
 func BenchmarkHandleDiscover(b *testing.B) {
 	logger := zerolog.New(os.Stdout)
-	server := NewServer(Config{Logger: logger})
+	server := NewServer(Config{Logger: logger}, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/discover.json", nil)
 
@@ -474,7 +484,7 @@ func BenchmarkHandleDiscover(b *testing.B) {
 // BenchmarkHandleDeviceXML benchmarks the device.xml endpoint
 func BenchmarkHandleDeviceXML(b *testing.B) {
 	logger := zerolog.New(os.Stdout)
-	server := NewServer(Config{Logger: logger})
+	server := NewServer(Config{Logger: logger}, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/device.xml", nil)
 

@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/api/middleware"
+	"github.com/ManuGH/xg2g/internal/channels"
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/hdhr"
 	"github.com/ManuGH/xg2g/internal/health"
@@ -37,15 +38,16 @@ var uiFS embed.FS
 
 // Server represents the HTTP API server for xg2g.
 type Server struct {
-	mu            sync.RWMutex
-	refreshing    atomic.Bool // serialize refreshes via atomic flag
-	cfg           config.AppConfig
-	status        jobs.Status
-	cb            *CircuitBreaker
-	hdhr          *hdhr.Server    // HDHomeRun emulation server
-	configHolder  ConfigHolder    // Optional: for hot config reload support
-	auditLogger   AuditLogger     // Optional: for audit logging
-	healthManager *health.Manager // Health and readiness checks
+	mu             sync.RWMutex
+	refreshing     atomic.Bool // serialize refreshes via atomic flag
+	cfg            config.AppConfig
+	status         jobs.Status
+	cb             *CircuitBreaker
+	hdhr           *hdhr.Server      // HDHomeRun emulation server
+	configHolder   ConfigHolder      // Optional: for hot config reload support
+	auditLogger    AuditLogger       // Optional: for audit logging
+	healthManager  *health.Manager   // Health and readiness checks
+	channelManager *channels.Manager // Channel management
 	// refreshFn allows tests to stub the refresh operation; defaults to jobs.Refresh
 	refreshFn      func(context.Context, config.AppConfig, *openwebif.StreamDetector) (*jobs.Status, error)
 	streamDetector *openwebif.StreamDetector
@@ -127,9 +129,16 @@ func (s *Server) dataFilePath(rel string) (string, error) {
 
 // New creates and initializes a new HTTP API server.
 func New(cfg config.AppConfig, detector *openwebif.StreamDetector) *Server {
+	// Initialize channel manager
+	cm := channels.NewManager(cfg.DataDir)
+	if err := cm.Load(); err != nil {
+		log.L().Error().Err(err).Msg("failed to load channel states")
+	}
+
 	s := &Server{
 		cfg:            cfg,
 		streamDetector: detector,
+		channelManager: cm,
 		status: jobs.Status{
 			Version: cfg.Version, // Initialize version from config
 		},
@@ -142,9 +151,9 @@ func New(cfg config.AppConfig, detector *openwebif.StreamDetector) *Server {
 
 	// Initialize HDHomeRun emulation if enabled
 	logger := log.WithComponent("api")
-	hdhrCfg := hdhr.GetConfigFromEnv(logger)
+	hdhrCfg := hdhr.GetConfigFromEnv(logger, cfg.DataDir)
 	if hdhrCfg.Enabled {
-		s.hdhr = hdhr.NewServer(hdhrCfg)
+		s.hdhr = hdhr.NewServer(hdhrCfg, cm)
 		logger.Info().
 			Bool("hdhr_enabled", true).
 			Str("device_id", hdhrCfg.DeviceID).
@@ -256,6 +265,9 @@ func (s *Server) routes() http.Handler {
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/health", s.handleAPIHealth)
 		r.Get("/config", s.handleAPIConfig)
+		r.Post("/config/reload", s.handleConfigReloadV1)
+		r.Post("/channels/toggle", s.handleAPIToggleChannel)
+		r.Post("/channels/toggle-all", s.handleAPIToggleAllChannels)
 		r.Get("/bouquets", s.handleAPIBouquets)
 		r.Get("/channels", s.handleAPIChannels)
 		r.Get("/logs/recent", s.handleAPILogs)

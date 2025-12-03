@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/m3u"
 )
 
 // handleAPIPlaylistDownload serves the M3U playlist as a download
@@ -26,9 +27,38 @@ func (s *Server) handleAPIPlaylistDownload(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// Read file content
+	content, err := os.ReadFile(path)
+	if err != nil {
+		logger.Error().Err(err).Msg("failed to read playlist")
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Parse and filter
+	channels := m3u.Parse(string(content))
+	var filtered []m3u.Channel
+	for _, ch := range channels {
+		id := ch.TvgID
+		if id == "" {
+			id = ch.Name
+		}
+		if s.channelManager == nil || s.channelManager.IsEnabled(id) {
+			filtered = append(filtered, ch)
+		}
+	}
+
+	// Generate filtered M3U
+	var sb strings.Builder
+	sb.WriteString("#EXTM3U\n")
+	for _, ch := range filtered {
+		sb.WriteString(ch.Raw + "\n")
+		sb.WriteString(ch.URL + "\n")
+	}
+
 	w.Header().Set("Content-Disposition", "attachment; filename="+playlistName)
 	w.Header().Set("Content-Type", "audio/x-mpegurl")
-	http.ServeFile(w, r, path)
+	w.Write([]byte(sb.String()))
 }
 
 // handleAPIXMLTVDownload serves the XMLTV file as a download
