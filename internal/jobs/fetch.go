@@ -74,8 +74,36 @@ func (a *epgAggregator) aggregateEvents(events []openwebif.EPGEvent, srefMap map
 		if len(channelEvents) > 0 {
 			channelsWithData++
 		}
-		progs := epg.ProgrammesFromEPG(channelEvents, channelID)
-		allProgrammes = append(allProgrammes, progs...)
+		// Convert to programmes with metadata enrichment
+		for _, event := range channelEvents {
+			// Parse description for metadata
+			meta := epg.ParseDescription(event.LongDesc)
+
+			// Map to XMLTV programme
+			prog := epg.Programme{
+				Start:   formatTime(event.Begin),
+				Stop:    formatTime(event.Begin + event.Duration),
+				Channel: channelID,
+				Title:   epg.Title{Text: event.Title},
+				Desc:    event.Description + "\n\n" + event.LongDesc,
+				Date:    meta.Year,
+				Country: meta.Country,
+			}
+
+			// Add Credits if available
+			if len(meta.Directors) > 0 || len(meta.Actors) > 0 {
+				prog.Credits = &epg.Credits{
+					Director: meta.Directors,
+					Actor:    meta.Actors,
+				}
+			}
+
+			// Add Genre if available (from parser or event)
+			// Note: OpenWebIF event doesn't have Genre field yet, but we can add it later
+			// For now, we rely on what we parsed or what might be added to EPGEvent
+
+			allProgrammes = append(allProgrammes, prog)
+		}
 	}
 
 	metrics.RecordEPGChannelSuccess(channelsWithData)
@@ -105,63 +133,85 @@ func collectEPGProgrammes(ctx context.Context, client *openwebif.Client, items [
 	return collectEPGPerService(ctx, client, items, cfg)
 }
 
-// collectEPGFromBouquet fetches EPG for all channels in one request (faster, single API call)
+// collectEPGFromBouquet fetches EPG for all channels by iterating over their bouquets
 func collectEPGFromBouquet(ctx context.Context, client *openwebif.Client, items []playlist.Item, cfg config.AppConfig) []epg.Programme {
 	logger := xglog.FromContext(ctx)
 
-	// Extract bouquet reference from first channel's stream URL
-	// All channels in the same bouquet share the bouquet reference
-	var bouquetRef string
-	for _, item := range items {
-		sRef := extractSRefFromStreamURL(item.URL)
-		if sRef != "" {
-			// Extract bouquet ref from service ref (format: 1:7:1:0:0:0:0:0:0:0:FROM BOUQUET "userbouquet.xxx.tv" ORDER BY bouquet)
-			// For now, we'll use cfg.Bouquet to look up the bouquet ref
-			break
-		}
-	}
+	// Identify all unique bouquets from the items
+	// We need to map bouquet name -> bouquet reference
+	bouquetRefs := make(map[string]string)
 
-	// Fetch EPG for entire bouquet in one request
-	reqCtx, cancel := context.WithTimeout(ctx, time.Duration(cfg.EPGTimeoutMS*len(items))*time.Millisecond)
+	// First, get all available bouquets from the receiver to resolve references
+	reqCtx, cancel := context.WithTimeout(ctx, time.Duration(cfg.EPGTimeoutMS)*time.Millisecond)
 	defer cancel()
 
-	// Get bouquets to find the reference
-	bouquets, err := client.Bouquets(reqCtx)
+	availableBouquets, err := client.Bouquets(reqCtx)
 	if err != nil {
 		logger.Error().Err(err).Msg("Failed to fetch bouquets for EPG")
 		return nil
 	}
 
-	// Find the bouquet reference for the configured bouquet name
-	for name, ref := range bouquets {
-		if name == cfg.Bouquet {
-			bouquetRef = ref
-			break
+	// Find unique bouquets used in our playlist
+	uniqueBouquets := make(map[string]bool)
+	for _, item := range items {
+		if item.Group != "" {
+			uniqueBouquets[item.Group] = true
 		}
 	}
 
-	if bouquetRef == "" {
-		logger.Warn().Str("bouquet", cfg.Bouquet).Msg("Bouquet not found, falling back to per-service EPG")
+	// Resolve references for used bouquets
+	// If a bouquet name from M3U matches one on the receiver, we get its ref
+	var targetRefs []string
+	for name := range uniqueBouquets {
+		if ref, ok := availableBouquets[name]; ok {
+			targetRefs = append(targetRefs, ref)
+			bouquetRefs[name] = ref
+		} else {
+			logger.Debug().Str("bouquet", name).Msg("Bouquet from playlist not found on receiver, skipping EPG for this group")
+		}
+	}
+
+	// Fallback: If no bouquets matched (e.g. custom groups in M3U), try the configured fallback bouquet
+	if len(targetRefs) == 0 && cfg.Bouquet != "" {
+		if ref, ok := availableBouquets[cfg.Bouquet]; ok {
+			logger.Info().Str("fallback_bouquet", cfg.Bouquet).Msg("No playlist bouquets matched, using configured fallback")
+			targetRefs = append(targetRefs, ref)
+		}
+	}
+
+	if len(targetRefs) == 0 {
+		logger.Warn().Msg("No valid bouquets found for EPG fetch, falling back to per-service")
 		return collectEPGPerService(ctx, client, items, cfg)
 	}
 
-	logger.Debug().Str("bouquet_ref", bouquetRef).Msg("Fetching EPG for bouquet")
+	logger.Info().Int("bouquets_count", len(targetRefs)).Msg("Fetching EPG for bouquets")
 
-	// Fetch all EPG events for the bouquet
-	events, err := client.GetBouquetEPG(reqCtx, bouquetRef, cfg.EPGDays)
-	if err != nil {
-		logger.Error().Err(err).Str("bouquet", cfg.Bouquet).Msg("Failed to fetch bouquet EPG")
-		return nil
+	var allEvents []openwebif.EPGEvent
+
+	// Fetch EPG for each bouquet
+	for _, ref := range targetRefs {
+		// Per-bouquet timeout
+		bCtx, bCancel := context.WithTimeout(ctx, time.Duration(cfg.EPGTimeoutMS)*time.Millisecond)
+
+		events, err := client.GetBouquetEPG(bCtx, ref, cfg.EPGDays)
+		bCancel() // Release context resources immediately
+
+		if err != nil {
+			logger.Error().Err(err).Str("bouquet_ref", ref).Msg("Failed to fetch bouquet EPG")
+			continue
+		}
+
+		logger.Debug().Str("bouquet_ref", ref).Int("events", len(events)).Msg("Fetched bouquet EPG")
+		allEvents = append(allEvents, events...)
 	}
 
-	logger.Info().Int("raw_events", len(events)).Msg("Received EPG events from bouquet")
+	logger.Info().Int("total_raw_events", len(allEvents)).Msg("Received EPG events from all bouquets")
 
 	// Use aggregator to match events to channels and convert to programmes
 	aggregator := newEPGAggregator(ctx, items)
 	srefMap := aggregator.buildSRefMap()
-	allProgrammes := aggregator.aggregateEvents(events, srefMap)
+	allProgrammes := aggregator.aggregateEvents(allEvents, srefMap)
 
-	logger.Info().Msg("EPG collected via bouquet endpoint")
 	return allProgrammes
 }
 
@@ -293,4 +343,10 @@ func extractSRefFromStreamURL(streamURL string) string {
 	}
 
 	return decodedRef
+}
+
+// formatTime converts unix timestamp to XMLTV time format (YYYYMMDDhhmmss +0000)
+func formatTime(timestamp int64) string {
+	t := time.Unix(timestamp, 0).UTC()
+	return t.Format("20060102150405 +0000")
 }

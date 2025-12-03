@@ -32,11 +32,22 @@ type Icon struct {
 
 // Programme represents a TV programme in XMLTV format.
 type Programme struct {
-	Start   string `xml:"start,attr"`
-	Stop    string `xml:"stop,attr"`
-	Channel string `xml:"channel,attr"`
-	Title   Title  `xml:"title"`
-	Desc    string `xml:"desc,omitempty"`
+	Start    string   `xml:"start,attr"`
+	Stop     string   `xml:"stop,attr"`
+	Channel  string   `xml:"channel,attr"`
+	Title    Title    `xml:"title"`
+	Desc     string   `xml:"desc,omitempty"`
+	Credits  *Credits `xml:"credits,omitempty"`
+	Date     string   `xml:"date,omitempty"`
+	Category []string `xml:"category,omitempty"`
+	Country  string   `xml:"country,omitempty"`
+}
+
+type Credits struct {
+	Director []string `xml:"director,omitempty"`
+	Actor    []string `xml:"actor,omitempty"`
+	Writer   []string `xml:"writer,omitempty"`
+	Producer []string `xml:"producer,omitempty"`
 }
 
 // Title represents a programme title with language support.
