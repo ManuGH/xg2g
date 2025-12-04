@@ -49,7 +49,7 @@ func TestFullRefreshFlow(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	status, err := jobs.Refresh(ctx, cfg)
+	status, err := jobs.Refresh(ctx, cfg, nil)
 
 	// Verify: Refresh succeeded
 	require.NoError(t, err, "Refresh should complete successfully")
@@ -109,7 +109,7 @@ func TestAPIRefreshEndpoint(t *testing.T) {
 		EPGEnabled: false, // Disable EPG for faster test
 	}
 
-	apiServer := api.New(cfg)
+	apiServer := api.New(cfg, nil)
 	handler := apiServer.Handler()
 	testServer := httptest.NewServer(handler)
 	defer testServer.Close()
@@ -187,7 +187,7 @@ func TestRefreshWithBackendError(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	_, err := jobs.Refresh(ctx, cfg)
+	_, err := jobs.Refresh(ctx, cfg, nil)
 
 	// Verify: Error is returned but doesn't panic
 	assert.Error(t, err, "Should return error when backend fails")
@@ -219,7 +219,7 @@ func TestRefreshWithTimeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
-	_, err := jobs.Refresh(ctx, cfg)
+	_, err := jobs.Refresh(ctx, cfg, nil)
 
 	// Verify: Timeout error
 	assert.Error(t, err, "Should timeout")
@@ -269,7 +269,7 @@ func TestRefreshWithPartialFailure(t *testing.T) {
 	defer cancel()
 
 	// Execute: Should handle partial failures
-	_, err := jobs.Refresh(ctx, cfg)
+	_, err := jobs.Refresh(ctx, cfg, nil)
 
 	// Verify: May succeed or fail depending on which request failed
 	// but should not panic or hang
@@ -293,7 +293,7 @@ func TestConcurrentRefreshRequests(t *testing.T) {
 		EPGEnabled: false,
 	}
 
-	apiServer := api.New(cfg)
+	apiServer := api.New(cfg, nil)
 	handler := apiServer.Handler()
 	testServer := httptest.NewServer(handler)
 	defer testServer.Close()
@@ -362,7 +362,7 @@ func TestHealthCheckFlow(t *testing.T) {
 		Bouquet:    "Premium",
 	}
 
-	apiServer := api.New(cfg)
+	apiServer := api.New(cfg, nil)
 	handler := apiServer.Handler()
 	testServer := httptest.NewServer(handler)
 	defer testServer.Close()
@@ -446,7 +446,7 @@ http://example.com/stream`
 		Bouquet:    "Premium",
 	}
 
-	apiServer := api.New(cfg)
+	apiServer := api.New(cfg, nil)
 	handler := apiServer.Handler()
 	testServer := httptest.NewServer(handler)
 	defer testServer.Close()

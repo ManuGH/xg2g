@@ -43,7 +43,7 @@ func TestCircuitBreakerFlow(t *testing.T) {
 		EPGEnabled: false,
 	}
 
-	apiServer := api.New(cfg)
+	apiServer := api.New(cfg, nil)
 	handler := apiServer.Handler()
 	testServer := httptest.NewServer(handler)
 	defer testServer.Close()
@@ -150,7 +150,7 @@ func TestRetryBehavior(t *testing.T) {
 	defer cancel()
 
 	// Execute: Should retry and eventually succeed
-	status, err := jobs.Refresh(ctx, cfg)
+	status, err := jobs.Refresh(ctx, cfg, nil)
 
 	attempts := attemptCount.Load()
 	t.Logf("Retry behavior: %d attempts made", attempts)
@@ -215,7 +215,7 @@ func TestGracefulDegradation(t *testing.T) {
 	defer cancel()
 
 	// Execute: Should create playlist even if EPG fails
-	status, err := jobs.Refresh(ctx, cfg)
+	status, err := jobs.Refresh(ctx, cfg, nil)
 
 	t.Logf("Graceful degradation result:")
 	t.Logf("  Error: %v", err)
@@ -272,7 +272,7 @@ func TestRecoveryAfterFailure(t *testing.T) {
 	ctx1, cancel1 := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel1()
 
-	_, err1 := jobs.Refresh(ctx1, cfg)
+	_, err1 := jobs.Refresh(ctx1, cfg, nil)
 	assert.Error(t, err1, "Should fail while server is unhealthy")
 	t.Logf("Phase 1 (unhealthy): Failed as expected - %v", err1)
 
@@ -285,7 +285,7 @@ func TestRecoveryAfterFailure(t *testing.T) {
 	ctx2, cancel2 := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel2()
 
-	status, err2 := jobs.Refresh(ctx2, cfg)
+	status, err2 := jobs.Refresh(ctx2, cfg, nil)
 
 	// Verify: Should succeed after recovery
 	if err2 == nil {
@@ -323,7 +323,7 @@ func TestRateLimitingBehavior(t *testing.T) {
 		EPGEnabled: false,
 	}
 
-	apiServer := api.New(cfg)
+	apiServer := api.New(cfg, nil)
 	handler := apiServer.Handler()
 	testServer := httptest.NewServer(handler)
 	defer testServer.Close()
@@ -417,7 +417,7 @@ func TestContextCancellationFlow(t *testing.T) {
 
 	resultChan := make(chan error, 1)
 	go func() {
-		_, err := jobs.Refresh(ctx, cfg)
+		_, err := jobs.Refresh(ctx, cfg, nil)
 		resultChan <- err
 	}()
 
