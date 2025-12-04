@@ -283,8 +283,8 @@ func (s *HLSStreamer) waitForPlaylist(ctx context.Context) error {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
-	// Wait up to 10 seconds (typical tuning time for Enigma2 is 2-5s)
-	timeout := time.After(10 * time.Second)
+	// Wait up to 30 seconds (typical tuning time for Enigma2 is 2-5s, but can be slower)
+	timeout := time.After(30 * time.Second)
 
 	for {
 		select {

@@ -204,11 +204,12 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		!strings.HasSuffix(r.URL.Path, ".ts") &&
 		!strings.HasSuffix(r.URL.Path, ".m3u8") {
 		userAgent := r.Header.Get("User-Agent")
-		isIOSClient := strings.Contains(userAgent, "iPhone") ||
+		isIOSClient := (strings.Contains(userAgent, "iPhone") ||
 			strings.Contains(userAgent, "iPad") ||
 			strings.Contains(userAgent, "iOS") ||
 			strings.Contains(userAgent, "AppleCoreMedia") ||
-			strings.Contains(userAgent, "CFNetwork")
+			strings.Contains(userAgent, "CFNetwork")) &&
+			!strings.Contains(userAgent, "Plex") // Exclude Plex (it handles MPEG-TS)
 
 		// Auto-upgrade iOS clients to HLS for better compatibility
 		if isIOSClient {
