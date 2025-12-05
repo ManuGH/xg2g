@@ -91,7 +91,7 @@ Got an Intel QuickSync or NVIDIA GPU? xg2g can offload video transcoding to hard
 
 Production-grade from day one. Includes specific endpoints for liveness/readiness probes, Prometheus metrics, and OpenTelemetry tracing.
 
-[Read the Deployment Guide →](docs/guides/PRODUCTION_DEPLOYMENT.md)
+[Read the Architecture Guide →](docs/ARCHITECTURE.md)
 
 ---
 
@@ -101,7 +101,6 @@ We are building the best open-source TV gateway.
 
 - **[Discussions](https://github.com/ManuGH/xg2g/discussions)**: Ask questions and share setups.
 - **[Issues](https://github.com/ManuGH/xg2g/issues)**: Report bugs or request features.
-- **[Contributing](CONTRIBUTING.md)**: Code with us!
 
 ---
 
