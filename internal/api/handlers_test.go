@@ -621,6 +621,9 @@ func TestCheckFile_NotExist(t *testing.T) {
 }
 
 func TestCheckFile_NoPermission(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("skipping test running as root")
+	}
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "restricted.txt")
 	require.NoError(t, os.WriteFile(filePath, []byte("test"), 0000))

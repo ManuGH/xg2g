@@ -74,7 +74,7 @@ func (m *Manager) Save() error {
 		return err
 	}
 
-	return os.WriteFile(m.filePath, data, 0644)
+	return os.WriteFile(m.filePath, data, 0600)
 }
 
 // IsEnabled checks if a channel is enabled

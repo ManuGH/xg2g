@@ -273,6 +273,9 @@ func TestFileChecker(t *testing.T) {
 		{
 			name: "permission denied or other stat error",
 			setup: func() string {
+				if os.Geteuid() == 0 {
+					return filepath.Join(tempDir, "force_fail_root.txt")
+				}
 				// Create a file in a directory, then remove read permissions on parent
 				dirPath := filepath.Join(tempDir, "restricted")
 				require.NoError(t, os.Mkdir(dirPath, 0750))

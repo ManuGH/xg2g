@@ -58,7 +58,7 @@ func (s *Server) handleAPIPlaylistDownload(w http.ResponseWriter, r *http.Reques
 
 	w.Header().Set("Content-Disposition", "attachment; filename="+playlistName)
 	w.Header().Set("Content-Type", "audio/x-mpegurl")
-	w.Write([]byte(sb.String()))
+	_, _ = w.Write([]byte(sb.String()))
 }
 
 // handleAPIXMLTVDownload serves the XMLTV file as a download

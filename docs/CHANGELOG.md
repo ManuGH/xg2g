@@ -7,7 +7,111 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-No unreleased changes yet.
+## [3.0.10] - 2025-11-28
+
+### 🐛 Bug Fixes
+
+- **Release Workflow**: Updated `release.yml` to use Go 1.25 and build WebUI assets before running tests
+- **CI/CD**: Applied `GOTOOLCHAIN=auto` and `check-latest: true` to all workflows (`govulncheck`, `docker`, `release`)
+
+## [3.0.9] - 2025-11-28
+
+### 🐛 Bug Fixes
+
+- **CI/CD**: Set `GOTOOLCHAIN=auto` globally in CI workflow to ensure Go 1.25 is downloaded if missing
+
+## [3.0.8] - 2025-11-28
+
+### 🐛 Bug Fixes
+
+- **CI/CD**: Explicitly set Go version to `1.25` and `GOTOOLCHAIN=auto` in CI to force correct toolchain resolution
+
+## [3.0.7] - 2025-11-28
+
+### 🐛 Bug Fixes
+
+- **CI/CD**: Added `check-latest: true` to `setup-go` action to correctly resolve Go 1.25 release
+
+## [3.0.6] - 2025-11-28
+
+### 🐛 Bug Fixes
+
+- **CI/CD**: Fixed unit test workflow by building WebUI before running Go tests
+- **Build**: Ensured `go:embed` finds required assets in CI environment
+
+## [3.0.2] - 2025-11-28
+
+### 🐛 Bug Fixes
+
+- **Linting**: Removed unused code (`closeBody`) and fixed markdown formatting issues
+- **CI/CD**: Improved compliance with linter rules for cleaner builds
+
+## [3.0.1] - 2025-11-28
+
+### 🐛 Bug Fixes
+
+- **Docker Build**: Fixed CI failure by adding Node.js build stage to Dockerfile
+- **Build Artifacts**: Removed `internal/api/ui` from git tracking (now built inside Docker)
+
+## [3.0.0] - 2025-11-28
+
+### 🚀 Major Features
+
+- **Built-in WebUI**
+  - New React-based dashboard available at `/ui/`
+  - View system health, uptime, and component status
+  - Browse bouquets and channels with EPG status
+  - View live logs for troubleshooting
+  - Zero-config: embedded directly into the single binary
+
+### 🛡️ Reliability & Internal Improvements
+
+- **Circuit Breaker Pattern**
+  - Added circuit breaker for OpenWebIF client to prevent cascading failures
+  - Automatic fail-fast when receiver is unresponsive
+  - Graceful recovery with half-open state
+
+- **HLS Stability**
+  - Improved HLS playlist generation reliability
+  - Fixed race conditions in stream proxy
+
+- **Test Suite Consolidation**
+  - Merged and cleaned up proxy tests
+  - Reduced technical debt and improved CI execution time
+
+## [2.2.0] - 2025-11-28
+
+### 🔒 Security & Reliability Hardening
+
+This release focuses on hardening the application for production use, adding TLS support, XML security improvements,
+and enhanced developer tooling.
+
+### Added
+
+- **TLS Support**
+  - Native HTTPS support for API and Stream Proxy
+  - Configurable via `XG2G_TLS_CERT` and `XG2G_TLS_KEY`
+  - Optional `XG2G_FORCE_HTTPS` redirect
+
+- **XML Security Hardening**
+  - Strict XML parsing enabled by default
+  - Protection against XXE (XML External Entity) attacks
+  - DoS protection via input size limits (50MB) and entity expansion limits
+
+- **Developer Excellence**
+  - **Load Testing**: Automated test suite for >1500 services
+  - **Static Analysis**: Integrated `gosec` for security linting
+  - **Coverage**: Infrastructure for mandatory code coverage checks
+
+### Changed
+
+- **Performance**: Improved load testing capabilities
+- **Documentation**: Added TLS configuration guide to README
+
+### Security
+
+- **XMLTV**: Fixed potential XXE and DoS vectors in EPG parsing
+- **Transport**: Added encryption support for all endpoints
 
 ## [2.0.0] - 2025-01-XX
 
@@ -226,6 +330,7 @@ users get a working system immediately.
 ## [1.5.0] - 2025-10-29
 
 ### Added
+
 - **Actionlint workflow** for automatic GitHub Actions validation
 - **Conftest OPA policies** for enforcing Dockerfile and Kubernetes security rules
 - **XMLTV fuzzing tests** with Go native fuzzing and weekly scheduled runs
@@ -243,12 +348,14 @@ users get a working system immediately.
   - `docs/security/RENOVATE_SETUP.md` - Step-by-step Renovate activation guide
 
 ### Changed
+
 - Container runtime hardening: enabled read-only root filesystem in docker-compose.yml
 - CI pipeline now implements complete security chain: SBOM → Cosign → CodeQL → Fuzzing → Conftest
 - CHANGELOG.md migrated to "Keep a Changelog" format
 - Improved security posture across all container deployments
 
 ### Security
+
 - **SLSA Level 3 Provenance** activated for all releases
 - **Keyless Cosign signatures** with Rekor attestations
 - **Conftest policy gate** active for Dockerfile and Kubernetes manifests
@@ -262,6 +369,7 @@ users get a working system immediately.
 - **Automated CVE mitigation** < 24h via Dependabot + Renovate
 
 ### Fixed
+
 - Conftest CI workflow now uses dockerfile-parse instead of non-existent dockerfile-json
 - Docker Compose tmpfs/volume mount conflict resolved
 - Test expectations aligned with v1.4.0+ default behavior
@@ -280,11 +388,13 @@ users get a working system immediately.
 
 ### Documentation
 
-This release includes extensive documentation for supply chain security tools, configuration guides, and best practices. See `docs/security/` for details.
+This release includes extensive documentation for supply chain security tools, configuration guides, and best practices.
+See `docs/security/` for details.
 
 ## [1.4.0] - 2024-01-XX
 
 ### Added
+
 - HDHomeRun emulation for Plex/Jellyfin native integration
 - Auto-discovery via SSDP/UPnP
 - Complete out-of-the-box experience with all features enabled by default
@@ -292,17 +402,20 @@ This release includes extensive documentation for supply chain security tools, c
 - Versioned API (v1) with deprecation headers for legacy endpoints
 
 ### Changed
+
 - Simplified configuration documentation
 - Organized Docker Compose files by use case
 - Made Enigma2 authentication explicit in examples
 - Improved startup logging for better visibility
 
 ### Deprecated
+
 - Legacy API endpoints (/api/status, /api/refresh) in favor of /api/v1/*
 
 ## [1.3.0] - 2023-XX-XX
 
 ### Added
+
 - OSCam Streamrelay support with automatic channel detection
 - Smart port selection (8001 vs 17999)
 - Audio transcoding (MP2/AC3 → AAC)
@@ -311,12 +424,14 @@ This release includes extensive documentation for supply chain security tools, c
 - Health checks (/healthz, /readyz)
 
 ### Changed
+
 - Improved EPG collection performance
 - Enhanced logging output
 
 ## [1.2.0] - 2023-XX-XX
 
 ### Added
+
 - XMLTV EPG support (7 days)
 - Channel logos (picons)
 - Multiple bouquets support
@@ -325,6 +440,7 @@ This release includes extensive documentation for supply chain security tools, c
 ## [1.1.0] - 2023-XX-XX
 
 ### Added
+
 - M3U playlist generation
 - Docker support
 - Basic authentication for Enigma2
@@ -332,6 +448,7 @@ This release includes extensive documentation for supply chain security tools, c
 ## [1.0.0] - 2023-XX-XX
 
 ### Added
+
 - Initial release
 - Basic Enigma2 to IPTV gateway functionality
 

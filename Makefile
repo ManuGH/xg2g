@@ -126,20 +126,10 @@ help: ## Show this help message
 	@echo "  prod-restart   Restart production service"
 	@echo "  prod-ps        Show production containers"
 	@echo ""
-	@echo "Monitoring:"
-	@echo "  mon-up         Start monitoring stack (Prometheus + Grafana + Jaeger)"
-	@echo "  mon-down       Stop monitoring stack"
-	@echo "  mon-logs       Show monitoring logs"
-	@echo "  mon-ps         Show monitoring containers"
-	@echo ""
 	@echo "Deployment Helpers:"
 	@echo "  pin-digests            Replace <OWNER> and digest placeholders in deploy/ templates"
-	@echo "  compose-up-alpine      Start Alpine image via docker compose (deploy/docker/docker-compose.alpine.yml)"
-	@echo "  compose-up-distroless  Start Distroless image via docker compose (deploy/docker/docker-compose.distroless.yml)"
-	@echo "  k8s-apply-alpine       Apply Kubernetes Alpine manifest (deploy/k8s/k8s-alpine.yaml)"
-	@echo "  k8s-apply-distroless   Apply Kubernetes Distroless manifest (deploy/k8s/k8s-distroless.yaml)"
-	@echo "  k8s-secret-apply       Apply xg2g K8s secret (set NS and TOKEN)"
-	@echo "  k8s-secret-delete      Delete xg2g K8s secret"
+	@echo "Deployment Helpers:"
+	@echo "  pin-digests            Replace <OWNER> and digest placeholders in deploy/ templates"
 	@echo ""
 	@echo "Release Management:"
 	@echo "  release-check  Validate release readiness"
@@ -648,25 +638,6 @@ prod-restart: ## Restart production service
 prod-ps: ## Show production containers
 	@docker compose -f docker-compose.production.yml ps
 
-mon-up: ## Start monitoring stack
-	@echo "Starting monitoring stack..."
-	@docker compose -f deploy/monitoring/docker-compose.yml up -d
-	@echo "✅ Monitoring stack started"
-	@echo "📊 Grafana: http://localhost:3000 (admin/admin)"
-	@echo "📈 Prometheus: http://localhost:9090"
-	@echo "🔍 Jaeger: http://localhost:16686"
-
-mon-down: ## Stop monitoring stack
-	@echo "Stopping monitoring stack..."
-	@docker compose -f deploy/monitoring/docker-compose.yml down
-	@echo "✅ Monitoring stack stopped"
-
-mon-logs: ## Show monitoring logs
-	@echo "Showing monitoring logs..."
-	@docker compose -f deploy/monitoring/docker-compose.yml logs -f
-
-mon-ps: ## Show monitoring containers
-	@docker compose -f deploy/monitoring/docker-compose.yml ps
 
 
 
@@ -680,9 +651,6 @@ hooks:
 	@pre-commit install
 	@pre-commit install --hook-type pre-push
 
-lint-yaml:
-	@yamllint -c .yamllint.yaml internal/config/testdata examples .github/workflows
-	@yamlfmt -lint internal/config/testdata examples .github/workflows
 
 validate:
 	@test -f config.yaml && go run ./cmd/validate -f config.yaml || go run ./cmd/validate -f config.example.yaml
