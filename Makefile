@@ -589,8 +589,8 @@ down: ## Stop docker-compose.yml stack
 
 status: ## Check API status endpoint
 	@echo "Checking xg2g API status..."
-	@curl -s http://localhost:8080/api/status | jq . || \
-		curl -s http://localhost:8080/api/status || \
+	@curl -s http://localhost:8080/api/v1/status | jq . 2>/dev/null || \
+		curl -s http://localhost:8080/api/v1/status || \
 		echo "❌ Service not responding. Is it running? (make up / make dev)"
 
 logs: ## Show service logs (use SVC=service-name to filter)
@@ -652,7 +652,11 @@ hooks:
 	@pre-commit install --hook-type pre-push
 
 
-validate:
+check-env: ## Check .env configuration
+	@echo "Checking docker compose config..."
+	@docker compose config
+
+validate: check-env ## Validate configuration
 	@test -f config.yaml && go run ./cmd/validate -f config.yaml || go run ./cmd/validate -f config.example.yaml
 
 schema-docs: ## Generate docs/config.md from JSON Schema

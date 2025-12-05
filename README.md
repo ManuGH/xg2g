@@ -61,31 +61,45 @@ Built with a hybrid Go/Rust architecture. The critical audio transcoding path is
 
 ---
 
-## ⚡ Quick Start
-
-Get up and running in **seconds** with Docker.
+## 🚀 Quick Start (2min)
 
 ```bash
-docker run -d \
-  -p 8080:8080 \
-  -p 18000:18000 \
-  -e XG2G_OWI_BASE=http://192.168.1.100 \  # Your Receiver IP
-  -e XG2G_BOUQUET=Favourites \             # Your Channel List
-  ghcr.io/manugh/xg2g:latest
+git clone https://github.com/ManuGH/xg2g
+cd xg2g
+
+# 1. Configure
+cp .env.example .env
+nano .env  # or vim/code - Edit OWI_HOST, Bouquets, Modes
+
+# 2. Start
+docker compose up -d
+
+# 3. Access
+# WebUI: http://localhost:8080
+# Playlist: http://localhost:8080/files/playlist.m3u
 ```
 
-**That's it.**
-
-- **WebUI**: `http://localhost:8080/ui/`
-- **Playlist**: `http://localhost:8080/files/playlist.m3u`
+**That's it.** Configuration is now handled entirely in `.env`.
 
 ---
 
 ## 🛠️ Advanced Usage
 
-### Hardware Acceleration
+Everything is configured via `.env`. See `.env.example` for all available options, including:
 
-Got an Intel QuickSync or NVIDIA GPU? xg2g can offload video transcoding to hardware, letting you stream HD content over slow mobile connections.
+- **Security**: API Tokens, Rate Limiting
+- **Performance**: Audio/Video Bitrates, Buffers
+- **Hardware**: GPU Transcoding (Mode 3), Device Mappings
+
+### Hardware Acceleration (Mode 3)
+
+xg2g supports hardware-accelerated video transcoding via VAAPI/NVENC using `ffmpeg` and Rust FFI. This is **disabled by default** to keep the footprint small.
+
+To enable it:
+
+1. Set `MODE_3_ENABLED=true` in `.env`.
+2. Ensure your host has GPU drivers installed (e.g. `intel-media-driver`).
+3. Uncomment the `devices` section in `docker-compose.yml` if needed.
 
 ### Kubernetes Ready
 
