@@ -213,7 +213,7 @@ services:
 #    - Uncomment the mode you want (MODE 1 is default)
 #
 # 2. Start:
-#    docker compose -f docker-compose.unified.yml up -d
+#    docker compose up -d
 #
 # 3. Access:
 #    - MODE 1: http://localhost:8080/files/playlist.m3u
@@ -235,7 +235,7 @@ services:
 #   - Verify: vainfo (should list AMD encoders)
 #
 # Test GPU access:
-#   docker run --rm --device /dev/dri:/dev/dri debian:bookworm-slim \
+#   docker run --rm --device /dev/dri:/dev/dri debian:trixie-slim \
 #     bash -c "apt update && apt install -y vainfo && vainfo"
 #
 # =============================================================================

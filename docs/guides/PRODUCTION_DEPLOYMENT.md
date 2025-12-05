@@ -13,10 +13,10 @@ This guide covers the production deployment of the xg2g GPU transcoding system w
 - **GPU**: AMD GPU with VCN (Video Core Next) encoding support
   - Tested: AMD Radeon Graphics (gfx1103_r1)
   - Driver: Mesa Gallium 22.3.6+
-- **OS**: Debian 12 (Bookworm) - Required for stable VAAPI support
+- **OS**: Debian 13 (Trixie) - Required for stable VAAPI support
 - **Kernel**: 6.12.43+ with DRM 3.61+
 - **Docker**: 20.10+ with docker-compose
-- **FFmpeg**: 5.1.7+ with VAAPI support
+- **FFmpeg**: 7.x+ with VAAPI support
 
 ## 📦 Quick Deployment
 

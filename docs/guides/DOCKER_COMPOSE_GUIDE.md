@@ -120,7 +120,7 @@ Additional compose files in [`./deploy/`](deploy/) directory:
 |------|---------|
 | [`deploy/docker-compose.production.yml`](deploy/docker-compose.production.yml) | Full production stack with monitoring |
 | [`deploy/docker-compose.dev.yml`](deploy/docker-compose.dev.yml) | Development with live reload |
-| [`deploy/docker-compose.alpine.yml`](deploy/docker-compose.alpine.yml) | Alpine-based (smaller image) |
+| ~~`deploy/docker-compose.alpine.yml`~~ | ~~Alpine-based (deprecated)~~ |
 | [`deploy/docker-compose.distroless.yml`](deploy/docker-compose.distroless.yml) | Distroless (security hardened) |
 
 ---

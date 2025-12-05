@@ -13,11 +13,8 @@ builds:
       - CGO_ENABLED=0
     goos:
       - linux
-      - darwin
-      - windows
     goarch:
       - amd64
-      - arm64
     ldflags:
       - -s -w
       - -X main.Version={{.Version}}
@@ -96,9 +93,7 @@ release:
     Download the appropriate binary for your platform from the assets below.
 
     **Supported Platforms:**
-    - Linux (amd64, arm64)
-    - macOS (amd64, arm64)
-    - Windows (amd64, arm64)
+    - Linux (amd64)
 
     ### 🔐 Verification
 

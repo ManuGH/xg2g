@@ -27,7 +27,7 @@ Instead, please report them via email to [security@example.com](mailto:security@
 
 ### Base Image CVEs
 
-The project uses Debian 12 (Bookworm) and Alpine Linux base images. Some CVEs exist in base image packages
+The project uses Debian 13 (Trixie) base image. Some CVEs may exist in base image packages
 without upstream fixes:
 
 - **Monitoring**: We run daily Trivy scans to detect new vulnerabilities

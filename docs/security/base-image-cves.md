@@ -2,9 +2,9 @@
 
 This document tracks known Common Vulnerabilities and Exposures (CVEs) in the base images used by `xg2g` that are currently unpatched or considered acceptable risks.
 
-## Debian Bookworm Slim
+## Debian Trixie Slim
 
-The `xg2g` runtime image is based on `debian:bookworm-slim`. While we strive to keep the image updated, some CVEs may persist due to upstream delays or because they do not affect the `xg2g` application context.
+The `xg2g` runtime image is based on `debian:trixie-slim` with FFmpeg 7.x. While we strive to keep the image updated, some CVEs may persist due to upstream delays or because they do not affect the `xg2g` application context.
 
 ### Known Issues
 

@@ -13,7 +13,7 @@ git push origin v1.6.0
 ```
 
 This will automatically:
-- Build multi-platform binaries (Linux, macOS, Windows for amd64/arm64)
+- Build binaries for Linux amd64
 - Generate checksums and SBOM
 - Sign artifacts with Cosign
 - Create a GitHub Release with changelog
@@ -22,9 +22,7 @@ This will automatically:
 ## What Gets Released
 
 ### 1. CLI Binaries (nogpu builds)
-- **Linux:** amd64, arm64
-- **macOS:** amd64, arm64 (Apple Silicon)
-- **Windows:** amd64
+- **Linux:** amd64
 
 **Note:** These binaries are built **without audio transcoding support** (nogpu tag).
 - ✅ M3U playlist generation
@@ -43,7 +41,7 @@ Docker images include:
 - ✅ All features
 - ✅ Rust audio transcoder
 - ✅ iOS/Safari audio support
-- ✅ Multi-arch (linux/amd64, linux/arm64)
+- ✅ Linux amd64 architecture
 
 ## Release Checklist
 
@@ -138,10 +136,6 @@ Each release includes:
 
 - **Binaries:**
   - `xg2g_v1.6.0_linux_amd64.tar.gz`
-  - `xg2g_v1.6.0_linux_arm64.tar.gz`
-  - `xg2g_v1.6.0_darwin_amd64.tar.gz`
-  - `xg2g_v1.6.0_darwin_arm64.tar.gz`
-  - `xg2g_v1.6.0_windows_amd64.zip`
 
 - **Checksums:**
   - `checksums.txt` (SHA256)

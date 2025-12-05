@@ -31,7 +31,7 @@ BUILD_FLAGS := -trimpath -buildvcs=false
 LDFLAGS := -ldflags "-s -w -buildid= -X 'main.Version=$(VERSION)'"
 DOCKER_IMAGE := xg2g
 DOCKER_REGISTRY ?=
-PLATFORMS := linux/amd64,linux/arm64,darwin/amd64,darwin/arm64
+PLATFORMS := linux/amd64
 
 # Coverage thresholds (matching CI configuration)
 COVERAGE_THRESHOLD := 55
