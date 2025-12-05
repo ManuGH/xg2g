@@ -617,26 +617,26 @@ ps: ## Show running containers
 
 prod-up: ## Start production docker-compose stack
 	@echo "Starting production stack..."
-	@docker compose -f docker-compose.production.yml up -d
+	@docker compose -f docker-compose.yml up -d
 	@echo "✅ Production stack started"
 	@echo "📊 Metrics: http://localhost:9090/metrics"
 
 prod-down: ## Stop production stack
 	@echo "Stopping production stack..."
-	@docker compose -f docker-compose.production.yml down
+	@docker compose -f docker-compose.yml down
 	@echo "✅ Production stack stopped"
 
 prod-logs: ## Show production stack logs
 	@echo "Showing production logs..."
-	@docker compose -f docker-compose.production.yml logs -f
+	@docker compose -f docker-compose.yml logs -f
 
 prod-restart: ## Restart production service
 	@echo "Restarting production service..."
-	@docker compose -f docker-compose.production.yml restart xg2g
+	@docker compose -f docker-compose.yml restart xg2g
 	@echo "✅ Production service restarted"
 
 prod-ps: ## Show production containers
-	@docker compose -f docker-compose.production.yml ps
+	@docker compose -f docker-compose.yml ps
 
 
 
