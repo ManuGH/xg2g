@@ -11,6 +11,9 @@ services:
     # ===========================================================================
     # PORTS
     # ===========================================================================
+    # TIP: For Proxmox LXC or HDHomeRun Discovery (SSDP), use 'network_mode: host'
+    # and comment out the 'ports' section. This allows multicast to work correctly.
+    # network_mode: host
     ports:
       - "${WEBUI_PORT:-8080}:8080"
       - "${STREAM_PORT:-18000}:18000"
@@ -92,14 +95,14 @@ services:
       # video  = GPU Full Transcode                -> XG2G_GPU_TRANSCODE=true
       # direct = Passthrough (no processing)       -> defaults
       # =========================================================================
-      
+
       # Strategy Mapping (Simple .env "TRANSCODING_STRATEGY" controls behavior)
       # Note: We map abstraction to internal flags.
-      
+
       # Audio Strategy (Rust FFI)
       - XG2G_ENABLE_STREAM_PROXY=true
       - XG2G_USE_RUST_REMUXER=${XG2G_USE_RUST_REMUXER:-true}
-      
+
       # Compatibility
       - XG2G_H264_STREAM_REPAIR=${XG2G_H264_STREAM_REPAIR:-true}
 
@@ -109,7 +112,7 @@ services:
 
       # Proxy Configuration
       - XG2G_PROXY_LISTEN=:18000
-      
+
       # Security & Limits
       - XG2G_API_TOKEN=${API_TOKEN}
       - XG2G_RATE_LIMIT_RPS=${RATE_LIMIT_RPS:-10}
