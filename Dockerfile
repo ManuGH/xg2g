@@ -8,15 +8,18 @@
 # =============================================================================
 # Stage 1: Build Rust Remuxer (ac-ffmpeg library for audio transcoding)
 # =============================================================================
-FROM rust:1.91-trixie AS rust-builder
+FROM debian:trixie-slim AS rust-builder
 
 WORKDIR /build
 
-# Install FFmpeg 7.x development libraries
+# Install FFmpeg 7.x development libraries and build tools
+# We use debian:trixie to ensure we get FFmpeg 7.x (libav* dev packages)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     pkg-config \
     clang \
+    curl \
+    ca-certificates \
     libavcodec-dev \
     libavformat-dev \
     libavfilter-dev \
@@ -24,9 +27,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libswresample-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Set Cargo environment variables for caching
-ENV CARGO_HOME=/usr/local/cargo \
-    CARGO_TARGET_DIR=/build/target
+# Install Rust via rustup to guarantee version 1.91 on Trixie
+ENV RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:$PATH
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.91 && \
+    rustc --version && cargo --version
 
 # Set FFmpeg paths for ac-ffmpeg crate
 ENV FFMPEG_INCLUDE_DIR=/usr/include \
