@@ -20,7 +20,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-var Version = "v3.0.10"
+var (
+	version   = "dev"
+	commit    = "unknown"
+	buildDate = "unknown"
+)
 
 // maskURL removes user info from a URL string for safe logging.
 func maskURL(rawURL string) string {
@@ -39,7 +43,7 @@ func main() {
 	flag.Parse()
 
 	if *showVersion {
-		fmt.Println(Version)
+		fmt.Printf("%s (commit: %s, built: %s)\n", version, commit, buildDate)
 		os.Exit(0)
 	}
 
@@ -50,7 +54,7 @@ func main() {
 	defer stop()
 
 	// Load configuration with precedence: ENV > File > Defaults
-	loader := config.NewLoader(*configPath, Version)
+	loader := config.NewLoader(*configPath, version)
 	cfg, err := loader.Load()
 	if err != nil {
 		logger.Fatal().
@@ -87,7 +91,9 @@ func main() {
 
 	logger.Info().
 		Str("event", "startup").
-		Str("version", Version).
+		Str("version", version).
+		Str("commit", commit).
+		Str("build_date", buildDate).
 		Str("addr", serverCfg.ListenAddr).
 		Msg("starting xg2g")
 

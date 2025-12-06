@@ -11,17 +11,26 @@ builds:
     binary: xg2g
     env:
       - CGO_ENABLED=0
+      - TZ=UTC
+      - SOURCE_DATE_EPOCH={{ .Env.SOURCE_DATE_EPOCH }}
+      - GOFLAGS=-trimpath -buildvcs=false -mod=readonly
     goos:
       - linux
     goarch:
       - amd64
+      - arm64
+    mod_timestamp: "{{ .CommitDate }}"
     ldflags:
-      - -s -w
-      - -X main.Version={{.Version}}
-      - -X main.Commit={{.Commit}}
-      - -X main.Date={{.Date}}
+      - -s -w -buildid=
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.buildDate={{.CommitDate}}
     flags:
       - -trimpath
+    gcflags:
+      - all=-trimpath={{.ProjectDir}}
+    asmflags:
+      - all=-trimpath={{.ProjectDir}}
 
 archives:
   - id: xg2g
@@ -44,7 +53,7 @@ archives:
       - docs/guides/**/*
 
 checksum:
-  name_template: 'checksums.txt'
+  name_template: "checksums.txt"
   algorithm: sha256
 
 snapshot:
@@ -55,24 +64,24 @@ changelog:
   sort: asc
   filters:
     exclude:
-      - '^docs:'
-      - '^test:'
-      - '^chore:'
-      - '^ci:'
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
   groups:
-    - title: 'Features'
+    - title: "Features"
       regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
       order: 0
-    - title: 'Bug Fixes'
+    - title: "Bug Fixes"
       regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
       order: 1
-    - title: 'Performance Improvements'
+    - title: "Performance Improvements"
       regexp: '^.*?perf(\([[:word:]]+\))??!?:.+$'
       order: 2
-    - title: 'Refactors'
+    - title: "Refactors"
       regexp: '^.*?refactor(\([[:word:]]+\))??!?:.+$'
       order: 3
-    - title: 'Other Changes'
+    - title: "Other Changes"
       order: 999
 
 release:

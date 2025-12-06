@@ -12,7 +12,7 @@
 	quality-gates pre-commit install dev-tools check-tools \
         release-check release-build release-tag release-notes \
         dev up down status prod-up prod-down prod-logs \
-        restart prod-restart ps prod-ps
+        restart prod-restart ps prod-ps ui-build
 
 # ===================================================================================================
 # Configuration and Variables
@@ -22,13 +22,17 @@
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT_HASH := $(shell git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)
 BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+SOURCE_DATE_EPOCH ?= $(shell git log -1 --pretty=%ct 2>/dev/null || date -u +%s)
+export SOURCE_DATE_EPOCH
+export TZ := UTC
+export GOFLAGS := -trimpath -buildvcs=false -mod=readonly
 
 # Build configuration
 BINARY_NAME := daemon
 BUILD_DIR := bin
 # Reproducible build flags
 BUILD_FLAGS := -trimpath -buildvcs=false
-LDFLAGS := -ldflags "-s -w -buildid= -X 'main.Version=$(VERSION)'"
+LDFLAGS := -ldflags "-s -w -buildid= -X 'main.version=$(VERSION)' -X 'main.commit=$(COMMIT_HASH)' -X 'main.buildDate=$(BUILD_DATE)'"
 DOCKER_IMAGE := xg2g
 DOCKER_REGISTRY ?=
 PLATFORMS := linux/amd64
@@ -147,7 +151,12 @@ help: ## Show this help message
 # Build Targets
 # ===================================================================================================
 
-build: ## Build the main daemon binary
+ui-build: ## Build WebUI assets
+	@echo "Building WebUI assets..."
+	@cd webui && npm ci && npm run build
+	@echo "✅ WebUI build complete"
+
+build: ui-build ## Build the main daemon binary
 	@echo "Building xg2g daemon..."
 	@mkdir -p $(BUILD_DIR)
 	go build $(BUILD_FLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/daemon
@@ -187,6 +196,14 @@ build-all: ## Build binaries for all supported platforms
 	done
 	@echo "✅ Multi-platform build complete"
 	@ls -la $(BUILD_DIR)/
+
+build-repro: ui-build ## Build deterministic binary (reproducible across identical sources)
+	@echo "Building reproducible xg2g daemon..."
+	@mkdir -p $(BUILD_DIR)
+	@CGO_ENABLED=0 go build $(BUILD_FLAGS) -mod=readonly -o $(BUILD_DIR)/$(BINARY_NAME) \
+		-ldflags "-s -w -buildid= -X 'main.version=$(VERSION)' -X 'main.commit=$(COMMIT_HASH)' -X 'main.buildDate=$(SOURCE_DATE_EPOCH)'" \
+		./cmd/daemon
+	@echo "✅ Reproducible build complete: $(BUILD_DIR)/$(BINARY_NAME)"
 
 clean: ## Remove build artifacts and temporary files
 	@echo "Cleaning build artifacts..."

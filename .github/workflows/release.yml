@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read  # Top-level read-only
+  contents: read # Top-level read-only
 
 env:
   REGISTRY: ghcr.io
@@ -31,10 +31,10 @@ jobs:
     runs-on: ubuntu-latest
     needs: security-gate
     permissions:
-      contents: write  # for GoReleaser to create releases
-      packages: write  # for pushing to GHCR
-      id-token: write  # for cosign OIDC signing
-      security-events: write  # for Trivy SARIF upload
+      contents: write # for GoReleaser to create releases
+      packages: write # for pushing to GHCR
+      id-token: write # for cosign OIDC signing
+      security-events: write # for Trivy SARIF upload
 
     steps:
       - name: Checkout
@@ -82,6 +82,10 @@ jobs:
       - name: Verify modules
         run: go mod verify
 
+      - name: Set SOURCE_DATE_EPOCH
+        run: |
+          echo "SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)" >> $GITHUB_ENV
+
       # =============================================
       # Build Binaries with GoReleaser
       # =============================================
@@ -93,6 +97,7 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_DATE_EPOCH: ${{ env.SOURCE_DATE_EPOCH }}
 
       # =============================================
       # Build and Push Multi-Arch Container Images
