@@ -77,31 +77,43 @@ services:
     # ===========================================================================
     environment:
       # OpenWebIF
-      - XG2G_OWI_BASE=http://${OWI_HOST}:${OWI_PORT}
+      - XG2G_OWI_BASE=${OWI_HOST:+http://${OWI_HOST}:${OWI_PORT:-80}}
       - XG2G_OWI_USER=${OWI_USER}
       - XG2G_OWI_PASS=${OWI_PASS}
 
-      # Bouquets
-      - XG2G_BOUQUET=${DEFAULT_BOUQUET}
+      # Main Configuration
+      - XG2G_BOUQUET=${DEFAULT_BOUQUET:-Favourites}
       - XG2G_INITIAL_REFRESH=${INITIAL_REFRESH:-true}
 
-      # Mode 2: Audio Transcoding
-      - XG2G_ENABLE_STREAM_PROXY=${AUDIO_TRANSCODING_ENABLED:-false}
+      # =========================================================================
+      # TRANSCODING STRATEGY
+      # =========================================================================
+      # audio  = Rust FFI Audio Remux (39µs)       -> XG2G_ENABLE_AUDIO_TRANSCODING=true
+      # video  = GPU Full Transcode                -> XG2G_GPU_TRANSCODE=true
+      # direct = Passthrough (no processing)       -> defaults
+      # =========================================================================
+      
+      # Strategy Mapping (Simple .env "TRANSCODING_STRATEGY" controls behavior)
+      # Note: We map abstraction to internal flags.
+      
+      # Audio Strategy (Rust FFI)
+      - XG2G_ENABLE_STREAM_PROXY=true
+      - XG2G_USE_RUST_REMUXER=${XG2G_USE_RUST_REMUXER:-true}
+      
+      # Compatibility
+      - XG2G_H264_STREAM_REPAIR=${XG2G_H264_STREAM_REPAIR:-true}
+
+      # Video Strategy (GPU)
+      # Only active if explicitly configured via XG2G_TRANSCODER_URL
+      - XG2G_TRANSCODER_URL=${XG2G_TRANSCODER_URL}
+
+      # Proxy Configuration
       - XG2G_PROXY_LISTEN=:18000
-
-      # Mode 3: GPU Transcoding (Conditional)
-      - XG2G_GPU_TRANSCODE=${MODE_3_ENABLED:-false}
-      - XG2G_GPU_LISTEN=0.0.0.0:8085
-      - XG2G_TRANSCODER_URL=http://localhost:8085
-
-      # Production & Security
+      
+      # Security & Limits
       - XG2G_API_TOKEN=${API_TOKEN}
       - XG2G_RATE_LIMIT_RPS=${RATE_LIMIT_RPS:-10}
       - XG2G_RATE_LIMIT_BURST=${RATE_LIMIT_BURST:-20}
-
-      # Advanced
-      - XG2G_AUDIO_BITRATE=${AUDIO_BITRATE:-192k}
-      - XG2G_VIDEO_BITRATE=${VIDEO_BITRATE:-4M}
 
     volumes:
       - xg2g-data:/data
