@@ -79,6 +79,23 @@ docker compose up -d
 # Playlist: http://localhost:8080/files/playlist.m3u
 ```
 
+## 🛠️ Local Development (Go 1.25 required)
+
+**Docker (Recommended):**
+
+```bash
+docker compose up -d
+```
+
+**Local:**
+
+```bash
+go install golang.org/dl/go1.25.5@latest
+go1.25.5 download
+export PATH=$HOME/sdk/go1.25.5/bin:$PATH
+make dev
+```
+
 **That's it.** Configuration is now handled entirely in `.env`.
 
 ---

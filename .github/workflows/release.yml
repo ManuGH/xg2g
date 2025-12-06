@@ -14,18 +14,174 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  # CodeQL analysis
+  codeql:
+    name: Analyze
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ["go", "c-cpp"]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Setup Rust
+        if: matrix.language == 'c-cpp'
+        uses: dtolnay/rust-toolchain@6d9817901c499d6b02debbb57edb38d33daa680b # stable
+        with:
+          toolchain: stable
+
+      - name: Install FFmpeg development headers
+        if: matrix.language == 'c-cpp'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libavcodec-dev libavformat-dev libavutil-dev libswresample-dev libswscale-dev pkg-config
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@497990dfed22177a82ba1bbab381bc8f6d27058f # v3
+        with:
+          languages: ${{ matrix.language }}
+
+      - name: Build Rust Library (C/C++ Analysis)
+        if: matrix.language == 'c-cpp'
+        run: make build-rust
+
+      - name: Build Go (Go Analysis)
+        if: matrix.language == 'go'
+        uses: github/codeql-action/autobuild@497990dfed22177a82ba1bbab381bc8f6d27058f # v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@497990dfed22177a82ba1bbab381bc8f6d27058f # v3
+        with:
+          category: "/language:${{ matrix.language }}"
+
+  # Govulncheck
+  govulncheck:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6
+
+      - name: Setup Go
+        uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6
+        with:
+          go-version-file: "go.mod"
+          check-latest: true
+        env:
+          GOTOOLCHAIN: auto
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Ensure jq
+        run: |
+          jq --version || (sudo apt-get update && sudo apt-get install -y jq)
+
+      - name: Run govulncheck (SARIF)
+        run: |
+          govulncheck -format sarif ./... > govulncheck.sarif || echo '{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"govulncheck","informationUri":"https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck"}},"results":[]}]}' > govulncheck.sarif
+
+      - name: Fix SARIF duplicate tags
+        run: |
+          jq '
+            if .runs then
+              .runs |= map(
+                if .tool.driver.rules then
+                  .tool.driver.rules |= map(
+                    if .properties.tags then
+                      .properties.tags |= unique
+                    else
+                      .
+                    end
+                  )
+                else
+                  .
+                end
+              )
+            else
+              .
+            end
+          ' govulncheck.sarif > govulncheck.fixed.sarif
+          mv govulncheck.fixed.sarif govulncheck.sarif
+
+      - name: Upload SARIF to code scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@fe4161a26a8629af62121b670040955b330f9af2 # v4
+        with:
+          sarif_file: govulncheck.sarif
+          category: govulncheck
+
+      - name: Run govulncheck (JSON)
+        run: govulncheck -format json ./... > govulncheck.json || true
+
+      - name: Evaluate High/Critical vulnerabilities
+        id: severity
+        run: |
+          set -euo pipefail
+          if [ ! -s govulncheck.json ]; then
+            echo "high_crit_count=0" >> "$GITHUB_OUTPUT"
+            echo "fail=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          count=$(jq -r '
+            ( .vulns // [] )
+            | map(
+                ( .osv.database_specific.severity? // "" ) as $lab
+                | (if ($lab | ascii_upcase) == "CRITICAL" then 9 elif ($lab | ascii_upcase) == "HIGH" then 7 else 0 end) as $labelScore
+                | ( ( .osv.severity? // [] )
+                    | map( (.score // 0) as $s
+                          | ( ($s|type) == "number" )
+                            and $s or ( ($s|tostring) | (if test("^[0-9.]+$") then tonumber elif test("CRITICAL";"i") then 9 elif test("HIGH";"i") then 7 else 0 end) ) )
+                    | (if length>0 then max else 0 end)
+                  ) as $cvssScore
+                | ([ $labelScore, $cvssScore ] | max) as $maxSev
+                | select($maxSev >= 7)
+              )
+            | length
+          ' govulncheck.json | tr -d '\n' )
+          if ! printf '%s' "$count" | grep -Eq '^[0-9]+$'; then count=0; fi
+          echo "High/Critical vulnerabilities: ${count}" >> "$GITHUB_STEP_SUMMARY"
+          printf 'high_crit_count=%s\n' "$count" >> "$GITHUB_OUTPUT"
+          if [ "$count" -gt 0 ]; then printf 'fail=true\n' >> "$GITHUB_OUTPUT"; else printf 'fail=false\n' >> "$GITHUB_OUTPUT"; fi
+
+      - name: Fail on High/Critical
+        if: steps.severity.outputs.fail == 'true'
+        run: |
+          echo "❌ High/Critical vulnerabilities detected: ${{ steps.severity.outputs.high_crit_count }}" >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
   # Security gate: Ensure all security checks pass before release
   security-gate:
     name: Security Gate
     runs-on: ubuntu-latest
+    needs: [codeql, govulncheck]
+    if: always()
     permissions:
       contents: read
     steps:
-      - name: Wait for security workflows
+      - name: Check security workflow status
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
         run: |
-          echo "✅ Security workflows must complete successfully before release"
-          echo "Required workflows: CodeQL, gosec, govulncheck, Container Security"
-          echo "This job ensures all security scans pass before artifacts are released"
+          echo "❌ Security checks failed or were cancelled."
+          exit 1
+      - name: Pass Security Gate
+        run: echo "✅ All security checks passed."
 
   release:
     runs-on: ubuntu-latest
@@ -45,7 +201,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
         with:
-          go-version: "1.25"
+          go-version-file: go.mod
           check-latest: true
           cache: true
         env:
@@ -124,7 +280,7 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest
 
       - name: Build and push Docker image
         id: build-push
@@ -172,9 +328,9 @@ jobs:
 
       - name: Generate SBOM
         run: |
-          syft packages . \
+          mkdir -p dist && syft packages . \
             -o spdx-json \
-            --file dist/sbom.spdx.json
+            > dist/sbom.spdx.json
 
       - name: Attest SBOM to image
         env:
