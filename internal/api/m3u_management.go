@@ -27,8 +27,8 @@ func (s *Server) handleAPIPlaylistDownload(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Read file content
-	content, err := os.ReadFile(path)
+	// Read file content from resolved data dir
+	content, err := os.ReadFile(path) //nolint:gosec // path is constrained via dataFilePath
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to read playlist")
 		http.Error(w, "Internal server error", http.StatusInternalServerError)

@@ -71,6 +71,7 @@ test_parser.go
 !internal/epg/testdata/empty.golden.xml
 .copilot-instructions.md
 dist/
+!internal/api/dist/
 
 # Test and development artifacts (local testing)
 test-*.sh

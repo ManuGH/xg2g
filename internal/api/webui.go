@@ -101,7 +101,7 @@ func (s *Server) handleAPIBouquets(w http.ResponseWriter, r *http.Request) {
 	var bouquets []string
 
 	// Try to read and parse M3U
-	if data, err := os.ReadFile(path); err == nil {
+	if data, err := os.ReadFile(path); err == nil { //nolint:gosec // path is derived from configured data dir
 		channels := m3u.Parse(string(data))
 		seen := make(map[string]bool)
 		for _, ch := range channels {
@@ -263,6 +263,7 @@ func (s *Server) handleAPIToggleAllChannels(w http.ResponseWriter, r *http.Reque
 	}
 	path := filepath.Join(s.cfg.DataDir, playlistName)
 
+	// #nosec G304 -- path is constrained by configured data directory
 	data, err := os.ReadFile(path)
 	if err != nil {
 		log.L().Error().Err(err).Msg("failed to read playlist for toggle all")

@@ -100,6 +100,15 @@ make dev
 
 ---
 
+## ✅ Quality Checks (Codex-ready)
+
+- One command to run the review bundle: `make codex` (golangci-lint + race/coverage tests + govulncheck)
+- Prereqs: Go 1.25.5, `make`, optional `make dev-tools` to install linters/scanners locally
+- Optional extras: `make schema-validate` (config schema), `make security` (SBOM + dependency scanning), `make ui-build` if you changed `webui/`
+- Full reviewer checklist: [docs/checklist_codex.md](docs/checklist_codex.md)
+
+---
+
 ## 🛠️ Advanced Usage
 
 Everything is configured via `.env`. See `.env.example` for all available options, including:

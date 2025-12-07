@@ -1,3 +1,5 @@
+version: 2
+
 # golangci-lint configuration file
 # see https://golangci-lint.run/usage/configuration/
 
@@ -13,8 +15,9 @@ linters:
     - ineffassign
     - unused
     - errcheck
-  settings:
-    gosec:
-      excludes:
-        - G104 # Duplicate of errcheck
-        - G304 # File path provided by user (config/CLI) is acceptable
+
+linters-settings:
+  gosec:
+    excludes:
+      - G104 # Duplicate of errcheck
+      - G304 # File path provided by user (config/CLI) is acceptable

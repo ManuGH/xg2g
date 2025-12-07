@@ -91,7 +91,7 @@ func TestLoad_1500Services(t *testing.T) {
 
 	// Verify output file integrity
 	m3uPath := filepath.Join(tmpDir, "playlist.m3u")
-	content, err := os.ReadFile(m3uPath)
+	content, err := os.ReadFile(m3uPath) //nolint:gosec // tmpDir is controlled by the test
 	if err != nil {
 		t.Fatalf("Failed to read playlist: %v", err)
 	}

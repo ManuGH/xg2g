@@ -116,7 +116,7 @@ func TestCSRFProtection_BlocksCrossOriginRequests(t *testing.T) {
 
 func TestCSRFProtection_AllowsConfiguredOrigins(t *testing.T) {
 	// Set allowed origins
-	os.Setenv("XG2G_ALLOWED_ORIGINS", "http://trusted.com,https://another.com") //nolint:errcheck // Test setup
+	os.Setenv("XG2G_ALLOWED_ORIGINS", "http://trusted.com,https://another.com") //nolint:errcheck,gosec // Test setup
 	defer os.Unsetenv("XG2G_ALLOWED_ORIGINS")                                   //nolint:errcheck // Test cleanup
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -240,16 +240,16 @@ func TestGetReceiverHost(t *testing.T) {
 			oldVal := os.Getenv("XG2G_OWI_BASE")
 			defer func() {
 				if oldVal != "" {
-					os.Setenv("XG2G_OWI_BASE", oldVal) //nolint:errcheck // Test cleanup
+					os.Setenv("XG2G_OWI_BASE", oldVal) //nolint:errcheck,gosec // Test cleanup
 				} else {
-					os.Unsetenv("XG2G_OWI_BASE") //nolint:errcheck // Test cleanup
+					os.Unsetenv("XG2G_OWI_BASE") //nolint:errcheck,gosec // Test cleanup
 				}
 			}()
 
 			if tt.envVal != "" {
-				os.Setenv("XG2G_OWI_BASE", tt.envVal) //nolint:errcheck // Test setup
+				os.Setenv("XG2G_OWI_BASE", tt.envVal) //nolint:errcheck,gosec // Test setup
 			} else {
-				os.Unsetenv("XG2G_OWI_BASE") //nolint:errcheck // Test cleanup
+				os.Unsetenv("XG2G_OWI_BASE") //nolint:errcheck,gosec // Test cleanup
 			}
 
 			got := GetReceiverHost()

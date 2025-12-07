@@ -12,7 +12,7 @@
 	quality-gates pre-commit install dev-tools check-tools \
         release-check release-build release-tag release-notes \
         dev up down status prod-up prod-down prod-logs \
-        restart prod-restart ps prod-ps ui-build
+        restart prod-restart ps prod-ps ui-build codex
 
 # ===================================================================================================
 # Configuration and Variables
@@ -81,8 +81,8 @@ help: ## Show this help message
 	@echo "  test-ffi          Test Rust FFI integration (requires Rust library)"
 	@echo ""
 	@echo "Enterprise Testing:"
-
-	@echo "  quality-gates  Validate all quality gates (coverage, lint, security)"
+	@echo "  codex             Run the Codex review bundle (lint + race/coverage + govulncheck)"
+	@echo "  quality-gates     Validate all quality gates (coverage, lint, security)"
 	@echo ""
 	@echo "Docker Operations:"
 	@echo "  docker              Build Docker image"
@@ -154,6 +154,11 @@ help: ## Show this help message
 ui-build: ## Build WebUI assets
 	@echo "Building WebUI assets..."
 	@cd webui && npm ci && npm run build
+	@echo "Copying to internal/api/dist..."
+	@rm -rf internal/api/dist/*
+	@mkdir -p internal/api/dist
+	@cp -r webui/dist/* internal/api/dist/
+	@touch internal/api/dist/.keep
 	@echo "✅ WebUI build complete"
 
 build: ui-build ## Build the main daemon binary
@@ -347,7 +352,9 @@ coverage-check: ## Check if coverage meets threshold
 # Enterprise Testing
 # ===================================================================================================
 
-
+codex: quality-gates ## Run Codex review bundle (lint + race/coverage + govulncheck)
+	@echo "✅ Codex review bundle completed"
+	@echo "   Includes: lint, race+coverage, govulncheck"
 
 quality-gates: lint test-cover security-vulncheck ## Validate all quality gates
 	@echo "Validating quality gates..."

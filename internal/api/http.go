@@ -33,7 +33,7 @@ import (
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 )
 
-//go:embed ui/*
+//go:embed dist/*
 var uiFS embed.FS
 
 // Server represents the HTTP API server for xg2g.
@@ -1168,7 +1168,7 @@ func (s *Server) handleUIRefresh(w http.ResponseWriter, r *http.Request) {
 
 // uiHandler returns a handler that serves the embedded Web UI
 func (s *Server) uiHandler() http.Handler {
-	subFS, err := fs.Sub(uiFS, "ui")
+	subFS, err := fs.Sub(uiFS, "dist")
 	if err != nil {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "UI not available", http.StatusInternalServerError)
