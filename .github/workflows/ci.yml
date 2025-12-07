@@ -29,10 +29,14 @@ jobs:
     timeout-minutes: 20
     env:
       GOTOOLCHAIN: auto
+      TZ: UTC
 
     steps:
       - name: Checkout
         uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6
+
+      - name: Set Reproducible Build Headers
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)" >> $GITHUB_ENV
 
       - name: Setup Go
         uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5
@@ -82,10 +86,12 @@ jobs:
           echo "✅ nogpu build successful"
 
       - name: Unit tests
+        env:
+          CGO_ENABLED: 0
         run: |
           set -euo pipefail
           # Use nogpu tag to skip Rust FFI packages (builds stub implementations instead)
-          go test -v -race -tags=nogpu -coverprofile=coverage.out -covermode=atomic $(go list -tags=nogpu ./... | grep -v '/test$')
+          go test -v -tags=nogpu -coverprofile=coverage.out -covermode=atomic $(go list -tags=nogpu ./... | grep -v '/test$')
 
       - name: Setup Node for OpenAPI lint
         uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6

@@ -58,5 +58,3 @@ require (
 	google.golang.org/grpc v1.75.1 // indirect
 	google.golang.org/protobuf v1.36.10 // indirect
 )
-
-exclude go.yaml.in/yaml/v2 v2.4.2
