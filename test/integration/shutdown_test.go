@@ -4,7 +4,9 @@ package test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -14,6 +16,23 @@ import (
 	"testing"
 	"time"
 )
+
+func getFreeTCPPort(t *testing.T) int {
+	t.Helper()
+
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to get free port: %v", err)
+	}
+	defer func() { _ = l.Close() }()
+
+	addr, ok := l.Addr().(*net.TCPAddr)
+	if !ok {
+		t.Fatal("listener address is not TCPAddr")
+	}
+
+	return addr.Port
+}
 
 // TestGracefulShutdown verifies that the daemon shuts down cleanly on SIGTERM/SIGINT
 // without leaving orphaned goroutines or incomplete writes.
@@ -34,9 +53,10 @@ func TestGracefulShutdown(t *testing.T) {
 	dataDir := t.TempDir()
 
 	// Prepare minimal environment
+	port := getFreeTCPPort(t)
 	env := []string{
 		"XG2G_DATA=" + dataDir,
-		"XG2G_LISTEN=:18888",
+		fmt.Sprintf("XG2G_LISTEN=:%d", port),
 		"XG2G_OWI_BASE=http://127.0.0.1:19999", // Non-existent (no backend needed for shutdown test)
 		"XG2G_BOUQUET=Test",
 		"XG2G_EPG_ENABLED=false",            // Disable EPG to simplify test
@@ -73,7 +93,7 @@ func TestGracefulShutdown(t *testing.T) {
 			// Wait for daemon to be ready
 			ready := false
 			for i := 0; i < 50; i++ {
-				resp, err := http.Get("http://127.0.0.1:18888/healthz")
+				resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/healthz", port))
 				if err == nil && resp.StatusCode == http.StatusOK {
 					_ = resp.Body.Close()
 					ready = true
@@ -142,9 +162,10 @@ func TestShutdownWithActiveRequests(t *testing.T) {
 	}
 
 	dataDir := t.TempDir()
+	port := getFreeTCPPort(t)
 	env := []string{
 		"XG2G_DATA=" + dataDir,
-		"XG2G_LISTEN=:18889",
+		fmt.Sprintf("XG2G_LISTEN=:%d", port),
 		"XG2G_OWI_BASE=http://127.0.0.1:19999",
 		"XG2G_BOUQUET=Test",
 		"XG2G_EPG_ENABLED=false",
@@ -171,7 +192,7 @@ func TestShutdownWithActiveRequests(t *testing.T) {
 	// Wait for readiness
 	ready := false
 	for i := 0; i < 50; i++ {
-		resp, err := http.Get("http://127.0.0.1:18889/healthz")
+		resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/healthz", port))
 		if err == nil && resp.StatusCode == http.StatusOK {
 			_ = resp.Body.Close()
 			ready = true
@@ -186,7 +207,7 @@ func TestShutdownWithActiveRequests(t *testing.T) {
 	// Start background request
 	requestDone := make(chan error, 1)
 	go func() {
-		resp, err := http.Get("http://127.0.0.1:18889/api/v1/status")
+		resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/api/v1/status", port))
 		if err != nil {
 			requestDone <- err
 			return

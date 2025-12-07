@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -18,6 +19,22 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func getFreeUDPPort(t *testing.T) int {
+	t.Helper()
+
+	addr, err := net.ResolveUDPAddr("udp4", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	conn, err := net.ListenUDP("udp4", addr)
+	require.NoError(t, err)
+	defer func() { _ = conn.Close() }()
+
+	udpAddr, ok := conn.LocalAddr().(*net.UDPAddr)
+	require.True(t, ok)
+
+	return udpAddr.Port
+}
 
 func TestNewServer(t *testing.T) {
 	logger := zerolog.New(os.Stdout)
@@ -430,11 +447,14 @@ func TestSSDPIntegration(t *testing.T) {
 		t.Skip("Skipping SSDP integration test in short mode")
 	}
 
+	ssdpPort := getFreeUDPPort(t)
+
 	logger := zerolog.New(os.Stdout)
 	config := Config{
 		DeviceID:     "SSDP123",
 		FriendlyName: "SSDP Test",
 		BaseURL:      "http://localhost:8080",
+		SSDPPort:     ssdpPort,
 		Logger:       logger,
 	}
 

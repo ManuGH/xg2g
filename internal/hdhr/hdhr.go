@@ -31,6 +31,7 @@ type Config struct {
 	BaseURL      string
 	TunerCount   int
 	PlexForceHLS bool // Force HLS URLs in lineup.json for Plex iOS compatibility
+	SSDPPort     int
 	DataDir      string
 	Logger       zerolog.Logger
 }
@@ -61,6 +62,9 @@ func NewServer(config Config, cm *channels.Manager) *Server {
 	}
 	if config.TunerCount == 0 {
 		config.TunerCount = 4
+	}
+	if config.SSDPPort == 0 {
+		config.SSDPPort = 1900
 	}
 
 	return &Server{
@@ -261,8 +265,13 @@ func getEnvInt(key string, defaultValue int) int {
 
 // StartSSDPAnnouncer starts SSDP announcements for automatic discovery
 func (s *Server) StartSSDPAnnouncer(ctx context.Context) error {
+	ssdpPort := s.config.SSDPPort
+	if ssdpPort == 0 {
+		ssdpPort = 1900
+	}
+
 	// SSDP multicast address
-	multicastAddr := "239.255.255.250:1900"
+	multicastAddr := fmt.Sprintf("239.255.255.250:%d", ssdpPort)
 
 	// Resolve multicast address
 	addr, err := net.ResolveUDPAddr("udp4", multicastAddr)
@@ -272,9 +281,9 @@ func (s *Server) StartSSDPAnnouncer(ctx context.Context) error {
 
 	// Create UDP connection
 	lc := &net.ListenConfig{}
-	conn, err := lc.ListenPacket(ctx, "udp4", ":1900")
+	conn, err := lc.ListenPacket(ctx, "udp4", fmt.Sprintf(":%d", ssdpPort))
 	if err != nil {
-		return fmt.Errorf("failed to listen on UDP port 1900: %w", err)
+		return fmt.Errorf("failed to listen on UDP port %d: %w", ssdpPort, err)
 	}
 
 	// Join multicast group using ipv4.PacketConn
