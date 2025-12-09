@@ -505,7 +505,16 @@ jobs:
           set -euo pipefail
           rm -rf bin
           make build-repro
-          sha256sum bin/daemon | diff - /tmp/expected.sha256
+          sha256sum bin/daemon | diff - /tmp/expected.sha256 || ( \
+            echo "❌ Binary hashes differ!" && \
+            apt-get update && apt-get install -y xxd && \
+            xxd bin/daemon > /tmp/build2.hex && \
+            make build-repro && \
+            xxd bin/daemon > /tmp/build3.hex && \
+            echo "Diffing build2 vs build3:" && \
+            diff -u /tmp/build2.hex /tmp/build3.hex | head -n 50 && \
+            exit 1 \
+          )
 
       - name: Upload reproducible binary
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5

@@ -10,7 +10,7 @@
 #   ./xg2g-daemon --config config.yaml
 
 # Application version (read-only, informational)
-version: "dev"
+version: "1"
 
 # Data directory for storing playlists, XMLTV files, and logs
 # ENV: XG2G_DATA
