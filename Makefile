@@ -5,14 +5,14 @@
 # All targets are designed with enterprise-grade quality assurance and CI/CD integration in mind.
 # ===================================================================================================
 
-.PHONY: help build build-all build-rust build-ffi clean clean-rust lint lint-fix test test-transcoder test-schema test-race test-cover cover test-fuzz test-all test-ffi \
+.PHONY: help build build-all build-rust build-ffi clean clean-rust clean-certs lint lint-fix test test-transcoder test-schema test-race test-cover cover test-fuzz test-all test-ffi \
         docker docker-build docker-build-cpu docker-build-gpu docker-build-all docker-security docker-tag docker-push docker-clean \
         sbom deps deps-update deps-tidy deps-verify deps-licenses \
         security security-scan security-audit security-vulncheck \
 	quality-gates pre-commit install dev-tools check-tools \
         release-check release-build release-tag release-notes \
         dev up down status prod-up prod-down prod-logs \
-        restart prod-restart ps prod-ps ui-build codex
+        restart prod-restart ps prod-ps ui-build codex certs
 
 # ===================================================================================================
 # Configuration and Variables
@@ -49,6 +49,7 @@ TOOL_DIR := $(if $(GOBIN),$(GOBIN),$(GOPATH_BIN))
 # Tool executables
 GOLANGCI_LINT := $(TOOL_DIR)/golangci-lint
 GOVULNCHECK := $(TOOL_DIR)/govulncheck
+OAPI_CODEGEN := $(TOOL_DIR)/oapi-codegen
 SYFT := $(TOOL_DIR)/syft
 GRYPE := $(TOOL_DIR)/grype
 
@@ -67,10 +68,13 @@ help: ## Show this help message
 	@echo "  build-ffi      Build single binary with embedded Rust library (CGO)"
 	@echo "  clean          Remove build artifacts and temporary files"
 	@echo "  clean-rust     Clean Rust build artifacts"
+	@echo "  clean-certs    Remove auto-generated TLS certificates"
+	@echo "  certs          Generate self-signed TLS certificates"
 	@echo ""
 	@echo "Quality Assurance:"
 	@echo "  lint              Run golangci-lint with all checks"
 	@echo "  lint-fix          Run golangci-lint with automatic fixes"
+	@echo "  generate          Generate Go code from OpenAPI spec"
 	@echo "  test              Run all unit tests (stub transcoder)"
 	@echo "  test-transcoder   Run tests with Rust transcoder enabled"
 	@echo "  test-schema       Run JSON schema validation tests"
@@ -161,6 +165,13 @@ ui-build: ## Build WebUI assets
 	@touch internal/api/dist/.keep
 	@echo "✅ WebUI build complete"
 
+generate: ## Generate Go code from OpenAPI spec
+	@echo "Generating API server code..."
+	@mkdir -p internal/api
+	@command -v $(OAPI_CODEGEN) >/dev/null 2>&1 || go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest
+	@$(OAPI_CODEGEN) -package api -generate types,chi-server,spec -o internal/api/server_gen.go api/openapi.yaml
+	@echo "✅ Code generation complete: internal/api/server_gen.go"
+
 build: ui-build ## Build the main daemon binary
 	@echo "Building xg2g daemon..."
 	@mkdir -p $(BUILD_DIR)
@@ -216,6 +227,25 @@ clean: ## Remove build artifacts and temporary files
 	@rm -rf coverage.out coverage.html
 	@rm -rf *.prof *.test
 	@rm -rf dist/
+
+clean-certs: ## Remove auto-generated TLS certificates
+	@echo "Removing TLS certificates..."
+	@rm -rf certs/
+	@echo "✅ TLS certificates removed"
+
+certs: ## Generate self-signed TLS certificates
+	@echo "Generating self-signed TLS certificates..."
+	@mkdir -p certs
+	@go run -trimpath ./cmd/gencert
+	@echo ""
+	@echo "To use these certificates, set:"
+	@echo "   export XG2G_TLS_CERT=certs/xg2g.crt"
+	@echo "   export XG2G_TLS_KEY=certs/xg2g.key"
+	@echo ""
+	@echo "Or enable auto-generation on startup:"
+	@echo "   export XG2G_TLS_ENABLED=true"
+
+clean-full: clean clean-rust ## Remove all build artifacts including Rust
 	@go clean -cache -testcache -modcache
 	@echo "✅ Clean complete"
 
@@ -232,7 +262,8 @@ lint: ## Run golangci-lint with all checks
 	@echo "Ensuring golangci-lint is installed..."
 	@command -v $(GOLANGCI_LINT) >/dev/null 2>&1 || go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 	@echo "Running golangci-lint..."
-	@"$(GOLANGCI_LINT)" run ./... --timeout=5m
+	@$(GOLANGCI_LINT) --version
+	@"$(GOLANGCI_LINT)" run ./... --timeout=5m --concurrency=2
 	@echo "✅ Lint checks passed"
 
 lint-fix: ## Run golangci-lint with automatic fixes
@@ -317,6 +348,11 @@ test-integration-slow: ## Run slow integration tests (with stub transcoder)
 	@echo "Running slow integration tests..."
 	@go test -tags=integration_slow -v -timeout=10m ./test/integration/... -run="^TestSlow"
 	@echo "✅ Slow tests passed"
+
+smoke-test: ## Run E2E smoke test (Builds & Runs daemon)
+	@echo "Running E2E smoke test..."
+	@go test -v -tags=smoke -timeout=2m ./test/smoke/...
+	@echo "✅ Smoke test passed"
 
 coverage: ## Generate and view coverage report locally
 	@echo "Generating coverage report..."
@@ -512,6 +548,8 @@ dev-tools: ## Install all development tools
 	@echo "Installing development tools..."
 	@echo "Installing golangci-lint..."
 	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	@echo "Installing oapi-codegen..."
+	@go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest
 	@echo "Installing govulncheck..."
 	@go install golang.org/x/vuln/cmd/govulncheck@latest
 	@echo "Installing syft for SBOM generation..."

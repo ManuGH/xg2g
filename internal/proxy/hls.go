@@ -42,6 +42,8 @@ type HLSStreamer struct {
 // HLSManager manages multiple HLS streams.
 type HLSManager struct {
 	streams       map[string]*HLSStreamer
+	plexProfiles  map[string]*PlexProfile  // Plex/iOS-optimized profiles
+	llhlsProfiles map[string]*LLHLSProfile // Low-Latency HLS profiles
 	mu            sync.RWMutex
 	logger        zerolog.Logger
 	outputBase    string
@@ -65,6 +67,8 @@ func NewHLSManager(logger zerolog.Logger, outputDir string) (*HLSManager, error)
 
 	m := &HLSManager{
 		streams:       make(map[string]*HLSStreamer),
+		plexProfiles:  make(map[string]*PlexProfile),
+		llhlsProfiles: make(map[string]*LLHLSProfile),
 		logger:        logger,
 		outputBase:    outputDir,
 		cleanup:       time.NewTicker(DefaultHLSCleanupInterval),
@@ -140,6 +144,13 @@ func (s *HLSStreamer) Start() error {
 	playlistPath := filepath.Join(s.outputDir, "playlist.m3u8")
 	segmentPattern := filepath.Join(s.outputDir, "segment_%03d.ts")
 
+	// Ensure clean state by removing previous output
+	// outputDir is already validated via secureJoin
+	_ = os.RemoveAll(s.outputDir)
+	if err := os.MkdirAll(s.outputDir, 0750); err != nil {
+		return fmt.Errorf("re-create output directory: %w", err)
+	}
+
 	// ffmpeg command to convert MPEG-TS to HLS
 	// -map 0:v -map 0:a: Only video and audio (exclude subtitles/other streams)
 	// -c copy: No re-encoding
@@ -150,10 +161,18 @@ func (s *HLSStreamer) Start() error {
 	args := []string{
 		"-hide_banner",
 		"-loglevel", "warning",
+		// Stream Repair Flags (Enigma2 Compatibility)
+		"-fflags", "+genpts+igndts", // Regenerate PTS, ignore bad DTS
+		"-analyzeduration", "5000000", // 5s analysis limit (Goldilocks zone)
+		"-probesize", "5000000", // 5MB probe size
 		"-i", s.targetURL,
 		"-map", "0:v",
 		"-map", "0:a",
-		"-c", "copy",
+		"-c:v", "copy", // Copy video (fast, original quality)
+		"-c:a", "aac", // Transcode audio to AAC (compatible, fixes timestamps)
+		"-ac", "2", // Stereo downmix
+		"-b:a", "192k", // 192kbps audio bitrate
+		"-bsf:v", "h264_mp4toannexb", // Repair SPS/PPS for iOS
 		"-f", "hls",
 		"-hls_time", "2",
 		"-hls_list_size", "6",
@@ -180,7 +199,7 @@ func (s *HLSStreamer) Start() error {
 		scanner.Buffer(buf, 1024*1024)
 
 		for scanner.Scan() {
-			s.logger.Debug().
+			s.logger.Info().
 				Str("service_ref", s.serviceRef).
 				Str("ffmpeg", scanner.Text()).
 				Msg("hls ffmpeg stderr")
@@ -322,7 +341,9 @@ func (m *HLSManager) cleanupIdleStreams() {
 	// Collect idle streams under lock, cleanup outside lock to avoid blocking
 	m.mu.Lock()
 	toCleanup := make([]*HLSStreamer, 0)
+	toCleanupPlex := make([]*PlexProfile, 0)
 
+	// Cleanup generic HLS streams
 	for ref, stream := range m.streams {
 		if stream.isIdle(m.idleTimeout) {
 			m.logger.Info().
@@ -332,11 +353,44 @@ func (m *HLSManager) cleanupIdleStreams() {
 			delete(m.streams, ref)
 		}
 	}
+
+	// Cleanup Plex profiles
+	for ref, profile := range m.plexProfiles {
+		if profile.IsIdle(m.idleTimeout) {
+			m.logger.Info().
+				Str("service_ref", ref).
+				Msg("removing idle Plex/iOS profile")
+			toCleanupPlex = append(toCleanupPlex, profile)
+			delete(m.plexProfiles, ref)
+		}
+	}
+
+	// Cleanup LL-HLS profiles
+	toCleanupLLHLS := make([]*LLHLSProfile, 0)
+	for ref, profile := range m.llhlsProfiles {
+		if profile.IsIdle(m.idleTimeout) {
+			m.logger.Info().
+				Str("service_ref", ref).
+				Msg("removing idle LL-HLS profile")
+			toCleanupLLHLS = append(toCleanupLLHLS, profile)
+			delete(m.llhlsProfiles, ref)
+		}
+	}
 	m.mu.Unlock()
 
 	// Cleanup streams outside of manager lock to avoid blocking new requests
 	for _, stream := range toCleanup {
 		stream.Stop()
+	}
+
+	// Cleanup Plex profiles
+	for _, profile := range toCleanupPlex {
+		profile.Stop()
+	}
+
+	// Cleanup LL-HLS profiles
+	for _, profile := range toCleanupLLHLS {
+		profile.Stop()
 	}
 }
 
@@ -348,24 +402,105 @@ func (m *HLSManager) Shutdown() {
 		close(m.stopChan)
 		m.cleanup.Stop()
 
-		// Collect streams under lock, stop them outside lock to avoid blocking
+		// Collect streams and profiles under lock, stop them outside lock to avoid blocking
 		m.mu.Lock()
 		streams := make([]*HLSStreamer, 0, len(m.streams))
 		for _, stream := range m.streams {
 			streams = append(streams, stream)
 		}
+		profiles := make([]*PlexProfile, 0, len(m.plexProfiles))
+		for _, profile := range m.plexProfiles {
+			profiles = append(profiles, profile)
+		}
+		llhlsProfiles := make([]*LLHLSProfile, 0, len(m.llhlsProfiles))
+		for _, profile := range m.llhlsProfiles {
+			llhlsProfiles = append(llhlsProfiles, profile)
+		}
 		m.streams = make(map[string]*HLSStreamer)
+		m.plexProfiles = make(map[string]*PlexProfile)
+		m.llhlsProfiles = make(map[string]*LLHLSProfile)
 		m.mu.Unlock()
 
 		// Stop all streams outside of lock
 		for _, stream := range streams {
 			stream.Stop()
 		}
+
+		// Stop all Plex profiles outside of lock
+		for _, profile := range profiles {
+			profile.Stop()
+		}
+
+		// Stop all LL-HLS profiles outside of lock
+		for _, profile := range llhlsProfiles {
+			profile.Stop()
+		}
 	})
 }
 
+// GetOrCreatePlexProfile gets an existing Plex profile or creates a new one.
+func (m *HLSManager) GetOrCreatePlexProfile(serviceRef, targetURL string) (*PlexProfile, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Check if profile already exists
+	if profile, ok := m.plexProfiles[serviceRef]; ok {
+		profile.UpdateAccess()
+		return profile, nil
+	}
+
+	// Create new Plex profile
+	config := GetPlexProfileConfig()
+	profile, err := NewPlexProfile(serviceRef, targetURL, m.outputBase, m.logger, config)
+	if err != nil {
+		return nil, err
+	}
+
+	m.plexProfiles[serviceRef] = profile
+	return profile, nil
+}
+
+// GetOrCreateLLHLSProfile gets an existing LL-HLS profile or creates a new one.
+func (m *HLSManager) GetOrCreateLLHLSProfile(serviceRef, targetURL string) (*LLHLSProfile, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Check if profile already exists
+	if profile, ok := m.llhlsProfiles[serviceRef]; ok {
+		profile.UpdateAccess()
+		return profile, nil
+	}
+
+	// Create new LL-HLS profile
+	config := GetLLHLSConfig()
+	profile, err := NewLLHLSProfile(serviceRef, targetURL, m.outputBase, m.logger, config)
+	if err != nil {
+		return nil, err
+	}
+
+	m.llhlsProfiles[serviceRef] = profile
+	return profile, nil
+}
+
 // ServeHLS handles HLS playlist and segment requests.
+// Routes to appropriate HLS profile based on User-Agent:
+//   - Plex clients → Plex/iOS profile (classical HLS, mpegts)
+//   - Native Apple clients → LL-HLS profile (fmp4, low latency)
+//   - Others → Generic HLS
 func (m *HLSManager) ServeHLS(w http.ResponseWriter, r *http.Request, serviceRef, targetURL string) error {
+	userAgent := r.Header.Get("User-Agent")
+
+	// Priority 1: Plex clients (classical HLS for maximum compatibility)
+	if ShouldUsePlexProfile(userAgent) {
+		return m.servePlexHLS(w, r, serviceRef, targetURL)
+	}
+
+	// Priority 2: Native Apple clients (LL-HLS for low latency)
+	if IsNativeAppleClient(userAgent) {
+		return m.serveLLHLS(w, r, serviceRef, targetURL)
+	}
+
+	// Fallback: Generic HLS for all other clients
 	// Get or create stream
 	stream, err := m.GetOrCreateStream(serviceRef, targetURL)
 	if err != nil {
@@ -391,6 +526,74 @@ func (m *HLSManager) ServeHLS(w http.ResponseWriter, r *http.Request, serviceRef
 
 	// Default: serve playlist
 	return m.servePlaylist(w, stream)
+}
+
+// servePlexHLS serves HLS using the Plex/iOS-optimized profile.
+func (m *HLSManager) servePlexHLS(w http.ResponseWriter, r *http.Request, serviceRef, targetURL string) error {
+	// Get or create Plex profile
+	profile, err := m.GetOrCreatePlexProfile(serviceRef, targetURL)
+	if err != nil {
+		return fmt.Errorf("get plex profile: %w", err)
+	}
+
+	// Start profile if not already started
+	if err := profile.Start(true, "192k"); err != nil {
+		return fmt.Errorf("start plex profile: %w", err)
+	}
+
+	// Wait for stream to be ready (initial segments available)
+	if err := profile.WaitReady(30 * time.Second); err != nil {
+		return fmt.Errorf("plex profile not ready: %w", err)
+	}
+
+	// Determine what to serve
+	path := r.URL.Path
+
+	if strings.HasSuffix(path, ".m3u8") || strings.HasSuffix(path, "/hls") {
+		// Serve Plex-optimized playlist
+		return profile.ServePlaylist(w)
+	} else if strings.Contains(path, "segment_") && strings.HasSuffix(path, ".ts") {
+		// Serve segment
+		segmentName := filepath.Base(path)
+		return profile.ServeSegment(w, segmentName)
+	}
+
+	// Default: serve playlist
+	return profile.ServePlaylist(w)
+}
+
+// serveLLHLS serves HLS using the Low-Latency HLS profile.
+func (m *HLSManager) serveLLHLS(w http.ResponseWriter, r *http.Request, serviceRef, targetURL string) error {
+	// Get or create LL-HLS profile
+	profile, err := m.GetOrCreateLLHLSProfile(serviceRef, targetURL)
+	if err != nil {
+		return fmt.Errorf("get llhls profile: %w", err)
+	}
+
+	// Start profile if not already started
+	if err := profile.Start(true, "192k"); err != nil {
+		return fmt.Errorf("start llhls profile: %w", err)
+	}
+
+	// Wait for stream to be ready (initial segments available)
+	if err := profile.WaitReady(30 * time.Second); err != nil {
+		return fmt.Errorf("llhls profile not ready: %w", err)
+	}
+
+	// Determine what to serve
+	path := r.URL.Path
+
+	if strings.HasSuffix(path, ".m3u8") || strings.HasSuffix(path, "/hls") {
+		// Serve LL-HLS playlist
+		return profile.ServePlaylist(w)
+	} else if strings.HasSuffix(path, ".m4s") || strings.HasSuffix(path, "init.mp4") {
+		// Serve fmp4 segment or init segment
+		segmentName := filepath.Base(path)
+		return profile.ServeSegment(w, segmentName)
+	}
+
+	// Default: serve playlist
+	return profile.ServePlaylist(w)
 }
 
 // ServeSegmentFromAnyStream finds and serves a segment from any active stream.

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/telemetry"
 	"github.com/ManuGH/xg2g/internal/transcoder"
 	"github.com/rs/zerolog"
@@ -164,6 +165,7 @@ func (t *Transcoder) TranscodeStream(ctx context.Context, w http.ResponseWriter,
 
 	// Start ffmpeg
 	span.AddEvent("starting ffmpeg")
+	metrics.IncFFmpegRestart()
 	if err := cmd.Start(); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "failed to start ffmpeg")
@@ -301,6 +303,14 @@ func (t *Transcoder) RepairH264Stream(ctx context.Context, w http.ResponseWriter
 	// - bsf:v h264_mp4toannexb: Convert H.264 to Annex-B format, inserting PPS/SPS NAL units
 	// - c copy: No transcoding, just copy streams (zero CPU overhead)
 	// - fflags +genpts+igndts: Regenerate timestamps (Enigma2 streams have broken DTS)
+	// Build ffmpeg command for H.264 stream repair
+	// Input: MPEG-TS stream from stdin with broken H.264
+	// Output: MPEG-TS stream with repaired H.264 to stdout
+	//
+	// Key flags:
+	// - bsf:v h264_mp4toannexb: Convert H.264 to Annex-B format, inserting PPS/SPS NAL units
+	// - c copy: No transcoding (for video), just copy streams
+	// - fflags +genpts+igndts: Regenerate timestamps (Enigma2 streams have broken DTS)
 	args := []string{
 		"-hide_banner",
 		"-loglevel", "error",
@@ -308,7 +318,24 @@ func (t *Transcoder) RepairH264Stream(ctx context.Context, w http.ResponseWriter
 		"-i", "pipe:0", // Read from stdin
 		"-map", "0:v", "-c:v", "copy", // Copy video stream without transcoding
 		"-bsf:v", "h264_mp4toannexb", // CRITICAL: Add PPS/SPS headers for H.264 Annex-B
-		"-map", "0:a", "-c:a", "copy", // Copy audio stream without transcoding
+	}
+
+	// Audio handling: Transcode to AAC if enabled (for iOS support), otherwise copy
+	if t.Config.Enabled {
+		args = append(args,
+			"-map", "0:a", "-c:a", t.Config.Codec, // Transcode audio (usually aac)
+			"-b:a", t.Config.Bitrate, // Audio bitrate
+			"-ac", fmt.Sprintf("%d", t.Config.Channels), // Audio channels
+			"-async", "1", // Audio-video sync
+		)
+	} else {
+		args = append(args,
+			"-map", "0:a", "-c:a", "copy", // Copy audio stream without transcoding
+		)
+	}
+
+	// Add output options
+	args = append(args,
 		"-start_at_zero",                  // Start timestamps at zero
 		"-avoid_negative_ts", "make_zero", // Fix negative timestamps
 		"-muxdelay", "0", // No mux delay
@@ -320,7 +347,7 @@ func (t *Transcoder) RepairH264Stream(ctx context.Context, w http.ResponseWriter
 		"-sdt_period", "0.5", // Regenerate SDT every 500ms
 		"-f", "mpegts", // Output format
 		"pipe:1", // Write to stdout
-	}
+	)
 
 	t.logger.Info().
 		Str("ffmpeg_path", t.Config.FFmpegPath).
@@ -356,6 +383,7 @@ func (t *Transcoder) RepairH264Stream(ctx context.Context, w http.ResponseWriter
 
 	// Start ffmpeg
 	span.AddEvent("starting ffmpeg H.264 repair")
+	metrics.IncFFmpegRestart()
 	if err := cmd.Start(); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "failed to start ffmpeg")

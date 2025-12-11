@@ -13,12 +13,13 @@ func PiconURL(owiBase, sref string) string {
 	// HD channels (type 19, 1F, 16, etc.) should fall back to SD (type 1)
 	// This matches OpenWebif's frontend behavior where picons are typically
 	// stored with SD service type even for HD channels.
-	// e.g., 1:0:19:132F:3EF:1:C00000:0:0:0: -> 1:0:1:132F:3EF:1:C00000:0:0:0:
-	normalizedSref := normalizeServiceRefForPicon(sref)
+	// e.g., 1:0:1:132F:3EF:1:C00000:0:0:0: -> 1:0:1:132F:3EF:1:C00000:0:0:0:
+	// normalizedSref := NormalizeServiceRefForPicon(sref)
+	// We do NOT normalize by default anymore, to support strict picon matching (e.g. 1_0_19...)
 
 	// Convert service reference colons to underscores for Enigma2 picon naming
 	// e.g., 1:0:1:132F:3EF:1:C00000:0:0:0: -> 1_0_1_132F_3EF_1_C00000_0_0_0
-	piconRef := strings.ReplaceAll(normalizedSref, ":", "_")
+	piconRef := strings.ReplaceAll(sref, ":", "_")
 	piconRef = strings.TrimSuffix(piconRef, "_") // Remove trailing underscore
 
 	// If owiBase already contains the file API path, just append the picon filename
@@ -30,10 +31,10 @@ func PiconURL(owiBase, sref string) string {
 	return strings.TrimRight(owiBase, "/") + "/picon/" + piconRef + ".png"
 }
 
-// normalizeServiceRefForPicon converts HD service types to SD for picon lookup.
+// NormalizeServiceRefForPicon converts HD service types to SD for picon lookup.
 // Most picon sets use SD service type (1) even for HD channels.
 // Format: 1:0:ServiceType:SID:TID:NID:Namespace:0:0:0:
-func normalizeServiceRefForPicon(sref string) string {
+func NormalizeServiceRefForPicon(sref string) string {
 	// Split service reference by colons
 	parts := strings.Split(sref, ":")
 	if len(parts) < 3 {

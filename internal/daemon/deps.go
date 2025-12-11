@@ -19,6 +19,9 @@ type Deps struct {
 	// Config is the jobs configuration (OpenWebIF, EPG, etc.)
 	Config config.AppConfig
 
+	// ConfigManager handles configuration persistence
+	ConfigManager *config.Manager
+
 	// APIHandler is the HTTP handler for the API server
 	APIHandler http.Handler
 

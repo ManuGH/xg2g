@@ -17,7 +17,7 @@ import (
 
 // writeM3U safely writes the playlist for Windows using temp file + rename
 // Note: Windows doesn't support atomic rename with fsync like Unix
-func writeM3U(ctx context.Context, path string, items []playlist.Item) error {
+func writeM3U(ctx context.Context, path string, items []playlist.Item, publicURL string) error {
 	logger := xglog.FromContext(ctx)
 
 	// Create temp file in same directory for atomic rename
@@ -35,7 +35,7 @@ func writeM3U(ctx context.Context, path string, items []playlist.Item) error {
 	}()
 
 	// Write playlist to temp file
-	if err := playlist.WriteM3U(tmpFile, items); err != nil {
+	if err := playlist.WriteM3U(tmpFile, items, publicURL); err != nil {
 		return fmt.Errorf("write M3U data: %w", err)
 	}
 

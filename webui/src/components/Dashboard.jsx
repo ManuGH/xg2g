@@ -39,7 +39,7 @@ export default function Dashboard() {
           <div className={`status-indicator ${health.receiver.status}`}>
             {health.receiver.status.toUpperCase()}
           </div>
-          <p>Last Check: {new Date(health.receiver.last_check).toLocaleString()}</p>
+          <p>Last Check: {new Date(health.receiver.last_check).getFullYear() > 2000 ? new Date(health.receiver.last_check).toLocaleString() : 'Never'}</p>
         </div>
 
         <div className="card">
@@ -68,7 +68,7 @@ function LogList() {
   useEffect(() => {
     import('../api').then(({ getRecentLogs }) => {
       getRecentLogs()
-        .then(data => setLogs(data.slice(0, 5)))
+        .then(data => setLogs((data || []).slice(0, 5)))
         .catch(console.error)
         .finally(() => setLoading(false));
     });
@@ -89,7 +89,7 @@ function LogList() {
       <tbody>
         {logs.map((log, i) => (
           <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
-            <td>{new Date(log.timestamp).toLocaleTimeString()}</td>
+            <td>{new Date(log.time).toLocaleTimeString()}</td>
             <td className={`log-level ${log.level.toLowerCase()}`}>{log.level}</td>
             <td>{log.message}</td>
           </tr>

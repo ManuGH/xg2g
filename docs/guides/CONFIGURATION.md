@@ -216,6 +216,109 @@ picons:
 
 If not set, playlists will not include logos.
 
+### TLS/HTTPS Configuration
+
+xg2g supports HTTPS to prevent Mixed Content issues when accessed from secure contexts (like Plex Web).
+
+**Environment Variables:**
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `XG2G_TLS_ENABLED` | Auto-generate self-signed certificates | `false` |
+| `XG2G_TLS_CERT` | Path to TLS certificate file | - |
+| `XG2G_TLS_KEY` | Path to TLS private key file | - |
+| `XG2G_FORCE_HTTPS` | Redirect HTTP to HTTPS (not yet implemented) | `false` |
+
+**Configuration Examples:**
+
+#### Option 1: Auto-Generated Self-Signed Certificates
+
+Best for local/private use. xg2g will automatically generate certificates in `certs/` on startup.
+
+```bash
+export XG2G_TLS_ENABLED=true
+```
+
+Or in `.env`:
+
+```bash
+XG2G_TLS_ENABLED=true
+```
+
+**Automatic Network IP Detection:**
+
+The generated certificate automatically includes all detected network IP addresses from your server's network interfaces. For example:
+
+- `localhost`, `127.0.0.1`, `::1` (loopback)
+- `10.10.55.14`, `192.168.1.100` (LAN IPs)
+- IPv6 addresses
+
+This means the certificate works for both:
+- `https://localhost:8080` (local access)
+- `https://10.10.55.14:8080` (network access from Plex, etc.)
+
+No additional configuration needed!
+
+#### Option 2: Manual Certificate Generation
+
+Generate certificates manually using the provided Makefile target:
+
+```bash
+make certs
+```
+
+This creates:
+
+- `certs/xg2g.crt` - Self-signed certificate (valid 10 years)
+- `certs/xg2g.key` - Private key (ECDSA P-256)
+
+Then configure the paths:
+
+```bash
+export XG2G_TLS_CERT=certs/xg2g.crt
+export XG2G_TLS_KEY=certs/xg2g.key
+```
+
+#### Option 3: Use Your Own Certificates
+
+For production deployments with Let's Encrypt or commercial certificates:
+
+```bash
+export XG2G_TLS_CERT=/etc/letsencrypt/live/yourdomain.com/fullchain.pem
+export XG2G_TLS_KEY=/etc/letsencrypt/live/yourdomain.com/privkey.pem
+```
+
+**Important Notes:**
+
+1. **Both certificate and key must be provided together** - If only one is set, xg2g will fail to start with an error.
+
+2. **Self-signed certificates require browser acceptance** - On first access, you'll see a security warning. Click "Advanced" → "Proceed to [host]" to accept.
+
+3. **Plex Mixed Content Fix** - For Plex to fetch logos over HTTPS:
+   - Visit your xg2g HTTPS URL in a browser first (e.g., `https://10.10.55.14:8080`)
+   - Accept the self-signed certificate
+   - Plex Web (running in the same browser) will then be able to fetch logos from `https://10.10.55.14:8080` without Mixed Content errors
+   - The certificate automatically includes your server's IP addresses, so no additional configuration is needed
+
+4. **Certificate paths are relative to working directory** - Use absolute paths in production.
+
+5. **To remove auto-generated certificates:**
+
+   ```bash
+   make clean-certs
+   ```
+
+**Verifying HTTPS is Enabled:**
+
+When xg2g starts with TLS enabled, you'll see:
+
+```text
+INFO  → TLS: enabled (cert: certs/xg2g.crt, key: certs/xg2g.key)
+INFO  API server listening (HTTPS) addr=:8080
+```
+
+Access via `https://localhost:8080` instead of `http://`.
+
 ---
 
 ## Environment Variable Interpolation

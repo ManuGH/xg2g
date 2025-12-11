@@ -1,33 +1,71 @@
 const API_BASE = '/api';
 
+// Helper to handle Auth and JSON responses
+async function fetchClient(endpoint, options = {}) {
+  const token = localStorage.getItem('XG2G_API_TOKEN');
+  const headers = {
+    'Content-Type': 'application/json',
+    ...options.headers,
+  };
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`${API_BASE}${endpoint}`, {
+    ...options,
+    headers,
+  });
+
+  if (response.status === 401) {
+    // Dispatch event so App.jsx can show auth prompt
+    window.dispatchEvent(new CustomEvent('auth-required'));
+    throw new Error('Unauthorized');
+  }
+
+  if (!response.ok) {
+    throw new Error(`API Error: ${response.statusText}`);
+  }
+
+  // specific check for 204 No Content
+  if (response.status === 204) return null;
+
+  return response.json();
+}
+
 export async function getHealth() {
-  const res = await fetch(`${API_BASE}/health`);
-  if (!res.ok) throw new Error('Failed to fetch health');
-  return res.json();
+  return fetchClient('/system/health');
 }
 
 export async function getConfig() {
-  const res = await fetch(`${API_BASE}/config`);
-  if (!res.ok) throw new Error('Failed to fetch config');
-  return res.json();
+  return fetchClient('/system/config');
 }
 
 export async function getBouquets() {
-  const res = await fetch(`${API_BASE}/bouquets`);
-  if (!res.ok) throw new Error('Failed to fetch bouquets');
-  return res.json();
+  return fetchClient('/services/bouquets');
 }
 
 export async function getChannels(bouquet) {
-  const params = new URLSearchParams();
-  if (bouquet) params.append('bouquet', bouquet);
-  const res = await fetch(`${API_BASE}/channels?${params.toString()}`);
-  if (!res.ok) throw new Error('Failed to fetch channels');
-  return res.json();
+  const query = bouquet ? `?bouquet=${encodeURIComponent(bouquet)}` : '';
+  return fetchClient(`/services${query}`);
+}
+
+export async function toggleService(id, enabled) {
+  return fetchClient(`/services/${encodeURIComponent(id)}/toggle`, {
+    method: 'POST',
+    body: JSON.stringify({ enabled }),
+  });
 }
 
 export async function getRecentLogs() {
-  const res = await fetch(`${API_BASE}/logs/recent`);
-  if (!res.ok) throw new Error('Failed to fetch logs');
-  return res.json();
+  // api defines it as array of LogEntry
+  return fetchClient('/logs');
 }
+
+export async function regeneratePlaylist() {
+  // Calls POST /system/refresh
+  return fetchClient('/system/refresh', {
+    method: 'POST',
+  });
+}
+

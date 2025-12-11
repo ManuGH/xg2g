@@ -3,18 +3,17 @@ package proxy
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/rs/zerolog"
 )
@@ -170,16 +169,8 @@ func New(cfg Config) (*Server, error) {
 	return s, nil
 }
 
-// handleRequest handles incoming HTTP requests.
-// HEAD requests are answered directly without proxying to avoid EOF errors from Enigma2.
-// GET requests may be processed through stream repair/transcoding pipeline (priority order):
-//  0. H.264 Stream Repair (XG2G_H264_STREAM_REPAIR=true) - Fixes broken H.264 for Plex
-//  1. GPU Transcoding (XG2G_GPU_TRANSCODE=true) - Full video+audio transcode
-//  2. Audio Transcoding (XG2G_ENABLE_AUDIO_TRANSCODING=true) - Audio-only transcode
-//  3. Direct Proxy (default) - No processing
-//
-// HLS requests (/hls/, .m3u8, segment_*.ts) are routed to HLS manager.
-// POST requests are proxied directly to the target URL.
+// handleRequest handles incoming HTTP requests using a priority chain of handlers.
+// Chain: HEAD -> HLS -> Transcode -> Direct
 func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	// Log the request
 	s.logger.Debug().
@@ -188,163 +179,24 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		Str("remote_addr", r.RemoteAddr).
 		Msg("proxy request")
 
-	// Handle HEAD requests without proxying
-	if r.Method == http.MethodHead {
-		s.handleHeadRequest(w, r)
+	// 1. HEAD Requests (Enigma2 compatibility)
+	if s.tryHandleHEAD(w, r) {
 		return
 	}
 
-	// Auto-detect iOS clients and serve HLS instead of MPEG-TS
-	// NOTE: This only works for DIRECT iOS clients (Safari, VLC, IPTV apps)
-	// It does NOT work for Plex iOS clients, because Plex Server acts as proxy
-	// and its User-Agent is "PlexMediaServer/...", not iOS-specific.
-	// IMPORTANT: Exclude HLS component files (.ts, .m3u8) to prevent recursive conversion
-	if s.hlsManager != nil && r.Method == http.MethodGet &&
-		!strings.HasPrefix(r.URL.Path, "/hls/") &&
-		!strings.HasSuffix(r.URL.Path, ".ts") &&
-		!strings.HasSuffix(r.URL.Path, ".m3u8") {
-		userAgent := r.Header.Get("User-Agent")
-		isIOSClient := (strings.Contains(userAgent, "iPhone") ||
-			strings.Contains(userAgent, "iPad") ||
-			strings.Contains(userAgent, "iOS") ||
-			strings.Contains(userAgent, "AppleCoreMedia") ||
-			strings.Contains(userAgent, "CFNetwork")) &&
-			!strings.Contains(userAgent, "Plex") // Exclude Plex (it handles MPEG-TS)
-
-		// Auto-upgrade iOS clients to HLS for better compatibility
-		if isIOSClient {
-			hlsPath := "/hls" + r.URL.Path
-			s.logger.Info().
-				Str("user_agent", userAgent).
-				Str("original_path", r.URL.Path).
-				Str("hls_path", hlsPath).
-				Str("client_ip", r.RemoteAddr).
-				Msg("auto-redirecting iOS client to HLS")
-
-			// Internal redirect to HLS handler
-			r.URL.Path = hlsPath
-			s.handleHLSRequest(w, r)
-			return
-		}
+	// 2. HLS Requests (iOS/Plex auto-detection & files)
+	if s.tryHandleHLS(w, r) {
+		return
 	}
 
-	// Handle explicit HLS requests (iOS streaming)
-	if s.hlsManager != nil && r.Method == http.MethodGet {
-		path := r.URL.Path
-
-		// Handle segment requests without /hls/ prefix (Safari requests segments with relative paths)
-		if !strings.HasPrefix(path, "/hls/") && strings.Contains(path, "segment_") && strings.HasSuffix(path, ".ts") {
-			segmentName := filepath.Base(path)
-			if err := s.hlsManager.ServeSegmentFromAnyStream(w, segmentName); err != nil {
-				s.logger.Error().
-					Err(err).
-					Str("segment", segmentName).
-					Msg("failed to serve HLS segment")
-				http.Error(w, "Segment not found", http.StatusNotFound)
-			}
-			return
-		}
-
-		// Handle HLS requests with /hls/ prefix or playlist requests
-		// - /hls/<service_ref> - HLS playlist request
-		// - /*.m3u8 - Playlist file
-		if strings.HasPrefix(path, "/hls/") || strings.HasSuffix(path, ".m3u8") {
-			s.handleHLSRequest(w, r)
-			return
-		}
+	// 3. Transcoding (Stream Repair / GPU / Audio)
+	if s.tryHandleTranscode(w, r) {
+		return
 	}
 
-	// Handle GET requests with optional transcoding
-	if r.Method == http.MethodGet && s.transcoder != nil {
-		// Build target URL for this request using Smart Detection or fallback
-		targetURL := s.resolveTargetURL(r.Context(), r.URL.Path, r.URL.RawQuery)
-
-		// Priority 0: H.264 stream repair (if enabled) - Fixes broken H.264 streams for Plex
-		// This adds PPS/SPS headers using FFmpeg's h264_mp4toannexb bitstream filter
-		if s.transcoder.Config.H264RepairEnabled {
-			s.logger.Info().
-				Str("path", r.URL.Path).
-				Str("target", targetURL).
-				Msg("routing stream through H.264 PPS/SPS repair (Plex compatibility fix)")
-
-			if err := s.transcoder.RepairH264Stream(r.Context(), w, r, targetURL); err != nil {
-				// Only log error if it's not a context cancellation (client disconnect)
-				if !errors.Is(err, context.Canceled) {
-					s.logger.Error().
-						Err(err).
-						Str("path", r.URL.Path).
-						Msg("H.264 stream repair failed, falling back to direct proxy")
-				}
-				// Fallback to direct proxy on error
-				s.proxy.ServeHTTP(w, r)
-			}
-			return
-		}
-
-		// Priority 1: GPU transcoding (if enabled)
-		if s.transcoder.IsGPUEnabled() {
-			s.logger.Debug().
-				Str("path", r.URL.Path).
-				Str("target", targetURL).
-				Msg("routing stream through GPU transcoder")
-
-			if err := s.transcoder.ProxyToGPUTranscoder(r.Context(), w, r, targetURL); err != nil {
-				// Only log error if it's not a context cancellation (client disconnect)
-				if !errors.Is(err, context.Canceled) {
-					s.logger.Error().
-						Err(err).
-						Str("path", r.URL.Path).
-						Msg("GPU transcoding failed, falling back to direct proxy")
-				}
-				// Fallback to direct proxy on error
-				s.proxy.ServeHTTP(w, r)
-			}
-			return
-		}
-
-		// Priority 2: Audio-only transcoding
-		// Try Rust remuxer first (if enabled), with automatic fallback to FFmpeg
-		var err error
-		if s.transcoder.Config.UseRustRemuxer {
-			s.logger.Debug().Str("method", "rust").Msg("attempting native rust remuxer")
-			err = s.transcoder.TranscodeStreamRust(r.Context(), w, r, targetURL)
-
-			// If Rust remuxer fails and it's not a client disconnect, fall back to FFmpeg
-			if err != nil && r.Context().Err() == nil {
-				s.logger.Warn().
-					Err(err).
-					Str("path", r.URL.Path).
-					Msg("rust remuxer failed, falling back to FFmpeg subprocess")
-
-				// Fallback: Try FFmpeg subprocess transcoding
-				s.logger.Debug().Str("method", "ffmpeg").Msg("using ffmpeg transcoding")
-				err = s.transcoder.TranscodeStream(r.Context(), w, r, targetURL)
-			}
-		} else {
-			// Rust remuxer disabled, use FFmpeg directly
-			s.logger.Debug().Str("method", "ffmpeg").Msg("using ffmpeg transcoding")
-			err = s.transcoder.TranscodeStream(r.Context(), w, r, targetURL)
-		}
-
-		// If transcoding succeeded or client disconnected, we're done
-		if err == nil || r.Context().Err() != nil {
-			if err != nil {
-				s.logger.Debug().
-					Str("path", r.URL.Path).
-					Msg("audio transcoding stopped (client disconnected)")
-			}
-			return
-		}
-
-		// If transcoding failed, log and fall back to direct proxy
-		s.logger.Warn().
-			Err(err).
-			Str("path", r.URL.Path).
-			Msg("all transcoding methods failed, falling back to direct proxy")
-		// Fall through to s.proxy.ServeHTTP below
-	}
-
-	// Proxy GET/POST requests to target (no transcoding)
+	// 4. Direct Proxy (Fallback)
+	metrics.IncActiveStreams("direct")
+	defer metrics.DecActiveStreams("direct")
 	s.proxy.ServeHTTP(w, r)
 }
 
@@ -408,11 +260,14 @@ func (s *Server) handleHLSRequest(w http.ResponseWriter, r *http.Request) {
 	// Extract service reference from path
 	var serviceRef string
 	if strings.HasPrefix(path, "/hls/") {
-		// /hls/<service_ref> format
-		serviceRef = strings.TrimPrefix(path, "/hls/")
-		// Remove any file extensions
+		// /hls/<service_ref> format, potentially followed by /playlist.m3u8 or /segment.ts
+		trimmed := strings.TrimPrefix(path, "/hls/")
+		parts := strings.Split(trimmed, "/")
+		if len(parts) > 0 {
+			serviceRef = parts[0]
+		}
+		// Remove .m3u8 if present (for flat format /hls/REF.m3u8)
 		serviceRef = strings.TrimSuffix(serviceRef, ".m3u8")
-		serviceRef = strings.TrimSuffix(serviceRef, "/")
 	} else {
 		// Try to extract from path (e.g., /1:0:19:132F:3EF:1:C00000:0:0:0:/playlist.m3u8)
 		parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
@@ -443,22 +298,6 @@ func (s *Server) handleHLSRequest(w http.ResponseWriter, r *http.Request) {
 			Msg("HLS streaming failed")
 		http.Error(w, "HLS streaming failed", http.StatusInternalServerError)
 	}
-}
-
-// handleHeadRequest handles HEAD requests by returning a 200 OK response
-// with appropriate headers without proxying to the target.
-func (s *Server) handleHeadRequest(w http.ResponseWriter, r *http.Request) {
-	// Set headers for MPEG-TS stream
-	w.Header().Set("Content-Type", "video/mp2t")
-	w.Header().Set("Accept-Ranges", "none")
-	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
-	w.Header().Set("Connection", "close")
-
-	w.WriteHeader(http.StatusOK)
-
-	s.logger.Debug().
-		Str("path", r.URL.Path).
-		Msg("answered HEAD request")
 }
 
 // Start starts the proxy server.

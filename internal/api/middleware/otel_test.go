@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
 func TestShouldTrace(t *testing.T) {
@@ -45,17 +45,20 @@ func TestSpanNameFormatter(t *testing.T) {
 }
 
 func TestExtractAndAddSpanAttributes(t *testing.T) {
-	t.Parallel()
+	// Enable robust testing by using a real SDK TraceProvider (not the global noop default)
+	tp := sdktrace.NewTracerProvider()
 
-	tr := otel.Tracer("test-tracer")
+	// Create a tracer from the provider
+	tr := tp.Tracer("test-tracer")
+
 	ctx, span := tr.Start(context.Background(), "test-span")
 	defer span.End()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/status", nil).WithContext(ctx)
 
 	traceID, spanID := ExtractTraceContext(req)
-	if traceID == "" || spanID == "" {
-		t.Fatalf("expected non-empty trace/span ids, got %q %q", traceID, spanID)
+	if traceID == "" || spanID == "" || traceID == "00000000000000000000000000000000" {
+		t.Fatalf("expected valid trace/span ids, got %q %q", traceID, spanID)
 	}
 
 	// Ensure adding attributes does not panic and attaches to the current span

@@ -10,8 +10,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
+	"net/http/httputil"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -36,6 +38,9 @@ import (
 //go:embed dist/*
 var uiFS embed.FS
 
+//go:embed webplayer.html
+var webplayerHTML []byte
+
 // Server represents the HTTP API server for xg2g.
 type Server struct {
 	mu             sync.RWMutex
@@ -44,14 +49,15 @@ type Server struct {
 	status         jobs.Status
 	cb             *CircuitBreaker
 	hdhr           *hdhr.Server      // HDHomeRun emulation server
-	configHolder   ConfigHolder      // Optional: for hot config reload support
 	auditLogger    AuditLogger       // Optional: for audit logging
 	healthManager  *health.Manager   // Health and readiness checks
 	channelManager *channels.Manager // Channel management
+	configManager  *config.Manager   // Config operations
 	// refreshFn allows tests to stub the refresh operation; defaults to jobs.Refresh
 	refreshFn      func(context.Context, config.AppConfig, *openwebif.StreamDetector) (*jobs.Status, error)
 	streamDetector *openwebif.StreamDetector
 	startTime      time.Time
+	piconSemaphore chan struct{} // Limit concurrent upstream picon fetches
 }
 
 // AuditLogger interface for audit logging (optional).
@@ -128,7 +134,7 @@ func (s *Server) dataFilePath(rel string) (string, error) {
 }
 
 // New creates and initializes a new HTTP API server.
-func New(cfg config.AppConfig, detector *openwebif.StreamDetector) *Server {
+func New(cfg config.AppConfig, detector *openwebif.StreamDetector, cfgMgr *config.Manager) *Server {
 	// Initialize channel manager
 	cm := channels.NewManager(cfg.DataDir)
 	if err := cm.Load(); err != nil {
@@ -139,10 +145,12 @@ func New(cfg config.AppConfig, detector *openwebif.StreamDetector) *Server {
 		cfg:            cfg,
 		streamDetector: detector,
 		channelManager: cm,
+		configManager:  cfgMgr,
 		status: jobs.Status{
 			Version: cfg.Version, // Initialize version from config
 		},
-		startTime: time.Now(),
+		startTime:      time.Now(),
+		piconSemaphore: make(chan struct{}, 20), // Max 20 concurrent downloads
 	}
 	// Default refresh function
 	s.refreshFn = jobs.Refresh
@@ -252,6 +260,9 @@ func (s *Server) routes() http.Handler {
 	r.Get("/healthz", s.handleHealth)
 	r.Get("/readyz", s.handleReady)
 
+	// Web Player (Safari-First)
+	r.Get("/webplayer", s.handleWebPlayer)
+
 	// Web UI (read-only dashboard)
 	r.Handle("/ui/*", http.StripPrefix("/ui", s.uiHandler()))
 	r.Get("/ui", func(w http.ResponseWriter, r *http.Request) {
@@ -261,31 +272,19 @@ func (s *Server) routes() http.Handler {
 		http.Redirect(w, r, "/ui/", http.StatusTemporaryRedirect)
 	})
 
-	// WebUI API endpoints (v3.0.0+)
-	r.Route("/api", func(r chi.Router) {
-		r.Get("/health", s.handleAPIHealth)
-		r.Get("/config", s.handleAPIConfig)
-		r.Post("/config/reload", s.handleConfigReloadV1)
-		r.Post("/channels/toggle", s.handleAPIToggleChannel)
-		r.Post("/channels/toggle-all", s.handleAPIToggleAllChannels)
-		r.Get("/bouquets", s.handleAPIBouquets)
-		r.Get("/channels", s.handleAPIChannels)
-		r.Get("/logs/recent", s.handleAPILogs)
-
-		// File Management
-		r.Get("/files/status", s.handleAPIFileStatus)
-		r.Post("/m3u/regenerate", s.handleAPIRegenerate)
-		r.Get("/m3u/download", s.handleAPIPlaylistDownload)
-		r.Get("/xmltv/download", s.handleAPIXMLTVDownload)
+	// Register Generated API v2 Routes
+	// We use the generated handler which attaches to our existing router 'r'
+	// and creates routes starting with /api
+	HandlerWithOptions(s, ChiServerOptions{
+		BaseURL:    "/api/v2",
+		BaseRouter: r,
+		Middlewares: []MiddlewareFunc{
+			// Apply Auth Middleware to all API routes
+			func(next http.Handler) http.Handler {
+				return s.authMiddleware(next) // Use struct method for config access
+			},
+		},
 	})
-
-	// V1 API (current stable version)
-	s.registerV1Routes(r)
-
-	// V2 API (future - behind feature flag)
-	if featureEnabled("API_V2") {
-		s.registerV2Routes(r)
-	}
 
 	// HDHomeRun emulation endpoints (versionless - hardware emulation protocol)
 	if s.hdhr != nil {
@@ -300,6 +299,14 @@ func (s *Server) routes() http.Handler {
 	// XMLTV endpoint (versionless - standard format)
 	r.Method(http.MethodGet, "/xmltv.xml", http.HandlerFunc(s.handleXMLTV))
 	r.Method(http.MethodHead, "/xmltv.xml", http.HandlerFunc(s.handleXMLTV))
+
+	// Logo Proxy (Renamed from Picon to clean cache)
+	r.Get("/logos/{ref}.png", s.handlePicons)
+	r.Head("/logos/{ref}.png", s.handlePicons)
+
+	// Stream Proxy (Avoids CORS/Port issues for Webplayer)
+	// Proxies /stream/... to internal stream server (port 18000)
+	r.Get("/stream/*", s.handleStreamProxy)
 
 	// Harden file server: disable directory listing and use a secure handler
 	r.Handle("/files/*", http.StripPrefix("/files/", s.secureFileServer()))
@@ -689,31 +696,51 @@ func (s *Server) Handler() http.Handler {
 	return withMiddlewares(s.routes())
 }
 
-// AuthMiddleware is a middleware that enforces API token authentication.
-// It checks the "X-API-Token" header against the configured token.
-// If the token is missing or invalid, it responds with an error.
-func AuthMiddleware(next http.Handler) http.Handler {
+// authMiddleware is a middleware that enforces API token authentication.
+func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token := os.Getenv("XG2G_API_TOKEN")
+		token := s.cfg.APIToken
 		if token == "" {
-			// If no token is set, auth is disabled
-			next.ServeHTTP(w, r)
+			// Fail secure: if no token configured, allow only if intended?
+			// Original logic: if token == "", fail closed (line 327) or open?
+			// Line 327 says: if token == "" -> access denied.
+			// Line 698 says: if token == "" -> auth disabled (pass through).
+
+			// User requested "Authorization: Bearer".
+			// Let's stick to "If token configured, check it. If not, maybe allow?"
+			// But creating 'fail-closed' is safer.
+			// However for local dev (no token), we want access?
+			// Let's use the logic from s.authRequired:
+			// "if token == "" ... access denied"
+
+			logger := log.WithComponentFromContext(r.Context(), "auth")
+			logger.Error().Str("event", "auth.fail_closed").Msg("XG2G_API_TOKEN is not configured, access denied")
+			http.Error(w, "Unauthorized: API token not configured on server", http.StatusUnauthorized)
 			return
 		}
 
-		reqToken := r.Header.Get("X-API-Token")
-		logger := log.FromContext(r.Context()).With().Str("component", "auth").Logger()
-
-		if reqToken == "" {
-			logger.Warn().Str("event", "auth.missing_header").Msg("authorization header missing")
-			http.Error(w, "Unauthorized: Missing API token", http.StatusUnauthorized)
+		// Check Bearer token
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			// Fallback to query param or custom header?
+			// New API v2 uses Bearer.
+			http.Error(w, "Unauthorized: Missing Authorization header", http.StatusUnauthorized)
 			return
 		}
 
-		// Use constant-time comparison to prevent timing attacks
+		parts := strings.Split(authHeader, " ")
+		if len(parts) != 2 || parts[0] != "Bearer" {
+			http.Error(w, "Unauthorized: Invalid Authorization header format", http.StatusUnauthorized)
+			return
+		}
+
+		reqToken := parts[1]
+
+		// Use constant-time comparison
 		if subtle.ConstantTimeCompare([]byte(reqToken), []byte(token)) != 1 {
-			logger.Warn().Str("event", "auth.invalid_token").Msg("invalid api token")
-			http.Error(w, "Forbidden: Invalid API token", http.StatusForbidden)
+			logger := log.WithComponentFromContext(r.Context(), "auth")
+			logger.Warn().Str("event", "auth.invalid").Msg("invalid bearer token")
+			http.Error(w, "Forbidden: Invalid token", http.StatusForbidden)
 			return
 		}
 
@@ -834,338 +861,6 @@ func (s *Server) handleLineupJSON(w http.ResponseWriter, r *http.Request) {
 		Msg("HDHomeRun lineup served")
 }
 
-// registerV1Routes registers all v1 API endpoints
-func (s *Server) registerV1Routes(r chi.Router) {
-	// Import the v1 package handler
-	// Note: This will be done after we fix the import cycle
-	r.Route("/api/v1", func(r chi.Router) {
-		r.Get("/status", s.handleStatusV1)
-		// Apply rate limiting and CSRF protection to expensive refresh operation
-		r.With(middleware.RefreshRateLimit(), middleware.CSRFProtection()).
-			Post("/refresh", s.authRequired(s.handleRefreshV1))
-		// Config management endpoints
-		r.Route("/config", func(r chi.Router) {
-			r.With(middleware.CSRFProtection()).
-				Post("/reload", s.authRequired(s.handleConfigReloadV1))
-		})
-		// Web UI endpoints (read-only dashboard)
-		r.Route("/ui", func(r chi.Router) {
-			r.Get("/status", s.handleUIStatus)    // Enhanced status for dashboard
-			r.Get("/urls", s.handleUIUrls)        // M3U/XMLTV URLs
-			r.Post("/refresh", s.handleUIRefresh) // Refresh trigger (no auth for UI)
-		})
-	})
-}
-
-// registerV2Routes registers all v2 API endpoints (placeholder for future)
-func (s *Server) registerV2Routes(r chi.Router) {
-	// V2 API implementation will go here
-	// Example: different path structure, enhanced response formats, etc.
-	r.Route("/api/v2", func(r chi.Router) {
-		r.Get("/status", s.handleStatusV2Placeholder)
-	})
-}
-
-// handleStatusV1 wraps the v1 handler
-func (s *Server) handleStatusV1(w http.ResponseWriter, r *http.Request) {
-	logger := log.WithComponentFromContext(r.Context(), "api.v1")
-
-	status := s.GetStatus()
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-API-Version", "1")
-
-	resp := map[string]any{
-		"status":   "ok",
-		"version":  status.Version,
-		"lastRun":  status.LastRun,
-		"channels": status.Channels,
-	}
-
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		logger.Error().Err(err).Msg("failed to encode v1 status response")
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	logger.Debug().
-		Str("event", "v1.status.success").
-		Str("version", status.Version).
-		Time("lastRun", status.LastRun).
-		Int("channels", status.Channels).
-		Msg("v1 status request handled")
-}
-
-// handleRefreshV1 wraps the refresh handler for v1
-func (s *Server) handleRefreshV1(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("X-API-Version", "1")
-	s.handleRefresh(w, r)
-}
-
-// handleConfigReloadV1 handles POST /api/v1/config/reload - triggers config file reload.
-func (s *Server) handleConfigReloadV1(w http.ResponseWriter, r *http.Request) {
-	logger := log.WithComponentFromContext(r.Context(), "api.v1")
-	w.Header().Set("X-API-Version", "1")
-
-	actor := r.RemoteAddr // Default actor
-
-	// Check if config holder is available
-	if s.configHolder == nil {
-		if s.auditLogger != nil {
-			s.auditLogger.ConfigReload(actor, "failure", map[string]string{
-				"error": "hot reload not enabled",
-			})
-		}
-		RespondError(w, r, http.StatusServiceUnavailable, ErrServiceUnavailable,
-			map[string]string{"reason": "hot reload not enabled"})
-		logger.Warn().
-			Str("event", "config.reload_unavailable").
-			Msg("config reload requested but hot reload not enabled")
-		return
-	}
-
-	// Trigger reload
-	if err := s.configHolder.Reload(r.Context()); err != nil {
-		if s.auditLogger != nil {
-			s.auditLogger.ConfigReload(actor, "failure", map[string]string{
-				"error": err.Error(),
-			})
-		}
-		RespondError(w, r, http.StatusInternalServerError, ErrInternalServer,
-			map[string]string{"error": err.Error()})
-		logger.Error().
-			Err(err).
-			Str("event", "config.reload_failed").
-			Msg("config reload failed")
-		return
-	}
-
-	// Update server config from holder
-	s.mu.Lock()
-	s.cfg = s.configHolder.Get()
-	s.mu.Unlock()
-
-	// Audit log success
-	if s.auditLogger != nil {
-		s.auditLogger.ConfigReload(actor, "success", map[string]string{
-			"method": "api",
-		})
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	resp := map[string]any{
-		"status":  "ok",
-		"message": "configuration reloaded successfully",
-	}
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		logger.Error().Err(err).Msg("failed to encode config reload response")
-		return
-	}
-
-	logger.Info().
-		Str("event", "config.reload_success").
-		Msg("configuration reloaded via API")
-}
-
-// SetConfigHolder sets the config holder for hot reload support (optional).
-// Must be called before routes are registered if hot reload is desired.
-func (s *Server) SetConfigHolder(holder ConfigHolder) {
-	s.configHolder = holder
-}
-
-// SetAuditLogger sets the audit logger for security event logging (optional).
-func (s *Server) SetAuditLogger(logger AuditLogger) {
-	s.auditLogger = logger
-}
-
-// handleUIStatus handles GET /api/v1/ui/status - enhanced status for Web UI dashboard.
-// Returns aggregated status including health checks, receiver info, channels, and EPG.
-func (s *Server) handleUIStatus(w http.ResponseWriter, r *http.Request) {
-	logger := log.WithComponentFromContext(r.Context(), "api.ui")
-
-	// Get current status
-	s.mu.RLock()
-	status := s.status
-	cfg := s.cfg
-	s.mu.RUnlock()
-
-	// Get health check results (verbose mode to include all checks)
-	healthStatus := s.healthManager.Health(r.Context(), true)
-
-	// Build receiver info
-	receiverInfo := map[string]any{
-		"base_url":   cfg.OWIBase,
-		"configured": cfg.OWIBase != "",
-	}
-
-	// Try to get receiver latency from health check
-	if receiverCheck, ok := healthStatus.Checks["receiver_connection"]; ok {
-		receiverInfo["reachable"] = receiverCheck.Status == health.StatusHealthy
-		if receiverCheck.Error != "" {
-			receiverInfo["error"] = receiverCheck.Error
-		}
-	}
-
-	// Build channels info
-	channelsInfo := map[string]any{
-		"count":        status.Channels,
-		"last_updated": status.LastRun,
-	}
-
-	// Build EPG info
-	epgInfo := map[string]any{
-		"enabled":      cfg.EPGEnabled,
-		"programmes":   status.EPGProgrammes,
-		"last_updated": status.LastRun,
-	}
-
-	// Check if EPG is stale (>48h old)
-	if !status.LastRun.IsZero() {
-		age := time.Since(status.LastRun)
-		epgInfo["stale"] = age > 48*time.Hour
-		epgInfo["age_hours"] = int(age.Hours())
-	}
-
-	// Build response
-	resp := map[string]any{
-		"health": map[string]any{
-			"status": string(healthStatus.Status),
-			"checks": healthStatus.Checks,
-		},
-		"receiver": receiverInfo,
-		"channels": channelsInfo,
-		"epg":      epgInfo,
-		"version":  status.Version,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-API-Version", "1")
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		logger.Error().Err(err).Msg("failed to encode UI status response")
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	logger.Debug().
-		Str("event", "ui.status.success").
-		Str("health_status", string(healthStatus.Status)).
-		Int("channels", status.Channels).
-		Msg("UI status request handled")
-}
-
-// handleUIUrls handles GET /api/v1/ui/urls - returns M3U and XMLTV URLs.
-func (s *Server) handleUIUrls(w http.ResponseWriter, r *http.Request) {
-	logger := log.WithComponentFromContext(r.Context(), "api.ui")
-
-	s.mu.RLock()
-	cfg := s.cfg
-	s.mu.RUnlock()
-
-	// Build base URL from request (use Host header)
-	scheme := "http"
-	if r.TLS != nil {
-		scheme = "https"
-	}
-	baseURL := fmt.Sprintf("%s://%s", scheme, r.Host)
-
-	// Get playlist filename from config or env
-	playlistName := os.Getenv("XG2G_PLAYLIST_FILENAME")
-	if strings.TrimSpace(playlistName) == "" {
-		playlistName = "playlist.m3u"
-	}
-
-	// Build URLs
-	m3uURL := fmt.Sprintf("%s/files/%s", baseURL, playlistName)
-	xmltvURL := ""
-	if cfg.XMLTVPath != "" {
-		xmltvURL = fmt.Sprintf("%s/%s", baseURL, cfg.XMLTVPath)
-	}
-
-	resp := map[string]any{
-		"m3u_url":   m3uURL,
-		"xmltv_url": xmltvURL,
-		"hdhr_url":  fmt.Sprintf("%s/device.xml", baseURL),
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-API-Version", "1")
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		logger.Error().Err(err).Msg("failed to encode UI urls response")
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	logger.Debug().
-		Str("event", "ui.urls.success").
-		Str("m3u_url", m3uURL).
-		Str("xmltv_url", xmltvURL).
-		Msg("UI URLs request handled")
-}
-
-// handleUIRefresh handles POST /api/v1/ui/refresh - triggers channel/EPG refresh.
-// This is a simplified refresh endpoint for the Web UI (no authentication required).
-func (s *Server) handleUIRefresh(w http.ResponseWriter, r *http.Request) {
-	logger := log.WithComponentFromContext(r.Context(), "api.ui")
-
-	// Try to acquire the refresh flag atomically
-	if !s.refreshing.CompareAndSwap(false, true) {
-		logger.Warn().Str("event", "ui.refresh.conflict").Msg("refresh already in progress")
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Retry-After", "30")
-		w.WriteHeader(http.StatusConflict)
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"status":       "error",
-			"message":      "A refresh operation is already in progress",
-			"triggered_at": time.Now(),
-		})
-		return
-	}
-
-	// Release the flag when done
-	defer s.refreshing.Store(false)
-
-	// Trigger refresh
-	logger.Info().Str("event", "ui.refresh.started").Msg("refresh triggered from UI")
-
-	newStatus, err := s.refreshFn(r.Context(), s.cfg, s.streamDetector)
-	if err != nil {
-		logger.Error().Err(err).Str("event", "ui.refresh.failed").Msg("refresh failed")
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"status":       "error",
-			"message":      "Refresh failed",
-			"error":        err.Error(),
-			"triggered_at": time.Now(),
-		})
-		return
-	}
-
-	// Update status
-	s.mu.Lock()
-	s.status = *newStatus
-	s.mu.Unlock()
-
-	logger.Info().
-		Str("event", "ui.refresh.success").
-		Int("channels", newStatus.Channels).
-		Int("bouquets", newStatus.Bouquets).
-		Msg("refresh completed successfully")
-
-	w.Header().Set("Content-Type", "application/json")
-	resp := map[string]any{
-		"status":       "success",
-		"message":      "Refresh completed successfully",
-		"triggered_at": time.Now(),
-		"channels":     newStatus.Channels,
-		"bouquets":     newStatus.Bouquets,
-	}
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		logger.Error().Err(err).Msg("failed to encode UI refresh response")
-		return
-	}
-}
-
 // uiHandler returns a handler that serves the embedded Web UI
 func (s *Server) uiHandler() http.Handler {
 	subFS, err := fs.Sub(uiFS, "dist")
@@ -1174,37 +869,246 @@ func (s *Server) uiHandler() http.Handler {
 			http.Error(w, "UI not available", http.StatusInternalServerError)
 		})
 	}
-	return http.FileServer(http.FS(subFS))
-}
+	fileServer := http.FileServer(http.FS(subFS))
 
-// handleStatusV2Placeholder is a placeholder for v2 status endpoint
-func (s *Server) handleStatusV2Placeholder(w http.ResponseWriter, r *http.Request) {
-	logger := log.WithComponentFromContext(r.Context(), "api.v2")
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-API-Version", "2")
-
-	resp := map[string]string{
-		"message": "API v2 is under development",
-		"status":  "preview",
-	}
-
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		logger.Error().Err(err).Msg("failed to encode v2 placeholder response")
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-}
-
-// featureEnabled checks if a feature flag is enabled via environment variable
-func featureEnabled(flag string) bool {
-	val := os.Getenv("XG2G_FEATURE_" + flag)
-	return strings.ToLower(val) == "true" || val == "1"
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Assets (js, css, images) should be cached (hashed)
+		// Index.html should NOT be cached to ensure updates
+		path := r.URL.Path
+		if path == "/" || path == "/index.html" || path == "" || !strings.Contains(path, ".") {
+			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+			w.Header().Set("Pragma", "no-cache")
+			w.Header().Set("Expires", "0")
+		} else {
+			// Assets in /assets/ are hashed usually
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		}
+		fileServer.ServeHTTP(w, r)
+	})
 }
 
 // NewRouter creates and configures a new router with all middlewares and handlers.
 // This includes the logging middleware, security headers, and the API routes.
 func NewRouter(cfg config.AppConfig) http.Handler {
-	server := New(cfg, nil)
+	server := New(cfg, nil, nil)
 	return withMiddlewares(server.routes())
+}
+
+// handlePicons proxies picon requests to the backend receiver and caches them locally
+// Path: /picon/{ref}.png
+func (s *Server) handlePicons(w http.ResponseWriter, r *http.Request) {
+	ref := chi.URLParam(r, "ref")
+	if ref == "" {
+		http.Error(w, "Missing picon reference", http.StatusBadRequest)
+		return
+	}
+	// Decode URL-encoded chars if present
+	if decoded, err := url.PathUnescape(ref); err == nil {
+		ref = decoded
+	}
+
+	// normalizeRef is used for Upstream requests (needs colons usually)
+	// cacheRef is used for Local Filesystem (needs underscores for safety)
+
+	// Ensure we have a "Colon-style" ref for logical processing / upstream
+	processRef := strings.ReplaceAll(ref, "_", ":")
+
+	// Ensure we have an "Underscore-style" ref for filesystem
+	cacheRef := strings.ReplaceAll(processRef, ":", "_")
+
+	// Local Cache Path
+	piconDir := filepath.Join(s.cfg.DataDir, "picons")
+	if err := os.MkdirAll(piconDir, 0755); err != nil {
+		log.L().Error().Err(err).Msg("failed to create picon cache dir")
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	localPath := filepath.Join(piconDir, cacheRef+".png")
+
+	// 1. CACHE HIT
+	if _, err := os.Stat(localPath); err == nil {
+		logger := log.WithComponentFromContext(r.Context(), "picon")
+		logger.Info().Str("ref", ref).Msg("Serving from cache")
+		http.ServeFile(w, r, localPath)
+		return
+	}
+
+	// 2. CACHE MISS -> Download
+	upstreamBase := s.cfg.PiconBase
+	if upstreamBase == "" {
+		upstreamBase = s.cfg.OWIBase
+	}
+	if upstreamBase == "" {
+		http.Error(w, "Picon backend not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Use processRef (Colons) for upstream URL generation as Enigma2 expects colons or underscores depending on config
+	// Usually PiconURL converts to underscores internally, but let's be safe.
+	// Actually openwebif.PiconURL *already* converts to underscores!
+	// So passing processRef (colons) is fine.
+	upstreamURL := openwebif.PiconURL(upstreamBase, processRef)
+	logger := log.WithComponentFromContext(r.Context(), "picon")
+
+	// Acquire semaphore to protect upstream limit
+	select {
+	case s.piconSemaphore <- struct{}{}:
+		defer func() { <-s.piconSemaphore }()
+	case <-r.Context().Done():
+		return // Client gave up
+	}
+
+	logger.Info().Str("ref", processRef).Str("upstream_url", upstreamURL).Msg("Picon: Downloading to cache")
+
+	client := http.Client{
+		Timeout: 30 * time.Second,
+	}
+
+	resp, err := client.Get(upstreamURL)
+
+	// Fallback Logic
+	if (err == nil && resp.StatusCode == http.StatusNotFound) || err != nil {
+		if resp != nil {
+			resp.Body.Close()
+		}
+
+		// Normalize processRef (HD->SD fallback)
+		// e.g. 1:0:19... -> 1:0:1...
+		normalizedRef := openwebif.NormalizeServiceRefForPicon(processRef)
+		if normalizedRef != processRef {
+			fallbackURL := openwebif.PiconURL(upstreamBase, normalizedRef)
+			logger.Info().
+				Str("original_ref", processRef).
+				Str("normalized_ref", normalizedRef).
+				Str("fallback_url", fallbackURL).
+				Msg("Picon: attempting fallback")
+
+			respFallback, errFallback := client.Get(fallbackURL)
+			if errFallback == nil && respFallback.StatusCode == http.StatusOK {
+				resp = respFallback
+				err = nil
+			} else {
+				if respFallback != nil {
+					respFallback.Body.Close()
+				}
+			}
+		}
+	}
+
+	if err != nil {
+		logger.Error().Err(err).Str("url", upstreamURL).Msg("failed to fetch picon")
+		http.Error(w, "Failed to fetch picon", http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode != http.StatusNotFound {
+			logger.Warn().Int("status", resp.StatusCode).Str("url", upstreamURL).Msg("upstream returned error")
+		}
+		http.NotFound(w, r)
+		return
+	}
+
+	// 3. SAVE TO CACHE
+	tempFile, err := os.CreateTemp(piconDir, "picon-*.tmp")
+	if err != nil {
+		logger.Error().Err(err).Msg("failed to create temp picon file")
+		_, _ = io.Copy(w, resp.Body)
+		return
+	}
+	defer os.Remove(tempFile.Name())
+
+	if _, err := io.Copy(tempFile, resp.Body); err != nil {
+		logger.Error().Err(err).Msg("failed to write to temp picon file")
+		tempFile.Close()
+		http.Error(w, "Failed to cache picon", http.StatusInternalServerError)
+		return
+	}
+	tempFile.Close()
+
+	if err := os.Rename(tempFile.Name(), localPath); err != nil {
+		logger.Error().Err(err).Msg("failed to rename temp picon file to cache")
+		http.ServeFile(w, r, tempFile.Name())
+		return
+	}
+
+	// 4. SERVE
+	http.ServeFile(w, r, localPath)
+}
+
+// handleWebPlayer serves the embedded webplayer.html
+func (s *Server) handleWebPlayer(w http.ResponseWriter, r *http.Request) {
+	// Override global CSP to allow inline scripts/styles and external CDN (hls.js)
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob:; worker-src 'self' blob:; connect-src 'self'")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate") // Ensure updates are seen
+	if _, err := w.Write(webplayerHTML); err != nil {
+		logger := log.WithComponentFromContext(r.Context(), "api")
+		logger.Error().Err(err).Msg("failed to write webplayer html")
+	}
+}
+
+// handleStreamProxy proxies stream requests to the internal stream server (port 18000)
+// This avoids CORS issues and allows using relative paths in the webplayer
+func (s *Server) handleStreamProxy(w http.ResponseWriter, r *http.Request) {
+	// Destination: http://127.0.0.1:18000/hls/<path_after_stream>
+	// or simply proxy to 18000 and let it handle HLS detection?
+	// Request path: /stream/REF/playlist.m3u8 -> Target: /hls/REF
+	// Request path: /stream/REF/segment_X.m4s -> Target: /hls/REF/segment_X.m4s (or just relative?)
+
+	// Simplest approach: Proxy /stream/* to http://127.0.0.1:18000/hls/*
+	proxyPort := os.Getenv("XG2G_PROXY_PORT")
+	if proxyPort == "" {
+		proxyPort = "18000"
+	}
+	targetHost := "127.0.0.1:" + proxyPort
+
+	targetURL := &url.URL{
+		Scheme: "http",
+		Host:   targetHost,
+	}
+
+	proxy := httputil.NewSingleHostReverseProxy(targetURL)
+
+	// Rewriting Director
+	originalDirector := proxy.Director
+	proxy.Director = func(req *http.Request) {
+		originalDirector(req)
+		// Rewrite path: /stream/XXX -> /hls/XXX
+		// NOTE: The proxy server expects /hls/ prefix for HLS requests
+		if strings.HasPrefix(req.URL.Path, "/stream/") {
+			req.URL.Path = strings.Replace(req.URL.Path, "/stream/", "/hls/", 1)
+		}
+		req.Host = targetHost // Set Host header to satisfy proxy
+	}
+
+	// Important for streaming: flush immediately
+	proxy.FlushInterval = 100 * time.Millisecond
+
+	// Error handler
+	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		log.L().Error().Err(err).Msg("stream proxy failed")
+		w.WriteHeader(http.StatusBadGateway)
+	}
+
+	// Log start
+	log.L().Info().Str("path", r.URL.Path).Msg("stream proxy starting (port 18000)")
+
+	// Wrap writer to capture status
+	ww := &statusWriter{ResponseWriter: w, status: 200}
+	proxy.ServeHTTP(ww, r)
+
+	log.L().Info().Int("status", ww.status).Str("path", r.URL.Path).Msg("stream proxy finished")
+}
+
+type statusWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *statusWriter) WriteHeader(status int) {
+	w.status = status
+	w.ResponseWriter.WriteHeader(status)
 }

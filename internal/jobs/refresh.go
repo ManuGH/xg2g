@@ -7,7 +7,6 @@ import (
 	"context"
 
 	"errors"
-
 	"fmt"
 
 	"net/url"
@@ -219,10 +218,14 @@ func Refresh(ctx context.Context, cfg config.AppConfig, detector *openwebif.Stre
 				}
 			}
 
-			piconURL := ""
-			if cfg.PiconBase != "" {
-				piconURL = openwebif.PiconURL(cfg.PiconBase, ref)
-			}
+			// Use local proxy for picons to avoid Mixed Content / CORS issues
+			// Use underscore-based naming for browser compatibility
+			piconRef := strings.ReplaceAll(ref, ":", "_")
+			piconRef = strings.TrimRight(piconRef, "_")
+
+			// Use relative URL for internal components (WebUI, API)
+			// The M3U writer will prepend the public URL if configured
+			logoURL := fmt.Sprintf("/logos/%s.png?v=%d", piconRef, time.Now().Unix())
 
 			// Naive channel type classification based on name/ref hints.
 			lr := strings.ToLower(name + " " + ref)
@@ -241,7 +244,7 @@ func Refresh(ctx context.Context, cfg config.AppConfig, detector *openwebif.Stre
 				Name:    name,
 				TvgID:   makeTvgID(name, ref), // Human-readable IDs (e.g., "das-erste-hd-3fa92b")
 				TvgChNo: channelNumber,        // Sequential numbering based on bouquet position
-				TvgLogo: piconURL,
+				TvgLogo: logoURL,
 				Group:   bouquetName, // Use actual bouquet name as group
 				URL:     streamURL,
 			})
@@ -258,11 +261,19 @@ func Refresh(ctx context.Context, cfg config.AppConfig, detector *openwebif.Stre
 	// Sanitize filename for security
 	safeName, err := sanitizeFilename(playlistName)
 	if err != nil {
-		metrics.IncRefreshFailure("sanitize_filename")
-		return nil, fmt.Errorf("invalid playlist filename: %w", err)
+		logger.Warn().Err(err).Msg("failed to sanitize playlist filename, using default")
+		safeName = "playlist.m3u"
 	}
+
+	// Trigger background picon pre-warm (don't block refresh)
+	go PrewarmPicons(context.Background(), cfg, items)
+
+	// Generate M3U
 	playlistPath := filepath.Join(cfg.DataDir, safeName)
-	if err := writeM3U(ctx, playlistPath, items); err != nil {
+	// Pass Public URL to M3U writer for absolute paths in M3U (Plex compatibility)
+	// WebUI uses relative paths internally
+	publicURL := os.Getenv("XG2G_PUBLIC_URL")
+	if err := writeM3U(ctx, playlistPath, items, publicURL); err != nil {
 		metrics.IncRefreshFailure("write_m3u")
 		metrics.RecordPlaylistFileValidity("m3u", false)
 		return nil, fmt.Errorf("failed to write M3U playlist: %w", err)
@@ -288,7 +299,12 @@ func Refresh(ctx context.Context, cfg config.AppConfig, detector *openwebif.Stre
 		for _, it := range items {
 			ch := epg.Channel{ID: it.TvgID, DisplayName: []string{it.Name}}
 			if it.TvgLogo != "" {
-				ch.Icon = &epg.Icon{Src: it.TvgLogo}
+				// Use absolute URL for XMLTV as well (Plex requirement)
+				logo := it.TvgLogo
+				if publicURL != "" && strings.HasPrefix(logo, "/") {
+					logo = strings.TrimRight(publicURL, "/") + logo
+				}
+				ch.Icon = &epg.Icon{Src: logo}
 			}
 			xmlCh = append(xmlCh, ch)
 		}

@@ -63,7 +63,7 @@ func TestHandleStatus(t *testing.T) {
 				Version: tt.version,
 				DataDir: t.TempDir(),
 			}
-			srv := api.New(cfg, nil)
+			srv := api.New(cfg, nil, nil)
 			srv.SetStatus(jobs.Status{
 				Version:  tt.version,
 				LastRun:  tt.lastRun,
@@ -128,7 +128,7 @@ func TestHandleStatus_JSONStructure(t *testing.T) {
 		Version: "1.7.0",
 		DataDir: t.TempDir(),
 	}
-	srv := api.New(cfg, nil)
+	srv := api.New(cfg, nil, nil)
 	srv.SetStatus(jobs.Status{
 		Version:  "1.7.0",
 		LastRun:  time.Date(2025, 11, 1, 10, 0, 0, 0, time.UTC),
@@ -194,7 +194,7 @@ func TestHandleRefresh(t *testing.T) {
 				Version: "1.7.0",
 				DataDir: t.TempDir(),
 			}
-			srv := api.New(cfg, nil)
+			srv := api.New(cfg, nil, nil)
 
 			// Set mock refresh function to avoid actual refresh
 			srv.SetRefreshFunc(func(ctx context.Context, cfg config.AppConfig, _ *openwebif.StreamDetector) (*jobs.Status, error) {
@@ -232,7 +232,7 @@ func TestHandleRefresh_Concurrency(t *testing.T) {
 		Version: "1.7.0",
 		DataDir: t.TempDir(),
 	}
-	srv := api.New(cfg, nil)
+	srv := api.New(cfg, nil, nil)
 
 	// Track refresh calls
 	refreshCalled := 0
@@ -279,7 +279,7 @@ func TestHandleStatus_MethodNotAllowed(t *testing.T) {
 		Version: "1.7.0",
 		DataDir: t.TempDir(),
 	}
-	srv := api.New(cfg, nil)
+	srv := api.New(cfg, nil, nil)
 	handler := v1.NewHandler(srv)
 
 	// Test that POST is not allowed for status endpoint

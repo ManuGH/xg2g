@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
   xg2g:
-    image: ghcr.io/manugh/xg2g:latest
+    image: xg2g:latest
     container_name: xg2g
 
     # Run as specified user (default: root 0:0)
@@ -88,12 +88,12 @@ services:
     # ===========================================================================
     environment:
       # OpenWebIF
-      - XG2G_OWI_BASE=${OWI_HOST:+http://${OWI_HOST}:${OWI_PORT:-80}}
+      - XG2G_OWI_BASE=${XG2G_OWI_BASE:-${OWI_HOST:+http://${OWI_HOST}:${OWI_PORT:-80}}}
       - XG2G_OWI_USER=${OWI_USER}
       - XG2G_OWI_PASS=${OWI_PASS}
 
       # Main Configuration
-      - XG2G_BOUQUET=${DEFAULT_BOUQUET:-Favourites}
+      - XG2G_BOUQUET=${XG2G_BOUQUET:-${DEFAULT_BOUQUET:-Favourites}}
       - XG2G_INITIAL_REFRESH=${INITIAL_REFRESH:-true}
 
       # =========================================================================
@@ -127,7 +127,7 @@ services:
       - XG2G_RATE_LIMIT_BURST=${RATE_LIMIT_BURST:-20}
 
     volumes:
-      - xg2g-data:/data
+      - ./data:/data
 
     # ===========================================================================
     # HEALTHCHECK
@@ -140,6 +140,3 @@ services:
       start_period: 10s
 
     restart: "${RESTART_POLICY:-unless-stopped}"
-
-volumes:
-  xg2g-data:

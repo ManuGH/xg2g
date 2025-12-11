@@ -17,6 +17,8 @@ import (
 	xglog "github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/proxy"
+	xgtls "github.com/ManuGH/xg2g/internal/tls"
+	"github.com/ManuGH/xg2g/internal/validation"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -86,8 +88,52 @@ func main() {
 			Msg("EPG enabled but no XMLTV path set, using default")
 	}
 
+	// -------------------------------------------------------------------------
+	// Pre-flight Checks (Fail Fast)
+	// -------------------------------------------------------------------------
+	if err := validation.PerformStartupChecks(ctx, cfg); err != nil {
+		logger.Fatal().
+			Err(err).
+			Str("event", "startup.check_failed").
+			Msg("Startup checks failed. Please verify configuration and permissions.")
+	}
+	// -------------------------------------------------------------------------
+
 	// Parse server configuration
 	serverCfg := config.ParseServerConfig()
+
+	// Auto-generate TLS certificates if enabled but not provided
+	if cfg.TLSCert != "" || cfg.TLSKey != "" {
+		// User provided explicit paths, use them as-is
+		if cfg.TLSCert != "" && cfg.TLSKey != "" {
+			logger.Info().
+				Str("cert", cfg.TLSCert).
+				Str("key", cfg.TLSKey).
+				Msg("Using user-provided TLS certificates")
+		} else {
+			logger.Fatal().
+				Str("event", "tls.config.invalid").
+				Str("cert", cfg.TLSCert).
+				Str("key", cfg.TLSKey).
+				Msg("Both XG2G_TLS_CERT and XG2G_TLS_KEY must be set together")
+		}
+	} else if config.ParseBool("XG2G_TLS_ENABLED", false) {
+		// Auto-generate self-signed certificates
+		tlsCfg := xgtls.Config{
+			CertPath: config.ParseString("XG2G_TLS_CERT", ""),
+			KeyPath:  config.ParseString("XG2G_TLS_KEY", ""),
+			Logger:   logger,
+		}
+		certPath, keyPath, err := xgtls.EnsureCertificates(tlsCfg)
+		if err != nil {
+			logger.Fatal().
+				Err(err).
+				Str("event", "tls.ensure.failed").
+				Msg("Failed to ensure TLS certificates")
+		}
+		cfg.TLSCert = certPath
+		cfg.TLSKey = keyPath
+	}
 
 	logger.Info().
 		Str("event", "startup").
@@ -104,6 +150,9 @@ func main() {
 	logger.Info().Msgf("→ EPG: %s (%d days)", cfg.XMLTVPath, cfg.EPGDays)
 	if cfg.APIToken != "" {
 		logger.Info().Msg("→ API token: configured")
+	}
+	if cfg.TLSCert != "" && cfg.TLSKey != "" {
+		logger.Info().Msgf("→ TLS: enabled (cert: %s, key: %s)", cfg.TLSCert, cfg.TLSKey)
 	}
 	logger.Info().Msgf("→ Data dir: %s", cfg.DataDir)
 
@@ -166,13 +215,27 @@ func main() {
 		logger.Warn().Msg("→ No channels loaded. Trigger manual refresh via: POST /api/refresh")
 	}
 
+	// Initialize ConfigManager
+	configMgr := config.NewManager(*configPath)
+	if *configPath == "" {
+		// If no config file specified, default to data dir
+		configMgr = config.NewManager("config.yaml") // or data/config.yaml?
+		// User requested precedence: ENV > config.yaml > defaults.
+		// If configPath is empty, Loader uses defaults.
+		// If we want to save changes, we need a path.
+		// Let's defer to a safe default if not provided: "./config.yaml" or cfg.DataDir/config.yaml
+		// For now, let's use "config.yaml" in CWD if not specified, matching legacy behavior potentially?
+		// Better: use the *configPath if set, otherwise "config.yaml"
+	}
+
 	// Create API handler
-	s := api.New(cfg, streamDetector)
+	s := api.New(cfg, streamDetector, configMgr)
 
 	// Build daemon dependencies
 	deps := daemon.Deps{
 		Logger:         logger,
 		Config:         cfg,
+		ConfigManager:  configMgr,
 		APIHandler:     s.Handler(),
 		MetricsHandler: promhttp.Handler(),
 		ProxyConfig:    proxyConfig,

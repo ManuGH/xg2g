@@ -92,7 +92,30 @@ var (
 		Name: "xg2g_playlist_file_valid",
 		Help: "Whether playlist files exist and are readable (1=valid, 0=invalid)",
 	}, []string{"type"}) // type=m3u|xmltv
+
+	// Stream metrics
+	activeStreams = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "xg2g_active_streams",
+		Help: "Number of currently active streams",
+	}, []string{"type"}) // type=direct|transcode|repair
+
+	transcodeErrorsTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "xg2g_transcode_errors_total",
+		Help: "Total number of transcoding failures",
+	})
+
+	ffmpegRestartsTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "xg2g_ffmpeg_restarts_total",
+		Help: "Total number of ffmpeg process restarts",
+	})
 )
+
+func init() {
+	// Initialize vector metrics to 0 so they appear in output
+	activeStreams.WithLabelValues("direct")
+	activeStreams.WithLabelValues("transcode")
+	activeStreams.WithLabelValues("repair")
+}
 
 // RecordBouquetsCount records the total number of bouquets discovered.
 func RecordBouquetsCount(n int) { bouquetsTotal.Set(float64(n)) }
@@ -165,4 +188,24 @@ func RecordPlaylistFileValidity(fileType string, valid bool) {
 	} else {
 		playlistFileValid.WithLabelValues(fileType).Set(0)
 	}
+}
+
+// IncActiveStreams increments the active stream gauge for a given type.
+func IncActiveStreams(streamType string) {
+	activeStreams.WithLabelValues(streamType).Inc()
+}
+
+// DecActiveStreams decrements the active stream gauge for a given type.
+func DecActiveStreams(streamType string) {
+	activeStreams.WithLabelValues(streamType).Dec()
+}
+
+// IncTranscodeError increments the transcode error counter.
+func IncTranscodeError() {
+	transcodeErrorsTotal.Inc()
+}
+
+// IncFFmpegRestart increments the ffmpeg restart counter.
+func IncFFmpegRestart() {
+	ffmpegRestartsTotal.Inc()
 }

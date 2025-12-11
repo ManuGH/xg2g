@@ -26,7 +26,7 @@ func TestSecureFileServer_RangeRequests(t *testing.T) {
 		DataDir: tmpDir,
 		Version: "test",
 	}
-	srv := New(cfg, nil)
+	srv := New(cfg, nil, nil)
 
 	tests := []struct {
 		name        string
@@ -130,7 +130,7 @@ func TestSecureFileServer_ETagCaching(t *testing.T) {
 		DataDir: tmpDir,
 		Version: "test",
 	}
-	srv := New(cfg, nil)
+	srv := New(cfg, nil, nil)
 
 	// First request - get ETag
 	req1 := httptest.NewRequest(http.MethodGet, "/files/playlist.m3u", nil)
@@ -170,7 +170,7 @@ func TestSecureFileServer_PathTraversal(t *testing.T) {
 		DataDir: tmpDir,
 		Version: "test",
 	}
-	srv := New(cfg, nil)
+	srv := New(cfg, nil, nil)
 
 	tests := []struct {
 		name       string
@@ -246,7 +246,7 @@ func TestSecureFileServer_ContentType(t *testing.T) {
 		DataDir: tmpDir,
 		Version: "test",
 	}
-	srv := New(cfg, nil)
+	srv := New(cfg, nil, nil)
 
 	tests := []struct {
 		name            string
@@ -296,7 +296,7 @@ func TestSecureFileServer_MethodNotAllowed(t *testing.T) {
 		DataDir: tmpDir,
 		Version: "test",
 	}
-	srv := New(cfg, nil)
+	srv := New(cfg, nil, nil)
 
 	methods := []string{http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch}
 

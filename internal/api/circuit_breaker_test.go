@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"sync"
 	"testing"
 	"time"
 )
@@ -209,18 +210,44 @@ func TestNewCircuitBreaker_DefaultValues(t *testing.T) {
 }
 
 // TestCircuitBreaker_ConcurrentCalls tests thread safety.
-// TODO: Implement once circuit breaker is ready for testing.
 func TestCircuitBreaker_ConcurrentCalls(t *testing.T) {
-	t.Skip("TODO: Implement concurrent access tests")
+	cb := NewCircuitBreaker(10, 50*time.Millisecond)
+	const concurrentCalls = 20
 
-	// Use t.Parallel() and sync.WaitGroup to test concurrent calls
-	// Verify no race conditions (run with -race flag)
+	var wg sync.WaitGroup
+	wg.Add(concurrentCalls)
+
+	errChan := make(chan error, concurrentCalls)
+
+	for i := 0; i < concurrentCalls; i++ {
+		go func() {
+			defer wg.Done()
+			err := cb.Call(func() error {
+				time.Sleep(10 * time.Millisecond) // Simulate work
+				return nil
+			})
+			if err != nil {
+				errChan <- err
+			}
+		}()
+	}
+
+	wg.Wait()
+	close(errChan)
+
+	for err := range errChan {
+		t.Errorf("unexpected error during concurrent calls: %v", err)
+	}
+
+	if cb.State() != "closed" {
+		t.Errorf("expected closed state, got %s", cb.State())
+	}
 }
 
 // TestCircuitBreaker_ContextCancellation tests context handling.
-// TODO: Implement once circuit breaker supports context.
 func TestCircuitBreaker_ContextCancellation(t *testing.T) {
-	t.Skip("TODO: Circuit breaker does not currently use context")
-	// Future enhancement: Pass context to Call() method
-	// and check context.Done() before executing function
+	// Feature Request: Circuit breaker should respect context cancellation.
+	// Currently it does not take a context.
+	// This test documents the missing feature.
+	t.Skip("Skipping: CircuitBreaker.Call does not yet accept context.Context")
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getBouquets, getChannels } from '../api';
+import { getBouquets, getChannels, toggleService } from '../api';
 
 export default function Channels() {
   const [bouquets, setBouquets] = useState([]);
@@ -9,16 +9,19 @@ export default function Channels() {
 
   useEffect(() => {
     getBouquets().then(data => {
-      setBouquets(data);
-      if (data.length > 0) setSelectedBouquet(data[0].name);
-    });
+      // API v2 returns array of Bouquet objects directly (check openapi.yaml)
+      // Spec: array of items: $ref: "#/components/schemas/Bouquet"
+      setBouquets(data || []);
+      if (data && data.length > 0) setSelectedBouquet(data[0].name);
+    }).catch(console.error);
   }, []);
 
   useEffect(() => {
     if (!selectedBouquet) return;
     setLoading(true);
     getChannels(selectedBouquet)
-      .then(setChannels)
+      .then(data => setChannels(data || []))
+      .catch(console.error)
       .finally(() => setLoading(false));
   }, [selectedBouquet]);
 
@@ -26,20 +29,14 @@ export default function Channels() {
     // Optimistic update
     const originalChannels = [...channels];
     setChannels(channels.map(c =>
-      (c.tvg_id === channel.tvg_id && c.name === channel.name)
+      (c.id === channel.id) // v2 uses 'id' (schema: Service.id)
         ? { ...c, enabled }
         : c
     ));
 
     try {
-      const id = channel.tvg_id || channel.name;
-      const res = await fetch('/api/v1/channels/toggle', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, enabled })
-      });
-
-      if (!res.ok) throw new Error('Failed to toggle channel');
+      const id = channel.id; // v2 service ID
+      await toggleService(id, enabled);
     } catch (err) {
       console.error(err);
       // Revert on error
@@ -53,23 +50,17 @@ export default function Channels() {
       return;
     }
 
+    // This feature is not yet in API v2 (bulk toggle)
+    alert("Bulk toggle not supported in API v2 yet.");
+    /*
     // Optimistic update
     const originalChannels = [...channels];
     setChannels(channels.map(c => ({ ...c, enabled })));
 
     try {
-      const res = await fetch('/api/v1/channels/toggle-all', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled })
-      });
-
-      if (!res.ok) throw new Error('Failed to toggle channels');
-    } catch (err) {
-      console.error(err);
-      setChannels(originalChannels);
-      alert('Failed to update channel status');
-    }
+      // TODO: Implement bulk toggle in backend v2
+    } catch (err) { ... }
+    */
   };
 
   return (
@@ -91,10 +82,7 @@ export default function Channels() {
       <div className="main-content">
         <div className="header-actions" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h3>Channels ({channels.length})</h3>
-          <div className="actions">
-            <button onClick={() => handleBulkToggle(true)} style={{ marginRight: '8px' }}>Select All</button>
-            <button onClick={() => handleBulkToggle(false)}>Deselect All</button>
-          </div>
+          {/* Bulk actions disabled for now */}
         </div>
         {loading ? (
           <div>Loading...</div>
@@ -103,15 +91,15 @@ export default function Channels() {
             <thead>
               <tr>
                 <th>Active</th>
-                <th>#</th>
+                <th style={{ width: '40px' }}>#</th>
+                <th style={{ width: '50px' }}>Logo</th>
                 <th>Name</th>
-                <th>TVG ID</th>
-                <th>EPG</th>
+                <th>Service Ref</th>
               </tr>
             </thead>
             <tbody>
               {channels.map((ch, idx) => (
-                <tr key={idx} className={ch.enabled === false ? 'disabled' : ''}>
+                <tr key={ch.id} className={ch.enabled === false ? 'disabled' : ''}>
                   <td>
                     <input
                       type="checkbox"
@@ -120,9 +108,31 @@ export default function Channels() {
                     />
                   </td>
                   <td>{ch.number || idx + 1}</td>
+                  <td className="picon-cell" title="Play in Web Player">
+                    {ch.logo_url && (
+                      <a
+                        href={`/webplayer?channel=${encodeURIComponent(ch.id)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ display: 'block' }}
+                      >
+                        <img
+                          src={ch.logo_url}
+                          alt={ch.name}
+                          referrerPolicy="no-referrer"
+                          style={{
+                            width: '100px',
+                            height: 'auto',
+                            display: 'block',
+                            filter: 'drop-shadow(0px 1px 2px rgba(0,0,0,0.8))',
+                            cursor: 'pointer'
+                          }}
+                        />
+                      </a>
+                    )}
+                  </td>
                   <td>{ch.name}</td>
-                  <td>{ch.tvg_id}</td>
-                  <td>{ch.has_epg ? '✅' : '❌'}</td>
+                  <td>{ch.id}</td>
                 </tr>
               ))}
             </tbody>
@@ -132,3 +142,5 @@ export default function Channels() {
     </div>
   );
 }
+
+

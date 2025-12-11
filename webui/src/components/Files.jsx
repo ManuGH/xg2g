@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
+import { getHealth, regeneratePlaylist } from '../api';
 
 function Files() {
-  const [status, setStatus] = useState(null);
+  const [health, setHealth] = useState(null);
   const [loading, setLoading] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [error, setError] = useState(null);
@@ -9,17 +10,8 @@ function Files() {
   const fetchStatus = async () => {
     setLoading(true);
     try {
-      const [filesRes, urlsRes] = await Promise.all([
-        fetch('/api/files/status'),
-        fetch('/api/v1/ui/urls')
-      ]);
-
-      if (!filesRes.ok || !urlsRes.ok) throw new Error('Failed to fetch status');
-
-      const filesData = await filesRes.json();
-      const urlsData = await urlsRes.json();
-
-      setStatus({ ...filesData, urls: urlsData });
+      const data = await getHealth();
+      setHealth(data);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -34,9 +26,9 @@ function Files() {
   const handleRegenerate = async () => {
     setRegenerating(true);
     try {
-      const res = await fetch('/api/m3u/regenerate', { method: 'POST' });
-      if (!res.ok) throw new Error('Regeneration failed');
-      await fetchStatus(); // Refresh status
+      await regeneratePlaylist();
+      // Wait a bit for files to likely be written before refreshing status
+      setTimeout(fetchStatus, 1000);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -44,8 +36,12 @@ function Files() {
     }
   };
 
-  if (loading && !status) return <div>Loading...</div>;
+  if (loading && !health) return <div>Loading...</div>;
   if (error) return <div className="error">Error: {error}</div>;
+
+  const hdhrUrl = `${window.location.protocol}//${window.location.host}/device.xml`;
+  const m3uUrl = '/files/playlist.m3u';
+  const xmltvUrl = '/files/epg.xml';
 
   return (
     <div className="files-container">
@@ -60,48 +56,44 @@ function Files() {
       <div className="file-list">
         <div className="file-card">
           <h3>M3U Playlist</h3>
-          {status?.m3u?.exists ? (
-            <>
-              <p>Size: {(status.m3u.size / 1024).toFixed(2)} KB</p>
-              <p>Modified: {new Date(status.m3u.last_modified).toLocaleString()}</p>
-              <a href="/api/m3u/download" className="button" download>Download M3U</a>
-            </>
-          ) : (
-            <p className="missing">File missing</p>
-          )}
+          <p className="description">Standard M3U8 playlist for VLC, Kodi, TiviMate.</p>
+          <a href={m3uUrl} className="button" download>Download M3U</a>
         </div>
 
         <div className="file-card">
           <h3>XMLTV Guide</h3>
-          {status?.xmltv?.exists ? (
-            <>
-              <p>Size: {(status.xmltv.size / 1024 / 1024).toFixed(2)} MB</p>
-              <p>Modified: {new Date(status.xmltv.last_modified).toLocaleString()}</p>
-              <a href="/api/xmltv/download" className="button" download>Download XMLTV</a>
-            </>
+          <p className="description">EPG Data.</p>
+          {health?.epg?.status === 'ok' ? (
+            <p className="success">EPG Loaded</p>
           ) : (
-            <p className="missing">File missing</p>
+            <p className="warning">EPG Missing or Partial</p>
           )}
+          <div className="code-block" style={{ marginBottom: '10px' }}>
+            {`${window.location.protocol}//${window.location.host}/xmltv.xml`}
+          </div>
+          <div className="actions-row" style={{ display: 'flex', gap: '10px' }}>
+            <button
+              className="button secondary"
+              onClick={() => navigator.clipboard.writeText(`${window.location.protocol}//${window.location.host}/xmltv.xml`)}
+            >
+              Copy URL
+            </button>
+            <a href="/xmltv.xml" className="button" download>Download</a>
+          </div>
         </div>
 
         <div className="file-card">
           <h3>HDHomeRun (Plex)</h3>
           <p className="description">Use this IP/URL to add xg2g as a DVR in Plex or Jellyfin.</p>
-          {status?.urls?.hdhr_url ? (
-            <>
-              <div className="code-block">
-                {status.urls.hdhr_url.replace('/device.xml', '')}
-              </div>
-              <button
-                className="button secondary"
-                onClick={() => navigator.clipboard.writeText(status.urls.hdhr_url.replace('/device.xml', ''))}
-              >
-                Copy IP
-              </button>
-            </>
-          ) : (
-            <p className="missing">Loading...</p>
-          )}
+          <div className="code-block">
+            {hdhrUrl.replace('/device.xml', '')}
+          </div>
+          <button
+            className="button secondary"
+            onClick={() => navigator.clipboard.writeText(hdhrUrl.replace('/device.xml', ''))}
+          >
+            Copy IP
+          </button>
         </div>
       </div>
     </div>
@@ -109,3 +101,4 @@ function Files() {
 }
 
 export default Files;
+

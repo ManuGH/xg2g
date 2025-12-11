@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>xg2g WebPlayer</title>
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <style>
+    :root {
+      --bg-color: #000000;
+      --sidebar-width: 320px;
+      --accent-color: #0a84ff;
+      --text-primary: #ffffff;
+      --text-secondary: #8e8e93;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-primary);
+      height: 100vh;
+      width: 100vw;
+      overflow: hidden;
+      display: flex;
+    }
+
+    /* Sidebar - Hidden by default in Immersive Mode */
+    #sidebar {
+      width: var(--sidebar-width);
+      background: rgba(20, 20, 20, 0.95);
+      border-right: 1px solid #333;
+      display: flex;
+      flex-direction: column;
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      transform: translateX(-100%);
+      /* Hidden by default */
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      z-index: 100;
+      backdrop-filter: blur(20px);
+    }
+
+    #sidebar.visible {
+      transform: translateX(0);
+    }
+
+    /* Hover area to reveal sidebar */
+    #sidebar-trigger {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 20px;
+      z-index: 90;
+    }
+
+    .sidebar-header {
+      padding: 15px;
+      border-bottom: 1px solid #333;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    /* Bouquet Selector */
+    select.bouquet-select {
+      background: #333;
+      color: white;
+      border: none;
+      padding: 8px;
+      border-radius: 6px;
+      font-size: 14px;
+      width: 100%;
+      outline: none;
+      appearance: none;
+    }
+
+    .search-input {
+      width: 100%;
+      background: #333;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 6px;
+      color: white;
+      font-size: 14px;
+      outline: none;
+    }
+
+    .channel-list {
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .channel-item {
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      cursor: pointer;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .channel-item:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .channel-item.active {
+      background: rgba(10, 132, 255, 0.2);
+      border-left: 3px solid var(--accent-color);
+    }
+
+    .channel-logo {
+      width: 40px;
+      height: 40px;
+      background: #222;
+      border-radius: 6px;
+      margin-right: 15px;
+      object-fit: contain;
+    }
+
+    .channel-info {
+      flex: 1;
+    }
+
+    .channel-name {
+      font-weight: 500;
+      font-size: 15px;
+    }
+
+    /* Main Video Area */
+    #main {
+      flex: 1;
+      position: relative;
+      background: #000;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 100%;
+      height: 100%;
+    }
+
+    video {
+      width: 100%;
+      height: 100%;
+      max-height: 100vh;
+      outline: none;
+      object-fit: contain;
+    }
+
+    /* Loading Spinner */
+    #loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      display: none;
+    }
+
+    .spinner {
+      width: 50px;
+      height: 50px;
+      border: 3px solid rgba(255, 255, 255, 0.2);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    /* Debug Overlay */
+    #debug-overlay {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 15px;
+      border-radius: 8px;
+      font-family: monospace;
+      font-size: 12px;
+      color: #0f0;
+      pointer-events: none;
+      display: none;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    #debug-overlay.visible {
+      display: block;
+    }
+
+    /* Unmute Button */
+    #unmute-btn {
+      position: absolute;
+      bottom: 100px;
+      background: rgba(255, 255, 255, 0.2);
+      padding: 10px 20px;
+      border-radius: 30px;
+      font-weight: 600;
+      cursor: pointer;
+      backdrop-filter: blur(10px);
+      display: none;
+      transition: background 0.2s;
+    }
+
+    #unmute-btn:hover {
+      background: rgba(255, 255, 255, 0.4);
+    }
+
+    /* Custom Context Menu */
+    #context-menu {
+      position: fixed;
+      background: rgba(20, 20, 20, 0.95);
+      border: 1px solid #444;
+      border-radius: 8px;
+      padding: 5px 0;
+      min-width: 150px;
+      display: none;
+      z-index: 1000;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(10px);
+    }
+
+    .menu-item {
+      padding: 8px 15px;
+      font-size: 14px;
+      cursor: pointer;
+      color: #eee;
+    }
+
+    .menu-item:hover {
+      background: var(--accent-color);
+      color: white;
+    }
+  </style>
+</head>
+
+<body oncontextmenu="return false;">
+
+  <!-- Hover trigger -->
+  <div id="sidebar-trigger"></div>
+
+  <!-- Sidebar -->
+  <aside id="sidebar">
+    <div class="sidebar-header">
+      <select id="bouquet-select" class="bouquet-select" onchange="loadChannelsForBouquet(this.value)"></select>
+      <input type="text" class="search-input" id="search" placeholder="Search..." oninput="filterChannels()">
+    </div>
+    <div class="channel-list" id="channel-list"></div>
+  </aside>
+
+  <!-- Main Player -->
+  <main id="main">
+    <!-- CONTROLS ENABLED as requested by User -->
+    <video id="video" controls playsinline
+      poster="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"></video>
+
+    <div id="loading">
+      <div class="spinner"></div>
+    </div>
+    <div id="unmute-btn" onclick="unmuteVideo()">🔇 Click to Unmute</div>
+
+    <div id="debug-overlay">
+      <div>STATE: <span id="d-state">IDLE</span></div>
+      <div>RES: <span id="d-res">-</span></div>
+      <div>BUF: <span id="d-buf">0.0s</span></div>
+      <div>LAT: <span id="d-lat">0.0s</span></div>
+      <div>DROP: <span id="d-drop">0</span></div>
+      <div>ERR: <span id="d-err">0</span></div>
+    </div>
+  </main>
+
+  <div id="context-menu">
+    <div class="menu-item" onclick="toggleSidebar()">Toggle Channel List</div>
+    <div class="menu-item" onclick="toggleDebug()">Toggle Stream Info</div>
+    <div class="menu-item" onclick="location.reload()">Reload Player</div>
+  </div>
+
+  <script>
+    const video = document.getElementById('video');
+    const sidebar = document.getElementById('sidebar');
+    const loading = document.getElementById('loading');
+    const unmuteBtn = document.getElementById('unmute-btn');
+    const ctxMenu = document.getElementById('context-menu');
+    const bouquetSelect = document.getElementById('bouquet-select');
+
+    // Debug Nodes
+    const dState = document.getElementById('d-state');
+    const dRes = document.getElementById('d-res');
+    const dBuf = document.getElementById('d-buf');
+    const dLat = document.getElementById('d-lat');
+    const dDrop = document.getElementById('d-drop');
+    const dErr = document.getElementById('d-err');
+
+    let allChannels = [];
+    let hls = null;
+    let errorCount = 0;
+
+    // --- Init ---
+    document.addEventListener('DOMContentLoaded', async () => {
+      // 1. Fetch Bouquets
+      await fetchBouquets();
+
+      // 2. Fetch All Channels (or default bouquet)
+      // We start by fetching ALL so we can find the channel from ID even if not in first bouquet?
+      // Actually, Dashboard fetches all for the selected bouquet.
+      // If we deep link, we might not know the bouquet.
+      // Strategy: Fetch ALL services initially to support deep link, or fetch bouquets first?
+      // Let's fetch Bouquets, select the first one, load it.
+      // BUT if we have a deep link, we need to find that channel.
+      // We will look up the channel in "All Services" via a separate call if needed, 
+      // or just trust the ID is valid and play it, while loading the bouquet list separately.
+
+      // Let's load the default view (First Bouquet)
+      if (bouquetSelect.options.length > 0) {
+        await loadChannelsForBouquet(bouquetSelect.options[0].value);
+      } else {
+        // Fallback if no bouquets
+        await loadChannelsForBouquet('');
+      }
+
+      // 3. Handle Auto-Play from URL
+      const urlParams = new URLSearchParams(window.location.search);
+      const channelId = urlParams.get('channel');
+
+      if (channelId) {
+        console.log("Deep link channel:", channelId);
+        // We might not have this channel in the current 'allChannels' list if we only loaded one bouquet.
+        // But we want to play it regardless.
+        // We can synthesize a channel object or fetch it.
+        // Since we don't have a "get single channel" API easily without iterating, 
+        // we'll just construct the stream URL directly.
+        // We try to find it in the current list to get the name/logo.
+        let ch = allChannels.find(c => c.id === channelId);
+
+        if (!ch) {
+          // Channel not in current bouquet? Try to find which bouquet it belongs to?
+          // Or just play it blindly.
+          console.log("Channel not found in current list, playing blindly by ID");
+          ch = { id: channelId, name: "Channel " + channelId, logo_url: "" };
+        }
+
+        playChannel(ch); // Play immediately
+      } else {
+        sidebar.classList.add('visible');
+      }
+
+      // Sidebar interactions
+      document.getElementById('sidebar-trigger').addEventListener('mouseenter', () => sidebar.classList.add('visible'));
+      document.getElementById('main').addEventListener('click', () => {
+        sidebar.classList.remove('visible');
+        ctxMenu.style.display = 'none';
+      });
+    });
+
+    // --- Context Menu ---
+    document.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      ctxMenu.style.display = 'block';
+      ctxMenu.style.left = e.pageX + 'px';
+      ctxMenu.style.top = e.pageY + 'px';
+    });
+    function toggleDebug() { document.getElementById('debug-overlay').classList.toggle('visible'); ctxMenu.style.display = 'none'; }
+    function toggleSidebar() { sidebar.classList.toggle('visible'); ctxMenu.style.display = 'none'; }
+
+    // --- Data Loading ---
+    async function fetchWithAuth(url) {
+      const token = localStorage.getItem('XG2G_API_TOKEN');
+      const headers = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch(url, { headers });
+      if (!res.ok) throw new Error(`API Error: ${res.status}`);
+      return res.json();
+    }
+
+    async function fetchBouquets() {
+      try {
+        // api.js uses /api/services/bouquets (No v2 prefix explicitly here, but router mounts handler at /api)
+        // Generated code usually maps paths like /services/bouquets directly under /api base.
+        const bouquets = await fetchWithAuth('/api/services/bouquets');
+
+        bouquetSelect.innerHTML = '';
+        bouquets.forEach(b => {
+          const opt = document.createElement('option');
+          opt.value = b.name;
+          opt.textContent = b.name;
+          bouquetSelect.appendChild(opt);
+        });
+      } catch (e) {
+        console.error("Bouquet fetch error:", e);
+      }
+    }
+
+    async function loadChannelsForBouquet(bouquet) {
+      try {
+        loading.style.display = 'block';
+        let url = '/api/services'; // V2 endpoint
+        if (bouquet) {
+          url = `/api/services?bouquet=${encodeURIComponent(bouquet)}`;
+        }
+
+        // If fetching all (-1 or empty), V2 might require explicit param or different endpoint?
+        // Try fetching.
+        try {
+          allChannels = await fetchWithAuth(url);
+        } catch (e) {
+          // Determine if 404/401
+          console.warn("V2 API failed:", e);
+          // Fallback to V1 if it were available (but it's not)
+          // Just stop loading
+          dState.innerText = "API ERR";
+        }
+
+        renderChannels(allChannels || []);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        loading.style.display = 'none';
+      }
+    }
+
+    function renderChannels(list) {
+      const cont = document.getElementById('channel-list');
+      cont.innerHTML = '';
+      list.forEach(ch => {
+        const div = document.createElement('div');
+        div.className = 'channel-item';
+        div.innerHTML = `
+          <img src="${ch.logo_url || ''}" class="channel-logo" onerror="this.style.opacity=0">
+          <div class="channel-info">
+            <div class="channel-name">${ch.name}</div>
+          </div>
+        `;
+        div.onclick = (e) => {
+          e.stopPropagation();
+          playChannel(ch);
+          // Update URL
+          const url = new URL(window.location);
+          url.searchParams.set('channel', ch.id);
+          window.history.pushState({}, '', url);
+          sidebar.classList.remove('visible');
+        };
+        cont.appendChild(div);
+      });
+    }
+
+    function filterChannels() {
+      const q = document.getElementById('search').value.toLowerCase();
+      renderChannels(allChannels.filter(c => c.name.toLowerCase().includes(q)));
+    }
+
+    // --- Playback ---
+    function playChannel(ch) {
+      console.log('Playing', ch.name, ch.service_ref);
+      loading.style.display = 'block';
+      unmuteBtn.style.display = 'none';
+      dState.innerText = "LOADING " + ch.name;
+
+      // Use service_ref for streaming, not the ID/slug which is for UI only.
+      // E.g. 1:0:19:132F:3EF:1:C00000:0:0:0:
+      // Use directory-style URL so relative segment paths (segment_000.ts) resolve correctly
+      const streamUrl = `/stream/${encodeURIComponent(ch.service_ref)}/playlist.m3u8`;
+
+      if (Hls.isSupported() && !shouldUseNativeHls()) {
+        if (hls) hls.destroy();
+        hls = new Hls({ enableWorker: true, lowLatencyMode: true });
+        hls.loadSource(streamUrl);
+        hls.attachMedia(video);
+        hls.on(Hls.Events.MANIFEST_PARSED, () => attemptPlay());
+        hls.on(Hls.Events.ERROR, (e, data) => handleHlsError(data));
+      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = streamUrl;
+        video.addEventListener('loadedmetadata', () => attemptPlay());
+        video.addEventListener('error', (e) => {
+          dState.innerText = "NATIVE ERR";
+          errorCount++;
+          dErr.innerText = errorCount;
+        });
+      }
+    }
+
+    async function attemptPlay() {
+      loading.style.display = 'none';
+      try {
+        await video.play();
+        dState.innerText = "PLAYING";
+      } catch (err) {
+        console.warn("Autoplay failed:", err);
+        dState.innerText = "AUTOPLAY BLOCKED";
+        // Try muted
+        video.muted = true;
+        try {
+          await video.play();
+          dState.innerText = "PLAYING (MUTED)";
+          unmuteBtn.style.display = 'block';
+        } catch (e) {
+          dState.innerText = "PLAY ERR: " + e.message;
+        }
+      }
+    }
+
+    function unmuteVideo() { video.muted = false; unmuteBtn.style.display = 'none'; }
+    function shouldUseNativeHls() {
+      const ua = navigator.userAgent.toLowerCase();
+      return (ua.includes('safari') && !ua.includes('chrome')) || ua.includes('iphone') || ua.includes('ipad');
+    }
+
+    function handleHlsError(data) {
+      if (data.fatal) {
+        dState.innerText = "FATAL: " + data.type;
+        errorCount++;
+        dErr.innerText = errorCount;
+        switch (data.type) {
+          case Hls.ErrorTypes.NETWORK_ERROR: hls.startLoad(); break;
+          case Hls.ErrorTypes.MEDIA_ERROR: hls.recoverMediaError(); break;
+          default: hls.destroy(); break;
+        }
+      }
+    }
+
+    // Stats
+    setInterval(() => {
+      if (video.videoWidth) dRes.innerText = `${video.videoWidth}x${video.videoHeight}`;
+      if (video.buffered.length) dBuf.innerText = (video.buffered.end(video.buffered.length - 1) - video.currentTime).toFixed(1) + 's';
+      if (hls && hls.latency) dLat.innerText = hls.latency.toFixed(1) + 's';
+    }, 1000);
+
+  </script>
+</body>
+
+</html>

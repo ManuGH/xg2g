@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 )
 
 // Item represents an M3U playlist entry with channel metadata.
@@ -21,7 +22,7 @@ type Item struct {
 }
 
 // WriteM3U writes an M3U playlist to the given writer.
-func WriteM3U(w io.Writer, items []Item) error {
+func WriteM3U(w io.Writer, items []Item, publicURL string) error {
 	buf := &bytes.Buffer{}
 	// Optional x-tvg-url header attribute for clients that auto-load EPG
 	if epgURL := os.Getenv("XG2G_X_TVG_URL"); epgURL != "" {
@@ -38,7 +39,16 @@ func WriteM3U(w io.Writer, items []Item) error {
 			fmt.Fprintf(&attrs, `tvg-chno="%d" `, it.TvgChNo)
 		}
 		fmt.Fprintf(&attrs, `tvg-id="%s" `, it.TvgID)
-		fmt.Fprintf(&attrs, `tvg-logo="%s" `, it.TvgLogo)
+
+		// Handle Logo URL (prepend publicURL if set and logo is relative)
+		logo := it.TvgLogo
+		if publicURL != "" && strings.HasPrefix(logo, "/") {
+			// Ensure no double slash if publicURL has trailing slash (it shouldn't, but safe)
+			base := strings.TrimRight(publicURL, "/")
+			logo = base + logo
+		}
+		fmt.Fprintf(&attrs, `tvg-logo="%s" `, logo)
+
 		fmt.Fprintf(&attrs, `group-title="%s" `, it.Group)
 		// tvg-name duplicates channel name to improve EPG mapping in some clients
 		fmt.Fprintf(&attrs, `tvg-name="%s"`, it.Name)

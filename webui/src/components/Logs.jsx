@@ -44,7 +44,7 @@ export default function Logs() {
           <tbody>
             {logs.map((log, idx) => (
               <tr key={idx} className={`log-row ${log.level.toLowerCase()}`}>
-                <td className="log-time">{new Date(log.timestamp).toLocaleTimeString()}</td>
+                <td className="log-time">{new Date(log.time).toLocaleTimeString()}</td>
                 <td className="log-level">{log.level}</td>
                 <td className="log-component">{log.component}</td>
                 <td className="log-message">{log.message}</td>

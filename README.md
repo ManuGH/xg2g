@@ -23,6 +23,7 @@ xg2g is the missing link between your classic Enigma2 receiver (VU+, Dreambox) a
 | Feature | xg2g | Standard Enigma2 |
 | :--- | :---: | :---: |
 | **Plex / Jellyfin** | ✅ Auto-Discovery (HDHomeRun) | ❌ Manual Config Hell |
+| **Plex on iPhone** | ✅ Optimized HLS Profile (Direct Play) | ❌ Transcoding/Timeouts |
 | **iPhone Audio** | ✅ Auto-Transcode (AC3→AAC) | ❌ Silent (Codec Error) |
 | **Channel Switching** | ✅ Instant (< 1ms cache) | 🐢 Slow |
 | **Management** | ✅ Beautiful Web Dashboard | ❌ Clunky Old WebIF |
@@ -38,7 +39,8 @@ Forget about editing config files. xg2g auto-detects your receiver, scans your b
 ### 📱 Universal Compatibility
 
 - **Plex & Jellyfin**: Appears as a native HDHomeRun tuner. DVR, Live TV, and Guide just work.
-- **iOS & Apple TV**: Real-time audio caching creates fully compliant HLS streams from satellite feeds.
+- **Plex on iPhone/iPad**: 🆕 Dedicated iOS profile for Direct Play without transcoding. HLS with H.264 repair + AAC for instant, buffer-free streaming. [Learn more](docs/PLEX_IOS_PROFILE.md)
+- **iOS & Apple TV**: Real-time audio transcoding creates fully compliant HLS streams from satellite feeds.
 - **VLC & Kodi**: Generates standard M3U playlists and XMLTV guides.
 
 ### ⚡ Rust-Powered Performance
@@ -98,6 +100,22 @@ make dev
 
 **That's it.** Configuration is now handled entirely in `.env`.
 
+### 🧪 Running Tests Locally
+
+Run the swift unit test suite (recommended for iterating):
+
+```bash
+make test
+```
+
+Or run everything including race detection, coverage, and security checks (used by CI):
+
+```bash
+make codex
+```
+
+> **Note**: `make test` requires no special setup. `make codex` requires `golangci-lint` and `govulncheck` (installable via `make dev-tools`).
+
 ---
 
 ## ✅ Quality Checks (Codex-ready)
@@ -113,9 +131,68 @@ make dev
 
 Everything is configured via `.env`. See `.env.example` for all available options, including:
 
-- **Security**: API Tokens, Rate Limiting
+- **Security**: API Tokens, Rate Limiting, HTTPS/TLS
 - **Performance**: Audio/Video Bitrates, Buffers
 - **Hardware**: GPU Transcoding (Mode 3), Device Mappings
+
+### 🔒 HTTPS/TLS Support
+
+xg2g supports HTTPS out of the box to fix Mixed Content issues with Plex Web (which runs on HTTPS).
+
+#### Option 1: Auto-Generated Self-Signed Certificates (Recommended for local use)
+
+Enable auto-generation on startup:
+
+```bash
+# In .env or environment
+XG2G_TLS_ENABLED=true
+```
+
+xg2g will automatically generate self-signed certificates in `certs/` on first start.
+
+**Automatic Network Detection:** The certificate includes all your server's network IPs (e.g., `10.10.55.14`) in addition to `localhost`, so `https://your-server-ip:8080` works without additional configuration - perfect for Plex accessing xg2g over the network!
+
+#### Option 2: Manual Certificate Generation
+
+```bash
+make certs
+```
+
+Then configure the paths:
+
+```bash
+export XG2G_TLS_CERT=certs/xg2g.crt
+export XG2G_TLS_KEY=certs/xg2g.key
+```
+
+#### Option 3: Use Your Own Certificates (Production)
+
+```bash
+export XG2G_TLS_CERT=/path/to/your/cert.pem
+export XG2G_TLS_KEY=/path/to/your/key.pem
+```
+
+#### Accepting Self-Signed Certificates
+
+When using self-signed certificates, you'll see a browser warning on first access. This is expected and safe for local use:
+
+1. Navigate to `https://your-server-ip:8080` (e.g., `https://10.10.55.14:8080`)
+2. Click "Advanced" → "Proceed to [host] (unsafe)"
+3. The certificate will be accepted for your browser session
+
+**For Plex Logo Fix:** Once you've accepted the certificate in your browser, Plex Web (which runs in the same browser) will be able to fetch logos from `https://your-server-ip:8080` without Mixed Content errors.
+
+See [Configuration Guide](docs/guides/CONFIGURATION.md) for more details.
+
+### API Reference (v2)
+
+xg2g now provides a standard OpenAPI v3 REST API.
+
+- **Spec**: [api/openapi.yaml](api/openapi.yaml)
+- **Authentication**: `Authorization: Bearer <XG2G_API_TOKEN>`
+- **Base URL**: `/api`
+
+See the spec file for full endpoint documentation.
 
 ### Hardware Acceleration (Mode 3)
 

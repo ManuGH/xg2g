@@ -73,129 +73,7 @@ func TestHandleRefreshInternal(t *testing.T) {
 	}
 }
 
-// TestHandleRefreshV1Direct tests handleRefreshV1 directly.
-func TestHandleRefreshV1Direct(t *testing.T) {
-	mockRefreshFn := func(ctx context.Context, cfg config.AppConfig, _ *openwebif.StreamDetector) (*jobs.Status, error) {
-		return &jobs.Status{
-			Version:  "test",
-			Channels: 5,
-			LastRun:  time.Now(),
-		}, nil
-	}
-
-	s := &Server{
-		cfg:       config.AppConfig{Bouquet: "test"},
-		refreshFn: mockRefreshFn,
-		cb:        NewCircuitBreaker(3, 5*time.Second),
-	}
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/refresh", nil)
-	req = req.WithContext(context.Background())
-	rr := httptest.NewRecorder()
-
-	s.handleRefreshV1(rr, req)
-
-	// Should set X-API-Version header
-	if got := rr.Header().Get("X-API-Version"); got != "1" {
-		t.Errorf("expected X-API-Version header %q, got %q", "1", got)
-	}
-
-	// Should return success
-	if rr.Code != http.StatusOK {
-		t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
-	}
-}
-
-// fakeConfigHolder is a test double for ConfigHolder.
-type fakeConfigHolder struct {
-	cfg       config.AppConfig
-	reloadErr error
-}
-
-func (f *fakeConfigHolder) Get() config.AppConfig {
-	return f.cfg
-}
-
-func (f *fakeConfigHolder) Reload(ctx context.Context) error {
-	return f.reloadErr
-}
-
-// TestHandleConfigReloadV1 tests the config reload endpoint.
-func TestHandleConfigReloadV1(t *testing.T) {
-	t.Run("no_config_holder", func(t *testing.T) {
-		s := &Server{
-			configHolder: nil, // Hot reload not enabled
-		}
-
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/config/reload", nil)
-		req = req.WithContext(context.Background())
-		rr := httptest.NewRecorder()
-
-		s.handleConfigReloadV1(rr, req)
-
-		if rr.Code != http.StatusServiceUnavailable {
-			t.Errorf("expected status %d, got %d", http.StatusServiceUnavailable, rr.Code)
-		}
-
-		if got := rr.Header().Get("X-API-Version"); got != "1" {
-			t.Errorf("expected X-API-Version header %q, got %q", "1", got)
-		}
-	})
-
-	t.Run("reload_success", func(t *testing.T) {
-		newCfg := config.AppConfig{
-			Bouquet: "updated-bouquet",
-			DataDir: "/tmp/new",
-		}
-		holder := &fakeConfigHolder{
-			cfg:       newCfg,
-			reloadErr: nil,
-		}
-
-		s := &Server{
-			cfg:          config.AppConfig{Bouquet: "old"},
-			configHolder: holder,
-		}
-
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/config/reload", nil)
-		req = req.WithContext(context.Background())
-		rr := httptest.NewRecorder()
-
-		s.handleConfigReloadV1(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
-		}
-
-		// Verify config was updated
-		got := s.GetConfig()
-		if got.Bouquet != newCfg.Bouquet {
-			t.Errorf("expected config Bouquet %q, got %q", newCfg.Bouquet, got.Bouquet)
-		}
-	})
-
-	t.Run("reload_failure", func(t *testing.T) {
-		holder := &fakeConfigHolder{
-			cfg:       config.AppConfig{},
-			reloadErr: context.DeadlineExceeded,
-		}
-
-		s := &Server{
-			cfg:          config.AppConfig{Bouquet: "old"},
-			configHolder: holder,
-		}
-
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/config/reload", nil)
-		req = req.WithContext(context.Background())
-		rr := httptest.NewRecorder()
-
-		s.handleConfigReloadV1(rr, req)
-
-		if rr.Code != http.StatusInternalServerError {
-			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
-		}
-	})
-}
+// Obsolete tests for V1 API removed
 
 // TestHandleLineupJSON tests the HDHomeRun lineup.json endpoint.
 func TestHandleLineupJSON(t *testing.T) {
@@ -338,74 +216,6 @@ func TestAPIError_Error(t *testing.T) {
 	}
 }
 
-// TestSetConfigHolder tests the SetConfigHolder method.
-func TestSetConfigHolder(t *testing.T) {
-	s := &Server{}
-	holder := &fakeConfigHolder{
-		cfg: config.AppConfig{Bouquet: "test"},
-	}
-
-	s.SetConfigHolder(holder)
-
-	if s.configHolder == nil {
-		t.Error("expected configHolder to be set")
-	}
-}
-
-// fakeAuditLogger implements AuditLogger for testing.
-type fakeAuditLogger struct{}
-
-func (f fakeAuditLogger) ConfigReload(actor, result string, details map[string]string)           {}
-func (f fakeAuditLogger) RefreshStart(actor string, bouquets []string)                           {}
-func (f fakeAuditLogger) RefreshComplete(actor string, channels, bouquets int, durationMS int64) {}
-func (f fakeAuditLogger) RefreshError(actor, reason string)                                      {}
-func (f fakeAuditLogger) AuthSuccess(remoteAddr, endpoint string)                                {}
-func (f fakeAuditLogger) AuthFailure(remoteAddr, endpoint, reason string)                        {}
-func (f fakeAuditLogger) AuthMissing(remoteAddr, endpoint string)                                {}
-func (f fakeAuditLogger) RateLimitExceeded(remoteAddr, endpoint string)                          {}
-
-// TestSetAuditLogger tests the SetAuditLogger method.
-func TestSetAuditLogger(t *testing.T) {
-	s := &Server{}
-	logger := fakeAuditLogger{}
-
-	s.SetAuditLogger(logger)
-
-	// Since auditLogger is not exported, we can't directly check it
-	// But we've exercised the code path
-}
-
-// TestHandleStatusV2Placeholder tests the v2 placeholder endpoint.
-func TestHandleStatusV2Placeholder(t *testing.T) {
-	s := &Server{}
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v2/status", nil)
-	req = req.WithContext(context.Background())
-	rr := httptest.NewRecorder()
-
-	s.handleStatusV2Placeholder(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
-	}
-
-	if got := rr.Header().Get("X-API-Version"); got != "2" {
-		t.Errorf("expected X-API-Version header %q, got %q", "2", got)
-	}
-
-	var resp map[string]string
-	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
-
-	if resp["status"] != "preview" {
-		t.Errorf("expected status %q, got %q", "preview", resp["status"])
-	}
-	if resp["message"] != "API v2 is under development" {
-		t.Errorf("expected message %q, got %q", "API v2 is under development", resp["message"])
-	}
-}
-
 // TestHDHomeRunServer tests the HDHomeRunServer getter.
 func TestHDHomeRunServer(t *testing.T) {
 	s := &Server{
@@ -424,7 +234,7 @@ func TestHandler(t *testing.T) {
 			DataDir: t.TempDir(),
 			Bouquet: "test",
 		}
-		s := New(cfg, nil)
+		s := New(cfg, nil, nil)
 		handler := s.Handler()
 
 		if handler == nil {
@@ -441,98 +251,48 @@ func TestHandler(t *testing.T) {
 		}
 	})
 
-	t.Run("with_audit_logger", func(t *testing.T) {
-		cfg := config.AppConfig{
-			DataDir: t.TempDir(),
-			Bouquet: "test",
-		}
-		s := New(cfg, nil)
-		s.SetAuditLogger(fakeAuditLogger{})
-		handler := s.Handler()
-
-		if handler == nil {
-			t.Fatal("expected handler, got nil")
-		}
-
-		// Test basic endpoint
-		req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
-		rr := httptest.NewRecorder()
-		handler.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
-		}
-	})
+	// with_audit_logger case removed
 }
 
-// TestNewRouter tests the NewRouter function.
-func TestNewRouter(t *testing.T) {
-	cfg := config.AppConfig{
-		DataDir: t.TempDir(),
-		Bouquet: "test",
-	}
+// Obsolete tests removed (TestSetConfigHolder, TestSetAuditLogger, TestHandleStatusV2Placeholder, TestNewRouter)
 
-	handler := NewRouter(cfg)
-	if handler == nil {
-		t.Fatal("expected handler, got nil")
-	}
-
-	// Test that basic health endpoint works
-	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
-	}
-}
-
-// TestAuthMiddleware_Standalone tests AuthMiddleware directly (auth disabled, valid, missing, invalid).
+// TestAuthMiddleware_Standalone tests authMiddleware directly (auth disabled, valid, missing, invalid).
 func TestAuthMiddleware_Standalone(t *testing.T) {
 	mockHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("authenticated"))
 	})
 
-	t.Run("auth_disabled_no_env_token", func(t *testing.T) {
-		// Clear any existing token
-		oldToken := os.Getenv("XG2G_API_TOKEN")
-		_ = os.Unsetenv("XG2G_API_TOKEN")
-		defer func() {
-			if oldToken != "" {
-				_ = os.Setenv("XG2G_API_TOKEN", oldToken)
-			}
-		}()
+	t.Run("auth_disabled_no_token_configured", func(t *testing.T) {
+		s := &Server{
+			cfg: config.AppConfig{APIToken: ""},
+		}
 
-		wrapped := AuthMiddleware(mockHandler)
+		// Current logic: fail closed if no token (unlike old env-based mid-ware possibly)
+		// Wait, in my implementation of authMiddleware:
+		// if token == "" -> "Unauthorized: API token not configured on server"
+		// So this test expectation changes from "authenticated" to "Unauthorized".
+
+		wrapped := s.authMiddleware(mockHandler)
 		req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
 		req = req.WithContext(context.Background())
 		rr := httptest.NewRecorder()
 
 		wrapped.ServeHTTP(rr, req)
 
-		if rr.Code != http.StatusOK {
-			t.Errorf("expected status %d when auth disabled, got %d", http.StatusOK, rr.Code)
-		}
-		if body := rr.Body.String(); body != "authenticated" {
-			t.Errorf("expected body %q, got %q", "authenticated", body)
+		if rr.Code != http.StatusUnauthorized {
+			t.Errorf("expected status %d when auth not configured, got %d", http.StatusUnauthorized, rr.Code)
 		}
 	})
 
 	t.Run("auth_enabled_valid_token", func(t *testing.T) {
-		oldToken := os.Getenv("XG2G_API_TOKEN")
-		_ = os.Setenv("XG2G_API_TOKEN", "secret-test-token")
-		defer func() {
-			if oldToken != "" {
-				_ = os.Setenv("XG2G_API_TOKEN", oldToken)
-			} else {
-				_ = os.Unsetenv("XG2G_API_TOKEN")
-			}
-		}()
+		s := &Server{
+			cfg: config.AppConfig{APIToken: "secret-test-token"},
+		}
 
-		wrapped := AuthMiddleware(mockHandler)
+		wrapped := s.authMiddleware(mockHandler)
 		req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
-		req.Header.Set("X-API-Token", "secret-test-token")
+		req.Header.Set("Authorization", "Bearer secret-test-token")
 		req = req.WithContext(context.Background())
 		rr := httptest.NewRecorder()
 
@@ -543,20 +303,14 @@ func TestAuthMiddleware_Standalone(t *testing.T) {
 		}
 	})
 
-	t.Run("auth_enabled_missing_token", func(t *testing.T) {
-		oldToken := os.Getenv("XG2G_API_TOKEN")
-		_ = os.Setenv("XG2G_API_TOKEN", "secret-test-token")
-		defer func() {
-			if oldToken != "" {
-				_ = os.Setenv("XG2G_API_TOKEN", oldToken)
-			} else {
-				_ = os.Unsetenv("XG2G_API_TOKEN")
-			}
-		}()
+	t.Run("auth_enabled_missing_header", func(t *testing.T) {
+		s := &Server{
+			cfg: config.AppConfig{APIToken: "secret-test-token"},
+		}
 
-		wrapped := AuthMiddleware(mockHandler)
+		wrapped := s.authMiddleware(mockHandler)
 		req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
-		// No X-API-Token header
+		// No Authorization header
 		req = req.WithContext(context.Background())
 		rr := httptest.NewRecorder()
 
@@ -565,25 +319,19 @@ func TestAuthMiddleware_Standalone(t *testing.T) {
 		if rr.Code != http.StatusUnauthorized {
 			t.Errorf("expected status %d with missing token, got %d", http.StatusUnauthorized, rr.Code)
 		}
-		if !strings.Contains(rr.Body.String(), "Missing API token") {
-			t.Errorf("expected body to contain 'Missing API token', got: %s", rr.Body.String())
+		if !strings.Contains(rr.Body.String(), "Missing Authorization header") {
+			t.Errorf("expected body to contain 'Missing Authorization header', got: %s", rr.Body.String())
 		}
 	})
 
 	t.Run("auth_enabled_invalid_token", func(t *testing.T) {
-		oldToken := os.Getenv("XG2G_API_TOKEN")
-		_ = os.Setenv("XG2G_API_TOKEN", "secret-test-token")
-		defer func() {
-			if oldToken != "" {
-				_ = os.Setenv("XG2G_API_TOKEN", oldToken)
-			} else {
-				_ = os.Unsetenv("XG2G_API_TOKEN")
-			}
-		}()
+		s := &Server{
+			cfg: config.AppConfig{APIToken: "secret-test-token"},
+		}
 
-		wrapped := AuthMiddleware(mockHandler)
+		wrapped := s.authMiddleware(mockHandler)
 		req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
-		req.Header.Set("X-API-Token", "wrong-token")
+		req.Header.Set("Authorization", "Bearer wrong-token")
 		req = req.WithContext(context.Background())
 		rr := httptest.NewRecorder()
 
@@ -592,8 +340,10 @@ func TestAuthMiddleware_Standalone(t *testing.T) {
 		if rr.Code != http.StatusForbidden {
 			t.Errorf("expected status %d with invalid token, got %d", http.StatusForbidden, rr.Code)
 		}
-		if !strings.Contains(rr.Body.String(), "Invalid API token") {
-			t.Errorf("expected body to contain 'Invalid API token', got: %s", rr.Body.String())
+		if !strings.Contains(rr.Body.String(), "Invalid token") { // "Forbidden: Invalid token" from http.Error default msg? Or "Invalid token" matches my code?
+			// Code in http.go: http.Error(w, "Forbidden: Invalid token", http.StatusForbidden)
+			// So body contains "Forbidden: Invalid token"
+			t.Errorf("expected body to contain 'Invalid token', got: %s", rr.Body.String())
 		}
 	})
 }
@@ -640,37 +390,34 @@ func TestCheckFile_NoPermission(t *testing.T) {
 // V2 Routes Tests
 
 func TestRegisterV2Routes_StatusEndpoint(t *testing.T) {
-	// Enable API_V2 feature flag
-	t.Setenv("XG2G_FEATURE_API_V2", "true")
-
 	cfg := config.AppConfig{
-		DataDir: t.TempDir(),
-		Version: "test-v2",
+		APIToken: "test-token",
+		Version:  "2.0.0",
+		DataDir:  t.TempDir(),
 	}
-
-	srv := New(cfg, nil)
-	srv.SetStatus(jobs.Status{
-		Version:  "test-v2",
-		Channels: 100,
-		LastRun:  time.Now(),
+	s := New(cfg, nil, nil)
+	s.SetStatus(jobs.Status{
+		Version:  "2.0.0",
+		Channels: 2,
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v2/status", nil)
-	w := httptest.NewRecorder()
+	handler := s.Handler()
 
-	// The server's routes() method includes registerV2Routes when feature flag is enabled
-	srv.routes().ServeHTTP(w, req)
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/system/health", nil)
+	req.Header.Set("Authorization", "Bearer test-token")
+	rr := httptest.NewRecorder()
 
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
-	assert.Equal(t, "2", w.Header().Get("X-API-Version"))
+	handler.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
 
 	var resp map[string]interface{}
-	err := json.NewDecoder(w.Body).Decode(&resp)
+	err := json.NewDecoder(rr.Body).Decode(&resp)
 	require.NoError(t, err)
 
-	assert.Equal(t, "API v2 is under development", resp["message"])
-	assert.Equal(t, "preview", resp["status"])
+	assert.Equal(t, "ok", resp["status"])
+	assert.Equal(t, "2.0.0", resp["version"])
 }
 
 // TestHandleLineupJSON_PlexForceHLS_Disabled tests lineup.json returns direct MPEG-TS URLs when PlexForceHLS=false
@@ -692,7 +439,7 @@ http://10.10.55.14:18000/1:0:19:1334:3EF:1:C00000:0:0:0:
 	cfg := config.AppConfig{
 		DataDir: tempDir,
 	}
-	srv := New(cfg, nil)
+	srv := New(cfg, nil, nil)
 
 	// Initialize HDHomeRun with PlexForceHLS=false
 	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
@@ -745,7 +492,7 @@ http://10.10.55.14:18000/1:0:19:1334:3EF:1:C00000:0:0:0:
 	cfg := config.AppConfig{
 		DataDir: tempDir,
 	}
-	srv := New(cfg, nil)
+	srv := New(cfg, nil, nil)
 
 	// Initialize HDHomeRun with PlexForceHLS=true
 	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
@@ -797,7 +544,7 @@ http://10.10.55.14:18000/hls/1:0:19:132F:3EF:1:C00000:0:0:0:
 	cfg := config.AppConfig{
 		DataDir: tempDir,
 	}
-	srv := New(cfg, nil)
+	srv := New(cfg, nil, nil)
 
 	// Initialize HDHomeRun with PlexForceHLS=true
 	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()

@@ -86,3 +86,10 @@ node_modules/
 webui/dist/
 webui/node_modules/
 internal/api/ui/
+
+# TLS certificates (auto-generated)
+certs/
+
+# Local test artifacts
+api_test_output.txt
+*.png
