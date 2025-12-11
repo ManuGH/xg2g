@@ -47,7 +47,7 @@ jobs:
           cp -r webui/dist/* internal/api/ui/
 
       - name: Run gosec security scan
-        uses: securego/gosec@20c9506c1996f71fd0e5a06fd4ecdf487699291a # master
+        uses: securego/gosec@41f28e209a74be7102c923314ab604db2b1adb62 # master
         with:
           # -fmt sarif: Output in SARIF format
           # -out gosec.sarif: Save output to file
