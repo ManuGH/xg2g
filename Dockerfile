@@ -110,7 +110,7 @@ RUN set -eux; \
     export CGO_LDFLAGS="-L/usr/local/lib -lxg2g_transcoder -lavcodec -lavformat -lavfilter -lavutil -lswresample"; \
     echo "🚀 Building xg2g with Rust remuxer for linux/amd64"; \
     go build -buildvcs=false -trimpath -tags=gpu \
-    -ldflags="-s -w -X 'main.Version=${BUILD_REF}' -extldflags='-Wl,-rpath,/app/lib'" \
+    -ldflags="-s -w -X 'main.version=${BUILD_REF}' -extldflags='-Wl,-rpath,/app/lib'" \
     -o /out/xg2g ./cmd/daemon
 
 # =============================================================================

@@ -62,6 +62,30 @@ jobs:
           cache: "npm"
           cache-dependency-path: webui/package-lock.json
 
+      - name: Clean Build Artifacts
+        run: |
+          set -euo pipefail
+          make clean
+
+      - name: Generate API Client
+        run: |
+          set -euo pipefail
+          cd webui
+          npm run generate-client
+
+      - name: Verify Client is Up-to-Date (Contract Test)
+        run: |
+          set -euo pipefail
+          if [[ -n $(git status --porcelain webui/src/client) ]]; then
+            echo "❌ Error: helper 'webui/src/client' is out of sync with openapi.yaml"
+            echo "Please run 'npm run generate-client' locally and commit the changes."
+            git status webui/src/client
+            git diff webui/src/client
+            exit 1
+          else
+            echo "✅ Client matches OpenAPI spec"
+          fi
+
       - name: Build WebUI
         run: |
           set -euo pipefail

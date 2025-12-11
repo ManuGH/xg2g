@@ -38,6 +38,7 @@ func (s *Server) tryHandleHLS(w http.ResponseWriter, r *http.Request) bool {
 	}
 
 	path := r.URL.Path
+	// s.logger.Info().Str("path", path).Bool("manager_ok", s.hlsManager != nil).Str("method", r.Method).Msg("DEBUG: tryHandleHLS checking request")
 
 	// 1. Explicit HLS requests
 	// - /hls/...

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getHealth, regeneratePlaylist } from '../api';
+import { DefaultService } from '../client';
 
 function Files() {
   const [health, setHealth] = useState(null);
@@ -10,10 +10,15 @@ function Files() {
   const fetchStatus = async () => {
     setLoading(true);
     try {
-      const data = await getHealth();
+      const data = await DefaultService.getSystemHealth();
       setHealth(data);
     } catch (err) {
-      setError(err.message);
+      if (err.status === 401) {
+        window.dispatchEvent(new Event('auth-required'));
+        setError('Authentication required. Please enter your API token.');
+      } else {
+        setError(err.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -26,11 +31,17 @@ function Files() {
   const handleRegenerate = async () => {
     setRegenerating(true);
     try {
-      await regeneratePlaylist();
+      // POST /system/refresh
+      await DefaultService.postSystemRefresh();
       // Wait a bit for files to likely be written before refreshing status
       setTimeout(fetchStatus, 1000);
     } catch (err) {
-      setError(err.message);
+      if (err.status === 401) {
+        window.dispatchEvent(new Event('auth-required'));
+        setError('Authentication required. Please enter your API token.');
+      } else {
+        setError(err.message || 'Failed to regenerate');
+      }
     } finally {
       setRegenerating(false);
     }
@@ -41,7 +52,13 @@ function Files() {
 
   const hdhrUrl = `${window.location.protocol}//${window.location.host}/device.xml`;
   const m3uUrl = '/files/playlist.m3u';
-  const xmltvUrl = '/files/epg.xml';
+  // const xmltvUrl = '/files/epg.xml'; // Unused now, or use it?
+  // Actually we use hardcoded path in render. Let's just remove the const if unused by linter.
+  // Wait, the linter said it IS assigned but never used.
+  // Let's keep it if we want to use it, but fix usage.
+  // Actually, lines 71 and 77 use window.location...
+  // Let's just define it and use it to be clean.
+  const xmltvUrl = `${window.location.protocol}//${window.location.host}/xmltv.xml`;
 
   return (
     <div className="files-container">
@@ -68,13 +85,13 @@ function Files() {
           ) : (
             <p className="warning">EPG Missing or Partial</p>
           )}
-          <div className="code-block" style={{ marginBottom: '10px' }}>
-            {`${window.location.protocol}//${window.location.host}/xmltv.xml`}
+          <div className="code-block">
+            {xmltvUrl}
           </div>
           <div className="actions-row" style={{ display: 'flex', gap: '10px' }}>
             <button
               className="button secondary"
-              onClick={() => navigator.clipboard.writeText(`${window.location.protocol}//${window.location.host}/xmltv.xml`)}
+              onClick={() => navigator.clipboard.writeText(xmltvUrl)}
             >
               Copy URL
             </button>
@@ -101,4 +118,3 @@ function Files() {
 }
 
 export default Files;
-

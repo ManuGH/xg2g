@@ -475,7 +475,9 @@ func (c *Client) StreamURL(ctx context.Context, ref, name string) (string, error
 		detectionCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
 
-		info, err := c.streamDetector.DetectStreamURL(detectionCtx, ref, name)
+		// Use smart stream detection to find best URL
+		// We shouldn't skip the proxy here as we are a client
+		info, err := c.streamDetector.DetectStreamURL(detectionCtx, ref, name, false)
 		if err == nil && info != nil {
 			return info.URL, nil
 		}

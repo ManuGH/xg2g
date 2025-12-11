@@ -1,14 +1,22 @@
 import { useEffect, useState } from 'react';
-import { getHealth } from '../api';
+import { DefaultService } from '../client';
 
 export default function Dashboard() {
   const [health, setHealth] = useState(null);
   const [error, setError] = useState(null);
 
   const fetchHealth = () => {
-    getHealth()
+    DefaultService.getSystemHealth()
       .then(setHealth)
-      .catch(err => setError(err.message));
+      .catch(err => {
+        // Trigger auth modal on 401
+        if (err.status === 401) {
+          window.dispatchEvent(new Event('auth-required'));
+          setError('Authentication required. Please enter your API token.');
+        } else {
+          setError(err.message || 'Failed to fetch health');
+        }
+      });
   };
 
   useEffect(() => {
@@ -66,12 +74,10 @@ function LogList() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    import('../api').then(({ getRecentLogs }) => {
-      getRecentLogs()
-        .then(data => setLogs((data || []).slice(0, 5)))
-        .catch(console.error)
-        .finally(() => setLoading(false));
-    });
+    DefaultService.getLogs()
+      .then(data => setLogs((data || []).slice(0, 5)))
+      .catch(console.error)
+      .finally(() => setLoading(false));
   }, []);
 
   if (loading) return <div>Loading logs...</div>;

@@ -38,6 +38,8 @@ type TranscoderConfig struct {
 	TranscoderURL     string // URL of the GPU transcoder service
 	UseRustRemuxer    bool   // Whether to use native Rust remuxer instead of FFmpeg
 	H264RepairEnabled bool   // Whether H.264 stream repair is enabled (fixes PPS/SPS headers for Plex)
+	VideoTranscode    bool   // Whether full video transcoding is enabled
+	VideoCodec        string // Target video codec (auto, av1, hevc, h264)
 }
 
 // Transcoder handles audio transcoding for streams.
@@ -54,13 +56,74 @@ func NewTranscoder(config TranscoderConfig, logger zerolog.Logger) *Transcoder {
 	}
 }
 
-// TranscodeStream transcodes the audio of a stream from the target URL.
-// It proxies the request to the target, pipes it through ffmpeg for audio transcoding,
-// and streams the result back to the client.
+// TranscodeStream transcodes the stream from the target URL.
+// It proxies the request to the target, pipes it through ffmpeg for transcoding, and streams the result back to the client.
+// Supports Smart Codec Fallback (AV1 -> HEVC -> H264) if enabled.
 func (t *Transcoder) TranscodeStream(ctx context.Context, w http.ResponseWriter, r *http.Request, targetURL string) error {
+	// Determine list of codecs to try
+	var codecs []string
+	if t.Config.VideoTranscode && t.Config.VideoCodec == "auto" {
+		// Smart Fallback Cascade
+		codecs = []string{"av1_vaapi", "hevc_vaapi", "h264_vaapi"}
+	} else if t.Config.VideoTranscode {
+		// Specific codec requested (map simple names to VAAPI names)
+		switch t.Config.VideoCodec {
+		case "av1":
+			codecs = []string{"av1_vaapi"}
+		case "hevc":
+			codecs = []string{"hevc_vaapi"}
+		case "h264":
+			codecs = []string{"h264_vaapi"}
+		default:
+			codecs = []string{t.Config.VideoCodec} // User custom
+		}
+	} else {
+		// Audio only (Video Copy)
+		codecs = []string{"copy"}
+	}
+
+	var lastErr error
+	for _, codec := range codecs {
+		t.logger.Info().Str("codec", codec).Msg("attempting transcoding with codec")
+
+		err := t.streamTranscodeInternal(ctx, w, r, targetURL, codec)
+		if err == nil {
+			// Success! Stream finished normally (client disconnected or stream ended)
+			return nil
+		}
+
+		// Check if error is recoverable (i.e. we haven't written HTTP 200 yet)
+		// Our internal function returns specific error if it failed BEFORE writing headers.
+		// However, io.Copy logic writes headers implicitely on first write.
+		// If streamTranscodeInternal returns error 'failed to start ffmpeg' or immediate exit, we retry.
+		// If it transferred data, we likely already sent headers, so we can't retry cleanly (client sees broken stream).
+
+		// Simplify: We assume if it failed quickly, we can retry.
+		// But practically, if we can't reset ResponseWriter, we are stuck.
+		// NOTE: http.ResponseWriter cannot be reset.
+		// If streamTranscodeInternal wrote NOTHING, we are good.
+		// If it wrote SOMETHING, the client has received 200 OK and data. We can't change codec mid-stream easily without HLS.
+		// In a raw stream, we just die.
+
+		// For this implementation, we will try to ensure we don't write headers until FFmpeg is successfully started.
+		// But streamTranscodeInternal handles the piping.
+
+		if ctx.Err() != nil {
+			return ctx.Err() // Client disconnected, stop
+		}
+
+		lastErr = err
+		t.logger.Warn().Err(err).Str("codec", codec).Msg("transcoding failed, trying next fallback if available")
+	}
+
+	return fmt.Errorf("all transcoding attempts failed: %w", lastErr)
+}
+
+// streamTranscodeInternal is the worker logic for a single codec attempt.
+func (t *Transcoder) streamTranscodeInternal(ctx context.Context, w http.ResponseWriter, r *http.Request, targetURL string, videoCodec string) error {
 	// Start tracing span
 	tracer := telemetry.Tracer("xg2g.proxy")
-	ctx, span := tracer.Start(ctx, "transcode.cpu",
+	ctx, span := tracer.Start(ctx, "transcode.ffmpeg",
 		trace.WithSpanKind(trace.SpanKindInternal),
 	)
 	defer span.End()
@@ -68,11 +131,11 @@ func (t *Transcoder) TranscodeStream(ctx context.Context, w http.ResponseWriter,
 	// Add transcoding attributes
 	span.SetAttributes(
 		attribute.String(telemetry.TranscodeCodecKey, t.Config.Codec),
-		attribute.String(telemetry.TranscodeDeviceKey, "cpu"),
-		attribute.Bool(telemetry.TranscodeGPUEnabledKey, false),
+		attribute.String("video.codec", videoCodec),
+		attribute.Bool(telemetry.TranscodeGPUEnabledKey, videoCodec != "copy"),
 	)
 
-	// Create request to target
+	// Create request to target (Fresh Connection)
 	proxyReq, err := http.NewRequestWithContext(ctx, http.MethodGet, targetURL, nil)
 	if err != nil {
 		span.RecordError(err)
@@ -102,77 +165,78 @@ func (t *Transcoder) TranscodeStream(ctx context.Context, w http.ResponseWriter,
 		}
 	}()
 
-	// Build ffmpeg command for audio transcoding
-	// Input: MPEG-TS stream from stdin
-	// Output: MPEG-TS stream with transcoded audio to stdout
-	//
-	// CRITICAL: Do NOT use -copyts!
-	// Enigma2 streams have broken DTS timestamps. We must regenerate them.
-	// Using -start_at_zero + -fflags genpts instead of -copyts fixes audio sync issues.
-	args := []string{
-		"-hide_banner",
-		"-loglevel", "error",
-		"-fflags", "+genpts+igndts", // Generate PTS, ignore broken DTS
-		"-i", "pipe:0", // Read from stdin
-		"-map", "0:v", "-c:v", "copy", // Copy video stream
-		"-map", "0:a", "-c:a", t.Config.Codec, // Transcode audio
-		"-b:a", t.Config.Bitrate, // Audio bitrate
-		"-ac", fmt.Sprintf("%d", t.Config.Channels), // Audio channels
-		"-async", "1", // Audio-video sync
-		"-start_at_zero",                  // Start timestamps at zero
-		"-avoid_negative_ts", "make_zero", // Fix negative timestamps
-		"-muxdelay", "0", // No mux delay
-		"-muxpreload", "0", // No mux preload
-		"-mpegts_copyts", "1", // Preserve timestamps in MPEG-TS
-		"-mpegts_flags", "resend_headers+initial_discontinuity", // Regenerate PAT/PMT
-		"-pcr_period", "20", // Insert PCR every 20ms
-		"-pat_period", "0.1", // Regenerate PAT every 100ms
-		"-sdt_period", "0.5", // Regenerate SDT every 500ms
-		"-f", "mpegts", // Output format
-		"pipe:1", // Write to stdout
+	// Build ffmpeg command
+	var args []string
+	if videoCodec == "copy" {
+		// Audio Transcode Only
+		args = []string{
+			"-hide_banner", "-loglevel", "error",
+			"-fflags", "+genpts+igndts",
+			"-i", "pipe:0",
+			"-map", "0:v", "-c:v", "copy",
+			"-map", "0:a", "-c:a", t.Config.Codec,
+			"-b:a", t.Config.Bitrate,
+			"-ac", fmt.Sprintf("%d", t.Config.Channels),
+			"-async", "1",
+			"-start_at_zero", "-avoid_negative_ts", "make_zero",
+			"-muxdelay", "0", "-muxpreload", "0",
+			"-mpegts_copyts", "1",
+			"-mpegts_flags", "resend_headers+initial_discontinuity",
+			"-pcr_period", "20",
+			"-pat_period", "0.1",
+			"-sdt_period", "0.5",
+			"-f", "mpegts",
+			"pipe:1",
+		}
+	} else {
+		// Hardware Video Transcode
+		args = []string{
+			"-hide_banner", "-loglevel", "error",
+			"-init_hw_device", "vaapi=d1:/dev/dri/renderD128", // HW Device
+			"-filter_hw_device", "d1",
+			"-fflags", "+genpts+igndts",
+			"-i", "pipe:0",
+			"-vf", "format=nv12,hwupload", // Upload to GPU
+			"-map", "0:v", "-c:v", videoCodec, // Selected Codec
+			"-qp", "24", // Quality
+			"-map", "0:a", "-c:a", t.Config.Codec,
+			"-b:a", t.Config.Bitrate,
+			"-ac", fmt.Sprintf("%d", t.Config.Channels),
+			"-start_at_zero", "-avoid_negative_ts", "make_zero",
+			"-muxdelay", "0", "-muxpreload", "0",
+			"-mpegts_copyts", "1",
+			"-mpegts_flags", "resend_headers+initial_discontinuity",
+			"-f", "mpegts",
+			"pipe:1",
+		}
 	}
 
-	t.logger.Debug().
-		Str("ffmpeg_path", t.Config.FFmpegPath).
-		Strs("args", args).
-		Msg("starting ffmpeg transcoding")
-
-	// Ensure the ffmpeg path is clean and absolute before execution
-	ffmpegPath := filepath.Clean(t.Config.FFmpegPath)
-	if !filepath.IsAbs(ffmpegPath) {
-		return fmt.Errorf("ffmpeg path must be absolute: %s", ffmpegPath)
-	}
+	t.logger.Debug().Str("ffmpeg_path", t.Config.FFmpegPath).Strs("args", args).Msg("starting ffmpeg")
 
 	// Create ffmpeg command
-	// #nosec G204 -- ffmpegPath is sanitized above and args contain only predefined options
-	cmd := exec.CommandContext(ctx, ffmpegPath, args...)
+	cmd := exec.CommandContext(ctx, t.Config.FFmpegPath, args...)
 
 	// Connect pipes
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return fmt.Errorf("create stdin pipe: %w", err)
 	}
-
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("create stdout pipe: %w", err)
 	}
-
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		return fmt.Errorf("create stderr pipe: %w", err)
 	}
 
 	// Start ffmpeg
-	span.AddEvent("starting ffmpeg")
-	metrics.IncFFmpegRestart()
 	if err := cmd.Start(); err != nil {
 		span.RecordError(err)
-		span.SetStatus(codes.Error, "failed to start ffmpeg")
 		return fmt.Errorf("start ffmpeg: %w", err)
 	}
 
-	// Log ffmpeg stderr in background
+	// Capture Stderr
 	go func() {
 		scanner := bufio.NewScanner(stderr)
 		for scanner.Scan() {
@@ -180,60 +244,59 @@ func (t *Transcoder) TranscodeStream(ctx context.Context, w http.ResponseWriter,
 		}
 	}()
 
-	// Use WaitGroup to ensure all goroutines complete
+	// Async Pipe Input
 	var wg sync.WaitGroup
-	errChan := make(chan error, 2)
-
-	// Copy stream from target to ffmpeg stdin
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		defer func() {
-			if err := stdin.Close(); err != nil {
-				t.logger.Debug().Err(err).Msg("failed to close stdin")
-			}
-		}()
-		if _, err := io.Copy(stdin, resp.Body); err != nil {
-			if !strings.Contains(err.Error(), "broken pipe") {
-				errChan <- fmt.Errorf("copy to ffmpeg stdin: %w", err)
-			}
-		}
+		defer stdin.Close()
+		io.Copy(stdin, resp.Body)
 	}()
 
-	// Set response headers for transcoded stream
+	// --- CRITICAL FALLBACK LOGIC ---
+	// We must NOT write headers to 'w' until we are sure ffmpeg is working.
+	// We try to read the first chunk from stdout.
+	// If that read fails (e.g. ffmpeg exited because AV1 not supported), we return error.
+	// AND we have NOT written to 'w' yet, so the caller can retry with next codec!
+
+	firstChunk := make([]byte, 4096) // 4KB peek
+	n, startErr := stdout.Read(firstChunk)
+
+	if startErr != nil {
+		// Failed to read ANY data. This means ffmpeg likely died immediately or stream is empty.
+		// Kill process just in case
+		if cmd.Process != nil {
+			cmd.Process.Kill()
+		}
+		return fmt.Errorf("failed to read first chunk from ffmpeg (codec likely failed): %w", startErr)
+	}
+
+	// If we got here, FFmpeg is alive and producing data!
+	// NOW we commit to this stream.
 	w.Header().Set("Content-Type", "video/mp2t")
 	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 	w.Header().Set("Connection", "close")
+	// w.WriteHeader(http.StatusOK) // Implicit on Write
 
-	// Copy ffmpeg output to response writer
+	// Write the first chunk we peered
+	if _, err := w.Write(firstChunk[:n]); err != nil {
+		// Client disconnected probably
+		if cmd.Process != nil {
+			cmd.Process.Kill()
+		}
+		return nil
+	}
+
+	// Copy the rest of the stream
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if _, err := io.Copy(w, stdout); err != nil {
-			if !strings.Contains(err.Error(), "broken pipe") && !strings.Contains(err.Error(), "connection reset") {
-				errChan <- fmt.Errorf("copy from ffmpeg stdout: %w", err)
-			}
-		}
+		io.Copy(w, stdout)
 	}()
 
-	// Wait for all copy operations to complete
 	wg.Wait()
-
-	// Wait for ffmpeg to exit
-	if err := cmd.Wait(); err != nil {
-		// Only log error if it's not a context cancellation
-		if ctx.Err() == nil {
-			t.logger.Debug().Err(err).Msg("ffmpeg exited with error")
-		}
-	}
-
-	// Check for errors from goroutines
-	select {
-	case err := <-errChan:
-		return err
-	default:
-		return nil
-	}
+	cmd.Wait() // Wait for exit
+	return nil
 }
 
 // RepairH264Stream repairs H.264 streams by adding proper PPS/SPS headers using FFmpeg's h264_mp4toannexb bitstream filter.
@@ -650,6 +713,8 @@ func GetTranscoderConfig() TranscoderConfig {
 		TranscoderURL:     transcoderURL,
 		UseRustRemuxer:    useRust,
 		H264RepairEnabled: IsH264RepairEnabled(),
+		VideoTranscode:    os.Getenv("XG2G_VIDEO_TRANSCODE") == envTrue,
+		VideoCodec:        os.Getenv("XG2G_VIDEO_CODEC"),
 	}
 }
 

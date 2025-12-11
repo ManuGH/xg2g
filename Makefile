@@ -227,6 +227,7 @@ clean: ## Remove build artifacts and temporary files
 	@rm -rf coverage.out coverage.html
 	@rm -rf *.prof *.test
 	@rm -rf dist/
+	@go clean -cache
 
 clean-certs: ## Remove auto-generated TLS certificates
 	@echo "Removing TLS certificates..."
@@ -636,7 +637,7 @@ dev: ## Run daemon locally with .env configuration
 	XG2G_OWI_BASE=$${XG2G_OWI_BASE:?Set XG2G_OWI_BASE in .env} \
 	XG2G_BOUQUET=$${XG2G_BOUQUET:?Set XG2G_BOUQUET in .env} \
 	XG2G_LISTEN=$${XG2G_LISTEN:-:8080} \
-	go run ./cmd/daemon
+	go run $(LDFLAGS) ./cmd/daemon
 
 up: ## Start docker-compose.yml stack
 	@echo "Starting xg2g via docker compose..."

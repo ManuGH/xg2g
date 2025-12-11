@@ -10,6 +10,8 @@ import (
 	"os/signal"
 	"syscall"
 
+	"path/filepath"
+
 	"github.com/ManuGH/xg2g/internal/api"
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/daemon"
@@ -196,6 +198,14 @@ func main() {
 			Logger:         xglog.WithComponent("proxy"),
 			TLSCert:        cfg.TLSCert,
 			TLSKey:         cfg.TLSKey,
+			DataDir:        cfg.DataDir,
+			PlaylistPath:   filepath.Join(cfg.DataDir, "playlist.m3u"), // Default name
+		}
+
+		// Allow overriding playlist filename if needed
+		playlistName := os.Getenv("XG2G_PLAYLIST_FILENAME")
+		if playlistName != "" {
+			proxyConfig.PlaylistPath = filepath.Join(cfg.DataDir, playlistName)
 		}
 	}
 
@@ -240,6 +250,9 @@ func main() {
 		MetricsHandler: promhttp.Handler(),
 		ProxyConfig:    proxyConfig,
 	}
+
+	// Log unique build ID to verify deployment
+	logger.Info().Str("build_uuid", "DEPLOY_CHECK_ABC123").Msg("Daemon starting...")
 
 	// Create daemon manager
 	mgr, err := daemon.NewManager(serverCfg, deps)

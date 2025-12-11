@@ -238,9 +238,28 @@ func (p *LLHLSProfile) Start(forceAAC bool, aacBitrate string) error {
 		args = append(args, "-init_hw_device", deviceArg, "-filter_hw_device", "va")
 	}
 
+	// If we are using the Web API, we must "Zap" and resolve the real stream URL manually.
+	finalInputURL := p.targetURL
+	webAPIURL := convertToWebAPI(p.targetURL, p.serviceRef)
+
+	if webAPIURL != p.targetURL {
+		p.logger.Info().Str("web_api_url", webAPIURL).Msg("attempting to resolve Web API stream (Zapping)")
+		resolved, err := resolveWebAPI(webAPIURL)
+		if err != nil {
+			p.logger.Error().Err(err).Str("web_api_url", webAPIURL).Msg("failed to resolve Web API stream")
+		} else {
+			finalInputURL = resolved
+			p.logger.Info().Str("resolved_url", finalInputURL).Msg("successfully resolved stream URL")
+			// Give the tuner a moment to lock after zapping
+			time.Sleep(1000 * time.Millisecond)
+		}
+	} else {
+		p.logger.Info().Msg("using direct stream URL (no Web API detected)")
+	}
+
 	args = append(args,
 		"-fflags", "+genpts+igndts", // Regenerate timestamps (Enigma2 has broken DTS)
-		"-i", p.targetURL,
+		"-i", finalInputURL,
 		"-map", "0:v",
 	)
 

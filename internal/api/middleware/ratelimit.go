@@ -69,7 +69,7 @@ func RefreshRateLimit() func(http.Handler) http.Handler {
 // Default: 60 requests per minute per IP for standard API operations.
 func APIRateLimit() func(http.Handler) http.Handler {
 	return RateLimit(RateLimitConfig{
-		RequestLimit: 60,
+		RequestLimit: 600,
 		WindowSize:   time.Minute,
 	})
 }

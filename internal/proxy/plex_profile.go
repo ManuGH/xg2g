@@ -149,29 +149,48 @@ func (p *PlexProfile) Start(forceAAC bool, aacBitrate string) error {
 	// Build FFmpeg command for Plex/iOS HLS optimization
 	// This extends the existing H.264 repair technique (h264_mp4toannexb) with HLS output
 	// Based on transcoder.RepairH264Stream() but modified for segmented output
+	// If we are using the Web API, we must "Zap" and resolve the real stream URL manually.
+	finalInputURL := p.targetURL
+	webAPIURL := convertToWebAPI(p.targetURL, p.serviceRef)
+
+	if webAPIURL != p.targetURL {
+		p.logger.Info().Str("web_api_url", webAPIURL).Msg("attempting to resolve Web API stream (Zapping)")
+		resolved, err := resolveWebAPI(webAPIURL)
+		if err != nil {
+			p.logger.Error().Err(err).Str("web_api_url", webAPIURL).Msg("failed to resolve Web API stream")
+		} else {
+			finalInputURL = resolved
+			p.logger.Info().Str("resolved_url", finalInputURL).Msg("successfully resolved stream URL")
+			// Give the tuner a moment to lock after zapping
+			time.Sleep(1000 * time.Millisecond)
+		}
+	} else {
+		p.logger.Info().Msg("using direct stream URL (no Web API detected)")
+	}
+
 	args := []string{
 		"-hide_banner",
 		"-loglevel", "warning",
 		"-fflags", "+genpts+igndts", // Regenerate timestamps (Enigma2 has broken DTS)
-		"-i", p.targetURL,
+		"-i", finalInputURL,
 		"-map", "0:v",
-		"-c:v", "copy",                  // Copy video without re-encoding
-		"-bsf:v", "h264_mp4toannexb",    // CRITICAL: Add PPS/SPS headers for Plex (same as RepairH264Stream)
+		"-c:v", "copy", // Copy video without re-encoding
+		"-bsf:v", "h264_mp4toannexb", // CRITICAL: Add PPS/SPS headers for Plex (same as RepairH264Stream)
 	}
 
 	// Audio handling: AAC transcoding for iOS or copy for Plex server
 	if forceAAC {
 		args = append(args,
 			"-map", "0:a",
-			"-c:a", "aac",        // Transcode to AAC-LC
+			"-c:a", "aac", // Transcode to AAC-LC
 			"-b:a", aacBitrate,
-			"-ac", "2",           // Stereo
-			"-async", "1",        // Audio-video sync
+			"-ac", "2", // Stereo
+			"-async", "1", // Audio-video sync
 		)
 	} else {
 		args = append(args,
 			"-map", "0:a",
-			"-c:a", "copy",       // Copy audio as-is
+			"-c:a", "copy", // Copy audio as-is
 		)
 	}
 
@@ -191,8 +210,8 @@ func (p *PlexProfile) Start(forceAAC bool, aacBitrate string) error {
 	// HLS-specific output settings
 	args = append(args,
 		"-f", "hls",
-		"-hls_time", fmt.Sprintf("%d", p.segmentSize),          // Segment duration (2-4s)
-		"-hls_list_size", fmt.Sprintf("%d", p.playlistLen),     // Playlist size (3-6 segments)
+		"-hls_time", fmt.Sprintf("%d", p.segmentSize), // Segment duration (2-4s)
+		"-hls_list_size", fmt.Sprintf("%d", p.playlistLen), // Playlist size (3-6 segments)
 		"-hls_flags", "delete_segments+append_list+program_date_time", // Plex needs program_date_time
 		"-hls_segment_type", "mpegts",
 		"-hls_segment_filename", segmentPattern,
@@ -496,8 +515,7 @@ func IsPlexDirectStream(userAgent string, requestPath string) bool {
 // IsIOSPlexClient detects if the request is from Plex on iOS/iPadOS.
 func IsIOSPlexClient(userAgent string) bool {
 	ua := strings.ToLower(userAgent)
-	return IsPlexClient(userAgent) && (
-		strings.Contains(ua, "iphone") ||
+	return IsPlexClient(userAgent) && (strings.Contains(ua, "iphone") ||
 		strings.Contains(ua, "ipad") ||
 		strings.Contains(ua, "ios"))
 }

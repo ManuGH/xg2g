@@ -8,6 +8,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mpegts.js@latest"></script>
   <style>
     :root {
       --bg-color: #000000;
@@ -308,6 +309,7 @@
 
     let allChannels = [];
     let hls = null;
+    let mpegtsPlayer = null;
     let errorCount = 0;
 
     // --- Init ---
@@ -339,22 +341,40 @@
 
       if (channelId) {
         console.log("Deep link channel:", channelId);
-        // We might not have this channel in the current 'allChannels' list if we only loaded one bouquet.
-        // But we want to play it regardless.
-        // We can synthesize a channel object or fetch it.
-        // Since we don't have a "get single channel" API easily without iterating, 
-        // we'll just construct the stream URL directly.
-        // We try to find it in the current list to get the name/logo.
+
         let ch = allChannels.find(c => c.id === channelId);
 
         if (!ch) {
-          // Channel not in current bouquet? Try to find which bouquet it belongs to?
-          // Or just play it blindly.
-          console.log("Channel not found in current list, playing blindly by ID");
-          ch = { id: channelId, name: "Channel " + channelId, logo_url: "" };
+          // Not found in current bouquet (likely "Favourites").
+          // Try fetching ALL channels to find it.
+          console.log("Channel not found in current bouquet, fetching all...");
+          try {
+            // Fetch ALL channels (empty bouquet param)
+            const fullList = await fetchWithAuth('/api/v2/services');
+            ch = fullList.find(c => c.id === channelId);
+
+            // If found, update our main list to this full list so sidebar works
+            if (ch) {
+              allChannels = fullList;
+              renderChannels(allChannels);
+              // Reset bouquet selector to 'All' or similar if we could
+            }
+          } catch (e) {
+            console.error("Failed to fetch full list", e);
+          }
         }
 
-        playChannel(ch); // Play immediately
+        if (ch) {
+          playChannel(ch); // Play immediately
+        } else {
+          // Absolute fallback: try to play by constructing a fake channel object 
+          // We need the service Ref though. If ID == Service Ref (it is for V2), use it.
+          // V2 ID is the Service Ref.
+          console.log("Channel still not found. Attempting direct play via ID as Ref.");
+          ch = { id: channelId, service_ref: channelId, name: "Channel " + channelId, logo_url: "" };
+          playChannel(ch);
+        }
+
       } else {
         sidebar.classList.add('visible');
       }
@@ -384,15 +404,27 @@
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
       const res = await fetch(url, { headers });
+      if (res.status === 401 || res.status === 403) {
+        // Auth failed - prompt for token
+        const newToken = prompt('API Token required. Please enter your XG2G_API_TOKEN:');
+        if (newToken) {
+          localStorage.setItem('XG2G_API_TOKEN', newToken);
+          // Retry with new token
+          headers['Authorization'] = `Bearer ${newToken}`;
+          const retryRes = await fetch(url, { headers });
+          if (!retryRes.ok) throw new Error(`API Error: ${retryRes.status}`);
+          return retryRes.json();
+        }
+        throw new Error(`Authentication required (${res.status})`);
+      }
       if (!res.ok) throw new Error(`API Error: ${res.status}`);
       return res.json();
     }
 
     async function fetchBouquets() {
       try {
-        // api.js uses /api/services/bouquets (No v2 prefix explicitly here, but router mounts handler at /api)
-        // Generated code usually maps paths like /services/bouquets directly under /api base.
-        const bouquets = await fetchWithAuth('/api/services/bouquets');
+        // API V2 endpoint
+        const bouquets = await fetchWithAuth('/api/v2/services/bouquets');
 
         bouquetSelect.innerHTML = '';
         bouquets.forEach(b => {
@@ -409,21 +441,17 @@
     async function loadChannelsForBouquet(bouquet) {
       try {
         loading.style.display = 'block';
-        let url = '/api/services'; // V2 endpoint
+        let url = '/api/v2/services'; // V2 endpoint
         if (bouquet) {
-          url = `/api/services?bouquet=${encodeURIComponent(bouquet)}`;
+          url = `/api/v2/services?bouquet=${encodeURIComponent(bouquet)}`;
         }
 
-        // If fetching all (-1 or empty), V2 might require explicit param or different endpoint?
-        // Try fetching.
         try {
           allChannels = await fetchWithAuth(url);
         } catch (e) {
-          // Determine if 404/401
-          console.warn("V2 API failed:", e);
-          // Fallback to V1 if it were available (but it's not)
-          // Just stop loading
+          console.warn("API failed:", e);
           dState.innerText = "API ERR";
+          allChannels = [];
         }
 
         renderChannels(allChannels || []);
@@ -441,7 +469,7 @@
         const div = document.createElement('div');
         div.className = 'channel-item';
         div.innerHTML = `
-          <img src="${ch.logo_url || ''}" class="channel-logo" onerror="this.style.opacity=0">
+          <img src="${ch.logo_url || ''}" class="channel-logo" loading="lazy" onerror="this.onerror=null; this.src='/vite.svg'; this.style.opacity=0.3">
           <div class="channel-info">
             <div class="channel-name">${ch.name}</div>
           </div>
@@ -466,31 +494,109 @@
 
     // --- Playback ---
     function playChannel(ch) {
-      console.log('Playing', ch.name, ch.service_ref);
+      console.log('Playing (v2.1 - Proxied)', ch.name, ch.service_ref);
       loading.style.display = 'block';
       unmuteBtn.style.display = 'none';
       dState.innerText = "LOADING " + ch.name;
 
-      // Use service_ref for streaming, not the ID/slug which is for UI only.
-      // E.g. 1:0:19:132F:3EF:1:C00000:0:0:0:
-      // Use directory-style URL so relative segment paths (segment_000.ts) resolve correctly
-      const streamUrl = `/stream/${encodeURIComponent(ch.service_ref)}/playlist.m3u8`;
+      // Use service_ref for streaming. V2 ID is the service_ref.
+      const ref = ch.service_ref || ch.id;
 
-      if (Hls.isSupported() && !shouldUseNativeHls()) {
-        if (hls) hls.destroy();
-        hls = new Hls({ enableWorker: true, lowLatencyMode: true });
-        hls.loadSource(streamUrl);
-        hls.attachMedia(video);
-        hls.on(Hls.Events.MANIFEST_PARSED, () => attemptPlay());
-        hls.on(Hls.Events.ERROR, (e, data) => handleHlsError(data));
-      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        video.src = streamUrl;
-        video.addEventListener('loadedmetadata', () => attemptPlay());
-        video.addEventListener('error', (e) => {
-          dState.innerText = "NATIVE ERR";
+      // 1. URL Strategy
+      // Direct TS (via xg2g Remuxer/Repair): /stream/REF
+      // HLS Proxy (Reliable): /stream/REF/playlist.m3u8
+      // Note: We route through xg2g to get Audio Remuxing (Rust) + H.264 Header Repair
+      const directUrl = `/stream/${ref}`;
+      const hlsUrl = `/stream/${ref}/playlist.m3u8`;
+
+      // Cleanup previous player
+      if (hls) {
+        hls.destroy();
+        hls = null;
+      }
+      if (mpegtsPlayer) {
+        mpegtsPlayer.destroy();
+        mpegtsPlayer = null;
+      }
+      // Detach media source
+      video.removeAttribute('src');
+      video.load();
+
+      // 2. Player Selection Strategy
+      // "I have only new devices" Mode:
+      // Try mpegts.js FIRST (Support iOS 17.1+ and Desktop)
+      // Fallback to Native HLS only if mpegts fails/unsupported.
+      if (mpegts.isSupported()) {
+        console.log('Playing MPEG-TS stream with mpegts.js (Modern Mode):', directUrl);
+        dState.innerText = "MPEGTS (DIRECT)";
+
+        mpegtsPlayer = mpegts.createPlayer({
+          type: 'mpegts',
+          isLive: true,
+          url: directUrl
+        }, {
+          enableWorker: false, // Worker might fail on mixed content or strict CSP
+          enableStashBuffer: false,
+          stashInitialSize: 128,
+          liveBufferLatencyChasing: true,
+          liveBufferLatencyMaxLatency: 3,
+          liveBufferLatencyMinRemain: 0.5
+        });
+        mpegtsPlayer.attachMediaElement(video);
+        mpegtsPlayer.load();
+
+        mpegtsPlayer.on(mpegts.Events.ERROR, (errorType, errorDetail, errorInfo) => {
+          console.error('mpegts.js error:', errorType, errorDetail, errorInfo);
+          dState.innerText = "MPEGTS ERR";
           errorCount++;
           dErr.innerText = errorCount;
+
+          // Fatal Error? Try fallback to HLS if on iOS
+          if (shouldUseNativeHls()) {
+            console.warn("mpegts failed, falling back to HLS Proxy");
+            dState.innerText = "FALLBACK HLS";
+            if (mpegtsPlayer) mpegtsPlayer.destroy();
+            video.src = hlsUrl;
+            video.play();
+          }
         });
+
+        mpegtsPlayer.on(mpegts.Events.LOADING_COMPLETE, () => {
+          console.log('Stream loading complete');
+        });
+
+        mpegtsPlayer.on(mpegts.Events.MEDIA_INFO, (mediaInfo) => {
+          console.log('Media info:', mediaInfo);
+          attemptPlay();
+        });
+
+      } else if (shouldUseNativeHls()) {
+        console.log('Legacy iOS detected (No ManagedMediaSource), using Native HLS:', hlsUrl);
+        dState.innerText = "HLS (LEGACY)";
+        video.src = hlsUrl;
+        video.onloadedmetadata = () => {
+          console.log('Native HLS loaded metadata');
+          attemptPlay();
+        };
+        video.onerror = (e) => {
+          console.error("Native HLS Error", e);
+          dState.innerText = "HLS ERR";
+          dErr.innerText = ++errorCount;
+        };
+
+      } else {
+        // Fallback for browsers without MSE (rare today) -> Try HLS.js
+        console.log('mpegts.js not supported, trying HLS.js via Proxy');
+        if (Hls.isSupported()) {
+          hls = new Hls();
+          hls.loadSource(hlsUrl);
+          hls.attachMedia(video);
+          hls.on(Hls.Events.MANIFEST_PARSED, function () {
+            attemptPlay();
+          });
+        } else {
+          dState.innerText = "NOT SUPPORTED";
+        }
       }
     }
 

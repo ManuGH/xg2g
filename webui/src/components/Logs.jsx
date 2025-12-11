@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getRecentLogs } from '../api';
+import { DefaultService } from '../client';
 
 export default function Logs() {
   const [logs, setLogs] = useState([]);
@@ -8,9 +8,16 @@ export default function Logs() {
 
   const fetchLogs = () => {
     setLoading(true);
-    getRecentLogs()
+    DefaultService.getLogs()
       .then(setLogs)
-      .catch(err => setError(err.message))
+      .catch(err => {
+        if (err.status === 401) {
+          window.dispatchEvent(new Event('auth-required'));
+          setError('Authentication required. Please enter your API token.');
+        } else {
+          setError(err.message || 'Failed to fetch logs');
+        }
+      })
       .finally(() => setLoading(false));
   };
 

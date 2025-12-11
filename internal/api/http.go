@@ -38,7 +38,7 @@ import (
 //go:embed dist/*
 var uiFS embed.FS
 
-//go:embed webplayer.html
+//go:embed webplayer_v2.html
 var webplayerHTML []byte
 
 // Server represents the HTTP API server for xg2g.
@@ -150,7 +150,7 @@ func New(cfg config.AppConfig, detector *openwebif.StreamDetector, cfgMgr *confi
 			Version: cfg.Version, // Initialize version from config
 		},
 		startTime:      time.Now(),
-		piconSemaphore: make(chan struct{}, 20), // Max 20 concurrent downloads
+		piconSemaphore: make(chan struct{}, 50), // Increased from 1 or small default to 50
 	}
 	// Default refresh function
 	s.refreshFn = jobs.Refresh
@@ -307,6 +307,7 @@ func (s *Server) routes() http.Handler {
 	// Stream Proxy (Avoids CORS/Port issues for Webplayer)
 	// Proxies /stream/... to internal stream server (port 18000)
 	r.Get("/stream/*", s.handleStreamProxy)
+	r.Head("/stream/*", s.handleStreamProxy)
 
 	// Harden file server: disable directory listing and use a secure handler
 	r.Handle("/files/*", http.StripPrefix("/files/", s.secureFileServer()))
@@ -721,15 +722,28 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 
 		// Check Bearer token
 		authHeader := r.Header.Get("Authorization")
+		logger := log.WithComponentFromContext(r.Context(), "auth")
+
 		if authHeader == "" {
-			// Fallback to query param or custom header?
-			// New API v2 uses Bearer.
+			// Security alert: Missing auth header
+			logger.Warn().
+				Str("event", "auth.missing_header").
+				Str("remote_addr", r.RemoteAddr).
+				Str("path", r.URL.Path).
+				Str("user_agent", r.Header.Get("User-Agent")).
+				Msg("unauthorized access attempt - missing authorization header")
 			http.Error(w, "Unauthorized: Missing Authorization header", http.StatusUnauthorized)
 			return
 		}
 
 		parts := strings.Split(authHeader, " ")
 		if len(parts) != 2 || parts[0] != "Bearer" {
+			// Security alert: Invalid header format
+			logger.Warn().
+				Str("event", "auth.malformed_header").
+				Str("remote_addr", r.RemoteAddr).
+				Str("path", r.URL.Path).
+				Msg("unauthorized access attempt - malformed authorization header")
 			http.Error(w, "Unauthorized: Invalid Authorization header format", http.StatusUnauthorized)
 			return
 		}
@@ -738,8 +752,13 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 
 		// Use constant-time comparison
 		if subtle.ConstantTimeCompare([]byte(reqToken), []byte(token)) != 1 {
-			logger := log.WithComponentFromContext(r.Context(), "auth")
-			logger.Warn().Str("event", "auth.invalid").Msg("invalid bearer token")
+			// Security alert: Invalid token (potential brute force)
+			logger.Warn().
+				Str("event", "auth.invalid_token").
+				Str("remote_addr", r.RemoteAddr).
+				Str("path", r.URL.Path).
+				Str("user_agent", r.Header.Get("User-Agent")).
+				Msg("SECURITY ALERT: invalid bearer token - potential unauthorized access attempt")
 			http.Error(w, "Forbidden: Invalid token", http.StatusForbidden)
 			return
 		}
@@ -982,7 +1001,7 @@ func (s *Server) handlePicons(w http.ResponseWriter, r *http.Request) {
 				Str("original_ref", processRef).
 				Str("normalized_ref", normalizedRef).
 				Str("fallback_url", fallbackURL).
-				Msg("Picon: attempting fallback")
+				Msg("Picon: attempting fallback to SD picon")
 
 			respFallback, errFallback := client.Get(fallbackURL)
 			if errFallback == nil && respFallback.StatusCode == http.StatusOK {
@@ -994,18 +1013,10 @@ func (s *Server) handlePicons(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
-	}
-
-	if err != nil {
-		logger.Error().Err(err).Str("url", upstreamURL).Msg("failed to fetch picon")
-		http.Error(w, "Failed to fetch picon", http.StatusBadGateway)
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
 		if resp.StatusCode != http.StatusNotFound {
 			logger.Warn().Int("status", resp.StatusCode).Str("url", upstreamURL).Msg("upstream returned error")
+		} else {
+			logger.Debug().Str("url", upstreamURL).Msg("upstream returned 404 (picon not found)")
 		}
 		http.NotFound(w, r)
 		return
@@ -1034,17 +1045,44 @@ func (s *Server) handlePicons(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Fix permissions so file can be read by http.ServeFile
+	if err := os.Chmod(localPath, 0644); err != nil {
+		logger.Warn().Err(err).Msg("failed to set picon file permissions")
+	}
+
 	// 4. SERVE
 	http.ServeFile(w, r, localPath)
 }
 
 // handleWebPlayer serves the embedded webplayer.html
 func (s *Server) handleWebPlayer(w http.ResponseWriter, r *http.Request) {
+	// SAFETY MECHANISM: DevMode
+	// If enabled, read from disk to avoid stale embed issues during development
+	var content []byte
+	var err error
+
+	if s.cfg.DevMode {
+		// Try to read from local file system
+		content, err = os.ReadFile("internal/api/webplayer_v2.html")
+		if err != nil {
+			logger := log.WithComponentFromContext(r.Context(), "api")
+			logger.Warn().Err(err).Msg("DevMode: failed to read webplayer_v2.html from disk, falling back to embedded")
+			content = webplayerHTML
+		} else {
+			logger := log.WithComponentFromContext(r.Context(), "api")
+			logger.Info().Msg("DevMode: serving webplayer_v2.html from disk")
+		}
+	} else {
+		content = webplayerHTML
+	}
+
 	// Override global CSP to allow inline scripts/styles and external CDN (hls.js)
-	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob:; worker-src 'self' blob:; connect-src 'self'")
+	// connect-src needs to allow the stream proxy port (18000) and same-origin API calls
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: http: https:; media-src 'self' blob: http: https:; worker-src 'self' blob:; connect-src 'self' http://127.0.0.1:18000 http://localhost:18000 ws: wss:")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate") // Ensure updates are seen
-	if _, err := w.Write(webplayerHTML); err != nil {
+
+	if _, err := w.Write(content); err != nil {
 		logger := log.WithComponentFromContext(r.Context(), "api")
 		logger.Error().Err(err).Msg("failed to write webplayer html")
 	}
@@ -1053,12 +1091,10 @@ func (s *Server) handleWebPlayer(w http.ResponseWriter, r *http.Request) {
 // handleStreamProxy proxies stream requests to the internal stream server (port 18000)
 // This avoids CORS issues and allows using relative paths in the webplayer
 func (s *Server) handleStreamProxy(w http.ResponseWriter, r *http.Request) {
-	// Destination: http://127.0.0.1:18000/hls/<path_after_stream>
-	// or simply proxy to 18000 and let it handle HLS detection?
-	// Request path: /stream/REF/playlist.m3u8 -> Target: /hls/REF
-	// Request path: /stream/REF/segment_X.m4s -> Target: /hls/REF/segment_X.m4s (or just relative?)
+	// For simple webplayer compatibility: /stream/{service_ref}/playlist.m3u8
+	// We proxy directly to port 18000 WITHOUT the /hls/ prefix to let the proxy
+	// handle it as a regular stream request (not HLS forced)
 
-	// Simplest approach: Proxy /stream/* to http://127.0.0.1:18000/hls/*
 	proxyPort := os.Getenv("XG2G_PROXY_PORT")
 	if proxyPort == "" {
 		proxyPort = "18000"
@@ -1076,11 +1112,12 @@ func (s *Server) handleStreamProxy(w http.ResponseWriter, r *http.Request) {
 	originalDirector := proxy.Director
 	proxy.Director = func(req *http.Request) {
 		originalDirector(req)
-		// Rewrite path: /stream/XXX -> /hls/XXX
-		// NOTE: The proxy server expects /hls/ prefix for HLS requests
-		if strings.HasPrefix(req.URL.Path, "/stream/") {
-			req.URL.Path = strings.Replace(req.URL.Path, "/stream/", "/hls/", 1)
-		}
+		// Rewrite path: /stream/{service_ref}/playlist.m3u8 -> /{service_ref}
+		// Remove /stream/ prefix and /playlist.m3u8 suffix to get raw service ref
+		path := strings.TrimPrefix(req.URL.Path, "/stream/")
+		path = strings.TrimSuffix(path, "/playlist.m3u8")
+		path = strings.TrimSuffix(path, "/")
+		req.URL.Path = "/" + path
 		req.Host = targetHost // Set Host header to satisfy proxy
 	}
 

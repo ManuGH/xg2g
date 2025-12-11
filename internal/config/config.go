@@ -105,6 +105,7 @@ type AppConfig struct {
 
 	// Feature Flags
 	InstantTuneEnabled bool // Enable "Instant Tune" stream pre-warming
+	DevMode            bool // Enable development mode (live asset reloading)
 }
 
 // Loader handles configuration loading with precedence
@@ -359,6 +360,7 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 
 	// Feature Flags
 	cfg.InstantTuneEnabled = ParseBool("XG2G_INSTANT_TUNE", cfg.InstantTuneEnabled)
+	cfg.DevMode = ParseBool("XG2G_DEV", cfg.DevMode)
 }
 
 // expandEnv expands environment variables in the format ${VAR} or $VAR

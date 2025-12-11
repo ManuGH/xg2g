@@ -44,6 +44,7 @@ type StreamDetector struct {
 	// Configuration
 	receiverHost      string // e.g., "192.168.1.100"
 	proxyEnabled      bool
+	forceProxy        bool   // Always use proxy (Priority 0)
 	proxyHost         string // e.g., "192.168.1.50:18000"
 	cacheTTL          time.Duration
 	encryptedChannels map[string]bool // Whitelist of service refs requiring port 17999
@@ -57,6 +58,7 @@ type StreamDetector struct {
 // NewStreamDetector creates a new smart stream detector.
 func NewStreamDetector(receiverHost string, logger zerolog.Logger) *StreamDetector {
 	proxyEnabled := os.Getenv("XG2G_ENABLE_STREAM_PROXY") == "true"
+	forceProxy := os.Getenv("XG2G_FORCE_PROXY") == "true"
 	proxyHost := os.Getenv("XG2G_STREAM_BASE") // e.g., http://host:18000
 
 	sd := &StreamDetector{
@@ -73,6 +75,7 @@ func NewStreamDetector(receiverHost string, logger zerolog.Logger) *StreamDetect
 		logger:            logger,
 		receiverHost:      receiverHost,
 		proxyEnabled:      proxyEnabled,
+		forceProxy:        forceProxy,
 		proxyHost:         proxyHost,
 		cacheTTL:          24 * time.Hour, // Cache results for 24 hours
 		encryptedChannels: make(map[string]bool),
@@ -107,7 +110,10 @@ func (sd *StreamDetector) SetHTTPClient(client *http.Client) {
 
 // DetectStreamURL determines the optimal stream URL for a given service reference.
 // It tests multiple endpoints and returns the best working option.
-func (sd *StreamDetector) DetectStreamURL(ctx context.Context, serviceRef, channelName string) (*StreamInfo, error) {
+// DetectStreamURL determines the optimal stream URL for a given service reference.
+// It tests multiple endpoints and returns the best working option.
+// If skipProxy is true, it will not consider the proxy loopback address as a candidate (used by the proxy itself).
+func (sd *StreamDetector) DetectStreamURL(ctx context.Context, serviceRef, channelName string, skipProxy bool) (*StreamInfo, error) {
 	// Check cache first
 	if cached := sd.getCached(serviceRef); cached != nil {
 		sd.logger.Debug().
@@ -145,7 +151,7 @@ func (sd *StreamDetector) DetectStreamURL(ctx context.Context, serviceRef, chann
 	}
 
 	// Test endpoints in order of preference for FTA channels
-	candidates := sd.buildCandidates(serviceRef)
+	candidates := sd.buildCandidates(serviceRef, skipProxy)
 
 	for _, candidate := range candidates {
 		if sd.testEndpoint(ctx, candidate) {
@@ -203,7 +209,7 @@ type streamCandidate struct {
 
 // buildCandidates creates an ordered list of stream endpoints to test.
 // Encrypted channels (from whitelist_streamrelay) prioritize port 17999 (OSCam Streamrelay).
-func (sd *StreamDetector) buildCandidates(serviceRef string) []streamCandidate {
+func (sd *StreamDetector) buildCandidates(serviceRef string, skipProxy bool) []streamCandidate {
 	// Check if this channel is encrypted and requires port 17999
 	isEncrypted := sd.isEncrypted(serviceRef)
 
@@ -244,13 +250,23 @@ func (sd *StreamDetector) buildCandidates(serviceRef string) []streamCandidate {
 	}
 
 	// Priority 3: Proxy for port 17999 (if proxy is enabled)
-	if sd.proxyEnabled && sd.proxyHost != "" {
-		candidates = append(candidates, streamCandidate{
+	if sd.proxyEnabled && sd.proxyHost != "" && !skipProxy {
+		proxyCandidate := streamCandidate{
 			URL:      fmt.Sprintf("%s/%s", sd.proxyHost, serviceRef),
 			Port:     18000, // Proxy port (extracted from proxyHost)
 			UseProxy: true,
 			Priority: 3,
-		})
+		}
+
+		if sd.forceProxy {
+			// If forced, prepend as Priority 0 to ensure it's tried first
+			proxyCandidate.Priority = 0
+			// Prepend to candidates list
+			candidates = append([]streamCandidate{proxyCandidate}, candidates...)
+		} else {
+			// Otherwise append as fallback (Priority 3)
+			candidates = append(candidates, proxyCandidate)
+		}
 	}
 
 	return candidates
@@ -398,7 +414,7 @@ func (sd *StreamDetector) DetectBatch(ctx context.Context, services [][2]string)
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			info, err := sd.DetectStreamURL(ctx, ref, name)
+			info, err := sd.DetectStreamURL(ctx, ref, name, false)
 			if err == nil && info != nil {
 				resultsMu.Lock()
 				results[ref] = info

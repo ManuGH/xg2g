@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getHealth } from '../api';
+import { DefaultService } from '../client';
 
 export default function StatusIndicator() {
   const [status, setStatus] = useState('unknown'); // unknown, connected, disconnected
@@ -8,14 +8,13 @@ export default function StatusIndicator() {
   useEffect(() => {
     const check = async () => {
       try {
-        await getHealth();
+        await DefaultService.getSystemHealth();
         setStatus('connected');
         setLastCheck(new Date());
       } catch (err) {
-        // If 401, we are technically connected but unauthorized.
-        // api.js throws "Unauthorized" for 401.
-        if (err.message === 'Unauthorized') {
-          setStatus('connected'); // or 'auth-error'? For now, if we reach it, it's alive.
+        // OpenAPI client throws errors that might have status/message
+        if (err.status === 401 || err.status === 403) {
+          setStatus('connected'); // Valid response but auth issue
         } else {
           setStatus('disconnected');
         }

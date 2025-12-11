@@ -163,6 +163,9 @@ components:
           type: string
         enabled:
           type: boolean
+        service_ref:
+          type: string
+          description: Service reference for streaming (extracted from M3U URL)
 
     LogEntry:
       type: object

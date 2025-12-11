@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/m3u"
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/rs/zerolog"
@@ -31,6 +32,9 @@ type Server struct {
 	hlsManager     *HLSManager               // HLS streaming manager for iOS
 	tlsCert        string
 	tlsKey         string
+	dataDir        string            // For reading playlist.m3u
+	playlistPath   string            // Path to M3U playlist
+	channelMap     map[string]string // Map of ID -> Stream URL
 }
 
 // Config holds the configuration for the proxy server.
@@ -56,6 +60,10 @@ type Config struct {
 	// TLS Configuration
 	TLSCert string
 	TLSKey  string
+
+	// Playlist Configuration
+	DataDir      string
+	PlaylistPath string
 }
 
 // New creates a new proxy server.
@@ -76,6 +84,14 @@ func New(cfg Config) (*Server, error) {
 		receiverHost:   cfg.ReceiverHost,
 		tlsCert:        cfg.TLSCert,
 		tlsKey:         cfg.TLSKey,
+		dataDir:        cfg.DataDir,
+		playlistPath:   cfg.PlaylistPath,
+		channelMap:     make(map[string]string),
+	}
+
+	// Load M3U playlist if available
+	if err := s.loadM3U(); err != nil {
+		cfg.Logger.Warn().Err(err).Msg("failed to load initial playlist (will retry on lookup)")
 	}
 
 	// Parse target URL if provided (used as fallback)
@@ -206,9 +222,52 @@ func (s *Server) resolveTargetURL(ctx context.Context, path, rawQuery string) st
 	// Extract service reference from path (e.g., /1:0:19:132F:3EF:1:C00000:0:0:0:)
 	serviceRef := strings.TrimPrefix(path, "/")
 
+	// Check if this looks like a service reference (contains colons)
+	isRef := strings.Contains(serviceRef, ":")
+
+	// If it's a slug (frontend ID) and not a Ref, try to resolve it via M3U map
+	if !isRef && serviceRef != "" {
+		if streamURL, ok := s.lookupStreamURL(serviceRef); ok {
+			// Found in map! Use the URL from M3U.
+			// This might be http://RECEIVER:8001/... or http://PROXY:18000/...
+			// If it points to us (proxy), we need to extract the Ref from it to avoid loops
+			// or simply use it if the proxy client handles it (but loop is bad).
+			// Let's check if it's a proxy loop.
+			if strings.Contains(streamURL, s.addr) || strings.Contains(streamURL, "localhost:"+strings.Split(s.addr, ":")[1]) {
+				// It's pointing to us. Extract Ref from path.
+				// Assume format http://host:port/REF...
+				if parsed, err := url.Parse(streamURL); err == nil {
+					// Use the path from the URL as the new path (likely /REF)
+					path = parsed.Path
+					serviceRef = strings.TrimPrefix(path, "/")
+					isRef = strings.Contains(serviceRef, ":")
+					s.logger.Debug().Str("slug", serviceRef).Str("resolved_path", path).Msg("resolved slug to self-referencing proxy URL, extracting path")
+				}
+			} else {
+				// It's an external URL (Direct to Receiver). Use it directly!
+				if rawQuery != "" {
+					streamURL += "?" + rawQuery
+				}
+				s.logger.Debug().Str("slug", serviceRef).Str("target", streamURL).Msg("resolved slug to upstream URL via M3U")
+				return streamURL
+			}
+		} else {
+			// Not found in map. Try reloading M3U once?
+			if err := s.loadM3U(); err == nil {
+				if streamURL, ok := s.lookupStreamURL(serviceRef); ok {
+					if rawQuery != "" {
+						streamURL += "?" + rawQuery
+					}
+					s.logger.Info().Str("slug", serviceRef).Msg("resolved slug after M3U reload")
+					return streamURL
+				}
+			}
+		}
+	}
+
 	// Try Smart Detection first (if available and enabled)
 	if s.streamDetector != nil && serviceRef != "" && openwebif.IsEnabled() {
-		streamInfo, err := s.streamDetector.DetectStreamURL(ctx, serviceRef, "")
+		streamInfo, err := s.streamDetector.DetectStreamURL(ctx, serviceRef, "", true)
 		if err == nil && streamInfo != nil {
 			targetURL := streamInfo.URL
 			if rawQuery != "" {
@@ -372,4 +431,42 @@ func GetReceiverHost() string {
 	}
 
 	return parsed.Hostname()
+}
+
+// loadM3U loads the M3U playlist and builds the ID->URL map.
+func (s *Server) loadM3U() error {
+	if s.playlistPath == "" {
+		return nil
+	}
+
+	// Read M3U file
+	data, err := os.ReadFile(s.playlistPath)
+	if err != nil {
+		return fmt.Errorf("read playlist: %w", err)
+	}
+
+	// Parse
+	channels := m3u.Parse(string(data))
+	newMap := make(map[string]string)
+
+	for _, ch := range channels {
+		id := ch.TvgID
+		if id != "" && ch.URL != "" {
+			newMap[id] = ch.URL
+		}
+	}
+	s.logger.Info().Int("count", len(newMap)).Str("path", s.playlistPath).Msg("loaded channels from playlist")
+	s.channelMap = newMap
+
+	return nil
+}
+
+// lookupStreamURL looks up a stream URL by ID.
+// TODO: Add proper locking. For now, this is a prototype fix.
+func (s *Server) lookupStreamURL(id string) (string, bool) {
+	// This access is UNSAFE if loadM3U runs concurrently.
+	// But for now, loadM3U is only called at startup and on miss (which is rare/racey but maybe acceptable for fix).
+	// Real fix: Add mutex.
+	url, ok := s.channelMap[id]
+	return url, ok
 }

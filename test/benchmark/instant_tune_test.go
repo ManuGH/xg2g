@@ -50,15 +50,17 @@ func BenchmarkInstantTune(b *testing.B) {
 		// But creating new detector is cheap.
 
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			// Create fresh detector to simulate cold cache
-			d := openwebif.NewStreamDetector("127.0.0.1", logger)
-			d.SetHTTPClient(mockClient)
+		b.RunParallel(func(pb *testing.PB) {
+			for pb.Next() {
+				// Create fresh detector to simulate cold cache
+				d := openwebif.NewStreamDetector("127.0.0.1", logger)
+				d.SetHTTPClient(mockClient)
+				ctx := context.Background()
 
-			// Test just one service
-			s := services[0]
-			_, _ = d.DetectStreamURL(context.Background(), s[1], s[0])
-		}
+				// Test just one service
+				_, _ = d.DetectStreamURL(ctx, "1:0:1:79E0:443:1:C00000:0:0:0:", "Test Channel", false)
+			}
+		})
 	})
 
 	b.Run("WarmCache_InstantTune", func(b *testing.B) {
@@ -71,7 +73,7 @@ func BenchmarkInstantTune(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			s := services[0]
 			// With Instant Tune, the URL is already in cache
-			_, _ = detector.DetectStreamURL(ctx, s[1], s[0])
+			_, _ = detector.DetectStreamURL(ctx, s[1], s[0], false)
 		}
 	})
 }

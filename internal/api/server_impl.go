@@ -255,13 +255,28 @@ func (s *Server) GetServices(w http.ResponseWriter, r *http.Request, params GetS
 		}
 		number := ch.Number
 
+		// Extract service_ref from URL for streaming
+		serviceRef := ""
+		if ch.URL != "" {
+			// URL format is typically: http://receiver:8001/sref (where sref is the service reference)
+			parts := strings.Split(ch.URL, "/")
+			if len(parts) > 0 {
+				serviceRef = parts[len(parts)-1]
+			}
+		}
+		// Fallback to TvgID if service_ref not found
+		if serviceRef == "" {
+			serviceRef = id
+		}
+
 		resp = append(resp, Service{
-			Id:      &id,
-			Name:    &name,
-			Group:   &group,
-			LogoUrl: &logo,
-			Number:  &number,
-			Enabled: &enabled,
+			Id:         &id,
+			Name:       &name,
+			Group:      &group,
+			LogoUrl:    &logo,
+			Number:     &number,
+			Enabled:    &enabled,
+			ServiceRef: &serviceRef,
 		})
 	}
 

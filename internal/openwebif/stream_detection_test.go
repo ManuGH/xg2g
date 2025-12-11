@@ -275,24 +275,35 @@ func TestStreamDetector_DetectStreamURL(t *testing.T) {
 	serviceRef := "1:0:1:6DCF:44D:1:C00000:0:0:0:"
 	channelName := "Test Channel"
 
-	info, err := detector.DetectStreamURL(ctx, serviceRef, channelName)
-
+	info, err := detector.DetectStreamURL(ctx, serviceRef, channelName, false)
 	if err != nil {
 		t.Errorf("DetectStreamURL() error = %v", err)
 	}
-
 	if info == nil {
 		t.Fatal("DetectStreamURL() returned nil info")
-		return
 	}
 
-	// Should return fallback URL
 	if info.URL == "" {
 		t.Error("DetectStreamURL() returned empty URL")
 	}
 
-	if info.Port != 8001 {
-		t.Errorf("expected fallback port 8001, got %d", info.Port)
+	// Verify encryption detection
+	if !info.UseProxy && info.Port == 17999 {
+		// This is expected for encrypted channel
+	}
+
+	if info.Port != 17999 {
+		t.Errorf("Expected port 17999 for encrypted channel, got %d", info.Port)
+	}
+
+	// Test 4: Verify caching
+	// Second call should return cached result
+	info2, _ := detector.DetectStreamURL(ctx, serviceRef, "Test Channel", false)
+	if info2 == nil {
+		t.Fatal("DetectStreamURL() returned nil info on second call")
+	}
+	if info2.Port != 17999 {
+		t.Errorf("Expected cached port 17999, got %d", info2.Port)
 	}
 }
 
@@ -314,7 +325,7 @@ func TestStreamDetector_Caching(t *testing.T) {
 
 	// Call should use cache
 	ctx := context.Background()
-	info, err := detector.DetectStreamURL(ctx, serviceRef, "Test Channel")
+	info, err := detector.DetectStreamURL(ctx, serviceRef, "Test Channel", false)
 	if err != nil {
 		t.Fatalf("DetectStreamURL() error = %v", err)
 	}
@@ -389,13 +400,14 @@ func TestStreamDetector_BuildCandidates(t *testing.T) {
 				logger:       logger,
 			}
 
-			candidates := detector.buildCandidates("1:0:1:6DCF")
+			// Pass skipProxy=false for these tests
+			candidates := detector.buildCandidates("1:0:1:6DCF", false)
 
 			if len(candidates) != tt.wantCandidates {
 				t.Errorf("got %d candidates, want %d", len(candidates), tt.wantCandidates)
 			}
 
-			if candidates[0].Port != tt.wantFirstPort {
+			if len(candidates) > 0 && candidates[0].Port != tt.wantFirstPort {
 				t.Errorf("first candidate port = %d, want %d", candidates[0].Port, tt.wantFirstPort)
 			}
 

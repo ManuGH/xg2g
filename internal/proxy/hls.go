@@ -19,10 +19,10 @@ import (
 
 const (
 	// DefaultHLSIdleTimeout is the default timeout for idle HLS streams before cleanup
-	DefaultHLSIdleTimeout = 60 * time.Second
+	DefaultHLSIdleTimeout = 4 * time.Second
 
 	// DefaultHLSCleanupInterval is the default interval for checking idle streams
-	DefaultHLSCleanupInterval = 30 * time.Second
+	DefaultHLSCleanupInterval = 2 * time.Second
 )
 
 // HLSStreamer manages HLS segmentation for a single stream.
@@ -158,21 +158,48 @@ func (s *HLSStreamer) Start() error {
 	// -hls_time 2: 2-second segments (low latency)
 	// -hls_list_size 6: Keep last 6 segments (12 seconds buffer)
 	// -hls_flags: delete_segments (auto cleanup) + append_list (continuous stream)
+	// If we are using the Web API, we must "Zap" and resolve the real stream URL manually.
+	finalInputURL := s.targetURL
+	webAPIURL := convertToWebAPI(s.targetURL, s.serviceRef)
+
+	if webAPIURL != s.targetURL {
+		s.logger.Info().Str("web_api_url", webAPIURL).Msg("attempting to resolve Web API stream (Zapping)")
+		resolved, err := resolveWebAPI(webAPIURL)
+		if err != nil {
+			s.logger.Error().Err(err).Str("web_api_url", webAPIURL).Msg("failed to resolve Web API stream")
+		} else {
+			finalInputURL = resolved
+			s.logger.Info().Str("resolved_url", finalInputURL).Msg("successfully resolved stream URL")
+			// Give the tuner a moment to lock after zapping
+			time.Sleep(1000 * time.Millisecond)
+		}
+	} else {
+		s.logger.Info().Msg("using direct stream URL (no Web API detected)")
+	}
+
+	s.logger.Info().Str("ffmpeg_input", finalInputURL).Msg("starting ffmpeg with input")
+
 	args := []string{
 		"-hide_banner",
-		"-loglevel", "warning",
-		// Stream Repair Flags (Enigma2 Compatibility)
-		"-fflags", "+genpts+igndts", // Regenerate PTS, ignore bad DTS
-		"-analyzeduration", "5000000", // 5s analysis limit (Goldilocks zone)
-		"-probesize", "5000000", // 5MB probe size
-		"-i", s.targetURL,
-		"-map", "0:v",
-		"-map", "0:a",
-		"-c:v", "copy", // Copy video (fast, original quality)
-		"-c:a", "aac", // Transcode audio to AAC (compatible, fixes timestamps)
+		"-loglevel", "info", // Changed from warning to info for better debugging
+		"-err_detect", "ignore_err", // Ignore decoding errors
+		"-ignore_unknown",                          // Ignore streams that fail probing
+		"-fflags", "+genpts+igndts+discardcorrupt", // Regenerate PTS, ignore bad DTS, discard corrupt frames
+		"-analyzeduration", "60000000", // Increased to 60s for SPS/PPS detection
+		"-probesize", "100000000", // Increased to 100MB for SPS/PPS detection
+		"-rw_timeout", "30000000", // 30s socket timeout
+		"-start_at_zero",                  // Normalize timestamps start
+		"-avoid_negative_ts", "make_zero", // Shift timestamps to positive
+		"-thread_queue_size", "4096", // Increase thread queue for buffer
+		// "-reconnect", "1", "-reconnect_at_eof", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5", // REMOVED: Fail fast
+		"-i", finalInputURL,
+		"-map", "0:v:0", // Explicitly map first video (Port 8001 is filtered, so 0:v:0 is safe)
+		"-map", "0:a:0", // Explicitly map first audio
+		"-c:v", "copy", // DIRECT STREAM COPY
+		"-c:a", "aac", // Transcode audio to AAC
 		"-ac", "2", // Stereo downmix
 		"-b:a", "192k", // 192kbps audio bitrate
-		"-bsf:v", "h264_mp4toannexb", // Repair SPS/PPS for iOS
+		"-bsf:v", "h264_mp4toannexb,dump_extra", // Extract and inject SPS/PPS headers into every keyframe
 		"-f", "hls",
 		"-hls_time", "2",
 		"-hls_list_size", "6",
@@ -312,6 +339,14 @@ func (s *HLSStreamer) waitForPlaylist(ctx context.Context) error {
 		case <-timeout:
 			return fmt.Errorf("timeout waiting for playlist creation")
 		case <-ticker.C:
+			// check if process is still running
+			s.mu.RLock()
+			running := s.started
+			s.mu.RUnlock()
+			if !running {
+				return fmt.Errorf("process exited before playlist creation")
+			}
+
 			// playlistPath is already validated via secureJoin (constructed from validated s.outputDir)
 			if _, err := os.Stat(playlistPath); err == nil {
 				// Playlist exists, but let's make sure it has content

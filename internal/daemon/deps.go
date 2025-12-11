@@ -52,6 +52,10 @@ type ProxyConfig struct {
 	// TLS Configuration
 	TLSCert string
 	TLSKey  string
+
+	// Playlist Configuration
+	DataDir      string
+	PlaylistPath string
 }
 
 // Validate checks if the dependencies are valid.

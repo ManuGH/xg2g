@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { DefaultService as SystemService } from '../client';
+import { DefaultService } from '../client';
 import './Config.css';
 
 function Config() {
@@ -17,12 +17,17 @@ function Config() {
   const loadConfig = async () => {
     try {
       setLoading(true);
-      const data = await SystemService.getSystemConfig();
+      const data = await DefaultService.getSystemConfig();
       setConfig(data);
       setError(null);
     } catch (err) {
       console.error('Failed to load config:', err);
-      setError('Failed to load configuration. Please ensure the backend is running.');
+      if (err.status === 401) {
+        window.dispatchEvent(new Event('auth-required'));
+        setError('Authentication required. Please enter your API token.');
+      } else {
+        setError('Failed to load configuration. Please ensure the backend is running.');
+      }
     } finally {
       setLoading(false);
     }
@@ -52,7 +57,7 @@ function Config() {
     setSuccessMsg('');
 
     try {
-      const result = await SystemService.putSystemConfig({
+      const result = await DefaultService.putSystemConfig({
         openWebIF: config.openWebIF,
         bouquets: config.bouquets,
         epg: config.epg,
@@ -122,12 +127,13 @@ function Config() {
             </div>
           </div>
           <div className="form-group">
-            <label>Stream Port</label>
+            <label>Default Stream Port</label>
             <input
               type="number"
               value={config.openWebIF?.streamPort || 8001}
               onChange={e => handleChange('openWebIF', 'streamPort', parseInt(e.target.value))}
             />
+            <small>Standard port (8001). Encrypted channels use 17999 automatically.</small>
           </div>
         </section>
 
@@ -186,14 +192,14 @@ function Config() {
         <section className="config-section">
           <h3>Picons (Channel Logos)</h3>
           <div className="form-group">
-            <label>Picon Base URL</label>
+            <label>External Picon Source (Optional)</label>
             <input
               type="text"
               value={config.picons?.baseUrl || ''}
               onChange={e => handleChange('picons', 'baseUrl', e.target.value)}
               placeholder="http://picons.example.com/"
             />
-            <small>External URL for channel logos (optional)</small>
+            <small>Leave blank to use picons from receiver. Enter URL for external source.</small>
           </div>
         </section>
 

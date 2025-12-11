@@ -27,8 +27,8 @@ type ServerConfig struct {
 
 const (
 	// Default server timeouts
-	defaultReadTimeout     = 5 * time.Second
-	defaultWriteTimeout    = 10 * time.Second
+	defaultReadTimeout     = 60 * time.Second
+	defaultWriteTimeout    = 60 * time.Second
 	defaultIdleTimeout     = 120 * time.Second
 	defaultMaxHeaderBytes  = 1 << 20 // 1 MB
 	defaultShutdownTimeout = 15 * time.Second
