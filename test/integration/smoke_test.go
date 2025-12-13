@@ -34,7 +34,7 @@ func TestSmoke_HealthEndpoints(t *testing.T) {
 	}{
 		{"liveness", "/healthz", http.StatusOK},
 		{"readiness_not_ready", "/readyz", http.StatusServiceUnavailable},
-		{"status", "/api/v1/status", http.StatusOK},
+		{"status", "/api/v2/status", http.StatusOK},
 	}
 
 	for _, tt := range tests {
@@ -74,7 +74,7 @@ func TestSmoke_RefreshEndpointAuth(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			resp := helpers.DoRequest(t, ts.Server.URL, helpers.RequestOptions{
 				Method: http.MethodPost,
-				Path:   "/api/v1/refresh",
+				Path:   "/api/v2/refresh",
 				Token:  tt.token,
 			})
 			defer resp.Body.Close()
@@ -135,7 +135,7 @@ func TestSmoke_ConcurrentAPIRequests(t *testing.T) {
 		go func() {
 			resp := helpers.DoRequest(t, ts.Server.URL, helpers.RequestOptions{
 				Method: http.MethodPost,
-				Path:   "/api/v1/refresh",
+				Path:   "/api/v2/refresh",
 				Token:  "test-token",
 			})
 			defer resp.Body.Close()

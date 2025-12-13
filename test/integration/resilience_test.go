@@ -56,7 +56,7 @@ func TestCircuitBreakerFlow(t *testing.T) {
 		req, _ := http.NewRequestWithContext(
 			context.Background(),
 			http.MethodPost,
-			testServer.URL+"/api/v1/refresh",
+			testServer.URL+"/api/v2/refresh",
 			nil,
 		)
 		req.Header.Set("Origin", testServer.URL) // CSRF protection
@@ -338,7 +338,7 @@ func TestRateLimitingBehavior(t *testing.T) {
 			req, _ := http.NewRequestWithContext(
 				context.Background(),
 				http.MethodPost,
-				testServer.URL+"/api/v1/refresh",
+				testServer.URL+"/api/v2/refresh",
 				nil,
 			)
 			req.Header.Set("Origin", testServer.URL) // CSRF protection

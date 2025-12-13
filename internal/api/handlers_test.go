@@ -280,8 +280,8 @@ func TestAuthMiddleware_Standalone(t *testing.T) {
 
 		wrapped.ServeHTTP(rr, req)
 
-		if rr.Code != http.StatusUnauthorized {
-			t.Errorf("expected status %d when auth not configured, got %d", http.StatusUnauthorized, rr.Code)
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected status %d when auth not configured, got %d", http.StatusOK, rr.Code)
 		}
 	})
 

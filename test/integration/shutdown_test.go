@@ -207,7 +207,7 @@ func TestShutdownWithActiveRequests(t *testing.T) {
 	// Start background request
 	requestDone := make(chan error, 1)
 	go func() {
-		resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/api/v1/status", port))
+		resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/api/v2/status", port))
 		if err != nil {
 			requestDone <- err
 			return

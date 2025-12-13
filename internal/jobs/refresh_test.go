@@ -109,7 +109,7 @@ func refreshWithClient(ctx context.Context, cfg config.AppConfig, cl OwiClient) 
 	}
 
 	playlistPath := filepath.Join(cfg.DataDir, "playlist.m3u")
-	if err := writeM3U(ctx, playlistPath, items); err != nil {
+	if err := writeM3U(ctx, playlistPath, items, ""); err != nil {
 		return nil, fmt.Errorf("failed to write M3U playlist: %w", err)
 	}
 	logger.Info().

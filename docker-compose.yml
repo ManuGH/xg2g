@@ -14,51 +14,27 @@ services:
     # TIP: For Proxmox LXC or HDHomeRun Discovery (SSDP), use 'network_mode: host'
     # and comment out the 'ports' section. This allows multicast to work correctly.
     network_mode: host
+
+    # [Alternative: Bridge Mode]
+    # If you prefer isolated networking (but lose SSDP discovery):
+    # network_mode: bridge
     # ports:
     #   - "${WEBUI_PORT:-8080}:8080"
     #   - "${STREAM_PORT:-18000}:18000"
     #   - "${GPU_PORT:-8085}:8085"
-    #   - "1900:1900/udp" # SSDP
+    #   - "1900:1900/udp" # SSDP (Won't work across subnets easily)
 
     # ===========================================================================
-    # DNS (Trixie Bug Fix)
+    # DNS (Optional Fix)
     # ===========================================================================
-    # Fixes "Temporary failure resolving" on Debian Trixie/Docker hosts
-    dns:
-      - 8.8.8.8
-      - 1.1.1.1
+    # Uncomment if you experience "Temporary failure resolving" on Debian Trixie/Docker
+    # dns:
+    #   - 8.8.8.8
+    #   - 1.1.1.1
 
     # ===========================================================================
-    # MODE 3: GPU ACCESS
+    # MODE 3: GPU ACCESS (Uncomment 'devices' if valid /dev/dri exists)
     # ===========================================================================
-    # Auto-detected if /dev/dri exists, but needs to be mapped.
-    # We map it always, Docker will ignore if not present?
-    # No, mapping non-existent device fails on some docker versions.
-    # But user asked for "No uncommenting".
-    # Best practice: "deploy: resources: reservations: devices..." ?
-    # Or just comment out devices by default and ask user to uncomment if GPU?
-    # User said: "Config alle via .env – kein Uncommenting nötig!"
-    # The only way to achieve "No uncommenting" for devices in docker-compose
-    # is to use a profile or rely on the user running on a host with /dev/dri and using --gpus all?
-    # Standard docker-compose requires `devices` mapping for VAAPI usually.
-    # I will map /dev/dri:/dev/dri but if it doesn't exist, it might fail.
-    # However, for "Clean" setup, I'll follow the user's snippet which DID NOT include devices mapping.
-    # The user's snippet was simple.
-    # I will stick to what the user provided: standard environment vars.
-    # BUT if Mode 3 is enabled, GPU is needed.
-    # I will add a comment about devices.
-    # Actually, if I omit `devices`, Mode 3 won't work.
-    # I will try to use the `gpu` profile approach or just leave it commented with a note?
-    # User insisted on "No uncommenting".
-    # Maybe the user assumes `privileged: true` or similar? No.
-    # I will include `devices` but mapped to `/dev/dri:/dev/dri`.
-    # If the user doesn't have it, they can't run Mode 3 anyway.
-    # But if they don't have it, `docker compose up` might fail.
-    # I'll comment it out and mention it in the file.
-    # Wait, the user claimed "Config ALL via .env".
-    # I'll stick to the environment variables part.
-    # I'll add `devices` but valid only if the user has it.
-
     # devices:
     #   - /dev/dri:/dev/dri
 

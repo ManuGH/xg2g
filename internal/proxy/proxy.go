@@ -11,6 +11,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/m3u"
@@ -32,9 +33,20 @@ type Server struct {
 	hlsManager     *HLSManager               // HLS streaming manager for iOS
 	tlsCert        string
 	tlsKey         string
-	dataDir        string            // For reading playlist.m3u
-	playlistPath   string            // Path to M3U playlist
-	channelMap     map[string]string // Map of ID -> Stream URL
+	dataDir        string // For reading playlist.m3u
+	playlistPath   string // Path to M3U playlist
+	// channelMap stores StreamID -> StreamURL mappings.
+	// Concurrency: Protected by channelMu (RWMutex).
+	// - Reads (Lookup) use RLock/RUnlock
+	// - Writes (Load) use Lock/Unlock
+	// Reload Strategy:
+	// - Initial load at startup.
+	// - On specific lookup miss (slug not found), we attempt one reload.
+	// - Future plan: Use file watcher or periodic refresh for high-availability updates.
+	channelMap map[string]string
+	channelMu  sync.RWMutex
+	listenPort string
+	localHosts map[string]struct{}
 }
 
 // Config holds the configuration for the proxy server.
@@ -88,6 +100,10 @@ func New(cfg Config) (*Server, error) {
 		playlistPath:   cfg.PlaylistPath,
 		channelMap:     make(map[string]string),
 	}
+
+	listenHost, listenPort := splitListenAddr(cfg.ListenAddr)
+	s.listenPort = listenPort
+	s.localHosts = collectLocalHosts(listenHost)
 
 	// Load M3U playlist if available
 	if err := s.loadM3U(); err != nil {
@@ -175,8 +191,8 @@ func New(cfg Config) (*Server, error) {
 	s.httpServer = &http.Server{
 		Addr:              cfg.ListenAddr,
 		Handler:           mux,
-		ReadTimeout:       10 * time.Second,
-		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       40 * time.Second, // Increased to allow FFmpeg probing (>30s)
+		ReadHeaderTimeout: 10 * time.Second,
 		WriteTimeout:      0, // No timeout for streaming
 		IdleTimeout:       120 * time.Second,
 		MaxHeaderBytes:    1 << 20, // 1 MB
@@ -233,7 +249,7 @@ func (s *Server) resolveTargetURL(ctx context.Context, path, rawQuery string) st
 			// If it points to us (proxy), we need to extract the Ref from it to avoid loops
 			// or simply use it if the proxy client handles it (but loop is bad).
 			// Let's check if it's a proxy loop.
-			if strings.Contains(streamURL, s.addr) || strings.Contains(streamURL, "localhost:"+strings.Split(s.addr, ":")[1]) {
+			if s.isSelfURL(streamURL) {
 				// It's pointing to us. Extract Ref from path.
 				// Assume format http://host:port/REF...
 				if parsed, err := url.Parse(streamURL); err == nil {
@@ -245,9 +261,7 @@ func (s *Server) resolveTargetURL(ctx context.Context, path, rawQuery string) st
 				}
 			} else {
 				// It's an external URL (Direct to Receiver). Use it directly!
-				if rawQuery != "" {
-					streamURL += "?" + rawQuery
-				}
+				streamURL = appendRawQuery(streamURL, rawQuery)
 				s.logger.Debug().Str("slug", serviceRef).Str("target", streamURL).Msg("resolved slug to upstream URL via M3U")
 				return streamURL
 			}
@@ -255,9 +269,7 @@ func (s *Server) resolveTargetURL(ctx context.Context, path, rawQuery string) st
 			// Not found in map. Try reloading M3U once?
 			if err := s.loadM3U(); err == nil {
 				if streamURL, ok := s.lookupStreamURL(serviceRef); ok {
-					if rawQuery != "" {
-						streamURL += "?" + rawQuery
-					}
+					streamURL = appendRawQuery(streamURL, rawQuery)
 					s.logger.Info().Str("slug", serviceRef).Msg("resolved slug after M3U reload")
 					return streamURL
 				}
@@ -269,10 +281,7 @@ func (s *Server) resolveTargetURL(ctx context.Context, path, rawQuery string) st
 	if s.streamDetector != nil && serviceRef != "" && openwebif.IsEnabled() {
 		streamInfo, err := s.streamDetector.DetectStreamURL(ctx, serviceRef, "", true)
 		if err == nil && streamInfo != nil {
-			targetURL := streamInfo.URL
-			if rawQuery != "" {
-				targetURL += "?" + rawQuery
-			}
+			targetURL := appendRawQuery(streamInfo.URL, rawQuery)
 
 			s.logger.Debug().
 				Str("service_ref", serviceRef).
@@ -293,17 +302,12 @@ func (s *Server) resolveTargetURL(ctx context.Context, path, rawQuery string) st
 	// Fallback to configured target URL or receiver host
 	if s.targetURL != nil {
 		targetURL := s.targetURL.String() + path
-		if rawQuery != "" {
-			targetURL += "?" + rawQuery
-		}
-		return targetURL
+		return appendRawQuery(targetURL, rawQuery)
 	}
 
 	// Last resort: Use receiver host with default port 8001
 	targetURL := fmt.Sprintf("http://%s%s", net.JoinHostPort(s.receiverHost, "8001"), path)
-	if rawQuery != "" {
-		targetURL += "?" + rawQuery
-	}
+	targetURL = appendRawQuery(targetURL, rawQuery)
 
 	s.logger.Debug().
 		Str("target", targetURL).
@@ -456,17 +460,144 @@ func (s *Server) loadM3U() error {
 		}
 	}
 	s.logger.Info().Int("count", len(newMap)).Str("path", s.playlistPath).Msg("loaded channels from playlist")
+	s.channelMu.Lock()
 	s.channelMap = newMap
+	s.channelMu.Unlock()
 
 	return nil
 }
 
 // lookupStreamURL looks up a stream URL by ID.
-// TODO: Add proper locking. For now, this is a prototype fix.
 func (s *Server) lookupStreamURL(id string) (string, bool) {
-	// This access is UNSAFE if loadM3U runs concurrently.
-	// But for now, loadM3U is only called at startup and on miss (which is rare/racey but maybe acceptable for fix).
-	// Real fix: Add mutex.
+	s.channelMu.RLock()
 	url, ok := s.channelMap[id]
+	s.channelMu.RUnlock()
 	return url, ok
+}
+
+// appendRawQuery merges the provided raw query string into the base URL.
+func appendRawQuery(base, rawQuery string) string {
+	if rawQuery == "" {
+		return base
+	}
+
+	u, err := url.Parse(base)
+	if err != nil {
+		if strings.Contains(base, "?") {
+			return base + "&" + rawQuery
+		}
+		return base + "?" + rawQuery
+	}
+
+	extra, err := url.ParseQuery(rawQuery)
+	if err != nil {
+		if u.RawQuery == "" {
+			u.RawQuery = rawQuery
+		} else {
+			u.RawQuery = u.RawQuery + "&" + rawQuery
+		}
+		return u.String()
+	}
+
+	values := u.Query()
+	for key, vs := range extra {
+		for _, v := range vs {
+			values.Add(key, v)
+		}
+	}
+	u.RawQuery = values.Encode()
+	return u.String()
+}
+
+func splitListenAddr(addr string) (string, string) {
+	if addr == "" {
+		return "", ""
+	}
+
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return "", strings.TrimPrefix(addr, ":")
+	}
+	if port == "" {
+		port = strings.TrimPrefix(addr, ":")
+	}
+	return host, port
+}
+
+func collectLocalHosts(explicitHost string) map[string]struct{} {
+	hosts := map[string]struct{}{
+		"localhost": {},
+		"127.0.0.1": {},
+		"::1":       {},
+	}
+
+	addHost := func(host string) {
+		if host == "" {
+			return
+		}
+		hosts[strings.ToLower(host)] = struct{}{}
+	}
+
+	if explicitHost != "" && explicitHost != "0.0.0.0" && explicitHost != "::" {
+		addHost(explicitHost)
+	}
+
+	if hn, err := os.Hostname(); err == nil {
+		addHost(hn)
+	}
+
+	ifaces, err := net.Interfaces()
+	if err == nil {
+		for _, iface := range ifaces {
+			addrs, err := iface.Addrs()
+			if err != nil {
+				continue
+			}
+			for _, addr := range addrs {
+				switch v := addr.(type) {
+				case *net.IPNet:
+					addHost(v.IP.String())
+				case *net.IPAddr:
+					addHost(v.IP.String())
+				default:
+					addHost(addr.String())
+				}
+			}
+		}
+	}
+
+	return hosts
+}
+
+func (s *Server) isSelfURL(streamURL string) bool {
+	if s.listenPort == "" {
+		return false
+	}
+
+	parsed, err := url.Parse(streamURL)
+	if err != nil {
+		return false
+	}
+
+	host := strings.ToLower(parsed.Hostname())
+	port := parsed.Port()
+	if port == "" {
+		switch parsed.Scheme {
+		case "https":
+			port = "443"
+		default:
+			port = "80"
+		}
+	}
+
+	if port != s.listenPort {
+		return false
+	}
+
+	if host == "" {
+		return true
+	}
+
+	_, ok := s.localHosts[host]
+	return ok
 }

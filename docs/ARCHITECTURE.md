@@ -40,7 +40,7 @@ graph TB
     end
 
     subgraph "xg2g Middleware"
-        API[HTTP API Server<br/>/api/v1/*]
+        API[HTTP API Server<br/>/api/v2/*]
         HDHR[HDHomeRun Emulation<br/>SSDP Discovery]
         Proxy[Stream Proxy<br/>HTTP Tunneling]
         Jobs[Background Jobs<br/>Refresh, EPG]
@@ -88,8 +88,8 @@ graph LR
     end
 
     subgraph "internal/api"
-        Router[router.go<br/>HTTP Routing]
-        V1[v1/handlers.go<br/>API v1 Endpoints]
+        Router[http.go<br/>HTTP Routing]
+        V2[v2/handlers.go<br/>API v2 Endpoints]
         MW[middleware/*<br/>Auth, CORS, Tracing]
     end
 
@@ -116,14 +116,14 @@ graph LR
 
     Main --> Bootstrap
     Bootstrap --> Router
-    Router --> V1
+    Router --> V2
     Router --> MW
-    V1 --> Refresh
-    V1 --> Proxy
-    V1 --> HDHR
+    V2 --> Refresh
+    V2 --> Proxy
+    V2 --> HDHR
     Proxy --> TC
     Bootstrap --> Config
-    V1 --> Validate
+    V2 --> Validate
     MW --> Telemetry
     Bootstrap --> Log
 ```
@@ -136,9 +136,9 @@ graph LR
 
 **Key Endpoints**:
 
-- `GET /api/v1/status` - Service health and version
-- `POST /api/v1/refresh` - Trigger playlist/EPG refresh
-- `GET /api/v1/channels` - List available channels
+- `GET /api/v2/status` - Service health and version
+- `POST /api/v2/refresh` - Trigger playlist/EPG refresh
+- `GET /api/v2/channels` - List available channels
 
 **Architecture Decision**: [ADR-001 API Versioning](adr/001-api-versioning.md)
 
@@ -228,7 +228,7 @@ sequenceDiagram
     participant OWI as Enigma2 OpenWebIF
     participant Storage as File Storage
 
-    Client->>API: POST /api/v1/refresh
+    Client->>API: POST /api/v2/refresh
     API->>Jobs: Trigger Refresh Job
     Jobs->>OWI: GET /api/bouquets
     OWI-->>Jobs: Bouquet List

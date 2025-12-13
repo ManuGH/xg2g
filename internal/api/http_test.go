@@ -260,11 +260,11 @@ func TestAuthMiddleware(t *testing.T) {
 		expectedBody   string
 	}{
 		{
-			name:           "no token configured, fail closed",
+			name:           "no token configured, auth disabled",
 			tokenEnv:       "",
 			headerValue:    "",
-			expectedStatus: http.StatusUnauthorized,
-			expectedBody:   "Unauthorized: API token not configured on server",
+			expectedStatus: http.StatusOK,
+			expectedBody:   "OK",
 		},
 		{
 			name:           "token configured, no header, unauthorized",
@@ -719,7 +719,7 @@ func TestClientDisconnectDuringRefresh(t *testing.T) {
 	// Create a context that we'll cancel to simulate client disconnect
 	ctx, cancel := context.WithCancel(context.Background())
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/refresh", nil).WithContext(ctx)
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/refresh", nil).WithContext(ctx)
 	req.Header.Set("Authorization", "Bearer test-token")
 
 	rr := httptest.NewRecorder()

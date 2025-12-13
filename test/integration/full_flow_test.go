@@ -118,7 +118,7 @@ func TestAPIRefreshEndpoint(t *testing.T) {
 	req, err := http.NewRequestWithContext(
 		context.Background(),
 		http.MethodPost,
-		testServer.URL+"/api/v1/refresh",
+		testServer.URL+"/api/v2/refresh",
 		nil,
 	)
 	require.NoError(t, err, "Should create request")
@@ -148,7 +148,7 @@ func TestAPIRefreshEndpoint(t *testing.T) {
 	statusReq, _ := http.NewRequestWithContext(
 		context.Background(),
 		http.MethodGet,
-		testServer.URL+"/api/v1/status",
+		testServer.URL+"/api/v2/status",
 		nil,
 	)
 
@@ -307,7 +307,7 @@ func TestConcurrentRefreshRequests(t *testing.T) {
 			req, _ := http.NewRequestWithContext(
 				context.Background(),
 				http.MethodPost,
-				testServer.URL+"/api/v1/refresh",
+				testServer.URL+"/api/v2/refresh",
 				nil,
 			)
 			req.Header.Set("Origin", testServer.URL) // CSRF protection
@@ -387,7 +387,7 @@ func TestHealthCheckFlow(t *testing.T) {
 		},
 		{
 			name:           "status before refresh",
-			endpoint:       "/api/v1/status",
+			endpoint:       "/api/v2/status",
 			expectedStatus: http.StatusOK,
 			shouldContain:  "channels",
 		},

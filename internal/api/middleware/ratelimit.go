@@ -5,6 +5,8 @@ package middleware
 import (
 	"fmt"
 	"net/http"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/httprate"
@@ -23,14 +25,6 @@ type RateLimitConfig struct {
 
 // RateLimit creates a rate limiting middleware using the httprate library.
 // It uses a sliding window counter algorithm for accurate rate limiting.
-//
-// Example usage:
-//
-//	// Limit to 10 requests per minute per IP
-//	r.Use(middleware.RateLimit(middleware.RateLimitConfig{
-//	    RequestLimit: 10,
-//	    WindowSize:   time.Minute,
-//	}))
 func RateLimit(cfg RateLimitConfig) func(http.Handler) http.Handler {
 	// Default to IP-based rate limiting if no key function provided
 	keyFunc := cfg.KeyFunc
@@ -65,11 +59,28 @@ func RefreshRateLimit() func(http.Handler) http.Handler {
 	})
 }
 
-// APIRateLimit returns a rate limiter configured for general API endpoints.
-// Default: 60 requests per minute per IP for standard API operations.
+// APIRateLimit returns a rate limiter configured via environment variables.
+// It is disabled by default unless XG2G_RATELIMIT_ENABLED is "true".
 func APIRateLimit() func(http.Handler) http.Handler {
+	enabled, _ := strconv.ParseBool(os.Getenv("XG2G_RATELIMIT_ENABLED"))
+	if !enabled {
+		// Passthrough if disabled
+		return func(next http.Handler) http.Handler {
+			return next
+		}
+	}
+
+	// Parse custom limits
+	rps, _ := strconv.Atoi(os.Getenv("XG2G_RATELIMIT_RPS"))
+	if rps <= 0 {
+		rps = 100 // Default: 100 req/sec (~6000/min)
+	}
+
+	// Convert RPS to Per-Minute for smoother sliding window
+	limit := rps * 60
+
 	return RateLimit(RateLimitConfig{
-		RequestLimit: 600,
+		RequestLimit: limit,
 		WindowSize:   time.Minute,
 	})
 }

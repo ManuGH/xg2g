@@ -280,8 +280,8 @@ func TestAPIVersioningContract(t *testing.T) {
 	t.Run("V1EndpointsExist", func(t *testing.T) {
 		// Contract: V1 API endpoints are available
 		v1Endpoints := []string{
-			"/api/v1/status",
-			"/api/v1/health",
+			"/api/v2/status",
+			"/api/v2/health",
 		}
 
 		for _, endpoint := range v1Endpoints {

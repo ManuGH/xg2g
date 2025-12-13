@@ -386,13 +386,13 @@
             const loadingEl = document.getElementById('loading');
 
             try {
-                console.log('[Dashboard] Fetching status from /api/v1/ui/status');
+                console.log('[Dashboard] Fetching status from /api/v2/ui/status');
 
                 // Create abort controller for timeout
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
 
-                const response = await fetch('/api/v1/ui/status', {
+                const response = await fetch('/api/v2/ui/status', {
                     method: 'GET',
                     headers: {
                         'Accept': 'application/json',
@@ -452,12 +452,12 @@
         // Load URLs from API with better error handling
         async function loadUrls() {
             try {
-                console.log('[Dashboard] Fetching URLs from /api/v1/ui/urls');
+                console.log('[Dashboard] Fetching URLs from /api/v2/ui/urls');
 
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-                const response = await fetch('/api/v1/ui/urls', {
+                const response = await fetch('/api/v2/ui/urls', {
                     method: 'GET',
                     headers: {
                         'Accept': 'application/json',
@@ -647,7 +647,7 @@
             status.textContent = '⏳ Refreshing...';
 
             try {
-                const response = await fetch('/api/v1/ui/refresh', { method: 'POST' });
+                const response = await fetch('/api/v2/ui/refresh', { method: 'POST' });
                 const data = await response.json();
 
                 if (response.ok && data.status === 'success') {

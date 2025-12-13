@@ -29,7 +29,7 @@ type RequestOptions struct {
 //
 //	resp := helpers.DoRequest(t, ts.Server.URL, helpers.RequestOptions{
 //	    Method: http.MethodPost,
-//	    Path: "/api/v1/refresh",
+//	    Path: "/api/v2/refresh",
 //	    Token: "test-token",
 //	})
 //	defer resp.Body.Close()

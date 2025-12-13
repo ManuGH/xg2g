@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/telemetry"
@@ -143,12 +144,8 @@ func (t *Transcoder) streamTranscodeInternal(ctx context.Context, w http.Respons
 		return fmt.Errorf("create proxy request: %w", err)
 	}
 
-	// Copy headers from original request
-	for key, values := range r.Header {
-		for _, value := range values {
-			proxyReq.Header.Add(key, value)
-		}
-	}
+	// Copy Safe Headers from original request
+	copyHeaders(r.Header, proxyReq.Header)
 
 	// Execute request to target
 	span.AddEvent("fetching source stream")
@@ -166,6 +163,32 @@ func (t *Transcoder) streamTranscodeInternal(ctx context.Context, w http.Respons
 	}()
 
 	// Build ffmpeg command
+	audioCopy := strings.EqualFold(t.Config.Codec, "copy")
+	buildAudioArgs := func(includeAsync bool) []string {
+		if audioCopy {
+			return []string{"-map", "0:a?", "-c:a", "copy"}
+		}
+		args := []string{
+			"-map", "0:a?", "-c:a", t.Config.Codec,
+			"-b:a", t.Config.Bitrate,
+			"-ac", fmt.Sprintf("%d", t.Config.Channels),
+		}
+		if includeAsync {
+			args = append(args, "-async", "1")
+		}
+		return args
+	}
+	muxArgs := []string{
+		"-start_at_zero", "-avoid_negative_ts", "make_zero",
+		"-muxdelay", "0", "-muxpreload", "0",
+		"-mpegts_copyts", "1",
+		"-mpegts_flags", "resend_headers+initial_discontinuity",
+		"-pcr_period", "20",
+		"-pat_period", "0.1",
+		"-sdt_period", "0.5",
+		"-f", "mpegts",
+		"pipe:1",
+	}
 	var args []string
 	if videoCodec == "copy" {
 		// Audio Transcode Only
@@ -174,20 +197,9 @@ func (t *Transcoder) streamTranscodeInternal(ctx context.Context, w http.Respons
 			"-fflags", "+genpts+igndts",
 			"-i", "pipe:0",
 			"-map", "0:v", "-c:v", "copy",
-			"-map", "0:a", "-c:a", t.Config.Codec,
-			"-b:a", t.Config.Bitrate,
-			"-ac", fmt.Sprintf("%d", t.Config.Channels),
-			"-async", "1",
-			"-start_at_zero", "-avoid_negative_ts", "make_zero",
-			"-muxdelay", "0", "-muxpreload", "0",
-			"-mpegts_copyts", "1",
-			"-mpegts_flags", "resend_headers+initial_discontinuity",
-			"-pcr_period", "20",
-			"-pat_period", "0.1",
-			"-sdt_period", "0.5",
-			"-f", "mpegts",
-			"pipe:1",
 		}
+		args = append(args, buildAudioArgs(true)...)
+		args = append(args, muxArgs...)
 	} else {
 		// Hardware Video Transcode
 		args = []string{
@@ -199,16 +211,10 @@ func (t *Transcoder) streamTranscodeInternal(ctx context.Context, w http.Respons
 			"-vf", "format=nv12,hwupload", // Upload to GPU
 			"-map", "0:v", "-c:v", videoCodec, // Selected Codec
 			"-qp", "24", // Quality
-			"-map", "0:a", "-c:a", t.Config.Codec,
-			"-b:a", t.Config.Bitrate,
-			"-ac", fmt.Sprintf("%d", t.Config.Channels),
-			"-start_at_zero", "-avoid_negative_ts", "make_zero",
-			"-muxdelay", "0", "-muxpreload", "0",
-			"-mpegts_copyts", "1",
-			"-mpegts_flags", "resend_headers+initial_discontinuity",
-			"-f", "mpegts",
-			"pipe:1",
 		}
+		args = append(args, buildAudioArgs(false)...)
+		args = append(args, "-map", "0:s?", "-c:s", "copy") // Copy subtitles if present
+		args = append(args, muxArgs...)
 	}
 
 	t.logger.Debug().Str("ffmpeg_path", t.Config.FFmpegPath).Strs("args", args).Msg("starting ffmpeg")
@@ -713,8 +719,65 @@ func GetTranscoderConfig() TranscoderConfig {
 		TranscoderURL:     transcoderURL,
 		UseRustRemuxer:    useRust,
 		H264RepairEnabled: IsH264RepairEnabled(),
-		VideoTranscode:    os.Getenv("XG2G_VIDEO_TRANSCODE") == envTrue,
+		VideoTranscode:    checkVAAPI() && os.Getenv("XG2G_VIDEO_TRANSCODE") == envTrue,
 		VideoCodec:        os.Getenv("XG2G_VIDEO_CODEC"),
+	}
+}
+
+// checkVAAPI probes if VAAPI device exists and is usable.
+// Returns true if usable, false otherwise.
+func checkVAAPI() bool {
+	// 1. Check if device file exists
+	devicePath := os.Getenv("XG2G_VAAPI_DEVICE")
+	if devicePath == "" {
+		devicePath = "/dev/dri/renderD128"
+	}
+	if _, err := os.Stat(devicePath); os.IsNotExist(err) {
+		return false
+	}
+
+	// 2. (Optional) Run vainfo or ffmpeg probe?
+	// For now, existence of device + env var enabled is "good enough" for fast startup,
+	// but user asked for "verify before use".
+	// Let's run a quick ffmpeg probe to be sure driver is loaded.
+	// This adds ~50ms to startup but saves tons of errors later.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "ffmpeg",
+		"-hide_banner", "-loglevel", "error",
+		"-init_hw_device", "vaapi=probe:"+devicePath,
+		"-filter_hw_device", "probe",
+		"-f", "lavfi", "-i", "nullsrc",
+		"-t", "0.1", "-f", "null", "-",
+	)
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "VAAPI Probe Failed: %v\n", err)
+		return false
+	}
+	return true
+}
+
+// copyHeaders copies whitelisted headers from source to dest.
+// Safe for upstream proxying.
+func copyHeaders(src, dst http.Header) {
+	// Whitelist of safe headers to forward to Enigma2
+	// Enigma2 is picky about Auth and Host, but hates connection/upgrade headers from proxies.
+	whitelist := []string{
+		"Authorization",
+		"User-Agent",
+		"Accept",
+		"Accept-Language",
+		"X-Forwarded-For",
+		"X-Real-Ip",
+	}
+
+	for _, k := range whitelist {
+		if vals := src.Values(k); len(vals) > 0 {
+			for _, v := range vals {
+				dst.Add(k, v)
+			}
+		}
 	}
 }
 

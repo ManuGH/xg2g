@@ -18,6 +18,7 @@ validate_cov.out
 # Go workspace
 bin/
 pkg/
+logs/
 *.log
 
 # Go modules cache
@@ -70,8 +71,11 @@ test_parser.go
 !internal/epg/testdata/multi_channel.golden.xml
 !internal/epg/testdata/empty.golden.xml
 .copilot-instructions.md
+# Vendor assets (Tracked manually)
 dist/
 !internal/api/dist/
+!internal/api/dist/hls.min.js
+!internal/api/dist/mpegts.min.js
 
 # Test and development artifacts (local testing)
 test-*.sh
@@ -93,3 +97,11 @@ certs/
 # Local test artifacts
 api_test_output.txt
 *.png
+
+# Data Files (Keep gitkeep)
+data/*.xml
+data/*.m3u
+
+# Binaries at root
+xg2g-*
+xg2g-daemon

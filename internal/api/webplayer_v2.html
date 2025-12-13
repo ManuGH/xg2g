@@ -7,8 +7,8 @@
   <title>xg2g WebPlayer</title>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
-  <script src="https://cdn.jsdelivr.net/npm/mpegts.js@latest"></script>
+  <script src="/ui/hls.min.js"></script>
+  <script src="/ui/mpegts.min.js"></script>
   <style>
     :root {
       --bg-color: #000000;
@@ -468,12 +468,30 @@
       list.forEach(ch => {
         const div = document.createElement('div');
         div.className = 'channel-item';
-        div.innerHTML = `
-          <img src="${ch.logo_url || ''}" class="channel-logo" loading="lazy" onerror="this.onerror=null; this.src='/vite.svg'; this.style.opacity=0.3">
-          <div class="channel-info">
-            <div class="channel-name">${ch.name}</div>
-          </div>
-        `;
+
+        // Logo
+        const img = document.createElement('img');
+        img.className = 'channel-logo';
+        img.loading = 'lazy';
+        img.src = ch.logo_url || '';
+        img.onerror = function () {
+          this.onerror = null;
+          this.src = '/vite.svg';
+          this.style.opacity = '0.3';
+        };
+        div.appendChild(img);
+
+        // Info container
+        const infoDiv = document.createElement('div');
+        infoDiv.className = 'channel-info';
+
+        // Name
+        const nameDiv = document.createElement('div');
+        nameDiv.className = 'channel-name';
+        nameDiv.textContent = ch.name; // XSS Safe
+
+        infoDiv.appendChild(nameDiv);
+        div.appendChild(infoDiv);
         div.onclick = (e) => {
           e.stopPropagation();
           playChannel(ch);

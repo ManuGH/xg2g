@@ -13,7 +13,7 @@ We take the security of `xg2g` seriously. If you believe you have found a securi
 
 **Please do not report security vulnerabilities through public GitHub issues.**
 
-Instead, please report them via email to [security@example.com](mailto:security@example.com). You should receive a response within 48 hours. If for some reason you do not, please follow up via email to ensure we received your original message.
+Instead, please report them via **GitHub Security Advisories** (Draft a new advisory). This allows us to discuss and fix the issue privately before disclosure.
 
 ## Vulnerability Response Process
 

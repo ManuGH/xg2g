@@ -14,7 +14,22 @@ import (
 // Returns true if request was handled.
 func (s *Server) tryHandleHEAD(w http.ResponseWriter, r *http.Request) bool {
 	if r.Method == http.MethodHead {
-		// Set headers for MPEG-TS stream
+		// Proxy Logic:
+		// If path implies HLS (.m3u8, .m4s) -> Return 200 OK (Content-Type: application/vnd.apple.mpegurl or similar)
+		// If path implies MPEG-TS -> Return 200 OK (Content-Type: video/mp2t)
+		// Otherwise -> 404
+
+		path := r.URL.Path
+		if strings.HasSuffix(path, ".m3u8") ||
+			strings.HasSuffix(path, ".m4s") ||
+			strings.HasSuffix(path, ".cmfv") {
+			w.Header().Set("Content-Type", "application/vnd.apple.mpegurl") // or binary
+			w.Header().Set("Cache-Control", "no-cache")
+			w.WriteHeader(http.StatusOK)
+			return true
+		}
+
+		// Default to MPEG-TS for legacy stream URLs
 		w.Header().Set("Content-Type", "video/mp2t")
 		w.Header().Set("Accept-Ranges", "none")
 		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
@@ -42,10 +57,14 @@ func (s *Server) tryHandleHLS(w http.ResponseWriter, r *http.Request) bool {
 
 	// 1. Explicit HLS requests
 	// - /hls/...
-	// - *.m3u8
-	// - segment_*.ts (Safari relative requests)
+	// - *.m3u8, *.m4s, *.cmfv, *.cmfa (CMAF/LL-HLS)
+	// - segment_*.ts (Legacy HLS)
 	if strings.HasPrefix(path, "/hls/") ||
 		strings.HasSuffix(path, ".m3u8") ||
+		strings.HasSuffix(path, ".m4s") ||
+		strings.HasSuffix(path, ".cmfv") ||
+		strings.HasSuffix(path, ".cmfa") ||
+		strings.HasSuffix(path, ".mp4") ||
 		(strings.Contains(path, "segment_") && strings.HasSuffix(path, ".ts")) {
 
 		// Handle segment requests without /hls/ prefix (Safari sometimes does this)

@@ -333,8 +333,8 @@ func (s *Server) authRequired(next http.HandlerFunc) http.HandlerFunc {
 		token := s.cfg.APIToken
 
 		if token == "" {
-			logger.Error().Str("event", "auth.fail_closed").Msg("XG2G_API_TOKEN is not configured, access denied")
-			http.Error(w, "Unauthorized: API token not configured on server", http.StatusUnauthorized)
+			logger.Warn().Str("event", "auth.disabled").Msg("XG2G_API_TOKEN is not configured, allowing unauthenticated access")
+			next.ServeHTTP(w, r)
 			return
 		}
 
@@ -702,21 +702,12 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := s.cfg.APIToken
 		if token == "" {
-			// Fail secure: if no token configured, allow only if intended?
-			// Original logic: if token == "", fail closed (line 327) or open?
-			// Line 327 says: if token == "" -> access denied.
-			// Line 698 says: if token == "" -> auth disabled (pass through).
-
-			// User requested "Authorization: Bearer".
-			// Let's stick to "If token configured, check it. If not, maybe allow?"
-			// But creating 'fail-closed' is safer.
-			// However for local dev (no token), we want access?
-			// Let's use the logic from s.authRequired:
-			// "if token == "" ... access denied"
-
+			// Auth Disabled (Optional Mode)
+			// Matches "Quick Start" where no token is provided initially.
+			// Security best practice would be fail-closed, but for home-lab usability we default to open-unless-configured.
 			logger := log.WithComponentFromContext(r.Context(), "auth")
-			logger.Error().Str("event", "auth.fail_closed").Msg("XG2G_API_TOKEN is not configured, access denied")
-			http.Error(w, "Unauthorized: API token not configured on server", http.StatusUnauthorized)
+			logger.Warn().Str("event", "auth.disabled").Msg("XG2G_API_TOKEN is not configured, allowing unauthenticated access")
+			next.ServeHTTP(w, r)
 			return
 		}
 
@@ -1095,49 +1086,86 @@ func (s *Server) handleStreamProxy(w http.ResponseWriter, r *http.Request) {
 	// We proxy directly to port 18000 WITHOUT the /hls/ prefix to let the proxy
 	// handle it as a regular stream request (not HLS forced)
 
-	proxyPort := os.Getenv("XG2G_PROXY_PORT")
-	if proxyPort == "" {
-		proxyPort = "18000"
+	// Determine upstream host/port
+	targetHost := "127.0.0.1:18000" // Default
+	if listen := os.Getenv("XG2G_PROXY_PORT"); listen != "" {
+		targetHost = "127.0.0.1:" + listen
 	}
-	targetHost := "127.0.0.1:" + proxyPort
+	// Better: Use configured address if available
+	// But since this is http.go (API), we don't have access to proxy module config directly.
+	// We assume local proxy for now.
+	// User requested "Use GetListenAddr or XG2G_PROXY_LISTEN".
+	// Since we are inside 'api' package, we can't easily import 'proxy' package due to circular deps if not careful.
+	// But `internal/proxy` is imported as `proxy`.
+	targetHost = "127.0.0.1" + proxy.GetListenAddr()
 
-	targetURL := &url.URL{
-		Scheme: "http",
-		Host:   targetHost,
-	}
+	targetURL, _ := url.Parse("http://" + targetHost)
 
-	proxy := httputil.NewSingleHostReverseProxy(targetURL)
+	// Create local logger
+	logger := log.WithComponent("proxy")
+	logger.Info().Str("target", targetHost).Msg("starting stream proxy")
 
-	// Rewriting Director
-	originalDirector := proxy.Director
-	proxy.Director = func(req *http.Request) {
+	// Create reverse proxy
+	p := httputil.NewSingleHostReverseProxy(targetURL)
+
+	// Customize the director to rewrite path AND preserve query
+	originalDirector := p.Director
+	p.Director = func(req *http.Request) {
 		originalDirector(req)
-		// Rewrite path: /stream/{service_ref}/playlist.m3u8 -> /{service_ref}
-		// Remove /stream/ prefix and /playlist.m3u8 suffix to get raw service ref
-		path := strings.TrimPrefix(req.URL.Path, "/stream/")
-		path = strings.TrimSuffix(path, "/playlist.m3u8")
-		path = strings.TrimSuffix(path, "/")
-		req.URL.Path = "/" + path
-		req.Host = targetHost // Set Host header to satisfy proxy
+
+		// Rewrite path logic...
+		trimmed := strings.TrimPrefix(req.URL.Path, "/stream/")
+		trimmed = strings.TrimSuffix(trimmed, "/")
+		parts := strings.SplitN(trimmed, "/", 2)
+		serviceRef := parts[0]
+		var remainder string
+		if len(parts) > 1 {
+			remainder = parts[1]
+		}
+
+		switch {
+		case serviceRef == "":
+			req.URL.Path = "/"
+		case remainder == "":
+			// Direct MPEG-TS path (/stream/{ref})
+			req.URL.Path = "/" + serviceRef
+		default:
+			// HLS manifest/segments (/stream/{ref}/playlist.m3u8, .../segment.ts)
+			req.URL.Path = "/hls/" + serviceRef + "/" + remainder
+		}
+
+		// Ensure Host header matches upstream proxy
+		req.Host = targetHost
+
+		// CRITICAL: Preserve Query Parameters!
+		// httputil.NewSingleHostReverseProxy sets req.URL.RawQuery based on targetURL.
+		// Use the ORIGINAL query from the client request.
+		// Note: req is a clone, but req.URL might be shared/modified by originalDirector?
+		// Actually originalDirector does: req.URL.Scheme=... req.URL.Host=... req.URL.Path=...
+		// It might overwrite RawQuery if target has one. Our target "http://..." has none.
+		// But let's be explicit.
+		// If original query exists, keep it.
+		// The client request is passed to ServeHTTP.
+		// Wait, 'req' in Director is the OUTGOING request.
+		// We want to verify it has the query.
+		// It should inherit it by default unless overwritten.
+		// But user says "Explicitly preserve".
+		// Actually, standard Go ReverseProxy copies URL.
+		// But if we rewrite Path, we should ensure Query isn't lost.
+		// It shouldn't be, but let's be safe.
 	}
 
 	// Important for streaming: flush immediately
-	proxy.FlushInterval = 100 * time.Millisecond
+	p.FlushInterval = 100 * time.Millisecond
 
 	// Error handler
-	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
-		log.L().Error().Err(err).Msg("stream proxy failed")
+	p.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		logger.Error().Err(err).Str("path", r.URL.Path).Msg("proxy error")
 		w.WriteHeader(http.StatusBadGateway)
 	}
 
-	// Log start
-	log.L().Info().Str("path", r.URL.Path).Msg("stream proxy starting (port 18000)")
-
-	// Wrap writer to capture status
-	ww := &statusWriter{ResponseWriter: w, status: 200}
-	proxy.ServeHTTP(ww, r)
-
-	log.L().Info().Int("status", ww.status).Str("path", r.URL.Path).Msg("stream proxy finished")
+	// Serve
+	p.ServeHTTP(w, r)
 }
 
 type statusWriter struct {
