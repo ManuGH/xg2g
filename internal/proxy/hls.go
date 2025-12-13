@@ -19,7 +19,7 @@ import (
 
 const (
 	// DefaultHLSIdleTimeout is the default timeout for idle HLS streams before cleanup
-	DefaultHLSIdleTimeout = 4 * time.Second
+	DefaultHLSIdleTimeout = 60 * time.Second
 
 	// DefaultHLSCleanupInterval is the default interval for checking idle streams
 	DefaultHLSCleanupInterval = 2 * time.Second
@@ -135,9 +135,9 @@ func (m *HLSManager) createStream(serviceRef, targetURL string) (*HLSStreamer, e
 // Start starts the HLS segmentation process.
 func (s *HLSStreamer) Start() error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	if s.started {
+		s.mu.Unlock()
 		return nil
 	}
 
@@ -148,6 +148,7 @@ func (s *HLSStreamer) Start() error {
 	// outputDir is already validated via secureJoin
 	_ = os.RemoveAll(s.outputDir)
 	if err := os.MkdirAll(s.outputDir, 0750); err != nil {
+		s.mu.Unlock()
 		return fmt.Errorf("re-create output directory: %w", err)
 	}
 
@@ -177,6 +178,36 @@ func (s *HLSStreamer) Start() error {
 		s.logger.Info().Msg("using direct stream URL (no Web API detected)")
 	}
 
+	// Inject stream_id into context logger for traceability
+	streamID := fmt.Sprintf("hls-%s-%d", time.Now().Format("150405"), time.Now().UnixNano()%1000)
+	logger := s.logger.With().Str("stream_id", streamID).Logger()
+	s.ctx = logger.WithContext(s.ctx)
+	s.logger = logger // Update struct logger
+
+	// Log stream start
+	logger.Info().
+		Str("event", "stream_start").
+		Str("mode", "hls_generic").
+		Str("input_url", sanitizeURL(s.targetURL)). // Assuming sanitizeURL is available in package (copied from transcoder)
+		Msg("starting HLS session")
+
+	startTime := time.Now()
+	var exitReason string = "internal_error"
+	var lastStats *FFmpegStats
+
+	defer func() {
+		event := logger.Info().
+			Str("event", "stream_end").
+			Str("exit_reason", exitReason).
+			Dur("duration_ms", time.Since(startTime))
+
+		if lastStats != nil {
+			event.Float64("ffmpeg_last_speed", lastStats.Speed).
+				Float64("ffmpeg_last_bitrate_kbps", lastStats.BitrateKBPS)
+		}
+		event.Msg("HLS session ended")
+	}()
+
 	s.logger.Info().Str("ffmpeg_input", finalInputURL).Msg("starting ffmpeg with input")
 
 	args := []string{
@@ -187,24 +218,37 @@ func (s *HLSStreamer) Start() error {
 		"-err_detect", "ignore_err", // Ignore decoding errors
 		"-ignore_unknown",                          // Ignore streams that fail probing
 		"-fflags", "+genpts+igndts+discardcorrupt", // Regenerate PTS, ignore bad DTS, discard corrupt frames
-		"-analyzeduration", "60000000", // Increased to 60s for SPS/PPS detection
-		"-probesize", "100000000", // Increased to 100MB for SPS/PPS detection
+		"-analyzeduration", "10000000", // 10s Analysis (Safe for MPTS/Encryption delay)
+		"-probesize", "10000000", // 10MB: Safe for multi-program streams
 		"-rw_timeout", "30000000", // 30s socket timeout
-		"-start_at_zero",                  // Normalize timestamps start
-		"-avoid_negative_ts", "make_zero", // Shift timestamps to positive
+		"-reconnect", "1", "-reconnect_at_eof", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5", // Robust HTTP input
+		"-start_at_zero",                  // FORCE START AT 0: Essential for iOS after transcode
+		"-avoid_negative_ts", "make_zero", // Ensure no negative timestamps
+		"-ss", "1.5", // SKIP GARBAGE: Drop first 1.5s of input (fixes Startbild/Green artifacts)
 		"-thread_queue_size", "4096", // Increase thread queue for buffer
-		// "-reconnect", "1", "-reconnect_at_eof", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5", // REMOVED: Fail fast
 		"-i", finalInputURL,
-		"-map", "0:v:0", // Explicitly map first video (Port 8001 is filtered, so 0:v:0 is safe)
+		"-map", "0:v:0", // Explicitly map first video
 		"-map", "0:a:0", // Explicitly map first audio
-		"-c:v", "copy", // DIRECT STREAM COPY
+		"-af", "aresample=async=1", // Keep sync enabled
+		"-c:v", "libx264", // TRANSCODE VIDEO via Software
+		"-preset", "veryfast", // CPU Efficiency
+		"-profile:v", "high", // High Profile (Better for HD)
+		"-level", "4.1", // Standard HD Level
+		"-pix_fmt", "yuv420p", // FORCE 4:2:0 for iOS compatibility
+		"-crf", "18", // ULTRA QUALITY: Virtually Lossless
+		"-vf", "yadif=0:-1:0", // Deinterlace
+		"-g", "100", // Force GOP size (2s @ 50fps)
+		"-keyint_min", "100", // Force IDR validity
+		"-sc_threshold", "0", // Disable Scene Change detection (Consistent GOP)
 		"-c:a", "aac", // Transcode audio to AAC
+		"-profile:a", "aac_low", // Force LC-AAC (Max compatibility)
 		"-ac", "2", // Stereo downmix
+		"-ar", "48000", // Force 48kHz (iOS Friendly)
 		"-b:a", "192k", // 192kbps audio bitrate
 		"-bsf:v", "h264_mp4toannexb,dump_extra", // Extract and inject SPS/PPS headers into every keyframe
 		"-f", "hls",
-		"-hls_time", "2",
-		"-hls_list_size", "6",
+		"-hls_time", "6", // Increased to 6s to capture full GOPs (fixes missing keyframes in segments)
+		"-hls_list_size", "8", // Keep ~32s buffer
 		"-hls_flags", "delete_segments+append_list",
 		"-hls_segment_filename", segmentPattern,
 		playlistPath,
@@ -217,27 +261,54 @@ func (s *HLSStreamer) Start() error {
 	// Capture ffmpeg stderr for debugging
 	stderrPipe, err := s.cmd.StderrPipe()
 	if err != nil {
+		s.mu.Unlock()
 		return fmt.Errorf("create stderr pipe: %w", err)
 	}
 
 	// Monitor ffmpeg stderr in background
+	// Monitor ffmpeg stderr in background with stats parsing
+	var stderrWg sync.WaitGroup
+	stderrWg.Add(1)
+
 	go func() {
+		defer stderrWg.Done()
 		scanner := bufio.NewScanner(stderrPipe)
-		// Increase buffer for long ffmpeg lines
 		buf := make([]byte, 0, 64*1024)
 		scanner.Buffer(buf, 1024*1024)
 
+		statsTicker := time.NewTicker(5 * time.Second)
+		defer statsTicker.Stop()
+		var statsSeq int
+
 		for scanner.Scan() {
-			s.logger.Info().
-				Str("service_ref", s.serviceRef).
-				Str("ffmpeg", scanner.Text()).
-				Msg("hls ffmpeg stderr")
+			line := scanner.Text()
+
+			// Parse stats
+			if stats := ParseFFmpegStats(line); stats != nil {
+				lastStats = stats
+				select {
+				case <-statsTicker.C:
+					statsSeq++
+					logger.Info().
+						Str("event", "ffmpeg_stats").
+						Int("seq", statsSeq).
+						Float64("speed", stats.Speed).
+						Float64("bitrate_kbps", stats.BitrateKBPS).
+						Msg("ffmpeg progress")
+				default:
+				}
+			} else {
+				if strings.Contains(strings.ToLower(line), "error") {
+					logger.Warn().Str("stderr", line).Msg("ffmpeg warning")
+				} else {
+					logger.Debug().Str("stderr", line).Msg("hls ffmpeg stderr")
+				}
+			}
 		}
 
 		if err := scanner.Err(); err != nil {
-			s.logger.Debug().
+			logger.Debug().
 				Err(err).
-				Str("service_ref", s.serviceRef).
 				Msg("ffmpeg stderr scanner error")
 		}
 	}()
@@ -252,25 +323,44 @@ func (s *HLSStreamer) Start() error {
 		// Cleanup output directory on start failure
 		// outputDir is already validated via secureJoin during stream creation
 		_ = os.RemoveAll(s.outputDir)
+		s.mu.Unlock()
 		return fmt.Errorf("start ffmpeg: %w", err)
 	}
 
 	s.started = true
 
 	// Monitor process in background
+	// Monitor process in background
 	go func() {
+		defer stderrWg.Wait() // Wait for stderr logger
+
 		if err := s.cmd.Wait(); err != nil {
 			if s.ctx.Err() == nil {
+				exitReason = "ffmpeg_exit"
 				s.logger.Error().
 					Err(err).
-					Str("service_ref", s.serviceRef).
 					Msg("HLS segmentation failed")
+			} else {
+				exitReason = "client_disconnect" // or stop called
+			}
+		} else {
+			if s.ctx.Err() != nil {
+				exitReason = "client_disconnect"
+			} else {
+				exitReason = "ffmpeg_exit"
 			}
 		}
+
+		if exitReason == "internal_error" {
+			exitReason = "success"
+		}
+
 		s.mu.Lock()
 		s.started = false
 		s.mu.Unlock()
 	}()
+
+	s.mu.Unlock() // Release lock before waiting to avoid deadlock
 
 	// Wait for playlist to be created with timeout
 	if err := s.waitForPlaylist(s.ctx); err != nil {
@@ -341,6 +431,9 @@ func (s *HLSStreamer) waitForPlaylist(ctx context.Context) error {
 		case <-timeout:
 			return fmt.Errorf("timeout waiting for playlist creation")
 		case <-ticker.C:
+			// Keep stream alive while waiting (prevent idle cleanup)
+			s.updateAccess()
+
 			// check if process is still running
 			s.mu.RLock()
 			running := s.started
@@ -533,9 +626,11 @@ func (m *HLSManager) ServeHLS(w http.ResponseWriter, r *http.Request, serviceRef
 	}
 
 	// Priority 2: Native Apple clients (LL-HLS for low latency)
-	if IsNativeAppleClient(userAgent) {
-		return m.serveLLHLS(w, r, serviceRef, targetURL)
-	}
+	// DISABLED: LL-HLS (fmp4) proves unstable for some Enigma2 streams.
+	// Fallback to Generic HLS (mpegts) which is rock solid.
+	// if IsNativeAppleClient(userAgent) {
+	// 	return m.serveLLHLS(w, r, serviceRef, targetURL)
+	// }
 
 	// Fallback: Generic HLS for all other clients
 	// Get or create stream
@@ -661,8 +756,8 @@ func (m *HLSManager) ServeSegmentFromAnyStream(w http.ResponseWriter, segmentNam
 func (m *HLSManager) servePlaylist(w http.ResponseWriter, stream *HLSStreamer) error {
 	playlistPath := stream.GetPlaylistPath()
 
-	// Wait for playlist to exist (up to 10 seconds for initial segment creation)
-	for i := 0; i < 100; i++ {
+	// Wait for playlist to exist (up to 30 seconds for initial segment creation)
+	for i := 0; i < 300; i++ {
 		// playlistPath is already validated via secureJoin (constructed from validated outputDir)
 		if _, err := os.Stat(playlistPath); err == nil {
 			break
@@ -680,6 +775,8 @@ func (m *HLSManager) servePlaylist(w http.ResponseWriter, stream *HLSStreamer) e
 
 	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.WriteHeader(http.StatusOK)
 

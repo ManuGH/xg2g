@@ -74,6 +74,7 @@ export default function Player({ streamUrl, onClose }) {
 
   return (
     <div
+      className="player-overlay"
       style={{
         position: 'fixed',
         top: 0,
@@ -89,9 +90,10 @@ export default function Player({ streamUrl, onClose }) {
     >
       <video
         ref={videoRef}
-        style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-        controls
-        playsInline
+        style={{ width: '100%', height: '100%', objectFit: 'contain', backgroundColor: 'black' }}
+        controls={true}
+        playsInline={true}
+        webkit-playsinline="true"
         autoPlay
         muted
         onClick={handleUnmute}

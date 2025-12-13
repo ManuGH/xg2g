@@ -173,6 +173,14 @@ func (rl *rateLimiter) middleware(next http.Handler) http.Handler {
 				return
 			}
 		}
+
+		// Skip rate limiting for static assets (picons)
+		path := r.URL.Path
+		if strings.HasSuffix(path, ".png") || strings.HasSuffix(path, ".jpg") || strings.HasSuffix(path, ".jpeg") || strings.HasSuffix(path, ".ico") {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		limiter := rl.getLimiter(ip)
 
 		// Best-effort RateLimit headers (limit per second, remaining tokens now)

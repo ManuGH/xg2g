@@ -28,7 +28,7 @@ export TZ := UTC
 export GOFLAGS := -trimpath -buildvcs=false -mod=readonly
 
 # Build configuration
-BINARY_NAME := daemon
+BINARY_NAME := xg2g
 BUILD_DIR := bin
 # Reproducible build flags
 BUILD_FLAGS := -trimpath -buildvcs=false
@@ -625,6 +625,13 @@ release-notes: ## Generate release notes
 
 dev: ## Run daemon locally with .env configuration
 	@echo "Starting xg2g in development mode..."
+	@echo "🧹 Cleaning up old instances..."
+	@pkill -x "$(BINARY_NAME)" || true
+	@echo "⏳ Waiting for port release..."
+	@for i in 1 2 3 4 5; do if pgrep -x "$(BINARY_NAME)" >/dev/null; then sleep 1; else break; fi; done
+	@if pgrep -x "$(BINARY_NAME)" >/dev/null; then echo "💀 Force killing..."; pkill -9 -x "$(BINARY_NAME)" || true; fi
+	@echo "🧹 Cleaning up zombie ffmpeg processes..."
+	@pkill -u $$(id -u) -x ffmpeg || true
 	@if [ ! -f .env ]; then \
 		echo "⚠️  No .env file found. Creating from .env.example..."; \
 		cp .env.example .env; \
@@ -637,7 +644,8 @@ dev: ## Run daemon locally with .env configuration
 	XG2G_OWI_BASE=$${XG2G_OWI_BASE:?Set XG2G_OWI_BASE in .env} \
 	XG2G_BOUQUET=$${XG2G_BOUQUET:?Set XG2G_BOUQUET in .env} \
 	XG2G_LISTEN=$${XG2G_LISTEN:-:8080} \
-	go run $(LDFLAGS) ./cmd/daemon
+	go build $(BUILD_FLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/daemon && \
+	./$(BUILD_DIR)/$(BINARY_NAME)
 
 up: ## Start docker-compose.yml stack
 	@echo "Starting xg2g via docker compose..."

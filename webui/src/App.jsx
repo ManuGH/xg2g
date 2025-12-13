@@ -15,12 +15,24 @@ function App() {
   const [showAuth, setShowAuth] = useState(!localStorage.getItem('XG2G_API_TOKEN'));
   const [token, setToken] = useState(localStorage.getItem('XG2G_API_TOKEN') || '');
 
-  // Channel Data State (Lifted from Channels.jsx)
+  // Channel Data State
   const [bouquets, setBouquets] = useState([]);
   const [selectedBouquet, setSelectedBouquet] = useState(''); // Empty string = "All Channels"
   const [channels, setChannels] = useState([]);
   const [loading, setLoading] = useState(false);
   const [dataLoaded, setDataLoaded] = useState(false); // To avoid re-fetching on tab switch
+
+  // Force mobile viewport
+  useEffect(() => {
+    let meta = document.querySelector('meta[name="viewport"]');
+    if (!meta) {
+      meta = document.createElement('meta');
+      meta.name = 'viewport';
+      document.head.appendChild(meta);
+    }
+    meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+  }, []);
+
 
   useEffect(() => {
     const handleAuth = () => setShowAuth(true);

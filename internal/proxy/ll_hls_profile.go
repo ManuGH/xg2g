@@ -431,11 +431,11 @@ func (p *LLHLSProfile) watchdogRoutine(playlistPath string) {
 	defer ticker.Stop()
 
 	// Give ffmpeg some time to start up and write first files
-	time.Sleep(5 * time.Second)
+	time.Sleep(10 * time.Second)
 
 	var lastModTime time.Time
 	stallCount := 0
-	maxStalls := 3 // 3 * 2s = 6s timeout
+	maxStalls := 15 // 15 * 2s = 30s timeout
 
 	for {
 		select {

@@ -303,6 +303,9 @@ func (s *Server) routes() http.Handler {
 	// Logo Proxy (Renamed from Picon to clean cache)
 	r.Get("/logos/{ref}.png", s.handlePicons)
 	r.Head("/logos/{ref}.png", s.handlePicons)
+	// Legacy Picon Path (for compatibility)
+	r.Get("/picon/{ref}.png", s.handlePicons)
+	r.Head("/picon/{ref}.png", s.handlePicons)
 
 	// Stream Proxy (Avoids CORS/Port issues for Webplayer)
 	// Proxies /stream/... to internal stream server (port 18000)
