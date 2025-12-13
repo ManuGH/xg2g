@@ -2,6 +2,7 @@
 package proxy
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"net"
@@ -12,7 +13,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
+
+	"golang.org/x/sync/semaphore"
 
 	"github.com/ManuGH/xg2g/internal/m3u"
 	"github.com/ManuGH/xg2g/internal/metrics"
@@ -47,6 +51,12 @@ type Server struct {
 	channelMu  sync.RWMutex
 	listenPort string
 	localHosts map[string]struct{}
+
+	streamLimiter     *semaphore.Weighted
+	streamLimit       int64
+	transcodeFailOpen bool
+
+	idleTimeout time.Duration
 }
 
 // Config holds the configuration for the proxy server.
@@ -108,6 +118,28 @@ func New(cfg Config) (*Server, error) {
 	// Load M3U playlist if available
 	if err := s.loadM3U(); err != nil {
 		cfg.Logger.Warn().Err(err).Msg("failed to load initial playlist (will retry on lookup)")
+	}
+
+	// Optional stream limiter
+	if limitEnv := os.Getenv("XG2G_MAX_CONCURRENT_STREAMS"); limitEnv != "" {
+		if n, err := strconv.ParseInt(limitEnv, 10, 64); err == nil && n > 0 {
+			s.streamLimit = n
+			s.streamLimiter = semaphore.NewWeighted(n)
+		}
+	}
+
+	// Transcode fail-open behaviour (default: false = fail-closed)
+	if v := strings.ToLower(os.Getenv("XG2G_TRANSCODE_FAIL_OPEN")); v == "true" {
+		s.transcodeFailOpen = true
+	}
+
+	// Optional idle timeout for media sessions
+	if v := os.Getenv("XG2G_PROXY_IDLE_TIMEOUT"); v != "" {
+		if dur, err := time.ParseDuration(v); err == nil {
+			s.idleTimeout = dur
+		} else if n, err2 := strconv.Atoi(v); err2 == nil {
+			s.idleTimeout = time.Duration(n) * time.Second
+		}
 	}
 
 	// Parse target URL if provided (used as fallback)
@@ -204,6 +236,22 @@ func New(cfg Config) (*Server, error) {
 // handleRequest handles incoming HTTP requests using a priority chain of handlers.
 // Chain: HEAD -> HLS -> Transcode -> Direct
 func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
+	acquired := s.acquireStreamSlotIfNeeded(w, r)
+	if acquired {
+		defer s.releaseStreamSlot()
+	}
+
+	// Idle timeout wrapper for media sessions
+	if s.idleTimeout > 0 && isStreamSessionStart(r) {
+		var cancel context.CancelFunc
+		ctx := r.Context()
+		ctx, cancel = context.WithCancel(ctx)
+		tracking := newIdleTrackingWriter(w, s.idleTimeout, cancel, s.logger)
+		w = tracking
+		r = r.WithContext(ctx)
+		defer cancel()
+		go tracking.watch()
+	}
 	// Log the request
 	s.logger.Debug().
 		Str("method", r.Method).
@@ -314,6 +362,131 @@ func (s *Server) resolveTargetURL(ctx context.Context, path, rawQuery string) st
 		Msg("using receiver host fallback")
 
 	return targetURL
+}
+
+// acquireStreamSlotIfNeeded enforces the concurrent stream limit for requests
+// that initiate a streaming session (not control-plane endpoints). Returns true
+// if a slot was acquired and should be released by the caller.
+func (s *Server) acquireStreamSlotIfNeeded(w http.ResponseWriter, r *http.Request) bool {
+	if s.streamLimiter == nil {
+		return false
+	}
+	if !isStreamSessionStart(r) {
+		return false
+	}
+	if !s.streamLimiter.TryAcquire(1) {
+		http.Error(w, "too many concurrent streams", http.StatusTooManyRequests)
+		return false
+	}
+	return true
+}
+
+func (s *Server) releaseStreamSlot() {
+	if s.streamLimiter != nil {
+		s.streamLimiter.Release(1)
+	}
+}
+
+// isStreamSessionStart heuristically detects streaming session starts to avoid
+// counting every HLS segment. We consider HLS playlists and direct stream
+// requests, but skip control-plane endpoints and segment fetches.
+func isStreamSessionStart(r *http.Request) bool {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		return false
+	}
+	path := r.URL.Path
+	// Skip control-plane
+	if strings.HasPrefix(path, "/api/") ||
+		strings.HasPrefix(path, "/healthz") ||
+		strings.HasPrefix(path, "/readyz") ||
+		strings.HasPrefix(path, "/metrics") ||
+		strings.HasPrefix(path, "/discover") ||
+		strings.HasPrefix(path, "/lineup") ||
+		strings.HasPrefix(path, "/device") ||
+		strings.HasPrefix(path, "/files/") {
+		return false
+	}
+
+	// HLS: count playlist/init requests, not segments
+	if strings.HasPrefix(path, "/hls/") {
+		if strings.HasSuffix(path, ".m3u8") {
+			return true
+		}
+		if strings.Contains(path, "segment_") || strings.HasSuffix(path, ".ts") {
+			return false
+		}
+		// Other HLS control (init) should count
+		return true
+	}
+
+	// Default: treat other paths as stream starts (direct TS)
+	return true
+}
+
+type idleTrackingWriter struct {
+	http.ResponseWriter
+	lastWrite int64
+	timeout   time.Duration
+	cancel    context.CancelFunc
+	logger    zerolog.Logger
+	wroteHdr  bool
+	mu        sync.Mutex
+}
+
+func newIdleTrackingWriter(w http.ResponseWriter, timeout time.Duration, cancel context.CancelFunc, logger zerolog.Logger) *idleTrackingWriter {
+	now := time.Now().UnixNano()
+	return &idleTrackingWriter{
+		ResponseWriter: w,
+		lastWrite:      now,
+		timeout:        timeout,
+		cancel:         cancel,
+		logger:         logger,
+	}
+}
+
+func (w *idleTrackingWriter) WriteHeader(status int) {
+	w.mu.Lock()
+	w.wroteHdr = true
+	w.mu.Unlock()
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *idleTrackingWriter) Write(b []byte) (int, error) {
+	atomic.StoreInt64(&w.lastWrite, time.Now().UnixNano())
+	return w.ResponseWriter.Write(b)
+}
+
+func (w *idleTrackingWriter) watch() {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		last := atomic.LoadInt64(&w.lastWrite)
+		if time.Since(time.Unix(0, last)) > w.timeout {
+			w.logger.Warn().Dur("idle_timeout", w.timeout).Msg("stream idle timeout reached, cancelling")
+			w.cancel()
+			w.mu.Lock()
+			alreadyWrote := w.wroteHdr
+			w.mu.Unlock()
+			if !alreadyWrote {
+				// Best effort to inform client
+				http.Error(w.ResponseWriter, "stream idle timeout", http.StatusGatewayTimeout)
+			}
+			return
+		}
+	}
+}
+
+func (w *idleTrackingWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+func (w *idleTrackingWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if h, ok := w.ResponseWriter.(http.Hijacker); ok {
+		return h.Hijack()
+	}
+	return nil, nil, fmt.Errorf("hijack not supported")
 }
 
 // handleHLSRequest handles HLS streaming requests for iOS devices.

@@ -2,7 +2,63 @@
 
 package config
 
-import "time"
+import (
+	"fmt"
+	"net"
+	"time"
+)
+
+// bindListenAddr replaces the host part of a listen address when it is of the
+// form ":PORT" or empty. Explicit host:port values are left untouched.
+// Supports "if:<name>" to bind to the first non-loopback IPv4 of an interface.
+func bindListenAddr(listenAddr, bind string) (string, error) {
+	if bind == "" {
+		return listenAddr, nil
+	}
+
+	if listenAddr == "" || listenAddr[0] == ':' {
+		port := listenAddr
+		if port == "" {
+			port = ":0"
+		}
+
+		host := bind
+		if len(bind) > 3 && bind[:3] == "if:" {
+			ifName := bind[3:]
+			iface, err := net.InterfaceByName(ifName)
+			if err != nil {
+				return "", fmt.Errorf("resolve interface %q: %w", ifName, err)
+			}
+			addrs, err := iface.Addrs()
+			if err != nil {
+				return "", fmt.Errorf("list addrs for %q: %w", ifName, err)
+			}
+			found := false
+			for _, a := range addrs {
+				var ip net.IP
+				switch v := a.(type) {
+				case *net.IPNet:
+					ip = v.IP
+				case *net.IPAddr:
+					ip = v.IP
+				}
+				if ip == nil || ip.IsLoopback() || ip.To4() == nil {
+					continue
+				}
+				host = ip.String()
+				found = true
+				break
+			}
+			if !found {
+				return "", fmt.Errorf("no suitable IPv4 on interface %q", ifName)
+			}
+		}
+
+		return net.JoinHostPort(host, port[1:]), nil
+	}
+
+	return listenAddr, nil
+}
 
 // ServerConfig holds HTTP server configuration.
 type ServerConfig struct {
@@ -37,8 +93,17 @@ const (
 // ParseServerConfig reads server configuration from environment variables.
 // It returns a ServerConfig with sensible defaults that can be overridden via ENV.
 func ParseServerConfig() ServerConfig {
+	bind := ParseString("XG2G_BIND_INTERFACE", "")
+	listen := ParseString("XG2G_LISTEN", ":8080")
+	if bind != "" && (listen == "" || listen[0] == ':') {
+		// Only override when host is missing; host:port stays as-is.
+		if hostPort, err := bindListenAddr(listen, bind); err == nil {
+			listen = hostPort
+		}
+	}
+
 	return ServerConfig{
-		ListenAddr:      ParseString("XG2G_LISTEN", ":8080"),
+		ListenAddr:      listen,
 		ReadTimeout:     ParseDuration("XG2G_SERVER_READ_TIMEOUT", defaultReadTimeout),
 		WriteTimeout:    ParseDuration("XG2G_SERVER_WRITE_TIMEOUT", defaultWriteTimeout),
 		IdleTimeout:     ParseDuration("XG2G_SERVER_IDLE_TIMEOUT", defaultIdleTimeout),

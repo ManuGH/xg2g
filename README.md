@@ -63,6 +63,23 @@ Built with a hybrid Go/Rust architecture. The critical audio transcoding path is
 
 ---
 
+## 🛡️ Streaming Hardening Flags
+
+Optional Flags für mehr Stabilität unter Last:
+
+- `XG2G_MAX_CONCURRENT_STREAMS` — Limitiert gleichzeitige Medien-Sessions (Proxy/HLS/Repair/Transcode). Default `0` (unbegrenzt). Gilt nicht für Control-Plane (`/api`, `/healthz`, `/readyz`, `/metrics`, `/lineup`, `/discover`, `/files`). Bei Überschreitung: HTTP 429.
+  - Beispiel: `export XG2G_MAX_CONCURRENT_STREAMS=3`
+- `XG2G_TRANSCODE_FAIL_OPEN` — Verhalten bei ffmpeg-Fehlern in Repair/Transcode: Default `false` (502 zum Client). `true` → Warn-Log und Fallback auf Direkt-Proxy (kein Format-Mapping, best effort).
+  - Beispiel: `export XG2G_TRANSCODE_FAIL_OPEN=true`
+- `XG2G_BIND_INTERFACE` — Überschreibt den Host für Listen-Adressen vom Typ `:PORT`. Explizite `host:port` bleiben unverändert. Akzeptiert IP/Host oder `if:<interface>` (erste nicht-loopback IPv4). Keine IPv6-Auflösung; Start bricht ab, wenn keine IPv4 gefunden wird. In Docker bindest du damit an die Container-IP.
+  - Beispiel: `export XG2G_BIND_INTERFACE=192.168.1.10` oder `export XG2G_BIND_INTERFACE=if:eth0`
+- `XG2G_FFMPEG_LOGLEVEL` — Setzt `-loglevel` für alle ffmpeg-basierten Pipelines (Repair/Transcode/HLS-Profile). Default unset (bestehendes Verhalten). Zulässig: `quiet, panic, fatal, error, warning, info, verbose, debug, trace`.
+  - Beispiel: `export XG2G_FFMPEG_LOGLEVEL=warning`
+- `XG2G_PROXY_IDLE_TIMEOUT` — Bricht Medien-Sessions ab, wenn für die Dauer kein Byte an den Client ging. Default `0` (aus). Nur Medienpfade, nicht Control-Plane.
+  - Beispiel: `export XG2G_PROXY_IDLE_TIMEOUT=60s`
+
+---
+
 ## 🚀 Quick Start (2min)
 
 ```bash

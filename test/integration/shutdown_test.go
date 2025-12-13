@@ -2,12 +2,14 @@
 package test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -52,12 +54,26 @@ func TestGracefulShutdown(t *testing.T) {
 	// Create temporary data directory
 	dataDir := t.TempDir()
 
+	// Start Mock OpenWebIf
+	mockOWI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/bouquets" {
+			w.Header().Set("Content-Type", "application/json")
+			// Return a mock bouquet response corresponding to XG2G_BOUQUET=Test
+			w.Write([]byte(`{"bouquets": [["1:7:1:0:0:0:0:0:0:0:FROM BOUQUET \"userbouquet.test.tv\" ORDER BY bouquet", "Test"]]}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer mockOWI.Close()
+
 	// Prepare minimal environment
 	port := getFreeTCPPort(t)
+	proxyPort := getFreeTCPPort(t)
 	env := []string{
 		"XG2G_DATA=" + dataDir,
 		fmt.Sprintf("XG2G_LISTEN=:%d", port),
-		"XG2G_OWI_BASE=http://127.0.0.1:19999", // Non-existent (no backend needed for shutdown test)
+		fmt.Sprintf("XG2G_PROXY_LISTEN=:%d", proxyPort),
+		"XG2G_OWI_BASE=" + mockOWI.URL,
 		"XG2G_BOUQUET=Test",
 		"XG2G_EPG_ENABLED=false",            // Disable EPG to simplify test
 		"XG2G_HDHR_ENABLED=false",           // Disable HDHR
@@ -83,8 +99,10 @@ func TestGracefulShutdown(t *testing.T) {
 			// #nosec G204 -- Test code: executing test binary with controlled path
 			cmd := exec.CommandContext(ctx, binaryPath)
 			cmd.Env = env
-			cmd.Stdout = io.Discard
-			cmd.Stderr = io.Discard
+			// Capture output for debugging
+			var outputBuffer bytes.Buffer
+			cmd.Stdout = &outputBuffer
+			cmd.Stderr = &outputBuffer
 
 			if err := cmd.Start(); err != nil {
 				t.Fatalf("failed to start daemon: %v", err)
@@ -104,7 +122,7 @@ func TestGracefulShutdown(t *testing.T) {
 
 			if !ready {
 				_ = cmd.Process.Kill()
-				t.Fatal("daemon did not become ready")
+				t.Fatalf("daemon did not become ready. Output:\n%s", outputBuffer.String())
 			}
 
 			t.Logf("Daemon ready, sending %s", tt.signal)
@@ -161,12 +179,25 @@ func TestShutdownWithActiveRequests(t *testing.T) {
 		t.Fatalf("failed to build daemon: %v\n%s", err, out)
 	}
 
+	// Start Mock OpenWebIf
+	mockOWI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/bouquets" {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"bouquets": [["1:7:1:0:0:0:0:0:0:0:FROM BOUQUET \"userbouquet.test.tv\" ORDER BY bouquet", "Test"]]}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer mockOWI.Close()
+
 	dataDir := t.TempDir()
 	port := getFreeTCPPort(t)
+	proxyPort := getFreeTCPPort(t)
 	env := []string{
 		"XG2G_DATA=" + dataDir,
 		fmt.Sprintf("XG2G_LISTEN=:%d", port),
-		"XG2G_OWI_BASE=http://127.0.0.1:19999",
+		fmt.Sprintf("XG2G_PROXY_LISTEN=:%d", proxyPort),
+		"XG2G_OWI_BASE=" + mockOWI.URL,
 		"XG2G_BOUQUET=Test",
 		"XG2G_EPG_ENABLED=false",
 		"XG2G_HDHR_ENABLED=false",
@@ -181,8 +212,10 @@ func TestShutdownWithActiveRequests(t *testing.T) {
 	// #nosec G204 -- Test code: executing test binary with controlled path
 	cmd := exec.CommandContext(ctx, binaryPath)
 	cmd.Env = env
-	cmd.Stdout = io.Discard
-	cmd.Stderr = io.Discard
+	// Capture output for debugging
+	var outputBuffer bytes.Buffer
+	cmd.Stdout = &outputBuffer
+	cmd.Stderr = &outputBuffer
 
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("failed to start daemon: %v", err)
@@ -201,7 +234,7 @@ func TestShutdownWithActiveRequests(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 	if !ready {
-		t.Fatal("daemon did not become ready")
+		t.Fatalf("daemon did not become ready. Output:\n%s", outputBuffer.String())
 	}
 
 	// Start background request

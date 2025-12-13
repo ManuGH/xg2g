@@ -187,6 +187,11 @@ func TestHandleGetRequest(t *testing.T) {
 	}))
 	defer target.Close()
 
+	// Disable transcoding/repair for this test to ensure we test direct proxying
+	t.Setenv("XG2G_H264_STREAM_REPAIR", "false")
+	t.Setenv("XG2G_ENABLE_AUDIO_TRANSCODING", "false")
+	t.Setenv("XG2G_GPU_TRANSCODE", "false")
+
 	// Create proxy server
 	srv, err := New(Config{
 		ListenAddr: ":0",

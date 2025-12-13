@@ -18,6 +18,10 @@ const testHeaderValue = "test-value"
 
 // TestProxyWithQueryParameters tests proxying requests with query params
 func TestProxyWithQueryParameters(t *testing.T) {
+	t.Setenv("XG2G_H264_STREAM_REPAIR", "false")
+	t.Setenv("XG2G_ENABLE_AUDIO_TRANSCODING", "false")
+	t.Setenv("XG2G_GPU_TRANSCODE", "false")
+
 	receivedQuery := ""
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedQuery = r.URL.RawQuery
@@ -51,6 +55,10 @@ func TestProxyWithQueryParameters(t *testing.T) {
 
 // TestProxyWithLargeResponse tests handling of large responses
 func TestProxyWithLargeResponse(t *testing.T) {
+	t.Setenv("XG2G_H264_STREAM_REPAIR", "false")
+	t.Setenv("XG2G_ENABLE_AUDIO_TRANSCODING", "false")
+	t.Setenv("XG2G_GPU_TRANSCODE", "false")
+
 	// 5MB response
 	largeData := strings.Repeat("A", 5*1024*1024)
 
@@ -90,6 +98,10 @@ func TestProxyWithLargeResponse(t *testing.T) {
 
 // TestProxyBackendErrors tests handling of backend errors
 func TestProxyBackendErrors(t *testing.T) {
+	t.Setenv("XG2G_H264_STREAM_REPAIR", "false")
+	t.Setenv("XG2G_ENABLE_AUDIO_TRANSCODING", "false")
+	t.Setenv("XG2G_GPU_TRANSCODE", "false")
+
 	tests := []struct {
 		name           string
 		backendStatus  int
@@ -135,6 +147,10 @@ func TestProxyBackendErrors(t *testing.T) {
 
 // TestProxyWithCustomHeaders tests header forwarding (both request and response)
 func TestProxyWithCustomHeaders(t *testing.T) {
+	t.Setenv("XG2G_H264_STREAM_REPAIR", "false")
+	t.Setenv("XG2G_ENABLE_AUDIO_TRANSCODING", "false")
+	t.Setenv("XG2G_GPU_TRANSCODE", "false")
+
 	receivedHeaders := http.Header{}
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedHeaders = r.Header.Clone()

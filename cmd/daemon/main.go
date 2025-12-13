@@ -5,9 +5,11 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"path/filepath"
@@ -38,6 +40,60 @@ func maskURL(rawURL string) string {
 	}
 	parsedURL.User = nil
 	return parsedURL.String()
+}
+
+// bindListenAddr replaces the host portion of a listen address (":8080") with
+// the provided bind host/IP. If the listen address already contains a host,
+// it is left untouched. Supports "if:<name>" to bind to the first IPv4 of an
+// interface. Returns the adjusted listen address or an error.
+func bindListenAddr(listenAddr, bind string) (string, error) {
+	if bind == "" {
+		return listenAddr, nil
+	}
+
+	// Only override when the listen address is just ":port" or empty.
+	if listenAddr == "" || strings.HasPrefix(listenAddr, ":") {
+		port := strings.TrimPrefix(listenAddr, ":")
+		if port == "" {
+			port = "0"
+		}
+
+		host := bind
+		if strings.HasPrefix(bind, "if:") {
+			ifName := strings.TrimPrefix(bind, "if:")
+			iface, err := net.InterfaceByName(ifName)
+			if err != nil {
+				return "", fmt.Errorf("resolve interface %q: %w", ifName, err)
+			}
+			addrs, err := iface.Addrs()
+			if err != nil {
+				return "", fmt.Errorf("list addrs for %q: %w", ifName, err)
+			}
+			found := false
+			for _, a := range addrs {
+				var ip net.IP
+				switch v := a.(type) {
+				case *net.IPNet:
+					ip = v.IP
+				case *net.IPAddr:
+					ip = v.IP
+				}
+				if ip == nil || ip.IsLoopback() || ip.To4() == nil {
+					continue
+				}
+				host = ip.String()
+				found = true
+				break
+			}
+			if !found {
+				return "", fmt.Errorf("no suitable IPv4 on interface %q", ifName)
+			}
+		}
+
+		return net.JoinHostPort(host, port), nil
+	}
+
+	return listenAddr, nil
 }
 
 func main() {
@@ -103,6 +159,16 @@ func main() {
 
 	// Parse server configuration
 	serverCfg := config.ParseServerConfig()
+	bindHost := os.Getenv("XG2G_BIND_INTERFACE")
+	if bindHost != "" {
+		if newListen, err := bindListenAddr(serverCfg.ListenAddr, bindHost); err != nil {
+			logger.Fatal().
+				Err(err).
+				Msg("invalid XG2G_BIND_INTERFACE for API listen")
+		} else {
+			serverCfg.ListenAddr = newListen
+		}
+	}
 
 	// Auto-generate TLS certificates if enabled but not provided
 	if cfg.TLSCert != "" || cfg.TLSKey != "" {
@@ -152,6 +218,10 @@ func main() {
 	logger.Info().Msgf("→ EPG: %s (%d days)", cfg.XMLTVPath, cfg.EPGDays)
 	if cfg.APIToken != "" {
 		logger.Info().Msg("→ API token: configured")
+	} else {
+		logger.Warn().
+			Str("security", "weak").
+			Msg("→ API token: NOT configured (Auth Disabled). Set XG2G_API_TOKEN for security.")
 	}
 	if cfg.TLSCert != "" && cfg.TLSKey != "" {
 		logger.Info().Msgf("→ TLS: enabled (cert: %s, key: %s)", cfg.TLSCert, cfg.TLSKey)
@@ -165,6 +235,11 @@ func main() {
 	if config.ParseBool("XG2G_ENABLE_STREAM_PROXY", true) {
 		targetURL := config.ParseString("XG2G_PROXY_TARGET", "")
 		receiverHost := proxy.GetReceiverHost()
+		if receiverHost == "" && cfg.OWIBase != "" {
+			if parsed, err := url.Parse(cfg.OWIBase); err == nil {
+				receiverHost = parsed.Hostname()
+			}
+		}
 
 		// PROXY_TARGET is now optional - if not provided, use Smart Detection
 		if targetURL == "" && receiverHost == "" {
@@ -200,6 +275,15 @@ func main() {
 			TLSKey:         cfg.TLSKey,
 			DataDir:        cfg.DataDir,
 			PlaylistPath:   filepath.Join(cfg.DataDir, "playlist.m3u"), // Default name
+		}
+		if bindHost != "" {
+			if newListen, err := bindListenAddr(proxyConfig.ListenAddr, bindHost); err != nil {
+				logger.Fatal().
+					Err(err).
+					Msg("invalid XG2G_BIND_INTERFACE for proxy listen")
+			} else {
+				proxyConfig.ListenAddr = newListen
+			}
 		}
 
 		// Allow overriding playlist filename if needed

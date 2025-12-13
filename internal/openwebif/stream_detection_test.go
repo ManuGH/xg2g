@@ -275,6 +275,9 @@ func TestStreamDetector_DetectStreamURL(t *testing.T) {
 	serviceRef := "1:0:1:6DCF:44D:1:C00000:0:0:0:"
 	channelName := "Test Channel"
 
+	// Mock whitelist to treat this channel as encrypted
+	detector.encryptedChannels[serviceRef] = true
+
 	info, err := detector.DetectStreamURL(ctx, serviceRef, channelName, false)
 	if err != nil {
 		t.Errorf("DetectStreamURL() error = %v", err)

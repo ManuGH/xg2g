@@ -226,8 +226,8 @@ func (p *LLHLSProfile) Start(forceAAC bool, aacBitrate string) error {
 	// Based on Plex profile but with fmp4 and LL-HLS specific flags
 	args := []string{
 		"-hide_banner",
-		"-loglevel", "warning",
 	}
+	args = append(args, logLevelArgs("warning")...)
 
 	// VAAPI Specific Global Args (must be before input if possible, or strictly global)
 	// User example: ffmpeg -init_hw_device vaapi=va:/dev/dri/renderD128 -filter_hw_device va -i ...

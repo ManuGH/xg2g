@@ -978,7 +978,13 @@ func (s *Server) handlePicons(w http.ResponseWriter, r *http.Request) {
 	resp, err := client.Get(upstreamURL)
 
 	// Fallback Logic
-	if (err == nil && resp.StatusCode == http.StatusNotFound) || err != nil {
+	// Enter fallback/error handling if: Request failed OR Status is not OK (e.g. 404, 500, 403)
+	if err != nil || (resp != nil && resp.StatusCode != http.StatusOK) {
+		if resp != nil && resp.StatusCode == http.StatusNotFound {
+			// It's a 404, we might try fallback
+		} else if resp != nil {
+			// It's 500, 403, etc.
+		}
 		if resp != nil {
 			resp.Body.Close()
 		}
@@ -996,22 +1002,41 @@ func (s *Server) handlePicons(w http.ResponseWriter, r *http.Request) {
 
 			respFallback, errFallback := client.Get(fallbackURL)
 			if errFallback == nil && respFallback.StatusCode == http.StatusOK {
+				// Success! Use the fallback response
 				resp = respFallback
-				err = nil
-			} else {
-				if respFallback != nil {
-					respFallback.Body.Close()
-				}
+				goto ServePicon
 			}
+
+			// Fallback failed
+			if respFallback != nil {
+				respFallback.Body.Close()
+			}
+			logger.Debug().Err(errFallback).Msg("SD picon fallback failed")
 		}
-		if resp.StatusCode != http.StatusNotFound {
+
+		// If we are here, both original and fallback failed
+		if err != nil {
+			logger.Warn().Err(err).Str("url", upstreamURL).Msg("upstream fetch failed")
+			http.Error(w, "Picon upstream unavailable", http.StatusBadGateway)
+			return
+		} else if resp != nil && resp.StatusCode != http.StatusNotFound {
 			logger.Warn().Int("status", resp.StatusCode).Str("url", upstreamURL).Msg("upstream returned error")
+			// Pass through 5xx errors from upstream
+			if resp.StatusCode >= 500 {
+				http.Error(w, "Picon upstream error", http.StatusBadGateway)
+			} else {
+				http.NotFound(w, r)
+			}
+			return
 		} else {
 			logger.Debug().Str("url", upstreamURL).Msg("upstream returned 404 (picon not found)")
 		}
+
 		http.NotFound(w, r)
 		return
 	}
+
+ServePicon:
 
 	// 3. SAVE TO CACHE
 	tempFile, err := os.CreateTemp(piconDir, "picon-*.tmp")
@@ -1087,17 +1112,13 @@ func (s *Server) handleStreamProxy(w http.ResponseWriter, r *http.Request) {
 	// handle it as a regular stream request (not HLS forced)
 
 	// Determine upstream host/port
-	targetHost := "127.0.0.1:18000" // Default
-	if listen := os.Getenv("XG2G_PROXY_PORT"); listen != "" {
-		targetHost = "127.0.0.1:" + listen
+	// Allow configuring the proxy host for split deployments (e.g. Docker containers)
+	targetHost := os.Getenv("XG2G_PROXY_HOST")
+	if targetHost == "" {
+		targetHost = "127.0.0.1"
 	}
-	// Better: Use configured address if available
-	// But since this is http.go (API), we don't have access to proxy module config directly.
-	// We assume local proxy for now.
-	// User requested "Use GetListenAddr or XG2G_PROXY_LISTEN".
-	// Since we are inside 'api' package, we can't easily import 'proxy' package due to circular deps if not careful.
-	// But `internal/proxy` is imported as `proxy`.
-	targetHost = "127.0.0.1" + proxy.GetListenAddr()
+	// Append port from proxy config
+	targetHost += proxy.GetListenAddr()
 
 	targetURL, _ := url.Parse("http://" + targetHost)
 

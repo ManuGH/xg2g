@@ -150,10 +150,12 @@ func (s *Server) tryHandleTranscode(w http.ResponseWriter, r *http.Request) bool
 
 		if err := s.transcoder.RepairH264Stream(r.Context(), w, r, targetURL); err != nil {
 			if !errors.Is(err, context.Canceled) {
-				s.logger.Error().Err(err).Str("path", r.URL.Path).Msg("H.264 stream repair failed, falling back to direct proxy")
+				if s.handleTranscodeError(w, r, err) {
+					return true
+				}
 				metrics.IncTranscodeError()
 			}
-			return false // Fallback to direct
+			return s.transcodeFailOpen == false // handled above if fail-closed; otherwise fallback
 		}
 		return true
 	}
@@ -167,9 +169,11 @@ func (s *Server) tryHandleTranscode(w http.ResponseWriter, r *http.Request) bool
 
 		if err := s.transcoder.ProxyToGPUTranscoder(r.Context(), w, r, targetURL); err != nil {
 			if !errors.Is(err, context.Canceled) {
-				s.logger.Error().Err(err).Str("path", r.URL.Path).Msg("GPU transcoding failed, falling back to direct proxy")
+				if s.handleTranscodeError(w, r, err) {
+					return true
+				}
 			}
-			return false // Fallback to direct
+			return s.transcodeFailOpen == false
 		}
 		return true
 	}
@@ -210,7 +214,29 @@ func (s *Server) tryHandleTranscode(w http.ResponseWriter, r *http.Request) bool
 	}
 
 	// If all transcoding failed -> fallback to direct
-	s.logger.Warn().Err(err).Str("path", r.URL.Path).Msg("all transcoding methods failed, falling back to direct proxy")
+	if s.handleTranscodeError(w, r, err) {
+		return true
+	}
 	metrics.IncTranscodeError()
-	return false
+	return s.transcodeFailOpen == false
+}
+
+// handleTranscodeError enforces fail-open/fail-closed behaviour for the
+// transcoder pipeline. Returns true if the error has been fully handled
+// (response written), false if caller should fallback to direct proxy.
+func (s *Server) handleTranscodeError(w http.ResponseWriter, r *http.Request, err error) bool {
+	if s.transcodeFailOpen {
+		s.logger.Warn().
+			Err(err).
+			Str("path", r.URL.Path).
+			Msg("transcode pipeline failed, failing open to direct proxy")
+		return false
+	}
+
+	s.logger.Error().
+		Err(err).
+		Str("path", r.URL.Path).
+		Msg("transcode pipeline failed, returning 502")
+	http.Error(w, "transcode failed", http.StatusBadGateway)
+	return true
 }

@@ -181,7 +181,9 @@ func (s *HLSStreamer) Start() error {
 
 	args := []string{
 		"-hide_banner",
-		"-loglevel", "info", // Changed from warning to info for better debugging
+	}
+	args = append(args, logLevelArgs("info")...)
+	args = append(args,
 		"-err_detect", "ignore_err", // Ignore decoding errors
 		"-ignore_unknown",                          // Ignore streams that fail probing
 		"-fflags", "+genpts+igndts+discardcorrupt", // Regenerate PTS, ignore bad DTS, discard corrupt frames
@@ -206,7 +208,7 @@ func (s *HLSStreamer) Start() error {
 		"-hls_flags", "delete_segments+append_list",
 		"-hls_segment_filename", segmentPattern,
 		playlistPath,
-	}
+	)
 
 	// #nosec G204 -- HLS transcoding: ffmpeg command with controlled arguments
 	s.cmd = exec.CommandContext(s.ctx, "ffmpeg", args...)

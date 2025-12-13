@@ -14,12 +14,13 @@ func PiconURL(owiBase, sref string) string {
 	// This matches OpenWebif's frontend behavior where picons are typically
 	// stored with SD service type even for HD channels.
 	// e.g., 1:0:1:132F:3EF:1:C00000:0:0:0: -> 1:0:1:132F:3EF:1:C00000:0:0:0:
-	// normalizedSref := NormalizeServiceRefForPicon(sref)
+	normalizedSref := NormalizeServiceRefForPicon(sref)
 	// We do NOT normalize by default anymore, to support strict picon matching (e.g. 1_0_19...)
+	// UPDATE: We DO normalize now to fix broken picons for HD/HEVC channels (as requested)
 
 	// Convert service reference colons to underscores for Enigma2 picon naming
 	// e.g., 1:0:1:132F:3EF:1:C00000:0:0:0: -> 1_0_1_132F_3EF_1_C00000_0_0_0
-	piconRef := strings.ReplaceAll(sref, ":", "_")
+	piconRef := strings.ReplaceAll(normalizedSref, ":", "_")
 	piconRef = strings.TrimSuffix(piconRef, "_") // Remove trailing underscore
 
 	// If owiBase already contains the file API path, just append the picon filename
