@@ -143,6 +143,42 @@ func (p *PlexProfile) Start(forceAAC bool, aacBitrate string) error {
 		return nil
 	}
 
+	// Inject stream_id into context logger for traceability
+	// This ensures all logs from this stream session share the same ID
+	streamID := fmt.Sprintf("plex-%s-%d", time.Now().Format("150405"), time.Now().UnixNano()%1000)
+	logger := zerolog.Ctx(p.ctx).With().Str("stream_id", streamID).Logger()
+	// Update context with logger
+	p.ctx = logger.WithContext(p.ctx)
+	// Update struct logger as well for other methods
+	p.logger = logger
+
+	// Log stream start (Lifecycle Event)
+	logger.Info().
+		Str("event", "stream_start").
+		Str("mode", "plex_hls").
+		Str("input_url", sanitizeURL(p.targetURL)).
+		Str("segment_duration", fmt.Sprintf("%ds", p.segmentSize)).
+		Str("force_aac", fmt.Sprintf("%v", forceAAC)).
+		Msg("starting plex profile session")
+
+	startTime := time.Now()
+	var exitReason string = "internal_error" // Default
+	var lastStats *FFmpegStats
+
+	defer func() {
+		// Log stream end (Lifecycle Event)
+		event := logger.Info().
+			Str("event", "stream_end").
+			Str("exit_reason", exitReason).
+			Dur("duration_ms", time.Since(startTime))
+
+		if lastStats != nil {
+			event.Float64("ffmpeg_last_speed", lastStats.Speed).
+				Float64("ffmpeg_last_bitrate_kbps", lastStats.BitrateKBPS)
+		}
+		event.Msg("plex profile session ended")
+	}()
+
 	playlistPath := filepath.Join(p.outputDir, "playlist.m3u8")
 	segmentPattern := filepath.Join(p.outputDir, "segment_%03d.ts")
 
@@ -170,13 +206,15 @@ func (p *PlexProfile) Start(forceAAC bool, aacBitrate string) error {
 
 	args := []string{
 		"-hide_banner",
-		"-loglevel", "warning",
+	}
+	args = append(args, logLevelArgs("info")...)
+	args = append(args,
 		"-fflags", "+genpts+igndts", // Regenerate timestamps (Enigma2 has broken DTS)
 		"-i", finalInputURL,
 		"-map", "0:v",
 		"-c:v", "copy", // Copy video without re-encoding
 		"-bsf:v", "h264_mp4toannexb", // CRITICAL: Add PPS/SPS headers for Plex (same as RepairH264Stream)
-	}
+	)
 
 	// Audio handling: AAC transcoding for iOS or copy for Plex server
 	if forceAAC {
@@ -244,19 +282,48 @@ func (p *PlexProfile) Start(forceAAC bool, aacBitrate string) error {
 	}
 
 	// Monitor ffmpeg stderr in background
+	// Monitor ffmpeg stderr in background with stats parsing
+	// Use WaitGroup to ensure we capture all logs before exit
+	var stderrWg sync.WaitGroup
+	stderrWg.Add(1)
+
 	go func() {
+		defer stderrWg.Done()
 		scanner := bufio.NewScanner(stderrPipe)
 		buf := make([]byte, 0, 64*1024)
 		scanner.Buffer(buf, 1024*1024)
+		statsTicker := time.NewTicker(5 * time.Second)
+		defer statsTicker.Stop()
+		var statsSeq int
 
 		for scanner.Scan() {
-			p.logger.Debug().
-				Str("ffmpeg", scanner.Text()).
-				Msg("plex profile ffmpeg stderr")
+			line := scanner.Text()
+
+			// Parse stats
+			if stats := ParseFFmpegStats(line); stats != nil {
+				lastStats = stats
+				select {
+				case <-statsTicker.C:
+					statsSeq++
+					logger.Info().
+						Str("event", "ffmpeg_stats").
+						Int("seq", statsSeq).
+						Float64("speed", stats.Speed).
+						Float64("bitrate_kbps", stats.BitrateKBPS).
+						Msg("ffmpeg progress")
+				default:
+				}
+			} else {
+				if strings.Contains(strings.ToLower(line), "error") {
+					logger.Warn().Str("stderr", line).Msg("ffmpeg warning")
+				} else {
+					logger.Debug().Str("stderr", line).Msg("plex profile ffmpeg stderr")
+				}
+			}
 		}
 
 		if err := scanner.Err(); err != nil {
-			p.logger.Debug().
+			logger.Debug().
 				Err(err).
 				Msg("ffmpeg stderr scanner error")
 		}
@@ -272,13 +339,29 @@ func (p *PlexProfile) Start(forceAAC bool, aacBitrate string) error {
 
 	// Monitor process in background
 	go func() {
+		defer stderrWg.Wait() // Wait for logger to finish
+
 		if err := p.cmd.Wait(); err != nil {
 			if p.ctx.Err() == nil {
-				p.logger.Error().
+				exitReason = "ffmpeg_exit"
+				logger.Error().
 					Err(err).
 					Msg("Plex/iOS HLS segmentation failed")
+			} else {
+				exitReason = "client_disconnect"
+			}
+		} else {
+			if p.ctx.Err() != nil {
+				exitReason = "client_disconnect"
+			} else {
+				exitReason = "ffmpeg_exit" // Unexpected exit even if 0? HLS should run forever
 			}
 		}
+
+		if exitReason == "internal_error" {
+			exitReason = "success" // Should typically not happen for infinite HLS loop unless stopped
+		}
+
 		p.mu.Lock()
 		p.started = false
 		p.mu.Unlock()

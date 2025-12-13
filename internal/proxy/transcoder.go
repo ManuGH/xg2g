@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/metrics"
@@ -61,6 +62,41 @@ func NewTranscoder(config TranscoderConfig, logger zerolog.Logger) *Transcoder {
 // It proxies the request to the target, pipes it through ffmpeg for transcoding, and streams the result back to the client.
 // Supports Smart Codec Fallback (AV1 -> HEVC -> H264) if enabled.
 func (t *Transcoder) TranscodeStream(ctx context.Context, w http.ResponseWriter, r *http.Request, targetURL string) error {
+	// Inject stream_id into context logger for traceability
+	// This ensures all logs from this stream session share the same ID
+	streamID := fmt.Sprintf("transcode-%s-%d", time.Now().Format("150405"), time.Now().UnixNano()%1000)
+	logger := zerolog.Ctx(ctx).With().Str("stream_id", streamID).Logger()
+	ctx = logger.WithContext(ctx)
+
+	// Log stream start (Lifecycle Event)
+	logger.Info().
+		Str("event", "stream_start").
+		Str("mode", "transcode").
+		Str("input_url", sanitizeURL(targetURL)).
+		Str("client_ip", r.RemoteAddr).
+		Str("user_agent", r.UserAgent()).
+		Msg("starting transcode session")
+
+	startTime := time.Now()
+	var exitReason string = "internal_error" // Default
+	var bytesOut int64
+	var lastStats *FFmpegStats
+
+	defer func() {
+		// Log stream end (Lifecycle Event)
+		event := logger.Info().
+			Str("event", "stream_end").
+			Str("exit_reason", exitReason).
+			Dur("duration_ms", time.Since(startTime)).
+			Int64("bytes_out", bytesOut)
+
+		if lastStats != nil {
+			event.Float64("ffmpeg_last_speed", lastStats.Speed).
+				Float64("ffmpeg_last_bitrate_kbps", lastStats.BitrateKBPS)
+		}
+		event.Msg("transcode session ended")
+	}()
+
 	// Determine list of codecs to try
 	var codecs []string
 	if t.Config.VideoTranscode && t.Config.VideoCodec == "auto" {
@@ -85,43 +121,40 @@ func (t *Transcoder) TranscodeStream(ctx context.Context, w http.ResponseWriter,
 
 	var lastErr error
 	for _, codec := range codecs {
-		t.logger.Info().Str("codec", codec).Msg("attempting transcoding with codec")
+		logger.Info().Str("codec", codec).Msg("attempting transcoding with codec")
 
-		err := t.streamTranscodeInternal(ctx, w, r, targetURL, codec)
+		// Create a child context for this attempt implies we should respect parent cancellation
+		attemptCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
+		err := t.streamTranscodeInternal(attemptCtx, w, r, targetURL, codec, &bytesOut, &exitReason, &lastStats)
 		if err == nil {
 			// Success! Stream finished normally (client disconnected or stream ended)
+			if exitReason == "internal_error" {
+				exitReason = "success" // Should have been set by internal, but just in case
+			}
 			return nil
 		}
 
-		// Check if error is recoverable (i.e. we haven't written HTTP 200 yet)
-		// Our internal function returns specific error if it failed BEFORE writing headers.
-		// However, io.Copy logic writes headers implicitely on first write.
-		// If streamTranscodeInternal returns error 'failed to start ffmpeg' or immediate exit, we retry.
-		// If it transferred data, we likely already sent headers, so we can't retry cleanly (client sees broken stream).
-
-		// Simplify: We assume if it failed quickly, we can retry.
-		// But practically, if we can't reset ResponseWriter, we are stuck.
-		// NOTE: http.ResponseWriter cannot be reset.
-		// If streamTranscodeInternal wrote NOTHING, we are good.
-		// If it wrote SOMETHING, the client has received 200 OK and data. We can't change codec mid-stream easily without HLS.
-		// In a raw stream, we just die.
-
-		// For this implementation, we will try to ensure we don't write headers until FFmpeg is successfully started.
-		// But streamTranscodeInternal handles the piping.
-
+		// Check if error is recoverable
 		if ctx.Err() != nil {
+			exitReason = "client_disconnect"
 			return ctx.Err() // Client disconnected, stop
 		}
 
 		lastErr = err
-		t.logger.Warn().Err(err).Str("codec", codec).Msg("transcoding failed, trying next fallback if available")
+		logger.Warn().Err(err).Str("codec", codec).Msg("transcoding failed, trying next fallback if available")
+		// Reset exit reason for next try
+		exitReason = "ffmpeg_exit"
 	}
 
+	exitReason = "ffmpeg_exit" // Last error was likely ffmpeg failure
 	return fmt.Errorf("all transcoding attempts failed: %w", lastErr)
 }
 
 // streamTranscodeInternal is the worker logic for a single codec attempt.
-func (t *Transcoder) streamTranscodeInternal(ctx context.Context, w http.ResponseWriter, r *http.Request, targetURL string, videoCodec string) error {
+func (t *Transcoder) streamTranscodeInternal(ctx context.Context, w http.ResponseWriter, r *http.Request, targetURL string, videoCodec string, bytesOut *int64, exitReason *string, lastStats **FFmpegStats) error {
+	logger := zerolog.Ctx(ctx)
 	// Start tracing span
 	tracer := telemetry.Tracer("xg2g.proxy")
 	ctx, span := tracer.Start(ctx, "transcode.ffmpeg",
@@ -192,32 +225,34 @@ func (t *Transcoder) streamTranscodeInternal(ctx context.Context, w http.Respons
 	var args []string
 	if videoCodec == "copy" {
 		// Audio Transcode Only
-		args = []string{
-			"-hide_banner", "-loglevel", "error",
+		args = []string{"-hide_banner"}
+		args = append(args, logLevelArgs("error")...)
+		args = append(args,
 			"-fflags", "+genpts+igndts",
 			"-i", "pipe:0",
 			"-map", "0:v", "-c:v", "copy",
-		}
+		)
 		args = append(args, buildAudioArgs(true)...)
 		args = append(args, muxArgs...)
 	} else {
 		// Hardware Video Transcode
-		args = []string{
-			"-hide_banner", "-loglevel", "error",
+		args = []string{"-hide_banner"}
+		args = append(args, logLevelArgs("error")...)
+		args = append(args,
 			"-init_hw_device", "vaapi=d1:/dev/dri/renderD128", // HW Device
 			"-filter_hw_device", "d1",
 			"-fflags", "+genpts+igndts",
 			"-i", "pipe:0",
 			"-vf", "format=nv12,hwupload", // Upload to GPU
 			"-map", "0:v", "-c:v", videoCodec, // Selected Codec
-			"-qp", "24", // Quality
-		}
+			"-qp", "24", // Quality,
+		)
 		args = append(args, buildAudioArgs(false)...)
 		args = append(args, "-map", "0:s?", "-c:s", "copy") // Copy subtitles if present
 		args = append(args, muxArgs...)
 	}
 
-	t.logger.Debug().Str("ffmpeg_path", t.Config.FFmpegPath).Strs("args", args).Msg("starting ffmpeg")
+	logger.Debug().Str("ffmpeg_path", t.Config.FFmpegPath).Strs("args", args).Msg("starting ffmpeg")
 
 	// Create ffmpeg command
 	cmd := exec.CommandContext(ctx, t.Config.FFmpegPath, args...)
@@ -243,10 +278,47 @@ func (t *Transcoder) streamTranscodeInternal(ctx context.Context, w http.Respons
 	}
 
 	// Capture Stderr
+	// Capture Stderr with Stats Parsing
+	var stderrWg sync.WaitGroup
+	stderrWg.Add(1)
 	go func() {
+		defer stderrWg.Done()
+
 		scanner := bufio.NewScanner(stderr)
+		statsTicker := time.NewTicker(5 * time.Second)
+		defer statsTicker.Stop()
+
+		var statsSeq int
+
 		for scanner.Scan() {
-			t.logger.Debug().Str("ffmpeg_stderr", scanner.Text()).Msg("ffmpeg output")
+			line := scanner.Text()
+
+			// Parse stats
+			if stats := ParseFFmpegStats(line); stats != nil {
+				*lastStats = stats // Update pointer for parent
+
+				select {
+				case <-statsTicker.C:
+					statsSeq++
+					logger.Info().
+						Str("event", "ffmpeg_stats").
+						Int("seq", statsSeq).
+						Float64("speed", stats.Speed).
+						Float64("bitrate_kbps", stats.BitrateKBPS).
+						Float64("fps", stats.FPS).
+						Int("frame", stats.Frame).
+						Msg("ffmpeg progress")
+				default:
+					// Debounce
+				}
+			} else {
+				// Log other notable lines or debug
+				if strings.Contains(strings.ToLower(line), "error") || strings.Contains(line, "Invalid") {
+					logger.Warn().Str("stderr", line).Msg("ffmpeg warning")
+				} else {
+					logger.Debug().Str("stderr", line).Msg("ffmpeg output")
+				}
+			}
 		}
 	}()
 
@@ -297,12 +369,58 @@ func (t *Transcoder) streamTranscodeInternal(ctx context.Context, w http.Respons
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		io.Copy(w, stdout)
+		n, err := io.Copy(w, stdout)
+		if n > 0 {
+			atomic.AddInt64(bytesOut, n)
+		}
+		// If copy error and context is not cancelled, it's a broken pipe (client disconnect) or ffmpeg death
+		if err != nil {
+			if ctx.Err() != nil {
+				*exitReason = "client_disconnect"
+			} else if strings.Contains(err.Error(), "broken pipe") || strings.Contains(err.Error(), "connection reset") {
+				*exitReason = "client_disconnect"
+			} else {
+				// Could be ffmpeg died
+				*exitReason = "ffmpeg_exit"
+			}
+		} else {
+			// Copy finished normally (EOF from stdout)
+			// This means FFmpeg exited
+			if ctx.Err() != nil {
+				*exitReason = "client_disconnect"
+			} else {
+				*exitReason = "ffmpeg_exit"
+			}
+		}
 	}()
 
 	wg.Wait()
+
+	// Wait for stderr to finish (ensure we got all logs)
+	stderrWg.Wait()
+
 	cmd.Wait() // Wait for exit
+
+	if *exitReason == "internal_error" {
+		*exitReason = "success" // If we reached here without setting specific error
+	}
+
 	return nil
+}
+
+// sanitizeURL removes credentials and query params for safe logging
+func sanitizeURL(u string) string {
+	parsed, err := url.Parse(u)
+	if err != nil {
+		return "invalid"
+	}
+	// Redact User info
+	if parsed.User != nil {
+		parsed.User = url.User("redacted")
+	}
+	// Remove Query params (often contain tokens)
+	parsed.RawQuery = ""
+	return parsed.String()
 }
 
 // RepairH264Stream repairs H.264 streams by adding proper PPS/SPS headers using FFmpeg's h264_mp4toannexb bitstream filter.
@@ -320,6 +438,40 @@ func (t *Transcoder) streamTranscodeInternal(ctx context.Context, w http.Respons
 //   - Minimal latency (~10-20ms for bitstream filter)
 //   - Zero CPU usage for encoding/decoding
 func (t *Transcoder) RepairH264Stream(ctx context.Context, w http.ResponseWriter, r *http.Request, targetURL string) error {
+	// Inject stream_id into context logger for traceability
+	streamID := fmt.Sprintf("repair-%s-%d", time.Now().Format("150405"), time.Now().UnixNano()%1000)
+	logger := zerolog.Ctx(ctx).With().Str("stream_id", streamID).Logger()
+	ctx = logger.WithContext(ctx)
+
+	// Log stream start (Lifecycle Event)
+	logger.Info().
+		Str("event", "stream_start").
+		Str("mode", "repair").
+		Str("input_url", sanitizeURL(targetURL)).
+		Str("client_ip", r.RemoteAddr).
+		Str("user_agent", r.UserAgent()).
+		Msg("starting repair session")
+
+	startTime := time.Now()
+	var exitReason string = "internal_error" // Default
+	var bytesOut int64
+	var lastStats *FFmpegStats
+
+	defer func() {
+		// Log stream end (Lifecycle Event)
+		event := logger.Info().
+			Str("event", "stream_end").
+			Str("exit_reason", exitReason).
+			Dur("duration_ms", time.Since(startTime)).
+			Int64("bytes_out", bytesOut)
+
+		if lastStats != nil {
+			event.Float64("ffmpeg_last_speed", lastStats.Speed).
+				Float64("ffmpeg_last_bitrate_kbps", lastStats.BitrateKBPS)
+		}
+		event.Msg("repair session ended")
+	}()
+
 	// Start tracing span
 	tracer := telemetry.Tracer("xg2g.proxy")
 	ctx, span := tracer.Start(ctx, "stream.h264_repair",
@@ -382,12 +534,14 @@ func (t *Transcoder) RepairH264Stream(ctx context.Context, w http.ResponseWriter
 	// - fflags +genpts+igndts: Regenerate timestamps (Enigma2 streams have broken DTS)
 	args := []string{
 		"-hide_banner",
-		"-loglevel", "error",
+	}
+	args = append(args, logLevelArgs("error")...)
+	args = append(args,
 		"-fflags", "+genpts+igndts", // Generate PTS, ignore broken DTS
 		"-i", "pipe:0", // Read from stdin
 		"-map", "0:v", "-c:v", "copy", // Copy video stream without transcoding
 		"-bsf:v", "h264_mp4toannexb", // CRITICAL: Add PPS/SPS headers for H.264 Annex-B
-	}
+	)
 
 	// Audio handling: Transcode to AAC if enabled (for iOS support), otherwise copy
 	if t.Config.Enabled {
@@ -459,11 +613,39 @@ func (t *Transcoder) RepairH264Stream(ctx context.Context, w http.ResponseWriter
 		return fmt.Errorf("start ffmpeg: %w", err)
 	}
 
-	// Log ffmpeg stderr in background
+	// Log ffmpeg stderr in background with stats
+	var stderrWg sync.WaitGroup
+	stderrWg.Add(1)
 	go func() {
+		defer stderrWg.Done()
 		scanner := bufio.NewScanner(stderr)
+		statsTicker := time.NewTicker(5 * time.Second)
+		defer statsTicker.Stop()
+		var statsSeq int
+
 		for scanner.Scan() {
-			t.logger.Debug().Str("ffmpeg_stderr", scanner.Text()).Msg("ffmpeg H.264 repair output")
+			line := scanner.Text()
+			// Parse stats
+			if stats := ParseFFmpegStats(line); stats != nil {
+				lastStats = stats
+				select {
+				case <-statsTicker.C:
+					statsSeq++
+					logger.Info().
+						Str("event", "ffmpeg_stats").
+						Int("seq", statsSeq).
+						Float64("speed", stats.Speed).
+						Float64("bitrate_kbps", stats.BitrateKBPS).
+						Msg("ffmpeg progress")
+				default:
+				}
+			} else {
+				if strings.Contains(strings.ToLower(line), "error") {
+					logger.Warn().Str("stderr", line).Msg("ffmpeg warning")
+				} else {
+					logger.Debug().Str("stderr", line).Msg("ffmpeg repair output")
+				}
+			}
 		}
 	}()
 
@@ -477,7 +659,7 @@ func (t *Transcoder) RepairH264Stream(ctx context.Context, w http.ResponseWriter
 		defer wg.Done()
 		defer func() {
 			if err := stdin.Close(); err != nil {
-				t.logger.Debug().Err(err).Msg("failed to close stdin")
+				logger.Debug().Err(err).Msg("failed to close stdin")
 			}
 		}()
 		if _, err := io.Copy(stdin, resp.Body); err != nil {
@@ -496,9 +678,26 @@ func (t *Transcoder) RepairH264Stream(ctx context.Context, w http.ResponseWriter
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if _, err := io.Copy(w, stdout); err != nil {
+		n, err := io.Copy(w, stdout)
+		if n > 0 {
+			atomic.AddInt64(&bytesOut, n)
+		}
+		if err != nil {
+			if ctx.Err() != nil {
+				exitReason = "client_disconnect"
+			} else if strings.Contains(err.Error(), "broken pipe") {
+				exitReason = "client_disconnect"
+			} else {
+				exitReason = "ffmpeg_exit"
+			}
 			if !strings.Contains(err.Error(), "broken pipe") && !strings.Contains(err.Error(), "connection reset") {
 				errChan <- fmt.Errorf("copy from ffmpeg stdout: %w", err)
+			}
+		} else {
+			if ctx.Err() != nil {
+				exitReason = "client_disconnect"
+			} else {
+				exitReason = "ffmpeg_exit"
 			}
 		}
 	}()
@@ -506,12 +705,19 @@ func (t *Transcoder) RepairH264Stream(ctx context.Context, w http.ResponseWriter
 	// Wait for all copy operations to complete
 	wg.Wait()
 
+	// Wait for stderr log to finish
+	stderrWg.Wait()
+
 	// Wait for ffmpeg to exit
 	if err := cmd.Wait(); err != nil {
 		// Only log error if it's not a context cancellation
 		if ctx.Err() == nil {
-			t.logger.Debug().Err(err).Msg("ffmpeg H.264 repair exited with error")
+			logger.Debug().Err(err).Msg("ffmpeg H.264 repair exited with error")
 		}
+	}
+
+	if exitReason == "internal_error" {
+		exitReason = "success"
 	}
 
 	// Check for errors from goroutines
@@ -709,8 +915,42 @@ func GetTranscoderConfig() TranscoderConfig {
 		useRust = rustEnv == envTrue
 	}
 
+	// Verify FFmpeg availability
+	ffmpegFound := false
+	if path, err := exec.LookPath(ffmpegPath); err == nil {
+		ffmpegPath = path
+		ffmpegFound = true
+	} else {
+		// Verify absolute path if provided
+		if filepath.IsAbs(ffmpegPath) {
+			if _, err := os.Stat(ffmpegPath); err == nil {
+				ffmpegFound = true
+			}
+		}
+	}
+
+	h264Repair := IsH264RepairEnabled()
+	videoTranscode := checkVAAPI() && os.Getenv("XG2G_VIDEO_TRANSCODE") == envTrue
+	audioEnabled := IsTranscodingEnabled()
+
+	if !ffmpegFound {
+		// Log warning to stderr (since no logger available here)
+		msg := fmt.Sprintf("[WARN] FFmpeg not found at '%s'. Disabling H.264 Repair and Video Transcoding.\n", ffmpegPath)
+		fmt.Fprint(os.Stderr, msg)
+
+		// Disable features requiring FFmpeg
+		h264Repair = false
+		videoTranscode = false
+
+		// For audio, if not using Rust remuxer, we must disable it too
+		if !useRust {
+			fmt.Fprint(os.Stderr, "[WARN] FFmpeg not found and Rust Remuxer disabled. Audio transcoding disabled.\n")
+			audioEnabled = false
+		}
+	}
+
 	return TranscoderConfig{
-		Enabled:           IsTranscodingEnabled(),
+		Enabled:           audioEnabled,
 		Codec:             codec,
 		Bitrate:           bitrate,
 		Channels:          channels,
@@ -718,8 +958,8 @@ func GetTranscoderConfig() TranscoderConfig {
 		GPUEnabled:        gpuEnabled,
 		TranscoderURL:     transcoderURL,
 		UseRustRemuxer:    useRust,
-		H264RepairEnabled: IsH264RepairEnabled(),
-		VideoTranscode:    checkVAAPI() && os.Getenv("XG2G_VIDEO_TRANSCODE") == envTrue,
+		H264RepairEnabled: h264Repair,
+		VideoTranscode:    videoTranscode,
 		VideoCodec:        os.Getenv("XG2G_VIDEO_CODEC"),
 	}
 }
@@ -744,13 +984,15 @@ func checkVAAPI() bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "ffmpeg",
-		"-hide_banner", "-loglevel", "error",
+	args := []string{"-hide_banner"}
+	args = append(args, logLevelArgs("error")...)
+	args = append(args,
 		"-init_hw_device", "vaapi=probe:"+devicePath,
 		"-filter_hw_device", "probe",
 		"-f", "lavfi", "-i", "nullsrc",
 		"-t", "0.1", "-f", "null", "-",
 	)
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 	if err := cmd.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "VAAPI Probe Failed: %v\n", err)
 		return false
