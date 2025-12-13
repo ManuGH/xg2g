@@ -68,13 +68,7 @@ export default function Channels({
                           src={ch.logo_url}
                           alt={ch.name}
                           onClick={() => onPlay(ch)}
-                          style={{
-                            width: '80px',
-                            height: 'auto',
-                            display: 'block',
-                            cursor: 'pointer',
-                            filter: 'drop-shadow(0px 1px 2px rgba(0,0,0,0.8))'
-                          }}
+                          className="channel-logo"
                         />
                       ) : (
                         <button onClick={() => onPlay(ch)} style={{ cursor: 'pointer' }}>▶️</button>
@@ -92,5 +86,4 @@ export default function Channels({
     </div>
   );
 }
-
 

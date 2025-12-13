@@ -23,6 +23,9 @@ const (
 
 	// DefaultHLSCleanupInterval is the default interval for checking idle streams
 	DefaultHLSCleanupInterval = 2 * time.Second
+
+	// DefaultHLSPlaylistTimeout is how long we wait for the first playable segment/playlist
+	DefaultHLSPlaylistTimeout = 60 * time.Second
 )
 
 // HLSStreamer manages HLS segmentation for a single stream.
@@ -141,6 +144,32 @@ func (s *HLSStreamer) Start() error {
 		return nil
 	}
 
+	// Fresh context per session (avoid reusing canceled contexts)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Inject stream_id into context logger for traceability
+	streamID := fmt.Sprintf("hls-%s-%d", time.Now().Format("150405"), time.Now().UnixNano()%1000)
+	logger := s.logger.With().Str("stream_id", streamID).Logger()
+	ctx = logger.WithContext(ctx)
+
+	// Mark stream as starting before long-running work to avoid lock contention
+	s.ctx = ctx
+	s.cancel = cancel
+	s.logger = logger
+	s.lastAccess = time.Now()
+	s.started = true
+	s.mu.Unlock()
+
+	cleanupOnError := true
+	defer func() {
+		if cleanupOnError {
+			cancel()
+			s.mu.Lock()
+			s.started = false
+			s.mu.Unlock()
+		}
+	}()
+
 	playlistPath := filepath.Join(s.outputDir, "playlist.m3u8")
 	segmentPattern := filepath.Join(s.outputDir, "segment_%03d.ts")
 
@@ -148,7 +177,6 @@ func (s *HLSStreamer) Start() error {
 	// outputDir is already validated via secureJoin
 	_ = os.RemoveAll(s.outputDir)
 	if err := os.MkdirAll(s.outputDir, 0750); err != nil {
-		s.mu.Unlock()
 		return fmt.Errorf("re-create output directory: %w", err)
 	}
 
@@ -164,25 +192,19 @@ func (s *HLSStreamer) Start() error {
 	webAPIURL := convertToWebAPI(s.targetURL, s.serviceRef)
 
 	if webAPIURL != s.targetURL {
-		s.logger.Info().Str("web_api_url", webAPIURL).Msg("attempting to resolve Web API stream (Zapping)")
+		logger.Info().Str("web_api_url", webAPIURL).Msg("attempting to resolve Web API stream (Zapping)")
 		resolved, err := resolveWebAPI(webAPIURL)
 		if err != nil {
-			s.logger.Error().Err(err).Str("web_api_url", webAPIURL).Msg("failed to resolve Web API stream")
+			logger.Error().Err(err).Str("web_api_url", webAPIURL).Msg("failed to resolve Web API stream")
 		} else {
 			finalInputURL = resolved
-			s.logger.Info().Str("resolved_url", finalInputURL).Msg("successfully resolved stream URL")
+			logger.Info().Str("resolved_url", finalInputURL).Msg("successfully resolved stream URL")
 			// Give the tuner a moment to lock after zapping
 			time.Sleep(1000 * time.Millisecond)
 		}
 	} else {
-		s.logger.Info().Msg("using direct stream URL (no Web API detected)")
+		logger.Info().Msg("using direct stream URL (no Web API detected)")
 	}
-
-	// Inject stream_id into context logger for traceability
-	streamID := fmt.Sprintf("hls-%s-%d", time.Now().Format("150405"), time.Now().UnixNano()%1000)
-	logger := s.logger.With().Str("stream_id", streamID).Logger()
-	s.ctx = logger.WithContext(s.ctx)
-	s.logger = logger // Update struct logger
 
 	// Log stream start
 	logger.Info().
@@ -208,7 +230,7 @@ func (s *HLSStreamer) Start() error {
 		event.Msg("HLS session ended")
 	}()
 
-	s.logger.Info().Str("ffmpeg_input", finalInputURL).Msg("starting ffmpeg with input")
+	logger.Info().Str("ffmpeg_input", finalInputURL).Msg("starting ffmpeg with input")
 
 	args := []string{
 		"-hide_banner",
@@ -218,11 +240,11 @@ func (s *HLSStreamer) Start() error {
 		"-err_detect", "ignore_err", // Ignore decoding errors
 		"-ignore_unknown",                          // Ignore streams that fail probing
 		"-fflags", "+genpts+igndts+discardcorrupt", // Regenerate PTS, ignore bad DTS, discard corrupt frames
-		"-analyzeduration", "10000000", // 10s Analysis (Safe for MPTS/Encryption delay)
+		"-analyzeduration", "7000000", // 7s Analysis (safe for encrypted/slow-lock streams)
 		"-probesize", "10000000", // 10MB: Safe for multi-program streams
 		"-rw_timeout", "30000000", // 30s socket timeout
 		"-reconnect", "1", "-reconnect_at_eof", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5", // Robust HTTP input
-		"-start_at_zero",                  // FORCE START AT 0: Essential for iOS after transcode
+		"-start_at_zero",                  // Reset timestamps to 0
 		"-avoid_negative_ts", "make_zero", // Ensure no negative timestamps
 		"-ss", "1.5", // SKIP GARBAGE: Drop first 1.5s of input (fixes Startbild/Green artifacts)
 		"-thread_queue_size", "4096", // Increase thread queue for buffer
@@ -237,8 +259,9 @@ func (s *HLSStreamer) Start() error {
 		"-pix_fmt", "yuv420p", // FORCE 4:2:0 for iOS compatibility
 		"-crf", "18", // ULTRA QUALITY: Virtually Lossless
 		"-vf", "yadif=0:-1:0", // Deinterlace
-		"-g", "100", // Force GOP size (2s @ 50fps)
-		"-keyint_min", "100", // Force IDR validity
+		"-g", "50", // Shorter GOP for faster keyframes (≈2s @25fps / 1s @50fps)
+		"-keyint_min", "50", // Match GOP floor
+		"-force_key_frames", "expr:gte(t,n_forced*2)", // Ensure keyframe every 2s for segment boundaries
 		"-sc_threshold", "0", // Disable Scene Change detection (Consistent GOP)
 		"-c:a", "aac", // Transcode audio to AAC
 		"-profile:a", "aac_low", // Force LC-AAC (Max compatibility)
@@ -247,9 +270,9 @@ func (s *HLSStreamer) Start() error {
 		"-b:a", "192k", // 192kbps audio bitrate
 		"-bsf:v", "h264_mp4toannexb,dump_extra", // Extract and inject SPS/PPS headers into every keyframe
 		"-f", "hls",
-		"-hls_time", "6", // Increased to 6s to capture full GOPs (fixes missing keyframes in segments)
-		"-hls_list_size", "8", // Keep ~32s buffer
-		"-hls_flags", "delete_segments+append_list",
+		"-hls_time", "2", // Faster first segment for quicker start
+		"-hls_list_size", "12", // ~24s buffer
+		"-hls_flags", "delete_segments+append_list+independent_segments",
 		"-hls_segment_filename", segmentPattern,
 		playlistPath,
 	)
@@ -261,7 +284,6 @@ func (s *HLSStreamer) Start() error {
 	// Capture ffmpeg stderr for debugging
 	stderrPipe, err := s.cmd.StderrPipe()
 	if err != nil {
-		s.mu.Unlock()
 		return fmt.Errorf("create stderr pipe: %w", err)
 	}
 
@@ -313,7 +335,7 @@ func (s *HLSStreamer) Start() error {
 		}
 	}()
 
-	s.logger.Info().
+	logger.Info().
 		Str("service_ref", s.serviceRef).
 		Str("target", s.targetURL).
 		Str("output", playlistPath).
@@ -323,11 +345,8 @@ func (s *HLSStreamer) Start() error {
 		// Cleanup output directory on start failure
 		// outputDir is already validated via secureJoin during stream creation
 		_ = os.RemoveAll(s.outputDir)
-		s.mu.Unlock()
 		return fmt.Errorf("start ffmpeg: %w", err)
 	}
-
-	s.started = true
 
 	// Monitor process in background
 	// Monitor process in background
@@ -337,7 +356,7 @@ func (s *HLSStreamer) Start() error {
 		if err := s.cmd.Wait(); err != nil {
 			if s.ctx.Err() == nil {
 				exitReason = "ffmpeg_exit"
-				s.logger.Error().
+				logger.Error().
 					Err(err).
 					Msg("HLS segmentation failed")
 			} else {
@@ -360,8 +379,6 @@ func (s *HLSStreamer) Start() error {
 		s.mu.Unlock()
 	}()
 
-	s.mu.Unlock() // Release lock before waiting to avoid deadlock
-
 	// Wait for playlist to be created with timeout
 	if err := s.waitForPlaylist(s.ctx); err != nil {
 		// Cleanup on failure
@@ -369,6 +386,7 @@ func (s *HLSStreamer) Start() error {
 		return fmt.Errorf("wait for playlist: %w", err)
 	}
 
+	cleanupOnError = false
 	return nil
 }
 
@@ -421,8 +439,8 @@ func (s *HLSStreamer) waitForPlaylist(ctx context.Context) error {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
-	// Wait up to 30 seconds (typical tuning time for Enigma2 is 2-5s, but can be slower)
-	timeout := time.After(30 * time.Second)
+	// Wait up to DefaultHLSPlaylistTimeout (slow/locked tuners can need >30s)
+	timeout := time.After(DefaultHLSPlaylistTimeout)
 
 	for {
 		select {
@@ -443,11 +461,20 @@ func (s *HLSStreamer) waitForPlaylist(ctx context.Context) error {
 			}
 
 			// playlistPath is already validated via secureJoin (constructed from validated s.outputDir)
-			if _, err := os.Stat(playlistPath); err == nil {
-				// Playlist exists, but let's make sure it has content
-				info, err := os.Stat(playlistPath)
-				if err == nil && info.Size() > 0 {
-					return nil
+			if data, err := os.ReadFile(playlistPath); err == nil && len(data) > 0 { // #nosec G304
+				lines := strings.Split(string(data), "\n")
+				for _, line := range lines {
+					line = strings.TrimSpace(line)
+					if line == "" || strings.HasPrefix(line, "#") {
+						continue
+					}
+					// Verify first referenced segment exists to avoid serving an empty playlist
+					segmentPath, segErr := secureJoin(s.outputDir, line)
+					if segErr == nil {
+						if info, statErr := os.Stat(segmentPath); statErr == nil && info.Size() > 0 {
+							return nil
+						}
+					}
 				}
 			}
 		}

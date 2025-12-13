@@ -289,6 +289,114 @@ nav button.active {
   transform: scale(0.95);
 }
 
+.channel-logo {
+  width: 80px;
+  height: auto;
+  display: block;
+  cursor: pointer;
+  filter: drop-shadow(0px 1px 2px rgba(0, 0, 0, 0.8));
+}
+
+.streaming-page {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+.streaming-sidebar {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  position: sticky;
+  top: 100px;
+}
+
+.streaming-sidebar h3 {
+  margin: 0 0 12px;
+  color: var(--text-muted);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  font-size: 13px;
+}
+
+.streaming-select-wrapper select {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.streaming-count {
+  margin-top: 10px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.streaming-list {
+  display: grid;
+  gap: 12px;
+}
+
+.streaming-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+}
+
+.streaming-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.streaming-logo {
+  width: 64px;
+  height: 64px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.streaming-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.streaming-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.streaming-name {
+  color: var(--text-primary);
+  font-weight: 600;
+  font-size: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.streaming-ref {
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.streaming-card .btn-play {
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+}
+
 /* --- Mobile Responsiveness (iOS List Style) --- */
 @media (max-width: 768px) {
   .app-container {
@@ -322,6 +430,14 @@ nav button.active {
     width: 100%;
   }
 
+  .streaming-page {
+    grid-template-columns: 1fr;
+  }
+
+  .streaming-sidebar {
+    position: static;
+  }
+
   .channel-table thead {
     display: none;
   }
@@ -349,8 +465,32 @@ nav button.active {
     background: transparent !important;
   }
 
+  /* Hide toggle + numbering + refs for compact list */
+  .channel-table td:first-child,
+  .channel-table td:nth-child(2),
+  .channel-table td:nth-child(5) {
+    display: none;
+  }
+
+  /* Logo (Left, column 3) */
+  .channel-table td:nth-child(3) {
+    width: 50px;
+    height: 50px;
+    margin-right: 12px;
+    border-radius: 12px;
+    background: #000;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  .channel-table td:nth-child(3) img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+
   /* Channel Name (Left) */
-  .channel-table td:nth-child(2) {
+  .channel-table td:nth-child(4) {
     font-size: 17px;
     /* iOS Body size */
     font-weight: 500;
@@ -362,29 +502,9 @@ nav button.active {
     padding-right: 12px;
   }
 
-  /* Logo (Left, if exists) - Assume Col 1 is Logo */
-  .channel-table td:first-child {
-    width: 40px;
-    height: 40px;
-    margin-right: 12px;
-    border-radius: 8px;
-    background: #000;
-    overflow: hidden;
-  }
-
-  .channel-table td:first-child img {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-  }
-
-  /* Hide non-essential columns (Group, Status) if needed, 
-     but user likely wants to see status. Let's keep status small. */
-
-  /* Buttons (Right Action) */
+  /* Hide ref column to keep list clean */
   .channel-table td:last-child {
-    display: flex;
-    gap: 8px;
+    display: none;
   }
 
   /* Minimal Play Button */

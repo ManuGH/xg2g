@@ -7,6 +7,7 @@ import Files from './components/Files';
 import Logs from './components/Logs';
 import Config from './components/Config';
 import StatusIndicator from './components/StatusIndicator';
+import Streaming from './components/Streaming';
 import { OpenAPI } from './client/core/OpenAPI';
 import { DefaultService } from './client/services/DefaultService';
 
@@ -166,6 +167,12 @@ function App() {
             Channels
           </button>
           <button
+            className={view === 'streaming' ? 'active' : ''}
+            onClick={() => setView('streaming')}
+          >
+            Streaming
+          </button>
+          <button
             className={view === 'files' ? 'active' : ''}
             onClick={() => setView('files')}
           >
@@ -199,6 +206,16 @@ function App() {
             onPlay={setPlayingChannel}
           />
         )}
+        {view === 'streaming' && (
+          <Streaming
+            bouquets={bouquets}
+            channels={channels}
+            loading={loading}
+            selectedBouquet={selectedBouquet}
+            onSelectBouquet={loadChannels}
+            onPlay={setPlayingChannel}
+          />
+        )}
         {view === 'files' && <Files />}
         {view === 'logs' && <Logs />}
         {view === 'config' && <Config />}
@@ -208,4 +225,3 @@ function App() {
 }
 
 export default App;
-

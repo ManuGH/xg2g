@@ -7,13 +7,22 @@ export default function Player({ streamUrl, onClose }) {
   const hlsRef = useRef(null);
   const [isMuted, setIsMuted] = useState(true);
   const [error, setError] = useState(null);
+  const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
+    const forcePlay = () => {
+      video.play().catch(() => {});
+    };
+
     // Reset error logic handled by parent key change or initial state
     // setError(null);
+    video.setAttribute('playsinline', 'true');
+    video.setAttribute('webkit-playsinline', 'true');
+
+    setError(null);
 
     // iOS / Native HLS Support
     if (video.canPlayType('application/vnd.apple.mpegurl')) {
@@ -29,25 +38,37 @@ export default function Player({ streamUrl, onClose }) {
       const hls = new Hls({
         debug: false,
         enableWorker: true,
-        lowLatencyMode: true,
+        lowLatencyMode: false, // Server-side LL-HLS disabled; stick to robust MPEG-TS HLS
       });
       hlsRef.current = hls;
 
-      hls.loadSource(streamUrl);
       hls.attachMedia(video);
+      hls.loadSource(streamUrl);
+
+      // Ensure playback kicks off once manifest is ready (avoids freeze on first frame)
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        hls.startLoad();
+        video.play().catch(err => console.warn("Play failed after manifest parse:", err));
+      });
+      hls.on(Hls.Events.MEDIA_ATTACHED, () => {
+        // Some browsers need a play attempt right after attach
+        video.play().catch(() => {});
+      });
 
       hls.on(Hls.Events.ERROR, (event, data) => {
         if (data.fatal) {
           console.error("HLS Fatal Error:", data);
-          // setError("Stream Connection Failed"); // Avoid direct layout shift
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR:
+              setError("Netzwerkproblem – erneuter Verbindungsversuch …");
               hls.startLoad();
               break;
             case Hls.ErrorTypes.MEDIA_ERROR:
+              setError("Wiedergabe-Problem – versuche Recovery …");
               hls.recoverMediaError();
               break;
             default:
+              setError("Stream konnte nicht gestartet werden. Tippe auf Retry.");
               hls.destroy();
               break;
           }
@@ -58,12 +79,15 @@ export default function Player({ streamUrl, onClose }) {
       // setError("HLS not supported in this browser."); // Avoid effect sync update
     }
 
+    video.addEventListener('canplay', forcePlay);
+
     return () => {
       if (hlsRef.current) {
         hlsRef.current.destroy();
       }
+      video.removeEventListener('canplay', forcePlay);
     };
-  }, [streamUrl]);
+  }, [streamUrl, reloadToken]);
 
   const handleUnmute = () => {
     if (videoRef.current) {
@@ -71,6 +95,33 @@ export default function Player({ streamUrl, onClose }) {
       setIsMuted(false);
     }
   };
+
+  const handleUnmuteClick = (e) => {
+    e.stopPropagation();
+    handleUnmute();
+    if (videoRef.current) {
+      videoRef.current.play().catch(() => {});
+    }
+  };
+
+  // Guard against stalls: if the player fires "waiting", nudge playback/load
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const handleWaiting = () => {
+      if (hlsRef.current) {
+        hlsRef.current.startLoad();
+        hlsRef.current.recoverMediaError();
+      }
+      video.play().catch(() => {});
+    };
+
+    video.addEventListener('waiting', handleWaiting);
+    return () => {
+      video.removeEventListener('waiting', handleWaiting);
+    };
+  }, []);
 
   return (
     <div
@@ -95,8 +146,7 @@ export default function Player({ streamUrl, onClose }) {
         playsInline={true}
         webkit-playsinline="true"
         autoPlay
-        muted
-        onClick={handleUnmute}
+        muted={isMuted}
       />
 
       {/* Close Button */}
@@ -122,7 +172,7 @@ export default function Player({ streamUrl, onClose }) {
       {/* Unmute Overlay (if muted) */}
       {isMuted && (
         <div
-          onClick={handleUnmute}
+          onClick={handleUnmuteClick}
           style={{
             position: 'absolute',
             bottom: '100px',
@@ -130,7 +180,8 @@ export default function Player({ streamUrl, onClose }) {
             color: 'white',
             padding: '10px 20px',
             borderRadius: '20px',
-            pointerEvents: 'none' // Let clicks pass to video
+            pointerEvents: 'auto',
+            cursor: 'pointer'
           }}
         >
           Tap to Unmute 🔊
@@ -138,8 +189,17 @@ export default function Player({ streamUrl, onClose }) {
       )}
 
       {error && (
-        <div style={{ position: 'absolute', color: 'red', background: 'rgba(0,0,0,0.8)', padding: '20px' }}>
-          {error}
+        <div style={{ position: 'absolute', color: 'red', background: 'rgba(0,0,0,0.8)', padding: '20px', borderRadius: '12px', bottom: '20%', textAlign: 'center' }}>
+          <div style={{ marginBottom: '10px' }}>{error}</div>
+          <button
+            style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer' }}
+            onClick={() => {
+              setError(null);
+              setReloadToken(t => t + 1); // Re-init HLS
+            }}
+          >
+            Retry
+          </button>
         </div>
       )}
     </div>
