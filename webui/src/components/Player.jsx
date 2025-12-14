@@ -8,51 +8,47 @@ export default function Player({ streamUrl, onClose }) {
   const [isMuted, setIsMuted] = useState(true);
   const [error, setError] = useState(null);
   const [reloadToken, setReloadToken] = useState(0);
+  const [isBuffering, setIsBuffering] = useState(true);
 
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
-    const forcePlay = () => {
-      video.play().catch(() => {});
-    };
-
-    // Reset error logic handled by parent key change or initial state
-    // setError(null);
+    setError(null);
     video.setAttribute('playsinline', 'true');
     video.setAttribute('webkit-playsinline', 'true');
+    video.autoplay = true;
+    video.crossOrigin = 'anonymous';
 
-    setError(null);
+    // setError(null); // Fix lint: Avoid setState in effect
+    setIsBuffering(true);
 
-    // iOS / Native HLS Support
-    if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      video.src = streamUrl;
-      video.play().catch(e => {
-        console.warn("Autoplay failed:", e);
-        // Usually fails if unmuted, but we start muted.
-        // If it fails, show a "Click to Play" overlay?
-      });
-    }
-    // HLS.js Support (Desktop)
-    else if (Hls.isSupported()) {
+    const canUseHlsJs = Hls.isSupported();
+    const canUseNativeHls = !!video.canPlayType('application/vnd.apple.mpegurl');
+    let cleanupNativeError;
+
+    const startWithHlsJs = () => {
+      if (hlsRef.current) return;
       const hls = new Hls({
         debug: false,
         enableWorker: true,
-        lowLatencyMode: false, // Server-side LL-HLS disabled; stick to robust MPEG-TS HLS
+        lowLatencyMode: false,
       });
       hlsRef.current = hls;
+
+      // Ensure previous native src is cleared before attaching MSE
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
 
       hls.attachMedia(video);
       hls.loadSource(streamUrl);
 
-      // Ensure playback kicks off once manifest is ready (avoids freeze on first frame)
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         hls.startLoad();
-        video.play().catch(err => console.warn("Play failed after manifest parse:", err));
-      });
-      hls.on(Hls.Events.MEDIA_ATTACHED, () => {
-        // Some browsers need a play attempt right after attach
-        video.play().catch(() => {});
+        video.play().catch(e => {
+          if (e.name !== 'AbortError') console.warn("Play failed after manifest parse:", e);
+        });
       });
 
       hls.on(Hls.Events.ERROR, (event, data) => {
@@ -74,18 +70,45 @@ export default function Player({ streamUrl, onClose }) {
           }
         }
       });
+    };
+
+    const startNative = () => {
+      video.src = streamUrl;
+      video.load();
+      video.play().catch(e => {
+        if (e.name !== 'AbortError') console.warn("Autoplay failed:", e);
+      });
+
+      const handleNativeError = () => {
+        console.warn("Native HLS failed, attempting hls.js fallback", video.error);
+        if (canUseHlsJs) {
+          startWithHlsJs();
+        } else {
+          setError("Stream konnte nicht gestartet werden. Tippe auf Retry.");
+        }
+      };
+
+      video.addEventListener('error', handleNativeError);
+      cleanupNativeError = () => video.removeEventListener('error', handleNativeError);
+    };
+
+    if (canUseHlsJs) {
+      startWithHlsJs();
+    } else if (canUseNativeHls) {
+      startNative();
     } else {
       console.warn("HLS not supported in this browser.");
-      // setError("HLS not supported in this browser."); // Avoid effect sync update
+      setError("HLS wird von diesem Browser nicht unterstützt.");
     }
 
-    video.addEventListener('canplay', forcePlay);
-
     return () => {
+      if (cleanupNativeError) cleanupNativeError();
       if (hlsRef.current) {
         hlsRef.current.destroy();
+        hlsRef.current = null;
       }
-      video.removeEventListener('canplay', forcePlay);
+      video.removeAttribute('src');
+      video.load();
     };
   }, [streamUrl, reloadToken]);
 
@@ -98,29 +121,42 @@ export default function Player({ streamUrl, onClose }) {
 
   const handleUnmuteClick = (e) => {
     e.stopPropagation();
+    e.preventDefault();
     handleUnmute();
     if (videoRef.current) {
-      videoRef.current.play().catch(() => {});
+      videoRef.current.play().catch(() => { });
     }
   };
 
-  // Guard against stalls: if the player fires "waiting", nudge playback/load
-  useEffect(() => {
+  const toggleMute = () => {
+    if (videoRef.current) {
+      const nextMuted = !videoRef.current.muted;
+      videoRef.current.muted = nextMuted;
+      setIsMuted(nextMuted);
+      if (!nextMuted) {
+        videoRef.current.play().catch(() => { });
+      }
+    }
+  };
+
+  const handleWaiting = () => {
     const video = videoRef.current;
     if (!video) return;
 
-    const handleWaiting = () => {
-      if (hlsRef.current) {
-        hlsRef.current.startLoad();
-        hlsRef.current.recoverMediaError();
-      }
-      video.play().catch(() => {});
-    };
+    // Only attempt recovery if we are SUPPOSED to be playing
+    if (!video.paused && hlsRef.current) {
+      hlsRef.current.startLoad();
+      // Only recover media error if strictly needed; startLoad is usually enough for stalls
+      // hlsRef.current.recoverMediaError(); 
+    }
+    video.play().catch(() => { });
+  };
 
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
     video.addEventListener('waiting', handleWaiting);
-    return () => {
-      video.removeEventListener('waiting', handleWaiting);
-    };
+    return () => video.removeEventListener('waiting', handleWaiting);
   }, []);
 
   return (
@@ -145,29 +181,55 @@ export default function Player({ streamUrl, onClose }) {
         controls={true}
         playsInline={true}
         webkit-playsinline="true"
+        crossOrigin="anonymous"
+        preload="auto"
         autoPlay
         muted={isMuted}
+        onPlaying={() => setIsBuffering(false)}
+        onCanPlay={() => setIsBuffering(false)}
+        onWaiting={() => setIsBuffering(true)}
       />
 
-      {/* Close Button */}
-      <button
-        onClick={onClose}
+      {/* Top Controls */}
+      <div
         style={{
           position: 'absolute',
-          top: '20px',
-          right: '20px',
-          background: 'rgba(0,0,0,0.5)',
-          color: 'white',
-          border: 'none',
-          padding: '10px 20px',
-          fontSize: '18px',
-          cursor: 'pointer',
-          borderRadius: '5px',
+          top: 16,
+          right: 16,
+          display: 'flex',
+          gap: 8,
           zIndex: 100000
         }}
       >
-        ✕ Close
-      </button>
+        <button
+          onClick={toggleMute}
+          style={{
+            background: 'rgba(0,0,0,0.5)',
+            color: 'white',
+            border: '1px solid rgba(255,255,255,0.2)',
+            padding: '8px 12px',
+            fontSize: '14px',
+            cursor: 'pointer',
+            borderRadius: '999px'
+          }}
+        >
+          {isMuted ? '🔇 Unmute' : '🔊 Mute'}
+        </button>
+        <button
+          onClick={onClose}
+          style={{
+            background: 'rgba(255,255,255,0.1)',
+            color: 'white',
+            border: '1px solid rgba(255,255,255,0.2)',
+            padding: '8px 12px',
+            fontSize: '14px',
+            cursor: 'pointer',
+            borderRadius: '999px'
+          }}
+        >
+          ✕ Close
+        </button>
+      </div>
 
       {/* Unmute Overlay (if muted) */}
       {isMuted && (
@@ -181,10 +243,43 @@ export default function Player({ streamUrl, onClose }) {
             padding: '10px 20px',
             borderRadius: '20px',
             pointerEvents: 'auto',
-            cursor: 'pointer'
+            cursor: 'pointer',
+            boxShadow: '0 6px 20px rgba(0,0,0,0.35)'
           }}
         >
           Tap to Unmute 🔊
+        </div>
+      )}
+
+      {isBuffering && !error && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            color: 'white',
+            background: 'rgba(0,0,0,0.5)',
+            padding: '12px 16px',
+            borderRadius: '12px',
+            fontSize: '14px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px'
+          }}
+        >
+          <span
+            style={{
+              width: '14px',
+              height: '14px',
+              border: '2px solid rgba(255,255,255,0.6)',
+              borderTopColor: 'white',
+              borderRadius: '50%',
+              display: 'inline-block',
+              animation: 'spin 1s linear infinite'
+            }}
+          />
+          Buffering …
         </div>
       )}
 

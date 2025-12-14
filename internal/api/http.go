@@ -54,8 +54,7 @@ type Server struct {
 	channelManager *channels.Manager // Channel management
 	configManager  *config.Manager   // Config operations
 	// refreshFn allows tests to stub the refresh operation; defaults to jobs.Refresh
-	refreshFn      func(context.Context, config.AppConfig, *openwebif.StreamDetector) (*jobs.Status, error)
-	streamDetector *openwebif.StreamDetector
+	refreshFn      func(context.Context, config.AppConfig) (*jobs.Status, error)
 	startTime      time.Time
 	piconSemaphore chan struct{} // Limit concurrent upstream picon fetches
 }
@@ -134,7 +133,7 @@ func (s *Server) dataFilePath(rel string) (string, error) {
 }
 
 // New creates and initializes a new HTTP API server.
-func New(cfg config.AppConfig, detector *openwebif.StreamDetector, cfgMgr *config.Manager) *Server {
+func New(cfg config.AppConfig, cfgMgr *config.Manager) *Server {
 	// Initialize channel manager
 	cm := channels.NewManager(cfg.DataDir)
 	if err := cm.Load(); err != nil {
@@ -143,7 +142,6 @@ func New(cfg config.AppConfig, detector *openwebif.StreamDetector, cfgMgr *confi
 
 	s := &Server{
 		cfg:            cfg,
-		streamDetector: detector,
 		channelManager: cm,
 		configManager:  cfgMgr,
 		status: jobs.Status{
@@ -444,7 +442,7 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	// Run the refresh via circuit breaker; it will mark failures and handle panics
 	err := s.cb.Call(func() error {
 		var err error
-		st, err = s.refreshFn(jobCtx, s.cfg, s.streamDetector)
+		st, err = s.refreshFn(jobCtx, s.cfg)
 		return err
 	})
 	duration := time.Since(start)
@@ -903,7 +901,7 @@ func (s *Server) uiHandler() http.Handler {
 // NewRouter creates and configures a new router with all middlewares and handlers.
 // This includes the logging middleware, security headers, and the API routes.
 func NewRouter(cfg config.AppConfig) http.Handler {
-	server := New(cfg, nil, nil)
+	server := New(cfg, nil)
 	return withMiddlewares(server.routes())
 }
 

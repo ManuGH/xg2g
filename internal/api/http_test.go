@@ -59,7 +59,7 @@ func TestHandleRefresh_ErrorDoesNotUpdateLastRun(t *testing.T) {
 		DataDir:    t.TempDir(),
 		StreamPort: 8001,
 	}
-	s := New(cfg, nil, nil)
+	s := New(cfg, nil)
 	handler := s.Handler()
 	initialTime := s.status.LastRun
 
@@ -131,7 +131,7 @@ func TestHandleRefresh_ConflictOnConcurrent(t *testing.T) {
 		DataDir:    t.TempDir(),
 		StreamPort: 8001,
 	}
-	s := New(cfg, nil, nil)
+	s := New(cfg, nil)
 
 	// Install a slow refresh function to force overlap
 	startCh := make(chan struct{})
@@ -224,7 +224,7 @@ func TestHandleReady(t *testing.T) {
 		XMLTVPath: xmltvPath,
 		OWIBase:   mockReceiver.URL, // Use mock receiver for health check
 	}
-	s := New(cfg, nil, nil)
+	s := New(cfg, nil)
 	handler := s.Handler()
 
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "/readyz", nil)
@@ -347,7 +347,7 @@ func TestSecureFileHandlerSymlinkPolicy(t *testing.T) {
 	require.NoError(t, os.Symlink(outsideDir, symlinkDir))
 
 	cfg := config.AppConfig{DataDir: dataDir}
-	server := New(cfg, nil, nil)
+	server := New(cfg, nil)
 	handler := server.Handler()
 
 	tests := []struct {
@@ -412,7 +412,7 @@ func TestAdvancedPathTraversal(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(tempDir, "ok.txt"), []byte("ok"), 0o600))
 
 	cfg := config.AppConfig{DataDir: tempDir}
-	server := New(cfg, nil, nil)
+	server := New(cfg, nil)
 	handler := server.Handler()
 
 	attacks := []string{
@@ -466,7 +466,7 @@ http://example.com/stream1
 		XMLTVPath: "xmltv.xml",
 	}
 
-	server := New(cfg, nil, nil)
+	server := New(cfg, nil)
 	handler := server.Handler()
 
 	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
@@ -491,7 +491,7 @@ func TestHandleXMLTV_FileTooLarge(t *testing.T) {
 		XMLTVPath: "xmltv.xml",
 	}
 
-	server := New(cfg, nil, nil)
+	server := New(cfg, nil)
 	handler := server.Handler()
 
 	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
@@ -509,7 +509,7 @@ func TestHandleXMLTV_FileNotFound(t *testing.T) {
 		XMLTVPath: "nonexistent.xml",
 	}
 
-	server := New(cfg, nil, nil)
+	server := New(cfg, nil)
 	handler := server.Handler()
 
 	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
@@ -550,7 +550,7 @@ http://example.com/stream1
 		XMLTVPath: "xmltv.xml",
 	}
 
-	server := New(cfg, nil, nil)
+	server := New(cfg, nil)
 	handler := server.Handler()
 
 	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
@@ -574,7 +574,7 @@ func TestHandleXMLTV_EmptyPath(t *testing.T) {
 		XMLTVPath: "", // Empty path - not configured
 	}
 
-	server := New(cfg, nil, nil)
+	server := New(cfg, nil)
 	handler := server.Handler()
 
 	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
@@ -604,7 +604,7 @@ func TestHandleXMLTV_M3UNotFound(t *testing.T) {
 		XMLTVPath: "xmltv.xml",
 	}
 
-	server := New(cfg, nil, nil)
+	server := New(cfg, nil)
 	handler := server.Handler()
 
 	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
@@ -638,7 +638,7 @@ func TestHandleXMLTV_M3UTooLarge(t *testing.T) {
 		XMLTVPath: "xmltv.xml",
 	}
 
-	server := New(cfg, nil, nil)
+	server := New(cfg, nil)
 	handler := server.Handler()
 
 	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
@@ -668,7 +668,7 @@ func TestHandleXMLTV_HEADRequest(t *testing.T) {
 		XMLTVPath: "xmltv.xml",
 	}
 
-	server := New(cfg, nil, nil)
+	server := New(cfg, nil)
 	handler := server.Handler()
 
 	req := httptest.NewRequest(http.MethodHead, "/xmltv.xml", nil)
@@ -690,7 +690,7 @@ func TestHandleRefreshV2(t *testing.T) {
 		StreamPort: 8001,
 	}
 
-	server := New(cfg, nil, nil)
+	server := New(cfg, nil)
 	handler := server.Handler()
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v2/system/refresh", nil)
@@ -714,7 +714,7 @@ func TestClientDisconnectDuringRefresh(t *testing.T) {
 		StreamPort: 8001,
 	}
 
-	server := New(cfg, nil, nil)
+	server := New(cfg, nil)
 
 	// Create a context that we'll cancel to simulate client disconnect
 	ctx, cancel := context.WithCancel(context.Background())

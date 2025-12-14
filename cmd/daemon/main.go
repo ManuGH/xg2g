@@ -19,7 +19,6 @@ import (
 	"github.com/ManuGH/xg2g/internal/daemon"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	xglog "github.com/ManuGH/xg2g/internal/log"
-	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/proxy"
 	xgtls "github.com/ManuGH/xg2g/internal/tls"
 	"github.com/ManuGH/xg2g/internal/validation"
@@ -229,7 +228,6 @@ func main() {
 	logger.Info().Msgf("→ Data dir: %s", cfg.DataDir)
 
 	// Configure proxy (enabled by default in v2.0 for Zero Config experience)
-	var streamDetector *openwebif.StreamDetector
 	var proxyConfig *daemon.ProxyConfig
 
 	if config.ParseBool("XG2G_ENABLE_STREAM_PROXY", true) {
@@ -241,40 +239,22 @@ func main() {
 			}
 		}
 
-		// PROXY_TARGET is now optional - if not provided, use Smart Detection
+		// PROXY_TARGET is now optional - if not provided, we still require ReceiverHost for Web-API access
 		if targetURL == "" && receiverHost == "" {
 			logger.Fatal().
 				Str("event", "proxy.config.invalid").
 				Msg("XG2G_ENABLE_STREAM_PROXY is true but neither XG2G_PROXY_TARGET nor XG2G_OWI_BASE is set")
 		}
 
-		// Create StreamDetector if Smart Detection is enabled AND Instant Tune is enabled
-		if receiverHost != "" && openwebif.IsEnabled() && cfg.InstantTuneEnabled {
-			streamDetector = openwebif.NewStreamDetector(receiverHost, xglog.WithComponent("stream-detector"))
-			if targetURL == "" {
-				logger.Info().
-					Str("receiver", receiverHost).
-					Msg("Stream proxy using Smart Detection (automatic port selection)")
-			} else {
-				logger.Info().
-					Str("receiver", receiverHost).
-					Str("target", targetURL).
-					Msg("Stream proxy using Smart Detection with fallback target")
-			}
-		} else if !cfg.InstantTuneEnabled {
-			logger.Info().Msg("Instant Tune (StreamDetector) is disabled by configuration")
-		}
-
 		proxyConfig = &daemon.ProxyConfig{
-			ListenAddr:     config.ParseString("XG2G_PROXY_LISTEN", ":18000"),
-			TargetURL:      targetURL,
-			ReceiverHost:   receiverHost,
-			StreamDetector: streamDetector,
-			Logger:         xglog.WithComponent("proxy"),
-			TLSCert:        cfg.TLSCert,
-			TLSKey:         cfg.TLSKey,
-			DataDir:        cfg.DataDir,
-			PlaylistPath:   filepath.Join(cfg.DataDir, "playlist.m3u"), // Default name
+			ListenAddr:   config.ParseString("XG2G_PROXY_LISTEN", ":18000"),
+			TargetURL:    targetURL,
+			ReceiverHost: receiverHost,
+			Logger:       xglog.WithComponent("proxy"),
+			TLSCert:      cfg.TLSCert,
+			TLSKey:       cfg.TLSKey,
+			DataDir:      cfg.DataDir,
+			PlaylistPath: filepath.Join(cfg.DataDir, "playlist.m3u"), // Default name
 		}
 		if bindHost != "" {
 			if newListen, err := bindListenAddr(proxyConfig.ListenAddr, bindHost); err != nil {
@@ -297,8 +277,7 @@ func main() {
 	// Users can disable with XG2G_INITIAL_REFRESH=false if needed
 	if config.ParseBool("XG2G_INITIAL_REFRESH", true) {
 		logger.Info().Msg("performing initial data refresh on startup")
-		// Instant Tune: Pass streamDetector to pre-warm cache
-		if _, err := jobs.Refresh(ctx, cfg, streamDetector); err != nil {
+		if _, err := jobs.Refresh(ctx, cfg); err != nil {
 			logger.Error().Err(err).Msg("initial data refresh failed")
 			logger.Warn().Msg("→ Channels will be empty until manual refresh via /api/refresh")
 		} else {
@@ -323,7 +302,7 @@ func main() {
 	}
 
 	// Create API handler
-	s := api.New(cfg, streamDetector, configMgr)
+	s := api.New(cfg, configMgr)
 
 	// Build daemon dependencies
 	deps := daemon.Deps{

@@ -37,7 +37,15 @@ export default function Streaming({
               <div className="streaming-row">
                 <div className="streaming-logo">
                   {ch.logo_url ? (
-                    <img src={ch.logo_url} alt={ch.name} />
+                    <img
+                      src={ch.logo_url}
+                      alt={ch.name}
+                      onError={(e) => {
+                        e.target.onerror = null;
+                        e.target.style.display = 'none';
+                        e.target.parentNode.innerHTML = '<span>🎬</span>';
+                      }}
+                    />
                   ) : (
                     <span>🎬</span>
                   )}

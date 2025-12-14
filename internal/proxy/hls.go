@@ -653,11 +653,9 @@ func (m *HLSManager) ServeHLS(w http.ResponseWriter, r *http.Request, serviceRef
 	}
 
 	// Priority 2: Native Apple clients (LL-HLS for low latency)
-	// DISABLED: LL-HLS (fmp4) proves unstable for some Enigma2 streams.
-	// Fallback to Generic HLS (mpegts) which is rock solid.
-	// if IsNativeAppleClient(userAgent) {
-	// 	return m.serveLLHLS(w, r, serviceRef, targetURL)
-	// }
+	if IsNativeAppleClient(userAgent) {
+		return m.serveLLHLS(w, r, serviceRef, targetURL)
+	}
 
 	// Fallback: Generic HLS for all other clients
 	// Get or create stream

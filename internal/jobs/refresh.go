@@ -65,11 +65,10 @@ type Status struct {
 }
 
 // Refresh performs the complete refresh cycle: fetch bouquets → services → write M3U + XMLTV
-
 //
 
 //nolint:gocyclo // Complex orchestration function with validation, requires sequential operations
-func Refresh(ctx context.Context, cfg config.AppConfig, detector *openwebif.StreamDetector) (*Status, error) {
+func Refresh(ctx context.Context, cfg config.AppConfig) (*Status, error) {
 	// Start tracing span for the entire refresh job
 	tracer := telemetry.Tracer("xg2g.jobs")
 	ctx, span := tracer.Start(ctx, "job.refresh",
@@ -158,26 +157,6 @@ func Refresh(ctx context.Context, cfg config.AppConfig, detector *openwebif.Stre
 			return nil, fmt.Errorf("failed to fetch services for bouquet %q: %w", bouquetName, err)
 		}
 		metrics.RecordServicesCount(bouquetName, len(services))
-
-		// Instant Tune: Pre-warm stream detection cache
-		if detector != nil {
-			batch := make([][2]string, 0, len(services))
-			for _, s := range services {
-				if len(s) >= 2 {
-					batch = append(batch, [2]string{s[0], s[1]})
-				}
-			}
-			// Run detection in background (don't block refresh)
-			// The detector handles concurrency internally
-			go func(b [][2]string) {
-				// Create a detached context with timeout for the background job
-				bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-				defer cancel()
-				if _, err := detector.DetectBatch(bgCtx, b); err != nil {
-					logger.Warn().Err(err).Msg("instant tune pre-warming failed")
-				}
-			}(batch)
-		}
 
 		for _, s := range services {
 			name, ref := s[0], s[1]

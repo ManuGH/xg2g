@@ -6,7 +6,6 @@ import (
 	"net/http"
 
 	"github.com/ManuGH/xg2g/internal/config"
-	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/rs/zerolog"
 )
 
@@ -42,9 +41,6 @@ type ProxyConfig struct {
 
 	// ReceiverHost is the receiver hostname/IP for Smart Detection fallback
 	ReceiverHost string
-
-	// StreamDetector enables smart port detection (8001 vs 17999)
-	StreamDetector *openwebif.StreamDetector
 
 	// Logger is the logger for the proxy
 	Logger zerolog.Logger

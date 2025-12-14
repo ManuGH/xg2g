@@ -12,24 +12,37 @@ import (
 // Tuner allocation and Session management.
 // Confirmed: User has 8 FBC Tuners, so "Zapping" via API does NOT disturb the main TV.
 func convertToWebAPI(targetURL, serviceRef string) string {
-	// targetURL is: http://10.10.55.64:8001/1:0:19:132F:3EF:1:C00000:0:0:0:
-	// We need: http://10.10.55.64/web/stream.m3u?ref=1:0:19:132F:3EF:1:C00000:0:0:0:
-
-	parts := strings.Split(targetURL, "/")
-	if len(parts) < 4 {
-		return targetURL // Fallback if format is unexpected
+	// targetURL is typically http://<host>:8001/<REF> or http://<host>:17999/<REF>
+	// We want: http(s)://<host>/web/stream.m3u?ref=<REF>&name=Stream
+	// Always prefer the provided serviceRef if available; fallback to the path.
+	if strings.Contains(targetURL, "/web/stream.m3u") {
+		return targetURL
 	}
 
-	hostPort := parts[2]
-	host := strings.Split(hostPort, ":")[0]
+	parsed, err := url.Parse(targetURL)
+	if err != nil {
+		return targetURL
+	}
 
-	// The Service Ref is the path part (index 3)
-	// Example: http://host:8001/{REF} -> parts[0]="http:", parts[1]="", parts[2]="host:8001", parts[3]="{REF}"
-	realServiceRef := parts[3]
+	host := strings.Split(parsed.Host, ":")[0]
+	realRef := serviceRef
+	if realRef == "" {
+		parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+		if len(parts) > 0 {
+			realRef = parts[len(parts)-1]
+		}
+	}
+	if realRef == "" {
+		return targetURL
+	}
 
-	escapedRef := url.QueryEscape(realServiceRef)
+	escapedRef := url.QueryEscape(realRef)
+	scheme := parsed.Scheme
+	if scheme == "" {
+		scheme = "http"
+	}
 
-	return fmt.Sprintf("http://%s/web/stream.m3u?ref=%s&name=Stream", host, escapedRef)
+	return fmt.Sprintf("%s://%s/web/stream.m3u?ref=%s&name=Stream", scheme, host, escapedRef)
 }
 
 // resolveWebAPI performs the HTTP request to the Enigma2 Web API to "Zap" the channel

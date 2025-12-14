@@ -41,9 +41,6 @@ type Client struct {
 	username   string
 	password   string
 
-	// Smart stream detection (v1.2.0+)
-	streamDetector *StreamDetector
-
 	// Request caching (v1.3.0+)
 	cache    Cacher
 	cacheTTL time.Duration
@@ -213,12 +210,6 @@ func NewWithPort(base string, streamPort int, opts Options) *Client {
 		cacheTTL:        cacheTTL,
 		receiverLimiter: rate.NewLimiter(receiverRPS, receiverBurst),
 		cb:              NewCircuitBreaker(5, 30*time.Second), // 5 failures, 30s reset
-	}
-
-	// Initialize smart stream detection if enabled (v1.2.0+)
-	if IsEnabled() {
-		client.streamDetector = NewStreamDetector(host, logger)
-		logger.Info().Msg("smart stream detection enabled")
 	}
 
 	// Log cache status
@@ -469,26 +460,6 @@ func (c *Client) Services(ctx context.Context, bouquetRef string) ([][2]string, 
 // StreamURL builds a streaming URL for the given service reference.
 // Context is used for smart stream detection and tracing.
 func (c *Client) StreamURL(ctx context.Context, ref, name string) (string, error) {
-	// NEW in v1.2.0: Smart Stream Detection
-	// Automatically detects optimal stream endpoint per channel
-	if c.streamDetector != nil {
-		detectionCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-
-		// Use smart stream detection to find best URL
-		// We shouldn't skip the proxy here as we are a client
-		info, err := c.streamDetector.DetectStreamURL(detectionCtx, ref, name, false)
-		if err == nil && info != nil {
-			return info.URL, nil
-		}
-
-		// Log detection failure but continue with fallback
-		c.log.Warn().
-			Err(err).
-			Str("service_ref", maskServiceRef(ref)).
-			Str("channel", name).
-			Msg("smart stream detection failed, using fallback")
-	}
 
 	// Fallback: Original logic (manual configuration)
 	base := strings.TrimSpace(c.base)

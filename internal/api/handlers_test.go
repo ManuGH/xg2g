@@ -234,7 +234,7 @@ func TestHandler(t *testing.T) {
 			DataDir: t.TempDir(),
 			Bouquet: "test",
 		}
-		s := New(cfg, nil, nil)
+		s := New(cfg, nil)
 		handler := s.Handler()
 
 		if handler == nil {
@@ -395,7 +395,7 @@ func TestRegisterV2Routes_StatusEndpoint(t *testing.T) {
 		Version:  "2.0.0",
 		DataDir:  t.TempDir(),
 	}
-	s := New(cfg, nil, nil)
+	s := New(cfg, nil)
 	s.SetStatus(jobs.Status{
 		Version:  "2.0.0",
 		Channels: 2,
@@ -439,7 +439,7 @@ http://10.10.55.14:18000/1:0:19:1334:3EF:1:C00000:0:0:0:
 	cfg := config.AppConfig{
 		DataDir: tempDir,
 	}
-	srv := New(cfg, nil, nil)
+	srv := New(cfg, nil)
 
 	// Initialize HDHomeRun with PlexForceHLS=false
 	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
@@ -492,7 +492,7 @@ http://10.10.55.14:18000/1:0:19:1334:3EF:1:C00000:0:0:0:
 	cfg := config.AppConfig{
 		DataDir: tempDir,
 	}
-	srv := New(cfg, nil, nil)
+	srv := New(cfg, nil)
 
 	// Initialize HDHomeRun with PlexForceHLS=true
 	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
@@ -544,7 +544,7 @@ http://10.10.55.14:18000/hls/1:0:19:132F:3EF:1:C00000:0:0:0:
 	cfg := config.AppConfig{
 		DataDir: tempDir,
 	}
-	srv := New(cfg, nil, nil)
+	srv := New(cfg, nil)
 
 	// Initialize HDHomeRun with PlexForceHLS=true
 	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()

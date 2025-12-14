@@ -219,15 +219,14 @@ func (m *manager) startProxyServer(_ context.Context, errChan chan<- error) erro
 
 	var err error
 	m.proxyServer, err = proxy.New(proxy.Config{
-		ListenAddr:     m.deps.ProxyConfig.ListenAddr,
-		TargetURL:      m.deps.ProxyConfig.TargetURL,
-		ReceiverHost:   m.deps.ProxyConfig.ReceiverHost,
-		StreamDetector: m.deps.ProxyConfig.StreamDetector,
-		Logger:         m.deps.ProxyConfig.Logger,
-		TLSCert:        m.deps.ProxyConfig.TLSCert,
-		TLSKey:         m.deps.ProxyConfig.TLSKey,
-		DataDir:        m.deps.ProxyConfig.DataDir,
-		PlaylistPath:   m.deps.ProxyConfig.PlaylistPath,
+		ListenAddr:   m.deps.ProxyConfig.ListenAddr,
+		TargetURL:    m.deps.ProxyConfig.TargetURL,
+		ReceiverHost: m.deps.ProxyConfig.ReceiverHost,
+		Logger:       m.deps.ProxyConfig.Logger,
+		TLSCert:      m.deps.ProxyConfig.TLSCert,
+		TLSKey:       m.deps.ProxyConfig.TLSKey,
+		DataDir:      m.deps.ProxyConfig.DataDir,
+		PlaylistPath: m.deps.ProxyConfig.PlaylistPath,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create proxy: %w", err)
@@ -238,7 +237,7 @@ func (m *manager) startProxyServer(_ context.Context, errChan chan<- error) erro
 		if m.deps.ProxyConfig.TargetURL != "" {
 			logEvent.Str("target", m.deps.ProxyConfig.TargetURL)
 		} else if m.deps.ProxyConfig.ReceiverHost != "" {
-			logEvent.Str("receiver", m.deps.ProxyConfig.ReceiverHost).Str("mode", "smart_detection")
+			logEvent.Str("receiver", m.deps.ProxyConfig.ReceiverHost)
 		}
 		logEvent.Msg("Proxy server listening")
 

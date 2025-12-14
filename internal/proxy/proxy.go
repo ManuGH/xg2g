@@ -20,25 +20,23 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/m3u"
 	"github.com/ManuGH/xg2g/internal/metrics"
-	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/rs/zerolog"
 )
 
 // Server represents a reverse proxy server for Enigma2 streams.
 type Server struct {
-	addr           string
-	targetURL      *url.URL // Fallback target URL (optional)
-	proxy          *httputil.ReverseProxy
-	httpServer     *http.Server
-	logger         zerolog.Logger
-	transcoder     *Transcoder               // Optional audio transcoder
-	streamDetector *openwebif.StreamDetector // Smart stream detection
-	receiverHost   string                    // Receiver host for fallback
-	hlsManager     *HLSManager               // HLS streaming manager for iOS
-	tlsCert        string
-	tlsKey         string
-	dataDir        string // For reading playlist.m3u
-	playlistPath   string // Path to M3U playlist
+	addr         string
+	targetURL    *url.URL // Fallback target URL (optional)
+	proxy        *httputil.ReverseProxy
+	httpServer   *http.Server
+	logger       zerolog.Logger
+	transcoder   *Transcoder // Optional audio transcoder
+	receiverHost string      // Receiver host for fallback
+	hlsManager   *HLSManager // HLS streaming manager for iOS
+	tlsCert      string
+	tlsKey       string
+	dataDir      string // For reading playlist.m3u
+	playlistPath string // Path to M3U playlist
 	// channelMap stores StreamID -> StreamURL mappings.
 	// Concurrency: Protected by channelMu (RWMutex).
 	// - Reads (Lookup) use RLock/RUnlock
@@ -72,10 +70,6 @@ type Config struct {
 	// Required if TargetURL is not provided
 	ReceiverHost string
 
-	// StreamDetector enables smart port detection (8001 vs 17999)
-	// Optional: If provided, overrides TargetURL for optimal routing
-	StreamDetector *openwebif.StreamDetector
-
 	// Logger is the logger instance to use
 	Logger zerolog.Logger
 
@@ -100,15 +94,14 @@ func New(cfg Config) (*Server, error) {
 	}
 
 	s := &Server{
-		addr:           cfg.ListenAddr,
-		logger:         cfg.Logger,
-		streamDetector: cfg.StreamDetector,
-		receiverHost:   cfg.ReceiverHost,
-		tlsCert:        cfg.TLSCert,
-		tlsKey:         cfg.TLSKey,
-		dataDir:        cfg.DataDir,
-		playlistPath:   cfg.PlaylistPath,
-		channelMap:     make(map[string]string),
+		addr:         cfg.ListenAddr,
+		logger:       cfg.Logger,
+		receiverHost: cfg.ReceiverHost,
+		tlsCert:      cfg.TLSCert,
+		tlsKey:       cfg.TLSKey,
+		dataDir:      cfg.DataDir,
+		playlistPath: cfg.PlaylistPath,
+		channelMap:   make(map[string]string),
 	}
 
 	listenHost, listenPort := splitListenAddr(cfg.ListenAddr)
@@ -196,15 +189,10 @@ func New(cfg Config) (*Server, error) {
 		}
 	}
 
-	// Log Smart Detection status
-	if s.streamDetector != nil {
-		cfg.Logger.Info().
-			Str("receiver", s.receiverHost).
-			Msg("Smart stream detection enabled (automatic port selection)")
-	} else if s.targetURL != nil {
+	if s.targetURL != nil {
 		cfg.Logger.Info().
 			Str("target", s.targetURL.String()).
-			Msg("Using fixed target URL (Smart Detection disabled)")
+			Msg("Using fixed target URL")
 	}
 
 	// Initialize HLS manager for iOS streaming
@@ -280,9 +268,8 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	s.proxy.ServeHTTP(w, r)
 }
 
-// resolveTargetURL resolves the target URL for a request using Smart Detection or fallback.
-// It extracts the service reference from the path and uses StreamDetector to find the optimal backend.
-func (s *Server) resolveTargetURL(ctx context.Context, path, rawQuery string) string {
+// resolveTargetURL resolves the target URL for a request using configured target or receiver host.
+func (s *Server) resolveTargetURL(_ context.Context, path, rawQuery string) string {
 	// Extract service reference from path (e.g., /1:0:19:132F:3EF:1:C00000:0:0:0:)
 	serviceRef := strings.TrimPrefix(path, "/")
 
@@ -323,28 +310,6 @@ func (s *Server) resolveTargetURL(ctx context.Context, path, rawQuery string) st
 				}
 			}
 		}
-	}
-
-	// Try Smart Detection first (if available and enabled)
-	if s.streamDetector != nil && serviceRef != "" && openwebif.IsEnabled() {
-		streamInfo, err := s.streamDetector.DetectStreamURL(ctx, serviceRef, "", true)
-		if err == nil && streamInfo != nil {
-			targetURL := appendRawQuery(streamInfo.URL, rawQuery)
-
-			s.logger.Debug().
-				Str("service_ref", serviceRef).
-				Int("port", streamInfo.Port).
-				Str("target", targetURL).
-				Msg("using smart detection for backend URL")
-
-			return targetURL
-		}
-
-		// Log detection failure but continue with fallback
-		s.logger.Debug().
-			Err(err).
-			Str("service_ref", serviceRef).
-			Msg("smart detection failed, using fallback target")
 	}
 
 	// Fallback to configured target URL or receiver host
