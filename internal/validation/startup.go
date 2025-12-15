@@ -48,7 +48,7 @@ func checkDataDir(logger zerolog.Logger, path string) error {
 
 	// Check write permissions by creating a temp file
 	testFile := filepath.Join(path, ".write_test")
-	if err := os.WriteFile(testFile, []byte("ok"), 0644); err != nil {
+	if err := os.WriteFile(testFile, []byte("ok"), 0600); err != nil {
 		return fmt.Errorf("directory is not writable: %s (error: %v)", path, err)
 	}
 	_ = os.Remove(testFile)

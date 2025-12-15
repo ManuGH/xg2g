@@ -446,13 +446,13 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	var st *jobs.Status
 	// Run the refresh via circuit breaker; it will mark failures and handle panics
 	err := s.cb.Call(func() error {
-			var err error
-			s.mu.RLock()
-			snap := s.snap
-			s.mu.RUnlock()
-			st, err = s.refreshFn(jobCtx, snap)
-			return err
-		})
+		var err error
+		s.mu.RLock()
+		snap := s.snap
+		s.mu.RUnlock()
+		st, err = s.refreshFn(jobCtx, snap)
+		return err
+	})
 	duration := time.Since(start)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -815,20 +815,20 @@ func (s *Server) handleLineupJSON(w http.ResponseWriter, r *http.Request) {
 			// This is the stream URL
 			streamURL := line
 
-				// If H.264 stream repair is enabled, rewrite URL to use proxy host and port
-				// This ensures Plex gets streams from the xg2g proxy (with H.264 repair) instead of direct receiver access
-				s.mu.RLock()
-				snap := s.snap
-				s.mu.RUnlock()
-				if snap.Runtime.Transcoder.H264RepairEnabled {
-					if parsedURL, err := url.Parse(streamURL); err == nil {
-						// Get proxy listen address (default :18000)
-						proxyListen := strings.TrimSpace(snap.Runtime.StreamProxy.ListenAddr)
-						if proxyListen == "" {
-							proxyListen = ":18000"
-						}
-						// Extract port from proxy listen address (format is ":18000" or "0.0.0.0:18000")
-						proxyPort := strings.TrimPrefix(proxyListen, ":")
+			// If H.264 stream repair is enabled, rewrite URL to use proxy host and port
+			// This ensures Plex gets streams from the xg2g proxy (with H.264 repair) instead of direct receiver access
+			s.mu.RLock()
+			snap := s.snap
+			s.mu.RUnlock()
+			if snap.Runtime.Transcoder.H264RepairEnabled {
+				if parsedURL, err := url.Parse(streamURL); err == nil {
+					// Get proxy listen address (default :18000)
+					proxyListen := strings.TrimSpace(snap.Runtime.StreamProxy.ListenAddr)
+					if proxyListen == "" {
+						proxyListen = ":18000"
+					}
+					// Extract port from proxy listen address (format is ":18000" or "0.0.0.0:18000")
+					proxyPort := strings.TrimPrefix(proxyListen, ":")
 					if colonIdx := strings.LastIndex(proxyPort, ":"); colonIdx != -1 {
 						proxyPort = proxyPort[colonIdx+1:]
 					}
@@ -943,7 +943,7 @@ func (s *Server) handlePicons(w http.ResponseWriter, r *http.Request) {
 
 	// Local Cache Path
 	piconDir := filepath.Join(s.cfg.DataDir, "picons")
-	if err := os.MkdirAll(piconDir, 0755); err != nil {
+	if err := os.MkdirAll(piconDir, 0750); err != nil {
 		log.L().Error().Err(err).Msg("failed to create picon cache dir")
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
@@ -1077,7 +1077,7 @@ ServePicon:
 	}
 
 	// Fix permissions so file can be read by http.ServeFile
-	if err := os.Chmod(localPath, 0644); err != nil {
+	if err := os.Chmod(localPath, 0600); err != nil {
 		logger.Warn().Err(err).Msg("failed to set picon file permissions")
 	}
 
@@ -1190,14 +1190,4 @@ func portFromListenAddr(listen string) string {
 		return listen[idx+1:]
 	}
 	return ""
-}
-
-type statusWriter struct {
-	http.ResponseWriter
-	status int
-}
-
-func (w *statusWriter) WriteHeader(status int) {
-	w.status = status
-	w.ResponseWriter.WriteHeader(status)
 }

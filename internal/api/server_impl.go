@@ -265,13 +265,13 @@ func (s *Server) GetServices(w http.ResponseWriter, r *http.Request, params GetS
 		}
 
 		name := ch.Name
-			group := ch.Group
-			logo := ch.Logo
+		group := ch.Group
+		logo := ch.Logo
 
-			publicURL := snap.Runtime.PublicURL
-			if publicURL != "" && strings.HasPrefix(logo, publicURL) {
-				logo = strings.TrimPrefix(logo, publicURL)
-			}
+		publicURL := snap.Runtime.PublicURL
+		if publicURL != "" && strings.HasPrefix(logo, publicURL) {
+			logo = strings.TrimPrefix(logo, publicURL)
+		}
 		number := ch.Number
 
 		// Extract service_ref from URL for streaming
@@ -483,7 +483,7 @@ func (s *Server) handleEPGList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	xmltvData, err := os.ReadFile(xmltvPath)
+	xmltvData, err := os.ReadFile(xmltvPath) // #nosec G304
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to read xmltv for epg list")
 		http.Error(w, "XMLTV not available", http.StatusInternalServerError)
@@ -533,7 +533,7 @@ func (s *Server) handleEPGList(w http.ResponseWriter, r *http.Request) {
 		s.mu.RUnlock()
 		playlistName := snap.Runtime.PlaylistFilename
 		playlistPath := filepath.Clean(filepath.Join(cfg.DataDir, playlistName))
-		if data, err := os.ReadFile(playlistPath); err == nil {
+		if data, err := os.ReadFile(playlistPath); err == nil { // #nosec G304
 			channels := m3u.Parse(string(data))
 			for _, ch := range channels {
 				if ch.Group != bouquetFilter {

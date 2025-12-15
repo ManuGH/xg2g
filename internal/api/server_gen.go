@@ -21,6 +21,7 @@ import (
 )
 
 const (
+	// #nosec G101
 	BearerAuthScopes = "BearerAuth.Scopes"
 )
 

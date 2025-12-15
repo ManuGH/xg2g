@@ -139,7 +139,7 @@ func (s *Server) tryHandleTranscode(w http.ResponseWriter, r *http.Request) bool
 				}
 				metrics.IncTranscodeError()
 			}
-			return s.transcodeFailOpen == false // handled above if fail-closed; otherwise fallback
+			return !s.transcodeFailOpen // handled above if fail-closed; otherwise fallback
 		}
 		return true
 	}
@@ -157,7 +157,7 @@ func (s *Server) tryHandleTranscode(w http.ResponseWriter, r *http.Request) bool
 					return true
 				}
 			}
-			return s.transcodeFailOpen == false
+			return !s.transcodeFailOpen
 		}
 		return true
 	}
@@ -202,7 +202,7 @@ func (s *Server) tryHandleTranscode(w http.ResponseWriter, r *http.Request) bool
 		return true
 	}
 	metrics.IncTranscodeError()
-	return s.transcodeFailOpen == false
+	return !s.transcodeFailOpen
 }
 
 // handleTranscodeError enforces fail-open/fail-closed behaviour for the

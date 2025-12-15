@@ -264,7 +264,7 @@ func TestSecuritySuiteExtended(t *testing.T) {
 #EXTINF:-1 tvg-id="test1" tvg-chno="100" tvg-name="Test Channel" group-title="Test",Test Channel
 http://example.com/stream
 `
-		os.WriteFile(filepath.Join(tempDir, "playlist.m3u"), []byte(playlistContent), 0644)
+		os.WriteFile(filepath.Join(tempDir, "playlist.m3u"), []byte(playlistContent), 0600)
 
 		port := getFreeTCPPort(t)
 		proxyPort := getFreeTCPPort(t)
@@ -391,7 +391,7 @@ bouquets:
 openWebIF:
   baseUrl: "%s"
 `, mockOWI.URL)
-		os.WriteFile(configFile, []byte(initialConfig), 0644)
+		os.WriteFile(configFile, []byte(initialConfig), 0600)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -427,7 +427,7 @@ openWebIF:
 `, mockOWI.URL)
 
 		time.Sleep(100 * time.Millisecond)
-		os.WriteFile(configFile, []byte(newConfig), 0644)
+		os.WriteFile(configFile, []byte(newConfig), 0600)
 
 		time.Sleep(1 * time.Second)
 

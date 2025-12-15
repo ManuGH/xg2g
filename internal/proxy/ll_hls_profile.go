@@ -43,7 +43,7 @@ type LLHLSProfile struct {
 	playlistLen int // Number of segments (6-10 for LL-HLS)
 	partSize    int // Partial segment size in bytes (256KB default)
 	ffmpegPath  string
-	ready       chan struct{} // Signals when initial segments are ready
+	ready       chan struct{}             // Signals when initial segments are ready
 	hevcConfig  streamprofile.LLHLSConfig // Store full config for decision making
 }
 
@@ -271,7 +271,7 @@ func (p *LLHLSProfile) Start(forceAAC bool, aacBitrate string) error {
 		Str("container", "fmp4").
 		Msg("starting LL-HLS profile (Low-Latency HLS)")
 
-	p.cmd = exec.CommandContext(p.ctx, p.ffmpegPath, args...)
+	p.cmd = exec.CommandContext(p.ctx, p.ffmpegPath, args...) // #nosec G204
 	p.cmd.Dir = p.outputDir
 
 	// Capture stderr for debugging
@@ -495,6 +495,7 @@ func (p *LLHLSProfile) ServePlaylist(w http.ResponseWriter) error {
 	p.UpdateAccess()
 
 	playlistPath := filepath.Join(p.outputDir, "playlist.m3u8")
+	// #nosec G304
 	data, err := os.ReadFile(playlistPath)
 	if err != nil {
 		return fmt.Errorf("read playlist: %w", err)
@@ -518,6 +519,7 @@ func (p *LLHLSProfile) ServeSegment(w http.ResponseWriter, segmentName string) e
 		return fmt.Errorf("invalid segment path: %w", err)
 	}
 
+	// #nosec G304
 	data, err := os.ReadFile(segmentPath)
 	if err != nil {
 		return fmt.Errorf("read segment: %w", err)

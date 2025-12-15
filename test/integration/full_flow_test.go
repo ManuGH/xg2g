@@ -433,7 +433,7 @@ func TestFileServingFlow(t *testing.T) {
 #EXTINF:-1,Test Channel
 http://example.com/stream`
 
-	err := os.WriteFile(playlistPath, []byte(playlistContent), 0644)
+	err := os.WriteFile(playlistPath, []byte(playlistContent), 0600)
 	require.NoError(t, err)
 
 	mock := openwebif.NewMockServer()

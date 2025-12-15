@@ -25,14 +25,14 @@ type webAPIStreamInfo struct {
 // the returned M3U playlist.
 func resolveWebAPIStreamInfo(apiURL string) (webAPIStreamInfo, error) {
 	// 1. Perform GET request (Zaps the channel)
-	resp, err := http.Get(apiURL)
+	resp, err := http.Get(apiURL) // #nosec G107
 	if err != nil {
 		return webAPIStreamInfo{}, fmt.Errorf("failed to call Web API: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return webAPIStreamInfo{}, fmt.Errorf("Web API returned status %d", resp.StatusCode)
+		return webAPIStreamInfo{}, fmt.Errorf("web API returned status %d", resp.StatusCode)
 	}
 
 	// 2. Parse M3U response to find the stream URL
@@ -77,13 +77,4 @@ func resolveWebAPIStreamInfo(apiURL string) (webAPIStreamInfo, error) {
 	}
 
 	return webAPIStreamInfo{URL: urlLine, ProgramID: programID}, nil
-}
-
-// resolveWebAPI resolves a WebIF stream.m3u URL to the actual transport stream URL.
-func resolveWebAPI(apiURL string) (string, error) {
-	info, err := resolveWebAPIStreamInfo(apiURL)
-	if err != nil {
-		return "", err
-	}
-	return info.URL, nil
 }

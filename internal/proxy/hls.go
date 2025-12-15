@@ -287,7 +287,7 @@ func (s *HLSStreamer) Start() error {
 		Msg("starting HLS session")
 
 	startTime := time.Now()
-	var exitReason string = "internal_error"
+	var exitReason = "internal_error"
 	var lastStats *FFmpegStats
 
 	defer func() {
@@ -325,7 +325,7 @@ func (s *HLSStreamer) Start() error {
 	// Write EXT-X-START hint for DVR to instruct clients to start 30 minutes behind live edge
 	startOffset := dvrSeconds
 	startTag := fmt.Sprintf("#EXT-X-START:TIME-OFFSET=-%d,PRECISE=YES\n", startOffset)
-	if err := os.WriteFile(startTagPath, []byte(startTag), 0644); err != nil {
+	if err := os.WriteFile(startTagPath, []byte(startTag), 0600); err != nil {
 		logger.Warn().Err(err).Msg("failed to write EXT-X-START tag")
 	}
 
@@ -389,7 +389,7 @@ func (s *HLSStreamer) Start() error {
 	)
 
 	// #nosec G204 -- HLS transcoding: ffmpeg command with controlled arguments
-	s.cmd = exec.CommandContext(s.ctx, "ffmpeg", args...)
+	s.cmd = exec.CommandContext(s.ctx, "ffmpeg", args...) // #nosec G204
 	s.cmd.Stdout = nil
 
 	// Capture ffmpeg stderr for debugging
@@ -572,7 +572,8 @@ func (s *HLSStreamer) waitForPlaylist(ctx context.Context) error {
 			}
 
 			// playlistPath is already validated via secureJoin (constructed from validated s.outputDir)
-			if data, err := os.ReadFile(playlistPath); err == nil && len(data) > 0 { // #nosec G304
+			// #nosec G304
+			if data, err := os.ReadFile(playlistPath); err == nil && len(data) > 0 {
 				lines := strings.Split(string(data), "\n")
 				for _, line := range lines {
 					line = strings.TrimSpace(line)
@@ -965,6 +966,9 @@ func (m *HLSManager) ServeSegmentFromAnyStream(w http.ResponseWriter, segmentNam
 
 // servePlaylist serves the HLS playlist file.
 func (m *HLSManager) servePlaylist(w http.ResponseWriter, stream *HLSStreamer) error {
+	// Keep the stream alive while clients are actively fetching the manifest.
+	stream.updateAccess()
+
 	playlistPath := stream.GetPlaylistPath()
 
 	// Wait for playlist to exist (up to 30 seconds for initial segment creation)
@@ -985,6 +989,7 @@ func (m *HLSManager) servePlaylist(w http.ResponseWriter, stream *HLSStreamer) e
 
 	// Check for start tag (DVR hint)
 	startTagPath := filepath.Join(stream.GetOutputDir(), ".start_tag")
+	// #nosec G304
 	if startTagData, err := os.ReadFile(startTagPath); err == nil && len(startTagData) > 0 {
 		// Inject start tag after #EXTM3U header
 		content := string(data)
@@ -1013,6 +1018,9 @@ func (m *HLSManager) servePlaylist(w http.ResponseWriter, stream *HLSStreamer) e
 
 // serveSegment serves an HLS segment file.
 func (m *HLSManager) serveSegment(w http.ResponseWriter, stream *HLSStreamer, segmentName string) error {
+	// Keep the stream alive while clients are actively fetching segments.
+	stream.updateAccess()
+
 	// Validate segment path to prevent directory traversal
 	segmentPath, err := secureJoin(stream.GetOutputDir(), segmentName)
 	if err != nil {

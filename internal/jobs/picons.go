@@ -21,7 +21,7 @@ func PrewarmPicons(ctx context.Context, cfg config.AppConfig, items []playlist.I
 	log.Info().Int("count", len(items)).Msg("Picon: Starting background pre-warm")
 
 	piconDir := filepath.Join(cfg.DataDir, "picons")
-	if err := os.MkdirAll(piconDir, 0755); err != nil {
+	if err := os.MkdirAll(piconDir, 0750); err != nil {
 		log.Error().Err(err).Msg("Picon: failed to create cache dir")
 		return
 	}

@@ -58,6 +58,7 @@ func readStableFile(path string, maxWait time.Duration) ([]byte, error) {
 	deadline := time.Now().Add(maxWait)
 	var lastErr error
 	for {
+		// #nosec G304
 		b1, err := os.ReadFile(path)
 		if err != nil {
 			lastErr = err
@@ -79,6 +80,7 @@ func readStableFile(path string, maxWait time.Duration) ([]byte, error) {
 
 		time.Sleep(10 * time.Millisecond)
 
+		// #nosec G304
 		b2, err := os.ReadFile(path)
 		if err != nil {
 			lastErr = err
@@ -283,7 +285,7 @@ func (p *SafariDVRProfile) Start() error {
 		Str("container", "mpegts").
 		Msg("starting Safari DVR profile (large sliding window for scrubbing)")
 
-	p.cmd = exec.CommandContext(p.ctx, p.ffmpegPath, args...)
+	p.cmd = exec.CommandContext(p.ctx, p.ffmpegPath, args...) // #nosec G204
 	p.cmd.Dir = p.outputDir
 
 	// Capture stderr for debugging

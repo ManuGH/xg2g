@@ -36,12 +36,9 @@ func normalizeLegacyYAML(data []byte) ([]byte, []string, bool, error) {
 	}
 
 	var warnings []string
-	changed := false
+	changed := changedKey(root, &warnings, "openwebif", "openWebIF")
 
 	// Root-level key aliases.
-	if changedKey(root, &warnings, "openwebif", "openWebIF") {
-		changed = true
-	}
 
 	// Legacy: receiver: <baseUrl> or receiver: { ... } → openWebIF: ...
 	if receiverVal, receiverKeyIdx := mappingGetCI(root, "receiver"); receiverVal != nil {

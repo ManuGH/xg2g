@@ -36,6 +36,7 @@ To migrate to the current schema, run `xg2g config dump --effective --file confi
 ### Why Use Config Files?
 
 **Advantages:**
+
 - ✅ Better organization and readability
 - ✅ Version control friendly (separate secrets)
 - ✅ Easier to manage complex configurations
@@ -43,6 +44,7 @@ To migrate to the current schema, run `xg2g config dump --effective --file confi
 - ✅ Validation before startup
 
 **When to use ENV vars:**
+
 - Secrets (passwords, API tokens)
 - Environment-specific overrides (dev/staging/prod)
 - Dynamic configuration in orchestrators (Kubernetes)
@@ -56,6 +58,7 @@ To migrate to the current schema, run `xg2g config dump --effective --file confi
 The simplest config file requires only OpenWebIF URL and bouquet:
 
 **config.yaml:**
+
 ```yaml
 openWebIF:
   baseUrl: http://192.168.1.100
@@ -68,6 +71,7 @@ epg:
 ```
 
 **Run:**
+
 ```bash
 ./xg2g-daemon --config config.yaml
 ```
@@ -130,6 +134,7 @@ openWebIF:
 ```
 
 **Duration formats:**
+
 - `500ms` - 500 milliseconds
 - `5s` - 5 seconds
 - `1m` - 1 minute
@@ -153,6 +158,7 @@ bouquets:
 ```
 
 **Equivalent ENV var:**
+
 ```bash
 XG2G_BOUQUET="Favourites,Premium,Sports,Movies"
 ```
@@ -213,6 +219,7 @@ api:
 ```
 
 **Security:**
+
 - Always set an API token in production
 - Use strong, randomly-generated tokens (e.g., `openssl rand -hex 32`)
 - Store token in environment variable, not in config file
@@ -278,12 +285,13 @@ XG2G_TLS_ENABLED=true
 The generated certificate automatically includes all detected network IP addresses from your server's network interfaces. For example:
 
 - `localhost`, `127.0.0.1`, `::1` (loopback)
-- `10.10.55.14`, `192.168.1.100` (LAN IPs)
+- `192.168.1.100`, `192.168.1.100` (LAN IPs)
 - IPv6 addresses
 
 This means the certificate works for both:
+
 - `https://localhost:8080` (local access)
-- `https://10.10.55.14:8080` (network access from Plex, etc.)
+- `https://192.168.1.100:8080` (network access from Plex, etc.)
 
 No additional configuration needed!
 
@@ -323,9 +331,9 @@ export XG2G_TLS_KEY=/etc/letsencrypt/live/yourdomain.com/privkey.pem
 2. **Self-signed certificates require browser acceptance** - On first access, you'll see a security warning. Click "Advanced" → "Proceed to [host]" to accept.
 
 3. **Plex Mixed Content Fix** - For Plex to fetch logos over HTTPS:
-   - Visit your xg2g HTTPS URL in a browser first (e.g., `https://10.10.55.14:8080`)
+   - Visit your xg2g HTTPS URL in a browser first (e.g., `https://192.168.1.100:8080`)
    - Accept the self-signed certificate
-   - Plex Web (running in the same browser) will then be able to fetch logos from `https://10.10.55.14:8080` without Mixed Content errors
+   - Plex Web (running in the same browser) will then be able to fetch logos from `https://192.168.1.100:8080` without Mixed Content errors
    - The certificate automatically includes your server's IP addresses, so no additional configuration is needed
 
 4. **Certificate paths are relative to working directory** - Use absolute paths in production.
@@ -364,6 +372,7 @@ api:
 ```
 
 **Syntax:**
+
 - `${VAR}` - Expands to value of `VAR`
 - `$VAR` - Also supported
 - Undefined variables expand to empty string
@@ -419,6 +428,7 @@ All config file settings can be overridden via environment variables.
 ### Development
 
 **config.dev.yaml:**
+
 ```yaml
 dataDir: ./data
 logLevel: debug
@@ -442,6 +452,7 @@ api:
 ### Production
 
 **config.prod.yaml:**
+
 ```yaml
 dataDir: /data
 logLevel: info
@@ -481,6 +492,7 @@ picons:
 ```
 
 **.env (secrets):**
+
 ```bash
 XG2G_OWI_BASE=http://192.168.1.100
 XG2G_OWI_USER=root
@@ -492,6 +504,7 @@ XG2G_PICON_BASE=http://192.168.1.100:80/picon
 ### Docker
 
 **docker-compose.yml:**
+
 ```yaml
 services:
   xg2g:
@@ -512,6 +525,7 @@ services:
 ### Kubernetes
 
 **configmap.yaml:**
+
 ```yaml
 apiVersion: v1
 kind: ConfigMap
@@ -531,6 +545,7 @@ data:
 ```
 
 **secret.yaml:**
+
 ```yaml
 apiVersion: v1
 kind: Secret
@@ -543,6 +558,7 @@ stringData:
 ```
 
 **deployment.yaml:**
+
 ```yaml
 apiVersion: apps/v1
 kind: Deployment
@@ -587,6 +603,7 @@ spec:
 ### 1. Separate Configuration from Secrets
 
 **Good:**
+
 ```yaml
 # config.yaml (version controlled)
 openWebIF:
@@ -598,6 +615,7 @@ XG2G_OWI_PASS=secret123
 ```
 
 **Bad:**
+
 ```yaml
 # config.yaml (DO NOT commit passwords!)
 openWebIF:
@@ -656,17 +674,21 @@ git log -- config.yaml
 **Symptom:** xg2g uses defaults instead of config file
 
 **Check:**
+
 1. Is `--config` flag set?
+
    ```bash
    xg2g --config /path/to/config.yaml
    ```
 
 2. Is path correct?
+
    ```bash
    ls -la /path/to/config.yaml
    ```
 
 3. Check logs for "config.loaded" event:
+
    ```bash
    docker logs xg2g | grep config.loaded
    ```
@@ -700,6 +722,7 @@ yamllint config.yaml
 ```
 
 **Common mistakes:**
+
 ```yaml
 # ❌ Wrong indentation
 openWebIF:
@@ -728,6 +751,7 @@ export XG2G_BOUQUET="Override"
 ```
 
 **Solution:**
+
 ```bash
 # Unset ENV var to use config file value
 unset XG2G_BOUQUET
@@ -742,6 +766,7 @@ unset XG2G_BOUQUET
 Extract current ENV vars into `config.yaml`:
 
 **Before (docker-compose.yml):**
+
 ```yaml
 environment:
   - XG2G_OWI_BASE=http://192.168.1.100
@@ -751,6 +776,7 @@ environment:
 ```
 
 **After (config.yaml):**
+
 ```yaml
 openWebIF:
   baseUrl: http://192.168.1.100
@@ -764,6 +790,7 @@ epg:
 ### Step 2: Keep secrets in ENV
 
 **docker-compose.yml:**
+
 ```yaml
 command: ["--config", "/config/config.yaml"]
 environment:

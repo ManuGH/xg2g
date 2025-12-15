@@ -24,7 +24,7 @@ func NewManager(configPath string) *Manager {
 // Save writes the configuration to disk.
 func (m *Manager) Save(cfg *AppConfig) error {
 	// Ensure directory exists
-	if err := os.MkdirAll(filepath.Dir(m.configPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(m.configPath), 0750); err != nil {
 		return fmt.Errorf("mkdir config dir: %w", err)
 	}
 

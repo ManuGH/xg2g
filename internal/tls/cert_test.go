@@ -149,7 +149,7 @@ func TestEnsureCertificates_IncompleteRegenerate(t *testing.T) {
 	keyPath := filepath.Join(tmpDir, "incomplete.key")
 
 	// Create only the cert file (incomplete pair)
-	if err := os.WriteFile(certPath, []byte("dummy cert"), 0644); err != nil {
+	if err := os.WriteFile(certPath, []byte("dummy cert"), 0600); err != nil {
 		t.Fatalf("Failed to create dummy cert: %v", err)
 	}
 

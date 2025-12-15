@@ -74,7 +74,7 @@ func (t *Transcoder) TranscodeStream(ctx context.Context, w http.ResponseWriter,
 		Msg("starting transcode session")
 
 	startTime := time.Now()
-	var exitReason string = "internal_error" // Default
+	var exitReason = "internal_error" // Default
 	var bytesOut int64
 	var lastStats *FFmpegStats
 
@@ -251,7 +251,7 @@ func (t *Transcoder) streamTranscodeInternal(ctx context.Context, w http.Respons
 	logger.Debug().Str("ffmpeg_path", t.Config.FFmpegPath).Strs("args", args).Msg("starting ffmpeg")
 
 	// Create ffmpeg command
-	cmd := exec.CommandContext(ctx, t.Config.FFmpegPath, args...)
+	cmd := exec.CommandContext(ctx, t.Config.FFmpegPath, args...) // #nosec G204
 
 	// Connect pipes
 	stdin, err := cmd.StdinPipe()
@@ -439,7 +439,7 @@ func (t *Transcoder) RepairH264Stream(ctx context.Context, w http.ResponseWriter
 		Msg("starting repair session")
 
 	startTime := time.Now()
-	var exitReason string = "internal_error" // Default
+	var exitReason = "internal_error" // Default
 	var bytesOut int64
 	var lastStats *FFmpegStats
 
@@ -572,7 +572,7 @@ func (t *Transcoder) RepairH264Stream(ctx context.Context, w http.ResponseWriter
 
 	// Create ffmpeg command
 	// #nosec G204 -- ffmpegPath is sanitized above and args contain only predefined options
-	cmd := exec.CommandContext(ctx, ffmpegPath, args...)
+	cmd := exec.CommandContext(ctx, ffmpegPath, args...) // #nosec G204
 
 	// Connect pipes
 	stdin, err := cmd.StdinPipe()

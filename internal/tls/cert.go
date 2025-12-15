@@ -118,7 +118,7 @@ func GenerateSelfSigned(certPath, keyPath string, validityYears int) error {
 func GenerateSelfSignedWithIPs(certPath, keyPath string, validityYears int, additionalIPs []net.IP, additionalDNS []string) error {
 	// Ensure directory exists
 	certDir := filepath.Dir(certPath)
-	if err := os.MkdirAll(certDir, 0755); err != nil {
+	if err := os.MkdirAll(certDir, 0750); err != nil {
 		return fmt.Errorf("create cert directory: %w", err)
 	}
 
@@ -204,6 +204,7 @@ func GenerateSelfSignedWithIPs(certPath, keyPath string, validityYears int, addi
 	}
 
 	// Write certificate to file
+	// #nosec G304
 	certOut, err := os.Create(certPath)
 	if err != nil {
 		return fmt.Errorf("create cert file: %w", err)
@@ -217,6 +218,7 @@ func GenerateSelfSignedWithIPs(certPath, keyPath string, validityYears int, addi
 	}
 
 	// Write private key to file
+	// #nosec G304
 	keyOut, err := os.OpenFile(keyPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return fmt.Errorf("create key file: %w", err)
