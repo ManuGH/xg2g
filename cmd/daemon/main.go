@@ -5,7 +5,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"net"
 	"net/url"
 	"os"
 	"os/signal"
@@ -19,7 +18,6 @@ import (
 	"github.com/ManuGH/xg2g/internal/daemon"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	xglog "github.com/ManuGH/xg2g/internal/log"
-	"github.com/ManuGH/xg2g/internal/proxy"
 	xgtls "github.com/ManuGH/xg2g/internal/tls"
 	"github.com/ManuGH/xg2g/internal/validation"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -41,61 +39,11 @@ func maskURL(rawURL string) string {
 	return parsedURL.String()
 }
 
-// bindListenAddr replaces the host portion of a listen address (":8080") with
-// the provided bind host/IP. If the listen address already contains a host,
-// it is left untouched. Supports "if:<name>" to bind to the first IPv4 of an
-// interface. Returns the adjusted listen address or an error.
-func bindListenAddr(listenAddr, bind string) (string, error) {
-	if bind == "" {
-		return listenAddr, nil
-	}
-
-	// Only override when the listen address is just ":port" or empty.
-	if listenAddr == "" || strings.HasPrefix(listenAddr, ":") {
-		port := strings.TrimPrefix(listenAddr, ":")
-		if port == "" {
-			port = "0"
-		}
-
-		host := bind
-		if strings.HasPrefix(bind, "if:") {
-			ifName := strings.TrimPrefix(bind, "if:")
-			iface, err := net.InterfaceByName(ifName)
-			if err != nil {
-				return "", fmt.Errorf("resolve interface %q: %w", ifName, err)
-			}
-			addrs, err := iface.Addrs()
-			if err != nil {
-				return "", fmt.Errorf("list addrs for %q: %w", ifName, err)
-			}
-			found := false
-			for _, a := range addrs {
-				var ip net.IP
-				switch v := a.(type) {
-				case *net.IPNet:
-					ip = v.IP
-				case *net.IPAddr:
-					ip = v.IP
-				}
-				if ip == nil || ip.IsLoopback() || ip.To4() == nil {
-					continue
-				}
-				host = ip.String()
-				found = true
-				break
-			}
-			if !found {
-				return "", fmt.Errorf("no suitable IPv4 on interface %q", ifName)
-			}
-		}
-
-		return net.JoinHostPort(host, port), nil
-	}
-
-	return listenAddr, nil
-}
-
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "config" {
+		os.Exit(runConfigCLI(os.Args[2:]))
+	}
+
 	// Handle command-line flags
 	showVersion := flag.Bool("version", false, "print version and exit")
 	configPath := flag.String("config", "", "path to config file (YAML)")
@@ -112,23 +60,45 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	// Determine config path:
+	// - Explicit via --config
+	// - Otherwise auto-load ${XG2G_DATA}/config.yaml if it exists (so UI-saved config persists)
+	explicitConfigPath := strings.TrimSpace(*configPath)
+	effectiveConfigPath := explicitConfigPath
+	if effectiveConfigPath == "" {
+		dataDir := strings.TrimSpace(os.Getenv("XG2G_DATA"))
+		if dataDir == "" {
+			dataDir = "/tmp"
+		}
+		autoPath := filepath.Join(dataDir, "config.yaml")
+		if _, err := os.Stat(autoPath); err == nil {
+			effectiveConfigPath = autoPath
+		}
+	}
+
 	// Load configuration with precedence: ENV > File > Defaults
-	loader := config.NewLoader(*configPath, version)
+	loader := config.NewLoader(effectiveConfigPath, version)
 	cfg, err := loader.Load()
 	if err != nil {
 		logger.Fatal().
 			Err(err).
 			Str("event", "config.load_failed").
-			Str("config_path", *configPath).
+			Str("config_path", effectiveConfigPath).
 			Msg("failed to load configuration")
 	}
 
 	// Log config source
-	if *configPath != "" {
+	if explicitConfigPath != "" {
 		logger.Info().
 			Str("event", "config.loaded").
 			Str("source", "file").
-			Str("path", *configPath).
+			Str("path", explicitConfigPath).
+			Msg("loaded configuration from file")
+	} else if effectiveConfigPath != "" {
+		logger.Info().
+			Str("event", "config.loaded").
+			Str("source", "file(auto)").
+			Str("path", effectiveConfigPath).
 			Msg("loaded configuration from file")
 	} else {
 		logger.Info().
@@ -158,9 +128,20 @@ func main() {
 
 	// Parse server configuration
 	serverCfg := config.ParseServerConfig()
+
+	// Allow config.yaml to set the API listen address, but keep ENV as the highest priority.
+	// ENV precedence: XG2G_LISTEN / XG2G_API_ADDR > config.yaml api.listenAddr > defaults.
+	if _, ok := os.LookupEnv("XG2G_LISTEN"); !ok {
+		if _, ok := os.LookupEnv("XG2G_API_ADDR"); !ok {
+			if strings.TrimSpace(cfg.APIListenAddr) != "" {
+				serverCfg.ListenAddr = cfg.APIListenAddr
+			}
+		}
+	}
+
 	bindHost := os.Getenv("XG2G_BIND_INTERFACE")
 	if bindHost != "" {
-		if newListen, err := bindListenAddr(serverCfg.ListenAddr, bindHost); err != nil {
+		if newListen, err := config.BindListenAddr(serverCfg.ListenAddr, bindHost); err != nil {
 			logger.Fatal().
 				Err(err).
 				Msg("invalid XG2G_BIND_INTERFACE for API listen")
@@ -213,7 +194,11 @@ func main() {
 	// Log key configuration
 	logger.Info().Msgf("→ Receiver: %s (auth: %v)", maskURL(cfg.OWIBase), cfg.OWIUsername != "")
 	logger.Info().Msgf("→ Bouquet: %s", cfg.Bouquet)
-	logger.Info().Msgf("→ Stream port: %d", cfg.StreamPort)
+	if cfg.UseWebIFStreams {
+		logger.Info().Msg("→ Stream: OpenWebIF /web/stream.m3u (receiver decides 8001/17999 internally)")
+	} else {
+		logger.Info().Msgf("→ Stream port: %d (direct TS)", cfg.StreamPort)
+	}
 	logger.Info().Msgf("→ EPG: %s (%d days)", cfg.XMLTVPath, cfg.EPGDays)
 	if cfg.APIToken != "" {
 		logger.Info().Msg("→ API token: configured")
@@ -227,13 +212,15 @@ func main() {
 	}
 	logger.Info().Msgf("→ Data dir: %s", cfg.DataDir)
 
+	snap := config.BuildSnapshot(cfg)
+
 	// Configure proxy (enabled by default in v2.0 for Zero Config experience)
 	var proxyConfig *daemon.ProxyConfig
 
-	if config.ParseBool("XG2G_ENABLE_STREAM_PROXY", true) {
-		targetURL := config.ParseString("XG2G_PROXY_TARGET", "")
-		receiverHost := proxy.GetReceiverHost()
-		if receiverHost == "" && cfg.OWIBase != "" {
+	if snap.Runtime.StreamProxy.Enabled {
+		targetURL := strings.TrimSpace(snap.Runtime.StreamProxy.TargetURL)
+		receiverHost := ""
+		if cfg.OWIBase != "" {
 			if parsed, err := url.Parse(cfg.OWIBase); err == nil {
 				receiverHost = parsed.Hostname()
 			}
@@ -247,17 +234,18 @@ func main() {
 		}
 
 		proxyConfig = &daemon.ProxyConfig{
-			ListenAddr:   config.ParseString("XG2G_PROXY_LISTEN", ":18000"),
+			ListenAddr:   snap.Runtime.StreamProxy.ListenAddr,
 			TargetURL:    targetURL,
 			ReceiverHost: receiverHost,
 			Logger:       xglog.WithComponent("proxy"),
 			TLSCert:      cfg.TLSCert,
 			TLSKey:       cfg.TLSKey,
 			DataDir:      cfg.DataDir,
-			PlaylistPath: filepath.Join(cfg.DataDir, "playlist.m3u"), // Default name
+			PlaylistPath: filepath.Join(cfg.DataDir, snap.Runtime.PlaylistFilename),
+			Runtime:      snap.Runtime,
 		}
 		if bindHost != "" {
-			if newListen, err := bindListenAddr(proxyConfig.ListenAddr, bindHost); err != nil {
+			if newListen, err := config.BindListenAddr(proxyConfig.ListenAddr, bindHost); err != nil {
 				logger.Fatal().
 					Err(err).
 					Msg("invalid XG2G_BIND_INTERFACE for proxy listen")
@@ -266,18 +254,13 @@ func main() {
 			}
 		}
 
-		// Allow overriding playlist filename if needed
-		playlistName := os.Getenv("XG2G_PLAYLIST_FILENAME")
-		if playlistName != "" {
-			proxyConfig.PlaylistPath = filepath.Join(cfg.DataDir, playlistName)
-		}
 	}
 
 	// Initial refresh before starting servers (enabled by default in v2.0)
 	// Users can disable with XG2G_INITIAL_REFRESH=false if needed
 	if config.ParseBool("XG2G_INITIAL_REFRESH", true) {
 		logger.Info().Msg("performing initial data refresh on startup")
-		if _, err := jobs.Refresh(ctx, cfg); err != nil {
+		if _, err := jobs.Refresh(ctx, snap); err != nil {
 			logger.Error().Err(err).Msg("initial data refresh failed")
 			logger.Warn().Msg("→ Channels will be empty until manual refresh via /api/refresh")
 		} else {
@@ -289,33 +272,81 @@ func main() {
 	}
 
 	// Initialize ConfigManager
-	configMgr := config.NewManager(*configPath)
-	if *configPath == "" {
-		// If no config file specified, default to data dir
-		configMgr = config.NewManager("config.yaml") // or data/config.yaml?
-		// User requested precedence: ENV > config.yaml > defaults.
-		// If configPath is empty, Loader uses defaults.
-		// If we want to save changes, we need a path.
-		// Let's defer to a safe default if not provided: "./config.yaml" or cfg.DataDir/config.yaml
-		// For now, let's use "config.yaml" in CWD if not specified, matching legacy behavior potentially?
-		// Better: use the *configPath if set, otherwise "config.yaml"
+	configMgrPath := effectiveConfigPath
+	if configMgrPath == "" {
+		configMgrPath = filepath.Join(cfg.DataDir, "config.yaml")
+	}
+	configMgr := config.NewManager(configMgrPath)
+
+	// Hot reload support: watch config file and allow SIGHUP/API-triggered reload.
+	cfgHolder := config.NewConfigHolder(cfg, config.NewLoader(configMgrPath, version), configMgrPath)
+	if err := cfgHolder.StartWatcher(ctx); err != nil {
+		logger.Warn().
+			Err(err).
+			Str("event", "config.watcher_start_failed").
+			Str("path", configMgrPath).
+			Msg("failed to start config watcher")
 	}
 
 	// Create API handler
 	s := api.New(cfg, configMgr)
+	s.SetConfigHolder(cfgHolder)
+
+	// Apply config changes to the API server when reloaded.
+	applyCh := make(chan config.AppConfig, 1)
+	cfgHolder.RegisterListener(applyCh)
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case newCfg := <-applyCh:
+				s.ApplyConfig(newCfg)
+			}
+		}
+	}()
+
+	// Use SIGHUP as a config reload trigger (non-fatal).
+	hupChan := make(chan os.Signal, 1)
+	signal.Notify(hupChan, syscall.SIGHUP)
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-hupChan:
+				logger.Info().
+					Str("event", "config.reload_signal").
+					Str("signal", "SIGHUP").
+					Msg("received SIGHUP, reloading config")
+				if err := cfgHolder.Reload(context.Background()); err != nil {
+					logger.Warn().
+						Err(err).
+						Str("event", "config.reload_failed").
+						Msg("config reload failed")
+				}
+			}
+		}
+	}()
 
 	// Build daemon dependencies
+	metricsAddr := ""
+	if cfg.MetricsEnabled {
+		metricsAddr = strings.TrimSpace(cfg.MetricsAddr)
+		if metricsAddr == "" {
+			metricsAddr = ":9090"
+		}
+	}
+
 	deps := daemon.Deps{
 		Logger:         logger,
 		Config:         cfg,
 		ConfigManager:  configMgr,
 		APIHandler:     s.Handler(),
 		MetricsHandler: promhttp.Handler(),
+		MetricsAddr:    metricsAddr,
 		ProxyConfig:    proxyConfig,
 	}
-
-	// Log unique build ID to verify deployment
-	logger.Info().Str("build_uuid", "DEPLOY_CHECK_ABC123").Msg("Daemon starting...")
 
 	// Create daemon manager
 	mgr, err := daemon.NewManager(serverCfg, deps)

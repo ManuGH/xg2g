@@ -5,7 +5,9 @@ package config
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	xglog "github.com/ManuGH/xg2g/internal/log"
@@ -17,34 +19,46 @@ import (
 // It provides thread-safe access to configuration and supports hot reloading
 // from file or manual trigger via API.
 type ConfigHolder struct {
-	mu         sync.RWMutex
-	current    AppConfig
+	reloadOpMu sync.Mutex
+	snapshot   atomic.Value // holds Snapshot
 	loader     *Loader
 	configPath string
+	configDir  string
+	configFile string
 	watcher    *fsnotify.Watcher
 	logger     zerolog.Logger
 
 	// Reload notifications
 	reloadMu        sync.RWMutex
 	reloadListeners []chan<- AppConfig
+	snapListeners   []chan<- Snapshot
 }
 
 // NewConfigHolder creates a new configuration holder with initial config.
 func NewConfigHolder(initial AppConfig, loader *Loader, configPath string) *ConfigHolder {
-	return &ConfigHolder{
-		current:         initial,
+	h := &ConfigHolder{
 		loader:          loader,
 		configPath:      configPath,
 		logger:          xglog.WithComponent("config"),
 		reloadListeners: make([]chan<- AppConfig, 0),
+		snapListeners:   make([]chan<- Snapshot, 0),
 	}
+	h.snapshot.Store(BuildSnapshot(initial))
+	return h
 }
 
 // Get returns the current configuration (thread-safe read).
 func (h *ConfigHolder) Get() AppConfig {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	return h.current
+	return h.Snapshot().App
+}
+
+// Snapshot returns the current immutable runtime snapshot (thread-safe read).
+func (h *ConfigHolder) Snapshot() Snapshot {
+	v := h.snapshot.Load()
+	if v == nil {
+		return Snapshot{}
+	}
+	return v.(Snapshot)
 }
 
 // Reload reloads configuration from file and validates it.
@@ -52,7 +66,13 @@ func (h *ConfigHolder) Get() AppConfig {
 // This ensures atomic config updates - either the full config is valid and applied,
 // or the old config remains unchanged.
 func (h *ConfigHolder) Reload(_ context.Context) error {
+	h.reloadOpMu.Lock()
+	defer h.reloadOpMu.Unlock()
+
 	h.logger.Info().Str("event", "config.reload_start").Msg("reloading configuration")
+
+	oldSnap := h.Snapshot()
+	oldCfg := oldSnap.App
 
 	// Load new configuration
 	newCfg, err := h.loader.Load()
@@ -74,13 +94,12 @@ func (h *ConfigHolder) Reload(_ context.Context) error {
 	}
 
 	// Atomically swap configuration
-	h.mu.Lock()
-	oldCfg := h.current
-	h.current = newCfg
-	h.mu.Unlock()
+	newSnap := BuildSnapshot(newCfg)
+	h.snapshot.Store(newSnap)
 
 	// Notify listeners of config change
 	h.notifyListeners(newCfg)
+	h.notifySnapshotListeners(newSnap)
 
 	// Log configuration changes
 	h.logChanges(oldCfg, newCfg)
@@ -109,10 +128,13 @@ func (h *ConfigHolder) StartWatcher(ctx context.Context) error {
 
 	h.watcher = watcher
 
-	// Add config file to watcher
-	if err := watcher.Add(h.configPath); err != nil {
+	// Watch the directory so we can handle atomic replace writes (tmp+rename) and file creation.
+	h.configDir = filepath.Dir(h.configPath)
+	h.configFile = filepath.Base(h.configPath)
+
+	if err := watcher.Add(h.configDir); err != nil {
 		_ = watcher.Close() // Ignore close error in error path
-		return fmt.Errorf("watch config file: %w", err)
+		return fmt.Errorf("watch config dir: %w", err)
 	}
 
 	h.logger.Info().
@@ -146,11 +168,17 @@ func (h *ConfigHolder) watchLoop(ctx context.Context) {
 				return
 			}
 
-			// Watch for Write and Create events (covers vim, nano, echo)
-			if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) {
+			// Filter for our config file only.
+			if h.configFile != "" && filepath.Base(event.Name) != h.configFile {
+				continue
+			}
+
+			// Watch for Write/Create/Rename (covers vim/atomic replace, nano, echo).
+			if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) || event.Has(fsnotify.Rename) {
 				h.logger.Debug().
 					Str("event", "config.file_changed").
 					Str("op", event.Op.String()).
+					Str("name", event.Name).
 					Msg("config file changed")
 
 				// Debounce: reset timer on each event
@@ -195,6 +223,14 @@ func (h *ConfigHolder) RegisterListener(ch chan<- AppConfig) {
 	h.reloadListeners = append(h.reloadListeners, ch)
 }
 
+// RegisterSnapshotListener registers a channel to receive snapshot reload notifications.
+// The channel will receive the new snapshot whenever a reload succeeds.
+func (h *ConfigHolder) RegisterSnapshotListener(ch chan<- Snapshot) {
+	h.reloadMu.Lock()
+	defer h.reloadMu.Unlock()
+	h.snapListeners = append(h.snapListeners, ch)
+}
+
 // notifyListeners sends the new config to all registered listeners (non-blocking).
 func (h *ConfigHolder) notifyListeners(newCfg AppConfig) {
 	h.reloadMu.RLock()
@@ -208,6 +244,21 @@ func (h *ConfigHolder) notifyListeners(newCfg AppConfig) {
 			h.logger.Warn().
 				Str("event", "config.listener_skip").
 				Msg("skipped notifying listener (channel full)")
+		}
+	}
+}
+
+func (h *ConfigHolder) notifySnapshotListeners(snap Snapshot) {
+	h.reloadMu.RLock()
+	defer h.reloadMu.RUnlock()
+
+	for _, ch := range h.snapListeners {
+		select {
+		case ch <- snap:
+		default:
+			h.logger.Warn().
+				Str("event", "config.snapshot_listener_skip").
+				Msg("skipped notifying snapshot listener (channel full)")
 		}
 	}
 }
@@ -237,6 +288,12 @@ func (h *ConfigHolder) logChanges(old, newCfg AppConfig) {
 			Int("old", old.StreamPort).
 			Int("new", newCfg.StreamPort).
 			Msg("config changed: StreamPort")
+	}
+	if old.UseWebIFStreams != newCfg.UseWebIFStreams {
+		h.logger.Info().
+			Bool("old", old.UseWebIFStreams).
+			Bool("new", newCfg.UseWebIFStreams).
+			Msg("config changed: UseWebIFStreams")
 	}
 	if old.OWIBase != newCfg.OWIBase {
 		h.logger.Info().

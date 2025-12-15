@@ -1,18 +1,17 @@
 import { useState, useEffect } from 'react';
+import { flushSync } from 'react-dom';
 import './App.css';
-import Channels from './components/Channels';
 import Player from './components/Player';
 import Dashboard from './components/Dashboard';
 import Files from './components/Files';
 import Logs from './components/Logs';
 import Config from './components/Config';
-import StatusIndicator from './components/StatusIndicator';
-import Streaming from './components/Streaming';
+import EPG from './components/EPG';
 import { OpenAPI } from './client/core/OpenAPI';
 import { DefaultService } from './client/services/DefaultService';
 
 function App() {
-  const [view, setView] = useState('dashboard');
+  const [view, setView] = useState('epg');
   const [showAuth, setShowAuth] = useState(!localStorage.getItem('XG2G_API_TOKEN'));
   const [token, setToken] = useState(localStorage.getItem('XG2G_API_TOKEN') || '');
 
@@ -120,6 +119,13 @@ function App() {
   // Player State
   const [playingChannel, setPlayingChannel] = useState(null);
 
+  const handlePlay = (channel) => {
+    // iOS/Safari only allows starting playback with sound inside a real user gesture.
+    // Force the Player overlay to mount synchronously so its `useLayoutEffect` can call `video.play()`
+    // within the same click/tap event.
+    flushSync(() => setPlayingChannel(channel));
+  };
+
   // ... (existing helper functions)
 
   return (
@@ -161,16 +167,10 @@ function App() {
             Dashboard
           </button>
           <button
-            className={view === 'channels' ? 'active' : ''}
-            onClick={() => setView('channels')}
+            className={view === 'epg' ? 'active' : ''}
+            onClick={() => setView('epg')}
           >
-            Channels
-          </button>
-          <button
-            className={view === 'streaming' ? 'active' : ''}
-            onClick={() => setView('streaming')}
-          >
-            Streaming
+            TV/EPG
           </button>
           <button
             className={view === 'files' ? 'active' : ''}
@@ -194,26 +194,13 @@ function App() {
       </header>
       <main className="app-main">
         {view === 'dashboard' && <Dashboard />}
-        {view === 'channels' && (
-          <Channels
-            bouquets={bouquets}
+        {view === 'epg' && (
+          <EPG
             channels={channels}
-            loading={loading}
+            bouquets={bouquets}
             selectedBouquet={selectedBouquet}
             onSelectBouquet={loadChannels}
-            // setChannels={setChannels} // No longer needed directly if we pass handleToggle
-            onToggle={handleToggle}
-            onPlay={setPlayingChannel}
-          />
-        )}
-        {view === 'streaming' && (
-          <Streaming
-            bouquets={bouquets}
-            channels={channels}
-            loading={loading}
-            selectedBouquet={selectedBouquet}
-            onSelectBouquet={loadChannels}
-            onPlay={setPlayingChannel}
+            onPlay={handlePlay}
           />
         )}
         {view === 'files' && <Files />}

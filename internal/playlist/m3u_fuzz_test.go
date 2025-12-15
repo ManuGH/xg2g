@@ -38,7 +38,7 @@ func FuzzWriteM3U(f *testing.F) {
 		}
 
 		var buf bytes.Buffer
-		err := WriteM3U(&buf, items, "")
+		err := WriteM3U(&buf, items, "", "")
 		if err != nil {
 			t.Fatalf("WriteM3U failed: %v", err)
 		}

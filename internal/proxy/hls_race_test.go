@@ -13,7 +13,7 @@ import (
 // with simultaneous Shutdown to ensure no data races or panics.
 func TestHLSGetOrCreateAndShutdownRace(t *testing.T) {
 	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
-	m, err := NewHLSManager(logger, t.TempDir())
+	m, err := NewHLSManager(logger, HLSManagerConfig{OutputDir: t.TempDir()})
 	if err != nil {
 		t.Fatalf("NewHLSManager failed: %v", err)
 	}
@@ -61,7 +61,7 @@ func TestHLSGetOrCreateAndShutdownRace(t *testing.T) {
 // while streams are being accessed concurrently.
 func TestHLSIdleCleanupWithConcurrentAccess(t *testing.T) {
 	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
-	m, err := NewHLSManager(logger, t.TempDir())
+	m, err := NewHLSManager(logger, HLSManagerConfig{OutputDir: t.TempDir()})
 	if err != nil {
 		t.Fatalf("NewHLSManager failed: %v", err)
 	}
@@ -128,7 +128,7 @@ func TestHLSIdleCleanupWithConcurrentAccess(t *testing.T) {
 // streams concurrently to ensure proper isolation and no races.
 func TestHLSConcurrentMultipleStreams(t *testing.T) {
 	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
-	m, err := NewHLSManager(logger, t.TempDir())
+	m, err := NewHLSManager(logger, HLSManagerConfig{OutputDir: t.TempDir()})
 	if err != nil {
 		t.Fatalf("NewHLSManager failed: %v", err)
 	}
@@ -182,7 +182,7 @@ func TestHLSConcurrentMultipleStreams(t *testing.T) {
 // is safe and doesn't cause panics or data races.
 func TestHLSShutdownIdempotency(t *testing.T) {
 	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
-	m, err := NewHLSManager(logger, t.TempDir())
+	m, err := NewHLSManager(logger, HLSManagerConfig{OutputDir: t.TempDir()})
 	if err != nil {
 		t.Fatalf("NewHLSManager failed: %v", err)
 	}

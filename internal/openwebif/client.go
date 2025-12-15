@@ -14,7 +14,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -29,17 +28,19 @@ import (
 
 // Client is an OpenWebIF HTTP client for communicating with Enigma2 receivers.
 type Client struct {
-	base       string
-	port       int
-	http       *http.Client
-	log        zerolog.Logger
-	host       string
-	timeout    time.Duration
-	maxRetries int
-	backoff    time.Duration
-	maxBackoff time.Duration
-	username   string
-	password   string
+	base            string
+	port            int
+	http            *http.Client
+	log             zerolog.Logger
+	useWebIFStreams bool
+	host            string
+	timeout         time.Duration
+	maxRetries      int
+	backoff         time.Duration
+	maxBackoff      time.Duration
+	username        string
+	password        string
+	streamBaseURL   string
 
 	// Request caching (v1.3.0+)
 	cache    Cacher
@@ -73,6 +74,15 @@ type Options struct {
 	MaxBackoff            time.Duration
 	Username              string
 	Password              string
+	UseWebIFStreams       bool
+	StreamBaseURL         string // Optional: override direct stream base URL (scheme+host[:port])
+
+	// HTTP transport tuning (optional; defaults are safe).
+	HTTPMaxIdleConns        int
+	HTTPMaxIdleConnsPerHost int
+	HTTPMaxConnsPerHost     int
+	HTTPIdleTimeout         time.Duration
+	HTTPEnableHTTP2         *bool
 
 	// Caching options (v1.3.0+)
 	Cache    Cacher        // Optional cache implementation
@@ -81,6 +91,24 @@ type Options struct {
 	// Rate limiting options (v1.7.0+)
 	ReceiverRateLimit rate.Limit // Max requests/sec to receiver (default: 10)
 	ReceiverBurst     int        // Burst capacity (default: 20)
+}
+
+// AboutInfo represents a subset of /api/about metadata.
+type AboutInfo struct {
+	Info struct {
+		Model   string `json:"model"`
+		Boxtype string `json:"boxtype"`
+		Brand   string `json:"brand"`
+	} `json:"info"`
+	Tuners      []AboutTuner `json:"tuners"`
+	TunersCount int          `json:"tuners_count"`
+	FBCTuners   []AboutTuner `json:"fbc_tuners"`
+}
+
+// AboutTuner represents a tuner entry in /api/about.
+type AboutTuner struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
 }
 
 const (
@@ -145,12 +173,26 @@ func NewWithPort(base string, streamPort int, opts Options) *Client {
 		responseHeaderTimeout = opts.ResponseHeaderTimeout
 	}
 
-	// Resolve transport pool knobs from environment (optional overrides)
-	maxIdleConns := getenvInt("XG2G_HTTP_MAX_IDLE_CONNS", 100)
-	maxIdlePerHost := getenvInt("XG2G_HTTP_MAX_IDLE_CONNS_PER_HOST", 20)
-	maxConnsPerHost := getenvInt("XG2G_HTTP_MAX_CONNS_PER_HOST", 50)
-	idleConnTimeout := getenvDuration("XG2G_HTTP_IDLE_TIMEOUT", 90*time.Second)
-	forceHTTP2 := strings.ToLower(os.Getenv("XG2G_HTTP_ENABLE_HTTP2")) != "false"
+	maxIdleConns := opts.HTTPMaxIdleConns
+	if maxIdleConns <= 0 {
+		maxIdleConns = 100
+	}
+	maxIdlePerHost := opts.HTTPMaxIdleConnsPerHost
+	if maxIdlePerHost <= 0 {
+		maxIdlePerHost = 20
+	}
+	maxConnsPerHost := opts.HTTPMaxConnsPerHost
+	if maxConnsPerHost <= 0 {
+		maxConnsPerHost = 50
+	}
+	idleConnTimeout := opts.HTTPIdleTimeout
+	if idleConnTimeout <= 0 {
+		idleConnTimeout = 90 * time.Second
+	}
+	forceHTTP2 := true
+	if opts.HTTPEnableHTTP2 != nil {
+		forceHTTP2 = *opts.HTTPEnableHTTP2
+	}
 
 	// Create a dedicated, hardened transport with optimized pooling.
 	transport := &http.Transport{
@@ -206,6 +248,8 @@ func NewWithPort(base string, streamPort int, opts Options) *Client {
 		maxBackoff:      nopts.MaxBackoff,
 		username:        opts.Username,
 		password:        opts.Password,
+		useWebIFStreams: nopts.UseWebIFStreams,
+		streamBaseURL:   strings.TrimSpace(opts.StreamBaseURL),
 		cache:           opts.Cache, // Optional cache (nil = no caching)
 		cacheTTL:        cacheTTL,
 		receiverLimiter: rate.NewLimiter(receiverRPS, receiverBurst),
@@ -224,26 +268,6 @@ func NewWithPort(base string, streamPort int, opts Options) *Client {
 		Msg("receiver rate limiting enabled")
 
 	return client
-}
-
-// getenvInt returns an int from ENV or the default if unset/invalid.
-func getenvInt(key string, def int) int {
-	if v := os.Getenv(key); v != "" {
-		if i, err := strconv.Atoi(v); err == nil {
-			return i
-		}
-	}
-	return def
-}
-
-// getenvDuration returns a duration from ENV or the default.
-func getenvDuration(key string, def time.Duration) time.Duration {
-	if v := os.Getenv(key); v != "" {
-		if d, err := time.ParseDuration(v); err == nil {
-			return d
-		}
-	}
-	return def
 }
 
 func normalizeOptions(opts Options) Options {
@@ -273,6 +297,19 @@ func normalizeOptions(opts Options) Options {
 		opts.MaxBackoff = opts.Backoff
 	}
 	return opts
+}
+
+// About fetches receiver metadata from /api/about (best-effort).
+func (c *Client) About(ctx context.Context) (*AboutInfo, error) {
+	body, err := c.get(ctx, "/api/about", "about", nil)
+	if err != nil {
+		return nil, err
+	}
+	var info AboutInfo
+	if err := json.Unmarshal(body, &info); err != nil {
+		return nil, fmt.Errorf("parse about response: %w", err)
+	}
+	return &info, nil
 }
 
 // Bouquets retrieves all available bouquets from the receiver.
@@ -481,14 +518,7 @@ func (c *Client) StreamURL(ctx context.Context, ref, name string) (string, error
 		return "", fmt.Errorf("openwebif base URL %q missing host", base)
 	}
 
-	// DEPRECATED: XG2G_USE_WEBIF_STREAMS
-	// This setting is deprecated as of v1.1.0 and may be removed in v2.0.0.
-	// WebIF streaming (/web/stream.m3u) is rarely needed and less compatible.
-	// Prefer direct TS streams (port 8001) or the integrated proxy for port 17999.
-	// Only use this if you specifically need standby-mode streaming.
-	useWebIF, _ := strconv.ParseBool(os.Getenv("XG2G_USE_WEBIF_STREAMS"))
-
-	if useWebIF {
+	if c.useWebIFStreams {
 		// Use WebIF streaming endpoint (works in standby mode)
 		// Format: http://<host>/web/stream.m3u?ref=<service_ref>&name=<channel_name>
 		hostname := parsed.Hostname()
@@ -517,9 +547,9 @@ func (c *Client) StreamURL(ctx context.Context, ref, name string) (string, error
 	// Format: http://<host>:<stream_port>/<service_ref>
 	// This is the direct MPEG-TS stream from the Enigma2 receiver
 
-	// Check if custom stream base URL is configured (e.g., for nginx proxy)
-	// XG2G_STREAM_BASE=http://10.10.55.193:17999 overrides the stream host/port
-	if streamBase := os.Getenv("XG2G_STREAM_BASE"); streamBase != "" {
+	// Check if custom stream base URL is configured (e.g., for nginx proxy).
+	// This overrides the stream host/port, but keeps the service reference path.
+	if streamBase := strings.TrimSpace(c.streamBaseURL); streamBase != "" {
 		streamParsed, err := url.Parse(streamBase)
 		if err == nil && streamParsed.Host != "" {
 			u := &url.URL{
@@ -567,11 +597,6 @@ func StreamURL(base, ref, name string) (string, error) {
 func resolveStreamPort(port int) int {
 	if port > 0 && port <= 65535 {
 		return port
-	}
-	if v := os.Getenv("XG2G_STREAM_PORT"); v != "" {
-		if p, err := strconv.Atoi(v); err == nil && p > 0 && p <= 65535 {
-			return p
-		}
 	}
 	return defaultStreamPort
 }

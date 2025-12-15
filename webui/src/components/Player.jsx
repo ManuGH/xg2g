@@ -1,39 +1,123 @@
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
+
+function derivePreflightUrl(streamUrl) {
+  try {
+    const url = new URL(streamUrl, window.location.origin);
+    const parts = url.pathname.split('/').filter(Boolean);
+    if (parts.length !== 3) return null;
+    const [prefix, streamId, file] = parts;
+    if (prefix !== 'stream' || file !== 'playlist.m3u8') return null;
+    url.pathname = `/stream/${streamId}/preflight`;
+    return url.pathname + url.search;
+  } catch {
+    return null;
+  }
+}
 
 export default function Player({ streamUrl, onClose }) {
   const videoRef = useRef(null);
   const hlsRef = useRef(null);
-  const [isMuted, setIsMuted] = useState(true);
+  const safariNativeFailedRef = useRef(false);
+  const safariAutoRetriedRef = useRef(false);
+  const attemptStartedAtRef = useRef(0);
+  const [isMuted, setIsMuted] = useState(false);
   const [error, setError] = useState(null);
   const [reloadToken, setReloadToken] = useState(0);
   const [isBuffering, setIsBuffering] = useState(true);
+  const [showControls, setShowControls] = useState(true);
+  const [showSafariStart, setShowSafariStart] = useState(false);
+  const hideControlsTimeoutRef = useRef(null);
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
+  const isSafari = /safari/i.test(ua) && !/chrome|crios|fxios|edg/i.test(ua);
 
   useEffect(() => {
+    safariAutoRetriedRef.current = false;
+  }, [streamUrl]);
+
+  const clearHideControls = () => {
+    if (hideControlsTimeoutRef.current) {
+      clearTimeout(hideControlsTimeoutRef.current);
+      hideControlsTimeoutRef.current = null;
+    }
+  };
+
+  const scheduleHideControls = () => {
+    clearHideControls();
+    if (isBuffering || error) {
+      setShowControls(true);
+      return;
+    }
+    hideControlsTimeoutRef.current = setTimeout(() => setShowControls(false), 2000);
+  };
+
+  const handleUserActivity = () => {
+    setShowControls(true);
+    scheduleHideControls();
+  };
+
+  useLayoutEffect(() => {
     const video = videoRef.current;
     if (!video) return;
+
+    const abortController = new AbortController();
+    let isCancelled = false;
+
+    // Disable hls.js fallback on Safari to avoid SourceBuffer errors; native-only
+    const safariFallbackEnabled = false;
 
     setError(null);
     video.setAttribute('playsinline', 'true');
     video.setAttribute('webkit-playsinline', 'true');
-    video.autoplay = true;
+    video.setAttribute('preload', 'metadata');
+    video.autoplay = false;
     video.crossOrigin = 'anonymous';
+    video.muted = false;
+    video.defaultMuted = false;
 
     // setError(null); // Fix lint: Avoid setState in effect
     setIsBuffering(true);
+    attemptStartedAtRef.current = Date.now();
 
-    const canUseHlsJs = Hls.isSupported();
+    const hasMse = typeof window !== 'undefined' && !!window.MediaSource;
     const canUseNativeHls = !!video.canPlayType('application/vnd.apple.mpegurl');
+    // Prefer native HLS on Safari to avoid SourceBuffer quirks (audio buffer removal)
+    const preferNativeFirst = isSafari && canUseNativeHls && !safariNativeFailedRef.current;
+    // Use hls.js on MSE-capable browsers; Safari fallback is disabled unless explicitly enabled
+    const canUseHlsJs = (!isSafari && Hls.isSupported() && hasMse) || (isSafari && safariFallbackEnabled && Hls.isSupported() && hasMse);
     let cleanupNativeError;
+
+    const kickPreflight = () => {
+      const preflightUrl = derivePreflightUrl(streamUrl);
+      if (!preflightUrl) return;
+
+      fetch(preflightUrl, {
+        method: 'GET',
+        signal: abortController.signal,
+        cache: 'no-store',
+        headers: { 'Accept': 'application/json' },
+      }).catch((err) => {
+        if (isCancelled) return;
+        if (err && (err.name === 'AbortError' || err.code === 20)) return;
+        console.warn('Stream preflight failed', err);
+      });
+    };
 
     const startWithHlsJs = () => {
       if (hlsRef.current) return;
-      const hls = new Hls({
-        debug: false,
-        enableWorker: true,
-        lowLatencyMode: false,
-      });
+      let hls;
+      try {
+        hls = new Hls({
+          debug: false,
+          enableWorker: isSafari ? false : true, // Safari+workers can be flaky
+          lowLatencyMode: false,
+        });
+      } catch (err) {
+        console.warn("Failed to init hls.js, falling back to native HLS", err);
+        if (canUseNativeHls) startNative(true);
+        return;
+      }
       hlsRef.current = hls;
 
       // Ensure previous native src is cleared before attaching MSE
@@ -52,6 +136,23 @@ export default function Player({ streamUrl, onClose }) {
       });
 
       hls.on(Hls.Events.ERROR, (event, data) => {
+        if (
+          isSafari &&
+          canUseNativeHls &&
+          (data.details === Hls.ErrorDetails.BUFFER_APPEND_ERROR || data.details === Hls.ErrorDetails.BUFFER_APPENDING_ERROR)
+        ) {
+          console.warn("Safari audio buffer issue detected", data);
+          hls.destroy();
+          hlsRef.current = null;
+          if (!safariNativeFailedRef.current) {
+            setError("Safari: Audiopuffer-Problem – wechsle auf nativen Player …");
+            startNative(true);
+          } else {
+            setError("Safari kann den Audiopuffer nicht verarbeiten. Tippe auf Retry (hls.js-Modus).");
+          }
+          return;
+        }
+
         if (data.fatal) {
           console.error("HLS Fatal Error:", data);
           switch (data.type) {
@@ -72,27 +173,84 @@ export default function Player({ streamUrl, onClose }) {
       });
     };
 
-    const startNative = () => {
+    const startNative = (skipErrorListener = false, skipAutoplay = false) => {
       video.src = streamUrl;
       video.load();
-      video.play().catch(e => {
-        if (e.name !== 'AbortError') console.warn("Autoplay failed:", e);
-      });
 
-      const handleNativeError = () => {
-        console.warn("Native HLS failed, attempting hls.js fallback", video.error);
-        if (canUseHlsJs) {
-          startWithHlsJs();
-        } else {
+      if (!skipAutoplay) {
+        video.play().catch((e) => {
+          if (e.name !== 'AbortError') console.warn("Autoplay failed:", e);
+          if (isSafari && e && e.name === "NotAllowedError") {
+            setShowSafariStart(true);
+            setError(null);
+            setIsBuffering(false);
+            return;
+          }
           setError("Stream konnte nicht gestartet werden. Tippe auf Retry.");
-        }
-      };
+        });
+      }
 
-      video.addEventListener('error', handleNativeError);
-      cleanupNativeError = () => video.removeEventListener('error', handleNativeError);
+      if (!skipErrorListener) {
+        const handleNativeError = () => {
+          console.warn("Native HLS failed", video.error);
+          safariNativeFailedRef.current = true;
+          const code = video.error && typeof video.error.code === 'number' ? video.error.code : null;
+
+          // One gentle auto-retry for Safari: the first request can fail while the backend is still
+          // warming up ffmpeg/segments. This avoids the user needing to close+reopen.
+          if (isSafari && !safariFallbackEnabled) {
+            const sinceStartMs = Date.now() - (attemptStartedAtRef.current || 0);
+            if (!safariAutoRetriedRef.current && sinceStartMs < 20_000) {
+              safariAutoRetriedRef.current = true;
+              setError(null);
+              setIsBuffering(true);
+              // Force a clean reload of the media element.
+              try {
+                video.pause();
+                video.removeAttribute('src');
+                video.load();
+              } catch { }
+              setTimeout(() => setReloadToken((t) => t + 1), 800);
+              return;
+            }
+          }
+
+          if (isSafari && !safariFallbackEnabled) {
+            if (code === 2) {
+              setError("Netzwerkproblem – Stream startet noch. Tippe auf Retry.");
+            } else if (code === 3) {
+              setError("Safari konnte den Stream nicht decodieren (native). Tippe auf Retry.");
+            } else {
+              setError("Safari konnte den Stream nicht starten (native). Tippe auf Retry.");
+            }
+            return;
+          }
+          if (canUseHlsJs) {
+            startWithHlsJs();
+          } else {
+            setError("Stream konnte nicht gestartet werden. Tippe auf Retry.");
+          }
+        };
+
+        video.addEventListener('error', handleNativeError);
+        cleanupNativeError = () => video.removeEventListener('error', handleNativeError);
+      }
     };
 
-    if (canUseHlsJs) {
+    // Best-effort warm-up: do NOT await on Safari, otherwise we lose the user gesture and iOS will mute/block audio.
+    kickPreflight();
+
+    if (isSafari) {
+      // Force native on Safari to avoid hls.js SourceBuffer issues.
+      // Do NOT try to autoplay on Safari to avoid "start muted" / race conditions.
+      // Instead, show the start overlay immediately and wait for user gesture.
+      startNative(false, true); // true = skipAutoplay
+      setShowSafariStart(true);
+      setError(null);
+      setIsBuffering(false);
+    } else if (preferNativeFirst) {
+      startNative();
+    } else if (canUseHlsJs) {
       startWithHlsJs();
     } else if (canUseNativeHls) {
       startNative();
@@ -102,6 +260,8 @@ export default function Player({ streamUrl, onClose }) {
     }
 
     return () => {
+      isCancelled = true;
+      abortController.abort();
       if (cleanupNativeError) cleanupNativeError();
       if (hlsRef.current) {
         hlsRef.current.destroy();
@@ -110,7 +270,13 @@ export default function Player({ streamUrl, onClose }) {
       video.removeAttribute('src');
       video.load();
     };
-  }, [streamUrl, reloadToken]);
+  }, [streamUrl, reloadToken, isSafari]);
+
+  useEffect(() => {
+    scheduleHideControls();
+    return clearHideControls;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isBuffering, error]);
 
   const handleUnmute = () => {
     if (videoRef.current) {
@@ -128,6 +294,17 @@ export default function Player({ streamUrl, onClose }) {
     }
   };
 
+  const handleReload = () => {
+    setError(null);
+    setIsBuffering(true);
+    setShowSafariStart(false);
+    if (isSafari && videoRef.current) {
+      videoRef.current.muted = false;
+      setIsMuted(false);
+    }
+    setReloadToken((t) => t + 1);
+  };
+
   const toggleMute = () => {
     if (videoRef.current) {
       const nextMuted = !videoRef.current.muted;
@@ -139,15 +316,41 @@ export default function Player({ streamUrl, onClose }) {
     }
   };
 
+  const handleReady = () => {
+    setIsBuffering(false);
+    scheduleHideControls();
+  };
+
+  const handleSafariStart = () => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    setShowSafariStart(false);
+    setError(null);
+    setIsBuffering(true);
+
+    // Use the user gesture to request audio immediately.
+    setIsMuted(false);
+    video.muted = false;
+    video.play().catch((e) => {
+      if (e && e.name === 'NotAllowedError') {
+        setShowSafariStart(true);
+        setIsBuffering(false);
+        return;
+      }
+      console.warn('Safari play failed', e);
+      setError('Stream konnte nicht gestartet werden. Tippe auf Retry.');
+    });
+  };
+
   const handleWaiting = () => {
     const video = videoRef.current;
     if (!video) return;
 
-    // Only attempt recovery if we are SUPPOSED to be playing
-    if (!video.paused && hlsRef.current) {
+    // Only attempt recovery for hls.js/MSE playback.
+    if (!hlsRef.current) return;
+    if (!video.paused) {
       hlsRef.current.startLoad();
-      // Only recover media error if strictly needed; startLoad is usually enough for stalls
-      // hlsRef.current.recoverMediaError(); 
     }
     video.play().catch(() => { });
   };
@@ -156,7 +359,27 @@ export default function Player({ streamUrl, onClose }) {
     const video = videoRef.current;
     if (!video) return;
     video.addEventListener('waiting', handleWaiting);
-    return () => video.removeEventListener('waiting', handleWaiting);
+    const canPlayHandler = () => {
+      if (video.paused) {
+        video.play().catch((e) => {
+          if (e.name !== 'AbortError') console.warn('Play on canplay failed', e);
+        });
+      }
+    };
+    video.addEventListener('canplay', canPlayHandler);
+    video.addEventListener('loadedmetadata', handleReady);
+    video.addEventListener('playing', handleReady);
+    video.addEventListener('play', handleReady);
+    const volumeHandler = () => setIsMuted(!!video.muted);
+    video.addEventListener('volumechange', volumeHandler);
+    return () => {
+      video.removeEventListener('waiting', handleWaiting);
+      video.removeEventListener('canplay', canPlayHandler);
+      video.removeEventListener('loadedmetadata', handleReady);
+      video.removeEventListener('playing', handleReady);
+      video.removeEventListener('play', handleReady);
+      video.removeEventListener('volumechange', volumeHandler);
+    };
   }, []);
 
   return (
@@ -174,6 +397,8 @@ export default function Player({ streamUrl, onClose }) {
         alignItems: 'center',
         justifyContent: 'center'
       }}
+      onMouseMove={handleUserActivity}
+      onTouchStart={handleUserActivity}
     >
       <video
         ref={videoRef}
@@ -182,11 +407,10 @@ export default function Player({ streamUrl, onClose }) {
         playsInline={true}
         webkit-playsinline="true"
         crossOrigin="anonymous"
-        preload="auto"
-        autoPlay
+        preload="metadata"
         muted={isMuted}
-        onPlaying={() => setIsBuffering(false)}
-        onCanPlay={() => setIsBuffering(false)}
+        onPlaying={handleReady}
+        onCanPlay={handleReady}
         onWaiting={() => setIsBuffering(true)}
       />
 
@@ -198,7 +422,10 @@ export default function Player({ streamUrl, onClose }) {
           right: 16,
           display: 'flex',
           gap: 8,
-          zIndex: 100000
+          zIndex: 100000,
+          opacity: showControls ? 1 : 0,
+          pointerEvents: showControls ? 'auto' : 'none',
+          transition: 'opacity 0.2s ease'
         }}
       >
         <button
@@ -248,6 +475,27 @@ export default function Player({ streamUrl, onClose }) {
           }}
         >
           Tap to Unmute 🔊
+        </div>
+      )}
+
+      {/* Safari Start Overlay */}
+      {showSafariStart && isSafari && (
+        <div
+          onClick={handleSafariStart}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(0,0,0,0.5)',
+            color: 'white',
+            fontSize: '16px',
+            cursor: 'pointer',
+            zIndex: 120000,
+          }}
+        >
+          Tippe, um zu starten
         </div>
       )}
 

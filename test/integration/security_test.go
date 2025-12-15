@@ -168,7 +168,7 @@ func TestSecuritySuiteExtended(t *testing.T) {
 			"X-Frame-Options":         "DENY",
 			"X-Content-Type-Options":  "nosniff",
 			"Referrer-Policy":         "no-referrer",
-			"Content-Security-Policy": "default-src 'self'; frame-ancestors 'none'",
+			"Content-Security-Policy": "default-src 'self'; media-src 'self' blob: data:; frame-ancestors 'none'",
 		}
 		for k, v := range expected {
 			if got := headers.Get(k); got != v {

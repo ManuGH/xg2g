@@ -5,40 +5,23 @@ package jobs
 
 import (
 	"context"
-
 	"errors"
 	"fmt"
-
-	"net/url"
-
 	"os"
-
 	"path/filepath"
-
 	"strings"
-
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
-
 	xglog "github.com/ManuGH/xg2g/internal/log"
-
 	"github.com/ManuGH/xg2g/internal/epg"
-
 	"github.com/ManuGH/xg2g/internal/metrics"
-
 	"github.com/ManuGH/xg2g/internal/openwebif"
-
 	"github.com/ManuGH/xg2g/internal/playlist"
-
 	"github.com/ManuGH/xg2g/internal/telemetry"
-
 	"github.com/ManuGH/xg2g/internal/validate"
-
 	"go.opentelemetry.io/otel/attribute"
-
 	"go.opentelemetry.io/otel/codes"
-
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -68,13 +51,16 @@ type Status struct {
 //
 
 //nolint:gocyclo // Complex orchestration function with validation, requires sequential operations
-func Refresh(ctx context.Context, cfg config.AppConfig) (*Status, error) {
+func Refresh(ctx context.Context, snap config.Snapshot) (*Status, error) {
 	// Start tracing span for the entire refresh job
 	tracer := telemetry.Tracer("xg2g.jobs")
 	ctx, span := tracer.Start(ctx, "job.refresh",
 		trace.WithSpanKind(trace.SpanKindInternal),
 	)
 	defer span.End()
+
+	cfg := snap.App
+	rt := snap.Runtime
 
 	startTime := time.Now()
 
@@ -89,13 +75,22 @@ func Refresh(ctx context.Context, cfg config.AppConfig) (*Status, error) {
 		return nil, err
 	}
 
+	enableHTTP2 := rt.OpenWebIF.HTTPEnableHTTP2
 	opts := openwebif.Options{
-		Timeout:    cfg.OWITimeout,
-		MaxRetries: cfg.OWIRetries,
-		Backoff:    cfg.OWIBackoff,
-		MaxBackoff: cfg.OWIMaxBackoff,
-		Username:   cfg.OWIUsername,
-		Password:   cfg.OWIPassword,
+		Timeout:         cfg.OWITimeout,
+		MaxRetries:      cfg.OWIRetries,
+		Backoff:         cfg.OWIBackoff,
+		MaxBackoff:      cfg.OWIMaxBackoff,
+		Username:        cfg.OWIUsername,
+		Password:        cfg.OWIPassword,
+		UseWebIFStreams: cfg.UseWebIFStreams,
+		StreamBaseURL:   rt.OpenWebIF.StreamBaseURL,
+
+		HTTPMaxIdleConns:        rt.OpenWebIF.HTTPMaxIdleConns,
+		HTTPMaxIdleConnsPerHost: rt.OpenWebIF.HTTPMaxIdleConnsPerHost,
+		HTTPMaxConnsPerHost:     rt.OpenWebIF.HTTPMaxConnsPerHost,
+		HTTPIdleTimeout:         rt.OpenWebIF.HTTPIdleTimeout,
+		HTTPEnableHTTP2:         &enableHTTP2,
 	}
 	client := openwebif.NewWithPort(cfg.OWIBase, cfg.StreamPort, opts)
 
@@ -111,6 +106,13 @@ func Refresh(ctx context.Context, cfg config.AppConfig) (*Status, error) {
 	metrics.RecordBouquetsCount(len(bouquets))
 	span.SetAttributes(attribute.Int("bouquets.count", len(bouquets)))
 
+	// Build reverse lookup map (ref -> name) for backward compatibility with configs
+	// that specify bouquet references instead of bouquet names.
+	bouquetRefs := make(map[string]string, len(bouquets))
+	for name, ref := range bouquets {
+		bouquetRefs[ref] = name
+	}
+
 	// Support comma-separated bouquet list (e.g., "Premium,Favourites,Sports")
 	requestedBouquets := strings.Split(cfg.Bouquet, ",")
 	for i := range requestedBouquets {
@@ -119,16 +121,29 @@ func Refresh(ctx context.Context, cfg config.AppConfig) (*Status, error) {
 
 	// Pre-flight validation: check ALL requested bouquets exist before processing
 	var missingBouquets []string
-	validBouquets := make([]string, 0, len(requestedBouquets))
+	type resolvedBouquet struct {
+		Name string
+		Ref  string
+	}
+	validBouquets := make([]resolvedBouquet, 0, len(requestedBouquets))
 	for _, bouquetName := range requestedBouquets {
 		if bouquetName == "" {
 			continue
 		}
-		if _, ok := bouquets[bouquetName]; !ok {
-			missingBouquets = append(missingBouquets, bouquetName)
-		} else {
-			validBouquets = append(validBouquets, bouquetName)
+
+		// Preferred: bouquet configured by name
+		if ref, ok := bouquets[bouquetName]; ok {
+			validBouquets = append(validBouquets, resolvedBouquet{Name: bouquetName, Ref: ref})
+			continue
 		}
+
+		// Backward compatibility: bouquet configured by reference string
+		if name, ok := bouquetRefs[bouquetName]; ok {
+			validBouquets = append(validBouquets, resolvedBouquet{Name: name, Ref: bouquetName})
+			continue
+		}
+
+		missingBouquets = append(missingBouquets, bouquetName)
 	}
 
 	// If ANY requested bouquet is missing, fail early with comprehensive error
@@ -148,8 +163,9 @@ func Refresh(ctx context.Context, cfg config.AppConfig) (*Status, error) {
 	// This ensures Threadfin/Plex display channels in bouquet order
 	channelNumber := 1
 
-	for _, bouquetName := range validBouquets {
-		bouquetRef := bouquets[bouquetName] // Safe: already validated above
+	for _, b := range validBouquets {
+		bouquetName := b.Name
+		bouquetRef := b.Ref
 
 		services, err := client.Services(ctx, bouquetRef)
 		if err != nil {
@@ -184,17 +200,10 @@ func Refresh(ctx context.Context, cfg config.AppConfig) (*Status, error) {
 
 			// If XG2G_USE_PROXY_URLS=true, rewrite URLs to point to xg2g proxy
 			// This enables audio transcoding and smart stream detection for Plex/Jellyfin
-			if os.Getenv("XG2G_USE_PROXY_URLS") == "true" {
-				proxyBase := os.Getenv("XG2G_PROXY_BASE_URL")
-				if proxyBase == "" {
-					proxyBase = "http://localhost:18000"
-				}
-				// Extract service reference from receiver URL and create proxy URL
-				// Proxy will use Smart Detection to route to correct port (8001/17999)
-				parsedURL, err := url.Parse(streamURL)
-				if err == nil && parsedURL.Path != "" {
-					streamURL = proxyBase + parsedURL.Path
-				}
+			if rt.UseProxyURLs {
+				// Always rewrite using the known service reference (avoids dropping query params for WebIF URLs).
+				proxyBase := strings.TrimRight(rt.ProxyBaseURL, "/")
+				streamURL = proxyBase + "/" + ref
 			}
 
 			// Use local proxy for picons to avoid Mixed Content / CORS issues
@@ -221,7 +230,7 @@ func Refresh(ctx context.Context, cfg config.AppConfig) (*Status, error) {
 
 			items = append(items, playlist.Item{
 				Name:    name,
-				TvgID:   makeTvgID(name, ref), // Human-readable IDs (e.g., "das-erste-hd-3fa92b")
+				TvgID:   makeTvgID(name, ref, rt.UseHashTvgID), // Human-readable by default
 				TvgChNo: channelNumber,        // Sequential numbering based on bouquet position
 				TvgLogo: logoURL,
 				Group:   bouquetName, // Use actual bouquet name as group
@@ -233,10 +242,7 @@ func Refresh(ctx context.Context, cfg config.AppConfig) (*Status, error) {
 	metrics.RecordChannelTypeCounts(hd, sd, radio, unknown)
 
 	// Write M3U playlist (filename configurable via ENV)
-	playlistName := os.Getenv("XG2G_PLAYLIST_FILENAME")
-	if strings.TrimSpace(playlistName) == "" {
-		playlistName = "playlist.m3u"
-	}
+	playlistName := rt.PlaylistFilename
 	// Sanitize filename for security
 	safeName, err := sanitizeFilename(playlistName)
 	if err != nil {
@@ -251,8 +257,8 @@ func Refresh(ctx context.Context, cfg config.AppConfig) (*Status, error) {
 	playlistPath := filepath.Join(cfg.DataDir, safeName)
 	// Pass Public URL to M3U writer for absolute paths in M3U (Plex compatibility)
 	// WebUI uses relative paths internally
-	publicURL := os.Getenv("XG2G_PUBLIC_URL")
-	if err := writeM3U(ctx, playlistPath, items, publicURL); err != nil {
+	publicURL := rt.PublicURL
+	if err := writeM3U(ctx, playlistPath, items, publicURL, rt.XTvgURL); err != nil {
 		metrics.IncRefreshFailure("write_m3u")
 		metrics.RecordPlaylistFileValidity("m3u", false)
 		return nil, fmt.Errorf("failed to write M3U playlist: %w", err)

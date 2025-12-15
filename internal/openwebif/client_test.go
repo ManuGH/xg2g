@@ -12,10 +12,6 @@ import (
 )
 
 func TestStreamURLScenarios(t *testing.T) {
-	t.Setenv("XG2G_STREAM_PORT", "")
-	// Disable smart stream detection to test explicit port configuration
-	t.Setenv("XG2G_SMART_STREAM_DETECTION", "false")
-
 	ref := "1:0:19:1334:3EF:1:C00000:0:0:0:"
 	name := "ORF1 HD"
 
@@ -23,7 +19,6 @@ func TestStreamURLScenarios(t *testing.T) {
 		name       string
 		base       string
 		port       int
-		envValue   string
 		wantHost   string
 		wantScheme string
 		wantPath   string
@@ -69,19 +64,9 @@ func TestStreamURLScenarios(t *testing.T) {
 			wantPath:   "/" + ref,
 		},
 		{
-			name:       "env fallback",
+			name:       "default port",
 			base:       "http://example.com",
 			port:       0,
-			envValue:   "19000",
-			wantHost:   "example.com:19000",
-			wantScheme: "http",
-			wantPath:   "/" + ref,
-		},
-		{
-			name:       "env invalid falls back to default",
-			base:       "http://example.com",
-			port:       0,
-			envValue:   "abc",
 			wantHost:   "example.com:8001",
 			wantScheme: "http",
 			wantPath:   "/" + ref,
@@ -90,12 +75,6 @@ func TestStreamURLScenarios(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.envValue != "" {
-				t.Setenv("XG2G_STREAM_PORT", tc.envValue)
-			} else {
-				t.Setenv("XG2G_STREAM_PORT", "")
-			}
-
 			client := NewWithPort(tc.base, tc.port, Options{Timeout: time.Second})
 			got, err := client.StreamURL(context.Background(), ref, name)
 			if err != nil {
@@ -121,6 +100,60 @@ func TestStreamURLScenarios(t *testing.T) {
 				t.Fatalf("expected no query parameters for direct streaming, got: %s", parsed.RawQuery)
 			}
 		})
+	}
+}
+
+func TestStreamURLWebIF(t *testing.T) {
+	ref := "1:0:19:1334:3EF:1:C00000:0:0:0:"
+	name := "ORF1 HD"
+
+	client := NewWithPort("http://example.com", 0, Options{
+		UseWebIFStreams: true,
+	})
+
+	got, err := client.StreamURL(context.Background(), ref, name)
+	if err != nil {
+		t.Fatalf("StreamURL returned error: %v", err)
+	}
+
+	parsed, err := url.Parse(got)
+	if err != nil {
+		t.Fatalf("failed to parse URL %q: %v", got, err)
+	}
+
+	if parsed.Host != "example.com" {
+		t.Fatalf("host: want %q, got %q", "example.com", parsed.Host)
+	}
+	if parsed.Path != "/web/stream.m3u" {
+		t.Fatalf("path: want %q, got %q", "/web/stream.m3u", parsed.Path)
+	}
+	q := parsed.Query()
+	if q.Get("ref") != ref || q.Get("name") != name {
+		t.Fatalf("query: expected ref/name (%q/%q), got ref=%q name=%q", ref, name, q.Get("ref"), q.Get("name"))
+	}
+}
+
+func TestAbout(t *testing.T) {
+	mock := NewMockServer()
+	defer mock.Close()
+
+	client := New(mock.URL())
+
+	info, err := client.About(context.Background())
+	if err != nil {
+		t.Fatalf("About() error: %v", err)
+	}
+	if info == nil {
+		t.Fatalf("About() returned nil info")
+	}
+	if info.Info.Model != "Mock Receiver" {
+		t.Fatalf("Model: want %q, got %q", "Mock Receiver", info.Info.Model)
+	}
+	if info.TunersCount != 2 {
+		t.Fatalf("TunersCount: want %d, got %d", 2, info.TunersCount)
+	}
+	if len(info.Tuners) != 2 {
+		t.Fatalf("Tuners length: want %d, got %d", 2, len(info.Tuners))
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/log"
 	"gopkg.in/yaml.v3"
 )
 
@@ -38,6 +39,7 @@ type OpenWebIFConfig struct {
 	Backoff    string `yaml:"backoff,omitempty"`    // e.g. "500ms"
 	MaxBackoff string `yaml:"maxBackoff,omitempty"` // e.g. "30s"
 	StreamPort int    `yaml:"streamPort,omitempty"`
+	UseWebIF   *bool  `yaml:"useWebIFStreams,omitempty"`
 }
 
 // EPGConfig holds EPG configuration
@@ -73,22 +75,26 @@ type PiconsConfig struct {
 
 // AppConfig holds all configuration for the application
 type AppConfig struct {
-	Version       string
-	DataDir       string
-	LogLevel      string
-	OWIBase       string
-	OWIUsername   string // Optional: HTTP Basic Auth username
-	OWIPassword   string // Optional: HTTP Basic Auth password
-	Bouquet       string // Comma-separated list of bouquets (e.g., "Premium,Favourites")
-	XMLTVPath     string
-	PiconBase     string
-	FuzzyMax      int
-	StreamPort    int
-	APIToken      string // Optional: for securing the /api/refresh endpoint
-	OWITimeout    time.Duration
-	OWIRetries    int
-	OWIBackoff    time.Duration
-	OWIMaxBackoff time.Duration
+	Version         string
+	DataDir         string
+	LogLevel        string
+	OWIBase         string
+	OWIUsername     string // Optional: HTTP Basic Auth username
+	OWIPassword     string // Optional: HTTP Basic Auth password
+	Bouquet         string // Comma-separated list of bouquets (e.g., "Premium,Favourites")
+	XMLTVPath       string
+	PiconBase       string
+	FuzzyMax        int
+	StreamPort      int
+	UseWebIFStreams bool
+	APIToken        string // Optional: for securing the /api/refresh endpoint
+	APIListenAddr   string // Optional: API listen address (if set via config.yaml)
+	MetricsEnabled  bool   // Optional: enable Prometheus metrics server
+	MetricsAddr     string // Optional: metrics listen address (if enabled)
+	OWITimeout      time.Duration
+	OWIRetries      int
+	OWIBackoff      time.Duration
+	OWIMaxBackoff   time.Duration
 
 	// EPG Configuration
 	EPGEnabled        bool
@@ -160,6 +166,10 @@ func (l *Loader) setDefaults(cfg *AppConfig) {
 	cfg.OWIBase = ""     // No default - must be explicitly configured
 	cfg.Bouquet = "Premium"
 	cfg.StreamPort = 8001
+	cfg.UseWebIFStreams = true
+	cfg.APIListenAddr = ""
+	cfg.MetricsEnabled = false
+	cfg.MetricsAddr = ":9090"
 	cfg.OWITimeout = 10 * time.Second
 	cfg.OWIRetries = 3
 	cfg.OWIBackoff = 500 * time.Millisecond
@@ -176,7 +186,7 @@ func (l *Loader) setDefaults(cfg *AppConfig) {
 	cfg.EPGSource = "per-service" // Default to per-service for backward compatibility
 
 	// Feature Flags
-	cfg.InstantTuneEnabled = true
+	cfg.InstantTuneEnabled = false
 }
 
 // loadFile loads configuration from a YAML file
@@ -204,7 +214,28 @@ func (l *Loader) loadFile(path string) (*FileConfig, error) {
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true) // Reject unknown fields
 	if err := dec.Decode(&fileCfg); err != nil {
-		return nil, fmt.Errorf("parse YAML (strict): %w", err)
+		// Backward compatibility: try to normalize known legacy key spellings/structures and re-parse strictly.
+		if !isYAMLUnknownFieldError(err) {
+			return nil, fmt.Errorf("parse YAML (strict): %w", err)
+		}
+
+		normalized, warnings, changed, normErr := normalizeLegacyYAML(data)
+		if normErr != nil || !changed {
+			return nil, fmt.Errorf("parse YAML (strict): %w", err)
+		}
+
+		dec2 := yaml.NewDecoder(bytes.NewReader(normalized))
+		dec2.KnownFields(true)
+		if err2 := dec2.Decode(&fileCfg); err2 != nil {
+			return nil, fmt.Errorf("parse YAML (strict): %w", err)
+		}
+
+		if len(warnings) > 0 {
+			logger := log.WithComponent("config")
+			for _, w := range warnings {
+				logger.Warn().Str("event", "config.legacy_key_mapped").Msg(w)
+			}
+		}
 	}
 
 	return &fileCfg, nil
@@ -231,6 +262,9 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 	}
 	if src.OpenWebIF.StreamPort > 0 {
 		dst.StreamPort = src.OpenWebIF.StreamPort
+	}
+	if src.OpenWebIF.UseWebIF != nil {
+		dst.UseWebIFStreams = *src.OpenWebIF.UseWebIF
 	}
 
 	// Parse durations from strings
@@ -294,6 +328,17 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 	if src.API.Token != "" {
 		dst.APIToken = expandEnv(src.API.Token)
 	}
+	if src.API.ListenAddr != "" {
+		dst.APIListenAddr = expandEnv(src.API.ListenAddr)
+	}
+
+	// Metrics
+	if src.Metrics.Enabled != nil {
+		dst.MetricsEnabled = *src.Metrics.Enabled
+	}
+	if src.Metrics.ListenAddr != "" {
+		dst.MetricsAddr = expandEnv(src.Metrics.ListenAddr)
+	}
 
 	// Picons
 	if src.Picons.BaseURL != "" {
@@ -315,8 +360,11 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	// OpenWebIF (with backward-compatible aliases for v2.0)
 	cfg.OWIBase = ParseStringWithAlias("XG2G_OWI_BASE", "RECEIVER_IP", cfg.OWIBase)
 	cfg.OWIUsername = ParseStringWithAlias("XG2G_OWI_USER", "RECEIVER_USER", cfg.OWIUsername)
+	cfg.OWIUsername = ParseStringWithAlias("XG2G_OWI_USER", "XG2G_OWI_USERNAME", cfg.OWIUsername)
 	cfg.OWIPassword = ParseStringWithAlias("XG2G_OWI_PASS", "RECEIVER_PASS", cfg.OWIPassword)
+	cfg.OWIPassword = ParseStringWithAlias("XG2G_OWI_PASS", "XG2G_OWI_PASSWORD", cfg.OWIPassword)
 	cfg.StreamPort = ParseInt("XG2G_STREAM_PORT", cfg.StreamPort)
+	cfg.UseWebIFStreams = ParseBool("XG2G_USE_WEBIF_STREAMS", cfg.UseWebIFStreams)
 
 	// OpenWebIF timeouts/retries
 	// Convert millisecond ENV values to time.Duration
@@ -345,13 +393,25 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	cfg.EPGSource = ParseString("XG2G_EPG_SOURCE", cfg.EPGSource)
 	cfg.EPGRetries = ParseInt("XG2G_EPG_RETRIES", cfg.EPGRetries)
 	cfg.FuzzyMax = ParseInt("XG2G_FUZZY_MAX", cfg.FuzzyMax)
-	cfg.XMLTVPath = ParseString("XG2G_XMLTV", cfg.XMLTVPath)
+	cfg.XMLTVPath = ParseStringWithAlias("XG2G_XMLTV", "XG2G_EPG_XMLTV_PATH", cfg.XMLTVPath)
 
 	// API
 	cfg.APIToken = ParseString("XG2G_API_TOKEN", cfg.APIToken)
+	cfg.APIListenAddr = ParseStringWithAlias("XG2G_LISTEN", "XG2G_API_ADDR", cfg.APIListenAddr)
+
+	// Metrics
+	// Primary configuration is via XG2G_METRICS_LISTEN (empty disables).
+	// Accept XG2G_METRICS_ADDR as a legacy alias.
+	if v, ok := os.LookupEnv("XG2G_METRICS_LISTEN"); ok {
+		cfg.MetricsAddr = v
+		cfg.MetricsEnabled = strings.TrimSpace(v) != ""
+	} else if v, ok := os.LookupEnv("XG2G_METRICS_ADDR"); ok {
+		cfg.MetricsAddr = v
+		cfg.MetricsEnabled = strings.TrimSpace(v) != ""
+	}
 
 	// Picons
-	cfg.PiconBase = ParseString("XG2G_PICON_BASE", cfg.PiconBase)
+	cfg.PiconBase = ParseStringWithAlias("XG2G_PICON_BASE", "XG2G_PICONS_BASE", cfg.PiconBase)
 
 	// TLS
 	cfg.TLSCert = ParseString("XG2G_TLS_CERT", cfg.TLSCert)

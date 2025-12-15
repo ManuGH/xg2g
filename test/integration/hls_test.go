@@ -68,6 +68,11 @@ func TestHLSEndpoint(t *testing.T) {
 			w.Write([]byte(`{"bouquets": [["1:0:1:0:0:0:0:0:0:0", "Test Channel"]]}`))
 			return
 		}
+		if r.URL.Path == "/api/about" {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"info":{"model":"test","boxtype":"test","brand":"test"},"tuners_count":1,"tuners":[{"name":"Tuner A","type":"DVB-S2"}],"fbc_tuners":[]}`))
+			return
+		}
 
 		w.Header().Set("Content-Type", "video/mp2t")
 		flusher, ok := w.(http.Flusher)

@@ -7,11 +7,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	streamprofile "github.com/ManuGH/xg2g/internal/core/profile"
 	"github.com/rs/zerolog"
 )
 
@@ -44,123 +44,11 @@ type LLHLSProfile struct {
 	partSize    int // Partial segment size in bytes (256KB default)
 	ffmpegPath  string
 	ready       chan struct{} // Signals when initial segments are ready
-	hevcConfig  LLHLSConfig   // Store full config for decision making
-}
-
-// LLHLSConfig holds configuration for LL-HLS profile.
-type LLHLSConfig struct {
-	SegmentDuration int    // Segment duration in seconds (1-2)
-	PlaylistSize    int    // Number of segments in playlist (6-10)
-	StartupSegments int    // Pre-buffer segments before serving (2-3)
-	PartSize        int    // Partial segment size in bytes (256KB default)
-	FFmpegPath      string // Path to FFmpeg binary
-
-	// HEVC / Transcoding Config
-	HevcEnabled    bool   // Enable HEVC transcoding
-	HevcBitrate    string // Target video bitrate (e.g. "6000k")
-	HevcMaxBitrate string // Max video bitrate (e.g. "8000k")
-	HevcEncoder    string // Encoder name (hevc_nvenc, hevc_vaapi, libx265)
-	HevcProfile    string // Encoding profile (main, main10)
-	HevcLevel      string // Encoding level (5.0, 5.1)
-	VaapiDevice    string // VAAPI Device path (default /dev/dri/renderD128)
-	PartDuration   string // Partial segment duration (ms, e.g. "200ms")
-}
-
-// GetLLHLSConfig returns LL-HLS configuration from environment or defaults.
-func GetLLHLSConfig() LLHLSConfig {
-	cfg := LLHLSConfig{
-		SegmentDuration: 1,
-		PlaylistSize:    6,
-		StartupSegments: 2,
-		PartSize:        262144,
-		FFmpegPath:      "/usr/bin/ffmpeg",
-		HevcEnabled:     false,
-		HevcBitrate:     "6000k",
-		HevcMaxBitrate:  "8000k",
-		HevcEncoder:     "hevc_nvenc",
-		HevcProfile:     "main",
-		HevcLevel:       "5.0",
-		VaapiDevice:     "/dev/dri/renderD128",
-		PartDuration:    "200ms", // 200ms partial segments
-	}
-
-	// Override from environment
-	if v := os.Getenv("XG2G_LLHLS_SEGMENT_DURATION"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 1 && n <= 2 {
-			cfg.SegmentDuration = n
-		}
-	}
-
-	if v := os.Getenv("XG2G_LLHLS_PLAYLIST_SIZE"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 6 && n <= 10 {
-			cfg.PlaylistSize = n
-		}
-	}
-
-	if v := os.Getenv("XG2G_LLHLS_STARTUP_SEGMENTS"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 1 && n <= 3 {
-			cfg.StartupSegments = n
-		}
-	}
-
-	if v := os.Getenv("XG2G_LLHLS_PART_SIZE"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 65536 && n <= 1048576 {
-			cfg.PartSize = n
-		}
-	}
-
-	if v := os.Getenv("XG2G_LLHLS_FFMPEG_PATH"); v != "" {
-		cfg.FFmpegPath = v
-	} else if v := os.Getenv("XG2G_WEB_FFMPEG_PATH"); v != "" {
-		cfg.FFmpegPath = v
-	}
-
-	// HEVC Config - Renamed to XG2G_LLHLS_HEVC_*
-	if v := os.Getenv("XG2G_LLHLS_HEVC_ENABLED"); v == "true" {
-		cfg.HevcEnabled = true
-	} else if v := os.Getenv("XG2G_WEB_HEVC_PROFILE_ENABLED"); v == "true" {
-		cfg.HevcEnabled = true // Backwards compatibility during migration
-	}
-
-	if v := os.Getenv("XG2G_LLHLS_HEVC_BITRATE"); v != "" {
-		cfg.HevcBitrate = v
-	} else if v := os.Getenv("XG2G_WEB_HEVC_BITRATE"); v != "" {
-		cfg.HevcBitrate = v
-	}
-
-	if v := os.Getenv("XG2G_LLHLS_HEVC_PEAK"); v != "" {
-		cfg.HevcMaxBitrate = v
-	} else if v := os.Getenv("XG2G_WEB_HEVC_MAXBITRATE"); v != "" {
-		cfg.HevcMaxBitrate = v
-	}
-
-	if v := os.Getenv("XG2G_LLHLS_HEVC_ENCODER"); v != "" {
-		cfg.HevcEncoder = v
-	} else if v := os.Getenv("XG2G_WEB_HEVC_ENCODER"); v != "" {
-		cfg.HevcEncoder = v
-	}
-
-	if v := os.Getenv("XG2G_LLHLS_HEVC_PROFILE"); v != "" {
-		cfg.HevcProfile = v
-	}
-
-	if v := os.Getenv("XG2G_LLHLS_HEVC_LEVEL"); v != "" {
-		cfg.HevcLevel = v
-	}
-
-	if v := os.Getenv("XG2G_LLHLS_VAAPI_DEVICE"); v != "" {
-		cfg.VaapiDevice = v
-	}
-
-	if v := os.Getenv("XG2G_WEB_LL_HLS_PART_DURATION"); v != "" {
-		cfg.PartDuration = v
-	}
-
-	return cfg
+	hevcConfig  streamprofile.LLHLSConfig // Store full config for decision making
 }
 
 // NewLLHLSProfile creates a new LL-HLS profile.
-func NewLLHLSProfile(serviceRef, targetURL, baseDir string, logger zerolog.Logger, config LLHLSConfig) (*LLHLSProfile, error) {
+func NewLLHLSProfile(serviceRef, targetURL, baseDir string, logger zerolog.Logger, config streamprofile.LLHLSConfig) (*LLHLSProfile, error) {
 	// Create unique directory for this profile
 	// Use sanitized service reference as directory name
 	streamID := sanitizeServiceRef(serviceRef)
@@ -210,6 +98,9 @@ func (p *LLHLSProfile) Start(forceAAC bool, aacBitrate string) error {
 	if p.started {
 		return nil
 	}
+	// New readiness signal per start; profiles can be restarted if ffmpeg exits.
+	ready := make(chan struct{})
+	p.ready = ready
 
 	playlistPath := filepath.Join(p.outputDir, "playlist.m3u8")
 	segmentPattern := filepath.Join(p.outputDir, "segment_%03d.m4s")
@@ -223,11 +114,11 @@ func (p *LLHLSProfile) Start(forceAAC bool, aacBitrate string) error {
 	}
 
 	// Build FFmpeg command for LL-HLS optimization
-	// Based on Plex profile but with fmp4 and LL-HLS specific flags
+	// LL-HLS uses fMP4 + partial segments (low-latency extensions).
 	args := []string{
 		"-hide_banner",
 	}
-	args = append(args, logLevelArgs("warning")...)
+	args = append(args, logLevelArgs("warning", "")...)
 
 	// VAAPI Specific Global Args (must be before input if possible, or strictly global)
 	// User example: ffmpeg -init_hw_device vaapi=va:/dev/dri/renderD128 -filter_hw_device va -i ...
@@ -241,15 +132,18 @@ func (p *LLHLSProfile) Start(forceAAC bool, aacBitrate string) error {
 	// If we are using the Web API, we must "Zap" and resolve the real stream URL manually.
 	finalInputURL := p.targetURL
 	webAPIURL := convertToWebAPI(p.targetURL, p.serviceRef)
+	var programID int
 
-	if webAPIURL != p.targetURL {
+	// Resolve WebIF stream URL (and optional program hint) if applicable.
+	if strings.Contains(p.targetURL, "/web/stream.m3u") || webAPIURL != p.targetURL {
 		p.logger.Info().Str("web_api_url", webAPIURL).Msg("attempting to resolve Web API stream (Zapping)")
-		resolved, err := resolveWebAPI(webAPIURL)
+		resolved, err := resolveWebAPIStreamInfo(webAPIURL)
 		if err != nil {
 			p.logger.Error().Err(err).Str("web_api_url", webAPIURL).Msg("failed to resolve Web API stream")
 		} else {
-			finalInputURL = resolved
-			p.logger.Info().Str("resolved_url", finalInputURL).Msg("successfully resolved stream URL")
+			finalInputURL = resolved.URL
+			programID = resolved.ProgramID
+			p.logger.Info().Str("resolved_url", finalInputURL).Int("program_id", programID).Msg("successfully resolved stream URL")
 			// Give the tuner a moment to lock after zapping
 			time.Sleep(1000 * time.Millisecond)
 		}
@@ -260,8 +154,12 @@ func (p *LLHLSProfile) Start(forceAAC bool, aacBitrate string) error {
 	args = append(args,
 		"-fflags", "+genpts+igndts", // Regenerate timestamps (Enigma2 has broken DTS)
 		"-i", finalInputURL,
-		"-map", "0:v",
 	)
+	if programID > 0 {
+		args = append(args, "-map", fmt.Sprintf("0:p:%d:v:0", programID))
+	} else {
+		args = append(args, "-map", "0:v")
+	}
 
 	// Video Transcoding Decision
 	if p.hevcConfig.HevcEnabled {
@@ -316,14 +214,18 @@ func (p *LLHLSProfile) Start(forceAAC bool, aacBitrate string) error {
 		// CLASSICAL COPY (Original Behavior)
 		args = append(args,
 			"-c:v", "copy", // Copy video without re-encoding
-			"-bsf:v", "h264_mp4toannexb", // CRITICAL: Add PPS/SPS headers (same as Plex profile)
+			"-bsf:v", "h264_mp4toannexb", // CRITICAL: Add PPS/SPS headers
 		)
 	}
 
 	// Audio handling: AAC transcoding for iOS
+	audioMap := "0:a:0?"
+	if programID > 0 {
+		audioMap = fmt.Sprintf("0:p:%d:a:0?", programID)
+	}
 	if forceAAC {
 		args = append(args,
-			"-map", "0:a",
+			"-map", audioMap,
 			"-c:a", "aac", // Transcode to AAC-LC
 			"-b:a", aacBitrate,
 			"-ac", "2", // Stereo
@@ -331,12 +233,12 @@ func (p *LLHLSProfile) Start(forceAAC bool, aacBitrate string) error {
 		)
 	} else {
 		args = append(args,
-			"-map", "0:a",
+			"-map", audioMap,
 			"-c:a", "copy", // Copy audio as-is
 		)
 	}
 
-	// Common timestamp/muxing options (same as Plex profile)
+	// Common timestamp/muxing options
 	args = append(args,
 		"-start_at_zero",
 		"-avoid_negative_ts", "make_zero",
@@ -419,7 +321,7 @@ func (p *LLHLSProfile) Start(forceAAC bool, aacBitrate string) error {
 	}()
 
 	// Wait for initial segments to be ready
-	go p.waitForSegments(initSegment, playlistPath)
+	go p.waitForSegments(initSegment, playlistPath, ready)
 
 	return nil
 }
@@ -479,18 +381,23 @@ func (p *LLHLSProfile) watchdogRoutine(playlistPath string) {
 }
 
 // waitForSegments waits for initial segments to be written before signaling ready.
-func (p *LLHLSProfile) waitForSegments(initSegment, playlistPath string) {
-	timeout := time.After(30 * time.Second)
+func (p *LLHLSProfile) waitForSegments(initSegment, playlistPath string, ready chan struct{}) {
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
 
 	for {
 		select {
-		case <-timeout:
-			p.logger.Warn().Msg("timeout waiting for LL-HLS segments")
-			close(p.ready)
+		case <-p.ctx.Done():
 			return
 		case <-ticker.C:
+			p.mu.RLock()
+			currentReady := p.ready
+			started := p.started
+			p.mu.RUnlock()
+			if currentReady != ready || !started {
+				return
+			}
+
 			// Check if init segment and playlist exist
 			if _, err := os.Stat(initSegment); err != nil {
 				continue
@@ -508,7 +415,7 @@ func (p *LLHLSProfile) waitForSegments(initSegment, playlistPath string) {
 			p.logger.Info().
 				Int("segments_ready", len(matches)).
 				Msg("LL-HLS profile ready")
-			close(p.ready)
+			close(ready)
 			return
 		}
 	}
@@ -516,8 +423,14 @@ func (p *LLHLSProfile) waitForSegments(initSegment, playlistPath string) {
 
 // WaitReady waits for the profile to be ready with a timeout.
 func (p *LLHLSProfile) WaitReady(timeout time.Duration) error {
+	p.mu.RLock()
+	ready := p.ready
+	p.mu.RUnlock()
+	if ready == nil {
+		return fmt.Errorf("timeout waiting for LL-HLS profile to be ready")
+	}
 	select {
-	case <-p.ready:
+	case <-ready:
 		return nil
 	case <-time.After(timeout):
 		return fmt.Errorf("timeout waiting for LL-HLS profile to be ready")
@@ -622,19 +535,4 @@ func (p *LLHLSProfile) ServeSegment(w http.ResponseWriter, segmentName string) e
 	return nil
 }
 
-// IsNativeAppleClient detects if the request is from a native Apple client.
-// These clients support LL-HLS (iOS 14+, macOS 11+, Safari 14+).
-// Excludes Plex (which uses its own HLS implementation).
-func IsNativeAppleClient(userAgent string) bool {
-	ua := userAgent
-
-	// Exclude Plex (handled separately)
-	if IsPlexClient(userAgent) {
-		return false
-	}
-
-	// Native Apple clients that support LL-HLS
-	return strings.Contains(ua, "AppleCoreMedia") || // Native iOS/macOS media player
-		strings.Contains(ua, "CFNetwork") || // iOS network stack
-		strings.Contains(ua, "VideoToolbox") // macOS video framework
-}
+// User-Agent helpers moved to internal/core/useragent; see useragent.go for wrappers.

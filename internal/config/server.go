@@ -8,10 +8,10 @@ import (
 	"time"
 )
 
-// bindListenAddr replaces the host part of a listen address when it is of the
+// BindListenAddr replaces the host part of a listen address when it is of the
 // form ":PORT" or empty. Explicit host:port values are left untouched.
 // Supports "if:<name>" to bind to the first non-loopback IPv4 of an interface.
-func bindListenAddr(listenAddr, bind string) (string, error) {
+func BindListenAddr(listenAddr, bind string) (string, error) {
 	if bind == "" {
 		return listenAddr, nil
 	}
@@ -93,14 +93,7 @@ const (
 // ParseServerConfig reads server configuration from environment variables.
 // It returns a ServerConfig with sensible defaults that can be overridden via ENV.
 func ParseServerConfig() ServerConfig {
-	bind := ParseString("XG2G_BIND_INTERFACE", "")
-	listen := ParseString("XG2G_LISTEN", ":8080")
-	if bind != "" && (listen == "" || listen[0] == ':') {
-		// Only override when host is missing; host:port stays as-is.
-		if hostPort, err := bindListenAddr(listen, bind); err == nil {
-			listen = hostPort
-		}
-	}
+	listen := ParseStringWithAlias("XG2G_LISTEN", "XG2G_API_ADDR", ":8080")
 
 	return ServerConfig{
 		ListenAddr:      listen,

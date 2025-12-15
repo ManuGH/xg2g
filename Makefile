@@ -746,3 +746,4 @@ schema-validate: ## Validate all YAML config files against JSON Schema
 		echo "⚠  check-jsonschema not installed, skipping schema validation"; \
 		echo "   Install with: pip install check-jsonschema"; \
 	fi
+

@@ -7,10 +7,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"os/exec"
 	"testing"
 
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/rs/zerolog"
 )
 
@@ -32,49 +32,53 @@ func TestNewTranscoder(t *testing.T) {
 	}
 }
 
-func TestGetTranscoderConfig(t *testing.T) {
-	t.Run("default_config", func(t *testing.T) {
-		t.Setenv("XG2G_ENABLE_AUDIO_TRANSCODING", "")
-		t.Setenv("XG2G_GPU_TRANSCODING", "")
-		t.Setenv("XG2G_GPU_TRANSCODER_URL", "")
+func TestBuildTranscoderConfigFromRuntime(t *testing.T) {
+	t.Parallel()
 
-		_ = GetTranscoderConfig()
-		// Default depends on build tags:
-		// - nogpu builds: disabled (no FFmpeg/Rust in CI)
-		// - gpu builds: enabled (for iOS Safari compatibility)
-		// This test just verifies configuration can be read
-	})
+	t.Run("ffmpeg_missing_disables_ffmpeg_features", func(t *testing.T) {
+		t.Parallel()
 
-	t.Run("enabled_via_env", func(t *testing.T) {
-		t.Setenv("XG2G_ENABLE_AUDIO_TRANSCODING", "true")
-		config := GetTranscoderConfig()
-		if !config.Enabled {
-			t.Error("expected transcoding enabled")
+		cfg := buildTranscoderConfigFromRuntime(config.TranscoderRuntime{
+			Enabled:           true,
+			H264RepairEnabled: true,
+			AudioEnabled:      true,
+			Codec:             "aac",
+			Bitrate:           "192k",
+			Channels:          2,
+			FFmpegPath:        "/nonexistent/ffmpeg",
+			UseRustRemuxer:    false,
+			VideoTranscode:    true,
+		})
+
+		if cfg.Enabled {
+			t.Errorf("expected audio transcoding disabled when ffmpeg is missing and rust is disabled")
+		}
+		if cfg.H264RepairEnabled {
+			t.Errorf("expected H.264 repair disabled when ffmpeg is missing")
+		}
+		if cfg.VideoTranscode {
+			t.Errorf("expected video transcode disabled when ffmpeg is missing")
 		}
 	})
 
-	t.Run("custom_codec", func(t *testing.T) {
-		t.Setenv("XG2G_AUDIO_CODEC", "mp3")
-		config := GetTranscoderConfig()
-		if config.Codec != "mp3" {
-			t.Errorf("expected codec 'mp3', got '%s'", config.Codec)
-		}
-	})
+	t.Run("rust_keeps_audio_without_ffmpeg", func(t *testing.T) {
+		t.Parallel()
 
-	t.Run("gpu_config", func(t *testing.T) {
-		t.Setenv("XG2G_GPU_TRANSCODE", "true") // Note: TRANSCODE not TRANSCODING
-		t.Setenv("XG2G_TRANSCODER_URL", "http://localhost:9999")
-		config := GetTranscoderConfig()
-		if !config.GPUEnabled {
-			t.Error("expected GPU transcoding enabled")
+		cfg := buildTranscoderConfigFromRuntime(config.TranscoderRuntime{
+			Enabled:        true,
+			AudioEnabled:   true,
+			FFmpegPath:     "/nonexistent/ffmpeg",
+			UseRustRemuxer: true,
+		})
+
+		if !cfg.Enabled {
+			t.Errorf("expected audio enabled when rust remuxer is enabled even without ffmpeg")
 		}
-		if config.TranscoderURL != "http://localhost:9999" {
-			t.Errorf("expected transcoder URL 'http://localhost:9999', got '%s'", config.TranscoderURL)
+		if cfg.H264RepairEnabled {
+			t.Errorf("expected H.264 repair disabled when ffmpeg is missing")
 		}
 	})
 }
-
-// IsGPUEnabled is tested indirectly via GetTranscoderConfig
 
 // TestTranscodeStream_FFmpegNotFound verifies graceful handling when ffmpeg is missing
 func TestTranscodeStream_FFmpegNotFound(t *testing.T) {
@@ -107,7 +111,7 @@ func TestTranscodeStream_FFmpegNotFound(t *testing.T) {
 	if err == nil {
 		t.Error("expected error when ffmpeg is not found")
 	}
-	if !os.IsNotExist(err) && !isExecError(err) {
+	if !isExecError(err) {
 		t.Logf("Got error: %v (type: %T)", err, err)
 	}
 }

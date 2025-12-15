@@ -29,6 +29,10 @@ type Deps struct {
 
 	// MetricsHandler is the HTTP handler for Prometheus metrics (if enabled)
 	MetricsHandler http.Handler
+
+	// MetricsAddr is the address the metrics server should listen on.
+	// Empty disables the metrics server.
+	MetricsAddr string
 }
 
 // ProxyConfig holds proxy server configuration.
@@ -36,10 +40,10 @@ type ProxyConfig struct {
 	// ListenAddr is the proxy listen address (e.g., ":18000")
 	ListenAddr string
 
-	// TargetURL is the upstream target URL (optional if StreamDetector is provided)
+	// TargetURL is the upstream target URL (optional if ReceiverHost is provided).
 	TargetURL string
 
-	// ReceiverHost is the receiver hostname/IP for Smart Detection fallback
+	// ReceiverHost is the receiver hostname/IP for fallback proxying.
 	ReceiverHost string
 
 	// Logger is the logger for the proxy
@@ -52,6 +56,9 @@ type ProxyConfig struct {
 	// Playlist Configuration
 	DataDir      string
 	PlaylistPath string
+
+	// Runtime holds the effective runtime settings (ENV-derived) required by the proxy.
+	Runtime config.RuntimeSnapshot
 }
 
 // Validate checks if the dependencies are valid.

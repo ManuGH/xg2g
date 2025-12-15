@@ -5,7 +5,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -220,123 +219,6 @@ func TestHandleGetRequest(t *testing.T) {
 
 	if body := rec.Body.String(); body != "stream data" {
 		t.Errorf("got body %q, want %q", body, "stream data")
-	}
-}
-
-func TestIsEnabled(t *testing.T) {
-	tests := []struct {
-		name     string
-		envValue string
-		want     bool
-	}{
-		{
-			name:     "enabled",
-			envValue: "true",
-			want:     true,
-		},
-		{
-			name:     "disabled",
-			envValue: "false",
-			want:     false,
-		},
-		{
-			name:     "not set",
-			envValue: "",
-			want:     false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if err := os.Setenv("XG2G_ENABLE_STREAM_PROXY", tt.envValue); err != nil {
-				t.Fatalf("Setenv failed: %v", err)
-			}
-			defer func() {
-				if err := os.Unsetenv("XG2G_ENABLE_STREAM_PROXY"); err != nil {
-					t.Errorf("Unsetenv failed: %v", err)
-				}
-			}()
-
-			if got := IsEnabled(); got != tt.want {
-				t.Errorf("IsEnabled() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestGetListenAddr(t *testing.T) {
-	tests := []struct {
-		name     string
-		envValue string
-		want     string
-	}{
-		{
-			name:     "custom port",
-			envValue: "19000",
-			want:     ":19000",
-		},
-		{
-			name:     "default port",
-			envValue: "",
-			want:     ":18000",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.envValue != "" {
-				if err := os.Setenv("XG2G_PROXY_PORT", tt.envValue); err != nil {
-					t.Fatalf("Setenv failed: %v", err)
-				}
-				defer func() {
-					if err := os.Unsetenv("XG2G_PROXY_PORT"); err != nil {
-						t.Errorf("Unsetenv failed: %v", err)
-					}
-				}()
-			}
-
-			if got := GetListenAddr(); got != tt.want {
-				t.Errorf("GetListenAddr() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestGetTargetURL(t *testing.T) {
-	tests := []struct {
-		name     string
-		envValue string
-		want     string
-	}{
-		{
-			name:     "set",
-			envValue: "http://example.com:17999",
-			want:     "http://example.com:17999",
-		},
-		{
-			name:     "not set",
-			envValue: "",
-			want:     "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.envValue != "" {
-				if err := os.Setenv("XG2G_PROXY_TARGET", tt.envValue); err != nil {
-					t.Fatalf("Setenv failed: %v", err)
-				}
-				defer func() {
-					if err := os.Unsetenv("XG2G_PROXY_TARGET"); err != nil {
-						t.Errorf("Unsetenv failed: %v", err)
-					}
-				}()
-			}
-
-			if got := GetTargetURL(); got != tt.want {
-				t.Errorf("GetTargetURL() = %v, want %v", got, tt.want)
-			}
-		})
 	}
 }
 

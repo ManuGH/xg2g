@@ -16,7 +16,7 @@ import (
 
 // writeM3U safely writes the playlist with full durability guarantees using renameio
 // This ensures atomic + durable writes: fsync before rename prevents data loss on power failure
-func writeM3U(ctx context.Context, path string, items []playlist.Item, publicURL string) error {
+func writeM3U(ctx context.Context, path string, items []playlist.Item, publicURL string, xTvgURL string) error {
 	logger := xglog.FromContext(ctx)
 
 	// renameio handles: temp file creation, fsync, atomic rename, cleanup on error
@@ -32,7 +32,7 @@ func writeM3U(ctx context.Context, path string, items []playlist.Item, publicURL
 	}()
 
 	// Write playlist to pending file
-	if err := playlist.WriteM3U(pendingFile, items, publicURL); err != nil {
+	if err := playlist.WriteM3U(pendingFile, items, publicURL, xTvgURL); err != nil {
 		return fmt.Errorf("write M3U data: %w", err)
 	}
 

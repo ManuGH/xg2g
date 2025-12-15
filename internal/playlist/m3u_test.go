@@ -44,7 +44,7 @@ func TestWriteM3UTable(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			var b strings.Builder
-			if err := WriteM3U(&b, tc.items, ""); err != nil {
+			if err := WriteM3U(&b, tc.items, "", ""); err != nil {
 				t.Fatalf("WriteM3U failed: %v", err)
 			}
 			out := b.String()

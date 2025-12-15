@@ -62,6 +62,9 @@ func refreshWithClient(ctx context.Context, cfg config.AppConfig, cl OwiClient) 
 	logger := xglog.WithComponentFromContext(ctx, "jobs")
 	logger.Info().Str("event", "refresh.start").Msg("starting refresh")
 
+	snap := config.BuildSnapshot(cfg)
+	rt := snap.Runtime
+
 	if err := validateConfig(cfg); err != nil {
 		return nil, err
 	}
@@ -90,7 +93,7 @@ func refreshWithClient(ctx context.Context, cfg config.AppConfig, cl OwiClient) 
 
 		item := playlist.Item{
 			Name:    name,
-			TvgID:   makeTvgID(name, sref),
+			TvgID:   makeTvgID(name, sref, rt.UseHashTvgID),
 			TvgChNo: i + 1,
 			Group:   cfg.Bouquet,
 		}
@@ -108,8 +111,8 @@ func refreshWithClient(ctx context.Context, cfg config.AppConfig, cl OwiClient) 
 		items = append(items, item)
 	}
 
-	playlistPath := filepath.Join(cfg.DataDir, "playlist.m3u")
-	if err := writeM3U(ctx, playlistPath, items, ""); err != nil {
+	playlistPath := filepath.Join(cfg.DataDir, rt.PlaylistFilename)
+	if err := writeM3U(ctx, playlistPath, items, "", rt.XTvgURL); err != nil {
 		return nil, fmt.Errorf("failed to write M3U playlist: %w", err)
 	}
 	logger.Info().
@@ -217,7 +220,7 @@ func TestRefresh_InvalidStreamPort(t *testing.T) {
 		StreamPort: 70000, // Invalid port
 	}
 
-	_, err := Refresh(ctx, cfg, nil)
+	_, err := Refresh(ctx, config.BuildSnapshot(cfg))
 	if err == nil {
 		t.Error("Expected error for invalid stream port")
 	}
@@ -234,7 +237,7 @@ func TestRefresh_ConfigValidation(t *testing.T) {
 		DataDir: "/tmp/test",
 	}
 
-	_, err := Refresh(ctx, cfg, nil)
+	_, err := Refresh(ctx, config.BuildSnapshot(cfg))
 	if err == nil {
 		t.Error("Expected error for invalid config")
 	}
@@ -518,7 +521,7 @@ func TestRefresh_VersionPersistence(t *testing.T) {
 	ctx := context.Background()
 
 	// Mock successful refresh (minimal setup)
-	status, err := Refresh(ctx, cfg, nil)
+	status, err := Refresh(ctx, config.BuildSnapshot(cfg))
 
 	// We expect validation errors since we don't have a real OWI server,
 	// but the important part is that if Status is returned, it must contain the version

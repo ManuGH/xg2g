@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"net/url"
-	"os"
 	"strings"
 	"testing"
 )
@@ -194,67 +193,6 @@ func TestServer_ResolveTargetURL(t *testing.T) {
 			got := s.resolveTargetURL(context.Background(), tt.path, tt.query)
 			if !strings.Contains(got, tt.wantContains) {
 				t.Errorf("resolveTargetURL() = %v, want to contain %v", got, tt.wantContains)
-			}
-		})
-	}
-}
-
-func TestGetReceiverHost(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name    string
-		envVal  string
-		want    string
-		wantErr bool
-	}{
-		{
-			name:    "valid URL with host",
-			envVal:  "http://10.10.55.57",
-			want:    "10.10.55.57",
-			wantErr: false,
-		},
-		{
-			name:    "valid URL with port",
-			envVal:  "http://enigma2.local:80",
-			want:    "enigma2.local",
-			wantErr: false,
-		},
-		{
-			name:    "HTTPS URL",
-			envVal:  "https://receiver.example.com",
-			want:    "receiver.example.com",
-			wantErr: false,
-		},
-		{
-			name:    "empty env variable",
-			envVal:  "",
-			want:    "",
-			wantErr: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Set environment variable
-			oldVal := os.Getenv("XG2G_OWI_BASE")
-			defer func() {
-				if oldVal != "" {
-					os.Setenv("XG2G_OWI_BASE", oldVal) //nolint:errcheck,gosec // Test cleanup
-				} else {
-					os.Unsetenv("XG2G_OWI_BASE") //nolint:errcheck,gosec // Test cleanup
-				}
-			}()
-
-			if tt.envVal != "" {
-				os.Setenv("XG2G_OWI_BASE", tt.envVal) //nolint:errcheck,gosec // Test setup
-			} else {
-				os.Unsetenv("XG2G_OWI_BASE") //nolint:errcheck,gosec // Test cleanup
-			}
-
-			got := GetReceiverHost()
-			if got != tt.want {
-				t.Errorf("GetReceiverHost() = %v, want %v", got, tt.want)
 			}
 		})
 	}

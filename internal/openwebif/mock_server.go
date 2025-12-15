@@ -278,6 +278,11 @@ func (m *MockServer) handleAbout(w http.ResponseWriter, _ *http.Request) {
 			"imagever":  "Test Image",
 			"kernelver": "5.10.0",
 		},
+		"tuners": []map[string]string{
+			{"name": "Tuner A", "type": "DVB-S2"},
+			{"name": "Tuner B", "type": "DVB-S2"},
+		},
+		"tuners_count": 2,
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)

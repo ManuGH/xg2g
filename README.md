@@ -23,7 +23,7 @@ xg2g is the missing link between your classic Enigma2 receiver (VU+, Dreambox) a
 | Feature | xg2g | Standard Enigma2 |
 | :--- | :---: | :---: |
 | **Plex / Jellyfin** | ✅ Auto-Discovery (HDHomeRun) | ❌ Manual Config Hell |
-| **Plex on iPhone** | ✅ Optimized HLS Profile (Direct Play) | ❌ Transcoding/Timeouts |
+| **Safari / iPhone** | ✅ Native HLS (AAC + compatibility fixes) | ❌ Codec/Playback Issues |
 | **iPhone Audio** | ✅ Auto-Transcode (AC3→AAC) | ❌ Silent (Codec Error) |
 | **Channel Switching** | ✅ Instant (< 1ms cache) | 🐢 Slow |
 | **Management** | ✅ Beautiful Web Dashboard | ❌ Clunky Old WebIF |
@@ -39,8 +39,7 @@ Forget about editing config files. xg2g auto-detects your receiver, scans your b
 ### 📱 Universal Compatibility
 
 - **Plex & Jellyfin**: Appears as a native HDHomeRun tuner. DVR, Live TV, and Guide just work.
-- **Plex on iPhone/iPad**: 🆕 Dedicated iOS profile for Direct Play without transcoding. HLS with H.264 repair + AAC for instant, buffer-free streaming. [Learn more](docs/PLEX_IOS_PROFILE.md)
-- **iOS & Apple TV**: Real-time audio transcoding creates fully compliant HLS streams from satellite feeds.
+- **Safari / iOS / Apple TV**: Native HLS playback with compatible audio/video outputs.
 - **VLC & Kodi**: Generates standard M3U playlists and XMLTV guides.
 
 ### ⚡ Rust-Powered Performance
@@ -88,7 +87,7 @@ cd xg2g
 
 # 1. Configure
 cp .env.example .env
-nano .env  # or vim/code - Edit OWI_HOST, Bouquets, Modes
+nano .env  # or vim/code - Edit XG2G_OWI_BASE, XG2G_BOUQUET, etc.
 
 # 2. Start
 docker compose up -d
@@ -115,11 +114,17 @@ export PATH=$HOME/sdk/go1.25.5/bin:$PATH
 make dev
 ```
 
-**That's it.** Configuration is now handled entirely in `.env`.
+**That's it.** You can configure via ENV (recommended for Docker) or `--config config.yaml` (YAML).
+
+Config helpers:
+
+- Validate: `xg2g config validate --file config.yaml`
+- Dump merged config (defaults + file + env): `xg2g config dump --effective --file config.yaml`
+- Reload config at runtime: `SIGHUP` or `POST /api/v2/system/config/reload`
 
 ### 🧪 Running Tests Locally
 
-Run the swift unit test suite (recommended for iterating):
+Run the Go unit test suite (recommended for iterating):
 
 ```bash
 make test

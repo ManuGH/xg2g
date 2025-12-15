@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 )
 
@@ -22,10 +21,10 @@ type Item struct {
 }
 
 // WriteM3U writes an M3U playlist to the given writer.
-func WriteM3U(w io.Writer, items []Item, publicURL string) error {
+func WriteM3U(w io.Writer, items []Item, publicURL string, xTvgURL string) error {
 	buf := &bytes.Buffer{}
 	// Optional x-tvg-url header attribute for clients that auto-load EPG
-	if epgURL := os.Getenv("XG2G_X_TVG_URL"); epgURL != "" {
+	if epgURL := strings.TrimSpace(xTvgURL); epgURL != "" {
 		// Some players support x-tvg-url (unofficial but widely used)
 		fmt.Fprintf(buf, `#EXTM3U x-tvg-url="%s"`+"\n", epgURL)
 	} else {

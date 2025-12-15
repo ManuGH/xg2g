@@ -10,7 +10,6 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -18,6 +17,7 @@ import (
 
 	"golang.org/x/sync/semaphore"
 
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/m3u"
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/rs/zerolog"
@@ -63,10 +63,10 @@ type Config struct {
 	ListenAddr string
 
 	// TargetURL is the URL to proxy requests to (e.g., "http://10.10.55.57:17999")
-	// Optional: If not provided, uses StreamDetector with ReceiverHost
+	// Optional: If not provided, falls back to ReceiverHost with the default Enigma2 stream port.
 	TargetURL string
 
-	// ReceiverHost is the receiver hostname/IP for Smart Detection fallback
+	// ReceiverHost is the receiver hostname/IP for fallback proxying.
 	// Required if TargetURL is not provided
 	ReceiverHost string
 
@@ -80,6 +80,10 @@ type Config struct {
 	// Playlist Configuration
 	DataDir      string
 	PlaylistPath string
+
+	// Runtime holds the effective runtime configuration (ENV-derived) used by the proxy
+	// for streaming features (limits, transcoder, HLS profiles, etc.).
+	Runtime config.RuntimeSnapshot
 }
 
 // New creates a new proxy server.
@@ -113,26 +117,20 @@ func New(cfg Config) (*Server, error) {
 		cfg.Logger.Warn().Err(err).Msg("failed to load initial playlist (will retry on lookup)")
 	}
 
+	rt := cfg.Runtime
+
 	// Optional stream limiter
-	if limitEnv := os.Getenv("XG2G_MAX_CONCURRENT_STREAMS"); limitEnv != "" {
-		if n, err := strconv.ParseInt(limitEnv, 10, 64); err == nil && n > 0 {
-			s.streamLimit = n
-			s.streamLimiter = semaphore.NewWeighted(n)
-		}
+	if n := rt.StreamProxy.MaxConcurrentStreams; n > 0 {
+		s.streamLimit = n
+		s.streamLimiter = semaphore.NewWeighted(n)
 	}
 
 	// Transcode fail-open behaviour (default: false = fail-closed)
-	if v := strings.ToLower(os.Getenv("XG2G_TRANSCODE_FAIL_OPEN")); v == "true" {
-		s.transcodeFailOpen = true
-	}
+	s.transcodeFailOpen = rt.StreamProxy.TranscodeFailOpen
 
 	// Optional idle timeout for media sessions
-	if v := os.Getenv("XG2G_PROXY_IDLE_TIMEOUT"); v != "" {
-		if dur, err := time.ParseDuration(v); err == nil {
-			s.idleTimeout = dur
-		} else if n, err2 := strconv.Atoi(v); err2 == nil {
-			s.idleTimeout = time.Duration(n) * time.Second
-		}
+	if rt.StreamProxy.IdleTimeout > 0 {
+		s.idleTimeout = rt.StreamProxy.IdleTimeout
 	}
 
 	// Parse target URL if provided (used as fallback)
@@ -172,15 +170,21 @@ func New(cfg Config) (*Server, error) {
 	}
 
 	// Initialize optional transcoder
-	if IsTranscodingEnabled() {
-		transcoderCfg := GetTranscoderConfig()
-		s.transcoder = NewTranscoder(transcoderCfg, cfg.Logger)
+	if rt.Transcoder.Enabled {
+		transcoderCfg := buildTranscoderConfigFromRuntime(rt.Transcoder)
+		if transcoderCfg.Enabled || transcoderCfg.H264RepairEnabled || transcoderCfg.GPUEnabled || transcoderCfg.VideoTranscode {
+			s.transcoder = NewTranscoder(transcoderCfg, cfg.Logger.With().Str("component", "transcoder").Logger())
+		}
 
-		if transcoderCfg.GPUEnabled {
+		if s.transcoder != nil && transcoderCfg.H264RepairEnabled {
+			cfg.Logger.Info().Msg("H.264 stream repair enabled")
+		}
+		if s.transcoder != nil && transcoderCfg.GPUEnabled {
 			cfg.Logger.Info().
 				Str("transcoder_url", transcoderCfg.TranscoderURL).
 				Msg("GPU transcoding enabled (full video+audio)")
-		} else {
+		}
+		if s.transcoder != nil && transcoderCfg.Enabled {
 			cfg.Logger.Info().
 				Str("codec", transcoderCfg.Codec).
 				Str("bitrate", transcoderCfg.Bitrate).
@@ -196,12 +200,19 @@ func New(cfg Config) (*Server, error) {
 	}
 
 	// Initialize HLS manager for iOS streaming
-	hlsManager, err := NewHLSManager(cfg.Logger.With().Str("component", "hls").Logger(), "")
+	hlsCfg := HLSManagerConfig{
+		OutputDir:      rt.HLS.OutputDir,
+		Generic:        rt.HLS.Generic,
+		Safari:         rt.HLS.Safari,
+		LLHLS:          rt.HLS.LLHLS,
+		FFmpegLogLevel: rt.FFmpegLogLevel,
+	}
+	hlsManager, err := NewHLSManager(cfg.Logger.With().Str("component", "hls").Logger(), hlsCfg)
 	if err != nil {
 		cfg.Logger.Warn().Err(err).Msg("failed to initialize HLS manager, HLS streaming disabled")
 	} else {
 		s.hlsManager = hlsManager
-		cfg.Logger.Info().Msg("HLS streaming enabled for iOS devices")
+		cfg.Logger.Info().Msg("HLS streaming enabled")
 	}
 
 	// Create HTTP server
@@ -252,7 +263,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2. HLS Requests (iOS/Plex auto-detection & files)
+	// 2. HLS Requests (UA-based routing & profile files)
 	if s.tryHandleHLS(w, r) {
 		return
 	}
@@ -460,12 +471,16 @@ func (s *Server) handleHLSRequest(w http.ResponseWriter, r *http.Request) {
 
 	// Extract service reference from path
 	var serviceRef string
+	var remainder string
 	if strings.HasPrefix(path, "/hls/") {
 		// /hls/<service_ref> format, potentially followed by /playlist.m3u8 or /segment.ts
 		trimmed := strings.TrimPrefix(path, "/hls/")
 		parts := strings.Split(trimmed, "/")
 		if len(parts) > 0 {
 			serviceRef = parts[0]
+		}
+		if len(parts) > 1 {
+			remainder = parts[1]
 		}
 		// Remove .m3u8 if present (for flat format /hls/REF.m3u8)
 		serviceRef = strings.TrimSuffix(serviceRef, ".m3u8")
@@ -474,6 +489,9 @@ func (s *Server) handleHLSRequest(w http.ResponseWriter, r *http.Request) {
 		parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
 		if len(parts) > 0 {
 			serviceRef = parts[0]
+		}
+		if len(parts) > 1 {
+			remainder = parts[1]
 		}
 	}
 
@@ -490,6 +508,19 @@ func (s *Server) handleHLSRequest(w http.ResponseWriter, r *http.Request) {
 		Str("target", targetURL).
 		Str("path", path).
 		Msg("serving HLS stream")
+
+	// Preflight endpoint used by the WebUI to warm up the session before attaching the
+	// playlist to a <video> element (prevents first-play failures on Safari).
+	if remainder == "preflight" || strings.HasSuffix(path, "/preflight") {
+		if err := s.hlsManager.PreflightHLS(r.Context(), r, serviceRef, targetURL); err != nil {
+			s.logger.Error().Err(err).Str("service_ref", serviceRef).Msg("HLS preflight failed")
+			http.Error(w, "HLS preflight failed", http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 
 	// Serve HLS content
 	if err := s.hlsManager.ServeHLS(w, r, serviceRef, targetURL); err != nil {
@@ -508,7 +539,7 @@ func (s *Server) Start() error {
 	if s.targetURL != nil {
 		logEvent.Str("target", s.targetURL.String())
 	} else if s.receiverHost != "" {
-		logEvent.Str("receiver", s.receiverHost).Str("mode", "smart_detection")
+		logEvent.Str("receiver", s.receiverHost).Str("mode", "receiver_fallback")
 	}
 
 	if s.tlsCert != "" && s.tlsKey != "" {
@@ -536,43 +567,6 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	}
 
 	return s.httpServer.Shutdown(ctx)
-}
-
-// IsEnabled checks if the proxy is enabled via environment variable.
-func IsEnabled() bool {
-	enabled, _ := strconv.ParseBool(os.Getenv("XG2G_ENABLE_STREAM_PROXY"))
-	return enabled
-}
-
-// GetListenAddr returns the listen address from environment or default.
-func GetListenAddr() string {
-	if addr := os.Getenv("XG2G_PROXY_PORT"); addr != "" {
-		return ":" + addr
-	}
-	return ":18000" // Default proxy port
-}
-
-// GetTargetURL returns the target URL from environment (optional).
-// If not provided, proxy will use Smart Detection with receiver host.
-func GetTargetURL() string {
-	return os.Getenv("XG2G_PROXY_TARGET")
-}
-
-// GetReceiverHost returns the receiver host from XG2G_OWI_BASE.
-// Extracts hostname/IP from base URL (e.g., "http://10.10.55.64" -> "10.10.55.64")
-func GetReceiverHost() string {
-	baseURL := os.Getenv("XG2G_OWI_BASE")
-	if baseURL == "" {
-		return ""
-	}
-
-	// Parse URL to extract host
-	parsed, err := url.Parse(baseURL)
-	if err != nil {
-		return ""
-	}
-
-	return parsed.Hostname()
 }
 
 // loadM3U loads the M3U playlist and builds the ID->URL map.

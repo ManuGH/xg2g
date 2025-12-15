@@ -220,7 +220,7 @@ func TestSecurityHeadersMiddleware(t *testing.T) {
 
 	// Check the headers
 	expectedHeaders := map[string]string{
-		"Content-Security-Policy": "default-src 'self'; frame-ancestors 'none'",
+		"Content-Security-Policy": defaultCSP,
 		"Referrer-Policy":         "no-referrer",
 		"X-Content-Type-Options":  "nosniff",
 		"X-Frame-Options":         "DENY",

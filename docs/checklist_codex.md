@@ -12,7 +12,7 @@ Use this short guide to run Codex/QA checks against xg2g without digging through
 ## Setup
 
 - Clone: `git clone https://github.com/ManuGH/xg2g && cd xg2g`
-- Config: `cp .env.example .env` and adjust `OWI_HOST`, `DEFAULT_BOUQUET`, ports, and tokens as needed
+- Config: `cp .env.example .env` and adjust `XG2G_OWI_BASE`, `XG2G_BOUQUET`, ports, and tokens as needed
 - Optional: install tooling once with `make dev-tools` (golangci-lint, govulncheck, syft/grype, go-licenses)
 
 ## Automated Checks (one command)

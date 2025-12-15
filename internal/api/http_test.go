@@ -17,7 +17,6 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/jobs"
-	"github.com/ManuGH/xg2g/internal/openwebif"
 )
 
 // dummyHandler is a no-op http.Handler that writes "OK".
@@ -32,7 +31,7 @@ func TestHandleSystemHealth(t *testing.T) {
 		DataDir:    t.TempDir(),
 		StreamPort: 8001,
 		Version:    "1.2.3",
-	}, nil, nil)
+	}, nil)
 
 	// Set status for health check
 	s.SetStatus(jobs.Status{
@@ -87,13 +86,14 @@ func TestRecordRefreshMetrics(t *testing.T) {
 	assert.Contains(t, body, `xg2g_refresh_duration_seconds_count`)
 }
 
-func TestHandleRefresh_SuccessUpdatesLastRun(t *testing.T) {
-	// Create a mock refresh function that succeeds
-	mockRefreshFn := func(ctx context.Context, cfg config.AppConfig, _ *openwebif.StreamDetector) (*jobs.Status, error) {
-		return &jobs.Status{
-			Version:  "test-success",
-			Channels: 10,
-			LastRun:  time.Now(),
+ func TestHandleRefresh_SuccessUpdatesLastRun(t *testing.T) {
+ 	// Create a mock refresh function that succeeds
+ 	mockRefreshFn := func(ctx context.Context, snap config.Snapshot) (*jobs.Status, error) {
+ 		_ = snap
+ 		return &jobs.Status{
+ 			Version:  "test-success",
+ 			Channels: 10,
+ 			LastRun:  time.Now(),
 		}, nil
 	}
 
@@ -101,7 +101,7 @@ func TestHandleRefresh_SuccessUpdatesLastRun(t *testing.T) {
 		APIToken:   "test-token",
 		DataDir:    t.TempDir(),
 		StreamPort: 8001,
-	}, nil, nil)
+	}, nil)
 	s.refreshFn = mockRefreshFn
 
 	handler := s.Handler()
@@ -133,14 +133,14 @@ func TestHandleRefresh_ConflictOnConcurrent(t *testing.T) {
 	}
 	s := New(cfg, nil)
 
-	// Install a slow refresh function to force overlap
-	startCh := make(chan struct{})
-	releaseCh := make(chan struct{})
-	s.refreshFn = func(_ context.Context, _ config.AppConfig, _ *openwebif.StreamDetector) (*jobs.Status, error) {
-		close(startCh) // signal that refresh started
-		<-releaseCh    // block until allowed to finish
-		return &jobs.Status{Channels: 1, LastRun: time.Now()}, nil
-	}
+ 	// Install a slow refresh function to force overlap
+ 	startCh := make(chan struct{})
+ 	releaseCh := make(chan struct{})
+ 	s.refreshFn = func(_ context.Context, _ config.Snapshot) (*jobs.Status, error) {
+ 		close(startCh) // signal that refresh started
+ 		<-releaseCh    // block until allowed to finish
+ 		return &jobs.Status{Channels: 1, LastRun: time.Now()}, nil
+ 	}
 
 	handler := s.Handler()
 
@@ -192,7 +192,7 @@ func TestHandleRefresh_ConflictOnConcurrent(t *testing.T) {
 }
 
 func TestHandleHealth(t *testing.T) {
-	s := New(config.AppConfig{}, nil, nil)
+	s := New(config.AppConfig{}, nil)
 	handler := s.Handler()
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "/healthz", nil)
 	require.NoError(t, err)
@@ -295,7 +295,7 @@ func TestAuthMiddleware(t *testing.T) {
 				t.Setenv("XG2G_API_TOKEN", tt.tokenEnv)
 			}
 
-			s := New(config.AppConfig{APIToken: tt.tokenEnv}, nil, nil)
+			s := New(config.AppConfig{APIToken: tt.tokenEnv}, nil)
 			// Test against a protected route
 			handler := s.authRequired(dummyHandler)
 
@@ -386,7 +386,7 @@ func TestSecureFileHandlerSymlinkPolicy(t *testing.T) {
 }
 
 func TestMiddlewareChain(t *testing.T) {
-	server := New(config.AppConfig{APIToken: "test-token"}, nil, nil)
+	server := New(config.AppConfig{APIToken: "test-token"}, nil)
 	handler := server.Handler()
 
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "/test", nil)

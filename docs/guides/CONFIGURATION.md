@@ -10,6 +10,29 @@ xg2g supports three configuration methods with the following precedence (highest
 2. **Configuration File** (YAML) - Middle priority
 3. **Defaults** - Lowest priority (hard-coded)
 
+If no `--config` is provided, xg2g will also auto-load `config.yaml` from the data directory
+(`$XG2G_DATA/config.yaml`) if that file exists. This allows WebUI-saved configuration to persist
+without changing your startup command.
+
+## Reloading Configuration
+
+xg2g can reload a file-backed `config.yaml` at runtime:
+
+- Send `SIGHUP` to the process to reload config from disk (non-fatal if reload fails).
+- Call `POST /api/v2/system/config/reload` to reload via API.
+
+Some settings still require a restart (e.g. listen address, TLS, metrics, receiver host/stream mode).
+
+## CLI Helpers
+
+- Validate a config file: `xg2g config validate --file config.yaml`
+- Dump merged config (defaults + file + env): `xg2g config dump --effective --file config.yaml`
+
+## Legacy Configs
+
+xg2g accepts common legacy key spellings (e.g. `openwebif`, `bouquet`, `api.addr`) and logs warnings.
+To migrate to the current schema, run `xg2g config dump --effective --file config.yaml` and replace your file.
+
 ### Why Use Config Files?
 
 **Advantages:**
@@ -46,7 +69,7 @@ epg:
 
 **Run:**
 ```bash
-xg2g --config config.yaml
+./xg2g-daemon --config config.yaml
 ```
 
 ---
@@ -60,7 +83,7 @@ xg2g --config config.yaml
 version: "1.5.0"
 
 # Data directory for storing playlists and EPG files
-# Default: /data
+# Default: /tmp (override in production)
 dataDir: /data
 
 # Log level: debug, info, warn, error
@@ -80,10 +103,15 @@ openWebIF:
   # HTTP Basic Auth credentials (optional)
   # Recommended: use environment variables for secrets
   username: root
-  password: ${XG2G_OWI_PASSWORD}
+  password: ${XG2G_OWI_PASS}
 
-  # Stream port (default: 8001)
-  # This is where xg2g fetches video streams from
+  # Preferred streaming mode (default: true)
+  # When true, xg2g uses OpenWebIF `/web/stream.m3u` and the receiver decides
+  # internally whether to use direct streaming (8001) or relay (e.g. 17999).
+  useWebIFStreams: true
+
+  # Legacy direct streaming port (default: 8001)
+  # Only used when useWebIFStreams is false.
   streamPort: 8001
 
   # Request timeout (default: 10s)
@@ -135,7 +163,7 @@ Electronic Program Guide (EPG) provides schedule information for channels.
 
 ```yaml
 epg:
-  # Enable EPG collection (default: false)
+  # Enable EPG collection (default: true)
   enabled: true
 
   # Number of days to fetch (1-14, default: 7)
@@ -329,7 +357,7 @@ Config files support environment variable expansion:
 openWebIF:
   baseUrl: http://192.168.1.100
   username: root
-  password: ${XG2G_OWI_PASSWORD}  # Expanded at runtime
+  password: ${XG2G_OWI_PASS}  # Expanded at runtime
 
 api:
   token: ${XG2G_API_TOKEN}
@@ -350,8 +378,8 @@ All config file settings can be overridden via environment variables.
 
 | ENV Variable | Config Path | Type | Default |
 |--------------|-------------|------|---------|
-| `XG2G_DATA` | `dataDir` | string | `/data` |
-| `XG2G_OWI_BASE` | `openWebIF.baseUrl` | string | `http://10.10.55.57` |
+| `XG2G_DATA` | `dataDir` | string | `/tmp` |
+| `XG2G_OWI_BASE` | `openWebIF.baseUrl` | string | (required) |
 | `XG2G_OWI_USER` | `openWebIF.username` | string | - |
 | `XG2G_OWI_PASS` | `openWebIF.password` | string | - |
 | `XG2G_STREAM_PORT` | `openWebIF.streamPort` | int | `8001` |
@@ -364,7 +392,7 @@ All config file settings can be overridden via environment variables.
 
 | ENV Variable | Config Path | Type | Default |
 |--------------|-------------|------|---------|
-| `XG2G_EPG_ENABLED` | `epg.enabled` | bool | `false` |
+| `XG2G_EPG_ENABLED` | `epg.enabled` | bool | `true` |
 | `XG2G_EPG_DAYS` | `epg.days` | int | `7` |
 | `XG2G_EPG_MAX_CONCURRENCY` | `epg.maxConcurrency` | int | `5` |
 | `XG2G_EPG_TIMEOUT_MS` | `epg.timeoutMs` | int | `15000` |
@@ -421,7 +449,7 @@ logLevel: info
 openWebIF:
   baseUrl: ${XG2G_OWI_BASE}
   username: ${XG2G_OWI_USER}
-  password: ${XG2G_OWI_PASSWORD}
+  password: ${XG2G_OWI_PASS}
   streamPort: 8001
   timeout: 15s
   retries: 5
@@ -456,7 +484,7 @@ picons:
 ```bash
 XG2G_OWI_BASE=http://192.168.1.100
 XG2G_OWI_USER=root
-XG2G_OWI_PASSWORD=secret123
+XG2G_OWI_PASS=secret123
 XG2G_API_TOKEN=your-long-random-token
 XG2G_PICON_BASE=http://192.168.1.100:80/picon
 ```
@@ -470,7 +498,7 @@ services:
     image: ghcr.io/manugh/xg2g:latest
     command: ["--config", "/config/config.yaml"]
     environment:
-      - XG2G_OWI_PASSWORD=${XG2G_OWI_PASSWORD}
+      - XG2G_OWI_PASS=${XG2G_OWI_PASS}
       - XG2G_API_TOKEN=${XG2G_API_TOKEN}
     volumes:
       - ./data:/data
@@ -528,7 +556,7 @@ spec:
         image: ghcr.io/manugh/xg2g:latest
         args: ["--config", "/config/config.yaml"]
         env:
-        - name: XG2G_OWI_PASSWORD
+        - name: XG2G_OWI_PASS
           valueFrom:
             secretKeyRef:
               name: xg2g-secrets
@@ -563,10 +591,10 @@ spec:
 # config.yaml (version controlled)
 openWebIF:
   baseUrl: http://192.168.1.100
-  password: ${XG2G_OWI_PASSWORD}
+  password: ${XG2G_OWI_PASS}
 
 # .env (not in git)
-XG2G_OWI_PASSWORD=secret123
+XG2G_OWI_PASS=secret123
 ```
 
 **Bad:**
@@ -652,10 +680,10 @@ Ensure environment variable is set:
 
 ```bash
 # Check if variable is set
-echo $XG2G_OWI_PASSWORD
+echo $XG2G_OWI_PASS
 
 # Set variable
-export XG2G_OWI_PASSWORD=secret123
+export XG2G_OWI_PASS=secret123
 ```
 
 ### Invalid YAML syntax
@@ -739,7 +767,7 @@ epg:
 ```yaml
 command: ["--config", "/config/config.yaml"]
 environment:
-  - XG2G_OWI_PASSWORD=${XG2G_OWI_PASSWORD}
+  - XG2G_OWI_PASS=${XG2G_OWI_PASS}
   - XG2G_API_TOKEN=${XG2G_API_TOKEN}
 volumes:
   - ./config.yaml:/config/config.yaml:ro

@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -16,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/core/urlutil"
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/telemetry"
 	"github.com/ManuGH/xg2g/internal/transcoder"
@@ -23,10 +23,6 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
-)
-
-const (
-	envTrue = "true"
 )
 
 // TranscoderConfig holds configuration for audio transcoding.
@@ -226,7 +222,7 @@ func (t *Transcoder) streamTranscodeInternal(ctx context.Context, w http.Respons
 	if videoCodec == "copy" {
 		// Audio Transcode Only
 		args = []string{"-hide_banner"}
-		args = append(args, logLevelArgs("error")...)
+		args = append(args, logLevelArgs("error", "")...)
 		args = append(args,
 			"-fflags", "+genpts+igndts",
 			"-i", "pipe:0",
@@ -237,7 +233,7 @@ func (t *Transcoder) streamTranscodeInternal(ctx context.Context, w http.Respons
 	} else {
 		// Hardware Video Transcode
 		args = []string{"-hide_banner"}
-		args = append(args, logLevelArgs("error")...)
+		args = append(args, logLevelArgs("error", "")...)
 		args = append(args,
 			"-init_hw_device", "vaapi=d1:/dev/dri/renderD128", // HW Device
 			"-filter_hw_device", "d1",
@@ -410,17 +406,7 @@ func (t *Transcoder) streamTranscodeInternal(ctx context.Context, w http.Respons
 
 // sanitizeURL removes credentials and query params for safe logging
 func sanitizeURL(u string) string {
-	parsed, err := url.Parse(u)
-	if err != nil {
-		return "invalid"
-	}
-	// Redact User info
-	if parsed.User != nil {
-		parsed.User = url.User("redacted")
-	}
-	// Remove Query params (often contain tokens)
-	parsed.RawQuery = ""
-	return parsed.String()
+	return urlutil.SanitizeURL(u)
 }
 
 // RepairH264Stream repairs H.264 streams by adding proper PPS/SPS headers using FFmpeg's h264_mp4toannexb bitstream filter.
@@ -535,7 +521,7 @@ func (t *Transcoder) RepairH264Stream(ctx context.Context, w http.ResponseWriter
 	args := []string{
 		"-hide_banner",
 	}
-	args = append(args, logLevelArgs("error")...)
+	args = append(args, logLevelArgs("error", "")...)
 	args = append(args,
 		"-fflags", "+genpts+igndts", // Generate PTS, ignore broken DTS
 		"-i", "pipe:0", // Read from stdin
@@ -838,166 +824,6 @@ func isContextCancelled(ctx context.Context) bool {
 func isBrokenPipe(err error) bool {
 	return strings.Contains(err.Error(), "broken pipe") ||
 		strings.Contains(err.Error(), "connection reset")
-}
-
-// IsTranscodingEnabled checks if audio transcoding is enabled via environment variable.
-// Default: true (enabled by default for iOS Safari compatibility)
-// Set XG2G_ENABLE_AUDIO_TRANSCODING=false to disable
-func IsTranscodingEnabled() bool {
-	env := strings.ToLower(os.Getenv("XG2G_ENABLE_AUDIO_TRANSCODING"))
-	if env == "" {
-		return defaultTranscodingEnabled() // Build-tag dependent default
-	}
-	return env == envTrue
-}
-
-// IsH264RepairEnabled checks if H.264 stream repair is enabled via environment variable.
-// Default: true (enabled by default for Plex/Jellyfin compatibility in v2.0)
-// Set XG2G_H264_STREAM_REPAIR=false to disable
-func IsH264RepairEnabled() bool {
-	env := strings.ToLower(os.Getenv("XG2G_H264_STREAM_REPAIR"))
-	// Default to true (v2.0), can be explicitly disabled with "false"
-	if env == "false" {
-		return false
-	}
-	return true
-}
-
-// GetTranscoderConfig builds transcoder configuration from environment variables.
-func GetTranscoderConfig() TranscoderConfig {
-	// Check for deprecated audio transcoding feature
-	if audioTranscodeEnv := strings.ToLower(os.Getenv("XG2G_ENABLE_AUDIO_TRANSCODING")); audioTranscodeEnv == envTrue {
-		// Only warn if explicitly enabled (not just using defaults)
-		fmt.Fprintf(os.Stderr, "[DEPRECATED] XG2G_ENABLE_AUDIO_TRANSCODING is deprecated and will be removed in v3.0.\n")
-		fmt.Fprintf(os.Stderr, "[DEPRECATED] Use XG2G_H264_STREAM_REPAIR=true (enabled by default in v2.0) for Plex/Jellyfin compatibility.\n")
-		fmt.Fprintf(os.Stderr, "[DEPRECATED] Plex will handle transcoding automatically with H.264 Stream Repair enabled.\n")
-	}
-
-	codec := os.Getenv("XG2G_AUDIO_CODEC")
-	if codec == "" {
-		codec = "aac" // Default to AAC
-	}
-
-	bitrate := os.Getenv("XG2G_AUDIO_BITRATE")
-	if bitrate == "" {
-		bitrate = "192k" // Default bitrate
-	}
-
-	channels := 2 // Default to stereo
-	if ch := os.Getenv("XG2G_AUDIO_CHANNELS"); ch != "" {
-		if ch == "1" {
-			channels = 1
-		}
-	}
-
-	ffmpegPath := os.Getenv("XG2G_FFMPEG_PATH")
-	if ffmpegPath == "" {
-		ffmpegPath = "/usr/bin/ffmpeg" // Use system ffmpeg by default (absolute path required)
-	}
-
-	// GPU transcoding configuration (DEPRECATED in v2.0, will be removed in v3.0)
-	gpuEnabled := strings.ToLower(os.Getenv("XG2G_GPU_TRANSCODE")) == envTrue
-	if gpuEnabled {
-		fmt.Fprintf(os.Stderr, "[DEPRECATED] XG2G_GPU_TRANSCODE is deprecated and will be removed in v3.0.\n")
-		fmt.Fprintf(os.Stderr, "[DEPRECATED] Use XG2G_H264_STREAM_REPAIR=true (enabled by default in v2.0) for Plex/Jellyfin compatibility.\n")
-		fmt.Fprintf(os.Stderr, "[DEPRECATED] Plex will handle transcoding automatically with H.264 Stream Repair enabled.\n")
-	}
-	transcoderURL := os.Getenv("XG2G_TRANSCODER_URL")
-	if transcoderURL == "" {
-		transcoderURL = "http://localhost:8085" // Default GPU transcoder URL
-	}
-
-	// Check if Rust remuxer should be used
-	// Default depends on build tags: true for gpu builds, false for nogpu builds
-	// Set XG2G_USE_RUST_REMUXER=true/false to override
-	useRust := defaultUseRustRemuxer() // Build-tag dependent default
-	if rustEnv := strings.ToLower(os.Getenv("XG2G_USE_RUST_REMUXER")); rustEnv != "" {
-		useRust = rustEnv == envTrue
-	}
-
-	// Verify FFmpeg availability
-	ffmpegFound := false
-	if path, err := exec.LookPath(ffmpegPath); err == nil {
-		ffmpegPath = path
-		ffmpegFound = true
-	} else {
-		// Verify absolute path if provided
-		if filepath.IsAbs(ffmpegPath) {
-			if _, err := os.Stat(ffmpegPath); err == nil {
-				ffmpegFound = true
-			}
-		}
-	}
-
-	h264Repair := IsH264RepairEnabled()
-	videoTranscode := checkVAAPI() && os.Getenv("XG2G_VIDEO_TRANSCODE") == envTrue
-	audioEnabled := IsTranscodingEnabled()
-
-	if !ffmpegFound {
-		// Log warning to stderr (since no logger available here)
-		msg := fmt.Sprintf("[WARN] FFmpeg not found at '%s'. Disabling H.264 Repair and Video Transcoding.\n", ffmpegPath)
-		fmt.Fprint(os.Stderr, msg)
-
-		// Disable features requiring FFmpeg
-		h264Repair = false
-		videoTranscode = false
-
-		// For audio, if not using Rust remuxer, we must disable it too
-		if !useRust {
-			fmt.Fprint(os.Stderr, "[WARN] FFmpeg not found and Rust Remuxer disabled. Audio transcoding disabled.\n")
-			audioEnabled = false
-		}
-	}
-
-	return TranscoderConfig{
-		Enabled:           audioEnabled,
-		Codec:             codec,
-		Bitrate:           bitrate,
-		Channels:          channels,
-		FFmpegPath:        ffmpegPath,
-		GPUEnabled:        gpuEnabled,
-		TranscoderURL:     transcoderURL,
-		UseRustRemuxer:    useRust,
-		H264RepairEnabled: h264Repair,
-		VideoTranscode:    videoTranscode,
-		VideoCodec:        os.Getenv("XG2G_VIDEO_CODEC"),
-	}
-}
-
-// checkVAAPI probes if VAAPI device exists and is usable.
-// Returns true if usable, false otherwise.
-func checkVAAPI() bool {
-	// 1. Check if device file exists
-	devicePath := os.Getenv("XG2G_VAAPI_DEVICE")
-	if devicePath == "" {
-		devicePath = "/dev/dri/renderD128"
-	}
-	if _, err := os.Stat(devicePath); os.IsNotExist(err) {
-		return false
-	}
-
-	// 2. (Optional) Run vainfo or ffmpeg probe?
-	// For now, existence of device + env var enabled is "good enough" for fast startup,
-	// but user asked for "verify before use".
-	// Let's run a quick ffmpeg probe to be sure driver is loaded.
-	// This adds ~50ms to startup but saves tons of errors later.
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	args := []string{"-hide_banner"}
-	args = append(args, logLevelArgs("error")...)
-	args = append(args,
-		"-init_hw_device", "vaapi=probe:"+devicePath,
-		"-filter_hw_device", "probe",
-		"-f", "lavfi", "-i", "nullsrc",
-		"-t", "0.1", "-f", "null", "-",
-	)
-	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
-	if err := cmd.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "VAAPI Probe Failed: %v\n", err)
-		return false
-	}
-	return true
 }
 
 // copyHeaders copies whitelisted headers from source to dest.

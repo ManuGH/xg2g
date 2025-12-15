@@ -39,6 +39,7 @@ func (m *Manager) Save(cfg *AppConfig) error {
 			Username:   cfg.OWIUsername,
 			Password:   cfg.OWIPassword,
 			StreamPort: cfg.StreamPort,
+			UseWebIF:   boolPtr(cfg.UseWebIFStreams),
 		},
 		Bouquets: splitCSV(cfg.Bouquet),
 		EPG: EPGConfig{
@@ -53,17 +54,28 @@ func (m *Manager) Save(cfg *AppConfig) error {
 		},
 	}
 
-	// Encode to YAML
-	f, err := os.Create(m.configPath)
+	// Encode to YAML (atomic write: temp file + rename)
+	dir := filepath.Dir(m.configPath)
+	tmp, err := os.CreateTemp(dir, "config-*.tmp")
 	if err != nil {
-		return fmt.Errorf("create config file: %w", err)
+		return fmt.Errorf("create temp config file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = os.Remove(tmp.Name()) }()
 
-	enc := yaml.NewEncoder(f)
+	enc := yaml.NewEncoder(tmp)
 	enc.SetIndent(2)
 	if err := enc.Encode(fileCfg); err != nil {
 		return fmt.Errorf("encode config: %w", err)
+	}
+	if err := enc.Close(); err != nil {
+		return fmt.Errorf("close encoder: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temp config file: %w", err)
+	}
+
+	if err := os.Rename(tmp.Name(), m.configPath); err != nil {
+		return fmt.Errorf("rename config file: %w", err)
 	}
 
 	return nil

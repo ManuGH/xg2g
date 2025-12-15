@@ -23,23 +23,24 @@ logLevel: "info"
 # OpenWebIF Configuration (Enigma2 Receiver)
 openWebIF:
   # Base URL of your Enigma2 receiver (required)
-  # ⚠️  NEVER include :80 or :8001 here! Those are different services.
-  #     ✅ CORRECT:  "http://192.168.1.100"
-  #     ❌ WRONG:    "http://192.168.1.100:80"
+  # This must point to the OpenWebIF HTTP(S) interface (usually port 80 or 443).
+  # ✅ OK:    "http://192.168.1.100"
+  # ✅ OK:    "http://192.168.1.100:8080"   (if your OpenWebIF runs on a custom port)
+  # ❌ WRONG: "http://192.168.1.100:8001"   (Enigma2 stream server, not OpenWebIF)
   # ENV: XG2G_OWI_BASE
   baseUrl: "http://192.168.1.100"
 
   # Optional authentication
-  # ENV: XG2G_OWI_USERNAME, XG2G_OWI_PASSWORD
+  # ENV: XG2G_OWI_USER, XG2G_OWI_PASS
   username: ""
   password: ""
 
   # HTTP timeout for OpenWebIF requests
-  # ENV: XG2G_OWI_TIMEOUT_MS
+  # ENV: XG2G_OWI_TIMEOUT_MS (milliseconds, e.g. 10000)
   timeout: "10s"
 
   # Number of retries for failed requests
-  # ENV: XG2G_OWI_MAX_RETRIES
+  # ENV: XG2G_OWI_RETRIES
   retries: 3
 
   # Initial backoff delay between retries
@@ -50,22 +51,22 @@ openWebIF:
   # ENV: XG2G_OWI_MAX_BACKOFF_MS
   maxBackoff: "30s"
 
-  # Stream port for M3U playlist URLs
-  # Common values:
-  #   8001  - Standard Enigma2 stream server (FTA channels)
-  #   17999 - OSCam Streamrelay (encrypted channels: Sky, HD+, etc.)
-  # See docs/STREAM_PORTS.md for detailed configuration guide
+  # Legacy direct streaming port (only used when useWebIFStreams=false)
   # ENV: XG2G_STREAM_PORT
   streamPort: 8001
 
+  # Verwende OpenWebIF /web/stream.m3u (Box entscheidet Relay vs. Direkt, inkl. FBC)
+  # Default: true. Ausschalten nur für Legacy/Port-8001/17999 Setups.
+  # ENV: XG2G_USE_WEBIF_STREAMS
+  useWebIFStreams: true
+
 # Bouquet Selection
 # Specify which bouquets to include in the generated playlist
-# If empty or omitted, all bouquets are included
-# ENV: XG2G_BOUQUET_REFS (comma-separated)
+# If empty or omitted, the default bouquet is used ("Premium")
+# ENV: XG2G_BOUQUET (comma-separated bouquet NAMES, e.g. "Premium,Favourites")
 bouquets:
-  - '1:7:1:0:0:0:0:0:0:0:FROM BOUQUET "userbouquet.favourites.tv" ORDER BY bouquet'
-  - '1:7:1:0:0:0:0:0:0:0:FROM BOUQUET "userbouquet.dbe01.tv" ORDER BY bouquet'
-  # Add more bouquet references as needed
+  - "Premium"
+  - "Favourites"
 
 # Electronic Program Guide (EPG) Configuration
 epg:
@@ -96,7 +97,7 @@ epg:
   fuzzyMax: 2
 
   # Output path for XMLTV file (relative to dataDir)
-  # ENV: XG2G_EPG_XMLTV_PATH
+  # ENV: XG2G_XMLTV
   xmltvPath: "xmltv.xml"
 
   # EPG Fetch Strategy
@@ -113,24 +114,24 @@ api:
   token: ""
 
   # API server listen address
-  # ENV: XG2G_API_ADDR
+  # ENV: XG2G_LISTEN
   listenAddr: ":8080"
 
 # Prometheus Metrics Configuration
 metrics:
   # Enable Prometheus metrics endpoint
-  # ENV: XG2G_METRICS_ENABLED
+  # ENV: XG2G_METRICS_LISTEN (empty disables)
   enabled: true
 
   # Metrics server listen address
-  # ENV: XG2G_METRICS_ADDR
+  # ENV: XG2G_METRICS_LISTEN
   listenAddr: ":9090"
 
 # Picons (Channel Logos) Configuration
 picons:
   # Base URL for channel logos/picons
   # Example: https://github.com/picons/picons/raw/master/picons
-  # ENV: XG2G_PICONS_BASE
+  # ENV: XG2G_PICON_BASE
   baseUrl: ""
 # ==============================================================================
 # Advanced Configuration Examples
@@ -194,36 +195,36 @@ picons:
 #
 # OpenWebIF:
 #   XG2G_OWI_BASE                - Base URL (REQUIRED)
-#   XG2G_OWI_USERNAME            - Username for authentication
-#   XG2G_OWI_PASSWORD            - Password for authentication
+#   XG2G_OWI_USER                - Username for authentication
+#   XG2G_OWI_PASS                - Password for authentication
 #   XG2G_OWI_TIMEOUT_MS          - Request timeout in milliseconds
-#   XG2G_OWI_MAX_RETRIES         - Maximum retry attempts
+#   XG2G_OWI_RETRIES             - Maximum retry attempts
 #   XG2G_OWI_BACKOFF_MS          - Initial backoff delay in milliseconds
 #   XG2G_OWI_MAX_BACKOFF_MS      - Maximum backoff delay in milliseconds
 #   XG2G_STREAM_PORT             - Stream port number
+#   XG2G_USE_WEBIF_STREAMS       - Use /web/stream.m3u URLs (true/false)
 #
 # Bouquets:
-#   XG2G_BOUQUET_REFS            - Comma-separated list of bouquet references
+#   XG2G_BOUQUET                 - Comma-separated list of bouquet names
 #
 # EPG:
 #   XG2G_EPG_ENABLED             - Enable EPG (true/false)
-#   XG2G_EPG_DAYS                - Days of EPG data (1-7)
+#   XG2G_EPG_DAYS                - Days of EPG data (1-14)
 #   XG2G_EPG_MAX_CONCURRENCY     - Max concurrent requests (1-10)
 #   XG2G_EPG_TIMEOUT_MS          - EPG request timeout in milliseconds
 #   XG2G_EPG_RETRIES             - EPG retry attempts
-#   XG2G_EPG_FUZZY_MAX           - Fuzzy match distance (0-5)
-#   XG2G_EPG_XMLTV_PATH          - XMLTV output file path
+#   XG2G_FUZZY_MAX               - Fuzzy match distance (0-10)
+#   XG2G_XMLTV                   - XMLTV output file path (relative to dataDir)
 #
 # API:
 #   XG2G_API_TOKEN               - Bearer token for API authentication
-#   XG2G_API_ADDR                - API listen address
+#   XG2G_LISTEN                  - API listen address
 #
 # Metrics:
-#   XG2G_METRICS_ENABLED         - Enable Prometheus metrics (true/false)
-#   XG2G_METRICS_ADDR            - Metrics listen address
+#   XG2G_METRICS_LISTEN          - Metrics listen address (empty disables)
 #
 # Picons:
-#   XG2G_PICONS_BASE             - Base URL for channel logos
+#   XG2G_PICON_BASE              - Base URL for channel logos
 #
 # ==============================================================================
 # Usage Examples
@@ -233,7 +234,7 @@ picons:
 #    ./xg2g-daemon --config config.yaml
 #
 # 2. Using environment variables only:
-#    XG2G_OWI_BASE=http://192.168.1.100:80 \
+#    XG2G_OWI_BASE=http://192.168.1.100 \
 #    XG2G_EPG_ENABLED=true \
 #    ./xg2g-daemon
 #
@@ -253,10 +254,8 @@ picons:
 # - For EPG issues, check Enigma2 supports EPG API:
 #     curl http://192.168.1.100/api/epgservice?sRef=REFERENCE
 #
-# - Streams don't play? Smart Stream Detection is enabled by default!
-#   It automatically detects port 8001 vs 17999 (OSCam) per channel.
-#   To disable: XG2G_SMART_STREAM_DETECTION=false
-#   See docs/STREAM_PORTS.md for details.
+# - Streams: In der Regel `useWebIFStreams: true` verwenden, damit die Box intern
+#   Direct vs. Relay entscheidet (8001/17999 sind dann intern und für xg2g egal).
 #
 # - Enable debug logging for detailed information:
 #     XG2G_LOG_LEVEL=debug ./xg2g-daemon --config config.yaml

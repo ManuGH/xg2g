@@ -14,7 +14,6 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/hdhr"
 	"github.com/ManuGH/xg2g/internal/jobs"
-	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -47,7 +46,8 @@ func TestGetConfig(t *testing.T) {
 // TestHandleRefreshInternal tests the HandleRefreshInternal wrapper.
 func TestHandleRefreshInternal(t *testing.T) {
 	// Create a mock refresh function that succeeds immediately
-	mockRefreshFn := func(ctx context.Context, cfg config.AppConfig, _ *openwebif.StreamDetector) (*jobs.Status, error) {
+	mockRefreshFn := func(ctx context.Context, snap config.Snapshot) (*jobs.Status, error) {
+		_ = snap
 		return &jobs.Status{
 			Version:  "test",
 			Channels: 42,
@@ -55,8 +55,10 @@ func TestHandleRefreshInternal(t *testing.T) {
 		}, nil
 	}
 
+	cfg := config.AppConfig{Bouquet: "test"}
 	s := &Server{
-		cfg:       config.AppConfig{Bouquet: "test"},
+		cfg:       cfg,
+		snap:      config.BuildSnapshot(cfg),
 		refreshFn: mockRefreshFn,
 		cb:        NewCircuitBreaker(3, 5*time.Second),
 	}
@@ -96,11 +98,11 @@ http://example.com/stream3
 			t.Fatal(err)
 		}
 
-		s := &Server{
-			cfg: config.AppConfig{
-				DataDir: tmpDir,
-			},
-		}
+			cfg := config.AppConfig{DataDir: tmpDir}
+			s := &Server{
+				cfg:  cfg,
+				snap: config.BuildSnapshot(cfg),
+			}
 
 		req := httptest.NewRequest(http.MethodGet, "/lineup.json", nil)
 		req = req.WithContext(context.Background())
@@ -137,11 +139,11 @@ http://example.com/stream3
 		tmpDir := t.TempDir()
 		// Don't create playlist.m3u
 
-		s := &Server{
-			cfg: config.AppConfig{
-				DataDir: tmpDir,
-			},
-		}
+			cfg := config.AppConfig{DataDir: tmpDir}
+			s := &Server{
+				cfg:  cfg,
+				snap: config.BuildSnapshot(cfg),
+			}
 
 		req := httptest.NewRequest(http.MethodGet, "/lineup.json", nil)
 		req = req.WithContext(context.Background())

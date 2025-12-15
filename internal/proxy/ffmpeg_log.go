@@ -2,25 +2,10 @@ package proxy
 
 import (
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"time"
 )
-
-// ffmpegLogLevelOverride holds the validated override from environment.
-var ffmpegLogLevelOverride string
-
-// init parses the optional XG2G_FFMPEG_LOGLEVEL and exits fast on invalid values.
-func init() {
-	if v := os.Getenv("XG2G_FFMPEG_LOGLEVEL"); v != "" {
-		if !isValidFFmpegLogLevel(v) {
-			fmt.Fprintf(os.Stderr, "invalid XG2G_FFMPEG_LOGLEVEL %q (allowed: quiet, panic, fatal, error, warning, info, verbose, debug, trace)\n", v)
-			os.Exit(1)
-		}
-		ffmpegLogLevelOverride = v
-	}
-}
 
 func isValidFFmpegLogLevel(v string) bool {
 	switch strings.ToLower(v) {
@@ -31,10 +16,10 @@ func isValidFFmpegLogLevel(v string) bool {
 	}
 }
 
-func logLevelArgs(defaultLevel string) []string {
+func logLevelArgs(defaultLevel, override string) []string {
 	level := defaultLevel
-	if ffmpegLogLevelOverride != "" {
-		level = ffmpegLogLevelOverride
+	if strings.TrimSpace(override) != "" && isValidFFmpegLogLevel(override) {
+		level = override
 	}
 	return []string{"-loglevel", level}
 }

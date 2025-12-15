@@ -44,7 +44,7 @@ func (s *Server) tryHandleHEAD(w http.ResponseWriter, r *http.Request) bool {
 	return false
 }
 
-// tryHandleHLS handles HLS related requests (iOS/Plex detection and serving files).
+// tryHandleHLS handles HLS related requests (UA-based routing and serving profile files).
 // Returns true if request was handled.
 func (s *Server) tryHandleHLS(w http.ResponseWriter, r *http.Request) bool {
 	// Skip if HLS is disabled or not a GET request
@@ -53,7 +53,6 @@ func (s *Server) tryHandleHLS(w http.ResponseWriter, r *http.Request) bool {
 	}
 
 	path := r.URL.Path
-	// s.logger.Info().Str("path", path).Bool("manager_ok", s.hlsManager != nil).Str("method", r.Method).Msg("DEBUG: tryHandleHLS checking request")
 
 	// 1. Explicit HLS requests
 	// - /hls/...
@@ -82,27 +81,12 @@ func (s *Server) tryHandleHLS(w http.ResponseWriter, r *http.Request) bool {
 		return true
 	}
 
-	// 2. Client Auto-Detection (Client is requesting a regular path, e.g. /1:0:1...)
+	// 2. Client auto-detection (client requests a regular path, e.g. /1:0:1...)
 	// Exclude HLS component files to prevent recursion loop
 	if !strings.HasSuffix(path, ".ts") {
 		userAgent := r.Header.Get("User-Agent")
 
-		// Check for Plex
-		if IsPlexClient(userAgent) {
-			hlsPath := "/hls" + path
-			s.logger.Info().
-				Str("user_agent", userAgent).
-				Str("original_path", path).
-				Str("hls_path", hlsPath).
-				Str("client_ip", r.RemoteAddr).
-				Msg("auto-redirecting Plex client to optimized HLS profile")
-
-			r.URL.Path = hlsPath
-			s.handleHLSRequest(w, r)
-			return true
-		}
-
-		// Check for iOS
+		// Check for Apple native clients (AVFoundation/WebKit HLS stack)
 		isIOSClient := (strings.Contains(userAgent, "iPhone") ||
 			strings.Contains(userAgent, "iPad") ||
 			strings.Contains(userAgent, "iOS") ||

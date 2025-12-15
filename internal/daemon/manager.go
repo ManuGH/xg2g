@@ -183,7 +183,7 @@ func (m *manager) startAPIServer(_ context.Context, errChan chan<- error) error 
 //
 //nolint:unparam // error return kept for consistency with other start methods
 func (m *manager) startMetricsServer(_ context.Context, errChan chan<- error) error {
-	metricsAddr := config.ParseMetricsAddr()
+	metricsAddr := m.deps.MetricsAddr
 	if metricsAddr == "" {
 		return nil // Metrics disabled
 	}
@@ -227,6 +227,7 @@ func (m *manager) startProxyServer(_ context.Context, errChan chan<- error) erro
 		TLSKey:       m.deps.ProxyConfig.TLSKey,
 		DataDir:      m.deps.ProxyConfig.DataDir,
 		PlaylistPath: m.deps.ProxyConfig.PlaylistPath,
+		Runtime:      m.deps.ProxyConfig.Runtime,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create proxy: %w", err)

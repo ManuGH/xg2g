@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -30,7 +31,6 @@ import (
 	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
-	"github.com/ManuGH/xg2g/internal/proxy"
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 )
@@ -38,14 +38,13 @@ import (
 //go:embed dist/*
 var uiFS embed.FS
 
-//go:embed webplayer_v2.html
-var webplayerHTML []byte
-
 // Server represents the HTTP API server for xg2g.
 type Server struct {
 	mu             sync.RWMutex
 	refreshing     atomic.Bool // serialize refreshes via atomic flag
 	cfg            config.AppConfig
+	snap           config.Snapshot
+	configHolder   ConfigHolder
 	status         jobs.Status
 	cb             *CircuitBreaker
 	hdhr           *hdhr.Server      // HDHomeRun emulation server
@@ -54,7 +53,7 @@ type Server struct {
 	channelManager *channels.Manager // Channel management
 	configManager  *config.Manager   // Config operations
 	// refreshFn allows tests to stub the refresh operation; defaults to jobs.Refresh
-	refreshFn      func(context.Context, config.AppConfig) (*jobs.Status, error)
+	refreshFn      func(context.Context, config.Snapshot) (*jobs.Status, error)
 	startTime      time.Time
 	piconSemaphore chan struct{} // Limit concurrent upstream picon fetches
 }
@@ -142,6 +141,7 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager) *Server {
 
 	s := &Server{
 		cfg:            cfg,
+		snap:           config.BuildSnapshot(cfg),
 		channelManager: cm,
 		configManager:  cfgMgr,
 		status: jobs.Status{
@@ -170,10 +170,7 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager) *Server {
 	s.healthManager = health.NewManager(cfg.Version)
 
 	// Register health checkers
-	playlistName := os.Getenv("XG2G_PLAYLIST_FILENAME")
-	if strings.TrimSpace(playlistName) == "" {
-		playlistName = "playlist.m3u"
-	}
+	playlistName := s.snap.Runtime.PlaylistFilename
 	playlistPath := filepath.Join(cfg.DataDir, playlistName)
 	s.healthManager.RegisterChecker(health.NewFileChecker("playlist", playlistPath))
 
@@ -258,14 +255,19 @@ func (s *Server) routes() http.Handler {
 	r.Get("/healthz", s.handleHealth)
 	r.Get("/readyz", s.handleReady)
 
-	// Web Player (Safari-First)
-	r.Get("/webplayer", s.handleWebPlayer)
-
 	// Web UI (read-only dashboard)
 	r.Handle("/ui/*", http.StripPrefix("/ui", s.uiHandler()))
 	r.Get("/ui", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/ui/", http.StatusMovedPermanently)
 	})
+
+	// Now/Next EPG for a list of services (frontend helper)
+	r.With(s.authMiddleware).Post("/api/v2/services/now-next", http.HandlerFunc(s.handleNowNextEPG))
+	// EPG listing from XMLTV (frontend helper)
+	r.With(s.authMiddleware).Get("/api/v2/epg", http.HandlerFunc(s.handleEPGList))
+	// Trigger config reload from disk (if a file-backed config is configured)
+	r.With(s.authMiddleware).Post("/api/v2/system/config/reload", http.HandlerFunc(s.handleConfigReload))
+
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/ui/", http.StatusTemporaryRedirect)
 	})
@@ -315,12 +317,15 @@ func (s *Server) routes() http.Handler {
 	return r
 }
 
+const defaultCSP = "default-src 'self'; media-src 'self' blob: data:; frame-ancestors 'none'"
+
 // securityHeadersMiddleware adds common security headers to all responses.
 func securityHeadersMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'")
+		// Allow blob: for MediaSource playback (Safari blocks HLS blobs without this)
+		w.Header().Set("Content-Security-Policy", defaultCSP)
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		next.ServeHTTP(w, r)
 	})
@@ -441,10 +446,13 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	var st *jobs.Status
 	// Run the refresh via circuit breaker; it will mark failures and handle panics
 	err := s.cb.Call(func() error {
-		var err error
-		st, err = s.refreshFn(jobCtx, s.cfg)
-		return err
-	})
+			var err error
+			s.mu.RLock()
+			snap := s.snap
+			s.mu.RUnlock()
+			st, err = s.refreshFn(jobCtx, snap)
+			return err
+		})
 	duration := time.Since(start)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -807,17 +815,20 @@ func (s *Server) handleLineupJSON(w http.ResponseWriter, r *http.Request) {
 			// This is the stream URL
 			streamURL := line
 
-			// If H.264 stream repair is enabled, rewrite URL to use proxy host and port
-			// This ensures Plex gets streams from the xg2g proxy (with H.264 repair) instead of direct receiver access
-			if proxy.IsH264RepairEnabled() {
-				if parsedURL, err := url.Parse(streamURL); err == nil {
-					// Get proxy listen address from environment (default :18000)
-					proxyListen := os.Getenv("XG2G_PROXY_LISTEN")
-					if proxyListen == "" {
-						proxyListen = ":18000"
-					}
-					// Extract port from proxy listen address (format is ":18000" or "0.0.0.0:18000")
-					proxyPort := strings.TrimPrefix(proxyListen, ":")
+				// If H.264 stream repair is enabled, rewrite URL to use proxy host and port
+				// This ensures Plex gets streams from the xg2g proxy (with H.264 repair) instead of direct receiver access
+				s.mu.RLock()
+				snap := s.snap
+				s.mu.RUnlock()
+				if snap.Runtime.Transcoder.H264RepairEnabled {
+					if parsedURL, err := url.Parse(streamURL); err == nil {
+						// Get proxy listen address (default :18000)
+						proxyListen := strings.TrimSpace(snap.Runtime.StreamProxy.ListenAddr)
+						if proxyListen == "" {
+							proxyListen = ":18000"
+						}
+						// Extract port from proxy listen address (format is ":18000" or "0.0.0.0:18000")
+						proxyPort := strings.TrimPrefix(proxyListen, ":")
 					if colonIdx := strings.LastIndex(proxyPort, ":"); colonIdx != -1 {
 						proxyPort = proxyPort[colonIdx+1:]
 					}
@@ -883,6 +894,9 @@ func (s *Server) uiHandler() http.Handler {
 	fileServer := http.FileServer(http.FS(subFS))
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Explicitly attach CSP so the main UI HTML allows blob: media (Safari HLS)
+		w.Header().Set("Content-Security-Policy", defaultCSP)
+
 		// Assets (js, css, images) should be cached (hashed)
 		// Index.html should NOT be cached to ensure updates
 		path := r.URL.Path
@@ -1071,61 +1085,35 @@ ServePicon:
 	http.ServeFile(w, r, localPath)
 }
 
-// handleWebPlayer serves the embedded webplayer.html
-func (s *Server) handleWebPlayer(w http.ResponseWriter, r *http.Request) {
-	// SAFETY MECHANISM: DevMode
-	// If enabled, read from disk to avoid stale embed issues during development
-	var content []byte
-	var err error
-
-	if s.cfg.DevMode {
-		// Try to read from local file system
-		content, err = os.ReadFile("internal/api/webplayer_v2.html")
-		if err != nil {
-			logger := log.WithComponentFromContext(r.Context(), "api")
-			logger.Warn().Err(err).Msg("DevMode: failed to read webplayer_v2.html from disk, falling back to embedded")
-			content = webplayerHTML
-		} else {
-			logger := log.WithComponentFromContext(r.Context(), "api")
-			logger.Info().Msg("DevMode: serving webplayer_v2.html from disk")
-		}
-	} else {
-		content = webplayerHTML
-	}
-
-	// Override global CSP to allow inline scripts/styles and external CDN (hls.js)
-	// connect-src needs to allow the stream proxy port (18000) and same-origin API calls
-	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: http: https:; media-src 'self' blob: http: https:; worker-src 'self' blob:; connect-src 'self' http://127.0.0.1:18000 http://localhost:18000 ws: wss:")
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate") // Ensure updates are seen
-
-	if _, err := w.Write(content); err != nil {
-		logger := log.WithComponentFromContext(r.Context(), "api")
-		logger.Error().Err(err).Msg("failed to write webplayer html")
-	}
-}
-
-// handleStreamProxy proxies stream requests to the internal stream server (port 18000)
-// This avoids CORS issues and allows using relative paths in the webplayer
+// handleStreamProxy proxies stream requests to the internal stream server (port 18000).
+// This avoids CORS issues and allows using relative paths from the WebUI.
 func (s *Server) handleStreamProxy(w http.ResponseWriter, r *http.Request) {
-	// For simple webplayer compatibility: /stream/{service_ref}/playlist.m3u8
+	// For simple WebUI compatibility: /stream/{service_ref}/playlist.m3u8
 	// We proxy directly to port 18000 WITHOUT the /hls/ prefix to let the proxy
 	// handle it as a regular stream request (not HLS forced)
 
 	// Determine upstream host/port
 	// Allow configuring the proxy host for split deployments (e.g. Docker containers)
-	targetHost := os.Getenv("XG2G_PROXY_HOST")
-	if targetHost == "" {
-		targetHost = "127.0.0.1"
-	}
-	// Append port from proxy config
-	targetHost += proxy.GetListenAddr()
+	s.mu.RLock()
+	snap := s.snap
+	s.mu.RUnlock()
 
-	targetURL, _ := url.Parse("http://" + targetHost)
+	upstreamHost := strings.TrimSpace(snap.Runtime.StreamProxy.UpstreamHost)
+	if upstreamHost == "" {
+		upstreamHost = "127.0.0.1"
+	}
+	proxyPort := "18000"
+	if port := portFromListenAddr(strings.TrimSpace(snap.Runtime.StreamProxy.ListenAddr)); port != "" {
+		proxyPort = port
+	}
+
+	targetURL, _ := url.Parse("http://" + net.JoinHostPort(upstreamHost, proxyPort))
+	targetHost := targetURL.Host
+	origQuery := r.URL.RawQuery
 
 	// Create local logger
 	logger := log.WithComponent("proxy")
-	logger.Info().Str("target", targetHost).Msg("starting stream proxy")
+	logger.Info().Str("target", targetURL.String()).Msg("starting stream proxy")
 
 	// Create reverse proxy
 	p := httputil.NewSingleHostReverseProxy(targetURL)
@@ -1160,21 +1148,8 @@ func (s *Server) handleStreamProxy(w http.ResponseWriter, r *http.Request) {
 		req.Host = targetHost
 
 		// CRITICAL: Preserve Query Parameters!
-		// httputil.NewSingleHostReverseProxy sets req.URL.RawQuery based on targetURL.
-		// Use the ORIGINAL query from the client request.
-		// Note: req is a clone, but req.URL might be shared/modified by originalDirector?
-		// Actually originalDirector does: req.URL.Scheme=... req.URL.Host=... req.URL.Path=...
-		// It might overwrite RawQuery if target has one. Our target "http://..." has none.
-		// But let's be explicit.
-		// If original query exists, keep it.
-		// The client request is passed to ServeHTTP.
-		// Wait, 'req' in Director is the OUTGOING request.
-		// We want to verify it has the query.
-		// It should inherit it by default unless overwritten.
-		// But user says "Explicitly preserve".
-		// Actually, standard Go ReverseProxy copies URL.
-		// But if we rewrite Path, we should ensure Query isn't lost.
-		// It shouldn't be, but let's be safe.
+		// We use query params for profile selection (e.g. ?llhls=1).
+		req.URL.RawQuery = origQuery
 	}
 
 	// Important for streaming: flush immediately
@@ -1188,6 +1163,33 @@ func (s *Server) handleStreamProxy(w http.ResponseWriter, r *http.Request) {
 
 	// Serve
 	p.ServeHTTP(w, r)
+}
+
+func portFromListenAddr(listen string) string {
+	listen = strings.TrimSpace(listen)
+	if listen == "" {
+		return ""
+	}
+
+	// Most common formats:
+	// - ":18000"
+	// - "0.0.0.0:18000"
+	// - "127.0.0.1:18000"
+	// - "[::]:18000"
+	if _, port, err := net.SplitHostPort(listen); err == nil {
+		return port
+	}
+
+	// Accept a bare port ("18000") as well.
+	if !strings.Contains(listen, ":") {
+		return listen
+	}
+
+	// Fallback: last colon split (handles slightly malformed values).
+	if idx := strings.LastIndex(listen, ":"); idx != -1 && idx+1 < len(listen) {
+		return listen[idx+1:]
+	}
+	return ""
 }
 
 type statusWriter struct {

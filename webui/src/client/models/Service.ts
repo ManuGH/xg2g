@@ -9,5 +9,5 @@ export type Service = {
     logo_url?: string;
     number?: string;
     enabled?: boolean;
+    service_ref?: string;
 };
-

@@ -63,9 +63,10 @@ func checkOpenWebIF(ctx context.Context, logger zerolog.Logger, cfg config.AppCo
 	}
 
 	client := openwebif.NewWithPort(cfg.OWIBase, 0, openwebif.Options{
-		Timeout:  5 * time.Second,
-		Username: cfg.OWIUsername,
-		Password: cfg.OWIPassword,
+		Timeout:         5 * time.Second,
+		Username:        cfg.OWIUsername,
+		Password:        cfg.OWIPassword,
+		UseWebIFStreams: cfg.UseWebIFStreams,
 	})
 
 	// Check connectivity (GetVersion or similar lightweight call)
@@ -75,6 +76,23 @@ func checkOpenWebIF(ctx context.Context, logger zerolog.Logger, cfg config.AppCo
 		return fmt.Errorf("failed to reach receiver at %s: %v", cfg.OWIBase, err)
 	}
 	logger.Info().Str("receiver", cfg.OWIBase).Msg("✓ Receiver is reachable")
+
+	// Best-effort: fetch tuner/FBC info for visibility
+	if about, err := client.About(ctx); err == nil && about != nil {
+		tuners := about.TunersCount
+		if tuners == 0 && len(about.Tuners) > 0 {
+			tuners = len(about.Tuners)
+		}
+		if tuners == 0 && len(about.FBCTuners) > 0 {
+			tuners = len(about.FBCTuners)
+		}
+		logger.Info().
+			Str("receiver", cfg.OWIBase).
+			Str("model", about.Info.Model).
+			Str("boxtype", about.Info.Boxtype).
+			Int("tuners_reported", tuners).
+			Msg("receiver about info")
+	}
 
 	// 3. Bouquet Existence
 	// cfg.Bouquet can be a comma-separated list

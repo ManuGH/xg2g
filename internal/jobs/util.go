@@ -5,7 +5,6 @@ package jobs
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"os"
 )
 
 // makeStableIDFromSRef creates a deterministic, collision-resistant tvg-id from a service reference
@@ -21,7 +20,7 @@ func makeStableIDFromSRef(sref string) string {
 
 // makeTvgID creates a tvg-id for a channel, choosing between human-readable or hash-based format.
 // By default, it creates human-readable IDs like "das-erste-hd-3fa92b".
-// Set XG2G_USE_HASH_TVGID=true to use legacy hash-based IDs like "sref-a3f5d8c1...".
+// Set useHash=true to use legacy hash-based IDs like "sref-a3f5d8c1...".
 //
 // Human-readable format:
 //   - Easier to debug and understand in logs/playlists
@@ -32,9 +31,8 @@ func makeStableIDFromSRef(sref string) string {
 //   - Fully opaque SHA256 hash
 //   - Maximum stability if channel names change frequently
 //   - Use if you have custom tooling that depends on hash format
-func makeTvgID(name, sref string) string {
-	// Allow users to opt-in to legacy hash-based IDs
-	if os.Getenv("XG2G_USE_HASH_TVGID") == "true" {
+func makeTvgID(name, sref string, useHash bool) string {
+	if useHash {
 		return makeStableIDFromSRef(sref)
 	}
 
