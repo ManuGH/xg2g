@@ -70,11 +70,10 @@ jobs:
           make build-rust
 
       # Autobuild for Go (CodeQL handles this well usually, but we can be explicit)
-      - name: Build Go (Go Analysis)
-        if: matrix.language == 'go'
-        uses: github/codeql-action/autobuild@cf1bb45a277cb3c205638b2cd5c984db1c46a412 # v3
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@323fb8c0ad5be63b7a6ebf1f32c35882fcfea2cf # v3
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@cf1bb45a277cb3c205638b2cd5c984db1c46a412 # v3
+        uses: github/codeql-action/analyze@323fb8c0ad5be63b7a6ebf1f32c35882fcfea2cf # v3
         with:
           category: "/language:${{ matrix.language }}"
