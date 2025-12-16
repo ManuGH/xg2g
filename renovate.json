@@ -1,0 +1,271 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits",
+    ":separateMajorReleases",
+    "group:allNonMajor"
+  ],
+  "description": "Renovate configuration for xg2g - IPTV streaming proxy",
+  "timezone": "Europe/Berlin",
+  "schedule": [
+    "before 6am on Monday"
+  ],
+  "labels": [
+    "dependencies"
+  ],
+  "assignees": [
+    "ManuGH"
+  ],
+  "reviewers": [
+    "ManuGH"
+  ],
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 2,
+  "rebaseWhen": "behind-base-branch",
+  "semanticCommits": "enabled",
+  "commitMessagePrefix": "chore(deps):",
+  "automerge": false,
+  "platformAutomerge": false,
+  "vulnerabilityAlerts": {
+    "labels": [
+      "security"
+    ],
+    "assignees": [
+      "ManuGH"
+    ],
+    "enabled": true
+  },
+  "packageRules": [
+    {
+      "description": "Group Go minor and patch updates",
+      "matchDatasources": [
+        "go"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "groupName": "go dependencies",
+      "schedule": [
+        "before 6am on Monday"
+      ]
+    },
+    {
+      "description": "Group Docker base image updates",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackagePatterns": [
+        "^golang",
+        "^alpine",
+        "^debian"
+      ],
+      "groupName": "docker base images",
+      "schedule": [
+        "before 6am on Monday"
+      ]
+    },
+    {
+      "description": "Auto-merge Go patch updates (after CI passes)",
+      "matchDatasources": [
+        "go"
+      ],
+      "matchUpdateTypes": [
+        "patch"
+      ],
+      "automerge": true,
+      "automergeType": "pr",
+      "platformAutomerge": true,
+      "minimumReleaseAge": "3 days"
+    },
+    {
+      "description": "Auto-merge GitHub Actions patch updates",
+      "matchDatasources": [
+        "github-tags"
+      ],
+      "matchUpdateTypes": [
+        "patch"
+      ],
+      "automerge": true,
+      "automergeType": "pr",
+      "platformAutomerge": true
+    },
+    {
+      "description": "Security updates get high priority",
+      "matchDatasources": [
+        "go",
+        "docker",
+        "github-tags"
+      ],
+      "matchUpdateTypes": [
+        "major",
+        "minor",
+        "patch"
+      ],
+      "matchDepTypes": [
+        "dependencies"
+      ],
+      "vulnerabilitySeverity": "high",
+      "prPriority": 10,
+      "labels": [
+        "security",
+        "priority:high"
+      ],
+      "schedule": [
+        "at any time"
+      ]
+    },
+    {
+      "description": "Separate major Go version updates (manual review required)",
+      "matchDatasources": [
+        "go"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "automerge": false,
+      "labels": [
+        "go:major",
+        "breaking-change"
+      ],
+      "prPriority": 5
+    },
+    {
+      "description": "Separate major Docker base image updates",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackagePatterns": [
+        "^golang",
+        "^alpine",
+        "^debian"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "automerge": false,
+      "labels": [
+        "docker:major",
+        "breaking-change"
+      ]
+    },
+    {
+      "description": "Pin GitHub Actions to SHA for security",
+      "matchDatasources": [
+        "github-tags"
+      ],
+      "matchDepTypes": [
+        "action"
+      ],
+      "pinDigests": true
+    },
+    {
+      "description": "OpenTelemetry packages stay in sync",
+      "matchDatasources": [
+        "go"
+      ],
+      "matchPackagePatterns": [
+        "^go\\.opentelemetry\\.io/"
+      ],
+      "groupName": "opentelemetry",
+      "automerge": false,
+      "prPriority": 8
+    },
+    {
+      "description": "Prometheus client packages stay in sync",
+      "matchDatasources": [
+        "go"
+      ],
+      "matchPackagePatterns": [
+        "^github\\.com/prometheus/client"
+      ],
+      "groupName": "prometheus client",
+      "automerge": true,
+      "automergeType": "pr"
+    },
+    {
+      "description": "Rate limit Rust crate updates (FFI stability)",
+      "matchDatasources": [
+        "crate"
+      ],
+      "prCreation": "not-pending",
+      "minimumReleaseAge": "7 days",
+      "automerge": false,
+      "labels": [
+        "rust",
+        "ffi"
+      ]
+    }
+  ],
+  "golang": {
+    "commitMessageTopic": "Go module {{depName}}",
+    "enabled": true,
+    "postUpdateOptions": [
+      "gomodTidy",
+      "gomodUpdateImportPaths"
+    ]
+  },
+  "docker": {
+    "enabled": true,
+    "commitMessageTopic": "Docker image {{depName}}"
+  },
+  "github-actions": {
+    "enabled": true,
+    "commitMessageTopic": "GitHub Action {{depName}}"
+  },
+  "regexManagers": [
+    {
+      "description": "Update Go version in Dockerfiles",
+      "fileMatch": [
+        "^Dockerfile$",
+        "^Dockerfile\\..*$"
+      ],
+      "matchStrings": [
+        "FROM golang:(?<currentValue>.*?) "
+      ],
+      "datasourceTemplate": "docker",
+      "depNameTemplate": "golang"
+    },
+    {
+      "description": "Update Go version in GitHub Actions",
+      "fileMatch": [
+        "^\\.github/workflows/.*\\.ya?ml$"
+      ],
+      "matchStrings": [
+        "GO_VERSION: [\"']?(?<currentValue>.*?)[\"']?\\s"
+      ],
+      "datasourceTemplate": "golang-version",
+      "depNameTemplate": "go"
+    },
+    {
+      "description": "Update gosec version in CI",
+      "fileMatch": [
+        "^\\.github/workflows/.*\\.ya?ml$"
+      ],
+      "matchStrings": [
+        "VERSION=[\"']?(?<currentValue>v\\d+\\.\\d+\\.\\d+)[\"']?\\s+# gosec"
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "securego/gosec",
+      "versioningTemplate": "semver"
+    }
+  ],
+  "ignoreDeps": [],
+  "ignorePresets": [],
+  "suppressNotifications": [
+    "prIgnoreNotification"
+  ],
+  "rangeStrategy": "bump",
+  "bumpVersion": null,
+  "osvVulnerabilityAlerts": true,
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": [
+      "before 6am on the first day of the month"
+    ],
+    "commitMessageAction": "Update",
+    "commitMessageTopic": "lock file dependencies"
+  }
+}

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<tv generator-info-name="xg2g" generator-info-url="https://github.com/ManuGH/xg2g">
+  <channel id="c1">
+    <display-name>Chan1</display-name>
+  </channel>
+  <programme start="202501010000 +0000" stop="202501010100 +0000" channel="c1">
+    <title lang="en">Show1</title>
+    <desc>Description1</desc>
+  </programme>
+  <programme start="202501010100 +0000" stop="202501010200 +0000" channel="c1">
+    <title>Show2</title>
+  </programme>
+</tv>

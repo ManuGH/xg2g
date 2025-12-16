@@ -1,0 +1,107 @@
+# --- Go build ---
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, build output
+*.test
+*.out
+coverage.out
+coverage.html
+coverage*.out
+validate_cov.out
+*.prof
+
+# Go workspace
+bin/
+pkg/
+logs/
+*.log
+
+# Go modules cache
+go.work
+go.work.sum
+
+# --- Docker ---
+# Docker build artifacts
+*.bak
+*.backup
+*_backup*
+*.tmp
+*.swp
+docker-compose.override.yml
+.env
+config.yaml
+config.yml
+
+# --- Project specific ---
+# Local data (M3U, XMLTV, Cache)
+data/
+livetest-data/
+*.m3u
+*.xml
+*.gz
+
+# Build artifacts (binaries at repo root only)
+/xg2g
+/xg2g-*
+/daemon
+/daemon-*
+/api.test
+/test_output.txt
+transcoder.tar.gz
+test_parser.go
+
+# IDE/Editor
+.vscode/
+.idea/
+.DS_Store
+
+# Cache and temporary files
+.cache/
+/tmp/
+.codex_patch.diff
+
+# Keep test golden files (exceptions to *.xml rule)
+!internal/epg/testdata/*.golden.xml
+!internal/epg/testdata/xmltv.golden.xml
+!internal/epg/testdata/multi_channel.golden.xml
+!internal/epg/testdata/empty.golden.xml
+.copilot-instructions.md
+# Vendor assets (Tracked manually)
+dist/
+!internal/api/dist/
+!internal/api/dist/hls.min.js
+!internal/api/dist/mpegts.min.js
+
+# Test and development artifacts (local testing)
+test-*.sh
+benchmark-*.sh
+test-config.yaml
+.env.gpu
+.env.*
+!.env.example
+
+# WebUI
+node_modules/
+webui/dist/
+webui/node_modules/
+internal/api/ui/
+
+# TLS certificates (auto-generated)
+certs/
+
+# Local test artifacts
+api_test_output.txt
+*.png
+
+# Data Files (Keep gitkeep)
+data/*.xml
+data/*.m3u
+
+# Binaries at root
+xg2g-*
+xg2g-daemon

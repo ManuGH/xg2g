@@ -1,0 +1,12 @@
+# Invalid: wrong type for epg.days (should be int, not string)
+version: "1"
+dataDir: /tmp/xg2g-test
+openWebIF:
+  baseUrl: http://receiver.local
+  username: testuser
+  password: testpass
+bouquets:
+  - userbouquet.favourites.tv
+epg:
+  enabled: true
+  days: "seven" # Wrong type: string instead of int

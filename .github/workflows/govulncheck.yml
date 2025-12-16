@@ -1,0 +1,116 @@
+name: govulncheck
+
+on:
+  push:
+    branches: ["main"]
+    tags: ["v*"]
+  pull_request:
+    branches: ["main"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read  # Top-level read-only
+
+jobs:
+  vulncheck:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write  # for SARIF upload
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5 # v6
+        with:
+          go-version-file: "go.mod"
+          check-latest: true
+        env:
+          GOTOOLCHAIN: auto
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Ensure jq (for severity evaluation)
+        run: |
+          jq --version || (sudo apt-get update && sudo apt-get install -y jq)
+
+      - name: Run govulncheck (SARIF)
+        run: |
+          govulncheck -format sarif ./... > govulncheck.sarif || echo '{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"govulncheck","informationUri":"https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck"}},"results":[]}]}' > govulncheck.sarif
+
+      - name: Fix SARIF duplicate tags
+        run: |
+          # Deduplicate tags in rules to fix GitHub SARIF validation
+          jq '
+            if .runs then
+              .runs |= map(
+                if .tool.driver.rules then
+                  .tool.driver.rules |= map(
+                    if .properties.tags then
+                      .properties.tags |= unique
+                    else
+                      .
+                    end
+                  )
+                else
+                  .
+                end
+              )
+            else
+              .
+            end
+          ' govulncheck.sarif > govulncheck.fixed.sarif
+          mv govulncheck.fixed.sarif govulncheck.sarif
+
+      - name: Upload SARIF to code scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@cf1bb45a277cb3c205638b2cd5c984db1c46a412 # v4
+        with:
+          sarif_file: govulncheck.sarif
+          category: govulncheck
+
+      - name: Run govulncheck (JSON)
+        run: govulncheck -format json ./... > govulncheck.json || true
+
+      - name: Evaluate High/Critical vulnerabilities
+        id: severity
+        run: |
+          set -euo pipefail
+          if [ ! -s govulncheck.json ]; then
+            echo "high_crit_count=0" >> "$GITHUB_OUTPUT"
+            echo "fail=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Compute a single integer: number of vulns with severity >= HIGH (7)
+          count=$(jq -r '
+            ( .vulns // [] )
+            | map(
+                ( .osv.database_specific.severity? // "" ) as $lab
+                | (if ($lab | ascii_upcase) == "CRITICAL" then 9 elif ($lab | ascii_upcase) == "HIGH" then 7 else 0 end) as $labelScore
+                | ( ( .osv.severity? // [] )
+                    | map( (.score // 0) as $s
+                          | ( ($s|type) == "number" )
+                            and $s or ( ($s|tostring) | (if test("^[0-9.]+$") then tonumber elif test("CRITICAL";"i") then 9 elif test("HIGH";"i") then 7 else 0 end) ) )
+                    | (if length>0 then max else 0 end)
+                  ) as $cvssScore
+                | ([ $labelScore, $cvssScore ] | max) as $maxSev
+                | select($maxSev >= 7)
+              )
+            | length
+          ' govulncheck.json | tr -d '\n' )
+          # Fallback safety: default to 0 if empty or non-numeric
+          if ! printf '%s' "$count" | grep -Eq '^[0-9]+$'; then count=0; fi
+          echo "High/Critical vulnerabilities: ${count}" >> "$GITHUB_STEP_SUMMARY"
+          printf 'high_crit_count=%s\n' "$count" >> "$GITHUB_OUTPUT"
+          if [ "$count" -gt 0 ]; then printf 'fail=true\n' >> "$GITHUB_OUTPUT"; else printf 'fail=false\n' >> "$GITHUB_OUTPUT"; fi
+
+      - name: Fail on High/Critical
+        if: steps.severity.outputs.fail == 'true'
+        run: |
+          echo "❌ High/Critical vulnerabilities detected: ${{ steps.severity.outputs.high_crit_count }}" >> "$GITHUB_STEP_SUMMARY"
+          exit 1

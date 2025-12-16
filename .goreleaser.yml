@@ -1,0 +1,129 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+    - go mod verify
+
+builds:
+  - id: xg2g
+    main: ./cmd/daemon
+    binary: xg2g
+    env:
+      - CGO_ENABLED=0
+      - TZ=UTC
+      - SOURCE_DATE_EPOCH={{ .Env.SOURCE_DATE_EPOCH }}
+      - GOFLAGS=-trimpath -buildvcs=false -mod=readonly
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    mod_timestamp: "{{ .CommitDate }}"
+    ldflags:
+      - -s -w -buildid=
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.buildDate={{.CommitDate}}
+    flags:
+      - -trimpath
+    gcflags:
+      - all=-trimpath={{.ProjectDir}}
+    asmflags:
+      - all=-trimpath={{.ProjectDir}}
+
+archives:
+  - id: xg2g
+    format_overrides:
+      - goos: windows
+        format: zip
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    files:
+      - README.md
+      - LICENSE
+      - docs/README.md
+      - docs/ARCHITECTURE.md
+      - docs/guides/**/*
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
+  groups:
+    - title: "Features"
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: "Bug Fixes"
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: "Performance Improvements"
+      regexp: '^.*?perf(\([[:word:]]+\))??!?:.+$'
+      order: 2
+    - title: "Refactors"
+      regexp: '^.*?refactor(\([[:word:]]+\))??!?:.+$'
+      order: 3
+    - title: "Other Changes"
+      order: 999
+
+release:
+  github:
+    owner: ManuGH
+    name: xg2g
+  header: |
+    ## xg2g {{ .Tag }}
+
+    ### 📦 Installation
+
+    **Docker (Recommended):**
+    ```bash
+    docker pull ghcr.io/manugh/xg2g:{{ .Tag }}
+    ```
+
+    **Binary:**
+    Download the appropriate binary for your platform from the assets below.
+
+    **Supported Platforms:**
+    - Linux (amd64)
+
+    ### 🔐 Verification
+
+    All binaries and container images are signed with Cosign. Verify signatures:
+    ```bash
+    # Verify container signature
+    cosign verify ghcr.io/manugh/xg2g:{{ .Tag }} \
+      --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+      --certificate-identity-regexp '^https://github.com/ManuGH/xg2g'
+    ```
+  footer: |
+    ---
+
+    ### 📚 Documentation
+
+    - [Documentation](https://github.com/ManuGH/xg2g/blob/{{ .Tag }}/docs/README.md)
+    - [Architecture](https://github.com/ManuGH/xg2g/blob/{{ .Tag }}/docs/ARCHITECTURE.md)
+    - [Guides](https://github.com/ManuGH/xg2g/tree/{{ .Tag }}/docs/guides)
+
+    ---
+
+    **Full Changelog**: https://github.com/ManuGH/xg2g/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+    🤖 Built with [Claude Code](https://claude.com/claude-code)
