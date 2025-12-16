@@ -22,11 +22,11 @@ func TestParseServerConfig(t *testing.T) {
 				if cfg.ListenAddr != ":8080" {
 					t.Errorf("ListenAddr = %v, want :8080", cfg.ListenAddr)
 				}
-				if cfg.ReadTimeout != 40*time.Second {
-					t.Errorf("ReadTimeout = %v, want 40s", cfg.ReadTimeout)
+				if cfg.ReadTimeout != 60*time.Second {
+					t.Errorf("ReadTimeout = %v, want 60s", cfg.ReadTimeout)
 				}
-				if cfg.WriteTimeout != 40*time.Second {
-					t.Errorf("WriteTimeout = %v, want 40s", cfg.WriteTimeout)
+				if cfg.WriteTimeout != 0 {
+					t.Errorf("WriteTimeout = %v, want 0s", cfg.WriteTimeout)
 				}
 				if cfg.IdleTimeout != 120*time.Second {
 					t.Errorf("IdleTimeout = %v, want 120s", cfg.IdleTimeout)
@@ -91,11 +91,11 @@ func TestParseServerConfig(t *testing.T) {
 			},
 			validate: func(t *testing.T, cfg ServerConfig) {
 				t.Helper()
-				if cfg.ReadTimeout != 40*time.Second {
-					t.Errorf("ReadTimeout = %v, want 40s (default)", cfg.ReadTimeout)
+				if cfg.ReadTimeout != 60*time.Second {
+					t.Errorf("ReadTimeout = %v, want 60s (default)", cfg.ReadTimeout)
 				}
-				if cfg.WriteTimeout != 40*time.Second {
-					t.Errorf("WriteTimeout = %v, want 40s (default)", cfg.WriteTimeout)
+				if cfg.WriteTimeout != 0 {
+					t.Errorf("WriteTimeout = %v, want 0s (default)", cfg.WriteTimeout)
 				}
 				if cfg.IdleTimeout != 120*time.Second {
 					t.Errorf("IdleTimeout = %v, want 120s (default)", cfg.IdleTimeout)

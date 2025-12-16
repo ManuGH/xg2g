@@ -1133,6 +1133,11 @@ func (s *Server) handlePicons(w http.ResponseWriter, r *http.Request) {
 	}
 
 ServePicon:
+	defer func() {
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+	}()
 
 	// 3. SAVE TO CACHE
 	tempFile, err := os.CreateTemp(piconDir, "picon-*.tmp")
@@ -1141,19 +1146,26 @@ ServePicon:
 		_, _ = io.Copy(w, resp.Body)
 		return
 	}
-	defer func() { _ = os.Remove(tempFile.Name()) }()
+	defer func() {
+		_ = tempFile.Close()
+		_ = os.Remove(tempFile.Name())
+	}()
 
 	if _, err := io.Copy(tempFile, resp.Body); err != nil {
 		logger.Error().Err(err).Msg("failed to write to temp picon file")
-		_ = tempFile.Close()
 		http.Error(w, "Failed to cache picon", http.StatusInternalServerError)
 		return
 	}
-	_ = tempFile.Close()
+	_ = tempFile.Close() // Close before rename on Windows
 
 	if err := os.Rename(tempFile.Name(), localPath); err != nil {
 		logger.Error().Err(err).Msg("failed to rename temp picon file to cache")
-		http.ServeFile(w, r, tempFile.Name())
+		// If rename fails, serve from the temp file if it still exists
+		if _, statErr := os.Stat(tempFile.Name()); statErr == nil {
+			http.ServeFile(w, r, tempFile.Name())
+		} else {
+			http.Error(w, "Failed to cache picon", http.StatusInternalServerError)
+		}
 		return
 	}
 
@@ -1252,9 +1264,10 @@ func (s *Server) handleStreamProxy(w http.ResponseWriter, r *http.Request) {
 			if resp.StatusCode == 200 && (strings.HasSuffix(path, ".m3u8") || strings.HasSuffix(path, ".m3u")) {
 				body, err := io.ReadAll(resp.Body)
 				if err != nil {
+					_ = resp.Body.Close() // Ensure body is closed on error
 					return err
 				}
-				resp.Body.Close()
+				_ = resp.Body.Close() // Close the original body after reading
 
 				// Rewrite: Append ?token=... to lines ending in .ts, .aac, .m4s, .mp4, or inside lines (matches non-comment lines)
 				// Simple approach: append to lines that look like file paths/URLs and don't already have query params?
