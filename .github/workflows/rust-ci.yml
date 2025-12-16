@@ -2,49 +2,51 @@ name: Rust CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
     paths:
-      - 'transcoder/**'
-      - 'internal/transcoder/**'
-      - '.github/workflows/rust-ci.yml'
+      - "transcoder/**"
+      - "internal/transcoder/**"
+      - ".github/workflows/rust-ci.yml"
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
     paths:
-      - 'transcoder/**'
-      - 'internal/transcoder/**'
-      - '.github/workflows/rust-ci.yml'
+      - "transcoder/**"
+      - "internal/transcoder/**"
+
+permissions:
+  contents: read
 
 jobs:
   rust-build-test:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+      - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3
 
-    - name: Set up Rust
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        override: true
+      - name: Set up Rust
+        uses: actions-rs/toolchain@63eb9591781c46a70274cb3ebdf190fce92702e8 # v1
+        with:
+          toolchain: stable
+          override: true
 
-    - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.21'
+      - name: Set up Go
+        uses: actions/setup-go@93397bea11091df50f3d7e59dc26a7711a8bcfbe # v4
+        with:
+          go-version: "1.21"
 
-    - name: Install dependencies (ffmpeg-dev)
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libswresample-dev clang
+      - name: Install dependencies (ffmpeg-dev)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libswresample-dev clang
 
-    - name: Build Rust Library
-      run: |
-        cd transcoder
-        cargo build --release
-        ls -l target/release/libxg2g_transcoder.a
+      - name: Build Rust Library
+        run: |
+          cd transcoder
+          cargo build --release
+          ls -l target/release/libxg2g_transcoder.a
 
-    - name: Run Go Tests (with CGO)
-      # We need to explicitly point to the rust library if not in standard path?
-      # The Go bindings assume it is in ../../transcoder/target/release relative to internal/transcoder
-      run: |
-        export CGO_ENABLED=1
-        go test -v -tags=transcoder ./internal/transcoder/...
+      - name: Run Go Tests (with CGO)
+        # We need to explicitly point to the rust library if not in standard path?
+        # The Go bindings assume it is in ../../transcoder/target/release relative to internal/transcoder
+        run: |
+          export CGO_ENABLED=1
+          go test -v -tags=transcoder ./internal/transcoder/...
