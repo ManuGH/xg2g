@@ -57,6 +57,7 @@ type Server struct {
 	idleTimeout   time.Duration
 	activeStreams sync.Map // Map[*idleTrackingWriter]struct{}
 	monitorCancel context.CancelFunc
+	mu            sync.Mutex
 }
 
 // Config holds the configuration for the proxy server.
@@ -170,6 +171,20 @@ func New(cfg Config) (*Server, error) {
 			ErrorLog: nil,
 		}
 	}
+	// Use a custom Transport to allow explicit closing of idle connections
+	transport := &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
+	s.proxy.Transport = transport
 
 	// Initialize optional transcoder
 	if rt.Transcoder.Enabled {
@@ -524,7 +539,9 @@ func (s *Server) Start() error {
 
 	// Start centralized idle monitor
 	monitorCtx, monitorCancel := context.WithCancel(context.Background())
+	s.mu.Lock()
 	s.monitorCancel = monitorCancel
+	s.mu.Unlock()
 	s.startIdleMonitor(monitorCtx)
 
 	if s.targetURL != nil {
@@ -557,8 +574,18 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		s.hlsManager.Shutdown()
 	}
 
+	s.mu.Lock()
 	if s.monitorCancel != nil {
 		s.monitorCancel()
+		s.monitorCancel = nil
+	}
+	s.mu.Unlock()
+
+	// Close outgoing idle connections to backends
+	if s.proxy != nil && s.proxy.Transport != nil {
+		if t, ok := s.proxy.Transport.(*http.Transport); ok {
+			t.CloseIdleConnections()
+		}
 	}
 
 	return s.httpServer.Shutdown(ctx)
