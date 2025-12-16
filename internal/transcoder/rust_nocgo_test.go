@@ -53,8 +53,8 @@ func TestRustAudioRemuxer_Process_Stub(t *testing.T) {
 		t.Errorf("expected 0 bytes written from stub, got %d", written)
 	}
 
-	if !strings.Contains(err.Error(), "not available") {
-		t.Errorf("error should mention 'not available', got: %s", err.Error())
+	if !strings.Contains(err.Error(), "transcoder unavailable") {
+		t.Errorf("error should mention 'transcoder unavailable', got: %s", err.Error())
 	}
 }
 

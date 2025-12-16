@@ -1,0 +1,24 @@
+Results:
+
+
+[[97;41m/root/xg2g/internal/api/server_gen.go:24[0m] - G101 (CWE-798): Potential hardcoded credentials (Confidence: LOW, Severity: HIGH)
+    23: const (
+  > 24: 	BearerAuthScopes = "BearerAuth.Scopes"
+    25: )
+
+Autofix: 
+
+[[37;40m/root/xg2g/internal/api/http.go:1257[0m] - G104 (CWE-703): Errors unhandled (Confidence: HIGH, Severity: LOW)
+    1256: 				}
+  > 1257: 				resp.Body.Close()
+    1258: 
+
+Autofix: 
+
+[1;36mSummary:[0m
+  Gosec  : dev
+  Files  : 97
+  Lines  : 20953
+  Nosec  : 29
+  Issues : [1;31m2[0m
+
