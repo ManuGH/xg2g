@@ -21,14 +21,20 @@ import (
 )
 
 const (
-	//nosec G101
-	BearerAuthScopes = "BearerAuth" + "." + "Scopes"
+	BearerAuthScopes = "BearerAuth.Scopes"
 )
 
 // Defines values for ComponentStatusStatus.
 const (
 	ComponentStatusStatusError ComponentStatusStatus = "error"
 	ComponentStatusStatusOk    ComponentStatusStatus = "ok"
+)
+
+// Defines values for DvrCapabilitiesSeriesMode.
+const (
+	Delegated DvrCapabilitiesSeriesMode = "delegated"
+	Managed   DvrCapabilitiesSeriesMode = "managed"
+	None      DvrCapabilitiesSeriesMode = "none"
 )
 
 // Defines values for EPGConfigSource.
@@ -54,6 +60,44 @@ const (
 	Degraded SystemHealthStatus = "degraded"
 	Error    SystemHealthStatus = "error"
 	Ok       SystemHealthStatus = "ok"
+)
+
+// Defines values for TimerState.
+const (
+	TimerStateCompleted TimerState = "completed"
+	TimerStateDisabled  TimerState = "disabled"
+	TimerStateRecording TimerState = "recording"
+	TimerStateScheduled TimerState = "scheduled"
+	TimerStateUnknown   TimerState = "unknown"
+)
+
+// Defines values for TimerConflictType.
+const (
+	TimerConflictTypeDuplicate  TimerConflictType = "duplicate"
+	TimerConflictTypeOverlap    TimerConflictType = "overlap"
+	TimerConflictTypeTunerLimit TimerConflictType = "tuner_limit"
+	TimerConflictTypeUnknown    TimerConflictType = "unknown"
+)
+
+// Defines values for TimerConflictPreviewRequestMode.
+const (
+	Conservative  TimerConflictPreviewRequestMode = "conservative"
+	ReceiverAware TimerConflictPreviewRequestMode = "receiverAware"
+)
+
+// Defines values for TimerConflictPreviewResponseSuggestionsKind.
+const (
+	ReducePadding TimerConflictPreviewResponseSuggestionsKind = "reduce_padding"
+	ShiftEnd      TimerConflictPreviewResponseSuggestionsKind = "shift_end"
+	ShiftStart    TimerConflictPreviewResponseSuggestionsKind = "shift_start"
+)
+
+// Defines values for TimerCreateRequestAfterEvent.
+const (
+	Deepstandby TimerCreateRequestAfterEvent = "deepstandby"
+	Default     TimerCreateRequestAfterEvent = "default"
+	Nothing     TimerCreateRequestAfterEvent = "nothing"
+	Standby     TimerCreateRequestAfterEvent = "standby"
 )
 
 // AppConfig defines model for AppConfig.
@@ -91,6 +135,27 @@ type ConfigUpdate struct {
 	OpenWebIF    *OpenWebIFConfig `json:"openWebIF,omitempty"`
 	Picons       *PiconsConfig    `json:"picons,omitempty"`
 }
+
+// DvrCapabilities defines model for DvrCapabilities.
+type DvrCapabilities struct {
+	Conflicts struct {
+		Preview       *bool `json:"preview,omitempty"`
+		ReceiverAware *bool `json:"receiverAware,omitempty"`
+	} `json:"conflicts"`
+	Series struct {
+		DelegatedProvider *string                    `json:"delegatedProvider,omitempty"`
+		Mode              *DvrCapabilitiesSeriesMode `json:"mode,omitempty"`
+		Supported         *bool                      `json:"supported,omitempty"`
+	} `json:"series"`
+	Timers struct {
+		Delete         *bool `json:"delete,omitempty"`
+		Edit           *bool `json:"edit,omitempty"`
+		ReadBackVerify *bool `json:"readBackVerify,omitempty"`
+	} `json:"timers"`
+}
+
+// DvrCapabilitiesSeriesMode defines model for DvrCapabilities.Series.Mode.
+type DvrCapabilitiesSeriesMode string
 
 // EPGConfig defines model for EPGConfig.
 type EPGConfig struct {
@@ -137,6 +202,23 @@ type PiconsConfig struct {
 	BaseUrl *string `json:"baseUrl,omitempty"`
 }
 
+// ProblemDetails defines model for ProblemDetails.
+type ProblemDetails struct {
+	Conflicts *[]TimerConflict        `json:"conflicts,omitempty"`
+	Detail    *string                 `json:"detail,omitempty"`
+	Fields    *map[string]interface{} `json:"fields,omitempty"`
+	Instance  *string                 `json:"instance,omitempty"`
+	Status    int                     `json:"status"`
+	Title     string                  `json:"title"`
+	Type      string                  `json:"type"`
+}
+
+// RecordingStatus defines model for RecordingStatus.
+type RecordingStatus struct {
+	IsRecording bool    `json:"isRecording"`
+	ServiceName *string `json:"serviceName,omitempty"`
+}
+
 // Service defines model for Service.
 type Service struct {
 	Enabled *bool   `json:"enabled,omitempty"`
@@ -174,6 +256,93 @@ type SystemHealth struct {
 // SystemHealthStatus defines model for SystemHealth.Status.
 type SystemHealthStatus string
 
+// Timer defines model for Timer.
+type Timer struct {
+	Begin         int64                   `json:"begin"`
+	CreatedAt     *time.Time              `json:"createdAt,omitempty"`
+	Description   *string                 `json:"description,omitempty"`
+	End           int64                   `json:"end"`
+	Name          string                  `json:"name"`
+	ReceiverState *map[string]interface{} `json:"receiverState,omitempty"`
+	ServiceName   *string                 `json:"serviceName,omitempty"`
+	ServiceRef    string                  `json:"serviceRef"`
+	State         TimerState              `json:"state"`
+	TimerId       string                  `json:"timerId"`
+	UpdatedAt     *time.Time              `json:"updatedAt,omitempty"`
+}
+
+// TimerState defines model for Timer.State.
+type TimerState string
+
+// TimerConflict defines model for TimerConflict.
+type TimerConflict struct {
+	BlockingTimer  Timer             `json:"blockingTimer"`
+	Message        *string           `json:"message,omitempty"`
+	OverlapSeconds *int              `json:"overlapSeconds,omitempty"`
+	Type           TimerConflictType `json:"type"`
+}
+
+// TimerConflictType defines model for TimerConflict.Type.
+type TimerConflictType string
+
+// TimerConflictPreviewRequest defines model for TimerConflictPreviewRequest.
+type TimerConflictPreviewRequest struct {
+	Mode     *TimerConflictPreviewRequestMode `json:"mode,omitempty"`
+	Proposed TimerCreateRequest               `json:"proposed"`
+}
+
+// TimerConflictPreviewRequestMode defines model for TimerConflictPreviewRequest.Mode.
+type TimerConflictPreviewRequestMode string
+
+// TimerConflictPreviewResponse defines model for TimerConflictPreviewResponse.
+type TimerConflictPreviewResponse struct {
+	CanSchedule bool            `json:"canSchedule"`
+	Conflicts   []TimerConflict `json:"conflicts"`
+	Suggestions *[]struct {
+		Kind          *TimerConflictPreviewResponseSuggestionsKind `json:"kind,omitempty"`
+		Note          *string                                      `json:"note,omitempty"`
+		ProposedBegin *int64                                       `json:"proposedBegin,omitempty"`
+		ProposedEnd   *int64                                       `json:"proposedEnd,omitempty"`
+	} `json:"suggestions,omitempty"`
+}
+
+// TimerConflictPreviewResponseSuggestionsKind defines model for TimerConflictPreviewResponse.Suggestions.Kind.
+type TimerConflictPreviewResponseSuggestionsKind string
+
+// TimerCreateRequest defines model for TimerCreateRequest.
+type TimerCreateRequest struct {
+	AfterEvent       *TimerCreateRequestAfterEvent `json:"afterEvent,omitempty"`
+	Begin            int64                         `json:"begin"`
+	Description      *string                       `json:"description,omitempty"`
+	Enabled          *bool                         `json:"enabled,omitempty"`
+	End              int64                         `json:"end"`
+	IdempotencyKey   *string                       `json:"idempotencyKey,omitempty"`
+	JustPlay         *bool                         `json:"justPlay,omitempty"`
+	Name             string                        `json:"name"`
+	PaddingAfterSec  *int                          `json:"paddingAfterSec,omitempty"`
+	PaddingBeforeSec *int                          `json:"paddingBeforeSec,omitempty"`
+	ServiceRef       string                        `json:"serviceRef"`
+}
+
+// TimerCreateRequestAfterEvent defines model for TimerCreateRequest.AfterEvent.
+type TimerCreateRequestAfterEvent string
+
+// TimerList defines model for TimerList.
+type TimerList struct {
+	Items []Timer `json:"items"`
+}
+
+// TimerPatchRequest defines model for TimerPatchRequest.
+type TimerPatchRequest struct {
+	Begin            *int64  `json:"begin,omitempty"`
+	Description      *string `json:"description,omitempty"`
+	Enabled          *bool   `json:"enabled,omitempty"`
+	End              *int64  `json:"end,omitempty"`
+	Name             *string `json:"name,omitempty"`
+	PaddingAfterSec  *int    `json:"paddingAfterSec,omitempty"`
+	PaddingBeforeSec *int    `json:"paddingBeforeSec,omitempty"`
+}
+
 // GetEpgParams defines parameters for GetEpg.
 type GetEpgParams struct {
 	// From Start timestamp (unix seconds)
@@ -200,14 +369,35 @@ type PostServicesIdToggleJSONBody struct {
 	Enabled *bool `json:"enabled,omitempty"`
 }
 
+// GetTimersParams defines parameters for GetTimers.
+type GetTimersParams struct {
+	State *string `form:"state,omitempty" json:"state,omitempty"`
+	From  *int    `form:"from,omitempty" json:"from,omitempty"`
+}
+
 // PostServicesIdToggleJSONRequestBody defines body for PostServicesIdToggle for application/json ContentType.
 type PostServicesIdToggleJSONRequestBody PostServicesIdToggleJSONBody
 
 // PutSystemConfigJSONRequestBody defines body for PutSystemConfig for application/json ContentType.
 type PutSystemConfigJSONRequestBody = ConfigUpdate
 
+// AddTimerJSONRequestBody defines body for AddTimer for application/json ContentType.
+type AddTimerJSONRequestBody = TimerCreateRequest
+
+// PreviewConflictsJSONRequestBody defines body for PreviewConflicts for application/json ContentType.
+type PreviewConflictsJSONRequestBody = TimerConflictPreviewRequest
+
+// UpdateTimerJSONRequestBody defines body for UpdateTimer for application/json ContentType.
+type UpdateTimerJSONRequestBody = TimerPatchRequest
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// Get DVR capabilities
+	// (GET /dvr/capabilities)
+	GetDvrCapabilities(w http.ResponseWriter, r *http.Request)
+	// Get DVR recording status
+	// (GET /dvr/status)
+	GetDvrStatus(w http.ResponseWriter, r *http.Request)
 	// Get EPG data
 	// (GET /epg)
 	GetEpg(w http.ResponseWriter, r *http.Request, params GetEpgParams)
@@ -241,11 +431,41 @@ type ServerInterface interface {
 	// Trigger data refresh (EPG/Channels)
 	// (POST /system/refresh)
 	PostSystemRefresh(w http.ResponseWriter, r *http.Request)
+	// List all timers (v2)
+	// (GET /timers)
+	GetTimers(w http.ResponseWriter, r *http.Request, params GetTimersParams)
+	// Create a timer (v2)
+	// (POST /timers)
+	AddTimer(w http.ResponseWriter, r *http.Request)
+	// Preview conflicts
+	// (POST /timers/conflicts:preview)
+	PreviewConflicts(w http.ResponseWriter, r *http.Request)
+	// Delete timer
+	// (DELETE /timers/{timerId})
+	DeleteTimer(w http.ResponseWriter, r *http.Request, timerId string)
+	// Get timer
+	// (GET /timers/{timerId})
+	GetTimer(w http.ResponseWriter, r *http.Request, timerId string)
+	// Edit timer
+	// (PATCH /timers/{timerId})
+	UpdateTimer(w http.ResponseWriter, r *http.Request, timerId string)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
 
 type Unimplemented struct{}
+
+// Get DVR capabilities
+// (GET /dvr/capabilities)
+func (_ Unimplemented) GetDvrCapabilities(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get DVR recording status
+// (GET /dvr/status)
+func (_ Unimplemented) GetDvrStatus(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
 
 // Get EPG data
 // (GET /epg)
@@ -313,6 +533,42 @@ func (_ Unimplemented) PostSystemRefresh(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// List all timers (v2)
+// (GET /timers)
+func (_ Unimplemented) GetTimers(w http.ResponseWriter, r *http.Request, params GetTimersParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Create a timer (v2)
+// (POST /timers)
+func (_ Unimplemented) AddTimer(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Preview conflicts
+// (POST /timers/conflicts:preview)
+func (_ Unimplemented) PreviewConflicts(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Delete timer
+// (DELETE /timers/{timerId})
+func (_ Unimplemented) DeleteTimer(w http.ResponseWriter, r *http.Request, timerId string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get timer
+// (GET /timers/{timerId})
+func (_ Unimplemented) GetTimer(w http.ResponseWriter, r *http.Request, timerId string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Edit timer
+// (PATCH /timers/{timerId})
+func (_ Unimplemented) UpdateTimer(w http.ResponseWriter, r *http.Request, timerId string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // ServerInterfaceWrapper converts contexts to parameters.
 type ServerInterfaceWrapper struct {
 	Handler            ServerInterface
@@ -321,6 +577,46 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// GetDvrCapabilities operation middleware
+func (siw *ServerInterfaceWrapper) GetDvrCapabilities(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetDvrCapabilities(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetDvrStatus operation middleware
+func (siw *ServerInterfaceWrapper) GetDvrStatus(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetDvrStatus(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // GetEpg operation middleware
 func (siw *ServerInterfaceWrapper) GetEpg(w http.ResponseWriter, r *http.Request) {
@@ -614,6 +910,180 @@ func (siw *ServerInterfaceWrapper) PostSystemRefresh(w http.ResponseWriter, r *h
 	handler.ServeHTTP(w, r)
 }
 
+// GetTimers operation middleware
+func (siw *ServerInterfaceWrapper) GetTimers(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetTimersParams
+
+	// ------------- Optional query parameter "state" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "state", r.URL.Query(), &params.State)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "state", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "from" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "from", r.URL.Query(), &params.From)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "from", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetTimers(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AddTimer operation middleware
+func (siw *ServerInterfaceWrapper) AddTimer(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AddTimer(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PreviewConflicts operation middleware
+func (siw *ServerInterfaceWrapper) PreviewConflicts(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PreviewConflicts(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteTimer operation middleware
+func (siw *ServerInterfaceWrapper) DeleteTimer(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "timerId" -------------
+	var timerId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "timerId", chi.URLParam(r, "timerId"), &timerId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "timerId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteTimer(w, r, timerId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetTimer operation middleware
+func (siw *ServerInterfaceWrapper) GetTimer(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "timerId" -------------
+	var timerId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "timerId", chi.URLParam(r, "timerId"), &timerId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "timerId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetTimer(w, r, timerId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateTimer operation middleware
+func (siw *ServerInterfaceWrapper) UpdateTimer(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "timerId" -------------
+	var timerId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "timerId", chi.URLParam(r, "timerId"), &timerId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "timerId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateTimer(w, r, timerId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -728,6 +1198,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	}
 
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/dvr/capabilities", wrapper.GetDvrCapabilities)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/dvr/status", wrapper.GetDvrStatus)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/epg", wrapper.GetEpg)
 	})
 	r.Group(func(r chi.Router) {
@@ -760,6 +1236,24 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/system/refresh", wrapper.PostSystemRefresh)
 	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/timers", wrapper.GetTimers)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/timers", wrapper.AddTimer)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/timers/conflicts:preview", wrapper.PreviewConflicts)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/timers/{timerId}", wrapper.DeleteTimer)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/timers/{timerId}", wrapper.GetTimer)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/timers/{timerId}", wrapper.UpdateTimer)
+	})
 
 	return r
 }
@@ -767,32 +1261,50 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
+	"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",
+	"AAD//z7ri8FMNgAA",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file
