@@ -1,0 +1,107 @@
+version: "3.8"
+
+services:
+  xg2g:
+    image: xg2g:latest
+    container_name: xg2g
+
+    # Run as specified user (default: root 0:0)
+    user: "${DOCKER_USER:-0:0}"
+
+    # ===========================================================================
+    # PORTS
+    # ===========================================================================
+    # TIP: For Proxmox LXC or HDHomeRun Discovery (SSDP), use 'network_mode: host'
+    # and comment out the 'ports' section. This allows multicast to work correctly.
+    network_mode: host
+
+    # [Alternative: Bridge Mode]
+    # If you prefer isolated networking (but lose SSDP discovery):
+    # network_mode: bridge
+    # ports:
+    #   - "${WEBUI_PORT:-8080}:8080"
+    #   - "${STREAM_PORT:-18000}:18000"
+    #   - "${GPU_PORT:-8085}:8085"
+    #   - "1900:1900/udp" # SSDP (Won't work across subnets easily)
+
+    # ===========================================================================
+    # DNS (Optional Fix)
+    # ===========================================================================
+    # Uncomment if you experience "Temporary failure resolving" on Debian Trixie/Docker
+    # dns:
+    #   - 8.8.8.8
+    #   - 1.1.1.1
+
+    # ===========================================================================
+    # MODE 3: GPU ACCESS (Uncomment 'devices' if valid /dev/dri exists)
+    # ===========================================================================
+    # devices:
+    #   - /dev/dri:/dev/dri
+
+    # ===========================================================================
+    # SECURITY
+    # ===========================================================================
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+      - NET_BIND_SERVICE
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,nodev,size=100m
+
+    ulimits:
+      nofile:
+        soft: 4096
+        hard: 8192
+
+    # ===========================================================================
+    # ENVIRONMENT
+    # ===========================================================================
+    environment:
+      # Persist all generated files (playlist, xmltv, cache, logs) under /data
+      - XG2G_DATA=/data
+
+      # OpenWebIF
+      - XG2G_OWI_BASE=${XG2G_OWI_BASE:-${OWI_HOST:+http://${OWI_HOST}:${OWI_PORT:-80}}}
+      - XG2G_OWI_USER=${XG2G_OWI_USER:-${OWI_USER}}
+      - XG2G_OWI_PASS=${XG2G_OWI_PASS:-${OWI_PASS}}
+
+      # Main Configuration
+      - XG2G_BOUQUET=${XG2G_BOUQUET:-${DEFAULT_BOUQUET:-Favourites}}
+      - XG2G_INITIAL_REFRESH=${XG2G_INITIAL_REFRESH:-${INITIAL_REFRESH:-true}}
+      - XG2G_USE_WEBIF_STREAMS=${XG2G_USE_WEBIF_STREAMS:-true}
+
+      # Proxy Configuration
+      - XG2G_ENABLE_STREAM_PROXY=${XG2G_ENABLE_STREAM_PROXY:-true}
+      - XG2G_PROXY_LISTEN=${XG2G_PROXY_LISTEN:-:18000}
+      - XG2G_PROXY_TARGET=${XG2G_PROXY_TARGET:-}
+
+      # Compatibility / Transcoding knobs
+      - XG2G_USE_RUST_REMUXER=${XG2G_USE_RUST_REMUXER:-true}
+      - XG2G_H264_STREAM_REPAIR=${XG2G_H264_STREAM_REPAIR:-true}
+      - XG2G_TRANSCODER_URL=${XG2G_TRANSCODER_URL:-}
+
+      # Security & Limits
+      - XG2G_API_TOKEN=${XG2G_API_TOKEN:-${API_TOKEN}}
+      - XG2G_RATELIMIT_ENABLED=${XG2G_RATELIMIT_ENABLED:-false}
+      - XG2G_RATELIMIT_RPS=${XG2G_RATELIMIT_RPS:-100}
+
+    volumes:
+      - ./data:/data
+
+    # ===========================================================================
+    # HEALTHCHECK
+    # ===========================================================================
+    healthcheck:
+      test: wget -q -T 5 -O /dev/null http://localhost:8080/healthz || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+    restart: "${RESTART_POLICY:-unless-stopped}"

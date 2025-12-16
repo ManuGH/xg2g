@@ -1,0 +1,19 @@
+# Trivy configuration for allowlisting false positives
+# See: https://aquasecurity.github.io/trivy/latest/docs/configuration/filtering/
+
+# Example: Ignore specific CVEs that are false positives or accepted risks
+vulnerability:
+  ignore-unfixed: true
+  severity: "CRITICAL,HIGH,MEDIUM"
+
+# Example CVE allowlist (adjust as needed):
+# ignore:
+#   - CVE-2024-XXXXX  # Alpine base: fixed in next release, low severity
+#   - CVE-2023-YYYYY  # FFmpeg: not exploitable in our use case
+
+# Secret scanning exclusions
+secret:
+  exclude-paths:
+    - "**/*_test.go"
+    - "**/testdata/**"
+    - "**/*.md"

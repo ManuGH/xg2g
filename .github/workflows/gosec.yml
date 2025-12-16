@@ -1,0 +1,61 @@
+name: Security - Gosec
+
+on:
+  push:
+    branches: ["main"]
+    tags: ["v*.*.*"]
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  gosec:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    env:
+      GO111MODULE: on
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5 # v5
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+          cache-dependency-path: webui/package-lock.json
+
+      - name: Build WebUI
+        working-directory: webui
+        run: |
+          npm ci
+          npm run build
+
+      - name: Copy WebUI assets
+        run: |
+          mkdir -p internal/api/ui
+          cp -r webui/dist/* internal/api/ui/
+
+      - name: Run gosec security scan
+        uses: securego/gosec@master
+        with:
+          # -fmt sarif: Output in SARIF format
+          # -out gosec.sarif: Save output to file
+          # -severity medium: Fail on medium or higher severity issues
+          # ./...: Scan all packages
+          args: -fmt=sarif -out=gosec.sarif -severity=medium -exclude-dir=test -exclude-dir=internal/test -exclude-dir=.github ./...
+
+      - name: Upload SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@cf1bb45a277cb3c205638b2cd5c984db1c46a412 # v3
+        with:
+          sarif_file: gosec.sarif

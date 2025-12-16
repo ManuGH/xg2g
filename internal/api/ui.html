@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>xg2g v2.0 – Status Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #0f0f0f;
+            color: #e0e0e0;
+            line-height: 1.6;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding: 30px 0;
+            border-bottom: 2px solid #333;
+        }
+
+        header h1 {
+            font-size: 2.5rem;
+            font-weight: 300;
+            margin-bottom: 10px;
+            color: #fff;
+        }
+
+        header p {
+            color: #888;
+            font-size: 1.1rem;
+        }
+
+        .section {
+            background: #1a1a1a;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            border: 1px solid #2a2a2a;
+        }
+
+        .section h2 {
+            font-size: 1.5rem;
+            margin-bottom: 20px;
+            color: #fff;
+            font-weight: 400;
+        }
+
+        /* Health Status Badge */
+        .health-badge {
+            display: inline-block;
+            padding: 15px 30px;
+            border-radius: 8px;
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 30px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .health-badge.healthy {
+            background: #0d5e0d;
+            color: #4ade80;
+            border: 2px solid #4ade80;
+        }
+
+        .health-badge.degraded {
+            background: #854d0e;
+            color: #fbbf24;
+            border: 2px solid #fbbf24;
+        }
+
+        .health-badge.unhealthy {
+            background: #7f1d1d;
+            color: #f87171;
+            border: 2px solid #f87171;
+        }
+
+        /* Health Checks Grid */
+        .health-checks {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .check-item {
+            background: #0f0f0f;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #333;
+        }
+
+        .check-item.healthy {
+            border-left-color: #4ade80;
+        }
+
+        .check-item.degraded {
+            border-left-color: #fbbf24;
+        }
+
+        .check-item.unhealthy {
+            border-left-color: #f87171;
+        }
+
+        .check-name {
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: #fff;
+            text-transform: capitalize;
+        }
+
+        .check-message {
+            color: #888;
+            font-size: 0.9rem;
+        }
+
+        .check-error {
+            color: #f87171;
+            font-size: 0.85rem;
+            margin-top: 5px;
+        }
+
+        /* Action Buttons */
+        .actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        button {
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+
+        button:hover {
+            background: #1d4ed8;
+            transform: translateY(-1px);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            background: #444;
+            color: #888;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .refresh-status {
+            display: inline-block;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            margin-left: 10px;
+        }
+
+        .refresh-status.success {
+            background: #0d5e0d;
+            color: #4ade80;
+        }
+
+        .refresh-status.error {
+            background: #7f1d1d;
+            color: #f87171;
+        }
+
+        .refresh-status.running {
+            background: #1e3a8a;
+            color: #60a5fa;
+        }
+
+        /* URL Display */
+        .url-container {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .url-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: #0f0f0f;
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        .url-label {
+            font-weight: 600;
+            color: #888;
+            min-width: 100px;
+        }
+
+        .url-value {
+            flex: 1;
+            color: #60a5fa;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            word-break: break-all;
+        }
+
+        .copy-btn {
+            background: #374151;
+            padding: 8px 16px;
+            font-size: 0.85rem;
+        }
+
+        .copy-btn:hover {
+            background: #4b5563;
+        }
+
+        /* Details Boxes */
+        .details-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .detail-box {
+            background: #0f0f0f;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #2a2a2a;
+        }
+
+        .detail-box h3 {
+            color: #888;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 15px;
+            font-weight: 600;
+        }
+
+        .detail-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #2a2a2a;
+        }
+
+        .detail-item:last-child {
+            border-bottom: none;
+        }
+
+        .detail-label {
+            color: #888;
+        }
+
+        .detail-value {
+            color: #fff;
+            font-weight: 500;
+        }
+
+        .detail-value.success {
+            color: #4ade80;
+        }
+
+        .detail-value.error {
+            color: #f87171;
+        }
+
+        .detail-value.warning {
+            color: #fbbf24;
+        }
+
+        /* Loading State */
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #888;
+        }
+
+        .spinner {
+            border: 3px solid #333;
+            border-top: 3px solid #2563eb;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>🛰️ xg2g v2.0</h1>
+            <p>Status Dashboard – OpenWebIF IPTV Bridge</p>
+        </header>
+
+        <div id="loading" class="loading">
+            <div class="spinner"></div>
+            <p>Loading status...</p>
+        </div>
+
+        <div id="content" style="display: none;">
+            <!-- Overall Health Section -->
+            <div class="section">
+                <h2>Overall Health</h2>
+                <div id="health-badge" class="health-badge">Loading...</div>
+                <div id="health-checks" class="health-checks"></div>
+            </div>
+
+            <!-- Actions Section -->
+            <div class="section">
+                <h2>Actions</h2>
+                <div class="actions">
+                    <button id="refresh-btn" onclick="triggerRefresh()">🔄 Refresh Now</button>
+                    <span id="refresh-status" class="refresh-status" style="display: none;"></span>
+                </div>
+
+                <h3 style="margin: 30px 0 15px 0; color: #888; font-size: 1rem;">Playlist URLs</h3>
+                <div id="urls" class="url-container"></div>
+            </div>
+
+            <!-- Details Section -->
+            <div class="section">
+                <h2>Details</h2>
+                <div id="details" class="details-grid"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentData = null;
+        let retryCount = 0;
+        const MAX_RETRIES = 3;
+
+        // Load status on page load - use multiple strategies
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initDashboard);
+        } else {
+            // DOM already loaded
+            initDashboard();
+        }
+
+        // Also try after a short delay as fallback
+        setTimeout(initDashboard, 100);
+
+        function initDashboard() {
+            console.log('[Dashboard] Initializing...');
+            loadStatus();
+            loadUrls();
+            // Auto-refresh every 30 seconds
+            setInterval(loadStatus, 30000);
+        }
+
+        // Load status from API with timeout and better error handling
+        async function loadStatus() {
+            const loadingEl = document.getElementById('loading');
+
+            try {
+                console.log('[Dashboard] Fetching status from /api/v2/ui/status');
+
+                // Create abort controller for timeout
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+
+                const response = await fetch('/api/v2/ui/status', {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Cache-Control': 'no-cache'
+                    },
+                    signal: controller.signal
+                });
+
+                clearTimeout(timeoutId);
+
+                console.log('[Dashboard] Status response:', response.status, response.statusText);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                console.log('[Dashboard] Status data loaded:', data);
+
+                currentData = data;
+                renderStatus(data);
+
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('content').style.display = 'block';
+                retryCount = 0; // Reset retry count on success
+
+            } catch (error) {
+                console.error('[Dashboard] Failed to load status:', error);
+
+                retryCount++;
+                const errorMsg = error.name === 'AbortError'
+                    ? 'Request timeout (>10s)'
+                    : error.message || 'Unknown error';
+
+                if (retryCount < MAX_RETRIES) {
+                    loadingEl.innerHTML = `
+                        <div class="spinner"></div>
+                        <p style="color: #fbbf24;">⚠ ${errorMsg}</p>
+                        <p>Retrying... (${retryCount}/${MAX_RETRIES})</p>
+                    `;
+                    setTimeout(loadStatus, 2000 * retryCount); // Exponential backoff
+                } else {
+                    loadingEl.innerHTML = `
+                        <p style="color: #f87171;">❌ Failed to load status: ${errorMsg}</p>
+                        <p style="color: #888; margin-top: 10px;">Tried ${MAX_RETRIES} times.</p>
+                        <button onclick="location.reload()" style="margin-top: 20px; padding: 12px 24px; background: #2563eb; color: white; border: none; border-radius: 8px; cursor: pointer;">
+                            🔄 Reload Page
+                        </button>
+                        <button onclick="retryCount=0; loadStatus(); loadUrls();" style="margin-top: 20px; margin-left: 10px; padding: 12px 24px; background: #059669; color: white; border: none; border-radius: 8px; cursor: pointer;">
+                            ↻ Try Again
+                        </button>
+                    `;
+                }
+            }
+        }
+
+        // Load URLs from API with better error handling
+        async function loadUrls() {
+            try {
+                console.log('[Dashboard] Fetching URLs from /api/v2/ui/urls');
+
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+                const response = await fetch('/api/v2/ui/urls', {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Cache-Control': 'no-cache'
+                    },
+                    signal: controller.signal
+                });
+
+                clearTimeout(timeoutId);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+                console.log('[Dashboard] URLs loaded:', data);
+                renderUrls(data);
+
+            } catch (error) {
+                console.error('[Dashboard] Failed to load URLs:', error);
+                // Don't block the UI if URLs fail, just log it
+                const urlsEl = document.getElementById('urls');
+                if (urlsEl) {
+                    urlsEl.innerHTML = '<p style="color: #f87171;">Failed to load URLs</p>';
+                }
+            }
+        }
+
+        // Render status data
+        function renderStatus(data) {
+            // Health badge
+            const badge = document.getElementById('health-badge');
+            badge.textContent = data.health.status;
+            badge.className = 'health-badge ' + data.health.status.toLowerCase();
+
+            // Health checks
+            const checks = document.getElementById('health-checks');
+            checks.innerHTML = '';
+            for (const [name, check] of Object.entries(data.health.checks)) {
+                const item = document.createElement('div');
+                item.className = 'check-item ' + check.status.toLowerCase();
+                item.innerHTML = `
+                    <div class="check-name">${name.replace(/_/g, ' ')}</div>
+                    <div class="check-message">${check.message || 'OK'}</div>
+                    ${check.error ? `<div class="check-error">Error: ${check.error}</div>` : ''}
+                `;
+                checks.appendChild(item);
+            }
+
+            // Details boxes
+            renderDetails(data);
+        }
+
+        // Render details boxes
+        function renderDetails(data) {
+            const details = document.getElementById('details');
+            details.innerHTML = '';
+
+            // Receiver box
+            const receiver = document.createElement('div');
+            receiver.className = 'detail-box';
+            receiver.innerHTML = `
+                <h3>Receiver</h3>
+                <div class="detail-item">
+                    <span class="detail-label">Base URL</span>
+                    <span class="detail-value">${data.receiver.base_url || 'Not configured'}</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">Status</span>
+                    <span class="detail-value ${data.receiver.reachable ? 'success' : 'error'}">
+                        ${data.receiver.reachable ? '✓ Connected' : '✗ Unreachable'}
+                    </span>
+                </div>
+                ${data.receiver.error ? `
+                <div class="detail-item">
+                    <span class="detail-label">Error</span>
+                    <span class="detail-value error">${data.receiver.error}</span>
+                </div>
+                ` : ''}
+            `;
+            details.appendChild(receiver);
+
+            // Channels box
+            const channels = document.createElement('div');
+            channels.className = 'detail-box';
+            const lastUpdated = data.channels.last_updated ? new Date(data.channels.last_updated).toLocaleString() : 'Never';
+            channels.innerHTML = `
+                <h3>Channels</h3>
+                <div class="detail-item">
+                    <span class="detail-label">Count</span>
+                    <span class="detail-value ${data.channels.count > 0 ? 'success' : 'warning'}">${data.channels.count}</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">Last Updated</span>
+                    <span class="detail-value">${lastUpdated}</span>
+                </div>
+            `;
+            details.appendChild(channels);
+
+            // EPG box
+            const epg = document.createElement('div');
+            epg.className = 'detail-box';
+            const epgUpdated = data.epg.last_updated ? new Date(data.epg.last_updated).toLocaleString() : 'Never';
+            epg.innerHTML = `
+                <h3>EPG (Electronic Program Guide)</h3>
+                <div class="detail-item">
+                    <span class="detail-label">Enabled</span>
+                    <span class="detail-value ${data.epg.enabled ? 'success' : 'warning'}">
+                        ${data.epg.enabled ? '✓ Yes' : '✗ No'}
+                    </span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">Programmes</span>
+                    <span class="detail-value">${data.epg.programmes || 0}</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">Last Updated</span>
+                    <span class="detail-value">${epgUpdated}</span>
+                </div>
+                ${data.epg.stale ? `
+                <div class="detail-item">
+                    <span class="detail-label">Status</span>
+                    <span class="detail-value warning">⚠ Stale (${data.epg.age_hours}h old)</span>
+                </div>
+                ` : ''}
+            `;
+            details.appendChild(epg);
+        }
+
+        // Render URLs
+        function renderUrls(data) {
+            const urls = document.getElementById('urls');
+            urls.innerHTML = '';
+
+            // M3U URL
+            if (data.m3u_url) {
+                const m3u = document.createElement('div');
+                m3u.className = 'url-item';
+                m3u.innerHTML = `
+                    <span class="url-label">M3U Playlist</span>
+                    <span class="url-value">${data.m3u_url}</span>
+                    <button class="copy-btn" onclick="copyToClipboard('${data.m3u_url}', this)">Copy</button>
+                `;
+                urls.appendChild(m3u);
+            }
+
+            // XMLTV URL
+            if (data.xmltv_url) {
+                const xmltv = document.createElement('div');
+                xmltv.className = 'url-item';
+                xmltv.innerHTML = `
+                    <span class="url-label">XMLTV EPG</span>
+                    <span class="url-value">${data.xmltv_url}</span>
+                    <button class="copy-btn" onclick="copyToClipboard('${data.xmltv_url}', this)">Copy</button>
+                `;
+                urls.appendChild(xmltv);
+            }
+        }
+
+        // Copy to clipboard
+        function copyToClipboard(text, button) {
+            navigator.clipboard.writeText(text).then(() => {
+                const originalText = button.textContent;
+                button.textContent = '✓ Copied!';
+                button.style.background = '#0d5e0d';
+                setTimeout(() => {
+                    button.textContent = originalText;
+                    button.style.background = '';
+                }, 2000);
+            }).catch(err => {
+                console.error('Failed to copy:', err);
+                button.textContent = '✗ Failed';
+                setTimeout(() => {
+                    button.textContent = 'Copy';
+                }, 2000);
+            });
+        }
+
+        // Trigger refresh
+        async function triggerRefresh() {
+            const btn = document.getElementById('refresh-btn');
+            const status = document.getElementById('refresh-status');
+
+            btn.disabled = true;
+            status.style.display = 'inline-block';
+            status.className = 'refresh-status running';
+            status.textContent = '⏳ Refreshing...';
+
+            try {
+                const response = await fetch('/api/v2/ui/refresh', { method: 'POST' });
+                const data = await response.json();
+
+                if (response.ok && data.status === 'success') {
+                    status.className = 'refresh-status success';
+                    status.textContent = `✓ Success! ${data.channels} channels loaded`;
+                    // Reload status after successful refresh
+                    setTimeout(() => {
+                        loadStatus();
+                    }, 1000);
+                } else {
+                    status.className = 'refresh-status error';
+                    status.textContent = `✗ ${data.message || 'Refresh failed'}`;
+                }
+            } catch (error) {
+                status.className = 'refresh-status error';
+                status.textContent = '✗ Network error';
+                console.error('Refresh failed:', error);
+            } finally {
+                btn.disabled = false;
+                setTimeout(() => {
+                    status.style.display = 'none';
+                }, 5000);
+            }
+        }
+    </script>
+</body>
+
+</html>

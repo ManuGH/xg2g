@@ -1,0 +1,305 @@
+name: CI
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 2 * * *"
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    paths:
+      - "**/*.go"
+      - go.mod
+      - go.sum
+      - .github/workflows/ci.yml
+
+permissions:
+  contents: read
+  # Optional: Allow writing security events if needed (e.g. for sarif upload)
+  # security-events: write
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GOTOOLCHAIN: auto
+      TZ: UTC
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set Reproducible Build Headers
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)" >> $GITHUB_ENV
+
+      - name: Setup Go
+        uses: actions/setup-go@v5 # v5
+        with:
+          go-version: "1.25"
+          check-latest: true
+          cache: true
+        env:
+          GOTOOLCHAIN: auto
+
+      - name: Verify modules
+        run: |
+          set -euo pipefail
+          go mod tidy
+          go mod download
+          go mod verify
+          git diff --exit-code -- go.mod go.sum
+
+      - name: Setup Node for WebUI
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: webui/package-lock.json
+
+      - name: Clean Build Artifacts
+        run: |
+          set -euo pipefail
+          make clean
+
+      - name: Generate API Client
+        run: |
+          set -euo pipefail
+          cd webui
+          npm ci
+          npm run generate-client
+
+      - name: Verify Client is Up-to-Date (Contract Test)
+        run: |
+          set -euo pipefail
+          if [[ -n $(git status --porcelain webui/src/client) ]]; then
+            echo "❌ Error: helper 'webui/src/client' is out of sync with openapi.yaml"
+            echo "Please run 'npm run generate-client' locally and commit the changes."
+            git status webui/src/client
+            git diff webui/src/client
+            exit 1
+          else
+            echo "✅ Client matches OpenAPI spec"
+          fi
+
+      - name: Build WebUI
+        run: |
+          set -euo pipefail
+          cd webui
+          npm ci
+          npm run build
+          mkdir -p ../internal/api/ui
+          cp -r dist/* ../internal/api/ui/
+          ls -R ../internal/api/ui
+
+      - name: Build (Docker only - CGO/Rust dependency)
+        run: |
+          set -euo pipefail
+          # Skip direct Go build due to Rust FFI dependency (requires libxg2g_transcoder.so)
+          # Docker multi-stage build handles Rust → Go → Runtime compilation
+          echo "⏭️  Skipping direct Go build (requires Rust library)"
+          echo "✅ Docker build tested in separate workflow"
+
+          # Verify Go compilation (nogpu build must succeed)
+          echo "🔍 Verifying nogpu build compiles..."
+          go build -v -trimpath -mod=readonly -buildvcs=false -tags=nogpu -o /dev/null ./cmd/daemon
+          echo "✅ nogpu build successful"
+
+      - name: Unit tests
+        env:
+          CGO_ENABLED: 0
+        run: |
+          set -euo pipefail
+          # Use nogpu tag to skip Rust FFI packages (builds stub implementations instead)
+          go test -v -tags=nogpu -coverprofile=coverage.out -covermode=atomic $(go list -tags=nogpu ./... | grep -v '/test$')
+
+      - name: Setup Node for OpenAPI lint
+        uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+
+      - name: Lint OpenAPI
+        run: |
+          set -euo pipefail
+          npx --yes @redocly/cli@latest lint api/openapi.yaml --format=stylish | tee /tmp/openapi-lint.txt
+
+      - name: Attach OpenAPI lint report
+        if: always()
+        uses: actions/upload-artifact@v4 # v5
+        with:
+          name: openapi-lint
+          path: /tmp/openapi-lint.txt
+          retention-days: 14
+
+      - name: OpenAPI lint summary
+        if: always()
+        run: |
+          echo "## OpenAPI Lint" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          tail -n 200 /tmp/openapi-lint.txt >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: "Integration (Smoke Test)"
+        env:
+          XG2G_SMOKE_DATA_DIR: ./data
+        run: |
+          set -euo pipefail
+          # Run the Go-based smoke test which builds and validates the daemon end-to-end
+          make smoke-test
+
+      - name: Output validation
+        run: |
+          set -euo pipefail
+          test -f ./data/playlist.m3u
+          test -f ./data/xmltv.xml
+          test "$(grep -c '^#EXTINF' ./data/playlist.m3u || true)" -ge 2
+          test "$(grep -c '<channel ' ./data/xmltv.xml || true)" -ge 2
+          ! grep -q 'FROM BOUQUET' ./data/playlist.m3u
+
+      - name: Job summary
+        if: always()
+        run: |
+          set -euo pipefail
+
+          COV="n/a"
+          if [ -f coverage.out ]; then
+            COV=$(go tool cover -func=coverage.out | awk '/total:/ {print $3}')
+          fi
+
+          EXTINF=0
+          if [ -f ./data/playlist.m3u ]; then
+            EXTINF=$(grep -c '^#EXTINF' ./data/playlist.m3u || echo 0)
+          fi
+
+          CHANNELS=0
+          if [ -f ./data/xmltv.xml ]; then
+            CHANNELS=$(grep -c '<channel ' ./data/xmltv.xml || echo 0)
+          fi
+
+          GOLD_HASH="n/a"
+          if [ -f internal/epg/testdata/xmltv.golden.xml ]; then
+            GOLD_HASH=$(shasum -a 256 internal/epg/testdata/xmltv.golden.xml | awk '{print $1}')
+          fi
+
+          {
+            echo "## CI Result"
+            echo ""
+            echo "- Coverage: ${COV}"
+            echo "- Playlist entries (#EXTINF): ${EXTINF}"
+            echo "- XMLTV Channels: ${CHANNELS}"
+            echo "- Artifacts: logs-and-reports"
+            echo "- Daemon base: http://127.0.0.1${XG2G_LISTEN:-:8080}"
+            echo "- xmltv.golden.xml (sha256): ${GOLD_HASH}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install golangci-lint (built with runner Go)
+        run: |
+          set -euo pipefail
+          # Build golangci-lint from source using the runner's Go toolchain
+          # to avoid version mismatch errors with prebuilt binaries.
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.5.0
+          golangci-lint --version
+
+      - name: Lint
+        run: |
+          set -euo pipefail
+          golangci-lint run --timeout=5m --verbose ./...
+
+      - name: Lint Markdown
+        continue-on-error: true # Don't block CI on markdown linting issues
+        run: |
+          set -euo pipefail
+          npx --yes markdownlint-cli2 "docs/**/*.md" ".github/**/*.md" "*.md"
+
+      - name: Go test (repeat)
+        run: |
+          set -euo pipefail
+          # Use nogpu tag to skip Rust FFI packages (builds stub implementations instead)
+          go test -race -tags=nogpu $(go list -tags=nogpu ./... | grep -v '/test$') -v
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4 # v5
+        with:
+          name: logs-and-reports
+          path: |
+            coverage.out
+            /tmp/daemon.log
+            ./data/*
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # Optional: Full EPG smoke test against a real receiver (requires secrets)
+  # full-epg-smoke:
+  #   runs-on: ubuntu-latest
+  #   timeout-minutes: 30
+  #   if: ${{ github.event_name == 'workflow_dispatch' }}
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@v4
+  #     - name: Setup Go
+  #       uses: actions/setup-go@v5 # v5
+  #       with:
+  #         go-version-file: go.mod
+  #         cache: true
+  #     - name: Run full EPG smoke test
+  #       env:
+  #         XG2G_OWI_BASE: ${{ secrets.XG2G_OWI_BASE }}
+  #         XG2G_BOUQUET: Premium
+  #         XG2G_XMLTV: xmltv.xml
+  #         XG2G_EPG_ENABLED: "true"
+  #         XG2G_EPG_DAYS: "7"
+  #         XG2G_EPG_MAX_CONCURRENCY: "6"
+  #         XG2G_EPG_TIMEOUT_MS: "20000"
+  #         XG2G_API_TOKEN: ${{ secrets.XG2G_API_TOKEN }}
+  #         EPG_MIN_BYTES: $((5 * 1024 * 1024))
+  #         EPG_MIN_PROGRAMMES: "5000"
+  #       run: |
+  #         set -euo pipefail
+  #         ./scripts/epg-full-refresh.sh
+
+  validate-config:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5 # v5
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install check-jsonschema
+        run: |
+          python -m venv .venv
+          . .venv/bin/activate
+          pip install check-jsonschema==0.31.0
+
+      - name: Validate configs against JSON Schema
+        run: |
+          set -euo pipefail
+          . .venv/bin/activate
+          check-jsonschema --schemafile docs/guides/config.schema.json config.example.yaml
+          find internal/config/testdata -name 'valid*.yaml' -maxdepth 1 -type f -print0 | xargs -0 -I{} check-jsonschema --schemafile docs/guides/config.schema.json {}
+          if [ -d examples ]; then find examples -name '*.ya?ml' -type f -print0 | xargs -0 -I{} check-jsonschema --schemafile docs/guides/config.schema.json {}; fi
+
+      - name: Build validate tool
+        run: go build -o validate ./cmd/validate
+
+      - name: Validate example configs with tool
+        run: |
+          set -euo pipefail
+          if [ -f config.yaml ]; then ./validate -f config.yaml; fi
+          find internal/config/testdata -name 'valid*.yaml' -maxdepth 1 -type f -print0 | xargs -0 -I{} ./validate -f {}
+          if [ -d examples ]; then find examples -name '*.ya?ml' -type f -print0 | xargs -0 -I{} ./validate -f {}; fi

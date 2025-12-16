@@ -1,0 +1,34 @@
+root = true
+
+...existing code up to line 54...
+indent_size = 2
+
+# Markdown files
+[*.md]
+indent_style = space
+indent_size = 2
+
+# JSON files
+[*.json]
+indent_style = space
+indent_size = 2
+
+# Shell scripts
+[*.sh]
+indent_style = space
+indent_size = 2
+
+# Dockerfile
+[Dockerfile*]
+indent_style = space
+indent_size = 2
+
+# Makefile (tabs required)
+[Makefile]
+indent_style = tab
+indent_size = 8
+
+# XML files
+[*.xml]
+indent_style = space
+indent_size = 2

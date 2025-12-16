@@ -1,0 +1,20 @@
+# Gitleaks configuration for xg2g
+# https://github.com/gitleaks/gitleaks
+
+[allowlist]
+description = "Allowlist for false positives in example/template files"
+
+# Exclude example and template files that contain placeholder secrets
+paths = [
+  '''deploy/.*\.example\.yaml$''',
+  '''deploy/.*\.example\.yml$''',
+  '''.*/\.example''',
+]
+
+# Additional regex patterns for known false positives
+regexes = [
+  # Placeholder values in example files
+  '''placeholder-.*''',
+  '''example-.*''',
+  '''INSERT_.*_HERE''',
+]

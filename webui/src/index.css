@@ -1,0 +1,131 @@
+:root {
+  /* Premium Dark Theme (Enforced) */
+  --bg-color: #0f172a;
+  /* Slate 900 */
+  --text-color: #f8fafc;
+  /* Slate 50 */
+  --card-bg: #1e293b;
+  /* Slate 800 */
+  --card-text: #f1f5f9;
+  /* Slate 100 */
+  --border-color: #334155;
+  /* Slate 700 */
+  --active-color: #3b82f6;
+  /* Blue 500 */
+
+  --glass-bg: rgba(15, 23, 42, 0.85);
+  --glass-border: rgba(255, 255, 255, 0.1);
+
+  /* Safe Areas */
+  --sat: env(safe-area-inset-top, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+
+  /* Navigation */
+  --nav-height: 60px;
+}
+
+/* Typography */
+body {
+  font-family: 'Inter', -apple-system, sans-serif;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 320px;
+  min-height: 100vh;
+  min-height: -webkit-fill-available;
+  /* Safari full height fix */
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  overscroll-behavior-y: none;
+  /* Prevent rubber-banding on body */
+}
+
+/* Typography & Layout */
+h1 {
+  font-size: 2em;
+  /* Reduced from 3.2em for mobile */
+  line-height: 1.2;
+  margin: 0.5em 0;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+
+/* Inputs: Prevent Zoom on iOS */
+input,
+select,
+textarea {
+  font-size: 16px !important;
+  /* Critical for iOS */
+  max-width: 100%;
+}
+
+/* Touch Targets: Minimum 44px */
+button,
+a,
+.interactive {
+  min-height: 44px;
+  min-width: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: manipulation;
+  /* Remove double-tap zoom delay */
+}
+
+button {
+  border-radius: 10px;
+  /* iOS corner radius */
+  border: 1px solid transparent;
+  padding: 0 16px;
+  font-size: 17px;
+  /* iOS standard body size */
+  font-weight: 600;
+  font-family: inherit;
+  background-color: var(--card-bg);
+  color: var(--active-color);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:active {
+  opacity: 0.7;
+  transform: scale(0.98);
+}
+
+button:focus-visible {
+  outline: 2px solid var(--active-color);
+  outline-offset: 2px;
+}
+
+a {
+  font-weight: 500;
+  color: var(--active-color);
+  text-decoration: none;
+}
+
+/* Utilities */
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-top: 0.5px solid var(--glass-border);
+}
+
+/* Hide scrollbar but allow scrolling */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
