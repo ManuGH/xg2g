@@ -41,7 +41,7 @@ export default function Navigation({ activeView, onViewChange }) {
 
   return (
     <nav className="nav-container glass">
-      <div className="nav-logo">xg2g v3.3.0 (Community)</div>
+      <div className="nav-logo">xg2g v3.3.1 (Maintenance)</div>
       <div className="nav-links">
         {tabs.map((tab) => {
           const Icon = tab.icon;
