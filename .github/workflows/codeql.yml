@@ -28,7 +28,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6.0.1
 
       # Setup Go for both languages (Go analysis needs it, C++ build might interact with it)
       - name: Setup Go
