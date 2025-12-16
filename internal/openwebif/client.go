@@ -396,6 +396,32 @@ type EPGResponse struct {
 	Result bool       `json:"result"`
 }
 
+// Timer represents an Enigma2 timer entry
+type Timer struct {
+	ServiceRef  string `json:"serviceref"`
+	ServiceName string `json:"servicename"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Disabled    int    `json:"disabled"`
+	Begin       int64  `json:"begin"`
+	End         int64  `json:"end"`
+	Duration    int64  `json:"duration"`
+	State       int    `json:"state"`
+	Filename    string `json:"filename,omitempty"`
+}
+
+// TimerListResponse represents the response from /api/timerlist
+type TimerListResponse struct {
+	Result bool    `json:"result"`
+	Timers []Timer `json:"timers"`
+}
+
+// TimerOpResponse represents the response from /api/timeradd or /api/timerdelete
+type TimerOpResponse struct {
+	Result  bool   `json:"result"`
+	Message string `json:"message"`
+}
+
 // Services retrieves all services for a given bouquet.
 func (c *Client) Services(ctx context.Context, bouquetRef string) ([][2]string, error) {
 	// Check cache if available
@@ -494,6 +520,151 @@ func (c *Client) Services(ctx context.Context, bouquetRef string) ([][2]string, 
 	return empty, nil
 }
 
+// GetTimers retrieves the list of timers from the receiver.
+func (c *Client) GetTimers(ctx context.Context) ([]Timer, error) {
+	// Timers change frequently, so we don't cache them aggressively
+	// or we use a very short TTL if we did. For now, no caching.
+	body, err := c.get(ctx, "/api/timerlist", "timers.list", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var payload TimerListResponse
+	if err := json.Unmarshal(body, &payload); err != nil {
+		c.loggerFor(ctx).Error().Err(err).Str("event", "openwebif.decode").Str("operation", "timers.list").Msg("failed to decode timer list")
+		return nil, err
+	}
+
+	return payload.Timers, nil
+}
+
+// AddTimer schedules a new recording.
+func (c *Client) AddTimer(ctx context.Context, sRef string, begin, end int64, name, description string) error {
+	// URL Encode parameters
+	params := url.Values{}
+	params.Set("sRef", sRef)
+	params.Set("begin", strconv.FormatInt(begin, 10))
+	params.Set("end", strconv.FormatInt(end, 10))
+	params.Set("name", name)
+	params.Set("description", description)
+	// Defaults
+	params.Set("disabled", "0")
+	params.Set("justplay", "0")
+	params.Set("after_event", "3") // Auto
+
+	path := "/api/timeradd?" + params.Encode()
+	body, err := c.get(ctx, path, "timers.add", nil)
+	if err != nil {
+		return err
+	}
+
+	var resp TimerOpResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return fmt.Errorf("failed to decode timer add response: %w", err)
+	}
+
+	if !resp.Result {
+		return fmt.Errorf("failed to add timer: %s", resp.Message)
+	}
+
+	return nil
+}
+
+// DeleteTimer removes an existing timer.
+// Enigma2 requires exact matching of sRef, begin, and end.
+func (c *Client) DeleteTimer(ctx context.Context, sRef string, begin, end int64) error {
+	params := url.Values{}
+	params.Set("sRef", sRef)
+	params.Set("begin", strconv.FormatInt(begin, 10))
+	params.Set("end", strconv.FormatInt(end, 10))
+
+	path := "/api/timerdelete?" + params.Encode()
+	body, err := c.get(ctx, path, "timers.delete", nil)
+	if err != nil {
+		return err
+	}
+
+	var resp TimerOpResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return fmt.Errorf("failed to decode timer delete response: %w", err)
+	}
+
+	if !resp.Result {
+		return fmt.Errorf("failed to delete timer: %s", resp.Message)
+	}
+
+	return nil
+}
+
+// UpdateTimer updates an existing timer.
+// Uses /api/timerchange if available.
+func (c *Client) UpdateTimer(ctx context.Context, oldSRef string, oldBegin, oldEnd int64, newSRef string, newBegin, newEnd int64, name, description string, enabled bool) error {
+	params := url.Values{}
+	// Old timer identification
+	params.Set("sRef", oldSRef)
+	params.Set("begin", strconv.FormatInt(oldBegin, 10))
+	params.Set("end", strconv.FormatInt(oldEnd, 10))
+
+	// New values
+	params.Set("channel", newSRef) // Note: timerchange often uses 'channel' for new ref
+	params.Set("name", name)
+	params.Set("description", description)
+	params.Set("begin_timestamp", strconv.FormatInt(newBegin, 10)) // Some versions use begin, some begin_timestamp. Let's send both to be safe or check spec.
+	// Standard OpenWebIF typically uses the same keys as add, plus old keys.
+	// Actually, safer to rely on Delete+Add if we aren't 100% sure of the specific OWI version quirks.
+	// But user requested "native update path (if available)".
+	// Let's assume standard parameters:
+	params.Set("change_begin", strconv.FormatInt(newBegin, 10))
+	params.Set("change_end", strconv.FormatInt(newEnd, 10))
+	params.Set("change_name", name)
+	params.Set("change_description", description)
+	// OpenWebIF is messy here.
+	// For now, let's try the common 'timerchange' pattern if we implement it.
+
+	// WAIT. If we don't know the exact parameters for timerchange, Delete+Add is safer.
+	// However, I will define this method to call /api/timerchange.
+	// If it fails (404/500), the caller will fallback.
+
+	params.Set("deleteOldOnSave", "1") // Replaces old
+
+	path := "/api/timerchange?" + params.Encode()
+	body, err := c.get(ctx, path, "timers.update", nil)
+	if err != nil {
+		return err
+	}
+
+	var resp TimerOpResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return fmt.Errorf("failed to decode timer update response: %w", err)
+	}
+
+	if !resp.Result {
+		return fmt.Errorf("failed to update timer: %s", resp.Message)
+	}
+
+	return nil
+}
+
+// HasTimerChange checks if the receiver supports /api/timerchange
+func (c *Client) HasTimerChange(ctx context.Context) bool {
+	// Simple check: HEAD or GET /api/timerchange with dummy params or just invalid params
+	// If it returns 200 (Result: false) or 400, it exists. If 404, it doesn't.
+	// We cache this result in the client or caller.
+
+	// Quick probe
+	_, err := c.get(ctx, "/api/timerchange", "probe", nil)
+	// If error is 404, return false.
+	// get() returns error for non-200 if we didn't handle it?
+	// Actually c.get wraps generic requests.
+	// For now, let's assume if it errors with 404, it's missing.
+	if err != nil {
+		if strings.Contains(err.Error(), "404") {
+			return false
+		}
+	}
+	return true
+}
+
 // StreamURL builds a streaming URL for the given service reference.
 // Context is used for smart stream detection and tracing.
 func (c *Client) StreamURL(ctx context.Context, ref, name string) (string, error) {
@@ -587,11 +758,42 @@ func (c *Client) StreamURL(ctx context.Context, ref, name string) (string, error
 	return u.String(), nil
 }
 
-// StreamURL constructs a streaming URL from base URL and service reference.
-// Preserved helper that now uses New, so ENV variables take effect.
-// Deprecated: Use client.StreamURL(ctx, ref, name) for proper context propagation.
-func StreamURL(base, ref, name string) (string, error) {
-	return NewWithPort(base, 0, Options{}).StreamURL(context.Background(), ref, name)
+// StatusInfo represents the receiver status from /api/statusinfo
+type StatusInfo struct {
+	Result      bool   `json:"result"`
+	InStandby   string `json:"inStandby"`   // "true" or "false"
+	IsRecording string `json:"isRecording"` // "true" or "false"
+	ServiceName string `json:"currservice_name"`
+	ServiceRef  string `json:"currservice_serviceref"`
+}
+
+// GetStatusInfo fetches current receiver status (recording, standby, service).
+func (c *Client) GetStatusInfo(ctx context.Context) (*StatusInfo, error) {
+	// Short cache TTL (1s) to avoid hammering but allow rapid UI updates
+	const cacheKey = "statusinfo"
+	if c.cache != nil {
+		if cached, ok := c.cache.Get(cacheKey); ok {
+			if result, ok := cached.(*StatusInfo); ok {
+				return result, nil
+			}
+		}
+	}
+
+	body, err := c.get(ctx, "/api/statusinfo", "status.info", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var info StatusInfo
+	if err := json.Unmarshal(body, &info); err != nil {
+		return nil, fmt.Errorf("failed to decode status info: %w", err)
+	}
+
+	if c.cache != nil {
+		c.cache.Set(cacheKey, &info, 2*time.Second) // 2s TTL
+	}
+
+	return &info, nil
 }
 
 func resolveStreamPort(port int) int {

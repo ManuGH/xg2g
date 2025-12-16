@@ -460,16 +460,28 @@ body {
 }
 
 .epg-play-btn {
+  background: transparent;
+  color: var(--accent-primary);
+  border: 1px solid var(--border-subtle);
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  /* Circular */
+  font-size: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-left: auto;
+  padding: 0;
+}
+
+.epg-play-btn:hover {
   background: var(--accent-primary);
   color: white;
-  border: none;
-  padding: 6px 12px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: transform 0.1s;
-  margin-left: auto;
+  border-color: var(--accent-primary);
+  transform: scale(1.1);
+  box-shadow: 0 0 10px var(--accent-glow);
 }
 
 .epg-play-btn:active {
@@ -551,8 +563,9 @@ body {
 }
 
 .epg-search-logo img {
-  width: 52px;
-  height: 52px;
+  width: 90px;
+  height: auto;
+  min-height: 40px;
   object-fit: contain;
 }
 

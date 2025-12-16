@@ -34,6 +34,7 @@ export default function Navigation({ activeView, onViewChange }) {
   const tabs = [
     { id: 'dashboard', label: 'Dashboard', icon: Icons.Dashboard },
     { id: 'epg', label: 'TV/EPG', icon: Icons.EPG },
+    { id: 'timers', label: 'Timers', icon: Icons.Dashboard }, // Reusing Dashboard icon for now or add new Clock one
     { id: 'files', label: 'Files', icon: Icons.Files },
     { id: 'logs', label: 'Logs', icon: Icons.Logs },
     { id: 'config', label: 'Config', icon: Icons.Config },

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { DefaultService } from '../client';
+import { DefaultService } from '../client/services/DefaultService';
+import { DvrService } from '../client/services/DvrService';
 
 export default function Dashboard() {
   const [health, setHealth] = useState(null);
@@ -30,7 +31,10 @@ export default function Dashboard() {
     <div className="dashboard">
       <div className="dashboard-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <h2>System Status</h2>
-        <button onClick={fetchHealth}>Refresh</button>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <RecordingStatusIndicator />
+          <button onClick={fetchHealth}>Refresh</button>
+        </div>
       </div>
       <div className="card-grid">
 
@@ -42,6 +46,8 @@ export default function Dashboard() {
           <p>Uptime: {formatUptime(health.uptime_seconds)}</p>
           <p>Version: {health.version}</p>
         </div>
+
+        <StreamsCard />
 
         <div className="card">
           <h3>Enigma2 Link</h3>
@@ -67,6 +73,125 @@ export default function Dashboard() {
       </div>
     </div>
   );
+}
+
+function RecordingStatusIndicator() {
+  const [status, setStatus] = useState(null);
+
+  useEffect(() => {
+    let timeoutId;
+    let mounted = true;
+    let errors = 0;
+
+    const fetch = () => {
+      DvrService.getDvrStatus()
+        .then(data => {
+          if (!mounted) return;
+          setStatus(data);
+          errors = 0;
+          timeoutId = setTimeout(fetch, 10000);
+        })
+        .catch(() => {
+          if (!mounted) return;
+          setStatus(null);
+          errors++;
+          const delay = Math.min(10000 + (errors * 5000), 30000);
+          timeoutId = setTimeout(fetch, delay);
+        });
+    };
+
+    fetch();
+
+    return () => {
+      mounted = false;
+      clearTimeout(timeoutId);
+    };
+  }, []);
+
+  if (!status) {
+    return <div className="recording-badge unknown">REC: UNKNOWN</div>;
+  }
+
+  return (
+    <div className={`recording-badge ${status.isRecording ? 'active' : 'idle'}`}>
+      {status.isRecording ? `REC: ACTIVE ${status.serviceName ? `(${status.serviceName})` : ''}` : 'REC: IDLE'}
+    </div>
+  );
+}
+
+function StreamsCard() {
+  const [streams, setStreams] = useState([]);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let timeoutId;
+    let mounted = true;
+    let errors = 0;
+
+    const fetch = () => {
+      DefaultService.getStreams()
+        .then(data => {
+          if (!mounted) return;
+          setStreams(data || []);
+          setError(false);
+          errors = 0;
+          timeoutId = setTimeout(fetch, 3000); // 3s
+        })
+        .catch(() => {
+          if (!mounted) return;
+          setError(true);
+          errors++;
+          const delay = Math.min(3000 + (errors * 2000), 15000);
+          timeoutId = setTimeout(fetch, delay);
+        });
+    };
+
+    fetch();
+
+    return () => {
+      mounted = false;
+      clearTimeout(timeoutId);
+    };
+  }, []);
+
+  const count = streams.length;
+
+  const maskIP = (ip) => {
+    if (!ip) return '';
+    // Simple IPv4 masking: 1.2.3.4 -> 1.2.3.xxx
+    return ip.replace(/\.\d+$/, '.xxx');
+  };
+
+  return (
+    <div className="card">
+      <h3>Active Streams</h3>
+      <div className={`status-indicator ${count > 0 ? 'active' : 'idle'}`}>
+        {error ? 'UNAVAILABLE' : `${count} Active`}
+      </div>
+      {streams.length > 0 && (
+        <ul className="stream-list">
+          {streams.map(s => (
+            <li key={s.id}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+                <span className="channel">{s.channel_name || 'Unknown'}</span>
+                <span className="ip-hint" style={{ fontSize: '0.8em', color: '#888' }}>{maskIP(s.client_ip)}</span>
+              </div>
+              <div className="duration" style={{ fontSize: '0.85em' }}>{s.started_at ? formatDuration(new Date(s.started_at)) : ''}</div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function formatDuration(startDate) {
+  const diff = Math.floor((new Date() - startDate) / 1000);
+  const h = Math.floor(diff / 3600);
+  const m = Math.floor((diff % 3600) / 60);
+  const s = diff % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m ${s}s`;
 }
 
 function LogList() {

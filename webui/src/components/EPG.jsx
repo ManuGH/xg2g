@@ -1,5 +1,5 @@
 import React from 'react';
-import { EpgService, OpenAPI } from '../client';
+import { EpgService, TimersService, OpenAPI } from '../client';
 
 function formatTime(ts) {
   if (!ts) return '';
@@ -20,7 +20,7 @@ function formatRange(start, end) {
   return `${formatTime(start)} – ${formatTime(end)}`;
 }
 
-function ProgrammeRow({ prog, now, highlight = false }) {
+function ProgrammeRow({ prog, now, highlight = false, onRecord, isRecorded }) {
   const inProgress = now >= prog.start && now <= prog.end;
   const total = prog.end - prog.start;
   const elapsed = Math.max(0, Math.min(total, now - prog.start));
@@ -28,7 +28,37 @@ function ProgrammeRow({ prog, now, highlight = false }) {
 
   return (
     <div className={`epg-programme${highlight ? ' epg-programme-current' : ''}`}>
-      <div className="epg-programme-time">{formatRange(prog.start, prog.end)}</div>
+      <div className="epg-programme-time">
+        {formatRange(prog.start, prog.end)}
+        {onRecord && (
+          isRecorded ? (
+            <span title="Aufnahme geplant" style={{ marginLeft: '8px', color: '#ff4444', fontSize: '14px' }}>
+              🔴
+            </span>
+          ) : (
+            <button
+              className="epg-record-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                onRecord(prog);
+              }}
+              title="Aufnahme planen"
+              style={{
+                marginLeft: '8px',
+                cursor: 'pointer',
+                background: 'transparent',
+                border: 'none',
+                color: '#ff4444',
+                fontSize: '14px',
+                padding: '0 4px',
+                lineHeight: 1
+              }}
+            >
+              ⏺
+            </button>
+          )
+        )}
+      </div>
       <div className="epg-programme-body">
         <div className="epg-programme-title">
           {prog.title || '—'}
@@ -59,12 +89,71 @@ export default function EPG({ channels, bouquets = [], selectedBouquet = '', onS
   const [error, setError] = React.useState(null);
   const [hours, setHours] = React.useState(6);
   const [now, setNow] = React.useState(Date.now() / 1000);
+
   const [expanded, setExpanded] = React.useState({});
   const [searchQuery, setSearchQuery] = React.useState('');
   const [searchResults, setSearchResults] = React.useState([]);
   const [searchLoading, setSearchLoading] = React.useState(false);
   const [searchError, setSearchError] = React.useState(null);
   const [searchRan, setSearchRan] = React.useState(false);
+  const [timers, setTimers] = React.useState([]);
+
+  const RECORD_Supported = true; // Feature Flag
+
+  // Fetch Timers for EPG Feedback
+  const fetchTimers = async () => {
+    try {
+      const data = await TimersService.getTimers();
+      setTimers(data || []);
+    } catch (err) {
+      console.error("Failed to fetch timers for EPG", err);
+    }
+  };
+
+  React.useEffect(() => {
+    fetchTimers();
+    // Poll timers occasionally?
+    const interval = setInterval(fetchTimers, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleRecord = async (prog) => {
+    if (!confirm(`Aufnahme für "${prog.title}" planen?`)) return;
+
+    try {
+      const token = localStorage.getItem('XG2G_API_TOKEN');
+      if (token) OpenAPI.TOKEN = token;
+
+      await TimersService.addTimer({
+        service_ref: prog.service_ref,
+        begin: prog.start,
+        end: prog.end,
+        name: prog.title,
+        description: prog.desc || ''
+      });
+      alert('Aufnahme erfolgreich geplant!');
+      fetchTimers(); // Refresh Feedback immediately
+    } catch (err) {
+      console.error(err);
+      alert('Fehler beim Planen der Aufnahme: ' + (err.message || err));
+    }
+  };
+
+  const isRecorded = (prog) => {
+    return timers.some(t => {
+      // Check Service Ref (t.serviceref might be different casing or format?)
+      // Check Time Overlap
+      if (t.serviceref !== prog.service_ref && t.serviceref !== prog.channel) return false;
+
+      // Simple overlap check
+      // Timer: [t.begin, t.end]
+      // Prog:  [prog.start, prog.end]
+      // Overlap if: t.begin < prog.end && t.end > prog.start
+
+      return (t.begin < prog.end && t.end > prog.start);
+    });
+  };
+
 
   const runSearch = async (query, bouquet) => {
     const q = query.trim();
@@ -103,18 +192,7 @@ export default function EPG({ channels, bouquets = [], selectedBouquet = '', onS
     return map;
   }, [channels]);
 
-  const channelOrder = React.useMemo(() => {
-    const order = new Map();
-    (channels || []).forEach((ch, idx) => {
-      const ref = ch.service_ref || ch.serviceRef || ch.id;
-      if (!ref || order.has(ref)) return;
-      order.set(ref, { idx, number: ch.number });
-      if (ch.id && !order.has(ch.id)) {
-        order.set(ch.id, { idx, number: ch.number });
-      }
-    });
-    return order;
-  }, [channels]);
+  /* Unused channelOrder memo removed */
 
   const grouped = React.useMemo(() => {
     const g = {};
@@ -308,7 +386,34 @@ export default function EPG({ channels, bouquets = [], selectedBouquet = '', onS
                 })();
                 return (
                   <div className="epg-programme epg-programme-search" key={`${prog.service_ref}-${prog.start}`}>
-                    <div className="epg-programme-time">{range}</div>
+                    <div className="epg-programme-time">
+                      <div>{range}</div>
+                      {logo && (
+                        <div className="epg-search-logo" style={{ marginTop: '8px' }}>
+                          <img
+                            src={logo}
+                            alt={displayName}
+                            onError={(e) => {
+                              e.target.onerror = null;
+                              e.target.style.display = 'none';
+                            }}
+                          />
+                        </div>
+                      )}
+                      {RECORD_Supported && (
+                        <button
+                          className="epg-record-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRecord(prog);
+                          }}
+                          title="Aufnahme planen"
+                          style={{ marginTop: '8px', background: 'transparent', border: 'none', color: '#ff4444', fontSize: '18px', cursor: 'pointer' }}
+                        >
+                          ⏺
+                        </button>
+                      )}
+                    </div>
                     <div className="epg-programme-body">
                       <div className="epg-programme-title">
                         {prog.title || '—'}
@@ -324,18 +429,6 @@ export default function EPG({ channels, bouquets = [], selectedBouquet = '', onS
                         </button>
                       )}
                       {prog.desc && <div className="epg-programme-desc">{prog.desc}</div>}
-                      {logo && (
-                        <div className="epg-search-logo">
-                          <img
-                            src={logo}
-                            alt={displayName}
-                            onError={(e) => {
-                              e.target.onerror = null;
-                              e.target.style.display = 'none';
-                            }}
-                          />
-                        </div>
-                      )}
                     </div>
                   </div>
                 );
@@ -353,7 +446,7 @@ export default function EPG({ channels, bouquets = [], selectedBouquet = '', onS
           // Try to find EPG data by service_ref OR id
           const list = grouped[ch.service_ref] || grouped[ch.id] || [];
 
-          const now = Date.now() / 1000;
+
           const current = list.find((p) => now >= p.start && now <= p.end) || list[0];
           const others = list.filter((p) => p !== current);
           const logo = ch?.logo_url || ch?.logoUrl || ch?.logo;
@@ -406,6 +499,7 @@ export default function EPG({ channels, bouquets = [], selectedBouquet = '', onS
                     prog={current}
                     now={now}
                     highlight
+                    onRecord={handleRecord}
                   />
                 )}
 
@@ -419,12 +513,14 @@ export default function EPG({ channels, bouquets = [], selectedBouquet = '', onS
                     </button>
                     {expanded[ref] && (
                       <div className="epg-programmes-noncurrent">
-                        {others.map((prog) => (
+                        {others.map((prog, idx2) => (
                           <ProgrammeRow
-                            key={`${prog.service_ref}-${prog.start}`}
+                            key={`${prog.start}-${idx2}`}
                             prog={prog}
                             now={now}
-                            highlight={false}
+                            highlight={prog.start <= now && prog.end >= now}
+                            onRecord={handleRecord}
+                            isRecorded={isRecorded(prog)}
                           />
                         ))}
                       </div>
@@ -439,3 +535,5 @@ export default function EPG({ channels, bouquets = [], selectedBouquet = '', onS
     </div >
   );
 }
+
+

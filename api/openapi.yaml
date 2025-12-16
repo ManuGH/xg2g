@@ -167,6 +167,150 @@ components:
           type: string
           description: Service reference for streaming (extracted from M3U URL)
 
+    ProblemDetails:
+      type: object
+      required: [type, title, status]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        fields:
+          type: object
+          additionalProperties: true
+        conflicts:
+          type: array
+          items: { $ref: "#/components/schemas/TimerConflict" }
+
+    Timer:
+      type: object
+      required: [timerId, serviceRef, begin, end, name, state]
+      properties:
+        timerId: { type: string }
+        serviceRef: { type: string }
+        begin: { type: integer, format: int64 }
+        end: { type: integer, format: int64 }
+        name: { type: string }
+        description: { type: string }
+        serviceName: { type: string }
+        state:
+          type: string
+          enum: [scheduled, recording, completed, disabled, unknown]
+        receiverState:
+          type: object
+          additionalProperties: true
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    TimerCreateRequest:
+      type: object
+      required: [serviceRef, begin, end, name]
+      properties:
+        serviceRef: { type: string }
+        begin: { type: integer, format: int64 }
+        end: { type: integer, format: int64 }
+        name: { type: string }
+        description: { type: string }
+        enabled: { type: boolean, default: true }
+        justPlay: { type: boolean, default: false }
+        afterEvent:
+          type: string
+          enum: [default, standby, deepstandby, nothing]
+          default: default
+        paddingBeforeSec: { type: integer, default: 0 }
+        paddingAfterSec: { type: integer, default: 0 }
+        idempotencyKey: { type: string }
+
+    TimerPatchRequest:
+      type: object
+      properties:
+        begin: { type: integer, format: int64 }
+        end: { type: integer, format: int64 }
+        name: { type: string }
+        description: { type: string }
+        enabled: { type: boolean }
+        paddingBeforeSec: { type: integer }
+        paddingAfterSec: { type: integer }
+
+    TimerConflict:
+      type: object
+      required: [type, blockingTimer]
+      properties:
+        type:
+          type: string
+          enum: [overlap, duplicate, tuner_limit, unknown]
+        blockingTimer: { $ref: "#/components/schemas/Timer" }
+        overlapSeconds: { type: integer }
+        message: { type: string }
+
+    TimerConflictPreviewRequest:
+      type: object
+      required: [proposed]
+      properties:
+        proposed:
+          $ref: "#/components/schemas/TimerCreateRequest"
+        mode:
+          type: string
+          enum: [conservative, receiverAware]
+          default: conservative
+
+    TimerConflictPreviewResponse:
+      type: object
+      required: [canSchedule, conflicts]
+      properties:
+        canSchedule: { type: boolean }
+        conflicts:
+          type: array
+          items: { $ref: "#/components/schemas/TimerConflict" }
+        suggestions:
+          type: array
+          items:
+            type: object
+            properties:
+              kind:
+                { type: string, enum: [reduce_padding, shift_start, shift_end] }
+              proposedBegin: { type: integer, format: int64 }
+              proposedEnd: { type: integer, format: int64 }
+              note: { type: string }
+
+    DvrCapabilities:
+      type: object
+      required: [timers, conflicts, series]
+      properties:
+        timers:
+          type: object
+          properties:
+            edit: { type: boolean }
+            delete: { type: boolean }
+            readBackVerify: { type: boolean }
+        conflicts:
+          type: object
+          properties:
+            preview: { type: boolean }
+            receiverAware: { type: boolean }
+        series:
+          type: object
+          properties:
+            supported: { type: boolean }
+            mode: { type: string, enum: [none, delegated, managed] }
+            delegatedProvider: { type: string }
+
+    RecordingStatus:
+      type: object
+      required: [isRecording]
+      properties:
+        isRecording: { type: boolean }
+        serviceName: { type: string }
+
+    TimerList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Timer" }
+
     LogEntry:
       type: object
       properties:
@@ -377,9 +521,196 @@ paths:
                 items:
                   $ref: "#/components/schemas/StreamSession"
 
+  /timers:
+    get:
+      summary: List all timers (v2)
+      operationId: getTimers
+      tags:
+        - timers
+      parameters:
+        - name: state
+          in: query
+          schema:
+            type: string
+            default: scheduled
+        - name: from
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of timers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimerList"
+    post:
+      summary: Create a timer (v2)
+      operationId: addTimer
+      tags:
+        - timers
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TimerCreateRequest"
+      responses:
+        "201":
+          description: Timer created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Timer"
+        "409":
+          description: Duplicate timer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "422":
+          description: Conflict or validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "502":
+          description: Receiver inconsistent (verification failed)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+  /timers/{timerId}:
+    get:
+      summary: Get timer
+      operationId: getTimer
+      tags:
+        - timers
+      parameters:
+        - name: timerId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Timer details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Timer"
+        "404":
+          description: Timer not found
+    patch:
+      summary: Edit timer
+      operationId: updateTimer
+      tags:
+        - timers
+      parameters:
+        - name: timerId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TimerPatchRequest"
+      responses:
+        "200":
+          description: Timer updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Timer"
+        "404":
+          description: Timer not found
+        "409":
+          description: Duplicate resulting from edit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "422":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "502":
+          description: Receiver fail / Rollback
+    delete:
+      summary: Delete timer
+      operationId: deleteTimer
+      tags:
+        - timers
+      parameters:
+        - name: timerId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+
+  /timers/conflicts:preview:
+    post:
+      summary: Preview conflicts
+      operationId: previewConflicts
+      tags:
+        - timers
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TimerConflictPreviewRequest"
+      responses:
+        "200":
+          description: Preview result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimerConflictPreviewResponse"
+
+  /dvr/capabilities:
+    get:
+      summary: Get DVR capabilities
+      operationId: getDvrCapabilities
+      tags:
+        - dvr
+      responses:
+        "200":
+          description: Capabilities
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DvrCapabilities"
+
+  /dvr/status:
+    get:
+      summary: Get DVR recording status
+      operationId: getDvrStatus
+      tags:
+        - dvr
+      responses:
+        "200":
+          description: Recording status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordingStatus"
+
   /streams/{id}:
     delete:
       summary: Terminate a stream session
+      operationId: deleteStreamsId
       parameters:
         - in: path
           name: id
@@ -395,6 +726,7 @@ paths:
   /logs:
     get:
       summary: Get recent logs
+      operationId: getLogs
       responses:
         "200":
           description: Recent log entries

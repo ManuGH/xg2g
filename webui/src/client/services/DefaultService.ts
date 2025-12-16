@@ -130,7 +130,7 @@ export class DefaultService {
      * @returns void
      * @throws ApiError
      */
-    public static deleteStreams(
+    public static deleteStreamsId(
         id: string,
     ): CancelablePromise<void> {
         return __request(OpenAPI, {

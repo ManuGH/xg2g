@@ -34,8 +34,10 @@ import (
 	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
+	"github.com/ManuGH/xg2g/internal/proxy"
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
+	"golang.org/x/sync/singleflight"
 )
 
 //go:embed dist/*
@@ -64,6 +66,15 @@ type Server struct {
 	epgCache      *epg.TV
 	epgCacheTime  time.Time
 	epgCacheMTime time.Time
+	epgSfg        singleflight.Group
+
+	proxy ProxyServer // Interface for proxy interactions
+}
+
+// ProxyServer defines the interface for proxy interactions required by the API.
+type ProxyServer interface {
+	GetSessions() []*proxy.StreamSession
+	Terminate(id string) bool
 }
 
 // AuditLogger interface for audit logging (optional).
@@ -459,6 +470,13 @@ func (s *Server) GetConfig() config.AppConfig {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.cfg
+}
+
+// SetProxy configures the proxy server dependency
+func (s *Server) SetProxy(p ProxyServer) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.proxy = p
 }
 
 // HandleRefreshInternal exposes the refresh handler for versioned APIs
