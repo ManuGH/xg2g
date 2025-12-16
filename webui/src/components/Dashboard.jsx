@@ -197,14 +197,27 @@ function formatDuration(startDate) {
 function LogList() {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
+    // Defensive check for Generated Client
+    if (typeof DefaultService.getLogs !== 'function') {
+      console.error('API Client Verification Failed: DefaultService.getLogs is missing', DefaultService);
+      setError('Log service unavailable');
+      setLoading(false);
+      return;
+    }
+
     DefaultService.getLogs()
       .then(data => setLogs((data || []).slice(0, 5)))
-      .catch(console.error)
+      .catch(err => {
+        console.error('Failed to fetch logs', err);
+        setError('Failed to load logs');
+      })
       .finally(() => setLoading(false));
   }, []);
 
+  if (error) return <div className="error-message">{error}</div>;
   if (loading) return <div>Loading logs...</div>;
   if (!logs || logs.length === 0) return <div className="no-data">No recent logs</div>;
 

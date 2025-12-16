@@ -28,6 +28,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/api/middleware"
 	"github.com/ManuGH/xg2g/internal/channels"
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/dvr"
 	"github.com/ManuGH/xg2g/internal/epg"
 	"github.com/ManuGH/xg2g/internal/hdhr"
 	"github.com/ManuGH/xg2g/internal/health"
@@ -57,6 +58,9 @@ type Server struct {
 	healthManager  *health.Manager   // Health and readiness checks
 	channelManager *channels.Manager // Channel management
 	configManager  *config.Manager   // Config operations
+	seriesManager  *dvr.Manager      // Series Recording Rules (DVR v2)
+	seriesEngine   *dvr.SeriesEngine // Series Recording Engine (DVR v2.1)
+
 	// refreshFn allows tests to stub the refresh operation; defaults to jobs.Refresh
 	refreshFn      func(context.Context, config.Snapshot) (*jobs.Status, error)
 	startTime      time.Time
@@ -158,17 +162,33 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager) *Server {
 		log.L().Error().Err(err).Msg("failed to load channel states")
 	}
 
+	// Initialize Series Manager (DVR v2)
+	sm := dvr.NewManager(cfg.DataDir)
+	if err := sm.Load(); err != nil {
+		log.L().Error().Err(err).Msg("failed to load series rules")
+	}
+
+	// Initialize OpenWebIF Client
+	// Options can be tuned if needed (e.g. timeout, caching)
+	owiClient := openwebif.New(cfg.OWIBase)
+
 	s := &Server{
 		cfg:            cfg,
 		snap:           config.BuildSnapshot(cfg),
 		channelManager: cm,
 		configManager:  cfgMgr,
+		seriesManager:  sm,
 		status: jobs.Status{
 			Version: cfg.Version, // Initialize version from config
 		},
 		startTime:      time.Now(),
-		piconSemaphore: make(chan struct{}, 50), // Increased from 1 or small default to 50
+		piconSemaphore: make(chan struct{}, 50),
 	}
+
+	// Initialize Series Engine
+	// Server (s) implements EpgProvider interface via GetEvents method
+	s.seriesEngine = dvr.NewSeriesEngine(sm, owiClient, s)
+
 	// Default refresh function
 	s.refreshFn = jobs.Refresh
 	// Initialize a conservative default circuit breaker (3 failures -> 30s open)
@@ -209,7 +229,8 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager) *Server {
 		if cfg.OWIBase == "" {
 			return fmt.Errorf("receiver not configured")
 		}
-		// Quick HEAD request to check if receiver is reachable
+		// Use client for check if possible, or keep simple HTTP
+		// For now keeping simple check to avoid dependency circularity issues during startup
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		req, err := http.NewRequestWithContext(ctx, http.MethodHead, cfg.OWIBase, nil)
@@ -247,10 +268,69 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager) *Server {
 	return s
 }
 
+// GetEvents implements dvr.EpgProvider interface
+func (s *Server) GetEvents(from, to time.Time) ([]openwebif.EPGEvent, error) {
+	s.mu.RLock()
+	cache := s.epgCache
+	s.mu.RUnlock()
+
+	if cache == nil {
+		return nil, nil // No EPG data
+	}
+
+	var events []openwebif.EPGEvent
+
+	// Programs is flat list in epg.TV?
+	// Yes: Programs []Programme
+	// We need to iterate and convert.
+
+	for _, p := range cache.Programs {
+		// Parse times
+		// formatXMLTVTime: "20060102150405 -0700"
+		start, err := time.Parse("20060102150405 -0700", p.Start)
+		if err != nil {
+			continue
+		}
+
+		// Optimization: Skip if outside window
+		if start.After(to) {
+			continue
+		}
+
+		stop, err := time.Parse("20060102150405 -0700", p.Stop)
+		if err != nil {
+			// Fallback: 30 mins
+			stop = start.Add(30 * time.Minute)
+		}
+
+		if stop.Before(from) {
+			continue
+		}
+
+		// Convert to EPGEvent
+		evt := openwebif.EPGEvent{
+			Title:       p.Title.Text,
+			Description: p.Desc,
+			Begin:       start.Unix(),
+			Duration:    int64(stop.Sub(start).Seconds()),
+			SRef:        p.Channel, // Channel ID in XMLTV is SRef
+		}
+		events = append(events, evt)
+	}
+
+	return events, nil
+}
+
 // HDHomeRunServer returns the HDHomeRun server instance if enabled
 func (s *Server) HDHomeRunServer() *hdhr.Server {
 	return s.hdhr
 }
+
+// GetSeriesEngine returns the SeriesEngine instance (for scheduler wiring)
+func (s *Server) GetSeriesEngine() *dvr.SeriesEngine {
+	return s.seriesEngine
+}
+
 func (s *Server) routes() http.Handler {
 	r := chi.NewRouter()
 

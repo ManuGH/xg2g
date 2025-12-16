@@ -8,6 +8,7 @@ import Logs from './components/Logs';
 import Config from './components/Config';
 import EPG from './components/EPG';
 import Timers from './components/Timers';
+import SeriesManager from './components/SeriesManager';
 import Navigation from './components/Navigation';
 import { OpenAPI } from './client/core/OpenAPI';
 import { DefaultService } from './client/services/DefaultService';
@@ -174,7 +175,9 @@ function App() {
         {view === 'files' && <Files />}
         {view === 'logs' && <Logs />}
         {view === 'config' && <Config />}
+        {view === 'config' && <Config />}
         {view === 'timers' && <Timers />}
+        {view === 'series' && <SeriesManager />}
       </main>
     </div>
   );

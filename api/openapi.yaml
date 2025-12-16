@@ -102,6 +102,126 @@ components:
         instantTune:
           type: boolean
 
+    SeriesRuleRunReport:
+      type: object
+      properties:
+        ruleId: { type: string }
+        runId: { type: string }
+        trigger: { type: string }
+        startedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+        durationMs: { type: integer, format: int64 }
+        windowFrom: { type: integer, format: int64 }
+        windowTo: { type: integer, format: int64 }
+        status: { type: string, enum: [success, partial, failed] }
+        summary: { $ref: "#/components/schemas/RunSummary" }
+        snapshot: { $ref: "#/components/schemas/RuleSnapshot" }
+        decisions:
+          type: array
+          items: { $ref: "#/components/schemas/RunDecision" }
+        errors:
+          type: array
+          items: { $ref: "#/components/schemas/RunError" }
+        conflicts:
+          type: array
+          items: { $ref: "#/components/schemas/RunConflict" }
+
+    RunSummary:
+      type: object
+      properties:
+        epgItemsScanned: { type: integer }
+        epgItemsMatched: { type: integer }
+        timersAttempted: { type: integer }
+        timersCreated: { type: integer }
+        timersSkipped: { type: integer }
+        timersConflicted: { type: integer }
+        timersErrored: { type: integer }
+        maxTimersGlobalPerRunHit: { type: boolean }
+        maxMatchesScannedPerRuleHit: { type: boolean }
+        receiverUnreachable: { type: boolean }
+
+    RunDecision:
+      type: object
+      properties:
+        serviceRef: { type: string }
+        begin: { type: integer, format: int64 }
+        end: { type: integer, format: int64 }
+        title: { type: string }
+        action: { type: string }
+        reason: { type: string }
+        matchReason:
+          type: array
+          items: { type: string }
+        timerId: { type: string }
+        details: { type: string }
+
+    RunError:
+      type: object
+      properties:
+        type: { type: string }
+        message: { type: string }
+        at: { type: string, format: date-time }
+        retryable: { type: boolean }
+
+    RunConflict:
+      type: object
+      properties:
+        serviceRef: { type: string }
+        begin: { type: integer, format: int64 }
+        end: { type: integer, format: int64 }
+        title: { type: string }
+        blockingTimerId: { type: string }
+        overlapSeconds: { type: integer, format: int64 }
+        message: { type: string }
+
+    RuleSnapshot:
+      type: object
+      properties:
+        id: { type: string }
+        enabled: { type: boolean }
+        keyword: { type: string }
+        channelRef: { type: string }
+        days:
+          type: array
+          items: { type: integer }
+        startWindow: { type: string }
+        priority: { type: integer }
+    SeriesRule:
+      type: object
+      properties:
+        id:
+          type: string
+          readOnly: true
+        enabled:
+          type: boolean
+          default: true
+        keyword:
+          type: string
+          description: Search term or regex for event title
+        channel_ref:
+          type: string
+          description: Optional service reference to restrict rule
+        days:
+          type: array
+          items:
+            type: integer
+            minimum: 0
+            maximum: 6
+          description: Days of week (0=Sunday)
+        start_window:
+          type: string
+          description: Time window HHMM-HHMM
+        priority:
+          type: integer
+          default: 0
+        lastRunAt:
+          type: string
+          format: date-time
+        lastRunStatus:
+          type: string
+        lastRunSummary:
+          $ref: "#/components/schemas/RunSummary"
+
     ConfigUpdate:
       type: object
       properties:
@@ -736,3 +856,104 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/LogEntry"
+
+  /series-rules:
+    get:
+      summary: List all series recording rules
+      operationId: getSeriesRules
+      tags:
+        - series
+      responses:
+        "200":
+          description: List of rules
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SeriesRule"
+    post:
+      summary: Create a new series rule
+      operationId: createSeriesRule
+      tags:
+        - series
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SeriesRule"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeriesRule"
+
+  /series-rules/{id}/run:
+    post:
+      summary: Run a specific series rule immediately
+      operationId: runSeriesRule
+      tags:
+        - series
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: trigger
+          in: query
+          schema:
+            type: string
+            default: manual
+      responses:
+        "200":
+          description: Run report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeriesRuleRunReport"
+        "404":
+          description: Rule not found
+
+  /series-rules/run:
+    post:
+      summary: Run all enabled series rules immediately
+      operationId: runAllSeriesRules
+      tags:
+        - series
+      parameters:
+        - name: trigger
+          in: query
+          schema:
+            type: string
+            default: manual
+      responses:
+        "200":
+          description: List of run reports
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SeriesRuleRunReport"
+
+  /series-rules/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    delete:
+      summary: Delete a series rule
+      operationId: deleteSeriesRule
+      tags:
+        - series
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Rule not found
