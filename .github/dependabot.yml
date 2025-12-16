@@ -1,12 +1,16 @@
 version: 2
 updates:
-  # Go dependencies
+  # Go dependencies (Bundle everything into one PR)
   - package-ecosystem: "gomod"
     directory: "/"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: "daily"
       time: "04:00"
+    groups:
+      # Filter: Bundle all go modules updates into one "go-deps" PR
+      go-deps:
+        patterns:
+          - "*"
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
@@ -14,37 +18,50 @@ updates:
     commit-message:
       prefix: "chore(deps)"
       include: "scope"
-    reviewers:
-      - "ManuGH"
 
-  # GitHub Actions
+  # WebUI dependencies (Bundle everything into one PR)
+  - package-ecosystem: "npm"
+    directory: "/webui"
+    schedule:
+      interval: "daily"
+      time: "04:00"
+    groups:
+      # Filter: Bundle all npm updates into one "npm-deps" PR
+      npm-deps:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "javascript"
+
+  # GitHub Actions (Bundle everything into one PR)
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: "daily"
       time: "04:00"
+    groups:
+      # Filter: Bundle all action updates
+      actions:
+        patterns:
+          - "*"
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
       - "ci"
-    commit-message:
-      prefix: "chore(deps)"
-    reviewers:
-      - "ManuGH"
 
-  # Docker base images
+  # Docker Base Images (Bundle)
   - package-ecosystem: "docker"
-    directory: "/"
+    directory: "/transcoder"
     schedule:
       interval: "weekly"
-      day: "monday"
       time: "04:00"
-    open-pull-requests-limit: 3
+    groups:
+      docker-deps:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 5
     labels:
       - "dependencies"
       - "docker"
-    commit-message:
-      prefix: "chore(deps)"
-    reviewers:
-      - "ManuGH"
