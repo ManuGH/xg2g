@@ -30,10 +30,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
       - name: Setup Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        uses: actions/setup-go@6a3103239a5109b26f58a3a948e3532782cc46b6 # v5
         with:
           go-version-file: go.mod
           cache: true
@@ -76,10 +76,10 @@ jobs:
       security-events: write
     steps:
       - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
       - name: Setup Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        uses: actions/setup-go@6a3103239a5109b26f58a3a948e3532782cc46b6 # v5
         with:
           go-version-file: "go.mod"
           check-latest: true
@@ -194,12 +194,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           fetch-depth: 0 # GoReleaser needs full history
 
       - name: Set up Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.0.0
+        uses: actions/setup-go@6a3103239a5109b26f58a3a948e3532782cc46b6 # v5.0.0
         with:
           go-version-file: go.mod
           check-latest: true
@@ -211,7 +211,7 @@ jobs:
       # Build WebUI (Required for Tests)
       # =============================================
       - name: Setup Node for WebUI
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@8b15d933b934785465057d7675718a36c1cfc9f3 # v4
         with:
           node-version: "20"
           cache: "npm"
