@@ -1,7 +1,7 @@
 # Dockerfile for Rust GPU Transcoder Service
 # High-performance transcoding with VAAPI hardware acceleration
 
-FROM rust:1.84-bookworm AS builder
+FROM rust:1.92-bookworm AS builder
 
 WORKDIR /build
 
