@@ -49,6 +49,13 @@ const (
 	EPGStatusStatusOk      EPGStatusStatus = "ok"
 )
 
+// Defines values for SeriesRuleRunReportStatus.
+const (
+	Failed  SeriesRuleRunReportStatus = "failed"
+	Partial SeriesRuleRunReportStatus = "partial"
+	Success SeriesRuleRunReportStatus = "success"
+)
+
 // Defines values for StreamSessionState.
 const (
 	Active StreamSessionState = "active"
@@ -219,6 +226,105 @@ type RecordingStatus struct {
 	ServiceName *string `json:"serviceName,omitempty"`
 }
 
+// RuleSnapshot defines model for RuleSnapshot.
+type RuleSnapshot struct {
+	ChannelRef  *string `json:"channelRef,omitempty"`
+	Days        *[]int  `json:"days,omitempty"`
+	Enabled     *bool   `json:"enabled,omitempty"`
+	Id          *string `json:"id,omitempty"`
+	Keyword     *string `json:"keyword,omitempty"`
+	Priority    *int    `json:"priority,omitempty"`
+	StartWindow *string `json:"startWindow,omitempty"`
+}
+
+// RunConflict defines model for RunConflict.
+type RunConflict struct {
+	Begin           *int64  `json:"begin,omitempty"`
+	BlockingTimerId *string `json:"blockingTimerId,omitempty"`
+	End             *int64  `json:"end,omitempty"`
+	Message         *string `json:"message,omitempty"`
+	OverlapSeconds  *int64  `json:"overlapSeconds,omitempty"`
+	ServiceRef      *string `json:"serviceRef,omitempty"`
+	Title           *string `json:"title,omitempty"`
+}
+
+// RunDecision defines model for RunDecision.
+type RunDecision struct {
+	Action      *string   `json:"action,omitempty"`
+	Begin       *int64    `json:"begin,omitempty"`
+	Details     *string   `json:"details,omitempty"`
+	End         *int64    `json:"end,omitempty"`
+	MatchReason *[]string `json:"matchReason,omitempty"`
+	Reason      *string   `json:"reason,omitempty"`
+	ServiceRef  *string   `json:"serviceRef,omitempty"`
+	TimerId     *string   `json:"timerId,omitempty"`
+	Title       *string   `json:"title,omitempty"`
+}
+
+// RunError defines model for RunError.
+type RunError struct {
+	At        *time.Time `json:"at,omitempty"`
+	Message   *string    `json:"message,omitempty"`
+	Retryable *bool      `json:"retryable,omitempty"`
+	Type      *string    `json:"type,omitempty"`
+}
+
+// RunSummary defines model for RunSummary.
+type RunSummary struct {
+	EpgItemsMatched             *int  `json:"epgItemsMatched,omitempty"`
+	EpgItemsScanned             *int  `json:"epgItemsScanned,omitempty"`
+	MaxMatchesScannedPerRuleHit *bool `json:"maxMatchesScannedPerRuleHit,omitempty"`
+	MaxTimersGlobalPerRunHit    *bool `json:"maxTimersGlobalPerRunHit,omitempty"`
+	ReceiverUnreachable         *bool `json:"receiverUnreachable,omitempty"`
+	TimersAttempted             *int  `json:"timersAttempted,omitempty"`
+	TimersConflicted            *int  `json:"timersConflicted,omitempty"`
+	TimersCreated               *int  `json:"timersCreated,omitempty"`
+	TimersErrored               *int  `json:"timersErrored,omitempty"`
+	TimersSkipped               *int  `json:"timersSkipped,omitempty"`
+}
+
+// SeriesRule defines model for SeriesRule.
+type SeriesRule struct {
+	// ChannelRef Optional service reference to restrict rule
+	ChannelRef *string `json:"channel_ref,omitempty"`
+
+	// Days Days of week (0=Sunday)
+	Days    *[]int  `json:"days,omitempty"`
+	Enabled *bool   `json:"enabled,omitempty"`
+	Id      *string `json:"id,omitempty"`
+
+	// Keyword Search term or regex for event title
+	Keyword        *string     `json:"keyword,omitempty"`
+	LastRunAt      *time.Time  `json:"lastRunAt,omitempty"`
+	LastRunStatus  *string     `json:"lastRunStatus,omitempty"`
+	LastRunSummary *RunSummary `json:"lastRunSummary,omitempty"`
+	Priority       *int        `json:"priority,omitempty"`
+
+	// StartWindow Time window HHMM-HHMM
+	StartWindow *string `json:"start_window,omitempty"`
+}
+
+// SeriesRuleRunReport defines model for SeriesRuleRunReport.
+type SeriesRuleRunReport struct {
+	Conflicts  *[]RunConflict             `json:"conflicts,omitempty"`
+	Decisions  *[]RunDecision             `json:"decisions,omitempty"`
+	DurationMs *int64                     `json:"durationMs,omitempty"`
+	Errors     *[]RunError                `json:"errors,omitempty"`
+	FinishedAt *time.Time                 `json:"finishedAt,omitempty"`
+	RuleId     *string                    `json:"ruleId,omitempty"`
+	RunId      *string                    `json:"runId,omitempty"`
+	Snapshot   *RuleSnapshot              `json:"snapshot,omitempty"`
+	StartedAt  *time.Time                 `json:"startedAt,omitempty"`
+	Status     *SeriesRuleRunReportStatus `json:"status,omitempty"`
+	Summary    *RunSummary                `json:"summary,omitempty"`
+	Trigger    *string                    `json:"trigger,omitempty"`
+	WindowFrom *int64                     `json:"windowFrom,omitempty"`
+	WindowTo   *int64                     `json:"windowTo,omitempty"`
+}
+
+// SeriesRuleRunReportStatus defines model for SeriesRuleRunReport.Status.
+type SeriesRuleRunReportStatus string
+
 // Service defines model for Service.
 type Service struct {
 	Enabled *bool   `json:"enabled,omitempty"`
@@ -358,6 +464,16 @@ type GetEpgParams struct {
 	Q *string `form:"q,omitempty" json:"q,omitempty"`
 }
 
+// RunAllSeriesRulesParams defines parameters for RunAllSeriesRules.
+type RunAllSeriesRulesParams struct {
+	Trigger *string `form:"trigger,omitempty" json:"trigger,omitempty"`
+}
+
+// RunSeriesRuleParams defines parameters for RunSeriesRule.
+type RunSeriesRuleParams struct {
+	Trigger *string `form:"trigger,omitempty" json:"trigger,omitempty"`
+}
+
 // GetServicesParams defines parameters for GetServices.
 type GetServicesParams struct {
 	// Bouquet Filter by bouquet name
@@ -374,6 +490,9 @@ type GetTimersParams struct {
 	State *string `form:"state,omitempty" json:"state,omitempty"`
 	From  *int    `form:"from,omitempty" json:"from,omitempty"`
 }
+
+// CreateSeriesRuleJSONRequestBody defines body for CreateSeriesRule for application/json ContentType.
+type CreateSeriesRuleJSONRequestBody = SeriesRule
 
 // PostServicesIdToggleJSONRequestBody defines body for PostServicesIdToggle for application/json ContentType.
 type PostServicesIdToggleJSONRequestBody PostServicesIdToggleJSONBody
@@ -404,6 +523,21 @@ type ServerInterface interface {
 	// Get recent logs
 	// (GET /logs)
 	GetLogs(w http.ResponseWriter, r *http.Request)
+	// List all series recording rules
+	// (GET /series-rules)
+	GetSeriesRules(w http.ResponseWriter, r *http.Request)
+	// Create a new series rule
+	// (POST /series-rules)
+	CreateSeriesRule(w http.ResponseWriter, r *http.Request)
+	// Run all enabled series rules immediately
+	// (POST /series-rules/run)
+	RunAllSeriesRules(w http.ResponseWriter, r *http.Request, params RunAllSeriesRulesParams)
+	// Delete a series rule
+	// (DELETE /series-rules/{id})
+	DeleteSeriesRule(w http.ResponseWriter, r *http.Request, id string)
+	// Run a specific series rule immediately
+	// (POST /series-rules/{id}/run)
+	RunSeriesRule(w http.ResponseWriter, r *http.Request, id string, params RunSeriesRuleParams)
 	// List all services (channels)
 	// (GET /services)
 	GetServices(w http.ResponseWriter, r *http.Request, params GetServicesParams)
@@ -476,6 +610,36 @@ func (_ Unimplemented) GetEpg(w http.ResponseWriter, r *http.Request, params Get
 // Get recent logs
 // (GET /logs)
 func (_ Unimplemented) GetLogs(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List all series recording rules
+// (GET /series-rules)
+func (_ Unimplemented) GetSeriesRules(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Create a new series rule
+// (POST /series-rules)
+func (_ Unimplemented) CreateSeriesRule(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Run all enabled series rules immediately
+// (POST /series-rules/run)
+func (_ Unimplemented) RunAllSeriesRules(w http.ResponseWriter, r *http.Request, params RunAllSeriesRulesParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Delete a series rule
+// (DELETE /series-rules/{id})
+func (_ Unimplemented) DeleteSeriesRule(w http.ResponseWriter, r *http.Request, id string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Run a specific series rule immediately
+// (POST /series-rules/{id}/run)
+func (_ Unimplemented) RunSeriesRule(w http.ResponseWriter, r *http.Request, id string, params RunSeriesRuleParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -686,6 +850,152 @@ func (siw *ServerInterfaceWrapper) GetLogs(w http.ResponseWriter, r *http.Reques
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetLogs(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSeriesRules operation middleware
+func (siw *ServerInterfaceWrapper) GetSeriesRules(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSeriesRules(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateSeriesRule operation middleware
+func (siw *ServerInterfaceWrapper) CreateSeriesRule(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateSeriesRule(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RunAllSeriesRules operation middleware
+func (siw *ServerInterfaceWrapper) RunAllSeriesRules(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RunAllSeriesRulesParams
+
+	// ------------- Optional query parameter "trigger" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "trigger", r.URL.Query(), &params.Trigger)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trigger", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RunAllSeriesRules(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteSeriesRule operation middleware
+func (siw *ServerInterfaceWrapper) DeleteSeriesRule(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteSeriesRule(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RunSeriesRule operation middleware
+func (siw *ServerInterfaceWrapper) RunSeriesRule(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RunSeriesRuleParams
+
+	// ------------- Optional query parameter "trigger" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "trigger", r.URL.Query(), &params.Trigger)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trigger", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RunSeriesRule(w, r, id, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1210,6 +1520,21 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/logs", wrapper.GetLogs)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/series-rules", wrapper.GetSeriesRules)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/series-rules", wrapper.CreateSeriesRule)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/series-rules/run", wrapper.RunAllSeriesRules)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/series-rules/{id}", wrapper.DeleteSeriesRule)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/series-rules/{id}/run", wrapper.RunSeriesRule)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/services", wrapper.GetServices)
 	})
 	r.Group(func(r chi.Router) {
@@ -1261,50 +1586,62 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
-	"AAD//z7ri8FMNgAA",
+	"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",
+	"EwAA///wor+cGEkAAA==",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

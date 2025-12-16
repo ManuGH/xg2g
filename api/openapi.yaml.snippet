@@ -1,0 +1,84 @@
+    SeriesRuleRunReport:
+      type: object
+      properties:
+        ruleId: { type: string }
+        runId: { type: string }
+        trigger: { type: string }
+        startedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+        durationMs: { type: integer, format: int64 }
+        windowFrom: { type: integer, format: int64 }
+        windowTo: { type: integer, format: int64 }
+        status: { type: string, enum: [success, partial, failed] }
+        summary: { $ref: "#/components/schemas/RunSummary" }
+        snapshot: { $ref: "#/components/schemas/RuleSnapshot" }
+        decisions:
+          type: array
+          items: { $ref: "#/components/schemas/RunDecision" }
+        errors:
+          type: array
+          items: { $ref: "#/components/schemas/RunError" }
+        conflicts:
+          type: array
+          items: { $ref: "#/components/schemas/RunConflict" }
+
+    RunSummary:
+      type: object
+      properties:
+        epgItemsScanned: { type: integer }
+        epgItemsMatched: { type: integer }
+        timersAttempted: { type: integer }
+        timersCreated: { type: integer }
+        timersSkipped: { type: integer }
+        timersConflicted: { type: integer }
+        timersErrored: { type: integer }
+        maxTimersGlobalPerRunHit: { type: boolean }
+        maxMatchesScannedPerRuleHit: { type: boolean }
+        receiverUnreachable: { type: boolean }
+
+    RunDecision:
+      type: object
+      properties:
+        serviceRef: { type: string }
+        begin: { type: integer, format: int64 }
+        end: { type: integer, format: int64 }
+        title: { type: string }
+        action: { type: string }
+        reason: { type: string }
+        matchReason:
+          type: array
+          items: { type: string }
+        timerId: { type: string }
+        details: { type: string }
+
+    RunError:
+      type: object
+      properties:
+        type: { type: string }
+        message: { type: string }
+        at: { type: string, format: date-time }
+        retryable: { type: boolean }
+
+    RunConflict:
+      type: object
+      properties:
+        serviceRef: { type: string }
+        begin: { type: integer, format: int64 }
+        end: { type: integer, format: int64 }
+        title: { type: string }
+        blockingTimerId: { type: string }
+        overlapSeconds: { type: integer, format: int64 }
+        message: { type: string }
+
+    RuleSnapshot:
+      type: object
+      properties:
+        id: { type: string }
+        enabled: { type: boolean }
+        keyword: { type: string }
+        channelRef: { type: string }
+        days: 
+          type: array
+          items: { type: integer }
+        startWindow: { type: string }
+        priority: { type: integer }

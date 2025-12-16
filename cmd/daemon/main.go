@@ -16,6 +16,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/api"
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/daemon"
+	"github.com/ManuGH/xg2g/internal/dvr"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	xglog "github.com/ManuGH/xg2g/internal/log"
 	xgtls "github.com/ManuGH/xg2g/internal/tls"
@@ -291,6 +292,21 @@ func main() {
 	// Create API handler
 	s := api.New(cfg, configMgr)
 	s.SetConfigHolder(cfgHolder)
+
+	// Create Scheduler for Series Engine
+	// We extract the internal series engine from API server
+	// Ideally API server shouldn't expose it, but for pragmatic wiring we'll get it or create shared instance up front.
+	// API Server creates it inside New().
+	// We should refactor API New() to accept it or expose it.
+	// For minimal churn, let's expose it via Getter or just refactor main to create it and pass to API.
+
+	// Refactoring main to create SeriesEngine and pass to API is cleaner but more diffs.
+	// Let's add GetSeriesEngine() to Server to allow daemon to start scheduler.
+	seriesEngine := s.GetSeriesEngine()
+	if seriesEngine != nil {
+		sched := dvr.NewScheduler(seriesEngine)
+		sched.Start(ctx)
+	}
 
 	if proxyConfig != nil {
 		// Build proxy server to inject into API
