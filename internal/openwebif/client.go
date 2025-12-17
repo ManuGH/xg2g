@@ -790,7 +790,7 @@ func (c *Client) GetStatusInfo(ctx context.Context) (*StatusInfo, error) {
 	}
 
 	if c.cache != nil {
-		c.cache.Set(cacheKey, &info, 2*time.Second) // 2s TTL
+		c.cache.Set(cacheKey, &info, 2*time.Second) // 2s
 	}
 
 	return &info, nil
@@ -861,12 +861,26 @@ func classifyError(err error, status int) string {
 	return "ok"
 }
 
-func wrapError(operation string, err error, status int) error {
+func wrapError(operation string, err error, status int, body []byte) error {
 	if err != nil {
 		return fmt.Errorf("%s request failed: %w", operation, err)
 	}
 	if status > 0 {
-		return fmt.Errorf("%s: HTTP %d", operation, status)
+		msg := fmt.Sprintf("%s: HTTP %d", operation, status)
+		// Append body snippet if available (useful for Enigma2 stack traces)
+		if len(body) > 0 {
+			// Limit to 500 chars to avoid log spam, but enough for a stack trace header
+			limit := 500
+			if len(body) < limit {
+				limit = len(body)
+			}
+			snippet := string(body[:limit])
+			// Sanitize newlines for log clarity (optional, but good for error strings)
+			snippet = strings.ReplaceAll(snippet, "\n", " ")
+			snippet = strings.ReplaceAll(snippet, "\r", "")
+			msg = fmt.Sprintf("%s - Response: %s", msg, snippet)
+		}
+		return errors.New(msg)
 	}
 	return fmt.Errorf("%s: unknown error", operation)
 }
@@ -972,6 +986,7 @@ func (c *Client) doGet(ctx context.Context, path, operation string, decorate fun
 	maxAttempts := c.maxRetries + 1
 	var lastErr error
 	var lastStatus int
+	var lastData []byte
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		var res *http.Response
 		var err error
@@ -1051,6 +1066,7 @@ func (c *Client) doGet(ctx context.Context, path, operation string, decorate fun
 
 		lastErr = err
 		lastStatus = status
+		lastData = data
 
 		if !retry {
 			break
@@ -1068,7 +1084,7 @@ func (c *Client) doGet(ctx context.Context, path, operation string, decorate fun
 		}
 	}
 
-	return nil, wrapError(operation, lastErr, lastStatus)
+	return nil, wrapError(operation, lastErr, lastStatus, lastData)
 }
 
 func (c *Client) loggerFor(ctx context.Context) *zerolog.Logger {

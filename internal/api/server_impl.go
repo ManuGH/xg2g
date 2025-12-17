@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"html"
 	"net/http"
 	"net/url"
 	"os"
@@ -763,13 +764,15 @@ func (s *Server) GetEpg(w http.ResponseWriter, r *http.Request, params GetEpgPar
 			dur = 0
 		}
 
-		desc := p.Desc
+		// Unescape HTML entities and replace literal \n with real newlines
+		desc := html.UnescapeString(p.Desc)
+		desc = strings.ReplaceAll(desc, "\\n", "\n")
 		pID := p.Channel
 
 		items = append(items, EpgItem{
 			Id:         &pID,
 			ServiceRef: p.Channel,
-			Title:      p.Title.Text,
+			Title:      html.UnescapeString(p.Title.Text),
 			Desc:       &desc,
 			Start:      int(startUnix),
 			End:        int(endUnix),
@@ -877,6 +880,56 @@ func (s *Server) AddTimer(w http.ResponseWriter, r *http.Request) {
 	client := s.newOpenWebIFClient(cfg, snap)
 	ctx := r.Context()
 
+	// 0. Resolve ServiceRef if it's an M3U Channel ID
+	realSRef := req.ServiceRef
+	if !strings.Contains(realSRef, ":") {
+		// Doesn't look like Enigma2 Ref (1:0:1...), try to resolve from Playlist
+		playlistPath := filepath.Clean(filepath.Join(cfg.DataDir, snap.Runtime.PlaylistFilename))
+		log.L().Info().Str("path", playlistPath).Str("search_id", req.ServiceRef).Msg("attempting to resolve service ref from playlist")
+
+		if data, err := os.ReadFile(playlistPath); err == nil { // #nosec G304
+			channels := m3u.Parse(string(data))
+			log.L().Info().Int("channels", len(channels)).Msg("parsed playlist for resolution")
+
+			for _, ch := range channels {
+				if ch.TvgID == req.ServiceRef {
+					// Found it! Extract Ref from URL
+					u, err := url.Parse(ch.URL)
+					if err == nil {
+						// OpenWebIF stream URL analysis
+						// URL can be like: http://host/web/stream.m3u?ref=1:0:1...
+						// OR like: http://host:8001/1:0:1...
+
+						// Check for 'ref' query parameter first (OpenWebIF 80 port style)
+						ref := u.Query().Get("ref")
+						if ref != "" {
+							// Found in query, use it
+							if strings.Contains(ref, ":") {
+								realSRef = strings.TrimSuffix(ref, ":")
+								log.L().Info().Str("id", req.ServiceRef).Str("resolved", realSRef).Msg("resolved channel id to service ref (via query)")
+							}
+						} else {
+							// Check path (OpenWebIF 8001 port style)
+							parts := strings.Split(u.Path, "/")
+							if len(parts) > 0 {
+								candidate := parts[len(parts)-1]
+								if strings.Contains(candidate, ":") {
+									realSRef = strings.TrimSuffix(candidate, ":")
+									log.L().Info().Str("id", req.ServiceRef).Str("resolved", realSRef).Msg("resolved channel id to service ref (via path)")
+								}
+							}
+						}
+					} else {
+						log.L().Warn().Err(err).Str("url", ch.URL).Msg("failed to parse channel url during resolution")
+					}
+					break
+				}
+			}
+		} else {
+			log.L().Warn().Err(err).Str("path", playlistPath).Msg("failed to read playlist for resolution")
+		}
+	}
+
 	// 1. Duplicate/Conflict Check
 	existingTimers, err := client.GetTimers(ctx)
 	if err != nil {
@@ -887,7 +940,7 @@ func (s *Server) AddTimer(w http.ResponseWriter, r *http.Request) {
 
 	for _, t := range existingTimers {
 		// Strict Duplicate: Same ServiceRef + Exact Begin/End
-		if t.ServiceRef == req.ServiceRef && t.Begin == req.Begin && t.End == req.End {
+		if t.ServiceRef == realSRef && t.Begin == req.Begin && t.End == req.End {
 			// 409 Conflict (Duplicate)
 			writeProblem(w, http.StatusConflict, "dvr/duplicate", "Timer already exists", nil)
 			return
@@ -916,10 +969,18 @@ func (s *Server) AddTimer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 2. Add Timer
-	err = client.AddTimer(ctx, req.ServiceRef, realBegin, realEnd, req.Name, desc)
+	err = client.AddTimer(ctx, realSRef, realBegin, realEnd, req.Name, desc)
 	if err != nil {
 		log.L().Error().Err(err).Str("sref", req.ServiceRef).Msg("failed to add timer")
-		http.Error(w, fmt.Sprintf("Failed to add timer: %v", err), http.StatusInternalServerError)
+
+		status := http.StatusInternalServerError
+		errStr := err.Error()
+		if strings.Contains(errStr, "Konflikt") || strings.Contains(errStr, "Conflict") || strings.Contains(errStr, "overlap") {
+			status = http.StatusConflict
+		}
+
+		// Use writeProblem to return JSON error (RFC 7807) so frontend can parse the message
+		writeProblem(w, status, "dvr/add_failed", err.Error(), nil)
 		return
 	}
 
@@ -930,9 +991,25 @@ func (s *Server) AddTimer(w http.ResponseWriter, r *http.Request) {
 		checkTimers, err := client.GetTimers(ctx)
 		if err == nil {
 			for _, t := range checkTimers {
+				// Log candidates to debug matching failure
+				// Normalize candidate ref (OpenWebIF often returns trailing colon)
+				candidateRef := strings.TrimSuffix(t.ServiceRef, ":")
+
+				// Log candidates to debug matching failure
+				if strings.Contains(t.ServiceRef, "1:0:1") { // Log only relevant looking timers to reduce noise
+					log.L().Info().
+						Str("candidate_ref", t.ServiceRef).
+						Str("normalized_ref", candidateRef).
+						Int64("candidate_begin", t.Begin).
+						Str("target_ref", realSRef).
+						Int64("target_begin", realBegin).
+						Int64("diff_sec", t.Begin-realBegin).
+						Msg("verification candidate")
+				}
+
 				// Flexible match (Enigma might adjust seconds slightly)
-				if t.ServiceRef == req.ServiceRef &&
-					(t.Begin == realBegin || t.Begin == realBegin-1 || t.Begin == realBegin+1) {
+				if candidateRef == realSRef &&
+					(t.Begin >= realBegin-5 && t.Begin <= realBegin+5) { // Increased tolerance to +/- 5s
 					verified = true
 					createdTimer = &t
 					break

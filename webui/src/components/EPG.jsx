@@ -64,7 +64,7 @@ function ProgrammeRow({ prog, now, highlight = false, onRecord, isRecorded }) {
           {prog.title || '—'}
         </div>
         {prog.desc && (
-          <div className="epg-programme-desc">{prog.desc}</div>
+          <div className="epg-programme-desc" style={{ whiteSpace: 'pre-wrap' }}>{prog.desc}</div>
         )}
         {inProgress && (
           <div className="epg-progress-container">
@@ -104,7 +104,7 @@ export default function EPG({ channels, bouquets = [], selectedBouquet = '', onS
   const fetchTimers = async () => {
     try {
       const data = await TimersService.getTimers();
-      setTimers(data || []);
+      setTimers(data?.items || []);
     } catch (err) {
       console.error("Failed to fetch timers for EPG", err);
     }
@@ -125,7 +125,7 @@ export default function EPG({ channels, bouquets = [], selectedBouquet = '', onS
       if (token) OpenAPI.TOKEN = token;
 
       await TimersService.addTimer({
-        service_ref: prog.service_ref,
+        serviceRef: prog.service_ref,
         begin: prog.start,
         end: prog.end,
         name: prog.title,
@@ -133,9 +133,16 @@ export default function EPG({ channels, bouquets = [], selectedBouquet = '', onS
       });
       alert('Aufnahme erfolgreich geplant!');
       fetchTimers(); // Refresh Feedback immediately
+      fetchTimers(); // Refresh Feedback immediately
     } catch (err) {
       console.error(err);
-      alert('Fehler beim Planen der Aufnahme: ' + (err.message || err));
+      let msg = err.message || JSON.stringify(err);
+      if (err.body && err.body.title) {
+        msg = err.body.title;
+      } else if (err.body) {
+        msg = JSON.stringify(err.body);
+      }
+      alert('Fehler beim Planen der Aufnahme: ' + msg);
     }
   };
 

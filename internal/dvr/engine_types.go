@@ -84,3 +84,10 @@ type RunConflict struct {
 	OverlapSeconds  int64  `json:"overlapSeconds,omitempty"`
 	Message         string `json:"message,omitempty"`
 }
+
+const (
+	ActionCreated  = "created"
+	ActionSkipped  = "skipped"
+	ActionConflict = "conflict"
+	ActionError    = "error"
+)

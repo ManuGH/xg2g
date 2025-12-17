@@ -23,7 +23,8 @@ type FileConfig struct {
 
 	OpenWebIF OpenWebIFConfig `yaml:"openWebIF"`
 	Bouquets  []string        `yaml:"bouquets,omitempty"`
-	EPG       EPGConfig       `yaml:"epg"`
+	EPG       EPGConfig         `yaml:"epg"`
+	Recording map[string]string `yaml:"recording_roots,omitempty"`
 	API       APIConfig       `yaml:"api"`
 	Metrics   MetricsConfig   `yaml:"metrics,omitempty"`
 	Picons    PiconsConfig    `yaml:"picons,omitempty"`
@@ -113,6 +114,9 @@ type AppConfig struct {
 	InstantTuneEnabled bool // Enable "Instant Tune" stream pre-warming
 	DevMode            bool // Enable development mode (live asset reloading)
 	AuthAnonymous      bool // Allow anonymous access if no token is configured (Fail-Open override)
+
+	// Recording Configuration
+	RecordingRoots map[string]string // ID -> Absolute Path (e.g. "hdd" -> "/media/hdd/movie")
 }
 
 // Loader handles configuration loading with precedence
@@ -188,6 +192,11 @@ func (l *Loader) setDefaults(cfg *AppConfig) {
 
 	// Feature Flags
 	cfg.InstantTuneEnabled = false
+
+	// Recording Defaults
+	cfg.RecordingRoots = map[string]string{
+		"hdd": "/media/hdd/movie",
+	}
 }
 
 // loadFile loads configuration from a YAML file
@@ -325,6 +334,17 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 		dst.EPGSource = src.EPG.Source
 	}
 
+	// Recording Roots
+	if len(src.Recording) > 0 {
+		// Initialize if map is nil (which it shouldn't be due to setDefaults, but safe for merge)
+		if dst.RecordingRoots == nil {
+			dst.RecordingRoots = make(map[string]string)
+		}
+		for k, v := range src.Recording {
+			dst.RecordingRoots[k] = v
+		}
+	}
+
 	// API
 	if src.API.Token != "" {
 		dst.APIToken = expandEnv(src.API.Token)
@@ -422,9 +442,39 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	// Feature Flags
 	cfg.InstantTuneEnabled = ParseBool("XG2G_INSTANT_TUNE", cfg.InstantTuneEnabled)
 	cfg.DevMode = ParseBool("XG2G_DEV", cfg.DevMode)
+
+	// Recording Roots (Env Override)
+	if v, ok := os.LookupEnv("XG2G_RECORDING_ROOTS"); ok {
+		cfg.RecordingRoots = parseRecordingRoots(v, cfg.RecordingRoots)
+	}
 }
 
 // expandEnv expands environment variables in the format ${VAR} or $VAR
 func expandEnv(s string) string {
 	return os.ExpandEnv(s)
+}
+
+// Helper to parse map string: "id=path,id2=path2"
+func parseRecordingRoots(envVal string, defaults map[string]string) map[string]string {
+	if envVal == "" {
+		return defaults
+	}
+	out := make(map[string]string)
+	// preserve defaults? usually env overrides completely.
+	// let's say env overrides completely for simplicity.
+	parts := strings.Split(envVal, ",")
+	for _, p := range parts {
+		kv := strings.SplitN(p, "=", 2)
+		if len(kv) == 2 {
+			key := strings.TrimSpace(kv[0])
+			val := strings.TrimSpace(kv[1])
+			if key != "" && val != "" {
+				out[key] = val
+			}
+		}
+	}
+	if len(out) == 0 {
+		return defaults // Fallback if parsing failed completely
+	}
+	return out
 }

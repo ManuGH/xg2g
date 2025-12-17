@@ -41,7 +41,7 @@ func TestAuthMiddleware_FailClosed(t *testing.T) {
 			cfg:            config.AppConfig{APIToken: "secret"},
 			headerKey:      "Authorization",
 			headerVal:      "Bearer wrong",
-			expectedStatus: http.StatusForbidden,
+			expectedStatus: http.StatusUnauthorized,
 		},
 		{
 			name:           "Token Set, Correct Header -> Allow (200)",

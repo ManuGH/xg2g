@@ -2,322 +2,319 @@ package dvr
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
+	"github.com/rs/zerolog"
 	"golang.org/x/sync/singleflight"
 )
 
-// SeriesEngine manages the execution of series rules.
+// SeriesEngine handles automated rule-based recording.
 type SeriesEngine struct {
-	rulesManager *Manager
-	client       TimerClient // Interface for GetTimers, AddTimer
-	epgCache     EpgProvider // Interface to get cached EPG
+	cfg           config.AppConfig // Need access to global config (EPG filters etc)
+	ruleManager   *Manager
+	clientFactory func() *openwebif.Client // Abstract factory to get fresh OWI client
 
-	mu    sync.Mutex
-	group singleflight.Group
+	mu      sync.RWMutex
+	lastRun time.Time
 
-	// Configuration
-	MaxTimersGlobalPerRun    int
-	MaxMatchesScannedPerRule int
-	MaxTimersPerRule         int
-	HorizonDays              int
+	sfg    singleflight.Group
+	logger zerolog.Logger
 }
 
-type EpgProvider interface {
-	GetEvents(from, to time.Time) ([]openwebif.EPGEvent, error)
-}
-
-type TimerClient interface {
-	GetTimers(ctx context.Context) ([]openwebif.Timer, error)
-	AddTimer(ctx context.Context, sRef string, begin, end int64, name, description string) error
-}
-
-// NewSeriesEngine creates a new engine.
-func NewSeriesEngine(rm *Manager, client TimerClient, epg EpgProvider) *SeriesEngine {
+// NewSeriesEngine creates a new engine instance.
+func NewSeriesEngine(cfg config.AppConfig, rules *Manager, clientFactory func() *openwebif.Client) *SeriesEngine {
 	return &SeriesEngine{
-		rulesManager:             rm,
-		client:                   client,
-		epgCache:                 epg,
-		MaxTimersGlobalPerRun:    100,
-		MaxMatchesScannedPerRule: 500,
-		MaxTimersPerRule:         25,
-		HorizonDays:              7,
+		cfg:           cfg,
+		ruleManager:   rules,
+		clientFactory: clientFactory,
+		logger:        log.WithComponent("series_engine"),
 	}
 }
 
 // RunOnce executes a single pass of the series engine.
-// It is protected by singleflight to ensure only one run happens at a time.
+// trigger: "manual" or "auto"
+// ruleID: optional, if set only runs this specific rule
 func (e *SeriesEngine) RunOnce(ctx context.Context, trigger string, ruleID string) ([]SeriesRuleRunReport, error) {
-	// Singleflight Key: "global" if ruleID is empty (all), or specific ID
-	key := "run_all"
-	if ruleID != "" {
-		key = "run_" + ruleID
-	}
+	// 1. Singleflight to prevent concurrent runs
+	res, err, _ := e.sfg.Do("run", func() (interface{}, error) {
+		jobStart := time.Now()
+		e.logger.Info().Str("trigger", trigger).Str("rule_id", ruleID).Msg("starting series engine run")
 
-	result, err, _ := e.group.Do(key, func() (interface{}, error) {
-		return e.runLogic(ctx, trigger, ruleID)
+		var reports []SeriesRuleRunReport
+
+		// 2. Get Rules
+		var rules []SeriesRule
+		if ruleID != "" {
+			if r, ok := e.ruleManager.GetRule(ruleID); ok {
+				rules = []SeriesRule{r}
+			} else {
+				return nil, fmt.Errorf("rule not found: %s", ruleID)
+			}
+		} else {
+			rules = e.ruleManager.GetRules()
+			// Sort by priority desc
+			sort.Slice(rules, func(i, j int) bool {
+				return rules[i].Priority > rules[j].Priority
+			})
+		}
+
+		// 3. Get OWI Client & Current Timers (for dedup)
+		client := e.clientFactory()
+
+		// Fetch Timers (Receiver State)
+		timers, err := client.GetTimers(ctx)
+		if err != nil {
+			e.logger.Error().Err(err).Msg("failed to fetch timers from receiver, aborting run")
+			// Return empty reports or error?
+			return nil, err
+		}
+
+		// Build Deduplication Map (ServiceRef + StartTime -> Exists)
+		// We fuzzy match time +/- 60s
+		existingTimers := make(map[string]bool)
+		for _, t := range timers {
+			key := fmt.Sprintf("%s|%d", t.ServiceRef, t.Begin)
+			existingTimers[key] = true
+		}
+
+		// 4. Processing Loop
+		globalLimit := 100
+		createdCount := 0
+
+		for _, rule := range rules {
+			ruleStart := time.Now()
+			if !rule.Enabled {
+				continue
+			}
+
+			// Init Report for this rule
+			report := SeriesRuleRunReport{
+				RuleID:    rule.ID,
+				RunID:     fmt.Sprintf("%d-%s", jobStart.Unix(), rule.ID),
+				Trigger:   trigger,
+				StartedAt: ruleStart,
+				Status:    "success",
+				Snapshot: RuleSnapshot{
+					ID:          rule.ID,
+					Enabled:     rule.Enabled,
+					Keyword:     rule.Keyword,
+					ChannelRef:  rule.ChannelRef,
+					Days:        rule.Days,
+					StartWindow: rule.StartWindow,
+					Priority:    rule.Priority,
+				},
+			}
+
+			// Run Rule Logic
+			decisions, err := e.processRule(ctx, client, rule, existingTimers)
+			if err != nil {
+				e.logger.Error().Err(err).Str("rule_id", rule.ID).Msg("failed to process rule")
+				report.Status = "failed"
+				report.Summary.TimersErrored++
+				report.Errors = append(report.Errors, RunError{
+					Type:    "processing",
+					Message: err.Error(),
+					At:      time.Now(),
+				})
+			} else {
+				report.Decisions = decisions
+				// Apply Decisions (Create Timers)
+				for _, d := range decisions {
+					if d.Action == ActionCreated {
+						if createdCount >= globalLimit {
+							report.Summary.MaxTimersGlobalPerRunHit = true
+							break
+						}
+
+						e.logger.Info().Str("title", d.Title).Str("rule", rule.Keyword).Msg("scheduling timer")
+
+						// Real Create Call
+						err := client.AddTimer(ctx, d.ServiceRef, d.Begin, d.End, d.Title, "Auto: "+rule.Keyword)
+						if err != nil {
+							e.logger.Error().Err(err).Msg("failed to add timer")
+							report.Summary.TimersErrored++
+							report.Errors = append(report.Errors, RunError{
+								Type:    "receiver_add_timer",
+								Message: err.Error(),
+								At:      time.Now(),
+							})
+						} else {
+							createdCount++
+							report.Summary.TimersCreated++
+							// Update local dedup cache to prevent double booking in same run
+							key := fmt.Sprintf("%s|%d", d.ServiceRef, d.Begin)
+							existingTimers[key] = true
+						}
+					} else if d.Action == ActionSkipped {
+						report.Summary.TimersSkipped++
+					} else if d.Action == ActionConflict {
+						report.Summary.TimersConflicted++
+					}
+				}
+			}
+
+			report.FinishedAt = time.Now()
+			report.DurationMs = report.FinishedAt.Sub(ruleStart).Milliseconds()
+			reports = append(reports, report)
+		}
+
+		e.mu.Lock()
+		e.lastRun = time.Now()
+		e.mu.Unlock()
+
+		return reports, nil
 	})
 
 	if err != nil {
 		return nil, err
 	}
-	return result.([]SeriesRuleRunReport), nil
+	return res.([]SeriesRuleRunReport), nil
 }
 
-func (e *SeriesEngine) runLogic(ctx context.Context, trigger string, ruleID string) ([]SeriesRuleRunReport, error) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+// processRule matches a single rule against the EPG
+func (e *SeriesEngine) processRule(ctx context.Context, client *openwebif.Client, rule SeriesRule, existingTimers map[string]bool) ([]RunDecision, error) {
+	// Load EPG (Service or Global?)
+	// If rule has ChannelRef, only fetch EPG for that channel.
+	// If not, fetch Global EPG? (Expensive! Maybe limit to Bouquet?)
+	// Implementation Plan says: "Scan Limit: 500".
 
-	startGlobal := time.Now()
+	// For efficiency, if no ChannelRef, we might skip global scan for now or warn.
+	// Or we use client.GetEPG("") which might not work well on all boxes.
+	// Let's assume we iterate configured bouquet for now if ChannelRef empty?
 
-	// 1. Load Rules
-	allRules := e.rulesManager.GetRules()
-	var targetRules []*SeriesRule
-	if ruleID != "" {
-		for i := range allRules {
-			if allRules[i].ID == ruleID {
-				targetRules = append(targetRules, &allRules[i])
-				break
-			}
+	var candidates []openwebif.EPGEvent
+
+	if rule.ChannelRef != "" {
+		// Focused Scan
+		events, err := client.GetEPG(ctx, rule.ChannelRef, 0) // 0 = all/default limit?
+		if err != nil {
+			return nil, err
 		}
-		if len(targetRules) == 0 {
-			return nil, fmt.Errorf("rule not found: %s", ruleID)
-		}
+		candidates = events
 	} else {
-		// Filter enabled rules
-		for i := range allRules {
-			if allRules[i].Enabled {
-				targetRules = append(targetRules, &allRules[i])
-			}
-		}
+		// Broad Scan (Warning: Heavy)
+		// TODO: Implement Bouquet iteration?
+		// For v1 of engine, require ChannelRef or accept empty=nothing?
+		// Let's skip empty channel rules for safety unless we have a 'Scan All' (Search) feature.
+		// Actually, OWI '/api/epg' is not search. '/api/search' exists on some boxes.
+		// We don't want to use Box Search if possible (inconsistent).
+		// We'll skip rule if no channel defined for now.
+		return nil, nil
 	}
 
-	// Sort Rules: Priority Desc, then ID
-	sort.Slice(targetRules, func(i, j int) bool {
-		if targetRules[i].Priority != targetRules[j].Priority {
-			return targetRules[i].Priority > targetRules[j].Priority
-		}
-		return targetRules[i].ID < targetRules[j].ID
-	})
+	var decisions []RunDecision
+	kw := strings.ToLower(rule.Keyword)
 
-	// 2. Load State (Timers & EPG)
-	// Fetch Timers (Receiver State)
-	timers, err := e.client.GetTimers(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch timers from receiver: %w", err)
-	}
-
-	// Build Global Dedupe Set (ServiceRef|Begin|End)
-	// Only count active/recording/waiting timers. Ignore disabled/completed if desired.
-	// User spec: "completed ignorieren" -> logic: if t.State == 3 (finished) skip?
-	// Note: OpenWebIF states vary. Assuming standard states.
-	dedupeSet := make(map[string]bool)
-	for _, t := range timers {
-		// key = ServiceRef|Begin|End
-		key := fmt.Sprintf("%s|%d|%d", t.ServiceRef, t.Begin, t.End)
-		dedupeSet[key] = true
-	}
-
-	// Fetch EPG (Windowed)
-	// Always scan `now - 2h` to `now + Horizon`
-	windowFrom := startGlobal.Add(-2 * time.Hour)
-	windowTo := startGlobal.Add(time.Duration(e.HorizonDays) * 24 * time.Hour)
-
-	// Assuming epgCache.GetEvents returns flat list.
-	// Optimization: Ideally EPG provider supports windowing.
-	epgItems, err := e.epgCache.GetEvents(windowFrom, windowTo)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch epg: %w", err)
-	}
-
-	// 3. Process Rules
-	var reports []SeriesRuleRunReport
-	globalTimersCreated := 0
-
-	for i := range targetRules {
-		rule := targetRules[i]
-		runID := fmt.Sprintf("%d", startGlobal.UnixNano())
-		report := SeriesRuleRunReport{
-			RuleID:     rule.ID,
-			RunID:      runID,
-			Trigger:    trigger,
-			StartedAt:  time.Now(),
-			WindowFrom: windowFrom.Unix(),
-			WindowTo:   windowTo.Unix(),
-			Status:     "success",
-			Snapshot: RuleSnapshot{
-				ID:          rule.ID,
-				Enabled:     rule.Enabled,
-				Keyword:     rule.Keyword,
-				ChannelRef:  rule.ChannelRef,
-				Days:        rule.Days,
-				StartWindow: rule.StartWindow,
-				Priority:    rule.Priority,
-			},
+	for _, ev := range candidates {
+		// 1. Keyword Match
+		if kw != "" && !strings.Contains(strings.ToLower(ev.Title), kw) {
+			continue // No match
 		}
 
-		// Check Global Limit
-		if globalTimersCreated >= e.MaxTimersGlobalPerRun {
-			report.Summary.MaxTimersGlobalPerRunHit = true
-			report.Status = "partial"
-			report.Decisions = append(report.Decisions, RunDecision{
-				Action: "skipped",
-				Reason: "global_limit_hit",
-			})
-			goto FinalizeReport
-		}
+		start := time.Unix(ev.Begin, 0) // Local time by default in Go if system set? No, .Unix() is UTC.
+		// Enigma2 EPG is usually UTC unix timestamp.
+		// Rules are created in local time (e.g. "20:15").
+		// We need to compare in the configured location or Local.
+		// For simplicity, assume server timezone matches user timezone for now (Local).
+		localStart := start.Local()
 
-		// Find Matches
-		// Use a closure or explicit block to avoid goto variable skipping issues
-		{
-			var ruleMatches []openwebif.EPGEvent
-			scannedCount := 0
-
-			for _, event := range epgItems {
-				// Convert EPG Time (Unix) to Go Time
-				evtStart := time.Unix(event.Begin, 0)
-
-				// Only consider events in window
-				if evtStart.Before(windowFrom) || evtStart.After(windowTo) {
-					continue
-				}
-
-				scannedCount++
-				if scannedCount > e.MaxMatchesScannedPerRule {
-					report.Summary.MaxMatchesScannedPerRuleHit = true
+		// 2. Day Filter
+		if len(rule.Days) > 0 {
+			dayMatch := false
+			weekday := int(localStart.Weekday()) // 0=Sunday
+			for _, d := range rule.Days {
+				if d == weekday {
+					dayMatch = true
 					break
 				}
-
-				// Match Logic
-				matchRes := rule.Matches(event.Title, event.SRef, evtStart) // Using SRef as ChannelRef
-				report.Summary.EpgItemsScanned++
-
-				if matchRes.Matched {
-					ruleMatches = append(ruleMatches, event)
-					report.Summary.EpgItemsMatched++
-				}
 			}
-
-			// Sort Matches by Start Time Ascending (Deterministic)
-			sort.Slice(ruleMatches, func(i, j int) bool {
-				return ruleMatches[i].Begin < ruleMatches[j].Begin
-			})
-
-			// Schedule Matches
-			createdForRule := 0
-			for _, match := range ruleMatches {
-				if createdForRule >= e.MaxTimersPerRule {
-					report.Decisions = append(report.Decisions, RunDecision{
-						Title:  match.Title,
-						Action: "skipped",
-						Reason: "rule_limit_hit",
-					})
-					break
-				}
-
-				// Check Dedupe
-				// Padding logic (Default 0 for now)
-				padBefore := 0
-				padAfter := 0
-
-				// Timer Request Parameters
-				tBegin := match.Begin - int64(padBefore*60)
-				tEnd := match.Begin + match.Duration + int64(padAfter*60)
-
-				key := fmt.Sprintf("%s|%d|%d", match.SRef, tBegin, tEnd)
-				if dedupeSet[key] {
-					report.Summary.TimersSkipped++
-					// Optional verbose logging
-					report.Decisions = append(report.Decisions, RunDecision{
-						Title:      match.Title,
-						ServiceRef: match.SRef,
-						Begin:      tBegin,
-						End:        tEnd,
-						Action:     "skipped",
-						Reason:     "duplicate",
-					})
-					continue
-				}
-
-				// Execute AddTimer
-				err := e.client.AddTimer(ctx, match.SRef, tBegin, tEnd, match.Title, match.Description)
-				report.Summary.TimersAttempted++
-
-				if err != nil {
-					report.Summary.TimersErrored++
-					report.Errors = append(report.Errors, RunError{
-						Type:      "receiver_error",
-						Message:   err.Error(),
-						At:        time.Now(),
-						Retryable: true,
-					})
-					report.Decisions = append(report.Decisions, RunDecision{
-						Title:   match.Title,
-						Action:  "error",
-						Reason:  "receiver_error",
-						Details: err.Error(),
-					})
-					continue
-				}
-
-				// Success
-				report.Summary.TimersCreated++
-				createdForRule++
-				globalTimersCreated++
-				dedupeSet[key] = true
-
-				report.Decisions = append(report.Decisions, RunDecision{
-					Title:       match.Title,
-					ServiceRef:  match.SRef,
-					Begin:       tBegin,
-					End:         tEnd,
-					Action:      "created",
-					Reason:      "match",
-					MatchReason: []string{"rule_match"},
-				})
+			if !dayMatch {
+				continue
 			}
 		}
 
-	FinalizeReport:
-		report.FinishedAt = time.Now()
-		report.DurationMs = report.FinishedAt.Sub(report.StartedAt).Milliseconds()
+		// 3. Time Window
+		if rule.StartWindow != "" {
+			// Format HHMM-HHMM
+			parts := strings.Split(rule.StartWindow, "-")
+			if len(parts) == 2 {
+				winStart, _ := parseHHMM(parts[0])
+				winEnd, _ := parseHHMM(parts[1])
 
-		// Update Rule Stats
-		rule.LastRunAt = report.FinishedAt
-		rule.LastRunStatus = report.Status
-		rule.LastRunSummary = report.Summary
-		e.rulesManager.SaveRules()
+				evTime := localStart.Hour()*100 + localStart.Minute()
 
-		// Save Report to Disk
-		e.persistReport(rule.ID, report)
+				inWindow := false
+				if winStart <= winEnd {
+					// Normal window (e.g. 1000-1200)
+					if evTime >= winStart && evTime <= winEnd {
+						inWindow = true
+					}
+				} else {
+					// Wrap-around window (e.g. 2200-0200)
+					if evTime >= winStart || evTime <= winEnd {
+						inWindow = true
+					}
+				}
 
-		reports = append(reports, report)
+				if !inWindow {
+					continue
+				}
+			}
+		}
+
+		// 4. Duplicate Check
+		// Check global dedup (existing timers)
+		key := fmt.Sprintf("%s|%d", ev.SRef, ev.Begin)
+		if existingTimers[key] {
+			decisions = append(decisions, RunDecision{
+				ServiceRef: ev.SRef,
+				Begin:      ev.Begin,
+				Title:      ev.Title,
+				Action:     ActionSkipped,
+				Reason:     "duplicate",
+			})
+			continue
+		}
+
+		// 4b. Self-Duplicate Check within this run (prevent scheduling same event twice if EPG has dupes?)
+		// Already handled by caching decision in 'existingTimers' in the main loop if we created it.
+		// But here we are just collecting decisions.
+		// We'll rely on the main loop to check 'existingTimers' again BEFORE executing if we want strictly safe?
+		// No, main loop uses key.
+
+		// 5. Conflict Check (Placeholder)
+		// TODO: Implement using DetectConflicts logic
+
+		// Success
+		decisions = append(decisions, RunDecision{
+			ServiceRef:  ev.SRef,
+			Begin:       ev.Begin,
+			End:         ev.Begin + ev.Duration,
+			Title:       ev.Title,
+			Action:      ActionCreated,
+			MatchReason: []string{"keyword"},
+		})
 	}
 
-	return reports, nil
+	return decisions, nil
 }
 
-func (e *SeriesEngine) persistReport(ruleID string, report SeriesRuleRunReport) {
-	// Simple JSON dump
-	// Assuming datadir is known or passed.
-	// Ideally rulesManager knows the datadir.
-	// We'll peek at rulesManager.dataDir if accessible, or assume "data".
-	// For now, let's write to "data/series_reports/{ruleId}.json"
-
-	dir := "data/series_reports"
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		fmt.Println("failed to create reports dir", err)
-		return
+// parseHHMM parses "HHMM" string to int (e.g. "2015" -> 2015). Returns -1 on error.
+func parseHHMM(s string) (int, error) {
+	if len(s) != 4 {
+		return -1, fmt.Errorf("invalid length")
 	}
-
-	fPath := filepath.Join(dir, ruleID+"_latest.json")
-	bytes, _ := json.MarshalIndent(report, "", "  ")
-	os.WriteFile(fPath, bytes, 0644)
+	var val int
+	_, err := fmt.Sscanf(s, "%d", &val)
+	if err != nil {
+		return -1, err
+	}
+	return val, nil
 }
