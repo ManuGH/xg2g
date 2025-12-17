@@ -69,7 +69,7 @@ func (m *Manager) saveRulesToFile(rules []SeriesRule) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(m.dataPath, data, 0644)
+	return os.WriteFile(m.dataPath, data, 0600)
 }
 
 // SaveRules is an alias for Save, used by the engine.
