@@ -21,13 +21,13 @@ type FileConfig struct {
 	DataDir  string `yaml:"dataDir,omitempty"`
 	LogLevel string `yaml:"logLevel,omitempty"`
 
-	OpenWebIF OpenWebIFConfig `yaml:"openWebIF"`
-	Bouquets  []string        `yaml:"bouquets,omitempty"`
+	OpenWebIF OpenWebIFConfig   `yaml:"openWebIF"`
+	Bouquets  []string          `yaml:"bouquets,omitempty"`
 	EPG       EPGConfig         `yaml:"epg"`
 	Recording map[string]string `yaml:"recording_roots,omitempty"`
-	API       APIConfig       `yaml:"api"`
-	Metrics   MetricsConfig   `yaml:"metrics,omitempty"`
-	Picons    PiconsConfig    `yaml:"picons,omitempty"`
+	API       APIConfig         `yaml:"api"`
+	Metrics   MetricsConfig     `yaml:"metrics,omitempty"`
+	Picons    PiconsConfig      `yaml:"picons,omitempty"`
 }
 
 // OpenWebIFConfig holds OpenWebIF client configuration

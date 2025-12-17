@@ -1,9 +1,10 @@
 .recordings-view {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  animation: fadeIn 0.4s ease-out;
-  padding-bottom: 80px; /* Safe area for mobile menu */
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    animation: fadeIn 0.4s ease-out;
+    padding-bottom: 80px;
+    /* Safe area for mobile menu */
 }
 
 .recordings-toolbar {
@@ -18,12 +19,18 @@
     gap: 12px;
 }
 
+.toolbar-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
 .breadcrumbs {
-   display: flex;
-   gap: 8px;
-   font-size: 14px;
-   align-items: center;
-   flex-wrap: wrap;
+    display: flex;
+    gap: 8px;
+    font-size: 14px;
+    align-items: center;
+    flex-wrap: wrap;
 }
 
 .breadcrumb-item {
@@ -62,7 +69,8 @@
     background: var(--bg-card);
     border-radius: var(--radius-lg);
     border: 1px solid var(--border-subtle);
-    overflow: hidden; /* Contains table corners */
+    overflow: hidden;
+    /* Contains table corners */
 }
 
 .rec-table {
@@ -106,7 +114,7 @@
 }
 
 .rec-icon-folder {
-    color: #fbbf24; /* Amber-400 */
+    color: var(--accent-warning);
 }
 
 .rec-icon-file {
@@ -133,16 +141,19 @@
 
 .rec-desc {
     font-size: 12px;
-    color: var(--text-muted);
+    color: var(--text-primary);
+    opacity: 0.7;
     display: -webkit-box;
     -webkit-line-clamp: 1;
+    line-clamp: 1;
+    /* Standard property */
     -webkit-box-orient: vertical;
     overflow: hidden;
     max-width: 400px;
 }
 
 .rec-action-btn {
-    background: var(--accent-primary);
+    background: var(--active-color);
     color: white;
     border: none;
     padding: 6px 14px;
@@ -154,7 +165,12 @@
 }
 
 .rec-action-btn:hover {
-    background-color: #2563eb; /* Blue-600 */
+    background-color: var(--active-color-hover);
+}
+
+.rec-action-btn:focus-visible {
+    outline: 2px solid var(--active-color);
+    outline-offset: 2px;
 }
 
 .rec-action-btn:active {
@@ -173,25 +189,26 @@
         flex-direction: column;
         align-items: stretch;
     }
-    
+
     .breadcrumbs {
-        order: 2; /* Move breadcrumbs below select on mobile */
+        order: 2;
+        /* Move breadcrumbs below select on mobile */
         overflow-x: auto;
         white-space: nowrap;
         padding-bottom: 4px;
     }
-    
+
     .rec-table thead {
         display: none;
     }
-    
+
     .rec-table tr {
         display: flex;
         flex-wrap: wrap;
         padding: 12px;
         position: relative;
     }
-    
+
     .rec-table td {
         border: none;
         padding: 4px 0;
@@ -201,16 +218,19 @@
         width: 100%;
         margin-bottom: 8px;
     }
-    
-    .rec-table td:nth-child(2), /* Duration */
-    .rec-table td:nth-child(3) { /* Date */
+
+    .rec-table td:nth-child(2),
+    /* Duration */
+    .rec-table td:nth-child(3) {
+        /* Date */
         width: auto;
         margin-right: 12px;
         font-size: 12px;
         color: var(--text-muted);
     }
-    
-    .rec-table td:last-child { /* Action */
+
+    .rec-table td:last-child {
+        /* Action */
         position: absolute;
         right: 12px;
         top: 50%;

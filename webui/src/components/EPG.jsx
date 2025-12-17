@@ -1,5 +1,6 @@
 import React from 'react';
 import { EpgService, TimersService, OpenAPI } from '../client';
+import './EPG.css';
 
 function formatTime(ts) {
   if (!ts) return '';
@@ -7,13 +8,7 @@ function formatTime(ts) {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-function formatDateTime(ts) {
-  if (!ts) return '';
-  const d = new Date(ts * 1000);
-  const date = d.toLocaleDateString([], { weekday: 'short', day: '2-digit', month: '2-digit' });
-  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  return `${date} ${time}`;
-}
+
 
 function formatRange(start, end) {
   if (!start || !end) return '';
@@ -21,7 +16,7 @@ function formatRange(start, end) {
 }
 
 function ProgrammeRow({ prog, now, highlight = false, onRecord, isRecorded }) {
-  const inProgress = now >= prog.start && now <= prog.end;
+  const inProgress = now >= prog.start && now < prog.end;
   const total = prog.end - prog.start;
   const elapsed = Math.max(0, Math.min(total, now - prog.start));
   const pct = total > 0 ? Math.round((elapsed / total) * 100) : 0;
@@ -32,7 +27,7 @@ function ProgrammeRow({ prog, now, highlight = false, onRecord, isRecorded }) {
         {formatRange(prog.start, prog.end)}
         {onRecord && (
           isRecorded ? (
-            <span title="Aufnahme geplant" style={{ marginLeft: '8px', color: '#ff4444', fontSize: '14px' }}>
+            <span title="Aufnahme geplant" className="epg-record-indicator">
               🔴
             </span>
           ) : (
@@ -43,16 +38,6 @@ function ProgrammeRow({ prog, now, highlight = false, onRecord, isRecorded }) {
                 onRecord(prog);
               }}
               title="Aufnahme planen"
-              style={{
-                marginLeft: '8px',
-                cursor: 'pointer',
-                background: 'transparent',
-                border: 'none',
-                color: '#ff4444',
-                fontSize: '14px',
-                padding: '0 4px',
-                lineHeight: 1
-              }}
             >
               ⏺
             </button>
@@ -64,7 +49,7 @@ function ProgrammeRow({ prog, now, highlight = false, onRecord, isRecorded }) {
           {prog.title || '—'}
         </div>
         {prog.desc && (
-          <div className="epg-programme-desc" style={{ whiteSpace: 'pre-wrap' }}>{prog.desc}</div>
+          <div className="epg-programme-desc">{prog.desc}</div>
         )}
         {inProgress && (
           <div className="epg-progress-container">
@@ -91,6 +76,7 @@ export default function EPG({ channels, bouquets = [], selectedBouquet = '', onS
   const [now, setNow] = React.useState(Date.now() / 1000);
 
   const [expanded, setExpanded] = React.useState({});
+  const [searchExpanded, setSearchExpanded] = React.useState({}); // Separate state for search results expansion
   const [searchQuery, setSearchQuery] = React.useState('');
   const [searchResults, setSearchResults] = React.useState([]);
   const [searchLoading, setSearchLoading] = React.useState(false);
@@ -103,6 +89,9 @@ export default function EPG({ channels, bouquets = [], selectedBouquet = '', onS
   // Fetch Timers for EPG Feedback
   const fetchTimers = async () => {
     try {
+      const token = localStorage.getItem('XG2G_API_TOKEN');
+      if (token) OpenAPI.TOKEN = token;
+
       const data = await TimersService.getTimers();
       setTimers(data?.items || []);
     } catch (err) {
@@ -133,7 +122,6 @@ export default function EPG({ channels, bouquets = [], selectedBouquet = '', onS
       });
       alert('Aufnahme erfolgreich geplant!');
       fetchTimers(); // Refresh Feedback immediately
-      fetchTimers(); // Refresh Feedback immediately
     } catch (err) {
       console.error(err);
       let msg = err.message || JSON.stringify(err);
@@ -147,16 +135,10 @@ export default function EPG({ channels, bouquets = [], selectedBouquet = '', onS
   };
 
   const isRecorded = (prog) => {
+    const progRef = prog.service_ref;
     return timers.some(t => {
-      // Check Service Ref (t.serviceref might be different casing or format?)
-      // Check Time Overlap
-      if (t.serviceref !== prog.service_ref && t.serviceref !== prog.channel) return false;
-
-      // Simple overlap check
-      // Timer: [t.begin, t.end]
-      // Prog:  [prog.start, prog.end]
-      // Overlap if: t.begin < prog.end && t.end > prog.start
-
+      const tRef = t.serviceRef || t.serviceref || t.service_ref;
+      if (tRef && progRef && tRef !== progRef) return false;
       return (t.begin < prog.end && t.end > prog.start);
     });
   };
@@ -167,6 +149,7 @@ export default function EPG({ channels, bouquets = [], selectedBouquet = '', onS
     if (!q) return;
     setSearchLoading(true);
     setSearchError(null);
+    setSearchExpanded({}); // Reset expansion state on new search
     setSearchRan(true);
     try {
       const token = localStorage.getItem('XG2G_API_TOKEN');
@@ -262,6 +245,52 @@ export default function EPG({ channels, bouquets = [], selectedBouquet = '', onS
     });
   }, [channels]);
 
+  // Partition search results into unified groups
+  const searchGrouped = React.useMemo(() => {
+    if (!searchResults.length) return [];
+
+    const current = now;
+
+    // Group all results by service_ref
+    const byRef = new Map();
+    for (const item of searchResults) {
+      const ref = item.service_ref;
+      if (!byRef.has(ref)) byRef.set(ref, []);
+      byRef.get(ref).push(item);
+    }
+
+    // Sort within each channel: NOW first, then chronological
+    for (const [, list] of byRef.entries()) {
+      list.sort((a, b) => {
+        const aNow = a.start <= current && a.end > current ? 0 : 1;
+        const bNow = b.start <= current && b.end > current ? 0 : 1;
+        if (aNow !== bNow) return aNow - bNow;
+        return a.start - b.start;
+      });
+    }
+
+    // Sort channel groups by Number -> Name (fallback ref)
+    const groups = Array.from(byRef.entries());
+    groups.sort(([refA], [refB]) => {
+      const chA = channelMap[refA] || {};
+      const chB = channelMap[refB] || {};
+      const numA = parseInt(chA.number, 10);
+      const numB = parseInt(chB.number, 10);
+      const validA = !Number.isNaN(numA);
+      const validB = !Number.isNaN(numB);
+
+      if (validA && validB && numA !== numB) return numA - numB;
+      if (validA && !validB) return -1;
+      if (!validA && validB) return 1;
+
+      const nameA = (chA.name || refA || '').toString();
+      const nameB = (chB.name || refB || '').toString();
+      return nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
+    });
+
+    return groups;
+  }, [searchResults, now, channelMap]);
+
   return (
     <div className="epg-page">
       <div className="epg-toolbar">
@@ -275,14 +304,13 @@ export default function EPG({ channels, bouquets = [], selectedBouquet = '', onS
       </div>
 
       {/* Time Window Selector moved to toolbar for better visibility */}
-      <div className="epg-controls" style={{ padding: '0 20px 10px', display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
+      <div className="epg-controls">
         {bouquets.length > 0 && (
           <label>
             Bouquet:
             <select
               value={selectedBouquet}
               onChange={(e) => onSelectBouquet && onSelectBouquet(e.target.value)}
-              style={{ marginLeft: '8px', padding: '4px' }}
             >
               <option value="">Alle Sender</option>
               {bouquets.map((b) => (
@@ -297,7 +325,6 @@ export default function EPG({ channels, bouquets = [], selectedBouquet = '', onS
           <select
             value={hours}
             onChange={(e) => setHours(parseInt(e.target.value, 10))}
-            style={{ marginLeft: '8px', padding: '4px' }}
           >
             <option value={6}>6 Stunden</option>
             <option value={12}>12 Stunden</option>
@@ -323,6 +350,7 @@ export default function EPG({ channels, bouquets = [], selectedBouquet = '', onS
                 setSearchResults([]);
                 setSearchError(null);
                 setSearchLoading(false);
+                setSearchExpanded({});
               }
             }}
             placeholder="Suche nach Sendungen (z.B. ZIB)"
@@ -371,71 +399,96 @@ export default function EPG({ channels, bouquets = [], selectedBouquet = '', onS
           <div className="epg-card">
             <div className="epg-channel">
               <div className="epg-channel-meta">
-                <div className="epg-channel-name">Suchergebnisse: “{searchQuery.trim()}” (7 Tage)</div>
+                <div className="epg-channel-name">Suchergebnisse: “{searchQuery.trim()}”</div>
               </div>
             </div>
+
             <div className="epg-programmes">
-              {searchResults.map((prog) => {
-                const ch = channelMap[prog.service_ref];
-                const logo = ch?.logo_url || ch?.logoUrl || ch?.logo;
+              {/* Unified Search Results */}
+              {searchGrouped.map(([ref, list]) => {
+                const ch = channelMap[ref];
                 const displayName = ch
-                  ? `${ch.number ? `${ch.number} · ` : ''}${ch.name || ch.id || prog.service_ref}`
-                  : prog.service_ref;
-                const range = (() => {
-                  const startStr = formatDateTime(prog.start);
-                  const endStr = formatDateTime(prog.end);
-                  const startDate = new Date(prog.start * 1000);
-                  const endDate = new Date(prog.end * 1000);
-                  if (startDate.toDateString() === endDate.toDateString()) {
-                    return `${startStr} – ${formatTime(prog.end)}`;
-                  }
-                  return `${startStr} – ${endStr}`;
-                })();
+                  ? `${ch.number ? `${ch.number} · ` : ''}${ch.name || ch.id || ref}`
+                  : ref;
+                const logo = ch?.logo_url || ch?.logoUrl || ch?.logo;
+
+                // Slice: Top 2 + Rest
+                const top2 = list.slice(0, 2);
+                const rest = list.slice(2);
+                const isExpanded = searchExpanded[ref];
+
                 return (
-                  <div className="epg-programme epg-programme-search" key={`${prog.service_ref}-${prog.start}`}>
-                    <div className="epg-programme-time">
-                      <div>{range}</div>
-                      {logo && (
-                        <div className="epg-search-logo" style={{ marginTop: '8px' }}>
+                  <div className="epg-search-group" key={ref}>
+                    {/* Channel Header (Matches Main View) */}
+                    <div className="epg-channel">
+                      <div className="epg-logo">
+                        {logo ? (
                           <img
                             src={logo}
                             alt={displayName}
                             onError={(e) => {
-                              e.target.onerror = null;
                               e.target.style.display = 'none';
+                              e.target.parentNode.innerHTML = '<span>🎬</span>';
                             }}
                           />
-                        </div>
-                      )}
-                      {RECORD_Supported && (
+                        ) : (
+                          <span>🎬</span>
+                        )}
+                      </div>
+                      <div className="epg-channel-meta">
+                        <div className="epg-channel-name">{displayName}</div>
+                      </div>
+                      {/* Play Button */}
+                      {onPlay && ch && (
                         <button
-                          className="epg-record-btn"
+                          className="btn-play header-play"
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleRecord(prog);
+                            onPlay(ch);
                           }}
-                          title="Aufnahme planen"
-                          style={{ marginTop: '8px', background: 'transparent', border: 'none', color: '#ff4444', fontSize: '18px', cursor: 'pointer' }}
+                          title="Play Stream"
                         >
-                          ⏺
+                          <span>▶</span> Play
                         </button>
                       )}
                     </div>
-                    <div className="epg-programme-body">
-                      <div className="epg-programme-title">
-                        {prog.title || '—'}
-                      </div>
-                      <div className="epg-programme-desc">{displayName}</div>
-                      {onPlay && ch && (
-                        <button
-                          className="epg-play-btn"
-                          onClick={() => onPlay(ch)}
-                          title="Play"
-                        >
-                          ▶
-                        </button>
+
+                    <div className="epg-programmes">
+                      {top2.map((prog) => (
+                        <ProgrammeRow
+                          key={`${prog.service_ref}-${prog.start}`}
+                          prog={prog}
+                          now={now}
+                          highlight={now >= prog.start && now < prog.end}
+                          onRecord={handleRecord}
+                          isRecorded={isRecorded(prog)}
+                        />
+                      ))}
+
+                      {rest.length > 0 && (
+                        <div className="epg-dropdown">
+                          <button
+                            className="epg-toggle"
+                            onClick={() => setSearchExpanded((prev) => ({ ...prev, [ref]: !prev[ref] }))}
+                          >
+                            {isExpanded ? 'Weniger anzeigen' : `Weitere Sendungen (${rest.length})`}
+                          </button>
+                          {isExpanded && (
+                            <div className="epg-programmes-noncurrent">
+                              {rest.map((prog) => (
+                                <ProgrammeRow
+                                  key={`${prog.service_ref}-${prog.start}`}
+                                  prog={prog}
+                                  now={now}
+                                  highlight={now >= prog.start && now < prog.end}
+                                  onRecord={handleRecord}
+                                  isRecorded={isRecorded(prog)}
+                                />
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       )}
-                      {prog.desc && <div className="epg-programme-desc">{prog.desc}</div>}
                     </div>
                   </div>
                 );
@@ -454,7 +507,7 @@ export default function EPG({ channels, bouquets = [], selectedBouquet = '', onS
           const list = grouped[ch.service_ref] || grouped[ch.id] || [];
 
 
-          const current = list.find((p) => now >= p.start && now <= p.end) || list[0];
+          const current = list.find((p) => now >= p.start && now < p.end) || list[0];
           const others = list.filter((p) => p !== current);
           const logo = ch?.logo_url || ch?.logoUrl || ch?.logo;
           const displayName = ch
@@ -487,13 +540,12 @@ export default function EPG({ channels, bouquets = [], selectedBouquet = '', onS
                 </div>
                 {/* Play Button - Always Visible (Inside Header) */}
                 <button
-                  className="btn-play"
+                  className="btn-play header-play"
                   onClick={(e) => {
                     e.stopPropagation();
                     if (onPlay) onPlay(ch);
                   }}
                   title="Play Stream"
-                  style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '6px', zIndex: 10 }}
                 >
                   <span>▶</span> Play
                 </button>
@@ -525,7 +577,7 @@ export default function EPG({ channels, bouquets = [], selectedBouquet = '', onS
                             key={`${prog.start}-${idx2}`}
                             prog={prog}
                             now={now}
-                            highlight={prog.start <= now && prog.end >= now}
+                            highlight={prog.start <= now && prog.end > now}
                             onRecord={handleRecord}
                             isRecorded={isRecorded(prog)}
                           />

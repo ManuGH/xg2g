@@ -1,21 +1,93 @@
 package openwebif
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"path/filepath"
+	"strconv"
 )
 
-// Movie represents a recording in the movie list
-type Movie struct {
-	ServiceRef  string      `json:"serviceref"`
-	Title       string      `json:"eventname"`
-	Description string      `json:"description"`
-	Length      string      `json:"length"` // OWI typically returns string like "90 min"
-	Filesize    string      `json:"filesize"`
-	Filename    string      `json:"filename"`
-	Begin       interface{} `json:"recordingtime"` // int or string
+// StringOrNumberString handles JSON fields that can be "123" or 123.
+type StringOrNumberString string
+
+func (s *StringOrNumberString) UnmarshalJSON(b []byte) error {
+	b = bytes.TrimSpace(b)
+	if len(b) == 0 || bytes.Equal(b, []byte("null")) {
+		*s = ""
+		return nil
+	}
+
+	// If it's a JSON string: "12345"
+	if b[0] == '"' {
+		var v string
+		if err := json.Unmarshal(b, &v); err != nil {
+			return err
+		}
+		*s = StringOrNumberString(v)
+		return nil
+	}
+
+	// Otherwise treat as number: 12345 (or 12345.0, etc.)
+	var n json.Number
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.UseNumber()
+	if err := dec.Decode(&n); err != nil {
+		return fmt.Errorf("filesize: invalid json value: %s", string(b))
+	}
+
+	// Prefer integer string if possible
+	if i, err := n.Int64(); err == nil {
+		*s = StringOrNumberString(strconv.FormatInt(i, 10))
+		return nil
+	}
+
+	// Fallback: keep raw number text
+	*s = StringOrNumberString(n.String())
+	return nil
+}
+
+// IntOrStringInt64 handles JSON fields that can be "123" or 123.
+type IntOrStringInt64 int64
+
+func (v *IntOrStringInt64) UnmarshalJSON(b []byte) error {
+	b = bytes.TrimSpace(b)
+	if len(b) == 0 || bytes.Equal(b, []byte("null")) || bytes.Equal(b, []byte(`""`)) {
+		*v = 0
+		return nil
+	}
+	// If it's a JSON string: "12345"
+	if b[0] == '"' {
+		var s string
+		if err := json.Unmarshal(b, &s); err != nil {
+			return err
+		}
+		if s == "" {
+			*v = 0
+			return nil
+		}
+		i, err := strconv.ParseInt(s, 10, 64)
+		if err != nil {
+			return fmt.Errorf("recordingtime: invalid string %q", s)
+		}
+		*v = IntOrStringInt64(i)
+		return nil
+	}
+	// Otherwise treat as number
+	var n json.Number
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.UseNumber()
+	if err := dec.Decode(&n); err != nil {
+		return fmt.Errorf("recordingtime: invalid json value: %s", string(b))
+	}
+	i, err := n.Int64()
+	if err != nil {
+		return fmt.Errorf("recordingtime: not int64: %s", n.String())
+	}
+	*v = IntOrStringInt64(i)
+	return nil
 }
 
 // MovieLocation represents a directory bookmark
@@ -24,12 +96,64 @@ type MovieLocation struct {
 	Name string `json:"name"`
 }
 
+// BookmarkList handles varied bookmark formats ([], [strings], [objects], "", {})
+type BookmarkList []MovieLocation
+
+func (bl *BookmarkList) UnmarshalJSON(b []byte) error {
+	b = bytes.TrimSpace(b)
+	if len(b) == 0 || bytes.Equal(b, []byte("null")) || bytes.Equal(b, []byte(`""`)) {
+		*bl = []MovieLocation{}
+		return nil
+	}
+
+	// Case 1: Array of Objects (Standard)
+	var objs []MovieLocation
+	if err := json.Unmarshal(b, &objs); err == nil {
+		*bl = BookmarkList(objs)
+		return nil
+	}
+
+	// Case 2: Array of Strings (Legacy)
+	var strs []string
+	if err := json.Unmarshal(b, &strs); err == nil {
+		list := make([]MovieLocation, len(strs))
+		for i, s := range strs {
+			list[i] = MovieLocation{
+				Path: s,
+				Name: filepath.Base(s),
+			}
+		}
+		*bl = BookmarkList(list)
+		return nil
+	}
+
+	// Case 3: Single Object (Edge Case)
+	var obj MovieLocation
+	if err := json.Unmarshal(b, &obj); err == nil && (obj.Path != "" || obj.Name != "") {
+		*bl = BookmarkList{obj}
+		return nil
+	}
+
+	return fmt.Errorf("bookmarks: invalid json format")
+}
+
+// Movie represents a recording in the movie list
+type Movie struct {
+	ServiceRef  string               `json:"serviceref"`
+	Title       string               `json:"eventname"`
+	Description string               `json:"description"`
+	Length      string               `json:"length"` // OWI typically returns string like "90 min"
+	Filesize    StringOrNumberString `json:"filesize"`
+	Filename    string               `json:"filename"`
+	Begin       IntOrStringInt64     `json:"recordingtime"`
+}
+
 // MovieList represents the response from /api/movielist
 type MovieList struct {
-	Movies    []Movie         `json:"movies"`
-	Bookmarks []MovieLocation `json:"bookmarks"`
-	Directory string          `json:"directory"`
-	Result    bool            `json:"result"`
+	Movies    []Movie      `json:"movies"`
+	Bookmarks BookmarkList `json:"bookmarks"`
+	Directory string       `json:"directory"`
+	Result    bool         `json:"result"`
 }
 
 // GetRecordings retrieves the list of recordings from the receiver.

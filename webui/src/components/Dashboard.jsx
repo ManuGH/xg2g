@@ -203,6 +203,7 @@ function LogList() {
     // Defensive check for Generated Client
     if (typeof DefaultService.getLogs !== 'function') {
       console.error('API Client Verification Failed: DefaultService.getLogs is missing', DefaultService);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setError('Log service unavailable');
       setLoading(false);
       return;

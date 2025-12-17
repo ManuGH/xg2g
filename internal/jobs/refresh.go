@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
-	xglog "github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/epg"
+	xglog "github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/playlist"
@@ -231,7 +231,7 @@ func Refresh(ctx context.Context, snap config.Snapshot) (*Status, error) {
 			items = append(items, playlist.Item{
 				Name:    name,
 				TvgID:   makeTvgID(name, ref, rt.UseHashTvgID), // Human-readable by default
-				TvgChNo: channelNumber,        // Sequential numbering based on bouquet position
+				TvgChNo: channelNumber,                         // Sequential numbering based on bouquet position
 				TvgLogo: logoURL,
 				Group:   bouquetName, // Use actual bouquet name as group
 				URL:     streamURL,

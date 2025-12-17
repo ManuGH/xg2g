@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -41,6 +42,19 @@ func (m *MockEpg) GetEvents(from, to time.Time) ([]openwebif.EPGEvent, error) {
 	return args.Get(0).([]openwebif.EPGEvent), args.Error(1)
 }
 
+func (m *MockClient) GetEPG(ctx context.Context, ref string, limit int) ([]openwebif.EPGEvent, error) {
+	args := m.Called(ctx, ref, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]openwebif.EPGEvent), args.Error(1)
+}
+
+func (m *MockClient) DeleteTimer(ctx context.Context, sRef string, begin, end int64) error {
+	args := m.Called(ctx, sRef, begin, end)
+	return args.Error(0)
+}
+
 func TestSeriesEngine_RunOnce(t *testing.T) {
 	// Setup
 	tmpDir := t.TempDir()
@@ -63,9 +77,16 @@ func TestSeriesEngine_RunOnce(t *testing.T) {
 	})
 
 	mockClient := new(MockClient)
-	mockEpg := new(MockEpg)
 
-	engine := NewSeriesEngine(rm, mockClient, mockEpg)
+	// Mock Config
+	mockCfg := config.AppConfig{}
+
+	// Factory returns the SAME mock instance for testing
+	factory := func() OWIClient {
+		return mockClient
+	}
+
+	engine := NewSeriesEngine(mockCfg, rm, factory)
 
 	// Mock Data
 	now := time.Now()
@@ -76,7 +97,8 @@ func TestSeriesEngine_RunOnce(t *testing.T) {
 		{Title: "Sports Live", SRef: "1:0:1:SPORTS", Begin: now.Add(3 * time.Hour).Unix(), Duration: 3600},
 	}
 	// Note: We use generic matchers because strict time matching is flaky in tests
-	mockEpg.On("GetEvents", mock.Anything, mock.Anything).Return(events, nil)
+	// Note: We use generic matchers because strict time matching is flaky in tests
+	mockClient.On("GetEPG", mock.Anything, mock.Anything, mock.Anything).Return(events, nil)
 
 	// Client Return (GetTimers empty first time)
 	mockClient.On("GetTimers", mock.Anything).Return([]openwebif.Timer{}, nil)
@@ -102,10 +124,9 @@ func TestSeriesEngine_RunOnce(t *testing.T) {
 	// mockClient must be reset or configured for second call
 
 	mockClient2 := new(MockClient)
-	mockEpg2 := new(MockEpg)
-	engine2 := NewSeriesEngine(rm, mockClient2, mockEpg2)
+	engine2 := NewSeriesEngine(mockCfg, rm, func() OWIClient { return mockClient2 })
 
-	mockEpg2.On("GetEvents", mock.Anything, mock.Anything).Return(events, nil)
+	mockClient2.On("GetEPG", mock.Anything, mock.Anything, mock.Anything).Return(events, nil)
 
 	// Simulate existing timer
 	existingTimer := openwebif.Timer{

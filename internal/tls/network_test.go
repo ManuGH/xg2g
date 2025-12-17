@@ -124,8 +124,8 @@ func TestGenerateSelfSignedWithIPs_Deduplication(t *testing.T) {
 
 	additionalDNS := []string{
 		"test.local",
-		"test.local",  // duplicate
-		"localhost",   // duplicate of default
+		"test.local", // duplicate
+		"localhost",  // duplicate of default
 	}
 
 	err := GenerateSelfSignedWithIPs(certPath, keyPath, 1, additionalIPs, additionalDNS)

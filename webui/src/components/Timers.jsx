@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { TimersService, DvrService, OpenAPI } from '../client';
 import EditTimerDialog from './EditTimerDialog';
+import './Timers.css';
 
 function formatDateTime(ts) {
   if (!ts) return '';
@@ -73,42 +74,42 @@ export default function Timers() {
   };
 
   return (
-    <div className="timers-view p-4">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-bold">Scheduled Recordings</h2>
-        <button onClick={fetchTimers} className="bg-gray-700 px-3 py-1 rounded">Refresh</button>
+    <div className="timers-view">
+      <div className="timers-toolbar">
+        <h2>Scheduled Recordings</h2>
+        <button onClick={fetchTimers} className="timer-refresh-btn">Refresh</button>
       </div>
 
-      {loading && <div className="text-center">Loading...</div>}
-      {error && <div className="text-red-500">{error}</div>}
+      {loading && <div className="timers-loading">Loading...</div>}
+      {error && <div className="status-indicator error w-full justify-center">{error}</div>}
 
       {!loading && !error && timers.length === 0 && (
-        <div className="text-gray-400 text-center py-8">No timers scheduled.</div>
+        <div className="timers-empty">No timers scheduled.</div>
       )}
 
-      <div className="grid gap-2">
+      <div className="timers-list">
         {timers.map((t, idx) => (
-          <div key={t.timerId || idx} className="bg-gray-800 p-3 rounded flex justify-between items-center">
-            <div>
-              <div className="font-bold">{t.name}</div>
-              <div className="text-sm text-gray-400">{t.serviceName || t.serviceRef}</div>
-              <div className="text-xs text-gray-500">
+          <div key={t.timerId || idx} className="timer-card">
+            <div className="timer-info">
+              <div className="timer-name">{t.name}</div>
+              <div className="timer-service">{t.serviceName || t.serviceRef}</div>
+              <div className="timer-time">
                 {formatDateTime(t.begin)} - {formatDateTime(t.end)}
               </div>
-              <div className={`text-xs mt-1 ${t.state === 'recording' ? 'text-green-500' : 'text-yellow-500'}`}>
+              <div className={`timer-state ${t.state === 'recording' ? 'status-recording' : 'status-scheduled'}`}>
                 {t.state}
               </div>
             </div>
-            <div className="flex gap-2">
+            <div className="timer-actions">
               <button
                 onClick={() => setEditingTimer(t)}
-                className="bg-blue-900/50 text-blue-300 hover:bg-blue-900 px-3 py-1 rounded text-sm"
+                className="timer-btn btn-edit"
               >
                 Edit
               </button>
               <button
                 onClick={() => handleDelete(t)}
-                className="bg-red-900/50 text-red-300 hover:bg-red-900 px-3 py-1 rounded text-sm"
+                className="timer-btn btn-delete"
               >
                 Delete
               </button>

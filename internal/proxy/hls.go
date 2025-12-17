@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -341,7 +342,17 @@ func (s *HLSStreamer) Start() error {
 		"-analyzeduration", "7000000", // 7s Analysis (safe for encrypted/slow-lock streams)
 		"-probesize", "10000000", // 10MB: Safe for multi-program streams
 		"-rw_timeout", "30000000", // 30s socket timeout
-		"-reconnect", "1", "-reconnect_at_eof", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5", // Robust HTTP input
+	)
+
+	// Add HTTP-specific robustness flags only for network streams
+	// Security / Stability: Strict scheme check to avoid applying these flags to file paths
+	if u, err := url.Parse(finalInputURL); err == nil && (u.Scheme == "http" || u.Scheme == "https") {
+		args = append(args,
+			"-reconnect", "1", "-reconnect_at_eof", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5", // Robust HTTP input
+		)
+	}
+
+	args = append(args,
 		"-start_at_zero",                  // Reset timestamps to 0
 		"-avoid_negative_ts", "make_zero", // Ensure no negative timestamps
 		"-ss", "1.5", // SKIP GARBAGE: Drop first 1.5s of input (fixes Startbild/Green artifacts)

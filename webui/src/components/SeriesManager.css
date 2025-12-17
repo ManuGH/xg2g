@@ -17,15 +17,29 @@
     font-weight: 600;
 }
 
+.loading-state {
+    padding: 24px;
+    text-align: center;
+    color: var(--text-muted);
+}
+
+.text-secondary {
+    color: var(--text-secondary);
+}
+
 .btn-primary {
-    background: var(--accent-primary, #3b82f6);
+    background: var(--accent-primary);
     color: white;
     border: none;
     padding: 10px 20px;
-    border-radius: var(--radius-md, 8px);
+    border-radius: var(--radius-md);
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s;
+}
+
+.sm-header .btn-primary {
+    margin-top: 6px;
 }
 
 .btn-primary:hover {
@@ -38,7 +52,7 @@
     color: var(--text-primary);
     border: 1px solid var(--border-subtle);
     padding: 8px 16px;
-    border-radius: var(--radius-md, 8px);
+    border-radius: var(--radius-md);
     cursor: pointer;
     transition: all 0.2s;
 }
@@ -48,17 +62,28 @@
 }
 
 .btn-danger {
-    background: rgba(239, 68, 68, 0.15);
-    color: #ef4444;
-    border: 1px solid rgba(239, 68, 68, 0.3);
+    background: color-mix(in srgb, var(--accent-danger) 15%, transparent);
+    color: var(--accent-danger);
+    border: 1px solid color-mix(in srgb, var(--accent-danger) 30%, transparent);
     padding: 8px 16px;
-    border-radius: var(--radius-md, 8px);
+    border-radius: var(--radius-md);
     cursor: pointer;
     transition: all 0.2s;
 }
 
 .btn-danger:hover {
-    background: rgba(239, 68, 68, 0.25);
+    background: color-mix(in srgb, var(--accent-danger) 25%, transparent);
+}
+
+/* Logic: Focus Visible */
+.btn-primary:focus-visible,
+.btn-secondary:focus-visible,
+.btn-danger:focus-visible,
+.day-btn:focus-visible,
+.close-btn:focus-visible,
+.input-field:focus-visible {
+    outline: 2px solid var(--accent-primary);
+    outline-offset: 2px;
 }
 
 /* Rule Card */
@@ -91,13 +116,13 @@
 }
 
 .status-badge.active {
-    background: rgba(16, 185, 129, 0.15);
-    color: #10b981;
+    background: color-mix(in srgb, var(--accent-success) 15%, transparent);
+    color: var(--accent-success);
 }
 
 .status-badge.inactive {
-    background: rgba(107, 114, 128, 0.15);
-    color: #9ca3af;
+    background: color-mix(in srgb, var(--text-muted) 15%, transparent);
+    color: var(--text-muted);
 }
 
 .rule-meta {
@@ -134,8 +159,13 @@
     color: var(--text-secondary);
 }
 
-.run-status.success { color: #10b981; }
-.run-status.failed { color: #ef4444; }
+.run-status.success {
+    color: var(--accent-success);
+}
+
+.run-status.failed {
+    color: var(--accent-danger);
+}
 
 .rule-actions {
     display: flex;
@@ -178,7 +208,7 @@
 }
 
 .modal.glass {
-    background: var(--bg-card); /* Fallback */
+    background: var(--bg-card);
 }
 
 .modal-header {
@@ -230,7 +260,7 @@
     box-sizing: border-box;
 }
 
-.input-field:focus {
+.input-field:focus-visible {
     border-color: var(--accent-primary);
 }
 

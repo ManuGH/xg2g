@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -74,7 +75,10 @@ func TestScheduler_Loop(t *testing.T) {
 	mockEpg := new(MockEpg)
 
 	// Create Engine
-	engine := NewSeriesEngine(rm, mockClient, mockEpg)
+	// Create Engine
+	mockClient = new(MockClient)
+	mockCfg := config.AppConfig{}
+	engine := NewSeriesEngine(mockCfg, rm, func() OWIClient { return mockClient })
 
 	// Create Scheduler with MockClock
 	sched := NewScheduler(engine)

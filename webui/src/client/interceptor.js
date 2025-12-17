@@ -48,7 +48,7 @@ export function initializeAuth() {
 export function enableSecurityMonitoring() {
   // Log when token is added/removed from localStorage
   const originalSetItem = localStorage.setItem;
-  localStorage.setItem = function(key, value) {
+  localStorage.setItem = function (key) {
     if (key === 'XG2G_API_TOKEN') {
       console.log('[Security] API token updated');
     }
@@ -56,7 +56,7 @@ export function enableSecurityMonitoring() {
   };
 
   const originalRemoveItem = localStorage.removeItem;
-  localStorage.removeItem = function(key) {
+  localStorage.removeItem = function (key) {
     if (key === 'XG2G_API_TOKEN') {
       console.warn('[Security] API token removed');
     }

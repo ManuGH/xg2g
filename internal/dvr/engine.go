@@ -15,11 +15,19 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
+// OWIClient abstracts the OpenWebIF client for testing
+type OWIClient interface {
+	GetTimers(ctx context.Context) ([]openwebif.Timer, error)
+	AddTimer(ctx context.Context, sRef string, begin, end int64, name, description string) error
+	DeleteTimer(ctx context.Context, sRef string, begin, end int64) error
+	GetEPG(ctx context.Context, ref string, limit int) ([]openwebif.EPGEvent, error)
+}
+
 // SeriesEngine handles automated rule-based recording.
 type SeriesEngine struct {
 	cfg           config.AppConfig // Need access to global config (EPG filters etc)
 	ruleManager   *Manager
-	clientFactory func() *openwebif.Client // Abstract factory to get fresh OWI client
+	clientFactory func() OWIClient // Abstract factory to get fresh OWI client
 
 	mu      sync.RWMutex
 	lastRun time.Time
@@ -29,7 +37,7 @@ type SeriesEngine struct {
 }
 
 // NewSeriesEngine creates a new engine instance.
-func NewSeriesEngine(cfg config.AppConfig, rules *Manager, clientFactory func() *openwebif.Client) *SeriesEngine {
+func NewSeriesEngine(cfg config.AppConfig, rules *Manager, clientFactory func() OWIClient) *SeriesEngine {
 	return &SeriesEngine{
 		cfg:           cfg,
 		ruleManager:   rules,
@@ -125,6 +133,7 @@ func (e *SeriesEngine) RunOnce(ctx context.Context, trigger string, ruleID strin
 				})
 			} else {
 				report.Decisions = decisions
+				report.Summary.EpgItemsMatched = len(decisions)
 				// Apply Decisions (Create Timers)
 				for _, d := range decisions {
 					if d.Action == ActionCreated {
@@ -179,7 +188,7 @@ func (e *SeriesEngine) RunOnce(ctx context.Context, trigger string, ruleID strin
 }
 
 // processRule matches a single rule against the EPG
-func (e *SeriesEngine) processRule(ctx context.Context, client *openwebif.Client, rule SeriesRule, existingTimers map[string]bool) ([]RunDecision, error) {
+func (e *SeriesEngine) processRule(ctx context.Context, client OWIClient, rule SeriesRule, existingTimers map[string]bool) ([]RunDecision, error) {
 	// Load EPG (Service or Global?)
 	// If rule has ChannelRef, only fetch EPG for that channel.
 	// If not, fetch Global EPG? (Expensive! Maybe limit to Bouquet?)
@@ -199,13 +208,6 @@ func (e *SeriesEngine) processRule(ctx context.Context, client *openwebif.Client
 		}
 		candidates = events
 	} else {
-		// Broad Scan (Warning: Heavy)
-		// TODO: Implement Bouquet iteration?
-		// For v1 of engine, require ChannelRef or accept empty=nothing?
-		// Let's skip empty channel rules for safety unless we have a 'Scan All' (Search) feature.
-		// Actually, OWI '/api/epg' is not search. '/api/search' exists on some boxes.
-		// We don't want to use Box Search if possible (inconsistent).
-		// We'll skip rule if no channel defined for now.
 		return nil, nil
 	}
 
@@ -262,6 +264,7 @@ func (e *SeriesEngine) processRule(ctx context.Context, client *openwebif.Client
 						inWindow = true
 					}
 				}
+				fmt.Printf("DEBUG: TimeWindow: time=%d win=%d-%d in=%v\n", evTime, winStart, winEnd, inWindow)
 
 				if !inWindow {
 					continue
@@ -308,6 +311,7 @@ func (e *SeriesEngine) processRule(ctx context.Context, client *openwebif.Client
 
 // parseHHMM parses "HHMM" string to int (e.g. "2015" -> 2015). Returns -1 on error.
 func parseHHMM(s string) (int, error) {
+	s = strings.ReplaceAll(s, ":", "")
 	if len(s) != 4 {
 		return -1, fmt.Errorf("invalid length")
 	}
