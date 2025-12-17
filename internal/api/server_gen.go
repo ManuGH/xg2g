@@ -21,6 +21,7 @@ import (
 )
 
 const (
+	// #nosec G101 -- OpenAPI-generated constant name, not actual credentials
 	BearerAuthScopes = "BearerAuth.Scopes"
 )
 

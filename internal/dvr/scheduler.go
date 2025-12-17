@@ -183,6 +183,7 @@ func (s *Scheduler) jitterDuration() time.Duration {
 		return 0
 	}
 	ms := int64(s.Jitter / time.Millisecond)
+	// #nosec G404 -- math/rand is acceptable here for scheduler jitter to avoid thundering herd; not security-sensitive
 	delta := rand.Int63n(ms*2) - ms // -ms to +ms
 	return time.Duration(delta) * time.Millisecond
 }
