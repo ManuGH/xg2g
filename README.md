@@ -21,7 +21,7 @@ If you like **xg2g** and want to support its development (or get access to the "
 <a href="https://github.com/sponsors/ManuGH">
   <img src="https://img.shields.io/badge/Sponsor-GitHub-ea4aaa?style=for-the-badge&logo=github" alt="Sponsor on GitHub" />
 </a>
-<a href="https://paypal.me/YOUR_PAYPAL">
+<a href="https://paypal.me/ManuGH">
   <img src="https://img.shields.io/badge/Donate-PayPal-00457C?style=for-the-badge&logo=paypal" alt="Donate with PayPal" />
 </a>
 
