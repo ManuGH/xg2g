@@ -95,6 +95,39 @@ export default function RecordingsList() {
     setPlaying({ url, title: item.title });
   };
 
+  const handleDelete = async (item) => {
+    try {
+      // Encode ID
+      const toBase64Url = (str) => {
+        return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      };
+      const encodedId = toBase64Url(item.service_ref);
+
+      const token = localStorage.getItem('XG2G_API_TOKEN'); // Use consistent key
+      // Actually RecordingsService likely doesn't have delete method yet.
+      // We can use fetch directly or add it to service. 
+      // Let's use fetch for MVP to avoid editing another file if possible, or edit service properly.
+      // Editing service is better practice. But for now speed:
+
+      const res = await fetch(`/api/v2/recordings/${encodedId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!res.ok) {
+        throw new Error('Failed to delete recording');
+      }
+
+      // Refresh list
+      fetchData(root, path);
+    } catch (e) {
+      console.error(e);
+      alert('Failed to delete recording');
+    }
+  };
+
   const formatDuration = (val) => {
     if (!val) return '';
     // Check if seconds or string '90 min'
@@ -152,7 +185,7 @@ export default function RecordingsList() {
           {renderBreadcrumbs()}
         </div>
 
-        <div className="flex gap-2 items-center">
+        <div className="toolbar-actions">
           {data?.roots?.length > 1 && (
             <select
               value={root}
@@ -265,6 +298,19 @@ export default function RecordingsList() {
                       }}
                     >
                       Play
+                    </button>
+                    <button
+                      className="rec-action-btn rec-delete-btn"
+                      style={{ marginLeft: '8px', backgroundColor: '#ef4444' }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        // eslint-disable-next-line no-restricted-globals
+                        if (confirm(`Delete "${rec.title}"? This cannot be undone.`)) {
+                          handleDelete(rec);
+                        }
+                      }}
+                    >
+                      Delete
                     </button>
                   </td>
                 </tr>

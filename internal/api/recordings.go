@@ -11,9 +11,9 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 
+	"github.com/ManuGH/xg2g/internal/fsutil"
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog/log"
 )
@@ -97,8 +97,8 @@ func (s *Server) GetRecordingsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// confineRelPath handles cleaning, symlinks, backslashes and strict confinement
-	cleanTarget, err := confineRelPath(rootAbs, qPath)
+	// fsutil.ConfineRelPath handles cleaning, symlinks, backslashes and strict confinement
+	cleanTarget, err := fsutil.ConfineRelPath(rootAbs, qPath)
 	if err != nil {
 		log.Warn().Err(err).Str("root", rootAbs).Str("path", qPath).Msg("path traversal detected")
 		http.Error(w, "Access denied", http.StatusForbidden)
@@ -128,19 +128,8 @@ func (s *Server) GetRecordingsHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Process Movies
 	for _, m := range list.Movies {
-		// Begin time: OWI might return string or int.
-		// openwebif struct calls it 'interface{}'. Try to cast.
-		var beginTs int64
-		switch v := m.Begin.(type) {
-		case int64:
-			beginTs = v
-		case float64:
-			beginTs = int64(v)
-		case string:
-			if parsed, err := strconv.ParseInt(v, 10, 64); err == nil {
-				beginTs = parsed
-			}
-		}
+		// Begin time: OWI might return string or int, now normalized by IntOrStringInt64
+		beginTs := int64(m.Begin)
 
 		response.Recordings = append(response.Recordings, RecordingItem{
 			ServiceRef:  m.ServiceRef,
@@ -154,12 +143,12 @@ func (s *Server) GetRecordingsHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Process Directories (Bookmarks)
 	// We need to resolve the root symlinks to correctly compute relative paths for bookmarks
-	// We mirror the canonicalization logic of confineAbsPath: Abs -> EvalSymlinks
+	// We mirror the canonicalization logic of fsutil.ConfineAbsPath: Abs -> EvalSymlinks
 	absRoot, _ := filepath.Abs(rootAbs)
 	realRoot, err := filepath.EvalSymlinks(absRoot)
 	if err != nil {
 		// If we can't resolve the root, fall back to Abs
-		// Same as confineAbsPath fallback logic (though confineAbsPath handles non-exist as error in some cases, here we tolerate for listing? No, existing behavior)
+		// Same as fsutil.ConfineAbsPath fallback logic (though confineAbsPath handles non-exist as error in some cases, here we tolerate for listing? No, existing behavior)
 		if os.IsNotExist(err) {
 			// If root effectively doesn't exist, we probably won't find bookmarks inside it anyway,
 			// but let's keep consistent path base.
@@ -167,7 +156,7 @@ func (s *Server) GetRecordingsHandler(w http.ResponseWriter, r *http.Request) {
 		} else {
 			// For other errors, fallback (or fail?)
 			// confineAbsPath falls back to absRoot if IsNotExist, or returns err?
-			// Actually confineAbsPath currently: if err!=nil && !IsNotExist { return err } -> Fails closed.
+			// Actually fsutil.ConfineAbsPath currently: if err!=nil && !IsNotExist { return err } -> Fails closed.
 			// But here we might want to be slightly lenient if only listing?
 			// User requested: "mirror the exact root canonicalization logic"
 			// if err != nil { realRoot = absRoot } (simple fallback as requested in option 2)
@@ -177,8 +166,8 @@ func (s *Server) GetRecordingsHandler(w http.ResponseWriter, r *http.Request) {
 
 	for _, b := range list.Bookmarks {
 		// b.Path is absolute. Validate it is within the root.
-		// We use confineAbsPath to ensure it doesn't escape.
-		resolvedBookmark, err := confineAbsPath(rootAbs, b.Path)
+		// We use fsutil.ConfineAbsPath to ensure it doesn't escape.
+		resolvedBookmark, err := fsutil.ConfineAbsPath(rootAbs, b.Path)
 		if err != nil {
 			continue
 		}
@@ -299,16 +288,19 @@ func (s *Server) GetRecordingHLSPlaylistHandler(w http.ResponseWriter, r *http.R
 	allowed := false
 
 	// Check against all configured roots
+	// Check against all configured roots
 	roots := cfg.RecordingRoots
 	if len(roots) == 0 {
 		// Default fallback if no roots configured
 		roots = map[string]string{"hdd": "/media/hdd/movie"}
 	}
 
+	var resolvedPath string
 	for _, rootPath := range roots {
-		// We use confineAbsPath because HLS ServiceRef IDs contain absolute paths (usually)
-		if _, err := confineAbsPath(rootPath, filePath); err == nil {
+		// We use fsutil.ConfineAbsPath because HLS ServiceRef IDs contain absolute paths (usually)
+		if abs, err := fsutil.ConfineAbsPath(rootPath, filePath); err == nil {
 			allowed = true
+			resolvedPath = abs
 			break
 		}
 	}
@@ -319,36 +311,10 @@ func (s *Server) GetRecordingHLSPlaylistHandler(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	// SSRF / Host Validation
-	// ... (rest same) ...
-	receiverHost := "127.0.0.1"
-	if cfg.OWIBase != "" {
-		if u, err := url.Parse(cfg.OWIBase); err == nil && u.Hostname() != "" {
-			receiverHost = u.Hostname()
-		} else {
-			cleaned := strings.TrimPrefix(cfg.OWIBase, "http://")
-			cleaned = strings.TrimPrefix(cleaned, "https://")
-			if idx := strings.Index(cleaned, ":"); idx != -1 {
-				receiverHost = cleaned[:idx]
-			} else {
-				receiverHost = cleaned
-			}
-		}
-	}
-
-	// Configured stream port
-	port := 8001
-	if cfg.StreamPort > 0 {
-		port = cfg.StreamPort
-	}
-
-	// Construct Receiver Stream URL Safely
-	u := url.URL{
-		Scheme: "http",
-		Host:   fmt.Sprintf("%s:%d", receiverHost, port),
-		Path:   filePath,
-	}
-	upstreamURL := u.String()
+	// Use Local File Path as Upstream
+	// Since we have direct access to the file (verified above), using the local path
+	// avoids network overhead and dependency on the receiver's HTTP streaming capabilities.
+	upstreamURL := resolvedPath
 
 	// Proxy to internal Stream Proxy HLS handler
 	// We use Base64RawURL Encoded ServiceRef as the ID for HLS session.
@@ -447,4 +413,103 @@ func (s *Server) GetRecordingHLSCustomSegmentHandler(w http.ResponseWriter, r *h
 	}
 
 	p.ServeHTTP(w, r)
+}
+
+// DeleteRecordingHandler handles DELETE /api/v2/recordings/{ref}
+// Deletes the recording file and associated sidecar files from the local disk.
+func (s *Server) DeleteRecordingHandler(w http.ResponseWriter, r *http.Request) {
+	recordingID := chi.URLParam(r, "ref")
+	if recordingID == "" {
+		http.Error(w, "Missing recording ID", http.StatusBadRequest)
+		return
+	}
+
+	// Decode ID
+	var serviceRef string
+	if decodedBytes, err := base64.RawURLEncoding.DecodeString(recordingID); err == nil {
+		serviceRef = string(decodedBytes)
+	} else {
+		if decodedBytes2, err2 := base64.URLEncoding.DecodeString(recordingID); err2 == nil {
+			serviceRef = string(decodedBytes2)
+		} else if decoded, err3 := url.PathUnescape(recordingID); err3 == nil {
+			serviceRef = decoded
+		} else {
+			serviceRef = recordingID
+		}
+	}
+
+	// Extract path from ServiceRef
+	parts := strings.Split(serviceRef, ":")
+	var filePath string
+	for i := len(parts) - 1; i >= 0; i-- {
+		if strings.HasPrefix(parts[i], "/") {
+			filePath = parts[i]
+			break
+		}
+	}
+
+	if filePath == "" {
+		http.Error(w, "Invalid recording reference (no file path found)", http.StatusBadRequest)
+		return
+	}
+
+	s.mu.RLock()
+	cfg := s.cfg
+	s.mu.RUnlock()
+
+	// SECURITY: Confinement Check
+	allowed := false
+	var resolvedPath string
+	roots := cfg.RecordingRoots
+	if len(roots) == 0 {
+		roots = map[string]string{"hdd": "/media/hdd/movie"}
+	}
+
+	for _, rootPath := range roots {
+		if abs, err := fsutil.ConfineAbsPath(rootPath, filePath); err == nil {
+			allowed = true
+			resolvedPath = abs
+			break
+		}
+	}
+
+	if !allowed {
+		log.Warn().Str("path", filePath).Msg("recording delete blocked: path not in allowed roots")
+		http.Error(w, "Access denied: Path not in allowed roots", http.StatusForbidden)
+		return
+	}
+
+	// Delete Content
+	log.Info().Str("path", resolvedPath).Msg("deleting recording")
+	if err := os.Remove(resolvedPath); err != nil {
+		if os.IsNotExist(err) {
+			http.Error(w, "File not found", http.StatusNotFound)
+			return
+		}
+		log.Error().Err(err).Str("path", resolvedPath).Msg("failed to delete recording file")
+		http.Error(w, "Failed to delete file", http.StatusInternalServerError)
+		return
+	}
+
+	// Delete Sidecars (.eit, .ts.meta, .ts.cuts, .ts.ap, .ts.sc, .jpg)
+	base := resolvedPath
+	ext := filepath.Ext(base)
+	noExt := strings.TrimSuffix(base, ext)
+
+	sidecars := []string{
+		base + ".meta",
+		base + ".cuts",
+		base + ".ap",
+		base + ".sc",
+		noExt + ".eit",
+		noExt + ".jpg",
+	}
+
+	for _, sc := range sidecars {
+		if err := os.Remove(sc); err != nil && !os.IsNotExist(err) {
+			log.Warn().Err(err).Str("file", sc).Msg("failed to delete sidecar file")
+		}
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

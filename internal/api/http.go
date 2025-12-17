@@ -186,7 +186,7 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager) *Server {
 
 	// Initialize Series Engine
 	// Server (s) implements EpgProvider interface via GetEvents method
-	s.seriesEngine = dvr.NewSeriesEngine(cfg, sm, func() *openwebif.Client {
+	s.seriesEngine = dvr.NewSeriesEngine(cfg, sm, func() dvr.OWIClient {
 		return openwebif.New(cfg.OWIBase)
 	})
 
@@ -400,6 +400,7 @@ func (s *Server) routes() http.Handler {
 	// Manual Routes for Recordings (MVP)
 	r.With(s.authMiddleware).Get("/api/v2/recordings", s.GetRecordingsHandler)
 	r.With(s.authMiddleware).Get("/api/v2/recordings/stream/{ref}", s.GetRecordingStreamHandler)
+	r.With(s.authMiddleware).Delete("/api/v2/recordings/{ref}", s.DeleteRecordingHandler)
 
 	// HLS for Recordings (Proxied)
 	// Note: Cookies (HttpOnly) are used for auth, but authMiddleware checks headers/cookies now.

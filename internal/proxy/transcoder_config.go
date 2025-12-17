@@ -85,4 +85,3 @@ func resolveFFmpegPath(configured string) (string, bool) {
 	}
 	return "/usr/bin/ffmpeg", false
 }
-

@@ -22,7 +22,7 @@ const closeButtonStyle = {
   boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
 };
 
-export default function Player({ streamUrl, preflightUrl, onClose, config = {} }) {
+export default function Player({ streamUrl, preflightUrl, onClose }) {
   const videoRef = useRef(null);
   const playerRef = useRef(null);
   const hlsRef = useRef(null);

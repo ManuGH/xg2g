@@ -219,15 +219,16 @@ func (m *manager) startProxyServer(_ context.Context, errChan chan<- error) erro
 
 	var err error
 	m.proxyServer, err = proxy.New(proxy.Config{
-		ListenAddr:   m.deps.ProxyConfig.ListenAddr,
-		TargetURL:    m.deps.ProxyConfig.TargetURL,
-		ReceiverHost: m.deps.ProxyConfig.ReceiverHost,
-		Logger:       m.deps.ProxyConfig.Logger,
-		TLSCert:      m.deps.ProxyConfig.TLSCert,
-		TLSKey:       m.deps.ProxyConfig.TLSKey,
-		DataDir:      m.deps.ProxyConfig.DataDir,
-		PlaylistPath: m.deps.ProxyConfig.PlaylistPath,
-		Runtime:      m.deps.ProxyConfig.Runtime,
+		ListenAddr:     m.deps.ProxyConfig.ListenAddr,
+		TargetURL:      m.deps.ProxyConfig.TargetURL,
+		ReceiverHost:   m.deps.ProxyConfig.ReceiverHost,
+		Logger:         m.deps.ProxyConfig.Logger,
+		TLSCert:        m.deps.ProxyConfig.TLSCert,
+		TLSKey:         m.deps.ProxyConfig.TLSKey,
+		DataDir:        m.deps.ProxyConfig.DataDir,
+		PlaylistPath:   m.deps.ProxyConfig.PlaylistPath,
+		RecordingRoots: m.deps.Config.RecordingRoots,
+		Runtime:        m.deps.ProxyConfig.Runtime,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create proxy: %w", err)

@@ -1,0 +1,180 @@
+/* Files.css */
+
+.files-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: fadeIn 0.4s ease-out;
+  padding-bottom: 80px;
+}
+
+.files-header {
+  background: var(--card-bg);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.files-header h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-color);
+}
+
+.files-subtle {
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 0 2px;
+}
+
+.files-status {
+  font-weight: 650;
+  text-transform: uppercase;
+  font-size: 12px;
+  letter-spacing: 0.4px;
+}
+
+.files-status.is-ok {
+  color: var(--accent-success);
+}
+
+.files-status.is-warn {
+  color: var(--accent-warning);
+}
+
+.files-loading {
+  padding: 24px;
+  color: var(--text-muted);
+}
+
+.files-alert {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-subtle);
+  padding: 12px 14px;
+  background: var(--card-bg);
+  color: var(--text-secondary);
+}
+
+.files-alert-error {
+  border-color: color-mix(in srgb, var(--accent-danger) 45%, var(--border-subtle));
+  background: color-mix(in srgb, var(--accent-danger) 10%, var(--card-bg));
+}
+
+.files-alert-success {
+  border-color: color-mix(in srgb, var(--accent-success) 45%, var(--border-subtle));
+  background: color-mix(in srgb, var(--accent-success) 10%, var(--card-bg));
+}
+
+.files-alert-warning {
+  border-color: color-mix(in srgb, var(--accent-warning) 45%, var(--border-subtle));
+  background: color-mix(in srgb, var(--accent-warning) 10%, var(--card-bg));
+}
+
+/* Buttons (shared pattern across Files) */
+.files-btn {
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 650;
+  cursor: pointer;
+  transition: background-color 0.2s, transform 0.1s, opacity 0.2s;
+  text-decoration: none;
+}
+
+.files-btn-primary {
+  background: var(--accent-primary);
+  color: #ffffff;
+}
+
+.files-btn-primary:hover {
+  background: var(--accent-primary-hover);
+}
+
+.files-btn-secondary {
+  background: color-mix(in srgb, var(--bg-hover) 35%, var(--card-bg));
+  color: var(--text-color);
+  border-color: var(--border-subtle);
+}
+
+.files-btn-secondary:hover {
+  background: var(--bg-hover);
+}
+
+.files-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.files-btn:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+/* Cards */
+.file-list {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 16px;
+}
+
+.file-card {
+  grid-column: span 12;
+  background: var(--card-bg);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.file-card h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-color);
+}
+
+.description {
+  margin: 0;
+  color: var(--text-secondary);
+  opacity: 0.9;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+/* Code block */
+.code-block {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  word-break: break-all;
+}
+
+/* Action row */
+.actions-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+@media (min-width: 900px) {
+  .file-card {
+    grid-column: span 4;
+  }
+}

@@ -16,6 +16,7 @@ import (
 	"golang.org/x/sync/semaphore"
 
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/fsutil"
 	"github.com/ManuGH/xg2g/internal/m3u"
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/rs/zerolog"
@@ -36,10 +37,11 @@ type Server struct {
 	dataDir      string // For reading playlist.m3u
 	playlistPath string // Path to M3U playlist
 	// channelMap stores StreamID -> StreamURL mappings.
-	channelMap map[string]string
-	channelMu  sync.RWMutex
-	listenPort string
-	localHosts map[string]struct{}
+	channelMap     map[string]string
+	channelMu      sync.RWMutex
+	listenPort     string
+	localHosts     map[string]struct{}
+	recordingRoots map[string]string
 
 	streamLimiter     *semaphore.Weighted
 	streamLimit       int64
@@ -53,15 +55,16 @@ type Server struct {
 
 // Config holds the configuration for the proxy server.
 type Config struct {
-	ListenAddr   string
-	TargetURL    string
-	ReceiverHost string
-	Logger       zerolog.Logger
-	TLSCert      string
-	TLSKey       string
-	DataDir      string
-	PlaylistPath string
-	Runtime      config.RuntimeSnapshot
+	ListenAddr     string
+	TargetURL      string
+	ReceiverHost   string
+	Logger         zerolog.Logger
+	TLSCert        string
+	TLSKey         string
+	DataDir        string
+	PlaylistPath   string
+	RecordingRoots map[string]string
+	Runtime        config.RuntimeSnapshot
 }
 
 // New creates a new proxy server.
@@ -74,16 +77,25 @@ func New(cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("either TargetURL or ReceiverHost is required")
 	}
 
+	// Ensure RecordingRoots has a default if empty to prevent surprising denials
+	recordingRoots := cfg.RecordingRoots
+	if len(recordingRoots) == 0 {
+		recordingRoots = map[string]string{"hdd": "/media/hdd/movie"}
+	}
+
 	s := &Server{
-		addr:         cfg.ListenAddr,
-		logger:       cfg.Logger,
-		receiverHost: cfg.ReceiverHost,
-		tlsCert:      cfg.TLSCert,
-		tlsKey:       cfg.TLSKey,
-		dataDir:      cfg.DataDir,
-		playlistPath: cfg.PlaylistPath,
-		channelMap:   make(map[string]string),
-		registry:     NewRegistry(),
+		addr:           cfg.ListenAddr,
+		logger:         cfg.Logger,
+		receiverHost:   cfg.ReceiverHost,
+		tlsCert:        cfg.TLSCert,
+		tlsKey:         cfg.TLSKey,
+		hlsManager:     nil, // init later
+		dataDir:        cfg.DataDir,
+		playlistPath:   cfg.PlaylistPath,
+		recordingRoots: recordingRoots,
+		channelMap:     make(map[string]string),
+		registry:       NewRegistry(),
+		localHosts:     make(map[string]struct{}),
 	}
 
 	listenHost, listenPort := splitListenAddr(cfg.ListenAddr)
@@ -198,7 +210,50 @@ func (s *Server) GetSessions() []*StreamSession {
 	return s.registry.List()
 }
 
+func (s *Server) validateUpstream(upstream string) error {
+	// ALLOW: http://, https://
+	// ALLOW: Absolute path IF confined within RecordingRoots AND is regular file
+	// DENY: file:// (ambiguous/unnecessary), other schemes
+	u, err := url.Parse(upstream)
+	if err != nil {
+		return fmt.Errorf("invalid url: %w", err)
+	}
+
+	if u.Scheme == "http" || u.Scheme == "https" {
+		return nil
+	}
+
+	if u.Scheme == "" && strings.HasPrefix(upstream, "/") {
+		// Absolute path check
+		// 1. Must be confined in at least one root
+		for _, root := range s.recordingRoots {
+			if confined, err := fsutil.ConfineAbsPath(root, upstream); err == nil {
+				// 2. Must be regular file
+				if err := fsutil.IsRegularFile(confined); err == nil {
+					return nil
+				}
+			}
+		}
+		return fmt.Errorf("path not confined in allowed roots or not a regular file")
+	}
+
+	return fmt.Errorf("disallowed scheme or path")
+}
+
 func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
+	// Security: Fail fast on disallowed upstream URL
+	if r.URL.RawQuery != "" {
+		if values, err := url.ParseQuery(r.URL.RawQuery); err == nil {
+			if upstream := values.Get("upstream"); upstream != "" {
+				if err := s.validateUpstream(upstream); err != nil {
+					s.logger.Warn().Str("upstream", upstream).Err(err).Msg("rejecting proxy request with disallowed upstream URL")
+					http.Error(w, "Forbidden: disallowed upstream URL", http.StatusForbidden)
+					return
+				}
+			}
+		}
+	}
+
 	acquired := s.acquireStreamSlotIfNeeded(w, r)
 	if acquired {
 		defer s.releaseStreamSlot()
@@ -351,14 +406,16 @@ func (s *Server) resolveTargetURL(_ context.Context, path, rawQuery string) stri
 	if rawQuery != "" {
 		values, _ := url.ParseQuery(rawQuery)
 		if upstream := values.Get("upstream"); upstream != "" {
-			// Validate upstream URL to ensure security (must be http/https)
-			if u, err := url.Parse(upstream); err == nil && (u.Scheme == "http" || u.Scheme == "https") {
+			// Validate upstream URL using shared logic
+			if err := s.validateUpstream(upstream); err == nil {
 				// We don't append rawQuery recursively to the upstream URL itself if it's an override,
 				// but we might want to keep other params (like HLS opts).
 				// For now, trust the upstream param as the base.
 				s.logger.Debug().Str("upstream", upstream).Msg("using explicit upstream URL")
 				return upstream
 			}
+			// If not allowed, ignore upstream and fall through to receiver logic
+			s.logger.Warn().Str("upstream", upstream).Msg("ignoring disallowed upstream URL")
 		}
 	}
 
