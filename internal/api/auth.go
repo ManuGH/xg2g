@@ -6,7 +6,6 @@ import (
 	"context"
 	"crypto/subtle"
 	"net/http"
-	"strings"
 
 	"github.com/ManuGH/xg2g/internal/log"
 )
@@ -18,37 +17,40 @@ type ctxPrincipalKey struct{}
 
 // Note: securityHeaders is defined in middleware.go
 
-// authenticate is a middleware that validates API tokens
-// If no token is configured in the environment, authentication is disabled (open access)
-//
-//nolint:unused // Legacy auth function
-func authenticate(next http.Handler) http.Handler {
+// authMiddleware is a middleware that enforces API token authentication.
+func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Get token from Server config would be better, but for now use env
-		// This matches the existing AuthMiddleware behavior
-		token := r.Context().Value(serverConfigKey{})
-		if token == nil || token.(string) == "" {
-			// No token configured - authentication disabled
-			next.ServeHTTP(w, r)
+		s.mu.RLock()
+		token := s.cfg.APIToken
+		authAnon := s.cfg.AuthAnonymous
+		s.mu.RUnlock()
+
+		if token == "" {
+			if authAnon {
+				// Auth Explicitly Disabled
+				next.ServeHTTP(w, r)
+				return
+			}
+			// Fail-Closed (Default)
+			log.FromContext(r.Context()).Error().Str("event", "auth.fail_closed").Msg("XG2G_API_TOKEN not set and XG2G_AUTH_ANONYMOUS!=true. Denying access.")
+			writeUnauthorized(w)
 			return
 		}
 
-		reqToken := parseBearer(r.Header.Get("Authorization"))
-		if reqToken == "" {
-			// Fallback to X-API-Token header for backward compatibility
-			reqToken = r.Header.Get("X-API-Token")
-		}
+		// Use unified token extraction
+		// For general API, we do NOT allow query parameter tokens, strictly enforcing Header/Cookie.
+		reqToken := extractToken(r, false)
 
 		logger := log.FromContext(r.Context()).With().Str("component", "auth").Logger()
 
 		if reqToken == "" {
-			logger.Warn().Str("event", "auth.missing_header").Msg("authorization header missing")
+			logger.Warn().Str("event", "auth.missing_header").Msg("authorization header/cookie missing")
 			writeUnauthorized(w)
 			return
 		}
 
 		// Use constant-time comparison to prevent timing attacks
-		if subtle.ConstantTimeCompare([]byte(reqToken), []byte(token.(string))) != 1 {
+		if subtle.ConstantTimeCompare([]byte(reqToken), []byte(token)) != 1 {
 			logger.Warn().Str("event", "auth.invalid_token").Msg("invalid api token")
 			writeUnauthorized(w)
 			return
@@ -56,32 +58,48 @@ func authenticate(next http.Handler) http.Handler {
 
 		// Token is valid - add principal to context
 		ctx := context.WithValue(r.Context(), ctxPrincipalKey{}, "authenticated")
+		// Also store the token in context? Not stricly needed if we always re-extract or config is source.
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
-// parseBearer extracts the token from a "Bearer <token>" authorization header
-//
-//nolint:unused // Helper function - kept for future use
-func parseBearer(auth string) string {
-	const prefix = "Bearer "
-	if strings.HasPrefix(auth, prefix) {
-		return strings.TrimSpace(auth[len(prefix):])
-	}
-	return ""
-}
+// HandleSessionLogin creates a secure HTTP-only session cookie exchange for the provided Bearer token.
+// POST /api/v2/auth/session
+// Requires Authentication (via Header) to be successful first.
+func (s *Server) HandleSessionLogin(w http.ResponseWriter, r *http.Request) {
+	// 1. Re-extract the token that was successfully validated
+	// We prefer the Bearer token from the header for this "login" exchange.
+	// We allow Header or Cookie (if refreshing). NO Query.
+	reqToken := extractToken(r, false)
 
-// principalFrom extracts the authenticated principal from the request context
-//
-//nolint:unused // Helper function - kept for future use
-func principalFrom(ctx context.Context) string {
-	if p := ctx.Value(ctxPrincipalKey{}); p != nil {
-		return p.(string)
-	}
-	return ""
-}
+	// Fallback: If logic fails, use configured token if auth enabled (Single User Mode)
+	s.mu.RLock()
+	cfgToken := s.cfg.APIToken
+	forceHTTPS := s.cfg.ForceHTTPS
+	s.mu.RUnlock()
 
-// serverConfigKey is used to pass server config through context
-//
-//nolint:unused // Legacy type - kept for future use
-type serverConfigKey struct{}
+	if reqToken == "" {
+		if cfgToken == "" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		reqToken = cfgToken
+	} else {
+		if cfgToken != "" && subtle.ConstantTimeCompare([]byte(reqToken), []byte(cfgToken)) != 1 {
+			writeUnauthorized(w)
+			return
+		}
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "xg2g_session",
+		Value:    reqToken,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   r.TLS != nil || forceHTTPS, // auto-detect or force
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   86400, // 24h
+	})
+
+	w.WriteHeader(http.StatusOK) // 200 OK
+}

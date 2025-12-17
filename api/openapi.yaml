@@ -461,6 +461,52 @@ components:
           type: string
           enum: [active, idle]
 
+    RecordingRoot:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+
+    Breadcrumb:
+      type: object
+      properties:
+        name: { type: string }
+        path: { type: string }
+
+    DirectoryItem:
+      type: object
+      properties:
+        name: { type: string }
+        path: { type: string }
+
+    RecordingItem:
+      type: object
+      properties:
+        service_ref: { type: string }
+        title: { type: string }
+        description: { type: string }
+        begin: { type: integer, format: int64 }
+        length: { type: string }
+        filename: { type: string }
+
+    RecordingResponse:
+      type: object
+      properties:
+        roots:
+          type: array
+          items: { $ref: "#/components/schemas/RecordingRoot" }
+        current_root: { type: string }
+        current_path: { type: string }
+        breadcrumbs:
+          type: array
+          items: { $ref: "#/components/schemas/Breadcrumb" }
+        directories:
+          type: array
+          items: { $ref: "#/components/schemas/DirectoryItem" }
+        recordings:
+          type: array
+          items: { $ref: "#/components/schemas/RecordingItem" }
+
 security:
   - BearerAuth: []
 
@@ -640,6 +686,95 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/StreamSession"
+
+  /recordings:
+    get:
+      summary: Browse recordings
+      operationId: getRecordings
+      tags:
+        - recordings
+      parameters:
+        - name: root
+          in: query
+          schema:
+            type: string
+          description: Root location ID
+        - name: path
+          in: query
+          schema:
+            type: string
+          description: Relative path
+      responses:
+        "200":
+          description: Recordings list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordingResponse"
+
+  /recordings/{recordingId}/playlist.m3u8:
+    get:
+      summary: Get HLS playlist for a recording
+      operationId: getRecordingHLSPlaylist
+      tags:
+        - recordings
+      parameters:
+        - name: recordingId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: URL-encoded service reference or ID of the recording
+      responses:
+        "200":
+          description: HLS Playlist
+          content:
+            application/vnd.apple.mpegurl:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Recording not found
+
+  /recordings/{recordingId}/{segment}:
+    get:
+      summary: Get HLS segment for a recording
+      operationId: getRecordingHLSCustomSegment
+      tags:
+        - recordings
+      parameters:
+        - name: recordingId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: segment
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '.*\.(ts|mp4|m4s|cmfv)$'
+      responses:
+        "200":
+          description: Media Segment
+          content:
+            video/mp2t:
+              schema:
+                type: string
+                format: binary
+
+  /auth/session:
+    post:
+      summary: Create session cookie
+      description: Exchanges the Bearer token for a secure HttpOnly session cookie, enabling native playback (HLS) without token in URL.
+      operationId: createSession
+      tags:
+        - auth
+      responses:
+        "204":
+          description: Session created
+        "401":
+          description: Unauthorized
 
   /timers:
     get:

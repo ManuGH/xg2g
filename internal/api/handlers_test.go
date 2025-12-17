@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -257,98 +256,6 @@ func TestHandler(t *testing.T) {
 }
 
 // Obsolete tests removed (TestSetConfigHolder, TestSetAuditLogger, TestHandleStatusV2Placeholder, TestNewRouter)
-
-// TestAuthMiddleware_Standalone tests authMiddleware directly (auth disabled, valid, missing, invalid).
-func TestAuthMiddleware_Standalone(t *testing.T) {
-	mockHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("authenticated"))
-	})
-
-	t.Run("auth_disabled_no_token_configured", func(t *testing.T) {
-		s := &Server{
-			cfg: config.AppConfig{APIToken: ""},
-		}
-
-		// Current logic: fail closed if no token (unlike old env-based mid-ware possibly)
-		// Wait, in my implementation of authMiddleware:
-		// if token == "" -> "Unauthorized: API token not configured on server"
-		// So this test expectation changes from "authenticated" to "Unauthorized".
-
-		wrapped := s.authMiddleware(mockHandler)
-		req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
-		req = req.WithContext(context.Background())
-		rr := httptest.NewRecorder()
-
-		wrapped.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusUnauthorized {
-			t.Errorf("expected status %d when auth not configured, got %d", http.StatusUnauthorized, rr.Code)
-		}
-	})
-
-	t.Run("auth_enabled_valid_token", func(t *testing.T) {
-		s := &Server{
-			cfg: config.AppConfig{APIToken: "secret-test-token"},
-		}
-
-		wrapped := s.authMiddleware(mockHandler)
-		req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
-		req.Header.Set("Authorization", "Bearer secret-test-token")
-		req = req.WithContext(context.Background())
-		rr := httptest.NewRecorder()
-
-		wrapped.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Errorf("expected status %d with valid token, got %d", http.StatusOK, rr.Code)
-		}
-	})
-
-	t.Run("auth_enabled_missing_header", func(t *testing.T) {
-		s := &Server{
-			cfg: config.AppConfig{APIToken: "secret-test-token"},
-		}
-
-		wrapped := s.authMiddleware(mockHandler)
-		req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
-		// No Authorization header
-		req = req.WithContext(context.Background())
-		rr := httptest.NewRecorder()
-
-		wrapped.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusUnauthorized {
-			t.Errorf("expected status %d with missing token, got %d", http.StatusUnauthorized, rr.Code)
-		}
-		if !strings.Contains(rr.Body.String(), "Missing Authorization header") {
-			t.Errorf("expected body to contain 'Missing Authorization header', got: %s", rr.Body.String())
-		}
-	})
-
-	t.Run("auth_enabled_invalid_token", func(t *testing.T) {
-		s := &Server{
-			cfg: config.AppConfig{APIToken: "secret-test-token"},
-		}
-
-		wrapped := s.authMiddleware(mockHandler)
-		req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
-		req.Header.Set("Authorization", "Bearer wrong-token")
-		req = req.WithContext(context.Background())
-		rr := httptest.NewRecorder()
-
-		wrapped.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusForbidden {
-			t.Errorf("expected status %d with invalid token, got %d", http.StatusForbidden, rr.Code)
-		}
-		if !strings.Contains(rr.Body.String(), "Invalid token") { // "Forbidden: Invalid token" from http.Error default msg? Or "Invalid token" matches my code?
-			// Code in http.go: http.Error(w, "Forbidden: Invalid token", http.StatusForbidden)
-			// So body contains "Forbidden: Invalid token"
-			t.Errorf("expected body to contain 'Invalid token', got: %s", rr.Body.String())
-		}
-	})
-}
 
 // checkFile Tests
 

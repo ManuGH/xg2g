@@ -170,7 +170,6 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager) *Server {
 
 	// Initialize OpenWebIF Client
 	// Options can be tuned if needed (e.g. timeout, caching)
-	owiClient := openwebif.New(cfg.OWIBase)
 
 	s := &Server{
 		cfg:            cfg,
@@ -187,7 +186,9 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager) *Server {
 
 	// Initialize Series Engine
 	// Server (s) implements EpgProvider interface via GetEvents method
-	s.seriesEngine = dvr.NewSeriesEngine(sm, owiClient, s)
+	s.seriesEngine = dvr.NewSeriesEngine(cfg, sm, func() *openwebif.Client {
+		return openwebif.New(cfg.OWIBase)
+	})
 
 	// Default refresh function
 	s.refreshFn = jobs.Refresh
@@ -376,7 +377,7 @@ func (s *Server) routes() http.Handler {
 	r.With(s.authMiddleware).Post("/api/v2/system/config/reload", http.HandlerFunc(s.handleConfigReload))
 
 	// Session Login (Cookie issuance for Native Players)
-	r.With(s.authMiddleware).Post("/api/auth/session", http.HandlerFunc(s.handleSessionLogin))
+	r.With(s.authMiddleware).Post("/api/v2/auth/session", http.HandlerFunc(s.HandleSessionLogin))
 
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/ui/", http.StatusTemporaryRedirect)
@@ -395,6 +396,16 @@ func (s *Server) routes() http.Handler {
 			},
 		},
 	})
+
+	// Manual Routes for Recordings (MVP)
+	r.With(s.authMiddleware).Get("/api/v2/recordings", s.GetRecordingsHandler)
+	r.With(s.authMiddleware).Get("/api/v2/recordings/stream/{ref}", s.GetRecordingStreamHandler)
+
+	// HLS for Recordings (Proxied)
+	// Note: Cookies (HttpOnly) are used for auth, but authMiddleware checks headers/cookies now.
+	// So we apply authMiddleware.
+	r.With(s.authMiddleware).Get("/api/v2/recordings/{recordingId}/playlist.m3u8", s.GetRecordingHLSPlaylistHandler)
+	r.With(s.authMiddleware).Get("/api/v2/recordings/{recordingId}/{segment}", s.GetRecordingHLSCustomSegmentHandler)
 
 	// HDHomeRun emulation endpoints (versionless - hardware emulation protocol)
 	if s.hdhr != nil {
@@ -427,9 +438,10 @@ func (s *Server) routes() http.Handler {
 }
 
 func (s *Server) handleStreamPreflight(w http.ResponseWriter, r *http.Request) {
-	// 1. Verify Token (Query Param)
+	// 1. Verify Token
 	token := s.cfg.APIToken
-	reqToken := r.URL.Query().Get("token")
+	// We allow query token here as this is the "login" for streaming clients
+	reqToken := extractToken(r, true)
 
 	if token != "" && subtle.ConstantTimeCompare([]byte(reqToken), []byte(token)) != 1 {
 		http.Error(w, "Invalid token", http.StatusForbidden)
@@ -437,13 +449,25 @@ func (s *Server) handleStreamPreflight(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 2. Set Cookie
+	// Use canonical xg2g_session
+	http.SetCookie(w, &http.Cookie{
+		Name:     "xg2g_session",
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   r.TLS != nil || s.cfg.ForceHTTPS,
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   86400, // 24h
+	})
+
+	// Also set legacy cookie for backward compat (temporarily)
 	http.SetCookie(w, &http.Cookie{
 		Name:     "X-API-Token",
 		Value:    token,
-		Path:     "/", // simpler scope
+		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
-		MaxAge:   86400, // 24h
+		MaxAge:   86400,
 	})
 
 	w.WriteHeader(http.StatusOK)
@@ -492,17 +516,9 @@ func (s *Server) authRequired(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		reqToken := r.Header.Get("X-API-Token")
-		// Fallback 1: Check 'token' query parameter (Critical for Native HLS/Safari)
-		if reqToken == "" {
-			reqToken = r.URL.Query().Get("token")
-		}
-		// Fallback 2: Check 'X-API-Token' cookie (Session-based auth for HLS segments)
-		if reqToken == "" {
-			if cookie, err := r.Cookie("X-API-Token"); err == nil {
-				reqToken = cookie.Value
-			}
-		}
+		// Use unified token extraction
+		// For streaming, we ALLOW query parameter tokens (legacy or direct stream links)
+		reqToken := extractToken(r, true)
 
 		if reqToken == "" {
 			logger.Warn().Str("event", "auth.missing_header").Msg("authorization header/param/cookie missing")
@@ -870,80 +886,6 @@ func (s *Server) Handler() http.Handler {
 		return withMiddlewares(s.routes(), s.auditLogger)
 	}
 	return withMiddlewares(s.routes())
-}
-
-// authMiddleware is a middleware that enforces API token authentication.
-func (s *Server) authMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token := s.cfg.APIToken
-		if token == "" {
-			if s.cfg.AuthAnonymous {
-				// Auth Explicitly Disabled
-				logger := log.WithComponentFromContext(r.Context(), "auth")
-				logger.Warn().Str("event", "auth.anonymous").Msg("XG2G_AUTH_ANONYMOUS=true, allowing unauthenticated access")
-				next.ServeHTTP(w, r)
-				return
-			}
-
-			// Fail-Closed (Default)
-			logger := log.WithComponentFromContext(r.Context(), "auth")
-			logger.Error().Str("event", "auth.fail_closed").Msg("XG2G_API_TOKEN not set and XG2G_AUTH_ANONYMOUS!=true. Denying access.")
-			http.Error(w, "Unauthorized: Authentication required (Configure XG2G_API_TOKEN or XG2G_AUTH_ANONYMOUS=true)", http.StatusUnauthorized)
-			return
-		}
-
-		// Check Bearer token
-		authHeader := r.Header.Get("Authorization")
-		logger := log.WithComponentFromContext(r.Context(), "auth")
-
-		if authHeader == "" {
-			// Check for Session Cookie (for Native Players/HLS)
-			if cookie, err := r.Cookie("xg2g_session"); err == nil && cookie.Value != "" {
-				authHeader = "Bearer " + cookie.Value
-			}
-		}
-
-		if authHeader == "" {
-			// Security alert: Missing auth header
-			logger.Warn().
-				Str("event", "auth.missing_header").
-				Str("remote_addr", r.RemoteAddr).
-				Str("path", r.URL.Path).
-				Str("user_agent", r.Header.Get("User-Agent")).
-				Msg("unauthorized access attempt - missing authorization header")
-			http.Error(w, "Unauthorized: Missing Authorization header", http.StatusUnauthorized)
-			return
-		}
-
-		parts := strings.Split(authHeader, " ")
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			// Security alert: Invalid header format
-			logger.Warn().
-				Str("event", "auth.malformed_header").
-				Str("remote_addr", r.RemoteAddr).
-				Str("path", r.URL.Path).
-				Msg("unauthorized access attempt - malformed authorization header")
-			http.Error(w, "Unauthorized: Invalid Authorization header format", http.StatusUnauthorized)
-			return
-		}
-
-		reqToken := parts[1]
-
-		// Use constant-time comparison
-		if subtle.ConstantTimeCompare([]byte(reqToken), []byte(token)) != 1 {
-			// Security alert: Invalid token (potential brute force)
-			logger.Warn().
-				Str("event", "auth.invalid_token").
-				Str("remote_addr", r.RemoteAddr).
-				Str("path", r.URL.Path).
-				Str("user_agent", r.Header.Get("User-Agent")).
-				Msg("SECURITY ALERT: invalid bearer token - potential unauthorized access attempt")
-			http.Error(w, "Forbidden: Invalid token", http.StatusForbidden)
-			return
-		}
-
-		next.ServeHTTP(w, r)
-	})
 }
 
 // handleLineupJSON handles /lineup.json endpoint for HDHomeRun emulation

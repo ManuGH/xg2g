@@ -5,9 +5,9 @@ import Player from './components/Player';
 import Dashboard from './components/Dashboard';
 import Files from './components/Files';
 import Logs from './components/Logs';
-import Config from './components/Config';
 import EPG from './components/EPG';
 import Timers from './components/Timers';
+import RecordingsList from './components/RecordingsList';
 import SeriesManager from './components/SeriesManager';
 import Navigation from './components/Navigation';
 import { OpenAPI } from './client/core/OpenAPI';
@@ -174,8 +174,8 @@ function App() {
         )}
         {view === 'files' && <Files />}
         {view === 'logs' && <Logs />}
-        {view === 'config' && <Config />}
-        {view === 'config' && <Config />}
+        {view === 'recordings' && <RecordingsList token={token} />}
+
         {view === 'timers' && <Timers />}
         {view === 'series' && <SeriesManager />}
       </main>

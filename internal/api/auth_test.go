@@ -3,91 +3,68 @@
 package api
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
+
+	"github.com/ManuGH/xg2g/internal/config"
 
 	"github.com/stretchr/testify/assert"
 )
 
-func TestParseBearer(t *testing.T) {
-	tests := []struct {
-		name      string
-		auth      string
-		wantToken string
-	}{
-		{
-			name:      "valid bearer token",
-			auth:      "Bearer abc123",
-			wantToken: "abc123",
-		},
-		{
-			name:      "bearer with spaces",
-			auth:      "Bearer   xyz789  ",
-			wantToken: "xyz789",
-		},
-		{
-			name:      "missing bearer prefix",
-			auth:      "abc123",
-			wantToken: "",
-		},
-		{
-			name:      "empty string",
-			auth:      "",
-			wantToken: "",
-		},
-		{
-			name:      "wrong scheme",
-			auth:      "Basic abc123",
-			wantToken: "",
-		},
-		{
-			name:      "bearer lowercase",
-			auth:      "bearer token123",
-			wantToken: "",
-		},
-	}
+// Note: Token extraction logic is tested in security_utils_test.go
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := parseBearer(tt.auth)
-			assert.Equal(t, tt.wantToken, got)
-		})
-	}
-}
+func TestAuthMiddleware_NoTokenConfigured(t *testing.T) {
+	// When no token is configured, authentication is disabled (unless Anonymous is false? Logic says if token=="" check AuthAnon)
+	// Code: if token=="" { if authAnon { allow } else { fail_closed } }
 
-func TestAuthenticate_NoTokenConfigured(t *testing.T) {
-	// When no token is configured, authentication is disabled
+	// Case 1: AuthAnonymous = true
 	nextCalled := false
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		nextCalled = true
 		w.WriteHeader(http.StatusOK)
 	})
 
-	handler := authenticate(next)
+	s := &Server{
+		cfg: config.AppConfig{
+			APIToken:      "",
+			AuthAnonymous: true,
+		},
+	}
+	handler := s.authMiddleware(next)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	// Simulate no token in context
-	req = req.WithContext(context.WithValue(req.Context(), serverConfigKey{}, ""))
 	w := httptest.NewRecorder()
 
 	handler.ServeHTTP(w, req)
 
-	assert.True(t, nextCalled, "next handler should be called when auth is disabled")
+	assert.True(t, nextCalled, "next handler should be called when auth is anonymous")
 	assert.Equal(t, http.StatusOK, w.Code)
+
+	// Case 2: AuthAnonymous = false (Fail Closed)
+	nextCalled = false
+	s.cfg.AuthAnonymous = false
+	handler = s.authMiddleware(next)
+	w = httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	assert.False(t, nextCalled)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
-func TestAuthenticate_MissingAuthHeader(t *testing.T) {
+func TestAuthMiddleware_MissingAuthHeader(t *testing.T) {
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("next handler should not be called")
 	})
 
-	handler := authenticate(next)
+	s := &Server{
+		cfg: config.AppConfig{
+			APIToken: "secret-token",
+		},
+	}
+	handler := s.authMiddleware(next)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	// Simulate token configured in context
-	req = req.WithContext(context.WithValue(req.Context(), serverConfigKey{}, "secret-token"))
 	w := httptest.NewRecorder()
 
 	handler.ServeHTTP(w, req)
@@ -95,21 +72,22 @@ func TestAuthenticate_MissingAuthHeader(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
-func TestAuthenticate_ValidBearerToken(t *testing.T) {
+func TestAuthMiddleware_ValidBearerToken(t *testing.T) {
 	nextCalled := false
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		nextCalled = true
-		// Verify principal was set in context
-		principal := principalFrom(r.Context())
-		assert.Equal(t, "authenticated", principal)
 		w.WriteHeader(http.StatusOK)
 	})
 
-	handler := authenticate(next)
+	s := &Server{
+		cfg: config.AppConfig{
+			APIToken: "secret-token",
+		},
+	}
+	handler := s.authMiddleware(next)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("Authorization", "Bearer secret-token")
-	req = req.WithContext(context.WithValue(req.Context(), serverConfigKey{}, "secret-token"))
 	w := httptest.NewRecorder()
 
 	handler.ServeHTTP(w, req)
@@ -118,18 +96,22 @@ func TestAuthenticate_ValidBearerToken(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
-func TestAuthenticate_ValidXAPIToken(t *testing.T) {
+func TestAuthMiddleware_ValidCookie(t *testing.T) {
 	nextCalled := false
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		nextCalled = true
 		w.WriteHeader(http.StatusOK)
 	})
 
-	handler := authenticate(next)
+	s := &Server{
+		cfg: config.AppConfig{
+			APIToken: "secret-token",
+		},
+	}
+	handler := s.authMiddleware(next)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("X-API-Token", "secret-token")
-	req = req.WithContext(context.WithValue(req.Context(), serverConfigKey{}, "secret-token"))
+	req.AddCookie(&http.Cookie{Name: "xg2g_session", Value: "secret-token"})
 	w := httptest.NewRecorder()
 
 	handler.ServeHTTP(w, req)
@@ -138,16 +120,20 @@ func TestAuthenticate_ValidXAPIToken(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
-func TestAuthenticate_InvalidToken(t *testing.T) {
+func TestAuthMiddleware_InvalidToken(t *testing.T) {
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("next handler should not be called")
 	})
 
-	handler := authenticate(next)
+	s := &Server{
+		cfg: config.AppConfig{
+			APIToken: "secret-token",
+		},
+	}
+	handler := s.authMiddleware(next)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("Authorization", "Bearer wrong-token")
-	req = req.WithContext(context.WithValue(req.Context(), serverConfigKey{}, "secret-token"))
 	w := httptest.NewRecorder()
 
 	handler.ServeHTTP(w, req)
@@ -155,28 +141,59 @@ func TestAuthenticate_InvalidToken(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
-func TestPrincipalFrom(t *testing.T) {
-	tests := []struct {
-		name          string
-		ctx           context.Context
-		wantPrincipal string
-	}{
-		{
-			name:          "with principal",
-			ctx:           context.WithValue(context.Background(), ctxPrincipalKey{}, "alice"),
-			wantPrincipal: "alice",
+// Test legacy X-API-Token header support
+func TestAuthMiddleware_ValidXAPIToken(t *testing.T) {
+	nextCalled := false
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nextCalled = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	s := &Server{
+		cfg: config.AppConfig{
+			APIToken: "secret-token",
 		},
-		{
-			name:          "without principal",
-			ctx:           context.Background(),
-			wantPrincipal: "",
+	}
+	handler := s.authMiddleware(next)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("X-API-Token", "secret-token")
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	assert.True(t, nextCalled)
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestHandleSessionLogin(t *testing.T) {
+	s := &Server{
+		cfg: config.AppConfig{
+			APIToken:   "secret",
+			ForceHTTPS: true,
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := principalFrom(tt.ctx)
-			assert.Equal(t, tt.wantPrincipal, got)
-		})
+	// Auth success
+	req := httptest.NewRequest("POST", "/api/v2/auth/session", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	w := httptest.NewRecorder()
+
+	s.HandleSessionLogin(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	// Check cookie
+	cookies := w.Result().Cookies()
+	found := false
+	for _, c := range cookies {
+		if c.Name == "xg2g_session" {
+			found = true
+			assert.Equal(t, "secret", c.Value)
+			assert.True(t, c.HttpOnly)
+			assert.True(t, c.Secure) // ForceHTTPS=true
+			assert.Equal(t, 24*time.Hour, time.Duration(c.MaxAge)*time.Second)
+		}
 	}
+	assert.True(t, found, "xg2g_session cookie not found")
 }

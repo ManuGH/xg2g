@@ -346,6 +346,22 @@ func (s *Server) resolveTargetURL(_ context.Context, path, rawQuery string) stri
 		}
 	}
 
+	// Dynamic Upstream Override (e.g. for Recordings)
+	// Check if 'upstream' query param is present
+	if rawQuery != "" {
+		values, _ := url.ParseQuery(rawQuery)
+		if upstream := values.Get("upstream"); upstream != "" {
+			// Validate upstream URL to ensure security (must be http/https)
+			if u, err := url.Parse(upstream); err == nil && (u.Scheme == "http" || u.Scheme == "https") {
+				// We don't append rawQuery recursively to the upstream URL itself if it's an override,
+				// but we might want to keep other params (like HLS opts).
+				// For now, trust the upstream param as the base.
+				s.logger.Debug().Str("upstream", upstream).Msg("using explicit upstream URL")
+				return upstream
+			}
+		}
+	}
+
 	if s.targetURL != nil {
 		targetURL := s.targetURL.String() + path
 		return appendRawQuery(targetURL, rawQuery)
