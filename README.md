@@ -97,6 +97,22 @@ xg2g also emulates an HDHomeRun tuner, allowing you to connect it to **Plex** or
 
 ---
 
+## 📦 Deployment Options
+
+xg2g supports multiple deployment methods. Choose what fits your use case:
+
+| Method | Use Case | Auto-Restart | Isolation |
+|--------|----------|--------------|-----------|
+| **Docker Compose** | Quick setup, portable environments | ✅ Yes | ✅ Full |
+| **systemd Service** | Production servers, low overhead | ✅ Yes | ⚠️ Shared host |
+| **Manual Binary** | Development, testing | ❌ No | ❌ None |
+
+**Current Production Recommendation:** systemd service provides optimal performance for dedicated hosts, while Docker Compose offers better portability and isolation for multi-service deployments.
+
+> **Note:** The repository includes both deployment methods. Docker support is maintained for containerized environments, while systemd is the primary production path for bare-metal/VM deployments.
+
+---
+
 ## 🛠️ Configuration
 
 xg2g is configured primarily via **Environment Variables**.
