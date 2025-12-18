@@ -2,7 +2,9 @@ version: "3.8"
 
 services:
   xg2g:
-    image: xg2g:latest
+    # NOTE: Build with 'make docker-build' to create this image
+    # Uses Debian Trixie (FFmpeg 7.x) - see Dockerfile:11
+    image: xg2g:trixie-local
     container_name: xg2g
 
     # Run as specified user (default: root 0:0)
