@@ -19,12 +19,6 @@ import (
 	"github.com/ManuGH/xg2g/internal/jobs"
 )
 
-// dummyHandler is a no-op http.Handler that writes "OK".
-var dummyHandler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte("OK"))
-})
-
 func TestHandleSystemHealth(t *testing.T) {
 	s := New(config.AppConfig{
 		APIToken:   "test-token",

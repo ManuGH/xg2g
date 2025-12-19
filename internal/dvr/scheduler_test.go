@@ -75,8 +75,6 @@ func TestScheduler_Loop(t *testing.T) {
 	mockEpg := new(MockEpg)
 
 	// Create Engine
-	// Create Engine
-	mockClient = new(MockClient)
 	mockCfg := config.AppConfig{}
 	engine := NewSeriesEngine(mockCfg, rm, func() OWIClient { return mockClient })
 

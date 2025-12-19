@@ -470,9 +470,6 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	cfg.RateLimitGlobal = ParseInt("XG2G_RATELIMIT_GLOBAL", cfg.RateLimitGlobal)
 	cfg.RateLimitAuth = ParseInt("XG2G_RATELIMIT_AUTH", cfg.RateLimitAuth)
 
-	cfg.RateLimitGlobal = ParseInt("XG2G_RATELIMIT_GLOBAL", cfg.RateLimitGlobal)
-	cfg.RateLimitAuth = ParseInt("XG2G_RATELIMIT_AUTH", cfg.RateLimitAuth)
-
 	// Stream Proxy
 	cfg.MaxConcurrentStreams = ParseInt("XG2G_MAX_CONCURRENT_STREAMS", cfg.MaxConcurrentStreams)
 

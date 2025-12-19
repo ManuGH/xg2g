@@ -3,9 +3,11 @@ package validation
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/log"
@@ -15,7 +17,7 @@ import (
 // PerformStartupChecks validates the environment and dependencies before starting the server.
 func PerformStartupChecks(ctx context.Context, cfg config.AppConfig) error {
 	logger := log.WithComponent("startup-check")
-	logger.Info().Msg("Runnning pre-flight startup checks...")
+	logger.Info().Msg("Running pre-flight startup checks...")
 
 	// 1. Data Directory Permissions
 	if err := checkDataDir(logger, cfg.DataDir); err != nil {
@@ -58,13 +60,16 @@ func checkDataDir(logger zerolog.Logger, path string) error {
 // checkTargetedValidations performs security and runtime-critical validations
 func checkTargetedValidations(logger zerolog.Logger, cfg config.AppConfig) error {
 	// a. Listen Address (Parseable)
-	// We don't have a direct "ParseAddr" but net.Listen would fail later.
-	// For minimal check, we can rely on standard library logic or assume it is handled by the server.
-	// However, user asked for "Listen address: parseable".
-	// Let's just key off "is not empty" mostly, as Listen/Bind handles specifics.
 	if cfg.APIListenAddr != "" {
-		// Just a basic sanity check, minimal value.
-		// Real validation happens when we try to bind.
+		_, port, err := net.SplitHostPort(cfg.APIListenAddr)
+		if err != nil {
+			return fmt.Errorf("invalid API listen address %q: %w", cfg.APIListenAddr, err)
+		}
+		portNum, err := strconv.Atoi(port)
+		if err != nil || portNum < 0 || portNum > 65535 {
+			return fmt.Errorf("invalid API listen port %q in %q", port, cfg.APIListenAddr)
+		}
+		logger.Info().Str("addr", cfg.APIListenAddr).Msg("✓ API listen address is valid")
 	}
 
 	// b. OWI Base URL (Syntax + Scheme)
@@ -120,10 +125,9 @@ func checkTargetedValidations(logger zerolog.Logger, cfg config.AppConfig) error
 }
 
 func checkFileReadable(path string) error {
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // Path comes from operator config; verifying readability is expected.
 	if err != nil {
 		return err
 	}
-	f.Close()
-	return nil
+	return f.Close()
 }

@@ -828,8 +828,6 @@ func (s *Server) GetTimers(w http.ResponseWriter, r *http.Request, params GetTim
 		default:
 			if t.Disabled != 0 {
 				stateStr = TimerStateDisabled
-			} else {
-				stateStr = TimerStateScheduled // Assume scheduled if not special
 			}
 		}
 

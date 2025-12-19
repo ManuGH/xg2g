@@ -310,16 +310,6 @@ func main() {
 		sched.Start(ctx)
 	}
 
-	if proxyConfig != nil {
-		// Build proxy server to inject into API
-		// NOTE: We recreate the proxy logic inside daemon manager usually.
-		// But here we need the INSTANCE.
-		// The daemon manager creates the proxy instance.
-		// We need to pass the *proxy.Server instance from manager to API?
-		// OR, create it here and pass it to manager?
-		// Manager takes 'deps'.
-	}
-
 	applyCh := make(chan config.AppConfig, 1)
 	cfgHolder.RegisterListener(applyCh)
 	go func() {

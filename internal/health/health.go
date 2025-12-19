@@ -124,9 +124,10 @@ func (m *Manager) Health(ctx context.Context, verbose bool) HealthResponse {
 		for _, c := range checkers {
 			res := c.Check(ctx)
 			resp.Checks[c.Name()] = res
-			if res.Status == StatusUnhealthy {
+			switch res.Status {
+			case StatusUnhealthy:
 				hasUnhealthy = true
-			} else if res.Status == StatusDegraded {
+			case StatusDegraded:
 				hasDegraded = true
 			}
 		}

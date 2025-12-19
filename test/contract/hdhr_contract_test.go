@@ -11,8 +11,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"testing"
 	"path/filepath"
+	"testing"
 
 	"github.com/ManuGH/xg2g/internal/channels"
 	"github.com/ManuGH/xg2g/internal/hdhr"

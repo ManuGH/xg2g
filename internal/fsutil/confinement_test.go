@@ -12,17 +12,21 @@ func TestConfineRelPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	t.Cleanup(func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Fatalf("cleanup tmp dir: %v", err)
+		}
+	})
 
 	// Create a subdirectory "subdir"
 	subDir := filepath.Join(tmpDir, "subdir")
-	if err := os.Mkdir(subDir, 0755); err != nil {
+	if err := os.Mkdir(subDir, 0o750); err != nil {
 		t.Fatal(err)
 	}
 
 	// Create a regular file "safe.txt"
 	safeFile := filepath.Join(tmpDir, "safe.txt")
-	if err := os.WriteFile(safeFile, []byte("safe"), 0644); err != nil {
+	if err := os.WriteFile(safeFile, []byte("safe"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -101,11 +105,15 @@ func TestConfineAbsPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	t.Cleanup(func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Fatalf("cleanup tmp dir: %v", err)
+		}
+	})
 
 	// safe file
 	safePath := filepath.Join(tmpDir, "safe.txt")
-	if err := os.WriteFile(safePath, []byte("ok"), 0644); err != nil {
+	if err := os.WriteFile(safePath, []byte("ok"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -114,7 +122,11 @@ func TestConfineAbsPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(outsideDir)
+	t.Cleanup(func() {
+		if err := os.RemoveAll(outsideDir); err != nil {
+			t.Fatalf("cleanup outside dir: %v", err)
+		}
+	})
 	outsidePath := filepath.Join(outsideDir, "secret.txt")
 
 	tests := []struct {
