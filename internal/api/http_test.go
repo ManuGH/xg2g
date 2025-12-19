@@ -220,9 +220,10 @@ func TestHandleReady(t *testing.T) {
 	defer mockReceiver.Close()
 
 	cfg := config.AppConfig{
-		DataDir:   tempDir,
-		XMLTVPath: xmltvPath,
-		OWIBase:   mockReceiver.URL, // Use mock receiver for health check
+		DataDir:     tempDir,
+		XMLTVPath:   xmltvPath,
+		OWIBase:     mockReceiver.URL, // Use mock receiver for health check
+		ReadyStrict: true,
 	}
 	s := New(cfg, nil)
 	handler := s.Handler()
@@ -231,18 +232,34 @@ func TestHandleReady(t *testing.T) {
 	require.NoError(t, err)
 
 	// Case 1: Not ready (no files, last run is zero)
+	// With the new readiness contract, /readyz returns 503 until first successful refresh
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 	assert.Equal(t, http.StatusServiceUnavailable, rr.Code)
+	assert.Contains(t, rr.Body.String(), `"ready":false`)
 
-	// Case 2: Ready
-	s.status.LastRun = time.Now()
-	s.status.Error = ""
-	s.status.Channels = 10       // Set some channels for health check
-	s.status.EPGProgrammes = 100 // Set EPG programmes for health check
+	// Case 2: Simulate successful refresh
+	// Update server status to indicate successful refresh (health checkers already registered by New())
+	// Create the required files first so file checkers pass
 	require.NoError(t, os.WriteFile(playlistPath, []byte("#EXTM3U"), 0o600))
 	require.NoError(t, os.WriteFile(xmltvFullPath, []byte("<tv></tv>"), 0o600))
 
+	// Update status with proper locking
+	func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.status.LastRun = time.Now()
+		s.status.Error = ""
+		s.status.Channels = 10       // Set some channels for health check
+		s.status.EPGProgrammes = 100 // Set EPG programmes for health check
+	}()
+
+	// Wait for the readiness cache to expire (1s TTL)
+	// The first /readyz call cached the "not ready" state, so we need to wait
+	// for the cache to expire before the checkers will re-run and see the new state
+	time.Sleep(1100 * time.Millisecond)
+
+	// Now readiness should pass (all checkers will re-run and see healthy state)
 	rr = httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
