@@ -4,9 +4,9 @@ package api
 
 import (
 	"context"
-	"crypto/subtle"
 	"net/http"
 
+	"github.com/ManuGH/xg2g/internal/auth"
 	"github.com/ManuGH/xg2g/internal/log"
 )
 
@@ -50,7 +50,7 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 		}
 
 		// Use constant-time comparison to prevent timing attacks
-		if subtle.ConstantTimeCompare([]byte(reqToken), []byte(token)) != 1 {
+		if !auth.AuthorizeToken(reqToken, token) {
 			logger.Warn().Str("event", "auth.invalid_token").Msg("invalid api token")
 			writeUnauthorized(w)
 			return
@@ -85,7 +85,7 @@ func (s *Server) HandleSessionLogin(w http.ResponseWriter, r *http.Request) {
 		}
 		reqToken = cfgToken
 	} else {
-		if cfgToken != "" && subtle.ConstantTimeCompare([]byte(reqToken), []byte(cfgToken)) != 1 {
+		if cfgToken != "" && !auth.AuthorizeToken(reqToken, cfgToken) {
 			writeUnauthorized(w)
 			return
 		}
