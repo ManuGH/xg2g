@@ -21,9 +21,10 @@ func BenchmarkProxyRequest(b *testing.B) {
 
 	// Create proxy
 	proxy, err := New(Config{
-		ListenAddr: ":0",
-		TargetURL:  backend.URL,
-		Logger:     zerolog.New(io.Discard),
+		ListenAddr:    ":0",
+		TargetURL:     backend.URL,
+		Logger:        zerolog.New(io.Discard),
+		AuthAnonymous: true,
 	})
 	if err != nil {
 		b.Fatalf("Failed to create proxy: %v", err)
@@ -53,9 +54,10 @@ func BenchmarkProxyHeadRequest(b *testing.B) {
 	defer backend.Close()
 
 	proxy, err := New(Config{
-		ListenAddr: ":0",
-		TargetURL:  backend.URL,
-		Logger:     zerolog.New(io.Discard),
+		ListenAddr:    ":0",
+		TargetURL:     backend.URL,
+		Logger:        zerolog.New(io.Discard),
+		AuthAnonymous: true,
 	})
 	if err != nil {
 		b.Fatalf("Failed to create proxy: %v", err)
@@ -90,9 +92,10 @@ func BenchmarkProxyLargeResponse(b *testing.B) {
 	defer backend.Close()
 
 	proxy, err := New(Config{
-		ListenAddr: ":0",
-		TargetURL:  backend.URL,
-		Logger:     zerolog.New(io.Discard),
+		ListenAddr:    ":0",
+		TargetURL:     backend.URL,
+		Logger:        zerolog.New(io.Discard),
+		AuthAnonymous: true,
 	})
 	if err != nil {
 		b.Fatalf("Failed to create proxy: %v", err)
@@ -124,9 +127,10 @@ func BenchmarkProxyConcurrent(b *testing.B) {
 	defer backend.Close()
 
 	proxy, err := New(Config{
-		ListenAddr: ":0",
-		TargetURL:  backend.URL,
-		Logger:     zerolog.New(io.Discard),
+		ListenAddr:    ":0",
+		TargetURL:     backend.URL,
+		Logger:        zerolog.New(io.Discard),
+		AuthAnonymous: true,
 	})
 	if err != nil {
 		b.Fatalf("Failed to create proxy: %v", err)
@@ -156,9 +160,10 @@ func BenchmarkProxyNew(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		_, _ = New(Config{
-			ListenAddr: ":0",
-			TargetURL:  "http://example.com:8080",
-			Logger:     zerolog.New(io.Discard),
+			ListenAddr:    ":0",
+			TargetURL:     "http://example.com:8080",
+			Logger:        zerolog.New(io.Discard),
+			AuthAnonymous: true,
 		})
 	}
 }

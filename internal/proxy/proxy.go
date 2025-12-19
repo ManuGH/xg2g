@@ -15,7 +15,10 @@ import (
 
 	"golang.org/x/sync/semaphore"
 
+	apimw "github.com/ManuGH/xg2g/internal/api/middleware"
+	"github.com/ManuGH/xg2g/internal/auth"
 	"github.com/ManuGH/xg2g/internal/config"
+	xglog "github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/m3u"
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/rs/zerolog"
@@ -36,11 +39,12 @@ type Server struct {
 	dataDir      string // For reading playlist.m3u
 	playlistPath string // Path to M3U playlist
 	// channelMap stores StreamID -> StreamURL mappings.
-	channelMap     map[string]string
-	channelMu      sync.RWMutex
-	listenPort     string
-	localHosts     map[string]struct{}
-	recordingRoots map[string]string
+	channelMap         map[string]string
+	channelMu          sync.RWMutex
+	listenPort         string
+	localHosts         map[string]struct{}
+	recordingRoots     map[string]string
+	allowedAuthorities map[string]struct{} // Canonical host:port allowlist
 
 	streamLimiter     *semaphore.Weighted
 	streamLimit       int64
@@ -79,6 +83,12 @@ func New(cfg Config) (*Server, error) {
 
 	if cfg.TargetURL == "" && cfg.ReceiverHost == "" {
 		return nil, fmt.Errorf("either TargetURL or ReceiverHost is required")
+	}
+
+	// Security Gate 1: Fail-Closed Auth
+	// If anonymous auth is disabled, we MUST have a valid, non-empty token configured.
+	if !cfg.AuthAnonymous && strings.TrimSpace(cfg.APIToken) == "" {
+		return nil, fmt.Errorf("proxy authentication token is unset or empty, and anonymous access is disabled (refusing to start open proxy)")
 	}
 
 	// Ensure RecordingRoots has a default if empty to prevent surprising denials
@@ -125,11 +135,23 @@ func New(cfg Config) (*Server, error) {
 		s.idleTimeout = rt.StreamProxy.IdleTimeout
 	}
 
+	// Security Gate 2: SSRF / Open Proxy Hardening
+	// Pre-calculate allowed authorities (host:port) to prevent pivoting.
+	s.allowedAuthorities = make(map[string]struct{})
+
 	if cfg.TargetURL != "" {
 		target, err := url.Parse(cfg.TargetURL)
 		if err != nil {
 			return nil, fmt.Errorf("parse target URL %q: %w", cfg.TargetURL, err)
 		}
+		// Enforce explicit port
+		if target.Port() == "" {
+			return nil, fmt.Errorf("configured TargetURL %q must include an explicit port (e.g. :80 or :443)", cfg.TargetURL)
+		}
+
+		auth := canonicalizeAuthority(target.Host)
+		s.allowedAuthorities[auth] = struct{}{}
+
 		s.targetURL = target
 
 		s.proxy = httputil.NewSingleHostReverseProxy(target)
@@ -141,6 +163,17 @@ func New(cfg Config) (*Server, error) {
 			req.Host = target.Host
 		}
 	} else if cfg.ReceiverHost != "" {
+		// ReceiverHost legacy mode: implies port 8001
+		// Validate that ReceiverHost is host-only (no port); port is implied by legacy behavior.
+		if _, _, err := net.SplitHostPort(cfg.ReceiverHost); err == nil {
+			return nil, fmt.Errorf("ReceiverHost %q must not include a port; configure TargetURL instead", cfg.ReceiverHost)
+		}
+
+		// Determine the authority we actually fallback to: ReceiverHost:8001
+		receiverAuth := net.JoinHostPort(cfg.ReceiverHost, "8001")
+		// Canonicalize
+		s.allowedAuthorities[canonicalizeAuthority(receiverAuth)] = struct{}{}
+
 		s.proxy = &httputil.ReverseProxy{
 			Director: func(req *http.Request) {
 				targetURL := s.resolveTargetURL(req.Context(), req.URL.Path, req.URL.RawQuery)
@@ -192,12 +225,13 @@ func New(cfg Config) (*Server, error) {
 		cfg.Logger.Info().Msg("HLS streaming enabled")
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", s.handleRequest)
+	r := apimw.NewRouter(apimw.StackConfig{})
+	r.HandleFunc("/", s.handleRequest)
+	r.HandleFunc("/*", s.handleRequest)
 
 	s.httpServer = &http.Server{
 		Addr:              cfg.ListenAddr,
-		Handler:           mux,
+		Handler:           r,
 		ReadTimeout:       40 * time.Second,
 		ReadHeaderTimeout: 10 * time.Second,
 		WriteTimeout:      0,
@@ -219,7 +253,7 @@ func (s *Server) GetSessions() []*StreamSession {
 func (s *Server) validateUpstream(upstream string) error {
 	// ALLOW: http://, https://
 	// DENY: file://, user@host
-	// HOST MUST MATCH configured ReceiverHost or TargetURL (canonicalized)
+	// HOST:PORT MUST MATCH configured allowedAuthorities EXACTLY
 
 	u, err := url.Parse(upstream)
 	if err != nil {
@@ -234,79 +268,56 @@ func (s *Server) validateUpstream(upstream string) error {
 		return fmt.Errorf("userinfo not allowed in upstream")
 	}
 
-	// Canonicalize upstream host
-	upstreamHost := canonicalizeHost(u.Host)
+	// Must have a port to match our strict config requirements
+	if u.Port() == "" {
+		return fmt.Errorf("upstream must have explicit port")
+	}
 
-	// Collect allowed hosts
-	allowedHosts := make(map[string]bool)
-	if s.receiverHost != "" {
-		allowedHosts[canonicalizeHost(s.receiverHost)] = true
-		allowedHosts[canonicalizeHost(net.JoinHostPort(s.receiverHost, "8001"))] = true
-	}
-	if s.targetURL != nil {
-		allowedHosts[canonicalizeHost(s.targetURL.Host)] = true
-	}
+	// Canonicalize authority (host:port)
+	auth := canonicalizeAuthority(u.Host)
 
 	// Strict Match
-	if !allowedHosts[upstreamHost] {
-		// Allow if it's explicitly 127.0.0.1 or localhost (self-reference safe for proxy?)
-		// P0 Plan says "Host MUST match configured ReceiverHost or TargetURL".
-		// We stick to the strict plan.
-		return fmt.Errorf("upstream host %q not allowed", upstreamHost)
+	if _, ok := s.allowedAuthorities[auth]; !ok {
+		// No fuzzy matching, no localhost pivoting.
+		// P3 Invariant: ONLY configured upstream.
+		return fmt.Errorf("upstream authority %q not allowed (must match configured target exactly)", auth)
 	}
 
 	return nil
 }
 
-func canonicalizeHost(host string) string {
-	h, _, err := net.SplitHostPort(host)
+func canonicalizeAuthority(hostport string) string {
+	host, port, err := net.SplitHostPort(hostport)
 	if err != nil {
-		h = host // no port
+		return strings.ToLower(hostport)
 	}
-	h = strings.ToLower(strings.TrimSuffix(h, "."))
 
-	// weak resolve for localhost/127.0.0.1 equivalence?
-	// For now, strict string matching on configured values.
-	if h == "" {
-		return "localhost"
+	if ip := net.ParseIP(host); ip != nil {
+		if v4 := ip.To4(); v4 != nil {
+			host = v4.String()
+		} else {
+			host = ip.String()
+		}
+	} else {
+		host = strings.ToLower(host)
 	}
-	return h
+
+	return net.JoinHostPort(host, port)
 }
 
 func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
+	logger := xglog.WithContext(r.Context(), s.logger)
+
 	// 1. Authentication Check
-	if s.apiToken != "" {
-		// Extract token from Query, Header, or Cookie
-		token := r.URL.Query().Get("token")
-		if token == "" {
-			token = r.URL.Query().Get("api_token")
-		}
-		if token == "" {
-			token = r.Header.Get("X-G2G-Token")
-		}
-		if token == "" {
-			token = r.Header.Get("X-API-Token")
-		}
-		if token == "" {
-			if c, err := r.Cookie("xg2g_session"); err == nil {
-				token = c.Value
-			}
-		}
-
-		// Validate
-		valid := false
-		if token != "" {
-			// constant time compare
-			valid = token == s.apiToken
-		}
-
-		if !valid && !s.authAnonymous {
-			s.logger.Warn().
+	// Policy: If auth is required (!AuthAnonymous), we enforce it strictly.
+	// Since New() enforces that s.apiToken is set if !AuthAnonymous, checking !AuthAnonymous implies checking expectedToken presence.
+	if !s.authAnonymous {
+		if !auth.AuthorizeRequest(r, s.apiToken, true) {
+			logger.Warn().
 				Str("event", "auth.fail").
 				Str("path", r.URL.Path).
 				Str("reason", "unauthorized").
 				Msg("proxy request unauthorized")
-			// Metrics: proxy_reject_reason="unauthorized" (implied by log or explicit metric call)
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -316,7 +327,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		if values, err := url.ParseQuery(r.URL.RawQuery); err == nil {
 			if upstream := values.Get("upstream"); upstream != "" {
 				if err := s.validateUpstream(upstream); err != nil {
-					s.logger.Warn().Str("upstream", upstream).Err(err).Msg("rejecting proxy request with disallowed upstream URL")
+					logger.Warn().Str("upstream", upstream).Err(err).Msg("rejecting proxy request with disallowed upstream URL")
 					http.Error(w, "Forbidden: disallowed upstream URL", http.StatusForbidden)
 					return
 				}
@@ -360,7 +371,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	s.logger.Debug().
+	logger.Debug().
 		Str("method", r.Method).
 		Str("path", r.URL.Path).
 		Str("remote_addr", r.RemoteAddr).
@@ -368,7 +379,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	// Update activity on write
 	if session != nil {
-		w = newSessionWriter(w, session, s.logger)
+		w = newSessionWriter(w, session, logger)
 	}
 
 	if s.tryHandleHEAD(w, r) {
@@ -443,7 +454,9 @@ func (w *sessionWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return nil, nil, fmt.Errorf("hijack not supported")
 }
 
-func (s *Server) resolveTargetURL(_ context.Context, path, rawQuery string) string {
+func (s *Server) resolveTargetURL(ctx context.Context, path, rawQuery string) string {
+	logger := xglog.WithContext(ctx, s.logger)
+
 	serviceRef := strings.TrimPrefix(path, "/")
 	isRef := strings.Contains(serviceRef, ":")
 
@@ -453,18 +466,18 @@ func (s *Server) resolveTargetURL(_ context.Context, path, rawQuery string) stri
 				if parsed, err := url.Parse(streamURL); err == nil {
 					path = parsed.Path
 					serviceRef = strings.TrimPrefix(path, "/")
-					s.logger.Debug().Str("slug", serviceRef).Str("resolved_path", path).Msg("resolved slug to self-referencing proxy URL, extracting path")
+					logger.Debug().Str("slug", serviceRef).Str("resolved_path", path).Msg("resolved slug to self-referencing proxy URL, extracting path")
 				}
 			} else {
 				streamURL = appendRawQuery(streamURL, rawQuery)
-				s.logger.Debug().Str("slug", serviceRef).Str("target", streamURL).Msg("resolved slug to upstream URL via M3U")
+				logger.Debug().Str("slug", serviceRef).Str("target", streamURL).Msg("resolved slug to upstream URL via M3U")
 				return streamURL
 			}
 		} else {
 			if err := s.loadM3U(); err == nil {
 				if streamURL, ok := s.lookupStreamURL(serviceRef); ok {
 					streamURL = appendRawQuery(streamURL, rawQuery)
-					s.logger.Info().Str("slug", serviceRef).Msg("resolved slug after M3U reload")
+					logger.Info().Str("slug", serviceRef).Msg("resolved slug after M3U reload")
 					return streamURL
 				}
 			}
@@ -481,11 +494,11 @@ func (s *Server) resolveTargetURL(_ context.Context, path, rawQuery string) stri
 				// We don't append rawQuery recursively to the upstream URL itself if it's an override,
 				// but we might want to keep other params (like HLS opts).
 				// For now, trust the upstream param as the base.
-				s.logger.Debug().Str("upstream", upstream).Msg("using explicit upstream URL")
+				logger.Debug().Str("upstream", upstream).Msg("using explicit upstream URL")
 				return upstream
 			}
 			// If not allowed, ignore upstream and fall through to receiver logic
-			s.logger.Warn().Str("upstream", upstream).Msg("ignoring disallowed upstream URL")
+			logger.Warn().Str("upstream", upstream).Msg("ignoring disallowed upstream URL")
 		}
 	}
 
@@ -497,7 +510,7 @@ func (s *Server) resolveTargetURL(_ context.Context, path, rawQuery string) stri
 	targetURL := fmt.Sprintf("http://%s%s", net.JoinHostPort(s.receiverHost, "8001"), path)
 	targetURL = appendRawQuery(targetURL, rawQuery)
 
-	s.logger.Debug().
+	logger.Debug().
 		Str("target", targetURL).
 		Msg("using receiver host fallback")
 
@@ -554,6 +567,8 @@ func isStreamSessionStart(r *http.Request) bool {
 }
 
 func (s *Server) handleHLSRequest(w http.ResponseWriter, r *http.Request) {
+	logger := xglog.WithContext(r.Context(), s.logger)
+
 	path := r.URL.Path
 	var serviceRef string
 	var remainder string
@@ -584,7 +599,7 @@ func (s *Server) handleHLSRequest(w http.ResponseWriter, r *http.Request) {
 
 	targetURL := s.resolveTargetURL(r.Context(), "/"+serviceRef, r.URL.RawQuery)
 
-	s.logger.Debug().
+	logger.Debug().
 		Str("service_ref", serviceRef).
 		Str("target", targetURL).
 		Str("path", path).
@@ -592,7 +607,7 @@ func (s *Server) handleHLSRequest(w http.ResponseWriter, r *http.Request) {
 
 	if remainder == "preflight" || strings.HasSuffix(path, "/preflight") {
 		if err := s.hlsManager.PreflightHLS(r.Context(), r, serviceRef, targetURL); err != nil {
-			s.logger.Error().Err(err).Str("service_ref", serviceRef).Msg("HLS preflight failed")
+			logger.Error().Err(err).Str("service_ref", serviceRef).Msg("HLS preflight failed")
 			http.Error(w, "HLS preflight failed", http.StatusServiceUnavailable)
 			return
 		}
@@ -602,7 +617,7 @@ func (s *Server) handleHLSRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.hlsManager.ServeHLS(w, r, serviceRef, targetURL); err != nil {
-		s.logger.Error().
+		logger.Error().
 			Err(err).
 			Str("service_ref", serviceRef).
 			Msg("HLS streaming failed")

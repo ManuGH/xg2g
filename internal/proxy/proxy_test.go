@@ -23,90 +23,150 @@ func TestNew(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "valid config",
+			name: "valid config (anonymous)",
+			cfg: Config{
+				ListenAddr:    ":18000",
+				TargetURL:     "http://example.com:17999",
+				Logger:        logger,
+				AuthAnonymous: true,
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid config (token)",
 			cfg: Config{
 				ListenAddr: ":18000",
 				TargetURL:  "http://example.com:17999",
 				Logger:     logger,
+				APIToken:   "valid-token",
 			},
 			wantErr: false,
 		},
 		{
 			name: "valid config with custom port",
 			cfg: Config{
-				ListenAddr: "127.0.0.1:8080",
-				TargetURL:  "http://example.com:8080",
-				Logger:     logger,
+				ListenAddr:    "127.0.0.1:8080",
+				TargetURL:     "http://example.com:8080",
+				Logger:        logger,
+				AuthAnonymous: true,
 			},
 			wantErr: false,
 		},
 		{
+			name: "fail-closed: missing token and not anonymous",
+			cfg: Config{
+				ListenAddr: ":18000",
+				TargetURL:  "http://example.com:17999",
+				Logger:     logger,
+				// APIToken empty, AuthAnonymous false
+			},
+			wantErr: true,
+		},
+		{
+			name: "fail-closed: empty token strings",
+			cfg: Config{
+				ListenAddr: ":18000",
+				TargetURL:  "http://example.com:17999",
+				Logger:     logger,
+				APIToken:   "   ", // Whitespace check
+			},
+			wantErr: true,
+		},
+		{
+			name: "valid config with receiver host (legacy implicit 8001)",
+			cfg: Config{
+				ListenAddr:    ":18000",
+				ReceiverHost:  "192.168.1.10",
+				Logger:        logger,
+				AuthAnonymous: true,
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid config: target url missing port",
+			cfg: Config{
+				ListenAddr:    ":18000",
+				TargetURL:     "http://example.com", // No port
+				Logger:        logger,
+				AuthAnonymous: true,
+			},
+			wantErr: true,
+		},
+		{
 			name: "missing listen addr",
 			cfg: Config{
-				TargetURL: "http://example.com:17999",
-				Logger:    logger,
+				TargetURL:     "http://example.com:17999",
+				Logger:        logger,
+				AuthAnonymous: true,
 			},
 			wantErr: true,
 		},
 		{
 			name: "empty listen addr",
 			cfg: Config{
-				ListenAddr: "",
-				TargetURL:  "http://example.com:17999",
-				Logger:     logger,
+				ListenAddr:    "",
+				TargetURL:     "http://example.com:17999",
+				Logger:        logger,
+				AuthAnonymous: true,
 			},
 			wantErr: true,
 		},
 		{
 			name: "missing target URL",
 			cfg: Config{
-				ListenAddr: ":18000",
-				Logger:     logger,
+				ListenAddr:    ":18000",
+				Logger:        logger,
+				AuthAnonymous: true,
 			},
 			wantErr: true,
 		},
 		{
 			name: "empty target URL",
 			cfg: Config{
-				ListenAddr: ":18000",
-				TargetURL:  "",
-				Logger:     logger,
+				ListenAddr:    ":18000",
+				TargetURL:     "",
+				Logger:        logger,
+				AuthAnonymous: true,
 			},
 			wantErr: true,
 		},
 		{
 			name: "invalid target URL - empty scheme",
 			cfg: Config{
-				ListenAddr: ":18000",
-				TargetURL:  "://invalid",
-				Logger:     logger,
+				ListenAddr:    ":18000",
+				TargetURL:     "://invalid",
+				Logger:        logger,
+				AuthAnonymous: true,
 			},
 			wantErr: true,
 		},
 		{
 			name: "invalid target URL - just colon",
 			cfg: Config{
-				ListenAddr: ":18000",
-				TargetURL:  ":",
-				Logger:     logger,
+				ListenAddr:    ":18000",
+				TargetURL:     ":",
+				Logger:        logger,
+				AuthAnonymous: true,
 			},
 			wantErr: true,
 		},
 		{
 			name: "invalid target URL - invalid characters",
 			cfg: Config{
-				ListenAddr: ":18000",
-				TargetURL:  "http://exa mple.com",
-				Logger:     logger,
+				ListenAddr:    ":18000",
+				TargetURL:     "http://exa mple.com",
+				Logger:        logger,
+				AuthAnonymous: true,
 			},
 			wantErr: true,
 		},
 		{
 			name: "invalid target URL - malformed scheme",
 			cfg: Config{
-				ListenAddr: ":18000",
-				TargetURL:  "ht!tp://example.com",
-				Logger:     logger,
+				ListenAddr:    ":18000",
+				TargetURL:     "ht!tp://example.com",
+				Logger:        logger,
+				AuthAnonymous: true,
 			},
 			wantErr: true,
 		},
@@ -134,9 +194,10 @@ func TestHandleHeadRequest(t *testing.T) {
 
 	// Create proxy server
 	srv, err := New(Config{
-		ListenAddr: ":0", // Random port
-		TargetURL:  target.URL,
-		Logger:     logger,
+		ListenAddr:    ":0", // Random port
+		TargetURL:     target.URL,
+		Logger:        logger,
+		AuthAnonymous: true,
 	})
 	if err != nil {
 		t.Fatalf("New() failed: %v", err)
@@ -195,9 +256,10 @@ func TestHandleGetRequest(t *testing.T) {
 
 	// Create proxy server
 	srv, err := New(Config{
-		ListenAddr: ":0",
-		TargetURL:  target.URL,
-		Logger:     logger,
+		ListenAddr:    ":0",
+		TargetURL:     target.URL,
+		Logger:        logger,
+		AuthAnonymous: true,
 	})
 	if err != nil {
 		t.Fatalf("New() failed: %v", err)
@@ -225,23 +287,46 @@ func TestHandleGetRequest(t *testing.T) {
 }
 
 func TestValidateUpstream_Strict(t *testing.T) {
+	// Setup allowed authorities manually as we are testing validateUpstream logic in isolation
+	// In real usage, New() populates this.
 	s := &Server{
-		receiverHost: "192.168.1.10",
-		// targetURL is nil
+		allowedAuthorities: map[string]struct{}{
+			"192.168.1.10:8001": {},
+			"example.com:80":    {},
+			"[::1]:8080":        {},
+		},
 	}
 
 	tests := []struct {
 		upstream string
 		wantErr  bool
 	}{
-		{"http://192.168.1.10/stream", false},
 		{"http://192.168.1.10:8001/stream", false},
-		{"http://localhost/stream", true}, // Not in allowed list (strict match)
-		{"http://127.0.0.1/stream", true}, // Not in allowed list
-		{"http://google.com/stream", true},
-		{"http://169.254.169.254/latest/meta-data", true}, // SSRF attempt
-		{"file:///etc/passwd", true},                      // Scheme denied
-		{"http://user@192.168.1.10/stream", true},         // User info denied
+		{"http://example.com:80/stream", false},
+		{"http://[::1]:8080/stream", false},
+
+		// Port Pivot Attempts
+		{"http://192.168.1.10:80/stream", true}, // Same host, diff port
+		{"http://192.168.1.10:22/stream", true}, // Pivot to SSH
+		{"http://example.com:443/stream", true}, // Same host, diff port
+
+		// Missing Port (Strict Mode)
+		{"http://192.168.1.10/stream", true}, // No port in request
+
+		// Host Mismatch
+		{"http://localhost:8001/stream", true}, // Not allowed (even if IP matches in DNS)
+		{"http://127.0.0.1:8001/stream", true}, // Not allowed
+		{"http://google.com:80/stream", true},
+
+		// SSRF / Bad Schemes / UserInfo
+		{"http://169.254.169.254:80/latest/meta-data", true},
+		{"file:///etc/passwd", true},
+		{"http://user@192.168.1.10:8001/stream", true},
+		{"tcp://192.168.1.10:8001", true},
+
+		// Canonicalization Checks
+		{"http://Example.com:80/stream", false}, // Case insen host
+		{"http://192.168.1.10:8001", false},     // No path is ok
 	}
 
 	for _, tt := range tests {
@@ -261,23 +346,23 @@ func TestHandleRequest_Auth(t *testing.T) {
 		registry: NewRegistry(),
 	}
 
-	// Mock target to prevent nil panic if proxy tries to serve (though we expect auth fail first)
-	// But if auth succeeds, it calls s.proxy.ServeHTTP which might be nil.
-	// We only test Auth Failure here. For success, we need a mock proxy.
-
 	tests := []struct {
 		name       string
-		token      string
+		token      string // Legacy header
 		queryToken string
+		authHeader string // Authorization header
 		wantStatus int
 	}{
-		{"No token", "", "", http.StatusUnauthorized},
-		{"Invalid token", "wrong", "", http.StatusUnauthorized},
-		{"Valid header token", "secret-token", "", http.StatusOK},
-		{"Valid query token", "", "secret-token", http.StatusOK},
+		{"No token", "", "", "", http.StatusUnauthorized},
+		{"Invalid token", "wrong", "", "", http.StatusUnauthorized},
+		{"Valid header token (legacy)", "secret-token", "", "", http.StatusOK},
+		{"Valid query token", "", "secret-token", "", http.StatusOK},
+		{"Valid Bearer token", "", "", "Bearer secret-token", http.StatusOK},
+		{"Invalid Bearer token", "", "", "Bearer wrong", http.StatusUnauthorized},
+		{"Malformed Bearer header", "", "", "Basic secret-token", http.StatusUnauthorized},
 	}
 
-	// We need a dummy proxy for success cases
+	// Mock target
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -295,6 +380,9 @@ func TestHandleRequest_Auth(t *testing.T) {
 				q := req.URL.Query()
 				q.Set("token", tt.queryToken)
 				req.URL.RawQuery = q.Encode()
+			}
+			if tt.authHeader != "" {
+				req.Header.Set("Authorization", tt.authHeader)
 			}
 
 			w := httptest.NewRecorder()
@@ -316,9 +404,10 @@ func TestShutdown(t *testing.T) {
 	defer target.Close()
 
 	srv, err := New(Config{
-		ListenAddr: ":0",
-		TargetURL:  target.URL,
-		Logger:     logger,
+		ListenAddr:    ":0",
+		TargetURL:     target.URL,
+		Logger:        logger,
+		AuthAnonymous: true,
 	})
 	if err != nil {
 		t.Fatalf("New() failed: %v", err)

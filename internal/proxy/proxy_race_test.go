@@ -26,9 +26,10 @@ func TestConcurrentRequests(t *testing.T) {
 
 	// Create proxy
 	proxy, err := New(Config{
-		ListenAddr: ":0",
-		TargetURL:  backend.URL,
-		Logger:     zerolog.New(io.Discard),
+		ListenAddr:    ":0",
+		TargetURL:     backend.URL,
+		Logger:        zerolog.New(io.Discard),
+		AuthAnonymous: true,
 	})
 	if err != nil {
 		t.Fatalf("Failed to create proxy: %v", err)
@@ -84,9 +85,10 @@ func TestConcurrentStartShutdown(t *testing.T) {
 	defer backend.Close()
 
 	proxy, err := New(Config{
-		ListenAddr: ":0",
-		TargetURL:  backend.URL,
-		Logger:     zerolog.New(io.Discard),
+		ListenAddr:    ":0",
+		TargetURL:     backend.URL,
+		Logger:        zerolog.New(io.Discard),
+		AuthAnonymous: true,
 	})
 	if err != nil {
 		t.Fatalf("Failed to create proxy: %v", err)
@@ -131,9 +133,10 @@ func TestContextCancellation(t *testing.T) {
 	defer backend.Close()
 
 	proxy, err := New(Config{
-		ListenAddr: ":0",
-		TargetURL:  backend.URL,
-		Logger:     zerolog.New(io.Discard),
+		ListenAddr:    ":0",
+		TargetURL:     backend.URL,
+		Logger:        zerolog.New(io.Discard),
+		AuthAnonymous: true,
 	})
 	if err != nil {
 		t.Fatalf("Failed to create proxy: %v", err)
@@ -168,18 +171,19 @@ func TestMultipleShutdowns(t *testing.T) {
 	defer backend.Close()
 
 	proxy, err := New(Config{
-		ListenAddr: ":0",
-		TargetURL:  backend.URL,
-		Logger:     zerolog.New(io.Discard),
+		ListenAddr:    ":0",
+		TargetURL:     backend.URL,
+		Logger:        zerolog.New(io.Discard),
+		AuthAnonymous: true,
 	})
 	if err != nil {
 		t.Fatalf("Failed to create proxy: %v", err)
 	}
 
 	// Start server
-
+	errCh := make(chan error, 1)
 	go func() {
-		_ = proxy.Start()
+		errCh <- proxy.Start()
 	}()
 
 	time.Sleep(50 * time.Millisecond)
@@ -195,6 +199,15 @@ func TestMultipleShutdowns(t *testing.T) {
 		}
 		// Subsequent shutdowns may error, but shouldn't panic
 	}
+
+	select {
+	case err := <-errCh:
+		if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, http.ErrServerClosed) {
+			t.Errorf("Start error: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Error("Start didn't return after shutdown")
+	}
 }
 
 // TestConcurrentHeadRequests tests race conditions with HEAD requests
@@ -205,9 +218,10 @@ func TestConcurrentHeadRequests(t *testing.T) {
 	defer backend.Close()
 
 	proxy, err := New(Config{
-		ListenAddr: ":0",
-		TargetURL:  backend.URL,
-		Logger:     zerolog.New(io.Discard),
+		ListenAddr:    ":0",
+		TargetURL:     backend.URL,
+		Logger:        zerolog.New(io.Discard),
+		AuthAnonymous: true,
 	})
 	if err != nil {
 		t.Fatalf("Failed to create proxy: %v", err)

@@ -7,6 +7,8 @@ import (
 	"net/http"
 
 	"github.com/ManuGH/xg2g/internal/telemetry"
+	"github.com/go-chi/chi/v5"
+	chimw "github.com/go-chi/chi/v5/middleware"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/propagation"
@@ -23,68 +25,56 @@ func Tracing(tracerName string) func(http.Handler) http.Handler {
 			// This enables distributed tracing across service boundaries
 			ctx := otel.GetTextMapPropagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
 
+			// Use route pattern if available (keeps span cardinality bounded).
+			route := r.URL.Path
+			if routeCtx := chi.RouteContext(r.Context()); routeCtx != nil {
+				if pattern := routeCtx.RoutePattern(); pattern != "" {
+					route = pattern
+				}
+			}
+
+			// Never include query values in traces (tokens may be passed via query).
+			urlLabel := r.URL.Path
+			if r.URL.RawQuery != "" {
+				urlLabel += "?"
+			}
+
 			// Start a new span for this request
-			ctx, span := tracer.Start(ctx, r.Method+" "+r.URL.Path,
+			ctx, span := tracer.Start(ctx, r.Method+" "+route,
 				trace.WithSpanKind(trace.SpanKindServer),
 			)
 			defer span.End()
 
-			// Create a response writer wrapper to capture status code
-			rw := &responseWriter{
-				ResponseWriter: w,
-				statusCode:     http.StatusOK, // Default to 200
-			}
+			// Capture status code while preserving streaming interfaces.
+			ww := chimw.NewWrapResponseWriter(w, r.ProtoMajor)
 
 			// Add HTTP attributes to span
 			span.SetAttributes(telemetry.HTTPAttributes(
 				r.Method,
-				r.URL.Path,
-				r.URL.String(),
+				route,
+				urlLabel,
 				0, // Will be set after response
 			)...)
 
 			// Process request
-			next.ServeHTTP(rw, r.WithContext(ctx))
+			next.ServeHTTP(ww, r.WithContext(ctx))
 
 			// Update span with response status
+			statusCode := ww.Status()
 			span.SetAttributes(telemetry.HTTPAttributes(
 				r.Method,
-				r.URL.Path,
-				r.URL.String(),
-				rw.statusCode,
+				route,
+				urlLabel,
+				statusCode,
 			)...)
 
 			// Mark span as error if status code >= 500
-			if rw.statusCode >= 500 {
-				span.SetStatus(codes.Error, http.StatusText(rw.statusCode))
+			if statusCode >= 500 {
+				span.SetStatus(codes.Error, http.StatusText(statusCode))
 			} else {
 				// Treat 4xx as client-side issues to avoid noisy error signal
 				span.SetStatus(codes.Ok, "")
 			}
 		})
 	}
-}
-
-// responseWriter wraps http.ResponseWriter to capture the status code.
-type responseWriter struct {
-	http.ResponseWriter
-	statusCode int
-	written    bool
-}
-
-// WriteHeader captures the status code.
-func (rw *responseWriter) WriteHeader(statusCode int) {
-	if !rw.written {
-		rw.statusCode = statusCode
-		rw.written = true
-	}
-	rw.ResponseWriter.WriteHeader(statusCode)
-}
-
-// Write ensures WriteHeader is called with default status if not already written.
-func (rw *responseWriter) Write(b []byte) (int, error) {
-	if !rw.written {
-		rw.WriteHeader(http.StatusOK)
-	}
-	return rw.ResponseWriter.Write(b)
 }

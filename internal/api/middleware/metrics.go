@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -44,24 +45,17 @@ func Metrics() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
+			contentLength := r.ContentLength
 
 			// Track in-flight requests
 			httpRequestsInFlight.Inc()
 			defer httpRequestsInFlight.Dec()
 
-			// Record request size
-			if r.ContentLength > 0 {
-				httpRequestSize.WithLabelValues(r.Method, r.URL.Path).Observe(float64(r.ContentLength))
-			}
-
-			// Wrap response writer to capture status and size
-			mw := &metricsWriter{
-				ResponseWriter: w,
-				statusCode:     http.StatusOK,
-			}
+			// Wrap response writer to capture status and size while preserving streaming interfaces
+			ww := chimw.NewWrapResponseWriter(w, r.ProtoMajor)
 
 			// Process request
-			next.ServeHTTP(mw, r)
+			next.ServeHTTP(ww, r)
 
 			// Calculate duration
 			duration := time.Since(start).Seconds()
@@ -74,40 +68,18 @@ func Metrics() func(http.Handler) http.Handler {
 				}
 			}
 
+			// Record request size (label by route pattern to avoid cardinality explosion)
+			if contentLength > 0 {
+				httpRequestSize.WithLabelValues(r.Method, path).Observe(float64(contentLength))
+			}
+
 			// Record metrics
-			status := strconv.Itoa(mw.statusCode)
+			status := strconv.Itoa(ww.Status())
 			httpRequestDuration.WithLabelValues(r.Method, path, status).Observe(duration)
 
-			if mw.bytesWritten > 0 {
-				httpResponseSize.WithLabelValues(r.Method, path, status).Observe(float64(mw.bytesWritten))
+			if written := ww.BytesWritten(); written > 0 {
+				httpResponseSize.WithLabelValues(r.Method, path, status).Observe(float64(written))
 			}
 		})
 	}
-}
-
-// metricsWriter wraps http.ResponseWriter to capture metrics.
-type metricsWriter struct {
-	http.ResponseWriter
-	statusCode   int
-	bytesWritten int
-	written      bool
-}
-
-// WriteHeader captures the status code.
-func (mw *metricsWriter) WriteHeader(statusCode int) {
-	if !mw.written {
-		mw.statusCode = statusCode
-		mw.written = true
-	}
-	mw.ResponseWriter.WriteHeader(statusCode)
-}
-
-// Write captures the number of bytes written.
-func (mw *metricsWriter) Write(b []byte) (int, error) {
-	if !mw.written {
-		mw.WriteHeader(http.StatusOK)
-	}
-	n, err := mw.ResponseWriter.Write(b)
-	mw.bytesWritten += n
-	return n, err
 }

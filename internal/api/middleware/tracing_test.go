@@ -2,7 +2,10 @@
 package middleware
 
 import (
+	"bufio"
 	"context"
+	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -179,73 +182,41 @@ func TestTracing_MultipleRequests(t *testing.T) {
 	}
 }
 
-func TestResponseWriter_WriteHeader(t *testing.T) {
-	rec := httptest.NewRecorder()
-	rw := &responseWriter{
-		ResponseWriter: rec,
-		statusCode:     http.StatusOK,
-	}
-
-	// First call should set status
-	rw.WriteHeader(http.StatusCreated)
-	if rw.statusCode != http.StatusCreated {
-		t.Errorf("Expected status 201, got %d", rw.statusCode)
-	}
-
-	// Second call should be ignored
-	rw.WriteHeader(http.StatusBadRequest)
-	if rw.statusCode != http.StatusCreated {
-		t.Errorf("Expected status to remain 201, got %d", rw.statusCode)
-	}
+type testResponseWriter struct {
+	*httptest.ResponseRecorder
 }
 
-func TestResponseWriter_Write(t *testing.T) {
-	rec := httptest.NewRecorder()
-	rw := &responseWriter{
-		ResponseWriter: rec,
-		statusCode:     http.StatusOK,
-	}
+func (t testResponseWriter) Flush() {}
 
-	// Write should implicitly call WriteHeader if not already called
-	n, err := rw.Write([]byte("test"))
-	if err != nil {
-		t.Fatalf("Write failed: %v", err)
-	}
-
-	if n != 4 {
-		t.Errorf("Expected 4 bytes written, got %d", n)
-	}
-
-	if !rw.written {
-		t.Error("Expected written flag to be true")
-	}
-
-	if rw.statusCode != http.StatusOK {
-		t.Errorf("Expected status 200, got %d", rw.statusCode)
-	}
+func (t testResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return nil, nil, errors.New("not implemented")
 }
 
-func TestResponseWriter_WriteWithExplicitHeader(t *testing.T) {
-	rec := httptest.NewRecorder()
-	rw := &responseWriter{
-		ResponseWriter: rec,
-		statusCode:     http.StatusOK,
-	}
-
-	// Explicitly set header first
-	rw.WriteHeader(http.StatusAccepted)
-
-	// Then write
-	n, err := rw.Write([]byte("test"))
+func TestTracing_PreservesResponseWriterInterfaces(t *testing.T) {
+	_, err := telemetry.NewProvider(context.Background(), telemetry.Config{
+		Enabled:     false,
+		ServiceName: "test",
+	})
 	if err != nil {
-		t.Fatalf("Write failed: %v", err)
+		t.Fatalf("Failed to create provider: %v", err)
 	}
 
-	if n != 4 {
-		t.Errorf("Expected 4 bytes written, got %d", n)
-	}
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if _, ok := w.(http.Flusher); !ok {
+			t.Error("expected ResponseWriter to implement http.Flusher")
+		}
+		if _, ok := w.(http.Hijacker); !ok {
+			t.Error("expected ResponseWriter to implement http.Hijacker")
+		}
+		w.WriteHeader(http.StatusOK)
+	})
 
-	if rw.statusCode != http.StatusAccepted {
-		t.Errorf("Expected status 202, got %d", rw.statusCode)
+	tracedHandler := Tracing("test-tracer")(handler)
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/status", nil)
+	rec := testResponseWriter{ResponseRecorder: httptest.NewRecorder()}
+	tracedHandler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", rec.Code)
 	}
 }

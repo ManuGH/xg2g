@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 	"go.opentelemetry.io/otel/trace"
@@ -50,9 +51,7 @@ func Configure(cfg Config) {
 
 	service := cfg.Service
 	if service == "" {
-		if service == "" {
-			service = "xg2g"
-		}
+		service = "xg2g"
 	}
 
 	version := cfg.Version
@@ -93,10 +92,22 @@ func Middleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
-			// Create a logger with a unique request ID
-			reqID := uuid.New().String()
+
+			ctx := r.Context()
+			reqID := RequestIDFromContext(ctx)
+			if reqID == "" {
+				// Fallback for callers that don't run the RequestID middleware.
+				reqID = r.Header.Get("X-Request-ID")
+				if reqID == "" {
+					reqID = uuid.New().String()
+				}
+				ctx = ContextWithRequestID(ctx, reqID)
+				if w.Header().Get("X-Request-ID") == "" {
+					w.Header().Set("X-Request-ID", reqID)
+				}
+			}
+
 			logCtx := logger().With().
-				Str("req_id", reqID).
 				Str("method", r.Method).
 				Str("path", r.URL.Path).
 				Str("remote_addr", r.RemoteAddr).
@@ -110,38 +121,25 @@ func Middleware() func(http.Handler) http.Handler {
 					Str("span_id", span.SpanContext().SpanID().String())
 			}
 
-			l := logCtx.Logger()
+			l := WithContext(ctx, logCtx.Logger())
 
 			// Add the logger to the request context
-			ctx := l.WithContext(r.Context())
-			r = r.WithContext(ctx)
+			r = r.WithContext(l.WithContext(ctx))
 
-			// Use a status recorder to capture the response status
-			sr := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+			// Capture status while preserving streaming interfaces (Flusher/Hijacker/etc).
+			ww := chimw.NewWrapResponseWriter(w, r.ProtoMajor)
 
 			// Process the request
-			next.ServeHTTP(sr, r)
+			next.ServeHTTP(ww, r)
 
 			// Log the request details
 			l.Info().
 				Str("event", "request.handled").
-				Int("status", sr.status).
+				Int("status", ww.Status()).
 				Dur("duration", time.Since(start)).
 				Msg("http request")
 		})
 	}
-}
-
-// statusRecorder wraps http.ResponseWriter to capture the status code.
-type statusRecorder struct {
-	http.ResponseWriter
-	status int
-}
-
-// WriteHeader captures the status code before writing it to the response.
-func (sr *statusRecorder) WriteHeader(code int) {
-	sr.status = code
-	sr.ResponseWriter.WriteHeader(code)
 }
 
 // WithComponent returns a child logger annotated with the given component name.

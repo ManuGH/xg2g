@@ -47,6 +47,7 @@ func TestIdleTimeout(t *testing.T) {
 				IdleTimeout: idleTimeout,
 			},
 		},
+		AuthAnonymous: true,
 	}
 
 	srv, err := New(cfg)
@@ -88,13 +89,14 @@ func TestIdleMonitor_Cleanup(t *testing.T) {
 
 	cfg := Config{
 		ListenAddr: ":0",
-		TargetURL:  "http://example.com",
+		TargetURL:  "http://example.com:80",
 		Logger:     logger,
 		Runtime: config.RuntimeSnapshot{
 			StreamProxy: config.StreamProxyRuntime{
 				IdleTimeout: idleTimeout,
 			},
 		},
+		AuthAnonymous: true,
 	}
 	srv, _ := New(cfg)
 

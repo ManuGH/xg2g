@@ -30,9 +30,10 @@ func TestProxyWithQueryParameters(t *testing.T) {
 	defer backend.Close()
 
 	proxy, err := New(Config{
-		ListenAddr: ":0",
-		TargetURL:  backend.URL,
-		Logger:     zerolog.New(io.Discard),
+		ListenAddr:    ":0",
+		TargetURL:     backend.URL,
+		Logger:        zerolog.New(io.Discard),
+		AuthAnonymous: true,
 	})
 	if err != nil {
 		t.Fatalf("Failed to create proxy: %v", err)
@@ -69,9 +70,10 @@ func TestProxyWithLargeResponse(t *testing.T) {
 	defer backend.Close()
 
 	proxy, err := New(Config{
-		ListenAddr: ":0",
-		TargetURL:  backend.URL,
-		Logger:     zerolog.New(io.Discard),
+		ListenAddr:    ":0",
+		TargetURL:     backend.URL,
+		Logger:        zerolog.New(io.Discard),
+		AuthAnonymous: true,
 	})
 	if err != nil {
 		t.Fatalf("Failed to create proxy: %v", err)
@@ -121,9 +123,10 @@ func TestProxyBackendErrors(t *testing.T) {
 			defer backend.Close()
 
 			proxy, err := New(Config{
-				ListenAddr: ":0",
-				TargetURL:  backend.URL,
-				Logger:     zerolog.New(io.Discard),
+				ListenAddr:    ":0",
+				TargetURL:     backend.URL,
+				Logger:        zerolog.New(io.Discard),
+				AuthAnonymous: true,
 			})
 			if err != nil {
 				t.Fatalf("Failed to create proxy: %v", err)
@@ -160,9 +163,10 @@ func TestProxyWithCustomHeaders(t *testing.T) {
 	defer backend.Close()
 
 	proxy, err := New(Config{
-		ListenAddr: ":0",
-		TargetURL:  backend.URL,
-		Logger:     zerolog.New(io.Discard),
+		ListenAddr:    ":0",
+		TargetURL:     backend.URL,
+		Logger:        zerolog.New(io.Discard),
+		AuthAnonymous: true,
 	})
 	if err != nil {
 		t.Fatalf("Failed to create proxy: %v", err)
@@ -206,9 +210,10 @@ func TestProxyUnsupportedMethods(t *testing.T) {
 	defer backend.Close()
 
 	proxy, err := New(Config{
-		ListenAddr: ":0",
-		TargetURL:  backend.URL,
-		Logger:     zerolog.New(io.Discard),
+		ListenAddr:    ":0",
+		TargetURL:     backend.URL,
+		Logger:        zerolog.New(io.Discard),
+		AuthAnonymous: true,
 	})
 	if err != nil {
 		t.Fatalf("Failed to create proxy: %v", err)
@@ -251,9 +256,10 @@ func TestShutdownWithActiveConnections(t *testing.T) {
 	defer backend.Close()
 
 	proxy, err := New(Config{
-		ListenAddr: ":0",
-		TargetURL:  backend.URL,
-		Logger:     zerolog.New(io.Discard),
+		ListenAddr:    ":0",
+		TargetURL:     backend.URL,
+		Logger:        zerolog.New(io.Discard),
+		AuthAnonymous: true,
 	})
 	if err != nil {
 		t.Fatalf("Failed to create proxy: %v", err)
@@ -309,9 +315,10 @@ func TestStartWithInvalidAddress(t *testing.T) {
 	defer backend.Close()
 
 	proxy, err := New(Config{
-		ListenAddr: "invalid:address:format",
-		TargetURL:  backend.URL,
-		Logger:     zerolog.New(io.Discard),
+		ListenAddr:    "invalid:address:format",
+		TargetURL:     backend.URL,
+		Logger:        zerolog.New(io.Discard),
+		AuthAnonymous: true,
 	})
 	if err != nil {
 		t.Fatalf("Failed to create proxy: %v", err)
@@ -339,9 +346,10 @@ func TestServerShutdown_ContextTimeout(t *testing.T) {
 	defer backend.Close()
 
 	proxy, err := New(Config{
-		ListenAddr: ":0",
-		TargetURL:  backend.URL,
-		Logger:     logger,
+		ListenAddr:    ":0",
+		TargetURL:     backend.URL,
+		Logger:        logger,
+		AuthAnonymous: true,
 	})
 	if err != nil {
 		t.Fatalf("Failed to create proxy: %v", err)
@@ -391,9 +399,10 @@ func TestServerIntegration_HTTPClientTimeouts(t *testing.T) {
 	defer backend.Close()
 
 	proxy, err := New(Config{
-		ListenAddr: ":0",
-		TargetURL:  backend.URL,
-		Logger:     logger,
+		ListenAddr:    ":0",
+		TargetURL:     backend.URL,
+		Logger:        logger,
+		AuthAnonymous: true,
 	})
 	if err != nil {
 		t.Fatalf("Failed to create proxy: %v", err)

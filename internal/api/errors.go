@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-chi/chi/v5/middleware"
+	"github.com/ManuGH/xg2g/internal/log"
 )
 
 // writeJSON writes a JSON response with the given status code
@@ -170,7 +170,7 @@ func RespondError(w http.ResponseWriter, r *http.Request, statusCode int, apiErr
 	response := &APIError{
 		Code:      apiErr.Code,
 		Message:   apiErr.Message,
-		RequestID: middleware.GetReqID(r.Context()),
+		RequestID: log.RequestIDFromContext(r.Context()),
 	}
 
 	// Add optional details if provided

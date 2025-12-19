@@ -6,7 +6,6 @@ package api
 import (
 	"bytes"
 	"context"
-	"crypto/subtle"
 	"embed"
 	"encoding/json"
 	"errors"
@@ -26,6 +25,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/api/middleware"
+	"github.com/ManuGH/xg2g/internal/auth"
 	"github.com/ManuGH/xg2g/internal/channels"
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/dvr"
@@ -382,25 +382,23 @@ func (s *Server) GetSeriesEngine() *dvr.SeriesEngine {
 }
 
 func (s *Server) routes() http.Handler {
-	r := chi.NewRouter()
+	r := middleware.NewRouter(middleware.StackConfig{
+		EnableCORS:     true,
+		AllowedOrigins: s.cfg.AllowedOrigins,
 
-	// Apply middleware stack (Standardized Order)
-	// 1. Recoverer (outermost safety net)
-	r.Use(middleware.Recoverer)
-	// 2. RequestID (correlation early)
-	r.Use(middleware.RequestID)
-	// 3. CORS (so OPTIONS and browser clients behave)
-	r.Use(middleware.CORS(s.cfg.AllowedOrigins))
-	// 4. Security headers (add security headers to all responses)
-	r.Use(securityHeadersMiddleware)
-	// 5. Metrics (track all requests)
-	r.Use(middleware.Metrics())
-	// 6. Tracing (distributed tracing with OpenTelemetry)
-	r.Use(middleware.Tracing("xg2g-api"))
-	// 7. Logging (wraps handlers, captures full latency)
-	r.Use(log.Middleware())
-	// 8. Rate Limit (Global protection)
-	r.Use(middleware.APIRateLimit(s.cfg.RateLimitEnabled, s.cfg.RateLimitGlobal, s.cfg.RateLimitBurst, s.cfg.RateLimitWhitelist))
+		EnableSecurityHeaders: true,
+		CSP:                   middleware.DefaultCSP,
+
+		EnableMetrics:  true,
+		TracingService: "xg2g-api",
+		EnableLogging:  true,
+
+		EnableRateLimit:    true,
+		RateLimitEnabled:   s.cfg.RateLimitEnabled,
+		RateLimitGlobalRPS: s.cfg.RateLimitGlobal,
+		RateLimitBurst:     s.cfg.RateLimitBurst,
+		RateLimitWhitelist: s.cfg.RateLimitWhitelist,
+	})
 
 	// Health checks (versionless - infrastructure endpoints)
 	r.Get("/healthz", s.handleHealth)
@@ -497,9 +495,7 @@ func (s *Server) handleStreamPreflight(w http.ResponseWriter, r *http.Request) {
 
 	// 1. Verify Token
 	// We allow query token here as this is the "login" for streaming clients
-	reqToken := extractToken(r, true)
-
-	if token != "" && subtle.ConstantTimeCompare([]byte(reqToken), []byte(token)) != 1 {
+	if token != "" && !auth.AuthorizeRequest(r, token, true) {
 		http.Error(w, "Invalid token", http.StatusForbidden)
 		return
 	}
@@ -527,34 +523,6 @@ func (s *Server) handleStreamPreflight(w http.ResponseWriter, r *http.Request) {
 	})
 
 	w.WriteHeader(http.StatusOK)
-}
-
-// allow loading styles/images from common CDNs for Plyr, allow unsafe-inline for React/Plyr dynamic styles
-const defaultCSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://cdn.plyr.io; media-src 'self' blob: data: https://cdn.plyr.io; connect-src 'self' https://cdn.plyr.io; frame-ancestors 'none'"
-
-// securityHeadersMiddleware adds common security headers to all responses.
-func securityHeadersMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Strict Transport Security (HSTS)
-		w.Header().Set("Strict-Transport-Security", "max-age=15552000; includeSubDomains")
-
-		// Content Security Policy (CSP)
-		w.Header().Set("Content-Security-Policy", defaultCSP)
-
-		// X-Content-Type-Options
-		w.Header().Set("X-Content-Type-Options", "nosniff")
-
-		// X-Frame-Options
-		w.Header().Set("X-Frame-Options", "DENY")
-
-		// X-XSS-Protection (legacy header for older browsers)
-		w.Header().Set("X-XSS-Protection", "1; mode=block")
-
-		// Referrer-Policy
-		w.Header().Set("Referrer-Policy", "no-referrer")
-
-		next.ServeHTTP(w, r)
-	})
 }
 
 // authRequired is a middleware that enforces API token authentication for a handler.
@@ -594,7 +562,7 @@ func (s *Server) authRequired(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		// Use constant-time comparison to prevent timing attacks
-		if subtle.ConstantTimeCompare([]byte(reqToken), []byte(token)) != 1 {
+		if !auth.AuthorizeToken(reqToken, token) {
 			logger.Warn().Str("event", "auth.invalid_token").Msg("invalid api token")
 
 			// Audit log: authentication failure
@@ -1079,7 +1047,7 @@ func (s *Server) uiHandler() http.Handler {
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Explicitly attach CSP so the main UI HTML allows blob: media (Safari HLS)
-		w.Header().Set("Content-Security-Policy", defaultCSP)
+		w.Header().Set("Content-Security-Policy", middleware.DefaultCSP)
 
 		// Assets (js, css, images) should be cached (hashed)
 		// Index.html should NOT be cached to ensure updates
