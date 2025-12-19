@@ -57,7 +57,7 @@ Prevents "config drift" where the running state diverges from the known configur
 
 * **Code:** `internal/config` is the sole package authorized to read process environment variables (e.g., `os.LookupEnv` / `os.Getenv`).
 * **Code:** Handlers access config via `config.Snapshot` or `config.AppConfig`, never potentially mutating globals or system env.
-* **Tripwire:** CI Lint check (Planned) preventing `os.LookupEnv` outside `internal/config`.
+* **Tripwire:** `.github/workflows/lint.yml` enforces that direct environment access (e.g., `os.Getenv`, `os.LookupEnv`) is not used outside `internal/config` in non-test code under `internal/` and `cmd/`.
 
 ### 3.2. File Serving Security
 
@@ -80,18 +80,21 @@ Prevents Directory Traversal and Information Disclosure vulnerabilities, ensurin
 **Behavior:**
 
 * **Local Bind:** The stream proxy binds to `127.0.0.1` by default. Binding to `0.0.0.0` requires explicit operator configuration.
+* **Strict Host:Port Validation:** The proxy forwards traffic **ONLY** to the exact `host:port` configured in `TargetURL`.
+  * **Canonicalization:** Hostnames are case-insensitive. IP addresses are canonicalized.
+  * **No Port Pivoting:** Requests to the same host on a different port are strictly rejected.
+  * **Explicit Port:** `TargetURL` must have an explicit port defined. Implicit ports (e.g., http=80) are NOT assumed during validation to prevent ambiguity.
 * **Explicit Auth:** Access to the proxy requires valid authentication (Token or Cookie), identical to the API, unless `AuthAnonymous` is explicitly enabled by the operator.
-* **Upstream Validation:** The proxy forwards traffic **ONLY** to the configured `OpenWebIF` upstream.
-  * Request URLs are rewritten to target the configured `OWIBase`.
-* `file://` scheme in upstream targets is strictly forbidden.
+* **Fail-Closed Auth:** The proxy refuses to start if `AuthAnonymous` is disabled (default) AND no `APIToken` is configured.
+* **Scheme Restriction:** Only `http` and `https` schemes are allowed. `file://`, `ftp://`, etc., are strictly forbidden.
 
 **Rationale:**
-Prevents Server-Side Request Forgery (SSRF) and Open Proxy abuse. Ensures that the proxy cannot be used to attack the local network or internal services.
+Prevents Server-Side Request Forgery (SSRF) and Open Proxy abuse. Ensures that the proxy cannot be used to attack the local network, port-scan internal services, or pivot to unauthorized ports on the receiver.
 
 **Enforcement:**
 
-* **Code:** `internal/proxy` package.
-* **Tests:** `TestProxy_SSRF_Protection` (or equivalent integration tests).
+* **Code:** `internal/proxy` package (`New`, `validateUpstream`).
+* **Tests:** `TestValidateUpstream_Strict`, `TestNew` (fail-closed checks), `TestProxy_SSRF_Protection`.
 
 ### 3.4. Process Lifecycle
 

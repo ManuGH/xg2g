@@ -19,14 +19,10 @@ jobs:
 
           echo "Scanning for direct environment access (os.Getenv, os.LookupEnv, etc) outside internal/config..."
 
-          # We search recursively in internal/ for the banned patterns.
+          # Scan non-test code in internal/ and cmd/ for the banned patterns.
           # We exclude internal/config (authorized).
-
-          # TEMP EXCLUSIONS (P2 debt): remove these as items land.
-          # - internal/daemon/bootstrap.go (Telemetry)
-
-          VIOLATIONS=$(grep -RIn --include='*.go' -E '\b(os|syscall)\.(Getenv|LookupEnv|Environ|ExpandEnv|Expand)\b' internal/ \
-            | grep -vE '^(internal/config/|internal/daemon/bootstrap\.go)' \
+          VIOLATIONS=$(grep -RIn --include='*.go' --exclude='*_test.go' -E '\b(os|syscall)\.(Getenv|LookupEnv|Environ|ExpandEnv|Expand)\b' internal/ cmd/ \
+            | grep -vE '^internal/config/' \
             || true)
             
           if [ -n "$VIOLATIONS" ]; then
