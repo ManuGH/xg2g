@@ -8,17 +8,19 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
-
-	"path/filepath"
+	"time"
 
 	"github.com/ManuGH/xg2g/internal/api"
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/daemon"
 	"github.com/ManuGH/xg2g/internal/dvr"
+	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	xglog "github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/openwebif"
 	xgtls "github.com/ManuGH/xg2g/internal/tls"
 	"github.com/ManuGH/xg2g/internal/validation"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -401,6 +403,32 @@ func main() {
 				// SSDP announcer stops when context is cancelled
 				return nil
 			})
+		}
+	}
+
+	// Configure Health Manager (Strict Mode)
+	hm := s.HealthManager()
+	if hm != nil {
+		hm.SetReadyStrict(cfg.ReadyStrict)
+		if cfg.ReadyStrict {
+			if cfg.OWIBase == "" {
+				// Strict mode requires a target to check. Fail startup if missing.
+				logger.Fatal().Msg("Strict readiness enabled (XG2G_READY_STRICT=true) but OpenWebIF base URL is missing. Cannot perform strict checks.")
+			}
+
+			// Register strict OWI connectivity checker
+			checker := health.NewReceiverChecker(func(ctx context.Context) error {
+				client := openwebif.NewWithPort(cfg.OWIBase, 0, openwebif.Options{
+					Timeout:  2 * time.Second, // Client-side timeout
+					Username: cfg.OWIUsername,
+					Password: cfg.OWIPassword,
+				})
+				// Use the probe context (propagating the 2s timeout)
+				_, err := client.About(ctx)
+				return err
+			})
+			hm.RegisterChecker(checker)
+			logger.Info().Msg("Strict readiness checks enabled: monitoring OpenWebIF connectivity")
 		}
 	}
 

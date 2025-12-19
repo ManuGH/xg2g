@@ -6,12 +6,12 @@ package config
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/log"
 	"gopkg.in/yaml.v3"
 )
 
@@ -58,8 +58,16 @@ type EPGConfig struct {
 
 // APIConfig holds API server configuration
 type APIConfig struct {
-	Token      string `yaml:"token,omitempty"`
-	ListenAddr string `yaml:"listenAddr,omitempty"`
+	Token      string          `yaml:"token,omitempty"`
+	ListenAddr string          `yaml:"listenAddr,omitempty"`
+	RateLimit  RateLimitConfig `yaml:"rateLimit,omitempty"`
+}
+
+// RateLimitConfig holds rate limiting settings
+type RateLimitConfig struct {
+	Enabled *bool `yaml:"enabled,omitempty"` // Pointer to distinguish from zero value
+	Global  *int  `yaml:"global,omitempty"`  // Requests per second
+	Auth    *int  `yaml:"auth,omitempty"`    // Requests per minute (stricter)
 }
 
 // MetricsConfig holds Prometheus metrics configuration
@@ -114,6 +122,13 @@ type AppConfig struct {
 	InstantTuneEnabled bool // Enable "Instant Tune" stream pre-warming
 	DevMode            bool // Enable development mode (live asset reloading)
 	AuthAnonymous      bool // Allow anonymous access if no token is configured (Fail-Open override)
+	ReadyStrict        bool // Enable strict readiness checks (check upstream availability)
+	RateLimitEnabled   bool // Enable rate limiting
+	RateLimitGlobal    int  // Requests per second (global)
+	RateLimitAuth      int  // Requests per minute (auth)
+
+	// Stream Proxy
+	MaxConcurrentStreams int // Maximum concurrent streams allowed (DoS protection)
 
 	// Recording Configuration
 	RecordingRoots map[string]string // ID -> Absolute Path (e.g. "hdd" -> "/media/hdd/movie")
@@ -134,6 +149,7 @@ func NewLoader(configPath, version string) *Loader {
 }
 
 // Load loads configuration with precedence: ENV > File > Defaults
+// It enforces Strict Validated Order: Parse File (Strict) -> Apply Env -> Validate
 func (l *Loader) Load() (AppConfig, error) {
 	cfg := AppConfig{}
 
@@ -192,14 +208,22 @@ func (l *Loader) setDefaults(cfg *AppConfig) {
 
 	// Feature Flags
 	cfg.InstantTuneEnabled = false
+	cfg.ReadyStrict = false
+
+	// Rate Limiting (Secure by Default)
+	cfg.RateLimitEnabled = true
+	cfg.RateLimitGlobal = 100 // Reasonable RPS for single user
+	cfg.RateLimitAuth = 10    // Strict limit for auth attempts (RPM)
+
+	// Stream Proxy Defaults
+	cfg.MaxConcurrentStreams = 10 // Safe default to prevent resource exhaustion
 
 	// Recording Defaults
-	cfg.RecordingRoots = map[string]string{
-		"hdd": "/media/hdd/movie",
-	}
+	cfg.RecordingRoots = nil
 }
 
-// loadFile loads configuration from a YAML file
+// loadFile loads configuration from a YAML file with STRICT parsing.
+// Unknown fields will cause a fatal error to prevent misconfiguration.
 func (l *Loader) loadFile(path string) (*FileConfig, error) {
 	path = filepath.Clean(path)
 
@@ -216,36 +240,24 @@ func (l *Loader) loadFile(path string) (*FileConfig, error) {
 		return nil, fmt.Errorf("read file: %w", err)
 	}
 
-	// Check for deprecated fields before parsing (logs warnings)
-	checkDeprecations(data)
-
 	// Parse YAML with strict mode (unknown fields cause errors)
 	var fileCfg FileConfig
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true) // Reject unknown fields
+
 	if err := dec.Decode(&fileCfg); err != nil {
-		// Backward compatibility: try to normalize known legacy key spellings/structures and re-parse strictly.
-		if !isYAMLUnknownFieldError(err) {
-			return nil, fmt.Errorf("parse YAML (strict): %w", err)
+		if err == io.EOF {
+			return &FileConfig{}, nil
 		}
+		if strings.Contains(err.Error(), "field") && strings.Contains(err.Error(), "not found") {
+			return nil, fmt.Errorf("strict config parse error (legacy keys found? see docs/guides/CONFIGURATION.md): %w", err)
+		}
+		return nil, fmt.Errorf("strict config parse error: %w", err)
+	}
 
-		normalized, warnings, changed, normErr := normalizeLegacyYAML(data)
-		if normErr != nil || !changed {
-			return nil, fmt.Errorf("parse YAML (strict): %w", err)
-		}
-
-		dec2 := yaml.NewDecoder(bytes.NewReader(normalized))
-		dec2.KnownFields(true)
-		if err2 := dec2.Decode(&fileCfg); err2 != nil {
-			return nil, fmt.Errorf("parse YAML (strict): %w", err)
-		}
-
-		if len(warnings) > 0 {
-			logger := log.WithComponent("config")
-			for _, w := range warnings {
-				logger.Warn().Str("event", "config.legacy_key_mapped").Msg(w)
-			}
-		}
+	// Strict: Ensure no multiple documents or trailing content
+	if err := dec.Decode(&struct{}{}); err != io.EOF {
+		return nil, fmt.Errorf("config file contains multiple documents or trailing content")
 	}
 
 	return &fileCfg, nil
@@ -352,6 +364,15 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 	if src.API.ListenAddr != "" {
 		dst.APIListenAddr = expandEnv(src.API.ListenAddr)
 	}
+	if src.API.RateLimit.Enabled != nil {
+		dst.RateLimitEnabled = *src.API.RateLimit.Enabled
+	}
+	if src.API.RateLimit.Global != nil {
+		dst.RateLimitGlobal = *src.API.RateLimit.Global
+	}
+	if src.API.RateLimit.Auth != nil {
+		dst.RateLimitAuth = *src.API.RateLimit.Auth
+	}
 
 	// Metrics
 	if src.Metrics.Enabled != nil {
@@ -442,6 +463,18 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	// Feature Flags
 	cfg.InstantTuneEnabled = ParseBool("XG2G_INSTANT_TUNE", cfg.InstantTuneEnabled)
 	cfg.DevMode = ParseBool("XG2G_DEV", cfg.DevMode)
+	cfg.ReadyStrict = ParseBool("XG2G_READY_STRICT", cfg.ReadyStrict)
+
+	// Rate Limiting
+	cfg.RateLimitEnabled = ParseBool("XG2G_RATELIMIT", cfg.RateLimitEnabled)
+	cfg.RateLimitGlobal = ParseInt("XG2G_RATELIMIT_GLOBAL", cfg.RateLimitGlobal)
+	cfg.RateLimitAuth = ParseInt("XG2G_RATELIMIT_AUTH", cfg.RateLimitAuth)
+
+	cfg.RateLimitGlobal = ParseInt("XG2G_RATELIMIT_GLOBAL", cfg.RateLimitGlobal)
+	cfg.RateLimitAuth = ParseInt("XG2G_RATELIMIT_AUTH", cfg.RateLimitAuth)
+
+	// Stream Proxy
+	cfg.MaxConcurrentStreams = ParseInt("XG2G_MAX_CONCURRENT_STREAMS", cfg.MaxConcurrentStreams)
 
 	// Recording Roots (Env Override)
 	if v, ok := os.LookupEnv("XG2G_RECORDING_ROOTS"); ok {
@@ -477,4 +510,13 @@ func parseRecordingRoots(envVal string, defaults map[string]string) map[string]s
 		return defaults // Fallback if parsing failed completely
 	}
 	return out
+}
+
+// String implements fmt.Stringer to provide a redacted string representation of the config.
+// This ensures that sensitive fields are not leaked in logs when printing the config struct.
+func (c AppConfig) String() string {
+	masked := MaskSecrets(c)
+	// Use json for cleaner output, or simple struct dump
+	// Since MaskSecrets returns map[string]any for structs, we can just print that
+	return fmt.Sprintf("%+v", masked)
 }

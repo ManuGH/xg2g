@@ -295,11 +295,23 @@ func (h *ConfigHolder) logChanges(old, newCfg AppConfig) {
 			Bool("new", newCfg.UseWebIFStreams).
 			Msg("config changed: UseWebIFStreams")
 	}
-	if old.OWIBase != newCfg.OWIBase {
+	if old.RateLimitEnabled != newCfg.RateLimitEnabled {
 		h.logger.Info().
-			Str("old", maskURL(old.OWIBase)).
-			Str("new", maskURL(newCfg.OWIBase)).
-			Msg("config changed: OWIBase")
+			Bool("old", old.RateLimitEnabled).
+			Bool("new", newCfg.RateLimitEnabled).
+			Msg("config changed: RateLimitEnabled")
+	}
+	if old.RateLimitGlobal != newCfg.RateLimitGlobal {
+		h.logger.Info().
+			Int("old", old.RateLimitGlobal).
+			Int("new", newCfg.RateLimitGlobal).
+			Msg("config changed: RateLimitGlobal")
+	}
+	if old.RateLimitAuth != newCfg.RateLimitAuth {
+		h.logger.Info().
+			Int("old", old.RateLimitAuth).
+			Int("new", newCfg.RateLimitAuth).
+			Msg("config changed: RateLimitAuth")
 	}
 }
 

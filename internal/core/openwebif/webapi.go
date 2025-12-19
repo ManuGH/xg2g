@@ -48,5 +48,5 @@ func ConvertToWebAPI(targetURL, serviceRef string) string {
 		scheme = "http"
 	}
 
-	return fmt.Sprintf("%s://%s/web/stream.m3u?ref=%s&name=Stream", scheme, host, escapedRef)
+	return fmt.Sprintf("%s://%s/web/stream.m3u?ref=%s&name=Stream&device=etc&fname=Stream", scheme, host, escapedRef)
 }

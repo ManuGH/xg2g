@@ -98,7 +98,7 @@ func BuildSnapshot(app AppConfig) Snapshot {
 		FFmpegLogLevel:   ParseString("XG2G_FFMPEG_LOGLEVEL", ""),
 	}
 
-	rt.StreamProxy = buildStreamProxyRuntime()
+	rt.StreamProxy = buildStreamProxyRuntime(app)
 	rt.OpenWebIF = buildOpenWebIFRuntime()
 	rt.Transcoder = buildTranscoderRuntime()
 	rt.HLS = buildHLSRuntime(app)
@@ -106,7 +106,7 @@ func BuildSnapshot(app AppConfig) Snapshot {
 	return Snapshot{App: app, Runtime: rt}
 }
 
-func buildStreamProxyRuntime() StreamProxyRuntime {
+func buildStreamProxyRuntime(app AppConfig) StreamProxyRuntime {
 	listen := ParseString("XG2G_PROXY_LISTEN", "")
 	if strings.TrimSpace(listen) == "" {
 		if port := strings.TrimSpace(ParseString("XG2G_PROXY_PORT", "")); port != "" {
@@ -116,19 +116,12 @@ func buildStreamProxyRuntime() StreamProxyRuntime {
 		}
 	}
 
-	limit := int64(0)
-	if raw := strings.TrimSpace(ParseString("XG2G_MAX_CONCURRENT_STREAMS", "")); raw != "" {
-		if n, err := strconv.ParseInt(raw, 10, 64); err == nil && n > 0 {
-			limit = n
-		}
-	}
-
 	return StreamProxyRuntime{
 		Enabled:              ParseBool("XG2G_ENABLE_STREAM_PROXY", true),
 		ListenAddr:           listen,
 		TargetURL:            ParseString("XG2G_PROXY_TARGET", ""),
 		UpstreamHost:         ParseString("XG2G_PROXY_HOST", "127.0.0.1"),
-		MaxConcurrentStreams: limit,
+		MaxConcurrentStreams: int64(app.MaxConcurrentStreams),
 		TranscodeFailOpen:    ParseBool("XG2G_TRANSCODE_FAIL_OPEN", false),
 		IdleTimeout:          parseDurationOrSeconds("XG2G_PROXY_IDLE_TIMEOUT", 0),
 	}

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	streamprofile "github.com/ManuGH/xg2g/internal/core/profile"
+	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/rs/zerolog"
 	"golang.org/x/sync/singleflight"
 )
@@ -70,6 +71,9 @@ type HLSStreamer struct {
 	dvrWindow  int // seconds of DVR window to retain
 	segmentDur int // seconds
 	ffLogLevel string
+
+	startTime          time.Time
+	firstSegmentServed sync.Once
 }
 
 // HLSManager manages multiple HLS streams.
@@ -229,7 +233,12 @@ func (s *HLSStreamer) Start() error {
 	s.logger = logger
 	s.lastAccess = time.Now()
 	s.started = true
+	s.startTime = time.Now()
+	s.firstSegmentServed = sync.Once{}
 	s.mu.Unlock()
+
+	startTime := time.Now()
+	encrypted := false
 
 	cleanupOnError := true
 	defer func() {
@@ -265,17 +274,31 @@ func (s *HLSStreamer) Start() error {
 	var programID int
 
 	// If target is already a WebIF stream or we converted to WebIF, resolve once to get the real TS URL.
+	var zapError string
 	if strings.Contains(s.targetURL, "/web/stream.m3u") || webAPIURL != s.targetURL {
 		logger.Info().Str("web_api_url", webAPIURL).Msg("attempting to resolve Web API stream (Zapping)")
+		tuneStart := time.Now()
 		resolved, err := resolveWebAPIStreamInfo(webAPIURL)
 		if err != nil {
 			logger.Error().Err(err).Str("web_api_url", webAPIURL).Msg("failed to resolve Web API stream")
+			if strings.Contains(err.Error(), "context deadline exceeded") || strings.Contains(err.Error(), "timeout") {
+				zapError = "zap_timeout"
+			} else {
+				zapError = "zap_failed"
+			}
 		} else {
 			finalInputURL = resolved.URL
 			programID = resolved.ProgramID
 			logger.Info().Str("resolved_url", finalInputURL).Int("program_id", programID).Msg("successfully resolved stream URL")
-			// Give the tuner a moment to lock after zapping
-			time.Sleep(1000 * time.Millisecond)
+
+			if strings.Contains(finalInputURL, ":17999/") {
+				encrypted = true
+			}
+
+			// Give the tuner a moment to lock after zapping (especially for encrypted channels)
+			time.Sleep(3000 * time.Millisecond)
+
+			metrics.ObserveStreamTuneDuration(encrypted, time.Since(tuneStart))
 		}
 	} else {
 		logger.Info().Msg("using direct stream URL (no Web API detected)")
@@ -288,7 +311,6 @@ func (s *HLSStreamer) Start() error {
 		Str("input_url", sanitizeURL(s.targetURL)). // Assuming sanitizeURL is available in package (copied from transcoder)
 		Msg("starting HLS session")
 
-	startTime := time.Now()
 	var exitReason = "internal_error"
 	var lastStats *FFmpegStats
 
@@ -303,6 +325,8 @@ func (s *HLSStreamer) Start() error {
 				Float64("ffmpeg_last_bitrate_kbps", lastStats.BitrateKBPS)
 		}
 		event.Msg("HLS session ended")
+
+		metrics.IncStreamStart(encrypted, exitReason == "success" || exitReason == "client_disconnect", exitReason)
 	}()
 
 	dvrSeconds := s.dvrWindow
@@ -416,6 +440,7 @@ func (s *HLSStreamer) Start() error {
 	var stderrWg sync.WaitGroup
 	stderrWg.Add(1)
 
+	var detectedReason string
 	go func() {
 		defer stderrWg.Done()
 		scanner := bufio.NewScanner(stderrPipe)
@@ -446,6 +471,9 @@ func (s *HLSStreamer) Start() error {
 			} else {
 				if strings.Contains(strings.ToLower(line), "error") {
 					logger.Warn().Str("stderr", line).Msg("ffmpeg warning")
+					if reason := ClassifyFFmpegError(line); reason != "" {
+						detectedReason = reason
+					}
 				} else {
 					logger.Debug().Str("stderr", line).Msg("hls ffmpeg stderr")
 				}
@@ -480,6 +508,11 @@ func (s *HLSStreamer) Start() error {
 		if err := s.cmd.Wait(); err != nil {
 			if s.ctx.Err() == nil {
 				exitReason = "ffmpeg_exit"
+				if detectedReason != "" {
+					exitReason = detectedReason
+				} else if zapError != "" {
+					exitReason = zapError
+				}
 				logger.Error().
 					Err(err).
 					Msg("HLS segmentation failed")
@@ -504,12 +537,15 @@ func (s *HLSStreamer) Start() error {
 	}()
 
 	// Wait for playlist to be created with timeout
-	if err := s.waitForPlaylist(s.ctx); err != nil {
+	if err := s.waitForPlaylist(s.ctx, encrypted, startTime); err != nil {
 		// Cleanup on failure
 		s.Stop()
 		return fmt.Errorf("wait for playlist: %w", err)
 	}
 
+	metrics.ObserveStreamStartupLatency(encrypted, time.Since(startTime))
+
+	exitReason = "success"
 	cleanupOnError = false
 	return nil
 }
@@ -569,7 +605,7 @@ func (s *HLSStreamer) isIdle(timeout time.Duration) bool {
 }
 
 // waitForPlaylist waits for the HLS playlist to be created.
-func (s *HLSStreamer) waitForPlaylist(ctx context.Context) error {
+func (s *HLSStreamer) waitForPlaylist(ctx context.Context, encrypted bool, startTime time.Time) error {
 	playlistPath := s.GetPlaylistPath()
 
 	// Use fsnotify based watcher instead of polling loop
@@ -598,6 +634,9 @@ func (s *HLSStreamer) waitForPlaylist(ctx context.Context) error {
 		// since it should be there if referenced in playlist
 		if err := WaitForFile(ctx, s.logger, segmentPath, 2*time.Second); err != nil {
 			s.logger.Warn().Str("segment", line).Msg("referenced segment not immediately available")
+		} else {
+			// Segment verified available on disk
+			metrics.ObserveStreamFirstSegmentLatency(encrypted, time.Since(startTime))
 		}
 		return nil
 	}
@@ -1059,6 +1098,12 @@ func (m *HLSManager) serveSegment(w http.ResponseWriter, stream *HLSStreamer, se
 			m.logger.Warn().Err(err).Msg("failed to close segment file")
 		}
 	}()
+
+	// Record First Segment Serve Latency
+	stream.firstSegmentServed.Do(func() {
+		encrypted := strings.Contains(stream.targetURL, ":17999/")
+		metrics.ObserveStreamFirstSegmentServeLatency(encrypted, time.Since(stream.startTime))
+	})
 
 	w.Header().Set("Content-Type", "video/mp2t")
 	w.Header().Set("Cache-Control", "max-age=10")

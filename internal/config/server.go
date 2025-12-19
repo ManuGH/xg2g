@@ -95,13 +95,18 @@ const (
 func ParseServerConfig() ServerConfig {
 	listen := ParseStringWithAlias("XG2G_LISTEN", "XG2G_API_ADDR", ":8080")
 
+	shutdownTimeout := ParseDuration("XG2G_SERVER_SHUTDOWN_TIMEOUT", defaultShutdownTimeout)
+	if shutdownTimeout < 3*time.Second {
+		shutdownTimeout = 3 * time.Second
+	}
+
 	return ServerConfig{
 		ListenAddr:      listen,
 		ReadTimeout:     ParseDuration("XG2G_SERVER_READ_TIMEOUT", defaultReadTimeout),
 		WriteTimeout:    ParseDuration("XG2G_SERVER_WRITE_TIMEOUT", defaultWriteTimeout),
 		IdleTimeout:     ParseDuration("XG2G_SERVER_IDLE_TIMEOUT", defaultIdleTimeout),
 		MaxHeaderBytes:  ParseInt("XG2G_SERVER_MAX_HEADER_BYTES", defaultMaxHeaderBytes),
-		ShutdownTimeout: ParseDuration("XG2G_SERVER_SHUTDOWN_TIMEOUT", defaultShutdownTimeout),
+		ShutdownTimeout: shutdownTimeout,
 	}
 }
 
