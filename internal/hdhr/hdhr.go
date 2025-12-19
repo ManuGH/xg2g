@@ -225,9 +225,9 @@ func (s *Server) HandleLineupPost(w http.ResponseWriter, r *http.Request) {
 
 // GetConfigFromEnv creates Config from environment variables
 func GetConfigFromEnv(logger zerolog.Logger, dataDir string) Config {
-	// Default to enabled for out-of-the-box Plex/Jellyfin discovery
-	// Can be disabled with XG2G_HDHR_ENABLED=false
-	enabled := getEnvDefault("XG2G_HDHR_ENABLED", "true") == "true"
+	// Default to disabled for security (opt-in, not opt-out)
+	// Enable with XG2G_HDHR_ENABLED=true for Plex/Jellyfin discovery
+	enabled := getEnvDefault("XG2G_HDHR_ENABLED", "false") == "true"
 
 	// Parse Plex Force HLS flag
 	plexForceHLS := getEnvDefault("XG2G_PLEX_FORCE_HLS", "false") == "true"

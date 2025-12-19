@@ -314,7 +314,7 @@ func TestGetConfigFromEnv(t *testing.T) {
 			name:    "default values",
 			envVars: map[string]string{},
 			expected: Config{
-				Enabled:      true, // Default since v1.4.0 for out-of-the-box Plex/Jellyfin discovery
+				Enabled:      false, // Disabled by default for security (opt-in, not opt-out)
 				DeviceID:     "",
 				FriendlyName: "xg2g",
 				ModelName:    "HDHR-xg2g",

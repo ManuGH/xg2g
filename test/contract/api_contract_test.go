@@ -229,12 +229,12 @@ func TestAPIDataFilePathContract(t *testing.T) {
 	handler := server.Handler()
 
 	t.Run("ValidFileAccess", func(t *testing.T) {
-		// Contract: Files within data dir are accessible
-		req := httptest.NewRequest(http.MethodGet, "/playlist.m3u", nil)
+		// Contract: Files within data dir are accessible via /files/ prefix
+		req := httptest.NewRequest(http.MethodGet, "/files/playlist.m3u", nil)
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
 
-		assert.Equal(t, http.StatusOK, rec.Code, "Valid files must be accessible")
+		assert.Equal(t, http.StatusOK, rec.Code, "Valid files must be accessible via /files/ prefix")
 		assert.Contains(t, rec.Body.String(), "#EXTM3U", "File content must be returned")
 	})
 

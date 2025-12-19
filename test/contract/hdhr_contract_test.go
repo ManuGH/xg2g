@@ -12,7 +12,9 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+	"path/filepath"
 
+	"github.com/ManuGH/xg2g/internal/channels"
 	"github.com/ManuGH/xg2g/internal/hdhr"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/stretchr/testify/assert"
@@ -34,7 +36,7 @@ func TestHDHomeRunDiscoveryContract(t *testing.T) {
 		Logger:       logger,
 	}
 
-	server := hdhr.NewServer(cfg)
+	server := hdhr.NewServer(cfg, channels.NewManager(t.TempDir()))
 
 	t.Run("DiscoveryEndpointContract", func(t *testing.T) {
 		// Contract: /discover.json returns JSON with required fields
@@ -91,7 +93,7 @@ func TestHDHomeRunDiscoveryContract(t *testing.T) {
 			Logger:  logger,
 		}
 
-		minimalServer := hdhr.NewServer(minimalCfg)
+		minimalServer := hdhr.NewServer(minimalCfg, channels.NewManager(t.TempDir()))
 
 		req := httptest.NewRequest(http.MethodGet, "/discover.json", nil)
 		rec := httptest.NewRecorder()
@@ -121,7 +123,7 @@ func TestHDHomeRunLineupStatusContract(t *testing.T) {
 		Logger:       logger,
 	}
 
-	server := hdhr.NewServer(cfg)
+	server := hdhr.NewServer(cfg, channels.NewManager(t.TempDir()))
 
 	t.Run("LineupStatusContract", func(t *testing.T) {
 		// Contract: /lineup_status.json returns status information
@@ -167,15 +169,25 @@ func TestHDHomeRunLineupStatusContract(t *testing.T) {
 // TestHDHomeRunLineupContract verifies the lineup endpoint contract
 func TestHDHomeRunLineupContract(t *testing.T) {
 	logger := log.WithComponent("test")
+	tmpDir := t.TempDir()
+
+	// Create minimal playlist.m3u file for lineup endpoint
+	playlistContent := `#EXTM3U
+#EXTINF:-1 tvg-chno="1" tvg-id="test1" tvg-name="Test Channel 1",Test Channel 1
+http://example.com/stream/1
+`
+	err := os.WriteFile(filepath.Join(tmpDir, "playlist.m3u"), []byte(playlistContent), 0600)
+	require.NoError(t, err, "Failed to create test playlist")
 
 	cfg := hdhr.Config{
 		Enabled:      true,
 		DeviceID:     "TESTHDR1",
 		FriendlyName: "Test HDHomeRun",
 		Logger:       logger,
+		DataDir:      tmpDir,
 	}
 
-	server := hdhr.NewServer(cfg)
+	server := hdhr.NewServer(cfg, channels.NewManager(tmpDir))
 
 	t.Run("LineupEndpointContract", func(t *testing.T) {
 		// Contract: /lineup.json returns channel array
@@ -227,7 +239,7 @@ func TestHDHomeRunConfigContract(t *testing.T) {
 			os.Unsetenv("XG2G_HDHR_FRIENDLY_NAME")
 		}()
 
-		cfg := hdhr.GetConfigFromEnv(logger)
+		cfg := hdhr.GetConfigFromEnv(logger, t.TempDir())
 
 		// Contract: Config is populated from environment
 		assert.True(t, cfg.Enabled, "Enabled must be read from XG2G_HDHR_ENABLED")
@@ -245,7 +257,7 @@ func TestHDHomeRunConfigContract(t *testing.T) {
 		os.Unsetenv("XG2G_HDHR_ENABLED")
 		os.Unsetenv("XG2G_HDHR_DEVICE_ID")
 
-		cfg := hdhr.GetConfigFromEnv(logger)
+		cfg := hdhr.GetConfigFromEnv(logger, t.TempDir())
 
 		// Contract: Defaults are provided when env vars are not set
 		assert.False(t, cfg.Enabled, "Enabled defaults to false")
@@ -261,7 +273,7 @@ func TestHDHomeRunConfigContract(t *testing.T) {
 			Logger:  logger,
 		}
 
-		server := hdhr.NewServer(emptyCfg)
+		server := hdhr.NewServer(emptyCfg, channels.NewManager(t.TempDir()))
 
 		// Verify server has defaults by checking discovery response
 		req := httptest.NewRequest(http.MethodGet, "/discover.json", nil)
@@ -294,7 +306,7 @@ func TestHDHomeRunSSDPContract(t *testing.T) {
 		Logger:       logger,
 	}
 
-	server := hdhr.NewServer(cfg)
+	server := hdhr.NewServer(cfg, channels.NewManager(t.TempDir()))
 
 	t.Run("SSDPAnnouncerContract", func(t *testing.T) {
 		// Contract: StartSSDPAnnouncer can be called without panic
@@ -321,7 +333,7 @@ func TestHDHomeRunIntegrationContract(t *testing.T) {
 
 		os.Unsetenv("XG2G_HDHR_ENABLED")
 
-		cfg := hdhr.GetConfigFromEnv(logger)
+		cfg := hdhr.GetConfigFromEnv(logger, t.TempDir())
 
 		assert.False(t, cfg.Enabled,
 			"HDHomeRun must be disabled by default")
@@ -334,7 +346,7 @@ func TestHDHomeRunIntegrationContract(t *testing.T) {
 		os.Setenv("XG2G_HDHR_ENABLED", "true")
 		defer os.Unsetenv("XG2G_HDHR_ENABLED")
 
-		cfg := hdhr.GetConfigFromEnv(logger)
+		cfg := hdhr.GetConfigFromEnv(logger, t.TempDir())
 
 		assert.True(t, cfg.Enabled,
 			"XG2G_HDHR_ENABLED=true must enable HDHomeRun")
