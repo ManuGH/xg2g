@@ -67,7 +67,7 @@ func TestLoad_1500Services(t *testing.T) {
 	start := time.Now()
 
 	// Run refresh job
-	status, err := jobs.Refresh(context.Background(), config.BuildSnapshot(cfg))
+	status, err := jobs.Refresh(context.Background(), config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault()))
 	if err != nil {
 		t.Fatalf("Refresh failed: %v", err)
 	}

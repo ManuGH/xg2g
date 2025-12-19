@@ -215,7 +215,30 @@ func main() {
 	}
 	logger.Info().Msgf("→ Data dir: %s", cfg.DataDir)
 
-	snap := config.BuildSnapshot(cfg)
+	// Initialize ConfigManager (needed for API config endpoints + hot reload).
+	configMgrPath := effectiveConfigPath
+	if configMgrPath == "" {
+		configMgrPath = filepath.Join(cfg.DataDir, "config.yaml")
+	}
+	configMgr := config.NewManager(configMgrPath)
+
+	// Hot reload support: watch config file and allow SIGHUP/API-triggered reload.
+	cfgHolder := config.NewConfigHolder(cfg, config.NewLoader(configMgrPath, version), configMgrPath)
+	if err := cfgHolder.StartWatcher(ctx); err != nil {
+		logger.Warn().
+			Err(err).
+			Str("event", "config.watcher_start_failed").
+			Str("path", configMgrPath).
+			Msg("failed to start config watcher")
+	}
+
+	var snap config.Snapshot
+	if current := cfgHolder.Current(); current != nil {
+		snap = *current
+	} else {
+		snap = config.BuildSnapshot(cfg, config.DefaultEnv())
+	}
+	cfg = snap.App
 
 	// Configure proxy (enabled by default in v2.0 for Zero Config experience)
 	var proxyConfig *daemon.ProxyConfig
@@ -274,26 +297,10 @@ func main() {
 		logger.Warn().Msg("→ No channels loaded. Trigger manual refresh via: POST /api/refresh")
 	}
 
-	// Initialize ConfigManager
-	configMgrPath := effectiveConfigPath
-	if configMgrPath == "" {
-		configMgrPath = filepath.Join(cfg.DataDir, "config.yaml")
-	}
-	configMgr := config.NewManager(configMgrPath)
-
-	// Hot reload support: watch config file and allow SIGHUP/API-triggered reload.
-	cfgHolder := config.NewConfigHolder(cfg, config.NewLoader(configMgrPath, version), configMgrPath)
-	if err := cfgHolder.StartWatcher(ctx); err != nil {
-		logger.Warn().
-			Err(err).
-			Str("event", "config.watcher_start_failed").
-			Str("path", configMgrPath).
-			Msg("failed to start config watcher")
-	}
-
 	// Create API handler
 	s := api.New(cfg, configMgr)
 	s.SetConfigHolder(cfgHolder)
+	s.ApplySnapshot(cfgHolder.Current())
 
 	// Create Scheduler for Series Engine
 	// We extract the internal series engine from API server
@@ -310,15 +317,15 @@ func main() {
 		sched.Start(ctx)
 	}
 
-	applyCh := make(chan config.AppConfig, 1)
-	cfgHolder.RegisterListener(applyCh)
+	applyCh := make(chan *config.Snapshot, 1)
+	cfgHolder.RegisterSnapshotListener(applyCh)
 	go func() {
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case newCfg := <-applyCh:
-				s.ApplyConfig(newCfg)
+			case newSnap := <-applyCh:
+				s.ApplySnapshot(newSnap)
 			}
 		}
 	}()

@@ -57,7 +57,7 @@ func TestHandleRefreshInternal(t *testing.T) {
 	cfg := config.AppConfig{Bouquet: "test"}
 	s := &Server{
 		cfg:       cfg,
-		snap:      config.BuildSnapshot(cfg),
+		snap:      config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault()),
 		refreshFn: mockRefreshFn,
 		cb:        NewCircuitBreaker(3, 5*time.Second),
 	}
@@ -100,7 +100,7 @@ http://example.com/stream3
 		cfg := config.AppConfig{DataDir: tmpDir}
 		s := &Server{
 			cfg:  cfg,
-			snap: config.BuildSnapshot(cfg),
+			snap: config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault()),
 		}
 
 		req := httptest.NewRequest(http.MethodGet, "/lineup.json", nil)
@@ -141,7 +141,7 @@ http://example.com/stream3
 		cfg := config.AppConfig{DataDir: tmpDir}
 		s := &Server{
 			cfg:  cfg,
-			snap: config.BuildSnapshot(cfg),
+			snap: config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault()),
 		}
 
 		req := httptest.NewRequest(http.MethodGet, "/lineup.json", nil)

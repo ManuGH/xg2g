@@ -4,6 +4,9 @@ package config
 
 import (
 	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -53,6 +56,49 @@ func TestNewConfigHolder(t *testing.T) {
 	}
 	if got.DataDir != initial.DataDir {
 		t.Errorf("expected DataDir %q, got %q", initial.DataDir, got.DataDir)
+	}
+}
+
+func TestConfigHolder_Swap_AssignsMonotonicEpoch(t *testing.T) {
+	initial := AppConfig{
+		Bouquet:     "test-bouquet",
+		DataDir:     "/tmp/test",
+		EPGDays:     7,
+		EPGEnabled:  true,
+		OWIBase:     "http://test.example.com",
+		OWIUsername: "user",
+		OWIPassword: "pass",
+	}
+
+	loader := NewLoader("", "test")
+	holder := NewConfigHolder(initial, loader, "")
+
+	first := holder.Current()
+	if first == nil {
+		t.Fatal("expected initial snapshot, got nil")
+	}
+	if first.Epoch == 0 {
+		t.Fatal("expected initial snapshot epoch to be non-zero")
+	}
+
+	next := BuildSnapshot(initial, DefaultEnv())
+	next.Epoch = 12345 // should be overwritten by Swap()
+	nextPtr := &next
+
+	prev := holder.Swap(nextPtr)
+	if prev == nil {
+		t.Fatal("expected previous snapshot, got nil")
+	}
+	if prev != first {
+		t.Fatalf("expected Swap() to return previous snapshot pointer")
+	}
+
+	got := holder.Current()
+	if got != nextPtr {
+		t.Fatalf("expected Current() to return swapped snapshot pointer")
+	}
+	if got.Epoch != first.Epoch+1 {
+		t.Fatalf("expected epoch to increment: got %d, want %d", got.Epoch, first.Epoch+1)
 	}
 }
 
@@ -256,6 +302,74 @@ func TestMaskURL(t *testing.T) {
 				t.Errorf("maskURL(%q) = %q, want %q", tc.input, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestConfigHolder_ReloadDuringRequest_UsesSingleEpoch(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	writeValidConfig(t, configPath, "old-bouquet")
+
+	loader := NewLoader(configPath, "test")
+	initial, err := loader.Load()
+	if err != nil {
+		t.Fatalf("failed to load initial config: %v", err)
+	}
+
+	holder := NewConfigHolder(initial, loader, configPath)
+
+	firstEpochCh := make(chan uint64, 1)
+	secondEpochCh := make(chan uint64, 1)
+	proceed := make(chan struct{})
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		snap := holder.Current()
+		if snap == nil {
+			http.Error(w, "no snapshot", http.StatusInternalServerError)
+			return
+		}
+
+		firstEpochCh <- snap.Epoch
+		<-proceed
+		secondEpochCh <- snap.Epoch
+
+		_, _ = fmt.Fprintf(w, "%d,%d", snap.Epoch, snap.Epoch)
+	})
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		handler.ServeHTTP(rr, req)
+	}()
+
+	firstEpoch := <-firstEpochCh
+
+	writeValidConfig(t, configPath, "new-bouquet")
+	if err := holder.Reload(context.Background()); err != nil {
+		t.Fatalf("Reload() failed: %v", err)
+	}
+
+	current := holder.Current()
+	if current == nil {
+		t.Fatal("expected snapshot after reload, got nil")
+	}
+	if current.Epoch <= firstEpoch {
+		t.Fatalf("expected epoch to increase after reload: got %d, want > %d", current.Epoch, firstEpoch)
+	}
+	if current.App.Bouquet != "new-bouquet" {
+		t.Fatalf("expected Bouquet %q after reload, got %q", "new-bouquet", current.App.Bouquet)
+	}
+
+	close(proceed)
+	<-done
+
+	secondEpoch := <-secondEpochCh
+	if secondEpoch != firstEpoch {
+		t.Fatalf("expected request to use a single epoch: got %d then %d", firstEpoch, secondEpoch)
 	}
 }
 

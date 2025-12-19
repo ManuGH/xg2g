@@ -62,7 +62,7 @@ func refreshWithClient(ctx context.Context, cfg config.AppConfig, cl OwiClient) 
 	logger := xglog.WithComponentFromContext(ctx, "jobs")
 	logger.Info().Str("event", "refresh.start").Msg("starting refresh")
 
-	snap := config.BuildSnapshot(cfg)
+	snap := config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault())
 	rt := snap.Runtime
 
 	if err := validateConfig(cfg); err != nil {
@@ -220,7 +220,7 @@ func TestRefresh_InvalidStreamPort(t *testing.T) {
 		StreamPort: 70000, // Invalid port
 	}
 
-	_, err := Refresh(ctx, config.BuildSnapshot(cfg))
+	_, err := Refresh(ctx, config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault()))
 	if err == nil {
 		t.Error("Expected error for invalid stream port")
 	}
@@ -237,7 +237,7 @@ func TestRefresh_ConfigValidation(t *testing.T) {
 		DataDir: "/tmp/test",
 	}
 
-	_, err := Refresh(ctx, config.BuildSnapshot(cfg))
+	_, err := Refresh(ctx, config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault()))
 	if err == nil {
 		t.Error("Expected error for invalid config")
 	}
@@ -521,7 +521,7 @@ func TestRefresh_VersionPersistence(t *testing.T) {
 	ctx := context.Background()
 
 	// Mock successful refresh (minimal setup)
-	status, err := Refresh(ctx, config.BuildSnapshot(cfg))
+	status, err := Refresh(ctx, config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault()))
 
 	// We expect validation errors since we don't have a real OWI server,
 	// but the important part is that if Status is returned, it must contain the version

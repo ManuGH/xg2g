@@ -214,3 +214,19 @@ func ParseBool(key string, defaultValue bool) bool {
 		Msg("using default value")
 	return defaultValue
 }
+
+// ReadOSRuntimeEnv reads all runtime environment variables from the current process
+// environment and returns an immutable Env suitable for BuildSnapshot.
+func ReadOSRuntimeEnv() (Env, error) {
+	return ReadEnv(os.Getenv)
+}
+
+// ReadOSRuntimeEnvOrDefault reads the runtime Env from the current process environment.
+// If reading fails, it returns DefaultEnv.
+func ReadOSRuntimeEnvOrDefault() Env {
+	env, err := ReadOSRuntimeEnv()
+	if err != nil {
+		return DefaultEnv()
+	}
+	return env
+}

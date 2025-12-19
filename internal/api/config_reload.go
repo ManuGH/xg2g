@@ -16,18 +16,22 @@ func (s *Server) SetConfigHolder(holder ConfigHolder) {
 	s.configHolder = holder
 }
 
-func (s *Server) ApplyConfig(cfg config.AppConfig) {
+func (s *Server) ApplySnapshot(snap *config.Snapshot) {
+	if snap == nil {
+		return
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.cfg = cfg
-	s.snap = config.BuildSnapshot(cfg)
-	s.status.Version = cfg.Version
+	s.cfg = snap.App
+	s.snap = *snap
+	s.status.Version = snap.App.Version
 }
 
 func (s *Server) handleConfigReload(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	holder := s.configHolder
-	oldCfg := s.cfg
+	oldCfg := s.snap.App
 	s.mu.RUnlock()
 
 	if holder == nil {
@@ -45,13 +49,17 @@ func (s *Server) handleConfigReload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newCfg := holder.Get()
-	s.ApplyConfig(newCfg)
+	newSnap := holder.Current()
+	if newSnap == nil {
+		http.Error(w, "config reload failed", http.StatusInternalServerError)
+		return
+	}
+	s.ApplySnapshot(newSnap)
 
 	resp := struct {
 		RestartRequired bool `json:"restart_required"`
 	}{
-		RestartRequired: reloadRequiresRestart(oldCfg, newCfg),
+		RestartRequired: reloadRequiresRestart(oldCfg, newSnap.App),
 	}
 
 	w.Header().Set("Content-Type", "application/json")

@@ -60,7 +60,7 @@ func TestRefresh_IntegrationSuccess(t *testing.T) {
 		StreamPort: 8001,
 	}
 
-	status, err := Refresh(context.Background(), config.BuildSnapshot(cfg))
+	status, err := Refresh(context.Background(), config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault()))
 	if err != nil {
 		t.Fatalf("Refresh returned error: %v", err)
 	}

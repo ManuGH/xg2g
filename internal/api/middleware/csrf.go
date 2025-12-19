@@ -60,8 +60,8 @@ func CSRFProtection() func(http.Handler) http.Handler {
 // getAllowedOrigins loads allowed origins from XG2G_ALLOWED_ORIGINS environment variable.
 // Returns a map for O(1) lookup performance.
 func getAllowedOrigins() map[string]bool {
-	originsEnv := os.Getenv("XG2G_ALLOWED_ORIGINS")
-	if originsEnv == "" {
+	originsEnv, ok := os.LookupEnv("XG2G_ALLOWED_ORIGINS")
+	if !ok || originsEnv == "" {
 		return nil // nil means only same-origin requests allowed
 	}
 

@@ -96,7 +96,7 @@ type AuditLogger interface {
 // ConfigHolder interface allows hot configuration reloading without import cycles.
 // Implemented by config.ConfigHolder.
 type ConfigHolder interface {
-	Get() config.AppConfig
+	Current() *config.Snapshot
 	Reload(ctx context.Context) error
 }
 
@@ -112,7 +112,11 @@ func (s *Server) dataFilePath(rel string) (string, error) {
 		return "", fmt.Errorf("data file path contains traversal: %s", rel)
 	}
 
-	root, err := filepath.Abs(s.cfg.DataDir)
+	s.mu.RLock()
+	dataDir := s.cfg.DataDir
+	s.mu.RUnlock()
+
+	root, err := filepath.Abs(dataDir)
 	if err != nil {
 		return "", fmt.Errorf("resolve data directory: %w", err)
 	}
@@ -171,9 +175,16 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager) *Server {
 	// Initialize OpenWebIF Client
 	// Options can be tuned if needed (e.g. timeout, caching)
 
+	env, err := config.ReadOSRuntimeEnv()
+	if err != nil {
+		log.L().Warn().Err(err).Msg("failed to read runtime environment, using defaults")
+		env = config.DefaultEnv()
+	}
+	snap := config.BuildSnapshot(cfg, env)
+
 	s := &Server{
 		cfg:            cfg,
-		snap:           config.BuildSnapshot(cfg),
+		snap:           snap,
 		channelManager: cm,
 		configManager:  cfgMgr,
 		seriesManager:  sm,
@@ -442,8 +453,12 @@ func (s *Server) routes() http.Handler {
 }
 
 func (s *Server) handleStreamPreflight(w http.ResponseWriter, r *http.Request) {
-	// 1. Verify Token
+	s.mu.RLock()
 	token := s.cfg.APIToken
+	forceHTTPS := s.cfg.ForceHTTPS
+	s.mu.RUnlock()
+
+	// 1. Verify Token
 	// We allow query token here as this is the "login" for streaming clients
 	reqToken := extractToken(r, true)
 
@@ -459,7 +474,7 @@ func (s *Server) handleStreamPreflight(w http.ResponseWriter, r *http.Request) {
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   r.TLS != nil || s.cfg.ForceHTTPS,
+		Secure:   r.TLS != nil || forceHTTPS,
 		SameSite: http.SameSiteStrictMode,
 		MaxAge:   86400, // 24h
 	})
@@ -510,10 +525,13 @@ func securityHeadersMiddleware(next http.Handler) http.Handler {
 func (s *Server) authRequired(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logger := log.WithComponentFromContext(r.Context(), "auth")
+		s.mu.RLock()
 		token := s.cfg.APIToken
+		authAnon := s.cfg.AuthAnonymous
+		s.mu.RUnlock()
 
 		if token == "" {
-			if s.cfg.AuthAnonymous {
+			if authAnon {
 				logger.Warn().Str("event", "auth.anonymous").Msg("XG2G_AUTH_ANONYMOUS=true, allowing unauthenticated access")
 				next.ServeHTTP(w, r)
 				return
@@ -610,8 +628,13 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 	defer s.refreshing.Store(false)
 
+	// Capture snapshot once to prevent config drift within this operation.
+	s.mu.RLock()
+	snap := s.snap
+	s.mu.RUnlock()
+
 	// Audit log: refresh started
-	bouquets := strings.Split(s.cfg.Bouquet, ",")
+	bouquets := strings.Split(snap.App.Bouquet, ",")
 	if s.auditLogger != nil {
 		s.auditLogger.RefreshStart(actor, bouquets)
 	}
@@ -636,9 +659,6 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	// Run the refresh via circuit breaker; it will mark failures and handle panics
 	err := s.cb.Call(func() error {
 		var err error
-		s.mu.RLock()
-		snap := s.snap
-		s.mu.RUnlock()
 		st, err = s.refreshFn(jobCtx, snap)
 		return err
 	})
@@ -900,6 +920,11 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) handleLineupJSON(w http.ResponseWriter, r *http.Request) {
 	logger := log.WithComponentFromContext(r.Context(), "hdhr")
 
+	// Capture snapshot once to avoid config drift during this request.
+	s.mu.RLock()
+	snap := s.snap
+	s.mu.RUnlock()
+
 	// Read the M3U playlist file
 	m3uPath, err := s.dataFilePath("playlist.m3u")
 	if err != nil {
@@ -945,9 +970,6 @@ func (s *Server) handleLineupJSON(w http.ResponseWriter, r *http.Request) {
 
 			// If H.264 stream repair is enabled, rewrite URL to use proxy host and port
 			// This ensures Plex gets streams from the xg2g proxy (with H.264 repair) instead of direct receiver access
-			s.mu.RLock()
-			snap := s.snap
-			s.mu.RUnlock()
 			if snap.Runtime.Transcoder.H264RepairEnabled {
 				if parsedURL, err := url.Parse(streamURL); err == nil {
 					// Get proxy listen address (default :18000)

@@ -38,8 +38,8 @@ func Configure(cfg Config) {
 		if parsed, err := zerolog.ParseLevel(cfg.Level); err == nil {
 			level = parsed
 		}
-	} else if env := os.Getenv("LOG_LEVEL"); env != "" {
-		if parsed, err := zerolog.ParseLevel(env); err == nil {
+	} else if envLevel, ok := os.LookupEnv("LOG_LEVEL"); ok && envLevel != "" {
+		if parsed, err := zerolog.ParseLevel(envLevel); err == nil {
 			level = parsed
 		}
 	}
@@ -53,16 +53,22 @@ func Configure(cfg Config) {
 
 	service := cfg.Service
 	if service == "" {
-		service = os.Getenv("LOG_SERVICE")
-		if service == "" {
+		if envService, ok := os.LookupEnv("LOG_SERVICE"); ok && envService != "" {
+			service = envService
+		} else {
 			service = "xg2g"
 		}
+	}
+
+	version := ""
+	if envVersion, ok := os.LookupEnv("VERSION"); ok {
+		version = envVersion
 	}
 
 	base = zerolog.New(writer).With().
 		Timestamp().
 		Str("service", service).
-		Str("version", os.Getenv("VERSION")).
+		Str("version", version).
 		Logger().Hook(bufferHook{})
 }
 

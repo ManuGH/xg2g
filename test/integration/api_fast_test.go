@@ -109,7 +109,7 @@ func TestAPIFast_BasicRefreshFlow(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	status, err := jobs.Refresh(ctx, config.BuildSnapshot(cfg))
+	status, err := jobs.Refresh(ctx, config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault()))
 
 	require.NoError(t, err, "Basic refresh should succeed")
 	require.NotNil(t, status)

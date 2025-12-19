@@ -387,44 +387,6 @@ func TestGetConfigFromEnv(t *testing.T) {
 	}
 }
 
-func TestUtilityFunctions(t *testing.T) {
-	t.Run("getEnvDefault", func(t *testing.T) {
-		// Test with non-existent env var
-		result := getEnvDefault("NON_EXISTENT_VAR_XG2G_TEST", "default")
-		assert.Equal(t, "default", result)
-
-		// Test with existing env var
-		t.Setenv("TEST_VAR_XG2G", "test_value")
-
-		result = getEnvDefault("TEST_VAR_XG2G", "default")
-		assert.Equal(t, "test_value", result)
-
-		// Test with empty env var
-		t.Setenv("EMPTY_VAR_XG2G", "")
-
-		result = getEnvDefault("EMPTY_VAR_XG2G", "default")
-		assert.Equal(t, "default", result)
-	})
-
-	t.Run("getEnvInt", func(t *testing.T) {
-		// Test with non-existent env var
-		result := getEnvInt("NON_EXISTENT_INT_VAR", 42)
-		assert.Equal(t, 42, result)
-
-		// Test with valid integer
-		t.Setenv("TEST_INT_VAR", "123")
-
-		result = getEnvInt("TEST_INT_VAR", 42)
-		assert.Equal(t, 123, result)
-
-		// Test with invalid integer
-		t.Setenv("INVALID_INT_VAR", "not_an_int")
-
-		result = getEnvInt("INVALID_INT_VAR", 42)
-		assert.Equal(t, 42, result)
-	})
-}
-
 func TestServerGetLocalIP(t *testing.T) {
 	logger := zerolog.New(os.Stdout)
 	server := NewServer(Config{Logger: logger}, nil)

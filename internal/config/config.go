@@ -410,16 +410,16 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 
 	// OpenWebIF timeouts/retries
 	// Convert millisecond ENV values to time.Duration
-	if v := os.Getenv("XG2G_OWI_TIMEOUT_MS"); v != "" {
+	if v, ok := os.LookupEnv("XG2G_OWI_TIMEOUT_MS"); ok && v != "" {
 		ms := ParseInt("XG2G_OWI_TIMEOUT_MS", int(cfg.OWITimeout.Milliseconds()))
 		cfg.OWITimeout = time.Duration(ms) * time.Millisecond
 	}
 	cfg.OWIRetries = ParseInt("XG2G_OWI_RETRIES", cfg.OWIRetries)
-	if v := os.Getenv("XG2G_OWI_BACKOFF_MS"); v != "" {
+	if v, ok := os.LookupEnv("XG2G_OWI_BACKOFF_MS"); ok && v != "" {
 		ms := ParseInt("XG2G_OWI_BACKOFF_MS", int(cfg.OWIBackoff.Milliseconds()))
 		cfg.OWIBackoff = time.Duration(ms) * time.Millisecond
 	}
-	if v := os.Getenv("XG2G_OWI_MAX_BACKOFF_MS"); v != "" {
+	if v, ok := os.LookupEnv("XG2G_OWI_MAX_BACKOFF_MS"); ok && v != "" {
 		ms := ParseInt("XG2G_OWI_MAX_BACKOFF_MS", int(cfg.OWIMaxBackoff.Milliseconds()))
 		cfg.OWIMaxBackoff = time.Duration(ms) * time.Millisecond
 	}

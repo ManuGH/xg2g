@@ -20,7 +20,8 @@ import (
 // from file or manual trigger via API.
 type ConfigHolder struct {
 	reloadOpMu sync.Mutex
-	snapshot   atomic.Value // holds Snapshot
+	epoch      atomic.Uint64
+	snapshot   atomic.Pointer[Snapshot]
 	loader     *Loader
 	configPath string
 	configDir  string
@@ -31,7 +32,7 @@ type ConfigHolder struct {
 	// Reload notifications
 	reloadMu        sync.RWMutex
 	reloadListeners []chan<- AppConfig
-	snapListeners   []chan<- Snapshot
+	snapListeners   []chan<- *Snapshot
 }
 
 // NewConfigHolder creates a new configuration holder with initial config.
@@ -41,9 +42,16 @@ func NewConfigHolder(initial AppConfig, loader *Loader, configPath string) *Conf
 		configPath:      configPath,
 		logger:          xglog.WithComponent("config"),
 		reloadListeners: make([]chan<- AppConfig, 0),
-		snapListeners:   make([]chan<- Snapshot, 0),
+		snapListeners:   make([]chan<- *Snapshot, 0),
 	}
-	h.snapshot.Store(BuildSnapshot(initial))
+	env, err := ReadOSRuntimeEnv()
+	if err != nil {
+		h.logger.Warn().Err(err).Str("event", "config.env_read_failed").Msg("failed to read runtime environment, using defaults")
+		env = DefaultEnv()
+	}
+
+	snap := BuildSnapshot(initial, env)
+	h.Swap(&snap)
 	return h
 }
 
@@ -52,13 +60,29 @@ func (h *ConfigHolder) Get() AppConfig {
 	return h.Snapshot().App
 }
 
-// Snapshot returns the current immutable runtime snapshot (thread-safe read).
+// Current returns the current immutable runtime snapshot pointer (thread-safe read).
+func (h *ConfigHolder) Current() *Snapshot {
+	return h.snapshot.Load()
+}
+
+// Swap atomically swaps the current snapshot.
+// Swap assigns a new, monotonically increasing Epoch to next before storing it.
+func (h *ConfigHolder) Swap(next *Snapshot) (prev *Snapshot) {
+	if next == nil {
+		return h.snapshot.Load()
+	}
+
+	next.Epoch = h.epoch.Add(1)
+	return h.snapshot.Swap(next)
+}
+
+// Snapshot returns a copy of the current immutable runtime snapshot (thread-safe read).
 func (h *ConfigHolder) Snapshot() Snapshot {
-	v := h.snapshot.Load()
-	if v == nil {
+	snap := h.Current()
+	if snap == nil {
 		return Snapshot{}
 	}
-	return v.(Snapshot)
+	return *snap
 }
 
 // Reload reloads configuration from file and validates it.
@@ -71,8 +95,10 @@ func (h *ConfigHolder) Reload(_ context.Context) error {
 
 	h.logger.Info().Str("event", "config.reload_start").Msg("reloading configuration")
 
-	oldSnap := h.Snapshot()
-	oldCfg := oldSnap.App
+	oldCfg := AppConfig{}
+	if oldSnap := h.Current(); oldSnap != nil {
+		oldCfg = oldSnap.App
+	}
 
 	// Load new configuration
 	newCfg, err := h.loader.Load()
@@ -94,12 +120,19 @@ func (h *ConfigHolder) Reload(_ context.Context) error {
 	}
 
 	// Atomically swap configuration
-	newSnap := BuildSnapshot(newCfg)
-	h.snapshot.Store(newSnap)
+	env, err := ReadOSRuntimeEnv()
+	if err != nil {
+		h.logger.Warn().Err(err).Str("event", "config.env_read_failed").Msg("failed to read runtime environment, using defaults")
+		env = DefaultEnv()
+	}
+
+	newSnap := BuildSnapshot(newCfg, env)
+	newSnapPtr := &newSnap
+	h.Swap(newSnapPtr)
 
 	// Notify listeners of config change
 	h.notifyListeners(newCfg)
-	h.notifySnapshotListeners(newSnap)
+	h.notifySnapshotListeners(newSnapPtr)
 
 	// Log configuration changes
 	h.logChanges(oldCfg, newCfg)
@@ -225,7 +258,7 @@ func (h *ConfigHolder) RegisterListener(ch chan<- AppConfig) {
 
 // RegisterSnapshotListener registers a channel to receive snapshot reload notifications.
 // The channel will receive the new snapshot whenever a reload succeeds.
-func (h *ConfigHolder) RegisterSnapshotListener(ch chan<- Snapshot) {
+func (h *ConfigHolder) RegisterSnapshotListener(ch chan<- *Snapshot) {
 	h.reloadMu.Lock()
 	defer h.reloadMu.Unlock()
 	h.snapListeners = append(h.snapListeners, ch)
@@ -248,7 +281,11 @@ func (h *ConfigHolder) notifyListeners(newCfg AppConfig) {
 	}
 }
 
-func (h *ConfigHolder) notifySnapshotListeners(snap Snapshot) {
+func (h *ConfigHolder) notifySnapshotListeners(snap *Snapshot) {
+	if snap == nil {
+		return
+	}
+
 	h.reloadMu.RLock()
 	defer h.reloadMu.RUnlock()
 

@@ -142,8 +142,11 @@ func (d *Daemon) Shutdown(ctx context.Context) error {
 // initTelemetry initializes OpenTelemetry tracing.
 func (d *Daemon) initTelemetry(ctx context.Context) error {
 	// Check if telemetry is enabled
-	enabled := os.Getenv("XG2G_TELEMETRY_ENABLED") == "true"
-	if !enabled {
+	enabled, ok := os.LookupEnv("XG2G_TELEMETRY_ENABLED")
+	if !ok {
+		return nil
+	}
+	if enabled != "true" {
 		return nil
 	}
 
@@ -189,7 +192,7 @@ func WaitForShutdown() context.Context {
 // Helper functions
 
 func getEnvOrDefault(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
+	if value, ok := os.LookupEnv(key); ok && value != "" {
 		return value
 	}
 	return defaultValue

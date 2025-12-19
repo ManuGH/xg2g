@@ -40,8 +40,8 @@ func (sr *statusRecorder) WriteHeader(code int) {
 
 func loadTrustedCIDRs() {
 	trustedCIDRsOnce.Do(func() {
-		csv := os.Getenv("XG2G_TRUSTED_PROXIES")
-		if csv == "" {
+		csv, ok := os.LookupEnv("XG2G_TRUSTED_PROXIES")
+		if !ok || csv == "" {
 			return
 		}
 		for _, part := range strings.Split(csv, ",") {
@@ -383,10 +383,10 @@ func chain(h http.Handler, mws ...func(http.Handler) http.Handler) http.Handler 
 
 func withMiddlewares(h http.Handler, auditLogger ...RateLimitAuditor) http.Handler {
 	// Make rate limiter configurable via environment
-	rpsStr := os.Getenv("XG2G_RATELIMIT_RPS")
-	burstStr := os.Getenv("XG2G_RATELIMIT_BURST")
-	enabledStr := os.Getenv("XG2G_RATELIMIT_ENABLED")
-	whitelistStr := os.Getenv("XG2G_RATELIMIT_WHITELIST")
+	rpsStr, _ := os.LookupEnv("XG2G_RATELIMIT_RPS")
+	burstStr, _ := os.LookupEnv("XG2G_RATELIMIT_BURST")
+	enabledStr, _ := os.LookupEnv("XG2G_RATELIMIT_ENABLED")
+	whitelistStr, _ := os.LookupEnv("XG2G_RATELIMIT_WHITELIST")
 
 	rps := 10.0
 	if rpsStr != "" {
