@@ -14,6 +14,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/rs/zerolog"
+	"go.uber.org/goleak"
 )
 
 // contains is a helper to check if a string contains a substring
@@ -87,6 +88,8 @@ func TestNewManager_MissingAPIHandler(t *testing.T) {
 }
 
 func TestManager_StartStop_OK(t *testing.T) {
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
+
 	// Create a simple test handler
 	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -140,6 +143,8 @@ func TestManager_StartStop_OK(t *testing.T) {
 }
 
 func TestManager_Shutdown_TimesOut(t *testing.T) {
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
+
 	// Create a handler that blocks on shutdown
 	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		time.Sleep(10 * time.Second) // Block longer than shutdown timeout
@@ -217,6 +222,8 @@ func TestManager_Shutdown_NotStarted(t *testing.T) {
 }
 
 func TestManager_WithMetrics(t *testing.T) {
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
+
 	// Create test handlers
 	apiHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
