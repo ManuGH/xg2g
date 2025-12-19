@@ -140,11 +140,8 @@ func TestAPIRateLimit_Configuration(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	t.Setenv("XG2G_RATELIMIT_ENABLED", "true")
-	t.Setenv("XG2G_RATELIMIT_RPS", "1") // 1 RPS = 60 RPM
-
-	// Apply API rate limiter
-	limitedHandler := APIRateLimit()(handler)
+	// Apply API rate limiter: Enabled=true, RPS=1 (60 RPM)
+	limitedHandler := APIRateLimit(true, 1)(handler)
 
 	// Make 60 requests (at limit)
 	for i := 0; i < 60; i++ {

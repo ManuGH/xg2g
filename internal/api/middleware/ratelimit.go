@@ -5,8 +5,6 @@ package middleware
 import (
 	"fmt"
 	"net/http"
-	"os"
-	"strconv"
 	"time"
 
 	"github.com/go-chi/httprate"
@@ -59,10 +57,8 @@ func RefreshRateLimit() func(http.Handler) http.Handler {
 	})
 }
 
-// APIRateLimit returns a rate limiter configured via environment variables.
-// It is disabled by default unless XG2G_RATELIMIT_ENABLED is "true".
-func APIRateLimit() func(http.Handler) http.Handler {
-	enabled, _ := strconv.ParseBool(os.Getenv("XG2G_RATELIMIT_ENABLED"))
+// APIRateLimit returns a rate limiter configured via AppConfig.
+func APIRateLimit(enabled bool, rps int) func(http.Handler) http.Handler {
 	if !enabled {
 		// Passthrough if disabled
 		return func(next http.Handler) http.Handler {
@@ -70,10 +66,8 @@ func APIRateLimit() func(http.Handler) http.Handler {
 		}
 	}
 
-	// Parse custom limits
-	rps, _ := strconv.Atoi(os.Getenv("XG2G_RATELIMIT_RPS"))
 	if rps <= 0 {
-		rps = 100 // Default: 100 req/sec (~6000/min)
+		rps = 100 // Default safety net
 	}
 
 	// Convert RPS to Per-Minute for smoother sliding window
