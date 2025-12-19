@@ -33,10 +33,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6.0.1
 
       - name: Setup Go
-        uses: actions/setup-go@v5 # v5
+        uses: actions/setup-go@v6.1.0 # v5
         with:
           go-version-file: go.mod
           cache: true
@@ -50,7 +50,7 @@ jobs:
           git diff --exit-code -- go.mod go.sum
 
       - name: Setup Node for WebUI
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "20"
           cache: "npm"
@@ -96,7 +96,7 @@ jobs:
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload coverage
-        uses: actions/upload-artifact@v4 # v5
+        uses: actions/upload-artifact@v6 # v5
         with:
           name: coverage-unit-tests
           path: coverage.out
@@ -112,7 +112,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Setup Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
@@ -121,7 +121,7 @@ jobs:
           cache: true
 
       - name: Setup Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v5
         with:
           python-version: "3.x"
 
@@ -164,10 +164,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6.0.1
 
       - name: Setup Go
-        uses: actions/setup-go@v5 # v5
+        uses: actions/setup-go@v6.1.0 # v5
         with:
           go-version-file: go.mod
           cache: true
@@ -178,7 +178,7 @@ jobs:
           toolchain: stable
 
       - name: Setup Node for WebUI
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "20"
           cache: "npm"
@@ -194,7 +194,7 @@ jobs:
           cp -r dist/* ../internal/api/ui/
 
       - name: Cache Rust dependencies
-        uses: actions/cache@v4 # v4
+        uses: actions/cache@v5 # v4
         with:
           path: |
             ~/.cargo/bin/
@@ -222,7 +222,7 @@ jobs:
         run: make test-transcoder
 
       - name: Upload Rust artifacts
-        uses: actions/upload-artifact@v4 # v5
+        uses: actions/upload-artifact@v6 # v5
         with:
           name: rust-library
           path: transcoder/target/release/libxg2g_transcoder.a
@@ -238,16 +238,16 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6.0.1
 
       - name: Setup Go
-        uses: actions/setup-go@v5 # v5
+        uses: actions/setup-go@v6.1.0 # v5
         with:
           go-version-file: go.mod
           cache: true
 
       - name: Setup Node for WebUI
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "20"
           cache: "npm"
@@ -272,7 +272,7 @@ jobs:
         run: make lint
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "lts/*"
 
@@ -289,7 +289,7 @@ jobs:
 
       - name: Upload OpenAPI lint report
         if: always()
-        uses: actions/upload-artifact@v4 # v5
+        uses: actions/upload-artifact@v6 # v5
         with:
           name: openapi-lint
           path: /tmp/openapi-lint.txt
@@ -306,16 +306,16 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6.0.1
 
       - name: Setup Go
-        uses: actions/setup-go@v5 # v5
+        uses: actions/setup-go@v6.1.0 # v5
         with:
           go-version-file: go.mod
           cache: true
 
       - name: Setup Node for WebUI
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "20"
           cache: "npm"
@@ -368,7 +368,7 @@ jobs:
       TZ: UTC
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6.0.1
         with:
           fetch-depth: 0
 
@@ -385,7 +385,7 @@ jobs:
         run: go mod download
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "20"
           cache: "npm"
@@ -425,7 +425,7 @@ jobs:
           )
 
       - name: Upload reproducible binary
-        uses: actions/upload-artifact@v4 # v5
+        uses: actions/upload-artifact@v6 # v5
         with:
           name: reproducible-daemon
           path: bin/daemon

@@ -28,11 +28,11 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6.0.1
 
       # Setup Go for both languages (Go analysis needs it, C++ build might interact with it)
       - name: Setup Go
-        uses: actions/setup-go@v5 # v5
+        uses: actions/setup-go@v6.1.0 # v5
         with:
           go-version-file: go.mod
           cache: true
@@ -53,7 +53,7 @@ jobs:
 
       # Initialize CodeQL
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@cf1bb45a277cb3c205638b2cd5c984db1c46a412 # v3
+        uses: github/codeql-action/init@5d4e8d1aca955e8d8589aabd499c5cae939e33c7 # v3
         with:
           languages: ${{ matrix.language }}
           # If you wish to specify custom queries, you can do so here or in a config file.
@@ -71,9 +71,9 @@ jobs:
 
       # Autobuild for Go (CodeQL handles this well usually, but we can be explicit)
       - name: Autobuild
-        uses: github/codeql-action/autobuild@323fb8c0ad5be63b7a6ebf1f32c35882fcfea2cf # v3
+        uses: github/codeql-action/autobuild@5d4e8d1aca955e8d8589aabd499c5cae939e33c7 # v3
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@323fb8c0ad5be63b7a6ebf1f32c35882fcfea2cf # v3
+        uses: github/codeql-action/analyze@5d4e8d1aca955e8d8589aabd499c5cae939e33c7 # v3
         with:
           category: "/language:${{ matrix.language }}"
