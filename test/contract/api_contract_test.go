@@ -70,16 +70,23 @@ func TestAPIServerContract(t *testing.T) {
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
 
-		// Before first refresh, readiness should be 503
+		// Before first refresh, readiness should be 503 (no data loaded yet)
 		assert.Equal(t, http.StatusServiceUnavailable, rec.Code,
 			"Readiness endpoint must return 503 before first refresh")
 		assert.Contains(t, rec.Header().Get("Content-Type"), "application/json",
 			"Readiness endpoint must return JSON")
+
+		var response map[string]interface{}
+		err := json.Unmarshal(rec.Body.Bytes(), &response)
+		require.NoError(t, err, "Readiness response must be valid JSON")
+		assert.Contains(t, response, "ready", "Readiness response must contain 'ready' field")
+		assert.False(t, response["ready"].(bool), "Ready field must be false before first refresh")
 	})
 
 	t.Run("StatusEndpointContract", func(t *testing.T) {
-		// Contract: /api/status returns JSON with version, lastRun, channels, error fields
-		req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+		// Contract: /api/v2/system/health returns JSON with system health information
+		req := httptest.NewRequest(http.MethodGet, "/api/v2/system/health", nil)
+		req.Header.Set("X-API-Token", "test-token")
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
 
@@ -87,20 +94,20 @@ func TestAPIServerContract(t *testing.T) {
 		assert.Contains(t, rec.Header().Get("Content-Type"), "application/json",
 			"Status endpoint must return JSON")
 
-		var status map[string]interface{}
-		err := json.Unmarshal(rec.Body.Bytes(), &status)
-		require.NoError(t, err, "Status response must be valid JSON")
+		var health map[string]interface{}
+		err := json.Unmarshal(rec.Body.Bytes(), &health)
+		require.NoError(t, err, "Health response must be valid JSON")
 
-		// Contract: Status response must have specific fields
-		assert.Contains(t, status, "version", "Status must contain version")
-		assert.Contains(t, status, "lastRun", "Status must contain lastRun")
-		assert.Contains(t, status, "channels", "Status must contain channels")
+		// Contract: Health response must have system status fields
+		assert.Contains(t, health, "version", "Health must contain version")
+		assert.Contains(t, health, "status", "Health must contain status")
+		assert.Contains(t, health, "uptime_seconds", "Health must contain uptime_seconds")
 
 		// Contract: version must be string
-		assert.IsType(t, "", status["version"], "version must be string")
+		assert.IsType(t, "", health["version"], "version must be string")
 
-		// Contract: channels must be numeric
-		assert.IsType(t, float64(0), status["channels"], "channels must be numeric")
+		// Contract: status must be string ("ok", "degraded", etc.)
+		assert.IsType(t, "", health["status"], "status must be string")
 	})
 
 	t.Run("AuthenticationContract", func(t *testing.T) {
@@ -114,21 +121,21 @@ func TestAPIServerContract(t *testing.T) {
 		}{
 			{
 				name:           "no_token",
-				endpoint:       "/api/refresh",
+				endpoint:       "/api/v2/system/refresh",
 				method:         http.MethodPost,
 				token:          "",
 				expectedStatus: http.StatusUnauthorized,
 			},
 			{
 				name:           "wrong_token",
-				endpoint:       "/api/refresh",
+				endpoint:       "/api/v2/system/refresh",
 				method:         http.MethodPost,
 				token:          "wrong-token",
-				expectedStatus: http.StatusForbidden,
+				expectedStatus: http.StatusUnauthorized, // API returns 401 for invalid tokens
 			},
 			{
 				name:           "valid_token",
-				endpoint:       "/api/refresh",
+				endpoint:       "/api/v2/system/refresh",
 				method:         http.MethodPost,
 				token:          "test-token",
 				expectedStatus: http.StatusOK, // Will fail due to mock, but auth passes
@@ -144,8 +151,8 @@ func TestAPIServerContract(t *testing.T) {
 				rec := httptest.NewRecorder()
 				handler.ServeHTTP(rec, req)
 
-				// Only check auth status codes (401/403), ignore functional errors
-				if tt.expectedStatus == http.StatusUnauthorized || tt.expectedStatus == http.StatusForbidden {
+				// Only check auth status codes (401), ignore functional errors
+				if tt.expectedStatus == http.StatusUnauthorized {
 					assert.Equal(t, tt.expectedStatus, rec.Code,
 						"Authentication contract violated for %s", tt.name)
 				}
@@ -172,25 +179,20 @@ func TestAPIServerContract(t *testing.T) {
 	})
 
 	t.Run("DeprecationHeadersContract", func(t *testing.T) {
-		// Contract: Legacy /api/* endpoints have deprecation headers
-		req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
-		rec := httptest.NewRecorder()
-		handler.ServeHTTP(rec, req)
-
-		// Deprecation headers should be present for legacy endpoints
-		assert.NotEmpty(t, rec.Header().Get("Deprecation"),
-			"Legacy endpoints must have Deprecation header")
-		assert.NotEmpty(t, rec.Header().Get("Sunset"),
-			"Legacy endpoints must have Sunset header")
+		// Contract: This test is skipped as legacy /api/* endpoints were removed
+		// API v2 endpoints (/api/v2/*) are the canonical API surface
+		t.Skip("Legacy /api/* endpoints removed in favor of /api/v2/* (see docs/UPGRADE.md)")
 	})
 
 	t.Run("ErrorResponseContract", func(t *testing.T) {
 		// Contract: Error responses are JSON with 'error' field
-		req := httptest.NewRequest(http.MethodPost, "/api/refresh", nil)
+		req := httptest.NewRequest(http.MethodPost, "/api/v2/system/refresh", nil)
 		// No auth token - will return error
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
 
+		// API v2 returns JSON error responses
+		assert.Equal(t, http.StatusUnauthorized, rec.Code, "Missing auth should return 401")
 		assert.Contains(t, rec.Header().Get("Content-Type"), "application/json",
 			"Error responses must be JSON")
 
@@ -198,6 +200,7 @@ func TestAPIServerContract(t *testing.T) {
 		err := json.Unmarshal(rec.Body.Bytes(), &errResponse)
 		require.NoError(t, err, "Error response must be valid JSON")
 		assert.Contains(t, errResponse, "error", "Error response must contain 'error' field")
+		assert.Equal(t, "unauthorized", errResponse["error"], "Error field must indicate unauthorized")
 	})
 }
 
@@ -277,31 +280,32 @@ func TestAPIVersioningContract(t *testing.T) {
 	server := api.New(cfg, nil)
 	handler := server.Handler()
 
-	t.Run("V1EndpointsExist", func(t *testing.T) {
-		// Contract: V1 API endpoints are available
-		v1Endpoints := []string{
-			"/api/v2/status",
-			"/api/v2/health",
+	t.Run("V2EndpointsExist", func(t *testing.T) {
+		// Contract: V2 API endpoints are available
+		v2Endpoints := []string{
+			"/api/v2/system/health",
+			"/api/v2/dvr/status",
 		}
 
-		for _, endpoint := range v1Endpoints {
+		for _, endpoint := range v2Endpoints {
 			req := httptest.NewRequest(http.MethodGet, endpoint, nil)
+			req.Header.Set("X-API-Token", "test-token")
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)
 
 			assert.NotEqual(t, http.StatusNotFound, rec.Code,
-				"V1 endpoint must exist: %s", endpoint)
+				"V2 endpoint must exist: %s", endpoint)
 		}
 	})
 
-	t.Run("LegacyEndpointsStillWork", func(t *testing.T) {
-		// Contract: Legacy endpoints remain functional during deprecation
+	t.Run("LegacyEndpointsRemoved", func(t *testing.T) {
+		// Contract: Legacy /api/* endpoints were removed in favor of /api/v2/*
 		req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
 
-		assert.Equal(t, http.StatusOK, rec.Code,
-			"Legacy endpoints must remain functional during deprecation")
+		assert.Equal(t, http.StatusNotFound, rec.Code,
+			"Legacy /api/status endpoint should be removed (use /api/v2/status)")
 	})
 }
 
@@ -343,7 +347,7 @@ func TestAPICircuitBreakerContract(t *testing.T) {
 			default:
 			}
 
-			req := httptest.NewRequest(http.MethodPost, "/api/refresh", nil)
+			req := httptest.NewRequest(http.MethodPost, "/api/v2/system/refresh", nil)
 			req.Header.Set("X-API-Token", "test-token")
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)

@@ -226,14 +226,12 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager) *Server {
 	}))
 
 	// Receiver connectivity check
-	s.healthManager.RegisterChecker(health.NewReceiverChecker(func() error {
+	s.healthManager.RegisterChecker(health.NewReceiverChecker(func(ctx context.Context) error {
 		if cfg.OWIBase == "" {
 			return fmt.Errorf("receiver not configured")
 		}
 		// Use client for check if possible, or keep simple HTTP
-		// For now keeping simple check to avoid dependency circularity issues during startup
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
+		// Use the context provided by health manager (which includes timeout)
 		req, err := http.NewRequestWithContext(ctx, http.MethodHead, cfg.OWIBase, nil)
 		if err != nil {
 			return err
@@ -322,6 +320,11 @@ func (s *Server) GetEvents(from, to time.Time) ([]openwebif.EPGEvent, error) {
 	return events, nil
 }
 
+// HealthManager returns the health check manager
+func (s *Server) HealthManager() *health.Manager {
+	return s.healthManager
+}
+
 // HDHomeRunServer returns the HDHomeRun server instance if enabled
 func (s *Server) HDHomeRunServer() *hdhr.Server {
 	return s.hdhr
@@ -341,7 +344,7 @@ func (s *Server) routes() http.Handler {
 	// 2. Recoverer - panic recovery to prevent server crashes
 	r.Use(chimiddleware.Recoverer)
 	// 3. Global Rate Limiting - protect all endpoints from DoS (OWASP 2025)
-	r.Use(middleware.APIRateLimit())
+	r.Use(middleware.APIRateLimit(s.cfg.RateLimitEnabled, s.cfg.RateLimitGlobal))
 	// 4. Metrics - track all requests (before tracing for accurate timing)
 	r.Use(middleware.Metrics())
 	// 5. Tracing - distributed tracing with OpenTelemetry (with context propagation)
@@ -491,6 +494,9 @@ func securityHeadersMiddleware(next http.Handler) http.Handler {
 
 		// X-Frame-Options
 		w.Header().Set("X-Frame-Options", "DENY")
+
+		// X-XSS-Protection (legacy header for older browsers)
+		w.Header().Set("X-XSS-Protection", "1; mode=block")
 
 		// Referrer-Policy
 		w.Header().Set("Referrer-Policy", "no-referrer")
