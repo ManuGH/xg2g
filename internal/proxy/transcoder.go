@@ -18,6 +18,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/core/urlutil"
 	"github.com/ManuGH/xg2g/internal/metrics"
+	"github.com/ManuGH/xg2g/internal/procgroup"
 	"github.com/ManuGH/xg2g/internal/telemetry"
 	"github.com/ManuGH/xg2g/internal/transcoder"
 	"github.com/rs/zerolog"
@@ -81,11 +82,12 @@ func (t *Transcoder) TranscodeStream(ctx context.Context, w http.ResponseWriter,
 	var lastStats *FFmpegStats
 
 	defer func() {
+		duration := time.Since(startTime)
 		// Log stream end (Lifecycle Event)
 		event := logger.Info().
 			Str("event", "stream_end").
 			Str("exit_reason", exitReason).
-			Dur("duration_ms", time.Since(startTime)).
+			Dur("duration_ms", duration).
 			Int64("bytes_out", bytesOut)
 
 		if lastStats != nil {
@@ -93,6 +95,9 @@ func (t *Transcoder) TranscodeStream(ctx context.Context, w http.ResponseWriter,
 				Float64("ffmpeg_last_bitrate_kbps", lastStats.BitrateKBPS)
 		}
 		event.Msg("transcode session ended")
+
+		// P2.5 Observability Metric
+		metrics.ObserveStreamSession("transcode", exitReason, duration.Seconds())
 	}()
 
 	// Determine list of codecs to try
@@ -123,9 +128,10 @@ func (t *Transcoder) TranscodeStream(ctx context.Context, w http.ResponseWriter,
 
 		// Create a child context for this attempt implies we should respect parent cancellation
 		attemptCtx, cancel := context.WithCancel(ctx)
-		defer cancel()
 
 		err := t.streamTranscodeInternal(attemptCtx, w, r, targetURL, codec, &bytesOut, &exitReason, &lastStats)
+		cancel() // Ensure context is cancelled immediately after attempt
+
 		if err == nil {
 			// Success! Stream finished normally (client disconnected or stream ended)
 			if exitReason == "internal_error" {
@@ -255,6 +261,9 @@ func (t *Transcoder) streamTranscodeInternal(ctx context.Context, w http.Respons
 	// Create ffmpeg command
 	cmd := exec.CommandContext(ctx, t.Config.FFmpegPath, args...) // #nosec G204
 
+	// Create process group for robust cleanup
+	procgroup.Set(cmd)
+
 	// Connect pipes
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -269,11 +278,44 @@ func (t *Transcoder) streamTranscodeInternal(ctx context.Context, w http.Respons
 		return fmt.Errorf("create stderr pipe: %w", err)
 	}
 
+	var started bool
+	var waitErr error
+
+	// Wait channel for robust shutdown pattern
+	waitCh := make(chan error, 1)
+
+	// Robust cleanup: Ensure process is killed and waited for
+	defer func() {
+		// Panic safety: recover and ensure cleanup runs
+		if r := recover(); r != nil {
+			log.Error().Interface("panic", r).Msg("Transcoder panic recovered, cleaning up ffmpeg")
+		}
+
+		if started {
+			// Robust Shutdown Pattern via helper
+			waitErr = procgroup.Terminate(cmd, waitCh, 2*time.Second)
+
+			// Log error via defer since we are past return
+			if waitErr != nil {
+				// Only log error if it's not a context cancellation/kill
+				if ctx.Err() == nil && !strings.Contains(waitErr.Error(), "killed") {
+					logger.Error().Err(waitErr).Msg("Transcoder process exited with error")
+				}
+			}
+		}
+	}()
+
 	// Start ffmpeg
 	if err := cmd.Start(); err != nil {
 		span.RecordError(err)
 		return fmt.Errorf("start ffmpeg: %w", err)
 	}
+	started = true
+
+	// Start waiter
+	go func() {
+		waitCh <- cmd.Wait()
+	}()
 
 	// Capture Stderr
 	// Capture Stderr with Stats Parsing
@@ -342,10 +384,7 @@ func (t *Transcoder) streamTranscodeInternal(ctx context.Context, w http.Respons
 
 	if startErr != nil {
 		// Failed to read ANY data. This means ffmpeg likely died immediately or stream is empty.
-		// Kill process just in case
-		if cmd.Process != nil {
-			_ = cmd.Process.Kill()
-		}
+		// Defer will handle cleanup
 		return fmt.Errorf("failed to read first chunk from ffmpeg (codec likely failed): %w", startErr)
 	}
 
@@ -359,9 +398,6 @@ func (t *Transcoder) streamTranscodeInternal(ctx context.Context, w http.Respons
 	// Write the first chunk we peered
 	if _, err := w.Write(firstChunk[:n]); err != nil {
 		// Client disconnected probably
-		if cmd.Process != nil {
-			_ = cmd.Process.Kill()
-		}
 		return nil
 	}
 
@@ -399,13 +435,20 @@ func (t *Transcoder) streamTranscodeInternal(ctx context.Context, w http.Respons
 	// Wait for stderr to finish (ensure we got all logs)
 	stderrWg.Wait()
 
-	if err := cmd.Wait(); err != nil { // Wait for exit
-		log.Error().Err(err).Msg("Transcoder failed")
-	}
+	// Wait for defer to handle process cleanup/waiting
+	// We return nil here, defer will populate waitErr inside the select.
+	// But defer runs AFTER return.
+	// So we can't inspect waitErr here.
+	// However, we don't return waitErr. We just log it if it's "bad".
+	// The pattern expects us to trigger the defer.
 
-	if *exitReason == "internal_error" {
-		*exitReason = "success" // If we reached here without setting specific error
-	}
+	// Wait, we need to know if we should log the error logic below.
+	// The original code:
+	// if waitErr != nil ... log ...
+
+	// With the new pattern, waitErr is set in defer.
+	// We can't log it *after* defer inside the function.
+	// We should log it *inside* the defer.
 
 	return nil
 }
@@ -450,11 +493,12 @@ func (t *Transcoder) RepairH264Stream(ctx context.Context, w http.ResponseWriter
 	var lastStats *FFmpegStats
 
 	defer func() {
+		duration := time.Since(startTime)
 		// Log stream end (Lifecycle Event)
 		event := logger.Info().
 			Str("event", "stream_end").
 			Str("exit_reason", exitReason).
-			Dur("duration_ms", time.Since(startTime)).
+			Dur("duration_ms", duration).
 			Int64("bytes_out", bytesOut)
 
 		if lastStats != nil {
@@ -462,6 +506,9 @@ func (t *Transcoder) RepairH264Stream(ctx context.Context, w http.ResponseWriter
 				Float64("ffmpeg_last_bitrate_kbps", lastStats.BitrateKBPS)
 		}
 		event.Msg("repair session ended")
+
+		// P2.5 Observability Metric
+		metrics.ObserveStreamSession("repair", exitReason, duration.Seconds())
 	}()
 
 	// Start tracing span
@@ -580,6 +627,9 @@ func (t *Transcoder) RepairH264Stream(ctx context.Context, w http.ResponseWriter
 	// #nosec G204 -- ffmpegPath is sanitized above and args contain only predefined options
 	cmd := exec.CommandContext(ctx, ffmpegPath, args...) // #nosec G204
 
+	// Create process group for robust cleanup
+	procgroup.Set(cmd)
+
 	// Connect pipes
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -596,6 +646,28 @@ func (t *Transcoder) RepairH264Stream(ctx context.Context, w http.ResponseWriter
 		return fmt.Errorf("create stderr pipe: %w", err)
 	}
 
+	// Robust cleanup wait channel
+	waitCh := make(chan error, 1)
+	var started bool
+	var waitErr error
+
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Error().Interface("panic", r).Msg("H.264 Repair panic recovered")
+		}
+		if started {
+			// Robust Shutdown Pattern via helper
+			waitErr = procgroup.Terminate(cmd, waitCh, 2*time.Second)
+
+			// Log error if it's not a context cancellation/kill
+			if waitErr != nil {
+				if ctx.Err() == nil && !strings.Contains(waitErr.Error(), "killed") {
+					logger.Debug().Err(waitErr).Msg("ffmpeg H.264 repair exited with error")
+				}
+			}
+		}
+	}()
+
 	// Start ffmpeg
 	span.AddEvent("starting ffmpeg H.264 repair")
 	metrics.IncFFmpegRestart()
@@ -604,6 +676,12 @@ func (t *Transcoder) RepairH264Stream(ctx context.Context, w http.ResponseWriter
 		span.SetStatus(codes.Error, "failed to start ffmpeg")
 		return fmt.Errorf("start ffmpeg: %w", err)
 	}
+	started = true
+
+	// Start waiter
+	go func() {
+		waitCh <- cmd.Wait()
+	}()
 
 	// Log ffmpeg stderr in background with stats
 	var stderrWg sync.WaitGroup
@@ -699,14 +777,6 @@ func (t *Transcoder) RepairH264Stream(ctx context.Context, w http.ResponseWriter
 
 	// Wait for stderr log to finish
 	stderrWg.Wait()
-
-	// Wait for ffmpeg to exit
-	if err := cmd.Wait(); err != nil {
-		// Only log error if it's not a context cancellation
-		if ctx.Err() == nil {
-			logger.Debug().Err(err).Msg("ffmpeg H.264 repair exited with error")
-		}
-	}
 
 	if exitReason == "internal_error" {
 		exitReason = "success"

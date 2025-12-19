@@ -21,6 +21,7 @@ type Config struct {
 	Level   string    // optional log level ("debug", "info", etc.)
 	Output  io.Writer // optional writer (defaults to os.Stdout)
 	Service string    // optional service name attached to every log entry
+	Version string    // optional version attached to every log entry
 }
 
 var (
@@ -38,10 +39,6 @@ func Configure(cfg Config) {
 		if parsed, err := zerolog.ParseLevel(cfg.Level); err == nil {
 			level = parsed
 		}
-	} else if envLevel, ok := os.LookupEnv("LOG_LEVEL"); ok && envLevel != "" {
-		if parsed, err := zerolog.ParseLevel(envLevel); err == nil {
-			level = parsed
-		}
 	}
 	zerolog.SetGlobalLevel(level)
 	zerolog.TimeFieldFormat = time.RFC3339
@@ -53,17 +50,12 @@ func Configure(cfg Config) {
 
 	service := cfg.Service
 	if service == "" {
-		if envService, ok := os.LookupEnv("LOG_SERVICE"); ok && envService != "" {
-			service = envService
-		} else {
+		if service == "" {
 			service = "xg2g"
 		}
 	}
 
-	version := ""
-	if envVersion, ok := os.LookupEnv("VERSION"); ok {
-		version = envVersion
-	}
+	version := cfg.Version
 
 	base = zerolog.New(writer).With().
 		Timestamp().
@@ -234,6 +226,5 @@ func GetRecentLogs() []LogEntry {
 }
 
 //nolint:gochecknoinits // Required to ensure logger is initialized before any usage
-func init() {
-	Configure(Config{})
-}
+// Init removed to prevent side-effect environment reads.
+// Configure must be called explicitly, or logger() will lazy-init with defaults.

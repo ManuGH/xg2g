@@ -1,0 +1,42 @@
+name: Lint Invariants
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check-env-access:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enforce Config Determinism (Env Reads)
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Scanning for direct environment access (os.Getenv, os.LookupEnv, etc) outside internal/config..."
+
+          # We search recursively in internal/ for the banned patterns.
+          # We exclude internal/config (authorized).
+
+          # TEMP EXCLUSIONS (P2 debt): remove these as items land.
+          # - internal/daemon/bootstrap.go (Telemetry)
+
+          VIOLATIONS=$(grep -RIn --include='*.go' -E '\b(os|syscall)\.(Getenv|LookupEnv|Environ|ExpandEnv|Expand)\b' internal/ \
+            | grep -vE '^(internal/config/|internal/daemon/bootstrap\.go)' \
+            || true)
+            
+          if [ -n "$VIOLATIONS" ]; then
+            echo "ERROR: Direct environment access detected outside authorized packages:"
+            echo "$VIOLATIONS"
+            echo ""
+            echo "Invariant Violation: Config Determinism (Section 3.1)"
+            echo "Only internal/config is authorized to read process environment variables."
+            echo "Please use config.AppConfig or internal/config helpers."
+            exit 1
+          fi
+
+          echo "✅ No unauthorized environment access detected."

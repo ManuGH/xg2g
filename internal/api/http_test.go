@@ -272,8 +272,8 @@ func TestSecureFileHandlerSymlinkPolicy(t *testing.T) {
 	require.NoError(t, os.MkdirAll(subDir, 0o750))
 	require.NoError(t, os.Mkdir(outsideDir, 0o750))
 
-	testFile := filepath.Join(dataDir, "test.m3u")
-	subFile := filepath.Join(subDir, "sub.m3u")
+	testFile := filepath.Join(dataDir, "playlist.m3u")
+	subFile := filepath.Join(subDir, "playlist.m3u")
 	outsideFile := filepath.Join(outsideDir, "secret.txt")
 
 	require.NoError(t, os.WriteFile(testFile, []byte("m3u content"), 0o600))
@@ -302,16 +302,16 @@ func TestSecureFileHandlerSymlinkPolicy(t *testing.T) {
 		expectedStatus int
 		expectedBody   string
 	}{
-		{name: "B6: valid file access", method: http.MethodGet, path: "/files/test.m3u", expectedStatus: http.StatusOK, expectedBody: "m3u content"},
-		{name: "B7: subdirectory file access", method: http.MethodGet, path: "/files/subdir/sub.m3u", expectedStatus: http.StatusOK, expectedBody: "sub content"},
+		{name: "B6: valid file access", method: http.MethodGet, path: "/files/playlist.m3u", expectedStatus: http.StatusOK, expectedBody: "m3u content"},
+		{name: "B7: subdirectory file access", method: http.MethodGet, path: "/files/subdir/playlist.m3u", expectedStatus: http.StatusOK, expectedBody: "sub content"},
 		{name: "B8: symlink to outside file", method: http.MethodGet, path: "/files/evil_symlink", expectedStatus: http.StatusForbidden, expectedBody: "Forbidden"},
 		{name: "B9: symlink chain to outside", method: http.MethodGet, path: "/files/link1", expectedStatus: http.StatusForbidden, expectedBody: "Forbidden"},
 		{name: "B10: path traversal with ..", method: http.MethodGet, path: "/files/../outside/secret.txt", expectedStatus: http.StatusForbidden, expectedBody: "Forbidden"},
 		{name: "B11: symlink directory traversal", method: http.MethodGet, path: "/files/evil_dir/secret.txt", expectedStatus: http.StatusForbidden, expectedBody: "Forbidden"},
 		{name: "B12: URL-encoded traversal %2e%2e", method: http.MethodGet, path: "/files/%2e%2e/outside/secret.txt", expectedStatus: http.StatusForbidden, expectedBody: "Forbidden"},
 		{name: "directory access blocked", method: http.MethodGet, path: "/files/subdir/", expectedStatus: http.StatusForbidden, expectedBody: "Forbidden"},
-		{name: "nonexistent file", method: http.MethodGet, path: "/files/nonexistent.txt", expectedStatus: http.StatusNotFound, expectedBody: "Not found"},
-		{name: "method not allowed", method: http.MethodPost, path: "/files/test.m3u", expectedStatus: http.StatusMethodNotAllowed, expectedBody: "Method not allowed"},
+		{name: "nonexistent file", method: http.MethodGet, path: "/files/epg.xml", expectedStatus: http.StatusNotFound, expectedBody: "Not found"},
+		{name: "method not allowed", method: http.MethodPost, path: "/files/playlist.m3u", expectedStatus: http.StatusMethodNotAllowed, expectedBody: "Method not allowed"},
 	}
 
 	for _, tt := range tests {

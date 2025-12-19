@@ -5,6 +5,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -219,6 +221,89 @@ func TestHandleGetRequest(t *testing.T) {
 
 	if body := rec.Body.String(); body != "stream data" {
 		t.Errorf("got body %q, want %q", body, "stream data")
+	}
+}
+
+func TestValidateUpstream_Strict(t *testing.T) {
+	s := &Server{
+		receiverHost: "192.168.1.10",
+		// targetURL is nil
+	}
+
+	tests := []struct {
+		upstream string
+		wantErr  bool
+	}{
+		{"http://192.168.1.10/stream", false},
+		{"http://192.168.1.10:8001/stream", false},
+		{"http://localhost/stream", true}, // Not in allowed list (strict match)
+		{"http://127.0.0.1/stream", true}, // Not in allowed list
+		{"http://google.com/stream", true},
+		{"http://169.254.169.254/latest/meta-data", true}, // SSRF attempt
+		{"file:///etc/passwd", true},                      // Scheme denied
+		{"http://user@192.168.1.10/stream", true},         // User info denied
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.upstream, func(t *testing.T) {
+			if err := s.validateUpstream(tt.upstream); (err != nil) != tt.wantErr {
+				t.Errorf("validateUpstream(%q) error = %v, wantErr %v", tt.upstream, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestHandleRequest_Auth(t *testing.T) {
+	logger := zerolog.New(io.Discard)
+	s := &Server{
+		apiToken: "secret-token",
+		logger:   logger,
+		registry: NewRegistry(),
+	}
+
+	// Mock target to prevent nil panic if proxy tries to serve (though we expect auth fail first)
+	// But if auth succeeds, it calls s.proxy.ServeHTTP which might be nil.
+	// We only test Auth Failure here. For success, we need a mock proxy.
+
+	tests := []struct {
+		name       string
+		token      string
+		queryToken string
+		wantStatus int
+	}{
+		{"No token", "", "", http.StatusUnauthorized},
+		{"Invalid token", "wrong", "", http.StatusUnauthorized},
+		{"Valid header token", "secret-token", "", http.StatusOK},
+		{"Valid query token", "", "secret-token", http.StatusOK},
+	}
+
+	// We need a dummy proxy for success cases
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target.Close()
+	u, _ := url.Parse(target.URL)
+	s.proxy = httputil.NewSingleHostReverseProxy(u)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/stream/ref", nil)
+			if tt.token != "" {
+				req.Header.Set("X-API-Token", tt.token)
+			}
+			if tt.queryToken != "" {
+				q := req.URL.Query()
+				q.Set("token", tt.queryToken)
+				req.URL.RawQuery = q.Encode()
+			}
+
+			w := httptest.NewRecorder()
+			s.handleRequest(w, req)
+
+			if w.Code != tt.wantStatus {
+				t.Errorf("Status = %v, want %v", w.Code, tt.wantStatus)
+			}
+		})
 	}
 }
 

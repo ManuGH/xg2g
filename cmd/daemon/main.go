@@ -57,6 +57,13 @@ func main() {
 		os.Exit(0)
 	}
 
+	// Configure logger with safe defaults until config is loaded
+	xglog.Configure(xglog.Config{
+		Level:   "info",
+		Service: "xg2g",
+		Version: version,
+	})
+
 	logger := xglog.WithComponent("daemon")
 
 	// Create a context that listens for the interrupt signal from the OS
@@ -83,12 +90,20 @@ func main() {
 	loader := config.NewLoader(effectiveConfigPath, version)
 	cfg, err := loader.Load()
 	if err != nil {
+		// Log failure using default logger
 		logger.Fatal().
 			Err(err).
 			Str("event", "config.load_failed").
 			Str("config_path", effectiveConfigPath).
 			Msg("failed to load configuration")
 	}
+
+	// Re-configure logger with loaded configuration
+	xglog.Configure(xglog.Config{
+		Level:   cfg.LogLevel,
+		Service: cfg.LogService,
+		Version: cfg.Version,
+	})
 
 	// Log config source
 	if explicitConfigPath != "" {

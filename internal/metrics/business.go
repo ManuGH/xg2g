@@ -108,6 +108,12 @@ var (
 		Name: "xg2g_ffmpeg_restarts_total",
 		Help: "Total number of ffmpeg process restarts",
 	})
+
+	// Picon metrics
+	piconFetchesTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "xg2g_picon_fetches_total",
+		Help: "Total number of picon fetch attempts by result",
+	}, []string{"result"}) // result=hit_disk|downloaded|notfound|error|negcache|dedup|dropped
 )
 
 func init() {
@@ -208,4 +214,61 @@ func IncTranscodeError() {
 // IncFFmpegRestart increments the ffmpeg restart counter.
 func IncFFmpegRestart() {
 	ffmpegRestartsTotal.Inc()
+}
+
+// IncPiconFetch increments the picon fetch counter by result.
+func IncPiconFetch(result string) {
+	piconFetchesTotal.WithLabelValues(result).Inc()
+}
+
+// P2.5 Observability Metrics
+
+var (
+	streamSessionsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "xg2g_stream_sessions_total",
+		Help: "Total number of stream sessions by mode and outcome",
+	}, []string{"mode", "outcome"}) // mode=direct|transcode|repair|hls_*, outcome=success|client_disconnect|ffmpeg_exit|...
+
+	streamSessionDurationSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "xg2g_stream_session_duration_seconds",
+		Help:    "Duration of stream sessions in seconds",
+		Buckets: []float64{1, 5, 15, 30, 60, 120, 300, 600, 1800, 3600, 7200}, // Up to 2h
+	}, []string{"mode", "outcome"})
+
+	procTerminateTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "xg2g_proc_terminate_total",
+		Help: "Total process group termination attempts by signal and outcome",
+	}, []string{"sig", "outcome"}) // sig=SIGTERM|SIGKILL, outcome=sent|esrch|error
+
+	procWaitTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "xg2g_proc_wait_total",
+		Help: "Total process wait outcomes",
+	}, []string{"outcome"}) // outcome=exit0|exit_nonzero|forced_exit0|forced_error
+
+	hlsStartupSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "xg2g_hls_startup_seconds",
+		Help:    "Time until first HLS segment is ready",
+		Buckets: []float64{0.1, 0.5, 1, 2, 5, 10, 30},
+	}, []string{"profile"}) // profile=generic|safari|llhls
+)
+
+// ObserveStreamSession records a stream session's duration and outcome.
+func ObserveStreamSession(mode, outcome string, duration float64) {
+	streamSessionsTotal.WithLabelValues(mode, outcome).Inc()
+	streamSessionDurationSeconds.WithLabelValues(mode, outcome).Observe(duration)
+}
+
+// IncProcTerminate records a process termination attempt.
+func IncProcTerminate(sig, outcome string) {
+	procTerminateTotal.WithLabelValues(sig, outcome).Inc()
+}
+
+// IncProcWait records a process wait outcome.
+func IncProcWait(outcome string) {
+	procWaitTotal.WithLabelValues(outcome).Inc()
+}
+
+// ObserveHLSStartup records HLS startup latency.
+func ObserveHLSStartup(profile string, duration float64) {
+	hlsStartupSeconds.WithLabelValues(profile).Observe(duration)
 }

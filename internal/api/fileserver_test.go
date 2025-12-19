@@ -13,10 +13,61 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 )
 
+func TestSecureFileServer_AllowlistDenylist(t *testing.T) {
+	// Create a temporary directory with test files
+	tmpDir := t.TempDir()
+
+	// Create allowed files
+	allowed := []string{"playlist.m3u", "xmltv.xml", "epg.xml"}
+	for _, name := range allowed {
+		if err := os.WriteFile(filepath.Join(tmpDir, name), []byte("allowed"), 0600); err != nil {
+			t.Fatalf("Failed to create %s: %v", name, err)
+		}
+	}
+
+	// Create denied/sensitive files
+	denied := []string{"config.yaml", ".env", "secret.key", "other.txt"}
+	for _, name := range denied {
+		if err := os.WriteFile(filepath.Join(tmpDir, name), []byte("secret"), 0600); err != nil {
+			t.Fatalf("Failed to create %s: %v", name, err)
+		}
+	}
+
+	cfg := config.AppConfig{DataDir: tmpDir, Version: "test"}
+	srv := New(cfg, nil)
+	handler := http.StripPrefix("/files/", srv.secureFileServer())
+
+	tests := []struct {
+		filename   string
+		wantStatus int
+	}{
+		{"playlist.m3u", http.StatusOK},
+		{"xmltv.xml", http.StatusOK},
+		{"epg.xml", http.StatusOK},
+		{"config.yaml", http.StatusForbidden},
+		{"playlist.m3u.bak", http.StatusForbidden},
+		{".env", http.StatusForbidden},
+		{"secret.key", http.StatusForbidden},
+		{"other.txt", http.StatusForbidden}, // Default deny
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.filename, func(t *testing.T) {
+			// Ensure the request path mimics the router logic
+			req := httptest.NewRequest(http.MethodGet, "/files/"+tt.filename, nil)
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, req)
+			if w.Code != tt.wantStatus {
+				t.Errorf("File %s: status = %v, want %v", tt.filename, w.Code, tt.wantStatus)
+			}
+		})
+	}
+}
+
 func TestSecureFileServer_RangeRequests(t *testing.T) {
 	// Create a temporary directory with test files
 	tmpDir := t.TempDir()
-	testFile := filepath.Join(tmpDir, "test.m3u")
+	testFile := filepath.Join(tmpDir, "playlist.m3u")
 	testContent := "#EXTM3U\n#EXTINF:-1,Channel 1\nhttp://example.com/stream1\n#EXTINF:-1,Channel 2\nhttp://example.com/stream2\n"
 	if err := os.WriteFile(testFile, []byte(testContent), 0600); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
@@ -77,7 +128,7 @@ func TestSecureFileServer_RangeRequests(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "/files/test.m3u", nil)
+			req := httptest.NewRequest(http.MethodGet, "/files/playlist.m3u", nil)
 			if tt.rangeHeader != "" {
 				req.Header.Set("Range", tt.rangeHeader)
 			}
@@ -204,7 +255,7 @@ func TestSecureFileServer_PathTraversal(t *testing.T) {
 		},
 		{
 			name:       "Valid file request",
-			path:       "/files/valid.m3u",
+			path:       "/files/playlist.m3u",
 			wantStatus: http.StatusNotFound, // File doesn't exist, but path is valid
 		},
 	}
@@ -230,9 +281,8 @@ func TestSecureFileServer_ContentType(t *testing.T) {
 	// Create test files with different extensions
 	files := map[string]string{
 		"playlist.m3u": "#EXTM3U\n",
-		"channels.xml": "<?xml version=\"1.0\"?>\n",
-		"epg.m3u8":     "#EXTM3U\n",
-		"data.txt":     "test data\n",
+		"xmltv.xml":    "<?xml version=\"1.0\"?>\n",
+		"epg.xml":      "<?xml version=\"1.0\"?>\n",
 	}
 
 	for name, content := range files {
@@ -259,13 +309,13 @@ func TestSecureFileServer_ContentType(t *testing.T) {
 			wantContentType: "audio/x-mpegurl; charset=utf-8",
 		},
 		{
-			name:            "M3U8 file",
-			file:            "epg.m3u8",
-			wantContentType: "audio/x-mpegurl; charset=utf-8",
+			name:            "XMLTV file",
+			file:            "xmltv.xml",
+			wantContentType: "application/xml; charset=utf-8",
 		},
 		{
-			name:            "XML file",
-			file:            "channels.xml",
+			name:            "EPG XML file",
+			file:            "epg.xml",
 			wantContentType: "application/xml; charset=utf-8",
 		},
 	}
@@ -302,7 +352,7 @@ func TestSecureFileServer_MethodNotAllowed(t *testing.T) {
 
 	for _, method := range methods {
 		t.Run(method, func(t *testing.T) {
-			req := httptest.NewRequest(method, "/files/test.m3u", nil)
+			req := httptest.NewRequest(method, "/files/playlist.m3u", nil)
 			w := httptest.NewRecorder()
 
 			handler := http.StripPrefix("/files/", srv.secureFileServer())

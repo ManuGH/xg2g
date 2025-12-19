@@ -4,6 +4,7 @@ package middleware
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"time"
 
@@ -19,6 +20,8 @@ type RateLimitConfig struct {
 	// KeyFunc extracts the rate limit key from the request (e.g., IP address)
 	// If nil, defaults to IP-based rate limiting
 	KeyFunc func(r *http.Request) (string, error)
+	// Whitelist is a list of IPs or CIDRs to exempt from rate limiting
+	Whitelist []string
 }
 
 // RateLimit creates a rate limiting middleware using the httprate library.
@@ -31,7 +34,7 @@ func RateLimit(cfg RateLimitConfig) func(http.Handler) http.Handler {
 	}
 
 	// Create httprate limiter with sliding window
-	return httprate.Limit(
+	limiter := httprate.Limit(
 		cfg.RequestLimit,
 		cfg.WindowSize,
 		httprate.WithKeyFuncs(keyFunc),
@@ -39,6 +42,7 @@ func RateLimit(cfg RateLimitConfig) func(http.Handler) http.Handler {
 			// Custom 429 response with Retry-After header
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Retry-After", fmt.Sprintf("%d", int(cfg.WindowSize.Seconds())))
+			w.Header().Set("X-RateLimit-Limit", fmt.Sprintf("%d", cfg.RequestLimit))
 			w.WriteHeader(http.StatusTooManyRequests)
 
 			// Write JSON error response
@@ -46,10 +50,29 @@ func RateLimit(cfg RateLimitConfig) func(http.Handler) http.Handler {
 			_, _ = w.Write([]byte(resp))
 		}),
 	)
+
+	// Wrap with whitelist check
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Check whitelist
+			if len(cfg.Whitelist) > 0 {
+				ip, _, err := net.SplitHostPort(r.RemoteAddr)
+				if err != nil {
+					ip = r.RemoteAddr
+				}
+				for _, allowed := range cfg.Whitelist {
+					if allowed == ip { // TODO: Support CIDR
+						next.ServeHTTP(w, r)
+						return
+					}
+				}
+			}
+			// Delegate to limiter
+			limiter(next).ServeHTTP(w, r)
+		})
+	}
 }
 
-// RefreshRateLimit returns a rate limiter configured for expensive refresh operations.
-// Default: 10 requests per minute per IP to prevent abuse of expensive operations.
 func RefreshRateLimit() func(http.Handler) http.Handler {
 	return RateLimit(RateLimitConfig{
 		RequestLimit: 10,
@@ -58,7 +81,7 @@ func RefreshRateLimit() func(http.Handler) http.Handler {
 }
 
 // APIRateLimit returns a rate limiter configured via AppConfig.
-func APIRateLimit(enabled bool, rps int) func(http.Handler) http.Handler {
+func APIRateLimit(enabled bool, rps int, burst int, whitelist []string) func(http.Handler) http.Handler {
 	if !enabled {
 		// Passthrough if disabled
 		return func(next http.Handler) http.Handler {
@@ -70,11 +93,13 @@ func APIRateLimit(enabled bool, rps int) func(http.Handler) http.Handler {
 		rps = 100 // Default safety net
 	}
 
-	// Convert RPS to Per-Minute for smoother sliding window
+	// Sliding window logic: Window is 1 minute.
+	// We map RPS to requests per minute.
 	limit := rps * 60
 
 	return RateLimit(RateLimitConfig{
 		RequestLimit: limit,
 		WindowSize:   time.Minute,
+		Whitelist:    whitelist,
 	})
 }

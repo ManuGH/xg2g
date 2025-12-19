@@ -54,7 +54,7 @@ func readStreamProxyRuntime(getenv func(string) string) StreamProxyRuntime {
 		if port := strings.TrimSpace(getString(getenv, "XG2G_PROXY_PORT", "")); port != "" {
 			listen = ":" + port
 		} else {
-			listen = ":18000"
+			listen = "127.0.0.1:18000"
 		}
 	}
 

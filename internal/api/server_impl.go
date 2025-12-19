@@ -454,20 +454,7 @@ func (s *Server) handleNowNextEPG(w http.ResponseWriter, r *http.Request) {
 	snap := s.snap
 	s.mu.RUnlock()
 
-	enableHTTP2 := snap.Runtime.OpenWebIF.HTTPEnableHTTP2
-	client := openwebif.NewWithPort(cfg.OWIBase, cfg.StreamPort, openwebif.Options{
-		Timeout:         cfg.OWITimeout,
-		Username:        cfg.OWIUsername,
-		Password:        cfg.OWIPassword,
-		UseWebIFStreams: cfg.UseWebIFStreams,
-		StreamBaseURL:   snap.Runtime.OpenWebIF.StreamBaseURL,
-
-		HTTPMaxIdleConns:        snap.Runtime.OpenWebIF.HTTPMaxIdleConns,
-		HTTPMaxIdleConnsPerHost: snap.Runtime.OpenWebIF.HTTPMaxIdleConnsPerHost,
-		HTTPMaxConnsPerHost:     snap.Runtime.OpenWebIF.HTTPMaxConnsPerHost,
-		HTTPIdleTimeout:         snap.Runtime.OpenWebIF.HTTPIdleTimeout,
-		HTTPEnableHTTP2:         &enableHTTP2,
-	})
+	client := s.newOpenWebIFClient(cfg, snap)
 
 	now := time.Now()
 	items := make([]nowNextItem, len(req.Services))
@@ -1379,9 +1366,33 @@ func writeProblem(w http.ResponseWriter, status int, problemType, title string, 
 }
 
 // Helper to create client from config (refactored from handleNowNextEPG)
+// Helper to get or create cached client from config
+// Uses Double-Checked Locking optimization for performance
 func (s *Server) newOpenWebIFClient(cfg config.AppConfig, snap config.Snapshot) *openwebif.Client {
+	// 1. Fast path: Read lock check
+	s.mu.RLock()
+	cachedClient := s.owiClient
+	cachedEpoch := s.owiEpoch
+	s.mu.RUnlock()
+
+	// If cached match, assume safe to use (Client is thread-safe)
+	if cachedClient != nil && cachedEpoch == snap.Epoch {
+		return cachedClient
+	}
+
+	// 2. Slow path: Write lock
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Double check
+	if s.owiClient != nil && s.owiEpoch == snap.Epoch {
+		return s.owiClient
+	}
+
+	// Rebuild
+	log.L().Debug().Uint64("epoch", snap.Epoch).Msg("recreating OpenWebIF client")
 	enableHTTP2 := snap.Runtime.OpenWebIF.HTTPEnableHTTP2
-	return openwebif.NewWithPort(cfg.OWIBase, cfg.StreamPort, openwebif.Options{
+	client := openwebif.NewWithPort(cfg.OWIBase, cfg.StreamPort, openwebif.Options{
 		Timeout:                 cfg.OWITimeout,
 		Username:                cfg.OWIUsername,
 		Password:                cfg.OWIPassword,
@@ -1393,4 +1404,9 @@ func (s *Server) newOpenWebIFClient(cfg config.AppConfig, snap config.Snapshot) 
 		HTTPIdleTimeout:         snap.Runtime.OpenWebIF.HTTPIdleTimeout,
 		HTTPEnableHTTP2:         &enableHTTP2,
 	})
+
+	s.owiClient = client
+	s.owiEpoch = snap.Epoch
+
+	return client
 }

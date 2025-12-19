@@ -620,6 +620,58 @@ epg:
 	// This is intentional - we only fixed EPG fields for now
 }
 
+func TestAuthAnonymousEnv(t *testing.T) {
+	// Cleanup env after test
+	defer func() {
+		os.Unsetenv("XG2G_AUTH_ANONYMOUS")
+	}()
+
+	// Set required OWIBase
+	t.Setenv("XG2G_OWI_BASE", "http://example.com")
+
+	tests := []struct {
+		name    string
+		envKey  string
+		envVal  string
+		check   func(*AppConfig) bool
+		wantErr bool
+	}{
+		{
+			name:   "Auth Anonymous True",
+			envKey: "XG2G_AUTH_ANONYMOUS",
+			envVal: "true",
+			check: func(c *AppConfig) bool {
+				return c.AuthAnonymous == true
+			},
+		},
+		{
+			name:   "Auth Anonymous False",
+			envKey: "XG2G_AUTH_ANONYMOUS",
+			envVal: "false",
+			check: func(c *AppConfig) bool {
+				return c.AuthAnonymous == false
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.envKey != "" {
+				t.Setenv(tt.envKey, tt.envVal)
+			}
+			loader := NewLoader("", "test")
+			cfg, err := loader.Load()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Load() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.check(&cfg) {
+				t.Errorf("Config check failed for assertion")
+			}
+		})
+	}
+}
+
 func containsString(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && findSubstring(s, substr))
 }

@@ -28,6 +28,7 @@ type FileConfig struct {
 	API       APIConfig         `yaml:"api"`
 	Metrics   MetricsConfig     `yaml:"metrics,omitempty"`
 	Picons    PiconsConfig      `yaml:"picons,omitempty"`
+	HDHR      HDHRConfig        `yaml:"hdhr,omitempty"`
 }
 
 // OpenWebIFConfig holds OpenWebIF client configuration
@@ -58,16 +59,19 @@ type EPGConfig struct {
 
 // APIConfig holds API server configuration
 type APIConfig struct {
-	Token      string          `yaml:"token,omitempty"`
-	ListenAddr string          `yaml:"listenAddr,omitempty"`
-	RateLimit  RateLimitConfig `yaml:"rateLimit,omitempty"`
+	Token          string          `yaml:"token,omitempty"`
+	ListenAddr     string          `yaml:"listenAddr,omitempty"`
+	RateLimit      RateLimitConfig `yaml:"rateLimit,omitempty"`
+	AllowedOrigins []string        `yaml:"allowedOrigins,omitempty"`
 }
 
 // RateLimitConfig holds rate limiting settings
 type RateLimitConfig struct {
-	Enabled *bool `yaml:"enabled,omitempty"` // Pointer to distinguish from zero value
-	Global  *int  `yaml:"global,omitempty"`  // Requests per second
-	Auth    *int  `yaml:"auth,omitempty"`    // Requests per minute (stricter)
+	Enabled   *bool    `yaml:"enabled,omitempty"`   // Pointer to distinguish from zero value
+	Global    *int     `yaml:"global,omitempty"`    // Requests per second
+	Auth      *int     `yaml:"auth,omitempty"`      // Requests per minute (stricter)
+	Burst     *int     `yaml:"burst,omitempty"`     // Burst capacity
+	Whitelist []string `yaml:"whitelist,omitempty"` // CIDRs or IPs to exempt
 }
 
 // MetricsConfig holds Prometheus metrics configuration
@@ -82,11 +86,24 @@ type PiconsConfig struct {
 	BaseURL string `yaml:"baseUrl,omitempty"`
 }
 
+// HDHRConfig holds HDHomeRun emulation configuration (optional pointers for YAML merge)
+type HDHRConfig struct {
+	Enabled      *bool  `yaml:"enabled,omitempty"`
+	DeviceID     string `yaml:"deviceId,omitempty"`
+	FriendlyName string `yaml:"friendlyName,omitempty"`
+	ModelNumber  string `yaml:"modelNumber,omitempty"`
+	FirmwareName string `yaml:"firmwareName,omitempty"`
+	BaseURL      string `yaml:"baseUrl,omitempty"`
+	TunerCount   *int   `yaml:"tunerCount,omitempty"`
+	PlexForceHLS *bool  `yaml:"plexForceHls,omitempty"`
+}
+
 // AppConfig holds all configuration for the application
 type AppConfig struct {
 	Version         string
 	DataDir         string
 	LogLevel        string
+	LogService      string
 	OWIBase         string
 	OWIUsername     string // Optional: HTTP Basic Auth username
 	OWIPassword     string // Optional: HTTP Basic Auth password
@@ -98,6 +115,7 @@ type AppConfig struct {
 	UseWebIFStreams bool
 	APIToken        string // Optional: for securing the /api/refresh endpoint
 	APIListenAddr   string // Optional: API listen address (if set via config.yaml)
+	TrustedProxies  string // Comma-separated list of trusted CIDRs
 	MetricsEnabled  bool   // Optional: enable Prometheus metrics server
 	MetricsAddr     string // Optional: metrics listen address (if enabled)
 	OWITimeout      time.Duration
@@ -126,12 +144,17 @@ type AppConfig struct {
 	RateLimitEnabled   bool // Enable rate limiting
 	RateLimitGlobal    int  // Requests per second (global)
 	RateLimitAuth      int  // Requests per minute (auth)
+	RateLimitBurst     int
+	RateLimitWhitelist []string
+	AllowedOrigins     []string
 
 	// Stream Proxy
 	MaxConcurrentStreams int // Maximum concurrent streams allowed (DoS protection)
 
-	// Recording Configuration
 	RecordingRoots map[string]string // ID -> Absolute Path (e.g. "hdd" -> "/media/hdd/movie")
+
+	// HDHomeRun Configuration
+	HDHR HDHRConfig // Reusing the struct as it fits well (using value types locally)
 }
 
 // Loader handles configuration loading with precedence
@@ -220,6 +243,18 @@ func (l *Loader) setDefaults(cfg *AppConfig) {
 
 	// Recording Defaults
 	cfg.RecordingRoots = nil
+
+	// HDHomeRun Defaults
+	cfg.HDHR.Enabled = new(bool)
+	*cfg.HDHR.Enabled = false // Disabled by default
+	cfg.HDHR.DeviceID = ""    // Auto-generated if empty
+	cfg.HDHR.FriendlyName = "xg2g"
+	cfg.HDHR.ModelNumber = "HDHR-xg2g"
+	cfg.HDHR.FirmwareName = "xg2g-1.4.0"
+	cfg.HDHR.TunerCount = new(int)
+	*cfg.HDHR.TunerCount = 4
+	cfg.HDHR.PlexForceHLS = new(bool)
+	*cfg.HDHR.PlexForceHLS = false
 }
 
 // loadFile loads configuration from a YAML file with STRICT parsing.
@@ -373,6 +408,15 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 	if src.API.RateLimit.Auth != nil {
 		dst.RateLimitAuth = *src.API.RateLimit.Auth
 	}
+	if src.API.RateLimit.Burst != nil {
+		dst.RateLimitBurst = *src.API.RateLimit.Burst
+	}
+	if len(src.API.RateLimit.Whitelist) > 0 {
+		dst.RateLimitWhitelist = src.API.RateLimit.Whitelist
+	}
+	if len(src.API.AllowedOrigins) > 0 {
+		dst.AllowedOrigins = src.API.AllowedOrigins
+	}
 
 	// Metrics
 	if src.Metrics.Enabled != nil {
@@ -387,6 +431,32 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 		dst.PiconBase = expandEnv(src.Picons.BaseURL)
 	}
 
+	// HDHomeRun
+	if src.HDHR.Enabled != nil {
+		dst.HDHR.Enabled = src.HDHR.Enabled
+	}
+	if src.HDHR.DeviceID != "" {
+		dst.HDHR.DeviceID = expandEnv(src.HDHR.DeviceID)
+	}
+	if src.HDHR.FriendlyName != "" {
+		dst.HDHR.FriendlyName = expandEnv(src.HDHR.FriendlyName)
+	}
+	if src.HDHR.ModelNumber != "" {
+		dst.HDHR.ModelNumber = expandEnv(src.HDHR.ModelNumber)
+	}
+	if src.HDHR.FirmwareName != "" {
+		dst.HDHR.FirmwareName = expandEnv(src.HDHR.FirmwareName)
+	}
+	if src.HDHR.BaseURL != "" {
+		dst.HDHR.BaseURL = expandEnv(src.HDHR.BaseURL)
+	}
+	if src.HDHR.TunerCount != nil {
+		dst.HDHR.TunerCount = src.HDHR.TunerCount
+	}
+	if src.HDHR.PlexForceHLS != nil {
+		dst.HDHR.PlexForceHLS = src.HDHR.PlexForceHLS
+	}
+
 	return nil
 }
 
@@ -395,9 +465,10 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 // Uses consistent ParseBool/ParseInt/ParseDuration helpers from env.go
 func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	// String values (direct assignment)
-	cfg.Version = ParseString("XG2G_VERSION", cfg.Version)
+	cfg.Version = ParseStringWithAlias("XG2G_VERSION", "VERSION", cfg.Version)
 	cfg.DataDir = ParseString("XG2G_DATA", cfg.DataDir)
-	cfg.LogLevel = ParseString("XG2G_LOG_LEVEL", cfg.LogLevel)
+	cfg.LogLevel = ParseStringWithAlias("XG2G_LOG_LEVEL", "LOG_LEVEL", cfg.LogLevel)
+	cfg.LogService = ParseStringWithAlias("XG2G_LOG_SERVICE", "LOG_SERVICE", cfg.LogService)
 
 	// OpenWebIF (with backward-compatible aliases for v2.0)
 	cfg.OWIBase = ParseStringWithAlias("XG2G_OWI_BASE", "RECEIVER_IP", cfg.OWIBase)
@@ -410,17 +481,16 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 
 	// OpenWebIF timeouts/retries
 	// Convert millisecond ENV values to time.Duration
-	if v, ok := os.LookupEnv("XG2G_OWI_TIMEOUT_MS"); ok && v != "" {
-		ms := ParseInt("XG2G_OWI_TIMEOUT_MS", int(cfg.OWITimeout.Milliseconds()))
+	// OpenWebIF timeouts/retries
+	// Convert millisecond ENV values to time.Duration
+	if ms := ParseInt("XG2G_OWI_TIMEOUT_MS", 0); ms > 0 {
 		cfg.OWITimeout = time.Duration(ms) * time.Millisecond
 	}
 	cfg.OWIRetries = ParseInt("XG2G_OWI_RETRIES", cfg.OWIRetries)
-	if v, ok := os.LookupEnv("XG2G_OWI_BACKOFF_MS"); ok && v != "" {
-		ms := ParseInt("XG2G_OWI_BACKOFF_MS", int(cfg.OWIBackoff.Milliseconds()))
+	if ms := ParseInt("XG2G_OWI_BACKOFF_MS", 0); ms > 0 {
 		cfg.OWIBackoff = time.Duration(ms) * time.Millisecond
 	}
-	if v, ok := os.LookupEnv("XG2G_OWI_MAX_BACKOFF_MS"); ok && v != "" {
-		ms := ParseInt("XG2G_OWI_MAX_BACKOFF_MS", int(cfg.OWIMaxBackoff.Milliseconds()))
+	if ms := ParseInt("XG2G_OWI_MAX_BACKOFF_MS", 0); ms > 0 {
 		cfg.OWIMaxBackoff = time.Duration(ms) * time.Millisecond
 	}
 
@@ -444,12 +514,10 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	// Metrics
 	// Primary configuration is via XG2G_METRICS_LISTEN (empty disables).
 	// Accept XG2G_METRICS_ADDR as a legacy alias.
-	if v, ok := os.LookupEnv("XG2G_METRICS_LISTEN"); ok {
-		cfg.MetricsAddr = v
-		cfg.MetricsEnabled = strings.TrimSpace(v) != ""
-	} else if v, ok := os.LookupEnv("XG2G_METRICS_ADDR"); ok {
-		cfg.MetricsAddr = v
-		cfg.MetricsEnabled = strings.TrimSpace(v) != ""
+	metricsAddr := ParseStringWithAlias("XG2G_METRICS_LISTEN", "XG2G_METRICS_ADDR", "")
+	if metricsAddr != "" {
+		cfg.MetricsAddr = metricsAddr
+		cfg.MetricsEnabled = true
 	}
 
 	// Picons
@@ -463,20 +531,43 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	// Feature Flags
 	cfg.InstantTuneEnabled = ParseBool("XG2G_INSTANT_TUNE", cfg.InstantTuneEnabled)
 	cfg.DevMode = ParseBool("XG2G_DEV", cfg.DevMode)
+	cfg.AuthAnonymous = ParseBool("XG2G_AUTH_ANONYMOUS", cfg.AuthAnonymous)
 	cfg.ReadyStrict = ParseBool("XG2G_READY_STRICT", cfg.ReadyStrict)
 
 	// Rate Limiting
 	cfg.RateLimitEnabled = ParseBool("XG2G_RATELIMIT", cfg.RateLimitEnabled)
 	cfg.RateLimitGlobal = ParseInt("XG2G_RATELIMIT_GLOBAL", cfg.RateLimitGlobal)
 	cfg.RateLimitAuth = ParseInt("XG2G_RATELIMIT_AUTH", cfg.RateLimitAuth)
+	cfg.RateLimitBurst = ParseInt("XG2G_RATELIMIT_BURST", cfg.RateLimitBurst)
+	cfg.RateLimitWhitelist = parseCommaSeparated(ParseString("XG2G_RATELIMIT_WHITELIST", ""), cfg.RateLimitWhitelist)
+
+	// CSRF / CORS (Env Aliases)
+	cfg.AllowedOrigins = parseCommaSeparated(ParseString("XG2G_ALLOWED_ORIGINS", ""), cfg.AllowedOrigins)
+
+	// Trusted Proxies
+	cfg.TrustedProxies = ParseString("XG2G_TRUSTED_PROXIES", cfg.TrustedProxies)
 
 	// Stream Proxy
 	cfg.MaxConcurrentStreams = ParseInt("XG2G_MAX_CONCURRENT_STREAMS", cfg.MaxConcurrentStreams)
 
 	// Recording Roots (Env Override)
-	if v, ok := os.LookupEnv("XG2G_RECORDING_ROOTS"); ok {
-		cfg.RecordingRoots = parseRecordingRoots(v, cfg.RecordingRoots)
-	}
+	cfg.RecordingRoots = parseRecordingRoots(ParseString("XG2G_RECORDING_ROOTS", ""), cfg.RecordingRoots)
+
+	// HDHomeRun Emulation
+	hdhrEnabled := ParseBool("XG2G_HDHR_ENABLED", *cfg.HDHR.Enabled)
+	cfg.HDHR.Enabled = &hdhrEnabled
+
+	cfg.HDHR.DeviceID = ParseString("XG2G_HDHR_DEVICE_ID", cfg.HDHR.DeviceID)
+	cfg.HDHR.FriendlyName = ParseString("XG2G_HDHR_FRIENDLY_NAME", cfg.HDHR.FriendlyName)
+	cfg.HDHR.ModelNumber = ParseStringWithAlias("XG2G_HDHR_MODEL", "XG2G_HDHR_MODEL_NUMBER", cfg.HDHR.ModelNumber)
+	cfg.HDHR.FirmwareName = ParseString("XG2G_HDHR_FIRMWARE", cfg.HDHR.FirmwareName)
+	cfg.HDHR.BaseURL = ParseString("XG2G_HDHR_BASE_URL", cfg.HDHR.BaseURL)
+
+	hdhrTunerCount := ParseInt("XG2G_HDHR_TUNER_COUNT", *cfg.HDHR.TunerCount)
+	cfg.HDHR.TunerCount = &hdhrTunerCount
+
+	plexForceHLS := ParseBool("XG2G_PLEX_FORCE_HLS", *cfg.HDHR.PlexForceHLS)
+	cfg.HDHR.PlexForceHLS = &plexForceHLS
 }
 
 // expandEnv expands environment variables in the format ${VAR} or $VAR
@@ -505,6 +596,22 @@ func parseRecordingRoots(envVal string, defaults map[string]string) map[string]s
 	}
 	if len(out) == 0 {
 		return defaults // Fallback if parsing failed completely
+	}
+	return out
+}
+
+// Helper to parse comma-separated list
+func parseCommaSeparated(envVal string, defaults []string) []string {
+	if envVal == "" {
+		return defaults
+	}
+	var out []string
+	parts := strings.Split(envVal, ",")
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
 	}
 	return out
 }

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	streamprofile "github.com/ManuGH/xg2g/internal/core/profile"
+	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/rs/zerolog"
 )
 
@@ -51,6 +52,7 @@ type SafariDVRProfile struct {
 	config     streamprofile.SafariDVRConfig
 	ready      chan struct{} // Signals when initial segments are ready
 	ffmpegPath string
+	startTime  time.Time
 }
 
 // Local readStableFile removed in favor of proxy.ReadStableFile wrapper
@@ -102,6 +104,7 @@ func (p *SafariDVRProfile) Start() error {
 	// New readiness signal per start; profiles can be restarted if ffmpeg exits.
 	ready := make(chan struct{})
 	p.ready = ready
+	p.startTime = time.Now()
 
 	playlistPath := filepath.Join(p.outputDir, "playlist.m3u8")
 	sessionID := strconv.FormatInt(time.Now().UnixNano(), 36)
@@ -275,11 +278,25 @@ func (p *SafariDVRProfile) Start() error {
 		p.mu.Lock()
 		p.started = false
 		p.mu.Unlock()
-		if err != nil && p.ctx.Err() == nil {
-			p.logger.Error().Err(err).Msg("ffmpeg process exited with error")
+
+		exitReason := "success"
+		if err != nil {
+			if p.ctx.Err() == nil {
+				exitReason = "ffmpeg_exit"
+				p.logger.Error().Err(err).Msg("ffmpeg process exited with error")
+			} else {
+				exitReason = "client_disconnect" // or stop called
+				p.logger.Info().Msg("ffmpeg process stopped")
+			}
 		} else {
+			if p.ctx.Err() != nil {
+				exitReason = "client_disconnect"
+			}
 			p.logger.Info().Msg("ffmpeg process stopped")
 		}
+
+		// P2.5 Observability Metric
+		metrics.ObserveStreamSession("hls_safari", exitReason, time.Since(p.startTime).Seconds())
 	}()
 
 	// Wait for initial segments to be ready
@@ -392,6 +409,9 @@ func (p *SafariDVRProfile) waitForSegments(playlistPath string, ready chan struc
 			p.logger.Info().
 				Int("segments_ready", readyCount).
 				Msg("Safari DVR profile ready")
+
+			// P2.5 Observability Metric
+			metrics.ObserveHLSStartup("safari", time.Since(p.startTime).Seconds())
 			close(ready)
 			return
 		}

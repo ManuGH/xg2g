@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/channels"
-	xgconfig "github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/m3u"
 	"github.com/rs/zerolog"
 	"golang.org/x/net/ipv4"
@@ -223,26 +222,6 @@ func (s *Server) HandleLineupPost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// GetConfigFromEnv creates Config from environment variables
-func GetConfigFromEnv(logger zerolog.Logger, dataDir string) Config {
-	enabled := xgconfig.ParseBool("XG2G_HDHR_ENABLED", false)
-	plexForceHLS := xgconfig.ParseBool("XG2G_PLEX_FORCE_HLS", false)
-
-	return Config{
-		Enabled:          enabled,
-		DeviceID:         xgconfig.ParseString("XG2G_HDHR_DEVICE_ID", ""),
-		FriendlyName:     xgconfig.ParseString("XG2G_HDHR_FRIENDLY_NAME", "xg2g"),
-		ModelName:        xgconfig.ParseString("XG2G_HDHR_MODEL", "HDHR-xg2g"),
-		FirmwareName:     xgconfig.ParseString("XG2G_HDHR_FIRMWARE", "xg2g-1.4.0"),
-		BaseURL:          xgconfig.ParseString("XG2G_HDHR_BASE_URL", ""),
-		TunerCount:       xgconfig.ParseInt("XG2G_HDHR_TUNER_COUNT", 4),
-		PlexForceHLS:     plexForceHLS,
-		PlaylistFilename: xgconfig.ParseString("XG2G_PLAYLIST_FILENAME", "playlist.m3u"),
-		DataDir:          dataDir,
-		Logger:           logger,
-	}
 }
 
 // StartSSDPAnnouncer starts SSDP announcements for automatic discovery

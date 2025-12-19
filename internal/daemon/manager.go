@@ -229,6 +229,8 @@ func (m *manager) startProxyServer(_ context.Context, errChan chan<- error) erro
 		PlaylistPath:   m.deps.ProxyConfig.PlaylistPath,
 		RecordingRoots: m.deps.Config.RecordingRoots,
 		Runtime:        m.deps.ProxyConfig.Runtime,
+		APIToken:       m.deps.Config.APIToken,
+		AuthAnonymous:  m.deps.Config.AuthAnonymous,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create proxy: %w", err)

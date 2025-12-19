@@ -55,3 +55,12 @@ We recommend the following best practices for running `xg2g`:
 - **Run as non-root**: The Docker image is designed to run as a non-root user. Do not override this unless absolutely necessary.
 - **Network Isolation**: Run `xg2g` in an isolated network segment if possible.
 - **Keep Updated**: Always run the latest supported version of `xg2g`.
+
+## Security Guarantees
+
+As of version 3.0+, `xg2g` enforces the following security invariants by default:
+
+1. **Strict File Serving**: Arbitrary file access via the API is forbidden. Only specific, required playback files (M3U, XMLTV) are served.
+2. **Localhost-Only Internal Services**: The stream proxy and metrics endpoints bind to `127.0.0.1` by default preventing accidental exposure.
+3. **Authenticated Proxying**: Access to the stream proxy requires a valid API token.
+4. **SSRF Protection**: Upstream proxy targets are strictly validated against configured allowlists.

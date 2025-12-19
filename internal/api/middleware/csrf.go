@@ -5,7 +5,6 @@ package middleware
 import (
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 )
 
@@ -17,16 +16,13 @@ import (
 // 2. Referer header matches allowed origins (fallback for older browsers)
 // 3. Allows same-origin requests by default
 //
-// Configuration via environment variable:
-//   - XG2G_ALLOWED_ORIGINS: Comma-separated list of allowed origins (e.g., "http://localhost:8080,https://example.com")
-//   - If not set, only same-origin requests are allowed
-//
-// Example usage:
-//
-//	r.Use(middleware.CSRFProtection())
-func CSRFProtection() func(http.Handler) http.Handler {
-	// Load allowed origins from environment
-	allowedOrigins := getAllowedOrigins()
+//	r.Use(middleware.CSRFProtection(allowedOrigins))
+func CSRFProtection(allowedOrigins []string) func(http.Handler) http.Handler {
+	// Create map for O(1) lookup
+	originsMap := make(map[string]bool)
+	for _, origin := range allowedOrigins {
+		originsMap[origin] = true
+	}
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -46,7 +42,7 @@ func CSRFProtection() func(http.Handler) http.Handler {
 			}
 
 			// Check if request origin is allowed
-			if !isOriginAllowed(requestOrigin, allowedOrigins, r) {
+			if !isOriginAllowed(requestOrigin, originsMap, r) {
 				http.Error(w, "Forbidden: Cross-origin request not allowed", http.StatusForbidden)
 				return
 			}
@@ -57,26 +53,9 @@ func CSRFProtection() func(http.Handler) http.Handler {
 	}
 }
 
-// getAllowedOrigins loads allowed origins from XG2G_ALLOWED_ORIGINS environment variable.
-// Returns a map for O(1) lookup performance.
-func getAllowedOrigins() map[string]bool {
-	originsEnv, ok := os.LookupEnv("XG2G_ALLOWED_ORIGINS")
-	if !ok || originsEnv == "" {
-		return nil // nil means only same-origin requests allowed
-	}
-
-	origins := make(map[string]bool)
-	for _, origin := range strings.Split(originsEnv, ",") {
-		origin = strings.TrimSpace(origin)
-		if origin != "" {
-			// Normalize origin (remove trailing slash)
-			origin = strings.TrimSuffix(origin, "/")
-			origins[origin] = true
-		}
-	}
-
-	return origins
-}
+// Helper to check allowlist
+// Removed implicit getAllowedOrigins env reader
+// getAllowedOrigins was removed in favor of explicit configuration.
 
 // getRequestOrigin extracts the origin from the request.
 // It checks Origin header first (preferred), then falls back to Referer.

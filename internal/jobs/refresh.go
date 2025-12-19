@@ -251,7 +251,7 @@ func Refresh(ctx context.Context, snap config.Snapshot) (*Status, error) {
 	}
 
 	// Trigger background picon pre-warm (don't block refresh)
-	go PrewarmPicons(context.Background(), cfg, items)
+	go PrewarmPicons(ctx, cfg, items)
 
 	// Generate M3U
 	playlistPath := filepath.Join(cfg.DataDir, safeName)

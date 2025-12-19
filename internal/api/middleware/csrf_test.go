@@ -5,7 +5,6 @@ package middleware
 import (
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 )
 
@@ -14,7 +13,7 @@ func TestCSRFProtection_AllowsSafeMethodsWithoutOrigin(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	csrfHandler := CSRFProtection()(handler)
+	csrfHandler := CSRFProtection(nil)(handler)
 
 	// GET and HEAD are safe methods - should not require origin
 	safeMethods := []string{http.MethodGet, http.MethodHead}
@@ -37,7 +36,7 @@ func TestCSRFProtection_BlocksUnsafeMethodsWithoutOrigin(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	csrfHandler := CSRFProtection()(handler)
+	csrfHandler := CSRFProtection(nil)(handler)
 
 	// POST, PUT, DELETE, PATCH are unsafe methods - require origin
 	unsafeMethods := []string{http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch}
@@ -61,7 +60,7 @@ func TestCSRFProtection_AllowsSameOriginRequests(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	csrfHandler := CSRFProtection()(handler)
+	csrfHandler := CSRFProtection(nil)(handler)
 
 	req := httptest.NewRequest(http.MethodPost, "/test", nil)
 	req.Host = "example.com"
@@ -80,7 +79,7 @@ func TestCSRFProtection_AllowsSameOriginWithHTTPS(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	csrfHandler := CSRFProtection()(handler)
+	csrfHandler := CSRFProtection(nil)(handler)
 
 	req := httptest.NewRequest(http.MethodPost, "/test", nil)
 	req.Host = "example.com"
@@ -100,7 +99,7 @@ func TestCSRFProtection_BlocksCrossOriginRequests(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	csrfHandler := CSRFProtection()(handler)
+	csrfHandler := CSRFProtection(nil)(handler)
 
 	req := httptest.NewRequest(http.MethodPost, "/test", nil)
 	req.Host = "example.com"
@@ -116,14 +115,14 @@ func TestCSRFProtection_BlocksCrossOriginRequests(t *testing.T) {
 
 func TestCSRFProtection_AllowsConfiguredOrigins(t *testing.T) {
 	// Set allowed origins
-	os.Setenv("XG2G_ALLOWED_ORIGINS", "http://trusted.com,https://another.com") //nolint:errcheck,gosec // Test setup
-	defer os.Unsetenv("XG2G_ALLOWED_ORIGINS")                                   //nolint:errcheck // Test cleanup
+	// allowed origins
+	allowed := []string{"http://trusted.com", "https://another.com"}
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	csrfHandler := CSRFProtection()(handler)
+	csrfHandler := CSRFProtection(allowed)(handler)
 
 	// Request from allowed origin
 	req := httptest.NewRequest(http.MethodPost, "/test", nil)
@@ -167,7 +166,7 @@ func TestCSRFProtection_FallbackToReferer(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	csrfHandler := CSRFProtection()(handler)
+	csrfHandler := CSRFProtection(nil)(handler)
 
 	req := httptest.NewRequest(http.MethodPost, "/test", nil)
 	req.Host = "example.com"
@@ -187,7 +186,7 @@ func TestCSRFProtection_RefererCrossOriginBlocked(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	csrfHandler := CSRFProtection()(handler)
+	csrfHandler := CSRFProtection(nil)(handler)
 
 	req := httptest.NewRequest(http.MethodPost, "/test", nil)
 	req.Host = "example.com"
@@ -206,7 +205,7 @@ func TestCSRFProtection_OriginPriorityOverReferer(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	csrfHandler := CSRFProtection()(handler)
+	csrfHandler := CSRFProtection(nil)(handler)
 
 	req := httptest.NewRequest(http.MethodPost, "/test", nil)
 	req.Host = "example.com"

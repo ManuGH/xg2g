@@ -30,6 +30,39 @@ func (s *Server) secureFileServer() http.Handler {
 		}
 
 		path := r.URL.Path
+		
+		// 1. Strict Allowlist (Base filenames only)
+		// Only explicit, known safe public files are allowed.
+		allowedFiles := map[string]bool{
+			"playlist.m3u": true,
+			"xmltv.xml":    true,
+			"epg.xml":      true,
+		}
+
+		filename := filepath.Base(path)
+		if !allowedFiles[filename] {
+			// Defense-in-depth: Check for sensitive extensions to log specific reason
+			deniedExts := []string{".yaml", ".yml", ".key", ".pem", ".env", ".db", ".json", ".ini", ".conf"}
+			ext := strings.ToLower(filepath.Ext(filename))
+			isSensitive := false
+			for _, denied := range deniedExts {
+				if ext == denied {
+					isSensitive = true
+					break
+				}
+			}
+
+			if isSensitive {
+				logger.Warn().Str("event", "file_req.denied").Str("path", path).Str("reason", "forbidden_extension").Msg("attempted access to sensitive file extension")
+				recordFileRequestDenied("forbidden_extension") // Metrics
+			} else {
+				logger.Warn().Str("event", "file_req.denied").Str("path", path).Str("reason", "not_allowlisted").Msg("file not in allowlist")
+				recordFileRequestDenied("forbidden_file") // Metrics
+			}
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+
 		// Enhanced traversal detection including multiple URL-decode passes,
 		// Unicode normalization, mixed-case encodings, and NUL bytes.
 		if isPathTraversal(path) {

@@ -2,16 +2,9 @@ package jobs
 
 import (
 	"context"
-	"io"
-	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
-	"sync"
-	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
-	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/playlist"
 	"github.com/rs/zerolog/log"
 )
@@ -20,22 +13,38 @@ import (
 func PrewarmPicons(ctx context.Context, cfg config.AppConfig, items []playlist.Item) {
 	log.Info().Int("count", len(items)).Msg("Picon: Starting background pre-warm")
 
-	piconDir := filepath.Join(cfg.DataDir, "picons")
-	if err := os.MkdirAll(piconDir, 0750); err != nil {
-		log.Error().Err(err).Msg("Picon: failed to create cache dir")
-		return
+	refs := extractPiconRefs(items)
+	log.Info().Int("unique_picons", len(refs)).Msg("Picon: Identified unique picons to warm")
+
+	// Get (or init) global pool
+	// Note: Ideally InitPiconPool is called at app startup to ensure workers are running,
+	// but this lazy getter handles it if not.
+	pool := GetPiconPool(cfg)
+
+	// We don't start/stop the pool here anymore (it's global/long-lived).
+	// We just enqueue jobs.
+
+	var enq, dropped int
+	for ref := range refs {
+		if ctx.Err() != nil {
+			break
+		}
+		// Enqueue returns true if accepted (or handled via dedup/cache), false if dropped/error
+		if pool.Enqueue(ctx, ref) {
+			enq++
+		} else {
+			dropped++
+		}
 	}
 
-	upstreamBase := cfg.PiconBase
-	if upstreamBase == "" {
-		upstreamBase = cfg.OWIBase
-	}
+	log.Info().
+		Int("enqueued", enq).
+		Int("dropped", dropped).
+		Msg("Picon: pre-warm queued")
+}
 
-	client := http.Client{
-		Timeout: 30 * time.Second,
-	}
-
-	// Extract refs and dedup
+// extractPiconRefs parses unique picon refs from playlist items
+func extractPiconRefs(items []playlist.Item) map[string]bool {
 	refs := make(map[string]bool)
 	for _, item := range items {
 		// TvgLogo is "/logos/1_0_19..._0_0_0.png?v=..."
@@ -60,94 +69,8 @@ func PrewarmPicons(ctx context.Context, cfg config.AppConfig, items []playlist.I
 			refs[refColon] = true
 		}
 	}
-
-	log.Info().Int("unique_picons", len(refs)).Msg("Picon: Identified unique picons to warm")
-
-	// Semaphore to limit concurrency (10 concurrent downloads)
-	sem := make(chan struct{}, 10)
-	var wg sync.WaitGroup
-
-	for ref := range refs {
-		wg.Add(1)
-		go func(r string) {
-			defer wg.Done()
-			sem <- struct{}{}        // Acquire
-			defer func() { <-sem }() // Release
-
-			downloadPicon(ctx, client, upstreamBase, piconDir, r)
-		}(ref)
-	}
-
-	wg.Wait()
-	log.Info().Msg("Picon: Background pre-warm completed")
+	return refs
 }
 
-// downloadPicon downloads a single picon
-func downloadPicon(ctx context.Context, client http.Client, upstreamBase, piconDir, ref string) {
-	// Logic similar to http.go, but purely internal
-	// ref here is "1:0:19..." (colon based)
-
-	// Target Filename (Underscore based)
-	storeRef := strings.ReplaceAll(ref, ":", "_")
-	storeRef = strings.TrimRight(storeRef, "_") // Ensure clean filename
-	localPath := filepath.Join(piconDir, storeRef+".png")
-
-	if _, err := os.Stat(localPath); err == nil {
-		return // Already exists
-	}
-
-	log.Debug().Str("ref", ref).Msg("Picon: Pre-warming...")
-
-	// URL logic
-	upstreamURL := openwebif.PiconURL(upstreamBase, ref)
-	resp, err := client.Get(upstreamURL)
-
-	// Fallback logic...
-	if (err == nil && resp.StatusCode == http.StatusNotFound) || err != nil {
-		if resp != nil {
-			_ = resp.Body.Close()
-		}
-		normalized := openwebif.NormalizeServiceRefForPicon(ref)
-		if normalized != ref {
-			fallbackURL := openwebif.PiconURL(upstreamBase, normalized)
-			respFallback, errFallback := client.Get(fallbackURL)
-			if errFallback == nil && respFallback.StatusCode == http.StatusOK {
-				resp = respFallback
-				err = nil
-			} else {
-				if respFallback != nil {
-					_ = respFallback.Body.Close()
-				}
-			}
-		}
-	}
-
-	if err != nil || resp.StatusCode != http.StatusOK {
-		if resp != nil {
-			_ = resp.Body.Close()
-		}
-		return // Skip failed
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	// Save
-	tempFile, err := os.CreateTemp(piconDir, "picon-warm-*.tmp")
-	if err != nil {
-		return
-	}
-	defer func() {
-		_ = os.Remove(tempFile.Name())
-	}()
-
-	if _, err := io.Copy(tempFile, resp.Body); err != nil {
-		_ = tempFile.Close()
-		return
-	}
-	// Close the file explicitly before renaming
-	if err := tempFile.Close(); err != nil {
-		return
-	}
-	if err := os.Rename(tempFile.Name(), localPath); err != nil {
-		return
-	}
-}
+// downloadPicon is deprecated/legacy; logic moved to PiconPool.downloadOne
+// Keeping local helper removed to enforce pool usage.

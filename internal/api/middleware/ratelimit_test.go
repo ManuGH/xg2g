@@ -140,8 +140,8 @@ func TestAPIRateLimit_Configuration(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	// Apply API rate limiter: Enabled=true, RPS=1 (60 RPM)
-	limitedHandler := APIRateLimit(true, 1)(handler)
+	// Apply API rate limiter: Enabled=true, RPS=1 (60 RPM), Burst=20, Whitelist=nil
+	limitedHandler := APIRateLimit(true, 1, 20, nil)(handler)
 
 	// Make 60 requests (at limit)
 	for i := 0; i < 60; i++ {

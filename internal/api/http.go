@@ -37,7 +37,6 @@ import (
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/proxy"
 	"github.com/go-chi/chi/v5"
-	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -71,6 +70,10 @@ type Server struct {
 	epgCacheTime  time.Time
 	epgCacheMTime time.Time
 	epgSfg        singleflight.Group
+
+	// OpenWebIF Client Cache (P1 Performance Fix)
+	owiClient *openwebif.Client
+	owiEpoch  uint64
 
 	proxy ProxyServer // Interface for proxy interactions
 }
@@ -166,6 +169,9 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager) *Server {
 		log.L().Error().Err(err).Msg("failed to load channel states")
 	}
 
+	// Initialize Trusted Proxies (Global API Config)
+	SetTrustedProxies(cfg.TrustedProxies)
+
 	// Initialize Series Manager (DVR v2)
 	sm := dvr.NewManager(cfg.DataDir)
 	if err := sm.Load(); err != nil {
@@ -208,12 +214,41 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager) *Server {
 
 	// Initialize HDHomeRun emulation if enabled
 	logger := log.WithComponent("api")
-	hdhrCfg := hdhr.GetConfigFromEnv(logger, cfg.DataDir)
-	if hdhrCfg.Enabled {
-		s.hdhr = hdhr.NewServer(hdhrCfg, cm)
+	// Map config.AppConfig.HDHR -> hdhr.Config
+	hdhrEnabled := false
+	if cfg.HDHR.Enabled != nil {
+		hdhrEnabled = *cfg.HDHR.Enabled
+	}
+
+	if hdhrEnabled {
+		// Populate HDHR config from AppConfig
+		tunerCount := 4
+		if cfg.HDHR.TunerCount != nil {
+			tunerCount = *cfg.HDHR.TunerCount
+		}
+		plexForceHLS := false
+		if cfg.HDHR.PlexForceHLS != nil {
+			plexForceHLS = *cfg.HDHR.PlexForceHLS
+		}
+
+		hdhrConf := hdhr.Config{
+			Enabled:          hdhrEnabled,
+			DeviceID:         cfg.HDHR.DeviceID,
+			FriendlyName:     cfg.HDHR.FriendlyName,
+			ModelName:        cfg.HDHR.ModelNumber,
+			FirmwareName:     cfg.HDHR.FirmwareName,
+			BaseURL:          cfg.HDHR.BaseURL,
+			TunerCount:       tunerCount,
+			PlexForceHLS:     plexForceHLS,
+			PlaylistFilename: s.snap.Runtime.PlaylistFilename, // Runtime snapshot has the correct filename
+			DataDir:          cfg.DataDir,
+			Logger:           logger,
+		}
+
+		s.hdhr = hdhr.NewServer(hdhrConf, cm)
 		logger.Info().
 			Bool("hdhr_enabled", true).
-			Str("device_id", hdhrCfg.DeviceID).
+			Str("device_id", hdhrConf.DeviceID).
 			Msg("HDHomeRun emulation enabled")
 	}
 
@@ -349,21 +384,23 @@ func (s *Server) GetSeriesEngine() *dvr.SeriesEngine {
 func (s *Server) routes() http.Handler {
 	r := chi.NewRouter()
 
-	// Apply middleware stack (order matters for correctness and performance)
-	// 1. RequestID - generate unique ID for request correlation
-	r.Use(chimiddleware.RequestID)
-	// 2. Recoverer - panic recovery to prevent server crashes
-	r.Use(chimiddleware.Recoverer)
-	// 3. Global Rate Limiting - protect all endpoints from DoS (OWASP 2025)
-	r.Use(middleware.APIRateLimit(s.cfg.RateLimitEnabled, s.cfg.RateLimitGlobal))
-	// 4. Metrics - track all requests (before tracing for accurate timing)
-	r.Use(middleware.Metrics())
-	// 5. Tracing - distributed tracing with OpenTelemetry (with context propagation)
-	r.Use(middleware.Tracing("xg2g-api"))
-	// 6. Logging - structured request/response logging
-	r.Use(log.Middleware())
-	// 7. Security headers - add security headers to all responses
+	// Apply middleware stack (Standardized Order)
+	// 1. Recoverer (outermost safety net)
+	r.Use(middleware.Recoverer)
+	// 2. RequestID (correlation early)
+	r.Use(middleware.RequestID)
+	// 3. CORS (so OPTIONS and browser clients behave)
+	r.Use(middleware.CORS(s.cfg.AllowedOrigins))
+	// 4. Security headers (add security headers to all responses)
 	r.Use(securityHeadersMiddleware)
+	// 5. Metrics (track all requests)
+	r.Use(middleware.Metrics())
+	// 6. Tracing (distributed tracing with OpenTelemetry)
+	r.Use(middleware.Tracing("xg2g-api"))
+	// 7. Logging (wraps handlers, captures full latency)
+	r.Use(log.Middleware())
+	// 8. Rate Limit (Global protection)
+	r.Use(middleware.APIRateLimit(s.cfg.RateLimitEnabled, s.cfg.RateLimitGlobal, s.cfg.RateLimitBurst, s.cfg.RateLimitWhitelist))
 
 	// Health checks (versionless - infrastructure endpoints)
 	r.Get("/healthz", s.handleHealth)
@@ -909,10 +946,7 @@ func (s *Server) handleXMLTV(w http.ResponseWriter, r *http.Request) {
 
 // Handler returns the configured HTTP handler with all routes and middleware applied.
 func (s *Server) Handler() http.Handler {
-	if s.auditLogger != nil {
-		return withMiddlewares(s.routes(), s.auditLogger)
-	}
-	return withMiddlewares(s.routes())
+	return s.routes()
 }
 
 // handleLineupJSON handles /lineup.json endpoint for HDHomeRun emulation
@@ -1066,7 +1100,7 @@ func (s *Server) uiHandler() http.Handler {
 // This includes the logging middleware, security headers, and the API routes.
 func NewRouter(cfg config.AppConfig) http.Handler {
 	server := New(cfg, nil)
-	return withMiddlewares(server.routes())
+	return server.routes()
 }
 
 // handlePicons proxies picon requests to the backend receiver and caches them locally
@@ -1339,18 +1373,22 @@ func (s *Server) handleStreamProxy(w http.ResponseWriter, r *http.Request) {
 				_ = resp.Body.Close() // Close the original body after reading
 
 				// Rewrite: Append ?token=... to lines ending in .ts, .aac, .m4s, .mp4, or inside lines (matches non-comment lines)
-				// Simple approach: append to lines that look like file paths/URLs and don't already have query params?
-				// Better: Regex or simple suffix check. Most HLS segments are relative.
+				// Strict mode: Only rewrite relative URLs (no scheme/host)
 				lines := strings.Split(string(body), "\n")
 				var newLines []string
 				for _, line := range lines {
 					trim := strings.TrimSpace(line)
 					if trim != "" && !strings.HasPrefix(trim, "#") {
-						// This is a segment or variant URL
-						if strings.Contains(trim, "?") {
-							newLines = append(newLines, trim+"&token="+token)
+						// Check if line is a relative URL (no scheme)
+						if !strings.Contains(trim, "://") && !strings.HasPrefix(trim, "//") {
+							// This is a relative segment or variant URL
+							if strings.Contains(trim, "?") {
+								newLines = append(newLines, trim+"&token="+url.QueryEscape(token))
+							} else {
+								newLines = append(newLines, trim+"?token="+url.QueryEscape(token))
+							}
 						} else {
-							newLines = append(newLines, trim+"?token="+token)
+							newLines = append(newLines, line)
 						}
 					} else {
 						newLines = append(newLines, line)
