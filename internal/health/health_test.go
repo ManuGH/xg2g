@@ -78,6 +78,7 @@ func TestManager_Health_Uptime(t *testing.T) {
 
 func TestManager_Ready_NoCheckers(t *testing.T) {
 	m := NewManager("v1.0.0")
+	m.SetReadyStrict(true)
 
 	resp := m.Ready(context.Background(), false)
 	assert.True(t, resp.Ready)
@@ -86,10 +87,11 @@ func TestManager_Ready_NoCheckers(t *testing.T) {
 
 func TestManager_Ready_AllHealthy(t *testing.T) {
 	m := NewManager("v1.0.0")
+	m.SetReadyStrict(true)
 	m.RegisterChecker(&mockChecker{name: "check1", status: StatusHealthy})
 	m.RegisterChecker(&mockChecker{name: "check2", status: StatusHealthy})
 
-	resp := m.Ready(context.Background(), false)
+	resp := m.Ready(context.Background(), true)
 	assert.True(t, resp.Ready)
 	assert.Equal(t, StatusHealthy, resp.Status)
 	assert.Len(t, resp.Checks, 2)
@@ -97,6 +99,7 @@ func TestManager_Ready_AllHealthy(t *testing.T) {
 
 func TestManager_Ready_Degraded(t *testing.T) {
 	m := NewManager("v1.0.0")
+	m.SetReadyStrict(true)
 	m.RegisterChecker(&mockChecker{name: "degraded", status: StatusDegraded})
 
 	resp := m.Ready(context.Background(), false)
@@ -106,6 +109,7 @@ func TestManager_Ready_Degraded(t *testing.T) {
 
 func TestManager_Ready_Unhealthy(t *testing.T) {
 	m := NewManager("v1.0.0")
+	m.SetReadyStrict(true)
 	m.RegisterChecker(&mockChecker{name: "unhealthy", status: StatusUnhealthy})
 
 	resp := m.Ready(context.Background(), false)
@@ -186,6 +190,7 @@ func TestManager_ServeReady(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			m := NewManager("v1.0.0")
+			m.SetReadyStrict(true)
 			m.RegisterChecker(tt.checker)
 
 			req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
@@ -211,6 +216,61 @@ func TestManager_ServeReady_EncodingError(t *testing.T) {
 
 	// Should not panic even if encoding fails
 	m.ServeReady(w, req)
+}
+
+func TestManager_Ready_StaleOnError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping slow test in short mode")
+	}
+
+	m := NewManager("v1.0.0")
+	m.SetReadyStrict(true)
+
+	// 1. Prime cache with healthy result
+	m.RegisterChecker(&mockChecker{name: "test", status: StatusHealthy})
+	resp1 := m.Ready(context.Background(), false)
+	assert.True(t, resp1.Ready)
+	assert.Empty(t, resp1.Error)
+	timestamp1 := resp1.Timestamp
+
+	// 2. Replace checkers with a blocking one to force timeout
+	// We use a helper to verify safe mutation
+	blocking := &blockingChecker{delay: 5000 * time.Millisecond}
+	// Age the cache to bypass 1s fresh TTL but keep it valid for 5s stale TTL
+	// This forces a new Do() call which will timeout
+	m.setTestState([]Checker{blocking}, time.Now().Add(-2*time.Second))
+
+	// 3. Call Ready. Should timeout (2s) and return stale result
+	respStale := m.Ready(context.Background(), false)
+
+	assert.True(t, respStale.Ready, "Should return stale ready result")
+	assert.NotEmpty(t, respStale.Error, "Should have error on timeout")
+	// CRITICAL ASSERTION: Timestamp should match the INITIAL successful run
+	assert.Equal(t, timestamp1, respStale.Timestamp, "Should return timestamp from last successful run")
+}
+
+// Helper for safe test state manipulation
+func (m *Manager) setTestState(checkers []Checker, lastTime time.Time) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.checkers = checkers
+	m.lastReadyTime = lastTime
+}
+
+// blockingChecker respects context but delays response
+type blockingChecker struct {
+	delay time.Duration
+}
+
+func (c *blockingChecker) Name() string    { return "blocker" }
+func (c *blockingChecker) Type() CheckType { return CheckReadiness }
+func (c *blockingChecker) Check(ctx context.Context) CheckResult {
+	select {
+	case <-time.After(c.delay):
+		return CheckResult{Status: StatusHealthy}
+	case <-ctx.Done():
+		return CheckResult{Status: StatusUnhealthy, Error: ctx.Err().Error()}
+	}
 }
 
 func TestFileChecker_Name(t *testing.T) {
@@ -374,14 +434,22 @@ func TestLastRunChecker(t *testing.T) {
 
 // Mock checker for testing
 type mockChecker struct {
-	name    string
-	status  Status
-	message string
-	err     string
+	name      string
+	status    Status
+	message   string
+	err       string
+	checkType CheckType
 }
 
 func (m *mockChecker) Name() string {
 	return m.name
+}
+
+func (m *mockChecker) Type() CheckType {
+	if m.checkType != 0 {
+		return m.checkType
+	}
+	return CheckHealth | CheckReadiness
 }
 
 func (m *mockChecker) Check(_ context.Context) CheckResult {

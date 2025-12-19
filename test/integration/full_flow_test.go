@@ -49,7 +49,7 @@ func TestFullRefreshFlow(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	status, err := jobs.Refresh(ctx, cfg, nil)
+	status, err := jobs.Refresh(ctx, config.BuildSnapshot(cfg))
 
 	// Verify: Refresh succeeded
 	require.NoError(t, err, "Refresh should complete successfully")
@@ -187,7 +187,7 @@ func TestRefreshWithBackendError(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	_, err := jobs.Refresh(ctx, cfg, nil)
+	_, err := jobs.Refresh(ctx, config.BuildSnapshot(cfg))
 
 	// Verify: Error is returned but doesn't panic
 	assert.Error(t, err, "Should return error when backend fails")
@@ -219,7 +219,7 @@ func TestRefreshWithTimeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
-	_, err := jobs.Refresh(ctx, cfg, nil)
+	_, err := jobs.Refresh(ctx, config.BuildSnapshot(cfg))
 
 	// Verify: Timeout error
 	assert.Error(t, err, "Should timeout")
@@ -269,7 +269,7 @@ func TestRefreshWithPartialFailure(t *testing.T) {
 	defer cancel()
 
 	// Execute: Should handle partial failures
-	_, err := jobs.Refresh(ctx, cfg, nil)
+	_, err := jobs.Refresh(ctx, config.BuildSnapshot(cfg))
 
 	// Verify: May succeed or fail depending on which request failed
 	// but should not panic or hang

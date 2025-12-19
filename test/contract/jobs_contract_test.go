@@ -86,7 +86,7 @@ func TestJobsRefreshContract(t *testing.T) {
 
 		for _, tc := range invalidConfigs {
 			t.Run(tc.name, func(t *testing.T) {
-				_, err := jobs.Refresh(ctx, tc.config)
+				_, err := jobs.Refresh(ctx, config.BuildSnapshot(tc.config))
 				assert.Error(t, err, "Invalid config must return error: %s", tc.name)
 			})
 		}
@@ -110,7 +110,7 @@ func TestJobsRefreshContract(t *testing.T) {
 			OWIBackoff: 100 * time.Millisecond,
 		}
 
-		status, err := jobs.Refresh(ctx, cfg)
+		status, err := jobs.Refresh(ctx, config.BuildSnapshot(cfg))
 
 		// Contract: Even on failure, may return nil status (check both cases)
 		if status != nil {
@@ -166,7 +166,7 @@ func TestJobsRefreshContract(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel() // Cancel before calling Refresh
 
-		_, err := jobs.Refresh(ctx, cfg)
+		_, err := jobs.Refresh(ctx, config.BuildSnapshot(cfg))
 
 		// Contract: Cancelled context must return error
 		assert.Error(t, err, "Refresh must respect context cancellation")
@@ -197,7 +197,7 @@ func TestJobsRefreshContract(t *testing.T) {
 		defer cancel()
 
 		start := time.Now()
-		_, err := jobs.Refresh(ctx, cfg)
+		_, err := jobs.Refresh(ctx, config.BuildSnapshot(cfg))
 		duration := time.Since(start)
 
 		// Contract: Must fail within reasonable time (not hang forever)
@@ -228,7 +228,7 @@ func TestJobsRefreshContract(t *testing.T) {
 		}
 
 		ctx := context.Background()
-		_, err := jobs.Refresh(ctx, cfgWithEPG)
+		_, err := jobs.Refresh(ctx, config.BuildSnapshot(cfgWithEPG))
 
 		// Will fail due to invalid backend, but EPG config is validated
 		assert.Error(t, err, "Invalid backend causes error")
@@ -254,7 +254,7 @@ func TestJobsRefreshContract(t *testing.T) {
 		}
 
 		ctx := context.Background()
-		_, err := jobs.Refresh(ctx, cfg)
+		_, err := jobs.Refresh(ctx, config.BuildSnapshot(cfg))
 
 		// Will fail due to invalid backend, but bouquet parsing is validated
 		assert.Error(t, err, "Invalid backend causes error")

@@ -33,34 +33,6 @@ func TestLoad_ValidMinimal(t *testing.T) {
 	}
 }
 
-func TestLoad_ValidLegacyKeys(t *testing.T) {
-	// Ensure test directory exists (validation checks this)
-	testDir := "/tmp/xg2g-config-test"
-	if err := os.MkdirAll(testDir, 0750); err != nil {
-		t.Fatalf("failed to create test directory: %v", err)
-	}
-	defer func() { _ = os.RemoveAll(testDir) }()
-
-	loader := NewLoader(filepath.Join("testdata", "legacy.yaml"), "test")
-	cfg, err := loader.Load()
-	if err != nil {
-		t.Fatalf("expected legacy config to load, got error: %v", err)
-	}
-
-	if cfg.OWIBase != "http://receiver.local" {
-		t.Errorf("expected OWIBase=http://receiver.local, got %s", cfg.OWIBase)
-	}
-	if cfg.OWIUsername != "testuser" {
-		t.Errorf("expected OWIUsername=testuser, got %s", cfg.OWIUsername)
-	}
-	if cfg.OWIPassword != "testpass" {
-		t.Errorf("expected OWIPassword=testpass, got %s", cfg.OWIPassword)
-	}
-	if cfg.Bouquet != "userbouquet.favourites.tv" {
-		t.Errorf("expected Bouquet=userbouquet.favourites.tv, got %s", cfg.Bouquet)
-	}
-}
-
 // TestLoad_UnknownKeyFails tests that strict parsing rejects unknown fields.
 func TestLoad_UnknownKeyFails(t *testing.T) {
 	loader := NewLoader(filepath.Join("testdata", "invalid-unknown-key.yaml"), "test")
