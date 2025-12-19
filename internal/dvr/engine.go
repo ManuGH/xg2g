@@ -293,7 +293,8 @@ func (e *SeriesEngine) processRule(ctx context.Context, client OWIClient, rule S
 		// No, main loop uses key.
 
 		// 5. Conflict Check (Placeholder)
-		// TODO: Implement using DetectConflicts logic
+		// NOTE: Conflict detection intentionally deferred (see docs/TROUBLESHOOTING.md)
+		// Future work: Implement DetectConflicts logic that accounts for tuner count and existing timers
 
 		// Success
 		decisions = append(decisions, RunDecision{
