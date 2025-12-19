@@ -68,6 +68,7 @@ type HLSStreamer struct {
 	lastAccess time.Time
 	mu         sync.RWMutex
 	started    bool
+	stopping   bool
 	dvrWindow  int // seconds of DVR window to retain
 	segmentDur int // seconds
 	ffLogLevel string
@@ -219,6 +220,10 @@ func (s *HLSStreamer) Start() error {
 		s.mu.Unlock()
 		return nil
 	}
+	if s.stopping {
+		s.mu.Unlock()
+		return fmt.Errorf("hls stream is stopping")
+	}
 
 	// Fresh context per session (avoid reusing canceled contexts)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -315,35 +320,12 @@ func (s *HLSStreamer) Start() error {
 		Msg("starting HLS session")
 
 	// exitReason at this scope tracks *startup* outcome.
-	// Full session outcome is tracked by the background struct/waiter.
-	var exitReason = "internal_error"
+	// Full session outcome is tracked by the background waiter using its own local variable.
+	var startupExitReason = "internal_error"
 
 	defer func() {
-		// Only log start outcome here (detailed session metrics moved to background waiter)
-		// We still log "HLS session ended" here confusingly because Start() blocks until playlist is ready?
-		// No, Start() blocks until playlist is ready. The DEFER runs when START returns.
-		// So this log message "HLS session ended" is misleading if it prints here.
-		// Ah, looking at lines 320ish: "event", "stream_end" ... "duration_ms" ...
-		// This duration is just the startup duration!
-
-		// Let's fix the log message too while we are at it, or leave it to minimize diff churn?
-		// User said: "In HLSStreamer.Start() you set exitReason = "success" after the playlist becomes available. That’s “startup succeeded”, not “session succeeded”."
-
-		// The original code logged "HLS session ended" here. That seems wrong if Start() returns and the stream continues.
-		// However, I should strictly follow the instruction: "Remove ObserveStreamSession from Start's defer".
-
-		metrics.IncStreamStart(encrypted, exitReason == "success" || exitReason == "client_disconnect", exitReason)
-
-		if exitReason != "success" {
-			// If startup failed, we should probably record a failed session?
-			// But if startup failed, the background waiter might not run or might exit immediately.
-			// Let's rely on the background waiter to record the full session if it started.
-			// If Start() fails, s.started might be set to false.
-
-			// Actually, if Start() returns error, the background waiter handles the wait result.
-			// But we returned error from Start().
-			// Let's just remove the ObserveStreamSession line as requested.
-		}
+		// Only log start outcome here. Session end metrics are handled by the waiter.
+		metrics.IncStreamStart(encrypted, startupExitReason == "success" || startupExitReason == "client_disconnect", startupExitReason)
 	}()
 
 	dvrSeconds := s.dvrWindow
@@ -521,49 +503,58 @@ func (s *HLSStreamer) Start() error {
 
 	// Monitor process in background
 	// Monitor process in background
+	cmd := s.cmd
+	waitCh := s.waitCh
+	sessionStart := s.startTime
 	go func() {
 		// Capture wait error
-		waitErr := s.cmd.Wait() // Closes pipes, causing scanner EOF
+		waitErr := cmd.Wait() // Closes pipes, causing scanner EOF
 
 		stderrWg.Wait() // Wait for scanner to finish parsing stats/errors
 
+		// sessionExitReason tracks the outcome of the streaming SESSION.
+		// It is fully local to this goroutine to avoid data races.
+		var sessionExitReason string
+
 		if waitErr != nil {
 			if s.ctx.Err() == nil {
-				exitReason = "ffmpeg_exit"
+				sessionExitReason = "ffmpeg_exit"
 				if detectedReason != "" {
-					exitReason = detectedReason
+					sessionExitReason = detectedReason
 				} else if zapError != "" {
-					exitReason = zapError
+					sessionExitReason = zapError
 				}
 				logger.Error().
 					Err(waitErr).
 					Msg("HLS segmentation failed")
 			} else {
-				exitReason = "client_disconnect" // or stop called
+				sessionExitReason = "client_disconnect" // or stop called
 			}
 		} else {
 			if s.ctx.Err() != nil {
-				exitReason = "client_disconnect"
+				sessionExitReason = "client_disconnect"
 			} else {
-				exitReason = "ffmpeg_exit"
+				sessionExitReason = "ffmpeg_exit"
 			}
 		}
 
-		if exitReason == "internal_error" {
-			exitReason = "success"
+		if sessionExitReason == "internal_error" || sessionExitReason == "" {
+			sessionExitReason = "success"
 		}
-
-		s.mu.Lock()
-		s.started = false
-		s.mu.Unlock()
 
 		// P2.5 Observability Metric
 		// Measure full session duration relative to when we marked it started
-		metrics.ObserveStreamSession("hls_generic", exitReason, time.Since(s.startTime).Seconds())
+		metrics.ObserveStreamSession("hls_generic", sessionExitReason, time.Since(sessionStart).Seconds())
 
 		// Signal completion to Stop() or Terminate()
-		s.waitCh <- waitErr
-		close(s.waitCh)
+		waitCh <- waitErr
+		close(waitCh)
+
+		s.mu.Lock()
+		s.started = false
+		s.cmd = nil
+		s.waitCh = nil
+		s.mu.Unlock()
 	}()
 
 	// Wait for playlist to be created with timeout
@@ -575,7 +566,7 @@ func (s *HLSStreamer) Start() error {
 
 	metrics.ObserveStreamStartupLatency(encrypted, time.Since(startTime))
 
-	exitReason = "success"
+	startupExitReason = "success"
 	cleanupOnError = false
 	return nil
 }
@@ -583,27 +574,45 @@ func (s *HLSStreamer) Start() error {
 // Stop stops the HLS segmentation process.
 func (s *HLSStreamer) Stop() {
 	s.mu.Lock()
-	if !s.started || s.cmd == nil {
+	if s.stopping {
 		s.mu.Unlock()
 		return
 	}
+	s.stopping = true
+
+	started := s.started
+	cmd := s.cmd
+	waitCh := s.waitCh
+	cancel := s.cancel
+	outputDir := s.outputDir
 	s.mu.Unlock() // Unlock to allow waiters to proceed/cleanup
 
 	s.logger.Info().Msg("stopping HLS segmentation")
 
+	if cancel != nil {
+		cancel()
+	}
+
 	// Robust shutdown: Terminate process group first
 	// This will send SIGTERM, wait for waitCh, or fallback to SIGKILL.
 	// We pass s.waitCh which is populated by the background goroutine.
-	_ = procgroup.Terminate(s.cmd, s.waitCh, 2*time.Second)
+	if started && cmd != nil && waitCh != nil {
+		_ = procgroup.Terminate(cmd, waitCh, 2*time.Second)
+	}
 
 	// Post-termination cleanup
-	s.cancel() // Ensure context is cancelled (legacy cleanup)
-
 	// Clean up output directory
 	// outputDir is already validated via secureJoin during stream creation
-	if err := os.RemoveAll(s.outputDir); err != nil {
+	if err := os.RemoveAll(outputDir); err != nil {
 		s.logger.Warn().Err(err).Msg("failed to clean up HLS directory")
 	}
+
+	s.mu.Lock()
+	s.started = false
+	s.stopping = false
+	s.cmd = nil
+	s.waitCh = nil
+	s.mu.Unlock()
 }
 
 // GetPlaylistPath returns the path to the HLS playlist file.

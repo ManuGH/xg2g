@@ -16,6 +16,7 @@ import (
 
 	streamprofile "github.com/ManuGH/xg2g/internal/core/profile"
 	"github.com/ManuGH/xg2g/internal/metrics"
+	"github.com/ManuGH/xg2g/internal/procgroup"
 	"github.com/rs/zerolog"
 )
 
@@ -49,10 +50,12 @@ type SafariDVRProfile struct {
 	lastAccess time.Time
 	mu         sync.RWMutex
 	started    bool
+	stopping   bool
 	config     streamprofile.SafariDVRConfig
 	ready      chan struct{} // Signals when initial segments are ready
 	ffmpegPath string
 	startTime  time.Time
+	waitCh     chan error // Buffered channel for process exit result
 }
 
 // Local readStableFile removed in favor of proxy.ReadStableFile wrapper
@@ -101,10 +104,20 @@ func (p *SafariDVRProfile) Start() error {
 	if p.started {
 		return nil
 	}
+	if p.stopping {
+		return fmt.Errorf("safari dvr profile is stopping")
+	}
 	// New readiness signal per start; profiles can be restarted if ffmpeg exits.
 	ready := make(chan struct{})
 	p.ready = ready
 	p.startTime = time.Now()
+	// Initialize wait channel (buffered to prevent blocking)
+	p.waitCh = make(chan error, 1)
+
+	// Refresh context (important for restartability)
+	ctx, cancel := context.WithCancel(context.Background())
+	p.ctx = ctx
+	p.cancel = cancel
 
 	playlistPath := filepath.Join(p.outputDir, "playlist.m3u8")
 	sessionID := strconv.FormatInt(time.Now().UnixNano(), 36)
@@ -113,6 +126,7 @@ func (p *SafariDVRProfile) Start() error {
 	// Ensure clean state by removing previous output
 	_ = os.RemoveAll(p.outputDir)
 	if err := os.MkdirAll(p.outputDir, 0750); err != nil {
+		p.cancel()
 		return fmt.Errorf("re-create output directory: %w", err)
 	}
 
@@ -237,13 +251,18 @@ func (p *SafariDVRProfile) Start() error {
 	p.cmd = exec.CommandContext(p.ctx, p.ffmpegPath, args...) // #nosec G204
 	p.cmd.Dir = p.outputDir
 
+	// Ensure process group for consistent cleanup
+	procgroup.Set(p.cmd)
+
 	// Capture stderr for debugging
 	stderr, err := p.cmd.StderrPipe()
 	if err != nil {
+		p.cancel()
 		return fmt.Errorf("create stderr pipe: %w", err)
 	}
 
 	if err := p.cmd.Start(); err != nil {
+		p.cancel()
 		return fmt.Errorf("start ffmpeg: %w", err)
 	}
 
@@ -270,49 +289,66 @@ func (p *SafariDVRProfile) Start() error {
 	}()
 
 	// Watchdog: Monitor playlist updates to detect stalls
-	go p.watchdogRoutine(playlistPath)
+	go p.watchdogRoutine(ctx, playlistPath)
 
-	// Wait for FFmpeg process to exit
+	// Wait for FFmpeg process to exit - SINGLE WAITER
+	cmd := p.cmd
+	waitCh := p.waitCh
+	startTime := p.startTime
 	go func() {
-		err := p.cmd.Wait()
+		// Wait for command to finish
+		waitErr := cmd.Wait()
+
+		// Determine exit reason for metrics BEFORE unlocking/cleanup
+		exitReason := "success"
+		if waitErr != nil {
+			// If context is canceled, it was likely deliberate Stop()
+			if ctx.Err() != nil {
+				exitReason = "client_disconnect"
+			} else {
+				// Otherwise it crashed
+				exitReason = "ffmpeg_exit"
+				p.logger.Error().Err(waitErr).Msg("ffmpeg process exited with error")
+			}
+		} else {
+			// Clean exit
+			if ctx.Err() != nil {
+				exitReason = "client_disconnect"
+			} else {
+				p.logger.Info().Msg("ffmpeg process stopped naturally")
+			}
+		}
+
 		p.mu.Lock()
 		p.started = false
 		p.mu.Unlock()
 
-		exitReason := "success"
-		if err != nil {
-			if p.ctx.Err() == nil {
-				exitReason = "ffmpeg_exit"
-				p.logger.Error().Err(err).Msg("ffmpeg process exited with error")
-			} else {
-				exitReason = "client_disconnect" // or stop called
-				p.logger.Info().Msg("ffmpeg process stopped")
-			}
-		} else {
-			if p.ctx.Err() != nil {
-				exitReason = "client_disconnect"
-			}
-			p.logger.Info().Msg("ffmpeg process stopped")
-		}
-
 		// P2.5 Observability Metric
-		metrics.ObserveStreamSession("hls_safari", exitReason, time.Since(p.startTime).Seconds())
+		metrics.ObserveStreamSession("hls_safari", exitReason, time.Since(startTime).Seconds())
+
+		// Send result to wait channel and close it
+		waitCh <- waitErr
+		close(waitCh)
 	}()
 
 	// Wait for initial segments to be ready
-	go p.waitForSegments(playlistPath, ready)
+	go p.waitForSegments(ctx, playlistPath, ready)
 
 	return nil
 }
 
 // watchdogRoutine monitors the playlist file for updates.
 // If the playlist stops updating, it assumes ffmpeg has stalled and kills the process.
-func (p *SafariDVRProfile) watchdogRoutine(playlistPath string) {
+func (p *SafariDVRProfile) watchdogRoutine(ctx context.Context, playlistPath string) {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
 	// Give ffmpeg some time to start up
-	time.Sleep(10 * time.Second)
+	select {
+	case <-ctx.Done():
+		return
+	case <-time.After(10 * time.Second):
+	}
 
 	var lastModTime time.Time
 	stallCount := 0
@@ -320,7 +356,7 @@ func (p *SafariDVRProfile) watchdogRoutine(playlistPath string) {
 
 	for {
 		select {
-		case <-p.ctx.Done():
+		case <-ctx.Done():
 			return
 		case <-ticker.C:
 			p.mu.RLock()
@@ -347,9 +383,8 @@ func (p *SafariDVRProfile) watchdogRoutine(playlistPath string) {
 					Int("stall_seconds", stallCount*2).
 					Msg("watchdog: stream stalled (no playlist updates), killing ffmpeg")
 
-				if p.cmd != nil && p.cmd.Process != nil {
-					_ = p.cmd.Process.Kill()
-				}
+				// Use Stop() to cleanup properly instead of raw Process.Kill
+				go p.Stop()
 				return
 			}
 		}
@@ -357,7 +392,7 @@ func (p *SafariDVRProfile) watchdogRoutine(playlistPath string) {
 }
 
 // waitForSegments waits for initial segments to be written before signaling ready.
-func (p *SafariDVRProfile) waitForSegments(playlistPath string, ready chan struct{}) {
+func (p *SafariDVRProfile) waitForSegments(ctx context.Context, playlistPath string, ready chan struct{}) {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
@@ -365,7 +400,7 @@ func (p *SafariDVRProfile) waitForSegments(playlistPath string, ready chan struc
 
 	for {
 		select {
-		case <-p.ctx.Done():
+		case <-ctx.Done():
 			return
 		case <-ticker.C:
 			p.mu.RLock()
@@ -376,7 +411,7 @@ func (p *SafariDVRProfile) waitForSegments(playlistPath string, ready chan struc
 				return
 			}
 
-			data, err := ReadStableFile(p.ctx, playlistPath, 10*time.Millisecond, 250*time.Millisecond)
+			data, err := ReadStableFile(ctx, playlistPath, 10*time.Millisecond, 250*time.Millisecond)
 			if err != nil || len(data) == 0 {
 				continue
 			}
@@ -437,43 +472,47 @@ func (p *SafariDVRProfile) WaitReady(timeout time.Duration) error {
 // Stop stops the Safari DVR profile and cleans up resources.
 func (p *SafariDVRProfile) Stop() {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	if !p.started {
+	if p.stopping {
+		p.mu.Unlock()
 		return
 	}
+	p.stopping = true
+
+	started := p.started
+	cmd := p.cmd
+	waitCh := p.waitCh
+	cancel := p.cancel
+	outputDir := p.outputDir
+	p.mu.Unlock()
 
 	p.logger.Info().Msg("stopping Safari DVR profile")
-	p.cancel()
 
-	// Wait for process to exit (with timeout)
-	done := make(chan struct{})
-	go func() {
-		if p.cmd != nil && p.cmd.Process != nil {
-			// Wait for the command to finish
-			_ = p.cmd.Wait()
-
-		}
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		p.logger.Info().Msg("Safari DVR profile stopped gracefully")
-	case <-time.After(5 * time.Second):
-		p.logger.Warn().Msg("force killing Safari DVR profile")
-		if p.cmd != nil && p.cmd.Process != nil {
-			_ = p.cmd.Process.Kill()
-
-		}
+	// Ensure context is cancelled
+	if cancel != nil {
+		cancel()
 	}
 
-	p.started = false
+	// Robust termination using process groups
+	// This blocks until proper exit or kill + grace period
+	if started && cmd != nil && waitCh != nil {
+		if err := procgroup.Terminate(cmd, waitCh, 2*time.Second); err != nil {
+			p.logger.Warn().Err(err).Msg("process group termination reported error")
+		}
+	}
 
 	// Cleanup output directory
-	if err := os.RemoveAll(p.outputDir); err != nil {
+	if err := os.RemoveAll(outputDir); err != nil {
 		p.logger.Error().Err(err).Msg("failed to cleanup Safari DVR output directory")
 	}
+
+	p.mu.Lock()
+	p.started = false
+	p.cmd = nil
+	p.waitCh = nil
+	p.stopping = false
+	p.mu.Unlock()
+
+	p.logger.Info().Msg("Safari DVR profile stopped gracefully")
 }
 
 // UpdateAccess updates the last access time.
