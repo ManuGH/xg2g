@@ -340,10 +340,10 @@ test-integration: ## Run integration tests (with stub transcoder)
 	@go test -tags=integration -v -timeout=5m ./test/integration/...
 	@echo "✅ Integration tests passed"
 
-test-integration-fast: ## Run fast integration smoke tests (with stub transcoder)
-	@echo "Running fast integration smoke tests..."
-	@go test -tags=integration_fast -v -timeout=3m ./test/integration/... -run="^TestSmoke"
-	@echo "✅ Smoke tests passed"
+test-integration-fast: ## Run fast integration tests (with stub transcoder)
+	@echo "Running fast integration tests..."
+	@go test -tags=integration_fast -v -timeout=3m ./test/integration/... -run="^TestAPIFast"
+	@echo "✅ Fast integration tests passed"
 
 test-integration-slow: ## Run slow integration tests (with stub transcoder)
 	@echo "Running slow integration tests..."

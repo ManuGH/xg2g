@@ -18,23 +18,25 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestSmoke_HealthEndpoints tests critical health check endpoints (< 100ms)
+// TestAPIFast_HealthEndpoints tests critical health check endpoints (< 100ms)
 // Tag: critical, fast
 // Risk Level: HIGH - production health checks depend on this
-func TestSmoke_HealthEndpoints(t *testing.T) {
+func TestAPIFast_HealthEndpoints(t *testing.T) {
 	ts := helpers.NewTestServer(t, helpers.TestServerOptions{
-		DataDir: t.TempDir(),
+		DataDir:  t.TempDir(),
+		APIToken: "test-token",
 	})
 	defer ts.Close()
 
 	tests := []struct {
 		name           string
 		endpoint       string
+		token          string
 		expectedStatus int
 	}{
-		{"liveness", "/healthz", http.StatusOK},
-		{"readiness_not_ready", "/readyz", http.StatusServiceUnavailable},
-		{"status", "/api/v2/status", http.StatusOK},
+		{"liveness", "/healthz", "", http.StatusOK},
+		{"readiness_not_ready", "/readyz", "", http.StatusServiceUnavailable},
+		{"status", "/api/v2/system/health", "test-token", http.StatusOK},
 	}
 
 	for _, tt := range tests {
@@ -42,6 +44,7 @@ func TestSmoke_HealthEndpoints(t *testing.T) {
 			resp := helpers.DoRequest(t, ts.Server.URL, helpers.RequestOptions{
 				Method: http.MethodGet,
 				Path:   tt.endpoint,
+				Token:  tt.token,
 			})
 			defer resp.Body.Close()
 
@@ -51,10 +54,10 @@ func TestSmoke_HealthEndpoints(t *testing.T) {
 	}
 }
 
-// TestSmoke_RefreshEndpointAuth tests API authentication (< 50ms)
+// TestAPIFast_RefreshEndpointAuth tests API authentication (< 50ms)
 // Tag: critical, fast, security
 // Risk Level: HIGH - authentication bypass would be critical
-func TestSmoke_RefreshEndpointAuth(t *testing.T) {
+func TestAPIFast_RefreshEndpointAuth(t *testing.T) {
 	ts := helpers.NewTestServer(t, helpers.TestServerOptions{
 		DataDir:  t.TempDir(),
 		APIToken: "test-token",
@@ -67,14 +70,14 @@ func TestSmoke_RefreshEndpointAuth(t *testing.T) {
 		expectedStatus int
 	}{
 		{"no_token", "", http.StatusUnauthorized},
-		{"wrong_token", "wrong", http.StatusForbidden}, // 403 for wrong token (not 401)
+		{"wrong_token", "wrong", http.StatusUnauthorized}, // API returns 401 for both missing and invalid tokens
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			resp := helpers.DoRequest(t, ts.Server.URL, helpers.RequestOptions{
 				Method: http.MethodPost,
-				Path:   "/api/v2/refresh",
+				Path:   "/api/v2/system/refresh",
 				Token:  tt.token,
 			})
 			defer resp.Body.Close()
@@ -85,10 +88,10 @@ func TestSmoke_RefreshEndpointAuth(t *testing.T) {
 	}
 }
 
-// TestSmoke_BasicRefreshFlow tests minimal refresh cycle (< 500ms)
+// TestAPIFast_BasicRefreshFlow tests minimal refresh cycle (< 500ms)
 // Tag: critical, fast
 // Risk Level: HIGH - core business logic
-func TestSmoke_BasicRefreshFlow(t *testing.T) {
+func TestAPIFast_BasicRefreshFlow(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	mock := openwebif.NewMockServer()
@@ -106,17 +109,17 @@ func TestSmoke_BasicRefreshFlow(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	status, err := jobs.Refresh(ctx, cfg, nil)
+	status, err := jobs.Refresh(ctx, config.BuildSnapshot(cfg))
 
 	require.NoError(t, err, "Basic refresh should succeed")
 	require.NotNil(t, status)
 	assert.Greater(t, status.Channels, 0, "Should find channels")
 }
 
-// TestSmoke_ConcurrentAPIRequests tests basic concurrency safety (< 1s)
+// TestAPIFast_ConcurrentAPIRequests tests basic concurrency safety (< 1s)
 // Tag: critical, fast, concurrency
 // Risk Level: HIGH - race conditions can cause production issues
-func TestSmoke_ConcurrentAPIRequests(t *testing.T) {
+func TestAPIFast_ConcurrentAPIRequests(t *testing.T) {
 	mock := openwebif.NewMockServer()
 	defer mock.Close()
 
@@ -135,7 +138,7 @@ func TestSmoke_ConcurrentAPIRequests(t *testing.T) {
 		go func() {
 			resp := helpers.DoRequest(t, ts.Server.URL, helpers.RequestOptions{
 				Method: http.MethodPost,
-				Path:   "/api/v2/refresh",
+				Path:   "/api/v2/system/refresh",
 				Token:  "test-token",
 			})
 			defer resp.Body.Close()
