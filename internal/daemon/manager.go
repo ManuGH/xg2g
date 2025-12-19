@@ -100,18 +100,15 @@ func (m *manager) Start(ctx context.Context) error {
 		}
 	}
 
-	// Check if running in proxy-only mode
-	proxyOnlyMode := config.ParseString("XG2G_PROXY_ONLY_MODE", "false") == "true"
-
 	// Start metrics server if configured (skip in proxy-only mode)
-	if !proxyOnlyMode && m.deps.MetricsHandler != nil {
+	if !m.deps.ProxyOnly && m.deps.MetricsHandler != nil {
 		if err := m.startMetricsServer(ctx, errChan); err != nil {
 			return fmt.Errorf("failed to start metrics server: %w", err)
 		}
 	}
 
 	// Start main API server (skip in proxy-only mode)
-	if !proxyOnlyMode {
+	if !m.deps.ProxyOnly {
 		if err := m.startAPIServer(ctx, errChan); err != nil {
 			return fmt.Errorf("failed to start API server: %w", err)
 		}
@@ -123,6 +120,9 @@ func (m *manager) Start(ctx context.Context) error {
 	select {
 	case err := <-errChan:
 		m.logger.Error().Err(err).Msg("Server error, initiating shutdown")
+		if shutdownErr := m.Shutdown(context.Background()); shutdownErr != nil {
+			return fmt.Errorf("%w (shutdown: %v)", err, shutdownErr)
+		}
 		return err
 	case <-ctx.Done():
 		m.logger.Info().Msg("Shutdown signal received")

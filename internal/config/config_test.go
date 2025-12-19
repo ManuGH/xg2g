@@ -621,11 +621,6 @@ epg:
 }
 
 func TestAuthAnonymousEnv(t *testing.T) {
-	// Cleanup env after test
-	defer func() {
-		os.Unsetenv("XG2G_AUTH_ANONYMOUS")
-	}()
-
 	// Set required OWIBase
 	t.Setenv("XG2G_OWI_BASE", "http://example.com")
 

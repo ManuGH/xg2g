@@ -72,7 +72,6 @@ func TestScheduler_Loop(t *testing.T) {
 	rm := NewManager(tmpDir)
 
 	mockClient := new(MockClient)
-	mockEpg := new(MockEpg)
 
 	// Create Engine
 	mockCfg := config.AppConfig{}
@@ -82,15 +81,12 @@ func TestScheduler_Loop(t *testing.T) {
 	sched := NewScheduler(engine)
 	mockClock := &MockClock{}
 	sched.clock = mockClock
-	sched.StartupDelay = 1 * time.Second
+	sched.StartupDelay = 0
 
-	// Expectations
-	// Start(ctx) calls nextDuration(true) -> creates timer
-	// Loop waits for timer.C
-	// We trigger timer.C manually -> RunOnce calls
-
-	mockClient.On("GetTimers", mock.Anything).Return([]openwebif.Timer{}, nil)
-	mockEpg.On("GetEvents", mock.Anything, mock.Anything).Return([]openwebif.EPGEvent{}, nil)
+	runCh := make(chan struct{}, 2)
+	mockClient.On("GetTimers", mock.Anything).Return([]openwebif.Timer{}, nil).Run(func(_ mock.Arguments) {
+		runCh <- struct{}{}
+	})
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -109,28 +105,6 @@ func TestScheduler_Loop(t *testing.T) {
 
 	// Trigger 1st Run
 	timer.Trigger()
-
-	// Wait for Run to complete safely
-	// We can't safely inspect mockClient.Calls while it's being written to.
-	// We need a synchronization mechanism.
-	// Since we can't easily modify the engine execution for tests,
-	// we can rely on the fact that RunOnce logs "Series Engine run completed"
-	// OR, we can add a side-effect to the mock that allows us to wait.
-
-	// Let's redefine the MockClient expectation to signal a channel
-	runCh := make(chan struct{}, 10)
-
-	// Clear previous expectations from setup
-	mockClient.ExpectedCalls = nil
-	mockClient.Calls = nil
-
-	mockClient.On("GetTimers", mock.Anything).Return([]openwebif.Timer{}, nil).Run(func(args mock.Arguments) {
-		runCh <- struct{}{}
-	})
-
-	// Trigger 2nd Run (or just count the first one)
-	// Actually we triggered above.
-	// Wait for signal
 	select {
 	case <-runCh:
 		// Success
@@ -149,7 +123,7 @@ func TestScheduler_Loop(t *testing.T) {
 	}
 
 	cancel()
-	time.Sleep(10 * time.Millisecond) // Allow exit log
+	time.Sleep(25 * time.Millisecond) // Allow loop to observe cancellation
 
 	// Final assertion safe now that loop is cancelled
 	mockClient.AssertNumberOfCalls(t, "GetTimers", 2)

@@ -33,6 +33,10 @@ type Deps struct {
 	// MetricsAddr is the address the metrics server should listen on.
 	// Empty disables the metrics server.
 	MetricsAddr string
+
+	// ProxyOnly disables API + metrics servers when true.
+	// This is a runtime mode switch and must be computed at startup (and treated as immutable).
+	ProxyOnly bool
 }
 
 // ProxyConfig holds proxy server configuration.
@@ -66,7 +70,7 @@ func (d *Deps) Validate() error {
 	if d.Logger.GetLevel() == zerolog.Disabled {
 		return ErrMissingLogger
 	}
-	if d.APIHandler == nil {
+	if !d.ProxyOnly && d.APIHandler == nil {
 		return ErrMissingAPIHandler
 	}
 	// Config validation is done by config.Loader

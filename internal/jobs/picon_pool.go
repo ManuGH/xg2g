@@ -267,7 +267,7 @@ func (p *PiconPool) tryFetchToFile(ctx context.Context, url, localPath string) (
 	if err != nil {
 		return 0, false
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	status = resp.StatusCode
 	if status != http.StatusOK {

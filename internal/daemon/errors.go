@@ -11,6 +11,9 @@ var (
 	// ErrMissingAPIHandler is returned when API handler is not provided
 	ErrMissingAPIHandler = errors.New("API handler is required")
 
+	// ErrMissingManager is returned when a daemon app is created without a manager.
+	ErrMissingManager = errors.New("manager is required")
+
 	// ErrManagerNotStarted is returned when trying to shutdown a manager that hasn't started
 	ErrManagerNotStarted = errors.New("manager not started")
 

@@ -16,7 +16,6 @@ import (
 	"github.com/ManuGH/xg2g/internal/api"
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/daemon"
-	"github.com/ManuGH/xg2g/internal/dvr"
 	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	xglog "github.com/ManuGH/xg2g/internal/log"
@@ -76,7 +75,7 @@ func main() {
 	explicitConfigPath := strings.TrimSpace(*configPath)
 	effectiveConfigPath := explicitConfigPath
 	if effectiveConfigPath == "" {
-		dataDir := strings.TrimSpace(os.Getenv("XG2G_DATA"))
+		dataDir := strings.TrimSpace(config.ParseString("XG2G_DATA", "/tmp"))
 		if dataDir == "" {
 			dataDir = "/tmp"
 		}
@@ -149,15 +148,13 @@ func main() {
 
 	// Allow config.yaml to set the API listen address, but keep ENV as the highest priority.
 	// ENV precedence: XG2G_LISTEN / XG2G_API_ADDR > config.yaml api.listenAddr > defaults.
-	if _, ok := os.LookupEnv("XG2G_LISTEN"); !ok {
-		if _, ok := os.LookupEnv("XG2G_API_ADDR"); !ok {
-			if strings.TrimSpace(cfg.APIListenAddr) != "" {
-				serverCfg.ListenAddr = cfg.APIListenAddr
-			}
+	if strings.TrimSpace(config.ParseStringWithAlias("XG2G_LISTEN", "XG2G_API_ADDR", "")) == "" {
+		if strings.TrimSpace(cfg.APIListenAddr) != "" {
+			serverCfg.ListenAddr = cfg.APIListenAddr
 		}
 	}
 
-	bindHost := os.Getenv("XG2G_BIND_INTERFACE")
+	bindHost := strings.TrimSpace(config.ParseString("XG2G_BIND_INTERFACE", ""))
 	if bindHost != "" {
 		if newListen, err := config.BindListenAddr(serverCfg.ListenAddr, bindHost); err != nil {
 			logger.Fatal().
@@ -239,13 +236,6 @@ func main() {
 
 	// Hot reload support: watch config file and allow SIGHUP/API-triggered reload.
 	cfgHolder := config.NewConfigHolder(cfg, config.NewLoader(configMgrPath, version), configMgrPath)
-	if err := cfgHolder.StartWatcher(ctx); err != nil {
-		logger.Warn().
-			Err(err).
-			Str("event", "config.watcher_start_failed").
-			Str("path", configMgrPath).
-			Msg("failed to start config watcher")
-	}
 
 	var snap config.Snapshot
 	if current := cfgHolder.Current(); current != nil {
@@ -317,57 +307,6 @@ func main() {
 	s.SetConfigHolder(cfgHolder)
 	s.ApplySnapshot(cfgHolder.Current())
 
-	// Create Scheduler for Series Engine
-	// We extract the internal series engine from API server
-	// Ideally API server shouldn't expose it, but for pragmatic wiring we'll get it or create shared instance up front.
-	// API Server creates it inside New().
-	// We should refactor API New() to accept it or expose it.
-	// For minimal churn, let's expose it via Getter or just refactor main to create it and pass to API.
-
-	// Refactoring main to create SeriesEngine and pass to API is cleaner but more diffs.
-	// Let's add GetSeriesEngine() to Server to allow daemon to start scheduler.
-	seriesEngine := s.GetSeriesEngine()
-	if seriesEngine != nil {
-		sched := dvr.NewScheduler(seriesEngine)
-		sched.Start(ctx)
-	}
-
-	applyCh := make(chan *config.Snapshot, 1)
-	cfgHolder.RegisterSnapshotListener(applyCh)
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case newSnap := <-applyCh:
-				s.ApplySnapshot(newSnap)
-			}
-		}
-	}()
-
-	// Use SIGHUP as a config reload trigger (non-fatal).
-	hupChan := make(chan os.Signal, 1)
-	signal.Notify(hupChan, syscall.SIGHUP)
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-hupChan:
-				logger.Info().
-					Str("event", "config.reload_signal").
-					Str("signal", "SIGHUP").
-					Msg("received SIGHUP, reloading config")
-				if err := cfgHolder.Reload(context.Background()); err != nil {
-					logger.Warn().
-						Err(err).
-						Str("event", "config.reload_failed").
-						Msg("config reload failed")
-				}
-			}
-		}
-	}()
-
 	// Build daemon dependencies
 	metricsAddr := ""
 	if cfg.MetricsEnabled {
@@ -377,6 +316,8 @@ func main() {
 		}
 	}
 
+	proxyOnlyMode := config.ParseBool("XG2G_PROXY_ONLY_MODE", false)
+
 	deps := daemon.Deps{
 		Logger:         logger,
 		Config:         cfg,
@@ -385,6 +326,7 @@ func main() {
 		MetricsHandler: promhttp.Handler(),
 		MetricsAddr:    metricsAddr,
 		ProxyConfig:    proxyConfig,
+		ProxyOnly:      proxyOnlyMode,
 	}
 
 	// Create daemon manager
@@ -394,28 +336,6 @@ func main() {
 			Err(err).
 			Str("event", "manager.creation.failed").
 			Msg("failed to create daemon manager")
-	}
-
-	// Start SSDP announcer for HDHomeRun auto-discovery if enabled (not in proxy-only mode)
-	proxyOnlyMode := config.ParseString("XG2G_PROXY_ONLY_MODE", "false") == "true"
-	if !proxyOnlyMode {
-		if hdhrSrv := s.HDHomeRunServer(); hdhrSrv != nil {
-			go func() {
-				if err := hdhrSrv.StartSSDPAnnouncer(ctx); err != nil {
-					logger.Error().
-						Err(err).
-						Str("event", "ssdp.failed").
-						Msg("SSDP announcer failed")
-				}
-			}()
-
-			// Register shutdown hook for SSDP cleanup
-			mgr.RegisterShutdownHook("ssdp_announcer", func(shutdownCtx context.Context) error {
-				logger.Info().Msg("Stopping SSDP announcer")
-				// SSDP announcer stops when context is cancelled
-				return nil
-			})
-		}
 	}
 
 	// Configure Health Manager (Strict Mode)
@@ -444,12 +364,13 @@ func main() {
 		}
 	}
 
-	// Start daemon manager (blocks until shutdown)
-	if err := mgr.Start(ctx); err != nil {
+	// Start daemon app (blocks until shutdown)
+	app := daemon.NewApp(logger, mgr, cfgHolder, s, proxyOnlyMode)
+	if err := app.Run(ctx); err != nil {
 		logger.Fatal().
 			Err(err).
 			Str("event", "manager.failed").
-			Msg("daemon manager failed")
+			Msg("daemon app failed")
 	}
 
 	logger.Info().Msg("server exiting")

@@ -39,7 +39,7 @@ func printConfigUsage() {
 }
 
 func resolveDefaultConfigPath() string {
-	dataDir := strings.TrimSpace(os.Getenv("XG2G_DATA"))
+	dataDir := strings.TrimSpace(config.ParseString("XG2G_DATA", "/tmp"))
 	if dataDir == "" {
 		dataDir = "/tmp"
 	}
