@@ -43,6 +43,7 @@ All notable changes to this project will be documented in this file.
 - **Upgrade path for older configs**:
   - `config.yaml` accepts common legacy key spellings (e.g. `openwebif`, `bouquet`, `api.addr`) and logs warnings.
   - Refresh supports bouquet selection by **name** or legacy **bouquet ref** string.
+- **Config snapshots**: Runtime-ENV is now read only during load/reload (deterministic snapshots, no ENV drift in hot paths). `Snapshot.Epoch` helps debug reload behavior.
 
 ### Notes
 
