@@ -230,6 +230,50 @@ func TestSafariDVR_FFmpegCrash_HandlesGracefully(t *testing.T) {
 	profile.mu.RUnlock()
 }
 
+func TestSafariDVR_WaitReady_FailsFastOnFFmpegExit(t *testing.T) {
+	logger := zerolog.New(io.Discard)
+	tmpDir := t.TempDir()
+
+	config := streamprofile.SafariDVRConfig{
+		SegmentDuration: 2,
+		DVRWindowSize:   60,
+	}
+
+	dummyFFmpeg := filepath.Join(tmpDir, "ffmpeg_exit.sh")
+	script := "#!/bin/sh\n" +
+		"sleep 0.2\n" +
+		"exit 1\n"
+	// #nosec G306 -- test helper script needs to be executable
+	if err := os.WriteFile(dummyFFmpeg, []byte(script), 0755); err != nil {
+		t.Fatalf("failed to create dummy ffmpeg: %v", err)
+	}
+	config.FFmpegPath = dummyFFmpeg
+
+	profile, err := NewSafariDVRProfile("ref:1:0:waitready", "http://fake/stream", tmpDir, logger, config)
+	if err != nil {
+		t.Fatalf("NewSafariDVRProfile failed: %v", err)
+	}
+	defer profile.Stop()
+
+	if err := profile.Start(); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	waitStart := time.Now()
+	err = profile.WaitReady(30 * time.Second)
+	waitDur := time.Since(waitStart)
+
+	if err == nil {
+		t.Fatal("expected WaitReady() to fail, but it succeeded")
+	}
+	if strings.Contains(err.Error(), "timeout waiting") {
+		t.Fatalf("expected WaitReady() to fail fast on ffmpeg exit, got timeout: %v", err)
+	}
+	if waitDur > 3*time.Second {
+		t.Fatalf("WaitReady() took too long (%v), expected fast failure after ffmpeg exit", waitDur)
+	}
+}
+
 // TestSafariDVR_Start_WhenStopping_ReturnsError verifies that Start() fails when Stop() is in progress.
 func TestSafariDVR_Start_WhenStopping_ReturnsError(t *testing.T) {
 	logger := zerolog.New(io.Discard)
