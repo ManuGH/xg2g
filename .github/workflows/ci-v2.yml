@@ -361,7 +361,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     container:
-      image: golang:1.24-bookworm
+      image: golang:1.25-trixie
       env:
         CGO_ENABLED: 0
     env:
