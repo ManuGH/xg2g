@@ -23,10 +23,33 @@ This process is asynchronous. `xg2g` receives the stream URL immediately after t
 
 ### Solution
 
-The system implements a **Post-Zap Delay** to handle this race condition.
+The system implements a **Post-Zap Delay** plus a **Readiness Probe** to handle this race condition.
 
-- **Mechanism**: `ZapAndResolveStream` enforces a fixed post-zap delay (currently **5 seconds**) after successfully resolving the Web API stream (see `internal/proxy/hls_helper.go`).
-- **Effect**: Gives the receiver time to stabilize the tuner and `oscam-emu` listener before FFmpeg attempts the connection.
+- **Mechanism**: `ZapAndResolveStream` enforces a fixed post-zap delay (currently **5 seconds**) after successfully resolving the Web API stream, then probes the resolved stream URL until it yields bytes (bounded) before starting FFmpeg (see `internal/proxy/hls_helper.go`).
+- **Effect**: Avoids "connect too early" flake by waiting for the receiver port to be actually readable, not just theoretically open.
+
+### If it still fails (fast-fail behavior)
+
+If FFmpeg exits before the first HLS playlist/segments are ready, xg2g will stop waiting and fail the request instead of idling until a long timeout.
+
+Typical log sequence:
+
+- `ffmpeg process exited with error` (from the HLS profile)
+- `HLS preflight failed` or `HLS streaming failed` with an error like `ffmpeg exited before ready`
+
+This usually indicates the receiver never stabilized the returned stream URL (tuner busy, softcam not ready, port not open yet, receiver-side error). In this case, increasing “wait time” inside xg2g won’t help unless FFmpeg stays alive and reconnects successfully.
+
+If you see an error like `stream not ready after zap`, xg2g could resolve the stream URL but never observed the stream returning bytes within the bounded readiness probe window.
+
+If a specific client fails to play HLS, you can force MPEG-TS by appending `?mode=ts` to the stream URL. To force HLS, use `?mode=hls`.
+
+### WebAPI timeouts
+
+The WebAPI “zap” call uses a bounded HTTP timeout. If you see errors like `failed to call Web API: context deadline exceeded` / `zap_timeout`, check:
+
+- OpenWebIF is reachable (host/port, credentials/token)
+- receiver responsiveness under load (tuner/softcam state)
+- LAN connectivity/packet loss
 
 ### Important Notes & Architecture Constraints
 

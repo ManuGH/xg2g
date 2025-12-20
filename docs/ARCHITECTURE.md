@@ -26,6 +26,7 @@ xg2g is a middleware service that bridges Enigma2 satellite/cable receivers with
 - **Middleware Pattern**: Sits between Enigma2 and media servers
 - **Modular Design**: Separated API, proxy/streaming, jobs, and shared core packages
 - **12-Factor Compatible**: Configuration via file + ENV overrides
+- **Deterministic Config**: ENV is read only at load/reload; a request/job runs against one config snapshot/epoch
 
 ## Architecture Diagram
 
@@ -157,6 +158,17 @@ Client → xg2g Proxy → Enigma2 Stream → [Transcoding?] → Client
 - **Audio Transcoding**: FFmpeg CPU-based (AAC, MP3)
 - **GPU Transcoding**: External transcoder service (VAAPI, NVENC, QSV)
 
+**Streaming Format & Profile Selection**:
+
+- **Direct MPEG-TS**: `GET /{service_ref}` (for IPTV clients like VLC/Plex)
+- **HLS (browser/web players)**: `GET /hls/{service_ref}` (or via API compatibility proxy: `/stream/{service_ref}/playlist.m3u8`)
+- **Client routing**: The proxy can auto-route browser-like requests hitting a direct stream URL to HLS (based on request headers, not browser brand).
+- **Overrides**: `?mode=hls` forces HLS, `?mode=ts` forces MPEG-TS for legacy clients.
+- **HLS profiles**:
+  - Default: Safari DVR profile (stable sliding window)
+  - Opt-in: `?profile=generic` (generic MPEG-TS HLS)
+  - Opt-in: `?llhls=1` / `?profile=llhls` (low-latency HLS)
+
 **Related**: [ADR-004 OpenTelemetry](adr/004-opentelemetry.md) - GPU transcoding tracing
 
 ### 3. Background Jobs (`internal/jobs`)
@@ -227,7 +239,7 @@ sequenceDiagram
     participant OWI as Enigma2 OpenWebIF
     participant Storage as File Storage
 
-    Client->>API: POST /api/v2/refresh
+    Client->>API: POST /api/v2/system/refresh
     API->>Jobs: Trigger Refresh Job
     Jobs->>OWI: GET /api/bouquets
     OWI-->>Jobs: Bouquet List
@@ -491,7 +503,7 @@ To prevent regression of encrypted channel support, all developers must adhere t
 - [ADR-001: API Versioning](adr/001-api-versioning.md)
 - [ADR-002: Config Precedence](adr/002-config-precedence.md)
 - [ADR-003: Validation Package](adr/003-validation-package.md)
-- [ADR-004: OpenTelemetry Integration](adr/004-opentelemetry-integration.md)
+- [ADR-004: OpenTelemetry Integration](adr/004-opentelemetry.md)
 - [CI/CD Documentation](ci-cd.md)
 - [Telemetry Guide](telemetry.md)
 
