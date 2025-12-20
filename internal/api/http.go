@@ -495,6 +495,7 @@ func (s *Server) handleStreamPreflight(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	token := s.cfg.APIToken
 	forceHTTPS := s.cfg.ForceHTTPS
+	snap := s.snap
 	s.mu.RUnlock()
 
 	// 1. Verify Token
@@ -526,7 +527,71 @@ func (s *Server) handleStreamPreflight(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   86400,
 	})
 
+	serviceRef := chi.URLParam(r, "ref")
+	if serviceRef != "" && snap.Runtime.StreamProxy.Enabled && shouldWarmupHLS(r) {
+		if err := s.preflightProxyHLS(r, serviceRef, token, snap.Runtime.StreamProxy); err != nil {
+			logger := log.WithComponentFromContext(r.Context(), "proxy")
+			logger.Error().
+				Err(err).
+				Str("service_ref", serviceRef).
+				Msg("HLS preflight failed")
+			http.Error(w, "HLS preflight failed", http.StatusServiceUnavailable)
+			return
+		}
+	}
+
 	w.WriteHeader(http.StatusOK)
+}
+
+func shouldWarmupHLS(r *http.Request) bool {
+	q := r.URL.Query()
+	if strings.EqualFold(q.Get("mode"), "ts") || q.Get("ts") == "1" {
+		return false
+	}
+	return true
+}
+
+func (s *Server) preflightProxyHLS(r *http.Request, serviceRef, token string, proxyCfg config.StreamProxyRuntime) error {
+	const preflightTimeout = 12 * time.Second
+
+	upstreamHost := strings.TrimSpace(proxyCfg.UpstreamHost)
+	if upstreamHost == "" {
+		upstreamHost = "127.0.0.1"
+	}
+	proxyPort := "18000"
+	if port := portFromListenAddr(strings.TrimSpace(proxyCfg.ListenAddr)); port != "" {
+		proxyPort = port
+	}
+
+	target := url.URL{
+		Scheme:   "http",
+		Host:     net.JoinHostPort(upstreamHost, proxyPort),
+		Path:     "/hls/" + serviceRef + "/preflight",
+		RawQuery: r.URL.RawQuery,
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), preflightTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
+	if err != nil {
+		return err
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("proxy preflight returned %s", resp.Status)
+	}
+	return nil
 }
 
 // authRequired is a middleware that enforces API token authentication for a handler.

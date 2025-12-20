@@ -9,6 +9,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -22,6 +23,87 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/jobs"
 )
+
+func TestHandleStreamPreflight_WarmsProxy(t *testing.T) {
+	type preflightHit struct {
+		path  string
+		query string
+		auth  string
+	}
+
+	hitCh := make(chan preflightHit, 1)
+	proxySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hitCh <- preflightHit{
+			path:  r.URL.Path,
+			query: r.URL.RawQuery,
+			auth:  r.Header.Get("Authorization"),
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(proxySrv.Close)
+
+	proxyURL, err := url.Parse(proxySrv.URL)
+	require.NoError(t, err)
+	t.Setenv("XG2G_PROXY_HOST", proxyURL.Hostname())
+	t.Setenv("XG2G_PROXY_PORT", proxyURL.Port())
+
+	s := New(config.AppConfig{
+		APIToken:   "test-token",
+		DataDir:    t.TempDir(),
+		StreamPort: 8001,
+	}, nil)
+	handler := s.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/stream/orf1-hd-58b0f8/preflight?llhls=1", nil)
+	req.Header.Set("Authorization", "Bearer test-token")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	select {
+	case hit := <-hitCh:
+		assert.Equal(t, "/hls/orf1-hd-58b0f8/preflight", hit.path)
+		assert.Equal(t, "llhls=1", hit.query)
+		assert.Equal(t, "Bearer test-token", hit.auth)
+	default:
+		t.Fatal("expected proxy preflight to be called")
+	}
+}
+
+func TestHandleStreamPreflight_ModeTS_SkipsWarmup(t *testing.T) {
+	hitCh := make(chan struct{}, 1)
+	proxySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hitCh <- struct{}{}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(proxySrv.Close)
+
+	proxyURL, err := url.Parse(proxySrv.URL)
+	require.NoError(t, err)
+	t.Setenv("XG2G_PROXY_HOST", proxyURL.Hostname())
+	t.Setenv("XG2G_PROXY_PORT", proxyURL.Port())
+
+	s := New(config.AppConfig{
+		APIToken:   "test-token",
+		DataDir:    t.TempDir(),
+		StreamPort: 8001,
+	}, nil)
+	handler := s.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/stream/orf1-hd-58b0f8/preflight?mode=ts", nil)
+	req.Header.Set("Authorization", "Bearer test-token")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	select {
+	case <-hitCh:
+		t.Fatal("unexpected proxy preflight call for mode=ts")
+	default:
+	}
+}
 
 func TestHandleSystemHealth(t *testing.T) {
 	s := New(config.AppConfig{
