@@ -60,6 +60,8 @@ type SafariDVRProfile struct {
 	ffmpegPath string
 	startTime  time.Time
 	waitCh     chan error // Buffered channel for process exit result
+	done       chan struct{}
+	exitErr    error
 }
 
 // Local readStableFile removed in favor of proxy.ReadStableFile wrapper
@@ -117,6 +119,8 @@ func (p *SafariDVRProfile) Start() error {
 	p.startTime = time.Now()
 	// Initialize wait channel (buffered to prevent blocking)
 	p.waitCh = make(chan error, 1)
+	p.done = make(chan struct{})
+	p.exitErr = nil
 
 	// Refresh context (important for restartability)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -152,15 +156,15 @@ func (p *SafariDVRProfile) Start() error {
 	webAPIURL := convertToWebAPI(p.targetURL, p.serviceRef)
 	var programID int
 	if strings.Contains(p.targetURL, "/web/stream.m3u") || webAPIURL != p.targetURL {
-		p.logger.Info().Str("web_api_url", webAPIURL).Msg("attempting to resolve Web API stream (Zapping)")
+		p.logger.Info().Str("web_api_url", sanitizeURL(webAPIURL)).Msg("attempting to resolve Web API stream (Zapping)")
 		// Use centralized helper with 5s delay protection
-		url, pid, err := ZapAndResolveStream(webAPIURL)
+		url, pid, err := ZapAndResolveStream(ctx, webAPIURL)
 		if err != nil {
-			p.logger.Error().Err(err).Str("web_api_url", webAPIURL).Msg("failed to resolve Web API stream")
+			p.logger.Error().Err(err).Str("web_api_url", sanitizeURL(webAPIURL)).Msg("failed to resolve Web API stream")
 		} else {
 			finalInputURL = url
 			programID = pid
-			p.logger.Info().Str("resolved_url", finalInputURL).Int("program_id", programID).Msg("successfully resolved stream URL")
+			p.logger.Info().Str("resolved_url", sanitizeURL(finalInputURL)).Int("program_id", programID).Msg("successfully resolved stream URL")
 		}
 	} else {
 		p.logger.Info().Msg("using direct stream URL (no Web API detected)")
@@ -244,7 +248,7 @@ func (p *SafariDVRProfile) Start() error {
 	)
 
 	p.logger.Info().
-		Str("target", p.targetURL).
+		Str("target", sanitizeURL(p.targetURL)).
 		Str("output", playlistPath).
 		Int("segment_duration", p.config.SegmentDuration).
 		Int("dvr_window_seconds", p.config.DVRWindowSize).
@@ -298,6 +302,7 @@ func (p *SafariDVRProfile) Start() error {
 	// Wait for FFmpeg process to exit - SINGLE WAITER
 	cmd := p.cmd
 	waitCh := p.waitCh
+	done := p.done
 	startTime := p.startTime
 	go func() {
 		// Wait for command to finish
@@ -324,8 +329,11 @@ func (p *SafariDVRProfile) Start() error {
 		}
 
 		p.mu.Lock()
+		p.exitErr = waitErr
 		p.started = false
 		p.mu.Unlock()
+
+		close(done)
 
 		// P2.5 Observability Metric
 		metrics.ObserveStreamSession("hls_safari", exitReason, time.Since(startTime).Seconds())
@@ -461,14 +469,27 @@ func (p *SafariDVRProfile) waitForSegments(ctx context.Context, playlistPath str
 func (p *SafariDVRProfile) WaitReady(timeout time.Duration) error {
 	p.mu.RLock()
 	ready := p.ready
+	done := p.done
 	p.mu.RUnlock()
 	if ready == nil {
 		return fmt.Errorf("safari dvr profile not initialized")
 	}
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
 	select {
 	case <-ready:
 		return nil
-	case <-time.After(timeout):
+	case <-done:
+		p.mu.RLock()
+		exitErr := p.exitErr
+		p.mu.RUnlock()
+		if exitErr == nil {
+			return fmt.Errorf("safari dvr profile stopped before ready")
+		}
+		return fmt.Errorf("safari dvr ffmpeg exited before ready: %w", exitErr)
+	case <-timer.C:
 		return fmt.Errorf("timeout waiting for Safari DVR profile to be ready")
 	}
 }

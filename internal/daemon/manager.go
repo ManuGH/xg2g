@@ -235,6 +235,7 @@ func (m *manager) startProxyServer(_ context.Context, errChan chan<- error) erro
 		Runtime:        m.deps.ProxyConfig.Runtime,
 		APIToken:       m.deps.Config.APIToken,
 		AuthAnonymous:  m.deps.Config.AuthAnonymous,
+		AllowedOrigins: m.deps.ProxyConfig.AllowedOrigins,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create proxy: %w", err)

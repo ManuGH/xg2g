@@ -50,6 +50,8 @@ type LLHLSProfile struct {
 	ffmpegPath  string
 	ready       chan struct{}             // Signals when initial segments are ready
 	hevcConfig  streamprofile.LLHLSConfig // Store full config for decision making
+	done        chan struct{}
+	exitErr     error
 }
 
 // NewLLHLSProfile creates a new LL-HLS profile.
@@ -106,6 +108,12 @@ func (p *LLHLSProfile) Start(forceAAC bool, aacBitrate string) error {
 	// New readiness signal per start; profiles can be restarted if ffmpeg exits.
 	ready := make(chan struct{})
 	p.ready = ready
+	p.done = make(chan struct{})
+	p.exitErr = nil
+	// Refresh context (important for restartability)
+	ctx, cancel := context.WithCancel(context.Background())
+	p.ctx = ctx
+	p.cancel = cancel
 
 	playlistPath := filepath.Join(p.outputDir, "playlist.m3u8")
 	segmentPattern := filepath.Join(p.outputDir, "segment_%03d.m4s")
@@ -141,16 +149,14 @@ func (p *LLHLSProfile) Start(forceAAC bool, aacBitrate string) error {
 
 	// Resolve WebIF stream URL (and optional program hint) if applicable.
 	if strings.Contains(p.targetURL, "/web/stream.m3u") || webAPIURL != p.targetURL {
-		p.logger.Info().Str("web_api_url", webAPIURL).Msg("attempting to resolve Web API stream (Zapping)")
-		resolved, err := resolveWebAPIStreamInfo(webAPIURL)
+		p.logger.Info().Str("web_api_url", sanitizeURL(webAPIURL)).Msg("attempting to resolve Web API stream (Zapping)")
+		url, pid, err := ZapAndResolveStream(p.ctx, webAPIURL)
 		if err != nil {
-			p.logger.Error().Err(err).Str("web_api_url", webAPIURL).Msg("failed to resolve Web API stream")
+			p.logger.Error().Err(err).Str("web_api_url", sanitizeURL(webAPIURL)).Msg("failed to resolve Web API stream")
 		} else {
-			finalInputURL = resolved.URL
-			programID = resolved.ProgramID
-			p.logger.Info().Str("resolved_url", finalInputURL).Int("program_id", programID).Msg("successfully resolved stream URL")
-			// Give the tuner a moment to lock after zapping
-			time.Sleep(1000 * time.Millisecond)
+			finalInputURL = url
+			programID = pid
+			p.logger.Info().Str("resolved_url", sanitizeURL(finalInputURL)).Int("program_id", programID).Msg("successfully resolved stream URL")
 		}
 	} else {
 		p.logger.Info().Msg("using direct stream URL (no Web API detected)")
@@ -267,7 +273,7 @@ func (p *LLHLSProfile) Start(forceAAC bool, aacBitrate string) error {
 	)
 
 	p.logger.Info().
-		Str("target", p.targetURL).
+		Str("target", sanitizeURL(p.targetURL)).
 		Str("output", playlistPath).
 		Int("segment_duration", p.segmentSize).
 		Int("playlist_size", p.playlistLen).
@@ -309,11 +315,14 @@ func (p *LLHLSProfile) Start(forceAAC bool, aacBitrate string) error {
 	go p.watchdogRoutine(playlistPath)
 
 	// Wait for FFmpeg process to exit
+	done := p.done
 	go func() {
 		err := p.cmd.Wait()
 		p.mu.Lock()
 		p.started = false
+		p.exitErr = err
 		p.mu.Unlock()
+		close(done)
 		if err != nil && p.ctx.Err() == nil {
 			p.logger.Error().Err(err).Msg("ffmpeg process exited with error (possibly killed by watchdog or crash)")
 		} else {
@@ -430,14 +439,27 @@ func (p *LLHLSProfile) waitForSegments(initSegment, playlistPath string, ready c
 func (p *LLHLSProfile) WaitReady(timeout time.Duration) error {
 	p.mu.RLock()
 	ready := p.ready
+	done := p.done
 	p.mu.RUnlock()
 	if ready == nil {
 		return fmt.Errorf("timeout waiting for LL-HLS profile to be ready")
 	}
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
 	select {
 	case <-ready:
 		return nil
-	case <-time.After(timeout):
+	case <-done:
+		p.mu.RLock()
+		exitErr := p.exitErr
+		p.mu.RUnlock()
+		if exitErr == nil {
+			return fmt.Errorf("ll-hls profile stopped before ready")
+		}
+		return fmt.Errorf("ll-hls ffmpeg exited before ready: %w", exitErr)
+	case <-timer.C:
 		return fmt.Errorf("timeout waiting for LL-HLS profile to be ready")
 	}
 }
@@ -445,41 +467,41 @@ func (p *LLHLSProfile) WaitReady(timeout time.Duration) error {
 // Stop stops the LL-HLS profile and cleans up resources.
 func (p *LLHLSProfile) Stop() {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-
 	if !p.started {
+		p.mu.Unlock()
 		return
 	}
 
 	p.logger.Info().Msg("stopping LL-HLS profile")
-	p.cancel()
 
-	// Wait for process to exit (with timeout)
-	done := make(chan struct{})
-	go func() {
-		if p.cmd != nil && p.cmd.Process != nil {
-			// Wait for the command to finish
-			_ = p.cmd.Wait()
+	cmd := p.cmd
+	cancel := p.cancel
+	done := p.done
+	outputDir := p.outputDir
+	p.mu.Unlock()
 
-		}
-		close(done)
-	}()
+	if cancel != nil {
+		cancel()
+	}
 
 	select {
 	case <-done:
 		p.logger.Info().Msg("LL-HLS profile stopped gracefully")
 	case <-time.After(5 * time.Second):
 		p.logger.Warn().Msg("force killing LL-HLS profile")
-		if p.cmd != nil && p.cmd.Process != nil {
-			_ = p.cmd.Process.Kill()
-
+		if cmd != nil && cmd.Process != nil {
+			_ = cmd.Process.Kill()
 		}
 	}
 
+	p.mu.Lock()
 	p.started = false
+	p.cmd = nil
+	p.done = nil
+	p.mu.Unlock()
 
 	// Cleanup output directory
-	if err := os.RemoveAll(p.outputDir); err != nil {
+	if err := os.RemoveAll(outputDir); err != nil {
 		p.logger.Error().Err(err).Msg("failed to cleanup LL-HLS output directory")
 	}
 }

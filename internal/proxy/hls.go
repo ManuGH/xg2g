@@ -77,9 +77,12 @@ type HLSStreamer struct {
 	segmentDur int // seconds
 	ffLogLevel string
 	waitCh     chan error // Channel to signal process exit to Stop()
+	done       chan struct{}
+	exitErr    error
 
 	startTime          time.Time
 	firstSegmentServed sync.Once
+	playlistTimeout    time.Duration
 }
 
 // HLSManager manages multiple HLS streams.
@@ -201,16 +204,17 @@ func (m *HLSManager) createStream(serviceRef, targetURL string) (*HLSStreamer, e
 	ctx, cancel := context.WithCancel(context.Background())
 
 	stream := &HLSStreamer{
-		serviceRef: serviceRef,
-		targetURL:  targetURL,
-		outputDir:  outputDir,
-		ctx:        ctx,
-		cancel:     cancel,
-		logger:     m.logger.With().Str("service_ref", serviceRef).Logger(),
-		lastAccess: time.Now(),
-		dvrWindow:  m.genericConfig.DVRWindowSize,
-		segmentDur: m.genericConfig.SegmentDuration,
-		ffLogLevel: m.ffLogLevel,
+		serviceRef:      serviceRef,
+		targetURL:       targetURL,
+		outputDir:       outputDir,
+		ctx:             ctx,
+		cancel:          cancel,
+		logger:          m.logger.With().Str("service_ref", serviceRef).Logger(),
+		lastAccess:      time.Now(),
+		dvrWindow:       m.genericConfig.DVRWindowSize,
+		segmentDur:      m.genericConfig.SegmentDuration,
+		ffLogLevel:      m.ffLogLevel,
+		playlistTimeout: m.playlistTimeout,
 	}
 
 	return stream, nil
@@ -247,6 +251,8 @@ func (s *HLSStreamer) Start() error {
 	s.firstSegmentServed = sync.Once{}
 	// Initialize wait channel
 	s.waitCh = make(chan error, 1)
+	s.done = make(chan struct{})
+	s.exitErr = nil
 	s.mu.Unlock()
 
 	startTime := time.Now()
@@ -288,13 +294,13 @@ func (s *HLSStreamer) Start() error {
 	// If target is already a WebIF stream or we converted to WebIF, resolve once to get the real TS URL.
 	var zapError string
 	if strings.Contains(s.targetURL, "/web/stream.m3u") || webAPIURL != s.targetURL {
-		logger.Info().Str("web_api_url", webAPIURL).Msg("attempting to resolve Web API stream (Zapping)")
+		logger.Info().Str("web_api_url", sanitizeURL(webAPIURL)).Msg("attempting to resolve Web API stream (Zapping)")
 		tuneStart := time.Now()
 		// Use centralized helper with race condition protection (5s delay)
-		url, pid, err := ZapAndResolveStream(webAPIURL)
+		url, pid, err := ZapAndResolveStream(ctx, webAPIURL)
 
 		if err != nil {
-			logger.Error().Err(err).Str("web_api_url", webAPIURL).Msg("failed to resolve Web API stream")
+			logger.Error().Err(err).Str("web_api_url", sanitizeURL(webAPIURL)).Msg("failed to resolve Web API stream")
 			if strings.Contains(err.Error(), "context deadline exceeded") || strings.Contains(err.Error(), "timeout") {
 				zapError = "zap_timeout"
 			} else {
@@ -303,7 +309,7 @@ func (s *HLSStreamer) Start() error {
 		} else {
 			finalInputURL = url
 			programID = pid
-			logger.Info().Str("resolved_url", finalInputURL).Int("program_id", programID).Msg("successfully resolved stream URL")
+			logger.Info().Str("resolved_url", sanitizeURL(finalInputURL)).Int("program_id", programID).Msg("successfully resolved stream URL")
 
 			if strings.Contains(finalInputURL, ":17999/") {
 				encrypted = true
@@ -344,7 +350,7 @@ func (s *HLSStreamer) Start() error {
 	}
 
 	logger.Info().
-		Str("ffmpeg_input", finalInputURL).
+		Str("ffmpeg_input", sanitizeURL(finalInputURL)).
 		Int("dvr_seconds", dvrSeconds).
 		Int("hls_list_size", dvrListSize).
 		Msg("starting ffmpeg with input")
@@ -492,7 +498,7 @@ func (s *HLSStreamer) Start() error {
 
 	logger.Info().
 		Str("service_ref", s.serviceRef).
-		Str("target", s.targetURL).
+		Str("target", sanitizeURL(s.targetURL)).
 		Str("output", playlistPath).
 		Msg("starting HLS segmentation")
 
@@ -507,6 +513,7 @@ func (s *HLSStreamer) Start() error {
 	// Monitor process in background
 	cmd := s.cmd
 	waitCh := s.waitCh
+	done := s.done
 	sessionStart := s.startTime
 	go func() {
 		// Capture wait error
@@ -547,6 +554,12 @@ func (s *HLSStreamer) Start() error {
 		// P2.5 Observability Metric
 		// Measure full session duration relative to when we marked it started
 		metrics.ObserveStreamSession("hls_generic", sessionExitReason, time.Since(sessionStart).Seconds())
+
+		s.mu.Lock()
+		s.exitErr = waitErr
+		s.mu.Unlock()
+
+		close(done)
 
 		// Signal completion to Stop() or Terminate()
 		waitCh <- waitErr
@@ -645,9 +658,45 @@ func (s *HLSStreamer) isIdle(timeout time.Duration) bool {
 func (s *HLSStreamer) waitForPlaylist(ctx context.Context, encrypted bool, startTime time.Time) error {
 	playlistPath := s.GetPlaylistPath()
 
+	s.mu.RLock()
+	done := s.done
+	s.mu.RUnlock()
+
+	waitCtx := ctx
+	cancel := func() {}
+	if done != nil {
+		waitCtx, cancel = context.WithCancel(ctx)
+		defer cancel()
+
+		go func() {
+			select {
+			case <-done:
+				cancel()
+			case <-waitCtx.Done():
+			}
+		}()
+	}
+
 	// Use fsnotify based watcher instead of polling loop
 	// We wait for the playlist file to be created and have non-zero size
-	if err := WaitForFile(ctx, s.logger, playlistPath, DefaultHLSPlaylistTimeout); err != nil {
+	timeout := s.playlistTimeout
+	if timeout <= 0 {
+		timeout = DefaultHLSPlaylistTimeout
+	}
+	if err := WaitForFile(waitCtx, s.logger, playlistPath, timeout); err != nil {
+		if done != nil {
+			select {
+			case <-done:
+				s.mu.RLock()
+				exitErr := s.exitErr
+				s.mu.RUnlock()
+				if exitErr == nil {
+					return fmt.Errorf("ffmpeg exited before playlist ready")
+				}
+				return fmt.Errorf("ffmpeg exited before playlist ready: %w", exitErr)
+			default:
+			}
+		}
 		return err
 	}
 
@@ -839,71 +888,66 @@ func (m *HLSManager) GetOrCreateSafariDVRProfile(serviceRef, targetURL string) (
 	return profile, nil
 }
 
-// ServeHLS handles HLS playlist and segment requests.
-// Routes to appropriate HLS profile based on User-Agent and query parameters:
-//   - ?llhls=1 → LL-HLS profile (low latency, opt-in)
-//   - Safari/Apple clients → Safari DVR profile (large sliding window for scrubbing)
-//   - Others → Generic HLS
-func (m *HLSManager) ServeHLS(w http.ResponseWriter, r *http.Request, serviceRef, targetURL string) error {
-	userAgent := r.Header.Get("User-Agent")
+type hlsProfileKind uint8
 
-	// Priority 1: Explicit LL-HLS request via query parameter
-	if r.URL.Query().Get("llhls") == "1" {
-		return m.serveLLHLS(w, r, serviceRef, targetURL)
+const (
+	hlsProfileSafariDVR hlsProfileKind = iota
+	hlsProfileGeneric
+	hlsProfileLLHLS
+)
+
+func selectHLSProfile(r *http.Request) hlsProfileKind {
+	q := r.URL.Query()
+	if q.Get("llhls") == "1" {
+		return hlsProfileLLHLS
 	}
 
-	// Priority 2: Safari/Apple clients → Safari DVR profile
-	if IsSafariClient(userAgent) || IsNativeAppleClient(userAgent) {
+	switch strings.ToLower(strings.TrimSpace(q.Get("profile"))) {
+	case "generic":
+		return hlsProfileGeneric
+	case "llhls":
+		return hlsProfileLLHLS
+	case "safari", "dvr", "":
+		return hlsProfileSafariDVR
+	default:
+		// Unknown values fall back to the default to keep behavior stable.
+		return hlsProfileSafariDVR
+	}
+}
+
+// ServeHLS handles HLS playlist and segment requests.
+// Routes to an HLS profile based on explicit query parameters, not User-Agent:
+//   - ?llhls=1 or ?profile=llhls → LL-HLS profile (opt-in)
+//   - ?profile=generic → Generic HLS
+//   - default / ?profile=safari|dvr → Safari DVR profile (stable sliding window)
+func (m *HLSManager) ServeHLS(w http.ResponseWriter, r *http.Request, serviceRef, targetURL string) error {
+	switch selectHLSProfile(r) {
+	case hlsProfileLLHLS:
+		return m.serveLLHLS(w, r, serviceRef, targetURL)
+	case hlsProfileGeneric:
+		return m.serveGenericHLS(w, r, serviceRef, targetURL)
+	default:
 		return m.serveSafariDVR(w, r, serviceRef, targetURL)
 	}
-
-	// Fallback: Generic HLS for all other clients
-	// Get or create stream
-	stream, err := m.GetOrCreateStream(serviceRef, targetURL)
-	if err != nil {
-		return fmt.Errorf("get stream: %w", err)
-	}
-
-	// Start segmentation if not already started
-	if err := stream.Start(); err != nil {
-		return fmt.Errorf("start stream: %w", err)
-	}
-
-	// Determine what to serve (playlist or segment)
-	path := r.URL.Path
-
-	if strings.HasSuffix(path, ".m3u8") || strings.HasSuffix(path, "/hls") {
-		// Serve playlist
-		return m.servePlaylist(w, stream)
-	} else if strings.Contains(path, "segment_") && strings.HasSuffix(path, ".ts") {
-		// Serve segment
-		segmentName := filepath.Base(path)
-		return m.serveSegment(w, stream, segmentName)
-	}
-
-	// Default: serve playlist
-	return m.servePlaylist(w, stream)
 }
 
 // PreflightHLS ensures the selected HLS profile is started and ready before a client
 // attaches the playlist to a <video> element. This avoids first-play failures on
 // Safari when the initial manifest/segments take longer to become available.
 func (m *HLSManager) PreflightHLS(ctx context.Context, r *http.Request, serviceRef, targetURL string) error {
-	userAgent := r.Header.Get("User-Agent")
-
 	var key string
-	switch {
-	case r.URL.Query().Get("llhls") == "1":
+	switch selectHLSProfile(r) {
+	case hlsProfileLLHLS:
 		key = "llhls:" + serviceRef
-	case IsSafariClient(userAgent) || IsNativeAppleClient(userAgent):
-		key = "safari:" + serviceRef
-	default:
+	case hlsProfileGeneric:
 		key = "generic:" + serviceRef
+	default:
+		key = "safari:" + serviceRef
 	}
 
 	_, err, _ := m.startGroup.Do(key, func() (any, error) {
-		switch {
-		case r.URL.Query().Get("llhls") == "1":
+		switch selectHLSProfile(r) {
+		case hlsProfileLLHLS:
 			profile, err := m.GetOrCreateLLHLSProfile(serviceRef, targetURL)
 			if err != nil {
 				return nil, err
@@ -917,7 +961,7 @@ func (m *HLSManager) PreflightHLS(ctx context.Context, r *http.Request, serviceR
 			}
 			return nil, profile.WaitReady(m.playlistTimeout)
 
-		case IsSafariClient(userAgent) || IsNativeAppleClient(userAgent):
+		case hlsProfileSafariDVR:
 			profile, err := m.GetOrCreateSafariDVRProfile(serviceRef, targetURL)
 			if err != nil {
 				return nil, err
@@ -948,6 +992,27 @@ func (m *HLSManager) PreflightHLS(ctx context.Context, r *http.Request, serviceR
 	})
 
 	return err
+}
+
+func (m *HLSManager) serveGenericHLS(w http.ResponseWriter, r *http.Request, serviceRef, targetURL string) error {
+	stream, err := m.GetOrCreateStream(serviceRef, targetURL)
+	if err != nil {
+		return fmt.Errorf("get stream: %w", err)
+	}
+
+	if err := stream.Start(); err != nil {
+		return fmt.Errorf("start stream: %w", err)
+	}
+
+	path := r.URL.Path
+	if strings.HasSuffix(path, ".m3u8") || strings.HasSuffix(path, "/hls") {
+		return m.servePlaylist(w, stream)
+	}
+	if strings.Contains(path, "segment_") && strings.HasSuffix(path, ".ts") {
+		segmentName := filepath.Base(path)
+		return m.serveSegment(w, stream, segmentName)
+	}
+	return m.servePlaylist(w, stream)
 }
 
 // serveSafariDVR serves HLS using the Safari DVR profile (large sliding window).

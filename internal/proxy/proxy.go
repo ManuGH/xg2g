@@ -78,6 +78,7 @@ type Config struct {
 	Runtime        config.RuntimeSnapshot
 	APIToken       string
 	AuthAnonymous  bool
+	AllowedOrigins []string
 }
 
 // New creates a new proxy server.
@@ -230,7 +231,10 @@ func New(cfg Config) (*Server, error) {
 		cfg.Logger.Info().Msg("HLS streaming enabled")
 	}
 
-	r := apimw.NewRouter(apimw.StackConfig{})
+	r := apimw.NewRouter(apimw.StackConfig{
+		EnableCORS:     true,
+		AllowedOrigins: cfg.AllowedOrigins,
+	})
 	r.HandleFunc("/", s.handleRequest)
 	r.HandleFunc("/*", s.handleRequest)
 	r.NotFound(s.handleRequest)
@@ -334,7 +338,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		if values, err := url.ParseQuery(r.URL.RawQuery); err == nil {
 			if upstream := values.Get("upstream"); upstream != "" {
 				if err := s.validateUpstream(upstream); err != nil {
-					logger.Warn().Str("upstream", upstream).Err(err).Msg("rejecting proxy request with disallowed upstream URL")
+					logger.Warn().Str("upstream", sanitizeURL(upstream)).Err(err).Msg("rejecting proxy request with disallowed upstream URL")
 					http.Error(w, "Forbidden: disallowed upstream URL", http.StatusForbidden)
 					return
 				}
@@ -489,7 +493,7 @@ func (s *Server) resolveTargetURL(ctx context.Context, path, rawQuery string) (s
 				}
 			} else {
 				streamURL = appendRawQuery(streamURL, rawQuery)
-				logger.Debug().Str("slug", serviceRef).Str("target", streamURL).Msg("resolved slug to upstream URL via M3U")
+				logger.Debug().Str("slug", serviceRef).Str("target", sanitizeURL(streamURL)).Msg("resolved slug to upstream URL via M3U")
 				return streamURL, true
 			}
 		} else {
@@ -508,10 +512,10 @@ func (s *Server) resolveTargetURL(ctx context.Context, path, rawQuery string) (s
 		values, _ := url.ParseQuery(rawQuery)
 		if upstream := values.Get("upstream"); upstream != "" {
 			if err := s.validateUpstream(upstream); err == nil {
-				logger.Debug().Str("upstream", upstream).Msg("using explicit upstream URL")
+				logger.Debug().Str("upstream", sanitizeURL(upstream)).Msg("using explicit upstream URL")
 				return upstream, true
 			}
-			logger.Warn().Str("upstream", upstream).Msg("ignoring disallowed upstream URL")
+			logger.Warn().Str("upstream", sanitizeURL(upstream)).Msg("ignoring disallowed upstream URL")
 		}
 	}
 
@@ -550,13 +554,10 @@ func (s *Server) resolveTargetURL(ctx context.Context, path, rawQuery string) (s
 
 		logger.Info().Str("service_ref", serviceRef).Msg("attempting dynamic resolution via WebAPI (not in playlist)")
 
-		// We use a short timeout resolution here just to get the port.
-		// Actual Zapping/Delay happens in the HLS handler usually, but for direct proxy
-		// we might need to do it here.
-		info, err := resolveWebAPIStreamInfo(webAPIURL) // This is from hls_helper.go (package proxy)
+		streamURL, _, err := ZapAndResolveStream(ctx, webAPIURL)
 		if err == nil {
-			logger.Info().Str("service_ref", serviceRef).Str("resolved_url", info.URL).Msg("dynamically resolved stream URL")
-			return appendRawQuery(info.URL, rawQuery), true
+			logger.Info().Str("service_ref", serviceRef).Str("resolved_url", sanitizeURL(streamURL)).Msg("dynamically resolved stream URL")
+			return appendRawQuery(streamURL, rawQuery), true
 		}
 
 		logger.Warn().Err(err).Str("service_ref", serviceRef).Msg("dynamic WebAPI resolution failed")
@@ -655,7 +656,7 @@ func (s *Server) handleHLSRequest(w http.ResponseWriter, r *http.Request) {
 
 	logger.Debug().
 		Str("service_ref", serviceRef).
-		Str("target", targetURL).
+		Str("target", sanitizeURL(targetURL)).
 		Str("path", path).
 		Msg("serving HLS stream")
 
@@ -689,7 +690,7 @@ func (s *Server) Start() error {
 	s.startIdleMonitor(monitorCtx)
 
 	if s.targetURL != nil {
-		logEvent.Str("target", s.targetURL.String())
+		logEvent.Str("target", sanitizeURL(s.targetURL.String()))
 	} else if s.receiverHost != "" {
 		logEvent.Str("receiver", s.receiverHost).Str("mode", "receiver_fallback")
 	}

@@ -269,15 +269,16 @@ func main() {
 		}
 
 		proxyConfig = &daemon.ProxyConfig{
-			ListenAddr:   snap.Runtime.StreamProxy.ListenAddr,
-			TargetURL:    targetURL,
-			ReceiverHost: receiverHost,
-			Logger:       xglog.WithComponent("proxy"),
-			TLSCert:      cfg.TLSCert,
-			TLSKey:       cfg.TLSKey,
-			DataDir:      cfg.DataDir,
-			PlaylistPath: filepath.Join(cfg.DataDir, snap.Runtime.PlaylistFilename),
-			Runtime:      snap.Runtime,
+			ListenAddr:     snap.Runtime.StreamProxy.ListenAddr,
+			TargetURL:      targetURL,
+			ReceiverHost:   receiverHost,
+			Logger:         xglog.WithComponent("proxy"),
+			TLSCert:        cfg.TLSCert,
+			TLSKey:         cfg.TLSKey,
+			DataDir:        cfg.DataDir,
+			PlaylistPath:   filepath.Join(cfg.DataDir, snap.Runtime.PlaylistFilename),
+			Runtime:        snap.Runtime,
+			AllowedOrigins: cfg.AllowedOrigins,
 		}
 		if bindHost != "" {
 			if newListen, err := config.BindListenAddr(proxyConfig.ListenAddr, bindHost); err != nil {

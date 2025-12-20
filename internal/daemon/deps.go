@@ -67,6 +67,9 @@ type ProxyConfig struct {
 
 	// Runtime holds the effective runtime settings (ENV-derived) required by the proxy.
 	Runtime config.RuntimeSnapshot
+
+	// AllowedOrigins for CORS
+	AllowedOrigins []string
 }
 
 // Validate checks if the dependencies are valid.

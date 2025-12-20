@@ -48,7 +48,7 @@ func (s *Server) tryHandleHEAD(w http.ResponseWriter, r *http.Request) bool {
 	return false
 }
 
-// tryHandleHLS handles HLS related requests (UA-based routing and serving profile files).
+// tryHandleHLS handles HLS related requests and auto-routing for browser-like clients.
 // Returns true if request was handled.
 func (s *Server) tryHandleHLS(w http.ResponseWriter, r *http.Request) bool {
 	// Skip if HLS is disabled or not a GET request
@@ -88,23 +88,19 @@ func (s *Server) tryHandleHLS(w http.ResponseWriter, r *http.Request) bool {
 	// 2. Client auto-detection (client requests a regular path, e.g. /1:0:1...)
 	// Exclude HLS component files to prevent recursion loop
 	if !strings.HasSuffix(path, ".ts") {
-		userAgent := r.Header.Get("User-Agent")
+		lookup := func(id string) bool {
+			_, ok := s.lookupStreamURL(id)
+			return ok
+		}
 
-		// Check for Apple native clients (AVFoundation/WebKit HLS stack)
-		isIOSClient := (strings.Contains(userAgent, "iPhone") ||
-			strings.Contains(userAgent, "iPad") ||
-			strings.Contains(userAgent, "iOS") ||
-			strings.Contains(userAgent, "AppleCoreMedia") ||
-			strings.Contains(userAgent, "CFNetwork"))
-
-		if isIOSClient {
+		if shouldAutoRouteHLS(path, r, lookup) {
 			hlsPath := "/hls" + path
 			s.logger.Info().
-				Str("user_agent", userAgent).
+				Str("user_agent", r.Header.Get("User-Agent")).
 				Str("original_path", path).
 				Str("hls_path", hlsPath).
 				Str("client_ip", r.RemoteAddr).
-				Msg("auto-redirecting iOS client to HLS")
+				Msg("auto-routing client to HLS")
 
 			r.URL.Path = hlsPath
 			s.handleHLSRequest(w, r)
@@ -113,6 +109,65 @@ func (s *Server) tryHandleHLS(w http.ResponseWriter, r *http.Request) bool {
 	}
 
 	return false
+}
+
+func shouldAutoRouteHLS(path string, r *http.Request, lookup func(string) bool) bool {
+	if !isStreamLikePath(path, lookup) {
+		return false
+	}
+
+	q := r.URL.Query()
+	if strings.EqualFold(q.Get("mode"), "ts") || q.Get("ts") == "1" {
+		return false
+	}
+	if strings.EqualFold(q.Get("mode"), "hls") || q.Get("hls") == "1" {
+		return true
+	}
+
+	accept := strings.ToLower(r.Header.Get("Accept"))
+	if acceptWantsHLS(accept) {
+		return true
+	}
+	if acceptWantsTS(accept) {
+		return false
+	}
+
+	dest := strings.ToLower(strings.TrimSpace(r.Header.Get("Sec-Fetch-Dest")))
+	if dest == "video" || dest == "audio" || dest == "media" {
+		return true
+	}
+
+	// Client Hints / Fetch Metadata are a strong browser signal (TV webviews often include them too).
+	if strings.TrimSpace(r.Header.Get("Sec-CH-UA")) != "" {
+		return true
+	}
+
+	// Default to HLS for broad compatibility when the client is ambiguous.
+	return true
+}
+
+func isStreamLikePath(path string, lookup func(string) bool) bool {
+	trimmed := strings.Trim(path, "/")
+	if trimmed == "" || strings.Contains(trimmed, "/") {
+		return false
+	}
+	if strings.Contains(trimmed, ":") {
+		return true
+	}
+	if lookup != nil && lookup(trimmed) {
+		return true
+	}
+	return false
+}
+
+func acceptWantsHLS(accept string) bool {
+	return strings.Contains(accept, "application/vnd.apple.mpegurl") ||
+		strings.Contains(accept, "application/x-mpegurl") ||
+		strings.Contains(accept, "application/mpegurl")
+}
+
+func acceptWantsTS(accept string) bool {
+	return strings.Contains(accept, "video/mp2t") || strings.Contains(accept, "video/mpeg")
 }
 
 // tryHandleTranscode handles transcoding (Stream Repair, GPU, Rust, FFmpeg).
@@ -132,7 +187,7 @@ func (s *Server) tryHandleTranscode(w http.ResponseWriter, r *http.Request) bool
 	if s.transcoder.IsGPUEnabled() {
 		s.logger.Debug().
 			Str("path", r.URL.Path).
-			Str("target", targetURL).
+			Str("target", sanitizeURL(targetURL)).
 			Msg("routing stream through GPU transcoder")
 
 		if err := s.transcoder.ProxyToGPUTranscoder(r.Context(), w, r, targetURL); err != nil {
@@ -177,7 +232,7 @@ func (s *Server) tryHandleTranscode(w http.ResponseWriter, r *http.Request) bool
 	if s.transcoder.Config.H264RepairEnabled {
 		s.logger.Info().
 			Str("path", r.URL.Path).
-			Str("target", targetURL).
+			Str("target", sanitizeURL(targetURL)).
 			Msg("routing stream through H.264 PPS/SPS repair (FFmpeg)")
 
 		metrics.IncActiveStreams("repair")
