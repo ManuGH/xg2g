@@ -10,64 +10,98 @@ import (
 	"testing"
 )
 
-func TestShouldAutoRouteHLS_QueryOverrides(t *testing.T) {
+func TestRoutingDecision_Precedence(t *testing.T) {
 	lookup := func(string) bool { return true }
 
-	req := httptest.NewRequest(http.MethodGet, "/1:0:1?mode=ts", nil)
-	req.Header.Set("Accept", "application/vnd.apple.mpegurl")
-	if shouldAutoRouteHLS(req.URL.Path, req, lookup) {
-		t.Fatalf("expected mode=ts to disable auto HLS")
+	type testCase struct {
+		name         string
+		path         string
+		headers      map[string]string
+		query        string
+		wantDecision string
+		wantReason   string
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/1:0:1?hls=1", nil)
-	req.Header.Set("Accept", "video/mp2t")
-	if !shouldAutoRouteHLS(req.URL.Path, req, lookup) {
-		t.Fatalf("expected hls=1 to enable auto HLS")
+	tests := []testCase{
+		{
+			name:         "query ts overrides accept hls",
+			path:         "/1:0:1",
+			query:        "mode=ts",
+			headers:      map[string]string{"Accept": "application/vnd.apple.mpegurl"},
+			wantDecision: routeDecisionTS,
+			wantReason:   routeReasonQuery,
+		},
+		{
+			name:         "query hls overrides accept ts",
+			path:         "/1:0:1",
+			query:        "hls=1",
+			headers:      map[string]string{"Accept": "video/mp2t"},
+			wantDecision: routeDecisionHLS,
+			wantReason:   routeReasonQuery,
+		},
+		{
+			name:         "accept hls",
+			path:         "/1:0:1",
+			headers:      map[string]string{"Accept": "application/vnd.apple.mpegurl"},
+			wantDecision: routeDecisionHLS,
+			wantReason:   routeReasonAccept,
+		},
+		{
+			name:         "accept ts wins over fetch",
+			path:         "/1:0:1",
+			headers:      map[string]string{"Accept": "video/mp2t", "Sec-Fetch-Dest": "video"},
+			wantDecision: routeDecisionTS,
+			wantReason:   routeReasonAccept,
+		},
+		{
+			name:         "fetch metadata",
+			path:         "/1:0:1",
+			headers:      map[string]string{"Sec-Fetch-Dest": "video"},
+			wantDecision: routeDecisionHLS,
+			wantReason:   routeReasonFetch,
+		},
+		{
+			name:         "default for ref",
+			path:         "/1:0:1",
+			wantDecision: routeDecisionHLS,
+			wantReason:   routeReasonGateRef,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			url := tt.path
+			if tt.query != "" {
+				url = url + "?" + tt.query
+			}
+			req := httptest.NewRequest(http.MethodGet, url, nil)
+			for k, v := range tt.headers {
+				req.Header.Set(k, v)
+			}
+			decision := decideStreamRouting(req.URL.Path, req, lookup)
+			if decision.decision != tt.wantDecision {
+				t.Fatalf("decision mismatch: got %q want %q", decision.decision, tt.wantDecision)
+			}
+			if decision.reason != tt.wantReason {
+				t.Fatalf("reason mismatch: got %q want %q", decision.reason, tt.wantReason)
+			}
+		})
 	}
 }
 
-func TestShouldAutoRouteHLS_AcceptHeaders(t *testing.T) {
-	lookup := func(string) bool { return true }
-
-	req := httptest.NewRequest(http.MethodGet, "/1:0:1", nil)
-	req.Header.Set("Accept", "application/vnd.apple.mpegurl")
-	if !shouldAutoRouteHLS(req.URL.Path, req, lookup) {
-		t.Fatalf("expected HLS accept header to enable auto HLS")
+func TestRoutingDecision_DefaultForSlug(t *testing.T) {
+	lookup := func(id string) bool { return id == "known" }
+	req := httptest.NewRequest(http.MethodGet, "/known", nil)
+	decision := decideStreamRouting(req.URL.Path, req, lookup)
+	if decision.decision != routeDecisionHLS {
+		t.Fatalf("decision mismatch: got %q want %q", decision.decision, routeDecisionHLS)
 	}
-
-	req = httptest.NewRequest(http.MethodGet, "/1:0:1", nil)
-	req.Header.Set("Accept", "video/mp2t")
-	if shouldAutoRouteHLS(req.URL.Path, req, lookup) {
-		t.Fatalf("expected TS accept header to disable auto HLS")
+	if decision.reason != routeReasonGateSlug {
+		t.Fatalf("reason mismatch: got %q want %q", decision.reason, routeReasonGateSlug)
 	}
 }
 
-func TestShouldAutoRouteHLS_FetchMetadata(t *testing.T) {
-	lookup := func(string) bool { return true }
-
-	req := httptest.NewRequest(http.MethodGet, "/1:0:1", nil)
-	req.Header.Set("Sec-Fetch-Dest", "video")
-	if !shouldAutoRouteHLS(req.URL.Path, req, lookup) {
-		t.Fatalf("expected Sec-Fetch-Dest=video to enable auto HLS")
-	}
-
-	req = httptest.NewRequest(http.MethodGet, "/1:0:1", nil)
-	req.Header.Set("Sec-CH-UA", "\"Chromium\";v=\"120\"")
-	if !shouldAutoRouteHLS(req.URL.Path, req, lookup) {
-		t.Fatalf("expected Sec-CH-UA to enable auto HLS")
-	}
-}
-
-func TestShouldAutoRouteHLS_DefaultsToHLS(t *testing.T) {
-	lookup := func(string) bool { return true }
-
-	req := httptest.NewRequest(http.MethodGet, "/1:0:1", nil)
-	if !shouldAutoRouteHLS(req.URL.Path, req, lookup) {
-		t.Fatalf("expected default to be HLS when client is ambiguous")
-	}
-}
-
-func TestShouldAutoRouteHLS_NonStreamPaths(t *testing.T) {
+func TestRoutingDecision_CompatRegression(t *testing.T) {
 	tests := []string{
 		"/metrics",
 		"/healthz",
@@ -85,22 +119,18 @@ func TestShouldAutoRouteHLS_NonStreamPaths(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		req.Header.Set("Accept", "application/vnd.apple.mpegurl")
 		req.Header.Set("Sec-Fetch-Dest", "video")
-		if shouldAutoRouteHLS(path, req, lookup) {
+		decision := decideStreamRouting(path, req, lookup)
+		if decision.decision != routeDecisionProxy || decision.reason != routeReasonGateReject {
 			t.Fatalf("expected %s to avoid auto HLS routing", path)
 		}
 	}
 }
 
-func TestShouldAutoRouteHLS_KnownSlug(t *testing.T) {
+func TestRoutingDecision_UnknownSlug(t *testing.T) {
 	lookup := func(id string) bool { return id == "known" }
-
-	req := httptest.NewRequest(http.MethodGet, "/known", nil)
-	if !shouldAutoRouteHLS(req.URL.Path, req, lookup) {
-		t.Fatalf("expected known slug to be considered stream-like")
-	}
-
-	req = httptest.NewRequest(http.MethodGet, "/unknown", nil)
-	if shouldAutoRouteHLS(req.URL.Path, req, lookup) {
+	req := httptest.NewRequest(http.MethodGet, "/unknown", nil)
+	decision := decideStreamRouting(req.URL.Path, req, lookup)
+	if decision.decision != routeDecisionProxy || decision.reason != routeReasonGateReject {
 		t.Fatalf("expected unknown slug to avoid auto HLS routing")
 	}
 }
