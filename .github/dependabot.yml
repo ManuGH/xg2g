@@ -1,0 +1,52 @@
+version: 2
+updates:
+  # Go dependencies (Bundle everything into one PR)
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "daily"
+      time: "04:00"
+    groups:
+      # Filter: Bundle all go modules updates into one "go-deps" PR
+      go-deps:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "go"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+
+  # WebUI dependencies (Bundle everything into one PR)
+  - package-ecosystem: "npm"
+    directory: "/webui"
+    schedule:
+      interval: "daily"
+      time: "04:00"
+    groups:
+      # Filter: Bundle all npm updates into one "npm-deps" PR
+      npm-deps:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "javascript"
+
+  # GitHub Actions (Bundle everything into one PR)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "daily"
+      time: "04:00"
+    groups:
+      # Filter: Bundle all action updates
+      actions:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "ci"

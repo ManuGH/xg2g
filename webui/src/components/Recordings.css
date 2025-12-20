@@ -1,0 +1,243 @@
+.recordings-view {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    animation: fadeIn 0.4s ease-out;
+    padding-bottom: 80px;
+    /* Safe area for mobile menu */
+}
+
+.recordings-toolbar {
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    padding: 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.toolbar-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.breadcrumbs {
+    display: flex;
+    gap: 8px;
+    font-size: 14px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.breadcrumb-item {
+    cursor: pointer;
+    color: var(--accent-primary);
+    transition: color 0.2s;
+}
+
+.breadcrumb-item:hover {
+    text-decoration: underline;
+}
+
+.breadcrumb-item.active {
+    color: var(--text-primary);
+    cursor: default;
+    font-weight: 600;
+    pointer-events: none;
+}
+
+.breadcrumb-separator {
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.root-select {
+    padding: 8px 12px;
+    border-radius: var(--radius-md);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-subtle);
+    font-size: 14px;
+    min-width: 120px;
+}
+
+.recordings-list-card {
+    background: var(--bg-card);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-subtle);
+    overflow: hidden;
+    /* Contains table corners */
+}
+
+.rec-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.rec-table th {
+    background: var(--bg-secondary);
+    color: var(--text-muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 12px;
+    letter-spacing: 0.5px;
+    padding: 16px;
+    text-align: left;
+}
+
+.rec-table td {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border-subtle);
+    color: var(--text-secondary);
+    font-size: 14px;
+    vertical-align: middle;
+}
+
+.rec-table tr:last-child td {
+    border-bottom: none;
+}
+
+.rec-table tr:hover td {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.rec-icon {
+    width: 24px;
+    height: 24px;
+    margin-right: 12px;
+    flex-shrink: 0;
+}
+
+.rec-icon-folder {
+    color: var(--accent-warning);
+}
+
+.rec-icon-file {
+    color: var(--text-muted);
+}
+
+.rec-name-cell {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+}
+
+.rec-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.rec-title {
+    font-weight: 600;
+    font-size: 15px;
+    color: var(--text-primary);
+}
+
+.rec-desc {
+    font-size: 12px;
+    color: var(--text-primary);
+    opacity: 0.7;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    line-clamp: 1;
+    /* Standard property */
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    max-width: 400px;
+}
+
+.rec-action-btn {
+    background: var(--active-color);
+    color: white;
+    border: none;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.1s, background-color 0.2s;
+}
+
+.rec-action-btn:hover {
+    background-color: var(--active-color-hover);
+}
+
+.rec-action-btn:focus-visible {
+    outline: 2px solid var(--active-color);
+    outline-offset: 2px;
+}
+
+.rec-action-btn:active {
+    transform: scale(0.95);
+}
+
+.rec-empty {
+    text-align: center;
+    padding: 40px;
+    color: var(--text-muted);
+}
+
+/* Mobile Responsiveness */
+@media (max-width: 768px) {
+    .recordings-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .breadcrumbs {
+        order: 2;
+        /* Move breadcrumbs below select on mobile */
+        overflow-x: auto;
+        white-space: nowrap;
+        padding-bottom: 4px;
+    }
+
+    .rec-table thead {
+        display: none;
+    }
+
+    .rec-table tr {
+        display: flex;
+        flex-wrap: wrap;
+        padding: 12px;
+        position: relative;
+    }
+
+    .rec-table td {
+        border: none;
+        padding: 4px 0;
+    }
+
+    .rec-table td:first-child {
+        width: 100%;
+        margin-bottom: 8px;
+    }
+
+    .rec-table td:nth-child(2),
+    /* Duration */
+    .rec-table td:nth-child(3) {
+        /* Date */
+        width: auto;
+        margin-right: 12px;
+        font-size: 12px;
+        color: var(--text-muted);
+    }
+
+    .rec-table td:last-child {
+        /* Action */
+        position: absolute;
+        right: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+    }
+
+    .rec-desc {
+        max-width: 250px;
+    }
+}

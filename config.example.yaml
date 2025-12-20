@@ -1,0 +1,236 @@
+# yaml-language-server: $schema=./docs/guides/config.schema.json
+# xg2g Configuration File (v2.0+)
+#
+# This file is optional. xg2g is 12-Factor App compliant and can be fully configured via
+# environment variables (ENV). This file is useful for complex setups or personal preference.
+#
+# ENV precedence: ENV > config.yaml > Defaults
+#
+# To validate your config:
+#   xg2g config validate --config /path/to/config.yaml
+
+version: "2.1"
+
+# ------------------------------------------------------------------------------
+# Global Settings
+# ------------------------------------------------------------------------------
+# Log level: debug, info, warn, error
+logLevel: "info"
+
+# Data directory for cache, playlists, and recordings
+dataDir: "/tmp/xg2g-data"
+
+# ------------------------------------------------------------------------------
+# OpenWebIF (Receiver) Configuration [REQUIRED]
+# ------------------------------------------------------------------------------
+openWebIF:
+  # Base URL of your Enigma2 receiver (e.g. http://192.168.1.50)
+  baseUrl: "http://127.0.0.1"
+
+  # Optional: HTTP Basic Auth
+  # username: "root"
+  # password: "password"
+
+  # Connection settings
+  timeout: "5s"
+  retries: 3
+
+  # Streaming
+  # 8001 = Non-transcoded (Direct)
+  # 8002 = Transcoded (if supported by receiver)
+  streamPort: 8001
+
+  # Use /web/stream.m3u logic? (Recommended: true)
+  # If true, asks receiver to generate stream URL (handles 17999 transcoding automatically).
+  useWebIFStreams: true
+
+# ------------------------------------------------------------------------------
+# Bouquets (Channel Lists)
+# ------------------------------------------------------------------------------
+# List of bouquets to include. Case-sensitive matching.
+bouquets:
+  - "Premium"
+  - "Favourites"
+
+# ------------------------------------------------------------------------------
+# EPG (Electronic Program Guide)
+# ------------------------------------------------------------------------------
+epg:
+  enabled: true
+
+  # How many days of EPG to fetch (1-14)
+  days: 7
+
+  # Path to save/load XMLTV file (Default: xmltv.xml)
+  xmltvPath: "xmltv.xml"
+
+  # Maximum Levenshtein distance for fuzzy channel matching (0-5)
+  # 0 = exact match only, higher = more lenient matching
+  # ENV: XG2G_EPG_FUZZY_MAX
+  fuzzyMax: 2
+
+  # EPG Fetch Strategy
+  # - "per-service": Fetch EPG for each channel individually (default, compatible with all receivers)
+  # - "bouquet": Fetch full bouquet EPG in one request (faster, but may fail on some receivers)
+  # ENV: XG2G_EPG_SOURCE
+  source: "per-service"
+
+# API Server Configuration
+api:
+  # Bearer token for API authentication (leave empty to disable)
+  # Generate a secure token: openssl rand -hex 32
+  # ENV: XG2G_API_TOKEN
+  token: ""
+
+  # API server listen address
+  # ENV: XG2G_LISTEN
+  listenAddr: ":8080"
+
+# Prometheus Metrics Configuration
+metrics:
+  # Enable Prometheus metrics endpoint
+  # ENV: XG2G_METRICS_LISTEN (empty disables)
+  enabled: true
+
+  # Metrics server listen address
+  # ENV: XG2G_METRICS_LISTEN
+  listenAddr: ":9090"
+
+# Picons (Channel Logos) Configuration
+picons:
+  # Base URL for channel logos/picons
+  # Example: https://github.com/picons/picons/raw/master/picons
+  # ENV: XG2G_PICON_BASE
+  baseUrl: ""
+# ==============================================================================
+# Advanced Configuration Examples
+# ==============================================================================
+
+# Example 1: Minimal configuration (OpenWebIF only)
+# ---
+# openWebIF:
+#   baseUrl: "http://192.168.1.100"
+
+# Example 2: Full EPG setup with authentication
+# ---
+# openWebIF:
+#   baseUrl: "http://dreambox.local"
+#   username: "admin"
+#   password: "secret"
+# epg:
+#   enabled: true
+#   days: 7
+#   maxConcurrency: 5
+#   xmltvPath: "xmltv.xml"
+
+# Example 3: Multiple bouquets with custom API token
+# ---
+# openWebIF:
+#   baseUrl: "http://192.168.1.100"
+# bouquets:
+#   - "1:7:1:0:0:0:0:0:0:0:FROM BOUQUET \"favorites.tv\" ORDER BY bouquet"
+#   - "1:7:1:0:0:0:0:0:0:0:FROM BOUQUET \"sports.tv\" ORDER BY bouquet"
+# api:
+#   token: "your-secure-token-here"
+#   listenAddr: ":8080"
+# metrics:
+#   enabled: true
+#   listenAddr: ":9090"
+
+# Example 4: High-performance EPG collection
+# ---
+# openWebIF:
+#   baseUrl: "http://192.168.1.100"
+#   timeout: "30s"
+#   retries: 5
+#   maxBackoff: "60s"
+# epg:
+#   enabled: true
+#   days: 7
+#   maxConcurrency: 10
+#   timeoutMs: 60000
+#   retries: 3
+#   fuzzyMax: 3
+
+# ==============================================================================
+# Environment Variable Reference
+# ==============================================================================
+#
+# All configuration options can be overridden via environment variables:
+#
+# Application:
+#   XG2G_DATA                    - Data directory path
+#   XG2G_LOG_LEVEL               - Log level (debug, info, warn, error)
+#
+# OpenWebIF:
+#   XG2G_OWI_BASE                - Base URL (REQUIRED)
+#   XG2G_OWI_USER                - Username for authentication
+#   XG2G_OWI_PASS                - Password for authentication
+#   XG2G_OWI_TIMEOUT_MS          - Request timeout in milliseconds
+#   XG2G_OWI_RETRIES             - Maximum retry attempts
+#   XG2G_OWI_BACKOFF_MS          - Initial backoff delay in milliseconds
+#   XG2G_OWI_MAX_BACKOFF_MS      - Maximum backoff delay in milliseconds
+#   XG2G_STREAM_PORT             - Stream port number
+#   XG2G_USE_WEBIF_STREAMS       - Use /web/stream.m3u URLs (true/false)
+#
+# Bouquets:
+#   XG2G_BOUQUET                 - Comma-separated list of bouquet names
+#
+# EPG:
+#   XG2G_EPG_ENABLED             - Enable EPG (true/false)
+#   XG2G_EPG_DAYS                - Days of EPG data (1-14)
+#   XG2G_EPG_MAX_CONCURRENCY     - Max concurrent requests (1-10)
+#   XG2G_EPG_TIMEOUT_MS          - EPG request timeout in milliseconds
+#   XG2G_EPG_RETRIES             - EPG retry attempts
+#   XG2G_FUZZY_MAX               - Fuzzy match distance (0-10)
+#   XG2G_XMLTV                   - XMLTV output file path (relative to dataDir)
+#
+# API:
+#   XG2G_API_TOKEN               - Bearer token for API authentication
+#   XG2G_LISTEN                  - API listen address
+#
+# Metrics:
+#   XG2G_METRICS_LISTEN          - Metrics listen address (empty disables)
+#
+# Picons:
+#   XG2G_PICON_BASE              - Base URL for channel logos
+#
+# ==============================================================================
+# Usage Examples
+# ==============================================================================
+#
+# 1. Using config file:
+#    ./xg2g-daemon --config config.yaml
+#
+# 2. Using environment variables only:
+#    XG2G_OWI_BASE=http://192.168.1.100 \
+#    XG2G_EPG_ENABLED=true \
+#    ./xg2g-daemon
+#
+# 3. Mixed (ENV overrides config file):
+#    XG2G_EPG_DAYS=7 ./xg2g-daemon --config config.yaml
+#
+# 4. Check version:
+#    ./xg2g-daemon --version
+#
+# ==============================================================================
+# Troubleshooting
+# ==============================================================================
+#
+# - If OpenWebIF connection fails, verify the baseUrl is accessible:
+#     curl http://192.168.1.100/api/statusinfo
+#
+# - For EPG issues, check Enigma2 supports EPG API:
+#     curl http://192.168.1.100/api/epgservice?sRef=REFERENCE
+#
+# - Streams: In der Regel `useWebIFStreams: true` verwenden, damit die Box intern
+#   Direct vs. Relay entscheidet (8001/17999 sind dann intern und für xg2g egal).
+#
+# - Enable debug logging for detailed information:
+#     XG2G_LOG_LEVEL=debug ./xg2g-daemon --config config.yaml
+#
+# - Check metrics at: http://localhost:9090/metrics
+#
+# - Health check: curl http://localhost:8080/healthz
+# - API health (auth): curl -H "Authorization: Bearer <token>" http://localhost:8080/api/v2/system/health
+#

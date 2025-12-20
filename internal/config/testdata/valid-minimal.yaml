@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=../../../docs/guides/config.schema.json
+# Valid minimal xg2g configuration
+version: "1"
+dataDir: /tmp/xg2g-config-test
+openWebIF:
+  baseUrl: http://receiver.local
+  username: testuser
+  password: testpass
+bouquets:
+  - userbouquet.favourites.tv
+epg:
+  enabled: true
+  days: 7

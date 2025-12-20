@@ -1,0 +1,40 @@
+# CODEOWNERS - Code Review Assignment
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Global fallback - all files require review by repository owner
+* @ManuGH
+
+# ===================================================================================================
+# Critical Paths - Require explicit review
+# ===================================================================================================
+
+# Security & Authentication
+/internal/api/middleware.go @ManuGH
+/internal/api/auth.go @ManuGH
+/.github/workflows/ @ManuGH
+
+# CI/CD Pipeline
+/.github/workflows/*.yml @ManuGH
+/Makefile @ManuGH
+/Dockerfile @ManuGH
+/Dockerfile.distroless @ManuGH
+
+# Core Business Logic
+/internal/epg/ @ManuGH
+/internal/openwebif/ @ManuGH
+/internal/jobs/refresh.go @ManuGH
+
+# Configuration & Deployment
+/deploy/ @ManuGH
+/docker-compose*.yml @ManuGH
+/go.mod @ManuGH
+/go.sum @ManuGH
+
+# Security & Dependencies
+/.golangci.yml @ManuGH
+/.github/dependabot.yml @ManuGH
+/SECURITY.md @ManuGH
+
+# Documentation (can be more relaxed, but still require review)
+/README.md @ManuGH
+/docs/ @ManuGH

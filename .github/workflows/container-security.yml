@@ -1,0 +1,278 @@
+name: Container Security Scanning
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*.*.*"]
+    paths:
+      - "Dockerfile"
+      - "deploy/docker/Dockerfile.*"
+      - ".github/workflows/container-security.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "Dockerfile"
+      - "deploy/docker/Dockerfile.*"
+      - ".github/workflows/container-security.yml"
+  schedule:
+    # Run daily at 2 AM UTC to catch new vulnerabilities
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read # Global read-only, write per job
+
+jobs:
+  secrets-scan:
+    name: Scan for Secrets (Gitleaks)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          fetch-depth: 0 # Full history for Gitleaks
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  scan-production-image:
+    name: Scan Production Container (Go + Rust)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+      pull-requests: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349 # v3.7.1
+
+      - name: "Build production image (multi-stage: Rust + Go)"
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        env:
+          SOURCE_DATE_EPOCH: "0"
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          load: true
+          tags: xg2g:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@6e7b7d1fd3e4fef0c5fa8cce1229c54b2c9bd0d8 # 0.24.0
+        with:
+          image-ref: xg2g:${{ github.sha }}
+          format: "sarif"
+          output: "trivy-results.sarif"
+          severity: "CRITICAL,HIGH,MEDIUM"
+          vuln-type: "os,library"
+          ignore-unfixed: false
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@cf1bb45a277cb3c205638b2cd5c984db1c46a412 # v3.27.9
+        if: always()
+        with:
+          sarif_file: "trivy-results.sarif"
+          category: "container-production"
+
+      - name: Run Trivy for PR comment
+        uses: aquasecurity/trivy-action@6e7b7d1fd3e4fef0c5fa8cce1229c54b2c9bd0d8 # 0.24.0
+        if: github.event_name == 'pull_request'
+        with:
+          image-ref: xg2g:${{ github.sha }}
+          format: "table"
+          output: "trivy-table.txt"
+          severity: "CRITICAL,HIGH"
+          exit-code: "0"
+
+      - name: Comment PR with scan results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        with:
+          script: |
+            const fs = require('fs');
+            const output = fs.readFileSync('trivy-table.txt', 'utf8');
+
+            const comment = `## 🔒 Container Security Scan: Production Image (Go + Rust)
+
+            <details>
+            <summary>Trivy Vulnerability Report</summary>
+
+            \`\`\`
+            ${output}
+            \`\`\`
+
+            </details>
+
+            _Scanned image: \`xg2g:${{ github.sha }}\` (multi-stage build with Rust + Go)_
+            `;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+      - name: Fail on critical/high vulnerabilities
+        uses: aquasecurity/trivy-action@6e7b7d1fd3e4fef0c5fa8cce1229c54b2c9bd0d8 # 0.24.0
+        with:
+          image-ref: xg2g:${{ github.sha }}
+          format: "table"
+          severity: "CRITICAL,HIGH"
+          exit-code: "1"
+          ignore-unfixed: true
+
+  scan-image-configuration:
+    name: Scan Image Configuration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349 # v3.7.1
+
+      - name: Build production image
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        env:
+          SOURCE_DATE_EPOCH: "0"
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          load: true
+          tags: xg2g:${{ github.sha }}
+          provenance: false
+
+      - name: Run Trivy config scanner
+        uses: aquasecurity/trivy-action@6e7b7d1fd3e4fef0c5fa8cce1229c54b2c9bd0d8 # 0.24.0
+        with:
+          image-ref: xg2g:${{ github.sha }}
+          scan-type: "config"
+          format: "table"
+          output: "trivy-config.txt"
+          exit-code: "0"
+
+      - name: Upload configuration scan results
+        uses: actions/upload-artifact@v4 # v4.4.3
+        if: always()
+        with:
+          name: trivy-config-report
+          path: trivy-config.txt
+          retention-days: 30
+
+  scan-filesystem:
+    name: Scan Filesystem for Secrets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - name: Run Trivy filesystem scanner
+        uses: aquasecurity/trivy-action@6e7b7d1fd3e4fef0c5fa8cce1229c54b2c9bd0d8 # 0.24.0
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          format: "sarif"
+          output: "trivy-fs-results.sarif"
+          severity: "CRITICAL,HIGH"
+          scanners: "secret,misconfig"
+
+      - name: Upload filesystem scan to GitHub Security
+        uses: github/codeql-action/upload-sarif@cf1bb45a277cb3c205638b2cd5c984db1c46a412 # v3.27.9
+        if: always()
+        with:
+          sarif_file: "trivy-fs-results.sarif"
+          category: "filesystem-secrets"
+
+  generate-sbom:
+    name: Generate and Scan SBOM
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349 # v3.7.1
+
+      - name: Build production image
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        env:
+          SOURCE_DATE_EPOCH: "0"
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          load: true
+          tags: xg2g:${{ github.sha }}
+          provenance: false
+
+      - name: Generate SBOM for production image
+        uses: aquasecurity/trivy-action@6e7b7d1fd3e4fef0c5fa8cce1229c54b2c9bd0d8 # 0.24.0
+        with:
+          image-ref: xg2g:${{ github.sha }}
+          format: "cyclonedx"
+          output: "sbom-production.json"
+          scan-type: "image"
+
+      - name: Download previous SBOM (for diff)
+        uses: actions/download-artifact@v4 # v6.0.0
+        continue-on-error: true
+        with:
+          name: container-sbom
+          path: ./previous/
+
+      - name: Generate SBOM diff
+        run: |
+          if [ -f ./previous/sbom-production.json ]; then
+            echo "## SBOM Package Diff" >> "$GITHUB_STEP_SUMMARY"
+            jq -r '.components[].name' sbom-production.json | sort > pkgs.current
+            jq -r '.components[].name' ./previous/sbom-production.json | sort > pkgs.previous
+
+            echo "### Added packages:" >> "$GITHUB_STEP_SUMMARY"
+            comm -13 pkgs.previous pkgs.current | tee -a "$GITHUB_STEP_SUMMARY" || echo "(none)"
+
+            echo "### Removed packages:" >> "$GITHUB_STEP_SUMMARY"
+            comm -23 pkgs.previous pkgs.current | tee -a "$GITHUB_STEP_SUMMARY" || echo "(none)"
+          else
+            echo "No previous SBOM found, skipping diff" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4 # v4.4.3
+        with:
+          name: container-sbom
+          path: sbom-production.json
+          retention-days: 90
+
+      - name: Scan SBOM for vulnerabilities
+        uses: aquasecurity/trivy-action@6e7b7d1fd3e4fef0c5fa8cce1229c54b2c9bd0d8 # 0.24.0
+        with:
+          scan-type: "sbom"
+          scan-ref: "sbom-production.json"
+          format: "table"
+          severity: "CRITICAL,HIGH"
+          exit-code: "0"

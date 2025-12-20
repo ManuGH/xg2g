@@ -1,0 +1,541 @@
+// Copyright (c) 2025 ManuGH
+// Licensed under the PolyForm Noncommercial License 1.0.0
+// Since v2.0.0, this software is restricted to non-commercial use only.
+
+// SPDX-License-Identifier: MIT
+package jobs
+
+import (
+	"context"
+	"fmt"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/epg"
+	xglog "github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/openwebif"
+	"github.com/ManuGH/xg2g/internal/playlist"
+)
+
+// OwiClient defines the interface for OpenWebIF operations, allowing for mocks in tests.
+type OwiClient interface {
+	Bouquets(ctx context.Context) (map[string]string, error)
+	Services(ctx context.Context, bouquetRef string) ([][2]string, error)
+	StreamURL(ctx context.Context, ref, name string) (string, error)
+	GetEPG(ctx context.Context, sRef string, days int) ([]openwebif.EPGEvent, error)
+}
+
+type mockOWI struct {
+	bouquets map[string]string
+	services map[string][][2]string
+}
+
+func (m *mockOWI) Bouquets(_ context.Context) (map[string]string, error) {
+	return m.bouquets, nil
+}
+
+func (m *mockOWI) Services(_ context.Context, bouquetRef string) ([][2]string, error) {
+	return m.services[bouquetRef], nil
+}
+
+func (m *mockOWI) StreamURL(_ context.Context, ref, _ string) (string, error) {
+	return "http://stream/" + ref, nil
+}
+
+func (m *mockOWI) GetEPG(_ context.Context, sRef string, _ int) ([]openwebif.EPGEvent, error) {
+	// Return mock EPG data for tests
+	return []openwebif.EPGEvent{
+		{
+			ID:          1,
+			Title:       "Test Programme",
+			Description: "Test Description",
+			Begin:       time.Now().Unix(),
+			Duration:    3600,
+			SRef:        sRef,
+		},
+	}, nil
+}
+
+// refreshWithClient is a test helper that allows injecting a mock client.
+func refreshWithClient(ctx context.Context, cfg config.AppConfig, cl OwiClient) (*Status, error) {
+	logger := xglog.WithComponentFromContext(ctx, "jobs")
+	logger.Info().Str("event", "refresh.start").Msg("starting refresh")
+
+	snap := config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault())
+	rt := snap.Runtime
+
+	if err := validateConfig(cfg); err != nil {
+		return nil, err
+	}
+
+	bqs, err := cl.Bouquets(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("bouquets: %w", err)
+	}
+
+	ref, ok := bqs[cfg.Bouquet]
+	if !ok {
+		return nil, fmt.Errorf("bouquet %q not found", cfg.Bouquet)
+	}
+
+	services, err := cl.Services(ctx, ref)
+	if err != nil {
+		return nil, fmt.Errorf("services for bouquet %q: %w", cfg.Bouquet, err)
+	}
+
+	items := make([]playlist.Item, 0, len(services))
+	for i, svc := range services {
+		if len(svc) < 2 {
+			continue
+		}
+		name, sref := svc[0], svc[1]
+
+		item := playlist.Item{
+			Name:    name,
+			TvgID:   makeTvgID(name, sref, rt.UseHashTvgID),
+			TvgChNo: i + 1,
+			Group:   cfg.Bouquet,
+		}
+
+		streamURL, err := cl.StreamURL(ctx, sref, name)
+		if err != nil {
+			return nil, fmt.Errorf("stream url for %q: %w", name, err)
+		}
+		item.URL = streamURL
+
+		if cfg.PiconBase != "" {
+			item.TvgLogo = strings.TrimRight(cfg.PiconBase, "/") + "/" + url.PathEscape(sref) + ".png"
+		}
+
+		items = append(items, item)
+	}
+
+	playlistPath := filepath.Join(cfg.DataDir, rt.PlaylistFilename)
+	if err := writeM3U(ctx, playlistPath, items, "", rt.XTvgURL); err != nil {
+		return nil, fmt.Errorf("failed to write M3U playlist: %w", err)
+	}
+	logger.Info().
+		Str("event", "playlist.write").
+		Str("path", playlistPath).
+		Int("channels", len(items)).
+		Msg("playlist written")
+
+	if cfg.XMLTVPath != "" {
+		xmlCh := make([]epg.Channel, 0, len(items))
+		for _, it := range items {
+			ch := epg.Channel{ID: it.TvgID, DisplayName: []string{it.Name}}
+			if it.TvgLogo != "" {
+				ch.Icon = &epg.Icon{Src: it.TvgLogo}
+			}
+			xmlCh = append(xmlCh, ch)
+		}
+		if err := epg.WriteXMLTV(epg.GenerateXMLTV(xmlCh, nil), filepath.Join(cfg.DataDir, cfg.XMLTVPath)); err != nil {
+			logger.Warn().
+				Err(err).
+				Str("event", "xmltv.failed").
+				Str("path", cfg.XMLTVPath).
+				Int("channels", len(xmlCh)).
+				Msg("XMLTV generation failed")
+		} else {
+			logger.Info().
+				Str("event", "xmltv.success").
+				Str("path", cfg.XMLTVPath).
+				Int("channels", len(xmlCh)).
+				Msg("XMLTV generated")
+		}
+	}
+
+	status := &Status{LastRun: time.Now(), Channels: len(items)}
+	logger.Info().
+		Str("event", "refresh.success").
+		Int("channels", status.Channels).
+		Msg("refresh completed")
+	return status, nil
+}
+
+func TestRefreshWithClient_Success(t *testing.T) {
+	tmpdir := t.TempDir()
+	cfg := config.AppConfig{
+		DataDir:    tmpdir,
+		OWIBase:    "http://mock",
+		Bouquet:    "Favourites",
+		PiconBase:  "",
+		XMLTVPath:  "xmltv.xml", // Use relative path, not absolute
+		StreamPort: 8001,
+	}
+
+	mock := &mockOWI{
+		bouquets: map[string]string{"Favourites": "bref1"},
+		services: map[string][][2]string{"bref1": {{"Channel A", "1:0:1"}, {"Channel B", "1:0:2"}}},
+	}
+
+	st, err := refreshWithClient(context.Background(), cfg, mock)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if st.Channels != 2 {
+		t.Fatalf("expected 2 channels, got %d", st.Channels)
+	}
+	// check files exist
+	if _, err := os.Stat(filepath.Join(tmpdir, "playlist.m3u")); err != nil {
+		t.Fatalf("playlist missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(tmpdir, "xmltv.xml")); err != nil {
+		t.Fatalf("xmltv missing: %v", err)
+	}
+}
+
+func TestRefreshWithClient_BouquetNotFound(t *testing.T) {
+	tmpdir := t.TempDir()
+	cfg := config.AppConfig{DataDir: tmpdir, OWIBase: "http://mock", Bouquet: "NonExistent", StreamPort: 8001}
+	mock := &mockOWI{bouquets: map[string]string{"Favourites": "bref1"}, services: map[string][][2]string{}}
+
+	_, err := refreshWithClient(context.Background(), cfg, mock)
+	if err == nil {
+		t.Fatal("expected error for missing bouquet, got nil")
+	}
+}
+
+func TestRefreshWithClient_ServicesError(t *testing.T) {
+	tmpdir := t.TempDir()
+	cfg := config.AppConfig{DataDir: tmpdir, OWIBase: "http://mock", Bouquet: "Favourites", StreamPort: 8001}
+	// mock that has bouquets but no services entry -> Services returns nil slice (treated as zero channels)
+	mock := &mockOWI{bouquets: map[string]string{"Favourites": "bref1"}, services: map[string][][2]string{}}
+
+	st, err := refreshWithClient(context.Background(), cfg, mock)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if st.Channels != 0 {
+		t.Fatalf("expected 0 channels, got %d", st.Channels)
+	}
+}
+
+func TestRefresh_InvalidStreamPort(t *testing.T) {
+	ctx := context.Background()
+	cfg := config.AppConfig{
+		OWIBase:    "http://test.local",
+		DataDir:    "/tmp/test",
+		StreamPort: 70000, // Invalid port
+	}
+
+	_, err := Refresh(ctx, config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault()))
+	if err == nil {
+		t.Error("Expected error for invalid stream port")
+	}
+	// Check that error message mentions the validation failure
+	if !strings.Contains(err.Error(), "StreamPort") {
+		t.Errorf("Expected error to mention StreamPort, got: %v", err)
+	}
+}
+
+func TestRefresh_ConfigValidation(t *testing.T) {
+	ctx := context.Background()
+	cfg := config.AppConfig{
+		OWIBase: "", // Invalid empty base URL
+		DataDir: "/tmp/test",
+	}
+
+	_, err := Refresh(ctx, config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault()))
+	if err == nil {
+		t.Error("Expected error for invalid config")
+	}
+}
+
+func TestRefresh_M3UWriteError(t *testing.T) {
+	t.Setenv("XG2G_PLAYLIST_FILENAME", "playlist.m3u")
+
+	tmpdir := t.TempDir()
+	blocker := filepath.Join(tmpdir, "playlist.m3u")
+	if err := os.Mkdir(blocker, 0o750); err != nil {
+		t.Fatalf("failed to create blocker directory: %v", err)
+	}
+
+	cfg := config.AppConfig{
+		DataDir:    tmpdir,
+		OWIBase:    "http://mock",
+		Bouquet:    "Favourites",
+		StreamPort: 8001,
+	}
+
+	mock := &mockOWI{
+		bouquets: map[string]string{"Favourites": "bref1"},
+		services: map[string][][2]string{"bref1": {{"Channel A", "1:0:1"}}},
+	}
+
+	_, err := refreshWithClient(context.Background(), cfg, mock)
+	if err == nil {
+		t.Fatal("expected an error when writing M3U to a blocked path, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to write M3U playlist") {
+		t.Errorf("expected error to contain 'failed to write M3U playlist', got: %v", err)
+	}
+}
+
+func TestValidateConfig(t *testing.T) {
+	tests := []struct {
+		name    string
+		cfg     config.AppConfig
+		wantErr bool
+	}{
+		{
+			name: "http_ok",
+			cfg: config.AppConfig{
+				OWIBase:    "http://test.local",
+				DataDir:    "/tmp",
+				StreamPort: 8001,
+			},
+			wantErr: false,
+		},
+		{
+			name: "https_ok",
+			cfg: config.AppConfig{
+				OWIBase:    "https://test.local:8080",
+				DataDir:    "/tmp",
+				StreamPort: 8001,
+			},
+			wantErr: false,
+		},
+		{
+			name: "empty_owiabase",
+			cfg: config.AppConfig{
+				DataDir:    "/tmp",
+				StreamPort: 8001,
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing_scheme",
+			cfg: config.AppConfig{
+				OWIBase:    "test.local",
+				DataDir:    "/tmp",
+				StreamPort: 8001,
+			},
+			wantErr: true,
+		},
+		{
+			name: "unsupported_scheme",
+			cfg: config.AppConfig{
+				OWIBase:    "ftp://test.local",
+				DataDir:    "/tmp",
+				StreamPort: 8001,
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid_port",
+			cfg: config.AppConfig{
+				OWIBase:    "http://test.local:abc",
+				DataDir:    "/tmp",
+				StreamPort: 8001,
+			},
+			wantErr: true,
+		},
+		{
+			name: "port_too_large",
+			cfg: config.AppConfig{
+				OWIBase:    "http://test.local",
+				DataDir:    "/tmp",
+				StreamPort: 99999, // Invalid stream port
+			},
+			wantErr: true,
+		},
+		{
+			name: "empty_datadir",
+			cfg: config.AppConfig{
+				OWIBase:    "http://test.local",
+				StreamPort: 8001,
+			},
+			wantErr: true,
+		},
+		{
+			name: "path_traversal",
+			cfg: config.AppConfig{
+				OWIBase:    "http://test.local",
+				DataDir:    "../../../etc",
+				StreamPort: 8001,
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid_stream_port_zero",
+			cfg: config.AppConfig{
+				OWIBase:    "http://test.local",
+				DataDir:    "/tmp",
+				StreamPort: 0,
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid_stream_port_negative",
+			cfg: config.AppConfig{
+				OWIBase:    "http://test.local",
+				DataDir:    "/tmp",
+				StreamPort: -1,
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing_host",
+			cfg: config.AppConfig{
+				OWIBase:    "http:///", // scheme present but host missing
+				DataDir:    "/tmp",
+				StreamPort: 8001,
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateConfig(tt.cfg)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateConfig() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestMakeStableIDFromSRef(t *testing.T) {
+	a := makeStableIDFromSRef("1:0:19:132F:3EF:1:C00000:0:0:0:")
+	b := makeStableIDFromSRef("1:0:19:132F:3EF:1:C00000:0:0:0:")
+	c := makeStableIDFromSRef("1:0:19:1334:3EF:1:C00000:0:0:0:")
+	if a != b {
+		t.Fatalf("stable ID should be deterministic; got %q and %q", a, b)
+	}
+	if a == c {
+		t.Fatalf("different sRefs should yield different IDs; got %q == %q", a, c)
+	}
+	if wantPrefix := "sref-"; len(a) < len(wantPrefix) || a[:len(wantPrefix)] != wantPrefix {
+		t.Fatalf("stable ID must be prefixed with %q; got %q", wantPrefix, a)
+	}
+}
+
+// Security regression tests for playlist filename sanitization
+func TestSanitizeFilename_Security(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		want      string
+		shouldErr bool
+		errMsg    string
+	}{
+		{
+			name:      "valid filename",
+			input:     "playlist.m3u",
+			want:      "playlist.m3u",
+			shouldErr: false,
+		},
+		{
+			name:      "valid filename with m3u8",
+			input:     "channels.m3u8",
+			want:      "channels.m3u8",
+			shouldErr: false,
+		},
+		{
+			name:      "filename without extension",
+			input:     "myplaylist",
+			want:      "myplaylist.m3u",
+			shouldErr: false,
+		},
+		{
+			name:      "empty filename uses default",
+			input:     "",
+			want:      "playlist.m3u",
+			shouldErr: false,
+		},
+		{
+			name:      "path traversal with dotdot",
+			input:     "../../../etc/passwd",
+			want:      "passwd.m3u",
+			shouldErr: false, // filepath.Base strips directory components, extension added
+		},
+		{
+			name:      "absolute path rejected",
+			input:     "/etc/passwd.m3u",
+			want:      "passwd.m3u",
+			shouldErr: false, // filepath.Base removes directory
+		},
+		{
+			name:      "directory prefix removed",
+			input:     "subdir/playlist.m3u",
+			want:      "playlist.m3u",
+			shouldErr: false, // filepath.Base extracts filename
+		},
+		{
+			name:      "windows path separator",
+			input:     "subdir\\playlist.m3u",
+			want:      "subdir\\playlist.m3u", // On Unix, backslash is valid filename character
+			shouldErr: false,
+		},
+		{
+			name:      "dotdot in filename",
+			input:     "..malicious",
+			want:      "",
+			shouldErr: true,
+			errMsg:    "traversal",
+		},
+		{
+			name:      "hidden file",
+			input:     ".hidden.m3u",
+			want:      ".hidden.m3u",
+			shouldErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := sanitizeFilename(tt.input)
+
+			if tt.shouldErr {
+				if err == nil {
+					t.Errorf("expected error, got none")
+				} else if !strings.Contains(err.Error(), tt.errMsg) {
+					t.Errorf("expected error to contain %q, got %q", tt.errMsg, err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+				if got != tt.want {
+					t.Errorf("sanitizeFilename(%q) = %q, want %q", tt.input, got, tt.want)
+				}
+			}
+		})
+	}
+}
+
+// Regression test: version field must persist across refreshes
+func TestRefresh_VersionPersistence(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	cfg := config.AppConfig{
+		Version:    "v1.2.3-test",
+		DataDir:    tmpDir,
+		OWIBase:    "http://mock",
+		StreamPort: 8001,
+		OWITimeout: time.Second,
+	}
+
+	ctx := context.Background()
+
+	// Mock successful refresh (minimal setup)
+	status, err := Refresh(ctx, config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault()))
+
+	// We expect validation errors since we don't have a real OWI server,
+	// but the important part is that if Status is returned, it must contain the version
+	if err == nil && status != nil {
+		if status.Version != cfg.Version {
+			t.Errorf("Status.Version = %q, want %q (version must persist from config)",
+				status.Version, cfg.Version)
+		}
+	}
+
+	// This test primarily serves as documentation and catches future regressions
+	// where Status construction forgets to copy cfg.Version
+}

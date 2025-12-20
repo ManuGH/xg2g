@@ -1,0 +1,93 @@
+# Pre-commit hooks for xg2g
+# Install: pip install pre-commit && pre-commit install
+# Run manually: pre-commit run --all-files
+# https://pre-commit.com/
+
+repos:
+  # Go formatting and imports
+  - repo: https://github.com/dnephin/pre-commit-golang
+    rev: v0.5.1
+    hooks:
+      - id: go-fmt
+        name: Format Go code (gofmt)
+        args: [-w, -s]
+      - id: go-mod-tidy
+        name: Tidy Go modules
+
+  # Generic file checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        name: Trim trailing whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+        name: Fix end of files
+      - id: check-yaml
+        name: Check YAML files
+        args: [--allow-multiple-documents]
+        exclude: ^deploy/helm/.*/templates/.*\.(yaml|yml)$
+      - id: check-added-large-files
+        name: Check for large files
+        args: [--maxkb=1024]
+      - id: check-case-conflict
+        name: Check for case conflicts
+      - id: check-merge-conflict
+        name: Check for merge conflicts
+
+  # YAML formatting
+  - repo: https://github.com/google/yamlfmt
+    rev: v0.13.0
+    hooks:
+      - id: yamlfmt
+        name: Format YAML files
+        files: ^(internal/config/testdata/|examples/).*\.(ya?ml)$
+        exclude: ^deploy/helm/.*/templates/.*\.(yaml|yml)$
+
+  # YAML linting
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.35.1
+    hooks:
+      - id: yamllint
+        name: Lint YAML files
+        args: [-c, .yamllint.yaml]
+        files: ^(internal/config/testdata/|examples/).*\.(ya?ml)$
+        exclude: ^deploy/helm/.*/templates/.*\.(yaml|yml)$
+
+  # Go linting (optional, can be slow)
+  - repo: https://github.com/golangci/golangci-lint
+    rev: v1.61.0
+    hooks:
+      - id: golangci-lint
+        name: Lint Go code
+        args: ["run", "--out-format=colored-line-number", "--timeout=3m"]
+        stages: [manual, push]  # Only on push to avoid slowing down commits
+
+  # Local hooks
+  - repo: local
+    hooks:
+      - id: validate-healthchecks
+        name: Validate healthcheck endpoints
+        entry: scripts/validate-healthchecks.sh
+        language: script
+        files: '^(docker-compose.*\.ya?ml|deploy/docker-compose.*\.ya?ml|deploy/k8s-.*\.ya?ml|deploy/kubernetes/.*\.ya?ml)$'
+        pass_filenames: false
+
+# Global settings
+default_stages: [pre-commit]
+ci:
+  autofix_prs: true
+  autoupdate_schedule: quarterly
+
+# Exclusions (Generated, Third-Party, Binary artifacts)
+exclude: |
+  (?x)(
+    ^vendor/|
+    ^dist/|
+    ^build/|
+    ^docs/generated/|
+    \.snap$|
+    \.svg$|
+    \.png$|
+    \.jpg$
+  )

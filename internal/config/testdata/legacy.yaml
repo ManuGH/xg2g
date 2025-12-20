@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=../../../docs/guides/config.schema.json
+# Valid legacy xg2g configuration (older key spellings/structure)
+version: "1"
+dataDir: /tmp/xg2g-config-test
+
+openwebif:
+  base: http://receiver.local
+  user: testuser
+  pass: testpass
+
+bouquet: userbouquet.favourites.tv
+
+epg:
+  enabled: true
+  days: 7
+
