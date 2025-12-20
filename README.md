@@ -7,10 +7,15 @@
 
   [![CI](https://github.com/ManuGH/xg2g/actions/workflows/ci.yml/badge.svg)](https://github.com/ManuGH/xg2g/actions/workflows/ci.yml)
   [![Docker Pulls](https://img.shields.io/docker/pulls/manugh/xg2g?color=blue)](https://hub.docker.com/r/manugh/xg2g)
-  [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+  [![License: PolyForm Noncommercial](https://img.shields.io/badge/License-PolyForm_Noncommercial-blue.svg)](https://polyformproject.org/licenses/noncommercial/1.0.0)
 
   [Quick Start](#-quick-start) • [Features](#-features) • [Docs](docs/)
 </div>
+
+> [!IMPORTANT]
+> **License Change**: Starting with **v2.0.0**, xg2g is licensed under the **PolyForm Noncommercial License 1.0.0**.
+> This application is free for personal, educational, and non-profit use. **Commercial use (e.g., ISPs, Resellers) requires a separate license.**
+> See [Licensing](docs/licensing.md) for details.
 
 ---
 
@@ -133,4 +138,5 @@ xg2g is configured primarily via **Environment Variables**.
 - **[Discussions](https://github.com/ManuGH/xg2g/discussions)**: Share your setup, ask questions.
 - **[Issues](https://github.com/ManuGH/xg2g/issues)**: Report bugs.
 
-License: **MIT**
+License: **PolyForm Noncommercial License 1.0.0**
+*(See [Licensing](docs/licensing.md) for commercial inquiries)*

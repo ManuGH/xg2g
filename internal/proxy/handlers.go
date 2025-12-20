@@ -1,3 +1,7 @@
+// Copyright (c) 2025 ManuGH
+// Licensed under the PolyForm Noncommercial License 1.0.0
+// Since v2.0.0, this software is restricted to non-commercial use only.
+
 package proxy
 
 import (
@@ -120,8 +124,10 @@ func (s *Server) tryHandleTranscode(w http.ResponseWriter, r *http.Request) bool
 		return false
 	}
 
-	targetURL := s.resolveTargetURL(r.Context(), r.URL.Path, r.URL.RawQuery)
-
+	targetURL, ok := s.resolveTargetURL(r.Context(), r.URL.Path, r.URL.RawQuery)
+	if !ok {
+		return false
+	}
 	// Priority 1: GPU Transcoding (Explicit override)
 	if s.transcoder.IsGPUEnabled() {
 		s.logger.Debug().

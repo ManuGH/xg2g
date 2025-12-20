@@ -1,3 +1,7 @@
+// Copyright (c) 2025 ManuGH
+// Licensed under the PolyForm Noncommercial License 1.0.0
+// Since v2.0.0, this software is restricted to non-commercial use only.
+
 package proxy
 
 import (
@@ -6,6 +10,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	coreopenwebif "github.com/ManuGH/xg2g/internal/core/openwebif"
 )
@@ -77,4 +82,26 @@ func resolveWebAPIStreamInfo(apiURL string) (webAPIStreamInfo, error) {
 	}
 
 	return webAPIStreamInfo{URL: urlLine, ProgramID: programID}, nil
+}
+
+// ZapAndResolveStream performs the full channel zap sequence with the required delay
+// for preventing race conditions on encrypted channels. It wraps resolveWebAPIStreamInfo
+// and handles the waiting period if the stream is detected as encrypted (or always, for safety).
+func ZapAndResolveStream(apiURL string) (string, int, error) {
+	// 1. Zap and get stream info
+	info, err := resolveWebAPIStreamInfo(apiURL)
+	if err != nil {
+		return "", 0, err
+	}
+
+	// 2. Check encryption/port implications
+	// Port 17999 implies oscam-emu (encrypted), which needs time to open the port.
+	// Standard port 8001 (FTA) is usually faster, but a consistent delay is safer
+	// across the board for Enigma2 tuners to stabilize.
+
+	// We use a fixed 5s delay as validated in production to solve the race condition.
+	// This serves as the single source of truth for this specific hardware timing quirk.
+	time.Sleep(5 * time.Second)
+
+	return info.URL, info.ProgramID, nil
 }

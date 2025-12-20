@@ -2,7 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [2.0.0] - 2025-12-20
+
+### License
+
+- **Changed license from MIT/AGPL to PolyForm Noncommercial License 1.0.0**.
+  - **Breaking Change**: Commercial use is now restricted.
+  - This change ensures the project remains free for personal and non-profit use while requiring commercial entities to obtain a separate license.
+  - See `docs/licensing.md` for migration details.
 
 ### Breaking Changes
 

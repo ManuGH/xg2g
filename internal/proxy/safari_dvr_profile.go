@@ -1,3 +1,7 @@
+// Copyright (c) 2025 ManuGH
+// Licensed under the PolyForm Noncommercial License 1.0.0
+// Since v2.0.0, this software is restricted to non-commercial use only.
+
 package proxy
 
 import (
@@ -101,11 +105,11 @@ func (p *SafariDVRProfile) Start() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if p.started {
-		return nil
-	}
 	if p.stopping {
 		return fmt.Errorf("safari dvr profile is stopping")
+	}
+	if p.started {
+		return nil
 	}
 	// New readiness signal per start; profiles can be restarted if ffmpeg exits.
 	ready := make(chan struct{})
@@ -149,14 +153,14 @@ func (p *SafariDVRProfile) Start() error {
 	var programID int
 	if strings.Contains(p.targetURL, "/web/stream.m3u") || webAPIURL != p.targetURL {
 		p.logger.Info().Str("web_api_url", webAPIURL).Msg("attempting to resolve Web API stream (Zapping)")
-		resolved, err := resolveWebAPIStreamInfo(webAPIURL)
+		// Use centralized helper with 5s delay protection
+		url, pid, err := ZapAndResolveStream(webAPIURL)
 		if err != nil {
 			p.logger.Error().Err(err).Str("web_api_url", webAPIURL).Msg("failed to resolve Web API stream")
 		} else {
-			finalInputURL = resolved.URL
-			programID = resolved.ProgramID
+			finalInputURL = url
+			programID = pid
 			p.logger.Info().Str("resolved_url", finalInputURL).Int("program_id", programID).Msg("successfully resolved stream URL")
-			time.Sleep(1000 * time.Millisecond) // Give tuner time to lock
 		}
 	} else {
 		p.logger.Info().Msg("using direct stream URL (no Web API detected)")

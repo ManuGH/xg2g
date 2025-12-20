@@ -1,3 +1,7 @@
+// Copyright (c) 2025 ManuGH
+// Licensed under the PolyForm Noncommercial License 1.0.0
+// Since v2.0.0, this software is restricted to non-commercial use only.
+
 import React, { useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
 import Plyr from 'plyr';

@@ -1,3 +1,7 @@
+// Copyright (c) 2025 ManuGH
+// Licensed under the PolyForm Noncommercial License 1.0.0
+// Since v2.0.0, this software is restricted to non-commercial use only.
+
 // Jemalloc - REMOVED due to incompatibility with Tokio runtime initialization
 // Issue: jemalloc's initialization conflicts with manual Tokio runtime builder
 // For GPU transcoding, bottlenecks are GPU/IO/FFmpeg, not memory allocation

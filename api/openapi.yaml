@@ -1,7 +1,11 @@
 openapi: 3.0.3
 info:
   title: xg2g API
-  description: API for xg2g (Enigma2 to Plex/Jellyfin Proxy)
+  description: |
+    API for xg2g (Enigma2 to Plex/Jellyfin Proxy).
+
+    **License**: PolyForm Noncommercial License 1.0.0.
+    Commercial usage is restricted. See repository documentation for details.
   version: 2.0.0
 servers:
   - url: /api/v2

@@ -24,8 +24,8 @@ xg2g is a middleware service that bridges Enigma2 satellite/cable receivers with
 
 - **Stateless**: No persistent state (except cached playlists/EPG)
 - **Middleware Pattern**: Sits between Enigma2 and media servers
-- **Plugin Architecture**: Modular transcoding, telemetry, validation
-- **12-Factor App**: Configuration via ENV, horizontally scalable
+- **Modular Design**: Separated API, proxy/streaming, jobs, and shared core packages
+- **12-Factor Compatible**: Configuration via file + ENV overrides
 
 ## Architecture Diagram
 
@@ -84,12 +84,12 @@ graph LR
     end
 
     subgraph "internal/daemon"
-        Bootstrap[bootstrap.go<br/>Lifecycle Management]
+        App[app.go<br/>Lifecycle Orchestration]
     end
 
     subgraph "internal/api"
-        Router[http.go<br/>HTTP Routing]
-        V2[v2/handlers.go<br/>API v2 Endpoints]
+        Router[http.go<br/>Routing + UI]
+        V2[server_gen.go + server_impl.go<br/>API v2 Handlers]
         MW[middleware/*<br/>Auth, CORS, Tracing]
     end
 
@@ -103,8 +103,7 @@ graph LR
     end
 
     subgraph "internal/hdhr"
-        HDHR[hdhr.go<br/>HDHomeRun Protocol]
-        SSDP[ssdp.go<br/>Device Discovery]
+        HDHR[hdhr.go<br/>HDHomeRun + SSDP]
     end
 
     subgraph "Supporting Packages"
@@ -114,18 +113,18 @@ graph LR
         Log[log/*<br/>Structured Logging]
     end
 
-    Main --> Bootstrap
-    Bootstrap --> Router
+    Main --> App
+    App --> Router
     Router --> V2
     Router --> MW
     V2 --> Refresh
     V2 --> Proxy
     V2 --> HDHR
     Proxy --> TC
-    Bootstrap --> Config
+    App --> Config
     V2 --> Validate
     MW --> Telemetry
-    Bootstrap --> Log
+    App --> Log
 ```
 
 ## Component Breakdown
@@ -136,9 +135,9 @@ graph LR
 
 **Key Endpoints**:
 
-- `GET /api/v2/status` - Service health and version
-- `POST /api/v2/refresh` - Trigger playlist/EPG refresh
-- `GET /api/v2/channels` - List available channels
+- `GET /api/v2/system/health` - Service health and runtime status
+- `POST /api/v2/system/refresh` - Trigger playlist/EPG refresh
+- `GET /api/v2/services` - List available channels (services)
 
 **Architecture Decision**: [ADR-001 API Versioning](adr/001-api-versioning.md)
 
@@ -269,6 +268,43 @@ sequenceDiagram
         Enigma2-->>Proxy: MPEG-TS Stream
         Proxy->>Proxy: [FFmpeg if enabled]
         Proxy-->>Client: Stream Chunks
+    end
+```
+
+### Encrypted Stream Lifecycle (Race Condition Handling)
+
+This flow illustrates why the **5-second Zap Delay** is critical for encrypted channels.
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Proxy as xg2g Proxy
+    participant OWI as Enigma2 (WebAPI)
+    participant Receiver as Enigma2 (System)
+    participant OSCam as oscam-emu (Port 17999)
+
+    Client->>Proxy: GET /stream/{id}/playlist.m3u8
+    Proxy->>OWI: GET /web/stream.m3u?ref=... (Zap)
+    OWI->>Receiver: Tune & Init CAM
+    OWI-->>Proxy: URL: http://ip:17999/...
+    
+    note right of Proxy: CRITICAL: Receiver operates asynchronously!
+    Receiver->>Receiver: Tuning... (1-2s)
+    Receiver->>OSCam: Start Decryption... (1s)
+    OSCam->>OSCam: Open Port 17999... (1s)
+
+    rect rgb(255, 240, 240)
+        note right of Proxy: Without Delay (Race Condition)
+        Proxy-xOSCam: Connect Port 17999
+        OSCam--xProxy: Connection Refused (Port not ready)
+    end
+
+    rect rgb(240, 255, 240)
+        note right of Proxy: With 5s Delay (Fix)
+        Proxy->>Proxy: Sleep 5s (Zap Delay)
+        Proxy->>OSCam: Connect Port 17999
+        OSCam-->>Proxy: MPEG-TS Stream (Decrypted)
+        Proxy-->>Client: HLS Playlist
     end
 ```
 
@@ -431,14 +467,24 @@ spec:
 - **Automated Scanning**: govulncheck, Trivy, CodeQL
 
 **Related**: [SECURITY.md](../SECURITY.md)
-422:
-437: 2.  **Discovery**: The server checks for VAAPI devices (`/dev/dri/renderD128`).
-438: 3.  **Permissions**: The Docker container runs as user `xg2g` (65532) but is added to `video` and `render` groups to ensure access.
-439: 4.  **Process**:
-    - Client requests stream
-    - Proxy forwards to internal GPU server (HTTP)
-    - GPU server uses `ffmpeg` (via `ac-ffmpeg` crate) to transcode using VAAPI hardware acceleration
-    - Stream returned to proxy -> client
+
+### Stream Resolution Standards (Core Invariants)
+
+To prevent regression of encrypted channel support, all developers must adhere to these invariants:
+
+1. **NEVER Hardcode Ports 8001 or 17999**:
+    - **Rule**: The proxy MUST NOT guess the stream port.
+    - **Reason**: Enigma2 dynamically assigns ports based on decryption needs (8001=FTA, 17999=Encrypted/OSCam). Guessing 8001 for an encrypted channel results in a silent failure (black screen).
+    - **Correct Approach**: Always parse the URL returned by the WebAPI.
+
+2. **WebAPI is the Source of Truth**:
+    - **Rule**: All stream requests must be resolved via the Enigma2 Web API (`/web/stream.m3u?ref=...`).
+    - **Reason**: This API handles the "Zap" command and returns the correct, active stream URL (including the correct port).
+    - **Implementation**: Use `ZapAndResolveStream` helper which encapsulates this logic.
+
+3. **Respect Hardware Timing (Zap Delay)**:
+    - **Rule**: A delay (currently **5 seconds**) is MANDATORY between Zapping and connecting to the stream port for encrypted channels.
+    - **Reason**: `oscam-emu` needs time to initialize the descrambler and open port 17999. Connecting too early causes "Connection Refused".
 
 ## References
 
@@ -451,6 +497,6 @@ spec:
 
 ---
 
-**Last Updated**: 2025-01-21
-**Version**: 1.0
+**Last Updated**: 2025-12-19
+**Version**: 2.0.0
 **Maintainer**: @ManuGH

@@ -47,11 +47,12 @@ curl http://localhost:8081/health
 Health check with VAAPI status.
 
 **Response:**
+
 ```json
 {
   "status": "ok",
   "vaapi_available": true,
-  "version": "1.0.0"
+  "version": "2.0.0"
 }
 ```
 
@@ -62,6 +63,7 @@ Prometheus metrics endpoint.
 **Response:** Prometheus text format
 
 **Example metrics:**
+
 ```text
 xg2g_transcoder_requests_total 1234
 xg2g_transcoder_success_total 1200
@@ -76,6 +78,7 @@ xg2g_transcoder_bytes_total 123456789012
 Transcode a stream from the given URL.
 
 **Parameters:**
+
 - `source_url` (required): Source stream URL
 - `video_bitrate` (optional): Override video bitrate (e.g., `3000k`)
 - `audio_bitrate` (optional): Override audio bitrate (e.g., `128k`)
@@ -83,6 +86,7 @@ Transcode a stream from the given URL.
 **Response:** MPEG-TS stream (`video/mp2t`)
 
 **Example:**
+
 ```bash
 curl "http://localhost:8081/transcode?source_url=http://enigma2:17999/stream" | ffplay -
 ```
@@ -205,6 +209,7 @@ ffmpeg \
 ```
 
 **Key features:**
+
 - Fast stream analysis (2s instead of 15s)
 - Timestamp regeneration (`+genpts+igndts`)
 - GPU deinterlacing and encoding

@@ -1,3 +1,7 @@
+// Copyright (c) 2025 ManuGH
+// Licensed under the PolyForm Noncommercial License 1.0.0
+// Since v2.0.0, this software is restricted to non-commercial use only.
+
 // SPDX-License-Identifier: MIT
 package main
 
@@ -26,9 +30,9 @@ import (
 )
 
 var (
-	version   = "v3.2.0-85-g441be91-dirty"
-	commit    = "441be91"
-	buildDate = "2025-12-11T18:58:00Z"
+	version   = "v2.0.0"
+	commit    = "none"
+	buildDate = "unknown"
 )
 
 // maskURL removes user info from a URL string for safe logging.

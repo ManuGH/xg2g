@@ -1,3 +1,7 @@
+// Copyright (c) 2025 ManuGH
+// Licensed under the PolyForm Noncommercial License 1.0.0
+// Since v2.0.0, this software is restricted to non-commercial use only.
+
 // SPDX-License-Identifier: MIT
 
 package proxy
@@ -167,5 +171,131 @@ func TestSafariDVR_TerminatesProcessGroup(t *testing.T) {
 			t.Fatalf("child process %d still alive after Stop()", childPID)
 		}
 		time.Sleep(25 * time.Millisecond)
+	}
+}
+
+// TestSafariDVR_FFmpegCrash_HandlesGracefully verifies that the profile handles ffmpeg crashes gracefully.
+func TestSafariDVR_FFmpegCrash_HandlesGracefully(t *testing.T) {
+	logger := zerolog.New(io.Discard)
+	tmpDir := t.TempDir()
+
+	config := streamprofile.SafariDVRConfig{
+		SegmentDuration: 2,
+		DVRWindowSize:   60,
+	}
+
+	// Create a script that crashes immediately
+	dummyFFmpeg := filepath.Join(tmpDir, "ffmpeg_crash.sh")
+	script := "#!/bin/sh\n" +
+		"echo 'Starting...' >&2\n" +
+		"sleep 0.5\n" +
+		"echo 'Error: Simulated ffmpeg crash' >&2\n" +
+		"exit 1\n"
+	// #nosec G306 -- test helper script needs to be executable
+	if err := os.WriteFile(dummyFFmpeg, []byte(script), 0755); err != nil {
+		t.Fatalf("failed to create dummy ffmpeg: %v", err)
+	}
+	config.FFmpegPath = dummyFFmpeg
+
+	profile, err := NewSafariDVRProfile("ref:1:0:crash", "http://fake/stream", tmpDir, logger, config)
+	if err != nil {
+		t.Fatalf("NewSafariDVRProfile failed: %v", err)
+	}
+
+	// Start the profile - should succeed initially
+	if err := profile.Start(); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	// Wait for process to crash
+	time.Sleep(1 * time.Second)
+
+	// Verify profile detected the crash and marked itself as not started
+	profile.mu.RLock()
+	started := profile.started
+	profile.mu.RUnlock()
+
+	if started {
+		t.Error("profile should have detected ffmpeg crash and marked itself as stopped")
+	}
+
+	// Calling Stop should be safe even after crash
+	profile.Stop()
+
+	// Verify final state
+	profile.mu.RLock()
+	if profile.started {
+		t.Error("profile should be stopped after explicit Stop()")
+	}
+	profile.mu.RUnlock()
+}
+
+// TestSafariDVR_Start_WhenStopping_ReturnsError verifies that Start() fails when Stop() is in progress.
+func TestSafariDVR_Start_WhenStopping_ReturnsError(t *testing.T) {
+	logger := zerolog.New(io.Discard)
+	tmpDir := t.TempDir()
+
+	config := streamprofile.SafariDVRConfig{
+		SegmentDuration: 2,
+		DVRWindowSize:   60,
+	}
+
+	// Create a long-running script
+	dummyFFmpeg := filepath.Join(tmpDir, "ffmpeg_long.sh")
+	script := "#!/bin/sh\n" +
+		"sleep 30\n"
+	// #nosec G306 -- test helper script needs to be executable
+	if err := os.WriteFile(dummyFFmpeg, []byte(script), 0755); err != nil {
+		t.Fatalf("failed to create dummy ffmpeg: %v", err)
+	}
+	config.FFmpegPath = dummyFFmpeg
+
+	profile, err := NewSafariDVRProfile("ref:1:0:stopping", "http://fake/stream", tmpDir, logger, config)
+	if err != nil {
+		t.Fatalf("NewSafariDVRProfile failed: %v", err)
+	}
+
+	// Start the profile
+	if err := profile.Start(); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	// Manually set stopping flag to simulate Stop() in progress
+	profile.mu.Lock()
+	profile.stopping = true
+	profile.mu.Unlock()
+
+	// Try to start again - should fail
+	err = profile.Start()
+	if err == nil {
+		t.Fatal("expected Start() to fail when stopping=true, but it succeeded")
+	}
+
+	expectedMsg := "safari dvr profile is stopping"
+	if !strings.Contains(err.Error(), expectedMsg) {
+		t.Errorf("expected error message to contain %q, got: %v", expectedMsg, err)
+	}
+
+	// Cleanup
+	profile.mu.Lock()
+	profile.stopping = false
+	profile.mu.Unlock()
+	profile.Stop()
+}
+
+// TestSafariDVR_InvalidOutputPath_ReturnsError verifies that invalid paths are rejected.
+func TestSafariDVR_InvalidOutputPath_ReturnsError(t *testing.T) {
+	logger := zerolog.New(io.Discard)
+
+	config := streamprofile.SafariDVRConfig{
+		SegmentDuration: 2,
+		DVRWindowSize:   60,
+		FFmpegPath:      "/usr/bin/ffmpeg",
+	}
+
+	// Try to create profile with path traversal attempt
+	_, err := NewSafariDVRProfile("../../etc/passwd", "http://fake/stream", "/tmp", logger, config)
+	if err == nil {
+		t.Fatal("expected NewSafariDVRProfile to reject path traversal, but it succeeded")
 	}
 }

@@ -4,8 +4,8 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 3.0.x   | :white_check_mark: |
-| < 3.0   | :x:                |
+| 2.0.x   | ✅ Supported       |
+| 1.x     | ❌ End of Life     |
 
 ## Reporting a Vulnerability
 
@@ -58,7 +58,7 @@ We recommend the following best practices for running `xg2g`:
 
 ## Security Guarantees
 
-As of version 3.0+, `xg2g` enforces the following security invariants by default:
+As of version 2.0+, `xg2g` enforces the following security invariants by default:
 
 1. **Strict File Serving**: Arbitrary file access via the API is forbidden. Only specific, required playback files (M3U, XMLTV) are served.
 2. **Localhost-Only Internal Services**: The stream proxy and metrics endpoints bind to `127.0.0.1` by default preventing accidental exposure.

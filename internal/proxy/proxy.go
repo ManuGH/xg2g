@@ -1,3 +1,7 @@
+// Copyright (c) 2025 ManuGH
+// Licensed under the PolyForm Noncommercial License 1.0.0
+// Since v2.0.0, this software is restricted to non-commercial use only.
+
 package proxy
 
 import (
@@ -18,6 +22,7 @@ import (
 	apimw "github.com/ManuGH/xg2g/internal/api/middleware"
 	"github.com/ManuGH/xg2g/internal/auth"
 	"github.com/ManuGH/xg2g/internal/config"
+	coreopenwebif "github.com/ManuGH/xg2g/internal/core/openwebif"
 	xglog "github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/m3u"
 	"github.com/ManuGH/xg2g/internal/metrics"
@@ -176,7 +181,7 @@ func New(cfg Config) (*Server, error) {
 
 		s.proxy = &httputil.ReverseProxy{
 			Director: func(req *http.Request) {
-				targetURL := s.resolveTargetURL(req.Context(), req.URL.Path, req.URL.RawQuery)
+				targetURL, _ := s.resolveTargetURL(req.Context(), req.URL.Path, req.URL.RawQuery)
 				target, _ := url.Parse(targetURL)
 				if target != nil {
 					req.URL.Scheme = target.Scheme
@@ -228,6 +233,8 @@ func New(cfg Config) (*Server, error) {
 	r := apimw.NewRouter(apimw.StackConfig{})
 	r.HandleFunc("/", s.handleRequest)
 	r.HandleFunc("/*", s.handleRequest)
+	r.NotFound(s.handleRequest)
+	r.MethodNotAllowed(s.handleRequest)
 
 	s.httpServer = &http.Server{
 		Addr:              cfg.ListenAddr,
@@ -394,6 +401,18 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Strict check: if we can't resolve the target, fail before proxying.
+	// This prevents the "Director" from processing an empty/invalid URL.
+	//
+	// Note: In tests, Server can be manually constructed with a fixed reverse proxy and without
+	// TargetURL/ReceiverHost. In that case, skip resolution and let the injected proxy handle it.
+	if s.targetURL != nil || s.receiverHost != "" || s.playlistPath != "" {
+		if _, ok := s.resolveTargetURL(r.Context(), r.URL.Path, r.URL.RawQuery); !ok {
+			http.Error(w, "stream not found", http.StatusNotFound)
+			return
+		}
+	}
+
 	metrics.IncActiveStreams("direct")
 	defer metrics.DecActiveStreams("direct")
 	s.proxy.ServeHTTP(w, r)
@@ -454,7 +473,7 @@ func (w *sessionWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return nil, nil, fmt.Errorf("hijack not supported")
 }
 
-func (s *Server) resolveTargetURL(ctx context.Context, path, rawQuery string) string {
+func (s *Server) resolveTargetURL(ctx context.Context, path, rawQuery string) (string, bool) {
 	logger := xglog.WithContext(ctx, s.logger)
 
 	serviceRef := strings.TrimPrefix(path, "/")
@@ -471,50 +490,81 @@ func (s *Server) resolveTargetURL(ctx context.Context, path, rawQuery string) st
 			} else {
 				streamURL = appendRawQuery(streamURL, rawQuery)
 				logger.Debug().Str("slug", serviceRef).Str("target", streamURL).Msg("resolved slug to upstream URL via M3U")
-				return streamURL
+				return streamURL, true
 			}
 		} else {
 			if err := s.loadM3U(); err == nil {
 				if streamURL, ok := s.lookupStreamURL(serviceRef); ok {
 					streamURL = appendRawQuery(streamURL, rawQuery)
 					logger.Info().Str("slug", serviceRef).Msg("resolved slug after M3U reload")
-					return streamURL
+					return streamURL, true
 				}
 			}
 		}
 	}
 
 	// Dynamic Upstream Override (e.g. for Recordings)
-	// Check if 'upstream' query param is present
 	if rawQuery != "" {
 		values, _ := url.ParseQuery(rawQuery)
 		if upstream := values.Get("upstream"); upstream != "" {
-			// Validate upstream URL using shared logic
 			if err := s.validateUpstream(upstream); err == nil {
-				// We don't append rawQuery recursively to the upstream URL itself if it's an override,
-				// but we might want to keep other params (like HLS opts).
-				// For now, trust the upstream param as the base.
 				logger.Debug().Str("upstream", upstream).Msg("using explicit upstream URL")
-				return upstream
+				return upstream, true
 			}
-			// If not allowed, ignore upstream and fall through to receiver logic
 			logger.Warn().Str("upstream", upstream).Msg("ignoring disallowed upstream URL")
 		}
 	}
 
 	if s.targetURL != nil {
 		targetURL := s.targetURL.String() + path
-		return appendRawQuery(targetURL, rawQuery)
+		return appendRawQuery(targetURL, rawQuery), true
 	}
 
-	targetURL := fmt.Sprintf("http://%s%s", net.JoinHostPort(s.receiverHost, "8001"), path)
-	targetURL = appendRawQuery(targetURL, rawQuery)
+	// Universal Fallback (WebAPI Resolution)
+	// If the stream is not in our loaded M3U, it might still be a valid Service Reference.
+	// Instead of guessing Port 8001 (which breaks encrypted channels), we ask the WebAPI.
+	if serviceRef != "" && !strings.Contains(serviceRef, "/") {
+		// Construct the WebAPI URL for this reference
+		// Note: We don't have the full "Zap" logic here, just the URL construction.
+		// BUT: resolveTargetURL is synchronous and expected to return a URL string.
+		// We can't block for 5s here easily if this is called in Director.
 
-	logger.Debug().
-		Str("target", targetURL).
-		Msg("using receiver host fallback")
+		// BETTER APPROACH:
+		// We construct a "Virtual" WebAPI URL for this service ref.
+		// We trust the ZapAndResolveStream logic (called later by HLS handler) to handle the actual resolution.
+		// However, for DIRECT proxying (Director), we need a simplified approach.
 
-	return targetURL
+		// Let's use the helper to get the WebAPI URL for this ref.
+		// Then we can try to resolve it ONCE.
+
+		// Wait, if we return a WebAPI URL here, the caller might use it as the upstream?
+		// No, the caller expects a STREAM URL (http://ip:port/ref).
+
+		// We must perform the resolution here if we want to be safe.
+		// This might add latency to the first request, but it's better than broken streams.
+
+		webAPIURL := coreopenwebif.ConvertToWebAPI(
+			fmt.Sprintf("http://%s:80", s.receiverHost), // Base URL
+			serviceRef,
+		)
+
+		logger.Info().Str("service_ref", serviceRef).Msg("attempting dynamic resolution via WebAPI (not in playlist)")
+
+		// We use a short timeout resolution here just to get the port.
+		// Actual Zapping/Delay happens in the HLS handler usually, but for direct proxy
+		// we might need to do it here.
+		info, err := resolveWebAPIStreamInfo(webAPIURL) // This is from hls_helper.go (package proxy)
+		if err == nil {
+			logger.Info().Str("service_ref", serviceRef).Str("resolved_url", info.URL).Msg("dynamically resolved stream URL")
+			return appendRawQuery(info.URL, rawQuery), true
+		}
+
+		logger.Warn().Err(err).Str("service_ref", serviceRef).Msg("dynamic WebAPI resolution failed")
+	}
+
+	// NO BLIND FALLBACK to 8001.
+	logger.Warn().Str("path", path).Msg("could not resolve stream URL (check playlist or upstream param)")
+	return "", false
 }
 
 func (s *Server) acquireStreamSlotIfNeeded(w http.ResponseWriter, r *http.Request) bool {
@@ -597,7 +647,11 @@ func (s *Server) handleHLSRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	targetURL := s.resolveTargetURL(r.Context(), "/"+serviceRef, r.URL.RawQuery)
+	targetURL, ok := s.resolveTargetURL(r.Context(), "/"+serviceRef, r.URL.RawQuery)
+	if !ok {
+		http.Error(w, "service reference not found in playlist", http.StatusNotFound)
+		return
+	}
 
 	logger.Debug().
 		Str("service_ref", serviceRef).

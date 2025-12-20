@@ -1,3 +1,7 @@
+// Copyright (c) 2025 ManuGH
+// Licensed under the PolyForm Noncommercial License 1.0.0
+// Since v2.0.0, this software is restricted to non-commercial use only.
+
 // Package proxy provides HLS streaming support for the stream proxy.
 package proxy
 
@@ -286,7 +290,9 @@ func (s *HLSStreamer) Start() error {
 	if strings.Contains(s.targetURL, "/web/stream.m3u") || webAPIURL != s.targetURL {
 		logger.Info().Str("web_api_url", webAPIURL).Msg("attempting to resolve Web API stream (Zapping)")
 		tuneStart := time.Now()
-		resolved, err := resolveWebAPIStreamInfo(webAPIURL)
+		// Use centralized helper with race condition protection (5s delay)
+		url, pid, err := ZapAndResolveStream(webAPIURL)
+
 		if err != nil {
 			logger.Error().Err(err).Str("web_api_url", webAPIURL).Msg("failed to resolve Web API stream")
 			if strings.Contains(err.Error(), "context deadline exceeded") || strings.Contains(err.Error(), "timeout") {
@@ -295,17 +301,13 @@ func (s *HLSStreamer) Start() error {
 				zapError = "zap_failed"
 			}
 		} else {
-			finalInputURL = resolved.URL
-			programID = resolved.ProgramID
+			finalInputURL = url
+			programID = pid
 			logger.Info().Str("resolved_url", finalInputURL).Int("program_id", programID).Msg("successfully resolved stream URL")
 
 			if strings.Contains(finalInputURL, ":17999/") {
 				encrypted = true
 			}
-
-			// Give the tuner a moment to lock after zapping (especially for encrypted channels)
-			time.Sleep(3000 * time.Millisecond)
-
 			metrics.ObserveStreamTuneDuration(encrypted, time.Since(tuneStart))
 		}
 	} else {

@@ -1,3 +1,7 @@
+// Copyright (c) 2025 ManuGH
+// Licensed under the PolyForm Noncommercial License 1.0.0
+// Since v2.0.0, this software is restricted to non-commercial use only.
+
 // SPDX-License-Identifier: MIT
 
 package proxy
@@ -190,7 +194,10 @@ func TestServer_ResolveTargetURL(t *testing.T) {
 				targetURL: targetURL,
 			}
 
-			got := s.resolveTargetURL(context.Background(), tt.path, tt.query)
+			got, ok := s.resolveTargetURL(context.Background(), tt.path, tt.query)
+			if !ok {
+				t.Errorf("resolveTargetURL() returned false, expected success")
+			}
 			if !strings.Contains(got, tt.wantContains) {
 				t.Errorf("resolveTargetURL() = %v, want to contain %v", got, tt.wantContains)
 			}

@@ -25,13 +25,29 @@ This process is asynchronous. `xg2g` receives the stream URL immediately after t
 
 The system implements a **Post-Zap Delay** to handle this race condition.
 
-- **Mechanism**: A fixed `time.Sleep(3 * time.Second)` in `internal/proxy/hls.go` after successfully resolving the Web API stream.
+- **Mechanism**: `ZapAndResolveStream` enforces a fixed post-zap delay (currently **5 seconds**) after successfully resolving the Web API stream (see `internal/proxy/hls_helper.go`).
 - **Effect**: Gives the receiver time to stabilize the tuner and `oscam-emu` listener before FFmpeg attempts the connection.
 
-### Important Notes
+### Important Notes & Architecture Constraints
 
-- **Do NOT force Port 8001**: Port 8001 is for unencrypted (FTA) streams. Encrypted streams *must* use the port returned by OpenWebIF (e.g., 17999), as this is where the decryption happens. Forcing 8001 will result in a connection but no valid video data (black screen or error).
-- **Startup Latency**: It is normal for streams to take **13-15 seconds** to start (3s Zap delay + FFmpeg initialization + HLS buffering). This is expected behavior for encrypted Enigma2 streaming.
+> [!IMPORTANT]
+> **Understanding Port Redirection (8001 vs 17999)**
+>
+> 1. **Entry Point**: xg2g talks to the **OpenWebIF API** (Port 80) to request a stream (`/web/stream.m3u`).
+> 2. **Redirect**: OpenWebIF returns a playlist containing the **actual** stream URL.
+>    - For **FTA (Free-to-Air)** channels, this is usually Port **8001** (direct TS stream).
+>    - For **Encrypted** channels, this is usually Port **17999** (served by `oscam-emu` or configured streamer which handles decryption).
+> 3. **The Trap**: Developers often try to "fix" connection issues by hardcoding Port 8001. **This is wrong.** If you force Port 8001 for an encrypted channel, you will get a connection, but the stream will be black/invalid because it bypasses the decryption layer. You *must* follow the port returned by OpenWebIF.
+>
+> **The Race Condition (Why the Delay Exists)**
+>
+> When OpenWebIF returns the URL for Port 17999, it does *not* guarantee that `oscam-emu` has finished initializing the listener on that port. The receiver is still:
+>
+> 1. Locking the tuner.
+> 2. Initializing the CAM.
+> 3. Opening the socket.
+>
+> If xg2g (FFmpeg) connects instantly (ms after receiving the URL), it hits `Connection Refused`. The **5-second Post-Zap Delay** is mandatory to allow this sequence to complete.
 
 ---
 
