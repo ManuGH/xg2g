@@ -10,9 +10,26 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 
 	"github.com/ManuGH/xg2g/internal/metrics"
 )
+
+const (
+	routeDecisionHLS   = "hls"
+	routeDecisionTS    = "ts"
+	routeDecisionProxy = "proxy"
+
+	routeReasonGateRef    = "gate_ref"
+	routeReasonGateSlug   = "gate_slug"
+	routeReasonGateReject = "gate_reject"
+	routeReasonQuery      = "query"
+	routeReasonAccept     = "accept"
+	routeReasonFetch      = "fetch"
+	routeReasonDefault    = "default"
+)
+
+var defaultRoutingLogCounter atomic.Uint64
 
 // tryHandleHEAD handles HEAD requests.
 // Returns true if request was handled.
@@ -93,7 +110,33 @@ func (s *Server) tryHandleHLS(w http.ResponseWriter, r *http.Request) bool {
 			return ok
 		}
 
-		if shouldAutoRouteHLS(path, r, lookup) {
+		decision := decideStreamRouting(path, r, lookup)
+		metrics.IncStreamRouting(decision.decision, decision.reason)
+
+		if decision.reason == routeReasonGateReject {
+			// Only warn if an explicit HLS override was requested but the gate rejected it.
+			q := r.URL.Query()
+			if strings.EqualFold(q.Get("mode"), "hls") || q.Get("hls") == "1" {
+				s.logger.Warn().
+					Str("decision", decision.decision).
+					Str("reason", decision.reason).
+					Str("path_class", decision.pathClass).
+					Msg("auto HLS rejected by gate")
+			}
+			return false
+		}
+
+		if decision.reason == routeReasonGateRef || decision.reason == routeReasonGateSlug {
+			if defaultRoutingLogCounter.Add(1)%100 == 0 {
+				s.logger.Debug().
+					Str("decision", decision.decision).
+					Str("reason", decision.reason).
+					Str("path_class", decision.pathClass).
+					Msg("auto-routing decision sampled")
+			}
+		}
+
+		if decision.route {
 			hlsPath := "/hls" + path
 			s.logger.Info().
 				Str("user_agent", r.Header.Get("User-Agent")).
@@ -111,53 +154,105 @@ func (s *Server) tryHandleHLS(w http.ResponseWriter, r *http.Request) bool {
 	return false
 }
 
-func shouldAutoRouteHLS(path string, r *http.Request, lookup func(string) bool) bool {
-	if !isStreamLikePath(path, lookup) {
-		return false
+type routingDecision struct {
+	decision  string
+	reason    string
+	pathClass string
+	route     bool
+}
+
+func decideStreamRouting(path string, r *http.Request, lookup func(string) bool) routingDecision {
+	gateReason, streamLike := gateStreamPath(path, lookup)
+	if !streamLike {
+		return routingDecision{
+			decision:  routeDecisionProxy,
+			reason:    routeReasonGateReject,
+			pathClass: "non_stream",
+			route:     false,
+		}
 	}
 
 	q := r.URL.Query()
 	if strings.EqualFold(q.Get("mode"), "ts") || q.Get("ts") == "1" {
-		return false
+		return routingDecision{
+			decision:  routeDecisionTS,
+			reason:    routeReasonQuery,
+			pathClass: pathClassFromGate(gateReason),
+			route:     false,
+		}
 	}
 	if strings.EqualFold(q.Get("mode"), "hls") || q.Get("hls") == "1" {
-		return true
+		return routingDecision{
+			decision:  routeDecisionHLS,
+			reason:    routeReasonQuery,
+			pathClass: pathClassFromGate(gateReason),
+			route:     true,
+		}
 	}
 
 	accept := strings.ToLower(r.Header.Get("Accept"))
 	if acceptWantsHLS(accept) {
-		return true
+		return routingDecision{
+			decision:  routeDecisionHLS,
+			reason:    routeReasonAccept,
+			pathClass: pathClassFromGate(gateReason),
+			route:     true,
+		}
 	}
 	if acceptWantsTS(accept) {
-		return false
+		return routingDecision{
+			decision:  routeDecisionTS,
+			reason:    routeReasonAccept,
+			pathClass: pathClassFromGate(gateReason),
+			route:     false,
+		}
 	}
 
 	dest := strings.ToLower(strings.TrimSpace(r.Header.Get("Sec-Fetch-Dest")))
 	if dest == "video" || dest == "audio" || dest == "media" {
-		return true
+		return routingDecision{
+			decision:  routeDecisionHLS,
+			reason:    routeReasonFetch,
+			pathClass: pathClassFromGate(gateReason),
+			route:     true,
+		}
 	}
 
 	// Client Hints / Fetch Metadata are a strong browser signal (TV webviews often include them too).
 	if strings.TrimSpace(r.Header.Get("Sec-CH-UA")) != "" {
-		return true
+		return routingDecision{
+			decision:  routeDecisionHLS,
+			reason:    routeReasonFetch,
+			pathClass: pathClassFromGate(gateReason),
+			route:     true,
+		}
 	}
 
 	// Default to HLS for broad compatibility when the client is ambiguous.
-	return true
+	defaultReason := gateReason
+	if defaultReason != routeReasonGateRef && defaultReason != routeReasonGateSlug {
+		defaultReason = routeReasonDefault
+	}
+	return routingDecision{
+		decision:  routeDecisionHLS,
+		reason:    defaultReason,
+		pathClass: pathClassFromGate(gateReason),
+		route:     true,
+	}
 }
 
-func isStreamLikePath(path string, lookup func(string) bool) bool {
+func gateStreamPath(path string, lookup func(string) bool) (string, bool) {
 	trimmed := strings.Trim(path, "/")
 	if trimmed == "" || strings.Contains(trimmed, "/") {
-		return false
+		return routeReasonGateReject, false
 	}
 	if strings.Contains(trimmed, ":") {
-		return true
+		return routeReasonGateRef, true
 	}
 	if lookup != nil && lookup(trimmed) {
-		return true
+		return routeReasonGateSlug, true
 	}
-	return false
+	return routeReasonGateReject, false
 }
 
 func acceptWantsHLS(accept string) bool {
@@ -168,6 +263,17 @@ func acceptWantsHLS(accept string) bool {
 
 func acceptWantsTS(accept string) bool {
 	return strings.Contains(accept, "video/mp2t") || strings.Contains(accept, "video/mpeg")
+}
+
+func pathClassFromGate(gateReason string) string {
+	switch gateReason {
+	case routeReasonGateRef:
+		return "stream_ref"
+	case routeReasonGateSlug:
+		return "stream_slug"
+	default:
+		return "non_stream"
+	}
 }
 
 // tryHandleTranscode handles transcoding (Stream Repair, GPU, Rust, FFmpeg).

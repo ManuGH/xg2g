@@ -49,6 +49,11 @@ var (
 		Name: "xg2g_stream_start_total",
 		Help: "Total number of stream start attempts by result and reason",
 	}, []string{"result", "reason", "encrypted"})
+
+	StreamRoutingTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "xg2g_proxy_stream_routing_total",
+		Help: "Routing decisions for stream-like requests (auto HLS vs TS vs proxy)",
+	}, []string{"decision", "reason"})
 )
 
 // ObserveStreamTuneDuration records the tune duration.
@@ -78,4 +83,9 @@ func IncStreamStart(encrypted bool, success bool, reason string) {
 		result = "success"
 	}
 	StreamStartTotal.WithLabelValues(result, reason, strconv.FormatBool(encrypted)).Inc()
+}
+
+// IncStreamRouting records a routing decision for stream-like paths.
+func IncStreamRouting(decision, reason string) {
+	StreamRoutingTotal.WithLabelValues(decision, reason).Inc()
 }
