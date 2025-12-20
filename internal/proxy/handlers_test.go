@@ -64,7 +64,7 @@ func TestRoutingDecision_Precedence(t *testing.T) {
 			name:         "default for ref",
 			path:         "/1:0:1",
 			wantDecision: routeDecisionHLS,
-			wantReason:   routeReasonGateRef,
+			wantReason:   routeReasonDefault,
 		},
 	}
 
@@ -96,8 +96,8 @@ func TestRoutingDecision_DefaultForSlug(t *testing.T) {
 	if decision.decision != routeDecisionHLS {
 		t.Fatalf("decision mismatch: got %q want %q", decision.decision, routeDecisionHLS)
 	}
-	if decision.reason != routeReasonGateSlug {
-		t.Fatalf("reason mismatch: got %q want %q", decision.reason, routeReasonGateSlug)
+	if decision.reason != routeReasonDefault {
+		t.Fatalf("reason mismatch: got %q want %q", decision.reason, routeReasonDefault)
 	}
 }
 
@@ -110,7 +110,6 @@ func TestRoutingDecision_CompatRegression(t *testing.T) {
 		"/discover.json",
 		"/lineup.json",
 		"/device.xml",
-		"/stream/unknown",
 		"/api/v2/status",
 	}
 
@@ -126,9 +125,22 @@ func TestRoutingDecision_CompatRegression(t *testing.T) {
 	}
 }
 
+func TestRoutingDecision_StreamPathGateReject(t *testing.T) {
+	lookup := func(string) bool { return false }
+	req := httptest.NewRequest(http.MethodGet, "/stream/unknown", nil)
+	req.Header.Set("Accept", "application/vnd.apple.mpegurl")
+	req.Header.Set("Sec-Fetch-Dest", "video")
+	decision := decideStreamRouting(req.URL.Path, req, lookup)
+	if decision.decision != routeDecisionProxy || decision.reason != routeReasonGateReject {
+		t.Fatalf("expected stream-like path to avoid auto HLS routing when gate rejects")
+	}
+}
+
 func TestRoutingDecision_UnknownSlug(t *testing.T) {
 	lookup := func(id string) bool { return id == "known" }
 	req := httptest.NewRequest(http.MethodGet, "/unknown", nil)
+	req.Header.Set("Accept", "application/vnd.apple.mpegurl")
+	req.Header.Set("Sec-Fetch-Dest", "video")
 	decision := decideStreamRouting(req.URL.Path, req, lookup)
 	if decision.decision != routeDecisionProxy || decision.reason != routeReasonGateReject {
 		t.Fatalf("expected unknown slug to avoid auto HLS routing")

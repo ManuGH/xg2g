@@ -126,7 +126,7 @@ func (s *Server) tryHandleHLS(w http.ResponseWriter, r *http.Request) bool {
 			return false
 		}
 
-		if decision.reason == routeReasonGateRef || decision.reason == routeReasonGateSlug {
+		if decision.reason == routeReasonDefault {
 			if defaultRoutingLogCounter.Add(1)%100 == 0 {
 				s.logger.Debug().
 					Str("decision", decision.decision).
@@ -229,13 +229,9 @@ func decideStreamRouting(path string, r *http.Request, lookup func(string) bool)
 	}
 
 	// Default to HLS for broad compatibility when the client is ambiguous.
-	defaultReason := gateReason
-	if defaultReason != routeReasonGateRef && defaultReason != routeReasonGateSlug {
-		defaultReason = routeReasonDefault
-	}
 	return routingDecision{
 		decision:  routeDecisionHLS,
-		reason:    defaultReason,
+		reason:    routeReasonDefault,
 		pathClass: pathClassFromGate(gateReason),
 		route:     true,
 	}
