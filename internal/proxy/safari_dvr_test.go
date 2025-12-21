@@ -7,6 +7,7 @@
 package proxy
 
 import (
+	"context"
 	"io"
 	"os"
 	"os/exec"
@@ -22,6 +23,22 @@ import (
 	streamprofile "github.com/ManuGH/xg2g/internal/core/profile"
 	"github.com/rs/zerolog"
 )
+
+type mockChecker struct {
+	called bool
+	ref    string
+	err    error
+}
+
+func (m *mockChecker) WaitReady(ctx context.Context, ref string) error {
+	m.called = true
+	m.ref = ref
+	return m.err
+}
+
+func (m *mockChecker) CheckInvariant(ctx context.Context, ref string) error {
+	return nil
+}
 
 // TestSafariDVR_Stop_Idempotent_NoDoubleWaitDeadlock ensures that calling Stop()
 // multiple times is safe and does not cause panics or double-wait errors.
@@ -43,7 +60,7 @@ func TestSafariDVR_Stop_Idempotent_NoDoubleWaitDeadlock(t *testing.T) {
 	}
 	config.FFmpegPath = dummyFFmpeg
 
-	profile, err := NewSafariDVRProfile("ref:1:0:1", "http://fake/stream", tmpDir, logger, config)
+	profile, err := NewSafariDVRProfile("ref:1:0:1", "http://fake/stream", tmpDir, logger, config, &mockChecker{})
 	if err != nil {
 		t.Fatalf("NewSafariDVRProfile failed: %v", err)
 	}
@@ -124,7 +141,7 @@ func TestSafariDVR_TerminatesProcessGroup(t *testing.T) {
 		FFmpegPath:      dummyBin,
 	}
 
-	profile, err := NewSafariDVRProfile("ref:test:group", "http://fake/stream", tmpDir, logger, config)
+	profile, err := NewSafariDVRProfile("ref:test:group", "http://fake/stream", tmpDir, logger, config, &mockChecker{})
 	if err != nil {
 		t.Fatalf("NewSafariDVRProfile failed: %v", err)
 	}
@@ -197,7 +214,7 @@ func TestSafariDVR_FFmpegCrash_HandlesGracefully(t *testing.T) {
 	}
 	config.FFmpegPath = dummyFFmpeg
 
-	profile, err := NewSafariDVRProfile("ref:1:0:crash", "http://fake/stream", tmpDir, logger, config)
+	profile, err := NewSafariDVRProfile("ref:1:0:crash", "http://fake/stream", tmpDir, logger, config, &mockChecker{})
 	if err != nil {
 		t.Fatalf("NewSafariDVRProfile failed: %v", err)
 	}
@@ -249,7 +266,7 @@ func TestSafariDVR_WaitReady_FailsFastOnFFmpegExit(t *testing.T) {
 	}
 	config.FFmpegPath = dummyFFmpeg
 
-	profile, err := NewSafariDVRProfile("ref:1:0:waitready", "http://fake/stream", tmpDir, logger, config)
+	profile, err := NewSafariDVRProfile("ref:1:0:waitready", "http://fake/stream", tmpDir, logger, config, &mockChecker{})
 	if err != nil {
 		t.Fatalf("NewSafariDVRProfile failed: %v", err)
 	}
@@ -294,7 +311,7 @@ func TestSafariDVR_Start_WhenStopping_ReturnsError(t *testing.T) {
 	}
 	config.FFmpegPath = dummyFFmpeg
 
-	profile, err := NewSafariDVRProfile("ref:1:0:stopping", "http://fake/stream", tmpDir, logger, config)
+	profile, err := NewSafariDVRProfile("ref:1:0:stopping", "http://fake/stream", tmpDir, logger, config, &mockChecker{})
 	if err != nil {
 		t.Fatalf("NewSafariDVRProfile failed: %v", err)
 	}
@@ -338,7 +355,7 @@ func TestSafariDVR_InvalidOutputPath_ReturnsError(t *testing.T) {
 	}
 
 	// Try to create profile with path traversal attempt
-	_, err := NewSafariDVRProfile("../../etc/passwd", "http://fake/stream", "/tmp", logger, config)
+	_, err := NewSafariDVRProfile("../../etc/passwd", "http://fake/stream", "/tmp", logger, config, &mockChecker{})
 	if err == nil {
 		t.Fatal("expected NewSafariDVRProfile to reject path traversal, but it succeeded")
 	}

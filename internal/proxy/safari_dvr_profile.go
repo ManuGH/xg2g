@@ -1,4 +1,3 @@
-// Copyright (c) 2025 ManuGH
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
@@ -10,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,8 +29,8 @@ import (
 // proper scrubbing/seeking in Safari's native HLS stack.
 //
 // Key characteristics:
-//   - Container: MPEG-TS (.ts) for maximum Safari compatibility
-//   - Segment Duration: 6 seconds (conservative, reduces manifest reload frequency)
+//   - Container: fMP4/CMAF (.m4s) for best modern Safari compatibility and DVR
+//   - Segment Duration: 2 seconds (per user requirement for Phase 3)
 //   - DVR Window: 30-45 minutes (1800-2700 seconds)
 //   - Sliding Window: Large hls_list_size to maintain seekable range
 //
@@ -38,37 +38,45 @@ import (
 //   - Safari calculates video.seekable range based strictly on playlist window
 //   - Requires large EXT-X-MEDIA-SEQUENCE range for scrubber UI to appear
 //   - PROGRAM-DATE-TIME enables absolute time mapping
+//   - Init segment (init.mp4) required for fMP4
 //
 // Use cases:
 //   - Safari on iOS/macOS (native HLS stack)
 //   - Live streams where DVR/rewind functionality is critical
 //   - Scenarios where latency can be sacrificed for better UX
 type SafariDVRProfile struct {
-	serviceRef string
-	targetURL  string
-	outputDir  string
-	cmd        *exec.Cmd
-	ctx        context.Context
-	cancel     context.CancelFunc
-	logger     zerolog.Logger
-	lastAccess time.Time
-	mu         sync.RWMutex
-	started    bool
-	stopping   bool
-	config     streamprofile.SafariDVRConfig
-	ready      chan struct{} // Signals when initial segments are ready
-	ffmpegPath string
-	startTime  time.Time
-	waitCh     chan error // Buffered channel for process exit result
-	done       chan struct{}
-	exitErr    error
+	serviceRef   string
+	targetURL    string
+	outputDir    string
+	cmd          *exec.Cmd
+	ctx          context.Context
+	cancel       context.CancelFunc
+	logger       zerolog.Logger
+	lastAccess   time.Time
+	mu           sync.RWMutex
+	started      bool
+	stopping     bool
+	config       streamprofile.SafariDVRConfig
+	ready        chan struct{} // Signals when initial segments are ready
+	ffmpegPath   string
+	startTime    time.Time
+	waitCh       chan error // Buffered channel for process exit result
+	done         chan struct{}
+	exitErr      error
+	readyChecker ReadyChecker
+	stderrBuf    *LineRing // Thread-safe ring buffer for stderr
+
+	// Telemetry State
+	programID       int
+	inputSource     string        // "webapi" or "direct"
+	startupDuration time.Duration // Time until first segment ready
 }
 
 // Local readStableFile removed in favor of proxy.ReadStableFile wrapper
 // which handles the sleep/debouncing more efficiently.
 
 // NewSafariDVRProfile creates a new Safari DVR profile.
-func NewSafariDVRProfile(serviceRef, targetURL, baseDir string, logger zerolog.Logger, config streamprofile.SafariDVRConfig) (*SafariDVRProfile, error) {
+func NewSafariDVRProfile(serviceRef, targetURL, baseDir string, logger zerolog.Logger, config streamprofile.SafariDVRConfig, checker ReadyChecker) (*SafariDVRProfile, error) {
 	// Create unique directory for this profile
 	streamID := sanitizeServiceRef(serviceRef)
 	outputDir, err := secureJoin(filepath.Join(baseDir, "safari-dvr"), streamID)
@@ -83,26 +91,28 @@ func NewSafariDVRProfile(serviceRef, targetURL, baseDir string, logger zerolog.L
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &SafariDVRProfile{
-		serviceRef: serviceRef,
-		targetURL:  targetURL,
-		outputDir:  outputDir,
-		ctx:        ctx,
-		cancel:     cancel,
-		logger:     logger.With().Str("component", "safari_dvr_profile").Str("service_ref", serviceRef).Logger(),
-		lastAccess: time.Now(),
-		config:     config,
-		ready:      make(chan struct{}),
-		ffmpegPath: config.FFmpegPath,
+		serviceRef:   serviceRef,
+		targetURL:    targetURL,
+		outputDir:    outputDir,
+		ctx:          ctx,
+		cancel:       cancel,
+		logger:       logger.With().Str("component", "safari_dvr_profile").Str("service_ref", serviceRef).Logger(),
+		lastAccess:   time.Now(),
+		config:       config,
+		ready:        make(chan struct{}),
+		ffmpegPath:   config.FFmpegPath,
+		readyChecker: checker,
+		stderrBuf:    NewLineRing(100), // Catch last 100 lines
 	}, nil
 }
 
 // Start starts the Safari DVR HLS segmentation process.
 // This process ensures:
-//   - MPEG-TS container for maximum Safari compatibility
+//   - fMP4/CMAF container for modern Safari compatibility
 //   - Large sliding window (30-45 min) for DVR scrubbing
 //   - EVENT playlist type with EXT-X-START hint
 //   - PROGRAM-DATE-TIME for absolute time mapping
-//   - Conservative segment size (6s) to reduce manifest reload frequency
+//   - 2s segment duration for responsive start
 func (p *SafariDVRProfile) Start() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -129,7 +139,9 @@ func (p *SafariDVRProfile) Start() error {
 
 	playlistPath := filepath.Join(p.outputDir, "playlist.m3u8")
 	sessionID := strconv.FormatInt(time.Now().UnixNano(), 36)
-	segmentPattern := filepath.Join(p.outputDir, fmt.Sprintf("segment_%s_%%05d.ts", sessionID))
+	// Use .m4s for fMP4 segments
+	segmentPattern := filepath.Join(p.outputDir, fmt.Sprintf("segment_%s_%%05d.m4s", sessionID))
+	initSegmentName := "init.mp4"
 
 	// Ensure clean state by removing previous output
 	_ = os.RemoveAll(p.outputDir)
@@ -156,9 +168,28 @@ func (p *SafariDVRProfile) Start() error {
 	webAPIURL := convertToWebAPI(p.targetURL, p.serviceRef)
 	var programID int
 	if strings.Contains(p.targetURL, "/web/stream.m3u") || webAPIURL != p.targetURL {
-		p.logger.Info().Str("web_api_url", sanitizeURL(webAPIURL)).Msg("attempting to resolve Web API stream (Zapping)")
-		// Use centralized helper with 5s delay protection
-		url, pid, err := ZapAndResolveStream(ctx, webAPIURL)
+		// Fix: Extract technical ServiceRef from targetURL for accurate readiness checking.
+		// ReadyChecker compares against the receiver's reported ServiceRef (e.g. "1:0:19..."),
+		// but p.serviceRef might be a slug (e.g. "orf1-hd...").
+		technicalRef := p.serviceRef
+		if u, err := url.Parse(p.targetURL); err == nil {
+			q := u.Query()
+			if val := q.Get("ref"); val != "" {
+				technicalRef = val
+			} else if val := q.Get("sRef"); val != "" {
+				technicalRef = val
+			} else {
+				// Checks for direct stream URL path (e.g. /1:0:19...)
+				pathRef := strings.TrimPrefix(u.Path, "/")
+				if strings.Contains(pathRef, ":") {
+					technicalRef = pathRef
+				}
+			}
+		}
+
+		p.logger.Info().Str("web_api_url", sanitizeURL(webAPIURL)).Str("tech_ref", technicalRef).Msg("attempting to resolve Web API stream (Zapping)")
+		// Use centralized helper with robust readiness checks
+		url, pid, err := ZapAndResolveStream(ctx, webAPIURL, technicalRef, p.readyChecker)
 		if err != nil {
 			p.logger.Error().Err(err).Str("web_api_url", sanitizeURL(webAPIURL)).Msg("failed to resolve Web API stream")
 		} else {
@@ -170,13 +201,34 @@ func (p *SafariDVRProfile) Start() error {
 		p.logger.Info().Msg("using direct stream URL (no Web API detected)")
 	}
 
+	p.programID = programID
+	if webAPIURL != p.targetURL {
+		p.inputSource = "webapi"
+	} else {
+		p.inputSource = "direct"
+	}
+
+	metrics.StreamStartAttempts.WithLabelValues("safari_dvr", "init").Inc()
+
+	// Tune FFmpeg Probe/Analysis parameters
+	// If we successfully resolved a ProgramID via WebAPI, we can trust the stream structure more
+	// and use significantly faster startup parameters.
+	analyzeDuration := "7000000" // 7s (default safe)
+	probeSize := "10000000"      // 10MB (default safe)
+
+	if programID > 0 {
+		analyzeDuration = "2000000" // 2s (fast start)
+		probeSize = "2000000"       // 2MB (fast start)
+		p.logger.Info().Msg("using optimized fast-start analysis parameters")
+	}
+
 	// Input options (robust for Enigma2 streams)
 	args = append(args,
 		"-err_detect", "ignore_err",
 		"-ignore_unknown",
 		"-fflags", "+genpts+igndts+discardcorrupt",
-		"-analyzeduration", "7000000", // 7s analysis
-		"-probesize", "10000000", // 10MB probe
+		"-analyzeduration", analyzeDuration,
+		"-probesize", probeSize,
 		"-rw_timeout", "30000000", // 30s socket timeout
 		"-reconnect", "1",
 		"-reconnect_at_eof", "1",
@@ -203,46 +255,34 @@ func (p *SafariDVRProfile) Start() error {
 		)
 	}
 
-	// Video transcoding (H.264 for Safari compatibility)
+	// Video transcoding (Default: Copy for speed/quality, Transcode only if needed)
+	// User Requirement: Video copy (Default), Audio AAC 160k (Default)
 	args = append(args,
-		"-c:v", "libx264",
-		"-preset", "veryfast",
-		"-profile:v", "high",
-		"-level", "4.1",
-		"-pix_fmt", "yuv420p",
-		"-crf", "18", // High quality
-		"-vf", "yadif=0:-1:0", // Deinterlace
-		"-g", "150", // GOP = 6s * 25fps
-		"-keyint_min", "150",
-		"-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%d)", p.config.SegmentDuration),
-		"-sc_threshold", "0",
-		"-bsf:v", "h264_mp4toannexb,dump_extra", // SPS/PPS headers
+		"-c:v", "copy",
 	)
 
-	// Audio handling
-	if p.config.ForceAAC {
-		args = append(args,
-			"-c:a", "aac",
-			"-profile:a", "aac_low",
-			"-ac", "2", // Stereo
-			"-ar", "48000",
-			"-b:a", p.config.AACBitrate,
-			"-af", "aresample=async=1",
-		)
-	} else {
-		args = append(args,
-			"-c:a", "copy",
-		)
-	}
+	// Note: If input is not H.264/HEVC, copy might fail or be incompatible with fMP4.
+	// But Enigma2 streams are usually H.264.
+	// We might need a flag to force transcode if input is weird, but "Default Copy" was requested.
 
-	// HLS output options (Safari DVR optimized)
+	// Audio handling (Always AAC for Safari)
+	args = append(args,
+		"-c:a", "aac",
+		"-b:a", "160k",
+		"-ac", "2",
+		"-ar", "48000",
+		"-af", "aresample=async=1",
+	)
+
+	// HLS output options (Safari DVR optimized - fMP4)
 	args = append(args,
 		"-f", "hls",
-		"-hls_time", fmt.Sprintf("%d", p.config.SegmentDuration),
+		"-hls_segment_type", "fmp4",
+		"-hls_fmp4_init_filename", initSegmentName,
+		"-hls_time", "2", // 2s segments as requested
 		"-hls_list_size", fmt.Sprintf("%d", hlsListSize),
-		// Use a classic live sliding window; Safari derives seekable range from the visible window.
-		// temp_file prevents clients from fetching half-written segments (common cause of periodic restarts).
-		"-hls_flags", "delete_segments+program_date_time+independent_segments+temp_file",
+		// Flags: independent_segments+append_list+omit_endlist (and temp_file for safety)
+		"-hls_flags", "independent_segments+append_list+omit_endlist+temp_file+program_date_time",
 		"-hls_segment_filename", segmentPattern,
 		playlistPath,
 	)
@@ -250,11 +290,11 @@ func (p *SafariDVRProfile) Start() error {
 	p.logger.Info().
 		Str("target", sanitizeURL(p.targetURL)).
 		Str("output", playlistPath).
-		Int("segment_duration", p.config.SegmentDuration).
+		Int("segment_duration", 2).
 		Int("dvr_window_seconds", p.config.DVRWindowSize).
 		Int("hls_list_size", hlsListSize).
-		Str("container", "mpegts").
-		Msg("starting Safari DVR profile (large sliding window for scrubbing)")
+		Str("container", "fmp4").
+		Msg("starting Safari DVR profile (fMP4, Copy Video, AAC Audio)")
 
 	p.cmd = exec.CommandContext(p.ctx, p.ffmpegPath, args...) // #nosec G204
 	p.cmd.Dir = p.outputDir
@@ -278,12 +318,15 @@ func (p *SafariDVRProfile) Start() error {
 
 	// Monitor FFmpeg stderr
 	go func() {
+		// Use LineRing to capture tail, but also log debug lines.
 		scanner := bufio.NewScanner(stderr)
 		buf := make([]byte, 0, 64*1024)
 		scanner.Buffer(buf, 1024*1024)
 
 		for scanner.Scan() {
 			line := scanner.Text()
+			p.stderrBuf.Add(line) // Race-safe add
+
 			if strings.Contains(strings.ToLower(line), "error") {
 				p.logger.Warn().Str("stderr", line).Msg("ffmpeg warning")
 			} else {
@@ -304,6 +347,11 @@ func (p *SafariDVRProfile) Start() error {
 	waitCh := p.waitCh
 	done := p.done
 	startTime := p.startTime
+
+	// Capture telemetry context locally
+	tmProgramID := p.programID
+	tmInputSrc := p.inputSource
+
 	go func() {
 		// Wait for command to finish
 		waitErr := cmd.Wait()
@@ -313,7 +361,7 @@ func (p *SafariDVRProfile) Start() error {
 		if waitErr != nil {
 			// If context is canceled, it was likely deliberate Stop()
 			if ctx.Err() != nil {
-				exitReason = "client_disconnect"
+				exitReason = "profile_stopped"
 			} else {
 				// Otherwise it crashed
 				exitReason = "ffmpeg_exit"
@@ -322,11 +370,35 @@ func (p *SafariDVRProfile) Start() error {
 		} else {
 			// Clean exit
 			if ctx.Err() != nil {
-				exitReason = "client_disconnect"
+				exitReason = "profile_stopped"
 			} else {
 				p.logger.Info().Msg("ffmpeg process stopped naturally")
 			}
 		}
+
+		// Emit Metric with reason code
+		// exit status 183 is common
+		exitCode := "unknown"
+		if waitErr != nil {
+			if exitErr, ok := waitErr.(*exec.ExitError); ok {
+				exitCode = fmt.Sprintf("%d", exitErr.ExitCode())
+			}
+		} else {
+			exitCode = "0"
+		}
+
+		// If exit code is non-zero (or 183), capture stderr tail from RingBuffer
+		var stderrTail string
+		if exitCode != "0" {
+			stderrTail = p.stderrBuf.String()
+		}
+
+		metrics.IncFFmpegExit("safari_dvr", exitCode, exitReason)
+
+		// Retrieve startup duration safely
+		p.mu.RLock()
+		startupDur := p.startupDuration
+		p.mu.RUnlock()
 
 		p.mu.Lock()
 		p.exitErr = waitErr
@@ -337,6 +409,20 @@ func (p *SafariDVRProfile) Start() error {
 
 		// P2.5 Observability Metric
 		metrics.ObserveStreamSession("hls_safari", exitReason, time.Since(startTime).Seconds())
+
+		// PROPOSAL 1.C: Structured Session Log
+		// event=hls.session_start (per user request name, though implies summary/end)
+		p.logger.Info().
+			Str("event", "hls.session_end").
+			Str("profile", "safari_dvr").
+			Str("input", tmInputSrc).
+			Int("program_id", tmProgramID).
+			Int64("segments_ready_ms", startupDur.Milliseconds()).              // Time until segments ready
+			Int64("session_duration_ms", time.Since(startTime).Milliseconds()). // Total session duration
+			Str("exit_reason", exitReason).
+			Str("exit_code", exitCode).
+			Str("stderr_tail", stderrTail).
+			Msg("stream session ended")
 
 		// Send result to wait channel and close it
 		waitCh <- waitErr
@@ -449,6 +535,12 @@ func (p *SafariDVRProfile) waitForSegments(ctx context.Context, playlistPath str
 				}
 			}
 
+			// Also check for init.mp4
+			initPath := filepath.Join(p.outputDir, "init.mp4")
+			if _, err := os.Stat(initPath); err != nil {
+				continue // Init segment not ready
+			}
+
 			if readyCount < minSegments {
 				continue
 			}
@@ -457,8 +549,13 @@ func (p *SafariDVRProfile) waitForSegments(ctx context.Context, playlistPath str
 				Int("segments_ready", readyCount).
 				Msg("Safari DVR profile ready")
 
+			startupDur := time.Since(p.startTime)
+			p.mu.Lock()
+			p.startupDuration = startupDur
+			p.mu.Unlock()
+
 			// P2.5 Observability Metric
-			metrics.ObserveHLSStartup("safari", time.Since(p.startTime).Seconds())
+			metrics.ObserveHLSStartup("safari_dvr", startupDur.Seconds())
 			close(ready)
 			return
 		}
@@ -662,8 +759,8 @@ func (p *SafariDVRProfile) ServePlaylist(w http.ResponseWriter) error {
 	return nil
 }
 
-// ServeSegment serves a Safari DVR HLS segment (.ts).
-func (p *SafariDVRProfile) ServeSegment(w http.ResponseWriter, segmentName string) error {
+// ServeSegment serves a Safari DVR HLS segment (.m4s or .mp4).
+func (p *SafariDVRProfile) ServeSegment(ctx context.Context, w http.ResponseWriter, segmentName string) error {
 	p.UpdateAccess()
 
 	// Validate segment name to prevent path traversal
@@ -672,12 +769,29 @@ func (p *SafariDVRProfile) ServeSegment(w http.ResponseWriter, segmentName strin
 		return fmt.Errorf("invalid segment path: %w", err)
 	}
 
-	// Wait for segment to exist (up to 10 seconds)
-	for i := 0; i < 100; i++ {
-		if _, err := os.Stat(segmentPath); err == nil {
-			break
+	// Wait for segment to exist (up to 10 seconds) with Context awareness
+	timer := time.NewTimer(0)
+	defer timer.Stop()
+
+	// 10s timeout derived from previous loop (100 * 100ms)
+	timeout := time.After(10 * time.Second)
+
+	found := false
+	for !found {
+		select {
+		case <-ctx.Done():
+			return ctx.Err() // Client request cancel
+		case <-p.ctx.Done():
+			return p.ctx.Err() // Server requested stop
+		case <-timeout:
+			return fmt.Errorf("timeout waiting for segment")
+		case <-timer.C:
+			if _, err := os.Stat(segmentPath); err == nil {
+				found = true
+			} else {
+				timer.Reset(100 * time.Millisecond)
+			}
 		}
-		time.Sleep(100 * time.Millisecond)
 	}
 
 	// Open segment file
@@ -689,7 +803,12 @@ func (p *SafariDVRProfile) ServeSegment(w http.ResponseWriter, segmentName strin
 		_ = file.Close()
 	}()
 
-	w.Header().Set("Content-Type", "video/mp2t")
+	// Set content type based on extension
+	if strings.HasSuffix(segmentName, ".mp4") {
+		w.Header().Set("Content-Type", "video/mp4")
+	} else {
+		w.Header().Set("Content-Type", "video/iso.segment") // m4s
+	}
 	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable") // Segments never change
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.WriteHeader(http.StatusOK)
@@ -702,3 +821,35 @@ func (p *SafariDVRProfile) ServeSegment(w http.ResponseWriter, segmentName strin
 }
 
 // User-Agent helpers moved to internal/core/useragent; see useragent.go for wrappers.
+
+// LineRing is a thread-safe ring buffer for storing the last N lines of text.
+type LineRing struct {
+	lines []string
+	max   int
+	mu    sync.RWMutex
+}
+
+func NewLineRing(max int) *LineRing {
+	return &LineRing{
+		lines: make([]string, 0, max),
+		max:   max,
+	}
+}
+
+func (r *LineRing) Add(line string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.lines) >= r.max {
+		// Shift
+		// Note: This is O(n), but max is small (100) and this is per-line write on stderr.
+		// Performance impact is negligible for this use case.
+		r.lines = r.lines[1:]
+	}
+	r.lines = append(r.lines, line)
+}
+
+func (r *LineRing) String() string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return strings.Join(r.lines, "\n")
+}

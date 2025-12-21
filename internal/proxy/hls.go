@@ -58,6 +58,8 @@ type HLSManagerConfig struct {
 	EnableHLS        bool
 	EnableSafariDVR  bool
 	EnableLLHLSOptIn bool
+
+	ReadyChecker ReadyChecker
 }
 
 // HLSStreamer manages HLS segmentation for a single stream.
@@ -83,6 +85,7 @@ type HLSStreamer struct {
 	startTime          time.Time
 	firstSegmentServed sync.Once
 	playlistTimeout    time.Duration
+	readyChecker       ReadyChecker
 }
 
 // HLSManager manages multiple HLS streams.
@@ -104,6 +107,7 @@ type HLSManager struct {
 	idleTimeout       time.Duration // Configurable idle timeout for stream cleanup
 	cleanupTicker     time.Duration // Configurable cleanup interval
 	playlistTimeout   time.Duration
+	readyChecker      ReadyChecker
 }
 
 // NewHLSManager creates a new HLS stream manager.
@@ -159,6 +163,7 @@ func NewHLSManager(logger zerolog.Logger, cfg HLSManagerConfig) (*HLSManager, er
 		idleTimeout:       idleTimeout,
 		cleanupTicker:     cleanupInterval,
 		playlistTimeout:   playlistTimeout,
+		readyChecker:      cfg.ReadyChecker,
 	}
 
 	// Start cleanup goroutine
@@ -215,6 +220,7 @@ func (m *HLSManager) createStream(serviceRef, targetURL string) (*HLSStreamer, e
 		segmentDur:      m.genericConfig.SegmentDuration,
 		ffLogLevel:      m.ffLogLevel,
 		playlistTimeout: m.playlistTimeout,
+		readyChecker:    m.readyChecker,
 	}
 
 	return stream, nil
@@ -296,8 +302,8 @@ func (s *HLSStreamer) Start() error {
 	if strings.Contains(s.targetURL, "/web/stream.m3u") || webAPIURL != s.targetURL {
 		logger.Info().Str("web_api_url", sanitizeURL(webAPIURL)).Msg("attempting to resolve Web API stream (Zapping)")
 		tuneStart := time.Now()
-		// Use centralized helper with race condition protection (5s delay)
-		url, pid, err := ZapAndResolveStream(ctx, webAPIURL)
+		// Use centralized helper with robust readiness checks
+		url, pid, err := ZapAndResolveStream(ctx, webAPIURL, s.serviceRef, s.readyChecker)
 
 		if err != nil {
 			logger.Error().Err(err).Str("web_api_url", sanitizeURL(webAPIURL)).Msg("failed to resolve Web API stream")
@@ -579,7 +585,7 @@ func (s *HLSStreamer) Start() error {
 		return fmt.Errorf("wait for playlist: %w", err)
 	}
 
-	metrics.ObserveStreamStartupLatency(encrypted, time.Since(startTime))
+	metrics.ObserveHLSStartup("generic", time.Since(startTime).Seconds())
 
 	startupExitReason = "success"
 	cleanupOnError = false
@@ -858,7 +864,7 @@ func (m *HLSManager) GetOrCreateLLHLSProfile(serviceRef, targetURL string) (*LLH
 	}
 
 	// Create new LL-HLS profile
-	profile, err := NewLLHLSProfile(serviceRef, targetURL, m.outputBase, m.logger, m.llhlsConfig)
+	profile, err := NewLLHLSProfile(serviceRef, targetURL, m.outputBase, m.logger, m.llhlsConfig, m.readyChecker)
 	if err != nil {
 		return nil, err
 	}
@@ -879,7 +885,7 @@ func (m *HLSManager) GetOrCreateSafariDVRProfile(serviceRef, targetURL string) (
 	}
 
 	// Create new Safari DVR profile
-	profile, err := NewSafariDVRProfile(serviceRef, targetURL, m.outputBase, m.logger, m.safariConfig)
+	profile, err := NewSafariDVRProfile(serviceRef, targetURL, m.outputBase, m.logger, m.safariConfig, m.readyChecker)
 	if err != nil {
 		return nil, err
 	}
@@ -1039,10 +1045,11 @@ func (m *HLSManager) serveSafariDVR(w http.ResponseWriter, r *http.Request, serv
 	if strings.HasSuffix(path, ".m3u8") || strings.HasSuffix(path, "/hls") {
 		// Serve Safari DVR playlist
 		return profile.ServePlaylist(w)
-	} else if strings.Contains(path, "segment_") && strings.HasSuffix(path, ".ts") {
-		// Serve segment
+	} else if (strings.Contains(path, "segment_") && (strings.HasSuffix(path, ".ts") || strings.HasSuffix(path, ".m4s"))) ||
+		strings.HasSuffix(path, "init.mp4") || strings.HasSuffix(path, ".mp4") {
+		// Serve segment (legacy .ts or new .m4s/.mp4)
 		segmentName := filepath.Base(path)
-		return profile.ServeSegment(w, segmentName)
+		return profile.ServeSegment(r.Context(), w, segmentName)
 	}
 
 	// Default: serve playlist
@@ -1076,7 +1083,7 @@ func (m *HLSManager) serveLLHLS(w http.ResponseWriter, r *http.Request, serviceR
 	} else if strings.HasSuffix(path, ".m4s") || strings.HasSuffix(path, "init.mp4") {
 		// Serve fmp4 segment or init segment
 		segmentName := filepath.Base(path)
-		return profile.ServeSegment(w, segmentName)
+		return profile.ServeSegment(r.Context(), w, segmentName)
 	}
 
 	// Default: serve playlist
@@ -1086,7 +1093,7 @@ func (m *HLSManager) serveLLHLS(w http.ResponseWriter, r *http.Request, serviceR
 // ServeSegmentFromAnyStream finds and serves a segment from any active stream.
 // This handles the case where Safari requests segments with relative paths like "/segment_043.ts"
 // without the /hls/ prefix.
-func (m *HLSManager) ServeSegmentFromAnyStream(w http.ResponseWriter, segmentName string) error {
+func (m *HLSManager) ServeSegmentFromAnyStream(ctx context.Context, w http.ResponseWriter, segmentName string) error {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -1112,7 +1119,7 @@ func (m *HLSManager) ServeSegmentFromAnyStream(w http.ResponseWriter, segmentNam
 		}
 		if _, err := os.Stat(segmentPath); err == nil {
 			profile.UpdateAccess()
-			return profile.ServeSegment(w, segmentName)
+			return profile.ServeSegment(ctx, w, segmentName)
 		}
 	}
 

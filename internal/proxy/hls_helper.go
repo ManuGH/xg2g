@@ -17,14 +17,24 @@ import (
 	"time"
 
 	coreopenwebif "github.com/ManuGH/xg2g/internal/core/openwebif"
+	"github.com/ManuGH/xg2g/internal/metrics"
 )
 
 var (
-	zapDelay              = 5 * time.Second
 	streamProbeTimeout    = 15 * time.Second
 	streamProbeAttemptDur = 2 * time.Second
 	streamProbeRetryDelay = 250 * time.Millisecond
 )
+
+func computeZapDelay(targetURL string) time.Duration {
+	// Heuristic: Port 17999 is commonly used for encrypted streams (oscam-emu) which need more time.
+	// We use a safe delay of 2s for these.
+	if strings.Contains(targetURL, ":17999/") {
+		return 2 * time.Second
+	}
+	// For standard FTA/HTTP streams (port 8001 etc.), 500ms is sufficient to let the tuner settle.
+	return 500 * time.Millisecond
+}
 
 // Helper to convert direct stream URL to Enigma2 Web API URL.
 func convertToWebAPI(targetURL, serviceRef string) string {
@@ -100,31 +110,29 @@ func resolveWebAPIStreamInfo(ctx context.Context, apiURL string) (webAPIStreamIn
 	return webAPIStreamInfo{URL: urlLine, ProgramID: programID}, nil
 }
 
-// ZapAndResolveStream performs the full channel zap sequence with the required delay
-// for preventing race conditions on encrypted channels. It wraps resolveWebAPIStreamInfo
-// and handles the waiting period if the stream is detected as encrypted (or always, for safety).
-func ZapAndResolveStream(ctx context.Context, apiURL string) (string, int, error) {
+// ZapAndResolveStream performs the full channel zap sequence using robust readiness checks.
+// It wraps resolveWebAPIStreamInfo and uses the provided ReadyChecker to ensure the stream
+// is technically ready (locked, PIDs present) before returning.
+func ZapAndResolveStream(ctx context.Context, apiURL, serviceRef string, checker ReadyChecker) (string, int, error) {
 	// 1. Zap and get stream info
 	info, err := resolveWebAPIStreamInfo(ctx, apiURL)
 	if err != nil {
 		return "", 0, err
 	}
 
-	// 2. Check encryption/port implications
-	// Port 17999 implies oscam-emu (encrypted), which needs time to open the port.
-	// Standard port 8001 (FTA) is usually faster, but a consistent delay is safer
-	// across the board for Enigma2 tuners to stabilize.
-
-	// We use a fixed 5s delay as validated in production to solve the race condition.
-	// This serves as the single source of truth for this specific hardware timing quirk.
-	select {
-	case <-ctx.Done():
-		return "", 0, ctx.Err()
-	case <-time.After(zapDelay):
-	}
-
-	if err := waitForStreamReady(ctx, info.URL); err != nil {
-		return "", 0, err
+	// 2. Wait for Enigma2 to be ready using robust checks
+	// This replaces all sleep/heuristic delays.
+	if checker != nil {
+		if err := checker.WaitReady(ctx, serviceRef); err != nil {
+			return "", 0, fmt.Errorf("readiness check failed: %w", err)
+		}
+		// Final defensive invariant check
+		if err := checker.CheckInvariant(ctx, serviceRef); err != nil {
+			metrics.IncEnigma2InvariantViolation()
+			return "", 0, fmt.Errorf("invariant violation: %w", err)
+		}
+	} else {
+		return "", 0, errors.New("readiness checker is required")
 	}
 
 	return info.URL, info.ProgramID, nil

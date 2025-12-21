@@ -7,6 +7,7 @@ package proxy
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"golang.org/x/sync/semaphore"
+	"golang.org/x/sync/singleflight"
 
 	apimw "github.com/ManuGH/xg2g/internal/api/middleware"
 	"github.com/ManuGH/xg2g/internal/auth"
@@ -26,6 +28,7 @@ import (
 	xglog "github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/m3u"
 	"github.com/ManuGH/xg2g/internal/metrics"
+	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/rs/zerolog"
 )
 
@@ -62,7 +65,23 @@ type Server struct {
 
 	apiToken      string
 	authAnonymous bool
+
+	readyChecker   ReadyChecker
+	sfg            singleflight.Group
+	preflightCache sync.Map // Map[string]preflightCacheEntry
 }
+
+type preflightCacheEntry struct {
+	status    int
+	timestamp time.Time
+}
+
+var (
+	ErrReadyTimeout   = errors.New("readiness check timed out")
+	ErrInvariant      = errors.New("invariant violation")
+	ErrNotReady       = errors.New("stream not ready")
+	ErrStreamNotFound = errors.New("stream not found")
+)
 
 // Config holds the configuration for the proxy server.
 type Config struct {
@@ -223,6 +242,38 @@ func New(cfg Config) (*Server, error) {
 		LLHLS:          rt.HLS.LLHLS,
 		FFmpegLogLevel: rt.FFmpegLogLevel,
 	}
+
+	// Initialize OpenWebIF Client and ReadyChecker for robust startup
+	var checker ReadyChecker
+	var owiHost string
+
+	if cfg.ReceiverHost != "" {
+		owiHost = cfg.ReceiverHost
+	} else if cfg.TargetURL != "" {
+		// Attempt to extract host from TargetURL
+		if u, err := url.Parse(cfg.TargetURL); err == nil {
+			owiHost = u.Hostname()
+		}
+	}
+
+	if owiHost != "" {
+		// Create OpenWebIF client
+		// Port 0 uses default 8001/80 logic internally or we can specify if known.
+		// Assuming standard Enigma2 setup where WebIF is on 80.
+		// client.New expects base URL (e.g. http://host).
+		owiBase := fmt.Sprintf("http://%s", owiHost)
+		if !strings.Contains(owiHost, ":") {
+			owiBase = fmt.Sprintf("http://%s:80", owiHost)
+		}
+		owiClient := openwebif.New(owiBase)
+		// Decorate valid client with ReadyChecker
+		checker = NewReadyChecker(owiClient, cfg.Logger.With().Str("component", "ready_check").Logger())
+		hlsCfg.ReadyChecker = checker
+		s.readyChecker = checker
+	} else {
+		cfg.Logger.Warn().Msg("could not determine receiver host for readiness checks; robust stream startup disabled")
+	}
+
 	hlsManager, err := NewHLSManager(cfg.Logger.With().Str("component", "hls").Logger(), hlsCfg)
 	if err != nil {
 		cfg.Logger.Warn().Err(err).Msg("failed to initialize HLS manager, HLS streaming disabled")
@@ -346,7 +397,11 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	acquired := s.acquireStreamSlotIfNeeded(w, r)
+	// Stop on limiter 429
+	acquired, stop := s.acquireStreamSlotIfNeeded(w, r)
+	if stop {
+		return
+	}
 	if acquired {
 		defer s.releaseStreamSlot()
 	}
@@ -357,7 +412,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	if isStreamSessionStart(r) {
 		// Identify Stream
 		path := r.URL.Path
-		serviceRef := extractServiceRef(path)
+		serviceRef, _ := extractServiceRef(path)
 		channelName := serviceRef // Default to ref
 
 		// Try to look up name if possible?
@@ -422,14 +477,36 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	s.proxy.ServeHTTP(w, r)
 }
 
-func extractServiceRef(path string) string {
-	// Simple extraction logic, mirrors handleHLSRequest or resolveTargetURL partially
-	trimmed := strings.Trim(path, "/")
-	parts := strings.Split(trimmed, "/")
-	if len(parts) > 0 {
-		return parts[0]
+// extractServiceRef extracts the service reference from a request path.
+// extractServiceRef extracts the service reference and any path remainder from a request path.
+// It normalizes /stream/{ref}/... and /hls/{ref}/... patterns.
+func extractServiceRef(path string) (serviceRef, remainder string) {
+	// 1. Handle /hls/ and /stream/ prefixes
+	if strings.HasPrefix(path, "/hls/") || strings.HasPrefix(path, "/stream/") {
+		trimmed := strings.TrimPrefix(path, "/hls/")
+		trimmed = strings.TrimPrefix(trimmed, "/stream/")
+
+		parts := strings.Split(trimmed, "/")
+		if len(parts) > 0 {
+			serviceRef = parts[0]
+			// Handle legacy .m3u8 suffix on the ref itself (e.g. /hls/ref.m3u8)
+			serviceRef = strings.TrimSuffix(serviceRef, ".m3u8")
+		}
+		if len(parts) > 1 {
+			remainder = strings.Join(parts[1:], "/")
+		}
+		return serviceRef, remainder
 	}
-	return "unknown"
+
+	// 2. Fallback for direct paths like /1:0:1... or simple identifiers
+	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
+	if len(parts) > 0 {
+		serviceRef = parts[0]
+	}
+	if len(parts) > 1 {
+		remainder = strings.Join(parts[1:], "/")
+	}
+	return serviceRef, remainder
 }
 
 // sessionWriter wraps ResponseWriter to update StreamSession.
@@ -480,7 +557,20 @@ func (w *sessionWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 func (s *Server) resolveTargetURL(ctx context.Context, path, rawQuery string) (string, bool) {
 	logger := xglog.WithContext(ctx, s.logger)
 
-	serviceRef := strings.TrimPrefix(path, "/")
+	// Normalize path using robust extractor
+	// This ensures we always look up the bare service reference or slug
+	// and strips /stream/, /hls/, and handles remainder correctly.
+	normalizedRef, remainder := extractServiceRef(path)
+
+	// Reconstruct path non-lossily for downstream use (e.g. fallback target construction)
+	// We want /{ref} or /{ref}/{remainder}
+	normalizedPath := "/" + normalizedRef
+	if remainder != "" {
+		normalizedPath += "/" + remainder
+	}
+	path = normalizedPath
+
+	serviceRef := normalizedRef
 	isRef := strings.Contains(serviceRef, ":")
 
 	if !isRef && serviceRef != "" {
@@ -538,14 +628,18 @@ func (s *Server) resolveTargetURL(ctx context.Context, path, rawQuery string) (s
 		// We trust the ZapAndResolveStream logic (called later by HLS handler) to handle the actual resolution.
 		// However, for DIRECT proxying (Director), we need a simplified approach.
 
-		// Let's use the helper to get the WebAPI URL for this ref.
-		// Then we can try to resolve it ONCE.
-
 		// Wait, if we return a WebAPI URL here, the caller might use it as the upstream?
 		// No, the caller expects a STREAM URL (http://ip:port/ref).
 
 		// We must perform the resolution here if we want to be safe.
 		// This might add latency to the first request, but it's better than broken streams.
+
+		// Logic:
+		// 1. If we have a TargetURL (Fixed mode), we shouldn't be here really unless playlist was missing?
+		// 2. If we are in Receiver Host mode, we can try to ask the receiver.
+		if s.receiverHost == "" {
+			return "", false
+		}
 
 		webAPIURL := coreopenwebif.ConvertToWebAPI(
 			fmt.Sprintf("http://%s:80", s.receiverHost), // Base URL
@@ -554,7 +648,7 @@ func (s *Server) resolveTargetURL(ctx context.Context, path, rawQuery string) (s
 
 		logger.Info().Str("service_ref", serviceRef).Msg("attempting dynamic resolution via WebAPI (not in playlist)")
 
-		streamURL, _, err := ZapAndResolveStream(ctx, webAPIURL)
+		streamURL, _, err := ZapAndResolveStream(ctx, webAPIURL, serviceRef, s.readyChecker)
 		if err == nil {
 			logger.Info().Str("service_ref", serviceRef).Str("resolved_url", sanitizeURL(streamURL)).Msg("dynamically resolved stream URL")
 			return appendRawQuery(streamURL, rawQuery), true
@@ -568,18 +662,20 @@ func (s *Server) resolveTargetURL(ctx context.Context, path, rawQuery string) (s
 	return "", false
 }
 
-func (s *Server) acquireStreamSlotIfNeeded(w http.ResponseWriter, r *http.Request) bool {
+// acquireStreamSlotIfNeeded attempts to acquire a stream slot if the request is a session start.
+// Returns (acquired, stop). If stop is true, an error (e.g. 429) has been written and the caller should return.
+func (s *Server) acquireStreamSlotIfNeeded(w http.ResponseWriter, r *http.Request) (bool, bool) {
 	if s.streamLimiter == nil {
-		return false
+		return false, false
 	}
 	if !isStreamSessionStart(r) {
-		return false
+		return false, false
 	}
 	if !s.streamLimiter.TryAcquire(1) {
 		http.Error(w, "too many concurrent streams", http.StatusTooManyRequests)
-		return false
+		return false, true
 	}
-	return true
+	return true, false
 }
 
 func (s *Server) releaseStreamSlot() {
@@ -593,66 +689,51 @@ func isStreamSessionStart(r *http.Request) bool {
 		return false
 	}
 	path := r.URL.Path
-	if strings.HasPrefix(path, "/api/") ||
-		strings.HasPrefix(path, "/healthz") ||
-		strings.HasPrefix(path, "/readyz") ||
-		strings.HasPrefix(path, "/metrics") ||
-		strings.HasPrefix(path, "/discover") ||
-		strings.HasPrefix(path, "/lineup") ||
-		strings.HasPrefix(path, "/device") ||
-		strings.HasPrefix(path, "/files/") {
+
+	// 1. Exclude segments and media chunks (Limiter Safety)
+	if strings.HasSuffix(path, ".ts") ||
+		strings.HasSuffix(path, ".m4s") ||
+		strings.HasSuffix(path, ".mp4") ||
+		strings.HasSuffix(path, ".aac") {
 		return false
 	}
 
-	if strings.HasPrefix(path, "/hls/") {
-		if strings.HasSuffix(path, ".m3u8") {
-			return true
-		}
-		if strings.Contains(path, "segment_") || strings.HasSuffix(path, ".ts") {
-			return false
-		}
+	// 2. Exclude HLS control endpoints
+	if strings.HasSuffix(path, "/preflight") {
+		return false
+	}
+
+	// 3. Count manifest requests
+	if strings.HasSuffix(path, ".m3u8") {
 		return true
 	}
 
-	return true
+	// 4. Count direct /stream/ starts (legacy or direct)
+	if strings.HasPrefix(path, "/stream/") {
+		return true
+	}
+
+	// 5. Count direct service ref (/1:0:1:...)
+	ref, _ := extractServiceRef(path)
+	return ref != "" && strings.Contains(ref, ":")
 }
 
 func (s *Server) handleHLSRequest(w http.ResponseWriter, r *http.Request) {
 	logger := xglog.WithContext(r.Context(), s.logger)
 
+	serviceRef, targetURL, err := s.resolveHLS(r.Context(), r)
+	if err != nil {
+		logger.Warn().Err(err).Msg("HLS resolution failed")
+		if strings.Contains(err.Error(), "unauthorized") { // Simplified check
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		} else {
+			http.Error(w, err.Error(), http.StatusNotFound)
+		}
+		return
+	}
+
 	path := r.URL.Path
-	var serviceRef string
-	var remainder string
-	if strings.HasPrefix(path, "/hls/") {
-		trimmed := strings.TrimPrefix(path, "/hls/")
-		parts := strings.Split(trimmed, "/")
-		if len(parts) > 0 {
-			serviceRef = parts[0]
-		}
-		if len(parts) > 1 {
-			remainder = parts[1]
-		}
-		serviceRef = strings.TrimSuffix(serviceRef, ".m3u8")
-	} else {
-		parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-		if len(parts) > 0 {
-			serviceRef = parts[0]
-		}
-		if len(parts) > 1 {
-			remainder = parts[1]
-		}
-	}
-
-	if serviceRef == "" {
-		http.Error(w, "service reference required", http.StatusBadRequest)
-		return
-	}
-
-	targetURL, ok := s.resolveTargetURL(r.Context(), "/"+serviceRef, r.URL.RawQuery)
-	if !ok {
-		http.Error(w, "service reference not found in playlist", http.StatusNotFound)
-		return
-	}
+	_, remainder := extractServiceRef(path)
 
 	logger.Debug().
 		Str("service_ref", serviceRef).
@@ -661,13 +742,15 @@ func (s *Server) handleHLSRequest(w http.ResponseWriter, r *http.Request) {
 		Msg("serving HLS stream")
 
 	if remainder == "preflight" || strings.HasSuffix(path, "/preflight") {
-		if err := s.hlsManager.PreflightHLS(r.Context(), r, serviceRef, targetURL); err != nil {
-			logger.Error().Err(err).Str("service_ref", serviceRef).Msg("HLS preflight failed")
-			http.Error(w, "HLS preflight failed", http.StatusServiceUnavailable)
+		// Use Preflight method directly (shared logic)
+		status, err := s.Preflight(r.Context(), r, serviceRef)
+		if err != nil {
+			logger.Error().Err(err).Int("status", status).Str("service_ref", serviceRef).Msg("HLS preflight failed")
+			http.Error(w, "HLS preflight failed", status)
 			return
 		}
 		w.Header().Set("Cache-Control", "no-store")
-		w.WriteHeader(http.StatusNoContent)
+		w.WriteHeader(status)
 		return
 	}
 
@@ -678,6 +761,121 @@ func (s *Server) handleHLSRequest(w http.ResponseWriter, r *http.Request) {
 			Msg("HLS streaming failed")
 		http.Error(w, "HLS streaming failed", http.StatusInternalServerError)
 	}
+}
+
+// Preflight ensures the stream is ready (idempotent, coalesced, cached).
+// Returns status code (204/503/etc) and potential error.
+func (s *Server) Preflight(ctx context.Context, req *http.Request, serviceRef string) (int, error) {
+	// 1. Robust Cache Key (Ref + Query Params)
+	// Includes upstream, profile, etc. to prevent poisoning.
+	cacheKey := serviceRef + "|" + req.URL.RawQuery
+
+	// 2. Check Cache (TTL 10s)
+	if val, ok := s.preflightCache.Load(cacheKey); ok {
+		if entry, ok := val.(preflightCacheEntry); ok {
+			if time.Since(entry.timestamp) < 10*time.Second {
+				// Cache Hit
+				if entry.status == http.StatusNoContent {
+					return entry.status, nil
+				}
+				if entry.status == http.StatusNotFound {
+					return entry.status, fmt.Errorf("%w: cached", ErrStreamNotFound)
+				}
+				// Respect TTL for failures too
+				return entry.status, fmt.Errorf("cached preflight result: %d", entry.status)
+			}
+		} else {
+			// Type mismatch? excessive defensive coding: delete it.
+			s.preflightCache.Delete(cacheKey)
+		}
+	}
+
+	// 3. Coalesce concurrent requests via singleflight
+	// Key matches cache key for correct coalescing scope
+	res, err, _ := s.sfg.Do(cacheKey, func() (any, error) {
+		// Re-check cache inside lock? singleflight handles the "wait for result".
+
+		// 4. Resolve Target (Validates Ref & Compute Target)
+		// We use the extracted/resolved values from here on.
+		resolvedRef, targetURL, err := s.resolveHLS(ctx, req)
+		if err != nil {
+			return http.StatusNotFound, err
+		}
+
+		// Verify resolvedRef matches passed serviceRef?
+		// API passed serviceRef from path param.
+		// resolveHLS extracts from path.
+		// They should match. If not, something weird (traversal?).
+		if resolvedRef != serviceRef {
+			return http.StatusBadRequest, fmt.Errorf("service ref mismatch (path vs param)")
+		}
+
+		// 5. Delegate to HLS Manager (Actual Readiness Check)
+		if err := s.hlsManager.PreflightHLS(ctx, req, resolvedRef, targetURL); err != nil {
+			// Distinguish between Reference Error vs Not Ready vs Internal
+
+			// P4c Hardening: Typed Errors
+			if errors.Is(err, ErrReadyTimeout) || errors.Is(err, ErrNotReady) {
+				return http.StatusServiceUnavailable, err
+			}
+			if errors.Is(err, ErrInvariant) {
+				return http.StatusInternalServerError, err
+			}
+
+			// Fallback for wrapped errors or string-based ones from deeper layers
+			errStr := err.Error()
+			if strings.Contains(errStr, "timeout") || strings.Contains(errStr, "not ready") {
+				return http.StatusServiceUnavailable, err
+			}
+
+			// Default to 500
+			return http.StatusInternalServerError, err
+		}
+
+		return http.StatusNoContent, nil
+	})
+
+	status := http.StatusServiceUnavailable
+	if val, ok := res.(int); ok {
+		status = val
+	}
+
+	// 6. Update Cache
+	// P4c Hardening: Only cache Success (204) for full TTL (10s).
+	// Do NOT cache failures (503) to allow immediate recovery once backend is ready.
+	if status == http.StatusNoContent {
+		s.preflightCache.Store(cacheKey, preflightCacheEntry{
+			status:    status,
+			timestamp: time.Now(),
+		})
+	} else if status == http.StatusNotFound {
+		// 404 is a hard error (bad ref), we can cache it to prevent spam.
+		s.preflightCache.Store(cacheKey, preflightCacheEntry{
+			status:    status,
+			timestamp: time.Now(),
+		})
+	}
+	// 503 is transient (starting), do not cache.
+
+	return status, err
+}
+
+// resolveHLS encapsulates the logic to parse a request, extract the service ref,
+// and resolve the target URL. It includes basic validation but relies on upstream auth.
+func (s *Server) resolveHLS(ctx context.Context, r *http.Request) (string, string, error) {
+	path := r.URL.Path
+	serviceRef, _ := extractServiceRef(path)
+
+	if serviceRef == "" {
+		return "", "", fmt.Errorf("service reference required")
+	}
+
+	targetURL, ok := s.resolveTargetURL(ctx, "/"+serviceRef, r.URL.RawQuery)
+	if !ok {
+		return "", "", fmt.Errorf("%w: service reference not found in playlist", ErrStreamNotFound)
+	}
+
+	return serviceRef, targetURL, nil
 }
 
 func (s *Server) Start() error {

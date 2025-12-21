@@ -1,8 +1,5 @@
-// Copyright (c) 2025 ManuGH
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
-
-// SPDX-License-Identifier: MIT
 
 // Package api provides HTTP server functionality for the xg2g application.
 package api
@@ -86,6 +83,7 @@ type Server struct {
 type ProxyServer interface {
 	GetSessions() []*proxy.StreamSession
 	Terminate(id string) bool
+	Preflight(ctx context.Context, req *http.Request, serviceRef string) (int, error)
 }
 
 // AuditLogger interface for audit logging (optional).
@@ -554,44 +552,25 @@ func shouldWarmupHLS(r *http.Request) bool {
 func (s *Server) preflightProxyHLS(r *http.Request, serviceRef, token string, proxyCfg config.StreamProxyRuntime) error {
 	const preflightTimeout = 12 * time.Second
 
-	upstreamHost := strings.TrimSpace(proxyCfg.UpstreamHost)
-	if upstreamHost == "" {
-		upstreamHost = "127.0.0.1"
-	}
-	proxyPort := "18000"
-	if port := portFromListenAddr(strings.TrimSpace(proxyCfg.ListenAddr)); port != "" {
-		proxyPort = port
-	}
-
-	target := url.URL{
-		Scheme:   "http",
-		Host:     net.JoinHostPort(upstreamHost, proxyPort),
-		Path:     "/hls/" + serviceRef + "/preflight",
-		RawQuery: r.URL.RawQuery,
-	}
-
+	// Direct Method Call Pattern (Robust, No Networking)
+	// We call the Stream Proxy implementation directly via the interface.
+	// This avoids "port not bound", "context deadline exceeded" on localhost dials, and internal auth loops.
 	ctx, cancel := context.WithTimeout(r.Context(), preflightTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
-	if err != nil {
-		return err
-	}
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
+	if s.proxy != nil {
+		status, err := s.proxy.Preflight(ctx, r, serviceRef)
+		if err != nil {
+			return fmt.Errorf("proxy preflight failed (%d): %w", status, err)
+		}
+		// Strict Semantics: Check status
+		if status != http.StatusNoContent {
+			return fmt.Errorf("proxy preflight returned status %d", status)
+		}
+		return nil
 	}
 
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, resp.Body)
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("proxy preflight returned %s", resp.Status)
-	}
-	return nil
+	return fmt.Errorf("proxy not initialized")
 }
 
 // authRequired is a middleware that enforces API token authentication for a handler.

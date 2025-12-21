@@ -9,97 +9,71 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"sync/atomic"
 	"testing"
-	"time"
 )
 
+type testReadyChecker struct {
+	waitReadyFunc func(ctx context.Context, ref string) error
+	calls         int
+}
+
+func (m *testReadyChecker) WaitReady(ctx context.Context, ref string) error {
+	m.calls++
+	if m.waitReadyFunc != nil {
+		return m.waitReadyFunc(ctx, ref)
+	}
+	return nil
+}
+
+func (t *testReadyChecker) CheckInvariant(ctx context.Context, serviceRef string) error {
+	return nil
+}
+
 func TestZapAndResolveStream_WaitsForStreamReady(t *testing.T) {
-	oldZapDelay := zapDelay
-	oldProbeTimeout := streamProbeTimeout
-	oldProbeAttempt := streamProbeAttemptDur
-	oldProbeRetry := streamProbeRetryDelay
-	zapDelay = 0
-	streamProbeTimeout = 500 * time.Millisecond
-	streamProbeAttemptDur = 100 * time.Millisecond
-	streamProbeRetryDelay = 10 * time.Millisecond
-	t.Cleanup(func() {
-		zapDelay = oldZapDelay
-		streamProbeTimeout = oldProbeTimeout
-		streamProbeAttemptDur = oldProbeAttempt
-		streamProbeRetryDelay = oldProbeRetry
-	})
-
-	var streamAttempts atomic.Int32
-	streamSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		attempt := streamAttempts.Add(1)
-		if attempt < 3 {
-			http.Error(w, "not ready", http.StatusServiceUnavailable)
-			return
-		}
-		w.Header().Set("Content-Type", "video/mp2t")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte{0x47}) // MPEG-TS sync byte (enough to prove the port serves data)
-	}))
-	t.Cleanup(streamSrv.Close)
-
+	// Setup WebAPI server to return stream info
 	webAPISrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		_, _ = fmt.Fprintf(w, "#EXTM3U\n#EXTVLCOPT:program=108\n%s\n", streamSrv.URL)
+		_, _ = fmt.Fprintf(w, "#EXTM3U\n#EXTVLCOPT:program=108\nhttp://example.com/stream\n")
 	}))
 	t.Cleanup(webAPISrv.Close)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
+	ctx := context.Background()
+	checker := &testReadyChecker{}
 
-	url, pid, err := ZapAndResolveStream(ctx, webAPISrv.URL+"/web/stream.m3u?ref=1:0:1")
+	url, pid, err := ZapAndResolveStream(ctx, webAPISrv.URL+"/web/stream.m3u?ref=1:0:1", "1:0:1", checker)
 	if err != nil {
 		t.Fatalf("ZapAndResolveStream returned error: %v", err)
 	}
-	if url != streamSrv.URL {
-		t.Fatalf("unexpected stream URL: got %q want %q", url, streamSrv.URL)
+	if url != "http://example.com/stream" {
+		t.Fatalf("unexpected stream URL: got %q want %q", url, "http://example.com/stream")
 	}
 	if pid != 108 {
 		t.Fatalf("unexpected program id: got %d want %d", pid, 108)
 	}
-	if got := streamAttempts.Load(); got < 3 {
-		t.Fatalf("expected stream readiness probes, got attempts=%d", got)
+	if checker.calls == 0 {
+		t.Fatal("expected ReadyChecker.WaitReady to be called")
 	}
 }
 
 func TestZapAndResolveStream_FailsWhenStreamNeverReady(t *testing.T) {
-	oldZapDelay := zapDelay
-	oldProbeTimeout := streamProbeTimeout
-	oldProbeAttempt := streamProbeAttemptDur
-	oldProbeRetry := streamProbeRetryDelay
-	zapDelay = 0
-	streamProbeTimeout = 150 * time.Millisecond
-	streamProbeAttemptDur = 50 * time.Millisecond
-	streamProbeRetryDelay = 10 * time.Millisecond
-	t.Cleanup(func() {
-		zapDelay = oldZapDelay
-		streamProbeTimeout = oldProbeTimeout
-		streamProbeAttemptDur = oldProbeAttempt
-		streamProbeRetryDelay = oldProbeRetry
-	})
-
-	streamSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "not ready", http.StatusServiceUnavailable)
-	}))
-	t.Cleanup(streamSrv.Close)
-
 	webAPISrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		_, _ = fmt.Fprintf(w, "#EXTM3U\n%s\n", streamSrv.URL)
+		_, _ = fmt.Fprintf(w, "#EXTM3U\nhttp://example.com/stream\n")
 	}))
 	t.Cleanup(webAPISrv.Close)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
+	ctx := context.Background()
+	checker := &testReadyChecker{
+		waitReadyFunc: func(ctx context.Context, ref string) error {
+			return fmt.Errorf("timeout")
+		},
+	}
 
-	_, _, err := ZapAndResolveStream(ctx, webAPISrv.URL+"/web/stream.m3u?ref=1:0:1")
+	_, _, err := ZapAndResolveStream(ctx, webAPISrv.URL+"/web/stream.m3u?ref=1:0:1", "1:0:1", checker)
 	if err == nil {
-		t.Fatalf("expected error, got nil")
+		t.Fatal("expected error, got nil")
+	}
+	if err.Error() != "readiness check failed: timeout" {
+		t.Fatalf("unexpected error message: %v", err)
 	}
 }
-

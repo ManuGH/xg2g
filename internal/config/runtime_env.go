@@ -102,7 +102,8 @@ func readHLSRuntime(getenv func(string) string) HLSRuntime {
 
 	safari := streamprofile.DefaultSafariDVRConfig()
 	if v := strings.TrimSpace(getString(getenv, "XG2G_SAFARI_DVR_SEGMENT_DURATION", "")); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 4 && n <= 10 {
+		// Valid range 2-10s. 2s is optimized for fast startup (Safari), 6s+ for stability.
+		if n, err := strconv.Atoi(v); err == nil && n >= 2 && n <= 10 {
 			safari.SegmentDuration = n
 		}
 	}

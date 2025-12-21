@@ -34,28 +34,29 @@ import (
 //   - Native Apple TV app
 //   - VLC on iOS (experimental)
 type LLHLSProfile struct {
-	serviceRef  string
-	targetURL   string
-	outputDir   string
-	cmd         *exec.Cmd
-	ctx         context.Context
-	cancel      context.CancelFunc
-	logger      zerolog.Logger
-	lastAccess  time.Time
-	mu          sync.RWMutex
-	started     bool
-	segmentSize int // Segment duration (1s recommended for LL-HLS)
-	playlistLen int // Number of segments (6-10 for LL-HLS)
-	partSize    int // Partial segment size in bytes (256KB default)
-	ffmpegPath  string
-	ready       chan struct{}             // Signals when initial segments are ready
-	hevcConfig  streamprofile.LLHLSConfig // Store full config for decision making
-	done        chan struct{}
-	exitErr     error
+	serviceRef   string
+	targetURL    string
+	outputDir    string
+	cmd          *exec.Cmd
+	ctx          context.Context
+	cancel       context.CancelFunc
+	logger       zerolog.Logger
+	lastAccess   time.Time
+	mu           sync.RWMutex
+	started      bool
+	segmentSize  int // Segment duration (1s recommended for LL-HLS)
+	playlistLen  int // Number of segments (6-10 for LL-HLS)
+	partSize     int // Partial segment size in bytes (256KB default)
+	ffmpegPath   string
+	ready        chan struct{}             // Signals when initial segments are ready
+	hevcConfig   streamprofile.LLHLSConfig // Store full config for decision making
+	done         chan struct{}
+	exitErr      error
+	readyChecker ReadyChecker
 }
 
 // NewLLHLSProfile creates a new LL-HLS profile.
-func NewLLHLSProfile(serviceRef, targetURL, baseDir string, logger zerolog.Logger, config streamprofile.LLHLSConfig) (*LLHLSProfile, error) {
+func NewLLHLSProfile(serviceRef, targetURL, baseDir string, logger zerolog.Logger, config streamprofile.LLHLSConfig, checker ReadyChecker) (*LLHLSProfile, error) {
 	// Create unique directory for this profile
 	// Use sanitized service reference as directory name
 	streamID := sanitizeServiceRef(serviceRef)
@@ -71,19 +72,20 @@ func NewLLHLSProfile(serviceRef, targetURL, baseDir string, logger zerolog.Logge
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &LLHLSProfile{
-		serviceRef:  serviceRef,
-		targetURL:   targetURL,
-		outputDir:   outputDir,
-		ctx:         ctx,
-		cancel:      cancel,
-		logger:      logger.With().Str("component", "llhls_profile").Str("service_ref", serviceRef).Logger(),
-		lastAccess:  time.Now(),
-		segmentSize: config.SegmentDuration,
-		playlistLen: config.PlaylistSize,
-		partSize:    config.PartSize,
-		ffmpegPath:  config.FFmpegPath,
-		ready:       make(chan struct{}),
-		hevcConfig:  config,
+		serviceRef:   serviceRef,
+		targetURL:    targetURL,
+		outputDir:    outputDir,
+		ctx:          ctx,
+		cancel:       cancel,
+		logger:       logger.With().Str("component", "llhls_profile").Str("service_ref", serviceRef).Logger(),
+		lastAccess:   time.Now(),
+		segmentSize:  config.SegmentDuration,
+		playlistLen:  config.PlaylistSize,
+		partSize:     config.PartSize,
+		ffmpegPath:   config.FFmpegPath,
+		ready:        make(chan struct{}),
+		hevcConfig:   config,
+		readyChecker: checker,
 	}, nil
 }
 
@@ -150,7 +152,7 @@ func (p *LLHLSProfile) Start(forceAAC bool, aacBitrate string) error {
 	// Resolve WebIF stream URL (and optional program hint) if applicable.
 	if strings.Contains(p.targetURL, "/web/stream.m3u") || webAPIURL != p.targetURL {
 		p.logger.Info().Str("web_api_url", sanitizeURL(webAPIURL)).Msg("attempting to resolve Web API stream (Zapping)")
-		url, pid, err := ZapAndResolveStream(p.ctx, webAPIURL)
+		url, pid, err := ZapAndResolveStream(p.ctx, webAPIURL, p.serviceRef, p.readyChecker)
 		if err != nil {
 			p.logger.Error().Err(err).Str("web_api_url", sanitizeURL(webAPIURL)).Msg("failed to resolve Web API stream")
 		} else {
@@ -542,13 +544,20 @@ func (p *LLHLSProfile) ServePlaylist(w http.ResponseWriter) error {
 }
 
 // ServeSegment serves an LL-HLS segment (.m4s or init.mp4).
-func (p *LLHLSProfile) ServeSegment(w http.ResponseWriter, segmentName string) error {
+func (p *LLHLSProfile) ServeSegment(ctx context.Context, w http.ResponseWriter, segmentName string) error {
 	p.UpdateAccess()
 
 	// Validate segment name to prevent path traversal
 	segmentPath, err := secureJoin(p.outputDir, segmentName)
 	if err != nil {
 		return fmt.Errorf("invalid segment path: %w", err)
+	}
+
+	// Wait loop could be added here for LL-HLS blocking, but currently it just serves what's there.
+	// If needed, we can add ctx awareness here similar to SafariDVRProfile.
+	// For now, just check context before reading.
+	if ctx.Err() != nil {
+		return ctx.Err()
 	}
 
 	// #nosec G304

@@ -155,6 +155,9 @@ type ClientInterface interface {
 	Bouquets(ctx context.Context) (map[string]string, error)
 	Services(ctx context.Context, bouquetRef string) ([][2]string, error)
 	StreamURL(ctx context.Context, ref, name string) (string, error)
+	GetCurrent(ctx context.Context) (*CurrentInfo, error)
+	GetStatusInfo(ctx context.Context) (*StatusInfo, error)
+	GetSignal(ctx context.Context) (*SignalInfo, error)
 }
 
 // New creates a new OpenWebIF client with the given options.
@@ -771,6 +774,32 @@ type StatusInfo struct {
 	ServiceRef  string `json:"currservice_serviceref"`
 }
 
+// CurrentInfo represents the detailed service info from /api/getcurrent
+type CurrentInfo struct {
+	Result bool `json:"result"`
+	Info   struct {
+		ServiceRef  string `json:"serviceref"`
+		ServiceName string `json:"name"`
+		VideoPID    int    `json:"vpid,omitempty"`
+		AudioPID    int    `json:"apid,omitempty"`
+		PMTPID      int    `json:"pmtpid,omitempty"`
+		PCRPID      int    `json:"pcrpid,omitempty"`
+		TXT         int    `json:"txtpid,omitempty"`
+		TSID        int    `json:"tsid,omitempty"`
+		ONID        int    `json:"onid,omitempty"`
+		SID         int    `json:"sid,omitempty"`
+	} `json:"info"`
+}
+
+// SignalInfo represents the tuner signal stats from /api/signal
+type SignalInfo struct {
+	Result    bool   `json:"result"`
+	SNR       int    `json:"snr"`
+	AGC       int    `json:"agc"`
+	BER       int    `json:"ber"`
+	InStandby string `json:"inStandby"` // "true"/"false" (API inconsistency)
+}
+
 // GetStatusInfo fetches current receiver status (recording, standby, service).
 func (c *Client) GetStatusInfo(ctx context.Context) (*StatusInfo, error) {
 	// Short cache TTL (1s) to avoid hammering but allow rapid UI updates
@@ -797,6 +826,36 @@ func (c *Client) GetStatusInfo(ctx context.Context) (*StatusInfo, error) {
 		c.cache.Set(cacheKey, &info, 2*time.Second) // 2s
 	}
 
+	return &info, nil
+}
+
+// GetCurrent fetches detailed current service information (PIDs, etc).
+func (c *Client) GetCurrent(ctx context.Context) (*CurrentInfo, error) {
+	// Status data changes rapidly, so very short TTL or no cache
+	// We want fresh data for readiness checks.
+	body, err := c.get(ctx, "/api/getcurrent", "get.current", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var info CurrentInfo
+	if err := json.Unmarshal(body, &info); err != nil {
+		return nil, fmt.Errorf("failed to decode current info: %w", err)
+	}
+	return &info, nil
+}
+
+// GetSignal fetches signal statistics (SNR, BER, etc).
+func (c *Client) GetSignal(ctx context.Context) (*SignalInfo, error) {
+	body, err := c.get(ctx, "/api/signal", "get.signal", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var info SignalInfo
+	if err := json.Unmarshal(body, &info); err != nil {
+		return nil, fmt.Errorf("failed to decode signal info: %w", err)
+	}
 	return &info, nil
 }
 

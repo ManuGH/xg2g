@@ -41,10 +41,20 @@ func (s *Server) tryHandleHEAD(w http.ResponseWriter, r *http.Request) bool {
 		// Otherwise -> 404
 
 		path := r.URL.Path
-		if strings.HasSuffix(path, ".m3u8") ||
-			strings.HasSuffix(path, ".m4s") ||
-			strings.HasSuffix(path, ".cmfv") {
-			w.Header().Set("Content-Type", "application/vnd.apple.mpegurl") // or binary
+		if strings.HasSuffix(path, ".m3u8") {
+			w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+			w.Header().Set("Cache-Control", "no-cache")
+			w.WriteHeader(http.StatusOK)
+			return true
+		} else if strings.HasSuffix(path, ".m4s") ||
+			strings.HasSuffix(path, ".cmfv") ||
+			strings.HasSuffix(path, ".cmfa") {
+			w.Header().Set("Content-Type", "video/iso.segment")
+			w.Header().Set("Cache-Control", "no-cache")
+			w.WriteHeader(http.StatusOK)
+			return true
+		} else if strings.HasSuffix(path, ".mp4") {
+			w.Header().Set("Content-Type", "video/mp4")
 			w.Header().Set("Cache-Control", "no-cache")
 			w.WriteHeader(http.StatusOK)
 			return true
@@ -88,9 +98,11 @@ func (s *Server) tryHandleHLS(w http.ResponseWriter, r *http.Request) bool {
 		(strings.Contains(path, "segment_") && strings.HasSuffix(path, ".ts")) {
 
 		// Handle segment requests without /hls/ prefix (Safari sometimes does this)
-		if !strings.HasPrefix(path, "/hls/") && strings.Contains(path, "segment_") && strings.HasSuffix(path, ".ts") {
+		if !strings.HasPrefix(path, "/hls/") &&
+			(strings.Contains(path, "segment_") || strings.EqualFold(filepath.Base(path), "init.mp4")) &&
+			(strings.HasSuffix(path, ".ts") || strings.HasSuffix(path, ".m4s") || strings.HasSuffix(path, ".mp4")) {
 			segmentName := filepath.Base(path)
-			if err := s.hlsManager.ServeSegmentFromAnyStream(w, segmentName); err != nil {
+			if err := s.hlsManager.ServeSegmentFromAnyStream(r.Context(), w, segmentName); err != nil {
 				s.logger.Error().Err(err).Str("segment", segmentName).Msg("failed to serve HLS segment")
 				http.Error(w, "Segment not found", http.StatusNotFound)
 			}

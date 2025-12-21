@@ -13,19 +13,27 @@ import (
 )
 
 var (
+	// ZapDelayDuration tracks the dynamic delay duration applied after a Zap.
+	ZapDelayDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "xg2g_hls_zap_delay_seconds",
+		Help:    "Dynamic delay wait time after channel zap",
+		Buckets: []float64{0.1, 0.5, 1, 2, 5},
+	})
+
+	// StreamStartAttempts tracks the outcome of stream start attempts by profile.
+	StreamStartAttempts = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "xg2g_hls_start_attempt_total",
+		Help: "Total number of HLS start attempts by profile and outcome",
+	}, []string{"profile", "outcome"})
+)
+
+var (
 	// StreamTuneDuration tracks the time taken for the receiver to tune
 	// (Zap request + post-zap delay).
 	StreamTuneDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "xg2g_stream_tune_duration_seconds",
 		Help:    "Time taken for receiver tuning (Zap + delay)",
 		Buckets: []float64{0.1, 0.25, 0.5, 1, 2, 3, 5, 8, 13, 20},
-	}, []string{"encrypted"})
-
-	// StreamStartupLatency tracks the total time from start request to valid playlist.
-	StreamStartupLatency = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "xg2g_stream_startup_latency_seconds",
-		Help:    "Total time from request to playlist availability",
-		Buckets: []float64{1, 2, 3, 5, 8, 13, 20, 30},
 	}, []string{"encrypted"})
 
 	// StreamFirstSegmentLatency tracks the time until the first media segment is written to disk.
@@ -54,16 +62,38 @@ var (
 		Name: "xg2g_proxy_stream_routing_total",
 		Help: "Routing decisions for stream-like requests (auto HLS vs TS vs proxy)",
 	}, []string{"decision", "reason"})
+
+	// --- Phase 4 Metrics ---
+
+	// Enigma2ReadyDuration tracks time spent waiting for readiness check
+	Enigma2ReadyDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "xg2g_enigma2_ready_duration_seconds",
+		Help:    "Time waiting for Enigma2 to lock and stabilize",
+		Buckets: []float64{0.25, 0.5, 1, 1.5, 2, 3, 5, 8},
+	})
+
+	// Enigma2ReadyOutcome tracks readiness check results
+	Enigma2ReadyOutcome = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "xg2g_enigma2_ready_outcome_total",
+		Help: "Enigma2 readiness check outcomes (ready, timeout, cancelled, error)",
+	}, []string{"outcome"})
+
+	// FFmpegExitTotal tracks ffmpeg process exit codes
+	FFmpegExitTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "xg2g_ffmpeg_exit_total",
+		Help: "Total number of ffmpeg process exits by code and reason",
+	}, []string{"profile", "code", "reason"})
+
+	// Enigma2InvariantViolation tracks critical invariant checks failure
+	Enigma2InvariantViolationTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "xg2g_enigma2_invariant_violation_total",
+		Help: "Critical invariant violations (expected_ref != actual_ref at stream start)",
+	})
 )
 
 // ObserveStreamTuneDuration records the tune duration.
 func ObserveStreamTuneDuration(encrypted bool, duration time.Duration) {
 	StreamTuneDuration.WithLabelValues(strconv.FormatBool(encrypted)).Observe(duration.Seconds())
-}
-
-// ObserveStreamStartupLatency records the startup latency.
-func ObserveStreamStartupLatency(encrypted bool, duration time.Duration) {
-	StreamStartupLatency.WithLabelValues(strconv.FormatBool(encrypted)).Observe(duration.Seconds())
 }
 
 // ObserveStreamFirstSegmentLatency records the first segment latency.
@@ -85,7 +115,26 @@ func IncStreamStart(encrypted bool, success bool, reason string) {
 	StreamStartTotal.WithLabelValues(result, reason, strconv.FormatBool(encrypted)).Inc()
 }
 
-// IncStreamRouting records a routing decision for stream-like paths.
 func IncStreamRouting(decision, reason string) {
 	StreamRoutingTotal.WithLabelValues(decision, reason).Inc()
+}
+
+// ObserveEnigma2Ready records readiness check duration.
+func ObserveEnigma2Ready(duration time.Duration) {
+	Enigma2ReadyDuration.Observe(duration.Seconds())
+}
+
+// IncEnigma2ReadyOutcome records readiness check result.
+func IncEnigma2ReadyOutcome(outcome string) {
+	Enigma2ReadyOutcome.WithLabelValues(outcome).Inc()
+}
+
+// IncEnigma2InvariantViolation increments the invariant violation counter
+func IncEnigma2InvariantViolation() {
+	Enigma2InvariantViolationTotal.Inc()
+}
+
+// IncFFmpegExit increments the ffmpeg exit counter
+func IncFFmpegExit(profile, code, reason string) {
+	FFmpegExitTotal.WithLabelValues(profile, code, reason).Inc()
 }

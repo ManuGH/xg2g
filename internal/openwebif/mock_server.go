@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -25,6 +26,13 @@ type MockServer struct {
 	streamURL string
 	delay     map[string]int // Artificial delay in milliseconds per endpoint
 	failures  map[string]int // Number of failures before success per endpoint
+
+	// State for readiness simulation
+	currentServiceRef string
+	isLocked          bool
+	hasPIDs           bool
+	isStandby         bool
+	snrSignal         int
 }
 
 // BouquetsResponse matches OpenWebIF API structure.
@@ -45,6 +53,9 @@ func NewMockServer() *MockServer {
 		epgEvents: make(map[string][]EPGEvent),
 		delay:     make(map[string]int),
 		failures:  make(map[string]int),
+		snrSignal: 75,
+		isLocked:  true,
+		hasPIDs:   true,
 	}
 
 	// Set up default test data
@@ -58,6 +69,9 @@ func NewMockServer() *MockServer {
 	mux.HandleFunc("/api/epgservice", mock.handleEPG)
 	mux.HandleFunc("/api/zap", mock.handleZap)
 	mux.HandleFunc("/api/about", mock.handleAbout)
+	mux.HandleFunc("/api/getcurrent", mock.handleGetCurrent)
+	mux.HandleFunc("/api/signal", mock.handleSignal)
+	mux.HandleFunc("/api/statusinfo", mock.handleStatusInfo)
 
 	mock.Server = httptest.NewServer(mux)
 	return mock
@@ -114,6 +128,17 @@ func (m *MockServer) setDefaultDataNoLock() {
 	}
 
 	m.streamURL = "http://localhost:8001"
+	m.currentServiceRef = ""
+}
+
+// SetSignalState configures the signal state for testing.
+func (m *MockServer) SetSignalState(locked, pids, standby bool, snr int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.isLocked = locked
+	m.hasPIDs = pids
+	m.isStandby = standby
+	m.snrSignal = snr
 }
 
 // AddBouquet adds a bouquet to the mock server.
@@ -306,6 +331,79 @@ func (m *MockServer) Reset() {
 
 	// Reset to defaults without re-locking
 	m.setDefaultDataNoLock()
+}
+
+// handleGetCurrent handles /api/getcurrent
+func (m *MockServer) handleGetCurrent(w http.ResponseWriter, _ *http.Request) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	vpid := 0
+	apid := 0
+	pmtpid := 0
+
+	if m.isLocked && m.hasPIDs {
+		vpid = 5100
+		apid = 5101
+		pmtpid = 5000
+	}
+
+	resp := map[string]interface{}{
+		"result": true,
+		"info": map[string]interface{}{
+			"serviceref": m.currentServiceRef,
+			"name":       "Mock Channel",
+			"vpid":       strconv.Itoa(vpid),
+			"apid":       strconv.Itoa(apid),
+			"pmtpid":     strconv.Itoa(pmtpid),
+		},
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// handleSignal handles /api/signal
+func (m *MockServer) handleSignal(w http.ResponseWriter, _ *http.Request) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	standbyStr := "false"
+	if m.isStandby {
+		standbyStr = "true"
+	}
+
+	resp := map[string]interface{}{
+		"result":    true,
+		"snr":       m.snrSignal,
+		"agc":       50,
+		"ber":       0,
+		"inStandby": standbyStr,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// handleStatusInfo handles /api/statusinfo
+func (m *MockServer) handleStatusInfo(w http.ResponseWriter, _ *http.Request) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	standbyStr := "false"
+	if m.isStandby {
+		standbyStr = "true"
+	}
+	isRecordingStr := "false"
+
+	resp := map[string]interface{}{
+		"result":                 true,
+		"inStandby":              standbyStr,
+		"isRecording":            isRecordingStr,
+		"currservice_name":       "Mock Channel",
+		"currservice_serviceref": m.currentServiceRef,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // URL returns the mock server's base URL.
