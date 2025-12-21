@@ -23,7 +23,7 @@ import (
 
 type IntentHandler struct {
 	Store store.StateStore
-	Bus   bus.EventBus
+	Bus   bus.Bus
 	// TTL for idempotency key mapping.
 	IdempotencyTTL time.Duration
 }
@@ -67,10 +67,18 @@ func (h IntentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sessionID := newID()
+	// MVP: default profile construction (v3-core model.ProfileSpec)
+	// In the future this should verify against a profile registry.
+	prof := model.ProfileSpec{
+		Name:         req.ProfileID,
+		LLHLS:        false,
+		DVRWindowSec: 300,
+	}
+
 	rec := &model.SessionRecord{
 		SessionID:     sessionID,
 		ServiceRef:    req.ServiceRef,
-		ProfileID:     req.ProfileID,
+		Profile:       prof,
 		State:         model.SessionStarting,
 		CreatedAtUnix: time.Now().Unix(),
 		UpdatedAtUnix: time.Now().Unix(),
@@ -84,11 +92,13 @@ func (h IntentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Publish intent event for workers. No blocking.
-	_ = h.Bus.Publish(ctx, bus.SubjectSessionStart, bus.SessionStartEvent{
+	// We map the request to a StartSessionEvent.
+	_ = h.Bus.Publish(ctx, string(model.EventStartSession), model.StartSessionEvent{
+		Type:       model.EventStartSession,
 		SessionID:  sessionID,
 		ServiceRef: req.ServiceRef,
 		ProfileID:  req.ProfileID,
-		Options:    req.Options,
+		// Options/Params mapping if needed
 	})
 
 	h.respond202(ctx, w, sessionID)
@@ -100,7 +110,7 @@ func (h IntentHandler) respond202(ctx context.Context, w http.ResponseWriter, se
 	w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(IntentResponse{
 		SessionID: sessionID,
-		State:     model.SessionStarting,
+		State:     string(model.SessionStarting),
 	})
 }
 

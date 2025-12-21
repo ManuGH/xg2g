@@ -37,37 +37,45 @@ func (b *MemoryBus) Publish(_ context.Context, topic string, msg Message) error 
 	return nil
 }
 
-func (b *MemoryBus) Subscribe(ctx context.Context, topic string, handler Handler) error {
+func (b *MemoryBus) Subscribe(ctx context.Context, topic string) (Subscriber, error) {
 	ch := make(chan Message, 64)
 
 	b.mu.Lock()
 	b.subs[topic] = append(b.subs[topic], ch)
 	b.mu.Unlock()
 
-	defer func() {
-		b.mu.Lock()
-		lst := b.subs[topic]
-		out := lst[:0]
-		for _, c := range lst {
-			if c != ch {
-				out = append(out, c)
-			}
-		}
-		if len(out) == 0 {
-			delete(b.subs, topic)
-		} else {
-			b.subs[topic] = out
-		}
-		b.mu.Unlock()
-		close(ch)
-	}()
+	return &memSub{b: b, topic: topic, ch: ch}, nil
+}
 
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case msg := <-ch:
-			_ = handler(ctx, msg)
+type memSub struct {
+	b     *MemoryBus
+	topic string
+	ch    chan Message
+}
+
+func (s *memSub) C() <-chan Message {
+	return s.ch
+}
+
+func (s *memSub) Close() error {
+	s.b.mu.Lock()
+	defer s.b.mu.Unlock()
+
+	lst := s.b.subs[s.topic]
+	out := lst[:0]
+	for _, c := range lst {
+		if c != s.ch {
+			out = append(out, c)
 		}
 	}
+	if len(out) == 0 {
+		delete(s.b.subs, s.topic)
+	} else {
+		s.b.subs[s.topic] = out
+	}
+	close(s.ch) // Signal subscriber to stop
+	return nil
 }
+
+// Ensure compliance
+var _ Bus = (*MemoryBus)(nil)

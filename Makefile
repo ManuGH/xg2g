@@ -747,8 +747,3 @@ schema-validate: ## Validate all YAML config files against JSON Schema
 		echo "⚠  check-jsonschema not installed, skipping schema validation"; \
 		echo "   Install with: pip install check-jsonschema"; \
 	fi
-
-.PHONY: v3-mvp
-v3-mvp: ## Build + test the v3 skeleton (requires Go toolchain matching go.mod toolchain)
-	@echo "Building v3 (build tag: v3)..."
-	@go test -tags v3 ./...

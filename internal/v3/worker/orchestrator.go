@@ -21,14 +21,14 @@ import (
 // and MUST be out-of-band from HTTP request paths.
 //
 // MVP:
-//  - acquire a single-writer lease per serviceKey
-//  - transition Session: STARTING -> READY/FAILED
-//  - (placeholder) for receiver tuning + ffmpeg lifecycle
+//   - acquire a single-writer lease per serviceKey
+//   - transition Session: STARTING -> READY/FAILED
+//   - (placeholder) for receiver tuning + ffmpeg lifecycle
 type Orchestrator struct {
 	Store store.StateStore
-	Bus   bus.EventBus
+	Bus   bus.Bus
 
-	LeaseTTL      time.Duration
+	LeaseTTL       time.Duration
 	HeartbeatEvery time.Duration
 }
 
@@ -40,42 +40,43 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 		o.HeartbeatEvery = 10 * time.Second
 	}
 
-	ch, cancel, err := o.Bus.Subscribe(ctx, "v3", 256)
+	sub, err := o.Bus.Subscribe(ctx, string(model.EventStartSession))
 	if err != nil {
 		return err
 	}
-	defer cancel()
+	defer sub.Close()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case msg, ok := <-ch:
+		case msg, ok := <-sub.C():
 			if !ok {
 				return errors.New("event channel closed")
 			}
-			if msg.Type == string(model.EventStartSession) {
-				_ = o.handleStart(ctx, msg)
+			// Type switch on message interface
+			if evt, ok := msg.(model.StartSessionEvent); ok {
+				_ = o.handleStart(ctx, evt)
 			}
 		}
 	}
 }
 
-func (o *Orchestrator) handleStart(ctx context.Context, msg bus.Message) error {
-	e, ok := msg.Data.(model.StartSessionEvent)
-	if !ok {
-		return nil
-	}
-
+func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEvent) error {
 	// Single-writer lease per service key (prevents stampedes).
-	lease, err := o.Store.AcquireLease(ctx, e.ServiceKey, e.SessionID, o.LeaseTTL)
+	lease, ok, err := o.Store.TryAcquireLease(ctx, e.ServiceRef, e.SessionID, o.LeaseTTL)
 	if err != nil {
-		// Another worker likely owns the lease; we do not fail the session here.
+		// Error communicating with store
+		return err
+	}
+	if !ok {
+		// Another worker owns the lease, ignore.
 		return nil
 	}
-	defer lease.Release(ctx)
+	defer o.Store.ReleaseLease(ctx, lease.Key(), lease.Owner())
 
 	// Heartbeat loop (crash-safe; store implementation decides renewal semantics).
+	// We run this until work is done.
 	hbCtx, hbCancel := context.WithCancel(ctx)
 	defer hbCancel()
 	go func() {
@@ -86,7 +87,8 @@ func (o *Orchestrator) handleStart(ctx context.Context, msg bus.Message) error {
 			case <-hbCtx.Done():
 				return
 			case <-t.C:
-				_ = lease.Renew(ctx, o.LeaseTTL)
+				// Renew lease on store
+				_, _, _ = o.Store.RenewLease(ctx, lease.Key(), lease.Owner(), o.LeaseTTL)
 			}
 		}
 	}()
@@ -97,9 +99,10 @@ func (o *Orchestrator) handleStart(ctx context.Context, msg bus.Message) error {
 	//  - ffmpeg worker spawn + readiness signal
 	//  - packager ready
 	//  - then READY
-	return o.Store.UpdateSession(ctx, e.SessionID, func(r *model.SessionRecord) error {
+	_, err = o.Store.UpdateSession(ctx, e.SessionID, func(r *model.SessionRecord) error {
 		r.State = model.SessionReady
-		r.UpdatedAt = time.Now().UTC()
+		r.UpdatedAtUnix = time.Now().Unix()
 		return nil
 	})
+	return err
 }

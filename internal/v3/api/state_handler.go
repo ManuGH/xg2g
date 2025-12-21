@@ -36,8 +36,23 @@ func NewStateHandler(st store.StateStore) http.Handler {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
+		if sess == nil {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+
+		resp := SessionResponse{
+			SessionID:       sess.SessionID,
+			ServiceRef:      sess.ServiceRef,
+			ProfileID:       sess.Profile.Name,
+			State:           sess.State,
+			Reason:          sess.Reason,
+			ReasonDetail:    sess.ReasonDetail,
+			CorrelationID:   sess.CorrelationID,
+			UpdatedAtUnixMs: sess.UpdatedAtUnix * 1000,
+		}
 
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(StateResponse{Session: sess})
+		_ = json.NewEncoder(w).Encode(resp)
 	})
 }
