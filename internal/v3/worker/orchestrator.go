@@ -66,11 +66,16 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 	// Single-writer lease per service key (prevents stampedes).
 	lease, ok, err := o.Store.TryAcquireLease(ctx, e.ServiceRef, e.SessionID, o.LeaseTTL)
 	if err != nil {
-		// Error communicating with store
+		// Store error: retry immediately or backoff? Bus default retry?
 		return err
 	}
 	if !ok {
-		// Another worker owns the lease, ignore.
+		// Lease held by another worker.
+		// MVP Robustness: Requeue intent to verify it eventually succeeds or fails if lease is stale.
+		// For proper "at-least-once", strictly we should define a retry count or rely on a durable queue.
+		// Here: Log and ignore (let client retry) OR simple in-memory requeue.
+		// User requested: "Event ignored on busy lease" is MVP contract.
+		// We leave a comment for Phase 2 hardening.
 		return nil
 	}
 	defer o.Store.ReleaseLease(ctx, lease.Key(), lease.Owner())
