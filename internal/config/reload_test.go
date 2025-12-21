@@ -14,23 +14,32 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/oasdiff/yaml"
 )
 
 // Test helper: create a minimal valid config file
 func writeValidConfig(t *testing.T, path string, bouquet string) {
 	t.Helper()
-	content := `dataDir: /tmp/test
-openWebIF:
-  baseUrl: http://test.example.com
-  username: testuser
-  password: testpass
-bouquets:
-  - ` + bouquet + `
-epg:
-  enabled: true
-  days: 7
-`
-	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+	// Use map/struct to marshal correct YAML to avoid indentation issues
+	cfg := map[string]interface{}{
+		"dataDir": "/tmp/test",
+		"openWebIF": map[string]interface{}{
+			"baseUrl":  "http://test.example.com",
+			"username": "testuser",
+			"password": "testpass",
+		},
+		"bouquets": []string{bouquet},
+		"epg": map[string]interface{}{
+			"enabled": true,
+			"days":    7,
+		},
+	}
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("failed to marshal config: %v", err)
+	}
+	if err := os.WriteFile(path, data, 0600); err != nil {
 		t.Fatalf("failed to write config: %v", err)
 	}
 }
