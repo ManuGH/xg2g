@@ -9,9 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -19,22 +17,6 @@ import (
 	coreopenwebif "github.com/ManuGH/xg2g/internal/core/openwebif"
 	"github.com/ManuGH/xg2g/internal/metrics"
 )
-
-var (
-	streamProbeTimeout    = 15 * time.Second
-	streamProbeAttemptDur = 2 * time.Second
-	streamProbeRetryDelay = 250 * time.Millisecond
-)
-
-func computeZapDelay(targetURL string) time.Duration {
-	// Heuristic: Port 17999 is commonly used for encrypted streams (oscam-emu) which need more time.
-	// We use a safe delay of 2s for these.
-	if strings.Contains(targetURL, ":17999/") {
-		return 2 * time.Second
-	}
-	// For standard FTA/HTTP streams (port 8001 etc.), 500ms is sufficient to let the tuner settle.
-	return 500 * time.Millisecond
-}
 
 // Helper to convert direct stream URL to Enigma2 Web API URL.
 func convertToWebAPI(targetURL, serviceRef string) string {
@@ -136,64 +118,4 @@ func ZapAndResolveStream(ctx context.Context, apiURL, serviceRef string, checker
 	}
 
 	return info.URL, info.ProgramID, nil
-}
-
-func waitForStreamReady(ctx context.Context, streamURL string) error {
-	parsed, err := url.Parse(streamURL)
-	if err != nil {
-		return fmt.Errorf("parse stream url: %w", err)
-	}
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return nil
-	}
-
-	probeCtx, cancel := context.WithTimeout(ctx, streamProbeTimeout)
-	defer cancel()
-
-	for {
-		if err := tryProbeStream(probeCtx, streamURL); err == nil {
-			return nil
-		}
-
-		select {
-		case <-probeCtx.Done():
-			return fmt.Errorf("stream not ready after zap: %w", probeCtx.Err())
-		case <-time.After(streamProbeRetryDelay):
-		}
-	}
-}
-
-func tryProbeStream(ctx context.Context, streamURL string) error {
-	attemptCtx, cancel := context.WithTimeout(ctx, streamProbeAttemptDur)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(attemptCtx, http.MethodGet, streamURL, nil)
-	if err != nil {
-		return fmt.Errorf("build stream probe request: %w", err)
-	}
-	req.Header.Set("Range", "bytes=0-1023")
-
-	client := &http.Client{Timeout: streamProbeAttemptDur}
-	resp, err := client.Do(req) // #nosec G107 -- streamURL is already constrained by SSRF allowlist rules upstream
-	if err != nil {
-		return err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
-		return fmt.Errorf("stream probe http status %d", resp.StatusCode)
-	}
-
-	buf := make([]byte, 1)
-	n, readErr := io.ReadAtLeast(resp.Body, buf, 1)
-	if n > 0 {
-		return nil
-	}
-	if readErr == nil {
-		return fmt.Errorf("stream probe returned empty body")
-	}
-	if errors.Is(readErr, context.Canceled) || errors.Is(readErr, context.DeadlineExceeded) {
-		return readErr
-	}
-	return readErr
 }
