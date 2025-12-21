@@ -2,7 +2,6 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
-// SPDX-License-Identifier: MIT
 package main
 
 import (
@@ -25,6 +24,7 @@ import (
 	xglog "github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	xgtls "github.com/ManuGH/xg2g/internal/tls"
+	"github.com/ManuGH/xg2g/internal/v3/shadow"
 	"github.com/ManuGH/xg2g/internal/validation"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -288,6 +288,18 @@ func main() {
 			} else {
 				proxyConfig.ListenAddr = newListen
 			}
+		}
+
+		// v3 Shadow Canary: Initialize Client if enabled
+		if cfg.ShadowIntentsEnabled && cfg.ShadowTarget != "" {
+			v3ShadowCfg := shadow.Config{
+				TargetURL: cfg.ShadowTarget,
+				Enabled:   true,
+			}
+			proxyConfig.ShadowClient = shadow.New(v3ShadowCfg)
+			logger.Info().Str("target", cfg.ShadowTarget).Msg("v3 Shadow Canary enabled")
+		} else if cfg.ShadowIntentsEnabled {
+			logger.Warn().Msg("v3 Shadow Canary enabled but XG2G_V3_SHADOW_TARGET is missing. Disabling.")
 		}
 
 	}

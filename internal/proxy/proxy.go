@@ -29,6 +29,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/m3u"
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/openwebif"
+	"github.com/ManuGH/xg2g/internal/v3/shadow"
 	"github.com/rs/zerolog"
 )
 
@@ -69,6 +70,7 @@ type Server struct {
 	readyChecker   ReadyChecker
 	sfg            singleflight.Group
 	preflightCache sync.Map // Map[string]preflightCacheEntry
+	shadowClient   *shadow.Client
 }
 
 type preflightCacheEntry struct {
@@ -304,6 +306,13 @@ func New(cfg Config) (*Server, error) {
 	return s, nil
 }
 
+// SetShadowClient configures the v3 shadow client for intent mirroring.
+func (s *Server) SetShadowClient(client *shadow.Client) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.shadowClient = client
+}
+
 // GetSessions returns the list of active stream sessions.
 func (s *Server) GetSessions() []*StreamSession {
 	if s.registry == nil {
@@ -414,6 +423,25 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
 		serviceRef, _ := extractServiceRef(path)
 		channelName := serviceRef // Default to ref
+
+		// v3 Shadow Canary: Fire Intent
+		// This is the "Traffic Guard" hook
+		if s.shadowClient != nil {
+			// Infer profile from path/query (basic heuristic)
+			profile := "stream"
+			if strings.Contains(path, "stream.m3u8") || strings.Contains(path, "playlist.m3u8") {
+				profile = "hls"
+				if r.URL.Query().Get("llhls") == "1" {
+					profile = "llhls"
+				}
+			}
+			// Use r.Context() but Fire spawns its own goroutine/context
+			host, _, _ := net.SplitHostPort(r.RemoteAddr)
+			if host == "" {
+				host = r.RemoteAddr
+			}
+			s.shadowClient.Fire(r.Context(), serviceRef, profile, host)
+		}
 
 		// Try to look up name if possible?
 		// For now simple ref is enough.

@@ -241,6 +241,11 @@ func (m *manager) startProxyServer(_ context.Context, errChan chan<- error) erro
 		return fmt.Errorf("failed to create proxy: %w", err)
 	}
 
+	// v3 Shadow Canary: Inject Client
+	if m.deps.ProxyConfig.ShadowClient != nil {
+		m.proxyServer.SetShadowClient(m.deps.ProxyConfig.ShadowClient)
+	}
+
 	go func() {
 		logEvent := m.logger.Info().Str("addr", m.deps.ProxyConfig.ListenAddr)
 		if m.deps.ProxyConfig.TargetURL != "" {

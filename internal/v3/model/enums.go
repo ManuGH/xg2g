@@ -1,6 +1,3 @@
-//go:build v3
-// +build v3
-
 // Copyright (c) 2025 ManuGH
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
@@ -92,4 +89,21 @@ type PipelineRecord struct {
 	Reason         ReasonCode    `json:"reason"`
 	CreatedAtUnix  int64         `json:"createdAtUnix"`
 	UpdatedAtUnix  int64         `json:"updatedAtUnix"`
+}
+
+// IntentType defines the type of intent (command).
+type IntentType string
+
+const (
+	IntentTypeStreamStart IntentType = "stream.start"
+	IntentTypeStreamStop  IntentType = "stream.stop"
+)
+
+// Intent represents a user desire to change state (e.g., start a stream).
+type Intent struct {
+	Type       IntentType        `json:"type"`
+	ServiceRef string            `json:"serviceRef"`
+	Profile    string            `json:"profile"`
+	Priority   int               `json:"priority"`
+	Metadata   map[string]string `json:"metadata,omitempty"`
 }
