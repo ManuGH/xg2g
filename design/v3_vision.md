@@ -107,3 +107,22 @@ graph TD
 2. **Shadow Mode**: Run v3 Workers alongside v2 Proxy. v2 Proxy acts as "Client" to v3 Store.
 3. **Origin Switch**: Switch `/stream/` to read from v3 Store.
 4. **Deprecation**: Remove v2 synchronous paths.
+
+## 6. Known Risks & 2026 Requirements (Critique)
+
+*Items identified as necessary for production-grade v3, to be addressed in implementation.*
+
+1. **FSM Granularity (Client Drift)**
+    * `STARTING` is too coarse for aggressive clients (Safari/VisionOS).
+    * Requirement: Sub-states (`STARTING_TUNE`, `STARTING_FFMPEG`, `STARTING_PACKAGER`) exposed to client via ReasonCode progression to prevent timeout/reload loops.
+
+2. **Origin Placeholder Semantics**
+    * Simple "Empty Playlist" can cause clients to stop playback.
+    * Requirement: "Valid manifest referencing placeholder segment" OR "Master pointing to empty variant" depending on strict player testing.
+
+3. **Lease Crash-Recovery**
+    * TTL-only is insufficient for split-brain/crash recovery.
+    * Requirement: Monotonic fencing tokens (Epochs) and strict Owner-ID enforcement. Bus replay must not override newer writers.
+
+4. **Idempotency Scope**
+    * Requirement: Defined scope (by `ServiceRef`+`Profile` OR arbitrary `Idempotency-Key`?). Must guarantee stable SessionID return even during partial failures.
