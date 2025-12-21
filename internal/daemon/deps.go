@@ -10,6 +10,7 @@ import (
 	"net/http"
 
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/v3/shadow"
 	"github.com/rs/zerolog"
 )
 
@@ -70,6 +71,9 @@ type ProxyConfig struct {
 
 	// AllowedOrigins for CORS
 	AllowedOrigins []string
+
+	// ShadowClient for v3 Canary (Optional)
+	ShadowClient *shadow.Client
 }
 
 // Validate checks if the dependencies are valid.

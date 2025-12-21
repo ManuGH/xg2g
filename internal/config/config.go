@@ -2,8 +2,6 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
-// SPDX-License-Identifier: MIT
-
 // Package config provides configuration management for xg2g.
 package config
 
@@ -141,16 +139,18 @@ type AppConfig struct {
 	ForceHTTPS bool   // Redirect HTTP to HTTPS
 
 	// Feature Flags
-	InstantTuneEnabled bool // Enable "Instant Tune" stream pre-warming
-	DevMode            bool // Enable development mode (live asset reloading)
-	AuthAnonymous      bool // Allow anonymous access if no token is configured (Fail-Open override)
-	ReadyStrict        bool // Enable strict readiness checks (check upstream availability)
-	RateLimitEnabled   bool // Enable rate limiting
-	RateLimitGlobal    int  // Requests per second (global)
-	RateLimitAuth      int  // Requests per minute (auth)
-	RateLimitBurst     int
-	RateLimitWhitelist []string
-	AllowedOrigins     []string
+	InstantTuneEnabled   bool   // Enable "Instant Tune" stream pre-warming
+	DevMode              bool   // Enable development mode (live asset reloading)
+	AuthAnonymous        bool   // Allow anonymous access if no token is configured (Fail-Open override)
+	ReadyStrict          bool   // Enable strict readiness checks (check upstream availability)
+	ShadowIntentsEnabled bool   // v3 Shadow Canary: mirror intents to v3 API (default OFF)
+	ShadowTarget         string // v3 Shadow Canary: target URL (e.g. http://localhost:8080/api/v3/intents)
+	RateLimitEnabled     bool   // Enable rate limiting
+	RateLimitGlobal      int    // Requests per second (global)
+	RateLimitAuth        int    // Requests per minute (auth)
+	RateLimitBurst       int
+	RateLimitWhitelist   []string
+	AllowedOrigins       []string
 
 	// Stream Proxy
 	MaxConcurrentStreams int // Maximum concurrent streams allowed (DoS protection)
@@ -537,6 +537,9 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	cfg.DevMode = ParseBool("XG2G_DEV", cfg.DevMode)
 	cfg.AuthAnonymous = ParseBool("XG2G_AUTH_ANONYMOUS", cfg.AuthAnonymous)
 	cfg.ReadyStrict = ParseBool("XG2G_READY_STRICT", cfg.ReadyStrict)
+	cfg.ReadyStrict = ParseBool("XG2G_READY_STRICT", cfg.ReadyStrict)
+	cfg.ShadowIntentsEnabled = ParseBool("XG2G_V3_SHADOW_INTENTS", cfg.ShadowIntentsEnabled)
+	cfg.ShadowTarget = ParseString("XG2G_V3_SHADOW_TARGET", cfg.ShadowTarget)
 
 	// Rate Limiting
 	cfg.RateLimitEnabled = ParseBool("XG2G_RATELIMIT", cfg.RateLimitEnabled)
