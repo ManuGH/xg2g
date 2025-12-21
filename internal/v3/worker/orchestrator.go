@@ -92,8 +92,11 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 			case <-hbCtx.Done():
 				return
 			case <-t.C:
-				// Renew lease on store
-				_, _, _ = o.Store.RenewLease(ctx, lease.Key(), lease.Owner(), o.LeaseTTL)
+				// Renew lease on store using hbCtx (not parent ctx) to respect cancellation
+				_, _, err := o.Store.RenewLease(hbCtx, lease.Key(), lease.Owner(), o.LeaseTTL)
+				if err != nil {
+					// In a real implementation we should log this error (e.g. zap.L().Error("lease renewal failed", zap.Error(err)))
+				}
 			}
 		}
 	}()
