@@ -28,7 +28,6 @@ import (
 type mockProxy struct {
 	preflightCalled bool
 	lastPath        string
-	lastHeaders     http.Header
 }
 
 func (m *mockProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {}

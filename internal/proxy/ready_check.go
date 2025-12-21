@@ -131,6 +131,7 @@ func (c *Enigma2ReadyChecker) pollUntilReady(ctx context.Context, ref string) (e
 
 	// Local seeded RNG for thread-safe deterministic jitter without global lock contention
 	src := rand.NewSource(time.Now().UnixNano())
+	// #nosec G404 -- Jitter does not require cryptographic security
 	rng := rand.New(src)
 
 	c.logger.Info().Str("ref", ref).Msg("checking readiness...")

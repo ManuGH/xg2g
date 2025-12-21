@@ -843,12 +843,13 @@ func (s *Server) Preflight(ctx context.Context, req *http.Request, serviceRef st
 	// 6. Update Cache
 	// P4c Hardening: Only cache Success (204) for full TTL (10s).
 	// Do NOT cache failures (503) to allow immediate recovery once backend is ready.
-	if status == http.StatusNoContent {
+	switch status {
+	case http.StatusNoContent:
 		s.preflightCache.Store(cacheKey, preflightCacheEntry{
 			status:    status,
 			timestamp: time.Now(),
 		})
-	} else if status == http.StatusNotFound {
+	case http.StatusNotFound:
 		// 404 is a hard error (bad ref), we can cache it to prevent spam.
 		s.preflightCache.Store(cacheKey, preflightCacheEntry{
 			status:    status,
