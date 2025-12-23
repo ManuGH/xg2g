@@ -24,6 +24,7 @@ import (
 	"unicode/utf8"
 
 	xglog "github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/resilience"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/rs/zerolog"
@@ -57,7 +58,7 @@ type Client struct {
 	receiverLimiter *rate.Limiter
 
 	// Circuit Breaker for fault tolerance (v2.2.0+)
-	cb *CircuitBreaker
+	cb *resilience.CircuitBreaker
 }
 
 // Cacher provides caching capabilities for OpenWebIF requests.
@@ -260,7 +261,7 @@ func NewWithPort(base string, streamPort int, opts Options) *Client {
 		cache:           opts.Cache, // Optional cache (nil = no caching)
 		cacheTTL:        cacheTTL,
 		receiverLimiter: rate.NewLimiter(receiverRPS, receiverBurst),
-		cb:              NewCircuitBreaker(5, 30*time.Second), // 5 failures, 30s reset
+		cb:              resilience.NewCircuitBreaker("openwebif", 5, 30*time.Second), // 5 failures, 30s reset
 	}
 
 	// Log cache status
@@ -1030,7 +1031,7 @@ func (c *Client) get(ctx context.Context, path, operation string, decorate func(
 	})
 
 	if cbErr != nil {
-		if errors.Is(cbErr, ErrCircuitOpen) {
+		if errors.Is(cbErr, resilience.ErrCircuitOpen) {
 			c.loggerFor(ctx).Warn().
 				Str("event", "circuit_breaker.open").
 				Str("operation", operation).

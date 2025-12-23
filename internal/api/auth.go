@@ -37,7 +37,7 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			}
 			// Fail-Closed (Default)
 			log.FromContext(r.Context()).Error().Str("event", "auth.fail_closed").Msg("XG2G_API_TOKEN not set and XG2G_AUTH_ANONYMOUS!=true. Denying access.")
-			writeUnauthorized(w)
+			RespondError(w, r, http.StatusUnauthorized, ErrUnauthorized)
 			return
 		}
 
@@ -49,14 +49,14 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 
 		if reqToken == "" {
 			logger.Warn().Str("event", "auth.missing_header").Msg("authorization header/cookie missing")
-			writeUnauthorized(w)
+			RespondError(w, r, http.StatusUnauthorized, ErrUnauthorized)
 			return
 		}
 
 		// Use constant-time comparison to prevent timing attacks
 		if !auth.AuthorizeToken(reqToken, token) {
 			logger.Warn().Str("event", "auth.invalid_token").Msg("invalid api token")
-			writeUnauthorized(w)
+			RespondError(w, r, http.StatusUnauthorized, ErrUnauthorized)
 			return
 		}
 
@@ -90,7 +90,7 @@ func (s *Server) HandleSessionLogin(w http.ResponseWriter, r *http.Request) {
 		reqToken = cfgToken
 	} else {
 		if cfgToken != "" && !auth.AuthorizeToken(reqToken, cfgToken) {
-			writeUnauthorized(w)
+			RespondError(w, r, http.StatusUnauthorized, ErrUnauthorized)
 			return
 		}
 	}

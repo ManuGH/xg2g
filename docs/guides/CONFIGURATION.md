@@ -1,4 +1,4 @@
-# xg2g Configuration Guide (v2.1+)
+# xg2g Configuration Guide (v2.1+; current: v2.1.0)
 
 xg2g is a **12-Factor App** designed to be configured primarily via **Environment Variables**.
 For complex setups or persisted configurations, a YAML file can be used.
@@ -13,7 +13,7 @@ For complex setups or persisted configurations, a YAML file can be used.
 If you are upgrading from v2.0 and using `config.yaml`, you must update your configuration keys.
 Environment variables remain partially backward compatible (aliases are provided for common variables like `RECEIVER_IP`), but `config.yaml` usage is strict.
 
-*Note: While legacy environment variables are currently accepted, they are deprecated and will be removed in v3.0.*
+*Note: Legacy environment variable aliases are still accepted, but they are deprecated, emit startup warnings, and will be removed in v2.2.*
 
 ### Removed / Renamed Keys
 
@@ -191,3 +191,19 @@ api:
 | `XG2G_EPG_DAYS` | `epg.days` | `7` |
 | `XG2G_API_TOKEN` | `api.token` | - |
 | `XG2G_READY_STRICT` | - | `false` |
+
+---
+
+## v3 (Experimental/Preview)
+
+The v3 control plane is experimental/preview and exposed under `/api/v3/*`. It is configured via **environment variables only** (no `config.yaml` support yet).
+
+| ENV Variable | Purpose |
+| :--- | :--- |
+| `XG2G_V3_WORKER_ENABLED` | Enable v3 worker/store |
+| `XG2G_V3_WORKER_MODE` | Worker mode (`standard` or `virtual`) |
+| `XG2G_V3_STORE_BACKEND` | Store backend (`memory` or `bolt`) |
+| `XG2G_V3_STORE_PATH` | Store path for bolt backend |
+| `XG2G_V3_HLS_ROOT` | HLS output root for v3 sessions |
+| `XG2G_V3_SHADOW_INTENTS` | Enable shadow intents from v2 proxy |
+| `XG2G_V3_SHADOW_TARGET` | Shadow intents target URL |

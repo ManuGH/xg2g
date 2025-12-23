@@ -23,9 +23,9 @@ We need an explicit compatibility boundary so changes to handlers don’t silent
 
 - Breaking API changes require a new version prefix (`/api/v3`) and migration docs.
 - Within a major API version, backwards-compatible evolution is allowed (additive fields/endpoints), but removing/renaming routes is treated as breaking.
+- The `/api/v3/*` surface is currently **experimental/preview** until explicitly promoted in release notes.
 
 ## References (Code)
 
 - API router / WebUI: `internal/api/http.go`
 - Generated API server wiring: `internal/api/server_gen.go`
-

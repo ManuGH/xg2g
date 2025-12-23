@@ -268,7 +268,7 @@ func (e *SeriesEngine) processRule(ctx context.Context, client OWIClient, rule S
 						inWindow = true
 					}
 				}
-				fmt.Printf("DEBUG: TimeWindow: time=%d win=%d-%d in=%v\n", evTime, winStart, winEnd, inWindow)
+
 
 				if !inWindow {
 					continue

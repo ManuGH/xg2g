@@ -115,7 +115,7 @@ type AppConfig struct {
 	FuzzyMax        int
 	StreamPort      int
 	UseWebIFStreams bool
-	APIToken        string // Optional: for securing the /api/refresh endpoint
+	APIToken        string // Optional: for securing API endpoints (e.g., /api/v2/*)
 	APIListenAddr   string // Optional: API listen address (if set via config.yaml)
 	TrustedProxies  string // Comma-separated list of trusted CIDRs
 	MetricsEnabled  bool   // Optional: enable Prometheus metrics server
@@ -144,11 +144,11 @@ type AppConfig struct {
 	AuthAnonymous        bool   // Allow anonymous access if no token is configured (Fail-Open override)
 	AllowQueryTokens     bool   // DEPRECATED: Allow authentication via query parameter (insecure, will be removed in v3.0)
 	ReadyStrict          bool   // Enable strict readiness checks (check upstream availability)
-	ShadowIntentsEnabled bool   // v3 Shadow Canary: mirror intents to v3 API (default OFF)
-	ShadowTarget         string // v3 Shadow Canary: target URL (e.g. http://localhost:8080/api/v3/intents)
+	ShadowIntentsEnabled bool   // v3 Shadow Canary (experimental): mirror intents to v3 API (default OFF)
+	ShadowTarget         string // v3 Shadow Canary (experimental): target URL (e.g. http://localhost:8080/api/v3/intents)
 
-	// v3 Worker Config
-	WorkerEnabled bool   // Enable v3 Worker
+	// v3 Worker Config (experimental)
+	WorkerEnabled bool   // Enable v3 worker
 	WorkerMode    string // "standard" or "virtual" (dry-run)
 	StoreBackend  string // "memory" or "bolt"
 	StorePath     string // Path to v3 store data
@@ -495,11 +495,30 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	cfg.LogService = ParseStringWithAlias("XG2G_LOG_SERVICE", "LOG_SERVICE", cfg.LogService)
 
 	// OpenWebIF (with backward-compatible aliases for v2.0)
+	// OpenWebIF (with backward-compatible aliases for v2.0)
 	cfg.OWIBase = ParseStringWithAlias("XG2G_OWI_BASE", "RECEIVER_IP", cfg.OWIBase)
-	cfg.OWIUsername = ParseStringWithAlias("XG2G_OWI_USER", "RECEIVER_USER", cfg.OWIUsername)
-	cfg.OWIUsername = ParseStringWithAlias("XG2G_OWI_USER", "XG2G_OWI_USERNAME", cfg.OWIUsername)
-	cfg.OWIPassword = ParseStringWithAlias("XG2G_OWI_PASS", "RECEIVER_PASS", cfg.OWIPassword)
-	cfg.OWIPassword = ParseStringWithAlias("XG2G_OWI_PASS", "XG2G_OWI_PASSWORD", cfg.OWIPassword)
+
+	// Username: XG2G_OWI_USER > XG2G_OWI_USERNAME > RECEIVER_USER
+	if v := ParseString("XG2G_OWI_USER", ""); v != "" {
+		cfg.OWIUsername = v
+	} else if v := ParseString("XG2G_OWI_USERNAME", ""); v != "" {
+		logDeprecatedEnvAlias("XG2G_OWI_USERNAME", "XG2G_OWI_USER")
+		cfg.OWIUsername = v
+	} else if v := ParseString("RECEIVER_USER", ""); v != "" {
+		logDeprecatedEnvAlias("RECEIVER_USER", "XG2G_OWI_USER")
+		cfg.OWIUsername = v
+	}
+
+	// Password: XG2G_OWI_PASS > XG2G_OWI_PASSWORD > RECEIVER_PASS
+	if v := ParseString("XG2G_OWI_PASS", ""); v != "" {
+		cfg.OWIPassword = v
+	} else if v := ParseString("XG2G_OWI_PASSWORD", ""); v != "" {
+		logDeprecatedEnvAlias("XG2G_OWI_PASSWORD", "XG2G_OWI_PASS")
+		cfg.OWIPassword = v
+	} else if v := ParseString("RECEIVER_PASS", ""); v != "" {
+		logDeprecatedEnvAlias("RECEIVER_PASS", "XG2G_OWI_PASS")
+		cfg.OWIPassword = v
+	}
 	cfg.StreamPort = ParseInt("XG2G_STREAM_PORT", cfg.StreamPort)
 	cfg.UseWebIFStreams = ParseBool("XG2G_USE_WEBIF_STREAMS", cfg.UseWebIFStreams)
 

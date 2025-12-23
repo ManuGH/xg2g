@@ -16,6 +16,8 @@ xg2g has **excellent architecture** (9/10) but requires **critical fixes** befor
 
 **Est. Engineering Effort:** 15-20 days (1 senior engineer)
 
+> **Note:** V3 control plane endpoints are **experimental/preview** and exposed under `/api/v3/*`.
+
 ---
 
 ## 🎯 SPRINT 1: CRITICAL FIXES (Week 1-2)
@@ -540,7 +542,7 @@ var v3RequestDuration = promauto.NewHistogramVec(
 
 func V3MetricsMiddleware(next http.Handler) http.Handler {
     return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        if !strings.HasPrefix(r.URL.Path, "/v3/") {
+        if !strings.HasPrefix(r.URL.Path, "/api/v3/") {
             next.ServeHTTP(w, r)
             return
         }

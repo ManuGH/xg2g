@@ -41,6 +41,8 @@ import (
 	"github.com/ManuGH/xg2g/internal/v3/store"
 	"github.com/go-chi/chi/v5"
 	"golang.org/x/sync/singleflight"
+
+	"github.com/ManuGH/xg2g/internal/resilience"
 )
 
 //go:embed dist/*
@@ -54,7 +56,7 @@ type Server struct {
 	snap           config.Snapshot
 	configHolder   ConfigHolder
 	status         jobs.Status
-	cb             *CircuitBreaker
+	cb             *resilience.CircuitBreaker
 	hdhr           *hdhr.Server      // HDHomeRun emulation server
 	auditLogger    AuditLogger       // Optional: for audit logging
 	healthManager  *health.Manager   // Health and readiness checks
@@ -217,8 +219,9 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager) *Server {
 
 	// Default refresh function
 	s.refreshFn = jobs.Refresh
+	s.refreshFn = jobs.Refresh
 	// Initialize a conservative default circuit breaker (3 failures -> 30s open)
-	s.cb = NewCircuitBreaker(3, 30*time.Second)
+	s.cb = resilience.NewCircuitBreaker("api_refresh", 3, 30*time.Second, resilience.WithPanicRecovery(true))
 
 	// Initialize HDHomeRun emulation if enabled
 	logger := log.WithComponent("api")
@@ -490,7 +493,7 @@ func (s *Server) routes() http.Handler {
 	r.Get("/stream/{ref}/preflight", s.handleStreamPreflight)
 	r.Handle("/stream/*", s.authRequired(s.handleStreamProxy))
 
-	// Phase 7A: v3 Control Plane (Shadow Canary Endpoint)
+	// Phase 7A: v3 Control Plane (experimental/preview, /api/v3/*)
 	r.Post("/api/v3/intents", s.handleV3Intents)
 	r.Get("/api/v3/sessions", s.handleV3SessionsDebug)
 	r.Get("/api/v3/sessions/{sessionID}/hls/{filename}", s.handleV3HLS)
@@ -729,7 +732,7 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	var st *jobs.Status
 	// Run the refresh via circuit breaker; it will mark failures and handle panics
-	err := s.cb.Call(func() error {
+	err := s.cb.Execute(func() error {
 		var err error
 		st, err = s.refreshFn(jobCtx, snap)
 		return err
@@ -744,7 +747,7 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Distinguish open circuit (fast-fail) from internal error
-		if errors.Is(err, errCircuitOpen) {
+		if errors.Is(err, resilience.ErrCircuitOpen) {
 			logger.Warn().
 				Str("event", "refresh.circuit_open").
 				Int64("duration_ms", duration.Milliseconds()).

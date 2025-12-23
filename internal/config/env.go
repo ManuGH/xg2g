@@ -35,23 +35,7 @@ func ParseStringWithAlias(primaryKey, aliasKey, defaultValue string) string {
 
 	// Check alias key (user-friendly alternative)
 	if value, exists := os.LookupEnv(aliasKey); exists && value != "" {
-		// Log that alias is being used
-		lowerKey := strings.ToLower(aliasKey)
-		if strings.Contains(lowerKey, "password") {
-			logger.Debug().
-				Str("key", aliasKey).
-				Str("alias_for", primaryKey).
-				Str("source", "environment_alias").
-				Bool("sensitive", true).
-				Msg("using environment variable alias")
-		} else {
-			logger.Debug().
-				Str("key", aliasKey).
-				Str("alias_for", primaryKey).
-				Str("value", value).
-				Str("source", "environment_alias").
-				Msg("using environment variable alias")
-		}
+		logDeprecatedEnvAlias(aliasKey, primaryKey)
 		return value
 	}
 
@@ -63,6 +47,15 @@ func ParseStringWithAlias(primaryKey, aliasKey, defaultValue string) string {
 		Str("source", "default").
 		Msg("using default value")
 	return defaultValue
+}
+
+func logDeprecatedEnvAlias(aliasKey, primaryKey string) {
+	logger := log.WithComponent("config")
+	logger.Warn().
+		Str("key", aliasKey).
+		Str("alias_for", primaryKey).
+		Str("remove_in", "v2.2").
+		Msg("deprecated environment variable alias in use")
 }
 
 // parseStringWithLogger reads an environment variable with custom logger.

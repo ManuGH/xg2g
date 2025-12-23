@@ -9,9 +9,6 @@ package api
 import (
 	"encoding/json"
 	"net/http"
-	"strconv"
-	"strings"
-	"time"
 
 	"github.com/ManuGH/xg2g/internal/log"
 )
@@ -30,59 +27,6 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 			Err(err).
 			Int("status", code).
 			Msg("failed to encode JSON response - client may receive partial data")
-	}
-}
-
-// writeError writes a generic error response
-//
-//nolint:unused // Legacy function - kept for future use
-func writeError(w http.ResponseWriter, err error) {
-	writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-}
-
-// writeUnauthorized writes a 401 Unauthorized response
-//
-//nolint:unused // Legacy function - kept for future use
-func writeUnauthorized(w http.ResponseWriter) {
-	writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
-}
-
-// writeForbidden writes a 403 Forbidden response
-//
-//nolint:unused // Legacy function - kept for future use
-func writeForbidden(w http.ResponseWriter) {
-	writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
-}
-
-// writeNotFound writes a 404 Not Found response
-//
-//nolint:unused // Legacy function - kept for future use
-func writeNotFound(w http.ResponseWriter) {
-	writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
-}
-
-// writeServiceUnavailable writes a 503 Service Unavailable response
-//
-//nolint:unused // Legacy function - kept for future use
-func writeServiceUnavailable(w http.ResponseWriter, err error) {
-	writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
-}
-
-// setDownloadHeaders sets appropriate headers for file downloads
-//
-//nolint:unused // Legacy function - kept for future use
-func setDownloadHeaders(w http.ResponseWriter, name string, size int64, mod time.Time) {
-	w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
-	w.Header().Set("Last-Modified", mod.UTC().Format(http.TimeFormat))
-
-	// Set Content-Type based on file extension
-	switch {
-	case strings.HasSuffix(name, ".m3u"), strings.HasSuffix(name, ".m3u8"):
-		w.Header().Set("Content-Type", "audio/x-mpegurl")
-	case strings.HasSuffix(name, ".xml"):
-		w.Header().Set("Content-Type", "application/xml")
-	default:
-		w.Header().Set("Content-Type", "application/octet-stream")
 	}
 }
 

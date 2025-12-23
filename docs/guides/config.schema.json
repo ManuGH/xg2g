@@ -9,8 +9,8 @@
     "version": {
       "type": "string",
       "description": "Configuration version identifier",
-      "default": "1",
-      "examples": ["1"]
+      "default": "2.1.0",
+      "examples": ["2.1.0"]
     },
     "dataDir": {
       "type": "string",

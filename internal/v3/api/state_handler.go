@@ -15,7 +15,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/v3/store"
 )
 
-// NewStateHandler returns an http.Handler that serves GET /v3/sessions/{id}.
+// NewStateHandler returns an http.Handler that serves GET /api/v3/sessions/{id}.
 // The router can be any mux; for MVP we parse the last path element.
 func NewStateHandler(st store.StateStore) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -24,7 +24,7 @@ func NewStateHandler(st store.StateStore) http.Handler {
 			return
 		}
 
-		id := strings.TrimPrefix(r.URL.Path, "/v3/sessions/")
+		id := strings.TrimPrefix(r.URL.Path, "/api/v3/sessions/")
 		id = strings.Trim(id, "/")
 		if id == "" {
 			http.Error(w, "missing session id", http.StatusBadRequest)

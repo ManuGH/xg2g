@@ -57,7 +57,7 @@ func TestV3Flow(t *testing.T) {
 	t.Run("Happy Path: Intent -> Ready", func(t *testing.T) {
 		// Act: Send Intent
 		reqBody := `{"serviceRef": "1:0:1:...:TestService", "profile": "web_opt"}`
-		req := httptest.NewRequest("POST", "/v3/intents", strings.NewReader(reqBody))
+		req := httptest.NewRequest("POST", "/api/v3/intents", strings.NewReader(reqBody))
 		w := httptest.NewRecorder()
 		intentHandler.ServeHTTP(w, req)
 
@@ -102,7 +102,7 @@ func TestV3Flow(t *testing.T) {
 
 		// First Call
 		w1 := httptest.NewRecorder()
-		r1 := httptest.NewRequest("POST", "/v3/intents", strings.NewReader(reqBody))
+		r1 := httptest.NewRequest("POST", "/api/v3/intents", strings.NewReader(reqBody))
 		// We can set Header too
 		// r1.Header.Set("Idempotency-Key", key)
 		intentHandler.ServeHTTP(w1, r1)
@@ -112,7 +112,7 @@ func TestV3Flow(t *testing.T) {
 
 		// Second Call
 		w2 := httptest.NewRecorder()
-		r2 := httptest.NewRequest("POST", "/v3/intents", strings.NewReader(reqBody))
+		r2 := httptest.NewRequest("POST", "/api/v3/intents", strings.NewReader(reqBody))
 		intentHandler.ServeHTTP(w2, r2)
 
 		var resp2 api.IntentResponse
@@ -143,7 +143,7 @@ func TestV3Flow(t *testing.T) {
 		// Send Intent
 		reqBody := `{"serviceRef": "` + svc + `", "profile": "web_opt"}`
 		w := httptest.NewRecorder()
-		intentHandler.ServeHTTP(w, httptest.NewRequest("POST", "/v3/intents", strings.NewReader(reqBody)))
+		intentHandler.ServeHTTP(w, httptest.NewRequest("POST", "/api/v3/intents", strings.NewReader(reqBody)))
 
 		var resp api.IntentResponse
 		_ = json.NewDecoder(w.Body).Decode(&resp)

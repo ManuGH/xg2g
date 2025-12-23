@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.0] - 2025-12-30
+
+### Changed
+
+- **Version alignment**: Bumped binary/OpenAPI/config schema/example to v2.1.0.
+- **Docs**: Marked v3 as experimental/preview and normalized references to `/api/v3`.
+- **Config**: Legacy environment variable aliases are deprecated, emit warnings, and are scheduled for removal in v2.2.
+
+## [2.0.1] - 2025-12-23
+
 ### Security
 
 - **[BREAKING] Query parameter authentication disabled by default**

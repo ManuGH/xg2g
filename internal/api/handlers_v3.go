@@ -18,7 +18,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/v3/model"
 )
 
-// handleV3Intents handles POST /api/v3/intents (Shadow Canary & Future Control Plane).
+// handleV3Intents handles POST /api/v3/intents (experimental/preview control plane).
 func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	// 0. Hardening: Limit Request Size (1MB)
 	r.Body = http.MaxBytesReader(w, r.Body, 1048576)

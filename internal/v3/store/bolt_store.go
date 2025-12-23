@@ -60,7 +60,7 @@ func OpenBoltStore(path string) (*BoltStore, error) {
 	// Ensure directory exists?
 	// User Requirement: "nicht automatisch erstellen (klarer Operator contract), aber: wenn directory fehlt -> error"
 	// os.MkdirAll(filepath.Dir(path), 0750)
-	// We will trust the operator created the dir.
+	// We expect the operator to create the data directory.
 	// But we should construct the full path if 'path' is a directory.
 
 	info, err := os.Stat(path)

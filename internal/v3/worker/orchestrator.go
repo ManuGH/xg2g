@@ -163,7 +163,7 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 		// Calculate final metrics
 		// Determine Outcome
 		finalState := model.SessionFailed
-		reason := model.RFFmpegExited
+		reason := model.RProcessEnded
 		detail := ""
 
 		if retErr == nil {

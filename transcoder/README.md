@@ -52,7 +52,7 @@ Health check with VAAPI status.
 {
   "status": "ok",
   "vaapi_available": true,
-  "version": "2.0.0"
+  "version": "2.0.1"
 }
 ```
 

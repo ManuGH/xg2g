@@ -1,5 +1,7 @@
 # Phase 9-3: Cleanup & Garbage Collection Walkthrough
 
+> **Note:** The v3 control plane is **experimental/preview** and is served under `/api/v3/*`.
+
 ## Overview
 
 This phase implements robust lifecycle cleanup for HLS sessions to prevent disk exhaustion and store bloat. It handles both "friendly" termination and "orphaned" artifacts left by crashes or restart loops.

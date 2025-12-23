@@ -21,6 +21,6 @@ The following configuration keys were previously auto-migrated but have now been
 | `epg` | `xmltv` | `xmltvPath` | |
 | Root | `xmltv` | `epg.xmltvPath` | Moved to `epg` section |
 
-## Removed Environment Variable Overrides
+## Deprecated Environment Variable Aliases
 
-Matching environment variables for the above legacy keys (e.g., `XG2G_OPENWEBIF_BASE`, `XG2G_OPENWEBIF_TIMEOUT_MS`) are also no longer supported. Use the standard mapping for new keys (e.g., `XG2G_OPENWEBIF_BASEURL`, `XG2G_OPENWEBIF_TIMEOUT`).
+Some legacy environment variable aliases are still accepted for backward compatibility (e.g., `RECEIVER_IP`, `RECEIVER_USER`, `RECEIVER_PASS`, `XG2G_API_ADDR`, `XG2G_METRICS_ADDR`, `XG2G_PICONS_BASE`, `XG2G_EPG_XMLTV_PATH`). These emit startup warnings and will be removed in **v2.2**. Use canonical names instead (e.g., `XG2G_OWI_BASE`, `XG2G_OWI_USER`, `XG2G_OWI_PASS`, `XG2G_LISTEN`, `XG2G_METRICS_LISTEN`, `XG2G_PICON_BASE`, `XG2G_XMLTV`).

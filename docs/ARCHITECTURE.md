@@ -510,5 +510,5 @@ To prevent regression of encrypted channel support, all developers must adhere t
 ---
 
 **Last Updated**: 2025-12-19
-**Version**: 2.0.0
+**Version**: 2.1.0
 **Maintainer**: @ManuGH

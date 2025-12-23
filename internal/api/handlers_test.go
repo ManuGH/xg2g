@@ -17,6 +17,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/hdhr"
 	"github.com/ManuGH/xg2g/internal/jobs"
+	"github.com/ManuGH/xg2g/internal/resilience"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -63,7 +64,7 @@ func TestHandleRefreshInternal(t *testing.T) {
 		cfg:       cfg,
 		snap:      config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault()),
 		refreshFn: mockRefreshFn,
-		cb:        NewCircuitBreaker(3, 5*time.Second),
+		cb:        resilience.NewCircuitBreaker("test", 3, 5*time.Second),
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/refresh", nil)
