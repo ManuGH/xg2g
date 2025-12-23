@@ -4,7 +4,7 @@
 
 //go:build schemacheck
 
-// SPDX-License-Identifier: MIT
+// Since v2.0.0, this software is restricted to non-commercial use only.
 
 package config
 

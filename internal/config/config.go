@@ -145,12 +145,31 @@ type AppConfig struct {
 	ReadyStrict          bool   // Enable strict readiness checks (check upstream availability)
 	ShadowIntentsEnabled bool   // v3 Shadow Canary: mirror intents to v3 API (default OFF)
 	ShadowTarget         string // v3 Shadow Canary: target URL (e.g. http://localhost:8080/api/v3/intents)
-	RateLimitEnabled     bool   // Enable rate limiting
-	RateLimitGlobal      int    // Requests per second (global)
-	RateLimitAuth        int    // Requests per minute (auth)
-	RateLimitBurst       int
-	RateLimitWhitelist   []string
-	AllowedOrigins       []string
+
+	// v3 Worker Config
+	WorkerEnabled bool   // Enable v3 Worker
+	WorkerMode    string // "standard" or "virtual" (dry-run)
+	StoreBackend  string // "memory" or "bolt"
+	StorePath     string // Path to v3 store data
+	TunerSlots    []int  // Parsed tuner slots (e.g. [0, 1])
+
+	// Enigma2 Config (Phase 8-3)
+	E2Host        string
+	E2TuneTimeout time.Duration
+
+	// FFmpeg Config (Phase 8-4)
+	FFmpegBin         string
+	FFmpegKillTimeout time.Duration
+
+	// HLS Config (Phase 8-5)
+	HLSRoot string // e.g. /var/lib/xg2g/v3-hls
+
+	RateLimitEnabled   bool // Enable rate limiting
+	RateLimitGlobal    int  // Requests per second (global)
+	RateLimitAuth      int  // Requests per minute (auth)
+	RateLimitBurst     int
+	RateLimitWhitelist []string
+	AllowedOrigins     []string
 
 	// Stream Proxy
 	MaxConcurrentStreams int // Maximum concurrent streams allowed (DoS protection)
@@ -540,6 +559,27 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	cfg.ReadyStrict = ParseBool("XG2G_READY_STRICT", cfg.ReadyStrict)
 	cfg.ShadowIntentsEnabled = ParseBool("XG2G_V3_SHADOW_INTENTS", cfg.ShadowIntentsEnabled)
 	cfg.ShadowTarget = ParseString("XG2G_V3_SHADOW_TARGET", cfg.ShadowTarget)
+
+	cfg.WorkerEnabled = ParseBool("XG2G_V3_WORKER_ENABLED", cfg.WorkerEnabled)
+	cfg.WorkerMode = ParseString("XG2G_V3_WORKER_MODE", "standard")
+	cfg.StoreBackend = ParseString("XG2G_V3_STORE_BACKEND", "memory")
+	cfg.StorePath = ParseString("XG2G_V3_STORE_PATH", "/var/lib/xg2g/v3-store")
+
+	if slots, err := ParseTunerSlots(os.Getenv("XG2G_V3_TUNER_SLOTS")); err == nil {
+		cfg.TunerSlots = slots
+	}
+	// Defaulting Rule: Virtual Mode defaults to [0] if empty
+	if len(cfg.TunerSlots) == 0 && cfg.WorkerMode == "virtual" {
+		cfg.TunerSlots = []int{0}
+	}
+
+	cfg.E2Host = ParseString("XG2G_V3_E2_HOST", "http://localhost")
+	cfg.E2TuneTimeout = ParseDuration("XG2G_V3_TUNE_TIMEOUT", 10*time.Second)
+
+	cfg.FFmpegBin = ParseString("XG2G_V3_FFMPEG_BIN", "ffmpeg")
+	cfg.FFmpegKillTimeout = ParseDuration("XG2G_V3_FFMPEG_KILL_TIMEOUT", 5*time.Second)
+
+	cfg.HLSRoot = ParseString("XG2G_V3_HLS_ROOT", "/var/lib/xg2g/v3-hls")
 
 	// Rate Limiting
 	cfg.RateLimitEnabled = ParseBool("XG2G_RATELIMIT", cfg.RateLimitEnabled)

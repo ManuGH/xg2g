@@ -2,7 +2,7 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
-// SPDX-License-Identifier: MIT
+// Since v2.0.0, this software is restricted to non-commercial use only.
 
 // Package health provides health and readiness check functionality for production deployments.
 // It supports Docker HEALTHCHECK and Kubernetes probes with detailed component status.

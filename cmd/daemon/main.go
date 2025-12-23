@@ -335,15 +335,34 @@ func main() {
 
 	proxyOnlyMode := config.ParseBool("XG2G_PROXY_ONLY_MODE", false)
 
+	// v3 Worker Config
+	var v3Config *daemon.V3Config
+	if cfg.WorkerEnabled {
+		v3Config = &daemon.V3Config{
+			Enabled:           cfg.WorkerEnabled,
+			Mode:              cfg.WorkerMode,
+			StoreBackend:      cfg.StoreBackend,
+			StorePath:         cfg.StorePath,
+			TunerSlots:        cfg.TunerSlots,
+			E2Host:            cfg.E2Host,
+			E2TuneTimeout:     cfg.E2TuneTimeout,
+			FFmpegBin:         cfg.FFmpegBin,
+			FFmpegKillTimeout: cfg.FFmpegKillTimeout,
+			HLSRoot:           cfg.HLSRoot,
+		}
+	}
+
 	deps := daemon.Deps{
-		Logger:         logger,
-		Config:         cfg,
-		ConfigManager:  configMgr,
-		APIHandler:     s.Handler(),
-		MetricsHandler: promhttp.Handler(),
-		MetricsAddr:    metricsAddr,
-		ProxyConfig:    proxyConfig,
-		ProxyOnly:      proxyOnlyMode,
+		Logger:          logger,
+		Config:          cfg,
+		ConfigManager:   configMgr,
+		APIHandler:      s.Handler(),
+		APIServerSetter: s,
+		MetricsHandler:  promhttp.Handler(),
+		MetricsAddr:     metricsAddr,
+		ProxyConfig:     proxyConfig,
+		ProxyOnly:       proxyOnlyMode,
+		V3Config:        v3Config,
 	}
 
 	// Create daemon manager

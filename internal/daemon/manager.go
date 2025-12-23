@@ -2,7 +2,7 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
-// SPDX-License-Identifier: MIT
+// Since v2.0.0, this software is restricted to non-commercial use only.
 
 package daemon
 
@@ -16,6 +16,10 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/proxy"
+	memorybus "github.com/ManuGH/xg2g/internal/v3/bus"
+	"github.com/ManuGH/xg2g/internal/v3/exec"
+	"github.com/ManuGH/xg2g/internal/v3/store"
+	"github.com/ManuGH/xg2g/internal/v3/worker"
 	"github.com/rs/zerolog"
 )
 
@@ -109,6 +113,11 @@ func (m *manager) Start(ctx context.Context) error {
 		if err := m.startMetricsServer(ctx, errChan); err != nil {
 			return fmt.Errorf("failed to start metrics server: %w", err)
 		}
+	}
+
+	// Phase 7A: Start v3 Worker (if enabled)
+	if m.deps.V3Config != nil && m.deps.V3Config.Enabled {
+		m.startV3Worker(ctx, errChan)
 	}
 
 	// Start main API server (skip in proxy-only mode)
@@ -270,7 +279,70 @@ func (m *manager) startProxyServer(_ context.Context, errChan chan<- error) erro
 	return nil
 }
 
-// Shutdown gracefully shuts down all servers with the configured timeout.
+// startV3Worker initializes v3 Bus, Store, and Orchestrator
+func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error {
+	cfg := m.deps.V3Config
+	// Use INFO level for visibility during canary
+	m.logger.Info().
+		Str("mode", cfg.Mode).
+		Str("store", cfg.StorePath).
+		Msg("starting v3 worker (Phase 7A)")
+
+	// 1. Initialize Bus (Memory for MVP)
+	v3Bus := memorybus.NewMemoryBus()
+
+	// 2. Initialize Store (Factory)
+	v3Store, err := store.OpenStateStore(m.deps.V3Config.StoreBackend, m.deps.V3Config.StorePath)
+	if err != nil {
+		m.logger.Error().Err(err).Msg("failed to open v3 store")
+		return err
+	}
+
+	// Phase 7B-2: Register Shutdown Hook for Store
+	if c, ok := v3Store.(interface{ Close() error }); ok {
+		m.RegisterShutdownHook("v3_store_close", func(ctx context.Context) error {
+			return c.Close()
+		})
+	}
+
+	// 3. Initialize Orchestrator
+	orch := &worker.Orchestrator{
+		Store:          v3Store,
+		Bus:            v3Bus,
+		LeaseTTL:       30 * time.Second,
+		HeartbeatEvery: 10 * time.Second,
+		VirtualMode:    cfg.Mode == "virtual",
+		TunerSlots:     cfg.TunerSlots,
+	}
+
+	// Phase 8-3: Factory Wiring
+	if cfg.Mode == "virtual" {
+		orch.ExecFactory = &exec.StubFactory{}
+	} else {
+		orch.ExecFactory = exec.NewRealFactory(cfg.E2Host, cfg.E2TuneTimeout, cfg.FFmpegBin, cfg.HLSRoot)
+	}
+
+	// 4. Inject into API Server (Shadow Receiving)
+	if m.deps.APIServerSetter != nil {
+		m.deps.APIServerSetter.SetV3Components(v3Bus, v3Store)
+		m.logger.Info().Msg("v3 components injected into API server")
+	} else {
+		m.logger.Warn().Msg("API Server Setter not available - shadow intents will not be processed")
+	}
+
+	// 5. Run Orchestrator
+	go func() {
+		// Orchestrator.Run returns error on exit
+		if err := orch.Run(ctx); err != nil {
+			if err != context.Canceled {
+				m.logger.Error().Err(err).Msg("v3 worker orchestrator exited unexpected")
+				errChan <- fmt.Errorf("v3 worker: %w", err)
+			}
+		}
+	}()
+
+	return nil
+}
 func (m *manager) Shutdown(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

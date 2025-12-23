@@ -37,6 +37,8 @@ import (
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/proxy"
+	"github.com/ManuGH/xg2g/internal/v3/bus"
+	"github.com/ManuGH/xg2g/internal/v3/store"
 	"github.com/go-chi/chi/v5"
 	"golang.org/x/sync/singleflight"
 )
@@ -77,6 +79,10 @@ type Server struct {
 	owiEpoch  uint64
 
 	proxy ProxyServer // Interface for proxy interactions
+
+	// v3 Integration
+	v3Bus   bus.Bus
+	v3Store store.StateStore
 }
 
 // ProxyServer defines the interface for proxy interactions required by the API.
@@ -484,6 +490,11 @@ func (s *Server) routes() http.Handler {
 	r.Get("/stream/{ref}/preflight", s.handleStreamPreflight)
 	r.Handle("/stream/*", s.authRequired(s.handleStreamProxy))
 
+	// Phase 7A: v3 Control Plane (Shadow Canary Endpoint)
+	r.Post("/api/v3/intents", s.handleV3Intents)
+	r.Get("/api/v3/sessions", s.handleV3SessionsDebug)
+	r.Get("/api/v3/sessions/{sessionID}/hls/{filename}", s.handleV3HLS)
+
 	// Harden file server: disable directory listing and use a secure handler
 	r.Handle("/files/*", http.StripPrefix("/files/", s.secureFileServer()))
 	return r
@@ -651,6 +662,14 @@ func (s *Server) SetProxy(p ProxyServer) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.proxy = p
+}
+
+// SetV3Components configures v3 event bus and store
+func (s *Server) SetV3Components(b bus.Bus, st store.StateStore) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.v3Bus = b
+	s.v3Store = st
 }
 
 // HandleRefreshInternal exposes the refresh handler for versioned APIs
