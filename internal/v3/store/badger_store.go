@@ -281,7 +281,10 @@ func (s *BadgerStore) TryAcquireLease(ctx context.Context, leaseKey, owner strin
 		return txn.SetEntry(entry)
 	})
 	if err != nil {
-		return nil, false, nil
+		if err.Error() == "lease held" {
+			return nil, false, nil
+		}
+		return nil, false, err
 	}
 	return &badgerLease{s: s, leaseKey: leaseKey, owner: owner, ttl: ttl, expiresAt: exp}, true, nil
 }
@@ -326,9 +329,10 @@ func (s *BadgerStore) RenewLease(ctx context.Context, leaseKey, owner string, tt
 		if err == badger.ErrKeyNotFound {
 			return nil, false, nil
 		}
-		// If owned by other, we treat as false? Or error? Interface says (Lease, bool, error).
-		// Usually bool=false implies "failed to acquire/renew".
-		return nil, false, nil
+		if err.Error() == "lease owned by other" {
+			return nil, false, nil
+		}
+		return nil, false, err
 	}
 	return &badgerLease{s: s, leaseKey: leaseKey, owner: owner, ttl: ttl, expiresAt: exp}, true, nil
 }

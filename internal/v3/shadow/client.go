@@ -35,32 +35,68 @@ type Config struct {
 
 // Client is a dedicated HTTP client for firing shadow intents.
 // It is designed to be fail-safe, non-blocking, and isolated from the main path.
+// Client is a dedicated HTTP client for firing shadow intents.
+// It is designed to be fail-safe, non-blocking, and isolated from the main path.
 type Client struct {
 	httpClient *http.Client
 	cfg        Config
 	logger     zerolog.Logger
+	queue      chan shadowJob
+}
+
+type shadowJob struct {
+	ctx        context.Context
+	serviceRef string
+	profile    string
+	clientIP   string
 }
 
 // New creates a new Shadow Client with a strict 50ms timeout.
 func New(cfg Config) *Client {
-	return &Client{
+	c := &Client{
 		cfg: cfg,
 		httpClient: &http.Client{
 			// Strict hard timeout to prevent goroutine pile-up
 			Timeout: 50 * time.Millisecond,
 			Transport: &http.Transport{
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 100,
-				IdleConnTimeout:     90 * time.Second,
-				DisableKeepAlives:   false, // KeepAlive essential for latency
+				MaxIdleConns:          100,
+				MaxIdleConnsPerHost:   100,
+				IdleConnTimeout:       90 * time.Second,
+				TLSHandshakeTimeout:   50 * time.Millisecond,
+				ResponseHeaderTimeout: 50 * time.Millisecond,
+				ExpectContinueTimeout: 50 * time.Millisecond,
+				DisableKeepAlives:     false, // KeepAlive essential for latency
 			},
 		},
 		logger: log.WithComponent("v3-shadow"),
+		queue:  make(chan shadowJob, 100), // Buffer of 100 pending intents
 	}
+	c.startWorker()
+	return c
+}
+
+func (c *Client) startWorker() {
+	go func() {
+		for job := range c.queue {
+			// Create a fresh context for execution (detached from Fire's context)
+			// We use a short timeout for the actual request
+			ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+			err := c.execute(ctx, job.serviceRef, job.profile, job.clientIP)
+			cancel() // Always cancel
+
+			if err != nil {
+				shadowIntentsTotal.WithLabelValues("error").Inc()
+				// Log at debug level to avoid noise in production
+				c.logger.Debug().Err(err).Msg("shadow intent failed")
+			} else {
+				shadowIntentsTotal.WithLabelValues("sent").Inc()
+			}
+		}
+	}()
 }
 
 // Fire (Fire-and-Forget) triggers a shadow intent asynchronously.
-// It returns immediately and handles the request in a goroutine.
+// It returns immediately. If the queue is full, it drops the intent.
 func (c *Client) Fire(ctx context.Context, serviceRef, profile, clientIP string) {
 	if !c.cfg.Enabled {
 		shadowIntentsTotal.WithLabelValues("disabled").Inc()
@@ -71,22 +107,13 @@ func (c *Client) Fire(ctx context.Context, serviceRef, profile, clientIP string)
 		return
 	}
 
-	// Capture values for async execution
-	go func() {
-		// Create a detached context with timeout to ensure we don't leak
-		// We do NOT use the parent ctx because this is fire-and-forget.
-		asyncCtx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-		defer cancel()
-
-		err := c.execute(asyncCtx, serviceRef, profile, clientIP)
-		if err != nil {
-			shadowIntentsTotal.WithLabelValues("error").Inc()
-			// Log at debug level to avoid noise in production
-			c.logger.Debug().Err(err).Msg("shadow intent failed")
-		} else {
-			shadowIntentsTotal.WithLabelValues("sent").Inc()
-		}
-	}()
+	select {
+	case c.queue <- shadowJob{ctx: ctx, serviceRef: serviceRef, profile: profile, clientIP: clientIP}:
+		// Enqueued
+	default:
+		// Queue full, drop
+		shadowIntentsTotal.WithLabelValues("dropped").Inc()
+	}
 }
 
 func (c *Client) execute(ctx context.Context, serviceRef, profile, clientIP string) error {
