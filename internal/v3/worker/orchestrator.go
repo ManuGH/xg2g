@@ -177,8 +177,13 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 }
 
 func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEvent) (retErr error) {
+	started := false
+
 	// 0. Unified Finalization (Always Runs)
 	defer func() {
+		if !started {
+			return
+		}
 		// Determine Outcome
 		finalState := model.SessionFailed
 		reason := model.RFFmpegExited
@@ -303,6 +308,7 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 		jobsTotal.WithLabelValues("failed_starting", o.modeLabel()).Inc()
 		return err
 	}
+	started = true
 
 	// 2. Perform Work (Execution Contracts)
 	tuner, err := o.ExecFactory.NewTuner(slot)

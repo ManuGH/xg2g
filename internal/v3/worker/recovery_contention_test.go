@@ -72,7 +72,7 @@ func TestContention_Blocked(t *testing.T) {
 
 	sB, err := st.GetSession(ctx, sessB)
 	require.NoError(t, err)
-	assert.Equal(t, model.SessionStopped, sB.State, "Session B should be STOPPED due to Tuner contention")
+	assert.Equal(t, model.SessionNew, sB.State, "Session B should remain NEW due to Tuner contention")
 }
 
 // TestRecovery_StaleTunerLease verifies that a stale session holding a tuner slot
