@@ -35,8 +35,6 @@ type Config struct {
 
 // Client is a dedicated HTTP client for firing shadow intents.
 // It is designed to be fail-safe, non-blocking, and isolated from the main path.
-// Client is a dedicated HTTP client for firing shadow intents.
-// It is designed to be fail-safe, non-blocking, and isolated from the main path.
 type Client struct {
 	httpClient *http.Client
 	cfg        Config
