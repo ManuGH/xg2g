@@ -1,6 +1,3 @@
-//go:build v3
-// +build v3
-
 // Copyright (c) 2025 ManuGH
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
@@ -21,7 +18,7 @@ var errLeaseHeld = errors.New("lease already held")
 // MemoryStore is an in-memory StateStore intended for tests and local iteration.
 // Not durable; not suitable for production.
 type MemoryStore struct {
-	mu sync.Mutex
+	mu sync.RWMutex
 
 	sessions  map[string]*model.SessionRecord
 	pipelines map[string]*model.PipelineRecord
@@ -141,11 +138,58 @@ func (l *memoryLease) Key() string          { return l.key }
 func (l *memoryLease) Owner() string        { return l.owner }
 func (l *memoryLease) ExpiresAt() time.Time { return l.exp }
 
+// ListSessions returns all sessions (Debug/Admin).
+func (m *MemoryStore) ListSessions(ctx context.Context) ([]*model.SessionRecord, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	var list []*model.SessionRecord
+	for _, rec := range m.sessions {
+		// Return copy
+		cp := *rec
+		list = append(list, &cp)
+	}
+	return list, nil
+}
+
 func (m *MemoryStore) PutSession(ctx context.Context, rec *model.SessionRecord) error {
 	m.mu.Lock()
 	cpy := *rec
 	m.sessions[rec.SessionID] = &cpy
 	m.mu.Unlock()
+	return nil
+}
+
+func (m *MemoryStore) PutSessionWithIdempotency(ctx context.Context, s *model.SessionRecord, idemKey string, ttl time.Duration) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// 1. Write Session
+	cpy := *s
+	m.sessions[s.SessionID] = &cpy
+
+	// 2. Write Idempotency
+	if idemKey != "" {
+		deadline := time.Now().Add(ttl)
+		m.idem[idemKey] = idemState{sessionID: s.SessionID, exp: deadline}
+	}
+	return nil
+}
+
+func (m *MemoryStore) ScanSessions(ctx context.Context, fn func(*model.SessionRecord) error) error {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	for _, rec := range m.sessions {
+		// Pass copy to avoid concurrent modification issues during callback?
+		// But callback might be long running?
+		// For Scan, usually we hold read lock, or copy all keys.
+		// MVP: Hold RLock (fast scan).
+		cpy := *rec
+		if err := fn(&cpy); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -159,6 +203,13 @@ func (m *MemoryStore) GetSession(ctx context.Context, sessionID string) (*model.
 	cpy := *rec
 	m.mu.Unlock()
 	return &cpy, nil
+}
+
+func (m *MemoryStore) DeleteSession(ctx context.Context, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.sessions, id)
+	return nil
 }
 
 func (m *MemoryStore) PutPipeline(ctx context.Context, rec *model.PipelineRecord) error {

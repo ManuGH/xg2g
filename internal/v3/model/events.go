@@ -22,3 +22,11 @@ type StartSessionEvent struct {
 	ProfileID     string    `json:"profileId"`
 	RequestedAtUN int64     `json:"requestedAtUnix"`
 }
+
+// StopSessionEvent is emitted when a stop intent is received.
+type StopSessionEvent struct {
+	Type          EventType  `json:"type"`
+	SessionID     string     `json:"sessionId"`
+	Reason        ReasonCode `json:"reason,omitempty"`
+	RequestedAtUN int64      `json:"requestedAtUnix"`
+}

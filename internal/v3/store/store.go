@@ -1,6 +1,3 @@
-//go:build v3
-// +build v3
-
 // Copyright (c) 2025 ManuGH
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
@@ -9,9 +6,15 @@ package store
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/v3/model"
+)
+
+var (
+	ErrIdempotentReplay = errors.New("idempotent replay")
+	ErrNotFound         = errors.New("not found")
 )
 
 // Lease is a single-writer lock for a (receiver, serviceKey) or similar key.
@@ -31,8 +34,14 @@ type Lease interface {
 type StateStore interface {
 	// --- Session CRUD ---
 	PutSession(ctx context.Context, s *model.SessionRecord) error
+	// PutSessionWithIdempotency writes a session and an idempotency key atomicity (in one transaction).
+	PutSessionWithIdempotency(ctx context.Context, s *model.SessionRecord, idemKey string, ttl time.Duration) error
 	GetSession(ctx context.Context, id string) (*model.SessionRecord, error)
 	UpdateSession(ctx context.Context, id string, fn func(*model.SessionRecord) error) (*model.SessionRecord, error)
+	ListSessions(ctx context.Context) ([]*model.SessionRecord, error)
+	// ScanSessions iterates over all sessions calling fn. Safest for large datasets.
+	ScanSessions(ctx context.Context, fn func(*model.SessionRecord) error) error
+	DeleteSession(ctx context.Context, id string) error
 
 	// --- Pipeline CRUD ---
 	PutPipeline(ctx context.Context, p *model.PipelineRecord) error

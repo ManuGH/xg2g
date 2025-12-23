@@ -155,6 +155,75 @@ func (s *BadgerStore) GetSession(ctx context.Context, sessionID string) (*model.
 	return &out, nil
 }
 
+func (s *BadgerStore) DeleteSession(ctx context.Context, id string) error {
+	key := []byte("sess:" + id)
+	return s.db.Update(func(txn *badger.Txn) error {
+		return txn.Delete(key)
+	})
+}
+
+func (s *BadgerStore) PutSessionWithIdempotency(ctx context.Context, rec *model.SessionRecord, idemKey string, ttl time.Duration) error {
+	sessKey := []byte("sess:" + rec.SessionID)
+	sessBuf, err := json.Marshal(rec)
+	if err != nil {
+		return err
+	}
+
+	return s.db.Update(func(txn *badger.Txn) error {
+		// Idempotency check
+		if idemKey != "" {
+			iKey := []byte("idem:" + idemKey)
+			if _, err := txn.Get(iKey); err == nil {
+				return ErrIdempotentReplay // Already exists
+			} else if err != badger.ErrKeyNotFound {
+				return err
+			}
+			// Write Idem
+			entry := badger.NewEntry(iKey, []byte(rec.SessionID)).WithTTL(ttl)
+			if err := txn.SetEntry(entry); err != nil {
+				return err
+			}
+		}
+		// Write Session
+		return txn.Set(sessKey, sessBuf)
+	})
+}
+
+func (s *BadgerStore) ListSessions(ctx context.Context) ([]*model.SessionRecord, error) {
+	var list []*model.SessionRecord
+	err := s.ScanSessions(ctx, func(r *model.SessionRecord) error {
+		list = append(list, r)
+		return nil
+	})
+	return list, err
+}
+
+func (s *BadgerStore) ScanSessions(ctx context.Context, fn func(*model.SessionRecord) error) error {
+	prefix := []byte("sess:")
+	return s.db.View(func(txn *badger.Txn) error {
+		it := txn.NewIterator(badger.DefaultIteratorOptions)
+		defer it.Close()
+		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+			}
+			item := it.Item()
+			var rec model.SessionRecord
+			if err := item.Value(func(val []byte) error {
+				return json.Unmarshal(val, &rec)
+			}); err != nil {
+				continue
+			}
+			if err := fn(&rec); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 func (s *BadgerStore) PutIdempotency(ctx context.Context, idemKey, sessionID string, ttl time.Duration) error {
 	key := []byte("idem:" + idemKey)
 	entry := badger.NewEntry(key, []byte(sessionID)).WithTTL(ttl)

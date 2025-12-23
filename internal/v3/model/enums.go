@@ -4,19 +4,48 @@
 
 package model
 
+import "time"
+
 // SessionState is the client-visible lifecycle for a session ticket.
 // It is intentionally coarse-grained and stable across profiles.
 type SessionState string
+type ProfileID string
 
 const (
-	SessionNew       SessionState = "NEW"
+	SessionNew     SessionState = "NEW"
+	SessionUnknown SessionState = "UNKNOWN"
+
+	// Context Keys
+	CtxKeyTunerSlot = "tuner_slot"
+)
+
+// ExitStatus describes how a Transcoder process ended.
+// Moved here from exec package to avoid import cycles.
+type ExitStatus struct {
+	Code      int
+	Reason    string
+	StartedAt time.Time
+	EndedAt   time.Time
+}
+
+const (
 	SessionStarting  SessionState = "STARTING"
 	SessionReady     SessionState = "READY"
 	SessionDraining  SessionState = "DRAINING"
 	SessionStopping  SessionState = "STOPPING"
 	SessionFailed    SessionState = "FAILED"
 	SessionCancelled SessionState = "CANCELLED"
+	SessionStopped   SessionState = "STOPPED"
 )
+
+// IsTerminal returns true if the state is a final state.
+func (s SessionState) IsTerminal() bool {
+	switch s {
+	case SessionFailed, SessionCancelled, SessionStopped:
+		return true
+	}
+	return false
+}
 
 // PipelineState is the internal worker lifecycle.
 // This is where “real truth” lives for tuning, FFmpeg, packaging, etc.
@@ -54,6 +83,7 @@ const (
 	RPackagerFailed     ReasonCode = "R_PACKAGER_FAILED"
 	RCancelled          ReasonCode = "R_CANCELLED"
 	RIdleTimeout        ReasonCode = "R_IDLE_TIMEOUT"
+	RClientStop         ReasonCode = "R_CLIENT_STOP"
 )
 
 // ProfileSpec is data-driven and future-proof (VisionOS, embedded clients, etc.).
@@ -66,17 +96,18 @@ type ProfileSpec struct {
 
 // SessionRecord is the state-store source of truth for client-visible state.
 type SessionRecord struct {
-	SessionID     string        `json:"sessionId"`
-	ServiceRef    string        `json:"serviceRef"`
-	Profile       ProfileSpec   `json:"profile"`
-	State         SessionState  `json:"state"`
-	PipelineState PipelineState `json:"pipelineState"`
-	Reason        ReasonCode    `json:"reason"`
-	ReasonDetail  string        `json:"reasonDetail,omitempty"`
-	CorrelationID string        `json:"correlationId"`
-	CreatedAtUnix int64         `json:"createdAtUnix"`
-	UpdatedAtUnix int64         `json:"updatedAtUnix"`
-	ExpiresAtUnix int64         `json:"expiresAtUnix"` // TTL for garbage collection.
+	SessionID     string            `json:"sessionId"`
+	ServiceRef    string            `json:"serviceRef"`
+	Profile       ProfileSpec       `json:"profile"`
+	State         SessionState      `json:"state"`
+	PipelineState PipelineState     `json:"pipelineState"`
+	Reason        ReasonCode        `json:"reason"`
+	ReasonDetail  string            `json:"reasonDetail,omitempty"`
+	CorrelationID string            `json:"correlationId"`
+	CreatedAtUnix int64             `json:"createdAtUnix"`
+	UpdatedAtUnix int64             `json:"updatedAtUnix"`
+	ExpiresAtUnix int64             `json:"expiresAtUnix"` // TTL for garbage collection.
+	ContextData   map[string]string `json:"contextData,omitempty"`
 }
 
 // PipelineRecord tracks the internal worker state.
@@ -102,6 +133,7 @@ const (
 // Intent represents a user desire to change state (e.g., start a stream).
 type Intent struct {
 	Type       IntentType        `json:"type"`
+	SessionID  string            `json:"sessionId,omitempty"`
 	ServiceRef string            `json:"serviceRef"`
 	Profile    string            `json:"profile"`
 	Priority   int               `json:"priority"`

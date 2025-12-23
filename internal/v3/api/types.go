@@ -7,6 +7,8 @@ package api
 import "github.com/ManuGH/xg2g/internal/v3/model"
 
 type IntentRequest struct {
+	Type           model.IntentType  `json:"type"` // defaults to stream.start if empty
+	SessionID      string            `json:"sessionId,omitempty"`
 	ServiceRef     string            `json:"serviceRef"`
 	ProfileID      string            `json:"profile"`
 	Params         map[string]string `json:"params,omitempty"`
