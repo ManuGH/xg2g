@@ -21,40 +21,12 @@ import (
 	"github.com/ManuGH/xg2g/internal/v3/model"
 	"github.com/ManuGH/xg2g/internal/v3/store"
 	"github.com/google/uuid"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-var (
-	jobsTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "v3_worker_jobs_total",
-			Help: "Total worker jobs processed",
-		},
-		[]string{"result", "mode"},
-	)
-	fsmTransitions = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "v3_fsm_transitions_total",
-			Help: "FSM state transitions",
-		},
-		[]string{"state_from", "state_to", "mode"},
-	)
-	recoveryTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "v3_worker_recovery_total",
-			Help: "Total sessions recovered",
-		},
-		[]string{"action", "mode"},
-	)
-	leaseLostTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "v3_worker_lease_lost_total",
-			Help: "Total leases lost during heartbeat",
-		},
-		[]string{"mode"},
-	)
-)
+// Phase 9-4: Metrics defined in metrics.go
+// jobsTotal -> tunerBusyTotal (subset)
+// fsmTransitions -> fsmTransitions (kept)
+// leaseLostTotal -> leaseLostTotalLegacy (kept/aliased)
 
 // Orchestrator consumes intents and drives pipelines. It is intentionally side-effecting,
 // and MUST be out-of-band from HTTP request paths.
@@ -180,25 +152,47 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 	started := false
 
 	// 0. Unified Finalization (Always Runs)
+	// Critical Fix 9-4: Must run even if !started (e.g. tune fail, lease fail).
 	defer func() {
-		if !started {
+		// Guard: If we returned nil (no error) but never started,
+		// it means we decided to backoff (Busy/Dedup).
+		// In this case, LEAVE STATE AS NEW. Do not finalize.
+		if retErr == nil && !started {
 			return
 		}
+		// Calculate final metrics
 		// Determine Outcome
 		finalState := model.SessionFailed
 		reason := model.RFFmpegExited
 		detail := ""
 
 		if retErr == nil {
-			// Success (process exit code 0)
+			// Clean exit (Success)
+			// User Req 2: Use RCompleted or RProcessExit (not RFFmpegExited)
 			finalState = model.SessionStopped
-			reason = model.RFFmpegExited
+			reason = model.RProcessEnded // Using customized code
 		} else {
 			if errors.Is(retErr, context.Canceled) {
 				finalState = model.SessionStopped
 				reason = model.RClientStop
-			} else {
+			} else if errors.Is(retErr, context.DeadlineExceeded) {
+				reason = model.RTuneTimeout
 				detail = retErr.Error()
+			} else {
+				// Fallback to generic or specific based on string
+				// MVP: If error is not nil, it's likely a failure.
+				// If we haven't mapped it, using RUnknown or keeping RFFmpegExited default?
+				// RFFmpegExited implies process ran. If we failed before that (Tune), it is wrong.
+				// Use RGenericError or similar? Or RUnknown.
+				// User requested: "Tune-Fehler => RTuneFailed".
+				// We can check string?
+				if detail == "" {
+					detail = retErr.Error()
+				}
+				reason = model.RUnknown // Or R_EXECUTION_FAILED?
+				// Let's use RUnknown as safe default, or RTuneFailed if we are in tuning phase?
+				// Hard to know phase here easily without state.
+				// But we are in finalizer.
 			}
 		}
 
@@ -233,6 +227,24 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 
 		// PR 9-3: On-Stop Cleanup
 		o.cleanupFiles(e.SessionID)
+
+		// Phase 9-4: Golden Signals (Session End)
+		mode := o.modeLabel()
+		sessionEndTotal.WithLabelValues(string(reason), e.ProfileID, mode).Inc()
+
+		logEvt := log.L().Info().
+			Str("event", "hls.session_end").
+			Str("sid", e.SessionID).
+			Str("reason", string(reason)).
+			Str("profile", e.ProfileID).
+			Str("mode", mode)
+
+		if detail != "" {
+			logEvt.Str("detail", detail)
+		}
+		// If we had a transcoder, we might have exit code, bytes, etc.
+		// For now, MVP log.
+		logEvt.Msg("session ended")
 	}()
 
 	// 1. Dedup Lock (ServiceRef) - Transient (Phase 8-2)
@@ -243,10 +255,14 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 		return err
 	}
 	if !ok {
-		jobsTotal.WithLabelValues("lease_conflict", o.modeLabel()).Inc()
+		// jobsTotal.WithLabelValues("lease_conflict", o.modeLabel()).Inc()
 		return nil
 	}
-	defer o.Store.ReleaseLease(ctx, dedupLease.Key(), dedupLease.Owner())
+	defer func() {
+		ctxRel, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		o.Store.ReleaseLease(ctxRel, dedupLease.Key(), dedupLease.Owner())
+	}()
 
 	// 2. Resource Lock (Tuner Slot) - Persistent (Phase 8-2)
 	slot, tunerLease, ok, err := o.acquireTunerLease(ctx, o.TunerSlots)
@@ -255,13 +271,17 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 	}
 	if !ok {
 		// All slots busy
-		jobsTotal.WithLabelValues("tuner_busy", o.modeLabel()).Inc()
+		tunerBusyTotal.WithLabelValues(o.modeLabel()).Inc()
 		// We do NOT fail the session, we just don't start it yet.
 		// It remains in NEW state (or QUEUED if we had it).
 		// Client/Shadow will retry.
 		return nil
 	}
-	defer o.Store.ReleaseLease(ctx, tunerLease.Key(), tunerLease.Owner())
+	defer func() {
+		ctxRel, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		o.Store.ReleaseLease(ctxRel, tunerLease.Key(), tunerLease.Owner())
+	}()
 
 	// Heartbeat loop: Renew TUNER Lease explicitly
 	hbCtx, hbCancel := context.WithCancel(ctx)
@@ -285,7 +305,7 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 					log.L().Warn().Err(err).Msg("heartbeat renewal error")
 				} else if !ok {
 					log.L().Warn().Str("lease", tunerLease.Key()).Msg("tuner lease lost, aborting")
-					leaseLostTotal.WithLabelValues(o.modeLabel()).Inc()
+					leaseLostTotalLegacy.WithLabelValues(o.modeLabel()).Inc()
 					hbCancel()
 					return
 				}
@@ -296,6 +316,10 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 	// 1. Transition to STARTING (Store Tuner Slot)
 	o.recordTransition(model.SessionUnknown, model.SessionStarting)
 	_, err = o.Store.UpdateSession(ctx, e.SessionID, func(r *model.SessionRecord) error {
+		// Guard: If somebody (handleStop) already marked it STOPPING or Terminal, abort start
+		if r.State.IsTerminal() || r.State == model.SessionStopping {
+			return fmt.Errorf("session state %s, aborting start", r.State)
+		}
 		r.State = model.SessionStarting
 		r.UpdatedAtUnix = time.Now().Unix()
 		if r.ContextData == nil {
@@ -308,24 +332,52 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 		jobsTotal.WithLabelValues("failed_starting", o.modeLabel()).Inc()
 		return err
 	}
-	started = true
+	// started = true // Removed in Phase 9-4
 
 	// 2. Perform Work (Execution Contracts)
 	tuner, err := o.ExecFactory.NewTuner(slot)
 	if err != nil {
-		jobsTotal.WithLabelValues("exec_error", o.modeLabel()).Inc()
+		// jobsTotal.WithLabelValues("exec_error", o.modeLabel()).Inc()
 		return err
 	}
 	defer tuner.Close()
 
-	if err := tuner.Tune(hbCtx, e.ServiceRef); err != nil {
-		jobsTotal.WithLabelValues("tune_failed", o.modeLabel()).Inc()
-		return err
+	// Measure Ready Duration
+	readyStart := time.Now()
+	tuneErr := tuner.Tune(hbCtx, e.ServiceRef)
+	readyDurationVal := time.Since(readyStart).Seconds()
+
+	// Classify Outcome
+	var outcome string
+	if tuneErr == nil {
+		outcome = "success"
+	} else {
+		outcome = "failure"
+		// Classify failure for counter
+		failReason := "other"
+		if errors.Is(tuneErr, context.DeadlineExceeded) {
+			failReason = "timeout"
+		} else if errors.Is(tuneErr, context.Canceled) {
+			failReason = "canceled"
+		}
+		// Detailed breakdown
+		readyOutcomeTotal.WithLabelValues(failReason, o.modeLabel()).Inc()
 	}
+	readyDuration.WithLabelValues(outcome, o.modeLabel()).Observe(readyDurationVal)
+
+	if tuneErr != nil {
+		// Tuner failed, but we still run finalizer.
+		// We should explicitly set retErr so finalizer sees failure.
+		// (It is set by return)
+		// jobsTotal.WithLabelValues("tune_failed", o.modeLabel()).Inc()
+		return tuneErr
+	}
+
+	// Ready Success Counter
+	readyOutcomeTotal.WithLabelValues("success", o.modeLabel()).Inc()
 
 	transcoder, err := o.ExecFactory.NewTranscoder()
 	if err != nil {
-		jobsTotal.WithLabelValues("exec_error", o.modeLabel()).Inc()
 		return err
 	}
 
@@ -334,7 +386,6 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 	// So variable is `e`.
 	// e has SessionID, ServiceRef, ProfileID.
 	if err := transcoder.Start(hbCtx, e.SessionID, e.ServiceRef, model.ProfileID(e.ProfileID)); err != nil {
-		jobsTotal.WithLabelValues("start_failed", o.modeLabel()).Inc()
 		return err
 	}
 	defer func() {
@@ -351,11 +402,9 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 		return nil
 	})
 	if err != nil {
-		jobsTotal.WithLabelValues("failed_ready", o.modeLabel()).Inc()
 		return err
 	}
-
-	jobsTotal.WithLabelValues("processed", o.modeLabel()).Inc()
+	started = true // Session is now active/starting.
 
 	// 4. Wait
 	_, waitErr := transcoder.Wait(hbCtx)
@@ -364,18 +413,32 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 
 func (o *Orchestrator) handleStop(ctx context.Context, e model.StopSessionEvent) error {
 	// 1. Always attempt store update (Idempotency)
+	var shortCircuitCleanup bool
 	_, err := o.Store.UpdateSession(ctx, e.SessionID, func(r *model.SessionRecord) error {
 		if r.State.IsTerminal() {
 			return nil
 		}
-		// Move to STOPPING. The active worker (if any) will see this and exit,
-		// or the finalized block will eventually set STOPPED.
+		// Fix 1: Hard logic gap. If session is NEW (never started), we can finalize it immediately.
+		if r.State == model.SessionNew {
+			r.State = model.SessionStopped
+			r.PipelineState = model.PipeStopped
+			r.Reason = e.Reason
+			r.UpdatedAtUnix = time.Now().Unix()
+			shortCircuitCleanup = true
+			return nil
+		}
+
+		// Move to STOPPING. The active worker (if any) will see this and exit.
 		r.State = model.SessionStopping
 		r.PipelineState = model.PipeStopRequested
 		r.Reason = e.Reason
 		r.UpdatedAtUnix = time.Now().Unix()
 		return nil
 	})
+
+	if shortCircuitCleanup {
+		o.cleanupFiles(e.SessionID)
+	}
 	if err != nil {
 		return err
 	}

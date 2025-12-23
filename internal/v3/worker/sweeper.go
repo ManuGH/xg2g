@@ -45,18 +45,39 @@ func (s *Sweeper) sweepStore(ctx context.Context) {
 	expiredCount := 0
 
 	var toDelete []string
+	var toFinalize []string
 	count := 0
 	err := s.Orch.Store.ScanSessions(ctx, func(r *model.SessionRecord) error {
 		count++
-		// Criteria for deletion:
-		// 1. IsTerminal (STOPPED, FAILED)
-		// 2. UpdatedAt older than Retention
+
+		// Guard: UpdatedAtUnix safety
+		updatedAt := r.UpdatedAtUnix
+		if updatedAt == 0 {
+			updatedAt = r.CreatedAtUnix
+		}
+		if updatedAt == 0 {
+			updatedAt = now.Unix() // Assume fresh
+		}
+		age := now.Sub(time.Unix(updatedAt, 0))
+
+		// Rule 1: Terminal Sessions (STOPPED, FAILED, CANCELLED) -> Retention
 		if r.State.IsTerminal() {
-			age := now.Sub(time.Unix(r.UpdatedAtUnix, 0))
 			if age > s.Conf.SessionRetention {
 				toDelete = append(toDelete, r.SessionID)
 			}
+			return nil
 		}
+
+		// Rule 2: Stuck STOPPING Sessions -> Force Finalize to STOPPED (Safe)
+		// If a session remains in STOPPING for > 1 minute, assume worker failed/died.
+		// We do NOT delete immediately to avoid race conditions with active processes.
+		// Instead, we force state -> STOPPED, and let next sweep handle retention.
+		if r.State == model.SessionStopping {
+			if age > 1*time.Minute {
+				toFinalize = append(toFinalize, r.SessionID)
+			}
+		}
+
 		return nil
 	})
 
@@ -65,6 +86,28 @@ func (s *Sweeper) sweepStore(ctx context.Context) {
 		return
 	}
 
+	// 1. Finalize Stuck Sessions
+	for _, sid := range toFinalize {
+		_, err := s.Orch.Store.UpdateSession(ctx, sid, func(r *model.SessionRecord) error {
+			if r.State.IsTerminal() {
+				return nil // Already handled
+			}
+			r.State = model.SessionStopped
+			r.PipelineState = model.PipeStopped
+			r.Reason = model.RIdleTimeout
+			r.ReasonDetail = "sweeper_forced_stop_stuck"
+			r.UpdatedAtUnix = time.Now().Unix()
+			return nil
+		})
+		if err != nil {
+			log.L().Warn().Err(err).Str("sid", sid).Msg("failed to finalize stuck session")
+		} else {
+			// Trigger cleanup?
+			s.Orch.cleanupFiles(sid)
+		}
+	}
+
+	// 2. Delete Expired Sessions
 	for _, sid := range toDelete {
 		if err := s.Orch.Store.DeleteSession(ctx, sid); err != nil {
 			log.L().Warn().Err(err).Str("sid", sid).Msg("failed to delete expired session")

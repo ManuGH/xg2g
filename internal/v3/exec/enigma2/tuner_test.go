@@ -77,5 +77,5 @@ func TestTuner_Tune_Timeout(t *testing.T) {
 	defer cancel()
 
 	err := tuner.Tune(ctx, "1:0:1:TARGET:0")
-	assert.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.ErrorIs(t, err, ErrReadyTimeout)
 }

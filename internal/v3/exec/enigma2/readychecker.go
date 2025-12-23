@@ -98,7 +98,7 @@ func (rc *ReadyChecker) check(ctx context.Context, expected string) error {
 	// A. Get Current
 	curr, err := rc.Client.GetCurrent(ctx)
 	if err != nil {
-		return fmt.Errorf("%w: get current: %v", ErrUpstreamUnavailable, err)
+		return fmt.Errorf("%w: get current: %w", ErrUpstreamUnavailable, err)
 	}
 
 	actual := NormalizeServiceRef(curr.Info.ServiceReference)
@@ -109,7 +109,7 @@ func (rc *ReadyChecker) check(ctx context.Context, expected string) error {
 	// B. Check Signal
 	sig, err := rc.Client.GetSignal(ctx)
 	if err != nil {
-		return fmt.Errorf("%w: get signal: %v", ErrUpstreamUnavailable, err)
+		return fmt.Errorf("%w: get signal: %w", ErrUpstreamUnavailable, err)
 	}
 
 	if !sig.Locked {

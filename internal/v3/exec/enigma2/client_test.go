@@ -63,6 +63,6 @@ func TestClient_GetSignal(t *testing.T) {
 	c := NewClient(ts.URL, 1*time.Second)
 	sig, err := c.GetSignal(context.Background())
 	require.NoError(t, err)
-	assert.Equal(t, 85, sig.Snr)
+	assert.Equal(t, IntString(85), sig.Snr)
 	assert.True(t, sig.Locked)
 }

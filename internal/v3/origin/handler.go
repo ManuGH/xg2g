@@ -19,9 +19,9 @@ const minimalManifest = "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:10\n#E
 
 // NewHLSOriginHandler is a v3 origin facade: state lookup + dumb file/cache serve.
 // MVP behavior:
-//  - READY: delegate to downstream handler (e.g. static file server)
-//  - STARTING: return minimal .m3u8 (Safari-friendly)
-//  - FAILED/UNKNOWN/NOTFOUND: 404 or 503
+//   - READY: delegate to downstream handler (e.g. static file server)
+//   - STARTING: return minimal .m3u8 (Safari-friendly)
+//   - FAILED/UNKNOWN/NOTFOUND: 404 or 503
 func NewHLSOriginHandler(st store.StateStore, downstream http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasSuffix(r.URL.Path, ".m3u8") {

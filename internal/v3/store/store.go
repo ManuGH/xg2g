@@ -36,6 +36,8 @@ type StateStore interface {
 	PutSession(ctx context.Context, s *model.SessionRecord) error
 	// PutSessionWithIdempotency writes a session and an idempotency key atomicity (in one transaction).
 	PutSessionWithIdempotency(ctx context.Context, s *model.SessionRecord, idemKey string, ttl time.Duration) error
+	// GetSession returns the session record. If not found, it returns (nil, nil).
+	// Callers must check for nil record before using it.
 	GetSession(ctx context.Context, id string) (*model.SessionRecord, error)
 	UpdateSession(ctx context.Context, id string, fn func(*model.SessionRecord) error) (*model.SessionRecord, error)
 	ListSessions(ctx context.Context) ([]*model.SessionRecord, error)
