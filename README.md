@@ -9,7 +9,7 @@
   [![Docker Pulls](https://img.shields.io/docker/pulls/manugh/xg2g?color=blue)](https://hub.docker.com/r/manugh/xg2g)
   [![License: PolyForm Noncommercial](https://img.shields.io/badge/License-PolyForm_Noncommercial-blue.svg)](https://polyformproject.org/licenses/noncommercial/1.0.0)
 
-  [Quick Start](#-quick-start) • [Features](#-features) • [Docs](docs/)
+  [Quick Start](#-quick-start) • [Features](#-features) • [Docs](docs/) • [Internals](docs/INTERNALS.md)
 </div>
 
 > [!IMPORTANT]
@@ -60,12 +60,17 @@ Missed a scene? No problem.
 ### 📱 Perfect Mobile Streaming
 
 - **Native HLS**: Streams are remuxed on-the-fly to be compatible with all modern browsers and mobile devices.
-- **Rust Audio Engine**: Real-time AC3/DTS to AAC transcoding ensures you get sound on every device, without burning your CPU.
+- **Rust Audio Engine**: Real-time AC3/DTS to AAC transcoding via FFI (FFmpeg 7.x/Trixie) ensures you get sound on every device, without burning your CPU.
 
 ### � HDHomeRun Emulation (Beta)
 
 xg2g also emulates an HDHomeRun tuner, allowing you to connect it to **Plex** or **Jellyfin**.
 *(Note: Full Plex/Jellyfin documentation and optimization is coming in a future update.)*
+
+### 🧪 Experimental (v3)
+
+- **Control Plane**: New worker-based architecture for better reliability (see `docs/INTERNALS.md`).
+- **Shadow Canary**: Optional mirroring of intents for safe testing.
 
 ---
 

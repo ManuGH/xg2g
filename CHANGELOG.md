@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **Refactor**: Unified Circuit Breaker implementation into `internal/resilience` (replaces scattered implementations in `api` and `openwebif`).
+- **Refactor**: Removed unused error helper functions in `internal/api/errors.go`.
+- **Config**: Fixed precedence logic for OpenWebIF credentials to correctly prefer specific env vars (`XG2G_OWI_USER`) over generic ones.
+- **Orchestration**: Replaced deprecated `RFFmpegExited` with `RProcessEnded`.
+
 ## [2.1.0] - 2025-12-30
 
 ### Changed

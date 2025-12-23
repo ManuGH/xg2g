@@ -500,6 +500,7 @@ To prevent regression of encrypted channel support, all developers must adhere t
 
 ## References
 
+- [Internals Guide](INTERNALS.md)
 - [ADR-001: API Versioning](adr/001-api-versioning.md)
 - [ADR-002: Config Precedence](adr/002-config-precedence.md)
 - [ADR-003: Validation Package](adr/003-validation-package.md)
