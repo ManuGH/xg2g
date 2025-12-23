@@ -177,19 +177,28 @@ func (m *MemoryStore) PutSessionWithIdempotency(ctx context.Context, s *model.Se
 }
 
 func (m *MemoryStore) ScanSessions(ctx context.Context, fn func(*model.SessionRecord) error) error {
+	// Step 1: Create snapshot under lock
 	m.mu.RLock()
-	defer m.mu.RUnlock()
-
+	snapshot := make([]*model.SessionRecord, 0, len(m.sessions))
 	for _, rec := range m.sessions {
-		// Pass copy to avoid concurrent modification issues during callback?
-		// But callback might be long running?
-		// For Scan, usually we hold read lock, or copy all keys.
-		// MVP: Hold RLock (fast scan).
-		cpy := *rec
-		if err := fn(&cpy); err != nil {
+		cpy := *rec // Deep copy
+		snapshot = append(snapshot, &cpy)
+	}
+	m.mu.RUnlock()
+
+	// Step 2: Iterate without lock - prevents blocking reads during slow callbacks
+	for _, rec := range snapshot {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		if err := fn(rec); err != nil {
 			return err
 		}
 	}
+
 	return nil
 }
 

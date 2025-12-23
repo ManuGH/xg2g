@@ -8,6 +8,9 @@
 package config
 
 import (
+	"net"
+	"strings"
+
 	"github.com/ManuGH/xg2g/internal/validate"
 )
 
@@ -44,6 +47,21 @@ func Validate(cfg AppConfig) error {
 
 	// Validate file paths for security
 	v.Path("XMLTVPath", cfg.XMLTVPath)
+
+	// Rate limit whitelist entries must be valid IPs or CIDRs
+	for _, entry := range cfg.RateLimitWhitelist {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		if net.ParseIP(entry) != nil {
+			continue
+		}
+		if _, _, err := net.ParseCIDR(entry); err == nil {
+			continue
+		}
+		v.AddError("RateLimitWhitelist", "must be a valid IP or CIDR", entry)
+	}
 
 	if !v.IsValid() {
 		return v.Err()

@@ -10,11 +10,12 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
+
 	"github.com/ManuGH/xg2g/internal/log"
 	v3api "github.com/ManuGH/xg2g/internal/v3/api"
 	"github.com/ManuGH/xg2g/internal/v3/model"
-	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
 )
 
 // handleV3Intents handles POST /api/v3/intents (Shadow Canary & Future Control Plane).
@@ -50,12 +51,12 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		existingSessionID, ok, err := store.GetIdempotency(ctx, req.IdempotencyKey)
 		if err != nil {
 			log.L().Error().Err(err).Str("k", req.IdempotencyKey).Msg("v3 idempotency check failed")
+			http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+			return
 		}
 		if ok {
 			// Already processed, return established SessionID
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			_ = json.NewEncoder(w).Encode(map[string]string{
+			writeJSON(w, http.StatusOK, map[string]string{
 				"sessionId": existingSessionID,
 				"status":    "idempotent_replay",
 			})
@@ -143,8 +144,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 8. Respond Success (Accepted)
-	w.WriteHeader(http.StatusAccepted)
-	_ = json.NewEncoder(w).Encode(map[string]string{
+	writeJSON(w, http.StatusAccepted, map[string]string{
 		"sessionId": sessionID,
 		"status":    "accepted",
 	})
@@ -178,8 +178,7 @@ func (s *Server) handleV3SessionsDebug(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(sessions)
+	writeJSON(w, http.StatusOK, sessions)
 }
 
 // handleV3HLS serves HLS playlists and segments.

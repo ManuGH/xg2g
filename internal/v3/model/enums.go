@@ -76,6 +76,7 @@ const (
 	RNotFound           ReasonCode = "R_NOT_FOUND"
 	RLeaseBusy          ReasonCode = "R_LEASE_BUSY"
 	RTuneTimeout        ReasonCode = "R_TUNE_TIMEOUT"
+	RLeaseExpired       ReasonCode = "R_LEASE_EXPIRED" // Lease lost or expired
 	RTuneFailed         ReasonCode = "R_TUNE_FAILED"
 	RInvariantViolation ReasonCode = "R_INVARIANT_VIOLATION"
 	RFFmpegStartFailed  ReasonCode = "R_FFMPEG_START_FAILED"

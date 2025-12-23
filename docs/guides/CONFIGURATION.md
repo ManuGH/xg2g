@@ -92,6 +92,74 @@ If running in Kubernetes or Docker Compose with healthchecks:
   - If `XG2G_READY_STRICT=false` (default): Returns 200 immediately.
   - If `XG2G_READY_STRICT=true`: Pings Enigma2 receiver (timeout 2s). Returns 503 if unreachable.
 
+## Security & Rate Limiting
+
+### Authentication
+
+xg2g supports multiple authentication methods:
+
+1. **Bearer Token (Recommended)**: `Authorization: Bearer <token>`
+2. **Session Cookie**: `xg2g_session` cookie
+3. **Query Parameter (Deprecated)**: `?token=...` - **Disabled by default** due to security risks
+
+**Security Warning**: Query parameter authentication logs tokens in:
+
+- Proxy server access logs
+- Browser history
+- HTTP Referer headers
+
+**Migration**: Use `Authorization` header instead. To temporarily re-enable (not recommended):
+
+```bash
+export XG2G_ALLOW_QUERY_TOKENS=true  # Will be removed in v3.0
+```
+
+### Rate Limiting
+
+Protect your API from abuse with built-in rate limiting:
+
+```yaml
+# config.yaml
+api:
+  rateLimit:
+    enabled: true
+    global: 100          # Requests per second (all endpoints)
+    auth: 10             # Requests per minute (auth-required endpoints)
+    burst: 20            # Burst capacity
+    whitelist:           # IPs/CIDRs exempt from rate limiting
+      - 192.168.1.0/24   # Local network
+      - 10.0.0.0/8       # Private network
+      - 172.20.0.5       # Specific trusted IP
+```
+
+**Environment Variables**:
+
+```bash
+export XG2G_RATELIMIT_ENABLED=true
+export XG2G_RATELIMIT_GLOBAL=100
+export XG2G_RATELIMIT_AUTH=10
+export XG2G_RATELIMIT_BURST=20
+export XG2G_RATELIMIT_WHITELIST="192.168.1.0/24,10.0.0.0/8"
+```
+
+**CIDR Notation Support**:
+
+- **Single IP**: `192.168.1.100`
+- **IPv4 Subnet**: `192.168.0.0/16`, `10.0.0.0/8`
+- **IPv6 Subnet**: `2001:db8::/32`
+
+Example whitelist configuration:
+
+```yaml
+api:
+  rateLimit:
+    whitelist:
+      - 127.0.0.1           # Localhost
+      - 192.168.1.0/24      # Home network
+      - 10.0.0.0/8          # Corporate VPN
+      - 2001:db8::/48       # IPv6 subnet
+```
+
 ## Troubleshooting
 
 **"field ... not found in type config.FileConfig"**

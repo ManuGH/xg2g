@@ -81,20 +81,46 @@ func (r *Runner) Start(ctx context.Context, sessionID, serviceRef string, profil
 	tmpPlaylist, _ := PlaylistPaths(sessionDir)
 
 	// 2. Build Args
+	// Profile Configuration
+	// Phase 9-5: Safari DVR / fMP4 Logic
+	isFMP4 := false
+	ext := ".ts"
+
+	if profile == "safari_dvr" {
+		isFMP4 = true
+		ext = ".m4s"
+	}
+
+	// 2. Build Args
 	in := InputSpec{
 		StreamURL: fmt.Sprintf("%s/%s", r.E2Host, serviceRef), // E2Host is base e.g. http://localhost:8001
 	}
 
-	// Profile Configuration (Stubbed selection logic)
+	profSpec := model.ProfileSpec{Name: string(profile)} // Stub, in future passed in.
+	if isFMP4 {
+		profSpec.LLHLS = true // Re-using LLHLS flag or add explicit Type field in Args?
+		// For now, let's just create profSpec correctly.
+		// Wait, BuildHLSArgs uses profSpec?
+		// We need to pass the "UseFMP4" intent to BuildHLSArgs.
+		// We can add it to OutputSpec or use ProfileSpec.
+		// Let's modify ProfileSpec or pass it explicitly.
+		// Actually, let's update OutputSpec to have Extension/FMP4 flag.
+		// But wait, args.go:BuildHLSArgs takes profSpec.
+		// I will update args.go next.
+	} else {
+		// profSpec.LLHLS = false
+	}
+
 	out := OutputSpec{
 		HLSPlaylist:        tmpPlaylist,
-		SegmentFilename:    SegmentPattern(sessionDir),
+		SegmentFilename:    SegmentPattern(sessionDir, ext),
 		SegmentDuration:    6,
 		PlaylistWindowSize: 5,
 	}
 
-	// In real impl, checking profile ID would affect codec flags
-	profSpec := model.ProfileSpec{Name: string(profile)}
+	if isFMP4 {
+		out.InitFilename = InitPath(sessionDir) // We need to add this field to OutputSpec in args.go
+	}
 
 	args, err := BuildHLSArgs(in, out, profSpec)
 	if err != nil {

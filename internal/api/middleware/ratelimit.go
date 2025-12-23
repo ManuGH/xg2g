@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/httprate"
@@ -37,6 +38,8 @@ func RateLimit(cfg RateLimitConfig) func(http.Handler) http.Handler {
 		keyFunc = httprate.KeyByIP
 	}
 
+	whitelistIPs, whitelistNets := parseWhitelist(cfg.Whitelist)
+
 	// Create httprate limiter with sliding window
 	limiter := httprate.Limit(
 		cfg.RequestLimit,
@@ -57,22 +60,17 @@ func RateLimit(cfg RateLimitConfig) func(http.Handler) http.Handler {
 
 	// Wrap with whitelist check
 	return func(next http.Handler) http.Handler {
+		limitedNext := limiter(next)
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Check whitelist
-			if len(cfg.Whitelist) > 0 {
-				ip, _, err := net.SplitHostPort(r.RemoteAddr)
-				if err != nil {
-					ip = r.RemoteAddr
-				}
-				for _, allowed := range cfg.Whitelist {
-					if allowed == ip { // TODO: Support CIDR
-						next.ServeHTTP(w, r)
-						return
-					}
+			if len(whitelistIPs) > 0 || len(whitelistNets) > 0 {
+				if clientIP := requestIP(r); clientIP != nil && isWhitelisted(clientIP, whitelistIPs, whitelistNets) {
+					next.ServeHTTP(w, r)
+					return
 				}
 			}
 			// Delegate to limiter
-			limiter(next).ServeHTTP(w, r)
+			limitedNext.ServeHTTP(w, r)
 		})
 	}
 }
@@ -106,4 +104,56 @@ func APIRateLimit(enabled bool, rps int, burst int, whitelist []string) func(htt
 		WindowSize:   time.Minute,
 		Whitelist:    whitelist,
 	})
+}
+
+func parseWhitelist(entries []string) ([]net.IP, []*net.IPNet) {
+	if len(entries) == 0 {
+		return nil, nil
+	}
+
+	ips := make([]net.IP, 0, len(entries))
+	nets := make([]*net.IPNet, 0, len(entries))
+	for _, entry := range entries {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		if ip := net.ParseIP(entry); ip != nil {
+			ips = append(ips, ip)
+			continue
+		}
+		if _, ipNet, err := net.ParseCIDR(entry); err == nil {
+			nets = append(nets, ipNet)
+		}
+	}
+
+	return ips, nets
+}
+
+func requestIP(r *http.Request) net.IP {
+	if ipStr, err := httprate.KeyByIP(r); err == nil && ipStr != "" {
+		if ip := net.ParseIP(ipStr); ip != nil {
+			return ip
+		}
+	}
+
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	return net.ParseIP(host)
+}
+
+func isWhitelisted(ip net.IP, ips []net.IP, nets []*net.IPNet) bool {
+	for _, allowed := range ips {
+		if allowed.Equal(ip) {
+			return true
+		}
+	}
+	for _, allowed := range nets {
+		if allowed.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }

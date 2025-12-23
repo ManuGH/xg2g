@@ -10,6 +10,8 @@ import (
 	"crypto/subtle"
 	"net/http"
 	"strings"
+
+	"github.com/ManuGH/xg2g/internal/log"
 )
 
 // ExtractToken retrieves the API token from the request.
@@ -35,9 +37,14 @@ func ExtractToken(r *http.Request, allowQuery bool) string {
 		return t
 	}
 
-	// 4. Query Parameter (if allowed)
+	// 4. Query Parameter (if allowed) - DEPRECATED
 	if allowQuery {
 		if t := r.URL.Query().Get("token"); t != "" {
+			// Log deprecation warning
+			log.L().Warn().
+				Str("path", r.URL.Path).
+				Str("remote_addr", r.RemoteAddr).
+				Msg("DEPRECATED: Query parameter authentication is insecure (tokens logged in proxies/browsers) and will be removed in v3.0. Use Authorization header instead.")
 			return t
 		}
 	}

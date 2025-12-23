@@ -167,10 +167,17 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 		detail := ""
 
 		if retErr == nil {
-			// Clean exit (Success)
-			// User Req 2: Use RCompleted or RProcessExit (not RFFmpegExited)
-			finalState = model.SessionStopped
-			reason = model.RProcessEnded // Using customized code
+			// Clean exit of Wait() logic
+			if ctx.Err() != nil {
+				// Context cancelled -> Expected Stop (Client Stop or Timeout)
+				finalState = model.SessionStopped
+				reason = model.RClientStop
+			} else {
+				// Context valid -> Spontaneous Exit (e.g. End of Stream, Crash, or Early Exit)
+				// Fix 11-2: Treat unrequested exit as abnormal termination.
+				finalState = model.SessionFailed
+				reason = model.RProcessEnded // "Process ended unexpectedly"
+			}
 		} else {
 			if errors.Is(retErr, context.Canceled) {
 				finalState = model.SessionStopped
@@ -304,8 +311,22 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 				if err != nil {
 					log.L().Warn().Err(err).Msg("heartbeat renewal error")
 				} else if !ok {
-					log.L().Warn().Str("lease", tunerLease.Key()).Msg("tuner lease lost, aborting")
+					log.L().Warn().Str("lease", tunerLease.Key()).Str("sid", e.SessionID).Msg("tuner lease lost, aborting")
 					leaseLostTotalLegacy.WithLabelValues(o.modeLabel()).Inc()
+
+					// Fix 11-3: Lease Robustness
+					// Explicitly attempt to mark FAILED before cancelling context.
+					// This ensures the session is terminal even if finalizer fails later (e.g. race).
+					// Best-effort push.
+					_, _ = o.Store.UpdateSession(hbCtx, e.SessionID, func(r *model.SessionRecord) error {
+						if !r.State.IsTerminal() {
+							r.State = model.SessionFailed
+							r.Reason = model.RLeaseExpired
+							r.UpdatedAtUnix = time.Now().Unix()
+						}
+						return nil
+					})
+
 					hbCancel()
 					return
 				}

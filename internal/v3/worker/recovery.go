@@ -103,7 +103,7 @@ func handleRecovery(ctx context.Context, o *Orchestrator, s *model.SessionRecord
 
 func isIntermediateState(s model.SessionState) bool {
 	switch s {
-	case model.SessionStarting, model.SessionStopping, model.SessionDraining:
+	case model.SessionStarting, model.SessionStopping, model.SessionDraining, model.SessionReady:
 		return true
 	// TUNING, PACKAGING, LEASED etc would go here if defined in SessionState (they are PipelineStates in model)
 	// model.SessionState is coarse.
@@ -116,8 +116,8 @@ func determineRecoveryTarget(s model.SessionState) model.SessionState {
 	switch s {
 	case model.SessionStarting:
 		return model.SessionNew // Retry start
-	case model.SessionStopping, model.SessionDraining:
-		return model.SessionFailed // Abort stop/drain -> Failed (safest terminal)
+	case model.SessionStopping, model.SessionDraining, model.SessionReady:
+		return model.SessionFailed // Abort stop/drain/ready -> Failed (safest terminal)
 	default:
 		return model.SessionFailed
 	}

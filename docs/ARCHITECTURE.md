@@ -404,7 +404,7 @@ spec:
 
 | Component | Technology | Why |
 |-----------|------------|-----|
-| **Language** | Go 1.25+ | Performance, concurrency, static typing |
+| **Language** | Go 1.25 | Performance, concurrency, static typing |
 | **HTTP Server** | `net/http` + `go-chi/chi` | Standard library + flexible routing |
 | **Logging** | `rs/zerolog` | Fast, structured, zero-allocation |
 | **Metrics** | Prometheus | Industry standard, rich ecosystem |

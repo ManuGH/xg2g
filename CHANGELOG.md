@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Security
+
+- **[BREAKING] Query parameter authentication disabled by default**
+  - Authentication via `?token=...` in URLs is now disabled by default to prevent token leakage in proxy logs, browser history, and referrer headers.
+  - **Migration**: Use `Authorization: Bearer <token>` header or `xg2g_session` cookie instead.
+  - **Temporary workaround**: Set `XG2G_ALLOW_QUERY_TOKENS=true` to re-enable (will be removed in v3.0).
+  - Requests using query tokens will log a deprecation warning.
+
+### Fixed
+
+- **V3 Store**: Fixed lock contention in `MemoryStore.ScanSessions` that could block reads during slow callbacks.
+- **API**: JSON encoding errors are now logged instead of silently ignored.
+- **V3 API**: Idempotency check failures now return HTTP 503 instead of continuing with undefined behavior.
+
+### Added
+
+- **Config**: `XG2G_ALLOW_QUERY_TOKENS` environment variable to control query parameter authentication (default: false).
+- **Tests**: Added concurrency tests for V3 MemoryStore with race detector coverage.
+
 ## [2.0.0] - 2025-12-20
 
 ### License

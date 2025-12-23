@@ -606,10 +606,10 @@ func (s *Server) authRequired(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		// Use unified token extraction
-		// For streaming, we ALLOW query parameter tokens (legacy or direct stream links)
-		reqToken := extractToken(r, true)
+		// Security: Query parameter tokens can leak in logs/proxies (use s.cfg.AllowQueryTokens to enable if needed)
+		requestToken := extractToken(r, s.cfg.AllowQueryTokens)
 
-		if reqToken == "" {
+		if requestToken == "" {
 			logger.Warn().Str("event", "auth.missing_header").Msg("authorization header/param/cookie missing")
 
 			// Audit log: missing authentication
@@ -621,7 +621,7 @@ func (s *Server) authRequired(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		// Use constant-time comparison to prevent timing attacks
-		if !auth.AuthorizeToken(reqToken, token) {
+		if !auth.AuthorizeToken(requestToken, token) {
 			logger.Warn().Str("event", "auth.invalid_token").Msg("invalid api token")
 
 			// Audit log: authentication failure

@@ -16,13 +16,21 @@ import (
 	"github.com/ManuGH/xg2g/internal/log"
 )
 
-// writeJSON writes a JSON response with the given status code
-//
-//nolint:unused // Legacy function - kept for future use
+// writeJSON writes a JSON response with the given status code.
+// If encoding fails, headers are already sent so we can't change the status code,
+// but we log the error for debugging.
 func writeJSON(w http.ResponseWriter, code int, v any) {
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(v)
+
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		// Headers already sent, can't change status code
+		// Log error for debugging - client may receive partial/corrupted response
+		log.L().Error().
+			Err(err).
+			Int("status", code).
+			Msg("failed to encode JSON response - client may receive partial data")
+	}
 }
 
 // writeError writes a generic error response

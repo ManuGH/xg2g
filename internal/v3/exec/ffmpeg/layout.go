@@ -5,6 +5,7 @@
 package ffmpeg
 
 import (
+	"fmt"
 	"path/filepath"
 )
 
@@ -21,8 +22,18 @@ func PlaylistPaths(dir string) (tmp, final string) {
 	return filepath.Join(dir, "index.m3u8.tmp"), filepath.Join(dir, "index.m3u8")
 }
 
+// InitPath returns the path for the fMP4 initialization segment (map).
+func InitPath(dir string) string {
+	return filepath.Join(dir, "init.mp4")
+}
+
 // SegmentPattern returns the filename pattern for segments.
 // e.g., seg_%06d.ts (or .m4s in future)
-func SegmentPattern(dir string) string {
-	return filepath.Join(dir, "seg_%06d.ts")
+// SegmentPattern returns the filename pattern for segments.
+// e.g., seg_%06d.ts (or .m4s in future)
+func SegmentPattern(dir, ext string) string {
+	if ext == "" {
+		ext = ".ts"
+	}
+	return filepath.Join(dir, fmt.Sprintf("seg_%%06d%s", ext))
 }

@@ -99,13 +99,48 @@ func TestRecoverySweep_IgnoreTerminal(t *testing.T) {
 	orch := &Orchestrator{Store: s}
 	ctx := context.Background()
 
-	s.PutSession(ctx, &model.SessionRecord{SessionID: "s1", State: model.SessionReady})
+	// TestRecoverySweep_IgnoreTerminal only checks truly terminal states now (FAILED, STOPPED)
 	s.PutSession(ctx, &model.SessionRecord{SessionID: "s2", State: model.SessionFailed})
+	s.PutSession(ctx, &model.SessionRecord{SessionID: "s3", State: model.SessionStopped})
 
 	orch.recoverStaleLeases(ctx)
 
-	r1, _ := s.GetSession(ctx, "s1")
-	if r1.State != model.SessionReady {
-		t.Error("Ready changed")
+	r2, _ := s.GetSession(ctx, "s2")
+	if r2.State != model.SessionFailed {
+		t.Error("Failed changed")
+	}
+	r3, _ := s.GetSession(ctx, "s3")
+	if r3.State != model.SessionStopped {
+		t.Error("Stopped changed")
+	}
+}
+
+func TestRecoverySweep_RecoverReady(t *testing.T) {
+	// Fix 11-1: READY sessions without lease must be recovered to FAILED (Zombies)
+	tmpDir, _ := os.MkdirTemp("", "recovery_ready")
+	defer os.RemoveAll(tmpDir)
+	s, _ := store.OpenBoltStore(tmpDir)
+	defer s.Close()
+
+	orch := &Orchestrator{Store: s, LeaseTTL: 100 * time.Millisecond}
+	ctx := context.Background()
+
+	// Setup Zombie READY session (Stale Lease)
+	s.PutSession(ctx, &model.SessionRecord{SessionID: "zombie", State: model.SessionReady})
+	// Cheat: Acquire/Wait to expire lease (implicit or explicit)
+	// If no lease exists, TryAcquire works -> Recover works.
+	// If lease exists but expired, TryAcquire works -> Recover works.
+	// We just ensure no active lease blocks us.
+
+	if err := orch.recoverStaleLeases(ctx); err != nil {
+		t.Fatalf("recovery failed: %v", err)
+	}
+
+	r, _ := s.GetSession(ctx, "zombie")
+	if r.State != model.SessionFailed {
+		t.Errorf("expected Zombie READY to become FAILED, got %s", r.State)
+	}
+	if r.ContextData["recovered"] != "true" {
+		t.Error("missing recovered flag")
 	}
 }

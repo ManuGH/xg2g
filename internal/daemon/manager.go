@@ -10,7 +10,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -225,7 +227,7 @@ func (m *manager) startMetricsServer(_ context.Context, errChan chan<- error) er
 }
 
 // startProxyServer starts the optional stream proxy server.
-func (m *manager) startProxyServer(_ context.Context, errChan chan<- error) error {
+func (m *manager) startProxyServer(ctx context.Context, errChan chan<- error) error {
 	if m.deps.ProxyConfig == nil {
 		return nil // Proxy disabled
 	}
@@ -273,8 +275,9 @@ func (m *manager) startProxyServer(_ context.Context, errChan chan<- error) erro
 		}
 	}()
 
-	// Give proxy a moment to start listening
-	time.Sleep(100 * time.Millisecond)
+	if err := waitForListener(ctx, m.deps.ProxyConfig.ListenAddr, 2*time.Second); err != nil {
+		return fmt.Errorf("proxy server listen check failed: %w", err)
+	}
 
 	return nil
 }
@@ -342,6 +345,76 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 	}()
 
 	return nil
+}
+
+func waitForListener(ctx context.Context, addr string, timeout time.Duration) error {
+	if addr == "" {
+		return fmt.Errorf("listen address is empty")
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+
+	var lastErr error
+	for {
+		if err := tryDialListener(addr); err == nil {
+			return nil
+		} else {
+			lastErr = err
+		}
+
+		select {
+		case <-ctx.Done():
+			if lastErr != nil {
+				return fmt.Errorf("timed out waiting for listener on %s: %w", addr, lastErr)
+			}
+			return fmt.Errorf("timed out waiting for listener on %s", addr)
+		case <-ticker.C:
+		}
+	}
+}
+
+func tryDialListener(addr string) error {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		if strings.HasPrefix(addr, ":") {
+			port = strings.TrimPrefix(addr, ":")
+		} else if !strings.Contains(addr, ":") {
+			port = addr
+		} else {
+			return err
+		}
+	}
+	if port == "" {
+		return fmt.Errorf("listen address %q missing port", addr)
+	}
+
+	hosts := []string{host}
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		hosts = []string{"127.0.0.1", "::1"}
+	}
+
+	var lastErr error
+	for _, h := range hosts {
+		if h == "" {
+			continue
+		}
+		dialAddr := net.JoinHostPort(h, port)
+		conn, err := net.DialTimeout("tcp", dialAddr, 100*time.Millisecond)
+		if err == nil {
+			_ = conn.Close()
+			return nil
+		}
+		lastErr = err
+	}
+
+	if lastErr == nil {
+		return fmt.Errorf("failed to dial %q", addr)
+	}
+	return lastErr
 }
 func (m *manager) Shutdown(ctx context.Context) error {
 	m.mu.Lock()

@@ -169,3 +169,44 @@ func TestAPIRateLimit_Configuration(t *testing.T) {
 		t.Errorf("61st request: expected 429, got %d", w.Code)
 	}
 }
+
+func TestRateLimit_WhitelistCIDR(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	limiter := RateLimit(RateLimitConfig{
+		RequestLimit: 1,
+		WindowSize:   time.Second,
+		Whitelist:    []string{"192.168.0.0/16"},
+	})
+	limitedHandler := limiter(handler)
+
+	// Whitelisted subnet should bypass rate limiting
+	for i := 0; i < 3; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		req.RemoteAddr = "192.168.1.10:12345"
+		w := httptest.NewRecorder()
+		limitedHandler.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Errorf("whitelisted request %d: expected 200, got %d", i+1, w.Code)
+		}
+	}
+
+	// Non-whitelisted IP should be rate limited after first request
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req.RemoteAddr = "10.0.0.1:12345"
+	w := httptest.NewRecorder()
+	limitedHandler.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("non-whitelisted first request: expected 200, got %d", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/test", nil)
+	req.RemoteAddr = "10.0.0.1:12345"
+	w = httptest.NewRecorder()
+	limitedHandler.ServeHTTP(w, req)
+	if w.Code != http.StatusTooManyRequests {
+		t.Errorf("non-whitelisted second request: expected 429, got %d", w.Code)
+	}
+}

@@ -142,6 +142,7 @@ type AppConfig struct {
 	InstantTuneEnabled   bool   // Enable "Instant Tune" stream pre-warming
 	DevMode              bool   // Enable development mode (live asset reloading)
 	AuthAnonymous        bool   // Allow anonymous access if no token is configured (Fail-Open override)
+	AllowQueryTokens     bool   // DEPRECATED: Allow authentication via query parameter (insecure, will be removed in v3.0)
 	ReadyStrict          bool   // Enable strict readiness checks (check upstream availability)
 	ShadowIntentsEnabled bool   // v3 Shadow Canary: mirror intents to v3 API (default OFF)
 	ShadowTarget         string // v3 Shadow Canary: target URL (e.g. http://localhost:8080/api/v3/intents)
@@ -555,7 +556,7 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	cfg.InstantTuneEnabled = ParseBool("XG2G_INSTANT_TUNE", cfg.InstantTuneEnabled)
 	cfg.DevMode = ParseBool("XG2G_DEV", cfg.DevMode)
 	cfg.AuthAnonymous = ParseBool("XG2G_AUTH_ANONYMOUS", cfg.AuthAnonymous)
-	cfg.ReadyStrict = ParseBool("XG2G_READY_STRICT", cfg.ReadyStrict)
+	cfg.AllowQueryTokens = ParseBool("XG2G_ALLOW_QUERY_TOKENS", cfg.AllowQueryTokens)
 	cfg.ReadyStrict = ParseBool("XG2G_READY_STRICT", cfg.ReadyStrict)
 	cfg.ShadowIntentsEnabled = ParseBool("XG2G_V3_SHADOW_INTENTS", cfg.ShadowIntentsEnabled)
 	cfg.ShadowTarget = ParseString("XG2G_V3_SHADOW_TARGET", cfg.ShadowTarget)

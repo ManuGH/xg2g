@@ -11,6 +11,8 @@ import (
 	"errors"
 	"sync"
 	"time"
+
+	"github.com/ManuGH/xg2g/internal/metrics"
 )
 
 // clock abstracts time operations for testability.
@@ -73,6 +75,7 @@ func NewCircuitBreaker(threshold int, timeout time.Duration, opts ...CircuitBrea
 	for _, opt := range opts {
 		opt(cb)
 	}
+	metrics.SetCircuitBreakerState("refresh", cb.state)
 	return cb
 }
 
@@ -83,6 +86,7 @@ func (cb *CircuitBreaker) Call(fn func() error) (err error) {
 	}
 
 	cb.mu.Lock()
+	prevState := cb.state
 	switch cb.state {
 	case circuitStateOpen:
 		if cb.clock.Now().Sub(cb.openedAt) >= cb.timeout {
@@ -96,7 +100,11 @@ func (cb *CircuitBreaker) Call(fn func() error) (err error) {
 	default:
 		cb.state = circuitStateClosed
 	}
+	state := cb.state
 	cb.mu.Unlock()
+	if state != prevState {
+		metrics.SetCircuitBreakerState("refresh", state)
+	}
 
 	defer func() {
 		if r := recover(); r != nil {
@@ -117,20 +125,37 @@ func (cb *CircuitBreaker) Call(fn func() error) (err error) {
 
 func (cb *CircuitBreaker) recordFailure() {
 	cb.mu.Lock()
-	defer cb.mu.Unlock()
+	prevState := cb.state
 	cb.failures++
 	// If in half-open, any failure opens immediately
 	if cb.state == circuitStateHalfOpen || cb.failures >= cb.threshold {
 		cb.state = circuitStateOpen
 		cb.openedAt = cb.clock.Now()
 	}
+	state := cb.state
+	cb.mu.Unlock()
+	if state != prevState {
+		metrics.SetCircuitBreakerState("refresh", state)
+		if state == circuitStateOpen {
+			reason := "threshold_exceeded"
+			if prevState == circuitStateHalfOpen {
+				reason = "half_open_failure"
+			}
+			metrics.RecordCircuitBreakerTrip("refresh", reason)
+		}
+	}
 }
 
 func (cb *CircuitBreaker) recordSuccess() {
 	cb.mu.Lock()
-	defer cb.mu.Unlock()
+	prevState := cb.state
 	cb.failures = 0
 	cb.state = circuitStateClosed
+	state := cb.state
+	cb.mu.Unlock()
+	if state != prevState {
+		metrics.SetCircuitBreakerState("refresh", state)
+	}
 }
 
 // State returns the current state (for debugging/metrics if needed).
