@@ -88,7 +88,23 @@ The following environment variables control V3 behavior:
 | `XG2G_V3_STORE_BACKEND` | `memory` | Session state store (`memory` or `bolt`) |
 | `XG2G_V3_STORE_PATH` | `/var/lib/xg2g/v3-store` | Path to BoltDB file (Recommended: `/data/v3-store` for Docker) |
 | `XG2G_V3_HLS_ROOT` | `/var/lib/xg2g/v3-hls` | Root for HLS segments (Recommended: `/data/v3-hls` for Docker) |
-| `XG2G_V3_E2_HOST` | `http://localhost` | Enigma2 Receiver URL for Worker (Must set in Docker!) |
+| `XG2G_V3_E2_HOST` | (inherits from `XG2G_OWI_BASE`) | Enigma2 Receiver URL for Worker (auto-inherits if not set) |
+| `XG2G_CONFIG_VERSION` | `3.0.0` | Config schema version for v3 strict validation |
+| `XG2G_V3_CONFIG_STRICT` | `true` | Enforce strict v3 config validation (override for migration) |
+
+## RBAC Scopes
+
+v3 endpoints require scopes in addition to a valid token. For example, creating intents requires `v3:write`:
+
+```bash
+export XG2G_API_TOKEN_SCOPES="v3:read,v3:write"
+```
+
+See `docs/guides/RBAC.md` for the full scope mapping.
+
+## Strict Config Default
+
+`configVersion` defaults to `3.0.0`, so v3 strict validation is enabled by default. Use `XG2G_V3_CONFIG_STRICT=false` to override during migration.
 
 ## Verification
 

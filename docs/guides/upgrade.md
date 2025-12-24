@@ -1,8 +1,14 @@
 # Upgrade Guide
 
-This document lists changes to the configuration format and environment variables, including removed legacy paths.
+This document records historical configuration migrations and deprecations.
 
-## Removed Legacy Configuration Keys
+## History
+
+### Legacy Configuration Migration (v2.x)
+
+This section lists changes to the configuration format and environment variables, including removed legacy paths.
+
+#### Removed Legacy Configuration Keys
 
 The following configuration keys were previously auto-migrated but have now been removed. Please update your `config.yaml` to use the new keys.
 
@@ -21,6 +27,10 @@ The following configuration keys were previously auto-migrated but have now been
 | `epg` | `xmltv` | `xmltvPath` | |
 | Root | `xmltv` | `epg.xmltvPath` | Moved to `epg` section |
 
-## Deprecated Environment Variable Aliases
+#### Removed Environment Variable Aliases (v3.0.0)
 
-Some legacy environment variable aliases are still accepted for backward compatibility (e.g., `RECEIVER_IP`, `RECEIVER_USER`, `RECEIVER_PASS`, `XG2G_API_ADDR`, `XG2G_METRICS_ADDR`, `XG2G_PICONS_BASE`, `XG2G_EPG_XMLTV_PATH`). These emit startup warnings and will be removed in **v2.2**. Use canonical names instead (e.g., `XG2G_OWI_BASE`, `XG2G_OWI_USER`, `XG2G_OWI_PASS`, `XG2G_LISTEN`, `XG2G_METRICS_LISTEN`, `XG2G_PICON_BASE`, `XG2G_XMLTV`).
+Legacy environment variable aliases are no longer accepted as of v3.0.0 (e.g., `RECEIVER_IP`, `RECEIVER_USER`, `RECEIVER_PASS`, `XG2G_API_ADDR`, `XG2G_METRICS_ADDR`, `XG2G_PICONS_BASE`, `XG2G_EPG_XMLTV_PATH`). Use canonical names instead (e.g., `XG2G_OWI_BASE`, `XG2G_OWI_USER`, `XG2G_OWI_PASS`, `XG2G_LISTEN`, `XG2G_METRICS_LISTEN`, `XG2G_PICON_BASE`, `XG2G_XMLTV`).
+
+#### Query Token Authentication Removed (v3.0.0)
+
+Authentication via `?token=...` was removed in v3.0.0 due to security risks. Use `Authorization: Bearer <token>` or the `xg2g_session` cookie instead.

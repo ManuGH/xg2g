@@ -9,8 +9,14 @@
     "version": {
       "type": "string",
       "description": "Configuration version identifier",
-      "default": "2.1.0",
-      "examples": ["2.1.0"]
+      "default": "3.0.0",
+      "examples": ["3.0.0"]
+    },
+    "configVersion": {
+      "type": "string",
+      "description": "Explicit configuration schema version (preferred for v3 strict validation).",
+      "default": "3.0.0",
+      "examples": ["3.0.0"]
     },
     "dataDir": {
       "type": "string",
@@ -187,6 +193,42 @@
           "writeOnly": true,
           "description": "Bearer token for API authentication. Can also be provided via environment variable XG2G_API_TOKEN. Never logged in plaintext. Environment variables are expanded.",
           "examples": ["my-secret-token", "${API_TOKEN}"]
+        },
+        "tokenScopes": {
+          "type": "array",
+          "description": "Scopes granted to api.token (comma-separated via XG2G_API_TOKEN_SCOPES).",
+          "items": {
+            "type": "string",
+            "examples": ["v3:read", "v3:write"]
+          },
+          "default": []
+        },
+        "tokens": {
+          "type": "array",
+          "description": "Additional API tokens with scopes (XG2G_API_TOKENS).",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["token"],
+            "properties": {
+              "token": {
+                "type": "string",
+                "writeOnly": true,
+                "description": "API token value. Keep it secret.",
+                "examples": ["my-other-token"]
+              },
+              "scopes": {
+                "type": "array",
+                "description": "Scopes granted to this token.",
+                "items": {
+                  "type": "string",
+                  "examples": ["v3:read", "v3:write"]
+                },
+                "default": []
+              }
+            }
+          },
+          "default": []
         },
         "listenAddr": {
           "type": "string",

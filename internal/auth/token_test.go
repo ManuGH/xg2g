@@ -19,20 +19,16 @@ func TestExtractToken_PriorityOrder(t *testing.T) {
 	r.AddCookie(&http.Cookie{Name: "xg2g_session", Value: "session-token"})
 	r.AddCookie(&http.Cookie{Name: "X-API-Token", Value: "legacy-cookie-token"})
 
-	if got := ExtractToken(r, true); got != "bearer-token" {
+	if got := ExtractToken(r); got != "bearer-token" {
 		t.Fatalf("ExtractToken() = %q, want %q", got, "bearer-token")
 	}
 }
 
-func TestExtractToken_AllowQuery(t *testing.T) {
+func TestExtractToken_IgnoresQuery(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "http://example.local/test?token=query-token", nil)
 
-	if got := ExtractToken(r, false); got != "" {
-		t.Fatalf("ExtractToken(allowQuery=false) = %q, want empty", got)
-	}
-
-	if got := ExtractToken(r, true); got != "query-token" {
-		t.Fatalf("ExtractToken(allowQuery=true) = %q, want %q", got, "query-token")
+	if got := ExtractToken(r); got != "" {
+		t.Fatalf("ExtractToken() = %q, want empty", got)
 	}
 }
 
@@ -55,10 +51,13 @@ func TestAuthorizeRequest(t *testing.T) {
 	expected := "secret"
 
 	r := httptest.NewRequest(http.MethodGet, "http://example.local/test?token=secret", nil)
-	if AuthorizeRequest(r, expected, true) != true {
-		t.Fatal("AuthorizeRequest should accept query token when allowQuery=true")
+	if AuthorizeRequest(r, expected) != false {
+		t.Fatal("AuthorizeRequest should reject query token")
 	}
-	if AuthorizeRequest(r, expected, false) != false {
-		t.Fatal("AuthorizeRequest should reject query token when allowQuery=false")
+
+	r = httptest.NewRequest(http.MethodGet, "http://example.local/test", nil)
+	r.Header.Set("Authorization", "Bearer secret")
+	if AuthorizeRequest(r, expected) != true {
+		t.Fatal("AuthorizeRequest should accept bearer token")
 	}
 }

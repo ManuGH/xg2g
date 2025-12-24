@@ -29,6 +29,8 @@ func runConfigCLI(args []string) int {
 		return runConfigValidate(args[1:])
 	case "dump":
 		return runConfigDump(args[1:])
+	case "migrate":
+		return runConfigMigrate(args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown subcommand: %s\n\n", args[0])
 		printConfigUsage()
@@ -40,6 +42,7 @@ func printConfigUsage() {
 	fmt.Fprintln(os.Stderr, "Usage:")
 	fmt.Fprintln(os.Stderr, "  xg2g config validate [--file|-f config.yaml]")
 	fmt.Fprintln(os.Stderr, "  xg2g config dump --effective [--file|-f config.yaml] [--format=yaml|json]")
+	fmt.Fprintln(os.Stderr, "  xg2g config migrate --file|-f config.yaml [--to VERSION] [--write]")
 }
 
 func resolveDefaultConfigPath() string {
@@ -150,6 +153,91 @@ func runConfigDump(args []string) int {
 	}
 }
 
+func runConfigMigrate(args []string) int {
+	fs := flag.NewFlagSet("xg2g config migrate", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+
+	var file string
+	var targetVersion string
+	var write bool
+
+	fs.StringVar(&file, "file", "", "path to YAML configuration file")
+	fs.StringVar(&file, "f", "", "path to YAML configuration file (shorthand)")
+	fs.StringVar(&targetVersion, "to", config.V3ConfigVersion, "target config version")
+	fs.BoolVar(&write, "write", false, "write changes to file")
+
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+
+	configPath := strings.TrimSpace(file)
+	if configPath == "" {
+		configPath = resolveDefaultConfigPath()
+	}
+	if configPath == "" {
+		fmt.Fprintln(os.Stderr, "Error: --file is required (no default config.yaml found in $XG2G_DATA)")
+		return 2
+	}
+
+	fileCfg, err := config.LoadFileConfig(configPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Configuration error in %s:\n  %v\n", configPath, err)
+		return 1
+	}
+
+	updated, changes, err := config.MigrateFileConfig(*fileCfg, targetVersion)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Migration error in %s:\n  %v\n", configPath, err)
+		return 1
+	}
+
+	if len(changes) == 0 {
+		fmt.Printf("✓ %s is already at configVersion %s\n", configPath, config.EffectiveFileConfigVersion(*fileCfg))
+		return 0
+	}
+
+	for _, change := range changes {
+		fmt.Printf("- %s\n", change)
+	}
+
+	if !write {
+		fmt.Fprintln(os.Stderr, "Dry run only. Re-run with --write to apply changes.")
+		return 0
+	}
+
+	if err := writeConfigFile(configPath, updated); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to write %s:\n  %v\n", configPath, err)
+		return 1
+	}
+
+	fmt.Printf("✓ migrated %s to configVersion %s\n", configPath, config.EffectiveFileConfigVersion(updated))
+	return 0
+}
+
+func writeConfigFile(path string, cfg config.FileConfig) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), "config-*.tmp")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(tmp.Name()) }()
+
+	enc := yaml.NewEncoder(tmp)
+	enc.SetIndent(2)
+	if err := enc.Encode(cfg); err != nil {
+		_ = enc.Close()
+		_ = tmp.Close()
+		return err
+	}
+	if err := enc.Close(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
+}
+
 func fileConfigFromAppConfig(cfg config.AppConfig) config.FileConfig {
 	epgEnabled := cfg.EPGEnabled
 	epgDays := cfg.EPGDays
@@ -162,9 +250,10 @@ func fileConfigFromAppConfig(cfg config.AppConfig) config.FileConfig {
 	useWebIFStreams := cfg.UseWebIFStreams
 
 	return config.FileConfig{
-		Version:  cfg.Version,
-		DataDir:  cfg.DataDir,
-		LogLevel: cfg.LogLevel,
+		Version:       config.EffectiveConfigVersion(cfg),
+		ConfigVersion: cfg.ConfigVersion,
+		DataDir:       cfg.DataDir,
+		LogLevel:      cfg.LogLevel,
 		OpenWebIF: config.OpenWebIFConfig{
 			BaseURL:    cfg.OWIBase,
 			Username:   cfg.OWIUsername,
@@ -188,8 +277,10 @@ func fileConfigFromAppConfig(cfg config.AppConfig) config.FileConfig {
 			Source:         cfg.EPGSource,
 		},
 		API: config.APIConfig{
-			Token:      cfg.APIToken,
-			ListenAddr: cfg.APIListenAddr,
+			Token:       cfg.APIToken,
+			TokenScopes: append([]string(nil), cfg.APITokenScopes...),
+			Tokens:      append([]config.ScopedToken(nil), cfg.APITokens...),
+			ListenAddr:  cfg.APIListenAddr,
 		},
 		Metrics: config.MetricsConfig{
 			Enabled:    &metricsEnabled,

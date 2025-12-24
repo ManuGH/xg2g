@@ -67,6 +67,28 @@ func Validate(cfg AppConfig) error {
 	if cfg.WorkerEnabled {
 		v.WritableDirectory("StorePath", cfg.StorePath, false)
 		v.WritableDirectory("HLSRoot", cfg.HLSRoot, false)
+
+		if cfg.ConfigStrict {
+			if strings.TrimSpace(cfg.ConfigVersion) == "" {
+				v.AddError("ConfigVersion", "required when XG2G_V3_CONFIG_STRICT=true", cfg.ConfigVersion)
+			} else if cfg.ConfigVersion != V3ConfigVersion {
+				v.AddError("ConfigVersion", "unsupported v3 config version", cfg.ConfigVersion)
+			}
+
+			switch cfg.WorkerMode {
+			case "standard", "virtual":
+			default:
+				v.AddError("WorkerMode", "must be standard or virtual", cfg.WorkerMode)
+			}
+
+			switch cfg.StoreBackend {
+			case "memory", "bolt":
+			default:
+				v.AddError("StoreBackend", "must be memory or bolt", cfg.StoreBackend)
+			}
+
+			v.URL("E2Host", cfg.E2Host, []string{"http", "https"})
+		}
 	}
 
 	if !v.IsValid() {

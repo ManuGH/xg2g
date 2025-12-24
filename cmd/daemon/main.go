@@ -29,7 +29,7 @@ import (
 )
 
 var (
-	version   = "v2.1.0"
+	version   = "v3.0.0"
 	commit    = "none"
 	buildDate = "unknown"
 )
@@ -128,6 +128,28 @@ func main() {
 			Msg("loaded configuration from environment and defaults")
 	}
 
+	if cfg.ConfigVersion != config.V3ConfigVersion {
+		logger.Warn().
+			Str("event", "config.migration.required").
+			Str("config_version", cfg.ConfigVersion).
+			Str("target_version", config.V3ConfigVersion).
+			Msg("legacy configVersion detected; migrate configuration to v3")
+	}
+
+	if cfg.WorkerEnabled {
+		if cfg.ConfigVersion != config.V3ConfigVersion {
+			logger.Warn().
+				Str("event", "config.strict.disabled").
+				Str("config_version", cfg.ConfigVersion).
+				Msg("v3 worker enabled with legacy configVersion; strict validation disabled until migration")
+		} else if !cfg.ConfigStrict {
+			logger.Warn().
+				Str("event", "config.strict.disabled").
+				Str("config_version", cfg.ConfigVersion).
+				Msg("v3 strict validation disabled via XG2G_V3_CONFIG_STRICT override")
+		}
+	}
+
 	// Legacy: Determine XMLTV path if EPG is enabled and no explicit path is set
 	if cfg.EPGEnabled && cfg.XMLTVPath == "" {
 		cfg.XMLTVPath = "xmltv.xml"
@@ -151,8 +173,8 @@ func main() {
 	serverCfg := config.ParseServerConfig()
 
 	// Allow config.yaml to set the API listen address, but keep ENV as the highest priority.
-	// ENV precedence: XG2G_LISTEN / XG2G_API_ADDR > config.yaml api.listenAddr > defaults.
-	if strings.TrimSpace(config.ParseStringWithAlias("XG2G_LISTEN", "XG2G_API_ADDR", "")) == "" {
+	// ENV precedence: XG2G_LISTEN > config.yaml api.listenAddr > defaults.
+	if strings.TrimSpace(config.ParseString("XG2G_LISTEN", "")) == "" {
 		if strings.TrimSpace(cfg.APIListenAddr) != "" {
 			serverCfg.ListenAddr = cfg.APIListenAddr
 		}

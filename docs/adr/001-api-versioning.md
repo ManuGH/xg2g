@@ -15,15 +15,20 @@ We need an explicit compatibility boundary so changes to handlers don’t silent
 
 ## Decision
 
-- The HTTP API is versioned via a URL prefix: `/api/v2/*`.
+- The HTTP API is versioned via a URL prefix: `/api/<version>/*`.
 - The OpenAPI-generated server is mounted under this base path, and the WebUI uses the same base.
-- Non-versioned “compat” routes (e.g. `/stream/*`) exist only for WebUI playback integration and are considered internal wiring, not public API surface.
+- Non-versioned "compat" routes (e.g. `/stream/*`) exist only for WebUI playback integration and are considered internal wiring, not public API surface.
 
 ## Consequences
 
 - Breaking API changes require a new version prefix and migration docs.
 - Within a major API version, backwards-compatible evolution is allowed (additive fields/endpoints), but removing/renaming routes is treated as breaking.
-- The `/api/v2/*` surface is stable. The `/api/v3/*` surface provides the streaming control plane.
+- Legacy version details are captured in the History section.
+
+## History
+
+- Stable API base path at the time of this decision: `/api/v2/*`.
+- Streaming control plane introduced under `/api/v3/*`.
 
 ## References (Code)
 

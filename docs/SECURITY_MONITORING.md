@@ -24,7 +24,7 @@ xg2g includes comprehensive security monitoring to detect and log unauthorized a
 **Console Logs**:
 ```javascript
 [Security] API token loaded from localStorage
-[Security] 401 Unauthorized detected on: /api/v2/system/health
+[Security] 401 Unauthorized detected on: /api/<version>/system/health
 [Security] API token updated
 [Security] API token removed
 ```
@@ -41,7 +41,7 @@ xg2g includes comprehensive security monitoring to detect and log unauthorized a
   "level": "warn",
   "event": "auth.missing_header",
   "remote_addr": "192.168.1.100:54321",
-  "path": "/api/v2/system/health",
+  "path": "/api/<version>/system/health",
   "user_agent": "Mozilla/5.0...",
   "message": "unauthorized access attempt - missing authorization header"
 }
@@ -53,7 +53,7 @@ xg2g includes comprehensive security monitoring to detect and log unauthorized a
   "level": "warn",
   "event": "auth.malformed_header",
   "remote_addr": "192.168.1.100:54321",
-  "path": "/api/v2/channels",
+  "path": "/api/<version>/services",
   "message": "unauthorized access attempt - malformed authorization header"
 }
 ```
@@ -64,7 +64,7 @@ xg2g includes comprehensive security monitoring to detect and log unauthorized a
   "level": "warn",
   "event": "auth.invalid_token",
   "remote_addr": "192.168.1.100:54321",
-  "path": "/api/v2/system/health",
+  "path": "/api/<version>/system/health",
   "user_agent": "curl/8.0.1",
   "message": "SECURITY ALERT: invalid bearer token - potential unauthorized access attempt"
 }

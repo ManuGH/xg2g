@@ -1,5 +1,5 @@
 # yaml-language-server: $schema=./docs/guides/config.schema.json
-# xg2g Configuration File (v2.1+)
+# xg2g Configuration File (v3.0+)
 #
 # This file is optional. xg2g is 12-Factor App compliant and can be fully configured via
 # environment variables (ENV). This file is useful for complex setups or personal preference.
@@ -9,7 +9,8 @@
 # To validate your config:
 #   xg2g config validate --config /path/to/config.yaml
 
-version: "2.1.0"
+version: "3.0.0"
+configVersion: "3.0.0" # v3 strict validation default; set XG2G_V3_CONFIG_STRICT=false to override
 
 # ------------------------------------------------------------------------------
 # Global Settings
@@ -81,6 +82,18 @@ api:
   # Generate a secure token: openssl rand -hex 32
   # ENV: XG2G_API_TOKEN
   token: ""
+
+  # Scopes for the primary token (v3 RBAC)
+  # ENV: XG2G_API_TOKEN_SCOPES
+  # tokenScopes:
+  #   - v3:read
+  #   - v3:write
+
+  # Additional tokens with scopes (v3 RBAC)
+  # ENV: XG2G_API_TOKENS
+  # tokens:
+  #   - token: "read-only-token"
+  #     scopes: ["v3:read"]
 
   # API server listen address
   # ENV: XG2G_LISTEN
@@ -187,6 +200,8 @@ picons:
 #
 # API:
 #   XG2G_API_TOKEN               - Bearer token for API authentication
+#   XG2G_API_TOKEN_SCOPES        - Scopes for the primary token (v3 RBAC)
+#   XG2G_API_TOKENS              - Additional tokens with scopes (v3 RBAC)
 #   XG2G_LISTEN                  - API listen address
 #
 # Metrics:
@@ -198,6 +213,8 @@ picons:
 # v3 (experimental/preview; /api/v3/*; env-only):
 #   XG2G_V3_WORKER_ENABLED       - Enable v3 worker/store
 #   XG2G_V3_WORKER_MODE          - Worker mode (standard or virtual)
+#   XG2G_CONFIG_VERSION          - Config schema version for v3 strict validation
+#   XG2G_V3_CONFIG_STRICT        - Enable strict v3 config validation
 #   XG2G_V3_STORE_BACKEND        - Store backend (memory or bolt)
 #   XG2G_V3_STORE_PATH           - Store path for bolt backend
 #   XG2G_V3_HLS_ROOT             - HLS output root for v3 sessions

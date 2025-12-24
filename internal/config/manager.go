@@ -35,9 +35,10 @@ func (m *Manager) Save(cfg *AppConfig) error {
 	// Map AppConfig back to FileConfig for serialization
 	// We only write fields that are user-configurable via the UI
 	fileCfg := FileConfig{
-		Version:  cfg.Version,
-		DataDir:  cfg.DataDir,
-		LogLevel: cfg.LogLevel,
+		Version:       EffectiveConfigVersion(*cfg),
+		ConfigVersion: cfg.ConfigVersion,
+		DataDir:       cfg.DataDir,
+		LogLevel:      cfg.LogLevel,
 		OpenWebIF: OpenWebIFConfig{
 			BaseURL:    cfg.OWIBase,
 			Username:   cfg.OWIUsername,

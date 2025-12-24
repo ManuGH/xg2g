@@ -19,9 +19,10 @@ import (
 
 // FileConfig represents the YAML configuration structure
 type FileConfig struct {
-	Version  string `yaml:"version,omitempty"`
-	DataDir  string `yaml:"dataDir,omitempty"`
-	LogLevel string `yaml:"logLevel,omitempty"`
+	Version       string `yaml:"version,omitempty"`
+	ConfigVersion string `yaml:"configVersion,omitempty"`
+	DataDir       string `yaml:"dataDir,omitempty"`
+	LogLevel      string `yaml:"logLevel,omitempty"`
 
 	OpenWebIF OpenWebIFConfig   `yaml:"openWebIF"`
 	Bouquets  []string          `yaml:"bouquets,omitempty"`
@@ -59,9 +60,17 @@ type EPGConfig struct {
 	Source         string `yaml:"source,omitempty"` // "bouquet" or "per-service" (default)
 }
 
+// ScopedToken defines a token and its associated scopes.
+type ScopedToken struct {
+	Token  string   `yaml:"token"`
+	Scopes []string `yaml:"scopes,omitempty"`
+}
+
 // APIConfig holds API server configuration
 type APIConfig struct {
 	Token          string          `yaml:"token,omitempty"`
+	TokenScopes    []string        `yaml:"tokenScopes,omitempty"`
+	Tokens         []ScopedToken   `yaml:"tokens,omitempty"`
 	ListenAddr     string          `yaml:"listenAddr,omitempty"`
 	RateLimit      RateLimitConfig `yaml:"rateLimit,omitempty"`
 	AllowedOrigins []string        `yaml:"allowedOrigins,omitempty"`
@@ -103,6 +112,8 @@ type HDHRConfig struct {
 // AppConfig holds all configuration for the application
 type AppConfig struct {
 	Version         string
+	ConfigVersion   string
+	ConfigStrict    bool
 	DataDir         string
 	LogLevel        string
 	LogService      string
@@ -116,6 +127,8 @@ type AppConfig struct {
 	StreamPort      int
 	UseWebIFStreams bool
 	APIToken        string // Optional: for securing API endpoints (e.g., /api/v2/*)
+	APITokenScopes  []string
+	APITokens       []ScopedToken
 	APIListenAddr   string // Optional: API listen address (if set via config.yaml)
 	TrustedProxies  string // Comma-separated list of trusted CIDRs
 	MetricsEnabled  bool   // Optional: enable Prometheus metrics server
@@ -142,7 +155,6 @@ type AppConfig struct {
 	InstantTuneEnabled   bool   // Enable "Instant Tune" stream pre-warming
 	DevMode              bool   // Enable development mode (live asset reloading)
 	AuthAnonymous        bool   // Allow anonymous access if no token is configured (Fail-Open override)
-	AllowQueryTokens     bool   // DEPRECATED: Allow authentication via query parameter (insecure, will be removed in v3.0)
 	ReadyStrict          bool   // Enable strict readiness checks (check upstream availability)
 	ShadowIntentsEnabled bool   // v3 Shadow Canary (experimental): mirror intents to v3 API (default OFF)
 	ShadowTarget         string // v3 Shadow Canary (experimental): target URL (e.g. http://localhost:8080/api/v3/intents)
@@ -241,6 +253,8 @@ func (l *Loader) setDefaults(cfg *AppConfig) {
 	cfg.OWIMaxBackoff = 30 * time.Second
 	cfg.FuzzyMax = 2
 	cfg.LogLevel = "info"
+	cfg.ConfigVersion = DefaultConfigVersion
+	cfg.ConfigStrict = false
 
 	// EPG defaults - enabled by default for complete out-of-the-box experience
 	cfg.EPGEnabled = true
@@ -318,6 +332,11 @@ func (l *Loader) loadFile(path string) (*FileConfig, error) {
 
 // mergeFileConfig merges file configuration into jobs.Config
 func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
+	if src.ConfigVersion != "" {
+		dst.ConfigVersion = src.ConfigVersion
+	} else if src.Version != "" {
+		dst.ConfigVersion = src.Version
+	}
 	if src.DataDir != "" {
 		dst.DataDir = expandEnv(src.DataDir)
 	}
@@ -414,6 +433,12 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 	if src.API.Token != "" {
 		dst.APIToken = expandEnv(src.API.Token)
 	}
+	if len(src.API.TokenScopes) > 0 {
+		dst.APITokenScopes = append([]string(nil), src.API.TokenScopes...)
+	}
+	if len(src.API.Tokens) > 0 {
+		dst.APITokens = append([]ScopedToken(nil), src.API.Tokens...)
+	}
 	if src.API.ListenAddr != "" {
 		dst.APIListenAddr = expandEnv(src.API.ListenAddr)
 	}
@@ -483,26 +508,21 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 // Uses consistent ParseBool/ParseInt/ParseDuration helpers from env.go
 func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	// String values (direct assignment)
-	cfg.Version = ParseStringWithAlias("XG2G_VERSION", "VERSION", cfg.Version)
+	cfg.Version = ParseString("XG2G_VERSION", cfg.Version)
 	cfg.DataDir = ParseString("XG2G_DATA", cfg.DataDir)
-	cfg.LogLevel = ParseStringWithAlias("XG2G_LOG_LEVEL", "LOG_LEVEL", cfg.LogLevel)
-	cfg.LogService = ParseStringWithAlias("XG2G_LOG_SERVICE", "LOG_SERVICE", cfg.LogService)
+	cfg.LogLevel = ParseString("XG2G_LOG_LEVEL", cfg.LogLevel)
+	cfg.LogService = ParseString("XG2G_LOG_SERVICE", cfg.LogService)
 
-	// OpenWebIF (with backward-compatible aliases for v2.0)
-	// OpenWebIF (with backward-compatible aliases for v2.0)
-	cfg.OWIBase = ParseStringWithAlias("XG2G_OWI_BASE", "RECEIVER_IP", cfg.OWIBase)
+	// OpenWebIF
+	cfg.OWIBase = ParseString("XG2G_OWI_BASE", cfg.OWIBase)
 
-	// Username: XG2G_OWI_USER > XG2G_OWI_USERNAME
+	// Username: XG2G_OWI_USER
 	if v := ParseString("XG2G_OWI_USER", ""); v != "" {
-		cfg.OWIUsername = v
-	} else if v := ParseString("XG2G_OWI_USERNAME", ""); v != "" {
 		cfg.OWIUsername = v
 	}
 
-	// Password: XG2G_OWI_PASS > XG2G_OWI_PASSWORD
+	// Password: XG2G_OWI_PASS
 	if v := ParseString("XG2G_OWI_PASS", ""); v != "" {
-		cfg.OWIPassword = v
-	} else if v := ParseString("XG2G_OWI_PASSWORD", ""); v != "" {
 		cfg.OWIPassword = v
 	}
 	cfg.StreamPort = ParseInt("XG2G_STREAM_PORT", cfg.StreamPort)
@@ -523,6 +543,14 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 		cfg.OWIMaxBackoff = time.Duration(ms) * time.Millisecond
 	}
 
+	// Config versioning (v3 strict mode)
+	cfg.ConfigVersion = ParseString("XG2G_CONFIG_VERSION", cfg.ConfigVersion)
+	if _, ok := os.LookupEnv("XG2G_V3_CONFIG_STRICT"); ok {
+		cfg.ConfigStrict = ParseBool("XG2G_V3_CONFIG_STRICT", cfg.ConfigStrict)
+	} else if cfg.ConfigVersion == V3ConfigVersion {
+		cfg.ConfigStrict = true
+	}
+
 	// Bouquet
 	cfg.Bouquet = ParseString("XG2G_BOUQUET", cfg.Bouquet)
 
@@ -534,11 +562,13 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	cfg.EPGSource = ParseString("XG2G_EPG_SOURCE", cfg.EPGSource)
 	cfg.EPGRetries = ParseInt("XG2G_EPG_RETRIES", cfg.EPGRetries)
 	cfg.FuzzyMax = ParseInt("XG2G_FUZZY_MAX", cfg.FuzzyMax)
-	cfg.XMLTVPath = ParseStringWithAlias("XG2G_XMLTV", "XG2G_EPG_XMLTV_PATH", cfg.XMLTVPath)
+	cfg.XMLTVPath = ParseString("XG2G_XMLTV", cfg.XMLTVPath)
 
 	// API
 	cfg.APIToken = ParseString("XG2G_API_TOKEN", cfg.APIToken)
-	cfg.APIListenAddr = ParseStringWithAlias("XG2G_LISTEN", "XG2G_API_ADDR", cfg.APIListenAddr)
+	cfg.APITokenScopes = parseCommaSeparated(ParseString("XG2G_API_TOKEN_SCOPES", ""), cfg.APITokenScopes)
+	cfg.APITokens = parseScopedTokens(ParseString("XG2G_API_TOKENS", ""), cfg.APITokens)
+	cfg.APIListenAddr = ParseString("XG2G_LISTEN", cfg.APIListenAddr)
 
 	// Metrics
 	// Primary configuration is via XG2G_METRICS_LISTEN (empty disables).
@@ -549,7 +579,7 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	}
 
 	// Picons
-	cfg.PiconBase = ParseStringWithAlias("XG2G_PICON_BASE", "XG2G_PICONS_BASE", cfg.PiconBase)
+	cfg.PiconBase = ParseString("XG2G_PICON_BASE", cfg.PiconBase)
 
 	// TLS
 	cfg.TLSCert = ParseString("XG2G_TLS_CERT", cfg.TLSCert)
@@ -560,7 +590,6 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	cfg.InstantTuneEnabled = ParseBool("XG2G_INSTANT_TUNE", cfg.InstantTuneEnabled)
 	cfg.DevMode = ParseBool("XG2G_DEV", cfg.DevMode)
 	cfg.AuthAnonymous = ParseBool("XG2G_AUTH_ANONYMOUS", cfg.AuthAnonymous)
-	cfg.AllowQueryTokens = ParseBool("XG2G_ALLOW_QUERY_TOKENS", cfg.AllowQueryTokens)
 	cfg.ReadyStrict = ParseBool("XG2G_READY_STRICT", cfg.ReadyStrict)
 	cfg.ShadowIntentsEnabled = ParseBool("XG2G_V3_SHADOW_INTENTS", cfg.ShadowIntentsEnabled)
 	cfg.ShadowTarget = ParseString("XG2G_V3_SHADOW_TARGET", cfg.ShadowTarget)
@@ -619,7 +648,7 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 
 	cfg.HDHR.DeviceID = ParseString("XG2G_HDHR_DEVICE_ID", cfg.HDHR.DeviceID)
 	cfg.HDHR.FriendlyName = ParseString("XG2G_HDHR_FRIENDLY_NAME", cfg.HDHR.FriendlyName)
-	cfg.HDHR.ModelNumber = ParseStringWithAlias("XG2G_HDHR_MODEL", "XG2G_HDHR_MODEL_NUMBER", cfg.HDHR.ModelNumber)
+	cfg.HDHR.ModelNumber = ParseString("XG2G_HDHR_MODEL", cfg.HDHR.ModelNumber)
 	cfg.HDHR.FirmwareName = ParseString("XG2G_HDHR_FIRMWARE", cfg.HDHR.FirmwareName)
 	cfg.HDHR.BaseURL = ParseString("XG2G_HDHR_BASE_URL", cfg.HDHR.BaseURL)
 
@@ -656,6 +685,38 @@ func parseRecordingRoots(envVal string, defaults map[string]string) map[string]s
 	}
 	if len(out) == 0 {
 		return defaults // Fallback if parsing failed completely
+	}
+	return out
+}
+
+// Helper to parse scoped tokens: "token=scopes;token2=scopes2"
+func parseScopedTokens(envVal string, defaults []ScopedToken) []ScopedToken {
+	if strings.TrimSpace(envVal) == "" {
+		return defaults
+	}
+	entries := strings.Split(envVal, ";")
+	var out []ScopedToken
+	for _, entry := range entries {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		kv := strings.SplitN(entry, "=", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		token := strings.TrimSpace(kv[0])
+		scopes := strings.TrimSpace(kv[1])
+		if token == "" {
+			continue
+		}
+		out = append(out, ScopedToken{
+			Token:  token,
+			Scopes: parseCommaSeparated(scopes, nil),
+		})
+	}
+	if len(out) == 0 {
+		return defaults
 	}
 	return out
 }

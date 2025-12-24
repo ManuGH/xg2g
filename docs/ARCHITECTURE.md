@@ -41,7 +41,7 @@ graph TB
     end
 
     subgraph "xg2g Middleware"
-        API[HTTP API Server<br/>/api/v2/*]
+        API[HTTP API Server<br/>/api/<version>/*]
         HDHR[HDHomeRun Emulation<br/>SSDP Discovery]
         Jobs[Background Jobs<br/>Refresh, EPG]
         V3[V3 Control Plane<br/>/api/v3/*]
@@ -87,7 +87,7 @@ graph LR
 
     subgraph "internal/api"
         Router[http.go<br/>Routing + UI]
-        V2[server_gen.go + server_impl.go<br/>API v2 Handlers]
+        APIHandlers[server_gen.go + server_impl.go<br/>Generated API Handlers]
         MW[middleware/*<br/>Auth, CORS, Tracing]
     end
 
@@ -108,12 +108,12 @@ graph LR
 
     Main --> App
     App --> Router
-    Router --> V2
+    Router --> APIHandlers
     Router --> MW
-    V2 --> Refresh
-    V2 --> HDHR
+    APIHandlers --> Refresh
+    APIHandlers --> HDHR
     App --> Config
-    V2 --> Validate
+    APIHandlers --> Validate
     MW --> Telemetry
     App --> Log
 ```
@@ -124,11 +124,11 @@ graph LR
 
 **Responsibility**: Expose REST API for playlist management and status queries
 
-**Key Endpoints**:
+**Key Endpoints** (versioned):
 
-- `GET /api/v2/system/health` - Service health and runtime status
-- `POST /api/v2/system/refresh` - Trigger playlist/EPG refresh
-- `GET /api/v2/services` - List available channels (services)
+- `GET /api/<version>/system/health` - Service health and runtime status
+- `POST /api/<version>/system/refresh` - Trigger playlist/EPG refresh
+- `GET /api/<version>/services` - List available channels (services)
 
 **Architecture Decision**: [ADR-001 API Versioning](adr/001-api-versioning.md)
 
@@ -224,7 +224,7 @@ sequenceDiagram
     participant OWI as Enigma2 OpenWebIF
     participant Storage as File Storage
 
-    Client->>API: POST /api/v2/system/refresh
+    Client->>API: POST /api/<version>/system/refresh
     API->>Jobs: Trigger Refresh Job
     Jobs->>OWI: GET /api/bouquets
     OWI-->>Jobs: Bouquet List
@@ -420,6 +420,11 @@ To prevent regression of encrypted channel support, all developers must adhere t
     - **Rule**: A delay (currently **5 seconds**) is MANDATORY between Zapping and connecting to the stream port for encrypted channels.
     - **Reason**: `oscam-emu` needs time to initialize the descrambler and open port 17999. Connecting too early causes "Connection Refused".
 
+## History
+
+- Stable API base path (legacy): `/api/v2/*`.
+- Document version: 3.0.0 (2025-12-19).
+
 ## References
 
 - [Internals Guide](INTERNALS.md)
@@ -431,6 +436,4 @@ To prevent regression of encrypted channel support, all developers must adhere t
 
 ---
 
-**Last Updated**: 2025-12-19
-**Version**: 2.1.0
 **Maintainer**: @ManuGH

@@ -10,7 +10,6 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/ManuGH/xg2g/internal/auth"
 	"github.com/ManuGH/xg2g/internal/log"
 )
 
@@ -25,25 +24,25 @@ type ctxPrincipalKey struct{}
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s.mu.RLock()
-		token := s.cfg.APIToken
 		authAnon := s.cfg.AuthAnonymous
+		hasTokens := s.cfg.APIToken != "" || len(s.cfg.APITokens) > 0
 		s.mu.RUnlock()
 
-		if token == "" {
+		if !hasTokens {
 			if authAnon {
 				// Auth Explicitly Disabled
 				next.ServeHTTP(w, r)
 				return
 			}
 			// Fail-Closed (Default)
-			log.FromContext(r.Context()).Error().Str("event", "auth.fail_closed").Msg("XG2G_API_TOKEN not set and XG2G_AUTH_ANONYMOUS!=true. Denying access.")
+			log.FromContext(r.Context()).Error().Str("event", "auth.fail_closed").Msg("No API tokens configured and XG2G_AUTH_ANONYMOUS!=true. Denying access.")
 			RespondError(w, r, http.StatusUnauthorized, ErrUnauthorized)
 			return
 		}
 
 		// Use unified token extraction
 		// For general API, we do NOT allow query parameter tokens, strictly enforcing Header/Cookie.
-		reqToken := extractToken(r, false)
+		reqToken := extractToken(r)
 
 		logger := log.FromContext(r.Context()).With().Str("component", "auth").Logger()
 
@@ -54,7 +53,7 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 		}
 
 		// Use constant-time comparison to prevent timing attacks
-		if !auth.AuthorizeToken(reqToken, token) {
+		if _, ok := s.tokenScopes(reqToken); !ok {
 			logger.Warn().Str("event", "auth.invalid_token").Msg("invalid api token")
 			RespondError(w, r, http.StatusUnauthorized, ErrUnauthorized)
 			return
@@ -74,22 +73,27 @@ func (s *Server) HandleSessionLogin(w http.ResponseWriter, r *http.Request) {
 	// 1. Re-extract the token that was successfully validated
 	// We prefer the Bearer token from the header for this "login" exchange.
 	// We allow Header or Cookie (if refreshing). NO Query.
-	reqToken := extractToken(r, false)
+	reqToken := extractToken(r)
 
 	// Fallback: If logic fails, use configured token if auth enabled (Single User Mode)
 	s.mu.RLock()
 	cfgToken := s.cfg.APIToken
 	forceHTTPS := s.cfg.ForceHTTPS
+	hasTokens := s.cfg.APIToken != "" || len(s.cfg.APITokens) > 0
 	s.mu.RUnlock()
 
 	if reqToken == "" {
-		if cfgToken == "" {
+		if !hasTokens {
 			w.WriteHeader(http.StatusOK)
+			return
+		}
+		if cfgToken == "" {
+			RespondError(w, r, http.StatusUnauthorized, ErrUnauthorized)
 			return
 		}
 		reqToken = cfgToken
 	} else {
-		if cfgToken != "" && !auth.AuthorizeToken(reqToken, cfgToken) {
+		if _, ok := s.tokenScopes(reqToken); !ok {
 			RespondError(w, r, http.StatusUnauthorized, ErrUnauthorized)
 			return
 		}

@@ -1,7 +1,8 @@
-# xg2g Internals (v2.1.0)
+# xg2g Internals
 
 This document is a concise map of the `internal/` tree for contributors and reviewers.
-The public API includes `/api/v2/*` (stable) and `/api/v3/*` (streaming control plane).
+The public API is versioned; the streaming control plane is exposed under `/api/v3/*`.
+Legacy API version details are captured in the History section.
 
 ## Entry points
 
@@ -13,7 +14,7 @@ The public API includes `/api/v2/*` (stable) and `/api/v3/*` (streaming control 
 
 | Path | Role | Notes |
 | :--- | :--- | :--- |
-| `internal/api` | HTTP server, routing, middleware, WebUI embed | Serves v2 (stable) and v3 APIs |
+| `internal/api` | HTTP server, routing, middleware, WebUI embed | Serves versioned APIs and the WebUI |
 | `internal/config` | Config loader, env parsing, validation | YAML schema in `docs/guides/config.schema.json` |
 | `internal/openwebif` | Enigma2 OpenWebIF client | Upstream source of channels, streams, EPG |
 | `internal/jobs` | Refresh pipeline | Generates playlist + XMLTV, caches EPG |
@@ -28,13 +29,13 @@ The public API includes `/api/v2/*` (stable) and `/api/v3/*` (streaming control 
 | `internal/telemetry` / `internal/metrics` | Tracing and metrics | OpenTelemetry + Prometheus |
 | `internal/v3` | V3 streaming control plane | Bus + store + worker + HLS |
 
-## Config schema summary (v2.1)
+## Config schema summary
 
 Primary schema: `docs/guides/config.schema.json`
 
 | Section | Source | Purpose |
 | :--- | :--- | :--- |
-| `version` | YAML | Config schema version (v2.1.0) |
+| `version` | YAML | Config schema version |
 | `dataDir` | YAML/ENV | Data dir for playlists, EPG, logs |
 | `openWebIF` | YAML/ENV | Receiver base URL, auth, timeouts |
 | `bouquets` | YAML/ENV | Channel list selection |
@@ -85,7 +86,7 @@ The React bundle in `webui/` is built and embedded in `internal/api/dist/*`.
 ### SessionState FSM
 
 ```mermaid
-stateDiagram-v2
+stateDiagram
   [*] --> NEW
   NEW --> STARTING
   STARTING --> READY
@@ -104,7 +105,7 @@ stateDiagram-v2
 ### PipelineState FSM
 
 ```mermaid
-stateDiagram-v2
+stateDiagram
   [*] --> INIT
   INIT --> LEASE_ACQUIRED
   LEASE_ACQUIRED --> TUNE_REQUESTED
@@ -123,6 +124,17 @@ stateDiagram-v2
 ```
 
 Reference enums: `internal/v3/model/enums.go`.
+
+## History
+
+### v2 API Surface
+
+- Stable API base path: `/api/v2/*`.
+- Streaming control plane was introduced under `/api/v3/*`.
+
+### v2 Config Schema
+
+- Config schema version: v3.0.0.
 
 ## FFmpeg Configuration for Enigma2/DVB Receivers
 

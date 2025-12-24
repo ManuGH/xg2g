@@ -41,7 +41,7 @@ jobs:
 
       - name: Run govulncheck (SARIF)
         run: |
-          govulncheck -format sarif ./... > govulncheck.sarif || echo '{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"govulncheck","informationUri":"https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck"}},"results":[]}]}' > govulncheck.sarif
+          govulncheck -format sarif ./... > govulncheck.sarif || echo '{"version":"3.0.0","runs":[{"tool":{"driver":{"name":"govulncheck","informationUri":"https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck"}},"results":[]}]}' > govulncheck.sarif
 
       - name: Fix SARIF duplicate tags
         run: |

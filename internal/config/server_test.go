@@ -76,18 +76,6 @@ func TestParseServerConfig(t *testing.T) {
 			},
 		},
 		{
-			name: "listen addr from alias",
-			envVars: map[string]string{
-				"XG2G_API_ADDR": ":9100",
-			},
-			validate: func(t *testing.T, cfg ServerConfig) {
-				t.Helper()
-				if cfg.ListenAddr != ":9100" {
-					t.Errorf("ListenAddr = %v, want :9100", cfg.ListenAddr)
-				}
-			},
-		},
-		{
 			name: "invalid values fall back to defaults",
 			envVars: map[string]string{
 				"XG2G_SERVER_READ_TIMEOUT":     "invalid",

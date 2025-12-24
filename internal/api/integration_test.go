@@ -72,9 +72,8 @@ func TestIntegration_SessionAndPlayback(t *testing.T) {
 	w4 := httptest.NewRecorder()
 	handler.ServeHTTP(w4, req4)
 
-	// Assert deterministic failure mode (400)
-	// The handler returns 400 because the "test" service ref is invalid/not found in a specific way relative to roots,
-	// or just invalid format for expected service ref structure.
-	// This confirms we passed Auth (401) and likely Path Confinement (403), hitting the logic that validates the ID/Path.
-	assert.Equal(t, http.StatusBadRequest, w4.Code, "Expected 400 (Auth passed, invalid/missing recording)")
+	// Assert deterministic failure mode (403)
+	// The handler returns 403 because v2 streaming is deprecated.
+	// This confirms we passed Auth (401) and reached the handler logic.
+	assert.Equal(t, http.StatusForbidden, w4.Code, "Expected 403 (Auth passed, v2 streaming deprecated)")
 }

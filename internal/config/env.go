@@ -22,36 +22,6 @@ func ParseString(key, defaultValue string) string {
 	return parseStringWithLogger(log.WithComponent("config"), key, defaultValue)
 }
 
-// ParseStringWithAlias reads a string from environment variable, checking an alias first.
-// Priority: primary key > alias key > default value.
-// This enables backward-compatible environment variable names.
-func ParseStringWithAlias(primaryKey, aliasKey, defaultValue string) string {
-	logger := log.WithComponent("config")
-
-	// Check primary key first (new naming convention)
-	if value, exists := os.LookupEnv(primaryKey); exists && value != "" {
-		return parseStringWithLogger(logger, primaryKey, defaultValue)
-	}
-
-	// Check alias key (user-friendly alternative)
-	if value, exists := os.LookupEnv(aliasKey); exists && value != "" {
-		logger.Warn().
-			Str("key", aliasKey).
-			Str("alias_for", primaryKey).
-			Msg("deprecated environment variable alias in use")
-		return value
-	}
-
-	// Fall back to default
-	logger.Debug().
-		Str("key", primaryKey).
-		Str("alias", aliasKey).
-		Str("default", defaultValue).
-		Str("source", "default").
-		Msg("using default value")
-	return defaultValue
-}
-
 // parseStringWithLogger reads an environment variable with custom logger.
 func parseStringWithLogger(logger zerolog.Logger, key, defaultValue string) string {
 	if value, exists := os.LookupEnv(key); exists {

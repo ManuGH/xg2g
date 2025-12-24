@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 
 	"strings"
@@ -23,7 +24,6 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/api/middleware"
-	"github.com/ManuGH/xg2g/internal/auth"
 	"github.com/ManuGH/xg2g/internal/channels"
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/dvr"
@@ -474,10 +474,7 @@ func (s *Server) routes() http.Handler {
 	r.Head("/logos/{ref}.png", s.handlePicons)
 
 	// Phase 7A: v3 Control Plane (experimental/preview, /api/v3/*)
-	r.Post("/api/v3/intents", s.handleV3Intents)
-	r.Get("/api/v3/sessions", s.handleV3SessionsDebug)
-	r.Get("/api/v3/sessions/{sessionID}", s.handleV3SessionState)
-	r.Get("/api/v3/sessions/{sessionID}/hls/{filename}", s.handleV3HLS)
+	s.registerV3Routes(r)
 
 	// Harden file server: disable directory listing and use a secure handler
 	r.Handle("/files/*", http.StripPrefix("/files/", s.secureFileServer()))
@@ -490,24 +487,23 @@ func (s *Server) authRequired(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logger := log.WithComponentFromContext(r.Context(), "auth")
 		s.mu.RLock()
-		token := s.cfg.APIToken
 		authAnon := s.cfg.AuthAnonymous
+		hasTokens := s.cfg.APIToken != "" || len(s.cfg.APITokens) > 0
 		s.mu.RUnlock()
 
-		if token == "" {
+		if !hasTokens {
 			if authAnon {
 				logger.Warn().Str("event", "auth.anonymous").Msg("XG2G_AUTH_ANONYMOUS=true, allowing unauthenticated access")
 				next.ServeHTTP(w, r)
 				return
 			}
-			logger.Error().Str("event", "auth.fail_closed").Msg("XG2G_API_TOKEN not set and XG2G_AUTH_ANONYMOUS!=true. Denying access.")
+			logger.Error().Str("event", "auth.fail_closed").Msg("No API tokens configured and XG2G_AUTH_ANONYMOUS!=true. Denying access.")
 			http.Error(w, "Unauthorized: Authentication required", http.StatusUnauthorized)
 			return
 		}
 
 		// Use unified token extraction
-		// Security: Query parameter tokens can leak in logs/proxies (use s.cfg.AllowQueryTokens to enable if needed)
-		requestToken := extractToken(r, s.cfg.AllowQueryTokens)
+		requestToken := extractToken(r)
 
 		if requestToken == "" {
 			logger.Warn().Str("event", "auth.missing_header").Msg("authorization header/param/cookie missing")
@@ -521,7 +517,7 @@ func (s *Server) authRequired(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		// Use constant-time comparison to prevent timing attacks
-		if !auth.AuthorizeToken(requestToken, token) {
+		if _, ok := s.tokenScopes(requestToken); !ok {
 			logger.Warn().Str("event", "auth.invalid_token").Msg("invalid api token")
 
 			// Audit log: authentication failure
@@ -902,6 +898,7 @@ func (s *Server) handleLineupJSON(w http.ResponseWriter, r *http.Request) {
 	var lineup []hdhr.LineupEntry
 	lines := strings.Split(string(data), "\n")
 	var currentChannel hdhr.LineupEntry
+	forceHLS := s.hdhr != nil && s.hdhr.PlexForceHLS()
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -924,6 +921,9 @@ func (s *Server) handleLineupJSON(w http.ResponseWriter, r *http.Request) {
 		} else if len(line) > 0 && !strings.HasPrefix(line, "#") && currentChannel.GuideName != "" {
 			// This is the stream URL
 			streamURL := line
+			if forceHLS {
+				streamURL = addHLSProxyPrefix(streamURL)
+			}
 
 			currentChannel.URL = streamURL
 			lineup = append(lineup, currentChannel)
@@ -940,6 +940,26 @@ func (s *Server) handleLineupJSON(w http.ResponseWriter, r *http.Request) {
 	logger.Debug().
 		Int("channels", len(lineup)).
 		Msg("HDHomeRun lineup served")
+}
+
+func addHLSProxyPrefix(raw string) string {
+	if raw == "" {
+		return raw
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	if strings.HasPrefix(parsed.Path, "/hls/") {
+		return raw
+	}
+	trimmed := strings.TrimPrefix(parsed.Path, "/")
+	if trimmed == "" {
+		parsed.Path = "/hls"
+	} else {
+		parsed.Path = path.Join("/hls", trimmed)
+	}
+	return parsed.String()
 }
 
 // uiHandler returns a handler that serves the embedded Web UI

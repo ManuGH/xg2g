@@ -6,7 +6,7 @@ info:
 
     **License**: PolyForm Noncommercial License 1.0.0.
     Commercial usage is restricted. See repository documentation for details.
-  version: 2.1.0
+  version: 3.0.0
 servers:
   - url: /api/v2
     description: Production API

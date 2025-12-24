@@ -36,3 +36,11 @@ jobs:
           fi
 
           echo "✅ No unauthorized environment access detected."
+
+  check-deprecations:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check Deprecation Registry
+        run: python3 scripts/check_deprecations.py

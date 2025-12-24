@@ -217,7 +217,7 @@ func (s *Server) GetRecordingsHandler(w http.ResponseWriter, r *http.Request) {
 // Redirects to /stream/{ref} which handles proxying/HLS
 func (s *Server) GetRecordingStreamHandler(w http.ResponseWriter, r *http.Request) {
 	// V2 Proxy deprecated
-	http.Error(w, "V2 streaming deprecated", http.StatusNotFound)
+	http.Error(w, "V2 streaming deprecated", http.StatusForbidden)
 }
 
 // GetRecordingHLSPlaylistHandler handles GET /api/v2/recordings/{recordingId}/playlist.m3u8
@@ -225,14 +225,14 @@ func (s *Server) GetRecordingStreamHandler(w http.ResponseWriter, r *http.Reques
 // injecting the correct upstream URL extracted from the recording ID (service ref).
 func (s *Server) GetRecordingHLSPlaylistHandler(w http.ResponseWriter, r *http.Request) {
 	// V2 Proxy deprecated
-	http.Error(w, "V2 streaming deprecated", http.StatusNotFound)
+	http.Error(w, "V2 streaming deprecated", http.StatusForbidden)
 }
 
 // GetRecordingHLSCustomSegmentHandler handles GET /api/v2/recordings/{recordingId}/{segment}
 // Proxies segment requests to the internal Stream Proxy.
 func (s *Server) GetRecordingHLSCustomSegmentHandler(w http.ResponseWriter, r *http.Request) {
 	// V2 Proxy deprecated
-	http.NotFound(w, r)
+	http.Error(w, "V2 streaming deprecated", http.StatusForbidden)
 }
 
 // DeleteRecordingHandler handles DELETE /api/v2/recordings/{ref}

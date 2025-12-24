@@ -4,8 +4,24 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.0] - 2025-12-24
+
+### Breaking Changes
+
+- **Auth**: Removed query parameter authentication (`?token=...`). Use `Authorization: Bearer <token>` or `xg2g_session`.
+- **Config**: Removed legacy environment variable aliases (e.g., `RECEIVER_IP`, `XG2G_API_ADDR`). Canonical env vars only.
+- **Config**: Default config schema version is now `3.0.0` with strict validation enabled by default.
+
+### Added
+
+- **RBAC**: Scoped tokens with centralized v3 route registration and deny-by-default enforcement for write/admin endpoints.
+- **Config**: `configVersion` and strict-mode validation; `xg2g config migrate` scaffolding for upgrades.
+- **Docs**: RBAC guide and endpoint→scope mapping.
+
 ### Changed
 
+- **Routing**: v3 routes always registered and return semantic status codes for validation errors.
+- **Startup**: v3 store/HLS path validation fails fast when invalid or unwritable.
 - **Refactor**: Unified Circuit Breaker implementation into `internal/resilience` (replaces scattered implementations in `api` and `openwebif`).
 - **Refactor**: Removed unused error helper functions in `internal/api/errors.go`.
 - **Config**: Fixed precedence logic for OpenWebIF credentials to correctly prefer specific env vars (`XG2G_OWI_USER`) over generic ones.
@@ -26,7 +42,7 @@ All notable changes to this project will be documented in this file.
 - **[BREAKING] Query parameter authentication disabled by default**
   - Authentication via `?token=...` in URLs is now disabled by default to prevent token leakage in proxy logs, browser history, and referrer headers.
   - **Migration**: Use `Authorization: Bearer <token>` header or `xg2g_session` cookie instead.
-  - **Temporary workaround**: Set `XG2G_ALLOW_QUERY_TOKENS=true` to re-enable (will be removed in v3.0).
+  - **Temporary workaround**: Set `XG2G_ALLOW_QUERY_TOKENS=true` to re-enable (will be removed in v3.0.0).
   - Requests using query tokens will log a deprecation warning.
 
 ### Fixed

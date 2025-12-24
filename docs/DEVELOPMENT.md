@@ -28,12 +28,13 @@ make dev
 ```
 
 This will:
+
 - Build WebUI (React)
 - Embed WebUI in Go binary
 - Build Go daemon
 - Run with your `.env` configuration
 
-**Access**: http://localhost:8088
+**Access**: <http://localhost:8088>
 
 ### 3. Run with Docker Compose
 
@@ -187,6 +188,7 @@ var distFS embed.FS
 ```
 
 This means:
+
 - Frontend changes require: `make ui-build` + `make build`
 - Backend changes only require: `make build`
 
@@ -225,3 +227,4 @@ See [V3 Setup Guide](guides/v3-setup.md) for production deployment.
 - [Configuration Guide](guides/CONFIGURATION.md)
 - [Troubleshooting](TROUBLESHOOTING.md)
 - [Architecture](ARCHITECTURE.md)
+- [Versioning Guidelines](VERSIONING.md)

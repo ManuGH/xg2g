@@ -1,29 +1,13 @@
-# xg2g Configuration Guide (v2.1+; current: v2.1.0)
+# xg2g Configuration Guide
 
 xg2g is a **12-Factor App** designed to be configured primarily via **Environment Variables**.
 For complex setups or persisted configurations, a YAML file can be used.
 
-> [!IMPORTANT]
-> **v2.1 Update: Strict Validation**
-> xg2g now enforces **Strict Configuration Parsing**. Unknown keys in `config.yaml` will cause startup failure.
-> Legacy keys (e.g. `receiver`, `xmltv`) are **no longer supported**. See the Migration Guide below.
+## Deprecations
 
-## Migration from v2.0
+See `docs/DEPRECATION_POLICY.md` for the policy and removal targets.
 
-If you are upgrading from v2.0 and using `config.yaml`, you must update your configuration keys.
-Environment variables remain partially backward compatible (aliases are provided for common variables like `RECEIVER_IP`), but `config.yaml` usage is strict.
-
-*Note: Legacy environment variable aliases are still accepted, but they are deprecated, emit startup warnings, and will be removed in v2.2.*
-
-### Removed / Renamed Keys
-
-| Legacy Key (v2.0) | New Key (v2.1+) | Notes |
-| :--- | :--- | :--- |
-| `receiver` | `openWebIF` | Complete section rename |
-| `xmltv` | `epg.xmltvPath` | Moved under `epg` section |
-| `tuner.requests` | `epg.maxConcurrency` | Renamed for clarity |
-| `epg.fuzzy` | `epg.fuzzyMax` | Renamed |
-| `api.token` | `api.token` | (Unchanged) |
+Legacy environment variable aliases are deprecated and will be removed in `v3.0.0`. Use canonical names instead.
 
 ### Strict Readiness Checks
 
@@ -69,6 +53,7 @@ For users who prefer a file-based config:
 
 ```yaml
 version: "2.1"
+configVersion: "3.0.0" # required when XG2G_V3_CONFIG_STRICT=true
 openWebIF:
   baseUrl: "http://192.168.1.50"
   streamPort: 8001
@@ -77,10 +62,18 @@ epg:
   days: 7
 ```
 
+`configVersion` is used for v3 strict validation. `version` remains for schema compatibility.
+
 Load it with:
 
 ```bash
 ./xg2g-daemon --config /path/to/my-config.yaml
+```
+
+Migrate a config file (scaffolding):
+
+```bash
+./xg2g-daemon config migrate --file /path/to/my-config.yaml --to 3.0.0 --write
 ```
 
 ## Readiness Probes
@@ -100,19 +93,15 @@ xg2g supports multiple authentication methods:
 
 1. **Bearer Token (Recommended)**: `Authorization: Bearer <token>`
 2. **Session Cookie**: `xg2g_session` cookie
-3. **Query Parameter (Deprecated)**: `?token=...` - **Disabled by default** due to security risks
 
-**Security Warning**: Query parameter authentication logs tokens in:
+### RBAC Scopes (v3)
 
-- Proxy server access logs
-- Browser history
-- HTTP Referer headers
+v3 endpoints require scopes in addition to a valid token. Configure scopes with:
 
-**Migration**: Use `Authorization` header instead. To temporarily re-enable (not recommended):
+- `XG2G_API_TOKEN_SCOPES` for the primary token
+- `XG2G_API_TOKENS` for additional scoped tokens
 
-```bash
-export XG2G_ALLOW_QUERY_TOKENS=true  # Will be removed in v3.0
-```
+See `docs/guides/RBAC.md` for scope definitions and endpoint mappings.
 
 ### Rate Limiting
 
@@ -190,7 +179,11 @@ api:
 | `XG2G_EPG_ENABLED` | `epg.enabled` | `true` |
 | `XG2G_EPG_DAYS` | `epg.days` | `7` |
 | `XG2G_API_TOKEN` | `api.token` | - |
+| `XG2G_API_TOKEN_SCOPES` | `api.tokenScopes` | - |
+| `XG2G_API_TOKENS` | `api.tokens` | - |
 | `XG2G_READY_STRICT` | - | `false` |
+| `XG2G_CONFIG_VERSION` | `configVersion` | - |
+| `XG2G_V3_CONFIG_STRICT` | - | `false` |
 
 ---
 
@@ -208,3 +201,29 @@ The v3 streaming backend is the **production streaming system** (enabled by defa
 | `XG2G_V3_E2_HOST` | (inherits from `XG2G_OWI_BASE`) | Enigma2 Receiver URL for V3 worker (auto-inherits if not set) |
 | `XG2G_V3_TUNER_SLOTS` | (auto) | Tuner slots to use (JSON array, e.g., `[0,1]`) |
 | `XG2G_V3_FFMPEG_BIN` | `ffmpeg` | Path to ffmpeg binary |
+| `XG2G_CONFIG_VERSION` | `3.0.0` | Config schema version for v3 strict validation |
+| `XG2G_V3_CONFIG_STRICT` | `true` | Enforce strict v3 config validation (override for migration) |
+
+`configVersion` defaults to `3.0.0`, so v3 strict validation is enabled by default. Use `XG2G_V3_CONFIG_STRICT=false` to override during migration.
+
+## History
+
+### v2.1 Strict Validation
+
+xg2g enforces strict configuration parsing. Unknown keys in `config.yaml` cause startup failure.
+Legacy keys (e.g., `receiver`, `xmltv`) are no longer supported.
+
+### Migration from v2.0
+
+If you are upgrading from v2.0 and using `config.yaml`, you must update your configuration keys.
+Environment variable aliases were removed in v3.0.0; use canonical names only.
+
+Removed / renamed keys:
+
+| Legacy Key (v2.0) | New Key (v2.1+) | Notes |
+| :--- | :--- | :--- |
+| `receiver` | `openWebIF` | Complete section rename |
+| `xmltv` | `epg.xmltvPath` | Moved under `epg` section |
+| `tuner.requests` | `epg.maxConcurrency` | Renamed for clarity |
+| `epg.fuzzy` | `epg.fuzzyMax` | Renamed |
+| `api.token` | `api.token` | (Unchanged) |
