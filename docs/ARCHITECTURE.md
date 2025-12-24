@@ -227,6 +227,30 @@ Client → xg2g Proxy → Enigma2 Stream → [Transcoding?] → Client
 
 **Related**: [ADR-004 OpenTelemetry](adr/004-opentelemetry.md)
 
+### 8. v3 Control Plane (Experimental) (`internal/v3`)
+
+**Responsibility**: Stateful, event-driven orchestration for advanced streaming scenarios.
+
+**Core Components**:
+
+- **Intent API**: `/api/v3/intents` (POST) - accepts "Start" or "Stop" intents.
+- **Event Bus**: In-memory message bus for decoupling API from Worker.
+- **State Store**: Persists session lifecycle (New -> Tuning -> Transcoding -> Ready).
+- **Worker**: Orchestrator that acquires tuner leases and manages FFmpeg processes.
+
+**Architecture**:
+
+```mermaid
+graph LR
+    Client -->|Intent| API[v3 API]
+    API -->|Event| Bus[Event Bus]
+    Bus -->|Consume| Worker[v3 Worker]
+    Worker -->|Update| Store[State Store]
+    Worker -->|Manage| FFmpeg[FFmpeg Process]
+    FFmpeg -->|HLS Segments| Disk
+    Client -->|GET .m3u8| API
+```
+
 ## Data Flow
 
 ### Playlist Refresh Flow
@@ -505,8 +529,7 @@ To prevent regression of encrypted channel support, all developers must adhere t
 - [ADR-002: Config Precedence](adr/002-config-precedence.md)
 - [ADR-003: Validation Package](adr/003-validation-package.md)
 - [ADR-004: OpenTelemetry Integration](adr/004-opentelemetry.md)
-- [CI/CD Documentation](ci-cd.md)
-- [Telemetry Guide](telemetry.md)
+- [Telemetry & Observability](OBSERVABILITY.md)
 
 ---
 

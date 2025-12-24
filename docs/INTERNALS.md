@@ -51,9 +51,14 @@ Primary schema: `docs/guides/config.schema.json`
 ### Startup and refresh
 
 1. `cmd/daemon` loads config (file + env) and validates.
-2. `internal/api` starts HTTP server and WebUI.
-3. `internal/jobs` refresh loads bouquets and services from `internal/openwebif`.
-4. Playlist and XMLTV are regenerated and cached on disk.
+2. **Pre-flight Checks**: `internal/validation` verifies permissions, paths, and dependencies.
+3. **Auto-TLS**: `internal/tls` generates self-signed certificates if enabled and missing.
+4. `internal/api` starts HTTP server and WebUI.
+5. `internal/config` watcher starts to enable hot-reload of settings.
+6. `internal/dvr` scheduler starts to manage recording rules.
+7. `internal/hdhr` starts SSDP announcer for auto-discovery.
+8. `internal/jobs` refresh loads bouquets and services from `internal/openwebif` (if `XG2G_INITIAL_REFRESH` is true).
+9. Playlist and XMLTV are regenerated and cached on disk.
 
 ### Streaming (v2)
 
@@ -118,6 +123,31 @@ stateDiagram-v2
 
 Reference enums: `internal/v3/model/enums.go`.
 
+## FFmpeg Configuration for Enigma2/DVB Receivers
+
+**Critical Compatibility Note:** Enigma2 receivers (e.g., Vu+ boxes with OpenWebIF) require specific HTTP headers to serve streams reliably. Without these headers, FFmpeg fails with "Stream ends prematurely" errors.
+
+### VLC-Compatible Headers
+
+Analysis of VLC's stream handling revealed that it uses:
+
+- **User-Agent:** `VLC/3.0.21 LibVLC/3.0.21`
+- **HTTP Protocol:** HTTP/1.0 (not 1.1)
+- **Custom Header:** `Icy-MetaData: 1`
+
+These headers are implemented in `internal/v3/exec/ffmpeg/args.go:50-59` to ensure FFmpeg can reliably connect to Enigma2 receivers.
+
+### Audio Encoding
+
+Source streams from DVB/satellite often use AC3 5.1 surround (448 kbps). The system:
+
+1. **Detects source channels** automatically (2.0 stereo or 5.1 surround)
+2. **Transcodes to AAC** at 384 kbps (Safari-compatible, supports 5.1 natively)
+3. **Preserves channel layout** using `aresample` filter to ensure proper metadata
+4. **Handles dynamic changes** when broadcasts switch between stereo ads and 5.1 movies
+
+See `internal/v3/exec/ffmpeg/args.go:67-79` for audio encoding parameters.
+
 ## Where to start reading code
 
 - API router and v2 wiring: `internal/api/http.go`
@@ -126,3 +156,5 @@ Reference enums: `internal/v3/model/enums.go`.
 - OpenWebIF client: `internal/openwebif/client.go`
 - Stream proxy and HLS: `internal/proxy/proxy.go`
 - v3 orchestrator: `internal/v3/worker/orchestrator.go`
+- FFmpeg argument builder: `internal/v3/exec/ffmpeg/args.go`
+- Enigma2 stream resolver: `internal/v3/exec/enigma2/client_ext.go`
