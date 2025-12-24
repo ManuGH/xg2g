@@ -205,11 +205,12 @@ function V3Player({ token, channel, autoStart, onClose }) {
   };
 
   useEffect(() => {
+    const videoEl = videoRef.current;
     return () => {
       if (hlsRef.current) hlsRef.current.destroy();
-      if (videoRef.current) {
-        videoRef.current.pause();
-        videoRef.current.src = '';
+      if (videoEl) {
+        videoEl.pause();
+        videoEl.src = '';
       }
       sendStopIntent(sessionIdRef.current);
     };
@@ -296,6 +297,7 @@ function V3Player({ token, channel, autoStart, onClose }) {
           ref={videoRef}
           controls
           autoPlay={!!autoStart}
+          muted={!!autoStart}
           style={{ width: '100%', aspectRatio: '16/9', display: 'block' }}
         />
       </div>
