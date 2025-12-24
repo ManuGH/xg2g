@@ -12,7 +12,7 @@ on:
       - "**/*.go"
       - go.mod
       - go.sum
-      - .github/workflows/ci.yml
+      - .github/workflows/ci-v2.yml
       - Makefile
 
 permissions:
@@ -80,7 +80,7 @@ jobs:
       - name: Run unit tests with race detector
         run: |
           set -euo pipefail
-          go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+          go test -v -race -tags=nogpu -coverprofile=coverage.out -covermode=atomic ./...
 
       - name: Generate coverage report
         run: |
@@ -428,7 +428,7 @@ jobs:
         uses: actions/upload-artifact@v4 # v5
         with:
           name: reproducible-daemon
-          path: bin/daemon
+          path: bin/xg2g
           retention-days: 7
 
   # ============================================================================
@@ -458,13 +458,15 @@ jobs:
           echo "| Schema Validation | ${{ needs.schema-validation.result }} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Lint | ${{ needs.lint.result }} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Integration Tests | ${{ needs.integration-tests.result }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Reproducible Build | ${{ needs.reproducible-build.result }} |" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Fail if any required job failed
         if: |
           needs.unit-tests.result == 'failure' ||
           needs.schema-validation.result == 'failure' ||
           needs.lint.result == 'failure' ||
-          needs.integration-tests.result == 'failure'
+          needs.integration-tests.result == 'failure' ||
+          needs.reproducible-build.result == 'failure'
         run: |
           echo "❌ One or more required CI jobs failed"
           exit 1
