@@ -9,7 +9,7 @@
   [![Docker Pulls](https://img.shields.io/docker/pulls/manugh/xg2g?color=blue)](https://hub.docker.com/r/manugh/xg2g)
   [![License: PolyForm Noncommercial](https://img.shields.io/badge/License-PolyForm_Noncommercial-blue.svg)](https://polyformproject.org/licenses/noncommercial/1.0.0)
 
-  [Quick Start](#-quick-start) • [Features](#-features) • [Docs](docs/) • [Internals](docs/INTERNALS.md)
+  [Quick Start](#-quick-start) • [Features](#-features) • [Development](docs/DEVELOPMENT.md) • [Docs](docs/) • [Internals](docs/INTERNALS.md)
 </div>
 
 > [!IMPORTANT]
@@ -139,6 +139,16 @@ xg2g is configured primarily via **Environment Variables**.
 | `XG2G_EPG_DAYS` | Number of days to fetch EPG | `7` |
 
 👉 **[Read the Full Configuration Guide](docs/guides/CONFIGURATION.md)** for advanced settings, YAML config, and metrics.
+
+---
+
+## 📚 Documentation
+
+- **[Development Guide](docs/DEVELOPMENT.md)**: Build, run, and debug locally
+- **[Configuration Reference](docs/guides/CONFIGURATION.md)**: All environment variables and YAML options
+- **[V3 Setup Guide](docs/guides/v3-setup.md)**: Production deployment guide
+- **[Troubleshooting](docs/TROUBLESHOOTING.md)**: Common issues and solutions
+- **[Architecture](docs/ARCHITECTURE.md)**: System design and internals
 
 ---
 
