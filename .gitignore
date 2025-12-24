@@ -84,7 +84,6 @@ test-config.yaml
 .env.gpu
 .env.*
 !.env.example
-!.env.minimal
 
 # WebUI
 node_modules/
