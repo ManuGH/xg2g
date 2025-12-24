@@ -63,14 +63,14 @@ jobs:
           npm ci
           npm run generate-client
           npm run build
-          mkdir -p ../internal/api/ui
-          cp -r dist/* ../internal/api/ui/
+          mkdir -p ../internal/api/dist
+          cp -r dist/* ../internal/api/dist/
 
       - name: Build (stub transcoder)
         run: |
           set -euo pipefail
           echo "🔍 Building with stub transcoder (no Rust dependency)..."
-          go build -v -trimpath -mod=readonly -buildvcs=false -o /dev/null ./cmd/daemon
+          go build -v -trimpath -mod=readonly -buildvcs=false -tags=nogpu -o /dev/null ./cmd/daemon
           go build -v -trimpath -mod=readonly -buildvcs=false -o /dev/null ./cmd/validate
           echo "✅ Build successful"
 
@@ -190,8 +190,8 @@ jobs:
           cd webui
           npm ci
           npm run build
-          mkdir -p ../internal/api/ui
-          cp -r dist/* ../internal/api/ui/
+          mkdir -p ../internal/api/dist
+          cp -r dist/* ../internal/api/dist/
 
       - name: Cache Rust dependencies
         uses: actions/cache@v4 # v4
@@ -259,8 +259,8 @@ jobs:
           cd webui
           npm ci
           npm run build
-          mkdir -p ../internal/api/ui
-          cp -r dist/* ../internal/api/ui/
+          mkdir -p ../internal/api/dist
+          cp -r dist/* ../internal/api/dist/
 
       - name: Install golangci-lint
         run: |
@@ -269,7 +269,7 @@ jobs:
           golangci-lint --version
 
       - name: Run golangci-lint
-        run: make lint
+        run: golangci-lint run --timeout=5m --verbose --build-tags=nogpu ./...
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -327,14 +327,14 @@ jobs:
           cd webui
           npm ci
           npm run build
-          mkdir -p ../internal/api/ui
-          cp -r dist/* ../internal/api/ui/
+          mkdir -p ../internal/api/dist
+          cp -r dist/* ../internal/api/dist/
 
       - name: Build daemon (stub transcoder)
         run: |
           set -euo pipefail
           BUILD_REF="${GITHUB_SHA:-dev}"
-          go build -v -trimpath -mod=readonly -buildvcs=false \
+          go build -v -trimpath -mod=readonly -buildvcs=false -tags=nogpu \
             -ldflags "-X main.version=${BUILD_REF}" \
             -o bin/xg2g ./cmd/daemon
 
@@ -398,8 +398,8 @@ jobs:
           npm ci
           npm run generate-client
           npm run build
-          mkdir -p ../internal/api/ui
-          cp -r dist/* ../internal/api/ui/
+          mkdir -p ../internal/api/dist
+          cp -r dist/* ../internal/api/dist/
 
       - name: Build #1 (reference)
         run: |
