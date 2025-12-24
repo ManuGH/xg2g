@@ -79,7 +79,7 @@ jobs:
       - name: Build Go
         if: matrix.language == 'go'
         run: |
-          go build ./...
+          go build -tags=nogpu ./...
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3

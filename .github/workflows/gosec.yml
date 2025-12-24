@@ -53,7 +53,7 @@ jobs:
           # -out gosec.sarif: Save output to file
           # -severity medium: Fail on medium or higher severity issues
           # ./...: Scan all packages
-          args: -fmt=sarif -out=gosec.sarif -severity=medium -exclude-dir=test -exclude-dir=internal/test -exclude-dir=.github ./...
+          args: -fmt=sarif -out=gosec.sarif -severity=medium -tags=nogpu -exclude-dir=test -exclude-dir=internal/test -exclude-dir=.github ./...
 
       - name: Upload SARIF to GitHub Security
         uses: github/codeql-action/upload-sarif@v3

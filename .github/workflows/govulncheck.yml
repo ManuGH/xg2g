@@ -47,7 +47,7 @@ jobs:
 
       - name: Run govulncheck (SARIF)
         run: |
-          govulncheck -format sarif ./... > govulncheck.sarif || echo '{"version":"3.0.0","runs":[{"tool":{"driver":{"name":"govulncheck","informationUri":"https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck"}},"results":[]}]}' > govulncheck.sarif
+          govulncheck -tags=nogpu -format sarif ./... > govulncheck.sarif || echo '{"version":"3.0.0","runs":[{"tool":{"driver":{"name":"govulncheck","informationUri":"https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck"}},"results":[]}]}' > govulncheck.sarif
 
       - name: Fix SARIF duplicate tags
         run: |
@@ -81,7 +81,7 @@ jobs:
           category: govulncheck
 
       - name: Run govulncheck (JSON)
-        run: govulncheck -format json ./... > govulncheck.json || true
+        run: govulncheck -tags=nogpu -format json ./... > govulncheck.json || true
 
       - name: Evaluate High/Critical vulnerabilities
         id: severity
