@@ -150,6 +150,7 @@ xg2g is configured primarily via **Environment Variables**.
 - **[Development Guide](docs/DEVELOPMENT.md)**: Build, run, and debug locally
 - **[Configuration Reference](docs/guides/CONFIGURATION.md)**: All environment variables and YAML options
 - **[V3 Setup Guide](docs/guides/v3-setup.md)**: Production deployment guide
+- **[NAS Installation (Unraid/Synology)](docs/guides/INSTALL_NAS.md)**: Easy setup for NAS users
 - **[Deprecation Policy](docs/DEPRECATION_POLICY.md)**: Removal policy and timelines
 - **[Troubleshooting](docs/TROUBLESHOOTING.md)**: Common issues and solutions
 - **[Architecture](docs/ARCHITECTURE.md)**: System design and internals
