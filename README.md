@@ -67,11 +67,13 @@ Missed a scene? No problem.
 xg2g also emulates an HDHomeRun tuner, allowing you to connect it to **Plex** or **Jellyfin**.
 *(Note: Full Plex/Jellyfin documentation and optimization is coming in a future update.)*
 
-### 🏗️ V3 Architecture
+### 🏗️ Streaming Architecture (V3)
 
-- **Event-Driven Streaming**: Worker-based architecture with tuner leasing and session management.
-- **HLS Delivery**: FFmpeg-based transcoding with automatic AAC audio conversion.
-- **State Management**: Persistent session state with support for crash recovery.
+Built on a modern event-driven design for reliability and performance:
+
+- **Event-Driven Workers**: Background workers manage stream sessions with tuner leasing.
+- **HLS Delivery**: FFmpeg-based transcoding with automatic AAC audio conversion for universal compatibility.
+- **Resilient State**: Persistent session state with automatic recovery from crashes and restarts.
 
 ---
 
