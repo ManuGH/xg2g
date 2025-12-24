@@ -375,8 +375,30 @@ func (v *Validator) StreamURL(field, streamURL string) {
 		return
 	}
 
-	// Validate path (stream URLs should have a path component)
 	if u.Path == "" || u.Path == "/" {
 		v.AddError(field, "stream URL must have a path component", streamURL)
 	}
+}
+
+// WritableDirectory validates that a directory exists (or can be created) and is writable
+// It performs a "touch test" by creating a temporary file
+func (v *Validator) WritableDirectory(field, path string, mustExist bool) {
+	// 1. Basic Directory check (creation + existence)
+	v.Directory(field, path, mustExist)
+	if !v.IsValid() {
+		return // Stop if basic check failed
+	}
+
+	// 2. Touch Test
+	// We know it exists and is a directory now (or we failed above).
+	// Let's try to write a temp file.
+	testFile := filepath.Join(path, ".xg2g_write_test_"+fmt.Sprintf("%d", os.Getpid()))
+	f, err := os.Create(testFile)
+	if err != nil {
+		v.AddError(field, fmt.Sprintf("directory is not writable: %v", err), path)
+		return
+	}
+	// Clean up
+	_ = f.Close()
+	_ = os.Remove(testFile)
 }

@@ -32,9 +32,15 @@ To run `xg2g` with V3 enabled using Docker:
       -e XG2G_API_TOKEN="your-secret-token" \
       -e XG2G_OWI_BASE="http://your-receiver-ip" \
       -e XG2G_V3_WORKER_ENABLED=true \
+      -e XG2G_V3_E2_HOST="http://your-receiver-ip" \
+      -e XG2G_V3_STORE_PATH="/data/v3-store" \
+      -e XG2G_V3_HLS_ROOT="/data/v3-hls" \
       -v $(pwd)/data:/data \
       xg2g:latest
     ```
+
+    Ensure the `XG2G_V3_STORE_PATH` and `XG2G_V3_HLS_ROOT` paths are writable in the container.
+    The daemon will create missing directories on startup and fail fast if they are not usable.
 
 ### Docker Compose
 
@@ -49,7 +55,10 @@ services:
     environment:
       - XG2G_API_TOKEN=your-secret-token
       - XG2G_OWI_BASE=http://your-receiver-ip
-      - XG2G_V3_WORKER_ENABLED=true # Enable V3
+      - XG2G_V3_WORKER_ENABLED=true
+      - XG2G_V3_E2_HOST=http://your-receiver-ip # Critical for Docker networking
+      - XG2G_V3_STORE_PATH=/data/v3-store   # Persist store in volume
+      - XG2G_V3_HLS_ROOT=/data/v3-hls       # Persist HLS segments in volume
     volumes:
       - ./data:/data
 ```
@@ -79,7 +88,9 @@ The following environment variables control V3 behavior:
 | :--- | :--- | :--- |
 | `XG2G_V3_WORKER_ENABLED` | `false` | Master switch to enable V3 backend |
 | `XG2G_V3_STORE_BACKEND` | `memory` | Session state store (`memory` or `bolt`) |
-| `XG2G_V3_STORE_PATH` | `/var/lib/xg2g/v3-store` | Path to BoltDB file (if backend is `bolt`) |
+| `XG2G_V3_STORE_PATH` | `/var/lib/xg2g/v3-store` | Path to BoltDB file (Recommended: `/data/v3-store` for Docker) |
+| `XG2G_V3_HLS_ROOT` | `/var/lib/xg2g/v3-hls` | Root for HLS segments (Recommended: `/data/v3-hls` for Docker) |
+| `XG2G_V3_E2_HOST` | `http://localhost` | Enigma2 Receiver URL for Worker (Must set in Docker!) |
 
 ## Verification
 
@@ -103,4 +114,10 @@ To verify V3 is active:
 
     ```bash
     curl -H "Authorization: Bearer <token>" http://localhost:8080/api/v3/sessions
+    ```
+
+4. **Readiness (Verbose)**: V3 readiness diagnostics appear in:
+
+    ```bash
+    curl http://localhost:8080/readyz?verbose=true
     ```

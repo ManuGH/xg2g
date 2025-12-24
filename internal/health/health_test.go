@@ -121,6 +121,18 @@ func TestManager_Ready_Unhealthy(t *testing.T) {
 	assert.Equal(t, StatusUnhealthy, resp.Status)
 }
 
+func TestManager_Ready_InformationalDoesNotGate(t *testing.T) {
+	m := NewManager("v1.0.0")
+	m.SetReadyStrict(true)
+	m.RegisterChecker(&mockChecker{name: "core", status: StatusHealthy})
+	m.RegisterChecker(Informational(&mockChecker{name: "v3", status: StatusUnhealthy}))
+
+	resp := m.Ready(context.Background(), true)
+	assert.True(t, resp.Ready)
+	assert.Equal(t, StatusHealthy, resp.Status)
+	assert.Equal(t, StatusUnhealthy, resp.Checks["v3"].Status)
+}
+
 func TestManager_ServeHealth(t *testing.T) {
 	m := NewManager("v1.0.0")
 	m.RegisterChecker(&mockChecker{name: "test", status: StatusHealthy})
@@ -434,6 +446,21 @@ func TestLastRunChecker(t *testing.T) {
 			assert.Contains(t, result.Message, tt.expectedMsg)
 		})
 	}
+}
+
+func TestWritableDirChecker_CreatesMissingDir(t *testing.T) {
+	baseDir, err := os.MkdirTemp("", "writable-dir-check")
+	require.NoError(t, err)
+	defer func() { _ = os.RemoveAll(baseDir) }()
+
+	targetDir := filepath.Join(baseDir, "v3-hls")
+	checker := NewWritableDirChecker("test", targetDir)
+	result := checker.Check(context.Background())
+
+	assert.Equal(t, StatusHealthy, result.Status)
+	info, err := os.Stat(targetDir)
+	require.NoError(t, err)
+	assert.True(t, info.IsDir())
 }
 
 // Mock checker for testing

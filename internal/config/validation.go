@@ -63,6 +63,12 @@ func Validate(cfg AppConfig) error {
 		v.AddError("RateLimitWhitelist", "must be a valid IP or CIDR", entry)
 	}
 
+	// Validate V3 Worker paths if enabled (Fail Fast)
+	if cfg.WorkerEnabled {
+		v.WritableDirectory("StorePath", cfg.StorePath, false)
+		v.WritableDirectory("HLSRoot", cfg.HLSRoot, false)
+	}
+
 	if !v.IsValid() {
 		return v.Err()
 	}

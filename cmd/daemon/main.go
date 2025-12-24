@@ -24,7 +24,6 @@ import (
 	xglog "github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	xgtls "github.com/ManuGH/xg2g/internal/tls"
-	"github.com/ManuGH/xg2g/internal/v3/shadow"
 	"github.com/ManuGH/xg2g/internal/validation"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -39,7 +38,7 @@ var (
 func maskURL(rawURL string) string {
 	parsedURL, err := url.Parse(rawURL)
 	if err != nil {
-		return "invalid-url-redacted"
+		return "[invalid_url]"
 	}
 	parsedURL.User = nil
 	return parsedURL.String()
@@ -251,59 +250,6 @@ func main() {
 	cfg = snap.App
 
 	// Configure proxy (enabled by default in v2.0 for Zero Config experience)
-	var proxyConfig *daemon.ProxyConfig
-
-	if snap.Runtime.StreamProxy.Enabled {
-		targetURL := strings.TrimSpace(snap.Runtime.StreamProxy.TargetURL)
-		receiverHost := ""
-		if cfg.OWIBase != "" {
-			if parsed, err := url.Parse(cfg.OWIBase); err == nil {
-				receiverHost = parsed.Hostname()
-			}
-		}
-
-		// PROXY_TARGET is now optional - if not provided, we still require ReceiverHost for Web-API access
-		if targetURL == "" && receiverHost == "" {
-			logger.Fatal().
-				Str("event", "proxy.config.invalid").
-				Msg("XG2G_ENABLE_STREAM_PROXY is true but neither XG2G_PROXY_TARGET nor XG2G_OWI_BASE is set")
-		}
-
-		proxyConfig = &daemon.ProxyConfig{
-			ListenAddr:     snap.Runtime.StreamProxy.ListenAddr,
-			TargetURL:      targetURL,
-			ReceiverHost:   receiverHost,
-			Logger:         xglog.WithComponent("proxy"),
-			TLSCert:        cfg.TLSCert,
-			TLSKey:         cfg.TLSKey,
-			DataDir:        cfg.DataDir,
-			PlaylistPath:   filepath.Join(cfg.DataDir, snap.Runtime.PlaylistFilename),
-			Runtime:        snap.Runtime,
-			AllowedOrigins: cfg.AllowedOrigins,
-		}
-		if bindHost != "" {
-			if newListen, err := config.BindListenAddr(proxyConfig.ListenAddr, bindHost); err != nil {
-				logger.Fatal().
-					Err(err).
-					Msg("invalid XG2G_BIND_INTERFACE for proxy listen")
-			} else {
-				proxyConfig.ListenAddr = newListen
-			}
-		}
-
-		// v3 Shadow Canary: Initialize Client if enabled
-		if cfg.ShadowIntentsEnabled && cfg.ShadowTarget != "" {
-			v3ShadowCfg := shadow.Config{
-				TargetURL: cfg.ShadowTarget,
-				Enabled:   true,
-			}
-			proxyConfig.ShadowClient = shadow.New(v3ShadowCfg)
-			logger.Info().Str("target", cfg.ShadowTarget).Msg("v3 Shadow Canary enabled")
-		} else if cfg.ShadowIntentsEnabled {
-			logger.Warn().Msg("v3 Shadow Canary enabled but XG2G_V3_SHADOW_TARGET is missing. Disabling.")
-		}
-
-	}
 
 	// Initial refresh before starting servers (enabled by default in v2.0)
 	// Users can disable with XG2G_INITIAL_REFRESH=false if needed
@@ -334,8 +280,6 @@ func main() {
 		}
 	}
 
-	proxyOnlyMode := config.ParseBool("XG2G_PROXY_ONLY_MODE", false)
-
 	// v3 Worker Config
 	var v3Config *daemon.V3Config
 	if cfg.WorkerEnabled {
@@ -361,9 +305,9 @@ func main() {
 		APIServerSetter: s,
 		MetricsHandler:  promhttp.Handler(),
 		MetricsAddr:     metricsAddr,
-		ProxyConfig:     proxyConfig,
-		ProxyOnly:       proxyOnlyMode,
-		V3Config:        v3Config,
+
+		ProxyOnly: false, // Deprecated, always false now
+		V3Config:  v3Config,
 	}
 
 	// Create daemon manager
@@ -403,7 +347,7 @@ func main() {
 	}
 
 	// Start daemon app (blocks until shutdown)
-	app := daemon.NewApp(logger, mgr, cfgHolder, s, proxyOnlyMode)
+	app := daemon.NewApp(logger, mgr, cfgHolder, s, false)
 	if err := app.Run(ctx); err != nil {
 		logger.Fatal().
 			Err(err).

@@ -5,7 +5,6 @@
 package api
 
 import (
-	"bytes"
 	"context"
 	"embed"
 	"encoding/json"
@@ -13,9 +12,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"net"
 	"net/http"
-	"net/http/httputil"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -36,7 +33,6 @@ import (
 	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
-	"github.com/ManuGH/xg2g/internal/proxy"
 	"github.com/ManuGH/xg2g/internal/v3/bus"
 	"github.com/ManuGH/xg2g/internal/v3/store"
 	"github.com/go-chi/chi/v5"
@@ -80,18 +76,9 @@ type Server struct {
 	owiClient *openwebif.Client
 	owiEpoch  uint64
 
-	proxy ProxyServer // Interface for proxy interactions
-
 	// v3 Integration
 	v3Bus   bus.Bus
 	v3Store store.StateStore
-}
-
-// ProxyServer defines the interface for proxy interactions required by the API.
-type ProxyServer interface {
-	GetSessions() []*proxy.StreamSession
-	Terminate(id string) bool
-	Preflight(ctx context.Context, req *http.Request, serviceRef string) (int, error)
 }
 
 // AuditLogger interface for audit logging (optional).
@@ -486,10 +473,6 @@ func (s *Server) routes() http.Handler {
 	r.Get("/logos/{ref}.png", s.handlePicons)
 	r.Head("/logos/{ref}.png", s.handlePicons)
 
-	// Video Streaming (HLS/MPEG-TS)
-	r.Get("/stream/{ref}/preflight", s.handleStreamPreflight)
-	r.Handle("/stream/*", s.authRequired(s.handleStreamProxy))
-
 	// Phase 7A: v3 Control Plane (experimental/preview, /api/v3/*)
 	r.Post("/api/v3/intents", s.handleV3Intents)
 	r.Get("/api/v3/sessions", s.handleV3SessionsDebug)
@@ -499,80 +482,6 @@ func (s *Server) routes() http.Handler {
 	// Harden file server: disable directory listing and use a secure handler
 	r.Handle("/files/*", http.StripPrefix("/files/", s.secureFileServer()))
 	return r
-}
-
-func (s *Server) handleStreamPreflight(w http.ResponseWriter, r *http.Request) {
-	s.mu.RLock()
-	token := s.cfg.APIToken
-	forceHTTPS := s.cfg.ForceHTTPS
-	snap := s.snap
-	s.mu.RUnlock()
-
-	// 1. Verify Token
-	// We allow query token here as this is the "login" for streaming clients
-	if token != "" && !auth.AuthorizeRequest(r, token, true) {
-		http.Error(w, "Invalid token", http.StatusForbidden)
-		return
-	}
-
-	// 2. Set Cookie
-	// Use canonical xg2g_session
-	http.SetCookie(w, &http.Cookie{
-		Name:     "xg2g_session",
-		Value:    token,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   r.TLS != nil || forceHTTPS,
-		SameSite: http.SameSiteStrictMode,
-		MaxAge:   86400, // 24h
-	})
-
-	serviceRef := chi.URLParam(r, "ref")
-	if serviceRef != "" && snap.Runtime.StreamProxy.Enabled && shouldWarmupHLS(r) {
-		if err := s.preflightProxyHLS(r, serviceRef, token, snap.Runtime.StreamProxy); err != nil {
-			logger := log.WithComponentFromContext(r.Context(), "proxy")
-			logger.Error().
-				Err(err).
-				Str("service_ref", serviceRef).
-				Msg("HLS preflight failed")
-			http.Error(w, "HLS preflight failed", http.StatusServiceUnavailable)
-			return
-		}
-	}
-
-	w.WriteHeader(http.StatusOK)
-}
-
-func shouldWarmupHLS(r *http.Request) bool {
-	q := r.URL.Query()
-	if strings.EqualFold(q.Get("mode"), "ts") || q.Get("ts") == "1" {
-		return false
-	}
-	return true
-}
-
-func (s *Server) preflightProxyHLS(r *http.Request, serviceRef, token string, proxyCfg config.StreamProxyRuntime) error {
-	const preflightTimeout = 12 * time.Second
-
-	// Direct Method Call Pattern (Robust, No Networking)
-	// We call the Stream Proxy implementation directly via the interface.
-	// This avoids "port not bound", "context deadline exceeded" on localhost dials, and internal auth loops.
-	ctx, cancel := context.WithTimeout(r.Context(), preflightTimeout)
-	defer cancel()
-
-	if s.proxy != nil {
-		status, err := s.proxy.Preflight(ctx, r, serviceRef)
-		if err != nil {
-			return fmt.Errorf("proxy preflight failed (%d): %w", status, err)
-		}
-		// Strict Semantics: Check status
-		if status != http.StatusNoContent {
-			return fmt.Errorf("proxy preflight returned status %d", status)
-		}
-		return nil
-	}
-
-	return fmt.Errorf("proxy not initialized")
 }
 
 // authRequired is a middleware that enforces API token authentication for a handler.
@@ -646,13 +555,6 @@ func (s *Server) GetConfig() config.AppConfig {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.cfg
-}
-
-// SetProxy configures the proxy server dependency
-func (s *Server) SetProxy(p ProxyServer) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.proxy = p
 }
 
 // SetV3Components configures v3 event bus and store
@@ -980,11 +882,6 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) handleLineupJSON(w http.ResponseWriter, r *http.Request) {
 	logger := log.WithComponentFromContext(r.Context(), "hdhr")
 
-	// Capture snapshot once to avoid config drift during this request.
-	s.mu.RLock()
-	snap := s.snap
-	s.mu.RUnlock()
-
 	// Read the M3U playlist file
 	m3uPath, err := s.dataFilePath("playlist.m3u")
 	if err != nil {
@@ -1027,54 +924,6 @@ func (s *Server) handleLineupJSON(w http.ResponseWriter, r *http.Request) {
 		} else if len(line) > 0 && !strings.HasPrefix(line, "#") && currentChannel.GuideName != "" {
 			// This is the stream URL
 			streamURL := line
-
-			// If H.264 stream repair is enabled, rewrite URL to use proxy host and port
-			// This ensures Plex gets streams from the xg2g proxy (with H.264 repair) instead of direct receiver access
-			if snap.Runtime.Transcoder.H264RepairEnabled {
-				if parsedURL, err := url.Parse(streamURL); err == nil {
-					// Get proxy listen address (default :18000)
-					proxyListen := strings.TrimSpace(snap.Runtime.StreamProxy.ListenAddr)
-					if proxyListen == "" {
-						proxyListen = ":18000"
-					}
-					// Extract port from proxy listen address (format is ":18000" or "0.0.0.0:18000")
-					proxyPort := strings.TrimPrefix(proxyListen, ":")
-					if colonIdx := strings.LastIndex(proxyPort, ":"); colonIdx != -1 {
-						proxyPort = proxyPort[colonIdx+1:]
-					}
-
-					// Get the proxy host from the request (e.g., "10.10.55.14:8080")
-					// This is the IP address that the client used to connect to the API server
-					proxyHost := r.Host
-					if colonIdx := strings.LastIndex(proxyHost, ":"); colonIdx != -1 {
-						proxyHost = proxyHost[:colonIdx] // Extract just the IP without port
-					}
-
-					// Rewrite the URL to use proxy host and port
-					// Example: http://10.10.55.64:8001/... -> http://10.10.55.14:18000/...
-					parsedURL.Host = proxyHost + ":" + proxyPort
-					streamURL = parsedURL.String()
-				}
-			}
-
-			// If Plex Force HLS is enabled, add /hls/ prefix for proxy's HLS handler
-			// This can work together with H264 repair (host/port rewrite above, /hls/ prefix here)
-			if s.hdhr != nil && s.hdhr.PlexForceHLS() {
-				// Note: The /hls/ handler exists on the stream proxy (port 18000), not the API server (port 8080)
-				// Parse the stream URL (possibly already rewritten by H264 repair above)
-				if parsedURL, err := url.Parse(streamURL); err == nil {
-					// Only rewrite if /hls/ prefix doesn't already exist
-					if !strings.HasPrefix(parsedURL.Path, "/hls/") {
-						// Extract service reference from path (everything after last slash)
-						if lastSlash := strings.LastIndex(parsedURL.Path, "/"); lastSlash != -1 {
-							serviceRef := parsedURL.Path[lastSlash+1:]
-							// Prepend /hls/ to the service reference, keeping the same host:port
-							parsedURL.Path = "/hls/" + serviceRef
-							streamURL = parsedURL.String()
-						}
-					}
-				}
-			}
 
 			currentChannel.URL = streamURL
 			lineup = append(lineup, currentChannel)
@@ -1306,158 +1155,4 @@ ServePicon:
 
 	// 4. SERVE
 	http.ServeFile(w, r, localPath)
-}
-
-// handleStreamProxy proxies stream requests to the internal stream server (port 18000).
-// This avoids CORS issues and allows using relative paths from the WebUI.
-func (s *Server) handleStreamProxy(w http.ResponseWriter, r *http.Request) {
-	// For simple WebUI compatibility: /stream/{service_ref}/playlist.m3u8
-	// We proxy directly to port 18000 WITHOUT the /hls/ prefix to let the proxy
-	// handle it as a regular stream request (not HLS forced)
-
-	// Determine upstream host/port
-	// Allow configuring the proxy host for split deployments (e.g. Docker containers)
-	s.mu.RLock()
-	snap := s.snap
-	s.mu.RUnlock()
-
-	upstreamHost := strings.TrimSpace(snap.Runtime.StreamProxy.UpstreamHost)
-	if upstreamHost == "" {
-		upstreamHost = "127.0.0.1"
-	}
-	proxyPort := "18000"
-	if port := portFromListenAddr(strings.TrimSpace(snap.Runtime.StreamProxy.ListenAddr)); port != "" {
-		proxyPort = port
-	}
-
-	targetURL, _ := url.Parse("http://" + net.JoinHostPort(upstreamHost, proxyPort))
-	targetHost := targetURL.Host
-	origQuery := r.URL.RawQuery
-
-	// Create local logger
-	logger := log.WithComponent("proxy")
-	logger.Info().Str("target", targetURL.String()).Msg("starting stream proxy")
-
-	// Create reverse proxy
-	p := httputil.NewSingleHostReverseProxy(targetURL)
-
-	// Customize the director to rewrite path AND preserve query
-	originalDirector := p.Director
-	p.Director = func(req *http.Request) {
-		originalDirector(req)
-
-		// Rewrite path logic...
-		trimmed := strings.TrimPrefix(req.URL.Path, "/stream/")
-		trimmed = strings.TrimSuffix(trimmed, "/")
-		parts := strings.SplitN(trimmed, "/", 2)
-		serviceRef := parts[0]
-		var remainder string
-		if len(parts) > 1 {
-			remainder = parts[1]
-		}
-
-		switch {
-		case serviceRef == "":
-			req.URL.Path = "/"
-		case remainder == "":
-			// Direct MPEG-TS path (/stream/{ref})
-			req.URL.Path = "/" + serviceRef
-		default:
-			// HLS manifest/segments (/stream/{ref}/playlist.m3u8, .../segment.ts)
-			req.URL.Path = "/hls/" + serviceRef + "/" + remainder
-		}
-
-		// Ensure Host header matches upstream proxy
-		req.Host = targetHost
-
-		// CRITICAL: Preserve Query Parameters!
-		// We use query params for profile selection (e.g. ?llhls=1).
-		req.URL.RawQuery = origQuery
-	}
-
-	// Important for streaming: flush immediately
-	p.FlushInterval = 100 * time.Millisecond
-
-	// Error handler
-	p.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
-		logger.Error().Err(err).Str("path", r.URL.Path).Msg("proxy error")
-		w.WriteHeader(http.StatusBadGateway)
-	}
-
-	// Token Propagation: Rewrite M3U8 playlists to include token in segment URLs
-	// This makes HLS work on players that don't support Cookies/Headers (e.g., specific SmartTVs, Safari AVPlayer sometimes)
-	token := r.URL.Query().Get("token")
-	if token != "" {
-		p.ModifyResponse = func(resp *http.Response) error {
-			// Only rewrite playlists
-			path := resp.Request.URL.Path
-			if resp.StatusCode == 200 && (strings.HasSuffix(path, ".m3u8") || strings.HasSuffix(path, ".m3u")) {
-				body, err := io.ReadAll(resp.Body)
-				if err != nil {
-					_ = resp.Body.Close() // Ensure body is closed on error
-					return err
-				}
-				_ = resp.Body.Close() // Close the original body after reading
-
-				// Rewrite: Append ?token=... to lines ending in .ts, .aac, .m4s, .mp4, or inside lines (matches non-comment lines)
-				// Strict mode: Only rewrite relative URLs (no scheme/host)
-				lines := strings.Split(string(body), "\n")
-				var newLines []string
-				for _, line := range lines {
-					trim := strings.TrimSpace(line)
-					if trim != "" && !strings.HasPrefix(trim, "#") {
-						// Check if line is a relative URL (no scheme)
-						if !strings.Contains(trim, "://") && !strings.HasPrefix(trim, "//") {
-							// This is a relative segment or variant URL
-							if strings.Contains(trim, "?") {
-								newLines = append(newLines, trim+"&token="+url.QueryEscape(token))
-							} else {
-								newLines = append(newLines, trim+"?token="+url.QueryEscape(token))
-							}
-						} else {
-							newLines = append(newLines, line)
-						}
-					} else {
-						newLines = append(newLines, line)
-					}
-				}
-				newBody := []byte(strings.Join(newLines, "\n"))
-
-				resp.Body = io.NopCloser(bytes.NewReader(newBody))
-				resp.ContentLength = int64(len(newBody))
-				resp.Header.Set("Content-Length", fmt.Sprintf("%d", len(newBody)))
-			}
-			return nil
-		}
-	}
-
-	// Serve
-	p.ServeHTTP(w, r)
-}
-
-func portFromListenAddr(listen string) string {
-	listen = strings.TrimSpace(listen)
-	if listen == "" {
-		return ""
-	}
-
-	// Most common formats:
-	// - ":18000"
-	// - "0.0.0.0:18000"
-	// - "127.0.0.1:18000"
-	// - "[::]:18000"
-	if _, port, err := net.SplitHostPort(listen); err == nil {
-		return port
-	}
-
-	// Accept a bare port ("18000") as well.
-	if !strings.Contains(listen, ":") {
-		return listen
-	}
-
-	// Fallback: last colon split (handles slightly malformed values).
-	if idx := strings.LastIndex(listen, ":"); idx != -1 && idx+1 < len(listen) {
-		return listen[idx+1:]
-	}
-	return ""
 }

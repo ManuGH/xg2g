@@ -154,6 +154,11 @@ function V3Player({ token, channel, autoStart, onClose }) {
       }
       const hls = new Hls({
         debug: false,
+        enableWorker: true,
+        lowLatencyMode: true,
+        liveSyncDurationCount: 2, // Sync close to edge (window is only 3 segs)
+        liveMaxLatencyDurationCount: 3,
+        maxBufferLength: 10, // Don't try to buffer 30s
         xhrSetup: (xhr) => {
           if (token) xhr.setRequestHeader('Authorization', 'Bearer ' + token);
         }

@@ -264,11 +264,17 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 		// jobsTotal.WithLabelValues("lease_conflict", o.modeLabel()).Inc()
 		return nil
 	}
-	defer func() {
+	// Release Dedup Lock immediately after critical section (Transient)
+	// We only hold it to linearize setup for the same service.
+	// Fix: Do NOT defer to function end (session end).
+	releaseDedup := func() {
 		ctxRel, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		o.Store.ReleaseLease(ctxRel, dedupLease.Key(), dedupLease.Owner())
-	}()
+	}
+	defer releaseDedup() // Safety fallback (idempotent)
+
+	// We will call releaseDedup() explicitly once we have successfully transitioned or failed.
 
 	// 2. Resource Lock (Tuner Slot) - Persistent (Phase 8-2)
 	slot, tunerLease, ok, err := o.acquireTunerLease(ctx, o.TunerSlots)
@@ -427,6 +433,10 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 	started = true // Session is now active/starting.
 
 	// 4. Wait
+	// Fix 8-2: Release Setup Lock *before* blocking.
+	// We are now in a stable state (READY).
+	releaseDedup()
+
 	_, waitErr := transcoder.Wait(hbCtx)
 	return waitErr
 }

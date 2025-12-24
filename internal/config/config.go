@@ -172,9 +172,6 @@ type AppConfig struct {
 	RateLimitWhitelist []string
 	AllowedOrigins     []string
 
-	// Stream Proxy
-	MaxConcurrentStreams int // Maximum concurrent streams allowed (DoS protection)
-
 	RecordingRoots map[string]string // ID -> Absolute Path (e.g. "hdd" -> "/media/hdd/movie")
 
 	// HDHomeRun Configuration
@@ -261,9 +258,6 @@ func (l *Loader) setDefaults(cfg *AppConfig) {
 	cfg.RateLimitEnabled = true
 	cfg.RateLimitGlobal = 100 // Reasonable RPS for single user
 	cfg.RateLimitAuth = 10    // Strict limit for auth attempts (RPM)
-
-	// Stream Proxy Defaults
-	cfg.MaxConcurrentStreams = 10 // Safe default to prevent resource exhaustion
 
 	// Recording Defaults
 	cfg.RecordingRoots = nil
@@ -604,9 +598,6 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 
 	// Trusted Proxies
 	cfg.TrustedProxies = ParseString("XG2G_TRUSTED_PROXIES", cfg.TrustedProxies)
-
-	// Stream Proxy
-	cfg.MaxConcurrentStreams = ParseInt("XG2G_MAX_CONCURRENT_STREAMS", cfg.MaxConcurrentStreams)
 
 	// Recording Roots (Env Override)
 	cfg.RecordingRoots = parseRecordingRoots(ParseString("XG2G_RECORDING_ROOTS", ""), cfg.RecordingRoots)

@@ -388,61 +388,15 @@ func (s *Server) GetLogs(w http.ResponseWriter, r *http.Request) {
 
 // GetStreams implements ServerInterface
 func (s *Server) GetStreams(w http.ResponseWriter, r *http.Request) {
-	s.mu.RLock()
-	proxySrv := s.proxy
-	s.mu.RUnlock()
-
-	if proxySrv == nil {
-		// Return empty if proxy is not configured or injected
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode([]StreamSession{})
-		return
-	}
-
-	sessions := proxySrv.GetSessions()
-	resp := make([]StreamSession, 0, len(sessions))
-
-	for _, sess := range sessions {
-		// Map proxy.StreamSession to api.StreamSession
-		// Note: api.StreamSessionState is string alias
-		state := StreamSessionState(sess.State)
-
-		// Dereference copies safely
-		id := sess.ID
-		ip := sess.ClientIP
-		ch := sess.ChannelName
-		start := sess.StartedAt
-
-		resp = append(resp, StreamSession{
-			Id:          &id,
-			ClientIp:    &ip,
-			ChannelName: &ch,
-			StartedAt:   &start,
-			State:       &state,
-		})
-	}
-
+	// V2 Proxy deprecated
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode([]StreamSession{})
 }
 
 // DeleteStreamsId implements ServerInterface
 func (s *Server) DeleteStreamsId(w http.ResponseWriter, r *http.Request, id string) {
-	s.mu.RLock()
-	proxySrv := s.proxy
-	s.mu.RUnlock()
-
-	if proxySrv == nil {
-		http.Error(w, "Proxy not available", http.StatusServiceUnavailable)
-		return
-	}
-
-	if success := proxySrv.Terminate(id); !success {
-		http.Error(w, "Session not found", http.StatusNotFound)
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
+	// V2 Proxy deprecated
+	http.Error(w, "V2 proxy deprecated", http.StatusNotFound)
 }
 
 // handleNowNextEPG returns now/next EPG for a list of service references.

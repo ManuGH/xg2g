@@ -11,6 +11,7 @@ package health
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"sync"
@@ -69,6 +70,26 @@ type Checker interface {
 	Name() string
 	Type() CheckType
 	Check(ctx context.Context) CheckResult
+}
+
+// InformationalChecker marks readiness checks that should not affect readiness gating.
+// They still run and appear in verbose output.
+type InformationalChecker interface {
+	Checker
+	Informational() bool
+}
+
+type informationalWrapper struct {
+	Checker
+}
+
+func (informationalWrapper) Informational() bool {
+	return true
+}
+
+// Informational wraps a checker so it is excluded from readiness gating.
+func Informational(checker Checker) Checker {
+	return informationalWrapper{Checker: checker}
 }
 
 // Manager manages health and readiness checks
@@ -195,8 +216,13 @@ func (m *Manager) Ready(ctx context.Context, verbose bool) ReadinessResponse {
 				continue
 			}
 
+			informational := false
+			if ic, ok := c.(InformationalChecker); ok && ic.Informational() {
+				informational = true
+			}
+
 			wg.Add(1)
-			go func(checker Checker) {
+			go func(checker Checker, isInformational bool) {
 				defer wg.Done()
 				// Use the shared probeCtx
 				res := checker.Check(probeCtx)
@@ -205,6 +231,10 @@ func (m *Manager) Ready(ctx context.Context, verbose bool) ReadinessResponse {
 				defer mu.Unlock()
 				result.Checks[checker.Name()] = res
 
+				if isInformational {
+					return
+				}
+
 				// Aggregation logic
 				if res.Status == StatusUnhealthy {
 					result.Status = StatusUnhealthy
@@ -212,7 +242,7 @@ func (m *Manager) Ready(ctx context.Context, verbose bool) ReadinessResponse {
 				} else if res.Status == StatusDegraded && result.Status != StatusUnhealthy {
 					result.Status = StatusDegraded
 				}
-			}(c)
+			}(c, informational)
 		}
 		wg.Wait()
 
@@ -392,6 +422,98 @@ func (c *FileChecker) Check(ctx context.Context) CheckResult {
 	}
 }
 
+// WritableDirChecker checks if a directory exists and is writable (touch test)
+type WritableDirChecker struct {
+	name string
+	path string
+}
+
+// NewWritableDirChecker creates a checker for directory writeability
+func NewWritableDirChecker(name, path string) *WritableDirChecker {
+	return &WritableDirChecker{
+		name: name,
+		path: path,
+	}
+}
+
+func (c *WritableDirChecker) Name() string {
+	return c.name
+}
+
+func (c *WritableDirChecker) Type() CheckType {
+	// Runtime writeability is critical for readiness (can we record?)
+	return CheckReadiness | CheckHealth
+}
+
+func (c *WritableDirChecker) Check(ctx context.Context) CheckResult {
+	if c.path == "" {
+		return CheckResult{
+			Status:  StatusHealthy,
+			Message: "not configured (optional)",
+		}
+	}
+
+	created := false
+	info, err := os.Stat(c.path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			if err := os.MkdirAll(c.path, 0750); err != nil {
+				return CheckResult{
+					Status:  StatusUnhealthy,
+					Error:   fmt.Sprintf("failed to create directory: %v", err),
+					Message: c.path,
+				}
+			}
+			created = true
+			info, err = os.Stat(c.path)
+			if err != nil {
+				return CheckResult{
+					Status:  StatusUnhealthy,
+					Error:   fmt.Sprintf("failed to stat created directory: %v", err),
+					Message: c.path,
+				}
+			}
+		}
+		if err != nil {
+			return CheckResult{
+				Status: StatusUnhealthy,
+				Error:  err.Error(),
+			}
+		}
+	}
+
+	if !info.IsDir() {
+		return CheckResult{
+			Status: StatusUnhealthy,
+			Error:  "expected directory, got file",
+		}
+	}
+
+	// Touch Test
+	f, err := os.CreateTemp(c.path, ".health_probe_*")
+	if err != nil {
+		return CheckResult{
+			Status:  StatusUnhealthy,
+			Error:   fmt.Sprintf("write probe failed: %v", err),
+			Message: "directory not writable",
+		}
+	}
+	probeFile := f.Name()
+	_ = f.Close()
+	_ = os.Remove(probeFile) // cleanup
+
+	if created {
+		return CheckResult{
+			Status:  StatusHealthy,
+			Message: "directory created and writable",
+		}
+	}
+	return CheckResult{
+		Status:  StatusHealthy,
+		Message: "directory writable",
+	}
+}
+
 // LastRunChecker checks if the last job run was successful
 type LastRunChecker struct {
 	getLastRun func() (time.Time, string)
@@ -446,18 +568,31 @@ func (c *LastRunChecker) Check(ctx context.Context) CheckResult {
 
 // ReceiverChecker checks if the OpenWebIF receiver is reachable
 type ReceiverChecker struct {
+	name            string
 	checkConnection func(context.Context) error
 }
 
 // NewReceiverChecker creates a checker for receiver connectivity
 func NewReceiverChecker(checkConnection func(context.Context) error) *ReceiverChecker {
 	return &ReceiverChecker{
+		name:            "receiver_connection",
+		checkConnection: checkConnection,
+	}
+}
+
+// NewNamedReceiverChecker creates a checker with a custom name.
+func NewNamedReceiverChecker(name string, checkConnection func(context.Context) error) *ReceiverChecker {
+	if name == "" {
+		name = "receiver_connection"
+	}
+	return &ReceiverChecker{
+		name:            name,
 		checkConnection: checkConnection,
 	}
 }
 
 func (c *ReceiverChecker) Name() string {
-	return "receiver_connection"
+	return c.name
 }
 
 func (c *ReceiverChecker) Type() CheckType {

@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
-	"github.com/ManuGH/xg2g/internal/proxy"
+	"github.com/ManuGH/xg2g/internal/health"
 	memorybus "github.com/ManuGH/xg2g/internal/v3/bus"
 	"github.com/ManuGH/xg2g/internal/v3/exec"
 	"github.com/ManuGH/xg2g/internal/v3/store"
@@ -50,7 +50,6 @@ type manager struct {
 	// Servers
 	apiServer     *http.Server
 	metricsServer *http.Server
-	proxyServer   *proxy.Server
 
 	// Shutdown hooks (LIFO order)
 	shutdownHooks []namedHook
@@ -102,13 +101,6 @@ func (m *manager) Start(ctx context.Context) error {
 
 	// Error channel for server failures
 	errChan := make(chan error, 3)
-
-	// Start proxy server if configured
-	if m.deps.ProxyConfig != nil {
-		if err := m.startProxyServer(ctx, errChan); err != nil {
-			return fmt.Errorf("failed to start proxy server: %w", err)
-		}
-	}
 
 	// Start metrics server if configured (skip in proxy-only mode)
 	if !m.deps.ProxyOnly && m.deps.MetricsHandler != nil {
@@ -226,62 +218,6 @@ func (m *manager) startMetricsServer(_ context.Context, errChan chan<- error) er
 	return nil
 }
 
-// startProxyServer starts the optional stream proxy server.
-func (m *manager) startProxyServer(ctx context.Context, errChan chan<- error) error {
-	if m.deps.ProxyConfig == nil {
-		return nil // Proxy disabled
-	}
-
-	var err error
-	m.proxyServer, err = proxy.New(proxy.Config{
-		ListenAddr:     m.deps.ProxyConfig.ListenAddr,
-		TargetURL:      m.deps.ProxyConfig.TargetURL,
-		ReceiverHost:   m.deps.ProxyConfig.ReceiverHost,
-		Logger:         m.deps.ProxyConfig.Logger,
-		TLSCert:        m.deps.ProxyConfig.TLSCert,
-		TLSKey:         m.deps.ProxyConfig.TLSKey,
-		DataDir:        m.deps.ProxyConfig.DataDir,
-		PlaylistPath:   m.deps.ProxyConfig.PlaylistPath,
-		RecordingRoots: m.deps.Config.RecordingRoots,
-		Runtime:        m.deps.ProxyConfig.Runtime,
-		APIToken:       m.deps.Config.APIToken,
-		AuthAnonymous:  m.deps.Config.AuthAnonymous,
-		AllowedOrigins: m.deps.ProxyConfig.AllowedOrigins,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create proxy: %w", err)
-	}
-
-	// v3 Shadow Canary: Inject Client
-	if m.deps.ProxyConfig.ShadowClient != nil {
-		m.proxyServer.SetShadowClient(m.deps.ProxyConfig.ShadowClient)
-	}
-
-	go func() {
-		logEvent := m.logger.Info().Str("addr", m.deps.ProxyConfig.ListenAddr)
-		if m.deps.ProxyConfig.TargetURL != "" {
-			logEvent.Str("target", m.deps.ProxyConfig.TargetURL)
-		} else if m.deps.ProxyConfig.ReceiverHost != "" {
-			logEvent.Str("receiver", m.deps.ProxyConfig.ReceiverHost)
-		}
-		logEvent.Msg("Proxy server listening")
-
-		if err := m.proxyServer.Start(); err != nil {
-			m.logger.Error().
-				Err(err).
-				Str("event", "proxy.server.failed").
-				Msg("Proxy server failed")
-			errChan <- fmt.Errorf("proxy server: %w", err)
-		}
-	}()
-
-	if err := waitForListener(ctx, m.deps.ProxyConfig.ListenAddr, 2*time.Second); err != nil {
-		return fmt.Errorf("proxy server listen check failed: %w", err)
-	}
-
-	return nil
-}
-
 // startV3Worker initializes v3 Bus, Store, and Orchestrator
 func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error {
 	cfg := m.deps.V3Config
@@ -289,6 +225,8 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 	m.logger.Info().
 		Str("mode", cfg.Mode).
 		Str("store", cfg.StorePath).
+		Str("hls_root", cfg.HLSRoot).
+		Str("e2_host", cfg.E2Host).
 		Msg("starting v3 worker (Phase 7A)")
 
 	// 1. Initialize Bus (Memory for MVP)
@@ -333,7 +271,10 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 		m.logger.Warn().Msg("API Server Setter not available - shadow intents will not be processed")
 	}
 
-	// 5. Run Orchestrator
+	// 5. Register Health/Readiness Checks (Phase 9-1)
+	m.registerV3Checks(cfg)
+
+	// 6. Run Orchestrator
 	go func() {
 		// Orchestrator.Run returns error on exit
 		if err := orch.Run(ctx); err != nil {
@@ -368,10 +309,8 @@ func waitForListener(ctx context.Context, addr string, timeout time.Duration) er
 
 		select {
 		case <-ctx.Done():
-			if lastErr != nil {
-				return fmt.Errorf("timed out waiting for listener on %s: %w", addr, lastErr)
-			}
-			return fmt.Errorf("timed out waiting for listener on %s", addr)
+			return fmt.Errorf("timed out waiting for listener on %s: %w", addr, lastErr)
+
 		case <-ticker.C:
 		}
 	}
@@ -448,14 +387,6 @@ func (m *manager) Shutdown(ctx context.Context) error {
 		}
 	}
 
-	// Shutdown proxy server
-	if m.proxyServer != nil {
-		m.logger.Debug().Msg("Shutting down proxy server")
-		if err := m.proxyServer.Shutdown(shutdownCtx); err != nil {
-			errs = append(errs, fmt.Errorf("proxy server shutdown: %w", err))
-		}
-	}
-
 	// Execute shutdown hooks in reverse order (LIFO)
 	m.logger.Debug().Int("hooks", len(m.shutdownHooks)).Msg("Executing shutdown hooks")
 	for i := len(m.shutdownHooks) - 1; i >= 0; i-- {
@@ -499,6 +430,46 @@ func (m *manager) RegisterShutdownHook(name string, hook ShutdownHook) {
 		name: name,
 		hook: hook,
 	})
-
 	m.logger.Debug().Str("hook", name).Msg("Registered shutdown hook")
+}
+
+// registerV3Checks registers health and readiness checks for V3 components.
+func (m *manager) registerV3Checks(cfg *V3Config) {
+	hm := m.deps.APIServerSetter.HealthManager()
+	if hm == nil {
+		m.logger.Warn().Msg("HealthManager not available, skipping V3 checks")
+		return
+	}
+
+	// 1. Storage Checks (Runtime Writeability)
+	hm.RegisterChecker(health.Informational(health.NewWritableDirChecker("v3_store_path", cfg.StorePath)))
+	hm.RegisterChecker(health.Informational(health.NewWritableDirChecker("v3_hls_root", cfg.HLSRoot)))
+
+	// 2. Connectivity Checks (Upstream/Receiver)
+	// Re-uses the existing network logic but scoped to V3 dependencies.
+	// We can use a ReceiverChecker pointing to E2Host.
+	hm.RegisterChecker(health.Informational(health.NewNamedReceiverChecker("v3_receiver_connection", func(ctx context.Context) error {
+		if cfg.E2Host == "" {
+			return fmt.Errorf("XG2G_V3_E2_HOST is empty")
+		}
+		// Quick connectivity check to E2Host
+		// Use a 2s timeout to avoid blocking readiness probes too long
+		checkCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+
+		req, err := http.NewRequestWithContext(checkCtx, http.MethodHead, cfg.E2Host, nil)
+		if err != nil {
+			return err
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode >= 500 {
+			return fmt.Errorf("receiver returned status %d", resp.StatusCode)
+		}
+		return nil
+	})))
+
 }

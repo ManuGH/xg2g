@@ -44,33 +44,11 @@ func ReadEnv(getenv func(string) string) (Env, error) {
 		FFmpegLogLevel:   getString(getenv, "XG2G_FFMPEG_LOGLEVEL", ""),
 	}
 
-	rt.StreamProxy = readStreamProxyRuntime(getenv)
 	rt.OpenWebIF = readOpenWebIFRuntime(getenv)
 	rt.Transcoder = readTranscoderRuntime(getenv)
 	rt.HLS = readHLSRuntime(getenv)
 
 	return Env{Runtime: rt}, nil
-}
-
-func readStreamProxyRuntime(getenv func(string) string) StreamProxyRuntime {
-	listen := getString(getenv, "XG2G_PROXY_LISTEN", "")
-	if strings.TrimSpace(listen) == "" {
-		if port := strings.TrimSpace(getString(getenv, "XG2G_PROXY_PORT", "")); port != "" {
-			listen = ":" + port
-		} else {
-			listen = "127.0.0.1:18000"
-		}
-	}
-
-	return StreamProxyRuntime{
-		Enabled:              getBool(getenv, "XG2G_ENABLE_STREAM_PROXY", true),
-		ListenAddr:           listen,
-		TargetURL:            getString(getenv, "XG2G_PROXY_TARGET", ""),
-		UpstreamHost:         getString(getenv, "XG2G_PROXY_HOST", "127.0.0.1"),
-		MaxConcurrentStreams: 0, // filled from AppConfig in BuildSnapshot
-		TranscodeFailOpen:    getBool(getenv, "XG2G_TRANSCODE_FAIL_OPEN", false),
-		IdleTimeout:          parseDurationOrSeconds(getenv, "XG2G_PROXY_IDLE_TIMEOUT", 0),
-	}
 }
 
 func readOpenWebIFRuntime(getenv func(string) string) OpenWebIFRuntime {

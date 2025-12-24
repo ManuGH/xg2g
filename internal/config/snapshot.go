@@ -30,26 +30,11 @@ type RuntimeSnapshot struct {
 	ProxyBaseURL     string
 	UseHashTvgID     bool
 
-	StreamProxy StreamProxyRuntime
-	OpenWebIF   OpenWebIFRuntime
-	Transcoder  TranscoderRuntime
-	HLS         HLSRuntime
+	OpenWebIF  OpenWebIFRuntime
+	Transcoder TranscoderRuntime
+	HLS        HLSRuntime
 
 	FFmpegLogLevel string
-}
-
-type StreamProxyRuntime struct {
-	Enabled bool
-
-	ListenAddr string // e.g. ":18000"
-	TargetURL  string // optional
-
-	// For API-side reverse proxying to the stream proxy (split deployments).
-	UpstreamHost string // default: "127.0.0.1"
-
-	MaxConcurrentStreams int64
-	TranscodeFailOpen    bool
-	IdleTimeout          time.Duration
 }
 
 type OpenWebIFRuntime struct {
@@ -95,6 +80,6 @@ type HLSRuntime struct {
 // and a previously frozen Env (read once during load/reload).
 func BuildSnapshot(app AppConfig, env Env) Snapshot {
 	rt := env.Runtime
-	rt.StreamProxy.MaxConcurrentStreams = int64(app.MaxConcurrentStreams)
+
 	return Snapshot{App: app, Runtime: rt}
 }

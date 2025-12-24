@@ -43,9 +43,8 @@ graph TB
     subgraph "xg2g Middleware"
         API[HTTP API Server<br/>/api/v2/*]
         HDHR[HDHomeRun Emulation<br/>SSDP Discovery]
-        Proxy[Stream Proxy<br/>HTTP Tunneling]
         Jobs[Background Jobs<br/>Refresh, EPG]
-        Transcoder[Transcoding Engine<br/>FFmpeg / GPU]
+        V3[V3 Control Plane<br/>/api/v3/*]
     end
 
     subgraph "Backend"
@@ -61,18 +60,16 @@ graph TB
     Plex --> HDHR
     Plex --> API
     Jellyfin --> API
-    VLC --> Proxy
+    VLC --> V3
 
     API --> Jobs
-    Proxy --> Transcoder
     HDHR --> API
 
     Jobs --> Enigma2
-    Proxy --> Enigma2
     Jobs --> Storage
+    V3 --> Enigma2
 
     API --> Metrics
-    Proxy --> Traces
     Jobs --> Traces
 ```
 
@@ -98,11 +95,6 @@ graph LR
         Refresh[refresh.go<br/>Playlist/EPG Refresh]
     end
 
-    subgraph "internal/proxy"
-        Proxy[proxy.go<br/>Stream Proxy]
-        TC[transcoder.go<br/>Audio/Video Transcoding]
-    end
-
     subgraph "internal/hdhr"
         HDHR[hdhr.go<br/>HDHomeRun + SSDP]
     end
@@ -119,9 +111,7 @@ graph LR
     Router --> V2
     Router --> MW
     V2 --> Refresh
-    V2 --> Proxy
     V2 --> HDHR
-    Proxy --> TC
     App --> Config
     V2 --> Validate
     MW --> Telemetry
@@ -141,35 +131,6 @@ graph LR
 - `GET /api/v2/services` - List available channels (services)
 
 **Architecture Decision**: [ADR-001 API Versioning](adr/001-api-versioning.md)
-
-### 2. Stream Proxy (`internal/proxy`)
-
-**Responsibility**: Proxy live streams from Enigma2 to clients with optional transcoding
-
-**Flow**:
-
-```
-Client → xg2g Proxy → Enigma2 Stream → [Transcoding?] → Client
-```
-
-**Transcoding Modes**:
-
-- **Passthrough**: Direct proxy (no transcoding)
-- **Audio Transcoding**: FFmpeg CPU-based (AAC, MP3)
-- **GPU Transcoding**: External transcoder service (VAAPI, NVENC, QSV)
-
-**Streaming Format & Profile Selection**:
-
-- **Direct MPEG-TS**: `GET /{service_ref}` (for IPTV clients like VLC/Plex)
-- **HLS (browser/web players)**: `GET /hls/{service_ref}` (or via API compatibility proxy: `/stream/{service_ref}/playlist.m3u8`)
-- **Client routing**: The proxy can auto-route browser-like requests hitting a direct stream URL to HLS (based on request headers, not browser brand).
-- **Overrides**: `?mode=hls` forces HLS, `?mode=ts` forces MPEG-TS for legacy clients.
-- **HLS profiles**:
-  - Default: Safari DVR profile (stable sliding window)
-  - Opt-in: `?profile=generic` (generic MPEG-TS HLS)
-  - Opt-in: `?llhls=1` / `?profile=llhls` (low-latency HLS)
-
-**Related**: [ADR-004 OpenTelemetry](adr/004-opentelemetry.md) - GPU transcoding tracing
 
 ### 3. Background Jobs (`internal/jobs`)
 
@@ -279,69 +240,6 @@ sequenceDiagram
     Jobs->>Storage: Write xmltv.xml
     Jobs-->>API: Refresh Complete
     API-->>Client: 200 OK
-```
-
-### Stream Proxy Flow (with GPU Transcoding)
-
-```mermaid
-sequenceDiagram
-    participant Client as VLC/Player
-    participant Proxy as xg2g Proxy
-    participant GPU as GPU Transcoder
-    participant Enigma2 as Enigma2 Receiver
-
-    Client->>Proxy: GET /stream/channel123.ts
-    Proxy->>Proxy: Check GPU Enabled?
-    alt GPU Transcoding
-        Proxy->>GPU: POST /transcode?source_url=...
-        GPU->>Enigma2: GET Stream
-        Enigma2-->>GPU: MPEG-TS Stream
-        GPU->>GPU: Transcode (VAAPI)
-        GPU-->>Proxy: Transcoded Stream
-        Proxy-->>Client: Stream Chunks
-    else CPU Transcoding / Passthrough
-        Proxy->>Enigma2: GET Stream
-        Enigma2-->>Proxy: MPEG-TS Stream
-        Proxy->>Proxy: [FFmpeg if enabled]
-        Proxy-->>Client: Stream Chunks
-    end
-```
-
-### Encrypted Stream Lifecycle (Race Condition Handling)
-
-This flow illustrates why the **5-second Zap Delay** is critical for encrypted channels.
-
-```mermaid
-sequenceDiagram
-    participant Client
-    participant Proxy as xg2g Proxy
-    participant OWI as Enigma2 (WebAPI)
-    participant Receiver as Enigma2 (System)
-    participant OSCam as oscam-emu (Port 17999)
-
-    Client->>Proxy: GET /stream/{id}/playlist.m3u8
-    Proxy->>OWI: GET /web/stream.m3u?ref=... (Zap)
-    OWI->>Receiver: Tune & Init CAM
-    OWI-->>Proxy: URL: http://ip:17999/...
-    
-    note right of Proxy: CRITICAL: Receiver operates asynchronously!
-    Receiver->>Receiver: Tuning... (1-2s)
-    Receiver->>OSCam: Start Decryption... (1s)
-    OSCam->>OSCam: Open Port 17999... (1s)
-
-    rect rgb(255, 240, 240)
-        note right of Proxy: Without Delay (Race Condition)
-        Proxy-xOSCam: Connect Port 17999
-        OSCam--xProxy: Connection Refused (Port not ready)
-    end
-
-    rect rgb(240, 255, 240)
-        note right of Proxy: With 5s Delay (Fix)
-        Proxy->>Proxy: Sleep 5s (Zap Delay)
-        Proxy->>OSCam: Connect Port 17999
-        OSCam-->>Proxy: MPEG-TS Stream (Decrypted)
-        Proxy-->>Client: HLS Playlist
-    end
 ```
 
 ## Deployment Architectures

@@ -95,7 +95,7 @@ RUN go mod download
 COPY . .
 
 # Copy WebUI artifacts from node-builder
-COPY --from=node-builder /webui/dist ./internal/api/ui
+COPY --from=node-builder /webui/dist ./internal/api/dist
 
 # Build Go daemon WITH CGO enabled for Rust FFI bindings
 ARG GIT_REF

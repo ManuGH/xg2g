@@ -7,10 +7,7 @@ package api
 import (
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
-	"net"
 	"net/http"
-	"net/http/httputil"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -219,204 +216,23 @@ func (s *Server) GetRecordingsHandler(w http.ResponseWriter, r *http.Request) {
 // GetRecordingStreamHandler handles GET /api/v2/recordings/stream/{ref}
 // Redirects to /stream/{ref} which handles proxying/HLS
 func (s *Server) GetRecordingStreamHandler(w http.ResponseWriter, r *http.Request) {
-	ref := chi.URLParam(r, "ref")
-
-	// Valid Service Ref?
-	// Basic check: must start with 1:0:
-	if !strings.HasPrefix(ref, "1:0:") {
-		http.Error(w, "Invalid service reference", http.StatusBadRequest)
-		return
-	}
-
-	// Redirect to existing stream endpoint
-	target := fmt.Sprintf("/stream/%s", url.PathEscape(ref))
-	http.Redirect(w, r, target, http.StatusTemporaryRedirect)
+	// V2 Proxy deprecated
+	http.Error(w, "V2 streaming deprecated", http.StatusNotFound)
 }
 
 // GetRecordingHLSPlaylistHandler handles GET /api/v2/recordings/{recordingId}/playlist.m3u8
 // It acts as a reverse proxy to the internal Stream Proxy (port 18000),
 // injecting the correct upstream URL extracted from the recording ID (service ref).
 func (s *Server) GetRecordingHLSPlaylistHandler(w http.ResponseWriter, r *http.Request) {
-	recordingID := chi.URLParam(r, "recordingId")
-	if recordingID == "" {
-		http.Error(w, "Missing recording ID", http.StatusBadRequest)
-		return
-	}
-
-	// Decode ID (Base64RawURL expected)
-	// Strategy: Try Base64RawURL decode.
-	var serviceRef string
-	if decodedBytes, err := base64.RawURLEncoding.DecodeString(recordingID); err == nil {
-		serviceRef = string(decodedBytes)
-	} else {
-		// Fallback for transition/legacy: try standard URL (with padding) if Raw failed
-		if decodedBytes2, err2 := base64.URLEncoding.DecodeString(recordingID); err2 == nil {
-			serviceRef = string(decodedBytes2)
-		} else if decoded, err3 := url.PathUnescape(recordingID); err3 == nil {
-			// Last resort: PathUnescape
-			serviceRef = decoded
-		} else {
-			serviceRef = recordingID
-		}
-	}
-
-	if serviceRef == "" {
-		http.Error(w, "Invalid recording ID", http.StatusBadRequest)
-		return
-	}
-
-	s.mu.RLock()
-	cfg := s.cfg // Guarded access
-	snap := s.snap
-	s.mu.RUnlock()
-
-	// Logic: Extract the file path from the Service Ref
-	// Standard Enigma2 ref ends with :/path/to/file.ts
-	// Robust extraction: Find the part starting with /
-	parts := strings.Split(serviceRef, ":")
-	var filePath string
-	for i := len(parts) - 1; i >= 0; i-- {
-		if strings.HasPrefix(parts[i], "/") {
-			filePath = parts[i]
-			break
-		}
-	}
-
-	if filePath == "" {
-		http.Error(w, "Invalid recording reference (no file path found)", http.StatusBadRequest)
-		return
-	}
-
-	// SECURITY: Confinement Check
-	// Prevent access to files outside of configured RecordingRoots
-	allowed := false
-
-	// Check against all configured roots
-	// Check against all configured roots
-	roots := cfg.RecordingRoots
-	if len(roots) == 0 {
-		// Default fallback if no roots configured
-		roots = map[string]string{"hdd": "/media/hdd/movie"}
-	}
-
-	var resolvedPath string
-	for _, rootPath := range roots {
-		// We use fsutil.ConfineAbsPath because HLS ServiceRef IDs contain absolute paths (usually)
-		if abs, err := fsutil.ConfineAbsPath(rootPath, filePath); err == nil {
-			allowed = true
-			resolvedPath = abs
-			break
-		}
-	}
-
-	if !allowed {
-		log.Warn().Str("path", filePath).Msg("recording path traversal blocked")
-		http.Error(w, "Access denied: Recording path not in allowed roots", http.StatusForbidden)
-		return
-	}
-
-	// Use Local File Path as Upstream
-	// Since we have direct access to the file (verified above), using the local path
-	// avoids network overhead and dependency on the receiver's HTTP streaming capabilities.
-	upstreamURL := resolvedPath
-
-	// Proxy to internal Stream Proxy HLS handler
-	// We use Base64RawURL Encoded ServiceRef as the ID for HLS session.
-	sessID := base64.RawURLEncoding.EncodeToString([]byte(serviceRef))
-
-	proxyHost := "127.0.0.1:18000"
-	if addr := snap.Runtime.StreamProxy.ListenAddr; addr != "" {
-		_, p, _ := net.SplitHostPort(addr)
-		if p != "" {
-			proxyHost = "127.0.0.1:" + p
-		}
-	}
-
-	targetPath := fmt.Sprintf("/hls/%s/playlist.m3u8", sessID)
-	// Simplify Reverse Proxy: Target is just host
-	proxyTarget, _ := url.Parse(fmt.Sprintf("http://%s", proxyHost))
-
-	// Create reverse proxy
-	p := httputil.NewSingleHostReverseProxy(proxyTarget)
-
-	p.Director = func(req *http.Request) {
-		req.URL.Scheme = "http"
-		req.URL.Host = proxyHost
-		req.URL.Path = targetPath
-
-		// Set query params
-		q := req.URL.Query()
-		q.Set("upstream", upstreamURL)
-
-		if r.URL.Query().Get("llhls") == "1" {
-			q.Set("llhls", "1")
-		}
-
-		req.URL.RawQuery = q.Encode()
-		req.Host = proxyHost // Important for keeping host header correct for internal proxy
-	}
-
-	p.ServeHTTP(w, r)
+	// V2 Proxy deprecated
+	http.Error(w, "V2 streaming deprecated", http.StatusNotFound)
 }
 
 // GetRecordingHLSCustomSegmentHandler handles GET /api/v2/recordings/{recordingId}/{segment}
 // Proxies segment requests to the internal Stream Proxy.
 func (s *Server) GetRecordingHLSCustomSegmentHandler(w http.ResponseWriter, r *http.Request) {
-	recordingID := chi.URLParam(r, "recordingId")
-	segment := chi.URLParam(r, "segment")
-
-	if recordingID == "" || segment == "" {
-		http.NotFound(w, r)
-		return
-	}
-
-	// Security: Validate Segment Name using shared regex
-	if !segmentAllowList.MatchString(segment) {
-		http.Error(w, "Invalid segment name", http.StatusBadRequest)
-		return
-	}
-
-	// Decode ID
-	var serviceRef string
-	if decodedBytes, err := base64.RawURLEncoding.DecodeString(recordingID); err == nil {
-		serviceRef = string(decodedBytes)
-	} else {
-		if decodedBytes2, err2 := base64.URLEncoding.DecodeString(recordingID); err2 == nil {
-			serviceRef = string(decodedBytes2)
-		} else if decoded, err3 := url.PathUnescape(recordingID); err3 == nil {
-			serviceRef = decoded
-		} else {
-			serviceRef = recordingID
-		}
-	}
-
-	// If we used Base64 as SessID in playlist, we must use it here too.
-	sessID := base64.RawURLEncoding.EncodeToString([]byte(serviceRef))
-
-	s.mu.RLock()
-	snap := s.snap
-	s.mu.RUnlock()
-
-	proxyHost := "127.0.0.1:18000"
-	if addr := snap.Runtime.StreamProxy.ListenAddr; addr != "" {
-		_, p, _ := net.SplitHostPort(addr)
-		if p != "" {
-			proxyHost = "127.0.0.1:" + p
-		}
-	}
-
-	targetPath := fmt.Sprintf("/hls/%s/%s", sessID, segment)
-	proxyTarget, _ := url.Parse(fmt.Sprintf("http://%s", proxyHost))
-
-	p := httputil.NewSingleHostReverseProxy(proxyTarget)
-	p.Director = func(req *http.Request) {
-		req.URL.Scheme = "http"
-		req.URL.Host = proxyHost
-		req.URL.Path = targetPath
-		req.Host = proxyHost
-	}
-
-	p.ServeHTTP(w, r)
+	// V2 Proxy deprecated
+	http.NotFound(w, r)
 }
 
 // DeleteRecordingHandler handles DELETE /api/v2/recordings/{ref}

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/v3/bus"
 	"github.com/ManuGH/xg2g/internal/v3/shadow"
 	"github.com/ManuGH/xg2g/internal/v3/store"
@@ -56,6 +57,7 @@ type Deps struct {
 // V3ComponentSetter defines the interface for injecting v3 components
 type V3ComponentSetter interface {
 	SetV3Components(b bus.Bus, st store.StateStore)
+	HealthManager() *health.Manager
 }
 
 // V3Config holds v3 worker/pipeline configuration.
