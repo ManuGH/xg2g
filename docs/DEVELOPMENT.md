@@ -58,14 +58,34 @@ make clean
 make build
 ```
 
-### Frontend Only Changes
+### Frontend Development (Separate Dev Server)
+
+For **live frontend development** without rebuilding the backend:
 
 ```bash
-# Rebuild WebUI and embed in Go binary
-make ui-build
+# Terminal 1: Run backend (serves API only)
+go build -o bin/xg2g ./cmd/daemon && ./bin/xg2g
 
-# Then rebuild daemon
-make build
+# Terminal 2: Run frontend dev server (hot reload)
+cd webui && npm run dev
+# Open http://localhost:5173 (Vite dev server with hot reload)
+```
+
+**Benefits**: Frontend changes reload instantly, no backend rebuild needed.
+
+### Frontend Only Changes (Production Build)
+
+When you're done and want to **embed** the WebUI into the Go binary:
+
+```bash
+# 1. Build WebUI
+cd webui && npm run build
+
+# 2. Copy to embed location
+cd .. && cp -r webui/dist/* internal/api/dist/
+
+# 3. Rebuild Go binary (embeds new WebUI)
+go build -o bin/xg2g ./cmd/daemon
 ```
 
 ### Backend Only Changes
