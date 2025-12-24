@@ -196,15 +196,15 @@ api:
 
 ## v3 Configuration
 
-The v3 streaming control plane is exposed under `/api/v3/*`. It is configured via **environment variables only** (no `config.yaml` support yet).
+The v3 streaming backend is the **production streaming system** (enabled by default). It is configured via **environment variables only** (no `config.yaml` support yet).
 
-| ENV Variable | Purpose |
-| :--- | :--- |
-| `XG2G_V3_WORKER_ENABLED` | Enable v3 worker/store |
-| `XG2G_V3_WORKER_MODE` | Worker mode (`standard` or `virtual`) |
-| `XG2G_V3_STORE_BACKEND` | Store backend (`memory` or `bolt`) |
-| `XG2G_V3_STORE_PATH` | Store path for bolt backend |
-| `XG2G_V3_HLS_ROOT` | HLS output root for v3 sessions (Default: `/var/lib/xg2g/v3-hls`) |
-| `XG2G_V3_E2_HOST` | Enigma2 Receiver URL for Worker (Default: `http://localhost`) |
-| `XG2G_V3_TUNER_SLOTS` | Tuner slots to use (JSON array `[0,1]`) |
-| `XG2G_V3_FFMPEG_BIN` | Path to ffmpeg binary (Default: `ffmpeg`) |
+| ENV Variable | Default | Purpose |
+| :--- | :--- | :--- |
+| `XG2G_V3_WORKER_ENABLED` | `true` | Enable v3 worker/store (enabled by default in docker-compose) |
+| `XG2G_V3_WORKER_MODE` | `standard` | Worker mode (`standard` or `virtual`) |
+| `XG2G_V3_STORE_BACKEND` | `memory` | Store backend (`memory` or `bolt`) |
+| `XG2G_V3_STORE_PATH` | `/var/lib/xg2g/v3-store` | Store path for bolt backend |
+| `XG2G_V3_HLS_ROOT` | `/var/lib/xg2g/v3-hls` | HLS output root for v3 sessions |
+| `XG2G_V3_E2_HOST` | `http://localhost` | Enigma2 Receiver URL (CRITICAL for Docker - set to receiver IP) |
+| `XG2G_V3_TUNER_SLOTS` | (auto) | Tuner slots to use (JSON array, e.g., `[0,1]`) |
+| `XG2G_V3_FFMPEG_BIN` | `ffmpeg` | Path to ffmpeg binary |

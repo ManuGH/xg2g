@@ -14,8 +14,10 @@ cd xg2g
 # Create .env from example
 cp .env.example .env
 
-# Edit .env with your receiver IP
-nano .env  # Set XG2G_OWI_BASE=http://YOUR_RECEIVER_IP
+# Edit .env with required settings
+nano .env
+# Required: XG2G_OWI_BASE=http://YOUR_RECEIVER_IP
+# For Docker: XG2G_V3_E2_HOST=http://YOUR_RECEIVER_IP (same as OWI_BASE)
 ```
 
 ### 2. Run Locally (Without Docker)

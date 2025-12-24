@@ -44,23 +44,22 @@ To run `xg2g` with V3 enabled using Docker:
 
 ### Docker Compose
 
-Add the following environment variable to your `docker-compose.yml`:
+The provided `docker-compose.yml` already has V3 enabled by default. Just configure your `.env` file:
 
-```yaml
-version: "3"
-services:
-  xg2g:
-    build: .
-    network_mode: host
-    environment:
-      - XG2G_API_TOKEN=your-secret-token
-      - XG2G_OWI_BASE=http://your-receiver-ip
-      - XG2G_V3_WORKER_ENABLED=true
-      - XG2G_V3_E2_HOST=http://your-receiver-ip # Critical for Docker networking
-      - XG2G_V3_STORE_PATH=/data/v3-store   # Persist store in volume
-      - XG2G_V3_HLS_ROOT=/data/v3-hls       # Persist HLS segments in volume
-    volumes:
-      - ./data:/data
+```bash
+# Required settings in .env
+XG2G_OWI_BASE=http://your-receiver-ip
+XG2G_V3_E2_HOST=http://your-receiver-ip  # Critical for Docker networking
+
+# Optional (has sensible defaults)
+XG2G_V3_STORE_PATH=/data/v3-store   # Persist store in volume
+XG2G_V3_HLS_ROOT=/data/v3-hls       # Persist HLS segments in volume
+```
+
+Then run:
+
+```bash
+docker compose up -d
 ```
 
 ### Bare Metal
