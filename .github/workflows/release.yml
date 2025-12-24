@@ -227,8 +227,8 @@ jobs:
           rm -rf ../internal/api/dist
           mkdir -p ../internal/api/dist
           cp -a dist/. ../internal/api/dist/
-          # Sanity Check: Fail if empty
-          test -n "$(ls -A ../internal/api/dist)" || (echo "❌ internal/api/dist is empty" && exit 1)
+          # Sanity Check: Fail if index.html is missing (ensures valid build)
+          test -f ../internal/api/dist/index.html || (echo "❌ internal/api/dist/index.html missing" && exit 1)
 
       # =============================================
       # Pre-Release Checks
