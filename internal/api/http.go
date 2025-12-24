@@ -45,7 +45,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/resilience"
 )
 
-//go:embed ui/*
+//go:embed dist/*
 var uiFS embed.FS
 
 // Server represents the HTTP API server for xg2g.
@@ -1095,8 +1095,8 @@ func (s *Server) handleLineupJSON(w http.ResponseWriter, r *http.Request) {
 
 // uiHandler returns a handler that serves the embedded Web UI
 func (s *Server) uiHandler() http.Handler {
-	// Subdirectory "ui" matches the COPY path in Dockerfile
-	subFS, err := fs.Sub(uiFS, "ui")
+	// Subdirectory "dist" matches the build output
+	subFS, err := fs.Sub(uiFS, "dist")
 	if err != nil {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "UI not available", http.StatusInternalServerError)
