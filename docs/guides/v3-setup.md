@@ -86,7 +86,7 @@ The following environment variables control V3 behavior:
 
 | Variable | Default | Description |
 | :--- | :--- | :--- |
-| `XG2G_V3_WORKER_ENABLED` | `false` | Master switch to enable V3 backend |
+| `XG2G_V3_WORKER_ENABLED` | `true` | Master switch to enable V3 backend (enabled by default in docker-compose) |
 | `XG2G_V3_STORE_BACKEND` | `memory` | Session state store (`memory` or `bolt`) |
 | `XG2G_V3_STORE_PATH` | `/var/lib/xg2g/v3-store` | Path to BoltDB file (Recommended: `/data/v3-store` for Docker) |
 | `XG2G_V3_HLS_ROOT` | `/var/lib/xg2g/v3-hls` | Root for HLS segments (Recommended: `/data/v3-hls` for Docker) |
