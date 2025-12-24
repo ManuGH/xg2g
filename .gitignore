@@ -73,9 +73,7 @@ test_parser.go
 .copilot-instructions.md
 # Vendor assets (Tracked manually)
 dist/
-!internal/api/dist/
-!internal/api/dist/hls.min.js
-!internal/api/dist/mpegts.min.js
+internal/api/dist/
 
 # Test and development artifacts (local testing)
 test-*.sh

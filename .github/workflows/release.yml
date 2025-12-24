@@ -208,11 +208,25 @@ jobs:
           GOTOOLCHAIN: auto
 
       # =============================================
-      # WebUI Assets (Already in Git)
+      # Build WebUI (Strategy A: CI-generated)
       # =============================================
-      # Note: We rely on the committed 'internal/api/dist' assets.
-      # Rebuilding them here causes "dirty git state" failures in GoReleaser
-      # because npm builds are not deterministically identical to committed files.
+      - name: Setup Node for WebUI
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: webui/package-lock.json
+
+      - name: Build WebUI
+        run: |
+          set -euo pipefail
+          cd webui
+          npm ci
+          npm run build
+          # Ensure destination exists and is empty
+          rm -rf ../internal/api/dist/*
+          mkdir -p ../internal/api/dist
+          cp -r dist/* ../internal/api/dist/
 
       # =============================================
       # Pre-Release Checks
