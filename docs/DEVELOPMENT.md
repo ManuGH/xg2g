@@ -1,0 +1,205 @@
+# Development Guide
+
+Quick reference for common development tasks.
+
+## 🚀 Quick Start (Development)
+
+### 1. First Time Setup
+
+```bash
+# Clone and enter directory
+git clone https://github.com/ManuGH/xg2g.git
+cd xg2g
+
+# Create .env from example
+cp .env.example .env
+
+# Edit .env with your receiver IP
+nano .env  # Set XG2G_OWI_BASE=http://YOUR_RECEIVER_IP
+```
+
+### 2. Run Locally (Without Docker)
+
+```bash
+# Build and run in one command
+make dev
+```
+
+This will:
+- Build WebUI (React)
+- Embed WebUI in Go binary
+- Build Go daemon
+- Run with your `.env` configuration
+
+**Access**: http://localhost:8080
+
+### 3. Run with Docker Compose
+
+```bash
+# Start
+make up
+
+# View logs
+make logs
+
+# Stop
+make down
+```
+
+## 🔧 Common Tasks
+
+### Rebuild Everything from Scratch
+
+```bash
+# Clean all build artifacts
+make clean
+
+# Rebuild
+make build
+```
+
+### Frontend Only Changes
+
+```bash
+# Rebuild WebUI and embed in Go binary
+make ui-build
+
+# Then rebuild daemon
+make build
+```
+
+### Backend Only Changes
+
+```bash
+# Just rebuild Go daemon (WebUI unchanged)
+go build -o bin/xg2g ./cmd/daemon
+
+# Or use Make
+make build
+```
+
+### Restart Running Service
+
+```bash
+# If running via docker-compose
+make restart
+
+# If running locally (make dev)
+# Press Ctrl+C and run `make dev` again
+```
+
+## 🐛 Troubleshooting
+
+### "Port already in use"
+
+```bash
+# Find and kill process on port 8080
+lsof -ti:8080 | xargs kill -9
+
+# Or use Make helper
+pkill -x xg2g
+```
+
+### "WebUI not loading"
+
+The WebUI is embedded in the Go binary. You must:
+
+1. Build WebUI: `make ui-build`
+2. Rebuild daemon: `make build`
+3. Restart: `make restart` or re-run `make dev`
+
+### "Changes not appearing"
+
+```bash
+# Full clean rebuild
+make clean
+make build
+```
+
+### Docker build cache issues
+
+```bash
+# Clean Docker cache
+make docker-clean
+
+# Rebuild image
+make docker-build
+```
+
+## 📁 Project Structure
+
+```
+xg2g/
+├── cmd/daemon/          # Main entry point
+├── internal/            # Go backend code
+│   ├── api/            # HTTP API + embedded WebUI
+│   ├── v3/             # V3 streaming architecture
+│   └── ...
+├── webui/              # React frontend (Vite)
+│   ├── src/
+│   └── dist/           # Build output (embedded in Go)
+├── transcoder/         # Rust audio transcoding library
+├── Dockerfile          # Multi-stage build
+├── docker-compose.yml  # Deployment config
+└── Makefile            # Build automation
+```
+
+## 🔨 Build Process Explained
+
+### Full Build Chain
+
+```
+1. Rust Transcoder → libxg2g_transcoder.so
+2. WebUI (React)   → webui/dist/*
+3. Embed WebUI     → internal/api/dist/*
+4. Go Binary       → bin/xg2g (includes embedded UI + Rust FFI)
+```
+
+### Why WebUI Must Be Rebuilt
+
+The WebUI is **embedded** into the Go binary at compile time:
+
+```go
+//go:embed dist/*
+var distFS embed.FS
+```
+
+This means:
+- Frontend changes require: `make ui-build` + `make build`
+- Backend changes only require: `make build`
+
+## 🎯 Simplified Commands for AI/Automation
+
+### "Start fresh"
+
+```bash
+make clean && make build && make dev
+```
+
+### "Rebuild everything"
+
+```bash
+make clean-full && make build
+```
+
+### "Just restart"
+
+```bash
+make restart
+```
+
+### "View logs"
+
+```bash
+make logs
+```
+
+## 🚢 Production Deployment
+
+See [V3 Setup Guide](guides/v3-setup.md) for production deployment.
+
+## 📖 Additional Resources
+
+- [Configuration Guide](guides/CONFIGURATION.md)
+- [Troubleshooting](TROUBLESHOOTING.md)
+- [Architecture](ARCHITECTURE.md)
