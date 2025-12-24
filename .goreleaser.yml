@@ -104,6 +104,8 @@ release:
     **Supported Platforms:**
     - Linux (amd64)
 
+    > **Note:** The release binaries are **Pure Go** (no audio transcoding). For full transcoding support (Rust-powered), please use the **Docker image**.
+
     ### 🔐 Verification
 
     All binaries and container images are signed with Cosign. Verify signatures:

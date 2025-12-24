@@ -41,7 +41,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/resilience"
 )
 
-//go:embed dist/*
+//go:embed dist
 var uiFS embed.FS
 
 // Server represents the HTTP API server for xg2g.
