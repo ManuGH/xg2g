@@ -55,10 +55,10 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cp target/release/libxg2g_transcoder.so /output/ && \
     cp target/release/libxg2g_transcoder.rlib /output/
 
-# =============================================================================
+# =============================================
 # Stage 2: Build WebUI (React + Vite)
-# =============================================================================
-FROM node:22-slim AS node-builder
+# =============================================
+FROM node:20-slim AS node-builder
 WORKDIR /webui
 COPY webui/package*.json ./
 RUN npm ci
@@ -124,11 +124,6 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     tzdata \
     wget \
     ffmpeg \
-    libavcodec61 \
-    libavformat61 \
-    libavfilter10 \
-    libavutil59 \
-    libswresample5 \
     && rm -rf /var/lib/apt/lists/* && \
     groupadd -g 65532 xg2g && \
     useradd -u 65532 -g xg2g -d /app -s /bin/false xg2g && \

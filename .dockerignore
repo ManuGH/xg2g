@@ -1,58 +1,33 @@
-# Build artifacts and binaries
+# Version Control & CI
+.git/
+
+# IDE & Editors
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.bak
+
+# Build Artifacts (Go)
 bin/
 pkg/
 *.exe
 *.test
 *.out
-daemon
-daemon-*
-coverage.*
 *.prof
+coverage.*
 
-# Development tools and configs
-.git/
-.github/
-.vscode/
-.idea/
-.cache/
+# Dependencies (Local)
 node_modules/
-*.md
-README*
-LICENSE*
-CHANGELOG*
-Dockerfile*
-docker-compose*
-Makefile
 
-# Runtime data and logs
+# Runtime Data
 data/
-*.m3u
-*.xml
 *.log
 .env
 .env.*
 
-# Temporary files
-*.tmp
-*.bak
-*.swp
-*~
-.DS_Store
-
-# Ignore everything except what we need
-*
-!cmd/
-!internal/
-!transcoder/
-!webui/
-!go.mod
-!go.sum
-
-# Re-exclude tests and fixtures inside included directories
-cmd/**/*_test.go
-internal/**/*_test.go
-cmd/**/testdata/**
-internal/**/testdata/**
-
-# Strategy A: Ignore local WebUI builds (Docker builds its own)
+# Strategy A: Strict Isolation
+# 1. Ignore global dist (release artifacts)
+dist/
+# 2. Ignore local WebUI builds (Docker builds its own via multi-stage)
 internal/api/dist/
