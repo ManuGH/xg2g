@@ -97,7 +97,7 @@ func refreshWithClient(ctx context.Context, cfg config.AppConfig, cl OwiClient) 
 
 		item := playlist.Item{
 			Name:    name,
-			TvgID:   makeTvgID(name, sref, rt.UseHashTvgID),
+			TvgID:   makeTvgID(name, sref),
 			TvgChNo: i + 1,
 			Group:   cfg.Bouquet,
 		}
@@ -398,21 +398,6 @@ func TestValidateConfig(t *testing.T) {
 				t.Errorf("validateConfig() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
-	}
-}
-
-func TestMakeStableIDFromSRef(t *testing.T) {
-	a := makeStableIDFromSRef("1:0:19:132F:3EF:1:C00000:0:0:0:")
-	b := makeStableIDFromSRef("1:0:19:132F:3EF:1:C00000:0:0:0:")
-	c := makeStableIDFromSRef("1:0:19:1334:3EF:1:C00000:0:0:0:")
-	if a != b {
-		t.Fatalf("stable ID should be deterministic; got %q and %q", a, b)
-	}
-	if a == c {
-		t.Fatalf("different sRefs should yield different IDs; got %q == %q", a, c)
-	}
-	if wantPrefix := "sref-"; len(a) < len(wantPrefix) || a[:len(wantPrefix)] != wantPrefix {
-		t.Fatalf("stable ID must be prefixed with %q; got %q", wantPrefix, a)
 	}
 }
 

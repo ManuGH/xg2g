@@ -35,7 +35,10 @@ func ParseStringWithAlias(primaryKey, aliasKey, defaultValue string) string {
 
 	// Check alias key (user-friendly alternative)
 	if value, exists := os.LookupEnv(aliasKey); exists && value != "" {
-		logDeprecatedEnvAlias(aliasKey, primaryKey)
+		logger.Warn().
+			Str("key", aliasKey).
+			Str("alias_for", primaryKey).
+			Msg("deprecated environment variable alias in use")
 		return value
 	}
 
@@ -47,15 +50,6 @@ func ParseStringWithAlias(primaryKey, aliasKey, defaultValue string) string {
 		Str("source", "default").
 		Msg("using default value")
 	return defaultValue
-}
-
-func logDeprecatedEnvAlias(aliasKey, primaryKey string) {
-	logger := log.WithComponent("config")
-	logger.Warn().
-		Str("key", aliasKey).
-		Str("alias_for", primaryKey).
-		Str("remove_in", "v2.2").
-		Msg("deprecated environment variable alias in use")
 }
 
 // parseStringWithLogger reads an environment variable with custom logger.

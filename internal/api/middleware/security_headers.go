@@ -37,9 +37,6 @@ func SecurityHeaders(csp string) func(http.Handler) http.Handler {
 			// X-Frame-Options
 			w.Header().Set("X-Frame-Options", "DENY")
 
-			// X-XSS-Protection (legacy header for older browsers)
-			w.Header().Set("X-XSS-Protection", "1; mode=block")
-
 			// Referrer-Policy
 			w.Header().Set("Referrer-Policy", "no-referrer")
 

@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"sync"
 	"time"
@@ -516,13 +515,11 @@ func (o *Orchestrator) recordTransition(from, to model.SessionState) {
 	fsmTransitions.WithLabelValues(string(from), string(to), o.modeLabel()).Inc()
 }
 
-var safeIDRe = regexp.MustCompile(`^[a-zA-Z0-9_\-]+$`)
-
 func (o *Orchestrator) cleanupFiles(sid string) {
 	if o.HLSRoot == "" {
 		return
 	}
-	if !safeIDRe.MatchString(sid) {
+	if !model.IsSafeSessionID(sid) {
 		log.L().Warn().Str("sid", sid).Msg("refusing to cleanup unsafe session ID")
 		return
 	}

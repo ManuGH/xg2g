@@ -90,6 +90,14 @@ func TestServeHLS_PathTraversal(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Result().StatusCode)
 }
 
+func TestServeHLS_InvalidSessionID(t *testing.T) {
+	req := httptest.NewRequest("GET", "/hls/index.m3u8", nil)
+	w := httptest.NewRecorder()
+
+	ServeHLS(w, req, &mockHLSStore{}, "/tmp", "../bad", "index.m3u8")
+	assert.Equal(t, http.StatusBadRequest, w.Result().StatusCode)
+}
+
 func TestServeHLS_ForbiddenExt(t *testing.T) {
 	req := httptest.NewRequest("GET", "/hls/foo.exe", nil)
 	w := httptest.NewRecorder()

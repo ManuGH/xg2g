@@ -72,6 +72,7 @@ services:
       - XG2G_OWI_BASE=${XG2G_OWI_BASE:-${OWI_HOST:+http://${OWI_HOST}:${OWI_PORT:-80}}}
       - XG2G_OWI_USER=${XG2G_OWI_USER:-${OWI_USER}}
       - XG2G_OWI_PASS=${XG2G_OWI_PASS:-${OWI_PASS}}
+      - XG2G_LOG_LEVEL=${XG2G_LOG_LEVEL:-info}
 
       # Main Configuration
       - XG2G_BOUQUET=${XG2G_BOUQUET:-${DEFAULT_BOUQUET:-Favourites}}
@@ -90,8 +91,23 @@ services:
 
       # Security & Limits
       - XG2G_API_TOKEN=${XG2G_API_TOKEN:-${API_TOKEN}}
+      - XG2G_DEV=${XG2G_DEV:-false}
       - XG2G_RATELIMIT_ENABLED=${XG2G_RATELIMIT_ENABLED:-false}
       - XG2G_RATELIMIT_RPS=${XG2G_RATELIMIT_RPS:-100}
+
+      # V3 Control Plane / Worker
+      - XG2G_V3_WORKER_ENABLED=${XG2G_V3_WORKER_ENABLED:-false}
+      - XG2G_V3_WORKER_MODE=${XG2G_V3_WORKER_MODE:-standard}
+      - XG2G_V3_STORE_BACKEND=${XG2G_V3_STORE_BACKEND:-memory}
+      - XG2G_V3_STORE_PATH=${XG2G_V3_STORE_PATH:-/data/v3-store}
+      - XG2G_V3_TUNER_SLOTS=${XG2G_V3_TUNER_SLOTS:-}
+      - XG2G_V3_E2_HOST=${XG2G_V3_E2_HOST:-}
+      - XG2G_V3_TUNE_TIMEOUT=${XG2G_V3_TUNE_TIMEOUT:-10s}
+      - XG2G_V3_FFMPEG_BIN=${XG2G_V3_FFMPEG_BIN:-ffmpeg}
+      - XG2G_V3_FFMPEG_KILL_TIMEOUT=${XG2G_V3_FFMPEG_KILL_TIMEOUT:-5s}
+      - XG2G_V3_HLS_ROOT=${XG2G_V3_HLS_ROOT:-/data/stream/encoded}
+      - XG2G_V3_SHADOW_INTENTS=${XG2G_V3_SHADOW_INTENTS:-false}
+      - XG2G_V3_SHADOW_TARGET=${XG2G_V3_SHADOW_TARGET:-}
 
     volumes:
       - ./data:/data

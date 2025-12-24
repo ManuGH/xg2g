@@ -45,7 +45,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/resilience"
 )
 
-//go:embed dist/*
+//go:embed ui/*
 var uiFS embed.FS
 
 // Server represents the HTTP API server for xg2g.
@@ -485,9 +485,6 @@ func (s *Server) routes() http.Handler {
 	// Logo Proxy (Renamed from Picon to clean cache)
 	r.Get("/logos/{ref}.png", s.handlePicons)
 	r.Head("/logos/{ref}.png", s.handlePicons)
-	// Legacy Picon Path (for compatibility)
-	r.Get("/picon/{ref}.png", s.handlePicons)
-	r.Head("/picon/{ref}.png", s.handlePicons)
 
 	// Video Streaming (HLS/MPEG-TS)
 	r.Get("/stream/{ref}/preflight", s.handleStreamPreflight)
@@ -496,6 +493,7 @@ func (s *Server) routes() http.Handler {
 	// Phase 7A: v3 Control Plane (experimental/preview, /api/v3/*)
 	r.Post("/api/v3/intents", s.handleV3Intents)
 	r.Get("/api/v3/sessions", s.handleV3SessionsDebug)
+	r.Get("/api/v3/sessions/{sessionID}", s.handleV3SessionState)
 	r.Get("/api/v3/sessions/{sessionID}/hls/{filename}", s.handleV3HLS)
 
 	// Harden file server: disable directory listing and use a secure handler
@@ -527,16 +525,6 @@ func (s *Server) handleStreamPreflight(w http.ResponseWriter, r *http.Request) {
 		Secure:   r.TLS != nil || forceHTTPS,
 		SameSite: http.SameSiteStrictMode,
 		MaxAge:   86400, // 24h
-	})
-
-	// Also set legacy cookie for backward compat (temporarily)
-	http.SetCookie(w, &http.Cookie{
-		Name:     "X-API-Token",
-		Value:    token,
-		Path:     "/",
-		HttpOnly: true,
-		SameSite: http.SameSiteStrictMode,
-		MaxAge:   86400,
 	})
 
 	serviceRef := chi.URLParam(r, "ref")
@@ -1107,7 +1095,8 @@ func (s *Server) handleLineupJSON(w http.ResponseWriter, r *http.Request) {
 
 // uiHandler returns a handler that serves the embedded Web UI
 func (s *Server) uiHandler() http.Handler {
-	subFS, err := fs.Sub(uiFS, "dist")
+	// Subdirectory "ui" matches the COPY path in Dockerfile
+	subFS, err := fs.Sub(uiFS, "ui")
 	if err != nil {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "UI not available", http.StatusInternalServerError)
@@ -1142,7 +1131,7 @@ func NewRouter(cfg config.AppConfig) http.Handler {
 }
 
 // handlePicons proxies picon requests to the backend receiver and caches them locally
-// Path: /picon/{ref}.png
+// Path: /logos/{ref}.png
 func (s *Server) handlePicons(w http.ResponseWriter, r *http.Request) {
 	ref := chi.URLParam(r, "ref")
 	if ref == "" {

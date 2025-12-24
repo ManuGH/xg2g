@@ -6,16 +6,31 @@ package ffmpeg
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/ManuGH/xg2g/internal/v3/exec/enigma2"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestRunner_Lifecycle(t *testing.T) {
+	// Mock Enigma2 Server
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/web/stream.m3u" {
+			// Return a dummy playlist
+			w.Write([]byte("#EXTM3U\nhttp://127.0.0.1:8001/stream\n")) // Dummy stream URL
+			return
+		}
+		w.WriteHeader(404)
+	}))
+	defer ts.Close()
+
 	// Use "sleep_test" profile to invoke "sleep 10"
-	runner := NewRunner("run_test", "/tmp/hls", "http://localhost") // binPath override in Start
+	runner := NewRunner("run_test", "/tmp/hls", enigma2.NewClient(ts.URL, time.Second)) // binPath override in Start
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -45,7 +60,17 @@ func TestRunner_Lifecycle(t *testing.T) {
 }
 
 func TestRunner_ContextCancel(t *testing.T) {
-	runner := NewRunner("run_test", "/tmp/hls", "http://localhost")
+	// Mock Enigma2 Server
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/web/stream.m3u" {
+			w.Write([]byte("#EXTM3U\nhttp://127.0.0.1:8001/stream\n"))
+			return
+		}
+		w.WriteHeader(404)
+	}))
+	defer ts.Close()
+
+	runner := NewRunner("run_test", "/tmp/hls", enigma2.NewClient(ts.URL, time.Second))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()

@@ -61,6 +61,13 @@ func (c *Client) GetSignal(ctx context.Context) (*Signal, error) {
 	if err := c.get(ctx, "/api/signal", nil, &res); err != nil {
 		return nil, err
 	}
+
+	// Fallback: Some receivers (e.g. older OpenWebIF or specific images) do not return the "lock" field in JSON.
+	// If Locked is false but SNR is high (e.g. > 50%), assume signal is locked.
+	if !res.Locked && res.Snr > 50 {
+		res.Locked = true
+	}
+
 	return &res, nil
 }
 

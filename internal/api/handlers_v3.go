@@ -181,6 +181,44 @@ func (s *Server) handleV3SessionsDebug(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, sessions)
 }
 
+// handleV3SessionState returns a single session state without DevMode gating.
+func (s *Server) handleV3SessionState(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	store := s.v3Store
+	s.mu.RUnlock()
+
+	if store == nil {
+		http.Error(w, "v3 store not initialized", http.StatusServiceUnavailable)
+		return
+	}
+
+	sessionID := chi.URLParam(r, "sessionID")
+	if sessionID == "" || !model.IsSafeSessionID(sessionID) {
+		http.Error(w, "invalid session id", http.StatusBadRequest)
+		return
+	}
+
+	sess, err := store.GetSession(r.Context(), sessionID)
+	if err != nil || sess == nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+
+	resp := v3api.SessionResponse{
+		SessionID:       sess.SessionID,
+		ServiceRef:      sess.ServiceRef,
+		ProfileID:       sess.Profile.Name,
+		State:           sess.State,
+		Reason:          sess.Reason,
+		ReasonDetail:    sess.ReasonDetail,
+		CorrelationID:   sess.CorrelationID,
+		UpdatedAtUnixMs: sess.UpdatedAtUnix * 1000,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
 // handleV3HLS serves HLS playlists and segments.
 func (s *Server) handleV3HLS(w http.ResponseWriter, r *http.Request) {
 	// 1. Check v3 availability

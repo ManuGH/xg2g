@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/log"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -36,6 +37,14 @@ func NewReadyChecker(c *Client) *ReadyChecker {
 
 // NormalizeServiceRef standardizes service references for comparison.
 func NormalizeServiceRef(ref string) string {
+	parts := strings.Split(ref, ":")
+	if len(parts) >= 10 {
+		// Mask Namespace (index 6) to avoid mismatches (e.g. C00000 vs C00001)
+		parts[6] = "0"
+		// Reassemble the first 10 fields (standard Enigma2 ref parts)
+		// This also effectively strips any trailing URL or channel name
+		return strings.Join(parts[:10], ":") + ":"
+	}
 	return strings.TrimSuffix(strings.TrimSpace(ref), ":")
 }
 
@@ -103,6 +112,8 @@ func (rc *ReadyChecker) check(ctx context.Context, expected string) error {
 
 	actual := NormalizeServiceRef(curr.Info.ServiceReference)
 	if actual != expected {
+		// Log mismatch for debugging
+		log.L().Debug().Str("expected", expected).Str("actual", actual).Str("raw", curr.Info.ServiceReference).Msg("ReadyChecker mismatch")
 		return fmt.Errorf("%w: expected %s, got %s", ErrWrongServiceRef, expected, actual)
 	}
 
@@ -113,6 +124,7 @@ func (rc *ReadyChecker) check(ctx context.Context, expected string) error {
 	}
 
 	if !sig.Locked {
+		log.L().Debug().Int("snr", int(sig.Snr)).Msg("ReadyChecker not locked")
 		return ErrNotLocked
 	}
 

@@ -40,6 +40,24 @@ func BuildHLSArgs(in InputSpec, out OutputSpec, prof model.ProfileSpec) ([]strin
 		"-loglevel", "error", // We capture stderr
 		"-nostats",
 
+		// Input robustness flags for unreliable/noisy streams
+		"-fflags", "+genpts+nobuffer",  // Generate missing PTS, no input buffering
+		"-err_detect", "ignore_err",    // Ignore decoder errors
+		"-analyzeduration", "2000000",  // 2s to receive H.264 PPS/SPS headers
+		"-probesize", "5000000",        // 5MB probe buffer for codec init
+		"-max_delay", "0",              // No demux delay
+
+		// HTTP input options for Enigma2/DVB receivers (VLC-compatible)
+		// CRITICAL: Enigma2 receivers require VLC-compatible HTTP headers for reliable streaming
+		// Analysis of VLC showed it uses HTTP/1.0 with specific User-Agent and Icy-MetaData headers
+		// Without these headers, FFmpeg gets "Stream ends prematurely" errors from the receiver
+		"-user_agent", "VLC/3.0.21 LibVLC/3.0.21",  // Identify as VLC for compatibility
+		"-headers", "Icy-MetaData: 1",              // Request Icecast metadata
+		"-reconnect", "1",                          // Enable automatic reconnection
+		"-reconnect_streamed", "1",                 // Reconnect even for streamed protocols
+		"-reconnect_delay_max", "5",                // Max 5s between reconnect attempts
+		"-timeout", "10000000",                     // 10s timeout (in microseconds)
+
 		// Input
 		"-i", in.StreamURL,
 
@@ -47,9 +65,22 @@ func BuildHLSArgs(in InputSpec, out OutputSpec, prof model.ProfileSpec) ([]strin
 		"-map", "0:v?", // Video if present
 		"-map", "0:a?", // Audio if present
 
-		// Video Transcoding (Stub: copy for now unless profile says otherwise)
+		// Video: copy stream as-is
 		"-c:v", "copy",
-		"-c:a", "copy", // Stub: copy
+
+		// Audio: Re-encode to AAC for best compatibility and quality
+		// DVB/satellite streams often have incomplete codec parameters that fail with copy
+		// Using high-quality AAC settings for best audio quality:
+		//
+		// CRITICAL: Safari requires explicit channel metadata in output
+		// We use aresample to properly copy channel layout from source and set metadata
+		// This handles dynamic changes (5.1 during movies, stereo during ads)
+		// Safari on macOS supports AAC 5.1 surround natively
+		"-filter:a", "aresample=async=1:first_pts=0",  // Properly handle channel layout
+		"-c:a", "aac",
+		"-b:a", "384k",  // High bitrate works for both stereo and 5.1 (auto-adjusts)
+		"-ar", "48000",  // Force 48kHz sample rate
+		"-profile:a", "aac_low",  // AAC-LC profile for best compatibility
 
 		// HLS Output Options
 		"-f", "hls",

@@ -44,7 +44,7 @@ func TestTuner_Tune_Success(t *testing.T) {
 	defer ts.Close()
 
 	client := NewClient(ts.URL, 1*time.Second)
-	tuner := NewTuner(client, 0)
+	tuner := NewTuner(client, 0, 1*time.Second)
 	tuner.PollInterval = 10 * time.Millisecond // Fast poll
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
@@ -70,7 +70,7 @@ func TestTuner_Tune_Timeout(t *testing.T) {
 	defer ts.Close()
 
 	client := NewClient(ts.URL, 1*time.Second)
-	tuner := NewTuner(client, 0)
+	tuner := NewTuner(client, 0, 1*time.Second)
 	tuner.PollInterval = 10 * time.Millisecond
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)

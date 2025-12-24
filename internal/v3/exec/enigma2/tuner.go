@@ -17,21 +17,27 @@ type Tuner struct {
 	Client       *Client
 	Checker      *ReadyChecker
 	Slot         int
+	Timeout      time.Duration
 	PollInterval time.Duration
 }
 
 // NewTuner returns a new Enigma2 tuner instance.
-func NewTuner(client *Client, slot int) *Tuner {
+func NewTuner(client *Client, slot int, timeout time.Duration) *Tuner {
 	return &Tuner{
 		Client:       client,
 		Checker:      NewReadyChecker(client),
 		Slot:         slot,
+		Timeout:      timeout,
 		PollInterval: 500 * time.Millisecond,
 	}
 }
 
 // Tune zaps to the service and waits for a lock using ReadyChecker.
 func (t *Tuner) Tune(ctx context.Context, serviceRef string) error {
+	// Enforce timeout for the tuning operation
+	ctx, cancel := context.WithTimeout(ctx, t.Timeout)
+	defer cancel()
+
 	logger := log.L().With().Int("slot", t.Slot).Str("ref", serviceRef).Logger()
 	logger.Debug().Msg("initiating zap")
 

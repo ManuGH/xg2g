@@ -498,25 +498,17 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	// OpenWebIF (with backward-compatible aliases for v2.0)
 	cfg.OWIBase = ParseStringWithAlias("XG2G_OWI_BASE", "RECEIVER_IP", cfg.OWIBase)
 
-	// Username: XG2G_OWI_USER > XG2G_OWI_USERNAME > RECEIVER_USER
+	// Username: XG2G_OWI_USER > XG2G_OWI_USERNAME
 	if v := ParseString("XG2G_OWI_USER", ""); v != "" {
 		cfg.OWIUsername = v
 	} else if v := ParseString("XG2G_OWI_USERNAME", ""); v != "" {
-		logDeprecatedEnvAlias("XG2G_OWI_USERNAME", "XG2G_OWI_USER")
-		cfg.OWIUsername = v
-	} else if v := ParseString("RECEIVER_USER", ""); v != "" {
-		logDeprecatedEnvAlias("RECEIVER_USER", "XG2G_OWI_USER")
 		cfg.OWIUsername = v
 	}
 
-	// Password: XG2G_OWI_PASS > XG2G_OWI_PASSWORD > RECEIVER_PASS
+	// Password: XG2G_OWI_PASS > XG2G_OWI_PASSWORD
 	if v := ParseString("XG2G_OWI_PASS", ""); v != "" {
 		cfg.OWIPassword = v
 	} else if v := ParseString("XG2G_OWI_PASSWORD", ""); v != "" {
-		logDeprecatedEnvAlias("XG2G_OWI_PASSWORD", "XG2G_OWI_PASS")
-		cfg.OWIPassword = v
-	} else if v := ParseString("RECEIVER_PASS", ""); v != "" {
-		logDeprecatedEnvAlias("RECEIVER_PASS", "XG2G_OWI_PASS")
 		cfg.OWIPassword = v
 	}
 	cfg.StreamPort = ParseInt("XG2G_STREAM_PORT", cfg.StreamPort)
@@ -556,8 +548,7 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 
 	// Metrics
 	// Primary configuration is via XG2G_METRICS_LISTEN (empty disables).
-	// Accept XG2G_METRICS_ADDR as a legacy alias.
-	metricsAddr := ParseStringWithAlias("XG2G_METRICS_LISTEN", "XG2G_METRICS_ADDR", "")
+	metricsAddr := ParseString("XG2G_METRICS_LISTEN", "")
 	if metricsAddr != "" {
 		cfg.MetricsAddr = metricsAddr
 		cfg.MetricsEnabled = true

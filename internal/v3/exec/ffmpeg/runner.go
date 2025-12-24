@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/v3/exec/enigma2"
 	"github.com/ManuGH/xg2g/internal/v3/model"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -36,7 +37,7 @@ var (
 type Runner struct {
 	BinPath string
 	HLSRoot string
-	E2Host  string
+	Client  *enigma2.Client
 	Args    []string // Default args or template
 
 	cmd   *exec.Cmd
@@ -48,16 +49,16 @@ type Runner struct {
 	status *model.ExitStatus // Cached status once exited
 }
 
-// NewRunner creates a runner.
-func NewRunner(binPath, hlsRoot, e2Host string) *Runner {
+// NewRunner creates a new FFmpeg runner.
+func NewRunner(binPath, hlsRoot string, client *enigma2.Client) *Runner {
 	if binPath == "" {
 		binPath = "ffmpeg"
 	}
 	return &Runner{
 		BinPath: binPath,
 		HLSRoot: hlsRoot,
-		E2Host:  e2Host,
-		ring:    NewLineRing(100),
+		Client:  client,
+		ring:    NewLineRing(256), // Keep last 256 lines of stderr
 	}
 }
 
@@ -68,6 +69,10 @@ func (r *Runner) Start(ctx context.Context, sessionID, serviceRef string, profil
 
 	if r.cmd != nil {
 		return fmt.Errorf("process already started")
+	}
+	if !model.IsSafeSessionID(sessionID) {
+		startTotal.WithLabelValues("err_bad_session").Inc()
+		return fmt.Errorf("invalid session id: %s", sessionID)
 	}
 
 	// 1. Prepare Layout
@@ -92,8 +97,14 @@ func (r *Runner) Start(ctx context.Context, sessionID, serviceRef string, profil
 	}
 
 	// 2. Build Args
+	streamURL, err := r.Client.ResolveStreamURL(ctx, serviceRef)
+	if err != nil {
+		startTotal.WithLabelValues("err_url").Inc()
+		return fmt.Errorf("failed to resolve stream url: %w", err)
+	}
+
 	in := InputSpec{
-		StreamURL: fmt.Sprintf("%s/%s", r.E2Host, serviceRef), // E2Host is base e.g. http://localhost:8001
+		StreamURL: streamURL,
 	}
 
 	profSpec := model.ProfileSpec{Name: string(profile)} // Stub, in future passed in.
@@ -114,8 +125,8 @@ func (r *Runner) Start(ctx context.Context, sessionID, serviceRef string, profil
 	out := OutputSpec{
 		HLSPlaylist:        tmpPlaylist,
 		SegmentFilename:    SegmentPattern(sessionDir, ext),
-		SegmentDuration:    6,
-		PlaylistWindowSize: 5,
+		SegmentDuration:    2,
+		PlaylistWindowSize: 3,
 	}
 
 	if isFMP4 {
@@ -145,7 +156,8 @@ func (r *Runner) Start(ctx context.Context, sessionID, serviceRef string, profil
 	go func() {
 		scanner := bufio.NewScanner(stderr)
 		for scanner.Scan() {
-			r.ring.Write(scanner.Bytes())
+			line := scanner.Bytes()
+			r.ring.Write(line)
 			r.ring.Write([]byte("\n"))
 		}
 	}()
@@ -156,13 +168,16 @@ func (r *Runner) Start(ctx context.Context, sessionID, serviceRef string, profil
 	}
 
 	r.start = time.Now()
+
+	// Log FFmpeg command for debugging
+	log.L().Info().Str("component", "ffmpeg").Str("command", r.cmd.String()).Msg("starting ffmpeg process")
+
 	if err := r.cmd.Start(); err != nil {
 		startTotal.WithLabelValues("err").Inc()
 		return fmt.Errorf("ffmpeg start failed: %w", err)
 	}
 
 	startTotal.WithLabelValues("ok").Inc()
-	log.L().Debug().Str("bin", r.BinPath).Str("sess", sessionID).Msg("ffmpeg started")
 	return nil
 }
 
@@ -216,6 +231,16 @@ func (r *Runner) Wait(ctx context.Context) (model.ExitStatus, error) {
 			code = exitErr.ExitCode()
 		}
 
+		// Log FFmpeg stderr for debugging exit errors
+		stderrLines := r.ring.LastN(20)
+		if len(stderrLines) > 0 {
+			log.L().Error().
+				Str("component", "ffmpeg").
+				Int("exit_code", code).
+				Strs("stderr", stderrLines).
+				Msg("ffmpeg process failed")
+		}
+
 		// Check cancellation
 		select {
 		case <-ctx.Done():
@@ -260,15 +285,25 @@ func (r *Runner) Stop(ctx context.Context) error {
 
 	// Send SIGTERM
 	log.L().Debug().Msg("sending SIGTERM to ffmpeg")
-	if err := r.cmd.Process.Signal(syscall.SIGTERM); err != nil {
+	proc := r.cmd.Process
+	if err := proc.Signal(syscall.SIGTERM); err != nil {
 		// If error (e.g. process gone), just return
 		return err
 	}
 
-	// In a real runner, we might wait specific time then SIGKILL.
-	// But exec.CommandContext handles SIGKILL on context cancel.
-	// If caller cancels ctx passed to Start(), it kills.
-	// Here we just signal. Wait() is called by Orchestrator.
+	if ctx == nil {
+		return nil
+	}
+	if ctx.Err() != nil {
+		_ = proc.Kill()
+		return nil
+	}
+	if _, ok := ctx.Deadline(); ok {
+		go func() {
+			<-ctx.Done()
+			_ = proc.Kill()
+		}()
+	}
 
 	return nil
 }

@@ -34,6 +34,9 @@ func (s *Sweeper) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			if err := s.Orch.recoverStaleLeases(ctx); err != nil {
+				log.L().Warn().Err(err).Msg("recovery sweep failed")
+			}
 			s.sweepStore(ctx)
 			s.sweepFiles(ctx)
 		}
@@ -152,7 +155,7 @@ func (s *Sweeper) sweepFiles(ctx context.Context) {
 			continue
 		}
 		sid := e.Name()
-		if !safeIDRe.MatchString(sid) {
+		if !model.IsSafeSessionID(sid) {
 			continue // Skip unsafe/unknown paths
 		}
 

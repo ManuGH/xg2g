@@ -32,6 +32,10 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, s
 		http.Error(w, "invalid filename path", http.StatusBadRequest)
 		return
 	}
+	if !model.IsSafeSessionID(sessionID) {
+		http.Error(w, "invalid session id", http.StatusBadRequest)
+		return
+	}
 
 	isPlaylist := filename == "index.m3u8"
 	isSegment := strings.HasPrefix(filename, "seg_") && strings.HasSuffix(filename, ".ts")

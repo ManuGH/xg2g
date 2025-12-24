@@ -80,12 +80,12 @@ const (
 	RTuneFailed         ReasonCode = "R_TUNE_FAILED"
 	RInvariantViolation ReasonCode = "R_INVARIANT_VIOLATION"
 	RFFmpegStartFailed  ReasonCode = "R_FFMPEG_START_FAILED"
-	RFFmpegExited       ReasonCode = "R_FFMPEG_EXIT" // Deprecated for success. Use RProcessEnded.
-	RProcessEnded       ReasonCode = "R_PROCESS_ENDED"
-	RPackagerFailed     ReasonCode = "R_PACKAGER_FAILED"
-	RCancelled          ReasonCode = "R_CANCELLED"
-	RIdleTimeout        ReasonCode = "R_IDLE_TIMEOUT"
-	RClientStop         ReasonCode = "R_CLIENT_STOP"
+
+	RProcessEnded   ReasonCode = "R_PROCESS_ENDED"
+	RPackagerFailed ReasonCode = "R_PACKAGER_FAILED"
+	RCancelled      ReasonCode = "R_CANCELLED"
+	RIdleTimeout    ReasonCode = "R_IDLE_TIMEOUT"
+	RClientStop     ReasonCode = "R_CLIENT_STOP"
 )
 
 // ProfileSpec is data-driven and future-proof (VisionOS, embedded clients, etc.).

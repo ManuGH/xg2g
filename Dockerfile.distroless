@@ -1,0 +1,37 @@
+# syntax=docker/dockerfile:1
+
+# Build stage
+FROM golang:alpine AS builder
+
+WORKDIR /app
+
+# Install build dependencies
+RUN apk add --no-cache git make
+
+# Copy module files
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source
+COPY . .
+
+# Build statically linked binary
+# CGO_ENABLED=0 is default for cross-compilation but explicit here for static build
+RUN CGO_ENABLED=0 go build -ldflags="-w -s" -o /xg2g ./cmd/daemon
+
+# Production stage
+FROM gcr.io/distroless/static:nonroot
+
+WORKDIR /
+
+# Copy binary from builder
+COPY --from=builder /xg2g /xg2g
+
+# Copy necessary assets (if any - e.g. dist folders if embedded, but usually Go embeds)
+# Assuming static assets are embedded or config is mounted.
+# If we need CA certs, distroless/static includes them.
+
+# Expose port (default 8080 or whatever config uses)
+EXPOSE 8080
+
+ENTRYPOINT ["/xg2g"]

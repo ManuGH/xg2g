@@ -29,8 +29,6 @@ func InitPath(dir string) string {
 
 // SegmentPattern returns the filename pattern for segments.
 // e.g., seg_%06d.ts (or .m4s in future)
-// SegmentPattern returns the filename pattern for segments.
-// e.g., seg_%06d.ts (or .m4s in future)
 func SegmentPattern(dir, ext string) string {
 	if ext == "" {
 		ext = ".ts"

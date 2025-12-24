@@ -60,6 +60,7 @@ func main() {
 		os.Exit(0)
 	}
 
+	// Parse Config
 	// Configure logger with safe defaults until config is loaded
 	xglog.Configure(xglog.Config{
 		Level:   "info",
@@ -373,6 +374,7 @@ func main() {
 			Str("event", "manager.creation.failed").
 			Msg("failed to create daemon manager")
 	}
+	logger.Info().Str("version", "DEBUG-VERIFICATON-RUN").Msg("Starting daemon manager")
 
 	// Configure Health Manager (Strict Mode)
 	hm := s.HealthManager()
