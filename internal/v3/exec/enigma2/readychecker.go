@@ -29,9 +29,9 @@ func NewReadyChecker(c *Client) *ReadyChecker {
 	return &ReadyChecker{
 		Client:     c,
 		PollBase:   250 * time.Millisecond,
-		JitterFrac: 0.2, // +/- 20%
-		DebounceN:  2,   // 2 consecutive successes
-		rnd:        rand.New(rand.NewSource(time.Now().UnixNano())),
+		JitterFrac: 0.2,                                             // +/- 20%
+		DebounceN:  2,                                               // 2 consecutive successes
+		rnd:        rand.New(rand.NewSource(time.Now().UnixNano())), // #nosec G404 -- jitter only, no crypto
 	}
 }
 

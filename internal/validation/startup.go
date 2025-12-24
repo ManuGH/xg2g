@@ -129,7 +129,7 @@ func checkTargetedValidations(logger zerolog.Logger, cfg config.AppConfig) error
 }
 
 func checkFileReadable(path string) error {
-	f, err := os.Open(path) //nolint:gosec // Path comes from operator config; verifying readability is expected.
+	f, err := os.Open(path) // #nosec G304 -- path comes from operator config; verifying readability is expected
 	if err != nil {
 		return err
 	}

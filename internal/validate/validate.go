@@ -393,7 +393,7 @@ func (v *Validator) WritableDirectory(field, path string, mustExist bool) {
 	// We know it exists and is a directory now (or we failed above).
 	// Let's try to write a temp file.
 	testFile := filepath.Join(path, ".xg2g_write_test_"+fmt.Sprintf("%d", os.Getpid()))
-	f, err := os.Create(testFile)
+	f, err := os.Create(testFile) // #nosec G304 -- test utility, path checked by Directory() first
 	if err != nil {
 		v.AddError(field, fmt.Sprintf("directory is not writable: %v", err), path)
 		return

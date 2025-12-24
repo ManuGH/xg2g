@@ -109,7 +109,7 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, s
 	}
 
 	// 6. Serve Content (Supports Range)
-	f, err := os.Open(filePath)
+	f, err := os.Open(filePath) // #nosec G304 -- filePath constructed from safe session dir + validated filename
 	if err != nil {
 		http.Error(w, "failed to open file", http.StatusInternalServerError)
 		return

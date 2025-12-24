@@ -78,6 +78,7 @@ func (r *Runner) Start(ctx context.Context, sessionID, serviceRef string, profil
 	// 1. Prepare Layout
 	sessionDir := SessionOutputDir(r.HLSRoot, sessionID)
 	// mkdir -p
+	// #nosec G301 -- 0755 required for serving files via web/nginx
 	if err := os.MkdirAll(sessionDir, 0755); err != nil {
 		startTotal.WithLabelValues("err_mkdir").Inc()
 		return fmt.Errorf("failed to create session dir: %w", err)
@@ -143,7 +144,7 @@ func (r *Runner) Start(ctx context.Context, sessionID, serviceRef string, profil
 		args = []string{"10"}
 	}
 
-	r.cmd = exec.CommandContext(ctx, r.BinPath, args...)
+	r.cmd = exec.CommandContext(ctx, r.BinPath, args...) // #nosec G204 -- args constructed internally; BinPath from trusted config
 
 	// Capture Stderr
 	stderr, err := r.cmd.StderrPipe()

@@ -7,6 +7,7 @@
 package transcoder
 
 import (
+	"errors"
 	"runtime"
 	"testing"
 	"time"
@@ -75,9 +76,8 @@ func TestRustAudioRemuxer_ProcessEmptyInput(t *testing.T) {
 		t.Fatal("expected error for empty input, got nil")
 	}
 
-	expectedMsg := "input is empty"
-	if err.Error() != expectedMsg {
-		t.Errorf("expected error '%s', got '%s'", expectedMsg, err.Error())
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Errorf("expected error ErrInvalidInput, got %v", err)
 	}
 }
 
@@ -102,9 +102,8 @@ func TestRustAudioRemuxer_ProcessAfterClose(t *testing.T) {
 		t.Fatal("expected error when processing after Close(), got nil")
 	}
 
-	expectedMsg := "remuxer is closed"
-	if err.Error() != expectedMsg {
-		t.Errorf("expected error '%s', got '%s'", expectedMsg, err.Error())
+	if !errors.Is(err, ErrTranscoderUnavailable) {
+		t.Errorf("expected error ErrTranscoderUnavailable, got %v", err)
 	}
 }
 
