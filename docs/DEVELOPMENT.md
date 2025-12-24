@@ -33,7 +33,7 @@ This will:
 - Build Go daemon
 - Run with your `.env` configuration
 
-**Access**: http://localhost:8080
+**Access**: http://localhost:8088
 
 ### 3. Run with Docker Compose
 

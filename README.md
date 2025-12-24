@@ -110,7 +110,7 @@ Built on a modern event-driven design for reliability and performance:
 
 **That's it.**
 
-- **Open your browser:** [http://localhost:8080](http://localhost:8080)
+- **Open your browser:** [http://localhost:8088](http://localhost:8088)
 
 ---
 

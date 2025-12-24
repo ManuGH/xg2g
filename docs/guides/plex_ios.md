@@ -10,7 +10,7 @@ Wichtig: Das alte „Plex/iOS-Profil“ mit vielen `XG2G_PLEX_*` Tuning-Variable
 
 1. **HDHomeRun hinzufügen**
    - Plex → Live TV & DVR → Setup
-   - Tuner-URL: `http://<xg2g-host>:8080`
+   - Tuner-URL: `http://<xg2g-host>:8088`
 2. **HLS für Plex erzwingen (besonders für iOS sinnvoll)**
    - `XG2G_PLEX_FORCE_HLS=true`
    - Dadurch liefert `GET /lineup.json` HLS-URLs an Plex aus.

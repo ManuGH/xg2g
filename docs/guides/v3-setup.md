@@ -103,7 +103,7 @@ To verify V3 is active:
 2. **Health Check**:
 
     ```bash
-    curl http://localhost:8080/healthz
+    curl http://localhost:8088/healthz
     ```
 
     Should return `200 OK`.
@@ -111,11 +111,11 @@ To verify V3 is active:
 3. **Intents**: V3 uses "intents" to start streams. You can manually inspect active sessions at:
 
     ```bash
-    curl -H "Authorization: Bearer <token>" http://localhost:8080/api/v3/sessions
+    curl -H "Authorization: Bearer <token>" http://localhost:8088/api/v3/sessions
     ```
 
 4. **Readiness (Verbose)**: V3 readiness diagnostics appear in:
 
     ```bash
-    curl http://localhost:8080/readyz?verbose=true
+    curl http://localhost:8088/readyz?verbose=true
     ```
