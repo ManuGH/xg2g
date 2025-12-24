@@ -107,9 +107,13 @@ jobs:
           test -d ../internal/api/dist/assets || (echo "❌ assets/ missing" && exit 1)
 
           # Debug: Log Integrity to Summary
-          echo "### WebUI Build Integrity" >> $GITHUB_STEP_SUMMARY
-          echo "- **Files**: $(find ../internal/api/dist -type f | wc -l)" >> $GITHUB_STEP_SUMMARY
-          echo "- **Index Hash**: $(sha256sum ../internal/api/dist/index.html | awk '{print $1}')" >> $GITHUB_STEP_SUMMARY
+          FILES="$(find ../internal/api/dist -type f | wc -l | tr -d ' ')"
+          IDXHASH="$(sha256sum ../internal/api/dist/index.html | awk '{print $1}')"
+          {
+            echo "### WebUI Build Integrity"
+            echo "- **Files**: ${FILES}"
+            echo "- **Index Hash**: ${IDXHASH}"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build (Docker only - CGO/Rust dependency)
         run: |
