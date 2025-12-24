@@ -95,8 +95,8 @@ services:
       - XG2G_RATELIMIT_ENABLED=${XG2G_RATELIMIT_ENABLED:-false}
       - XG2G_RATELIMIT_RPS=${XG2G_RATELIMIT_RPS:-100}
 
-      # V3 Control Plane / Worker
-      - XG2G_V3_WORKER_ENABLED=${XG2G_V3_WORKER_ENABLED:-false}
+      # V3 Control Plane / Worker (Production Streaming Backend)
+      - XG2G_V3_WORKER_ENABLED=${XG2G_V3_WORKER_ENABLED:-true}
       - XG2G_V3_WORKER_MODE=${XG2G_V3_WORKER_MODE:-standard}
       - XG2G_V3_STORE_BACKEND=${XG2G_V3_STORE_BACKEND:-memory}
       - XG2G_V3_STORE_PATH=${XG2G_V3_STORE_PATH:-/data/v3-store}

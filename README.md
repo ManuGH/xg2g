@@ -94,6 +94,9 @@ xg2g also emulates an HDHomeRun tuner, allowing you to connect it to **Plex** or
 
     # Bouquet to stream (comma separated)
     XG2G_BOUQUET=Favourites
+
+    # Enable V3 streaming backend (required)
+    XG2G_V3_WORKER_ENABLED=true
     ```
 
 3. **Start it up:**
