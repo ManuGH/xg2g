@@ -188,7 +188,7 @@ graph LR
 
 **Related**: [ADR-004 OpenTelemetry](adr/004-opentelemetry.md)
 
-### 8. v3 Control Plane (Experimental) (`internal/v3`)
+### 8. v3 Control Plane (`internal/v3`)
 
 **Responsibility**: Stateful, event-driven orchestration for advanced streaming scenarios.
 

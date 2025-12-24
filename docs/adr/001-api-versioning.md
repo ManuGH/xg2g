@@ -21,9 +21,9 @@ We need an explicit compatibility boundary so changes to handlers don’t silent
 
 ## Consequences
 
-- Breaking API changes require a new version prefix (`/api/v3`) and migration docs.
+- Breaking API changes require a new version prefix and migration docs.
 - Within a major API version, backwards-compatible evolution is allowed (additive fields/endpoints), but removing/renaming routes is treated as breaking.
-- The `/api/v3/*` surface is currently **experimental/preview** until explicitly promoted in release notes.
+- The `/api/v2/*` surface is stable. The `/api/v3/*` surface provides the streaming control plane.
 
 ## References (Code)
 

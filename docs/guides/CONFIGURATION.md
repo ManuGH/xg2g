@@ -194,9 +194,9 @@ api:
 
 ---
 
-## v3 (Experimental/Preview)
+## v3 Configuration
 
-The v3 control plane is experimental/preview and exposed under `/api/v3/*`. It is configured via **environment variables only** (no `config.yaml` support yet).
+The v3 streaming control plane is exposed under `/api/v3/*`. It is configured via **environment variables only** (no `config.yaml` support yet).
 
 | ENV Variable | Purpose |
 | :--- | :--- |

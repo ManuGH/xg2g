@@ -13,7 +13,7 @@
 </div>
 
 > [!IMPORTANT]
-> **License Change**: Starting with **v2.0.0**, xg2g is licensed under the **PolyForm Noncommercial License 1.0.0**.
+> **License**: xg2g is licensed under the **PolyForm Noncommercial License 1.0.0**.
 > This application is free for personal, educational, and non-profit use. **Commercial use (e.g., ISPs, Resellers) requires a separate license.**
 > See [Licensing](docs/licensing.md) for details.
 
@@ -67,10 +67,11 @@ Missed a scene? No problem.
 xg2g also emulates an HDHomeRun tuner, allowing you to connect it to **Plex** or **Jellyfin**.
 *(Note: Full Plex/Jellyfin documentation and optimization is coming in a future update.)*
 
-### 🧪 Experimental (v3)
+### 🏗️ V3 Architecture
 
-- **Control Plane**: New worker-based architecture for better reliability (see `docs/INTERNALS.md`).
-- **Shadow Canary**: Optional mirroring of intents for safe testing.
+- **Event-Driven Streaming**: Worker-based architecture with tuner leasing and session management.
+- **HLS Delivery**: FFmpeg-based transcoding with automatic AAC audio conversion.
+- **State Management**: Persistent session state with support for crash recovery.
 
 ---
 
