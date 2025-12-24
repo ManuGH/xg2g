@@ -5,7 +5,7 @@
   <Registry>https://github.com/ManuGH/xg2g/pkgs/container/xg2g</Registry>
   <Network>host</Network>
 
-  <Shell>sh</Shell>
+  <Shell>bash</Shell>
   <Privileged>false</Privileged>
   <Support>https://github.com/ManuGH/xg2g/issues</Support>
   <Project>https://github.com/ManuGH/xg2g</Project>
