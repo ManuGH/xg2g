@@ -43,8 +43,8 @@ jobs:
 
       - name: Copy WebUI assets
         run: |
-          mkdir -p internal/api/ui
-          cp -r webui/dist/* internal/api/ui/
+          mkdir -p internal/api/dist
+          cp -r webui/dist/* internal/api/dist/
 
       - name: Run gosec security scan
         uses: securego/gosec@b72378a2da300339c40788e1eddf1ddea6498558 # v2.22.11

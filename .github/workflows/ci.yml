@@ -93,9 +93,9 @@ jobs:
           cd webui
           npm ci
           npm run build
-          mkdir -p ../internal/api/ui
-          cp -r dist/* ../internal/api/ui/
-          ls -R ../internal/api/ui
+          mkdir -p ../internal/api/dist
+          cp -r dist/* ../internal/api/dist/
+          ls -R ../internal/api/dist
 
       - name: Build (Docker only - CGO/Rust dependency)
         run: |

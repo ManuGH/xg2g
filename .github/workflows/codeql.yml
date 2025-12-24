@@ -30,6 +30,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Create Dummy WebUI Assets (Strategy A)
+        run: |
+          mkdir -p internal/api/dist
+          touch internal/api/dist/index.html
+          echo "Dummy Asset for CI" > internal/api/dist/index.html
+
       # Setup Go for both languages (Go analysis needs it, C++ build might interact with it)
       - name: Setup Go
         uses: actions/setup-go@v5 # v5
