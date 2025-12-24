@@ -53,3 +53,6 @@ cmd/**/*_test.go
 internal/**/*_test.go
 cmd/**/testdata/**
 internal/**/testdata/**
+
+# Strategy A: Ignore local WebUI builds (Docker builds its own)
+internal/api/dist/

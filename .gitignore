@@ -71,7 +71,7 @@ test_parser.go
 !internal/epg/testdata/multi_channel.golden.xml
 !internal/epg/testdata/empty.golden.xml
 .copilot-instructions.md
-# Vendor assets (Tracked manually)
+# CI-generated assets (do not commit)
 dist/
 internal/api/dist/
 

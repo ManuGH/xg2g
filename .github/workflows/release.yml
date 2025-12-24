@@ -223,10 +223,12 @@ jobs:
           cd webui
           npm ci
           npm run build
-          # Ensure destination exists and is empty
-          rm -rf ../internal/api/dist/*
+          # Ensure destination exists and is empty (Robust Strategy A)
+          rm -rf ../internal/api/dist
           mkdir -p ../internal/api/dist
-          cp -r dist/* ../internal/api/dist/
+          cp -a dist/. ../internal/api/dist/
+          # Sanity Check: Fail if empty
+          test -n "$(ls -A ../internal/api/dist)" || (echo "❌ internal/api/dist is empty" && exit 1)
 
       # =============================================
       # Pre-Release Checks
@@ -258,7 +260,7 @@ jobs:
           SOURCE_DATE_EPOCH: ${{ env.SOURCE_DATE_EPOCH }}
 
       # =============================================
-      # Build and Push Multi-Arch Container Images
+      # Build and Push Container Image (amd64)
       # =============================================
       - name: Set up QEMU
         uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
