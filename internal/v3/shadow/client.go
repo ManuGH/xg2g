@@ -151,7 +151,7 @@ func (c *Client) execute(ctx context.Context, serviceRef, profile, clientIP stri
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("shadow api returned %d", resp.StatusCode)

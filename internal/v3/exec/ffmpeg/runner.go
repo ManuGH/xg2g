@@ -119,8 +119,6 @@ func (r *Runner) Start(ctx context.Context, sessionID, serviceRef string, profil
 		// Actually, let's update OutputSpec to have Extension/FMP4 flag.
 		// But wait, args.go:BuildHLSArgs takes profSpec.
 		// I will update args.go next.
-	} else {
-		// profSpec.LLHLS = false
 	}
 
 	out := OutputSpec{
@@ -158,8 +156,8 @@ func (r *Runner) Start(ctx context.Context, sessionID, serviceRef string, profil
 		scanner := bufio.NewScanner(stderr)
 		for scanner.Scan() {
 			line := scanner.Bytes()
-			r.ring.Write(line)
-			r.ring.Write([]byte("\n"))
+			_, _ = r.ring.Write(line)
+			_, _ = r.ring.Write([]byte("\n"))
 		}
 	}()
 

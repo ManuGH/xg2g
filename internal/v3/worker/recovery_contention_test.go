@@ -88,7 +88,7 @@ func TestRecovery_StaleTunerLease(t *testing.T) {
 	// Setup Stale Session with Tuner Slot 0
 	sessID := "stale-tuner-sess"
 	slot := 0
-	st.PutSession(ctx, &model.SessionRecord{
+	_ = st.PutSession(ctx, &model.SessionRecord{
 		SessionID:  sessID,
 		ServiceRef: "abc",
 		State:      model.SessionStarting,
@@ -129,7 +129,7 @@ func TestRecovery_ActiveTunerLease(t *testing.T) {
 	// Setup Active Session with Tuner Slot 0
 	sessID := "active-tuner-sess"
 	slot := 0
-	st.PutSession(ctx, &model.SessionRecord{
+	_ = st.PutSession(ctx, &model.SessionRecord{
 		SessionID:  sessID,
 		ServiceRef: "abc",
 		State:      model.SessionStarting,

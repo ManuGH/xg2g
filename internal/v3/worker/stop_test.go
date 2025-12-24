@@ -25,7 +25,7 @@ func TestOrchestrator_Stop_Ready(t *testing.T) {
 
 	hlsRoot, err := os.MkdirTemp("", "xg2g-test-hls")
 	require.NoError(t, err)
-	defer os.RemoveAll(hlsRoot)
+	defer func() { _ = os.RemoveAll(hlsRoot) }()
 
 	orch := &Orchestrator{
 		Bus:            eventBus,
@@ -47,7 +47,7 @@ func TestOrchestrator_Stop_Ready(t *testing.T) {
 
 	// 2. Start Session
 	sessionID := "sess-stop-ready"
-	st.PutSession(ctx, &model.SessionRecord{
+	_ = st.PutSession(ctx, &model.SessionRecord{
 		SessionID: sessionID, ServiceRef: "ref:1", State: model.SessionNew,
 	})
 
@@ -64,8 +64,8 @@ func TestOrchestrator_Stop_Ready(t *testing.T) {
 
 	// 4. Create dummy files (Verify Cleanup)
 	sessionDir := filepath.Join(hlsRoot, "sessions", sessionID)
-	require.NoError(t, os.MkdirAll(sessionDir, 0755))
-	require.NoError(t, os.WriteFile(filepath.Join(sessionDir, "playlist.m3u8"), []byte("#EXTM3U"), 0644))
+	require.NoError(t, os.MkdirAll(sessionDir, 0750))
+	require.NoError(t, os.WriteFile(filepath.Join(sessionDir, "playlist.m3u8"), []byte("#EXTM3U"), 0600))
 
 	// 5. Publish Stop Session
 	stopEvt := model.StopSessionEvent{
@@ -125,7 +125,7 @@ func TestOrchestrator_Stop_Starting(t *testing.T) {
 
 	// 2. Start Session
 	sessionID := "sess-stop-starting"
-	st.PutSession(ctx, &model.SessionRecord{
+	_ = st.PutSession(ctx, &model.SessionRecord{
 		SessionID: sessionID, ServiceRef: "ref:2", State: model.SessionNew,
 	})
 
@@ -188,8 +188,8 @@ func TestOrchestrator_Stop_Idempotency(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 
 	sessionID := "sess-idempotent"
-	st.PutSession(ctx, &model.SessionRecord{SessionID: sessionID, ServiceRef: "ref:i", State: model.SessionNew})
-	eventBus.Publish(ctx, string(model.EventStartSession), model.StartSessionEvent{
+	_ = st.PutSession(ctx, &model.SessionRecord{SessionID: sessionID, ServiceRef: "ref:i", State: model.SessionNew})
+	_ = eventBus.Publish(ctx, string(model.EventStartSession), model.StartSessionEvent{
 		SessionID: sessionID, ServiceRef: "ref:i", ProfileID: "p1",
 	})
 
@@ -200,8 +200,8 @@ func TestOrchestrator_Stop_Idempotency(t *testing.T) {
 
 	// Stop Twice
 	stopEvt := model.StopSessionEvent{SessionID: sessionID, Reason: model.RClientStop}
-	eventBus.Publish(ctx, string(model.EventStopSession), stopEvt)
-	eventBus.Publish(ctx, string(model.EventStopSession), stopEvt)
+	_ = eventBus.Publish(ctx, string(model.EventStopSession), stopEvt)
+	_ = eventBus.Publish(ctx, string(model.EventStopSession), stopEvt)
 
 	require.Eventually(t, func() bool {
 		s, err := st.GetSession(ctx, sessionID)

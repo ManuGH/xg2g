@@ -13,8 +13,6 @@ import (
 	"github.com/ManuGH/xg2g/internal/v3/model"
 )
 
-var errLeaseHeld = errors.New("lease already held")
-
 // MemoryStore is an in-memory StateStore intended for tests and local iteration.
 // Not durable; not suitable for production.
 type MemoryStore struct {

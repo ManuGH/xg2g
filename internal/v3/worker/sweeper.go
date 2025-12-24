@@ -181,9 +181,6 @@ func (s *Sweeper) sweepFiles(ctx context.Context) {
 				// Not in store, and old -> Orphan
 				s.Orch.cleanupFiles(sid)
 				orphanCount++
-			} else {
-				// In store. Check if it matches our retention policy (should have been swept by sweepStore if terminal)
-				// If it's active but old modtime? (Maybe streaming but no file updates? Unlikely for HLS)
 			}
 		}
 	}

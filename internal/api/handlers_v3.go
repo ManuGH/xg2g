@@ -72,15 +72,16 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		intentType = model.IntentTypeStreamStart
 	}
 
-	if intentType == model.IntentTypeStreamStart {
+	switch intentType {
+	case model.IntentTypeStreamStart:
 		sessionID = uuid.New().String()
-	} else if intentType == model.IntentTypeStreamStop {
+	case model.IntentTypeStreamStop:
 		if req.SessionID == "" {
 			http.Error(w, "sessionId required for stop", http.StatusBadRequest)
 			return
 		}
 		sessionID = req.SessionID
-	} else {
+	default:
 		http.Error(w, "unsupported intent type", http.StatusBadRequest)
 		return
 	}
@@ -97,7 +98,8 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 5. Build & Publish Event
-	if intentType == model.IntentTypeStreamStart {
+	switch intentType {
+	case model.IntentTypeStreamStart:
 		// Create Session Record (Starting state)
 		session := &model.SessionRecord{
 			SessionID:     sessionID,
@@ -127,7 +129,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "failed to dispatch intent", http.StatusInternalServerError)
 			return
 		}
-	} else if intentType == model.IntentTypeStreamStop {
+	case model.IntentTypeStreamStop:
 		// For STOP, we don't create a session record if it doesn't exist.
 		// We just publish the stop event. The worker/orchestrator handles the rest.
 		event := model.StopSessionEvent{

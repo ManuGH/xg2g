@@ -22,7 +22,7 @@ func TestRunner_Lifecycle(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/web/stream.m3u" {
 			// Return a dummy playlist
-			w.Write([]byte("#EXTM3U\nhttp://127.0.0.1:8001/stream\n")) // Dummy stream URL
+			_, _ = w.Write([]byte("#EXTM3U\nhttp://127.0.0.1:8001/stream\n")) // Dummy stream URL
 			return
 		}
 		w.WriteHeader(404)
@@ -42,7 +42,7 @@ func TestRunner_Lifecycle(t *testing.T) {
 	// 2. Stop (Signal)
 	go func() {
 		time.Sleep(100 * time.Millisecond)
-		runner.Stop(ctx)
+		_ = runner.Stop(ctx)
 	}()
 
 	// 3. Wait
@@ -63,7 +63,7 @@ func TestRunner_ContextCancel(t *testing.T) {
 	// Mock Enigma2 Server
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/web/stream.m3u" {
-			w.Write([]byte("#EXTM3U\nhttp://127.0.0.1:8001/stream\n"))
+			_, _ = w.Write([]byte("#EXTM3U\nhttp://127.0.0.1:8001/stream\n"))
 			return
 		}
 		w.WriteHeader(404)

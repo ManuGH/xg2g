@@ -10,9 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
@@ -110,8 +108,11 @@ func (m *manager) Start(ctx context.Context) error {
 	}
 
 	// Phase 7A: Start v3 Worker (if enabled)
+	// Phase 7A: Start v3 Worker (if enabled)
 	if m.deps.V3Config != nil && m.deps.V3Config.Enabled {
-		m.startV3Worker(ctx, errChan)
+		if err := m.startV3Worker(ctx, errChan); err != nil {
+			return fmt.Errorf("failed to start v3 worker: %w", err)
+		}
 	}
 
 	// Start main API server (skip in proxy-only mode)
@@ -288,73 +289,6 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 	return nil
 }
 
-func waitForListener(ctx context.Context, addr string, timeout time.Duration) error {
-	if addr == "" {
-		return fmt.Errorf("listen address is empty")
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	ticker := time.NewTicker(25 * time.Millisecond)
-	defer ticker.Stop()
-
-	var lastErr error
-	for {
-		if err := tryDialListener(addr); err == nil {
-			return nil
-		} else {
-			lastErr = err
-		}
-
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("timed out waiting for listener on %s: %w", addr, lastErr)
-
-		case <-ticker.C:
-		}
-	}
-}
-
-func tryDialListener(addr string) error {
-	host, port, err := net.SplitHostPort(addr)
-	if err != nil {
-		if strings.HasPrefix(addr, ":") {
-			port = strings.TrimPrefix(addr, ":")
-		} else if !strings.Contains(addr, ":") {
-			port = addr
-		} else {
-			return err
-		}
-	}
-	if port == "" {
-		return fmt.Errorf("listen address %q missing port", addr)
-	}
-
-	hosts := []string{host}
-	if host == "" || host == "0.0.0.0" || host == "::" {
-		hosts = []string{"127.0.0.1", "::1"}
-	}
-
-	var lastErr error
-	for _, h := range hosts {
-		if h == "" {
-			continue
-		}
-		dialAddr := net.JoinHostPort(h, port)
-		conn, err := net.DialTimeout("tcp", dialAddr, 100*time.Millisecond)
-		if err == nil {
-			_ = conn.Close()
-			return nil
-		}
-		lastErr = err
-	}
-
-	if lastErr == nil {
-		return fmt.Errorf("failed to dial %q", addr)
-	}
-	return lastErr
-}
 func (m *manager) Shutdown(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -465,7 +399,7 @@ func (m *manager) registerV3Checks(cfg *V3Config) {
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode >= 500 {
 			return fmt.Errorf("receiver returned status %d", resp.StatusCode)
 		}

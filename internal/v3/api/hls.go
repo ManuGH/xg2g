@@ -114,7 +114,7 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, s
 		http.Error(w, "failed to open file", http.StatusInternalServerError)
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	http.ServeContent(w, r, cleanName, info.ModTime(), f)
 }

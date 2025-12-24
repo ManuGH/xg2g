@@ -37,10 +37,10 @@ func TestServeHLS_HappyPath(t *testing.T) {
 	tmpRoot := t.TempDir()
 	sessID := "valid-sess"
 	sessDir := ffmpeg.SessionOutputDir(tmpRoot, sessID)
-	require.NoError(t, os.MkdirAll(sessDir, 0755))
+	require.NoError(t, os.MkdirAll(sessDir, 0750))
 
 	// Create index.m3u8
-	err := os.WriteFile(filepath.Join(sessDir, "index.m3u8"), []byte("#EXTM3U"), 0644)
+	err := os.WriteFile(filepath.Join(sessDir, "index.m3u8"), []byte("#EXTM3U"), 0600)
 	require.NoError(t, err)
 
 	store := &mockHLSStore{

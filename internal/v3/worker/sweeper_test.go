@@ -22,7 +22,7 @@ func TestSweeper_StoreCleanup(t *testing.T) {
 	st := store.NewMemoryStore()
 	hlsRoot, err := os.MkdirTemp("", "xg2g-sweep-store")
 	require.NoError(t, err)
-	defer os.RemoveAll(hlsRoot)
+	defer func() { _ = os.RemoveAll(hlsRoot) }()
 
 	orch := &Orchestrator{
 		Store:   st,
@@ -48,7 +48,7 @@ func TestSweeper_StoreCleanup(t *testing.T) {
 
 	// Create files
 	sDir := filepath.Join(hlsRoot, "sessions", sid)
-	require.NoError(t, os.MkdirAll(sDir, 0755))
+	require.NoError(t, os.MkdirAll(sDir, 0750))
 
 	// 2. Run Sweep
 	sweeper.sweepStore(ctx)
@@ -70,7 +70,7 @@ func TestSweeper_FileCleanup(t *testing.T) {
 	st := store.NewMemoryStore()
 	hlsRoot, err := os.MkdirTemp("", "xg2g-sweep-files")
 	require.NoError(t, err)
-	defer os.RemoveAll(hlsRoot)
+	defer func() { _ = os.RemoveAll(hlsRoot) }()
 
 	orch := &Orchestrator{
 		Store:   st,
@@ -86,7 +86,7 @@ func TestSweeper_FileCleanup(t *testing.T) {
 	// 1. Create Orphan Directory (Old)
 	orphanID := "sess-orphan"
 	orphanDir := filepath.Join(hlsRoot, "sessions", orphanID)
-	require.NoError(t, os.MkdirAll(orphanDir, 0755))
+	require.NoError(t, os.MkdirAll(orphanDir, 0750))
 
 	// Set ModTime to past
 	oldTime := time.Now().Add(-200 * time.Millisecond)
@@ -95,7 +95,7 @@ func TestSweeper_FileCleanup(t *testing.T) {
 	// 2. Create Active Directory (Should Keep)
 	activeID := "sess-active"
 	activeDir := filepath.Join(hlsRoot, "sessions", activeID)
-	require.NoError(t, os.MkdirAll(activeDir, 0755))
+	require.NoError(t, os.MkdirAll(activeDir, 0750))
 	// In Store
 	require.NoError(t, st.PutSession(ctx, &model.SessionRecord{
 		SessionID: activeID, State: model.SessionReady,
@@ -106,7 +106,7 @@ func TestSweeper_FileCleanup(t *testing.T) {
 	// 3. Create Recent Orphan (Should Keep - Race condition guard)
 	recentID := "sess-recent"
 	recentDir := filepath.Join(hlsRoot, "sessions", recentID)
-	require.NoError(t, os.MkdirAll(recentDir, 0755))
+	require.NoError(t, os.MkdirAll(recentDir, 0750))
 	// ModTime is Now()
 
 	// 4. Run Sweep
@@ -131,7 +131,7 @@ func TestSweeper_Integration(t *testing.T) {
 	st := store.NewMemoryStore()
 	bus := bus.NewMemoryBus()
 	hlsRoot, _ := os.MkdirTemp("", "xg2g-sweep-integ")
-	defer os.RemoveAll(hlsRoot)
+	defer func() { _ = os.RemoveAll(hlsRoot) }()
 
 	orch := &Orchestrator{
 		Store:          st,
@@ -154,9 +154,9 @@ func TestSweeper_Integration(t *testing.T) {
 	rec := &model.SessionRecord{
 		SessionID: sid, State: model.SessionStopped, UpdatedAtUnix: time.Now().Add(-1 * time.Hour).Unix(),
 	}
-	st.PutSession(ctx, rec)
+	_ = st.PutSession(ctx, rec)
 	sDir := filepath.Join(hlsRoot, "sessions", sid)
-	os.MkdirAll(sDir, 0755)
+	_ = os.MkdirAll(sDir, 0750)
 
 	// Run Orchestrator
 	go func() { _ = orch.Run(ctx) }()

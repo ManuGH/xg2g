@@ -25,7 +25,7 @@ func TestClient_Fire_Idempotency(t *testing.T) {
 		defer mu.Unlock()
 		requestCount++
 		lastHdrKey = r.Header.Get("X-Idempotency-Key")
-		json.NewDecoder(r.Body).Decode(&lastIntent)
+		_ = json.NewDecoder(r.Body).Decode(&lastIntent)
 		w.WriteHeader(http.StatusAccepted)
 	}))
 	defer server.Close()

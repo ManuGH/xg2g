@@ -74,7 +74,7 @@ func (o *Orchestrator) recoverStaleLeases(ctx context.Context) error {
 }
 
 func handleRecovery(ctx context.Context, o *Orchestrator, s *model.SessionRecord, l store.Lease, logger zerolog.Logger) bool {
-	defer o.Store.ReleaseLease(ctx, l.Key(), l.Owner())
+	defer func() { _ = o.Store.ReleaseLease(ctx, l.Key(), l.Owner()) }()
 
 	targetState := determineRecoveryTarget(s.State)
 	logger.Info().

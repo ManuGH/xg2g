@@ -25,7 +25,7 @@ func TestTuner_Tune_Success(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/api/zap":
-			fmt.Fprintln(w, `{"result": true}`)
+			_, _ = fmt.Fprintln(w, `{"result": true}`)
 		case "/api/getcurrent":
 			// First poll returns wrong ref, second returns correct
 			count := atomic.AddInt32(&polls, 1)
@@ -33,12 +33,12 @@ func TestTuner_Tune_Success(t *testing.T) {
 			if count > 1 {
 				ref = targetRef
 			}
-			fmt.Fprintf(w, `{"result": true, "info": {"ref": "%s"}}`+"\n", ref)
+			_, _ = fmt.Fprintf(w, `{"result": true, "info": {"ref": "%s"}}`+"\n", ref)
 		case "/api/signal":
 			// Lock on 3rd poll
 			count := atomic.LoadInt32(&polls)
 			locked := count > 2
-			fmt.Fprintf(w, `{"result": true, "lock": %v, "snr": 80}`+"\n", locked)
+			_, _ = fmt.Fprintf(w, `{"result": true, "lock": %v, "snr": 80}`+"\n", locked)
 		}
 	}))
 	defer ts.Close()
@@ -60,11 +60,11 @@ func TestTuner_Tune_Timeout(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/api/zap":
-			fmt.Fprintln(w, `{"result": true}`)
+			_, _ = fmt.Fprintln(w, `{"result": true}`)
 		case "/api/getcurrent":
-			fmt.Fprintln(w, `{"result": true, "info": {"ref": "1:0:0:0:0"}}`) // Wrong Ref
+			_, _ = fmt.Fprintln(w, `{"result": true, "info": {"ref": "1:0:0:0:0"}}`) // Wrong Ref
 		case "/api/signal":
-			fmt.Fprintln(w, `{"result": true, "lock": false}`)
+			_, _ = fmt.Fprintln(w, `{"result": true, "lock": false}`)
 		}
 	}))
 	defer ts.Close()

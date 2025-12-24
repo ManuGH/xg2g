@@ -85,13 +85,13 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer subStart.Close()
+	defer func() { _ = subStart.Close() }()
 
 	subStop, err := o.Bus.Subscribe(ctx, string(model.EventStopSession))
 	if err != nil {
 		return err
 	}
-	defer subStop.Close()
+	defer func() { _ = subStop.Close() }()
 
 	// Phase 7B-3: Recovery Sweep on Startup
 	if err := o.recoverStaleLeases(ctx); err != nil {
@@ -270,7 +270,7 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 	releaseDedup := func() {
 		ctxRel, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		o.Store.ReleaseLease(ctxRel, dedupLease.Key(), dedupLease.Owner())
+		_ = o.Store.ReleaseLease(ctxRel, dedupLease.Key(), dedupLease.Owner())
 	}
 	defer releaseDedup() // Safety fallback (idempotent)
 
@@ -292,7 +292,7 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 	defer func() {
 		ctxRel, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		o.Store.ReleaseLease(ctxRel, tunerLease.Key(), tunerLease.Owner())
+		_ = o.Store.ReleaseLease(ctxRel, tunerLease.Key(), tunerLease.Owner())
 	}()
 
 	// Heartbeat loop: Renew TUNER Lease explicitly
@@ -366,7 +366,7 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 		// jobsTotal.WithLabelValues("exec_error", o.modeLabel()).Inc()
 		return err
 	}
-	defer tuner.Close()
+	defer func() { _ = tuner.Close() }()
 
 	// Measure Ready Duration
 	readyStart := time.Now()
@@ -541,8 +541,5 @@ func (o *Orchestrator) cleanupFiles(sid string) {
 	// Check if exists before removing? RemoveAll handles non-existence fine.
 	if err := os.RemoveAll(targetDir); err != nil {
 		log.L().Error().Err(err).Str("path", targetDir).Msg("failed to remove session directory")
-	} else {
-		// Log cleanup success? (Verbose)
-		// log.L().Info().Str("sid", sid).Msg("cleaned up session files")
 	}
 }

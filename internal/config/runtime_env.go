@@ -254,17 +254,3 @@ func getBool(getenv func(string) string, key string, defaultValue bool) bool {
 		return defaultValue
 	}
 }
-
-func parseDurationOrSeconds(getenv func(string) string, key string, def time.Duration) time.Duration {
-	raw := strings.TrimSpace(getString(getenv, key, ""))
-	if raw == "" {
-		return def
-	}
-	if d, err := time.ParseDuration(raw); err == nil {
-		return d
-	}
-	if n, err := strconv.Atoi(raw); err == nil && n >= 0 {
-		return time.Duration(n) * time.Second
-	}
-	return def
-}

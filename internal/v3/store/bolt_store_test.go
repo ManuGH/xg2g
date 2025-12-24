@@ -18,7 +18,7 @@ func TestBoltStore_OpenClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// OpenBoltStore expects explicit path or directory.
 
@@ -36,7 +36,7 @@ func TestBoltStore_OpenClose(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to reopen store: %v", err)
 	}
-	store2.Close()
+	_ = store2.Close()
 }
 
 func TestBoltStore_SessionRoundTrip(t *testing.T) {
@@ -44,10 +44,10 @@ func TestBoltStore_SessionRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	store, _ := OpenBoltStore(tmpDir)
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	ctx := context.Background()
 	rec := &model.SessionRecord{
@@ -73,10 +73,10 @@ func TestBoltStore_PutSessionWithIdempotency(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	store, _ := OpenBoltStore(tmpDir)
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	ctx := context.Background()
 	rec := &model.SessionRecord{
@@ -103,7 +103,10 @@ func TestBoltStore_PutSessionWithIdempotency(t *testing.T) {
 
 	// Verify Expiry
 	time.Sleep(150 * time.Millisecond)
-	sid, ok, err = store.GetIdempotency(ctx, "key-1")
+	_, ok, err = store.GetIdempotency(ctx, "key-1")
+	if err != nil {
+		t.Error(err)
+	}
 	if ok {
 		t.Error("expected expiry, got found")
 	}
@@ -114,13 +117,13 @@ func TestBoltStore_ScanSessions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 	store, _ := OpenBoltStore(tmpDir)
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
-	store.PutSession(context.Background(), &model.SessionRecord{SessionID: "s1"})
-	store.PutSession(context.Background(), &model.SessionRecord{SessionID: "s2"})
-	store.PutSession(context.Background(), &model.SessionRecord{SessionID: "s3"})
+	_ = store.PutSession(context.Background(), &model.SessionRecord{SessionID: "s1"})
+	_ = store.PutSession(context.Background(), &model.SessionRecord{SessionID: "s2"})
+	_ = store.PutSession(context.Background(), &model.SessionRecord{SessionID: "s3"})
 
 	count := 0
 	err = store.ScanSessions(context.Background(), func(s *model.SessionRecord) error {
@@ -140,15 +143,18 @@ func TestBoltStore_Lease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 	store, _ := OpenBoltStore(tmpDir)
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	ctx := context.Background()
 
 	// 1. Acquire
 	lease, ok, err := store.TryAcquireLease(ctx, "res1", "worker1", 100*time.Millisecond)
-	if err != nil || !ok {
-		t.Fatalf("acquire failed: %v, %v", err, ok)
+	if err != nil {
+		t.Fatalf("acquire failed: %v", err)
+	}
+	if !ok {
+		t.Fatalf("acquire ok=false")
 	}
 	if lease.Owner() != "worker1" {
 		t.Error("wrong owner")
@@ -156,25 +162,38 @@ func TestBoltStore_Lease(t *testing.T) {
 
 	// 2. Contention (Fail)
 	_, ok, err = store.TryAcquireLease(ctx, "res1", "worker2", 100*time.Millisecond)
+	if err != nil {
+		t.Fatalf("acquire 2 failed: %v", err)
+	}
 	if ok {
 		t.Error("expected contention failure")
 	}
 
 	// 3. Renew (Success)
 	_, ok, err = store.RenewLease(ctx, "res1", "worker1", 200*time.Millisecond)
+	if err != nil {
+		t.Fatalf("renew failed: %v", err)
+	}
 	if !ok {
-		t.Error("renew failed")
+		t.Error("renew failed ok=false")
 	}
 
 	// 4. Must-Fix Check: Renew on Expired Lease must fail
 	time.Sleep(250 * time.Millisecond)
 	_, ok, err = store.RenewLease(ctx, "res1", "worker1", 100*time.Millisecond)
+	if err != nil {
+		t.Logf("renew expired error (expected): %v", err)
+	}
 	if ok {
 		t.Error("expected renew to fail on expired lease (force recovery)")
 	}
 
 	// 5. Expiry Takeover
 	_, ok, err = store.TryAcquireLease(ctx, "res1", "worker2", 100*time.Millisecond)
+	// Check err
+	if err != nil {
+		t.Error(err)
+	}
 	if !ok {
 		t.Error("takeover failed after expiry")
 	}

@@ -89,7 +89,7 @@ func OpenBoltStore(path string) (*BoltStore, error) {
 		return nil
 	})
 	if err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("failed to init buckets: %w", err)
 	}
 

@@ -16,9 +16,9 @@ import (
 
 func TestRecoverySweep_RecoverStale(t *testing.T) {
 	tmpDir, _ := os.MkdirTemp("", "recovery_test")
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 	s, _ := store.OpenBoltStore(tmpDir) // Use real bolt store to test lease logic
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	orch := &Orchestrator{
 		Store:    s,
@@ -33,11 +33,11 @@ func TestRecoverySweep_RecoverStale(t *testing.T) {
 		ServiceRef: "ref1",
 		State:      model.SessionStarting,
 	}
-	s.PutSession(ctx, session)
+	_ = s.PutSession(ctx, session)
 
 	// Create expired lease
 	// We cheat by acquiring with short TTL and sleeping
-	s.TryAcquireLease(ctx, "ref1", "old-owner", 1*time.Millisecond)
+	_, _, _ = s.TryAcquireLease(ctx, "ref1", "old-owner", 1*time.Millisecond)
 	time.Sleep(10 * time.Millisecond)
 
 	// 2. Run Recovery
@@ -57,9 +57,9 @@ func TestRecoverySweep_RecoverStale(t *testing.T) {
 
 func TestRecoverySweep_IgnoreActive(t *testing.T) {
 	tmpDir, _ := os.MkdirTemp("", "recovery_active")
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 	s, _ := store.OpenBoltStore(tmpDir)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	orch := &Orchestrator{
 		Store:    s,
@@ -73,15 +73,15 @@ func TestRecoverySweep_IgnoreActive(t *testing.T) {
 		ServiceRef: "ref1",
 		State:      model.SessionStarting,
 	}
-	s.PutSession(ctx, session)
+	_ = s.PutSession(ctx, session)
 
 	// Acquire valid lease
 	// Phase 8-2b: Must matches the fallback key used by recovery (namespaced)
 	key := LeaseKeyService("ref1")
-	s.TryAcquireLease(ctx, key, "current-owner", 1*time.Second)
+	_, _, _ = s.TryAcquireLease(ctx, key, "current-owner", 1*time.Second)
 
 	// 2. Run Recovery
-	orch.recoverStaleLeases(ctx)
+	_ = orch.recoverStaleLeases(ctx)
 
 	// 3. Verify
 	rec, _ := s.GetSession(ctx, "active-1")
@@ -92,18 +92,18 @@ func TestRecoverySweep_IgnoreActive(t *testing.T) {
 
 func TestRecoverySweep_IgnoreTerminal(t *testing.T) {
 	tmpDir, _ := os.MkdirTemp("", "recovery_term")
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 	s, _ := store.OpenBoltStore(tmpDir)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	orch := &Orchestrator{Store: s}
 	ctx := context.Background()
 
 	// TestRecoverySweep_IgnoreTerminal only checks truly terminal states now (FAILED, STOPPED)
-	s.PutSession(ctx, &model.SessionRecord{SessionID: "s2", State: model.SessionFailed})
-	s.PutSession(ctx, &model.SessionRecord{SessionID: "s3", State: model.SessionStopped})
+	_ = s.PutSession(ctx, &model.SessionRecord{SessionID: "s2", State: model.SessionFailed})
+	_ = s.PutSession(ctx, &model.SessionRecord{SessionID: "s3", State: model.SessionStopped})
 
-	orch.recoverStaleLeases(ctx)
+	_ = orch.recoverStaleLeases(ctx)
 
 	r2, _ := s.GetSession(ctx, "s2")
 	if r2.State != model.SessionFailed {
@@ -118,15 +118,15 @@ func TestRecoverySweep_IgnoreTerminal(t *testing.T) {
 func TestRecoverySweep_RecoverReady(t *testing.T) {
 	// Fix 11-1: READY sessions without lease must be recovered to FAILED (Zombies)
 	tmpDir, _ := os.MkdirTemp("", "recovery_ready")
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 	s, _ := store.OpenBoltStore(tmpDir)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	orch := &Orchestrator{Store: s, LeaseTTL: 100 * time.Millisecond}
 	ctx := context.Background()
 
 	// Setup Zombie READY session (Stale Lease)
-	s.PutSession(ctx, &model.SessionRecord{SessionID: "zombie", State: model.SessionReady})
+	_ = s.PutSession(ctx, &model.SessionRecord{SessionID: "zombie", State: model.SessionReady})
 	// Cheat: Acquire/Wait to expire lease (implicit or explicit)
 	// If no lease exists, TryAcquire works -> Recover works.
 	// If lease exists but expired, TryAcquire works -> Recover works.

@@ -58,14 +58,6 @@ var (
 		[]string{"state_from", "state_to", "mode"},
 	)
 
-	recoveryTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "v3_worker_recovery_total",
-			Help: "Total sessions recovered",
-		},
-		[]string{"action", "mode"},
-	)
-
 	leaseLostTotalLegacy = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "v3_worker_lease_lost_total",

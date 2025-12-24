@@ -15,18 +15,18 @@ func TestLineRing(t *testing.T) {
 	r := NewLineRing(3)
 
 	// writes
-	fmt.Fprintf(r, "line1\n")
-	fmt.Fprintf(r, "line2\n")
+	_, _ = fmt.Fprintf(r, "line1\n")
+	_, _ = fmt.Fprintf(r, "line2\n")
 
 	last := r.LastN(10)
 	assert.Equal(t, []string{"line1", "line2"}, last)
 
-	fmt.Fprintf(r, "line3\n")
+	_, _ = fmt.Fprintf(r, "line3\n")
 	last = r.LastN(10)
 	assert.Equal(t, []string{"line1", "line2", "line3"}, last)
 
 	// Wrap
-	fmt.Fprintf(r, "line4\n")
+	_, _ = fmt.Fprintf(r, "line4\n")
 	last = r.LastN(10)
 	assert.Equal(t, []string{"line2", "line3", "line4"}, last)
 
@@ -36,7 +36,7 @@ func TestLineRing(t *testing.T) {
 
 func TestLineRing_Partial(t *testing.T) {
 	r := NewLineRing(5)
-	r.Write([]byte("foo\nbar\n"))
+	_, _ = r.Write([]byte("foo\nbar\n"))
 
 	last := r.LastN(10)
 	assert.Equal(t, []string{"foo", "bar"}, last)

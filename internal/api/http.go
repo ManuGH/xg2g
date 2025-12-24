@@ -481,63 +481,6 @@ func (s *Server) routes() http.Handler {
 	return r
 }
 
-// authRequired is a middleware that enforces API token authentication for a handler.
-// It implements a "fail-closed" strategy: if no token is configured, access is denied.
-func (s *Server) authRequired(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		logger := log.WithComponentFromContext(r.Context(), "auth")
-		s.mu.RLock()
-		authAnon := s.cfg.AuthAnonymous
-		hasTokens := s.cfg.APIToken != "" || len(s.cfg.APITokens) > 0
-		s.mu.RUnlock()
-
-		if !hasTokens {
-			if authAnon {
-				logger.Warn().Str("event", "auth.anonymous").Msg("XG2G_AUTH_ANONYMOUS=true, allowing unauthenticated access")
-				next.ServeHTTP(w, r)
-				return
-			}
-			logger.Error().Str("event", "auth.fail_closed").Msg("No API tokens configured and XG2G_AUTH_ANONYMOUS!=true. Denying access.")
-			http.Error(w, "Unauthorized: Authentication required", http.StatusUnauthorized)
-			return
-		}
-
-		// Use unified token extraction
-		requestToken := extractToken(r)
-
-		if requestToken == "" {
-			logger.Warn().Str("event", "auth.missing_header").Msg("authorization header/param/cookie missing")
-
-			// Audit log: missing authentication
-			if s.auditLogger != nil {
-				s.auditLogger.AuthMissing(clientIP(r), r.URL.Path)
-			}
-			http.Error(w, "Unauthorized: Missing API token", http.StatusUnauthorized)
-			return
-		}
-
-		// Use constant-time comparison to prevent timing attacks
-		if _, ok := s.tokenScopes(requestToken); !ok {
-			logger.Warn().Str("event", "auth.invalid_token").Msg("invalid api token")
-
-			// Audit log: authentication failure
-			if s.auditLogger != nil {
-				s.auditLogger.AuthFailure(clientIP(r), r.URL.Path, "invalid token")
-			}
-			http.Error(w, "Forbidden: Invalid API token", http.StatusForbidden)
-			return
-		}
-
-		// Audit log: authentication success
-		if s.auditLogger != nil {
-			s.auditLogger.AuthSuccess(clientIP(r), r.URL.Path)
-		}
-
-		// Token is valid
-		next.ServeHTTP(w, r)
-	}
-}
-
 // GetStatus returns the current server status (thread-safe)
 // This method is exposed for use by versioned API handlers
 func (s *Server) GetStatus() jobs.Status {

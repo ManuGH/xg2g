@@ -21,7 +21,7 @@ func TestClient_Zap(t *testing.T) {
 		assert.Equal(t, "/api/zap", r.URL.Path)
 		assert.Equal(t, "1:0:1:123:0:0:0:0:0:0:", r.URL.Query().Get("sRef"))
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintln(w, `{"result": true, "message": "zap done"}`)
+		_, _ = fmt.Fprintln(w, `{"result": true, "message": "zap done"}`)
 	}))
 	defer ts.Close()
 
@@ -34,7 +34,7 @@ func TestClient_GetCurrent(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/getcurrent", r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintln(w, `{
+		_, _ = fmt.Fprintln(w, `{
 			"result": true,
 			"info": {
 				"ref": "1:0:1:123:0:0:0:0:0:0:",
@@ -56,7 +56,7 @@ func TestClient_GetSignal(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/signal", r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintln(w, `{"result": true, "snr": 85, "agc": 90, "ber": 0, "lock": true}`)
+		_, _ = fmt.Fprintln(w, `{"result": true, "snr": 85, "agc": 90, "ber": 0, "lock": true}`)
 	}))
 	defer ts.Close()
 
