@@ -23,10 +23,11 @@ This process is asynchronous. `xg2g` receives the stream URL immediately after t
 
 ### Solution
 
-The system implements a **Post-Zap Delay** plus a **Readiness Probe** to handle this race condition.
+The V3 streaming system implements a **Post-Zap Delay** plus a **Readiness Probe** to handle this race condition.
 
-- **Mechanism**: `ZapAndResolveStream` enforces a fixed post-zap delay (currently **5 seconds**) after successfully resolving the Web API stream, then probes the resolved stream URL until it yields bytes (bounded) before starting FFmpeg (see `internal/proxy/hls_helper.go`).
+- **Mechanism**: The V3 orchestrator enforces a post-zap delay (configurable, default **5 seconds**) after successfully resolving the stream URL from OpenWebIF, then probes the resolved stream URL until it yields bytes before starting FFmpeg.
 - **Effect**: Avoids "connect too early" flake by waiting for the receiver port to be actually readable, not just theoretically open.
+- **Implementation**: See `internal/v3/exec/enigma2/client_ext.go` for stream resolution and tuning logic.
 
 ### If it still fails (fast-fail behavior)
 
@@ -40,8 +41,6 @@ Typical log sequence:
 This usually indicates the receiver never stabilized the returned stream URL (tuner busy, softcam not ready, port not open yet, receiver-side error). In this case, increasing “wait time” inside xg2g won’t help unless FFmpeg stays alive and reconnects successfully.
 
 If you see an error like `stream not ready after zap`, xg2g could resolve the stream URL but never observed the stream returning bytes within the bounded readiness probe window.
-
-If a specific client fails to play HLS, you can force MPEG-TS by appending `?mode=ts` to the stream URL. To force HLS, use `?mode=hls`.
 
 ### WebAPI timeouts
 
