@@ -4,7 +4,7 @@
   <Repository>ghcr.io/manugh/xg2g:v3</Repository>
   <Registry>https://github.com/ManuGH/xg2g/pkgs/container/xg2g</Registry>
   <Network>host</Network>
-  <MyIP/>
+
   <Shell>sh</Shell>
   <Privileged>false</Privileged>
   <Support>https://github.com/ManuGH/xg2g/issues</Support>
@@ -21,16 +21,16 @@
     **Configuration**:&#13;
     Set the 'Receiver URL' to your Enigma2 box IP.&#13;
     &#13;
-    (Requires NET_BIND_SERVICE capability for flexible port binding)
+    (Note: If creating a config to bind port 80/443, manually add --cap-add=NET_BIND_SERVICE)
   </Overview>
   <Category>MediaServer:Video</Category>
   <WebUI>http://[IP]:[PORT:8088]/</WebUI>
   <TemplateURL>https://raw.githubusercontent.com/ManuGH/xg2g/main/support/unraid/xg2g.xml</TemplateURL>
   <Icon>https://raw.githubusercontent.com/ManuGH/xg2g/main/docs/images/logo.png</Icon>
-  <ExtraParams>--cap-add=NET_BIND_SERVICE</ExtraParams>
+  <ExtraParams/>
   <PostArgs/>
   <CPUset/>
-  <DateInstalled>1703462400</DateInstalled>
+
   <DonateText>Support Development</DonateText>
   <DonateLink>https://github.com/sponsors/ManuGH</DonateLink>
   <Description>
@@ -48,6 +48,6 @@
   <Config Name="Config Path" Target="/data" Default="/mnt/user/appdata/xg2g/" Mode="rw" Description="Container Path: /data" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/xg2g/</Config>
   <Config Name="Receiver URL" Target="XG2G_OWI_BASE" Default="http://192.168.1.100" Mode="" Description="URL of your Enigma2 receiver (e.g. http://192.168.1.5)" Type="Variable" Display="always" Required="true" Mask="false">http://192.168.1.100</Config>
   <Config Name="Bouquets" Target="XG2G_BOUQUET" Default="Favourites" Mode="" Description="Comma separated list of Bouquets to load" Type="Variable" Display="always" Required="false" Mask="false">Favourites</Config>
-  <Config Name="WebUI Port" Target="8088" Default="8088" Mode="tcp" Description="Port for the Web Interface" Type="Port" Display="always" Required="true" Mask="false">8088</Config>
+
   <Config Name="API Token" Target="XG2G_API_TOKEN" Default="" Mode="" Description="Optional Bearer token for API security" Type="Variable" Display="advanced" Required="false" Mask="true"/>
 </Container>
