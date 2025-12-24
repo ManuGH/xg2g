@@ -24,10 +24,25 @@
 
   --font-main: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   --shadow-lg: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+
+  /* Alias tokens for shared components */
+  --bg-color: var(--bg-primary);
+  --card-bg: var(--bg-card);
+  --border-color: var(--border-subtle);
+  --text-color: var(--text-primary);
+  --active-color: var(--accent-primary);
+  --glass-border: rgba(255, 255, 255, 0.12);
+  --accent: var(--accent-primary);
+  --border: var(--border-subtle);
 }
 
 body {
   background-color: var(--bg-primary);
+  background-image:
+    radial-gradient(1200px 800px at 12% -10%, rgba(59, 130, 246, 0.18), transparent 60%),
+    radial-gradient(900px 700px at 88% 10%, rgba(16, 185, 129, 0.12), transparent 65%);
+  background-repeat: no-repeat;
+  background-size: cover;
   color: var(--text-primary);
   font-family: var(--font-main);
   -webkit-font-smoothing: antialiased;

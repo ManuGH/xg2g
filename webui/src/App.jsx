@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react';
 import { flushSync } from 'react-dom';
 import './App.css';
 import Player from './components/Player';
+import V3Player from './components/V3Player';
 import Dashboard from './components/Dashboard';
 import Files from './components/Files';
 import Logs from './components/Logs';
@@ -17,20 +18,7 @@ import Navigation from './components/Navigation';
 import { OpenAPI } from './client/core/OpenAPI';
 import { DefaultService } from './client/services/DefaultService';
 import { ServicesService } from './client/services/ServicesService';
-// Helper to construct preflight URL (wake up stream)
-function derivePreflightUrl(streamUrl) {
-  try {
-    const url = new URL(streamUrl, window.location.origin);
-    const parts = url.pathname.split('/').filter(Boolean);
-    if (parts.length !== 3) return null;
-    const [prefix, streamId, file] = parts;
-    if (prefix !== 'stream' || file !== 'playlist.m3u8') return null;
-    url.pathname = `/stream/${streamId}/preflight`;
-    return url.pathname + url.search;
-  } catch {
-    return null;
-  }
-}
+
 
 function App() {
   const [view, setView] = useState('epg');
@@ -154,9 +142,10 @@ function App() {
 
       {/* Player Overlay */}
       {playingChannel && (
-        <Player
-          streamUrl={`/stream/${playingChannel.id}/playlist.m3u8?token=${token}`}
-          preflightUrl={derivePreflightUrl(`/stream/${playingChannel.id}/playlist.m3u8?token=${token}`)}
+        <V3Player
+          token={token}
+          channel={playingChannel}
+          autoStart={true}
           onClose={() => setPlayingChannel(null)}
         />
       )}
@@ -181,6 +170,7 @@ function App() {
         {view === 'recordings' && <RecordingsList token={token} />}
 
         {view === 'timers' && <Timers />}
+        {view === 'v3' && <div className="glass"><V3Player token={token} /></div>}
         {view === 'series' && <SeriesManager />}
       </main>
     </div>

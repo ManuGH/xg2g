@@ -47,6 +47,7 @@ export default function Navigation({ activeView, onViewChange }) {
     { id: 'timers', label: 'Timers', icon: Icons.Dashboard }, // Reusing Dashboard icon for now or add new Clock one
     { id: 'series', label: 'Series', icon: Icons.Series },
     { id: 'files', label: 'Files', icon: Icons.Files },
+    { id: 'v3', label: 'V3 Player', icon: Icons.Dashboard }, // Using Dashboard icon
     { id: 'logs', label: 'Logs', icon: Icons.Logs },
   ];
 
