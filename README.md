@@ -91,16 +91,16 @@ Built on a modern event-driven design for reliability and performance:
 2. **Configure environment**:
 
     ```bash
-    # Download template and customize
-    curl -o .env https://raw.githubusercontent.com/ManuGH/xg2g/main/.env.example
+    # Download minimal config and customize
+    curl -o .env https://raw.githubusercontent.com/ManuGH/xg2g/main/.env.minimal
     nano .env
     ```
 
-    **Set these required values in `.env`:**
+    **Edit just 2 lines in `.env`:**
     - `XG2G_OWI_BASE` - Your Enigma2 receiver IP (e.g., `http://192.168.1.100`)
-    - `XG2G_BOUQUET` - Bouquet name (default: `Favourites`)
+    - `XG2G_BOUQUET` - Bouquet name (e.g., `Favourites`)
 
-    **Note**: `XG2G_V3_E2_HOST` automatically inherits from `XG2G_OWI_BASE` if not set.
+    For advanced options (EPG, metrics, transcoding), see [.env.example](https://github.com/ManuGH/xg2g/blob/main/.env.example)
 
 3. **Start it up:**
 
