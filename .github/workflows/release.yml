@@ -223,6 +223,7 @@ jobs:
           cd webui
           npm ci
           npm run build
+          rm -rf ../internal/api/dist/*
           mkdir -p ../internal/api/dist
           cp -r dist/* ../internal/api/dist/
 
