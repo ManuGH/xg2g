@@ -118,6 +118,30 @@ release:
   footer: |
     ---
 
+    ### 🛡️ Test Governance
+
+    - **Standard**: [docs/TESTING.md](https://github.com/ManuGH/xg2g/blob/{{ .Tag }}/docs/TESTING.md)
+    - **Checklist**: [.github/release_checklist.md](https://github.com/ManuGH/xg2g/blob/{{ .Tag }}/.github/release_checklist.md)
+
+    **Confidence Level:**
+    - Binary (amd64/arm64): 🟢 High
+    - Docker (amd64): 🟢 High
+    - Docker (arm64): 🔴 Not Supported / Not Tested
+
+    ---
+
+    ### 🛡️ Test Governance
+
+    - **Standard**: [docs/TESTING.md](https://github.com/ManuGH/xg2g/blob/{{ .Tag }}/docs/TESTING.md)
+    - **Checklist**: [.github/release_checklist.md](https://github.com/ManuGH/xg2g/blob/{{ .Tag }}/.github/release_checklist.md)
+
+    **Confidence Level:**
+    - Binary (amd64/arm64): 🟢 High
+    - Docker (amd64): 🟢 High
+    - Docker (arm64): 🔴 Not Supported / Not Tested
+
+    ---
+
     ### 📚 Documentation
 
     - [Documentation](https://github.com/ManuGH/xg2g/blob/{{ .Tag }}/docs/README.md)
