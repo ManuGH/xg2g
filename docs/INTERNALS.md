@@ -5,7 +5,7 @@ The public API includes `/api/v2/*` (stable) and `/api/v3/*` (streaming control 
 
 ## Entry points
 
-- `cmd/daemon`: main runtime (config load, API, jobs, proxy, optional v3 worker)
+- `cmd/daemon`: main runtime (config load, API, jobs, V3 worker)
 - `cmd/validate`: config validation CLI
 - `cmd/gencert`: TLS certificate helper
 

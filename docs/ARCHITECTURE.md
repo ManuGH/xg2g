@@ -24,7 +24,7 @@ xg2g is a middleware service that bridges Enigma2 satellite/cable receivers with
 
 - **Stateless**: No persistent state (except cached playlists/EPG)
 - **Middleware Pattern**: Sits between Enigma2 and media servers
-- **Modular Design**: Separated API, proxy/streaming, jobs, and shared core packages
+- **Modular Design**: Separated API, V3 streaming, jobs, and shared core packages
 - **12-Factor Compatible**: Configuration via file + ENV overrides
 - **Deterministic Config**: ENV is read only at load/reload; a request/job runs against one config snapshot/epoch
 
@@ -407,7 +407,7 @@ spec:
 To prevent regression of encrypted channel support, all developers must adhere to these invariants:
 
 1. **NEVER Hardcode Ports 8001 or 17999**:
-    - **Rule**: The proxy MUST NOT guess the stream port.
+    - **Rule**: The V3 streaming system MUST NOT guess the stream port.
     - **Reason**: Enigma2 dynamically assigns ports based on decryption needs (8001=FTA, 17999=Encrypted/OSCam). Guessing 8001 for an encrypted channel results in a silent failure (black screen).
     - **Correct Approach**: Always parse the URL returned by the WebAPI.
 
