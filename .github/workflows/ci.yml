@@ -15,7 +15,7 @@ on:
       - .github/workflows/ci.yml
       - "webui/**"
       - "api/openapi.yaml"
-      - "internal/api/http.go"
+      - "internal/api/**"
 
 permissions:
   contents: read
@@ -94,7 +94,8 @@ jobs:
         run: |
           set -euo pipefail
           cd webui
-          # npm ci already ran in 'Generate API Client'
+          # Guard: Ensure dependencies exist (npm ci ran in previous step)
+          test -d node_modules || (echo "❌ node_modules missing; run npm ci first" && exit 1)
           npm run build
           # Secure Copy (Strategy A)
           rm -rf ../internal/api/dist
@@ -102,6 +103,7 @@ jobs:
           cp -a dist/. ../internal/api/dist/
           # Sanity Check
           test -f ../internal/api/dist/index.html || (echo "❌ index.html missing" && exit 1)
+          test -d ../internal/api/dist/assets || (echo "❌ assets/ missing" && exit 1)
 
       - name: Build (Docker only - CGO/Rust dependency)
         run: |
