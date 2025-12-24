@@ -24,7 +24,17 @@ Releases must declare confidence levels for major artifacts:
 - 🟡 **Medium Confidence**: Automated tests passed, limited manual scope.
 - 🔴 **Low Confidence**: Not explicitly tested (use at own risk).
 
-## 3. Test Scope Template (Per Release)
+## 3. CI Architecture & Frequency
+
+ | Workflow | Role | Frequency | Scope |
+ | :--- | :--- | :--- | :--- |
+ | `ci.yml` | **PR Gate** | On PR/Push | Fast feedback, `nogpu` contract, Lint, Smoke Test. |
+ | `ci-v2.yml` | **Nightly/Extended** | Daily (02:17 UTC) | Deep regression (Rust FFI), Reproducible Builds. Manual monitoring required. |
+ | `release.yml` | **Production Release** | Tag (`v*`) | Builds official artifacts (Binary + Docker), Signs, Publishes. |
+
+ **Operational Note:** Nightly failures do not block PRs but must be investigated daily by maintainers. All schedules are UTC.
+
+## 4. Test Scope Template (Per Release)
 
 Copy this into the Release Pull Request or Walkthrough:
 
@@ -47,7 +57,7 @@ Copy this into the Release Pull Request or Walkthrough:
 - [ ] Migration from deprecated versions
 ```
 
-## 4. Release Approval Criteria
+## 5. Release Approval Criteria
 
 A release is approved **ONLY** if:
 
