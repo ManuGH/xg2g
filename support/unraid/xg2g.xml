@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Container version="2">
+  <Name>xg2g</Name>
+  <Repository>ghcr.io/manugh/xg2g:v3</Repository>
+  <Registry>https://github.com/ManuGH/xg2g/pkgs/container/xg2g</Registry>
+  <Network>host</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/ManuGH/xg2g/issues</Support>
+  <Project>https://github.com/ManuGH/xg2g</Project>
+  <Overview>
+    Ad-free, modern, self-hosted web player for Enigma2 (Dreambox/Vu+) receivers.&#13;
+    &#13;
+    Features:&#13;
+    - Modern React WebUI (Dark Mode)&#13;
+    - HLS Streaming (Mobile compatible)&#13;
+    - Timeshift (Rewind Live TV)&#13;
+    - HDHomeRun Emulation (Plex/Jellyfin support)&#13;
+    &#13;
+    **Configuration**:&#13;
+    Set the 'Receiver URL' to your Enigma2 box IP.
+  </Overview>
+  <Category>MediaApp:Video MediaServer:Video</Category>
+  <WebUI>http://[IP]:[PORT:8088]/ui/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/ManuGH/xg2g/main/support/unraid/xg2g.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/ManuGH/xg2g/main/docs/images/logo.png</Icon>
+  <ExtraParams>--cap-add=NET_BIND_SERVICE</ExtraParams>
+  <PostArgs/>
+  <CPUset/>
+  <DateInstalled>1703462400</DateInstalled>
+  <DonateText>Support Development</DonateText>
+  <DonateLink>https://github.com/sponsors/ManuGH</DonateLink>
+  <Description>
+    The Modern Web Player for Enigma2 receivers.
+  </Description>
+  <Networking>
+    <Mode>host</Mode>
+    <Publish>
+      <Port>
+        <HostPort>8088</HostPort>
+        <ContainerPort>8088</ContainerPort>
+        <Protocol>tcp</Protocol>
+      </Port>
+    </Publish>
+  </Networking>
+  <Data>
+    <Volume>
+      <HostDir>/mnt/user/appdata/xg2g/</HostDir>
+      <ContainerDir>/data</ContainerDir>
+      <Mode>rw</Mode>
+    </Volume>
+  </Data>
+  <Environment>
+    <Variable>
+      <Name>Receiver URL (XG2G_OWI_BASE)</Name>
+      <Value>http://192.168.1.100</Value>
+    </Variable>
+    <Variable>
+      <Name>Bouquet (XG2G_BOUQUET)</Name>
+      <Value>Favourites</Value>
+    </Variable>
+    <Variable>
+      <Name>API Token (Optional)</Name>
+      <Value></Value>
+    </Variable>
+  </Environment>
+  <Config Name="Config Path" Target="/data" Default="/mnt/user/appdata/xg2g/" Mode="rw" Description="Container Path: /data" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/xg2g/</Config>
+  <Config Name="Receiver URL" Target="XG2G_OWI_BASE" Default="http://192.168.1.100" Mode="" Description="URL of your Enigma2 receiver (e.g. http://192.168.1.5)" Type="Variable" Display="always" Required="true" Mask="false">http://192.168.1.100</Config>
+  <Config Name="Bouquets" Target="XG2G_BOUQUET" Default="Favourites" Mode="" Description="Comma separated list of Bouquets to load" Type="Variable" Display="always" Required="false" Mask="false">Favourites</Config>
+  <Config Name="WebUI Port" Target="8088" Default="8088" Mode="tcp" Description="Port for the Web Interface" Type="Port" Display="always" Required="true" Mask="false">8088</Config>
+  <Config Name="API Token" Target="XG2G_API_TOKEN" Default="" Mode="" Description="Optional Bearer token for API security" Type="Variable" Display="advanced" Required="false" Mask="true"/>
+</Container>
