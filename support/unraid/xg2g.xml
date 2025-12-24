@@ -24,12 +24,10 @@
     (Note: If creating a config to bind port 80/443, manually add --cap-add=NET_BIND_SERVICE)
   </Overview>
   <Category>MediaServer:Video</Category>
-  <WebUI>http://[IP]:[PORT:8088]/</WebUI>
+  <WebUI>http://[IP]:8088/</WebUI>
   <TemplateURL>https://raw.githubusercontent.com/ManuGH/xg2g/main/support/unraid/xg2g.xml</TemplateURL>
   <Icon>https://raw.githubusercontent.com/ManuGH/xg2g/main/docs/images/logo.png</Icon>
-  <ExtraParams/>
-  <PostArgs/>
-  <CPUset/>
+
 
   <DonateText>Support Development</DonateText>
   <DonateLink>https://github.com/sponsors/ManuGH</DonateLink>
