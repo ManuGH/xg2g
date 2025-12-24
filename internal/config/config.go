@@ -578,7 +578,18 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 		cfg.TunerSlots = []int{0}
 	}
 
-	cfg.E2Host = ParseString("XG2G_V3_E2_HOST", "http://localhost")
+	// Smart defaulting: If XG2G_V3_E2_HOST is not set, inherit from XG2G_OWI_BASE
+	// This prevents Docker networking issues where "localhost" doesn't work
+	e2Host := ParseString("XG2G_V3_E2_HOST", "")
+	if e2Host == "" {
+		// Fall back to OWI_BASE if available, otherwise use localhost
+		if cfg.OWIBase != "" {
+			e2Host = cfg.OWIBase
+		} else {
+			e2Host = "http://localhost"
+		}
+	}
+	cfg.E2Host = e2Host
 	cfg.E2TuneTimeout = ParseDuration("XG2G_V3_TUNE_TIMEOUT", 10*time.Second)
 
 	cfg.FFmpegBin = ParseString("XG2G_V3_FFMPEG_BIN", "ffmpeg")

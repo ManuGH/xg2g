@@ -205,6 +205,6 @@ The v3 streaming backend is the **production streaming system** (enabled by defa
 | `XG2G_V3_STORE_BACKEND` | `memory` | Store backend (`memory` or `bolt`) |
 | `XG2G_V3_STORE_PATH` | `/var/lib/xg2g/v3-store` | Store path for bolt backend |
 | `XG2G_V3_HLS_ROOT` | `/var/lib/xg2g/v3-hls` | HLS output root for v3 sessions |
-| `XG2G_V3_E2_HOST` | `http://localhost` | Enigma2 Receiver URL (CRITICAL for Docker - set to receiver IP) |
+| `XG2G_V3_E2_HOST` | (inherits from `XG2G_OWI_BASE`) | Enigma2 Receiver URL for V3 worker (auto-inherits if not set) |
 | `XG2G_V3_TUNER_SLOTS` | (auto) | Tuner slots to use (JSON array, e.g., `[0,1]`) |
 | `XG2G_V3_FFMPEG_BIN` | `ffmpeg` | Path to ffmpeg binary |

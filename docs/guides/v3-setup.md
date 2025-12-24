@@ -49,9 +49,8 @@ The provided `docker-compose.yml` already has V3 enabled by default. Just config
 ```bash
 # Required settings in .env
 XG2G_OWI_BASE=http://your-receiver-ip
-XG2G_V3_E2_HOST=http://your-receiver-ip  # Critical for Docker networking
 
-# Optional (has sensible defaults)
+# Optional (XG2G_V3_E2_HOST automatically inherits from XG2G_OWI_BASE if not set)
 XG2G_V3_STORE_PATH=/data/v3-store   # Persist store in volume
 XG2G_V3_HLS_ROOT=/data/v3-hls       # Persist HLS segments in volume
 ```

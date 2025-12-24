@@ -99,7 +99,8 @@ Built on a modern event-driven design for reliability and performance:
     **Set these required values in `.env`:**
     - `XG2G_OWI_BASE` - Your Enigma2 receiver IP (e.g., `http://192.168.1.100`)
     - `XG2G_BOUQUET` - Bouquet name (default: `Favourites`)
-    - `XG2G_V3_E2_HOST` - Same as receiver IP (critical for Docker networking)
+
+    **Note**: `XG2G_V3_E2_HOST` automatically inherits from `XG2G_OWI_BASE` if not set.
 
 3. **Start it up:**
 
