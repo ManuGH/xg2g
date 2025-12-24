@@ -4,16 +4,6 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "17 2 * * *" # Daily at 02:17 UTC
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-    paths:
-      - "**/*.go"
-      - go.mod
-      - go.sum
-      - .github/workflows/ci-v2.yml
-      - Makefile
 
 permissions:
   contents: read
@@ -383,13 +373,6 @@ jobs:
 
       - name: Setup Go Deps
         run: go mod download
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: webui/package-lock.json
 
       - name: Build WebUI
         run: |
