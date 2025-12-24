@@ -88,18 +88,18 @@ Built on a modern event-driven design for reliability and performance:
     curl -o docker-compose.yml https://raw.githubusercontent.com/ManuGH/xg2g/main/docker-compose.yml
     ```
 
-2. **Configure environment** (create `.env`):
+2. **Configure environment**:
 
     ```bash
-    # IP of your Enigma2 Receiver (VU+, Dreambox, etc.)
-    XG2G_OWI_BASE=http://192.168.1.100
-
-    # Bouquet to stream (comma separated)
-    XG2G_BOUQUET=Favourites
-
-    # Enable V3 streaming backend (required)
-    XG2G_V3_WORKER_ENABLED=true
+    # Download template and customize
+    curl -o .env https://raw.githubusercontent.com/ManuGH/xg2g/main/.env.example
+    nano .env
     ```
+
+    **Set these required values in `.env`:**
+    - `XG2G_OWI_BASE` - Your Enigma2 receiver IP (e.g., `http://192.168.1.100`)
+    - `XG2G_BOUQUET` - Bouquet name (default: `Favourites`)
+    - `XG2G_V3_E2_HOST` - Same as receiver IP (critical for Docker networking)
 
 3. **Start it up:**
 
