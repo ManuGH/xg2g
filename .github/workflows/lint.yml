@@ -10,7 +10,7 @@ jobs:
   check-env-access:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6.0.1
 
       - name: Enforce Config Determinism (Env Reads)
         shell: bash
@@ -40,7 +40,7 @@ jobs:
   check-deprecations:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6.0.1
 
       - name: Check Deprecation Registry
         run: python3 scripts/check_deprecations.py
