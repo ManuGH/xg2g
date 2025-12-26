@@ -13,7 +13,7 @@ import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class TimersService {
     /**
-     * List all timers (v2)
+     * List all timers
      * @param state
      * @param from
      * @returns TimerList List of timers
@@ -33,7 +33,7 @@ export class TimersService {
         });
     }
     /**
-     * Create a timer (v2)
+     * Create a timer
      * @param requestBody
      * @returns Timer Timer created
      * @throws ApiError

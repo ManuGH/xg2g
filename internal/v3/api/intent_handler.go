@@ -18,6 +18,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/v3/bus"
 	"github.com/ManuGH/xg2g/internal/v3/model"
+	"github.com/ManuGH/xg2g/internal/v3/profiles"
 	"github.com/ManuGH/xg2g/internal/v3/store"
 )
 
@@ -26,6 +27,8 @@ type IntentHandler struct {
 	Bus   bus.Bus
 	// TTL for idempotency key mapping.
 	IdempotencyTTL time.Duration
+	// DVRWindowSec overrides DVR window for DVR profiles; 0 uses internal default.
+	DVRWindowSec int
 }
 
 func (h IntentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -67,13 +70,11 @@ func (h IntentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sessionID := newID()
-	// MVP: default profile construction (v3-core model.ProfileSpec)
-	// In the future this should verify against a profile registry.
-	prof := model.ProfileSpec{
-		Name:         req.ProfileID,
-		LLHLS:        false,
-		DVRWindowSec: 300,
+	dvrWindowSec := h.DVRWindowSec
+	if dvrWindowSec <= 0 {
+		dvrWindowSec = 300
 	}
+	prof := profiles.Resolve(req.ProfileID, r.UserAgent(), dvrWindowSec)
 
 	rec := &model.SessionRecord{
 		SessionID:     sessionID,

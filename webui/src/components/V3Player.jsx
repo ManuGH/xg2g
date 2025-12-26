@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Hls from 'hls.js';
+import { AuthService, OpenAPI } from '../client';
 
 function V3Player({ token, channel, autoStart, onClose }) {
   const [sRef, setSRef] = useState(channel?.service_ref || channel?.id || '1:0:19:283D:3FB:1:C00000:0:0:0:');
-  const [profile, setProfile] = useState('hd'); // Default to HD as requested
+  const profileId = 'auto';
   const [sessionId, setSessionId] = useState(null);
   const [status, setStatus] = useState('idle');
   const [error, setError] = useState(null);
@@ -12,7 +13,9 @@ function V3Player({ token, channel, autoStart, onClose }) {
   const mounted = useRef(false);
   const sessionIdRef = useRef(null);
   const stopSentRef = useRef(null);
+  const sessionCookieRef = useRef({ token: null, pending: null });
   const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+  const apiBase = (OpenAPI.BASE || '/api/v3').replace(/\/$/, '');
 
   useEffect(() => {
     if (channel) {
@@ -24,6 +27,35 @@ function V3Player({ token, channel, autoStart, onClose }) {
   useEffect(() => {
     sessionIdRef.current = sessionId;
   }, [sessionId]);
+
+  useEffect(() => {
+    if (token) {
+      OpenAPI.TOKEN = token;
+    }
+    sessionCookieRef.current.token = null;
+    sessionCookieRef.current.pending = null;
+  }, [token]);
+
+  const ensureSessionCookie = useCallback(async () => {
+    if (!token) return;
+    if (sessionCookieRef.current.token === token) return;
+    if (sessionCookieRef.current.pending) return sessionCookieRef.current.pending;
+
+    const pending = (async () => {
+      try {
+        OpenAPI.TOKEN = token;
+        await AuthService.createSession();
+        sessionCookieRef.current.token = token;
+      } catch (err) {
+        console.warn('Failed to create session cookie', err);
+      } finally {
+        sessionCookieRef.current.pending = null;
+      }
+    })();
+
+    sessionCookieRef.current.pending = pending;
+    return pending;
+  }, [token]);
 
   // Auto-start logic
   useEffect(() => {
@@ -38,7 +70,7 @@ function V3Player({ token, channel, autoStart, onClose }) {
     if (!idToStop || stopSentRef.current === idToStop) return;
     stopSentRef.current = idToStop;
     try {
-      await fetch('/api/v3/intents', {
+      await fetch(`${apiBase}/intents`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -52,7 +84,7 @@ function V3Player({ token, channel, autoStart, onClose }) {
     } catch (err) {
       console.warn('Failed to stop v3 session', err);
     }
-  }, [token]);
+  }, [apiBase, token]);
 
   const startStream = async (refToUse) => {
     const ref = refToUse || sRef;
@@ -60,8 +92,11 @@ function V3Player({ token, channel, autoStart, onClose }) {
     setStatus('starting');
     setError(null);
     try {
+      // 0. Auth Preflight (Cookie Handshake for Native HLS/Safari)
+      await ensureSessionCookie();
+
       // 1. Create Session
-      const res = await fetch('/api/v3/intents', {
+      const res = await fetch(`${apiBase}/intents`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -69,7 +104,7 @@ function V3Player({ token, channel, autoStart, onClose }) {
         },
         body: JSON.stringify({
           type: 'stream.start',
-          profile: profile,
+          profile: profileId,
           serviceRef: ref
         })
       });
@@ -85,7 +120,7 @@ function V3Player({ token, channel, autoStart, onClose }) {
       await waitForSessionReady(newSessionId);
 
       // 3. Play HLS
-      const streamUrl = '/api/v3/sessions/' + newSessionId + '/hls/index.m3u8';
+      const streamUrl = `${apiBase}/sessions/${newSessionId}/hls/index.m3u8`;
       playHls(streamUrl);
 
     } catch (err) {
@@ -99,7 +134,7 @@ function V3Player({ token, channel, autoStart, onClose }) {
   };
 
   const waitForPlaylistReady = async (sessionId, maxAttempts = 120) => {
-    const playlistUrl = '/api/v3/sessions/' + sessionId + '/hls/index.m3u8';
+    const playlistUrl = `${apiBase}/sessions/${sessionId}/hls/index.m3u8`;
     for (let i = 0; i < maxAttempts; i++) {
       const playlistRes = await fetch(playlistUrl, {
         headers: { 'Authorization': 'Bearer ' + token }
@@ -116,7 +151,7 @@ function V3Player({ token, channel, autoStart, onClose }) {
     // First wait for READY state
     for (let i = 0; i < maxAttempts; i++) {
       try {
-        const res = await fetch('/api/v3/sessions/' + sessionId, {
+        const res = await fetch(`${apiBase}/sessions/${sessionId}`, {
           headers: {
             'Authorization': 'Bearer ' + token
           }
@@ -274,10 +309,7 @@ function V3Player({ token, channel, autoStart, onClose }) {
             style={{ padding: '8px', width: '300px', background: '#333', border: '1px solid #555', color: '#fff' }}
           />
         )}
-        <select value={profile} onChange={e => setProfile(e.target.value)} style={{ padding: '8px' }}>
-          <option value="mobile">Mobile</option>
-          <option value="hd">HD</option>
-        </select>
+
 
         {!autoStart && (
           <button onClick={() => startStream()} disabled={status === 'starting' || status === 'playing'} style={{ padding: '8px 16px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>

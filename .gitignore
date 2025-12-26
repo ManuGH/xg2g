@@ -105,3 +105,4 @@ data/picons/*.png
 # Binaries at root
 xg2g-*
 xg2g-daemon
+xg2g_new

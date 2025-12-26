@@ -4,6 +4,7 @@
 
 
 import React, { useState, useEffect } from 'react';
+import { OpenAPI } from '../client';
 import { RecordingsService } from '../client/services/RecordingsService';
 import { AuthService } from '../client/services/AuthService';
 import Player from './Player';
@@ -32,6 +33,7 @@ export default function RecordingsList() {
   const [error, setError] = useState(null);
   const [playing, setPlaying] = useState(null); // { url, title }
   const initialLoad = React.useRef(true);
+  const apiBase = (OpenAPI.BASE || '/api/v3').replace(/\/$/, '');
 
   // Fetch Data
   const fetchData = async (r, p) => {
@@ -92,7 +94,7 @@ export default function RecordingsList() {
       return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
     };
 
-    const baseUrl = '/api/v3';
+    const baseUrl = apiBase;
     const encodedId = toBase64Url(item.service_ref);
     const url = `${baseUrl}/recordings/${encodedId}/playlist.m3u8`;
 
@@ -113,7 +115,7 @@ export default function RecordingsList() {
       // Let's use fetch for MVP to avoid editing another file if possible, or edit service properly.
       // Editing service is better practice. But for now speed:
 
-      const res = await fetch(`/api/v3/recordings/${encodedId}`, {
+      const res = await fetch(`${apiBase}/recordings/${encodedId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`

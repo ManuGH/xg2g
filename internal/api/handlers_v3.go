@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -17,6 +16,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/log"
 	v3api "github.com/ManuGH/xg2g/internal/v3/api"
 	"github.com/ManuGH/xg2g/internal/v3/model"
+	"github.com/ManuGH/xg2g/internal/v3/profiles"
 )
 
 // handleV3Intents handles POST /api/v3/intents.
@@ -73,23 +73,6 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		intentType = model.IntentTypeStreamStart
 	}
 
-	// 4a. User-Agent Detection (Safari Fix)
-	// If the client is Safari and no specific profile is requested, force "safari" profile
-	// to ensure we transcode incompatible formats (like MPEG-2) to H.264.
-	isSafari := false
-	if ua := r.UserAgent(); ua != "" {
-		// Chrome also includes "Safari", so check for "Safari" AND NOT "Chrome"
-		// (Simple heuristic, can be improved)
-		if strings.Contains(ua, "Safari") && !strings.Contains(ua, "Chrome") && !strings.Contains(ua, "Chromium") {
-			isSafari = true
-		}
-	}
-
-	if isSafari && (req.ProfileID == "" || req.ProfileID == "default" || req.ProfileID == "hd") {
-		req.ProfileID = "safari_dvr"
-	}
-	log.L().Info().Str("ua", r.UserAgent()).Bool("is_safari", isSafari).Str("final_profile", req.ProfileID).Msg("intent profile debug")
-
 	switch intentType {
 	case model.IntentTypeStreamStart:
 		sessionID = uuid.New().String()
@@ -118,14 +101,20 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	// 5. Build & Publish Event
 	switch intentType {
 	case model.IntentTypeStreamStart:
+		requestedProfile := req.ProfileID
+		profileSpec := profiles.Resolve(requestedProfile, r.UserAgent(), s.cfg.DVRWindowSec)
+		log.L().
+			Info().
+			Str("ua", r.UserAgent()).
+			Str("requested_profile", requestedProfile).
+			Str("profile", profileSpec.Name).
+			Msg("intent profile resolved")
+
 		// Create Session Record (Starting state)
 		session := &model.SessionRecord{
-			SessionID:  sessionID,
-			ServiceRef: req.ServiceRef,
-			Profile: model.ProfileSpec{
-				Name:         req.ProfileID,
-				DVRWindowSec: s.cfg.DVRWindowSec, // Use configured DVR window
-			},
+			SessionID:      sessionID,
+			ServiceRef:     req.ServiceRef,
+			Profile:        profileSpec,
 			State:          model.SessionNew,
 			CreatedAtUnix:  time.Now().Unix(),
 			UpdatedAtUnix:  time.Now().Unix(),
@@ -143,7 +132,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 			Type:          model.EventStartSession,
 			SessionID:     sessionID,
 			ServiceRef:    req.ServiceRef,
-			ProfileID:     req.ProfileID,
+			ProfileID:     profileSpec.Name,
 			RequestedAtUN: time.Now().Unix(),
 		}
 		if err := bus.Publish(r.Context(), string(model.EventStartSession), event); err != nil {

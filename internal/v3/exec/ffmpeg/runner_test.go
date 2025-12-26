@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/v3/exec/enigma2"
+	"github.com/ManuGH/xg2g/internal/v3/model"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -36,7 +37,7 @@ func TestRunner_Lifecycle(t *testing.T) {
 	defer cancel()
 
 	// 1. Start
-	err := runner.Start(ctx, "test1", "1:0:1", "sleep_test")
+	err := runner.Start(ctx, "test1", "1:0:1", model.ProfileSpec{Name: "sleep_test"})
 	require.NoError(t, err)
 
 	// 2. Stop (Signal)
@@ -75,7 +76,7 @@ func TestRunner_ContextCancel(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 
-	err := runner.Start(ctx, "test2", "1:0:1", "sleep_test")
+	err := runner.Start(ctx, "test2", "1:0:1", model.ProfileSpec{Name: "sleep_test"})
 	require.NoError(t, err)
 
 	status, err := runner.Wait(ctx)
