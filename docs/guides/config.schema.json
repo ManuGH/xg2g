@@ -99,6 +99,90 @@
         }
       }
     },
+    "enigma2": {
+      "type": "object",
+      "description": "Enigma2 client configuration for the V3 worker",
+      "properties": {
+        "baseUrl": {
+          "type": "string",
+          "description": "Base URL of the Enigma2 receiver (defaults to openWebIF.baseUrl)",
+          "format": "uri",
+          "pattern": "^https?://",
+          "examples": [
+            "http://receiver.local",
+            "http://192.168.1.100",
+            "https://enigma2.example.com"
+          ]
+        },
+        "username": {
+          "type": "string",
+          "description": "Enigma2 authentication username (if required). Environment variables like ${USER} are expanded.",
+          "examples": ["root", "${ENIGMA_USER}"]
+        },
+        "password": {
+          "type": "string",
+          "writeOnly": true,
+          "description": "Enigma2 authentication password (if required). Can also be provided via environment variable XG2G_V3_E2_PASS. Never logged in plaintext. Environment variables are expanded.",
+          "examples": ["dreambox", "${ENIGMA_PASSWORD}"]
+        },
+        "timeout": {
+          "type": "string",
+          "description": "HTTP request timeout duration (Go duration format: 10s, 500ms, 1m)",
+          "pattern": "^[0-9]+(ns|us|µs|ms|s|m|h)$",
+          "default": "10s",
+          "examples": ["10s", "5s", "30s"]
+        },
+        "responseHeaderTimeout": {
+          "type": "string",
+          "description": "Timeout to wait for HTTP response headers (Go duration format)",
+          "pattern": "^[0-9]+(ns|us|µs|ms|s|m|h)$",
+          "default": "10s",
+          "examples": ["10s", "5s", "30s"]
+        },
+        "retries": {
+          "type": "integer",
+          "description": "Number of retry attempts for failed HTTP requests",
+          "minimum": 0,
+          "maximum": 10,
+          "default": 2,
+          "examples": [2, 3, 0]
+        },
+        "backoff": {
+          "type": "string",
+          "description": "Initial backoff duration between retries (Go duration format)",
+          "pattern": "^[0-9]+(ns|us|µs|ms|s|m|h)$",
+          "default": "200ms",
+          "examples": ["200ms", "500ms", "1s"]
+        },
+        "maxBackoff": {
+          "type": "string",
+          "description": "Maximum backoff duration for exponential backoff (Go duration format)",
+          "pattern": "^[0-9]+(ns|us|µs|ms|s|m|h)$",
+          "default": "2s",
+          "examples": ["2s", "5s", "10s"]
+        },
+        "rateLimit": {
+          "type": "integer",
+          "description": "Receiver request rate limit in requests per second (0 uses default)",
+          "minimum": 0,
+          "default": 10,
+          "examples": [10, 5, 0]
+        },
+        "rateBurst": {
+          "type": "integer",
+          "description": "Burst capacity for receiver requests",
+          "minimum": 0,
+          "default": 20,
+          "examples": [20, 10, 0]
+        },
+        "userAgent": {
+          "type": "string",
+          "description": "User-Agent string for Enigma2 requests",
+          "default": "xg2g-v3",
+          "examples": ["xg2g-v3"]
+        }
+      }
+    },
     "bouquets": {
       "type": "array",
       "description": "List of Enigma2 bouquet references (filenames or service references)",

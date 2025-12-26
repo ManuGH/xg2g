@@ -69,6 +69,16 @@ type V3Config struct {
 	TunerSlots        []int
 	E2Host            string
 	E2TuneTimeout     time.Duration
+	E2Username        string
+	E2Password        string
+	E2Timeout         time.Duration
+	E2RespTimeout     time.Duration
+	E2Retries         int
+	E2Backoff         time.Duration
+	E2MaxBackoff      time.Duration
+	E2RateLimit       int
+	E2RateBurst       int
+	E2UserAgent       string
 	FFmpegBin         string
 	FFmpegKillTimeout time.Duration
 	HLSRoot           string

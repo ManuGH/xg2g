@@ -18,9 +18,11 @@ import (
 	"github.com/ManuGH/xg2g/internal/health"
 	memorybus "github.com/ManuGH/xg2g/internal/v3/bus"
 	"github.com/ManuGH/xg2g/internal/v3/exec"
+	"github.com/ManuGH/xg2g/internal/v3/exec/enigma2"
 	"github.com/ManuGH/xg2g/internal/v3/store"
 	"github.com/ManuGH/xg2g/internal/v3/worker"
 	"github.com/rs/zerolog"
+	"golang.org/x/time/rate"
 )
 
 // ShutdownHook is a function that performs cleanup during graceful shutdown.
@@ -265,7 +267,19 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 	if cfg.Mode == "virtual" {
 		orch.ExecFactory = &exec.StubFactory{}
 	} else {
-		orch.ExecFactory = exec.NewRealFactory(cfg.E2Host, cfg.E2TuneTimeout, cfg.FFmpegBin, cfg.HLSRoot)
+		e2Opts := enigma2.Options{
+			Timeout:               cfg.E2Timeout,
+			ResponseHeaderTimeout: cfg.E2RespTimeout,
+			MaxRetries:            cfg.E2Retries,
+			Backoff:               cfg.E2Backoff,
+			MaxBackoff:            cfg.E2MaxBackoff,
+			Username:              cfg.E2Username,
+			Password:              cfg.E2Password,
+			UserAgent:             cfg.E2UserAgent,
+			RateLimit:             rate.Limit(cfg.E2RateLimit),
+			RateLimitBurst:        cfg.E2RateBurst,
+		}
+		orch.ExecFactory = exec.NewRealFactory(cfg.E2Host, cfg.E2TuneTimeout, cfg.FFmpegBin, cfg.HLSRoot, e2Opts)
 	}
 
 	// 4. Inject into API Server (Shadow Receiving)
@@ -398,6 +412,9 @@ func (m *manager) registerV3Checks(cfg *V3Config) {
 		req, err := http.NewRequestWithContext(checkCtx, http.MethodHead, cfg.E2Host, nil)
 		if err != nil {
 			return err
+		}
+		if cfg.E2Username != "" || cfg.E2Password != "" {
+			req.SetBasicAuth(cfg.E2Username, cfg.E2Password)
 		}
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {

@@ -25,6 +25,7 @@ type FileConfig struct {
 	LogLevel      string `yaml:"logLevel,omitempty"`
 
 	OpenWebIF OpenWebIFConfig   `yaml:"openWebIF"`
+	Enigma2   Enigma2Config     `yaml:"enigma2,omitempty"`
 	Bouquets  []string          `yaml:"bouquets,omitempty"`
 	EPG       EPGConfig         `yaml:"epg"`
 	Recording map[string]string `yaml:"recording_roots,omitempty"`
@@ -45,6 +46,21 @@ type OpenWebIFConfig struct {
 	MaxBackoff string `yaml:"maxBackoff,omitempty"` // e.g. "30s"
 	StreamPort int    `yaml:"streamPort,omitempty"`
 	UseWebIF   *bool  `yaml:"useWebIFStreams,omitempty"`
+}
+
+// Enigma2Config holds v3 Enigma2 client configuration
+type Enigma2Config struct {
+	BaseURL               string `yaml:"baseUrl,omitempty"`
+	Username              string `yaml:"username,omitempty"`
+	Password              string `yaml:"password,omitempty"`
+	Timeout               string `yaml:"timeout,omitempty"`               // e.g. "5s"
+	ResponseHeaderTimeout string `yaml:"responseHeaderTimeout,omitempty"` // e.g. "5s"
+	Retries               int    `yaml:"retries,omitempty"`
+	Backoff               string `yaml:"backoff,omitempty"`    // e.g. "200ms"
+	MaxBackoff            string `yaml:"maxBackoff,omitempty"` // e.g. "2s"
+	RateLimit             int    `yaml:"rateLimit,omitempty"`  // requests/sec
+	RateBurst             int    `yaml:"rateBurst,omitempty"`
+	UserAgent             string `yaml:"userAgent,omitempty"`
 }
 
 // EPGConfig holds EPG configuration
@@ -169,6 +185,16 @@ type AppConfig struct {
 	// Enigma2 Config (Phase 8-3)
 	E2Host        string
 	E2TuneTimeout time.Duration
+	E2Username    string
+	E2Password    string
+	E2Timeout     time.Duration
+	E2RespTimeout time.Duration
+	E2Retries     int
+	E2Backoff     time.Duration
+	E2MaxBackoff  time.Duration
+	E2RateLimit   int
+	E2RateBurst   int
+	E2UserAgent   string
 
 	// FFmpeg Config (Phase 8-4)
 	FFmpegBin         string
@@ -257,6 +283,17 @@ func (l *Loader) setDefaults(cfg *AppConfig) {
 	cfg.LogLevel = "info"
 	cfg.ConfigVersion = DefaultConfigVersion
 	cfg.ConfigStrict = false
+
+	// Enigma2 (v3) defaults
+	cfg.E2TuneTimeout = 10 * time.Second
+	cfg.E2Timeout = 10 * time.Second
+	cfg.E2RespTimeout = 10 * time.Second
+	cfg.E2Retries = 2
+	cfg.E2Backoff = 200 * time.Millisecond
+	cfg.E2MaxBackoff = 2 * time.Second
+	cfg.E2RateLimit = 10
+	cfg.E2RateBurst = 20
+	cfg.E2UserAgent = "xg2g-v3"
 
 	// EPG defaults - enabled by default for complete out-of-the-box experience
 	cfg.EPGEnabled = true
@@ -476,6 +513,57 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 		dst.PiconBase = expandEnv(src.Picons.BaseURL)
 	}
 
+	// Enigma2 (v3)
+	if src.Enigma2.BaseURL != "" {
+		dst.E2Host = expandEnv(src.Enigma2.BaseURL)
+	}
+	if src.Enigma2.Username != "" {
+		dst.E2Username = expandEnv(src.Enigma2.Username)
+	}
+	if src.Enigma2.Password != "" {
+		dst.E2Password = expandEnv(src.Enigma2.Password)
+	}
+	if src.Enigma2.Timeout != "" {
+		d, err := time.ParseDuration(src.Enigma2.Timeout)
+		if err != nil {
+			return fmt.Errorf("invalid enigma2.timeout: %w", err)
+		}
+		dst.E2Timeout = d
+	}
+	if src.Enigma2.ResponseHeaderTimeout != "" {
+		d, err := time.ParseDuration(src.Enigma2.ResponseHeaderTimeout)
+		if err != nil {
+			return fmt.Errorf("invalid enigma2.responseHeaderTimeout: %w", err)
+		}
+		dst.E2RespTimeout = d
+	}
+	if src.Enigma2.Backoff != "" {
+		d, err := time.ParseDuration(src.Enigma2.Backoff)
+		if err != nil {
+			return fmt.Errorf("invalid enigma2.backoff: %w", err)
+		}
+		dst.E2Backoff = d
+	}
+	if src.Enigma2.MaxBackoff != "" {
+		d, err := time.ParseDuration(src.Enigma2.MaxBackoff)
+		if err != nil {
+			return fmt.Errorf("invalid enigma2.maxBackoff: %w", err)
+		}
+		dst.E2MaxBackoff = d
+	}
+	if src.Enigma2.Retries > 0 {
+		dst.E2Retries = src.Enigma2.Retries
+	}
+	if src.Enigma2.RateLimit > 0 {
+		dst.E2RateLimit = src.Enigma2.RateLimit
+	}
+	if src.Enigma2.RateBurst > 0 {
+		dst.E2RateBurst = src.Enigma2.RateBurst
+	}
+	if src.Enigma2.UserAgent != "" {
+		dst.E2UserAgent = src.Enigma2.UserAgent
+	}
+
 	// HDHomeRun
 	if src.HDHR.Enabled != nil {
 		dst.HDHR.Enabled = src.HDHR.Enabled
@@ -609,19 +697,35 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 		cfg.TunerSlots = []int{0}
 	}
 
-	// Smart defaulting: If XG2G_V3_E2_HOST is not set, inherit from XG2G_OWI_BASE
+	// Smart defaulting: If XG2G_V3_E2_HOST is not set, inherit from config or OWI_BASE
 	// This prevents Docker networking issues where "localhost" doesn't work
 	e2Host := ParseString("XG2G_V3_E2_HOST", "")
 	if e2Host == "" {
-		// Fall back to OWI_BASE if available, otherwise use localhost
-		if cfg.OWIBase != "" {
+		if cfg.E2Host != "" {
+			e2Host = cfg.E2Host
+		} else if cfg.OWIBase != "" {
 			e2Host = cfg.OWIBase
 		} else {
 			e2Host = "http://localhost"
 		}
 	}
 	cfg.E2Host = e2Host
-	cfg.E2TuneTimeout = ParseDuration("XG2G_V3_TUNE_TIMEOUT", 10*time.Second)
+	cfg.E2TuneTimeout = ParseDuration("XG2G_V3_TUNE_TIMEOUT", cfg.E2TuneTimeout)
+	cfg.E2Timeout = ParseDuration("XG2G_V3_E2_TIMEOUT", cfg.E2Timeout)
+	cfg.E2RespTimeout = ParseDuration("XG2G_V3_E2_RESPONSE_HEADER_TIMEOUT", cfg.E2RespTimeout)
+	cfg.E2Retries = ParseInt("XG2G_V3_E2_RETRIES", cfg.E2Retries)
+	cfg.E2Backoff = ParseDuration("XG2G_V3_E2_BACKOFF", cfg.E2Backoff)
+	cfg.E2MaxBackoff = ParseDuration("XG2G_V3_E2_MAX_BACKOFF", cfg.E2MaxBackoff)
+	cfg.E2RateLimit = ParseInt("XG2G_V3_E2_RATE_LIMIT", cfg.E2RateLimit)
+	cfg.E2RateBurst = ParseInt("XG2G_V3_E2_RATE_BURST", cfg.E2RateBurst)
+	cfg.E2UserAgent = ParseString("XG2G_V3_E2_USER_AGENT", cfg.E2UserAgent)
+
+	if v := ParseString("XG2G_V3_E2_USER", ""); v != "" {
+		cfg.E2Username = v
+	}
+	if v := ParseString("XG2G_V3_E2_PASS", ""); v != "" {
+		cfg.E2Password = v
+	}
 
 	cfg.FFmpegBin = ParseString("XG2G_V3_FFMPEG_BIN", "ffmpeg")
 	cfg.FFmpegKillTimeout = ParseDuration("XG2G_V3_FFMPEG_KILL_TIMEOUT", 5*time.Second)

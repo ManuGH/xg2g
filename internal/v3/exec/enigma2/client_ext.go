@@ -22,19 +22,14 @@ func (c *Client) ResolveStreamURL(ctx context.Context, sref string) (string, err
 	u.Path = "/web/stream.m3u"
 	u.RawQuery = params.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
+	resp, err := c.doGet(ctx, "resolve_stream", u.String())
 	if err != nil {
-		return "", err
-	}
-
-	resp, err := c.HTTPClient.Do(req)
-	if err != nil {
-		return "", err
+		return "", fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("stream api returned status %d", resp.StatusCode)
+		return "", fmt.Errorf("%w: stream api returned status %d", ErrUpstreamUnavailable, resp.StatusCode)
 	}
 
 	// Parse M3U line by line to find the stream URL

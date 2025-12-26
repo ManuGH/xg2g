@@ -46,6 +46,30 @@ openWebIF:
   useWebIFStreams: true
 
 # ------------------------------------------------------------------------------
+# Enigma2 (v3 Worker) Client Configuration [OPTIONAL]
+# ------------------------------------------------------------------------------
+enigma2:
+  # Base URL for v3 worker (defaults to openWebIF.baseUrl if empty)
+  # baseUrl: "http://127.0.0.1"
+
+  # Optional: HTTP Basic Auth (if required by OpenWebIF)
+  # username: "root"
+  # password: "password"
+
+  # Request settings
+  # timeout: "10s"
+  # responseHeaderTimeout: "10s"
+  # retries: 2
+  # backoff: "200ms"
+  # maxBackoff: "2s"
+
+  # Rate limiting (requests/sec)
+  # rateLimit: 10
+  # rateBurst: 20
+
+  # userAgent: "xg2g-v3"
+
+# ------------------------------------------------------------------------------
 # Bouquets (Channel Lists)
 # ------------------------------------------------------------------------------
 # List of bouquets to include. Case-sensitive matching.
@@ -210,7 +234,7 @@ picons:
 # Picons:
 #   XG2G_PICON_BASE              - Base URL for channel logos
 #
-# v3 (experimental/preview; /api/v3/*; env-only):
+# v3 (/api/v3/*; env-first, enigma2 also configurable via config.yaml):
 #   XG2G_V3_WORKER_ENABLED       - Enable v3 worker/store
 #   XG2G_V3_WORKER_MODE          - Worker mode (standard or virtual)
 #   XG2G_CONFIG_VERSION          - Config schema version for v3 strict validation
@@ -220,6 +244,17 @@ picons:
 #   XG2G_V3_HLS_ROOT             - HLS output root for v3 sessions
 #   XG2G_V3_SHADOW_INTENTS       - Enable shadow intents from v2 proxy
 #   XG2G_V3_SHADOW_TARGET        - Shadow intents target URL
+#   XG2G_V3_E2_HOST              - Enigma2 receiver base URL (defaults to XG2G_OWI_BASE)
+#   XG2G_V3_E2_USER              - Enigma2 username (v3)
+#   XG2G_V3_E2_PASS              - Enigma2 password (v3)
+#   XG2G_V3_E2_TIMEOUT           - Enigma2 HTTP timeout (e.g., 10s)
+#   XG2G_V3_E2_RESPONSE_HEADER_TIMEOUT - Enigma2 response header timeout (e.g., 10s)
+#   XG2G_V3_E2_RETRIES           - Enigma2 retry attempts
+#   XG2G_V3_E2_BACKOFF           - Enigma2 retry backoff (e.g., 200ms)
+#   XG2G_V3_E2_MAX_BACKOFF       - Enigma2 max backoff (e.g., 2s)
+#   XG2G_V3_E2_RATE_LIMIT        - Enigma2 rate limit (req/sec)
+#   XG2G_V3_E2_RATE_BURST        - Enigma2 burst capacity
+#   XG2G_V3_E2_USER_AGENT        - Enigma2 User-Agent
 #
 # ==============================================================================
 # Usage Examples

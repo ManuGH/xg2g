@@ -89,6 +89,16 @@ The following environment variables control V3 behavior:
 | `XG2G_V3_STORE_PATH` | `/var/lib/xg2g/v3-store` | Path to BoltDB file (Recommended: `/data/v3-store` for Docker) |
 | `XG2G_V3_HLS_ROOT` | `/var/lib/xg2g/v3-hls` | Root for HLS segments (Recommended: `/data/v3-hls` for Docker) |
 | `XG2G_V3_E2_HOST` | (inherits from `XG2G_OWI_BASE`) | Enigma2 Receiver URL for Worker (auto-inherits if not set) |
+| `XG2G_V3_E2_USER` | - | Enigma2 username for v3 worker |
+| `XG2G_V3_E2_PASS` | - | Enigma2 password for v3 worker |
+| `XG2G_V3_E2_TIMEOUT` | `10s` | Enigma2 HTTP request timeout |
+| `XG2G_V3_E2_RESPONSE_HEADER_TIMEOUT` | `10s` | Enigma2 response header timeout |
+| `XG2G_V3_E2_RETRIES` | `2` | Enigma2 request retries |
+| `XG2G_V3_E2_BACKOFF` | `200ms` | Enigma2 retry backoff |
+| `XG2G_V3_E2_MAX_BACKOFF` | `2s` | Enigma2 max retry backoff |
+| `XG2G_V3_E2_RATE_LIMIT` | `10` | Enigma2 request rate limit (req/sec) |
+| `XG2G_V3_E2_RATE_BURST` | `20` | Enigma2 request burst capacity |
+| `XG2G_V3_E2_USER_AGENT` | `xg2g-v3` | Enigma2 User-Agent |
 | `XG2G_CONFIG_VERSION` | `3.0.0` | Config schema version for v3 strict validation |
 | `XG2G_V3_CONFIG_STRICT` | `true` | Enforce strict v3 config validation (override for migration) |
 

@@ -70,6 +70,31 @@ func Validate(cfg AppConfig) error {
 		if cfg.V3IdleTimeout < 0 {
 			v.AddError("V3IdleTimeout", "must be >= 0", cfg.V3IdleTimeout)
 		}
+		if cfg.E2TuneTimeout < 0 {
+			v.AddError("E2TuneTimeout", "must be >= 0", cfg.E2TuneTimeout)
+		}
+		if cfg.E2Timeout < 0 {
+			v.AddError("E2Timeout", "must be >= 0", cfg.E2Timeout)
+		}
+		if cfg.E2RespTimeout < 0 {
+			v.AddError("E2RespTimeout", "must be >= 0", cfg.E2RespTimeout)
+		}
+		v.Range("E2Retries", cfg.E2Retries, 0, 10)
+		if cfg.E2Backoff < 0 {
+			v.AddError("E2Backoff", "must be >= 0", cfg.E2Backoff)
+		}
+		if cfg.E2MaxBackoff < 0 {
+			v.AddError("E2MaxBackoff", "must be >= 0", cfg.E2MaxBackoff)
+		}
+		if cfg.E2Backoff > 0 && cfg.E2MaxBackoff > 0 && cfg.E2Backoff > cfg.E2MaxBackoff {
+			v.AddError("E2MaxBackoff", "must be >= E2Backoff", cfg.E2MaxBackoff)
+		}
+		if cfg.E2RateLimit < 0 {
+			v.AddError("E2RateLimit", "must be >= 0", cfg.E2RateLimit)
+		}
+		if cfg.E2RateBurst < 0 {
+			v.AddError("E2RateBurst", "must be >= 0", cfg.E2RateBurst)
+		}
 
 		if cfg.ConfigStrict {
 			if strings.TrimSpace(cfg.ConfigVersion) == "" {

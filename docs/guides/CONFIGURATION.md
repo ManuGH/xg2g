@@ -57,6 +57,12 @@ configVersion: "3.0.0" # required when XG2G_V3_CONFIG_STRICT=true
 openWebIF:
   baseUrl: "http://192.168.1.50"
   streamPort: 8001
+enigma2:
+  # Optional v3 worker overrides (defaults to openWebIF.baseUrl)
+  # baseUrl: "http://192.168.1.50"
+  # username: "root"
+  # password: "password"
+  # timeout: "10s"
 epg:
   enabled: true
   days: 7
@@ -189,7 +195,7 @@ api:
 
 ## v3 Configuration
 
-The v3 streaming backend is the **production streaming system** (enabled by default). It is configured via **environment variables only** (no `config.yaml` support yet).
+The v3 streaming backend is the **production streaming system** (enabled by default). Most settings are configured via **environment variables**. The `enigma2` block in `config.yaml` can be used to tune the v3 Enigma2 client (timeouts, retries, rate limits, auth).
 
 | ENV Variable | Default | Purpose |
 | :--- | :--- | :--- |
@@ -199,6 +205,16 @@ The v3 streaming backend is the **production streaming system** (enabled by defa
 | `XG2G_V3_STORE_PATH` | `/var/lib/xg2g/v3-store` | Store path for bolt backend |
 | `XG2G_V3_HLS_ROOT` | `/var/lib/xg2g/v3-hls` | HLS output root for v3 sessions |
 | `XG2G_V3_E2_HOST` | (inherits from `XG2G_OWI_BASE`) | Enigma2 Receiver URL for V3 worker (auto-inherits if not set) |
+| `XG2G_V3_E2_USER` | - | Enigma2 username for v3 worker |
+| `XG2G_V3_E2_PASS` | - | Enigma2 password for v3 worker |
+| `XG2G_V3_E2_TIMEOUT` | `10s` | Enigma2 HTTP request timeout |
+| `XG2G_V3_E2_RESPONSE_HEADER_TIMEOUT` | `10s` | Enigma2 response header timeout |
+| `XG2G_V3_E2_RETRIES` | `2` | Enigma2 request retries |
+| `XG2G_V3_E2_BACKOFF` | `200ms` | Enigma2 retry backoff |
+| `XG2G_V3_E2_MAX_BACKOFF` | `2s` | Enigma2 max retry backoff |
+| `XG2G_V3_E2_RATE_LIMIT` | `10` | Enigma2 request rate limit (req/sec) |
+| `XG2G_V3_E2_RATE_BURST` | `20` | Enigma2 request burst capacity |
+| `XG2G_V3_E2_USER_AGENT` | `xg2g-v3` | Enigma2 User-Agent |
 | `XG2G_V3_TUNER_SLOTS` | (auto) | Tuner slots to use (JSON array, e.g., `[0,1]`) |
 | `XG2G_V3_FFMPEG_BIN` | `ffmpeg` | Path to ffmpeg binary |
 | `XG2G_CONFIG_VERSION` | `3.0.0` | Config schema version for v3 strict validation |

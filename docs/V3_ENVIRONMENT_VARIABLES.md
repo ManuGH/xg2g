@@ -66,6 +66,68 @@ This document lists all environment variables for the xg2g V3 Worker/Control Pla
 - **Description:** Maximum time to wait for tuner to lock signal
 - **Example:** `XG2G_V3_TUNE_TIMEOUT=15s`
 
+## Enigma2 Client Tuning
+
+### `XG2G_V3_E2_USER`
+- **Type:** String
+- **Default:** Empty
+- **Description:** Enigma2 Basic Auth username for v3 worker requests
+- **Example:** `XG2G_V3_E2_USER=root`
+
+### `XG2G_V3_E2_PASS`
+- **Type:** String
+- **Default:** Empty
+- **Description:** Enigma2 Basic Auth password for v3 worker requests
+- **Example:** `XG2G_V3_E2_PASS=secret`
+
+### `XG2G_V3_E2_TIMEOUT`
+- **Type:** Duration
+- **Default:** `10s`
+- **Description:** Enigma2 HTTP request timeout
+- **Example:** `XG2G_V3_E2_TIMEOUT=8s`
+
+### `XG2G_V3_E2_RESPONSE_HEADER_TIMEOUT`
+- **Type:** Duration
+- **Default:** `10s`
+- **Description:** Time to wait for response headers from the receiver
+- **Example:** `XG2G_V3_E2_RESPONSE_HEADER_TIMEOUT=8s`
+
+### `XG2G_V3_E2_RETRIES`
+- **Type:** Integer
+- **Default:** `2`
+- **Description:** Max retry attempts for Enigma2 requests
+- **Example:** `XG2G_V3_E2_RETRIES=3`
+
+### `XG2G_V3_E2_BACKOFF`
+- **Type:** Duration
+- **Default:** `200ms`
+- **Description:** Initial backoff delay between retries
+- **Example:** `XG2G_V3_E2_BACKOFF=300ms`
+
+### `XG2G_V3_E2_MAX_BACKOFF`
+- **Type:** Duration
+- **Default:** `2s`
+- **Description:** Maximum backoff delay between retries
+- **Example:** `XG2G_V3_E2_MAX_BACKOFF=5s`
+
+### `XG2G_V3_E2_RATE_LIMIT`
+- **Type:** Integer
+- **Default:** `10`
+- **Description:** Rate limit (requests per second) toward the receiver
+- **Example:** `XG2G_V3_E2_RATE_LIMIT=5`
+
+### `XG2G_V3_E2_RATE_BURST`
+- **Type:** Integer
+- **Default:** `20`
+- **Description:** Burst capacity for receiver requests
+- **Example:** `XG2G_V3_E2_RATE_BURST=10`
+
+### `XG2G_V3_E2_USER_AGENT`
+- **Type:** String
+- **Default:** `xg2g-v3`
+- **Description:** User-Agent string for Enigma2 requests
+- **Example:** `XG2G_V3_E2_USER_AGENT=xg2g-v3`
+
 ## FFmpeg Configuration
 
 ### `XG2G_V3_FFMPEG_BIN`
