@@ -1,6 +1,7 @@
 // Type definitions for V3 Player component
 
 import type Hls from 'hls.js';
+import type { Service } from '../client-ts';
 
 export type PlayerStatus = 'idle' | 'starting' | 'buffering' | 'playing' | 'error' | 'stopped';
 
@@ -11,12 +12,24 @@ export interface Channel {
   [key: string]: unknown;
 }
 
-export interface V3PlayerProps {
-  token: string;
-  channel: Channel | null;
+export interface V3PlayerBaseProps {
+  token?: string;
   autoStart?: boolean;
   onClose?: () => void;
 }
+
+export interface V3PlayerLiveProps extends V3PlayerBaseProps {
+  channel: Service;
+  src?: never;
+}
+
+export interface V3PlayerDirectProps extends V3PlayerBaseProps {
+  src: string;
+  channel?: never;
+}
+
+export type V3PlayerProps = V3PlayerLiveProps | V3PlayerDirectProps;
+
 
 export interface SessionCookieState {
   token: string | null;

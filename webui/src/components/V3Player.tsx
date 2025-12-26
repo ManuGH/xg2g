@@ -13,7 +13,11 @@ import type {
   VideoElementRef
 } from '../types/v3-player';
 
-function V3Player({ token, channel, autoStart, onClose }: V3PlayerProps) {
+function V3Player(props: V3PlayerProps) {
+  const { token, autoStart, onClose } = props;
+  const channel = props.channel;
+  const src = props.src;
+
   const [sRef, setSRef] = useState<string>(
     channel?.service_ref || channel?.id || '1:0:19:283D:3FB:1:C00000:0:0:0:'
   );
@@ -39,6 +43,14 @@ function V3Player({ token, channel, autoStart, onClose }: V3PlayerProps) {
       if (ref) setSRef(ref);
     }
   }, [channel]);
+
+  // Direct Mode Effect
+  useEffect(() => {
+    if (src && autoStart && !mounted.current) {
+      mounted.current = true;
+      startStream();
+    }
+  }, [src, autoStart]);
 
   useEffect(() => {
     sessionIdRef.current = sessionId;
@@ -73,14 +85,15 @@ function V3Player({ token, channel, autoStart, onClose }: V3PlayerProps) {
     return pending;
   }, [token]);
 
-  // Auto-start logic
+  // Auto-start logic (Live Mode Only)
   useEffect(() => {
-    if (autoStart && sRef && !mounted.current) {
+    if (autoStart && sRef && !mounted.current && !src) {
       mounted.current = true;
       startStream(sRef);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoStart, sRef]);
+  }, [autoStart, sRef, src]);
+
 
   const sendStopIntent = useCallback(async (idToStop: string | null): Promise<void> => {
     if (!idToStop || stopSentRef.current === idToStop) return;
@@ -103,6 +116,13 @@ function V3Player({ token, channel, autoStart, onClose }: V3PlayerProps) {
   }, [apiBase, token]);
 
   const startStream = async (refToUse?: string): Promise<void> => {
+    // Direct Mode: Bypass Session Logic
+    if (src) {
+      setStatus('buffering');
+      playHls(src);
+      return;
+    }
+
     const ref = refToUse || sRef;
     let newSessionId: string | null = null;
     setStatus('starting');
@@ -148,6 +168,7 @@ function V3Player({ token, channel, autoStart, onClose }: V3PlayerProps) {
       setStatus('error');
     }
   };
+
 
   const waitForPlaylistReady = async (sessionId: string, maxAttempts = 120): Promise<void> => {
     const playlistUrl = `${apiBase}/sessions/${sessionId}/hls/index.m3u8`;
@@ -256,11 +277,15 @@ function V3Player({ token, channel, autoStart, onClose }: V3PlayerProps) {
       videoRef.current.pause();
       videoRef.current.src = '';
     }
-    await sendStopIntent(sessionId);
-    setSessionId(null);
+    // Only send stop intent if we have a session (Live Mode)
+    if (sessionId) {
+      await sendStopIntent(sessionId);
+      setSessionId(null);
+    }
     setStatus('idle');
     if (onClose) onClose();
   };
+
 
   useEffect(() => {
     const videoEl = videoRef.current;

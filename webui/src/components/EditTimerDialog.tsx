@@ -2,35 +2,52 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
-import React, { useState, useEffect, useRef } from 'react';
-import { TimersService, DvrService } from '../client-ts';
+import { useState, useEffect, useRef } from 'react';
+import {
+  updateTimer,
+  previewConflicts,
+  type Timer,
+  type DvrCapabilities,
+  type TimerConflictPreviewResponse,
+  type TimerCreateRequest
+} from '../client-ts';
 import './EditTimerDialog.css';
 
-export default function EditTimerDialog({ timer, onClose, onSave, capabilities }) {
-  const [formData, setFormData] = useState({
+interface EditTimerDialogProps {
+  timer: Timer;
+  onClose: () => void;
+  onSave: () => void;
+  capabilities?: DvrCapabilities;
+}
+
+interface FormData {
+  name: string;
+  description: string;
+  begin: number; // Unix timestamp
+  end: number;   // Unix timestamp
+  enabled: boolean;
+}
+
+export default function EditTimerDialog({ timer, onClose, onSave, capabilities }: EditTimerDialogProps) {
+  const [formData, setFormData] = useState<FormData>({
     name: timer.name || '',
     description: timer.description || '',
-    begin: timer.begin,
-    end: timer.end,
+    begin: timer.begin || 0,
+    end: timer.end || 0,
     enabled: timer.state !== 'disabled',
-    // Padding logic: simple absolute times as per API
   });
 
-  const [conflict, setConflict] = useState(null); // { conflicts: [], canSchedule: boolean }
-  const [validating, setValidating] = useState(false);
-  const [error, setError] = useState(null);
-  const [saving, setSaving] = useState(false);
+  const [conflict, setConflict] = useState<TimerConflictPreviewResponse | null>(null);
+  const [validating, setValidating] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState<boolean>(false);
 
-  const abortControllerRef = useRef(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
-  useEffect(() => {
-    // Initial loaded state
-  }, []);
-
-  const handleChange = (field, value) => {
+  const handleChange = (field: keyof FormData, value: any) => {
     setFormData(prev => {
       const next = { ...prev, [field]: value };
-      // Trigger validation if time/padding changes
+      // Trigger validation if time changes
       if (field === 'begin' || field === 'end') {
         debouncedValidate(next);
       }
@@ -38,7 +55,7 @@ export default function EditTimerDialog({ timer, onClose, onSave, capabilities }
     });
   };
 
-  const validationTimeoutRef = useRef(null);
+  const validationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -52,7 +69,7 @@ export default function EditTimerDialog({ timer, onClose, onSave, capabilities }
     };
   }, []);
 
-  const debouncedValidate = (data) => {
+  const debouncedValidate = (data: FormData) => {
     // Cancel pending execution
     if (validationTimeoutRef.current) {
       clearTimeout(validationTimeoutRef.current);
@@ -72,19 +89,29 @@ export default function EditTimerDialog({ timer, onClose, onSave, capabilities }
       setError(null);
 
       try {
-        const proposed = {
+        const proposed: TimerCreateRequest = {
           serviceRef: timer.serviceRef,
           name: data.name,
-          begin: parseInt(data.begin),
-          end: parseInt(data.end),
+          begin: data.begin,
+          end: data.end,
+          // Correctly map optional fields if they exist
+          description: data.description,
+          enabled: data.enabled
         };
 
-        const resp = await previewConflicts({
-          proposed: proposed,
-          mode: 'conservative'
+        const response = await previewConflicts({
+          body: {
+            proposed: proposed,
+            mode: 'conservative'
+          }
         });
 
-        if (!signal.aborted) {
+        // SDK returns the response body directly, so we just use response.data (if axios wrapper)
+        // BUT wait, check if the response object has data. 
+        // Based on user feedback: "resp ist TimerConflictPreviewResponse" implies response.data usage.
+        const resp = response.data; // Ensure we access data property
+
+        if (!signal.aborted && resp) {
           if (!resp.canSchedule || (resp.conflicts && resp.conflicts.length > 0)) {
             setConflict(resp);
           }
@@ -100,19 +127,24 @@ export default function EditTimerDialog({ timer, onClose, onSave, capabilities }
   };
 
   const handleSave = async () => {
+    if (!timer.timerId) return;
+
     setSaving(true);
     setError(null);
     try {
-      await updateTimer({ path: { timerId: timer.timerId }, body: {
-        name: formData.name,
-        description: formData.description,
-        begin: formData.begin,
-        end: formData.end,
-        enabled: formData.enabled
-      } });
+      await updateTimer({
+        path: { timerId: timer.timerId },
+        body: {
+          name: formData.name,
+          description: formData.description,
+          begin: formData.begin,
+          end: formData.end,
+          enabled: formData.enabled
+        }
+      });
       onSave(); // Parent refresh
       onClose();
-    } catch (err) {
+    } catch (err: any) {
       // Map errors
       if (err.status === 409) {
         setError("Timer existiert bereits.");
@@ -129,12 +161,12 @@ export default function EditTimerDialog({ timer, onClose, onSave, capabilities }
   };
 
   // Helper to parse local datetime input to unix
-  const toUnix = (str) => Math.floor(new Date(str).getTime() / 1000);
-  const toLocal = (unix) => {
+  const toUnix = (str: string) => Math.floor(new Date(str).getTime() / 1000);
+  const toLocal = (unix: number) => {
     if (!unix) return '';
     const d = new Date(unix * 1000);
-    const pad = (n) => n.toString().padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return `${d.getFullYear()} -${pad(d.getMonth() + 1)} -${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())} `;
   };
 
   // Capabilities Check
@@ -214,9 +246,9 @@ export default function EditTimerDialog({ timer, onClose, onSave, capabilities }
             <div className="conflict-alert">
               <p className="conflict-title">Konflikt gefunden:</p>
               <ul className="conflict-list">
-                {conflict.conflicts.map((c, i) => (
+                {conflict.conflicts?.map((c, i) => (
                   <li key={i}>
-                    {c.blockingTimer.name} ({Math.round(c.overlapSeconds / 60)} min Überschneidung)
+                    {c.blockingTimer?.name} ({Math.round((c.overlapSeconds || 0) / 60)} min Überschneidung)
                   </li>
                 ))}
               </ul>
@@ -235,7 +267,7 @@ export default function EditTimerDialog({ timer, onClose, onSave, capabilities }
           </button>
           <button
             onClick={handleSave}
-            disabled={!canEdit || saving || (conflict && conflict.conflicts.length > 0)}
+            disabled={!canEdit || saving || (conflict !== null && (conflict.conflicts?.length || 0) > 0)}
             className="timer-btn btn-save"
           >
             {saving ? 'Saving...' : 'Save'}

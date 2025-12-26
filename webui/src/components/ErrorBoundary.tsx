@@ -2,26 +2,36 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
-import React from 'react';
+import React, { type ReactNode, type ErrorInfo } from 'react';
 
-class ErrorBoundary extends React.Component {
-  constructor(props) {
+interface ErrorBoundaryProps {
+  children: ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+  errorInfo: ErrorInfo | null;
+}
+
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false, error: null, errorInfo: null };
   }
 
-  static getDerivedStateFromError(error) {
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     // Update state so the next render will show the fallback UI.
-    return { hasError: true, error };
+    return { hasError: true, error, errorInfo: null };
   }
 
-  componentDidCatch(error, errorInfo) {
+  componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
     // You can also log the error to an error reporting service
     console.error("Uncaught error:", error, errorInfo);
     this.setState({ errorInfo });
   }
 
-  render() {
+  render(): ReactNode {
     if (this.state.hasError) {
       // You can render any custom fallback UI
       return (

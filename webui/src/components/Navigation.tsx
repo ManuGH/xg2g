@@ -4,6 +4,7 @@
 
 import React from 'react';
 import './Navigation.css';
+import { type AppView } from '../types/app-context';
 
 // Simple SVG Icons
 const Icons = {
@@ -39,12 +40,23 @@ const Icons = {
   )
 };
 
-export default function Navigation({ activeView, onViewChange }) {
-  const tabs = [
+interface NavigationProps {
+  activeView: AppView;
+  onViewChange: (view: AppView) => void;
+}
+
+interface Tab {
+  id: AppView;
+  label: string;
+  icon: React.ComponentType;
+}
+
+export default function Navigation({ activeView, onViewChange }: NavigationProps) {
+  const tabs: Tab[] = [
     { id: 'dashboard', label: 'Dashboard', icon: Icons.Dashboard },
     { id: 'epg', label: 'TV/EPG', icon: Icons.EPG },
     { id: 'recordings', label: 'Aufnahmen', icon: Icons.Files }, // Using Files icon for now
-    { id: 'timers', label: 'Timers', icon: Icons.Dashboard }, // Reusing Dashboard icon for now or add new Clock one
+    { id: 'timers', label: 'Timers', icon: Icons.Dashboard }, // Reusing Dashboard icon for now
     { id: 'series', label: 'Series', icon: Icons.Series },
     { id: 'files', label: 'Files', icon: Icons.Files },
     { id: 'logs', label: 'Logs', icon: Icons.Logs },

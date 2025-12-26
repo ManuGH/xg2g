@@ -134,7 +134,7 @@ export default function Timers() {
       {editingTimer && (
         <EditTimerDialog
           timer={editingTimer}
-          capabilities={capabilities}
+          capabilities={capabilities || undefined}
           onClose={() => setEditingTimer(null)}
           onSave={fetchTimers}
         />

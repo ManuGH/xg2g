@@ -2,24 +2,39 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
-import { useState, useEffect } from 'react';
-import { getSystemConfig, putSystemConfig } from '../client-ts';
+import { useState, useEffect, FormEvent } from 'react';
+import { getSystemConfig, putSystemConfig, type AppConfig, type ConfigUpdate } from '../client-ts';
 import './Config.css';
 
+interface ValidationResponse {
+  valid: boolean;
+  message?: string;
+  version?: {
+    info?: {
+      brand?: string;
+      model?: string;
+    };
+  };
+  bouquets?: string[];
+  [key: string]: any;
+}
+
+type ConnectionStatus = 'untested' | 'valid' | 'invalid';
+
 function Config() {
-  const [config, setConfig] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
-  const [successMsg, setSuccessMsg] = useState('');
+  const [config, setConfig] = useState<AppConfig | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [saving, setSaving] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string>('');
 
   // New: Restarting State
-  const [restarting, setRestarting] = useState(false);
+  const [restarting, setRestarting] = useState<boolean>(false);
 
   // Smart Wizard State
-  const [validating, setValidating] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState('untested'); // untested, valid, invalid
-  const [validationResult, setValidationResult] = useState(null); // { version, bouquets }
+  const [validating, setValidating] = useState<boolean>(false);
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('untested');
+  const [validationResult, setValidationResult] = useState<ValidationResponse | null>(null);
 
   useEffect(() => {
     loadConfig();
@@ -28,24 +43,30 @@ function Config() {
   const loadConfig = async () => {
     try {
       setLoading(true);
-      const data = await getSystemConfig();
-      const normalized = {
-        ...data,
-        bouquets: Array.isArray(data.bouquets) ? data.bouquets : []
-      };
-      setConfig(normalized);
-      setError(null);
-      // Reset validation state on load
-      setConnectionStatus('untested');
-      setValidationResult(null);
-    } catch (err) {
-      console.error('Failed to load config:', err);
-      if (err.status === 401) {
-        window.dispatchEvent(new Event('auth-required'));
-        setError('Authentication required. Please enter your API token.');
-      } else {
-        setError('Failed to load configuration. Please ensure the backend is running.');
+      const result = await getSystemConfig();
+      if (result.data) {
+        const data = result.data;
+        const normalized: AppConfig = {
+          ...data,
+          bouquets: Array.isArray(data.bouquets) ? data.bouquets : []
+        };
+        setConfig(normalized);
+        setError(null);
+        // Reset validation state on load
+        setConnectionStatus('untested');
+        setValidationResult(null);
+      } else if (result.error) {
+        // @ts-ignore - 'status' might not be on generic error, but likely is
+        if (result.response?.status === 401) {
+          window.dispatchEvent(new Event('auth-required'));
+          setError('Authentication required. Please enter your API token.');
+        } else {
+          setError('Failed to load configuration. Please ensure the backend is running.');
+        }
       }
+    } catch (err: any) {
+      console.error('Failed to load config:', err);
+      setError('Failed to load configuration. Please ensure the backend is running.');
     } finally {
       setLoading(false);
     }
@@ -65,14 +86,21 @@ function Config() {
     }, 1000);
   };
 
-  const handleChange = (section, field, value) => {
-    setConfig(prev => ({
-      ...prev,
-      [section]: {
-        ...prev[section],
-        [field]: value
-      }
-    }));
+  const handleChange = (section: keyof AppConfig, field: string, value: any) => {
+    if (!config) return;
+
+    setConfig(prev => {
+      if (!prev) return null;
+      const sectionData = (prev[section] as any) || {};
+      return {
+        ...prev,
+        [section]: {
+          ...sectionData,
+          [field]: value
+        }
+      };
+    });
+
     // Invalidate connection status when URL/Auth changes
     if (section === 'openWebIF' && (field === 'baseUrl' || field === 'username' || field === 'password')) {
       setConnectionStatus('untested');
@@ -80,6 +108,7 @@ function Config() {
   };
 
   const validateConnection = async () => {
+    if (!config) return;
     setValidating(true);
     setError(null);
     setSuccessMsg('');
@@ -120,20 +149,22 @@ function Config() {
     }
   };
 
-  const toggleBouquet = (bouquet) => {
+  const toggleBouquet = (bouquet: string) => {
+    if (!config) return;
     const current = config.bouquets || [];
     const exists = current.includes(bouquet);
-    let updated;
+    let updated: string[];
     if (exists) {
       updated = current.filter(b => b !== bouquet);
     } else {
       updated = [...current, bouquet];
     }
-    setConfig(prev => ({ ...prev, bouquets: updated }));
+    setConfig(prev => prev ? ({ ...prev, bouquets: updated }) : null);
   };
 
-  const handleSave = async (e) => {
+  const handleSave = async (e: FormEvent) => {
     e.preventDefault();
+    if (!config) return;
 
     if (connectionStatus !== 'valid') {
       setError("Please validate the connection before saving.");
@@ -146,7 +177,7 @@ function Config() {
 
     try {
       // Smart Defaults for missing advanced fields
-      const payload = {
+      const payload: ConfigUpdate = {
         openWebIF: {
           ...config.openWebIF,
           streamPort: config.openWebIF?.streamPort || 8001 // Default to 8001 if missing
@@ -154,8 +185,8 @@ function Config() {
         bouquets: config.bouquets,
         epg: {
           enabled: config.epg?.enabled || false,
-          days: 3, // Hardcoded default
-          source: 'bouquet' // Hardcoded default optimization
+          days: 3,
+          source: 'bouquet' as const
         },
         // picons: Omitted (backend handles default)
         featureFlags: config.featureFlags
@@ -163,14 +194,18 @@ function Config() {
 
       const result = await putSystemConfig({ body: payload });
 
-      if (result.restart_required) {
-        setSuccessMsg('Configuration saved. Restarting application...');
-        setRestarting(true);
-        checkHealthAndReload();
+      if (result.data) {
+        if (result.data.restart_required) {
+          setSuccessMsg('Configuration saved. Restarting application...');
+          setRestarting(true);
+          checkHealthAndReload();
+        } else {
+          setSuccessMsg('Configuration saved successfully.');
+          // Reload to ensure we have the latest state
+          await loadConfig();
+        }
       } else {
-        setSuccessMsg('Configuration saved successfully.');
-        // Reload to ensure we have the latest state
-        await loadConfig();
+        setError('Failed to save configuration.');
       }
 
     } catch (err) {

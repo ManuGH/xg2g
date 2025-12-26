@@ -3,26 +3,37 @@
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
 import { useEffect, useState } from 'react';
-import { getSystemHealth, postSystemRefresh } from '../client-ts';
+import { getSystemHealth, postSystemRefresh, type SystemHealth } from '../client-ts';
 import './Files.css';
 
 function Files() {
-  const [health, setHealth] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [regenerating, setRegenerating] = useState(false);
-  const [error, setError] = useState(null);
+  const [health, setHealth] = useState<SystemHealth | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [regenerating, setRegenerating] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchStatus = async () => {
     setLoading(true);
     try {
-      const data = await getSystemHealth();
-      setHealth(data);
-    } catch (err) {
+      const response = await getSystemHealth();
+      if (response.data) {
+        setHealth(response.data);
+      } else if (response.error) {
+        // @ts-ignore - response.error might be generic, status check is valid runtime
+        if (response.response?.status === 401) {
+          window.dispatchEvent(new Event('auth-required'));
+          setError('Authentication required. Please enter your API token.');
+        } else {
+          // @ts-ignore
+          setError(response.error.message || 'Failed to fetch health');
+        }
+      }
+    } catch (err: any) {
       if (err.status === 401) {
         window.dispatchEvent(new Event('auth-required'));
         setError('Authentication required. Please enter your API token.');
       } else {
-        setError(err.message);
+        setError(err.message || 'Failed to fetch status');
       }
     } finally {
       setLoading(false);
@@ -38,7 +49,7 @@ function Files() {
     try {
       await postSystemRefresh();
       setTimeout(fetchStatus, 1000);
-    } catch (err) {
+    } catch (err: any) {
       if (err.status === 401) {
         window.dispatchEvent(new Event('auth-required'));
         setError('Authentication required. Please enter your API token.');

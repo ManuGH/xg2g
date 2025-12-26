@@ -3,16 +3,70 @@
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
 import { useState, useEffect } from 'react';
-import { getSeriesRules, deleteSeriesRule, createSeriesRule, runSeriesRule, getServices } from '../client-ts';
+import {
+  getSeriesRules,
+  deleteSeriesRule,
+  createSeriesRule,
+  runSeriesRule,
+  getServices,
+  type SeriesRule,
+  type Service,
+  type SeriesRuleWritable
+} from '../client-ts';
 import './SeriesManager.css';
 
+interface DaySelectorProps {
+  value: number[];
+  onChange: (value: number[]) => void;
+}
+
+// Helper component for Day Selection
+const DaySelector = ({ value, onChange }: DaySelectorProps) => {
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const toggleDay = (dayIndex: number) => {
+    const newValue = value.includes(dayIndex)
+      ? value.filter(d => d !== dayIndex)
+      : [...value, dayIndex].sort();
+    onChange(newValue);
+  };
+
+  return (
+    <div className="day-selector">
+      {days.map((d, i) => (
+        <button
+          key={i}
+          className={`day-btn ${value.includes(i) ? 'active' : ''}`}
+          onClick={() => toggleDay(i)}
+          type="button"
+        >
+          {d}
+        </button>
+      ))}
+    </div>
+  );
+};
+
+// Use definition from SDK which is intersection (SeriesRule & SeriesRuleWritable) or separate?
+// Looking at types.gen.ts, SeriesRuleWritable has the editable fields.
+// For the form state, we need a shape that matches what we edit.
+
+interface RuleFormState {
+  id?: string;
+  keyword: string;
+  channel_ref: string;
+  days: number[];
+  start_window: string;
+  priority: number | string; // Handle input string temporarily
+  enabled: boolean;
+}
+
 function SeriesManager() {
-  const [rules, setRules] = useState([]);
-  const [channels, setChannels] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
-  const [currentRule, setCurrentRule] = useState(null);
-  const [reportLoading, setReportLoading] = useState(false);
+  const [rules, setRules] = useState<SeriesRule[]>([]);
+  const [channels, setChannels] = useState<Service[]>([]);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [isEditing, setIsEditing] = useState<boolean>(false);
+  const [currentRule, setCurrentRule] = useState<RuleFormState | null>(null);
+  const [reportLoading, setReportLoading] = useState<string | false>(false);
 
   // Load Initial Data
   useEffect(() => {
@@ -24,6 +78,7 @@ function SeriesManager() {
     setLoading(true);
     try {
       const response = await getSeriesRules();
+      // SDK returns { data: SeriesRule[] }
       setRules(response.data || []);
     } catch (err) {
       console.error('Failed to load rules:', err);
@@ -41,88 +96,117 @@ function SeriesManager() {
     }
   };
 
-  const handleEdit = (rule) => {
-    setCurrentRule(rule ? { ...rule } : {
-      keyword: '',
-      channel_ref: '',
-      days: [],
-      start_window: '',
-      priority: 0,
-      enabled: true
-    });
+  const handleEdit = (rule: SeriesRule | null) => {
+    if (rule) {
+      setCurrentRule({
+        id: rule.id,
+        keyword: rule.keyword || '',
+        channel_ref: rule.channel_ref || '',
+        days: rule.days || [],
+        start_window: rule.start_window || '',
+        priority: rule.priority || 0,
+        enabled: rule.enabled !== false
+      });
+    } else {
+      setCurrentRule({
+        keyword: '',
+        channel_ref: '',
+        days: [],
+        start_window: '',
+        priority: 0,
+        enabled: true
+      });
+    }
     setIsEditing(true);
   };
 
-  const handleDelete = async (id) => {
+  const handleDelete = async (id: string) => {
     if (!window.confirm('Are you sure you want to delete this rule?')) return;
     try {
-      await deleteSeriesRule({ path: { ruleId: id } });
+      // Fix: id/ruleId key name depends on SDK. 
+      // User says: "DeleteSeriesRuleData: path: { id: string }"
+      await deleteSeriesRule({ path: { id } });
       loadRules();
-    } catch (err) {
-      alert('Failed to delete rule: ' + err.message);
+    } catch (err: any) {
+      alert('Failed to delete rule: ' + (err.message || 'Unknown error'));
     }
   };
 
   const handleSave = async () => {
+    if (!currentRule) return;
+
     try {
       if (!currentRule.keyword) {
         alert("Keyword is required");
         return;
       }
 
-      // Prepare payload (ensure types)
-      const payload = {
-        ...currentRule,
+      // Prepare payload (ensure types matches SeriesRuleWritable/CreateSeriesRuleData)
+      const payload: SeriesRuleWritable = {
+        keyword: currentRule.keyword,
+        channel_ref: currentRule.channel_ref,
         days: currentRule.days || [],
-        priority: parseInt(currentRule.priority) || 0
+        start_window: currentRule.start_window,
+        priority: Number(currentRule.priority) || 0,
+        enabled: currentRule.enabled
       };
+
+      // If we are editing, we usually need update, but current code uses create?
+      // Wait, original legacy code: `await createSeriesRule({ body: payload });`
+      // Does create handle upsert with ID? 
+      // SDK says `createSeriesRule`. Is there an `updateSeriesRule`?
+      // In SDK file: `createSeriesRule` is POST /series-rules`.
+      // If editing existing rule, usually we'd expect PUT/PATCH /series-rules/{id} or POST with ID.
+      // Original code just did create.
+      // Let's stick to original behavior but check if ID is used.
+      // If `currentRule.id` exists, maybe we delete and recreate? Or backend handles it?
+      // Original code did NOT use ID in payload for createSeriesRule.
+      // Wait, logic check: Standard REST creates new ID on POST.
+      // If the user was editing, how was it saving? 
+      // Original code: `handleSave` uses `createSeriesRule`.
+      // Maybe series rules implementation replaces based on strict equality? Or maybe edit was broken/limited to Copy-as-New?
+      // For faithful migration, I keep `createSeriesRule`. 
+      // The backend likely treats it as a new rule.
+      // NOTE: `updateSeriesRule` is NOT in the SDK list previously shown.
+      // But `putSystemConfig` exists.
+      // Let's assume Create is the intended action (Add/Clone).
+
+      // Warning: If editing an EXISTING rule, creating a new one creates a DUPLICATE unless the user deleted the old one.
+      // However, strict conversion means keeping logic. 
+      // User did not ask to fix Logic bugs, just TS and SDK usage.
+      // But I should verify sdk.gen.ts again for updateSeriesRule...
+      // Checked sdk.gen.ts in Step 2686: `getSeriesRules`, `createSeriesRule`, `runSeriesRule`, `runAllSeriesRules`, `deleteSeriesRule`.
+      // NO update/edit endpoint for series rules!
+      // So "Editing" effectively creates a new one. The User might want to Delete+Create?
+      // Legacy code didn't delete. 
+      // I will keep behavior: Create new rule.
 
       await createSeriesRule({ body: payload });
       setIsEditing(false);
       loadRules();
-    } catch (err) {
-      alert('Failed to save rule: ' + err.message);
+    } catch (err: any) {
+      alert('Failed to save rule: ' + (err.message || 'Unknown Error'));
     }
   };
 
-  const handleRunNow = async (id) => {
+  const handleRunNow = async (id: string) => {
     setReportLoading(id);
     try {
-      const response = await runSeriesRule({ path: { ruleId: id }, body: { trigger: 'manual' } });
+      // Fix: Params are path + query
+      const response = await runSeriesRule({
+        path: { id },
+        query: { trigger: 'manual' }
+      });
       const report = response.data;
-      alert(`Run Complete!\nMatched: ${report.summary?.epgItemsMatched}\nCreated: ${report.summary?.timersCreated}\nErrors: ${report.summary?.timersErrored}`);
+      if (report) {
+        alert(`Run Complete!\nMatched: ${report.summary?.epgItemsMatched}\nCreated: ${report.summary?.timersCreated}\nErrors: ${report.summary?.timersErrored}`);
+      }
       loadRules();
-    } catch (err) {
-      alert('Run failed: ' + err.message);
+    } catch (err: any) {
+      alert('Run failed: ' + (err.message || 'Unknown Error'));
     } finally {
       setReportLoading(false);
     }
-  };
-
-  // Helper component for Day Selection
-  const DaySelector = ({ value, onChange }) => {
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const toggleDay = (dayIndex) => {
-      const newValue = value.includes(dayIndex)
-        ? value.filter(d => d !== dayIndex)
-        : [...value, dayIndex].sort();
-      onChange(newValue);
-    };
-
-    return (
-      <div className="day-selector">
-        {days.map((d, i) => (
-          <button
-            key={i}
-            className={`day-btn ${value.includes(i) ? 'active' : ''}`}
-            onClick={() => toggleDay(i)}
-            type="button"
-          >
-            {d}
-          </button>
-        ))}
-      </div>
-    );
   };
 
   if (loading && !rules.length) return <div className="loading-state">Loading Rules...</div>;
@@ -149,7 +233,8 @@ function SeriesManager() {
             <div className="rule-meta text-secondary">
               <div className="meta-row">
                 <span className="label">Channel:</span>
-                <span className="value">{rule.channel_ref ? (channels.find(c => c.ref === rule.channel_ref || c.service_ref === rule.channel_ref)?.name || rule.channel_ref) : 'All Channels'}</span>
+                <span className="value">{rule.channel_ref ? (channels.find(c => c.service_ref === rule.channel_ref)?.name || rule.channel_ref) : 'All Channels'}</span>
+
               </div>
               <div className="meta-row">
                 <span className="label">Days:</span>
@@ -181,19 +266,19 @@ function SeriesManager() {
             <div className="rule-actions">
               <button
                 className="btn-secondary"
-                onClick={() => handleRunNow(rule.id)}
+                onClick={() => rule.id && handleRunNow(rule.id)}
                 disabled={reportLoading === rule.id}
               >
                 {reportLoading === rule.id ? 'Running...' : 'Run Now'}
               </button>
               <button className="btn-secondary" onClick={() => handleEdit(rule)}>Edit</button>
-              <button className="btn-danger" onClick={() => handleDelete(rule.id)}>Delete</button>
+              <button className="btn-danger" onClick={() => rule.id && handleDelete(rule.id)}>Delete</button>
             </div>
           </div>
         ))}
       </div>
 
-      {isEditing && (
+      {isEditing && currentRule && (
         <div className="modal-overlay">
           <div className="modal glass">
             <div className="modal-header">
@@ -224,7 +309,8 @@ function SeriesManager() {
                   >
                     <option value="">-- All Channels (Slower) --</option>
                     {channels.map(c => (
-                      <option key={c.ref || c.service_ref} value={c.ref || c.service_ref}>
+                      <option key={c.service_ref} value={c.service_ref}>
+
                         {c.name}
                       </option>
                     ))}
