@@ -479,6 +479,13 @@ func (s *Server) GetStatus() jobs.Status {
 	return s.status
 }
 
+// UpdateStatus updates the server status (thread-safe)
+func (s *Server) UpdateStatus(status jobs.Status) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.status = status
+}
+
 // GetConfig returns the server's current configuration
 func (s *Server) GetConfig() config.AppConfig {
 	s.mu.RLock()

@@ -161,7 +161,6 @@ xg2g/
 ├── webui/              # React frontend (Vite)
 │   ├── src/
 │   └── dist/           # Build output (embedded in Go)
-├── transcoder/         # Rust audio transcoding library
 ├── Dockerfile          # Multi-stage build
 ├── docker-compose.yml  # Deployment config
 └── Makefile            # Build automation
@@ -172,10 +171,9 @@ xg2g/
 ### Full Build Chain
 
 ```
-1. Rust Transcoder → libxg2g_transcoder.so
-2. WebUI (React)   → webui/dist/*
-3. Embed WebUI     → internal/api/dist/*
-4. Go Binary       → bin/xg2g (includes embedded UI + Rust FFI)
+1. WebUI (React)   → webui/dist/*
+2. Embed WebUI     → internal/api/dist/*
+3. Go Binary       → bin/xg2g (includes embedded UI)
 ```
 
 ### Why WebUI Must Be Rebuilt

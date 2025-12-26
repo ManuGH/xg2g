@@ -7,15 +7,19 @@ package api
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
-	"github.com/ManuGH/xg2g/internal/fsutil"
+	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
+
+	"github.com/ManuGH/xg2g/internal/v3/model"
+	"github.com/ManuGH/xg2g/internal/v3/profiles"
 )
 
 // Types are now generated in server_gen.go
@@ -138,10 +142,18 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 	recordingsList := make([]RecordingItem, 0, len(list.Movies))
 	for _, m := range list.Movies {
 		beginTs := int64(m.Begin)
+		desc := m.Description
+		if m.ExtendedDescription != "" {
+			if desc != "" {
+				desc += "\n\n"
+			}
+			desc += m.ExtendedDescription
+		}
+
 		recordingsList = append(recordingsList, RecordingItem{
 			ServiceRef:  strPtr(m.ServiceRef),
 			Title:       strPtr(m.Title),
-			Description: strPtr(m.Description),
+			Description: strPtr(desc),
 			Begin:       int64Ptr(beginTs),
 			Length:      strPtr(m.Length),
 			Filename:    strPtr(m.Filename),
@@ -222,18 +234,109 @@ func (s *Server) GetRecordingStream(w http.ResponseWriter, r *http.Request, reco
 }
 
 // GetRecordingHLSPlaylist handles GET /api/v3/recordings/{recordingId}/playlist.m3u8
-// It acts as a reverse proxy to the internal Stream Proxy (port 18000),
-// injecting the correct upstream URL extracted from the recording ID (service ref).
+// Creates a V3 session for the recording and redirects to the HLS playlist.
+// GetRecordingHLSPlaylist handles GET /api/v3/recordings/{recordingId}/playlist.m3u8
+// Creates a V3 session for the recording and redirects to the HLS playlist.
 func (s *Server) GetRecordingHLSPlaylist(w http.ResponseWriter, r *http.Request, recordingId string) {
-	// Recording stream proxy deprecated
-	http.Error(w, "recording streaming deprecated", http.StatusForbidden)
+	serviceRef := s.decodeRecordingID(recordingId)
+	if serviceRef == "" {
+		http.Error(w, "Invalid recording ID", http.StatusBadRequest)
+		return
+	}
+
+	// 1. Check V3 availability
+	s.mu.RLock()
+	bus := s.v3Bus
+	store := s.v3Store
+	s.mu.RUnlock()
+
+	if bus == nil || store == nil {
+		http.Error(w, "V3 components not initialized", http.StatusServiceUnavailable)
+		return
+	}
+
+	// 2. Determine Receiver Stream URL
+	s.mu.RLock()
+	host := s.cfg.OWIBase
+	streamPort := s.cfg.StreamPort
+	s.mu.RUnlock()
+
+	// Fix scheme if OWIBase has it
+	if strings.Contains(host, "://") {
+		// Parse OWIBase to get host
+		if u, err := url.Parse(host); err == nil {
+			host = u.Hostname()
+		}
+	}
+
+	// We use the resolved stream URL as the 'ServiceRef' in the V3 session
+	streamURL := fmt.Sprintf("http://%s:%d/%s", host, streamPort, serviceRef)
+
+	// 3. Create Session Record
+	// Format: recording-<uuid>
+	sessionID := "rec-" + uuid.New().String()
+
+	// Default to generic High profile for recordings
+	profileSpec := profiles.Resolve(profiles.ProfileHigh, r.UserAgent(), 0)
+
+	session := &model.SessionRecord{
+		SessionID:      sessionID,
+		ServiceRef:     streamURL, // <--- The actual playable URL
+		Profile:        profileSpec,
+		State:          model.SessionNew,
+		CreatedAtUnix:  time.Now().Unix(),
+		UpdatedAtUnix:  time.Now().Unix(),
+		LastAccessUnix: time.Now().Unix(),
+		ContextData:    map[string]string{"client_ip": r.RemoteAddr, "type": "recording"},
+	}
+
+	// Persist Session (Atomic)
+	if err := store.PutSession(r.Context(), session); err != nil {
+		log.Error().Err(err).Msg("failed to persist recording session")
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	// 4. Publish Start Event
+	event := model.StartSessionEvent{
+		Type:          model.EventStartSession,
+		SessionID:     sessionID,
+		ServiceRef:    streamURL,
+		ProfileID:     profileSpec.Name,
+		RequestedAtUN: time.Now().Unix(),
+	}
+
+	if err := bus.Publish(r.Context(), string(model.EventStartSession), event); err != nil {
+		log.Error().Err(err).Msg("failed to publish recording start intent")
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	// 5. Redirect to HLS Playlist
+	// The V3 HLS handler waits for the playlist file to appear, so immediate redirect is fine.
+	target := fmt.Sprintf("/api/v3/sessions/%s/hls/index.m3u8", sessionID)
+	http.Redirect(w, r, target, http.StatusTemporaryRedirect)
 }
 
-// GetRecordingHLSCustomSegment handles GET /api/v3/recordings/{recordingId}/{segment}
-// Proxies segment requests to the internal Stream Proxy.
+// GetRecordingHLSCustomSegment proxies to the V3 session handler.
+// Since we redirect to the standard V3 HLS endpoint, this shouldn't be called directly by the client
+// unless they manually constructed the URL. We can deprecate or redirect.
 func (s *Server) GetRecordingHLSCustomSegment(w http.ResponseWriter, r *http.Request, recordingId string, segment string) {
-	// Recording stream proxy deprecated
-	http.Error(w, "recording streaming deprecated", http.StatusForbidden)
+	http.Error(w, "use HLS playlist", http.StatusNotFound)
+}
+
+// decodeRecordingID helper (factored out)
+func (s *Server) decodeRecordingID(id string) string {
+	if decodedBytes, err := base64.RawURLEncoding.DecodeString(id); err == nil {
+		return string(decodedBytes)
+	}
+	if decodedBytes2, err2 := base64.URLEncoding.DecodeString(id); err2 == nil {
+		return string(decodedBytes2)
+	}
+	if decoded, err3 := url.PathUnescape(id); err3 == nil {
+		return decoded
+	}
+	return id
 }
 
 // DeleteRecording handles DELETE /api/v3/recordings/{recordingId}
@@ -259,77 +362,22 @@ func (s *Server) DeleteRecording(w http.ResponseWriter, r *http.Request, recordi
 		}
 	}
 
-	// Extract path from ServiceRef
-	parts := strings.Split(serviceRef, ":")
-	var filePath string
-	for i := len(parts) - 1; i >= 0; i-- {
-		if strings.HasPrefix(parts[i], "/") {
-			filePath = parts[i]
-			break
-		}
-	}
-
-	if filePath == "" {
-		http.Error(w, "Invalid recording reference (no file path found)", http.StatusBadRequest)
-		return
-	}
-
 	s.mu.RLock()
 	cfg := s.cfg
+	snap := s.snap
 	s.mu.RUnlock()
 
-	// SECURITY: Confinement Check
-	allowed := false
-	var resolvedPath string
-	roots := cfg.RecordingRoots
-	if len(roots) == 0 {
-		roots = map[string]string{"hdd": "/media/hdd/movie"}
-	}
+	// Use OpenWebIF Client to delete the recording on the receiver
+	// This works for HDD and NAS locations without needing local mounts.
+	client := s.newOpenWebIFClient(cfg, snap)
 
-	for _, rootPath := range roots {
-		if abs, err := fsutil.ConfineAbsPath(rootPath, filePath); err == nil {
-			allowed = true
-			resolvedPath = abs
-			break
-		}
-	}
+	log.Info().Str("sref", serviceRef).Msg("requesting recording deletion via OpenWebIF")
 
-	if !allowed {
-		log.Warn().Str("path", filePath).Msg("recording delete blocked: path not in allowed roots")
-		http.Error(w, "Access denied: Path not in allowed roots", http.StatusForbidden)
+	if err := client.DeleteMovie(r.Context(), serviceRef); err != nil {
+		log.Error().Err(err).Str("sref", serviceRef).Msg("failed to delete recording")
+		// Map generic error to 500. We could try to parse "not found" but OWI usually returns generic "false"
+		http.Error(w, fmt.Sprintf("Failed to delete recording: %v", err), http.StatusInternalServerError)
 		return
-	}
-
-	// Delete Content
-	log.Info().Str("path", resolvedPath).Msg("deleting recording")
-	if err := os.Remove(resolvedPath); err != nil {
-		if os.IsNotExist(err) {
-			http.Error(w, "File not found", http.StatusNotFound)
-			return
-		}
-		log.Error().Err(err).Str("path", resolvedPath).Msg("failed to delete recording file")
-		http.Error(w, "Failed to delete file", http.StatusInternalServerError)
-		return
-	}
-
-	// Delete Sidecars (.eit, .ts.meta, .ts.cuts, .ts.ap, .ts.sc, .jpg)
-	base := resolvedPath
-	ext := filepath.Ext(base)
-	noExt := strings.TrimSuffix(base, ext)
-
-	sidecars := []string{
-		base + ".meta",
-		base + ".cuts",
-		base + ".ap",
-		base + ".sc",
-		noExt + ".eit",
-		noExt + ".jpg",
-	}
-
-	for _, sc := range sidecars {
-		if err := os.Remove(sc); err != nil && !os.IsNotExist(err) {
-			log.Warn().Err(err).Str("file", sc).Msg("failed to delete sidecar file")
-		}
 	}
 
 	w.WriteHeader(http.StatusNoContent)

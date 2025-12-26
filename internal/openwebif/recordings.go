@@ -143,13 +143,14 @@ func (bl *BookmarkList) UnmarshalJSON(b []byte) error {
 
 // Movie represents a recording in the movie list
 type Movie struct {
-	ServiceRef  string               `json:"serviceref"`
-	Title       string               `json:"eventname"`
-	Description string               `json:"description"`
-	Length      string               `json:"length"` // OWI typically returns string like "90 min"
-	Filesize    StringOrNumberString `json:"filesize"`
-	Filename    string               `json:"filename"`
-	Begin       IntOrStringInt64     `json:"recordingtime"`
+	ServiceRef          string               `json:"serviceref"`
+	Title               string               `json:"eventname"`
+	Description         string               `json:"description"`
+	ExtendedDescription string               `json:"extended_description"` // Full plot summary
+	Length              string               `json:"length"`               // OWI typically returns string like "90 min"
+	Filesize            StringOrNumberString `json:"filesize"`
+	Filename            string               `json:"filename"`
+	Begin               IntOrStringInt64     `json:"recordingtime"`
 }
 
 // MovieList represents the response from /api/movielist
@@ -190,4 +191,36 @@ func (c *Client) GetRecordings(ctx context.Context, dirname string) (*MovieList,
 	}
 
 	return &list, nil
+}
+
+// MovieDeleteResponse represents the response from /api/moviedelete
+type MovieDeleteResponse struct {
+	Result  bool   `json:"result"`
+	Message string `json:"message"`
+}
+
+// DeleteMovie deletes a recording by its Service Reference.
+func (c *Client) DeleteMovie(ctx context.Context, sRef string) error {
+	params := url.Values{}
+	params.Set("sRef", sRef)
+
+	path := "/api/moviedelete?" + params.Encode()
+	body, err := c.get(ctx, path, "moviedelete", nil)
+	if err != nil {
+		return err
+	}
+
+	var resp MovieDeleteResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		// Some versions might just return simple JSON or even bool?
+		// Fallback check? usually it matches.
+		c.loggerFor(ctx).Error().Err(err).Str("body", string(body)).Msg("failed to decode moviedelete response")
+		return fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if !resp.Result {
+		return fmt.Errorf("receiver returned failure: %s", resp.Message)
+	}
+
+	return nil
 }

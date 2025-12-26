@@ -21,7 +21,6 @@ Legacy API version details are captured in the History section.
 | `internal/epg` | EPG parsing and XMLTV generation | Fuzzy matching + XMLTV output |
 | `internal/playlist` / `internal/m3u` | Playlist generation and parsing | M3U output for channels |
 | `internal/v3/exec` | FFmpeg + Enigma2 execution | Stream setup and transcoding (v3 only) |
-| `internal/transcoder` | Rust audio transcoder bridge | AAC remux/transcode path |
 | `internal/dvr` | Timers, series rules | Scheduler and series engine |
 | `internal/hdhr` | HDHomeRun emulation | Plex/Jellyfin compatibility |
 | `internal/health` | /healthz and /readyz | Optional strict readiness |

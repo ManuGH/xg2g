@@ -60,7 +60,7 @@ Missed a scene? No problem.
 ### 📱 Perfect Mobile Streaming
 
 - **Native HLS**: Streams are remuxed on-the-fly to be compatible with all modern browsers and mobile devices.
-- **Rust Audio Engine**: Real-time AC3/DTS to AAC transcoding via FFI (FFmpeg 7.x/Trixie) ensures you get sound on every device, without burning your CPU.
+- **Audio Transcoding**: Real-time AC3/DTS to AAC transcoding via FFmpeg 7.x ensures you get sound on every device.
 
 ### � HDHomeRun Emulation (Beta)
 

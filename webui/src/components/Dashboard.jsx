@@ -42,6 +42,15 @@ export default function Dashboard() {
       </div>
       <div className="card-grid">
 
+        {/* Startup Safety Net Indicator */}
+        {health.epg.missing_channels > 0 && health.uptime_seconds < 300 && (
+          <div className="card full-width warning-banner" style={{ background: '#fff3cd', color: '#856404', borderColor: '#ffeeba' }}>
+            <h3>⚠️ System Initializing</h3>
+            <p>The system is currently syncing with your receiver in the background. Some data may be missing temporarily.</p>
+            <small>This allows the UI to remain reachable while data loads. Please check "Recent Logs" below for progress.</small>
+          </div>
+        )}
+
         <div className="card">
           <h3>System Status</h3>
           <div className={`status-indicator ${health.status}`}>
@@ -58,7 +67,7 @@ export default function Dashboard() {
           <div className={`status-indicator ${health.receiver.status}`}>
             {health.receiver.status === 'ok' ? 'CONNECTED' : 'ERROR'}
           </div>
-          <p>Last Sync: {health.receiver.last_check ? new Date(health.receiver.last_check).toLocaleTimeString() : 'Never'}</p>
+          <p>Last Sync: {formatTimeAgo(health.receiver.last_check)}</p>
         </div>
 
         <div className="card">
@@ -252,4 +261,19 @@ function formatUptime(seconds) {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
   return `${h}h ${m}m`;
+}
+
+function formatTimeAgo(dateString) {
+  if (!dateString) return 'Never';
+  const date = new Date(dateString);
+  // Check for invalid date or crazy old dates (Year 1)
+  if (isNaN(date.getTime()) || date.getFullYear() < 2000) return 'Never';
+
+  const now = new Date();
+  const diffSeconds = Math.floor((now - date) / 1000);
+
+  if (diffSeconds < 60) return 'Just now';
+  if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m ago`;
+  if (diffSeconds < 86400) return `${Math.floor(diffSeconds / 3600)}h ago`;
+  return date.toLocaleDateString(); // > 1 day
 }

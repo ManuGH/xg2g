@@ -390,9 +390,6 @@ spec:
 3. **Stream URLs**: May expose internal IPs
    - Mitigation: `XG2G_STREAM_BASE` URL rewriting
 
-> [!IMPORTANT]
-> **Developer Note**: The `Process` method in `internal/transcoder/rust.go` encapsulates critical safety mechanisms (`runtime.LockOSThread`, buffer limits, error retrieval). **Never** bypass this method or create custom FFI wrappers without replicating these safety guarantees. Direct CGO calls without thread locking will lead to Undefined Behavior (UB) due to Rust's `thread_local` storage.
-
 ### Security Measures
 
 - **Non-Root Containers**: User `nonroot:nonroot`

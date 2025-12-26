@@ -80,10 +80,13 @@ func (s *Server) CreateSession(w http.ResponseWriter, r *http.Request) {
 	cfgToken := s.cfg.APIToken
 	forceHTTPS := s.cfg.ForceHTTPS
 	hasTokens := s.cfg.APIToken != "" || len(s.cfg.APITokens) > 0
+	authAnon := s.cfg.AuthAnonymous
 	s.mu.RUnlock()
 
 	if reqToken == "" {
-		if !hasTokens {
+		if !hasTokens || authAnon {
+			// If anonymous auth is enabled, or no tokens configured, we allow "login" (returns 200 OK)
+			// This signals to the frontend that no explicit auth is needed.
 			w.WriteHeader(http.StatusOK)
 			return
 		}

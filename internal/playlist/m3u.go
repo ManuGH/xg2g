@@ -16,12 +16,13 @@ import (
 
 // Item represents an M3U playlist entry with channel metadata.
 type Item struct {
-	Name    string
-	TvgID   string
-	TvgChNo int
-	TvgLogo string
-	Group   string
-	URL     string
+	Name       string
+	TvgID      string
+	TvgChNo    int
+	TvgLogo    string
+	Group      string
+	URL        string
+	ServiceRef string // Internal use: store original sRef for EPG fetching
 }
 
 // WriteM3U writes an M3U playlist to the given writer.

@@ -259,25 +259,32 @@ func main() {
 
 	// Configure proxy (enabled by default in v2.0 for Zero Config experience)
 
-	// Initial refresh before starting servers (enabled by default in v2.0)
-	// Users can disable with XG2G_INITIAL_REFRESH=false if needed
-	if config.ParseBool("XG2G_INITIAL_REFRESH", true) {
-		logger.Info().Msg("performing initial data refresh on startup")
-		if _, err := jobs.Refresh(ctx, snap); err != nil {
-			logger.Error().Err(err).Msg("initial data refresh failed")
-			logger.Warn().Msg("→ Channels will be empty until manual refresh via /api/refresh")
-		} else {
-			logger.Info().Msg("initial data refresh completed successfully")
-		}
-	} else {
-		logger.Warn().Msg("Initial refresh is disabled (XG2G_INITIAL_REFRESH=false)")
-		logger.Warn().Msg("→ No channels loaded. Trigger manual refresh via: POST /api/refresh")
-	}
-
 	// Create API handler
 	s := api.New(cfg, configMgr)
 	s.SetConfigHolder(cfgHolder)
 	s.ApplySnapshot(cfgHolder.Current())
+
+	// Initial refresh (Async "Safety Net" for fast startup)
+	// We run this in the background so the HTTP server binds ports immediately.
+	// Users can disable with XG2G_INITIAL_REFRESH=false if needed
+	if config.ParseBool("XG2G_INITIAL_REFRESH", true) {
+		go func() {
+			// Delay slightly to allow server to bind first (optional, but nice for logs)
+			time.Sleep(100 * time.Millisecond)
+			logger.Info().Msg("performing initial data refresh (background)")
+			if st, err := jobs.Refresh(ctx, snap); err != nil {
+				logger.Error().Err(err).Msg("initial data refresh failed")
+				logger.Warn().Msg("→ Channels will be empty until manual refresh via /api/refresh")
+			} else {
+				logger.Info().Msg("initial data refresh completed successfully")
+				// Update server status so UI shows correct "Last Sync" time
+				s.UpdateStatus(*st)
+			}
+		}()
+	} else {
+		logger.Warn().Msg("Initial refresh is disabled (XG2G_INITIAL_REFRESH=false)")
+		logger.Warn().Msg("→ No channels loaded. Trigger manual refresh via: POST /api/refresh")
+	}
 
 	// Build daemon dependencies
 	metricsAddr := ""

@@ -246,12 +246,13 @@ func Refresh(ctx context.Context, snap config.Snapshot) (*Status, error) {
 			}
 
 			items = append(items, playlist.Item{
-				Name:    name,
-				TvgID:   makeTvgID(name, ref), // Human-readable by default
-				TvgChNo: channelNumber,        // Sequential numbering based on bouquet position
-				TvgLogo: logoURL,
-				Group:   bouquetName, // Use actual bouquet name as group
-				URL:     streamURL,
+				Name:       name,
+				TvgID:      makeTvgID(name, ref), // Human-readable by default
+				TvgChNo:    channelNumber,        // Sequential numbering based on bouquet position
+				TvgLogo:    logoURL,
+				Group:      bouquetName, // Use actual bouquet name as group
+				URL:        streamURL,
+				ServiceRef: ref, // Explicitly store ref for EPG fetching
 			})
 			channelNumber++
 		}

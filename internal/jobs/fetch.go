@@ -234,9 +234,15 @@ func collectEPGPerService(ctx context.Context, client *openwebif.Client, items [
 	// Schedule per-channel EPG fetches
 	for _, item := range items {
 		it := item // capture
-		// Validate sRef presence early to avoid spinning up a goroutine needlessly
-		if sref := extractSRefFromStreamURL(it.URL); sref == "" {
-			logger.Debug().Str("channel", it.Name).Msg("skipping EPG: could not extract sRef from stream URL")
+
+		// Use explicit ServiceRef if available, otherwise try to extract from URL (legacy)
+		sRef := it.ServiceRef
+		if sRef == "" {
+			sRef = extractSRefFromStreamURL(it.URL)
+		}
+
+		if sRef == "" {
+			logger.Debug().Str("channel", it.Name).Msg("skipping EPG: no ServiceRef available")
 			continue
 		}
 
@@ -253,7 +259,7 @@ func collectEPGPerService(ctx context.Context, client *openwebif.Client, items [
 			reqCtx, cancel := context.WithTimeout(ctx, time.Duration(cfg.EPGTimeoutMS)*time.Millisecond)
 			defer cancel()
 
-			events, err := fetchEPGWithRetry(reqCtx, client, it.URL, cfg)
+			events, err := fetchEPGWithRetry(reqCtx, client, sRef, cfg)
 			if err != nil {
 				logger.Debug().Err(err).
 					Str("channel", it.Name).
@@ -295,11 +301,9 @@ func collectEPGPerService(ctx context.Context, client *openwebif.Client, items [
 }
 
 // fetchEPGWithRetry attempts to fetch EPG data with exponential backoff retry
-func fetchEPGWithRetry(ctx context.Context, client *openwebif.Client, streamURL string, cfg config.AppConfig) ([]openwebif.EPGEvent, error) {
-	// Extract sRef from streamURL - adjust based on your stream URL format
-	sRef := extractSRefFromStreamURL(streamURL)
+func fetchEPGWithRetry(ctx context.Context, client *openwebif.Client, sRef string, cfg config.AppConfig) ([]openwebif.EPGEvent, error) {
 	if sRef == "" {
-		return nil, fmt.Errorf("cannot extract sRef from stream URL: %s", streamURL)
+		return nil, fmt.Errorf("invalid empty sRef")
 	}
 
 	var lastErr error

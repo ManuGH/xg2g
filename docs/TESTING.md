@@ -12,7 +12,6 @@ Every release must explicitly state its test coverage against this matrix.
 | **API** | Unit/Integration | ✅ | ❌ | ✅ | |
 | **UI Embed** | CI Check | ✅ | ❌ | ✅ | `dist/**` check; Assumes Vite layout |
 | **UI Rendering** | E2E/Manual | ❌ | ✅ | ⚠️ | Check `/ui` loading |
-| **Rust Transcoder** | Unit/Integration | ✅ | ✅ | ⚠️ | CPU-based verification |
 | **Docker Build** | CI (Buildx) | ✅ | ❌ | ✅ | Includes Trivy scan |
 | **Docker Runtime** | Smoke Test | ❌ | ✅ | ⚠️ | Boot check |
 
