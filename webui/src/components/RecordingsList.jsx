@@ -3,11 +3,12 @@
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { getRecordings, createSession } from '../client-ts';
 import { client } from '../client-ts/client.gen';
-import Player from './Player';
 import './Recordings.css';
+
+const Player = lazy(() => import('./Player'));
 
 // SVG Icons
 const FolderIcon = ({ className }) => (
@@ -337,11 +338,13 @@ export default function RecordingsList() {
 
       {/* Player Overlay */}
       {playing && (
-        <Player
-          streamUrl={playing.url}
-          title={playing.title}
-          onClose={() => setPlaying(null)}
-        />
+        <Suspense fallback={<div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>Loading Player...</div>}>
+          <Player
+            streamUrl={playing.url}
+            title={playing.title}
+            onClose={() => setPlaying(null)}
+          />
+        </Suspense>
       )}
     </div>
   );
