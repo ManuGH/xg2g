@@ -18,7 +18,7 @@ import (
 
 // TestIntegration_SessionAndPlayback verifies the full auth flow:
 // 1. Unauthenticated access to recordings -> 401
-// 2. Login via /api/v2/auth/session -> 200 + Cookie
+// 2. Login via /api/v3/auth/session -> 200 + Cookie
 // 3. Cookie-based access to recordings -> 200 (or 400 if invalid serviceRef)
 func TestIntegration_SessionAndPlayback(t *testing.T) {
 	// Setup Server
@@ -33,13 +33,13 @@ func TestIntegration_SessionAndPlayback(t *testing.T) {
 	handler := s.Handler()
 
 	// 1. Attempt unauthenticated access
-	req1 := httptest.NewRequest("GET", "/api/v2/recordings/some-id/playlist.m3u8", nil)
+	req1 := httptest.NewRequest("GET", "/api/v3/recordings/some-id/playlist.m3u8", nil)
 	w1 := httptest.NewRecorder()
 	handler.ServeHTTP(w1, req1)
 	assert.Equal(t, http.StatusUnauthorized, w1.Code, "Expected 401 without auth")
 
 	// 2. Login to get session cookie
-	req2 := httptest.NewRequest("POST", "/api/v2/auth/session", nil)
+	req2 := httptest.NewRequest("POST", "/api/v3/auth/session", nil)
 	req2.Header.Set("Authorization", "Bearer integration-secret")
 	w2 := httptest.NewRecorder()
 	handler.ServeHTTP(w2, req2)
@@ -67,13 +67,13 @@ func TestIntegration_SessionAndPlayback(t *testing.T) {
 	// If we were blocked by path confinement early or bad ID format, we'd get 400.
 	// Getting 404 confirms full pipeline traversal.
 
-	req4 := httptest.NewRequest("GET", "/api/v2/recordings/dGVzdA==/playlist.m3u8", nil)
+	req4 := httptest.NewRequest("GET", "/api/v3/recordings/dGVzdA==/playlist.m3u8", nil)
 	req4.AddCookie(sessionCookie)
 	w4 := httptest.NewRecorder()
 	handler.ServeHTTP(w4, req4)
 
 	// Assert deterministic failure mode (403)
-	// The handler returns 403 because v2 streaming is deprecated.
+	// The handler returns 403 because recording streaming is deprecated.
 	// This confirms we passed Auth (401) and reached the handler logic.
-	assert.Equal(t, http.StatusForbidden, w4.Code, "Expected 403 (Auth passed, v2 streaming deprecated)")
+	assert.Equal(t, http.StatusForbidden, w4.Code, "Expected 403 (Auth passed, recording streaming deprecated)")
 }

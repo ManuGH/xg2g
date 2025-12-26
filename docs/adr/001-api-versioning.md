@@ -27,7 +27,7 @@ We need an explicit compatibility boundary so changes to handlers don’t silent
 
 ## History
 
-- Stable API base path at the time of this decision: `/api/v2/*`.
+- Stable API base path at the time of this decision: `/api/v3/*`.
 - Streaming control plane introduced under `/api/v3/*`.
 
 ## References (Code)

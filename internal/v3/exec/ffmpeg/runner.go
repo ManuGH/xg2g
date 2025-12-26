@@ -63,7 +63,7 @@ func NewRunner(binPath, hlsRoot string, client *enigma2.Client) *Runner {
 }
 
 // Start launches the process.
-func (r *Runner) Start(ctx context.Context, sessionID, serviceRef string, profile model.ProfileID) error {
+func (r *Runner) Start(ctx context.Context, sessionID, serviceRef string, profileSpec model.ProfileSpec) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -91,10 +91,16 @@ func (r *Runner) Start(ctx context.Context, sessionID, serviceRef string, profil
 	// Phase 9-5: Safari DVR / fMP4 Logic
 	isFMP4 := false
 	ext := ".ts"
+	profile := profileSpec.Name
 
-	if profile == "safari_dvr" {
+	if profile == "safari_dvr" || profile == "safari" {
 		isFMP4 = true
 		ext = ".m4s"
+		profileSpec.LLHLS = true
+		// Enable transcoding for Safari to ensure codec compatibility (MPEG-2 -> H.264)
+		if profileSpec.TranscodeVideo == false {
+			profileSpec.TranscodeVideo = true
+		}
 	}
 
 	// 2. Build Args
@@ -108,31 +114,35 @@ func (r *Runner) Start(ctx context.Context, sessionID, serviceRef string, profil
 		StreamURL: streamURL,
 	}
 
-	profSpec := model.ProfileSpec{Name: string(profile)} // Stub, in future passed in.
-	if isFMP4 {
-		profSpec.LLHLS = true // Re-using LLHLS flag or add explicit Type field in Args?
-		// For now, let's just create profSpec correctly.
-		// Wait, BuildHLSArgs uses profSpec?
-		// We need to pass the "UseFMP4" intent to BuildHLSArgs.
-		// We can add it to OutputSpec or use ProfileSpec.
-		// Let's modify ProfileSpec or pass it explicitly.
-		// Actually, let's update OutputSpec to have Extension/FMP4 flag.
-		// But wait, args.go:BuildHLSArgs takes profSpec.
-		// I will update args.go next.
+	// DVR window configuration
+	// Calculate playlist size based on DVR window duration from ProfileSpec
+	// Standard profiles: 3 segments (6 seconds, minimal latency)
+	// DVR profiles: Use DVRWindowSec from config (default: 2700s = 45min)
+	segmentDuration := 2 // seconds
+	playlistSize := 3    // default: minimal latency
+
+	if profileSpec.DVRWindowSec > 0 {
+		// Use configured DVR window
+		playlistSize = profileSpec.DVRWindowSec / segmentDuration
+		log.L().Info().
+			Int("dvr_window_sec", profileSpec.DVRWindowSec).
+			Int("playlist_size", playlistSize).
+			Str("profile", profile).
+			Msg("using configured DVR window")
 	}
 
 	out := OutputSpec{
 		HLSPlaylist:        tmpPlaylist,
 		SegmentFilename:    SegmentPattern(sessionDir, ext),
-		SegmentDuration:    2,
-		PlaylistWindowSize: 3,
+		SegmentDuration:    segmentDuration,
+		PlaylistWindowSize: playlistSize,
 	}
 
 	if isFMP4 {
-		out.InitFilename = InitPath(sessionDir) // We need to add this field to OutputSpec in args.go
+		out.InitFilename = "init.mp4" // Relative path for FFmpeg
 	}
 
-	args, err := BuildHLSArgs(in, out, profSpec)
+	args, err := BuildHLSArgs(in, out, profileSpec)
 	if err != nil {
 		return err
 	}

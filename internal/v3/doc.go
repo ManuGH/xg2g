@@ -2,7 +2,7 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
-// Package v3 implements the experimental Control Plane and Orchestration Layer.
+// Package v3 implements the Control Plane and Orchestration Layer.
 //
 // Overview:
 // The v3 architecture introduces a stateful, event-driven model for managing streams,
@@ -35,6 +35,5 @@
 //
 // Usage:
 // The v3 system is enabled via `XG2G_V3_WORKER_ENABLED=true`.
-// It currently runs alongside the v2 proxy but is intended to eventually replace it
-// as the primary streaming engine in future releases.
+// It is the primary streaming engine and control plane for live playback.
 package v3

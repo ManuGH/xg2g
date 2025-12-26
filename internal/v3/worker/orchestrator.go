@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -107,7 +108,14 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 	// Launch Background Sweeper (PR 9-3)
 	sweeper := &Sweeper{Orch: o, Conf: o.Sweeper}
 	if sweeper.Conf.Interval == 0 {
-		sweeper.Conf.Interval = 5 * time.Minute
+		if sweeper.Conf.IdleTimeout > 0 {
+			sweeper.Conf.Interval = sweeper.Conf.IdleTimeout / 2
+			if sweeper.Conf.Interval < 10*time.Second {
+				sweeper.Conf.Interval = 10 * time.Second
+			}
+		} else {
+			sweeper.Conf.Interval = 5 * time.Minute
+		}
 	}
 	if sweeper.Conf.SessionRetention == 0 {
 		sweeper.Conf.SessionRetention = 24 * time.Hour
@@ -370,6 +378,7 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 
 	// Measure Ready Duration
 	readyStart := time.Now()
+	log.L().Info().Str("ref", e.ServiceRef).Msg("worker: starting tune")
 	tuneErr := tuner.Tune(hbCtx, e.ServiceRef)
 	readyDurationVal := time.Since(readyStart).Seconds()
 
@@ -377,8 +386,10 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 	var outcome string
 	if tuneErr == nil {
 		outcome = "success"
+		log.L().Info().Msg("worker: tune success")
 	} else {
 		outcome = "failure"
+		log.L().Error().Err(tuneErr).Msg("worker: tune failed")
 		// Classify failure for counter
 		failReason := "other"
 		if errors.Is(tuneErr, context.DeadlineExceeded) {
@@ -407,11 +418,17 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 		return err
 	}
 
-	// e is the StartIntent payload (unmarshaled directly into method args? No, e is *model.SessionStartRequest? or similar)
-	// View file shows: func (o *Orchestrator) handleStart(ctx context.Context, e model.IntentStart) error {
-	// So variable is `e`.
-	// e has SessionID, ServiceRef, ProfileID.
-	if err := transcoder.Start(hbCtx, e.SessionID, e.ServiceRef, model.ProfileID(e.ProfileID)); err != nil {
+	// Fetch session to get ProfileSpec with DVR window configuration
+	session, err := o.Store.GetSession(ctx, e.SessionID)
+	if err != nil {
+		return fmt.Errorf("failed to get session for profile: %w", err)
+	}
+	if session == nil {
+		return fmt.Errorf("session not found: %s", e.SessionID)
+	}
+
+	ffmpegStartTime := time.Now()
+	if err := transcoder.Start(hbCtx, e.SessionID, e.ServiceRef, session.Profile); err != nil {
 		return err
 	}
 	defer func() {
@@ -420,11 +437,82 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 		_ = transcoder.Stop(stopCtx)
 	}()
 
-	// 3. Update READY
+	// 3. Wait for Playlist to be Servable
+	// Fix: Gate READY transition on playlist existence to avoid race condition
+	// where clients see READY state but get 404 on playlist requests.
+	//
+	// Background: FFmpeg needs time to:
+	// - Connect to upstream and probe stream (~2s analyzeduration)
+	// - Generate first HLS segment (~2s hls_time)
+	// - Write index.m3u8.tmp and have sync loop promote it to index.m3u8 (~200ms poll)
+	//
+	// We wait for index.m3u8 (not .tmp) because that's what clients request.
+	// Skip this check if HLSRoot is not configured (e.g., in tests with stub factory)
+	if o.HLSRoot != "" {
+		playlistPath := filepath.Join(o.HLSRoot, "sessions", e.SessionID, "index.m3u8")
+		playlistReadyTimeout := 10 * time.Second
+		playlistPollInterval := 200 * time.Millisecond
+		playlistDeadline := time.Now().Add(playlistReadyTimeout)
+
+		log.L().Info().
+			Str("session_id", e.SessionID).
+			Str("service_ref", e.ServiceRef).
+			Str("playlist_path", playlistPath).
+			Dur("timeout", playlistReadyTimeout).
+			Msg("waiting for playlist to become ready")
+
+		for {
+			// Success condition: file exists, non-empty, and contains #EXTM3U header
+			if info, statErr := os.Stat(playlistPath); statErr == nil && info.Size() > 0 {
+				// Sanity check: validate it's a real HLS manifest
+				if content, readErr := os.ReadFile(playlistPath); readErr == nil {
+					if strings.Contains(string(content), "#EXTM3U") {
+						break // Playlist ready!
+					}
+					log.L().Debug().
+						Str("session_id", e.SessionID).
+						Msg("playlist exists but missing #EXTM3U header, continuing to poll")
+				}
+			}
+
+			// Termination condition: timeout
+			if time.Now().After(playlistDeadline) {
+				elapsedMs := time.Since(ffmpegStartTime).Milliseconds()
+				log.L().Error().
+					Str("session_id", e.SessionID).
+					Str("service_ref", e.ServiceRef).
+					Str("playlist_path", playlistPath).
+					Dur("timeout", playlistReadyTimeout).
+					Int64("elapsed_ms", elapsedMs).
+					Msg("playlist not ready after timeout - failing session")
+				// Return error to trigger finalizer which will set FAILED state
+				return fmt.Errorf("playlist not ready after %s (upstream dead or no packets received)", playlistReadyTimeout)
+			}
+
+			// Termination condition: context cancelled
+			select {
+			case <-hbCtx.Done():
+				return hbCtx.Err()
+			case <-time.After(playlistPollInterval):
+				// Continue polling
+			}
+		}
+
+		playlistReadyDuration := time.Since(ffmpegStartTime)
+		log.L().Info().
+			Str("session_id", e.SessionID).
+			Str("service_ref", e.ServiceRef).
+			Int64("elapsed_ms", playlistReadyDuration.Milliseconds()).
+			Msg("playlist ready - transitioning to READY state")
+	}
+
+	// 4. Update READY
+	// Now it's safe to declare READY because playlist is servable
 	o.recordTransition(model.SessionStarting, model.SessionReady)
 	_, err = o.Store.UpdateSession(ctx, e.SessionID, func(r *model.SessionRecord) error {
 		r.State = model.SessionReady
 		r.UpdatedAtUnix = time.Now().Unix()
+		r.LastAccessUnix = time.Now().Unix()
 		return nil
 	})
 	if err != nil {

@@ -255,6 +255,10 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 		HeartbeatEvery: 10 * time.Second,
 		VirtualMode:    cfg.Mode == "virtual",
 		TunerSlots:     cfg.TunerSlots,
+		HLSRoot:        cfg.HLSRoot,
+		Sweeper: worker.SweeperConfig{
+			IdleTimeout: cfg.IdleTimeout,
+		},
 	}
 
 	// Phase 8-3: Factory Wiring

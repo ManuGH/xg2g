@@ -43,9 +43,9 @@ func NormalizeServiceRef(ref string) string {
 		parts[6] = "0"
 		// Reassemble the first 10 fields (standard Enigma2 ref parts)
 		// This also effectively strips any trailing URL or channel name
-		return strings.Join(parts[:10], ":") + ":"
+		return strings.ToUpper(strings.Join(parts[:10], ":") + ":")
 	}
-	return strings.TrimSuffix(strings.TrimSpace(ref), ":")
+	return strings.ToUpper(strings.TrimSuffix(strings.TrimSpace(ref), ":"))
 }
 
 // WaitReady blocks until the tuner is locked to the expected service or ctx errors.
@@ -124,8 +124,10 @@ func (rc *ReadyChecker) check(ctx context.Context, expected string) error {
 	}
 
 	if !sig.Locked {
-		log.L().Debug().Int("snr", int(sig.Snr)).Msg("ReadyChecker not locked")
-		return ErrNotLocked
+		// Log as warning but allow proceeding if ServiceRef matches.
+		// Some Enigma2 boxes or IPTV streams report Locked=false/SNR=0 even when working.
+		log.L().Warn().Int("snr", int(sig.Snr)).Msg("ReadyChecker: ServiceRef matches but signal not locked (proceeding)")
+		return nil
 	}
 
 	return nil

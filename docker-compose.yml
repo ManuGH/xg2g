@@ -55,6 +55,7 @@ services:
     read_only: true
     tmpfs:
       - /tmp:noexec,nosuid,nodev,size=100m
+      - /data/v3-hls:exec,size=2g,uid=0,gid=0
 
     ulimits:
       nofile:
@@ -73,16 +74,12 @@ services:
       - XG2G_OWI_USER=${XG2G_OWI_USER:-${OWI_USER}}
       - XG2G_OWI_PASS=${XG2G_OWI_PASS:-${OWI_PASS}}
       - XG2G_LOG_LEVEL=${XG2G_LOG_LEVEL:-info}
+      - XG2G_LISTEN=${XG2G_LISTEN:-:8088}
 
       # Main Configuration
       - XG2G_BOUQUET=${XG2G_BOUQUET:-${DEFAULT_BOUQUET:-Favourites}}
       - XG2G_INITIAL_REFRESH=${XG2G_INITIAL_REFRESH:-${INITIAL_REFRESH:-true}}
       - XG2G_USE_WEBIF_STREAMS=${XG2G_USE_WEBIF_STREAMS:-true}
-
-      # Proxy Configuration
-      - XG2G_ENABLE_STREAM_PROXY=${XG2G_ENABLE_STREAM_PROXY:-true}
-      - XG2G_PROXY_LISTEN=${XG2G_PROXY_LISTEN:-:18000}
-      - XG2G_PROXY_TARGET=${XG2G_PROXY_TARGET:-}
 
       # Compatibility / Transcoding knobs
       - XG2G_USE_RUST_REMUXER=${XG2G_USE_RUST_REMUXER:-true}
@@ -91,6 +88,7 @@ services:
 
       # Security & Limits
       - XG2G_API_TOKEN=${XG2G_API_TOKEN:-${API_TOKEN}}
+      - XG2G_API_TOKEN_SCOPES=${XG2G_API_TOKEN_SCOPES:-*}
       - XG2G_DEV=${XG2G_DEV:-false}
       - XG2G_RATELIMIT_ENABLED=${XG2G_RATELIMIT_ENABLED:-false}
       - XG2G_RATELIMIT_RPS=${XG2G_RATELIMIT_RPS:-100}
@@ -98,6 +96,7 @@ services:
       # V3 Control Plane / Worker (Production Streaming Backend)
       - XG2G_V3_WORKER_ENABLED=${XG2G_V3_WORKER_ENABLED:-true}
       - XG2G_V3_WORKER_MODE=${XG2G_V3_WORKER_MODE:-standard}
+      - XG2G_V3_CONFIG_STRICT=${XG2G_V3_CONFIG_STRICT:-false}
       - XG2G_V3_STORE_BACKEND=${XG2G_V3_STORE_BACKEND:-memory}
       - XG2G_V3_STORE_PATH=${XG2G_V3_STORE_PATH:-/data/v3-store}
       - XG2G_V3_TUNER_SLOTS=${XG2G_V3_TUNER_SLOTS:-}
@@ -105,7 +104,8 @@ services:
       - XG2G_V3_TUNE_TIMEOUT=${XG2G_V3_TUNE_TIMEOUT:-10s}
       - XG2G_V3_FFMPEG_BIN=${XG2G_V3_FFMPEG_BIN:-ffmpeg}
       - XG2G_V3_FFMPEG_KILL_TIMEOUT=${XG2G_V3_FFMPEG_KILL_TIMEOUT:-5s}
-      - XG2G_V3_HLS_ROOT=${XG2G_V3_HLS_ROOT:-/data/stream/encoded}
+      - XG2G_V3_HLS_ROOT=${XG2G_V3_HLS_ROOT:-/data/v3-hls}
+      - XG2G_V3_DVR_WINDOW=${XG2G_V3_DVR_WINDOW:-2700}
       - XG2G_V3_SHADOW_INTENTS=${XG2G_V3_SHADOW_INTENTS:-false}
       - XG2G_V3_SHADOW_TARGET=${XG2G_V3_SHADOW_TARGET:-}
 

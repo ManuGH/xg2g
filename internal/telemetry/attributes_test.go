@@ -13,15 +13,15 @@ import (
 )
 
 func TestHTTPAttributes(t *testing.T) {
-	attrs := HTTPAttributes("GET", "/api/v2/status", "http://localhost:8080/api/v2/status", 200)
+	attrs := HTTPAttributes("GET", "/api/v3/status", "http://localhost:8080/api/v3/status", 200)
 
 	if len(attrs) != 4 {
 		t.Fatalf("Expected 4 attributes, got %d", len(attrs))
 	}
 
 	verifyAttribute(t, attrs, HTTPMethodKey, "GET")
-	verifyAttribute(t, attrs, HTTPRouteKey, "/api/v2/status")
-	verifyAttribute(t, attrs, HTTPURLKey, "http://localhost:8080/api/v2/status")
+	verifyAttribute(t, attrs, HTTPRouteKey, "/api/v3/status")
+	verifyAttribute(t, attrs, HTTPURLKey, "http://localhost:8080/api/v3/status")
 	verifyIntAttribute(t, attrs, HTTPStatusCodeKey, 200)
 }
 

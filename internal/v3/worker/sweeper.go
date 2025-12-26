@@ -15,6 +15,7 @@ type SweeperConfig struct {
 	Interval         time.Duration
 	SessionRetention time.Duration // How long to keep terminal sessions in Store
 	FileRetention    time.Duration // How long to keep orphan files? (Or strict sync?)
+	IdleTimeout      time.Duration // Stop READY sessions after no client access (0 disables)
 }
 
 // Sweeper performs background cleanup of stale sessions and files.
@@ -49,6 +50,7 @@ func (s *Sweeper) sweepStore(ctx context.Context) {
 
 	var toDelete []string
 	var toFinalize []string
+	var toStop []string
 	count := 0
 	err := s.Orch.Store.ScanSessions(ctx, func(r *model.SessionRecord) error {
 		count++
@@ -81,6 +83,20 @@ func (s *Sweeper) sweepStore(ctx context.Context) {
 			}
 		}
 
+		// Rule 3: Idle READY sessions -> STOP (if enabled)
+		if s.Conf.IdleTimeout > 0 && (r.State == model.SessionReady || r.State == model.SessionDraining) {
+			lastAccess := r.LastAccessUnix
+			if lastAccess == 0 {
+				lastAccess = r.UpdatedAtUnix
+			}
+			if lastAccess == 0 {
+				lastAccess = r.CreatedAtUnix
+			}
+			if lastAccess > 0 && now.Sub(time.Unix(lastAccess, 0)) > s.Conf.IdleTimeout {
+				toStop = append(toStop, r.SessionID)
+			}
+		}
+
 		return nil
 	})
 
@@ -110,7 +126,20 @@ func (s *Sweeper) sweepStore(ctx context.Context) {
 		}
 	}
 
-	// 2. Delete Expired Sessions
+	// 2. Stop Idle Sessions
+	for _, sid := range toStop {
+		err := s.Orch.handleStop(ctx, model.StopSessionEvent{
+			Type:          model.EventStopSession,
+			SessionID:     sid,
+			Reason:        model.RIdleTimeout,
+			RequestedAtUN: time.Now().Unix(),
+		})
+		if err != nil {
+			log.L().Warn().Err(err).Str("sid", sid).Msg("failed to stop idle session")
+		}
+	}
+
+	// 3. Delete Expired Sessions
 	for _, sid := range toDelete {
 		if err := s.Orch.Store.DeleteSession(ctx, sid); err != nil {
 			log.L().Warn().Err(err).Str("sid", sid).Msg("failed to delete expired session")

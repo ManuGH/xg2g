@@ -19,47 +19,28 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// RecordingResponse is the DTO for the recordings view
-type RecordingResponse struct {
-	Roots       []RecordingRoot `json:"roots"`                  // Available roots
-	CurrentRoot string          `json:"current_root,omitempty"` // ID of current root
-	CurrentPath string          `json:"current_path,omitempty"` // Relative path inside root
-	Breadcrumbs []Breadcrumb    `json:"breadcrumbs,omitempty"`  // Navigation trail
-	Directories []DirectoryItem `json:"directories,omitempty"`  // Subdirectories
-	Recordings  []RecordingItem `json:"recordings,omitempty"`   // Files
-}
+// Types are now generated in server_gen.go
 
-type RecordingRoot struct {
-	ID   string `json:"id"`
-	Name string `json:"name"` // Label (e.g. "HDD")
-}
-
-type Breadcrumb struct {
-	Name string `json:"name"`
-	Path string `json:"path"` // Relative path for API query
-}
-
-type DirectoryItem struct {
-	Name string `json:"name"`
-	Path string `json:"path"` // Relative path for API query
-}
-
-type RecordingItem struct {
-	ServiceRef  string `json:"service_ref"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Begin       int64  `json:"begin"`
-	Length      string `json:"length"` // OWI returns string for length (e.g. "90 min" or seconds string)
-	Filename    string `json:"filename"`
-}
-
-// GetRecordingsHandler handles GET /api/v2/recordings
+// GetRecordings handles GET /api/v3/recordings
 // Query: ?root=<id>&path=<rel_path>
-func (s *Server) GetRecordingsHandler(w http.ResponseWriter, r *http.Request) {
+func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params GetRecordingsParams) {
 	s.mu.RLock()
 	cfg := s.cfg
 	snap := s.snap
 	s.mu.RUnlock()
+
+	// 1. Prepare Roots (Map manual params to query logic if needed, but generated code passes params struct)
+	// We need to use params instead of parsing r.URL manually if we want to be clean,
+	// but for now let's just use the method signature and existing logic if possible.
+	// Wait, param signature changed!
+	// Old: func (s *Server) GetRecordingsHandler(w http.ResponseWriter, r *http.Request)
+	// New: func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params GetRecordingsParams)
+
+	// I need to adapt the body to use 'params' or just ignore them and keep parsing URL if the URL is strictly equal.
+	// But generated code calls with params.
+
+	// Adapting body to use existing URL parsing or params.
+	// Params.Root and Params.Path are pointers.
 
 	// 1. Prepare Roots
 	roots := cfg.RecordingRoots
@@ -69,21 +50,42 @@ func (s *Server) GetRecordingsHandler(w http.ResponseWriter, r *http.Request) {
 
 	rootList := make([]RecordingRoot, 0, len(roots))
 	for id, path := range roots {
-		rootList = append(rootList, RecordingRoot{ID: id, Name: filepath.Base(path)})
+		// Local vars for pointers
+		i := id
+		n := filepath.Base(path)
+		rootList = append(rootList, RecordingRoot{Id: &i, Name: &n})
 	}
 	// Sort for stability
-	sort.Slice(rootList, func(i, j int) bool { return rootList[i].ID < rootList[j].ID })
+	sort.Slice(rootList, func(i, j int) bool {
+		// Dereference safely (though we just created them not nil)
+		id1 := ""
+		if rootList[i].Id != nil {
+			id1 = *rootList[i].Id
+		}
+		id2 := ""
+		if rootList[j].Id != nil {
+			id2 = *rootList[j].Id
+		}
+		return id1 < id2
+	})
 
 	// 2. Parse Query
-	qRootID := r.URL.Query().Get("root")
-	qPath := r.URL.Query().Get("path")
+	var qRootID, qPath string
+	if params.Root != nil {
+		qRootID = *params.Root
+	}
+	if params.Path != nil {
+		qPath = *params.Path
+	}
 
 	// If no root specified, return roots list (using first default for display)
 	if qRootID == "" {
 		if _, ok := roots["hdd"]; ok {
 			qRootID = "hdd"
 		} else if len(rootList) > 0 {
-			qRootID = rootList[0].ID
+			if rootList[0].Id != nil {
+				qRootID = *rootList[0].Id
+			}
 		} else {
 			http.Error(w, "No recording roots configured", http.StatusInternalServerError)
 			return
@@ -119,79 +121,57 @@ func (s *Server) GetRecordingsHandler(w http.ResponseWriter, r *http.Request) {
 	// ... continues ...
 
 	// 5. Build Response
-	response := RecordingResponse{
-		Roots:       rootList,
-		CurrentRoot: qRootID,
-		CurrentPath: qPath,
-		Recordings:  make([]RecordingItem, 0, len(list.Movies)),
-		Directories: make([]DirectoryItem, 0, len(list.Bookmarks)),
-	}
+	// Helper for pointers
+	strPtr := func(s string) *string { return &s }
+	int64Ptr := func(i int64) *int64 { return &i }
 
-	// Process Movies
+	recordingsList := make([]RecordingItem, 0, len(list.Movies))
 	for _, m := range list.Movies {
-		// Begin time: OWI might return string or int, now normalized by IntOrStringInt64
 		beginTs := int64(m.Begin)
-
-		response.Recordings = append(response.Recordings, RecordingItem{
-			ServiceRef:  m.ServiceRef,
-			Title:       m.Title,
-			Description: m.Description,
-			Begin:       beginTs,
-			Length:      m.Length,
-			Filename:    m.Filename,
+		recordingsList = append(recordingsList, RecordingItem{
+			ServiceRef:  strPtr(m.ServiceRef),
+			Title:       strPtr(m.Title),
+			Description: strPtr(m.Description),
+			Begin:       int64Ptr(beginTs),
+			Length:      strPtr(m.Length),
+			Filename:    strPtr(m.Filename),
 		})
 	}
 
+	directoriesList := make([]DirectoryItem, 0, len(list.Bookmarks))
 	// Process Directories (Bookmarks)
-	// We need to resolve the root symlinks to correctly compute relative paths for bookmarks
-	// We mirror the canonicalization logic of fsutil.ConfineAbsPath: Abs -> EvalSymlinks
 	absRoot, _ := filepath.Abs(rootAbs)
 	realRoot, err := filepath.EvalSymlinks(absRoot)
 	if err != nil {
-		// If we can't resolve the root, fall back to Abs
-		// Same as fsutil.ConfineAbsPath fallback logic (though confineAbsPath handles non-exist as error in some cases, here we tolerate for listing? No, existing behavior)
 		if os.IsNotExist(err) {
-			// If root effectively doesn't exist, we probably won't find bookmarks inside it anyway,
-			// but let's keep consistent path base.
 			realRoot = absRoot
 		} else {
-			// For other errors, fallback (or fail?)
-			// confineAbsPath falls back to absRoot if IsNotExist, or returns err?
-			// Actually fsutil.ConfineAbsPath currently: if err!=nil && !IsNotExist { return err } -> Fails closed.
-			// But here we might want to be slightly lenient if only listing?
-			// User requested: "mirror the exact root canonicalization logic"
-			// if err != nil { realRoot = absRoot } (simple fallback as requested in option 2)
 			realRoot = absRoot
 		}
 	}
 
 	for _, b := range list.Bookmarks {
-		// b.Path is absolute. Validate it is within the root.
-		// We use fsutil.ConfineAbsPath to ensure it doesn't escape.
 		resolvedBookmark, err := fsutil.ConfineAbsPath(rootAbs, b.Path)
 		if err != nil {
 			continue
 		}
 
-		// Compute relative display path against the resolved root
-		// resolvedBookmark is already resolved/real path. realRoot is resolved/real root.
 		rel, err := filepath.Rel(realRoot, resolvedBookmark)
 		if err != nil {
 			continue
 		}
 
-		// Ensure it's not "." (root itself) or escaping (though confine checked escape)
 		if rel == "." || strings.HasPrefix(rel, "..") {
 			continue
 		}
 
-		response.Directories = append(response.Directories, DirectoryItem{
-			Name: b.Name,
-			Path: rel,
+		directoriesList = append(directoriesList, DirectoryItem{
+			Name: strPtr(b.Name),
+			Path: strPtr(rel),
 		})
 	}
 
-	// Breadcrumbs
+	breadcrumbsList := make([]Breadcrumb, 0)
 	if qPath != "" && qPath != "." {
 		parts := strings.Split(qPath, string(filepath.Separator))
 		built := ""
@@ -200,11 +180,27 @@ func (s *Server) GetRecordingsHandler(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			built = filepath.Join(built, p)
-			response.Breadcrumbs = append(response.Breadcrumbs, Breadcrumb{
-				Name: p,
-				Path: built,
+			breadcrumbsList = append(breadcrumbsList, Breadcrumb{
+				Name: strPtr(p),
+				Path: strPtr(built),
 			})
 		}
+	}
+
+	// Fix RootList to generated type
+	genRoots := make([]RecordingRoot, 0, len(rootList))
+	for _, r := range rootList {
+		// Just copy the structs/pointers since they are already correct type
+		genRoots = append(genRoots, r)
+	}
+
+	response := RecordingResponse{
+		Roots:       &genRoots,
+		CurrentRoot: strPtr(qRootID),
+		CurrentPath: strPtr(qPath),
+		Recordings:  &recordingsList,
+		Directories: &directoriesList,
+		Breadcrumbs: &breadcrumbsList,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -213,29 +209,29 @@ func (s *Server) GetRecordingsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// GetRecordingStreamHandler handles GET /api/v2/recordings/stream/{ref}
+// GetRecordingStreamHandler handles GET /api/v3/recordings/stream/{ref}
 // Redirects to /stream/{ref} which handles proxying/HLS
 func (s *Server) GetRecordingStreamHandler(w http.ResponseWriter, r *http.Request) {
-	// V2 Proxy deprecated
-	http.Error(w, "V2 streaming deprecated", http.StatusForbidden)
+	// Recording stream proxy deprecated
+	http.Error(w, "recording streaming deprecated", http.StatusForbidden)
 }
 
-// GetRecordingHLSPlaylistHandler handles GET /api/v2/recordings/{recordingId}/playlist.m3u8
+// GetRecordingHLSPlaylist handles GET /api/v3/recordings/{recordingId}/playlist.m3u8
 // It acts as a reverse proxy to the internal Stream Proxy (port 18000),
 // injecting the correct upstream URL extracted from the recording ID (service ref).
-func (s *Server) GetRecordingHLSPlaylistHandler(w http.ResponseWriter, r *http.Request) {
-	// V2 Proxy deprecated
-	http.Error(w, "V2 streaming deprecated", http.StatusForbidden)
+func (s *Server) GetRecordingHLSPlaylist(w http.ResponseWriter, r *http.Request, recordingId string) {
+	// Recording stream proxy deprecated
+	http.Error(w, "recording streaming deprecated", http.StatusForbidden)
 }
 
-// GetRecordingHLSCustomSegmentHandler handles GET /api/v2/recordings/{recordingId}/{segment}
+// GetRecordingHLSCustomSegment handles GET /api/v3/recordings/{recordingId}/{segment}
 // Proxies segment requests to the internal Stream Proxy.
-func (s *Server) GetRecordingHLSCustomSegmentHandler(w http.ResponseWriter, r *http.Request) {
-	// V2 Proxy deprecated
-	http.Error(w, "V2 streaming deprecated", http.StatusForbidden)
+func (s *Server) GetRecordingHLSCustomSegment(w http.ResponseWriter, r *http.Request, recordingId string, segment string) {
+	// Recording stream proxy deprecated
+	http.Error(w, "recording streaming deprecated", http.StatusForbidden)
 }
 
-// DeleteRecordingHandler handles DELETE /api/v2/recordings/{ref}
+// DeleteRecordingHandler handles DELETE /api/v3/recordings/{ref}
 // Deletes the recording file and associated sidecar files from the local disk.
 func (s *Server) DeleteRecordingHandler(w http.ResponseWriter, r *http.Request) {
 	recordingID := chi.URLParam(r, "ref")

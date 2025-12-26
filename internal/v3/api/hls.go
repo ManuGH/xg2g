@@ -22,6 +22,10 @@ type HLSStore interface {
 	GetSession(ctx context.Context, id string) (*model.SessionRecord, error)
 }
 
+type hlsSessionUpdater interface {
+	UpdateSession(ctx context.Context, id string, fn func(*model.SessionRecord) error) (*model.SessionRecord, error)
+}
+
 // ServeHLS handles requests for HLS playlists and segments.
 // It enforces strict session validity and path security.
 func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, sessionID, filename string) {
@@ -38,16 +42,17 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, s
 	}
 
 	isPlaylist := filename == "index.m3u8"
-	isSegment := strings.HasPrefix(filename, "seg_") && strings.HasSuffix(filename, ".ts")
+	isSegment := strings.HasPrefix(filename, "seg_") && (strings.HasSuffix(filename, ".ts") || strings.HasSuffix(filename, ".m4s"))
+	isInit := filename == "init.mp4"
 
-	if !isPlaylist && !isSegment {
+	if !isPlaylist && !isSegment && !isInit {
 		http.Error(w, "file type not allowed", http.StatusForbidden)
 		return
 	}
 
 	// 2. Session Check
 	rec, err := store.GetSession(r.Context(), sessionID)
-	if err != nil {
+	if err != nil || rec == nil {
 		// Store error or Not Found logic
 		// BoltStore returns specialized errors or we check for nil?
 		// Assuming GetSession returns error if not found or system fail.
@@ -71,6 +76,26 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, s
 		// If FAILED/CANCELLED: 404
 		http.Error(w, "session not ready", http.StatusNotFound)
 		return
+	}
+
+	// 2b. Touch access time for idle timeout tracking (playlist requests only, throttled).
+	if isPlaylist {
+		const minAccessUpdateIntervalSec = int64(5)
+		now := time.Now().Unix()
+		if rec.LastAccessUnix == 0 || now-rec.LastAccessUnix >= minAccessUpdateIntervalSec {
+			if updater, ok := store.(hlsSessionUpdater); ok {
+				_, _ = updater.UpdateSession(r.Context(), sessionID, func(r *model.SessionRecord) error {
+					if r == nil {
+						return nil
+					}
+					if r.LastAccessUnix != 0 && now-r.LastAccessUnix < minAccessUpdateIntervalSec {
+						return nil
+					}
+					r.LastAccessUnix = now
+					return nil
+				})
+			}
+		}
 	}
 
 	// 3. Resolve File Path
@@ -103,9 +128,18 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, s
 		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 		w.Header().Set("Cache-Control", "no-store")
 	} else if isSegment {
-		w.Header().Set("Content-Type", "video/MP2T")
+		// TS segments: video/MP2T
+		// fMP4 segments (.m4s): video/iso.segment
+		if strings.HasSuffix(filename, ".m4s") {
+			w.Header().Set("Content-Type", "video/iso.segment")
+		} else {
+			w.Header().Set("Content-Type", "video/MP2T")
+		}
 		// User Req: "Cache-Control: public, max-age=60"
 		w.Header().Set("Cache-Control", "public, max-age=60")
+	} else if isInit {
+		w.Header().Set("Content-Type", "video/mp4")
+		w.Header().Set("Cache-Control", "public, max-age=3600")
 	}
 
 	// 6. Serve Content (Supports Range)

@@ -22,9 +22,6 @@ const (
 	// FeatureFlagEPG enables Electronic Program Guide fetching.
 	FeatureFlagEPG FeatureFlag = "EPG"
 
-	// FeatureFlagAPIv2 enables experimental API v2 endpoints.
-	FeatureFlagAPIv2 FeatureFlag = "APIv2"
-
 	// FeatureFlagTelemetry enables OpenTelemetry distributed tracing.
 	FeatureFlagTelemetry FeatureFlag = "TELEMETRY"
 
@@ -48,7 +45,7 @@ func (f FeatureFlag) EnvVarName() string {
 func (f FeatureFlag) IsValid() bool {
 	switch f {
 	case FeatureFlagAudioTranscoding, FeatureFlagGPUTranscode, FeatureFlagEPG,
-		FeatureFlagAPIv2, FeatureFlagTelemetry, FeatureFlagMetrics:
+		FeatureFlagTelemetry, FeatureFlagMetrics:
 		return true
 	default:
 		return false
@@ -61,7 +58,6 @@ func AllFeatureFlags() []FeatureFlag {
 		FeatureFlagAudioTranscoding,
 		FeatureFlagGPUTranscode,
 		FeatureFlagEPG,
-		FeatureFlagAPIv2,
 		FeatureFlagTelemetry,
 		FeatureFlagMetrics,
 	}

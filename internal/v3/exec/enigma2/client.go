@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -32,7 +33,8 @@ func NewClient(baseURL string, timeout time.Duration) *Client {
 // Zap requests the receiver to switch to the specified service reference.
 func (c *Client) Zap(ctx context.Context, sref string) error {
 	params := url.Values{}
-	params.Set("sRef", sref)
+	// NOTE: OpenWebIf API (Zap) specifically requires "sRef". "ref" causes a "parameter missing" error.
+	params.Set("sRef", strings.ToUpper(sref))
 
 	var res Response
 	if err := c.get(ctx, "/api/zap", params, &res); err != nil {

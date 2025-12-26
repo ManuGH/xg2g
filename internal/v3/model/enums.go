@@ -90,26 +90,28 @@ const (
 
 // ProfileSpec is data-driven and future-proof (VisionOS, embedded clients, etc.).
 type ProfileSpec struct {
-	Name         string `json:"name"`
-	LLHLS        bool   `json:"llhls"`
-	DVRWindowSec int    `json:"dvrWindowSec"`
-	// Future: Codec preference, audio-only, subtitles, etc.
+	Name           string `json:"name"`
+	LLHLS          bool   `json:"llhls"`
+	DVRWindowSec   int    `json:"dvrWindowSec"`
+	TranscodeVideo bool   `json:"transcodeVideo"`
+	// Future: Audio-only, subtitles, etc.
 }
 
 // SessionRecord is the state-store source of truth for client-visible state.
 type SessionRecord struct {
-	SessionID     string            `json:"sessionId"`
-	ServiceRef    string            `json:"serviceRef"`
-	Profile       ProfileSpec       `json:"profile"`
-	State         SessionState      `json:"state"`
-	PipelineState PipelineState     `json:"pipelineState"`
-	Reason        ReasonCode        `json:"reason"`
-	ReasonDetail  string            `json:"reasonDetail,omitempty"`
-	CorrelationID string            `json:"correlationId"`
-	CreatedAtUnix int64             `json:"createdAtUnix"`
-	UpdatedAtUnix int64             `json:"updatedAtUnix"`
-	ExpiresAtUnix int64             `json:"expiresAtUnix"` // TTL for garbage collection.
-	ContextData   map[string]string `json:"contextData,omitempty"`
+	SessionID      string            `json:"sessionId"`
+	ServiceRef     string            `json:"serviceRef"`
+	Profile        ProfileSpec       `json:"profile"`
+	State          SessionState      `json:"state"`
+	PipelineState  PipelineState     `json:"pipelineState"`
+	Reason         ReasonCode        `json:"reason"`
+	ReasonDetail   string            `json:"reasonDetail,omitempty"`
+	CorrelationID  string            `json:"correlationId"`
+	CreatedAtUnix  int64             `json:"createdAtUnix"`
+	UpdatedAtUnix  int64             `json:"updatedAtUnix"`
+	LastAccessUnix int64             `json:"lastAccessUnix,omitempty"`
+	ExpiresAtUnix  int64             `json:"expiresAtUnix"` // TTL for garbage collection.
+	ContextData    map[string]string `json:"contextData,omitempty"`
 }
 
 // PipelineRecord tracks the internal worker state.

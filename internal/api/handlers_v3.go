@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -18,7 +19,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/v3/model"
 )
 
-// handleV3Intents handles POST /api/v3/intents (experimental/preview control plane).
+// handleV3Intents handles POST /api/v3/intents.
 func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	// 0. Hardening: Limit Request Size (1MB)
 	r.Body = http.MaxBytesReader(w, r.Body, 1048576)
@@ -72,6 +73,23 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		intentType = model.IntentTypeStreamStart
 	}
 
+	// 4a. User-Agent Detection (Safari Fix)
+	// If the client is Safari and no specific profile is requested, force "safari" profile
+	// to ensure we transcode incompatible formats (like MPEG-2) to H.264.
+	isSafari := false
+	if ua := r.UserAgent(); ua != "" {
+		// Chrome also includes "Safari", so check for "Safari" AND NOT "Chrome"
+		// (Simple heuristic, can be improved)
+		if strings.Contains(ua, "Safari") && !strings.Contains(ua, "Chrome") && !strings.Contains(ua, "Chromium") {
+			isSafari = true
+		}
+	}
+
+	if isSafari && (req.ProfileID == "" || req.ProfileID == "default" || req.ProfileID == "hd") {
+		req.ProfileID = "safari_dvr"
+	}
+	log.L().Info().Str("ua", r.UserAgent()).Bool("is_safari", isSafari).Str("final_profile", req.ProfileID).Msg("intent profile debug")
+
 	switch intentType {
 	case model.IntentTypeStreamStart:
 		sessionID = uuid.New().String()
@@ -102,13 +120,17 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	case model.IntentTypeStreamStart:
 		// Create Session Record (Starting state)
 		session := &model.SessionRecord{
-			SessionID:     sessionID,
-			ServiceRef:    req.ServiceRef,
-			Profile:       model.ProfileSpec{Name: req.ProfileID},
-			State:         model.SessionNew,
-			CreatedAtUnix: time.Now().Unix(),
-			UpdatedAtUnix: time.Now().Unix(),
-			ContextData:   map[string]string{"client_ip": clientIP},
+			SessionID:  sessionID,
+			ServiceRef: req.ServiceRef,
+			Profile: model.ProfileSpec{
+				Name:         req.ProfileID,
+				DVRWindowSec: s.cfg.DVRWindowSec, // Use configured DVR window
+			},
+			State:          model.SessionNew,
+			CreatedAtUnix:  time.Now().Unix(),
+			UpdatedAtUnix:  time.Now().Unix(),
+			LastAccessUnix: time.Now().Unix(),
+			ContextData:    map[string]string{"client_ip": clientIP},
 		}
 
 		// Persist Session (Atomic)

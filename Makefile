@@ -414,13 +414,17 @@ docker-build-cpu: ## Build CPU-only Docker image (MODE 1+2: Audio transcoding on
 	@echo "🚀 Building CPU-only Docker image (MODE 1+2)..."
 	@docker buildx create --use --name xg2g-builder 2>/dev/null || true
 	@docker buildx build \
+		--load \
 		--platform $(PLATFORMS) \
 		-t $(DOCKER_IMAGE):$(VERSION) \
 		-t $(DOCKER_IMAGE):latest \
 		-t $(DOCKER_IMAGE):$(VERSION)-cpu \
 		-t $(DOCKER_IMAGE):latest-cpu \
 		.
-	@echo "✅ CPU-only Docker image built"
+	@echo "✅ CPU-only Docker image built and loaded to Docker"
+	@echo ""
+	@echo "💡 To restart the application with the new image:"
+	@echo "   docker compose down && docker compose up -d"
 
 docker-build-gpu: ## Build GPU-enabled Docker image (MODE 3: VAAPI video transcoding)
 	@echo "⚠️  GPU support is currently disabled in Dockerfile (MODE 3 temporarily unavailable)"

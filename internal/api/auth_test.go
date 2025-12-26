@@ -170,7 +170,7 @@ func TestAuthMiddleware_ValidXAPIToken(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
-func TestHandleSessionLogin(t *testing.T) {
+func TestCreateSession(t *testing.T) {
 	s := &Server{
 		cfg: config.AppConfig{
 			APIToken:   "secret",
@@ -179,11 +179,11 @@ func TestHandleSessionLogin(t *testing.T) {
 	}
 
 	// Auth success
-	req := httptest.NewRequest("POST", "/api/v2/auth/session", nil)
+	req := httptest.NewRequest("POST", "/api/v3/auth/session", nil)
 	req.Header.Set("Authorization", "Bearer secret")
 	w := httptest.NewRecorder()
 
-	s.HandleSessionLogin(w, req)
+	s.CreateSession(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 

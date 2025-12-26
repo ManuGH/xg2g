@@ -38,7 +38,7 @@ func TestHandleSystemHealth(t *testing.T) {
 		LastRun:  time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC),
 	})
 	handler := s.Handler()
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v2/system/health", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v3/system/health", nil)
 	require.NoError(t, err)
 	req.Header.Set("Authorization", "Bearer test-token")
 
@@ -60,7 +60,7 @@ func TestHandleRefresh_ErrorDoesNotUpdateLastRun(t *testing.T) {
 	handler := s.Handler()
 	initialTime := s.status.LastRun
 
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v2/system/refresh", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v3/system/refresh", nil)
 	require.NoError(t, err)
 	req.Host = "example.com"                       // Required for CSRF validation
 	req.Header.Set("Origin", "http://example.com") // Add Origin for CSRF protection
@@ -107,7 +107,7 @@ func TestHandleRefresh_SuccessUpdatesLastRun(t *testing.T) {
 	// Initial state
 	initialTime := s.status.LastRun
 
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v2/system/refresh", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v3/system/refresh", nil)
 	require.NoError(t, err)
 	req.Host = "example.com"
 	req.Header.Set("Origin", "http://example.com")
@@ -143,7 +143,7 @@ func TestHandleRefresh_ConflictOnConcurrent(t *testing.T) {
 	handler := s.Handler()
 
 	// First request starts and blocks
-	req1 := httptest.NewRequest(http.MethodPost, "/api/v2/system/refresh", nil)
+	req1 := httptest.NewRequest(http.MethodPost, "/api/v3/system/refresh", nil)
 	req1.Host = "example.com"                       // Required for CSRF validation
 	req1.Header.Set("Origin", "http://example.com") // Add Origin for CSRF protection
 	req1.Header.Set("Authorization", "Bearer dummy-token")
@@ -164,7 +164,7 @@ func TestHandleRefresh_ConflictOnConcurrent(t *testing.T) {
 	}
 
 	// Second request should get 409 Conflict
-	req2 := httptest.NewRequest(http.MethodPost, "/api/v2/system/refresh", nil)
+	req2 := httptest.NewRequest(http.MethodPost, "/api/v3/system/refresh", nil)
 	req2.Host = "example.com"                       // Required for CSRF validation
 	req2.Header.Set("Origin", "http://example.com") // Add Origin for CSRF protection
 	req2.Header.Set("Authorization", "Bearer dummy-token")
@@ -629,9 +629,9 @@ func TestHandleXMLTV_HEADRequest(t *testing.T) {
 	assert.Equal(t, "public, max-age=300", rr.Header().Get("Cache-Control"))
 }
 
-// TestHandleSystemHealthV2 removed as it duplicates TestHandleSystemHealth
+// TestHandleSystemHealthV3 removed as it duplicates TestHandleSystemHealth
 
-func TestHandleRefreshV2(t *testing.T) {
+func TestHandleRefreshV3(t *testing.T) {
 	cfg := config.AppConfig{
 		OWIBase:    "http://invalid-url-for-testing",
 		APIToken:   "refresh-token",
@@ -642,7 +642,9 @@ func TestHandleRefreshV2(t *testing.T) {
 	server := New(cfg, nil)
 	handler := server.Handler()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v2/system/refresh", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v3/system/refresh", nil)
+	req.Host = "example.com"                       // Required for CSRF validation
+	req.Header.Set("Origin", "http://example.com") // Add Origin for CSRF protection
 	req.Header.Set("Authorization", "Bearer refresh-token")
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
@@ -668,7 +670,9 @@ func TestClientDisconnectDuringRefresh(t *testing.T) {
 	// Create a context that we'll cancel to simulate client disconnect
 	ctx, cancel := context.WithCancel(context.Background())
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v2/refresh", nil).WithContext(ctx)
+	req := httptest.NewRequest(http.MethodPost, "/api/v3/system/refresh", nil).WithContext(ctx)
+	req.Host = "example.com"                       // Required for CSRF validation
+	req.Header.Set("Origin", "http://example.com") // Add Origin for CSRF protection
 	req.Header.Set("Authorization", "Bearer test-token")
 
 	rr := httptest.NewRecorder()

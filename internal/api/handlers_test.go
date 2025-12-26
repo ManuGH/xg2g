@@ -260,7 +260,7 @@ func TestHandler(t *testing.T) {
 	// with_audit_logger case removed
 }
 
-// Obsolete tests removed (TestSetConfigHolder, TestSetAuditLogger, TestHandleStatusV2Placeholder, TestNewRouter)
+// Obsolete tests removed (TestSetConfigHolder, TestSetAuditLogger, TestHandleStatusPlaceholder, TestNewRouter)
 
 // checkFile Tests
 
@@ -301,23 +301,23 @@ func TestCheckFile_NoPermission(t *testing.T) {
 	assert.False(t, result)
 }
 
-// V2 Routes Tests
+// API Routes Tests
 
-func TestRegisterV2Routes_StatusEndpoint(t *testing.T) {
+func TestRegisterRoutes_StatusEndpoint(t *testing.T) {
 	cfg := config.AppConfig{
 		APIToken: "test-token",
-		Version:  "2.0.0",
+		Version:  "3.0.0",
 		DataDir:  t.TempDir(),
 	}
 	s := New(cfg, nil)
 	s.SetStatus(jobs.Status{
-		Version:  "2.0.0",
+		Version:  "3.0.0",
 		Channels: 2,
 	})
 
 	handler := s.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v2/system/health", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v3/system/health", nil)
 	req.Header.Set("Authorization", "Bearer test-token")
 	rr := httptest.NewRecorder()
 
@@ -331,7 +331,7 @@ func TestRegisterV2Routes_StatusEndpoint(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "ok", resp["status"])
-	assert.Equal(t, "2.0.0", resp["version"])
+	assert.Equal(t, "3.0.0", resp["version"])
 }
 
 // TestHandleLineupJSON_PlexForceHLS_Disabled tests lineup.json returns direct MPEG-TS URLs when PlexForceHLS=false

@@ -92,7 +92,7 @@ export default function RecordingsList() {
       return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
     };
 
-    const baseUrl = '/api/v2';
+    const baseUrl = '/api/v3';
     const encodedId = toBase64Url(item.service_ref);
     const url = `${baseUrl}/recordings/${encodedId}/playlist.m3u8`;
 
@@ -113,7 +113,7 @@ export default function RecordingsList() {
       // Let's use fetch for MVP to avoid editing another file if possible, or edit service properly.
       // Editing service is better practice. But for now speed:
 
-      const res = await fetch(`/api/v2/recordings/${encodedId}`, {
+      const res = await fetch(`/api/v3/recordings/${encodedId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`

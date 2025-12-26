@@ -11,9 +11,9 @@ import (
 
 func (c *Client) ResolveStreamURL(ctx context.Context, sref string) (string, error) {
 	// Request the M3U playlist from the receiver to let it decide the correct stream URL (port, transcoding, etc).
-	// Endpoint: /web/stream.m3u?sRef=...
+	// Endpoint: /web/stream.m3u?ref=... (Using "ref" ensures full URL is returned on some OWI versions)
 	params := url.Values{}
-	params.Set("sRef", sref)
+	params.Set("ref", strings.ToUpper(sref))
 
 	u, err := url.Parse(c.BaseURL)
 	if err != nil {
@@ -49,7 +49,7 @@ func (c *Client) ResolveStreamURL(ctx context.Context, sref string) (string, err
 				// Naive check: does it look like it's missing the sRef?
 				// If the sRef isn't in the URL, append it.
 				if !strings.Contains(line, sref) {
-					return line + sref, nil
+					return line + strings.ToUpper(sref), nil
 				}
 			}
 			return line, nil

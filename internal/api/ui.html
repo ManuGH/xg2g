@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>xg2g v2.0 – Status Dashboard</title>
+    <title>xg2g v3 – Status Dashboard</title>
     <style>
         * {
             margin: 0;
@@ -320,7 +320,7 @@
 <body>
     <div class="container">
         <header>
-            <h1>🛰️ xg2g v2.0</h1>
+            <h1>🛰️ xg2g v3</h1>
             <p>Status Dashboard – OpenWebIF IPTV Bridge</p>
         </header>
 
@@ -386,13 +386,13 @@
             const loadingEl = document.getElementById('loading');
 
             try {
-                console.log('[Dashboard] Fetching status from /api/v2/ui/status');
+                console.log('[Dashboard] Fetching status from /api/v3/ui/status');
 
                 // Create abort controller for timeout
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
 
-                const response = await fetch('/api/v2/ui/status', {
+                const response = await fetch('/api/v3/ui/status', {
                     method: 'GET',
                     headers: {
                         'Accept': 'application/json',
@@ -452,12 +452,12 @@
         // Load URLs from API with better error handling
         async function loadUrls() {
             try {
-                console.log('[Dashboard] Fetching URLs from /api/v2/ui/urls');
+                console.log('[Dashboard] Fetching URLs from /api/v3/ui/urls');
 
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-                const response = await fetch('/api/v2/ui/urls', {
+                const response = await fetch('/api/v3/ui/urls', {
                     method: 'GET',
                     headers: {
                         'Accept': 'application/json',
@@ -647,7 +647,7 @@
             status.textContent = '⏳ Refreshing...';
 
             try {
-                const response = await fetch('/api/v2/ui/refresh', { method: 'POST' });
+                const response = await fetch('/api/v3/ui/refresh', { method: 'POST' });
                 const data = await response.json();
 
                 if (response.ok && data.status === 'success') {

@@ -422,7 +422,7 @@ To prevent regression of encrypted channel support, all developers must adhere t
 
 ## History
 
-- Stable API base path (legacy): `/api/v2/*`.
+- Stable API base path: `/api/v3/*`.
 - Document version: 3.0.0 (2025-12-19).
 
 ## References

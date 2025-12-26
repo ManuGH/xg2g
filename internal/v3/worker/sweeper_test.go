@@ -123,6 +123,38 @@ func TestSweeper_FileCleanup(t *testing.T) {
 	assert.NoError(t, err, "Recent dir should be kept (too young)")
 }
 
+func TestSweeper_IdleStop(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	st := store.NewMemoryStore()
+	orch := &Orchestrator{
+		Store: st,
+	}
+	sweeper := &Sweeper{
+		Orch: orch,
+		Conf: SweeperConfig{
+			IdleTimeout: 30 * time.Second,
+		},
+	}
+
+	sid := "sess-idle"
+	rec := &model.SessionRecord{
+		SessionID:      sid,
+		State:          model.SessionReady,
+		LastAccessUnix: time.Now().Add(-1 * time.Minute).Unix(),
+	}
+	require.NoError(t, st.PutSession(ctx, rec))
+
+	sweeper.sweepStore(ctx)
+
+	got, err := st.GetSession(ctx, sid)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, model.SessionStopping, got.State)
+	assert.Equal(t, model.RIdleTimeout, got.Reason)
+}
+
 func TestSweeper_Integration(t *testing.T) {
 	// Tests that Orchestrator launches sweeper
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)

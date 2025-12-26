@@ -66,10 +66,10 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// HandleSessionLogin creates a secure HTTP-only session cookie exchange for the provided Bearer token.
-// POST /api/v2/auth/session
+// CreateSession creates a secure HTTP-only session cookie exchange for the provided Bearer token.
+// POST /api/v3/auth/session
 // Requires Authentication (via Header) to be successful first.
-func (s *Server) HandleSessionLogin(w http.ResponseWriter, r *http.Request) {
+func (s *Server) CreateSession(w http.ResponseWriter, r *http.Request) {
 	// 1. Re-extract the token that was successfully validated
 	// We prefer the Bearer token from the header for this "login" exchange.
 	// We allow Header or Cookie (if refreshing). NO Query.

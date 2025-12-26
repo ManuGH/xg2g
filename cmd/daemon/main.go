@@ -316,6 +316,7 @@ func main() {
 			FFmpegBin:         cfg.FFmpegBin,
 			FFmpegKillTimeout: cfg.FFmpegKillTimeout,
 			HLSRoot:           cfg.HLSRoot,
+			IdleTimeout:       cfg.V3IdleTimeout,
 		}
 	}
 

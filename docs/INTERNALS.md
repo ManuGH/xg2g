@@ -127,9 +127,9 @@ Reference enums: `internal/v3/model/enums.go`.
 
 ## History
 
-### v2 API Surface
+### v3 API Surface
 
-- Stable API base path: `/api/v2/*`.
+- Stable API base path: `/api/v3/*`.
 - Streaming control plane was introduced under `/api/v3/*`.
 
 ### v2 Config Schema

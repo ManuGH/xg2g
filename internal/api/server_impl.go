@@ -23,6 +23,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/m3u"
 	"github.com/ManuGH/xg2g/internal/openwebif"
+	"github.com/ManuGH/xg2g/internal/v3/model"
 )
 
 // Ensure Server implements ServerInterface
@@ -388,15 +389,246 @@ func (s *Server) GetLogs(w http.ResponseWriter, r *http.Request) {
 
 // GetStreams implements ServerInterface
 func (s *Server) GetStreams(w http.ResponseWriter, r *http.Request) {
-	// V2 Proxy deprecated
+	s.mu.RLock()
+	store := s.v3Store
+	cfg := s.cfg
+	snap := s.snap
+	epgCache := s.epgCache
+	s.mu.RUnlock()
+
+	if store == nil {
+		http.Error(w, "v3 store not initialized", http.StatusServiceUnavailable)
+		return
+	}
+
+	sessions, err := store.ListSessions(r.Context())
+	if err != nil {
+		http.Error(w, "failed to list sessions", http.StatusInternalServerError)
+		return
+	}
+
+	if len(sessions) == 0 {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode([]StreamSession{})
+		return
+	}
+
+	now := time.Now()
+	idleTimeout := cfg.V3IdleTimeout
+	channelNames := make(map[string]string)
+
+	if epgCache != nil {
+		for _, ch := range epgCache.Channels {
+			if ch.ID == "" || len(ch.DisplayName) == 0 {
+				continue
+			}
+			if _, ok := channelNames[ch.ID]; !ok {
+				channelNames[ch.ID] = ch.DisplayName[0]
+			}
+		}
+	}
+
+	activeSessions := make([]*model.SessionRecord, 0, len(sessions))
+	missingRefs := make(map[string]struct{})
+
+	for _, sess := range sessions {
+		if sess == nil {
+			continue
+		}
+		if sess.State.IsTerminal() {
+			continue
+		}
+
+		lastAccess := sess.LastAccessUnix
+		if lastAccess == 0 {
+			lastAccess = sess.UpdatedAtUnix
+		}
+		if lastAccess == 0 {
+			lastAccess = sess.CreatedAtUnix
+		}
+		if idleTimeout > 0 && lastAccess > 0 {
+			if now.Sub(time.Unix(lastAccess, 0)) > idleTimeout {
+				continue
+			}
+		}
+
+		activeSessions = append(activeSessions, sess)
+		if sess.ServiceRef != "" {
+			if _, ok := channelNames[sess.ServiceRef]; !ok {
+				missingRefs[sess.ServiceRef] = struct{}{}
+			}
+		}
+	}
+
+	if len(activeSessions) == 0 {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode([]StreamSession{})
+		return
+	}
+
+	if len(missingRefs) > 0 {
+		for ref, name := range mapPlaylistNames(cfg, snap, missingRefs) {
+			if _, ok := channelNames[ref]; !ok && name != "" {
+				channelNames[ref] = name
+			}
+		}
+	}
+
+	resp := make([]StreamSession, 0, len(activeSessions))
+	for _, sess := range activeSessions {
+		if sess == nil {
+			continue
+		}
+		id := sess.SessionID
+		if id == "" {
+			continue
+		}
+
+		var clientIP *string
+		if sess.ContextData != nil {
+			if ip := sess.ContextData["client_ip"]; ip != "" {
+				clientIP = &ip
+			}
+		}
+
+		var channelName *string
+		if sess.ServiceRef != "" {
+			name := channelNames[sess.ServiceRef]
+			if name == "" {
+				name = sess.ServiceRef
+			}
+			if name != "" {
+				channelName = &name
+			}
+		}
+
+		var startedAt *time.Time
+		if sess.CreatedAtUnix > 0 {
+			t := time.Unix(sess.CreatedAtUnix, 0)
+			startedAt = &t
+		}
+
+		state := Active
+		resp = append(resp, StreamSession{
+			Id:          &id,
+			ClientIp:    clientIP,
+			ChannelName: channelName,
+			StartedAt:   startedAt,
+			State:       &state,
+		})
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode([]StreamSession{})
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // DeleteStreamsId implements ServerInterface
 func (s *Server) DeleteStreamsId(w http.ResponseWriter, r *http.Request, id string) {
-	// V2 Proxy deprecated
-	http.Error(w, "V2 proxy deprecated", http.StatusNotFound)
+	if id == "" || !model.IsSafeSessionID(id) {
+		http.Error(w, "invalid session id", http.StatusBadRequest)
+		return
+	}
+
+	s.mu.RLock()
+	bus := s.v3Bus
+	store := s.v3Store
+	s.mu.RUnlock()
+
+	if bus == nil || store == nil {
+		http.Error(w, "v3 control plane not enabled", http.StatusServiceUnavailable)
+		return
+	}
+
+	session, err := store.GetSession(r.Context(), id)
+	if err != nil {
+		http.Error(w, "failed to load session", http.StatusInternalServerError)
+		return
+	}
+	if session == nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+
+	event := model.StopSessionEvent{
+		Type:          model.EventStopSession,
+		SessionID:     id,
+		Reason:        model.RClientStop,
+		RequestedAtUN: time.Now().Unix(),
+	}
+	if err := bus.Publish(r.Context(), string(model.EventStopSession), event); err != nil {
+		log.L().Error().Err(err).Str("session", id).Msg("failed to publish stop event")
+		http.Error(w, "failed to stop session", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func mapPlaylistNames(cfg config.AppConfig, snap config.Snapshot, wanted map[string]struct{}) map[string]string {
+	if len(wanted) == 0 || snap.Runtime.PlaylistFilename == "" {
+		return nil
+	}
+
+	path := filepath.Clean(filepath.Join(cfg.DataDir, snap.Runtime.PlaylistFilename))
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+
+	channels := m3u.Parse(string(data))
+	names := make(map[string]string, len(wanted))
+
+	for _, ch := range channels {
+		if len(names) == len(wanted) {
+			break
+		}
+
+		id := ch.TvgID
+		if id == "" {
+			id = ch.Name
+		}
+
+		serviceRef := ""
+		if ch.URL != "" {
+			if u, err := url.Parse(ch.URL); err == nil {
+				if ref := u.Query().Get("ref"); ref != "" {
+					serviceRef = ref
+				} else {
+					parts := strings.Split(u.Path, "/")
+					if len(parts) > 0 {
+						serviceRef = parts[len(parts)-1]
+					}
+				}
+			} else {
+				parts := strings.Split(ch.URL, "/")
+				if len(parts) > 0 {
+					serviceRef = parts[len(parts)-1]
+				}
+			}
+		}
+
+		if serviceRef == "" {
+			serviceRef = id
+		}
+		if serviceRef == "" {
+			continue
+		}
+		if _, ok := wanted[serviceRef]; !ok {
+			continue
+		}
+
+		name := ch.Name
+		if name == "" {
+			name = id
+		}
+		if name == "" {
+			continue
+		}
+
+		names[serviceRef] = name
+	}
+
+	return names
 }
 
 // handleNowNextEPG returns now/next EPG for a list of service references.
@@ -731,7 +963,7 @@ func (s *Server) GetEpg(w http.ResponseWriter, r *http.Request, params GetEpgPar
 	})
 }
 
-// GetTimers implements ServerInterface (v2)
+// GetTimers implements ServerInterface
 func (s *Server) GetTimers(w http.ResponseWriter, r *http.Request, params GetTimersParams) {
 	s.mu.RLock()
 	cfg := s.cfg
@@ -802,7 +1034,7 @@ func (s *Server) GetTimers(w http.ResponseWriter, r *http.Request, params GetTim
 	_ = json.NewEncoder(w).Encode(TimerList{Items: mapped})
 }
 
-// AddTimer implements ServerInterface (v2)
+// AddTimer implements ServerInterface
 func (s *Server) AddTimer(w http.ResponseWriter, r *http.Request) {
 	var req TimerCreateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -988,7 +1220,7 @@ func (s *Server) AddTimer(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// DeleteTimer implements ServerInterface (v2)
+// DeleteTimer implements ServerInterface
 func (s *Server) DeleteTimer(w http.ResponseWriter, r *http.Request, timerId string) {
 	sRef, begin, end, err := ParseTimerID(timerId)
 	if err != nil {
@@ -1015,7 +1247,7 @@ func (s *Server) DeleteTimer(w http.ResponseWriter, r *http.Request, timerId str
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// UpdateTimer implements ServerInterface (v2 - Edit)
+// UpdateTimer implements ServerInterface (Edit)
 func (s *Server) UpdateTimer(w http.ResponseWriter, r *http.Request, timerId string) {
 	var req TimerPatchRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -1165,7 +1397,7 @@ func (s *Server) UpdateTimer(w http.ResponseWriter, r *http.Request, timerId str
 	})
 }
 
-// PreviewConflicts implements ServerInterface (v2)
+// PreviewConflicts implements ServerInterface
 func (s *Server) PreviewConflicts(w http.ResponseWriter, r *http.Request) {
 	var req TimerConflictPreviewRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -1223,7 +1455,7 @@ func (s *Server) PreviewConflicts(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
-// GetDvrCapabilities implements ServerInterface (v2)
+// GetDvrCapabilities implements ServerInterface
 func (s *Server) GetDvrCapabilities(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	cfg := s.cfg
@@ -1270,7 +1502,7 @@ func (s *Server) GetDvrCapabilities(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
-// GetTimer implements ServerInterface (v2)
+// GetTimer implements ServerInterface
 func (s *Server) GetTimer(w http.ResponseWriter, r *http.Request, timerId string) {
 	sRef, begin, end, err := ParseTimerID(timerId)
 	if err != nil {

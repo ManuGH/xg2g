@@ -18,7 +18,6 @@ func TestFeatureFlag_String(t *testing.T) {
 		{"audio transcoding", FeatureFlagAudioTranscoding, "AUDIO_TRANSCODING"},
 		{"GPU transcode", FeatureFlagGPUTranscode, "GPU_TRANSCODE"},
 		{"EPG", FeatureFlagEPG, "EPG"},
-		{"API v2", FeatureFlagAPIv2, "APIv2"},
 		{"telemetry", FeatureFlagTelemetry, "TELEMETRY"},
 		{"metrics", FeatureFlagMetrics, "METRICS"},
 	}
@@ -41,7 +40,6 @@ func TestFeatureFlag_EnvVarName(t *testing.T) {
 		{"audio transcoding", FeatureFlagAudioTranscoding, "XG2G_AUDIO_TRANSCODING_ENABLED"},
 		{"GPU transcode", FeatureFlagGPUTranscode, "XG2G_GPU_TRANSCODE_ENABLED"},
 		{"EPG", FeatureFlagEPG, "XG2G_EPG_ENABLED"},
-		{"API v2", FeatureFlagAPIv2, "XG2G_APIv2_ENABLED"},
 		{"telemetry", FeatureFlagTelemetry, "XG2G_TELEMETRY_ENABLED"},
 		{"metrics", FeatureFlagMetrics, "XG2G_METRICS_ENABLED"},
 	}
@@ -64,7 +62,6 @@ func TestFeatureFlag_IsValid(t *testing.T) {
 		{"audio transcoding valid", FeatureFlagAudioTranscoding, true},
 		{"GPU transcode valid", FeatureFlagGPUTranscode, true},
 		{"EPG valid", FeatureFlagEPG, true},
-		{"API v2 valid", FeatureFlagAPIv2, true},
 		{"telemetry valid", FeatureFlagTelemetry, true},
 		{"metrics valid", FeatureFlagMetrics, true},
 		{"invalid empty", FeatureFlag(""), false},
@@ -84,8 +81,8 @@ func TestFeatureFlag_IsValid(t *testing.T) {
 func TestAllFeatureFlags(t *testing.T) {
 	flags := AllFeatureFlags()
 
-	if len(flags) != 6 {
-		t.Errorf("AllFeatureFlags() returned %d flags, want 6", len(flags))
+	if len(flags) != 5 {
+		t.Errorf("AllFeatureFlags() returned %d flags, want 5", len(flags))
 	}
 
 	// Verify all expected flags are present
@@ -93,7 +90,6 @@ func TestAllFeatureFlags(t *testing.T) {
 		FeatureFlagAudioTranscoding,
 		FeatureFlagGPUTranscode,
 		FeatureFlagEPG,
-		FeatureFlagAPIv2,
 		FeatureFlagTelemetry,
 		FeatureFlagMetrics,
 	}

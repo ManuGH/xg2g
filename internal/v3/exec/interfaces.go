@@ -25,7 +25,7 @@ type Tuner interface {
 // Transcoder manages the ffmpeg process.
 type Transcoder interface {
 	// Start launches the process with the given specification.
-	Start(ctx context.Context, sessionID, serviceRef string, profile model.ProfileID) error
+	Start(ctx context.Context, sessionID, serviceRef string, profileSpec model.ProfileSpec) error
 
 	// Wait blocks until the process exits or context is cancelled.
 	// It returns the final status.

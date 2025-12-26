@@ -51,6 +51,12 @@ func TestOrchestrator_Stop_Ready(t *testing.T) {
 		SessionID: sessionID, ServiceRef: "ref:1", State: model.SessionNew,
 	})
 
+	// Create session directory and playlist BEFORE starting session
+	// (needed since we now wait for playlist before transitioning to READY)
+	sessionDir := filepath.Join(hlsRoot, "sessions", sessionID)
+	require.NoError(t, os.MkdirAll(sessionDir, 0750))
+	require.NoError(t, os.WriteFile(filepath.Join(sessionDir, "index.m3u8"), []byte("#EXTM3U\n"), 0600))
+
 	startEvt := model.StartSessionEvent{
 		SessionID: sessionID, ServiceRef: "ref:1", ProfileID: "p1",
 	}
@@ -61,11 +67,6 @@ func TestOrchestrator_Stop_Ready(t *testing.T) {
 		s, err := st.GetSession(ctx, sessionID)
 		return err == nil && s.State == model.SessionReady
 	}, 1*time.Second, 50*time.Millisecond)
-
-	// 4. Create dummy files (Verify Cleanup)
-	sessionDir := filepath.Join(hlsRoot, "sessions", sessionID)
-	require.NoError(t, os.MkdirAll(sessionDir, 0750))
-	require.NoError(t, os.WriteFile(filepath.Join(sessionDir, "playlist.m3u8"), []byte("#EXTM3U"), 0600))
 
 	// 5. Publish Stop Session
 	stopEvt := model.StopSessionEvent{

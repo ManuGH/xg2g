@@ -25,7 +25,7 @@ func TestShouldTrace(t *testing.T) {
 		}
 	}
 
-	tracePaths := []string{"/api/v2/system/health", "/api/v3/intents", "/files/playlist.m3u"}
+	tracePaths := []string{"/api/v3/system/health", "/api/v3/intents", "/files/playlist.m3u"}
 	for _, p := range tracePaths {
 		req := httptest.NewRequest(http.MethodGet, p, nil)
 		if !shouldTrace(req) {
@@ -37,13 +37,13 @@ func TestShouldTrace(t *testing.T) {
 func TestSpanNameFormatter(t *testing.T) {
 	t.Parallel()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v2/system/health", nil)
-	if got := spanNameFormatter("HTTP GET", req); got != "HTTP GET /api/v2/system/health" {
+	req := httptest.NewRequest(http.MethodGet, "/api/v3/system/health", nil)
+	if got := spanNameFormatter("HTTP GET", req); got != "HTTP GET /api/v3/system/health" {
 		t.Fatalf("unexpected span name: %s", got)
 	}
 
-	reqWithQuery := httptest.NewRequest(http.MethodGet, "/api/v2/system/health?token=secret", nil)
-	if got := spanNameFormatter("HTTP GET", reqWithQuery); got != "HTTP GET /api/v2/system/health?" {
+	reqWithQuery := httptest.NewRequest(http.MethodGet, "/api/v3/system/health?token=secret", nil)
+	if got := spanNameFormatter("HTTP GET", reqWithQuery); got != "HTTP GET /api/v3/system/health?" {
 		t.Fatalf("unexpected span name with query: %s", got)
 	}
 }

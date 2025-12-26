@@ -44,7 +44,7 @@ func TestTracing_Success(t *testing.T) {
 	tracedHandler := Tracing("test-tracer")(handler)
 
 	// Create test request
-	req := httptest.NewRequest(http.MethodGet, "/api/v2/status", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v3/status", nil)
 	rec := httptest.NewRecorder()
 
 	// Execute request
@@ -80,7 +80,7 @@ func TestTracing_Error(t *testing.T) {
 	tracedHandler := Tracing("test-tracer")(handler)
 
 	// Create test request
-	req := httptest.NewRequest(http.MethodGet, "/api/v2/error", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v3/error", nil)
 	rec := httptest.NewRecorder()
 
 	// Execute request
@@ -112,7 +112,7 @@ func TestTracing_ClientError(t *testing.T) {
 	tracedHandler := Tracing("test-tracer")(handler)
 
 	// Create test request
-	req := httptest.NewRequest(http.MethodGet, "/api/v2/notfound", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v3/notfound", nil)
 	rec := httptest.NewRecorder()
 
 	// Execute request
@@ -143,7 +143,7 @@ func TestTracing_WithUserAgent(t *testing.T) {
 	tracedHandler := Tracing("test-tracer")(handler)
 
 	// Create test request with User-Agent
-	req := httptest.NewRequest(http.MethodGet, "/api/v2/status", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v3/status", nil)
 	req.Header.Set("User-Agent", "TestClient/1.0")
 	rec := httptest.NewRecorder()
 
@@ -176,7 +176,7 @@ func TestTracing_MultipleRequests(t *testing.T) {
 
 	// Execute multiple requests
 	for i := 0; i < 10; i++ {
-		req := httptest.NewRequest(http.MethodGet, "/api/v2/status", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/v3/status", nil)
 		rec := httptest.NewRecorder()
 		tracedHandler.ServeHTTP(rec, req)
 
@@ -216,7 +216,7 @@ func TestTracing_PreservesResponseWriterInterfaces(t *testing.T) {
 	})
 
 	tracedHandler := Tracing("test-tracer")(handler)
-	req := httptest.NewRequest(http.MethodGet, "/api/v2/status", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v3/status", nil)
 	rec := testResponseWriter{ResponseRecorder: httptest.NewRecorder()}
 	tracedHandler.ServeHTTP(rec, req)
 

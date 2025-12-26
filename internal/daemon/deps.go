@@ -72,6 +72,7 @@ type V3Config struct {
 	FFmpegBin         string
 	FFmpegKillTimeout time.Duration
 	HLSRoot           string
+	IdleTimeout       time.Duration
 }
 
 // ProxyConfig holds proxy server configuration.

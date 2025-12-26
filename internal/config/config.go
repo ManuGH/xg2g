@@ -126,7 +126,7 @@ type AppConfig struct {
 	FuzzyMax        int
 	StreamPort      int
 	UseWebIFStreams bool
-	APIToken        string // Optional: for securing API endpoints (e.g., /api/v2/*)
+	APIToken        string // Optional: for securing API endpoints (e.g., /api/v3/*)
 	APITokenScopes  []string
 	APITokens       []ScopedToken
 	APIListenAddr   string // Optional: API listen address (if set via config.yaml)
@@ -156,10 +156,10 @@ type AppConfig struct {
 	DevMode              bool   // Enable development mode (live asset reloading)
 	AuthAnonymous        bool   // Allow anonymous access if no token is configured (Fail-Open override)
 	ReadyStrict          bool   // Enable strict readiness checks (check upstream availability)
-	ShadowIntentsEnabled bool   // v3 Shadow Canary (experimental): mirror intents to v3 API (default OFF)
-	ShadowTarget         string // v3 Shadow Canary (experimental): target URL (e.g. http://localhost:8080/api/v3/intents)
+	ShadowIntentsEnabled bool   // v3 Shadow Canary: mirror intents to v3 API (default OFF)
+	ShadowTarget         string // v3 Shadow Canary: target URL (e.g. http://localhost:8080/api/v3/intents)
 
-	// v3 Worker Config (experimental)
+	// v3 Worker Config
 	WorkerEnabled bool   // Enable v3 worker
 	WorkerMode    string // "standard" or "virtual" (dry-run)
 	StoreBackend  string // "memory" or "bolt"
@@ -175,7 +175,9 @@ type AppConfig struct {
 	FFmpegKillTimeout time.Duration
 
 	// HLS Config (Phase 8-5)
-	HLSRoot string // e.g. /var/lib/xg2g/v3-hls
+	HLSRoot       string        // e.g. /var/lib/xg2g/v3-hls
+	DVRWindowSec  int           // DVR window duration in seconds (default: 2700 = 45 minutes)
+	V3IdleTimeout time.Duration // Stop v3 sessions after idle (0 disables)
 
 	RateLimitEnabled   bool // Enable rate limiting
 	RateLimitGlobal    int  // Requests per second (global)
@@ -625,6 +627,8 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	cfg.FFmpegKillTimeout = ParseDuration("XG2G_V3_FFMPEG_KILL_TIMEOUT", 5*time.Second)
 
 	cfg.HLSRoot = ParseString("XG2G_V3_HLS_ROOT", "/var/lib/xg2g/v3-hls")
+	cfg.DVRWindowSec = ParseInt("XG2G_V3_DVR_WINDOW", 2700) // Default: 45 minutes
+	cfg.V3IdleTimeout = ParseDuration("XG2G_V3_IDLE_TIMEOUT", 2*time.Minute)
 
 	// Rate Limiting
 	cfg.RateLimitEnabled = ParseBool("XG2G_RATELIMIT", cfg.RateLimitEnabled)

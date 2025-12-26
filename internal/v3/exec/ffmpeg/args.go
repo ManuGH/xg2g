@@ -41,46 +41,53 @@ func BuildHLSArgs(in InputSpec, out OutputSpec, prof model.ProfileSpec) ([]strin
 		"-nostats",
 
 		// Input robustness flags for unreliable/noisy streams
-		"-fflags", "+genpts+nobuffer",  // Generate missing PTS, no input buffering
-		"-err_detect", "ignore_err",    // Ignore decoder errors
-		"-analyzeduration", "2000000",  // 2s to receive H.264 PPS/SPS headers
-		"-probesize", "5000000",        // 5MB probe buffer for codec init
-		"-max_delay", "0",              // No demux delay
+		"-fflags", "+genpts+nobuffer", // Generate missing PTS, no input buffering
+		"-err_detect", "ignore_err", // Ignore decoder errors
+		"-analyzeduration", "2000000", // 2s to receive H.264 PPS/SPS headers
+		"-probesize", "5000000", // 5MB probe buffer for codec init
+		"-max_delay", "0", // No demux delay
 
 		// HTTP input options for Enigma2/DVB receivers (VLC-compatible)
 		// CRITICAL: Enigma2 receivers require VLC-compatible HTTP headers for reliable streaming
 		// Analysis of VLC showed it uses HTTP/1.0 with specific User-Agent and Icy-MetaData headers
 		// Without these headers, FFmpeg gets "Stream ends prematurely" errors from the receiver
-		"-user_agent", "VLC/3.0.21 LibVLC/3.0.21",  // Identify as VLC for compatibility
-		"-headers", "Icy-MetaData: 1",              // Request Icecast metadata
-		"-reconnect", "1",                          // Enable automatic reconnection
-		"-reconnect_streamed", "1",                 // Reconnect even for streamed protocols
-		"-reconnect_delay_max", "5",                // Max 5s between reconnect attempts
-		"-timeout", "10000000",                     // 10s timeout (in microseconds)
+		"-user_agent", "curl/8.14.1", // Identify as curl for compatibility (VLC blocked)
+		"-headers", "Icy-MetaData: 1", // Request Icecast metadata
+		"-reconnect", "1", // Enable automatic reconnection
+		"-reconnect_streamed", "1", // Reconnect even for streamed protocols
+		"-reconnect_delay_max", "5", // Max 5s between reconnect attempts
+		"-timeout", "10000000", // 10s timeout (in microseconds)
 
 		// Input
 		"-i", in.StreamURL,
 
-		// Map all streams (basic pass-through logic for now, profile allows overrides)
-		"-map", "0:v?", // Video if present
-		"-map", "0:a?", // Audio if present
+		// Map video and first audio stream only
+		// Safari has issues with multiple audio streams and unknown channel layouts
+		"-map", "0:v:0?", // First video stream if present
+		"-map", "0:a:0?", // First audio stream only
 
-		// Video: copy stream as-is
-		"-c:v", "copy",
+		// Video:
+		"-c:v",
+		func() string {
+			if prof.TranscodeVideo {
+				return "libx264"
+			}
+			return "copy"
+		}(),
+		"-pix_fmt", "yuv420p", // CRITICAL: Safari compatibility - ensure YUV 4:2:0
 
 		// Audio: Re-encode to AAC for best compatibility and quality
 		// DVB/satellite streams often have incomplete codec parameters that fail with copy
 		// Using high-quality AAC settings for best audio quality:
 		//
 		// CRITICAL: Safari requires explicit channel metadata in output
-		// We use aresample to properly copy channel layout from source and set metadata
-		// This handles dynamic changes (5.1 during movies, stereo during ads)
-		// Safari on macOS supports AAC 5.1 surround natively
-		"-filter:a", "aresample=async=1:first_pts=0",  // Properly handle channel layout
+		// We explicitly set channel layout to prevent "unknown" layout issues
+		// aformat ensures proper channel layout metadata is written to output
+		"-filter:a", "aresample=async=1:first_pts=0,aformat=channel_layouts=5.1|stereo",
 		"-c:a", "aac",
-		"-b:a", "384k",  // High bitrate works for both stereo and 5.1 (auto-adjusts)
-		"-ar", "48000",  // Force 48kHz sample rate
-		"-profile:a", "aac_low",  // AAC-LC profile for best compatibility
+		"-b:a", "384k", // High bitrate works for both stereo and 5.1 (auto-adjusts)
+		"-ar", "48000", // Force 48kHz sample rate
+		"-profile:a", "aac_low", // AAC-LC profile for best compatibility
 
 		// HLS Output Options
 		"-f", "hls",
@@ -89,12 +96,37 @@ func BuildHLSArgs(in InputSpec, out OutputSpec, prof model.ProfileSpec) ([]strin
 
 		// Segment naming
 		"-hls_segment_filename", out.SegmentFilename,
+	}
 
-		// Flags:
-		// delete_segments: clean up old segments
-		// append_list: no (we want rolling)
-		// omit_endlist: yes (live stream)
-		"-hls_flags", "delete_segments+omit_endlist+temp_file",
+	// HLS Flags - DVR mode vs Live mode
+	// DVR: Keep segments, no temp_file (Safari seeking needs stable files)
+	// Live: Delete old segments to save disk
+	hlsFlags := "delete_segments+omit_endlist+temp_file"
+	if out.PlaylistWindowSize > 10 {
+		// DVR mode: NO delete_segments, NO temp_file for stable seeking
+		// CRITICAL Safari DVR flags (based on Apple HLS spec):
+		// - append_list: Required for EVENT playlists to properly append segments
+		// - independent_segments: Indicates keyframe-aligned segments for seeking
+		// - program_date_time: Adds absolute timestamps for accurate DVR navigation
+		hlsFlags = "omit_endlist+append_list+independent_segments+program_date_time"
+	}
+	args = append(args, "-hls_flags", hlsFlags)
+
+	if prof.TranscodeVideo {
+		args = append(args,
+			"-preset", "veryfast",
+			"-profile:v", "high",
+			"-level", "4.0",
+			"-crf", "23",
+			"-g", "50",
+		)
+	}
+
+	// DVR mode: Use EVENT playlist type for seekable streams
+	// CRITICAL: Must be set for ALL DVR configurations, not just fMP4
+	// Safari requires EVENT playlist type to enable DVR seeking
+	if out.PlaylistWindowSize > 10 {
+		args = append(args, "-hls_playlist_type", "event")
 	}
 
 	// fMP4 Special Handling
@@ -102,9 +134,6 @@ func BuildHLSArgs(in InputSpec, out OutputSpec, prof model.ProfileSpec) ([]strin
 		args = append(args,
 			"-hls_segment_type", "fmp4",
 			"-hls_fmp4_init_filename", out.InitFilename,
-			// independent_segments helps with seeking/scrubbing in some players, but uses more bits.
-			// Safari usually fine without it if keys are present.
-			// We skip it for now unless requested.
 		)
 	}
 

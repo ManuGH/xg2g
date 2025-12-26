@@ -5,7 +5,6 @@
 import { useState, useEffect } from 'react';
 import { flushSync } from 'react-dom';
 import './App.css';
-import Player from './components/Player';
 import V3Player from './components/V3Player';
 import Dashboard from './components/Dashboard';
 import Files from './components/Files';
@@ -170,7 +169,6 @@ function App() {
         {view === 'recordings' && <RecordingsList token={token} />}
 
         {view === 'timers' && <Timers />}
-        {view === 'v3' && <div className="glass"><V3Player token={token} /></div>}
         {view === 'series' && <SeriesManager />}
       </main>
     </div>

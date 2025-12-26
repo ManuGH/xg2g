@@ -418,23 +418,23 @@ func (s *Server) routes() http.Handler {
 	})
 
 	// Now/Next EPG for a list of services (frontend helper)
-	r.With(s.authMiddleware).Post("/api/v2/services/now-next", http.HandlerFunc(s.handleNowNextEPG))
+	r.With(s.authMiddleware).Post("/api/v3/services/now-next", http.HandlerFunc(s.handleNowNextEPG))
 	// EPG listing is now handled by the generated API client (GetEpg)
 	// Trigger config reload from disk (if a file-backed config is configured)
-	r.With(s.authMiddleware).Post("/api/v2/system/config/reload", http.HandlerFunc(s.handleConfigReload))
+	r.With(s.authMiddleware).Post("/api/v3/system/config/reload", http.HandlerFunc(s.handleConfigReload))
 
 	// Session Login (Cookie issuance for Native Players)
-	r.With(s.authMiddleware).Post("/api/v2/auth/session", http.HandlerFunc(s.HandleSessionLogin))
+	r.With(s.authMiddleware).Post("/api/v3/auth/session", http.HandlerFunc(s.CreateSession))
 
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/ui/", http.StatusTemporaryRedirect)
 	})
 
-	// Register Generated API v2 Routes
+	// Register Generated API v3 Routes
 	// We use the generated handler which attaches to our existing router 'r'
 	// and creates routes starting with /api
 	HandlerWithOptions(s, ChiServerOptions{
-		BaseURL:    "/api/v2",
+		BaseURL:    "/api/v3",
 		BaseRouter: r,
 		Middlewares: []MiddlewareFunc{
 			// Apply Auth Middleware to all API routes
@@ -445,15 +445,12 @@ func (s *Server) routes() http.Handler {
 	})
 
 	// Manual Routes for Recordings (MVP)
-	r.With(s.authMiddleware).Get("/api/v2/recordings", s.GetRecordingsHandler)
-	r.With(s.authMiddleware).Get("/api/v2/recordings/stream/{ref}", s.GetRecordingStreamHandler)
-	r.With(s.authMiddleware).Delete("/api/v2/recordings/{ref}", s.DeleteRecordingHandler)
+	// Note: GetRecordings is now handled by generated router
+	r.With(s.authMiddleware).Get("/api/v3/recordings/stream/{ref}", s.GetRecordingStreamHandler)
+	r.With(s.authMiddleware).Delete("/api/v3/recordings/{ref}", s.DeleteRecordingHandler)
 
 	// HLS for Recordings (Proxied)
-	// Note: Cookies (HttpOnly) are used for auth, but authMiddleware checks headers/cookies now.
-	// So we apply authMiddleware.
-	r.With(s.authMiddleware).Get("/api/v2/recordings/{recordingId}/playlist.m3u8", s.GetRecordingHLSPlaylistHandler)
-	r.With(s.authMiddleware).Get("/api/v2/recordings/{recordingId}/{segment}", s.GetRecordingHLSCustomSegmentHandler)
+	// Handled by generated routing
 
 	// HDHomeRun emulation endpoints (versionless - hardware emulation protocol)
 	if s.hdhr != nil {
@@ -473,7 +470,7 @@ func (s *Server) routes() http.Handler {
 	r.Get("/logos/{ref}.png", s.handlePicons)
 	r.Head("/logos/{ref}.png", s.handlePicons)
 
-	// Phase 7A: v3 Control Plane (experimental/preview, /api/v3/*)
+	// v3 Control Plane (/api/v3/*)
 	s.registerV3Routes(r)
 
 	// Harden file server: disable directory listing and use a secure handler

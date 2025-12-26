@@ -67,6 +67,9 @@ func Validate(cfg AppConfig) error {
 	if cfg.WorkerEnabled {
 		v.WritableDirectory("StorePath", cfg.StorePath, false)
 		v.WritableDirectory("HLSRoot", cfg.HLSRoot, false)
+		if cfg.V3IdleTimeout < 0 {
+			v.AddError("V3IdleTimeout", "must be >= 0", cfg.V3IdleTimeout)
+		}
 
 		if cfg.ConfigStrict {
 			if strings.TrimSpace(cfg.ConfigVersion) == "" {
