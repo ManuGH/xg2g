@@ -3,8 +3,7 @@
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
 import { useState, useEffect } from 'react';
-import { SeriesService } from '../client/services/SeriesService';
-import { DefaultService } from '../client/services/DefaultService';
+import { getSeriesRules, deleteSeriesRule, createSeriesRule, runSeriesRule, getServices } from '../client-ts';
 import './SeriesManager.css';
 
 function SeriesManager() {
@@ -24,8 +23,8 @@ function SeriesManager() {
   const loadRules = async () => {
     setLoading(true);
     try {
-      const data = await SeriesService.getSeriesRules();
-      setRules(data || []);
+      const response = await getSeriesRules();
+      setRules(response.data || []);
     } catch (err) {
       console.error('Failed to load rules:', err);
     } finally {
@@ -35,8 +34,8 @@ function SeriesManager() {
 
   const loadChannels = async () => {
     try {
-      const data = await DefaultService.getServices({ bouquet: '' });
-      setChannels(data || []);
+      const response = await getServices({ query: { bouquet: '' } });
+      setChannels(response.data || []);
     } catch (err) {
       console.error('Failed to load channels:', err);
     }
@@ -57,7 +56,7 @@ function SeriesManager() {
   const handleDelete = async (id) => {
     if (!window.confirm('Are you sure you want to delete this rule?')) return;
     try {
-      await SeriesService.deleteSeriesRule(id);
+      await deleteSeriesRule({ path: { ruleId: id } });
       loadRules();
     } catch (err) {
       alert('Failed to delete rule: ' + err.message);
@@ -78,7 +77,7 @@ function SeriesManager() {
         priority: parseInt(currentRule.priority) || 0
       };
 
-      await SeriesService.createSeriesRule(payload);
+      await createSeriesRule({ body: payload });
       setIsEditing(false);
       loadRules();
     } catch (err) {
@@ -89,7 +88,8 @@ function SeriesManager() {
   const handleRunNow = async (id) => {
     setReportLoading(id);
     try {
-      const report = await SeriesService.runSeriesRule(id, { trigger: 'manual' });
+      const response = await runSeriesRule({ path: { ruleId: id }, body: { trigger: 'manual' } });
+      const report = response.data;
       alert(`Run Complete!\nMatched: ${report.summary?.epgItemsMatched}\nCreated: ${report.summary?.timersCreated}\nErrors: ${report.summary?.timersErrored}`);
       loadRules();
     } catch (err) {

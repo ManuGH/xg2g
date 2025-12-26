@@ -4,9 +4,8 @@
 
 
 import React, { useState, useEffect } from 'react';
-import { OpenAPI } from '../client';
-import { RecordingsService } from '../client/services/RecordingsService';
-import { AuthService } from '../client/services/AuthService';
+import { getRecordings, createSession } from '../client-ts';
+import { client } from '../client-ts/client.gen';
 import Player from './Player';
 import './Recordings.css';
 
@@ -33,7 +32,7 @@ export default function RecordingsList() {
   const [error, setError] = useState(null);
   const [playing, setPlaying] = useState(null); // { url, title }
   const initialLoad = React.useRef(true);
-  const apiBase = (OpenAPI.BASE || '/api/v3').replace(/\/$/, '');
+  const apiBase = (client.getConfig().baseUrl || '/api/v3').replace(/\/$/, '');
 
   // Fetch Data
   const fetchData = async (r, p) => {
@@ -41,7 +40,8 @@ export default function RecordingsList() {
     setError(null);
     try {
       // If root is empty, backend will pick default and return it in 'current_root'
-      const res = await RecordingsService.getRecordings(r, p);
+      const response = await getRecordings({ query: { root: r, path: p } });
+      const res = response.data;
       setData(res);
 
       // Only update local state from backend on the very first load
@@ -83,7 +83,7 @@ export default function RecordingsList() {
     try {
       // 1. Establish Secure Session (HttpOnly Cookie)
       // We use the generated client to call POST /api/auth/session
-      await AuthService.createSession();
+      await createSession();
     } catch (e) {
       console.warn("Failed to create session cookie, playback might fail on some browsers", e);
     }

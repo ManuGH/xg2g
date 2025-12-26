@@ -2,11 +2,10 @@
 
 import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
-import { OpenAPI } from '../client/core/OpenAPI';
-import { DefaultService } from '../client/services/DefaultService';
-import { ServicesService } from '../client/services/ServicesService';
+import { getServices, getServicesBouquets, getSystemConfig } from '../client-ts';
+import { client } from '../client-ts/client.gen';
 import type { AppContextType, AppView } from '../types/app-context';
-import type { Service, Bouquet } from '../client';
+import type { Service, Bouquet } from '../client-ts';
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
@@ -49,14 +48,18 @@ export function AppProvider({ children }: AppProviderProps) {
   const setToken = useCallback((newToken: string) => {
     setTokenState(newToken);
     localStorage.setItem('XG2G_API_TOKEN', newToken);
-    OpenAPI.TOKEN = newToken;
+    client.setConfig({
+      headers: {
+        Authorization: `Bearer ${newToken}`
+      }
+    });
   }, []);
 
   const loadChannels = useCallback(async (bouquetName: string): Promise<void> => {
     setLoading(true);
     try {
       console.log('[DEBUG] Fetching channels for:', bouquetName);
-      const response = await DefaultService.getServices(
+      const response = await getServices(
         bouquetName ? { query: { bouquet: bouquetName } } : undefined
       );
       const data = response.data || [];
@@ -78,7 +81,7 @@ export function AppProvider({ children }: AppProviderProps) {
     setLoading(true);
     try {
       console.log('[DEBUG] Fetching bouquets...');
-      const response = await ServicesService.getServicesBouquets();
+      const response = await getServicesBouquets();
       const bouquetData = response.data || [];
       setBouquets(bouquetData);
       console.log('[DEBUG] Bouquets loaded:', bouquetData);
@@ -99,7 +102,7 @@ export function AppProvider({ children }: AppProviderProps) {
 
   const checkConfigAndLoad = useCallback(async (): Promise<void> => {
     try {
-      const response = await DefaultService.getSystemConfig();
+      const response = await getSystemConfig();
       const config = response.data;
       console.log('[DEBUG] System Config:', config);
 

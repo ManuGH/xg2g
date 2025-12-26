@@ -1,6 +1,6 @@
 // Type definitions for Application Context
 
-import type { Service, Bouquet } from '../client';
+import type { Service, Bouquet } from '../client-ts';
 
 export type AppView =
   | 'dashboard'

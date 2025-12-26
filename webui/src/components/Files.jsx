@@ -3,7 +3,7 @@
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
 import { useEffect, useState } from 'react';
-import { DefaultService } from '../client';
+import { getSystemHealth, postSystemRefresh } from '../client-ts';
 import './Files.css';
 
 function Files() {
@@ -15,7 +15,7 @@ function Files() {
   const fetchStatus = async () => {
     setLoading(true);
     try {
-      const data = await DefaultService.getSystemHealth();
+      const data = await getSystemHealth();
       setHealth(data);
     } catch (err) {
       if (err.status === 401) {
@@ -36,7 +36,7 @@ function Files() {
   const handleRegenerate = async () => {
     setRegenerating(true);
     try {
-      await DefaultService.postSystemRefresh();
+      await postSystemRefresh();
       setTimeout(fetchStatus, 1000);
     } catch (err) {
       if (err.status === 401) {

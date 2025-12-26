@@ -3,7 +3,7 @@
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
 import React, { useState, useEffect, useRef } from 'react';
-import { TimersService, DvrService } from '../client';
+import { TimersService, DvrService } from '../client-ts';
 import './EditTimerDialog.css';
 
 export default function EditTimerDialog({ timer, onClose, onSave, capabilities }) {
@@ -79,7 +79,7 @@ export default function EditTimerDialog({ timer, onClose, onSave, capabilities }
           end: parseInt(data.end),
         };
 
-        const resp = await TimersService.previewConflicts({
+        const resp = await previewConflicts({
           proposed: proposed,
           mode: 'conservative'
         });
@@ -103,13 +103,13 @@ export default function EditTimerDialog({ timer, onClose, onSave, capabilities }
     setSaving(true);
     setError(null);
     try {
-      await TimersService.updateTimer(timer.timerId, {
+      await updateTimer({ path: { timerId: timer.timerId }, body: {
         name: formData.name,
         description: formData.description,
         begin: formData.begin,
         end: formData.end,
         enabled: formData.enabled
-      });
+      } });
       onSave(); // Parent refresh
       onClose();
     } catch (err) {

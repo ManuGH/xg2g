@@ -8,8 +8,6 @@ import './index.css';
 import App from './App.tsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import { AppProvider } from './context/AppContext.tsx';
-// Global security interceptor - catches all 401 errors automatically
-import './client/interceptor.js';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

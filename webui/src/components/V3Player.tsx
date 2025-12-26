@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Hls from 'hls.js';
 import type { ErrorData } from 'hls.js';
-import { AuthService, OpenAPI } from '../client';
+import { createSession } from '../client-ts';
+import { client } from '../client-ts/client.gen';
 import type {
   V3PlayerProps,
   PlayerStatus,
@@ -30,7 +31,7 @@ function V3Player({ token, channel, autoStart, onClose }: V3PlayerProps) {
   const sleep = (ms: number): Promise<void> =>
     new Promise(resolve => setTimeout(resolve, ms));
 
-  const apiBase = (OpenAPI.BASE || '/api/v3').replace(/\/$/, '');
+  const apiBase = (client.getConfig().baseUrl || '/api/v3').replace(/\/$/, '');
 
   useEffect(() => {
     if (channel) {
@@ -45,7 +46,7 @@ function V3Player({ token, channel, autoStart, onClose }: V3PlayerProps) {
 
   useEffect(() => {
     if (token) {
-      OpenAPI.TOKEN = token;
+      client.setConfig({ headers: { Authorization: `Bearer ${token}` } });
     }
     sessionCookieRef.current.token = null;
     sessionCookieRef.current.pending = null;
@@ -58,8 +59,8 @@ function V3Player({ token, channel, autoStart, onClose }: V3PlayerProps) {
 
     const pending = (async () => {
       try {
-        OpenAPI.TOKEN = token;
-        await AuthService.createSession();
+        client.setConfig({ headers: { Authorization: `Bearer ${token}` } });
+        await createSession();
         sessionCookieRef.current.token = token;
       } catch (err) {
         console.warn('Failed to create session cookie', err);

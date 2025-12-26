@@ -1,6 +1,6 @@
 // Type definitions for EPG component
 
-import type { Service, Bouquet } from '../client';
+import type { Service, Bouquet } from '../client-ts';
 
 export interface Programme {
   service_ref: string;

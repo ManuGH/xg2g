@@ -7,7 +7,7 @@
         "patterns": [
           {
             "group": ["../client", "../client/*", "*/client", "*/client/*"],
-            "message": "Direct imports from src/client/ (compatibility layer) are restricted. Use src/client-ts/ SDK instead. Whitelist exceptions: src/context/AppContext.tsx"
+            "message": "Direct imports from src/client/ (compatibility layer) are forbidden. Use src/client-ts/ SDK instead. Phase 5: Compatibility layer removed."
           }
         ]
       }

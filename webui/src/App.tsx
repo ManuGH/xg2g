@@ -6,7 +6,6 @@ import { useEffect, lazy, Suspense } from 'react';
 import './App.css';
 import { useAppContext } from './context/AppContext';
 import Navigation from './components/Navigation';
-import { OpenAPI } from './client/core/OpenAPI';
 
 // Lazy load feature views (Phase 4: Bundle optimization)
 // V3Player is lazy loaded because it includes heavy HLS.js dependency
@@ -55,11 +54,11 @@ function App() {
     };
     window.addEventListener('auth-required', handleAuth);
 
-    // Initialize OpenAPI client with token if available
+    // Initialize client with token if available
     const storedToken = localStorage.getItem('XG2G_API_TOKEN');
     console.log('[DEBUG] Stored token:', storedToken);
     if (storedToken) {
-      OpenAPI.TOKEN = storedToken;
+      setToken(storedToken);
     }
 
     // Check config first, then load data if configured

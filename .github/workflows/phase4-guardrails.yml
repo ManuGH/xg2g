@@ -35,21 +35,19 @@ jobs:
       - name: Check for legacy client imports
         run: |
           # Check for imports from src/client/ (not src/client-ts/)
-          # Whitelist: AppContext.tsx (uses compatibility layer intentionally)
+          # Phase 5: All compatibility layer usage removed
 
-          WHITELIST="webui/src/context/AppContext.tsx"
-
-          VIOLATIONS=$(grep -r "from ['\"].*\.\.\/client[^-]" webui/src/components/ webui/src/hooks/ 2>/dev/null | grep -v "$WHITELIST" || true)
+          VIOLATIONS=$(grep -r "from ['\"].*\.\.\/client[^-]" webui/src/ 2>/dev/null || true)
 
           if [ -n "$VIOLATIONS" ]; then
-            echo "❌ ERROR: Legacy client imports detected (Phase 4 DoD B violation)"
+            echo "❌ ERROR: Legacy client imports detected (Phase 5 violation)"
             echo "Files with src/client/ imports:"
             echo "$VIOLATIONS"
             echo ""
             echo "Use src/client-ts/ SDK instead"
             exit 1
           fi
-          echo "✅ No legacy client imports outside whitelist"
+          echo "✅ No legacy client imports (compatibility layer removed)"
 
       - name: TypeScript Check
         run: |

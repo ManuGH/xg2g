@@ -3,7 +3,7 @@
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
 import { useState, useEffect } from 'react';
-import { DefaultService } from '../client';
+import { getSystemConfig, putSystemConfig } from '../client-ts';
 import './Config.css';
 
 function Config() {
@@ -28,7 +28,7 @@ function Config() {
   const loadConfig = async () => {
     try {
       setLoading(true);
-      const data = await DefaultService.getSystemConfig();
+      const data = await getSystemConfig();
       const normalized = {
         ...data,
         bouquets: Array.isArray(data.bouquets) ? data.bouquets : []
@@ -161,7 +161,7 @@ function Config() {
         featureFlags: config.featureFlags
       };
 
-      const result = await DefaultService.putSystemConfig(payload);
+      const result = await putSystemConfig({ body: payload });
 
       if (result.restart_required) {
         setSuccessMsg('Configuration saved. Restarting application...');
