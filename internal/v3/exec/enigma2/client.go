@@ -146,7 +146,7 @@ func (c *Client) Zap(ctx context.Context, sref string) error {
 	params.Set("sRef", strings.ToUpper(sref))
 
 	var res Response
-	if err := c.get(ctx, "/api/zap", "zap", params, &res); err != nil {
+	if err := c.get(ctx, "/api/zap", params, &res); err != nil {
 		return err
 	}
 
@@ -159,7 +159,7 @@ func (c *Client) Zap(ctx context.Context, sref string) error {
 // GetCurrent retrieves typical current service information.
 func (c *Client) GetCurrent(ctx context.Context) (*CurrentInfo, error) {
 	var res CurrentInfo
-	if err := c.get(ctx, "/api/getcurrent", "get_current", nil, &res); err != nil {
+	if err := c.get(ctx, "/api/getcurrent", nil, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -169,7 +169,7 @@ func (c *Client) GetCurrent(ctx context.Context) (*CurrentInfo, error) {
 func (c *Client) GetSignal(ctx context.Context) (*Signal, error) {
 	var res Signal
 	// /api/signal usually returns directly
-	if err := c.get(ctx, "/api/signal", "get_signal", nil, &res); err != nil {
+	if err := c.get(ctx, "/api/signal", nil, &res); err != nil {
 		return nil, err
 	}
 
@@ -182,7 +182,7 @@ func (c *Client) GetSignal(ctx context.Context) (*Signal, error) {
 	return &res, nil
 }
 
-func (c *Client) get(ctx context.Context, path string, operation string, params url.Values, v interface{}) error {
+func (c *Client) get(ctx context.Context, path string, params url.Values, v interface{}) error {
 	u, err := url.Parse(c.BaseURL)
 	if err != nil {
 		return fmt.Errorf("invalid base URL: %w", err)
@@ -190,7 +190,7 @@ func (c *Client) get(ctx context.Context, path string, operation string, params 
 	u.Path = path
 	u.RawQuery = params.Encode()
 
-	resp, err := c.doGet(ctx, operation, u.String())
+	resp, err := c.doGet(ctx, u.String())
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
 	}
@@ -206,33 +206,49 @@ func (c *Client) get(ctx context.Context, path string, operation string, params 
 	return nil
 }
 
-func (c *Client) doGet(ctx context.Context, operation, rawURL string) (*http.Response, error) {
+func (c *Client) doGet(ctx context.Context, rawURL string) (*http.Response, error) {
 	tracer := telemetry.Tracer("xg2g.enigma2")
 	route, urlLabel := traceLabels(rawURL)
-	ctx, span := tracer.Start(ctx, http.MethodGet+" "+route, trace.WithSpanKind(trace.SpanKindClient))
-	span.SetAttributes(telemetry.HTTPAttributes(http.MethodGet, route, urlLabel, 0)...)
+	ctx, span := tracer.Start(ctx, "xg2g.v3.enigma2.request", trace.WithSpanKind(trace.SpanKindClient))
+	span.SetAttributes(
+		attribute.String("http.method", http.MethodGet),
+		attribute.String("http.route", route),
+		attribute.String("http.url", urlLabel),
+	)
 	defer span.End()
 
 	maxAttempts := c.maxRetries + 1
 	var lastErr error
 	var lastStatus int
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		attemptCtx, attemptSpan := tracer.Start(ctx, "xg2g.v3.enigma2.request.attempt", trace.WithSpanKind(trace.SpanKindClient))
+		attemptSpan.SetAttributes(
+			attribute.Int("attempt", attempt),
+			attribute.Bool("retry", attempt > 1),
+		)
+
 		if c.limiter != nil {
-			if err := c.limiter.Wait(ctx); err != nil {
+			if err := c.limiter.Wait(attemptCtx); err != nil {
+				attemptSpan.RecordError(err)
+				attemptSpan.SetStatus(codes.Error, err.Error())
+				attemptSpan.End()
 				span.RecordError(err)
 				span.SetStatus(codes.Error, err.Error())
 				return nil, err
 			}
 		}
 
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+		req, err := http.NewRequestWithContext(attemptCtx, http.MethodGet, rawURL, nil)
 		if err != nil {
+			attemptSpan.RecordError(err)
+			attemptSpan.SetStatus(codes.Error, err.Error())
+			attemptSpan.End()
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
 			return nil, err
 		}
 		c.applyHeaders(req)
-		otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
+		otel.GetTextMapPropagator().Inject(attemptCtx, propagation.HeaderCarrier(req.Header))
 
 		start := time.Now()
 		resp, err := c.HTTPClient.Do(req)
@@ -243,18 +259,23 @@ func (c *Client) doGet(ctx context.Context, operation, rawURL string) (*http.Res
 			status = resp.StatusCode
 		}
 
-		success := err == nil && status == http.StatusOK
-		errClass := classifyError(err, status)
-		retry := !success && attempt < maxAttempts && shouldRetry(resp, err)
-		recordAttemptMetrics(operation, attempt, status, duration, success, errClass, retry)
+		retry := (err != nil || status != http.StatusOK) && attempt < maxAttempts && shouldRetry(resp, err)
+		recordAttemptMetrics(http.MethodGet, route, status, duration, err, retry)
 
-		if retry {
-			span.AddEvent("retry", trace.WithAttributes(
-				attribute.Int("attempt", attempt),
-				attribute.Int("status", status),
-				attribute.String("error_class", errClass),
-			))
+		attemptSpan.SetAttributes(telemetry.HTTPAttributes(http.MethodGet, route, urlLabel, status)...)
+		if err != nil {
+			attemptSpan.RecordError(err)
 		}
+		if err != nil || status >= http.StatusBadRequest {
+			statusText := http.StatusText(status)
+			if statusText == "" {
+				statusText = "request failed"
+			}
+			attemptSpan.SetStatus(codes.Error, statusText)
+		} else {
+			attemptSpan.SetStatus(codes.Ok, "")
+		}
+		attemptSpan.End()
 
 		if err == nil && status < http.StatusInternalServerError {
 			span.SetAttributes(telemetry.HTTPAttributes(http.MethodGet, route, urlLabel, status)...)

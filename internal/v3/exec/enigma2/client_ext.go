@@ -22,7 +22,7 @@ func (c *Client) ResolveStreamURL(ctx context.Context, sref string) (string, err
 	u.Path = "/web/stream.m3u"
 	u.RawQuery = params.Encode()
 
-	resp, err := c.doGet(ctx, "resolve_stream", u.String())
+	resp, err := c.doGet(ctx, u.String())
 	if err != nil {
 		return "", fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
 	}

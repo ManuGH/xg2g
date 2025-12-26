@@ -20,9 +20,9 @@ type RealFactory struct {
 }
 
 // NewRealFactory creates a RealFactory.
-func NewRealFactory(e2Host string, tuneTimeout time.Duration, ffmpegBin, hlsRoot string, e2Opts enigma2.Options) *RealFactory {
+func NewRealFactory(e2Client *enigma2.Client, tuneTimeout time.Duration, ffmpegBin, hlsRoot string) *RealFactory {
 	return &RealFactory{
-		E2Client:    enigma2.NewClientWithOptions(e2Host, e2Opts),
+		E2Client:    e2Client,
 		FFmpegBin:   ffmpegBin,
 		HLSRoot:     hlsRoot,
 		TuneTimeout: tuneTimeout,

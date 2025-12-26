@@ -264,22 +264,23 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 	}
 
 	// Phase 8-3: Factory Wiring
+	e2Opts := enigma2.Options{
+		Timeout:               cfg.E2Timeout,
+		ResponseHeaderTimeout: cfg.E2RespTimeout,
+		MaxRetries:            cfg.E2Retries,
+		Backoff:               cfg.E2Backoff,
+		MaxBackoff:            cfg.E2MaxBackoff,
+		Username:              cfg.E2Username,
+		Password:              cfg.E2Password,
+		UserAgent:             cfg.E2UserAgent,
+		RateLimit:             rate.Limit(cfg.E2RateLimit),
+		RateLimitBurst:        cfg.E2RateBurst,
+	}
+	e2Client := enigma2.NewClientWithOptions(cfg.E2Host, e2Opts)
 	if cfg.Mode == "virtual" {
 		orch.ExecFactory = &exec.StubFactory{}
 	} else {
-		e2Opts := enigma2.Options{
-			Timeout:               cfg.E2Timeout,
-			ResponseHeaderTimeout: cfg.E2RespTimeout,
-			MaxRetries:            cfg.E2Retries,
-			Backoff:               cfg.E2Backoff,
-			MaxBackoff:            cfg.E2MaxBackoff,
-			Username:              cfg.E2Username,
-			Password:              cfg.E2Password,
-			UserAgent:             cfg.E2UserAgent,
-			RateLimit:             rate.Limit(cfg.E2RateLimit),
-			RateLimitBurst:        cfg.E2RateBurst,
-		}
-		orch.ExecFactory = exec.NewRealFactory(cfg.E2Host, cfg.E2TuneTimeout, cfg.FFmpegBin, cfg.HLSRoot, e2Opts)
+		orch.ExecFactory = exec.NewRealFactory(e2Client, cfg.E2TuneTimeout, cfg.FFmpegBin, cfg.HLSRoot)
 	}
 
 	// 4. Inject into API Server (Shadow Receiving)
@@ -291,7 +292,7 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 	}
 
 	// 5. Register Health/Readiness Checks (Phase 9-1)
-	m.registerV3Checks(cfg)
+	m.registerV3Checks(cfg, e2Client)
 
 	// 6. Run Orchestrator
 	go func() {
@@ -386,7 +387,7 @@ func (m *manager) RegisterShutdownHook(name string, hook ShutdownHook) {
 }
 
 // registerV3Checks registers health and readiness checks for V3 components.
-func (m *manager) registerV3Checks(cfg *V3Config) {
+func (m *manager) registerV3Checks(cfg *V3Config, e2Client *enigma2.Client) {
 	hm := m.deps.APIServerSetter.HealthManager()
 	if hm == nil {
 		m.logger.Warn().Msg("HealthManager not available, skipping V3 checks")
@@ -401,7 +402,10 @@ func (m *manager) registerV3Checks(cfg *V3Config) {
 	// Re-uses the existing network logic but scoped to V3 dependencies.
 	// We can use a ReceiverChecker pointing to E2Host.
 	hm.RegisterChecker(health.Informational(health.NewNamedReceiverChecker("v3_receiver_connection", func(ctx context.Context) error {
-		if cfg.E2Host == "" {
+		if e2Client == nil || e2Client.HTTPClient == nil {
+			return fmt.Errorf("enigma2 client is not available")
+		}
+		if e2Client.BaseURL == "" {
 			return fmt.Errorf("XG2G_V3_E2_HOST is empty")
 		}
 		// Quick connectivity check to E2Host
@@ -409,14 +413,17 @@ func (m *manager) registerV3Checks(cfg *V3Config) {
 		checkCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
 
-		req, err := http.NewRequestWithContext(checkCtx, http.MethodHead, cfg.E2Host, nil)
+		req, err := http.NewRequestWithContext(checkCtx, http.MethodHead, e2Client.BaseURL, nil)
 		if err != nil {
 			return err
+		}
+		if cfg.E2UserAgent != "" {
+			req.Header.Set("User-Agent", cfg.E2UserAgent)
 		}
 		if cfg.E2Username != "" || cfg.E2Password != "" {
 			req.SetBasicAuth(cfg.E2Username, cfg.E2Password)
 		}
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := e2Client.HTTPClient.Do(req)
 		if err != nil {
 			return err
 		}
