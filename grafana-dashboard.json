@@ -1,0 +1,86 @@
+{
+  "dashboard": {
+    "title": "xg2g Streaming Metrics",
+    "tags": ["xg2g", "streaming"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Active Streams",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "xg2g_v3_sessions_active",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "FFmpeg Processes",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "xg2g_v3_ffmpeg_processes",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "Memory Usage",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "go_memstats_alloc_bytes",
+            "refId": "A",
+            "legendFormat": "Memory"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4}
+      },
+      {
+        "id": 4,
+        "title": "HTTP Request Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(http_requests_total[5m])",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4}
+      },
+      {
+        "id": 5,
+        "title": "Session State",
+        "type": "piechart",
+        "targets": [
+          {
+            "expr": "xg2g_v3_sessions_by_state",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12}
+      },
+      {
+        "id": 6,
+        "title": "Error Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(xg2g_errors_total[5m])",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12}
+      }
+    ],
+    "refresh": "10s",
+    "schemaVersion": 16,
+    "version": 0
+  },
+  "overwrite": true
+}
