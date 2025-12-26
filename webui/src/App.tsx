@@ -2,20 +2,23 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
-import { useEffect } from 'react';
+import { useEffect, lazy, Suspense } from 'react';
 import './App.css';
 import { useAppContext } from './context/AppContext';
-import V3Player from './components/V3Player.tsx';
-import Dashboard from './components/Dashboard';
-import Files from './components/Files';
-import Logs from './components/Logs';
-import EPG from './components/EPG';
-import Timers from './components/Timers';
-import RecordingsList from './components/RecordingsList';
-import SeriesManager from './components/SeriesManager';
-import Config from './components/Config';
 import Navigation from './components/Navigation';
 import { OpenAPI } from './client/core/OpenAPI';
+
+// Lazy load feature views (Phase 4: Bundle optimization)
+// V3Player is lazy loaded because it includes heavy HLS.js dependency
+const V3Player = lazy(() => import('./components/V3Player'));
+const Dashboard = lazy(() => import('./components/Dashboard'));
+const EPG = lazy(() => import('./components/EPG'));
+const Logs = lazy(() => import('./components/Logs'));
+const Files = lazy(() => import('./components/Files'));
+const SeriesManager = lazy(() => import('./components/SeriesManager'));
+const Timers = lazy(() => import('./components/Timers'));
+const RecordingsList = lazy(() => import('./components/RecordingsList'));
+const Config = lazy(() => import('./components/Config'));
 
 function App() {
   const ctx = useAppContext();
@@ -106,36 +109,40 @@ function App() {
       )}
 
       {playback.playingChannel && (
-        <V3Player
-          token={auth.token || ''}
-          channel={playback.playingChannel}
-          autoStart={true}
-          onClose={() => setPlayingChannel(null)}
-        />
+        <Suspense fallback={<div className="loading-spinner"></div>}>
+          <V3Player
+            token={auth.token || ''}
+            channel={playback.playingChannel}
+            autoStart={true}
+            onClose={() => setPlayingChannel(null)}
+          />
+        </Suspense>
       )}
 
       <Navigation activeView={view} onViewChange={ctx.setView} />
 
       <main className="content-area">
-        {view === 'dashboard' && <Dashboard />}
+        <Suspense fallback={<div className="loading-spinner" style={{ margin: '50px auto' }}></div>}>
+          {view === 'dashboard' && <Dashboard />}
 
-        {view === 'epg' && (
-          <EPG
-            channels={channels.channels}
-            bouquets={channels.bouquets as any}
-            selectedBouquet={channels.selectedBouquet}
-            onSelectBouquet={ctx.loadChannels}
-            onPlay={ctx.handlePlay}
-          />
-        )}
+          {view === 'epg' && (
+            <EPG
+              channels={channels.channels}
+              bouquets={channels.bouquets as any}
+              selectedBouquet={channels.selectedBouquet}
+              onSelectBouquet={ctx.loadChannels}
+              onPlay={ctx.handlePlay}
+            />
+          )}
 
-        {view === 'files' && <Files />}
-        {view === 'recordings' && <RecordingsList />}
-        {view === 'logs' && <Logs />}
+          {view === 'files' && <Files />}
+          {view === 'recordings' && <RecordingsList />}
+          {view === 'logs' && <Logs />}
 
-        {view === 'timers' && <Timers />}
-        {view === 'series' && <SeriesManager />}
-        {view === 'config' && <Config />}
+          {view === 'timers' && <Timers />}
+          {view === 'series' && <SeriesManager />}
+          {view === 'config' && <Config />}
+        </Suspense>
       </main>
     </div>
   );

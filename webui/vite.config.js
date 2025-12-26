@@ -35,5 +35,21 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // Separate HLS.js into its own chunk (loaded only with V3Player)
+          'hls': ['hls.js'],
+          // React and core libraries
+          'vendor-react': ['react', 'react-dom', 'react-dom/client'],
+          // Generated API client
+          'api-client': [
+            './src/client-ts/client.gen.ts',
+            './src/client-ts/sdk.gen.ts',
+            './src/client-ts/types.gen.ts'
+          ]
+        }
+      }
+    }
   },
 })
