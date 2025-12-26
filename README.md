@@ -2,14 +2,20 @@
 
 <div align="center">
   <img src="docs/images/logo.png" alt="xg2g Logo" width="200"/>
-  <h3>The Modern Web Player for Enigma2</h3>
-  <p>Watch your satellite TV in the browser with Timeshift, EPG Search, and perfect reliability.</p>
+  <h3>Production-Ready Streaming Middleware for Enigma2</h3>
+  <p>
+    Modern event-driven bridge between Enigma2 receivers and
+    Plex/Jellyfin/Browsers with HLS transcoding, EPG, and 45-minute timeshift.
+  </p>
 
   [![CI](https://github.com/ManuGH/xg2g/actions/workflows/ci.yml/badge.svg)](https://github.com/ManuGH/xg2g/actions/workflows/ci.yml)
   [![Docker Pulls](https://img.shields.io/docker/pulls/manugh/xg2g?color=blue)](https://hub.docker.com/r/manugh/xg2g)
   [![License: PolyForm Noncommercial](https://img.shields.io/badge/License-PolyForm_Noncommercial-blue.svg)](https://polyformproject.org/licenses/noncommercial/1.0.0)
+  [![Go Report Card](https://goreportcard.com/badge/github.com/ManuGH/xg2g)](https://goreportcard.com/report/github.com/ManuGH/xg2g)
 
-  [Quick Start](#-quick-start) • [Features](#-features) • [Development](docs/DEVELOPMENT.md) • [Docs](docs/) • [Internals](docs/INTERNALS.md)
+  [Quick Start](#-quick-start) • [Features](#-features) •
+  [v3.0.0 Release](docs/RELEASE-v3.0.0.md) • [Docs](docs/) •
+  [Architecture](docs/ARCHITECTURE.md)
 </div>
 
 > [!IMPORTANT]
@@ -42,13 +48,27 @@ xg2g transforms your receiver into a modern streaming platform. No more VLC plug
 
 ## ✨ Features
 
+### 🎯 v3.0.0 Production Ready
+
+**Feature Complete** and stable for production deployment:
+
+- ✅ **Event-Driven V3 Architecture** with FSM and persistent sessions
+- ✅ **100% TypeScript Frontend** (4,132 LOC, strict mode)
+- ✅ **RBAC Security** with scoped Bearer tokens
+- ✅ **OpenTelemetry** distributed tracing (Jaeger/Tempo)
+- ✅ **Zero Legacy Code** - all compatibility layers removed
+
+[Read the full v3.0.0 Release Notes →](docs/RELEASE-v3.0.0.md)
+
+---
+
 ### Modern Web Interface (WebUI)
 
-A beautiful, dark-mode accessible dashboard built with React.
+Beautiful, dark-mode accessible dashboard built with React 19 + TypeScript:
 
-- **Live TV**: Instant channel switching (<2ms).
-- **EPG & Search**: Browse the full program guide or search specifically for your favorite shows.
-- **System Dashboard**: Monitor backend health, uptime, and real-time logs to troubleshoot issues instantly.
+- **Live TV**: Instant channel switching (<2ms)
+- **EPG & Search**: Browse program guide or search for shows
+- **System Dashboard**: Monitor health, uptime, real-time logs
 
 ### ⏪ Timeshift (Replay)
 
@@ -59,21 +79,26 @@ Missed a scene? No problem.
 
 ### 📱 Perfect Mobile Streaming
 
-- **Native HLS**: Streams are remuxed on-the-fly to be compatible with all modern browsers and mobile devices.
-- **Audio Transcoding**: Real-time AC3/DTS to AAC transcoding via FFmpeg 7.x ensures you get sound on every device.
+- **Native HLS**: On-the-fly remuxing for all modern browsers/devices
+- **Audio Transcoding**: Real-time AC3/DTS→AAC via FFmpeg 7.x
 
-### � HDHomeRun Emulation (Beta)
+### 📺 HDHomeRun Emulation
 
-xg2g also emulates an HDHomeRun tuner, allowing you to connect it to **Plex** or **Jellyfin**.
-*(Note: Full Plex/Jellyfin documentation and optimization is coming in a future update.)*
+Emulates HDHomeRun tuner for **Plex** and **Jellyfin** integration:
 
-### 🏗️ Streaming Architecture (V3)
+- SSDP discovery for automatic client detection
+- M3U playlist export with bouquet filtering
+- XMLTV EPG export (7-day default)
 
-Built on a modern event-driven design for reliability and performance:
+### 🏗️ V3 Streaming Architecture
 
-- **Event-Driven Workers**: Background workers manage stream sessions with tuner leasing.
-- **HLS Delivery**: FFmpeg-based transcoding with automatic AAC audio conversion for universal compatibility.
-- **Resilient State**: Persistent session state with automatic recovery from crashes and restarts.
+Event-driven design for reliability and performance:
+
+- **Intent-Based API**: Request Start/Stop intents, receive SessionID
+- **Event Bus**: Decouples API from Worker (pub/sub)
+- **Finite State Machine**: New→Tuning→Transcoding→Ready→Stopped
+- **Persistent Sessions**: BadgerDB/BoltDB with crash recovery
+- **HLS Delivery**: 45-minute timeshift buffer, browser-native playback
 
 ---
 
@@ -147,13 +172,25 @@ xg2g is configured primarily via **Environment Variables**.
 
 ## 📚 Documentation
 
-- **[Development Guide](docs/DEVELOPMENT.md)**: Build, run, and debug locally
-- **[Configuration Reference](docs/guides/CONFIGURATION.md)**: All environment variables and YAML options
-- **[V3 Setup Guide](docs/guides/v3-setup.md)**: Production deployment guide
-- **[NAS Installation (Unraid/Synology)](docs/guides/INSTALL_NAS.md)**: Easy setup for NAS users
-- **[Deprecation Policy](docs/DEPRECATION_POLICY.md)**: Removal policy and timelines
-- **[Troubleshooting](docs/TROUBLESHOOTING.md)**: Common issues and solutions
-- **[Architecture](docs/ARCHITECTURE.md)**: System design and internals
+### Release Documentation
+
+- **[v3.0.0 Release Notes](docs/RELEASE-v3.0.0.md)**: Migration guide,
+  breaking changes, upgrade instructions
+
+### Setup & Configuration
+
+- **[Quick Start Guide](docs/guides/v3-setup.md)**: Production deployment
+- **[Configuration Reference](docs/guides/CONFIGURATION.md)**: ENV vars
+  and YAML options
+- **[NAS Installation](docs/guides/INSTALL_NAS.md)**: Unraid/Synology setup
+- **[RBAC Guide](docs/guides/rbac.md)**: Token scopes and endpoint mapping
+
+### Development & Architecture
+
+- **[Development Guide](docs/DEVELOPMENT.md)**: Build, run, debug locally
+- **[Architecture](docs/ARCHITECTURE.md)**: System design and V3 internals
+- **[Architecture Decision Records](docs/adr/)**: ADR-001 to ADR-004
+- **[Troubleshooting](docs/TROUBLESHOOTING.md)**: Common issues
 
 ---
 
