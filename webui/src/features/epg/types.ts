@@ -2,10 +2,13 @@
 
 export type EpgLoadState = 'idle' | 'loading' | 'ready' | 'error';
 
+// Constants
+export const DEFAULT_TIME_RANGE = 6; // hours
+
 export interface EpgEvent {
   service_ref: string;
-  start: number; // Unix timestamp
-  end: number; // Unix timestamp
+  start: number; // Unix timestamp (seconds)
+  end: number; // Unix timestamp (seconds)
   title: string;
   desc?: string;
 }
@@ -56,8 +59,8 @@ export interface EpgState {
   expandedChannels: Set<string>;
   expandedSearchChannels: Set<string>;
 
-  // Current time (for progress bars)
-  currentTime: number; // Unix timestamp
+  // Current time (for progress bars and event highlighting)
+  currentTime: number; // Unix timestamp (seconds)
 }
 
 export interface Timer {
