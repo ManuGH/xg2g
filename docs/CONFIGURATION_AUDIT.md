@@ -96,17 +96,10 @@ docker buildx build \
 
 ## Architecture Note: V2 vs V3
 
-### V2 "Stateless Proxy" (Deprecated)
+### V2 "Stateless Proxy" (Removed)
 
-**What it was:**
-- Simple reverse proxy that forwarded requests to Enigma2
-- No state management, no session tracking
-- Served on port 18000
-- API endpoints (legacy): `/api/v2/streams`, `/api/v2/recordings/{id}/stream`
-
-**Status:** **DEPRECATED and REMOVED**
-- All V2 proxy endpoints return "V2 proxy deprecated" (404)
-- Code confirms: `internal/api/server_impl.go` and `internal/api/recordings.go`
+**Status:** **REMOVED**
+- No `/api/v2/*` routes or proxy handlers remain in the codebase.
 
 ### V3 "Stateful Orchestrator" (Current Production)
 

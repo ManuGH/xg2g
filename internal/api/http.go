@@ -423,9 +423,6 @@ func (s *Server) routes() http.Handler {
 	// Trigger config reload from disk (if a file-backed config is configured)
 	r.With(s.authMiddleware).Post("/api/v3/system/config/reload", http.HandlerFunc(s.handleConfigReload))
 
-	// Session Login (Cookie issuance for Native Players)
-	r.With(s.authMiddleware).Post("/api/v3/auth/session", http.HandlerFunc(s.CreateSession))
-
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/ui/", http.StatusTemporaryRedirect)
 	})

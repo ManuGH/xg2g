@@ -99,7 +99,6 @@ The following environment variables control V3 behavior:
 | `XG2G_V3_E2_RATE_LIMIT` | `10` | Enigma2 request rate limit (req/sec) |
 | `XG2G_V3_E2_RATE_BURST` | `20` | Enigma2 request burst capacity |
 | `XG2G_V3_E2_USER_AGENT` | `xg2g-v3` | Enigma2 User-Agent |
-| `XG2G_CONFIG_VERSION` | `3.0.0` | Config schema version for v3 strict validation |
 | `XG2G_V3_CONFIG_STRICT` | `true` | Enforce strict v3 config validation (override for migration) |
 
 ## RBAC Scopes
@@ -114,7 +113,7 @@ See `docs/guides/RBAC.md` for the full scope mapping.
 
 ## Strict Config Default
 
-`configVersion` defaults to `3.0.0`, so v3 strict validation is enabled by default. Use `XG2G_V3_CONFIG_STRICT=false` to override during migration.
+The config schema is fixed to v3, so strict validation is enabled by default. Use `XG2G_V3_CONFIG_STRICT=false` to override during migration.
 
 ## Verification
 

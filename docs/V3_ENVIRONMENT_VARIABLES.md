@@ -21,8 +21,8 @@ This document lists all environment variables for the xg2g V3 Worker/Control Pla
 
 ### `XG2G_V3_CONFIG_STRICT`
 - **Type:** Boolean
-- **Default:** `false`
-- **Description:** Enable strict configuration validation (requires `ConfigVersion` field)
+- **Default:** `true`
+- **Description:** Enable strict configuration validation (schema fixed to v3)
 - **Example:** `XG2G_V3_CONFIG_STRICT=false`
 
 ## State Store Configuration

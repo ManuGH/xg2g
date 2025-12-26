@@ -36,7 +36,7 @@ func (m *Manager) Save(cfg *AppConfig) error {
 	// We only write fields that are user-configurable via the UI
 	fileCfg := FileConfig{
 		Version:       EffectiveConfigVersion(*cfg),
-		ConfigVersion: cfg.ConfigVersion,
+		ConfigVersion: V3ConfigVersion,
 		DataDir:       cfg.DataDir,
 		LogLevel:      cfg.LogLevel,
 		OpenWebIF: OpenWebIFConfig{

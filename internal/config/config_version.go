@@ -4,17 +4,13 @@
 
 package config
 
-import "strings"
-
 const (
-	DefaultConfigVersion = "3.0.0"
 	V3ConfigVersion      = "3.0.0"
+	DefaultConfigVersion = V3ConfigVersion
 )
 
 // EffectiveConfigVersion returns a stable config version for serialization.
 func EffectiveConfigVersion(cfg AppConfig) string {
-	if strings.TrimSpace(cfg.ConfigVersion) != "" {
-		return cfg.ConfigVersion
-	}
-	return DefaultConfigVersion
+	_ = cfg
+	return V3ConfigVersion
 }

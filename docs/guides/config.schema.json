@@ -4,17 +4,17 @@
   "title": "xg2g Configuration",
   "description": "YAML configuration schema for xg2g - XMLTV EPG generator for Enigma2 receivers",
   "type": "object",
-  "required": ["version", "dataDir", "openWebIF", "bouquets", "epg"],
+  "required": ["dataDir", "openWebIF", "bouquets", "epg"],
   "properties": {
     "version": {
       "type": "string",
-      "description": "Configuration version identifier",
+      "description": "Deprecated/ignored. Configuration is fixed to v3.",
       "default": "3.0.0",
       "examples": ["3.0.0"]
     },
     "configVersion": {
       "type": "string",
-      "description": "Explicit configuration schema version (preferred for v3 strict validation).",
+      "description": "Deprecated/ignored. Configuration is fixed to v3.",
       "default": "3.0.0",
       "examples": ["3.0.0"]
     },

@@ -28,20 +28,10 @@ func baseV3Config(t *testing.T) AppConfig {
 	}
 }
 
-func TestValidate_V3StrictRequiresConfigVersion(t *testing.T) {
+func TestValidate_V3StrictAllowsEmptyConfigVersion(t *testing.T) {
 	cfg := baseV3Config(t)
 	cfg.ConfigStrict = true
 	cfg.ConfigVersion = ""
-
-	err := Validate(cfg)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "ConfigVersion")
-}
-
-func TestValidate_V3StrictAcceptsConfigVersion(t *testing.T) {
-	cfg := baseV3Config(t)
-	cfg.ConfigStrict = true
-	cfg.ConfigVersion = V3ConfigVersion
 
 	err := Validate(cfg)
 	require.NoError(t, err)
@@ -50,7 +40,6 @@ func TestValidate_V3StrictAcceptsConfigVersion(t *testing.T) {
 func TestValidate_V3StrictRejectsInvalidWorkerMode(t *testing.T) {
 	cfg := baseV3Config(t)
 	cfg.ConfigStrict = true
-	cfg.ConfigVersion = V3ConfigVersion
 	cfg.WorkerMode = "weird"
 
 	err := Validate(cfg)

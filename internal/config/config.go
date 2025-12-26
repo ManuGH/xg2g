@@ -281,7 +281,7 @@ func (l *Loader) setDefaults(cfg *AppConfig) {
 	cfg.OWIMaxBackoff = 30 * time.Second
 	cfg.FuzzyMax = 2
 	cfg.LogLevel = "info"
-	cfg.ConfigVersion = DefaultConfigVersion
+	cfg.ConfigVersion = V3ConfigVersion
 	cfg.ConfigStrict = false
 
 	// Enigma2 (v3) defaults
@@ -371,11 +371,6 @@ func (l *Loader) loadFile(path string) (*FileConfig, error) {
 
 // mergeFileConfig merges file configuration into jobs.Config
 func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
-	if src.ConfigVersion != "" {
-		dst.ConfigVersion = src.ConfigVersion
-	} else if src.Version != "" {
-		dst.ConfigVersion = src.Version
-	}
 	if src.DataDir != "" {
 		dst.DataDir = expandEnv(src.DataDir)
 	}
@@ -633,11 +628,9 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 		cfg.OWIMaxBackoff = time.Duration(ms) * time.Millisecond
 	}
 
-	// Config versioning (v3 strict mode)
-	cfg.ConfigVersion = ParseString("XG2G_CONFIG_VERSION", cfg.ConfigVersion)
 	if _, ok := os.LookupEnv("XG2G_V3_CONFIG_STRICT"); ok {
 		cfg.ConfigStrict = ParseBool("XG2G_V3_CONFIG_STRICT", cfg.ConfigStrict)
-	} else if cfg.ConfigVersion == V3ConfigVersion {
+	} else {
 		cfg.ConfigStrict = true
 	}
 

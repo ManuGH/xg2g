@@ -52,8 +52,9 @@ The simplest way to run xg2g is with a few environment variables.
 For users who prefer a file-based config:
 
 ```yaml
-version: "2.1"
-configVersion: "3.0.0" # required when XG2G_V3_CONFIG_STRICT=true
+# version/configVersion are ignored (fixed to v3)
+# version: "3.0.0"
+# configVersion: "3.0.0"
 openWebIF:
   baseUrl: "http://192.168.1.50"
   streamPort: 8001
@@ -68,7 +69,7 @@ epg:
   days: 7
 ```
 
-`configVersion` is used for v3 strict validation. `version` remains for schema compatibility.
+`version` and `configVersion` are ignored; the schema is fixed to v3. Use `XG2G_V3_CONFIG_STRICT=false` to disable strict validation if needed.
 
 Load it with:
 
@@ -188,8 +189,7 @@ api:
 | `XG2G_API_TOKEN_SCOPES` | `api.tokenScopes` | - |
 | `XG2G_API_TOKENS` | `api.tokens` | - |
 | `XG2G_READY_STRICT` | - | `false` |
-| `XG2G_CONFIG_VERSION` | `configVersion` | - |
-| `XG2G_V3_CONFIG_STRICT` | - | `false` |
+| `XG2G_V3_CONFIG_STRICT` | - | `true` |
 
 ---
 
@@ -217,10 +217,9 @@ The v3 streaming backend is the **production streaming system** (enabled by defa
 | `XG2G_V3_E2_USER_AGENT` | `xg2g-v3` | Enigma2 User-Agent |
 | `XG2G_V3_TUNER_SLOTS` | (auto) | Tuner slots to use (JSON array, e.g., `[0,1]`) |
 | `XG2G_V3_FFMPEG_BIN` | `ffmpeg` | Path to ffmpeg binary |
-| `XG2G_CONFIG_VERSION` | `3.0.0` | Config schema version for v3 strict validation |
 | `XG2G_V3_CONFIG_STRICT` | `true` | Enforce strict v3 config validation (override for migration) |
 
-`configVersion` defaults to `3.0.0`, so v3 strict validation is enabled by default. Use `XG2G_V3_CONFIG_STRICT=false` to override during migration.
+Configuration is fixed to v3. Use `XG2G_V3_CONFIG_STRICT=false` to override strict validation during migration.
 
 ## History
 

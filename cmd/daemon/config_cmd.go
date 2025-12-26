@@ -251,7 +251,7 @@ func fileConfigFromAppConfig(cfg config.AppConfig) config.FileConfig {
 
 	return config.FileConfig{
 		Version:       config.EffectiveConfigVersion(cfg),
-		ConfigVersion: cfg.ConfigVersion,
+		ConfigVersion: config.V3ConfigVersion,
 		DataDir:       cfg.DataDir,
 		LogLevel:      cfg.LogLevel,
 		OpenWebIF: config.OpenWebIFConfig{

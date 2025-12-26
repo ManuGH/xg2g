@@ -5,22 +5,14 @@
 package config
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 )
 
-var ErrMigrationNotImplemented = errors.New("migration not implemented")
-
 // EffectiveFileConfigVersion resolves config version from a FileConfig.
 func EffectiveFileConfigVersion(cfg FileConfig) string {
-	if strings.TrimSpace(cfg.ConfigVersion) != "" {
-		return cfg.ConfigVersion
-	}
-	if strings.TrimSpace(cfg.Version) != "" {
-		return cfg.Version
-	}
-	return ""
+	_ = cfg
+	return V3ConfigVersion
 }
 
 // MigrateFileConfig applies known migrations to reach the target version.
@@ -30,16 +22,19 @@ func MigrateFileConfig(cfg FileConfig, targetVersion string) (FileConfig, []stri
 	if targetVersion == "" {
 		return cfg, nil, fmt.Errorf("target version is required")
 	}
-
-	current := EffectiveFileConfigVersion(cfg)
-	if current == targetVersion {
-		return cfg, nil, nil
+	if targetVersion != V3ConfigVersion {
+		return cfg, nil, fmt.Errorf("config version is fixed to %s", V3ConfigVersion)
 	}
 
-	if current == "" {
-		cfg.ConfigVersion = targetVersion
-		return cfg, []string{fmt.Sprintf("set configVersion to %s", targetVersion)}, nil
+	var changes []string
+	if strings.TrimSpace(cfg.ConfigVersion) != V3ConfigVersion {
+		cfg.ConfigVersion = V3ConfigVersion
+		changes = append(changes, fmt.Sprintf("set configVersion to %s", V3ConfigVersion))
+	}
+	if strings.TrimSpace(cfg.Version) != "" && strings.TrimSpace(cfg.Version) != V3ConfigVersion {
+		cfg.Version = V3ConfigVersion
+		changes = append(changes, fmt.Sprintf("set version to %s", V3ConfigVersion))
 	}
 
-	return cfg, nil, fmt.Errorf("%w: %s -> %s", ErrMigrationNotImplemented, current, targetVersion)
+	return cfg, changes, nil
 }

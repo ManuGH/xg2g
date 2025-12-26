@@ -97,12 +97,6 @@ func Validate(cfg AppConfig) error {
 		}
 
 		if cfg.ConfigStrict {
-			if strings.TrimSpace(cfg.ConfigVersion) == "" {
-				v.AddError("ConfigVersion", "required when XG2G_V3_CONFIG_STRICT=true", cfg.ConfigVersion)
-			} else if cfg.ConfigVersion != V3ConfigVersion {
-				v.AddError("ConfigVersion", "unsupported v3 config version", cfg.ConfigVersion)
-			}
-
 			switch cfg.WorkerMode {
 			case "standard", "virtual":
 			default:

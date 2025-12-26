@@ -128,24 +128,10 @@ func main() {
 			Msg("loaded configuration from environment and defaults")
 	}
 
-	if cfg.ConfigVersion != config.V3ConfigVersion {
-		logger.Warn().
-			Str("event", "config.migration.required").
-			Str("config_version", cfg.ConfigVersion).
-			Str("target_version", config.V3ConfigVersion).
-			Msg("legacy configVersion detected; migrate configuration to v3")
-	}
-
 	if cfg.WorkerEnabled {
-		if cfg.ConfigVersion != config.V3ConfigVersion {
+		if !cfg.ConfigStrict {
 			logger.Warn().
 				Str("event", "config.strict.disabled").
-				Str("config_version", cfg.ConfigVersion).
-				Msg("v3 worker enabled with legacy configVersion; strict validation disabled until migration")
-		} else if !cfg.ConfigStrict {
-			logger.Warn().
-				Str("event", "config.strict.disabled").
-				Str("config_version", cfg.ConfigVersion).
 				Msg("v3 strict validation disabled via XG2G_V3_CONFIG_STRICT override")
 		}
 	}
