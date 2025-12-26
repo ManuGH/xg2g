@@ -8,23 +8,29 @@
 # =============================================================================
 # Stage 1: Build WebUI (React + Vite)
 # =============================================================================
-FROM node:20-slim AS node-builder
+FROM node:24-slim AS node-builder
 WORKDIR /webui
+
+# Copy dependency manifests first for better layer caching
 COPY webui/package*.json ./
-RUN npm ci
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --prefer-offline --no-audit
+
+# Copy source and build
 COPY webui/ .
 RUN npm run build
 
 # =============================================================================
 # Stage 2: Build Go Daemon
 # =============================================================================
-FROM golang:1.25-trixie AS go-builder
+FROM golang:1.25.5-trixie AS go-builder
 
 WORKDIR /src
 
-# Copy Go source
+# Copy Go module files first for better layer caching
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
 
 COPY . .
 
@@ -51,12 +57,15 @@ RUN set -eux; \
 FROM debian:trixie-slim AS runtime
 
 # Install FFmpeg 7.x runtime libraries and dependencies
-RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
+# Using --no-install-recommends to minimize image size
+RUN apt-get update && \
+    apt-get upgrade -y && \
+    apt-get install -y --no-install-recommends \
     ca-certificates \
     tzdata \
     wget \
     ffmpeg \
-    && rm -rf /var/lib/apt/lists/* && \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* && \
     groupadd -g 65532 xg2g && \
     useradd -u 65532 -g xg2g -d /app -s /bin/false xg2g && \
     usermod -aG video xg2g && \
@@ -67,13 +76,12 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
 
 WORKDIR /app
 
-# Copy Go daemon
-COPY --from=go-builder /out/xg2g .
+# Copy Go daemon from builder stage
+COPY --from=go-builder --chown=xg2g:xg2g /out/xg2g .
 
 # Cache busting: BUILD_REVISION changes on every commit
 ARG BUILD_REVISION=unknown
 RUN chmod +x /app/xg2g && \
-    chown -R xg2g:xg2g /app && \
     echo "Build: ${BUILD_REVISION}" > /app/.build-info
 
 VOLUME ["/data"]
