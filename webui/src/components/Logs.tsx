@@ -3,32 +3,42 @@
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
 import { useEffect, useState } from 'react';
-import { DefaultService } from '../client';
+import { getLogs, type LogEntry } from '../client-ts';
 import './Logs.css';
 
 export default function Logs() {
-  const [logs, setLogs] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const fetchLogs = () => {
+  const fetchLogs = async (): Promise<void> => {
     setLoading(true);
-    DefaultService.getLogs()
-      .then(setLogs)
-      .catch(err => {
-        if (err.status === 401) {
+    setError(null);
+
+    try {
+      const result = await getLogs();
+
+      if (result.error) {
+        if (result.response?.status === 401) {
           window.dispatchEvent(new Event('auth-required'));
           setError('Authentication required. Please enter your API token.');
         } else {
-          setError(err.message || 'Failed to fetch logs');
+          setError('Failed to fetch logs');
         }
-      })
-      .finally(() => setLoading(false));
+      } else if (result.data) {
+        setLogs(result.data);
+      }
+    } catch (err) {
+      const error = err as Error;
+      setError(error.message || 'Failed to fetch logs');
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchLogs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
@@ -58,9 +68,9 @@ export default function Logs() {
             <tbody>
               {logs.map((log, idx) => (
                 <tr key={idx} className={`log-row level-${String(log.level || '').toLowerCase()}`}>
-                  <td className="log-time">{new Date(log.time).toLocaleTimeString()}</td>
+                  <td className="log-time">{new Date(log.time || '').toLocaleTimeString()}</td>
                   <td className="log-level">{log.level}</td>
-                  <td className="log-component">{log.component}</td>
+                  <td className="log-component">{(log.fields?.component as string) || ''}</td>
                   <td className="log-message">{log.message}</td>
                 </tr>
               ))}
