@@ -224,3 +224,32 @@ func (c *Client) DeleteMovie(ctx context.Context, sRef string) error {
 
 	return nil
 }
+
+// GetLocations retrieves the list of recording locations (bookmarks) from the receiver.
+type LocationsResponse struct {
+	Locations BookmarkList `json:"locations"`
+	Result    bool         `json:"result"`
+	Message   string       `json:"message"`
+}
+
+func (c *Client) GetLocations(ctx context.Context) ([]MovieLocation, error) {
+	body, err := c.get(ctx, "/api/getlocations", "getlocations", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp LocationsResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		c.loggerFor(ctx).Error().Err(err).Str("body", string(body)).Msg("failed to decode getlocations response")
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if !resp.Result {
+		// Log warning but return empty list? Or error?
+		// Sometimes result is false if no bookmarks are set (only default).
+		c.loggerFor(ctx).Warn().Msg("getlocations returned result=false")
+		return nil, nil // Return empty list, not error
+	}
+
+	return resp.Locations, nil
+}

@@ -46,9 +46,45 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 	// Params.Root and Params.Path are pointers.
 
 	// 1. Prepare Roots
-	roots := cfg.RecordingRoots
+	// 1. Prepare Roots (Configured + Discovered)
+	roots := make(map[string]string)
+
+	// Start with configured roots
+	if len(cfg.RecordingRoots) > 0 {
+		for k, v := range cfg.RecordingRoots {
+			roots[k] = v
+		}
+	} else if len(roots) == 0 {
+		// Only set default if NO discovery happens later?
+		// Actually, let's keep HDD default initially, but if discovery finds something else, good.
+		// Use empty map initially so discovery can populate it alone if needed.
+		// If both empty eventually, we add default.
+	}
+
+	// Dynamic Discovery: Fetch locations from OpenWebIF
+	client := s.newOpenWebIFClient(cfg, snap)
+	if locs, err := client.GetLocations(r.Context()); err == nil {
+		for _, loc := range locs {
+			// Generate an ID for the root. Use the name if available, else sanitized path base.
+			id := loc.Name
+			if id == "" {
+				id = filepath.Base(loc.Path)
+			}
+			// Sanitize ID (simple slugification)
+			id = strings.ToLower(strings.ReplaceAll(id, " ", "_"))
+
+			// Only add if not already present (Config takes precedence)
+			if _, exists := roots[id]; !exists {
+				roots[id] = loc.Path
+			}
+		}
+	} else {
+		log.Ctx(r.Context()).Warn().Err(err).Msg("failed to discover recording locations")
+	}
+
+	// Final check: if still empty, assume standard HDD
 	if len(roots) == 0 {
-		roots = map[string]string{"hdd": "/media/hdd/movie"}
+		roots["hdd"] = "/media/hdd/movie"
 	}
 
 	rootList := make([]RecordingRoot, 0, len(roots))
@@ -124,7 +160,7 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 	cleanTarget := filepath.Join(rootAbs, cleanRel)
 
 	// 4. Fetch from Receiver
-	client := s.newOpenWebIFClient(cfg, snap)
+	// client is already initialized above for discovery
 	list, err := client.GetRecordings(r.Context(), cleanTarget)
 	if err != nil {
 		log.Ctx(r.Context()).Error().Err(err).Str("path", cleanTarget).Msg("failed to fetch recordings")
