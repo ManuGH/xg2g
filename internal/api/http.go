@@ -441,14 +441,6 @@ func (s *Server) routes() http.Handler {
 		},
 	})
 
-	// Manual Routes for Recordings (MVP)
-	// Note: GetRecordings is now handled by generated router
-	r.With(s.authMiddleware).Get("/api/v3/recordings/stream/{ref}", s.GetRecordingStreamHandler)
-	r.With(s.authMiddleware).Delete("/api/v3/recordings/{ref}", s.DeleteRecordingHandler)
-
-	// HLS for Recordings (Proxied)
-	// Handled by generated routing
-
 	// HDHomeRun emulation endpoints (versionless - hardware emulation protocol)
 	if s.hdhr != nil {
 		r.Get("/discover.json", s.hdhr.HandleDiscover)

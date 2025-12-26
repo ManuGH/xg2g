@@ -716,6 +716,48 @@ paths:
               schema:
                 $ref: "#/components/schemas/RecordingResponse"
 
+  /recordings/{recordingId}:
+    delete:
+      summary: Delete a recording
+      operationId: deleteRecording
+      tags:
+        - recordings
+      parameters:
+        - name: recordingId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: URL-encoded service reference or ID of the recording
+      responses:
+        "204":
+          description: Recording deleted
+        "400":
+          description: Invalid recording reference
+        "403":
+          description: Access denied
+        "404":
+          description: Recording not found
+        "500":
+          description: Failed to delete recording
+
+  /recordings/{recordingId}/stream:
+    get:
+      summary: Stream recording (deprecated)
+      operationId: getRecordingStream
+      tags:
+        - recordings
+      parameters:
+        - name: recordingId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: URL-encoded service reference or ID of the recording
+      responses:
+        "403":
+          description: Recording streaming deprecated
+
   /recordings/{recordingId}/playlist.m3u8:
     get:
       summary: Get HLS playlist for a recording

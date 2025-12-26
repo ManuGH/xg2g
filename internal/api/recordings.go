@@ -15,7 +15,6 @@ import (
 	"strings"
 
 	"github.com/ManuGH/xg2g/internal/fsutil"
-	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog/log"
 )
 
@@ -209,9 +208,9 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 	}
 }
 
-// GetRecordingStreamHandler handles GET /api/v3/recordings/stream/{ref}
-// Redirects to /stream/{ref} which handles proxying/HLS
-func (s *Server) GetRecordingStreamHandler(w http.ResponseWriter, r *http.Request) {
+// GetRecordingStream handles GET /api/v3/recordings/{recordingId}/stream
+// Redirects to /stream/{recordingId} which handles proxying/HLS
+func (s *Server) GetRecordingStream(w http.ResponseWriter, r *http.Request, recordingId string) {
 	// Recording stream proxy deprecated
 	http.Error(w, "recording streaming deprecated", http.StatusForbidden)
 }
@@ -231,10 +230,10 @@ func (s *Server) GetRecordingHLSCustomSegment(w http.ResponseWriter, r *http.Req
 	http.Error(w, "recording streaming deprecated", http.StatusForbidden)
 }
 
-// DeleteRecordingHandler handles DELETE /api/v3/recordings/{ref}
+// DeleteRecording handles DELETE /api/v3/recordings/{recordingId}
 // Deletes the recording file and associated sidecar files from the local disk.
-func (s *Server) DeleteRecordingHandler(w http.ResponseWriter, r *http.Request) {
-	recordingID := chi.URLParam(r, "ref")
+func (s *Server) DeleteRecording(w http.ResponseWriter, r *http.Request, recordingId string) {
+	recordingID := recordingId
 	if recordingID == "" {
 		http.Error(w, "Missing recording ID", http.StatusBadRequest)
 		return
