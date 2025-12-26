@@ -12,8 +12,14 @@ function Config() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [successMsg, setSuccessMsg] = useState('');
-  const [restartRequired, setRestartRequired] = useState(false);
-  const [showAdvanced, setShowAdvanced] = useState(false);
+
+  // New: Restarting State
+  const [restarting, setRestarting] = useState(false);
+
+  // Smart Wizard State
+  const [validating, setValidating] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState('untested'); // untested, valid, invalid
+  const [validationResult, setValidationResult] = useState(null); // { version, bouquets }
 
   useEffect(() => {
     loadConfig();
@@ -29,6 +35,9 @@ function Config() {
       };
       setConfig(normalized);
       setError(null);
+      // Reset validation state on load
+      setConnectionStatus('untested');
+      setValidationResult(null);
     } catch (err) {
       console.error('Failed to load config:', err);
       if (err.status === 401) {
@@ -42,6 +51,20 @@ function Config() {
     }
   };
 
+  const checkHealthAndReload = async () => {
+    const pollInterval = setInterval(async () => {
+      try {
+        const res = await fetch('/healthz');
+        if (res.ok) {
+          clearInterval(pollInterval);
+          window.location.reload();
+        }
+      } catch (e) {
+        // Still down, ignore
+      }
+    }, 1000);
+  };
+
   const handleChange = (section, field, value) => {
     setConfig(prev => ({
       ...prev,
@@ -50,37 +73,106 @@ function Config() {
         [field]: value
       }
     }));
+    // Invalidate connection status when URL/Auth changes
+    if (section === 'openWebIF' && (field === 'baseUrl' || field === 'username' || field === 'password')) {
+      setConnectionStatus('untested');
+    }
   };
 
-  const handleBouquetChange = (value) => {
-    setConfig(prev => ({
-      ...prev,
-      bouquets: value.split(',').map(s => s.trim()).filter(s => s)
-    }));
+  const validateConnection = async () => {
+    setValidating(true);
+    setError(null);
+    setSuccessMsg('');
+
+    try {
+      const response = await fetch('/api/v3/setup/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          baseUrl: config.openWebIF?.baseUrl,
+          username: config.openWebIF?.username,
+          password: config.openWebIF?.password
+        })
+      });
+
+      const result = await response.json();
+
+      if (result.valid) {
+        setConnectionStatus('valid');
+        setValidationResult(result);
+        setSuccessMsg(`Connected successfully! Receiver: ${result.version?.info?.brand || 'Unknown'} ${result.version?.info?.model || ''}`);
+
+        // Auto-populate bouquets if empty
+        if ((!config.bouquets || config.bouquets.length === 0) && result.bouquets?.length > 0) {
+          // Optional: Auto-select favorites or first bouquet? 
+          // For now, let user choose, but show them available.
+        }
+      } else {
+        setConnectionStatus('invalid');
+        setError(result.message || 'Connection failed');
+      }
+    } catch (err) {
+      console.error('Validation failed:', err);
+      setConnectionStatus('invalid');
+      setError('Network error during validation');
+    } finally {
+      setValidating(false);
+    }
+  };
+
+  const toggleBouquet = (bouquet) => {
+    const current = config.bouquets || [];
+    const exists = current.includes(bouquet);
+    let updated;
+    if (exists) {
+      updated = current.filter(b => b !== bouquet);
+    } else {
+      updated = [...current, bouquet];
+    }
+    setConfig(prev => ({ ...prev, bouquets: updated }));
   };
 
   const handleSave = async (e) => {
     e.preventDefault();
+
+    if (connectionStatus !== 'valid') {
+      setError("Please validate the connection before saving.");
+      return;
+    }
+
     setSaving(true);
     setError(null);
     setSuccessMsg('');
 
     try {
-      const result = await DefaultService.putSystemConfig({
-        openWebIF: config.openWebIF,
+      // Smart Defaults for missing advanced fields
+      const payload = {
+        openWebIF: {
+          ...config.openWebIF,
+          streamPort: config.openWebIF?.streamPort || 8001 // Default to 8001 if missing
+        },
         bouquets: config.bouquets,
-        epg: config.epg,
-        picons: config.picons,
+        epg: {
+          enabled: config.epg?.enabled || false,
+          days: 3, // Hardcoded default
+          source: 'bouquet' // Hardcoded default optimization
+        },
+        // picons: Omitted (backend handles default)
         featureFlags: config.featureFlags
-      });
+      };
 
-      setSuccessMsg('Configuration saved successfully.');
+      const result = await DefaultService.putSystemConfig(payload);
+
       if (result.restart_required) {
-        setRestartRequired(true);
+        setSuccessMsg('Configuration saved. Restarting application...');
+        setRestarting(true);
+        checkHealthAndReload();
+      } else {
+        setSuccessMsg('Configuration saved successfully.');
+        // Reload to ensure we have the latest state
+        await loadConfig();
       }
 
-      // Reload to ensure we have the latest state
-      await loadConfig();
     } catch (err) {
       console.error('Failed to save config:', err);
       setError('Failed to save configuration. Please check the logs.');
@@ -89,90 +181,107 @@ function Config() {
     }
   };
 
+  if (restarting) {
+    return (
+      <div className="config-container restarting-overlay">
+        <div className="loading-spinner"></div>
+        <h2>Restarting Application...</h2>
+        <p>Please wait while your changes are applied.</p>
+      </div>
+    );
+  }
+
   if (loading) return <div className="loading">Loading configuration...</div>;
   if (!config) return <div className="error">Could not load configuration</div>;
 
-  const isUnconfigured = !config.openWebIF?.baseUrl || !config.openWebIF.baseUrl.trim();
+  const availableBouquets = validationResult?.bouquets || [];
+  const selectedBouquets = config.bouquets || [];
 
   return (
     <div className="config-container">
-      <h2>System Configuration</h2>
+      <h2>Initial Setup Wizard</h2>
 
       {error && <div className="alert error">{error}</div>}
-      {successMsg && <div className="alert success">{successMsg}</div>}
-      {restartRequired && (
-        <div className="alert warning">
-          Changes saved! A restart is required for some settings to take effect.
-        </div>
-      )}
-      {isUnconfigured && (
-        <div className="alert warning">
-          Setup required: enter your receiver address to enable streaming and EPG.
-        </div>
-      )}
+      {successMsg && !restarting && <div className="alert success">{successMsg}</div>}
 
       <form onSubmit={handleSave} className="config-form">
         <section className="config-section">
-          <h3>Receiver Connection</h3>
+          <h3>Step 1: Connect to Receiver</h3>
+          <p className="hint-text">Enter the IP address of your Enigma2 receiver (e.g., Dreambox, VU+).</p>
+
           <div className="form-group">
             <label>Receiver URL</label>
-            <input
-              type="text"
-              value={config.openWebIF?.baseUrl || ''}
-              onChange={e => handleChange('openWebIF', 'baseUrl', e.target.value)}
-              placeholder="http://192.168.1.x"
-            />
-            <small>Example: http://192.168.1.50</small>
+            <div className="input-with-button">
+              <input
+                type="text"
+                value={config.openWebIF?.baseUrl || ''}
+                onChange={e => handleChange('openWebIF', 'baseUrl', e.target.value)}
+                placeholder="http://192.168.1.50"
+                className={connectionStatus === 'valid' ? 'valid-input' : ''}
+              />
+            </div>
           </div>
+
           <div className="form-row">
             <div className="form-group">
-              <label>Username (Optional)</label>
+              <label>Username</label>
               <input
                 type="text"
                 value={config.openWebIF?.username || ''}
                 onChange={e => handleChange('openWebIF', 'username', e.target.value)}
+                placeholder="root (optional)"
               />
             </div>
             <div className="form-group">
-              <label>Password (Optional)</label>
+              <label>Password</label>
               <input
                 type="password"
                 value={config.openWebIF?.password || ''}
                 onChange={e => handleChange('openWebIF', 'password', e.target.value)}
+                placeholder="password (optional)"
               />
             </div>
           </div>
-          {showAdvanced && (
-            <div className="form-group">
-              <label>Default Stream Port</label>
-              <input
-                type="number"
-                value={config.openWebIF?.streamPort || 8001}
-                onChange={e => handleChange('openWebIF', 'streamPort', parseInt(e.target.value))}
-              />
-              <small>Standard port (8001). Encrypted channels use 17999 automatically.</small>
-            </div>
-          )}
+
+          <div className="validation-actions">
+            <button
+              type="button"
+              className={`btn-secondary ${connectionStatus}`}
+              onClick={validateConnection}
+              disabled={validating || !config.openWebIF?.baseUrl}
+            >
+              {validating ? 'Connecting...' : (connectionStatus === 'valid' ? '✓ Connection Verified' : 'Test Connection')}
+            </button>
+            {connectionStatus === 'valid' && <span className="status-badge success">Online</span>}
+          </div>
         </section>
 
-        {showAdvanced && (
-          <section className="config-section">
-            <h3>Bouquets</h3>
-            <div className="form-group">
-              <label>Active Bouquets (Optional)</label>
-              <input
-                type="text"
-                value={config.bouquets?.join(', ') || ''}
-                onChange={e => handleBouquetChange(e.target.value)}
-                placeholder="Leave empty to include all"
-              />
-              <small>Comma-separated list of bouquet names to fetch</small>
+        {connectionStatus === 'valid' && (
+          <section className="config-section animate-fade-in">
+            <h3>Step 2: Select Channels</h3>
+            <p className="hint-text">Choose which bouquets (favorites) you want to use.</p>
+
+            <div className="bouquets-grid">
+              {availableBouquets.length > 0 ? availableBouquets.map(b => (
+                <label key={b} className={`bouquet-card ${selectedBouquets.includes(b) ? 'selected' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={selectedBouquets.includes(b)}
+                    onChange={() => toggleBouquet(b)}
+                  />
+                  <span>{b}</span>
+                </label>
+              )) : (
+                <div className="empty-bouquets">
+                  No bouquets found. <small>Check your receiver configuration.</small>
+                </div>
+              )}
             </div>
           </section>
         )}
 
         <section className="config-section">
-          <h3>EPG Settings</h3>
+          <h3>Step 3: Options</h3>
           <div className="form-group checkbox-group">
             <label>
               <input
@@ -180,81 +289,21 @@ function Config() {
                 checked={config.epg?.enabled || false}
                 onChange={e => handleChange('epg', 'enabled', e.target.checked)}
               />
-              Enable EPG Fetching
+              Enable EPG (Electronic Program Guide)
             </label>
+            <small className="hint-text" style={{ marginTop: '4px', marginLeft: '24px' }}>
+              Automatically fetches program info for selected channels (3 days).
+            </small>
           </div>
-          {showAdvanced && config.epg?.enabled && (
-            <div className="form-row">
-              <div className="form-group">
-                <label>Days to Fetch</label>
-                <input
-                  type="number"
-                  min="1"
-                  max="14"
-                  value={config.epg?.days || 3}
-                  onChange={e => handleChange('epg', 'days', parseInt(e.target.value))}
-                />
-              </div>
-              <div className="form-group">
-                <label>Source Strategy</label>
-                <select
-                  value={config.epg?.source || 'per-service'}
-                  onChange={e => handleChange('epg', 'source', e.target.value)}
-                >
-                  <option value="per-service">Per Service (Better detail)</option>
-                  <option value="bouquet">Bouquet (Faster)</option>
-                </select>
-              </div>
-            </div>
-          )}
         </section>
 
-        {showAdvanced && (
-          <section className="config-section">
-            <h3>Picons (Channel Logos)</h3>
-            <div className="form-group">
-              <label>External Picon Source (Optional)</label>
-              <input
-                type="text"
-                value={config.picons?.baseUrl || ''}
-                onChange={e => handleChange('picons', 'baseUrl', e.target.value)}
-                placeholder="http://picons.example.com/"
-              />
-              <small>Leave blank to use picons from receiver. Enter URL for external source.</small>
-            </div>
-          </section>
-        )}
-
-        {showAdvanced && (
-          <section className="config-section">
-            <h3>Feature Flags</h3>
-            <div className="form-group checkbox-group">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={config.featureFlags?.instantTune || false}
-                  onChange={e => handleChange('featureFlags', 'instantTune', e.target.checked)}
-                />
-                Enable Instant Tune (Experimental)
-              </label>
-              <small>Pre-buffers streams for faster channel switching.</small>
-            </div>
-          </section>
-        )}
-
-        <div className="config-advanced-toggle">
+        <div className="form-actions sticky-footer">
           <button
-            type="button"
-            className="btn-secondary"
-            onClick={() => setShowAdvanced(prev => !prev)}
+            type="submit"
+            disabled={saving || connectionStatus !== 'valid'}
+            className="btn-primary"
           >
-            {showAdvanced ? 'Hide Advanced Settings' : 'Show Advanced Settings'}
-          </button>
-        </div>
-
-        <div className="form-actions">
-          <button type="submit" disabled={saving} className="btn-primary">
-            {saving ? 'Saving...' : 'Save Configuration'}
+            {saving ? 'Finish Setup' : 'Finish Setup'}
           </button>
         </div>
       </form>

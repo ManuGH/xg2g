@@ -23,6 +23,7 @@ window.fetch = async (...args) => {
   if (response.status === 401) {
     // Only trigger if this is an API call (not for assets, etc.)
     const url = args[0];
+    console.warn('[Security DEBUG] 401 Intercepted for URL:', url);
     if (typeof url === 'string' && url.includes('/api/')) {
       console.warn('[Security] 401 Unauthorized detected on:', url);
       window.dispatchEvent(new Event('auth-required'));

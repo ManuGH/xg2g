@@ -99,14 +99,25 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 		return
 	}
 
-	// fsutil.ConfineRelPath handles cleaning, symlinks, backslashes and strict confinement
-	cleanTarget, err := fsutil.ConfineRelPath(rootAbs, qPath)
-	if err != nil {
-		log.Warn().Err(err).Str("root", rootAbs).Str("path", qPath).Msg("path traversal detected")
+	// 3. Resolve & Validate Path
+	// ConfineRelPath uses local FS checks which fail for remote receiver paths.
+	// We switch to string-based validation only.
+	cleanRel := filepath.Clean(qPath)
+	if filepath.IsAbs(cleanRel) || strings.HasPrefix(cleanRel, "/") {
+		// If qPath was absolute, treat it as relative to root if possible, or just reject.
+		// For simplicity, force relative.
+		cleanRel = strings.TrimPrefix(cleanRel, "/")
+	}
+	// Check for traversal
+	if cleanRel == ".." || strings.HasPrefix(cleanRel, ".."+string(filepath.Separator)) {
+		log.Warn().Str("path", qPath).Msg("path traversal attempt detected")
 		http.Error(w, "Access denied", http.StatusForbidden)
 		return
 	}
-	// Note: cleanTarget is the resolved absolute path
+
+	// Construct the target path to send to receiver
+	// Note: rootAbs is the remote path on the receiver (e.g. /media/hdd/movie)
+	cleanTarget := filepath.Join(rootAbs, cleanRel)
 
 	// 4. Fetch from Receiver
 	client := s.newOpenWebIFClient(cfg, snap)
@@ -139,23 +150,18 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 
 	directoriesList := make([]DirectoryItem, 0, len(list.Bookmarks))
 	// Process Directories (Bookmarks)
-	absRoot, _ := filepath.Abs(rootAbs)
-	realRoot, err := filepath.EvalSymlinks(absRoot)
-	if err != nil {
-		if os.IsNotExist(err) {
-			realRoot = absRoot
-		} else {
-			realRoot = absRoot
-		}
-	}
-
 	for _, b := range list.Bookmarks {
-		resolvedBookmark, err := fsutil.ConfineAbsPath(rootAbs, b.Path)
-		if err != nil {
+		// Bookmarks are absolute paths on the receiver.
+		// We just want to see if they are inside our current root to show them as folders.
+		// Or if we should show them as "links"?
+		// Actually, standard logic is just to list them if they are subdirs.
+
+		// Simple string check: does bookmark start with rootAbs?
+		if !strings.HasPrefix(b.Path, rootAbs) {
 			continue
 		}
 
-		rel, err := filepath.Rel(realRoot, resolvedBookmark)
+		rel, err := filepath.Rel(rootAbs, b.Path)
 		if err != nil {
 			continue
 		}

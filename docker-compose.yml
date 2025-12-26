@@ -3,46 +3,21 @@ version: "3.8"
 services:
   xg2g:
     # NOTE: Build with 'make docker-build' to create this image
-    # Uses Debian Trixie (FFmpeg 7.x) - see Dockerfile:11
-    image: xg2g:trixie-local
+    image: xg2g:latest
+    pull_policy: never
     container_name: xg2g
 
-    # Run as specified user (default: root 0:0)
+    # Run as root for internal testing simplicity (or use specific UID if needed)
     user: "${DOCKER_USER:-0:0}"
 
-    # ===========================================================================
-    # PORTS
-    # ===========================================================================
-    # TIP: For Proxmox LXC or HDHomeRun Discovery (SSDP), use 'network_mode: host'
-    # and comment out the 'ports' section. This allows multicast to work correctly.
+    # Use host networking for best compatibility (SSDP, etc.)
     network_mode: host
 
-    # [Alternative: Bridge Mode]
-    # If you prefer isolated networking (but lose SSDP discovery):
-    # network_mode: bridge
+    # Alternative: Bridge mode (if you comment out network_mode: host)
     # ports:
-    #   - "${WEBUI_PORT:-8088}:8088"
-    #   - "${STREAM_PORT:-18000}:18000"
-    #   - "${GPU_PORT:-8085}:8085"
-    #   - "1900:1900/udp" # SSDP (Won't work across subnets easily)
+    #   - "8080:8080" # API
+    #   - "9090:9090" # Metrics
 
-    # ===========================================================================
-    # DNS (Optional Fix)
-    # ===========================================================================
-    # Uncomment if you experience "Temporary failure resolving" on Debian Trixie/Docker
-    # dns:
-    #   - 8.8.8.8
-    #   - 1.1.1.1
-
-    # ===========================================================================
-    # MODE 3: GPU ACCESS (Uncomment 'devices' if valid /dev/dri exists)
-    # ===========================================================================
-    # devices:
-    #   - /dev/dri:/dev/dri
-
-    # ===========================================================================
-    # SECURITY
-    # ===========================================================================
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -52,74 +27,67 @@ services:
       - SETGID
       - SETUID
       - NET_BIND_SERVICE
-    read_only: true
-    tmpfs:
-      - /tmp:noexec,nosuid,nodev,size=100m
-      - /data/v3-hls:exec,size=2g,uid=0,gid=0
 
-    ulimits:
-      nofile:
-        soft: 4096
-        hard: 8192
-
-    # ===========================================================================
-    # ENVIRONMENT
-    # ===========================================================================
-    environment:
-      # Persist all generated files (playlist, xmltv, cache, logs) under /data
-      - XG2G_DATA=/data
-
-      # OpenWebIF
-      - XG2G_OWI_BASE=${XG2G_OWI_BASE:-${OWI_HOST:+http://${OWI_HOST}:${OWI_PORT:-80}}}
-      - XG2G_OWI_USER=${XG2G_OWI_USER:-${OWI_USER}}
-      - XG2G_OWI_PASS=${XG2G_OWI_PASS:-${OWI_PASS}}
-      - XG2G_LOG_LEVEL=${XG2G_LOG_LEVEL:-info}
-      - XG2G_LISTEN=${XG2G_LISTEN:-:8088}
-
-      # Main Configuration
-      - XG2G_BOUQUET=${XG2G_BOUQUET:-${DEFAULT_BOUQUET:-}}
-      - XG2G_INITIAL_REFRESH=${XG2G_INITIAL_REFRESH:-${INITIAL_REFRESH:-true}}
-      - XG2G_USE_WEBIF_STREAMS=${XG2G_USE_WEBIF_STREAMS:-true}
-
-      # Compatibility / Transcoding knobs
-      - XG2G_USE_RUST_REMUXER=${XG2G_USE_RUST_REMUXER:-true}
-      - XG2G_H264_STREAM_REPAIR=${XG2G_H264_STREAM_REPAIR:-true}
-      - XG2G_TRANSCODER_URL=${XG2G_TRANSCODER_URL:-}
-
-      # Security & Limits
-      - XG2G_API_TOKEN=${XG2G_API_TOKEN:-${API_TOKEN}}
-      - XG2G_API_TOKEN_SCOPES=${XG2G_API_TOKEN_SCOPES:-*}
-      - XG2G_DEV=${XG2G_DEV:-false}
-      - XG2G_RATELIMIT_ENABLED=${XG2G_RATELIMIT_ENABLED:-false}
-      - XG2G_RATELIMIT_RPS=${XG2G_RATELIMIT_RPS:-100}
-
-      # V3 Control Plane / Worker (Production Streaming Backend)
-      - XG2G_V3_WORKER_ENABLED=${XG2G_V3_WORKER_ENABLED:-true}
-      - XG2G_V3_WORKER_MODE=${XG2G_V3_WORKER_MODE:-standard}
-      - XG2G_V3_CONFIG_STRICT=${XG2G_V3_CONFIG_STRICT:-false}
-      - XG2G_V3_STORE_BACKEND=${XG2G_V3_STORE_BACKEND:-memory}
-      - XG2G_V3_STORE_PATH=${XG2G_V3_STORE_PATH:-/data/v3-store}
-      - XG2G_V3_TUNER_SLOTS=${XG2G_V3_TUNER_SLOTS:-}
-      - XG2G_V3_E2_HOST=${XG2G_V3_E2_HOST:-}
-      - XG2G_V3_TUNE_TIMEOUT=${XG2G_V3_TUNE_TIMEOUT:-10s}
-      - XG2G_V3_FFMPEG_BIN=${XG2G_V3_FFMPEG_BIN:-ffmpeg}
-      - XG2G_V3_FFMPEG_KILL_TIMEOUT=${XG2G_V3_FFMPEG_KILL_TIMEOUT:-5s}
-      - XG2G_V3_HLS_ROOT=${XG2G_V3_HLS_ROOT:-/data/v3-hls}
-      - XG2G_V3_DVR_WINDOW=${XG2G_V3_DVR_WINDOW:-2700}
-      - XG2G_V3_SHADOW_INTENTS=${XG2G_V3_SHADOW_INTENTS:-false}
-      - XG2G_V3_SHADOW_TARGET=${XG2G_V3_SHADOW_TARGET:-}
-
+    # Mounts for data and V3 store/HLS
     volumes:
       - ./data:/data
+      - ./data/v3-store:/data/v3-store
+      - ./data/v3-hls:/data/v3-hls
 
-    # ===========================================================================
-    # HEALTHCHECK
-    # ===========================================================================
+    environment:
+      # Data Directory
+      - XG2G_DATA=/data
+
+      # Logging
+      - XG2G_LOG_LEVEL=${XG2G_LOG_LEVEL:-info}
+
+      # API Server
+      - XG2G_LISTEN=:8080
+
+      # Metrics
+      - XG2G_METRICS_LISTEN=:9090
+
+      # Security & Limits
+      - XG2G_API_TOKEN=
+      - XG2G_AUTH_ANONYMOUS=true
+      - XG2G_API_TOKEN_SCOPES=${XG2G_API_TOKEN_SCOPES:-*}
+
+      # OpenWebIF (Can be empty for Setup Mode)
+      - XG2G_OWI_BASE=${XG2G_OWI_BASE:-}
+      - XG2G_OWI_USER=${XG2G_OWI_USER:-}
+      - XG2G_OWI_PASS=${XG2G_OWI_PASS:-}
+
+      # Bouquets (Optional, comma-separated. Empty = All)
+      - XG2G_BOUQUET=${XG2G_BOUQUET:-}
+
+      # Main Configuration
+      - XG2G_INITIAL_REFRESH=false
+      - XG2G_USE_WEBIF_STREAMS=true
+      - XG2G_V3_WORKER_ENABLED=true
+      - XG2G_V3_WORKER_MODE=standard
+      - XG2G_V3_CONFIG_STRICT=false
+      - XG2G_V3_STORE_BACKEND=memory
+      # Persistent Store (Example configuration for BoltDB)
+      # - XG2G_V3_STORE_BACKEND=bolt
+      # - XG2G_V3_STORE_PATH=/data/v3-store/xg2g.db
+
+      - XG2G_V3_HLS_ROOT=/data/v3-hls
+
+      # Tuning
+      - XG2G_V3_TUNE_TIMEOUT=10s
+
+      # FFmpeg
+      - XG2G_V3_FFMPEG_BIN=ffmpeg
+      - XG2G_V3_FFMPEG_KILL_TIMEOUT=5s
+
+      # Dev Mode (Hot Reloading UI if mounted, otherwise serves dist)
+      - XG2G_DEV=false
+
     healthcheck:
-      test: wget -q -T 5 -O /dev/null http://localhost:8088/healthz || exit 1
-      interval: 30s
-      timeout: 10s
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8080/healthz"]
+      interval: 5s
+      timeout: 3s
       retries: 3
-      start_period: 10s
+      start_period: 2s
 
-    restart: "${RESTART_POLICY:-unless-stopped}"
+    restart: unless-stopped

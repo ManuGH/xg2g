@@ -423,6 +423,10 @@ func (s *Server) routes() http.Handler {
 	// Trigger config reload from disk (if a file-backed config is configured)
 	r.With(s.authMiddleware).Post("/api/v3/system/config/reload", http.HandlerFunc(s.handleConfigReload))
 
+	// Setup Validation (Testing connection before save)
+	r.Post("/api/v3/setup/validate", http.HandlerFunc(s.handleSetupValidate))
+	// Note: No auth middleware here because we need to test connectivity *before* we have a valid config/token.
+
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/ui/", http.StatusTemporaryRedirect)
 	})

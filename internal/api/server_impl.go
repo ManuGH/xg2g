@@ -56,7 +56,9 @@ func (s *Server) GetSystemHealth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	receiverStatus := ComponentStatusStatusOk
-	if s.status.Error != "" {
+	if s.cfg.OWIBase == "" {
+		receiverStatus = ComponentStatusStatusError
+	} else if s.status.Error != "" {
 		receiverStatus = ComponentStatusStatusError
 	}
 
@@ -119,9 +121,9 @@ func (s *Server) GetSystemConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := AppConfig{
-		Version:  &cfg.Version,
-		DataDir:  &cfg.DataDir,
-		LogLevel: &cfg.LogLevel,
+		Version:   &cfg.Version,
+		DataDir:   &cfg.DataDir,
+		LogLevel:  &cfg.LogLevel,
 		OpenWebIF: openWebIF,
 		Bouquets:  &bouquets,
 		Epg: &EPGConfig{
@@ -150,7 +152,11 @@ func (s *Server) PutSystemConfig(w http.ResponseWriter, r *http.Request) {
 
 	if req.OpenWebIF != nil {
 		if req.OpenWebIF.BaseUrl != nil {
-			s.cfg.OWIBase = *req.OpenWebIF.BaseUrl
+			val := *req.OpenWebIF.BaseUrl
+			if val != "" && !strings.HasPrefix(val, "http://") && !strings.HasPrefix(val, "https://") {
+				val = "http://" + val
+			}
+			s.cfg.OWIBase = val
 		}
 		if req.OpenWebIF.Username != nil {
 			s.cfg.OWIUsername = *req.OpenWebIF.Username
@@ -210,6 +216,14 @@ func (s *Server) PutSystemConfig(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(respObj)
+
+	if restartRequired {
+		go func() {
+			time.Sleep(1 * time.Second) // Allow response to flush
+			log.L().Info().Msg("Configuration updated, triggering restart...")
+			os.Exit(0) // Docker with restart: unless-stopped will revive us
+		}()
+	}
 }
 
 // PostSystemRefresh implements ServerInterface
@@ -1625,4 +1639,80 @@ func (s *Server) newOpenWebIFClient(cfg config.AppConfig, snap config.Snapshot) 
 	s.owiEpoch = snap.Epoch
 
 	return client
+}
+
+// Validation Request Model
+type setupValidateRequest struct {
+	BaseURL  string `json:"baseUrl"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+type setupValidateResponse struct {
+	Valid    bool                 `json:"valid"`
+	Message  string               `json:"message"`
+	Bouquets []string             `json:"bouquets,omitempty"`
+	Version  *openwebif.AboutInfo `json:"version,omitempty"`
+}
+
+// handleSetupValidate implements the validation endpoint
+func (s *Server) handleSetupValidate(w http.ResponseWriter, r *http.Request) {
+	var req setupValidateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.BaseURL == "" {
+		http.Error(w, "Base URL is required", http.StatusBadRequest)
+		return
+	}
+
+	// Smart Fix: Handle missing scheme (lazy user input)
+	if !strings.HasPrefix(req.BaseURL, "http://") && !strings.HasPrefix(req.BaseURL, "https://") {
+		req.BaseURL = "http://" + req.BaseURL
+	}
+
+	// Create ephemeral client
+	client := openwebif.NewWithPort(req.BaseURL, 0, openwebif.Options{
+		Timeout:  5 * time.Second, // Fast timeout for validation
+		Username: req.Username,
+		Password: req.Password,
+	})
+
+	// 1. Check Connectivity (Get About Info)
+	about, err := client.About(r.Context())
+	if err != nil {
+		// Log detailed error but return generic message to UI (or detailed if safe)
+		log.L().Warn().Err(err).Str("baseUrl", req.BaseURL).Msg("validation failed: connection error")
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(setupValidateResponse{
+			Valid:   false,
+			Message: fmt.Sprintf("Connection failed: %s", err.Error()),
+		})
+		return
+	}
+
+	// 2. Fetch Bouquets (Metadata)
+	bouquetsMap, err := client.Bouquets(r.Context())
+	if err != nil {
+		log.L().Warn().Err(err).Msg("validation warning: could not fetch bouquets")
+		// We still consider it "Valid" connection, but maybe warn about bouquets?
+		// For now, let's treat it as valid but empty bouquets.
+	}
+
+	bouquetsList := make([]string, 0, len(bouquetsMap))
+	for name := range bouquetsMap {
+		bouquetsList = append(bouquetsList, name)
+	}
+	sort.Strings(bouquetsList)
+
+	// Success
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(setupValidateResponse{
+		Valid:    true,
+		Message:  "Connection successful",
+		Version:  about,
+		Bouquets: bouquetsList,
+	})
 }
