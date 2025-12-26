@@ -7,6 +7,7 @@ package ffmpeg
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/ManuGH/xg2g/internal/v3/model"
 )
@@ -33,6 +34,15 @@ func BuildHLSArgs(in InputSpec, out OutputSpec, prof model.ProfileSpec) ([]strin
 	}
 	if out.HLSPlaylist == "" {
 		return nil, fmt.Errorf("missing playlist path")
+	}
+
+	audioBitrate := "384k"
+	if prof.AudioBitrateK > 0 {
+		audioBitrate = fmt.Sprintf("%dk", prof.AudioBitrateK)
+	}
+	audioFilter := "aresample=async=1:first_pts=0,aformat=channel_layouts=5.1|stereo"
+	if prof.AudioBitrateK > 0 && prof.AudioBitrateK <= 192 {
+		audioFilter = "aresample=async=1:first_pts=0,aformat=channel_layouts=stereo"
 	}
 
 	args := []string{
@@ -83,9 +93,9 @@ func BuildHLSArgs(in InputSpec, out OutputSpec, prof model.ProfileSpec) ([]strin
 		// CRITICAL: Safari requires explicit channel metadata in output
 		// We explicitly set channel layout to prevent "unknown" layout issues
 		// aformat ensures proper channel layout metadata is written to output
-		"-filter:a", "aresample=async=1:first_pts=0,aformat=channel_layouts=5.1|stereo",
+		"-filter:a", audioFilter,
 		"-c:a", "aac",
-		"-b:a", "384k", // High bitrate works for both stereo and 5.1 (auto-adjusts)
+		"-b:a", audioBitrate,
 		"-ar", "48000", // Force 48kHz sample rate
 		"-profile:a", "aac_low", // AAC-LC profile for best compatibility
 
@@ -109,17 +119,38 @@ func BuildHLSArgs(in InputSpec, out OutputSpec, prof model.ProfileSpec) ([]strin
 		// - independent_segments: Indicates keyframe-aligned segments for seeking
 		// - program_date_time: Adds absolute timestamps for accurate DVR navigation
 		hlsFlags = "omit_endlist+append_list+independent_segments+program_date_time"
+	} else if prof.LLHLS {
+		hlsFlags = hlsFlags + "+independent_segments"
 	}
 	args = append(args, "-hls_flags", hlsFlags)
 
 	if prof.TranscodeVideo {
+		crf := prof.VideoCRF
+		if crf == 0 {
+			crf = 23
+		}
+		gop := out.SegmentDuration * 25
+		if gop <= 0 {
+			gop = 50
+		}
+		keyframeInterval := strconv.FormatFloat(float64(out.SegmentDuration), 'f', 3, 64)
+		if keyframeInterval == "0.000" {
+			keyframeInterval = "2.000"
+		}
+
 		args = append(args,
 			"-preset", "veryfast",
 			"-profile:v", "high",
 			"-level", "4.0",
-			"-crf", "23",
-			"-g", "50",
+			"-crf", strconv.Itoa(crf),
+			"-g", strconv.Itoa(gop),
+			"-keyint_min", strconv.Itoa(gop),
+			"-sc_threshold", "0",
+			"-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%s)", keyframeInterval),
 		)
+		if prof.VideoMaxWidth > 0 {
+			args = append(args, "-vf", fmt.Sprintf("scale=w=%d:h=-2:flags=lanczos", prof.VideoMaxWidth))
+		}
 	}
 
 	// DVR mode: Use EVENT playlist type for seekable streams
@@ -135,6 +166,13 @@ func BuildHLSArgs(in InputSpec, out OutputSpec, prof model.ProfileSpec) ([]strin
 			"-hls_segment_type", "fmp4",
 			"-hls_fmp4_init_filename", out.InitFilename,
 		)
+	}
+	if prof.LLHLS {
+		partSize := float64(out.SegmentDuration) / 4.0
+		if partSize <= 0 {
+			partSize = 0.5
+		}
+		args = append(args, "-hls_part_size", strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.3f", partSize), "0"), "."))
 	}
 
 	args = append(args, out.HLSPlaylist)

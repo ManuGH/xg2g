@@ -17,6 +17,7 @@ const (
 	ProfileDVR       = "dvr"
 	ProfileSafari    = "safari"
 	ProfileSafariDVR = "safari_dvr"
+	ProfileCopy      = "copy"
 )
 
 var aliasMap = map[string]string{
@@ -33,6 +34,7 @@ var aliasMap = map[string]string{
 	"dvr":        ProfileDVR,
 	"safari":     ProfileSafari,
 	"safari_dvr": ProfileSafariDVR,
+	"copy":       ProfileCopy,
 }
 
 // Resolve maps a requested profile and user agent to a concrete ProfileSpec.
@@ -66,18 +68,30 @@ func Resolve(requested, userAgent string, dvrWindowSec int) model.ProfileSpec {
 	}
 
 	switch canonical {
+	case ProfileCopy:
+		return spec
 	case ProfileLow:
 		spec.TranscodeVideo = true
+		spec.VideoCRF = 26
+		spec.VideoMaxWidth = 1280
+		spec.AudioBitrateK = 160
+	case ProfileHigh:
+		spec.TranscodeVideo = true
+		spec.VideoCRF = 23
 	case ProfileSafari:
 		spec.TranscodeVideo = true
 		spec.LLHLS = true
+		spec.VideoCRF = 23
 	case ProfileSafariDVR:
 		spec.TranscodeVideo = true
 		spec.LLHLS = true
+		spec.VideoCRF = 23
 		if dvrWindowSec > 0 {
 			spec.DVRWindowSec = dvrWindowSec
 		}
 	case ProfileDVR:
+		spec.TranscodeVideo = true
+		spec.VideoCRF = 23
 		if dvrWindowSec > 0 {
 			spec.DVRWindowSec = dvrWindowSec
 		}

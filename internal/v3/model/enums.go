@@ -94,6 +94,9 @@ type ProfileSpec struct {
 	LLHLS          bool   `json:"llhls"`
 	DVRWindowSec   int    `json:"dvrWindowSec"`
 	TranscodeVideo bool   `json:"transcodeVideo"`
+	VideoCRF       int    `json:"videoCrf,omitempty"`
+	VideoMaxWidth  int    `json:"videoMaxWidth,omitempty"`
+	AudioBitrateK  int    `json:"audioBitrateK,omitempty"`
 	// Future: Audio-only, subtitles, etc.
 }
 

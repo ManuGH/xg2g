@@ -88,17 +88,16 @@ func (r *Runner) Start(ctx context.Context, sessionID, serviceRef string, profil
 
 	// 2. Build Args
 	// Profile Configuration
-	// Phase 9-5: Safari DVR / fMP4 Logic
+	// Phase 9-5: fMP4/LL-HLS handling
 	isFMP4 := false
 	ext := ".ts"
 	profile := profileSpec.Name
 
-	if profile == "safari_dvr" || profile == "safari" {
+	if profileSpec.LLHLS {
 		isFMP4 = true
 		ext = ".m4s"
-		profileSpec.LLHLS = true
-		// Enable transcoding for Safari to ensure codec compatibility (MPEG-2 -> H.264)
-		if profileSpec.TranscodeVideo == false {
+		// Ensure transcoding for LL-HLS clients to guarantee codec compatibility.
+		if !profileSpec.TranscodeVideo {
 			profileSpec.TranscodeVideo = true
 		}
 	}
