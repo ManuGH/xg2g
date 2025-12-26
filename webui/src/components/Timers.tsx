@@ -2,12 +2,12 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
-import React, { useState, useEffect } from 'react';
-import { TimersService, DvrService, OpenAPI } from '../client';
+import { useState, useEffect } from 'react';
+import { getTimers, deleteTimer, getDvrCapabilities, type Timer, type DvrCapabilities } from '../client-ts';
 import EditTimerDialog from './EditTimerDialog';
 import './Timers.css';
 
-function formatDateTime(ts) {
+function formatDateTime(ts: number | undefined): string {
   if (!ts) return '';
   const d = new Date(ts * 1000);
   return d.toLocaleString([], {
@@ -20,24 +20,25 @@ function formatDateTime(ts) {
 }
 
 export default function Timers() {
-  const [timers, setTimers] = useState([]);
-  const [capabilities, setCapabilities] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [timers, setTimers] = useState<Timer[]>([]);
+  const [capabilities, setCapabilities] = useState<DvrCapabilities | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Edit State
-  const [editingTimer, setEditingTimer] = useState(null);
+  const [editingTimer, setEditingTimer] = useState<Timer | null>(null);
 
-  const fetchTimers = async () => {
+  const fetchTimers = async (): Promise<void> => {
     setLoading(true);
     setError(null);
     try {
-      const token = localStorage.getItem('XG2G_API_TOKEN');
-      if (token) OpenAPI.TOKEN = token;
+      const result = await getTimers();
 
-      const data = await TimersService.getTimers();
-      // data is TimerList, so data.items
-      setTimers(data.items || []);
+      if (result.error) {
+        setError("Failed to load timers. Ensure backend is running and authenticated.");
+      } else if (result.data) {
+        setTimers(result.data.items || []);
+      }
     } catch (err) {
       console.error("Failed to load timers:", err);
       setError("Failed to load timers. Ensure backend is running and authenticated.");
@@ -46,10 +47,13 @@ export default function Timers() {
     }
   };
 
-  const fetchCapabilities = async () => {
+  const fetchCapabilities = async (): Promise<void> => {
     try {
-      const caps = await DvrService.getDvrCapabilities();
-      setCapabilities(caps);
+      const result = await getDvrCapabilities();
+
+      if (result.data) {
+        setCapabilities(result.data);
+      }
     } catch (err) {
       console.warn("Failed to fetch capabilities", err);
     }
@@ -58,22 +62,27 @@ export default function Timers() {
   useEffect(() => {
     fetchTimers();
     fetchCapabilities();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleDelete = async (timer) => {
+  const handleDelete = async (timer: Timer): Promise<void> => {
     if (!confirm(`Delete timer for "${timer.name}"?`)) return;
 
     try {
       // Use timerId for v2 delete
       if (timer.timerId) {
-        await TimersService.deleteTimer(timer.timerId);
+        const result = await deleteTimer({ path: { timerId: timer.timerId } });
+
+        if (result.error) {
+          throw new Error('Failed to delete timer');
+        }
+        fetchTimers();
       } else {
-        // Fallback for legacy (shouldn't happen with v2 API)
-        console.warn("No timerId found, try legacy?");
+        console.warn("No timerId found");
       }
-      fetchTimers();
     } catch (err) {
-      alert("Failed to delete timer: " + err.message);
+      const error = err as Error;
+      alert("Failed to delete timer: " + error.message);
     }
   };
 

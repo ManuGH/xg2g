@@ -1,0 +1,16 @@
+{
+  "extends": ["./eslint.config.js"],
+  "rules": {
+    "no-restricted-imports": [
+      "error",
+      {
+        "patterns": [
+          {
+            "group": ["../client", "../client/*", "*/client", "*/client/*"],
+            "message": "Direct imports from src/client/ (compatibility layer) are restricted. Use src/client-ts/ SDK instead. Whitelist exceptions: src/context/AppContext.tsx"
+          }
+        ]
+      }
+    ]
+  }
+}

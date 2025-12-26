@@ -3,29 +3,40 @@
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
 import { useEffect, useState } from 'react';
-import { DefaultService } from '../client/services/DefaultService';
-import { DvrService } from '../client/services/DvrService';
+import { getSystemHealth, getLogs, getStreams, getDvrStatus, type SystemHealth, type LogEntry, type StreamSession } from '../client-ts';
+
+interface DvrStatus {
+  isRecording?: boolean;
+  serviceName?: string;
+}
 
 export default function Dashboard() {
-  const [health, setHealth] = useState(null);
-  const [error, setError] = useState(null);
+  const [health, setHealth] = useState<SystemHealth | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const fetchHealth = () => {
-    DefaultService.getSystemHealth()
-      .then(setHealth)
-      .catch(err => {
-        // Trigger auth modal on 401
-        if (err.status === 401) {
+  const fetchHealth = async (): Promise<void> => {
+    try {
+      const result = await getSystemHealth();
+
+      if (result.error) {
+        if (result.response?.status === 401) {
           window.dispatchEvent(new Event('auth-required'));
           setError('Authentication required. Please enter your API token.');
         } else {
-          setError(err.message || 'Failed to fetch health');
+          setError('Failed to fetch health');
         }
-      });
+      } else if (result.data) {
+        setHealth(result.data);
+      }
+    } catch (err) {
+      const error = err as Error;
+      setError(error.message || 'Failed to fetch health');
+    }
   };
 
   useEffect(() => {
     fetchHealth();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (error) return <div className="error">Error: {error}</div>;
@@ -43,7 +54,7 @@ export default function Dashboard() {
       <div className="card-grid">
 
         {/* Startup Safety Net Indicator */}
-        {health.epg.missing_channels > 0 && health.uptime_seconds < 300 && (
+        {((health.epg?.missing_channels || 0) > 0 && (health.uptime_seconds || 0) < 300) && (
           <div className="card full-width warning-banner" style={{ background: '#fff3cd', color: '#856404', borderColor: '#ffeeba' }}>
             <h3>⚠️ System Initializing</h3>
             <p>The system is currently syncing with your receiver in the background. Some data may be missing temporarily.</p>
@@ -56,7 +67,7 @@ export default function Dashboard() {
           <div className={`status-indicator ${health.status}`}>
             {health.status === 'ok' ? 'HEALTHY' : 'DEGRADED'}
           </div>
-          <p>Uptime: {formatUptime(health.uptime_seconds)}</p>
+          <p>Uptime: {formatUptime(health.uptime_seconds || 0)}</p>
           <p>Version: {health.version}</p>
         </div>
 
@@ -64,18 +75,18 @@ export default function Dashboard() {
 
         <div className="card">
           <h3>Enigma2 Link</h3>
-          <div className={`status-indicator ${health.receiver.status}`}>
-            {health.receiver.status === 'ok' ? 'CONNECTED' : 'ERROR'}
+          <div className={`status-indicator ${health.receiver?.status}`}>
+            {health.receiver?.status === 'ok' ? 'CONNECTED' : 'ERROR'}
           </div>
-          <p>Last Sync: {formatTimeAgo(health.receiver.last_check)}</p>
+          <p>Last Sync: {formatTimeAgo(health.receiver?.last_check)}</p>
         </div>
 
         <div className="card">
           <h3>EPG Data</h3>
-          <div className={`status-indicator ${health.epg.status}`}>
-            {health.epg.status === 'ok' ? 'SYNCED' : health.epg.status === 'missing' ? 'PARTIAL' : 'ERROR'}
+          <div className={`status-indicator ${health.epg?.status}`}>
+            {health.epg?.status === 'ok' ? 'SYNCED' : health.epg?.status === 'missing' ? 'PARTIAL' : 'ERROR'}
           </div>
-          <p>{health.epg.missing_channels || 0} channels missing data</p>
+          <p>{health.epg?.missing_channels || 0} channels missing data</p>
         </div>
 
       </div>
@@ -89,28 +100,31 @@ export default function Dashboard() {
 }
 
 function RecordingStatusIndicator() {
-  const [status, setStatus] = useState(null);
+  const [status, setStatus] = useState<DvrStatus | null>(null);
 
   useEffect(() => {
-    let timeoutId;
+    let timeoutId: NodeJS.Timeout;
     let mounted = true;
     let errors = 0;
 
-    const fetch = () => {
-      DvrService.getDvrStatus()
-        .then(data => {
-          if (!mounted) return;
-          setStatus(data);
+    const fetch = async (): Promise<void> => {
+      try {
+        const result = await getDvrStatus();
+
+        if (!mounted) return;
+
+        if (result.data) {
+          setStatus(result.data as DvrStatus);
           errors = 0;
           timeoutId = setTimeout(fetch, 10000);
-        })
-        .catch(() => {
-          if (!mounted) return;
-          setStatus(null);
-          errors++;
-          const delay = Math.min(10000 + (errors * 5000), 30000);
-          timeoutId = setTimeout(fetch, delay);
-        });
+        }
+      } catch {
+        if (!mounted) return;
+        setStatus(null);
+        errors++;
+        const delay = Math.min(10000 + (errors * 5000), 30000);
+        timeoutId = setTimeout(fetch, delay);
+      }
     };
 
     fetch();
@@ -133,30 +147,33 @@ function RecordingStatusIndicator() {
 }
 
 function StreamsCard() {
-  const [streams, setStreams] = useState([]);
-  const [error, setError] = useState(false);
+  const [streams, setStreams] = useState<StreamSession[]>([]);
+  const [error, setError] = useState<boolean>(false);
 
   useEffect(() => {
-    let timeoutId;
+    let timeoutId: NodeJS.Timeout;
     let mounted = true;
     let errors = 0;
 
-    const fetch = () => {
-      DefaultService.getStreams()
-        .then(data => {
-          if (!mounted) return;
-          setStreams(data || []);
+    const fetch = async (): Promise<void> => {
+      try {
+        const result = await getStreams();
+
+        if (!mounted) return;
+
+        if (result.data) {
+          setStreams(result.data || []);
           setError(false);
           errors = 0;
           timeoutId = setTimeout(fetch, 3000); // 3s
-        })
-        .catch(() => {
-          if (!mounted) return;
-          setError(true);
-          errors++;
-          const delay = Math.min(3000 + (errors * 2000), 15000);
-          timeoutId = setTimeout(fetch, delay);
-        });
+        }
+      } catch {
+        if (!mounted) return;
+        setError(true);
+        errors++;
+        const delay = Math.min(3000 + (errors * 2000), 15000);
+        timeoutId = setTimeout(fetch, delay);
+      }
     };
 
     fetch();
@@ -169,7 +186,7 @@ function StreamsCard() {
 
   const count = streams.length;
 
-  const maskIP = (ip) => {
+  const maskIP = (ip: string | undefined): string => {
     if (!ip) return '';
     // Simple IPv4 masking: 1.2.3.4 -> 1.2.3.xxx
     return ip.replace(/\.\d+$/, '.xxx');
@@ -198,8 +215,8 @@ function StreamsCard() {
   );
 }
 
-function formatDuration(startDate) {
-  const diff = Math.floor((new Date() - startDate) / 1000);
+function formatDuration(startDate: Date): string {
+  const diff = Math.floor((new Date().getTime() - startDate.getTime()) / 1000);
   const h = Math.floor(diff / 3600);
   const m = Math.floor((diff % 3600) / 60);
   const s = diff % 60;
@@ -208,27 +225,29 @@ function formatDuration(startDate) {
 }
 
 function LogList() {
-  const [logs, setLogs] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Defensive check for Generated Client
-    if (typeof DefaultService.getLogs !== 'function') {
-      console.error('API Client Verification Failed: DefaultService.getLogs is missing', DefaultService);
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setError('Log service unavailable');
-      setLoading(false);
-      return;
-    }
+    const fetchLogs = async (): Promise<void> => {
+      try {
+        const result = await getLogs();
 
-    DefaultService.getLogs()
-      .then(data => setLogs((data || []).slice(0, 5)))
-      .catch(err => {
+        if (result.error) {
+          setError('Failed to load logs');
+        } else if (result.data) {
+          setLogs((result.data || []).slice(0, 5));
+        }
+      } catch (err) {
         console.error('Failed to fetch logs', err);
         setError('Failed to load logs');
-      })
-      .finally(() => setLoading(false));
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchLogs();
   }, []);
 
   if (error) return <div className="error-message">{error}</div>;
@@ -247,8 +266,8 @@ function LogList() {
       <tbody>
         {logs.map((log, i) => (
           <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
-            <td>{new Date(log.time).toLocaleTimeString()}</td>
-            <td className={`log-level ${log.level.toLowerCase()}`}>{log.level}</td>
+            <td>{new Date(log.time || '').toLocaleTimeString()}</td>
+            <td className={`log-level ${(log.level || '').toLowerCase()}`}>{log.level}</td>
             <td>{log.message}</td>
           </tr>
         ))}
@@ -257,20 +276,20 @@ function LogList() {
   );
 }
 
-function formatUptime(seconds) {
+function formatUptime(seconds: number): string {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
   return `${h}h ${m}m`;
 }
 
-function formatTimeAgo(dateString) {
+function formatTimeAgo(dateString: string | undefined): string {
   if (!dateString) return 'Never';
   const date = new Date(dateString);
   // Check for invalid date or crazy old dates (Year 1)
   if (isNaN(date.getTime()) || date.getFullYear() < 2000) return 'Never';
 
   const now = new Date();
-  const diffSeconds = Math.floor((now - date) / 1000);
+  const diffSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
 
   if (diffSeconds < 60) return 'Just now';
   if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m ago`;

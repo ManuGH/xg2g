@@ -1,0 +1,59 @@
+name: Phase 4 Guardrails
+
+on:
+  pull_request:
+    paths:
+      - 'webui/src/**'
+  push:
+    branches: [main]
+    paths:
+      - 'webui/src/**'
+
+jobs:
+  check-migrations:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for new JSX files
+        run: |
+          # Get list of new .jsx files in this PR/commit
+          NEW_JSX=$(git diff --name-only --diff-filter=A ${{ github.event.before }}..${{ github.sha }} | grep '\.jsx$' || true)
+
+          if [ -n "$NEW_JSX" ]; then
+            echo "❌ ERROR: New .jsx files detected (Phase 4 DoD B violation)"
+            echo "New files:"
+            echo "$NEW_JSX"
+            echo ""
+            echo "All new components must be .tsx (TypeScript)"
+            exit 1
+          fi
+          echo "✅ No new .jsx files"
+
+      - name: Check for legacy client imports
+        run: |
+          # Check for imports from src/client/ (not src/client-ts/)
+          # Whitelist: AppContext.tsx (uses compatibility layer intentionally)
+
+          WHITELIST="webui/src/context/AppContext.tsx"
+
+          VIOLATIONS=$(grep -r "from ['\"].*\.\.\/client[^-]" webui/src/components/ webui/src/hooks/ 2>/dev/null | grep -v "$WHITELIST" || true)
+
+          if [ -n "$VIOLATIONS" ]; then
+            echo "❌ ERROR: Legacy client imports detected (Phase 4 DoD B violation)"
+            echo "Files with src/client/ imports:"
+            echo "$VIOLATIONS"
+            echo ""
+            echo "Use src/client-ts/ SDK instead"
+            exit 1
+          fi
+          echo "✅ No legacy client imports outside whitelist"
+
+      - name: TypeScript Check
+        run: |
+          cd webui
+          npm ci
+          npm run build
+          echo "✅ TypeScript compilation successful"
