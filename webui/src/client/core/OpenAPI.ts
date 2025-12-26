@@ -1,32 +1,36 @@
-/* generated using openapi-typescript-codegen -- do not edit */
-/* istanbul ignore file */
-/* tslint:disable */
-/* eslint-disable */
-import type { ApiRequestOptions } from './ApiRequestOptions';
+// Legacy compatibility: OpenAPI configuration object
+// Re-exports the modern client configuration
 
-type Resolver<T> = (options: ApiRequestOptions) => Promise<T>;
-type Headers = Record<string, string>;
+import { client } from '../../client-ts/client.gen';
 
-export type OpenAPIConfig = {
-    BASE: string;
-    VERSION: string;
-    WITH_CREDENTIALS: boolean;
-    CREDENTIALS: 'include' | 'omit' | 'same-origin';
-    TOKEN?: string | Resolver<string> | undefined;
-    USERNAME?: string | Resolver<string> | undefined;
-    PASSWORD?: string | Resolver<string> | undefined;
-    HEADERS?: Headers | Resolver<Headers> | undefined;
-    ENCODE_PATH?: ((path: string) => string) | undefined;
-};
+// Internal token storage
+let _token: string | null = null;
 
-export const OpenAPI: OpenAPIConfig = {
-    BASE: '/api/v3',
-    VERSION: '3.0.0',
-    WITH_CREDENTIALS: false,
-    CREDENTIALS: 'include',
-    TOKEN: undefined,
-    USERNAME: undefined,
-    PASSWORD: undefined,
-    HEADERS: undefined,
-    ENCODE_PATH: undefined,
+export const OpenAPI = {
+  BASE: '/api/v3',
+
+  get TOKEN() {
+    return _token;
+  },
+
+  set TOKEN(value: string | null) {
+    _token = value;
+    // Configure client with new token
+    if (value) {
+      client.interceptors.request.use((request) => {
+        request.headers.set('Authorization', `Bearer ${value}`);
+        return request;
+      });
+    }
+  },
+
+  setConfig(config: { BASE?: string; TOKEN?: string }) {
+    if (config.BASE !== undefined) {
+      this.BASE = config.BASE;
+      client.setConfig({ baseUrl: config.BASE });
+    }
+    if (config.TOKEN !== undefined) {
+      this.TOKEN = config.TOKEN;
+    }
+  }
 };

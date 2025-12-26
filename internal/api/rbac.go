@@ -151,7 +151,7 @@ func (s *Server) requestScopes(r *http.Request) (scopeSet, bool) {
 		return s.tokenScopes(token)
 	}
 	if s.allowAnonymous() {
-		return defaultReadScopes(), true
+		return newScopeSet([]string{string(ScopeAll)}), true
 	}
 	return nil, false
 }

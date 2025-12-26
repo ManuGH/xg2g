@@ -46,10 +46,10 @@ services:
 
       # Metrics
       - XG2G_METRICS_LISTEN=:9090
+      - XG2G_AUTH_ANONYMOUS=true
 
       # Security & Limits
       - XG2G_API_TOKEN=
-      - XG2G_AUTH_ANONYMOUS=true
       - XG2G_API_TOKEN_SCOPES=${XG2G_API_TOKEN_SCOPES:-*}
 
       # OpenWebIF (Can be empty for Setup Mode)
