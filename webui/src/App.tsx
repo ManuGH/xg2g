@@ -12,7 +12,7 @@ import { OpenAPI } from './client/core/OpenAPI';
 // V3Player is lazy loaded because it includes heavy HLS.js dependency
 const V3Player = lazy(() => import('./components/V3Player'));
 const Dashboard = lazy(() => import('./components/Dashboard'));
-const EPG = lazy(() => import('./components/EPG'));
+const EPG = lazy(() => import('./features/epg/EPG'));
 const Logs = lazy(() => import('./components/Logs'));
 const Files = lazy(() => import('./components/Files'));
 const SeriesManager = lazy(() => import('./components/SeriesManager'));

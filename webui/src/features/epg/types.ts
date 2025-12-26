@@ -14,10 +14,10 @@ export interface EpgEvent {
 }
 
 export interface EpgChannel {
-  id: string;
+  id?: string;
   service_ref?: string;
   serviceRef?: string;
-  name: string;
+  name?: string;
   number?: string;
   group?: string;
   logo_url?: string;
