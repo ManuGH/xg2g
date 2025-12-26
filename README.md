@@ -96,9 +96,9 @@ Built on a modern event-driven design for reliability and performance:
     nano .env
     ```
 
-    **Set these required values in `.env`:**
+    **Set these values in `.env`:**
     - `XG2G_OWI_BASE` - Your Enigma2 receiver IP (e.g., `http://192.168.1.100`)
-    - `XG2G_BOUQUET` - Bouquet name (default: `Favourites`)
+    - `XG2G_BOUQUET` - Optional: comma-separated bouquets (empty = all)
 
     **Note**: `XG2G_V3_E2_HOST` automatically inherits from `XG2G_OWI_BASE` if not set.
 
@@ -136,8 +136,8 @@ xg2g is configured primarily via **Environment Variables**.
 
 | Variable | Description | Default |
 | :--- | :--- | :--- |
-| `XG2G_OWI_BASE` | URL of your Enigma2 receiver (Required) | - |
-| `XG2G_BOUQUET` | Bouquet names to load (comma separated) | `Favourites` |
+| `XG2G_OWI_BASE` | URL of your Enigma2 receiver (required for streaming) | - |
+| `XG2G_BOUQUET` | Bouquet names to load (comma separated). Empty = all. | empty |
 | `XG2G_API_TOKEN` | (Optional) Secures the API with Bearer auth | - |
 | `XG2G_EPG_DAYS` | Number of days to fetch EPG | `7` |
 

@@ -4,7 +4,7 @@
   "title": "xg2g Configuration",
   "description": "YAML configuration schema for xg2g - XMLTV EPG generator for Enigma2 receivers",
   "type": "object",
-  "required": ["dataDir", "openWebIF", "bouquets", "epg"],
+  "required": ["dataDir", "openWebIF", "epg"],
   "properties": {
     "version": {
       "type": "string",
@@ -185,8 +185,7 @@
     },
     "bouquets": {
       "type": "array",
-      "description": "List of Enigma2 bouquet references (filenames or service references)",
-      "minItems": 1,
+      "description": "Optional list of Enigma2 bouquet references (empty uses all available bouquets)",
       "items": {
         "type": "string",
         "minLength": 1,
@@ -197,6 +196,7 @@
         ]
       },
       "examples": [
+        [],
         ["userbouquet.favourites.tv"],
         ["userbouquet.dbe00.tv", "userbouquet.dbe01.tv"]
       ]

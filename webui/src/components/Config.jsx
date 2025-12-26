@@ -13,6 +13,7 @@ function Config() {
   const [error, setError] = useState(null);
   const [successMsg, setSuccessMsg] = useState('');
   const [restartRequired, setRestartRequired] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   useEffect(() => {
     loadConfig();
@@ -22,7 +23,11 @@ function Config() {
     try {
       setLoading(true);
       const data = await DefaultService.getSystemConfig();
-      setConfig(data);
+      const normalized = {
+        ...data,
+        bouquets: Array.isArray(data.bouquets) ? data.bouquets : []
+      };
+      setConfig(normalized);
       setError(null);
     } catch (err) {
       console.error('Failed to load config:', err);
@@ -87,6 +92,8 @@ function Config() {
   if (loading) return <div className="loading">Loading configuration...</div>;
   if (!config) return <div className="error">Could not load configuration</div>;
 
+  const isUnconfigured = !config.openWebIF?.baseUrl || !config.openWebIF.baseUrl.trim();
+
   return (
     <div className="config-container">
       <h2>System Configuration</h2>
@@ -98,19 +105,24 @@ function Config() {
           Changes saved! A restart is required for some settings to take effect.
         </div>
       )}
+      {isUnconfigured && (
+        <div className="alert warning">
+          Setup required: enter your receiver address to enable streaming and EPG.
+        </div>
+      )}
 
       <form onSubmit={handleSave} className="config-form">
         <section className="config-section">
-          <h3>OpenWebIF Connection</h3>
+          <h3>Receiver Connection</h3>
           <div className="form-group">
-            <label>Base URL</label>
+            <label>Receiver URL</label>
             <input
               type="text"
               value={config.openWebIF?.baseUrl || ''}
               onChange={e => handleChange('openWebIF', 'baseUrl', e.target.value)}
               placeholder="http://192.168.1.x"
             />
-            <small>Address of your Enigma2 receiver</small>
+            <small>Example: http://192.168.1.50</small>
           </div>
           <div className="form-row">
             <div className="form-group">
@@ -130,30 +142,34 @@ function Config() {
               />
             </div>
           </div>
-          <div className="form-group">
-            <label>Default Stream Port</label>
-            <input
-              type="number"
-              value={config.openWebIF?.streamPort || 8001}
-              onChange={e => handleChange('openWebIF', 'streamPort', parseInt(e.target.value))}
-            />
-            <small>Standard port (8001). Encrypted channels use 17999 automatically.</small>
-          </div>
+          {showAdvanced && (
+            <div className="form-group">
+              <label>Default Stream Port</label>
+              <input
+                type="number"
+                value={config.openWebIF?.streamPort || 8001}
+                onChange={e => handleChange('openWebIF', 'streamPort', parseInt(e.target.value))}
+              />
+              <small>Standard port (8001). Encrypted channels use 17999 automatically.</small>
+            </div>
+          )}
         </section>
 
-        <section className="config-section">
-          <h3>Bouquets</h3>
-          <div className="form-group">
-            <label>Active Bouquets</label>
-            <input
-              type="text"
-              value={config.bouquets?.join(', ') || ''}
-              onChange={e => handleBouquetChange(e.target.value)}
-              placeholder="Favourites (TV), Movies"
-            />
-            <small>Comma-separated list of bouquet names to fetch</small>
-          </div>
-        </section>
+        {showAdvanced && (
+          <section className="config-section">
+            <h3>Bouquets</h3>
+            <div className="form-group">
+              <label>Active Bouquets (Optional)</label>
+              <input
+                type="text"
+                value={config.bouquets?.join(', ') || ''}
+                onChange={e => handleBouquetChange(e.target.value)}
+                placeholder="Leave empty to include all"
+              />
+              <small>Comma-separated list of bouquet names to fetch</small>
+            </div>
+          </section>
+        )}
 
         <section className="config-section">
           <h3>EPG Settings</h3>
@@ -167,7 +183,7 @@ function Config() {
               Enable EPG Fetching
             </label>
           </div>
-          {config.epg?.enabled && (
+          {showAdvanced && config.epg?.enabled && (
             <div className="form-row">
               <div className="form-group">
                 <label>Days to Fetch</label>
@@ -193,34 +209,48 @@ function Config() {
           )}
         </section>
 
-        <section className="config-section">
-          <h3>Picons (Channel Logos)</h3>
-          <div className="form-group">
-            <label>External Picon Source (Optional)</label>
-            <input
-              type="text"
-              value={config.picons?.baseUrl || ''}
-              onChange={e => handleChange('picons', 'baseUrl', e.target.value)}
-              placeholder="http://picons.example.com/"
-            />
-            <small>Leave blank to use picons from receiver. Enter URL for external source.</small>
-          </div>
-        </section>
-
-        <section className="config-section">
-          <h3>Feature Flags</h3>
-          <div className="form-group checkbox-group">
-            <label>
+        {showAdvanced && (
+          <section className="config-section">
+            <h3>Picons (Channel Logos)</h3>
+            <div className="form-group">
+              <label>External Picon Source (Optional)</label>
               <input
-                type="checkbox"
-                checked={config.featureFlags?.instantTune || false}
-                onChange={e => handleChange('featureFlags', 'instantTune', e.target.checked)}
+                type="text"
+                value={config.picons?.baseUrl || ''}
+                onChange={e => handleChange('picons', 'baseUrl', e.target.value)}
+                placeholder="http://picons.example.com/"
               />
-              Enable Instant Tune (Experimental)
-            </label>
-            <small>Pre-buffers streams for faster channel switching.</small>
-          </div>
-        </section>
+              <small>Leave blank to use picons from receiver. Enter URL for external source.</small>
+            </div>
+          </section>
+        )}
+
+        {showAdvanced && (
+          <section className="config-section">
+            <h3>Feature Flags</h3>
+            <div className="form-group checkbox-group">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={config.featureFlags?.instantTune || false}
+                  onChange={e => handleChange('featureFlags', 'instantTune', e.target.checked)}
+                />
+                Enable Instant Tune (Experimental)
+              </label>
+              <small>Pre-buffers streams for faster channel switching.</small>
+            </div>
+          </section>
+        )}
+
+        <div className="config-advanced-toggle">
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => setShowAdvanced(prev => !prev)}
+          >
+            {showAdvanced ? 'Hide Advanced Settings' : 'Show Advanced Settings'}
+          </button>
+        </div>
 
         <div className="form-actions">
           <button type="submit" disabled={saving} className="btn-primary">

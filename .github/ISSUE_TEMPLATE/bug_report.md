@@ -38,7 +38,7 @@ A clear and concise description of what you expected to happen.
 ```bash
 # Relevant environment variables (remove sensitive data)
 XG2G_OWI_BASE=http://receiver.local
-XG2G_BOUQUET=Favourites
+XG2G_BOUQUET=
 XG2G_XMLTV=true
 ```
 

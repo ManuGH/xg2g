@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -78,41 +79,55 @@ func refreshWithClient(ctx context.Context, cfg config.AppConfig, cl OwiClient) 
 		return nil, fmt.Errorf("bouquets: %w", err)
 	}
 
-	ref, ok := bqs[cfg.Bouquet]
-	if !ok {
-		return nil, fmt.Errorf("bouquet %q not found", cfg.Bouquet)
+	requested := []string{}
+	if strings.TrimSpace(cfg.Bouquet) != "" {
+		requested = []string{cfg.Bouquet}
+	} else {
+		for name := range bqs {
+			requested = append(requested, name)
+		}
+		sort.Strings(requested)
 	}
 
-	services, err := cl.Services(ctx, ref)
-	if err != nil {
-		return nil, fmt.Errorf("services for bouquet %q: %w", cfg.Bouquet, err)
-	}
-
-	items := make([]playlist.Item, 0, len(services))
-	for i, svc := range services {
-		if len(svc) < 2 {
-			continue
-		}
-		name, sref := svc[0], svc[1]
-
-		item := playlist.Item{
-			Name:    name,
-			TvgID:   makeTvgID(name, sref),
-			TvgChNo: i + 1,
-			Group:   cfg.Bouquet,
+	items := make([]playlist.Item, 0)
+	channelNumber := 1
+	for _, bouquetName := range requested {
+		ref, ok := bqs[bouquetName]
+		if !ok {
+			return nil, fmt.Errorf("bouquet %q not found", bouquetName)
 		}
 
-		streamURL, err := cl.StreamURL(ctx, sref, name)
+		services, err := cl.Services(ctx, ref)
 		if err != nil {
-			return nil, fmt.Errorf("stream url for %q: %w", name, err)
+			return nil, fmt.Errorf("services for bouquet %q: %w", bouquetName, err)
 		}
-		item.URL = streamURL
+		for _, svc := range services {
+			if len(svc) < 2 {
+				continue
+			}
+			name, sref := svc[0], svc[1]
 
-		if cfg.PiconBase != "" {
-			item.TvgLogo = strings.TrimRight(cfg.PiconBase, "/") + "/" + url.PathEscape(sref) + ".png"
+			item := playlist.Item{
+				Name:    name,
+				TvgID:   makeTvgID(name, sref),
+				TvgChNo: channelNumber,
+				Group:   bouquetName,
+			}
+
+			channelNumber++
+
+			streamURL, err := cl.StreamURL(ctx, sref, name)
+			if err != nil {
+				return nil, fmt.Errorf("stream url for %q: %w", name, err)
+			}
+			item.URL = streamURL
+
+			if cfg.PiconBase != "" {
+				item.TvgLogo = strings.TrimRight(cfg.PiconBase, "/") + "/" + url.PathEscape(sref) + ".png"
+			}
+
+			items = append(items, item)
 		}
-
-		items = append(items, item)
 	}
 
 	playlistPath := filepath.Join(cfg.DataDir, rt.PlaylistFilename)
@@ -187,6 +202,37 @@ func TestRefreshWithClient_Success(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(tmpdir, "xmltv.xml")); err != nil {
 		t.Fatalf("xmltv missing: %v", err)
+	}
+}
+
+func TestRefreshWithClient_EmptyBouquetUsesAll(t *testing.T) {
+	tmpdir := t.TempDir()
+	cfg := config.AppConfig{
+		DataDir:    tmpdir,
+		OWIBase:    "http://mock",
+		Bouquet:    "",
+		PiconBase:  "",
+		XMLTVPath:  "xmltv.xml",
+		StreamPort: 8001,
+	}
+
+	mock := &mockOWI{
+		bouquets: map[string]string{
+			"Favourites": "bref1",
+			"Movies":     "bref2",
+		},
+		services: map[string][][2]string{
+			"bref1": {{"Channel A", "1:0:1"}},
+			"bref2": {{"Channel B", "1:0:2"}},
+		},
+	}
+
+	st, err := refreshWithClient(context.Background(), cfg, mock)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if st.Channels != 2 {
+		t.Fatalf("expected 2 channels, got %d", st.Channels)
 	}
 }
 

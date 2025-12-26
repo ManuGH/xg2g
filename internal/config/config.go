@@ -136,7 +136,7 @@ type AppConfig struct {
 	OWIBase         string
 	OWIUsername     string // Optional: HTTP Basic Auth username
 	OWIPassword     string // Optional: HTTP Basic Auth password
-	Bouquet         string // Comma-separated list of bouquets (e.g., "Premium,Favourites")
+	Bouquet         string // Comma-separated list of bouquets (empty = all)
 	XMLTVPath       string
 	PiconBase       string
 	FuzzyMax        int
@@ -269,7 +269,7 @@ func (l *Loader) Load() (AppConfig, error) {
 func (l *Loader) setDefaults(cfg *AppConfig) {
 	cfg.DataDir = "/tmp" // Use /tmp as default to pass validation in tests
 	cfg.OWIBase = ""     // No default - must be explicitly configured
-	cfg.Bouquet = "Premium"
+	cfg.Bouquet = ""
 	cfg.StreamPort = 8001
 	cfg.UseWebIFStreams = true
 	cfg.APIListenAddr = ""

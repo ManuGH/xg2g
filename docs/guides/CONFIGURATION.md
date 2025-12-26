@@ -35,7 +35,7 @@ The simplest way to run xg2g is with a few environment variables.
 
 | Variable | Description | Example |
 | :--- | :--- | :--- |
-| `XG2G_OWI_BASE` | **Required**. Base URL of your receiver. | `http://192.168.1.50` |
+| `XG2G_OWI_BASE` | Base URL of your receiver (required for streaming). If empty, xg2g starts in setup mode. | `http://192.168.1.50` |
 | `XG2G_DATA` | Data directory for cache/logs. | `/app/data` |
 | `XG2G_API_TOKEN` | Secure token for admin API. | `s3cr3t` |
 
@@ -43,7 +43,7 @@ The simplest way to run xg2g is with a few environment variables.
 
 | Variable | Description | Default |
 | :--- | :--- | :--- |
-| `XG2G_BOUQUET` | Bouquets to load (comma-separated). | `Premium` |
+| `XG2G_BOUQUET` | Bouquets to load (comma-separated). Empty = all bouquets. | empty |
 | `XG2G_EPG_DAYS` | Days of EPG to fetch. | `7` |
 | `XG2G_READY_STRICT` | Enable strict upstream checking. | `false` |
 
@@ -166,7 +166,7 @@ api:
 **"startup checks failed"**
 
 - Validations are now stricter. Ensure:
-  - `XG2G_OWI_BASE` has a scheme (`http://` or `https://`).
+  - If set, `XG2G_OWI_BASE` has a scheme (`http://` or `https://`).
   - TLS cert/key pair is complete if enabled.
   - Recording roots are absolute paths.
 
@@ -182,7 +182,7 @@ api:
 | `XG2G_DATA` | `dataDir` | `/tmp` |
 | `XG2G_LOG_LEVEL` | `logLevel` | `info` |
 | `XG2G_STREAM_PORT` | `openWebIF.streamPort` | `8001` |
-| `XG2G_BOUQUET` | `bouquets` | `Premium` |
+| `XG2G_BOUQUET` | `bouquets` | empty (all) |
 | `XG2G_EPG_ENABLED` | `epg.enabled` | `true` |
 | `XG2G_EPG_DAYS` | `epg.days` | `7` |
 | `XG2G_API_TOKEN` | `api.token` | - |

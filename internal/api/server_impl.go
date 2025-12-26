@@ -96,15 +96,41 @@ func (s *Server) GetSystemConfig(w http.ResponseWriter, r *http.Request) {
 	// But let's map it to the generated AppConfig
 
 	epgSource := EPGConfigSource(cfg.EPGSource)
+	bouquets := make([]string, 0)
+	for _, name := range strings.Split(cfg.Bouquet, ",") {
+		if trimmed := strings.TrimSpace(name); trimmed != "" {
+			bouquets = append(bouquets, trimmed)
+		}
+	}
+
+	openWebIF := &OpenWebIFConfig{
+		BaseUrl:    &cfg.OWIBase,
+		StreamPort: &cfg.StreamPort,
+	}
+	if cfg.OWIUsername != "" {
+		openWebIF.Username = &cfg.OWIUsername
+	}
+
+	picons := &PiconsConfig{
+		BaseUrl: &cfg.PiconBase,
+	}
+	featureFlags := &FeatureFlags{
+		InstantTune: &cfg.InstantTuneEnabled,
+	}
+
 	resp := AppConfig{
 		Version:  &cfg.Version,
 		DataDir:  &cfg.DataDir,
 		LogLevel: &cfg.LogLevel,
+		OpenWebIF: openWebIF,
+		Bouquets:  &bouquets,
 		Epg: &EPGConfig{
 			Days:    &cfg.EPGDays,
 			Enabled: &cfg.EPGEnabled,
 			Source:  &epgSource,
 		},
+		Picons:       picons,
+		FeatureFlags: featureFlags,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

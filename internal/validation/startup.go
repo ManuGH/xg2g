@@ -78,7 +78,8 @@ func checkTargetedValidations(logger zerolog.Logger, cfg config.AppConfig) error
 
 	// b. OWI Base URL (Syntax + Scheme)
 	if cfg.OWIBase == "" {
-		return fmt.Errorf("XG2G_OWI_BASE cannot be empty")
+		logger.Warn().Msg("OpenWebIF base URL not configured; running in setup mode")
+		return nil
 	}
 	u, err := url.Parse(cfg.OWIBase)
 	if err != nil {

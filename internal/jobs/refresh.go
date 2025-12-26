@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -118,9 +119,21 @@ func Refresh(ctx context.Context, snap config.Snapshot) (*Status, error) {
 	}
 
 	// Support comma-separated bouquet list (e.g., "Premium,Favourites,Sports")
-	requestedBouquets := strings.Split(cfg.Bouquet, ",")
-	for i := range requestedBouquets {
-		requestedBouquets[i] = strings.TrimSpace(requestedBouquets[i])
+	requestedBouquets := make([]string, 0)
+	for _, name := range strings.Split(cfg.Bouquet, ",") {
+		trimmed := strings.TrimSpace(name)
+		if trimmed != "" {
+			requestedBouquets = append(requestedBouquets, trimmed)
+		}
+	}
+	if len(requestedBouquets) == 0 {
+		for name := range bouquets {
+			requestedBouquets = append(requestedBouquets, name)
+		}
+		sort.Strings(requestedBouquets)
+		logger.Info().
+			Int("bouquets", len(requestedBouquets)).
+			Msg("no bouquets configured; using all available bouquets")
 	}
 
 	// Pre-flight validation: check ALL requested bouquets exist before processing

@@ -14,7 +14,7 @@ import (
 )
 
 func TestLoadDefaults(t *testing.T) {
-	// Set required OWIBase since it no longer has a default
+	// Set OWIBase to keep defaults deterministic for this test.
 	_ = os.Setenv("XG2G_OWI_BASE", "http://example.com")
 	defer func() { _ = os.Unsetenv("XG2G_OWI_BASE") }()
 
@@ -341,7 +341,7 @@ func TestOWIMaxBackoffFromENV(t *testing.T) {
 			// Clean environment
 			_ = os.Unsetenv("XG2G_OWI_MAX_BACKOFF_MS")
 
-			// Set required OWIBase
+			// Set OWIBase for test clarity
 			t.Setenv("XG2G_OWI_BASE", "http://example.com")
 
 			// Set test-specific ENV
@@ -550,7 +550,7 @@ func TestOWIMaxBackoffInvalidValues(t *testing.T) {
 			// Clean environment
 			_ = os.Unsetenv("XG2G_OWI_MAX_BACKOFF_MS")
 
-			// Set required OWIBase
+			// Set OWIBase for test clarity
 			t.Setenv("XG2G_OWI_BASE", "http://example.com")
 
 			// Set test-specific ENV
@@ -625,7 +625,7 @@ epg:
 }
 
 func TestAuthAnonymousEnv(t *testing.T) {
-	// Set required OWIBase
+	// Set OWIBase for test clarity
 	t.Setenv("XG2G_OWI_BASE", "http://example.com")
 
 	tests := []struct {

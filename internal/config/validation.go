@@ -18,17 +18,16 @@ import (
 func Validate(cfg AppConfig) error {
 	v := validate.New()
 
-	// OpenWebIF URL
-	v.URL("OWIBase", cfg.OWIBase, []string{"http", "https"})
+	// OpenWebIF URL (optional for setup mode)
+	if strings.TrimSpace(cfg.OWIBase) != "" {
+		v.URL("OWIBase", cfg.OWIBase, []string{"http", "https"})
+	}
 
 	// Stream port
 	v.Port("StreamPort", cfg.StreamPort)
 
 	// Data directory
 	v.Directory("DataDir", cfg.DataDir, false)
-
-	// Bouquet (at least not empty)
-	v.NotEmpty("Bouquet", cfg.Bouquet)
 
 	// EPG settings (if enabled)
 	if cfg.EPGEnabled {

@@ -37,6 +37,22 @@ func TestValidate_V3StrictAllowsEmptyConfigVersion(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestValidate_AllowsEmptyBouquet(t *testing.T) {
+	cfg := baseV3Config(t)
+	cfg.Bouquet = ""
+
+	err := Validate(cfg)
+	require.NoError(t, err)
+}
+
+func TestValidate_AllowsEmptyOWIBase(t *testing.T) {
+	cfg := baseV3Config(t)
+	cfg.OWIBase = ""
+
+	err := Validate(cfg)
+	require.NoError(t, err)
+}
+
 func TestValidate_V3StrictRejectsInvalidWorkerMode(t *testing.T) {
 	cfg := baseV3Config(t)
 	cfg.ConfigStrict = true

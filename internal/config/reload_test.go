@@ -191,10 +191,13 @@ func TestConfigHolder_Reload_ValidationFailure(t *testing.T) {
 
 	holder := NewConfigHolder(initial, loader, configPath)
 
-	// Write invalid config (missing required openWebIF section)
+	// Write invalid config (EPG days out of range)
 	invalidContent := `
-bouquets:
-  - new-bouquet
+openWebIF:
+  baseUrl: http://test.example.com
+epg:
+  enabled: true
+  days: 99
 `
 	if err := os.WriteFile(configPath, []byte(invalidContent), 0600); err != nil {
 		t.Fatalf("failed to write invalid config: %v", err)

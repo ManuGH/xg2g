@@ -23,7 +23,7 @@ logLevel: "info"
 dataDir: "/tmp/xg2g-data"
 
 # ------------------------------------------------------------------------------
-# OpenWebIF (Receiver) Configuration [REQUIRED]
+# OpenWebIF (Receiver) Configuration [REQUIRED for streaming]
 # ------------------------------------------------------------------------------
 openWebIF:
   # Base URL of your Enigma2 receiver (e.g. http://192.168.1.50)
@@ -71,12 +71,12 @@ enigma2:
   # userAgent: "xg2g-v3"
 
 # ------------------------------------------------------------------------------
-# Bouquets (Channel Lists)
+# Bouquets (Channel Lists) [OPTIONAL]
 # ------------------------------------------------------------------------------
-# List of bouquets to include. Case-sensitive matching.
-bouquets:
-  - "Premium"
-  - "Favourites"
+# Leave empty to include all available bouquets.
+# bouquets:
+#   - "Premium"
+#   - "Favourites"
 
 # ------------------------------------------------------------------------------
 # EPG (Electronic Program Guide)
@@ -212,7 +212,7 @@ picons:
 #   XG2G_USE_WEBIF_STREAMS       - Use /web/stream.m3u URLs (true/false)
 #
 # Bouquets:
-#   XG2G_BOUQUET                 - Comma-separated list of bouquet names
+#   XG2G_BOUQUET                 - Comma-separated list of bouquet names (empty = all)
 #
 # EPG:
 #   XG2G_EPG_ENABLED             - Enable EPG (true/false)

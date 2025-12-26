@@ -648,7 +648,7 @@ dev: ## Run daemon locally with .env configuration
 	@set -a; . ./.env; set +a; \
 	XG2G_DATA=$${XG2G_DATA:-./data} \
 	XG2G_OWI_BASE=$${XG2G_OWI_BASE:?Set XG2G_OWI_BASE in .env} \
-	XG2G_BOUQUET=$${XG2G_BOUQUET:?Set XG2G_BOUQUET in .env} \
+	XG2G_BOUQUET=$${XG2G_BOUQUET:-} \
 	XG2G_LISTEN=$${XG2G_LISTEN:-:8080} \
 	go build $(BUILD_FLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/daemon && \
 	./$(BUILD_DIR)/$(BINARY_NAME)

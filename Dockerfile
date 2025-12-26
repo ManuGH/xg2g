@@ -161,8 +161,8 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 # Default configuration
 ENV XG2G_DATA=/data \
     XG2G_LISTEN=:8080 \
-    XG2G_OWI_BASE=http://192.168.1.100 \
-    XG2G_BOUQUET=Favourites \
+    XG2G_OWI_BASE= \
+    XG2G_BOUQUET= \
     XG2G_FUZZY_MAX=2
 
 # Image metadata
