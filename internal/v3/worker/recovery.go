@@ -42,6 +42,9 @@ func (o *Orchestrator) recoverStaleLeases(ctx context.Context) error {
 
 	// Phase 2: Attempt Recovery (Read-Write)
 	for _, s := range candidates {
+		if !shouldRecover(start, o.LeaseTTL, s) {
+			continue
+		}
 		// Check Lease Status (Probe)
 		// Phase 8-2b: Probe correct key (Tuner Slot if present, fallback to ServiceRef)
 		probeKey := o.recoveryLeaseKey(s)
@@ -71,6 +74,24 @@ func (o *Orchestrator) recoverStaleLeases(ctx context.Context) error {
 		Msg("recovery sweep complete")
 
 	return nil
+}
+
+func shouldRecover(now time.Time, leaseTTL time.Duration, s *model.SessionRecord) bool {
+	if leaseTTL <= 0 {
+		return true
+	}
+	if s == nil {
+		return false
+	}
+	ts := s.UpdatedAtUnix
+	if ts == 0 {
+		ts = s.CreatedAtUnix
+	}
+	if ts == 0 {
+		return true
+	}
+	age := now.Sub(time.Unix(ts, 0))
+	return age >= leaseTTL
 }
 
 func handleRecovery(ctx context.Context, o *Orchestrator, s *model.SessionRecord, l store.Lease, logger zerolog.Logger) bool {

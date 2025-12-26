@@ -52,15 +52,9 @@ func TestReadyChecker_HappyPath(t *testing.T) {
 }
 
 func TestReadyChecker_Timeout(t *testing.T) {
-	// Always locked=false
+	// Always upstream error
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/getcurrent" {
-			ci := CurrentInfo{Result: true}
-			ci.Info.ServiceReference = "1:0:1:TEST:0:0:0:0:0:0:"
-			_ = json.NewEncoder(w).Encode(ci)
-		} else {
-			_ = json.NewEncoder(w).Encode(Signal{Result: true, Locked: false})
-		}
+		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer srv.Close()
 

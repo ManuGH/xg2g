@@ -41,6 +41,7 @@ func TestV3Flow(t *testing.T) {
 		Bus:            memBus,
 		LeaseTTL:       2 * time.Second,
 		HeartbeatEvery: 500 * time.Millisecond,
+		TunerSlots:     []int{0},
 	}
 
 	// Start Worker
@@ -53,6 +54,8 @@ func TestV3Flow(t *testing.T) {
 			t.Errorf("orchestrator startup failed: %v", err)
 		}
 	}()
+	// Ensure the orchestrator has subscribed before publishing intents.
+	time.Sleep(50 * time.Millisecond)
 
 	t.Run("Happy Path: Intent -> Ready", func(t *testing.T) {
 		// Act: Send Intent
@@ -134,7 +137,7 @@ func TestV3Flow(t *testing.T) {
 		svc := "1:0:1:Contentious"
 
 		// Pre-acquire lease
-		_, ok, err := memStore.TryAcquireLease(ctx, svc, "manual-test-owner", 5*time.Second)
+		_, ok, err := memStore.TryAcquireLease(ctx, worker.LeaseKeyService(svc), "manual-test-owner", 5*time.Second)
 		if err != nil || !ok {
 			t.Fatalf("failed to pre-acquire lease: %v", err)
 		}
