@@ -35,10 +35,13 @@ export interface EpgFilters {
 }
 
 export interface EpgState {
-  // Data
+  // Main EPG Data
   events: EpgEvent[];
   channels: EpgChannel[];
   bouquets: EpgBouquet[];
+
+  // Search Results (separate from main events)
+  searchEvents: EpgEvent[];
 
   // Filters
   filters: EpgFilters;
