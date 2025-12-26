@@ -5,7 +5,7 @@
 import { useState, useEffect } from 'react';
 import { flushSync } from 'react-dom';
 import './App.css';
-import V3Player from './components/V3Player';
+import V3Player from './components/V3Player.tsx';
 import Dashboard from './components/Dashboard';
 import Files from './components/Files';
 import Logs from './components/Logs';

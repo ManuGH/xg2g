@@ -1,20 +1,35 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Hls from 'hls.js';
+import type { ErrorData } from 'hls.js';
 import { AuthService, OpenAPI } from '../client';
+import type {
+  V3PlayerProps,
+  PlayerStatus,
+  SessionCookieState,
+  V3SessionResponse,
+  V3SessionStatusResponse,
+  HlsInstanceRef,
+  VideoElementRef
+} from '../types/v3-player';
 
-function V3Player({ token, channel, autoStart, onClose }) {
-  const [sRef, setSRef] = useState(channel?.service_ref || channel?.id || '1:0:19:283D:3FB:1:C00000:0:0:0:');
+function V3Player({ token, channel, autoStart, onClose }: V3PlayerProps) {
+  const [sRef, setSRef] = useState<string>(
+    channel?.service_ref || channel?.id || '1:0:19:283D:3FB:1:C00000:0:0:0:'
+  );
   const profileId = 'auto';
-  const [sessionId, setSessionId] = useState(null);
-  const [status, setStatus] = useState('idle');
-  const [error, setError] = useState(null);
-  const videoRef = useRef(null);
-  const hlsRef = useRef(null);
-  const mounted = useRef(false);
-  const sessionIdRef = useRef(null);
-  const stopSentRef = useRef(null);
-  const sessionCookieRef = useRef({ token: null, pending: null });
-  const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [status, setStatus] = useState<PlayerStatus>('idle');
+  const [error, setError] = useState<string | null>(null);
+  const videoRef = useRef<VideoElementRef>(null);
+  const hlsRef = useRef<HlsInstanceRef>(null);
+  const mounted = useRef<boolean>(false);
+  const sessionIdRef = useRef<string | null>(null);
+  const stopSentRef = useRef<string | null>(null);
+  const sessionCookieRef = useRef<SessionCookieState>({ token: null, pending: null });
+
+  const sleep = (ms: number): Promise<void> =>
+    new Promise(resolve => setTimeout(resolve, ms));
+
   const apiBase = (OpenAPI.BASE || '/api/v3').replace(/\/$/, '');
 
   useEffect(() => {
@@ -36,7 +51,7 @@ function V3Player({ token, channel, autoStart, onClose }) {
     sessionCookieRef.current.pending = null;
   }, [token]);
 
-  const ensureSessionCookie = useCallback(async () => {
+  const ensureSessionCookie = useCallback(async (): Promise<void> => {
     if (!token) return;
     if (sessionCookieRef.current.token === token) return;
     if (sessionCookieRef.current.pending) return sessionCookieRef.current.pending;
@@ -66,7 +81,7 @@ function V3Player({ token, channel, autoStart, onClose }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoStart, sRef]);
 
-  const sendStopIntent = useCallback(async (idToStop) => {
+  const sendStopIntent = useCallback(async (idToStop: string | null): Promise<void> => {
     if (!idToStop || stopSentRef.current === idToStop) return;
     stopSentRef.current = idToStop;
     try {
@@ -86,9 +101,9 @@ function V3Player({ token, channel, autoStart, onClose }) {
     }
   }, [apiBase, token]);
 
-  const startStream = async (refToUse) => {
+  const startStream = async (refToUse?: string): Promise<void> => {
     const ref = refToUse || sRef;
-    let newSessionId = null;
+    let newSessionId: string | null = null;
     setStatus('starting');
     setError(null);
     try {
@@ -110,7 +125,7 @@ function V3Player({ token, channel, autoStart, onClose }) {
       });
 
       if (!res.ok) throw new Error('API Error: ' + res.status);
-      const data = await res.json();
+      const data: V3SessionResponse = await res.json();
       newSessionId = data.sessionId;
       sessionIdRef.current = newSessionId;
       setSessionId(newSessionId);
@@ -128,12 +143,12 @@ function V3Player({ token, channel, autoStart, onClose }) {
         await sendStopIntent(newSessionId);
       }
       console.error(err);
-      setError(err.message);
+      setError((err as Error).message);
       setStatus('error');
     }
   };
 
-  const waitForPlaylistReady = async (sessionId, maxAttempts = 120) => {
+  const waitForPlaylistReady = async (sessionId: string, maxAttempts = 120): Promise<void> => {
     const playlistUrl = `${apiBase}/sessions/${sessionId}/hls/index.m3u8`;
     for (let i = 0; i < maxAttempts; i++) {
       const playlistRes = await fetch(playlistUrl, {
@@ -147,7 +162,7 @@ function V3Player({ token, channel, autoStart, onClose }) {
     throw new Error('Playlist file not ready');
   };
 
-  const waitForSessionReady = async (sessionId, maxAttempts = 60) => {
+  const waitForSessionReady = async (sessionId: string, maxAttempts = 60): Promise<void> => {
     // First wait for READY state
     for (let i = 0; i < maxAttempts; i++) {
       try {
@@ -162,13 +177,13 @@ function V3Player({ token, channel, autoStart, onClose }) {
         }
         if (!res.ok) throw new Error('Failed to fetch session');
 
-        const session = await res.json();
+        const session: V3SessionStatusResponse = await res.json();
 
-        if (session.state === 'FAILED' || session.state === 'CANCELLED' || session.state === 'STOPPED') {
-          throw new Error('Session failed: ' + (session.reasonDetail || session.reason || 'unknown error'));
+        if (session.state === 'STOPPED') {
+          throw new Error('Session failed: ' + (session.error || 'unknown error'));
         }
 
-        if (session.state === 'READY' || session.state === 'DRAINING') {
+        if (session.state === 'READY') {
           await waitForPlaylistReady(sessionId);
           return;
         }
@@ -176,13 +191,13 @@ function V3Player({ token, channel, autoStart, onClose }) {
         // Wait 500ms before next attempt
         await sleep(500);
       } catch (err) {
-        throw new Error('Session readiness check failed: ' + err.message);
+        throw new Error('Session readiness check failed: ' + (err as Error).message);
       }
     }
     throw new Error('Session did not become ready in time');
   };
 
-  const playHls = (url) => {
+  const playHls = (url: string): void => {
     if (Hls.isSupported()) {
       if (hlsRef.current) {
         hlsRef.current.destroy();
@@ -200,12 +215,14 @@ function V3Player({ token, channel, autoStart, onClose }) {
       });
       hlsRef.current = hls;
       hls.loadSource(url);
-      hls.attachMedia(videoRef.current);
+      if (videoRef.current) {
+        hls.attachMedia(videoRef.current);
+      }
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        videoRef.current.play().catch(e => console.warn("Autoplay failed", e));
+        videoRef.current?.play().catch(e => console.warn("Autoplay failed", e));
         setStatus('playing');
       });
-      hls.on(Hls.Events.ERROR, (event, data) => {
+      hls.on(Hls.Events.ERROR, (_event, data: ErrorData) => {
         if (data.fatal) {
           // Try to recover
           switch (data.type) {
@@ -216,23 +233,23 @@ function V3Player({ token, channel, autoStart, onClose }) {
               hls.recoverMediaError();
               break;
             default:
-              hlsRef.current.destroy();
+              hlsRef.current?.destroy();
               setStatus('error');
               setError('HLS Error: ' + data.type);
               break;
           }
         }
       });
-    } else if (videoRef.current.canPlayType('application/vnd.apple.mpegurl')) {
+    } else if (videoRef.current?.canPlayType('application/vnd.apple.mpegurl')) {
       videoRef.current.src = url;
       videoRef.current.addEventListener('loadedmetadata', () => {
-        videoRef.current.play();
+        videoRef.current?.play();
         setStatus('playing');
       });
     }
   };
 
-  const stopStream = async () => {
+  const stopStream = async (): Promise<void> => {
     if (hlsRef.current) hlsRef.current.destroy();
     if (videoRef.current) {
       videoRef.current.pause();
@@ -257,7 +274,7 @@ function V3Player({ token, channel, autoStart, onClose }) {
   }, [sendStopIntent]);
 
   // Overlay styles if onClose is present
-  const containerStyle = onClose ? {
+  const containerStyle: React.CSSProperties = onClose ? {
     position: 'fixed',
     top: 0,
     left: 0,

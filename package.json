@@ -1,0 +1,5 @@
+{
+  "devDependencies": {
+    "@types/hls.js": "^0.13.3"
+  }
+}
