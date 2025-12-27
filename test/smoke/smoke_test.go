@@ -259,8 +259,8 @@ func waitForHealth(baseURL string, timeout time.Duration) error {
 
 func waitForChannels(baseURL string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
-	// Since we disabled HDHR (and thus lineup.json), we check the internal API
-	url := baseURL + "/api/v2/services"
+	// Use v3 API endpoint
+	url := baseURL + "/api/v3/services"
 
 	for time.Now().Before(deadline) {
 		req, _ := http.NewRequest("GET", url, nil)
