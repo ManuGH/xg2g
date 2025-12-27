@@ -28,7 +28,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6.0.1
 
       - name: Create Dummy WebUI Assets (Strategy A)
         run: |
@@ -38,7 +38,7 @@ jobs:
 
       # Setup Go for both languages (Go analysis needs it, C++ build might interact with it)
       - name: Setup Go
-        uses: actions/setup-go@v5 # v5
+        uses: actions/setup-go@v6.1.0 # v5
         with:
           go-version-file: go.mod
           cache: true
@@ -59,7 +59,7 @@ jobs:
 
       # Initialize CodeQL
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
           # If you wish to specify custom queries, you can do so here or in a config file.
@@ -82,6 +82,6 @@ jobs:
           go build -tags=nogpu ./...
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
         with:
           category: "/language:${{ matrix.language }}"
