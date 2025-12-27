@@ -3,7 +3,7 @@
 import type Hls from 'hls.js';
 import type { Service } from '../client-ts';
 
-export type PlayerStatus = 'idle' | 'starting' | 'buffering' | 'playing' | 'error' | 'stopped';
+export type PlayerStatus = 'idle' | 'starting' | 'buffering' | 'playing' | 'error' | 'stopped' | 'paused';
 
 export interface Channel {
   id?: string;

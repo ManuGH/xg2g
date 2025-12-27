@@ -1,0 +1,330 @@
+.v3-player-container {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  overflow: hidden;
+  background-color: #000;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Glassmorphism Controls Header */
+.v3-player-controls-header {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 16px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.8), transparent);
+  display: flex;
+  gap: 12px;
+  z-index: 50;
+  align-items: center;
+  flex-wrap: wrap;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.v3-player-container:hover .v3-player-controls-header,
+.v3-player-controls-header:focus-within {
+  opacity: 1;
+}
+
+.bg-input {
+  padding: 8px 12px;
+  background: rgba(42, 42, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(4px);
+  color: #fff;
+  border-radius: 6px;
+  font-size: 14px;
+  outline: none;
+  transition: all 0.2s;
+}
+
+.bg-input:focus {
+  border-color: #3b82f6;
+  background: rgba(42, 42, 42, 0.9);
+}
+
+.btn-primary,
+.btn-danger,
+.btn-icon {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s;
+  backdrop-filter: blur(4px);
+}
+
+.btn-primary {
+  background: rgba(37, 99, 235, 0.8);
+  color: white;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: rgba(29, 78, 216, 0.9);
+  transform: translateY(-1px);
+}
+
+.btn-primary:disabled {
+  background: #4b5563;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.btn-danger {
+  background: rgba(220, 38, 38, 0.8);
+  color: white;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.btn-danger:hover {
+  background: rgba(185, 28, 28, 0.9);
+}
+
+.btn-icon {
+  background: rgba(255, 255, 255, 0.1);
+  color: #e5e5e5;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.btn-icon:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+.btn-icon.active {
+  background: rgba(37, 99, 235, 0.6);
+  color: #fff;
+  border-color: rgba(59, 130, 246, 0.5);
+}
+
+/* Video Wrapper */
+.video-wrapper {
+  width: 100%;
+  height: 100%;
+  background: #000;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.overlay-title {
+  position: absolute;
+  top: 24px;
+  left: 24px;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+  margin: 0;
+  z-index: 40;
+  pointer-events: none;
+  font-size: 1.5rem;
+  font-weight: 600;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.v3-player-container:hover .overlay-title {
+  opacity: 1;
+}
+
+/* Buffering Spinner */
+.spinner-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 30;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.spinner {
+  width: 48px;
+  height: 48px;
+  border: 4px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  border-top-color: #3b82f6;
+  animation: spin 1s ease-in-out infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Stats for Nerds Overlay */
+.stats-overlay {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(8px);
+  color: #10b981;
+  font-family: 'JetBrains Mono', 'Menlo', monospace;
+  font-size: 11px;
+  padding: 16px;
+  border-radius: 8px;
+  z-index: 60;
+  width: 280px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.stats-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.stats-row:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.stats-label {
+  color: #9ca3af;
+}
+
+.stats-value {
+  color: #fff;
+  font-weight: 600;
+}
+
+/* Error Toast UI */
+.error-toast {
+  position: absolute;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(30, 30, 30, 0.95);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  border-left: 4px solid #ef4444;
+  padding: 12px 20px;
+  border-radius: 8px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+  min-width: 300px;
+  max-width: 90vw;
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translate(-50%, 20px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translate(-50%, 0);
+    opacity: 1;
+  }
+}
+
+.error-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.error-text {
+  color: #fca5a5;
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.error-details-btn {
+  background: none;
+  border: none;
+  color: #9ca3af;
+  font-size: 11px;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+}
+
+.error-details-content {
+  font-size: 11px;
+  color: #9ca3af;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 8px;
+  border-radius: 4px;
+  margin-top: 4px;
+  font-family: monospace;
+  word-break: break-all;
+}
+
+.btn-retry {
+  background: #dc2626;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-retry:hover {
+  background: #b91c1c;
+}
+
+.close-btn {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+  background: rgba(0, 0, 0, 0.5);
+  border: none;
+  color: #fff;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 200;
+  font-size: 18px;
+  transition: all 0.2s;
+  backdrop-filter: blur(4px);
+}
+
+.close-btn:hover {
+  background: rgba(220, 38, 38, 0.8);
+  transform: rotate(90deg);
+}
+
+/* Touch/Mobile: Always show controls */
+@media (hover: none) {
+  .v3-player-controls-header {
+    opacity: 1;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.9), rgba(0, 0, 0, 0.4));
+  }
+
+  .overlay-title {
+    opacity: 1;
+  }
+}
