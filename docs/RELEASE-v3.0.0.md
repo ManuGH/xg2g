@@ -273,7 +273,8 @@ If you encounter issues during upgrade:
 **Docker:**
 ```bash
 docker compose down
-docker compose pull xg2g:v2.1.0
+# Edit docker-compose.yml to use the v2.1.0 tag:
+# image: ghcr.io/manugh/xg2g:v2.1.0
 docker compose up -d
 ```
 
@@ -328,7 +329,7 @@ sha256sum xg2g_3.0.0_linux_amd64.tar.gz
 
 **Docker Image:**
 ```bash
-docker pull xg2g:v3.0.0
+docker pull ghcr.io/manugh/xg2g:v3.0.0
 # Digest: sha256:<digest>
 ```
 
