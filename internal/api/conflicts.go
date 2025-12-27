@@ -117,12 +117,6 @@ func GenerateSuggestions(proposed TimerCreateRequest, conflicts []TimerConflict)
 		return nil
 	}
 
-	// Create a hypothetical unpadded request
-	nopad := proposed
-	zero := 0
-	nopad.PaddingBeforeSec = &zero
-	nopad.PaddingAfterSec = &zero
-
 	// We verify if removing padding resolves all conflicts.
 	// Since we don't have the list of ALL timers here, we can't be 100% sure without re-running detection against the full list.
 	// But we can check if it resolves the *reported* conflicts, assuming they are the only ones.

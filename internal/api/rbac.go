@@ -167,8 +167,8 @@ func (s *Server) scopeMiddleware(required ...Scope) func(http.Handler) http.Hand
 			if !scopes.allows(required) {
 				logger := log.FromContext(r.Context()).With().Str("component", "authz").Logger()
 				logger.Warn().
-					Strs("required_scopes", scopesToStrings(required)).
-					Strs("token_scopes", scopeSetToStrings(scopes)).
+					Interface("required_scopes", scopesToStrings(required)).
+					Interface("token_scopes", scopeSetToStrings(scopes)).
 					Msg("insufficient scopes for request")
 				RespondError(w, r, http.StatusForbidden, ErrForbidden)
 				return

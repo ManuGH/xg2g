@@ -60,7 +60,7 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 
 		// Token is valid - add principal to context
 		ctx := context.WithValue(r.Context(), ctxPrincipalKey{}, "authenticated")
-		// Also store the token in context? Not stricly needed if we always re-extract or config is source.
+		// Also store the token in context? Not strictly needed if we always re-extract or config is source.
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

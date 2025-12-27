@@ -214,21 +214,21 @@ func (s *Server) handleV3SessionState(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sess, err := store.GetSession(r.Context(), sessionID)
-	if err != nil || sess == nil {
+	session, err := store.GetSession(r.Context(), sessionID)
+	if err != nil || session == nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
 
 	resp := v3api.SessionResponse{
-		SessionID:       sess.SessionID,
-		ServiceRef:      sess.ServiceRef,
-		ProfileID:       sess.Profile.Name,
-		State:           sess.State,
-		Reason:          sess.Reason,
-		ReasonDetail:    sess.ReasonDetail,
-		CorrelationID:   sess.CorrelationID,
-		UpdatedAtUnixMs: sess.UpdatedAtUnix * 1000,
+		SessionID:       session.SessionID,
+		ServiceRef:      session.ServiceRef,
+		ProfileID:       session.Profile.Name,
+		State:           session.State,
+		Reason:          session.Reason,
+		ReasonDetail:    session.ReasonDetail,
+		CorrelationID:   session.CorrelationID,
+		UpdatedAtUnixMs: session.UpdatedAtUnix * 1000,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
