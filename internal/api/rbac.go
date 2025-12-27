@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/ManuGH/xg2g/internal/auth"
-	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/log"
 )
 
@@ -112,11 +111,11 @@ func (s *Server) tokenScopes(token string) (scopeSet, bool) {
 	if token == "" {
 		return nil, false
 	}
-	s.mu.RLock()
-	cfgToken := s.cfg.APIToken
-	cfgTokenScopes := append([]string(nil), s.cfg.APITokenScopes...)
-	cfgTokens := append([]config.ScopedToken(nil), s.cfg.APITokens...)
-	s.mu.RUnlock()
+	cfg := s.GetConfig()
+	cfgToken := cfg.APIToken
+	// We treat config as immutable after reload, so simple read is safe without copying slices.
+	cfgTokenScopes := cfg.APITokenScopes
+	cfgTokens := cfg.APITokens
 
 	if cfgToken != "" && auth.AuthorizeToken(token, cfgToken) {
 		if len(cfgTokenScopes) == 0 {
@@ -138,10 +137,9 @@ func (s *Server) tokenScopes(token string) (scopeSet, bool) {
 }
 
 func (s *Server) allowAnonymous() bool {
-	s.mu.RLock()
-	authAnon := s.cfg.AuthAnonymous
-	hasTokens := s.cfg.APIToken != "" || len(s.cfg.APITokens) > 0
-	s.mu.RUnlock()
+	cfg := s.GetConfig()
+	authAnon := cfg.AuthAnonymous
+	hasTokens := cfg.APIToken != "" || len(cfg.APITokens) > 0
 	return authAnon && !hasTokens
 }
 

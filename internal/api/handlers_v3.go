@@ -24,6 +24,9 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	// 0. Hardening: Limit Request Size (1MB)
 	r.Body = http.MaxBytesReader(w, r.Body, 1048576)
 
+	// Get Config Snapshot for consistent view during request
+	cfg := s.GetConfig()
+
 	// 1. Verify V3 Components Available
 	s.mu.RLock()
 	bus := s.v3Bus
@@ -102,7 +105,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	switch intentType {
 	case model.IntentTypeStreamStart:
 		requestedProfile := req.ProfileID
-		profileSpec := profiles.Resolve(requestedProfile, r.UserAgent(), s.cfg.DVRWindowSec)
+		profileSpec := profiles.Resolve(requestedProfile, r.UserAgent(), cfg.DVRWindowSec)
 		log.L().
 			Info().
 			Str("ua", r.UserAgent()).
@@ -169,7 +172,7 @@ func (s *Server) handleV3SessionsDebug(w http.ResponseWriter, r *http.Request) {
 	// Even if Auth is disabled (Anonymous), this endpoint exposes internal state.
 	// We require the server to be in Dev Mode explicitly.
 	// TODO: Add Role-Based Access Control (RBAC) in Phase 7B/8.
-	if !s.cfg.DevMode {
+	if !s.GetConfig().DevMode {
 		http.Error(w, "debug interface disabled (requires XG2G_DEV=true)", http.StatusForbidden)
 		return
 	}
@@ -249,5 +252,5 @@ func (s *Server) handleV3HLS(w http.ResponseWriter, r *http.Request) {
 	filename := chi.URLParam(r, "filename")
 
 	// 3. Serve via HLS helper
-	v3api.ServeHLS(w, r, store, s.cfg.HLSRoot, sessionID, filename)
+	v3api.ServeHLS(w, r, store, s.GetConfig().HLSRoot, sessionID, filename)
 }

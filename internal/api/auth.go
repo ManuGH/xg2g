@@ -23,10 +23,9 @@ type ctxPrincipalKey struct{}
 // authMiddleware is a middleware that enforces API token authentication.
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		s.mu.RLock()
-		authAnon := s.cfg.AuthAnonymous
-		hasTokens := s.cfg.APIToken != "" || len(s.cfg.APITokens) > 0
-		s.mu.RUnlock()
+		cfg := s.GetConfig()
+		authAnon := cfg.AuthAnonymous
+		hasTokens := cfg.APIToken != "" || len(cfg.APITokens) > 0
 
 		if !hasTokens {
 			if authAnon {
@@ -75,26 +74,23 @@ func (s *Server) CreateSession(w http.ResponseWriter, r *http.Request) {
 	// We allow Header or Cookie (if refreshing). NO Query.
 	reqToken := extractToken(r)
 
-	// Fallback: If logic fails, use configured token if auth enabled (Single User Mode)
-	s.mu.RLock()
-	cfgToken := s.cfg.APIToken
-	forceHTTPS := s.cfg.ForceHTTPS
-	hasTokens := s.cfg.APIToken != "" || len(s.cfg.APITokens) > 0
-	authAnon := s.cfg.AuthAnonymous
-	s.mu.RUnlock()
+	// No implicit fallback; token must be presented.
+	cfg := s.GetConfig()
+	forceHTTPS := cfg.ForceHTTPS
+	hasTokens := cfg.APIToken != "" || len(cfg.APITokens) > 0
+	authAnon := cfg.AuthAnonymous
 
+	// The client MUST present a valid token to exchange it for a session cookie.
 	if reqToken == "" {
-		if !hasTokens || authAnon {
-			// If anonymous auth is enabled, or no tokens configured, we allow "login" (returns 200 OK)
+		if !hasTokens && authAnon {
+			// If anonymous auth is enabled AND no tokens are configured, we allow "login" (returns 200 OK)
 			// This signals to the frontend that no explicit auth is needed.
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-		if cfgToken == "" {
-			RespondError(w, r, http.StatusUnauthorized, ErrUnauthorized)
-			return
-		}
-		reqToken = cfgToken
+		// Fail if no token presented and auth is required
+		RespondError(w, r, http.StatusUnauthorized, ErrUnauthorized)
+		return
 	} else {
 		if _, ok := s.tokenScopes(reqToken); !ok {
 			RespondError(w, r, http.StatusUnauthorized, ErrUnauthorized)
