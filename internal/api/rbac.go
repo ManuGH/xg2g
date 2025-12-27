@@ -151,7 +151,8 @@ func (s *Server) requestScopes(r *http.Request) (scopeSet, bool) {
 		return s.tokenScopes(token)
 	}
 	if s.allowAnonymous() {
-		return newScopeSet([]string{string(ScopeAll)}), true
+		// Anonymous users get read-only access by default for security
+		return newScopeSet([]string{string(ScopeV3Read)}), true
 	}
 	return nil, false
 }
