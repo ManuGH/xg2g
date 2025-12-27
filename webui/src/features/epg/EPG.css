@@ -275,6 +275,43 @@
   overflow: hidden;
 }
 
+.epg-programme-desc.expanded {
+  display: block;
+  line-clamp: unset;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+}
+
+.epg-programme {
+  display: flex;
+  gap: 16px;
+  padding: 8px;
+  border-radius: var(--radius-md);
+  transition: background 0.2s;
+  cursor: pointer; /* Clickable */
+}
+
+.epg-programme:hover {
+  background: var(--bg-hover);
+}
+
+.epg-date-label {
+  padding: 8px 8px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-primary);
+  opacity: 0.9;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  margin-top: 8px;
+  border-top: 1px dotted var(--border-subtle);
+}
+
+.epg-date-label:first-child {
+  margin-top: 0;
+  border-top: none;
+}
+
 .btn-play.header-play {
   margin-left: auto;
   display: flex;

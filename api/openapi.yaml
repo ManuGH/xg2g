@@ -19,6 +19,114 @@ components:
       bearerFormat: JWT
 
   schemas:
+    # ==================== V3 API Schemas ====================
+    APIError:
+      type: object
+      required: [code, message, request_id]
+      properties:
+        code:
+          type: string
+          description: Machine-readable error code
+          example: "UNAUTHORIZED"
+        message:
+          type: string
+          description: Human-readable error message
+          example: "Authentication required"
+        request_id:
+          type: string
+          description: Request ID for debugging
+          example: "req_abc123"
+        details:
+          description: Optional additional context
+          example: "Invalid token format"
+
+    IntentRequest:
+      type: object
+      required: [serviceRef]
+      properties:
+        type:
+          type: string
+          enum: [stream.start, stream.stop]
+          default: stream.start
+        serviceRef:
+          type: string
+          description: Enigma2 service reference
+          example: "1:0:1:445D:453:1:C00000:0:0:0:"
+        profileID:
+          type: string
+          description: Transcoding profile ID
+          example: "hls_720p"
+        sessionID:
+          type: string
+          format: uuid
+          description: Required for stream.stop intent
+        idempotencyKey:
+          type: string
+          description: Optional idempotency key for at-most-once semantics
+        params:
+          type: object
+          additionalProperties: true
+          description: Additional parameters
+
+    SessionResponse:
+      type: object
+      required: [sessionId, state]
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+        serviceRef:
+          type: string
+        profileID:
+          type: string
+        state:
+          type: string
+          enum: [new, leasing, starting, ready, draining, stopping, stopped, failed]
+        reason:
+          type: string
+          enum: [client_stop, idle_timeout, lease_lost, receiver_error, ffmpeg_error, internal_error]
+        reasonDetail:
+          type: string
+        correlationID:
+          type: string
+        updatedAtUnixMs:
+          type: integer
+          format: int64
+
+    SessionRecord:
+      type: object
+      properties:
+        sessionID:
+          type: string
+          format: uuid
+        serviceRef:
+          type: string
+        profile:
+          type: object
+        state:
+          type: string
+        reason:
+          type: string
+        reasonDetail:
+          type: string
+        createdAtUnix:
+          type: integer
+          format: int64
+        updatedAtUnix:
+          type: integer
+          format: int64
+        lastAccessUnix:
+          type: integer
+          format: int64
+        tunerID:
+          type: string
+        correlationID:
+          type: string
+        contextData:
+          type: object
+          additionalProperties: true
+
+    # ==================== Legacy Schemas ====================
     Error:
       type: object
       properties:
@@ -1138,3 +1246,173 @@ paths:
           description: Deleted
         "404":
           description: Rule not found
+
+  # ==================== V3 Control Plane API ====================
+  /intents:
+    post:
+      summary: Create stream intent (start or stop session)
+      operationId: createIntent
+      tags:
+        - v3
+      security:
+        - BearerAuth: [v3:write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IntentRequest"
+      responses:
+        "202":
+          description: Intent accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessionId:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                    enum: [accepted, idempotent_replay]
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+        "503":
+          description: V3 control plane unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+
+  /sessions:
+    get:
+      summary: List all sessions (admin only)
+      operationId: listSessions
+      tags:
+        - v3
+      security:
+        - BearerAuth: [v3:admin]
+      parameters:
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: Pagination offset
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+          description: Pagination limit (max 1000)
+      responses:
+        "200":
+          description: Sessions list with pagination metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SessionRecord"
+                  pagination:
+                    type: object
+                    properties:
+                      offset:
+                        type: integer
+                      limit:
+                        type: integer
+                      total:
+                        type: integer
+                      count:
+                        type: integer
+        "503":
+          description: V3 control plane unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+
+  /sessions/{sessionID}:
+    parameters:
+      - name: sessionID
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get session state
+      operationId: getSessionState
+      tags:
+        - v3
+      security:
+        - BearerAuth: [v3:read]
+      responses:
+        "200":
+          description: Session state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+        "400":
+          description: Invalid session ID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+        "404":
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+
+  /sessions/{sessionID}/hls/{filename}:
+    parameters:
+      - name: sessionID
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: filename
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: '^[a-zA-Z0-9_.-]+\.(m3u8|ts)$'
+    get:
+      summary: Serve HLS playlist or segment
+      operationId: serveHLS
+      tags:
+        - v3
+      security:
+        - BearerAuth: [v3:read]
+      responses:
+        "200":
+          description: HLS content
+          content:
+            application/vnd.apple.mpegurl:
+              schema:
+                type: string
+            video/MP2T:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: Invalid request
+        "404":
+          description: File not found
+        "503":
+          description: V3 control plane unavailable

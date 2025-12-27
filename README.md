@@ -15,12 +15,19 @@
 
   [Quick Start](#-quick-start) • [Features](#-features) •
   [v3.0.0 Release](docs/RELEASE-v3.0.0.md) • [Docs](docs/) •
-  [Architecture](docs/ARCHITECTURE.md)
+  [Architecture](ARCHITECTURE.md)
 </div>
 
+> [!NOTE]
+> **Production-Ready for Home-Lab**: xg2g v3 is a single-tenant control plane
+> optimized for stability & operational simplicity. Read
+> [ARCHITECTURE.md](ARCHITECTURE.md) for scope, threat model, and design
+> decisions.
+
 > [!IMPORTANT]
-> **License**: xg2g is licensed under the **PolyForm Noncommercial License 1.0.0**.
-> This application is free for personal, educational, and non-profit use. **Commercial use (e.g., ISPs, Resellers) requires a separate license.**
+> **License**: xg2g is licensed under the **PolyForm Noncommercial License
+> 1.0.0**. This application is free for personal, educational, and non-profit
+> use. **Commercial use (e.g., ISPs, Resellers) requires a separate license.**
 > See [Licensing](docs/licensing.md) for details.
 
 ---

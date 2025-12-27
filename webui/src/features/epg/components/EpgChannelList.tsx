@@ -5,6 +5,26 @@ import React from 'react';
 import type { EpgEvent, EpgChannel } from '../types';
 import { EpgEventRow } from './EpgEventList';
 
+// Helper: Get localized day string "Do 28.12."
+// Returns null if date matches "today" (relative to currentTime, but user said "same day no date")
+// Actually, standard is: If event starts on a different day than previous event (or today), show "Do 28.12."
+function getDateLabel(ts: number): string {
+  const d = new Date(ts * 1000);
+  return d.toLocaleDateString('de-DE', {
+    weekday: 'short',
+    day: '2-digit',
+    month: '2-digit',
+  });
+}
+
+function getTodayLabel(): string {
+  return new Date().toLocaleDateString('de-DE', {
+    weekday: 'short',
+    day: '2-digit',
+    month: '2-digit',
+  });
+}
+
 // Channel Header Component
 interface ChannelHeaderProps {
   channel: EpgChannel;
@@ -80,6 +100,7 @@ function ChannelCard({
 
   const current = events.find((e) => currentTime >= e.start && currentTime < e.end) || events[0];
   const others = events.filter((e) => e !== current);
+  const todayLabel = getTodayLabel();
 
   return (
     <div className="epg-card">
@@ -94,6 +115,8 @@ function ChannelCard({
             highlight
             onRecord={onRecord}
             isRecorded={isRecorded ? isRecorded(current) : false}
+          // Logic: Current event usually implies "Now/Today", so no date header unless we want to carry over
+          // But usually current is obvious. User said "Today no date".
           />
         )}
 
@@ -106,16 +129,40 @@ function ChannelCard({
             </button>
             {isExpanded && (
               <div className="epg-programmes-noncurrent">
-                {others.map((event) => (
-                  <EpgEventRow
-                    key={`${event.service_ref}-${event.start}`}
-                    event={event}
-                    currentTime={currentTime}
-                    highlight={currentTime >= event.start && currentTime < event.end}
-                    onRecord={onRecord}
-                    isRecorded={isRecorded ? isRecorded(event) : false}
-                  />
-                ))}
+                {others.map((event, index) => {
+                  const eventDate = getDateLabel(event.start);
+                  // Calculate if we need a header
+                  let showHeader = false;
+
+                  // 1. If it's the first item in "others"
+                  if (index === 0) {
+                    // Show if NOT today
+                    if (eventDate !== todayLabel) showHeader = true;
+                  } else {
+                    // Compare with previous
+                    const prev = others[index - 1];
+                    if (prev) {
+                      const prevDate = getDateLabel(prev.start);
+                      if (eventDate !== prevDate) {
+                        // Changed day
+                        // Show if NOT today (unlikely to go back to today, but safe check)
+                        if (eventDate !== todayLabel) showHeader = true;
+                      }
+                    }
+                  }
+
+                  return (
+                    <EpgEventRow
+                      key={`${event.service_ref}-${event.start}`}
+                      event={event}
+                      currentTime={currentTime}
+                      highlight={currentTime >= event.start && currentTime < event.end}
+                      onRecord={onRecord}
+                      isRecorded={isRecorded ? isRecorded(event) : false}
+                      dateLabel={showHeader ? eventDate : undefined}
+                    />
+                  );
+                })}
               </div>
             )}
           </div>
@@ -154,22 +201,37 @@ function SearchGroup({
 
   const top2 = events.slice(0, 2);
   const rest = events.slice(2);
+  const todayLabel = getTodayLabel();
 
   return (
     <div className="epg-search-group">
       <ChannelHeader channel={channel} displayName={displayName} onPlay={onPlay} />
 
       <div className="epg-programmes">
-        {top2.map((event) => (
-          <EpgEventRow
-            key={`${event.service_ref}-${event.start}`}
-            event={event}
-            currentTime={currentTime}
-            highlight={currentTime >= event.start && currentTime < event.end}
-            onRecord={onRecord}
-            isRecorded={isRecorded ? isRecorded(event) : false}
-          />
-        ))}
+        {top2.map((event, index) => {
+          const eventDate = getDateLabel(event.start);
+          let showHeader = false;
+          if (index === 0) {
+            if (eventDate !== todayLabel) showHeader = true;
+          } else {
+            const prev = top2[index - 1];
+            if (prev) {
+              const prevDate = getDateLabel(prev.start);
+              if (eventDate !== prevDate && eventDate !== todayLabel) showHeader = true;
+            }
+          }
+          return (
+            <EpgEventRow
+              key={`${event.service_ref}-${event.start}`}
+              event={event}
+              currentTime={currentTime}
+              highlight={currentTime >= event.start && currentTime < event.end}
+              onRecord={onRecord}
+              isRecorded={isRecorded ? isRecorded(event) : false}
+              dateLabel={showHeader ? eventDate : undefined}
+            />
+          )
+        })}
 
         {rest.length > 0 && (
           <div className="epg-dropdown">
@@ -178,16 +240,37 @@ function SearchGroup({
             </button>
             {isExpanded && (
               <div className="epg-programmes-noncurrent">
-                {rest.map((event) => (
-                  <EpgEventRow
-                    key={`${event.service_ref}-${event.start}`}
-                    event={event}
-                    currentTime={currentTime}
-                    highlight={currentTime >= event.start && currentTime < event.end}
-                    onRecord={onRecord}
-                    isRecorded={isRecorded ? isRecorded(event) : false}
-                  />
-                ))}
+                {rest.map((event, index) => {
+                  const eventDate = getDateLabel(event.start);
+                  let showHeader = false;
+
+                  if (index === 0) {
+                    // check against last of top2
+                    const lastTop = top2.length > 0 ? top2[top2.length - 1] : undefined;
+                    if (lastTop) {
+                      const lastTopDate = getDateLabel(lastTop.start);
+                      if (eventDate !== lastTopDate && eventDate !== todayLabel) showHeader = true;
+                    }
+                  } else {
+                    const prev = rest[index - 1];
+                    if (prev) {
+                      const prevDate = getDateLabel(prev.start);
+                      if (eventDate !== prevDate && eventDate !== todayLabel) showHeader = true;
+                    }
+                  }
+
+                  return (
+                    <EpgEventRow
+                      key={`${event.service_ref}-${event.start}`}
+                      event={event}
+                      currentTime={currentTime}
+                      highlight={currentTime >= event.start && currentTime < event.end}
+                      onRecord={onRecord}
+                      isRecorded={isRecorded ? isRecorded(event) : false}
+                      dateLabel={showHeader ? eventDate : undefined}
+                    />
+                  );
+                })}
               </div>
             )}
           </div>
@@ -331,3 +414,4 @@ export function EpgChannelList({
     </>
   );
 }
+

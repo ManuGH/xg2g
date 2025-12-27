@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -40,8 +41,9 @@ type Runner struct {
 	Client  *enigma2.Client
 	Args    []string // Default args or template
 
-	cmd   *exec.Cmd
-	start time.Time
+	cmd     *exec.Cmd
+	curlCmd *exec.Cmd // Upstream fetcher for reliable HTTP handling
+	start   time.Time
 
 	ring *LineRing
 
@@ -102,7 +104,6 @@ func (r *Runner) Start(ctx context.Context, sessionID, serviceRef string, profil
 		}
 	}
 
-	// 2. Build Args
 	streamURL, err := r.Client.ResolveStreamURL(ctx, serviceRef)
 	if err != nil {
 		startTotal.WithLabelValues("err_url").Inc()
@@ -141,6 +142,31 @@ func (r *Runner) Start(ctx context.Context, sessionID, serviceRef string, profil
 		out.InitFilename = "init.mp4" // Relative path for FFmpeg
 	}
 
+	// 3. Pipeline Setup (Curl -> FFmpeg)
+	// We use curl because FFmpeg's HTTP client is too strict for some Enigma2 receivers (malformed headers).
+	var curlCmd *exec.Cmd
+	if strings.HasPrefix(streamURL, "http") {
+		// Verify if we should use pipe (default: yes for robustness)
+		usePipe := true
+		if usePipe {
+			// Construct curl command
+			// Use -s (silent) but we might want errors?
+			// Use -N (no buffer) to flush immediately? streaming usually implies it?
+			// curl default buffer is fine usually, but -N is safer for latency?
+			// Using same args as verified manually: -s -H "Icy-MetaData: 1" --user-agent ...
+			curlArgs := []string{
+				"-s", // Silent mode (don't pollute logs with progress)
+				"-H", "Icy-MetaData: 1",
+				"--user-agent", "curl/8.14.1",
+				streamURL,
+			}
+			curlCmd = exec.CommandContext(ctx, "curl", curlArgs...)
+
+			// Override input for FFmpeg
+			in.StreamURL = "pipe:0"
+		}
+	}
+
 	args, err := BuildHLSArgs(in, out, profileSpec)
 	if err != nil {
 		return err
@@ -152,6 +178,17 @@ func (r *Runner) Start(ctx context.Context, sessionID, serviceRef string, profil
 	}
 
 	r.cmd = exec.CommandContext(ctx, r.BinPath, args...) // #nosec G204 -- args constructed internally; BinPath from trusted config
+
+	// Link Pipe
+	if curlCmd != nil {
+		r.curlCmd = curlCmd
+		pipe, err := curlCmd.StdoutPipe()
+		if err != nil {
+			startTotal.WithLabelValues("err_pipe").Inc()
+			return fmt.Errorf("failed to create curl pipe: %w", err)
+		}
+		r.cmd.Stdin = pipe
+	}
 
 	// Capture Stderr
 	stderr, err := r.cmd.StderrPipe()
@@ -180,7 +217,20 @@ func (r *Runner) Start(ctx context.Context, sessionID, serviceRef string, profil
 	// Log FFmpeg command for debugging
 	log.L().Info().Str("component", "ffmpeg").Str("command", r.cmd.String()).Msg("starting ffmpeg process")
 
+	// Start Curl if configured (pipeline)
+	if r.curlCmd != nil {
+		log.L().Info().Str("component", "ffmpeg").Str("upstream", "curl").Msg("starting curl pipeline")
+		if err := r.curlCmd.Start(); err != nil {
+			startTotal.WithLabelValues("err_curl").Inc()
+			return fmt.Errorf("curl start failed: %w", err)
+		}
+	}
+
 	if err := r.cmd.Start(); err != nil {
+		// Cleanup curl if ffmpeg fails
+		if r.curlCmd != nil {
+			_ = r.curlCmd.Process.Kill()
+		}
 		startTotal.WithLabelValues("err").Inc()
 		return fmt.Errorf("ffmpeg start failed: %w", err)
 	}
@@ -226,6 +276,13 @@ func (r *Runner) Wait(ctx context.Context) (model.ExitStatus, error) {
 	// Note: cmd.Wait() closes pipes.
 
 	err := r.cmd.Wait()
+
+	// Cleanup Curl (Wait/Kill)
+	if r.curlCmd != nil {
+		// Curl might still be running or blocked on write
+		_ = r.curlCmd.Wait() // Don't check error, just ensure it's reaped
+	}
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -289,6 +346,11 @@ func (r *Runner) Stop(ctx context.Context) error {
 	// Double check if already exited
 	if r.cmd.ProcessState != nil && r.cmd.ProcessState.Exited() {
 		return nil
+	}
+
+	// Stop Curl first to cut input
+	if r.curlCmd != nil && r.curlCmd.Process != nil {
+		_ = r.curlCmd.Process.Kill()
 	}
 
 	// Send SIGTERM

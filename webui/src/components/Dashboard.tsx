@@ -62,6 +62,14 @@ export default function Dashboard() {
           </div>
         )}
 
+        {/* V3.0.0 Welcome Banner */}
+        {health.version === 'v3.0.0' && (
+          <div className="card full-width info-banner" style={{ background: '#d1e7dd', color: '#0f5132', borderColor: '#badbcc' }}>
+            <h3>🎉 New Version 3.0.0</h3>
+            <p>Welcome to the new major release! The application has been updated to version 3.0.0.</p>
+          </div>
+        )}
+
         <div className="card">
           <h3>System Status</h3>
           <div className={`status-indicator ${health.status}`}>

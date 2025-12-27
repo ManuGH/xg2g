@@ -28,7 +28,7 @@ func (s *Server) v3Routes() []v3Route {
 		{
 			method:  http.MethodGet,
 			pattern: "/api/v3/sessions",
-			scopes:  []Scope{ScopeV3Read},
+			scopes:  []Scope{ScopeV3Admin},
 			handler: s.handleV3SessionsDebug,
 		},
 		{
