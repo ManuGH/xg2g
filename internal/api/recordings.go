@@ -54,12 +54,9 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 		for k, v := range cfg.RecordingRoots {
 			roots[k] = v
 		}
-	} else if len(roots) == 0 {
-		// Only set default if NO discovery happens later?
-		// Actually, let's keep HDD default initially, but if discovery finds something else, good.
-		// Use empty map initially so discovery can populate it alone if needed.
-		// If both empty eventually, we add default.
 	}
+	// Note: If no roots configured, discovery will populate.
+	// If both are empty eventually, a default is added later.
 
 	// Dynamic Discovery: Fetch locations from OpenWebIF
 	client := s.newOpenWebIFClient(cfg, snap)
@@ -241,11 +238,7 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 	}
 
 	// Fix RootList to generated type
-	genRoots := make([]RecordingRoot, 0, len(rootList))
-	for _, r := range rootList {
-		// Just copy the structs/pointers since they are already correct type
-		genRoots = append(genRoots, r)
-	}
+	genRoots := append([]RecordingRoot(nil), rootList...)
 
 	response := RecordingResponse{
 		Roots:       &genRoots,
