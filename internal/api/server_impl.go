@@ -1686,7 +1686,7 @@ func (s *Server) handleSetupValidate(w http.ResponseWriter, r *http.Request) {
 		// Log detailed error but return generic message to UI (or detailed if safe)
 		log.L().Warn().Err(err).Str("baseUrl", req.BaseURL).Msg("validation failed: connection error")
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(setupValidateResponse{
+		_ = json.NewEncoder(w).Encode(setupValidateResponse{
 			Valid:   false,
 			Message: fmt.Sprintf("Connection failed: %s", err.Error()),
 		})
@@ -1709,7 +1709,7 @@ func (s *Server) handleSetupValidate(w http.ResponseWriter, r *http.Request) {
 
 	// Success
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(setupValidateResponse{
+	_ = json.NewEncoder(w).Encode(setupValidateResponse{
 		Valid:    true,
 		Message:  "Connection successful",
 		Version:  about,

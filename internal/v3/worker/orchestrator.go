@@ -465,6 +465,7 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 			// Success condition: file exists, non-empty, and contains #EXTM3U header
 			if info, statErr := os.Stat(playlistPath); statErr == nil && info.Size() > 0 {
 				// Sanity check: validate it's a real HLS manifest
+				// #nosec G304 -- playlistPath is constructed from trusted hlsDir, not user input
 				if content, readErr := os.ReadFile(playlistPath); readErr == nil {
 					if strings.Contains(string(content), "#EXTM3U") {
 						break // Playlist ready!
