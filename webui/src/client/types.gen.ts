@@ -40,6 +40,10 @@ export type IntentRequest = {
      */
     profile?: string;
     /**
+     * Optional correlation ID for end-to-end tracing
+     */
+    correlationId?: string;
+    /**
      * Required for stream.stop intent
      */
     sessionID?: string;
@@ -59,7 +63,15 @@ export type SessionResponse = {
     sessionId: string;
     serviceRef?: string;
     profile?: string;
-    state: 'NEW' | 'STARTING' | 'READY' | 'DRAINING' | 'STOPPING' | 'STOPPED' | 'FAILED' | 'CANCELLED';
+    /**
+     * Session lifecycle state. READY guarantees a playable HLS stream (playlist + at least one segment,
+     * atomically published). PRIMING means FFmpeg is running but content is not yet playable.
+     *
+     */
+    state: 'NEW' | 'STARTING' | 'PRIMING' | 'READY' | 'DRAINING' | 'STOPPING' | 'STOPPED' | 'FAILED' | 'CANCELLED';
+    /**
+     * Reason code; R_LEASE_BUSY means capacity rejection (no tuner available), not a system fault.
+     */
     reason?: 'R_NONE' | 'R_UNKNOWN' | 'R_BAD_REQUEST' | 'R_NOT_FOUND' | 'R_LEASE_BUSY' | 'R_TUNE_TIMEOUT' | 'R_LEASE_EXPIRED' | 'R_TUNE_FAILED' | 'R_INVARIANT_VIOLATION' | 'R_FFMPEG_START_FAILED' | 'R_PROCESS_ENDED' | 'R_PACKAGER_FAILED' | 'R_CANCELLED' | 'R_IDLE_TIMEOUT' | 'R_CLIENT_STOP';
     reasonDetail?: string;
     correlationId?: string;
@@ -72,7 +84,15 @@ export type SessionRecord = {
     profile?: {
         [key: string]: unknown;
     };
-    state?: 'NEW' | 'STARTING' | 'READY' | 'DRAINING' | 'STOPPING' | 'STOPPED' | 'FAILED' | 'CANCELLED';
+    /**
+     * Session lifecycle state. READY guarantees a playable HLS stream (playlist + at least one segment,
+     * atomically published). PRIMING means FFmpeg is running but content is not yet playable.
+     *
+     */
+    state?: 'NEW' | 'STARTING' | 'PRIMING' | 'READY' | 'DRAINING' | 'STOPPING' | 'STOPPED' | 'FAILED' | 'CANCELLED';
+    /**
+     * Reason code; R_LEASE_BUSY means capacity rejection (no tuner available), not a system fault.
+     */
     reason?: 'R_NONE' | 'R_UNKNOWN' | 'R_BAD_REQUEST' | 'R_NOT_FOUND' | 'R_LEASE_BUSY' | 'R_TUNE_TIMEOUT' | 'R_LEASE_EXPIRED' | 'R_TUNE_FAILED' | 'R_INVARIANT_VIOLATION' | 'R_FFMPEG_START_FAILED' | 'R_PROCESS_ENDED' | 'R_PACKAGER_FAILED' | 'R_CANCELLED' | 'R_IDLE_TIMEOUT' | 'R_CLIENT_STOP';
     reasonDetail?: string;
     createdAtUnix?: number;
@@ -223,6 +243,27 @@ export type SeriesRule = {
     lastRunAt?: string;
     lastRunStatus?: string;
     lastRunSummary?: RunSummary;
+};
+
+export type SeriesRuleUpdate = {
+    enabled: boolean;
+    /**
+     * Search term or regex for event title
+     */
+    keyword: string;
+    /**
+     * Optional service reference to restrict rule
+     */
+    channel_ref?: string;
+    /**
+     * Days of week (0=Sunday)
+     */
+    days?: Array<number>;
+    /**
+     * Time window HHMM-HHMM
+     */
+    start_window?: string;
+    priority: number;
 };
 
 export type ConfigUpdate = {
@@ -1173,6 +1214,35 @@ export type DeleteSeriesRuleResponses = {
 
 export type DeleteSeriesRuleResponse = DeleteSeriesRuleResponses[keyof DeleteSeriesRuleResponses];
 
+export type UpdateSeriesRuleData = {
+    body: SeriesRuleUpdate;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/series-rules/{id}';
+};
+
+export type UpdateSeriesRuleErrors = {
+    /**
+     * Invalid request
+     */
+    400: unknown;
+    /**
+     * Rule not found
+     */
+    404: unknown;
+};
+
+export type UpdateSeriesRuleResponses = {
+    /**
+     * Updated
+     */
+    200: SeriesRule;
+};
+
+export type UpdateSeriesRuleResponse = UpdateSeriesRuleResponses[keyof UpdateSeriesRuleResponses];
+
 export type CreateIntentData = {
     body: IntentRequest;
     path?: never;
@@ -1185,6 +1255,10 @@ export type CreateIntentErrors = {
      * Invalid request
      */
     400: ApiError;
+    /**
+     * Lease busy (capacity rejection; no session created)
+     */
+    409: ApiError;
     /**
      * V3 control plane unavailable
      */
@@ -1200,6 +1274,7 @@ export type CreateIntentResponses = {
     202: {
         sessionId?: string;
         status?: 'accepted' | 'idempotent_replay';
+        correlationId?: string;
     };
 };
 

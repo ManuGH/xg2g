@@ -383,6 +383,32 @@ components:
         lastRunSummary:
           $ref: "#/components/schemas/RunSummary"
 
+    SeriesRuleUpdate:
+      type: object
+      required: [enabled, keyword, priority]
+      properties:
+        enabled:
+          type: boolean
+        keyword:
+          type: string
+          minLength: 1
+          description: Search term or regex for event title
+        channel_ref:
+          type: string
+          description: Optional service reference to restrict rule
+        days:
+          type: array
+          items:
+            type: integer
+            minimum: 0
+            maximum: 6
+          description: Days of week (0=Sunday)
+        start_window:
+          type: string
+          description: Time window HHMM-HHMM
+        priority:
+          type: integer
+
     ConfigUpdate:
       type: object
       properties:
@@ -1350,6 +1376,28 @@ paths:
         required: true
         schema:
           type: string
+    put:
+      summary: Update an existing series rule
+      operationId: updateSeriesRule
+      tags:
+        - series
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SeriesRuleUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeriesRule"
+        "404":
+          description: Rule not found
+        "400":
+          description: Invalid request
     delete:
       summary: Delete a series rule
       operationId: deleteSeriesRule

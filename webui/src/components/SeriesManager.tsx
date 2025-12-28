@@ -7,11 +7,13 @@ import {
   getSeriesRules,
   deleteSeriesRule,
   createSeriesRule,
+  updateSeriesRule,
   runSeriesRule,
   getServices,
   type SeriesRule,
   type Service,
-  type SeriesRuleWritable
+  type SeriesRuleWritable,
+  type SeriesRuleUpdate
 } from '../client-ts';
 import './SeriesManager.css';
 
@@ -141,47 +143,35 @@ function SeriesManager() {
         return;
       }
 
-      // Prepare payload (ensure types matches SeriesRuleWritable/CreateSeriesRuleData)
-      const payload: SeriesRuleWritable = {
-        keyword: currentRule.keyword,
-        channel_ref: currentRule.channel_ref,
-        days: currentRule.days || [],
-        start_window: currentRule.start_window,
-        priority: Number(currentRule.priority) || 0,
-        enabled: currentRule.enabled
-      };
+      // Prepare payload
+      if (currentRule.id) {
+        // Update existing rule
+        const updatePayload: SeriesRuleUpdate = {
+          enabled: currentRule.enabled,
+          keyword: currentRule.keyword,
+          priority: Number(currentRule.priority) || 0,
+          ...(currentRule.channel_ref?.trim() ? { channel_ref: currentRule.channel_ref.trim() } : {}),
+          ...(currentRule.start_window?.trim() ? { start_window: currentRule.start_window.trim() } : {}),
+          ...(currentRule.days?.length ? { days: currentRule.days } : {})
+        };
 
-      // If we are editing, we usually need update, but current code uses create?
-      // Wait, original legacy code: `await createSeriesRule({ body: payload });`
-      // Does create handle upsert with ID? 
-      // SDK says `createSeriesRule`. Is there an `updateSeriesRule`?
-      // In SDK file: `createSeriesRule` is POST /series-rules`.
-      // If editing existing rule, usually we'd expect PUT/PATCH /series-rules/{id} or POST with ID.
-      // Original code just did create.
-      // Let's stick to original behavior but check if ID is used.
-      // If `currentRule.id` exists, maybe we delete and recreate? Or backend handles it?
-      // Original code did NOT use ID in payload for createSeriesRule.
-      // Wait, logic check: Standard REST creates new ID on POST.
-      // If the user was editing, how was it saving? 
-      // Original code: `handleSave` uses `createSeriesRule`.
-      // Maybe series rules implementation replaces based on strict equality? Or maybe edit was broken/limited to Copy-as-New?
-      // For faithful migration, I keep `createSeriesRule`. 
-      // The backend likely treats it as a new rule.
-      // NOTE: `updateSeriesRule` is NOT in the SDK list previously shown.
-      // But `putSystemConfig` exists.
-      // Let's assume Create is the intended action (Add/Clone).
+        await updateSeriesRule({
+          path: { id: currentRule.id },
+          body: updatePayload
+        });
+      } else {
+        // Create new rule
+        const createPayload: SeriesRuleWritable = {
+          keyword: currentRule.keyword,
+          channel_ref: currentRule.channel_ref,
+          days: currentRule.days || [],
+          start_window: currentRule.start_window,
+          priority: Number(currentRule.priority) || 0,
+          enabled: currentRule.enabled
+        };
 
-      // Warning: If editing an EXISTING rule, creating a new one creates a DUPLICATE unless the user deleted the old one.
-      // However, strict conversion means keeping logic. 
-      // User did not ask to fix Logic bugs, just TS and SDK usage.
-      // But I should verify sdk.gen.ts again for updateSeriesRule...
-      // Checked sdk.gen.ts in Step 2686: `getSeriesRules`, `createSeriesRule`, `runSeriesRule`, `runAllSeriesRules`, `deleteSeriesRule`.
-      // NO update/edit endpoint for series rules!
-      // So "Editing" effectively creates a new one. The User might want to Delete+Create?
-      // Legacy code didn't delete. 
-      // I will keep behavior: Create new rule.
-
-      await createSeriesRule({ body: payload });
+        await createSeriesRule({ body: createPayload });
+      }
       setIsEditing(false);
       loadRules();
     } catch (err: any) {

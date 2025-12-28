@@ -6,12 +6,16 @@ package dvr
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
 
 	"github.com/google/uuid"
 )
+
+var ErrRuleNotFound = errors.New("rule not found")
 
 type Manager struct {
 	mu       sync.RWMutex
@@ -81,7 +85,7 @@ func (m *Manager) SaveRules() error {
 	return m.Save()
 }
 
-func (m *Manager) AddRule(r SeriesRule) string {
+func (m *Manager) AddRule(r SeriesRule) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -93,15 +97,13 @@ func (m *Manager) AddRule(r SeriesRule) string {
 	// Prepare slice while holding lock, then save
 	rules := m.getRulesSlice()
 
-	// We can release lock before I/O if we want, but keeping it simple for now to avoid race conditions on save order
-	// Actually, saveRulesToFile does I/O.
-	// We can do I/O under lock or outside.
-	// If we do inside, we block updates during I/O.
-	// If we do outside, we risk overwriting newer save?
-	// Given low throughput, inside is safer and simpler.
-	_ = m.saveRulesToFile(rules)
+	if err := m.saveRulesToFile(rules); err != nil {
+		// Rollback on save failure
+		delete(m.rules, r.ID)
+		return "", fmt.Errorf("failed to save rule: %w", err)
+	}
 
-	return r.ID
+	return r.ID, nil
 }
 
 func (m *Manager) GetRule(id string) (SeriesRule, bool) {
@@ -117,15 +119,50 @@ func (m *Manager) GetRules() []SeriesRule {
 	return m.getRulesSlice()
 }
 
-func (m *Manager) DeleteRule(id string) bool {
+func (m *Manager) UpdateRule(id string, upd SeriesRule) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if _, ok := m.rules[id]; ok {
-		delete(m.rules, id)
-		rules := m.getRulesSlice()
-		_ = m.saveRulesToFile(rules)
-		return true
+	existing, ok := m.rules[id]
+	if !ok {
+		return fmt.Errorf("%w: %s", ErrRuleNotFound, id)
 	}
-	return false
+
+	// Preserve server-managed fields
+	upd.ID = id
+	upd.LastRunAt = existing.LastRunAt
+	upd.LastRunStatus = existing.LastRunStatus
+	upd.LastRunSummary = existing.LastRunSummary
+
+	m.rules[id] = upd
+	rules := m.getRulesSlice()
+
+	if err := m.saveRulesToFile(rules); err != nil {
+		// Rollback on save failure
+		m.rules[id] = existing
+		return fmt.Errorf("failed to update rule: %w", err)
+	}
+
+	return nil
+}
+
+func (m *Manager) DeleteRule(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	existing, ok := m.rules[id]
+	if !ok {
+		return fmt.Errorf("%w: %s", ErrRuleNotFound, id)
+	}
+
+	delete(m.rules, id)
+	rules := m.getRulesSlice()
+
+	if err := m.saveRulesToFile(rules); err != nil {
+		// Rollback on save failure
+		m.rules[id] = existing
+		return fmt.Errorf("failed to delete rule: %w", err)
+	}
+
+	return nil
 }

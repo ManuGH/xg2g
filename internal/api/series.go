@@ -6,7 +6,9 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/ManuGH/xg2g/internal/dvr"
 )
@@ -28,30 +30,87 @@ func (s *Server) GetSeriesRules(w http.ResponseWriter, r *http.Request) {
 func (s *Server) CreateSeriesRule(w http.ResponseWriter, r *http.Request) {
 	var req SeriesRule
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+
+	// Validate keyword
+	if req.Keyword == nil || strings.TrimSpace(*req.Keyword) == "" {
+		http.Error(w, "keyword is required", http.StatusBadRequest)
 		return
 	}
 
 	dvrRule := mapAPIToRule(req)
 
 	// Persist
-	id := s.seriesManager.AddRule(dvrRule)
-	dvrRule.ID = id
+	id, err := s.seriesManager.AddRule(dvrRule)
+	if err != nil {
+		http.Error(w, "failed to create rule", http.StatusInternalServerError)
+		return
+	}
 
-	resp := mapRuleToAPI(dvrRule)
+	// Retrieve created rule with server-managed fields
+	created, ok := s.seriesManager.GetRule(id)
+	if !ok {
+		http.Error(w, "rule not found after creation", http.StatusInternalServerError)
+		return
+	}
+
+	resp := mapRuleToAPI(created)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+// UpdateSeriesRule implements ServerInterface
+func (s *Server) UpdateSeriesRule(w http.ResponseWriter, r *http.Request, id string) {
+	var req SeriesRuleUpdate
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+
+	// Validate keyword (already required by schema, but check for empty)
+	if strings.TrimSpace(req.Keyword) == "" {
+		http.Error(w, "keyword cannot be empty", http.StatusBadRequest)
+		return
+	}
+
+	dvrRule := mapAPIUpdateToRule(req)
+
+	if err := s.seriesManager.UpdateRule(id, dvrRule); err != nil {
+		if errors.Is(err, dvr.ErrRuleNotFound) {
+			http.Error(w, "Rule not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "failed to update rule", http.StatusInternalServerError)
+		return
+	}
+
+	// Retrieve updated rule with server-managed fields
+	updated, ok := s.seriesManager.GetRule(id)
+	if !ok {
+		http.Error(w, "Rule not found", http.StatusNotFound)
+		return
+	}
+
+	resp := mapRuleToAPI(updated)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
 // DeleteSeriesRule implements ServerInterface
 func (s *Server) DeleteSeriesRule(w http.ResponseWriter, r *http.Request, id string) {
-	if s.seriesManager.DeleteRule(id) {
-		w.WriteHeader(http.StatusNoContent)
-	} else {
-		http.Error(w, "Rule not found", http.StatusNotFound)
+	if err := s.seriesManager.DeleteRule(id); err != nil {
+		if errors.Is(err, dvr.ErrRuleNotFound) {
+			http.Error(w, "Rule not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "failed to delete rule", http.StatusInternalServerError)
+		return
 	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // Helpers
@@ -126,6 +185,26 @@ func mapAPIToRule(req SeriesRule) dvr.SeriesRule {
 	}
 	if req.Priority != nil {
 		r.Priority = *req.Priority
+	}
+	return r
+}
+
+func mapAPIUpdateToRule(req SeriesRuleUpdate) dvr.SeriesRule {
+	r := dvr.SeriesRule{}
+	// Required fields (non-pointer)
+	r.Enabled = req.Enabled
+	r.Keyword = req.Keyword
+	r.Priority = req.Priority
+
+	// Optional fields (pointer)
+	if req.ChannelRef != nil {
+		r.ChannelRef = *req.ChannelRef
+	}
+	if req.Days != nil {
+		r.Days = *req.Days
+	}
+	if req.StartWindow != nil {
+		r.StartWindow = *req.StartWindow
 	}
 	return r
 }
