@@ -90,6 +90,10 @@
     "searchResults": "Suchergebnisse: \"{{query}}\"",
     "confirmRecord": "Aufnahme für \"{{title}}\" planen?",
     "recordSuccess": "Aufnahme erfolgreich geplant!",
-    "recordError": "Fehler beim Planen der Aufnahme: {{error}}"
+    "recordError": "Fehler beim Planen der Aufnahme: {{error}}",
+    "playStream": "Stream abspielen",
+    "hideOtherShows": "Andere Sendungen ausblenden",
+    "moreShows": "Weitere Sendungen ({{count}})",
+    "showLess": "Weniger anzeigen"
   }
 }

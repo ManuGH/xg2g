@@ -2,6 +2,7 @@
 // Zero API imports
 
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import type { EpgEvent, EpgChannel } from '../types';
 import { EpgEventRow } from './EpgEventList';
 
@@ -33,6 +34,7 @@ interface ChannelHeaderProps {
 }
 
 function ChannelHeader({ channel, displayName, onPlay }: ChannelHeaderProps) {
+  const { t } = useTranslation();
   const logo = channel?.logo_url || channel?.logoUrl || channel?.logo;
 
   return (
@@ -63,7 +65,7 @@ function ChannelHeader({ channel, displayName, onPlay }: ChannelHeaderProps) {
             e.stopPropagation();
             onPlay(channel);
           }}
-          title="Play Stream"
+          title={t('epg.playStream')}
         >
           <span>▶</span> Play
         </button>
@@ -94,6 +96,7 @@ function ChannelCard({
   onRecord,
   isRecorded,
 }: ChannelCardProps) {
+  const { t } = useTranslation();
   const displayName = channel
     ? `${channel.number ? `${channel.number} · ` : ''}${channel.name || channel.id || 'Unknown'}`
     : 'Unknown';
@@ -124,8 +127,8 @@ function ChannelCard({
           <div className="epg-dropdown">
             <button className="epg-toggle" onClick={onToggleExpand}>
               {isExpanded
-                ? 'Andere Sendungen ausblenden'
-                : `Weitere Sendungen (${others.length})`}
+                ? t('epg.hideOtherShows')
+                : t('epg.moreShows', { count: others.length })}
             </button>
             {isExpanded && (
               <div className="epg-programmes-noncurrent">
@@ -194,6 +197,7 @@ function SearchGroup({
   onRecord,
   isRecorded,
 }: SearchGroupProps) {
+  const { t } = useTranslation();
   const serviceRef = channel.service_ref || channel.id || '';
   const displayName = channel
     ? `${channel.number ? `${channel.number} · ` : ''}${channel.name || channel.id || serviceRef}`
@@ -236,7 +240,7 @@ function SearchGroup({
         {rest.length > 0 && (
           <div className="epg-dropdown">
             <button className="epg-toggle" onClick={onToggleExpand}>
-              {isExpanded ? 'Weniger anzeigen' : `Weitere Sendungen (${rest.length})`}
+              {isExpanded ? t('epg.showLess') : t('epg.moreShows', { count: rest.length })}
             </button>
             {isExpanded && (
               <div className="epg-programmes-noncurrent">

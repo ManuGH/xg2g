@@ -72,11 +72,11 @@ export function EpgToolbar({
               onFilterChange({ timeRange: parseInt(e.target.value, 10) })
             }
           >
-            <option value={6}>6 {t('epg.hours', { count: 6, defaultValue: 'Hours' })}</option>
-            <option value={12}>12 {t('epg.hours', { count: 12, defaultValue: 'Hours' })}</option>
-            <option value={24}>24 {t('epg.hours', { count: 24, defaultValue: 'Hours' })}</option>
-            <option value={72}>3 {t('epg.hours', { count: 72, defaultValue: 'Days' }).replace('Hours', 'Days').replace('Stunden', 'Tage')}</option>
-            <option value={168}>7 {t('epg.hours', { count: 168, defaultValue: 'Days' }).replace('Hours', 'Days').replace('Stunden', 'Tage')}</option>
+            <option value={6}>{t('epg.hours', { count: 6, defaultValue: '6 Hours' })}</option>
+            <option value={12}>{t('epg.hours', { count: 12, defaultValue: '12 Hours' })}</option>
+            <option value={24}>{t('epg.hours', { count: 24, defaultValue: '24 Hours' })}</option>
+            <option value={72}>{t('epg.hours', { count: 72, defaultValue: '3 Days' }).replace('Hours', 'Days').replace('Stunden', 'Tage')}</option>
+            <option value={168}>{t('epg.hours', { count: 168, defaultValue: '7 Days' }).replace('Hours', 'Days').replace('Stunden', 'Tage')}</option>
           </select>
         </label>
       </div>
