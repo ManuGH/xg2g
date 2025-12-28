@@ -146,7 +146,16 @@ func (s *Server) allowAnonymous() bool {
 func (s *Server) requestScopes(r *http.Request) (scopeSet, bool) {
 	token := extractToken(r)
 	if token != "" {
-		return s.tokenScopes(token)
+		scopes, ok := s.tokenScopes(token)
+		if ok {
+			return scopes, true
+		}
+		// If token is invalid but anonymous is allowed, fall back to anonymous scopes
+		if s.allowAnonymous() {
+			return newScopeSet([]string{string(ScopeV3Read)}), true
+		}
+		// Token present but invalid and anonymous not allowed
+		return nil, false
 	}
 	if s.allowAnonymous() {
 		// Anonymous users get read-only access by default for security

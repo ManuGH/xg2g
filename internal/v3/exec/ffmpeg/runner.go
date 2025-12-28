@@ -115,6 +115,14 @@ func (r *Runner) Start(ctx context.Context, sessionID, serviceRef string, profil
 		StreamURL: streamURL,
 	}
 
+	// Detect Recording: Standard Enigma2 recordings use the "1:0:0:0:0:0:0:0:0:0:" service reference pattern
+	// or contain /media/ (though live streams *could* theoretically too, unlikely in this context).
+	// We check for the specific recording "all zeros" pattern.
+	if strings.Contains(serviceRef, "1:0:0:0:0:0:0:0:0:0:") || strings.Contains(streamURL, "/media/") {
+		logger.Info().Msg("detected recording stream, enabling realtime throttling (-re)")
+		in.RealtimeThrottle = true
+	}
+
 	// DVR window configuration
 	// Calculate playlist size based on DVR window duration from ProfileSpec
 	// Standard profiles: 3 segments (6 seconds, minimal latency)

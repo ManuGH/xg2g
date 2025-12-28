@@ -5,6 +5,7 @@
 package api
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -15,12 +16,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/rs/zerolog/log"
-
+	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/netutil"
+	"github.com/ManuGH/xg2g/internal/v3/lease"
 	"github.com/ManuGH/xg2g/internal/v3/model"
 	"github.com/ManuGH/xg2g/internal/v3/profiles"
+	v3store "github.com/ManuGH/xg2g/internal/v3/store"
+	"github.com/google/uuid"
 )
 
 // Types are now generated in server_gen.go
@@ -77,7 +79,7 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 			}
 		}
 	} else {
-		log.Ctx(r.Context()).Warn().Err(err).Msg("failed to discover recording locations")
+		log.L().Warn().Err(err).Msg("failed to discover recording locations")
 	}
 
 	// Final check: if still empty, assume standard HDD
@@ -142,7 +144,7 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 	// We switch to string-based validation only using our POSIX helper.
 	cleanRel, blocked := sanitizeRecordingRelPath(qPath)
 	if blocked {
-		log.Warn().Str("path", qPath).Msg("path traversal attempt detected")
+		log.L().Warn().Str("path", qPath).Msg("path traversal attempt detected")
 		http.Error(w, "Access denied", http.StatusForbidden)
 		return
 	}
@@ -156,7 +158,7 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 	// client is already initialized above for discovery
 	list, err := client.GetRecordings(r.Context(), cleanTarget)
 	if err != nil {
-		log.Ctx(r.Context()).Error().Err(err).Str("path", cleanTarget).Msg("failed to fetch recordings")
+		log.L().Error().Err(err).Str("path", cleanTarget).Msg("failed to fetch recordings")
 		http.Error(w, "Failed to fetch recordings from receiver", http.StatusBadGateway)
 		return
 	}
@@ -250,7 +252,7 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		log.Error().Err(err).Msg("failed to encode response")
+		log.L().Error().Err(err).Msg("failed to encode response")
 	}
 }
 
@@ -293,7 +295,7 @@ func (s *Server) GetRecordingHLSPlaylist(w http.ResponseWriter, r *http.Request,
 	// Extract just the hostname/ip (ignoring port from OWIBase as we use StreamPort)
 	h, _, err := netutil.NormalizeAuthority(host, "http")
 	if err != nil {
-		log.Ctx(r.Context()).Error().Err(err).Str("owi_base", host).Msg("invalid OWI base")
+		log.L().Error().Err(err).Str("owi_base", host).Msg("invalid OWI base")
 		http.Error(w, "Invalid OWI base configuration", http.StatusInternalServerError)
 		return
 	}
@@ -316,12 +318,80 @@ func (s *Server) GetRecordingHLSPlaylist(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	streamURL := fmt.Sprintf("http://%s:%d/%s", host, streamPort, cleanRef)
+	// Construct URL safely with encoding (handles spaces etc.)
+	u := url.URL{
+		Scheme: "http",
+		Host:   fmt.Sprintf("%s:%d", host, streamPort),
+		Path:   cleanRef,
+	}
+	streamURL := u.String()
+
+	// 2.5 Admission Control (Hardening)
+	// We must acquire a lease to ensure we respect tuner/transcoder slot limits.
+	// If we skip this, the Worker will terminate the session immediately with R_LEASE_BUSY.
+	config := s.GetConfig()
+	if len(config.TunerSlots) == 0 {
+		http.Error(w, "Service Unavailable (No Slots)", http.StatusServiceUnavailable)
+		return
+	}
+
+	admissionLeaseTTL := 30 * time.Second
+	dedupKey := lease.LeaseKeyService(streamURL)
+	var acquiredLeases []v3store.Lease
+
+	releaseLeases := func() {
+		if len(acquiredLeases) == 0 {
+			return
+		}
+		ctxRel, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		for _, l := range acquiredLeases {
+			_ = store.ReleaseLease(ctxRel, l.Key(), l.Owner())
+		}
+	}
+
+	// For recordings, we treat each playback as unique (no dedup sharing for now to keep it simple,
+	// because user might want independent seek positions).
+	sessionID := uuid.New().String()
+	correlationID := uuid.New().String()
+
+	// Dedup Lease (Service Ref)
+	dedupLease, ok, err := store.TryAcquireLease(r.Context(), dedupKey, sessionID, admissionLeaseTTL)
+	if err != nil {
+		log.L().Error().Err(err).Msg("failed to acquire dedup lease")
+		http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if !ok {
+		// If playing the same recording in another tab, we might hit this.
+		// For now, fail fast.
+		w.Header().Set("Retry-After", "1")
+		http.Error(w, "Recording already active", http.StatusConflict)
+		return
+	}
+	acquiredLeases = append(acquiredLeases, dedupLease)
+
+	// Tuner/Transcoder Lease
+	// Since we are same-package, we can call the unexported helper from handlers_v3.go
+	_, tunerLease, ok, err := tryAcquireTunerLease(r.Context(), store, sessionID, config.TunerSlots, admissionLeaseTTL)
+	if err != nil {
+		releaseLeases()
+		log.L().Error().Err(err).Msg("failed to acquire tuner check")
+		http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if !ok {
+		releaseLeases()
+		w.Header().Set("Retry-After", "5")
+		// 409 Conflict implies "try again later"
+		http.Error(w, "All tuners busy", http.StatusConflict)
+		return
+	}
+	acquiredLeases = append(acquiredLeases, tunerLease)
 
 	// 3. Create Session Record
 	// Format: recording-<uuid>
-	sessionID := uuid.New().String()
-	correlationID := uuid.New().String()
+	// sessionID generated above
 
 	// Default to generic High profile for recordings
 	profileSpec := profiles.Resolve(profiles.ProfileHigh, r.UserAgent(), 0)
@@ -340,7 +410,8 @@ func (s *Server) GetRecordingHLSPlaylist(w http.ResponseWriter, r *http.Request,
 
 	// Persist Session (Atomic)
 	if err := store.PutSession(r.Context(), session); err != nil {
-		log.Error().Err(err).Msg("failed to persist recording session")
+		releaseLeases()
+		log.L().Error().Err(err).Msg("failed to persist recording session")
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
@@ -356,7 +427,8 @@ func (s *Server) GetRecordingHLSPlaylist(w http.ResponseWriter, r *http.Request,
 	}
 
 	if err := bus.Publish(r.Context(), string(model.EventStartSession), event); err != nil {
-		log.Error().Err(err).Msg("failed to publish recording start intent")
+		releaseLeases()
+		log.L().Error().Err(err).Msg("failed to publish recording start intent")
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
@@ -420,10 +492,10 @@ func (s *Server) DeleteRecording(w http.ResponseWriter, r *http.Request, recordi
 	// This works for HDD and NAS locations without needing local mounts.
 	client := s.newOpenWebIFClient(cfg, snap)
 
-	log.Info().Str("sref", serviceRef).Msg("requesting recording deletion via OpenWebIF")
+	log.L().Info().Str("sref", serviceRef).Msg("requesting recording deletion via OpenWebIF")
 
 	if err := client.DeleteMovie(r.Context(), serviceRef); err != nil {
-		log.Error().Err(err).Str("sref", serviceRef).Msg("failed to delete recording")
+		log.L().Error().Err(err).Str("sref", serviceRef).Msg("failed to delete recording")
 		// Map generic error to 500. We could try to parse "not found" but OWI usually returns generic "false"
 		http.Error(w, fmt.Sprintf("Failed to delete recording: %v", err), http.StatusInternalServerError)
 		return

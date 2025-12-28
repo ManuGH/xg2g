@@ -14,7 +14,8 @@ import (
 
 // InputSpec defines the source stream parameters.
 type InputSpec struct {
-	StreamURL string
+	StreamURL        string
+	RealtimeThrottle bool // Add -re input flag (read at native rate)
 }
 
 // OutputSpec defines the destination paths.
@@ -68,6 +69,10 @@ func BuildHLSArgs(in InputSpec, out OutputSpec, prof model.ProfileSpec) ([]strin
 			"-reconnect_delay_max", "5", // Max 5s between reconnect attempts
 			"-timeout", "10000000", // 10s timeout (in microseconds)
 		)
+	}
+
+	if in.RealtimeThrottle {
+		args = append(args, "-re")
 	}
 
 	args = append(args,

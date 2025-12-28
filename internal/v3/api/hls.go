@@ -17,6 +17,8 @@ import (
 	"github.com/ManuGH/xg2g/internal/v3/model"
 )
 
+const hlsPlaylistWaitTimeout = 5 * time.Second
+
 // HLSStore defines the subset of Store operations needed for HLS serving.
 type HLSStore interface {
 	GetSession(ctx context.Context, id string) (*model.SessionRecord, error)
@@ -71,8 +73,14 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, s
 
 	// Validate State
 	// User Req: "rec.State == READY (oder READY + DRAINING)"
-	if rec.State != model.SessionReady && rec.State != model.SessionDraining {
-		// User Req: "NEW/STARTING: 404 (Client retry)"
+	// Modified: Allow STARTING/NEW to proceed to file check/polling loop.
+	validState := rec.State == model.SessionReady ||
+		rec.State == model.SessionDraining ||
+		rec.State == model.SessionStarting ||
+		rec.State == model.SessionNew
+
+	if !validState {
+		// User Req: "NEW/STARTING: 404 (Client retry)" -> Now handled by polling loop later
 		// If FAILED/CANCELLED: 404
 		http.Error(w, "session not ready", http.StatusNotFound)
 		return
@@ -100,13 +108,6 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, s
 
 	// 3. Resolve File Path
 	// Layout: <root>/sessions/<sessionID>/<filename>
-	// We use the same layout as ffmpeg.SessionOutputDir (<root>/sessions/<sessionID>).
-	// But api package imports exec/ffmpeg?
-	// User said: "internal/v3/hls/layout.go als shared... Für 8-6 kannst du direkt ffmpeg/layout.go importieren, wenn kein Cycle entsteht".
-	// exec imports model. api imports model.
-	// api -> exec/ffmpeg check:
-	// exec/ffmpeg imports model, log.
-	// No cycle.
 	relPath := filepath.Join("sessions", sessionID, filename)
 	filePath, err := fsutil.ConfineRelPath(hlsRoot, relPath)
 	if err != nil {
@@ -115,15 +116,40 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, s
 		return
 	}
 
+	// Debug Logging
+	logger := log.L().With().Str("sid", sessionID).Str("file", filename).Str("path", filePath).Str("state", string(rec.State)).Logger()
+
 	// 4. Check File Existence
 	info, err := os.Stat(filePath)
 	if os.IsNotExist(err) {
+		// If playlist is missing but session is potentially starting, wait a bit.
+		if isPlaylist && (rec.State == model.SessionNew || rec.State == model.SessionStarting) {
+			logger.Info().Msg("playlist missing during start, polling...")
+			deadline := time.Now().Add(hlsPlaylistWaitTimeout)
+			for time.Now().Before(deadline) {
+				time.Sleep(250 * time.Millisecond)
+				info, err = os.Stat(filePath)
+				if err == nil {
+					logger.Info().Msg("playlist appeared during polling")
+					break
+				}
+				if !os.IsNotExist(err) {
+					// Real error
+					logger.Error().Err(err).Msg("playlist stat error during polling")
+					break
+				}
+			}
+		}
+	}
+
+	if os.IsNotExist(err) {
+		logger.Warn().Err(err).Msg("file not found (final)")
 		// Normal during startup for segments or if playlist not yet promoted
 		http.Error(w, "file not found", http.StatusNotFound)
 		return
 	}
 	if err != nil {
-		log.L().Error().Err(err).Str("path", filePath).Msg("hls file stat failed")
+		logger.Error().Err(err).Msg("hls file stat failed")
 		http.Error(w, "internal check failed", http.StatusInternalServerError)
 		return
 	}
