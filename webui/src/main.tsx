@@ -2,7 +2,7 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
-import { StrictMode } from 'react';
+
 import { createRoot } from 'react-dom/client';
 import './i18n';
 import './index.css';
@@ -11,11 +11,9 @@ import ErrorBoundary from './components/ErrorBoundary.jsx';
 import { AppProvider } from './context/AppContext.tsx';
 
 createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <ErrorBoundary>
-      <AppProvider>
-        <App />
-      </AppProvider>
-    </ErrorBoundary>
-  </StrictMode>,
+  <ErrorBoundary>
+    <AppProvider>
+      <App />
+    </AppProvider>
+  </ErrorBoundary>,
 );
