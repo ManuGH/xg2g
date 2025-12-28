@@ -95,6 +95,12 @@ const (
 	SessionRecordStateSTOPPING  SessionRecordState = "STOPPING"
 )
 
+// Defines values for SessionResponseMode.
+const (
+	LIVE      SessionResponseMode = "LIVE"
+	RECORDING SessionResponseMode = "RECORDING"
+)
+
 // Defines values for SessionResponseReason.
 const (
 	SessionResponseReasonRBADREQUEST         SessionResponseReason = "R_BAD_REQUEST"
@@ -304,11 +310,11 @@ type IntentRequest struct {
 	// ProfileID Transcoding profile ID
 	ProfileID *string `json:"profileID,omitempty"`
 
-	// ServiceRef Enigma2 service reference
-	ServiceRef string `json:"serviceRef"`
+	// ServiceRef Required for stream.start. Enigma2 service reference (live playback only).
+	ServiceRef *string `json:"serviceRef,omitempty"`
 
-	// SessionID Required for stream.stop intent
-	SessionID *openapi_types.UUID `json:"sessionID,omitempty"`
+	// SessionId Required for stream.stop intent
+	SessionId *openapi_types.UUID `json:"sessionId,omitempty"`
 	Type      *IntentRequestType  `json:"type,omitempty"`
 }
 
@@ -376,12 +382,23 @@ type ProblemDetails struct {
 
 // RecordingItem defines model for RecordingItem.
 type RecordingItem struct {
-	Begin       *int64  `json:"begin,omitempty"`
-	Description *string `json:"description,omitempty"`
-	Filename    *string `json:"filename,omitempty"`
-	Length      *string `json:"length,omitempty"`
-	ServiceRef  *string `json:"service_ref,omitempty"`
-	Title       *string `json:"title,omitempty"`
+	// BeginUnixSeconds Recording start time as UNIX seconds.
+	BeginUnixSeconds *int64  `json:"begin_unix_seconds,omitempty"`
+	Description      *string `json:"description,omitempty"`
+
+	// DurationSeconds Recording duration in seconds, if known.
+	DurationSeconds *int64  `json:"duration_seconds,omitempty"`
+	Filename        *string `json:"filename,omitempty"`
+
+	// Length Human-readable duration string for display only.
+	Length *string `json:"length,omitempty"`
+
+	// RecordingId Base64url-encoded recording ID (RFC 4648, unpadded) to use for /recordings/{recordingId}.
+	RecordingId *string `json:"recording_id,omitempty"`
+
+	// ServiceRef Legacy receiver service reference (read-only).
+	ServiceRef *string `json:"service_ref,omitempty"`
+	Title      *string `json:"title,omitempty"`
 }
 
 // RecordingResponse defines model for RecordingResponse.
@@ -566,19 +583,40 @@ type SessionRecordState string
 // SessionResponse defines model for SessionResponse.
 type SessionResponse struct {
 	CorrelationId *string `json:"correlationId,omitempty"`
-	Profile       *string `json:"profile,omitempty"`
+
+	// DurationSeconds DVR window length for live sessions, in seconds.
+	DurationSeconds *float32 `json:"durationSeconds,omitempty"`
+
+	// LiveEdgeSeconds Current live edge position in seconds (live only).
+	LiveEdgeSeconds *float32 `json:"liveEdgeSeconds,omitempty"`
+
+	// Mode Playback mode for the session.
+	Mode *SessionResponseMode `json:"mode,omitempty"`
+
+	// PlaybackUrl Playback URL for the HLS playlist.
+	PlaybackUrl *string `json:"playbackUrl,omitempty"`
+	Profile     *string `json:"profile,omitempty"`
 
 	// Reason Reason code; R_LEASE_BUSY means capacity rejection (no tuner available), not a system fault.
 	Reason       *SessionResponseReason `json:"reason,omitempty"`
 	ReasonDetail *string                `json:"reasonDetail,omitempty"`
-	ServiceRef   *string                `json:"serviceRef,omitempty"`
-	SessionId    openapi_types.UUID     `json:"sessionId"`
+
+	// SeekableEndSeconds Latest seekable position in seconds.
+	SeekableEndSeconds *float32 `json:"seekableEndSeconds,omitempty"`
+
+	// SeekableStartSeconds Earliest seekable position in seconds.
+	SeekableStartSeconds *float32           `json:"seekableStartSeconds,omitempty"`
+	ServiceRef           *string            `json:"serviceRef,omitempty"`
+	SessionId            openapi_types.UUID `json:"sessionId"`
 
 	// State Session lifecycle state. READY guarantees a playable HLS stream (playlist + at least one segment,
 	// atomically published). PRIMING means FFmpeg is running but content is not yet playable.
 	State       SessionResponseState `json:"state"`
-	UpdatedAtMs *int64               `json:"updatedAtMs,omitempty"`
+	UpdatedAtMs *int                 `json:"updatedAtMs,omitempty"`
 }
+
+// SessionResponseMode Playback mode for the session.
+type SessionResponseMode string
 
 // SessionResponseReason Reason code; R_LEASE_BUSY means capacity rejection (no tuner available), not a system fault.
 type SessionResponseReason string
@@ -814,9 +852,6 @@ type ServerInterface interface {
 	// Get HLS playlist for a recording
 	// (GET /recordings/{recordingId}/playlist.m3u8)
 	GetRecordingHLSPlaylist(w http.ResponseWriter, r *http.Request, recordingId string)
-	// Stream recording (deprecated)
-	// (GET /recordings/{recordingId}/stream)
-	GetRecordingStream(w http.ResponseWriter, r *http.Request, recordingId string)
 	// Get HLS segment for a recording
 	// (GET /recordings/{recordingId}/{segment})
 	GetRecordingHLSCustomSegment(w http.ResponseWriter, r *http.Request, recordingId string, segment string)
@@ -952,12 +987,6 @@ func (_ Unimplemented) DeleteRecording(w http.ResponseWriter, r *http.Request, r
 // Get HLS playlist for a recording
 // (GET /recordings/{recordingId}/playlist.m3u8)
 func (_ Unimplemented) GetRecordingHLSPlaylist(w http.ResponseWriter, r *http.Request, recordingId string) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Stream recording (deprecated)
-// (GET /recordings/{recordingId}/stream)
-func (_ Unimplemented) GetRecordingStream(w http.ResponseWriter, r *http.Request, recordingId string) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1131,7 +1160,7 @@ func (siw *ServerInterfaceWrapper) CreateSession(w http.ResponseWriter, r *http.
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
 
 	r = r.WithContext(ctx)
 
@@ -1151,7 +1180,7 @@ func (siw *ServerInterfaceWrapper) GetDvrCapabilities(w http.ResponseWriter, r *
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
 
 	r = r.WithContext(ctx)
 
@@ -1171,7 +1200,7 @@ func (siw *ServerInterfaceWrapper) GetDvrStatus(w http.ResponseWriter, r *http.R
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
 
 	r = r.WithContext(ctx)
 
@@ -1193,7 +1222,7 @@ func (siw *ServerInterfaceWrapper) GetEpg(w http.ResponseWriter, r *http.Request
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
 
 	r = r.WithContext(ctx)
 
@@ -1268,7 +1297,7 @@ func (siw *ServerInterfaceWrapper) GetLogs(w http.ResponseWriter, r *http.Reques
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:admin"})
 
 	r = r.WithContext(ctx)
 
@@ -1290,7 +1319,7 @@ func (siw *ServerInterfaceWrapper) GetRecordings(w http.ResponseWriter, r *http.
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
 
 	r = r.WithContext(ctx)
 
@@ -1340,7 +1369,7 @@ func (siw *ServerInterfaceWrapper) DeleteRecording(w http.ResponseWriter, r *htt
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:write"})
 
 	r = r.WithContext(ctx)
 
@@ -1371,43 +1400,12 @@ func (siw *ServerInterfaceWrapper) GetRecordingHLSPlaylist(w http.ResponseWriter
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
 
 	r = r.WithContext(ctx)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetRecordingHLSPlaylist(w, r, recordingId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// GetRecordingStream operation middleware
-func (siw *ServerInterfaceWrapper) GetRecordingStream(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-
-	// ------------- Path parameter "recordingId" -------------
-	var recordingId string
-
-	err = runtime.BindStyledParameterWithOptions("simple", "recordingId", chi.URLParam(r, "recordingId"), &recordingId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "recordingId", Err: err})
-		return
-	}
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
-
-	r = r.WithContext(ctx)
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetRecordingStream(w, r, recordingId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1442,7 +1440,7 @@ func (siw *ServerInterfaceWrapper) GetRecordingHLSCustomSegment(w http.ResponseW
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
 
 	r = r.WithContext(ctx)
 
@@ -1462,7 +1460,7 @@ func (siw *ServerInterfaceWrapper) GetSeriesRules(w http.ResponseWriter, r *http
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
 
 	r = r.WithContext(ctx)
 
@@ -1482,7 +1480,7 @@ func (siw *ServerInterfaceWrapper) CreateSeriesRule(w http.ResponseWriter, r *ht
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:write"})
 
 	r = r.WithContext(ctx)
 
@@ -1504,7 +1502,7 @@ func (siw *ServerInterfaceWrapper) RunAllSeriesRules(w http.ResponseWriter, r *h
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:write"})
 
 	r = r.WithContext(ctx)
 
@@ -1546,7 +1544,7 @@ func (siw *ServerInterfaceWrapper) DeleteSeriesRule(w http.ResponseWriter, r *ht
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:write"})
 
 	r = r.WithContext(ctx)
 
@@ -1577,7 +1575,7 @@ func (siw *ServerInterfaceWrapper) UpdateSeriesRule(w http.ResponseWriter, r *ht
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:write"})
 
 	r = r.WithContext(ctx)
 
@@ -1608,7 +1606,7 @@ func (siw *ServerInterfaceWrapper) RunSeriesRule(w http.ResponseWriter, r *http.
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:write"})
 
 	r = r.WithContext(ctx)
 
@@ -1641,7 +1639,7 @@ func (siw *ServerInterfaceWrapper) GetServices(w http.ResponseWriter, r *http.Re
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
 
 	r = r.WithContext(ctx)
 
@@ -1672,7 +1670,7 @@ func (siw *ServerInterfaceWrapper) GetServicesBouquets(w http.ResponseWriter, r 
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
 
 	r = r.WithContext(ctx)
 
@@ -1692,7 +1690,7 @@ func (siw *ServerInterfaceWrapper) PostServicesNowNext(w http.ResponseWriter, r 
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
 
 	r = r.WithContext(ctx)
 
@@ -1723,7 +1721,7 @@ func (siw *ServerInterfaceWrapper) PostServicesIdToggle(w http.ResponseWriter, r
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:write"})
 
 	r = r.WithContext(ctx)
 
@@ -1855,7 +1853,7 @@ func (siw *ServerInterfaceWrapper) GetStreams(w http.ResponseWriter, r *http.Req
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
 
 	r = r.WithContext(ctx)
 
@@ -1886,7 +1884,7 @@ func (siw *ServerInterfaceWrapper) DeleteStreamsId(w http.ResponseWriter, r *htt
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:write"})
 
 	r = r.WithContext(ctx)
 
@@ -1906,7 +1904,7 @@ func (siw *ServerInterfaceWrapper) GetSystemConfig(w http.ResponseWriter, r *htt
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:admin"})
 
 	r = r.WithContext(ctx)
 
@@ -1926,7 +1924,7 @@ func (siw *ServerInterfaceWrapper) PutSystemConfig(w http.ResponseWriter, r *htt
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:admin"})
 
 	r = r.WithContext(ctx)
 
@@ -1946,7 +1944,7 @@ func (siw *ServerInterfaceWrapper) GetSystemHealth(w http.ResponseWriter, r *htt
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
 
 	r = r.WithContext(ctx)
 
@@ -1966,7 +1964,7 @@ func (siw *ServerInterfaceWrapper) PostSystemRefresh(w http.ResponseWriter, r *h
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:write"})
 
 	r = r.WithContext(ctx)
 
@@ -1988,7 +1986,7 @@ func (siw *ServerInterfaceWrapper) GetTimers(w http.ResponseWriter, r *http.Requ
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
 
 	r = r.WithContext(ctx)
 
@@ -2027,7 +2025,7 @@ func (siw *ServerInterfaceWrapper) AddTimer(w http.ResponseWriter, r *http.Reque
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:write"})
 
 	r = r.WithContext(ctx)
 
@@ -2047,7 +2045,7 @@ func (siw *ServerInterfaceWrapper) PreviewConflicts(w http.ResponseWriter, r *ht
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
 
 	r = r.WithContext(ctx)
 
@@ -2078,7 +2076,7 @@ func (siw *ServerInterfaceWrapper) DeleteTimer(w http.ResponseWriter, r *http.Re
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:write"})
 
 	r = r.WithContext(ctx)
 
@@ -2109,7 +2107,7 @@ func (siw *ServerInterfaceWrapper) GetTimer(w http.ResponseWriter, r *http.Reque
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
 
 	r = r.WithContext(ctx)
 
@@ -2140,7 +2138,7 @@ func (siw *ServerInterfaceWrapper) UpdateTimer(w http.ResponseWriter, r *http.Re
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:write"})
 
 	r = r.WithContext(ctx)
 
@@ -2296,9 +2294,6 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/recordings/{recordingId}/playlist.m3u8", wrapper.GetRecordingHLSPlaylist)
 	})
 	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/recordings/{recordingId}/stream", wrapper.GetRecordingStream)
-	})
-	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/recordings/{recordingId}/{segment}", wrapper.GetRecordingHLSCustomSegment)
 	})
 	r.Group(func(r chi.Router) {
@@ -2383,102 +2378,109 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
-	"BAAA///IGyCEHnwAAA==",
+	"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",
+	"/J8AAAD//1NqemsBhgAA",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

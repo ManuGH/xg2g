@@ -65,7 +65,7 @@ func NewRunner(binPath, hlsRoot string, client *enigma2.Client) *Runner {
 }
 
 // Start launches the process.
-func (r *Runner) Start(ctx context.Context, sessionID, serviceRef string, profileSpec model.ProfileSpec, startMs int64) error {
+func (r *Runner) Start(ctx context.Context, sessionID, source string, profileSpec model.ProfileSpec, startMs int64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -112,13 +112,16 @@ func (r *Runner) Start(ctx context.Context, sessionID, serviceRef string, profil
 	}
 
 	var streamURL string
-	if len(serviceRef) > 0 && serviceRef[0] == '/' {
+	switch {
+	case strings.HasPrefix(source, "http://") || strings.HasPrefix(source, "https://"):
+		streamURL = source
+	case len(source) > 0 && source[0] == '/':
 		// Use local path directly
-		streamURL = serviceRef
-	} else {
+		streamURL = source
+	default:
 		// Resolve via Enigma2
 		var err error
-		streamURL, err = r.Client.ResolveStreamURL(ctx, serviceRef)
+		streamURL, err = r.Client.ResolveStreamURL(ctx, source)
 		if err != nil {
 			startTotal.WithLabelValues("err_url").Inc()
 			return fmt.Errorf("failed to resolve stream url: %w", err)
@@ -130,13 +133,8 @@ func (r *Runner) Start(ctx context.Context, sessionID, serviceRef string, profil
 		StartOffset: startOffset,
 	}
 
-	// Detect Recording: Standard Enigma2 recordings use the "1:0:0:0:0:0:0:0:0:0:" service reference pattern
-	// or contain /media/ (though live streams *could* theoretically too, unlikely in this context).
-	// We check for the specific recording "all zeros" pattern.
-	if strings.Contains(serviceRef, "1:0:0:0:0:0:0:0:0:0:") || strings.Contains(streamURL, "/media/") {
-		logger.Info().Msg("detected recording stream, enabling realtime throttling (-re) and VOD mode")
-		in.RealtimeThrottle = true
-		profileSpec.DVRWindowSec = 0 // Force VOD mode (use 0 window)
+	if profileSpec.VOD {
+		logger.Info().Msg("VOD mode active: forcing full playlist")
 	}
 
 	// DVR window configuration
@@ -156,6 +154,12 @@ func (r *Runner) Start(ctx context.Context, sessionID, serviceRef string, profil
 			Msg("using configured DVR window")
 	}
 
+	// FORCE VOD MODE: Keep all segments.
+	if profileSpec.VOD {
+		playlistSize = 0
+		logger.Info().Msg("VOD mode active: forced playlist_size=0 (keep all segments)")
+	}
+
 	out := OutputSpec{
 		HLSPlaylist:        tmpPlaylist,
 		SegmentFilename:    SegmentPattern(sessionDir, ext),
@@ -170,6 +174,7 @@ func (r *Runner) Start(ctx context.Context, sessionID, serviceRef string, profil
 	// 3. Pipeline Setup (Curl -> FFmpeg)
 	// We use curl because FFmpeg's HTTP client is too strict for some Enigma2 receivers (malformed headers).
 	var curlCmd *exec.Cmd
+	var curlStderr *bufio.Scanner
 	if strings.HasPrefix(streamURL, "http") {
 		// Verify if we should use pipe (default: yes for robustness)
 		usePipe := true
@@ -180,14 +185,19 @@ func (r *Runner) Start(ctx context.Context, sessionID, serviceRef string, profil
 			// curl default buffer is fine usually, but -N is safer for latency?
 			// Using same args as verified manually: -s -H "Icy-MetaData: 1" --user-agent ...
 			curlArgs := []string{
-				"-v",                     // Verbose for debugging
+				"-sS",
 				"--connect-timeout", "5", // Fail fast on connection issues
 				"-H", "Icy-MetaData: 1",
 				"--user-agent", "curl/8.14.1",
 				streamURL,
 			}
 			curlCmd = exec.CommandContext(ctx, "curl", curlArgs...)
-			curlCmd.Stderr = os.Stderr // Capture curl errors in logs
+			if stderrPipe, err := curlCmd.StderrPipe(); err == nil {
+				curlStderr = bufio.NewScanner(stderrPipe)
+			} else {
+				startTotal.WithLabelValues("err_curl").Inc()
+				return fmt.Errorf("failed to capture curl stderr: %w", err)
+			}
 
 			// Override input for FFmpeg
 			in.StreamURL = "pipe:0"
@@ -233,6 +243,18 @@ func (r *Runner) Start(ctx context.Context, sessionID, serviceRef string, profil
 			_, _ = r.ring.Write([]byte("\n"))
 		}
 	}()
+	if curlStderr != nil {
+		go func() {
+			for curlStderr.Scan() {
+				line := curlStderr.Text()
+				if line == "" {
+					continue
+				}
+				_, _ = r.ring.Write([]byte("curl: " + line))
+				_, _ = r.ring.Write([]byte("\n"))
+			}
+		}()
+	}
 
 	// Start Playlist Atomicity Loop (Background)
 	if profile != "sleep_test" {

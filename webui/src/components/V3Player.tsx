@@ -36,8 +36,9 @@ interface ApiErrorResponse {
 function V3Player(props: V3PlayerProps) {
   const { t } = useTranslation();
   const { token, autoStart, onClose, duration } = props;
-  const channel = props.channel;
-  const src = props.src;
+  const channel = 'channel' in props ? props.channel : undefined;
+  const src = 'src' in props ? props.src : undefined;
+  const recordingId = 'recordingId' in props ? props.recordingId : undefined;
 
   const [sRef, setSRef] = useState<string>(
     channel?.service_ref || channel?.id || '1:0:19:283D:3FB:1:C00000:0:0:0:'
@@ -59,9 +60,17 @@ function V3Player(props: V3PlayerProps) {
   // UX Features State
   const [showStats, setShowStats] = useState(false);
   const [currentPlaybackTime, setCurrentPlaybackTime] = useState(0); // Local tracking for UI updates
+  const [seekableStart, setSeekableStart] = useState(0);
+  const [seekableEnd, setSeekableEnd] = useState(0);
+  const [durationSeconds, setDurationSeconds] = useState<number | null>(
+    duration && duration > 0 ? duration : null
+  );
+  const [playbackMode, setPlaybackMode] = useState<'LIVE' | 'VOD' | 'UNKNOWN'>('UNKNOWN');
   const [isPip, setIsPip] = useState(false);
   const [, setIsFullscreen] = useState(false);
-  const [seekOffset, setSeekOffset] = useState(0); // For VOD seeking offset in ms
+  const [isPlaying, setIsPlaying] = useState(false); // Track play/pause state
+  const [volume, setVolume] = useState(1); // 0.0 to 1.0
+  const [isMuted, setIsMuted] = useState(false);
   const [stats, setStats] = useState<PlayerStats>({
     bandwidth: 0,
     resolution: '-',
@@ -80,6 +89,52 @@ function V3Player(props: V3PlayerProps) {
   const apiBase = useMemo(() => {
     return (client.getConfig().baseUrl || '/api/v3').replace(/\/$/, '');
   }, []);
+
+  const formatClock = useCallback((value: number): string => {
+    if (!Number.isFinite(value) || value < 0) return '--:--';
+    const totalSeconds = Math.floor(value);
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const s = totalSeconds % 60;
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+  }, []);
+
+  const refreshSeekableState = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    let start = 0;
+    let end = 0;
+    if (playbackMode === 'VOD' && durationSeconds && durationSeconds > 0) {
+      end = durationSeconds;
+    } else if (video.seekable && video.seekable.length > 0) {
+      start = video.seekable.start(0);
+      end = video.seekable.end(video.seekable.length - 1);
+    } else if (Number.isFinite(video.duration) && video.duration > 0) {
+      end = video.duration;
+    } else if (durationSeconds && durationSeconds > 0) {
+      end = durationSeconds;
+    }
+    setSeekableStart(start);
+    setSeekableEnd(end);
+    setCurrentPlaybackTime(video.currentTime);
+  }, [durationSeconds, playbackMode]);
+
+  const seekTo = useCallback((targetSeconds: number) => {
+    const video = videoRef.current;
+    if (!video || !Number.isFinite(targetSeconds)) return;
+    let clamped = Math.max(0, targetSeconds);
+    if (seekableEnd > seekableStart) {
+      clamped = Math.min(Math.max(targetSeconds, seekableStart), seekableEnd);
+    }
+    video.currentTime = clamped;
+  }, [seekableEnd, seekableStart]);
+
+  const seekBy = useCallback((deltaSeconds: number) => {
+    const video = videoRef.current;
+    if (!video) return;
+    seekTo(video.currentTime + deltaSeconds);
+  }, [seekTo]);
 
   // --- UI Helpers (Memoized) ---
   const togglePlayPause = useCallback(() => {
@@ -117,6 +172,29 @@ function V3Player(props: V3PlayerProps) {
       console.warn("PiP failed", err);
     }
   }, []);
+
+  const toggleMute = useCallback(() => {
+    if (!videoRef.current) return;
+    if (isMuted) {
+      videoRef.current.muted = false;
+      setIsMuted(false);
+    } else {
+      videoRef.current.muted = true;
+      setIsMuted(true);
+    }
+  }, [isMuted]);
+
+  const handleVolumeChange = useCallback((newVolume: number) => {
+    if (!videoRef.current) return;
+    videoRef.current.volume = newVolume;
+    setVolume(newVolume);
+    if (newVolume === 0) {
+      setIsMuted(true);
+    } else if (isMuted) {
+      setIsMuted(false);
+      videoRef.current.muted = false;
+    }
+  }, [isMuted]);
 
   // --- Core Helpers & Wrappers (Memoized) ---
 
@@ -166,17 +244,16 @@ function V3Player(props: V3PlayerProps) {
     }
   }, [apiBase, authHeaders]);
 
-  const assertPlaylistReady = useCallback(async (sid: string): Promise<void> => {
-    const playlistUrl = `${apiBase}/sessions/${sid}/hls/index.m3u8`;
-    const playlistRes = await fetch(playlistUrl, {
-      headers: authHeaders()
-    });
-    if (!playlistRes.ok) {
-      throw new Error(t('player.readyButNotPlayable'));
+  const applySessionInfo = useCallback((session: V3SessionStatusResponse) => {
+    if (session.mode) {
+      setPlaybackMode(session.mode === 'LIVE' ? 'LIVE' : 'VOD');
     }
-  }, [apiBase, authHeaders, t]);
+    if (typeof session.durationSeconds === 'number' && session.durationSeconds > 0) {
+      setDurationSeconds(session.durationSeconds);
+    }
+  }, []);
 
-  const waitForSessionReady = useCallback(async (sid: string, maxAttempts = 60): Promise<void> => {
+  const waitForSessionReady = useCallback(async (sid: string, maxAttempts = 60): Promise<V3SessionStatusResponse> => {
     for (let i = 0; i < maxAttempts; i++) {
       try {
         const res = await fetch(`${apiBase}/sessions/${sid}`, {
@@ -195,18 +272,18 @@ function V3Player(props: V3PlayerProps) {
         if (!res.ok) throw new Error(t('player.failedToFetchSession'));
 
         const session: V3SessionStatusResponse = await res.json();
+        applySessionInfo(session);
         const sState = session.state;
 
-        if (sState === 'FAILED' || sState === 'STOPPED' || sState === 'CANCELLED' || sState === 'DRAINING' || sState === 'STOPPING') {
+        if (sState === 'FAILED' || sState === 'STOPPED' || sState === 'CANCELLED' || sState === 'STOPPING') {
           const reason = session.reason || sState;
           const detail = session.reasonDetail ? `: ${session.reasonDetail}` : '';
           throw new Error(`${t('player.sessionFailed')}: ${reason}${detail}`);
         }
 
-        if (sState === 'READY') {
+        if (sState === 'READY' || sState === 'DRAINING') {
           setStatus('ready');
-          await assertPlaylistReady(sid);
-          return;
+          return session;
         }
 
         if (sState === 'PRIMING') {
@@ -224,7 +301,7 @@ function V3Player(props: V3PlayerProps) {
       }
     }
     throw new Error(t('player.sessionNotReadyInTime'));
-  }, [apiBase, authHeaders, t, assertPlaylistReady]);
+  }, [apiBase, authHeaders, t, applySessionInfo]);
 
   const updateStats = useCallback((hls: Hls) => {
     if (!hls) return;
@@ -307,13 +384,39 @@ function V3Player(props: V3PlayerProps) {
     }
   }, [token, t, updateStats]);
 
-  const startStream = useCallback(async (refToUse?: string, startMs: number = 0): Promise<void> => {
+  const startRecordingPlayback = useCallback(async (id: string): Promise<void> => {
+    setStatus('buffering');
+    setError(null);
+    setErrorDetails(null);
+    setShowErrorDetails(false);
+    setPlaybackMode('VOD');
+
+    try {
+      await ensureSessionCookie();
+      const streamUrl = `${apiBase}/recordings/${id}/playlist.m3u8`;
+      playHls(streamUrl);
+    } catch (err) {
+      console.error(err);
+      setError((err as Error).message);
+      setErrorDetails((err as Error).stack || null);
+      setStatus('error');
+    }
+  }, [apiBase, ensureSessionCookie, playHls]);
+
+  const startStream = useCallback(async (refToUse?: string): Promise<void> => {
     sessionIdRef.current = null;
     stopSentRef.current = null;
+    setDurationSeconds(duration && duration > 0 ? duration : null);
 
     if (src) {
+      setPlaybackMode(duration && duration > 0 ? 'VOD' : 'LIVE');
       setStatus('buffering');
       playHls(src);
+      return;
+    }
+
+    if (recordingId) {
+      await startRecordingPlayback(recordingId);
       return;
     }
 
@@ -323,7 +426,7 @@ function V3Player(props: V3PlayerProps) {
     setError(null);
     setErrorDetails(null);
     setShowErrorDetails(false);
-    setSeekOffset(startMs); // Update offset
+    setPlaybackMode('LIVE');
 
     try {
       await ensureSessionCookie();
@@ -333,9 +436,8 @@ function V3Player(props: V3PlayerProps) {
         headers: authHeaders(true),
         body: JSON.stringify({
           type: 'stream.start',
-          profile: 'auto',
-          serviceRef: ref,
-          startMs: startMs > 0 ? startMs : undefined
+          profileID: 'auto',
+          serviceRef: ref
         })
       });
 
@@ -373,10 +475,10 @@ function V3Player(props: V3PlayerProps) {
       newSessionId = data.sessionId;
       sessionIdRef.current = newSessionId;
       setSessionId(newSessionId);
-      await waitForSessionReady(newSessionId);
+      const session = await waitForSessionReady(newSessionId);
 
       setStatus('ready');
-      const streamUrl = `${apiBase}/sessions/${newSessionId}/hls/index.m3u8`;
+      const streamUrl = session.playbackUrl || `${apiBase}/sessions/${newSessionId}/hls/index.m3u8`;
       playHls(streamUrl);
 
     } catch (err) {
@@ -388,7 +490,7 @@ function V3Player(props: V3PlayerProps) {
       setErrorDetails((err as Error).stack || null);
       setStatus('error');
     }
-  }, [src, sRef, apiBase, authHeaders, ensureSessionCookie, waitForSessionReady, playHls, sendStopIntent, t]);
+  }, [src, recordingId, sRef, apiBase, authHeaders, ensureSessionCookie, waitForSessionReady, playHls, sendStopIntent, t, duration, startRecordingPlayback]);
 
   const stopStream = useCallback(async (): Promise<void> => {
     if (hlsRef.current) hlsRef.current.destroy();
@@ -402,6 +504,10 @@ function V3Player(props: V3PlayerProps) {
     sessionIdRef.current = null;
     stopSentRef.current = null;
     setSessionId(null);
+    setPlaybackMode('UNKNOWN');
+    setSeekableStart(0);
+    setSeekableEnd(0);
+    setCurrentPlaybackTime(0);
     setStatus('stopped');
     if (onClose) onClose();
   }, [sessionId, sendStopIntent, onClose]);
@@ -439,12 +545,18 @@ function V3Player(props: V3PlayerProps) {
         case 'p':
           togglePiP();
           break;
+        case 'arrowleft':
+          seekBy(-15);
+          break;
+        case 'arrowright':
+          seekBy(15);
+          break;
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [toggleFullscreen, togglePlayPause, togglePiP]);
+  }, [toggleFullscreen, togglePlayPause, togglePiP, seekBy]);
 
   // Video Event Listeners
   useEffect(() => {
@@ -493,6 +605,29 @@ function V3Player(props: V3PlayerProps) {
     };
   }, [t]);
 
+  useEffect(() => {
+    const videoEl = videoRef.current;
+    if (!videoEl) return;
+
+    const handleTimeUpdate = () => refreshSeekableState();
+
+    videoEl.addEventListener('timeupdate', handleTimeUpdate);
+    videoEl.addEventListener('loadedmetadata', handleTimeUpdate);
+    videoEl.addEventListener('durationchange', handleTimeUpdate);
+    videoEl.addEventListener('progress', handleTimeUpdate);
+    videoEl.addEventListener('seeking', handleTimeUpdate);
+
+    refreshSeekableState();
+
+    return () => {
+      videoEl.removeEventListener('timeupdate', handleTimeUpdate);
+      videoEl.removeEventListener('loadedmetadata', handleTimeUpdate);
+      videoEl.removeEventListener('durationchange', handleTimeUpdate);
+      videoEl.removeEventListener('progress', handleTimeUpdate);
+      videoEl.removeEventListener('seeking', handleTimeUpdate);
+    };
+  }, [refreshSeekableState]);
+
   // Stats Polling
   useEffect(() => {
     if (!showStats) return;
@@ -527,7 +662,7 @@ function V3Player(props: V3PlayerProps) {
       buffHealth = Math.max(0, buffHealth);
 
       let lat: number | null = null;
-      const isLive = !!sessionIdRef.current || (hlsRef.current && hlsRef.current.liveSyncPosition);
+      const isLive = playbackMode === 'LIVE';
 
       if (isLive && hlsRef.current) {
         if (hlsRef.current.latency !== undefined && hlsRef.current.latency !== null) {
@@ -545,13 +680,37 @@ function V3Player(props: V3PlayerProps) {
         latency: lat !== null ? parseFloat(lat.toFixed(2)) : null
       }));
 
-      // Update generic playback time for scrubber
-      if (!videoRef.current.paused) {
-        setCurrentPlaybackTime(videoRef.current.currentTime);
-      }
     }, 1000);
     return () => clearInterval(interval);
-  }, [showStats]);
+  }, [showStats, playbackMode]);
+
+  // Track play/pause state for VOD controls
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const handlePlay = () => setIsPlaying(true);
+    const handlePause = () => setIsPlaying(false);
+
+    video.addEventListener('play', handlePlay);
+    video.addEventListener('pause', handlePause);
+
+    // Initialize state
+    setIsPlaying(!video.paused);
+
+    return () => {
+      video.removeEventListener('play', handlePlay);
+      video.removeEventListener('pause', handlePause);
+    };
+  }, []);
+
+  // Initialize volume from video element
+  useEffect(() => {
+    if (videoRef.current) {
+      setVolume(videoRef.current.volume);
+      setIsMuted(videoRef.current.muted);
+    }
+  }, []);
 
   // Fullscreen/PiP Listeners
   useEffect(() => {
@@ -581,13 +740,13 @@ function V3Player(props: V3PlayerProps) {
     }
   }, [channel]);
 
-  // Direct Mode / AutoStart Effect
   useEffect(() => {
-    if (src && autoStart && !mounted.current) {
+    if (!autoStart || mounted.current) return;
+    if (src || recordingId || sRef) {
       mounted.current = true;
-      startStream();
+      startStream(sRef);
     }
-  }, [src, autoStart, startStream]);
+  }, [autoStart, src, recordingId, sRef, startStream]);
 
   // Session ID Ref sync
   useEffect(() => {
@@ -603,13 +762,11 @@ function V3Player(props: V3PlayerProps) {
     sessionCookieRef.current.pending = null;
   }, [token]);
 
-  // Handle sRef auto-start (Live Mode)
   useEffect(() => {
-    if (autoStart && sRef && !mounted.current && !src) {
-      mounted.current = true;
-      startStream(sRef);
+    if (duration && duration > 0) {
+      setDurationSeconds(duration);
     }
-  }, [autoStart, sRef, src, startStream]);
+  }, [duration]);
 
   // Cleanup effect
   useEffect(() => {
@@ -648,6 +805,12 @@ function V3Player(props: V3PlayerProps) {
   const spinnerLabel = (status === 'starting' || status === 'priming' || status === 'buffering')
     ? `${t(`player.statusStates.${status}`, { defaultValue: status })}…`
     : '';
+
+  const windowDuration = Math.max(0, seekableEnd - seekableStart);
+  const relativePosition = Math.min(windowDuration, Math.max(0, currentPlaybackTime - seekableStart));
+  const hasSeekWindow = windowDuration > 0;
+  const isLiveMode = playbackMode === 'LIVE';
+  const isAtLiveEdge = isLiveMode && windowDuration > 0 && Math.abs(seekableEnd - currentPlaybackTime) < 2;
 
   return (
     <div className="v3-player-container" style={containerStyle}>
@@ -723,32 +886,69 @@ function V3Player(props: V3PlayerProps) {
 
       {/* Controls & Status Bar */}
       <div className="v3-player-controls-header">
-        {/* VOD Scrubber (If duration is present) */}
-        {duration && duration > 0 ? (
-          <div className="vod-controls" style={{ flex: 1, display: 'flex', alignItems: 'center', marginRight: '10px' }}>
-            <span style={{ fontSize: '12px', color: '#fff', marginRight: '8px', minWidth: '45px' }}>
-              {new Date((seekOffset + (currentPlaybackTime * 1000))).toISOString().substr(11, 8)}
-            </span>
-            <input
-              type="range"
-              min="0"
-              max={duration}
-              step="1"
-              value={Math.min(duration, (seekOffset / 1000) + currentPlaybackTime)}
-              onChange={(e) => {
-                const newVal = parseInt(e.target.value, 10);
-                // Calculate new startMs: (NewSeconds * 1000)
-                // We restart the stream at this absolute offset
-                startStream(undefined, newVal * 1000);
-              }}
-              style={{ flex: 1, cursor: 'pointer' }}
-            />
-            <span style={{ fontSize: '12px', color: '#aaa', marginLeft: '8px', minWidth: '45px' }}>
-              {new Date(duration * 1000).toISOString().substr(11, 8)}
-            </span>
+        {hasSeekWindow ? (
+          <div className="vod-controls seek-controls">
+            <div className="seek-buttons">
+              <button className="btn-icon" onClick={() => seekBy(-900)} title={t('player.seekBack15m', 'Back 15m')}>
+                ↺ 15m
+              </button>
+              <button className="btn-icon" onClick={() => seekBy(-60)} title={t('player.seekBack60s', 'Back 60s')}>
+                ↺ 60s
+              </button>
+              <button className="btn-icon" onClick={() => seekBy(-15)} title={t('player.seekBack15s', 'Back 15s')}>
+                ↺ 15s
+              </button>
+            </div>
+
+            <button
+              className="vod-play-btn"
+              onClick={togglePlayPause}
+              title={isPlaying ? t('player.pause', 'Pause') : t('player.play', 'Play')}
+            >
+              {isPlaying ? '⏸' : '▶'}
+            </button>
+
+            <div className="seek-slider-group">
+              <span className="vod-time">{formatClock(relativePosition)}</span>
+              <input
+                type="range"
+                min="0"
+                max={windowDuration}
+                step="0.1"
+                className="vod-slider"
+                value={relativePosition}
+                onChange={(e) => {
+                  const newVal = parseFloat(e.target.value);
+                  seekTo(seekableStart + newVal);
+                }}
+              />
+              <span className="vod-time-total">{formatClock(windowDuration)}</span>
+            </div>
+
+            <div className="seek-buttons">
+              <button className="btn-icon" onClick={() => seekBy(15)} title={t('player.seekForward15s', 'Forward 15s')}>
+                +15s
+              </button>
+              <button className="btn-icon" onClick={() => seekBy(60)} title={t('player.seekForward60s', 'Forward 60s')}>
+                +60s
+              </button>
+              <button className="btn-icon" onClick={() => seekBy(900)} title={t('player.seekForward15m', 'Forward 15m')}>
+                +15m
+              </button>
+            </div>
+
+            {isLiveMode && (
+              <button
+                className={`live-btn ${isAtLiveEdge ? 'active' : ''}`}
+                onClick={() => seekTo(seekableEnd)}
+                title={t('player.goLive', 'Go live')}
+              >
+                LIVE
+              </button>
+            )}
           </div>
         ) : (
-          !channel && (
+          !channel && !recordingId && !src && (
             <input
               type="text"
               className="bg-input"
@@ -760,7 +960,7 @@ function V3Player(props: V3PlayerProps) {
           )
         )}
 
-        {!autoStart && !duration && (
+        {!autoStart && !src && !recordingId && (
           <button
             className="btn-primary"
             onClick={() => startStream()}
@@ -769,6 +969,26 @@ function V3Player(props: V3PlayerProps) {
             ▶ {t('common.startStream')}
           </button>
         )}
+
+        {/* Volume Control */}
+        <div className="volume-control">
+          <button
+            className="volume-btn"
+            onClick={toggleMute}
+            title={isMuted ? t('player.unmute', 'Unmute') : t('player.mute', 'Mute')}
+          >
+            {isMuted ? '🔇' : volume > 0.5 ? '🔊' : volume > 0 ? '🔉' : '🔈'}
+          </button>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            className="volume-slider"
+            value={isMuted ? 0 : volume}
+            onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
+          />
+        </div>
 
         <button
           className={`btn-icon ${isPip ? 'active' : ''}`}
@@ -791,72 +1011,7 @@ function V3Player(props: V3PlayerProps) {
             ⏹ {t('common.stop')}
           </button>
         )}
-
-        {/* Hide Jump button in VOD mode (replaced by scrubber) */}
-        {!duration && (
-          <span style={{ fontSize: '12px', color: '#aaa', marginLeft: 'auto', marginRight: '10px' }}>
-            {t('player.hotkeysHint')}
-          </span>
-        )}
-
-        {/* Legacy Jump Control (Only for non-VOD / manual ref input) */}
-        {!duration && (
-          <button
-            className="btn-secondary"
-            onClick={() => {
-              const message = t('player.jumpToPrompt', 'Jump to MM:SS or integer minutes:') || 'Jump to MM:SS or integer minutes:';
-              const input = prompt(message);
-              if (!input) return;
-              let ms = 0;
-              if (input.includes(':')) {
-                const parts = input.split(':');
-                const m = parseInt(parts[0] || '0', 10) || 0;
-                const s = parseInt(parts[1] || '0', 10) || 0;
-                ms = (m * 60 + s) * 1000;
-              } else {
-                ms = parseInt(input, 10) * 60 * 1000;
-              }
-              if (!isNaN(ms) && ms >= 0) {
-                startStream(undefined, ms);
-              }
-            }}
-          >
-            ⏩ {t('player.jumpLabel', 'Jump')}
-          </button>
-        )}
       </div>
-
-      {/* Time Overlay - Hide in VOD mode as scrubber has explicit time */}
-      {!duration && (
-        <div className="time-overlay" style={{
-          position: 'absolute',
-          top: '10px',
-          right: '10px',
-          background: 'rgba(0,0,0,0.5)',
-          color: 'white',
-          padding: '4px 8px',
-          borderRadius: '4px',
-          fontSize: '14px',
-          pointerEvents: 'none'
-        }}>
-          ⏱ {(() => {
-            // We prefer stats.latency if available for live, but for VOD (recordings) we want absolute time.
-            // Since we don't distinguish mode easily here yet (unless we check channel vs recording),
-            // we'll show just current time if seekOffset is 0 (Live default)
-            if (videoRef.current && sessionIdRef.current) {
-              const current = videoRef.current.currentTime;
-              const totalSeconds = (seekOffset / 1000) + current;
-              const h = Math.floor(totalSeconds / 3600);
-              const m = Math.floor((totalSeconds % 3600) / 60);
-              const s = Math.floor(totalSeconds % 60);
-              const pad = (n: number) => n.toString().padStart(2, '0');
-              return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
-            }
-            return '--:--';
-          })()}
-        </div>
-      )}
-
     </div>
   );
 }

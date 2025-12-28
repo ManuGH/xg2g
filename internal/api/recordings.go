@@ -6,30 +6,45 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
+	"github.com/ManuGH/xg2g/internal/fsutil"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/netutil"
 	"github.com/ManuGH/xg2g/internal/recordings"
-	"github.com/ManuGH/xg2g/internal/v3/lease"
-	"github.com/ManuGH/xg2g/internal/v3/model"
+	ffmpegexec "github.com/ManuGH/xg2g/internal/v3/exec/ffmpeg"
 	"github.com/ManuGH/xg2g/internal/v3/profiles"
-	v3store "github.com/ManuGH/xg2g/internal/v3/store"
-	"github.com/google/uuid"
 )
 
 // Types are now generated in server_gen.go
+
+var (
+	errRecordingInvalid  = errors.New("invalid recording ref")
+	errRecordingNotReady = errors.New("recording not ready")
+	errRecordingNotFound = errors.New("recording not found")
+)
+
+const (
+	recordingIDMinLen = 16
+	recordingIDMaxLen = 2048
+)
 
 // GetRecordings handles GET /api/v3/recordings
 // Query: ?root=<id>&path=<rel_path>
@@ -176,7 +191,7 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 
 	recordingsList := make([]RecordingItem, 0, len(list.Movies))
 	for _, m := range list.Movies {
-		beginTs := int64(m.Begin)
+		beginUnixSeconds := int64(m.Begin)
 		desc := m.Description
 		if m.ExtendedDescription != "" {
 			if desc != "" {
@@ -184,6 +199,8 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 			}
 			desc += m.ExtendedDescription
 		}
+
+		durationSeconds, durationKnown := parseRecordingDurationSeconds(m.Length)
 
 		// Fallback for missing length on local files (NAS)
 		if (m.Length == "" || m.Length == "0") && s.recordingPathMapper != nil {
@@ -196,6 +213,8 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 						dur, pErr := probeDuration(r.Context(), localPath)
 						if pErr == nil && dur > 0 {
 							m.Length = fmt.Sprintf("%d min", int(dur.Minutes()))
+							durationSeconds = int64(dur.Seconds())
+							durationKnown = durationSeconds > 0
 							// Operator-facing log for "VOD-mode eligibility"
 							log.L().Info().
 								Str("recording_id", m.ServiceRef).
@@ -210,6 +229,8 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 							minutes := info.Size() / (60 * 1024 * 1024)
 							if minutes > 0 {
 								m.Length = fmt.Sprintf("%d min", minutes)
+								durationSeconds = int64(minutes * 60)
+								durationKnown = durationSeconds > 0
 								log.L().Debug().Str("file", localPath).Int64("size", info.Size()).Msgf("estimated heuristic duration: %s", m.Length)
 							}
 						}
@@ -218,13 +239,21 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 			}
 		}
 
+		recordingID := encodeRecordingID(m.ServiceRef)
+		var durationPtr *int64
+		if durationKnown && durationSeconds > 0 {
+			durationPtr = int64Ptr(durationSeconds)
+		}
+
 		recordingsList = append(recordingsList, RecordingItem{
-			ServiceRef:  strPtr(m.ServiceRef),
-			Title:       strPtr(m.Title),
-			Description: strPtr(desc),
-			Begin:       int64Ptr(beginTs),
-			Length:      strPtr(m.Length),
-			Filename:    strPtr(m.Filename),
+			ServiceRef:       strPtr(m.ServiceRef),
+			RecordingId:      strPtr(recordingID),
+			Title:            strPtr(m.Title),
+			Description:      strPtr(desc),
+			BeginUnixSeconds: int64Ptr(beginUnixSeconds),
+			DurationSeconds:  durationPtr,
+			Length:           strPtr(m.Length),
+			Filename:         strPtr(m.Filename),
 		})
 	}
 
@@ -293,13 +322,6 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 	}
 }
 
-// GetRecordingStream handles GET /api/v3/recordings/{recordingId}/stream
-// Redirects to /stream/{recordingId} which handles proxying/HLS
-func (s *Server) GetRecordingStream(w http.ResponseWriter, r *http.Request, recordingId string) {
-	// Recording stream proxy deprecated
-	http.Error(w, "recording streaming deprecated", http.StatusForbidden)
-}
-
 // extractPathFromServiceRef extracts the filesystem path from an Enigma2 service reference.
 // Enigma2 service references have the format: "1:0:0:0:0:0:0:0:0:0:/path/to/file.ts"
 // Returns the path part (everything after the last colon) if it starts with "/",
@@ -324,60 +346,76 @@ func extractPathFromServiceRef(serviceRef string) string {
 	return serviceRef
 }
 
-// GetRecordingHLSPlaylist handles GET /api/v3/recordings/{recordingId}/playlist.m3u8
-// Creates a V3 session for the recording and redirects to the HLS playlist.
-func (s *Server) GetRecordingHLSPlaylist(w http.ResponseWriter, r *http.Request, recordingId string) {
-	serviceRef := s.decodeRecordingID(recordingId)
+func (s *Server) resolveRecordingPlaybackSource(ctx context.Context, serviceRef string) (string, string, string, error) {
+	serviceRef = strings.TrimSpace(serviceRef)
 	if serviceRef == "" {
-		http.Error(w, "Invalid recording ID", http.StatusBadRequest)
-		return
+		return "", "", "", errRecordingInvalid
 	}
 
-	// 1. Check V3 availability
-	s.mu.RLock()
-	bus := s.v3Bus
-	store := s.v3Store
-	s.mu.RUnlock()
-
-	if bus == nil || store == nil {
-		http.Error(w, "V3 components not initialized", http.StatusServiceUnavailable)
-		return
+	receiverPath := extractPathFromServiceRef(serviceRef)
+	if !strings.HasPrefix(receiverPath, "/") {
+		return "", "", "", errRecordingInvalid
 	}
 
-	// 2. Determine Receiver Stream URL
+	cleanRef := strings.TrimLeft(receiverPath, "/")
+	cleanRef = path.Clean("/" + cleanRef)
+	cleanRef = strings.TrimPrefix(cleanRef, "/")
+	if cleanRef == "." || cleanRef == ".." || strings.HasPrefix(cleanRef, "../") {
+		return "", "", "", errRecordingInvalid
+	}
+	if strings.ContainsAny(cleanRef, "?#") {
+		return "", "", "", errRecordingInvalid
+	}
+
 	s.mu.RLock()
 	host := s.cfg.OWIBase
 	streamPort := s.cfg.StreamPort
+	stableWindow := s.cfg.RecordingStableWindow
+	policy := strings.ToLower(strings.TrimSpace(s.cfg.RecordingPlaybackPolicy))
+	pathMapper := s.recordingPathMapper
 	s.mu.RUnlock()
 
-	// Fix scheme if OWIBase has it using robust normalization
-	// Extract just the hostname/ip (ignoring port from OWIBase as we use StreamPort)
+	allowLocal := policy != "receiver_only"
+	allowReceiver := policy != "local_only"
+
+	if allowLocal && pathMapper != nil {
+		if localPath, ok := pathMapper.ResolveLocal(receiverPath); ok {
+			parts, err := recordingParts(localPath)
+			if err == nil && len(parts) > 0 {
+				if recordings.IsStable(parts[len(parts)-1], stableWindow) {
+					var durationSeconds string
+					if dur, pErr := probeDuration(ctx, localPath); pErr == nil && dur > 0 {
+						durationSeconds = fmt.Sprintf("%.3f", dur.Seconds())
+					} else if pErr != nil {
+						log.L().Warn().Err(pErr).Str("source", localPath).Msg("failed to probe recording duration")
+					}
+					return "local", localPath, durationSeconds, nil
+				}
+				if !allowReceiver {
+					return "", "", "", errRecordingNotReady
+				}
+				log.L().Debug().
+					Str("local_path", localPath).
+					Dur("stable_window", stableWindow).
+					Msg("file unstable, falling back to receiver")
+			} else if err != nil && !allowReceiver {
+				return "", "", "", errRecordingNotFound
+			}
+		} else if !allowReceiver {
+			return "", "", "", errRecordingNotFound
+		}
+	}
+
+	if !allowReceiver {
+		return "", "", "", errRecordingNotFound
+	}
+
 	h, _, err := netutil.NormalizeAuthority(host, "http")
 	if err != nil {
-		log.L().Error().Err(err).Str("owi_base", host).Msg("invalid OWI base")
-		http.Error(w, "Invalid OWI base configuration", http.StatusInternalServerError)
-		return
+		return "", "", "", fmt.Errorf("invalid OWI base: %w", err)
 	}
 	host = h
 
-	// We use the resolved stream URL as the 'ServiceRef' in the V3 session
-	// Ensure serviceRef doesn't start with / to avoid double slash with port
-	// Sanitize ref using path.Clean to prevent double-slashes or traversal characters
-	cleanRef := strings.TrimLeft(serviceRef, "/")
-	cleanRef = path.Clean("/" + cleanRef) // force absolute for cleaning
-	cleanRef = strings.TrimPrefix(cleanRef, "/")
-
-	if cleanRef == "." || cleanRef == ".." || strings.HasPrefix(cleanRef, "../") {
-		http.Error(w, "Invalid recording ref", http.StatusBadRequest)
-		return
-	}
-
-	if strings.ContainsAny(cleanRef, "?#") {
-		http.Error(w, "Invalid recording ref (query/fragment not allowed)", http.StatusBadRequest)
-		return
-	}
-
-	// Construct URL safely with encoding (handles spaces etc.)
 	u := url.URL{
 		Scheme: "http",
 		Host:   fmt.Sprintf("%s:%d", host, streamPort),
@@ -385,221 +423,535 @@ func (s *Server) GetRecordingHLSPlaylist(w http.ResponseWriter, r *http.Request,
 	}
 	streamURL := u.String()
 
-	// 2.3 Determine Playback Source (Local vs Receiver)
-	sourceType := "receiver"
-	source := streamURL
-
-	// If path mappings configured, try local-first playback
-	if s.recordingPathMapper != nil {
-		// Extract filesystem path from Enigma2 service reference
-		// Format: "1:0:0:0:0:0:0:0:0:0:/path/to/file.ts" -> "/path/to/file.ts"
-		receiverPath := extractPathFromServiceRef(serviceRef)
-
-		// Check if it's an absolute path (required for mapping)
-		if strings.HasPrefix(receiverPath, "/") {
-			if localPath, ok := s.recordingPathMapper.ResolveLocal(receiverPath); ok {
-				// Check if file exists locally
-				if _, err := os.Stat(localPath); err == nil {
-					// Check file stability (avoid streaming files being written)
-					s.mu.RLock()
-					stableWindow := s.cfg.RecordingStableWindow
-					s.mu.RUnlock()
-
-					if recordings.IsStable(localPath, stableWindow) {
-						sourceType = "local"
-						source = localPath
-					} else {
-						log.L().Debug().
-							Str("local_path", localPath).
-							Dur("stable_window", stableWindow).
-							Msg("file unstable, falling back to receiver")
-					}
-				}
-			}
-		}
-	}
-
-	// Log playback source decision
-	log.L().Info().
-		Str("recording_id", recordingId).
-		Str("source_type", sourceType).
-		Str("receiver_ref", serviceRef).
-		Str("source", source).
-		Msg("recording playback source selected")
-
-	// 2.5 Admission Control (Hardening)
-	// We must acquire a lease to ensure we respect tuner/transcoder slot limits.
-	// If we skip this, the Worker will terminate the session immediately with R_LEASE_BUSY.
-	config := s.GetConfig()
-	if len(config.TunerSlots) == 0 {
-		http.Error(w, "Service Unavailable (No Slots)", http.StatusServiceUnavailable)
-		return
-	}
-
-	admissionLeaseTTL := 30 * time.Second
-	dedupKey := lease.LeaseKeyService(streamURL)
-	var acquiredLeases []v3store.Lease
-
-	releaseLeases := func() {
-		if len(acquiredLeases) == 0 {
-			return
-		}
-		ctxRel, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		for _, l := range acquiredLeases {
-			_ = store.ReleaseLease(ctxRel, l.Key(), l.Owner())
-		}
-	}
-
-	// For recordings, we treat each playback as unique (no dedup sharing for now to keep it simple,
-	// because user might want independent seek positions).
-	sessionID := uuid.New().String()
-	correlationID := uuid.New().String()
-
-	// Dedup Lease (Service Ref)
-	// For local playback, we bypass global deduplication (allow multiple stats)
-	// by using the unique SessionID as the key.
-	if sourceType == "local" {
-		dedupKey = lease.LeaseKeyService("local:" + sessionID)
-	}
-
-	dedupLease, ok, err := store.TryAcquireLease(r.Context(), dedupKey, sessionID, admissionLeaseTTL)
-	if err != nil {
-		log.L().Error().Err(err).Msg("failed to acquire dedup lease")
-		http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
-		return
-	}
-	if !ok {
-		// If playing the same recording in another tab, we might hit this.
-		// For now, fail fast.
-		w.Header().Set("Retry-After", "1")
-		http.Error(w, "Recording already active", http.StatusConflict)
-		return
-	}
-	acquiredLeases = append(acquiredLeases, dedupLease)
-
-	// Tuner/Transcoder Lease
-	// Optimization: Skip tuner lease for local playback (no tuner needed)
-	var tunerLease v3store.Lease
-	if sourceType != "local" {
-		// Since we are same-package, we can call the unexported helper from handlers_v3.go
-		var ok bool
-		_, tunerLease, ok, err = tryAcquireTunerLease(r.Context(), store, sessionID, config.TunerSlots, admissionLeaseTTL)
-		if err != nil {
-			releaseLeases()
-			log.L().Error().Err(err).Msg("failed to acquire tuner check")
-			http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
-			return
-		}
-		if !ok {
-			releaseLeases()
-			w.Header().Set("Retry-After", "5")
-			// 409 Conflict implies "try again later"
-			http.Error(w, "All tuners busy", http.StatusConflict)
-			return
-		}
-		acquiredLeases = append(acquiredLeases, tunerLease)
-	} else {
-		log.L().Info().Str("sid", sessionID).Msg("skipping tuner lease for local playback")
-	}
-
-	// 3. Create Session Record
-	// Format: recording-<uuid>
-	// sessionID generated above
-
-	// Default to generic High profile for recordings
-	profileSpec := profiles.Resolve(profiles.ProfileHigh, r.UserAgent(), 0)
-
-	session := &model.SessionRecord{
-		SessionID:      sessionID,
-		ServiceRef:     source, // Local path or Receiver URL
-		Profile:        profileSpec,
-		State:          model.SessionNew,
-		CorrelationID:  correlationID,
-		CreatedAtUnix:  time.Now().Unix(),
-		UpdatedAtUnix:  time.Now().Unix(),
-		LastAccessUnix: time.Now().Unix(),
-		ContextData: map[string]string{
-			"client_ip":   r.RemoteAddr,
-			"type":        "recording",
-			"source_type": sourceType,
-		},
-	}
-
-	// Persist Session (Atomic)
-	if err := store.PutSession(r.Context(), session); err != nil {
-		releaseLeases()
-		log.L().Error().Err(err).Msg("failed to persist recording session")
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-
-	// 4. Publish Start Event
-	event := model.StartSessionEvent{
-		Type:          model.EventStartSession,
-		SessionID:     sessionID,
-		ServiceRef:    source,
-		ProfileID:     profileSpec.Name,
-		CorrelationID: correlationID,
-		StartMs:       0,
-		RequestedAtUN: time.Now().Unix(),
-	}
-
-	if err := bus.Publish(r.Context(), string(model.EventStartSession), event); err != nil {
-		releaseLeases()
-		log.L().Error().Err(err).Msg("failed to publish recording start intent")
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-
-	// 5. Redirect to HLS Playlist
-	// The V3 HLS handler waits for the playlist file to appear, so immediate redirect is fine.
-	target := fmt.Sprintf("/api/v3/sessions/%s/hls/index.m3u8", sessionID)
-	http.Redirect(w, r, target, http.StatusTemporaryRedirect)
+	return "receiver", streamURL, "", nil
 }
 
-// GetRecordingHLSCustomSegment proxies to the V3 session handler.
-// Since we redirect to the standard V3 HLS endpoint, this shouldn't be called directly by the client
-// unless they manually constructed the URL. We can deprecate or redirect.
+// GetRecordingHLSPlaylist handles GET /api/v3/recordings/{recordingId}/playlist.m3u8.
+// Recording playback is asset-based (VOD) and does not use v3 sessions.
+func (s *Server) GetRecordingHLSPlaylist(w http.ResponseWriter, r *http.Request, recordingId string) {
+	serviceRef := s.decodeRecordingID(recordingId)
+	if serviceRef == "" {
+		http.Error(w, "Invalid recording ID", http.StatusBadRequest)
+		return
+	}
+
+	playlistPath, err := s.ensureRecordingPlaylist(r.Context(), serviceRef)
+	if err != nil {
+		s.writeRecordingPlaybackError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+	w.Header().Set("Cache-Control", "no-store")
+	http.ServeFile(w, r, playlistPath)
+}
+
+// GetRecordingHLSCustomSegment serves the generated HLS segments.
 func (s *Server) GetRecordingHLSCustomSegment(w http.ResponseWriter, r *http.Request, recordingId string, segment string) {
-	http.Error(w, "use HLS playlist", http.StatusNotFound)
+	serviceRef := s.decodeRecordingID(recordingId)
+	if serviceRef == "" {
+		http.Error(w, "Invalid recording ID", http.StatusBadRequest)
+		return
+	}
+
+	segment = filepath.Base(segment)
+	if segment == "." || segment == ".." || strings.Contains(segment, "\\") {
+		http.Error(w, "invalid segment name", http.StatusBadRequest)
+		return
+	}
+	if !recordingSegmentAllowed(segment) {
+		http.Error(w, "file type not allowed", http.StatusForbidden)
+		return
+	}
+
+	s.mu.RLock()
+	hlsRoot := s.cfg.HLSRoot
+	s.mu.RUnlock()
+
+	cacheDir, err := recordingCacheDir(hlsRoot, serviceRef)
+	if err != nil {
+		log.L().Error().Err(err).Msg("recording cache dir unavailable")
+		http.Error(w, "recording storage unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	filePath, err := fsutil.ConfineRelPath(cacheDir, segment)
+	if err != nil {
+		http.Error(w, "segment not found", http.StatusNotFound)
+		return
+	}
+
+	info, err := os.Stat(filePath)
+	if os.IsNotExist(err) {
+		http.Error(w, "segment not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, "segment unavailable", http.StatusInternalServerError)
+		return
+	}
+	if info.IsDir() {
+		http.Error(w, "segment not found", http.StatusNotFound)
+		return
+	}
+
+	if segment == "init.mp4" {
+		w.Header().Set("Content-Type", "video/mp4")
+		w.Header().Set("Cache-Control", "public, max-age=3600")
+	} else if strings.HasSuffix(segment, ".m4s") || strings.HasSuffix(segment, ".cmfv") {
+		w.Header().Set("Content-Type", "video/iso.segment")
+		w.Header().Set("Cache-Control", "public, max-age=60")
+	} else {
+		w.Header().Set("Content-Type", "video/MP2T")
+		w.Header().Set("Cache-Control", "public, max-age=60")
+	}
+
+	f, err := os.Open(filePath) // #nosec G304 -- filePath is confined to recording cache dir.
+	if err != nil {
+		http.Error(w, "segment unavailable", http.StatusInternalServerError)
+		return
+	}
+	defer func() { _ = f.Close() }()
+
+	http.ServeContent(w, r, segment, info.ModTime(), f)
+}
+
+func (s *Server) ensureRecordingPlaylist(ctx context.Context, serviceRef string) (string, error) {
+	s.mu.RLock()
+	hlsRoot := s.cfg.HLSRoot
+	sfg := &s.recordingSfg
+	s.mu.RUnlock()
+
+	if err := validateRecordingRef(serviceRef); err != nil {
+		return "", err
+	}
+
+	cacheDir, err := recordingCacheDir(hlsRoot, serviceRef)
+	if err != nil {
+		return "", err
+	}
+	playlistPath := filepath.Join(cacheDir, "index.m3u8")
+	if recordingPlaylistReady(cacheDir) {
+		return playlistPath, nil
+	}
+
+	_, err, _ = sfg.Do(cacheDir, func() (any, error) {
+		if recordingPlaylistReady(cacheDir) {
+			return playlistPath, nil
+		}
+		sourceType, source, _, err := s.resolveRecordingPlaybackSource(ctx, serviceRef)
+		if err != nil {
+			return nil, err
+		}
+		if err := os.RemoveAll(cacheDir); err != nil && !os.IsNotExist(err) {
+			return nil, err
+		}
+		// #nosec G301 -- cache dir serves playback assets.
+		if err := os.MkdirAll(cacheDir, 0755); err != nil {
+			return nil, err
+		}
+		if err := s.generateRecordingPlaylist(ctx, cacheDir, sourceType, source); err != nil {
+			return nil, err
+		}
+		if !recordingPlaylistReady(cacheDir) {
+			return nil, fmt.Errorf("recording playlist incomplete")
+		}
+		return playlistPath, nil
+	})
+	if err != nil {
+		return "", err
+	}
+
+	return playlistPath, nil
+}
+
+func (s *Server) generateRecordingPlaylist(ctx context.Context, cacheDir, sourceType, source string) error {
+	tmpPlaylist, finalPlaylist := ffmpegexec.PlaylistPaths(cacheDir)
+	_ = os.Remove(tmpPlaylist)
+	_ = os.Remove(finalPlaylist)
+
+	input := ffmpegexec.InputSpec{
+		StreamURL: source,
+	}
+
+	var concatFile string
+	if sourceType == "local" {
+		parts, err := recordingParts(source)
+		if err != nil {
+			return err
+		}
+		if len(parts) != 1 || parts[0] != source {
+			concatFile = filepath.Join(cacheDir, "concat.txt")
+			if err := writeConcatList(concatFile, parts); err != nil {
+				return err
+			}
+			input.StreamURL = concatFile
+		}
+	}
+
+	output := ffmpegexec.OutputSpec{
+		HLSPlaylist:        tmpPlaylist,
+		SegmentFilename:    ffmpegexec.SegmentPattern(cacheDir, ".ts"),
+		SegmentDuration:    6,
+		PlaylistWindowSize: 0,
+	}
+
+	profileSpec := profiles.Resolve(profiles.ProfileDVR, "", 0)
+	profileSpec.VOD = true
+	profileSpec.DVRWindowSec = 0
+	profileSpec.LLHLS = false
+
+	args, err := ffmpegexec.BuildHLSArgs(input, output, profileSpec)
+	if err != nil {
+		return err
+	}
+	if concatFile != "" {
+		args = insertArgsBefore(args, "-i", []string{"-f", "concat", "-safe", "0"})
+	}
+
+	s.mu.RLock()
+	ffmpegBin := s.cfg.FFmpegBin
+	s.mu.RUnlock()
+	if ffmpegBin == "" {
+		ffmpegBin = "ffmpeg"
+	}
+
+	cmd := exec.CommandContext(ctx, ffmpegBin, args...) // #nosec G204 -- args are constructed internally.
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		log.L().Error().
+			Err(err).
+			Str("source_type", sourceType).
+			Str("source", source).
+			Str("ffmpeg", ffmpegBin).
+			Msgf("ffmpeg failed: %s", strings.TrimSpace(string(out)))
+		return fmt.Errorf("ffmpeg failed: %w", err)
+	}
+
+	if err := os.Rename(tmpPlaylist, finalPlaylist); err != nil {
+		return fmt.Errorf("promote playlist: %w", err)
+	}
+
+	return nil
+}
+
+func recordingCacheDir(hlsRoot, serviceRef string) (string, error) {
+	if strings.TrimSpace(hlsRoot) == "" {
+		return "", fmt.Errorf("hls root not configured")
+	}
+	return filepath.Join(hlsRoot, "recordings", recordingCacheKey(serviceRef)), nil
+}
+
+func recordingCacheKey(serviceRef string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(serviceRef)))
+	return hex.EncodeToString(sum[:])
+}
+
+func validateRecordingRef(serviceRef string) error {
+	serviceRef = strings.TrimSpace(serviceRef)
+	if serviceRef == "" {
+		return errRecordingInvalid
+	}
+	receiverPath := extractPathFromServiceRef(serviceRef)
+	if !strings.HasPrefix(receiverPath, "/") {
+		return errRecordingInvalid
+	}
+	cleanRef := strings.TrimLeft(receiverPath, "/")
+	cleanRef = path.Clean("/" + cleanRef)
+	cleanRef = strings.TrimPrefix(cleanRef, "/")
+	if cleanRef == "." || cleanRef == ".." || strings.HasPrefix(cleanRef, "../") {
+		return errRecordingInvalid
+	}
+	if strings.ContainsAny(cleanRef, "?#") {
+		return errRecordingInvalid
+	}
+	return nil
+}
+
+func recordingPlaylistReady(cacheDir string) bool {
+	playlistPath := filepath.Join(cacheDir, "index.m3u8")
+	info, err := os.Stat(playlistPath)
+	if err != nil || info.IsDir() {
+		return false
+	}
+	entries, err := os.ReadDir(cacheDir)
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		if recordingSegmentFile(entry.Name()) {
+			return true
+		}
+	}
+	return false
+}
+
+func recordingSegmentAllowed(name string) bool {
+	if name == "init.mp4" {
+		return true
+	}
+	return recordingSegmentFile(name)
+}
+
+func recordingSegmentFile(name string) bool {
+	if !strings.HasPrefix(name, "seg_") {
+		return false
+	}
+	switch {
+	case strings.HasSuffix(name, ".ts"):
+		return true
+	case strings.HasSuffix(name, ".m4s"):
+		return true
+	case strings.HasSuffix(name, ".mp4"):
+		return true
+	case strings.HasSuffix(name, ".cmfv"):
+		return true
+	default:
+		return false
+	}
+}
+
+func recordingParts(basePath string) ([]string, error) {
+	basePath = filepath.Clean(basePath)
+	baseInfo, err := os.Stat(basePath)
+	baseExists := err == nil && baseInfo.Mode().IsRegular()
+
+	dir := filepath.Dir(basePath)
+	baseName := filepath.Base(basePath)
+	entries, readErr := os.ReadDir(dir)
+	if readErr != nil && !baseExists {
+		if os.IsNotExist(readErr) {
+			return nil, errRecordingNotFound
+		}
+		return nil, readErr
+	}
+
+	type part struct {
+		index int
+		path  string
+	}
+	var parts []part
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasPrefix(name, baseName+".") {
+			continue
+		}
+		suffix := strings.TrimPrefix(name, baseName+".")
+		if suffix == "" {
+			continue
+		}
+		if !allDigits(suffix) {
+			continue
+		}
+		idx, err := strconv.Atoi(suffix)
+		if err != nil {
+			continue
+		}
+		parts = append(parts, part{index: idx, path: filepath.Join(dir, name)})
+	}
+
+	sort.Slice(parts, func(i, j int) bool {
+		return parts[i].index < parts[j].index
+	})
+
+	if baseExists || len(parts) > 0 {
+		out := make([]string, 0, len(parts)+1)
+		if baseExists {
+			out = append(out, basePath)
+		}
+		for _, p := range parts {
+			out = append(out, p.path)
+		}
+		return out, nil
+	}
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	return nil, errRecordingNotFound
+}
+
+func allDigits(value string) bool {
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return value != ""
+}
+
+func writeConcatList(path string, parts []string) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+
+	for _, part := range parts {
+		line := "file " + concatEscape(part) + "\n"
+		if _, err := io.WriteString(f, line); err != nil {
+			return err
+		}
+	}
+	return f.Sync()
+}
+
+func concatEscape(value string) string {
+	var b strings.Builder
+	for _, r := range value {
+		if r == '\\' || r == '\'' || r == ' ' || r == '#' || r == '\t' {
+			b.WriteByte('\\')
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+func insertArgsBefore(args []string, needle string, insert []string) []string {
+	for i, arg := range args {
+		if arg == needle {
+			out := make([]string, 0, len(args)+len(insert))
+			out = append(out, args[:i]...)
+			out = append(out, insert...)
+			out = append(out, args[i:]...)
+			return out
+		}
+	}
+	return append(insert, args...)
+}
+
+func (s *Server) writeRecordingPlaybackError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, errRecordingInvalid):
+		http.Error(w, "Invalid recording ID", http.StatusBadRequest)
+	case errors.Is(err, errRecordingNotFound):
+		http.Error(w, "Recording not found", http.StatusNotFound)
+	case errors.Is(err, errRecordingNotReady):
+		http.Error(w, "Recording not ready", http.StatusConflict)
+	default:
+		log.L().Error().Err(err).Msg("recording playback failed")
+		http.Error(w, "Failed to prepare recording", http.StatusInternalServerError)
+	}
+}
+
+func encodeRecordingID(serviceRef string) string {
+	if strings.TrimSpace(serviceRef) == "" {
+		return ""
+	}
+	return base64.RawURLEncoding.EncodeToString([]byte(serviceRef))
+}
+
+func validRecordingID(id string) bool {
+	if len(id) < recordingIDMinLen || len(id) > recordingIDMaxLen {
+		return false
+	}
+	for _, r := range id {
+		switch {
+		case r >= 'a' && r <= 'z':
+		case r >= 'A' && r <= 'Z':
+		case r >= '0' && r <= '9':
+		case r == '-' || r == '_':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // decodeRecordingID helper (factored out)
 func (s *Server) decodeRecordingID(id string) string {
+	id = strings.TrimSpace(id)
+	if !validRecordingID(id) {
+		return ""
+	}
 	if decodedBytes, err := base64.RawURLEncoding.DecodeString(id); err == nil {
-		return string(decodedBytes)
-	}
-	if decodedBytes2, err2 := base64.URLEncoding.DecodeString(id); err2 == nil {
-		return string(decodedBytes2)
-	}
-	if decoded, err3 := url.PathUnescape(id); err3 == nil {
+		if len(decodedBytes) == 0 {
+			return ""
+		}
+		if !utf8.Valid(decodedBytes) {
+			return ""
+		}
+		decoded := string(decodedBytes)
+		if strings.TrimSpace(decoded) == "" {
+			return ""
+		}
+		if strings.ContainsRune(decoded, '\x00') {
+			return ""
+		}
 		return decoded
 	}
-	return id
+	return ""
+}
+
+func parseRecordingDurationSeconds(length string) (int64, bool) {
+	length = strings.TrimSpace(length)
+	if length == "" || length == "0" {
+		return 0, false
+	}
+
+	if strings.Contains(length, ":") {
+		parts := strings.Split(length, ":")
+		if len(parts) == 3 {
+			hours, err1 := strconv.Atoi(parts[0])
+			minutes, err2 := strconv.Atoi(parts[1])
+			seconds, err3 := strconv.Atoi(parts[2])
+			if err1 != nil || err2 != nil || err3 != nil {
+				return 0, false
+			}
+			total := (hours * 3600) + (minutes * 60) + seconds
+			if total <= 0 {
+				return 0, false
+			}
+			return int64(total), true
+		}
+		if len(parts) == 2 {
+			minutes, err1 := strconv.Atoi(parts[0])
+			seconds, err2 := strconv.Atoi(parts[1])
+			if err1 != nil || err2 != nil {
+				return 0, false
+			}
+			total := (minutes * 60) + seconds
+			if total <= 0 {
+				return 0, false
+			}
+			return int64(total), true
+		}
+		return 0, false
+	}
+
+	fields := strings.Fields(length)
+	if len(fields) == 0 {
+		return 0, false
+	}
+	minStr := strings.TrimSpace(fields[0])
+	minStr = strings.TrimSuffix(minStr, "min")
+	minStr = strings.TrimSuffix(minStr, "mins")
+	minStr = strings.TrimSuffix(minStr, "m")
+	minutes, err := strconv.Atoi(minStr)
+	if err != nil || minutes <= 0 {
+		return 0, false
+	}
+	return int64(minutes * 60), true
 }
 
 // DeleteRecording handles DELETE /api/v3/recordings/{recordingId}
-// Deletes the recording file and associated sidecar files from the local disk.
+// Deletes the recording via OpenWebIF on the receiver.
 func (s *Server) DeleteRecording(w http.ResponseWriter, r *http.Request, recordingId string) {
-	recordingID := recordingId
-	if recordingID == "" {
+	if strings.TrimSpace(recordingId) == "" {
 		http.Error(w, "Missing recording ID", http.StatusBadRequest)
 		return
 	}
 
 	// Decode ID
-	var serviceRef string
-	if decodedBytes, err := base64.RawURLEncoding.DecodeString(recordingID); err == nil {
-		serviceRef = string(decodedBytes)
-	} else {
-		if decodedBytes2, err2 := base64.URLEncoding.DecodeString(recordingID); err2 == nil {
-			serviceRef = string(decodedBytes2)
-		} else if decoded, err3 := url.PathUnescape(recordingID); err3 == nil {
-			serviceRef = decoded
-		} else {
-			serviceRef = recordingID
-		}
+	serviceRef := s.decodeRecordingID(recordingId)
+	if serviceRef == "" || validateRecordingRef(serviceRef) != nil {
+		http.Error(w, "Invalid recording ID", http.StatusBadRequest)
+		return
 	}
 
 	s.mu.RLock()

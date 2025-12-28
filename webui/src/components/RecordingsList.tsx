@@ -4,7 +4,6 @@
 
 import React, { useState, useEffect, lazy, Suspense, useRef } from 'react';
 import { getRecordings, type RecordingResponse, type RecordingItem } from '../client-ts';
-import { client } from '../client-ts/client.gen';
 import { useAppContext } from '../context/AppContext';
 import './Recordings.css';
 
@@ -25,7 +24,7 @@ const FileIcon = ({ className }: { className?: string }) => (
 );
 
 interface PlayingState {
-  url: string;
+  recordingId: string;
   title: string;
   duration: number;
 }
@@ -42,9 +41,6 @@ export default function RecordingsList() {
   const [error, setError] = useState<string | null>(null);
   const [playing, setPlaying] = useState<PlayingState | null>(null); // { url, title, duration }
   const initialLoad = useRef<boolean>(true);
-
-  // Safe cast for baseUrl which exists in broader context
-  const apiBase = (client.getConfig().baseUrl || '/api/v3').replace(/\/$/, '');
 
   // Fetch Data
   const fetchData = async (r: string, p: string) => {
@@ -95,35 +91,15 @@ export default function RecordingsList() {
   };
 
   const handlePlay = async (item: RecordingItem) => {
-    if (!item.service_ref) return;
-
-    // Use HLS playlist URL for V3Player direct mode
-    const toBase64Url = (str: string) => {
-      return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-    };
-
-    const baseUrl = apiBase;
-    const encodedId = toBase64Url(item.service_ref);
-    const url = `${baseUrl}/recordings/${encodedId}/playlist.m3u8`;
-
-    // Parse duration from length string ("90 min") -> seconds
-    // Safe fallback if length is missing or malformed
-    let durationSec = 0;
-    if (item.length) {
-      console.log('Parsing length:', item.length);
-      // specific fix for "XX min"
-      const parts = item.length.split(' ');
-      const val = parseInt(parts[0], 10);
-      if (!isNaN(val)) {
-        durationSec = val * 60;
-      }
-      console.log('Parsed duration:', durationSec);
-    } else {
-      console.log('No length attribute on item:', item);
+    if (!item.recording_id) {
+      console.warn('Missing recording_id for recording item:', item);
+      return;
     }
 
+    const durationSec = item.duration_seconds ?? 0;
+
     setPlaying({
-      url,
+      recordingId: item.recording_id,
       title: item.title || 'Recording',
       duration: durationSec
     });
@@ -204,8 +180,8 @@ export default function RecordingsList() {
             <div className="item-details">
               <span className="item-name">{rec.title}</span>
               <div className="item-meta-row">
-                <span className="meta-date">{formatTime(rec.begin)}</span>
-                <span className="meta-length">{rec.length} min</span>
+                <span className="meta-date">{formatTime(rec.begin_unix_seconds)}</span>
+                <span className="meta-length">{rec.length}</span>
               </div>
               <p className="item-desc">{rec.description}</p>
             </div>
@@ -227,7 +203,7 @@ export default function RecordingsList() {
       {playing && (
         <Suspense fallback={<div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>Loading Player...</div>}>
           <V3Player
-            src={playing.url}
+            recordingId={playing.recordingId}
             token={auth?.token || undefined}
             autoStart={true}
             onClose={() => setPlaying(null)}

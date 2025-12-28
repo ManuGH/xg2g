@@ -161,9 +161,13 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEvent) (retErr error) {
 	correlationID := e.CorrelationID
 	leaseOwner := e.SessionID
-	if correlationID == "" && o.Store != nil {
-		if session, err := o.Store.GetSession(ctx, e.SessionID); err == nil && session != nil {
-			correlationID = session.CorrelationID
+	var session *model.SessionRecord
+	if o.Store != nil {
+		if sess, err := o.Store.GetSession(ctx, e.SessionID); err == nil && sess != nil {
+			session = sess
+			if correlationID == "" {
+				correlationID = sess.CorrelationID
+			}
 		}
 	}
 	if correlationID != "" {
@@ -174,6 +178,7 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 	startTime := time.Now()
 	startRecorded := false
 	ttfpRecorded := false
+	vodMode := false
 
 	recordStart := func(result string, reason model.ReasonCode) {
 		if startRecorded {
@@ -211,6 +216,10 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 				// Context cancelled -> Expected Stop (Client Stop or Timeout)
 				finalState = model.SessionStopped
 				reason = model.RClientStop
+			} else if vodMode {
+				finalState = model.SessionDraining
+				reason = model.RNone
+				detail = "recording completed"
 			} else {
 				// Context valid -> Spontaneous Exit (e.g. End of Stream, Crash, or Early Exit)
 				// Fix 11-2: Treat unrequested exit as abnormal termination.
@@ -253,8 +262,10 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 			return nil
 		})
 
-		// PR 9-3: On-Stop Cleanup
-		o.cleanupFiles(e.SessionID)
+		// PR 9-3: On-Stop Cleanup (skip for VOD recordings to keep cached assets)
+		if !vodMode || finalState == model.SessionFailed {
+			o.cleanupFiles(e.SessionID)
+		}
 
 		// Phase 9-4: Golden Signals (Session End)
 		sessionEndTotal.WithLabelValues(string(reason), e.ProfileID, mode).Inc()
@@ -278,44 +289,85 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 		}
 	}()
 
+	if session == nil {
+		return newReasonError(model.RNotFound, "session not found", nil)
+	}
+
+	sessionMode := model.ModeLive
+	if session.ContextData != nil {
+		if raw := strings.TrimSpace(session.ContextData[model.CtxKeyMode]); raw != "" {
+			sessionMode = strings.ToUpper(raw)
+		}
+	}
+	if sessionMode != model.ModeLive && sessionMode != model.ModeRecording {
+		sessionMode = model.ModeLive
+	}
+	playbackSource := e.ServiceRef
+	if sessionMode == model.ModeRecording {
+		if session.ContextData != nil {
+			playbackSource = strings.TrimSpace(session.ContextData[model.CtxKeySource])
+		}
+		if playbackSource == "" {
+			return newReasonError(model.RInvariantViolation, "missing recording source", nil)
+		}
+		sourceType := ""
+		if session.ContextData != nil {
+			sourceType = strings.TrimSpace(session.ContextData[model.CtxKeySourceType])
+		}
+		logger.Info().
+			Str("source_type", sourceType).
+			Str("source", playbackSource).
+			Msg("recording playback source selected")
+	}
+	vodMode = session.Profile.VOD || sessionMode == model.ModeRecording
+
 	// 1. Dedup Lock (ServiceRef) - Transient (Phase 8-2)
 	// We acquire this to prevent stampede during startup, but we don't hold it long-term.
-	dedupKey := o.LeaseKeyFunc(e)
-	dedupLease, ok, err := o.Store.TryAcquireLease(ctx, dedupKey, leaseOwner, o.LeaseTTL)
-	if err != nil {
-		return err
+	releaseDedup := func() {}
+	if sessionMode == model.ModeLive {
+		dedupKey := o.LeaseKeyFunc(e)
+		dedupLease, ok, err := o.Store.TryAcquireLease(ctx, dedupKey, leaseOwner, o.LeaseTTL)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			// jobsTotal.WithLabelValues("lease_conflict", o.modeLabel()).Inc()
+			return newReasonError(model.RLeaseBusy, "dedup lease held", nil)
+		}
+		// Release Dedup Lock immediately after critical section (Transient)
+		// We only hold it to linearize setup for the same service.
+		// Fix: Do NOT defer to function end (session end).
+		releaseDedup = func() {
+			ctxRel, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = o.Store.ReleaseLease(ctxRel, dedupLease.Key(), dedupLease.Owner())
+		}
+		defer releaseDedup() // Safety fallback (idempotent)
 	}
-	if !ok {
-		// jobsTotal.WithLabelValues("lease_conflict", o.modeLabel()).Inc()
-		return newReasonError(model.RLeaseBusy, "dedup lease held", nil)
-	}
-	// Release Dedup Lock immediately after critical section (Transient)
-	// We only hold it to linearize setup for the same service.
-	// Fix: Do NOT defer to function end (session end).
-	releaseDedup := func() {
-		ctxRel, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = o.Store.ReleaseLease(ctxRel, dedupLease.Key(), dedupLease.Owner())
-	}
-	defer releaseDedup() // Safety fallback (idempotent)
 
 	// We will call releaseDedup() explicitly once we have successfully transitioned or failed.
 
 	// 2. Resource Lock (Tuner Slot) - Persistent (Phase 8-2)
-	slot, tunerLease, ok, err := o.acquireTunerLease(ctx, o.TunerSlots, leaseOwner)
-	if err != nil {
-		return err
+	slot := -1
+	var tunerLease store.Lease
+	if sessionMode == model.ModeLive {
+		var ok bool
+		var err error
+		slot, tunerLease, ok, err = o.acquireTunerLease(ctx, o.TunerSlots, leaseOwner)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			// All slots busy
+			tunerBusyTotal.WithLabelValues(o.modeLabel()).Inc()
+			return newReasonError(model.RLeaseBusy, "no tuner slots available", nil)
+		}
+		defer func() {
+			ctxRel, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = o.Store.ReleaseLease(ctxRel, tunerLease.Key(), tunerLease.Owner())
+		}()
 	}
-	if !ok {
-		// All slots busy
-		tunerBusyTotal.WithLabelValues(o.modeLabel()).Inc()
-		return newReasonError(model.RLeaseBusy, "no tuner slots available", nil)
-	}
-	defer func() {
-		ctxRel, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = o.Store.ReleaseLease(ctxRel, tunerLease.Key(), tunerLease.Owner())
-	}()
 
 	// Heartbeat loop: Renew TUNER Lease explicitly
 	hbCtx, hbCancel := context.WithCancel(ctx)
@@ -325,45 +377,47 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 	// We also defer hbCancel to ensure resources are freed if we panic or return early
 	defer hbCancel()
 
-	go func() {
-		t := time.NewTicker(o.HeartbeatEvery)
-		defer t.Stop()
-		for {
-			select {
-			case <-hbCtx.Done():
-				return
-			case <-t.C:
-				// Renew Tuner Lease (Risk 8-2: Must probe correct lease)
-				_, ok, err := o.Store.RenewLease(hbCtx, tunerLease.Key(), tunerLease.Owner(), o.LeaseTTL)
-				if err != nil {
-					logger.Warn().Err(err).Msg("heartbeat renewal error")
-				} else if !ok {
-					logger.Warn().Str("lease", tunerLease.Key()).Str("sid", e.SessionID).Msg("tuner lease lost, aborting")
-					leaseLostTotalLegacy.WithLabelValues(o.modeLabel()).Inc()
-
-					// Fix 11-3: Lease Robustness
-					// Explicitly attempt to mark FAILED before cancelling context.
-					// This ensures the session is terminal even if finalizer fails later (e.g. race).
-					// Best-effort push.
-					_, _ = o.Store.UpdateSession(hbCtx, e.SessionID, func(r *model.SessionRecord) error {
-						if !r.State.IsTerminal() {
-							r.State = model.SessionFailed
-							r.Reason = model.RLeaseExpired
-							r.UpdatedAtUnix = time.Now().Unix()
-						}
-						return nil
-					})
-
-					hbCancel()
+	if sessionMode == model.ModeLive {
+		go func() {
+			t := time.NewTicker(o.HeartbeatEvery)
+			defer t.Stop()
+			for {
+				select {
+				case <-hbCtx.Done():
 					return
+				case <-t.C:
+					// Renew Tuner Lease (Risk 8-2: Must probe correct lease)
+					_, ok, err := o.Store.RenewLease(hbCtx, tunerLease.Key(), tunerLease.Owner(), o.LeaseTTL)
+					if err != nil {
+						logger.Warn().Err(err).Msg("heartbeat renewal error")
+					} else if !ok {
+						logger.Warn().Str("lease", tunerLease.Key()).Str("sid", e.SessionID).Msg("tuner lease lost, aborting")
+						leaseLostTotalLegacy.WithLabelValues(o.modeLabel()).Inc()
+
+						// Fix 11-3: Lease Robustness
+						// Explicitly attempt to mark FAILED before cancelling context.
+						// This ensures the session is terminal even if finalizer fails later (e.g. race).
+						// Best-effort push.
+						_, _ = o.Store.UpdateSession(hbCtx, e.SessionID, func(r *model.SessionRecord) error {
+							if !r.State.IsTerminal() {
+								r.State = model.SessionFailed
+								r.Reason = model.RLeaseExpired
+								r.UpdatedAtUnix = time.Now().Unix()
+							}
+							return nil
+						})
+
+						hbCancel()
+						return
+					}
 				}
 			}
-		}
-	}()
+		}()
+	}
 
 	// 1. Transition to STARTING (Store Tuner Slot)
 	o.recordTransition(model.SessionUnknown, model.SessionStarting)
-	_, err = o.Store.UpdateSession(ctx, e.SessionID, func(r *model.SessionRecord) error {
+	_, err := o.Store.UpdateSession(ctx, e.SessionID, func(r *model.SessionRecord) error {
 		// Guard: If somebody (handleStop) already marked it STOPPING or Terminal, abort start
 		if r.State.IsTerminal() || r.State == model.SessionStopping {
 			return fmt.Errorf("session state %s, aborting start", r.State)
@@ -373,7 +427,9 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 		if r.ContextData == nil {
 			r.ContextData = make(map[string]string)
 		}
-		r.ContextData[model.CtxKeyTunerSlot] = strconv.Itoa(slot)
+		if sessionMode == model.ModeLive && slot >= 0 {
+			r.ContextData[model.CtxKeyTunerSlot] = strconv.Itoa(slot)
+		}
 		return nil
 	})
 	if err != nil {
@@ -383,17 +439,23 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 	// started = true // Removed in Phase 9-4
 
 	// 2. Perform Work (Execution Contracts)
-	tuner, err := o.ExecFactory.NewTuner(slot)
-	if err != nil {
-		// jobsTotal.WithLabelValues("exec_error", o.modeLabel()).Inc()
-		return err
+	var tuner exec.Tuner
+	if sessionMode == model.ModeLive {
+		var err error
+		tuner, err = o.ExecFactory.NewTuner(slot)
+		if err != nil {
+			// jobsTotal.WithLabelValues("exec_error", o.modeLabel()).Inc()
+			return err
+		}
+		defer func() { _ = tuner.Close() }()
 	}
-	defer func() { _ = tuner.Close() }()
 
 	// Measure Ready Duration
 	readyStart := time.Now()
 	var tuneErr error
-	if len(e.ServiceRef) > 0 && e.ServiceRef[0] == '/' {
+	if sessionMode == model.ModeRecording {
+		logger.Info().Str("source", playbackSource).Msg("worker: recording mode, skipping tune")
+	} else if len(e.ServiceRef) > 0 && e.ServiceRef[0] == '/' {
 		logger.Info().Str("ref", e.ServiceRef).Msg("worker: skipping tune for local file")
 	} else {
 		logger.Info().Str("ref", e.ServiceRef).Msg("worker: starting tune")
@@ -441,16 +503,13 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 	}
 
 	// Fetch session to get ProfileSpec with DVR window configuration
-	session, err := o.Store.GetSession(ctx, e.SessionID)
-	if err != nil {
-		return fmt.Errorf("failed to get session for profile: %w", err)
-	}
-	if session == nil {
-		return fmt.Errorf("session not found: %s", e.SessionID)
+	profileSpec := session.Profile
+	if vodMode {
+		profileSpec.VOD = true
 	}
 
 	ffmpegStartTime := time.Now()
-	if err := transcoder.Start(hbCtx, e.SessionID, e.ServiceRef, session.Profile, e.StartMs); err != nil {
+	if err := transcoder.Start(hbCtx, e.SessionID, playbackSource, profileSpec, e.StartMs); err != nil {
 		return newReasonError(model.RFFmpegStartFailed, "", err)
 	}
 	o.recordTransition(model.SessionStarting, model.SessionPriming)
@@ -493,6 +552,9 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 	if o.HLSRoot != "" {
 		playlistPath := filepath.Join(o.HLSRoot, "sessions", e.SessionID, "index.m3u8")
 		playlistReadyTimeout := 10 * time.Second
+		if vodMode {
+			playlistReadyTimeout = 2 * time.Minute
+		}
 		playlistPollInterval := 200 * time.Millisecond
 		playlistDeadline := time.Now().Add(playlistReadyTimeout)
 
@@ -501,6 +563,7 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 			Str("service_ref", e.ServiceRef).
 			Str("playlist_path", playlistPath).
 			Dur("timeout", playlistReadyTimeout).
+			Bool("vod_mode", vodMode).
 			Msg("waiting for playlist to become ready")
 
 		for {
@@ -509,21 +572,33 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 				// Sanity check: validate it's a real HLS manifest
 				// #nosec G304 -- playlistPath is constructed from trusted hlsDir, not user input
 				if content, readErr := os.ReadFile(playlistPath); readErr == nil {
-					if strings.Contains(string(content), "#EXTM3U") {
-						segmentURI := firstSegmentFromPlaylist(content)
-						if segmentURI != "" {
-							segmentPath := filepath.Join(filepath.Dir(playlistPath), segmentURI)
-							if segInfo, segErr := os.Stat(segmentPath); segErr == nil && segInfo.Size() > 0 {
-								if !ttfpRecorded {
-									observeTTFP(e.ProfileID, mode, startTime)
-									ttfpRecorded = true
+					contentText := string(content)
+					if strings.Contains(contentText, "#EXTM3U") {
+						if vodMode && !strings.Contains(contentText, "#EXT-X-ENDLIST") {
+							logger.Debug().
+								Str("session_id", e.SessionID).
+								Msg("VOD playlist missing ENDLIST, continuing to poll")
+						} else {
+							segmentURI := firstSegmentFromPlaylist(content)
+							if vodMode {
+								if lastSegment := lastSegmentFromPlaylist(content); lastSegment != "" {
+									segmentURI = lastSegment
 								}
-								break // Playlist + segment ready!
 							}
+							if segmentURI != "" {
+								segmentPath := filepath.Join(filepath.Dir(playlistPath), segmentURI)
+								if segInfo, segErr := os.Stat(segmentPath); segErr == nil && segInfo.Size() > 0 {
+									if !ttfpRecorded {
+										observeTTFP(e.ProfileID, mode, startTime)
+										ttfpRecorded = true
+									}
+									break // Playlist + segment ready!
+								}
+							}
+							logger.Debug().
+								Str("session_id", e.SessionID).
+								Msg("playlist ready but segment not yet available, continuing to poll")
 						}
-						logger.Debug().
-							Str("session_id", e.SessionID).
-							Msg("playlist ready but segment not yet available, continuing to poll")
 					}
 					logger.Debug().
 						Str("session_id", e.SessionID).
@@ -703,4 +778,20 @@ func firstSegmentFromPlaylist(content []byte) string {
 		return line
 	}
 	return ""
+}
+
+func lastSegmentFromPlaylist(content []byte) string {
+	scanner := bufio.NewScanner(bytes.NewReader(content))
+	var last string
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if strings.Contains(line, "..") || filepath.IsAbs(line) {
+			continue
+		}
+		last = line
+	}
+	return last
 }

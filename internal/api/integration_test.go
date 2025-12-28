@@ -61,20 +61,16 @@ func TestIntegration_SessionAndPlayback(t *testing.T) {
 	assert.Equal(t, "/", sessionCookie.Path, "Cookie path must be root")
 
 	// 3. Use cookie for access
-	// We use a valid Base64URL encoded ID ("dGVzdA==" -> "test") but the file won't exist.
-	// We expect 404 Not Found, which proves we passed auth and reached the handler logic.
-	// If we were blocked by auth-middleware, we'd get 401.
-	// If we were blocked by path confinement early or bad ID format, we'd get 400.
-	// Getting 404 confirms full pipeline traversal.
+	// We use a valid Base64URL encoded ID ("dGVzdA==" -> "test") that decodes to an
+	// invalid recording reference. We expect 400, which proves we passed auth and
+	// reached the handler logic (401 would indicate auth failure).
 
 	req4 := httptest.NewRequest("GET", "/api/v3/recordings/dGVzdA==/playlist.m3u8", nil)
 	req4.AddCookie(sessionCookie)
 	w4 := httptest.NewRecorder()
 	handler.ServeHTTP(w4, req4)
 
-	// Assert deterministic failure mode (503)
-	// The handler returns 503 because V3 components are not initialized in this test.
+	// Assert deterministic failure mode (400)
 	// This confirms we passed Auth (401) and reached the handler logic.
-	// In production with V3 enabled, this would work.
-	assert.Equal(t, http.StatusServiceUnavailable, w4.Code, "Expected 503 (Auth passed, V3 not initialized in test)")
+	assert.Equal(t, http.StatusBadRequest, w4.Code, "Expected 400 (Auth passed, invalid recording ID)")
 }

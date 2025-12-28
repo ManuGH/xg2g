@@ -73,6 +73,9 @@ type Server struct {
 	epgCacheMTime time.Time
 	epgSfg        singleflight.Group
 
+	// Recording Playback (VOD cache generation)
+	recordingSfg singleflight.Group
+
 	// OpenWebIF Client Cache (P1 Performance Fix)
 	owiClient *openwebif.Client
 	owiEpoch  uint64

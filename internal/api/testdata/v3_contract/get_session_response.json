@@ -6,5 +6,10 @@
   "reason": "R_NONE",
   "reasonDetail": "baseline",
   "correlationId": "corr-test-001",
-  "updatedAtMs": 1700000000000
+  "updatedAtMs": 1700000000000,
+  "mode": "LIVE",
+  "seekableStartSeconds": 0,
+  "seekableEndSeconds": 0,
+  "liveEdgeSeconds": 0,
+  "playbackUrl": "/api/v3/sessions/550e8400-e29b-41d4-a716-446655440000/hls/index.m3u8"
 }

@@ -128,11 +128,19 @@ func (m *Manager) UpdateRule(id string, upd SeriesRule) error {
 		return fmt.Errorf("%w: %s", ErrRuleNotFound, id)
 	}
 
-	// Preserve server-managed fields
+	// Preserve server-managed fields when caller did not supply them.
 	upd.ID = id
-	upd.LastRunAt = existing.LastRunAt
-	upd.LastRunStatus = existing.LastRunStatus
-	upd.LastRunSummary = existing.LastRunSummary
+	hasLastRunStatus := upd.LastRunStatus != ""
+	hasLastRunSummary := !runSummaryEmpty(upd.LastRunSummary)
+	if upd.LastRunAt.IsZero() {
+		upd.LastRunAt = existing.LastRunAt
+	}
+	if !hasLastRunStatus {
+		upd.LastRunStatus = existing.LastRunStatus
+	}
+	if !hasLastRunSummary && !hasLastRunStatus {
+		upd.LastRunSummary = existing.LastRunSummary
+	}
 
 	m.rules[id] = upd
 	rules := m.getRulesSlice()
@@ -144,6 +152,19 @@ func (m *Manager) UpdateRule(id string, upd SeriesRule) error {
 	}
 
 	return nil
+}
+
+func runSummaryEmpty(summary RunSummary) bool {
+	return summary.EpgItemsScanned == 0 &&
+		summary.EpgItemsMatched == 0 &&
+		summary.TimersAttempted == 0 &&
+		summary.TimersCreated == 0 &&
+		summary.TimersSkipped == 0 &&
+		summary.TimersConflicted == 0 &&
+		summary.TimersErrored == 0 &&
+		!summary.MaxTimersGlobalPerRunHit &&
+		!summary.MaxMatchesScannedPerRuleHit &&
+		!summary.ReceiverUnreachable
 }
 
 func (m *Manager) DeleteRule(id string) error {

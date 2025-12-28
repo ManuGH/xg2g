@@ -42,7 +42,6 @@ components:
 
     IntentRequest:
       type: object
-      required: [serviceRef]
       properties:
         type:
           type: string
@@ -50,7 +49,7 @@ components:
           default: stream.start
         serviceRef:
           type: string
-          description: Enigma2 service reference
+          description: Required for stream.start. Enigma2 service reference (live playback only).
           example: "1:0:1:445D:453:1:C00000:0:0:0:"
         profileID:
           type: string
@@ -63,7 +62,7 @@ components:
         correlationId:
           type: string
           description: Optional correlation ID for end-to-end tracing
-        sessionID:
+        sessionId:
           type: string
           format: uuid
           description: Required for stream.stop intent
@@ -118,7 +117,30 @@ components:
           type: string
         updatedAtMs:
           type: integer
-          format: int64
+        mode:
+          type: string
+          description: Playback mode for the session.
+          enum: [LIVE, RECORDING]
+        durationSeconds:
+          type: number
+          format: float
+          description: DVR window length for live sessions, in seconds.
+        seekableStartSeconds:
+          type: number
+          format: float
+          description: Earliest seekable position in seconds.
+        seekableEndSeconds:
+          type: number
+          format: float
+          description: Latest seekable position in seconds.
+        liveEdgeSeconds:
+          type: number
+          format: float
+          description: Current live edge position in seconds (live only).
+        playbackUrl:
+          type: string
+          description: Playback URL for the HLS playlist.
+          format: uri
 
     SessionRecord:
       type: object
@@ -712,11 +734,29 @@ components:
     RecordingItem:
       type: object
       properties:
-        service_ref: { type: string }
+        service_ref:
+          type: string
+          description: Legacy receiver service reference (read-only).
+        recording_id:
+          type: string
+          description: Base64url-encoded recording ID (RFC 4648, unpadded) to use for /recordings/{recordingId}.
+          pattern: '^[A-Za-z0-9_-]+$'
+          minLength: 16
+          maxLength: 2048
+          example: "MTowOjA6MDo6L21lZGlhL2hkZC9tb3ZpZS9mb28udHM"
         title: { type: string }
         description: { type: string }
-        begin: { type: integer, format: int64 }
-        length: { type: string }
+        begin_unix_seconds:
+          type: integer
+          format: int64
+          description: Recording start time as UNIX seconds.
+        duration_seconds:
+          type: integer
+          format: int64
+          description: Recording duration in seconds, if known.
+        length:
+          type: string
+          description: Human-readable duration string for display only.
         filename: { type: string }
 
     RecordingResponse:
@@ -738,7 +778,7 @@ components:
           items: { $ref: "#/components/schemas/RecordingItem" }
 
 security:
-  - BearerAuth: []
+  - BearerAuth: [v3:read]
 
 paths:
   /system/health:
@@ -755,6 +795,8 @@ paths:
   /system/config:
     get:
       summary: Get system configuration
+      security:
+        - BearerAuth: [v3:admin]
       responses:
         "200":
           description: Configuration
@@ -764,6 +806,8 @@ paths:
                 $ref: "#/components/schemas/AppConfig"
     put:
       summary: Update system configuration
+      security:
+        - BearerAuth: [v3:admin]
       requestBody:
         required: true
         content:
@@ -788,6 +832,8 @@ paths:
   /system/refresh:
     post:
       summary: Trigger data refresh (EPG/Channels)
+      security:
+        - BearerAuth: [v3:write]
       responses:
         "202":
           description: Refresh started
@@ -905,6 +951,8 @@ paths:
   /services/{id}/toggle:
     post:
       summary: Toggle service enabled state
+      security:
+        - BearerAuth: [v3:write]
       parameters:
         - in: path
           name: id
@@ -967,6 +1015,9 @@ paths:
   /recordings/{recordingId}:
     delete:
       summary: Delete a recording
+      description: Deletes the recording via OpenWebIF on the receiver.
+      security:
+        - BearerAuth: [v3:write]
       operationId: deleteRecording
       tags:
         - recordings
@@ -976,7 +1027,11 @@ paths:
           required: true
           schema:
             type: string
-          description: URL-encoded service reference or ID of the recording
+            pattern: '^[A-Za-z0-9_-]+$'
+            minLength: 16
+            maxLength: 2048
+            example: "MTowOjA6MDo6L21lZGlhL2hkZC9tb3ZpZS9mb28udHM"
+          description: Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recording_id
       responses:
         "204":
           description: Recording deleted
@@ -988,23 +1043,6 @@ paths:
           description: Recording not found
         "500":
           description: Failed to delete recording
-
-  /recordings/{recordingId}/stream:
-    get:
-      summary: Stream recording (deprecated)
-      operationId: getRecordingStream
-      tags:
-        - recordings
-      parameters:
-        - name: recordingId
-          in: path
-          required: true
-          schema:
-            type: string
-          description: URL-encoded service reference or ID of the recording
-      responses:
-        "403":
-          description: Recording streaming deprecated
 
   /recordings/{recordingId}/playlist.m3u8:
     get:
@@ -1018,7 +1056,11 @@ paths:
           required: true
           schema:
             type: string
-          description: URL-encoded service reference or ID of the recording
+            pattern: '^[A-Za-z0-9_-]+$'
+            minLength: 16
+            maxLength: 2048
+            example: "MTowOjA6MDo6L21lZGlhL2hkZC9tb3ZpZS9mb28udHM"
+          description: Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recording_id
       responses:
         "200":
           description: HLS Playlist
@@ -1026,9 +1068,15 @@ paths:
             application/vnd.apple.mpegurl:
               schema:
                 type: string
-                format: binary
+            application/x-mpegURL:
+              schema:
+                type: string
+        "400":
+          description: Invalid recording ID
         "404":
           description: Recording not found
+        "409":
+          description: Recording not ready
 
   /recordings/{recordingId}/{segment}:
     get:
@@ -1042,6 +1090,11 @@ paths:
           required: true
           schema:
             type: string
+            pattern: '^[A-Za-z0-9_-]+$'
+            minLength: 16
+            maxLength: 2048
+            example: "MTowOjA6MDo6L21lZGlhL2hkZC9tb3ZpZS9mb28udHM"
+          description: Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recording_id
         - name: segment
           in: path
           required: true
@@ -1056,6 +1109,26 @@ paths:
               schema:
                 type: string
                 format: binary
+            video/MP2T:
+              schema:
+                type: string
+                format: binary
+            video/iso.segment:
+              schema:
+                type: string
+                format: binary
+            video/mp4:
+              schema:
+                type: string
+                format: binary
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: Invalid recording ID
+        "404":
+          description: Recording not found
 
   /auth/session:
     post:
@@ -1095,6 +1168,8 @@ paths:
                 $ref: "#/components/schemas/TimerList"
     post:
       summary: Create a timer
+      security:
+        - BearerAuth: [v3:write]
       operationId: addTimer
       tags:
         - timers
@@ -1153,6 +1228,8 @@ paths:
           description: Timer not found
     patch:
       summary: Edit timer
+      security:
+        - BearerAuth: [v3:write]
       operationId: updateTimer
       tags:
         - timers
@@ -1193,6 +1270,8 @@ paths:
           description: Receiver fail / Rollback
     delete:
       summary: Delete timer
+      security:
+        - BearerAuth: [v3:write]
       operationId: deleteTimer
       tags:
         - timers
@@ -1259,6 +1338,8 @@ paths:
   /streams/{id}:
     delete:
       summary: Terminate a stream session
+      security:
+        - BearerAuth: [v3:write]
       operationId: deleteStreamsId
       parameters:
         - in: path
@@ -1275,6 +1356,8 @@ paths:
   /logs:
     get:
       summary: Get recent logs
+      security:
+        - BearerAuth: [v3:admin]
       operationId: getLogs
       responses:
         "200":
@@ -1303,6 +1386,8 @@ paths:
                   $ref: "#/components/schemas/SeriesRule"
     post:
       summary: Create a new series rule
+      security:
+        - BearerAuth: [v3:write]
       operationId: createSeriesRule
       tags:
         - series
@@ -1323,6 +1408,8 @@ paths:
   /series-rules/{id}/run:
     post:
       summary: Run a specific series rule immediately
+      security:
+        - BearerAuth: [v3:write]
       operationId: runSeriesRule
       tags:
         - series
@@ -1350,6 +1437,8 @@ paths:
   /series-rules/run:
     post:
       summary: Run all enabled series rules immediately
+      security:
+        - BearerAuth: [v3:write]
       operationId: runAllSeriesRules
       tags:
         - series
@@ -1378,6 +1467,8 @@ paths:
           type: string
     put:
       summary: Update an existing series rule
+      security:
+        - BearerAuth: [v3:write]
       operationId: updateSeriesRule
       tags:
         - series
@@ -1400,6 +1491,8 @@ paths:
           description: Invalid request
     delete:
       summary: Delete a series rule
+      security:
+        - BearerAuth: [v3:write]
       operationId: deleteSeriesRule
       tags:
         - series

@@ -127,18 +127,17 @@ func BuildHLSArgs(in InputSpec, out OutputSpec, prof model.ProfileSpec) ([]strin
 		"-hls_segment_filename", out.SegmentFilename,
 	)
 
-	// HLS Flags - DVR mode vs Live mode
+	// HLS Flags - DVR/VOD vs Live
 	// DVR: Keep segments, no temp_file (Safari seeking needs stable files)
 	// Live: Delete old segments to save disk
 	hlsFlags := "delete_segments+omit_endlist+temp_file"
 
-	if out.PlaylistWindowSize == 0 {
-		// VOD / Full DVR Mode:
+	if prof.VOD {
+		// VOD:
 		// - Keep ALL segments (-hls_list_size 0)
-		// - Append new segments
-		// - Allow ENDLIST tag (do not omit) so player sees it as finite eventually
+		// - Allow ENDLIST tag (do not omit) so player sees it as finite
 		hlsFlags = "temp_file+independent_segments+program_date_time"
-	} else if out.PlaylistWindowSize > 10 {
+	} else if prof.DVRWindowSec > 0 {
 		// Rolling DVR mode: NO delete_segments, NO temp_file for stable seeking
 		// CRITICAL Safari DVR flags (based on Apple HLS spec):
 		// - append_list: Required for EVENT playlists to properly append segments
@@ -191,10 +190,12 @@ func BuildHLSArgs(in InputSpec, out OutputSpec, prof model.ProfileSpec) ([]strin
 		}
 	}
 
-	// DVR mode: Use EVENT playlist type for seekable streams
-	// CRITICAL: Must be set for ALL DVR configurations, not just fMP4
-	// Safari requires EVENT playlist type to enable DVR seeking
-	if out.PlaylistWindowSize > 10 {
+	// Playlist type:
+	// - DVR (timeshift): EVENT
+	// - Recording/VOD: VOD
+	if prof.VOD {
+		args = append(args, "-hls_playlist_type", "vod")
+	} else if prof.DVRWindowSec > 0 {
 		args = append(args, "-hls_playlist_type", "event")
 	}
 

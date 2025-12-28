@@ -4,6 +4,131 @@ export type ClientOptions = {
     baseUrl: `${string}://${string}/api/v3` | (string & {});
 };
 
+export type ApiError = {
+    /**
+     * Machine-readable error code
+     */
+    code: string;
+    /**
+     * Human-readable error message
+     */
+    message: string;
+    /**
+     * Request ID for debugging
+     */
+    request_id: string;
+    /**
+     * Optional additional context
+     */
+    details?: unknown;
+};
+
+export type IntentRequest = {
+    type?: 'stream.start' | 'stream.stop';
+    /**
+     * Required for stream.start. Enigma2 service reference (live playback only).
+     */
+    serviceRef?: string;
+    /**
+     * Transcoding profile ID
+     */
+    profileID?: string;
+    /**
+     * Legacy alias for profileID (decode-only, will be removed in v3.2)
+     *
+     * @deprecated
+     */
+    profile?: string;
+    /**
+     * Optional correlation ID for end-to-end tracing
+     */
+    correlationId?: string;
+    /**
+     * Required for stream.stop intent
+     */
+    sessionId?: string;
+    /**
+     * Optional idempotency key for at-most-once semantics
+     */
+    idempotencyKey?: string;
+    /**
+     * Additional parameters
+     */
+    params?: {
+        [key: string]: string;
+    };
+};
+
+export type SessionResponse = {
+    sessionId: string;
+    serviceRef?: string;
+    profile?: string;
+    /**
+     * Session lifecycle state. READY guarantees a playable HLS stream (playlist + at least one segment,
+     * atomically published). PRIMING means FFmpeg is running but content is not yet playable.
+     *
+     */
+    state: 'NEW' | 'STARTING' | 'PRIMING' | 'READY' | 'DRAINING' | 'STOPPING' | 'STOPPED' | 'FAILED' | 'CANCELLED';
+    /**
+     * Reason code; R_LEASE_BUSY means capacity rejection (no tuner available), not a system fault.
+     */
+    reason?: 'R_NONE' | 'R_UNKNOWN' | 'R_BAD_REQUEST' | 'R_NOT_FOUND' | 'R_LEASE_BUSY' | 'R_TUNE_TIMEOUT' | 'R_LEASE_EXPIRED' | 'R_TUNE_FAILED' | 'R_INVARIANT_VIOLATION' | 'R_FFMPEG_START_FAILED' | 'R_PROCESS_ENDED' | 'R_PACKAGER_FAILED' | 'R_CANCELLED' | 'R_IDLE_TIMEOUT' | 'R_CLIENT_STOP';
+    reasonDetail?: string;
+    correlationId?: string;
+    updatedAtMs?: number;
+    /**
+     * Playback mode for the session.
+     */
+    mode?: 'LIVE' | 'RECORDING';
+    /**
+     * DVR window length for live sessions, in seconds.
+     */
+    durationSeconds?: number;
+    /**
+     * Earliest seekable position in seconds.
+     */
+    seekableStartSeconds?: number;
+    /**
+     * Latest seekable position in seconds.
+     */
+    seekableEndSeconds?: number;
+    /**
+     * Current live edge position in seconds (live only).
+     */
+    liveEdgeSeconds?: number;
+    /**
+     * Playback URL for the HLS playlist.
+     */
+    playbackUrl?: string;
+};
+
+export type SessionRecord = {
+    sessionId?: string;
+    serviceRef?: string;
+    profile?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Session lifecycle state. READY guarantees a playable HLS stream (playlist + at least one segment,
+     * atomically published). PRIMING means FFmpeg is running but content is not yet playable.
+     *
+     */
+    state?: 'NEW' | 'STARTING' | 'PRIMING' | 'READY' | 'DRAINING' | 'STOPPING' | 'STOPPED' | 'FAILED' | 'CANCELLED';
+    /**
+     * Reason code; R_LEASE_BUSY means capacity rejection (no tuner available), not a system fault.
+     */
+    reason?: 'R_NONE' | 'R_UNKNOWN' | 'R_BAD_REQUEST' | 'R_NOT_FOUND' | 'R_LEASE_BUSY' | 'R_TUNE_TIMEOUT' | 'R_LEASE_EXPIRED' | 'R_TUNE_FAILED' | 'R_INVARIANT_VIOLATION' | 'R_FFMPEG_START_FAILED' | 'R_PROCESS_ENDED' | 'R_PACKAGER_FAILED' | 'R_CANCELLED' | 'R_IDLE_TIMEOUT' | 'R_CLIENT_STOP';
+    reasonDetail?: string;
+    createdAtUnix?: number;
+    updatedAtUnix?: number;
+    lastAccessUnix?: number;
+    tunerID?: string;
+    correlationId?: string;
+    contextData?: {
+        [key: string]: string;
+    };
+};
+
 export type Error = {
     type?: string;
     title?: string;
@@ -144,6 +269,27 @@ export type SeriesRule = {
     lastRunSummary?: RunSummary;
 };
 
+export type SeriesRuleUpdate = {
+    enabled: boolean;
+    /**
+     * Search term or regex for event title
+     */
+    keyword: string;
+    /**
+     * Optional service reference to restrict rule
+     */
+    channel_ref?: string;
+    /**
+     * Days of week (0=Sunday)
+     */
+    days?: Array<number>;
+    /**
+     * Time window HHMM-HHMM
+     */
+    start_window?: string;
+    priority: number;
+};
+
 export type ConfigUpdate = {
     openWebIF?: OpenWebIfConfig;
     bouquets?: Array<string>;
@@ -179,6 +325,32 @@ export type Service = {
      * Service reference for streaming (extracted from M3U URL)
      */
     service_ref?: string;
+};
+
+export type NowNextRequest = {
+    services: Array<string>;
+};
+
+export type NowNextEntry = {
+    title: string;
+    /**
+     * Unix timestamp (seconds)
+     */
+    start: number;
+    /**
+     * Unix timestamp (seconds)
+     */
+    end: number;
+};
+
+export type NowNextItem = {
+    service_ref: string;
+    now?: NowNextEntry;
+    next?: NowNextEntry;
+};
+
+export type NowNextResponse = {
+    items: Array<NowNextItem>;
 };
 
 export type ProblemDetails = {
@@ -315,10 +487,27 @@ export type DirectoryItem = {
 };
 
 export type RecordingItem = {
+    /**
+     * Legacy receiver service reference (read-only).
+     */
     service_ref?: string;
+    /**
+     * Base64url-encoded recording ID (RFC 4648, unpadded) to use for /recordings/{recordingId}.
+     */
+    recording_id?: string;
     title?: string;
     description?: string;
-    begin?: number;
+    /**
+     * Recording start time as UNIX seconds.
+     */
+    begin_unix_seconds?: number;
+    /**
+     * Recording duration in seconds, if known.
+     */
+    duration_seconds?: number;
+    /**
+     * Human-readable duration string for display only.
+     */
     length?: string;
     filename?: string;
 };
@@ -454,6 +643,29 @@ export type GetServicesBouquetsResponses = {
 
 export type GetServicesBouquetsResponse = GetServicesBouquetsResponses[keyof GetServicesBouquetsResponses];
 
+export type PostServicesNowNextData = {
+    body: NowNextRequest;
+    path?: never;
+    query?: never;
+    url: '/services/now-next';
+};
+
+export type PostServicesNowNextErrors = {
+    /**
+     * Invalid request
+     */
+    400: unknown;
+};
+
+export type PostServicesNowNextResponses = {
+    /**
+     * Now/next EPG entries per service
+     */
+    200: NowNextResponse;
+};
+
+export type PostServicesNowNextResponse = PostServicesNowNextResponses[keyof PostServicesNowNextResponses];
+
 export type GetEpgData = {
     body?: never;
     path?: never;
@@ -586,7 +798,7 @@ export type DeleteRecordingData = {
     body?: never;
     path: {
         /**
-         * URL-encoded service reference or ID of the recording
+         * Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recording_id
          */
         recordingId: string;
     };
@@ -622,30 +834,11 @@ export type DeleteRecordingResponses = {
 
 export type DeleteRecordingResponse = DeleteRecordingResponses[keyof DeleteRecordingResponses];
 
-export type GetRecordingStreamData = {
-    body?: never;
-    path: {
-        /**
-         * URL-encoded service reference or ID of the recording
-         */
-        recordingId: string;
-    };
-    query?: never;
-    url: '/recordings/{recordingId}/stream';
-};
-
-export type GetRecordingStreamErrors = {
-    /**
-     * Recording streaming deprecated
-     */
-    403: unknown;
-};
-
 export type GetRecordingHlsPlaylistData = {
     body?: never;
     path: {
         /**
-         * URL-encoded service reference or ID of the recording
+         * Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recording_id
          */
         recordingId: string;
     };
@@ -655,16 +848,24 @@ export type GetRecordingHlsPlaylistData = {
 
 export type GetRecordingHlsPlaylistErrors = {
     /**
+     * Invalid recording ID
+     */
+    400: unknown;
+    /**
      * Recording not found
      */
     404: unknown;
+    /**
+     * Recording not ready
+     */
+    409: unknown;
 };
 
 export type GetRecordingHlsPlaylistResponses = {
     /**
      * HLS Playlist
      */
-    200: Blob | File;
+    200: string;
 };
 
 export type GetRecordingHlsPlaylistResponse = GetRecordingHlsPlaylistResponses[keyof GetRecordingHlsPlaylistResponses];
@@ -672,11 +873,25 @@ export type GetRecordingHlsPlaylistResponse = GetRecordingHlsPlaylistResponses[k
 export type GetRecordingHlsCustomSegmentData = {
     body?: never;
     path: {
+        /**
+         * Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recording_id
+         */
         recordingId: string;
         segment: string;
     };
     query?: never;
     url: '/recordings/{recordingId}/{segment}';
+};
+
+export type GetRecordingHlsCustomSegmentErrors = {
+    /**
+     * Invalid recording ID
+     */
+    400: unknown;
+    /**
+     * Recording not found
+     */
+    404: unknown;
 };
 
 export type GetRecordingHlsCustomSegmentResponses = {
@@ -1042,3 +1257,176 @@ export type DeleteSeriesRuleResponses = {
 };
 
 export type DeleteSeriesRuleResponse = DeleteSeriesRuleResponses[keyof DeleteSeriesRuleResponses];
+
+export type UpdateSeriesRuleData = {
+    body: SeriesRuleUpdate;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/series-rules/{id}';
+};
+
+export type UpdateSeriesRuleErrors = {
+    /**
+     * Invalid request
+     */
+    400: unknown;
+    /**
+     * Rule not found
+     */
+    404: unknown;
+};
+
+export type UpdateSeriesRuleResponses = {
+    /**
+     * Updated
+     */
+    200: SeriesRule;
+};
+
+export type UpdateSeriesRuleResponse = UpdateSeriesRuleResponses[keyof UpdateSeriesRuleResponses];
+
+export type CreateIntentData = {
+    body: IntentRequest;
+    path?: never;
+    query?: never;
+    url: '/intents';
+};
+
+export type CreateIntentErrors = {
+    /**
+     * Invalid request
+     */
+    400: ApiError;
+    /**
+     * Lease busy (capacity rejection; no session created)
+     */
+    409: ApiError;
+    /**
+     * V3 control plane unavailable
+     */
+    503: ApiError;
+};
+
+export type CreateIntentError = CreateIntentErrors[keyof CreateIntentErrors];
+
+export type CreateIntentResponses = {
+    /**
+     * Intent accepted
+     */
+    202: {
+        sessionId?: string;
+        status?: 'accepted' | 'idempotent_replay';
+        correlationId?: string;
+    };
+};
+
+export type CreateIntentResponse = CreateIntentResponses[keyof CreateIntentResponses];
+
+export type ListSessionsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Pagination offset
+         */
+        offset?: number;
+        /**
+         * Pagination limit (max 1000)
+         */
+        limit?: number;
+    };
+    url: '/sessions';
+};
+
+export type ListSessionsErrors = {
+    /**
+     * V3 control plane unavailable
+     */
+    503: ApiError;
+};
+
+export type ListSessionsError = ListSessionsErrors[keyof ListSessionsErrors];
+
+export type ListSessionsResponses = {
+    /**
+     * Sessions list with pagination metadata
+     */
+    200: {
+        sessions?: Array<SessionRecord>;
+        pagination?: {
+            offset?: number;
+            limit?: number;
+            total?: number;
+            count?: number;
+        };
+    };
+};
+
+export type ListSessionsResponse = ListSessionsResponses[keyof ListSessionsResponses];
+
+export type GetSessionStateData = {
+    body?: never;
+    path: {
+        sessionID: string;
+    };
+    query?: never;
+    url: '/sessions/{sessionID}';
+};
+
+export type GetSessionStateErrors = {
+    /**
+     * Invalid session ID
+     */
+    400: ApiError;
+    /**
+     * Session not found
+     */
+    404: ApiError;
+};
+
+export type GetSessionStateError = GetSessionStateErrors[keyof GetSessionStateErrors];
+
+export type GetSessionStateResponses = {
+    /**
+     * Session state
+     */
+    200: SessionResponse;
+};
+
+export type GetSessionStateResponse = GetSessionStateResponses[keyof GetSessionStateResponses];
+
+export type ServeHlsData = {
+    body?: never;
+    path: {
+        sessionID: string;
+        filename: string;
+    };
+    query?: never;
+    url: '/sessions/{sessionID}/hls/{filename}';
+};
+
+export type ServeHlsErrors = {
+    /**
+     * Invalid request
+     */
+    400: unknown;
+    /**
+     * File not found
+     */
+    404: unknown;
+    /**
+     * V3 control plane unavailable
+     */
+    503: unknown;
+};
+
+export type ServeHlsResponses = {
+    /**
+     * HLS content
+     */
+    200: string;
+};
+
+export type ServeHlsResponse = ServeHlsResponses[keyof ServeHlsResponses];

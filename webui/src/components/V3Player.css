@@ -16,20 +16,24 @@
   left: 0;
   right: 0;
   margin: 0;
-  padding: 16px;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.8), transparent);
+  padding: 20px 24px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.95), rgba(0, 0, 0, 0.5) 60%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   display: flex;
   gap: 12px;
   z-index: 50;
   align-items: center;
   flex-wrap: wrap;
   opacity: 0;
-  transition: opacity 0.3s ease;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  transform: translateY(10px);
 }
 
 .v3-player-container:hover .v3-player-controls-header,
 .v3-player-controls-header:focus-within {
   opacity: 1;
+  transform: translateY(0);
 }
 
 .bg-input {
@@ -323,14 +327,270 @@
   transform: rotate(90deg);
 }
 
+/* VOD Scrubber Container */
+.vod-controls {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  padding: 12px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  min-width: 300px;
+  transition: all 0.3s ease;
+}
+
+.seek-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.seek-slider-group {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 220px;
+}
+
+.live-btn {
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  background: rgba(239, 68, 68, 0.2);
+  color: #fff;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.live-btn.active {
+  background: rgba(239, 68, 68, 0.85);
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.5);
+}
+
+.live-btn:hover {
+  background: rgba(239, 68, 68, 0.7);
+}
+
+.vod-controls:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* Time Display */
+.vod-time {
+  font-size: 13px;
+  color: #fff;
+  font-family: 'JetBrains Mono', 'Menlo', monospace;
+  min-width: 65px;
+  text-align: center;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+}
+
+.vod-time-total {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.6);
+  font-family: 'JetBrains Mono', 'Menlo', monospace;
+  min-width: 65px;
+  text-align: center;
+  letter-spacing: 0.5px;
+}
+
+/* VOD Slider (Range Input) */
+.vod-slider {
+  flex: 1;
+  height: 6px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  outline: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.vod-slider:hover {
+  background: rgba(255, 255, 255, 0.25);
+  height: 8px;
+}
+
+.vod-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  background: #3b82f6;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.5);
+  transition: all 0.2s ease;
+}
+
+.vod-slider::-webkit-slider-thumb:hover {
+  width: 18px;
+  height: 18px;
+  background: #60a5fa;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.8);
+}
+
+.vod-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  background: #3b82f6;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.5);
+  transition: all 0.2s ease;
+}
+
+.vod-slider::-moz-range-thumb:hover {
+  width: 18px;
+  height: 18px;
+  background: #60a5fa;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.8);
+}
+
+/* Play/Pause Button in VOD mode */
+.vod-play-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(59, 130, 246, 0.9);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 18px;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.vod-play-btn:hover {
+  background: rgba(37, 99, 235, 1);
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.6);
+}
+
+.vod-play-btn:active {
+  transform: scale(0.95);
+}
+
+/* Volume Control */
+.volume-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: all 0.2s ease;
+}
+
+.volume-control:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.volume-btn {
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.volume-btn:hover {
+  color: #3b82f6;
+  transform: scale(1.1);
+}
+
+.volume-slider {
+  width: 80px;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  outline: none;
+  cursor: pointer;
+}
+
+.volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  background: #3b82f6;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.volume-slider::-webkit-slider-thumb:hover {
+  background: #60a5fa;
+  transform: scale(1.2);
+}
+
+.volume-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  background: #3b82f6;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.volume-slider::-moz-range-thumb:hover {
+  background: #60a5fa;
+  transform: scale(1.2);
+}
+
 /* Touch/Mobile: Always show controls */
 @media (hover: none) {
   .v3-player-controls-header {
     opacity: 1;
-    background: linear-gradient(to top, rgba(0, 0, 0, 0.9), rgba(0, 0, 0, 0.4));
+    transform: translateY(0);
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.95), rgba(0, 0, 0, 0.6) 60%, transparent);
   }
 
   .overlay-title {
     opacity: 1;
+  }
+
+  .vod-slider {
+    height: 8px;
+  }
+
+  .vod-slider::-webkit-slider-thumb {
+    width: 20px;
+    height: 20px;
+  }
+
+  .vod-slider::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
   }
 }

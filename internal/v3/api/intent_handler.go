@@ -60,6 +60,17 @@ func (h IntentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	mode := model.ModeLive
+	if raw := strings.TrimSpace(req.Params["mode"]); raw != "" {
+		if strings.EqualFold(raw, model.ModeRecording) {
+			http.Error(w, "recording playback uses /recordings", http.StatusBadRequest)
+			return
+		}
+		if !strings.EqualFold(raw, model.ModeLive) {
+			http.Error(w, "unsupported playback mode", http.StatusBadRequest)
+			return
+		}
+	}
 
 	// Idempotency: Prefer header, fall back to request field.
 	idem := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
@@ -115,28 +126,40 @@ func (h IntentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	prof := profiles.Resolve(profileID, r.UserAgent(), dvrWindowSec)
 
-	dedupKey := lease.LeaseKeyService(req.ServiceRef)
-	dedupLease, ok, err := h.Store.TryAcquireLease(ctx, dedupKey, sessionID, h.LeaseTTL)
-	if err != nil {
-		http.Error(w, "lease acquisition failed", http.StatusServiceUnavailable)
-		return
+	var acquiredLeases []store.Lease
+	releaseLeases := func() {
+		for _, l := range acquiredLeases {
+			_ = h.Store.ReleaseLease(ctx, l.Key(), l.Owner())
+		}
 	}
-	if !ok {
-		w.Header().Set("Retry-After", "1")
-		http.Error(w, "lease busy", http.StatusConflict)
-		return
-	}
-	tunerLease, ok, err := tryAcquireTunerLease(ctx, h.Store, sessionID, h.TunerSlots, h.LeaseTTL)
-	if err != nil {
-		_ = h.Store.ReleaseLease(ctx, dedupLease.Key(), dedupLease.Owner())
-		http.Error(w, "tuner lease acquisition failed", http.StatusServiceUnavailable)
-		return
-	}
-	if !ok {
-		_ = h.Store.ReleaseLease(ctx, dedupLease.Key(), dedupLease.Owner())
-		w.Header().Set("Retry-After", "1")
-		http.Error(w, "lease busy", http.StatusConflict)
-		return
+
+	if mode == model.ModeLive {
+		dedupKey := lease.LeaseKeyService(req.ServiceRef)
+		dedupLease, ok, err := h.Store.TryAcquireLease(ctx, dedupKey, sessionID, h.LeaseTTL)
+		if err != nil {
+			http.Error(w, "lease acquisition failed", http.StatusServiceUnavailable)
+			return
+		}
+		if !ok {
+			w.Header().Set("Retry-After", "1")
+			http.Error(w, "lease busy", http.StatusConflict)
+			return
+		}
+		acquiredLeases = append(acquiredLeases, dedupLease)
+
+		tunerLease, ok, err := tryAcquireTunerLease(ctx, h.Store, sessionID, h.TunerSlots, h.LeaseTTL)
+		if err != nil {
+			releaseLeases()
+			http.Error(w, "tuner lease acquisition failed", http.StatusServiceUnavailable)
+			return
+		}
+		if !ok {
+			releaseLeases()
+			w.Header().Set("Retry-After", "1")
+			http.Error(w, "lease busy", http.StatusConflict)
+			return
+		}
+		acquiredLeases = append(acquiredLeases, tunerLease)
 	}
 
 	rec := &model.SessionRecord{
@@ -147,10 +170,12 @@ func (h IntentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		CorrelationID: correlationID,
 		CreatedAtUnix: time.Now().Unix(),
 		UpdatedAtUnix: time.Now().Unix(),
+		ContextData: map[string]string{
+			model.CtxKeyMode: mode,
+		},
 	}
 	if err := h.Store.PutSession(ctx, rec); err != nil {
-		_ = h.Store.ReleaseLease(ctx, tunerLease.Key(), tunerLease.Owner())
-		_ = h.Store.ReleaseLease(ctx, dedupLease.Key(), dedupLease.Owner())
+		releaseLeases()
 		http.Error(w, "failed to persist session", http.StatusInternalServerError)
 		return
 	}
@@ -168,8 +193,7 @@ func (h IntentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		CorrelationID: correlationID,
 		// Options/Params mapping if needed
 	}); err != nil {
-		_ = h.Store.ReleaseLease(ctx, tunerLease.Key(), tunerLease.Owner())
-		_ = h.Store.ReleaseLease(ctx, dedupLease.Key(), dedupLease.Owner())
+		releaseLeases()
 		http.Error(w, "failed to dispatch intent", http.StatusInternalServerError)
 		return
 	}

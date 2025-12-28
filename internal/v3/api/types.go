@@ -26,12 +26,18 @@ type IntentResponse struct {
 }
 
 type SessionResponse struct {
-	SessionID     string             `json:"sessionId"`
-	ServiceRef    string             `json:"serviceRef"`
-	Profile       string             `json:"profile"`
-	State         model.SessionState `json:"state"`
-	Reason        model.ReasonCode   `json:"reason,omitempty"`
-	ReasonDetail  string             `json:"reasonDetail,omitempty"`
-	CorrelationID string             `json:"correlationId,omitempty"`
-	UpdatedAtMs   int64              `json:"updatedAtMs"`
+	SessionID            string             `json:"sessionId"`
+	ServiceRef           string             `json:"serviceRef"`
+	Profile              string             `json:"profile"`
+	State                model.SessionState `json:"state"`
+	Reason               model.ReasonCode   `json:"reason,omitempty"`
+	ReasonDetail         string             `json:"reasonDetail,omitempty"`
+	CorrelationID        string             `json:"correlationId,omitempty"`
+	UpdatedAtMs          int64              `json:"updatedAtMs"`
+	Mode                 string             `json:"mode,omitempty"`
+	DurationSeconds      *float64           `json:"durationSeconds,omitempty"`
+	SeekableStartSeconds *float64           `json:"seekableStartSeconds,omitempty"`
+	SeekableEndSeconds   *float64           `json:"seekableEndSeconds,omitempty"`
+	LiveEdgeSeconds      *float64           `json:"liveEdgeSeconds,omitempty"`
+	PlaybackURL          string             `json:"playbackUrl,omitempty"`
 }

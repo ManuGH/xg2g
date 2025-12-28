@@ -8,9 +8,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -111,6 +113,10 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 
 	switch intentType {
 	case model.IntentTypeStreamStart:
+		if strings.TrimSpace(req.ServiceRef) == "" {
+			RespondError(w, r, http.StatusBadRequest, ErrInvalidInput, "serviceRef required for start")
+			return
+		}
 		sessionID = uuid.New().String()
 		if correlationID == "" {
 			correlationID = uuid.New().String()
@@ -142,6 +148,17 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 			clientIP = host
 		} else {
 			clientIP = r.RemoteAddr
+		}
+	}
+	mode := model.ModeLive
+	if raw := strings.TrimSpace(req.Params["mode"]); raw != "" {
+		if strings.EqualFold(raw, model.ModeRecording) {
+			RespondError(w, r, http.StatusBadRequest, ErrInvalidInput, "recording playback uses /recordings")
+			return
+		}
+		if !strings.EqualFold(raw, model.ModeLive) {
+			RespondError(w, r, http.StatusBadRequest, ErrInvalidInput, "unsupported playback mode")
+			return
 		}
 	}
 
@@ -218,9 +235,11 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 			CreatedAtUnix:  time.Now().Unix(),
 			UpdatedAtUnix:  time.Now().Unix(),
 			LastAccessUnix: time.Now().Unix(),
-			ContextData:    map[string]string{"client_ip": clientIP},
+			ContextData: map[string]string{
+				"client_ip":      clientIP,
+				model.CtxKeyMode: mode,
+			},
 		}
-
 		// Persist Session (Atomic)
 		if err := store.PutSessionWithIdempotency(r.Context(), session, req.IdempotencyKey, 1*time.Minute); err != nil {
 			releaseLeases()
@@ -389,6 +408,13 @@ func (s *Server) handleV3SessionState(w http.ResponseWriter, r *http.Request) {
 		CorrelationID: session.CorrelationID,
 		UpdatedAtMs:   session.UpdatedAtUnix * 1000,
 	}
+	mode, durationSeconds, seekableStart, seekableEnd, liveEdge := sessionPlaybackInfo(session, time.Now())
+	resp.Mode = mode
+	resp.DurationSeconds = durationSeconds
+	resp.SeekableStartSeconds = seekableStart
+	resp.SeekableEndSeconds = seekableEnd
+	resp.LiveEdgeSeconds = liveEdge
+	resp.PlaybackURL = fmt.Sprintf("/api/v3/sessions/%s/hls/index.m3u8", session.SessionID)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
@@ -456,4 +482,77 @@ func canonicalProfileID(profileID, profile string) (string, bool, error) {
 		return profile, true, nil
 	}
 	return "", false, nil
+}
+
+func sessionPlaybackInfo(session *model.SessionRecord, now time.Time) (string, *float64, *float64, *float64, *float64) {
+	mode := model.ModeLive
+	if session.ContextData != nil {
+		if raw := strings.TrimSpace(session.ContextData[model.CtxKeyMode]); raw != "" {
+			mode = strings.ToUpper(raw)
+		}
+	}
+	if mode != model.ModeLive && mode != model.ModeRecording {
+		mode = model.ModeLive
+	}
+
+	if mode == model.ModeRecording {
+		durationSeconds := parseContextSeconds(session.ContextData, model.CtxKeyDurationSeconds)
+		if durationSeconds == nil {
+			return mode, nil, nil, nil, nil
+		}
+		zero := 0.0
+		return mode, durationSeconds, &zero, durationSeconds, nil
+	}
+
+	var durationSeconds *float64
+	if session.Profile.DVRWindowSec > 0 {
+		val := float64(session.Profile.DVRWindowSec)
+		durationSeconds = &val
+	}
+
+	nowUnix := session.LastAccessUnix
+	if nowUnix == 0 {
+		nowUnix = session.UpdatedAtUnix
+	}
+	if nowUnix == 0 {
+		nowUnix = now.Unix()
+	}
+
+	startUnix := session.CreatedAtUnix
+	if startUnix == 0 {
+		startUnix = session.UpdatedAtUnix
+	}
+	if startUnix == 0 {
+		startUnix = nowUnix
+	}
+
+	liveEdgeVal := float64(nowUnix - startUnix)
+	if liveEdgeVal < 0 {
+		liveEdgeVal = 0
+	}
+
+	seekableStart := liveEdgeVal
+	if durationSeconds != nil && *durationSeconds > 0 {
+		seekableStart = liveEdgeVal - *durationSeconds
+		if seekableStart < 0 {
+			seekableStart = 0
+		}
+	}
+
+	return mode, durationSeconds, &seekableStart, &liveEdgeVal, &liveEdgeVal
+}
+
+func parseContextSeconds(ctx map[string]string, key string) *float64 {
+	if ctx == nil {
+		return nil
+	}
+	raw := strings.TrimSpace(ctx[key])
+	if raw == "" {
+		return nil
+	}
+	val, err := strconv.ParseFloat(raw, 64)
+	if err != nil || val <= 0 {
+		return nil
+	}
+	return &val
 }

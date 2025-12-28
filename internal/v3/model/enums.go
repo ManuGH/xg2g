@@ -16,7 +16,17 @@ const (
 	SessionUnknown SessionState = "UNKNOWN"
 
 	// Context Keys
-	CtxKeyTunerSlot = "tuner_slot"
+	CtxKeyTunerSlot       = "tuner_slot"
+	CtxKeyMode            = "mode"
+	CtxKeyDurationSeconds = "duration_seconds"
+	CtxKeyRecordingID     = "recording_id"
+	CtxKeySourceType      = "source_type"
+	CtxKeySource          = "source"
+)
+
+const (
+	ModeLive      = "LIVE"
+	ModeRecording = "RECORDING"
 )
 
 // ExitStatus describes how a Transcoder process ended.
@@ -94,6 +104,7 @@ type ProfileSpec struct {
 	Name           string `json:"name"`
 	LLHLS          bool   `json:"llhls"`
 	DVRWindowSec   int    `json:"dvrWindowSec"`
+	VOD            bool   `json:"vod,omitempty"`
 	TranscodeVideo bool   `json:"transcodeVideo"`
 	VideoCRF       int    `json:"videoCrf,omitempty"`
 	VideoMaxWidth  int    `json:"videoMaxWidth,omitempty"`

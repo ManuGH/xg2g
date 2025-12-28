@@ -38,7 +38,13 @@ export interface V3PlayerDirectProps extends V3PlayerBaseProps {
   channel?: never;
 }
 
-export type V3PlayerProps = V3PlayerLiveProps | V3PlayerDirectProps;
+export interface V3PlayerRecordingProps extends V3PlayerBaseProps {
+  recordingId: string;
+  channel?: never;
+  src?: never;
+}
+
+export type V3PlayerProps = V3PlayerLiveProps | V3PlayerDirectProps | V3PlayerRecordingProps;
 
 
 export interface SessionCookieState {
@@ -48,15 +54,15 @@ export interface SessionCookieState {
 
 export interface V3Intent {
   type: 'stream.start' | 'stream.stop';
-  profile?: string;
+  profileID?: string;
   serviceRef?: string;
   sessionId?: string;
 }
 
 export interface V3SessionResponse {
   sessionId: string;
-  state?: string;
-  playlistUrl?: string;
+  status?: string;
+  correlationId?: string;
 }
 
 export interface V3SessionStatusResponse {
@@ -73,6 +79,12 @@ export interface V3SessionStatusResponse {
   | 'CANCELLED';
   reason?: string;
   reasonDetail?: string;
+  mode?: 'LIVE' | 'RECORDING';
+  durationSeconds?: number;
+  seekableStartSeconds?: number;
+  seekableEndSeconds?: number;
+  liveEdgeSeconds?: number;
+  playbackUrl?: string;
 }
 
 // HLS-specific types
