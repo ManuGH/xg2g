@@ -221,6 +221,225 @@ The v3 streaming backend is the **production streaming system** (enabled by defa
 
 Configuration is fixed to v3. Use `XG2G_V3_CONFIG_STRICT=false` to override strict validation during migration.
 
+## Recording Playback
+
+xg2g supports **local-first playback** for recordings stored on NAS, NFS
+mounts, or local disks. This eliminates network streaming overhead and improves
+playback performance when the xg2g server has direct filesystem access to
+recordings.
+
+### How It Works
+
+1. **Path Mapping**: Configure receiver paths → local filesystem paths
+2. **Existence Check**: Verify the recording file exists locally
+3. **Stability Gate**: Ensure the file isn't being actively written
+   (ongoing recordings)
+4. **Playback Decision**: Use local file if stable, otherwise fall back to
+   Receiver HTTP streaming
+
+### Benefits
+
+- **Zero network overhead**: Direct file access instead of HTTP streaming
+  from receiver
+- **Better performance**: Lower latency, no transcoding overhead for local
+  playback
+- **Automatic fallback**: Gracefully uses Receiver HTTP if local file
+  unavailable or unstable
+- **Safe for ongoing recordings**: Stability check prevents streaming files
+  being written
+
+### Configuration
+
+#### Environment Variables
+
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `XG2G_RECORDINGS_POLICY` | `auto` | Playback policy: `auto` (local-first with fallback), `local_only`, `receiver_only` |
+| `XG2G_RECORDINGS_STABLE_WINDOW` | `2s` | Duration to check file size stability (prevents streaming files being written) |
+| `XG2G_RECORDINGS_MAP` | - | Path mappings: `/receiver/path=/local/path;/other=/mount` (semicolon-separated) |
+
+#### YAML Configuration
+
+```yaml
+recording_playback:
+  playback_policy: auto  # auto, local_only, receiver_only
+  stable_window: 2s      # File stability check duration
+  mappings:
+    - receiver_root: /media/hdd/movie
+      local_root: /mnt/recordings/movies
+    - receiver_root: /media/net/movie
+      local_root: /media/nfs-recordings
+```
+
+### Example Scenarios
+
+#### Scenario 1: Local Disk Recordings
+
+Receiver records to internal HDD, mounted via NFS on xg2g server:
+
+**Environment Variables:**
+
+```bash
+XG2G_RECORDINGS_POLICY=auto
+XG2G_RECORDINGS_STABLE_WINDOW=2s
+XG2G_RECORDINGS_MAP=/media/hdd/movie=/mnt/nfs-recordings
+```
+
+**YAML:**
+
+```yaml
+recording_playback:
+  playback_policy: auto
+  stable_window: 2s
+  mappings:
+    - receiver_root: /media/hdd/movie
+      local_root: /mnt/nfs-recordings
+```
+
+#### Scenario 2: Multiple Storage Locations
+
+Receiver has multiple recording locations (HDD + NAS):
+
+**Environment Variables:**
+
+```bash
+XG2G_RECORDINGS_MAP=/media/hdd/movie=/mnt/local-hdd;/media/net/movie=/mnt/nas-recordings
+```
+
+**YAML:**
+
+```yaml
+recording_playback:
+  mappings:
+    - receiver_root: /media/hdd/movie
+      local_root: /mnt/local-hdd
+    - receiver_root: /media/net/movie
+      local_root: /mnt/nas-recordings
+```
+
+#### Scenario 3: Docker with Bind Mount
+
+Receiver records to `/media/hdd/movie`, bind-mounted into container:
+
+**docker-compose.yml:**
+
+```yaml
+services:
+  xg2g:
+    image: ghcr.io/manugh/xg2g:latest
+    volumes:
+      - /path/on/host/recordings:/recordings:ro  # Read-only bind mount
+    environment:
+      XG2G_RECORDINGS_MAP: /media/hdd/movie=/recordings
+```
+
+### Path Mapping Rules
+
+- **Absolute paths required**: Both receiver and local paths must be absolute
+  (start with `/`)
+- **Longest prefix wins**: For overlapping paths (e.g., `/media/hdd/movie` vs
+  `/media/hdd/movie2`), longest match is used
+- **Security validation**: Path traversal (`..`) is blocked, paths are
+  normalized
+- **Case sensitive**: Path matching is case-sensitive (POSIX semantics)
+
+### Stability Window
+
+The `stable_window` prevents streaming files that are currently being written
+(e.g., ongoing recordings).
+
+**How it works:**
+
+1. Check file size at T=0
+2. Wait `stable_window` duration
+3. Check file size again
+4. If sizes match → file is stable → use local playback
+5. If sizes differ → file is being written → fall back to Receiver
+
+**Tuning guidance:**
+
+| Use Case | Recommended Window | Rationale |
+| :--- | :--- | :--- |
+| Fast local disk (SSD/NVMe) | `1s` - `2s` | Minimal write delay |
+| NAS/NFS with good network | `2s` - `5s` | Account for network write latency |
+| Slow NAS or WAN-backed storage | `5s` - `10s` | Allow for buffering and sync delays |
+| Receiver writes in large chunks | `10s+` | Wait for write bursts to complete |
+
+**Trade-offs:**
+
+- **Shorter window**: Faster playback start, risk of streaming unstable files
+- **Longer window**: Safer stability detection, slower playback start for new
+  recordings
+
+### Fallback Behavior
+
+Local playback will **automatically fall back to Receiver HTTP streaming**
+when:
+
+- No path mapping configured for the recording's receiver path
+- Recording's receiver path is not absolute (relative paths not supported)
+- Mapped local file does not exist
+- Local file is unstable (size changing during stability window)
+
+Fallback is **transparent** - no errors, no user intervention required. Debug
+logs indicate when fallback occurs.
+
+### Observability
+
+All playback decisions are logged:
+
+```json
+{
+  "level": "info",
+  "recording_id": "...",
+  "source_type": "local",
+  "receiver_ref": "/media/hdd/movie/recording.ts",
+  "source": "/mnt/recordings/recording.ts",
+  "msg": "recording playback source selected"
+}
+```
+
+**Fallback logs** (debug level):
+
+```json
+{
+  "level": "debug",
+  "local_path": "/mnt/recordings/recording.ts",
+  "stable_window": "2s",
+  "msg": "file unstable, falling back to receiver"
+}
+```
+
+### Troubleshooting
+
+**Problem**: Recordings always use Receiver HTTP, never local
+
+**Solutions:**
+
+1. Check path mapping matches receiver's exact path (case-sensitive)
+2. Verify local file exists: `ls -lh /mnt/recordings/`
+3. Ensure paths are absolute in both receiver and local roots
+4. Check xg2g has read access to local files
+5. Enable debug logging: `XG2G_LOG_LEVEL=debug`
+
+**Problem**: Playback stutters or starts slowly
+
+**Solutions:**
+
+1. Reduce `stable_window` if files are on fast storage
+2. Check NFS/CIFS mount performance:
+   `dd if=/mnt/recordings/test.ts of=/dev/null bs=1M count=100`
+3. Consider `receiver_only` policy if network to receiver is faster than local
+   disk
+
+**Problem**: Ongoing recordings fail to play
+
+**Solutions:**
+
+1. This is expected - unstable files fall back to Receiver (safer)
+2. Increase `stable_window` if receiver writes in large bursts
+3. Use Receiver HTTP for in-progress recordings (automatic fallback)
+
 ## History
 
 ### v2.1 Strict Validation

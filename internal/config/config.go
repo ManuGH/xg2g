@@ -24,15 +24,16 @@ type FileConfig struct {
 	DataDir       string `yaml:"dataDir,omitempty"`
 	LogLevel      string `yaml:"logLevel,omitempty"`
 
-	OpenWebIF OpenWebIFConfig   `yaml:"openWebIF"`
-	Enigma2   Enigma2Config     `yaml:"enigma2,omitempty"`
-	Bouquets  []string          `yaml:"bouquets,omitempty"`
-	EPG       EPGConfig         `yaml:"epg"`
-	Recording map[string]string `yaml:"recording_roots,omitempty"`
-	API       APIConfig         `yaml:"api"`
-	Metrics   MetricsConfig     `yaml:"metrics,omitempty"`
-	Picons    PiconsConfig      `yaml:"picons,omitempty"`
-	HDHR      HDHRConfig        `yaml:"hdhr,omitempty"`
+	OpenWebIF        OpenWebIFConfig         `yaml:"openWebIF"`
+	Enigma2          Enigma2Config           `yaml:"enigma2,omitempty"`
+	Bouquets         []string                `yaml:"bouquets,omitempty"`
+	EPG              EPGConfig               `yaml:"epg"`
+	Recording        map[string]string       `yaml:"recording_roots,omitempty"`
+	RecordingPlayback RecordingPlaybackConfig `yaml:"recording_playback,omitempty"`
+	API              APIConfig               `yaml:"api"`
+	Metrics          MetricsConfig           `yaml:"metrics,omitempty"`
+	Picons           PiconsConfig            `yaml:"picons,omitempty"`
+	HDHR             HDHRConfig              `yaml:"hdhr,omitempty"`
 }
 
 // OpenWebIFConfig holds OpenWebIF client configuration
@@ -74,6 +75,19 @@ type EPGConfig struct {
 	FuzzyMax       *int   `yaml:"fuzzyMax,omitempty"`
 	XMLTVPath      string `yaml:"xmltvPath,omitempty"`
 	Source         string `yaml:"source,omitempty"` // "bouquet" or "per-service" (default)
+}
+
+// RecordingPlaybackConfig holds recording playback configuration
+type RecordingPlaybackConfig struct {
+	PlaybackPolicy string                  `yaml:"playback_policy,omitempty"` // "auto" (default), "local_only", "receiver_only"
+	StableWindow   string                  `yaml:"stable_window,omitempty"`   // Duration string (e.g., "2s")
+	Mappings       []RecordingPathMapping  `yaml:"mappings,omitempty"`
+}
+
+// RecordingPathMapping defines Receiver→Local path mapping
+type RecordingPathMapping struct {
+	ReceiverRoot string `yaml:"receiver_root"` // e.g., "/media/net/movie"
+	LocalRoot    string `yaml:"local_root"`    // e.g., "/media/nfs-recordings"
 }
 
 // ScopedToken defines a token and its associated scopes.
@@ -214,6 +228,11 @@ type AppConfig struct {
 
 	RecordingRoots map[string]string // ID -> Absolute Path (e.g. "hdd" -> "/media/hdd/movie")
 
+	// Recording Playback Configuration
+	RecordingPlaybackPolicy   string                   // "auto" (default), "local_only", "receiver_only"
+	RecordingStableWindow     time.Duration            // File stability check duration (default: 2s)
+	RecordingPathMappings     []RecordingPathMapping   // Receiver→Local path mappings
+
 	// HDHomeRun Configuration
 	HDHR HDHRConfig // Reusing the struct as it fits well (using value types locally)
 }
@@ -314,6 +333,9 @@ func (l *Loader) setDefaults(cfg *AppConfig) {
 
 	// Recording Defaults
 	cfg.RecordingRoots = nil
+	cfg.RecordingPlaybackPolicy = "auto" // Local-first with receiver fallback
+	cfg.RecordingStableWindow = 2 * time.Second
+	cfg.RecordingPathMappings = nil
 
 	// HDHomeRun Defaults
 	cfg.HDHR.Enabled = new(bool)
@@ -461,6 +483,21 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 		for k, v := range src.Recording {
 			dst.RecordingRoots[k] = v
 		}
+	}
+
+	// Recording Playback
+	if src.RecordingPlayback.PlaybackPolicy != "" {
+		dst.RecordingPlaybackPolicy = src.RecordingPlayback.PlaybackPolicy
+	}
+	if src.RecordingPlayback.StableWindow != "" {
+		d, err := time.ParseDuration(src.RecordingPlayback.StableWindow)
+		if err != nil {
+			return fmt.Errorf("invalid recording_playback.stable_window: %w", err)
+		}
+		dst.RecordingStableWindow = d
+	}
+	if len(src.RecordingPlayback.Mappings) > 0 {
+		dst.RecordingPathMappings = append([]RecordingPathMapping(nil), src.RecordingPlayback.Mappings...)
 	}
 
 	// API
@@ -743,6 +780,11 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	// Recording Roots (Env Override)
 	cfg.RecordingRoots = parseRecordingRoots(ParseString("XG2G_RECORDING_ROOTS", ""), cfg.RecordingRoots)
 
+	// Recording Playback (Env Override)
+	cfg.RecordingPlaybackPolicy = ParseString("XG2G_RECORDINGS_POLICY", cfg.RecordingPlaybackPolicy)
+	cfg.RecordingStableWindow = ParseDuration("XG2G_RECORDINGS_STABLE_WINDOW", cfg.RecordingStableWindow)
+	cfg.RecordingPathMappings = parseRecordingMappings(ParseString("XG2G_RECORDINGS_MAP", ""), cfg.RecordingPathMappings)
+
 	// HDHomeRun Emulation
 	hdhrEnabled := ParseBool("XG2G_HDHR_ENABLED", *cfg.HDHR.Enabled)
 	cfg.HDHR.Enabled = &hdhrEnabled
@@ -786,6 +828,38 @@ func parseRecordingRoots(envVal string, defaults map[string]string) map[string]s
 	}
 	if len(out) == 0 {
 		return defaults // Fallback if parsing failed completely
+	}
+	return out
+}
+
+// Helper to parse recording path mappings: "/receiver/path=/local/path;/other=/mount"
+func parseRecordingMappings(envVal string, defaults []RecordingPathMapping) []RecordingPathMapping {
+	if envVal == "" {
+		return defaults
+	}
+	var out []RecordingPathMapping
+	entries := strings.Split(envVal, ";")
+	for _, entry := range entries {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		kv := strings.SplitN(entry, "=", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		receiverRoot := strings.TrimSpace(kv[0])
+		localRoot := strings.TrimSpace(kv[1])
+		if receiverRoot == "" || localRoot == "" {
+			continue
+		}
+		out = append(out, RecordingPathMapping{
+			ReceiverRoot: receiverRoot,
+			LocalRoot:    localRoot,
+		})
+	}
+	if len(out) == 0 {
+		return defaults
 	}
 	return out
 }

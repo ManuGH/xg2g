@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
 	"sort"
 	"strings"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/netutil"
+	"github.com/ManuGH/xg2g/internal/recordings"
 	"github.com/ManuGH/xg2g/internal/v3/lease"
 	"github.com/ManuGH/xg2g/internal/v3/model"
 	"github.com/ManuGH/xg2g/internal/v3/profiles"
@@ -326,6 +328,45 @@ func (s *Server) GetRecordingHLSPlaylist(w http.ResponseWriter, r *http.Request,
 	}
 	streamURL := u.String()
 
+	// 2.3 Determine Playback Source (Local vs Receiver)
+	sourceType := "receiver"
+	source := streamURL
+
+	// If path mappings configured, try local-first playback
+	if s.recordingPathMapper != nil {
+		// serviceRef is the decoded recording ID, which should be the receiver path
+		// Check if it's an absolute path (required for mapping)
+		if strings.HasPrefix(serviceRef, "/") {
+			if localPath, ok := s.recordingPathMapper.ResolveLocal(serviceRef); ok {
+				// Check if file exists locally
+				if _, err := os.Stat(localPath); err == nil {
+					// Check file stability (avoid streaming files being written)
+					s.mu.RLock()
+					stableWindow := s.cfg.RecordingStableWindow
+					s.mu.RUnlock()
+
+					if recordings.IsStable(localPath, stableWindow) {
+						sourceType = "local"
+						source = localPath
+					} else {
+						log.L().Debug().
+							Str("local_path", localPath).
+							Dur("stable_window", stableWindow).
+							Msg("file unstable, falling back to receiver")
+					}
+				}
+			}
+		}
+	}
+
+	// Log playback source decision
+	log.L().Info().
+		Str("recording_id", recordingId).
+		Str("source_type", sourceType).
+		Str("receiver_ref", serviceRef).
+		Str("source", source).
+		Msg("recording playback source selected")
+
 	// 2.5 Admission Control (Hardening)
 	// We must acquire a lease to ensure we respect tuner/transcoder slot limits.
 	// If we skip this, the Worker will terminate the session immediately with R_LEASE_BUSY.
@@ -398,14 +439,18 @@ func (s *Server) GetRecordingHLSPlaylist(w http.ResponseWriter, r *http.Request,
 
 	session := &model.SessionRecord{
 		SessionID:      sessionID,
-		ServiceRef:     streamURL, // <--- The actual playable URL
+		ServiceRef:     source, // Local path or Receiver URL
 		Profile:        profileSpec,
 		State:          model.SessionNew,
 		CorrelationID:  correlationID,
 		CreatedAtUnix:  time.Now().Unix(),
 		UpdatedAtUnix:  time.Now().Unix(),
 		LastAccessUnix: time.Now().Unix(),
-		ContextData:    map[string]string{"client_ip": r.RemoteAddr, "type": "recording"},
+		ContextData: map[string]string{
+			"client_ip":   r.RemoteAddr,
+			"type":        "recording",
+			"source_type": sourceType,
+		},
 	}
 
 	// Persist Session (Atomic)

@@ -33,6 +33,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
+	"github.com/ManuGH/xg2g/internal/recordings"
 	"github.com/ManuGH/xg2g/internal/v3/bus"
 	"github.com/ManuGH/xg2g/internal/v3/store"
 	"github.com/go-chi/chi/v5"
@@ -79,6 +80,9 @@ type Server struct {
 	// v3 Integration
 	v3Bus   bus.Bus
 	v3Store store.StateStore
+
+	// Recording Playback Path Mapper
+	recordingPathMapper *recordings.PathMapper
 }
 
 // AuditLogger interface for audit logging (optional).
@@ -186,11 +190,12 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager) *Server {
 	snap := config.BuildSnapshot(cfg, env)
 
 	s := &Server{
-		cfg:            cfg,
-		snap:           snap,
-		channelManager: cm,
-		configManager:  cfgMgr,
-		seriesManager:  sm,
+		cfg:                 cfg,
+		snap:                snap,
+		channelManager:      cm,
+		configManager:       cfgMgr,
+		seriesManager:       sm,
+		recordingPathMapper: recordings.NewPathMapper(cfg.RecordingPathMappings),
 		status: jobs.Status{
 			Version: cfg.Version, // Initialize version from config
 		},
