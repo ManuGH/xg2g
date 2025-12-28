@@ -69,5 +69,27 @@
     "sessionFailed": "Sitzung fehlgeschlagen",
     "hlsError": "HLS Fehler",
     "authFailed": "Anmeldung fehlgeschlagen"
+  },
+  "epg": {
+    "pageTitle": "EPG Übersicht ({{count}})",
+    "timeRange": "Zeitraum",
+    "rangeNowTo6h": "jetzt bis +6h",
+    "rangeNowTo12h": "jetzt bis +12h",
+    "rangeNowTo24h": "jetzt bis +24h",
+    "hours": "{{count}} Stunden",
+    "reload": "Neu laden",
+    "bouquet": "Bouquet",
+    "allServices": "Alle Sender",
+    "allBouquets": "Alle Bouquets",
+    "searchServices": "Suche nach Sendungen (z.B. ZIB)",
+    "search": "Suche",
+    "loading": "EPG wird geladen …",
+    "loadError": "EPG konnte nicht geladen werden.",
+    "searchError": "Suche fehlgeschlagen.",
+    "noResults": "Keine Treffer für \"{{query}}\" gefunden.",
+    "searchResults": "Suchergebnisse: \"{{query}}\"",
+    "confirmRecord": "Aufnahme für \"{{title}}\" planen?",
+    "recordSuccess": "Aufnahme erfolgreich geplant!",
+    "recordError": "Fehler beim Planen der Aufnahme: {{error}}"
   }
 }

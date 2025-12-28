@@ -7,9 +7,16 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/ManuGH/xg2g/internal/netutil"
 )
 
 func (c *Client) ResolveStreamURL(ctx context.Context, sref string) (string, error) {
+	// Bypass if sRef is already a direct URL (HTTP/HTTPS) as used by recordings
+	if _, ok := netutil.ParseDirectHTTPURL(sref); ok {
+		return sref, nil
+	}
+
 	// Request the M3U playlist from the receiver to let it decide the correct stream URL (port, transcoding, etc).
 	// Endpoint: /web/stream.m3u?ref=... (Using "ref" ensures full URL is returned on some OWI versions)
 	params := url.Values{}

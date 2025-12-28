@@ -1,6 +1,7 @@
 // EPG Toolbar - Filter controls and actions
 // Zero API imports
 
+import { useTranslation } from 'react-i18next';
 import type { EpgFilters, EpgBouquet, EpgLoadState } from '../types';
 
 export interface EpgToolbarProps {
@@ -25,6 +26,7 @@ export function EpgToolbar({
   onRefresh,
   onSearch,
 }: EpgToolbarProps) {
+  const { t } = useTranslation();
   const loading = loadState === 'loading';
   const searchLoading = searchLoadState === 'loading';
 
@@ -33,12 +35,12 @@ export function EpgToolbar({
       {/* Header Bar */}
       <div className="epg-toolbar">
         <div className="epg-toolbar-left">
-          <h3>EPG Übersicht ({channelCount})</h3>
-          <p>Zeitraum: jetzt bis +{filters.timeRange}h</p>
+          <h3>{t('epg.pageTitle', { count: channelCount })}</h3>
+          <p>{t('epg.timeRange')}: {t('epg.rangeNowTo' + filters.timeRange + 'h', { defaultValue: 'now to +' + filters.timeRange + 'h' })}</p>
         </div>
         <div className="epg-toolbar-right">
           <button onClick={onRefresh} disabled={loading}>
-            Neu laden
+            {t('epg.reload')}
           </button>
         </div>
       </div>
@@ -47,12 +49,12 @@ export function EpgToolbar({
       <div className="epg-controls">
         {bouquets.length > 0 && (
           <label>
-            Bouquet:
+            {t('epg.bouquet')}:
             <select
               value={filters.bouquetId || ''}
               onChange={(e) => onFilterChange({ bouquetId: e.target.value })}
             >
-              <option value="">Alle Sender</option>
+              <option value="">{t('epg.allServices')}</option>
               {bouquets.map((b) => (
                 <option key={b.name} value={b.name}>
                   {b.name}
@@ -63,18 +65,18 @@ export function EpgToolbar({
         )}
 
         <label>
-          Zeitraum:
+          {t('epg.timeRange')}:
           <select
             value={filters.timeRange}
             onChange={(e) =>
               onFilterChange({ timeRange: parseInt(e.target.value, 10) })
             }
           >
-            <option value={6}>6 Stunden</option>
-            <option value={12}>12 Stunden</option>
-            <option value={24}>24 Stunden</option>
-            <option value={72}>3 Tage</option>
-            <option value={168}>7 Tage</option>
+            <option value={6}>6 {t('epg.hours', { count: 6, defaultValue: 'Hours' })}</option>
+            <option value={12}>12 {t('epg.hours', { count: 12, defaultValue: 'Hours' })}</option>
+            <option value={24}>24 {t('epg.hours', { count: 24, defaultValue: 'Hours' })}</option>
+            <option value={72}>3 {t('epg.hours', { count: 72, defaultValue: 'Days' }).replace('Hours', 'Days').replace('Stunden', 'Tage')}</option>
+            <option value={168}>7 {t('epg.hours', { count: 168, defaultValue: 'Days' }).replace('Hours', 'Days').replace('Stunden', 'Tage')}</option>
           </select>
         </label>
       </div>
@@ -90,7 +92,7 @@ export function EpgToolbar({
               const val = e.target.value;
               onFilterChange({ query: val });
             }}
-            placeholder="Suche nach Sendungen (z.B. ZIB)"
+            placeholder={t('epg.searchServices')}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && filters.query?.trim() && onSearch) {
                 onSearch();
@@ -102,7 +104,7 @@ export function EpgToolbar({
               value={filters.bouquetId || ''}
               onChange={(e) => onFilterChange({ bouquetId: e.target.value })}
             >
-              <option value="">Alle Bouquets</option>
+              <option value="">{t('epg.allBouquets')}</option>
               {bouquets.map((b) => (
                 <option key={b.name} value={b.name}>
                   {b.name}
@@ -116,7 +118,7 @@ export function EpgToolbar({
             onClick={onSearch}
             disabled={searchLoading || !filters.query?.trim()}
           >
-            {searchLoading ? 'Suche …' : 'Suche'}
+            {searchLoading ? t('common.loading') : t('epg.search')}
           </button>
         </div>
       </div>

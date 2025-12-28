@@ -69,5 +69,27 @@
     "sessionFailed": "Session failed",
     "hlsError": "HLS Error",
     "authFailed": "Authentication failed"
+  },
+  "epg": {
+    "pageTitle": "EPG Overview ({{count}})",
+    "timeRange": "Time Range",
+    "rangeNowTo6h": "now to +6h",
+    "rangeNowTo12h": "now to +12h",
+    "rangeNowTo24h": "now to +24h",
+    "hours": "{{count}} Hours",
+    "reload": "Reload",
+    "bouquet": "Bouquet",
+    "allServices": "All Services",
+    "allBouquets": "All Bouquets",
+    "searchServices": "Search Services (e.g. ZIB)",
+    "search": "Search",
+    "loading": "Loading EPG…",
+    "loadError": "EPG could not be loaded.",
+    "searchError": "Search failed.",
+    "noResults": "No results found for \"{{query}}\".",
+    "searchResults": "Search results: \"{{query}}\"",
+    "confirmRecord": "Schedule recording for \"{{title}}\"?",
+    "recordSuccess": "Recording successfully scheduled!",
+    "recordError": "Error scheduling recording: {{error}}"
   }
 }

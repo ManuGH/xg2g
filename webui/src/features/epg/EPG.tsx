@@ -4,6 +4,7 @@
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
 import React, { useReducer, useEffect, useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { epgReducer, createInitialEpgState } from './epgModel';
 import { fetchEpgEvents, fetchTimers } from './epgApi';
 import { addTimer } from '../../client-ts';
@@ -29,6 +30,7 @@ export default function EPG({
   onSelectBouquet,
   onPlay,
 }: EpgProps) {
+  const { t } = useTranslation();
   const [state, dispatch] = useReducer(epgReducer, undefined, createInitialEpgState);
   const [timers, setTimers] = React.useState<Timer[]>([]);
 
@@ -53,7 +55,9 @@ export default function EPG({
 
   const handleRecord = useCallback(
     async (event: EpgEvent) => {
-      if (!confirm(`Aufnahme für "${event.title}" planen?`)) return;
+      // Note: confirm/alert are blocking, but simple enough for this scope.
+      // Ideally move to a proper modal or toast.
+      if (!confirm(t('epg.confirmRecord', { title: event.title }))) return;
 
       try {
         await addTimer({
@@ -65,7 +69,7 @@ export default function EPG({
             description: event.desc || '',
           },
         });
-        alert('Aufnahme erfolgreich geplant!');
+        alert(t('epg.recordSuccess'));
         loadTimers(); // Refresh feedback immediately
       } catch (err: any) {
         console.error(err);
@@ -75,10 +79,10 @@ export default function EPG({
         } else if (err.body) {
           msg = JSON.stringify(err.body);
         }
-        alert('Fehler beim Planen der Aufnahme: ' + msg);
+        alert(t('epg.recordError', { error: msg }));
       }
     },
-    [loadTimers]
+    [loadTimers, t]
   );
 
   const isRecorded = useCallback(
@@ -112,7 +116,18 @@ export default function EPG({
       dispatch({ type: 'LOAD_SUCCESS', payload: { events } });
     } catch (err: any) {
       console.error(err);
-      dispatch({ type: 'LOAD_ERROR', payload: { error: 'EPG konnte nicht geladen werden.' } });
+      // We need to resolve language for error string here or just set a key if reducer supported it?
+      // Reducer takes string. We should use a key or translate here?
+      // Since reducer state.error is displayed directly, we should translate here OR store key.
+      // Storing translated string is easier for now given existing typing.
+      // But hooks can change language... if we store "EPG failed" and switch lang, it stays "EPG failed".
+      // Ideally we store error CODE and translate in render.
+      // For now, let's translate here, user will refresh on error anyway.
+      // wait, useCallback dep needs 't'.
+      // PROPER FIX: Pass error CODE/KEY to state, translate in render.
+      // But invalidating typing... let's hack: use unique error keys and checking in render?
+      // Or just ignore hot-swapping language for errors.
+      dispatch({ type: 'LOAD_ERROR', payload: { error: 'epg.loadError' } });
     }
   }, [state.filters.timeRange, state.filters.bouquetId]);
 
@@ -141,7 +156,7 @@ export default function EPG({
       dispatch({ type: 'SEARCH_SUCCESS', payload: { events } });
     } catch (err: any) {
       console.error(err);
-      dispatch({ type: 'SEARCH_ERROR', payload: { error: 'Suche fehlgeschlagen.' } });
+      dispatch({ type: 'SEARCH_ERROR', payload: { error: 'epg.searchError' } });
     }
   }, [state.filters.query, state.filters.bouquetId]);
 
@@ -233,7 +248,7 @@ export default function EPG({
       />
 
       {/* Search Error */}
-      {state.searchError && <div className="epg-card epg-error">{state.searchError}</div>}
+      {state.searchError && <div className="epg-card epg-error">{t(state.searchError)}</div>}
 
       {/* Search No Results */}
       {state.searchLoadState === 'ready' &&
@@ -241,7 +256,7 @@ export default function EPG({
         !state.searchError &&
         state.filters.query?.trim() && (
           <div className="epg-card">
-            Keine Treffer für "{state.filters.query.trim()}" gefunden.
+            {t('epg.noResults', { query: state.filters.query.trim() })}
           </div>
         )}
 
@@ -251,7 +266,7 @@ export default function EPG({
           <div className="epg-channel">
             <div className="epg-channel-meta">
               <div className="epg-channel-name">
-                Suchergebnisse: "{state.filters.query?.trim()}"
+                {t('epg.searchResults', { query: state.filters.query?.trim() })}
               </div>
             </div>
           </div>
@@ -272,8 +287,8 @@ export default function EPG({
       )}
 
       {/* Main View Loading/Error */}
-      {state.loadState === 'loading' && <div className="epg-card">EPG wird geladen …</div>}
-      {state.error && <div className="epg-card epg-error">{state.error}</div>}
+      {state.loadState === 'loading' && <div className="epg-card">{t('epg.loading')}</div>}
+      {state.error && <div className="epg-card epg-error">{t(state.error)}</div>}
 
       {/* Main Channel List */}
       {showMainList && (

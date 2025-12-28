@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"path/filepath"
+	"path"
 	"sort"
 	"strings"
 	"time"
@@ -18,6 +18,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 
+	"github.com/ManuGH/xg2g/internal/netutil"
 	"github.com/ManuGH/xg2g/internal/v3/model"
 	"github.com/ManuGH/xg2g/internal/v3/profiles"
 )
@@ -65,7 +66,7 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 			// Generate an ID for the root. Use the name if available, else sanitized path base.
 			id := loc.Name
 			if id == "" {
-				id = filepath.Base(loc.Path)
+				id = path.Base(loc.Path)
 			}
 			// Sanitize ID (simple slugification)
 			id = strings.ToLower(strings.ReplaceAll(id, " ", "_"))
@@ -85,10 +86,10 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 	}
 
 	rootList := make([]RecordingRoot, 0, len(roots))
-	for id, path := range roots {
+	for id, pathStr := range roots {
 		// Local vars for pointers
 		i := id
-		n := filepath.Base(path)
+		n := path.Base(pathStr)
 		rootList = append(rootList, RecordingRoot{Id: &i, Name: &n})
 	}
 	// Sort for stability
@@ -129,7 +130,7 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 	}
 
 	// 3. Resolve & Validate Path
-	// Security: Strict confinement using confineRelPath
+	// Security: Strict confinement using sanitizeRecordingRelPath
 	rootAbs, ok := roots[qRootID]
 	if !ok {
 		http.Error(w, "Invalid root ID", http.StatusBadRequest)
@@ -138,15 +139,9 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 
 	// 3. Resolve & Validate Path
 	// ConfineRelPath uses local FS checks which fail for remote receiver paths.
-	// We switch to string-based validation only.
-	cleanRel := filepath.Clean(qPath)
-	if filepath.IsAbs(cleanRel) || strings.HasPrefix(cleanRel, "/") {
-		// If qPath was absolute, treat it as relative to root if possible, or just reject.
-		// For simplicity, force relative.
-		cleanRel = strings.TrimPrefix(cleanRel, "/")
-	}
-	// Check for traversal
-	if cleanRel == ".." || strings.HasPrefix(cleanRel, ".."+string(filepath.Separator)) {
+	// We switch to string-based validation only using our POSIX helper.
+	cleanRel, blocked := sanitizeRecordingRelPath(qPath)
+	if blocked {
 		log.Warn().Str("path", qPath).Msg("path traversal attempt detected")
 		http.Error(w, "Access denied", http.StatusForbidden)
 		return
@@ -154,7 +149,8 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 
 	// Construct the target path to send to receiver
 	// Note: rootAbs is the remote path on the receiver (e.g. /media/hdd/movie)
-	cleanTarget := filepath.Join(rootAbs, cleanRel)
+	// MUST use path.Join (POSIX) for receiver, not filepath.Join
+	cleanTarget := path.Join(rootAbs, cleanRel)
 
 	// 4. Fetch from Receiver
 	// client is already initialized above for discovery
@@ -194,24 +190,26 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 	}
 
 	directoriesList := make([]DirectoryItem, 0, len(list.Bookmarks))
+	// Optimization: hoist root trim
+	root := strings.TrimSuffix(rootAbs, "/")
 	// Process Directories (Bookmarks)
 	for _, b := range list.Bookmarks {
 		// Bookmarks are absolute paths on the receiver.
-		// We just want to see if they are inside our current root to show them as folders.
-		// Or if we should show them as "links"?
-		// Actually, standard logic is just to list them if they are subdirs.
+		// Safe containment check: Must be proper subdirectory
 
-		// Simple string check: does bookmark start with rootAbs?
-		if !strings.HasPrefix(b.Path, rootAbs) {
+		// Exact match check (optional, usually skipped as it's the current dir)
+		if b.Path == rootAbs {
 			continue
 		}
 
-		rel, err := filepath.Rel(rootAbs, b.Path)
-		if err != nil {
+		if !strings.HasPrefix(b.Path, root+"/") {
 			continue
 		}
 
-		if rel == "." || strings.HasPrefix(rel, "..") {
+		rel := strings.TrimPrefix(b.Path, root+"/")
+
+		// Double check we haven't produced something absolute or odd
+		if rel == "" || strings.HasPrefix(rel, "/") {
 			continue
 		}
 
@@ -223,13 +221,14 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 
 	breadcrumbsList := make([]Breadcrumb, 0)
 	if qPath != "" && qPath != "." {
-		parts := strings.Split(qPath, string(filepath.Separator))
+		// Use slash for splitting as we mandate POSIX paths for receiver
+		parts := strings.Split(qPath, "/")
 		built := ""
 		for _, p := range parts {
 			if p == "" {
 				continue
 			}
-			built = filepath.Join(built, p)
+			built = path.Join(built, p)
 			breadcrumbsList = append(breadcrumbsList, Breadcrumb{
 				Name: strPtr(p),
 				Path: strPtr(built),
@@ -290,20 +289,38 @@ func (s *Server) GetRecordingHLSPlaylist(w http.ResponseWriter, r *http.Request,
 	streamPort := s.cfg.StreamPort
 	s.mu.RUnlock()
 
-	// Fix scheme if OWIBase has it
-	if strings.Contains(host, "://") {
-		// Parse OWIBase to get host
-		if u, err := url.Parse(host); err == nil {
-			host = u.Hostname()
-		}
+	// Fix scheme if OWIBase has it using robust normalization
+	// Extract just the hostname/ip (ignoring port from OWIBase as we use StreamPort)
+	h, _, err := netutil.NormalizeAuthority(host, "http")
+	if err != nil {
+		log.Ctx(r.Context()).Error().Err(err).Str("owi_base", host).Msg("invalid OWI base")
+		http.Error(w, "Invalid OWI base configuration", http.StatusInternalServerError)
+		return
 	}
+	host = h
 
 	// We use the resolved stream URL as the 'ServiceRef' in the V3 session
-	streamURL := fmt.Sprintf("http://%s:%d/%s", host, streamPort, serviceRef)
+	// Ensure serviceRef doesn't start with / to avoid double slash with port
+	// Sanitize ref using path.Clean to prevent double-slashes or traversal characters
+	cleanRef := strings.TrimLeft(serviceRef, "/")
+	cleanRef = path.Clean("/" + cleanRef) // force absolute for cleaning
+	cleanRef = strings.TrimPrefix(cleanRef, "/")
+
+	if cleanRef == "." || cleanRef == ".." || strings.HasPrefix(cleanRef, "../") {
+		http.Error(w, "Invalid recording ref", http.StatusBadRequest)
+		return
+	}
+
+	if strings.ContainsAny(cleanRef, "?#") {
+		http.Error(w, "Invalid recording ref (query/fragment not allowed)", http.StatusBadRequest)
+		return
+	}
+
+	streamURL := fmt.Sprintf("http://%s:%d/%s", host, streamPort, cleanRef)
 
 	// 3. Create Session Record
 	// Format: recording-<uuid>
-	sessionID := "rec-" + uuid.New().String()
+	sessionID := uuid.New().String()
 	correlationID := uuid.New().String()
 
 	// Default to generic High profile for recordings
@@ -413,4 +430,26 @@ func (s *Server) DeleteRecording(w http.ResponseWriter, r *http.Request, recordi
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// sanitizeRecordingRelPath implementation for POSIX paths
+// Returns the cleaned relative path and whether it was blocked (traversal detected).
+func sanitizeRecordingRelPath(qPath string) (string, bool) {
+	// Use path.Clean for POSIX/receiver paths
+	cleanRel := path.Clean(qPath)
+
+	// path.Clean("") -> "."
+	if cleanRel == "." {
+		cleanRel = ""
+	}
+
+	// Reject absolute paths (treat as relative foundation)
+	cleanRel = strings.TrimPrefix(cleanRel, "/")
+
+	// Check for traversal
+	if cleanRel == ".." || strings.HasPrefix(cleanRel, "../") {
+		return "", true
+	}
+
+	return cleanRel, false
 }

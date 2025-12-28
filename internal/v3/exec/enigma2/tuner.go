@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/netutil"
 )
 
 // Tuner implements exec.Tuner using Enigma2 API.
@@ -43,6 +44,12 @@ func (t *Tuner) Tune(ctx context.Context, serviceRef string) error {
 
 	if err := t.Client.Zap(ctx, serviceRef); err != nil {
 		return fmt.Errorf("zap failed: %w", err)
+	}
+
+	// Bypass readiness check for HTTP streams (recordings/IPTV) as they don't produce tuner lock
+	if _, ok := netutil.ParseDirectHTTPURL(serviceRef); ok {
+		logger.Info().Msg("skipping tuner readiness check for HTTP stream")
+		return nil
 	}
 
 	// Wait for readiness with debounce/jitter
