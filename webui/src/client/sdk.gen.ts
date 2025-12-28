@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AddTimerData, AddTimerErrors, AddTimerResponses, CreateSeriesRuleData, CreateSeriesRuleResponses, CreateSessionData, CreateSessionErrors, CreateSessionResponses, DeleteRecordingData, DeleteRecordingErrors, DeleteRecordingResponses, DeleteSeriesRuleData, DeleteSeriesRuleErrors, DeleteSeriesRuleResponses, DeleteStreamsIdData, DeleteStreamsIdErrors, DeleteStreamsIdResponses, DeleteTimerData, DeleteTimerErrors, DeleteTimerResponses, GetDvrCapabilitiesData, GetDvrCapabilitiesResponses, GetDvrStatusData, GetDvrStatusResponses, GetEpgData, GetEpgResponses, GetLogsData, GetLogsResponses, GetRecordingHlsCustomSegmentData, GetRecordingHlsCustomSegmentResponses, GetRecordingHlsPlaylistData, GetRecordingHlsPlaylistErrors, GetRecordingHlsPlaylistResponses, GetRecordingsData, GetRecordingsResponses, GetRecordingStreamData, GetRecordingStreamErrors, GetSeriesRulesData, GetSeriesRulesResponses, GetServicesBouquetsData, GetServicesBouquetsResponses, GetServicesData, GetServicesResponses, GetStreamsData, GetStreamsResponses, GetSystemConfigData, GetSystemConfigResponses, GetSystemHealthData, GetSystemHealthResponses, GetTimerData, GetTimerErrors, GetTimerResponses, GetTimersData, GetTimersResponses, PostServicesByIdToggleData, PostServicesByIdToggleErrors, PostServicesByIdToggleResponses, PostSystemRefreshData, PostSystemRefreshErrors, PostSystemRefreshResponses, PreviewConflictsData, PreviewConflictsResponses, PutSystemConfigData, PutSystemConfigErrors, PutSystemConfigResponses, RunAllSeriesRulesData, RunAllSeriesRulesResponses, RunSeriesRuleData, RunSeriesRuleErrors, RunSeriesRuleResponses, UpdateTimerData, UpdateTimerErrors, UpdateTimerResponses } from './types.gen';
+import type { AddTimerData, AddTimerErrors, AddTimerResponses, CreateIntentData, CreateIntentErrors, CreateIntentResponses, CreateSeriesRuleData, CreateSeriesRuleResponses, CreateSessionData, CreateSessionErrors, CreateSessionResponses, DeleteRecordingData, DeleteRecordingErrors, DeleteRecordingResponses, DeleteSeriesRuleData, DeleteSeriesRuleErrors, DeleteSeriesRuleResponses, DeleteStreamsIdData, DeleteStreamsIdErrors, DeleteStreamsIdResponses, DeleteTimerData, DeleteTimerErrors, DeleteTimerResponses, GetDvrCapabilitiesData, GetDvrCapabilitiesResponses, GetDvrStatusData, GetDvrStatusResponses, GetEpgData, GetEpgResponses, GetLogsData, GetLogsResponses, GetRecordingHlsCustomSegmentData, GetRecordingHlsCustomSegmentResponses, GetRecordingHlsPlaylistData, GetRecordingHlsPlaylistErrors, GetRecordingHlsPlaylistResponses, GetRecordingsData, GetRecordingsResponses, GetRecordingStreamData, GetRecordingStreamErrors, GetSeriesRulesData, GetSeriesRulesResponses, GetServicesBouquetsData, GetServicesBouquetsResponses, GetServicesData, GetServicesResponses, GetSessionStateData, GetSessionStateErrors, GetSessionStateResponses, GetStreamsData, GetStreamsResponses, GetSystemConfigData, GetSystemConfigResponses, GetSystemHealthData, GetSystemHealthResponses, GetTimerData, GetTimerErrors, GetTimerResponses, GetTimersData, GetTimersResponses, ListSessionsData, ListSessionsErrors, ListSessionsResponses, PostServicesByIdToggleData, PostServicesByIdToggleErrors, PostServicesByIdToggleResponses, PostServicesNowNextData, PostServicesNowNextErrors, PostServicesNowNextResponses, PostSystemRefreshData, PostSystemRefreshErrors, PostSystemRefreshResponses, PreviewConflictsData, PreviewConflictsResponses, PutSystemConfigData, PutSystemConfigErrors, PutSystemConfigResponses, RunAllSeriesRulesData, RunAllSeriesRulesResponses, RunSeriesRuleData, RunSeriesRuleErrors, RunSeriesRuleResponses, ServeHlsData, ServeHlsErrors, ServeHlsResponses, UpdateTimerData, UpdateTimerErrors, UpdateTimerResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -65,6 +65,19 @@ export const getServicesBouquets = <ThrowOnError extends boolean = false>(option
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/services/bouquets',
     ...options
+});
+
+/**
+ * Get now/next EPG for a list of services
+ */
+export const postServicesNowNext = <ThrowOnError extends boolean = false>(options: Options<PostServicesNowNextData, ThrowOnError>) => (options.client ?? client).post<PostServicesNowNextResponses, PostServicesNowNextErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/services/now-next',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
 });
 
 /**
@@ -311,5 +324,45 @@ export const runAllSeriesRules = <ThrowOnError extends boolean = false>(options?
 export const deleteSeriesRule = <ThrowOnError extends boolean = false>(options: Options<DeleteSeriesRuleData, ThrowOnError>) => (options.client ?? client).delete<DeleteSeriesRuleResponses, DeleteSeriesRuleErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/series-rules/{id}',
+    ...options
+});
+
+/**
+ * Create stream intent (start or stop session)
+ */
+export const createIntent = <ThrowOnError extends boolean = false>(options: Options<CreateIntentData, ThrowOnError>) => (options.client ?? client).post<CreateIntentResponses, CreateIntentErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/intents',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * List all sessions (admin only)
+ */
+export const listSessions = <ThrowOnError extends boolean = false>(options?: Options<ListSessionsData, ThrowOnError>) => (options?.client ?? client).get<ListSessionsResponses, ListSessionsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/sessions',
+    ...options
+});
+
+/**
+ * Get session state
+ */
+export const getSessionState = <ThrowOnError extends boolean = false>(options: Options<GetSessionStateData, ThrowOnError>) => (options.client ?? client).get<GetSessionStateResponses, GetSessionStateErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/sessions/{sessionID}',
+    ...options
+});
+
+/**
+ * Serve HLS playlist or segment
+ */
+export const serveHls = <ThrowOnError extends boolean = false>(options: Options<ServeHlsData, ThrowOnError>) => (options.client ?? client).get<ServeHlsResponses, ServeHlsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/sessions/{sessionID}/hls/{filename}',
     ...options
 });

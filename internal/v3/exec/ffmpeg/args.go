@@ -56,18 +56,21 @@ func BuildHLSArgs(in InputSpec, out OutputSpec, prof model.ProfileSpec) ([]strin
 		"-analyzeduration", "2000000", // 2s to receive H.264 PPS/SPS headers
 		"-probesize", "5000000", // 5MB probe buffer for codec init
 		"-max_delay", "0", // No demux delay
+	}
 
-		// HTTP input options for Enigma2/DVB receivers (VLC-compatible)
-		// CRITICAL: Enigma2 receivers require VLC-compatible HTTP headers for reliable streaming
-		// Analysis of VLC showed it uses HTTP/1.0 with specific User-Agent and Icy-MetaData headers
-		// Without these headers, FFmpeg gets "Stream ends prematurely" errors from the receiver
-		"-user_agent", "curl/8.14.1", // Identify as curl for compatibility (VLC blocked)
-		"-headers", "Icy-MetaData: 1", // Request Icecast metadata
-		"-reconnect", "1", // Enable automatic reconnection
-		"-reconnect_streamed", "1", // Reconnect even for streamed protocols
-		"-reconnect_delay_max", "5", // Max 5s between reconnect attempts
-		"-timeout", "10000000", // 10s timeout (in microseconds)
+	// HTTP input options - only apply if NOT using a pipe
+	if strings.HasPrefix(in.StreamURL, "http") {
+		args = append(args,
+			"-user_agent", "curl/8.14.1", // Identify as curl for compatibility (VLC blocked)
+			"-headers", "Icy-MetaData: 1", // Request Icecast metadata
+			"-reconnect", "1", // Enable automatic reconnection
+			"-reconnect_streamed", "1", // Reconnect even for streamed protocols
+			"-reconnect_delay_max", "5", // Max 5s between reconnect attempts
+			"-timeout", "10000000", // 10s timeout (in microseconds)
+		)
+	}
 
+	args = append(args,
 		// Input
 		"-i", in.StreamURL,
 
@@ -77,14 +80,20 @@ func BuildHLSArgs(in InputSpec, out OutputSpec, prof model.ProfileSpec) ([]strin
 		"-map", "0:a:0?", // First audio stream only
 
 		// Video:
-		"-c:v",
-		func() string {
-			if prof.TranscodeVideo {
-				return "libx264"
-			}
-			return "copy"
-		}(),
-		"-pix_fmt", "yuv420p", // CRITICAL: Safari compatibility - ensure YUV 4:2:0
+	)
+
+	// Video Configuration
+	videoCodec := "copy"
+	if prof.TranscodeVideo {
+		videoCodec = "libx264"
+	}
+	args = append(args, "-c:v", videoCodec)
+
+	if prof.TranscodeVideo {
+		args = append(args, "-pix_fmt", "yuv420p") // CRITICAL: Safari compatibility - ensure YUV 4:2:0
+	}
+
+	args = append(args,
 
 		// Audio: Re-encode to AAC for best compatibility and quality
 		// DVB/satellite streams often have incomplete codec parameters that fail with copy
@@ -106,7 +115,7 @@ func BuildHLSArgs(in InputSpec, out OutputSpec, prof model.ProfileSpec) ([]strin
 
 		// Segment naming
 		"-hls_segment_filename", out.SegmentFilename,
-	}
+	)
 
 	// HLS Flags - DVR mode vs Live mode
 	// DVR: Keep segments, no temp_file (Safari seeking needs stable files)
@@ -139,7 +148,7 @@ func BuildHLSArgs(in InputSpec, out OutputSpec, prof model.ProfileSpec) ([]strin
 		}
 
 		args = append(args,
-			"-preset", "veryfast",
+			"-preset", "faster", // Better quality than veryfast, still efficient
 			"-profile:v", "high",
 			"-level", "4.0",
 			"-crf", strconv.Itoa(crf),
@@ -148,8 +157,20 @@ func BuildHLSArgs(in InputSpec, out OutputSpec, prof model.ProfileSpec) ([]strin
 			"-sc_threshold", "0",
 			"-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%s)", keyframeInterval),
 		)
+
+		// Video Filters (Deinterlacing + Scaling)
+		var filters []string
+
+		// Always deinterlace DVB content (yadif=1: output one frame per field aka 50i->50p)
+		// This preserves temporal resolution (smooth motion) which is critical for TV/Sports.
+		filters = append(filters, "yadif=1:-1:0")
+
 		if prof.VideoMaxWidth > 0 {
-			args = append(args, "-vf", fmt.Sprintf("scale=w=%d:h=-2:flags=lanczos", prof.VideoMaxWidth))
+			filters = append(filters, fmt.Sprintf("scale=w=%d:h=-2:flags=lanczos", prof.VideoMaxWidth))
+		}
+
+		if len(filters) > 0 {
+			args = append(args, "-vf", strings.Join(filters, ","))
 		}
 	}
 

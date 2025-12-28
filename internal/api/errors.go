@@ -34,16 +34,7 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 // Structured Error Codes (2025 API Best Practices)
 // ============================================================================
 
-// APIError represents a structured error response for the API.
-// It provides machine-readable error codes and human-friendly messages.
-type APIError struct {
-	Code      string `json:"code"`              // Machine-readable error code
-	Message   string `json:"message"`           // Human-readable error message
-	RequestID string `json:"request_id"`        // Request ID for support/debugging
-	Details   any    `json:"details,omitempty"` // Optional additional context
-}
-
-// Error implements the error interface
+// APIError is generated from OpenAPI; provide error interface behavior.
 func (e *APIError) Error() string {
 	return e.Message
 }
@@ -91,6 +82,10 @@ var (
 		Code:    "CIRCUIT_OPEN",
 		Message: "Service temporarily unavailable due to repeated failures",
 	}
+	ErrLeaseBusy = &APIError{
+		Code:    "LEASE_BUSY",
+		Message: "No tuner available; retry later",
+	}
 
 	// Validation errors
 	ErrInvalidInput = &APIError{
@@ -126,7 +121,7 @@ func RespondError(w http.ResponseWriter, r *http.Request, statusCode int, apiErr
 	response := &APIError{
 		Code:      apiErr.Code,
 		Message:   apiErr.Message,
-		RequestID: log.RequestIDFromContext(r.Context()),
+		RequestId: log.RequestIDFromContext(r.Context()),
 	}
 
 	// Add optional details if provided

@@ -50,6 +50,8 @@
     "statusStates": {
       "idle": "Leerlauf",
       "starting": "Startet",
+      "priming": "Wiedergabe wird vorbereitet",
+      "ready": "Bereit",
       "buffering": "Puffert",
       "playing": "Wiedergabe",
       "paused": "Pausiert",
@@ -57,11 +59,13 @@
       "stopped": "Gestoppt"
     },
     "playlistNotReady": "Playlist noch nicht bereit",
+    "readyButNotPlayable": "READY gemeldet, aber Playlist nicht verfügbar",
     "sessionNotReadyInTime": "Sitzung wurde nicht rechtzeitig bereit",
     "failedToFetchSession": "Sitzung konnte nicht geladen werden",
     "readinessCheckFailed": "Sitzungs-Check fehlgeschlagen",
     "apiError": "API-Fehler",
-    "leaseBusy": "Alle Tuner sind belegt",
+    "leaseBusy": "Alle Tuner sind derzeit belegt.",
+    "retryAfter": "Bitte in ~{{seconds}}s erneut versuchen.",
     "sessionFailed": "Sitzung fehlgeschlagen",
     "hlsError": "HLS Fehler",
     "authFailed": "Anmeldung fehlgeschlagen"

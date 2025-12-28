@@ -90,6 +90,12 @@ jobs:
             echo "✅ Client matches OpenAPI spec"
           fi
 
+      - name: Verify OpenAPI server codegen is up-to-date
+        run: |
+          set -euo pipefail
+          make generate
+          git diff --exit-code -- internal/api/server_gen.go
+
       - name: Build WebUI
         run: |
           set -euo pipefail

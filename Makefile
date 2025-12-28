@@ -45,6 +45,7 @@ EPG_COVERAGE_THRESHOLD := 55
 GOBIN ?= $(shell go env GOBIN)
 GOPATH_BIN := $(shell go env GOPATH)/bin
 TOOL_DIR := $(if $(GOBIN),$(GOBIN),$(GOPATH_BIN))
+OAPI_CODEGEN_VERSION := v2.5.1
 
 # Tool executables
 GOLANGCI_LINT := $(TOOL_DIR)/golangci-lint
@@ -163,7 +164,7 @@ ui-build: ## Build WebUI assets
 generate: ## Generate Go code from OpenAPI spec
 	@echo "Generating API server code..."
 	@mkdir -p internal/api
-	@command -v $(OAPI_CODEGEN) >/dev/null 2>&1 || go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest
+	@command -v $(OAPI_CODEGEN) >/dev/null 2>&1 || go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@$(OAPI_CODEGEN_VERSION)
 	@$(OAPI_CODEGEN) -package api -generate types,chi-server,spec -o internal/api/server_gen.go api/openapi.yaml
 	@echo "✅ Code generation complete: internal/api/server_gen.go"
 
@@ -585,8 +586,16 @@ release-notes: ## Generate release notes
 # Development & Local Orchestration
 # ===================================================================================================
 
-dev: ## Run daemon locally with .env configuration
-	@echo "Starting xg2g in development mode..."
+reset: ## Full reset: Stop, Clean, Rebuild UI, and Start Dev
+	@echo "🔄 Performing full environment reset..."
+	@$(MAKE) stop-local || true
+	@$(MAKE) clean
+	@echo "🧹 Clearing data/ directories..."
+	@rm -rf data/v3-hls data/v3-store data/playlist.m3u data/xmltv.xml
+	@$(MAKE) ui-build
+	@$(MAKE) dev
+
+stop-local: ## Local cleanup helper (stops daemon and ffmpeg)
 	@echo "🧹 Cleaning up old instances..."
 	@pkill -x "$(BINARY_NAME)" || true
 	@echo "⏳ Waiting for port release..."
@@ -594,6 +603,9 @@ dev: ## Run daemon locally with .env configuration
 	@if pgrep -x "$(BINARY_NAME)" >/dev/null; then echo "💀 Force killing..."; pkill -9 -x "$(BINARY_NAME)" || true; fi
 	@echo "🧹 Cleaning up zombie ffmpeg processes..."
 	@pkill -u $$(id -u) -x ffmpeg || true
+
+dev: stop-local ## Run daemon locally with .env configuration
+	@echo "Starting xg2g in development mode..."
 	@if [ ! -f .env ]; then \
 		echo "⚠️  No .env file found. Creating from .env.example..."; \
 		cp .env.example .env; \

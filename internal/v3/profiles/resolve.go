@@ -76,12 +76,18 @@ func Resolve(requested, userAgent string, dvrWindowSec int) model.ProfileSpec {
 		spec.VideoMaxWidth = 1280
 		spec.AudioBitrateK = 160
 	case ProfileHigh:
-		spec.TranscodeVideo = true
-		spec.VideoCRF = 23
+		spec.TranscodeVideo = false // Default to copy (passthrough) for original quality
+		if dvrWindowSec > 0 {
+			spec.DVRWindowSec = dvrWindowSec
+		}
 	case ProfileSafari:
-		spec.TranscodeVideo = true
-		spec.LLHLS = true
-		spec.VideoCRF = 23
+		// Revert to "High" profile (Stream Copy) as requested by user.
+		// WARNING: This may cause decode errors on Safari if stream is broken.
+		spec.TranscodeVideo = false
+		spec.LLHLS = false
+		if dvrWindowSec > 0 {
+			spec.DVRWindowSec = dvrWindowSec
+		}
 	case ProfileSafariDVR:
 		spec.TranscodeVideo = true
 		spec.LLHLS = true

@@ -56,6 +56,13 @@ components:
           type: string
           description: Transcoding profile ID
           example: "hls_720p"
+        profile:
+          type: string
+          deprecated: true
+          description: Legacy alias for profileID (decode-only, will be removed in v3.2)
+        correlationId:
+          type: string
+          description: Optional correlation ID for end-to-end tracing
         sessionID:
           type: string
           format: uuid
@@ -65,7 +72,8 @@ components:
           description: Optional idempotency key for at-most-once semantics
         params:
           type: object
-          additionalProperties: true
+          additionalProperties:
+            type: string
           description: Additional parameters
 
     SessionResponse:
@@ -77,26 +85,45 @@ components:
           format: uuid
         serviceRef:
           type: string
-        profileID:
+        profile:
           type: string
         state:
           type: string
-          enum: [new, leasing, starting, ready, draining, stopping, stopped, failed]
+          description: |
+            Session lifecycle state. READY guarantees a playable HLS stream (playlist + at least one segment,
+            atomically published). PRIMING means FFmpeg is running but content is not yet playable.
+          enum: [NEW, STARTING, PRIMING, READY, DRAINING, STOPPING, STOPPED, FAILED, CANCELLED]
         reason:
           type: string
-          enum: [client_stop, idle_timeout, lease_lost, receiver_error, ffmpeg_error, internal_error]
+          description: Reason code; R_LEASE_BUSY means capacity rejection (no tuner available), not a system fault.
+          enum:
+            - R_NONE
+            - R_UNKNOWN
+            - R_BAD_REQUEST
+            - R_NOT_FOUND
+            - R_LEASE_BUSY
+            - R_TUNE_TIMEOUT
+            - R_LEASE_EXPIRED
+            - R_TUNE_FAILED
+            - R_INVARIANT_VIOLATION
+            - R_FFMPEG_START_FAILED
+            - R_PROCESS_ENDED
+            - R_PACKAGER_FAILED
+            - R_CANCELLED
+            - R_IDLE_TIMEOUT
+            - R_CLIENT_STOP
         reasonDetail:
           type: string
-        correlationID:
+        correlationId:
           type: string
-        updatedAtUnixMs:
+        updatedAtMs:
           type: integer
           format: int64
 
     SessionRecord:
       type: object
       properties:
-        sessionID:
+        sessionId:
           type: string
           format: uuid
         serviceRef:
@@ -105,8 +132,29 @@ components:
           type: object
         state:
           type: string
+          description: |
+            Session lifecycle state. READY guarantees a playable HLS stream (playlist + at least one segment,
+            atomically published). PRIMING means FFmpeg is running but content is not yet playable.
+          enum: [NEW, STARTING, PRIMING, READY, DRAINING, STOPPING, STOPPED, FAILED, CANCELLED]
         reason:
           type: string
+          description: Reason code; R_LEASE_BUSY means capacity rejection (no tuner available), not a system fault.
+          enum:
+            - R_NONE
+            - R_UNKNOWN
+            - R_BAD_REQUEST
+            - R_NOT_FOUND
+            - R_LEASE_BUSY
+            - R_TUNE_TIMEOUT
+            - R_LEASE_EXPIRED
+            - R_TUNE_FAILED
+            - R_INVARIANT_VIOLATION
+            - R_FFMPEG_START_FAILED
+            - R_PROCESS_ENDED
+            - R_PACKAGER_FAILED
+            - R_CANCELLED
+            - R_IDLE_TIMEOUT
+            - R_CLIENT_STOP
         reasonDetail:
           type: string
         createdAtUnix:
@@ -120,11 +168,12 @@ components:
           format: int64
         tunerID:
           type: string
-        correlationID:
+        correlationId:
           type: string
         contextData:
           type: object
-          additionalProperties: true
+          additionalProperties:
+            type: string
 
     # ==================== Legacy Schemas ====================
     Error:
@@ -398,6 +447,49 @@ components:
         service_ref:
           type: string
           description: Service reference for streaming (extracted from M3U URL)
+
+    NowNextRequest:
+      type: object
+      required: [services]
+      properties:
+        services:
+          type: array
+          minItems: 1
+          items:
+            type: string
+
+    NowNextEntry:
+      type: object
+      required: [title, start, end]
+      properties:
+        title:
+          type: string
+        start:
+          type: integer
+          description: Unix timestamp (seconds)
+        end:
+          type: integer
+          description: Unix timestamp (seconds)
+
+    NowNextItem:
+      type: object
+      required: [service_ref]
+      properties:
+        service_ref:
+          type: string
+        now:
+          $ref: "#/components/schemas/NowNextEntry"
+        next:
+          $ref: "#/components/schemas/NowNextEntry"
+
+    NowNextResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/NowNextItem"
 
     ProblemDetails:
       type: object
@@ -691,6 +783,28 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Bouquet"
+
+  /services/now-next:
+    post:
+      summary: Get now/next EPG for a list of services
+      operationId: postServicesNowNext
+      tags:
+        - services
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NowNextRequest"
+      responses:
+        "200":
+          description: Now/next EPG entries per service
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NowNextResponse"
+        "400":
+          description: Invalid request
 
   /epg:
     get:
@@ -1276,8 +1390,21 @@ paths:
                   status:
                     type: string
                     enum: [accepted, idempotent_replay]
+                  correlationId:
+                    type: string
         "400":
           description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+        "409":
+          description: Lease busy (capacity rejection; no session created)
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+              description: Seconds to wait before retry
           content:
             application/json:
               schema:
@@ -1391,7 +1518,7 @@ paths:
         required: true
         schema:
           type: string
-          pattern: '^[a-zA-Z0-9_.-]+\.(m3u8|ts)$'
+          pattern: '^[a-zA-Z0-9_.-]+\.(m3u8|ts|m4s|mp4)$'
     get:
       summary: Serve HLS playlist or segment
       operationId: serveHLS
@@ -1407,6 +1534,14 @@ paths:
               schema:
                 type: string
             video/MP2T:
+              schema:
+                type: string
+                format: binary
+            video/iso.segment:
+              schema:
+                type: string
+                format: binary
+            video/mp4:
               schema:
                 type: string
                 format: binary

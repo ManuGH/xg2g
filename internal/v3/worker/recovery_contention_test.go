@@ -12,6 +12,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/v3/bus"
 	"github.com/ManuGH/xg2g/internal/v3/exec"
+	"github.com/ManuGH/xg2g/internal/v3/lease"
 	"github.com/ManuGH/xg2g/internal/v3/model"
 	"github.com/ManuGH/xg2g/internal/v3/store"
 	"github.com/stretchr/testify/assert"
@@ -35,7 +36,7 @@ func TestContention_Blocked(t *testing.T) {
 		TunerSlots:     []int{0}, // Only 1 slot
 		ExecFactory:    &exec.StubFactory{},
 		LeaseKeyFunc: func(e model.StartSessionEvent) string {
-			return LeaseKeyService(e.ServiceRef)
+			return lease.LeaseKeyService(e.ServiceRef)
 		},
 	}
 
@@ -67,12 +68,13 @@ func TestContention_Blocked(t *testing.T) {
 	// It should fail to acquire Tuner Lease
 	err := orch.handleStart(ctx, model.StartSessionEvent{SessionID: sessB, ServiceRef: refB, ProfileID: "p1"})
 
-	// Expect nil error (it just returns) but Session B stays in NEW
-	assert.NoError(t, err)
+	// Expect lease-busy error and Session B marked FAILED with reason.
+	assert.Error(t, err)
 
 	sB, err := st.GetSession(ctx, sessB)
 	require.NoError(t, err)
-	assert.Equal(t, model.SessionNew, sB.State, "Session B should remain NEW due to Tuner contention")
+	assert.Equal(t, model.SessionFailed, sB.State, "Session B should fail due to tuner contention")
+	assert.Equal(t, model.RLeaseBusy, sB.Reason, "Session B should report lease busy reason")
 }
 
 // TestRecovery_StaleTunerLease verifies that a stale session holding a tuner slot
@@ -139,7 +141,7 @@ func TestRecovery_ActiveTunerLease(t *testing.T) {
 	})
 
 	// Acquire Tuner Lease (Active)
-	key := LeaseKeyTunerSlot(slot)
+	key := lease.LeaseKeyTunerSlot(slot)
 	_, _, err := st.TryAcquireLease(ctx, key, "worker-active", 5*time.Second)
 	require.NoError(t, err)
 

@@ -9,6 +9,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/v3/bus"
 	"github.com/ManuGH/xg2g/internal/v3/exec"
+	"github.com/ManuGH/xg2g/internal/v3/lease"
 	"github.com/ManuGH/xg2g/internal/v3/model"
 	"github.com/ManuGH/xg2g/internal/v3/store"
 	"github.com/stretchr/testify/assert"
@@ -55,7 +56,9 @@ func TestOrchestrator_Stop_Ready(t *testing.T) {
 	// (needed since we now wait for playlist before transitioning to READY)
 	sessionDir := filepath.Join(hlsRoot, "sessions", sessionID)
 	require.NoError(t, os.MkdirAll(sessionDir, 0750))
-	require.NoError(t, os.WriteFile(filepath.Join(sessionDir, "index.m3u8"), []byte("#EXTM3U\n"), 0600))
+	playlist := "#EXTM3U\n#EXTINF:1.0,\nseg_000001.m4s\n"
+	require.NoError(t, os.WriteFile(filepath.Join(sessionDir, "index.m3u8"), []byte(playlist), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(sessionDir, "seg_000001.m4s"), []byte{0x00, 0x01}, 0600))
 
 	startEvt := model.StartSessionEvent{
 		SessionID: sessionID, ServiceRef: "ref:1", ProfileID: "p1",
@@ -85,7 +88,7 @@ func TestOrchestrator_Stop_Ready(t *testing.T) {
 
 	// 6. Assert Lease Released
 	// Try to acquire same slot
-	leaseKey := LeaseKeyTunerSlot(1)
+	leaseKey := lease.LeaseKeyTunerSlot(1)
 	_, acquired, err := st.TryAcquireLease(ctx, leaseKey, "other-worker", 5*time.Second)
 	require.NoError(t, err)
 	assert.True(t, acquired, "Tuner lease should be released after stop")

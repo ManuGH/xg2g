@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/v3/lease"
 	"github.com/ManuGH/xg2g/internal/v3/model"
 	"github.com/ManuGH/xg2g/internal/v3/store"
 	"github.com/rs/zerolog"
@@ -124,7 +125,7 @@ func handleRecovery(ctx context.Context, o *Orchestrator, s *model.SessionRecord
 
 func isIntermediateState(s model.SessionState) bool {
 	switch s {
-	case model.SessionStarting, model.SessionStopping, model.SessionDraining, model.SessionReady:
+	case model.SessionStarting, model.SessionPriming, model.SessionStopping, model.SessionDraining, model.SessionReady:
 		return true
 	// TUNING, PACKAGING, LEASED etc would go here if defined in SessionState (they are PipelineStates in model)
 	// model.SessionState is coarse.
@@ -137,6 +138,8 @@ func determineRecoveryTarget(s model.SessionState) model.SessionState {
 	switch s {
 	case model.SessionStarting:
 		return model.SessionNew // Retry start
+	case model.SessionPriming:
+		return model.SessionFailed
 	case model.SessionStopping, model.SessionDraining, model.SessionReady:
 		return model.SessionFailed // Abort stop/drain/ready -> Failed (safest terminal)
 	default:
@@ -148,10 +151,10 @@ func (o *Orchestrator) recoveryLeaseKey(s *model.SessionRecord) string {
 	if s != nil && s.ContextData != nil {
 		if raw := s.ContextData[model.CtxKeyTunerSlot]; raw != "" {
 			if slot, err := strconv.Atoi(raw); err == nil {
-				return LeaseKeyTunerSlot(slot)
+				return lease.LeaseKeyTunerSlot(slot)
 			}
 		}
 	}
 	// fallback (legacy/partial)
-	return LeaseKeyService(s.ServiceRef)
+	return lease.LeaseKeyService(s.ServiceRef)
 }

@@ -4,6 +4,87 @@ export type ClientOptions = {
     baseUrl: `${string}://${string}/api/v3` | (string & {});
 };
 
+export type ApiError = {
+    /**
+     * Machine-readable error code
+     */
+    code: string;
+    /**
+     * Human-readable error message
+     */
+    message: string;
+    /**
+     * Request ID for debugging
+     */
+    request_id: string;
+    /**
+     * Optional additional context
+     */
+    details?: unknown;
+};
+
+export type IntentRequest = {
+    type?: 'stream.start' | 'stream.stop';
+    /**
+     * Enigma2 service reference
+     */
+    serviceRef: string;
+    /**
+     * Transcoding profile ID
+     */
+    profileID?: string;
+    /**
+     * Legacy alias for profileID (decode-only, will be removed in v3.2)
+     *
+     * @deprecated
+     */
+    profile?: string;
+    /**
+     * Required for stream.stop intent
+     */
+    sessionID?: string;
+    /**
+     * Optional idempotency key for at-most-once semantics
+     */
+    idempotencyKey?: string;
+    /**
+     * Additional parameters
+     */
+    params?: {
+        [key: string]: string;
+    };
+};
+
+export type SessionResponse = {
+    sessionId: string;
+    serviceRef?: string;
+    profile?: string;
+    state: 'NEW' | 'STARTING' | 'READY' | 'DRAINING' | 'STOPPING' | 'STOPPED' | 'FAILED' | 'CANCELLED';
+    reason?: 'R_NONE' | 'R_UNKNOWN' | 'R_BAD_REQUEST' | 'R_NOT_FOUND' | 'R_LEASE_BUSY' | 'R_TUNE_TIMEOUT' | 'R_LEASE_EXPIRED' | 'R_TUNE_FAILED' | 'R_INVARIANT_VIOLATION' | 'R_FFMPEG_START_FAILED' | 'R_PROCESS_ENDED' | 'R_PACKAGER_FAILED' | 'R_CANCELLED' | 'R_IDLE_TIMEOUT' | 'R_CLIENT_STOP';
+    reasonDetail?: string;
+    correlationId?: string;
+    updatedAtMs?: number;
+};
+
+export type SessionRecord = {
+    sessionId?: string;
+    serviceRef?: string;
+    profile?: {
+        [key: string]: unknown;
+    };
+    state?: 'NEW' | 'STARTING' | 'READY' | 'DRAINING' | 'STOPPING' | 'STOPPED' | 'FAILED' | 'CANCELLED';
+    reason?: 'R_NONE' | 'R_UNKNOWN' | 'R_BAD_REQUEST' | 'R_NOT_FOUND' | 'R_LEASE_BUSY' | 'R_TUNE_TIMEOUT' | 'R_LEASE_EXPIRED' | 'R_TUNE_FAILED' | 'R_INVARIANT_VIOLATION' | 'R_FFMPEG_START_FAILED' | 'R_PROCESS_ENDED' | 'R_PACKAGER_FAILED' | 'R_CANCELLED' | 'R_IDLE_TIMEOUT' | 'R_CLIENT_STOP';
+    reasonDetail?: string;
+    createdAtUnix?: number;
+    updatedAtUnix?: number;
+    lastAccessUnix?: number;
+    tunerID?: string;
+    correlationId?: string;
+    contextData?: {
+        [key: string]: string;
+    };
+};
+
 export type Error = {
     type?: string;
     title?: string;
@@ -179,6 +260,32 @@ export type Service = {
      * Service reference for streaming (extracted from M3U URL)
      */
     service_ref?: string;
+};
+
+export type NowNextRequest = {
+    services: Array<string>;
+};
+
+export type NowNextEntry = {
+    title: string;
+    /**
+     * Unix timestamp (seconds)
+     */
+    start: number;
+    /**
+     * Unix timestamp (seconds)
+     */
+    end: number;
+};
+
+export type NowNextItem = {
+    service_ref: string;
+    now?: NowNextEntry;
+    next?: NowNextEntry;
+};
+
+export type NowNextResponse = {
+    items: Array<NowNextItem>;
 };
 
 export type ProblemDetails = {
@@ -453,6 +560,29 @@ export type GetServicesBouquetsResponses = {
 };
 
 export type GetServicesBouquetsResponse = GetServicesBouquetsResponses[keyof GetServicesBouquetsResponses];
+
+export type PostServicesNowNextData = {
+    body: NowNextRequest;
+    path?: never;
+    query?: never;
+    url: '/services/now-next';
+};
+
+export type PostServicesNowNextErrors = {
+    /**
+     * Invalid request
+     */
+    400: unknown;
+};
+
+export type PostServicesNowNextResponses = {
+    /**
+     * Now/next EPG entries per service
+     */
+    200: NowNextResponse;
+};
+
+export type PostServicesNowNextResponse = PostServicesNowNextResponses[keyof PostServicesNowNextResponses];
 
 export type GetEpgData = {
     body?: never;
@@ -1042,3 +1172,142 @@ export type DeleteSeriesRuleResponses = {
 };
 
 export type DeleteSeriesRuleResponse = DeleteSeriesRuleResponses[keyof DeleteSeriesRuleResponses];
+
+export type CreateIntentData = {
+    body: IntentRequest;
+    path?: never;
+    query?: never;
+    url: '/intents';
+};
+
+export type CreateIntentErrors = {
+    /**
+     * Invalid request
+     */
+    400: ApiError;
+    /**
+     * V3 control plane unavailable
+     */
+    503: ApiError;
+};
+
+export type CreateIntentError = CreateIntentErrors[keyof CreateIntentErrors];
+
+export type CreateIntentResponses = {
+    /**
+     * Intent accepted
+     */
+    202: {
+        sessionId?: string;
+        status?: 'accepted' | 'idempotent_replay';
+    };
+};
+
+export type CreateIntentResponse = CreateIntentResponses[keyof CreateIntentResponses];
+
+export type ListSessionsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Pagination offset
+         */
+        offset?: number;
+        /**
+         * Pagination limit (max 1000)
+         */
+        limit?: number;
+    };
+    url: '/sessions';
+};
+
+export type ListSessionsErrors = {
+    /**
+     * V3 control plane unavailable
+     */
+    503: ApiError;
+};
+
+export type ListSessionsError = ListSessionsErrors[keyof ListSessionsErrors];
+
+export type ListSessionsResponses = {
+    /**
+     * Sessions list with pagination metadata
+     */
+    200: {
+        sessions?: Array<SessionRecord>;
+        pagination?: {
+            offset?: number;
+            limit?: number;
+            total?: number;
+            count?: number;
+        };
+    };
+};
+
+export type ListSessionsResponse = ListSessionsResponses[keyof ListSessionsResponses];
+
+export type GetSessionStateData = {
+    body?: never;
+    path: {
+        sessionID: string;
+    };
+    query?: never;
+    url: '/sessions/{sessionID}';
+};
+
+export type GetSessionStateErrors = {
+    /**
+     * Invalid session ID
+     */
+    400: ApiError;
+    /**
+     * Session not found
+     */
+    404: ApiError;
+};
+
+export type GetSessionStateError = GetSessionStateErrors[keyof GetSessionStateErrors];
+
+export type GetSessionStateResponses = {
+    /**
+     * Session state
+     */
+    200: SessionResponse;
+};
+
+export type GetSessionStateResponse = GetSessionStateResponses[keyof GetSessionStateResponses];
+
+export type ServeHlsData = {
+    body?: never;
+    path: {
+        sessionID: string;
+        filename: string;
+    };
+    query?: never;
+    url: '/sessions/{sessionID}/hls/{filename}';
+};
+
+export type ServeHlsErrors = {
+    /**
+     * Invalid request
+     */
+    400: unknown;
+    /**
+     * File not found
+     */
+    404: unknown;
+    /**
+     * V3 control plane unavailable
+     */
+    503: unknown;
+};
+
+export type ServeHlsResponses = {
+    /**
+     * HLS content
+     */
+    200: string;
+};
+
+export type ServeHlsResponse = ServeHlsResponses[keyof ServeHlsResponses];

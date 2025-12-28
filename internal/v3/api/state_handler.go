@@ -44,12 +44,12 @@ func NewStateHandler(st store.StateStore) http.Handler {
 		resp := SessionResponse{
 			SessionID:       sess.SessionID,
 			ServiceRef:      sess.ServiceRef,
-			ProfileID:       sess.Profile.Name,
+			Profile:         sess.Profile.Name,
 			State:           sess.State,
 			Reason:          sess.Reason,
 			ReasonDetail:    sess.ReasonDetail,
 			CorrelationID:   sess.CorrelationID,
-			UpdatedAtUnixMs: sess.UpdatedAtUnix * 1000,
+			UpdatedAtMs:     sess.UpdatedAtUnix * 1000,
 		}
 
 		w.Header().Set("Content-Type", "application/json")

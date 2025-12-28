@@ -18,6 +18,7 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/go-chi/chi/v5"
 	"github.com/oapi-codegen/runtime"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
 const (
@@ -49,11 +50,81 @@ const (
 	EPGStatusStatusOk      EPGStatusStatus = "ok"
 )
 
+// Defines values for IntentRequestType.
+const (
+	StreamStart IntentRequestType = "stream.start"
+	StreamStop  IntentRequestType = "stream.stop"
+)
+
 // Defines values for SeriesRuleRunReportStatus.
 const (
 	Failed  SeriesRuleRunReportStatus = "failed"
 	Partial SeriesRuleRunReportStatus = "partial"
 	Success SeriesRuleRunReportStatus = "success"
+)
+
+// Defines values for SessionRecordReason.
+const (
+	SessionRecordReasonRBADREQUEST         SessionRecordReason = "R_BAD_REQUEST"
+	SessionRecordReasonRCANCELLED          SessionRecordReason = "R_CANCELLED"
+	SessionRecordReasonRCLIENTSTOP         SessionRecordReason = "R_CLIENT_STOP"
+	SessionRecordReasonRFFMPEGSTARTFAILED  SessionRecordReason = "R_FFMPEG_START_FAILED"
+	SessionRecordReasonRIDLETIMEOUT        SessionRecordReason = "R_IDLE_TIMEOUT"
+	SessionRecordReasonRINVARIANTVIOLATION SessionRecordReason = "R_INVARIANT_VIOLATION"
+	SessionRecordReasonRLEASEBUSY          SessionRecordReason = "R_LEASE_BUSY"
+	SessionRecordReasonRLEASEEXPIRED       SessionRecordReason = "R_LEASE_EXPIRED"
+	SessionRecordReasonRNONE               SessionRecordReason = "R_NONE"
+	SessionRecordReasonRNOTFOUND           SessionRecordReason = "R_NOT_FOUND"
+	SessionRecordReasonRPACKAGERFAILED     SessionRecordReason = "R_PACKAGER_FAILED"
+	SessionRecordReasonRPROCESSENDED       SessionRecordReason = "R_PROCESS_ENDED"
+	SessionRecordReasonRTUNEFAILED         SessionRecordReason = "R_TUNE_FAILED"
+	SessionRecordReasonRTUNETIMEOUT        SessionRecordReason = "R_TUNE_TIMEOUT"
+	SessionRecordReasonRUNKNOWN            SessionRecordReason = "R_UNKNOWN"
+)
+
+// Defines values for SessionRecordState.
+const (
+	SessionRecordStateCANCELLED SessionRecordState = "CANCELLED"
+	SessionRecordStateDRAINING  SessionRecordState = "DRAINING"
+	SessionRecordStateFAILED    SessionRecordState = "FAILED"
+	SessionRecordStateNEW       SessionRecordState = "NEW"
+	SessionRecordStatePRIMING   SessionRecordState = "PRIMING"
+	SessionRecordStateREADY     SessionRecordState = "READY"
+	SessionRecordStateSTARTING  SessionRecordState = "STARTING"
+	SessionRecordStateSTOPPED   SessionRecordState = "STOPPED"
+	SessionRecordStateSTOPPING  SessionRecordState = "STOPPING"
+)
+
+// Defines values for SessionResponseReason.
+const (
+	SessionResponseReasonRBADREQUEST         SessionResponseReason = "R_BAD_REQUEST"
+	SessionResponseReasonRCANCELLED          SessionResponseReason = "R_CANCELLED"
+	SessionResponseReasonRCLIENTSTOP         SessionResponseReason = "R_CLIENT_STOP"
+	SessionResponseReasonRFFMPEGSTARTFAILED  SessionResponseReason = "R_FFMPEG_START_FAILED"
+	SessionResponseReasonRIDLETIMEOUT        SessionResponseReason = "R_IDLE_TIMEOUT"
+	SessionResponseReasonRINVARIANTVIOLATION SessionResponseReason = "R_INVARIANT_VIOLATION"
+	SessionResponseReasonRLEASEBUSY          SessionResponseReason = "R_LEASE_BUSY"
+	SessionResponseReasonRLEASEEXPIRED       SessionResponseReason = "R_LEASE_EXPIRED"
+	SessionResponseReasonRNONE               SessionResponseReason = "R_NONE"
+	SessionResponseReasonRNOTFOUND           SessionResponseReason = "R_NOT_FOUND"
+	SessionResponseReasonRPACKAGERFAILED     SessionResponseReason = "R_PACKAGER_FAILED"
+	SessionResponseReasonRPROCESSENDED       SessionResponseReason = "R_PROCESS_ENDED"
+	SessionResponseReasonRTUNEFAILED         SessionResponseReason = "R_TUNE_FAILED"
+	SessionResponseReasonRTUNETIMEOUT        SessionResponseReason = "R_TUNE_TIMEOUT"
+	SessionResponseReasonRUNKNOWN            SessionResponseReason = "R_UNKNOWN"
+)
+
+// Defines values for SessionResponseState.
+const (
+	SessionResponseStateCANCELLED SessionResponseState = "CANCELLED"
+	SessionResponseStateDRAINING  SessionResponseState = "DRAINING"
+	SessionResponseStateFAILED    SessionResponseState = "FAILED"
+	SessionResponseStateNEW       SessionResponseState = "NEW"
+	SessionResponseStatePRIMING   SessionResponseState = "PRIMING"
+	SessionResponseStateREADY     SessionResponseState = "READY"
+	SessionResponseStateSTARTING  SessionResponseState = "STARTING"
+	SessionResponseStateSTOPPED   SessionResponseState = "STOPPED"
+	SessionResponseStateSTOPPING  SessionResponseState = "STOPPING"
 )
 
 // Defines values for StreamSessionState.
@@ -106,6 +177,21 @@ const (
 	Nothing     TimerCreateRequestAfterEvent = "nothing"
 	Standby     TimerCreateRequestAfterEvent = "standby"
 )
+
+// APIError defines model for APIError.
+type APIError struct {
+	// Code Machine-readable error code
+	Code string `json:"code"`
+
+	// Details Optional additional context
+	Details interface{} `json:"details,omitempty"`
+
+	// Message Human-readable error message
+	Message string `json:"message"`
+
+	// RequestId Request ID for debugging
+	RequestId string `json:"request_id"`
+}
 
 // AppConfig defines model for AppConfig.
 type AppConfig struct {
@@ -200,12 +286,68 @@ type FeatureFlags struct {
 	InstantTune *bool `json:"instantTune,omitempty"`
 }
 
+// IntentRequest defines model for IntentRequest.
+type IntentRequest struct {
+	// CorrelationId Optional correlation ID for end-to-end tracing
+	CorrelationId *string `json:"correlationId,omitempty"`
+
+	// IdempotencyKey Optional idempotency key for at-most-once semantics
+	IdempotencyKey *string `json:"idempotencyKey,omitempty"`
+
+	// Params Additional parameters
+	Params *map[string]string `json:"params,omitempty"`
+
+	// Profile Legacy alias for profileID (decode-only, will be removed in v3.2)
+	// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
+	Profile *string `json:"profile,omitempty"`
+
+	// ProfileID Transcoding profile ID
+	ProfileID *string `json:"profileID,omitempty"`
+
+	// ServiceRef Enigma2 service reference
+	ServiceRef string `json:"serviceRef"`
+
+	// SessionID Required for stream.stop intent
+	SessionID *openapi_types.UUID `json:"sessionID,omitempty"`
+	Type      *IntentRequestType  `json:"type,omitempty"`
+}
+
+// IntentRequestType defines model for IntentRequest.Type.
+type IntentRequestType string
+
 // LogEntry defines model for LogEntry.
 type LogEntry struct {
 	Fields  *map[string]interface{} `json:"fields,omitempty"`
 	Level   *string                 `json:"level,omitempty"`
 	Message *string                 `json:"message,omitempty"`
 	Time    *time.Time              `json:"time,omitempty"`
+}
+
+// NowNextEntry defines model for NowNextEntry.
+type NowNextEntry struct {
+	// End Unix timestamp (seconds)
+	End int `json:"end"`
+
+	// Start Unix timestamp (seconds)
+	Start int    `json:"start"`
+	Title string `json:"title"`
+}
+
+// NowNextItem defines model for NowNextItem.
+type NowNextItem struct {
+	Next       *NowNextEntry `json:"next,omitempty"`
+	Now        *NowNextEntry `json:"now,omitempty"`
+	ServiceRef string        `json:"service_ref"`
+}
+
+// NowNextRequest defines model for NowNextRequest.
+type NowNextRequest struct {
+	Services []string `json:"services"`
+}
+
+// NowNextResponse defines model for NowNextResponse.
+type NowNextResponse struct {
+	Items []NowNextItem `json:"items"`
 }
 
 // OpenWebIFConfig defines model for OpenWebIFConfig.
@@ -376,6 +518,58 @@ type Service struct {
 	ServiceRef *string `json:"service_ref,omitempty"`
 }
 
+// SessionRecord defines model for SessionRecord.
+type SessionRecord struct {
+	ContextData    *map[string]string      `json:"contextData,omitempty"`
+	CorrelationId  *string                 `json:"correlationId,omitempty"`
+	CreatedAtUnix  *int64                  `json:"createdAtUnix,omitempty"`
+	LastAccessUnix *int64                  `json:"lastAccessUnix,omitempty"`
+	Profile        *map[string]interface{} `json:"profile,omitempty"`
+
+	// Reason Reason code; R_LEASE_BUSY means capacity rejection (no tuner available), not a system fault.
+	Reason       *SessionRecordReason `json:"reason,omitempty"`
+	ReasonDetail *string              `json:"reasonDetail,omitempty"`
+	ServiceRef   *string              `json:"serviceRef,omitempty"`
+	SessionId    *openapi_types.UUID  `json:"sessionId,omitempty"`
+
+	// State Session lifecycle state. READY guarantees a playable HLS stream (playlist + at least one segment,
+	// atomically published). PRIMING means FFmpeg is running but content is not yet playable.
+	State         *SessionRecordState `json:"state,omitempty"`
+	TunerID       *string             `json:"tunerID,omitempty"`
+	UpdatedAtUnix *int64              `json:"updatedAtUnix,omitempty"`
+}
+
+// SessionRecordReason Reason code; R_LEASE_BUSY means capacity rejection (no tuner available), not a system fault.
+type SessionRecordReason string
+
+// SessionRecordState Session lifecycle state. READY guarantees a playable HLS stream (playlist + at least one segment,
+// atomically published). PRIMING means FFmpeg is running but content is not yet playable.
+type SessionRecordState string
+
+// SessionResponse defines model for SessionResponse.
+type SessionResponse struct {
+	CorrelationId *string `json:"correlationId,omitempty"`
+	Profile       *string `json:"profile,omitempty"`
+
+	// Reason Reason code; R_LEASE_BUSY means capacity rejection (no tuner available), not a system fault.
+	Reason       *SessionResponseReason `json:"reason,omitempty"`
+	ReasonDetail *string                `json:"reasonDetail,omitempty"`
+	ServiceRef   *string                `json:"serviceRef,omitempty"`
+	SessionId    openapi_types.UUID     `json:"sessionId"`
+
+	// State Session lifecycle state. READY guarantees a playable HLS stream (playlist + at least one segment,
+	// atomically published). PRIMING means FFmpeg is running but content is not yet playable.
+	State       SessionResponseState `json:"state"`
+	UpdatedAtMs *int64               `json:"updatedAtMs,omitempty"`
+}
+
+// SessionResponseReason Reason code; R_LEASE_BUSY means capacity rejection (no tuner available), not a system fault.
+type SessionResponseReason string
+
+// SessionResponseState Session lifecycle state. READY guarantees a playable HLS stream (playlist + at least one segment,
+// atomically published). PRIMING means FFmpeg is running but content is not yet playable.
+type SessionResponseState string
+
 // StreamSession defines model for StreamSession.
 type StreamSession struct {
 	ChannelName *string             `json:"channel_name,omitempty"`
@@ -532,14 +726,29 @@ type PostServicesIdToggleJSONBody struct {
 	Enabled *bool `json:"enabled,omitempty"`
 }
 
+// ListSessionsParams defines parameters for ListSessions.
+type ListSessionsParams struct {
+	// Offset Pagination offset
+	Offset *int `form:"offset,omitempty" json:"offset,omitempty"`
+
+	// Limit Pagination limit (max 1000)
+	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
 // GetTimersParams defines parameters for GetTimers.
 type GetTimersParams struct {
 	State *string `form:"state,omitempty" json:"state,omitempty"`
 	From  *int    `form:"from,omitempty" json:"from,omitempty"`
 }
 
+// CreateIntentJSONRequestBody defines body for CreateIntent for application/json ContentType.
+type CreateIntentJSONRequestBody = IntentRequest
+
 // CreateSeriesRuleJSONRequestBody defines body for CreateSeriesRule for application/json ContentType.
 type CreateSeriesRuleJSONRequestBody = SeriesRule
+
+// PostServicesNowNextJSONRequestBody defines body for PostServicesNowNext for application/json ContentType.
+type PostServicesNowNextJSONRequestBody = NowNextRequest
 
 // PostServicesIdToggleJSONRequestBody defines body for PostServicesIdToggle for application/json ContentType.
 type PostServicesIdToggleJSONRequestBody PostServicesIdToggleJSONBody
@@ -570,6 +779,9 @@ type ServerInterface interface {
 	// Get EPG data
 	// (GET /epg)
 	GetEpg(w http.ResponseWriter, r *http.Request, params GetEpgParams)
+	// Create stream intent (start or stop session)
+	// (POST /intents)
+	CreateIntent(w http.ResponseWriter, r *http.Request)
 	// Get recent logs
 	// (GET /logs)
 	GetLogs(w http.ResponseWriter, r *http.Request)
@@ -609,9 +821,21 @@ type ServerInterface interface {
 	// List all bouquets
 	// (GET /services/bouquets)
 	GetServicesBouquets(w http.ResponseWriter, r *http.Request)
+	// Get now/next EPG for a list of services
+	// (POST /services/now-next)
+	PostServicesNowNext(w http.ResponseWriter, r *http.Request)
 	// Toggle service enabled state
 	// (POST /services/{id}/toggle)
 	PostServicesIdToggle(w http.ResponseWriter, r *http.Request, id string)
+	// List all sessions (admin only)
+	// (GET /sessions)
+	ListSessions(w http.ResponseWriter, r *http.Request, params ListSessionsParams)
+	// Get session state
+	// (GET /sessions/{sessionID})
+	GetSessionState(w http.ResponseWriter, r *http.Request, sessionID openapi_types.UUID)
+	// Serve HLS playlist or segment
+	// (GET /sessions/{sessionID}/hls/{filename})
+	ServeHLS(w http.ResponseWriter, r *http.Request, sessionID openapi_types.UUID, filename string)
 	// List active streams
 	// (GET /streams)
 	GetStreams(w http.ResponseWriter, r *http.Request)
@@ -675,6 +899,12 @@ func (_ Unimplemented) GetDvrStatus(w http.ResponseWriter, r *http.Request) {
 // Get EPG data
 // (GET /epg)
 func (_ Unimplemented) GetEpg(w http.ResponseWriter, r *http.Request, params GetEpgParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Create stream intent (start or stop session)
+// (POST /intents)
+func (_ Unimplemented) CreateIntent(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -756,9 +986,33 @@ func (_ Unimplemented) GetServicesBouquets(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Get now/next EPG for a list of services
+// (POST /services/now-next)
+func (_ Unimplemented) PostServicesNowNext(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // Toggle service enabled state
 // (POST /services/{id}/toggle)
 func (_ Unimplemented) PostServicesIdToggle(w http.ResponseWriter, r *http.Request, id string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List all sessions (admin only)
+// (GET /sessions)
+func (_ Unimplemented) ListSessions(w http.ResponseWriter, r *http.Request, params ListSessionsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get session state
+// (GET /sessions/{sessionID})
+func (_ Unimplemented) GetSessionState(w http.ResponseWriter, r *http.Request, sessionID openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Serve HLS playlist or segment
+// (GET /sessions/{sessionID}/hls/{filename})
+func (_ Unimplemented) ServeHLS(w http.ResponseWriter, r *http.Request, sessionID openapi_types.UUID, filename string) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -951,6 +1205,26 @@ func (siw *ServerInterfaceWrapper) GetEpg(w http.ResponseWriter, r *http.Request
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetEpg(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateIntent operation middleware
+func (siw *ServerInterfaceWrapper) CreateIntent(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:write"})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateIntent(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1353,6 +1627,26 @@ func (siw *ServerInterfaceWrapper) GetServicesBouquets(w http.ResponseWriter, r 
 	handler.ServeHTTP(w, r)
 }
 
+// PostServicesNowNext operation middleware
+func (siw *ServerInterfaceWrapper) PostServicesNowNext(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostServicesNowNext(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // PostServicesIdToggle operation middleware
 func (siw *ServerInterfaceWrapper) PostServicesIdToggle(w http.ResponseWriter, r *http.Request) {
 
@@ -1375,6 +1669,118 @@ func (siw *ServerInterfaceWrapper) PostServicesIdToggle(w http.ResponseWriter, r
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PostServicesIdToggle(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListSessions operation middleware
+func (siw *ServerInterfaceWrapper) ListSessions(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:admin"})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListSessionsParams
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "offset", r.URL.Query(), &params.Offset)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "limit", r.URL.Query(), &params.Limit)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListSessions(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSessionState operation middleware
+func (siw *ServerInterfaceWrapper) GetSessionState(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "sessionID" -------------
+	var sessionID openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "sessionID", chi.URLParam(r, "sessionID"), &sessionID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sessionID", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSessionState(w, r, sessionID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ServeHLS operation middleware
+func (siw *ServerInterfaceWrapper) ServeHLS(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "sessionID" -------------
+	var sessionID openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "sessionID", chi.URLParam(r, "sessionID"), &sessionID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sessionID", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "filename" -------------
+	var filename string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "filename", chi.URLParam(r, "filename"), &filename, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filename", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ServeHLS(w, r, sessionID, filename)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1815,6 +2221,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/epg", wrapper.GetEpg)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/intents", wrapper.CreateIntent)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/logs", wrapper.GetLogs)
 	})
 	r.Group(func(r chi.Router) {
@@ -1854,7 +2263,19 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/services/bouquets", wrapper.GetServicesBouquets)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/services/now-next", wrapper.PostServicesNowNext)
+	})
+	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/services/{id}/toggle", wrapper.PostServicesIdToggle)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/sessions", wrapper.ListSessions)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/sessions/{sessionID}", wrapper.GetSessionState)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/sessions/{sessionID}/hls/{filename}", wrapper.ServeHLS)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/streams", wrapper.GetStreams)
@@ -1899,73 +2320,100 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
+	"H4sIAAAAAAAC/+w9+3Pjtpn/CobXH7ypbHnXm17rzv2gteS1Wq+tk+zk2uyeBiI/SahJgAFA2erG//sN",
+	"AL4JUNT6kctMkplEFkEA3wPf+4O+ej6LYkaBSuGdfvWEv4YI64+DyXjEOePqc8xZDFwS0E98FoD6fwDC",
+	"5ySWhFHv1PuE/TWhcMgBB3gRAgL1NtKDex484CgOwTv1bq8GtzcX19PxP0dDr+fJbay+FZITuvIee14A",
+	"EpNQNBe41h9wiHAQkPSjz6iEB1lZYEw3OCQBkuwOKFoyHmGpJo5ACLyy7PwiiTCt7zsbXZ55kMg1UEl8",
+	"rN5EHH5OCIfABoV6BkLOSdBcb2qeofFQ7Q4FsEhWK/VeeS0OP8/xwn/77qQ5fTq/Xvv0Jy9FcbHj0uJf",
+	"8pfZ4l/ga0QM4viM0SVZNUm7YMnPCRheIBIi/aEBXPoF5hxvNcmwxEPCrWMh1sv8gcPSO/X+o1/wWz9l",
+	"tv5o8jHdz2PPWwKWCYfzEK/ErhfPy2Mfe17IVpewgdC6ERYD/REW4/Nds15nA4tNxcRndOd2JnpU8dYG",
+	"uNAU/2ohYIMqHwzqmzShOAIrRAL4hvhQphGhElbAHSsoFvd5Ei32WCTGct0RgrMMJTOJZSKai4RYyLm/",
+	"Bv9O/ZWezFPFPnAoSQS2gyTyuYAmkWJ3dqcOihZNX3rd9qUochurdZ6L5V+TrV+bc204HBIOvmR8O5YQ",
+	"vQz7DDf8DMd4QUKSTVvXO3QZEl9aHsUcNgTuSystGAsBUyOLfSAb4IN7zME2xLYbAdy6iQBCWGEJwYSz",
+	"DQnALvWiVEVmPEsZVdydv6zENaZ4BYGFh3ueSOKYcTWu427V6eGO3UqwowUCIl0Iw8EH7N/9AJwst932",
+	"UNNJ6YZ6JaLlOLXppOKwNGHAW6uI63lAlcIO7EAIlnC/QoT0pHs9LwZ+mErPjjJkNPnokmoREYLQ1dxf",
+	"Y0ohdOzVIcfSlzvu4rwmRaobIVRITOVNQjtz+ZhKoDI1SGwnjnMItbUzDlosstK4zKoBGhxKdgg0QJJj",
+	"35g3DUYnAUQxk0D97d9h27JCaSC6g61eAsvDiAl5yKgPSECElWkmbMvEmGMj2AvbcVKB1GKGlvcxKExO",
+	"PRdIw90NhMacLUmYGpkxB1+f9lPJE6jPeQkr7G8RDgkWGp703fEQHQSgjLpDRsNtD92TMEQLQBwitoEA",
+	"EYo2J0fv3lghzeZo4vKGYyp8FhC6ypZC42HF6FyHYv6f745jqyI252WqtEh96hElqwi/Q+kYxGEJHKhf",
+	"NZ/fnh6fvj19//774en7709O356eHat/Ts2/9jWFsqBs0ExTYaMxJyQHHB0JyWJENEt7vcK+SBJitdHN",
+	"F2riJU5CaZ6ZeTDXPkV6Umtfl1azn9uyICyhzSb3LtlqRCXfNs/ekkAYtPCsYanGhKHTAC75P01UEKO/",
+	"u9hkNjlyxe6v4EE6QAFqER63lDwgtYKQOIrRgQCf0UCUuLoqPbl84hySyBDstkhVc6lh2ZI9vfkvbpAd",
+	"9pBySncYXRWcPfY8yu73fSVlrjk3h7ITJ+rBLQA5lUHZ3XAbyhGhY/Pwbd1qtu9HtG9GxIwKi9me7yD/",
+	"0AFxmliPO/ZlJrRtqm5fN30JLOCWhw5LWIh7xgO7K6dFyoRxabceEgHcYWPbjmPFnt9jl9a5OFuEEA2L",
+	"sEyLVd6JGDfKNjxLX7PGE/RaVkR9o1Q0ppHv8KNz06y70Ci0xw5pop72ykJFLWVjrin4jCvlbJcoC1gR",
+	"WhHRhMo/vbdKuoqQtCIxBKfHFgJdWX22XeKmVcK6wXUf8UUer+jOW6UYh4Wx/IRzoHLu8EqLAZwxaTcL",
+	"Uz+4LoXa9lT1nS3b4hkuus9Z5RbbnIzJb5huqgC3ScgWAqa4qslnu6DbQ4jlC7gcLyLyIQ4X0PDrlXPN",
+	"itgvzWY9n0kIM4pjsbaBmzp/U8fJyHzYut4sS5p6hKnNuXVg9w62ThUTc8I4kVune8rlj4QG7L4reRKa",
+	"y/AnSatFyPw7QldaLYztm08tyA6ztVm5bAM8xPHMWIkdJ6z6PU+TeQkdgk+yoHAVZdh3yuv9ZH+up5+C",
+	"RSz99RSwMDvqHhfl+Ts7HEirC+Ii/55IduStsOwedm5jIw6Sb9XhtJ9Nt2Fg2+ssiSJsdZpiLdvFJ0WK",
+	"ihwoR8DSQTNfiR/HoAg/mEmyYRPgSppduOJ/EX7Qh1F8DNkCh3o4vXBHC0149ZZywP66BTF6zoGUEMXS",
+	"tVkzKJMsO0ZxwDuGaFZoHzK7I3FsH2Kj2UwHMRX+nFogM5AcsaxGlARJhjgoRvEl4klo5chMhVQnHeKt",
+	"QGyJ7gHu0MHxf80SGuCtcoDzMxvhBxIlkXf6J+2dmc/Hvf1UUB4jqRjYDY2krK9rGm5r46waqgrIDDD3",
+	"10gCjxDjiMMKHkwgcQNUosyAbpqrWMhpQgd7nO30lVnd7G+OKM5mq/FUjKzp2Rxrx86gxvw+V7q1cB2J",
+	"AJmH6OLi06dD9Z9u0ZiCRacJnUKcupVP9dvKGt/qtRnVtteEuT60TZhwHVL+1FVV66TgXssbTWFZe0ko",
+	"EWsI9uErdXIdCown1PFElEzK9s2WzM+MefbbXzMFIRLfByE8HSGXBIdez1tiEjrTUt9wHiQnq5UjTWbY",
+	"+5yzqCOFzQs3rNNwx9HQWR9LjLLF3F5xlsRWCByGeMhWbJ44IkFO15sm0cKBqZrrXZeddYVSBMUJXaED",
+	"eJAcK22KlpxF6NPJLbqdXr7pKk10EN54R1Y5IuFBDrHEeyVYGus0kk1N79zo+4G8peShI8coUT7QXL7H",
+	"S6UsTmObhYVbT0io73W901/RdH45GsxG8w+3s3+gCDAVyMcx9oncIg5qKsIoOqAMyYQCR3iDSagY8E0P",
+	"USYRRmIrJERI64+jUi5iOr+6vhp5PW86v736+9X1j1f684fBcD4d/fftaHaj/766vpmfX99eDfVfxWb0",
+	"nze3V6P5zfjT6Pr2pvR89D+T8XQ0LIacD8aX6d/jqx8G0/Hg6mb+w/j6cnAzvjbrnp9/mow+zmc3g+lN",
+	"efxken02ms3mo6th9s3g7O+Dj6NpedTZ4OpsdJmvMbysbuvscjy6upnPbq4nVnlkSDF0Rwt3uBxZeqnq",
+	"FbnSRUp8gu3w6UlQSJbgb/0QkB54hKajwfAfaJVgjqkEEAijOMTacUAXl7P0fKID9WVIhER/RFiiELCQ",
+	"iFFAAlYRUNn7TLFkEfFxGG5RnCxCrZjeHKHJdPxpfPUx5a/z8yiGFSIC8YRSdewXiTQFclSqrxVfbUHm",
+	"mzj6TEt8dTX60et5mo7jq49ez0tnV4RQgHg9bzgdjK/MV4okk9JHTcGcsAVZbVTTHG9Seo1niS7S2eeE",
+	"t0osV2Rxt6hpSoA62/0uAX6XAL9LgG+SAPkp72jZNxKHGdEyktjitTON3JQ2blfdaYz5IQEq52Qvuy+1",
+	"yud4T7O8UqeEfUk2aigJwq71STMtLC4Ahyaz0YgldahWTB3iUkhn10v1ik93nVMAK44DXfjmKt1UfKFw",
+	"NBd7xWf3q7LVca2nxatzK7Q7iXcl5LoHZp3smpFslnHTXvnR9kzJbjFaZ2HFIEESanrn2S1dDRjFIZgC",
+	"yIAI43L1vITeUXZP7eZCS1w4FyR71K40qhSNHCkAzOLthiwpytskTTWf3eStcn6jU258/zyGK5ZXOoXm",
+	"HYX3JA6Jr4BJbbF5SCIiW8lgz2pXIduJmokp0nUWmER5X0lWj+Ur841vcCoPM1hqX1fre7/Yq+JiJox3",
+	"v7syQZ/vbJd10POpuoPrtEIxnaXnxB52eIHSCpGsViBkI0xX3dkdMQIpQziHIPFhHiuZos+xWJOlnOcF",
+	"cfqvaqFUKarBJLhsbI3KD3sI3+ydUUeJaS2Wbqv+KROlTAE3uSvs0kw6LSXw0QaorLJ29qng6uIbITEN",
+	"FlutNiEu/qJMru3Fwr1nrQ/ZJ+7fXXU1a30bC/8rEXIS4mrsfIlDYV26pelA8+lAoX4G/u5IfPrCB1gy",
+	"Dp3eaFWI7hJQq25xstYlsXHUfpVvuUL5xpo3/f7EpIMdLP5CrPcUXtuHNbqxw27BornCTziRWyVBIoOc",
+	"D4A58EFizPKF/us8A+BvPyo3V5NKg6qfFgCtpYy9x0ddv7ZkTcdzMBnrSO/D6t0KHWRF2JKhSQgP/b9B",
+	"GG6XhKIJZw/bN0ef6Wf63XeXxAcq4LvvTtGEhVu1FXTFqM+iCLhPcIjSEejt0fHR8dFnelY8SpRJoh3M",
+	"NFsJwRGaASAOMRNEMr5FAfMT5bWabgDT4KhLEoy3mabyPb3nwWTslSx470QtmbU84ZikX514ppFII7SP",
+	"E7nui5Jfx4SlNHj0oDy8FQgk14AMFYqWUISRphWgCynjaxpuUToj8hm7I9BDmhOVE021naGd5gX279DB",
+	"xeXsDboncs0SmU5JKLqdXh55euc8Dyx5RjlkTqg6c8YY0JC8O37vDiakXoZCxvvjt7bSZ4UHxsm/1aBy",
+	"ciZdtAaQQr3uGvnJUy96X9Q7/WDD+36t6WplmhCrgHwEWe/PakBznKcDjLLDsTE0CaP9f6URMyOWdlbM",
+	"1ZbSZ6AKf+15Gf6PINHwhynyq7vNwA82vAR94a+2wJ26ty8Icb3YzQJxPgSJbIwNal4fZoM8DQi4QB7F",
+	"Ky/tmjGdLqc/NfhU2X7l2vuEkgdUKsBXKsH7OQG+zfTcqbfkLMoEHrZL1WZrSbDvKpLtucY5CSVwtNii",
+	"tEUMpT6fbfaii6yxRKH/3SsIU+eQTWpb4efWub88kQt3GRP1BkLht4UsnJaRs0g4b+XYq0NjtxFf18aN",
+	"8zOafEQBlthybvJHxVlRJ8ScFdNQJMqqxibkx1nfUdp9/4EF22cTD9U+vceq+aZM88cGV7x7Alfszo/s",
+	"HzivBgWx70Ns4kC5XyDnHJSW7RTybNLX4AjlM2vN+XwSOr8Pw7q0uXKCZwRSS//lVZa+BCwALRKxRQfN",
+	"BNNfEWWFIWBMCiU214CDtGF4CpJvD7VBbLNGtKRVNuU9JhIttEmMdAVku5BVO/3++ORVcPDDic5ycBYq",
+	"K40CSmieTqvY5VqPlS3yn7zNyek9JxK8L0qyNo0ok6IxMgAdaOGFdHEFizPEvimJjc1JKjVCtmq1Ki7V",
+	"8yeK8k4OYN5h2BSaNhNDgRmyFQIqud204vkg87RfbV9wATwtRu0wLaaMqen9rJ/YoSZ1j8ZeWniqZZqy",
+	"5bFcO2ZNH72c/u3WhpEFDdvsQIFCkkYoCwp94OxeAOJlbGfMWfryS41y/a/553HwWL06oErKof5+Wgrq",
+	"txLzdnp5CNRnAQSWwlfG0XiI2FI7aeVEgSZNSouM3sUGvbr6249g7225+8xqNnCX1YdL1mdvFN3O+p0T",
+	"i6OuC5BQAJRkM7fugTKJliyheuz3tl2c6yo9JZfNfkvIq/KDIRfCFezuzRD9LEV9FJ0kf+50zC8uZ5P0",
+	"pd8ij7Qd6g0NjtTfcBTFsErL/IrJc3NoQSjWsqW+XONMX1zOUI6tvfijIZ7VVHlBgQl1PI30RgV2ornJ",
+	"uf/2yG09tGV/O6ukLN3pUMW8gbwkFA6KoW++Ce1f0+qPx66n7SwRkkUz81aTBs+Ivp51NpGv7J4pxlIC",
+	"V+8efff589GBFL9E8ftfovfiFz9abt78wXJYdp/NDQmA9aP4nXzyQfwEAcEoQ6L9dKWA7nO4zM03hzwJ",
+	"22NsReX+6xiHpWaWDubhpRIpbIkMGFXk6Gc41N0tBERZPabQZMjJbgF67LX606WtvYxPXYa9i0P99sVW",
+	"rkU2s8ivLaiLEYX7HMdpq1AdsXWO6/OEusMX04QOwrDKeTbZUY+ypXX95eNdpDcjTBPdTvDc5vOebF00",
+	"wOzF31RnNLisc/k0oZrJ0zRVmRACkShS0kNCuO1Ela+ki6VdOwe7DNlh2Xy1GRFJCE77ITcWdzBYF+VC",
+	"9lTJVvTs5NwKdp59U73/V6y/N8dbfMecs7+NQTT/IxGDT5bEL7NJR+7Pb5Bp0YBmzA4j8tlj9q8lmHT7",
+	"0R7CKEeaW9/q5+ggu4DujVfBdr98w+UutH/Ixr4GNrIrT/fARg6LAxuLYv8lFkzvGaqihbL7w+yeJrt8",
+	"mTCRIya9QeiFbJHa3Uud7JHj51/dHXS6Yvd9hSydKkljgygGnrFfh3BJUU9XNalpeWpjU4d13t9NTa0t",
+	"JFut0r7snQQdBzdm9Esos2/nks5difaUSCemaWRyZSJQWkvr1AtZk6FLNRhs5g59biHpstmUViLvD7bK",
+	"IXWKZ9mgHfJ/gleEmggxWy6FFu420Z8/tKjq4/aG+GYAubSorplFBxF+QG+Pj49dueistNay+tvj417R",
+	"nK8mKW3nrWU7z5v5jXNYbPm/hDpytAYg66MU1fbULpM47HrFQplROqrVcovqN2WHM74zsueeyDUqMIQi",
+	"kNjkjn8zWS0cRITWs1olqyEF90CPQ4yGW2seKxvY/5pfxvnYbkjoUaYN4UUN3mqPn5ukmQh6/XRwlngd",
+	"D0tS9cVXz8CuCepWZuGAgzqvKN0sKiissUcXxVnc4NqmP3cUEGTOYZMT++tQ9L9m99m5GVMpL7i4nHnP",
+	"Gedv1iiYQOSnybubfQOR2btEsKMskPqNU0Tx+2fJR2RI6WzZOQyHc1J1KHMJ+qzizsbBmurVhAjjqIhT",
+	"/0rcbA+f55cydouf/+9P+PDfg8N/Hh/+ZX50+OWPnz8fHUQnyZ9/kUKH06P4vT2aro+Szla0O4TpkFfx",
+	"iiutmh28wYHukMyVmNUZTIekYDyWwO4aeDOjdW7kZTyErrXAEnikLJFW69wq9AvrPJsC4aymJSuhNqjR",
+	"/aN9P78y1skXemB6tewL6vfiR2psIXL9JL0eyOJSpq3zfnVYz4sTm1OYNIF6fg+/8iMkL+DfVw14DuZy",
+	"qWKNrg5kC6KrLmKLRmjgfUcJg8AbqL9UoalBm4OsJfZd5/3P7eyb9km/pHlaXsemYPUTdyV3Cuo6m6CA",
+	"kcOSg1jvCHLosdN0qL02tJ7t1mNR2sFeKmG0j8Oh0rhbRCiKOVtxEHUwbkyUXBfWonTX6GA0+dg/qwYq",
+	"ix8vcVHtJvs1kQ55qcxUtYXmy23JHWP9u0vWXzKsX7SBtcREU/w5IqL5L7Fk1k76hTv/OggC0zX2MpLQ",
+	"2mT7qvnXtCeuiVH9oNp683xVvLWL1C3LD7PObEM0vYF3715xA1nnsDKTtSg3ch+yW/K+P37N3UzTvm5E",
+	"qM+oIMLU4G6Ak2X2G3zmtro3rmS5TPm4wfuF3OnnPb6npV+RcohWM+Cs9JtGL3dC7F3zr5waaO1ot9As",
+	"HYI4CCVyq2TJHpZ/E6qNMl/T+xk6GOuZwNptqBd3Pjyztb4r837VnnR3smqvXS2+ItDHryWBs0usXag0",
+	"o9qqIFuwGWPpr5v4NDbmK6D0heRFpUf715ASbnLuSi01yPnrKV4jtwhdmZsy9W/k/WpquKRyHZpRqT/U",
+	"R1MWhgvs39UOwiggLSehPaZmQmnAN470G2dBYu6wM03cOjrq9XFM+psT7/HL4/8FAAD//+GyG6FbeAAA",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

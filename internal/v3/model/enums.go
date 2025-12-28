@@ -30,6 +30,7 @@ type ExitStatus struct {
 
 const (
 	SessionStarting  SessionState = "STARTING"
+	SessionPriming   SessionState = "PRIMING"
 	SessionReady     SessionState = "READY"
 	SessionDraining  SessionState = "DRAINING"
 	SessionStopping  SessionState = "STOPPING"
@@ -74,7 +75,7 @@ const (
 	RUnknown            ReasonCode = "R_UNKNOWN"
 	RBadRequest         ReasonCode = "R_BAD_REQUEST"
 	RNotFound           ReasonCode = "R_NOT_FOUND"
-	RLeaseBusy          ReasonCode = "R_LEASE_BUSY"
+	RLeaseBusy          ReasonCode = "R_LEASE_BUSY" // Capacity rejection (no tuner available), retry later.
 	RTuneTimeout        ReasonCode = "R_TUNE_TIMEOUT"
 	RLeaseExpired       ReasonCode = "R_LEASE_EXPIRED" // Lease lost or expired
 	RTuneFailed         ReasonCode = "R_TUNE_FAILED"

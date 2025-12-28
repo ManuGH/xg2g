@@ -114,9 +114,15 @@ function Config() {
     setSuccessMsg('');
 
     try {
-      const response = await fetch('/api/v3/setup/validate', {
+      const token = localStorage.getItem('XG2G_API_TOKEN');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+
+      const response = await fetch('/internal/setup/validate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           baseUrl: config.openWebIF?.baseUrl,
           username: config.openWebIF?.username,

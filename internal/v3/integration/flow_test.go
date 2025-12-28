@@ -16,6 +16,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/v3/api"
 	"github.com/ManuGH/xg2g/internal/v3/bus"
+	"github.com/ManuGH/xg2g/internal/v3/lease"
 	"github.com/ManuGH/xg2g/internal/v3/model"
 	"github.com/ManuGH/xg2g/internal/v3/store"
 	"github.com/ManuGH/xg2g/internal/v3/worker"
@@ -33,6 +34,7 @@ func TestV3Flow(t *testing.T) {
 		Store:          memStore,
 		Bus:            memBus,
 		IdempotencyTTL: 1 * time.Minute,
+		TunerSlots:     []int{0},
 	}
 
 	// Arrange: Worker
@@ -126,52 +128,33 @@ func TestV3Flow(t *testing.T) {
 		}
 	})
 
-	t.Run("Lease Contention: Single Writer", func(t *testing.T) {
-		// We manually simulate contention by acquiring a lease on the store before the worker does.
-		// Note: The worker uses (ServiceRef) as key (assuming Orch implementation uses serviceRef?
-		// Worker implementation:
-		// lease, _, _ := o.Store.TryAcquireLease(ctx, e.ServiceRef, e.SessionID...
-
-		// In our previous Happy Path test, "1:0:1:Duplicate" was used.
-		// Let's use a new ServiceRef
+	t.Run("Lease Contention: Admission Rejects", func(t *testing.T) {
 		svc := "1:0:1:Contentious"
 
-		// Pre-acquire lease
-		_, ok, err := memStore.TryAcquireLease(ctx, worker.LeaseKeyService(svc), "manual-test-owner", 5*time.Second)
+		// Pre-acquire tuner lease to force admission busy.
+		_, ok, err := memStore.TryAcquireLease(ctx, lease.LeaseKeyTunerSlot(0), "manual-test-owner", 5*time.Second)
 		if err != nil || !ok {
 			t.Fatalf("failed to pre-acquire lease: %v", err)
 		}
-		defer memStore.ReleaseLease(ctx, svc, "manual-test-owner")
+		defer memStore.ReleaseLease(ctx, lease.LeaseKeyTunerSlot(0), "manual-test-owner")
 
-		// Send Intent
 		reqBody := `{"serviceRef": "` + svc + `", "profile": "web_opt"}`
 		w := httptest.NewRecorder()
 		intentHandler.ServeHTTP(w, httptest.NewRequest("POST", "/api/v3/intents", strings.NewReader(reqBody)))
 
-		var resp api.IntentResponse
-		_ = json.NewDecoder(w.Body).Decode(&resp)
-
-		// Wait a bit
-		time.Sleep(500 * time.Millisecond)
-
-		// Check Session State: Should still be STARTING because worker couldn't get lease
-		sess, _ := memStore.GetSession(ctx, resp.SessionID)
-		if sess.State != model.SessionStarting {
-			t.Errorf("expected session to stay STARTING (blocked by lease), but got %s", sess.State)
+		if w.Code != http.StatusConflict {
+			t.Fatalf("expected 409, got %d", w.Code)
 		}
 
-		// Now release lease
-		_ = memStore.ReleaseLease(ctx, svc, "manual-test-owner") // Manual release isn't strictly implementing Release() on Lease object in test setup above, but ReleaseLease on Store works.
-		// note: variable 'l' is of type Lease, we can use l.Key(), l.Owner() if needed.
-
-		// Worker should eventually retry?
-		// Wait: The Orchestrator MVP implementation consumes the event *once*.
-		// If TryAcquireLease fails (returns false), it returns nil (success/ignored).
-		// It does NOT retry in the MVP loop unless we implemented backoff/retry.
-		// Looking at code:
-		// if !ok { return nil }
-		// So the event is lost in this MVP. This correctly tests "Lease Contention -> Worker skips".
-		// This proves single-writer safety, even if availability in this MVP is "at-most-once".
+		sessions, err := memStore.ListSessions(ctx)
+		if err != nil {
+			t.Fatalf("list sessions failed: %v", err)
+		}
+		for _, sess := range sessions {
+			if sess.ServiceRef == svc {
+				t.Fatalf("unexpected session created during admission rejection: %v", sess)
+			}
+		}
 	})
 
 	// Cleanup

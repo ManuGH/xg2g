@@ -90,6 +90,34 @@ func TestServeHLS_PathTraversal(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Result().StatusCode)
 }
 
+func TestServeHLS_SymlinkEscape(t *testing.T) {
+	tmpRoot := t.TempDir()
+	sessID := "valid-sess"
+	sessDir := filepath.Join(tmpRoot, "sessions", sessID)
+	require.NoError(t, os.MkdirAll(sessDir, 0750))
+
+	outsideDir := t.TempDir()
+	outsideFile := filepath.Join(outsideDir, "secret.m4s")
+	require.NoError(t, os.WriteFile(outsideFile, []byte("secret"), 0600))
+
+	linkPath := filepath.Join(sessDir, "seg_001.m4s")
+	if err := os.Symlink(outsideFile, linkPath); err != nil {
+		t.Skipf("symlink not supported: %v", err)
+	}
+
+	store := &mockHLSStore{
+		sessions: map[string]*model.SessionRecord{
+			sessID: {State: model.SessionReady, ExpiresAtUnix: time.Now().Add(1 * time.Hour).Unix()},
+		},
+	}
+
+	req := httptest.NewRequest("GET", "/hls/seg_001.m4s", nil)
+	w := httptest.NewRecorder()
+
+	ServeHLS(w, req, store, tmpRoot, sessID, "seg_001.m4s")
+	assert.Equal(t, http.StatusNotFound, w.Result().StatusCode)
+}
+
 func TestServeHLS_InvalidSessionID(t *testing.T) {
 	req := httptest.NewRequest("GET", "/hls/index.m3u8", nil)
 	w := httptest.NewRecorder()

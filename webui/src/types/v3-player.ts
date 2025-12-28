@@ -3,7 +3,16 @@
 import type Hls from 'hls.js';
 import type { Service } from '../client-ts';
 
-export type PlayerStatus = 'idle' | 'starting' | 'buffering' | 'playing' | 'error' | 'stopped' | 'paused';
+export type PlayerStatus =
+  | 'idle'
+  | 'starting'
+  | 'priming'
+  | 'ready'
+  | 'buffering'
+  | 'playing'
+  | 'error'
+  | 'stopped'
+  | 'paused';
 
 export interface Channel {
   id?: string;
@@ -51,8 +60,18 @@ export interface V3SessionResponse {
 
 export interface V3SessionStatusResponse {
   sessionId: string;
-  state: 'PENDING' | 'READY' | 'PLAYING' | 'ERROR' | 'STOPPED' | 'FAILED' | 'CANCELLED';
-  error?: string;
+  state:
+    | 'NEW'
+    | 'STARTING'
+    | 'PRIMING'
+    | 'READY'
+    | 'DRAINING'
+    | 'STOPPING'
+    | 'STOPPED'
+    | 'FAILED'
+    | 'CANCELLED';
+  reason?: string;
+  reasonDetail?: string;
 }
 
 // HLS-specific types

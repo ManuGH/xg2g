@@ -12,11 +12,14 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/v3/bus"
+	"github.com/ManuGH/xg2g/internal/v3/lease"
 	"github.com/ManuGH/xg2g/internal/v3/model"
 	"github.com/ManuGH/xg2g/internal/v3/profiles"
 	"github.com/ManuGH/xg2g/internal/v3/store"
@@ -29,6 +32,10 @@ type IntentHandler struct {
 	IdempotencyTTL time.Duration
 	// DVRWindowSec overrides DVR window for DVR profiles; 0 uses internal default.
 	DVRWindowSec int
+	// LeaseTTL controls admission lease duration; 0 uses default.
+	LeaseTTL time.Duration
+	// TunerSlots is the admission capacity set; empty means no capacity configured.
+	TunerSlots []int
 }
 
 func (h IntentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -48,6 +55,11 @@ func (h IntentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "serviceRef is required", http.StatusBadRequest)
 		return
 	}
+	correlationID, err := NormalizeCorrelationID(req.CorrelationID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	// Idempotency: Prefer header, fall back to request field.
 	idem := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
@@ -61,7 +73,13 @@ func (h IntentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if idem != "" {
 		if existing, ok, err := h.Store.GetIdempotency(ctx, idem); err == nil && ok {
-			h.respond202(ctx, w, existing)
+			respCorrelationID := correlationID
+			if respCorrelationID == "" {
+				if session, err := h.Store.GetSession(ctx, existing); err == nil && session != nil {
+					respCorrelationID = session.CorrelationID
+				}
+			}
+			h.respond202(ctx, w, existing, respCorrelationID)
 			return
 		} else if err != nil {
 			http.Error(w, "idempotency lookup failed", http.StatusInternalServerError)
@@ -70,21 +88,69 @@ func (h IntentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sessionID := newID()
+	if correlationID == "" {
+		correlationID = newID()
+	}
+	if h.LeaseTTL <= 0 {
+		h.LeaseTTL = 30 * time.Second
+	}
+	if len(h.TunerSlots) == 0 {
+		http.Error(w, "no tuner slots configured", http.StatusServiceUnavailable)
+		return
+	}
 	dvrWindowSec := h.DVRWindowSec
 	if dvrWindowSec <= 0 {
 		dvrWindowSec = 300
 	}
-	prof := profiles.Resolve(req.ProfileID, r.UserAgent(), dvrWindowSec)
+	profileID, legacyProfile, err := canonicalProfileID(req.ProfileID, req.Profile)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if legacyProfile {
+		log.L().
+			Info().
+			Str("event", "v3.intent.legacy_profile").
+			Msg("legacy field 'profile' used; will be removed in v3.2")
+	}
+	prof := profiles.Resolve(profileID, r.UserAgent(), dvrWindowSec)
+
+	dedupKey := lease.LeaseKeyService(req.ServiceRef)
+	dedupLease, ok, err := h.Store.TryAcquireLease(ctx, dedupKey, sessionID, h.LeaseTTL)
+	if err != nil {
+		http.Error(w, "lease acquisition failed", http.StatusServiceUnavailable)
+		return
+	}
+	if !ok {
+		w.Header().Set("Retry-After", "1")
+		http.Error(w, "lease busy", http.StatusConflict)
+		return
+	}
+	tunerLease, ok, err := tryAcquireTunerLease(ctx, h.Store, sessionID, h.TunerSlots, h.LeaseTTL)
+	if err != nil {
+		_ = h.Store.ReleaseLease(ctx, dedupLease.Key(), dedupLease.Owner())
+		http.Error(w, "tuner lease acquisition failed", http.StatusServiceUnavailable)
+		return
+	}
+	if !ok {
+		_ = h.Store.ReleaseLease(ctx, dedupLease.Key(), dedupLease.Owner())
+		w.Header().Set("Retry-After", "1")
+		http.Error(w, "lease busy", http.StatusConflict)
+		return
+	}
 
 	rec := &model.SessionRecord{
 		SessionID:     sessionID,
 		ServiceRef:    req.ServiceRef,
 		Profile:       prof,
 		State:         model.SessionStarting,
+		CorrelationID: correlationID,
 		CreatedAtUnix: time.Now().Unix(),
 		UpdatedAtUnix: time.Now().Unix(),
 	}
 	if err := h.Store.PutSession(ctx, rec); err != nil {
+		_ = h.Store.ReleaseLease(ctx, tunerLease.Key(), tunerLease.Owner())
+		_ = h.Store.ReleaseLease(ctx, dedupLease.Key(), dedupLease.Owner())
 		http.Error(w, "failed to persist session", http.StatusInternalServerError)
 		return
 	}
@@ -94,24 +160,45 @@ func (h IntentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Publish intent event for workers. No blocking.
 	// We map the request to a StartSessionEvent.
-	_ = h.Bus.Publish(ctx, string(model.EventStartSession), model.StartSessionEvent{
-		Type:       model.EventStartSession,
-		SessionID:  sessionID,
-		ServiceRef: req.ServiceRef,
-		ProfileID:  req.ProfileID,
+	if err := h.Bus.Publish(ctx, string(model.EventStartSession), model.StartSessionEvent{
+		Type:          model.EventStartSession,
+		SessionID:     sessionID,
+		ServiceRef:    req.ServiceRef,
+		ProfileID:     profileID,
+		CorrelationID: correlationID,
 		// Options/Params mapping if needed
-	})
+	}); err != nil {
+		_ = h.Store.ReleaseLease(ctx, tunerLease.Key(), tunerLease.Owner())
+		_ = h.Store.ReleaseLease(ctx, dedupLease.Key(), dedupLease.Owner())
+		http.Error(w, "failed to dispatch intent", http.StatusInternalServerError)
+		return
+	}
 
-	h.respond202(ctx, w, sessionID)
+	h.respond202(ctx, w, sessionID, correlationID)
 }
 
-func (h IntentHandler) respond202(ctx context.Context, w http.ResponseWriter, sessionID string) {
+func tryAcquireTunerLease(ctx context.Context, st store.StateStore, owner string, slots []int, ttl time.Duration) (store.Lease, bool, error) {
+	for _, s := range slots {
+		key := lease.LeaseKeyTunerSlot(s)
+		l, got, err := st.TryAcquireLease(ctx, key, owner, ttl)
+		if err != nil {
+			return nil, false, err
+		}
+		if got {
+			return l, true, nil
+		}
+	}
+	return nil, false, nil
+}
+
+func (h IntentHandler) respond202(ctx context.Context, w http.ResponseWriter, sessionID, correlationID string) {
 	_ = ctx
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(IntentResponse{
-		SessionID: sessionID,
-		State:     string(model.SessionStarting),
+		SessionID:     sessionID,
+		State:         string(model.SessionStarting),
+		CorrelationID: correlationID,
 	})
 }
 
@@ -119,4 +206,17 @@ func newID() string {
 	var b [16]byte
 	_, _ = rand.Read(b[:])
 	return hex.EncodeToString(b[:])
+}
+
+func canonicalProfileID(profileID, profile string) (string, bool, error) {
+	if profileID != "" && profile != "" && profileID != profile {
+		return "", false, errors.New("profile and profileID must match when both are set")
+	}
+	if profileID != "" {
+		return profileID, false, nil
+	}
+	if profile != "" {
+		return profile, true, nil
+	}
+	return "", false, nil
 }

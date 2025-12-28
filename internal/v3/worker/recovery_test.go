@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/v3/lease"
 	"github.com/ManuGH/xg2g/internal/v3/model"
 	"github.com/ManuGH/xg2g/internal/v3/store"
 )
@@ -37,7 +38,7 @@ func TestRecoverySweep_RecoverStale(t *testing.T) {
 
 	// Create expired lease
 	// We cheat by acquiring with short TTL and sleeping
-	_, _, _ = s.TryAcquireLease(ctx, "ref1", "old-owner", 1*time.Millisecond)
+	_, _, _ = s.TryAcquireLease(ctx, lease.LeaseKeyService("ref1"), "old-owner", 1*time.Millisecond)
 	time.Sleep(10 * time.Millisecond)
 
 	// 2. Run Recovery
@@ -77,7 +78,7 @@ func TestRecoverySweep_IgnoreActive(t *testing.T) {
 
 	// Acquire valid lease
 	// Phase 8-2b: Must matches the fallback key used by recovery (namespaced)
-	key := LeaseKeyService("ref1")
+	key := lease.LeaseKeyService("ref1")
 	_, _, _ = s.TryAcquireLease(ctx, key, "current-owner", 1*time.Second)
 
 	// 2. Run Recovery

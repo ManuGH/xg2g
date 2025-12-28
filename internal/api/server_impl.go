@@ -593,6 +593,7 @@ func (s *Server) DeleteStreamsId(w http.ResponseWriter, r *http.Request, id stri
 		Type:          model.EventStopSession,
 		SessionID:     id,
 		Reason:        model.RClientStop,
+		CorrelationID: session.CorrelationID,
 		RequestedAtUN: time.Now().Unix(),
 	}
 	if err := bus.Publish(r.Context(), string(model.EventStopSession), event); err != nil {

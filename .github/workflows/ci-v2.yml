@@ -56,6 +56,12 @@ jobs:
           mkdir -p ../internal/api/dist
           cp -r dist/* ../internal/api/dist/
 
+      - name: Verify OpenAPI server codegen is up-to-date
+        run: |
+          set -euo pipefail
+          make generate
+          git diff --exit-code -- internal/api/server_gen.go
+
       - name: Build (stub transcoder)
         run: |
           set -euo pipefail

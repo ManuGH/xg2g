@@ -161,6 +161,12 @@
   animation: spin 1s ease-in-out infinite;
 }
 
+.spinner-label {
+  color: #e5e5e5;
+  font-size: 14px;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);

@@ -66,6 +66,33 @@ xg2g v3.0.0 marks the completion of a comprehensive architectural modernization,
 - V3 routes always registered with semantic status codes
 - RFC 7807 Problem Details for all errors
 
+### 4. Metrics (Observability)
+
+**Changed:** `xg2g_v3_session_starts_total` label `reason` is now `reason_class`.
+
+**Changed:** `R_LEASE_BUSY` is a capacity rejection and is tracked only via
+`xg2g_v3_capacity_rejections_total{reason="R_LEASE_BUSY"}`.
+
+**Note:** `mode` reflects worker execution mode (`standard|virtual`), not capacity.
+
+**Migration (Prometheus):**
+```promql
+# Old: failures by reason
+sum by (reason) (rate(xg2g_v3_session_starts_total{result="fail"}[5m]))
+
+# New: failures by reason_class
+sum by (reason_class) (rate(xg2g_v3_session_starts_total{result="fail"}[5m]))
+
+# New: success rate (capacity rejections excluded by design)
+sum(rate(xg2g_v3_session_starts_total{result="success"}[5m])) / sum(rate(xg2g_v3_session_starts_total[5m]))
+
+# New: capacity pressure (lease busy)
+sum(rate(xg2g_v3_capacity_rejections_total{reason="R_LEASE_BUSY"}[5m]))
+
+# New: TTFS p99 for stable profile
+histogram_quantile(0.99, sum by (le,profile,mode) (rate(xg2g_v3_time_to_first_segment_seconds_bucket{profile="stable"}[5m])))
+```
+
 ---
 
 ## New Features

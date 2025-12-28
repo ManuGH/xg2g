@@ -26,6 +26,13 @@ interface PlayerStats {
   levelIndex: number;
 }
 
+interface ApiErrorResponse {
+  code?: string;
+  message?: string;
+  request_id?: string;
+  details?: unknown;
+}
+
 function V3Player(props: V3PlayerProps) {
   const { t } = useTranslation();
   const { token, autoStart, onClose } = props;
@@ -157,18 +164,14 @@ function V3Player(props: V3PlayerProps) {
     }
   }, [apiBase, authHeaders]);
 
-  const waitForPlaylistReady = useCallback(async (sid: string, maxAttempts = 120): Promise<void> => {
+  const assertPlaylistReady = useCallback(async (sid: string): Promise<void> => {
     const playlistUrl = `${apiBase}/sessions/${sid}/hls/index.m3u8`;
-    for (let i = 0; i < maxAttempts; i++) {
-      const playlistRes = await fetch(playlistUrl, {
-        headers: authHeaders()
-      });
-      if (playlistRes.ok) {
-        return;
-      }
-      await sleep(250);
+    const playlistRes = await fetch(playlistUrl, {
+      headers: authHeaders()
+    });
+    if (!playlistRes.ok) {
+      throw new Error(t('player.readyButNotPlayable'));
     }
-    throw new Error(t('player.playlistNotReady'));
   }, [apiBase, authHeaders, t]);
 
   const waitForSessionReady = useCallback(async (sid: string, maxAttempts = 60): Promise<void> => {
@@ -192,13 +195,22 @@ function V3Player(props: V3PlayerProps) {
         const session: V3SessionStatusResponse = await res.json();
         const sState = session.state;
 
-        if (sState === 'ERROR' || sState === 'STOPPED' || sState === 'FAILED' || sState === 'CANCELLED') {
-          throw new Error(`${t('player.sessionFailed')}: ${session.error || sState}`);
+        if (sState === 'FAILED' || sState === 'STOPPED' || sState === 'CANCELLED' || sState === 'DRAINING' || sState === 'STOPPING') {
+          const reason = session.reason || sState;
+          const detail = session.reasonDetail ? `: ${session.reasonDetail}` : '';
+          throw new Error(`${t('player.sessionFailed')}: ${reason}${detail}`);
         }
 
         if (sState === 'READY') {
-          await waitForPlaylistReady(sid, 8);
+          setStatus('ready');
+          await assertPlaylistReady(sid);
           return;
+        }
+
+        if (sState === 'PRIMING') {
+          setStatus('priming');
+        } else {
+          setStatus('starting');
         }
 
         await sleep(500);
@@ -210,7 +222,7 @@ function V3Player(props: V3PlayerProps) {
       }
     }
     throw new Error(t('player.sessionNotReadyInTime'));
-  }, [apiBase, authHeaders, t, waitForPlaylistReady]);
+  }, [apiBase, authHeaders, t, assertPlaylistReady]);
 
   const updateStats = useCallback((hls: Hls) => {
     if (!hls) return;
@@ -330,9 +342,25 @@ function V3Player(props: V3PlayerProps) {
       }
 
       if (res.status === 409) {
+        const retryAfterHeader = res.headers.get('Retry-After');
+        const retryAfter = retryAfterHeader ? parseInt(retryAfterHeader, 10) : 0;
+        const retryHint = retryAfter > 0 ? ` ${t('player.retryAfter', { seconds: retryAfter })}` : '';
+        let apiErr: ApiErrorResponse | null = null;
+        try {
+          apiErr = await res.json();
+        } catch {
+          apiErr = null;
+        }
         setStatus('error');
-        setError(t('player.leaseBusy'));
-        setErrorDetails("HTTP 409");
+        setError(`${t('player.leaseBusy')}${retryHint}`);
+        if (apiErr?.code || apiErr?.request_id) {
+          const parts = [];
+          if (apiErr.code) parts.push(`code=${apiErr.code}`);
+          if (apiErr.request_id) parts.push(`request_id=${apiErr.request_id}`);
+          setErrorDetails(parts.join(' '));
+        } else {
+          setErrorDetails(null);
+        }
         return;
       }
 
@@ -341,10 +369,9 @@ function V3Player(props: V3PlayerProps) {
       newSessionId = data.sessionId;
       sessionIdRef.current = newSessionId;
       setSessionId(newSessionId);
-      setStatus('buffering');
-
       await waitForSessionReady(newSessionId);
 
+      setStatus('ready');
       const streamUrl = `${apiBase}/sessions/${newSessionId}/hls/index.m3u8`;
       playHls(streamUrl);
 
@@ -610,6 +637,10 @@ function V3Player(props: V3PlayerProps) {
     display: 'block'
   };
 
+  const spinnerLabel = (status === 'starting' || status === 'priming' || status === 'buffering')
+    ? `${t(`player.statusStates.${status}`, { defaultValue: status })}…`
+    : '';
+
   return (
     <div className="v3-player-container" style={containerStyle}>
       {onClose && (
@@ -641,9 +672,10 @@ function V3Player(props: V3PlayerProps) {
         {channel && <h3 className="overlay-title">{channel.name}</h3>}
 
         {/* Buffering Spinner */}
-        {(status === 'starting' || status === 'buffering') && (
+        {(status === 'starting' || status === 'priming' || status === 'buffering') && (
           <div className="spinner-overlay">
             <div className="spinner"></div>
+            <div className="spinner-label">{spinnerLabel}</div>
           </div>
         )}
 
@@ -698,7 +730,7 @@ function V3Player(props: V3PlayerProps) {
           <button
             className="btn-primary"
             onClick={() => startStream()}
-            disabled={status === 'starting'}
+            disabled={status === 'starting' || status === 'priming'}
           >
             ▶ {t('common.startStream')}
           </button>

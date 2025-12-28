@@ -417,15 +417,12 @@ func (s *Server) routes() http.Handler {
 		http.Redirect(w, r, "/ui/", http.StatusMovedPermanently)
 	})
 
-	// Now/Next EPG for a list of services (frontend helper)
-	r.With(s.authMiddleware).Post("/api/v3/services/now-next", http.HandlerFunc(s.handleNowNextEPG))
 	// EPG listing is now handled by the generated API client (GetEpg)
 	// Trigger config reload from disk (if a file-backed config is configured)
-	r.With(s.authMiddleware).Post("/api/v3/system/config/reload", http.HandlerFunc(s.handleConfigReload))
+	r.With(s.authMiddleware, s.scopeMiddleware(ScopeV3Admin)).Post("/internal/system/config/reload", http.HandlerFunc(s.handleConfigReload))
 
 	// Setup Validation (Testing connection before save)
-	r.Post("/api/v3/setup/validate", http.HandlerFunc(s.handleSetupValidate))
-	// Note: No auth middleware here because we need to test connectivity *before* we have a valid config/token.
+	r.With(s.setupValidateMiddleware).Post("/internal/setup/validate", http.HandlerFunc(s.handleSetupValidate))
 
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/ui/", http.StatusTemporaryRedirect)
@@ -462,9 +459,6 @@ func (s *Server) routes() http.Handler {
 	// Logo Proxy (Renamed from Picon to clean cache)
 	r.Get("/logos/{ref}.png", s.handlePicons)
 	r.Head("/logos/{ref}.png", s.handlePicons)
-
-	// v3 Control Plane (/api/v3/*)
-	s.registerV3Routes(r)
 
 	// Harden file server: disable directory listing and use a secure handler
 	r.Handle("/files/*", http.StripPrefix("/files/", s.secureFileServer()))

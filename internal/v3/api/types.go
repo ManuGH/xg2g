@@ -10,24 +10,27 @@ type IntentRequest struct {
 	Type           model.IntentType  `json:"type"` // defaults to stream.start if empty
 	SessionID      string            `json:"sessionId,omitempty"`
 	ServiceRef     string            `json:"serviceRef"`
-	ProfileID      string            `json:"profile"`
+	ProfileID      string            `json:"profileID,omitempty"`
+	Profile        string            `json:"profile,omitempty"`
+	CorrelationID  string            `json:"correlationId,omitempty"`
 	Params         map[string]string `json:"params,omitempty"`
 	IdempotencyKey string            `json:"idempotencyKey,omitempty"`
 }
 
 type IntentResponse struct {
-	SessionID string           `json:"sessionId"`
-	State     string           `json:"state"` // string for looser coupling in JSON? Or model.SessionState
-	Reason    model.ReasonCode `json:"reason,omitempty"`
+	SessionID     string           `json:"sessionId"`
+	State         string           `json:"state"` // string for looser coupling in JSON? Or model.SessionState
+	Reason        model.ReasonCode `json:"reason,omitempty"`
+	CorrelationID string           `json:"correlationId,omitempty"`
 }
 
 type SessionResponse struct {
-	SessionID       string             `json:"sessionId"`
-	ServiceRef      string             `json:"serviceRef"`
-	ProfileID       string             `json:"profile"`
-	State           model.SessionState `json:"state"`
-	Reason          model.ReasonCode   `json:"reason,omitempty"`
-	ReasonDetail    string             `json:"reasonDetail,omitempty"`
-	CorrelationID   string             `json:"correlationId,omitempty"`
-	UpdatedAtUnixMs int64              `json:"updatedAtMs"`
+	SessionID     string             `json:"sessionId"`
+	ServiceRef    string             `json:"serviceRef"`
+	Profile       string             `json:"profile"`
+	State         model.SessionState `json:"state"`
+	Reason        model.ReasonCode   `json:"reason,omitempty"`
+	ReasonDetail  string             `json:"reasonDetail,omitempty"`
+	CorrelationID string             `json:"correlationId,omitempty"`
+	UpdatedAtMs   int64              `json:"updatedAtMs"`
 }

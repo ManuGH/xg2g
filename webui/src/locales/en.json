@@ -50,6 +50,8 @@
     "statusStates": {
       "idle": "Idle",
       "starting": "Starting",
+      "priming": "Preparing playback",
+      "ready": "Ready",
       "buffering": "Buffering",
       "playing": "Playing",
       "paused": "Paused",
@@ -57,11 +59,13 @@
       "stopped": "Stopped"
     },
     "playlistNotReady": "Playlist not ready",
+    "readyButNotPlayable": "READY reported, but playlist is not available",
     "sessionNotReadyInTime": "Session did not become ready in time",
     "failedToFetchSession": "Failed to fetch session",
     "readinessCheckFailed": "Session readiness check failed",
     "apiError": "API error",
-    "leaseBusy": "All tuners are currently in use (Lease Busy)",
+    "leaseBusy": "All tuners are currently in use.",
+    "retryAfter": "Try again in ~{{seconds}}s.",
     "sessionFailed": "Session failed",
     "hlsError": "HLS Error",
     "authFailed": "Authentication failed"

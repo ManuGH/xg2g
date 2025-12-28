@@ -86,6 +86,44 @@ func TestContextWithJobID(t *testing.T) {
 	}
 }
 
+func TestContextWithCorrelationID(t *testing.T) {
+	tests := []struct {
+		name          string
+		ctx           context.Context
+		correlationID string
+		want          string
+	}{
+		{
+			name:          "nil context",
+			ctx:           nil,
+			correlationID: "corr-123",
+			want:          "corr-123",
+		},
+		{
+			name:          "background context",
+			ctx:           context.Background(),
+			correlationID: "corr-456",
+			want:          "corr-456",
+		},
+		{
+			name:          "empty correlation ID",
+			ctx:           context.Background(),
+			correlationID: "",
+			want:          "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := ContextWithCorrelationID(tt.ctx, tt.correlationID)
+			got := CorrelationIDFromContext(ctx)
+			if got != tt.want {
+				t.Errorf("CorrelationIDFromContext() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestRequestIDFromContextEmpty(t *testing.T) {
 	tests := []struct {
 		name string

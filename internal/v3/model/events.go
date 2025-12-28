@@ -20,6 +20,7 @@ type StartSessionEvent struct {
 	SessionID     string    `json:"sessionId"`
 	ServiceRef    string    `json:"serviceRef"`
 	ProfileID     string    `json:"profileId"`
+	CorrelationID string    `json:"correlationId,omitempty"`
 	RequestedAtUN int64     `json:"requestedAtUnix"`
 }
 
@@ -28,5 +29,6 @@ type StopSessionEvent struct {
 	Type          EventType  `json:"type"`
 	SessionID     string     `json:"sessionId"`
 	Reason        ReasonCode `json:"reason,omitempty"`
+	CorrelationID string     `json:"correlationId,omitempty"`
 	RequestedAtUN int64      `json:"requestedAtUnix"`
 }

@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/fsutil"
 	"github.com/ManuGH/xg2g/internal/log"
-	"github.com/ManuGH/xg2g/internal/v3/exec/ffmpeg"
 	"github.com/ManuGH/xg2g/internal/v3/model"
 )
 
@@ -32,7 +32,7 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, s
 	// 1. Path Security (Allowlist + Base)
 	// User Requirement: "Erlaube nur Basenames... Erlaube nur Whitelist"
 	cleanName := filepath.Base(filename)
-	if cleanName != filename || filename == "." || filename == ".." {
+	if cleanName != filename || filename == "." || filename == ".." || strings.Contains(filename, "\\") {
 		http.Error(w, "invalid filename path", http.StatusBadRequest)
 		return
 	}
@@ -100,15 +100,20 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, s
 
 	// 3. Resolve File Path
 	// Layout: <root>/sessions/<sessionID>/<filename>
-	// We reuse ffmpeg.SessionOutputDir to be consistent.
+	// We use the same layout as ffmpeg.SessionOutputDir (<root>/sessions/<sessionID>).
 	// But api package imports exec/ffmpeg?
 	// User said: "internal/v3/hls/layout.go als shared... Für 8-6 kannst du direkt ffmpeg/layout.go importieren, wenn kein Cycle entsteht".
 	// exec imports model. api imports model.
 	// api -> exec/ffmpeg check:
 	// exec/ffmpeg imports model, log.
 	// No cycle.
-	sessionDir := ffmpeg.SessionOutputDir(hlsRoot, sessionID)
-	filePath := filepath.Join(sessionDir, filename)
+	relPath := filepath.Join("sessions", sessionID, filename)
+	filePath, err := fsutil.ConfineRelPath(hlsRoot, relPath)
+	if err != nil {
+		log.L().Warn().Err(err).Str("sid", sessionID).Str("file", filename).Msg("hls path confinement failed")
+		http.Error(w, "file not found", http.StatusNotFound)
+		return
+	}
 
 	// 4. Check File Existence
 	info, err := os.Stat(filePath)
@@ -120,6 +125,10 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, s
 	if err != nil {
 		log.L().Error().Err(err).Str("path", filePath).Msg("hls file stat failed")
 		http.Error(w, "internal check failed", http.StatusInternalServerError)
+		return
+	}
+	if info.IsDir() {
+		http.Error(w, "file not found", http.StatusNotFound)
 		return
 	}
 

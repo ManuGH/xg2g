@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- **Metrics**: `xg2g_v3_session_starts_total` label `reason` renamed to `reason_class` (coarse buckets).
+  - Query rewrite: `sum by (reason) (xg2g_v3_session_starts_total)` → `sum by (reason_class) (xg2g_v3_session_starts_total)`.
+  - Capacity rejections (R_LEASE_BUSY) are tracked via `xg2g_v3_capacity_rejections_total`.
+
 ## [3.0.0] - 2025-12-24
 
 ### Breaking Changes

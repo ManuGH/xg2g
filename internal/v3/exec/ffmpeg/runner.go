@@ -76,6 +76,7 @@ func (r *Runner) Start(ctx context.Context, sessionID, serviceRef string, profil
 		startTotal.WithLabelValues("err_bad_session").Inc()
 		return fmt.Errorf("invalid session id: %s", sessionID)
 	}
+	logger := log.WithContext(ctx, log.WithComponent("ffmpeg"))
 
 	// 1. Prepare Layout
 	sessionDir := SessionOutputDir(r.HLSRoot, sessionID)
@@ -124,7 +125,7 @@ func (r *Runner) Start(ctx context.Context, sessionID, serviceRef string, profil
 	if profileSpec.DVRWindowSec > 0 {
 		// Use configured DVR window
 		playlistSize = profileSpec.DVRWindowSec / segmentDuration
-		log.L().Info().
+		logger.Info().
 			Int("dvr_window_sec", profileSpec.DVRWindowSec).
 			Int("playlist_size", playlistSize).
 			Str("profile", profile).
@@ -155,12 +156,14 @@ func (r *Runner) Start(ctx context.Context, sessionID, serviceRef string, profil
 			// curl default buffer is fine usually, but -N is safer for latency?
 			// Using same args as verified manually: -s -H "Icy-MetaData: 1" --user-agent ...
 			curlArgs := []string{
-				"-s", // Silent mode (don't pollute logs with progress)
+				"-v",                     // Verbose for debugging
+				"--connect-timeout", "5", // Fail fast on connection issues
 				"-H", "Icy-MetaData: 1",
 				"--user-agent", "curl/8.14.1",
 				streamURL,
 			}
 			curlCmd = exec.CommandContext(ctx, "curl", curlArgs...)
+			curlCmd.Stderr = os.Stderr // Capture curl errors in logs
 
 			// Override input for FFmpeg
 			in.StreamURL = "pipe:0"
@@ -215,11 +218,11 @@ func (r *Runner) Start(ctx context.Context, sessionID, serviceRef string, profil
 	r.start = time.Now()
 
 	// Log FFmpeg command for debugging
-	log.L().Info().Str("component", "ffmpeg").Str("command", r.cmd.String()).Msg("starting ffmpeg process")
+	logger.Info().Str("command", r.cmd.String()).Msg("starting ffmpeg process")
 
 	// Start Curl if configured (pipeline)
 	if r.curlCmd != nil {
-		log.L().Info().Str("component", "ffmpeg").Str("upstream", "curl").Msg("starting curl pipeline")
+		logger.Info().Str("upstream", "curl").Msg("starting curl pipeline")
 		if err := r.curlCmd.Start(); err != nil {
 			startTotal.WithLabelValues("err_curl").Inc()
 			return fmt.Errorf("curl start failed: %w", err)
@@ -245,6 +248,7 @@ func (r *Runner) syncPlaylistLoop(ctx context.Context, dir string) {
 	defer ticker.Stop()
 
 	tmpPath, finalPath := PlaylistPaths(dir)
+	logger := log.WithContext(ctx, log.WithComponent("ffmpeg"))
 
 	for {
 		select {
@@ -264,7 +268,7 @@ func (r *Runner) syncPlaylistLoop(ctx context.Context, dir string) {
 			// This works because FFmpeg recreates the file on next update (standard HLS Muxer behavior).
 			// If we restricted FFmpeg to keep fd open, this would break. But HLS Muxer closes file.
 			if err := os.Rename(tmpPath, finalPath); err != nil {
-				log.L().Warn().Err(err).Msg("failed to sync playlist")
+				logger.Warn().Err(err).Msg("failed to sync playlist")
 			}
 		}
 	}
@@ -276,6 +280,7 @@ func (r *Runner) Wait(ctx context.Context) (model.ExitStatus, error) {
 	// Note: cmd.Wait() closes pipes.
 
 	err := r.cmd.Wait()
+	logger := log.WithContext(ctx, log.WithComponent("ffmpeg"))
 
 	// Cleanup Curl (Wait/Kill)
 	if r.curlCmd != nil {
@@ -299,8 +304,7 @@ func (r *Runner) Wait(ctx context.Context) (model.ExitStatus, error) {
 		// Log FFmpeg stderr for debugging exit errors
 		stderrLines := r.ring.LastN(20)
 		if len(stderrLines) > 0 {
-			log.L().Error().
-				Str("component", "ffmpeg").
+			logger.Error().
 				Int("exit_code", code).
 				Strs("stderr", stderrLines).
 				Msg("ffmpeg process failed")
@@ -354,7 +358,8 @@ func (r *Runner) Stop(ctx context.Context) error {
 	}
 
 	// Send SIGTERM
-	log.L().Debug().Msg("sending SIGTERM to ffmpeg")
+	logger := log.WithContext(ctx, log.WithComponent("ffmpeg"))
+	logger.Debug().Msg("sending SIGTERM to ffmpeg")
 	proc := r.cmd.Process
 	if err := proc.Signal(syscall.SIGTERM); err != nil {
 		// If error (e.g. process gone), just return

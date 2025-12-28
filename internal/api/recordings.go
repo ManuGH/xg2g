@@ -304,6 +304,7 @@ func (s *Server) GetRecordingHLSPlaylist(w http.ResponseWriter, r *http.Request,
 	// 3. Create Session Record
 	// Format: recording-<uuid>
 	sessionID := "rec-" + uuid.New().String()
+	correlationID := uuid.New().String()
 
 	// Default to generic High profile for recordings
 	profileSpec := profiles.Resolve(profiles.ProfileHigh, r.UserAgent(), 0)
@@ -313,6 +314,7 @@ func (s *Server) GetRecordingHLSPlaylist(w http.ResponseWriter, r *http.Request,
 		ServiceRef:     streamURL, // <--- The actual playable URL
 		Profile:        profileSpec,
 		State:          model.SessionNew,
+		CorrelationID:  correlationID,
 		CreatedAtUnix:  time.Now().Unix(),
 		UpdatedAtUnix:  time.Now().Unix(),
 		LastAccessUnix: time.Now().Unix(),
@@ -332,6 +334,7 @@ func (s *Server) GetRecordingHLSPlaylist(w http.ResponseWriter, r *http.Request,
 		SessionID:     sessionID,
 		ServiceRef:    streamURL,
 		ProfileID:     profileSpec.Name,
+		CorrelationID: correlationID,
 		RequestedAtUN: time.Now().Unix(),
 	}
 

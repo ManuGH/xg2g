@@ -65,6 +65,20 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// setupValidateMiddleware enforces admin auth when tokens are configured, but
+// allows validation during initial setup when no tokens exist yet.
+func (s *Server) setupValidateMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cfg := s.GetConfig()
+		hasTokens := cfg.APIToken != "" || len(cfg.APITokens) > 0
+		if hasTokens {
+			s.authMiddleware(s.scopeMiddleware(ScopeV3Admin)(next)).ServeHTTP(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // CreateSession creates a secure HTTP-only session cookie exchange for the provided Bearer token.
 // POST /api/v3/auth/session
 // Requires Authentication (via Header) to be successful first.

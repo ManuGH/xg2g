@@ -47,7 +47,7 @@ func NewHLSOriginHandler(st store.StateStore, downstream http.Handler) http.Hand
 		case model.SessionReady:
 			downstream.ServeHTTP(w, r)
 			return
-		case model.SessionStarting:
+		case model.SessionStarting, model.SessionPriming:
 			w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 			w.Header().Set("Cache-Control", "no-store")
 			w.WriteHeader(http.StatusOK)
