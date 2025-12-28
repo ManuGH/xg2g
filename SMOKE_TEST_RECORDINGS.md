@@ -8,6 +8,17 @@ This document describes smoke test scenarios for the Recording Playback feature.
 - Enigma2 receiver with recordings
 - Access to receiver's recording filesystem (NFS mount, bind mount, or local disk)
 
+## Important: Enigma2 Service Reference Format
+
+Enigma2 recordings use service references in the format:
+
+```text
+1:0:0:0:0:0:0:0:0:0:/media/hdd/movie/recording.ts
+```
+
+xg2g automatically extracts the filesystem path (everything after the last colon)
+for path mapping. You don't need to manually transform service references.
+
 ## Test Scenario 1: Finished Recording (Local Playback)
 
 **Objective**: Verify local-first playback for stable, finished recordings.
@@ -187,7 +198,63 @@ XG2G_RECORDINGS_MAP=/media/hdd/movie=/mnt/recordings
 - ✅ No errors in logs
 - ✅ Playback works via Receiver HTTP
 
-## Test Scenario 5: Multiple Paths (Longest Prefix)
+## Test Scenario 5: Enigma2 Service Reference (Real-World Format)
+
+**Objective**: Verify automatic path extraction from Enigma2 service references.
+
+### Setup
+
+```bash
+XG2G_RECORDINGS_MAP=/media/nfs-recordings=/media/nfs-recordings
+```
+
+**Preconditions**:
+
+- Recording exists with Enigma2 service reference format
+- Service reference: `1:0:0:0:0:0:0:0:0:0:/media/nfs-recordings/Film.ts`
+- Local file exists at `/media/nfs-recordings/Film.ts`
+
+### Test Steps
+
+1. Get recording list from API:
+
+   ```bash
+   curl http://localhost:8088/api/v3/recordings -H "Authorization: Bearer token"
+   ```
+
+2. Extract service_ref from response (base64-encoded)
+
+3. Request HLS playlist with encoded service_ref
+
+4. Check logs for path extraction:
+
+   ```bash
+   tail -f /var/log/xg2g/systemd.log | grep "recording playback"
+   ```
+
+### Expected Results
+
+**Log output**:
+
+```json
+{
+  "level": "info",
+  "recording_id": "MTowOjA6MDowOjA6MDowOjA6MDowOjA6MDovbWVkaWEvbmZzLXJlY29yZGluZ3MvRmlsbS50cw==",
+  "source_type": "local",
+  "receiver_ref": "1:0:0:0:0:0:0:0:0:0:/media/nfs-recordings/Film.ts",
+  "source": "/media/nfs-recordings/Film.ts",
+  "msg": "recording playback source selected"
+}
+```
+
+**Behavior**:
+
+- ✅ Path `/media/nfs-recordings/Film.ts` extracted from service reference
+- ✅ PathMapper resolves to local file
+- ✅ `source_type=local` (path extraction successful)
+- ✅ Playback uses local file, not Receiver HTTP
+
+## Test Scenario 6: Multiple Paths (Longest Prefix)
 
 **Objective**: Verify longest-prefix-first matching for overlapping paths.
 

@@ -230,11 +230,14 @@ recordings.
 
 ### How It Works
 
-1. **Path Mapping**: Configure receiver paths → local filesystem paths
-2. **Existence Check**: Verify the recording file exists locally
-3. **Stability Gate**: Ensure the file isn't being actively written
+1. **ServiceRef Extraction**: Enigma2 recordings use service reference format
+   (`1:0:0:0:0:0:0:0:0:0:/path/to/file.ts`). xg2g automatically extracts the
+   filesystem path (everything after the last colon).
+2. **Path Mapping**: Configure receiver paths → local filesystem paths
+3. **Existence Check**: Verify the recording file exists locally
+4. **Stability Gate**: Ensure the file isn't being actively written
    (ongoing recordings)
-4. **Playback Decision**: Use local file if stable, otherwise fall back to
+5. **Playback Decision**: Use local file if stable, otherwise fall back to
    Receiver HTTP streaming
 
 ### Benefits
