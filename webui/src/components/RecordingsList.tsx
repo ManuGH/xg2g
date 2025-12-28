@@ -27,6 +27,7 @@ const FileIcon = ({ className }: { className?: string }) => (
 interface PlayingState {
   url: string;
   title: string;
+  duration: number;
 }
 
 export default function RecordingsList() {
@@ -39,7 +40,7 @@ export default function RecordingsList() {
   const [data, setData] = useState<RecordingResponse | null>(null); // Full API response
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [playing, setPlaying] = useState<PlayingState | null>(null); // { url, title }
+  const [playing, setPlaying] = useState<PlayingState | null>(null); // { url, title, duration }
   const initialLoad = useRef<boolean>(true);
 
   // Safe cast for baseUrl which exists in broader context
@@ -105,9 +106,26 @@ export default function RecordingsList() {
     const encodedId = toBase64Url(item.service_ref);
     const url = `${baseUrl}/recordings/${encodedId}/playlist.m3u8`;
 
+    // Parse duration from length string ("90 min") -> seconds
+    // Safe fallback if length is missing or malformed
+    let durationSec = 0;
+    if (item.length) {
+      console.log('Parsing length:', item.length);
+      // specific fix for "XX min"
+      const parts = item.length.split(' ');
+      const val = parseInt(parts[0], 10);
+      if (!isNaN(val)) {
+        durationSec = val * 60;
+      }
+      console.log('Parsed duration:', durationSec);
+    } else {
+      console.log('No length attribute on item:', item);
+    }
+
     setPlaying({
       url,
-      title: item.title || 'Recording'
+      title: item.title || 'Recording',
+      duration: durationSec
     });
   };
 
@@ -213,6 +231,7 @@ export default function RecordingsList() {
             token={auth?.token || undefined}
             autoStart={true}
             onClose={() => setPlaying(null)}
+            duration={playing.duration}
           />
         </Suspense>
       )}

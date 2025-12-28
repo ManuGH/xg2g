@@ -35,7 +35,7 @@ interface ApiErrorResponse {
 
 function V3Player(props: V3PlayerProps) {
   const { t } = useTranslation();
-  const { token, autoStart, onClose } = props;
+  const { token, autoStart, onClose, duration } = props;
   const channel = props.channel;
   const src = props.src;
 
@@ -58,8 +58,10 @@ function V3Player(props: V3PlayerProps) {
 
   // UX Features State
   const [showStats, setShowStats] = useState(false);
+  const [currentPlaybackTime, setCurrentPlaybackTime] = useState(0); // Local tracking for UI updates
   const [isPip, setIsPip] = useState(false);
   const [, setIsFullscreen] = useState(false);
+  const [seekOffset, setSeekOffset] = useState(0); // For VOD seeking offset in ms
   const [stats, setStats] = useState<PlayerStats>({
     bandwidth: 0,
     resolution: '-',
@@ -305,7 +307,7 @@ function V3Player(props: V3PlayerProps) {
     }
   }, [token, t, updateStats]);
 
-  const startStream = useCallback(async (refToUse?: string): Promise<void> => {
+  const startStream = useCallback(async (refToUse?: string, startMs: number = 0): Promise<void> => {
     sessionIdRef.current = null;
     stopSentRef.current = null;
 
@@ -321,6 +323,7 @@ function V3Player(props: V3PlayerProps) {
     setError(null);
     setErrorDetails(null);
     setShowErrorDetails(false);
+    setSeekOffset(startMs); // Update offset
 
     try {
       await ensureSessionCookie();
@@ -331,7 +334,8 @@ function V3Player(props: V3PlayerProps) {
         body: JSON.stringify({
           type: 'stream.start',
           profile: 'auto',
-          serviceRef: ref
+          serviceRef: ref,
+          startMs: startMs > 0 ? startMs : undefined
         })
       });
 
@@ -541,6 +545,10 @@ function V3Player(props: V3PlayerProps) {
         latency: lat !== null ? parseFloat(lat.toFixed(2)) : null
       }));
 
+      // Update generic playback time for scrubber
+      if (!videoRef.current.paused) {
+        setCurrentPlaybackTime(videoRef.current.currentTime);
+      }
     }, 1000);
     return () => clearInterval(interval);
   }, [showStats]);
@@ -715,18 +723,44 @@ function V3Player(props: V3PlayerProps) {
 
       {/* Controls & Status Bar */}
       <div className="v3-player-controls-header">
-        {!channel && (
-          <input
-            type="text"
-            className="bg-input"
-            value={sRef}
-            onChange={(e) => setSRef(e.target.value)}
-            placeholder={t('player.serviceRefPlaceholder')}
-            style={{ width: '300px' }}
-          />
+        {/* VOD Scrubber (If duration is present) */}
+        {duration && duration > 0 ? (
+          <div className="vod-controls" style={{ flex: 1, display: 'flex', alignItems: 'center', marginRight: '10px' }}>
+            <span style={{ fontSize: '12px', color: '#fff', marginRight: '8px', minWidth: '45px' }}>
+              {new Date((seekOffset + (currentPlaybackTime * 1000))).toISOString().substr(11, 8)}
+            </span>
+            <input
+              type="range"
+              min="0"
+              max={duration}
+              step="1"
+              value={Math.min(duration, (seekOffset / 1000) + currentPlaybackTime)}
+              onChange={(e) => {
+                const newVal = parseInt(e.target.value, 10);
+                // Calculate new startMs: (NewSeconds * 1000)
+                // We restart the stream at this absolute offset
+                startStream(undefined, newVal * 1000);
+              }}
+              style={{ flex: 1, cursor: 'pointer' }}
+            />
+            <span style={{ fontSize: '12px', color: '#aaa', marginLeft: '8px', minWidth: '45px' }}>
+              {new Date(duration * 1000).toISOString().substr(11, 8)}
+            </span>
+          </div>
+        ) : (
+          !channel && (
+            <input
+              type="text"
+              className="bg-input"
+              value={sRef}
+              onChange={(e) => setSRef(e.target.value)}
+              placeholder={t('player.serviceRefPlaceholder')}
+              style={{ width: '300px' }}
+            />
+          )
         )}
 
-        {!autoStart && (
+        {!autoStart && !duration && (
           <button
             className="btn-primary"
             onClick={() => startStream()}
@@ -758,10 +792,71 @@ function V3Player(props: V3PlayerProps) {
           </button>
         )}
 
-        <span style={{ fontSize: '12px', color: '#aaa', marginLeft: 'auto' }}>
-          {t('player.hotkeysHint')}
-        </span>
+        {/* Hide Jump button in VOD mode (replaced by scrubber) */}
+        {!duration && (
+          <span style={{ fontSize: '12px', color: '#aaa', marginLeft: 'auto', marginRight: '10px' }}>
+            {t('player.hotkeysHint')}
+          </span>
+        )}
+
+        {/* Legacy Jump Control (Only for non-VOD / manual ref input) */}
+        {!duration && (
+          <button
+            className="btn-secondary"
+            onClick={() => {
+              const message = t('player.jumpToPrompt', 'Jump to MM:SS or integer minutes:') || 'Jump to MM:SS or integer minutes:';
+              const input = prompt(message);
+              if (!input) return;
+              let ms = 0;
+              if (input.includes(':')) {
+                const parts = input.split(':');
+                const m = parseInt(parts[0] || '0', 10) || 0;
+                const s = parseInt(parts[1] || '0', 10) || 0;
+                ms = (m * 60 + s) * 1000;
+              } else {
+                ms = parseInt(input, 10) * 60 * 1000;
+              }
+              if (!isNaN(ms) && ms >= 0) {
+                startStream(undefined, ms);
+              }
+            }}
+          >
+            ⏩ {t('player.jumpLabel', 'Jump')}
+          </button>
+        )}
       </div>
+
+      {/* Time Overlay - Hide in VOD mode as scrubber has explicit time */}
+      {!duration && (
+        <div className="time-overlay" style={{
+          position: 'absolute',
+          top: '10px',
+          right: '10px',
+          background: 'rgba(0,0,0,0.5)',
+          color: 'white',
+          padding: '4px 8px',
+          borderRadius: '4px',
+          fontSize: '14px',
+          pointerEvents: 'none'
+        }}>
+          ⏱ {(() => {
+            // We prefer stats.latency if available for live, but for VOD (recordings) we want absolute time.
+            // Since we don't distinguish mode easily here yet (unless we check channel vs recording),
+            // we'll show just current time if seekOffset is 0 (Live default)
+            if (videoRef.current && sessionIdRef.current) {
+              const current = videoRef.current.currentTime;
+              const totalSeconds = (seekOffset / 1000) + current;
+              const h = Math.floor(totalSeconds / 3600);
+              const m = Math.floor((totalSeconds % 3600) / 60);
+              const s = Math.floor(totalSeconds % 60);
+              const pad = (n: number) => n.toString().padStart(2, '0');
+              return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+            }
+            return '--:--';
+          })()}
+        </div>
+      )}
+
     </div>
   );
 }

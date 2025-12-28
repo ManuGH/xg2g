@@ -25,6 +25,7 @@ export interface V3PlayerBaseProps {
   token?: string;
   autoStart?: boolean;
   onClose?: () => void;
+  duration?: number; // Duration in seconds (enables VOD mode)
 }
 
 export interface V3PlayerLiveProps extends V3PlayerBaseProps {
@@ -61,15 +62,15 @@ export interface V3SessionResponse {
 export interface V3SessionStatusResponse {
   sessionId: string;
   state:
-    | 'NEW'
-    | 'STARTING'
-    | 'PRIMING'
-    | 'READY'
-    | 'DRAINING'
-    | 'STOPPING'
-    | 'STOPPED'
-    | 'FAILED'
-    | 'CANCELLED';
+  | 'NEW'
+  | 'STARTING'
+  | 'PRIMING'
+  | 'READY'
+  | 'DRAINING'
+  | 'STOPPING'
+  | 'STOPPED'
+  | 'FAILED'
+  | 'CANCELLED';
   reason?: string;
   reasonDetail?: string;
 }

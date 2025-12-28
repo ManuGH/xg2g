@@ -7,13 +7,13 @@ import {
   getSeriesRules,
   deleteSeriesRule,
   createSeriesRule,
-  updateSeriesRule,
+  // updateSeriesRule, // Missing in SDK
   runSeriesRule,
   getServices,
   type SeriesRule,
   type Service,
   type SeriesRuleWritable,
-  type SeriesRuleUpdate
+  // type SeriesRuleUpdate // Missing in SDK
 } from '../client-ts';
 import './SeriesManager.css';
 
@@ -145,6 +145,8 @@ function SeriesManager() {
 
       // Prepare payload
       if (currentRule.id) {
+        alert("Update not implemented in this version (SDK mismatch). Please delete and recreate.");
+        /*
         // Update existing rule
         const updatePayload: SeriesRuleUpdate = {
           enabled: currentRule.enabled,
@@ -159,6 +161,7 @@ function SeriesManager() {
           path: { id: currentRule.id },
           body: updatePayload
         });
+        */
       } else {
         // Create new rule
         const createPayload: SeriesRuleWritable = {
