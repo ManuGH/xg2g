@@ -15,6 +15,7 @@ type IntentRequest struct {
 	CorrelationID  string            `json:"correlationId,omitempty"`
 	Params         map[string]string `json:"params,omitempty"`
 	IdempotencyKey string            `json:"idempotencyKey,omitempty"`
+	StartMs        *int64            `json:"startMs,omitempty"` // Seeking offset in ms
 }
 
 type IntentResponse struct {

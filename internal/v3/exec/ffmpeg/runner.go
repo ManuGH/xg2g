@@ -65,12 +65,18 @@ func NewRunner(binPath, hlsRoot string, client *enigma2.Client) *Runner {
 }
 
 // Start launches the process.
-func (r *Runner) Start(ctx context.Context, sessionID, serviceRef string, profileSpec model.ProfileSpec) error {
+func (r *Runner) Start(ctx context.Context, sessionID, serviceRef string, profileSpec model.ProfileSpec, startMs int64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if r.cmd != nil {
 		return fmt.Errorf("process already started")
+	}
+
+	// Format start offset if provided
+	var startOffset string
+	if startMs > 0 {
+		startOffset = fmt.Sprintf("%.3f", float64(startMs)/1000.0)
 	}
 	if !model.IsSafeSessionID(sessionID) {
 		startTotal.WithLabelValues("err_bad_session").Inc()
@@ -105,22 +111,32 @@ func (r *Runner) Start(ctx context.Context, sessionID, serviceRef string, profil
 		}
 	}
 
-	streamURL, err := r.Client.ResolveStreamURL(ctx, serviceRef)
-	if err != nil {
-		startTotal.WithLabelValues("err_url").Inc()
-		return fmt.Errorf("failed to resolve stream url: %w", err)
+	var streamURL string
+	if len(serviceRef) > 0 && serviceRef[0] == '/' {
+		// Use local path directly
+		streamURL = serviceRef
+	} else {
+		// Resolve via Enigma2
+		var err error
+		streamURL, err = r.Client.ResolveStreamURL(ctx, serviceRef)
+		if err != nil {
+			startTotal.WithLabelValues("err_url").Inc()
+			return fmt.Errorf("failed to resolve stream url: %w", err)
+		}
 	}
 
 	in := InputSpec{
-		StreamURL: streamURL,
+		StreamURL:   streamURL,
+		StartOffset: startOffset,
 	}
 
 	// Detect Recording: Standard Enigma2 recordings use the "1:0:0:0:0:0:0:0:0:0:" service reference pattern
 	// or contain /media/ (though live streams *could* theoretically too, unlikely in this context).
 	// We check for the specific recording "all zeros" pattern.
 	if strings.Contains(serviceRef, "1:0:0:0:0:0:0:0:0:0:") || strings.Contains(streamURL, "/media/") {
-		logger.Info().Msg("detected recording stream, enabling realtime throttling (-re)")
+		logger.Info().Msg("detected recording stream, enabling realtime throttling (-re) and VOD mode")
 		in.RealtimeThrottle = true
+		profileSpec.DVRWindowSec = 0 // Force VOD mode (use 0 window)
 	}
 
 	// DVR window configuration

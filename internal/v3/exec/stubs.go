@@ -61,7 +61,7 @@ type StubTranscoder struct {
 	start      time.Time
 }
 
-func (t *StubTranscoder) Start(ctx context.Context, sessionID, serviceRef string, profileSpec model.ProfileSpec) error {
+func (t *StubTranscoder) Start(ctx context.Context, sessionID, serviceRef string, profileSpec model.ProfileSpec, startMs int64) error {
 	t.start = time.Now()
 	// Simulate startup delay
 	delay := t.StartDelay

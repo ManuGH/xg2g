@@ -15,7 +15,8 @@ import (
 // InputSpec defines the source stream parameters.
 type InputSpec struct {
 	StreamURL        string
-	RealtimeThrottle bool // Add -re input flag (read at native rate)
+	RealtimeThrottle bool   // Add -re input flag (read at native rate)
+	StartOffset      string // Optional: Seek offset (e.g. "00:01:30" or seconds)
 }
 
 // OutputSpec defines the destination paths.
@@ -75,6 +76,10 @@ func BuildHLSArgs(in InputSpec, out OutputSpec, prof model.ProfileSpec) ([]strin
 		args = append(args, "-re")
 	}
 
+	if in.StartOffset != "" {
+		args = append(args, "-ss", in.StartOffset)
+	}
+
 	args = append(args,
 		// Input
 		"-i", in.StreamURL,
@@ -126,8 +131,15 @@ func BuildHLSArgs(in InputSpec, out OutputSpec, prof model.ProfileSpec) ([]strin
 	// DVR: Keep segments, no temp_file (Safari seeking needs stable files)
 	// Live: Delete old segments to save disk
 	hlsFlags := "delete_segments+omit_endlist+temp_file"
-	if out.PlaylistWindowSize > 10 {
-		// DVR mode: NO delete_segments, NO temp_file for stable seeking
+
+	if out.PlaylistWindowSize == 0 {
+		// VOD / Full DVR Mode:
+		// - Keep ALL segments (-hls_list_size 0)
+		// - Append new segments
+		// - Allow ENDLIST tag (do not omit) so player sees it as finite eventually
+		hlsFlags = "temp_file+independent_segments+program_date_time"
+	} else if out.PlaylistWindowSize > 10 {
+		// Rolling DVR mode: NO delete_segments, NO temp_file for stable seeking
 		// CRITICAL Safari DVR flags (based on Apple HLS spec):
 		// - append_list: Required for EVENT playlists to properly append segments
 		// - independent_segments: Indicates keyframe-aligned segments for seeking

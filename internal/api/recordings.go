@@ -457,6 +457,12 @@ func (s *Server) GetRecordingHLSPlaylist(w http.ResponseWriter, r *http.Request,
 	correlationID := uuid.New().String()
 
 	// Dedup Lease (Service Ref)
+	// For local playback, we bypass global deduplication (allow multiple stats)
+	// by using the unique SessionID as the key.
+	if sourceType == "local" {
+		dedupKey = lease.LeaseKeyService("local:" + sessionID)
+	}
+
 	dedupLease, ok, err := store.TryAcquireLease(r.Context(), dedupKey, sessionID, admissionLeaseTTL)
 	if err != nil {
 		log.L().Error().Err(err).Msg("failed to acquire dedup lease")
@@ -473,22 +479,29 @@ func (s *Server) GetRecordingHLSPlaylist(w http.ResponseWriter, r *http.Request,
 	acquiredLeases = append(acquiredLeases, dedupLease)
 
 	// Tuner/Transcoder Lease
-	// Since we are same-package, we can call the unexported helper from handlers_v3.go
-	_, tunerLease, ok, err := tryAcquireTunerLease(r.Context(), store, sessionID, config.TunerSlots, admissionLeaseTTL)
-	if err != nil {
-		releaseLeases()
-		log.L().Error().Err(err).Msg("failed to acquire tuner check")
-		http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
-		return
+	// Optimization: Skip tuner lease for local playback (no tuner needed)
+	var tunerLease v3store.Lease
+	if sourceType != "local" {
+		// Since we are same-package, we can call the unexported helper from handlers_v3.go
+		var ok bool
+		_, tunerLease, ok, err = tryAcquireTunerLease(r.Context(), store, sessionID, config.TunerSlots, admissionLeaseTTL)
+		if err != nil {
+			releaseLeases()
+			log.L().Error().Err(err).Msg("failed to acquire tuner check")
+			http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		if !ok {
+			releaseLeases()
+			w.Header().Set("Retry-After", "5")
+			// 409 Conflict implies "try again later"
+			http.Error(w, "All tuners busy", http.StatusConflict)
+			return
+		}
+		acquiredLeases = append(acquiredLeases, tunerLease)
+	} else {
+		log.L().Info().Str("sid", sessionID).Msg("skipping tuner lease for local playback")
 	}
-	if !ok {
-		releaseLeases()
-		w.Header().Set("Retry-After", "5")
-		// 409 Conflict implies "try again later"
-		http.Error(w, "All tuners busy", http.StatusConflict)
-		return
-	}
-	acquiredLeases = append(acquiredLeases, tunerLease)
 
 	// 3. Create Session Record
 	// Format: recording-<uuid>
@@ -525,9 +538,10 @@ func (s *Server) GetRecordingHLSPlaylist(w http.ResponseWriter, r *http.Request,
 	event := model.StartSessionEvent{
 		Type:          model.EventStartSession,
 		SessionID:     sessionID,
-		ServiceRef:    streamURL,
+		ServiceRef:    source,
 		ProfileID:     profileSpec.Name,
 		CorrelationID: correlationID,
+		StartMs:       0,
 		RequestedAtUN: time.Now().Unix(),
 	}
 

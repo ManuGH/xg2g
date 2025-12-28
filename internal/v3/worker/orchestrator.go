@@ -392,8 +392,13 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 
 	// Measure Ready Duration
 	readyStart := time.Now()
-	logger.Info().Str("ref", e.ServiceRef).Msg("worker: starting tune")
-	tuneErr := tuner.Tune(hbCtx, e.ServiceRef)
+	var tuneErr error
+	if len(e.ServiceRef) > 0 && e.ServiceRef[0] == '/' {
+		logger.Info().Str("ref", e.ServiceRef).Msg("worker: skipping tune for local file")
+	} else {
+		logger.Info().Str("ref", e.ServiceRef).Msg("worker: starting tune")
+		tuneErr = tuner.Tune(hbCtx, e.ServiceRef)
+	}
 	readyDurationVal := time.Since(readyStart).Seconds()
 
 	// Classify Outcome
@@ -445,7 +450,7 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 	}
 
 	ffmpegStartTime := time.Now()
-	if err := transcoder.Start(hbCtx, e.SessionID, e.ServiceRef, session.Profile); err != nil {
+	if err := transcoder.Start(hbCtx, e.SessionID, e.ServiceRef, session.Profile, e.StartMs); err != nil {
 		return newReasonError(model.RFFmpegStartFailed, "", err)
 	}
 	o.recordTransition(model.SessionStarting, model.SessionPriming)

@@ -71,5 +71,9 @@ func NormalizeAuthority(s, defaultScheme string) (host, port string, err error) 
 		return "", "", fmt.Errorf("failed to parse authority: %w", err)
 	}
 
+	if u.Host == "" {
+		return "", "", fmt.Errorf("empty host")
+	}
+
 	return u.Hostname(), u.Port(), nil
 }

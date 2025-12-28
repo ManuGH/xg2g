@@ -236,6 +236,18 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 			CorrelationID: correlationID,
 			RequestedAtUN: time.Now().Unix(),
 		}
+		if req.StartMs != nil {
+			ms := *req.StartMs
+			if ms < 0 {
+				ms = 0
+			}
+			// Safety Clamp: 24h
+			if ms > 86400000 {
+				ms = 86400000
+			}
+			event.StartMs = ms
+		}
+
 		if err := bus.Publish(r.Context(), string(model.EventStartSession), event); err != nil {
 			logger.Error().Err(err).Msg("failed to publish start event")
 			releaseLeases()

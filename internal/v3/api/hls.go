@@ -73,11 +73,12 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, s
 
 	// Validate State
 	// User Req: "rec.State == READY (oder READY + DRAINING)"
-	// Modified: Allow STARTING/NEW to proceed to file check/polling loop.
+	// Modified: Allow STARTING/NEW/PRIMING to proceed to file check/polling loop.
 	validState := rec.State == model.SessionReady ||
 		rec.State == model.SessionDraining ||
 		rec.State == model.SessionStarting ||
-		rec.State == model.SessionNew
+		rec.State == model.SessionNew ||
+		rec.State == model.SessionPriming
 
 	if !validState {
 		// User Req: "NEW/STARTING: 404 (Client retry)" -> Now handled by polling loop later
@@ -123,7 +124,7 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, s
 	info, err := os.Stat(filePath)
 	if os.IsNotExist(err) {
 		// If playlist is missing but session is potentially starting, wait a bit.
-		if isPlaylist && (rec.State == model.SessionNew || rec.State == model.SessionStarting) {
+		if isPlaylist && (rec.State == model.SessionNew || rec.State == model.SessionStarting || rec.State == model.SessionPriming) {
 			logger.Info().Msg("playlist missing during start, polling...")
 			deadline := time.Now().Add(hlsPlaylistWaitTimeout)
 			for time.Now().Before(deadline) {
@@ -139,7 +140,14 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, s
 					break
 				}
 			}
+			if err != nil {
+				logger.Info().Err(err).Msg("polling finished without success")
+			}
+		} else {
+			logger.Info().Str("state", string(rec.State)).Msg("playlist missing, not polling (state mismatch)")
 		}
+	} else if err != nil {
+		logger.Error().Err(err).Msg("initial stat failed")
 	}
 
 	if os.IsNotExist(err) {

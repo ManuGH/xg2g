@@ -22,6 +22,7 @@ type StartSessionEvent struct {
 	ProfileID     string    `json:"profileId"`
 	CorrelationID string    `json:"correlationId,omitempty"`
 	RequestedAtUN int64     `json:"requestedAtUnix"`
+	StartMs       int64     `json:"startMs,omitempty"`
 }
 
 // StopSessionEvent is emitted when a stop intent is received.
