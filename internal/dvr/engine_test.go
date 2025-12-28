@@ -65,20 +65,26 @@ func TestSeriesEngine_RunOnce(t *testing.T) {
 	rm := NewManager(tmpDir)
 
 	// Create Rule
-	ruleID := rm.AddRule(SeriesRule{
+	ruleID, err := rm.AddRule(SeriesRule{
 		Enabled:     true,
 		Keyword:     "News",
 		ChannelRef:  "1:0:1:TEST",
 		Priority:    10,
 		StartWindow: "00:00-23:59",
 	})
+	if err != nil {
+		t.Fatalf("Failed to add rule: %v", err)
+	}
 
 	// Create another rule that shouldn't match
-	rm.AddRule(SeriesRule{
+	_, err = rm.AddRule(SeriesRule{
 		Enabled:    true,
 		Keyword:    "Sports",
 		ChannelRef: "1:0:1:SPORTS",
 	})
+	if err != nil {
+		t.Fatalf("Failed to add second rule: %v", err)
+	}
 
 	mockClient := new(MockClient)
 
