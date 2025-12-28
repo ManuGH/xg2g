@@ -3,8 +3,10 @@
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import './Navigation.css';
 import { type AppView } from '../types/app-context';
+import { LanguageSwitcher } from './LanguageSwitcher';
 
 // Simple SVG Icons
 const Icons = {
@@ -52,14 +54,17 @@ interface Tab {
 }
 
 export default function Navigation({ activeView, onViewChange }: NavigationProps) {
+  const { t } = useTranslation();
+
   const tabs: Tab[] = [
-    { id: 'dashboard', label: 'Dashboard', icon: Icons.Dashboard },
-    { id: 'epg', label: 'TV/EPG', icon: Icons.EPG },
-    { id: 'recordings', label: 'Aufnahmen', icon: Icons.Files }, // Using Files icon for now
-    { id: 'timers', label: 'Timers', icon: Icons.Dashboard }, // Reusing Dashboard icon for now
-    { id: 'series', label: 'Series', icon: Icons.Series },
-    { id: 'files', label: 'Files', icon: Icons.Files },
-    { id: 'logs', label: 'Logs', icon: Icons.Logs },
+    { id: 'dashboard', label: t('nav.dashboard'), icon: Icons.Dashboard },
+    { id: 'epg', label: t('nav.epg'), icon: Icons.EPG },
+    { id: 'recordings', label: t('nav.recordings'), icon: Icons.Files },
+    { id: 'timers', label: t('nav.timers'), icon: Icons.Dashboard },
+    { id: 'series', label: t('nav.series'), icon: Icons.Series },
+    { id: 'files', label: t('nav.files'), icon: Icons.Files },
+    { id: 'logs', label: t('nav.logs'), icon: Icons.Logs },
+    { id: 'config', label: t('nav.settings'), icon: Icons.Config },
   ];
 
   return (
@@ -79,6 +84,9 @@ export default function Navigation({ activeView, onViewChange }: NavigationProps
             </button>
           );
         })}
+      </div>
+      <div style={{ marginLeft: 'auto', paddingRight: '1rem' }}>
+        <LanguageSwitcher />
       </div>
     </nav>
   );

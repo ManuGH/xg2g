@@ -51,7 +51,7 @@ export interface V3SessionResponse {
 
 export interface V3SessionStatusResponse {
   sessionId: string;
-  state: 'PENDING' | 'READY' | 'PLAYING' | 'ERROR' | 'STOPPED';
+  state: 'PENDING' | 'READY' | 'PLAYING' | 'ERROR' | 'STOPPED' | 'FAILED' | 'CANCELLED';
   error?: string;
 }
 
