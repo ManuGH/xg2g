@@ -12,8 +12,10 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -181,6 +183,39 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 				desc += "\n\n"
 			}
 			desc += m.ExtendedDescription
+		}
+
+		// Fallback for missing length on local files (NAS)
+		if (m.Length == "" || m.Length == "0") && s.recordingPathMapper != nil {
+			// Extract filesystem path
+			receiverPath := extractPathFromServiceRef(m.ServiceRef)
+			if strings.HasPrefix(receiverPath, "/") {
+				if localPath, ok := s.recordingPathMapper.ResolveLocal(receiverPath); ok {
+					if info, err := os.Stat(localPath); err == nil {
+						// Try robust probe first (Stufe 2)
+						dur, pErr := probeDuration(r.Context(), localPath)
+						if pErr == nil && dur > 0 {
+							m.Length = fmt.Sprintf("%d min", int(dur.Minutes()))
+							// Operator-facing log for "VOD-mode eligibility"
+							log.L().Info().
+								Str("recording_id", m.ServiceRef).
+								Int("duration_sec", int(dur.Seconds())).
+								Str("duration_source", "ffprobe").
+								Bool("mapped_local", true).
+								Msg("recording duration resolved")
+						} else {
+							// Fallback to size heuristic (Stufe 3)
+							log.L().Warn().Err(pErr).Str("file", localPath).Msg("probe failed, using heuristic")
+							// Estimate duration: 8 Mbps (~1 MB/s)
+							minutes := info.Size() / (60 * 1024 * 1024)
+							if minutes > 0 {
+								m.Length = fmt.Sprintf("%d min", minutes)
+								log.L().Debug().Str("file", localPath).Int64("size", info.Size()).Msgf("estimated heuristic duration: %s", m.Length)
+							}
+						}
+					}
+				}
+			}
 		}
 
 		recordingsList = append(recordingsList, RecordingItem{
@@ -594,4 +629,30 @@ func sanitizeRecordingRelPath(qPath string) (string, bool) {
 	}
 
 	return cleanRel, false
+}
+
+// probeDuration uses ffprobe to get the exact duration of a media file.
+// Returns duration in time.Duration.
+func probeDuration(ctx context.Context, path string) (time.Duration, error) {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second) // Fast timeout for list view
+	defer cancel()
+
+	// ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 <file>
+	c := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", path)
+	out, err := c.Output()
+	if err != nil {
+		return 0, err
+	}
+
+	val := strings.TrimSpace(string(out))
+	if val == "" || val == "N/A" {
+		return 0, fmt.Errorf("no duration found")
+	}
+
+	secs, err := strconv.ParseFloat(val, 64)
+	if err != nil {
+		return 0, err
+	}
+
+	return time.Duration(secs * float64(time.Second)), nil
 }
