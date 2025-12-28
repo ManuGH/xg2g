@@ -265,8 +265,30 @@ func (s *Server) GetRecordingStream(w http.ResponseWriter, r *http.Request, reco
 	http.Error(w, "recording streaming deprecated", http.StatusForbidden)
 }
 
-// GetRecordingHLSPlaylist handles GET /api/v3/recordings/{recordingId}/playlist.m3u8
-// Creates a V3 session for the recording and redirects to the HLS playlist.
+// extractPathFromServiceRef extracts the filesystem path from an Enigma2 service reference.
+// Enigma2 service references have the format: "1:0:0:0:0:0:0:0:0:0:/path/to/file.ts"
+// Returns the path part (everything after the last colon) if it starts with "/",
+// otherwise returns the original string unchanged (defensive).
+func extractPathFromServiceRef(serviceRef string) string {
+	// Find the last colon
+	lastColon := strings.LastIndex(serviceRef, ":")
+	if lastColon == -1 {
+		// No colon found, return as-is
+		return serviceRef
+	}
+
+	// Extract everything after the last colon
+	pathPart := serviceRef[lastColon+1:]
+
+	// Only return if it looks like an absolute path
+	if strings.HasPrefix(pathPart, "/") {
+		return pathPart
+	}
+
+	// Otherwise return original (defensive - might be a different format)
+	return serviceRef
+}
+
 // GetRecordingHLSPlaylist handles GET /api/v3/recordings/{recordingId}/playlist.m3u8
 // Creates a V3 session for the recording and redirects to the HLS playlist.
 func (s *Server) GetRecordingHLSPlaylist(w http.ResponseWriter, r *http.Request, recordingId string) {
@@ -334,10 +356,13 @@ func (s *Server) GetRecordingHLSPlaylist(w http.ResponseWriter, r *http.Request,
 
 	// If path mappings configured, try local-first playback
 	if s.recordingPathMapper != nil {
-		// serviceRef is the decoded recording ID, which should be the receiver path
+		// Extract filesystem path from Enigma2 service reference
+		// Format: "1:0:0:0:0:0:0:0:0:0:/path/to/file.ts" -> "/path/to/file.ts"
+		receiverPath := extractPathFromServiceRef(serviceRef)
+
 		// Check if it's an absolute path (required for mapping)
-		if strings.HasPrefix(serviceRef, "/") {
-			if localPath, ok := s.recordingPathMapper.ResolveLocal(serviceRef); ok {
+		if strings.HasPrefix(receiverPath, "/") {
+			if localPath, ok := s.recordingPathMapper.ResolveLocal(receiverPath); ok {
 				// Check if file exists locally
 				if _, err := os.Stat(localPath); err == nil {
 					// Check file stability (avoid streaming files being written)
