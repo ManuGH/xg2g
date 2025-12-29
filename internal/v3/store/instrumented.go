@@ -141,3 +141,9 @@ func (i *instrumentedStore) ReleaseLease(ctx context.Context, key, owner string)
 	defer func() { i.observe("release_lease", start, err) }()
 	return i.inner.ReleaseLease(ctx, key, owner)
 }
+
+func (i *instrumentedStore) DeleteAllLeases(ctx context.Context) (err error) {
+	start := time.Now()
+	defer func() { i.observe("delete_all_leases", start, err) }()
+	return i.inner.DeleteAllLeases(ctx)
+}

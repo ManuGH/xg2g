@@ -464,3 +464,17 @@ func (b *BoltStore) ReleaseLease(ctx context.Context, key, owner string) error {
 		return nil
 	})
 }
+
+func (b *BoltStore) DeleteAllLeases(ctx context.Context) error {
+	return b.db.Update(func(tx *bolt.Tx) error {
+		// Drop and Recreate bucket is fastest
+		if err := tx.DeleteBucket(bucketLeases); err != nil {
+			if errors.Is(err, bolt.ErrBucketNotFound) {
+				return nil
+			}
+			return err
+		}
+		_, err := tx.CreateBucket(bucketLeases)
+		return err
+	})
+}

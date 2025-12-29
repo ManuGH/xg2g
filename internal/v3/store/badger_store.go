@@ -360,6 +360,11 @@ func (s *BadgerStore) ReleaseLease(ctx context.Context, leaseKey, owner string) 
 	})
 }
 
+func (s *BadgerStore) DeleteAllLeases(ctx context.Context) error {
+	prefix := []byte("lease:")
+	return s.db.DropPrefix(prefix)
+}
+
 // Ensure interface compliance at compile time.
 var _ StateStore = (*BadgerStore)(nil)
 var _ Lease = (*badgerLease)(nil)

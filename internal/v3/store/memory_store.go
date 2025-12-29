@@ -273,3 +273,10 @@ func (m *MemoryStore) UpdatePipeline(ctx context.Context, id string, fn func(*mo
 	m.pipelines[id] = &cpy
 	return &cpy, nil
 }
+
+func (m *MemoryStore) DeleteAllLeases(ctx context.Context) error {
+	m.mu.Lock()
+	m.leases = make(map[string]leaseState)
+	m.mu.Unlock()
+	return nil
+}

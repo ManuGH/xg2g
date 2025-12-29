@@ -97,6 +97,13 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 	}
 	defer func() { _ = subStop.Close() }()
 
+	// Phase 8-2b: Flush Stale Leases (Restart Handling)
+	// Since we are the exclusive worker (using file-lock on DB), any existing leases are from dead processes.
+	// We must clear them to avoid "stiff arming" ourselves for TTL duration.
+	if err := o.Store.DeleteAllLeases(ctx); err != nil {
+		log.L().Error().Err(err).Msg("failed to flush old leases on startup, continuing but may block for TTL")
+	}
+
 	// Phase 7B-3: Recovery Sweep on Startup
 	if err := o.recoverStaleLeases(ctx); err != nil {
 		// Log but don't crash? Or crash to protect integrity?
