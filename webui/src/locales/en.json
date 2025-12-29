@@ -22,7 +22,8 @@
     "stop": "Stop",
     "showDetails": "Show Details",
     "hideDetails": "Hide Details",
-    "startStream": "Start Stream"
+    "startStream": "Start Stream",
+    "loading": "Loading..."
   },
   "player": {
     "status": "Status",
@@ -51,6 +52,7 @@
       "idle": "Idle",
       "starting": "Starting",
       "priming": "Preparing playback",
+      "building": "Preparing recording",
       "ready": "Ready",
       "buffering": "Buffering",
       "playing": "Playing",
@@ -68,7 +70,9 @@
     "retryAfter": "Try again in ~{{seconds}}s.",
     "sessionFailed": "Session failed",
     "hlsError": "HLS Error",
-    "authFailed": "Authentication failed"
+    "authFailed": "Authentication failed",
+    "recordingNotFound": "Recording was not found (it may have been deleted).",
+    "recordingPrepareTimeout": "Recording is taking unusually long to prepare. Please retry."
   },
   "epg": {
     "pageTitle": "EPG Overview ({{count}})",
@@ -95,5 +99,14 @@
     "hideOtherShows": "Hide other shows",
     "moreShows": "More shows ({{count}})",
     "showLess": "Show less"
+  },
+  "recordings": {
+    "selectionMode": "Selection Mode",
+    "deleteSelected": "Delete Selected ({{count}})",
+    "cancelSelection": "Cancel",
+    "confirmDelete": "Are you sure you want to permanently delete {{count}} recordings? This action cannot be undone.",
+    "deleteSuccess": "Successfully deleted {{count}} recordings.",
+    "deletePartial": "Deleted {{success}} recordings. {{failed}} failed.",
+    "deleteError": "Failed to delete recordings."
   }
 }

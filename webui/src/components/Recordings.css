@@ -43,6 +43,73 @@
     min-width: 150px;
 }
 
+.toolbar-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.icon-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 8px;
+    border-radius: var(--radius-md);
+    transition: all 0.2s;
+}
+
+.icon-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.icon-sm {
+    width: 20px;
+    height: 20px;
+}
+
+.btn-danger {
+    background: #dc2626;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: var(--radius-md);
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.btn-danger:hover {
+    background: #b91c1c;
+}
+
+.btn-danger:disabled {
+    background: #991b1b;
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.btn-secondary {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-subtle);
+    padding: 8px 16px;
+    border-radius: var(--radius-md);
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.btn-secondary:hover {
+    background: var(--bg-hover);
+}
+
+.btn-secondary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 /* Breadcrumbs */
 .breadcrumbs {
     display: flex;
@@ -209,6 +276,43 @@
 
 .grid-item.recording:hover .play-overlay span {
     transform: scale(1);
+}
+
+/* Selection Mode */
+.recordings-grid.selection-mode .grid-item.recording {
+    cursor: pointer;
+}
+
+.grid-item.recording.selected {
+    border-color: var(--accent-primary);
+    background: rgba(var(--accent-primary-rgb), 0.05); /* Assuming CSS var exists, else fallback needed */
+    box-shadow: 0 0 0 1px var(--accent-primary);
+}
+
+.selection-indicator {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 24px;
+    height: 24px;
+    border: 2px solid var(--border-subtle);
+    border-radius: 50%;
+    transition: all 0.2s;
+    background: var(--bg-card);
+}
+
+.grid-item.selected .selection-indicator {
+    background: var(--accent-primary);
+    border-color: var(--accent-primary);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.check-icon {
+    width: 16px;
+    height: 16px;
 }
 
 /* States */

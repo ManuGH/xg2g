@@ -22,7 +22,8 @@
     "stop": "Stop",
     "showDetails": "Details anzeigen",
     "hideDetails": "Details verbergen",
-    "startStream": "Stream starten"
+    "startStream": "Stream starten",
+    "loading": "Laden..."
   },
   "player": {
     "status": "Status",
@@ -51,6 +52,7 @@
       "idle": "Leerlauf",
       "starting": "Startet",
       "priming": "Wiedergabe wird vorbereitet",
+      "building": "Aufnahme wird vorbereitet",
       "ready": "Bereit",
       "buffering": "Puffert",
       "playing": "Wiedergabe",
@@ -68,7 +70,9 @@
     "retryAfter": "Bitte in ~{{seconds}}s erneut versuchen.",
     "sessionFailed": "Sitzung fehlgeschlagen",
     "hlsError": "HLS Fehler",
-    "authFailed": "Anmeldung fehlgeschlagen"
+    "authFailed": "Anmeldung fehlgeschlagen",
+    "recordingNotFound": "Aufnahme nicht gefunden (möglicherweise gelöscht).",
+    "recordingPrepareTimeout": "Die Aufnahme benötigt ungewöhnlich lange zur Vorbereitung. Bitte erneut versuchen."
   },
   "epg": {
     "pageTitle": "EPG Übersicht ({{count}})",
@@ -95,5 +99,14 @@
     "hideOtherShows": "Andere Sendungen ausblenden",
     "moreShows": "Weitere Sendungen ({{count}})",
     "showLess": "Weniger anzeigen"
+  },
+  "recordings": {
+    "selectionMode": "Auswahlmodus",
+    "deleteSelected": "Ausgewählte löschen ({{count}})",
+    "cancelSelection": "Abbrechen",
+    "confirmDelete": "Möchten Sie {{count}} Aufnahmen wirklich unwiderruflich löschen? Diese Aktion kann nicht rückgängig gemacht werden.",
+    "deleteSuccess": "{{count}} Aufnahmen erfolgreich gelöscht.",
+    "deletePartial": "{{success}} Aufnahmen gelöscht. {{failed}} fehlgeschlagen.",
+    "deleteError": "Fehler beim Löschen der Aufnahmen."
   }
 }

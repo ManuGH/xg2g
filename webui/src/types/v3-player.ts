@@ -7,6 +7,7 @@ export type PlayerStatus =
   | 'idle'
   | 'starting'
   | 'priming'
+  | 'building'
   | 'ready'
   | 'buffering'
   | 'playing'

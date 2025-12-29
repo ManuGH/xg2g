@@ -25,6 +25,11 @@ nano .env
 ```bash
 # Build and run in one command
 make dev
+# Build and run in one command
+make dev
+
+# Convenience wrapper (legacy support)
+./run_dev.sh
 ```
 
 This will:

@@ -56,6 +56,11 @@ function V3Player(props: V3PlayerProps) {
   const sessionIdRef = useRef<string | null>(null);
   const stopSentRef = useRef<string | null>(null);
   const sessionCookieRef = useRef<SessionCookieState>({ token: null, pending: null });
+  const vodRetryRef = useRef<number | null>(null);
+  const recordingTimeoutRef = useRef<number | null>(null);
+  const vodFetchRef = useRef<AbortController | null>(null);
+  const activeRecordingRef = useRef<string | null>(null);
+  const startIntentInFlight = useRef<boolean>(false);
 
   // UX Features State
   const [showStats, setShowStats] = useState(false);
@@ -226,6 +231,44 @@ function V3Player(props: V3PlayerProps) {
     return pending;
   }, [token]);
 
+  const isAbortError = (err: unknown): boolean => {
+    return (err instanceof Error && err.name === 'AbortError') ||
+      (typeof err === 'object' && err !== null && (err as { name?: string }).name === 'AbortError');
+  };
+
+  const resetPlaybackEngine = useCallback(() => {
+    if (hlsRef.current) {
+      hlsRef.current.destroy();
+      hlsRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.src = '';
+    }
+  }, []);
+
+  const clearRecordingTimeout = useCallback(() => {
+    if (recordingTimeoutRef.current !== null) {
+      window.clearTimeout(recordingTimeoutRef.current);
+      recordingTimeoutRef.current = null;
+    }
+  }, []);
+
+  const clearVodRetry = useCallback(() => {
+    if (vodRetryRef.current !== null) {
+      window.clearTimeout(vodRetryRef.current);
+      vodRetryRef.current = null;
+    }
+    clearRecordingTimeout();
+  }, [clearRecordingTimeout]);
+
+  const clearVodFetch = useCallback(() => {
+    if (vodFetchRef.current) {
+      vodFetchRef.current.abort();
+      vodFetchRef.current = null;
+    }
+  }, []);
+
   const sendStopIntent = useCallback(async (idToStop: string | null, force: boolean = false): Promise<void> => {
     if (!idToStop) return;
     if (!force && stopSentRef.current === idToStop) return;
@@ -278,6 +321,12 @@ function V3Player(props: V3PlayerProps) {
         if (sState === 'FAILED' || sState === 'STOPPED' || sState === 'CANCELLED' || sState === 'STOPPING') {
           const reason = session.reason || sState;
           const detail = session.reasonDetail ? `: ${session.reasonDetail}` : '';
+
+          // Lease busy -> show the dedicated message (same UX as 409 on /intents)
+          if (String(reason).includes('LEASE_BUSY') || String(detail).includes('LEASE_BUSY')) {
+            throw new Error(t('player.leaseBusy'));
+          }
+
           throw new Error(`${t('player.sessionFailed')}: ${reason}${detail}`);
         }
 
@@ -294,6 +343,12 @@ function V3Player(props: V3PlayerProps) {
 
         await sleep(500);
       } catch (err) {
+        const msg = (err as Error).message || '';
+        // If it's a terminal, user-facing error, abort immediately
+        if (msg === t('player.leaseBusy') || msg.startsWith(t('player.sessionFailed')) || msg === t('player.authFailed')) {
+          throw err;
+        }
+
         if (i === maxAttempts - 1) {
           throw new Error(`${t('player.readinessCheckFailed')}: ${(err as Error).message}`);
         }
@@ -385,7 +440,11 @@ function V3Player(props: V3PlayerProps) {
   }, [token, t, updateStats]);
 
   const startRecordingPlayback = useCallback(async (id: string): Promise<void> => {
-    setStatus('buffering');
+    activeRecordingRef.current = id;
+    clearVodRetry();
+    clearVodFetch();
+    resetPlaybackEngine();
+    setStatus('building');
     setError(null);
     setErrorDetails(null);
     setShowErrorDetails(false);
@@ -394,52 +453,54 @@ function V3Player(props: V3PlayerProps) {
     try {
       await ensureSessionCookie();
       const streamUrl = `${apiBase}/recordings/${id}/playlist.m3u8`;
-      playHls(streamUrl);
-    } catch (err) {
-      console.error(err);
-      setError((err as Error).message);
-      setErrorDetails((err as Error).stack || null);
-      setStatus('error');
-    }
-  }, [apiBase, ensureSessionCookie, playHls]);
+      const controller = new AbortController();
+      vodFetchRef.current = controller;
+      let res: Response;
+      try {
+        res = await fetch(streamUrl, { headers: authHeaders(), signal: controller.signal });
+      } finally {
+        if (vodFetchRef.current === controller) {
+          vodFetchRef.current = null;
+        }
+      }
 
-  const startStream = useCallback(async (refToUse?: string): Promise<void> => {
-    sessionIdRef.current = null;
-    stopSentRef.current = null;
-    setDurationSeconds(duration && duration > 0 ? duration : null);
+      if (res.status === 409 || res.status === 425 || res.status === 503) {
+        if (activeRecordingRef.current !== id) return;
 
-    if (src) {
-      setPlaybackMode(duration && duration > 0 ? 'VOD' : 'LIVE');
-      setStatus('buffering');
-      playHls(src);
-      return;
-    }
+        // Start loose timeout if not running
+        if (recordingTimeoutRef.current === null) {
+          recordingTimeoutRef.current = window.setTimeout(() => {
+            if (activeRecordingRef.current === id) {
+              clearVodRetry();
+              clearVodFetch();
+              setStatus('error');
+              setError(t('player.recordingPrepareTimeout'));
+            }
+          }, 60000); // 60s total build time allowance
+        }
 
-    if (recordingId) {
-      await startRecordingPlayback(recordingId);
-      return;
-    }
+        const retryAfterHeader = res.headers.get('Retry-After');
+        const retryAfter = retryAfterHeader ? parseInt(retryAfterHeader, 10) : 0;
+        const retryDelayMs = Math.max(2, retryAfter || 0) * 1000;
+        if (activeRecordingRef.current === id) {
+          setStatus('building');
+          vodRetryRef.current = window.setTimeout(() => {
+            if (activeRecordingRef.current === id) {
+              void startRecordingPlayback(id);
+            }
+          }, retryDelayMs);
+        }
+        return;
+      }
 
-    const ref = refToUse || sRef;
-    let newSessionId: string | null = null;
-    setStatus('starting');
-    setError(null);
-    setErrorDetails(null);
-    setShowErrorDetails(false);
-    setPlaybackMode('LIVE');
+      // Success or definitive failure -> clear global timeout
+      clearRecordingTimeout();
 
-    try {
-      await ensureSessionCookie();
-
-      const res = await fetch(`${apiBase}/intents`, {
-        method: 'POST',
-        headers: authHeaders(true),
-        body: JSON.stringify({
-          type: 'stream.start',
-          profileID: 'auto',
-          serviceRef: ref
-        })
-      });
+      if (res.status === 404) {
+        setStatus('error');
+        setError(t('player.recordingNotFound'));
+        return;
+      }
 
       if (res.status === 401 || res.status === 403) {
         setStatus('error');
@@ -447,48 +508,133 @@ function V3Player(props: V3PlayerProps) {
         return;
       }
 
-      if (res.status === 409) {
-        const retryAfterHeader = res.headers.get('Retry-After');
-        const retryAfter = retryAfterHeader ? parseInt(retryAfterHeader, 10) : 0;
-        const retryHint = retryAfter > 0 ? ` ${t('player.retryAfter', { seconds: retryAfter })}` : '';
-        let apiErr: ApiErrorResponse | null = null;
-        try {
-          apiErr = await res.json();
-        } catch {
-          apiErr = null;
-        }
-        setStatus('error');
-        setError(`${t('player.leaseBusy')}${retryHint}`);
-        if (apiErr?.code || apiErr?.request_id) {
-          const parts = [];
-          if (apiErr.code) parts.push(`code=${apiErr.code}`);
-          if (apiErr.request_id) parts.push(`request_id=${apiErr.request_id}`);
-          setErrorDetails(parts.join(' '));
-        } else {
-          setErrorDetails(null);
-        }
+      if (!res.ok) {
+        throw new Error(`${t('player.apiError')}: ${res.status}`);
+      }
+
+      if (activeRecordingRef.current !== id) {
         return;
       }
 
-      if (!res.ok) throw new Error(`${t('player.apiError')}: ${res.status}`);
-      const data: V3SessionResponse = await res.json();
-      newSessionId = data.sessionId;
-      sessionIdRef.current = newSessionId;
-      setSessionId(newSessionId);
-      const session = await waitForSessionReady(newSessionId);
-
-      setStatus('ready');
-      const streamUrl = session.playbackUrl || `${apiBase}/sessions/${newSessionId}/hls/index.m3u8`;
+      setStatus('buffering');
       playHls(streamUrl);
-
     } catch (err) {
-      if (newSessionId) {
-        await sendStopIntent(newSessionId);
+      if (isAbortError(err)) {
+        return;
       }
+      clearRecordingTimeout();
       console.error(err);
       setError((err as Error).message);
       setErrorDetails((err as Error).stack || null);
       setStatus('error');
+    }
+  }, [apiBase, authHeaders, clearVodFetch, clearVodRetry, clearRecordingTimeout, ensureSessionCookie, playHls, resetPlaybackEngine, t]);
+
+  const startStream = useCallback(async (refToUse?: string): Promise<void> => {
+    if (startIntentInFlight.current) return;
+    startIntentInFlight.current = true;
+
+    try {
+      if (src) {
+        // Reset state for local/src playback
+        activeRecordingRef.current = null;
+        clearVodRetry();
+        clearVodFetch();
+        sessionIdRef.current = null;
+        stopSentRef.current = null;
+        setDurationSeconds(duration && duration > 0 ? duration : null);
+
+        setPlaybackMode(duration && duration > 0 ? 'VOD' : 'LIVE');
+        setStatus('buffering');
+        playHls(src);
+        return;
+      }
+
+      if (recordingId) {
+        await startRecordingPlayback(recordingId);
+        return;
+      }
+
+      // Reset state for new live session
+      activeRecordingRef.current = null;
+      clearVodRetry();
+      clearVodFetch();
+      sessionIdRef.current = null;
+      stopSentRef.current = null;
+      setDurationSeconds(duration && duration > 0 ? duration : null);
+
+      const ref = refToUse || sRef;
+      let newSessionId: string | null = null;
+      setStatus('starting');
+      setError(null);
+      setErrorDetails(null);
+      setShowErrorDetails(false);
+      setPlaybackMode('LIVE');
+
+      try {
+        await ensureSessionCookie();
+
+        const res = await fetch(`${apiBase}/intents`, {
+          method: 'POST',
+          headers: authHeaders(true),
+          body: JSON.stringify({
+            type: 'stream.start',
+            profileID: 'auto',
+            serviceRef: ref
+          })
+        });
+
+        if (res.status === 401 || res.status === 403) {
+          setStatus('error');
+          setError(t('player.authFailed'));
+          return;
+        }
+
+        if (res.status === 409) {
+          const retryAfterHeader = res.headers.get('Retry-After');
+          const retryAfter = retryAfterHeader ? parseInt(retryAfterHeader, 10) : 0;
+          const retryHint = retryAfter > 0 ? ` ${t('player.retryAfter', { seconds: retryAfter })}` : '';
+          let apiErr: ApiErrorResponse | null = null;
+          try {
+            apiErr = await res.json();
+          } catch {
+            apiErr = null;
+          }
+          setStatus('error');
+          setError(`${t('player.leaseBusy')}${retryHint}`);
+          if (apiErr?.code || apiErr?.request_id) {
+            const parts = [];
+            if (apiErr.code) parts.push(`code=${apiErr.code}`);
+            if (apiErr.request_id) parts.push(`request_id=${apiErr.request_id}`);
+            setErrorDetails(parts.join(' '));
+          } else {
+            setErrorDetails(null);
+          }
+          return;
+        }
+
+        if (!res.ok) throw new Error(`${t('player.apiError')}: ${res.status}`);
+        const data: V3SessionResponse = await res.json();
+        newSessionId = data.sessionId;
+        sessionIdRef.current = newSessionId;
+        setSessionId(newSessionId);
+        const session = await waitForSessionReady(newSessionId);
+
+        setStatus('ready');
+        const streamUrl = session.playbackUrl || `${apiBase}/sessions/${newSessionId}/hls/index.m3u8`;
+        playHls(streamUrl);
+
+      } catch (err) {
+        if (newSessionId) {
+          await sendStopIntent(newSessionId);
+        }
+        console.error(err);
+        setError((err as Error).message);
+        setErrorDetails((err as Error).stack || null);
+        setStatus('error');
+      }
+    } finally {
+      startIntentInFlight.current = false;
     }
   }, [src, recordingId, sRef, apiBase, authHeaders, ensureSessionCookie, waitForSessionReady, playHls, sendStopIntent, t, duration, startRecordingPlayback]);
 
@@ -498,6 +644,9 @@ function V3Player(props: V3PlayerProps) {
       videoRef.current.pause();
       videoRef.current.src = '';
     }
+    clearVodRetry();
+    clearVodFetch();
+    activeRecordingRef.current = null;
     if (sessionId) {
       await sendStopIntent(sessionId);
     }
@@ -510,12 +659,15 @@ function V3Player(props: V3PlayerProps) {
     setCurrentPlaybackTime(0);
     setStatus('stopped');
     if (onClose) onClose();
-  }, [sessionId, sendStopIntent, onClose]);
+  }, [clearVodFetch, clearVodRetry, onClose, sendStopIntent, sessionId]);
 
-  const handleRetry = useCallback(() => {
-    stopStream().then(() => {
-      startStream();
-    });
+  const handleRetry = useCallback(async () => {
+    try {
+      await stopStream();
+    } finally {
+      startIntentInFlight.current = false;
+      void startStream();
+    }
   }, [stopStream, startStream]);
 
   // --- Effects ---
@@ -777,9 +929,12 @@ function V3Player(props: V3PlayerProps) {
         videoEl.pause();
         videoEl.src = '';
       }
+      clearVodRetry();
+      clearVodFetch();
+      activeRecordingRef.current = null;
       sendStopIntent(sessionIdRef.current, true);
     };
-  }, [sendStopIntent]);
+  }, [clearVodFetch, clearVodRetry, sendStopIntent]);
 
   // Overlay styles
   const containerStyle: React.CSSProperties = onClose ? {
@@ -802,7 +957,7 @@ function V3Player(props: V3PlayerProps) {
     display: 'block'
   };
 
-  const spinnerLabel = (status === 'starting' || status === 'priming' || status === 'buffering')
+  const spinnerLabel = (status === 'starting' || status === 'priming' || status === 'buffering' || status === 'building')
     ? `${t(`player.statusStates.${status}`, { defaultValue: status })}…`
     : '';
 
@@ -843,7 +998,7 @@ function V3Player(props: V3PlayerProps) {
         {channel && <h3 className="overlay-title">{channel.name}</h3>}
 
         {/* Buffering Spinner */}
-        {(status === 'starting' || status === 'priming' || status === 'buffering') && (
+        {(status === 'starting' || status === 'priming' || status === 'buffering' || status === 'building') && (
           <div className="spinner-overlay">
             <div className="spinner"></div>
             <div className="spinner-label">{spinnerLabel}</div>
