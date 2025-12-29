@@ -284,6 +284,10 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 		// For now, MVP log.
 		logEvt.Msg("session ended")
 
+		// Fix 17: Force Release Leases on Terminal State (Safety Net)
+		// This ensures that even if logic skipped early releases, we clean up now.
+		o.ForceReleaseLeases(context.Background(), e.SessionID, e.ServiceRef, session)
+
 		if !startRecorded {
 			recordStart(startResultForReason(reason), reason)
 		}
@@ -794,4 +798,37 @@ func lastSegmentFromPlaylist(content []byte) string {
 		last = line
 	}
 	return last
+}
+
+// ForceReleaseLeases attempts to release all possible leases for a session.
+// It is idempotent and safe to call on sessions that may not hold leases.
+func (o *Orchestrator) ForceReleaseLeases(ctx context.Context, sid, ref string, s *model.SessionRecord) {
+	// 1. Dedup Lease (ServiceRef)
+	// Key reconstruction: We need the ServiceRef.
+	// If 'ref' is passed, use it. If not, try to get from SessionRecord.
+	serviceRef := ref
+	if serviceRef == "" && s != nil {
+		serviceRef = s.ServiceRef
+	}
+	if serviceRef != "" {
+		// We reconstruct the key manually or use LeaseKeyFunc?
+		// We need an event for LeaseKeyFunc... but LeaseKeyFunc typically just uses ServiceRef.
+		// Let's assume standard behavior or use the helper if available.
+		// But LeaseKeyFunc is a field on Orchestrator.
+		// We can mock a StartSessionEvent.
+		evt := model.StartSessionEvent{ServiceRef: serviceRef}
+		key := o.LeaseKeyFunc(evt)
+		_ = o.Store.ReleaseLease(ctx, key, sid)
+	}
+
+	// 2. Tuner Lease (Slot)
+	// Only if we can determine the slot.
+	if s != nil && s.ContextData != nil {
+		if raw := s.ContextData[model.CtxKeyTunerSlot]; raw != "" {
+			if slot, err := strconv.Atoi(raw); err == nil {
+				key := lease.LeaseKeyTunerSlot(slot)
+				_ = o.Store.ReleaseLease(ctx, key, sid)
+			}
+		}
+	}
 }

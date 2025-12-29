@@ -66,7 +66,11 @@ func (s *Sweeper) sweepStore(ctx context.Context) {
 		age := now.Sub(time.Unix(updatedAt, 0))
 
 		// Rule 1: Terminal Sessions (STOPPED, FAILED, CANCELLED) -> Retention
+		// Fix 17: Ensure leases are released for terminal sessions (Janitor)
+		// This handles cases where the process crashed or logic failed to release on exit.
 		if r.State.IsTerminal() {
+			s.Orch.ForceReleaseLeases(ctx, r.SessionID, r.ServiceRef, r)
+
 			if age > s.Conf.SessionRetention {
 				toDelete = append(toDelete, r.SessionID)
 			}
