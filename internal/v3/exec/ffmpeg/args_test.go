@@ -32,7 +32,7 @@ func TestBuildHLSArgs(t *testing.T) {
 	assert.Contains(t, str, "-hls_time 6")
 	assert.Contains(t, str, "-hls_list_size 5")
 	assert.Contains(t, str, "-hls_segment_filename /tmp/sess/seg_%06d.ts")
-	assert.Contains(t, str, "-hls_flags delete_segments+omit_endlist+temp_file")
+	assert.Contains(t, str, "-hls_flags delete_segments+append_list+omit_endlist+temp_file")
 }
 
 func TestBuildHLSArgs_MissingInput(t *testing.T) {

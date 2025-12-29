@@ -85,18 +85,22 @@ func Resolve(requested, userAgent string, dvrWindowSec int) model.ProfileSpec {
 		// WARNING: This may cause decode errors on Safari if stream is broken.
 		spec.TranscodeVideo = false
 		spec.LLHLS = false
+		spec.AudioBitrateK = 192
 		if dvrWindowSec > 0 {
 			spec.DVRWindowSec = dvrWindowSec
 		}
 	case ProfileSafariDVR:
 		spec.TranscodeVideo = true
+		spec.Deinterlace = true
 		spec.LLHLS = true
 		spec.VideoCRF = 23
+		spec.AudioBitrateK = 192
 		if dvrWindowSec > 0 {
 			spec.DVRWindowSec = dvrWindowSec
 		}
 	case ProfileDVR:
 		spec.TranscodeVideo = true
+		spec.Deinterlace = true
 		spec.VideoCRF = 23
 		if dvrWindowSec > 0 {
 			spec.DVRWindowSec = dvrWindowSec
@@ -110,8 +114,15 @@ func isSafariUA(ua string) bool {
 	if ua == "" {
 		return false
 	}
+	ua = strings.ToLower(ua)
+	if strings.Contains(ua, "iphone") || strings.Contains(ua, "ipad") || strings.Contains(ua, "ipod") {
+		return true
+	}
 	// Chrome also includes "Safari", so check for "Safari" AND NOT "Chrome".
-	return strings.Contains(ua, "Safari") &&
-		!strings.Contains(ua, "Chrome") &&
-		!strings.Contains(ua, "Chromium")
+	return strings.Contains(ua, "safari") &&
+		!strings.Contains(ua, "chrome") &&
+		!strings.Contains(ua, "chromium") &&
+		!strings.Contains(ua, "crios") &&
+		!strings.Contains(ua, "fxios") &&
+		!strings.Contains(ua, "edgios")
 }

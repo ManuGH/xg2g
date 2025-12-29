@@ -6,6 +6,7 @@ package ffmpeg
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -15,8 +16,9 @@ import (
 // InputSpec defines the source stream parameters.
 type InputSpec struct {
 	StreamURL        string
-	RealtimeThrottle bool   // Add -re input flag (read at native rate)
-	StartOffset      string // Optional: Seek offset (e.g. "00:01:30" or seconds)
+	RealtimeThrottle bool    // Add -re input flag (read at native rate)
+	StartOffset      string  // Optional: Seek offset (e.g. "00:01:30" or seconds)
+	AvgFrameRate     float64 // Optional: input FPS if known
 }
 
 // OutputSpec defines the destination paths.
@@ -42,21 +44,23 @@ func BuildHLSArgs(in InputSpec, out OutputSpec, prof model.ProfileSpec) ([]strin
 	if prof.AudioBitrateK > 0 {
 		audioBitrate = fmt.Sprintf("%dk", prof.AudioBitrateK)
 	}
+	transcodeAudio := prof.AudioBitrateK > 0
 	audioFilter := "aresample=async=1:first_pts=0,aformat=channel_layouts=5.1|stereo"
-	if prof.AudioBitrateK > 0 && prof.AudioBitrateK <= 192 {
+	if transcodeAudio && prof.AudioBitrateK <= 192 {
 		audioFilter = "aresample=async=1:first_pts=0,aformat=channel_layouts=stereo"
 	}
 
 	args := []string{
+		"-nostdin",
 		"-hide_banner",
 		"-loglevel", "error", // We capture stderr
 		"-nostats",
 
 		// Input robustness flags for unreliable/noisy streams
-		"-fflags", "+genpts+nobuffer", // Generate missing PTS, no input buffering
+		"-fflags", "+genpts+nobuffer+discardcorrupt", // Generate missing PTS, no input buffering, discard corrupt packets
 		"-err_detect", "ignore_err", // Ignore decoder errors
-		"-analyzeduration", "2000000", // 2s to receive H.264 PPS/SPS headers
-		"-probesize", "5000000", // 5MB probe buffer for codec init
+		"-analyzeduration", "10000000", // 10s to receive H.264 PPS/SPS headers (increased from 2s)
+		"-probesize", "25000000", // 25MB probe buffer for codec init (increased from 5MB)
 		"-max_delay", "0", // No demux delay
 	}
 
@@ -103,61 +107,62 @@ func BuildHLSArgs(in InputSpec, out OutputSpec, prof model.ProfileSpec) ([]strin
 		args = append(args, "-pix_fmt", "yuv420p") // CRITICAL: Safari compatibility - ensure YUV 4:2:0
 	}
 
+	playlistSize := out.PlaylistWindowSize
+	if prof.VOD {
+		playlistSize = 0
+	}
+
 	args = append(args,
-
-		// Audio: Re-encode to AAC for best compatibility and quality
-		// DVB/satellite streams often have incomplete codec parameters that fail with copy
-		// Using high-quality AAC settings for best audio quality:
-		//
-		// CRITICAL: Safari requires explicit channel metadata in output
-		// We explicitly set channel layout to prevent "unknown" layout issues
-		// aformat ensures proper channel layout metadata is written to output
-		"-filter:a", audioFilter,
-		"-c:a", "aac",
-		"-b:a", audioBitrate,
-		"-ar", "48000", // Force 48kHz sample rate
-		"-profile:a", "aac_low", // AAC-LC profile for best compatibility
-
 		// HLS Output Options
 		"-f", "hls",
 		"-hls_time", strconv.Itoa(out.SegmentDuration),
-		"-hls_list_size", strconv.Itoa(out.PlaylistWindowSize),
+		"-hls_list_size", strconv.Itoa(playlistSize),
 
 		// Segment naming
 		"-hls_segment_filename", out.SegmentFilename,
 	)
 
-	// HLS Flags - DVR/VOD vs Live
-	// DVR: Keep segments, no temp_file (Safari seeking needs stable files)
-	// Live: Delete old segments to save disk
-	hlsFlags := "delete_segments+omit_endlist+temp_file"
+	if transcodeAudio {
+		args = append(args,
+			// Audio: Re-encode to AAC for compatibility
+			// Safari requires explicit channel metadata in output.
+			"-filter:a", audioFilter,
+			"-c:a", "aac",
+			"-b:a", audioBitrate,
+			"-ar", "48000", // Force 48kHz sample rate
+			"-profile:a", "aac_low", // AAC-LC profile for best compatibility
+		)
+	} else {
+		args = append(args, "-c:a", "copy")
+	}
 
+	// HLS Flags - DVR/VOD vs Live
+	// DVR: sliding window, no endlist
+	// Live: rolling window with delete_segments
+	hlsFlags := "delete_segments+append_list+omit_endlist+temp_file"
+	playlistType := ""
 	if prof.VOD {
 		// VOD:
 		// - Keep ALL segments (-hls_list_size 0)
-		// - Allow ENDLIST tag (do not omit) so player sees it as finite
-		hlsFlags = "temp_file+independent_segments+program_date_time"
+		// - Allow ENDLIST tag so player sees it as finite
+		hlsFlags = "independent_segments+temp_file"
+		playlistType = "vod"
 	} else if prof.DVRWindowSec > 0 {
-		// Rolling DVR mode: NO delete_segments, NO temp_file for stable seeking
-		// CRITICAL Safari DVR flags (based on Apple HLS spec):
-		// - append_list: Required for EVENT playlists to properly append segments
-		// - independent_segments: Indicates keyframe-aligned segments for seeking
-		// - program_date_time: Adds absolute timestamps for accurate DVR navigation
-		hlsFlags = "omit_endlist+append_list+independent_segments+program_date_time"
+		// Rolling DVR mode: EVENT playlist with stable seeking.
+		hlsFlags = "delete_segments+append_list+omit_endlist+independent_segments+program_date_time"
+		playlistType = "event"
 	} else if prof.LLHLS {
 		hlsFlags = hlsFlags + "+independent_segments"
 	}
 	args = append(args, "-hls_flags", hlsFlags)
 
+	useDeinterlace := prof.TranscodeVideo && prof.Deinterlace
 	if prof.TranscodeVideo {
 		crf := prof.VideoCRF
 		if crf == 0 {
 			crf = 23
 		}
-		gop := out.SegmentDuration * 25
-		if gop <= 0 {
-			gop = 50
-		}
+		gop := gopForSegment(out.SegmentDuration, in.AvgFrameRate, useDeinterlace)
 		keyframeInterval := strconv.FormatFloat(float64(out.SegmentDuration), 'f', 3, 64)
 		if keyframeInterval == "0.000" {
 			keyframeInterval = "2.000"
@@ -177,9 +182,10 @@ func BuildHLSArgs(in InputSpec, out OutputSpec, prof model.ProfileSpec) ([]strin
 		// Video Filters (Deinterlacing + Scaling)
 		var filters []string
 
-		// Always deinterlace DVB content (yadif=1: output one frame per field aka 50i->50p)
-		// This preserves temporal resolution (smooth motion) which is critical for TV/Sports.
-		filters = append(filters, "yadif=1:-1:0")
+		if useDeinterlace {
+			// Deinterlace only if explicitly enabled.
+			filters = append(filters, "yadif=1:-1:1")
+		}
 
 		if prof.VideoMaxWidth > 0 {
 			filters = append(filters, fmt.Sprintf("scale=w=%d:h=-2:flags=lanczos", prof.VideoMaxWidth))
@@ -193,10 +199,8 @@ func BuildHLSArgs(in InputSpec, out OutputSpec, prof model.ProfileSpec) ([]strin
 	// Playlist type:
 	// - DVR (timeshift): EVENT
 	// - Recording/VOD: VOD
-	if prof.VOD {
-		args = append(args, "-hls_playlist_type", "vod")
-	} else if prof.DVRWindowSec > 0 {
-		args = append(args, "-hls_playlist_type", "event")
+	if playlistType != "" {
+		args = append(args, "-hls_playlist_type", playlistType)
 	}
 
 	// fMP4 Special Handling
@@ -216,4 +220,22 @@ func BuildHLSArgs(in InputSpec, out OutputSpec, prof model.ProfileSpec) ([]strin
 
 	args = append(args, out.HLSPlaylist)
 	return args, nil
+}
+
+func gopForSegment(segmentDuration int, avgFrameRate float64, deinterlace bool) int {
+	if segmentDuration <= 0 {
+		segmentDuration = 2
+	}
+	if avgFrameRate <= 0 {
+		avgFrameRate = 25
+	}
+	outFps := avgFrameRate
+	if deinterlace {
+		outFps = avgFrameRate * 2
+	}
+	gop := int(math.Round(outFps * float64(segmentDuration)))
+	if gop <= 0 {
+		return 50
+	}
+	return gop
 }

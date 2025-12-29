@@ -60,6 +60,10 @@ var (
 		Code:    "BOUQUET_NOT_FOUND",
 		Message: "Bouquet not found",
 	}
+	ErrRecordingNotFound = &APIError{
+		Code:    "RECORDING_NOT_FOUND",
+		Message: "Recording not found",
+	}
 	ErrServiceNotFound = &APIError{
 		Code:    "SERVICE_NOT_FOUND",
 		Message: "Service not found",
@@ -85,6 +89,10 @@ var (
 	ErrLeaseBusy = &APIError{
 		Code:    "LEASE_BUSY",
 		Message: "No tuner available; retry later",
+	}
+	ErrRecordingNotReady = &APIError{
+		Code:    "R_RECORDING_NOT_READY",
+		Message: "Recording not ready",
 	}
 
 	// Validation errors

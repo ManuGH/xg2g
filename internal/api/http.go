@@ -75,6 +75,8 @@ type Server struct {
 
 	// Recording Playback (VOD cache generation)
 	recordingSfg singleflight.Group
+	recordingMu  sync.Mutex
+	recordingRun map[string]*recordingBuildState
 
 	// OpenWebIF Client Cache (P1 Performance Fix)
 	owiClient *openwebif.Client
@@ -199,6 +201,7 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager) *Server {
 		configManager:       cfgMgr,
 		seriesManager:       sm,
 		recordingPathMapper: recordings.NewPathMapper(cfg.RecordingPathMappings),
+		recordingRun:        make(map[string]*recordingBuildState),
 		status: jobs.Status{
 			Version: cfg.Version, // Initialize version from config
 		},

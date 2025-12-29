@@ -850,16 +850,18 @@ export type GetRecordingHlsPlaylistErrors = {
     /**
      * Invalid recording ID
      */
-    400: unknown;
+    400: ApiError;
     /**
      * Recording not found
      */
-    404: unknown;
+    404: ApiError;
     /**
      * Recording not ready
      */
-    409: unknown;
+    409: ApiError;
 };
+
+export type GetRecordingHlsPlaylistError = GetRecordingHlsPlaylistErrors[keyof GetRecordingHlsPlaylistErrors];
 
 export type GetRecordingHlsPlaylistResponses = {
     /**
@@ -887,12 +889,18 @@ export type GetRecordingHlsCustomSegmentErrors = {
     /**
      * Invalid recording ID
      */
-    400: unknown;
+    400: ApiError;
     /**
      * Recording not found
      */
-    404: unknown;
+    404: ApiError;
+    /**
+     * Recording not ready
+     */
+    409: ApiError;
 };
+
+export type GetRecordingHlsCustomSegmentError = GetRecordingHlsCustomSegmentErrors[keyof GetRecordingHlsCustomSegmentErrors];
 
 export type GetRecordingHlsCustomSegmentResponses = {
     /**

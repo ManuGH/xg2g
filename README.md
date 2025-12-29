@@ -195,7 +195,9 @@ xg2g is configured primarily via **Environment Variables**.
 ### Development & Architecture
 
 - **[Development Guide](docs/DEVELOPMENT.md)**: Build, run, debug locally
-- **[Architecture](docs/ARCHITECTURE.md)**: System design and V3 internals
+- **[Architecture](ARCHITECTURE.md)**: System design and V3 internals
+- **[V3 FSM Specification](docs/V3_FSM.md)**: Session state machine contract
+- **[Stream Resolution](docs/STREAMING.md)**: Operational standards
 - **[Architecture Decision Records](docs/adr/)**: ADR-001 to ADR-004
 - **[Troubleshooting](docs/TROUBLESHOOTING.md)**: Common issues
 

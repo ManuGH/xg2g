@@ -30,7 +30,6 @@ import (
 	"github.com/ManuGH/xg2g/internal/netutil"
 	"github.com/ManuGH/xg2g/internal/recordings"
 	ffmpegexec "github.com/ManuGH/xg2g/internal/v3/exec/ffmpeg"
-	"github.com/ManuGH/xg2g/internal/v3/profiles"
 )
 
 // Types are now generated in server_gen.go
@@ -42,9 +41,25 @@ var (
 )
 
 const (
-	recordingIDMinLen = 16
-	recordingIDMaxLen = 2048
+	recordingIDMinLen          = 16
+	recordingIDMaxLen          = 2048
+	recordingRetryAfterSeconds = 2
+	recordingBuildTimeout      = 2 * time.Hour
+	recordingBuildStaleAfter   = 2 * time.Hour
+	recordingBuildFailBackoff  = 30 * time.Second
 )
+
+type recordingBuildStatus string
+
+const (
+	recordingBuildRunning recordingBuildStatus = "RUNNING"
+	recordingBuildFailed  recordingBuildStatus = "FAILED"
+)
+
+type recordingBuildState struct {
+	status    recordingBuildStatus
+	updatedAt time.Time
+}
 
 // GetRecordings handles GET /api/v3/recordings
 // Query: ?root=<id>&path=<rel_path>
@@ -431,13 +446,13 @@ func (s *Server) resolveRecordingPlaybackSource(ctx context.Context, serviceRef 
 func (s *Server) GetRecordingHLSPlaylist(w http.ResponseWriter, r *http.Request, recordingId string) {
 	serviceRef := s.decodeRecordingID(recordingId)
 	if serviceRef == "" {
-		http.Error(w, "Invalid recording ID", http.StatusBadRequest)
+		s.writeRecordingPlaybackError(w, r, "", errRecordingInvalid)
 		return
 	}
 
 	playlistPath, err := s.ensureRecordingPlaylist(r.Context(), serviceRef)
 	if err != nil {
-		s.writeRecordingPlaybackError(w, err)
+		s.writeRecordingPlaybackError(w, r, serviceRef, err)
 		return
 	}
 
@@ -450,7 +465,7 @@ func (s *Server) GetRecordingHLSPlaylist(w http.ResponseWriter, r *http.Request,
 func (s *Server) GetRecordingHLSCustomSegment(w http.ResponseWriter, r *http.Request, recordingId string, segment string) {
 	serviceRef := s.decodeRecordingID(recordingId)
 	if serviceRef == "" {
-		http.Error(w, "Invalid recording ID", http.StatusBadRequest)
+		s.writeRecordingPlaybackError(w, r, "", errRecordingInvalid)
 		return
 	}
 
@@ -461,6 +476,11 @@ func (s *Server) GetRecordingHLSCustomSegment(w http.ResponseWriter, r *http.Req
 	}
 	if !recordingSegmentAllowed(segment) {
 		http.Error(w, "file type not allowed", http.StatusForbidden)
+		return
+	}
+
+	if _, err := s.ensureRecordingPlaylist(r.Context(), serviceRef); err != nil {
+		s.writeRecordingPlaybackError(w, r, serviceRef, err)
 		return
 	}
 
@@ -519,7 +539,6 @@ func (s *Server) GetRecordingHLSCustomSegment(w http.ResponseWriter, r *http.Req
 func (s *Server) ensureRecordingPlaylist(ctx context.Context, serviceRef string) (string, error) {
 	s.mu.RLock()
 	hlsRoot := s.cfg.HLSRoot
-	sfg := &s.recordingSfg
 	s.mu.RUnlock()
 
 	if err := validateRecordingRef(serviceRef); err != nil {
@@ -535,79 +554,186 @@ func (s *Server) ensureRecordingPlaylist(ctx context.Context, serviceRef string)
 		return playlistPath, nil
 	}
 
-	_, err, _ = sfg.Do(cacheDir, func() (any, error) {
-		if recordingPlaylistReady(cacheDir) {
-			return playlistPath, nil
-		}
-		sourceType, source, _, err := s.resolveRecordingPlaybackSource(ctx, serviceRef)
-		if err != nil {
-			return nil, err
-		}
-		if err := os.RemoveAll(cacheDir); err != nil && !os.IsNotExist(err) {
-			return nil, err
-		}
-		// #nosec G301 -- cache dir serves playback assets.
-		if err := os.MkdirAll(cacheDir, 0755); err != nil {
-			return nil, err
-		}
-		if err := s.generateRecordingPlaylist(ctx, cacheDir, sourceType, source); err != nil {
-			return nil, err
-		}
-		if !recordingPlaylistReady(cacheDir) {
-			return nil, fmt.Errorf("recording playlist incomplete")
-		}
-		return playlistPath, nil
-	})
+	sourceType, source, _, err := s.resolveRecordingPlaybackSource(ctx, serviceRef)
 	if err != nil {
 		return "", err
 	}
 
-	return playlistPath, nil
+	if err := s.scheduleRecordingBuild(cacheDir, serviceRef, sourceType, source); err != nil {
+		return "", err
+	}
+	return "", errRecordingNotReady
 }
 
-func (s *Server) generateRecordingPlaylist(ctx context.Context, cacheDir, sourceType, source string) error {
+func (s *Server) scheduleRecordingBuild(cacheDir, serviceRef, sourceType, source string) error {
+	now := time.Now()
+
+	s.recordingMu.Lock()
+	s.cleanupRecordingBuildsLocked(now)
+	if state, ok := s.recordingRun[cacheDir]; ok {
+		switch state.status {
+		case recordingBuildRunning:
+			if now.Sub(state.updatedAt) < recordingBuildStaleAfter {
+				s.recordingMu.Unlock()
+				return errRecordingNotReady
+			}
+		case recordingBuildFailed:
+			if now.Sub(state.updatedAt) < recordingBuildFailBackoff {
+				s.recordingMu.Unlock()
+				return errRecordingNotReady
+			}
+		}
+	}
+	s.recordingRun[cacheDir] = &recordingBuildState{
+		status:    recordingBuildRunning,
+		updatedAt: now,
+	}
+	s.recordingMu.Unlock()
+
+	go func() {
+		buildCtx, cancel := context.WithTimeout(context.Background(), recordingBuildTimeout)
+		defer cancel()
+
+		err := s.buildRecordingPlaylist(buildCtx, cacheDir, sourceType, source)
+		s.recordingMu.Lock()
+		defer s.recordingMu.Unlock()
+		if err != nil {
+			log.L().Error().
+				Err(err).
+				Str("recording_id", serviceRef).
+				Msg("recording VOD build failed")
+			s.recordingRun[cacheDir] = &recordingBuildState{
+				status:    recordingBuildFailed,
+				updatedAt: time.Now(),
+			}
+			return
+		}
+		delete(s.recordingRun, cacheDir)
+	}()
+
+	return errRecordingNotReady
+}
+
+func (s *Server) cleanupRecordingBuildsLocked(now time.Time) {
+	for key, state := range s.recordingRun {
+		if state == nil {
+			delete(s.recordingRun, key)
+			continue
+		}
+		if now.Sub(state.updatedAt) > recordingBuildStaleAfter {
+			delete(s.recordingRun, key)
+		}
+	}
+}
+
+func (s *Server) buildRecordingPlaylist(ctx context.Context, cacheDir, sourceType, source string) error {
+	if err := s.prepareRecordingCacheDir(cacheDir); err != nil {
+		return err
+	}
+	if err := s.generateRecordingPlaylist(ctx, cacheDir, sourceType, source, false); err == nil {
+		if recordingPlaylistReady(cacheDir) {
+			return nil
+		}
+		return fmt.Errorf("recording playlist incomplete after copy")
+	} else {
+		log.L().Warn().
+			Err(err).
+			Str("source_type", sourceType).
+			Str("source", source).
+			Msg("recording VOD copy path failed, retrying with video transcode")
+	}
+
+	if err := s.prepareRecordingCacheDir(cacheDir); err != nil {
+		return err
+	}
+	if err := s.generateRecordingPlaylist(ctx, cacheDir, sourceType, source, true); err != nil {
+		return err
+	}
+	if !recordingPlaylistReady(cacheDir) {
+		return fmt.Errorf("recording playlist incomplete after transcode")
+	}
+	return nil
+}
+
+func (s *Server) prepareRecordingCacheDir(cacheDir string) error {
+	if err := os.RemoveAll(cacheDir); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	// #nosec G301 -- cache dir serves playback assets.
+	return os.MkdirAll(cacheDir, 0755)
+}
+
+func (s *Server) generateRecordingPlaylist(ctx context.Context, cacheDir, sourceType, source string, transcode bool) error {
 	tmpPlaylist, finalPlaylist := ffmpegexec.PlaylistPaths(cacheDir)
 	_ = os.Remove(tmpPlaylist)
 	_ = os.Remove(finalPlaylist)
 
-	input := ffmpegexec.InputSpec{
-		StreamURL: source,
-	}
-
-	var concatFile string
+	input := source
+	useConcat := false
 	if sourceType == "local" {
 		parts, err := recordingParts(source)
 		if err != nil {
 			return err
 		}
 		if len(parts) != 1 || parts[0] != source {
-			concatFile = filepath.Join(cacheDir, "concat.txt")
+			concatFile := filepath.Join(cacheDir, "concat.txt")
 			if err := writeConcatList(concatFile, parts); err != nil {
 				return err
 			}
-			input.StreamURL = concatFile
+			input = concatFile
+			useConcat = true
 		}
 	}
-
-	output := ffmpegexec.OutputSpec{
-		HLSPlaylist:        tmpPlaylist,
-		SegmentFilename:    ffmpegexec.SegmentPattern(cacheDir, ".ts"),
-		SegmentDuration:    6,
-		PlaylistWindowSize: 0,
+	segmentPattern := ffmpegexec.SegmentPattern(cacheDir, ".ts")
+	args := []string{
+		"-nostdin",
+		"-hide_banner",
+		"-loglevel", "error",
+		"-fflags", "+genpts+discardcorrupt",
+		"-err_detect", "ignore_err",
+		"-probesize", "50M",
+		"-analyzeduration", "50M",
 	}
-
-	profileSpec := profiles.Resolve(profiles.ProfileDVR, "", 0)
-	profileSpec.VOD = true
-	profileSpec.DVRWindowSec = 0
-	profileSpec.LLHLS = false
-
-	args, err := ffmpegexec.BuildHLSArgs(input, output, profileSpec)
-	if err != nil {
-		return err
+	if useConcat {
+		args = append(args, "-f", "concat", "-safe", "0")
 	}
-	if concatFile != "" {
-		args = insertArgsBefore(args, "-i", []string{"-f", "concat", "-safe", "0"})
+	args = append(args,
+		"-i", input,
+		"-map", "0:v:0?",
+		"-map", "0:a:0?",
+	)
+	audioArgs := []string{
+		"-filter:a", "aresample=async=1:first_pts=0,aformat=channel_layouts=stereo",
+		"-c:a", "aac",
+		"-b:a", "192k",
+		"-ar", "48000",
+		"-profile:a", "aac_low",
 	}
+	if transcode {
+		args = append(args,
+			"-c:v", "libx264",
+			"-preset", "veryfast",
+			"-crf", "20",
+			"-x264-params", "keyint=100:min-keyint=100:scenecut=0",
+		)
+		args = append(args, audioArgs...)
+	} else {
+		args = append(args, "-c:v", "copy")
+		args = append(args, audioArgs...)
+	}
+	hlsFlags := "temp_file"
+	if transcode {
+		hlsFlags = "independent_segments+temp_file"
+	}
+	args = append(args,
+		"-f", "hls",
+		"-hls_time", "6",
+		"-hls_list_size", "0",
+		"-hls_playlist_type", "vod",
+		"-hls_flags", hlsFlags,
+		"-hls_segment_filename", segmentPattern,
+		tmpPlaylist,
+	)
 
 	s.mu.RLock()
 	ffmpegBin := s.cfg.FFmpegBin
@@ -624,6 +750,7 @@ func (s *Server) generateRecordingPlaylist(ctx context.Context, cacheDir, source
 			Str("source_type", sourceType).
 			Str("source", source).
 			Str("ffmpeg", ffmpegBin).
+			Bool("transcode_video", transcode).
 			Msgf("ffmpeg failed: %s", strings.TrimSpace(string(out)))
 		return fmt.Errorf("ffmpeg failed: %w", err)
 	}
@@ -674,6 +801,20 @@ func recordingPlaylistReady(cacheDir string) bool {
 	if err != nil || info.IsDir() {
 		return false
 	}
+	data, err := os.ReadFile(playlistPath)
+	if err != nil {
+		return false
+	}
+	playlist := string(data)
+	if !strings.Contains(playlist, "#EXTM3U") {
+		return false
+	}
+	if !strings.Contains(playlist, "#EXT-X-PLAYLIST-TYPE:VOD") {
+		return false
+	}
+	if !strings.Contains(playlist, "#EXT-X-ENDLIST") {
+		return false
+	}
 	entries, err := os.ReadDir(cacheDir)
 	if err != nil {
 		return false
@@ -721,6 +862,8 @@ func recordingParts(basePath string) ([]string, error) {
 
 	dir := filepath.Dir(basePath)
 	baseName := filepath.Base(basePath)
+	baseExt := filepath.Ext(baseName)
+	baseStem := strings.TrimSuffix(baseName, baseExt)
 	entries, readErr := os.ReadDir(dir)
 	if readErr != nil && !baseExists {
 		if os.IsNotExist(readErr) {
@@ -733,27 +876,39 @@ func recordingParts(basePath string) ([]string, error) {
 		index int
 		path  string
 	}
-	var parts []part
+	partsByIndex := make(map[int]string)
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
 		}
 		name := entry.Name()
-		if !strings.HasPrefix(name, baseName+".") {
+		if baseExt != "" && strings.HasPrefix(name, baseStem+"_") && strings.HasSuffix(name, baseExt) {
+			suffix := strings.TrimSuffix(strings.TrimPrefix(name, baseStem+"_"), baseExt)
+			if allDigits(suffix) {
+				if idx, err := strconv.Atoi(suffix); err == nil {
+					if _, exists := partsByIndex[idx]; !exists {
+						partsByIndex[idx] = filepath.Join(dir, name)
+					}
+				}
+			}
 			continue
 		}
-		suffix := strings.TrimPrefix(name, baseName+".")
-		if suffix == "" {
-			continue
+
+		if strings.HasPrefix(name, baseName+".") {
+			suffix := strings.TrimPrefix(name, baseName+".")
+			if allDigits(suffix) {
+				if idx, err := strconv.Atoi(suffix); err == nil {
+					if _, exists := partsByIndex[idx]; !exists {
+						partsByIndex[idx] = filepath.Join(dir, name)
+					}
+				}
+			}
 		}
-		if !allDigits(suffix) {
-			continue
-		}
-		idx, err := strconv.Atoi(suffix)
-		if err != nil {
-			continue
-		}
-		parts = append(parts, part{index: idx, path: filepath.Join(dir, name)})
+	}
+
+	parts := make([]part, 0, len(partsByIndex))
+	for idx, p := range partsByIndex {
+		parts = append(parts, part{index: idx, path: p})
 	}
 
 	sort.Slice(parts, func(i, j int) bool {
@@ -825,17 +980,34 @@ func insertArgsBefore(args []string, needle string, insert []string) []string {
 	return append(insert, args...)
 }
 
-func (s *Server) writeRecordingPlaybackError(w http.ResponseWriter, err error) {
+func (s *Server) writeRecordingPlaybackError(w http.ResponseWriter, r *http.Request, serviceRef string, err error) {
 	switch {
 	case errors.Is(err, errRecordingInvalid):
-		http.Error(w, "Invalid recording ID", http.StatusBadRequest)
+		RespondError(w, r, http.StatusBadRequest, ErrInvalidInput, "invalid recording id")
 	case errors.Is(err, errRecordingNotFound):
-		http.Error(w, "Recording not found", http.StatusNotFound)
+		RespondError(w, r, http.StatusNotFound, ErrRecordingNotFound)
 	case errors.Is(err, errRecordingNotReady):
-		http.Error(w, "Recording not ready", http.StatusConflict)
+		w.Header().Set("Retry-After", strconv.Itoa(recordingRetryAfterSeconds))
+		state := "PENDING"
+		if serviceRef != "" {
+			s.mu.RLock()
+			hlsRoot := s.cfg.HLSRoot
+			s.mu.RUnlock()
+			if cacheDir, cacheErr := recordingCacheDir(hlsRoot, serviceRef); cacheErr == nil {
+				s.recordingMu.Lock()
+				if build := s.recordingRun[cacheDir]; build != nil {
+					state = string(build.status)
+				}
+				s.recordingMu.Unlock()
+			}
+		}
+		RespondError(w, r, http.StatusConflict, ErrRecordingNotReady, map[string]any{
+			"state":             state,
+			"retryAfterSeconds": recordingRetryAfterSeconds,
+		})
 	default:
 		log.L().Error().Err(err).Msg("recording playback failed")
-		http.Error(w, "Failed to prepare recording", http.StatusInternalServerError)
+		RespondError(w, r, http.StatusInternalServerError, ErrInternalServer, "failed to prepare recording")
 	}
 }
 

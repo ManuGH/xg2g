@@ -106,6 +106,7 @@ type ProfileSpec struct {
 	DVRWindowSec   int    `json:"dvrWindowSec"`
 	VOD            bool   `json:"vod,omitempty"`
 	TranscodeVideo bool   `json:"transcodeVideo"`
+	Deinterlace    bool   `json:"deinterlace,omitempty"`
 	VideoCRF       int    `json:"videoCrf,omitempty"`
 	VideoMaxWidth  int    `json:"videoMaxWidth,omitempty"`
 	AudioBitrateK  int    `json:"audioBitrateK,omitempty"`

@@ -158,6 +158,48 @@ This is **not** designed for:
 
 ---
 
+#### 5. Atomic Lease Acquisition (TOCTOU Prevention)
+
+**Decision**: Lease acquisition uses atomic try-acquire, not probe-then-acquire.
+
+**Rationale**:
+- **Correctness**: Prevents TOCTOU (Time-of-check Time-of-use) race conditions
+- **Admission Control**: HTTP 409 returned before session creation on contention
+- **No Queueing**: Fail-fast instead of implicit queue building
+- **Atomic Guarantee**: Single atomic operation ensures either lease acquired OR 409 returned
+
+**Trade-off**: Client must implement retry logic for 409 responses.
+- **Acceptable**: Home-lab clients can retry with exponential backoff (1-2s typical)
+- **Not Acceptable If**: You need guaranteed admission with queuing semantics
+
+**Non-Goals** (explicitly excluded):
+- No worker refactor as part of admission control
+- No request queueing or waiting
+- No new session states for "waiting"
+
+---
+
+## V3 Session Lifecycle State Machine
+
+The V3 control plane implements an event-driven state machine for session lifecycle management.
+
+**Key States**:
+- **STARTING** → Worker initializing, FFmpeg starting
+- **PRIMING** → FFmpeg running, producing HLS artifacts (not yet playable)
+- **READY** → **Playable guarantee** (playlist + at least one segment atomically published)
+- **DRAINING/STOPPING** → Graceful shutdown in progress
+- **FAILED/CANCELLED/STOPPED** → Terminal states
+
+**Critical Guarantees**:
+- **Admission Guard**: No session created without successful lease acquisition (atomic try-acquire)
+- **READY Guard**: READY state guarantees immediate playability (playlist + segment exist)
+- **Timeout Guard**: Each phase has deadlines to prevent infinite waits
+- **Client Contract**: Normative polling behavior and error handling rules
+
+**Full specification**: See [V3_FSM.md](docs/V3_FSM.md) for complete state semantics, transition table, and normative client behavior contract.
+
+---
+
 ## API Design Principles
 
 ### 1. Intent-Based API (Not Direct Control)
@@ -319,6 +361,22 @@ Response includes metadata: `total`, `count`, `offset`, `limit`
 
 ---
 
+## Stream Resolution Standards
+
+**Critical operational standards** to prevent regression of stream resolution.
+
+**Core Invariants**:
+
+1. **NEVER hardcode stream ports** - Enigma2 dynamically assigns ports based on channel configuration
+2. **WebAPI is the source of truth** - Always resolve stream URLs via `/web/stream.m3u?ref=...` using `ResolveStreamURL()`
+3. **Parse returned URLs** - Extract host, port, and path from the WebAPI response
+
+**Why this matters**: Early versions hardcoded ports, causing silent failures (black screen) for certain channels. These invariants capture hard-won operational lessons.
+
+**Full specification**: See [STREAMING.md](docs/STREAMING.md) for detailed rules, implementation checklist, and common pitfalls.
+
+---
+
 ## Non-Goals (Explicit)
 
 These are **intentionally excluded** to maintain simplicity:
@@ -437,8 +495,8 @@ SLA)
 
 ## Version History
 
-- **v3.0.0** (2025-01): Initial release with event-driven architecture
-- **v3.1.0** (2025-12): Added RBAC, pagination, OpenAPI spec, ARCHITECTURE.md
+- **v3.0.0** (2025-12-24): Initial release with event-driven architecture, RBAC, pagination, OpenAPI spec
+- **Unreleased**: Recording playback enhancements, improved documentation structure
 
 ---
 
