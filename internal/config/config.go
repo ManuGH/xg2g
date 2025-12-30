@@ -182,11 +182,14 @@ type AppConfig struct {
 	ForceHTTPS bool   // Redirect HTTP to HTTPS
 
 	// Feature Flags
-	InstantTuneEnabled   bool   // Enable "Instant Tune" stream pre-warming
-	DevMode              bool   // Enable development mode (live asset reloading)
+	// TODO(cleanup): Remove InstantTuneEnabled - feature flag exists but no implementation
+	InstantTuneEnabled bool // Enable "Instant Tune" stream pre-warming (UNIMPLEMENTED)
+
 	AuthAnonymous        bool   // Allow anonymous access if no token is configured (Fail-Open override)
+	// TODO(cleanup): Review ReadyStrict usage - only used in tests, not in actual health check logic
 	ReadyStrict          bool   // Enable strict readiness checks (check upstream availability)
-	ShadowIntentsEnabled bool   // v3 Shadow Canary: mirror intents to v3 API (default OFF)
+	// TODO(cleanup): Remove ShadowIntentsEnabled - fully implemented but not integrated into API flow
+	ShadowIntentsEnabled bool   // v3 Shadow Canary: mirror intents to v3 API (default OFF, UNUSED)
 	ShadowTarget         string // v3 Shadow Canary: target URL (e.g. http://localhost:8080/api/v3/intents)
 
 	// v3 Worker Config
@@ -215,12 +218,11 @@ type AppConfig struct {
 	FFmpegKillTimeout time.Duration
 
 	// HLS Config (Phase 8-5)
-	HLSRoot            string        // e.g. /var/lib/xg2g/v3-hls
-	DVRWindowSec       int           // DVR window duration in seconds (default: 2700 = 45 minutes)
-	V3IdleTimeout      time.Duration // Stop v3 sessions after idle (0 disables)
-	V3APILeases        bool          // Feature Flag: If true, API acquires lease (Phase 1). If false, Worker does (Phase 2).
-	IdemSecretCurrent  string        // DEPRECATED: No longer used by v3 idempotency (was XG2G_IDEM_SECRET)
-	IdemSecretPrevious string        // DEPRECATED: No longer used by v3 idempotency (was XG2G_IDEM_SECRET_PREV)
+	HLSRoot       string        // e.g. /var/lib/xg2g/v3-hls
+	DVRWindowSec  int           // DVR window duration in seconds (default: 2700 = 45 minutes)
+	V3IdleTimeout time.Duration // Stop v3 sessions after idle (0 disables)
+	// TODO(v3.2): Remove V3APILeases - Phase 1 legacy code, default is Phase 2 (false) since ADR-003
+	V3APILeases   bool          // Feature Flag: If true, API acquires lease (Phase 1). If false, Worker does (Phase 2).
 
 	RateLimitEnabled   bool // Enable rate limiting
 	RateLimitGlobal    int  // Requests per second (global)
@@ -712,7 +714,7 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 
 	// Feature Flags
 	cfg.InstantTuneEnabled = ParseBool("XG2G_INSTANT_TUNE", cfg.InstantTuneEnabled)
-	cfg.DevMode = ParseBool("XG2G_DEV", cfg.DevMode)
+
 	cfg.AuthAnonymous = ParseBool("XG2G_AUTH_ANONYMOUS", cfg.AuthAnonymous)
 	cfg.ReadyStrict = ParseBool("XG2G_READY_STRICT", cfg.ReadyStrict)
 	cfg.ShadowIntentsEnabled = ParseBool("XG2G_V3_SHADOW_INTENTS", cfg.ShadowIntentsEnabled)
@@ -732,11 +734,6 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	}
 
 	cfg.V3APILeases = ParseBool("XG2G_V3_API_LEASES", cfg.V3APILeases)
-
-	// Idempotency secrets are deprecated in v3 Phase 2 (SHA256 deterministic keys).
-	// We retain fields for config backward compatibility but do NOT enforce generation.
-	cfg.IdemSecretCurrent = ParseString("XG2G_IDEM_SECRET", "")
-	cfg.IdemSecretPrevious = ParseString("XG2G_IDEM_SECRET_PREV", "")
 
 	// Smart defaulting: If XG2G_V3_E2_HOST is not set, inherit from config or OWI_BASE
 	// This prevents Docker networking issues where "localhost" doesn't work
