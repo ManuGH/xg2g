@@ -58,7 +58,7 @@ func (i *instrumentedStore) PutSession(ctx context.Context, s *model.SessionReco
 }
 
 // Correct approach
-func (i *instrumentedStore) PutSessionWithIdempotency(ctx context.Context, s *model.SessionRecord, key string, ttl time.Duration) (err error) {
+func (i *instrumentedStore) PutSessionWithIdempotency(ctx context.Context, s *model.SessionRecord, key string, ttl time.Duration) (existingID string, exists bool, err error) {
 	start := time.Now()
 	defer func() { i.observe("put_session_idem", start, err) }()
 	return i.inner.PutSessionWithIdempotency(ctx, s, key, ttl)

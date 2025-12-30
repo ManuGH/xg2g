@@ -6,6 +6,8 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -74,73 +76,74 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		logger = logger.With().Str("correlation_id", correlationID).Logger()
 	}
 
-	// 3. Idempotency Check (Store)
-	// We check if this intent was already processed recently
-	if req.IdempotencyKey != "" {
-		ctx := r.Context()
-		existingSessionID, ok, err := store.GetIdempotency(ctx, req.IdempotencyKey)
-		if err != nil {
-			logger.Error().Err(err).Str("k", req.IdempotencyKey).Msg("v3 idempotency check failed")
-			RespondError(w, r, http.StatusServiceUnavailable, ErrServiceUnavailable)
-			return
-		}
-		if ok {
-			// Already processed, return established SessionID
-			resp := map[string]string{
-				"sessionId": existingSessionID,
-				"status":    "idempotent_replay",
-			}
-			if correlationID == "" {
-				if session, err := store.GetSession(ctx, existingSessionID); err == nil && session != nil {
-					correlationID = session.CorrelationID
-				}
-			}
-			if correlationID != "" {
-				resp["correlationId"] = correlationID
-			}
-			writeJSON(w, http.StatusOK, resp)
-			return
-		}
-	}
-
-	// 4. Generate Session ID (Strong UUID)
-	// For START, new ID. For STOP, use provided ID.
-	var sessionID string
 	intentType := req.Type
 	if intentType == "" {
 		intentType = model.IntentTypeStreamStart
 	}
 
-	switch intentType {
-	case model.IntentTypeStreamStart:
-		if strings.TrimSpace(req.ServiceRef) == "" {
-			RespondError(w, r, http.StatusBadRequest, ErrInvalidInput, "serviceRef required for start")
+	// 3. Compute Idempotency Key (Server-Side)
+	// Policy: We calculate this strictly based on inputs to prevent client spoofing.
+	// If the client provided a key, we might validate it, but we prefer stable generation.
+	// Users with same ServiceRef + Profile + Bucket get same Key.
+	var idempotencyKey string
+	if intentType == model.IntentTypeStreamStart {
+		// Canonicalize profile first
+		requestedProfile, legacyProfile, err := canonicalProfileID(req.ProfileID, req.Profile)
+		if err != nil {
+			RespondError(w, r, http.StatusBadRequest, ErrInvalidInput, err.Error())
 			return
 		}
+		if legacyProfile {
+			logger.Info().Msg("legacy field 'profile' used; will be removed in v3.2")
+		}
+
+		// Bucket: 0 for Live, StartTime/1000 for VOD
+		bucket := "0"
+		if req.StartMs != nil && *req.StartMs > 0 {
+			// VOD/Catchup bucket (1 second resolution)
+			bucket = fmt.Sprintf("%d", *req.StartMs/1000)
+		}
+
+		// Compute Usage Key
+		idempotencyKey = ComputeIdemKey(model.IntentTypeStreamStart, req.ServiceRef, requestedProfile, bucket)
+
+		// Check if we should rotate/verify (Optional/Advanced: not strictly needed for creation, only for verification if we supported client keys)
+		// For creation, we always sign with Current.
+	}
+
+	// 4. Generate Session ID (Strong UUID)
+	// For START, new ID. For STOP, use provided ID.
+	var sessionID string
+	if intentType == model.IntentTypeStreamStart {
+		// New Session
 		sessionID = uuid.New().String()
 		if correlationID == "" {
 			correlationID = uuid.New().String()
 		}
-	case model.IntentTypeStreamStop:
+	} else if intentType == model.IntentTypeStreamStop {
+		// STOP logic remains same
 		if req.SessionID == "" {
 			RespondError(w, r, http.StatusBadRequest, ErrInvalidInput, "sessionId required for stop")
 			return
 		}
 		sessionID = req.SessionID
+		// ... retrieve correlation if needed ...
 		if correlationID == "" {
 			if session, err := store.GetSession(r.Context(), sessionID); err == nil && session != nil {
 				correlationID = session.CorrelationID
 			}
 		}
-	default:
+	} else {
 		RespondError(w, r, http.StatusBadRequest, ErrInvalidInput, "unsupported intent type")
 		return
 	}
+
+	// Add correlation to logger
 	if !correlationProvided && correlationID != "" {
 		logger = logger.With().Str("correlation_id", correlationID).Logger()
 	}
 
-	// Extract ClientIP from params or request (Normalized)
+	// Extract ClientIP (Normalized)
 	clientIP := req.Params["client_ip"]
 	if clientIP == "" {
 		host, _, err := net.SplitHostPort(r.RemoteAddr)
@@ -177,102 +180,160 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	// 5. Build & Publish Event
 	switch intentType {
 	case model.IntentTypeStreamStart:
-		requestedProfile, legacyProfile, err := canonicalProfileID(req.ProfileID, req.Profile)
-		if err != nil {
-			RespondError(w, r, http.StatusBadRequest, ErrInvalidInput, err.Error())
-			return
+		// Re-resolve profileSpec to get details (Name, etc)
+		// Note: canonicalProfileID was called above, so we know it's valid
+		reqProfileID, _, _ := canonicalProfileID(req.ProfileID, req.Profile)
+		profileSpec := profiles.Resolve(reqProfileID, r.UserAgent(), cfg.DVRWindowSec)
+
+		// Recalculate bucket for idempotency consistency in this scope
+		bucket := "0"
+		if req.StartMs != nil && *req.StartMs > 0 {
+			bucket = fmt.Sprintf("%d", *req.StartMs/1000)
 		}
-		if legacyProfile {
-			logger.Info().
-				Str("event", "v3.intent.legacy_profile").
-				Msg("legacy field 'profile' used; will be removed in v3.2")
-		}
-		profileSpec := profiles.Resolve(requestedProfile, r.UserAgent(), cfg.DVRWindowSec)
+
 		logger.Info().
 			Str("ua", r.UserAgent()).
 			Str("profile", profileSpec.Name).
+			Str("idem_key", idempotencyKey).
 			Msg("intent profile resolved")
 
 		if len(cfg.TunerSlots) == 0 {
+			RecordV3Intent(string(model.IntentTypeStreamStart), "phase0", "no_slots")
 			RespondError(w, r, http.StatusServiceUnavailable, ErrServiceUnavailable, "no tuner slots configured")
 			return
 		}
 
-		dedupKey := lease.LeaseKeyService(req.ServiceRef)
-		dedupLease, ok, err := store.TryAcquireLease(r.Context(), dedupKey, sessionID, admissionLeaseTTL)
-		if err != nil {
-			RespondError(w, r, http.StatusServiceUnavailable, ErrServiceUnavailable, "lease acquisition failed")
-			return
-		}
-		if !ok {
-			w.Header().Set("Retry-After", strconv.Itoa(admissionRetryAfterSec))
-			RespondError(w, r, http.StatusConflict, ErrLeaseBusy)
-			return
-		}
-		acquiredLeases = append(acquiredLeases, dedupLease)
+		// MIGRATION CONTRACT (ADR-003):
+		// Phase 1 (Legacy): V3APILeases=true
+		// Phase 2 (Target): V3APILeases=false
+		phaseLabel := "phase2"
+		if cfg.V3APILeases {
+			phaseLabel = "phase1"
+			dedupKey := lease.LeaseKeyService(req.ServiceRef)
+			dedupLease, ok, err := store.TryAcquireLease(r.Context(), dedupKey, sessionID, admissionLeaseTTL)
+			if err != nil {
+				RecordV3Intent(string(model.IntentTypeStreamStart), phaseLabel, "lease_error")
+				RespondError(w, r, http.StatusServiceUnavailable, ErrServiceUnavailable, "lease acquisition failed")
+				return
+			}
+			if !ok {
+				RecordV3Intent(string(model.IntentTypeStreamStart), phaseLabel, "conflict")
+				w.Header().Set("Retry-After", strconv.Itoa(admissionRetryAfterSec))
+				RespondError(w, r, http.StatusConflict, ErrLeaseBusy)
+				return
+			}
+			acquiredLeases = append(acquiredLeases, dedupLease)
 
-		_, tunerLease, ok, err := tryAcquireTunerLease(r.Context(), store, sessionID, cfg.TunerSlots, admissionLeaseTTL)
-		if err != nil {
-			releaseLeases()
-			RespondError(w, r, http.StatusServiceUnavailable, ErrServiceUnavailable, "tuner lease acquisition failed")
-			return
+			_, tunerLease, ok, err := tryAcquireTunerLease(r.Context(), store, sessionID, cfg.TunerSlots, admissionLeaseTTL)
+			if err != nil {
+				releaseLeases()
+				RecordV3Intent(string(model.IntentTypeStreamStart), phaseLabel, "tuner_error")
+				RespondError(w, r, http.StatusServiceUnavailable, ErrServiceUnavailable, "tuner lease acquisition failed")
+				return
+			}
+			if !ok {
+				releaseLeases()
+				RecordV3Intent(string(model.IntentTypeStreamStart), phaseLabel, "conflict")
+				w.Header().Set("Retry-After", strconv.Itoa(admissionRetryAfterSec))
+				RespondError(w, r, http.StatusConflict, ErrLeaseBusy)
+				return
+			}
+			acquiredLeases = append(acquiredLeases, tunerLease)
 		}
-		if !ok {
-			releaseLeases()
-			w.Header().Set("Retry-After", strconv.Itoa(admissionRetryAfterSec))
-			RespondError(w, r, http.StatusConflict, ErrLeaseBusy)
-			return
+
+		// 4. Persistence (Atomic Idempotency)
+		// We use PutSessionWithIdempotency to guarantee single-winner for parallel events.
+		requestParams := map[string]string{
+			"profile": reqProfileID,
+			"bucket":  bucket,
 		}
-		acquiredLeases = append(acquiredLeases, tunerLease)
+		if correlationID != "" {
+			requestParams["correlation_id"] = correlationID
+		}
+		if mode != "" {
+			requestParams[model.CtxKeyMode] = mode
+		}
 
 		// Create Session Record (Starting state)
 		session := &model.SessionRecord{
-			SessionID:      sessionID,
-			ServiceRef:     req.ServiceRef,
-			Profile:        profileSpec,
-			State:          model.SessionStarting,
-			CorrelationID:  correlationID,
-			CreatedAtUnix:  time.Now().Unix(),
-			UpdatedAtUnix:  time.Now().Unix(),
-			LastAccessUnix: time.Now().Unix(),
-			ContextData: map[string]string{
-				"client_ip":      clientIP,
-				model.CtxKeyMode: mode,
-			},
+			SessionID:     sessionID,
+			State:         model.SessionNew,
+			ServiceRef:    req.ServiceRef,
+			Profile:       profileSpec,
+			CreatedAtUnix: time.Now().Unix(),
+			UpdatedAtUnix: time.Now().Unix(),
+			ContextData:   requestParams, // Store context params
 		}
-		// Persist Session (Atomic)
-		if err := store.PutSessionWithIdempotency(r.Context(), session, req.IdempotencyKey, 1*time.Minute); err != nil {
-			releaseLeases()
-			RespondError(w, r, http.StatusInternalServerError, ErrInternalServer, "failed to persist session")
+
+		// Atomic Write
+		existingID, exists, err := store.PutSessionWithIdempotency(r.Context(), session, idempotencyKey, admissionLeaseTTL)
+		if err != nil {
+			logger.Error().Err(err).Msg("failed to persist intent")
+			RecordV3Intent(string(model.IntentTypeStreamStart), phaseLabel, "store_error")
+			RespondError(w, r, http.StatusInternalServerError, ErrInternalServer, "failed to persist intent")
 			return
 		}
 
-		event := model.StartSessionEvent{
+		if exists {
+			// Idempotent Replay
+			RecordV3Replay(string(model.IntentTypeStreamStart))
+			RecordV3Intent(string(model.IntentTypeStreamStart), phaseLabel, "replay")
+
+			logger.Info().Str("existing_sid", existingID).Msg("idempotent replay detected")
+
+			// Fetch existing session to get its correlation ID (Hygiene #2)
+			existingSession, err := store.GetSession(r.Context(), existingID)
+			replayCorrelation := correlationID // Default to current if fetch fails
+			if err == nil && existingSession != nil && existingSession.CorrelationID != "" {
+				replayCorrelation = existingSession.CorrelationID
+			} else if err == nil && existingSession != nil && existingSession.ContextData != nil {
+				if cid := existingSession.ContextData["correlation_id"]; cid != "" {
+					replayCorrelation = cid
+				}
+			}
+
+			writeJSON(w, http.StatusAccepted, &v3api.IntentResponse{
+				SessionID:     existingID,
+				State:         string(model.SessionNew), // Approximate/Eventual
+				CorrelationID: replayCorrelation,
+				Reason:        "idempotent_replay", // Hint for client
+			})
+			return
+		}
+
+		// 5. Publish Event (Only if new)
+		evt := model.StartSessionEvent{
 			Type:          model.EventStartSession,
 			SessionID:     sessionID,
 			ServiceRef:    req.ServiceRef,
-			ProfileID:     profileSpec.Name,
+			ProfileID:     reqProfileID,
 			CorrelationID: correlationID,
 			RequestedAtUN: time.Now().Unix(),
 		}
 		if req.StartMs != nil {
-			ms := *req.StartMs
-			if ms < 0 {
-				ms = 0
-			}
-			// Safety Clamp: 24h
-			if ms > 86400000 {
-				ms = 86400000
-			}
-			event.StartMs = ms
+			evt.StartMs = *req.StartMs
 		}
 
-		if err := bus.Publish(r.Context(), string(model.EventStartSession), event); err != nil {
+		if err := bus.Publish(r.Context(), string(model.EventStartSession), evt); err != nil {
+			// If publish fails, we should probably delete the session?
+			// Or let it expire. Expiry is safer.
 			logger.Error().Err(err).Msg("failed to publish start event")
-			releaseLeases()
-			RespondError(w, r, http.StatusInternalServerError, ErrInternalServer, "failed to dispatch intent")
+			RecordV3Publish("session.start", "error")
+			RecordV3Intent(string(model.IntentTypeStreamStart), phaseLabel, "publish_error")
+			RespondError(w, r, http.StatusInternalServerError, ErrInternalServer, "failed to publish event")
 			return
 		}
+		RecordV3Publish("session.start", "ok")
+
+		// 6. Response
+		logger.Info().Msg("intent accepted")
+		RecordV3Intent(string(model.IntentTypeStreamStart), phaseLabel, "accepted")
+		writeJSON(w, http.StatusAccepted, &v3api.IntentResponse{
+			SessionID:     sessionID,
+			State:         string(model.SessionNew),
+			CorrelationID: correlationID,
+		})
+
 	case model.IntentTypeStreamStop:
 		// For STOP, we don't create a session record if it doesn't exist.
 		// We just publish the stop event. The worker/orchestrator handles the rest.
@@ -285,20 +346,24 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := bus.Publish(r.Context(), string(model.EventStopSession), event); err != nil {
 			logger.Error().Err(err).Msg("failed to publish stop event")
+			RecordV3Publish("session.stop", "error")
+			RecordV3Intent(string(model.IntentTypeStreamStop), "any", "publish_error")
 			RespondError(w, r, http.StatusInternalServerError, ErrInternalServer, "failed to dispatch intent")
 			return
 		}
-	}
+		RecordV3Publish("session.stop", "ok")
+		RecordV3Intent(string(model.IntentTypeStreamStop), "any", "accepted")
 
-	// 8. Respond Success (Accepted)
-	resp := map[string]string{
-		"sessionId": sessionID,
-		"status":    "accepted",
+		writeJSON(w, http.StatusAccepted, &v3api.IntentResponse{
+			SessionID:     sessionID,
+			State:         string(model.SessionStopped),
+			CorrelationID: correlationID,
+		})
+
+	default:
+		// Other intent types...
+		RespondError(w, r, http.StatusBadRequest, ErrInvalidInput, "unsupported intent type")
 	}
-	if correlationID != "" {
-		resp["correlationId"] = correlationID
-	}
-	writeJSON(w, http.StatusAccepted, resp)
 }
 
 // handleV3SessionsDebug dumps all sessions from the store (Admin only).
@@ -555,4 +620,13 @@ func parseContextSeconds(ctx map[string]string, key string) *float64 {
 		return nil
 	}
 	return &val
+}
+
+// ComputeIdemKey generates a deterministic SHA256 idempotency key.
+// It uses the canonical payload: "v1:<type>:<ref>:<profile>:<bucket>"
+// Secret is no longer used (Server-Side generation is inherently protected).
+func ComputeIdemKey(intentType model.IntentType, ref, profile, bucket string) string {
+	payload := fmt.Sprintf("v1:%s:%s:%s:%s", intentType, ref, profile, bucket)
+	hash := sha256.Sum256([]byte(payload))
+	return hex.EncodeToString(hash[:])
 }

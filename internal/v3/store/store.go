@@ -34,8 +34,9 @@ type Lease interface {
 type StateStore interface {
 	// --- Session CRUD ---
 	PutSession(ctx context.Context, s *model.SessionRecord) error
-	// PutSessionWithIdempotency writes a session and an idempotency key atomicity (in one transaction).
-	PutSessionWithIdempotency(ctx context.Context, s *model.SessionRecord, idemKey string, ttl time.Duration) error
+	// PutSessionWithIdempotency writes a session and an idempotency key atomicity/transactionally.
+	// If the idempotency key already exists, it returns the existing sessionID, exists=true, and no error.
+	PutSessionWithIdempotency(ctx context.Context, s *model.SessionRecord, idemKey string, ttl time.Duration) (existingID string, exists bool, err error)
 	// GetSession returns the session record. If not found, it returns (nil, nil).
 	// Callers must check for nil record before using it.
 	GetSession(ctx context.Context, id string) (*model.SessionRecord, error)

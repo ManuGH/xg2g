@@ -162,19 +162,27 @@ func (s *BadgerStore) DeleteSession(ctx context.Context, id string) error {
 	})
 }
 
-func (s *BadgerStore) PutSessionWithIdempotency(ctx context.Context, rec *model.SessionRecord, idemKey string, ttl time.Duration) error {
+func (s *BadgerStore) PutSessionWithIdempotency(ctx context.Context, rec *model.SessionRecord, idemKey string, ttl time.Duration) (string, bool, error) {
+	var existingID string
+	var exists bool
+
 	sessKey := []byte("sess:" + rec.SessionID)
 	sessBuf, err := json.Marshal(rec)
 	if err != nil {
-		return err
+		return "", false, err
 	}
 
-	return s.db.Update(func(txn *badger.Txn) error {
+	err = s.db.Update(func(txn *badger.Txn) error {
 		// Idempotency check
 		if idemKey != "" {
 			iKey := []byte("idem:" + idemKey)
-			if _, err := txn.Get(iKey); err == nil {
-				return ErrIdempotentReplay // Already exists
+			if item, err := txn.Get(iKey); err == nil {
+				// Found, check value
+				if val, err := item.ValueCopy(nil); err == nil {
+					existingID = string(val)
+					exists = true
+					return nil
+				}
 			} else if err != badger.ErrKeyNotFound {
 				return err
 			}
@@ -187,6 +195,7 @@ func (s *BadgerStore) PutSessionWithIdempotency(ctx context.Context, rec *model.
 		// Write Session
 		return txn.Set(sessKey, sessBuf)
 	})
+	return existingID, exists, err
 }
 
 func (s *BadgerStore) ListSessions(ctx context.Context) ([]*model.SessionRecord, error) {

@@ -27,6 +27,7 @@ type SpyStore struct {
 	writeCount int64
 	leaseCount int64
 	leases     map[string]string // key -> owner
+	idem       map[string]string // idemKey -> sessionID
 
 	// Configuration
 	PanicOnWrite bool // If true, any mutating call panics
@@ -49,9 +50,23 @@ func (s *SpyStore) PutSession(ctx context.Context, sr *model.SessionRecord) erro
 	s.IncWrite()
 	return nil
 }
-func (s *SpyStore) PutSessionWithIdempotency(ctx context.Context, sr *model.SessionRecord, idemKey string, ttl time.Duration) error {
+func (s *SpyStore) PutSessionWithIdempotency(ctx context.Context, sr *model.SessionRecord, idemKey string, ttl time.Duration) (string, bool, error) {
 	s.IncWrite()
-	return nil
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.idem == nil {
+		s.idem = make(map[string]string)
+	}
+
+	if idemKey != "" {
+		if id, ok := s.idem[idemKey]; ok {
+			// Simulate existing
+			return id, true, nil
+		}
+		s.idem[idemKey] = sr.SessionID
+	}
+	return "", false, nil
 }
 func (s *SpyStore) GetSession(ctx context.Context, id string) (*model.SessionRecord, error) {
 	// Return nil, nil is "not found"
@@ -167,7 +182,7 @@ func newTestServer(t *testing.T, spy *SpyStore) (testServer, testTokens) {
 	// Re-use parameterized constructor with default config
 	// TrustedProxies must TRUST the test runner (127.0.0.1) but NOT the public IP (8.8.8.8)
 	// to allow XFF spoofing tests to work correctly.
-	return newTestServerConfig(t, spy, func(cfg *config.AppConfig) {
+	return newTestServerConfig(t, spy, nil, func(cfg *config.AppConfig) {
 		cfg.TrustedProxies = "127.0.0.1,::1"
 	})
 }
@@ -180,7 +195,7 @@ func TestLANGuard_UntrustedProxy(t *testing.T) {
 	// We send XFF="8.8.8.8".
 	// Expectation: Middleware sees 8.8.8.8 -> REJECT (403).
 	t.Run("trusted_proxy_honors_xff", func(t *testing.T) {
-		srv, _ := newTestServerConfig(t, spy, func(cfg *config.AppConfig) {
+		srv, _ := newTestServerConfig(t, spy, nil, func(cfg *config.AppConfig) {
 			cfg.TrustedProxies = "127.0.0.1"
 		})
 		client := srv.ts.Client()
@@ -196,7 +211,7 @@ func TestLANGuard_UntrustedProxy(t *testing.T) {
 
 	// Case 2: TrustedProxies is EMPTY/Missing.
 	t.Run("untrusted_proxy_ignores_xff", func(t *testing.T) {
-		srv, _ := newTestServerConfig(t, spy, func(cfg *config.AppConfig) {
+		srv, _ := newTestServerConfig(t, spy, nil, func(cfg *config.AppConfig) {
 			cfg.TrustedProxies = "" // No proxies trusted
 		})
 		client := srv.ts.Client()
@@ -267,28 +282,6 @@ type mockSubscriber struct{}
 
 func (s *mockSubscriber) C() <-chan bus.Message { return make(chan bus.Message) }
 func (s *mockSubscriber) Close() error          { return nil }
-
-// ---- Test Harness ----
-
-type testServer struct {
-	ts  *httptest.Server
-	url string
-}
-
-type testTokens struct {
-	admin string
-	read  string
-	write string
-}
-
-func newTestServer(t *testing.T, spy *SpyStore) (testServer, testTokens) {
-	// Re-use parameterized constructor with default config
-	// TrustedProxies must TRUST the test runner (127.0.0.1) but NOT the public IP (8.8.8.8)
-	// to allow XFF spoofing tests to work correctly.
-	return newTestServerConfig(t, spy, nil, func(cfg *config.AppConfig) {
-		cfg.TrustedProxies = "127.0.0.1,::1"
-	})
-}
 
 // Updated signature to accept optional SpyBus (nil = create new)
 func newTestServerConfig(t *testing.T, spy *SpyStore, spyBus *SpyBus, fn func(*config.AppConfig)) (testServer, testTokens) {
@@ -522,38 +515,66 @@ func TestLANGuard_PublicEndpoints(t *testing.T) {
 }
 
 func TestRaceSafety_ParallelIntents(t *testing.T) {
-	spy := &SpyStore{}
-	srv, tok := newTestServer(t, spy)
+	// Phase 1: Legacy (API Leases ON)
+	t.Run("Phase1_Legacy_API_Locking", func(t *testing.T) {
+		spy := &SpyStore{}
+		spyBus := &SpyBus{}
+		srv, tok := newTestServerConfig(t, spy, spyBus, func(cfg *config.AppConfig) {
+			cfg.V3APILeases = true
+		})
+		runRaceTest(t, srv, tok, spy, spyBus, true)
+	})
+
+	// Phase 2: Worker Logic (API Leases OFF)
+	// Currently this will FAIL because implementation is missing (Store won't see API skip).
+	// But the test structure is ready.
+	t.Run("Phase2_Worker_Dedup", func(t *testing.T) {
+		spy := &SpyStore{}
+		spyBus := &SpyBus{}
+		srv, tok := newTestServerConfig(t, spy, spyBus, func(cfg *config.AppConfig) {
+			cfg.V3APILeases = false
+		})
+
+		// In Phase 2, we expect 2 Accepted (Dedup happens at Worker or Idempotency check).
+		// Since Idempotency isn't implemented yet, we essentially test that API strictly returns 202
+		// without checking locks.
+		runRaceTest(t, srv, tok, spy, spyBus, false)
+	})
+}
+
+func runRaceTest(t *testing.T, srv testServer, tok testTokens, spy *SpyStore, spyBus *SpyBus, phase1 bool) {
 	client := srv.ts.Client()
 
 	const n = 2
 	var wg sync.WaitGroup
 	wg.Add(n)
 
+	// Capture SessionIDs
+	sessionIDs := make([]string, n)
 	statuses := make([]int, n)
 	for i := 0; i < n; i++ {
 		go func(idx int) {
 			defer wg.Done()
-
-			// Use same serviceRef to trigger collision on LeaseKeyService
+			// Use same serviceRef to trigger collision
 			body := map[string]any{
 				"type":       "stream.start",
 				"profileID":  "auto",
 				"serviceRef": "1:0:19:132F:3EF:1:C00000:0:0:0:RACETEST",
 			}
-
 			resp := doReq(t, client, http.MethodPost, srv.url+"/api/v3/intents", body, tok.write, "127.0.0.1")
 			defer resp.Body.Close()
 			statuses[idx] = resp.StatusCode
+
+			// Parse response for SessionID
+			var respMap map[string]any
+			if err := json.NewDecoder(resp.Body).Decode(&respMap); err == nil {
+				if sid, ok := respMap["sessionId"].(string); ok {
+					sessionIDs[idx] = sid
+				}
+			}
 		}(i)
 	}
 	wg.Wait()
-
-	// Analysis
-	// One should win (202 Accepted)
-	// One should lose (409 Conflict OR 202 if idempotent logic handles it?)
-	// Our handler uses TryAcquireLease. If false -> 409 Conflict.
-	// So we expect 1x 202, 1x 409.
 
 	accepted := 0
 	conflict := 0
@@ -570,12 +591,34 @@ func TestRaceSafety_ParallelIntents(t *testing.T) {
 		}
 	}
 
-	if accepted != 1 {
-		t.Errorf("expected exactly 1 accepted request, got %d (statuses: %v)", accepted, statuses)
+	if phase1 {
+		// Phase 1: 1 Winner (202), 1 Loser (409)
+		if accepted != 1 {
+			t.Errorf("[Phase1] expected exactly 1 accepted, got %d (statuses: %v)", accepted, statuses)
+		}
+		if conflict != 1 {
+			t.Errorf("[Phase1] expected exactly 1 conflict, got %d (statuses: %v)", conflict, statuses)
+		}
+	} else {
+		// Phase 2: 2 Accepted (202). No Conflicts from API.
+		// Worker handles dedup downstream.
+		if accepted != 2 {
+			t.Errorf("[Phase2] expected 2 accepted (API non-blocking), got %d (statuses: %v)", accepted, statuses)
+		}
+		// Logic Check: SpyBus should see 1 event (because Atomic Idempotency suppressed the second one).
+		events := len(spyBus.Events())
+		if events != 1 {
+			t.Errorf("[Phase2] expected 1 bus events (atomic suppression), got %d", events)
+		}
+
+		// Confirm duplicate requests got SAME session ID (Idempotency)
+		if sessionIDs[0] == "" || sessionIDs[1] == "" {
+			t.Errorf("[Phase2] Failed to parse session IDs: %v", sessionIDs)
+		} else if sessionIDs[0] != sessionIDs[1] {
+			t.Errorf("[Phase2] Idempotency Failed. Expected identical sessionIDs, got: %s vs %s", sessionIDs[0], sessionIDs[1])
+		}
 	}
-	if conflict != 1 {
-		t.Errorf("expected exactly 1 conflict (loser), got %d (statuses: %v)", conflict, statuses)
-	}
+
 	if other > 0 {
 		t.Errorf("unexpected statuses: %v", statuses)
 	}

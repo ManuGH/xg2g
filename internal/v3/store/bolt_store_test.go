@@ -85,8 +85,12 @@ func TestBoltStore_PutSessionWithIdempotency(t *testing.T) {
 	}
 
 	// First time: Success
-	if err := store.PutSessionWithIdempotency(ctx, rec, "key-1", 100*time.Millisecond); err != nil {
+	_, exists, err := store.PutSessionWithIdempotency(ctx, rec, "key-1", 100*time.Millisecond)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if exists {
+		t.Error("expected exists=false for first write")
 	}
 
 	// Verify Idempotency exists
@@ -95,10 +99,18 @@ func TestBoltStore_PutSessionWithIdempotency(t *testing.T) {
 		t.Errorf("expected found=true, sid=sess-atomic-1, got %v, %v", ok, sid)
 	}
 
-	// Verify Replay Detection (Must-Fix)
-	err = store.PutSessionWithIdempotency(ctx, rec, "key-1", 100*time.Millisecond)
-	if err != ErrIdempotentReplay {
-		t.Errorf("expected ErrIdempotentReplay, got %v", err)
+	// Verify Replay Detection (Atomic Check-And-Set)
+	// Must not return error, but exists=true and existingID
+	rec2 := &model.SessionRecord{SessionID: "sess-atomic-2"} // Different ID
+	existingID, exists, err := store.PutSessionWithIdempotency(ctx, rec2, "key-1", 100*time.Millisecond)
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+	if !exists {
+		t.Error("expected exists=true for replay")
+	}
+	if existingID != "sess-atomic-1" {
+		t.Errorf("expected existingID=sess-atomic-1, got %s", existingID)
 	}
 
 	// Verify Expiry

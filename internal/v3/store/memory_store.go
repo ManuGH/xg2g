@@ -165,20 +165,31 @@ func (m *MemoryStore) PutSession(ctx context.Context, rec *model.SessionRecord) 
 	return nil
 }
 
-func (m *MemoryStore) PutSessionWithIdempotency(ctx context.Context, s *model.SessionRecord, idemKey string, ttl time.Duration) error {
+func (m *MemoryStore) PutSessionWithIdempotency(ctx context.Context, s *model.SessionRecord, idemKey string, ttl time.Duration) (string, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// 1. Write Session
+	// 1. Check Idempotency
+	if idemKey != "" {
+		if st, ok := m.idem[idemKey]; ok {
+			if time.Now().Before(st.exp) {
+				return st.sessionID, true, nil
+			}
+			// Expired: delete and proceed to overwrite
+			delete(m.idem, idemKey)
+		}
+	}
+
+	// 2. Write Session
 	cpy := *s
 	m.sessions[s.SessionID] = &cpy
 
-	// 2. Write Idempotency
+	// 3. Write Idempotency
 	if idemKey != "" {
 		deadline := time.Now().Add(ttl)
 		m.idem[idemKey] = idemState{sessionID: s.SessionID, exp: deadline}
 	}
-	return nil
+	return "", false, nil
 }
 
 func (m *MemoryStore) ScanSessions(ctx context.Context, fn func(*model.SessionRecord) error) error {
@@ -186,7 +197,14 @@ func (m *MemoryStore) ScanSessions(ctx context.Context, fn func(*model.SessionRe
 	m.mu.RLock()
 	snapshot := make([]*model.SessionRecord, 0, len(m.sessions))
 	for _, rec := range m.sessions {
-		cpy := *rec // Deep copy
+		cpy := *rec // Shallow copy struct
+		// Deep copy map
+		if rec.ContextData != nil {
+			cpy.ContextData = make(map[string]string, len(rec.ContextData))
+			for k, v := range rec.ContextData {
+				cpy.ContextData[k] = v
+			}
+		}
 		snapshot = append(snapshot, &cpy)
 	}
 	m.mu.RUnlock()
@@ -209,13 +227,18 @@ func (m *MemoryStore) ScanSessions(ctx context.Context, fn func(*model.SessionRe
 
 func (m *MemoryStore) GetSession(ctx context.Context, sessionID string) (*model.SessionRecord, error) {
 	m.mu.Lock()
+	defer m.mu.Unlock()
 	rec, ok := m.sessions[sessionID]
 	if !ok {
-		m.mu.Unlock()
 		return nil, nil
 	}
 	cpy := *rec
-	m.mu.Unlock()
+	if rec.ContextData != nil {
+		cpy.ContextData = make(map[string]string, len(rec.ContextData))
+		for k, v := range rec.ContextData {
+			cpy.ContextData[k] = v
+		}
+	}
 	return &cpy, nil
 }
 
@@ -256,6 +279,13 @@ func (m *MemoryStore) UpdateSession(ctx context.Context, id string, fn func(*mod
 	}
 	// Copy to work on
 	cpy := *rec
+	if rec.ContextData != nil {
+		cpy.ContextData = make(map[string]string, len(rec.ContextData))
+		for k, v := range rec.ContextData {
+			cpy.ContextData[k] = v
+		}
+	}
+
 	if err := fn(&cpy); err != nil {
 		return nil, err
 	}

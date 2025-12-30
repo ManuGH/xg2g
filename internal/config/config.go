@@ -215,10 +215,12 @@ type AppConfig struct {
 	FFmpegKillTimeout time.Duration
 
 	// HLS Config (Phase 8-5)
-	HLSRoot       string        // e.g. /var/lib/xg2g/v3-hls
-	DVRWindowSec  int           // DVR window duration in seconds (default: 2700 = 45 minutes)
-	V3IdleTimeout time.Duration // Stop v3 sessions after idle (0 disables)
-	V3APILeases   bool          // Feature Flag: If true, API acquires lease (Phase 1). If false, Worker does (Phase 2).
+	HLSRoot            string        // e.g. /var/lib/xg2g/v3-hls
+	DVRWindowSec       int           // DVR window duration in seconds (default: 2700 = 45 minutes)
+	V3IdleTimeout      time.Duration // Stop v3 sessions after idle (0 disables)
+	V3APILeases        bool          // Feature Flag: If true, API acquires lease (Phase 1). If false, Worker does (Phase 2).
+	IdemSecretCurrent  string        // DEPRECATED: No longer used by v3 idempotency (was XG2G_IDEM_SECRET)
+	IdemSecretPrevious string        // DEPRECATED: No longer used by v3 idempotency (was XG2G_IDEM_SECRET_PREV)
 
 	RateLimitEnabled   bool // Enable rate limiting
 	RateLimitGlobal    int  // Requests per second (global)
@@ -324,7 +326,7 @@ func (l *Loader) setDefaults(cfg *AppConfig) {
 	cfg.EPGSource = "per-service" // Default to per-service for backward compatibility
 
 	// Feature Flags
-	cfg.V3APILeases = true // Phase 1 Default: API manages leases
+	cfg.V3APILeases = false // Phase 2 Default: Worker manages leases
 	cfg.InstantTuneEnabled = false
 	cfg.ReadyStrict = false
 
@@ -730,6 +732,11 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	}
 
 	cfg.V3APILeases = ParseBool("XG2G_V3_API_LEASES", cfg.V3APILeases)
+
+	// Idempotency secrets are deprecated in v3 Phase 2 (SHA256 deterministic keys).
+	// We retain fields for config backward compatibility but do NOT enforce generation.
+	cfg.IdemSecretCurrent = ParseString("XG2G_IDEM_SECRET", "")
+	cfg.IdemSecretPrevious = ParseString("XG2G_IDEM_SECRET_PREV", "")
 
 	// Smart defaulting: If XG2G_V3_E2_HOST is not set, inherit from config or OWI_BASE
 	// This prevents Docker networking issues where "localhost" doesn't work

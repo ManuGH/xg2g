@@ -1,9 +1,16 @@
 # ADR-003: Lease Responsibility Centralization
 
-**Status**: Proposed
+**Status**: Accepted
 **Date**: 2025-12-30
 **Component**: API / Worker (v3)
 **Context**: Fixing "Owner Mismatch" & "Hardware Coupling" in Session Management
+
+## Implementation Reference (v3.0.5)
+
+- **Feature Flag**: `XG2G_V3_API_LEASES` (Phase 1=true, Phase 2=false)
+- **Secrets**: `XG2G_IDEM_SECRET` (Deprecated/Unused)
+- **Verification**: `internal/api/auth_strict_test.go` (`TestRaceSafety_ParallelIntents`)
+  - Proves: Atomic Idempotency (1 Event), Phase 2 Behavior (2x 202).
 
 ## 1. Context & Problem Statement
 
@@ -53,53 +60,59 @@ The API Layer will become an "Intent Enqueue" system, responsible only for Authe
         - If YES: Continue (refresh).
         - If NO: Mark Session as `REJECTED_BUSY` (or `ended` with `R_LEASE_BUSY`). Stop.
 2. **Tuner Lease**: Attempt to acquire `lease:tuner:{slot}`.
-3. **Dedup Lease**: Attempt to acquire `lease:service:{sRef}`.
-    - *If Busy*: Check if I am the owner (re-entrant/idempotent).
-        - If YES: Continue (refresh).
-        - If NO: Mark Session as `REJECTED_BUSY` (or `ended` with `R_LEASE_BUSY`). Stop.
-4. **Tuner Lease**: Attempt to acquire `lease:tuner:{slot}`.
     - *If Busy*: Mark Session as `REJECTED_NO_TUNER`. Stop.
-5. **Execute**: Start Transcoder/Pipeline.
-6. **Maintain**: Renew leases periodically.
-7. **Cleanup**: Release leases on stop/error.
+3. **Execute**: Start Transcoder/Pipeline.
+4. **Maintain**: Renew leases periodically.
+5. **Cleanup**: Release leases on stop/error.
 
-### 3.3 Idempotency Key Design
+### 3.3 Idempotency Key Design (Server-Side)
 
-To prevent "Thundering Herd" (multiple users starting same channel) without API-side locking, we rely on stable Idempotency Keys using **HMAC-SHA256**.
+To prevent "Thundering Herd" (multiple users starting same channel) without API-side locking, we rely on stable Idempotency Keys using **SHA256 (Canonical Payload)**.
 
-**Configuration**:
+**Policy**: The Server MUST generate the key based on request parameters.
+**Payload**: `v1:stream.start:<ServiceRef>:<Profile>:<Bucket>`
+**Security**: Keys are deterministic; no secret is required.
 
-- `XG2G_IDEM_SECRET`: Required. If missing, generate random on startup (but this breaks idempotency across restarts).
-- **Rotation**: To support rotation, the system should try verifying with `CurrentSecret`, then `PreviousSecret` (if configured). For *generation*, always use `CurrentSecret`.
+### 3. VOD & Idempotency Scope
 
-**Definition**:
+- **Scope**: The `/api/v3/intents` endpoint and its idempotency guarantees cover **Live Streams** and **Live-Catchup/Timeshift** only.
+- **Recordings**: Recording playback uses a separate flow (`/api/v3/recordings/...`) and does not participate in this intent/lease system.
+- **Key Generation**: Idempotency keys are derived from `SHA256("v1:stream.start:<ServiceRef>:<Profile>:<Bucket>")`.
+  - **Bucket**: "0" for Live, `StartMs` derivative for Catchup.
+  - **Secrets Deprecated**: `XG2G_IDEM_SECRET` is no longer used; keys are strictly server-side deterministic.
+
+### 4. Observability Gate (Phase 2 Check)
+
+Before removing the feature flag, the following metrics must indicate stability:
+
+- `v3_intents_total{outcome="conflict", mode="phase2"}` should be near zero (handled by Worker).
+- `v3_idempotent_replay_total` should accurately track retry volume.
+- `v3_worker_start_total{outcome="rejected_busy"}` should correlate with theoretical conflicts.
+
+To guarantee single-event publishing in Phase 2, `PutSessionWithIdempotency` MUST be atomic.
+
+**Signature**:
 
 ```go
-key = HMAC_SHA256(
-    secret, 
-    "v3_intent" + "|" + type + "|" + target_id + "|" + profileID + "|" + bucket
-)
+func (s *Store) PutSessionWithIdempotency(ctx, session, key, ttl) (existingID string, exists bool, err error)
 ```
 
-**Bucketing & Target**:
+**Workflow**:
 
-- **Live Streams**:
-  - `target_id = serviceRef`
-  - `bucket = "0"` (Global deduplication for Live).
-- **VOD**:
-  - `target_id = recordingID` (CRITICAL: Must distinguish assets).
-  - `bucket = floor(start_ms / 1000)` (1-second bucket).
-  - *Rationale*: A seek to T=10s vs T=10.5s should probably share a session, but T=60s is a new intent.
+1. Compute `IdempotencyKey`.
+2. Call `PutSessionWithIdempotency`.
+3. **If Exists**: Return `202 Accepted` with `sessionId=existingID`. **DO NOT Publish Event**.
+4. **If New**: Publish `StartSessionEvent`. Return `202 Accepted`.
 
-### 3.4 Busy Contract (Conflict Resolution)
+### 3.5 Busy Contract (Conflict Resolution)
 
 Since the API no longer checks locks, it **always defaults to 202 Accepted** (unless Payload Invalid 400).
 
-- **Scenario**: User A starts Channel X. User B starts Channel X (different profile/params -> different Idempotency Key).
+- **Scenario**: User A starts Channel X. User B starts Channel X (different params -> different Key).
 - **API**: Both return `202 Accepted`.
 - **Worker**:
-  - User A's Intent: Acquires Lock -> Starts.
-  - User B's Intent: Sees Lock Busy.
+  - Session A: Running.
+  - Session B: Terminal (`R_LEASE_BUSY`).
   - **Resolution**: Worker marks User B's Session as `ended` with reason `R_LEASE_BUSY` (or `REJECTED_BUSY`).
 - **UX**: Client B polls session state, sees "Ended/Busy" immediately.
 
@@ -148,5 +161,4 @@ We will use a feature flag `XG2G_V3_API_LEASES` to control the transition.
 ## 6. Security Implications
 
 - **Auth Strictness**: Reject paths (401/403) must strictly assume "No Side Effects" (checked by `auth_strict_test.go`).
-- **HMAC Secret**: Must be secured in env vars. Rotation support ensures long-term security.
 - **LAN Guard**: Relies on robust `X-Forwarded-For` parsing (Fixed in `lan_guard.go`).

@@ -118,11 +118,12 @@ func (b *BoltStore) DeleteSession(ctx context.Context, id string) error {
 	})
 }
 
-func (b *BoltStore) PutSessionWithIdempotency(ctx context.Context, s *model.SessionRecord, idemKey string, ttl time.Duration) error {
-	return b.db.Update(func(tx *bolt.Tx) error {
-		// 1. Session Check (Optional? Assuming separate check done or overwrite ok)
+func (b *BoltStore) PutSessionWithIdempotency(ctx context.Context, s *model.SessionRecord, idemKey string, ttl time.Duration) (string, bool, error) {
+	var existingID string
+	var exists bool
 
-		// 2. Idempotency Check (Guard)
+	err := b.db.Update(func(tx *bolt.Tx) error {
+		// 1. Idempotency Check (Guard)
 		if idemKey != "" {
 			bucket := tx.Bucket(bucketIdempo)
 			existing := bucket.Get([]byte(idemKey))
@@ -131,13 +132,15 @@ func (b *BoltStore) PutSessionWithIdempotency(ctx context.Context, s *model.Sess
 				if err := json.Unmarshal(existing, &rec); err == nil {
 					if time.Now().Before(rec.ExpiresAt) {
 						// Valid idempotency key exists.
-						return ErrIdempotentReplay
+						existingID = rec.SessionID
+						exists = true
+						return nil
 					}
 				}
 			}
 		}
 
-		// 3. Write Session
+		// 2. Write Session
 		sessionBytes, err := json.Marshal(s)
 		if err != nil {
 			return err
@@ -146,7 +149,7 @@ func (b *BoltStore) PutSessionWithIdempotency(ctx context.Context, s *model.Sess
 			return err
 		}
 
-		// 4. Write Idempotency
+		// 3. Write Idempotency
 		if idemKey != "" {
 			rec := idemRecord{
 				SessionID: s.SessionID,
@@ -163,6 +166,8 @@ func (b *BoltStore) PutSessionWithIdempotency(ctx context.Context, s *model.Sess
 
 		return nil
 	})
+
+	return existingID, exists, err
 }
 
 func (b *BoltStore) GetSession(ctx context.Context, id string) (*model.SessionRecord, error) {

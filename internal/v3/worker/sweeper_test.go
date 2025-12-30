@@ -25,8 +25,9 @@ func TestSweeper_StoreCleanup(t *testing.T) {
 	defer func() { _ = os.RemoveAll(hlsRoot) }()
 
 	orch := &Orchestrator{
-		Store:   st,
-		HLSRoot: hlsRoot,
+		Store:        st,
+		HLSRoot:      hlsRoot,
+		LeaseKeyFunc: func(e model.StartSessionEvent) string { return e.ServiceRef },
 	}
 
 	sweeper := &Sweeper{
@@ -73,8 +74,9 @@ func TestSweeper_FileCleanup(t *testing.T) {
 	defer func() { _ = os.RemoveAll(hlsRoot) }()
 
 	orch := &Orchestrator{
-		Store:   st,
-		HLSRoot: hlsRoot,
+		Store:        st,
+		HLSRoot:      hlsRoot,
+		LeaseKeyFunc: func(e model.StartSessionEvent) string { return e.ServiceRef },
 	}
 	sweeper := &Sweeper{
 		Orch: orch,
