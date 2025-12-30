@@ -453,26 +453,51 @@ func (s *Server) routes() http.Handler {
 		},
 	})
 
-	// HDHomeRun emulation endpoints (versionless - hardware emulation protocol)
-	if s.hdhr != nil {
-		r.Get("/discover.json", s.hdhr.HandleDiscover)
-		r.Get("/lineup_status.json", s.hdhr.HandleLineupStatus)
-		r.Get("/lineup.json", s.handleLineupJSON)
-		r.Post("/lineup.json", s.hdhr.HandleLineupPost)
-		r.HandleFunc("/lineup.post", s.hdhr.HandleLineupPost) // supports both GET and POST
-		r.Get("/device.xml", s.hdhr.HandleDeviceXML)
+	// 9. LAN Guard (Restrict discovery/legacy endpoints to private networks)
+	// trusted proxies are comma-separated in config
+	var trustedCIDRs []string
+	if s.cfg.TrustedProxies != "" {
+		trustedCIDRs = strings.Split(s.cfg.TrustedProxies, ",")
 	}
+	lanGuard, _ := middleware.NewLANGuard(middleware.LANGuardConfig{
+		TrustedProxyCIDRs: trustedCIDRs,
+	})
 
-	// XMLTV endpoint (versionless - standard format)
-	r.Method(http.MethodGet, "/xmltv.xml", http.HandlerFunc(s.handleXMLTV))
-	r.Method(http.MethodHead, "/xmltv.xml", http.HandlerFunc(s.handleXMLTV))
+	// PROTECTED: Discovery / Legacy Endpoints
+	r.Group(func(r chi.Router) {
+		r.Use(lanGuard.RequireLAN)
 
-	// Logo Proxy (Renamed from Picon to clean cache)
-	r.Get("/logos/{ref}.png", s.handlePicons)
-	r.Head("/logos/{ref}.png", s.handlePicons)
+		// HDHomeRun emulation endpoints (versionless - hardware emulation protocol)
+		if s.hdhr != nil {
+			r.Get("/discover.json", s.hdhr.HandleDiscover)
+			r.Get("/lineup_status.json", s.hdhr.HandleLineupStatus)
+			r.Get("/lineup.json", s.handleLineupJSON)
+			r.Post("/lineup.json", s.hdhr.HandleLineupPost)
+			r.HandleFunc("/lineup.post", s.hdhr.HandleLineupPost) // supports both GET and POST
+			r.Get("/device.xml", s.hdhr.HandleDeviceXML)
+		}
+
+		// XMLTV endpoint (versionless - standard format)
+		r.Method(http.MethodGet, "/xmltv.xml", http.HandlerFunc(s.handleXMLTV))
+		r.Method(http.MethodHead, "/xmltv.xml", http.HandlerFunc(s.handleXMLTV))
+
+		// Internal playlist export
+		r.Get("/playlist.m3u", func(w http.ResponseWriter, r *http.Request) {
+			path := filepath.Join(s.cfg.DataDir, s.snap.Runtime.PlaylistFilename)
+			http.ServeFile(w, r, path)
+		})
+	})
+
+	// PUBLIC (or Internal Auth): Logo Proxy (Needs access from Players)
+	// Some players (esp mobile) might come from outside if strict LAN isn't perfect,
+	// but for now we treat logos as discovery assets.
+	r.With(lanGuard.RequireLAN).Get("/logos/{ref}.png", s.handlePicons)
+	r.With(lanGuard.RequireLAN).Head("/logos/{ref}.png", s.handlePicons)
 
 	// Harden file server: disable directory listing and use a secure handler
-	r.Handle("/files/*", http.StripPrefix("/files/", s.secureFileServer()))
+	// NOTE: fileserver applies its own allowlist, but we add LAN guard for depth.
+	r.With(lanGuard.RequireLAN).Handle("/files/*", http.StripPrefix("/files/", s.secureFileServer()))
+
 	return r
 }
 

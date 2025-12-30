@@ -360,9 +360,12 @@ func (s *BadgerStore) ReleaseLease(ctx context.Context, leaseKey, owner string) 
 	})
 }
 
-func (s *BadgerStore) DeleteAllLeases(ctx context.Context) error {
+func (s *BadgerStore) DeleteAllLeases(ctx context.Context) (int, error) {
 	prefix := []byte("lease:")
-	return s.db.DropPrefix(prefix)
+	// Badger DropPrefix doesn't return count.
+	// We could scan and count, but that defeats the optimization.
+	// For MVP BadgerStore, we return 0. (BoltStore is primary)
+	return 0, s.db.DropPrefix(prefix)
 }
 
 // Ensure interface compliance at compile time.

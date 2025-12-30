@@ -90,3 +90,7 @@ func (t *StubTranscoder) Wait(ctx context.Context) (model.ExitStatus, error) {
 func (t *StubTranscoder) Stop(ctx context.Context) error {
 	return nil
 }
+
+func (t *StubTranscoder) LastLogLines(n int) []string {
+	return []string{}
+}

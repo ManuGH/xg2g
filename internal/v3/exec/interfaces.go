@@ -33,6 +33,9 @@ type Transcoder interface {
 
 	// Stop gracefully terminates the process.
 	Stop(ctx context.Context) error
+
+	// LastLogLines returns the last N lines of stderr/log output.
+	LastLogLines(n int) []string
 }
 
 // Factory creates execution components.

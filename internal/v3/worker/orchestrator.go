@@ -100,8 +100,10 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 	// Phase 8-2b: Flush Stale Leases (Restart Handling)
 	// Since we are the exclusive worker (using file-lock on DB), any existing leases are from dead processes.
 	// We must clear them to avoid "stiff arming" ourselves for TTL duration.
-	if err := o.Store.DeleteAllLeases(ctx); err != nil {
+	if count, err := o.Store.DeleteAllLeases(ctx); err != nil {
 		log.L().Error().Err(err).Msg("failed to flush old leases on startup, continuing but may block for TTL")
+	} else if count > 0 {
+		log.L().Info().Int("cleared_leases", count).Msg("startup: flushed stale leases")
 	}
 
 	// Phase 7B-3: Recovery Sweep on Startup
@@ -235,6 +237,21 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 			}
 		} else {
 			reason, detail = classifyReason(retErr)
+
+			// Fix 11-4: Dedup Race Condition (Robust)
+			// If we failed because the dedup lease is held, another goroutine is handling this session.
+			// We MUST NOT execute any side effects (Store Update, File Cleanup, Force Release).
+			// The winner owns the session and its resources. We are just a "replay" loser.
+			if reason == model.RLeaseBusy && detail == DedupLeaseHeldDetail {
+				logger.Debug().
+					Bool("dedup_replay", true).
+					Str("service_ref", e.ServiceRef).
+					Str("sid", e.SessionID).
+					Str("correlation_id", correlationID).
+					Msg("dedup busy replay: skipping finalizer side effects")
+				return // Critical: Early exit. No-Op.
+			}
+
 			if reason == model.RClientStop {
 				finalState = model.SessionStopped
 			}
@@ -343,7 +360,7 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 		}
 		if !ok {
 			// jobsTotal.WithLabelValues("lease_conflict", o.modeLabel()).Inc()
-			return newReasonError(model.RLeaseBusy, "dedup lease held", nil)
+			return newReasonError(model.RLeaseBusy, DedupLeaseHeldDetail, nil)
 		}
 		// Release Dedup Lock immediately after critical section (Transient)
 		// We only hold it to linearize setup for the same service.
@@ -508,37 +525,220 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 	// Ready Success Counter
 	readyOutcomeTotal.WithLabelValues("success", o.modeLabel()).Inc()
 
-	transcoder, err := o.ExecFactory.NewTranscoder()
-	if err != nil {
-		return newReasonError(model.RFFmpegStartFailed, "transcoder init failed", err)
-	}
-
 	// Fetch session to get ProfileSpec with DVR window configuration
-	profileSpec := session.Profile
+	initialProfileSpec := session.Profile
 	if vodMode {
-		profileSpec.VOD = true
+		initialProfileSpec.VOD = true
 	}
 
-	ffmpegStartTime := time.Now()
-	if err := transcoder.Start(hbCtx, e.SessionID, playbackSource, profileSpec, e.StartMs); err != nil {
-		return newReasonError(model.RFFmpegStartFailed, "", err)
-	}
-	o.recordTransition(model.SessionStarting, model.SessionPriming)
-	_, err = o.Store.UpdateSession(ctx, e.SessionID, func(r *model.SessionRecord) error {
-		if r.State.IsTerminal() || r.State == model.SessionStopping {
-			return fmt.Errorf("session state %s, aborting priming", r.State)
+	// Fix 12: Hybrid Repair Policy (Retry Loop)
+	// We allow 1 retry with "Repair Profile" (Transcode=true) if UpstreamCorrupt is detected.
+	currentProfileSpec := initialProfileSpec
+	repairAttempted := false
+
+	// Transcoder variable scoped outside to allow stop/cleanup in defer
+	var transcoder exec.Transcoder
+
+	for attempt := 1; attempt <= 2; attempt++ {
+		// Create fresh transcoder instance for each attempt (Runner is one-shot)
+		transcoder, err = o.ExecFactory.NewTranscoder()
+		if err != nil {
+			return newReasonError(model.RFFmpegStartFailed, "transcoder init failed", err)
 		}
-		r.State = model.SessionPriming
-		r.UpdatedAtUnix = time.Now().Unix()
-		return nil
-	})
-	if err != nil {
-		return err
+
+		ffmpegStartTime := time.Now()
+
+		// 2a. Start Transcoder
+		if err := transcoder.Start(hbCtx, e.SessionID, playbackSource, currentProfileSpec, e.StartMs); err != nil {
+			return newReasonError(model.RFFmpegStartFailed, "", err)
+		}
+
+		// Update State to PRIMING (only on first attempt or if needed)
+		if attempt == 1 {
+			o.recordTransition(model.SessionStarting, model.SessionPriming)
+			_, err = o.Store.UpdateSession(ctx, e.SessionID, func(r *model.SessionRecord) error {
+				if r.State.IsTerminal() || r.State == model.SessionStopping {
+					return fmt.Errorf("session state %s, aborting priming", r.State)
+				}
+				r.State = model.SessionPriming
+				r.UpdatedAtUnix = time.Now().Unix()
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+			if o.HLSRoot != "" {
+				sessionDir := filepath.Join(o.HLSRoot, "sessions", e.SessionID)
+				go observeFirstSegment(hbCtx, sessionDir, startTime, e.ProfileID, mode)
+			}
+		}
+
+		// Deferred Stop for this attempt's process
+		// We can't use a simple defer because we might restart in the loop.
+		// Instead, we manage stopping explicitly or via a closure if we exit.
+		// For safety, we register a cleanup that runs if we leave the function,
+		// but we must be able to "cancel" it if we loop.
+		// Simpler: use a local cleanup logic.
+
+		// 3. Wait for Playlist to be Servable
+		if o.HLSRoot != "" {
+			playlistPath := filepath.Join(o.HLSRoot, "sessions", e.SessionID, "index.m3u8")
+			playlistReadyTimeout := 30 * time.Second
+			// Reduce timeout for repair attempt (encoder should be fast)
+			if repairAttempted {
+				playlistReadyTimeout = 15 * time.Second
+			}
+			if vodMode {
+				playlistReadyTimeout = 2 * time.Minute
+			}
+			playlistPollInterval := 200 * time.Millisecond
+			playlistDeadline := time.Now().Add(playlistReadyTimeout)
+
+			logger.Info().
+				Str("session_id", e.SessionID).
+				Str("service_ref", e.ServiceRef).
+				Str("profile", currentProfileSpec.Name).
+				Bool("repair_mode", repairAttempted).
+				Dur("timeout", playlistReadyTimeout).
+				Msg("waiting for playlist to become ready")
+
+			playlistReady := false
+			var failReason model.ReasonCode
+			var failDetail string
+
+			for {
+				// Success condition
+				if info, statErr := os.Stat(playlistPath); statErr == nil && info.Size() > 0 {
+					if content, readErr := os.ReadFile(playlistPath); readErr == nil {
+						contentText := string(content)
+						if strings.Contains(contentText, "#EXTM3U") {
+							if vodMode && !strings.Contains(contentText, "#EXT-X-ENDLIST") {
+								// poll
+							} else {
+								segmentURI := firstSegmentFromPlaylist(content)
+								if vodMode {
+									if lastSegment := lastSegmentFromPlaylist(content); lastSegment != "" {
+										segmentURI = lastSegment
+									}
+								}
+								if segmentURI != "" {
+									segmentPath := filepath.Join(filepath.Dir(playlistPath), segmentURI)
+									if segInfo, segErr := os.Stat(segmentPath); segErr == nil && segInfo.Size() > 0 {
+										if !ttfpRecorded {
+											observeTTFP(e.ProfileID, mode, startTime)
+											ttfpRecorded = true
+										}
+										playlistReady = true
+										break
+									}
+								}
+							}
+						}
+					}
+				}
+
+				// Timeout condition
+				if time.Now().After(playlistDeadline) {
+					elapsedMs := time.Since(ffmpegStartTime).Milliseconds()
+
+					// DIAGNOSTIC
+					sessionDir := filepath.Dir(playlistPath)
+					entries, _ := os.ReadDir(sessionDir)
+					var dirSnapshot []string
+					for _, ent := range entries {
+						info, _ := ent.Info()
+						mod := "unknown"
+						if info != nil {
+							mod = info.ModTime().Format(time.TimeOnly)
+						}
+						dirSnapshot = append(dirSnapshot, fmt.Sprintf("%s (%d bytes, %s)", ent.Name(), info.Size(), mod))
+					}
+					ffmpegLogs := transcoder.LastLogLines(20)
+
+					reason := model.RPackagerFailed
+					reasonDetail := fmt.Sprintf("playlist not ready after %s", playlistReadyTimeout)
+
+					// CLASSIFICATION
+					if len(entries) == 0 {
+						corruptSignatures := []string{
+							"decode_slice_header error", "no frame!", "non-existing PPS", "mmco: unref short failure",
+						}
+						signatureFound := false
+						for _, line := range ffmpegLogs {
+							for _, sig := range corruptSignatures {
+								if strings.Contains(line, sig) {
+									signatureFound = true
+									break
+								}
+							}
+						}
+						if signatureFound {
+							reason = model.RUpstreamCorrupt
+							reasonDetail = "upstream stream corrupt or missing keyframes"
+						}
+					}
+
+					logger.Error().
+						Str("session_id", e.SessionID).
+						Str("service_ref", e.ServiceRef).
+						Strs("dir_snapshot", dirSnapshot).
+						Strs("ffmpeg_stderr", ffmpegLogs).
+						Int64("elapsed_ms", elapsedMs).
+						Str("classification", string(reason)).
+						Msg("playlist not ready after timeout")
+
+					failReason = reason
+					failDetail = reasonDetail
+					break // Exit poll loop, handle failure
+				}
+
+				select {
+				case <-hbCtx.Done():
+					// Ensure cleanup happens via defer in main function, but we need to stop *this* transcoder
+					return hbCtx.Err()
+				case <-time.After(playlistPollInterval):
+					// continue
+				}
+			}
+
+			if playlistReady {
+				break // Break retry loop, proceed to READY
+			}
+
+			// Failure Handling & Retry Logic
+			// 1. Stop current process
+			stopCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			_ = transcoder.Stop(stopCtx)
+			cancel()
+
+			// 2. Decide: Retry or Fail?
+			if !repairAttempted && failReason == model.RUpstreamCorrupt && !vodMode {
+				logger.Warn().
+					Str("session_id", e.SessionID).
+					Str("reason", string(failReason)).
+					Msg("initiating repair switch: enabling transcoding")
+
+				// Prepare Repair Profile
+				repairAttempted = true
+				currentProfileSpec = initialProfileSpec
+				currentProfileSpec.Name = "repair"
+				currentProfileSpec.TranscodeVideo = true
+				currentProfileSpec.VideoCRF = 24
+				currentProfileSpec.Deinterlace = false
+				currentProfileSpec.AudioBitrateK = 192
+
+				// Cleanup artifacts
+				o.cleanupFiles(e.SessionID)
+
+				continue // LOOP: Start new transcoder
+			}
+
+			// Terminal Failure
+			return newReasonError(failReason, failDetail, nil)
+		}
 	}
-	if o.HLSRoot != "" {
-		sessionDir := filepath.Join(o.HLSRoot, "sessions", e.SessionID)
-		go observeFirstSegment(hbCtx, sessionDir, startTime, e.ProfileID, mode)
-	}
+
+	// Defer unified final stop (only runs when function exits)
 	defer func() {
 		stopBaseCtx := context.Background()
 		if correlationID != "" {
@@ -549,107 +749,12 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 		_ = transcoder.Stop(stopCtx)
 	}()
 
-	// 3. Wait for Playlist to be Servable
-	// Fix: Gate READY transition on playlist existence to avoid race condition
-	// where clients see READY state but get 404 on playlist requests.
-	//
-	// Background: FFmpeg needs time to:
-	// - Connect to upstream and probe stream (~2s analyzeduration)
-	// - Generate first HLS segment (~2s hls_time)
-	// - Write index.m3u8.tmp and have sync loop promote it to index.m3u8 (~200ms poll)
-	//
-	// We wait for index.m3u8 (not .tmp) because that's what clients request.
-	// Skip this check if HLSRoot is not configured (e.g., in tests with stub factory)
-	if o.HLSRoot != "" {
-		playlistPath := filepath.Join(o.HLSRoot, "sessions", e.SessionID, "index.m3u8")
-		playlistReadyTimeout := 10 * time.Second
-		if vodMode {
-			playlistReadyTimeout = 2 * time.Minute
-		}
-		playlistPollInterval := 200 * time.Millisecond
-		playlistDeadline := time.Now().Add(playlistReadyTimeout)
-
-		logger.Info().
-			Str("session_id", e.SessionID).
-			Str("service_ref", e.ServiceRef).
-			Str("playlist_path", playlistPath).
-			Dur("timeout", playlistReadyTimeout).
-			Bool("vod_mode", vodMode).
-			Msg("waiting for playlist to become ready")
-
-		for {
-			// Success condition: file exists, non-empty, and contains #EXTM3U header
-			if info, statErr := os.Stat(playlistPath); statErr == nil && info.Size() > 0 {
-				// Sanity check: validate it's a real HLS manifest
-				// #nosec G304 -- playlistPath is constructed from trusted hlsDir, not user input
-				if content, readErr := os.ReadFile(playlistPath); readErr == nil {
-					contentText := string(content)
-					if strings.Contains(contentText, "#EXTM3U") {
-						if vodMode && !strings.Contains(contentText, "#EXT-X-ENDLIST") {
-							logger.Debug().
-								Str("session_id", e.SessionID).
-								Msg("VOD playlist missing ENDLIST, continuing to poll")
-						} else {
-							segmentURI := firstSegmentFromPlaylist(content)
-							if vodMode {
-								if lastSegment := lastSegmentFromPlaylist(content); lastSegment != "" {
-									segmentURI = lastSegment
-								}
-							}
-							if segmentURI != "" {
-								segmentPath := filepath.Join(filepath.Dir(playlistPath), segmentURI)
-								if segInfo, segErr := os.Stat(segmentPath); segErr == nil && segInfo.Size() > 0 {
-									if !ttfpRecorded {
-										observeTTFP(e.ProfileID, mode, startTime)
-										ttfpRecorded = true
-									}
-									break // Playlist + segment ready!
-								}
-							}
-							logger.Debug().
-								Str("session_id", e.SessionID).
-								Msg("playlist ready but segment not yet available, continuing to poll")
-						}
-					}
-					logger.Debug().
-						Str("session_id", e.SessionID).
-						Msg("playlist exists but missing #EXTM3U header, continuing to poll")
-				}
-			}
-
-			// Termination condition: timeout
-			if time.Now().After(playlistDeadline) {
-				elapsedMs := time.Since(ffmpegStartTime).Milliseconds()
-				logger.Error().
-					Str("session_id", e.SessionID).
-					Str("service_ref", e.ServiceRef).
-					Str("playlist_path", playlistPath).
-					Dur("timeout", playlistReadyTimeout).
-					Int64("elapsed_ms", elapsedMs).
-					Msg("playlist not ready after timeout - failing session")
-				return newReasonError(
-					model.RPackagerFailed,
-					fmt.Sprintf("playlist not ready after %s", playlistReadyTimeout),
-					nil,
-				)
-			}
-
-			// Termination condition: context cancelled
-			select {
-			case <-hbCtx.Done():
-				return hbCtx.Err()
-			case <-time.After(playlistPollInterval):
-				// Continue polling
-			}
-		}
-
-		playlistReadyDuration := time.Since(ffmpegStartTime)
-		logger.Info().
-			Str("session_id", e.SessionID).
-			Str("service_ref", e.ServiceRef).
-			Int64("elapsed_ms", playlistReadyDuration.Milliseconds()).
-			Msg("playlist ready - transitioning to READY state")
-	}
+	playlistReadyDuration := time.Since(startTime) // Approximate
+	logger.Info().
+		Str("session_id", e.SessionID).
+		Str("profile", currentProfileSpec.Name).
+		Int64("elapsed_ms", playlistReadyDuration.Milliseconds()).
+		Msg("playlist ready - transitioning to READY state")
 
 	// 4. Update READY
 	// Now it's safe to declare READY because playlist is servable

@@ -92,11 +92,12 @@ const (
 	RInvariantViolation ReasonCode = "R_INVARIANT_VIOLATION"
 	RFFmpegStartFailed  ReasonCode = "R_FFMPEG_START_FAILED"
 
-	RProcessEnded   ReasonCode = "R_PROCESS_ENDED"
-	RPackagerFailed ReasonCode = "R_PACKAGER_FAILED"
-	RCancelled      ReasonCode = "R_CANCELLED"
-	RIdleTimeout    ReasonCode = "R_IDLE_TIMEOUT"
-	RClientStop     ReasonCode = "R_CLIENT_STOP"
+	RProcessEnded    ReasonCode = "R_PROCESS_ENDED"
+	RPackagerFailed  ReasonCode = "R_PACKAGER_FAILED"
+	RCancelled       ReasonCode = "R_CANCELLED"
+	RIdleTimeout     ReasonCode = "R_IDLE_TIMEOUT"
+	RClientStop      ReasonCode = "R_CLIENT_STOP"
+	RUpstreamCorrupt ReasonCode = "R_UPSTREAM_CORRUPT" // Upstream source is corrupt or missing keyframes
 )
 
 // ProfileSpec is data-driven and future-proof (VisionOS, embedded clients, etc.).

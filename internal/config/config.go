@@ -24,16 +24,16 @@ type FileConfig struct {
 	DataDir       string `yaml:"dataDir,omitempty"`
 	LogLevel      string `yaml:"logLevel,omitempty"`
 
-	OpenWebIF        OpenWebIFConfig         `yaml:"openWebIF"`
-	Enigma2          Enigma2Config           `yaml:"enigma2,omitempty"`
-	Bouquets         []string                `yaml:"bouquets,omitempty"`
-	EPG              EPGConfig               `yaml:"epg"`
-	Recording        map[string]string       `yaml:"recording_roots,omitempty"`
+	OpenWebIF         OpenWebIFConfig         `yaml:"openWebIF"`
+	Enigma2           Enigma2Config           `yaml:"enigma2,omitempty"`
+	Bouquets          []string                `yaml:"bouquets,omitempty"`
+	EPG               EPGConfig               `yaml:"epg"`
+	Recording         map[string]string       `yaml:"recording_roots,omitempty"`
 	RecordingPlayback RecordingPlaybackConfig `yaml:"recording_playback,omitempty"`
-	API              APIConfig               `yaml:"api"`
-	Metrics          MetricsConfig           `yaml:"metrics,omitempty"`
-	Picons           PiconsConfig            `yaml:"picons,omitempty"`
-	HDHR             HDHRConfig              `yaml:"hdhr,omitempty"`
+	API               APIConfig               `yaml:"api"`
+	Metrics           MetricsConfig           `yaml:"metrics,omitempty"`
+	Picons            PiconsConfig            `yaml:"picons,omitempty"`
+	HDHR              HDHRConfig              `yaml:"hdhr,omitempty"`
 }
 
 // OpenWebIFConfig holds OpenWebIF client configuration
@@ -79,9 +79,9 @@ type EPGConfig struct {
 
 // RecordingPlaybackConfig holds recording playback configuration
 type RecordingPlaybackConfig struct {
-	PlaybackPolicy string                  `yaml:"playback_policy,omitempty"` // "auto" (default), "local_only", "receiver_only"
-	StableWindow   string                  `yaml:"stable_window,omitempty"`   // Duration string (e.g., "2s")
-	Mappings       []RecordingPathMapping  `yaml:"mappings,omitempty"`
+	PlaybackPolicy string                 `yaml:"playback_policy,omitempty"` // "auto" (default), "local_only", "receiver_only"
+	StableWindow   string                 `yaml:"stable_window,omitempty"`   // Duration string (e.g., "2s")
+	Mappings       []RecordingPathMapping `yaml:"mappings,omitempty"`
 }
 
 // RecordingPathMapping defines Receiver→Local path mapping
@@ -218,6 +218,7 @@ type AppConfig struct {
 	HLSRoot       string        // e.g. /var/lib/xg2g/v3-hls
 	DVRWindowSec  int           // DVR window duration in seconds (default: 2700 = 45 minutes)
 	V3IdleTimeout time.Duration // Stop v3 sessions after idle (0 disables)
+	V3APILeases   bool          // Feature Flag: If true, API acquires lease (Phase 1). If false, Worker does (Phase 2).
 
 	RateLimitEnabled   bool // Enable rate limiting
 	RateLimitGlobal    int  // Requests per second (global)
@@ -229,9 +230,9 @@ type AppConfig struct {
 	RecordingRoots map[string]string // ID -> Absolute Path (e.g. "hdd" -> "/media/hdd/movie")
 
 	// Recording Playback Configuration
-	RecordingPlaybackPolicy   string                   // "auto" (default), "local_only", "receiver_only"
-	RecordingStableWindow     time.Duration            // File stability check duration (default: 2s)
-	RecordingPathMappings     []RecordingPathMapping   // Receiver→Local path mappings
+	RecordingPlaybackPolicy string                 // "auto" (default), "local_only", "receiver_only"
+	RecordingStableWindow   time.Duration          // File stability check duration (default: 2s)
+	RecordingPathMappings   []RecordingPathMapping // Receiver→Local path mappings
 
 	// HDHomeRun Configuration
 	HDHR HDHRConfig // Reusing the struct as it fits well (using value types locally)
@@ -323,6 +324,7 @@ func (l *Loader) setDefaults(cfg *AppConfig) {
 	cfg.EPGSource = "per-service" // Default to per-service for backward compatibility
 
 	// Feature Flags
+	cfg.V3APILeases = true // Phase 1 Default: API manages leases
 	cfg.InstantTuneEnabled = false
 	cfg.ReadyStrict = false
 
@@ -726,6 +728,8 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	if len(cfg.TunerSlots) == 0 && cfg.WorkerMode == "virtual" {
 		cfg.TunerSlots = []int{0}
 	}
+
+	cfg.V3APILeases = ParseBool("XG2G_V3_API_LEASES", cfg.V3APILeases)
 
 	// Smart defaulting: If XG2G_V3_E2_HOST is not set, inherit from config or OWI_BASE
 	// This prevents Docker networking issues where "localhost" doesn't work

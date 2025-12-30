@@ -88,6 +88,13 @@ func (m *MemoryStore) TryAcquireLease(ctx context.Context, key, owner string, tt
 		ok = false
 	}
 	if ok {
+		if ls.owner == owner {
+			// Re-entry: Update expiration (renew)
+			ls.exp = deadline
+			m.leases[key] = ls
+			m.mu.Unlock()
+			return &memoryLease{store: m, key: key, owner: owner, ttl: ttl, exp: deadline}, true, nil
+		}
 		m.mu.Unlock()
 		return nil, false, nil
 	}
@@ -274,9 +281,10 @@ func (m *MemoryStore) UpdatePipeline(ctx context.Context, id string, fn func(*mo
 	return &cpy, nil
 }
 
-func (m *MemoryStore) DeleteAllLeases(ctx context.Context) error {
+func (m *MemoryStore) DeleteAllLeases(ctx context.Context) (int, error) {
 	m.mu.Lock()
+	count := len(m.leases)
 	m.leases = make(map[string]leaseState)
 	m.mu.Unlock()
-	return nil
+	return count, nil
 }

@@ -18,6 +18,7 @@ const (
 	ProfileSafari    = "safari"
 	ProfileSafariDVR = "safari_dvr"
 	ProfileCopy      = "copy"
+	ProfileRepair    = "repair" // High + Transcode (Rescue Mode)
 )
 
 var aliasMap = map[string]string{
@@ -105,6 +106,13 @@ func Resolve(requested, userAgent string, dvrWindowSec int) model.ProfileSpec {
 		if dvrWindowSec > 0 {
 			spec.DVRWindowSec = dvrWindowSec
 		}
+	case ProfileRepair:
+		// RESCUE MODE: Force Transcode to repair timestamps/GOP
+		spec.TranscodeVideo = true
+		spec.Deinterlace = false // Keep simple unless needed
+		spec.VideoCRF = 24       // Slightly lower qual for speed?
+		spec.VideoMaxWidth = 1280
+		spec.AudioBitrateK = 192 // Ensure audio is clean too
 	}
 
 	return spec

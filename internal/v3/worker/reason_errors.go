@@ -15,6 +15,8 @@ import (
 	"github.com/ManuGH/xg2g/internal/v3/model"
 )
 
+const DedupLeaseHeldDetail = "dedup lease held"
+
 type reasonError struct {
 	reason model.ReasonCode
 	detail string

@@ -367,7 +367,9 @@ func (b *BoltStore) TryAcquireLease(ctx context.Context, key, owner string, ttl 
 		if val != nil {
 			if err := json.Unmarshal(val, &rec); err == nil {
 				if now.Before(rec.ExpiresAt) && rec.Owner != owner {
-					// Lease held by someone else and valid
+					// Lease held by someone else
+					// DEBUG: Log mismatch
+					log.L().Debug().Str("key", key).Str("held_by", rec.Owner).Str("req_owner", owner).Msg("bolt: lease contention")
 					return nil
 				}
 				// If lease expired or owned by us, we take it/renew it
@@ -465,16 +467,19 @@ func (b *BoltStore) ReleaseLease(ctx context.Context, key, owner string) error {
 	})
 }
 
-func (b *BoltStore) DeleteAllLeases(ctx context.Context) error {
-	return b.db.Update(func(tx *bolt.Tx) error {
-		// Drop and Recreate bucket is fastest
-		if err := tx.DeleteBucket(bucketLeases); err != nil {
-			if errors.Is(err, bolt.ErrBucketNotFound) {
-				return nil
+func (b *BoltStore) DeleteAllLeases(ctx context.Context) (int, error) {
+	var count int
+	err := b.db.Update(func(tx *bolt.Tx) error {
+		bkt := tx.Bucket(bucketLeases)
+		if bkt != nil {
+			count = bkt.Stats().KeyN
+			// Drop and Recreate bucket is fastest
+			if err := tx.DeleteBucket(bucketLeases); err != nil {
+				return err
 			}
-			return err
 		}
 		_, err := tx.CreateBucket(bucketLeases)
 		return err
 	})
+	return count, err
 }

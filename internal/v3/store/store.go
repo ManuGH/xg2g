@@ -58,5 +58,5 @@ type StateStore interface {
 	TryAcquireLease(ctx context.Context, key, owner string, ttl time.Duration) (Lease, bool, error)
 	RenewLease(ctx context.Context, key, owner string, ttl time.Duration) (Lease, bool, error)
 	ReleaseLease(ctx context.Context, key, owner string) error
-	DeleteAllLeases(ctx context.Context) error
+	DeleteAllLeases(ctx context.Context) (int, error)
 }
