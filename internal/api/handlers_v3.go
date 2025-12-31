@@ -260,6 +260,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 			State:         model.SessionNew,
 			ServiceRef:    req.ServiceRef,
 			Profile:       profileSpec,
+			CorrelationID: correlationID,
 			CreatedAtUnix: time.Now().Unix(),
 			UpdatedAtUnix: time.Now().Unix(),
 			ContextData:   requestParams, // Store context params
@@ -294,9 +295,8 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 
 			writeJSON(w, http.StatusAccepted, &v3api.IntentResponse{
 				SessionID:     existingID,
-				State:         string(model.SessionNew), // Approximate/Eventual
+				Status:        "idempotent_replay",
 				CorrelationID: replayCorrelation,
-				Reason:        "idempotent_replay", // Hint for client
 			})
 			return
 		}
@@ -330,7 +330,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		RecordV3Intent(string(model.IntentTypeStreamStart), phaseLabel, "accepted")
 		writeJSON(w, http.StatusAccepted, &v3api.IntentResponse{
 			SessionID:     sessionID,
-			State:         string(model.SessionNew),
+			Status:        "accepted",
 			CorrelationID: correlationID,
 		})
 
@@ -356,7 +356,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 
 		writeJSON(w, http.StatusAccepted, &v3api.IntentResponse{
 			SessionID:     sessionID,
-			State:         string(model.SessionStopped),
+			Status:        "accepted",
 			CorrelationID: correlationID,
 		})
 

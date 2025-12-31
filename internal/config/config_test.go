@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -65,6 +67,8 @@ epg:
   maxConcurrency: 10
 api:
   token: test-token
+  tokenScopes:
+    - v3:read
 picons:
   baseUrl: http://picons.local
 `, customDataDir)
@@ -168,6 +172,123 @@ epg:
 
 	if cfg.OWIBase != "http://example.com" {
 		t.Errorf("expected OWIBase from file: http://example.com, got %s", cfg.OWIBase)
+	}
+}
+
+func TestWorkerEnvMergePreservesConfigValues(t *testing.T) {
+	loader := NewLoader("", "test")
+	cfg := AppConfig{}
+	loader.setDefaults(&cfg)
+
+	cfg.WorkerEnabled = true
+	cfg.WorkerMode = "virtual"
+	cfg.StoreBackend = "bolt"
+	cfg.StorePath = "/tmp/xg2g-store"
+	cfg.HLSRoot = "/tmp/xg2g-hls"
+	cfg.DVRWindowSec = 1234
+	cfg.V3IdleTimeout = 45 * time.Second
+	cfg.E2Host = "http://file-e2.local"
+	cfg.E2Timeout = 12 * time.Second
+	cfg.E2RespTimeout = 7 * time.Second
+	cfg.E2Retries = 5
+	cfg.E2RateLimit = 9
+	cfg.E2RateBurst = 11
+	cfg.E2UserAgent = "xg2g-test"
+	cfg.TunerSlots = []int{1, 3}
+
+	unsetEnv(t, "XG2G_V3_WORKER_ENABLED")
+	unsetEnv(t, "XG2G_V3_WORKER_MODE")
+	unsetEnv(t, "XG2G_V3_STORE_BACKEND")
+	unsetEnv(t, "XG2G_V3_STORE_PATH")
+	unsetEnv(t, "XG2G_V3_HLS_ROOT")
+	unsetEnv(t, "XG2G_V3_DVR_WINDOW")
+	unsetEnv(t, "XG2G_V3_IDLE_TIMEOUT")
+	unsetEnv(t, "XG2G_V3_E2_HOST")
+	unsetEnv(t, "XG2G_V3_E2_TIMEOUT")
+	unsetEnv(t, "XG2G_V3_E2_RESPONSE_HEADER_TIMEOUT")
+	unsetEnv(t, "XG2G_V3_E2_RETRIES")
+	unsetEnv(t, "XG2G_V3_E2_RATE_LIMIT")
+	unsetEnv(t, "XG2G_V3_E2_RATE_BURST")
+	unsetEnv(t, "XG2G_V3_E2_USER_AGENT")
+	unsetEnv(t, "XG2G_V3_TUNER_SLOTS")
+
+	loader.mergeEnvConfig(&cfg)
+
+	if cfg.WorkerMode != "virtual" {
+		t.Errorf("expected WorkerMode to remain %q, got %q", "virtual", cfg.WorkerMode)
+	}
+	if cfg.StoreBackend != "bolt" {
+		t.Errorf("expected StoreBackend to remain %q, got %q", "bolt", cfg.StoreBackend)
+	}
+	if cfg.StorePath != "/tmp/xg2g-store" {
+		t.Errorf("expected StorePath to remain %q, got %q", "/tmp/xg2g-store", cfg.StorePath)
+	}
+	if cfg.HLSRoot != "/tmp/xg2g-hls" {
+		t.Errorf("expected HLSRoot to remain %q, got %q", "/tmp/xg2g-hls", cfg.HLSRoot)
+	}
+	if cfg.DVRWindowSec != 1234 {
+		t.Errorf("expected DVRWindowSec to remain %d, got %d", 1234, cfg.DVRWindowSec)
+	}
+	if cfg.V3IdleTimeout != 45*time.Second {
+		t.Errorf("expected V3IdleTimeout to remain %v, got %v", 45*time.Second, cfg.V3IdleTimeout)
+	}
+	if cfg.E2Host != "http://file-e2.local" {
+		t.Errorf("expected E2Host to remain %q, got %q", "http://file-e2.local", cfg.E2Host)
+	}
+	if cfg.E2Timeout != 12*time.Second {
+		t.Errorf("expected E2Timeout to remain %v, got %v", 12*time.Second, cfg.E2Timeout)
+	}
+	if cfg.E2RespTimeout != 7*time.Second {
+		t.Errorf("expected E2RespTimeout to remain %v, got %v", 7*time.Second, cfg.E2RespTimeout)
+	}
+	if cfg.E2Retries != 5 {
+		t.Errorf("expected E2Retries to remain %d, got %d", 5, cfg.E2Retries)
+	}
+	if cfg.E2RateLimit != 9 {
+		t.Errorf("expected E2RateLimit to remain %d, got %d", 9, cfg.E2RateLimit)
+	}
+	if cfg.E2RateBurst != 11 {
+		t.Errorf("expected E2RateBurst to remain %d, got %d", 11, cfg.E2RateBurst)
+	}
+	if cfg.E2UserAgent != "xg2g-test" {
+		t.Errorf("expected E2UserAgent to remain %q, got %q", "xg2g-test", cfg.E2UserAgent)
+	}
+	if !reflect.DeepEqual(cfg.TunerSlots, []int{1, 3}) {
+		t.Errorf("expected TunerSlots to remain [1 3], got %v", cfg.TunerSlots)
+	}
+}
+
+func TestInvalidTunerSlotsEnvPreservesConfig(t *testing.T) {
+	loader := NewLoader("", "test")
+	cfg := AppConfig{}
+	loader.setDefaults(&cfg)
+
+	cfg.WorkerMode = "standard"
+	cfg.TunerSlots = []int{2, 4}
+
+	t.Setenv("XG2G_V3_TUNER_SLOTS", "bad-slots")
+
+	loader.mergeEnvConfig(&cfg)
+
+	if !reflect.DeepEqual(cfg.TunerSlots, []int{2, 4}) {
+		t.Errorf("expected TunerSlots to remain [2 4], got %v", cfg.TunerSlots)
+	}
+}
+
+func TestEmptyTunerSlotsEnvPreservesConfig(t *testing.T) {
+	loader := NewLoader("", "test")
+	cfg := AppConfig{}
+	loader.setDefaults(&cfg)
+
+	cfg.WorkerMode = "standard"
+	cfg.TunerSlots = []int{5}
+
+	t.Setenv("XG2G_V3_TUNER_SLOTS", "")
+
+	loader.mergeEnvConfig(&cfg)
+
+	if !reflect.DeepEqual(cfg.TunerSlots, []int{5}) {
+		t.Errorf("expected TunerSlots to remain [5], got %v", cfg.TunerSlots)
 	}
 }
 
@@ -624,62 +745,128 @@ epg:
 	// This is intentional - we only fixed EPG fields for now
 }
 
-func TestAuthAnonymousEnv(t *testing.T) {
-	// Set OWIBase for test clarity
-	t.Setenv("XG2G_OWI_BASE", "http://example.com")
+func TestParseScopedTokensFromEnv(t *testing.T) {
+	t.Run("json_format", func(t *testing.T) {
+		t.Setenv("XG2G_API_TOKENS", `[{"token":"read","scopes":["v3:read"]},{"token":"ops","scopes":["v3:read","v3:write"]}]`)
 
-	tests := []struct {
-		name    string
-		envKey  string
-		envVal  string
-		check   func(*AppConfig) bool
-		wantErr bool
-	}{
-		{
-			name:   "Auth Anonymous True",
-			envKey: "XG2G_AUTH_ANONYMOUS",
-			envVal: "true",
-			check: func(c *AppConfig) bool {
-				return c.AuthAnonymous == true
-			},
-		},
-		{
-			name:   "Auth Anonymous False",
-			envKey: "XG2G_AUTH_ANONYMOUS",
-			envVal: "false",
-			check: func(c *AppConfig) bool {
-				return c.AuthAnonymous == false
-			},
-		},
+		loader := NewLoader("", "test")
+		cfg, err := loader.Load()
+		if err != nil {
+			t.Fatalf("Load() failed: %v", err)
+		}
+		if len(cfg.APITokens) != 2 {
+			t.Fatalf("expected 2 scoped tokens, got %d", len(cfg.APITokens))
+		}
+		if cfg.APITokens[0].Token != "read" {
+			t.Fatalf("expected first token 'read', got %q", cfg.APITokens[0].Token)
+		}
+	})
+
+	t.Run("legacy_format", func(t *testing.T) {
+		t.Setenv("XG2G_API_TOKENS", "read=v3:read;ops=v3:read,v3:write")
+
+		loader := NewLoader("", "test")
+		cfg, err := loader.Load()
+		if err != nil {
+			t.Fatalf("Load() failed: %v", err)
+		}
+		if len(cfg.APITokens) != 2 {
+			t.Fatalf("expected 2 scoped tokens, got %d", len(cfg.APITokens))
+		}
+	})
+
+	t.Run("invalid_json_errors", func(t *testing.T) {
+		t.Setenv("XG2G_API_TOKENS", `[{"token":]`)
+
+		loader := NewLoader("", "test")
+		_, err := loader.Load()
+		if err == nil || !containsString(err.Error(), "XG2G_API_TOKENS") {
+			t.Fatalf("expected XG2G_API_TOKENS error, got %v", err)
+		}
+	})
+
+	t.Run("legacy_missing_scopes_errors", func(t *testing.T) {
+		t.Setenv("XG2G_API_TOKENS", "read=")
+
+		loader := NewLoader("", "test")
+		_, err := loader.Load()
+		if err == nil || !containsString(err.Error(), "XG2G_API_TOKENS") {
+			t.Fatalf("expected XG2G_API_TOKENS error, got %v", err)
+		}
+	})
+
+	t.Run("unknown_scope_errors", func(t *testing.T) {
+		t.Setenv("XG2G_API_TOKENS", `[{"token":"read","scopes":["v3:unknown"]}]`)
+
+		loader := NewLoader("", "test")
+		_, err := loader.Load()
+		if err == nil || !containsString(err.Error(), "unknown scope") {
+			t.Fatalf("expected unknown scope error, got %v", err)
+		}
+	})
+}
+
+func TestAPITokenRequiresScopes(t *testing.T) {
+	t.Setenv("XG2G_API_TOKEN", "token-only")
+
+	loader := NewLoader("", "test")
+	_, err := loader.Load()
+	if err == nil || !containsString(err.Error(), "APITokenScopes") {
+		t.Fatalf("expected APITokenScopes error, got %v", err)
+	}
+}
+
+func TestYAMLRejectsMissingTokenScopes(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	yamlContent := `
+api:
+  token: test-token
+`
+
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0o600); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.envKey != "" {
-				t.Setenv(tt.envKey, tt.envVal)
-			}
-			loader := NewLoader("", "test")
-			cfg, err := loader.Load()
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Load() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !tt.check(&cfg) {
-				t.Errorf("Config check failed for assertion")
-			}
-		})
+	loader := NewLoader(configPath, "test")
+	_, err := loader.Load()
+	if err == nil || !containsString(err.Error(), "APITokenScopes") {
+		t.Fatalf("expected APITokenScopes error, got %v", err)
 	}
+}
+
+func TestYAMLRejectsTokenWithoutScopes(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	yamlContent := `
+api:
+  tokens:
+    - token: extra-token
+`
+
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0o600); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	loader := NewLoader(configPath, "test")
+	_, err := loader.Load()
+	if err == nil || !containsString(err.Error(), "APITokens") {
+		t.Fatalf("expected APITokens error, got %v", err)
+	}
+}
+
+func unsetEnv(t *testing.T, key string) {
+	t.Helper()
+	if val, ok := os.LookupEnv(key); ok {
+		_ = os.Unsetenv(key)
+		t.Cleanup(func() { _ = os.Setenv(key, val) })
+		return
+	}
+	t.Cleanup(func() { _ = os.Unsetenv(key) })
 }
 
 func containsString(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && findSubstring(s, substr))
-}
-
-func findSubstring(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
+	return strings.Contains(s, substr)
 }

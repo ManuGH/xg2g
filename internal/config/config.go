@@ -7,6 +7,7 @@ package config
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/log"
 	"gopkg.in/yaml.v3"
 )
 
@@ -93,7 +95,7 @@ type RecordingPathMapping struct {
 // ScopedToken defines a token and its associated scopes.
 type ScopedToken struct {
 	Token  string   `yaml:"token"`
-	Scopes []string `yaml:"scopes,omitempty"`
+	Scopes []string `yaml:"scopes"`
 }
 
 // APIConfig holds API server configuration
@@ -141,32 +143,33 @@ type HDHRConfig struct {
 
 // AppConfig holds all configuration for the application
 type AppConfig struct {
-	Version         string
-	ConfigVersion   string
-	ConfigStrict    bool
-	DataDir         string
-	LogLevel        string
-	LogService      string
-	OWIBase         string
-	OWIUsername     string // Optional: HTTP Basic Auth username
-	OWIPassword     string // Optional: HTTP Basic Auth password
-	Bouquet         string // Comma-separated list of bouquets (empty = all)
-	XMLTVPath       string
-	PiconBase       string
-	FuzzyMax        int
-	StreamPort      int
-	UseWebIFStreams bool
-	APIToken        string // Optional: for securing API endpoints (e.g., /api/v3/*)
-	APITokenScopes  []string
-	APITokens       []ScopedToken
-	APIListenAddr   string // Optional: API listen address (if set via config.yaml)
-	TrustedProxies  string // Comma-separated list of trusted CIDRs
-	MetricsEnabled  bool   // Optional: enable Prometheus metrics server
-	MetricsAddr     string // Optional: metrics listen address (if enabled)
-	OWITimeout      time.Duration
-	OWIRetries      int
-	OWIBackoff      time.Duration
-	OWIMaxBackoff   time.Duration
+	Version           string
+	ConfigVersion     string
+	ConfigStrict      bool
+	DataDir           string
+	LogLevel          string
+	LogService        string
+	OWIBase           string
+	OWIUsername       string // Optional: HTTP Basic Auth username
+	OWIPassword       string // Optional: HTTP Basic Auth password
+	Bouquet           string // Comma-separated list of bouquets (empty = all)
+	XMLTVPath         string
+	PiconBase         string
+	FuzzyMax          int
+	StreamPort        int
+	UseWebIFStreams   bool
+	APIToken          string // Optional: for securing API endpoints (e.g., /api/v3/*)
+	APITokenScopes    []string
+	APITokens         []ScopedToken
+	apiTokensParseErr error
+	APIListenAddr     string // Optional: API listen address (if set via config.yaml)
+	TrustedProxies    string // Comma-separated list of trusted CIDRs
+	MetricsEnabled    bool   // Optional: enable Prometheus metrics server
+	MetricsAddr       string // Optional: metrics listen address (if enabled)
+	OWITimeout        time.Duration
+	OWIRetries        int
+	OWIBackoff        time.Duration
+	OWIMaxBackoff     time.Duration
 
 	// EPG Configuration
 	EPGEnabled        bool
@@ -185,9 +188,8 @@ type AppConfig struct {
 	// TODO(cleanup): Remove InstantTuneEnabled - feature flag exists but no implementation
 	InstantTuneEnabled bool // Enable "Instant Tune" stream pre-warming (UNIMPLEMENTED)
 
-	AuthAnonymous        bool   // Allow anonymous access if no token is configured (Fail-Open override)
 	// TODO(cleanup): Review ReadyStrict usage - only used in tests, not in actual health check logic
-	ReadyStrict          bool   // Enable strict readiness checks (check upstream availability)
+	ReadyStrict bool // Enable strict readiness checks (check upstream availability)
 	// TODO(cleanup): Remove ShadowIntentsEnabled - fully implemented but not integrated into API flow
 	ShadowIntentsEnabled bool   // v3 Shadow Canary: mirror intents to v3 API (default OFF, UNUSED)
 	ShadowTarget         string // v3 Shadow Canary: target URL (e.g. http://localhost:8080/api/v3/intents)
@@ -222,7 +224,7 @@ type AppConfig struct {
 	DVRWindowSec  int           // DVR window duration in seconds (default: 2700 = 45 minutes)
 	V3IdleTimeout time.Duration // Stop v3 sessions after idle (0 disables)
 	// TODO(v3.2): Remove V3APILeases - Phase 1 legacy code, default is Phase 2 (false) since ADR-003
-	V3APILeases   bool          // Feature Flag: If true, API acquires lease (Phase 1). If false, Worker does (Phase 2).
+	V3APILeases bool // Feature Flag: If true, API acquires lease (Phase 1). If false, Worker does (Phase 2).
 
 	RateLimitEnabled   bool // Enable rate limiting
 	RateLimitGlobal    int  // Requests per second (global)
@@ -306,7 +308,7 @@ func (l *Loader) setDefaults(cfg *AppConfig) {
 	cfg.FuzzyMax = 2
 	cfg.LogLevel = "info"
 	cfg.ConfigVersion = V3ConfigVersion
-	cfg.ConfigStrict = false
+	cfg.ConfigStrict = true
 
 	// Enigma2 (v3) defaults
 	cfg.E2TuneTimeout = 10 * time.Second
@@ -318,6 +320,14 @@ func (l *Loader) setDefaults(cfg *AppConfig) {
 	cfg.E2RateLimit = 10
 	cfg.E2RateBurst = 20
 	cfg.E2UserAgent = "xg2g-v3"
+	cfg.WorkerMode = "standard"
+	cfg.StoreBackend = "memory"
+	cfg.StorePath = "/var/lib/xg2g/v3-store"
+	cfg.FFmpegBin = "ffmpeg"
+	cfg.FFmpegKillTimeout = 5 * time.Second
+	cfg.HLSRoot = "/var/lib/xg2g/v3-hls"
+	cfg.DVRWindowSec = 2700
+	cfg.V3IdleTimeout = 2 * time.Minute
 
 	// EPG defaults - enabled by default for complete out-of-the-box experience
 	cfg.EPGEnabled = true
@@ -671,11 +681,7 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 		cfg.OWIMaxBackoff = time.Duration(ms) * time.Millisecond
 	}
 
-	if _, ok := os.LookupEnv("XG2G_V3_CONFIG_STRICT"); ok {
-		cfg.ConfigStrict = ParseBool("XG2G_V3_CONFIG_STRICT", cfg.ConfigStrict)
-	} else {
-		cfg.ConfigStrict = true
-	}
+	cfg.ConfigStrict = ParseBool("XG2G_V3_CONFIG_STRICT", cfg.ConfigStrict)
 
 	// Bouquet
 	cfg.Bouquet = ParseString("XG2G_BOUQUET", cfg.Bouquet)
@@ -693,7 +699,11 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	// API
 	cfg.APIToken = ParseString("XG2G_API_TOKEN", cfg.APIToken)
 	cfg.APITokenScopes = parseCommaSeparated(ParseString("XG2G_API_TOKEN_SCOPES", ""), cfg.APITokenScopes)
-	cfg.APITokens = parseScopedTokens(ParseString("XG2G_API_TOKENS", ""), cfg.APITokens)
+	if tokens, err := parseScopedTokens(ParseString("XG2G_API_TOKENS", ""), cfg.APITokens); err != nil {
+		cfg.apiTokensParseErr = err
+	} else {
+		cfg.APITokens = tokens
+	}
 	cfg.APIListenAddr = ParseString("XG2G_LISTEN", cfg.APIListenAddr)
 
 	// Metrics
@@ -715,18 +725,30 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	// Feature Flags
 	cfg.InstantTuneEnabled = ParseBool("XG2G_INSTANT_TUNE", cfg.InstantTuneEnabled)
 
-	cfg.AuthAnonymous = ParseBool("XG2G_AUTH_ANONYMOUS", cfg.AuthAnonymous)
 	cfg.ReadyStrict = ParseBool("XG2G_READY_STRICT", cfg.ReadyStrict)
 	cfg.ShadowIntentsEnabled = ParseBool("XG2G_V3_SHADOW_INTENTS", cfg.ShadowIntentsEnabled)
 	cfg.ShadowTarget = ParseString("XG2G_V3_SHADOW_TARGET", cfg.ShadowTarget)
 
 	cfg.WorkerEnabled = ParseBool("XG2G_V3_WORKER_ENABLED", cfg.WorkerEnabled)
-	cfg.WorkerMode = ParseString("XG2G_V3_WORKER_MODE", "standard")
-	cfg.StoreBackend = ParseString("XG2G_V3_STORE_BACKEND", "memory")
-	cfg.StorePath = ParseString("XG2G_V3_STORE_PATH", "/var/lib/xg2g/v3-store")
+	cfg.WorkerMode = ParseString("XG2G_V3_WORKER_MODE", cfg.WorkerMode)
+	cfg.StoreBackend = ParseString("XG2G_V3_STORE_BACKEND", cfg.StoreBackend)
+	cfg.StorePath = ParseString("XG2G_V3_STORE_PATH", cfg.StorePath)
 
-	if slots, err := ParseTunerSlots(os.Getenv("XG2G_V3_TUNER_SLOTS")); err == nil {
-		cfg.TunerSlots = slots
+	if rawSlots, ok := os.LookupEnv("XG2G_V3_TUNER_SLOTS"); ok {
+		logger := log.WithComponent("config")
+		if strings.TrimSpace(rawSlots) == "" {
+			logger.Warn().
+				Str("key", "XG2G_V3_TUNER_SLOTS").
+				Msg("empty tuner slots, keeping existing config")
+		} else if slots, err := ParseTunerSlots(rawSlots); err == nil {
+			cfg.TunerSlots = slots
+		} else {
+			logger.Warn().
+				Str("key", "XG2G_V3_TUNER_SLOTS").
+				Str("value", rawSlots).
+				Err(err).
+				Msg("invalid tuner slots, keeping existing config")
+		}
 	}
 	// Defaulting Rule: Virtual Mode defaults to [0] if empty
 	if len(cfg.TunerSlots) == 0 && cfg.WorkerMode == "virtual" {
@@ -765,12 +787,12 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 		cfg.E2Password = v
 	}
 
-	cfg.FFmpegBin = ParseString("XG2G_V3_FFMPEG_BIN", "ffmpeg")
-	cfg.FFmpegKillTimeout = ParseDuration("XG2G_V3_FFMPEG_KILL_TIMEOUT", 5*time.Second)
+	cfg.FFmpegBin = ParseString("XG2G_V3_FFMPEG_BIN", cfg.FFmpegBin)
+	cfg.FFmpegKillTimeout = ParseDuration("XG2G_V3_FFMPEG_KILL_TIMEOUT", cfg.FFmpegKillTimeout)
 
-	cfg.HLSRoot = ParseString("XG2G_V3_HLS_ROOT", "/var/lib/xg2g/v3-hls")
-	cfg.DVRWindowSec = ParseInt("XG2G_V3_DVR_WINDOW", 2700) // Default: 45 minutes
-	cfg.V3IdleTimeout = ParseDuration("XG2G_V3_IDLE_TIMEOUT", 2*time.Minute)
+	cfg.HLSRoot = ParseString("XG2G_V3_HLS_ROOT", cfg.HLSRoot)
+	cfg.DVRWindowSec = ParseInt("XG2G_V3_DVR_WINDOW", cfg.DVRWindowSec) // Default: 45 minutes
+	cfg.V3IdleTimeout = ParseDuration("XG2G_V3_IDLE_TIMEOUT", cfg.V3IdleTimeout)
 
 	// Rate Limiting
 	cfg.RateLimitEnabled = ParseBool("XG2G_RATELIMIT", cfg.RateLimitEnabled)
@@ -872,13 +894,75 @@ func parseRecordingMappings(envVal string, defaults []RecordingPathMapping) []Re
 	return out
 }
 
-// Helper to parse scoped tokens: "token=scopes;token2=scopes2"
-func parseScopedTokens(envVal string, defaults []ScopedToken) []ScopedToken {
-	if strings.TrimSpace(envVal) == "" {
-		return defaults
+// Helper to parse scoped tokens from XG2G_API_TOKENS.
+// JSON array format is canonical; legacy "token=scopes;token2=scopes2" remains supported.
+func parseScopedTokens(envVal string, defaults []ScopedToken) ([]ScopedToken, error) {
+	trimmed := strings.TrimSpace(envVal)
+	if trimmed == "" {
+		return defaults, nil
 	}
-	entries := strings.Split(envVal, ";")
+	if strings.HasPrefix(trimmed, "[") {
+		return parseScopedTokensJSON(trimmed)
+	}
+	if strings.HasPrefix(trimmed, "{") {
+		return nil, fmt.Errorf("XG2G_API_TOKENS JSON must be an array of objects")
+	}
+
+	logger := log.WithComponent("config")
+	logger.Warn().
+		Str("key", "XG2G_API_TOKENS").
+		Msg("legacy token format detected; JSON array is recommended")
+	return parseScopedTokensLegacy(trimmed)
+}
+
+type scopedTokenJSON struct {
+	Token  string   `json:"token"`
+	Scopes []string `json:"scopes"`
+}
+
+func parseScopedTokensJSON(raw string) ([]ScopedToken, error) {
+	var entries []scopedTokenJSON
+	if err := json.Unmarshal([]byte(raw), &entries); err != nil {
+		return nil, fmt.Errorf("XG2G_API_TOKENS JSON parse failed: %w", err)
+	}
+	if len(entries) == 0 {
+		return nil, fmt.Errorf("XG2G_API_TOKENS JSON array is empty")
+	}
+	seen := make(map[string]struct{}, len(entries))
+	out := make([]ScopedToken, 0, len(entries))
+	for _, entry := range entries {
+		token := strings.TrimSpace(entry.Token)
+		if token == "" {
+			return nil, fmt.Errorf("XG2G_API_TOKENS token is empty")
+		}
+		if _, ok := seen[token]; ok {
+			return nil, fmt.Errorf("XG2G_API_TOKENS duplicate token %q", token)
+		}
+		seen[token] = struct{}{}
+
+		scopes := make([]string, 0, len(entry.Scopes))
+		for _, scope := range entry.Scopes {
+			scope = strings.TrimSpace(scope)
+			if scope == "" {
+				return nil, fmt.Errorf("XG2G_API_TOKENS scopes must not be empty for token %q", token)
+			}
+			scopes = append(scopes, scope)
+		}
+		if len(scopes) == 0 {
+			return nil, fmt.Errorf("XG2G_API_TOKENS scopes must be set for token %q", token)
+		}
+		out = append(out, ScopedToken{
+			Token:  token,
+			Scopes: scopes,
+		})
+	}
+	return out, nil
+}
+
+func parseScopedTokensLegacy(raw string) ([]ScopedToken, error) {
+	entries := strings.Split(raw, ";")
 	var out []ScopedToken
+	seen := make(map[string]struct{}, len(entries))
 	for _, entry := range entries {
 		entry = strings.TrimSpace(entry)
 		if entry == "" {
@@ -886,22 +970,33 @@ func parseScopedTokens(envVal string, defaults []ScopedToken) []ScopedToken {
 		}
 		kv := strings.SplitN(entry, "=", 2)
 		if len(kv) != 2 {
-			continue
+			return nil, fmt.Errorf("XG2G_API_TOKENS legacy entry must be token=scopes: %q", entry)
 		}
 		token := strings.TrimSpace(kv[0])
-		scopes := strings.TrimSpace(kv[1])
+		scopesRaw := strings.TrimSpace(kv[1])
 		if token == "" {
-			continue
+			return nil, fmt.Errorf("XG2G_API_TOKENS token is empty")
+		}
+		if _, ok := seen[token]; ok {
+			return nil, fmt.Errorf("XG2G_API_TOKENS duplicate token %q", token)
+		}
+		seen[token] = struct{}{}
+		if scopesRaw == "" {
+			return nil, fmt.Errorf("XG2G_API_TOKENS scopes must be set for token %q", token)
+		}
+		scopes := parseCommaSeparated(scopesRaw, nil)
+		if len(scopes) == 0 {
+			return nil, fmt.Errorf("XG2G_API_TOKENS scopes must be set for token %q", token)
 		}
 		out = append(out, ScopedToken{
 			Token:  token,
-			Scopes: parseCommaSeparated(scopes, nil),
+			Scopes: scopes,
 		})
 	}
 	if len(out) == 0 {
-		return defaults
+		return nil, fmt.Errorf("XG2G_API_TOKENS has no valid token entries")
 	}
-	return out
+	return out, nil
 }
 
 // Helper to parse comma-separated list

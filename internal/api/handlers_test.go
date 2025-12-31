@@ -262,52 +262,14 @@ func TestHandler(t *testing.T) {
 
 // Obsolete tests removed (TestSetConfigHolder, TestSetAuditLogger, TestHandleStatusPlaceholder, TestNewRouter)
 
-// checkFile Tests
-
-func TestCheckFile_RegularFile(t *testing.T) {
-	tmpDir := t.TempDir()
-	filePath := filepath.Join(tmpDir, "test.txt")
-	require.NoError(t, os.WriteFile(filePath, []byte("test content"), 0600))
-
-	result := checkFile(context.Background(), filePath)
-	assert.True(t, result)
-}
-
-func TestCheckFile_Directory(t *testing.T) {
-	tmpDir := t.TempDir()
-	result := checkFile(context.Background(), tmpDir)
-	assert.False(t, result)
-}
-
-func TestCheckFile_NotExist(t *testing.T) {
-	result := checkFile(context.Background(), "/nonexistent/file.txt")
-	assert.False(t, result)
-}
-
-func TestCheckFile_NoPermission(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("skipping test running as root")
-	}
-	tmpDir := t.TempDir()
-	filePath := filepath.Join(tmpDir, "restricted.txt")
-	require.NoError(t, os.WriteFile(filePath, []byte("test"), 0000))
-
-	// Clean up permissions after test
-	t.Cleanup(func() {
-		_ = os.Chmod(filePath, 0600)
-	})
-
-	result := checkFile(context.Background(), filePath)
-	assert.False(t, result)
-}
-
 // API Routes Tests
 
 func TestRegisterRoutes_StatusEndpoint(t *testing.T) {
 	cfg := config.AppConfig{
-		APIToken: "test-token",
-		Version:  "3.0.0",
-		DataDir:  t.TempDir(),
+		APIToken:       "test-token",
+		APITokenScopes: []string{string(ScopeV3Read)},
+		Version:        "3.0.0",
+		DataDir:        t.TempDir(),
 	}
 	s := New(cfg, nil)
 	s.SetStatus(jobs.Status{

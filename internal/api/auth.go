@@ -24,17 +24,11 @@ type ctxPrincipalKey struct{}
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cfg := s.GetConfig()
-		authAnon := cfg.AuthAnonymous
 		hasTokens := cfg.APIToken != "" || len(cfg.APITokens) > 0
 
 		if !hasTokens {
-			if authAnon {
-				// Auth Explicitly Disabled
-				next.ServeHTTP(w, r)
-				return
-			}
-			// Fail-Closed (Default)
-			log.FromContext(r.Context()).Error().Str("event", "auth.fail_closed").Msg("No API tokens configured and XG2G_AUTH_ANONYMOUS!=true. Denying access.")
+			// Fail-Closed: token-only access
+			log.FromContext(r.Context()).Error().Str("event", "auth.fail_closed").Msg("No API tokens configured. Denying access.")
 			RespondError(w, r, http.StatusUnauthorized, ErrUnauthorized)
 			return
 		}
@@ -65,18 +59,9 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// setupValidateMiddleware enforces admin auth when tokens are configured, but
-// allows validation during initial setup when no tokens exist yet.
+// setupValidateMiddleware enforces admin auth for setup validation.
 func (s *Server) setupValidateMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cfg := s.GetConfig()
-		hasTokens := cfg.APIToken != "" || len(cfg.APITokens) > 0
-		if hasTokens {
-			s.authMiddleware(s.scopeMiddleware(ScopeV3Admin)(next)).ServeHTTP(w, r)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
+	return s.authMiddleware(s.scopeMiddleware(ScopeV3Admin)(next))
 }
 
 // CreateSession creates a secure HTTP-only session cookie exchange for the provided Bearer token.
@@ -91,17 +76,9 @@ func (s *Server) CreateSession(w http.ResponseWriter, r *http.Request) {
 	// No implicit fallback; token must be presented.
 	cfg := s.GetConfig()
 	forceHTTPS := cfg.ForceHTTPS
-	hasTokens := cfg.APIToken != "" || len(cfg.APITokens) > 0
-	authAnon := cfg.AuthAnonymous
 
 	// The client MUST present a valid token to exchange it for a session cookie.
 	if reqToken == "" {
-		if !hasTokens && authAnon {
-			// If anonymous auth is enabled AND no tokens are configured, we allow "login" (returns 200 OK)
-			// This signals to the frontend that no explicit auth is needed.
-			w.WriteHeader(http.StatusOK)
-			return
-		}
 		// Fail if no token presented and auth is required
 		RespondError(w, r, http.StatusUnauthorized, ErrUnauthorized)
 		return

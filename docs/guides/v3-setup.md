@@ -30,6 +30,7 @@ To run `xg2g` with V3 enabled using Docker:
       --name xg2g \
       --net=host \
       -e XG2G_API_TOKEN="your-secret-token" \
+      -e XG2G_API_TOKEN_SCOPES="v3:read,v3:write" \
       -e XG2G_OWI_BASE="http://your-receiver-ip" \
       -e XG2G_V3_WORKER_ENABLED=true \
       -e XG2G_V3_E2_HOST="http://your-receiver-ip" \
@@ -49,6 +50,8 @@ The provided `docker-compose.yml` already has V3 enabled by default. Just config
 ```bash
 # Required settings in .env
 XG2G_OWI_BASE=http://your-receiver-ip
+XG2G_API_TOKEN=your-secret-token
+XG2G_API_TOKEN_SCOPES=v3:read,v3:write
 
 # Optional (XG2G_V3_E2_HOST automatically inherits from XG2G_OWI_BASE if not set)
 XG2G_V3_STORE_PATH=/data/v3-store   # Persist store in volume
@@ -74,6 +77,7 @@ docker compose up -d
     ```bash
     export XG2G_V3_WORKER_ENABLED=true
     export XG2G_API_TOKEN="your-token"
+    export XG2G_API_TOKEN_SCOPES="v3:read,v3:write"
     export XG2G_OWI_BASE="http://your-receiver-ip"
     ./xg2g-daemon
     ```

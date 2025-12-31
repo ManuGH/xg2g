@@ -221,7 +221,7 @@ func (h IntentHandler) respond202(ctx context.Context, w http.ResponseWriter, se
 	w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(IntentResponse{
 		SessionID:     sessionID,
-		State:         string(model.SessionStarting),
+		Status:        "accepted",
 		CorrelationID: correlationID,
 	})
 }

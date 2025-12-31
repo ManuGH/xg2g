@@ -281,19 +281,21 @@
         "tokenScopes": {
           "type": "array",
           "description": "Scopes granted to api.token (comma-separated via XG2G_API_TOKEN_SCOPES).",
+          "minItems": 1,
+          "uniqueItems": true,
           "items": {
             "type": "string",
+            "enum": ["*", "v3:*", "v3:read", "v3:write", "v3:admin"],
             "examples": ["v3:read", "v3:write"]
-          },
-          "default": []
+          }
         },
         "tokens": {
           "type": "array",
-          "description": "Additional API tokens with scopes (XG2G_API_TOKENS).",
+          "description": "Additional API tokens with scopes (XG2G_API_TOKENS). JSON array is recommended for env; legacy token=scopes;token2=scopes2 remains supported.",
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["token"],
+            "required": ["token", "scopes"],
             "properties": {
               "token": {
                 "type": "string",
@@ -304,11 +306,13 @@
               "scopes": {
                 "type": "array",
                 "description": "Scopes granted to this token.",
+                "minItems": 1,
+                "uniqueItems": true,
                 "items": {
                   "type": "string",
+                  "enum": ["*", "v3:*", "v3:read", "v3:write", "v3:admin"],
                   "examples": ["v3:read", "v3:write"]
-                },
-                "default": []
+                }
               }
             }
           },
@@ -319,7 +323,7 @@
           "description": "API server listen address (host:port)",
           "pattern": "^([a-zA-Z0-9.-]+)?:[0-9]+$",
           "default": ":8080",
-          "examples": [":8080", "127.0.0.1:8080", "0.0.0.0:9090"]
+          "examples": [":8088", "127.0.0.1:8088", "0.0.0.0:9090"]
         }
       }
     },
@@ -385,7 +389,7 @@
       },
       "api": {
         "token": "${API_TOKEN}",
-        "listenAddr": ":8080"
+        "listenAddr": ":8088"
       },
       "metrics": {
         "enabled": false,

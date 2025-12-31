@@ -1,10 +1,29 @@
 # Development Guide
 
 Quick reference for common development tasks.
+For end users, prefer Docker Compose (see README Quick Start).
 
 ## 🚀 Quick Start (Development)
 
-### 1. First Time Setup
+### 1. Configure Environment (Required)
+
+Pick one configuration source:
+
+- `.env` file (recommended)
+- exported environment variables
+- `config.yaml` (YAML config)
+
+Minimum required values for a working start:
+
+- `XG2G_OWI_BASE` (receiver base URL)
+- `XG2G_API_TOKEN` (required; UI will prompt)
+- `XG2G_API_TOKEN_SCOPES` (include `v3:write` for streaming)
+
+If `XG2G_OWI_BASE` is empty, the UI starts in **Setup Mode** instead of streaming.
+
+Run `make check-env` to validate your `.env` before starting.
+
+### 2. First Time Setup (Using .env)
 
 ```bash
 # Clone and enter directory
@@ -17,14 +36,14 @@ cp .env.example .env
 # Edit .env with required settings
 nano .env
 # Required: XG2G_OWI_BASE=http://YOUR_RECEIVER_IP
+# Required: XG2G_API_TOKEN=dev-token
+# Required for streaming: XG2G_API_TOKEN_SCOPES=v3:read,v3:write
 # Note: XG2G_V3_E2_HOST automatically inherits from XG2G_OWI_BASE if not set
 ```
 
-### 2. Run Locally (Without Docker)
+### 3. Run Locally (Without Docker)
 
 ```bash
-# Build and run in one command
-make dev
 # Build and run in one command
 make dev
 
@@ -41,7 +60,13 @@ This will:
 
 **Access**: <http://localhost:8088>
 
-### 3. Run with Docker Compose
+**Note**: The binary defaults to `:8080`; local dev templates set `XG2G_LISTEN=:8088`.
+
+The UI will prompt for the API token on first load.
+
+`run_dev.sh` is a thin wrapper around `make dev` for convenience.
+
+### 4. Run with Docker Compose
 
 ```bash
 # Start
@@ -121,8 +146,8 @@ make restart
 ### "Port already in use"
 
 ```bash
-# Find and kill process on port 8080
-lsof -ti:8080 | xargs kill -9
+# Find and kill process on port 8088
+lsof -ti:8088 | xargs kill -9
 
 # Or use Make helper
 pkill -x xg2g

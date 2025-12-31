@@ -17,7 +17,7 @@ We need an explicit compatibility boundary so changes to handlers don’t silent
 
 - The HTTP API is versioned via a URL prefix: `/api/<version>/*`.
 - The OpenAPI-generated server is mounted under this base path, and the WebUI uses the same base.
-- Non-versioned "compat" routes (e.g. `/stream/*`) exist only for WebUI playback integration and are considered internal wiring, not public API surface.
+- Non-versioned "compat" routes (e.g. `/stream/*`) were removed in v3; playback uses the v3 HLS/session endpoints.
 
 ## Consequences
 

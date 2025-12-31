@@ -25,10 +25,11 @@ import (
 
 func TestHandleSystemHealth(t *testing.T) {
 	s := New(config.AppConfig{
-		APIToken:   "test-token",
-		DataDir:    t.TempDir(),
-		StreamPort: 8001,
-		Version:    "1.2.3",
+		APIToken:       "test-token",
+		APITokenScopes: []string{string(ScopeV3Read)},
+		DataDir:        t.TempDir(),
+		StreamPort:     8001,
+		Version:        "1.2.3",
 	}, nil)
 
 	// Set status for health check
@@ -51,10 +52,11 @@ func TestHandleSystemHealth(t *testing.T) {
 
 func TestHandleRefresh_ErrorDoesNotUpdateLastRun(t *testing.T) {
 	cfg := config.AppConfig{
-		OWIBase:    "invalid-url",
-		APIToken:   "dummy-token",
-		DataDir:    t.TempDir(),
-		StreamPort: 8001,
+		OWIBase:        "invalid-url",
+		APIToken:       "dummy-token",
+		APITokenScopes: []string{string(ScopeV3Read)},
+		DataDir:        t.TempDir(),
+		StreamPort:     8001,
 	}
 	s := New(cfg, nil)
 	handler := s.Handler()
@@ -96,9 +98,10 @@ func TestHandleRefresh_SuccessUpdatesLastRun(t *testing.T) {
 	}
 
 	s := New(config.AppConfig{
-		APIToken:   "test-token",
-		DataDir:    t.TempDir(),
-		StreamPort: 8001,
+		APIToken:       "test-token",
+		APITokenScopes: []string{string(ScopeV3Read)},
+		DataDir:        t.TempDir(),
+		StreamPort:     8001,
 	}, nil)
 	s.refreshFn = mockRefreshFn
 
@@ -125,9 +128,10 @@ func TestHandleRefresh_SuccessUpdatesLastRun(t *testing.T) {
 
 func TestHandleRefresh_ConflictOnConcurrent(t *testing.T) {
 	cfg := config.AppConfig{
-		APIToken:   "dummy-token",
-		DataDir:    t.TempDir(),
-		StreamPort: 8001,
+		APIToken:       "dummy-token",
+		APITokenScopes: []string{string(ScopeV3Read)},
+		DataDir:        t.TempDir(),
+		StreamPort:     8001,
 	}
 	s := New(cfg, nil)
 
@@ -322,6 +326,7 @@ func TestSecureFileHandlerSymlinkPolicy(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			req, err := http.NewRequestWithContext(context.Background(), tt.method, tt.path, nil)
 			require.NoError(t, err)
+			req.RemoteAddr = "127.0.0.1:1234"
 
 			rr := httptest.NewRecorder()
 			handler.ServeHTTP(rr, req)
@@ -335,7 +340,10 @@ func TestSecureFileHandlerSymlinkPolicy(t *testing.T) {
 }
 
 func TestMiddlewareChain(t *testing.T) {
-	server := New(config.AppConfig{APIToken: "test-token"}, nil)
+	server := New(config.AppConfig{
+		APIToken:       "test-token",
+		APITokenScopes: []string{string(ScopeV3Read)},
+	}, nil)
 	handler := server.Handler()
 
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "/test", nil)
@@ -377,6 +385,7 @@ func TestAdvancedPathTraversal(t *testing.T) {
 	for _, attack := range attacks {
 		t.Run(attack, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/files/"+attack, nil)
+			req.RemoteAddr = "127.0.0.1:1234"
 			rr := httptest.NewRecorder()
 			handler.ServeHTTP(rr, req)
 
@@ -419,6 +428,7 @@ http://example.com/stream1
 	handler := server.Handler()
 
 	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
+	req.RemoteAddr = "127.0.0.1:1234"
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
@@ -444,6 +454,7 @@ func TestHandleXMLTV_FileTooLarge(t *testing.T) {
 	handler := server.Handler()
 
 	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
+	req.RemoteAddr = "127.0.0.1:1234"
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
@@ -462,6 +473,7 @@ func TestHandleXMLTV_FileNotFound(t *testing.T) {
 	handler := server.Handler()
 
 	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
+	req.RemoteAddr = "127.0.0.1:1234"
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
@@ -503,6 +515,7 @@ http://example.com/stream1
 	handler := server.Handler()
 
 	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
+	req.RemoteAddr = "127.0.0.1:1234"
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
@@ -527,6 +540,7 @@ func TestHandleXMLTV_EmptyPath(t *testing.T) {
 	handler := server.Handler()
 
 	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
+	req.RemoteAddr = "127.0.0.1:1234"
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
@@ -557,6 +571,7 @@ func TestHandleXMLTV_M3UNotFound(t *testing.T) {
 	handler := server.Handler()
 
 	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
+	req.RemoteAddr = "127.0.0.1:1234"
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
@@ -591,6 +606,7 @@ func TestHandleXMLTV_M3UTooLarge(t *testing.T) {
 	handler := server.Handler()
 
 	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
+	req.RemoteAddr = "127.0.0.1:1234"
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
@@ -621,6 +637,7 @@ func TestHandleXMLTV_HEADRequest(t *testing.T) {
 	handler := server.Handler()
 
 	req := httptest.NewRequest(http.MethodHead, "/xmltv.xml", nil)
+	req.RemoteAddr = "127.0.0.1:1234"
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
@@ -633,10 +650,11 @@ func TestHandleXMLTV_HEADRequest(t *testing.T) {
 
 func TestHandleRefreshV3(t *testing.T) {
 	cfg := config.AppConfig{
-		OWIBase:    "http://invalid-url-for-testing",
-		APIToken:   "refresh-token",
-		DataDir:    t.TempDir(),
-		StreamPort: 8001,
+		OWIBase:        "http://invalid-url-for-testing",
+		APIToken:       "refresh-token",
+		APITokenScopes: []string{string(ScopeV3Read)},
+		DataDir:        t.TempDir(),
+		StreamPort:     8001,
 	}
 
 	server := New(cfg, nil)
@@ -658,11 +676,12 @@ func TestClientDisconnectDuringRefresh(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	cfg := config.AppConfig{
-		DataDir:    tmpDir,
-		OWIBase:    "http://invalid-url-that-will-timeout",
-		Bouquet:    "test",
-		APIToken:   "test-token",
-		StreamPort: 8001,
+		DataDir:        tmpDir,
+		OWIBase:        "http://invalid-url-that-will-timeout",
+		Bouquet:        "test",
+		APIToken:       "test-token",
+		APITokenScopes: []string{string(ScopeV3Read)},
+		StreamPort:     8001,
 	}
 
 	server := New(cfg, nil)

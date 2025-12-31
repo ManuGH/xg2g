@@ -112,7 +112,7 @@ func reloadRequiresRestart(oldCfg, newCfg config.AppConfig) bool {
 		return true
 	}
 	// Security: Auth changes require restart to ensure consistent enforcement
-	if oldCfg.APIToken != newCfg.APIToken || oldCfg.AuthAnonymous != newCfg.AuthAnonymous {
+	if oldCfg.APIToken != newCfg.APIToken {
 		return true
 	}
 	if len(oldCfg.APITokens) != len(newCfg.APITokens) || len(oldCfg.APITokenScopes) != len(newCfg.APITokenScopes) {

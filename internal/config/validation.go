@@ -62,6 +62,55 @@ func Validate(cfg AppConfig) error {
 		v.AddError("RateLimitWhitelist", "must be a valid IP or CIDR", entry)
 	}
 
+	if cfg.apiTokensParseErr != nil {
+		v.AddError("APITokens", cfg.apiTokensParseErr.Error(), "")
+	}
+
+	validScopes := map[string]struct{}{
+		"*":        {},
+		"v3:*":     {},
+		"v3:read":  {},
+		"v3:write": {},
+		"v3:admin": {},
+	}
+
+	isValidScope := func(scope string) bool {
+		scope = strings.ToLower(strings.TrimSpace(scope))
+		_, ok := validScopes[scope]
+		return ok
+	}
+
+	if cfg.APIToken != "" && len(cfg.APITokenScopes) == 0 {
+		v.AddError("APITokenScopes", "must be set when APIToken is configured", "")
+	}
+	for _, scope := range cfg.APITokenScopes {
+		if !isValidScope(scope) {
+			v.AddError("APITokenScopes", "unknown scope", scope)
+		}
+	}
+	seenTokens := map[string]struct{}{}
+	for _, token := range cfg.APITokens {
+		tokenVal := strings.TrimSpace(token.Token)
+		if tokenVal == "" {
+			v.AddError("APITokens", "token must not be empty", "")
+			continue
+		}
+		if _, ok := seenTokens[tokenVal]; ok {
+			v.AddError("APITokens", "duplicate token", tokenVal)
+			continue
+		}
+		seenTokens[tokenVal] = struct{}{}
+		if len(token.Scopes) == 0 {
+			v.AddError("APITokens", "scopes must be set for token", tokenVal)
+			continue
+		}
+		for _, scope := range token.Scopes {
+			if !isValidScope(scope) {
+				v.AddError("APITokens", "unknown scope", scope)
+			}
+		}
+	}
+
 	// Validate V3 Worker paths if enabled (Fail Fast)
 	if cfg.WorkerEnabled {
 		v.WritableDirectory("StorePath", cfg.StorePath, false)

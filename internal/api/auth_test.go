@@ -20,10 +20,6 @@ import (
 // Note: Token extraction logic is tested in security_utils_test.go
 
 func TestAuthMiddleware_NoTokenConfigured(t *testing.T) {
-	// When no token is configured, authentication is disabled (unless Anonymous is false? Logic says if token=="" check AuthAnon)
-	// Code: if token=="" { if authAnon { allow } else { fail_closed } }
-
-	// Case 1: AuthAnonymous = true
 	nextCalled := false
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		nextCalled = true
@@ -32,8 +28,7 @@ func TestAuthMiddleware_NoTokenConfigured(t *testing.T) {
 
 	s := &Server{
 		cfg: config.AppConfig{
-			APIToken:      "",
-			AuthAnonymous: true,
+			APIToken: "",
 		},
 	}
 	handler := s.authMiddleware(next)
@@ -43,15 +38,6 @@ func TestAuthMiddleware_NoTokenConfigured(t *testing.T) {
 
 	handler.ServeHTTP(w, req)
 
-	assert.True(t, nextCalled, "next handler should be called when auth is anonymous")
-	assert.Equal(t, http.StatusOK, w.Code)
-
-	// Case 2: AuthAnonymous = false (Fail Closed)
-	nextCalled = false
-	s.cfg.AuthAnonymous = false
-	handler = s.authMiddleware(next)
-	w = httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
 	assert.False(t, nextCalled)
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
@@ -63,7 +49,8 @@ func TestAuthMiddleware_MissingAuthHeader(t *testing.T) {
 
 	s := &Server{
 		cfg: config.AppConfig{
-			APIToken: "secret-token",
+			APIToken:       "secret-token",
+			APITokenScopes: []string{string(ScopeV3Read)},
 		},
 	}
 	handler := s.authMiddleware(next)
@@ -85,7 +72,8 @@ func TestAuthMiddleware_ValidBearerToken(t *testing.T) {
 
 	s := &Server{
 		cfg: config.AppConfig{
-			APIToken: "secret-token",
+			APIToken:       "secret-token",
+			APITokenScopes: []string{string(ScopeV3Read)},
 		},
 	}
 	handler := s.authMiddleware(next)
@@ -109,7 +97,8 @@ func TestAuthMiddleware_ValidCookie(t *testing.T) {
 
 	s := &Server{
 		cfg: config.AppConfig{
-			APIToken: "secret-token",
+			APIToken:       "secret-token",
+			APITokenScopes: []string{string(ScopeV3Read)},
 		},
 	}
 	handler := s.authMiddleware(next)
@@ -131,13 +120,58 @@ func TestAuthMiddleware_InvalidToken(t *testing.T) {
 
 	s := &Server{
 		cfg: config.AppConfig{
-			APIToken: "secret-token",
+			APIToken:       "secret-token",
+			APITokenScopes: []string{string(ScopeV3Read)},
 		},
 	}
 	handler := s.authMiddleware(next)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("Authorization", "Bearer wrong-token")
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestAuthMiddleware_EmptyScopesPrimaryToken(t *testing.T) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("next handler should not be called")
+	})
+
+	s := &Server{
+		cfg: config.AppConfig{
+			APIToken: "secret-token",
+		},
+	}
+	handler := s.authMiddleware(next)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Authorization", "Bearer secret-token")
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestAuthMiddleware_EmptyScopesAdditionalToken(t *testing.T) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("next handler should not be called")
+	})
+
+	s := &Server{
+		cfg: config.AppConfig{
+			APITokens: []config.ScopedToken{
+				{Token: "scoped"},
+			},
+		},
+	}
+	handler := s.authMiddleware(next)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Authorization", "Bearer scoped")
 	w := httptest.NewRecorder()
 
 	handler.ServeHTTP(w, req)
@@ -155,7 +189,8 @@ func TestAuthMiddleware_ValidXAPIToken(t *testing.T) {
 
 	s := &Server{
 		cfg: config.AppConfig{
-			APIToken: "secret-token",
+			APIToken:       "secret-token",
+			APITokenScopes: []string{string(ScopeV3Read)},
 		},
 	}
 	handler := s.authMiddleware(next)
@@ -173,8 +208,9 @@ func TestAuthMiddleware_ValidXAPIToken(t *testing.T) {
 func TestCreateSession(t *testing.T) {
 	s := &Server{
 		cfg: config.AppConfig{
-			APIToken:   "secret",
-			ForceHTTPS: true,
+			APIToken:       "secret",
+			APITokenScopes: []string{string(ScopeV3Read)},
+			ForceHTTPS:     true,
 		},
 	}
 

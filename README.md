@@ -131,6 +131,8 @@ Event-driven design for reliability and performance:
     **Set these values in `.env`:**
     - `XG2G_OWI_BASE` - Your Enigma2 receiver IP (e.g., `http://192.168.1.100`)
     - `XG2G_BOUQUET` - Optional: comma-separated bouquets (empty = all)
+    - `XG2G_API_TOKEN` - Required; UI will prompt for this token
+    - `XG2G_API_TOKEN_SCOPES` - Include `v3:write` for streaming (e.g., `v3:read,v3:write`)
 
     **Note**: `XG2G_V3_E2_HOST` automatically inherits from `XG2G_OWI_BASE` if not set.
 
@@ -143,6 +145,7 @@ Event-driven design for reliability and performance:
 **That's it.**
 
 - **Open your browser:** [http://localhost:8088](http://localhost:8088)
+- **Note:** The binary defaults to `:8080`; Docker Compose sets `XG2G_LISTEN=:8088` for deployment.
 
 ---
 
@@ -170,7 +173,7 @@ xg2g is configured primarily via **Environment Variables**.
 | :--- | :--- | :--- |
 | `XG2G_OWI_BASE` | URL of your Enigma2 receiver (required for streaming) | - |
 | `XG2G_BOUQUET` | Bouquet names to load (comma separated). Empty = all. | empty |
-| `XG2G_API_TOKEN` | (Optional) Secures the API with Bearer auth | - |
+| `XG2G_API_TOKEN` | Required token for API access | - |
 | `XG2G_EPG_DAYS` | Number of days to fetch EPG | `7` |
 
 👉 **[Read the Full Configuration Guide](docs/guides/CONFIGURATION.md)** for advanced settings, YAML config, and metrics.

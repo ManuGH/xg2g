@@ -257,8 +257,8 @@ v3:read     → Read-only access
 
 **Enforcement**:
 - **Middleware-Level**: Route middleware checks scopes before handler
-- **Fail-Closed**: No tokens configured → deny all (unless `XG2G_AUTH_ANONYMOUS=true`)
-- **Anonymous Mode**: Explicitly opt-in (grants v3:read by default for safety)
+- **Fail-Closed**: No tokens configured → deny all
+- **Token-Only**: API access always requires a valid token
 
 ---
 

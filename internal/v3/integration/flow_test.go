@@ -78,8 +78,8 @@ func TestV3Flow(t *testing.T) {
 		if resp.SessionID == "" {
 			t.Error("expected sessionID")
 		}
-		if resp.State != string(model.SessionStarting) {
-			t.Errorf("expected state STARTING, got %s", resp.State)
+		if resp.Status != "accepted" {
+			t.Errorf("expected status accepted, got %s", resp.Status)
 		}
 
 		// Assert: Wait for Worker to pick it up and mark READY

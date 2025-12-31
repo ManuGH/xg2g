@@ -166,7 +166,7 @@ This document lists all environment variables for the xg2g V3 Worker/Control Pla
 - **Type:** URL
 - **Default:** Empty
 - **Description:** Target URL for shadow intent forwarding
-- **Example:** `XG2G_V3_SHADOW_TARGET=http://backup-server:8080`
+- **Example:** `XG2G_V3_SHADOW_TARGET=http://backup-server:8088`
 
 ## Complete Example Configuration
 

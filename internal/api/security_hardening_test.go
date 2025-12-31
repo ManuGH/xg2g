@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// TestCreateSession_SecurityCheck validates the stricter anonymous/auth policy.
+// TestCreateSession_SecurityCheck validates token-only session creation.
 func TestCreateSession_SecurityCheck(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -21,28 +21,18 @@ func TestCreateSession_SecurityCheck(t *testing.T) {
 		expectSecure   bool
 	}{
 		{
-			name: "AnonAllowed_NoToken",
+			name: "NoTokenConfigured_NoToken",
 			cfg: config.AppConfig{
-				AuthAnonymous: true,
-				APIToken:      "", // No tokens matches !hasTokens
+				APIToken: "",
 			},
-			expectedStatus: http.StatusOK,
-			expectCookie:   false, // Strict anonymous: no session cookie
-		},
-		{
-			name: "AnonAllowed_ButTokensExist_NoToken",
-			cfg: config.AppConfig{
-				AuthAnonymous: true,
-				APIToken:      "secret", // hasTokens = true
-			},
-			expectedStatus: http.StatusUnauthorized, // Should fail because tokens exist
+			expectedStatus: http.StatusUnauthorized,
 			expectCookie:   false,
 		},
 		{
 			name: "AuthRequired_NoToken",
 			cfg: config.AppConfig{
-				AuthAnonymous: false,
-				APIToken:      "secret",
+				APIToken:       "secret",
+				APITokenScopes: []string{"v3:read"},
 			},
 			expectedStatus: http.StatusUnauthorized,
 			expectCookie:   false,
@@ -50,8 +40,8 @@ func TestCreateSession_SecurityCheck(t *testing.T) {
 		{
 			name: "AuthRequired_ValidToken",
 			cfg: config.AppConfig{
-				AuthAnonymous: false,
-				APIToken:      "secret",
+				APIToken:       "secret",
+				APITokenScopes: []string{"v3:read"},
 			},
 			reqHeader:      "Bearer secret",
 			expectedStatus: http.StatusOK,
@@ -61,9 +51,9 @@ func TestCreateSession_SecurityCheck(t *testing.T) {
 		{
 			name: "AuthRequired_ValidToken_ForceHTTPS",
 			cfg: config.AppConfig{
-				AuthAnonymous: false,
-				APIToken:      "secret",
-				ForceHTTPS:    true,
+				APIToken:       "secret",
+				APITokenScopes: []string{"v3:read"},
+				ForceHTTPS:     true,
 			},
 			reqHeader:      "Bearer secret",
 			expectedStatus: http.StatusOK,
@@ -73,8 +63,8 @@ func TestCreateSession_SecurityCheck(t *testing.T) {
 		{
 			name: "AuthRequired_InvalidToken",
 			cfg: config.AppConfig{
-				AuthAnonymous: false,
-				APIToken:      "secret",
+				APIToken:       "secret",
+				APITokenScopes: []string{"v3:read"},
 			},
 			reqHeader:      "Bearer wrong",
 			expectedStatus: http.StatusUnauthorized,
@@ -119,8 +109,7 @@ func TestCreateSession_SecurityCheck(t *testing.T) {
 				}
 				assert.True(t, found, "xg2g_session cookie not found")
 			} else {
-				// Strict anonymous: ensure NO cookies are set at all
-				assert.Empty(t, cookies, "Expected no cookies in anonymous/unauth path")
+				assert.Empty(t, cookies, "Expected no cookies in unauthenticated path")
 			}
 		})
 	}
@@ -128,11 +117,11 @@ func TestCreateSession_SecurityCheck(t *testing.T) {
 
 func TestReloadRequiresRestart_Hardening(t *testing.T) {
 	baseCfg := config.AppConfig{
-		APIToken: "A",
+		APIToken:       "A",
+		APITokenScopes: []string{"v3:write"},
 		APITokens: []config.ScopedToken{
-			{Token: "T1", Scopes: []string{"read"}},
+			{Token: "T1", Scopes: []string{"v3:read"}},
 		},
-		APITokenScopes: []string{"write"},
 	}
 
 	tests := []struct {
@@ -155,21 +144,21 @@ func TestReloadRequiresRestart_Hardening(t *testing.T) {
 		{
 			name: "ScopeRotation_SameLen",
 			mod: func(c *config.AppConfig) {
-				c.APITokens[0].Scopes[0] = "admin" // content changed
+				c.APITokens[0].Scopes[0] = "v3:admin" // content changed
 			},
 			mustRest: true,
 		},
 		{
 			name: "TopLevelScopeRotation_SameLen",
 			mod: func(c *config.AppConfig) {
-				c.APITokenScopes[0] = "admin" // content changed
+				c.APITokenScopes[0] = "v3:admin" // content changed
 			},
 			mustRest: true,
 		},
 		{
 			name: "NewToken",
 			mod: func(c *config.AppConfig) {
-				c.APITokens = append(c.APITokens, config.ScopedToken{Token: "T2"})
+				c.APITokens = append(c.APITokens, config.ScopedToken{Token: "T2", Scopes: []string{"v3:read"}})
 			},
 			mustRest: true,
 		},

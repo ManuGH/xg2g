@@ -20,8 +20,7 @@ type IntentRequest struct {
 
 type IntentResponse struct {
 	SessionID     string           `json:"sessionId"`
-	State         string           `json:"state"` // string for looser coupling in JSON? Or model.SessionState
-	Reason        model.ReasonCode `json:"reason,omitempty"`
+	Status        string           `json:"status"`
 	CorrelationID string           `json:"correlationId,omitempty"`
 }
 

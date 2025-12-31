@@ -26,7 +26,7 @@ xg2g v3.0.0 marks the completion of a comprehensive architectural modernization,
 **Removed:** Query parameter authentication (`?token=...`)
 
 ```diff
-- http://localhost:8080/stream.m3u8?token=abc123
+- http://localhost:8088/api/v3/sessions/<session-id>/hls/index.m3u8?token=abc123
 + Authorization: Bearer abc123
 ```
 
@@ -116,7 +116,7 @@ histogram_quantile(0.99, sum by (le,profile,mode) (rate(xg2g_v3_time_to_first_se
   - Distributed tracing (Jaeger/Tempo support)
   - Structured logging (zerolog, JSON output)
   - Prometheus metrics (`/metrics`)
-  - Health checks (`/api/v3/system/health`)
+- Health checks (`/healthz` for liveness, `/api/v3/system/health` for API health)
 
 ### Frontend (TypeScript Migration)
 
@@ -191,10 +191,10 @@ xg2g config dump --effective
 
 ```diff
 - RECEIVER_IP=192.168.1.50
-+ XG2G_OPENWEBIF_BASEURL=http://192.168.1.50
++ XG2G_OWI_BASE=http://192.168.1.50
 
-- XG2G_API_ADDR=:8080
-+ XG2G_API_BIND=:8080
+- XG2G_API_ADDR=:8088
++ XG2G_LISTEN=:8088
 ```
 
 See `config.example.yaml` for complete reference.
@@ -203,13 +203,13 @@ See `config.example.yaml` for complete reference.
 
 **Before (v2):**
 ```bash
-curl "http://localhost:8080/api/v2/status?token=abc123"
+curl "http://localhost:8088/api/v2/status?token=abc123"
 ```
 
 **After (v3):**
 ```bash
 curl -H "Authorization: Bearer abc123" \
-     http://localhost:8080/api/v3/system/health
+     http://localhost:8088/api/v3/system/health
 ```
 
 ### Step 6: Deploy
@@ -230,7 +230,7 @@ journalctl -fu xg2g
 
 ```bash
 # Health check
-curl http://localhost:8080/api/v3/system/health
+curl http://localhost:8088/healthz
 
 # Check logs for warnings
 journalctl -u xg2g --since "5 minutes ago" | grep WARN
@@ -243,6 +243,7 @@ journalctl -u xg2g --since "5 minutes ago" | grep WARN
 | Component | Deprecated In | Removed In | Notes |
 |-----------|---------------|------------|-------|
 | Query token auth (`?token=...`) | v2.0.1 | **v3.0.0** | ✅ Removed |
+| Legacy `/stream/*` route | v2.1.0 | **v3.0.0** | ✅ Removed |
 | Legacy env vars (`RECEIVER_IP`, etc.) | v2.1.0 | **v3.0.0** | ✅ Removed |
 | `/api/v2/*` endpoints | v3.0.0 | v4.0.0 | Use `/api/v3/*` |
 | Compatibility layer (frontend) | v3.0.0 | **v3.0.0** | ✅ Removed |
@@ -327,7 +328,6 @@ systemctl restart xg2g
 - **RBAC Guide:** `docs/guides/rbac.md`
 - **API Reference:** `api/openapi.yaml` (OpenAPI 3.0 spec)
 - **Architecture Decisions:** `docs/adr/`
-- **Issue Tracker:** https://github.com/anthropics/xg2g/issues (placeholder)
 
 ---
 

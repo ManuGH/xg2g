@@ -15,7 +15,7 @@ services:
 
     # Alternative: Bridge mode (if you comment out network_mode: host)
     # ports:
-    #   - "8080:8080" # API
+    #   - "8088:8088" # API
     #   - "9090:9090" # Metrics
 
     security_opt:
@@ -34,6 +34,9 @@ services:
       - ./data/v3-store:/data/v3-store
       - ./data/v3-hls:/data/v3-hls
 
+    env_file:
+      - .env
+
     environment:
       # Data Directory
       - XG2G_DATA=/data
@@ -42,49 +45,30 @@ services:
       - XG2G_LOG_LEVEL=${XG2G_LOG_LEVEL:-info}
 
       # API Server
-      - XG2G_LISTEN=:8080
+      - XG2G_LISTEN=:8088
 
       # Metrics
       - XG2G_METRICS_LISTEN=:9090
-      - XG2G_AUTH_ANONYMOUS=true
-
-      # Security & Limits
-      - XG2G_API_TOKEN=
-      - XG2G_API_TOKEN_SCOPES=${XG2G_API_TOKEN_SCOPES:-*}
 
       # OpenWebIF (Can be empty for Setup Mode)
       - XG2G_OWI_BASE=${XG2G_OWI_BASE:-}
       - XG2G_OWI_USER=${XG2G_OWI_USER:-}
       - XG2G_OWI_PASS=${XG2G_OWI_PASS:-}
 
+      # Security
+      - XG2G_API_TOKEN=${XG2G_API_TOKEN:-}
+      - XG2G_API_TOKEN_SCOPES=${XG2G_API_TOKEN_SCOPES:-v3:read,v3:write}
+
       # Bouquets (Optional, comma-separated. Empty = All)
       - XG2G_BOUQUET=${XG2G_BOUQUET:-}
 
-      # Main Configuration
-      - XG2G_INITIAL_REFRESH=false
-      - XG2G_USE_WEBIF_STREAMS=true
-      - XG2G_V3_WORKER_ENABLED=true
-      - XG2G_V3_WORKER_MODE=standard
-      - XG2G_V3_CONFIG_STRICT=false
-      - XG2G_V3_STORE_BACKEND=memory
-      # Persistent Store (Example configuration for BoltDB)
-      # - XG2G_V3_STORE_BACKEND=bolt
-      # - XG2G_V3_STORE_PATH=/data/v3-store/xg2g.db
-
+      # V3 Streaming Backend
+      - XG2G_V3_WORKER_ENABLED=${XG2G_V3_WORKER_ENABLED:-true}
       - XG2G_V3_HLS_ROOT=/data/v3-hls
-
-      # Tuning
-      - XG2G_V3_TUNE_TIMEOUT=10s
-
-      # FFmpeg
-      - XG2G_V3_FFMPEG_BIN=ffmpeg
-      - XG2G_V3_FFMPEG_KILL_TIMEOUT=5s
-
-      # Dev Mode (Hot Reloading UI if mounted, otherwise serves dist)
-      - XG2G_DEV=false
+      - XG2G_V3_STORE_PATH=/data/v3-store
 
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8080/healthz"]
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8088/healthz"]
       interval: 5s
       timeout: 3s
       retries: 3

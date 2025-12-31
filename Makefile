@@ -8,10 +8,10 @@
 .PHONY: help build build-all clean clean-certs lint lint-fix test test-schema test-race test-cover cover test-fuzz test-all \
         docker docker-build docker-build-cpu docker-build-gpu docker-build-all docker-security docker-tag docker-push docker-clean \
         sbom deps deps-update deps-tidy deps-verify deps-licenses \
-        security security-scan security-audit security-vulncheck \
+	security security-scan security-audit security-vulncheck \
 	quality-gates pre-commit install dev-tools check-tools \
         release-check release-build release-tag release-notes \
-        dev up down status prod-up prod-down prod-logs \
+        dev up down status prod-up prod-down prod-logs check-env \
         restart prod-restart ps prod-ps ui-build codex certs
 
 # ===================================================================================================
@@ -116,6 +116,7 @@ help: ## Show this help message
 	@echo ""
 	@echo "Development & Local:"
 	@echo "  dev            Run daemon locally with .env configuration"
+	@echo "  check-env      Validate .env and docker compose config"
 	@echo "  up             Start docker-compose.yml stack"
 	@echo "  down           Stop docker-compose.yml stack"
 	@echo "  status         Check API status endpoint"
@@ -612,19 +613,21 @@ dev: stop-local ## Run daemon locally with .env configuration
 		echo "📝 Please edit .env with your settings"; \
 		exit 1; \
 	fi
+	@./scripts/check_env.sh
 	@echo "Loading configuration from .env..."
 	@set -a; . ./.env; set +a; \
 	XG2G_DATA=$${XG2G_DATA:-./data} \
 	XG2G_OWI_BASE=$${XG2G_OWI_BASE:?Set XG2G_OWI_BASE in .env} \
 	XG2G_BOUQUET=$${XG2G_BOUQUET:-} \
-	XG2G_LISTEN=$${XG2G_LISTEN:-:8080} \
+	XG2G_LISTEN=$${XG2G_LISTEN:-:8088} \
 	go build $(BUILD_FLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/daemon && \
 	./$(BUILD_DIR)/$(BINARY_NAME)
 
 up: ## Start docker-compose.yml stack
 	@echo "Starting xg2g via docker compose..."
+	@./scripts/check_env.sh
 	@docker compose up -d
-	@echo "✅ Stack started. Access at http://localhost:8080"
+	@echo "✅ Stack started. Access at http://localhost:8088"
 	@echo "📊 Check status: make status"
 
 down: ## Stop docker-compose.yml stack
@@ -634,7 +637,7 @@ down: ## Stop docker-compose.yml stack
 
 status: ## Check API status endpoint
 	@echo "Checking xg2g API status..."
-	@curl -fsS http://localhost:8080/healthz >/dev/null 2>&1 && echo "✅ OK (healthz)" || \
+	@curl -fsS http://localhost:8088/healthz >/dev/null 2>&1 && echo "✅ OK (healthz)" || \
 		echo "❌ Service not responding. Is it running? (make up / make dev)"
 
 logs: ## Show service logs (use SVC=service-name to filter)
@@ -661,6 +664,7 @@ ps: ## Show running containers
 
 prod-up: ## Start production docker-compose stack
 	@echo "Starting production stack..."
+	@./scripts/check_env.sh
 	@docker compose -f docker-compose.yml up -d
 	@echo "✅ Production stack started"
 	@echo "📊 Metrics: http://localhost:9090/metrics"
@@ -697,6 +701,7 @@ hooks:
 
 
 check-env: ## Check .env configuration
+	@./scripts/check_env.sh
 	@echo "Checking docker compose config..."
 	@docker compose config
 

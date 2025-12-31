@@ -23,9 +23,10 @@ import (
 func TestIntegration_SessionAndPlayback(t *testing.T) {
 	// Setup Server
 	cfg := config.AppConfig{
-		APIToken:   "integration-secret",
-		DataDir:    t.TempDir(),
-		ForceHTTPS: true, // Enable ForceHTTPS to verify Secure cookie
+		APIToken:       "integration-secret",
+		APITokenScopes: []string{string(ScopeV3Read)},
+		DataDir:        t.TempDir(),
+		ForceHTTPS:     true, // Enable ForceHTTPS to verify Secure cookie
 	}
 	s := New(cfg, nil)
 

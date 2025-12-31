@@ -108,21 +108,21 @@ api:
   # ENV: XG2G_API_TOKEN
   token: ""
 
-  # Scopes for the primary token (v3 RBAC)
+  # Scopes for the primary token (v3 RBAC, required when token is set)
   # ENV: XG2G_API_TOKEN_SCOPES
   # tokenScopes:
   #   - v3:read
   #   - v3:write
 
   # Additional tokens with scopes (v3 RBAC)
-  # ENV: XG2G_API_TOKENS
+  # ENV: XG2G_API_TOKENS (JSON array recommended; legacy token=scopes format supported)
   # tokens:
   #   - token: "read-only-token"
   #     scopes: ["v3:read"]
 
   # API server listen address
   # ENV: XG2G_LISTEN
-  listenAddr: ":8080"
+  listenAddr: ":8088"
 
 # Prometheus Metrics Configuration
 metrics:
@@ -170,7 +170,7 @@ picons:
 #   - "1:7:1:0:0:0:0:0:0:0:FROM BOUQUET \"sports.tv\" ORDER BY bouquet"
 # api:
 #   token: "your-secure-token-here"
-#   listenAddr: ":8080"
+#   listenAddr: ":8088"
 # metrics:
 #   enabled: true
 #   listenAddr: ":9090"
@@ -226,7 +226,7 @@ picons:
 # API:
 #   XG2G_API_TOKEN               - Bearer token for API authentication
 #   XG2G_API_TOKEN_SCOPES        - Scopes for the primary token (v3 RBAC)
-#   XG2G_API_TOKENS              - Additional tokens with scopes (v3 RBAC)
+#   XG2G_API_TOKENS              - Additional tokens with scopes (v3 RBAC, JSON recommended)
 #   XG2G_LISTEN                  - API listen address
 #
 # Metrics:
@@ -292,6 +292,6 @@ picons:
 #
 # - Check metrics at: http://localhost:9090/metrics
 #
-# - Health check: curl http://localhost:8080/healthz
-# - API health (auth): curl -H "Authorization: Bearer <token>" http://localhost:8080/api/v2/system/health
+# - Health check: curl http://localhost:8088/healthz
+# - API health (auth): curl -H "Authorization: Bearer <token>" http://localhost:8088/api/v2/system/health
 #

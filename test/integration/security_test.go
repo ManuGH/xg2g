@@ -39,6 +39,43 @@ func (b *ThreadSafeBuffer) Write(p []byte) (n int, err error) {
 	return b.b.Write(p)
 }
 
+func parseCSP(value string) map[string]map[string]struct{} {
+	directives := map[string]map[string]struct{}{}
+	for _, directive := range strings.Split(value, ";") {
+		directive = strings.TrimSpace(directive)
+		if directive == "" {
+			continue
+		}
+		parts := strings.Fields(directive)
+		if len(parts) == 0 {
+			continue
+		}
+		name := parts[0]
+		tokens, ok := directives[name]
+		if !ok {
+			tokens = map[string]struct{}{}
+			directives[name] = tokens
+		}
+		for _, token := range parts[1:] {
+			tokens[token] = struct{}{}
+		}
+	}
+	return directives
+}
+
+func requireCSPTokens(t *testing.T, directives map[string]map[string]struct{}, directive string, tokens ...string) {
+	t.Helper()
+	got, ok := directives[directive]
+	if !ok {
+		t.Fatalf("CSP directive %q missing", directive)
+	}
+	for _, token := range tokens {
+		if _, ok := got[token]; !ok {
+			t.Errorf("CSP %s missing token %q", directive, token)
+		}
+	}
+}
+
 func (b *ThreadSafeBuffer) String() string {
 	b.m.Lock()
 	defer b.m.Unlock()
@@ -93,10 +130,6 @@ func TestSecuritySuiteExtended(t *testing.T) {
 	// --- 1. Rate Limits under Load ---
 	t.Run("RateLimit", func(t *testing.T) {
 		port := getFreeTCPPort(t)
-		proxyPort := getFreeTCPPort(t)
-		for port == proxyPort {
-			proxyPort = getFreeTCPPort(t)
-		}
 
 		mockOWI := setupMockOWI(t)
 		defer mockOWI.Close()
@@ -108,12 +141,11 @@ func TestSecuritySuiteExtended(t *testing.T) {
 		cmd.Env = append(os.Environ(),
 			"XG2G_DATA="+t.TempDir(),
 			fmt.Sprintf("XG2G_LISTEN=:%d", port),
-			fmt.Sprintf("XG2G_PROXY_LISTEN=:%d", proxyPort),
 			"XG2G_OWI_BASE="+mockOWI.URL,
 			"XG2G_BOUQUET=Test",
 			"XG2G_INITIAL_REFRESH=false",
-			"XG2G_RATELIMIT_ENABLED=true",
-			"XG2G_RATELIMIT_RPS=1",
+			"XG2G_RATELIMIT=true",
+			"XG2G_RATELIMIT_GLOBAL=1",
 		)
 		var outBuf ThreadSafeBuffer
 		cmd.Stdout = &outBuf
@@ -157,10 +189,6 @@ func TestSecuritySuiteExtended(t *testing.T) {
 	// --- 2. Security Headers / CSP ---
 	t.Run("SecurityHeaders", func(t *testing.T) {
 		port := getFreeTCPPort(t)
-		proxyPort := getFreeTCPPort(t)
-		for port == proxyPort {
-			proxyPort = getFreeTCPPort(t)
-		}
 
 		mockOWI := setupMockOWI(t)
 		defer mockOWI.Close()
@@ -172,7 +200,6 @@ func TestSecuritySuiteExtended(t *testing.T) {
 		cmd.Env = append(os.Environ(),
 			"XG2G_DATA="+t.TempDir(),
 			fmt.Sprintf("XG2G_LISTEN=:%d", port),
-			fmt.Sprintf("XG2G_PROXY_LISTEN=:%d", proxyPort),
 			"XG2G_OWI_BASE="+mockOWI.URL,
 			"XG2G_BOUQUET=Test",
 			"XG2G_INITIAL_REFRESH=false",
@@ -204,37 +231,31 @@ func TestSecuritySuiteExtended(t *testing.T) {
 			"X-Frame-Options":         "DENY",
 			"X-Content-Type-Options":  "nosniff",
 			"Referrer-Policy":         "no-referrer",
-			"Content-Security-Policy": "default-src 'self'; media-src 'self' blob: data:; frame-ancestors 'none'",
 		}
 		for k, v := range expected {
 			if got := headers.Get(k); got != v {
 				t.Errorf("Header %s: expected %q, got %q", k, v, got)
 			}
 		}
+		csp := headers.Get("Content-Security-Policy")
+		if csp == "" {
+			t.Fatalf("Header Content-Security-Policy missing")
+		}
+		cspDirectives := parseCSP(csp)
+		requireCSPTokens(t, cspDirectives, "default-src", "'self'")
+		requireCSPTokens(t, cspDirectives, "frame-ancestors", "'none'")
+		requireCSPTokens(t, cspDirectives, "script-src", "'self'")
+		requireCSPTokens(t, cspDirectives, "style-src", "'self'", "'unsafe-inline'")
+		requireCSPTokens(t, cspDirectives, "img-src", "'self'", "data:", "blob:", "https://cdn.plyr.io")
+		requireCSPTokens(t, cspDirectives, "media-src", "'self'", "blob:", "data:", "https://cdn.plyr.io")
+		requireCSPTokens(t, cspDirectives, "connect-src", "'self'", "https://cdn.plyr.io")
 	})
 
-	// --- 3. Stream Proxy Query Passthrough ---
-	t.Run("StreamProxyQuery", func(t *testing.T) {
+	// --- 3. Stream Proxy Removed (v3) ---
+	t.Run("StreamProxyRemoved", func(t *testing.T) {
 		port := getFreeTCPPort(t)
-		proxyPort := getFreeTCPPort(t)
-		for port == proxyPort {
-			proxyPort = getFreeTCPPort(t)
-		}
 
-		queryReceived := make(chan string, 1)
-		mockOWI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path == "/api/bouquets" {
-				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(`{"bouquets": [["...", "Test"]]}`))
-				return
-			}
-			// Forward requests might arrive with or without /stream/ prefix depending on implementation
-			// We just want to verify the query parameters
-			if len(r.URL.RawQuery) > 0 {
-				queryReceived <- r.URL.RawQuery
-			}
-			w.WriteHeader(http.StatusOK)
-		}))
+		mockOWI := setupMockOWI(t)
 		defer mockOWI.Close()
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -244,12 +265,9 @@ func TestSecuritySuiteExtended(t *testing.T) {
 		cmd.Env = append(os.Environ(),
 			"XG2G_DATA="+t.TempDir(),
 			fmt.Sprintf("XG2G_LISTEN=:%d", port),
-			fmt.Sprintf("XG2G_PROXY_LISTEN=:%d", proxyPort),
-			fmt.Sprintf("XG2G_PROXY_PORT=%d", proxyPort), // Required for api/http.go -> proxy.GetListenAddr()
 			"XG2G_OWI_BASE="+mockOWI.URL,
 			"XG2G_BOUQUET=Test",
 			"XG2G_INITIAL_REFRESH=false",
-			"XG2G_PROXY_TARGET="+mockOWI.URL,
 		)
 		var outBuf ThreadSafeBuffer
 		cmd.Stdout = &outBuf
@@ -263,34 +281,17 @@ func TestSecuritySuiteExtended(t *testing.T) {
 		if !waitForPort(t, port, 15*time.Second) {
 			t.Fatalf("Daemon start fail: %s", outBuf.String())
 		}
-		// Also wait for Proxy Port to be ready, as API proxies to it
-		if !waitForPort(t, proxyPort, 15*time.Second) {
-			t.Fatalf("Proxy start fail: %s", outBuf.String())
-		}
 
-		streamURL := fmt.Sprintf("http://127.0.0.1:%d/stream/1:2:3?token=123&foo=bar", port)
+		streamURL := fmt.Sprintf("http://127.0.0.1:%d/stream/1:2:3?passthrough=123&foo=bar", port)
 		// #nosec G107 - Testing
 		resp, err := http.Get(streamURL)
-
 		if err != nil {
-			t.Logf("Stream req failed: %v", err)
+			t.Fatalf("Stream req failed: %v", err)
 		}
-		if resp != nil {
-			_ = resp.Body.Close()
-		}
+		defer func() { _ = resp.Body.Close() }()
 
-		select {
-		case q := <-queryReceived:
-			if !strings.Contains(q, "foo=bar") || !strings.Contains(q, "token=123") {
-				// Debug log to show what we got
-				t.Logf("Received query: %s", q)
-				// Relax validation: Strict exact match might fail if param order changes
-				if !strings.Contains(q, "foo=bar") {
-					t.Errorf("Query 'foo=bar' missing. Got: %s", q)
-				}
-			}
-		case <-time.After(1 * time.Second):
-			t.Error("Mock OWI did not receive stream request")
+		if resp.StatusCode != http.StatusNotFound {
+			t.Errorf("expected 404 for legacy /stream route, got %d", resp.StatusCode)
 		}
 	})
 
@@ -305,10 +306,6 @@ http://example.com/stream
 		_ = os.WriteFile(filepath.Join(tempDir, "playlist.m3u"), []byte(playlistContent), 0600)
 
 		port := getFreeTCPPort(t)
-		proxyPort := getFreeTCPPort(t)
-		for port == proxyPort {
-			proxyPort = getFreeTCPPort(t)
-		}
 
 		mockOWI := setupMockOWI(t)
 		defer mockOWI.Close()
@@ -320,7 +317,6 @@ http://example.com/stream
 		cmd.Env = append(os.Environ(),
 			"XG2G_DATA="+tempDir,
 			fmt.Sprintf("XG2G_LISTEN=:%d", port),
-			fmt.Sprintf("XG2G_PROXY_LISTEN=:%d", proxyPort),
 			"XG2G_OWI_BASE="+mockOWI.URL,
 			"XG2G_BOUQUET=Test",
 			"XG2G_HDHR_ENABLED=true",
@@ -362,10 +358,6 @@ http://example.com/stream
 	// --- 5. XMLTV Path Traversal ---
 	t.Run("XMLTVTraversal", func(t *testing.T) {
 		port := getFreeTCPPort(t)
-		proxyPort := getFreeTCPPort(t)
-		for port == proxyPort {
-			proxyPort = getFreeTCPPort(t)
-		}
 
 		mockOWI := setupMockOWI(t)
 		defer mockOWI.Close()
@@ -377,7 +369,6 @@ http://example.com/stream
 		cmd.Env = append(os.Environ(),
 			"XG2G_DATA="+t.TempDir(),
 			fmt.Sprintf("XG2G_LISTEN=:%d", port),
-			fmt.Sprintf("XG2G_PROXY_LISTEN=:%d", proxyPort),
 			"XG2G_OWI_BASE="+mockOWI.URL,
 			"XG2G_BOUQUET=Test",
 			"XG2G_XMLTV_PATH=../../etc/passwd", // TRAVERSAL ATTEMPT
@@ -416,10 +407,6 @@ http://example.com/stream
 		configFile := filepath.Join(tempDir, "config.yaml")
 
 		port := getFreeTCPPort(t)
-		proxyPort := getFreeTCPPort(t)
-		for port == proxyPort {
-			proxyPort = getFreeTCPPort(t)
-		}
 
 		mockOWI := setupMockOWI(t)
 		defer mockOWI.Close()
@@ -438,7 +425,6 @@ openWebIF:
 		cmd := exec.CommandContext(ctx, binaryPath, "-config", configFile) // #nosec G204
 		cmd.Env = append(os.Environ(),
 			fmt.Sprintf("XG2G_LISTEN=:%d", port),
-			fmt.Sprintf("XG2G_PROXY_LISTEN=:%d", proxyPort),
 			"XG2G_DATA="+tempDir,
 			"XG2G_INITIAL_REFRESH=false",
 		)

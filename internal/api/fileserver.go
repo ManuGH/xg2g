@@ -7,7 +7,6 @@
 package api
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -34,7 +33,7 @@ func (s *Server) secureFileServer() http.Handler {
 		}
 
 		path := r.URL.Path
-		
+
 		// 1. Strict Allowlist (Base filenames only)
 		// Only explicit, known safe public files are allowed.
 		allowedFiles := map[string]bool{
@@ -205,29 +204,6 @@ func (s *Server) secureFileServer() http.Handler {
 		recordFileCacheMiss()
 		http.ServeContent(w, r, info.Name(), info.ModTime(), f)
 	})
-}
-
-// checkFile verifies that a file exists and is readable
-//
-//nolint:unused // Helper function - kept for future use
-func checkFile(ctx context.Context, path string) bool {
-	info, err := os.Stat(path)
-	if err != nil {
-		return false
-	}
-	if info.IsDir() {
-		return false
-	}
-	// callers must provide paths checked by dataFilePath
-	f, err := os.Open(path) // #nosec G304
-	if err != nil {
-		return false
-	}
-	if err := f.Close(); err != nil {
-		// Log the error, but the function's outcome is already determined.
-		log.FromContext(ctx).Warn().Err(err).Str("path", path).Msg("failed to close file during check")
-	}
-	return true
 }
 
 // isPathTraversal performs robust checks against path traversal attempts.

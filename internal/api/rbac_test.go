@@ -16,7 +16,8 @@ import (
 func TestScopeMiddleware_DenyWriteByDefault(t *testing.T) {
 	s := &Server{
 		cfg: config.AppConfig{
-			APIToken: "secret",
+			APIToken:       "secret",
+			APITokenScopes: []string{string(ScopeV3Read)},
 		},
 	}
 
@@ -54,30 +55,6 @@ func TestScopeMiddleware_WriteImpliesRead(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
-func TestScopeMiddleware_AnonymousReadOnly(t *testing.T) {
-	s := &Server{
-		cfg: config.AppConfig{
-			AuthAnonymous: true,
-		},
-	}
-
-	readHandler := s.authMiddleware(s.scopeMiddleware(ScopeV3Read)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})))
-	readReq := httptest.NewRequest(http.MethodGet, "/api/v3/sessions", nil)
-	readResp := httptest.NewRecorder()
-	readHandler.ServeHTTP(readResp, readReq)
-	assert.Equal(t, http.StatusOK, readResp.Code)
-
-	writeHandler := s.authMiddleware(s.scopeMiddleware(ScopeV3Write)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})))
-	writeReq := httptest.NewRequest(http.MethodPost, "/api/v3/intents", nil)
-	writeResp := httptest.NewRecorder()
-	writeHandler.ServeHTTP(writeResp, writeReq)
-	assert.Equal(t, http.StatusForbidden, writeResp.Code)
-}
-
 func TestScopeMiddleware_TokenList(t *testing.T) {
 	s := &Server{
 		cfg: config.AppConfig{
@@ -98,4 +75,49 @@ func TestScopeMiddleware_TokenList(t *testing.T) {
 	handler.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestScopeMiddleware_EmptyScopesUnauthorized(t *testing.T) {
+	t.Run("api_token", func(t *testing.T) {
+		s := &Server{
+			cfg: config.AppConfig{
+				APIToken:       "secret",
+				APITokenScopes: nil,
+			},
+		}
+
+		handler := s.authMiddleware(s.scopeMiddleware(ScopeV3Read)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		})))
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v3/sessions", nil)
+		req.Header.Set("Authorization", "Bearer secret")
+		w := httptest.NewRecorder()
+
+		handler.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusUnauthorized, w.Code)
+	})
+
+	t.Run("token_list", func(t *testing.T) {
+		s := &Server{
+			cfg: config.AppConfig{
+				APITokens: []config.ScopedToken{
+					{Token: "scoped", Scopes: nil},
+				},
+			},
+		}
+
+		handler := s.authMiddleware(s.scopeMiddleware(ScopeV3Read)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		})))
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v3/sessions", nil)
+		req.Header.Set("Authorization", "Bearer scoped")
+		w := httptest.NewRecorder()
+
+		handler.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusUnauthorized, w.Code)
+	})
 }

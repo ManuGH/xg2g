@@ -102,10 +102,6 @@ func (s scopeSet) has(scope Scope) bool {
 	return ok
 }
 
-func defaultReadScopes() scopeSet {
-	return newScopeSet([]string{string(ScopeV3Read)})
-}
-
 // tokenScopes returns the scopes for a valid token.
 func (s *Server) tokenScopes(token string) (scopeSet, bool) {
 	if token == "" {
@@ -119,7 +115,7 @@ func (s *Server) tokenScopes(token string) (scopeSet, bool) {
 
 	if cfgToken != "" && auth.AuthorizeToken(token, cfgToken) {
 		if len(cfgTokenScopes) == 0 {
-			return defaultReadScopes(), true
+			return nil, false
 		}
 		return newScopeSet(cfgTokenScopes), true
 	}
@@ -127,20 +123,13 @@ func (s *Server) tokenScopes(token string) (scopeSet, bool) {
 	for _, entry := range cfgTokens {
 		if auth.AuthorizeToken(token, entry.Token) {
 			if len(entry.Scopes) == 0 {
-				return defaultReadScopes(), true
+				return nil, false
 			}
 			return newScopeSet(entry.Scopes), true
 		}
 	}
 
 	return nil, false
-}
-
-func (s *Server) allowAnonymous() bool {
-	cfg := s.GetConfig()
-	authAnon := cfg.AuthAnonymous
-	hasTokens := cfg.APIToken != "" || len(cfg.APITokens) > 0
-	return authAnon && !hasTokens
 }
 
 func (s *Server) requestScopes(r *http.Request) (scopeSet, bool) {
@@ -150,16 +139,7 @@ func (s *Server) requestScopes(r *http.Request) (scopeSet, bool) {
 		if ok {
 			return scopes, true
 		}
-		// If token is invalid but anonymous is allowed, fall back to anonymous scopes
-		if s.allowAnonymous() {
-			return newScopeSet([]string{string(ScopeV3Read)}), true
-		}
-		// Token present but invalid and anonymous not allowed
 		return nil, false
-	}
-	if s.allowAnonymous() {
-		// Anonymous users get read-only access by default for security
-		return newScopeSet([]string{string(ScopeV3Read)}), true
 	}
 	return nil, false
 }
@@ -169,6 +149,7 @@ func (s *Server) scopeMiddleware(required ...Scope) func(http.Handler) http.Hand
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			scopes, ok := s.requestScopes(r)
+
 			if !ok {
 				RespondError(w, r, http.StatusUnauthorized, ErrUnauthorized)
 				return

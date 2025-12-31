@@ -442,6 +442,7 @@ func (s *Server) routes() http.Handler {
 	// Register Generated API v3 Routes
 	// We use the generated handler which attaches to our existing router 'r'
 	// and creates routes starting with /api
+	// NOTE: HandlerWithOptions creates its own handler stack, so we must re-apply middlewares
 	HandlerWithOptions(s, ChiServerOptions{
 		BaseURL:    "/api/v3",
 		BaseRouter: r,

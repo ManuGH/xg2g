@@ -49,7 +49,7 @@ FFmpeg: ffmpeg (5s kill timeout)
 ```
 
 ### Health Status
-- **API Endpoint:** ✅ http://localhost:8080/healthz
+- **API Endpoint:** ✅ http://localhost:8088/healthz
 - **V3 Sessions API:** ✅ /api/v3/sessions (0 active sessions)
 - **Recovery Sweep:** ✅ Running every 5 minutes
 - **No Errors:** ✅ Clean logs

@@ -7,7 +7,7 @@ For complex setups or persisted configurations, a YAML file can be used.
 
 See `docs/DEPRECATION_POLICY.md` for the policy and removal targets.
 
-Legacy environment variable aliases are deprecated and will be removed in `v3.0.0`. Use canonical names instead.
+Legacy environment variable aliases were removed in `v3.0.0`. Use canonical names instead.
 
 ### Strict Readiness Checks
 
@@ -37,7 +37,7 @@ The simplest way to run xg2g is with a few environment variables.
 | :--- | :--- | :--- |
 | `XG2G_OWI_BASE` | Base URL of your receiver (required for streaming). If empty, xg2g starts in setup mode. | `http://192.168.1.50` |
 | `XG2G_DATA` | Data directory for cache/logs. | `/app/data` |
-| `XG2G_API_TOKEN` | Secure token for admin API. | `s3cr3t` |
+| `XG2G_API_TOKEN` | Required token for API access. | `s3cr3t` |
 
 #### Advanced
 
@@ -45,7 +45,10 @@ The simplest way to run xg2g is with a few environment variables.
 | :--- | :--- | :--- |
 | `XG2G_BOUQUET` | Bouquets to load (comma-separated). Empty = all bouquets. | empty |
 | `XG2G_EPG_DAYS` | Days of EPG to fetch. | `7` |
+| `XG2G_LISTEN` | API server listen address. | `:8080` |
 | `XG2G_READY_STRICT` | Enable strict upstream checking. | `false` |
+
+**Note:** The binary defaults to `:8080`; deployment configs may set `XG2G_LISTEN=:8088`.
 
 ### 2. Configuration File (YAML)
 
@@ -87,7 +90,7 @@ Migrate a config file (scaffolding):
 
 If running in Kubernetes or Docker Compose with healthchecks:
 
-- **Liveness Probe** (`/healthz`): Checks if process is not deadlocked. Always 200 OK.
+- **Liveness Probe** (`/healthz`): Checks if the process is up; it may return 503 during startup or degraded states.
 - **Readiness Probe** (`/readyz`): Checks if ready to serve traffic.
   - If `XG2G_READY_STRICT=false` (default): Returns 200 immediately.
   - If `XG2G_READY_STRICT=true`: Pings Enigma2 receiver (timeout 2s). Returns 503 if unreachable.
@@ -106,7 +109,15 @@ xg2g supports multiple authentication methods:
 v3 endpoints require scopes in addition to a valid token. Configure scopes with:
 
 - `XG2G_API_TOKEN_SCOPES` for the primary token
-- `XG2G_API_TOKENS` for additional scoped tokens
+- `XG2G_API_TOKENS` for additional scoped tokens (JSON recommended; legacy format still supported)
+
+Tokens without scopes are rejected (fail-closed).
+
+Example (JSON, recommended):
+
+```
+XG2G_API_TOKENS=[{"token":"read-token","scopes":["v3:read"]},{"token":"ops-token","scopes":["v3:read","v3:write"]}]
+```
 
 See `docs/guides/RBAC.md` for scope definitions and endpoint mappings.
 
@@ -131,7 +142,7 @@ api:
 **Environment Variables**:
 
 ```bash
-export XG2G_RATELIMIT_ENABLED=true
+export XG2G_RATELIMIT=true
 export XG2G_RATELIMIT_GLOBAL=100
 export XG2G_RATELIMIT_AUTH=10
 export XG2G_RATELIMIT_BURST=20
@@ -220,6 +231,13 @@ The v3 streaming backend is the **production streaming system** (enabled by defa
 | `XG2G_V3_CONFIG_STRICT` | `true` | Enforce strict v3 config validation (override for migration) |
 
 Configuration is fixed to v3. Use `XG2G_V3_CONFIG_STRICT=false` to override strict validation during migration.
+When `XG2G_V3_WORKER_MODE=virtual` and effective tuner slots are empty, a single virtual slot `[0]` is used.
+If `XG2G_V3_TUNER_SLOTS` is invalid or empty, it is ignored with a warning and existing config is preserved.
+
+## Removed in v3
+
+- The legacy `/stream/*` route has been removed and now returns 404. Use the v3 HLS/session endpoints (for example, `/api/v3/sessions/{sessionID}/hls/{filename}`) or the HDHomeRun endpoints when applicable.
+- Proxy environment variables (`XG2G_PROXY_*`) are no longer supported.
 
 ## Recording Playback
 

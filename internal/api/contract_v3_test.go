@@ -25,6 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ManuGH/xg2g/internal/config"
+	v3api "github.com/ManuGH/xg2g/internal/v3/api"
 	v3bus "github.com/ManuGH/xg2g/internal/v3/bus"
 	"github.com/ManuGH/xg2g/internal/v3/lease"
 	"github.com/ManuGH/xg2g/internal/v3/model"
@@ -73,6 +74,13 @@ func readFixture(t *testing.T, name string) []byte {
 	data, err := os.ReadFile(path)
 	require.NoError(t, err, "read fixture %s", name)
 	return data
+}
+
+func decodeIntentResponse(t *testing.T, body []byte) v3api.IntentResponse {
+	t.Helper()
+	var resp v3api.IntentResponse
+	require.NoError(t, json.Unmarshal(body, &resp))
+	return resp
 }
 
 func validateOpenAPIResponse(t *testing.T, doc *openapi3.T, req *http.Request, rr *httptest.ResponseRecorder, opts *openapi3filter.Options) {
@@ -147,30 +155,97 @@ func TestV3Contract_Intents(t *testing.T) {
 }
 
 func TestV3Contract_IntentLeaseBusy(t *testing.T) {
-	s, st := newV3TestServer(t, t.TempDir())
+	t.Run("phase1_api_leases_conflict", func(t *testing.T) {
+		s, st := newV3TestServer(t, t.TempDir())
+		s.mu.Lock()
+		s.cfg.V3APILeases = true
+		s.mu.Unlock()
 
-	_, ok, err := st.TryAcquireLease(context.Background(), lease.LeaseKeyTunerSlot(0), "busy-owner", 5*time.Second)
-	require.NoError(t, err)
-	require.True(t, ok)
+		_, ok, err := st.TryAcquireLease(context.Background(), lease.LeaseKeyTunerSlot(0), "busy-owner", 5*time.Second)
+		require.NoError(t, err)
+		require.True(t, ok)
 
-	body := readFixture(t, "post_intents_request.json")
-	req := httptest.NewRequest(http.MethodPost, "/api/v3/intents", bytes.NewReader(body))
-	req.Header.Set("Authorization", "Bearer test-token")
-	req.Header.Set("Content-Type", "application/json")
+		body := readFixture(t, "post_intents_request.json")
+		req := httptest.NewRequest(http.MethodPost, "/api/v3/intents", bytes.NewReader(body))
+		req.Header.Set("Authorization", "Bearer test-token")
+		req.Header.Set("Content-Type", "application/json")
 
-	rr := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rr, req)
+		rr := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rr, req)
 
-	require.Equal(t, http.StatusConflict, rr.Code)
-	validateOpenAPIResponse(t, loadOpenAPIDoc(t), req, rr, nil)
+		require.Equal(t, http.StatusConflict, rr.Code)
+		validateOpenAPIResponse(t, loadOpenAPIDoc(t), req, rr, nil)
 
-	var apiErr APIError
-	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &apiErr))
-	require.Equal(t, "LEASE_BUSY", apiErr.Code)
+		var apiErr APIError
+		require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &apiErr))
+		require.Equal(t, "LEASE_BUSY", apiErr.Code)
 
-	sessions, err := st.ListSessions(context.Background())
-	require.NoError(t, err)
-	require.Len(t, sessions, 0)
+		sessions, err := st.ListSessions(context.Background())
+		require.NoError(t, err)
+		require.Len(t, sessions, 0)
+	})
+
+	t.Run("phase2_idempotent_replay", func(t *testing.T) {
+		s, st := newV3TestServer(t, t.TempDir())
+		s.mu.Lock()
+		s.cfg.V3APILeases = false
+		s.mu.Unlock()
+
+		_, ok, err := st.TryAcquireLease(context.Background(), lease.LeaseKeyTunerSlot(0), "busy-owner", 5*time.Second)
+		require.NoError(t, err)
+		require.True(t, ok)
+
+		bus, ok := s.v3Bus.(*v3bus.MemoryBus)
+		require.True(t, ok)
+
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+
+		sub, err := bus.Subscribe(ctx, string(model.EventStartSession))
+		require.NoError(t, err)
+		defer sub.Close()
+
+		body := readFixture(t, "post_intents_request.json")
+
+		send := func() (*http.Request, *httptest.ResponseRecorder, v3api.IntentResponse) {
+			req := httptest.NewRequest(http.MethodPost, "/api/v3/intents", bytes.NewReader(body))
+			req.Header.Set("Authorization", "Bearer test-token")
+			req.Header.Set("Content-Type", "application/json")
+			rr := httptest.NewRecorder()
+			s.Handler().ServeHTTP(rr, req)
+			return req, rr, decodeIntentResponse(t, rr.Body.Bytes())
+		}
+
+		req1, rr1, resp1 := send()
+		require.Equal(t, http.StatusAccepted, rr1.Code)
+		validateOpenAPIResponse(t, loadOpenAPIDoc(t), req1, rr1, nil)
+
+		req2, rr2, resp2 := send()
+		require.Equal(t, http.StatusAccepted, rr2.Code)
+		validateOpenAPIResponse(t, loadOpenAPIDoc(t), req2, rr2, nil)
+
+		require.Equal(t, resp1.SessionID, resp2.SessionID)
+		require.Equal(t, "accepted", resp1.Status)
+		require.Equal(t, "idempotent_replay", resp2.Status)
+		require.Equal(t, "corr-intent-001", resp1.CorrelationID)
+		require.Equal(t, resp1.CorrelationID, resp2.CorrelationID)
+
+		select {
+		case <-sub.C():
+		case <-time.After(200 * time.Millisecond):
+			t.Fatal("expected session.start event")
+		}
+
+		select {
+		case <-sub.C():
+			t.Fatal("unexpected extra session.start event on replay")
+		case <-time.After(50 * time.Millisecond):
+		}
+
+		sessions, err := st.ListSessions(context.Background())
+		require.NoError(t, err)
+		require.Len(t, sessions, 1)
+	})
 }
 
 func TestV3Contract_SessionState(t *testing.T) {
