@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <!-- Background circle -->
+  <circle cx="100" cy="100" r="95" fill="#2563eb" stroke="#1e40af" stroke-width="2"/>
+  
+  <!-- Play button triangle (representing streaming) -->
+  <polygon points="75,60 75,140 145,100" fill="#ffffff"/>
+  
+  <!-- Signal waves (representing broadcast/streaming) -->
+  <path d="M 155 85 Q 165 85 165 100 Q 165 115 155 115" 
+        stroke="#ffffff" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <path d="M 165 75 Q 180 75 180 100 Q 180 125 165 125" 
+        stroke="#ffffff" stroke-width="4" fill="none" stroke-linecap="round"/>
+  
+  <!-- Text "xg2g" at bottom -->
+  <text x="100" y="175" font-family="Arial, sans-serif" font-size="24" 
+        font-weight="bold" fill="#ffffff" text-anchor="middle">xg2g</text>
+</svg>

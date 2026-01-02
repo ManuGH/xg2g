@@ -1,7 +1,7 @@
 # xg2g
 
 <div align="center">
-  <img src="docs/images/logo.png" alt="xg2g Logo" width="200"/>
+  <img src="docs/images/logo.svg" alt="xg2g Logo" width="200"/>
   <h3>Production-Ready Streaming Middleware for Enigma2</h3>
   <p>
     Modern event-driven bridge between Enigma2 receivers and
