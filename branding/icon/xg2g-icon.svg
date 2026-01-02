@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <!-- Icon-only version - no text, just the symbol -->
+  <defs>
+    <radialGradient id="iconGrad" cx="50%" cy="30%">
+      <stop offset="0%" style="stop-color:#60a5fa;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#3b82f6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1e40af;stop-opacity:1" />
+    </radialGradient>
+  </defs>
+  
+  <!-- Circle background with gradient -->
+  <circle cx="100" cy="100" r="95" fill="url(#iconGrad)" stroke="#1e40af" stroke-width="3"/>
+  
+  <!-- Play button -->
+  <polygon points="75,60 75,140 145,100" fill="#ffffff"/>
+  
+  <!-- Signal waves -->
+  <path d="M 155 85 Q 165 85 165 100 Q 165 115 155 115" 
+        stroke="#ffffff" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <path d="M 165 75 Q 180 75 180 100 Q 180 125 165 125" 
+        stroke="#ffffff" stroke-width="4" fill="none" stroke-linecap="round"/>
+</svg>

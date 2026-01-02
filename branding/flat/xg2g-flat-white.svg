@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <!-- Flat white-on-dark logo -->
+  <rect width="200" height="200" fill="#1e293b"/>
+  
+  <!-- Circle background -->
+  <circle cx="100" cy="100" r="80" fill="#334155"/>
+  
+  <!-- Play button -->
+  <polygon points="80,70 80,130 130,100" fill="#ffffff"/>
+  
+  <!-- Signal waves -->
+  <path d="M 140 90 Q 150 90 150 100 Q 150 110 140 110" 
+        stroke="#ffffff" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <path d="M 150 80 Q 165 80 165 100 Q 165 120 150 120" 
+        stroke="#ffffff" stroke-width="4" fill="none" stroke-linecap="round"/>
+</svg>

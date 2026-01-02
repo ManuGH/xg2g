@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400">
+  <!-- Dark background -->
+  <rect width="1200" height="400" fill="#0f172a"/>
+  
+  <!-- Logo circle with metallic gradient -->
+  <defs>
+    <radialGradient id="metallicGrad" cx="50%" cy="30%">
+      <stop offset="0%" style="stop-color:#60a5fa;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#3b82f6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1e40af;stop-opacity:1" />
+    </radialGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Logo circle -->
+  <circle cx="220" cy="200" r="85" fill="url(#metallicGrad)" stroke="#3b82f6" stroke-width="3" filter="url(#glow)"/>
+  
+  <!-- Play button triangle -->
+  <polygon points="195,160 195,240 265,200" fill="#ffffff" opacity="0.95"/>
+  
+  <!-- Signal waves -->
+  <path d="M 275 180 Q 290 180 290 200 Q 290 220 275 220" 
+        stroke="#ffffff" stroke-width="5" fill="none" stroke-linecap="round" opacity="0.9"/>
+  <path d="M 290 165 Q 310 165 310 200 Q 310 235 290 235" 
+        stroke="#ffffff" stroke-width="5" fill="none" stroke-linecap="round" opacity="0.7"/>
+  
+  <!-- Main text "xg2g" -->
+  <text x="380" y="220" font-family="'Helvetica Neue', Arial, sans-serif" 
+        font-size="120" font-weight="900" fill="#ffffff" letter-spacing="-2">xg2g</text>
+  
+  <!-- Tagline -->
+  <text x="380" y="260" font-family="'Helvetica Neue', Arial, sans-serif" 
+        font-size="28" font-weight="300" fill="#94a3b8" letter-spacing="4">GATEWAY-TO-GATEWAY STREAMING PROXY</text>
+</svg>
