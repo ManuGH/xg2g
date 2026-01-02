@@ -2,9 +2,8 @@ version: "3.8"
 
 services:
   xg2g:
-    # NOTE: Build with 'make docker-build' to create this image
-    image: xg2g:latest
-    pull_policy: never
+    image: ghcr.io/manugh/xg2g:latest
+    pull_policy: always
     container_name: xg2g
 
     # Run as root for internal testing simplicity (or use specific UID if needed)

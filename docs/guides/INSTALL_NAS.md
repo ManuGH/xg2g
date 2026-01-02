@@ -12,14 +12,14 @@ If you have the "Docker Compose Manager" plugin installed:
 
 1. Create a new stack named `xg2g`.
 2. Paste the standard [docker-compose.yml](../../docker-compose.yml) contents.
-3. Update `image: xg2g:trixie-local` to `image: ghcr.io/ManuGH/xg2g:v3`.
+3. The docker-compose.yml already references the correct image (`ghcr.io/manugh/xg2g:latest`).
 4. Click **Up**.
 
 ### Method B: "Add Container" (Manual)
 
 1. Go to **Docker** > **Add Container**.
 2. **Name**: `xg2g`
-3. **Repository**: `ghcr.io/manugh/xg2g:v3`
+3. **Repository**: `ghcr.io/manugh/xg2g:latest`
 4. **Network Type**: `Host`
 5. **Paths (Volume Mappings)**:
    - **Click "Add another Path, Port, Variable..."**
@@ -41,7 +41,7 @@ If you have the "Docker Compose Manager" plugin installed:
 
 1. Open **Container Manager** (formerly Docker).
 2. Go to **Registry** and search for `xg2g`.
-   - *Note: If not found, add `ghcr.io` to your Registry settings or download the image manually via SSH `docker pull ghcr.io/ManuGH/xg2g:v3`.*
+   - *Note: If not found, add `ghcr.io` to your Registry settings or download the image manually via SSH `docker pull ghcr.io/manugh/xg2g:latest`.*
 3. Select the image and click **Run**.
 4. **General Settings**:
    - **Container Name**: `xg2g`
