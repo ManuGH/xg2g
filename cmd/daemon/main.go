@@ -264,6 +264,9 @@ func main() {
 	s.SetConfigHolder(cfgHolder)
 	s.ApplySnapshot(cfgHolder.Current())
 
+	// Phase 8: Start Recording Cache Eviction Worker (Background)
+	go s.StartRecordingCacheEvicter(ctx)
+
 	// Initial refresh (Async "Safety Net" for fast startup)
 	// We run this in the background so the HTTP server binds ports immediately.
 	// Users can disable with XG2G_INITIAL_REFRESH=false if needed

@@ -240,6 +240,13 @@ type AppConfig struct {
 	RecordingStableWindow   time.Duration          // File stability check duration (default: 2s)
 	RecordingPathMappings   []RecordingPathMapping // Receiver→Local path mappings
 
+	// VOD Optimization (Phase 7)
+	VODProbeSize       string        // ffmpeg probesize (e.g. "50M")
+	VODAnalyzeDuration string        // ffmpeg analyzeduration (e.g. "50M")
+	VODStallTimeout    time.Duration // Supervisor stall timeout
+	VODMaxConcurrent   int           `json:"vodMaxConcurrentBuilds,omitempty"`
+	VODCacheTTL        time.Duration `json:"vodCacheTTL,omitempty"`
+
 	// HDHomeRun Configuration
 	HDHR HDHRConfig // Reusing the struct as it fits well (using value types locally)
 }
@@ -352,6 +359,11 @@ func (l *Loader) setDefaults(cfg *AppConfig) {
 	cfg.RecordingPlaybackPolicy = "auto" // Local-first with receiver fallback
 	cfg.RecordingStableWindow = 2 * time.Second
 	cfg.RecordingPathMappings = nil
+	cfg.VODProbeSize = "50M"
+	cfg.VODAnalyzeDuration = "50M"
+	cfg.VODStallTimeout = 60 * time.Second
+	cfg.VODMaxConcurrent = 2
+	cfg.VODCacheTTL = 24 * time.Hour
 
 	// HDHomeRun Defaults
 	cfg.HDHR.Enabled = new(bool)
@@ -810,10 +822,17 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	// Recording Roots (Env Override)
 	cfg.RecordingRoots = parseRecordingRoots(ParseString("XG2G_RECORDING_ROOTS", ""), cfg.RecordingRoots)
 
-	// Recording Playback (Env Override)
-	cfg.RecordingPlaybackPolicy = ParseString("XG2G_RECORDINGS_POLICY", cfg.RecordingPlaybackPolicy)
-	cfg.RecordingStableWindow = ParseDuration("XG2G_RECORDINGS_STABLE_WINDOW", cfg.RecordingStableWindow)
+	// Recording Playback Configuration
+	cfg.RecordingPlaybackPolicy = ParseString("XG2G_RECORDING_PLAYBACK_POLICY", cfg.RecordingPlaybackPolicy)
+	if w := ParseDuration("XG2G_RECORDING_STABLE_WINDOW", 0); w > 0 {
+		cfg.RecordingStableWindow = w
+	}
 	cfg.RecordingPathMappings = parseRecordingMappings(ParseString("XG2G_RECORDINGS_MAP", ""), cfg.RecordingPathMappings)
+
+	// VOD Optimization
+	cfg.VODProbeSize = ParseString("XG2G_VOD_PROBESIZE", cfg.VODProbeSize)
+	cfg.VODAnalyzeDuration = ParseString("XG2G_VOD_ANALYZEDURATION", cfg.VODAnalyzeDuration)
+	cfg.VODStallTimeout = ParseDuration("XG2G_VOD_STALL_TIMEOUT", cfg.VODStallTimeout)
 
 	// HDHomeRun Emulation
 	hdhrEnabled := ParseBool("XG2G_HDHR_ENABLED", *cfg.HDHR.Enabled)

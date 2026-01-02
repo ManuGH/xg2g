@@ -91,7 +91,18 @@ components:
           description: |
             Session lifecycle state. READY guarantees a playable HLS stream (playlist + at least one segment,
             atomically published). PRIMING means FFmpeg is running but content is not yet playable.
-          enum: [NEW, STARTING, PRIMING, READY, DRAINING, STOPPING, STOPPED, FAILED, CANCELLED]
+          enum:
+            [
+              NEW,
+              STARTING,
+              PRIMING,
+              READY,
+              DRAINING,
+              STOPPING,
+              STOPPED,
+              FAILED,
+              CANCELLED,
+            ]
         reason:
           type: string
           description: Reason code; R_LEASE_BUSY means capacity rejection (no tuner available), not a system fault.
@@ -157,7 +168,18 @@ components:
           description: |
             Session lifecycle state. READY guarantees a playable HLS stream (playlist + at least one segment,
             atomically published). PRIMING means FFmpeg is running but content is not yet playable.
-          enum: [NEW, STARTING, PRIMING, READY, DRAINING, STOPPING, STOPPED, FAILED, CANCELLED]
+          enum:
+            [
+              NEW,
+              STARTING,
+              PRIMING,
+              READY,
+              DRAINING,
+              STOPPING,
+              STOPPED,
+              FAILED,
+              CANCELLED,
+            ]
         reason:
           type: string
           description: Reason code; R_LEASE_BUSY means capacity rejection (no tuner available), not a system fault.
@@ -675,6 +697,19 @@ components:
         isRecording: { type: boolean }
         serviceName: { type: string }
 
+    RecordingBuildStatus:
+      type: object
+      required: [state]
+      properties:
+        state:
+          type: string
+          enum: [IDLE, RUNNING, FAILED, READY]
+        segment_count: { type: integer }
+        last_progress: { type: string, format: date-time }
+        started_at: { type: string, format: date-time }
+        attempt_mode: { type: string, enum: [fast, robust] }
+        error: { type: string }
+
     TimerList:
       type: object
       required: [items]
@@ -740,7 +775,7 @@ components:
         recording_id:
           type: string
           description: Base64url-encoded recording ID (RFC 4648, unpadded) to use for /recordings/{recordingId}.
-          pattern: '^[A-Za-z0-9_-]+$'
+          pattern: "^[A-Za-z0-9_-]+$"
           minLength: 16
           maxLength: 2048
           example: "MTowOjA6MDo6L21lZGlhL2hkZC9tb3ZpZS9mb28udHM"
@@ -1027,7 +1062,7 @@ paths:
           required: true
           schema:
             type: string
-            pattern: '^[A-Za-z0-9_-]+$'
+            pattern: "^[A-Za-z0-9_-]+$"
             minLength: 16
             maxLength: 2048
             example: "MTowOjA6MDo6L21lZGlhL2hkZC9tb3ZpZS9mb28udHM"
@@ -1044,6 +1079,29 @@ paths:
         "500":
           description: Failed to delete recording
 
+  /recordings/{recordingId}/status:
+    get:
+      summary: Get recording build status
+      parameters:
+        - in: path
+          name: recordingId
+          schema:
+            type: string
+          required: true
+      responses:
+        "200":
+          description: Build status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordingBuildStatus"
+        "400":
+          description: Invalid recording ID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+
   /recordings/{recordingId}/playlist.m3u8:
     get:
       summary: Get HLS playlist for a recording
@@ -1056,7 +1114,7 @@ paths:
           required: true
           schema:
             type: string
-            pattern: '^[A-Za-z0-9_-]+$'
+            pattern: "^[A-Za-z0-9_-]+$"
             minLength: 16
             maxLength: 2048
             example: "MTowOjA6MDo6L21lZGlhL2hkZC9tb3ZpZS9mb28udHM"
@@ -1102,7 +1160,7 @@ paths:
           required: true
           schema:
             type: string
-            pattern: '^[A-Za-z0-9_-]+$'
+            pattern: "^[A-Za-z0-9_-]+$"
             minLength: 16
             maxLength: 2048
             example: "MTowOjA6MDo6L21lZGlhL2hkZC9tb3ZpZS9mb28udHM"

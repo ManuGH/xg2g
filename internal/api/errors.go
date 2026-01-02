@@ -110,6 +110,10 @@ var (
 		Code:    "RATE_LIMIT_EXCEEDED",
 		Message: "Rate limit exceeded - too many requests",
 	}
+	ErrConcurrentBuildsExceeded = &APIError{
+		Code:    "CONCURRENT_BUILDS_EXCEEDED",
+		Message: "Too many concurrent recording builds",
+	}
 
 	// Generic errors
 	ErrInternalServer = &APIError{

@@ -5,6 +5,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -23,6 +24,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/ManuGH/xg2g/internal/fsutil"
@@ -38,6 +40,7 @@ var (
 	errRecordingInvalid  = errors.New("invalid recording ref")
 	errRecordingNotReady = errors.New("recording not ready")
 	errRecordingNotFound = errors.New("recording not found")
+	errTooManyBuilds     = errors.New("too many concurrent builds")
 )
 
 const (
@@ -57,8 +60,159 @@ const (
 )
 
 type recordingBuildState struct {
-	status    recordingBuildStatus
-	updatedAt time.Time
+	status            recordingBuildStatus
+	updatedAt         time.Time
+	lastProgressAt    time.Time
+	segCount          int
+	lastPlaylistMtime time.Time
+	lastSegMtime      time.Time
+	startedAt         time.Time
+	attemptMode       string
+	error             string // For status endpoint
+}
+
+// Typed Errors for Hardening
+var (
+	ErrProbeFailed       = fmt.Errorf("probe failed")
+	ErrSourceUnavailable = fmt.Errorf("source unavailable")
+	ErrFFmpegFatal       = fmt.Errorf("ffmpeg fatal error")
+)
+
+func classifyFFmpegError(stderr string, segmentsWritten int) error {
+	// 1. Late Failure -> Runtime Issue (Not Probe)
+	if segmentsWritten > 0 {
+		return ErrFFmpegFatal
+	}
+
+	// 2. Auth / Missing Source -> Non-Retryable
+	if strings.Contains(stderr, "401 Unauthorized") ||
+		strings.Contains(stderr, "403 Forbidden") ||
+		strings.Contains(stderr, "404 Not Found") ||
+		strings.Contains(stderr, "Connection refused") ||
+		strings.Contains(stderr, "No route to host") {
+		return ErrSourceUnavailable
+	}
+
+	// 3. Probe / init failure patterns -> Retryable
+	probePatterns := []string{
+		"could not find codec parameters",
+		"no streams",
+		"Invalid data found",
+		"Could not find codec parameters for stream",
+		"unspecified pixel format",
+		"error reading header",
+	}
+	for _, p := range probePatterns {
+		if strings.Contains(stderr, p) {
+			return ErrProbeFailed
+		}
+	}
+
+	// Default
+	return ErrFFmpegFatal
+}
+
+func (s *recordingBuildState) toStatus() RecordingBuildStatus {
+	st := RecordingBuildStatusStateRUNNING
+	if s.status == recordingBuildFailed {
+		st = RecordingBuildStatusStateFAILED
+	}
+	var startedAt *time.Time
+	if !s.startedAt.IsZero() {
+		startedAt = &s.startedAt
+	}
+	var mode RecordingBuildStatusAttemptMode
+	if s.attemptMode == "fast" {
+		mode = Fast
+	} else if s.attemptMode == "robust" {
+		mode = Robust
+	}
+
+	return RecordingBuildStatus{
+		State:        st,
+		SegmentCount: &s.segCount,
+		LastProgress: &s.lastProgressAt,
+		StartedAt:    startedAt,
+		AttemptMode:  &mode,
+		Error:        &s.error,
+	}
+}
+
+// checkSourceAvailability performs a preflight check
+func checkSourceAvailability(ctx context.Context, sourceURL string) error {
+	// Only check HTTP(s) sources
+	if !strings.HasPrefix(sourceURL, "http") {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "HEAD", sourceURL, nil)
+	if err != nil {
+		return err // URL parse error, etc.
+	}
+
+	// Use a default client with timeout
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("preflight failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 401 || resp.StatusCode == 403 || resp.StatusCode == 404 {
+		return fmt.Errorf("%w: HTTP %d", ErrSourceUnavailable, resp.StatusCode)
+	}
+	if resp.StatusCode >= 500 {
+		return fmt.Errorf("source error: HTTP %d", resp.StatusCode)
+	}
+	return nil
+}
+
+// GetRecordingsRecordingIdStatus handles GET /api/v3/recordings/{recordingId}/status
+func (s *Server) GetRecordingsRecordingIdStatus(w http.ResponseWriter, r *http.Request, recordingId string) {
+	serviceRef := s.decodeRecordingID(recordingId)
+	if serviceRef == "" {
+		s.writeRecordingPlaybackError(w, r, "", errRecordingInvalid)
+		return
+	}
+
+	s.mu.RLock()
+	hlsRoot := s.cfg.HLSRoot
+	s.mu.RUnlock()
+
+	cacheDir, err := recordingCacheDir(hlsRoot, serviceRef)
+	if err != nil {
+		s.writeRecordingPlaybackError(w, r, serviceRef, err)
+		return
+	}
+
+	// 1. Check Active Build
+	s.recordingMu.Lock()
+	if state, ok := s.recordingRun[cacheDir]; ok {
+		resp := state.toStatus()
+		s.recordingMu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+		return
+	}
+	s.recordingMu.Unlock()
+
+	// 2. Check Completed
+	state := RecordingBuildStatusStateIDLE
+	if recordingPlaylistReady(cacheDir) {
+		// Validated final playlist
+		state = RecordingBuildStatusStateREADY
+	} else if path, ok := recordingLivePlaylistReady(cacheDir); ok {
+		// Valid progressive playlist
+		_ = path
+		state = RecordingBuildStatusStateREADY
+	}
+
+	resp := RecordingBuildStatus{State: state}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // GetRecordings handles GET /api/v3/recordings
@@ -362,10 +516,12 @@ func extractPathFromServiceRef(serviceRef string) string {
 }
 
 func (s *Server) resolveRecordingPlaybackSource(ctx context.Context, serviceRef string) (string, string, string, error) {
-	serviceRef = strings.TrimSpace(serviceRef)
-	if serviceRef == "" {
-		return "", "", "", errRecordingInvalid
+	// Phase 1: Strict Validation Check (before any normalization)
+	if err := validateRecordingRef(serviceRef); err != nil {
+		return "", "", "", err
 	}
+	// Logic continues with trimmed ref
+	serviceRef = strings.TrimSpace(serviceRef)
 
 	receiverPath := extractPathFromServiceRef(serviceRef)
 	if !strings.HasPrefix(receiverPath, "/") {
@@ -378,6 +534,7 @@ func (s *Server) resolveRecordingPlaybackSource(ctx context.Context, serviceRef 
 	if cleanRef == "." || cleanRef == ".." || strings.HasPrefix(cleanRef, "../") {
 		return "", "", "", errRecordingInvalid
 	}
+	// Redundant but cheap re-check
 	if strings.ContainsAny(cleanRef, "?#") {
 		return "", "", "", errRecordingInvalid
 	}
@@ -388,6 +545,8 @@ func (s *Server) resolveRecordingPlaybackSource(ctx context.Context, serviceRef 
 	stableWindow := s.cfg.RecordingStableWindow
 	policy := strings.ToLower(strings.TrimSpace(s.cfg.RecordingPlaybackPolicy))
 	pathMapper := s.recordingPathMapper
+	username := s.cfg.OWIUsername
+	password := s.cfg.OWIPassword
 	s.mu.RUnlock()
 
 	allowLocal := policy != "receiver_only"
@@ -431,11 +590,23 @@ func (s *Server) resolveRecordingPlaybackSource(ctx context.Context, serviceRef 
 	}
 	host = h
 
+	// Enigma2 requires the ServiceRef to be literal (colons and all).
+	// We use a custom escaping helper to ensure RawPath is valid UTF-8 percent-encoded
+	// while strictly preserving colons and slashes.
+	rawPath := escapeServiceRefPath("/" + serviceRef)
+
 	u := url.URL{
-		Scheme: "http",
-		Host:   fmt.Sprintf("%s:%d", host, streamPort),
-		Path:   cleanRef,
+		Scheme:  "http",
+		Host:    fmt.Sprintf("%s:%d", host, streamPort),
+		Path:    "/" + serviceRef, // Decoded path.
+		RawPath: rawPath,          // Properly encoded path (valid for Go net/url).
 	}
+
+	// Inject credentials if configured
+	if username != "" && password != "" {
+		u.User = url.UserPassword(username, password)
+	}
+
 	streamURL := u.String()
 
 	return "receiver", streamURL, "", nil
@@ -549,9 +720,22 @@ func (s *Server) ensureRecordingPlaylist(ctx context.Context, serviceRef string)
 	if err != nil {
 		return "", err
 	}
-	playlistPath := filepath.Join(cacheDir, "index.m3u8")
+	// 1. Check Final
 	if recordingPlaylistReady(cacheDir) {
-		return playlistPath, nil
+		// P8: LRU Touch
+		now := time.Now()
+		_ = os.Chtimes(cacheDir, now, now)
+		return filepath.Join(cacheDir, "index.m3u8"), nil
+	}
+
+	// 2. Check Live (Progressive VOD - Phase 6)
+	if path, ok := recordingLivePlaylistReady(cacheDir); ok {
+		// P8: LRU Touch (Touch dir to update ModTime for evicter)
+		// We use a throttle or just always touch? File systems are fast.
+		// Let's touch the directory itself.
+		now := time.Now()
+		_ = os.Chtimes(cacheDir, now, now)
+		return path, nil
 	}
 
 	sourceType, source, _, err := s.resolveRecordingPlaybackSource(ctx, serviceRef)
@@ -565,9 +749,51 @@ func (s *Server) ensureRecordingPlaylist(ctx context.Context, serviceRef string)
 	return "", errRecordingNotReady
 }
 
+// recordingLivePlaylistReady checks if a valid progressive playlist exists.
+// Criteria: index.live.m3u8 exists AND references at least one existing segment file.
+func recordingLivePlaylistReady(cacheDir string) (string, bool) {
+	livePath := filepath.Join(cacheDir, "index.live.m3u8")
+
+	// 1. Check Playlist Existence
+	info, err := os.Stat(livePath)
+	if err != nil || info.IsDir() {
+		return "", false
+	}
+
+	// 2. Parse Playlist for valid segment reference
+	data, err := os.ReadFile(livePath)
+	if err != nil {
+		return "", false
+	}
+
+	content := string(data)
+	lines := strings.Split(content, "\n")
+
+	hasSegment := false
+	for _, l := range lines {
+		l = strings.TrimSpace(l)
+		if l == "" || strings.HasPrefix(l, "#") {
+			continue
+		}
+		// Found a URI line (segment)
+		// Check if file exists
+		segPath := filepath.Join(cacheDir, l)
+		if _, err := os.Stat(segPath); err == nil {
+			hasSegment = true
+			break
+		}
+	}
+
+	if hasSegment {
+		return livePath, true
+	}
+	return "", false
+}
+
 func (s *Server) scheduleRecordingBuild(cacheDir, serviceRef, sourceType, source string) error {
 	now := time.Now()
 
+	// 1. Dedup Check (Attach to existing)
 	s.recordingMu.Lock()
 	s.cleanupRecordingBuildsLocked(now)
 	if state, ok := s.recordingRun[cacheDir]; ok {
@@ -575,6 +801,8 @@ func (s *Server) scheduleRecordingBuild(cacheDir, serviceRef, sourceType, source
 		case recordingBuildRunning:
 			if now.Sub(state.updatedAt) < recordingBuildStaleAfter {
 				s.recordingMu.Unlock()
+				// Build already running, client should retry/wait.
+				// For progressive VOD, this means "check again soon".
 				return errRecordingNotReady
 			}
 		case recordingBuildFailed:
@@ -584,6 +812,20 @@ func (s *Server) scheduleRecordingBuild(cacheDir, serviceRef, sourceType, source
 			}
 		}
 	}
+	// 2. Concurrency Limit (Semaphore) - Only for NEW transitions
+	// Release lock to avoid blocking check/attach, but we need to reserve the spot?
+	// No, we hold the lock to set state=RUNNING. But semaphore acquire might block or fail.
+	// User Requirement: "Return 429 if semaphore full".
+
+	select {
+	case s.vodBuildSem <- struct{}{}:
+		// Semaphore acquired
+	default:
+		s.recordingMu.Unlock()
+		return errTooManyBuilds
+	}
+
+	// Double check state after acquire? No we held the lock.
 	s.recordingRun[cacheDir] = &recordingBuildState{
 		status:    recordingBuildRunning,
 		updatedAt: now,
@@ -591,6 +833,7 @@ func (s *Server) scheduleRecordingBuild(cacheDir, serviceRef, sourceType, source
 	s.recordingMu.Unlock()
 
 	go func() {
+		defer func() { <-s.vodBuildSem }() // Release semaphore on exit
 		buildCtx, cancel := context.WithTimeout(context.Background(), recordingBuildTimeout)
 		defer cancel()
 
@@ -605,6 +848,7 @@ func (s *Server) scheduleRecordingBuild(cacheDir, serviceRef, sourceType, source
 			s.recordingRun[cacheDir] = &recordingBuildState{
 				status:    recordingBuildFailed,
 				updatedAt: time.Now(),
+				error:     err.Error(),
 			}
 			return
 		}
@@ -627,26 +871,52 @@ func (s *Server) cleanupRecordingBuildsLocked(now time.Time) {
 }
 
 func (s *Server) buildRecordingPlaylist(ctx context.Context, cacheDir, sourceType, source string) error {
+	s.mu.RLock()
+	probeSize := s.cfg.VODProbeSize
+	analyzeDur := s.cfg.VODAnalyzeDuration
+	s.mu.RUnlock()
+
+	// Attempt 1: Configured (Fast) Probe
 	if err := s.prepareRecordingCacheDir(cacheDir); err != nil {
 		return err
 	}
-	if err := s.generateRecordingPlaylist(ctx, cacheDir, sourceType, source, false); err == nil {
+
+	err := s.runRecordingBuild(ctx, cacheDir, sourceType, source, false, probeSize, analyzeDur)
+	if err == nil {
 		if recordingPlaylistReady(cacheDir) {
 			return nil
 		}
-		return fmt.Errorf("recording playlist incomplete after copy")
+		// Fallthrough only if not ready and no error (incomplete copy?)
+		log.L().Warn().Str("source", source).Msg("recording copy path incomplete, trying transcode")
 	} else {
-		log.L().Warn().
-			Err(err).
-			Str("source_type", sourceType).
-			Str("source", source).
-			Msg("recording VOD copy path failed, retrying with video transcode")
+		// HARDENED RETRY LOGIC
+		if errors.Is(err, ErrProbeFailed) {
+			log.L().Warn().Err(err).Str("source", source).Msg("fast probe failed (retryable), switching to robust params")
+			// Proceed to Attempt 2
+		} else {
+			// Fail Fast for Auth, 404, or IO errors
+			return err
+		}
 	}
+
+	// Attempt 2: Robust Probe + Transcode (Fallback)
+	// Note: We also switch to transcode=true here as fallback, assuming copy might have failed due to codecs.
+	// But Phase 6 logic was: Try Copy -> if nil but not ready -> Try Transcode.
+	// The Adaptive Probe logic adds another dimension.
+
+	// Simplified Strategy:
+	// 1. Try Copy with Fast Probe.
+	// 2. If fails, Try Transcode with Robust Probe.
 
 	if err := s.prepareRecordingCacheDir(cacheDir); err != nil {
 		return err
 	}
-	if err := s.generateRecordingPlaylist(ctx, cacheDir, sourceType, source, true); err != nil {
+
+	// Robust Params
+	robustProbe := "200M"
+	robustAnalyze := "200M"
+
+	if err := s.runRecordingBuild(ctx, cacheDir, sourceType, source, true, robustProbe, robustAnalyze); err != nil {
 		return err
 	}
 	if !recordingPlaylistReady(cacheDir) {
@@ -663,10 +933,24 @@ func (s *Server) prepareRecordingCacheDir(cacheDir string) error {
 	return os.MkdirAll(cacheDir, 0755)
 }
 
-func (s *Server) generateRecordingPlaylist(ctx context.Context, cacheDir, sourceType, source string, transcode bool) error {
-	tmpPlaylist, finalPlaylist := ffmpegexec.PlaylistPaths(cacheDir)
-	_ = os.Remove(tmpPlaylist)
-	_ = os.Remove(finalPlaylist)
+func (s *Server) runRecordingBuild(ctx context.Context, cacheDir, sourceType, source string, transcode bool, probeSize, analyzeDur string) error {
+	// 0. Preflight Check (Fail Fast)
+	if err := checkSourceAvailability(ctx, source); err != nil {
+		return err
+	}
+
+	// Paths
+	livePlaylist := filepath.Join(cacheDir, "index.live.m3u8")
+	finalPlaylist := filepath.Join(cacheDir, "index.m3u8")
+	tmpFinalPlaylist := filepath.Join(cacheDir, "index.final.tmp")
+
+	// Clean slate for this run
+	_ = os.Remove(livePlaylist)
+	_ = os.Remove(tmpFinalPlaylist)
+	// We do NOT remove finalPlaylist here to support idempotency if another process finished it,
+	// checking it is done in buildRecordingPlaylist level or readiness.
+	// But since this is a *new* build attempt (previous failed/stale), we should probably ensure we don't conflict.
+	// However, atomic rename overwrites.
 
 	input := source
 	useConcat := false
@@ -689,10 +973,11 @@ func (s *Server) generateRecordingPlaylist(ctx context.Context, cacheDir, source
 		"-nostdin",
 		"-hide_banner",
 		"-loglevel", "error",
+		"-ignore_unknown", // Ignore unknown stream types (data, etc.)
 		"-fflags", "+genpts+discardcorrupt",
 		"-err_detect", "ignore_err",
-		"-probesize", "50M",
-		"-analyzeduration", "50M",
+		"-probesize", probeSize,
+		"-analyzeduration", analyzeDur,
 	}
 	if useConcat {
 		args = append(args, "-f", "concat", "-safe", "0")
@@ -701,6 +986,8 @@ func (s *Server) generateRecordingPlaylist(ctx context.Context, cacheDir, source
 		"-i", input,
 		"-map", "0:v:0?",
 		"-map", "0:a:0?",
+		"-sn", // Drop subtitles
+		"-dn", // Drop data streams
 	)
 	audioArgs := []string{
 		"-filter:a", "aresample=async=1:first_pts=0,aformat=channel_layouts=stereo",
@@ -721,18 +1008,21 @@ func (s *Server) generateRecordingPlaylist(ctx context.Context, cacheDir, source
 		args = append(args, "-c:v", "copy")
 		args = append(args, audioArgs...)
 	}
-	hlsFlags := "temp_file"
+
+	// Progressive VOD Flags (Phase 6)
+	hlsFlags := "append_list+temp_file" // Crucial for progressive update without overwriting invalid list
 	if transcode {
-		hlsFlags = "independent_segments+temp_file"
+		hlsFlags = "independent_segments+append_list+temp_file"
 	}
+
 	args = append(args,
 		"-f", "hls",
 		"-hls_time", "6",
 		"-hls_list_size", "0",
-		"-hls_playlist_type", "vod",
+		// NO -hls_playlist_type vod during build -> allows progressive updates
 		"-hls_flags", hlsFlags,
 		"-hls_segment_filename", segmentPattern,
-		tmpPlaylist,
+		livePlaylist, // Write to index.live.m3u8
 	)
 
 	s.mu.RLock()
@@ -742,23 +1032,188 @@ func (s *Server) generateRecordingPlaylist(ctx context.Context, cacheDir, source
 		ffmpegBin = "ffmpeg"
 	}
 
-	cmd := exec.CommandContext(ctx, ffmpegBin, args...) // #nosec G204 -- args are constructed internally.
-	out, err := cmd.CombinedOutput()
+	cmd := exec.CommandContext(ctx, ffmpegBin, args...) // #nosec G204
+
+	s.recordingMu.Lock()
+	if state, ok := s.recordingRun[cacheDir]; ok {
+		// Update attempt info
+		mode := "fast"
+		if probeSize == "200M" { // Simple heuristic or pass explicitly
+			mode = "robust"
+		}
+		state.attemptMode = mode
+		if state.startedAt.IsZero() {
+			state.startedAt = time.Now()
+		}
+	}
+	s.recordingMu.Unlock()
+
+	// Capture stderr for classification
+	var stderrBuf bytes.Buffer
+	cmd.Stderr = &stderrBuf
+	// cmd.Stderr = os.Stderr // debug
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("cmd start: %w", err)
+	}
+
+	// Supervisor Loop
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	// Supervisors State
+	lastProgress := time.Now()
+	lastSegCount := 0
+	lastPlayMtime := time.Time{}
+	lastSegMtime := time.Time{}
+
+	s.mu.RLock()
+	stallTimeout := s.cfg.VODStallTimeout
+	s.mu.RUnlock()
+	if stallTimeout <= 0 {
+		stallTimeout = 60 * time.Second
+	}
+
+	for {
+		select {
+		case err := <-done:
+			// Process exited
+			if err != nil {
+				log.L().Error().
+					Str("stderr", stderrBuf.String()).
+					Err(err).
+					Msg("ffmpeg exited with error")
+				return fmt.Errorf("ffmpeg failed: %w", err)
+			}
+			// Success: Finalize
+			return s.finalizeRecordingPlaylist(cacheDir, livePlaylist, finalPlaylist)
+
+		case <-ticker.C:
+			// Check Progress
+			hasProgress := false
+
+			// 1. Playlist ModTime
+			if info, err := os.Stat(livePlaylist); err == nil {
+				if info.ModTime().After(lastPlayMtime) {
+					lastPlayMtime = info.ModTime()
+					hasProgress = true
+				}
+			}
+
+			// 2. Newest Segment ModTime & Count
+			segCount, maxMtime, _ := getSegmentStats(cacheDir)
+			if segCount > lastSegCount {
+				lastSegCount = segCount
+				hasProgress = true
+			}
+			if maxMtime.After(lastSegMtime) {
+				lastSegMtime = maxMtime
+				hasProgress = true
+			}
+
+			if hasProgress {
+				lastProgress = time.Now()
+				// Update internal state for potential monitoring UI
+				s.recordingMu.Lock()
+				if state, ok := s.recordingRun[cacheDir]; ok {
+					state.lastProgressAt = lastProgress
+					state.segCount = segCount
+					state.lastPlaylistMtime = lastPlayMtime
+					state.lastSegMtime = lastSegMtime
+				}
+				s.recordingMu.Unlock()
+			} else {
+				if time.Since(lastProgress) > stallTimeout {
+					log.L().Error().
+						Str("cache_dir", cacheDir).
+						Dur("stall_duration", time.Since(lastProgress)).
+						Msg("Supervisor: Killing stalled ffmpeg process")
+
+					// Kill process
+					_ = cmd.Process.Kill()
+					return fmt.Errorf("recording build stalled")
+				}
+			}
+		}
+	}
+}
+
+// Helper to get verify progress stats
+func getSegmentStats(dir string) (int, time.Time, error) {
+	entries, err := os.ReadDir(dir)
 	if err != nil {
-		log.L().Error().
-			Err(err).
-			Str("source_type", sourceType).
-			Str("source", source).
-			Str("ffmpeg", ffmpegBin).
-			Bool("transcode_video", transcode).
-			Msgf("ffmpeg failed: %s", strings.TrimSpace(string(out)))
-		return fmt.Errorf("ffmpeg failed: %w", err)
+		return 0, time.Time{}, err
+	}
+	count := 0
+	var maxMtime time.Time
+	for _, e := range entries {
+		name := e.Name()
+		// Check for all segment extensions
+		if strings.HasPrefix(name, "seg_") && (strings.HasSuffix(name, ".ts") || strings.HasSuffix(name, ".m4s") || strings.HasSuffix(name, ".mp4") || strings.HasSuffix(name, ".cmfv")) {
+			count++
+			if info, err := e.Info(); err == nil {
+				if info.ModTime().After(maxMtime) {
+					maxMtime = info.ModTime()
+				}
+			}
+		}
+	}
+	return count, maxMtime, nil
+}
+
+// Finalize: Atomic read-modify-write-rename
+func (s *Server) finalizeRecordingPlaylist(cacheDir, livePath, finalPath string) error {
+	// 1. Check if source exists
+	data, err := os.ReadFile(livePath)
+	if err != nil {
+		return fmt.Errorf("read live playlist: %w", err)
 	}
 
-	if err := os.Rename(tmpPlaylist, finalPlaylist); err != nil {
-		return fmt.Errorf("promote playlist: %w", err)
+	content := string(data)
+	lines := strings.Split(content, "\n")
+	var newLines []string
+	hasVod := false
+
+	for _, l := range lines {
+		l = strings.TrimSpace(l)
+		if l == "" {
+			continue
+		}
+		if strings.HasPrefix(l, "#EXT-X-PLAYLIST-TYPE") {
+			continue // remove existing type if any
+		}
+		if l == "#EXT-X-ENDLIST" {
+			continue // skip, we append at end
+		}
+		newLines = append(newLines, l)
+		if l == "#EXTM3U" && !hasVod {
+			newLines = append(newLines, "#EXT-X-PLAYLIST-TYPE:VOD")
+			hasVod = true
+		}
+	}
+	// Append Endlist
+	newLines = append(newLines, "#EXT-X-ENDLIST")
+
+	// Write to temp final
+	tmpFinal := filepath.Join(cacheDir, "index.final.tmp")
+	if err := os.WriteFile(tmpFinal, []byte(strings.Join(newLines, "\n")), 0644); err != nil {
+		return fmt.Errorf("write final tmp: %w", err)
 	}
 
+	// Atomic Rename
+	if err := os.Rename(tmpFinal, finalPath); err != nil {
+		return fmt.Errorf("rename final: %w", err)
+	}
+
+	// Cleanup live
+	_ = os.Remove(livePath)
+
+	log.L().Info().Str("path", finalPath).Msg("Recording build finalized")
 	return nil
 }
 
@@ -775,11 +1230,32 @@ func recordingCacheKey(serviceRef string) string {
 }
 
 func validateRecordingRef(serviceRef string) error {
-	serviceRef = strings.TrimSpace(serviceRef)
-	if serviceRef == "" {
+	// Security: Ensure input is valid UTF-8 before processing
+	if !utf8.ValidString(serviceRef) {
 		return errRecordingInvalid
 	}
-	receiverPath := extractPathFromServiceRef(serviceRef)
+
+	// Security: Strict rejection of control characters (Unicode Control Category)
+	// Checked BEFORE TrimSpace to reject hidden formatting/control chars.
+	// We specifically allow spaces (0x20) as they are common in filenames.
+	for _, r := range serviceRef {
+		// Reject Control characters (Cc) AND Format characters (Cf) like zero-width joiners
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+			return errRecordingInvalid
+		}
+	}
+
+	trimmedRef := strings.TrimSpace(serviceRef)
+	if trimmedRef == "" {
+		return errRecordingInvalid
+	}
+
+	// Security: Reject query/fragment delimiters anywhere in the reference
+	if strings.ContainsAny(trimmedRef, "?#") {
+		return errRecordingInvalid
+	}
+
+	receiverPath := extractPathFromServiceRef(trimmedRef)
 	if !strings.HasPrefix(receiverPath, "/") {
 		return errRecordingInvalid
 	}
@@ -789,6 +1265,11 @@ func validateRecordingRef(serviceRef string) error {
 	if cleanRef == "." || cleanRef == ".." || strings.HasPrefix(cleanRef, "../") {
 		return errRecordingInvalid
 	}
+	// Strict check: Reject any ".." usage even if it effectively stays inside root
+	if strings.Contains(receiverPath, "/../") || strings.HasSuffix(receiverPath, "/..") {
+		return errRecordingInvalid
+	}
+	// Redundant check for path part, but safe to keep
 	if strings.ContainsAny(cleanRef, "?#") {
 		return errRecordingInvalid
 	}
@@ -981,14 +1462,25 @@ func insertArgsBefore(args []string, needle string, insert []string) []string {
 }
 
 func (s *Server) writeRecordingPlaybackError(w http.ResponseWriter, r *http.Request, serviceRef string, err error) {
+	state := "IDLE"
 	switch {
 	case errors.Is(err, errRecordingInvalid):
 		RespondError(w, r, http.StatusBadRequest, ErrInvalidInput, "invalid recording id")
+		return
 	case errors.Is(err, errRecordingNotFound):
-		RespondError(w, r, http.StatusNotFound, ErrRecordingNotFound)
+		RespondError(w, r, http.StatusNotFound, ErrRecordingNotFound, nil)
+		return
+	case errors.Is(err, errTooManyBuilds):
+		// 429 Too Many Requests
+		RespondError(w, r, http.StatusTooManyRequests, ErrConcurrentBuildsExceeded, map[string]any{
+			"state":          "QUEUED",
+			"max_concurrent": s.cfg.VODMaxConcurrent,
+		})
+		return
 	case errors.Is(err, errRecordingNotReady):
 		w.Header().Set("Retry-After", strconv.Itoa(recordingRetryAfterSeconds))
-		state := "PENDING"
+		state = "PENDING"
+		// If serviceRef is valid, try to check status
 		if serviceRef != "" {
 			s.mu.RLock()
 			hlsRoot := s.cfg.HLSRoot
@@ -1001,13 +1493,98 @@ func (s *Server) writeRecordingPlaybackError(w http.ResponseWriter, r *http.Requ
 				s.recordingMu.Unlock()
 			}
 		}
-		RespondError(w, r, http.StatusConflict, ErrRecordingNotReady, map[string]any{
+		RespondError(w, r, http.StatusServiceUnavailable, ErrRecordingNotReady, map[string]any{
 			"state":             state,
 			"retryAfterSeconds": recordingRetryAfterSeconds,
 		})
-	default:
-		log.L().Error().Err(err).Msg("recording playback failed")
-		RespondError(w, r, http.StatusInternalServerError, ErrInternalServer, "failed to prepare recording")
+		return
+	}
+	// Default
+	log.L().Error().Err(err).Msg("recording playback error")
+	RespondError(w, r, http.StatusInternalServerError, ErrInternalServer, "internal error")
+}
+
+// StartRecordingCacheEvicter runs a background worker to clean up old recording caches.
+// Phase 8: Resource Management (LRU Eviction)
+func (s *Server) StartRecordingCacheEvicter(ctx context.Context) {
+	ttl := s.cfg.VODCacheTTL
+	if ttl <= 0 {
+		ttl = 24 * time.Hour
+	}
+
+	ticker := time.NewTicker(1 * time.Hour)
+	defer ticker.Stop()
+
+	log.L().Info().Dur("ttl", ttl).Msg("starting recording cache evicter")
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.evictRecordingCaches(ttl)
+		}
+	}
+}
+
+func (s *Server) evictRecordingCaches(ttl time.Duration) {
+	s.mu.RLock()
+	hlsRoot := s.cfg.HLSRoot
+	s.mu.RUnlock()
+
+	recordingsDir := filepath.Join(hlsRoot, "recordings")
+	entries, err := os.ReadDir(recordingsDir)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			log.L().Error().Err(err).Msg("failed to read recordings directory for eviction")
+		}
+		return
+	}
+
+	now := time.Now()
+	evicted := 0
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		name := entry.Name()
+		// Safety 1: Skip if active (in recordingRun)
+		s.recordingMu.Lock()
+		path := filepath.Join(recordingsDir, name) // full path needed for cache key context?
+		// Actually recordingRun keys are cacheDirs (absolute paths).
+		// We need absolute path.
+		// recordingCacheDir logic: filepath.Join(hlsRoot, "recordings", key)
+		// So map key is absolute path.
+
+		if _, active := s.recordingRun[path]; active {
+			s.recordingMu.Unlock()
+			continue
+		}
+		s.recordingMu.Unlock()
+
+		// Safety 2: Check ModTime (Last Access via Chtimes)
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+
+		age := now.Sub(info.ModTime())
+		if age > ttl {
+			// Double check active state? No, we checked above.
+			// Evict
+			log.L().Info().Str("dir", name).Dur("age", age).Msg("evicting stale recording cache")
+			if err := os.RemoveAll(path); err != nil {
+				log.L().Error().Err(err).Str("dir", name).Msg("failed to remove stale cache")
+			} else {
+				evicted++
+			}
+		}
+	}
+
+	if evicted > 0 {
+		log.L().Info().Int("count", evicted).Msg("recording cache eviction complete")
 	}
 }
 
@@ -1193,4 +1770,38 @@ func probeDuration(ctx context.Context, path string) (time.Duration, error) {
 	}
 
 	return time.Duration(secs * float64(time.Second)), nil
+}
+
+// escapeServiceRefPath percent-encodes a string for use in a URL path,
+// but specifically preserves ':' and '/' as required by Enigma2 ServiceRefs.
+// It escapes all other non-unreserved characters (including UTF-8 bytes).
+func escapeServiceRefPath(s string) string {
+	const upperhex = "0123456789ABCDEF"
+	var b strings.Builder
+	b.Grow(len(s))
+
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if shouldEscapeRefChar(c) {
+			b.WriteByte('%')
+			b.WriteByte(upperhex[c>>4])
+			b.WriteByte(upperhex[c&15])
+		} else {
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
+}
+
+func shouldEscapeRefChar(c byte) bool {
+	// RFC 3986 Unreserved characters: ALPHA, DIGIT, "-", ".", "_", "~"
+	// Plus we specifically want to KEEP ":" and "/" for Enigma2 service refs.
+	if 'A' <= c && c <= 'Z' || 'a' <= c && c <= 'z' || '0' <= c && c <= '9' {
+		return false
+	}
+	switch c {
+	case '-', '.', '_', '~', ':', '/':
+		return false
+	}
+	return true
 }

@@ -616,10 +616,10 @@ dev: stop-local ## Run daemon locally with .env configuration
 	@./scripts/check_env.sh
 	@echo "Loading configuration from .env..."
 	@set -a; . ./.env; set +a; \
-	XG2G_DATA=$${XG2G_DATA:-./data} \
-	XG2G_OWI_BASE=$${XG2G_OWI_BASE:?Set XG2G_OWI_BASE in .env} \
-	XG2G_BOUQUET=$${XG2G_BOUQUET:-} \
-	XG2G_LISTEN=$${XG2G_LISTEN:-:8088} \
+	export XG2G_DATA=$${XG2G_DATA:-./data}; \
+	export XG2G_OWI_BASE=$${XG2G_OWI_BASE:-}; \
+	export XG2G_BOUQUET=$${XG2G_BOUQUET:-}; \
+	export XG2G_LISTEN=$${XG2G_LISTEN:-:8088}; \
 	go build $(BUILD_FLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/daemon && \
 	./$(BUILD_DIR)/$(BINARY_NAME)
 

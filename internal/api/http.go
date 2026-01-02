@@ -77,6 +77,7 @@ type Server struct {
 	recordingSfg singleflight.Group
 	recordingMu  sync.Mutex
 	recordingRun map[string]*recordingBuildState
+	vodBuildSem  chan struct{} // Semaphore for concurrent VOD builds (Phase 8)
 
 	// OpenWebIF Client Cache (P1 Performance Fix)
 	owiClient *openwebif.Client
@@ -207,6 +208,7 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager) *Server {
 		},
 		startTime:      time.Now(),
 		piconSemaphore: make(chan struct{}, 50),
+		vodBuildSem:    make(chan struct{}, cfg.VODMaxConcurrent),
 	}
 
 	// Initialize Series Engine
