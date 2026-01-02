@@ -381,6 +381,13 @@ export type Timer = {
     updatedAt?: string;
 };
 
+export type PlaybackInfo = {
+    mode: 'hls' | 'direct_mp4';
+    url: string;
+    seekable?: boolean;
+    reason?: string;
+};
+
 export type TimerCreateRequest = {
     serviceRef: string;
     begin: number;
@@ -448,6 +455,19 @@ export type DvrCapabilities = {
 export type RecordingStatus = {
     isRecording: boolean;
     serviceName?: string;
+};
+
+export type RecordingBuildStatus = {
+    state: 'IDLE' | 'RUNNING' | 'FAILED' | 'READY';
+    segment_count?: number;
+    last_progress?: string;
+    started_at?: string;
+    attempt_mode?: 'fast' | 'robust';
+    error?: string;
+    /**
+     * True if a progressive (timeshift) playlist is playable.
+     */
+    progressive_ready?: boolean;
 };
 
 export type TimerList = {
@@ -560,6 +580,24 @@ export type GetSystemHealthResponses = {
 };
 
 export type GetSystemHealthResponse = GetSystemHealthResponses[keyof GetSystemHealthResponses];
+
+export type GetSystemHealthzData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/system/healthz';
+};
+
+export type GetSystemHealthzResponses = {
+    /**
+     * Health status
+     */
+    200: {
+        status: 'ok';
+    };
+};
+
+export type GetSystemHealthzResponse = GetSystemHealthzResponses[keyof GetSystemHealthzResponses];
 
 export type GetSystemConfigData = {
     body?: never;
@@ -834,6 +872,85 @@ export type DeleteRecordingResponses = {
 
 export type DeleteRecordingResponse = DeleteRecordingResponses[keyof DeleteRecordingResponses];
 
+export type GetRecordingsByRecordingIdStatusData = {
+    body?: never;
+    path: {
+        recordingId: string;
+    };
+    query?: never;
+    url: '/recordings/{recordingId}/status';
+};
+
+export type GetRecordingsByRecordingIdStatusErrors = {
+    /**
+     * Invalid recording ID
+     */
+    400: ApiError;
+};
+
+export type GetRecordingsByRecordingIdStatusError = GetRecordingsByRecordingIdStatusErrors[keyof GetRecordingsByRecordingIdStatusErrors];
+
+export type GetRecordingsByRecordingIdStatusResponses = {
+    /**
+     * Build status
+     */
+    200: RecordingBuildStatus;
+};
+
+export type GetRecordingsByRecordingIdStatusResponse = GetRecordingsByRecordingIdStatusResponses[keyof GetRecordingsByRecordingIdStatusResponses];
+
+export type GetRecordingPlaybackInfoData = {
+    body?: never;
+    path: {
+        recordingId: string;
+    };
+    query?: never;
+    url: '/recordings/{recordingId}/playback';
+};
+
+export type GetRecordingPlaybackInfoErrors = {
+    /**
+     * Recording not found
+     */
+    404: ApiError;
+};
+
+export type GetRecordingPlaybackInfoError = GetRecordingPlaybackInfoErrors[keyof GetRecordingPlaybackInfoErrors];
+
+export type GetRecordingPlaybackInfoResponses = {
+    /**
+     * Playback strategy info
+     */
+    200: PlaybackInfo;
+};
+
+export type GetRecordingPlaybackInfoResponse = GetRecordingPlaybackInfoResponses[keyof GetRecordingPlaybackInfoResponses];
+
+export type StreamRecordingDirectData = {
+    body?: never;
+    path: {
+        recordingId: string;
+    };
+    query?: never;
+    url: '/recordings/{recordingId}/stream.mp4';
+};
+
+export type StreamRecordingDirectErrors = {
+    /**
+     * Recording not found
+     */
+    404: unknown;
+};
+
+export type StreamRecordingDirectResponses = {
+    /**
+     * Video stream
+     */
+    200: Blob | File;
+};
+
+export type StreamRecordingDirectResponse = StreamRecordingDirectResponses[keyof StreamRecordingDirectResponses];
+
 export type GetRecordingHlsPlaylistData = {
     body?: never;
     path: {
@@ -856,9 +973,9 @@ export type GetRecordingHlsPlaylistErrors = {
      */
     404: ApiError;
     /**
-     * Recording not ready
+     * Recording not ready for VOD
      */
-    409: ApiError;
+    503: ApiError;
 };
 
 export type GetRecordingHlsPlaylistError = GetRecordingHlsPlaylistErrors[keyof GetRecordingHlsPlaylistErrors];
@@ -871,6 +988,44 @@ export type GetRecordingHlsPlaylistResponses = {
 };
 
 export type GetRecordingHlsPlaylistResponse = GetRecordingHlsPlaylistResponses[keyof GetRecordingHlsPlaylistResponses];
+
+export type GetRecordingHlsTimeshiftData = {
+    body?: never;
+    path: {
+        /**
+         * Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recording_id
+         */
+        recordingId: string;
+    };
+    query?: never;
+    url: '/recordings/{recordingId}/timeshift.m3u8';
+};
+
+export type GetRecordingHlsTimeshiftErrors = {
+    /**
+     * Invalid recording ID
+     */
+    400: ApiError;
+    /**
+     * Recording not found
+     */
+    404: ApiError;
+    /**
+     * Recording not ready for timeshift
+     */
+    503: ApiError;
+};
+
+export type GetRecordingHlsTimeshiftError = GetRecordingHlsTimeshiftErrors[keyof GetRecordingHlsTimeshiftErrors];
+
+export type GetRecordingHlsTimeshiftResponses = {
+    /**
+     * HLS Playlist
+     */
+    200: string;
+};
+
+export type GetRecordingHlsTimeshiftResponse = GetRecordingHlsTimeshiftResponses[keyof GetRecordingHlsTimeshiftResponses];
 
 export type GetRecordingHlsCustomSegmentData = {
     body?: never;

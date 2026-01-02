@@ -2,8 +2,6 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
-// Since v2.0.0, this software is restricted to non-commercial use only.
-
 // Package metrics provides Prometheus metrics collection.
 package metrics
 
@@ -125,6 +123,9 @@ func init() {
 	activeStreams.WithLabelValues("direct")
 	activeStreams.WithLabelValues("transcode")
 	activeStreams.WithLabelValues("repair")
+
+	// Phase 9: Initialize VOD metrics
+	vodBuildsActive.WithLabelValues("ffmpeg")
 }
 
 // RecordBouquetsCount records the total number of bouquets discovered.
@@ -275,4 +276,90 @@ func IncProcWait(outcome string) {
 // ObserveHLSStartup records HLS startup latency.
 func ObserveHLSStartup(profile string, duration float64) {
 	hlsStartupSeconds.WithLabelValues(profile).Observe(duration)
+}
+
+// Phase 9: VOD Metrics
+var (
+	vodBuildsActive = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "xg2g_vod_builds_active",
+		Help: "Number of currently running VOD builds",
+	}, []string{"type"}) // type=ffmpeg
+
+	vodBuildsRejectedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "xg2g_vod_builds_rejected_total",
+		Help: "Total number of VOD builds rejected (429)",
+	}, []string{"reason"})
+
+	vodBuildsStaleKilledTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "xg2g_vod_builds_stale_killed_total",
+		Help: "Total number of stale VOD builds terminated",
+	}, []string{"method"}) // method=cancel|kill
+
+	vodCacheEvictedTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "xg2g_vod_cache_evicted_total",
+		Help: "Total number of VOD cache directories evicted",
+	})
+
+	vodBuildDurationSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "xg2g_vod_build_duration_seconds",
+		Help:    "Duration of VOD build attempts",
+		Buckets: []float64{1, 5, 10, 30, 60, 120, 300, 600, 1800},
+	}, []string{"result"}) // result=success|failed|canceled|stale
+
+	vodSetupSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "xg2g_vod_setup_seconds",
+		Help:    "Latency until VOD stream is ready for playback",
+		Buckets: []float64{0.5, 1, 2.5, 5, 10, 20, 30},
+	}, []string{"stage", "mode"}) // stage=live_ready, mode=fast|robust
+
+	// Phase 10: Circuit Breaker Metrics
+	vodCircuitOpen = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "xg2g_vod_circuit_open_total",
+		Help: "Total number of times circuit breaker opened",
+	}, []string{"key"}) // recording root
+
+	vodCircuitTrips = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "xg2g_vod_circuit_trips_total",
+		Help: "Total number of circuit breaker trips by reason",
+	}, []string{"reason"})
+
+	vodCircuitHalfOpen = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "xg2g_vod_circuit_halfopen_total",
+		Help: "Total number of times circuit breaker entered half-open state",
+	})
+)
+
+func IncVODBuildsActive() { vodBuildsActive.WithLabelValues("ffmpeg").Inc() }
+func DecVODBuildsActive() { vodBuildsActive.WithLabelValues("ffmpeg").Dec() }
+
+func IncVODBuildRejected(reason string) {
+	vodBuildsRejectedTotal.WithLabelValues(reason).Inc()
+}
+
+func IncVODBuildStaleKilled(method string) {
+	vodBuildsStaleKilledTotal.WithLabelValues(method).Inc()
+}
+
+func IncVODCacheEvicted() {
+	vodCacheEvictedTotal.Inc()
+}
+
+func ObserveVODSetupLatency(stage, mode string, duration float64) {
+	vodSetupSeconds.WithLabelValues(stage, mode).Observe(duration)
+}
+
+func IncVODCircuitOpen(key string) {
+	vodCircuitOpen.WithLabelValues(key).Inc()
+}
+
+func IncVODCircuitTrips(reason string) {
+	vodCircuitTrips.WithLabelValues(reason).Inc()
+}
+
+func IncVODCircuitHalfOpen() {
+	vodCircuitHalfOpen.Inc()
+}
+
+func ObserveVODBuildDuration(result string, duration float64) {
+	vodBuildDurationSeconds.WithLabelValues(result).Observe(duration)
 }

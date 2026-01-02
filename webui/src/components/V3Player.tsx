@@ -2,8 +2,8 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import Hls from 'hls.js';
 import type { ErrorData, FragLoadedData, ManifestParsedData } from 'hls.js';
-import { createSession } from '../client-ts';
-import { client } from '../client-ts/client.gen';
+import { createSession, getRecordingPlaybackInfo } from '../client/sdk.gen';
+import { client } from '../client/client.gen';
 import type {
   V3PlayerProps,
   PlayerStatus,
@@ -439,6 +439,26 @@ function V3Player(props: V3PlayerProps) {
     }
   }, [token, t, updateStats]);
 
+  const playDirectMp4 = useCallback((url: string) => {
+    if (hlsRef.current) {
+      hlsRef.current.destroy();
+      hlsRef.current = null;
+    }
+    const video = videoRef.current;
+    if (!video) return;
+
+    // Reset stats for direct play
+    setStats(prev => ({ ...prev, bandwidth: 0, resolution: 'Original (Direct)', fps: 0, levelIndex: -1 }));
+
+    // Log for verification
+    console.debug('[V3Player] Switching to Direct MP4 Mode:', url);
+
+    // Native playback
+    video.src = url;
+    video.load();
+    video.play().catch(e => console.warn("Autoplay failed", e));
+  }, []);
+
   const startRecordingPlayback = useCallback(async (id: string): Promise<void> => {
     activeRecordingRef.current = id;
     clearVodRetry();
@@ -452,12 +472,54 @@ function V3Player(props: V3PlayerProps) {
 
     try {
       await ensureSessionCookie();
-      const streamUrl = `${apiBase}/recordings/${id}/playlist.m3u8`;
+
+      // Determine Playback Mode
+      const hlsUrl = `${apiBase}/recordings/${id}/playlist.m3u8`;
+      let streamUrl = hlsUrl;
+      let mode = 'hls';
+
+      try {
+        const info = await getRecordingPlaybackInfo({
+          path: { recordingId: id },
+          headers: authHeaders() as Record<string, string>
+        });
+        if (info.data) {
+          console.debug('[V3Player] Playback Info:', info.data);
+          if (info.data.mode === 'direct_mp4' && info.data.url) {
+            mode = 'direct_mp4';
+            streamUrl = info.data.url;
+            // If url is relative, make absolute
+            if (streamUrl.startsWith('/')) {
+              const origin = window.location.origin;
+              streamUrl = `${origin}${streamUrl}`;
+            }
+          } else if (info.data.url) {
+            streamUrl = info.data.url;
+          }
+        }
+      } catch (e) {
+        console.warn('[V3Player] Failed to get playback info, falling back to HLS default', e);
+      }
+
       const controller = new AbortController();
       vodFetchRef.current = controller;
       let res: Response;
       try {
-        res = await fetch(streamUrl, { headers: authHeaders(), signal: controller.signal });
+        // This HEAD/GET request handles the 503 (Preparing) wait loop
+        // If direct MP4, this builds the cache.
+        res = await fetch(streamUrl, {
+          method: 'HEAD', // Use HEAD for check (MP4 or M3U8)
+          headers: authHeaders(),
+          signal: controller.signal
+        });
+        // If Method Not Allowed (some static servers), try GET
+        if (res.status === 405) {
+          res = await fetch(streamUrl, {
+            method: 'GET',
+            headers: { ...authHeaders() as Record<string, string>, 'Range': 'bytes=0-0' }, // Partial check 
+            signal: controller.signal
+          });
+        }
       } finally {
         if (vodFetchRef.current === controller) {
           vodFetchRef.current = null;
@@ -467,7 +529,21 @@ function V3Player(props: V3PlayerProps) {
       if (res.status === 409 || res.status === 425 || res.status === 503) {
         if (activeRecordingRef.current !== id) return;
 
-        // Start loose timeout if not running
+        // HYBRID STRATEGY:
+        // If MP4 is building (503), trigger background build and play HLS immediately.
+        if (mode === 'direct_mp4') {
+          console.info('[V3Player] Direct MP4 building. Falling back to HLS for instant playback.');
+
+          // Clear any error states from the 503 check
+          setError(null);
+          setStatus('buffering'); // HLS will take over
+
+          // Fallback to HLS
+          playHls(hlsUrl);
+          return;
+        }
+
+        // Standard Retry Logic (Only for HLS 503s, which are rare/recoverable)
         if (recordingTimeoutRef.current === null) {
           recordingTimeoutRef.current = window.setTimeout(() => {
             if (activeRecordingRef.current === id) {
@@ -476,7 +552,7 @@ function V3Player(props: V3PlayerProps) {
               setStatus('error');
               setError(t('player.recordingPrepareTimeout'));
             }
-          }, 60000); // 60s total build time allowance
+          }, 60000); // 60s timeout for HLS retries
         }
 
         const retryAfterHeader = res.headers.get('Retry-After');
@@ -517,7 +593,11 @@ function V3Player(props: V3PlayerProps) {
       }
 
       setStatus('buffering');
-      playHls(streamUrl);
+      if (mode === 'direct_mp4') {
+        playDirectMp4(streamUrl);
+      } else {
+        playHls(streamUrl);
+      }
     } catch (err) {
       if (isAbortError(err)) {
         return;

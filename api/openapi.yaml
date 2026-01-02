@@ -597,6 +597,20 @@ components:
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
 
+    PlaybackInfo:
+      type: object
+      required: [mode, url]
+      properties:
+        mode:
+          type: string
+          enum: [hls, direct_mp4]
+        url:
+          type: string
+        seekable:
+          type: boolean
+        reason:
+          type: string
+
     TimerCreateRequest:
       type: object
       required: [serviceRef, begin, end, name]
@@ -709,6 +723,9 @@ components:
         started_at: { type: string, format: date-time }
         attempt_mode: { type: string, enum: [fast, robust] }
         error: { type: string }
+        progressive_ready:
+          type: boolean
+          description: True if a progressive (timeshift) playlist is playable.
 
     TimerList:
       type: object
@@ -826,6 +843,25 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SystemHealth"
+
+  /system/healthz:
+    get:
+      summary: Get minimal system health
+      operationId: getSystemHealthz
+      security: []
+      responses:
+        "200":
+          description: Health status
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                additionalProperties: false
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
 
   /system/config:
     get:
@@ -1012,6 +1048,8 @@ paths:
   /streams:
     get:
       summary: List active streams
+      security:
+        - BearerAuth: [v3:admin]
       responses:
         "200":
           description: Active sessions
@@ -1102,9 +1140,56 @@ paths:
               schema:
                 $ref: "#/components/schemas/APIError"
 
+  /recordings/{recordingId}/playback:
+    get:
+      summary: Get playback strategy for a recording
+      operationId: getRecordingPlaybackInfo
+      tags: [recordings]
+      parameters:
+        - name: recordingId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Playback strategy info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlaybackInfo"
+        "404":
+          description: Recording not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+
+  /recordings/{recordingId}/stream.mp4:
+    get:
+      summary: Stream recording as MP4 (Direct VOD)
+      operationId: streamRecordingDirect
+      tags: [recordings]
+      parameters:
+        - name: recordingId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Video stream
+          content:
+            video/mp4:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Recording not found
+
   /recordings/{recordingId}/playlist.m3u8:
     get:
-      summary: Get HLS playlist for a recording
+      summary: Get VOD HLS playlist for a recording
       operationId: getRecordingHLSPlaylist
       tags:
         - recordings
@@ -1141,8 +1226,54 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/APIError"
-        "409":
-          description: Recording not ready
+        "503":
+          description: Recording not ready for VOD
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+
+  /recordings/{recordingId}/timeshift.m3u8:
+    get:
+      summary: Get timeshift HLS playlist for a recording
+      operationId: getRecordingHLSTimeshift
+      tags:
+        - recordings
+      parameters:
+        - name: recordingId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[A-Za-z0-9_-]+$"
+            minLength: 16
+            maxLength: 2048
+            example: "MTowOjA6MDo6L21lZGlhL2hkZC9tb3ZpZS9mb28udHM"
+          description: Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recording_id
+      responses:
+        "200":
+          description: HLS Playlist
+          content:
+            application/vnd.apple.mpegurl:
+              schema:
+                type: string
+            application/x-mpegURL:
+              schema:
+                type: string
+        "400":
+          description: Invalid recording ID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+        "404":
+          description: Recording not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+        "503":
+          description: Recording not ready for timeshift
           content:
             application/json:
               schema:
@@ -1221,6 +1352,8 @@ paths:
       operationId: createSession
       tags:
         - auth
+      security:
+        - BearerAuth: [v3:read]
       responses:
         "204":
           description: Session created

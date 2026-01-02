@@ -1,7 +1,7 @@
 // Type definitions for V3 Player component
 
 import type Hls from 'hls.js';
-import type { Service } from '../client-ts';
+import type { Service } from '../client/types.gen';
 
 export type PlayerStatus =
   | 'idle'

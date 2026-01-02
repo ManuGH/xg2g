@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -24,10 +25,6 @@ func TestRecordingConcurrencyLimit(t *testing.T) {
 		vodBuildSem:  make(chan struct{}, 1),
 	}
 
-	// Mock "recordingBuildTimeout" to be short for test if needed, references global
-	// We can't easily mock the goroutine duration without dependency injection,
-	// but we can test the semaphore acquisition logic by manually acquiring first.
-
 	// Case 1: Acquire Semaphore (Simulate external build)
 	select {
 	case s.vodBuildSem <- struct{}{}:
@@ -37,15 +34,12 @@ func TestRecordingConcurrencyLimit(t *testing.T) {
 	}
 
 	// Case 2: Attempt new build (Should Fail with ErrTooManyBuilds)
-	// We need to call scheduleRecordingBuild.
-	// Note: scheduleRecordingBuild spawns a goroutine that releases the semaphore on exit.
-	// But it fails BEFORE spawning if semaphore is full.
+	// We call scheduleRecordingBuild, which checks semaphore BEFORE spawning.
 
 	cacheDir := filepath.Join(cfg.HLSRoot, "rec1")
 	t.Logf("Case 2: Scheduling build for %s", cacheDir)
 	err := s.scheduleRecordingBuild(cacheDir, "ref1:test", "http", "http://test")
 
-	t.Logf("Case 2 Result: %v", err)
 	require.Error(t, err)
 	require.True(t, errors.Is(err, errTooManyBuilds) || errors.Is(err, ErrConcurrentBuildsExceeded), "expected limit error, got %v", err)
 
@@ -54,30 +48,49 @@ func TestRecordingConcurrencyLimit(t *testing.T) {
 	s.recordingMu.Unlock()
 	require.False(t, exists, "recordingRun should be empty after rejection")
 
-	// Case 3: Release Semaphore and Retry
+	// Case 3: Release Semaphore and use Blocking Mock logic for deterministic test
 	t.Log("Case 3: Releasing semaphore")
 	<-s.vodBuildSem
 
-	// Now it should succeed
+	// Inject blocking mock
+	block := make(chan struct{})
+	s.preflightCheck = func(ctx context.Context, src string) error {
+		<-block                     // Block until test allows
+		return ErrSourceUnavailable // Fail fast to exit goroutine without ffmpeg
+	}
+
+	// Schedule the build (should start async)
 	t.Log("Case 3: Scheduling build again")
 	err = s.scheduleRecordingBuild(cacheDir, "ref1:test", "http", "http://test")
-	require.NoError(t, err)
 
-	// Wait for goroutine to start/finish?
-	// scheduleRecordingBuild starts a goroutine that eventually exits (and releases sem).
-	// Since we didn't mock resolve/ffmpeg, it might fail fast or hang?
-	// Actually scheduleRecordingBuild calls runRecordingBuild which calls checkSourceAvailability.
-	// We didn't mock those. But `runRecordingBuild` runs async.
-	// The function `scheduleRecordingBuild` returns nil immediately if async started.
-	// So sem is held.
+	// Expectation: Async start
+	require.Error(t, err)
+	require.True(t, errors.Is(err, errRecordingNotReady), "expected recording started (not ready), got %v", err)
 
-	// Verify sem is held
+	// Verify semaphore is HELD while blocked
 	select {
 	case s.vodBuildSem <- struct{}{}:
-		t.Fatal("semaphore should be held by running build")
+		t.Fatal("semaphore should be held by blocked build")
 	default:
-		// success, it's full
+		// success
 	}
+
+	// Unblock
+	close(block)
+
+	// Verify semaphore is RELEASED after goroutine exits
+	released := false
+	for i := 0; i < 20; i++ {
+		select {
+		case s.vodBuildSem <- struct{}{}:
+			released = true
+			goto Done
+		default:
+			time.Sleep(50 * time.Millisecond)
+		}
+	}
+Done:
+	require.True(t, released, "semaphore should be released after build exits")
 }
 
 func TestRecordingCacheEviction(t *testing.T) {
@@ -110,17 +123,6 @@ func TestRecordingCacheEviction(t *testing.T) {
 	err = os.Mkdir(newDir, 0755)
 	require.NoError(t, err) // ModTime is Now()
 
-	// Run Evicter (Manually call internal function if possible, or wait for wrapper)
-	// We exposed StartRecordingCacheEvicter but that runs loop.
-	// We made `evictRecordingCaches` unexported.
-	// Ideally we'd test `evictRecordingCaches` directly.
-	// Since I cannot change visibility easily without another edit, I will call the loop
-	// with a very short ticker or context cancel?
-	// Or I can just trust `StartRecordingCacheEvicter` loop if I wait > TTL.
-
-	// Let's rely on `evictRecordingCaches` being unexported but I can access it if test is in same package `api`.
-	// Yes, `package api`.
-
 	s.evictRecordingCaches(cfg.VODCacheTTL)
 
 	// Check results
@@ -129,4 +131,64 @@ func TestRecordingCacheEviction(t *testing.T) {
 
 	_, err = os.Stat(newDir)
 	assert.NoError(t, err, "new cache should exist")
+}
+
+func TestStaleCancellation(t *testing.T) {
+	// Setup
+	cfg := config.AppConfig{
+		VODMaxConcurrent: 1,
+		HLSRoot:          t.TempDir(),
+	}
+	s := &Server{
+		cfg:          cfg,
+		recordingRun: make(map[string]*recordingBuildState),
+		vodBuildSem:  make(chan struct{}, 1),
+	}
+
+	// 1. Start a "stuck" build
+	// We manually inject state to simulate a build that holds the semaphore but isn't progressing
+	cacheDir := "/tmp/stale"
+
+	// Acquire sem
+	s.vodBuildSem <- struct{}{}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	state := &recordingBuildState{
+		status:         recordingBuildRunning,
+		updatedAt:      time.Now().Add(-5 * time.Hour), // Old update
+		lastProgressAt: time.Now().Add(-5 * time.Hour), // Old progress (Stale)
+		cancel:         cancel,
+	}
+	s.recordingRun[cacheDir] = state
+
+	// Launch a goroutine that waits for cancel, then releases sem
+	semReleased := make(chan bool)
+	go func() {
+		<-ctx.Done()    // Wait for cancel
+		<-s.vodBuildSem // Release sem
+		semReleased <- true
+	}()
+
+	// 2. Run Cleanup
+	// Should detect stale -> call cancel -> goroutine wakes -> releases sem
+	s.cleanupRecordingBuilds(time.Now())
+
+	// 3. Verify
+	select {
+	case <-semReleased:
+		// Success
+	case <-time.After(1 * time.Second):
+		t.Fatal("stale build validation failed: semaphore not released")
+	}
+
+	// Check state is marked failed
+	s.recordingMu.Lock()
+	st := s.recordingRun[cacheDir]
+	s.recordingMu.Unlock()
+
+	require.NotNil(t, st)
+	assert.Equal(t, recordingBuildFailed, st.status)
+	assert.Contains(t, st.error, "stale")
 }
