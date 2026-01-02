@@ -34,6 +34,14 @@ func (m *Manager) Save(cfg *AppConfig) error {
 
 	// Map AppConfig back to FileConfig for serialization
 	// We only write fields that are user-configurable via the UI
+	//
+	// IMPORTANT: For Enigma2.BaseURL, only write it if it differs from OWIBase.
+	// This preserves the automatic fallback behavior (enigma2 inherits from openWebIF).
+	e2BaseURL := ""
+	if cfg.E2Host != "" && cfg.E2Host != cfg.OWIBase {
+		e2BaseURL = cfg.E2Host
+	}
+
 	fileCfg := FileConfig{
 		Version:       EffectiveConfigVersion(*cfg),
 		ConfigVersion: V3ConfigVersion,
@@ -47,7 +55,7 @@ func (m *Manager) Save(cfg *AppConfig) error {
 			UseWebIF:   boolPtr(cfg.UseWebIFStreams),
 		},
 		Enigma2: Enigma2Config{
-			BaseURL:               cfg.E2Host,
+			BaseURL:               e2BaseURL,
 			Username:              cfg.E2Username,
 			Password:              cfg.E2Password,
 			Timeout:               cfg.E2Timeout.String(),
