@@ -1,8 +1,9 @@
-# xg2g
-
 <div align="center">
-  <img src="docs/images/logo.svg" alt="xg2g Logo" width="200"/>
-  <h3>Production-Ready Streaming Middleware for Enigma2</h3>
+  <img src="branding/hero/xg2g-hero-dark.svg" alt="xg2g - Gateway-to-Gateway Streaming Proxy" width="900"/>
+  
+  <p>
+    <strong>Production-Ready Streaming Middleware for Enigma2</strong>
+  </p>
   <p>
     Modern event-driven bridge between Enigma2 receivers and
     Plex/Jellyfin/Browsers with HLS transcoding, EPG, and 45-minute timeshift.
