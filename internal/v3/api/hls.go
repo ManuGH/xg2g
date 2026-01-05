@@ -5,10 +5,15 @@
 package api
 
 import (
+	"bufio"
+	"bytes"
 	"context"
+	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -18,6 +23,29 @@ import (
 )
 
 const hlsPlaylistWaitTimeout = 5 * time.Second
+
+var pdtRe = regexp.MustCompile(`^#EXT-X-PROGRAM-DATE-TIME:(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?)(Z|[+-]\d{4})\s*$`)
+
+func normalizeProgramDateTimeLine(line string) string {
+	m := pdtRe.FindStringSubmatch(line)
+	if m == nil {
+		return line
+	}
+	base := m[1]
+	off := m[2]
+
+	if off == "Z" {
+		return line
+	}
+	// off like +0000, -0130
+	if len(off) == 5 {
+		if off == "+0000" {
+			return "#EXT-X-PROGRAM-DATE-TIME:" + base + "Z"
+		}
+		return "#EXT-X-PROGRAM-DATE-TIME:" + base + off[:3] + ":" + off[3:]
+	}
+	return line
+}
 
 // HLSStore defines the subset of Store operations needed for HLS serving.
 type HLSStore interface {
@@ -67,7 +95,9 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, s
 	// Validate Expiry
 	// rec.ExpiresAtUnix (int64)
 	if rec.ExpiresAtUnix > 0 && time.Now().Unix() > rec.ExpiresAtUnix {
-		http.Error(w, "session expired", http.StatusNotFound)
+		// 410 Gone: Session explicitly ended (better than 404 for Safari retry logic)
+		w.Header().Set("Cache-Control", "no-store")
+		http.Error(w, "session expired", http.StatusGone)
 		return
 	}
 
@@ -81,9 +111,18 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, s
 		rec.State == model.SessionPriming
 
 	if !validState {
-		// User Req: "NEW/STARTING: 404 (Client retry)" -> Now handled by polling loop later
-		// If FAILED/CANCELLED: 404
-		http.Error(w, "session not ready", http.StatusNotFound)
+		// Safari Fix: Use 410 Gone for terminal states (FAILED/CANCELLED/STOPPED)
+		// This signals to Safari that the resource is intentionally unavailable and
+		// reduces aggressive retry behavior during teardown.
+		// For NEW/STARTING: Still use 404 (client should retry)
+		statusCode := http.StatusNotFound
+		message := "session not ready"
+		if rec.State.IsTerminal() {
+			statusCode = http.StatusGone
+			message = "stream ended"
+			w.Header().Set("Cache-Control", "no-store")
+		}
+		http.Error(w, message, statusCode)
 		return
 	}
 
@@ -172,17 +211,22 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, s
 		w.Header().Set("Cache-Control", "no-store")
 	} else if isSegment {
 		// TS segments: video/MP2T
-		// fMP4 segments (.m4s): video/iso.segment
+		// fMP4 segments (.m4s): video/mp4 (Safari REQUIRES video/mp4 for all fMP4 content)
 		if strings.HasSuffix(filename, ".m4s") {
-			w.Header().Set("Content-Type", "video/iso.segment")
+			w.Header().Set("Content-Type", "video/mp4")
 		} else {
-			w.Header().Set("Content-Type", "video/MP2T")
+			w.Header().Set("Content-Type", "video/mp2t")
 		}
 		// User Req: "Cache-Control: public, max-age=60"
 		w.Header().Set("Cache-Control", "public, max-age=60")
+		// CRITICAL: Disable compression for video segments (proxy-safe)
+		// Safari cannot decode gzip-compressed fMP4 segments
+		w.Header().Set("Content-Encoding", "identity")
 	} else if isInit {
 		w.Header().Set("Content-Type", "video/mp4")
 		w.Header().Set("Cache-Control", "public, max-age=3600")
+		// CRITICAL: Disable compression for init segment (proxy-safe)
+		w.Header().Set("Content-Encoding", "identity")
 	}
 
 	// 6. Serve Content (Supports Range)
@@ -192,6 +236,86 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, s
 		return
 	}
 	defer func() { _ = f.Close() }()
+
+	// Special handling for playlists: normalize timestamps
+	if isPlaylist {
+		forcePlaylistType := ""
+		var insertStartTag string
+		if rec.Profile.VOD {
+			forcePlaylistType = "VOD"
+		} else if rec.Profile.DVRWindowSec > 0 {
+			forcePlaylistType = "EVENT"
+
+			// Safari DVR Scrubber Hint: EXT-X-START tells Safari the seekable range for DVR UI
+			// TIME-OFFSET = negative value from live edge, PRECISE=YES for better seeking accuracy
+			offset := rec.Profile.DVRWindowSec
+			insertStartTag = fmt.Sprintf("#EXT-X-START:TIME-OFFSET=-%d,PRECISE=YES", offset)
+		}
+		insertedPlaylistType := false
+		insertedStartTag := false
+
+		// Read entire file, normalize lines, serve from buffer
+		// Limit playlist size to avoid memory issues (e.g. 1MB is plenty for live/event HLS)
+		raw, err := io.ReadAll(io.LimitReader(f, 1024*1024))
+		if err != nil {
+			log.L().Error().Err(err).Msg("failed to read playlist for normalization")
+			http.Error(w, "failed to read file", http.StatusInternalServerError)
+			return
+		}
+
+		var b bytes.Buffer
+		scanner := bufio.NewScanner(bytes.NewReader(raw))
+		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.HasPrefix(line, "#EXT-X-PLAYLIST-TYPE:") && forcePlaylistType != "" {
+				continue
+			}
+			if line == "#EXTM3U" && forcePlaylistType != "" && !insertedPlaylistType {
+				b.WriteString(line)
+				b.WriteByte('\n')
+				b.WriteString("#EXT-X-PLAYLIST-TYPE:" + forcePlaylistType)
+				b.WriteByte('\n')
+				insertedPlaylistType = true
+
+				// Insert EXT-X-START after PLAYLIST-TYPE for EVENT playlists (Safari DVR)
+				if insertStartTag != "" && !insertedStartTag {
+					b.WriteString(insertStartTag)
+					b.WriteByte('\n')
+					insertedStartTag = true
+				}
+				continue
+			}
+			if strings.HasPrefix(line, "#EXT-X-PROGRAM-DATE-TIME:") {
+				line = normalizeProgramDateTimeLine(line)
+			}
+			// Sanitize: Remove EXT-X-DISCONTINUITY tags which can cause MediaError on Safari (Code 4)
+			// especially when generated by FFmpeg's append_list behavior at the start of VOD playlists.
+			if strings.HasPrefix(line, "#EXT-X-DISCONTINUITY") {
+				continue
+			}
+			b.WriteString(line)
+			b.WriteByte('\n')
+		}
+
+		// Log EXT-X-START injection for debugging
+		if insertStartTag != "" && insertedStartTag {
+			logger.Debug().
+				Str("sid", sessionID).
+				Int("dvr_window_sec", rec.Profile.DVRWindowSec).
+				Str("start_tag", insertStartTag).
+				Msg("injected EXT-X-START tag for Safari DVR")
+		}
+
+		if err := scanner.Err(); err != nil {
+			log.L().Error().Err(err).Msg("failed to scan playlist for normalization")
+			http.Error(w, "failed to process file", http.StatusInternalServerError)
+			return
+		}
+
+		rdr := bytes.NewReader(b.Bytes())
+		http.ServeContent(w, r, cleanName, info.ModTime(), rdr)
+		return
+	}
 
 	http.ServeContent(w, r, cleanName, info.ModTime(), f)
 }

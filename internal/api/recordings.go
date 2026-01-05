@@ -31,6 +31,7 @@ import (
 
 	"bufio"
 
+	"github.com/ManuGH/xg2g/internal/auth"
 	"github.com/ManuGH/xg2g/internal/fsutil"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/metrics"
@@ -124,7 +125,7 @@ var (
 
 const (
 	recordingIDMinLen          = 16
-	recordingIDMaxLen          = 2048
+	recordingIDMaxLen          = 1024 // Reduced from 2048 to limit potential payload size
 	recordingRetryAfterSeconds = 2
 	recordingBuildTimeout      = 2 * time.Hour
 	recordingBuildStaleAfter   = 2 * time.Hour
@@ -165,6 +166,7 @@ var (
 	ErrProbeFailed       = errors.New("probe failed")
 	ErrSourceUnavailable = errors.New("source unavailable")
 	ErrFFmpegFatal       = errors.New("ffmpeg fatal error")
+	ErrFFmpegStalled     = errors.New("ffmpeg stalled")
 )
 
 func classifyFFmpegError(stderr string, segmentsWritten int) error {
@@ -237,12 +239,32 @@ func checkSourceAvailability(ctx context.Context, sourceURL string) error {
 		return nil
 	}
 
+	u, err := url.Parse(sourceURL)
+	if err != nil {
+		return err
+	}
+
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "HEAD", sourceURL, nil)
+	// Extract Auth if present
+	username := ""
+	password := ""
+	if u.User != nil {
+		username = u.User.Username()
+		password, _ = u.User.Password()
+		// Clear from URL to avoid leaking in logs if we printed it (we don't here, but good practice)
+		u.User = nil
+	}
+	cleanURL := u.String()
+
+	req, err := http.NewRequestWithContext(ctx, "HEAD", cleanURL, nil)
 	if err != nil {
-		return err // URL parse error, etc.
+		return err
+	}
+
+	if username != "" || password != "" {
+		req.SetBasicAuth(username, password)
 	}
 
 	// Use a default client with timeout
@@ -251,7 +273,34 @@ func checkSourceAvailability(ctx context.Context, sourceURL string) error {
 	if err != nil {
 		return fmt.Errorf("preflight failed: %w", err)
 	}
+
+	// Robustness: Handle 405 Method Not Allowed by retrying with GET
+	if resp.StatusCode == http.StatusMethodNotAllowed {
+		// Drain and close HEAD response before retry
+		_, _ = io.CopyN(io.Discard, resp.Body, 4096)
+		resp.Body.Close()
+
+		// Create new GET request (avoid reusing potential state)
+		retryReq, rErr := http.NewRequestWithContext(ctx, "GET", cleanURL, nil)
+		if rErr != nil {
+			return fmt.Errorf("preflight retry setup failed: %w", rErr)
+		}
+		if username != "" || password != "" {
+			retryReq.SetBasicAuth(username, password)
+		}
+
+		// Request minimal content (align Range with drain limit)
+		retryReq.Header.Set("Range", "bytes=0-4095")
+
+		resp, err = client.Do(retryReq)
+		if err != nil {
+			return fmt.Errorf("preflight retry failed: %w", err)
+		}
+	}
+
+	// Drain and close final response (connection reuse courtesy)
 	defer resp.Body.Close()
+	_, _ = io.CopyN(io.Discard, resp.Body, 4096)
 
 	if resp.StatusCode == 401 || resp.StatusCode == 403 || resp.StatusCode == 404 {
 		return fmt.Errorf("%w: HTTP %d", ErrSourceUnavailable, resp.StatusCode)
@@ -340,12 +389,29 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 
 	// 1. Prepare Roots
 	// 1. Prepare Roots (Configured + Discovered)
-	roots := make(map[string]string)
+	// Helper to normalize root IDs consistently (lowercase, spaces to underscores)
+	normalizeRootID := func(id string) string {
+		return strings.ToLower(strings.ReplaceAll(id, " ", "_"))
+	}
 
-	// Start with configured roots
+	// Collect all roots with normalized IDs and collision handling
+	rootsRaw := make(map[string]string) // normalized ID -> path
+
+	// Start with configured roots (normalize their IDs)
 	if len(cfg.RecordingRoots) > 0 {
 		for k, v := range cfg.RecordingRoots {
-			roots[k] = v
+			normalizedID := normalizeRootID(k)
+			// Collision handling for configured roots
+			baseID := normalizedID
+			counter := 2
+			for {
+				if _, exists := rootsRaw[normalizedID]; !exists {
+					break
+				}
+				normalizedID = fmt.Sprintf("%s-%d", baseID, counter)
+				counter++
+			}
+			rootsRaw[normalizedID] = v
 		}
 	}
 	// Note: If no roots configured, discovery will populate.
@@ -360,22 +426,32 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 			if id == "" {
 				id = path.Base(loc.Path)
 			}
-			// Sanitize ID (simple slugification)
-			id = strings.ToLower(strings.ReplaceAll(id, " ", "_"))
+			normalizedID := normalizeRootID(id)
 
-			// Only add if not already present (Config takes precedence)
-			if _, exists := roots[id]; !exists {
-				roots[id] = loc.Path
+			// Collision handling: Suffix with -2, -3 etc if ID exists
+			baseID := normalizedID
+			counter := 2
+			for {
+				if _, exists := rootsRaw[normalizedID]; !exists {
+					break
+				}
+				normalizedID = fmt.Sprintf("%s-%d", baseID, counter)
+				counter++
 			}
+
+			rootsRaw[normalizedID] = loc.Path
 		}
 	} else {
 		log.L().Warn().Err(err).Msg("failed to discover recording locations")
 	}
 
 	// Final check: if still empty, assume standard HDD
-	if len(roots) == 0 {
-		roots["hdd"] = "/media/hdd/movie"
+	if len(rootsRaw) == 0 {
+		rootsRaw["hdd"] = "/media/hdd/movie"
 	}
+
+	// Use rootsRaw as the canonical roots map
+	roots := rootsRaw
 
 	rootList := make([]RecordingRoot, 0, len(roots))
 	for id, pathStr := range roots {
@@ -432,11 +508,19 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 	// 3. Resolve & Validate Path
 	// ConfineRelPath uses local FS checks which fail for remote receiver paths.
 	// We switch to string-based validation only using our POSIX helper.
+	// Note: We assume qPath params (from net/url) are already URL-decoded,
+	// so "a%2eb" comes in as "a.b". sanitizeRecordingRelPath handles the string form.
 	cleanRel, blocked := sanitizeRecordingRelPath(qPath)
 	if blocked {
 		log.L().Warn().Str("path", qPath).Msg("path traversal attempt detected")
 		http.Error(w, "Access denied", http.StatusForbidden)
 		return
+	}
+
+	// Consistency: Use sanitized path for response structure and breadcrumbs
+	qPath = cleanRel
+	if qPath == "." {
+		qPath = "" // Normalize root to empty for display/breadcrumbs
 	}
 
 	// Construct the target path to send to receiver
@@ -528,6 +612,11 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 		})
 	}
 
+	// Enrich with Resume Data
+	if principal := auth.PrincipalFromContext(r.Context()); principal != nil {
+		s.attachResumeSummaries(r.Context(), principal.ID, recordingsList)
+	}
+
 	directoriesList := make([]DirectoryItem, 0, len(list.Bookmarks))
 	// Optimization: hoist root trim
 	root := strings.TrimSuffix(rootAbs, "/")
@@ -594,10 +683,68 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 }
 
 // GetRecordingPlaybackInfo determines the best playback strategy
+func (s *Server) attachResumeSummaries(ctx context.Context, principalID string, items []RecordingItem) {
+	if s.resumeStore == nil {
+		return
+	}
+
+	logger := log.WithComponentFromContext(ctx, "resume")
+
+	for i := range items {
+		// Dereference pointer safely
+		if items[i].RecordingId == nil {
+			continue
+		}
+		rid := *items[i].RecordingId
+		if rid == "" {
+			continue
+		}
+
+		// Ensure basic validity of ID to avoid accidental serviceRef usage
+		if !validRecordingID(rid) {
+			continue
+		}
+
+		st, err := s.resumeStore.Get(ctx, principalID, rid)
+		if err != nil {
+			// Do not fail list rendering on resume issues; log and continue.
+			logger.Debug().
+				Err(err).
+				Str("principal", principalID).
+				Str("recording", rid).
+				Msg("resume get failed (list enrichment)")
+			continue
+		}
+		if st == nil {
+			continue
+		}
+
+		// Marshal minimal summary.
+		updatedAt := st.UpdatedAt.UTC()
+		sum := &ResumeSummary{
+			PosSeconds:      &st.PosSeconds,
+			DurationSeconds: &st.DurationSeconds,
+			Finished:        &st.Finished,
+		}
+		if !st.UpdatedAt.IsZero() {
+			sum.UpdatedAt = &updatedAt
+		}
+
+		items[i].Resume = sum
+	}
+}
+
 func (s *Server) GetRecordingPlaybackInfo(w http.ResponseWriter, r *http.Request, recordingId string) {
+	// ENTRY LOG (Temporary)
+	log.L().Info().Str("recording_id", recordingId).Str("ua", r.UserAgent()).Msg("GetRecordingPlaybackInfo request received")
+
 	serviceRef := s.decodeRecordingID(recordingId)
 	if serviceRef == "" {
 		s.writeRecordingPlaybackError(w, r, "", errRecordingInvalid)
+		return
+	}
+	if err := validateRecordingRef(serviceRef); err != nil {
+		s.writeRecordingPlaybackError(w, r, "", err)
 		return
 	}
 
@@ -619,20 +766,12 @@ func (s *Server) GetRecordingPlaybackInfo(w http.ResponseWriter, r *http.Request
 	reason := "remote_source"
 
 	// 2. Logic: If Local & Finished -> Direct MP4
-	// "Finished" approximation: File exists and not currently being recorded?
-	// For now, simpler: If we can stat it, we assume we can remux it.
-	// TODO: Check if actively recording (growing). Use file modtime vs now?
+	// "Finished" check: File exists and is stable (not actively growing)
 	if localPath != "" {
 		if _, err := os.Stat(localPath); err == nil {
-			// Check if growing (active recording)
-			// A crude but effective check: is modtime very recent?
-			// If actively recording, we should use HLS Timeshift.
-			// Let's say if modtime > 1 min ago, it's "finished" enough for VOD?
-			// Or check existing active sessions.
-			// User said: "Finished VOD".
-
-			// Use existing stability check logic
-			// If not stable (growing), fallback to HLS
+			// Stability check: Use IsStable() to detect actively recording files
+			// If file modtime is within RecordingStableWindow, it's still growing
+			// → fallback to HLS progressive playback
 			isActive := !recordings.IsStable(localPath, s.cfg.RecordingStableWindow)
 
 			if !isActive {
@@ -650,6 +789,14 @@ func (s *Server) GetRecordingPlaybackInfo(w http.ResponseWriter, r *http.Request
 		Url:    url,
 		Reason: &reason,
 	}
+
+	// DIAGNOSTIC LOG (Temporary)
+	log.L().Info().
+		Str("recording_id", recordingId).
+		Str("resolved_path", localPath).
+		Str("mode", string(mode)).
+		Str("reason", reason).
+		Msg("GetRecordingPlaybackInfo decision")
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
@@ -731,8 +878,19 @@ func (s *Server) StreamRecordingDirect(w http.ResponseWriter, r *http.Request, r
 		if os.IsExist(err) {
 			// Already locked -> Remux in progress
 			log.L().Debug().Str("path", lockPath).Msg("vod build in progress, returning 503")
+
+			// Structured 503 response for frontend UX
+			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Retry-After", "5")
-			http.Error(w, "Preparing VOD (Remux in progress)", http.StatusServiceUnavailable) // 503
+			w.WriteHeader(http.StatusServiceUnavailable)
+
+			resp := map[string]interface{}{
+				"code":        "PREPARING",
+				"message":     "Preparing video for direct playback (optimizing for smooth streaming)",
+				"eta_seconds": 30, // Conservative estimate for typical DVB recording
+				"retry_after": 5,
+			}
+			json.NewEncoder(w).Encode(resp)
 			return
 		}
 		// True error
@@ -742,52 +900,35 @@ func (s *Server) StreamRecordingDirect(w http.ResponseWriter, r *http.Request, r
 	}
 	lockFile.Close() // Just existence is the lock
 
-	// 5. Start Remux Background Job
+	// 5. Concurrency Control (Semaphore)
+	select {
+	case s.vodBuildSem <- struct{}{}:
+		metrics.IncVODBuildsActive()
+	default:
+		// Saturated
+		log.L().Warn().Msg("direct stream remux rejected (semaphore full)")
+		os.Remove(lockPath) // Release the file lock since we aren't doing the work
+		w.Header().Set("Retry-After", "30")
+		// Consistency: Return 429 Too Many Requests, matching HLS build logic
+		http.Error(w, "Server Busy (Too many streams)", http.StatusTooManyRequests)
+		return
+	}
+
+	// 6. Start Remux Background Job (with probe + ladder + supervision)
 	go func() {
-		defer os.Remove(lockPath) // Unlock on finish
+		defer func() {
+			metrics.DecVODBuildsActive()
+			<-s.vodBuildSem
+			os.Remove(lockPath)
+		}()
 
-		log.L().Info().Str("src", localPath).Str("dest", cachePath).Msg("starting vod remux")
-
-		// ffmpeg -y -i input -c:v copy -c:a aac -b:a 192k -movflags +faststart output
-		// Transcode audio to AAC for max compatibility, copy video for speed.
-
-		// Use server root context for clean shutdown
-		parent := s.rootCtx
-		if parent == nil {
-			parent = context.Background()
-		}
-		ctx, cancel := context.WithTimeout(parent, 15*time.Minute)
-		defer cancel()
-
-		tmpOut := cachePath + ".tmp"
-
-		cmd := exec.CommandContext(ctx, "ffmpeg",
-			"-y",
-			"-i", localPath,
-			"-c:v", "copy",
-			"-c:a", "aac",
-			"-b:a", "192k",
-			"-movflags", "+faststart",
-			"-f", "mp4",
-			tmpOut,
-		)
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			log.L().Error().Err(err).Str("output", string(out)).Msg("vod remux failed")
-			os.Remove(tmpOut)
-			return
-		}
-
-		// Move tmp to final
-		if err := os.Rename(tmpOut, cachePath); err != nil {
-			log.L().Error().Err(err).Msg("failed to commit vod cache")
-			os.Remove(tmpOut)
-		} else {
-			log.L().Info().Str("file", cachePath).Msg("vod remux completed")
+		// Execute remux with probe-based decision tree + fallback ladder
+		if err := s.executeVODRemux(recordingId, serviceRef, localPath, cachePath); err != nil {
+			log.L().Error().Err(err).Str("recording", recordingId).Msg("vod remux failed")
 		}
 	}()
 
-	// 6. Return Wait
+	// 7. Return Wait
 	w.Header().Set("Retry-After", "5")
 	http.Error(w, "Starting VOD Preparation", http.StatusServiceUnavailable)
 }
@@ -829,14 +970,8 @@ func (s *Server) resolveRecordingPlaybackSource(ctx context.Context, serviceRef 
 		return "", "", "", errRecordingInvalid
 	}
 
-	cleanRef := strings.TrimLeft(receiverPath, "/")
-	cleanRef = path.Clean("/" + cleanRef)
-	cleanRef = strings.TrimPrefix(cleanRef, "/")
-	if cleanRef == "." || cleanRef == ".." || strings.HasPrefix(cleanRef, "../") {
-		return "", "", "", errRecordingInvalid
-	}
-	// Redundant but cheap re-check
-	if strings.ContainsAny(cleanRef, "?#") {
+	_, invalid := sanitizeRecordingRelPath(strings.TrimLeft(receiverPath, "/"))
+	if invalid {
 		return "", "", "", errRecordingInvalid
 	}
 
@@ -930,7 +1065,28 @@ func (s *Server) GetRecordingHLSPlaylist(w http.ResponseWriter, r *http.Request,
 
 	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 	w.Header().Set("Cache-Control", "no-store")
-	http.ServeFile(w, r, playlistPath)
+	info, err := os.Stat(playlistPath)
+	if err != nil || info.IsDir() {
+		s.writeRecordingPlaybackError(w, r, serviceRef, errRecordingNotReady)
+		return
+	}
+	data, err := os.ReadFile(playlistPath)
+	if err != nil {
+		s.writeRecordingPlaybackError(w, r, serviceRef, errRecordingNotReady)
+		return
+	}
+	playlistType := "VOD"
+	if filepath.Base(playlistPath) == "index.live.m3u8" {
+		playlistType = "EVENT"
+	}
+	playlist := rewritePlaylistType(string(data), playlistType)
+	http.ServeContent(w, r, "playlist.m3u8", info.ModTime(), bytes.NewReader([]byte(playlist)))
+}
+
+// GetRecordingHLSPlaylistHead handles HEAD /api/v3/recordings/{recordingId}/playlist.m3u8.
+// Safari uses HEAD to check Content-Length. Delegates to GET handler (http.ServeContent handles HEAD).
+func (s *Server) GetRecordingHLSPlaylistHead(w http.ResponseWriter, r *http.Request, recordingId string) {
+	s.GetRecordingHLSPlaylist(w, r, recordingId)
 }
 
 // GetRecordingHLSTimeshift handles GET /api/v3/recordings/{recordingId}/timeshift.m3u8.
@@ -950,7 +1106,24 @@ func (s *Server) GetRecordingHLSTimeshift(w http.ResponseWriter, r *http.Request
 
 	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 	w.Header().Set("Cache-Control", "no-store")
-	http.ServeFile(w, r, playlistPath)
+	info, err := os.Stat(playlistPath)
+	if err != nil || info.IsDir() {
+		s.writeRecordingPlaybackError(w, r, serviceRef, errRecordingNotReady)
+		return
+	}
+	data, err := os.ReadFile(playlistPath)
+	if err != nil {
+		s.writeRecordingPlaybackError(w, r, serviceRef, errRecordingNotReady)
+		return
+	}
+	playlist := rewritePlaylistType(string(data), "EVENT")
+	http.ServeContent(w, r, "timeshift.m3u8", info.ModTime(), bytes.NewReader([]byte(playlist)))
+}
+
+// GetRecordingHLSTimeshiftHead handles HEAD /api/v3/recordings/{recordingId}/timeshift.m3u8.
+// Safari uses HEAD to check Content-Length. Delegates to GET handler (http.ServeContent handles HEAD).
+func (s *Server) GetRecordingHLSTimeshiftHead(w http.ResponseWriter, r *http.Request, recordingId string) {
+	s.GetRecordingHLSTimeshift(w, r, recordingId)
 }
 
 // GetRecordingHLSCustomSegment serves the generated HLS segments.
@@ -966,7 +1139,7 @@ func (s *Server) GetRecordingHLSCustomSegment(w http.ResponseWriter, r *http.Req
 		http.Error(w, "invalid segment name", http.StatusBadRequest)
 		return
 	}
-	if !recordingSegmentAllowed(segment) {
+	if !isAllowedVideoSegment(segment) {
 		http.Error(w, "file type not allowed", http.StatusForbidden)
 		return
 	}
@@ -1010,12 +1183,16 @@ func (s *Server) GetRecordingHLSCustomSegment(w http.ResponseWriter, r *http.Req
 	if segment == "init.mp4" {
 		w.Header().Set("Content-Type", "video/mp4")
 		w.Header().Set("Cache-Control", "public, max-age=3600")
+		w.Header().Set("Content-Encoding", "identity") // Disable compression
 	} else if strings.HasSuffix(segment, ".m4s") || strings.HasSuffix(segment, ".cmfv") {
-		w.Header().Set("Content-Type", "video/iso.segment")
+		// Safari REQUIRES video/mp4 for all fMP4 content (not video/iso.segment)
+		w.Header().Set("Content-Type", "video/mp4")
 		w.Header().Set("Cache-Control", "public, max-age=60")
+		w.Header().Set("Content-Encoding", "identity") // Disable compression
 	} else {
 		w.Header().Set("Content-Type", "video/MP2T")
 		w.Header().Set("Cache-Control", "public, max-age=60")
+		w.Header().Set("Content-Encoding", "identity") // Disable compression
 	}
 
 	f, err := os.Open(filePath) // #nosec G304 -- filePath is confined to recording cache dir.
@@ -1026,6 +1203,12 @@ func (s *Server) GetRecordingHLSCustomSegment(w http.ResponseWriter, r *http.Req
 	defer func() { _ = f.Close() }()
 
 	http.ServeContent(w, r, segment, info.ModTime(), f)
+}
+
+// GetRecordingHLSCustomSegmentHead handles HEAD /api/v3/recordings/{recordingId}/{segment}.
+// Safari uses HEAD to check Content-Length. Delegates to GET handler (http.ServeContent handles HEAD).
+func (s *Server) GetRecordingHLSCustomSegmentHead(w http.ResponseWriter, r *http.Request, recordingId string, segment string) {
+	s.GetRecordingHLSCustomSegment(w, r, recordingId, segment)
 }
 
 func (s *Server) ensureRecordingPlaybackAssets(ctx context.Context, serviceRef string) (string, error) {
@@ -1163,16 +1346,31 @@ func recordingLivePlaylistReady(cacheDir string) (string, bool) {
 	content := string(data)
 	lines := strings.Split(content, "\n")
 
+	// VOD Recording uses TS-HLS only (no fMP4), so we only check for .ts segments
 	hasSegment := false
 	for _, l := range lines {
 		l = strings.TrimSpace(l)
 		if l == "" || strings.HasPrefix(l, "#") {
 			continue
 		}
+
 		// Found a URI line (segment)
-		// Check if file exists
-		segPath := filepath.Join(cacheDir, l)
-		if _, err := os.Stat(segPath); err == nil {
+		// Security: confine segment path to cache dir
+		// Validate segment name BEFORE path confinement/resolution to prevent bypass
+		if !isAllowedVideoSegment(l) {
+			continue
+		}
+
+		safeSeg, err := fsutil.ConfineRelPath(cacheDir, l)
+		if err != nil {
+			continue
+		}
+		// Double check file extension on resolved path (Canonical check)
+		if !isAllowedVideoSegment(safeSeg) {
+			continue
+		}
+
+		if _, err := os.Stat(safeSeg); err == nil {
 			hasSegment = true
 			break
 		}
@@ -1182,6 +1380,34 @@ func recordingLivePlaylistReady(cacheDir string) (string, bool) {
 		return livePath, true
 	}
 	return "", false
+}
+
+func rewritePlaylistType(content, playlistType string) string {
+	if playlistType == "" {
+		return content
+	}
+	lines := strings.Split(content, "\n")
+	newLines := make([]string, 0, len(lines)+1)
+	inserted := false
+	for _, line := range lines {
+		line = strings.TrimRight(line, "\r")
+		if strings.HasPrefix(line, "#EXT-X-PLAYLIST-TYPE:") {
+			continue
+		}
+		// Sanitize: Remove EXT-X-DISCONTINUITY (Safari Fix)
+		if strings.HasPrefix(line, "#EXT-X-DISCONTINUITY") {
+			continue
+		}
+		newLines = append(newLines, line)
+		if line == "#EXTM3U" && !inserted {
+			newLines = append(newLines, "#EXT-X-PLAYLIST-TYPE:"+playlistType)
+			inserted = true
+		}
+	}
+	if !inserted {
+		newLines = append([]string{"#EXT-X-PLAYLIST-TYPE:" + playlistType}, newLines...)
+	}
+	return strings.Join(newLines, "\n")
 }
 
 // Internal struct for safe cleanup
@@ -1393,18 +1619,21 @@ func (s *Server) buildRecordingPlaylist(ctx context.Context, cacheDir, sourceTyp
 	analyzeDur := s.cfg.VODAnalyzeDuration
 	s.mu.RUnlock()
 
-	// Attempt 1: Configured (Fast) Probe
+	// Attempt 1: Configured (Fast) Probe -> Forced Transcode (Safari Fix)
+	// We force transcode=true here to ensure clean timestamp/IDR alignment.
+	// Copy mode causes ~1.2s A/V offset reject by Safari (MediaError 4).
+	// Guardrails: Concurrency restricted by semaphore in scheduleRecordingBuild.
 	if err := s.prepareRecordingCacheDir(cacheDir); err != nil {
 		return err
 	}
 
-	err := s.runRecordingBuild(ctx, cacheDir, sourceType, source, false, probeSize, analyzeDur)
+	err := s.runRecordingBuild(ctx, cacheDir, sourceType, source, true, probeSize, analyzeDur)
 	if err == nil {
 		if recordingPlaylistReady(cacheDir) {
 			return nil
 		}
 		// Fallthrough only if not ready and no error (incomplete copy?)
-		log.L().Warn().Str("source", source).Msg("recording copy path incomplete, trying transcode")
+		log.L().Warn().Str("source", source).Msg("recording build incomplete, trying transcode fallback")
 	} else {
 		// HARDENED RETRY LOGIC
 		if errors.Is(err, ErrProbeFailed) {
@@ -1490,6 +1719,8 @@ func (s *Server) runRecordingBuild(ctx context.Context, cacheDir, sourceType, so
 			useConcat = true
 		}
 	}
+	// VOD Recording uses TS-HLS for maximum compatibility (no fMP4 for now)
+	// Segment extension determines ffmpeg output format via hls muxer
 	segmentPattern := ffmpegexec.SegmentPattern(cacheDir, ".ts")
 	args := []string{
 		"-nostdin",
@@ -1512,7 +1743,8 @@ func (s *Server) runRecordingBuild(ctx context.Context, cacheDir, sourceType, so
 		"-dn", // Drop data streams
 	)
 	audioArgs := []string{
-		"-filter:a", "aresample=async=1:first_pts=0,aformat=channel_layouts=stereo",
+		// Force PTS reset to 0 to fix Safari VOD playback (Start time > 0 causes MediaError)
+		"-filter:a", "asetpts=PTS-STARTPTS,aresample=async=1:first_pts=0,aformat=channel_layouts=stereo",
 		"-c:a", "aac",
 		"-b:a", "192k",
 		"-ar", "48000",
@@ -1520,9 +1752,14 @@ func (s *Server) runRecordingBuild(ctx context.Context, cacheDir, sourceType, so
 	}
 	if transcode {
 		args = append(args,
+			// Reset video PTS to 0
+			"-filter:v", "setpts=PTS-STARTPTS",
 			"-c:v", "libx264",
 			"-preset", "veryfast",
 			"-crf", "20",
+			"-pix_fmt", "yuv420p", // Strict requirement for many decoders
+			"-profile:v", "high", // Standard profile
+			"-level", "4.0", // Standard level
 			"-x264-params", "keyint=100:min-keyint=100:scenecut=0",
 		)
 		args = append(args, audioArgs...)
@@ -1537,12 +1774,27 @@ func (s *Server) runRecordingBuild(ctx context.Context, cacheDir, sourceType, so
 		hlsFlags = "independent_segments+append_list+temp_file"
 	}
 
+	// Dynamic segment pattern
+	// Override segmentPattern for fMP4
+	if transcode {
+		segmentPattern = strings.Replace(segmentPattern, ".ts", ".m4s", 1)
+	}
+
 	args = append(args,
+		"-muxdelay", "0",
+		"-muxpreload", "0",
 		"-f", "hls",
 		"-hls_time", "6",
 		"-hls_list_size", "0",
 		// NO -hls_playlist_type vod during build -> allows progressive updates
 		"-hls_flags", hlsFlags,
+	)
+
+	if transcode {
+		args = append(args, "-hls_segment_type", "fmp4")
+	}
+
+	args = append(args,
 		"-hls_segment_filename", segmentPattern,
 		livePlaylist, // Write to index.live.m3u8
 	)
@@ -1638,6 +1890,8 @@ func (s *Server) runRecordingBuild(ctx context.Context, cacheDir, sourceType, so
 	buildID := fmt.Sprintf("bld-%d", time.Now().UnixNano())
 
 	log.L().Info().
+		Str("pipeline", "vod_build").
+		Bool("transcode", transcode).
 		Str("video_input", input).
 		Str("build_id", buildID).
 		Str("stall_timeout", stallTimeout.String()).
@@ -1774,7 +2028,7 @@ func (s *Server) runRecordingBuild(ctx context.Context, cacheDir, sourceType, so
 				s.recordingMu.Unlock()
 
 				_ = cmd.Process.Kill()
-				return fmt.Errorf("recording build stalled (no progress for %v)", stallTimeout)
+				return fmt.Errorf("%w: no progress for %v", ErrFFmpegStalled, stallTimeout)
 			}
 
 			// 2. Observability (Pulse)
@@ -1810,8 +2064,8 @@ func getSegmentStats(dir string) (int, time.Time, error) {
 	var maxMtime time.Time
 	for _, e := range entries {
 		name := e.Name()
-		// Check for all segment extensions
-		if strings.HasPrefix(name, "seg_") && (strings.HasSuffix(name, ".ts") || strings.HasSuffix(name, ".m4s") || strings.HasSuffix(name, ".mp4") || strings.HasSuffix(name, ".cmfv")) {
+		// Use canonical segment validation to ensure consistent policy
+		if isAllowedVideoSegment(name) {
 			count++
 			if info, err := e.Info(); err == nil {
 				if info.ModTime().After(maxMtime) {
@@ -1892,23 +2146,17 @@ func validateRecordingRef(serviceRef string) error {
 		return errRecordingInvalid
 	}
 
-	// Security: Strict rejection of control characters (Unicode Control Category)
+	// Security: Reject control chars, \ and ?#
 	// Checked BEFORE TrimSpace to reject hidden formatting/control chars.
 	// We specifically allow spaces (0x20) as they are common in filenames.
 	for _, r := range serviceRef {
-		// Reject Control characters (Cc) AND Format characters (Cf) like zero-width joiners
-		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == '\\' || r == '?' || r == '#' {
 			return errRecordingInvalid
 		}
 	}
 
 	trimmedRef := strings.TrimSpace(serviceRef)
 	if trimmedRef == "" {
-		return errRecordingInvalid
-	}
-
-	// Security: Reject query/fragment delimiters anywhere in the reference
-	if strings.ContainsAny(trimmedRef, "?#") {
 		return errRecordingInvalid
 	}
 
@@ -1923,13 +2171,20 @@ func validateRecordingRef(serviceRef string) error {
 		return errRecordingInvalid
 	}
 	// Strict check: Reject any ".." usage even if it effectively stays inside root
+	// Check for traversal in the raw strings
 	if strings.Contains(receiverPath, "/../") || strings.HasSuffix(receiverPath, "/..") {
 		return errRecordingInvalid
 	}
-	// Redundant check for path part, but safe to keep
-	if strings.ContainsAny(cleanRef, "?#") {
-		return errRecordingInvalid
+
+	// Check for traversal in decoded path (catch %2e%2e)
+	if decoded, err := url.PathUnescape(receiverPath); err == nil {
+		if decoded != receiverPath {
+			if strings.Contains(decoded, "/../") || strings.HasSuffix(decoded, "/..") {
+				return errRecordingInvalid
+			}
+		}
 	}
+
 	return nil
 }
 
@@ -1961,36 +2216,11 @@ func recordingPlaylistReady(cacheDir string) bool {
 		if entry.IsDir() {
 			continue
 		}
-		if recordingSegmentFile(entry.Name()) {
+		if isAllowedVideoSegment(entry.Name()) {
 			return true
 		}
 	}
 	return false
-}
-
-func recordingSegmentAllowed(name string) bool {
-	if name == "init.mp4" {
-		return true
-	}
-	return recordingSegmentFile(name)
-}
-
-func recordingSegmentFile(name string) bool {
-	if !strings.HasPrefix(name, "seg_") {
-		return false
-	}
-	switch {
-	case strings.HasSuffix(name, ".ts"):
-		return true
-	case strings.HasSuffix(name, ".m4s"):
-		return true
-	case strings.HasSuffix(name, ".mp4"):
-		return true
-	case strings.HasSuffix(name, ".cmfv"):
-		return true
-	default:
-		return false
-	}
 }
 
 func recordingParts(basePath string) ([]string, error) {
@@ -2425,6 +2655,10 @@ func (s *Server) decodeRecordingID(id string) string {
 		if strings.ContainsRune(decoded, '\x00') {
 			return ""
 		}
+		// Strictly validate the decoded reference immediately
+		if err := validateRecordingRef(decoded); err != nil {
+			return ""
+		}
 		return decoded
 	}
 	return ""
@@ -2519,24 +2753,48 @@ func (s *Server) DeleteRecording(w http.ResponseWriter, r *http.Request, recordi
 
 // sanitizeRecordingRelPath implementation for POSIX paths
 // Returns the cleaned relative path and whether it was blocked (traversal detected).
-func sanitizeRecordingRelPath(qPath string) (string, bool) {
-	// Use path.Clean for POSIX/receiver paths
-	cleanRel := path.Clean(qPath)
-
-	// path.Clean("") -> "."
-	if cleanRel == "." {
-		cleanRel = ""
+func sanitizeRecordingRelPath(p string) (string, bool) {
+	if p == "" {
+		return "", false
+	}
+	// Security: Reject control chars, \, ?, #, and unicode Cf
+	for _, r := range p {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == '\\' || r == '?' || r == '#' {
+			return "", true
+		}
 	}
 
-	// Reject absolute paths (treat as relative foundation)
-	cleanRel = strings.TrimPrefix(cleanRel, "/")
+	// Treat as relative: strip leading slashes
+	p = strings.TrimLeft(p, "/")
 
-	// Check for traversal
-	if cleanRel == ".." || strings.HasPrefix(cleanRel, "../") {
+	clean := path.Clean(p)
+	if clean == ".." || strings.HasPrefix(clean, "../") {
 		return "", true
 	}
+	if clean == "." {
+		return "", false // Root
+	}
 
-	return cleanRel, false
+	return clean, false
+}
+
+// isAllowedVideoSegment provides a single canonical check for segment serving.
+// VOD Recording uses TS-HLS only for maximum compatibility.
+// STRICT: Only allow files starting with "seg_" and ending with .ts extension.
+func isAllowedVideoSegment(path string) bool {
+	name := filepath.Base(path)
+	// Allow init.mp4 for fMP4
+	if name == "init.mp4" {
+		return true
+	}
+	// Enforce prefix to prevent arbitrary file exposure
+	if !strings.HasPrefix(name, "seg_") {
+		return false
+	}
+
+	ext := strings.ToLower(filepath.Ext(name))
+	// VOD Recording outputs TS or fMP4 segments
+	return ext == ".ts" || ext == ".m4s"
 }
 
 // probeDuration uses ffprobe to get the exact duration of a media file.
