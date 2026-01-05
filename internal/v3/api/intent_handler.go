@@ -19,6 +19,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/v3/bus"
+	"github.com/ManuGH/xg2g/internal/v3/hardware"
 	"github.com/ManuGH/xg2g/internal/v3/lease"
 	"github.com/ManuGH/xg2g/internal/v3/model"
 	"github.com/ManuGH/xg2g/internal/v3/profiles"
@@ -124,7 +125,9 @@ func (h IntentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Str("event", "v3.intent.legacy_profile").
 			Msg("legacy field 'profile' used; will be removed in v3.2")
 	}
-	prof := profiles.Resolve(profileID, r.UserAgent(), dvrWindowSec)
+
+	// Legacy handler: no caps, no GPU detection, auto hwaccel
+	prof := profiles.Resolve(profileID, r.UserAgent(), dvrWindowSec, nil, hardware.HasVAAPI(), profiles.HWAccelAuto)
 
 	var acquiredLeases []store.Lease
 	releaseLeases := func() {

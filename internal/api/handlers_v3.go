@@ -19,12 +19,15 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	"github.com/ManuGH/xg2g/internal/log"
 	v3api "github.com/ManuGH/xg2g/internal/v3/api"
+	"github.com/ManuGH/xg2g/internal/v3/hardware"
 	"github.com/ManuGH/xg2g/internal/v3/lease"
 	"github.com/ManuGH/xg2g/internal/v3/model"
 	"github.com/ManuGH/xg2g/internal/v3/profiles"
+	"github.com/ManuGH/xg2g/internal/v3/scan"
 	v3store "github.com/ManuGH/xg2g/internal/v3/store"
 )
 
@@ -183,7 +186,76 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		// Re-resolve profileSpec to get details (Name, etc)
 		// Note: canonicalProfileID was called above, so we know it's valid
 		reqProfileID, _, _ := canonicalProfileID(req.ProfileID, req.Profile)
-		profileSpec := profiles.Resolve(reqProfileID, r.UserAgent(), cfg.DVRWindowSec)
+
+		// Smart Profile Lookup
+		var cap *scan.Capability
+		if s.v3Scan != nil {
+			if c, found := s.v3Scan.GetCapability(req.ServiceRef); found {
+				cap = &c
+			}
+		}
+		hasGPU := hardware.HasVAAPI()
+
+		// Parse hwaccel parameter (v3.1+)
+		hwaccelMode := profiles.HWAccelAuto // Default
+		if hwaccel := strings.TrimSpace(req.Params["hwaccel"]); hwaccel != "" {
+			switch strings.ToLower(hwaccel) {
+			case "force":
+				hwaccelMode = profiles.HWAccelForce
+			case "off":
+				hwaccelMode = profiles.HWAccelOff
+			case "auto":
+				hwaccelMode = profiles.HWAccelAuto
+			default:
+				// Strict validation: unknown hwaccel → 400 Bad Request
+				RecordV3Intent(string(model.IntentTypeStreamStart), "phase0", "invalid_hwaccel")
+				RespondError(w, r, http.StatusBadRequest, ErrInvalidInput,
+					fmt.Sprintf("invalid hwaccel value: %q (must be auto, force, or off)", hwaccel))
+				return
+			}
+		}
+
+		// Hard-fail if force requested but no GPU available
+		if hwaccelMode == profiles.HWAccelForce && !hasGPU {
+			RecordV3Intent(string(model.IntentTypeStreamStart), "phase0", "hwaccel_unavailable")
+			RespondError(w, r, http.StatusBadRequest, ErrInvalidInput,
+				"hwaccel=force requested but GPU not available (no /dev/dri/renderD128)")
+			return
+		}
+
+		profileSpec := profiles.Resolve(reqProfileID, r.UserAgent(), cfg.DVRWindowSec, cap, hasGPU, hwaccelMode)
+
+		// Determine effective hwaccel outcome (for deterministic logging)
+		hwaccelEffective := "cpu"
+		hwaccelReason := "not_applicable"
+		encoderBackend := "sw"
+
+		if profileSpec.TranscodeVideo {
+			if profileSpec.HWAccel == "vaapi" {
+				hwaccelEffective = "gpu"
+				encoderBackend = "vaapi"
+				if hwaccelMode == profiles.HWAccelForce {
+					hwaccelReason = "forced"
+				} else {
+					hwaccelReason = "auto_has_gpu"
+				}
+			} else {
+				hwaccelEffective = "cpu"
+				encoderBackend = profileSpec.VideoCodec // libx264, hevc, etc
+				if hwaccelMode == profiles.HWAccelOff {
+					hwaccelReason = "user_disabled"
+				} else if !hasGPU {
+					hwaccelReason = "no_gpu_available"
+				} else {
+					hwaccelReason = "profile_cpu_only"
+				}
+			}
+		} else {
+			// Passthrough (no transcoding)
+			hwaccelEffective = "off"
+			hwaccelReason = "passthrough"
+			encoderBackend = "none"
+		}
 
 		// Recalculate bucket for idempotency consistency in this scope
 		bucket := "0"
@@ -194,7 +266,16 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		logger.Info().
 			Str("ua", r.UserAgent()).
 			Str("profile", profileSpec.Name).
+			Int("dvr_window_sec", profileSpec.DVRWindowSec).
 			Str("idem_key", idempotencyKey).
+			Bool("gpu_available", hasGPU).
+			Str("hwaccel_requested", string(hwaccelMode)).
+			Str("hwaccel_effective", hwaccelEffective).
+			Str("hwaccel_reason", hwaccelReason).
+			Str("encoder_backend", encoderBackend).
+			Str("video_codec", profileSpec.VideoCodec).
+			Str("container", profileSpec.Container).
+			Bool("llhls", profileSpec.LLHLS).
 			Msg("intent profile resolved")
 
 		if len(cfg.TunerSlots) == 0 {
@@ -629,4 +710,138 @@ func ComputeIdemKey(intentType model.IntentType, ref, profile, bucket string) st
 	payload := fmt.Sprintf("v1:%s:%s:%s:%s", intentType, ref, profile, bucket)
 	hash := sha256.Sum256([]byte(payload))
 	return hex.EncodeToString(hash[:])
+}
+
+// ReportPlaybackFeedback handles POST /sessions/{sessionId}/feedback
+func (s *Server) ReportPlaybackFeedback(w http.ResponseWriter, r *http.Request, sessionId openapi_types.UUID) {
+	// 1. Verify V3 Available
+	s.mu.RLock()
+	bus := s.v3Bus
+	store := s.v3Store
+	s.mu.RUnlock()
+
+	if bus == nil || store == nil {
+		RespondError(w, r, http.StatusServiceUnavailable, &APIError{
+			Code:    "V3_UNAVAILABLE",
+			Message: "v3 not available",
+		})
+		return
+	}
+
+	// 2. Decode Feedback
+	var req PlaybackFeedbackRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		RespondError(w, r, http.StatusBadRequest, ErrInvalidInput, "invalid body")
+		return
+	}
+
+	// 3. Check for MediaError 3 (Safari HLS decode error)
+	// We only trigger fallback if it's an error and specifically code 3
+	isDecodeError := req.Event == PlaybackFeedbackRequestEventError && req.Code != nil && *req.Code == 3
+
+	if !isDecodeError {
+		// Just log info/warnings
+		log.L().Info().
+			Str("session_id", sessionId.String()).
+			Str("event", string(req.Event)).
+			Int("code", derefInt(req.Code)).
+			Str("msg", derefString(req.Message)).
+			Msg("playback feedback received")
+		w.WriteHeader(http.StatusAccepted)
+		return
+	}
+
+	// 4. Trigger Fallback
+	ctx := r.Context()
+	sess, err := store.GetSession(ctx, sessionId.String())
+	if err != nil || sess == nil {
+		RespondError(w, r, http.StatusNotFound, &APIError{Code: "NOT_FOUND", Message: "session not found"})
+		return
+	}
+
+	// Atomic Update via Store
+	var changed bool
+	updatedSess, err := store.UpdateSession(ctx, sessionId.String(), func(s *model.SessionRecord) error {
+		// If we are already in Repair profile, nothing more to do
+		if s.Profile.Name == profiles.ProfileRepair {
+			return nil
+		}
+
+		// Force switch to Repair Profile (CPU Transcode, Safe Settings)
+		// We manually construct the repair spec as we don't have access to Resolve() deps here easily
+		// or we can reuse existing profile but modify it.
+		// Existing ProfileRepair definition: Transcode=true, Deinterlace=false, CRF=24, Width=1280
+
+		s.Profile.Name = profiles.ProfileRepair
+		s.Profile.TranscodeVideo = true
+		s.Profile.Deinterlace = false // Keep simple
+		s.Profile.HWAccel = ""        // Force CPU
+		s.Profile.VideoCodec = "libx264"
+		s.Profile.VideoCRF = 24
+		s.Profile.VideoMaxWidth = 1280
+		s.Profile.Preset = "veryfast"
+		s.Profile.Container = "fmp4" // Ensure FMP4 for Safari
+
+		s.FallbackReason = fmt.Sprintf("client_report:code=%d", derefInt(req.Code))
+		s.FallbackAtUnix = time.Now().Unix()
+		changed = true
+		return nil
+	})
+
+	if err != nil {
+		log.L().Error().Err(err).Msg("failed to update session for fallback")
+		RespondError(w, r, http.StatusInternalServerError, ErrInternalServer, "store update failed")
+		return
+	}
+
+	if !changed {
+		log.L().Info().Str("session_id", sessionId.String()).Msg("fallback already active, ignoring request")
+		w.WriteHeader(http.StatusAccepted)
+		return
+	}
+
+	// Trigger Restart only if we actually applied the fallback
+	sess = updatedSess
+	log.L().Warn().Str("session_id", sess.SessionID).Msg("activating safari fallback (fmp4) due to client error")
+
+	// Stop existing session
+	stopEvt := model.StopSessionEvent{
+		Type:          model.EventStopSession,
+		SessionID:     sess.SessionID,
+		Reason:        model.RClientStop,
+		CorrelationID: sess.CorrelationID,
+		RequestedAtUN: time.Now().Unix(),
+	}
+	if err := bus.Publish(ctx, string(model.EventStopSession), stopEvt); err != nil {
+		log.L().Error().Err(err).Msg("failed to publish stop event during fallback")
+	}
+
+	// Start new session
+	startEvt := model.StartSessionEvent{
+		Type:          model.EventStartSession,
+		SessionID:     sess.SessionID,
+		ServiceRef:    sess.ServiceRef,
+		CorrelationID: sess.CorrelationID,
+		RequestedAtUN: time.Now().Unix(),
+	}
+
+	if err := bus.Publish(ctx, string(model.EventStartSession), startEvt); err != nil {
+		log.L().Error().Err(err).Msg("failed to publish restart event during fallback")
+	}
+
+	w.WriteHeader(http.StatusAccepted)
+}
+
+func derefInt(i *int) int {
+	if i == nil {
+		return 0
+	}
+	return *i
+}
+
+func derefString(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }

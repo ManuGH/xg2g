@@ -5,8 +5,10 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"html"
 	"net/http"
@@ -24,6 +26,8 @@ import (
 	"github.com/ManuGH/xg2g/internal/m3u"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/v3/model"
+	cfgvalidate "github.com/ManuGH/xg2g/internal/validate"
+	"github.com/ManuGH/xg2g/internal/validation"
 )
 
 // Ensure Server implements ServerInterface
@@ -50,9 +54,9 @@ func (s *Server) GetSystemHealth(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	status := Ok
+	status := SystemHealthStatusOk
 	if s.status.Error != "" {
-		status = Degraded
+		status = SystemHealthStatusDegraded
 	}
 
 	receiverStatus := ComponentStatusStatusOk
@@ -156,8 +160,11 @@ func (s *Server) PutSystemConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	current := s.cfg
+	s.mu.RUnlock()
+
+	next := current
 
 	if req.OpenWebIF != nil {
 		if req.OpenWebIF.BaseUrl != nil {
@@ -165,54 +172,66 @@ func (s *Server) PutSystemConfig(w http.ResponseWriter, r *http.Request) {
 			if val != "" && !strings.HasPrefix(val, "http://") && !strings.HasPrefix(val, "https://") {
 				val = "http://" + val
 			}
-			s.cfg.OWIBase = val
+			next.OWIBase = val
 		}
 		if req.OpenWebIF.Username != nil {
-			s.cfg.OWIUsername = *req.OpenWebIF.Username
+			next.OWIUsername = *req.OpenWebIF.Username
 		}
 		if req.OpenWebIF.Password != nil {
-			s.cfg.OWIPassword = *req.OpenWebIF.Password
+			next.OWIPassword = *req.OpenWebIF.Password
 		}
 		if req.OpenWebIF.StreamPort != nil {
-			s.cfg.StreamPort = *req.OpenWebIF.StreamPort
+			next.StreamPort = *req.OpenWebIF.StreamPort
 		}
 	}
 
 	if req.Bouquets != nil {
 		// Join array to comma-separated string
-		s.cfg.Bouquet = strings.Join(*req.Bouquets, ",")
+		next.Bouquet = strings.Join(*req.Bouquets, ",")
 	}
 
 	if req.Epg != nil {
 		if req.Epg.Enabled != nil {
-			s.cfg.EPGEnabled = *req.Epg.Enabled
+			next.EPGEnabled = *req.Epg.Enabled
 		}
 		if req.Epg.Days != nil {
-			s.cfg.EPGDays = *req.Epg.Days
+			next.EPGDays = *req.Epg.Days
 		}
 		if req.Epg.Source != nil {
-			s.cfg.EPGSource = string(*req.Epg.Source)
+			next.EPGSource = string(*req.Epg.Source)
 		}
 	}
 
 	if req.Picons != nil {
 		if req.Picons.BaseUrl != nil {
-			s.cfg.PiconBase = *req.Picons.BaseUrl
+			next.PiconBase = *req.Picons.BaseUrl
 		}
 	}
 
 	if req.FeatureFlags != nil {
 		if req.FeatureFlags.InstantTune != nil {
-			s.cfg.InstantTuneEnabled = *req.FeatureFlags.InstantTune
+			next.InstantTuneEnabled = *req.FeatureFlags.InstantTune
 		}
 	}
 
+	if err := config.Validate(next); err != nil {
+		respondConfigValidationError(w, r, err)
+		return
+	}
+	if err := validation.PerformStartupChecks(r.Context(), next); err != nil {
+		respondConfigValidationError(w, r, err)
+		return
+	}
+
 	// Persist to disk
-	if err := s.configManager.Save(&s.cfg); err != nil {
+	if err := s.configManager.Save(&next); err != nil {
 		log.L().Error().Err(err).Msg("failed to save configuration")
 		http.Error(w, "Failed to save configuration", http.StatusInternalServerError)
 		return
 	}
+	s.mu.Lock()
+	s.cfg = next
+	s.mu.Unlock()
 
 	// Determine if restart is required
 	restartRequired := true // Conservative default
@@ -223,16 +242,51 @@ func (s *Server) PutSystemConfig(w http.ResponseWriter, r *http.Request) {
 		RestartRequired: restartRequired,
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(respObj)
+	status := http.StatusOK
+	if restartRequired {
+		status = http.StatusAccepted
+	}
+	writeJSON(w, status, respObj)
 
 	if restartRequired {
 		go func() {
-			time.Sleep(1 * time.Second) // Allow response to flush
-			log.L().Info().Msg("Configuration updated, triggering restart...")
-			os.Exit(0) // Docker with restart: unless-stopped will revive us
+			time.Sleep(100 * time.Millisecond) // Allow response to flush
+			log.L().Info().Msg("configuration updated, triggering graceful shutdown")
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if err := s.requestShutdown(ctx); err != nil {
+				log.L().Error().Err(err).Msg("graceful shutdown request failed")
+			}
 		}()
 	}
+}
+
+type configValidationIssue struct {
+	Field   string `json:"field"`
+	Message string `json:"message"`
+	Value   any    `json:"value,omitempty"`
+}
+
+func respondConfigValidationError(w http.ResponseWriter, r *http.Request, err error) {
+	var details []configValidationIssue
+
+	var vErr cfgvalidate.ValidationError
+	if errors.As(err, &vErr) {
+		for _, item := range vErr.Errors() {
+			details = append(details, configValidationIssue{
+				Field:   item.Field,
+				Message: item.Message,
+				Value:   item.Value,
+			})
+		}
+	} else {
+		details = append(details, configValidationIssue{
+			Field:   "preflight",
+			Message: err.Error(),
+		})
+	}
+
+	RespondError(w, r, http.StatusBadRequest, ErrInvalidInput, details)
 }
 
 // PostSystemRefresh implements ServerInterface

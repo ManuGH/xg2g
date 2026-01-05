@@ -7,7 +7,8 @@
     "series": "Serien",
     "files": "Dateien",
     "logs": "Logs",
-    "settings": "Einstellungen"
+    "playerSettings": "Einstellungen",
+    "config": "Einrichtung"
   },
   "common": {
     "language": "Sprache",
@@ -42,7 +43,19 @@
     "hlsLevel": "HLS Level",
     "segDuration": "Seg Dauer",
     "closePlayer": "Player schließen",
+    "preparingDirectPlay": "Direktwiedergabe wird vorbereitet...",
     "serviceRefPlaceholder": "Service-Ref (1:0:1...)",
+    "seekBack15m": "15 Min. zurück",
+    "seekBack60s": "60 Sek. zurück",
+    "seekBack15s": "15 Sek. zurück",
+    "pause": "Pause",
+    "play": "Abspielen",
+    "seekForward15s": "15 Sek. vor",
+    "seekForward60s": "60 Sek. vor",
+    "seekForward15m": "15 Min. vor",
+    "goLive": "Live gehen",
+    "unmute": "Ton an",
+    "mute": "Stumm",
     "pipTitle": "Bild-in-Bild (p)",
     "statsTitle": "Statistiken (i)",
     "hotkeysHint": "Leertaste (Play/Pause) • F (Vollbild) • M (Stumm) • P (PiP) • I (Statistiken)",
@@ -72,7 +85,11 @@
     "hlsError": "HLS Fehler",
     "authFailed": "Anmeldung fehlgeschlagen",
     "recordingNotFound": "Aufnahme nicht gefunden (möglicherweise gelöscht).",
-    "recordingPrepareTimeout": "Die Aufnahme benötigt ungewöhnlich lange zur Vorbereitung. Bitte erneut versuchen."
+    "recordingPrepareTimeout": "Die Aufnahme benötigt ungewöhnlich lange zur Vorbereitung. Bitte erneut versuchen.",
+    "resumeTitle": "Wiedergabe fortsetzen?",
+    "resumePrompt": "Ab {{time}} fortsetzen?",
+    "resumeAction": "Fortsetzen",
+    "startOver": "Von vorn beginnen"
   },
   "epg": {
     "pageTitle": "EPG Übersicht ({{count}})",
@@ -108,5 +125,127 @@
     "deleteSuccess": "{{count}} Aufnahmen erfolgreich gelöscht.",
     "deletePartial": "{{success}} Aufnahmen gelöscht. {{failed}} fehlgeschlagen.",
     "deleteError": "Fehler beim Löschen der Aufnahmen."
+  },
+  "settings": {
+    "kicker": "System",
+    "title": "Einstellungen",
+    "subtitle": "Receiver-Setup konfigurieren und Streaming-Defaults wählen. Das Setup bleibt hier nach der Ersteinrichtung.",
+    "saved": "Einstellungen automatisch gespeichert",
+    "streaming": {
+      "title": "Streaming",
+      "profile": {
+        "label": "Stream-Encoding-Profil",
+        "hint": "Auto wird empfohlen. Safari HEVC (GPU) nur zum Testen auf unterstützten Geräten.",
+        "options": {
+          "auto": "Auto (H.264 für Safari, Standard für andere)",
+          "high": "Hohe Qualität (H.264)",
+          "safari": "Safari optimiert (H.264)",
+          "safariHevc": "Safari HEVC (CPU – experimentell)",
+          "safariHevcGpu": "Safari HEVC (GPU) ⚡ empfohlen",
+          "safariHevcGpuLl": "Safari HEVC (GPU) + Low Latency ⚡🚀",
+          "low": "Geringe Bandbreite (Mobil)",
+          "copy": "Direkt kopieren (Passthrough)"
+        }
+      },
+      "info": {
+        "gpu": {
+          "title": "GPU-Encoding aktiv",
+          "body": "Hardwarebeschleunigtes HEVC-Encoding. ~10% CPU pro Stream, 10–15 parallele Streams möglich."
+        },
+        "gpuLl": {
+          "title": "GPU-Encoding + Low Latency aktiv",
+          "body": "Hardwarebeschleunigtes HEVC mit LL-HLS. ~50% CPU pro Stream, <3s Latenz. Ideal für Sport und News."
+        },
+        "auto": "Safari nutzt H.264-Encoding. Andere Browser verwenden die Standard-HQ-Einstellungen."
+      },
+      "adaptive": {
+        "title": "Adaptive Bitrate (kommt bald)",
+        "toggle": "Bitrate automatisch an die Bandbreite anpassen",
+        "hint": "Passt die Qualität automatisch an, damit die Wiedergabe bei langsamen Verbindungen stabil bleibt."
+      },
+      "scan": {
+        "title": "Smart Profil Scanner",
+        "description": "Scannt alle Kanäle im Hintergrund auf Interlacing. Ermöglicht GPU-Beschleunigung für spezifische Kanäle.",
+        "start": "Scan Starten",
+        "status": {
+          "label": "Status",
+          "idle": "Leerlauf",
+          "running": "Läuft...",
+          "complete": "Fertig",
+          "failed": "Fehlgeschlagen",
+          "cancelled": "Abgebrochen"
+        },
+        "stats": {
+          "total": "Kanäle Gesamt",
+          "scanned": "Gescannt",
+          "interlaced": "Interlaced"
+        },
+        "timestamps": {
+          "started": "Gestartet",
+          "finished": "Beendet"
+        }
+      }
+    },
+    "footer": {
+      "noteTitle": "Hinweis:",
+      "noteBody": "Einstellungen werden lokal im Browser gespeichert und gelten für alle Streams. GPU-Encoding erfordert eine kompatible GPU (AMD/Intel mit VAAPI-Support)."
+    }
+  },
+  "setup": {
+    "title": "Receiver-Setup",
+    "loading": "Konfiguration wird geladen...",
+    "loadError": "Konfiguration konnte nicht geladen werden",
+    "receiver": {
+      "unknown": "Unbekannt"
+    },
+    "errors": {
+      "authRequired": "Authentifizierung erforderlich. Bitte API-Token eingeben.",
+      "loadFailed": "Konfiguration konnte nicht geladen werden. Bitte Backend prüfen.",
+      "connectionFailed": "Verbindung fehlgeschlagen",
+      "networkValidation": "Netzwerkfehler bei der Prüfung",
+      "validateBeforeSave": "Bitte die Verbindung prüfen, bevor gespeichert wird.",
+      "saveFailed": "Konfiguration konnte nicht gespeichert werden.",
+      "saveFailedLogs": "Konfiguration konnte nicht gespeichert werden. Bitte Logs prüfen."
+    },
+    "messages": {
+      "connected": "Verbindung erfolgreich! Receiver: {{receiver}}",
+      "saved": "Konfiguration erfolgreich gespeichert.",
+      "savedRestart": "Konfiguration gespeichert. Anwendung wird neu gestartet..."
+    },
+    "restart": {
+      "title": "Anwendung wird neu gestartet...",
+      "subtitle": "Bitte warten, während die Änderungen übernommen werden."
+    },
+    "step1": {
+      "title": "Schritt 1: Receiver verbinden",
+      "hint": "IP-Adresse deines Enigma2-Receivers eingeben (z. B. Dreambox, VU+)."
+    },
+    "fields": {
+      "receiverUrl": "Receiver-URL",
+      "username": "Benutzername",
+      "password": "Passwort"
+    },
+    "placeholders": {
+      "username": "root (optional)",
+      "password": "Passwort (optional)"
+    },
+    "actions": {
+      "connecting": "Verbindet...",
+      "connectionVerified": "Verbindung geprüft",
+      "testConnection": "Verbindung testen",
+      "statusOnline": "Online",
+      "finishSetup": "Setup abschließen"
+    },
+    "step2": {
+      "title": "Schritt 2: Sender auswählen",
+      "hint": "Wähle die Bouquets (Favoriten), die du verwenden willst.",
+      "empty": "Keine Bouquets gefunden.",
+      "emptyHint": "Bitte Receiver-Konfiguration prüfen."
+    },
+    "step3": {
+      "title": "Schritt 3: Optionen",
+      "enableEpg": "EPG aktivieren (Elektronischer Programmführer)",
+      "hint": "Lädt automatisch Programminfos für die ausgewählten Sender (3 Tage)."
+    }
   }
 }

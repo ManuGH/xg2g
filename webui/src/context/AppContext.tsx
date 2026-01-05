@@ -108,7 +108,7 @@ export function AppProvider({ children }: AppProviderProps) {
 
       if (!config?.openWebIF?.baseUrl) {
         console.log('[DEBUG] No Base URL configured. Switching to Setup Mode.');
-        setView('config');
+        setView('settings');
         return;
       }
 
@@ -116,7 +116,7 @@ export function AppProvider({ children }: AppProviderProps) {
     } catch (err) {
       console.error('[DEBUG] Failed to check config:', err);
       console.log('[DEBUG] Config check failed. Defaulting to Setup Mode.');
-      setView('config');
+      setView('settings');
 
       if ((err as { status?: number }).status === 401) {
         setShowAuth(true);

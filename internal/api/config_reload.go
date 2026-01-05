@@ -111,6 +111,20 @@ func reloadRequiresRestart(oldCfg, newCfg config.AppConfig) bool {
 	if oldCfg.OWIBase != newCfg.OWIBase || oldCfg.StreamPort != newCfg.StreamPort || oldCfg.UseWebIFStreams != newCfg.UseWebIFStreams {
 		return true
 	}
+	if oldCfg.TrustedProxies != newCfg.TrustedProxies {
+		return true
+	}
+	if !equalStrings(oldCfg.AllowedOrigins, newCfg.AllowedOrigins) {
+		return true
+	}
+	if oldCfg.RateLimitEnabled != newCfg.RateLimitEnabled ||
+		oldCfg.RateLimitGlobal != newCfg.RateLimitGlobal ||
+		oldCfg.RateLimitBurst != newCfg.RateLimitBurst {
+		return true
+	}
+	if !equalStrings(oldCfg.RateLimitWhitelist, newCfg.RateLimitWhitelist) {
+		return true
+	}
 	// Security: Auth changes require restart to ensure consistent enforcement
 	if oldCfg.APIToken != newCfg.APIToken {
 		return true
@@ -140,4 +154,16 @@ func reloadRequiresRestart(oldCfg, newCfg config.AppConfig) bool {
 		}
 	}
 	return false
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i, v := range a {
+		if b[i] != v {
+			return false
+		}
+	}
+	return true
 }

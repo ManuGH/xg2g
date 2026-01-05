@@ -29,6 +29,7 @@ import (
 	v3bus "github.com/ManuGH/xg2g/internal/v3/bus"
 	"github.com/ManuGH/xg2g/internal/v3/lease"
 	"github.com/ManuGH/xg2g/internal/v3/model"
+	"github.com/ManuGH/xg2g/internal/v3/resume"
 	v3store "github.com/ManuGH/xg2g/internal/v3/store"
 )
 
@@ -117,7 +118,7 @@ func newV3TestServer(t *testing.T, hlsRoot string) (*Server, *v3store.MemoryStor
 	}
 	s := New(cfg, nil)
 	st := v3store.NewMemoryStore()
-	s.SetV3Components(v3bus.NewMemoryBus(), st)
+	s.SetV3Components(v3bus.NewMemoryBus(), st, resume.NewMemoryStore(), nil)
 	return s, st
 }
 

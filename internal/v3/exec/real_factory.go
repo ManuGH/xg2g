@@ -13,19 +13,25 @@ import (
 
 // RealFactory produces real execution components (Enigma2 Tuner, Real/Stub Transcoder).
 type RealFactory struct {
-	E2Client    *enigma2.Client
-	FFmpegBin   string
-	HLSRoot     string
-	TuneTimeout time.Duration
+	E2Client        *enigma2.Client
+	FFmpegBin       string
+	HLSRoot         string
+	TuneTimeout     time.Duration
+	KillTimeout     time.Duration
+	AnalyzeDuration string
+	ProbeSize       string
 }
 
 // NewRealFactory creates a RealFactory.
-func NewRealFactory(e2Client *enigma2.Client, tuneTimeout time.Duration, ffmpegBin, hlsRoot string) *RealFactory {
+func NewRealFactory(e2Client *enigma2.Client, tuneTimeout time.Duration, ffmpegBin, hlsRoot string, killTimeout time.Duration, analyzeDuration, probeSize string) *RealFactory {
 	return &RealFactory{
-		E2Client:    e2Client,
-		FFmpegBin:   ffmpegBin,
-		HLSRoot:     hlsRoot,
-		TuneTimeout: tuneTimeout,
+		E2Client:        e2Client,
+		FFmpegBin:       ffmpegBin,
+		HLSRoot:         hlsRoot,
+		TuneTimeout:     tuneTimeout,
+		KillTimeout:     killTimeout,
+		AnalyzeDuration: analyzeDuration,
+		ProbeSize:       probeSize,
 	}
 }
 
@@ -34,5 +40,8 @@ func (f *RealFactory) NewTuner(slot int) (Tuner, error) {
 }
 
 func (f *RealFactory) NewTranscoder() (Transcoder, error) {
-	return ffmpeg.NewRunner(f.FFmpegBin, f.HLSRoot, f.E2Client), nil
+	runner := ffmpeg.NewRunner(f.FFmpegBin, f.HLSRoot, f.E2Client, f.KillTimeout)
+	runner.AnalyzeDuration = f.AnalyzeDuration
+	runner.ProbeSize = f.ProbeSize
+	return runner, nil
 }

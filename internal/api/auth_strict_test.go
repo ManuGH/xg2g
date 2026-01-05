@@ -16,6 +16,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/v3/bus"
 	"github.com/ManuGH/xg2g/internal/v3/model"
+	"github.com/ManuGH/xg2g/internal/v3/resume"
 	"github.com/ManuGH/xg2g/internal/v3/store"
 )
 
@@ -372,7 +373,7 @@ func newTestServerConfig(t *testing.T, spy *SpyStore, spyBus *SpyBus, fn func(*c
 	} else {
 		b = bus.NewMemoryBus()
 	}
-	srv.SetV3Components(b, spy)
+	srv.SetV3Components(b, spy, resume.NewMemoryStore(), nil)
 
 	handler := srv.routes()
 

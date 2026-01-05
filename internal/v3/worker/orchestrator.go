@@ -53,6 +53,8 @@ type Orchestrator struct {
 	ExecFactory  exec.Factory
 	LeaseKeyFunc func(model.StartSessionEvent) string
 
+	FFmpegKillTimeout time.Duration
+
 	// Phase 9-2: Lifecycle Management
 	mu     sync.Mutex
 	active map[string]context.CancelFunc
@@ -583,10 +585,10 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 		// 3. Wait for Playlist to be Servable
 		if o.HLSRoot != "" {
 			playlistPath := filepath.Join(o.HLSRoot, "sessions", e.SessionID, "index.m3u8")
-			playlistReadyTimeout := 30 * time.Second
+			playlistReadyTimeout := 45 * time.Second // Increased for OSCam-emu relay + HEVC transcoding
 			// Reduce timeout for repair attempt (encoder should be fast)
 			if repairAttempted {
-				playlistReadyTimeout = 15 * time.Second
+				playlistReadyTimeout = 20 * time.Second
 			}
 			if vodMode {
 				playlistReadyTimeout = 2 * time.Minute
@@ -659,23 +661,35 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 					reasonDetail := fmt.Sprintf("playlist not ready after %s", playlistReadyTimeout)
 
 					// CLASSIFICATION
-					if len(entries) == 0 {
-						corruptSignatures := []string{
-							"decode_slice_header error", "no frame!", "non-existing PPS", "mmco: unref short failure",
-						}
-						signatureFound := false
-						for _, line := range ffmpegLogs {
-							for _, sig := range corruptSignatures {
-								if strings.Contains(line, sig) {
-									signatureFound = true
-									break
-								}
+					corruptSignatures := []string{
+						"decode_slice_header error", "no frame!", "non-existing PPS", "non-existing SPS",
+						"mmco: unref short failure", "number of reference frames",
+					}
+					signatureFound := false
+					for _, line := range ffmpegLogs {
+						for _, sig := range corruptSignatures {
+							if strings.Contains(line, sig) {
+								signatureFound = true
+								break
 							}
 						}
 						if signatureFound {
-							reason = model.RUpstreamCorrupt
-							reasonDetail = "upstream stream corrupt or missing keyframes"
+							break
 						}
+					}
+
+					hasSegment := false
+					for _, ent := range entries {
+						name := ent.Name()
+						if strings.HasSuffix(name, ".ts") || strings.HasSuffix(name, ".m4s") {
+							hasSegment = true
+							break
+						}
+					}
+
+					if signatureFound && !hasSegment {
+						reason = model.RUpstreamCorrupt
+						reasonDetail = "upstream stream corrupt or missing keyframes"
 					}
 
 					logger.Error().
@@ -707,12 +721,31 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 
 			// Failure Handling & Retry Logic
 			// 1. Stop current process
-			stopCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			stopCtx, cancel := context.WithTimeout(context.Background(), o.ffmpegStopTimeout())
 			_ = transcoder.Stop(stopCtx)
 			cancel()
 
 			// 2. Decide: Retry or Fail?
 			if !repairAttempted && failReason == model.RUpstreamCorrupt && !vodMode {
+				if currentProfileSpec.TranscodeVideo {
+					logger.Warn().
+						Str("session_id", e.SessionID).
+						Str("reason", string(failReason)).
+						Msg("initiating fallback switch: disabling video transcoding (copy + AAC)")
+
+					repairAttempted = true
+					currentProfileSpec = initialProfileSpec
+					currentProfileSpec.Name = "copy"
+					currentProfileSpec.TranscodeVideo = false
+					// Keep AAC audio for Safari compatibility.
+					if currentProfileSpec.AudioBitrateK == 0 {
+						currentProfileSpec.AudioBitrateK = 192
+					}
+
+					o.cleanupFiles(e.SessionID)
+					continue
+				}
+
 				logger.Warn().
 					Str("session_id", e.SessionID).
 					Str("reason", string(failReason)).
@@ -744,7 +777,7 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 		if correlationID != "" {
 			stopBaseCtx = log.ContextWithCorrelationID(stopBaseCtx, correlationID)
 		}
-		stopCtx, cancel := context.WithTimeout(stopBaseCtx, 5*time.Second)
+		stopCtx, cancel := context.WithTimeout(stopBaseCtx, o.ffmpegStopTimeout())
 		defer cancel()
 		_ = transcoder.Stop(stopCtx)
 	}()
@@ -856,6 +889,13 @@ func (o *Orchestrator) modeLabel() string {
 		return "virtual"
 	}
 	return "standard"
+}
+
+func (o *Orchestrator) ffmpegStopTimeout() time.Duration {
+	if o.FFmpegKillTimeout > 0 {
+		return o.FFmpegKillTimeout
+	}
+	return 5 * time.Second
 }
 
 func (o *Orchestrator) recordTransition(from, to model.SessionState) {

@@ -10,8 +10,10 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/log"
@@ -79,16 +81,16 @@ func checkTargetedValidations(logger zerolog.Logger, cfg config.AppConfig) error
 	// b. OWI Base URL (Syntax + Scheme)
 	if cfg.OWIBase == "" {
 		logger.Warn().Msg("OpenWebIF base URL not configured; running in setup mode")
-		return nil
+	} else {
+		u, err := url.Parse(cfg.OWIBase)
+		if err != nil {
+			return fmt.Errorf("invalid XG2G_OWI_BASE URL: %w", err)
+		}
+		if u.Scheme != "http" && u.Scheme != "https" {
+			return fmt.Errorf("XG2G_OWI_BASE scheme must be http or https, got: %s", u.Scheme)
+		}
+		logger.Info().Str("url", cfg.OWIBase).Msg("✓ OWI Base URL is valid")
 	}
-	u, err := url.Parse(cfg.OWIBase)
-	if err != nil {
-		return fmt.Errorf("invalid XG2G_OWI_BASE URL: %w", err)
-	}
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return fmt.Errorf("XG2G_OWI_BASE scheme must be http or https, got: %s", u.Scheme)
-	}
-	logger.Info().Str("url", cfg.OWIBase).Msg("✓ OWI Base URL is valid")
 
 	// c. TLS Config (Pair + Readable)
 	if cfg.TLSCert != "" || cfg.TLSKey != "" {
@@ -124,6 +126,39 @@ func checkTargetedValidations(logger zerolog.Logger, cfg config.AppConfig) error
 			// Just ensuring it exists is enough for "startup".
 		}
 		logger.Info().Int("count", len(cfg.RecordingRoots)).Msg("✓ Recording roots validated")
+	}
+
+	// e. Worker dependencies + persistence safety
+	if cfg.WorkerEnabled {
+		if strings.EqualFold(cfg.WorkerMode, "virtual") {
+			logger.Info().Msg("Worker in virtual mode; skipping ffmpeg/curl dependency checks")
+		} else {
+			ffmpegBin := strings.TrimSpace(cfg.FFmpegBin)
+			if ffmpegBin == "" {
+				ffmpegBin = "ffmpeg"
+			}
+			if _, err := exec.LookPath(ffmpegBin); err != nil {
+				return fmt.Errorf("ffmpeg binary not found (%s): %w", ffmpegBin, err)
+			}
+			if _, err := exec.LookPath("curl"); err != nil {
+				return fmt.Errorf("curl binary not found: %w", err)
+			}
+			logger.Info().Str("ffmpeg", ffmpegBin).Msg("✓ Worker dependencies available")
+		}
+
+		if strings.EqualFold(cfg.StoreBackend, "memory") {
+			logger.Warn().
+				Str("store_backend", cfg.StoreBackend).
+				Msg("worker uses in-memory store; sessions are not persistent across restarts")
+		}
+
+		tempDir := filepath.Clean(os.TempDir())
+		dataDir := filepath.Clean(cfg.DataDir)
+		if tempDir != "." && (dataDir == tempDir || strings.HasPrefix(dataDir, tempDir+string(filepath.Separator))) {
+			logger.Warn().
+				Str("data_dir", cfg.DataDir).
+				Msg("data directory is under temp; cached data and sessions may be lost on reboot")
+		}
 	}
 
 	return nil

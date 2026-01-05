@@ -8,39 +8,69 @@ import (
 	"strings"
 
 	"github.com/ManuGH/xg2g/internal/v3/model"
+	"github.com/ManuGH/xg2g/internal/v3/scan"
 )
 
 const (
-	ProfileAuto      = "auto"
-	ProfileHigh      = "high"
-	ProfileLow       = "low"
-	ProfileDVR       = "dvr"
-	ProfileSafari    = "safari"
-	ProfileSafariDVR = "safari_dvr"
-	ProfileCopy      = "copy"
-	ProfileRepair    = "repair" // High + Transcode (Rescue Mode)
+	ProfileAuto           = "auto"
+	ProfileHigh           = "high"
+	ProfileLow            = "low"
+	ProfileDVR            = "dvr"
+	ProfileSafari         = "safari"
+	ProfileSafariDVR      = "safari_dvr"
+	ProfileSafariHEVC     = "safari_hevc"
+	ProfileSafariHEVCHW   = "safari_hevc_hw"    // GPU-accelerated HEVC
+	ProfileSafariHEVCHWLL = "safari_hevc_hw_ll" // GPU-accelerated HEVC + LL-HLS
+	ProfileCopy           = "copy"
+	ProfileRepair         = "repair" // High + Transcode (Rescue Mode)
 )
 
 var aliasMap = map[string]string{
-	"":           ProfileAuto,
-	"default":    ProfileAuto,
-	"auto":       ProfileAuto,
-	"hd":         ProfileHigh,
-	"high":       ProfileHigh,
-	"web_opt":    ProfileHigh,
-	"standard":   ProfileHigh,
-	"live":       ProfileHigh,
-	"mobile":     ProfileLow,
-	"low":        ProfileLow,
-	"dvr":        ProfileDVR,
-	"safari":     ProfileSafari,
-	"safari_dvr": ProfileSafariDVR,
-	"copy":       ProfileCopy,
+	"":                  ProfileAuto,
+	"default":           ProfileAuto,
+	"auto":              ProfileAuto,
+	"hd":                ProfileHigh,
+	"high":              ProfileHigh,
+	"web_opt":           ProfileHigh,
+	"standard":          ProfileHigh,
+	"live":              ProfileHigh,
+	"mobile":            ProfileLow,
+	"low":               ProfileLow,
+	"dvr":               ProfileDVR,
+	"safari":            ProfileSafari,
+	"safari_dvr":        ProfileSafariDVR,
+	"safari_hevc":       ProfileSafariHEVC,
+	"safari_hevc_hw":    ProfileSafariHEVCHW,
+	"safari_hevc_hw_ll": ProfileSafariHEVCHWLL,
+	"copy":              ProfileCopy,
+}
+
+type HWAccelMode string
+
+const (
+	HWAccelAuto  HWAccelMode = "auto"  // Server decides based on GPU availability
+	HWAccelForce HWAccelMode = "force" // Force GPU (fail if unavailable)
+	HWAccelOff   HWAccelMode = "off"   // Force CPU
+)
+
+// shouldUseGPU determines whether to use GPU acceleration based on availability and user override
+func shouldUseGPU(hasGPU bool, mode HWAccelMode) bool {
+	switch mode {
+	case HWAccelForce:
+		return true // Force GPU (will fail later if unavailable)
+	case HWAccelOff:
+		return false // Force CPU
+	case HWAccelAuto:
+		return hasGPU // Auto: use GPU if available
+	default:
+		return hasGPU
+	}
 }
 
 // Resolve maps a requested profile and user agent to a concrete ProfileSpec.
 // dvrWindowSec controls the DVR window for DVR profiles; <=0 disables DVR.
-func Resolve(requested, userAgent string, dvrWindowSec int) model.ProfileSpec {
+// hwaccelMode allows explicit GPU/CPU override (default: auto).
+func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability, hasGPU bool, hwaccelMode HWAccelMode) model.ProfileSpec {
 	requested = strings.ToLower(strings.TrimSpace(requested))
 	canonical, ok := aliasMap[requested]
 	if !ok {
@@ -50,19 +80,18 @@ func Resolve(requested, userAgent string, dvrWindowSec int) model.ProfileSpec {
 	isSafari := isSafariUA(userAgent)
 	if canonical == ProfileAuto {
 		if isSafari {
+			// Safari browser does NOT support HEVC in MSE/HLS.js
+			// Use H.264 (safari profile) for browser compatibility
+			// safari_hevc is opt-in only for testing/native apps
 			canonical = ProfileSafari
 		} else {
 			canonical = ProfileHigh
 		}
 	}
 
-	if isSafari {
-		if canonical == ProfileDVR || canonical == ProfileSafariDVR {
-			canonical = ProfileSafariDVR
-		} else if canonical != ProfileSafari {
-			canonical = ProfileSafari
-		}
-	}
+	// REMOVED: Server-side Safari profile override
+	// Frontend now controls profile switching explicitly based on fullscreen state
+	// This ensures inline playback uses custom controls, fullscreen uses native DVR
 
 	spec := model.ProfileSpec{
 		Name: canonical,
@@ -78,15 +107,46 @@ func Resolve(requested, userAgent string, dvrWindowSec int) model.ProfileSpec {
 		spec.AudioBitrateK = 160
 	case ProfileHigh:
 		spec.TranscodeVideo = false // Default to copy (passthrough) for original quality
+		spec.AudioBitrateK = 192    // FORCE AAC: Browsers cannot decode MP2/AC3 natively
 		if dvrWindowSec > 0 {
 			spec.DVRWindowSec = dvrWindowSec
 		}
 	case ProfileSafari:
-		// Revert to "High" profile (Stream Copy) as requested by user.
-		// WARNING: This may cause decode errors on Safari if stream is broken.
-		spec.TranscodeVideo = false
+		// Smart Profile Logic
+		if cap != nil && !cap.Interlaced {
+			// Progressive -> Direct Remux (Original Quality)
+			spec.TranscodeVideo = false
+			spec.Container = "fmp4"
+			spec.AudioBitrateK = 192
+			// HWAccel disabled for passthrough
+		} else {
+			// Interlaced or Unknown -> Transcode + Deinterlace
+			spec.TranscodeVideo = true
+			spec.Deinterlace = true
+			spec.Container = "fmp4"
+			spec.AudioBitrateK = 192
+
+			// HWAccel Decision (respects override)
+			useGPU := shouldUseGPU(hasGPU, hwaccelMode)
+
+			if useGPU {
+				// GPU Acceleration (High Quality)
+				spec.HWAccel = "vaapi"
+				spec.VideoCodec = "h264"
+				spec.VideoCRF = 16
+				spec.VideoMaxRateK = 20000
+				spec.VideoBufSizeK = 40000
+			} else {
+				// CPU Fallback (Safe Quality)
+				spec.VideoCodec = "libx264"
+				spec.VideoCRF = 18
+				spec.VideoMaxRateK = 8000
+				spec.VideoBufSizeK = 16000
+				spec.Preset = "veryfast"
+			}
+		}
+
 		spec.LLHLS = false
-		spec.AudioBitrateK = 192
 		if dvrWindowSec > 0 {
 			spec.DVRWindowSec = dvrWindowSec
 		}
@@ -103,6 +163,60 @@ func Resolve(requested, userAgent string, dvrWindowSec int) model.ProfileSpec {
 		spec.TranscodeVideo = true
 		spec.Deinterlace = true
 		spec.VideoCRF = 23
+		if dvrWindowSec > 0 {
+			spec.DVRWindowSec = dvrWindowSec
+		}
+	case ProfileSafariHEVC:
+		// Experimental: HEVC Live Transcoding (CPU)
+		// Strict constraints for Apple HLS compatibility (fMP4 implied by args builder)
+		spec.TranscodeVideo = true
+		spec.VideoCodec = "hevc"
+		spec.Deinterlace = true
+		spec.VideoCRF = 22        // Conservative start for x265
+		spec.VideoMaxRateK = 5000 // Strict VBV Cap
+		spec.VideoBufSizeK = 10000
+		spec.BFrames = 2 // B-Frames now work with FFmpeg master (sdtp bug fixed)
+		spec.AudioBitrateK = 192
+	case ProfileSafariHEVCHW:
+		// GPU-Accelerated HEVC (VAAPI) - Recommended for multi-stream
+		// 10x faster than CPU, ~10% CPU usage per stream
+		spec.TranscodeVideo = true
+		spec.VideoCodec = "hevc"
+		spec.Deinterlace = true
+		spec.VideoMaxRateK = 5000 // VBV Cap
+		spec.VideoBufSizeK = 10000
+		spec.AudioBitrateK = 192
+		// Note: VAAPI doesn't use CRF, uses constant quality mode instead
+
+		// HWAccel Decision (respects override)
+		if shouldUseGPU(hasGPU, hwaccelMode) {
+			spec.HWAccel = "vaapi"
+		} else {
+			// CPU Fallback: x265
+			spec.VideoCodec = "hevc"
+			spec.VideoCRF = 22
+		}
+
+	case ProfileSafariHEVCHWLL:
+		// GPU-Accelerated HEVC with LL-HLS - Ultra-low latency streaming
+		// Combines GPU encoding (~10% CPU) with LL-HLS (<3s latency)
+		spec.TranscodeVideo = true
+		spec.VideoCodec = "hevc"
+		spec.Deinterlace = true
+		spec.LLHLS = true // Enable Low-Latency HLS with 0.5s part-segments
+		spec.VideoMaxRateK = 5000
+		spec.VideoBufSizeK = 10000
+		spec.AudioBitrateK = 192
+
+		// HWAccel Decision (respects override)
+		if shouldUseGPU(hasGPU, hwaccelMode) {
+			spec.HWAccel = "vaapi"
+		} else {
+			// CPU Fallback: x265 with LL-HLS
+			spec.VideoCodec = "hevc"
+			spec.VideoCRF = 22
+		}
+
 		if dvrWindowSec > 0 {
 			spec.DVRWindowSec = dvrWindowSec
 		}

@@ -7,7 +7,8 @@
     "series": "Series",
     "files": "Files",
     "logs": "Logs",
-    "settings": "Settings"
+    "playerSettings": "Settings",
+    "config": "Setup"
   },
   "common": {
     "language": "Language",
@@ -42,7 +43,19 @@
     "hlsLevel": "HLS Level",
     "segDuration": "Seg Duration",
     "closePlayer": "Close Player",
+    "preparingDirectPlay": "Preparing Direct Play...",
     "serviceRefPlaceholder": "Service Ref (1:0:1...)",
+    "seekBack15m": "Back 15m",
+    "seekBack60s": "Back 60s",
+    "seekBack15s": "Back 15s",
+    "pause": "Pause",
+    "play": "Play",
+    "seekForward15s": "Forward 15s",
+    "seekForward60s": "Forward 60s",
+    "seekForward15m": "Forward 15m",
+    "goLive": "Go live",
+    "unmute": "Unmute",
+    "mute": "Mute",
     "pipTitle": "Picture-in-Picture (p)",
     "statsTitle": "Stats for Nerds (i)",
     "hotkeysHint": "Space (Play/Pause) • F (Full) • M (Mute) • P (PiP) • I (Stats)",
@@ -72,7 +85,11 @@
     "hlsError": "HLS Error",
     "authFailed": "Authentication failed",
     "recordingNotFound": "Recording was not found (it may have been deleted).",
-    "recordingPrepareTimeout": "Recording is taking unusually long to prepare. Please retry."
+    "recordingPrepareTimeout": "Recording is taking unusually long to prepare. Please retry.",
+    "resumeTitle": "Resume Playback?",
+    "resumePrompt": "Resume from {{time}}?",
+    "resumeAction": "Resume",
+    "startOver": "Start Over"
   },
   "epg": {
     "pageTitle": "EPG Overview ({{count}})",
@@ -108,5 +125,127 @@
     "deleteSuccess": "Successfully deleted {{count}} recordings.",
     "deletePartial": "Deleted {{success}} recordings. {{failed}} failed.",
     "deleteError": "Failed to delete recordings."
+  },
+  "settings": {
+    "kicker": "System",
+    "title": "Settings",
+    "subtitle": "Configure receiver setup and choose streaming defaults. Setup stays here after first run.",
+    "saved": "Settings saved automatically",
+    "streaming": {
+      "title": "Streaming",
+      "profile": {
+        "label": "Stream Encoding Profile",
+        "hint": "Auto is recommended. Use Safari HEVC (GPU) only for testing on supported devices.",
+        "options": {
+          "auto": "Auto (H.264 for Safari, default for others)",
+          "high": "High Quality (H.264)",
+          "safari": "Safari Optimized (H.264)",
+          "safariHevc": "Safari HEVC (CPU - Experimental)",
+          "safariHevcGpu": "Safari HEVC (GPU) ⚡ Recommended",
+          "safariHevcGpuLl": "Safari HEVC (GPU) + Low Latency ⚡🚀",
+          "low": "Low Bandwidth (Mobile)",
+          "copy": "Direct Copy (Passthrough)"
+        }
+      },
+      "info": {
+        "gpu": {
+          "title": "GPU Encoding Active",
+          "body": "Using hardware-accelerated HEVC encoding. ~10% CPU usage per stream, supports 10-15 concurrent streams."
+        },
+        "gpuLl": {
+          "title": "GPU Encoding + Low Latency Active",
+          "body": "Using hardware-accelerated HEVC with LL-HLS. ~50% CPU usage per stream, <3s latency. Best for live sports and news."
+        },
+        "auto": "Safari browsers will use H.264 encoding. Other browsers will use default high-quality settings."
+      },
+      "adaptive": {
+        "title": "Adaptive Bitrate (Coming soon)",
+        "toggle": "Auto-adjust bitrate based on bandwidth",
+        "hint": "Will automatically tune quality to keep playback stable on slower links."
+      },
+      "scan": {
+        "title": "Smart Profile Scanner",
+        "description": "Scans all channels in background to detect interlacing. Use this to enable GPU acceleration for specific channels.",
+        "start": "Start Scan",
+        "status": {
+          "label": "Status",
+          "idle": "Idle",
+          "running": "Running...",
+          "complete": "Complete",
+          "failed": "Failed",
+          "cancelled": "Cancelled"
+        },
+        "stats": {
+          "total": "Total Channels",
+          "scanned": "Scanned",
+          "interlaced": "Interlaced"
+        },
+        "timestamps": {
+          "started": "Started",
+          "finished": "Finished"
+        }
+      }
+    },
+    "footer": {
+      "noteTitle": "Note:",
+      "noteBody": "Settings are stored locally in your browser and apply to all streams. GPU encoding requires a compatible GPU (AMD/Intel with VAAPI support)."
+    }
+  },
+  "setup": {
+    "title": "Receiver Setup",
+    "loading": "Loading configuration...",
+    "loadError": "Could not load configuration",
+    "receiver": {
+      "unknown": "Unknown"
+    },
+    "errors": {
+      "authRequired": "Authentication required. Please enter your API token.",
+      "loadFailed": "Failed to load configuration. Please ensure the backend is running.",
+      "connectionFailed": "Connection failed",
+      "networkValidation": "Network error during validation",
+      "validateBeforeSave": "Please validate the connection before saving.",
+      "saveFailed": "Failed to save configuration.",
+      "saveFailedLogs": "Failed to save configuration. Please check the logs."
+    },
+    "messages": {
+      "connected": "Connected successfully! Receiver: {{receiver}}",
+      "saved": "Configuration saved successfully.",
+      "savedRestart": "Configuration saved. Restarting application..."
+    },
+    "restart": {
+      "title": "Restarting Application...",
+      "subtitle": "Please wait while your changes are applied."
+    },
+    "step1": {
+      "title": "Step 1: Connect to Receiver",
+      "hint": "Enter the IP address of your Enigma2 receiver (e.g., Dreambox, VU+)."
+    },
+    "fields": {
+      "receiverUrl": "Receiver URL",
+      "username": "Username",
+      "password": "Password"
+    },
+    "placeholders": {
+      "username": "root (optional)",
+      "password": "password (optional)"
+    },
+    "actions": {
+      "connecting": "Connecting...",
+      "connectionVerified": "Connection Verified",
+      "testConnection": "Test Connection",
+      "statusOnline": "Online",
+      "finishSetup": "Finish Setup"
+    },
+    "step2": {
+      "title": "Step 2: Select Channels",
+      "hint": "Choose which bouquets (favorites) you want to use.",
+      "empty": "No bouquets found.",
+      "emptyHint": "Check your receiver configuration."
+    },
+    "step3": {
+      "title": "Step 3: Options",
+      "enableEpg": "Enable EPG (Electronic Program Guide)",
+      "hint": "Automatically fetches program info for selected channels (3 days)."
+    }
   }
 }

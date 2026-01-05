@@ -10,7 +10,7 @@ export type AppView =
   | 'series'
   | 'files'
   | 'logs'
-  | 'config';
+  | 'settings';
 
 export interface AuthState {
   token: string | null;

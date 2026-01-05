@@ -28,6 +28,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/dvr"
 	"github.com/ManuGH/xg2g/internal/epg"
+	"github.com/ManuGH/xg2g/internal/fsutil"
 	"github.com/ManuGH/xg2g/internal/hdhr"
 	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/jobs"
@@ -35,6 +36,8 @@ import (
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/recordings"
 	"github.com/ManuGH/xg2g/internal/v3/bus"
+	"github.com/ManuGH/xg2g/internal/v3/resume"
+	"github.com/ManuGH/xg2g/internal/v3/scan"
 	"github.com/ManuGH/xg2g/internal/v3/store"
 	"github.com/go-chi/chi/v5"
 	"golang.org/x/sync/singleflight"
@@ -84,8 +87,10 @@ type Server struct {
 	owiEpoch  uint64
 
 	// v3 Integration
-	v3Bus   bus.Bus
-	v3Store store.StateStore
+	v3Bus       bus.Bus
+	v3Store     store.StateStore
+	resumeStore resume.Store
+	v3Scan      *scan.Manager
 
 	// Recording Playback Path Mapper
 	recordingPathMapper *recordings.PathMapper
@@ -99,6 +104,7 @@ type Server struct {
 	// P9: Safety & Shutdown
 	rootCtx    context.Context
 	rootCancel context.CancelFunc
+	shutdownFn func(context.Context) error
 }
 
 // AuditLogger interface for audit logging (optional).
@@ -358,6 +364,38 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return nil
 }
 
+// SetRootContext ties server lifecycle to the provided parent context.
+// It replaces any existing root context and cancels the previous one.
+func (s *Server) SetRootContext(ctx context.Context) {
+	if ctx == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.rootCancel != nil {
+		s.rootCancel()
+	}
+	s.rootCtx, s.rootCancel = context.WithCancel(ctx)
+}
+
+// SetShutdownFunc wires a graceful shutdown trigger (daemon-level).
+// The function should cancel the daemon root context and/or invoke manager shutdown.
+func (s *Server) SetShutdownFunc(fn func(context.Context) error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.shutdownFn = fn
+}
+
+func (s *Server) requestShutdown(ctx context.Context) error {
+	s.mu.RLock()
+	fn := s.shutdownFn
+	s.mu.RUnlock()
+	if fn == nil {
+		return nil
+	}
+	return fn(ctx)
+}
+
 // GetEvents implements dvr.EpgProvider interface
 func (s *Server) GetEvents(from, to time.Time) ([]openwebif.EPGEvent, error) {
 	s.mu.RLock()
@@ -480,15 +518,21 @@ func (s *Server) routes() http.Handler {
 	// and creates routes starting with /api
 	// NOTE: HandlerWithOptions creates its own handler stack, so we must re-apply middlewares
 	HandlerWithOptions(s, ChiServerOptions{
-		BaseURL:     "/api/v3",
-		BaseRouter:  r,
+		BaseURL:    "/api/v3",
+		BaseRouter: r,
 		Middlewares: []MiddlewareFunc{
 			// Apply Auth Middleware to all API routes
-			//			func(next http.Handler) http.Handler {
-			//				return s.authMiddleware(next) // Use struct method for config access
-			//			},
+			func(next http.Handler) http.Handler {
+				return s.authMiddleware(next)
+			},
 		},
 	})
+
+	// Manually register Resume Endpoint (Extension to generated API)
+	r.With(s.authMiddleware, s.scopeMiddleware(ScopeV3Write)).
+		Put("/api/v3/recordings/{recordingId}/resume", s.handleRecordingResume)
+	r.With(s.authMiddleware, s.scopeMiddleware(ScopeV3Write)).
+		Options("/api/v3/recordings/{recordingId}/resume", s.handleRecordingResumeOptions)
 
 	// 9. LAN Guard (Restrict discovery/legacy endpoints to private networks)
 	// trusted proxies are comma-separated in config
@@ -560,12 +604,14 @@ func (s *Server) GetConfig() config.AppConfig {
 	return s.cfg
 }
 
-// SetV3Components configures v3 event bus and store
-func (s *Server) SetV3Components(b bus.Bus, st store.StateStore) {
+// SetV3Components configures v3 event bus, store, and scan manager
+func (s *Server) SetV3Components(b bus.Bus, st store.StateStore, rs resume.Store, sm *scan.Manager) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.v3Bus = b
 	s.v3Store = st
+	s.resumeStore = rs
+	s.v3Scan = sm
 }
 
 // HandleRefreshInternal exposes the refresh handler for versioned APIs
@@ -1009,14 +1055,16 @@ func NewRouter(cfg config.AppConfig) http.Handler {
 // handlePicons proxies picon requests to the backend receiver and caches them locally
 // Path: /logos/{ref}.png
 func (s *Server) handlePicons(w http.ResponseWriter, r *http.Request) {
-	ref := chi.URLParam(r, "ref")
-	if ref == "" {
+	rawRef := chi.URLParam(r, "ref")
+	if rawRef == "" {
 		http.Error(w, "Missing picon reference", http.StatusBadRequest)
 		return
 	}
-	// Decode URL-encoded chars if present
-	if decoded, err := url.PathUnescape(ref); err == nil {
-		ref = decoded
+
+	ref, err := parsePiconRef(rawRef)
+	if err != nil {
+		http.Error(w, "Invalid picon reference", http.StatusBadRequest)
+		return
 	}
 
 	// normalizeRef is used for Upstream requests (needs colons usually)
@@ -1029,14 +1077,23 @@ func (s *Server) handlePicons(w http.ResponseWriter, r *http.Request) {
 	cacheRef := strings.ReplaceAll(processRef, ":", "_")
 
 	// Local Cache Path
-	piconDir := filepath.Join(s.cfg.DataDir, "picons")
+	piconDir, err := fsutil.ConfineRelPath(s.cfg.DataDir, "picons")
+	if err != nil {
+		log.L().Error().Err(err).Msg("failed to confine picon cache dir")
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
 	if err := os.MkdirAll(piconDir, 0750); err != nil {
 		log.L().Error().Err(err).Msg("failed to create picon cache dir")
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
-	localPath := filepath.Join(piconDir, cacheRef+".png")
+	localPath, err := fsutil.ConfineRelPath(s.cfg.DataDir, filepath.Join("picons", cacheRef+".png"))
+	if err != nil {
+		http.Error(w, "Invalid picon reference", http.StatusBadRequest)
+		return
+	}
 
 	// 1. CACHE HIT
 	if _, err := os.Stat(localPath); err == nil {
@@ -1182,4 +1239,27 @@ ServePicon:
 
 	// 4. SERVE
 	http.ServeFile(w, r, localPath)
+}
+
+func parsePiconRef(raw string) (string, error) {
+	decoded, err := url.PathUnescape(raw)
+	if err != nil {
+		return "", err
+	}
+	decoded = strings.TrimSpace(decoded)
+	if decoded == "" {
+		return "", fmt.Errorf("empty ref")
+	}
+	if strings.Contains(decoded, "/") || strings.Contains(decoded, "\\") {
+		return "", fmt.Errorf("path separator not allowed")
+	}
+	if strings.Contains(decoded, "..") {
+		return "", fmt.Errorf("path traversal not allowed")
+	}
+	for _, r := range decoded {
+		if r < 0x20 || r == 0x7f {
+			return "", fmt.Errorf("control characters not allowed")
+		}
+	}
+	return decoded, nil
 }

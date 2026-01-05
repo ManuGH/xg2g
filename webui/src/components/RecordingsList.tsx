@@ -6,7 +6,14 @@ import React, { useState, useEffect, lazy, Suspense, useRef } from 'react';
 import { getRecordings, deleteRecording, type RecordingResponse, type RecordingItem } from '../client-ts';
 import { useAppContext } from '../context/AppContext';
 import { useTranslation } from 'react-i18next';
+import RecordingResumeBar, { isResumeEligible } from '../features/resume/RecordingResumeBar';
+import type { ResumeSummary } from '../features/resume/types';
 import './Recordings.css';
+
+// TODO: Remove this once client-ts types are regenerated
+type RecordingItemWithResume = RecordingItem & {
+  resume?: ResumeSummary;
+};
 
 const V3Player = lazy(() => import('./V3Player'));
 
@@ -301,6 +308,13 @@ export default function RecordingsList() {
                   <span className="meta-length">{rec.length}</span>
                 </div>
                 <p className="item-desc">{rec.description}</p>
+                {/* Resume Bar Integration */}
+                {(rec as RecordingItemWithResume).resume && isResumeEligible((rec as RecordingItemWithResume).resume, rec.duration_seconds) && (
+                  <RecordingResumeBar
+                    resume={(rec as RecordingItemWithResume).resume!}
+                    durationSeconds={rec.duration_seconds}
+                  />
+                )}
               </div>
 
               {selectionMode && (

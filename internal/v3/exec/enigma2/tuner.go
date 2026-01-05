@@ -42,6 +42,11 @@ func (t *Tuner) Tune(ctx context.Context, serviceRef string) error {
 	logger := log.L().With().Int("slot", t.Slot).Str("ref", serviceRef).Logger()
 	logger.Debug().Msg("initiating zap")
 
+	if t.Client != nil && t.Client.useWebIFStreams {
+		logger.Info().Msg("skipping zap for WebIF stream")
+		return nil
+	}
+
 	if err := t.Client.Zap(ctx, serviceRef); err != nil {
 		return fmt.Errorf("zap failed: %w", err)
 	}

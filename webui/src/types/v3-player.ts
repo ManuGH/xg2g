@@ -90,4 +90,11 @@ export interface V3SessionStatusResponse {
 
 // HLS-specific types
 export type HlsInstanceRef = Hls | null;
-export type VideoElementRef = HTMLVideoElement | null;
+
+export interface SafariVideoElement extends HTMLVideoElement {
+  webkitEnterFullscreen?: () => void;
+  webkitSupportsFullscreen?: boolean;
+  webkitDisplayingFullscreen?: boolean;
+}
+
+export type VideoElementRef = SafariVideoElement | null;

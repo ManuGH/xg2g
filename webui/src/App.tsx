@@ -17,7 +17,7 @@ const Files = lazy(() => import('./components/Files'));
 const SeriesManager = lazy(() => import('./components/SeriesManager'));
 const Timers = lazy(() => import('./components/Timers'));
 const RecordingsList = lazy(() => import('./components/RecordingsList'));
-const Config = lazy(() => import('./components/Config'));
+const Settings = lazy(() => import('./components/Settings'));
 
 function App() {
   const ctx = useAppContext();
@@ -140,7 +140,7 @@ function App() {
 
           {view === 'timers' && <Timers />}
           {view === 'series' && <SeriesManager />}
-          {view === 'config' && <Config />}
+          {view === 'settings' && <Settings />}
         </Suspense>
       </main>
     </div>

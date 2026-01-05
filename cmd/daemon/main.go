@@ -6,6 +6,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"net/url"
@@ -13,6 +15,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -74,18 +77,38 @@ func main() {
 	defer stop()
 
 	// Determine config path:
-	// - Explicit via --config
-	// - Otherwise auto-load ${XG2G_DATA}/config.yaml if it exists (so UI-saved config persists)
+	// - Explicit via --config: Fail fast if invalid
+	// - Otherwise auto-load ${XG2G_DATA}/config.yaml: Fallback to defaults if invalid/dir
 	explicitConfigPath := strings.TrimSpace(*configPath)
-	effectiveConfigPath := explicitConfigPath
-	if effectiveConfigPath == "" {
+	var effectiveConfigPath string
+
+	if explicitConfigPath != "" {
+		// Explicit mode: Strict checks
+		absPath, err := filepath.Abs(explicitConfigPath)
+		if err != nil {
+			logger.Fatal().Err(err).Str("path", explicitConfigPath).Msg("failed to resolve absolute path for explicit config")
+		}
+		info, err := os.Stat(absPath)
+		if err != nil {
+			logger.Fatal().Err(err).Str("path", absPath).Msg("explicit config file not found")
+		}
+		if info.IsDir() {
+			logger.Fatal().Str("path", absPath).Msg("explicit config path is a directory, expected a file")
+		}
+		effectiveConfigPath = absPath
+	} else {
+		// Auto mode: Graceful fallback
 		dataDir := strings.TrimSpace(config.ParseString("XG2G_DATA", "/tmp"))
 		if dataDir == "" {
-			dataDir = "/tmp"
+			dataDir = "/tmp" // Fallback, though XG2G_DATA should usually be set
 		}
 		autoPath := filepath.Join(dataDir, "config.yaml")
-		if _, err := os.Stat(autoPath); err == nil {
-			effectiveConfigPath = autoPath
+
+		// Only use auto path if it exists and is a regular file
+		if info, err := os.Stat(autoPath); err == nil && !info.IsDir() {
+			if absPath, err := filepath.Abs(autoPath); err == nil {
+				effectiveConfigPath = absPath
+			}
 		}
 	}
 
@@ -113,7 +136,7 @@ func main() {
 		logger.Info().
 			Str("event", "config.loaded").
 			Str("source", "file").
-			Str("path", explicitConfigPath).
+			Str("path", effectiveConfigPath).
 			Msg("loaded configuration from file")
 	} else if effectiveConfigPath != "" {
 		logger.Info().
@@ -126,6 +149,15 @@ func main() {
 			Str("event", "config.loaded").
 			Str("source", "env+defaults").
 			Msg("loaded configuration from environment and defaults")
+	}
+
+	// Calculate and log configuration hash for debugging traceability
+	if configBytes, err := json.Marshal(cfg); err == nil {
+		hash := sha256.Sum256(configBytes)
+		logger.Info().
+			Str("event", "config.snapshot").
+			Str("sha256", fmt.Sprintf("%x", hash)).
+			Msg("configuration snapshot fingerprint")
 	}
 
 	if cfg.WorkerEnabled {
@@ -222,17 +254,29 @@ func main() {
 	logger.Info().Msgf("→ Receiver: %s (auth: %v)", maskURL(cfg.OWIBase), cfg.OWIUsername != "")
 	logger.Info().Msgf("→ Bouquet: %s", cfg.Bouquet)
 	if cfg.UseWebIFStreams {
-		logger.Info().Msg("→ Stream: OpenWebIF /web/stream.m3u (receiver decides 8001/17999 internally)")
+		if cfg.StreamPort > 0 {
+			logger.Info().Msgf("→ Stream: Direct port %d (V3 bypasses /web/stream.m3u)", cfg.StreamPort)
+		} else {
+			logger.Info().Msg("→ Stream: OpenWebIF /web/stream.m3u (receiver decides port)")
+		}
 	} else {
 		logger.Info().Msgf("→ Stream port: %d (direct TS)", cfg.StreamPort)
 	}
 	logger.Info().Msgf("→ EPG: %s (%d days)", cfg.XMLTVPath, cfg.EPGDays)
-	if cfg.APIToken != "" {
-		logger.Info().Msg("→ API token: configured")
+	// Enforce Fail-Closed Authentication
+	// Default: refuse startup if no API tokens are configured.
+	if strings.TrimSpace(cfg.APIToken) != "" {
+		logger.Info().
+			Str("event", "auth.configured").
+			Msg("→ API token: configured")
+	} else if len(cfg.APITokens) > 0 {
+		logger.Info().
+			Str("event", "auth.configured").
+			Msg("→ API tokens: configured")
 	} else {
-		logger.Warn().
-			Str("security", "weak").
-			Msg("→ API token: NOT configured (Auth Disabled). Set XG2G_API_TOKEN for security.")
+		logger.Fatal().
+			Str("event", "auth.missing_token").
+			Msg("No API tokens configured. Set XG2G_API_TOKEN or XG2G_API_TOKENS.")
 	}
 	if cfg.TLSCert != "" && cfg.TLSKey != "" {
 		logger.Info().Msgf("→ TLS: enabled (cert: %s, key: %s)", cfg.TLSCert, cfg.TLSKey)
@@ -261,6 +305,7 @@ func main() {
 
 	// Create API handler
 	s := api.New(cfg, configMgr)
+	s.SetRootContext(ctx)
 	s.SetConfigHolder(cfgHolder)
 	s.ApplySnapshot(cfgHolder.Current())
 
@@ -307,6 +352,8 @@ func main() {
 			StoreBackend:      cfg.StoreBackend,
 			StorePath:         cfg.StorePath,
 			TunerSlots:        cfg.TunerSlots,
+			UseWebIFStreams:   cfg.UseWebIFStreams,
+			StreamPort:        cfg.StreamPort,
 			E2Host:            cfg.E2Host,
 			E2TuneTimeout:     cfg.E2TuneTimeout,
 			E2Username:        cfg.E2Username,
@@ -323,6 +370,8 @@ func main() {
 			FFmpegKillTimeout: cfg.FFmpegKillTimeout,
 			HLSRoot:           cfg.HLSRoot,
 			IdleTimeout:       cfg.V3IdleTimeout,
+			E2AnalyzeDuration: cfg.E2AnalyzeDuration,
+			E2ProbeSize:       cfg.E2ProbeSize,
 		}
 	}
 
@@ -347,7 +396,22 @@ func main() {
 			Str("event", "manager.creation.failed").
 			Msg("failed to create daemon manager")
 	}
-	logger.Info().Str("version", "DEBUG-VERIFICATON-RUN").Msg("Starting daemon manager")
+	var shutdownOnce sync.Once
+	s.SetShutdownFunc(func(ctx context.Context) error {
+		var shutdownErr error
+		shutdownOnce.Do(func() {
+			stop()
+			if ctx == nil {
+				ctx = context.Background()
+			}
+			shutdownErr = mgr.Shutdown(ctx)
+		})
+		return shutdownErr
+	})
+	mgr.RegisterShutdownHook("api_server_shutdown", func(ctx context.Context) error {
+		return s.Shutdown(ctx)
+	})
+	logger.Info().Msg("Starting daemon manager")
 
 	// Configure Health Manager (Strict Mode)
 	hm := s.HealthManager()

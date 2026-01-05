@@ -59,6 +59,16 @@ components:
           type: string
           deprecated: true
           description: Legacy alias for profileID (decode-only, will be removed in v3.2)
+        hwaccel:
+          type: string
+          enum: [auto, force, off]
+          default: auto
+          description: |
+            Hardware acceleration override (v3.1+).
+            - auto: Server decides based on GPU availability
+            - force: Force GPU encoding (fails if no GPU)
+            - off: Force CPU encoding
+          example: "auto"
         correlationId:
           type: string
           description: Optional correlation ID for end-to-end tracing
@@ -218,6 +228,47 @@ components:
           type: object
           additionalProperties:
             type: string
+
+    ScanStatus:
+      type: object
+      properties:
+        state:
+          type: string
+          enum: [idle, running, complete, failed, cancelled]
+        started_at:
+          type: integer
+          format: int64
+          description: Unix timestamp of when the current or last scan started
+        finished_at:
+          type: integer
+          format: int64
+          description: Unix timestamp of when the last scan completed
+        total_channels:
+          type: integer
+          description: Total number of channels in the playlist
+        scanned_channels:
+          type: integer
+          description: Number of attempts (successful/failed) to probe channels so far
+        updated_count:
+          type: integer
+          description: Number of capabilities successfully updated in the store
+        last_error:
+          type: string
+
+    PlaybackFeedbackRequest:
+      type: object
+      required: [event]
+      properties:
+        event:
+          type: string
+          enum: [error, warning, info]
+        code:
+          type: integer
+          description: MediaError code if applicable
+        message:
+          type: string
+        details:
+          type: object
 
     # ==================== Legacy Schemas ====================
     Error:
@@ -810,6 +861,19 @@ components:
           type: string
           description: Human-readable duration string for display only.
         filename: { type: string }
+        resume: { $ref: "#/components/schemas/ResumeSummary" }
+
+    ResumeSummary:
+      type: object
+      properties:
+        pos_seconds:
+          type: integer
+          format: int64
+        duration_seconds:
+          type: integer
+          format: int64
+        finished: { type: boolean }
+        updated_at: { type: string, format: date-time }
 
     RecordingResponse:
       type: object
@@ -1140,7 +1204,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/APIError"
 
-  /recordings/{recordingId}/playback:
+  /recordings/{recordingId}/stream-info:
     get:
       summary: Get playback strategy for a recording
       operationId: getRecordingPlaybackInfo
@@ -1232,6 +1296,32 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/APIError"
+    head:
+      summary: Get VOD HLS playlist metadata (Safari compatibility)
+      operationId: getRecordingHLSPlaylistHead
+      tags:
+        - recordings
+      parameters:
+        - name: recordingId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[A-Za-z0-9_-]+$"
+            minLength: 16
+            maxLength: 2048
+      responses:
+        "200":
+          description: HLS playlist metadata
+          headers:
+            Content-Type:
+              schema:
+                type: string
+            Content-Length:
+              schema:
+                type: integer
+        "404":
+          description: Recording not found
 
   /recordings/{recordingId}/timeshift.m3u8:
     get:
@@ -1278,6 +1368,32 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/APIError"
+    head:
+      summary: Get timeshift HLS playlist metadata (Safari compatibility)
+      operationId: getRecordingHLSTimeshiftHead
+      tags:
+        - recordings
+      parameters:
+        - name: recordingId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[A-Za-z0-9_-]+$"
+            minLength: 16
+            maxLength: 2048
+      responses:
+        "200":
+          description: HLS playlist metadata
+          headers:
+            Content-Type:
+              schema:
+                type: string
+            Content-Length:
+              schema:
+                type: integer
+        "404":
+          description: Recording not found
 
   /recordings/{recordingId}/{segment}:
     get:
@@ -1344,6 +1460,38 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/APIError"
+    head:
+      summary: Get HLS segment metadata (Safari compatibility)
+      operationId: getRecordingHLSCustomSegmentHead
+      tags:
+        - recordings
+      parameters:
+        - name: recordingId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[A-Za-z0-9_-]+$"
+            minLength: 16
+            maxLength: 2048
+        - name: segment
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '.*\.(ts|mp4|m4s|cmfv)$'
+      responses:
+        "200":
+          description: Segment metadata
+          headers:
+            Content-Type:
+              schema:
+                type: string
+            Content-Length:
+              schema:
+                type: integer
+        "404":
+          description: Segment not found
 
   /auth/session:
     post:
@@ -1570,6 +1718,29 @@ paths:
         "404":
           description: Session not found
 
+  /sessions/{sessionId}/feedback:
+    post:
+      summary: Report playback feedback (e.g. valid errors)
+      operationId: reportPlaybackFeedback
+      tags: [streams]
+      parameters:
+        - in: path
+          name: sessionId
+          schema:
+            type: string
+            format: uuid
+          required: true
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlaybackFeedbackRequest"
+      responses:
+        "202":
+          description: Feedback accepted
+        "404":
+          description: Session not found
+
   /logs:
     get:
       summary: Get recent logs
@@ -1720,6 +1891,65 @@ paths:
           description: Rule not found
 
   # ==================== V3 Control Plane API ====================
+  /system/scan:
+    post:
+      summary: Trigger a background scan of all channels for capabilities
+      operationId: TriggerSystemScan
+      security:
+        - BearerAuth: []
+      responses:
+        "202":
+          description: Scan initiated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: "started" }
+        "200":
+          description: Scan already running
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: "already_running" }
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+    get:
+      summary: Get status of the capability scan
+      operationId: GetSystemScanStatus
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Current scan status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScanStatus"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+        "503":
+          description: Scanner not initialized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
   /intents:
     post:
       summary: Create stream intent (start or stop session)
@@ -1905,6 +2135,30 @@ paths:
                 format: binary
         "400":
           description: Invalid request
+        "404":
+          description: File not found
+        "503":
+          description: V3 control plane unavailable
+    head:
+      summary: Get HLS content metadata (Safari compatibility)
+      operationId: serveHLSHead
+      tags:
+        - v3
+      security:
+        - BearerAuth: [v3:read]
+      responses:
+        "200":
+          description: HLS content metadata (headers only)
+          headers:
+            Content-Type:
+              schema:
+                type: string
+            Content-Length:
+              schema:
+                type: integer
+            Cache-Control:
+              schema:
+                type: string
         "404":
           description: File not found
         "503":

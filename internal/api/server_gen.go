@@ -50,10 +50,24 @@ const (
 	EPGStatusStatusOk      EPGStatusStatus = "ok"
 )
 
+// Defines values for IntentRequestHwaccel.
+const (
+	Auto  IntentRequestHwaccel = "auto"
+	Force IntentRequestHwaccel = "force"
+	Off   IntentRequestHwaccel = "off"
+)
+
 // Defines values for IntentRequestType.
 const (
 	StreamStart IntentRequestType = "stream.start"
 	StreamStop  IntentRequestType = "stream.stop"
+)
+
+// Defines values for PlaybackFeedbackRequestEvent.
+const (
+	PlaybackFeedbackRequestEventError   PlaybackFeedbackRequestEvent = "error"
+	PlaybackFeedbackRequestEventInfo    PlaybackFeedbackRequestEvent = "info"
+	PlaybackFeedbackRequestEventWarning PlaybackFeedbackRequestEvent = "warning"
 )
 
 // Defines values for PlaybackInfoMode.
@@ -76,11 +90,20 @@ const (
 	RecordingBuildStatusStateRUNNING RecordingBuildStatusState = "RUNNING"
 )
 
+// Defines values for ScanStatusState.
+const (
+	ScanStatusStateCancelled ScanStatusState = "cancelled"
+	ScanStatusStateComplete  ScanStatusState = "complete"
+	ScanStatusStateFailed    ScanStatusState = "failed"
+	ScanStatusStateIdle      ScanStatusState = "idle"
+	ScanStatusStateRunning   ScanStatusState = "running"
+)
+
 // Defines values for SeriesRuleRunReportStatus.
 const (
-	Failed  SeriesRuleRunReportStatus = "failed"
-	Partial SeriesRuleRunReportStatus = "partial"
-	Success SeriesRuleRunReportStatus = "success"
+	SeriesRuleRunReportStatusFailed  SeriesRuleRunReportStatus = "failed"
+	SeriesRuleRunReportStatusPartial SeriesRuleRunReportStatus = "partial"
+	SeriesRuleRunReportStatusSuccess SeriesRuleRunReportStatus = "success"
 )
 
 // Defines values for SessionRecordReason.
@@ -161,9 +184,9 @@ const (
 
 // Defines values for SystemHealthStatus.
 const (
-	Degraded SystemHealthStatus = "degraded"
-	Error    SystemHealthStatus = "error"
-	Ok       SystemHealthStatus = "ok"
+	SystemHealthStatusDegraded SystemHealthStatus = "degraded"
+	SystemHealthStatusError    SystemHealthStatus = "error"
+	SystemHealthStatusOk       SystemHealthStatus = "ok"
 )
 
 // Defines values for TimerState.
@@ -317,6 +340,12 @@ type IntentRequest struct {
 	// CorrelationId Optional correlation ID for end-to-end tracing
 	CorrelationId *string `json:"correlationId,omitempty"`
 
+	// Hwaccel Hardware acceleration override (v3.1+).
+	// - auto: Server decides based on GPU availability
+	// - force: Force GPU encoding (fails if no GPU)
+	// - off: Force CPU encoding
+	Hwaccel *IntentRequestHwaccel `json:"hwaccel,omitempty"`
+
 	// IdempotencyKey Optional idempotency key for at-most-once semantics
 	IdempotencyKey *string `json:"idempotencyKey,omitempty"`
 
@@ -337,6 +366,12 @@ type IntentRequest struct {
 	SessionId *openapi_types.UUID `json:"sessionId,omitempty"`
 	Type      *IntentRequestType  `json:"type,omitempty"`
 }
+
+// IntentRequestHwaccel Hardware acceleration override (v3.1+).
+// - auto: Server decides based on GPU availability
+// - force: Force GPU encoding (fails if no GPU)
+// - off: Force CPU encoding
+type IntentRequestHwaccel string
 
 // IntentRequestType defines model for IntentRequest.Type.
 type IntentRequestType string
@@ -388,6 +423,18 @@ type OpenWebIFConfig struct {
 type PiconsConfig struct {
 	BaseUrl *string `json:"baseUrl,omitempty"`
 }
+
+// PlaybackFeedbackRequest defines model for PlaybackFeedbackRequest.
+type PlaybackFeedbackRequest struct {
+	// Code MediaError code if applicable
+	Code    *int                         `json:"code,omitempty"`
+	Details *map[string]interface{}      `json:"details,omitempty"`
+	Event   PlaybackFeedbackRequestEvent `json:"event"`
+	Message *string                      `json:"message,omitempty"`
+}
+
+// PlaybackFeedbackRequestEvent defines model for PlaybackFeedbackRequest.Event.
+type PlaybackFeedbackRequestEvent string
 
 // PlaybackInfo defines model for PlaybackInfo.
 type PlaybackInfo struct {
@@ -444,7 +491,8 @@ type RecordingItem struct {
 	Length *string `json:"length,omitempty"`
 
 	// RecordingId Base64url-encoded recording ID (RFC 4648, unpadded) to use for /recordings/{recordingId}.
-	RecordingId *string `json:"recording_id,omitempty"`
+	RecordingId *string        `json:"recording_id,omitempty"`
+	Resume      *ResumeSummary `json:"resume,omitempty"`
 
 	// ServiceRef Legacy receiver service reference (read-only).
 	ServiceRef *string `json:"service_ref,omitempty"`
@@ -471,6 +519,14 @@ type RecordingRoot struct {
 type RecordingStatus struct {
 	IsRecording bool    `json:"isRecording"`
 	ServiceName *string `json:"serviceName,omitempty"`
+}
+
+// ResumeSummary defines model for ResumeSummary.
+type ResumeSummary struct {
+	DurationSeconds *int64     `json:"duration_seconds,omitempty"`
+	Finished        *bool      `json:"finished,omitempty"`
+	PosSeconds      *int64     `json:"pos_seconds,omitempty"`
+	UpdatedAt       *time.Time `json:"updated_at,omitempty"`
 }
 
 // RuleSnapshot defines model for RuleSnapshot.
@@ -529,6 +585,29 @@ type RunSummary struct {
 	TimersErrored               *int  `json:"timersErrored,omitempty"`
 	TimersSkipped               *int  `json:"timersSkipped,omitempty"`
 }
+
+// ScanStatus defines model for ScanStatus.
+type ScanStatus struct {
+	// FinishedAt Unix timestamp of when the last scan completed
+	FinishedAt *int64  `json:"finished_at,omitempty"`
+	LastError  *string `json:"last_error,omitempty"`
+
+	// ScannedChannels Number of attempts (successful/failed) to probe channels so far
+	ScannedChannels *int `json:"scanned_channels,omitempty"`
+
+	// StartedAt Unix timestamp of when the current or last scan started
+	StartedAt *int64           `json:"started_at,omitempty"`
+	State     *ScanStatusState `json:"state,omitempty"`
+
+	// TotalChannels Total number of channels in the playlist
+	TotalChannels *int `json:"total_channels,omitempty"`
+
+	// UpdatedCount Number of capabilities successfully updated in the store
+	UpdatedCount *int `json:"updated_count,omitempty"`
+}
+
+// ScanStatusState defines model for ScanStatus.State.
+type ScanStatusState string
 
 // SeriesRule defines model for SeriesRule.
 type SeriesRule struct {
@@ -861,6 +940,9 @@ type PostServicesNowNextJSONRequestBody = NowNextRequest
 // PostServicesIdToggleJSONRequestBody defines body for PostServicesIdToggle for application/json ContentType.
 type PostServicesIdToggleJSONRequestBody PostServicesIdToggleJSONBody
 
+// ReportPlaybackFeedbackJSONRequestBody defines body for ReportPlaybackFeedback for application/json ContentType.
+type ReportPlaybackFeedbackJSONRequestBody = PlaybackFeedbackRequest
+
 // PutSystemConfigJSONRequestBody defines body for PutSystemConfig for application/json ContentType.
 type PutSystemConfigJSONRequestBody = ConfigUpdate
 
@@ -899,24 +981,33 @@ type ServerInterface interface {
 	// Delete a recording
 	// (DELETE /recordings/{recordingId})
 	DeleteRecording(w http.ResponseWriter, r *http.Request, recordingId string)
-	// Get playback strategy for a recording
-	// (GET /recordings/{recordingId}/playback)
-	GetRecordingPlaybackInfo(w http.ResponseWriter, r *http.Request, recordingId string)
 	// Get VOD HLS playlist for a recording
 	// (GET /recordings/{recordingId}/playlist.m3u8)
 	GetRecordingHLSPlaylist(w http.ResponseWriter, r *http.Request, recordingId string)
+	// Get VOD HLS playlist metadata (Safari compatibility)
+	// (HEAD /recordings/{recordingId}/playlist.m3u8)
+	GetRecordingHLSPlaylistHead(w http.ResponseWriter, r *http.Request, recordingId string)
 	// Get recording build status
 	// (GET /recordings/{recordingId}/status)
 	GetRecordingsRecordingIdStatus(w http.ResponseWriter, r *http.Request, recordingId string)
+	// Get playback strategy for a recording
+	// (GET /recordings/{recordingId}/stream-info)
+	GetRecordingPlaybackInfo(w http.ResponseWriter, r *http.Request, recordingId string)
 	// Stream recording as MP4 (Direct VOD)
 	// (GET /recordings/{recordingId}/stream.mp4)
 	StreamRecordingDirect(w http.ResponseWriter, r *http.Request, recordingId string)
 	// Get timeshift HLS playlist for a recording
 	// (GET /recordings/{recordingId}/timeshift.m3u8)
 	GetRecordingHLSTimeshift(w http.ResponseWriter, r *http.Request, recordingId string)
+	// Get timeshift HLS playlist metadata (Safari compatibility)
+	// (HEAD /recordings/{recordingId}/timeshift.m3u8)
+	GetRecordingHLSTimeshiftHead(w http.ResponseWriter, r *http.Request, recordingId string)
 	// Get HLS segment for a recording
 	// (GET /recordings/{recordingId}/{segment})
 	GetRecordingHLSCustomSegment(w http.ResponseWriter, r *http.Request, recordingId string, segment string)
+	// Get HLS segment metadata (Safari compatibility)
+	// (HEAD /recordings/{recordingId}/{segment})
+	GetRecordingHLSCustomSegmentHead(w http.ResponseWriter, r *http.Request, recordingId string, segment string)
 	// List all series recording rules
 	// (GET /series-rules)
 	GetSeriesRules(w http.ResponseWriter, r *http.Request)
@@ -956,6 +1047,12 @@ type ServerInterface interface {
 	// Serve HLS playlist or segment
 	// (GET /sessions/{sessionID}/hls/{filename})
 	ServeHLS(w http.ResponseWriter, r *http.Request, sessionID openapi_types.UUID, filename string)
+	// Get HLS content metadata (Safari compatibility)
+	// (HEAD /sessions/{sessionID}/hls/{filename})
+	ServeHLSHead(w http.ResponseWriter, r *http.Request, sessionID openapi_types.UUID, filename string)
+	// Report playback feedback (e.g. valid errors)
+	// (POST /sessions/{sessionId}/feedback)
+	ReportPlaybackFeedback(w http.ResponseWriter, r *http.Request, sessionId openapi_types.UUID)
 	// List active streams
 	// (GET /streams)
 	GetStreams(w http.ResponseWriter, r *http.Request)
@@ -977,6 +1074,12 @@ type ServerInterface interface {
 	// Trigger data refresh (EPG/Channels)
 	// (POST /system/refresh)
 	PostSystemRefresh(w http.ResponseWriter, r *http.Request)
+	// Get status of the capability scan
+	// (GET /system/scan)
+	GetSystemScanStatus(w http.ResponseWriter, r *http.Request)
+	// Trigger a background scan of all channels for capabilities
+	// (POST /system/scan)
+	TriggerSystemScan(w http.ResponseWriter, r *http.Request)
 	// List all timers
 	// (GET /timers)
 	GetTimers(w http.ResponseWriter, r *http.Request, params GetTimersParams)
@@ -1049,21 +1152,27 @@ func (_ Unimplemented) DeleteRecording(w http.ResponseWriter, r *http.Request, r
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// Get playback strategy for a recording
-// (GET /recordings/{recordingId}/playback)
-func (_ Unimplemented) GetRecordingPlaybackInfo(w http.ResponseWriter, r *http.Request, recordingId string) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
 // Get VOD HLS playlist for a recording
 // (GET /recordings/{recordingId}/playlist.m3u8)
 func (_ Unimplemented) GetRecordingHLSPlaylist(w http.ResponseWriter, r *http.Request, recordingId string) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Get VOD HLS playlist metadata (Safari compatibility)
+// (HEAD /recordings/{recordingId}/playlist.m3u8)
+func (_ Unimplemented) GetRecordingHLSPlaylistHead(w http.ResponseWriter, r *http.Request, recordingId string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // Get recording build status
 // (GET /recordings/{recordingId}/status)
 func (_ Unimplemented) GetRecordingsRecordingIdStatus(w http.ResponseWriter, r *http.Request, recordingId string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get playback strategy for a recording
+// (GET /recordings/{recordingId}/stream-info)
+func (_ Unimplemented) GetRecordingPlaybackInfo(w http.ResponseWriter, r *http.Request, recordingId string) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1079,9 +1188,21 @@ func (_ Unimplemented) GetRecordingHLSTimeshift(w http.ResponseWriter, r *http.R
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Get timeshift HLS playlist metadata (Safari compatibility)
+// (HEAD /recordings/{recordingId}/timeshift.m3u8)
+func (_ Unimplemented) GetRecordingHLSTimeshiftHead(w http.ResponseWriter, r *http.Request, recordingId string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // Get HLS segment for a recording
 // (GET /recordings/{recordingId}/{segment})
 func (_ Unimplemented) GetRecordingHLSCustomSegment(w http.ResponseWriter, r *http.Request, recordingId string, segment string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get HLS segment metadata (Safari compatibility)
+// (HEAD /recordings/{recordingId}/{segment})
+func (_ Unimplemented) GetRecordingHLSCustomSegmentHead(w http.ResponseWriter, r *http.Request, recordingId string, segment string) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1163,6 +1284,18 @@ func (_ Unimplemented) ServeHLS(w http.ResponseWriter, r *http.Request, sessionI
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Get HLS content metadata (Safari compatibility)
+// (HEAD /sessions/{sessionID}/hls/{filename})
+func (_ Unimplemented) ServeHLSHead(w http.ResponseWriter, r *http.Request, sessionID openapi_types.UUID, filename string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Report playback feedback (e.g. valid errors)
+// (POST /sessions/{sessionId}/feedback)
+func (_ Unimplemented) ReportPlaybackFeedback(w http.ResponseWriter, r *http.Request, sessionId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // List active streams
 // (GET /streams)
 func (_ Unimplemented) GetStreams(w http.ResponseWriter, r *http.Request) {
@@ -1202,6 +1335,18 @@ func (_ Unimplemented) GetSystemHealthz(w http.ResponseWriter, r *http.Request) 
 // Trigger data refresh (EPG/Channels)
 // (POST /system/refresh)
 func (_ Unimplemented) PostSystemRefresh(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get status of the capability scan
+// (GET /system/scan)
+func (_ Unimplemented) GetSystemScanStatus(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Trigger a background scan of all channels for capabilities
+// (POST /system/scan)
+func (_ Unimplemented) TriggerSystemScan(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1479,37 +1624,6 @@ func (siw *ServerInterfaceWrapper) DeleteRecording(w http.ResponseWriter, r *htt
 	handler.ServeHTTP(w, r)
 }
 
-// GetRecordingPlaybackInfo operation middleware
-func (siw *ServerInterfaceWrapper) GetRecordingPlaybackInfo(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-
-	// ------------- Path parameter "recordingId" -------------
-	var recordingId string
-
-	err = runtime.BindStyledParameterWithOptions("simple", "recordingId", chi.URLParam(r, "recordingId"), &recordingId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "recordingId", Err: err})
-		return
-	}
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
-
-	r = r.WithContext(ctx)
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetRecordingPlaybackInfo(w, r, recordingId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
 // GetRecordingHLSPlaylist operation middleware
 func (siw *ServerInterfaceWrapper) GetRecordingHLSPlaylist(w http.ResponseWriter, r *http.Request) {
 
@@ -1541,6 +1655,37 @@ func (siw *ServerInterfaceWrapper) GetRecordingHLSPlaylist(w http.ResponseWriter
 	handler.ServeHTTP(w, r)
 }
 
+// GetRecordingHLSPlaylistHead operation middleware
+func (siw *ServerInterfaceWrapper) GetRecordingHLSPlaylistHead(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "recordingId" -------------
+	var recordingId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "recordingId", chi.URLParam(r, "recordingId"), &recordingId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "recordingId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetRecordingHLSPlaylistHead(w, r, recordingId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetRecordingsRecordingIdStatus operation middleware
 func (siw *ServerInterfaceWrapper) GetRecordingsRecordingIdStatus(w http.ResponseWriter, r *http.Request) {
 
@@ -1563,6 +1708,37 @@ func (siw *ServerInterfaceWrapper) GetRecordingsRecordingIdStatus(w http.Respons
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetRecordingsRecordingIdStatus(w, r, recordingId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetRecordingPlaybackInfo operation middleware
+func (siw *ServerInterfaceWrapper) GetRecordingPlaybackInfo(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "recordingId" -------------
+	var recordingId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "recordingId", chi.URLParam(r, "recordingId"), &recordingId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "recordingId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetRecordingPlaybackInfo(w, r, recordingId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1634,6 +1810,37 @@ func (siw *ServerInterfaceWrapper) GetRecordingHLSTimeshift(w http.ResponseWrite
 	handler.ServeHTTP(w, r)
 }
 
+// GetRecordingHLSTimeshiftHead operation middleware
+func (siw *ServerInterfaceWrapper) GetRecordingHLSTimeshiftHead(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "recordingId" -------------
+	var recordingId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "recordingId", chi.URLParam(r, "recordingId"), &recordingId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "recordingId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetRecordingHLSTimeshiftHead(w, r, recordingId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetRecordingHLSCustomSegment operation middleware
 func (siw *ServerInterfaceWrapper) GetRecordingHLSCustomSegment(w http.ResponseWriter, r *http.Request) {
 
@@ -1665,6 +1872,46 @@ func (siw *ServerInterfaceWrapper) GetRecordingHLSCustomSegment(w http.ResponseW
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetRecordingHLSCustomSegment(w, r, recordingId, segment)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetRecordingHLSCustomSegmentHead operation middleware
+func (siw *ServerInterfaceWrapper) GetRecordingHLSCustomSegmentHead(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "recordingId" -------------
+	var recordingId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "recordingId", chi.URLParam(r, "recordingId"), &recordingId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "recordingId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "segment" -------------
+	var segment string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "segment", chi.URLParam(r, "segment"), &segment, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "segment", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetRecordingHLSCustomSegmentHead(w, r, recordingId, segment)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2067,6 +2314,77 @@ func (siw *ServerInterfaceWrapper) ServeHLS(w http.ResponseWriter, r *http.Reque
 	handler.ServeHTTP(w, r)
 }
 
+// ServeHLSHead operation middleware
+func (siw *ServerInterfaceWrapper) ServeHLSHead(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "sessionID" -------------
+	var sessionID openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "sessionID", chi.URLParam(r, "sessionID"), &sessionID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sessionID", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "filename" -------------
+	var filename string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "filename", chi.URLParam(r, "filename"), &filename, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filename", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ServeHLSHead(w, r, sessionID, filename)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReportPlaybackFeedback operation middleware
+func (siw *ServerInterfaceWrapper) ReportPlaybackFeedback(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "sessionId" -------------
+	var sessionId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "sessionId", chi.URLParam(r, "sessionId"), &sessionId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sessionId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReportPlaybackFeedback(w, r, sessionId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetStreams operation middleware
 func (siw *ServerInterfaceWrapper) GetStreams(w http.ResponseWriter, r *http.Request) {
 
@@ -2203,6 +2521,46 @@ func (siw *ServerInterfaceWrapper) PostSystemRefresh(w http.ResponseWriter, r *h
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PostSystemRefresh(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSystemScanStatus operation middleware
+func (siw *ServerInterfaceWrapper) GetSystemScanStatus(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSystemScanStatus(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// TriggerSystemScan operation middleware
+func (siw *ServerInterfaceWrapper) TriggerSystemScan(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.TriggerSystemScan(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2524,13 +2882,16 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Delete(options.BaseURL+"/recordings/{recordingId}", wrapper.DeleteRecording)
 	})
 	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/recordings/{recordingId}/playback", wrapper.GetRecordingPlaybackInfo)
-	})
-	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/recordings/{recordingId}/playlist.m3u8", wrapper.GetRecordingHLSPlaylist)
 	})
 	r.Group(func(r chi.Router) {
+		r.Head(options.BaseURL+"/recordings/{recordingId}/playlist.m3u8", wrapper.GetRecordingHLSPlaylistHead)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/recordings/{recordingId}/status", wrapper.GetRecordingsRecordingIdStatus)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/recordings/{recordingId}/stream-info", wrapper.GetRecordingPlaybackInfo)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/recordings/{recordingId}/stream.mp4", wrapper.StreamRecordingDirect)
@@ -2539,7 +2900,13 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/recordings/{recordingId}/timeshift.m3u8", wrapper.GetRecordingHLSTimeshift)
 	})
 	r.Group(func(r chi.Router) {
+		r.Head(options.BaseURL+"/recordings/{recordingId}/timeshift.m3u8", wrapper.GetRecordingHLSTimeshiftHead)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/recordings/{recordingId}/{segment}", wrapper.GetRecordingHLSCustomSegment)
+	})
+	r.Group(func(r chi.Router) {
+		r.Head(options.BaseURL+"/recordings/{recordingId}/{segment}", wrapper.GetRecordingHLSCustomSegmentHead)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/series-rules", wrapper.GetSeriesRules)
@@ -2581,6 +2948,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/sessions/{sessionID}/hls/{filename}", wrapper.ServeHLS)
 	})
 	r.Group(func(r chi.Router) {
+		r.Head(options.BaseURL+"/sessions/{sessionID}/hls/{filename}", wrapper.ServeHLSHead)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/sessions/{sessionId}/feedback", wrapper.ReportPlaybackFeedback)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/streams", wrapper.GetStreams)
 	})
 	r.Group(func(r chi.Router) {
@@ -2600,6 +2973,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/system/refresh", wrapper.PostSystemRefresh)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/system/scan", wrapper.GetSystemScanStatus)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/system/scan", wrapper.TriggerSystemScan)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/timers", wrapper.GetTimers)
@@ -2626,115 +3005,128 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
+	"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",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

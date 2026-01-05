@@ -23,7 +23,7 @@ RUN npm run build
 # =============================================================================
 # Stage 2: Build Go Daemon
 # =============================================================================
-FROM golang:1.25.5-trixie AS go-builder
+FROM golang:1.25-trixie AS go-builder
 
 WORKDIR /src
 
@@ -90,7 +90,7 @@ VOLUME ["/data"]
 EXPOSE 8080 18000
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD wget -qO- http://localhost:8080/api/status || exit 1
+    CMD wget -qO- http://localhost:8080/healthz || exit 1
 
 # Default configuration
 ENV XG2G_DATA=/data \

@@ -19,6 +19,8 @@ import (
 	memorybus "github.com/ManuGH/xg2g/internal/v3/bus"
 	"github.com/ManuGH/xg2g/internal/v3/exec"
 	"github.com/ManuGH/xg2g/internal/v3/exec/enigma2"
+	"github.com/ManuGH/xg2g/internal/v3/resume"
+	"github.com/ManuGH/xg2g/internal/v3/scan"
 	"github.com/ManuGH/xg2g/internal/v3/store"
 	"github.com/ManuGH/xg2g/internal/v3/worker"
 	"github.com/rs/zerolog"
@@ -55,8 +57,9 @@ type manager struct {
 	shutdownHooks []namedHook
 
 	// State
-	started bool
-	mu      sync.Mutex
+	started  bool
+	stopping bool
+	mu       sync.Mutex
 
 	// Logger
 	logger zerolog.Logger
@@ -249,15 +252,37 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 		})
 	}
 
+	// 2.5 Initialize Resume Store
+	resumeStore, err := resume.NewStore(m.deps.V3Config.StoreBackend, m.deps.V3Config.StorePath)
+	if err != nil {
+		m.logger.Error().Err(err).Msg("failed to open resume store")
+		return err
+	}
+	// Register Shutdown Hook for Resume Store
+	if c, ok := resumeStore.(interface{ Close() error }); ok {
+		m.RegisterShutdownHook("resume_store_close", func(ctx context.Context) error {
+			return c.Close()
+		})
+	}
+
+	// 2.7 Initialize Smart Profile Scanner
+	scanStore := scan.NewStore(m.deps.V3Config.StorePath)
+	playlistPath := "data/playlist.m3u"
+	if m.deps.ProxyConfig != nil && m.deps.ProxyConfig.PlaylistPath != "" {
+		playlistPath = m.deps.ProxyConfig.PlaylistPath
+	}
+	scanManager := scan.NewManager(scanStore, playlistPath)
+
 	// 3. Initialize Orchestrator
 	orch := &worker.Orchestrator{
-		Store:          v3Store,
-		Bus:            v3Bus,
-		LeaseTTL:       30 * time.Second,
-		HeartbeatEvery: 10 * time.Second,
-		VirtualMode:    cfg.Mode == "virtual",
-		TunerSlots:     cfg.TunerSlots,
-		HLSRoot:        cfg.HLSRoot,
+		Store:             v3Store,
+		Bus:               v3Bus,
+		LeaseTTL:          30 * time.Second,
+		HeartbeatEvery:    10 * time.Second,
+		VirtualMode:       cfg.Mode == "virtual",
+		TunerSlots:        cfg.TunerSlots,
+		HLSRoot:           cfg.HLSRoot,
+		FFmpegKillTimeout: cfg.FFmpegKillTimeout,
 		Sweeper: worker.SweeperConfig{
 			IdleTimeout: cfg.IdleTimeout,
 		},
@@ -275,17 +300,19 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 		UserAgent:             cfg.E2UserAgent,
 		RateLimit:             rate.Limit(cfg.E2RateLimit),
 		RateLimitBurst:        cfg.E2RateBurst,
+		UseWebIFStreams:       cfg.UseWebIFStreams,
+		StreamPort:            cfg.StreamPort,
 	}
 	e2Client := enigma2.NewClientWithOptions(cfg.E2Host, e2Opts)
 	if cfg.Mode == "virtual" {
 		orch.ExecFactory = &exec.StubFactory{}
 	} else {
-		orch.ExecFactory = exec.NewRealFactory(e2Client, cfg.E2TuneTimeout, cfg.FFmpegBin, cfg.HLSRoot)
+		orch.ExecFactory = exec.NewRealFactory(e2Client, cfg.E2TuneTimeout, cfg.FFmpegBin, cfg.HLSRoot, cfg.FFmpegKillTimeout, cfg.E2AnalyzeDuration, cfg.E2ProbeSize)
 	}
 
 	// 4. Inject into API Server (Shadow Receiving)
 	if m.deps.APIServerSetter != nil {
-		m.deps.APIServerSetter.SetV3Components(v3Bus, v3Store)
+		m.deps.APIServerSetter.SetV3Components(v3Bus, v3Store, resumeStore, scanManager)
 		m.logger.Info().Msg("v3 components injected into API server")
 	} else {
 		m.logger.Warn().Msg("API Server Setter not available - shadow intents will not be processed")
@@ -310,11 +337,16 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 
 func (m *manager) Shutdown(ctx context.Context) error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
+	if m.stopping {
+		m.mu.Unlock()
+		return nil
+	}
 	if !m.started {
+		m.mu.Unlock()
 		return ErrManagerNotStarted
 	}
+	m.stopping = true
+	m.mu.Unlock()
 
 	m.logger.Info().Msg("Shutting down daemon manager")
 

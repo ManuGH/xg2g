@@ -7,6 +7,10 @@ package bus
 import (
 	"context"
 	"sync"
+	"sync/atomic"
+
+	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/metrics"
 )
 
 // MemoryBus is an in-memory pub/sub used for unit tests and local prototyping.
@@ -15,6 +19,10 @@ type MemoryBus struct {
 	mu   sync.RWMutex
 	subs map[string][]chan Message
 }
+
+const dropLogEvery = 100
+
+var dropCount atomic.Uint64
 
 func NewMemoryBus() *MemoryBus {
 	return &MemoryBus{subs: make(map[string][]chan Message)}
@@ -29,6 +37,14 @@ func (b *MemoryBus) Publish(_ context.Context, topic string, msg Message) error 
 		case ch <- msg:
 		default:
 			// drop on backpressure to avoid producer blockage
+			metrics.IncBusDrop(topic)
+			count := dropCount.Add(1)
+			if count%dropLogEvery == 0 {
+				log.L().Warn().
+					Str("topic", topic).
+					Uint64("dropped", count).
+					Msg("memory bus dropping messages due to backpressure")
+			}
 		}
 	}
 	return nil

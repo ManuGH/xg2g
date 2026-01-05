@@ -159,7 +159,7 @@ export const getRecordingsByRecordingIdStatus = <ThrowOnError extends boolean = 
  */
 export const getRecordingPlaybackInfo = <ThrowOnError extends boolean = false>(options: Options<GetRecordingPlaybackInfoData, ThrowOnError>) => (options.client ?? client).get<GetRecordingPlaybackInfoResponses, GetRecordingPlaybackInfoErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/recordings/{recordingId}/playback',
+    url: '/recordings/{recordingId}/stream-info',
     ...options
 });
 

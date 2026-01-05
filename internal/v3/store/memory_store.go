@@ -18,8 +18,9 @@ import (
 type MemoryStore struct {
 	mu sync.RWMutex
 
-	sessions  map[string]*model.SessionRecord
-	pipelines map[string]*model.PipelineRecord
+	sessions   map[string]*model.SessionRecord
+	pipelines  map[string]*model.PipelineRecord
+	recordings map[string]*model.Recording // Added for testing
 
 	// key -> lease state
 	leases map[string]leaseState
@@ -40,10 +41,11 @@ type idemState struct {
 
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		sessions:  make(map[string]*model.SessionRecord),
-		pipelines: make(map[string]*model.PipelineRecord),
-		leases:    make(map[string]leaseState),
-		idem:      make(map[string]idemState),
+		sessions:   make(map[string]*model.SessionRecord),
+		pipelines:  make(map[string]*model.PipelineRecord),
+		recordings: make(map[string]*model.Recording),
+		leases:     make(map[string]leaseState),
+		idem:       make(map[string]idemState),
 	}
 }
 
@@ -317,4 +319,25 @@ func (m *MemoryStore) DeleteAllLeases(ctx context.Context) (int, error) {
 	m.leases = make(map[string]leaseState)
 	m.mu.Unlock()
 	return count, nil
+}
+
+// Minimal Recording Store implementation for tests
+func (m *MemoryStore) PutRecording(ctx context.Context, rec model.Recording) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	cp := rec
+	m.recordings[rec.ID] = &cp
+	return nil
+}
+
+func (m *MemoryStore) ListRecordings(ctx context.Context, _ any) ([]model.Recording, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var list []model.Recording
+	for _, r := range m.recordings {
+		list = append(list, *r)
+	}
+	// Sort by ID for deterministic tests
+	// (Simple bubble/api sort if needed, but for 1 item test irrelevant)
+	return list, nil
 }

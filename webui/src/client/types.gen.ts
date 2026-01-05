@@ -530,6 +530,14 @@ export type RecordingItem = {
      */
     length?: string;
     filename?: string;
+    resume?: ResumeSummary;
+};
+
+export type ResumeSummary = {
+    pos_seconds?: number;
+    duration_seconds?: number;
+    finished?: boolean;
+    updated_at?: string;
 };
 
 export type RecordingResponse = {
@@ -905,7 +913,7 @@ export type GetRecordingPlaybackInfoData = {
         recordingId: string;
     };
     query?: never;
-    url: '/recordings/{recordingId}/playback';
+    url: '/recordings/{recordingId}/stream-info';
 };
 
 export type GetRecordingPlaybackInfoErrors = {

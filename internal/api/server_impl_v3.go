@@ -5,6 +5,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
@@ -32,4 +33,75 @@ func (s *Server) ServeHLS(w http.ResponseWriter, r *http.Request, sessionID open
 	_ = sessionID
 	_ = filename
 	s.scopeMiddleware(ScopeV3Read)(http.HandlerFunc(s.handleV3HLS)).ServeHTTP(w, r)
+}
+
+// ServeHLSHead implements HEAD /sessions/{sessionID}/hls/{filename}.
+// Safari uses HEAD requests to check Content-Length before streaming.
+// This delegates to the same handler as GET (handleV3HLS), which internally
+// uses http.ServeContent that automatically handles HEAD by sending only headers.
+func (s *Server) ServeHLSHead(w http.ResponseWriter, r *http.Request, sessionID openapi_types.UUID, filename string) {
+	_ = sessionID
+	_ = filename
+	s.scopeMiddleware(ScopeV3Read)(http.HandlerFunc(s.handleV3HLS)).ServeHTTP(w, r)
+}
+
+// TriggerSystemScan implements POST /api/v3/system/scan
+func (s *Server) TriggerSystemScan(w http.ResponseWriter, r *http.Request) {
+	s.scopeMiddleware(ScopeV3Admin)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.v3Scan == nil {
+			RespondError(w, r, http.StatusServiceUnavailable, &APIError{
+				Code:    "SCAN_UNAVAILABLE",
+				Message: "Smart Profile Scanner is not initialized",
+			})
+			return
+		}
+
+		// Run in background
+		if started := s.v3Scan.RunBackground(); started {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			w.Write([]byte(`{"status":"started"}`))
+		} else {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"status":"already_running"}`))
+		}
+	})).ServeHTTP(w, r)
+}
+
+// GetSystemScanStatus implements GET /api/v3/system/scan
+func (s *Server) GetSystemScanStatus(w http.ResponseWriter, r *http.Request) {
+	s.scopeMiddleware(ScopeV3Admin)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.v3Scan == nil {
+			RespondError(w, r, http.StatusServiceUnavailable, &APIError{Code: "SCAN_UNAVAILABLE", Message: "Scanner not initialized"})
+			return
+		}
+
+		st := s.v3Scan.GetStatus()
+
+		state := ScanStatusState(st.State)
+		start := st.StartedAt
+		total := st.TotalChannels
+		scanned := st.ScannedChannels
+		updated := st.UpdatedCount
+		lastErr := st.LastError
+
+		resp := ScanStatus{
+			State:           &state,
+			StartedAt:       &start,
+			TotalChannels:   &total,
+			ScannedChannels: &scanned,
+			UpdatedCount:    &updated,
+		}
+		if st.FinishedAt > 0 {
+			finish := st.FinishedAt
+			resp.FinishedAt = &finish
+		}
+		if st.LastError != "" {
+			resp.LastError = &lastErr
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	})).ServeHTTP(w, r)
 }

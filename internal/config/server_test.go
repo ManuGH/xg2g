@@ -23,8 +23,8 @@ func TestParseServerConfig(t *testing.T) {
 			envVars: map[string]string{},
 			validate: func(t *testing.T, cfg ServerConfig) {
 				t.Helper()
-				if cfg.ListenAddr != ":8080" {
-					t.Errorf("ListenAddr = %v, want :8080", cfg.ListenAddr)
+				if cfg.ListenAddr != ":8088" {
+					t.Errorf("ListenAddr = %v, want :8088", cfg.ListenAddr)
 				}
 				if cfg.ReadTimeout != 60*time.Second {
 					t.Errorf("ReadTimeout = %v, want 60s", cfg.ReadTimeout)

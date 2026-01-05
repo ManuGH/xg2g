@@ -332,7 +332,8 @@ export function EpgChannelList({
     return (
       <>
         {sortedChannels.map((channel) => {
-          const ref = channel.service_ref || channel.id || '';
+          // Use channel.id to match EPG events (XMLTV channel IDs)
+          const ref = channel.id || '';
           const events = eventsByServiceRef.get(ref) || [];
           const isExpanded = expandedChannels.has(ref);
 

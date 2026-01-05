@@ -31,9 +31,20 @@
 }
 
 .v3-player-container:hover .v3-player-controls-header,
-.v3-player-controls-header:focus-within {
+.v3-player-controls-header:focus-within,
+.v3-player-container:fullscreen .v3-player-controls-header,
+.v3-player-container:-webkit-full-screen .v3-player-controls-header,
+.v3-player-container:-moz-full-screen .v3-player-controls-header,
+.v3-player-container:-ms-fullscreen .v3-player-controls-header {
   opacity: 1;
   transform: translateY(0);
+}
+
+/* Keep controls visible in fullscreen (Safari/iOS fix) */
+.v3-player-container:fullscreen .v3-player-controls-header,
+.v3-player-container:-webkit-full-screen .v3-player-controls-header {
+  opacity: 1 !important;
+  pointer-events: auto !important;
 }
 
 .bg-input {
@@ -138,7 +149,11 @@
   transition: opacity 0.3s;
 }
 
-.v3-player-container:hover .overlay-title {
+.v3-player-container:hover .overlay-title,
+.v3-player-container:fullscreen .overlay-title,
+.v3-player-container:-webkit-full-screen .overlay-title,
+.v3-player-container:-moz-full-screen .overlay-title,
+.v3-player-container:-ms-fullscreen .overlay-title {
   opacity: 1;
 }
 

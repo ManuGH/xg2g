@@ -64,7 +64,7 @@ export default function Navigation({ activeView, onViewChange }: NavigationProps
     { id: 'series', label: t('nav.series'), icon: Icons.Series },
     { id: 'files', label: t('nav.files'), icon: Icons.Files },
     { id: 'logs', label: t('nav.logs'), icon: Icons.Logs },
-    { id: 'config', label: t('nav.settings'), icon: Icons.Config },
+    { id: 'settings', label: t('nav.playerSettings'), icon: Icons.Config },
   ];
 
   return (

@@ -120,7 +120,7 @@ func TestMaskSecrets_FileConfig(t *testing.T) {
 		},
 		API: APIConfig{
 			Token:      "my-secret-token",
-			ListenAddr: ":8080",
+			ListenAddr: ":8088",
 		},
 	}
 

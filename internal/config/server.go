@@ -97,7 +97,7 @@ const (
 // ParseServerConfig reads server configuration from environment variables.
 // It returns a ServerConfig with sensible defaults that can be overridden via ENV.
 func ParseServerConfig() ServerConfig {
-	listen := ParseString("XG2G_LISTEN", ":8080")
+	listen := ParseString("XG2G_LISTEN", ":8088")
 
 	shutdownTimeout := ParseDuration("XG2G_SERVER_SHUTDOWN_TIMEOUT", defaultShutdownTimeout)
 	if shutdownTimeout < 3*time.Second {

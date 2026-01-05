@@ -102,30 +102,32 @@ func (s scopeSet) has(scope Scope) bool {
 	return ok
 }
 
-// tokenScopes returns the scopes for a valid token.
-func (s *Server) tokenScopes(token string) (scopeSet, bool) {
+// tokenPrincipal validates the token and returns the associated Principal.
+func (s *Server) tokenPrincipal(token string) (*auth.Principal, bool) {
 	if token == "" {
 		return nil, false
 	}
 	cfg := s.GetConfig()
 	cfgToken := cfg.APIToken
-	// We treat config as immutable after reload, so simple read is safe without copying slices.
 	cfgTokenScopes := cfg.APITokenScopes
 	cfgTokens := cfg.APITokens
 
+	// 1. Check legacy single token
 	if cfgToken != "" && auth.AuthorizeToken(token, cfgToken) {
 		if len(cfgTokenScopes) == 0 {
 			return nil, false
 		}
-		return newScopeSet(cfgTokenScopes), true
+		// Single token has no explicit user field in config, so we use empty user (hash-based ID)
+		return auth.NewPrincipal(token, "", cfgTokenScopes), true
 	}
 
+	// 2. Check scoped tokens list
 	for _, entry := range cfgTokens {
 		if auth.AuthorizeToken(token, entry.Token) {
 			if len(entry.Scopes) == 0 {
 				return nil, false
 			}
-			return newScopeSet(entry.Scopes), true
+			return auth.NewPrincipal(token, entry.User, entry.Scopes), true
 		}
 	}
 
@@ -133,11 +135,17 @@ func (s *Server) tokenScopes(token string) (scopeSet, bool) {
 }
 
 func (s *Server) requestScopes(r *http.Request) (scopeSet, bool) {
+	// Optimisation: If authMiddleware already ran, get principal from context
+	if p := auth.PrincipalFromContext(r.Context()); p != nil {
+		return newScopeSet(p.Scopes), true
+	}
+
+	// Fallback for cases where authMiddleware might not have run (should not happen in protected routes)
 	token := extractToken(r)
 	if token != "" {
-		scopes, ok := s.tokenScopes(token)
+		p, ok := s.tokenPrincipal(token)
 		if ok {
-			return scopes, true
+			return newScopeSet(p.Scopes), true
 		}
 		return nil, false
 	}

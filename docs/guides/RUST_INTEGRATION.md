@@ -9,7 +9,7 @@ To build the Rust-enabled binary (`xg2g-ffi`), your environment must have:
 1. **Rust Toolchain**: `rustc` and `cargo` (Latest Stable: **1.92.0**, Minimum: 1.70+).
     - Install via rustup: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
 2. **C Compiler**: `gcc` or `clang` (for CGO linking).
-3. **Go Toolchain**: Go **1.25+** (Latest Stable: **1.25.5**) with `CGO_ENABLED=1`.
+3. **Go Toolchain**: Go **1.25.x** with `CGO_ENABLED=1`.
 4. **FFmpeg**: Version **8.0+** (Latest Stable: **8.0.1**) recommended for H.264 Repair.
 
 ## Build Instructions

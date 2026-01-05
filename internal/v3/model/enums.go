@@ -107,10 +107,17 @@ type ProfileSpec struct {
 	DVRWindowSec   int    `json:"dvrWindowSec"`
 	VOD            bool   `json:"vod,omitempty"`
 	TranscodeVideo bool   `json:"transcodeVideo"`
+	VideoCodec     string `json:"videoCodec,omitempty"` // "h264" (default) or "hevc"
+	HWAccel        string `json:"hwAccel,omitempty"`    // "vaapi", "qsv", "nvenc", etc.
 	Deinterlace    bool   `json:"deinterlace,omitempty"`
 	VideoCRF       int    `json:"videoCrf,omitempty"`
 	VideoMaxWidth  int    `json:"videoMaxWidth,omitempty"`
+	VideoMaxRateK  int    `json:"videoMaxRateK,omitempty"`
+	VideoBufSizeK  int    `json:"videoBufSizeK,omitempty"`
+	BFrames        int    `json:"bframes,omitempty"`
 	AudioBitrateK  int    `json:"audioBitrateK,omitempty"`
+	Preset         string `json:"preset,omitempty"`
+	Container      string `json:"container,omitempty"` // "ts" (default) or "fmp4"
 	// Future: Audio-only, subtitles, etc.
 }
 
@@ -123,6 +130,8 @@ type SessionRecord struct {
 	PipelineState  PipelineState     `json:"pipelineState"`
 	Reason         ReasonCode        `json:"reason"`
 	ReasonDetail   string            `json:"reasonDetail,omitempty"`
+	FallbackReason string            `json:"fallbackReason,omitempty"`
+	FallbackAtUnix int64             `json:"fallbackAtUnix,omitempty"`
 	CorrelationID  string            `json:"correlationId"`
 	CreatedAtUnix  int64             `json:"createdAtUnix"`
 	UpdatedAtUnix  int64             `json:"updatedAtUnix"`

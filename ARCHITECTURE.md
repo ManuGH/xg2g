@@ -16,6 +16,7 @@ xg2g v3 is a **single-tenant, home-lab focused control plane** for live TV strea
 4. **Streaming Performance** → Low latency HLS delivery (secondary to stability)
 
 This is **not** designed for:
+
 - Multi-tenant SaaS deployments
 - Horizontal scaling across data centers
 - Complex user management / federated auth
@@ -26,6 +27,7 @@ This is **not** designed for:
 ## System Context
 
 ### Target Environment
+
 - **Deployment**: Single-user or family home network
 - **Scale**: 1-4 concurrent streams, 1-8 tuners
 - **Lifespan**: Long-running process (weeks between restarts)
@@ -45,7 +47,7 @@ This is **not** designed for:
 
 - **Authentication bypass** → Multi-token RBAC prevents unauthorized access
 - **Path traversal** → HLS file serving validates basenames + symlink resolution
-- **CSRF** → Origin/Referer validation on state-changing endpoints
+- **CSRF** → Middleware exists but is not wired globally; relies on token auth + SameSite cookies
 - **Rate-based DoS** → Global (1000 req/s) + per-IP (100 req/s) limits
 - **Secrets in logs** → Sensitive fields (tokens, passwords) masked
 - **Privilege escalation** → Scope-based authorization (read/write/admin)
@@ -96,11 +98,13 @@ This is **not** designed for:
 **Decision**: Use lightweight in-memory pub/sub instead of NATS JetStream or Redis Streams.
 
 **Rationale**:
+
 - **Simplicity**: No external dependencies or network hops
 - **Latency**: Sub-millisecond event delivery
 - **Failure Model**: Sessions are ephemeral (tied to tuner + FFmpeg process). On restart, clean slate is safer than replaying stale events.
 
 **Trade-off**: Events lost on process restart.
+
 - **Acceptable**: State Store is source of truth. Worker rebuilds from persisted sessions on startup.
 - **Not Acceptable If**: You need 24/7 operation with zero session loss on deployment.
 
@@ -113,12 +117,14 @@ This is **not** designed for:
 **Decision**: Use long-lived API tokens with scope-based RBAC instead of JWT + refresh tokens.
 
 **Rationale**:
+
 - **No Clock Skew**: Static tokens don't expire, no clock sync issues
 - **No Refresh Flow**: Simpler client implementation (no token rotation logic)
 - **Explicit Rotation**: Config-based rotation (update env var + restart) is auditable
 - **Multi-Token Support**: Different scopes per client (read-only mobile, admin desktop)
 
 **Trade-off**: No automatic expiration.
+
 - **Acceptable**: Home-lab assumes single owner. Compromise = rotate token manually.
 - **Not Acceptable If**: Multiple untrusted users or regulatory compliance (PCI-DSS, SOC2).
 
@@ -131,11 +137,13 @@ This is **not** designed for:
 **Decision**: Any authenticated user with `v3:read` can access any session's HLS stream.
 
 **Rationale**:
+
 - **Single-Tenant Assumption**: All users in household are trusted
 - **Simplicity**: No session-to-user binding or ownership tracking
 - **UUID Obscurity**: Session IDs are UUIDs (128-bit entropy) → unguessable
 
 **Trade-off**: No multi-user isolation.
+
 - **Acceptable**: Home-lab use case assumes family trust model.
 - **Not Acceptable If**: Multiple untrusted clients (e.g., public demo, shared apartment).
 
@@ -148,11 +156,13 @@ This is **not** designed for:
 **Decision**: Tuner allocation uses optimistic locking (lease-based coordination) instead of distributed locks.
 
 **Rationale**:
+
 - **Correctness**: Prevents over-subscription (more streams than tuners)
 - **Resilience**: Lease expiry handles crashed workers (self-healing)
 - **No Coordination Service**: No ZooKeeper/etcd dependency
 
 **Trade-off**: Lease contention causes temporary failures (retries needed).
+
 - **Acceptable**: Home-lab has low concurrency (1-4 streams). Retry succeeds within 1-2s.
 - **Not Acceptable If**: 10+ concurrent users with instant-on expectations.
 
@@ -163,16 +173,19 @@ This is **not** designed for:
 **Decision**: Lease acquisition uses atomic try-acquire, not probe-then-acquire.
 
 **Rationale**:
+
 - **Correctness**: Prevents TOCTOU (Time-of-check Time-of-use) race conditions
 - **Admission Control**: HTTP 409 returned before session creation on contention
 - **No Queueing**: Fail-fast instead of implicit queue building
 - **Atomic Guarantee**: Single atomic operation ensures either lease acquired OR 409 returned
 
 **Trade-off**: Client must implement retry logic for 409 responses.
+
 - **Acceptable**: Home-lab clients can retry with exponential backoff (1-2s typical)
 - **Not Acceptable If**: You need guaranteed admission with queuing semantics
 
 **Non-Goals** (explicitly excluded):
+
 - No worker refactor as part of admission control
 - No request queueing or waiting
 - No new session states for "waiting"
@@ -184,6 +197,7 @@ This is **not** designed for:
 The V3 control plane implements an event-driven state machine for session lifecycle management.
 
 **Key States**:
+
 - **STARTING** → Worker initializing, FFmpeg starting
 - **PRIMING** → FFmpeg running, producing HLS artifacts (not yet playable)
 - **READY** → **Playable guarantee** (playlist + at least one segment atomically published)
@@ -191,6 +205,7 @@ The V3 control plane implements an event-driven state machine for session lifecy
 - **FAILED/CANCELLED/STOPPED** → Terminal states
 
 **Critical Guarantees**:
+
 - **Admission Guard**: No session created without successful lease acquisition (atomic try-acquire)
 - **READY Guard**: READY state guarantees immediate playability (playlist + segment exist)
 - **Timeout Guard**: Each phase has deadlines to prevent infinite waits
@@ -207,11 +222,13 @@ The V3 control plane implements an event-driven state machine for session lifecy
 **Pattern**: Client submits **intent** (e.g., "I want to watch CNN"), not imperative commands (e.g., "allocate tuner 2, start FFmpeg").
 
 **Benefits**:
+
 - **Decoupling**: API layer doesn't block on slow operations (FFmpeg startup takes 3-5s)
 - **Async Feedback**: Client polls `/sessions/{id}` for state transitions
 - **Resilience**: Worker failures don't block HTTP responses
 
 **Example**:
+
 ```http
 POST /api/v3/intents
 {"serviceRef": "1:0:1:445D:453:1:C00000:0:0:0:", "profileID": "hls_720p"}
@@ -238,6 +255,7 @@ GET /api/v3/sessions/{uuid}
 ```
 
 **Benefits**:
+
 - **Debuggability**: `request_id` links HTTP → logs → traces
 - **Client Automation**: Machine codes enable retry logic (e.g., 503 → backoff)
 - **Consistency**: No mix of plain text, JSON, and HTTP status
@@ -247,6 +265,7 @@ GET /api/v3/sessions/{uuid}
 ### 3. Scope-Based RBAC (Hierarchical)
 
 **Model**:
+
 ```
 *           → All operations (superuser)
 v3:*        → All v3 operations
@@ -256,6 +275,7 @@ v3:read     → Read-only access
 ```
 
 **Enforcement**:
+
 - **Middleware-Level**: Route middleware checks scopes before handler
 - **Fail-Closed**: No tokens configured → deny all
 - **Token-Only**: API access always requires a valid token
@@ -304,22 +324,26 @@ Response includes metadata: `total`, `count`, `offset`, `limit`
 ## Observability
 
 ### 1. Request ID Propagation
+
 - Every HTTP request gets a unique ID (`X-Request-ID` header or generated)
 - Logged at API, event bus, worker, and FFmpeg layers
 - Enables end-to-end tracing (HTTP → event → FFmpeg log)
 
 ### 2. Structured Logging (zerolog)
+
 - JSON output for machine parsing
 - Contextual fields: `component`, `sessionID`, `tunerID`, `reason`
 - Log levels: `DEBUG` → `INFO` → `WARN` → `ERROR`
 
 ### 3. Prometheus Metrics
+
 - HTTP latency histograms per endpoint
 - Active session count by state
 - Tuner utilization (leased vs available)
 - FFmpeg process lifecycle events
 
 ### 4. OpenTelemetry Tracing (Optional)
+
 - Distributed traces via OTLP exporter
 - Disabled by default (enable via `XG2G_OTEL_ENDPOINT`)
 
@@ -331,7 +355,7 @@ Response includes metadata: `total`, `count`, `offset`, `limit`
 
 1. **Authentication**: Multi-token RBAC with constant-time comparison
 2. **Authorization**: Scope middleware on all v3 routes
-3. **CSRF Protection**: Origin/Referer validation on `POST/PUT/DELETE`
+3. **CSRF Protection**: Middleware exists but is not wired globally; mutating routes rely on token auth + SameSite cookies
 4. **Path Traversal**: Basename-only HLS file serving + symlink detection
 5. **Rate Limiting**: Global (1000 req/s) + per-IP (100 req/s) limits
 6. **Input Validation**: `DisallowUnknownFields` on JSON decoding
@@ -374,6 +398,17 @@ Response includes metadata: `total`, `count`, `offset`, `limit`
 **Why this matters**: Early versions hardcoded ports, causing silent failures (black screen) for certain channels. These invariants capture hard-won operational lessons.
 
 **Full specification**: See [STREAMING.md](docs/STREAMING.md) for detailed rules, implementation checklist, and common pitfalls.
+
+## VOD Playback Policy
+
+**Design Decision: Direct MP4 Startup**
+
+For Direct MP4 playback, the client implements an aggressive optimization to minimize Time-to-First-Picture (TTFP):
+
+- **Optimistic Polling**: When receiving `503 Service Unavailable` + `Retry-After`, the client **ignores the duration** specified in the header.
+- **Why**: The backend sets a conservative estimate (e.g., 5s), but the remux job often completes sooner.
+- **Behavior**: The client polls at a **1-second interval** to catch the "Ready" state immediately.
+- **Contract**: `Retry-After` serves only as a **capability flag** indicating that the 503 is a temporary "Preparing" state (safe to retry) rather than a hard failure.
 
 ---
 
@@ -420,19 +455,25 @@ These are **intentionally excluded** to maintain simplicity:
 ## FAQ
 
 ### Q: Why no persistent event bus?
+
 **A**: Events are ephemeral triggers, not durable state. State Store is the source of truth. On restart, worker rebuilds from persisted sessions. This is simpler and safer than replaying stale events.
 
 ### Q: Why not JWT tokens?
+
 **A**: JWT adds complexity (clock skew, refresh flow, storage) with no benefit in single-tenant home-lab. Long-lived tokens are simpler and explicit rotation is auditable.
 
 ### Q: Is this production-ready?
+
 **A**: Yes, for **home-lab production** (24/7 streaming for personal use). Not for multi-tenant SaaS or commercial deployment (see Threat Model).
 
 ### Q: How do I scale horizontally?
+
 **A**: You don't. This is designed for vertical scaling (more tuners, faster CPU). If you need multiple instances, you're outside the design scope.
 
 ### Q: Can I expose this to the internet?
+
 **A**: Yes, with caveats:
+
 - Use **TLS** (reverse proxy or `--tls` flag)
 - Use **secure tunnel** (Tailscale, Wireguard, Cloudflare Tunnel)
 - Enable **rate limiting** (default enabled)
@@ -503,3 +544,36 @@ SLA)
 ## License
 
 PolyForm Noncommercial License 1.0.0. Commercial use restricted.
+
+## Appendix A: Threat Model & Security Hardening
+
+### 1. Trust Boundaries
+
+- **External Network**: The API is exposed on `:8088`. While token auth is enforced for API operations, it is designed for single-tenant home-lab use.
+
+- **Enigma2 Receiver**: Trusted internal component. Communication is HTTP (Basic Auth supported).
+- **Filesystem**: configuration and data are stored in `XG2G_DATA` (default: `./data`).
+
+### 2. Hardening Measures
+
+The system utilizes robust defaults to minimize the attack surface:
+
+- **Configuration Integrity**: Config loading is strict. Directories disguised as config files are rejected. Explicit `--config` paths must allow fast failure if invalid.
+- **Systemd Isolation**:
+  - **Base Hardening (xg2g.service)**:
+    - `PrivateTmp=true`: Isolates temporary files.
+    - `NoNewPrivileges=true`: Prevents privilege escalation.
+    - `LimitNOFILE=65535`: Mitigates DoS via file descriptor exhaustion.
+    - `UMask=0077`: Ensures secrets/config are not world-readable.
+  - **Optional Extended Hardening (Drop-in)**:
+    - `LockPersonality`, `RestrictSUIDSGID`, `PrivateDevices`, `ProtectControlGroups`, `ProtectKernelTunables`, `RestrictNamespaces` can be enabled via `/etc/systemd/system/xg2g.service.d/hardening.conf`.
+
+### 3. Known Risks & Mitigations
+
+- **Fail-Closed Auth**: Authentication is enforced by default. Startup fails if no token is configured.
+
+- **Root Execution**: Currently, the service typically runs as `root` to simplify permission management for Docker/CI workflows.
+  - *Mitigation*: Systemd hardening reduces the impact. Future Roadmap includes migration to a dedicated `xg2g` user.
+  - *Mitigation*: Systemd hardening reduces the impact. Future Roadmap includes migration to a dedicated `xg2g` user.
+- **API Token Storage**: Tokens are stored in `config.yaml`.
+  - *Mitigation*: `UMask=0077` prevents unauthorized read access on the host.

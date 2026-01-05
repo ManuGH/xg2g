@@ -7,9 +7,9 @@
 package api
 
 import (
-	"context"
 	"net/http"
 
+	"github.com/ManuGH/xg2g/internal/auth"
 	"github.com/ManuGH/xg2g/internal/log"
 )
 
@@ -46,15 +46,15 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 		}
 
 		// Use constant-time comparison to prevent timing attacks
-		if _, ok := s.tokenScopes(reqToken); !ok {
+		principal, ok := s.tokenPrincipal(reqToken)
+		if !ok {
 			logger.Warn().Str("event", "auth.invalid_token").Msg("invalid api token")
 			RespondError(w, r, http.StatusUnauthorized, ErrUnauthorized)
 			return
 		}
 
 		// Token is valid - add principal to context
-		ctx := context.WithValue(r.Context(), ctxPrincipalKey{}, "authenticated")
-		// Also store the token in context? Not strictly needed if we always re-extract or config is source.
+		ctx := auth.WithPrincipal(r.Context(), principal)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -83,7 +83,7 @@ func (s *Server) CreateSession(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, http.StatusUnauthorized, ErrUnauthorized)
 		return
 	} else {
-		if _, ok := s.tokenScopes(reqToken); !ok {
+		if _, ok := s.tokenPrincipal(reqToken); !ok {
 			RespondError(w, r, http.StatusUnauthorized, ErrUnauthorized)
 			return
 		}

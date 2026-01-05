@@ -327,6 +327,12 @@ var (
 		Name: "xg2g_vod_circuit_halfopen_total",
 		Help: "Total number of times circuit breaker entered half-open state",
 	})
+
+	// Phase 11: VOD Remux Stall Detection
+	vodRemuxStallsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "xg2g_vod_remux_stalls_total",
+		Help: "Total number of VOD remux processes killed due to stall",
+	}, []string{"strategy"}) // strategy=default|fallback|transcode
 )
 
 func IncVODBuildsActive() { vodBuildsActive.WithLabelValues("ffmpeg").Inc() }
@@ -362,4 +368,8 @@ func IncVODCircuitHalfOpen() {
 
 func ObserveVODBuildDuration(result string, duration float64) {
 	vodBuildDurationSeconds.WithLabelValues(result).Observe(duration)
+}
+
+func IncVODRemuxStall(strategy string) {
+	vodRemuxStallsTotal.WithLabelValues(strategy).Inc()
 }

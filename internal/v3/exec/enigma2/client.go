@@ -38,6 +38,11 @@ type Client struct {
 	userAgent  string
 	rnd        *rand.Rand
 	mu         sync.Mutex
+	// When true, avoid explicit zapping and rely on WebIF stream tuning.
+	useWebIFStreams bool
+	// StreamPort is the port for direct stream URLs (e.g. 8001 for Enigma2, 17999 for OSCam-emu relay).
+	// When set, ResolveStreamURL will build direct URLs instead of querying /web/stream.m3u.
+	streamPort int
 }
 
 // Options configures the Enigma2 client behavior.
@@ -52,6 +57,8 @@ type Options struct {
 	UserAgent             string
 	RateLimit             rate.Limit
 	RateLimitBurst        int
+	UseWebIFStreams       bool
+	StreamPort            int // Port for direct stream URLs (0 = use /web/stream.m3u to let receiver decide)
 }
 
 const (
@@ -97,14 +104,16 @@ func NewClientWithOptions(baseURL string, opts Options) *Client {
 			Timeout:   nopts.Timeout,
 			Transport: transport,
 		},
-		limiter:    rate.NewLimiter(nopts.RateLimit, nopts.RateLimitBurst),
-		maxRetries: nopts.MaxRetries,
-		backoff:    nopts.Backoff,
-		maxBackoff: nopts.MaxBackoff,
-		username:   nopts.Username,
-		password:   nopts.Password,
-		userAgent:  nopts.UserAgent,
-		rnd:        rand.New(rand.NewSource(time.Now().UnixNano())), // #nosec G404 -- jitter only
+		limiter:         rate.NewLimiter(nopts.RateLimit, nopts.RateLimitBurst),
+		maxRetries:      nopts.MaxRetries,
+		backoff:         nopts.Backoff,
+		maxBackoff:      nopts.MaxBackoff,
+		username:        nopts.Username,
+		password:        nopts.Password,
+		userAgent:       nopts.UserAgent,
+		rnd:             rand.New(rand.NewSource(time.Now().UnixNano())), // #nosec G404 -- jitter only
+		useWebIFStreams: opts.UseWebIFStreams,
+		streamPort:      opts.StreamPort,
 	}
 }
 

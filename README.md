@@ -129,10 +129,15 @@ Event-driven design for reliability and performance:
     ```
 
     **Set these values in `.env`:**
-    - `XG2G_OWI_BASE` - Your Enigma2 receiver IP (e.g., `http://192.168.1.100`)
+    - `XG2G_OWI_BASE` - Your Enigma2 receiver IP
+      (e.g., `http://192.168.1.100`)
     - `XG2G_BOUQUET` - Optional: comma-separated bouquets (empty = all)
-    - `XG2G_API_TOKEN` - Required; UI will prompt for this token
-    - `XG2G_API_TOKEN_SCOPES` - Include `v3:write` for streaming (e.g., `v3:read,v3:write`)
+    - `XG2G_API_TOKEN` - **Required**; generate with
+      `openssl rand -hex 32`
+    - `XG2G_API_TOKEN_SCOPES` - **Required**; use `v3:read,v3:write`
+      for streaming
+
+    > **Security Note**: `XG2G_API_TOKEN` is mandatory. The application will not start without it.
 
     **Note**: `XG2G_V3_E2_HOST` automatically inherits from `XG2G_OWI_BASE` if not set.
 
@@ -145,7 +150,9 @@ Event-driven design for reliability and performance:
 **That's it.**
 
 - **Open your browser:** [http://localhost:8088](http://localhost:8088)
-- **Note:** The binary defaults to `:8080`; Docker Compose sets `XG2G_LISTEN=:8088` for deployment.
+- **⚠️ Port Change:** Default changed `:8080` → `:8088`
+  (set `XG2G_LISTEN=:8080` for old port)
+- **🔐 Authentication:** WebUI prompts for API token from `XG2G_API_TOKEN`
 
 ---
 
@@ -213,3 +220,12 @@ xg2g is configured primarily via **Environment Variables**.
 
 License: **PolyForm Noncommercial License 1.0.0**
 *(See [Licensing](docs/licensing.md) for commercial inquiries)*
+
+# Configuration Precedence
+
+The configuration is loaded with the following precedence order:
+
+1. **Systemd Environment** (Defined in config XG2G_DATA)
+2. **Config File** (Detected in XG2G_DATA or explicit --config)
+3. **Environment Variables** (From .env or system environment)
+4. **Defaults**

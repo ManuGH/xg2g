@@ -1,5 +1,13 @@
 # xg2g Build & Deployment Guide
 
+## Go Toolchain Policy
+
+Source of truth: `go.mod` `go` directive (minor-pinned).
+
+- Policy: pin to a minor version (e.g., `1.25`) and allow patch updates.
+- Dockerfiles and CI must match the minor version in `go.mod`.
+- CI enforces this via `scripts/check-go-toolchain.sh`.
+
 ## Quick Start: Build and Deploy with Docker
 
 ### 1. Build Docker Image

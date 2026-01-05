@@ -3,6 +3,7 @@
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
 import { useState, useEffect, FormEvent } from 'react';
+import { useTranslation } from 'react-i18next';
 import { getSystemConfig, putSystemConfig, type AppConfig, type ConfigUpdate } from '../client-ts';
 import './Config.css';
 
@@ -22,6 +23,7 @@ interface ValidationResponse {
 type ConnectionStatus = 'untested' | 'valid' | 'invalid';
 
 function Config() {
+  const { t } = useTranslation();
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
@@ -59,14 +61,14 @@ function Config() {
         // @ts-ignore - 'status' might not be on generic error, but likely is
         if (result.response?.status === 401) {
           window.dispatchEvent(new Event('auth-required'));
-          setError('Authentication required. Please enter your API token.');
+          setError(t('setup.errors.authRequired'));
         } else {
-          setError('Failed to load configuration. Please ensure the backend is running.');
+          setError(t('setup.errors.loadFailed'));
         }
       }
     } catch (err: any) {
       console.error('Failed to load config:', err);
-      setError('Failed to load configuration. Please ensure the backend is running.');
+      setError(t('setup.errors.loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -135,7 +137,11 @@ function Config() {
       if (result.valid) {
         setConnectionStatus('valid');
         setValidationResult(result);
-        setSuccessMsg(`Connected successfully! Receiver: ${result.version?.info?.brand || 'Unknown'} ${result.version?.info?.model || ''}`);
+        const receiver = [result.version?.info?.brand, result.version?.info?.model]
+          .filter(Boolean)
+          .join(' ')
+          .trim() || t('setup.receiver.unknown');
+        setSuccessMsg(t('setup.messages.connected', { receiver }));
 
         // Auto-populate bouquets if empty
         if ((!config.bouquets || config.bouquets.length === 0) && result.bouquets?.length > 0) {
@@ -144,12 +150,12 @@ function Config() {
         }
       } else {
         setConnectionStatus('invalid');
-        setError(result.message || 'Connection failed');
+        setError(result.message || t('setup.errors.connectionFailed'));
       }
     } catch (err) {
       console.error('Validation failed:', err);
       setConnectionStatus('invalid');
-      setError('Network error during validation');
+      setError(t('setup.errors.networkValidation'));
     } finally {
       setValidating(false);
     }
@@ -173,7 +179,7 @@ function Config() {
     if (!config) return;
 
     if (connectionStatus !== 'valid') {
-      setError("Please validate the connection before saving.");
+      setError(t('setup.errors.validateBeforeSave'));
       return;
     }
 
@@ -202,21 +208,21 @@ function Config() {
 
       if (result.data) {
         if (result.data.restart_required) {
-          setSuccessMsg('Configuration saved. Restarting application...');
+          setSuccessMsg(t('setup.messages.savedRestart'));
           setRestarting(true);
           checkHealthAndReload();
         } else {
-          setSuccessMsg('Configuration saved successfully.');
+          setSuccessMsg(t('setup.messages.saved'));
           // Reload to ensure we have the latest state
           await loadConfig();
         }
       } else {
-        setError('Failed to save configuration.');
+        setError(t('setup.errors.saveFailed'));
       }
 
     } catch (err) {
       console.error('Failed to save config:', err);
-      setError('Failed to save configuration. Please check the logs.');
+      setError(t('setup.errors.saveFailedLogs'));
     } finally {
       setSaving(false);
     }
@@ -226,32 +232,32 @@ function Config() {
     return (
       <div className="config-container restarting-overlay">
         <div className="loading-spinner"></div>
-        <h2>Restarting Application...</h2>
-        <p>Please wait while your changes are applied.</p>
+        <h2>{t('setup.restart.title')}</h2>
+        <p>{t('setup.restart.subtitle')}</p>
       </div>
     );
   }
 
-  if (loading) return <div className="loading">Loading configuration...</div>;
-  if (!config) return <div className="error">Could not load configuration</div>;
+  if (loading) return <div className="loading">{t('setup.loading')}</div>;
+  if (!config) return <div className="error">{t('setup.loadError')}</div>;
 
   const availableBouquets = validationResult?.bouquets || [];
   const selectedBouquets = config.bouquets || [];
 
   return (
     <div className="config-container">
-      <h2>Initial Setup Wizard</h2>
+      <h2>{t('setup.title')}</h2>
 
       {error && <div className="alert error">{error}</div>}
       {successMsg && !restarting && <div className="alert success">{successMsg}</div>}
 
       <form onSubmit={handleSave} className="config-form">
         <section className="config-section">
-          <h3>Step 1: Connect to Receiver</h3>
-          <p className="hint-text">Enter the IP address of your Enigma2 receiver (e.g., Dreambox, VU+).</p>
+          <h3>{t('setup.step1.title')}</h3>
+          <p className="hint-text">{t('setup.step1.hint')}</p>
 
           <div className="form-group">
-            <label>Receiver URL</label>
+            <label>{t('setup.fields.receiverUrl')}</label>
             <div className="input-with-button">
               <input
                 type="text"
@@ -265,21 +271,21 @@ function Config() {
 
           <div className="form-row">
             <div className="form-group">
-              <label>Username</label>
+              <label>{t('setup.fields.username')}</label>
               <input
                 type="text"
                 value={config.openWebIF?.username || ''}
                 onChange={e => handleChange('openWebIF', 'username', e.target.value)}
-                placeholder="root (optional)"
+                placeholder={t('setup.placeholders.username')}
               />
             </div>
             <div className="form-group">
-              <label>Password</label>
+              <label>{t('setup.fields.password')}</label>
               <input
                 type="password"
                 value={config.openWebIF?.password || ''}
                 onChange={e => handleChange('openWebIF', 'password', e.target.value)}
-                placeholder="password (optional)"
+                placeholder={t('setup.placeholders.password')}
               />
             </div>
           </div>
@@ -291,16 +297,18 @@ function Config() {
               onClick={validateConnection}
               disabled={validating || !config.openWebIF?.baseUrl}
             >
-              {validating ? 'Connecting...' : (connectionStatus === 'valid' ? '✓ Connection Verified' : 'Test Connection')}
+              {validating
+                ? t('setup.actions.connecting')
+                : (connectionStatus === 'valid' ? `✓ ${t('setup.actions.connectionVerified')}` : t('setup.actions.testConnection'))}
             </button>
-            {connectionStatus === 'valid' && <span className="status-badge success">Online</span>}
+            {connectionStatus === 'valid' && <span className="status-badge success">{t('setup.actions.statusOnline')}</span>}
           </div>
         </section>
 
         {connectionStatus === 'valid' && (
           <section className="config-section animate-fade-in">
-            <h3>Step 2: Select Channels</h3>
-            <p className="hint-text">Choose which bouquets (favorites) you want to use.</p>
+            <h3>{t('setup.step2.title')}</h3>
+            <p className="hint-text">{t('setup.step2.hint')}</p>
 
             <div className="bouquets-grid">
               {availableBouquets.length > 0 ? availableBouquets.map(b => (
@@ -314,7 +322,7 @@ function Config() {
                 </label>
               )) : (
                 <div className="empty-bouquets">
-                  No bouquets found. <small>Check your receiver configuration.</small>
+                  {t('setup.step2.empty')} <small>{t('setup.step2.emptyHint')}</small>
                 </div>
               )}
             </div>
@@ -322,7 +330,7 @@ function Config() {
         )}
 
         <section className="config-section">
-          <h3>Step 3: Options</h3>
+          <h3>{t('setup.step3.title')}</h3>
           <div className="form-group checkbox-group">
             <label>
               <input
@@ -330,10 +338,10 @@ function Config() {
                 checked={config.epg?.enabled || false}
                 onChange={e => handleChange('epg', 'enabled', e.target.checked)}
               />
-              Enable EPG (Electronic Program Guide)
+              {t('setup.step3.enableEpg')}
             </label>
             <small className="hint-text" style={{ marginTop: '4px', marginLeft: '24px' }}>
-              Automatically fetches program info for selected channels (3 days).
+              {t('setup.step3.hint')}
             </small>
           </div>
         </section>
@@ -344,7 +352,7 @@ function Config() {
             disabled={saving || connectionStatus !== 'valid'}
             className="btn-primary"
           >
-            {saving ? 'Finish Setup' : 'Finish Setup'}
+            {t('setup.actions.finishSetup')}
           </button>
         </div>
       </form>

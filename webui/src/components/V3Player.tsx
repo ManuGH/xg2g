@@ -2,8 +2,8 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import Hls from 'hls.js';
 import type { ErrorData, FragLoadedData, ManifestParsedData } from 'hls.js';
-import { createSession, getRecordingPlaybackInfo } from '../client/sdk.gen';
-import { client } from '../client/client.gen';
+import { createSession } from '../client-ts/sdk.gen';
+import { client } from '../client-ts/client.gen';
 import type {
   V3PlayerProps,
   PlayerStatus,
@@ -13,6 +13,8 @@ import type {
   HlsInstanceRef,
   VideoElementRef
 } from '../types/v3-player';
+import { useResume } from '../features/resume/useResume';
+import { ResumeState } from '../features/resume/api';
 import './V3Player.css';
 
 interface PlayerStats {
@@ -50,6 +52,7 @@ function V3Player(props: V3PlayerProps) {
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
   const [showErrorDetails, setShowErrorDetails] = useState(false);
 
+  const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<VideoElementRef>(null);
   const hlsRef = useRef<HlsInstanceRef>(null);
   const mounted = useRef<boolean>(false);
@@ -60,6 +63,7 @@ function V3Player(props: V3PlayerProps) {
   const recordingTimeoutRef = useRef<number | null>(null);
   const vodFetchRef = useRef<AbortController | null>(null);
   const activeRecordingRef = useRef<string | null>(null);
+  const [activeRecordingId, setActiveRecordingId] = useState<string | null>(null);
   const startIntentInFlight = useRef<boolean>(false);
 
   // UX Features State
@@ -74,6 +78,18 @@ function V3Player(props: V3PlayerProps) {
   const [isPip, setIsPip] = useState(false);
   const [, setIsFullscreen] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false); // Track play/pause state
+  const isSafari = useMemo(() => {
+    if (typeof navigator === 'undefined') return false;
+    const ua = navigator.userAgent.toLowerCase();
+    return ua.includes('safari') && !ua.includes('chrome') && !ua.includes('chromium') && !ua.includes('android');
+  }, []);
+  const [selectedProfile, setSelectedProfile] = useState<string>(() => {
+    // Load profile from localStorage (set via EPG Toolbar)
+    return localStorage.getItem('xg2g_stream_profile') || 'auto';
+  }); // Profile selection
+
+  // PREPARING state for VOD remux UX
+  const [preparing, setPreparing] = useState<{ eta?: number; message?: string } | null>(null);
   const [volume, setVolume] = useState(1); // 0.0 to 1.0
   const [isMuted, setIsMuted] = useState(false);
   const [stats, setStats] = useState<PlayerStats>({
@@ -87,6 +103,18 @@ function V3Player(props: V3PlayerProps) {
     levelIndex: -1
   });
 
+  // Resume State
+  const [resumeState, setResumeState] = useState<ResumeState | null>(null);
+  const [showResumeOverlay, setShowResumeOverlay] = useState(false);
+
+  // Resume Hook
+  useResume({
+    recordingId: activeRecordingId || undefined,
+    duration: durationSeconds,
+    videoElement: videoRef.current,
+    isPlaying
+  });
+
   const sleep = (ms: number): Promise<void> =>
     new Promise(resolve => setTimeout(resolve, ms));
 
@@ -94,6 +122,7 @@ function V3Player(props: V3PlayerProps) {
   const apiBase = useMemo(() => {
     return (client.getConfig().baseUrl || '/api/v3').replace(/\/$/, '');
   }, []);
+
 
   const formatClock = useCallback((value: number): string => {
     if (!Number.isFinite(value) || value < 0) return '--:--';
@@ -141,6 +170,22 @@ function V3Player(props: V3PlayerProps) {
     seekTo(video.currentTime + deltaSeconds);
   }, [seekTo]);
 
+  const seekWhenReady = useCallback((target: number) => {
+    const v = videoRef.current;
+    if (!v) return;
+
+    const doSeek = () => {
+      seekTo(target);
+      v.play().catch(e => console.warn("Seek play failed", e));
+    };
+
+    if (v.readyState >= 1) { // HAVE_METADATA
+      doSeek();
+    } else {
+      v.addEventListener('loadedmetadata', doSeek, { once: true });
+    }
+  }, [seekTo]);
+
   // --- UI Helpers (Memoized) ---
   const togglePlayPause = useCallback(() => {
     if (!videoRef.current) return;
@@ -152,16 +197,34 @@ function V3Player(props: V3PlayerProps) {
   }, []);
 
   const toggleFullscreen = useCallback(async () => {
+    // Safari DVR Mode (Native Fullscreen)
+    const video = videoRef.current;
+    if (isSafari && video?.webkitEnterFullscreen) {
+      video.webkitEnterFullscreen();
+      return;
+    }
+
     if (!document.fullscreenElement) {
       try {
-        await videoRef.current?.requestFullscreen();
+        // Use container fullscreen to preserve custom controls on Safari
+        await containerRef.current?.requestFullscreen();
       } catch (err) {
         console.warn("Fullscreen failed", err);
       }
     } else {
       await document.exitFullscreen();
     }
-  }, []);
+  }, [isSafari]);
+
+  const enterDVRMode = useCallback(() => {
+    const video = videoRef.current;
+    if (video && video.webkitEnterFullscreen) {
+      video.webkitEnterFullscreen();
+    } else {
+      // Fallback for non-Safari (just toggle FS)
+      toggleFullscreen();
+    }
+  }, [toggleFullscreen]);
 
   const togglePiP = useCallback(async () => {
     if (!videoRef.current) return;
@@ -209,6 +272,29 @@ function V3Player(props: V3PlayerProps) {
     if (token) h.Authorization = `Bearer ${token}`;
     return h;
   }, [token]);
+
+  const reportError = useCallback(async (event: 'error' | 'warning', code: number, msg?: string) => {
+    // Auto-switch to safari profile on error to ensure robust retry
+    if (event === 'error' && selectedProfile !== 'safari') {
+      console.info('[V3Player] Error detected. Switching profile to Safari (fMP4) for retry.');
+      setSelectedProfile('safari');
+    }
+
+    if (!sessionIdRef.current) return;
+    try {
+      await fetch(`${apiBase}/sessions/${sessionIdRef.current}/feedback`, {
+        method: 'POST',
+        headers: authHeaders(true),
+        body: JSON.stringify({
+          event,
+          code,
+          message: msg
+        })
+      });
+    } catch (e) {
+      console.warn('Failed to send feedback', e);
+    }
+  }, [apiBase, authHeaders, selectedProfile]);
 
   const ensureSessionCookie = useCallback(async (): Promise<void> => {
     if (!token) return;
@@ -296,7 +382,7 @@ function V3Player(props: V3PlayerProps) {
     }
   }, []);
 
-  const waitForSessionReady = useCallback(async (sid: string, maxAttempts = 60): Promise<V3SessionStatusResponse> => {
+  const waitForSessionReady = useCallback(async (sid: string, maxAttempts = 120): Promise<V3SessionStatusResponse> => {
     for (let i = 0; i < maxAttempts; i++) {
       try {
         const res = await fetch(`${apiBase}/sessions/${sid}`, {
@@ -372,7 +458,11 @@ function V3Player(props: V3PlayerProps) {
   }, []);
 
   const playHls = useCallback((url: string) => {
-    if (Hls.isSupported()) {
+    const video = videoRef.current;
+    if (!video) return;
+    const canPlayNative = !!video.canPlayType('application/vnd.apple.mpegurl');
+    const preferNative = isSafari && canPlayNative;
+    if (!preferNative && Hls.isSupported()) {
       if (hlsRef.current) {
         hlsRef.current.destroy();
       }
@@ -408,12 +498,16 @@ function V3Player(props: V3PlayerProps) {
       });
 
       hls.loadSource(url);
-      if (videoRef.current) {
-        hls.attachMedia(videoRef.current);
-      }
+      hls.attachMedia(video);
 
       hls.on(Hls.Events.ERROR, (_event, data: ErrorData) => {
         if (data.fatal) {
+          // Report fatal error to backend
+          if (sessionIdRef.current) {
+            const code = data.type === Hls.ErrorTypes.MEDIA_ERROR ? 3 : 0;
+            void reportError('error', code, `${data.type}: ${data.details}`);
+          }
+
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR:
               hls.startLoad();
@@ -430,14 +524,14 @@ function V3Player(props: V3PlayerProps) {
           }
         }
       });
-    } else if (videoRef.current?.canPlayType('application/vnd.apple.mpegurl')) {
+    } else if (canPlayNative) {
       // Safari Native
-      videoRef.current.src = url;
-      videoRef.current.addEventListener('loadedmetadata', () => {
-        videoRef.current?.play();
+      video.src = url;
+      video.addEventListener('loadedmetadata', () => {
+        video.play();
       }, { once: true });
     }
-  }, [token, t, updateStats]);
+  }, [token, t, updateStats, isSafari, reportError]);
 
   const playDirectMp4 = useCallback((url: string) => {
     if (hlsRef.current) {
@@ -461,6 +555,7 @@ function V3Player(props: V3PlayerProps) {
 
   const startRecordingPlayback = useCallback(async (id: string): Promise<void> => {
     activeRecordingRef.current = id;
+    setActiveRecordingId(id);
     clearVodRetry();
     clearVodFetch();
     resetPlaybackEngine();
@@ -479,10 +574,17 @@ function V3Player(props: V3PlayerProps) {
       let mode = 'hls';
 
       try {
-        const info = await getRecordingPlaybackInfo({
-          path: { recordingId: id },
-          headers: authHeaders() as Record<string, string>
+        // Use client.get to ensure correct Base URL, Auth, and Encoding
+        // The type parameter <any> bypasses strict typing for this manual call
+        const { data, error } = await client.get<any>({
+          url: '/recordings/{recordingId}/stream-info',
+          path: { recordingId: id }
         });
+
+        if (error) {
+          throw new Error(JSON.stringify(error));
+        }
+        const info = { data };
         if (info.data) {
           console.debug('[V3Player] Playback Info:', info.data);
           if (info.data.mode === 'direct_mp4' && info.data.url) {
@@ -493,12 +595,30 @@ function V3Player(props: V3PlayerProps) {
               const origin = window.location.origin;
               streamUrl = `${origin}${streamUrl}`;
             }
-          } else if (info.data.url) {
-            streamUrl = info.data.url;
+          }
+
+          // 1. Process Resume State
+          // Only show if meaningful (>= 15s and < duration - 10s and not finished)
+          // We expect the API to return the resume object if it exists.
+          // Need to cast or extend the type as SDK might not be fully updated in generated types yet.
+          // Assuming 'resume' is in info.data (we verified backend sends it)
+          const rData = (info?.data as any)?.resume as ResumeState | undefined;
+
+          if (rData && rData.pos_seconds >= 15 && (!rData.finished)) {
+            // Double check against duration if available
+            const d = rData.duration_seconds || durationSeconds;
+            if (!d || rData.pos_seconds < d - 10) {
+              setResumeState(rData);
+              setShowResumeOverlay(true);
+            }
           }
         }
-      } catch (e) {
-        console.warn('[V3Player] Failed to get playback info, falling back to HLS default', e);
+      } catch (e: any) {
+        console.warn('[V3Player] Failed to get playback info', e);
+        // DEBUG: Show error to user to diagnose cause
+        setError(`Debug Error: ${e.message || e}`);
+        setStatus('error');
+        return;
       }
 
       const controller = new AbortController();
@@ -520,83 +640,169 @@ function V3Player(props: V3PlayerProps) {
             signal: controller.signal
           });
         }
+
+        // --- ROBUST RETRY LOGIC [START] ---
+        // Handle "503 Preparing" for Direct MP4 to avoid premature HLS fallback
+        if (res.status === 503 && mode === 'direct_mp4') {
+          // Try to parse structured PREPARING response
+          let preparingInfo: { code?: string; eta_seconds?: number; retry_after?: number; message?: string } | null = null;
+          try {
+            const contentType = res.headers.get('Content-Type');
+            if (contentType?.includes('application/json')) {
+              preparingInfo = await res.json();
+            }
+          } catch {
+            // JSON parse failed, fall back to header-only logic
+          }
+
+          const isPreparing = preparingInfo?.code === 'PREPARING';
+          const retryAfterHeader = res.headers.get('Retry-After');
+          const etaSeconds = preparingInfo?.eta_seconds || 30;
+          const retryAfter = preparingInfo?.retry_after || (retryAfterHeader ? parseInt(retryAfterHeader, 10) : 5);
+
+          // Contract: Only retry if PREPARING or explicit "Retry-After" is present
+          if (isPreparing || retryAfterHeader) {
+            const startTime = Date.now();
+            const maxWait = 60000; // 60s max wait
+            let attempt = 0;
+
+            console.info(`[V3Player] Direct MP4 Preparing (503). ETA: ${etaSeconds}s, Entering retry loop (max 60s).`);
+
+            // Show PREPARING overlay
+            setPreparing({
+              eta: etaSeconds,
+              message: preparingInfo?.message || 'Preparing video for direct playback'
+            });
+            setStatus('building');
+
+            while (Date.now() - startTime < maxWait) {
+              if (activeRecordingRef.current !== id) {
+                setPreparing(null);
+                return;
+              }
+              attempt++;
+
+              // Wait using retry_after seconds
+              await sleep(retryAfter * 1000);
+
+              if (activeRecordingRef.current !== id) {
+                setPreparing(null);
+                return;
+              }
+
+              try {
+                const probeRes = await fetch(streamUrl, {
+                  method: 'GET',
+                  headers: { ...authHeaders() as Record<string, string>, 'Range': 'bytes=0-0' },
+                  signal: controller.signal
+                });
+
+                if (probeRes.ok || probeRes.status === 206) {
+                  // READY!
+                  console.info(`[V3Player] Direct MP4 Ready after ${Date.now() - startTime}ms (Attempt ${attempt})`);
+                  setPreparing(null);
+                  setStatus('buffering');
+                  playDirectMp4(streamUrl);
+                  return;
+                }
+
+                if (probeRes.status !== 503) {
+                  // Unexpected error -> abort retry and fall through
+                  console.warn(`[V3Player] Direct MP4 Probe failed with ${probeRes.status}. Aborting retry.`);
+                  break;
+                }
+                // If 503 again, continue loop
+              } catch (probeErr) {
+                if (isAbortError(probeErr)) {
+                  setPreparing(null);
+                  return;
+                }
+                console.warn('[V3Player] Probe error', probeErr);
+                break;
+              }
+            }
+            console.warn(`[V3Player] Direct MP4 Retry Timeout (60s). Falling back to HLS.`);
+            setPreparing(null);
+          }
+        }
+        // --- ROBUST RETRY LOGIC [END] ---
+
+        if (res.status === 409 || res.status === 425 || res.status === 503) {
+          if (activeRecordingRef.current !== id) return;
+
+          // If we reached here for direct_mp4, it means we either:
+          // 1. Didn't have Retry-After (generic 503)
+          // 2. Timed out in the loop above
+          // 3. Probed an error other than 503 in the loop
+
+          // Fallback to HLS for robustness
+          if (mode === 'direct_mp4') {
+            console.info('[V3Player] Falling back to HLS for playback.');
+            setError(null);
+            setStatus('buffering');
+            playHls(hlsUrl);
+            return;
+          }
+
+          // Standard Retry Logic (Only for HLS 503s, which are rare/recoverable)
+          if (recordingTimeoutRef.current === null) {
+            recordingTimeoutRef.current = window.setTimeout(() => {
+              if (activeRecordingRef.current === id) {
+                clearVodRetry();
+                clearVodFetch();
+                setStatus('error');
+                setError(t('player.recordingPrepareTimeout'));
+              }
+            }, 60000); // 60s timeout for HLS retries
+          }
+
+          const retryAfterHeader = res.headers.get('Retry-After');
+          const retryAfter = retryAfterHeader ? parseInt(retryAfterHeader, 10) : 0;
+          const retryDelayMs = Math.max(2, retryAfter || 0) * 1000;
+          if (activeRecordingRef.current === id) {
+            setStatus('building');
+            vodRetryRef.current = window.setTimeout(() => {
+              if (activeRecordingRef.current === id) {
+                void startRecordingPlayback(id);
+              }
+            }, retryDelayMs);
+          }
+          return;
+        }
+
+        // Success or definitive failure -> clear global timeout
+        clearRecordingTimeout();
+
+        if (res.status === 404) {
+          setStatus('error');
+          setError(t('player.recordingNotFound'));
+          return;
+        }
+
+        if (res.status === 401 || res.status === 403) {
+          setStatus('error');
+          setError(t('player.authFailed'));
+          return;
+        }
+
+        if (!res.ok) {
+          throw new Error(`${t('player.apiError')}: ${res.status}`);
+        }
+
+        if (activeRecordingRef.current !== id) {
+          return;
+        }
+
+        setStatus('buffering');
+        if (mode === 'direct_mp4') {
+          playDirectMp4(streamUrl);
+        } else {
+          playHls(streamUrl);
+        }
       } finally {
         if (vodFetchRef.current === controller) {
           vodFetchRef.current = null;
         }
-      }
-
-      if (res.status === 409 || res.status === 425 || res.status === 503) {
-        if (activeRecordingRef.current !== id) return;
-
-        // HYBRID STRATEGY:
-        // If MP4 is building (503), trigger background build and play HLS immediately.
-        if (mode === 'direct_mp4') {
-          console.info('[V3Player] Direct MP4 building. Falling back to HLS for instant playback.');
-
-          // Clear any error states from the 503 check
-          setError(null);
-          setStatus('buffering'); // HLS will take over
-
-          // Fallback to HLS
-          playHls(hlsUrl);
-          return;
-        }
-
-        // Standard Retry Logic (Only for HLS 503s, which are rare/recoverable)
-        if (recordingTimeoutRef.current === null) {
-          recordingTimeoutRef.current = window.setTimeout(() => {
-            if (activeRecordingRef.current === id) {
-              clearVodRetry();
-              clearVodFetch();
-              setStatus('error');
-              setError(t('player.recordingPrepareTimeout'));
-            }
-          }, 60000); // 60s timeout for HLS retries
-        }
-
-        const retryAfterHeader = res.headers.get('Retry-After');
-        const retryAfter = retryAfterHeader ? parseInt(retryAfterHeader, 10) : 0;
-        const retryDelayMs = Math.max(2, retryAfter || 0) * 1000;
-        if (activeRecordingRef.current === id) {
-          setStatus('building');
-          vodRetryRef.current = window.setTimeout(() => {
-            if (activeRecordingRef.current === id) {
-              void startRecordingPlayback(id);
-            }
-          }, retryDelayMs);
-        }
-        return;
-      }
-
-      // Success or definitive failure -> clear global timeout
-      clearRecordingTimeout();
-
-      if (res.status === 404) {
-        setStatus('error');
-        setError(t('player.recordingNotFound'));
-        return;
-      }
-
-      if (res.status === 401 || res.status === 403) {
-        setStatus('error');
-        setError(t('player.authFailed'));
-        return;
-      }
-
-      if (!res.ok) {
-        throw new Error(`${t('player.apiError')}: ${res.status}`);
-      }
-
-      if (activeRecordingRef.current !== id) {
-        return;
-      }
-
-      setStatus('buffering');
-      if (mode === 'direct_mp4') {
-        playDirectMp4(streamUrl);
-      } else {
-        playHls(streamUrl);
       }
     } catch (err) {
       if (isAbortError(err)) {
@@ -615,9 +821,20 @@ function V3Player(props: V3PlayerProps) {
     startIntentInFlight.current = true;
 
     try {
+      if (recordingId) {
+        console.info('[V3Player] startStream: recordingId path', { recordingId, hasSrc: !!src });
+        if (src) {
+          console.warn('[V3Player] Both recordingId and src provided; prioritizing recordingId (VOD path).');
+        }
+        await startRecordingPlayback(recordingId);
+        return;
+      }
+
       if (src) {
+        console.info('[V3Player] startStream: src path', { hasSrc: true });
         // Reset state for local/src playback
         activeRecordingRef.current = null;
+        setActiveRecordingId(null);
         clearVodRetry();
         clearVodFetch();
         sessionIdRef.current = null;
@@ -630,13 +847,9 @@ function V3Player(props: V3PlayerProps) {
         return;
       }
 
-      if (recordingId) {
-        await startRecordingPlayback(recordingId);
-        return;
-      }
-
       // Reset state for new live session
       activeRecordingRef.current = null;
+      setActiveRecordingId(null);
       clearVodRetry();
       clearVodFetch();
       sessionIdRef.current = null;
@@ -659,7 +872,7 @@ function V3Player(props: V3PlayerProps) {
           headers: authHeaders(true),
           body: JSON.stringify({
             type: 'stream.start',
-            profileID: 'auto',
+            profileID: selectedProfile,
             serviceRef: ref
           })
         });
@@ -718,7 +931,7 @@ function V3Player(props: V3PlayerProps) {
     }
   }, [src, recordingId, sRef, apiBase, authHeaders, ensureSessionCookie, waitForSessionReady, playHls, sendStopIntent, t, duration, startRecordingPlayback]);
 
-  const stopStream = useCallback(async (): Promise<void> => {
+  const stopStream = useCallback(async (skipClose: boolean = false): Promise<void> => {
     if (hlsRef.current) hlsRef.current.destroy();
     if (videoRef.current) {
       videoRef.current.pause();
@@ -727,6 +940,7 @@ function V3Player(props: V3PlayerProps) {
     clearVodRetry();
     clearVodFetch();
     activeRecordingRef.current = null;
+    setActiveRecordingId(null);
     if (sessionId) {
       await sendStopIntent(sessionId);
     }
@@ -738,7 +952,7 @@ function V3Player(props: V3PlayerProps) {
     setSeekableEnd(0);
     setCurrentPlaybackTime(0);
     setStatus('stopped');
-    if (onClose) onClose();
+    if (onClose && !skipClose) onClose();
   }, [clearVodFetch, clearVodRetry, onClose, sendStopIntent, sessionId]);
 
   const handleRetry = useCallback(async () => {
@@ -749,6 +963,8 @@ function V3Player(props: V3PlayerProps) {
       void startStream();
     }
   }, [stopStream, startStream]);
+
+
 
   // --- Effects ---
 
@@ -814,8 +1030,17 @@ function V3Player(props: V3PlayerProps) {
 
     const onError = () => {
       const err = videoEl.error;
+      console.error('[V3Player] Video Element Error:', err);
+
+      // Report to backend (triggers fallback if code=3)
+      if (err && sessionIdRef.current) {
+        // Run in background
+        void reportError('error', err.code, err.message);
+      }
+
       setStatus('error');
-      setError(err?.message || t('player.error'));
+      // Append video error to any existing error for full context
+      setError(prev => `Video Error: ${err?.code} (${err?.message}) | Prev: ${prev}`);
     };
 
     videoEl.addEventListener('waiting', onWaiting);
@@ -835,7 +1060,7 @@ function V3Player(props: V3PlayerProps) {
       videoEl.removeEventListener('pause', onPause);
       videoEl.removeEventListener('error', onError);
     };
-  }, [t]);
+  }, [reportError]);
 
   useEffect(() => {
     const videoEl = videoRef.current;
@@ -949,10 +1174,49 @@ function V3Player(props: V3PlayerProps) {
     const onFsChange = () => setIsFullscreen(!!document.fullscreenElement);
     const onPipChange = () => setIsPip(!!document.pictureInPictureElement);
 
+    // Safari Native Fullscreen Handler - Switch to DVR profile on enter
+    const onWebkitFullscreenChange = () => {
+      const video = videoRef.current;
+      if (!video || !isSafari) return;
+
+      // Check if entering or leaving fullscreen
+      const isInFullscreen = (video as any).webkitDisplayingFullscreen;
+
+      if (isInFullscreen && selectedProfile !== 'safari_hevc_hw_ll') {
+        console.info('[V3Player] Safari entered native fullscreen. Switching to safari_hevc_hw_ll (LL-HLS DVR)');
+        // Switch to LL-HLS DVR profile for native controls with timeline scrubber
+        setSelectedProfile('safari_hevc_hw_ll');
+
+        // Restart stream with new profile
+        if (sessionIdRef.current || src) {
+          stopStream(true).then(() => {
+            startStream();
+          });
+        }
+      } else if (!isInFullscreen && selectedProfile === 'safari_hevc_hw_ll') {
+        console.info('[V3Player] Safari exited native fullscreen. Switching back to safari profile');
+        // Switch back to standard safari profile for inline playback
+        setSelectedProfile('safari');
+
+        // Restart stream with inline profile
+        if (sessionIdRef.current || src) {
+          stopStream(true).then(() => {
+            startStream();
+          });
+        }
+      }
+    };
+
     document.addEventListener('fullscreenchange', onFsChange);
     if (videoRef.current) {
       videoRef.current.addEventListener('enterpictureinpicture', onPipChange);
       videoRef.current.addEventListener('leavepictureinpicture', onPipChange);
+
+      // Safari-specific fullscreen events
+      if (isSafari) {
+        videoRef.current.addEventListener('webkitbeginfullscreen', onWebkitFullscreenChange);
+        videoRef.current.addEventListener('webkitendfullscreen', onWebkitFullscreenChange);
+      }
     }
 
     return () => {
@@ -960,9 +1224,19 @@ function V3Player(props: V3PlayerProps) {
       if (videoRef.current) {
         videoRef.current.removeEventListener('enterpictureinpicture', onPipChange);
         videoRef.current.removeEventListener('leavepictureinpicture', onPipChange);
+
+        if (isSafari) {
+          videoRef.current.removeEventListener('webkitbeginfullscreen', onWebkitFullscreenChange);
+          videoRef.current.removeEventListener('webkitendfullscreen', onWebkitFullscreenChange);
+        }
       }
     };
-  }, []);
+  }, [isSafari, selectedProfile, stopStream, startStream, src]);
+
+  // Persist Profile Selection
+  useEffect(() => {
+    localStorage.setItem('xg2g_stream_profile', selectedProfile);
+  }, [selectedProfile]);
 
   // Update sRef on channel change
   useEffect(() => {
@@ -1037,9 +1311,12 @@ function V3Player(props: V3PlayerProps) {
     display: 'block'
   };
 
-  const spinnerLabel = (status === 'starting' || status === 'priming' || status === 'buffering' || status === 'building')
-    ? `${t(`player.statusStates.${status}`, { defaultValue: status })}…`
-    : '';
+  const spinnerLabel =
+    status === 'starting' || status === 'priming' || status === 'buffering' || status === 'building'
+      ? (status === 'buffering' && playbackMode === 'VOD' && activeRecordingRef.current)
+        ? t('player.preparingDirectPlay', 'Preparing Direct Play...') // Show explicit preparing for VOD buffering
+        : `${t(`player.statusStates.${status}`, { defaultValue: status })}…`
+      : '';
 
   const windowDuration = Math.max(0, seekableEnd - seekableStart);
   const relativePosition = Math.min(windowDuration, Math.max(0, currentPlaybackTime - seekableStart));
@@ -1048,10 +1325,10 @@ function V3Player(props: V3PlayerProps) {
   const isAtLiveEdge = isLiveMode && windowDuration > 0 && Math.abs(seekableEnd - currentPlaybackTime) < 2;
 
   return (
-    <div className="v3-player-container" style={containerStyle}>
+    <div ref={containerRef} className="v3-player-container" style={containerStyle}>
       {onClose && (
         <button
-          onClick={stopStream}
+          onClick={() => void stopStream()}
           className="close-btn"
           aria-label={t('player.closePlayer')}
         >
@@ -1077,8 +1354,21 @@ function V3Player(props: V3PlayerProps) {
       <div className="video-wrapper">
         {channel && <h3 className="overlay-title">{channel.name}</h3>}
 
+        {/* PREPARING Overlay (VOD Remux) */}
+        {preparing && (
+          <div className="spinner-overlay">
+            <div className="spinner"></div>
+            <div className="spinner-label">
+              {preparing.message || 'Preparing video...'}
+              {preparing.eta && <div style={{ fontSize: '0.9em', opacity: 0.8, marginTop: '8px' }}>
+                (~{preparing.eta}s)
+              </div>}
+            </div>
+          </div>
+        )}
+
         {/* Buffering Spinner */}
-        {(status === 'starting' || status === 'priming' || status === 'buffering' || status === 'building') && (
+        {!preparing && (status === 'starting' || status === 'priming' || status === 'buffering' || status === 'building') && (
           <div className="spinner-overlay">
             <div className="spinner"></div>
             <div className="spinner-label">{spinnerLabel}</div>
@@ -1087,7 +1377,10 @@ function V3Player(props: V3PlayerProps) {
 
         <video
           ref={videoRef}
-          controls
+          controls={false}
+          playsInline
+          webkit-playsinline=""
+          preload="metadata"
           autoPlay={!!autoStart}
           muted={!!autoStart}
           style={videoStyle}
@@ -1195,6 +1488,19 @@ function V3Player(props: V3PlayerProps) {
           )
         )}
 
+        {!src && !recordingId && status === 'idle' && (
+          <select
+            className="bg-input"
+            value={selectedProfile}
+            onChange={(e) => setSelectedProfile(e.target.value)}
+            style={{ marginRight: '10px', padding: '8px' }}
+          >
+            <option value="auto">Auto</option>
+            <option value="safari">Safari (H.264)</option>
+            <option value="safari_hevc_hw">Safari HEVC (GPU) ⚡</option>
+          </select>
+        )}
+
         {!autoStart && !src && !recordingId && (
           <button
             className="btn-primary"
@@ -1204,6 +1510,16 @@ function V3Player(props: V3PlayerProps) {
             ▶ {t('common.startStream')}
           </button>
         )}
+
+        {/* DVR Mode Button (Safari Only / Fallback) */}
+        <button
+          className="btn-primary"
+          onClick={enterDVRMode}
+          title={t('player.dvrMode', 'DVR Mode (Native)')}
+          style={{ display: isSafari ? 'inline-flex' : 'none', background: 'rgba(234, 179, 8, 0.8)', borderColor: 'rgba(234, 179, 8, 0.4)' }}
+        >
+          📺 DVR
+        </button>
 
         {/* Volume Control */}
         <div className="volume-control">
@@ -1242,13 +1558,43 @@ function V3Player(props: V3PlayerProps) {
         </button>
 
         {!onClose && (
-          <button onClick={stopStream} className="btn-danger">
+          <button onClick={() => void stopStream()} className="btn-danger">
             ⏹ {t('common.stop')}
           </button>
         )}
       </div>
+      {/* Resume Overlay */}
+      {showResumeOverlay && resumeState && (
+        <div className="v3-player-resume-overlay">
+          <div className="v3-player-resume-content">
+            <h3>{t('player.resumeTitle', 'Resume Playback?')}</h3>
+            <p>{t('player.resumePrompt', { time: formatClock(resumeState.pos_seconds) })}</p>
+            <div className="v3-player-resume-actions">
+              <button
+                className="v3-button primary"
+                onClick={() => {
+                  seekWhenReady(resumeState.pos_seconds);
+                  setShowResumeOverlay(false);
+                }}
+              >
+                {t('player.resumeAction', 'Resume')}
+              </button>
+              <button
+                className="v3-button secondary"
+                onClick={() => {
+                  seekWhenReady(0);
+                  setShowResumeOverlay(false);
+                }}
+              >
+                {t('player.startOver', 'Start Over')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 export default V3Player;
+// cspell:ignore remux arrowleft arrowright enterpictureinpicture leavepictureinpicture kbps Remux

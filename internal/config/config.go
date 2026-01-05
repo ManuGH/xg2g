@@ -64,6 +64,9 @@ type Enigma2Config struct {
 	RateLimit             int    `yaml:"rateLimit,omitempty"`  // requests/sec
 	RateBurst             int    `yaml:"rateBurst,omitempty"`
 	UserAgent             string `yaml:"userAgent,omitempty"`
+	// FFmpeg stream probing settings (for OSCam-emu relay compatibility)
+	AnalyzeDuration string `yaml:"analyzeDuration,omitempty"` // e.g. "10s", default: "2s"
+	ProbeSize       string `yaml:"probeSize,omitempty"`       // e.g. "10M", default: "10M"
 }
 
 // EPGConfig holds EPG configuration
@@ -96,6 +99,7 @@ type RecordingPathMapping struct {
 type ScopedToken struct {
 	Token  string   `yaml:"token"`
 	Scopes []string `yaml:"scopes"`
+	User   string   `yaml:"user,omitempty"`
 }
 
 // APIConfig holds API server configuration
@@ -211,9 +215,11 @@ type AppConfig struct {
 	E2Retries     int
 	E2Backoff     time.Duration
 	E2MaxBackoff  time.Duration
-	E2RateLimit   int
-	E2RateBurst   int
-	E2UserAgent   string
+	E2RateLimit       int
+	E2RateBurst       int
+	E2UserAgent       string
+	E2AnalyzeDuration string // FFmpeg -analyzeduration (e.g. "10s")
+	E2ProbeSize       string // FFmpeg -probesize (e.g. "10M")
 
 	// FFmpeg Config (Phase 8-4)
 	FFmpegBin         string
@@ -622,6 +628,12 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 	}
 	if src.Enigma2.UserAgent != "" {
 		dst.E2UserAgent = src.Enigma2.UserAgent
+	}
+	if src.Enigma2.AnalyzeDuration != "" {
+		dst.E2AnalyzeDuration = src.Enigma2.AnalyzeDuration
+	}
+	if src.Enigma2.ProbeSize != "" {
+		dst.E2ProbeSize = src.Enigma2.ProbeSize
 	}
 
 	// HDHomeRun

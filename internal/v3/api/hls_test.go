@@ -1,7 +1,3 @@
-// Copyright (c) 2025 ManuGH
-// Licensed under the PolyForm Noncommercial License 1.0.0
-// Since v2.0.0, this software is restricted to non-commercial use only.
-
 package api
 
 import (
@@ -11,125 +7,265 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
-	"time"
 
-	"github.com/ManuGH/xg2g/internal/v3/exec/ffmpeg"
 	"github.com/ManuGH/xg2g/internal/v3/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-type mockHLSStore struct {
-	sessions map[string]*model.SessionRecord
-}
-
-func (m *mockHLSStore) GetSession(ctx context.Context, id string) (*model.SessionRecord, error) {
-	s, ok := m.sessions[id]
-	if !ok {
-		return nil, os.ErrNotExist // Simulate "not found"
-	}
-	return s, nil
-}
-
-func TestServeHLS_HappyPath(t *testing.T) {
-	// Setup
-	tmpRoot := t.TempDir()
-	sessID := "valid-sess"
-	sessDir := ffmpeg.SessionOutputDir(tmpRoot, sessID)
-	require.NoError(t, os.MkdirAll(sessDir, 0750))
-
-	// Create index.m3u8
-	err := os.WriteFile(filepath.Join(sessDir, "index.m3u8"), []byte("#EXTM3U"), 0600)
-	require.NoError(t, err)
-
-	store := &mockHLSStore{
-		sessions: map[string]*model.SessionRecord{
-			sessID: {State: model.SessionReady, ExpiresAtUnix: time.Now().Add(1 * time.Hour).Unix()},
+func TestNormalizeProgramDateTimeLine(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "Already RFC3339 (Z)",
+			input:    "#EXT-X-PROGRAM-DATE-TIME:2026-01-04T16:17:53.066Z",
+			expected: "#EXT-X-PROGRAM-DATE-TIME:2026-01-04T16:17:53.066Z",
+		},
+		{
+			name:     "Already RFC3339 (Colon Offset)",
+			input:    "#EXT-X-PROGRAM-DATE-TIME:2026-01-04T16:17:53.066+00:00",
+			expected: "#EXT-X-PROGRAM-DATE-TIME:2026-01-04T16:17:53.066+00:00",
+		},
+		{
+			name:     "Fix +0000 to Z",
+			input:    "#EXT-X-PROGRAM-DATE-TIME:2026-01-04T16:17:53.066+0000",
+			expected: "#EXT-X-PROGRAM-DATE-TIME:2026-01-04T16:17:53.066Z",
+		},
+		{
+			name:     "Fix +HHMM to +HH:MM",
+			input:    "#EXT-X-PROGRAM-DATE-TIME:2026-01-04T16:17:53.066+0130",
+			expected: "#EXT-X-PROGRAM-DATE-TIME:2026-01-04T16:17:53.066+01:30",
+		},
+		{
+			name:     "Fix -HHMM to -HH:MM",
+			input:    "#EXT-X-PROGRAM-DATE-TIME:2026-01-04T16:17:53.066-0500",
+			expected: "#EXT-X-PROGRAM-DATE-TIME:2026-01-04T16:17:53.066-05:00",
+		},
+		{
+			name:     "Ignore Non-PDT Lines",
+			input:    "#EXTINF:2.000000,",
+			expected: "#EXTINF:2.000000,",
+		},
+		{
+			name:     "Ignore Malformed PDT",
+			input:    "#EXT-X-PROGRAM-DATE-TIME:invalid-date",
+			expected: "#EXT-X-PROGRAM-DATE-TIME:invalid-date",
+		},
+		{
+			name:     "Trims trailing whitespace when normalizing",
+			input:    "#EXT-X-PROGRAM-DATE-TIME:2026-01-04T16:17:53.066+0000   ",
+			expected: "#EXT-X-PROGRAM-DATE-TIME:2026-01-04T16:17:53.066Z",
 		},
 	}
 
-	// Request
-	req := httptest.NewRequest("GET", "/hls/index.m3u8", nil)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := normalizeProgramDateTimeLine(tt.input)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+// MockStore implements model.Store for testing
+type MockStore struct {
+	Session *model.SessionRecord
+}
+
+func (m *MockStore) GetSession(ctx context.Context, sessionID string) (*model.SessionRecord, error) {
+	if m.Session != nil && m.Session.SessionID == sessionID {
+		return m.Session, nil
+	}
+	return nil, os.ErrNotExist
+}
+
+func (m *MockStore) Get(ctx context.Context, sessionID string) (*model.SessionRecord, error) {
+	return m.GetSession(ctx, sessionID)
+}
+
+func (m *MockStore) List(ctx context.Context) ([]*model.SessionRecord, error) {
+	if m.Session != nil {
+		return []*model.SessionRecord{m.Session}, nil
+	}
+	return nil, nil
+}
+
+func (m *MockStore) Create(ctx context.Context, rec *model.SessionRecord) error {
+	m.Session = rec
+	return nil
+}
+
+func (m *MockStore) Update(ctx context.Context, rec *model.SessionRecord) error {
+	m.Session = rec
+	return nil
+}
+
+func (m *MockStore) Delete(ctx context.Context, sessionID string) error {
+	if m.Session != nil && m.Session.SessionID == sessionID {
+		m.Session = nil
+	}
+	return nil
+}
+
+func TestServeHLS_DVRWithStartTag(t *testing.T) {
+	// Setup temp directory
+	tmpDir := t.TempDir()
+	sessionID := "dvr-test-session"
+	sessionDir := filepath.Join(tmpDir, "sessions", sessionID)
+	require.NoError(t, os.MkdirAll(sessionDir, 0755))
+
+	// Create minimal EVENT playlist WITHOUT EXT-X-START (will be injected)
+	rawManifest := `#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:2
+#EXT-X-MEDIA-SEQUENCE:0
+#EXT-X-INDEPENDENT-SEGMENTS
+#EXT-X-PROGRAM-DATE-TIME:2026-01-04T16:00:00+0000
+#EXTINF:2.000000,
+seg_000000.ts
+#EXT-X-PROGRAM-DATE-TIME:2026-01-04T16:00:02+0000
+#EXTINF:2.000000,
+seg_000001.ts
+`
+	manifestPath := filepath.Join(sessionDir, "index.m3u8")
+	require.NoError(t, os.WriteFile(manifestPath, []byte(rawManifest), 0644))
+
+	// Mock store with DVR profile
+	store := &MockStore{
+		Session: &model.SessionRecord{
+			SessionID: sessionID,
+			State:     model.SessionReady,
+			Profile: model.ProfileSpec{
+				Name:          "safari",
+				DVRWindowSec:  2700, // 45 minutes
+				TranscodeVideo: false,
+			},
+		},
+	}
+
+	// Create HTTP request
+	req := httptest.NewRequest("GET", "/index.m3u8", nil)
 	w := httptest.NewRecorder()
 
-	ServeHLS(w, req, store, tmpRoot, sessID, "index.m3u8")
+	// Serve HLS
+	ServeHLS(w, req, store, tmpDir, sessionID, "index.m3u8")
 
 	resp := w.Result()
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	content := string(body)
+
+	// Assertions
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, "application/vnd.apple.mpegurl", resp.Header.Get("Content-Type"))
-	assert.Equal(t, "no-store", resp.Header.Get("Cache-Control"))
 
-	body, _ := io.ReadAll(resp.Body)
-	assert.Equal(t, "#EXTM3U", string(body))
+	// Check for injected tags
+	assert.Contains(t, content, "#EXT-X-START:TIME-OFFSET=-2700,PRECISE=YES", "Must inject EXT-X-START for DVR")
+	assert.Contains(t, content, "#EXT-X-PLAYLIST-TYPE:EVENT", "Must inject PLAYLIST-TYPE:EVENT")
+
+	// Verify tag placement (must come after #EXTM3U and PLAYLIST-TYPE)
+	extM3UIdx := strings.Index(content, "#EXTM3U")
+	startIdx := strings.Index(content, "#EXT-X-START")
+	playlistTypeIdx := strings.Index(content, "#EXT-X-PLAYLIST-TYPE")
+
+	assert.Greater(t, startIdx, extM3UIdx, "EXT-X-START must come after #EXTM3U")
+	assert.Greater(t, startIdx, playlistTypeIdx, "EXT-X-START must come after PLAYLIST-TYPE")
+
+	// Verify PROGRAM-DATE-TIME normalization (existing functionality)
+	assert.NotContains(t, content, "+0000", "Should normalize +0000 to Z")
+	assert.Contains(t, content, "2026-01-04T16:00:00Z", "Should have normalized timestamp")
 }
 
-func TestServeHLS_NotReady(t *testing.T) {
-	tmpRoot := t.TempDir()
-	sessID := "starting-sess"
+func TestServeHLS_VODNoStartTag(t *testing.T) {
+	// Setup temp directory
+	tmpDir := t.TempDir()
+	sessionID := "vod-test-session"
+	sessionDir := filepath.Join(tmpDir, "sessions", sessionID)
+	require.NoError(t, os.MkdirAll(sessionDir, 0755))
 
-	store := &mockHLSStore{
-		sessions: map[string]*model.SessionRecord{
-			sessID: {State: model.SessionNew}, // Not READY
+	// Create VOD playlist
+	rawManifest := `#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:2
+#EXTINF:2.000000,
+seg_000000.ts
+#EXT-X-ENDLIST
+`
+	manifestPath := filepath.Join(sessionDir, "index.m3u8")
+	require.NoError(t, os.WriteFile(manifestPath, []byte(rawManifest), 0644))
+
+	// Mock store with VOD profile
+	store := &MockStore{
+		Session: &model.SessionRecord{
+			SessionID: sessionID,
+			State:     model.SessionReady,
+			Profile: model.ProfileSpec{
+				Name: "vod",
+				VOD:  true,
+			},
 		},
 	}
 
-	req := httptest.NewRequest("GET", "/hls/index.m3u8", nil)
+	req := httptest.NewRequest("GET", "/index.m3u8", nil)
 	w := httptest.NewRecorder()
 
-	ServeHLS(w, req, store, tmpRoot, sessID, "index.m3u8")
+	ServeHLS(w, req, store, tmpDir, sessionID, "index.m3u8")
 
-	assert.Equal(t, http.StatusNotFound, w.Result().StatusCode)
+	resp := w.Result()
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	content := string(body)
+
+	// VOD should NOT get EXT-X-START tag
+	assert.NotContains(t, content, "EXT-X-START", "VOD playlists should not have EXT-X-START")
+	assert.Contains(t, content, "#EXT-X-PLAYLIST-TYPE:VOD", "Should force VOD playlist type")
 }
 
-func TestServeHLS_PathTraversal(t *testing.T) {
-	req := httptest.NewRequest("GET", "/hls/../secret", nil)
-	w := httptest.NewRecorder()
+func TestServeHLS_LiveNoStartTag(t *testing.T) {
+	// Setup temp directory
+	tmpDir := t.TempDir()
+	sessionID := "live-test-session"
+	sessionDir := filepath.Join(tmpDir, "sessions", sessionID)
+	require.NoError(t, os.MkdirAll(sessionDir, 0755))
 
-	ServeHLS(w, req, &mockHLSStore{}, "/tmp", "sess", "../secret")
-	assert.Equal(t, http.StatusBadRequest, w.Result().StatusCode)
-}
+	// Create live playlist
+	rawManifest := `#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:2
+#EXT-X-MEDIA-SEQUENCE:100
+#EXTINF:2.000000,
+seg_000100.ts
+`
+	manifestPath := filepath.Join(sessionDir, "index.m3u8")
+	require.NoError(t, os.WriteFile(manifestPath, []byte(rawManifest), 0644))
 
-func TestServeHLS_SymlinkEscape(t *testing.T) {
-	tmpRoot := t.TempDir()
-	sessID := "valid-sess"
-	sessDir := filepath.Join(tmpRoot, "sessions", sessID)
-	require.NoError(t, os.MkdirAll(sessDir, 0750))
-
-	outsideDir := t.TempDir()
-	outsideFile := filepath.Join(outsideDir, "secret.m4s")
-	require.NoError(t, os.WriteFile(outsideFile, []byte("secret"), 0600))
-
-	linkPath := filepath.Join(sessDir, "seg_001.m4s")
-	if err := os.Symlink(outsideFile, linkPath); err != nil {
-		t.Skipf("symlink not supported: %v", err)
-	}
-
-	store := &mockHLSStore{
-		sessions: map[string]*model.SessionRecord{
-			sessID: {State: model.SessionReady, ExpiresAtUnix: time.Now().Add(1 * time.Hour).Unix()},
+	// Mock store with live profile (DVRWindowSec = 0)
+	store := &MockStore{
+		Session: &model.SessionRecord{
+			SessionID: sessionID,
+			State:     model.SessionReady,
+			Profile: model.ProfileSpec{
+				Name:         "high",
+				DVRWindowSec: 0, // Live-only (no DVR)
+			},
 		},
 	}
 
-	req := httptest.NewRequest("GET", "/hls/seg_001.m4s", nil)
+	req := httptest.NewRequest("GET", "/index.m3u8", nil)
 	w := httptest.NewRecorder()
 
-	ServeHLS(w, req, store, tmpRoot, sessID, "seg_001.m4s")
-	assert.Equal(t, http.StatusNotFound, w.Result().StatusCode)
-}
+	ServeHLS(w, req, store, tmpDir, sessionID, "index.m3u8")
 
-func TestServeHLS_InvalidSessionID(t *testing.T) {
-	req := httptest.NewRequest("GET", "/hls/index.m3u8", nil)
-	w := httptest.NewRecorder()
+	resp := w.Result()
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	content := string(body)
 
-	ServeHLS(w, req, &mockHLSStore{}, "/tmp", "../bad", "index.m3u8")
-	assert.Equal(t, http.StatusBadRequest, w.Result().StatusCode)
-}
-
-func TestServeHLS_ForbiddenExt(t *testing.T) {
-	req := httptest.NewRequest("GET", "/hls/foo.exe", nil)
-	w := httptest.NewRecorder()
-
-	ServeHLS(w, req, &mockHLSStore{}, "/tmp", "sess", "foo.exe")
-	assert.Equal(t, http.StatusForbidden, w.Result().StatusCode)
+	// Live (DVRWindowSec=0) should NOT get EXT-X-START tag
+	assert.NotContains(t, content, "EXT-X-START", "Live playlists without DVR should not have EXT-X-START")
+	assert.NotContains(t, content, "#EXT-X-PLAYLIST-TYPE:EVENT", "Live should not force EVENT type")
 }

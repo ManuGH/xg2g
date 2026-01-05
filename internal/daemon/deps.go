@@ -13,6 +13,8 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/v3/bus"
+	"github.com/ManuGH/xg2g/internal/v3/resume"
+	"github.com/ManuGH/xg2g/internal/v3/scan"
 	"github.com/ManuGH/xg2g/internal/v3/shadow"
 	"github.com/ManuGH/xg2g/internal/v3/store"
 	"github.com/rs/zerolog"
@@ -56,7 +58,7 @@ type Deps struct {
 
 // V3ComponentSetter defines the interface for injecting v3 components
 type V3ComponentSetter interface {
-	SetV3Components(b bus.Bus, st store.StateStore)
+	SetV3Components(b bus.Bus, st store.StateStore, rs resume.Store, sm *scan.Manager)
 	HealthManager() *health.Manager
 }
 
@@ -67,6 +69,8 @@ type V3Config struct {
 	StoreBackend      string // "memory" or "bolt"
 	StorePath         string // Path to db file
 	TunerSlots        []int
+	UseWebIFStreams   bool
+	StreamPort        int // Direct stream port (e.g. 8001 for Enigma2, 17999 for OSCam-emu relay)
 	E2Host            string
 	E2TuneTimeout     time.Duration
 	E2Username        string
@@ -79,6 +83,8 @@ type V3Config struct {
 	E2RateLimit       int
 	E2RateBurst       int
 	E2UserAgent       string
+	E2AnalyzeDuration string // FFmpeg -analyzeduration (e.g. "10s")
+	E2ProbeSize       string // FFmpeg -probesize (e.g. "10M")
 	FFmpegBin         string
 	FFmpegKillTimeout time.Duration
 	HLSRoot           string
