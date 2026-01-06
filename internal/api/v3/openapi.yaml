@@ -573,6 +573,8 @@ components:
           $ref: "#/components/schemas/EPGConfig"
         picons:
           $ref: "#/components/schemas/PiconsConfig"
+        streaming:
+          $ref: "#/components/schemas/StreamingConfig"
         featureFlags:
           $ref: "#/components/schemas/FeatureFlags"
 
