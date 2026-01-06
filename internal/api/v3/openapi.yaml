@@ -374,9 +374,7 @@ components:
 
     FeatureFlags:
       type: object
-      properties:
-        instantTune:
-          type: boolean
+      properties: {}
 
     SeriesRuleRunReport:
       type: object
