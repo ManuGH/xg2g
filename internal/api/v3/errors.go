@@ -138,7 +138,7 @@ func RespondError(w http.ResponseWriter, r *http.Request, statusCode int, apiErr
 
 	// Add optional details if provided
 	if len(details) > 0 {
-		response.Details = details[0]
+		response.Details = &details[0]
 	}
 
 	// Set headers

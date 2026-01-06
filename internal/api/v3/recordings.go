@@ -754,18 +754,10 @@ func (s *Server) GetRecordingPlaybackInfo(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	var durationSec float32
-	if localPath != "" {
-		if d, err := ProbeDuration(r.Context(), localPath); err == nil {
-			durationSec = float32(d.Seconds())
-		}
-	}
-
 	resp := PlaybackInfo{
-		Mode:            mode,
-		Url:             url,
-		Reason:          &reason,
-		DurationSeconds: &durationSec,
+		Mode:   mode,
+		Url:    url,
+		Reason: &reason,
 	}
 
 	// DIAGNOSTIC LOG (Temporary)
