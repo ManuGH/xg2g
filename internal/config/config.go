@@ -146,6 +146,12 @@ type HDHRConfig struct {
 	PlexForceHLS *bool  `yaml:"plexForceHls,omitempty"`
 }
 
+// StreamingConfig holds streaming profile configuration
+type StreamingConfig struct {
+	DefaultProfile  string   `yaml:"default_profile" env:"XG2G_STREAM_PROFILE"`
+	AllowedProfiles []string `yaml:"allowed_profiles,omitempty"`
+}
+
 // AppConfig holds all configuration for the application
 type AppConfig struct {
 	Version           string
@@ -229,6 +235,9 @@ type AppConfig struct {
 
 	// HDHomeRun Configuration
 	HDHR HDHRConfig
+
+	// Streaming Configuration
+	Streaming StreamingConfig
 }
 
 // EngineConfig holds the Orchestrator engine settings
@@ -438,6 +447,14 @@ func (l *Loader) setDefaults(cfg *AppConfig) {
 	*cfg.HDHR.TunerCount = 4
 	cfg.HDHR.PlexForceHLS = new(bool)
 	*cfg.HDHR.PlexForceHLS = false
+
+	// Streaming Defaults (PR 5.1: Thin Client Fix)
+	if cfg.Streaming.DefaultProfile == "" {
+		cfg.Streaming.DefaultProfile = "auto"
+	}
+	if len(cfg.Streaming.AllowedProfiles) == 0 {
+		cfg.Streaming.AllowedProfiles = []string{"auto", "safari", "safari_hevc_hw"}
+	}
 }
 
 // loadFile loads configuration from a YAML file with STRICT parsing.
