@@ -99,6 +99,12 @@ jobs:
           make generate
           git diff --exit-code -- internal/api/server_gen.go
 
+      - name: Verify V3 OpenAPI server codegen is up-to-date
+        run: |
+          set -euo pipefail
+          oapi-codegen -package v3 -generate types,chi-server,spec -o internal/api/v3/server_gen.go internal/api/v3/openapi.yaml
+          git diff --exit-code -- internal/api/v3/server_gen.go
+
       - name: Build WebUI
         run: |
           set -euo pipefail
