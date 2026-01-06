@@ -40,6 +40,14 @@ export type IntentRequest = {
      */
     profile?: string;
     /**
+     * Hardware acceleration override (v3.1+).
+     * - auto: Server decides based on GPU availability
+     * - force: Force GPU encoding (fails if no GPU)
+     * - off: Force CPU encoding
+     *
+     */
+    hwaccel?: 'auto' | 'force' | 'off';
+    /**
      * Optional correlation ID for end-to-end tracing
      */
     correlationId?: string;
@@ -126,6 +134,43 @@ export type SessionRecord = {
     correlationId?: string;
     contextData?: {
         [key: string]: string;
+    };
+};
+
+export type ScanStatus = {
+    state?: 'idle' | 'running' | 'complete' | 'failed' | 'cancelled';
+    /**
+     * Unix timestamp of when the current or last scan started
+     */
+    started_at?: number;
+    /**
+     * Unix timestamp of when the last scan completed
+     */
+    finished_at?: number;
+    /**
+     * Total number of channels in the playlist
+     */
+    total_channels?: number;
+    /**
+     * Number of attempts (successful/failed) to probe channels so far
+     */
+    scanned_channels?: number;
+    /**
+     * Number of capabilities successfully updated in the store
+     */
+    updated_count?: number;
+    last_error?: string;
+};
+
+export type PlaybackFeedbackRequest = {
+    event: 'error' | 'warning' | 'info';
+    /**
+     * MediaError code if applicable
+     */
+    code?: number;
+    message?: string;
+    details?: {
+        [key: string]: unknown;
     };
 };
 
@@ -312,19 +357,6 @@ export type AppConfig = {
 export type Bouquet = {
     name?: string;
     services?: number;
-};
-
-export type Service = {
-    id?: string;
-    name?: string;
-    group?: string;
-    logo_url?: string;
-    number?: string;
-    enabled?: boolean;
-    /**
-     * Service reference for streaming (extracted from M3U URL)
-     */
-    service_ref?: string;
 };
 
 export type NowNextRequest = {
@@ -538,6 +570,25 @@ export type ResumeSummary = {
     duration_seconds?: number;
     finished?: boolean;
     updated_at?: string;
+};
+
+export type Service = {
+    /**
+     * Service identifier
+     */
+    id?: string;
+    /**
+     * Service/channel name
+     */
+    name?: string;
+    /**
+     * Enigma2 service reference
+     */
+    ref?: string;
+    /**
+     * Whether service is enabled
+     */
+    enabled?: boolean;
 };
 
 export type RecordingResponse = {
@@ -997,6 +1048,29 @@ export type GetRecordingHlsPlaylistResponses = {
 
 export type GetRecordingHlsPlaylistResponse = GetRecordingHlsPlaylistResponses[keyof GetRecordingHlsPlaylistResponses];
 
+export type GetRecordingHlsPlaylistHeadData = {
+    body?: never;
+    path: {
+        recordingId: string;
+    };
+    query?: never;
+    url: '/recordings/{recordingId}/playlist.m3u8';
+};
+
+export type GetRecordingHlsPlaylistHeadErrors = {
+    /**
+     * Recording not found
+     */
+    404: unknown;
+};
+
+export type GetRecordingHlsPlaylistHeadResponses = {
+    /**
+     * HLS playlist metadata
+     */
+    200: unknown;
+};
+
 export type GetRecordingHlsTimeshiftData = {
     body?: never;
     path: {
@@ -1034,6 +1108,29 @@ export type GetRecordingHlsTimeshiftResponses = {
 };
 
 export type GetRecordingHlsTimeshiftResponse = GetRecordingHlsTimeshiftResponses[keyof GetRecordingHlsTimeshiftResponses];
+
+export type GetRecordingHlsTimeshiftHeadData = {
+    body?: never;
+    path: {
+        recordingId: string;
+    };
+    query?: never;
+    url: '/recordings/{recordingId}/timeshift.m3u8';
+};
+
+export type GetRecordingHlsTimeshiftHeadErrors = {
+    /**
+     * Recording not found
+     */
+    404: unknown;
+};
+
+export type GetRecordingHlsTimeshiftHeadResponses = {
+    /**
+     * HLS playlist metadata
+     */
+    200: unknown;
+};
 
 export type GetRecordingHlsCustomSegmentData = {
     body?: never;
@@ -1073,6 +1170,30 @@ export type GetRecordingHlsCustomSegmentResponses = {
 };
 
 export type GetRecordingHlsCustomSegmentResponse = GetRecordingHlsCustomSegmentResponses[keyof GetRecordingHlsCustomSegmentResponses];
+
+export type GetRecordingHlsCustomSegmentHeadData = {
+    body?: never;
+    path: {
+        recordingId: string;
+        segment: string;
+    };
+    query?: never;
+    url: '/recordings/{recordingId}/{segment}';
+};
+
+export type GetRecordingHlsCustomSegmentHeadErrors = {
+    /**
+     * Segment not found
+     */
+    404: unknown;
+};
+
+export type GetRecordingHlsCustomSegmentHeadResponses = {
+    /**
+     * Segment metadata
+     */
+    200: unknown;
+};
 
 export type CreateSessionData = {
     body?: never;
@@ -1311,6 +1432,29 @@ export type DeleteStreamsIdResponses = {
 
 export type DeleteStreamsIdResponse = DeleteStreamsIdResponses[keyof DeleteStreamsIdResponses];
 
+export type ReportPlaybackFeedbackData = {
+    body?: PlaybackFeedbackRequest;
+    path: {
+        sessionId: string;
+    };
+    query?: never;
+    url: '/sessions/{sessionId}/feedback';
+};
+
+export type ReportPlaybackFeedbackErrors = {
+    /**
+     * Session not found
+     */
+    404: unknown;
+};
+
+export type ReportPlaybackFeedbackResponses = {
+    /**
+     * Feedback accepted
+     */
+    202: unknown;
+};
+
 export type GetLogsData = {
     body?: never;
     path?: never;
@@ -1458,6 +1602,72 @@ export type UpdateSeriesRuleResponses = {
 
 export type UpdateSeriesRuleResponse = UpdateSeriesRuleResponses[keyof UpdateSeriesRuleResponses];
 
+export type GetSystemScanStatusData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/system/scan';
+};
+
+export type GetSystemScanStatusErrors = {
+    /**
+     * Unauthorized
+     */
+    401: ApiError;
+    /**
+     * Scanner not initialized
+     */
+    503: ApiError;
+};
+
+export type GetSystemScanStatusError = GetSystemScanStatusErrors[keyof GetSystemScanStatusErrors];
+
+export type GetSystemScanStatusResponses = {
+    /**
+     * Current scan status
+     */
+    200: ScanStatus;
+};
+
+export type GetSystemScanStatusResponse = GetSystemScanStatusResponses[keyof GetSystemScanStatusResponses];
+
+export type TriggerSystemScanData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/system/scan';
+};
+
+export type TriggerSystemScanErrors = {
+    /**
+     * Unauthorized
+     */
+    401: ApiError;
+    /**
+     * Internal Server Error
+     */
+    500: ApiError;
+};
+
+export type TriggerSystemScanError = TriggerSystemScanErrors[keyof TriggerSystemScanErrors];
+
+export type TriggerSystemScanResponses = {
+    /**
+     * Scan already running
+     */
+    200: {
+        status?: string;
+    };
+    /**
+     * Scan initiated
+     */
+    202: {
+        status?: string;
+    };
+};
+
+export type TriggerSystemScanResponse = TriggerSystemScanResponses[keyof TriggerSystemScanResponses];
+
 export type CreateIntentData = {
     body: IntentRequest;
     path?: never;
@@ -1601,3 +1811,31 @@ export type ServeHlsResponses = {
 };
 
 export type ServeHlsResponse = ServeHlsResponses[keyof ServeHlsResponses];
+
+export type ServeHlsHeadData = {
+    body?: never;
+    path: {
+        sessionID: string;
+        filename: string;
+    };
+    query?: never;
+    url: '/sessions/{sessionID}/hls/{filename}';
+};
+
+export type ServeHlsHeadErrors = {
+    /**
+     * File not found
+     */
+    404: unknown;
+    /**
+     * V3 control plane unavailable
+     */
+    503: unknown;
+};
+
+export type ServeHlsHeadResponses = {
+    /**
+     * HLS content metadata (headers only)
+     */
+    200: unknown;
+};

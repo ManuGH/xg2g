@@ -372,6 +372,22 @@ components:
         baseUrl:
           type: string
 
+    StreamingConfig:
+      type: object
+      description: Streaming profile configuration (PR 5.1)
+      properties:
+        default_profile:
+          type: string
+          enum: [auto, safari, safari_hevc_hw]
+          description: Default streaming profile for new sessions
+          default: auto
+        allowed_profiles:
+          type: array
+          items:
+            type: string
+            enum: [auto, safari, safari_hevc_hw]
+          description: List of allowed streaming profiles
+
     FeatureFlags:
       type: object
       properties: {}

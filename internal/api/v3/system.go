@@ -130,6 +130,12 @@ func (s *Server) GetSystemConfig(w http.ResponseWriter, r *http.Request) {
 		BaseUrl: &cfg.PiconBase,
 	}
 
+	// PR 5.1: Add streaming config
+	streaming := &StreamingConfig{
+		DefaultProfile:  &cfg.Streaming.DefaultProfile,
+		AllowedProfiles: &cfg.Streaming.AllowedProfiles,
+	}
+
 	resp := AppConfig{
 		Version:   &cfg.Version,
 		DataDir:   &cfg.DataDir,
@@ -141,7 +147,8 @@ func (s *Server) GetSystemConfig(w http.ResponseWriter, r *http.Request) {
 			Enabled: &cfg.EPGEnabled,
 			Source:  &epgSource,
 		},
-		Picons: picons,
+		Picons:    picons,
+		Streaming: streaming,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
