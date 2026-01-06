@@ -856,6 +856,22 @@ components:
         finished: { type: boolean }
         updated_at: { type: string, format: date-time }
 
+    Service:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Service identifier
+        name:
+          type: string
+          description: Service/channel name
+        ref:
+          type: string
+          description: Enigma2 service reference
+        enabled:
+          type: boolean
+          description: Whether service is enabled
+
     RecordingResponse:
       type: object
       properties:
