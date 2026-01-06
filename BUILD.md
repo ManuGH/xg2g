@@ -69,7 +69,7 @@ go test ./...
 ### Run Specific Test Package
 
 ```bash
-go test -v ./internal/v3/worker
+go test -v ./internal/pipeline/worker
 ```
 
 ### Build Application Binary (non-Docker)

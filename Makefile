@@ -592,7 +592,8 @@ reset: ## Full reset: Stop, Clean, Rebuild UI, and Start Dev
 	@$(MAKE) stop-local || true
 	@$(MAKE) clean
 	@echo "🧹 Clearing data/ directories..."
-	@rm -rf data/v3-hls data/v3-store data/playlist.m3u data/xmltv.xml
+	@rm -rf data/hls data/v3-store data/playlist.m3u data/xmltv.xml
+
 	@$(MAKE) ui-build
 	@$(MAKE) dev
 

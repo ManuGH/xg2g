@@ -17,6 +17,16 @@ A new mode `ReadyStrict` has been added.
 - **Strict (True)**: `/readyz` returns 503 if the upstream enigma2 receiver is unreachable.
 - Enable via ENV: `XG2G_READY_STRICT=true`
 
+### Removed Configuration Keys
+
+The following keys were removed in PR 4 (Config Cleanup) as they had no effect:
+
+- `XG2G_INSTANT_TUNE` - Previously parsed but had no implementation
+- `XG2G_SHADOW_INTENTS` - Unused shadow canary feature
+- `XG2G_SHADOW_TARGET` - Dependent on `XG2G_SHADOW_INTENTS`
+
+If these keys are set, they will be ignored with a warning logged.
+
 ---
 
 ## Configuration Methods
@@ -72,7 +82,7 @@ epg:
   days: 7
 ```
 
-`version` and `configVersion` are ignored; the schema is fixed to v3. Use `XG2G_V3_CONFIG_STRICT=false` to disable strict validation if needed.
+`version` and `configVersion` are ignored; the schema is fixed to v3. Use `XG2G_CONFIG_STRICT=false` to disable strict validation if needed.
 
 Load it with:
 
@@ -95,6 +105,98 @@ If running in Kubernetes or Docker Compose with healthchecks:
   - If `XG2G_READY_STRICT=false` (default): Returns 200 immediately.
   - If `XG2G_READY_STRICT=true`: Pings Enigma2 receiver (timeout 2s). Returns 503 if unreachable.
 
+## V3 API (HLS) Setup
+
+### Overview
+
+V3 is the production streaming backend for xg2g and exposes HLS streaming capability under the `/api/v3` namespace. It utilizes a worker-based architecture to manage FFmpeg sessions and intents for robust playback.
+
+### Base URL and Endpoints
+
+The V3 API is strictly mounted under the `/api/v3` base path.
+
+**Example Endpoints:**
+
+- `/api/v3/sessions` (Session Management)
+- `/api/v3/sessions/{sessionID}/hls/{filename}` (HLS Playback)
+
+> **Note:** This mounting path is enforced by the V3 handler factory (`v3.NewHandler`) and cannot be changed.
+
+### LAN Guard Defaults (Local Network Only)
+
+The V3 API is restricted to LAN clients by default via **LAN Guard**. This creates a secure-by-default posture where sensitive streaming endpoints are not exposed to the public internet.
+
+Requests from outside the LAN (including those traversing a reverse proxy) require:
+
+1. Correct **IP allowlist** behavior (verifying the source IP).
+2. Correct **Trusted Proxy** configuration (if behind a reverse proxy).
+
+### Trusted Proxies (Reverse Proxy / X-Forwarded-For)
+
+If you run xg2g behind a reverse proxy (e.g., Nginx, Traefik, Cloudflare Tunnel), you **must** configure trusted proxy CIDRs. This allows the server to correctly interpret the `X-Forwarded-For` header to determine the actual client IP.
+
+**Configuration:** `XG2G_TRUSTED_PROXIES` (Env)
+
+- **Format:** Comma-separated CIDRs. Whitespace and empty entries are ignored.
+- **Example (Docker/Localhost):** `127.0.0.1/32,172.16.0.0/12`
+- **Example (Cloudflare):** Trust only your specialized connector or ingress IP, not the entire list of Cloudflare IPs if possible.
+
+> **Warning:** If trusted proxies are not configured, external requests will appear to come from the proxy's internal IP (often allowed), defeating LAN Guard security, OR legitimate remote access will be blocked if the proxy IP isn't trusted.
+
+### Authentication and Admin Token Expectations
+
+V3 endpoints require a valid token **AND** specific scopes.
+
+- **Required Scopes:**
+  - `v3:write` - For creating intents and starting streams.
+
+**Example Request:**
+
+```bash
+curl -H "Authorization: Bearer <YOUR_API_TOKEN>" http://localhost:8080/api/v3/sessions
+```
+
+### Deployment
+
+#### Docker (Recommended)
+
+```bash
+docker run -d \
+  -e XG2G_OWI_BASE=http://192.168.1.50 \
+  -e XG2G_ENGINE_ENABLED=true \
+  -e XG2G_API_TOKEN=secret-admin-token \
+  -p 8080:8080 \
+  ghcr.io/manugh/xg2g:latest
+```
+
+#### Docker Compose (.env)
+
+```ini
+XG2G_OWI_BASE=http://192.168.1.50
+XG2G_ENGINE_ENABLED=true
+XG2G_API_TOKEN=secret-admin-token
+```
+
+#### Bare Metal
+
+```bash
+export XG2G_OWI_BASE=http://192.168.1.50
+export XG2G_ENGINE_ENABLED=true
+export XG2G_API_TOKEN=secret-admin-token
+./xg2g start
+```
+
+> **Note:** V3 worker is enabled by default in most deployments. Ensure it is enabled (`XG2G_ENGINE_ENABLED=true`) if you have overridden defaults.
+
+### Verification
+
+Perform these smoke checks to verify your V3 setup:
+
+1. **Check Logs:** Look for "starting v3 worker..." in the startup logs.
+2. **Health Check:** `curl http://localhost:8080/healthz` should return 200 OK.
+3. **Session List:** `curl -H "Authorization: Bearer <token>" http://localhost:8080/api/v3/sessions` should return a JSON array (empty `[]` is fine).
+4. **Ready Check:** `curl http://localhost:8080/readyz?verbose=true` to see component status.
+
 ## Security & Rate Limiting
 
 ### Authentication
@@ -109,7 +211,7 @@ xg2g supports multiple authentication methods:
 v3 endpoints require scopes in addition to a valid token. Configure scopes with:
 
 - `XG2G_API_TOKEN_SCOPES` for the primary token
-- `XG2G_API_TOKENS` for additional scoped tokens (JSON recommended; legacy format still supported)
+- `XG2G_API_TOKENS` for additional scoped tokens (JSON recommended; simple format 'token=scopes' supported)
 
 Tokens without scopes are rejected (fail-closed).
 
@@ -142,11 +244,11 @@ api:
 **Environment Variables**:
 
 ```bash
-export XG2G_RATELIMIT=true
-export XG2G_RATELIMIT_GLOBAL=100
-export XG2G_RATELIMIT_AUTH=10
-export XG2G_RATELIMIT_BURST=20
-export XG2G_RATELIMIT_WHITELIST="192.168.1.0/24,10.0.0.0/8"
+export XG2G_RATE_LIMIT_ENABLED=true
+export XG2G_RATE_LIMIT_GLOBAL=100
+export XG2G_RATE_LIMIT_AUTH=10
+export XG2G_RATE_LIMIT_BURST=20
+export XG2G_RATE_LIMIT_WHITELIST="192.168.1.0/24,10.0.0.0/8"
 ```
 
 **CIDR Notation Support**:
@@ -192,7 +294,7 @@ api:
 | `XG2G_OWI_PASS` | `openWebIF.password` | - |
 | `XG2G_DATA` | `dataDir` | `/tmp` |
 | `XG2G_LOG_LEVEL` | `logLevel` | `info` |
-| `XG2G_STREAM_PORT` | `openWebIF.streamPort` | `8001` |
+| `XG2G_STREAM_PORT` | `openWebIF.streamPort` | `8001` (Direct Mode Only) |
 | `XG2G_BOUQUET` | `bouquets` | empty (all) |
 | `XG2G_EPG_ENABLED` | `epg.enabled` | `true` |
 | `XG2G_EPG_DAYS` | `epg.days` | `7` |
@@ -200,7 +302,7 @@ api:
 | `XG2G_API_TOKEN_SCOPES` | `api.tokenScopes` | - |
 | `XG2G_API_TOKENS` | `api.tokens` | - |
 | `XG2G_READY_STRICT` | - | `false` |
-| `XG2G_V3_CONFIG_STRICT` | - | `true` |
+| `XG2G_CONFIG_STRICT` | - | `true` |
 
 ---
 
@@ -210,29 +312,55 @@ The v3 streaming backend is the **production streaming system** (enabled by defa
 
 | ENV Variable | Default | Purpose |
 | :--- | :--- | :--- |
-| `XG2G_V3_WORKER_ENABLED` | `true` | Enable v3 worker/store (enabled by default in docker-compose) |
-| `XG2G_V3_WORKER_MODE` | `standard` | Worker mode (`standard` or `virtual`) |
-| `XG2G_V3_STORE_BACKEND` | `memory` | Store backend (`memory` or `bolt`) |
-| `XG2G_V3_STORE_PATH` | `/var/lib/xg2g/v3-store` | Store path for bolt backend |
-| `XG2G_V3_HLS_ROOT` | `/var/lib/xg2g/v3-hls` | HLS output root for v3 sessions |
-| `XG2G_V3_E2_HOST` | (inherits from `XG2G_OWI_BASE`) | Enigma2 Receiver URL for V3 worker (auto-inherits if not set) |
-| `XG2G_V3_E2_USER` | - | Enigma2 username for v3 worker |
-| `XG2G_V3_E2_PASS` | - | Enigma2 password for v3 worker |
-| `XG2G_V3_E2_TIMEOUT` | `10s` | Enigma2 HTTP request timeout |
-| `XG2G_V3_E2_RESPONSE_HEADER_TIMEOUT` | `10s` | Enigma2 response header timeout |
-| `XG2G_V3_E2_RETRIES` | `2` | Enigma2 request retries |
-| `XG2G_V3_E2_BACKOFF` | `200ms` | Enigma2 retry backoff |
-| `XG2G_V3_E2_MAX_BACKOFF` | `2s` | Enigma2 max retry backoff |
-| `XG2G_V3_E2_RATE_LIMIT` | `10` | Enigma2 request rate limit (req/sec) |
-| `XG2G_V3_E2_RATE_BURST` | `20` | Enigma2 request burst capacity |
-| `XG2G_V3_E2_USER_AGENT` | `xg2g-v3` | Enigma2 User-Agent |
-| `XG2G_V3_TUNER_SLOTS` | (auto) | Tuner slots to use (JSON array, e.g., `[0,1]`) |
-| `XG2G_V3_FFMPEG_BIN` | `ffmpeg` | Path to ffmpeg binary |
-| `XG2G_V3_CONFIG_STRICT` | `true` | Enforce strict v3 config validation (override for migration) |
+| `XG2G_ENGINE_ENABLED` | `true` | Enable v3 worker/store (enabled by default in docker-compose) |
+| `XG2G_ENGINE_MODE` | `standard` | Worker mode (`standard` or `virtual`) |
+| `XG2G_STORE_BACKEND` | `memory` | Store backend (`memory` or `bolt`) |
+| `XG2G_STORE_PATH` | `/var/lib/xg2g/v3-store` | Store path for bolt backend |
+| `XG2G_HLS_ROOT` | `/var/lib/xg2g/hls` | Root for HLS segments (Recommended: `/data/hls` for Docker) |
+| `XG2G_E2_HOST` | (inherits from `XG2G_OWI_BASE`) | Enigma2 Receiver URL for V3 worker (auto-inherits if not set) |
+| `XG2G_E2_USER` | - | Enigma2 username for v3 worker |
+| `XG2G_E2_PASS` | - | Enigma2 password for v3 worker |
+| `XG2G_E2_TIMEOUT` | `10s` | Enigma2 HTTP request timeout |
+| `XG2G_E2_RESPONSE_HEADER_TIMEOUT` | `10s` | Enigma2 response header timeout |
+| `XG2G_E2_RETRIES` | `2` | Enigma2 request retries |
+| `XG2G_E2_BACKOFF` | `200ms` | Enigma2 retry backoff |
+| `XG2G_E2_MAX_BACKOFF` | `2s` | Enigma2 max retry backoff |
+| `XG2G_E2_RATE_LIMIT` | `10` | Enigma2 request rate limit (req/sec) |
+| `XG2G_E2_RATE_BURST` | `20` | Enigma2 request burst capacity |
+| `XG2G_E2_USER_AGENT` | `xg2g-engine` | Enigma2 User-Agent |
+| `XG2G_RECORDINGS_STABLE_WINDOW` | `10s` | Time to wait before considering recording stable (safeguard for Safari endlist issues) |
+| `XG2G_TUNER_SLOTS` | (auto) | Tuner slots to use (CSV or Ranges, e.g., `0,1` or `0-3`) |
+| `XG2G_FFMPEG_BIN` | `ffmpeg` | Path to ffmpeg binary |
+| `XG2G_E2_AUTH_MODE` | `inherit` | E2 authentication mode: `inherit`, `none`, `explicit` |
+| `XG2G_CONFIG_STRICT` | `true` | Enforce strict v3 config validation (override for migration) |
 
-Configuration is fixed to v3. Use `XG2G_V3_CONFIG_STRICT=false` to override strict validation during migration.
-When `XG2G_V3_WORKER_MODE=virtual` and effective tuner slots are empty, a single virtual slot `[0]` is used.
-If `XG2G_V3_TUNER_SLOTS` is invalid or empty, it is ignored with a warning and existing config is preserved.
+**E2 Auth Mode (`XG2G_E2_AUTH_MODE`):**
+
+- `inherit` (default): If `XG2G_E2_USER`/`XG2G_E2_PASS` are empty, copy `XG2G_OWI_USER`/`XG2G_OWI_PASS` to E2 credentials.
+- `none`: Enforce no E2 authentication. E2 credentials must not be set (fail-start if set).
+- `explicit`: No inheritance. E2 credentials are used as explicitly set (or remain empty).
+
+Fail-start rules: Invalid mode, `none` + E2 creds set, partial credentials (user without pass or vice versa), or `inherit` + OWI partial will cause startup failure.
+
+Examples:
+
+```yaml
+# inherit: E2 inherits OWI credentials
+openWebIF: { username: "root", password: "pw" }
+enigma2: { authMode: "inherit" }
+
+# none: E2 uses no auth
+openWebIF: { username: "root", password: "pw" }
+enigma2: { authMode: "none" }
+
+# explicit: separate E2 credentials
+openWebIF: { username: "root", password: "pw" }
+enigma2: { authMode: "explicit", username: "e2user", password: "e2pass" }
+```
+
+Configuration is fixed to v3. Use `XG2G_CONFIG_STRICT=false` to override strict validation during migration.
+When `XG2G_ENGINE_MODE=virtual` and effective tuner slots are empty, a single virtual slot `[0]` is used.
+If `XG2G_TUNER_SLOTS` is invalid or empty, it is ignored with a warning and existing config is preserved.
 
 ## Removed in v3
 
@@ -276,7 +404,7 @@ recordings.
 | Variable | Default | Description |
 | :--- | :--- | :--- |
 | `XG2G_RECORDINGS_POLICY` | `auto` | Playback policy: `auto` (local-first with fallback), `local_only`, `receiver_only` |
-| `XG2G_RECORDINGS_STABLE_WINDOW` | `2s` | Duration to check file size stability (prevents streaming files being written) |
+| `XG2G_RECORDINGS_STABLE_WINDOW` | `10s` | Duration to check file size stability (prevents streaming files being written) |
 | `XG2G_RECORDINGS_MAP` | - | Path mappings: `/receiver/path=/local/path;/other=/mount` (semicolon-separated) |
 
 #### YAML Configuration
@@ -284,7 +412,7 @@ recordings.
 ```yaml
 recording_playback:
   playback_policy: auto  # auto, local_only, receiver_only
-  stable_window: 2s      # File stability check duration
+  stable_window: 10s     # File stability check duration
   mappings:
     - receiver_root: /media/hdd/movie
       local_root: /mnt/recordings/movies
@@ -302,7 +430,7 @@ Receiver records to internal HDD, mounted via NFS on xg2g server:
 
 ```bash
 XG2G_RECORDINGS_POLICY=auto
-XG2G_RECORDINGS_STABLE_WINDOW=2s
+XG2G_RECORDINGS_STABLE_WINDOW=10s
 XG2G_RECORDINGS_MAP=/media/hdd/movie=/mnt/nfs-recordings
 ```
 
@@ -311,7 +439,7 @@ XG2G_RECORDINGS_MAP=/media/hdd/movie=/mnt/nfs-recordings
 ```yaml
 recording_playback:
   playback_policy: auto
-  stable_window: 2s
+  stable_window: 10s
   mappings:
     - receiver_root: /media/hdd/movie
       local_root: /mnt/nfs-recordings

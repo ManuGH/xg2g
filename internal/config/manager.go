@@ -38,8 +38,8 @@ func (m *Manager) Save(cfg *AppConfig) error {
 	// IMPORTANT: For Enigma2.BaseURL, only write it if it differs from OWIBase.
 	// This preserves the automatic fallback behavior (enigma2 inherits from openWebIF).
 	e2BaseURL := ""
-	if cfg.E2Host != "" && cfg.E2Host != cfg.OWIBase {
-		e2BaseURL = cfg.E2Host
+	if cfg.Enigma2.BaseURL != "" && cfg.Enigma2.BaseURL != cfg.OWIBase {
+		e2BaseURL = cfg.Enigma2.BaseURL
 	}
 
 	fileCfg := FileConfig{
@@ -56,16 +56,16 @@ func (m *Manager) Save(cfg *AppConfig) error {
 		},
 		Enigma2: Enigma2Config{
 			BaseURL:               e2BaseURL,
-			Username:              cfg.E2Username,
-			Password:              cfg.E2Password,
-			Timeout:               cfg.E2Timeout.String(),
-			ResponseHeaderTimeout: cfg.E2RespTimeout.String(),
-			Retries:               cfg.E2Retries,
-			Backoff:               cfg.E2Backoff.String(),
-			MaxBackoff:            cfg.E2MaxBackoff.String(),
-			RateLimit:             cfg.E2RateLimit,
-			RateBurst:             cfg.E2RateBurst,
-			UserAgent:             cfg.E2UserAgent,
+			Username:              cfg.Enigma2.Username,
+			Password:              cfg.Enigma2.Password,
+			Timeout:               cfg.Enigma2.Timeout.String(),
+			ResponseHeaderTimeout: cfg.Enigma2.ResponseHeaderTimeout.String(),
+			Retries:               cfg.Enigma2.Retries,
+			Backoff:               cfg.Enigma2.Backoff.String(),
+			MaxBackoff:            cfg.Enigma2.MaxBackoff.String(),
+			RateLimit:             cfg.Enigma2.RateLimit,
+			RateBurst:             cfg.Enigma2.RateBurst,
+			UserAgent:             cfg.Enigma2.UserAgent,
 		},
 		Bouquets: splitCSV(cfg.Bouquet),
 		EPG: EPGConfig{

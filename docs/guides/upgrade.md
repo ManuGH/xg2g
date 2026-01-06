@@ -8,11 +8,12 @@ This document records historical configuration migrations and deprecations.
 
 This section lists changes to the configuration format and environment variables, including removed legacy paths.
 
-#### Removed Legacy Configuration Keys
+#### HLS Root Standardization (v3.2)
 
-The following configuration keys were previously auto-migrated but have now been removed. Please update your `config.yaml` to use the new keys.
+The HLS segment directory has been standardized to `hls`. A [Migration Guide](migration-hls-root.md) is available.
 
 | Section | Legacy Key | New Key | Notes |
+
 | :--- | :--- | :--- | :--- |
 | `openWebIF` | `base`, `baseURL` | `baseUrl` | |
 | `openWebIF` | `user` | `username` | |

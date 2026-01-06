@@ -246,8 +246,8 @@ func TestDVRWindow_SegmentCleanup(t *testing.T) {
 ## References
 
 - [REMUX_FIRST_DECISION.md](REMUX_FIRST_DECISION.md) – Storage layout
-- [args.go](../internal/v3/exec/ffmpeg/args.go) – HLS playlist configuration
-- [orchestrator.go](../internal/v3/worker/orchestrator.go) – Session lifecycle
+- [args.go](../internal/pipeline/exec/ffmpeg/args.go) – HLS playlist configuration
+- [orchestrator.go](../internal/pipeline/worker/orchestrator.go) – Session lifecycle
 
 ---
 

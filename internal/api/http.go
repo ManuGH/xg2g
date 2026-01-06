@@ -24,21 +24,23 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/api/middleware"
+	v3 "github.com/ManuGH/xg2g/internal/api/v3"
 	"github.com/ManuGH/xg2g/internal/channels"
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/dvr"
 	"github.com/ManuGH/xg2g/internal/epg"
-	"github.com/ManuGH/xg2g/internal/fsutil"
 	"github.com/ManuGH/xg2g/internal/hdhr"
 	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
+	"github.com/ManuGH/xg2g/internal/pipeline/bus"
+	"github.com/ManuGH/xg2g/internal/pipeline/resume"
+	"github.com/ManuGH/xg2g/internal/pipeline/scan"
+	"github.com/ManuGH/xg2g/internal/pipeline/store"
+	fsplat "github.com/ManuGH/xg2g/internal/platform/fs"
 	"github.com/ManuGH/xg2g/internal/recordings"
-	"github.com/ManuGH/xg2g/internal/v3/bus"
-	"github.com/ManuGH/xg2g/internal/v3/resume"
-	"github.com/ManuGH/xg2g/internal/v3/scan"
-	"github.com/ManuGH/xg2g/internal/v3/store"
+	"github.com/ManuGH/xg2g/internal/vod"
 	"github.com/go-chi/chi/v5"
 	"golang.org/x/sync/singleflight"
 
@@ -77,16 +79,15 @@ type Server struct {
 	epgSfg        singleflight.Group
 
 	// Recording Playback (VOD cache generation)
-	recordingSfg singleflight.Group
-	recordingMu  sync.Mutex
-	recordingRun map[string]*recordingBuildState
-	vodBuildSem  chan struct{} // Semaphore for concurrent VOD builds (Phase 8)
+	// Phase B: SOA Refactor - VOD Manager
+	vodManager vod.ManagerAPI
 
 	// OpenWebIF Client Cache (P1 Performance Fix)
 	owiClient *openwebif.Client
 	owiEpoch  uint64
 
 	// v3 Integration
+	v3Handler   *v3.Server
 	v3Bus       bus.Bus
 	v3Store     store.StateStore
 	resumeStore resume.Store
@@ -99,7 +100,7 @@ type Server struct {
 	lastEviction int64 // Atomic unix timestamp
 
 	// P8.2: Hardening & Test Stability
-	preflightCheck PreflightCheckFunc
+	preflightCheck v3.PreflightCheckFunc
 
 	// P9: Safety & Shutdown
 	rootCtx    context.Context
@@ -218,15 +219,15 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager) *Server {
 		configManager:       cfgMgr,
 		seriesManager:       sm,
 		recordingPathMapper: recordings.NewPathMapper(cfg.RecordingPathMappings),
-		recordingRun:        make(map[string]*recordingBuildState),
 		status: jobs.Status{
 			Version: cfg.Version, // Initialize version from config
 		},
 		startTime:      time.Now(),
 		piconSemaphore: make(chan struct{}, 50),
-		vodBuildSem:    make(chan struct{}, cfg.VODMaxConcurrent),
-		preflightCheck: checkSourceAvailability,
+		vodManager:     vod.NewManager(&vod.DefaultExecutor{Logger: *log.L()}, *log.L()),
+		preflightCheck: v3.CheckSourceAvailability,
 	}
+	s.v3Handler = v3.NewServer(cfg, cfgMgr, s.rootCancel)
 	// Initialized root context for server lifecycle
 	s.rootCtx, s.rootCancel = context.WithCancel(context.Background())
 
@@ -241,6 +242,22 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager) *Server {
 	s.refreshFn = jobs.Refresh
 	// Initialize a conservative default circuit breaker (3 failures -> 30s open)
 	s.cb = resilience.NewCircuitBreaker("api_refresh", 3, 30*time.Second, resilience.WithPanicRecovery(true))
+
+	// Wire v3 Handler dependencies
+	s.v3Handler.SetDependencies(
+		s.v3Bus,
+		s.v3Store,
+		s.resumeStore,
+		s.v3Scan,
+		s.recordingPathMapper,
+		s.channelManager,
+		s.seriesManager,
+		s.seriesEngine,
+		s.vodManager,
+		s.epgCache,
+		s.requestShutdown,
+		s.preflightCheck,
+	)
 
 	// Initialize HDHomeRun emulation if enabled
 	logger := log.WithComponent("api")
@@ -354,8 +371,8 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	}
 
 	// 2. Run final VOD cleanup (kill processes)
-	// We execute synchronous cleanup to ensure no orphans.
-	s.cleanupRecordingBuilds(time.Now())
+	// Phase B: vodManager handles cleanup via context (TODO: Add Shutdown to ManagerAPI if needed)
+	// Legacy cleanupRecordingBuilds removed.
 
 	// 3. Wait for active builds?
 	// We don't have a specific WaitGroup for builds, but cleanup killed the processes.
@@ -504,7 +521,7 @@ func (s *Server) routes() http.Handler {
 
 	// EPG listing is now handled by the generated API client (GetEpg)
 	// Trigger config reload from disk (if a file-backed config is configured)
-	r.With(s.authMiddleware, s.scopeMiddleware(ScopeV3Admin)).Post("/internal/system/config/reload", http.HandlerFunc(s.handleConfigReload))
+	r.With(s.authMiddleware, s.scopeMiddleware(v3.ScopeV3Admin)).Post("/internal/system/config/reload", http.HandlerFunc(s.handleConfigReload))
 
 	// Setup Validation (Testing connection before save)
 	r.With(s.setupValidateMiddleware).Post("/internal/setup/validate", http.HandlerFunc(s.handleSetupValidate))
@@ -517,10 +534,10 @@ func (s *Server) routes() http.Handler {
 	// We use the generated handler which attaches to our existing router 'r'
 	// and creates routes starting with /api
 	// NOTE: HandlerWithOptions creates its own handler stack, so we must re-apply middlewares
-	HandlerWithOptions(s, ChiServerOptions{
+	v3.HandlerWithOptions(s.v3Handler, v3.ChiServerOptions{
 		BaseURL:    "/api/v3",
 		BaseRouter: r,
-		Middlewares: []MiddlewareFunc{
+		Middlewares: []v3.MiddlewareFunc{
 			// Apply Auth Middleware to all API routes
 			func(next http.Handler) http.Handler {
 				return s.authMiddleware(next)
@@ -529,10 +546,10 @@ func (s *Server) routes() http.Handler {
 	})
 
 	// Manually register Resume Endpoint (Extension to generated API)
-	r.With(s.authMiddleware, s.scopeMiddleware(ScopeV3Write)).
-		Put("/api/v3/recordings/{recordingId}/resume", s.handleRecordingResume)
-	r.With(s.authMiddleware, s.scopeMiddleware(ScopeV3Write)).
-		Options("/api/v3/recordings/{recordingId}/resume", s.handleRecordingResumeOptions)
+	r.With(s.authMiddleware, s.scopeMiddleware(v3.ScopeV3Write)).
+		Put("/api/v3/recordings/{recordingId}/resume", s.v3Handler.HandleRecordingResume)
+	r.With(s.authMiddleware, s.scopeMiddleware(v3.ScopeV3Write)).
+		Options("/api/v3/recordings/{recordingId}/resume", s.v3Handler.HandleRecordingResumeOptions)
 
 	// 9. LAN Guard (Restrict discovery/legacy endpoints to private networks)
 	// trusted proxies are comma-separated in config
@@ -1077,7 +1094,7 @@ func (s *Server) handlePicons(w http.ResponseWriter, r *http.Request) {
 	cacheRef := strings.ReplaceAll(processRef, ":", "_")
 
 	// Local Cache Path
-	piconDir, err := fsutil.ConfineRelPath(s.cfg.DataDir, "picons")
+	piconDir, err := fsplat.ConfineRelPath(s.cfg.DataDir, "picons")
 	if err != nil {
 		log.L().Error().Err(err).Msg("failed to confine picon cache dir")
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -1089,7 +1106,7 @@ func (s *Server) handlePicons(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	localPath, err := fsutil.ConfineRelPath(s.cfg.DataDir, filepath.Join("picons", cacheRef+".png"))
+	localPath, err := fsplat.ConfineRelPath(s.cfg.DataDir, filepath.Join("picons", cacheRef+".png"))
 	if err != nil {
 		http.Error(w, "Invalid picon reference", http.StatusBadRequest)
 		return

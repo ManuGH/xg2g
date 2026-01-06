@@ -18,14 +18,14 @@ All changes related to HLS playlist 404 fix:
 
 1. **Makefile** - Added `--load` flag for Docker build
 2. **docker-compose.yml** - Added `XG2G_V3_CONFIG_STRICT`, fixed HLS_ROOT default
-3. **internal/v3/worker/orchestrator.go** - ⭐ **CRITICAL FIX:** Playlist readiness check
-4. **internal/v3/worker/stop_test.go** - Updated test for new behavior
+3. **internal/pipeline/worker/orchestrator.go** - ⭐ **CRITICAL FIX:** Playlist readiness check
+4. **internal/pipeline/worker/stop_test.go** - Updated test for new behavior
 5. **internal/api/handlers_v3.go** - Safari User-Agent detection
-6. **internal/v3/exec/enigma2/readychecker.go** - Tuning robustness
-7. **internal/v3/exec/enigma2/client*.go** - Minor improvements
-8. **internal/v3/exec/ffmpeg/args.go** - Transcoding support, curl UA
-9. **internal/v3/exec/ffmpeg/runner.go** - Enhanced logging
-10. **internal/v3/model/enums.go** - Added TranscodeVideo field
+6. **internal/pipeline/exec/enigma2/readychecker.go** - Tuning robustness
+7. **internal/pipeline/exec/enigma2/client*.go** - Minor improvements
+8. **internal/pipeline/exec/ffmpeg/args.go** - Transcoding support, curl UA
+9. **internal/pipeline/exec/ffmpeg/runner.go** - Enhanced logging
+10. **internal/pipeline/model/enums.go** - Added TranscodeVideo field
 
 ### New Documentation (2)
 1. **BUILD.md** - Build & deployment guide
@@ -149,7 +149,7 @@ All streaming is now handled by the V3 Worker/Orchestrator.
 Sessions were marked as `READY` before the HLS playlist file existed, causing 404 errors.
 
 ### Solution
-Added playlist readiness check in `internal/v3/worker/orchestrator.go`:
+Added playlist readiness check in `internal/pipeline/worker/orchestrator.go`:
 - Polls for `index.m3u8` existence (200ms interval)
 - Validates file is non-empty and contains `#EXTM3U`
 - 10-second timeout with proper error handling

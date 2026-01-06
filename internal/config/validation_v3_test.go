@@ -15,16 +15,24 @@ func baseV3Config(t *testing.T) AppConfig {
 	t.Helper()
 	tmp := t.TempDir()
 	return AppConfig{
-		OWIBase:       "http://example.com",
-		DataDir:       tmp,
-		Bouquet:       "Premium",
-		StreamPort:    8001,
-		WorkerEnabled: true,
-		WorkerMode:    "standard",
-		StoreBackend:  "memory",
-		StorePath:     filepath.Join(tmp, "v3-store"),
-		HLSRoot:       filepath.Join(tmp, "v3-hls"),
-		E2Host:        "http://example.com",
+		OWIBase:    "http://example.com",
+		DataDir:    tmp,
+		Bouquet:    "Premium",
+		StreamPort: 8001,
+		Engine: EngineConfig{
+			Enabled: true,
+			Mode:    "standard",
+		},
+		Store: StoreConfig{
+			Backend: "memory",
+			Path:    filepath.Join(tmp, "v3-store"),
+		},
+		HLS: HLSConfig{
+			Root: filepath.Join(tmp, "v3-hls"),
+		},
+		Enigma2: Enigma2Settings{
+			BaseURL: "http://example.com",
+		},
 	}
 }
 
@@ -56,9 +64,9 @@ func TestValidate_AllowsEmptyOWIBase(t *testing.T) {
 func TestValidate_V3StrictRejectsInvalidWorkerMode(t *testing.T) {
 	cfg := baseV3Config(t)
 	cfg.ConfigStrict = true
-	cfg.WorkerMode = "weird"
+	cfg.Engine.Mode = "weird"
 
 	err := Validate(cfg)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "WorkerMode")
+	require.Contains(t, err.Error(), "Engine.Mode")
 }

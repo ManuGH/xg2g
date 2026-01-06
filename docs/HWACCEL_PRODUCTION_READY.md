@@ -97,7 +97,7 @@ logger.Info().
 ### 4. **Test Coverage** (Automated)
 
 ```bash
-$ go test -v ./internal/v3/profiles -run TestHWAccel
+$ go test -v ./internal/pipeline/profiles -run TestHWAccel
 === RUN   TestHWAccelForceWithoutGPU
 --- PASS: TestHWAccelForceWithoutGPU (0.00s)
 === RUN   TestHWAccelOffAlwaysCPU
@@ -111,7 +111,7 @@ $ go test -v ./internal/v3/profiles -run TestHWAccel
 === RUN   TestHWAccelDeterminism
 --- PASS: TestHWAccelDeterminism (0.00s)
 PASS
-ok      github.com/ManuGH/xg2g/internal/v3/profiles    0.004s
+ok      github.com/ManuGH/xg2g/internal/pipeline/profiles    0.004s
 ```
 
 **Critical Tests**:
@@ -275,7 +275,7 @@ if err := ffmpeg.Start(); err != nil && isVAAPIError(err) {
 
 - [SAFARI_INLINE_PLAYBACK_IMPLEMENTATION.md](SAFARI_INLINE_PLAYBACK_IMPLEMENTATION.md)
 - [api/openapi.yaml](../api/openapi.yaml#L62-L71) - API Schema
-- [internal/v3/profiles/hwaccel_test.go](../internal/v3/profiles/hwaccel_test.go) - Test Suite
+- [internal/pipeline/profiles/hwaccel_test.go](../internal/pipeline/profiles/hwaccel_test.go) - Test Suite
 
 ---
 

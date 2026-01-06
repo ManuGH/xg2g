@@ -93,7 +93,7 @@ func (s *Server) ServeHLSHead(w http.ResponseWriter, r *http.Request, sessionID 
 
 ### 2. 410 Gone for Terminal States
 
-#### Expired Sessions ([internal/v3/api/hls.go:95-102](../internal/v3/api/hls.go:95-102))
+#### Expired Sessions ([internal/pipeline/api/hls.go:95-102](../internal/pipeline/api/hls.go:95-102))
 
 ```go
 if rec.ExpiresAtUnix > 0 && time.Now().Unix() > rec.ExpiresAtUnix {
@@ -106,7 +106,7 @@ if rec.ExpiresAtUnix > 0 && time.Now().Unix() > rec.ExpiresAtUnix {
 
 ---
 
-#### Terminal States ([internal/v3/api/hls.go:113-127](../internal/v3/api/hls.go:113-127))
+#### Terminal States ([internal/pipeline/api/hls.go:113-127](../internal/pipeline/api/hls.go:113-127))
 
 ```go
 if !validState {

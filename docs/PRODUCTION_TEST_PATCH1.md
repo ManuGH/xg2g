@@ -17,11 +17,11 @@
 # Expected: Should show recent build timestamp
 
 # Verify runner.go contains new segment duration logic
-grep -A 5 "Patch 1: Segment Duration Policy" internal/v3/exec/ffmpeg/runner.go
+grep -A 5 "Patch 1: Segment Duration Policy" internal/pipeline/exec/ffmpeg/runner.go
 # Expected: segmentDuration := 6
 
 # Verify args.go contains validation logic
-grep -A 5 "Patch 1: Ensure segment duration" internal/v3/exec/ffmpeg/args.go
+grep -A 5 "Patch 1: Ensure segment duration" internal/pipeline/exec/ffmpeg/args.go
 # Expected: if segDur <= 0 { segDur = 6 }
 ```
 
@@ -408,7 +408,7 @@ sudo cp /usr/local/bin/xg2g.pre-patch1 /usr/local/bin/xg2g
 sudo systemctl start xg2g
 
 # Verify rollback
-grep -A 5 "DVR / VOD Config" internal/v3/exec/ffmpeg/runner.go
+grep -A 5 "DVR / VOD Config" internal/pipeline/exec/ffmpeg/runner.go
 # Should show old code (segmentDuration := 2)
 
 # Report issue
@@ -482,7 +482,7 @@ sudo journalctl -u xg2g --since "3 hours ago" | grep "ffmpeg.*-hls_list_size"
 # 1. Verify runner.go calculation
 grep "calculated_playlist_size" /var/log/xg2g/xg2g.log
 # 2. Check args.go validation
-grep "Patch 1: Playlist size" internal/v3/exec/ffmpeg/args.go
+grep "Patch 1: Playlist size" internal/pipeline/exec/ffmpeg/args.go
 ```
 
 **Fix**: Ensure `playlistSize` calculation correct in runner.go

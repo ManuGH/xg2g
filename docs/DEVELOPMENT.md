@@ -248,7 +248,7 @@ make logs
 
 ## 🚢 Production Deployment
 
-See [V3 Setup Guide](guides/v3-setup.md) for production deployment.
+See [V3 Setup Guide](guides/CONFIGURATION.md#v3-api-hls-setup) for production deployment.
 
 ## 📖 Additional Resources
 

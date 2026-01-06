@@ -211,7 +211,7 @@ export XG2G_V3_HLS_ROOT=/var/lib/xg2g/v3-hls
 ## Related Documentation
 
 - [Build & Deployment Guide](../BUILD.md)
-- [V3 Architecture](../internal/v3/doc.go)
+- [V3 Architecture](../internal/pipeline/doc.go)
 - [Configuration Schema](../internal/config/schema.json)
 
 ## Troubleshooting

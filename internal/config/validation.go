@@ -8,7 +8,6 @@
 package config
 
 import (
-	"net"
 	"strings"
 
 	"github.com/ManuGH/xg2g/internal/validate"
@@ -44,22 +43,31 @@ func Validate(cfg AppConfig) error {
 	// OWI retries
 	v.Range("OWIRetries", cfg.OWIRetries, 0, 10)
 
+	// Validate TLS Configuration
+	if cfg.TLSEnabled {
+		// If TLS is enabled, require both cert and key, or neither (autogen)
+		hasCert := strings.TrimSpace(cfg.TLSCert) != ""
+		hasKey := strings.TrimSpace(cfg.TLSKey) != ""
+
+		if hasCert != hasKey {
+			v.AddError("TLS", "TLS enabled requires both cert and key, or none for autogen", "")
+		}
+	}
+
 	// Validate file paths for security
 	v.Path("XMLTVPath", cfg.XMLTVPath)
 
-	// Rate limit whitelist entries must be valid IPs or CIDRs
-	for _, entry := range cfg.RateLimitWhitelist {
-		entry = strings.TrimSpace(entry)
-		if entry == "" {
-			continue
+	// Validate Trusted Proxies (CIDR list)
+	if cfg.TrustedProxies != "" {
+		entries := strings.Split(cfg.TrustedProxies, ",")
+		if err := validateCIDRList("XG2G_TRUSTED_PROXIES", entries); err != nil {
+			v.AddError("TrustedProxies", err.Error(), "")
 		}
-		if net.ParseIP(entry) != nil {
-			continue
-		}
-		if _, _, err := net.ParseCIDR(entry); err == nil {
-			continue
-		}
-		v.AddError("RateLimitWhitelist", "must be a valid IP or CIDR", entry)
+	}
+
+	// Validate Rate Limit Whitelist (CIDR list)
+	if err := validateCIDRList("XG2G_RATE_LIMIT_WHITELIST", cfg.RateLimitWhitelist); err != nil {
+		v.AddError("RateLimitWhitelist", err.Error(), "")
 	}
 
 	if cfg.apiTokensParseErr != nil {
@@ -111,53 +119,53 @@ func Validate(cfg AppConfig) error {
 		}
 	}
 
-	// Validate V3 Worker paths if enabled (Fail Fast)
-	if cfg.WorkerEnabled {
-		v.WritableDirectory("StorePath", cfg.StorePath, false)
-		v.WritableDirectory("HLSRoot", cfg.HLSRoot, false)
-		if cfg.V3IdleTimeout < 0 {
-			v.AddError("V3IdleTimeout", "must be >= 0", cfg.V3IdleTimeout)
+	// Validate V3 Engine paths if enabled (Fail Fast)
+	if cfg.Engine.Enabled {
+		v.WritableDirectory("Store.Path", cfg.Store.Path, false)
+		v.WritableDirectory("HLS.Root", cfg.HLS.Root, false)
+		if cfg.Engine.IdleTimeout < 0 {
+			v.AddError("Engine.IdleTimeout", "must be >= 0", cfg.Engine.IdleTimeout)
 		}
-		if cfg.E2TuneTimeout < 0 {
-			v.AddError("E2TuneTimeout", "must be >= 0", cfg.E2TuneTimeout)
+		if cfg.Enigma2.TuneTimeout < 0 {
+			v.AddError("Enigma2.TuneTimeout", "must be >= 0", cfg.Enigma2.TuneTimeout)
 		}
-		if cfg.E2Timeout < 0 {
-			v.AddError("E2Timeout", "must be >= 0", cfg.E2Timeout)
+		if cfg.Enigma2.Timeout < 0 {
+			v.AddError("Enigma2.Timeout", "must be >= 0", cfg.Enigma2.Timeout)
 		}
-		if cfg.E2RespTimeout < 0 {
-			v.AddError("E2RespTimeout", "must be >= 0", cfg.E2RespTimeout)
+		if cfg.Enigma2.ResponseHeaderTimeout < 0 {
+			v.AddError("Enigma2.ResponseHeaderTimeout", "must be >= 0", cfg.Enigma2.ResponseHeaderTimeout)
 		}
-		v.Range("E2Retries", cfg.E2Retries, 0, 10)
-		if cfg.E2Backoff < 0 {
-			v.AddError("E2Backoff", "must be >= 0", cfg.E2Backoff)
+		v.Range("Enigma2.Retries", cfg.Enigma2.Retries, 0, 10)
+		if cfg.Enigma2.Backoff < 0 {
+			v.AddError("Enigma2.Backoff", "must be >= 0", cfg.Enigma2.Backoff)
 		}
-		if cfg.E2MaxBackoff < 0 {
-			v.AddError("E2MaxBackoff", "must be >= 0", cfg.E2MaxBackoff)
+		if cfg.Enigma2.MaxBackoff < 0 {
+			v.AddError("Enigma2.MaxBackoff", "must be >= 0", cfg.Enigma2.MaxBackoff)
 		}
-		if cfg.E2Backoff > 0 && cfg.E2MaxBackoff > 0 && cfg.E2Backoff > cfg.E2MaxBackoff {
-			v.AddError("E2MaxBackoff", "must be >= E2Backoff", cfg.E2MaxBackoff)
+		if cfg.Enigma2.Backoff > 0 && cfg.Enigma2.MaxBackoff > 0 && cfg.Enigma2.Backoff > cfg.Enigma2.MaxBackoff {
+			v.AddError("Enigma2.MaxBackoff", "must be >= Enigma2.Backoff", cfg.Enigma2.MaxBackoff)
 		}
-		if cfg.E2RateLimit < 0 {
-			v.AddError("E2RateLimit", "must be >= 0", cfg.E2RateLimit)
+		if cfg.Enigma2.RateLimit < 0 {
+			v.AddError("Enigma2.RateLimit", "must be >= 0", cfg.Enigma2.RateLimit)
 		}
-		if cfg.E2RateBurst < 0 {
-			v.AddError("E2RateBurst", "must be >= 0", cfg.E2RateBurst)
+		if cfg.Enigma2.RateBurst < 0 {
+			v.AddError("Enigma2.RateBurst", "must be >= 0", cfg.Enigma2.RateBurst)
 		}
 
 		if cfg.ConfigStrict {
-			switch cfg.WorkerMode {
+			switch cfg.Engine.Mode {
 			case "standard", "virtual":
 			default:
-				v.AddError("WorkerMode", "must be standard or virtual", cfg.WorkerMode)
+				v.AddError("Engine.Mode", "must be standard or virtual", cfg.Engine.Mode)
 			}
 
-			switch cfg.StoreBackend {
+			switch cfg.Store.Backend {
 			case "memory", "bolt":
 			default:
-				v.AddError("StoreBackend", "must be memory or bolt", cfg.StoreBackend)
+				v.AddError("Store.Backend", "must be memory or bolt", cfg.Store.Backend)
 			}
 
-			v.URL("E2Host", cfg.E2Host, []string{"http", "https"})
+			v.URL("Enigma2.BaseURL", cfg.Enigma2.BaseURL, []string{"http", "https"})
 		}
 	}
 

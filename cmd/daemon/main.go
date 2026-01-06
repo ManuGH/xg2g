@@ -27,7 +27,6 @@ import (
 	xglog "github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	xgtls "github.com/ManuGH/xg2g/internal/tls"
-	"github.com/ManuGH/xg2g/internal/validation"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -160,7 +159,7 @@ func main() {
 			Msg("configuration snapshot fingerprint")
 	}
 
-	if cfg.WorkerEnabled {
+	if cfg.Engine.Enabled {
 		if !cfg.ConfigStrict {
 			logger.Warn().
 				Str("event", "config.strict.disabled").
@@ -179,7 +178,7 @@ func main() {
 	// -------------------------------------------------------------------------
 	// Pre-flight Checks (Fail Fast)
 	// -------------------------------------------------------------------------
-	if err := validation.PerformStartupChecks(ctx, cfg); err != nil {
+	if err := health.PerformStartupChecks(ctx, cfg); err != nil {
 		logger.Fatal().
 			Err(err).
 			Str("event", "startup.check_failed").
@@ -224,11 +223,11 @@ func main() {
 				Str("key", cfg.TLSKey).
 				Msg("Both XG2G_TLS_CERT and XG2G_TLS_KEY must be set together")
 		}
-	} else if config.ParseBool("XG2G_TLS_ENABLED", false) {
+	} else if cfg.TLSEnabled {
 		// Auto-generate self-signed certificates
 		tlsCfg := xgtls.Config{
-			CertPath: config.ParseString("XG2G_TLS_CERT", ""),
-			KeyPath:  config.ParseString("XG2G_TLS_KEY", ""),
+			CertPath: cfg.TLSCert,
+			KeyPath:  cfg.TLSKey,
 			Logger:   logger,
 		}
 		certPath, keyPath, err := xgtls.EnsureCertificates(tlsCfg)
@@ -345,33 +344,33 @@ func main() {
 
 	// v3 Worker Config
 	var v3Config *daemon.V3Config
-	if cfg.WorkerEnabled {
+	if cfg.Engine.Enabled {
 		v3Config = &daemon.V3Config{
-			Enabled:           cfg.WorkerEnabled,
-			Mode:              cfg.WorkerMode,
-			StoreBackend:      cfg.StoreBackend,
-			StorePath:         cfg.StorePath,
-			TunerSlots:        cfg.TunerSlots,
+			Enabled:           cfg.Engine.Enabled,
+			Mode:              cfg.Engine.Mode,
+			StoreBackend:      cfg.Store.Backend,
+			StorePath:         cfg.Store.Path,
+			TunerSlots:        cfg.Engine.TunerSlots,
 			UseWebIFStreams:   cfg.UseWebIFStreams,
 			StreamPort:        cfg.StreamPort,
-			E2Host:            cfg.E2Host,
-			E2TuneTimeout:     cfg.E2TuneTimeout,
-			E2Username:        cfg.E2Username,
-			E2Password:        cfg.E2Password,
-			E2Timeout:         cfg.E2Timeout,
-			E2RespTimeout:     cfg.E2RespTimeout,
-			E2Retries:         cfg.E2Retries,
-			E2Backoff:         cfg.E2Backoff,
-			E2MaxBackoff:      cfg.E2MaxBackoff,
-			E2RateLimit:       cfg.E2RateLimit,
-			E2RateBurst:       cfg.E2RateBurst,
-			E2UserAgent:       cfg.E2UserAgent,
-			FFmpegBin:         cfg.FFmpegBin,
-			FFmpegKillTimeout: cfg.FFmpegKillTimeout,
-			HLSRoot:           cfg.HLSRoot,
-			IdleTimeout:       cfg.V3IdleTimeout,
-			E2AnalyzeDuration: cfg.E2AnalyzeDuration,
-			E2ProbeSize:       cfg.E2ProbeSize,
+			E2Host:            cfg.Enigma2.BaseURL,
+			E2TuneTimeout:     cfg.Enigma2.TuneTimeout,
+			E2Username:        cfg.Enigma2.Username,
+			E2Password:        cfg.Enigma2.Password,
+			E2Timeout:         cfg.Enigma2.Timeout,
+			E2RespTimeout:     cfg.Enigma2.ResponseHeaderTimeout,
+			E2Retries:         cfg.Enigma2.Retries,
+			E2Backoff:         cfg.Enigma2.Backoff,
+			E2MaxBackoff:      cfg.Enigma2.MaxBackoff,
+			E2RateLimit:       cfg.Enigma2.RateLimit,
+			E2RateBurst:       cfg.Enigma2.RateBurst,
+			E2UserAgent:       cfg.Enigma2.UserAgent,
+			FFmpegBin:         cfg.FFmpeg.Bin,
+			FFmpegKillTimeout: cfg.FFmpeg.KillTimeout,
+			HLSRoot:           cfg.HLS.Root,
+			IdleTimeout:       cfg.Engine.IdleTimeout,
+			E2AnalyzeDuration: cfg.Enigma2.AnalyzeDuration,
+			E2ProbeSize:       cfg.Enigma2.ProbeSize,
 		}
 	}
 

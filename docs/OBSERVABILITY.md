@@ -32,7 +32,7 @@ Interpretation:
 Metric definitions + label sets:
 
 - `xg2g_v3_time_to_first_playlist_seconds{profile,mode}`
-  - profile: auto|high|low|dvr|safari|safari_dvr|copy (canonical values from `internal/v3/profiles/resolve.go`; inputs are normalized)
+  - profile: auto|high|low|dvr|safari|safari_dvr|copy (canonical values from `internal/pipeline/profiles/resolve.go`; inputs are normalized)
   - mode: standard|virtual (worker execution mode; not a capacity label)
   - Observed only on success
 - `xg2g_v3_time_to_first_segment_seconds{profile,mode}`

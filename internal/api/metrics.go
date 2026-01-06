@@ -49,22 +49,6 @@ var (
 		Name: "xg2g_file_cache_misses_total",
 		Help: "Number of file requests resulting in 200 OK (content served)",
 	})
-
-	// V3 Metrics (Phase 2 Observability Gate)
-	v3IntentsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "xg2g_v3_intents_total", // Prefix aligned with xg2g_
-		Help: "Total V3 intents processed by outcome and phase.",
-	}, []string{"type", "mode", "outcome"})
-
-	v3IdempotentReplayTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "xg2g_v3_idempotent_replay_total",
-		Help: "Total duplicate intents suppressed via idempotency.",
-	}, []string{"type"})
-
-	v3BusPublishTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "xg2g_v3_bus_publish_total",
-		Help: "Total bus events published by API.",
-	}, []string{"topic", "outcome"})
 )
 
 func recordRefreshMetrics(duration time.Duration, channelCount int) {
@@ -87,19 +71,4 @@ func recordFileCacheHit() {
 
 func recordFileCacheMiss() {
 	fileCacheMissesTotal.Inc()
-}
-
-// RecordV3Intent observes the outcome of an intent request.
-func RecordV3Intent(intentType, mode, outcome string) {
-	v3IntentsTotal.WithLabelValues(intentType, mode, outcome).Inc()
-}
-
-// RecordV3Replay counts suppressed idempotent replays.
-func RecordV3Replay(intentType string) {
-	v3IdempotentReplayTotal.WithLabelValues(intentType).Inc()
-}
-
-// RecordV3Publish counts bus publication attempts.
-func RecordV3Publish(topic, outcome string) {
-	v3BusPublishTotal.WithLabelValues(topic, outcome).Inc()
 }

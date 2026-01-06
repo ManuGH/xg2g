@@ -72,7 +72,7 @@ When implementing stream resolution:
 
 ```go
 // WRONG - breaks channels with different port configurations
-streamURL := fmt.Sprintf("http://%s:8001/%s", receiverHost, serviceRef)
+streamURL := fmt.Sprintf("http://%s:%d/%s", receiverHost, 8001, serviceRef)
 ```
 
 ### ✅ Correct: Using WebAPI

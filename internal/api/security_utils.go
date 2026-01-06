@@ -12,5 +12,11 @@ import (
 
 // extractToken delegates to the shared internal/auth package to ensure parity with valid proxy auth.
 func extractToken(r *http.Request) string {
-	return auth.ExtractToken(r)
+	// 1. Try standard Header/Cookie extraction
+	t := auth.ExtractToken(r)
+	if t != "" {
+		return t
+	}
+	// 2. Fallback to Query Parameter (needed for direct media playback)
+	return r.URL.Query().Get("token")
 }

@@ -100,7 +100,7 @@ if (isSafari) {
 
 ### 3. ✅ Server-Side Profile Override entfernt
 
-**Datei**: [internal/v3/profiles/resolve.go:69-71](internal/v3/profiles/resolve.go#L69-L71)
+**Datei**: [internal/pipeline/profiles/resolve.go:69-71](internal/pipeline/profiles/resolve.go#L69-L71)
 
 **Vorher** (❌ Problematisch):
 ```go
@@ -281,7 +281,7 @@ systemctl restart xg2g
 
 - [docs/safari_hls_contract.md](safari_hls_contract.md) - Safari HLS Compliance Spec
 - [docs/guides/RUST_INTEGRATION.md](guides/RUST_INTEGRATION.md) - FFmpeg Integration
-- [internal/v3/profiles/resolve.go](../internal/v3/profiles/resolve.go) - Profile Resolution Logic
+- [internal/pipeline/profiles/resolve.go](../internal/pipeline/profiles/resolve.go) - Profile Resolution Logic
 
 ---
 

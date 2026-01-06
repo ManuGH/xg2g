@@ -50,7 +50,7 @@ IntentRequest:
 ### Backend Implementation
 
 ```go
-// internal/v3/profiles/resolve.go
+// internal/pipeline/profiles/resolve.go
 
 type HWAccelMode string
 
@@ -246,8 +246,8 @@ func TestHWAccelOverride(t *testing.T) {
 ## Related Documentation
 
 - [Safari Inline Playback](SAFARI_INLINE_PLAYBACK_IMPLEMENTATION.md) - Safari-specific fixes
-- [Profile Resolution](../internal/v3/profiles/resolve.go) - Profile logic
-- [Hardware Detection](../internal/v3/hardware/gpu.go) - VAAPI detection
+- [Profile Resolution](../internal/pipeline/profiles/resolve.go) - Profile logic
+- [Hardware Detection](../internal/pipeline/hardware/gpu.go) - VAAPI detection
 
 ---
 

@@ -29,9 +29,9 @@ ls /var/lib/xg2g/sessions/session-123/ | wc -l
 ```
 
 **Root Cause**:
-1. [runner.go:251](../internal/v3/exec/ffmpeg/runner.go:251): `segmentDuration = 2` (hardcoded, too small)
-2. [runner.go:254](../internal/v3/exec/ffmpeg/runner.go:254): `playlistSize = DVRWindowSec / 2` (calculated but not enforced by FFmpeg)
-3. [args.go:229](../internal/v3/exec/ffmpeg/args.go:229): `delete_segments` flag set, but without correct `hls_list_size` → No deterministic trimming
+1. [runner.go:251](../internal/pipeline/exec/ffmpeg/runner.go:251): `segmentDuration = 2` (hardcoded, too small)
+2. [runner.go:254](../internal/pipeline/exec/ffmpeg/runner.go:254): `playlistSize = DVRWindowSec / 2` (calculated but not enforced by FFmpeg)
+3. [args.go:229](../internal/pipeline/exec/ffmpeg/args.go:229): `delete_segments` flag set, but without correct `hls_list_size` → No deterministic trimming
 
 ---
 
@@ -39,7 +39,7 @@ ls /var/lib/xg2g/sessions/session-123/ | wc -l
 
 ### Core Changes
 
-#### 1. Segment Duration Policy ([runner.go:251-257](../internal/v3/exec/ffmpeg/runner.go:251-257))
+#### 1. Segment Duration Policy ([runner.go:251-257](../internal/pipeline/exec/ffmpeg/runner.go:251-257))
 
 **Before**:
 ```go
@@ -68,7 +68,7 @@ if profileSpec.LLHLS {
 
 ---
 
-#### 2. Playlist Size Calculation ([runner.go:259-276](../internal/v3/exec/ffmpeg/runner.go:259-276))
+#### 2. Playlist Size Calculation ([runner.go:259-276](../internal/pipeline/exec/ffmpeg/runner.go:259-276))
 
 **Before**:
 ```go
@@ -108,7 +108,7 @@ if profileSpec.VOD {
 
 ---
 
-#### 3. Validation in args.go ([args.go:177-190](../internal/v3/exec/ffmpeg/args.go:177-190))
+#### 3. Validation in args.go ([args.go:177-190](../internal/pipeline/exec/ffmpeg/args.go:177-190))
 
 **Added Safety Checks**:
 ```go
@@ -132,7 +132,7 @@ if prof.VOD {
 
 ---
 
-#### 4. FFmpeg Flags Already Correct ([args.go:227-238](../internal/v3/exec/ffmpeg/args.go:227-238))
+#### 4. FFmpeg Flags Already Correct ([args.go:227-238](../internal/pipeline/exec/ffmpeg/args.go:227-238))
 
 **Existing Implementation (No Change Needed)**:
 ```go
@@ -324,7 +324,7 @@ find /var/lib/xg2g/sessions -name "*.m4s" | wc -l
 
 **Metric** (Existing in hls.go):
 ```go
-// internal/v3/api/hls.go:243-296
+// internal/pipeline/api/hls.go:243-296
 // Playlist is buffered (1MB limit), parsed, modified, then served
 ```
 
@@ -355,8 +355,8 @@ go build && systemctl restart xg2g
 
 - [HWACCEL_PRODUCTION_READY.md](HWACCEL_PRODUCTION_READY.md) - HWAccel determinism
 - [SAFARI_INLINE_PLAYBACK_IMPLEMENTATION.md](SAFARI_INLINE_PLAYBACK_IMPLEMENTATION.md) - Safari integration
-- [args.go](../internal/v3/exec/ffmpeg/args.go) - FFmpeg arg construction
-- [runner.go](../internal/v3/exec/ffmpeg/runner.go) - Segment duration policy
+- [args.go](../internal/pipeline/exec/ffmpeg/args.go) - FFmpeg arg construction
+- [runner.go](../internal/pipeline/exec/ffmpeg/runner.go) - Segment duration policy
 
 ---
 

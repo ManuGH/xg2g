@@ -30,7 +30,7 @@ This release implements a **unified LIVE-DVR architecture** that eliminates Safa
 - Auth consistency verified (all HLS resources use same scope)
 
 **Files Changed:**
-- `internal/v3/api/hls.go` (lines 216, 224, 229)
+- `internal/pipeline/api/hls.go` (lines 216, 224, 229)
 - `internal/api/recordings.go` (lines 1186-1195)
 
 ---
@@ -55,7 +55,7 @@ This release implements a **unified LIVE-DVR architecture** that eliminates Safa
 ```
 
 **Files Changed:**
-- `internal/v3/exec/ffmpeg/args.go` (lines 189, 243)
+- `internal/pipeline/exec/ffmpeg/args.go` (lines 189, 243)
 
 ---
 
@@ -76,8 +76,8 @@ ELSE
 - Transcode: Only when necessary (interlaced, incompatible codecs, scaling)
 
 **Files Changed:**
-- `internal/v3/exec/ffmpeg/probe.go` (CanRemux method)
-- `internal/v3/exec/ffmpeg/probe_test.go` (9 test cases)
+- `internal/pipeline/exec/ffmpeg/probe.go` (CanRemux method)
+- `internal/pipeline/exec/ffmpeg/probe_test.go` (9 test cases)
 
 ---
 
@@ -259,7 +259,7 @@ systemctl restart xg2g
 
 ### Unit Tests
 ```bash
-go test ./internal/v3/exec/ffmpeg/... ./internal/v3/api/...
+go test ./internal/pipeline/exec/ffmpeg/... ./internal/pipeline/api/...
 # Status: ✅ All tests passing
 ```
 

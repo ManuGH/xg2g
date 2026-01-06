@@ -20,13 +20,13 @@ Legacy API version details are captured in the History section.
 | `internal/jobs` | Refresh pipeline | Generates playlist + XMLTV, caches EPG |
 | `internal/epg` | EPG parsing and XMLTV generation | Fuzzy matching + XMLTV output |
 | `internal/playlist` / `internal/m3u` | Playlist generation and parsing | M3U output for channels |
-| `internal/v3/exec` | FFmpeg + Enigma2 execution | Stream setup and transcoding (v3 only) |
+| `internal/pipeline/exec` | FFmpeg + Enigma2 execution | Stream setup and transcoding (v3 only) |
 | `internal/dvr` | Timers, series rules | Scheduler and series engine |
 | `internal/hdhr` | HDHomeRun emulation | Plex/Jellyfin compatibility |
 | `internal/health` | /healthz and /readyz | Optional strict readiness |
 | `internal/resilience` | Circuit Breakers | Unified state/failure handling |
 | `internal/telemetry` / `internal/metrics` | Tracing and metrics | OpenTelemetry + Prometheus |
-| `internal/v3` | V3 streaming control plane | Bus + store + worker + HLS |
+| `internal/pipeline` | V3 streaming control plane | Bus + store + worker + HLS |
 
 ## Config schema summary
 
@@ -51,7 +51,7 @@ Primary schema: `docs/guides/config.schema.json`
 ### Startup and refresh
 
 1. `cmd/daemon` loads config (file + env) and validates.
-2. **Pre-flight Checks**: `internal/validation` verifies permissions, paths, and dependencies.
+2. **Pre-flight Checks**: `internal/health` verifies permissions, paths, and dependencies.
 3. **Auto-TLS**: `internal/tls` generates self-signed certificates if enabled and missing.
 4. `internal/api` starts HTTP server and WebUI.
 5. `internal/config` watcher starts to enable hot-reload of settings.
@@ -122,7 +122,7 @@ stateDiagram
   SERVING --> FAIL
 ```
 
-Reference enums: `internal/v3/model/enums.go`.
+Reference enums: `internal/pipeline/model/enums.go`.
 
 ## History
 
@@ -147,7 +147,7 @@ Analysis of VLC's stream handling revealed that it uses:
 - **HTTP Protocol:** HTTP/1.0 (not 1.1)
 - **Custom Header:** `Icy-MetaData: 1`
 
-These headers are implemented in `internal/v3/exec/ffmpeg/args.go:50-59` to ensure FFmpeg can reliably connect to Enigma2 receivers.
+These headers are implemented in `internal/pipeline/exec/ffmpeg/args.go:50-59` to ensure FFmpeg can reliably connect to Enigma2 receivers.
 
 ### Audio Encoding
 
@@ -158,7 +158,7 @@ Source streams from DVB/satellite often use AC3 5.1 surround (448 kbps). The sys
 3. **Preserves channel layout** using `aresample` filter to ensure proper metadata
 4. **Handles dynamic changes** when broadcasts switch between stereo ads and 5.1 movies
 
-See `internal/v3/exec/ffmpeg/args.go:67-79` for audio encoding parameters.
+See `internal/pipeline/exec/ffmpeg/args.go:67-79` for audio encoding parameters.
 
 ## Where to start reading code
 
@@ -166,6 +166,6 @@ See `internal/v3/exec/ffmpeg/args.go:67-79` for audio encoding parameters.
 - Config loader and env handling: `internal/config/config.go`
 - Refresh pipeline: `internal/jobs/refresh.go`
 - OpenWebIF client: `internal/openwebif/client.go`
-- v3 orchestrator: `internal/v3/worker/orchestrator.go`
-- FFmpeg argument builder: `internal/v3/exec/ffmpeg/args.go`
-- Enigma2 stream resolver: `internal/v3/exec/enigma2/client_ext.go`
+- v3 orchestrator: `internal/pipeline/worker/orchestrator.go`
+- FFmpeg argument builder: `internal/pipeline/exec/ffmpeg/args.go`
+- Enigma2 stream resolver: `internal/pipeline/exec/enigma2/client_ext.go`

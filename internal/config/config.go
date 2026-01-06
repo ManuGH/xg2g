@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/platform/paths"
 	"gopkg.in/yaml.v3"
 )
 
@@ -184,54 +185,27 @@ type AppConfig struct {
 	EPGSource         string // EPG fetch strategy: "bouquet" (fast, single request) or "per-service" (default, per-channel requests)
 
 	// TLS Configuration
+	TLSEnabled bool   // Enable TLS (auto-generate certs if cert/key empty)
 	TLSCert    string // Path to TLS certificate file
 	TLSKey     string // Path to TLS key file
 	ForceHTTPS bool   // Redirect HTTP to HTTPS
 
 	// Feature Flags
-	// TODO(cleanup): Remove InstantTuneEnabled - feature flag exists but no implementation
-	InstantTuneEnabled bool // Enable "Instant Tune" stream pre-warming (UNIMPLEMENTED)
-
-	// TODO(cleanup): Review ReadyStrict usage - only used in tests, not in actual health check logic
+	// ReadyStrict enables strict readiness checks (e.g. OWI connectivity)
 	ReadyStrict bool // Enable strict readiness checks (check upstream availability)
-	// TODO(cleanup): Remove ShadowIntentsEnabled - fully implemented but not integrated into API flow
-	ShadowIntentsEnabled bool   // v3 Shadow Canary: mirror intents to v3 API (default OFF, UNUSED)
-	ShadowTarget         string // v3 Shadow Canary: target URL (e.g. http://localhost:8080/api/v3/intents)
 
-	// v3 Worker Config
-	WorkerEnabled bool   // Enable v3 worker
-	WorkerMode    string // "standard" or "virtual" (dry-run)
-	StoreBackend  string // "memory" or "bolt"
-	StorePath     string // Path to v3 store data
-	TunerSlots    []int  // Parsed tuner slots (e.g. [0, 1])
+	// Engine Configuration (Canonical)
+	Engine EngineConfig
+	Store  StoreConfig
+	HLS    HLSConfig
 
-	// Enigma2 Config (Phase 8-3)
-	E2Host        string
-	E2TuneTimeout time.Duration
-	E2Username    string
-	E2Password    string
-	E2Timeout     time.Duration
-	E2RespTimeout time.Duration
-	E2Retries     int
-	E2Backoff     time.Duration
-	E2MaxBackoff  time.Duration
-	E2RateLimit       int
-	E2RateBurst       int
-	E2UserAgent       string
-	E2AnalyzeDuration string // FFmpeg -analyzeduration (e.g. "10s")
-	E2ProbeSize       string // FFmpeg -probesize (e.g. "10M")
+	// Enigma2 Config (Runtime settings with Durations)
+	Enigma2 Enigma2Settings
 
-	// FFmpeg Config (Phase 8-4)
-	FFmpegBin         string
-	FFmpegKillTimeout time.Duration
+	// FFmpeg Config
+	FFmpeg FFmpegConfig
 
-	// HLS Config (Phase 8-5)
-	HLSRoot       string        // e.g. /var/lib/xg2g/v3-hls
-	DVRWindowSec  int           // DVR window duration in seconds (default: 2700 = 45 minutes)
-	V3IdleTimeout time.Duration // Stop v3 sessions after idle (0 disables)
-	// TODO(v3.2): Remove V3APILeases - Phase 1 legacy code, default is Phase 2 (false) since ADR-003
-	V3APILeases bool // Feature Flag: If true, API acquires lease (Phase 1). If false, Worker does (Phase 2).
-
+	// Global / Feature Flags
 	RateLimitEnabled   bool // Enable rate limiting
 	RateLimitGlobal    int  // Requests per second (global)
 	RateLimitAuth      int  // Requests per minute (auth)
@@ -246,7 +220,7 @@ type AppConfig struct {
 	RecordingStableWindow   time.Duration          // File stability check duration (default: 2s)
 	RecordingPathMappings   []RecordingPathMapping // Receiver→Local path mappings
 
-	// VOD Optimization (Phase 7)
+	// VOD Optimization
 	VODProbeSize       string        // ffmpeg probesize (e.g. "50M")
 	VODAnalyzeDuration string        // ffmpeg analyzeduration (e.g. "50M")
 	VODStallTimeout    time.Duration // Supervisor stall timeout
@@ -254,7 +228,52 @@ type AppConfig struct {
 	VODCacheTTL        time.Duration `json:"vodCacheTTL,omitempty"`
 
 	// HDHomeRun Configuration
-	HDHR HDHRConfig // Reusing the struct as it fits well (using value types locally)
+	HDHR HDHRConfig
+}
+
+// EngineConfig holds the Orchestrator engine settings
+type EngineConfig struct {
+	Enabled     bool          `yaml:"enabled"`
+	Mode        string        `yaml:"mode"` // "standard" or "virtual"
+	IdleTimeout time.Duration `yaml:"idleTimeout"`
+	TunerSlots  []int         `yaml:"tunerSlots"`
+}
+
+// StoreConfig holds the state store settings
+type StoreConfig struct {
+	Backend string `yaml:"backend"` // "memory" or "bolt"
+	Path    string `yaml:"path"`
+}
+
+// FFmpegConfig holds the FFmpeg binary settings
+type FFmpegConfig struct {
+	Bin         string        `yaml:"bin"`
+	KillTimeout time.Duration `yaml:"killTimeout"`
+}
+
+// HLSConfig holds HLS output settings
+type HLSConfig struct {
+	Root      string        `yaml:"root"`
+	DVRWindow time.Duration `yaml:"dvrWindow"`
+}
+
+// Enigma2Settings holds the runtime Enigma2 settings (using time.Duration)
+type Enigma2Settings struct {
+	BaseURL               string
+	Username              string
+	Password              string
+	AuthMode              string // Authentication mode: "inherit" (default), "none", "explicit"
+	Timeout               time.Duration
+	ResponseHeaderTimeout time.Duration
+	TuneTimeout           time.Duration // Logic compatibility
+	Retries               int
+	Backoff               time.Duration
+	MaxBackoff            time.Duration
+	RateLimit             int
+	RateBurst             int
+	UserAgent             string
+	AnalyzeDuration       string
+	ProbeSize             string
 }
 
 // Loader handles configuration loading with precedence
@@ -274,6 +293,9 @@ func NewLoader(configPath, version string) *Loader {
 // Load loads configuration with precedence: ENV > File > Defaults
 // It enforces Strict Validated Order: Parse File (Strict) -> Apply Env -> Validate
 func (l *Loader) Load() (AppConfig, error) {
+	// Pre-Release Guardrail: Fail fast if legacy keys are found
+	CheckLegacyEnv()
+
 	cfg := AppConfig{}
 
 	// 1. Set defaults
@@ -293,10 +315,29 @@ func (l *Loader) Load() (AppConfig, error) {
 	// 3. Override with environment variables (highest priority)
 	l.mergeEnvConfig(&cfg)
 
-	// 4. Set version from binary
+	// 4. Validate E2 Auth Mode inputs (before resolution to catch conflicts)
+	if err := validateE2AuthModeInputs(&cfg); err != nil {
+		return cfg, fmt.Errorf("e2 auth mode: %w", err)
+	}
+
+	// 4.5. Resolve E2 Auth Mode (inherit/none/explicit)
+	resolveE2AuthMode(&cfg)
+
+	// 5. Version from binary
 	cfg.Version = l.version
 
-	// 5. Validate final configuration
+	// 6. Resolve HLS Root (Migration & Path Safety)
+	// Must be done after DataDir is finalized
+	hlsRes, err := paths.ResolveHLSRoot(cfg.DataDir)
+	if err != nil {
+		return cfg, fmt.Errorf("resolve hls root: %w", err)
+	}
+	// Prefer configured root if set
+	if cfg.HLS.Root == "" {
+		cfg.HLS.Root = hlsRes.EffectiveRoot
+	}
+
+	// 7. Validate final configuration
 	if err := Validate(cfg); err != nil {
 		return cfg, fmt.Errorf("config validation failed: %w", err)
 	}
@@ -323,24 +364,36 @@ func (l *Loader) setDefaults(cfg *AppConfig) {
 	cfg.ConfigVersion = V3ConfigVersion
 	cfg.ConfigStrict = true
 
-	// Enigma2 (v3) defaults
-	cfg.E2TuneTimeout = 10 * time.Second
-	cfg.E2Timeout = 10 * time.Second
-	cfg.E2RespTimeout = 10 * time.Second
-	cfg.E2Retries = 2
-	cfg.E2Backoff = 200 * time.Millisecond
-	cfg.E2MaxBackoff = 2 * time.Second
-	cfg.E2RateLimit = 10
-	cfg.E2RateBurst = 20
-	cfg.E2UserAgent = "xg2g-v3"
-	cfg.WorkerMode = "standard"
-	cfg.StoreBackend = "memory"
-	cfg.StorePath = "/var/lib/xg2g/v3-store"
-	cfg.FFmpegBin = "ffmpeg"
-	cfg.FFmpegKillTimeout = 5 * time.Second
-	cfg.HLSRoot = "/var/lib/xg2g/v3-hls"
-	cfg.DVRWindowSec = 2700
-	cfg.V3IdleTimeout = 2 * time.Minute
+	// Engine defaults
+	cfg.Engine.Enabled = true
+	cfg.Engine.Mode = "standard"
+	cfg.Engine.IdleTimeout = 2 * time.Minute
+
+	// Store defaults
+	cfg.Store.Backend = "memory"
+	cfg.Store.Path = "/var/lib/xg2g/store"
+
+	// HLS Defaults
+	// cfg.HLS.Root is handled by paths.ResolveHLSRoot in Load()
+	cfg.HLS.DVRWindow = 45 * time.Minute
+
+	// Enigma2 defaults
+	cfg.Enigma2.AuthMode = "inherit"
+	cfg.Enigma2.Timeout = 10 * time.Second
+	cfg.Enigma2.ResponseHeaderTimeout = 10 * time.Second
+	cfg.Enigma2.TuneTimeout = 10 * time.Second // Kept for logic compatibility
+	cfg.Enigma2.Retries = 2
+	cfg.Enigma2.Backoff = 200 * time.Millisecond
+	cfg.Enigma2.MaxBackoff = 2 * time.Second
+	cfg.Enigma2.RateLimit = 10
+	cfg.Enigma2.RateBurst = 20
+	cfg.Enigma2.UserAgent = "xg2g-engine"
+	cfg.Enigma2.AnalyzeDuration = "10s"
+	cfg.Enigma2.ProbeSize = "10M"
+
+	// FFmpeg defaults
+	cfg.FFmpeg.Bin = "ffmpeg"
+	cfg.FFmpeg.KillTimeout = 5 * time.Second
 
 	// EPG defaults - enabled by default for complete out-of-the-box experience
 	cfg.EPGEnabled = true
@@ -350,20 +403,23 @@ func (l *Loader) setDefaults(cfg *AppConfig) {
 	cfg.EPGRetries = 2
 	cfg.EPGSource = "per-service" // Default to per-service for backward compatibility
 
+	// TLS
+	cfg.TLSEnabled = false
+
 	// Feature Flags
-	cfg.V3APILeases = false // Phase 2 Default: Worker manages leases
-	cfg.InstantTuneEnabled = false
 	cfg.ReadyStrict = false
 
 	// Rate Limiting (Secure by Default)
 	cfg.RateLimitEnabled = true
 	cfg.RateLimitGlobal = 100 // Reasonable RPS for single user
 	cfg.RateLimitAuth = 10    // Strict limit for auth attempts (RPM)
+	cfg.RateLimitBurst = 20   // Burst capacity
 
 	// Recording Defaults
 	cfg.RecordingRoots = nil
 	cfg.RecordingPlaybackPolicy = "auto" // Local-first with receiver fallback
-	cfg.RecordingStableWindow = 2 * time.Second
+	// P2: Increase stable window to 10s to avoid premature VOD detection (Safari endlist risk)
+	cfg.RecordingStableWindow = 10 * time.Second
 	cfg.RecordingPathMappings = nil
 	cfg.VODProbeSize = "50M"
 	cfg.VODAnalyzeDuration = "50M"
@@ -510,7 +566,7 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 
 	// Recording Roots
 	if len(src.Recording) > 0 {
-		// Initialize if map is nil (which it shouldn't be due to setDefaults, but safe for merge)
+		// Initialize if map is nil
 		if dst.RecordingRoots == nil {
 			dst.RecordingRoots = make(map[string]string)
 		}
@@ -579,61 +635,62 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 		dst.PiconBase = expandEnv(src.Picons.BaseURL)
 	}
 
-	// Enigma2 (v3)
+	// Enigma2 (Map FileConfig.Enigma2 to AppConfig.Enigma2)
+	// This maps the flat YAML Enigma2Config to the nested Enigma2Config in AppConfig
 	if src.Enigma2.BaseURL != "" {
-		dst.E2Host = expandEnv(src.Enigma2.BaseURL)
+		dst.Enigma2.BaseURL = expandEnv(src.Enigma2.BaseURL)
 	}
 	if src.Enigma2.Username != "" {
-		dst.E2Username = expandEnv(src.Enigma2.Username)
+		dst.Enigma2.Username = expandEnv(src.Enigma2.Username)
 	}
 	if src.Enigma2.Password != "" {
-		dst.E2Password = expandEnv(src.Enigma2.Password)
+		dst.Enigma2.Password = expandEnv(src.Enigma2.Password)
 	}
 	if src.Enigma2.Timeout != "" {
 		d, err := time.ParseDuration(src.Enigma2.Timeout)
 		if err != nil {
 			return fmt.Errorf("invalid enigma2.timeout: %w", err)
 		}
-		dst.E2Timeout = d
+		dst.Enigma2.Timeout = d
 	}
 	if src.Enigma2.ResponseHeaderTimeout != "" {
 		d, err := time.ParseDuration(src.Enigma2.ResponseHeaderTimeout)
 		if err != nil {
 			return fmt.Errorf("invalid enigma2.responseHeaderTimeout: %w", err)
 		}
-		dst.E2RespTimeout = d
+		dst.Enigma2.ResponseHeaderTimeout = d
 	}
 	if src.Enigma2.Backoff != "" {
 		d, err := time.ParseDuration(src.Enigma2.Backoff)
 		if err != nil {
 			return fmt.Errorf("invalid enigma2.backoff: %w", err)
 		}
-		dst.E2Backoff = d
+		dst.Enigma2.Backoff = d
 	}
 	if src.Enigma2.MaxBackoff != "" {
 		d, err := time.ParseDuration(src.Enigma2.MaxBackoff)
 		if err != nil {
 			return fmt.Errorf("invalid enigma2.maxBackoff: %w", err)
 		}
-		dst.E2MaxBackoff = d
+		dst.Enigma2.MaxBackoff = d
 	}
 	if src.Enigma2.Retries > 0 {
-		dst.E2Retries = src.Enigma2.Retries
+		dst.Enigma2.Retries = src.Enigma2.Retries
 	}
 	if src.Enigma2.RateLimit > 0 {
-		dst.E2RateLimit = src.Enigma2.RateLimit
+		dst.Enigma2.RateLimit = src.Enigma2.RateLimit
 	}
 	if src.Enigma2.RateBurst > 0 {
-		dst.E2RateBurst = src.Enigma2.RateBurst
+		dst.Enigma2.RateBurst = src.Enigma2.RateBurst
 	}
 	if src.Enigma2.UserAgent != "" {
-		dst.E2UserAgent = src.Enigma2.UserAgent
+		dst.Enigma2.UserAgent = src.Enigma2.UserAgent
 	}
 	if src.Enigma2.AnalyzeDuration != "" {
-		dst.E2AnalyzeDuration = src.Enigma2.AnalyzeDuration
+		dst.Enigma2.AnalyzeDuration = src.Enigma2.AnalyzeDuration
 	}
 	if src.Enigma2.ProbeSize != "" {
-		dst.E2ProbeSize = src.Enigma2.ProbeSize
+		dst.Enigma2.ProbeSize = src.Enigma2.ProbeSize
 	}
 
 	// HDHomeRun
@@ -691,9 +748,6 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	cfg.UseWebIFStreams = ParseBool("XG2G_USE_WEBIF_STREAMS", cfg.UseWebIFStreams)
 
 	// OpenWebIF timeouts/retries
-	// Convert millisecond ENV values to time.Duration
-	// OpenWebIF timeouts/retries
-	// Convert millisecond ENV values to time.Duration
 	if ms := ParseInt("XG2G_OWI_TIMEOUT_MS", 0); ms > 0 {
 		cfg.OWITimeout = time.Duration(ms) * time.Millisecond
 	}
@@ -705,7 +759,8 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 		cfg.OWIMaxBackoff = time.Duration(ms) * time.Millisecond
 	}
 
-	cfg.ConfigStrict = ParseBool("XG2G_V3_CONFIG_STRICT", cfg.ConfigStrict)
+	// Global strict mode
+	cfg.ConfigStrict = ParseBool("XG2G_CONFIG_STRICT", cfg.ConfigStrict)
 
 	// Bouquet
 	cfg.Bouquet = ParseString("XG2G_BOUQUET", cfg.Bouquet)
@@ -730,8 +785,12 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	}
 	cfg.APIListenAddr = ParseString("XG2G_LISTEN", cfg.APIListenAddr)
 
+	// CORS: ENV overrides YAML if set
+	if rawOrigins, ok := os.LookupEnv("XG2G_ALLOWED_ORIGINS"); ok {
+		cfg.AllowedOrigins = parseCommaSeparated(rawOrigins, nil)
+	}
+
 	// Metrics
-	// Primary configuration is via XG2G_METRICS_LISTEN (empty disables).
 	metricsAddr := ParseString("XG2G_METRICS_LISTEN", "")
 	if metricsAddr != "" {
 		cfg.MetricsAddr = metricsAddr
@@ -742,125 +801,79 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	cfg.PiconBase = ParseString("XG2G_PICON_BASE", cfg.PiconBase)
 
 	// TLS
+	cfg.TLSEnabled = ParseBool("XG2G_TLS_ENABLED", cfg.TLSEnabled)
 	cfg.TLSCert = ParseString("XG2G_TLS_CERT", cfg.TLSCert)
 	cfg.TLSKey = ParseString("XG2G_TLS_KEY", cfg.TLSKey)
 	cfg.ForceHTTPS = ParseBool("XG2G_FORCE_HTTPS", cfg.ForceHTTPS)
 
 	// Feature Flags
-	cfg.InstantTuneEnabled = ParseBool("XG2G_INSTANT_TUNE", cfg.InstantTuneEnabled)
-
 	cfg.ReadyStrict = ParseBool("XG2G_READY_STRICT", cfg.ReadyStrict)
-	cfg.ShadowIntentsEnabled = ParseBool("XG2G_V3_SHADOW_INTENTS", cfg.ShadowIntentsEnabled)
-	cfg.ShadowTarget = ParseString("XG2G_V3_SHADOW_TARGET", cfg.ShadowTarget)
 
-	cfg.WorkerEnabled = ParseBool("XG2G_V3_WORKER_ENABLED", cfg.WorkerEnabled)
-	cfg.WorkerMode = ParseString("XG2G_V3_WORKER_MODE", cfg.WorkerMode)
-	cfg.StoreBackend = ParseString("XG2G_V3_STORE_BACKEND", cfg.StoreBackend)
-	cfg.StorePath = ParseString("XG2G_V3_STORE_PATH", cfg.StorePath)
+	// CANONICAL ENGINE CONFIG
+	cfg.Engine.Enabled = ParseBool("XG2G_ENGINE_ENABLED", cfg.Engine.Enabled)
+	cfg.Engine.Mode = ParseString("XG2G_ENGINE_MODE", cfg.Engine.Mode)
+	cfg.Engine.IdleTimeout = ParseDuration("XG2G_ENGINE_IDLE_TIMEOUT", cfg.Engine.IdleTimeout)
 
-	if rawSlots, ok := os.LookupEnv("XG2G_V3_TUNER_SLOTS"); ok {
+	// Tuner Slots: XG2G_TUNER_SLOTS
+	if rawSlots, ok := os.LookupEnv("XG2G_TUNER_SLOTS"); ok {
 		logger := log.WithComponent("config")
 		if strings.TrimSpace(rawSlots) == "" {
-			logger.Warn().
-				Str("key", "XG2G_V3_TUNER_SLOTS").
-				Msg("empty tuner slots, keeping existing config")
+			logger.Warn().Str("key", "XG2G_TUNER_SLOTS").Msg("empty tuner slots, keeping defaults")
 		} else if slots, err := ParseTunerSlots(rawSlots); err == nil {
-			cfg.TunerSlots = slots
+			cfg.Engine.TunerSlots = slots
 		} else {
-			logger.Warn().
-				Str("key", "XG2G_V3_TUNER_SLOTS").
-				Str("value", rawSlots).
-				Err(err).
-				Msg("invalid tuner slots, keeping existing config")
+			logger.Warn().Str("key", "XG2G_TUNER_SLOTS").Str("value", rawSlots).Err(err).Msg("invalid tuner slots, keeping defaults")
 		}
 	}
 	// Defaulting Rule: Virtual Mode defaults to [0] if empty
-	if len(cfg.TunerSlots) == 0 && cfg.WorkerMode == "virtual" {
-		cfg.TunerSlots = []int{0}
+	if len(cfg.Engine.TunerSlots) == 0 && cfg.Engine.Mode == "virtual" {
+		cfg.Engine.TunerSlots = []int{0}
 	}
 
-	cfg.V3APILeases = ParseBool("XG2G_V3_API_LEASES", cfg.V3APILeases)
+	// CANONICAL STORE CONFIG
+	cfg.Store.Backend = ParseString("XG2G_STORE_BACKEND", cfg.Store.Backend)
+	cfg.Store.Path = ParseString("XG2G_STORE_PATH", cfg.Store.Path)
 
-	// Smart defaulting: If XG2G_V3_E2_HOST is not set, inherit from config or OWI_BASE
-	// This prevents Docker networking issues where "localhost" doesn't work
-	e2Host := ParseString("XG2G_V3_E2_HOST", "")
-	if e2Host == "" {
-		if cfg.E2Host != "" {
-			e2Host = cfg.E2Host
-		} else if cfg.OWIBase != "" {
-			e2Host = cfg.OWIBase
-		} else {
-			e2Host = "http://localhost"
-		}
-	}
-	cfg.E2Host = e2Host
-	cfg.E2TuneTimeout = ParseDuration("XG2G_V3_TUNE_TIMEOUT", cfg.E2TuneTimeout)
-	cfg.E2Timeout = ParseDuration("XG2G_V3_E2_TIMEOUT", cfg.E2Timeout)
-	cfg.E2RespTimeout = ParseDuration("XG2G_V3_E2_RESPONSE_HEADER_TIMEOUT", cfg.E2RespTimeout)
-	cfg.E2Retries = ParseInt("XG2G_V3_E2_RETRIES", cfg.E2Retries)
-	cfg.E2Backoff = ParseDuration("XG2G_V3_E2_BACKOFF", cfg.E2Backoff)
-	cfg.E2MaxBackoff = ParseDuration("XG2G_V3_E2_MAX_BACKOFF", cfg.E2MaxBackoff)
-	cfg.E2RateLimit = ParseInt("XG2G_V3_E2_RATE_LIMIT", cfg.E2RateLimit)
-	cfg.E2RateBurst = ParseInt("XG2G_V3_E2_RATE_BURST", cfg.E2RateBurst)
-	cfg.E2UserAgent = ParseString("XG2G_V3_E2_USER_AGENT", cfg.E2UserAgent)
+	// CANONICAL HLS CONFIG
+	cfg.HLS.Root = ParseString("XG2G_HLS_ROOT", cfg.HLS.Root)
+	cfg.HLS.DVRWindow = ParseDuration("XG2G_DVR_WINDOW", cfg.HLS.DVRWindow)
 
-	if v := ParseString("XG2G_V3_E2_USER", ""); v != "" {
-		cfg.E2Username = v
-	}
-	if v := ParseString("XG2G_V3_E2_PASS", ""); v != "" {
-		cfg.E2Password = v
+	// CANONICAL ENIGMA2 CONFIG
+	cfg.Enigma2.BaseURL = ParseString("XG2G_E2_HOST", cfg.Enigma2.BaseURL)
+	cfg.Enigma2.Username = ParseString("XG2G_E2_USER", cfg.Enigma2.Username)
+	cfg.Enigma2.Password = ParseString("XG2G_E2_PASS", cfg.Enigma2.Password)
+	cfg.Enigma2.AuthMode = strings.ToLower(strings.TrimSpace(ParseString("XG2G_E2_AUTH_MODE", cfg.Enigma2.AuthMode)))
+	cfg.Enigma2.Timeout = ParseDuration("XG2G_E2_TIMEOUT", cfg.Enigma2.Timeout)
+	cfg.Enigma2.ResponseHeaderTimeout = ParseDuration("XG2G_E2_RESPONSE_HEADER_TIMEOUT", cfg.Enigma2.ResponseHeaderTimeout)
+	cfg.Enigma2.Retries = ParseInt("XG2G_E2_RETRIES", cfg.Enigma2.Retries)
+	cfg.Enigma2.Backoff = ParseDuration("XG2G_E2_BACKOFF", cfg.Enigma2.Backoff)
+	cfg.Enigma2.MaxBackoff = ParseDuration("XG2G_E2_MAX_BACKOFF", cfg.Enigma2.MaxBackoff)
+	cfg.Enigma2.RateLimit = ParseInt("XG2G_E2_RATE_LIMIT", cfg.Enigma2.RateLimit)
+	cfg.Enigma2.RateBurst = ParseInt("XG2G_E2_RATE_BURST", cfg.Enigma2.RateBurst)
+	cfg.Enigma2.UserAgent = ParseString("XG2G_E2_USER_AGENT", cfg.Enigma2.UserAgent)
+	cfg.Enigma2.AnalyzeDuration = ParseString("XG2G_E2_ANALYZE_DURATION", cfg.Enigma2.AnalyzeDuration)
+	cfg.Enigma2.ProbeSize = ParseString("XG2G_E2_PROBE_SIZE", cfg.Enigma2.ProbeSize)
+
+	// Smart Defaulting: If E2Host is not set, inherit OWI config
+	if cfg.Enigma2.BaseURL == "" && cfg.OWIBase != "" {
+		cfg.Enigma2.BaseURL = cfg.OWIBase
 	}
 
-	cfg.FFmpegBin = ParseString("XG2G_V3_FFMPEG_BIN", cfg.FFmpegBin)
-	cfg.FFmpegKillTimeout = ParseDuration("XG2G_V3_FFMPEG_KILL_TIMEOUT", cfg.FFmpegKillTimeout)
-
-	cfg.HLSRoot = ParseString("XG2G_V3_HLS_ROOT", cfg.HLSRoot)
-	cfg.DVRWindowSec = ParseInt("XG2G_V3_DVR_WINDOW", cfg.DVRWindowSec) // Default: 45 minutes
-	cfg.V3IdleTimeout = ParseDuration("XG2G_V3_IDLE_TIMEOUT", cfg.V3IdleTimeout)
+	// CANONICAL FFMPEG CONFIG
+	cfg.FFmpeg.Bin = ParseString("XG2G_FFMPEG_BIN", cfg.FFmpeg.Bin)
+	cfg.FFmpeg.KillTimeout = ParseDuration("XG2G_FFMPEG_KILL_TIMEOUT", cfg.FFmpeg.KillTimeout)
 
 	// Rate Limiting
-	cfg.RateLimitEnabled = ParseBool("XG2G_RATELIMIT", cfg.RateLimitEnabled)
-	cfg.RateLimitGlobal = ParseInt("XG2G_RATELIMIT_GLOBAL", cfg.RateLimitGlobal)
-	cfg.RateLimitAuth = ParseInt("XG2G_RATELIMIT_AUTH", cfg.RateLimitAuth)
-	cfg.RateLimitBurst = ParseInt("XG2G_RATELIMIT_BURST", cfg.RateLimitBurst)
-	cfg.RateLimitWhitelist = parseCommaSeparated(ParseString("XG2G_RATELIMIT_WHITELIST", ""), cfg.RateLimitWhitelist)
-
-	// CSRF / CORS (Env Aliases)
-	cfg.AllowedOrigins = parseCommaSeparated(ParseString("XG2G_ALLOWED_ORIGINS", ""), cfg.AllowedOrigins)
+	cfg.RateLimitEnabled = ParseBool("XG2G_RATE_LIMIT_ENABLED", cfg.RateLimitEnabled)
+	cfg.RateLimitGlobal = ParseInt("XG2G_RATE_LIMIT_GLOBAL", cfg.RateLimitGlobal)
+	cfg.RateLimitAuth = ParseInt("XG2G_RATE_LIMIT_AUTH", cfg.RateLimitAuth)
+	cfg.RateLimitBurst = ParseInt("XG2G_RATE_LIMIT_BURST", cfg.RateLimitBurst)
+	if whitelist := ParseString("XG2G_RATE_LIMIT_WHITELIST", ""); whitelist != "" {
+		cfg.RateLimitWhitelist = parseCommaSeparated(whitelist, cfg.RateLimitWhitelist)
+	}
 
 	// Trusted Proxies
 	cfg.TrustedProxies = ParseString("XG2G_TRUSTED_PROXIES", cfg.TrustedProxies)
-
-	// Recording Roots (Env Override)
-	cfg.RecordingRoots = parseRecordingRoots(ParseString("XG2G_RECORDING_ROOTS", ""), cfg.RecordingRoots)
-
-	// Recording Playback Configuration
-	cfg.RecordingPlaybackPolicy = ParseString("XG2G_RECORDING_PLAYBACK_POLICY", cfg.RecordingPlaybackPolicy)
-	if w := ParseDuration("XG2G_RECORDING_STABLE_WINDOW", 0); w > 0 {
-		cfg.RecordingStableWindow = w
-	}
-	cfg.RecordingPathMappings = parseRecordingMappings(ParseString("XG2G_RECORDINGS_MAP", ""), cfg.RecordingPathMappings)
-
-	// VOD Optimization
-	cfg.VODProbeSize = ParseString("XG2G_VOD_PROBESIZE", cfg.VODProbeSize)
-	cfg.VODAnalyzeDuration = ParseString("XG2G_VOD_ANALYZEDURATION", cfg.VODAnalyzeDuration)
-	cfg.VODStallTimeout = ParseDuration("XG2G_VOD_STALL_TIMEOUT", cfg.VODStallTimeout)
-
-	// HDHomeRun Emulation
-	hdhrEnabled := ParseBool("XG2G_HDHR_ENABLED", *cfg.HDHR.Enabled)
-	cfg.HDHR.Enabled = &hdhrEnabled
-
-	cfg.HDHR.DeviceID = ParseString("XG2G_HDHR_DEVICE_ID", cfg.HDHR.DeviceID)
-	cfg.HDHR.FriendlyName = ParseString("XG2G_HDHR_FRIENDLY_NAME", cfg.HDHR.FriendlyName)
-	cfg.HDHR.ModelNumber = ParseString("XG2G_HDHR_MODEL", cfg.HDHR.ModelNumber)
-	cfg.HDHR.FirmwareName = ParseString("XG2G_HDHR_FIRMWARE", cfg.HDHR.FirmwareName)
-	cfg.HDHR.BaseURL = ParseString("XG2G_HDHR_BASE_URL", cfg.HDHR.BaseURL)
-
-	hdhrTunerCount := ParseInt("XG2G_HDHR_TUNER_COUNT", *cfg.HDHR.TunerCount)
-	cfg.HDHR.TunerCount = &hdhrTunerCount
-
-	plexForceHLS := ParseBool("XG2G_PLEX_FORCE_HLS", *cfg.HDHR.PlexForceHLS)
-	cfg.HDHR.PlexForceHLS = &plexForceHLS
 }
 
 // expandEnv expands environment variables in the format ${VAR} or $VAR

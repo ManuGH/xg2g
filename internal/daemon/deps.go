@@ -12,11 +12,11 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/health"
-	"github.com/ManuGH/xg2g/internal/v3/bus"
-	"github.com/ManuGH/xg2g/internal/v3/resume"
-	"github.com/ManuGH/xg2g/internal/v3/scan"
-	"github.com/ManuGH/xg2g/internal/v3/shadow"
-	"github.com/ManuGH/xg2g/internal/v3/store"
+	"github.com/ManuGH/xg2g/internal/pipeline/bus"
+	"github.com/ManuGH/xg2g/internal/pipeline/resume"
+	"github.com/ManuGH/xg2g/internal/pipeline/scan"
+	"github.com/ManuGH/xg2g/internal/pipeline/shadow"
+	"github.com/ManuGH/xg2g/internal/pipeline/store"
 	"github.com/rs/zerolog"
 )
 

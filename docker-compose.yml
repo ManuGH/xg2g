@@ -28,11 +28,11 @@ services:
       - SETUID
       - NET_BIND_SERVICE
 
-    # Mounts for data and V3 store/HLS
+    # Mounts for data and HLS
     volumes:
       - ./data:/data
       - ./data/v3-store:/data/v3-store
-      - ./data/v3-hls:/data/v3-hls
+      - ./data/hls:/data/hls # [New Standard] Migrated from v3-hls automatically
 
     env_file:
       - .env
@@ -62,9 +62,9 @@ services:
       # Bouquets (Optional, comma-separated. Empty = All)
       - XG2G_BOUQUET=${XG2G_BOUQUET:-}
 
-      # V3 Streaming Backend
+      # V3/Pipeline Streaming Backend
       - XG2G_V3_WORKER_ENABLED=${XG2G_V3_WORKER_ENABLED:-true}
-      - XG2G_V3_HLS_ROOT=/data/v3-hls
+      - XG2G_HLS_ROOT=/data/hls # [New Standard] Primary HLS mount
       - XG2G_V3_STORE_PATH=/data/v3-store
 
     healthcheck:

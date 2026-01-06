@@ -1,0 +1,245 @@
+// Copyright (c) 2025 ManuGH
+// Licensed under the PolyForm Noncommercial License 1.0.0
+// Since v2.0.0, this software is restricted to non-commercial use only.
+
+package v3
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/ManuGH/xg2g/internal/channels"
+	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/dvr"
+	"github.com/ManuGH/xg2g/internal/epg"
+	"github.com/ManuGH/xg2g/internal/jobs"
+	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/openwebif"
+	"github.com/ManuGH/xg2g/internal/pipeline/bus"
+	"github.com/ManuGH/xg2g/internal/pipeline/resume"
+	"github.com/ManuGH/xg2g/internal/pipeline/scan"
+	"github.com/ManuGH/xg2g/internal/pipeline/store"
+	"github.com/ManuGH/xg2g/internal/recordings"
+	"github.com/ManuGH/xg2g/internal/vod"
+	"golang.org/x/sync/singleflight"
+)
+
+// PreflightCheckFunc validates source accessibility before initiating a stream.
+type PreflightCheckFunc func(context.Context, string) error
+
+// Server implements the v3 API handlers.
+// It encapsulates all logic for /api/v3 endpoints.
+// Field names are kept consistent with internal/api.Server for seamless migration.
+type Server struct {
+	mu sync.RWMutex
+
+	// Shared State & Configuration
+	cfg       config.AppConfig
+	snap      config.Snapshot
+	status    jobs.Status
+	startTime time.Time
+
+	// Core Components
+	v3Bus               bus.Bus
+	v3Store             store.StateStore
+	resumeStore         resume.Store
+	v3Scan              *scan.Manager
+	recordingPathMapper *recordings.PathMapper
+	channelManager      *channels.Manager
+	seriesManager       *dvr.Manager
+	seriesEngine        *dvr.SeriesEngine
+	vodManager          vod.ManagerAPI
+	epgCache            *epg.TV // EPG Cache reference
+	owiClient           *openwebif.Client
+	owiEpoch            uint64
+	configManager       *config.Manager
+	epgCacheTime        time.Time
+	epgCacheMTime       time.Time
+	epgSfg              singleflight.Group
+
+	// Lifecycle
+	requestShutdown func(context.Context) error
+	preflightCheck  PreflightCheckFunc
+}
+
+// NewServer creates a new implemented v3 server.
+func NewServer(cfg config.AppConfig, cfgMgr *config.Manager, rootCancel context.CancelFunc) *Server {
+	return &Server{
+		cfg:           cfg,
+		configManager: cfgMgr,
+		startTime:     time.Now(),
+	}
+}
+
+// UpdateConfig updates the internal configuration snapshot.
+func (s *Server) UpdateConfig(cfg config.AppConfig, snap config.Snapshot) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cfg = cfg
+	s.snap = snap
+	s.owiEpoch++ // Invalidate cached OWI client
+}
+
+// UpdateStatus updates the internal status snapshot.
+func (s *Server) UpdateStatus(st jobs.Status) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.status = st
+}
+
+// SetPreflightCheck sets the source availability validator.
+func (s *Server) SetPreflightCheck(fn PreflightCheckFunc) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.preflightCheck = fn
+}
+
+// SetDependencies injects shared services into the handler.
+func (s *Server) SetDependencies(
+	bus bus.Bus,
+	store store.StateStore,
+	resume resume.Store,
+	scan *scan.Manager,
+	rpm *recordings.PathMapper,
+	cm *channels.Manager,
+	sm *dvr.Manager,
+	se *dvr.SeriesEngine,
+	vm vod.ManagerAPI,
+	epg *epg.TV,
+	requestShutdown func(context.Context) error,
+	preflightCheck PreflightCheckFunc,
+) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.v3Bus = bus
+	s.v3Store = store
+	s.resumeStore = resume
+	s.v3Scan = scan
+	s.recordingPathMapper = rpm
+	s.channelManager = cm
+	s.seriesManager = sm
+	s.seriesEngine = se
+	s.vodManager = vm
+	s.epgCache = epg
+	s.requestShutdown = requestShutdown
+	s.preflightCheck = preflightCheck
+}
+
+// GetConfig returns a copy of the current config.
+func (s *Server) GetConfig() config.AppConfig {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.cfg
+}
+
+// GetStatus returns the current status.
+func (s *Server) GetStatus() jobs.Status {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.status
+}
+
+func (s *Server) dataFilePath(rel string) (string, error) {
+	clean := filepath.Clean(rel)
+	if filepath.IsAbs(clean) {
+		return "", fmt.Errorf("data file path must be relative: %s", rel)
+	}
+	if strings.Contains(clean, "..") {
+		return "", fmt.Errorf("data file path contains traversal: %s", rel)
+	}
+
+	s.mu.RLock()
+	dataDir := s.cfg.DataDir
+	s.mu.RUnlock()
+
+	root, err := filepath.Abs(dataDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve data directory: %w", err)
+	}
+
+	full := filepath.Join(root, clean)
+	resolvedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		resolvedRoot = root
+	}
+
+	resolved := full
+	if info, statErr := os.Stat(full); statErr == nil {
+		if info.IsDir() {
+			return "", fmt.Errorf("data file path points to directory: %s", rel)
+		}
+		if resolvedPath, evalErr := filepath.EvalSymlinks(full); evalErr == nil {
+			resolved = resolvedPath
+		}
+	} else if !errors.Is(statErr, os.ErrNotExist) {
+		return "", fmt.Errorf("stat data file: %w", statErr)
+	} else {
+		// File might be generated later; still ensure parent directories stay within root.
+		dir := filepath.Dir(full)
+		if _, dirErr := os.Stat(dir); dirErr == nil {
+			if realDir, evalErr := filepath.EvalSymlinks(dir); evalErr == nil {
+				resolved = filepath.Join(realDir, filepath.Base(full))
+			}
+		}
+	}
+
+	relToRoot, err := filepath.Rel(resolvedRoot, resolved)
+	if err != nil {
+		return "", fmt.Errorf("resolve relative path: %w", err)
+	}
+	if strings.HasPrefix(relToRoot, "..") || filepath.IsAbs(relToRoot) {
+		return "", fmt.Errorf("data file escapes data directory: %s", rel)
+	}
+
+	return resolved, nil
+}
+
+// newOpenWebIFClient gets or creates a cached client from config
+func (s *Server) newOpenWebIFClient(cfg config.AppConfig, snap config.Snapshot) *openwebif.Client {
+	// 1. Fast path: Read lock check
+	s.mu.RLock()
+	cachedClient := s.owiClient
+	cachedEpoch := s.owiEpoch
+	s.mu.RUnlock()
+
+	// If cached match, assume safe to use (Client is thread-safe)
+	if cachedClient != nil && cachedEpoch == snap.Epoch {
+		return cachedClient
+	}
+
+	// 2. Slow path: Write lock
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Double check
+	if s.owiClient != nil && s.owiEpoch == snap.Epoch {
+		return s.owiClient
+	}
+
+	// Rebuild
+	log.L().Debug().Uint64("epoch", snap.Epoch).Msg("recreating OpenWebIF client")
+	enableHTTP2 := snap.Runtime.OpenWebIF.HTTPEnableHTTP2
+	client := openwebif.NewWithPort(cfg.OWIBase, cfg.StreamPort, openwebif.Options{
+		Timeout:                 cfg.OWITimeout,
+		Username:                cfg.OWIUsername,
+		Password:                cfg.OWIPassword,
+		UseWebIFStreams:         cfg.UseWebIFStreams,
+		StreamBaseURL:           snap.Runtime.OpenWebIF.StreamBaseURL,
+		HTTPMaxIdleConns:        snap.Runtime.OpenWebIF.HTTPMaxIdleConns,
+		HTTPMaxIdleConnsPerHost: snap.Runtime.OpenWebIF.HTTPMaxIdleConnsPerHost,
+		HTTPMaxConnsPerHost:     snap.Runtime.OpenWebIF.HTTPMaxConnsPerHost,
+		HTTPIdleTimeout:         snap.Runtime.OpenWebIF.HTTPIdleTimeout,
+		HTTPEnableHTTP2:         &enableHTTP2,
+	})
+
+	s.owiClient = client
+	s.owiEpoch = snap.Epoch
+
+	return client
+}

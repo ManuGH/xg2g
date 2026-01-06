@@ -550,25 +550,6 @@ components:
         services:
           type: integer
 
-    Service:
-      type: object
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-        group:
-          type: string
-        logo_url:
-          type: string
-        number:
-          type: string
-        enabled:
-          type: boolean
-        service_ref:
-          type: string
-          description: Service reference for streaming (extracted from M3U URL)
-
     NowNextRequest:
       type: object
       required: [services]

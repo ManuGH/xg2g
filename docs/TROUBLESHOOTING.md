@@ -27,7 +27,7 @@ The V3 streaming system implements a **Post-Zap Delay** plus a **Readiness Probe
 
 - **Mechanism**: The V3 orchestrator enforces a post-zap delay (configurable, default **5 seconds**) after successfully resolving the stream URL from OpenWebIF, then probes the resolved stream URL until it yields bytes before starting FFmpeg.
 - **Effect**: Avoids "connect too early" flake by waiting for the receiver port to be actually readable, not just theoretically open.
-- **Implementation**: See `internal/v3/exec/enigma2/client_ext.go` for stream resolution and tuning logic.
+- **Implementation**: See `internal/pipeline/exec/enigma2/client_ext.go` for stream resolution and tuning logic.
 
 ### If it still fails (fast-fail behavior)
 

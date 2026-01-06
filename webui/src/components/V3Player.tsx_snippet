@@ -1,0 +1,39 @@
+
+  const waitForDirectStream = useCallback(async (url: string): Promise<void> => {
+    const maxRetries = 100; // 5 minutes max wait
+    let retries = 0;
+
+    while (retries < maxRetries) {
+      if (isTeardownRef.current) throw new Error('Playback cancelled');
+      
+      try {
+        // Use standard fetch to check status without downloading body
+        const res = await fetch(url, { method: 'HEAD' });
+        
+        if (res.ok || res.status === 206) {
+          return; // Ready!
+        }
+
+        if (res.status === 503) {
+          // Parse Retry-After or ETA if available
+          let msg = t('player.preparing');
+          const retryAfter = res.headers.get('Retry-After');
+          // Backend might send ETA in JSON body on GET, but we use HEAD here.
+          // Fallback to generic message with countdown.
+          setStatus('starting'); // Keep status as busy
+          // Update error details to show progress (hacky but effective)
+          setErrorDetails(`${t('player.preparing')} (${retries * 3}s...)`);
+          setShowErrorDetails(true);
+        } else {
+           throw new Error(`Unexpected status: ${res.status}`);
+        }
+      } catch (e) {
+         console.warn('[V3Player] Probe failed', e);
+         // Network error? retry.
+      }
+
+      retries++;
+      await new Promise(r => setTimeout(r, 3000));
+    }
+    throw new Error(t('player.timeout'));
+  }, [t]);

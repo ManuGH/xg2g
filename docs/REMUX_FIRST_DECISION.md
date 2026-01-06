@@ -144,7 +144,7 @@ Do NOT apply `Content-Encoding: gzip` to init.mp4 or .m4s files.
 ### Unit tests
 
 ```bash
-go test ./internal/v3/exec/ffmpeg/... -run TestStreamProbeResult_CanRemux
+go test ./internal/pipeline/exec/ffmpeg/... -run TestStreamProbeResult_CanRemux
 ```
 
 ### Integration test checklist
@@ -203,6 +203,6 @@ ls -1 /recordings/{id}/hls/seg_*.m4s | wc -l
 
 ## References
 
-- [args.go](../internal/v3/exec/ffmpeg/args.go) – ffmpeg argument construction
-- [probe.go](../internal/v3/exec/ffmpeg/probe.go) – Stream analysis and remux decision
-- [hls.go](../internal/v3/api/hls.go) – HLS delivery with correct MIME types
+- [args.go](../internal/pipeline/exec/ffmpeg/args.go) – ffmpeg argument construction
+- [probe.go](../internal/pipeline/exec/ffmpeg/probe.go) – Stream analysis and remux decision
+- [hls.go](../internal/pipeline/api/hls.go) – HLS delivery with correct MIME types

@@ -25,4 +25,4 @@ jobs:
         run: go test ./...
 
       - name: Safari HLS integration smoke
-        run: go test -tags=integration ./internal/v3/api -run TestSafariHLSSmoke -v
+        run: go test -tags=integration ./internal/pipeline/api -run TestSafariHLSSmoke -v
