@@ -30,16 +30,6 @@ export type IntentRequest = {
      */
     serviceRef?: string;
     /**
-     * Transcoding profile ID
-     */
-    profileID?: string;
-    /**
-     * Legacy alias for profileID (decode-only, will be removed in v3.2)
-     *
-     * @deprecated
-     */
-    profile?: string;
-    /**
      * Hardware acceleration override (v3.1+).
      * - auto: Server decides based on GPU availability
      * - force: Force GPU encoding (fails if no GPU)

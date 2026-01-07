@@ -632,7 +632,6 @@ func runRaceTest(t *testing.T, srv testServer, tok testTokens, spy *SpyStore, sp
 			// Use same serviceRef to trigger collision
 			body := map[string]any{
 				"type":       "stream.start",
-				"profileID":  "auto",
 				"serviceRef": "1:0:19:132F:3EF:1:C00000:0:0:0:RACETEST",
 			}
 			resp := doReq(t, client, http.MethodPost, srv.url+"/api/v3/intents", body, tok.write, "127.0.0.1")

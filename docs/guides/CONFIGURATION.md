@@ -333,6 +333,57 @@ The v3 streaming backend is the **production streaming system** (enabled by defa
 | `XG2G_FFMPEG_BIN` | `ffmpeg` | Path to ffmpeg binary |
 | `XG2G_E2_AUTH_MODE` | `inherit` | E2 authentication mode: `inherit`, `none`, `explicit` |
 | `XG2G_CONFIG_STRICT` | `true` | Enforce strict v3 config validation (override for migration) |
+| `XG2G_STREAMING_POLICY` | `universal` | Streaming delivery policy (ADR-00X: only `universal` is supported) |
+
+### Streaming Delivery Policy (ADR-00X)
+
+xg2g uses a **single, server-defined streaming delivery policy**: `universal`.
+
+**Guarantees**:
+
+- **Video**: H.264 (AVC)
+- **Audio**: AAC
+- **Container**: fMP4
+- **Delivery**: HLS
+- **Compatibility**: Safari/iOS Tier-1 compliant (GOP/segment constraints enforced server-side)
+
+**Non-Goals**:
+
+- No HEVC/x265 by default
+- No User-Agent detection
+- No client-side fallbacks or auto-switching
+
+> [!IMPORTANT]
+> **Universal is the only supported delivery path.** Browser-specific playback issues are bugs in the pipeline, not a reason to introduce new policies or UI fallbacks.
+
+**Environment Variable**:
+
+```bash
+export XG2G_STREAMING_POLICY=universal  # Default (only supported value)
+```
+
+**YAML Configuration**:
+
+```yaml
+streaming:
+  delivery_policy: universal  # Only supported value
+```
+
+**Breaking Change** (v3.1+):
+
+The old `XG2G_STREAM_PROFILE` environment variable has been **removed**. If this variable is still set, the application will **fail to start** with the following error:
+
+```
+XG2G_STREAM_PROFILE removed. Use XG2G_STREAMING_POLICY=universal (ADR-00X)
+```
+
+**Migration**:
+
+| Old (v3.0) | New (v3.1+) | Action |
+|---|---|---|
+| `XG2G_STREAM_PROFILE=auto` | `XG2G_STREAMING_POLICY=universal` | Update env var |
+| `XG2G_STREAM_PROFILE=safari` | `XG2G_STREAMING_POLICY=universal` | Update env var |
+| `XG2G_STREAM_PROFILE=safari_hevc_hw` | `XG2G_STREAMING_POLICY=universal` | Update env var |
 
 **E2 Auth Mode (`XG2G_E2_AUTH_MODE`):**
 

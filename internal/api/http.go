@@ -371,7 +371,9 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	}
 
 	// 2. Run final VOD cleanup (kill processes)
-	// Phase B: vodManager handles cleanup via context (TODO: Add Shutdown to ManagerAPI if needed)
+	if s.vodManager != nil {
+		s.vodManager.CancelAll()
+	}
 	// Legacy cleanupRecordingBuilds removed.
 
 	// 3. Wait for active builds?

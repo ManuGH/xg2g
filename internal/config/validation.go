@@ -173,43 +173,15 @@ func Validate(cfg AppConfig) error {
 		return v.Err()
 	}
 
-	// Validate Streaming Config (PR 5.1: Thin Client Fix)
-	validProfiles := map[string]bool{
-		"auto":           true,
-		"safari":         true,
-		"safari_hevc_hw": true,
+	// Validate Streaming Config (ADR-00X: universal policy only)
+	if cfg.Streaming.DeliveryPolicy != "universal" {
+		v.AddError("Streaming.DeliveryPolicy",
+			"only 'universal' policy is supported (ADR-00X)",
+			cfg.Streaming.DeliveryPolicy)
 	}
 
-	// Check default_profile is valid enum (always set after defaults)
-	if !validProfiles[cfg.Streaming.DefaultProfile] {
-		v.AddError("Streaming.DefaultProfile",
-			"invalid profile: must be one of auto, safari, safari_hevc_hw",
-			cfg.Streaming.DefaultProfile)
-	}
-
-	// Check each allowed_profiles entry is valid
-	for _, p := range cfg.Streaming.AllowedProfiles {
-		if !validProfiles[p] {
-			v.AddError("Streaming.AllowedProfiles",
-				"invalid profile in allowed_profiles",
-				p)
-		}
-	}
-
-	// Check default_profile is in allowed_profiles
-	if len(cfg.Streaming.AllowedProfiles) > 0 {
-		found := false
-		for _, p := range cfg.Streaming.AllowedProfiles {
-			if p == cfg.Streaming.DefaultProfile {
-				found = true
-				break
-			}
-		}
-		if !found {
-			v.AddError("Streaming.DefaultProfile",
-				"default_profile not in allowed_profiles",
-				cfg.Streaming.DefaultProfile)
-		}
+	if !v.IsValid() {
+		return v.Err()
 	}
 
 	return nil

@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -34,6 +35,8 @@ import (
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/platform/net"
+	"github.com/ManuGH/xg2g/internal/resilience"
+	"github.com/ManuGH/xg2g/internal/vod"
 
 	ffmpegexec "github.com/ManuGH/xg2g/internal/pipeline/exec/ffmpeg"
 	"github.com/ManuGH/xg2g/internal/platform/fs"
@@ -283,15 +286,15 @@ func (s *Server) GetRecordingsRecordingIdStatus(w http.ResponseWriter, r *http.R
 		resp := RecordingBuildStatus{
 			State: RecordingBuildStatusStateRUNNING,
 		}
-		if run.Err != nil {
+		if err := run.Error(); err != nil {
 			resp.State = RecordingBuildStatusStateFAILED
-			msg := run.Err.Error()
+			msg := err.Error()
 			resp.Error = &msg
 		} else {
 			// Check done channel if finished success?
 			select {
 			case <-run.Done:
-				if run.Err == nil {
+				if run.Error() == nil {
 					resp.State = RecordingBuildStatusStateREADY
 				}
 			default:
@@ -342,7 +345,6 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 	// 1. Prepare Roots (Map manual params to query logic if needed, but generated code passes params struct)
 	// We need to use params instead of parsing r.URL manually if we want to be clean,
 	// but for now let's just use the method signature and existing logic if possible.
-	// Wait, param signature changed!
 	// Old: func (s *Server) GetRecordingsHandler(w http.ResponseWriter, r *http.Request)
 	// New: func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params GetRecordingsParams)
 
@@ -497,8 +499,15 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 	// client is already initialized above for discovery
 	list, err := client.GetRecordings(r.Context(), cleanTarget)
 	if err != nil {
-		log.L().Error().Err(err).Str("path", cleanTarget).Msg("failed to fetch recordings")
-		http.Error(w, "Failed to fetch recordings from receiver", http.StatusBadGateway)
+		log.L().Error().Err(err).Str("event", "openwebif.recordings_failed").Msg("failed to fetch recordings from receiver")
+		RespondError(w, r, http.StatusBadGateway, ErrUpstreamUnavailable)
+		return
+	}
+
+	if !list.Result {
+		log.L().Warn().Str("event", "openwebif.result_false").Str("rel_path", cleanRel).Msg("receiver returned result=false for recordings list")
+		// CONTRACT-004: Specific error code for result=false
+		RespondError(w, r, http.StatusBadGateway, ErrUpstreamResultFalse)
 		return
 	}
 
@@ -520,7 +529,8 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 			desc += m.ExtendedDescription
 		}
 
-		durationSeconds, durationKnown := ParseRecordingDurationSeconds(m.Length)
+		durationSeconds, durErr := ParseRecordingDurationSeconds(m.Length)
+		durationKnown := (durErr == nil)
 
 		// Fallback for missing length on local files (NAS)
 		if (m.Length == "" || m.Length == "0") && s.recordingPathMapper != nil {
@@ -534,7 +544,7 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 						if pErr == nil && dur > 0 {
 							m.Length = fmt.Sprintf("%d min", int(dur.Minutes()))
 							durationSeconds = int64(dur.Seconds())
-							durationKnown = durationSeconds > 0
+							durationKnown = true
 							// Operator-facing log for "VOD-mode eligibility"
 							log.L().Info().
 								Str("recording_id", m.ServiceRef).
@@ -550,7 +560,7 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 							if minutes > 0 {
 								m.Length = fmt.Sprintf("%d min", minutes)
 								durationSeconds = int64(minutes * 60)
-								durationKnown = durationSeconds > 0
+								durationKnown = true
 								log.L().Debug().Str("file", localPath).Int64("size", info.Size()).Msgf("estimated heuristic duration: %s", m.Length)
 							}
 						}
@@ -804,31 +814,49 @@ func (s *Server) StreamRecordingDirect(w http.ResponseWriter, r *http.Request, r
 	cachePath := filepath.Join(cacheDir, cacheName)
 
 	// 3. Unify Build Orchestration
-	// Delegate to central asset manager which handles:
-	// - Validation
-	// - Cache checking (and versioning via VODCacheVersion)
-	// - Concurrency control (Semaphore)
-	// - Build scheduling (recordingRun map)
-	_, err := s.ensureRecordingPlaybackAssets(r.Context(), serviceRef)
-	if err == nil {
-		// Success! Cache is ready.
-		// Open file explicitly to ensure we can close it (ServeContent does not close)
-		f, err := os.Open(cachePath)
-		if err != nil {
-			log.L().Error().Err(err).Str("path", cachePath).Msg("failed to open cached vod file")
-			http.Error(w, "Stream Error", http.StatusInternalServerError)
+	if _, err := os.Stat(cachePath); err == nil {
+		// Ready!
+	} else {
+		// Start MP4 Remux (Phase C)
+		req, pErr := s.prepareVODRequest(r.Context(), recordingId, serviceRef, localPath, cachePath)
+		if pErr != nil {
+			s.writeRecordingPlaybackError(w, r, serviceRef, pErr)
 			return
 		}
-		defer f.Close()
 
-		if info, err := f.Stat(); err == nil {
-			http.ServeContent(w, r, "stream.mp4", info.ModTime(), f)
+		spec := vod.JobSpec{
+			ID:         cachePath,
+			ServiceRef: serviceRef,
+			Kind:       "mp4",
+		}
+		_, isNew := s.vodManager.EnsureSpec(r.Context(), spec, s.executeVODWork(req))
+		if isNew {
+			s.writeRecordingPlaybackError(w, r, serviceRef, errRecordingNotReady)
 			return
 		}
-	} else if !errors.Is(err, errRecordingNotReady) {
-		// Genuine Error
-		log.L().Error().Err(err).Str("recording", recordingId).Msg("vod preparation failed")
-		s.writeRecordingPlaybackError(w, r, serviceRef, err)
+	}
+
+	// 4. Try serve if ready or running (handled below)
+	if run := s.vodManager.Get(cachePath); run == nil {
+		// Not in manager and not on disk?
+		if _, err := os.Stat(cachePath); err != nil {
+			s.writeRecordingPlaybackError(w, r, serviceRef, errRecordingNotReady)
+			return
+		}
+	}
+
+	// Success! Cache is ready.
+	// Open file explicitly to ensure we can close it (ServeContent does not close)
+	f, err := os.Open(cachePath)
+	if err != nil {
+		log.L().Error().Err(err).Str("path", cachePath).Msg("failed to open cached vod file")
+		http.Error(w, "Stream Error", http.StatusInternalServerError)
+		return
+	}
+	defer f.Close()
+
+	if info, err := f.Stat(); err == nil {
+		http.ServeContent(w, r, "stream.mp4", info.ModTime(), f)
 		return
 	}
 
@@ -841,8 +869,8 @@ func (s *Server) StreamRecordingDirect(w http.ResponseWriter, r *http.Request, r
 		select {
 		case <-run.Done:
 			// Run verified complete
-			if run.Err != nil {
-				s.writeRecordingPlaybackError(w, r, serviceRef, run.Err)
+			if err := run.Error(); err != nil {
+				s.writeRecordingPlaybackError(w, r, serviceRef, err)
 				return
 			}
 			// Success - serve it
@@ -870,7 +898,7 @@ func (s *Server) StreamRecordingDirect(w http.ResponseWriter, r *http.Request, r
 			"retry_after": 5,
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Retry-After", "5")
+		w.Header().Set("Retry-After", "10")
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_ = json.NewEncoder(w).Encode(resp)
 		return
@@ -1221,13 +1249,18 @@ func (s *Server) ensureRecordingPlaybackAssets(ctx context.Context, serviceRef s
 	}
 	s.mu.RUnlock()
 
-	_, isNew := s.vodManager.Ensure(ctx, cacheDir, func(ctx context.Context) error {
-		// HLS Build Logic
-		// Logic encapsulated in runRecordingBuild
-		// Note: Legacy scheduleRecordingBuild did pre-checks and semaphores.
-		// Manager handles exactly-once.
-		// Does runRecordingBuild clean up cacheDir on start? Yes.
-		return s.runRecordingBuild(ctx, cacheDir, sourceType, source, false, probeSize, analyzeDur)
+	spec := vod.JobSpec{
+		ID:         cacheDir,
+		ServiceRef: serviceRef,
+		Kind:       "hls",
+	}
+	_, isNew := s.vodManager.EnsureSpec(ctx, spec, func(ctx context.Context, spec vod.JobSpec) error {
+		err := s.runRecordingBuild(ctx, spec.ID, sourceType, source, false, probeSize, analyzeDur)
+		// Circuit Breaker Re-Integration (Phase C)
+		if breaker := resilience.GetOrRegisterVOD(spec.ServiceRef, resilience.VODConfig{}); breaker != nil {
+			breaker.Report(err == nil)
+		}
+		return err
 	})
 
 	if isNew {
@@ -1279,8 +1312,17 @@ func (s *Server) ensureRecordingVODPlaylist(ctx context.Context, serviceRef stri
 		return "", err
 	}
 
-	_, isNew := s.vodManager.Ensure(ctx, cacheDir, func(ctx context.Context) error {
-		return s.runRecordingBuild(ctx, cacheDir, sourceType, source, false, probeSize, analyzeDur)
+	spec := vod.JobSpec{
+		ID:         cacheDir,
+		ServiceRef: serviceRef,
+		Kind:       "hls",
+	}
+	_, isNew := s.vodManager.EnsureSpec(ctx, spec, func(ctx context.Context, spec vod.JobSpec) error {
+		err := s.runRecordingBuild(ctx, spec.ID, sourceType, source, false, probeSize, analyzeDur)
+		if breaker := resilience.GetOrRegisterVOD(spec.ServiceRef, resilience.VODConfig{}); breaker != nil {
+			breaker.Report(err == nil)
+		}
+		return err
 	})
 
 	if isNew {
@@ -1330,8 +1372,17 @@ func (s *Server) ensureRecordingTimeshiftPlaylist(ctx context.Context, serviceRe
 		return "", err
 	}
 
-	_, isNew := s.vodManager.Ensure(ctx, cacheDir, func(ctx context.Context) error {
-		return s.runRecordingBuild(ctx, cacheDir, sourceType, source, false, probeSize, analyzeDur)
+	spec := vod.JobSpec{
+		ID:         cacheDir,
+		ServiceRef: serviceRef,
+		Kind:       "hls",
+	}
+	_, isNew := s.vodManager.EnsureSpec(ctx, spec, func(ctx context.Context, spec vod.JobSpec) error {
+		err := s.runRecordingBuild(ctx, spec.ID, sourceType, source, false, probeSize, analyzeDur)
+		if breaker := resilience.GetOrRegisterVOD(spec.ServiceRef, resilience.VODConfig{}); breaker != nil {
+			breaker.Report(err == nil)
+		}
+		return err
 	})
 
 	if isNew {
@@ -2150,7 +2201,7 @@ func (s *Server) writeRecordingPlaybackError(w http.ResponseWriter, r *http.Requ
 		return
 	case errors.Is(err, errTooManyBuilds):
 		// 429 Too Many Requests
-		w.Header().Set("Retry-After", "30")
+		w.Header().Set("Retry-After", "10")
 		RespondError(w, r, http.StatusTooManyRequests, ErrConcurrentBuildsExceeded, map[string]any{
 			"state":          "REJECTED",
 			"max_concurrent": s.cfg.VODMaxConcurrent,
@@ -2165,12 +2216,11 @@ func (s *Server) writeRecordingPlaybackError(w http.ResponseWriter, r *http.Requ
 			hlsRoot := s.cfg.HLS.Root
 			s.mu.RUnlock()
 			if cacheDir, cacheErr := RecordingCacheDir(hlsRoot, serviceRef); cacheErr == nil {
-				// Phase B: Use vodManager
 				if run := s.vodManager.Get(cacheDir); run != nil {
 					state = "RUNNING"
 					select {
 					case <-run.Done:
-						if run.Err != nil {
+						if run.Error() != nil {
 							state = "FAILED"
 						} else {
 							state = "READY"
@@ -2470,55 +2520,142 @@ func (s *Server) DecodeRecordingID(id string) string {
 	return ""
 }
 
-func ParseRecordingDurationSeconds(length string) (int64, bool) {
+// ParseRecordingDurationSeconds parses duration strings from the receiver.
+//
+// Invariants:
+// 1. Strictly non-panicking (uses defensive checks/strconv).
+// 2. Returns error for invalid format, overflow, or negative values.
+// 3. Supported formats: "HH:MM:SS", "MM:SS", "M min|mins|minutes|m".
+// 4. Enforces range validation: MM and SS must be 0-59 in colon formats.
+func ParseRecordingDurationSeconds(length string) (int64, error) {
 	length = strings.TrimSpace(length)
 	if length == "" || length == "0" {
-		return 0, false
+		return 0, ErrDurationInvalid
 	}
 
+	// Case 1: HH:MM:SS or MM:SS
 	if strings.Contains(length, ":") {
 		parts := strings.Split(length, ":")
+		if len(parts) < 2 || len(parts) > 3 {
+			return 0, ErrDurationInvalid
+		}
+
+		cleanParts := make([]int64, len(parts))
+		for i := range parts {
+			s := strings.TrimSpace(parts[i])
+			if s == "" {
+				return 0, ErrDurationInvalid
+			}
+			val, err := strconv.ParseInt(s, 10, 64)
+			if err != nil {
+				return 0, ErrDurationInvalid
+			}
+			if val < 0 {
+				return 0, ErrDurationNegative
+			}
+			cleanParts[i] = val
+		}
+
+		// Enforce range validation:
+		// - HH:MM:SS -> MM < 60, SS < 60
+		// - MM:SS    -> SS < 60 (MM can be arbitrary)
 		if len(parts) == 3 {
-			hours, err1 := strconv.Atoi(parts[0])
-			minutes, err2 := strconv.Atoi(parts[1])
-			seconds, err3 := strconv.Atoi(parts[2])
-			if err1 != nil || err2 != nil || err3 != nil {
-				return 0, false
+			if cleanParts[1] >= 60 || cleanParts[2] >= 60 {
+				return 0, ErrDurationInvalid
 			}
-			total := (hours * 3600) + (minutes * 60) + seconds
-			if total <= 0 {
-				return 0, false
+		} else { // len(parts) == 2
+			if cleanParts[1] >= 60 {
+				return 0, ErrDurationInvalid
 			}
-			return int64(total), true
 		}
-		if len(parts) == 2 {
-			minutes, err1 := strconv.Atoi(parts[0])
-			seconds, err2 := strconv.Atoi(parts[2])
-			if err1 != nil || err2 != nil {
-				return 0, false
+
+		var total int64
+		if len(parts) == 3 {
+			// HH:MM:SS
+			if cleanParts[0] > math.MaxInt64/3600 {
+				return 0, ErrDurationOverflow
 			}
-			total := (minutes * 60) + seconds
-			if total <= 0 {
-				return 0, false
+			total = cleanParts[0] * 3600
+
+			term2 := cleanParts[1] * 60
+			if total > math.MaxInt64-term2 {
+				return 0, ErrDurationOverflow
 			}
-			return int64(total), true
+			total += term2
+
+			if total > math.MaxInt64-cleanParts[2] {
+				return 0, ErrDurationOverflow
+			}
+			total += cleanParts[2]
+		} else {
+			// MM:SS
+			if cleanParts[0] > math.MaxInt64/60 {
+				return 0, ErrDurationOverflow
+			}
+			total = cleanParts[0] * 60
+
+			if total > math.MaxInt64-cleanParts[1] {
+				return 0, ErrDurationOverflow
+			}
+			total += cleanParts[1]
 		}
-		return 0, false
+
+		if total <= 0 {
+			return 0, ErrDurationInvalid
+		}
+		return total, nil
 	}
 
+	// Case 2: Numeric with suffix (e.g. "90 min")
 	fields := strings.Fields(length)
-	if len(fields) == 0 {
-		return 0, false
+	if len(fields) == 0 || len(fields) > 2 {
+		return 0, ErrDurationInvalid
 	}
-	minStr := strings.TrimSpace(fields[0])
-	minStr = strings.TrimSuffix(minStr, "min")
-	minStr = strings.TrimSuffix(minStr, "mins")
-	minStr = strings.TrimSuffix(minStr, "m")
-	minutes, err := strconv.Atoi(minStr)
-	if err != nil || minutes <= 0 {
-		return 0, false
+
+	suffixes := []string{"minutes", "mins", "min", "min.", "m"}
+	minStr := fields[0]
+
+	if len(fields) == 2 {
+		found := false
+		suffix := strings.ToLower(fields[1])
+		for _, s := range suffixes {
+			if suffix == s {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return 0, ErrDurationInvalid
+		}
+	} else {
+		foundSuffix := ""
+		lowerStr := strings.ToLower(minStr)
+		for _, s := range suffixes {
+			if strings.HasSuffix(lowerStr, s) {
+				foundSuffix = s
+				break
+			}
+		}
+		if foundSuffix != "" {
+			minStr = minStr[:len(minStr)-len(foundSuffix)]
+		}
 	}
-	return int64(minutes * 60), true
+
+	minutes, err := strconv.ParseInt(minStr, 10, 64)
+	if err != nil {
+		return 0, ErrDurationInvalid
+	}
+	if minutes < 0 {
+		return 0, ErrDurationNegative
+	}
+	if minutes > math.MaxInt64/60 {
+		return 0, ErrDurationOverflow
+	}
+	total := minutes * 60
+	if total <= 0 {
+		return 0, ErrDurationInvalid
+	}
+	return total, nil
 }
 
 // DeleteRecording handles DELETE /api/v3/recordings/{recordingId}

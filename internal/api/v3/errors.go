@@ -124,6 +124,39 @@ var (
 		Code:    "SERVICE_UNAVAILABLE",
 		Message: "Service temporarily unavailable",
 	}
+	ErrUpstreamUnavailable = &APIError{
+		Code:    "UPSTREAM_UNAVAILABLE",
+		Message: "The receiver (OpenWebIF) failed to provide the requested data",
+	}
+	// CONTRACT-004: Receiver returned result=false
+	ErrUpstreamResultFalse = &APIError{
+		Code:    "UPSTREAM_RESULT_FALSE",
+		Message: "Receiver returned result=false",
+	}
+
+	// Duration parsing errors
+	ErrDurationInvalid = &APIError{
+		Code:    "DURATION_INVALID",
+		Message: "Invalid duration format",
+	}
+	ErrDurationOverflow = &APIError{
+		Code:    "DURATION_OVERFLOW",
+		Message: "Duration value exceeds maximum allowed limit",
+	}
+	ErrDurationNegative = &APIError{
+		Code:    "DURATION_NEGATIVE",
+		Message: "Duration cannot be negative",
+	}
+
+	// Library errors (Phase 0)
+	ErrLibraryScanRunning = &APIError{
+		Code:    "LIBRARY_SCAN_RUNNING",
+		Message: "Library scan already in progress, retry later",
+	}
+	ErrLibraryRootNotFound = &APIError{
+		Code:    "LIBRARY_ROOT_NOT_FOUND",
+		Message: "Library root not found",
+	}
 )
 
 // RespondError sends a structured error response to the client.

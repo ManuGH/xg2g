@@ -1,4 +1,4 @@
-import { client } from '../../client/client.gen';
+import { client } from '../../client-ts/client.gen';
 
 export interface ResumeState {
   pos_seconds: number;

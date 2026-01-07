@@ -9,7 +9,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -90,15 +89,9 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	// Users with same ServiceRef + Profile + Bucket get same Key.
 	var idempotencyKey string
 	if intentType == model.IntentTypeStreamStart {
-		// Canonicalize profile first
-		requestedProfile, legacyProfile, err := canonicalProfileID(req.ProfileID, req.Profile)
-		if err != nil {
-			RespondError(w, r, http.StatusBadRequest, ErrInvalidInput, err.Error())
-			return
-		}
-		if legacyProfile {
-			logger.Info().Msg("legacy field 'profile' used; will be removed in v3.2")
-		}
+		// ADR-00X: Universal Delivery Policy
+		// Profile selection is removed. We enforce "universal".
+		requestedProfile := "universal"
 
 		// Bucket: 0 for Live, StartTime/1000 for VOD
 		bucket := "0"
@@ -172,8 +165,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	switch intentType {
 	case model.IntentTypeStreamStart:
 		// Re-resolve profileSpec to get details (Name, etc)
-		// Note: canonicalProfileID was called above, so we know it's valid
-		reqProfileID, _, _ := canonicalProfileID(req.ProfileID, req.Profile)
+		reqProfileID := "universal"
 
 		// Smart Profile Lookup
 		var cap *scan.Capability
@@ -268,6 +260,8 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 
 		if len(cfg.Engine.TunerSlots) == 0 {
 			RecordV3Intent(string(model.IntentTypeStreamStart), "phase0", "no_slots")
+			// CONTRACT-003: Retry-After header for tuner unavailability
+			w.Header().Set("Retry-After", "10")
 			RespondError(w, r, http.StatusServiceUnavailable, ErrServiceUnavailable, "no tuner slots configured")
 			return
 		}
@@ -570,19 +564,6 @@ func parsePaginationParams(r *http.Request) (offset int, limit int) {
 	}
 
 	return offset, limit
-}
-
-func canonicalProfileID(profileID, profile string) (string, bool, error) {
-	if profileID != "" && profile != "" && profileID != profile {
-		return "", false, errors.New("profile and profileID must match when both are set")
-	}
-	if profileID != "" {
-		return profileID, false, nil
-	}
-	if profile != "" {
-		return profile, true, nil
-	}
-	return "", false, nil
 }
 
 func sessionPlaybackInfo(session *model.SessionRecord, now time.Time) (string, *float64, *float64, *float64, *float64) {

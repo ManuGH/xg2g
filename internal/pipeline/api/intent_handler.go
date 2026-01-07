@@ -12,12 +12,10 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"strings"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 	"github.com/ManuGH/xg2g/internal/pipeline/lease"
@@ -114,20 +112,22 @@ func (h IntentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if dvrWindowSec <= 0 {
 		dvrWindowSec = 300
 	}
-	profileID, legacyProfile, err := canonicalProfileID(req.ProfileID, req.Profile)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	if legacyProfile {
-		log.L().
-			Info().
-			Str("event", "v3.intent.legacy_profile").
-			Msg("legacy field 'profile' used; will be removed in v3.2")
+	dvrWindowSec := h.DVRWindowSec
+	if dvrWindowSec <= 0 {
+		dvrWindowSec = 300
 	}
 
-	// Legacy handler: no caps, no GPU detection, auto hwaccel
-	prof := profiles.Resolve(profileID, r.UserAgent(), dvrWindowSec, nil, hardware.HasVAAPI(), profiles.HWAccelAuto)
+	// ADR-00X: Streaming Profiles are removed.
+	// We enforce the single "universal" delivery policy.
+	// Legacy fields (profile/pID) are ignored if present in JSON payload.
+	// Actually, schema removal means they won't be unmarshalled into the struct if struct tag is gone.
+	// So we don't need to check them.
+
+	// Use "universal" policy
+	policyID := "universal"
+
+	// Resolve profile (universal)
+	prof := profiles.Resolve(policyID, r.UserAgent(), dvrWindowSec, nil, hardware.HasVAAPI(), profiles.HWAccelAuto)
 
 	var acquiredLeases []store.Lease
 	releaseLeases := func() {
@@ -189,10 +189,12 @@ func (h IntentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Publish intent event for workers. No blocking.
 	// We map the request to a StartSessionEvent.
 	if err := h.Bus.Publish(ctx, string(model.EventStartSession), model.StartSessionEvent{
-		Type:          model.EventStartSession,
-		SessionID:     sessionID,
-		ServiceRef:    req.ServiceRef,
-		ProfileID:     profileID,
+		Type:       model.EventStartSession,
+		SessionID:  sessionID,
+		ServiceRef: req.ServiceRef,
+		// ProfileID is now implicitly universal, but if the struct still has it, we might need to set it or remove it from struct.
+		// If StartSessionEvent struct still has ProfileID, we should set it to "universal".
+		ProfileID:     "universal",
 		CorrelationID: correlationID,
 		// Options/Params mapping if needed
 	}); err != nil {
@@ -233,17 +235,4 @@ func newID() string {
 	var b [16]byte
 	_, _ = rand.Read(b[:])
 	return hex.EncodeToString(b[:])
-}
-
-func canonicalProfileID(profileID, profile string) (string, bool, error) {
-	if profileID != "" && profile != "" && profileID != profile {
-		return "", false, errors.New("profile and profileID must match when both are set")
-	}
-	if profileID != "" {
-		return profileID, false, nil
-	}
-	if profile != "" {
-		return profile, true, nil
-	}
-	return "", false, nil
 }

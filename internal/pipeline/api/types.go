@@ -7,11 +7,10 @@ package api
 import "github.com/ManuGH/xg2g/internal/pipeline/model"
 
 type IntentRequest struct {
-	Type           model.IntentType  `json:"type"` // defaults to stream.start if empty
-	SessionID      string            `json:"sessionId,omitempty"`
-	ServiceRef     string            `json:"serviceRef"`
-	ProfileID      string            `json:"profileID,omitempty"`
-	Profile        string            `json:"profile,omitempty"`
+	Type       model.IntentType `json:"type"` // defaults to stream.start if empty
+	SessionID  string           `json:"sessionId,omitempty"`
+	ServiceRef string           `json:"serviceRef"`
+
 	CorrelationID  string            `json:"correlationId,omitempty"`
 	Params         map[string]string `json:"params,omitempty"`
 	IdempotencyKey string            `json:"idempotencyKey,omitempty"`
@@ -19,9 +18,9 @@ type IntentRequest struct {
 }
 
 type IntentResponse struct {
-	SessionID     string           `json:"sessionId"`
-	Status        string           `json:"status"`
-	CorrelationID string           `json:"correlationId,omitempty"`
+	SessionID     string `json:"sessionId"`
+	Status        string `json:"status"`
+	CorrelationID string `json:"correlationId,omitempty"`
 }
 
 type SessionResponse struct {

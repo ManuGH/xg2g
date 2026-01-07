@@ -226,7 +226,7 @@ function SeriesManager() {
             <div className="rule-meta text-secondary">
               <div className="meta-row">
                 <span className="label">Channel:</span>
-                <span className="value">{rule.channel_ref ? (channels.find(c => c.service_ref === rule.channel_ref)?.name || rule.channel_ref) : 'All Channels'}</span>
+                <span className="value">{rule.channel_ref ? (channels.find(c => c.ref === rule.channel_ref)?.name || rule.channel_ref) : 'All Channels'}</span>
 
               </div>
               <div className="meta-row">
@@ -302,7 +302,7 @@ function SeriesManager() {
                   >
                     <option value="">-- All Channels (Slower) --</option>
                     {channels.map(c => (
-                      <option key={c.service_ref} value={c.service_ref}>
+                      <option key={c.ref} value={c.ref}>
 
                         {c.name}
                       </option>

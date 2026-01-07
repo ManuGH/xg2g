@@ -126,7 +126,6 @@ func (c *Client) execute(ctx context.Context, serviceRef, profile, clientIP stri
 	// Use v3api.IntentRequest to match API contract
 	intent := v3api.IntentRequest{
 		ServiceRef:     serviceRef,
-		ProfileID:      profile,
 		IdempotencyKey: idempotencyKey,
 		Params: map[string]string{
 			"shadow":    "true",

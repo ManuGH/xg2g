@@ -51,14 +51,7 @@ components:
           type: string
           description: Required for stream.start. Enigma2 service reference (live playback only).
           example: "1:0:1:445D:453:1:C00000:0:0:0:"
-        profileID:
-          type: string
-          description: Transcoding profile ID
-          example: "hls_720p"
-        profile:
-          type: string
-          deprecated: true
-          description: Legacy alias for profileID (decode-only, will be removed in v3.2)
+
         hwaccel:
           type: string
           enum: [auto, force, off]
@@ -541,6 +534,92 @@ components:
           $ref: "#/components/schemas/PiconsConfig"
         featureFlags:
           $ref: "#/components/schemas/FeatureFlags"
+        streaming:
+          $ref: "#/components/schemas/StreamingConfig"
+
+    StreamingConfig:
+      type: object
+      properties:
+        delivery_policy:
+          type: string
+          enum: [universal]
+          description: "Strict delivery policy (v3.1+)"
+
+    SystemDiagnostics:
+      type: object
+      required: [measured_at, derived_at, overall_status, subsystems]
+      description: "System-wide diagnostics per ADR-SRE-002"
+      properties:
+        measured_at:
+          type: string
+          format: date-time
+          description: "When subsystems were last probed"
+        derived_at:
+          type: string
+          format: date-time
+          description: "When overall status was computed"
+        overall_status:
+          type: string
+          enum: [ok, degraded, unavailable, unknown]
+          description: "Overall system health (per P0-A critical subsystem logic)"
+        subsystems:
+          type: object
+          description: "Health status per subsystem"
+          additionalProperties: true
+        degradation_summary:
+          type: array
+          description: "Actionable degradation items for failed subsystems"
+          items:
+            type: object
+            properties:
+              subsystem:
+                type: string
+              status:
+                type: string
+                enum: [degraded, unavailable]
+              since:
+                type: string
+                format: date-time
+              error_code:
+                type: string
+              suggested_actions:
+                type: array
+                items:
+                  type: string
+
+    LibraryRoot:
+      type: object
+      required: [id, type, last_scan_status]
+      properties:
+        id: { type: string }
+        type: { type: string, enum: [smb, nfs, local] }
+        last_scan_time: { type: string, format: date-time }
+        last_scan_status:
+          { type: string, enum: [never, running, ok, degraded, failed] }
+        total_items: { type: integer }
+
+    LibraryItem:
+      type: object
+      required: [root_id, rel_path, filename, size_bytes, mod_time]
+      properties:
+        root_id: { type: string }
+        rel_path: { type: string }
+        filename: { type: string }
+        size_bytes: { type: integer, format: int64 }
+        mod_time: { type: string, format: date-time }
+        scan_time: { type: string, format: date-time }
+        status: { type: string, enum: [ok, unreadable] }
+
+    LibraryItemsResponse:
+      type: object
+      required: [items, total, limit, offset]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/LibraryItem" }
+        total: { type: integer }
+        limit: { type: integer }
+        offset: { type: integer }
 
     Bouquet:
       type: object
@@ -961,6 +1040,28 @@ paths:
         "500":
           description: Failed to save configuration
 
+  /system/diagnostics:
+    get:
+      summary: Get system diagnostics
+      operationId: getSystemDiagnostics
+      security:
+        - BearerAuth: []
+      description: |
+        Returns comprehensive system health status for all subsystems.
+        Per ADR-SRE-002, subsystems are checked concurrently and degradation
+        is reported explicitly without cascading failures.
+      responses:
+        "200":
+          description: System diagnostics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemDiagnostics"
+        "401":
+          description: Unauthorized
+        "500":
+          description: Diagnostics check failed
+
   /system/refresh:
     post:
       summary: Trigger data refresh (EPG/Channels)
@@ -971,6 +1072,55 @@ paths:
           description: Refresh started
         "409":
           description: Refresh already in progress
+
+  /library/roots:
+    get:
+      summary: List library roots
+      operationId: getLibraryRoots
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Library roots
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LibraryRoot"
+
+  /library/roots/{root_id}/items:
+    get:
+      summary: List items in library root
+      operationId: getLibraryRootItems
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: root_id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 100, maximum: 500 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
+      responses:
+        "200":
+          description: Library items
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LibraryItemsResponse"
+        "404":
+          description: Root not found
+        "503":
+          description: Scan in progress
+          headers:
+            Retry-After:
+              schema: { type: integer }
+              description: Seconds to wait before retry
 
   /services/bouquets:
     get:

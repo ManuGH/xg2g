@@ -30,15 +30,13 @@ export type IntentRequest = {
      */
     serviceRef?: string;
     /**
-     * Transcoding profile ID
-     */
-    profileID?: string;
-    /**
-     * Legacy alias for profileID (decode-only, will be removed in v3.2)
+     * Hardware acceleration override (v3.1+).
+     * - auto: Server decides based on GPU availability
+     * - force: Force GPU encoding (fails if no GPU)
+     * - off: Force CPU encoding
      *
-     * @deprecated
      */
-    profile?: string;
+    hwaccel?: 'auto' | 'force' | 'off';
     /**
      * Optional correlation ID for end-to-end tracing
      */
@@ -344,24 +342,19 @@ export type AppConfig = {
     epg?: EpgConfig;
     picons?: PiconsConfig;
     featureFlags?: FeatureFlags;
+    streaming?: StreamingConfig;
+};
+
+export type StreamingConfig = {
+    /**
+     * Strict delivery policy (v3.1+)
+     */
+    delivery_policy?: 'universal';
 };
 
 export type Bouquet = {
     name?: string;
     services?: number;
-};
-
-export type Service = {
-    id?: string;
-    name?: string;
-    group?: string;
-    logo_url?: string;
-    number?: string;
-    enabled?: boolean;
-    /**
-     * Service reference for streaming (extracted from M3U URL)
-     */
-    service_ref?: string;
 };
 
 export type NowNextRequest = {
@@ -575,6 +568,25 @@ export type ResumeSummary = {
     duration_seconds?: number;
     finished?: boolean;
     updated_at?: string;
+};
+
+export type Service = {
+    /**
+     * Service identifier
+     */
+    id?: string;
+    /**
+     * Service/channel name
+     */
+    name?: string;
+    /**
+     * Enigma2 service reference
+     */
+    ref?: string;
+    /**
+     * Whether service is enabled
+     */
+    enabled?: boolean;
 };
 
 export type RecordingResponse = {
@@ -1034,6 +1046,29 @@ export type GetRecordingHlsPlaylistResponses = {
 
 export type GetRecordingHlsPlaylistResponse = GetRecordingHlsPlaylistResponses[keyof GetRecordingHlsPlaylistResponses];
 
+export type GetRecordingHlsPlaylistHeadData = {
+    body?: never;
+    path: {
+        recordingId: string;
+    };
+    query?: never;
+    url: '/recordings/{recordingId}/playlist.m3u8';
+};
+
+export type GetRecordingHlsPlaylistHeadErrors = {
+    /**
+     * Recording not found
+     */
+    404: unknown;
+};
+
+export type GetRecordingHlsPlaylistHeadResponses = {
+    /**
+     * HLS playlist metadata
+     */
+    200: unknown;
+};
+
 export type GetRecordingHlsTimeshiftData = {
     body?: never;
     path: {
@@ -1071,6 +1106,29 @@ export type GetRecordingHlsTimeshiftResponses = {
 };
 
 export type GetRecordingHlsTimeshiftResponse = GetRecordingHlsTimeshiftResponses[keyof GetRecordingHlsTimeshiftResponses];
+
+export type GetRecordingHlsTimeshiftHeadData = {
+    body?: never;
+    path: {
+        recordingId: string;
+    };
+    query?: never;
+    url: '/recordings/{recordingId}/timeshift.m3u8';
+};
+
+export type GetRecordingHlsTimeshiftHeadErrors = {
+    /**
+     * Recording not found
+     */
+    404: unknown;
+};
+
+export type GetRecordingHlsTimeshiftHeadResponses = {
+    /**
+     * HLS playlist metadata
+     */
+    200: unknown;
+};
 
 export type GetRecordingHlsCustomSegmentData = {
     body?: never;
@@ -1110,6 +1168,30 @@ export type GetRecordingHlsCustomSegmentResponses = {
 };
 
 export type GetRecordingHlsCustomSegmentResponse = GetRecordingHlsCustomSegmentResponses[keyof GetRecordingHlsCustomSegmentResponses];
+
+export type GetRecordingHlsCustomSegmentHeadData = {
+    body?: never;
+    path: {
+        recordingId: string;
+        segment: string;
+    };
+    query?: never;
+    url: '/recordings/{recordingId}/{segment}';
+};
+
+export type GetRecordingHlsCustomSegmentHeadErrors = {
+    /**
+     * Segment not found
+     */
+    404: unknown;
+};
+
+export type GetRecordingHlsCustomSegmentHeadResponses = {
+    /**
+     * Segment metadata
+     */
+    200: unknown;
+};
 
 export type CreateSessionData = {
     body?: never;
@@ -1727,3 +1809,31 @@ export type ServeHlsResponses = {
 };
 
 export type ServeHlsResponse = ServeHlsResponses[keyof ServeHlsResponses];
+
+export type ServeHlsHeadData = {
+    body?: never;
+    path: {
+        sessionID: string;
+        filename: string;
+    };
+    query?: never;
+    url: '/sessions/{sessionID}/hls/{filename}';
+};
+
+export type ServeHlsHeadErrors = {
+    /**
+     * File not found
+     */
+    404: unknown;
+    /**
+     * V3 control plane unavailable
+     */
+    503: unknown;
+};
+
+export type ServeHlsHeadResponses = {
+    /**
+     * HLS content metadata (headers only)
+     */
+    200: unknown;
+};

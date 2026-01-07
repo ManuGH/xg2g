@@ -32,33 +32,65 @@ func NewManager(exec Exec, log zerolog.Logger) *Manager {
 // Ensure guarantees that a background job for the given ID is running.
 // If a job is already active, it returns the existing Run handle (isNew=false).
 // If not, it starts a new job using the provided work function and returns the new handle (isNew=true).
+//
+// Stable API P0: This method remains unchanged and delegates to EnsureSpec.
 func (m *Manager) Ensure(ctx context.Context, id string, work WorkFunc) (*Run, bool) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	spec := JobSpec{
+		ID:   id,
+		Kind: "legacy",
+	}
+	workSpec := func(ctx context.Context, s JobSpec) error {
+		return work(ctx)
+	}
+	return m.EnsureSpec(ctx, spec, workSpec)
+}
 
-	// 1. Check existing
-	if run, exists := m.runs[id]; exists {
-		m.log.Debug().Str("id", id).Msg("Ensure: return existing run")
-		return run, false
+// EnsureSpec provides structured job orchestration with observability (Phase C)
+func (m *Manager) EnsureSpec(ctx context.Context, spec JobSpec, work WorkFuncSpec) (*Run, bool) {
+	// 0. Fail-fast if context already canceled (P1)
+	if err := ctx.Err(); err != nil {
+		m.log.Debug().Str("id", spec.ID).Err(err).Msg("EnsureSpec: context already canceled")
+		return nil, false
+	}
+
+	m.mu.Lock()
+
+	// 1. Check existing & Stale Handle Detection (P0)
+	if run, exists := m.runs[spec.ID]; exists {
+		select {
+		case <-run.Done:
+			// Run is done but not yet deleted from map (stale).
+			// Recreate it as a new run.
+			m.log.Debug().Str("id", spec.ID).Msg("EnsureSpec: cleaning stale run")
+			delete(m.runs, spec.ID)
+		default:
+			// Run is still active.
+			m.mu.Unlock()
+			m.log.Debug().Str("id", spec.ID).Msg("EnsureSpec: return existing run")
+			return run, false
+		}
 	}
 
 	// 2. Create new Run
-	// Note: We use a detached context for the run itself so it survives the caller's request context
-	// unless explicitly cancelled by manager.
 	runCtx, cancel := context.WithCancel(context.Background())
 
 	run := &Run{
-		ID:        id,
+		ID:        spec.ID,
 		StartedAt: time.Now(),
 		Done:      make(chan struct{}),
 		Cancel:    cancel,
 	}
 
-	m.runs[id] = run
-	m.log.Info().Str("id", id).Msg("Ensure: started new run")
+	m.runs[spec.ID] = run
+	m.log.Info().
+		Str("id", spec.ID).
+		Str("serviceRef", spec.ServiceRef).
+		Str("kind", spec.Kind).
+		Msg("EnsureSpec: started new run")
 
-	// 3. Start Execute Goroutine
-	go m.executeRun(runCtx, run, work)
+	// 3. Start Execute Goroutine (Unlocking BEFORE start - P1)
+	m.mu.Unlock()
+	go m.executeRunSpec(runCtx, run, spec, work)
 
 	return run, true
 }
@@ -82,15 +114,29 @@ func (m *Manager) Cancel(id string) {
 	}
 }
 
-// executeRun is the worker goroutine
-// Guardrail: Must ensure cleanup (delete from map) on exit
-func (m *Manager) executeRun(ctx context.Context, run *Run, work WorkFunc) {
-	// Guardrail 1: Guarantee cleanup
+// CancelAll stops all active runs (P9 Graceful Shutdown)
+func (m *Manager) CancelAll() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.log.Info().Int("count", len(m.runs)).Msg("CancelAll: stopping all runs")
+	for id, run := range m.runs {
+		m.log.Debug().Str("id", id).Msg("CancelAll: canceling run")
+		run.Cancel()
+	}
+}
+
+// executeRunSpec is the worker goroutine
+// Phase C: Uses JobSpec and thread-safe error setter
+func (m *Manager) executeRunSpec(ctx context.Context, run *Run, spec JobSpec, work WorkFuncSpec) {
 	defer func() {
-		// Recover from panic to ensure cleanup
+		// Recover from panic to ensure cleanup (P1)
 		if r := recover(); r != nil {
-			m.log.Error().Str("id", run.ID).Interface("panic", r).Msg("executeRun panicked")
-			run.Err = fmt.Errorf("panic: %v", r)
+			m.log.Error().
+				Str("id", run.ID).
+				Interface("panic", r).
+				Msg("executeRunSpec panicked")
+			run.setError(fmt.Errorf("panic: %v", r))
 		}
 
 		// Close Done channel
@@ -101,13 +147,15 @@ func (m *Manager) executeRun(ctx context.Context, run *Run, work WorkFunc) {
 		delete(m.runs, run.ID)
 		m.mu.Unlock()
 
-		m.log.Info().Str("id", run.ID).Err(run.Err).Msg("executeRun: cleanup complete")
+		m.log.Info().
+			Str("id", run.ID).
+			Err(run.Error()).
+			Msg("executeRunSpec: cleanup complete")
 	}()
 
 	// Execute Work
-	// The work function encapsulates the logic (HLS build or MP4 remux)
-	err := work(ctx)
+	err := work(ctx, spec)
 	if err != nil {
-		run.Err = err
+		run.setError(err)
 	}
 }

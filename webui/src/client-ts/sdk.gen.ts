@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AddTimerData, AddTimerErrors, AddTimerResponses, CreateIntentData, CreateIntentErrors, CreateIntentResponses, CreateSeriesRuleData, CreateSeriesRuleResponses, CreateSessionData, CreateSessionErrors, CreateSessionResponses, DeleteRecordingData, DeleteRecordingErrors, DeleteRecordingResponses, DeleteSeriesRuleData, DeleteSeriesRuleErrors, DeleteSeriesRuleResponses, DeleteStreamsIdData, DeleteStreamsIdErrors, DeleteStreamsIdResponses, DeleteTimerData, DeleteTimerErrors, DeleteTimerResponses, GetDvrCapabilitiesData, GetDvrCapabilitiesResponses, GetDvrStatusData, GetDvrStatusResponses, GetEpgData, GetEpgResponses, GetLogsData, GetLogsResponses, GetRecordingHlsCustomSegmentData, GetRecordingHlsCustomSegmentErrors, GetRecordingHlsCustomSegmentResponses, GetRecordingHlsPlaylistData, GetRecordingHlsPlaylistErrors, GetRecordingHlsPlaylistResponses, GetRecordingHlsTimeshiftData, GetRecordingHlsTimeshiftErrors, GetRecordingHlsTimeshiftResponses, GetRecordingPlaybackInfoData, GetRecordingPlaybackInfoErrors, GetRecordingPlaybackInfoResponses, GetRecordingsByRecordingIdStatusData, GetRecordingsByRecordingIdStatusErrors, GetRecordingsByRecordingIdStatusResponses, GetRecordingsData, GetRecordingsResponses, GetSeriesRulesData, GetSeriesRulesResponses, GetServicesBouquetsData, GetServicesBouquetsResponses, GetServicesData, GetServicesResponses, GetSessionStateData, GetSessionStateErrors, GetSessionStateResponses, GetStreamsData, GetStreamsResponses, GetSystemConfigData, GetSystemConfigResponses, GetSystemHealthData, GetSystemHealthResponses, GetSystemHealthzData, GetSystemHealthzResponses, GetSystemScanStatusData, GetSystemScanStatusErrors, GetSystemScanStatusResponses, GetTimerData, GetTimerErrors, GetTimerResponses, GetTimersData, GetTimersResponses, ListSessionsData, ListSessionsErrors, ListSessionsResponses, PostServicesByIdToggleData, PostServicesByIdToggleErrors, PostServicesByIdToggleResponses, PostServicesNowNextData, PostServicesNowNextErrors, PostServicesNowNextResponses, PostSystemRefreshData, PostSystemRefreshErrors, PostSystemRefreshResponses, PreviewConflictsData, PreviewConflictsResponses, PutSystemConfigData, PutSystemConfigErrors, PutSystemConfigResponses, ReportPlaybackFeedbackData, ReportPlaybackFeedbackErrors, ReportPlaybackFeedbackResponses, RunAllSeriesRulesData, RunAllSeriesRulesResponses, RunSeriesRuleData, RunSeriesRuleErrors, RunSeriesRuleResponses, ServeHlsData, ServeHlsErrors, ServeHlsResponses, StreamRecordingDirectData, StreamRecordingDirectErrors, StreamRecordingDirectResponses, TriggerSystemScanData, TriggerSystemScanErrors, TriggerSystemScanResponses, UpdateSeriesRuleData, UpdateSeriesRuleErrors, UpdateSeriesRuleResponses, UpdateTimerData, UpdateTimerErrors, UpdateTimerResponses } from './types.gen';
+import type { AddTimerData, AddTimerErrors, AddTimerResponses, CreateIntentData, CreateIntentErrors, CreateIntentResponses, CreateSeriesRuleData, CreateSeriesRuleResponses, CreateSessionData, CreateSessionErrors, CreateSessionResponses, DeleteRecordingData, DeleteRecordingErrors, DeleteRecordingResponses, DeleteSeriesRuleData, DeleteSeriesRuleErrors, DeleteSeriesRuleResponses, DeleteStreamsIdData, DeleteStreamsIdErrors, DeleteStreamsIdResponses, DeleteTimerData, DeleteTimerErrors, DeleteTimerResponses, GetDvrCapabilitiesData, GetDvrCapabilitiesResponses, GetDvrStatusData, GetDvrStatusResponses, GetEpgData, GetEpgResponses, GetLogsData, GetLogsResponses, GetRecordingHlsCustomSegmentData, GetRecordingHlsCustomSegmentErrors, GetRecordingHlsCustomSegmentHeadData, GetRecordingHlsCustomSegmentHeadErrors, GetRecordingHlsCustomSegmentHeadResponses, GetRecordingHlsCustomSegmentResponses, GetRecordingHlsPlaylistData, GetRecordingHlsPlaylistErrors, GetRecordingHlsPlaylistHeadData, GetRecordingHlsPlaylistHeadErrors, GetRecordingHlsPlaylistHeadResponses, GetRecordingHlsPlaylistResponses, GetRecordingHlsTimeshiftData, GetRecordingHlsTimeshiftErrors, GetRecordingHlsTimeshiftHeadData, GetRecordingHlsTimeshiftHeadErrors, GetRecordingHlsTimeshiftHeadResponses, GetRecordingHlsTimeshiftResponses, GetRecordingPlaybackInfoData, GetRecordingPlaybackInfoErrors, GetRecordingPlaybackInfoResponses, GetRecordingsByRecordingIdStatusData, GetRecordingsByRecordingIdStatusErrors, GetRecordingsByRecordingIdStatusResponses, GetRecordingsData, GetRecordingsResponses, GetSeriesRulesData, GetSeriesRulesResponses, GetServicesBouquetsData, GetServicesBouquetsResponses, GetServicesData, GetServicesResponses, GetSessionStateData, GetSessionStateErrors, GetSessionStateResponses, GetStreamsData, GetStreamsResponses, GetSystemConfigData, GetSystemConfigResponses, GetSystemHealthData, GetSystemHealthResponses, GetSystemHealthzData, GetSystemHealthzResponses, GetSystemScanStatusData, GetSystemScanStatusErrors, GetSystemScanStatusResponses, GetTimerData, GetTimerErrors, GetTimerResponses, GetTimersData, GetTimersResponses, ListSessionsData, ListSessionsErrors, ListSessionsResponses, PostServicesByIdToggleData, PostServicesByIdToggleErrors, PostServicesByIdToggleResponses, PostServicesNowNextData, PostServicesNowNextErrors, PostServicesNowNextResponses, PostSystemRefreshData, PostSystemRefreshErrors, PostSystemRefreshResponses, PreviewConflictsData, PreviewConflictsResponses, PutSystemConfigData, PutSystemConfigErrors, PutSystemConfigResponses, ReportPlaybackFeedbackData, ReportPlaybackFeedbackErrors, ReportPlaybackFeedbackResponses, RunAllSeriesRulesData, RunAllSeriesRulesResponses, RunSeriesRuleData, RunSeriesRuleErrors, RunSeriesRuleResponses, ServeHlsData, ServeHlsErrors, ServeHlsHeadData, ServeHlsHeadErrors, ServeHlsHeadResponses, ServeHlsResponses, StreamRecordingDirectData, StreamRecordingDirectErrors, StreamRecordingDirectResponses, TriggerSystemScanData, TriggerSystemScanErrors, TriggerSystemScanResponses, UpdateSeriesRuleData, UpdateSeriesRuleErrors, UpdateSeriesRuleResponses, UpdateTimerData, UpdateTimerErrors, UpdateTimerResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -182,6 +182,15 @@ export const getRecordingHlsPlaylist = <ThrowOnError extends boolean = false>(op
 });
 
 /**
+ * Get VOD HLS playlist metadata (Safari compatibility)
+ */
+export const getRecordingHlsPlaylistHead = <ThrowOnError extends boolean = false>(options: Options<GetRecordingHlsPlaylistHeadData, ThrowOnError>) => (options.client ?? client).head<GetRecordingHlsPlaylistHeadResponses, GetRecordingHlsPlaylistHeadErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/recordings/{recordingId}/playlist.m3u8',
+    ...options
+});
+
+/**
  * Get timeshift HLS playlist for a recording
  */
 export const getRecordingHlsTimeshift = <ThrowOnError extends boolean = false>(options: Options<GetRecordingHlsTimeshiftData, ThrowOnError>) => (options.client ?? client).get<GetRecordingHlsTimeshiftResponses, GetRecordingHlsTimeshiftErrors, ThrowOnError>({
@@ -191,9 +200,27 @@ export const getRecordingHlsTimeshift = <ThrowOnError extends boolean = false>(o
 });
 
 /**
+ * Get timeshift HLS playlist metadata (Safari compatibility)
+ */
+export const getRecordingHlsTimeshiftHead = <ThrowOnError extends boolean = false>(options: Options<GetRecordingHlsTimeshiftHeadData, ThrowOnError>) => (options.client ?? client).head<GetRecordingHlsTimeshiftHeadResponses, GetRecordingHlsTimeshiftHeadErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/recordings/{recordingId}/timeshift.m3u8',
+    ...options
+});
+
+/**
  * Get HLS segment for a recording
  */
 export const getRecordingHlsCustomSegment = <ThrowOnError extends boolean = false>(options: Options<GetRecordingHlsCustomSegmentData, ThrowOnError>) => (options.client ?? client).get<GetRecordingHlsCustomSegmentResponses, GetRecordingHlsCustomSegmentErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/recordings/{recordingId}/{segment}',
+    ...options
+});
+
+/**
+ * Get HLS segment metadata (Safari compatibility)
+ */
+export const getRecordingHlsCustomSegmentHead = <ThrowOnError extends boolean = false>(options: Options<GetRecordingHlsCustomSegmentHeadData, ThrowOnError>) => (options.client ?? client).head<GetRecordingHlsCustomSegmentHeadResponses, GetRecordingHlsCustomSegmentHeadErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/recordings/{recordingId}/{segment}',
     ...options
@@ -440,6 +467,15 @@ export const getSessionState = <ThrowOnError extends boolean = false>(options: O
  * Serve HLS playlist or segment
  */
 export const serveHls = <ThrowOnError extends boolean = false>(options: Options<ServeHlsData, ThrowOnError>) => (options.client ?? client).get<ServeHlsResponses, ServeHlsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/sessions/{sessionID}/hls/{filename}',
+    ...options
+});
+
+/**
+ * Get HLS content metadata (Safari compatibility)
+ */
+export const serveHlsHead = <ThrowOnError extends boolean = false>(options: Options<ServeHlsHeadData, ThrowOnError>) => (options.client ?? client).head<ServeHlsHeadResponses, ServeHlsHeadErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/sessions/{sessionID}/hls/{filename}',
     ...options

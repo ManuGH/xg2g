@@ -146,10 +146,9 @@ type HDHRConfig struct {
 	PlexForceHLS *bool  `yaml:"plexForceHls,omitempty"`
 }
 
-// StreamingConfig holds streaming profile configuration
+// StreamingConfig defines streaming delivery policy (ADR-00X: universal default)
 type StreamingConfig struct {
-	DefaultProfile  string   `yaml:"default_profile" env:"XG2G_STREAM_PROFILE"`
-	AllowedProfiles []string `yaml:"allowed_profiles,omitempty"`
+	DeliveryPolicy string `yaml:"delivery_policy" env:"XG2G_STREAMING_POLICY"`
 }
 
 // AppConfig holds all configuration for the application
@@ -238,6 +237,25 @@ type AppConfig struct {
 
 	// Streaming Configuration
 	Streaming StreamingConfig
+
+	// Library Configuration (Phase 0 per ADR-ENG-002)
+	Library LibraryConfig
+}
+
+// LibraryConfig holds library configuration
+type LibraryConfig struct {
+	Enabled bool                `yaml:"enabled"`
+	DBPath  string              `yaml:"db_path"`
+	Roots   []LibraryRootConfig `yaml:"roots"`
+}
+
+// LibraryRootConfig defines a library root
+type LibraryRootConfig struct {
+	ID         string   `yaml:"id"`
+	Path       string   `yaml:"path"`
+	Type       string   `yaml:"type"` // smb|nfs|local
+	MaxDepth   int      `yaml:"max_depth"`
+	IncludeExt []string `yaml:"include_ext"`
 }
 
 // EngineConfig holds the Orchestrator engine settings
@@ -331,6 +349,11 @@ func (l *Loader) Load() (AppConfig, error) {
 
 	// 4.5. Resolve E2 Auth Mode (inherit/none/explicit)
 	resolveE2AuthMode(&cfg)
+
+	// 4.6. ADR-00X: Fail-start if deprecated XG2G_STREAM_PROFILE is set
+	if os.Getenv("XG2G_STREAM_PROFILE") != "" {
+		return cfg, fmt.Errorf("XG2G_STREAM_PROFILE removed. Use XG2G_STREAMING_POLICY=universal (ADR-00X)")
+	}
 
 	// 5. Version from binary
 	cfg.Version = l.version
@@ -448,13 +471,15 @@ func (l *Loader) setDefaults(cfg *AppConfig) {
 	cfg.HDHR.PlexForceHLS = new(bool)
 	*cfg.HDHR.PlexForceHLS = false
 
-	// Streaming Defaults (PR 5.1: Thin Client Fix)
-	if cfg.Streaming.DefaultProfile == "" {
-		cfg.Streaming.DefaultProfile = "auto"
+	// Streaming Defaults (ADR-00X: universal policy)
+	if cfg.Streaming.DeliveryPolicy == "" {
+		cfg.Streaming.DeliveryPolicy = "universal"
 	}
-	if len(cfg.Streaming.AllowedProfiles) == 0 {
-		cfg.Streaming.AllowedProfiles = []string{"auto", "safari", "safari_hevc_hw"}
-	}
+
+	// Library Defaults (Phase 0 - disabled by default)
+	cfg.Library.Enabled = false
+	cfg.Library.DBPath = filepath.Join(cfg.DataDir, "library.sqlite")
+	// Roots configured via config.yaml only
 }
 
 // loadFile loads configuration from a YAML file with STRICT parsing.

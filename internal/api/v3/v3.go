@@ -19,6 +19,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/dvr"
 	"github.com/ManuGH/xg2g/internal/epg"
 	"github.com/ManuGH/xg2g/internal/jobs"
+	"github.com/ManuGH/xg2g/internal/library"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
@@ -62,6 +63,8 @@ type Server struct {
 	epgCacheTime        time.Time
 	epgCacheMTime       time.Time
 	epgSfg              singleflight.Group
+	diagnosticsManager  *DiagnosticsManager // System diagnostics per ADR-SRE-002
+	libraryService      *library.Service    // Media library per ADR-ENG-002
 
 	// Lifecycle
 	requestShutdown func(context.Context) error
@@ -70,10 +73,39 @@ type Server struct {
 
 // NewServer creates a new implemented v3 server.
 func NewServer(cfg config.AppConfig, cfgMgr *config.Manager, rootCancel context.CancelFunc) *Server {
+	// Initialize diagnostics manager per ADR-SRE-002
+	diagnosticsManager := NewDiagnosticsManager(cfg.OWIBase)
+
+	// Initialize library service if enabled (Phase 0 per ADR-ENG-002)
+	var librarySvc *library.Service
+	if cfg.Library.Enabled && len(cfg.Library.Roots) > 0 {
+		// Convert config roots to library roots
+		var libraryRoots []library.RootConfig
+		for _, r := range cfg.Library.Roots {
+			libraryRoots = append(libraryRoots, library.RootConfig{
+				ID:         r.ID,
+				Path:       r.Path,
+				Type:       r.Type,
+				MaxDepth:   r.MaxDepth,
+				IncludeExt: r.IncludeExt,
+			})
+		}
+
+		store, err := library.NewStore(cfg.Library.DBPath)
+		if err != nil {
+			log.L().Error().Err(err).Msg("failed to initialize library store")
+		} else {
+			librarySvc = library.NewService(libraryRoots, store)
+			log.L().Info().Int("roots", len(libraryRoots)).Msg("library service initialized")
+		}
+	}
+
 	return &Server{
-		cfg:           cfg,
-		configManager: cfgMgr,
-		startTime:     time.Now(),
+		cfg:                cfg,
+		configManager:      cfgMgr,
+		startTime:          time.Now(),
+		diagnosticsManager: diagnosticsManager,
+		libraryService:     librarySvc,
 	}
 }
 

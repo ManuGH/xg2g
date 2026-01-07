@@ -1,0 +1,1 @@
+{"bouquets":[],"dataDir":"/tmp","epg":{"days":7,"enabled":true,"source":"per-service"},"logLevel":"info","openWebIF":{"baseUrl":"http://127.0.0.1:8080","streamPort":8001},"picons":{"baseUrl":""},"streaming":{"delivery_policy":"universal"},"version":"v3.0.0"}

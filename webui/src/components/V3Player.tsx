@@ -43,7 +43,7 @@ function V3Player(props: V3PlayerProps) {
   const recordingId = 'recordingId' in props ? props.recordingId : undefined;
 
   const [sRef, setSRef] = useState<string>(
-    channel?.service_ref || channel?.id || '1:0:19:283D:3FB:1:C00000:0:0:0:'
+    channel?.ref || channel?.id || '1:0:19:283D:3FB:1:C00000:0:0:0:'
   );
 
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -65,8 +65,7 @@ function V3Player(props: V3PlayerProps) {
   const activeRecordingRef = useRef<string | null>(null);
   const [activeRecordingId, setActiveRecordingId] = useState<string | null>(null);
   const startIntentInFlight = useRef<boolean>(false);
-  const nextProfileRef = useRef<string | null>(null);
-  const prevProfileBeforeFsRef = useRef<string | null>(null);
+  // ADR-00X: Profile-related refs removed (universal policy only)
   const isTeardownRef = useRef<boolean>(false);
 
   // UX Features State
@@ -86,10 +85,7 @@ function V3Player(props: V3PlayerProps) {
     const ua = navigator.userAgent.toLowerCase();
     return ua.includes('safari') && !ua.includes('chrome') && !ua.includes('chromium') && !ua.includes('android');
   }, []);
-  const [selectedProfile, setSelectedProfile] = useState<string>(() => {
-    // Load profile from localStorage (set via EPG Toolbar)
-    return localStorage.getItem('xg2g_stream_profile') || 'auto';
-  }); // Profile selection
+  // ADR-00X: Profile selection removed (universal policy only)
 
   // PREPARING state for VOD remux UX
   const [volume, setVolume] = useState(1); // 0.0 to 1.0
@@ -276,12 +272,7 @@ function V3Player(props: V3PlayerProps) {
   }, [token]);
 
   const reportError = useCallback(async (event: 'error' | 'warning', code: number, msg?: string) => {
-    // Auto-switch to safari profile on error to ensure robust retry
-    // Auto-switch to safari profile on error ONLY if we were in auto mode
-    if (event === 'error' && selectedProfile === 'auto') {
-      console.info('[V3Player] Error detected in Auto mode. Switching profile to Safari (fMP4) for retry.');
-      setSelectedProfile('safari');
-    }
+    // ADR-00X: Auto-switch logic removed (universal policy only)
 
     if (!sessionIdRef.current) return;
     try {
@@ -297,7 +288,7 @@ function V3Player(props: V3PlayerProps) {
     } catch (e) {
       console.warn('Failed to send feedback', e);
     }
-  }, [apiBase, authHeaders, selectedProfile]);
+  }, [apiBase, authHeaders]);
 
   const ensureSessionCookie = useCallback(async (): Promise<void> => {
     if (!token) return;
@@ -576,26 +567,38 @@ function V3Player(props: V3PlayerProps) {
         }
 
         if (res.status === 503) {
-          // Parse Retry-After or ETA if available
-          // Parse Retry-After or ETA if available
+          // CONTRACT-FE-001: Strict Retry-After enforcement
           const retryAfter = res.headers.get('Retry-After');
-          // Backend might send ETA in JSON body on GET, but we use HEAD here.
-          // Fallback to generic message with countdown.
-          setStatus('starting'); // Keep status as busy
-          // Update error details to show progress (hacky but effective)
-          const waitHint = retryAfter ? ` (retry ${retryAfter}s)` : ` (${retries * 3}s...)`;
-          setErrorDetails(`${t('player.preparing')}${waitHint}`);
+
+          if (!retryAfter) {
+            // No Retry-After header → fail immediately per contract
+            setStatus('error');
+            setError(t('player.serverError'));
+            setErrorDetails('Server did not provide retry guidance (missing Retry-After header)');
+            setShowErrorDetails(true);
+            throw new Error('503 without Retry-After header');
+          }
+
+          const retrySeconds = parseInt(retryAfter, 10);
+          setStatus('starting');
+          setErrorDetails(`${t('player.preparing')} (retry in ${retrySeconds}s)`);
           setShowErrorDetails(true);
+
+          // Wait exact retry_after duration
+          await new Promise(r => setTimeout(r, retrySeconds * 1000));
         } else {
           throw new Error(`Unexpected status: ${res.status}`);
         }
       } catch (e) {
+        // Network error or non-503 error → fail
+        if ((e as Error).message === '503 without Retry-After header') {
+          throw e; // Propagate contract violation error
+        }
         console.warn('[V3Player] Probe failed', e);
-        // Network error? retry.
+        throw new Error(t('player.networkError'));
       }
 
       retries++;
-      await new Promise(r => setTimeout(r, 3000));
     }
     throw new Error(t('player.timeout'));
   }, [t]);
@@ -713,9 +716,18 @@ function V3Player(props: V3PlayerProps) {
 
         // 503 logic for HLS (Rare, usually handled by playlist retry, but good to have)
         if (res.status === 503) {
-          // Retry logic for HLS... simplified here as we mainly use Direct MP4 now
+          // CONTRACT-FE-001: Strict Retry-After enforcement
           const retryAfter = res.headers.get('Retry-After');
-          const delay = retryAfter ? parseInt(retryAfter, 10) * 1000 : 2000;
+
+          if (!retryAfter) {
+            // No header → show error instead of guessing
+            setError(t('player.serverBusy'));
+            setErrorDetails('Server did not provide retry guidance');
+            setStatus('error');
+            return;
+          }
+
+          const delay = parseInt(retryAfter, 10) * 1000;
           setStatus('building');
           vodRetryRef.current = window.setTimeout(() => {
             if (activeRecordingRef.current === id) startRecordingPlayback(id);
@@ -796,7 +808,7 @@ function V3Player(props: V3PlayerProps) {
           headers: authHeaders(true),
           body: JSON.stringify({
             type: 'stream.start',
-            profileID: nextProfileRef.current || selectedProfile,
+
             serviceRef: ref
           })
         });
@@ -1126,59 +1138,8 @@ function V3Player(props: V3PlayerProps) {
       const video = videoRef.current;
       if (!video || !isSafari) return;
 
-      // Check if entering or leaving fullscreen
-      const isInFullscreen = (video as any).webkitDisplayingFullscreen;
-
-      if (isInFullscreen) {
-        // Save current profile preference if not already saved (to handle multiple events)
-        if (prevProfileBeforeFsRef.current === null) {
-          prevProfileBeforeFsRef.current = selectedProfile;
-        }
-
-        if (selectedProfile !== 'safari_hevc_hw') {
-          console.info('[V3Player] Safari entered native fullscreen. Switching to safari_hevc_hw (DVR)');
-          // Switch to DVR profile for native controls with timeline scrubber
-          setSelectedProfile('safari_hevc_hw');
-
-          // Queue the profile override for immediate restart
-          nextProfileRef.current = 'safari_hevc_hw';
-
-          // Restart stream with new profile
-          if (sessionIdRef.current || src) {
-            stopStream(true).then(() => {
-              // Ensure next profile is used even if state update is lagging
-              void startStream();
-            });
-          }
-        }
-      } else {
-        // Restore previous profile
-        const restore = prevProfileBeforeFsRef.current;
-        prevProfileBeforeFsRef.current = null;
-
-        if (restore && restore !== selectedProfile) {
-          console.info(`[V3Player] Safari exited native fullscreen. Restoring profile: ${restore}`);
-          setSelectedProfile(restore);
-
-          // Queue the profile override for immediate restart
-          nextProfileRef.current = restore;
-
-          // Restart stream with restored profile
-          if (sessionIdRef.current || src) {
-            stopStream(true).then(() => {
-              void startStream();
-            });
-          }
-        } else if (selectedProfile === 'safari_hevc_hw') {
-          // Fallback if no restore state but we are stuck in HEVC (e.g. initial load in FS)
-          console.info('[V3Player] Safari exited native fullscreen. Switching back to safari default');
-          setSelectedProfile('safari');
-          nextProfileRef.current = 'safari';
-          if (sessionIdRef.current || src) {
-            stopStream(true).then(() => void startStream());
-          }
-        }
-      }
+      // ADR-00X: Fullscreen profile switching removed (universal policy only)
+      // Safari native fullscreen no longer triggers profile changes
     };
 
     document.addEventListener('fullscreenchange', onFsChange);
@@ -1205,17 +1166,13 @@ function V3Player(props: V3PlayerProps) {
         }
       }
     };
-  }, [isSafari, selectedProfile, stopStream, startStream, src]);
+  }, [isSafari, stopStream, startStream, src]);
 
-  // Persist Profile Selection
-  useEffect(() => {
-    localStorage.setItem('xg2g_stream_profile', selectedProfile);
-  }, [selectedProfile]);
 
   // Update sRef on channel change
   useEffect(() => {
     if (channel) {
-      const ref = channel.service_ref || channel.id;
+      const ref = channel.ref || channel.id;
       if (ref) setSRef(ref);
     }
   }, [channel]);
@@ -1449,18 +1406,7 @@ function V3Player(props: V3PlayerProps) {
           )
         )}
 
-        {!src && !recordingId && status === 'idle' && (
-          <select
-            className="bg-input"
-            value={selectedProfile}
-            onChange={(e) => setSelectedProfile(e.target.value)}
-            style={{ marginRight: '10px', padding: '8px' }}
-          >
-            <option value="auto">Auto</option>
-            <option value="safari">Safari (H.264)</option>
-            <option value="safari_hevc_hw">Safari HEVC (GPU) ⚡</option>
-          </select>
-        )}
+        {/* ADR-00X: Profile dropdown removed (universal policy only) */}
 
         {!autoStart && !src && !recordingId && (
           <button

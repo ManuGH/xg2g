@@ -90,9 +90,15 @@ func (s *Server) prepareVODRequest(ctx context.Context, recordingID, serviceRef,
 }
 
 // executeVODWork performs the actual VOD remux (MP4) using the VOD package helpers.
-// It is designed to be passed as a WorkFunc to vod.Manager.
-func (s *Server) executeVODWork(req vod.RemuxRequest) func(context.Context) error {
-	return func(ctx context.Context) error {
+// It is designed to be passed as a WorkFuncSpec to vod.Manager.
+func (s *Server) executeVODWork(req vod.RemuxRequest) vod.WorkFuncSpec {
+	return func(ctx context.Context, spec vod.JobSpec) error {
+		logger := log.L().With().
+			Str("component", "vod-worker").
+			Str("recording", spec.ID).
+			Str("serviceRef", spec.ServiceRef).
+			Logger()
+
 		defer func() {
 			// Cleanup temporary files
 			for _, path := range req.CleanupPaths {
@@ -120,7 +126,7 @@ func (s *Server) executeVODWork(req vod.RemuxRequest) func(context.Context) erro
 		}
 
 		// Execute
-		exec := &vod.DefaultExecutor{Logger: *log.L()}
+		exec := &vod.DefaultExecutor{Logger: logger}
 		return exec.Run(ctx, "ffmpeg", decision.Args)
 	}
 }

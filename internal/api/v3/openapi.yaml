@@ -51,14 +51,7 @@ components:
           type: string
           description: Required for stream.start. Enigma2 service reference (live playback only).
           example: "1:0:1:445D:453:1:C00000:0:0:0:"
-        profileID:
-          type: string
-          description: Transcoding profile ID
-          example: "hls_720p"
-        profile:
-          type: string
-          deprecated: true
-          description: Legacy alias for profileID (decode-only, will be removed in v3.2)
+
         hwaccel:
           type: string
           enum: [auto, force, off]
@@ -374,19 +367,13 @@ components:
 
     StreamingConfig:
       type: object
-      description: Streaming profile configuration (PR 5.1)
+      description: Streaming delivery policy configuration (ADR-00X)
       properties:
-        default_profile:
+        delivery_policy:
           type: string
-          enum: [auto, safari, safari_hevc_hw]
-          description: Default streaming profile for new sessions
-          default: auto
-        allowed_profiles:
-          type: array
-          items:
-            type: string
-            enum: [auto, safari, safari_hevc_hw]
-          description: List of allowed streaming profiles
+          enum: [universal]
+          description: Streaming delivery policy (only 'universal' is supported)
+          default: universal
 
     FeatureFlags:
       type: object

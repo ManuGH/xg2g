@@ -55,7 +55,7 @@ export interface SessionCookieState {
 
 export interface V3Intent {
   type: 'stream.start' | 'stream.stop';
-  profileID?: string;
+
   serviceRef?: string;
   sessionId?: string;
 }

@@ -130,15 +130,10 @@ func (s *Server) GetSystemConfig(w http.ResponseWriter, r *http.Request) {
 		BaseUrl: &cfg.PiconBase,
 	}
 
-	// PR 5.1: Add streaming config (convert to generated enum types)
-	defaultProfile := StreamingConfigDefaultProfile(cfg.Streaming.DefaultProfile)
-	allowedProfiles := make([]StreamingConfigAllowedProfiles, len(cfg.Streaming.AllowedProfiles))
-	for i, p := range cfg.Streaming.AllowedProfiles {
-		allowedProfiles[i] = StreamingConfigAllowedProfiles(p)
-	}
+	// ADR-00X: Add streaming config (delivery_policy only)
+	deliveryPolicy := StreamingConfigDeliveryPolicy(cfg.Streaming.DeliveryPolicy)
 	streaming := &StreamingConfig{
-		DefaultProfile:  &defaultProfile,
-		AllowedProfiles: &allowedProfiles,
+		DeliveryPolicy: &deliveryPolicy,
 	}
 
 	resp := AppConfig{

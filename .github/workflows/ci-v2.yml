@@ -52,6 +52,7 @@ jobs:
           cd webui
           npm ci
           npm run generate-client
+          npm test -- --run
           npm run build
           mkdir -p ../internal/api/dist
           cp -r dist/* ../internal/api/dist/

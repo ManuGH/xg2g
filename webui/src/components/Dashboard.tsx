@@ -113,7 +113,9 @@ function RecordingStatusIndicator() {
   useEffect(() => {
     let timeoutId: NodeJS.Timeout;
     let mounted = true;
-    let errors = 0;
+
+    // CONTRACT-FE-002: Standard polling interval
+    const POLL_INTERVAL_MS = 30000; // 30s per contract
 
     const fetch = async (): Promise<void> => {
       try {
@@ -123,15 +125,14 @@ function RecordingStatusIndicator() {
 
         if (result.data) {
           setStatus(result.data as DvrStatus);
-          errors = 0;
-          timeoutId = setTimeout(fetch, 10000);
+          // Success: use standard interval
+          timeoutId = setTimeout(fetch, POLL_INTERVAL_MS);
         }
       } catch {
         if (!mounted) return;
         setStatus(null);
-        errors++;
-        const delay = Math.min(10000 + (errors * 5000), 30000);
-        timeoutId = setTimeout(fetch, delay);
+        // Error: use standard interval (no custom backoff)
+        timeoutId = setTimeout(fetch, POLL_INTERVAL_MS);
       }
     };
 
@@ -161,7 +162,9 @@ function StreamsCard() {
   useEffect(() => {
     let timeoutId: NodeJS.Timeout;
     let mounted = true;
-    let errors = 0;
+
+    // CONTRACT-FE-002: Standard polling for active streams
+    const POLL_INTERVAL_MS = 5000; // 5s for streams (less critical than diagnostics)
 
     const fetch = async (): Promise<void> => {
       try {
@@ -172,15 +175,14 @@ function StreamsCard() {
         if (result.data) {
           setStreams(result.data || []);
           setError(false);
-          errors = 0;
-          timeoutId = setTimeout(fetch, 3000); // 3s
+          // Success: use standard interval
+          timeoutId = setTimeout(fetch, POLL_INTERVAL_MS);
         }
       } catch {
         if (!mounted) return;
         setError(true);
-        errors++;
-        const delay = Math.min(3000 + (errors * 2000), 15000);
-        timeoutId = setTimeout(fetch, delay);
+        // Error: use standard interval (no custom backoff)
+        timeoutId = setTimeout(fetch, POLL_INTERVAL_MS);
       }
     };
 

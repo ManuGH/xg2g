@@ -4,20 +4,19 @@
 
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { getSystemScanStatus, triggerSystemScan } from '../client-ts';
-import type { ScanStatus } from '../client-ts/types.gen';
+import { getSystemScanStatus, triggerSystemScan, getSystemConfig } from '../client-ts';
+import type { ScanStatus, AppConfig } from '../client-ts/types.gen';
 import Config from './Config';
 import './Settings.css';
 
 function Settings() {
   const { t } = useTranslation();
-  const [streamProfile, setStreamProfile] = useState<string>(() => {
-    return localStorage.getItem('xg2g_stream_profile') || 'auto';
-  });
+  // ADR-00X: Profile selection removed (universal policy only)
 
-  const [savedMessage, setSavedMessage] = useState<string>('');
+  // ADR-00X: Unused savedMessage state removed (was for profile save feedback)
   const [scanStatus, setScanStatus] = useState<ScanStatus | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [config, setConfig] = useState<AppConfig | null>(null);
 
   // Poll scan status
   useEffect(() => {
@@ -38,6 +37,17 @@ function Settings() {
       }
     };
 
+    const fetchConfig = async () => {
+      try {
+        const { data } = await getSystemConfig();
+        if (data) setConfig(data);
+      } catch (err) {
+        console.error("Failed to load config", err);
+      }
+    };
+
+    fetchConfig();
+
     fetchStatus();
     intervalId = setInterval(fetchStatus, 2000) as unknown as number;
     return () => clearInterval(intervalId);
@@ -56,12 +66,7 @@ function Settings() {
     }
   };
 
-  useEffect(() => {
-    localStorage.setItem('xg2g_stream_profile', streamProfile);
-    setSavedMessage(t('settings.saved'));
-    const timer = setTimeout(() => setSavedMessage(''), 2000);
-    return () => clearTimeout(timer);
-  }, [streamProfile, t]);
+  // ADR-00X: Profile persistence removed (universal policy only)
 
   return (
     <div className="settings-page">
@@ -142,36 +147,18 @@ function Settings() {
       <div className="settings-section">
         <h3>{t('settings.streaming.title')}</h3>
 
+        {/* Note: Profile selection removed in favor of Universal Policy */}
         <div className="settings-group">
-          <label htmlFor="stream-profile">
-            <strong>{t('settings.streaming.profile.label')}</strong>
-            <span className="settings-hint">
-              {t('settings.streaming.profile.hint')}
-            </span>
-          </label>
-          <select
-            id="stream-profile"
-            value={streamProfile}
-            onChange={(e) => setStreamProfile(e.target.value)}
-            className="settings-select"
-          >
-            <option value="auto">{t('settings.streaming.profile.options.auto')}</option>
-            <option value="safari">{t('settings.streaming.profile.options.safari')}</option>
-            <option value="safari_hevc_hw">{t('settings.streaming.profile.options.safariHevcGpu')}</option>
-          </select>
-
-          {streamProfile === 'safari_hevc_hw' && (
-            <div className="settings-info">
-              <strong>{t('settings.streaming.info.gpu.title')}</strong>
-              <p>{t('settings.streaming.info.gpu.body')}</p>
-            </div>
-          )}
-
-          {streamProfile === 'auto' && (
-            <div className="settings-info">
-              <p>{t('settings.streaming.info.auto')}</p>
-            </div>
-          )}
+          <label>{t('settings.streaming.policy') || 'Delivery Policy'}</label>
+          <div className="input-with-button">
+            <input
+              type="text"
+              value={config?.streaming?.delivery_policy === 'universal' ? "Universal (H.264/AAC/fMP4)" : (config?.streaming?.delivery_policy || "Loading...")}
+              disabled
+              className="input-readonly"
+            />
+            <span className="settings-hint">Strict Universal-Only</span>
+          </div>
         </div>
       </div>
 
@@ -188,11 +175,8 @@ function Settings() {
         </div>
       </div>
 
-      {savedMessage && (
-        <div className="settings-saved-message">
-          ✓ {savedMessage}
-        </div>
-      )}
+      {/* ADR-00X: Saved message removed (was for profile save feedback) */}
+
 
       <div className="settings-footer">
         <p>

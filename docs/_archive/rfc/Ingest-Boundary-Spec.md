@@ -1,6 +1,6 @@
 # Ingest Boundary Specification
 
-This document defines the technical requirements for the xg2g `worker` and `ffmpeg` runner to enforce the Zero-Trust boundary with Enigma2 sources as defined in [ADR-004](file:///root/xg2g/docs/rfc/ADR-004-enigma2-trust-boundary.md).
+This document defines the technical requirements for the xg2g `worker` and `ffmpeg` runner to enforce the Zero-Trust boundary with Enigma2 sources as defined in [ADR-004](ADR-004-enigma2-trust-boundary.md).
 
 ## 1. FFmpeg Configuration (The "Repair Shop")
 
