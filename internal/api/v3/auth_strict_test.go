@@ -111,6 +111,9 @@ func (s *SpyStore) UpdateSession(ctx context.Context, id string, fn func(*model.
 func (s *SpyStore) ListSessions(ctx context.Context) ([]*model.SessionRecord, error) {
 	return nil, nil
 }
+func (s *SpyStore) QuerySessions(ctx context.Context, filter store.SessionFilter) ([]*model.SessionRecord, error) {
+	return nil, nil
+}
 func (s *SpyStore) ScanSessions(ctx context.Context, fn func(*model.SessionRecord) error) error {
 	return nil
 }

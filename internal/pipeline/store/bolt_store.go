@@ -238,6 +238,39 @@ func (b *BoltStore) ListSessions(ctx context.Context) ([]*model.SessionRecord, e
 	return list, err
 }
 
+// QuerySessions filters sessions (ADR-009 CTO Patch 2)
+// Note: BoltStore implementation uses ListSessions + filter for now
+// TODO: Optimize with index/cursor filtering in future
+func (b *BoltStore) QuerySessions(ctx context.Context, filter SessionFilter) ([]*model.SessionRecord, error) {
+	all, err := b.ListSessions(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build state map
+	stateMatch := make(map[model.SessionState]bool)
+	for _, state := range filter.States {
+		stateMatch[state] = true
+	}
+
+	var result []*model.SessionRecord
+	for _, rec := range all {
+		// Filter by state
+		if len(filter.States) > 0 && !stateMatch[rec.State] {
+			continue
+		}
+
+		// Filter by lease expiry
+		if filter.LeaseExpiresBefore > 0 && rec.LeaseExpiresAtUnix > filter.LeaseExpiresBefore {
+			continue
+		}
+
+		result = append(result, rec)
+	}
+
+	return result, nil
+}
+
 func (b *BoltStore) ScanSessions(ctx context.Context, fn func(*model.SessionRecord) error) error {
 	return b.db.View(func(tx *bolt.Tx) error {
 		c := tx.Bucket(bucketSessions).Cursor()

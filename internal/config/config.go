@@ -151,6 +151,13 @@ type StreamingConfig struct {
 	DeliveryPolicy string `yaml:"delivery_policy" env:"XG2G_STREAMING_POLICY"`
 }
 
+// SessionsConfig holds session lease settings (ADR-009)
+type SessionsConfig struct {
+	LeaseTTL            time.Duration `yaml:"lease_ttl"`
+	HeartbeatInterval   time.Duration `yaml:"heartbeat_interval"`
+	ExpiryCheckInterval time.Duration `yaml:"expiry_check_interval"`
+}
+
 // AppConfig holds all configuration for the application
 type AppConfig struct {
 	Version           string
@@ -237,6 +244,9 @@ type AppConfig struct {
 
 	// Streaming Configuration
 	Streaming StreamingConfig
+
+	// ADR-009: Session Lease Configuration
+	Sessions SessionsConfig
 
 	// Library Configuration (Phase 0 per ADR-ENG-002)
 	Library LibraryConfig
@@ -480,6 +490,17 @@ func (l *Loader) setDefaults(cfg *AppConfig) {
 	cfg.Library.Enabled = false
 	cfg.Library.DBPath = filepath.Join(cfg.DataDir, "library.sqlite")
 	// Roots configured via config.yaml only
+
+	// ADR-009: Session Lease Defaults (config normalization - CTO Patch 1)
+	if cfg.Sessions.LeaseTTL == 0 {
+		cfg.Sessions.LeaseTTL = 60 * time.Second
+	}
+	if cfg.Sessions.HeartbeatInterval == 0 {
+		cfg.Sessions.HeartbeatInterval = 5 * time.Second
+	}
+	if cfg.Sessions.ExpiryCheckInterval == 0 {
+		cfg.Sessions.ExpiryCheckInterval = 10 * time.Second
+	}
 }
 
 // loadFile loads configuration from a YAML file with STRICT parsing.

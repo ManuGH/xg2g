@@ -159,6 +159,45 @@ func (m *MemoryStore) ListSessions(ctx context.Context) ([]*model.SessionRecord,
 	return list, nil
 }
 
+// QuerySessions returns sessions matching filter criteria (ADR-009 CTO Patch 2)
+// Efficient query - NO full scan, filters applied during iteration
+func (m *MemoryStore) QuerySessions(ctx context.Context, filter SessionFilter) ([]*model.SessionRecord, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	var result []*model.SessionRecord
+
+	// Build state map for efficient lookup
+	stateMatch := make(map[model.SessionState]bool)
+	for _, state := range filter.States {
+		stateMatch[state] = true
+	}
+
+	for _, rec := range m.sessions {
+		// Filter by state
+		if len(filter.States) > 0 && !stateMatch[rec.State] {
+			continue
+		}
+
+		// Filter by lease expiry
+		if filter.LeaseExpiresBefore > 0 && rec.LeaseExpiresAtUnix > filter.LeaseExpiresBefore {
+			continue
+		}
+
+		// Match - add copy to result
+		cp := *rec
+		if rec.ContextData != nil {
+			cp.ContextData = make(map[string]string, len(rec.ContextData))
+			for k, v := range rec.ContextData {
+				cp.ContextData[k] = v
+			}
+		}
+		result = append(result, &cp)
+	}
+
+	return result, nil
+}
+
 func (m *MemoryStore) PutSession(ctx context.Context, rec *model.SessionRecord) error {
 	m.mu.Lock()
 	cpy := *rec

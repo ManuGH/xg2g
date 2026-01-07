@@ -293,7 +293,10 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 			CorrelationID: correlationID,
 			CreatedAtUnix: time.Now().Unix(),
 			UpdatedAtUnix: time.Now().Unix(),
-			ContextData:   requestParams, // Store context params
+			// ADR-009: Session Lease (config-driven, CTO Patch 1 compliant)
+			LeaseExpiresAtUnix: time.Now().Add(cfg.Sessions.LeaseTTL).Unix(),
+			HeartbeatInterval:  int(cfg.Sessions.HeartbeatInterval.Seconds()),
+			ContextData:        requestParams, // Store context params
 		}
 
 		// Atomic Write
