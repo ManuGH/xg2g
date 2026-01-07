@@ -2,7 +2,8 @@
 
 ## Summary
 
-Implements client-side session heartbeat loop in `V3Player.tsx` per ADR-009. **Frontend-only changes - NO backend modifications.**
+Implements client-side session heartbeat loop in `V3Player.tsx` per ADR-009.
+**Frontend-only changes - NO backend modifications.**
 
 ## CTO Compliance Status
 
@@ -28,9 +29,11 @@ Implements client-side session heartbeat loop in `V3Player.tsx` per ADR-009. **F
 
 ```typescript
 // ADR-009: Session Lease Semantics
-const [heartbeatInterval, setHeartbeatInterval] = useState<number | null>(null); // seconds from backend
+const [heartbeatInterval, setHeartbeatInterval] = useState<number | null>(null);
+// seconds from backend
 // @ts-expect-error - TS6133: leaseExpiresAt used via setter, not directly read
-const [leaseExpiresAt, setLeaseExpiresAt] = useState<string | null>(null); // ISO 8601
+const [leaseExpiresAt, setLeaseExpiresAt] = useState<string | null>(null);
+// ISO 8601
 ```
 
 **Key points:**
@@ -66,7 +69,8 @@ useEffect(() => {
   }
 
   const intervalMs = heartbeatInterval * 1000;
-  console.debug('[V3Player][Heartbeat] Starting heartbeat loop:', { sessionId, intervalMs });
+  console.debug('[V3Player][Heartbeat] Starting heartbeat loop:',
+    { sessionId, intervalMs });
 
   const timerId = setInterval(async () => {
     try {
@@ -207,4 +211,5 @@ git diff --name-only | grep -c "^internal/"
 
 ---
 
-**CTO Approval Required:** All Phase 3 requirements satisfied per PR3_CTO_COMMAND.md.
+**CTO Approval Required:** All Phase 3 requirements satisfied per
+PR3_CTO_COMMAND.md.
