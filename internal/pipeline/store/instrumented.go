@@ -82,6 +82,12 @@ func (i *instrumentedStore) ListSessions(ctx context.Context) (list []*model.Ses
 	return i.inner.ListSessions(ctx)
 }
 
+func (i *instrumentedStore) QuerySessions(ctx context.Context, filter SessionFilter) (list []*model.SessionRecord, err error) {
+	start := time.Now()
+	defer func() { i.observe("query_sessions", start, err) }()
+	return i.inner.QuerySessions(ctx, filter)
+}
+
 func (i *instrumentedStore) ScanSessions(ctx context.Context, fn func(*model.SessionRecord) error) (err error) {
 	start := time.Now()
 	defer func() { i.observe("scan_sessions", start, err) }()

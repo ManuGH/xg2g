@@ -123,21 +123,26 @@ type ProfileSpec struct {
 
 // SessionRecord is the state-store source of truth for client-visible state.
 type SessionRecord struct {
-	SessionID      string            `json:"sessionId"`
-	ServiceRef     string            `json:"serviceRef"`
-	Profile        ProfileSpec       `json:"profile"`
-	State          SessionState      `json:"state"`
-	PipelineState  PipelineState     `json:"pipelineState"`
-	Reason         ReasonCode        `json:"reason"`
-	ReasonDetail   string            `json:"reasonDetail,omitempty"`
-	FallbackReason string            `json:"fallbackReason,omitempty"`
-	FallbackAtUnix int64             `json:"fallbackAtUnix,omitempty"`
-	CorrelationID  string            `json:"correlationId"`
-	CreatedAtUnix  int64             `json:"createdAtUnix"`
-	UpdatedAtUnix  int64             `json:"updatedAtUnix"`
-	LastAccessUnix int64             `json:"lastAccessUnix,omitempty"`
-	ExpiresAtUnix  int64             `json:"expiresAtUnix"` // TTL for garbage collection.
-	ContextData    map[string]string `json:"contextData,omitempty"`
+	SessionID      string        `json:"sessionId"`
+	ServiceRef     string        `json:"serviceRef"`
+	Profile        ProfileSpec   `json:"profile"`
+	State          SessionState  `json:"state"`
+	PipelineState  PipelineState `json:"pipelineState"`
+	Reason         ReasonCode    `json:"reason"`
+	ReasonDetail   string        `json:"reasonDetail,omitempty"`
+	FallbackReason string        `json:"fallbackReason,omitempty"`
+	FallbackAtUnix int64         `json:"fallbackAtUnix,omitempty"`
+	CorrelationID  string        `json:"correlationId"`
+	CreatedAtUnix  int64         `json:"createdAtUnix"`
+	UpdatedAtUnix  int64         `json:"updatedAtUnix"`
+	LastAccessUnix int64         `json:"lastAccessUnix,omitempty"`
+	ExpiresAtUnix  int64         `json:"expiresAtUnix"` // TTL for garbage collection.
+	// ADR-009: Session Lease Semantics
+	LeaseExpiresAtUnix int64             `json:"leaseExpiresAtUnix"`
+	HeartbeatInterval  int               `json:"heartbeatInterval"`
+	LastHeartbeatUnix  int64             `json:"lastHeartbeatUnix,omitempty"`
+	StopReason         string            `json:"stopReason,omitempty"` // USER_STOPPED, LEASE_EXPIRED, FAILED, etc.
+	ContextData        map[string]string `json:"contextData,omitempty"`
 }
 
 // PipelineRecord tracks the internal worker state.

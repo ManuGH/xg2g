@@ -103,6 +103,22 @@ var (
 		},
 		[]string{"reason", "profile", "mode"},
 	)
+
+	// ADR-009: Session Lease Metrics
+	sessionsLeaseExpiredTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "xg2g_sessions_lease_expired_total",
+			Help: "Total sessions expired due to lease timeout",
+		},
+		[]string{"previous_state"},
+	)
+
+	sessionsHeartbeatTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "xg2g_sessions_heartbeat_total",
+			Help: "Total successful heartbeats",
+		},
+	)
 )
 
 func observeTTFP(profile, mode string, start time.Time) {

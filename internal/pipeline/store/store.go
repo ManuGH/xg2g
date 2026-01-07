@@ -17,6 +17,12 @@ var (
 	ErrNotFound         = errors.New("not found")
 )
 
+// SessionFilter defines filtering criteria for QuerySessions (ADR-009 CTO Patch 2)
+type SessionFilter struct {
+	States             []model.SessionState // Filter by state (e.g., NEW, STARTING, READY)
+	LeaseExpiresBefore int64                // Unix timestamp - sessions expiring before this time
+}
+
 // Lease is a single-writer lock for a (receiver, serviceKey) or similar key.
 // The owner string should be stable for the lifetime of the worker instance.
 type Lease interface {
@@ -40,6 +46,9 @@ type StateStore interface {
 	// GetSession returns the session record. If not found, it returns (nil, nil).
 	// Callers must check for nil record before using it.
 	GetSession(ctx context.Context, id string) (*model.SessionRecord, error)
+	// ADR-009: QuerySessions returns sessions matching filter criteria (efficient, no full scan)
+	// CTO Patch 2: For lease expiry - filter by state + lease_expires_at
+	QuerySessions(ctx context.Context, filter SessionFilter) ([]*model.SessionRecord, error)
 	UpdateSession(ctx context.Context, id string, fn func(*model.SessionRecord) error) (*model.SessionRecord, error)
 	ListSessions(ctx context.Context) ([]*model.SessionRecord, error)
 	// ScanSessions iterates over all sessions calling fn. Safest for large datasets.
