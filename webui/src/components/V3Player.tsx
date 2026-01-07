@@ -87,6 +87,10 @@ function V3Player(props: V3PlayerProps) {
   }, []);
   // ADR-00X: Profile selection removed (universal policy only)
 
+  // ADR-009: Session Lease Semantics
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [leaseExpiresAt, setLeaseExpiresAt] = useState<string | null>(null); // ISO 8601
+
   // PREPARING state for VOD remux UX
   const [volume, setVolume] = useState(1); // 0.0 to 1.0
   const [isMuted, setIsMuted] = useState(false);
@@ -376,6 +380,13 @@ function V3Player(props: V3PlayerProps) {
     }
     if (typeof session.durationSeconds === 'number' && session.durationSeconds > 0) {
       setDurationSeconds(session.durationSeconds);
+    }
+    // ADR-009: Parse lease fields from session response
+    if (typeof session.heartbeat_interval === 'number') {
+      setHeartbeatInterval(session.heartbeat_interval);
+    }
+    if (session.lease_expires_at) {
+      setLeaseExpiresAt(session.lease_expires_at);
     }
   }, []);
 
@@ -941,6 +952,56 @@ function V3Player(props: V3PlayerProps) {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [toggleFullscreen, togglePlayPause, togglePiP, seekBy]);
+
+  // ADR-009: Session Heartbeat Loop
+  useEffect(() => {
+    if (!sessionId || !heartbeatInterval || status !== 'ready') {
+      return; // Only run when session is READY
+    }
+
+    const intervalMs = heartbeatInterval * 1000;
+    console.debug('[V3Player][Heartbeat] Starting heartbeat loop:', { sessionId, intervalMs });
+
+    const timerId = setInterval(async () => {
+      try {
+        const res = await fetch(`${apiBase}/sessions/${sessionId}/heartbeat`, {
+          method: 'POST',
+          headers: authHeaders(true)
+        });
+
+        if (res.status === 200) {
+          const data = await res.json();
+          setLeaseExpiresAt(data.lease_expires_at);
+          console.debug('[V3Player][Heartbeat] Lease extended:', data.lease_expires_at);
+        } else if (res.status === 410) {
+          // Terminal: Session lease expired
+          console.error('[V3Player][Heartbeat] Session expired (410)');
+          clearInterval(timerId);
+          setStatus('error');
+          setError(t('player.sessionExpired') || 'Session expired. Please restart.');
+          if (videoRef.current) {
+            videoRef.current.pause();
+          }
+        } else if (res.status === 404) {
+          console.warn('[V3Player][Heartbeat] Session not found (404)');
+          clearInterval(timerId);
+          setStatus('error');
+          setError(t('player.sessionNotFound') || 'Session no longer exists.');
+          if (videoRef.current) {
+            videoRef.current.pause();
+          }
+        }
+      } catch (error) {
+        console.error('[V3Player][Heartbeat] Network error:', error);
+        // Allow retry on next interval (no infinite loops)
+      }
+    }, intervalMs);
+
+    return () => {
+      console.debug('[V3Player][Heartbeat] Cleanup: Clearing heartbeat timer');
+      clearInterval(timerId);
+    };
+  }, [sessionId, heartbeatInterval, status, apiBase, authHeaders, t]);
 
   // Video Event Listeners
   useEffect(() => {

@@ -68,25 +68,24 @@ export interface V3SessionResponse {
 
 export interface V3SessionStatusResponse {
   sessionId: string;
-  state:
-  | 'NEW'
-  | 'STARTING'
-  | 'PRIMING'
-  | 'READY'
-  | 'DRAINING'
-  | 'STOPPING'
-  | 'STOPPED'
-  | 'FAILED'
-  | 'CANCELLED';
+  state: string;
   reason?: string;
   reasonDetail?: string;
+  correlationId?: string;
+  updatedAtMs?: number;
   mode?: 'LIVE' | 'RECORDING';
   durationSeconds?: number;
   seekableStartSeconds?: number;
   seekableEndSeconds?: number;
   liveEdgeSeconds?: number;
   playbackUrl?: string;
+  // ADR-009: Session Lease Semantics
+  heartbeat_interval?: number; // seconds
+  lease_expires_at?: string; // ISO 8601
+  last_heartbeat?: string; // ISO 8601
+  stop_reason?: string; // USER_STOPPED, LEASE_EXPIRED, FAILED, CLEANUP
 }
+
 
 // HLS-specific types
 export type HlsInstanceRef = Hls | null;
