@@ -107,3 +107,9 @@ xg2g-*
 xg2g-daemon
 xg2g_new
 testdata/
+
+# Runtime artifacts (process management, locks, temp files)
+*.pid
+*.lock
+*.tmp
+server.pid
