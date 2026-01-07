@@ -16,24 +16,26 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: "1.21"
+          go-version-file: "go.mod" # Use go.mod version, not hardcoded
 
       - name: Install gocyclo
         run: go install github.com/fzipp/gocyclo/cmd/gocyclo@latest
 
-      - name: Check Complexity Threshold
+      - name: Check Complexity Threshold (Fail-Closed)
         run: |
           echo "🔍 Checking for functions with cyclomatic complexity >20..."
-          if gocyclo -over 20 ./internal ./cmd; then
-            echo "✅ All functions below complexity threshold"
-          else
-            echo "❌ High complexity detected (>20)"
-            echo "💡 Refactor complex functions or update threshold"
+          out="$(gocyclo -over 20 ./internal ./cmd || true)"
+          if [ -n "$out" ]; then
+            echo "❌ High complexity detected (>20):"
+            echo "$out"
+            echo ""
+            echo "💡 Refactor these functions or update threshold in workflow"
             exit 1
           fi
+          echo "✅ All functions below complexity threshold"
 
   openapi-drift-check:
-    name: Prevent OpenAPI Drift
+    name: Prevent OpenAPI Drift (Fail-Closed)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -43,35 +45,33 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: "1.21"
+          go-version-file: "go.mod"
 
-      - name: Check OpenAPI Sync
+      - name: Check OpenAPI Sync (Always, Hard Fail)
         run: |
-          echo "🔍 Checking OpenAPI specification sync..."
+          echo "🔍 Verifying OpenAPI generation sync..."
 
-          # Check if openapi.yaml changed
-          if git diff --name-only origin/main...HEAD | grep -q "openapi.yaml"; then
-            echo "⚠️  openapi.yaml changed - verifying sync..."
-            
-            # Regenerate if Makefile target exists
-            if grep -q "generate-api" Makefile 2>/dev/null; then
-              make generate-api || echo "Warning: generate-api target not found"
-              
-              # Check for drift
-              if git diff --exit-code internal/api/v3/server_gen.go; then
-                echo "✅ OpenAPI and generated code in sync"
-              else
-                echo "❌ OpenAPI drift detected"
-                echo "Generated code doesnt match openapi.yaml"
-                echo "💡 Run: make generate-api && git add internal/api/v3/server_gen.go"
-                exit 1
-              fi
-            else
-              echo "⚠️  Skipping: generate-api target not found in Makefile"
-            fi
-          else
-            echo "✅ openapi.yaml unchanged - no drift check needed"
+          # Hard fail if generate target missing (this is a required gate)
+          if ! grep -qE '^generate-api:' Makefile 2>/dev/null; then
+            echo "❌ Missing Makefile target: generate-api"
+            echo "This target is REQUIRED for OpenAPI drift prevention"
+            exit 1
           fi
+
+          # Regenerate (always, not just when openapi.yaml changed)
+          echo "🔄 Running: make generate-api"
+          make generate-api
+
+          # Hard fail on ANY diff after generation
+          if ! git diff --exit-code; then
+            echo "❌ OpenAPI drift detected"
+            echo "Generated code doesn't match current state"
+            echo ""
+            echo "💡 Fix: make generate-api && git add -A && git commit"
+            exit 1
+          fi
+
+          echo "✅ OpenAPI and generated code in sync"
 
   lint-and-test:
     name: Lint & Test (Hard Gates)
@@ -82,7 +82,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: "1.21"
+          go-version-file: "go.mod"
 
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v3
