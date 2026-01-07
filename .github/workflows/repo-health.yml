@@ -1,0 +1,84 @@
+name: Repository Health Checks
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  check-large-files:
+    name: Prevent Large Files
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Check for large files
+        run: |
+          MAX_SIZE_MB=5
+          MAX_SIZE_BYTES=$((MAX_SIZE_MB * 1024 * 1024))
+
+          echo "🔍 Checking for large files in commit..."
+
+          # Get files changed in this PR/commit
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+          else
+            FILES=$(git diff --name-only HEAD~1..HEAD)
+          fi
+
+          LARGE_FILES=""
+          for file in $FILES; do
+            if [ -f "$file" ]; then
+              SIZE=$(stat -c%s "$file")
+              if [ "$SIZE" -gt "$MAX_SIZE_BYTES" ]; then
+                SIZE_MB=$(echo "scale=2; $SIZE / 1024 / 1024" | bc)
+                LARGE_FILES="${LARGE_FILES}  - $file (${SIZE_MB}MB)\n"
+              fi
+            fi
+          done
+
+          if [ -n "$LARGE_FILES" ]; then
+            echo "❌ ERROR: Large files detected (>${MAX_SIZE_MB}MB):"
+            echo -e "$LARGE_FILES"
+            echo ""
+            echo "💡 Solutions:"
+            echo "  1. Move to testdata/ (gitignored)"
+            echo "  2. Use Git LFS"
+            echo "  3. Host externally"
+            exit 1
+          fi
+
+          echo "✅ No large files detected"
+
+  check-test-assets-location:
+    name: Verify Test Assets in testdata/
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Check for test files in root
+        run: |
+          echo "🔍 Checking for test assets in repository root..."
+
+          # Look for common test file patterns in root
+          TEST_FILES=$(find . -maxdepth 1 -type f \( \
+            -name "*.mp4" -o \
+            -name "*.ts" -o \
+            -name "*test*.mp4" -o \
+            -name "downloaded_*.ts" -o \
+            -name "verify_*.ts" \
+          \) 2>/dev/null || true)
+
+          if [ -n "$TEST_FILES" ]; then
+            echo "❌ ERROR: Test files found in repository root:"
+            echo "$TEST_FILES"
+            echo ""
+            echo "💡 Move these files to testdata/ directory:"
+            echo "  mv *.mp4 *.ts testdata/videos/ testdata/segments/"
+            exit 1
+          fi
+
+          echo "✅ No test files in root directory"

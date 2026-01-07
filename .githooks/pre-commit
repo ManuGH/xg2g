@@ -1,0 +1,45 @@
+#!/bin/bash
+# Pre-commit hook to prevent large files from being committed
+# Place in .git/hooks/pre-commit and chmod +x
+
+set -e
+
+MAX_SIZE_MB=5
+MAX_SIZE_BYTES=$((MAX_SIZE_MB * 1024 * 1024))
+
+echo "🔍 Checking for large files in commit..."
+
+# Get list of staged files
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM)
+
+if [ -z "$STAGED_FILES" ]; then
+    exit 0
+fi
+
+LARGE_FILES=""
+for file in $STAGED_FILES; do
+    if [ -f "$file" ]; then
+        SIZE=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null)
+        if [ "$SIZE" -gt "$MAX_SIZE_BYTES" ]; then
+            SIZE_MB=$(echo "scale=2; $SIZE / 1024 / 1024" | bc)
+            LARGE_FILES="${LARGE_FILES}  - $file (${SIZE_MB}MB)\n"
+        fi
+    fi
+done
+
+if [ -n "$LARGE_FILES" ]; then
+    echo "❌ ERROR: Large files detected in commit (>${MAX_SIZE_MB}MB):"
+    echo -e "$LARGE_FILES"
+    echo ""
+    echo "💡 Solutions:"
+    echo "  1. Move files to testdata/ (excluded from Git)"
+    echo "  2. Use Git LFS: git lfs track 'path/to/file'"
+    echo "  3. Host externally (CDN/S3)"
+    echo ""
+    echo "To bypass this check (NOT recommended):"
+    echo "  git commit --no-verify"
+    exit 1
+fi
+
+echo "✅ No large files detected"
+exit 0
