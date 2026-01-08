@@ -12,7 +12,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     libx264-dev \
     libx265-dev \
-    libfdk-aac-dev \
     libva-dev \
     && rm -rf /var/lib/apt/lists/*
 
@@ -43,7 +42,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     libx264-164 \
     libx265-199 \
-    libfdk-aac2 \
     libva2 \
     libva-drm2 \
     intel-media-va-driver \
