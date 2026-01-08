@@ -8,7 +8,7 @@ import (
 	"net/http"
 
 	v3 "github.com/ManuGH/xg2g/internal/api/v3"
-	"github.com/ManuGH/xg2g/internal/auth"
+	"github.com/ManuGH/xg2g/internal/control/auth"
 	"github.com/ManuGH/xg2g/internal/log"
 )
 

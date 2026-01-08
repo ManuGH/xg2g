@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/auth"
+	"github.com/ManuGH/xg2g/internal/control/auth"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 	"github.com/go-chi/chi/v5"

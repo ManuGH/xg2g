@@ -9,7 +9,7 @@ package v3
 import (
 	"net/http"
 
-	"github.com/ManuGH/xg2g/internal/auth"
+	"github.com/ManuGH/xg2g/internal/control/auth"
 	"github.com/ManuGH/xg2g/internal/log"
 )
 

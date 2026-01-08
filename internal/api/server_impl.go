@@ -15,7 +15,7 @@ import (
 	"context" // This import is necessary for context.Context
 
 	v3 "github.com/ManuGH/xg2g/internal/api/v3"
-	"github.com/ManuGH/xg2g/internal/auth"
+	"github.com/ManuGH/xg2g/internal/control/auth"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 )

@@ -7,7 +7,7 @@ package v3
 import (
 	"net/http"
 
-	"github.com/ManuGH/xg2g/internal/auth"
+	"github.com/ManuGH/xg2g/internal/control/auth"
 )
 
 // extractToken delegates to the shared internal/auth package to ensure parity with valid proxy auth.
