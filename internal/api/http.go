@@ -23,7 +23,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/api/middleware"
+	"github.com/ManuGH/xg2g/internal/control/middleware"
 	v3 "github.com/ManuGH/xg2g/internal/api/v3"
 	"github.com/ManuGH/xg2g/internal/channels"
 	"github.com/ManuGH/xg2g/internal/config"
