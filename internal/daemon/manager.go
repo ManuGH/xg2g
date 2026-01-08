@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -18,11 +19,15 @@ import (
 	worker "github.com/ManuGH/xg2g/internal/domain/session/manager"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/health"
+	"github.com/ManuGH/xg2g/internal/infrastructure/bus"
+	"github.com/ManuGH/xg2g/internal/infrastructure/media/ffmpeg"
+	"github.com/ManuGH/xg2g/internal/infrastructure/media/stub"
+	"github.com/ManuGH/xg2g/internal/infrastructure/platform"
 	memorybus "github.com/ManuGH/xg2g/internal/pipeline/bus"
-	"github.com/ManuGH/xg2g/internal/pipeline/exec"
 	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
+	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 	"golang.org/x/time/rate"
 )
@@ -112,8 +117,6 @@ func (m *manager) Start(ctx context.Context) error {
 		}
 	}
 
-	// Phase 7A: Start v3 Worker (if enabled)
-	// Phase 7A: Start v3 Worker (if enabled)
 	// Phase 7A: Start v3 Worker (if enabled)
 	if m.deps.Config.Engine.Enabled {
 		if err := m.startV3Worker(ctx, errChan); err != nil {
@@ -240,7 +243,6 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 	v3Bus := memorybus.NewMemoryBus()
 
 	// 2. Initialize Store (Factory)
-	// 2. Initialize Store (Factory)
 	v3Store, err := store.OpenStateStore(cfg.Store.Backend, cfg.Store.Path)
 	if err != nil {
 		m.logger.Error().Err(err).Msg("failed to open v3 store")
@@ -255,7 +257,6 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 	}
 
 	// 2.5 Initialize Resume Store
-	// 2.5 Initialize Resume Store
 	resumeStore, err := resume.NewStore(cfg.Store.Backend, cfg.Store.Path)
 	if err != nil {
 		m.logger.Error().Err(err).Msg("failed to open resume store")
@@ -269,7 +270,6 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 	}
 
 	// 2.7 Initialize Smart Profile Scanner
-	// 2.7 Initialize Smart Profile Scanner
 	scanStore := scan.NewStore(cfg.Store.Path)
 	playlistPath := "data/playlist.m3u"
 	if m.deps.ProxyConfig != nil && m.deps.ProxyConfig.PlaylistPath != "" {
@@ -278,16 +278,26 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 	scanManager := scan.NewManager(scanStore, playlistPath)
 
 	// 3. Initialize Orchestrator
+	// Generate stable worker identity (replacing domain-level OS calls)
+	host, _ := os.Hostname()
+	workerOwner := fmt.Sprintf("%s-%d-%s", host, os.Getpid(), uuid.New().String())
+
 	orch := &worker.Orchestrator{
-		Store:             v3Store,
-		Bus:               v3Bus,
-		LeaseTTL:          30 * time.Second,
-		HeartbeatEvery:    10 * time.Second,
-		TunerSlots:        cfg.Engine.TunerSlots,
-		HLSRoot:           cfg.HLS.Root,
-		FFmpegKillTimeout: cfg.FFmpeg.KillTimeout,
+		Store:               v3Store,
+		Bus:                 bus.NewAdapter(v3Bus),    // Injected Adapter
+		Platform:            platform.NewOSPlatform(), // Platform Port
+		LeaseTTL:            30 * time.Second,         // Explicit default
+		HeartbeatEvery:      10 * time.Second,         // Explicit default
+		Owner:               workerOwner,              // Explicit generation
+		TunerSlots:          cfg.Engine.TunerSlots,
+		HLSRoot:             cfg.HLS.Root,
+		PipelineStopTimeout: 5 * time.Second, // Explicit default (fallback if cfg missing)
+		StartConcurrency:    10,              // Bounded Start concurrency
+		StopConcurrency:     10,              // Bounded Stop concurrency
 		Sweeper: worker.SweeperConfig{
-			IdleTimeout: cfg.Engine.IdleTimeout,
+			IdleTimeout:      cfg.Engine.IdleTimeout,
+			Interval:         5 * time.Minute, // Explicit default
+			SessionRetention: 24 * time.Hour,  // Explicit default
 		},
 	}
 
@@ -308,9 +318,9 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 	}
 	e2Client := enigma2.NewClientWithOptions(cfg.Enigma2.BaseURL, e2Opts)
 	if cfg.Engine.Mode == "virtual" {
-		orch.ExecFactory = &exec.StubFactory{}
+		orch.Pipeline = stub.NewAdapter()
 	} else {
-		orch.ExecFactory = exec.NewRealFactory(e2Client, cfg.Enigma2.TuneTimeout, cfg.FFmpeg.Bin, cfg.HLS.Root, cfg.FFmpeg.KillTimeout, cfg.Enigma2.AnalyzeDuration, cfg.Enigma2.ProbeSize)
+		orch.Pipeline = ffmpeg.NewLocalAdapter(cfg.FFmpeg.Bin, cfg.HLS.Root, e2Client, m.logger)
 	}
 
 	// 4. Inject into API Server (Shadow Receiving)
@@ -321,7 +331,6 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 		m.logger.Warn().Msg("API Server Setter not available - shadow intents will not be processed")
 	}
 
-	// 5. Register Health/Readiness Checks (Phase 9-1)
 	// 5. Register Health/Readiness Checks (Phase 9-1)
 	m.registerV3Checks(&cfg, e2Client)
 

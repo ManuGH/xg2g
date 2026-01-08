@@ -27,32 +27,21 @@ for pkg in $PACKAGES; do
     echo "Scanning $pkg..."
 
     # 2. Get Transitive Dependencies (Prod + Test)
-    # .Imports = Production imports
-    # .TestImports = Test imports
-    # .XTestImports = Blackbox test imports
-    # Use -deps to recursively find dependencies
-    # We use go list -deps -f '{{.ImportPath}}' <pkg> for prod deps
-    
-    # PROD DEPS
     prod_deps=$(go list -deps -f '{{.ImportPath}}' $pkg 2>/dev/null)
-    
-    # TEST DEPS (Direct only, verifying transitive test deps is heavy but safer for this stage)
-    # For now, let's scan direct Test/XTest imports to catch direct legacy usage in tests.
     test_imports=$(go list -f '{{.TestImports}} {{.XTestImports}}' $pkg | tr -d '[]')
     
     all_refs="$prod_deps $test_imports"
 
-    # Define Whitelist (Transitional allowed dependencies during Strangler migration)
-    # Format: "pkg_path:legacy_prefix"
+    # Define Whitelist (Transitions allowed during Strangler migration)
+    # CTO Mandate: Whitelist must be EMPTY (0).
     ALLOWED_VIOLATIONS=(
-        "github.com/ManuGH/xg2g/internal/domain/session/manager:github.com/ManuGH/xg2g/internal/pipeline"
     )
 
     # 0. Safety Guard: Prevent silent whitelist growth
     # CTO Constraint: The whitelist must explicitly be updated/approved if it grows.
-    # Current Limit: 1 (Session Manager Move)
-    if [ "${#ALLOWED_VIOLATIONS[@]}" -gt 1 ]; then
-        echo "❌ VIOLATION: ALLOWED_VIOLATIONS whitelist exceeds approved limit (1)."
+    # Updated Limit: 0 (Decoupled Session Manager)
+    if [ "${#ALLOWED_VIOLATIONS[@]}" -gt 0 ]; then
+        echo "❌ VIOLATION: ALLOWED_VIOLATIONS whitelist exceeds approved limit (0)."
         echo "   Reducing debt is the goal. Do not add new waivers without CTO approval."
         exit 1
     fi

@@ -81,16 +81,16 @@ const (
 type ReasonCode string
 
 const (
-	RNone               ReasonCode = "R_NONE"
-	RUnknown            ReasonCode = "R_UNKNOWN"
-	RBadRequest         ReasonCode = "R_BAD_REQUEST"
-	RNotFound           ReasonCode = "R_NOT_FOUND"
-	RLeaseBusy          ReasonCode = "R_LEASE_BUSY" // Capacity rejection (no tuner available), retry later.
-	RTuneTimeout        ReasonCode = "R_TUNE_TIMEOUT"
-	RLeaseExpired       ReasonCode = "R_LEASE_EXPIRED" // Lease lost or expired
-	RTuneFailed         ReasonCode = "R_TUNE_FAILED"
-	RInvariantViolation ReasonCode = "R_INVARIANT_VIOLATION"
-	RFFmpegStartFailed  ReasonCode = "R_FFMPEG_START_FAILED"
+	RNone                ReasonCode = "R_NONE"
+	RUnknown             ReasonCode = "R_UNKNOWN"
+	RBadRequest          ReasonCode = "R_BAD_REQUEST"
+	RNotFound            ReasonCode = "R_NOT_FOUND"
+	RLeaseBusy           ReasonCode = "R_LEASE_BUSY" // Capacity rejection (no tuner available), retry later.
+	RTuneTimeout         ReasonCode = "R_TUNE_TIMEOUT"
+	RLeaseExpired        ReasonCode = "R_LEASE_EXPIRED" // Lease lost or expired
+	RTuneFailed          ReasonCode = "R_TUNE_FAILED"
+	RInvariantViolation  ReasonCode = "R_INVARIANT_VIOLATION"
+	RPipelineStartFailed ReasonCode = "R_PIPELINE_START_FAILED"
 
 	RProcessEnded    ReasonCode = "R_PROCESS_ENDED"
 	RPackagerFailed  ReasonCode = "R_PACKAGER_FAILED"

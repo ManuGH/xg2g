@@ -12,7 +12,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/stretchr/testify/require"
 )
@@ -39,20 +38,20 @@ func TestClassifyReason(t *testing.T) {
 		},
 		{
 			name:       "tune timeout",
-			err:        fmt.Errorf("tuner readiness failed: %w", enigma2.ErrReadyTimeout),
+			err:        fmt.Errorf("tuner readiness failed: %w", errors.New("tuner ready timeout")),
 			wantReason: model.RTuneTimeout,
 			wantDetail: "tuner ready timeout",
 		},
 		{
 			name:       "tune failed upstream",
-			err:        fmt.Errorf("zap failed: %w", enigma2.ErrUpstreamUnavailable),
+			err:        fmt.Errorf("zap failed: %w", errors.New("upstream unavailable")),
 			wantReason: model.RTuneFailed,
 			wantDetail: "upstream unavailable",
 		},
 		{
 			name:       "ffmpeg start failed",
-			err:        newReasonError(model.RFFmpegStartFailed, "transcoder init failed", errors.New("boom")),
-			wantReason: model.RFFmpegStartFailed,
+			err:        newReasonError(model.RPipelineStartFailed, "transcoder init failed", errors.New("boom")),
+			wantReason: model.RPipelineStartFailed,
 			wantDetail: "transcoder init failed",
 		},
 		{

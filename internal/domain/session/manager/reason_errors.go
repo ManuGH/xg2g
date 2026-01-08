@@ -1,6 +1,5 @@
 // Copyright (c) 2025 ManuGH
 // Licensed under the PolyForm Noncommercial License 1.0.0
-// Since v2.0.0, this software is restricted to non-commercial use only.
 
 package manager
 
@@ -11,7 +10,6 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 )
 
@@ -57,16 +55,20 @@ func classifyReason(err error) (model.ReasonCode, string) {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return model.RTuneTimeout, "deadline exceeded"
 	}
-	if errors.Is(err, enigma2.ErrReadyTimeout) {
+
+	// Legacy Enigma2 Error Handling (Decoupled via String Match)
+	// Ideally the Adapter should wrap these.
+	msg := err.Error()
+	if strings.Contains(msg, "ready timeout") {
 		return model.RTuneTimeout, "tuner ready timeout"
 	}
-	if errors.Is(err, enigma2.ErrWrongServiceRef) {
+	if strings.Contains(msg, "wrong service reference") {
 		return model.RTuneFailed, "wrong service reference"
 	}
-	if errors.Is(err, enigma2.ErrUpstreamUnavailable) {
+	if strings.Contains(msg, "upstream unavailable") {
 		return model.RTuneFailed, "upstream unavailable"
 	}
-	if errors.Is(err, enigma2.ErrNotLocked) {
+	if strings.Contains(msg, "tuner not locked") {
 		return model.RTuneFailed, "tuner not locked"
 	}
 

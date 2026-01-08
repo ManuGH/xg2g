@@ -8,7 +8,7 @@ import "context"
 
 // Message is an opaque event payload. For MVP, we use a typed struct.
 // For NATS JetStream, this will map to subject + bytes.
-type Message interface{}
+type Message = interface{}
 
 // Handler applies an event/message within a context.
 type Handler func(ctx context.Context, msg Message) error

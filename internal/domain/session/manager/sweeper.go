@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/log"
 )
 
 // SweeperConfig defines retention policies.
@@ -20,11 +20,17 @@ type SweeperConfig struct {
 
 // Sweeper performs background cleanup of stale sessions and files.
 type Sweeper struct {
-	Orch *Orchestrator
-	Conf SweeperConfig
+	Orch      *Orchestrator
+	Conf      SweeperConfig
+	RecoverFn func(context.Context) error // optional; if nil, uses Orch.recoverStaleLeases
 }
 
+// Run starts the sweeper loop. It periodically calls SweepOnce on a ticker.
 func (s *Sweeper) Run(ctx context.Context) {
+	if s.Conf.Interval <= 0 {
+		return
+	}
+
 	ticker := time.NewTicker(s.Conf.Interval)
 	defer ticker.Stop()
 
@@ -35,13 +41,25 @@ func (s *Sweeper) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := s.Orch.recoverStaleLeases(ctx); err != nil {
-				log.L().Warn().Err(err).Msg("recovery sweep failed")
-			}
-			s.sweepStore(ctx)
-			s.sweepFiles(ctx)
+			s.SweepOnce(ctx)
 		}
 	}
+}
+
+// SweepOnce performs exactly one sweep pass: recovery, store cleanup, file cleanup.
+// This method is deterministic and suitable for unit testing.
+func (s *Sweeper) SweepOnce(ctx context.Context) {
+	if s.RecoverFn != nil {
+		if err := s.RecoverFn(ctx); err != nil {
+			log.L().Warn().Err(err).Msg("recovery sweep failed")
+		}
+	} else {
+		if err := s.Orch.recoverStaleLeases(ctx); err != nil {
+			log.L().Warn().Err(err).Msg("recovery sweep failed")
+		}
+	}
+	s.sweepStore(ctx)
+	s.sweepFiles(ctx)
 }
 
 func (s *Sweeper) sweepStore(ctx context.Context) {

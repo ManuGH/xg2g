@@ -140,7 +140,7 @@ func reasonClass(reason model.ReasonCode) string {
 		return "timeout"
 	case model.RTuneFailed:
 		return "tune_failed"
-	case model.RFFmpegStartFailed, model.RProcessEnded:
+	case model.RPipelineStartFailed, model.RProcessEnded:
 		return "ffmpeg_failed"
 	case model.RPackagerFailed:
 		return "packager_failed"

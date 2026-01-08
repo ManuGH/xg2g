@@ -11,10 +11,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/log"
-	"github.com/ManuGH/xg2g/internal/pipeline/lease"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
+	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/rs/zerolog"
 )
 
@@ -151,10 +150,10 @@ func (o *Orchestrator) recoveryLeaseKey(s *model.SessionRecord) string {
 	if s != nil && s.ContextData != nil {
 		if raw := s.ContextData[model.CtxKeyTunerSlot]; raw != "" {
 			if slot, err := strconv.Atoi(raw); err == nil {
-				return lease.LeaseKeyTunerSlot(slot)
+				return model.LeaseKeyTunerSlot(slot)
 			}
 		}
 	}
 	// fallback (legacy/partial)
-	return lease.LeaseKeyService(s.ServiceRef)
+	return model.LeaseKeyService(s.ServiceRef)
 }
