@@ -61,8 +61,6 @@ type TranscoderRuntime struct {
 	GPUEnabled    bool
 	TranscoderURL string
 
-	UseRustRemuxer bool
-
 	VideoTranscode bool
 	VideoCodec     string
 	VAAPIDevice    string

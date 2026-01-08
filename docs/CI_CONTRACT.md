@@ -16,7 +16,7 @@ All developers must verify these gates locally before pushing.
 
 | CI Job | Local Command | Description |
 | :--- | :--- | :--- |
-| `Unit tests` | `go test ./...` | Unit tests (no GPU). |
+| `Unit tests` | `go test ./...` | Pure Go unit tests (CPU-only). |
 | `Integration` | `make smoke-test` | Local daemon run. |
 | `validate-config` | `make validate` | Config validation. |
 | `schema-validate` | `make schema-validate` | JSON Schema check. |
@@ -25,7 +25,7 @@ All developers must verify these gates locally before pushing.
 
 | CI Job | Local Command | Description |
 | :--- | :--- | :--- |
-| `nogpu-build` | `go build -tags=nogpu ./cmd/daemon` | Base compilation. |
+| `build` | `go build ./cmd/daemon` | Pure Go compilation (CGO disabled). |
 | `multi-platform` | `make build-all` | Cross-compilation. |
 
 ## 4. Environment Invariants

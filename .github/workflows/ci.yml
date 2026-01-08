@@ -130,26 +130,24 @@ jobs:
             echo "- **Index Hash**: ${IDXHASH}"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Build (Docker only - CGO/Rust dependency)
+      - name: Build (Pure Go - No CGO)
         run: |
           set -euo pipefail
-          # Full-feature (GPU/Rust) build is validated via Docker.
-          # Here we verify the 'nogpu' build compiles (CI Contract).
-          echo "⏭️  Skipping direct Go build (requires Rust library)"
-          echo "✅ Docker build tested in separate workflow"
+          # Pure Go build (no CGO, no GPU transcoding).
+          echo "✅ Building pure Go daemon..."
 
-          # Verify Go compilation (nogpu build must succeed)
-          echo "🔍 Verifying nogpu build compiles..."
-          go build -v -trimpath -mod=readonly -buildvcs=false -tags=nogpu -o /dev/null ./cmd/daemon
-          echo "✅ nogpu build successful"
+          # Verify Go compilation succeeds
+          echo "🔍 Verifying build compiles..."
+          go build -v -trimpath -mod=readonly -buildvcs=false -o /dev/null ./cmd/daemon
+          echo "✅ Build successful"
 
       - name: Unit tests
         env:
           CGO_ENABLED: 0
         run: |
           set -euo pipefail
-          # Use nogpu tag to skip Rust FFI packages (builds stub implementations instead)
-          go test -v -tags=nogpu -coverprofile=coverage.out -covermode=atomic $(go list -tags=nogpu ./... | grep -v '/test$')
+          # Pure Go tests (no CGO required)
+          go test -v -coverprofile=coverage.out -covermode=atomic $(go list ./... | grep -v '/test$')
 
       - name: Setup Node for OpenAPI lint
         uses: actions/setup-node@v6
@@ -253,8 +251,8 @@ jobs:
       - name: Go test (repeat)
         run: |
           set -euo pipefail
-          # Use nogpu tag to skip Rust FFI packages (builds stub implementations instead)
-          go test -race -tags=nogpu $(go list -tags=nogpu ./... | grep -v '/test$') -v
+          # Pure Go tests with race detection
+          go test -race $(go list ./... | grep -v '/test$') -v
 
       - name: Upload artifacts
         if: always()

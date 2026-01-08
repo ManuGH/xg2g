@@ -44,15 +44,13 @@ jobs:
           go mod verify
           git diff --exit-code -- go.mod go.sum
 
-      - name: Verify Go syntax (skip CGO build)
+      - name: Verify Go syntax
         run: |
           BUILD_REF="${GITHUB_SHA:-dev}"
-          # Skip direct build due to Rust FFI dependency
-          # Docker multi-stage build handles Rust → Go → Runtime compilation
-          echo "⏭️  Skipping direct Go build (requires Rust library)"
+          # Pure Go build (CGO disabled)
           echo "✅ Docker build will handle full compilation"
-          # Verify Go syntax only with nogpu tag
-          go build -v -trimpath -mod=readonly -buildvcs=false -tags=nogpu -ldflags "-X main.Version=${BUILD_REF}" -o /dev/null ./cmd/daemon || true
+          # Verify Go syntax
+          go build -v -trimpath -mod=readonly -buildvcs=false -ldflags "-X main.Version=${BUILD_REF}" -o /dev/null ./cmd/daemon || true
 
       - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
 

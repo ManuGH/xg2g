@@ -49,7 +49,7 @@ func TestGracefulShutdown(t *testing.T) {
 		t.Skip("skipping graceful shutdown test in short mode")
 	}
 
-	// Build the daemon binary for testing (stub transcoder by default, no Rust FFI)
+	// Build the daemon binary for testing (Pure Go, CGO disabled)
 	binaryPath := filepath.Join(t.TempDir(), "xg2g-test")
 	// #nosec G204 -- Test code: building test binary with controlled arguments
 	buildCmd := exec.Command("go", "build", "-o", binaryPath, "../../cmd/daemon")
@@ -177,7 +177,7 @@ func TestShutdownWithActiveRequests(t *testing.T) {
 		t.Skip("skipping shutdown with active requests test in short mode")
 	}
 
-	// Build the daemon binary (stub transcoder by default, no Rust FFI)
+	// Build the daemon binary (Pure Go, CGO disabled)
 	binaryPath := filepath.Join(t.TempDir(), "xg2g-test")
 	// #nosec G204 -- Test code: building test binary with controlled arguments
 	buildCmd := exec.Command("go", "build", "-o", binaryPath, "../../cmd/daemon")

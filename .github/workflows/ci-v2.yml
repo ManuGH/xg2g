@@ -66,8 +66,8 @@ jobs:
       - name: Build (stub transcoder)
         run: |
           set -euo pipefail
-          echo "🔍 Building with stub transcoder (no Rust dependency)..."
-          go build -v -trimpath -mod=readonly -buildvcs=false -tags=nogpu -o /dev/null ./cmd/daemon
+          echo "🔍 Building Pure Go daemon (CGO disabled)..."
+          go build -v -trimpath -mod=readonly -buildvcs=false -o /dev/null ./cmd/daemon
           go build -v -trimpath -mod=readonly -buildvcs=false -o /dev/null ./cmd/validate
           echo "✅ Build successful"
 
@@ -77,7 +77,7 @@ jobs:
       - name: Run unit tests with race detector
         run: |
           set -euo pipefail
-          go test -v -race -tags=nogpu -coverprofile=coverage.out -covermode=atomic ./...
+          go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
 
       - name: Generate coverage report
         run: |
@@ -149,83 +149,6 @@ jobs:
             xargs -0 -I{} ./bin/validate -f {}
 
   # ============================================================================
-  # Job 3: Transcoder Tests (Optional, Rust/CGO Required)
-  # Runs on: schedule (nightly) or manual workflow_dispatch
-  # ============================================================================
-  transcoder-tests:
-    name: Transcoder Tests (Rust FFI)
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    # Only run on schedule or manual trigger (not on every PR)
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6.0.1
-
-      - name: Setup Go
-        uses: actions/setup-go@v6.1.0 # v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@6d9817901c499d6b02debbb57edb38d33daa680b # stable
-        with:
-          toolchain: stable
-
-      - name: Setup Node for WebUI
-        uses: actions/setup-node@v6
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: webui/package-lock.json
-
-      - name: Build WebUI
-        run: |
-          set -euo pipefail
-          cd webui
-          npm ci
-          npm run build
-          mkdir -p ../internal/api/dist
-          cp -r dist/* ../internal/api/dist/
-
-      - name: Cache Rust dependencies
-        uses: actions/cache@v5 # v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            transcoder/target/
-          key: ${{ runner.os }}-cargo-v2-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-v2-
-
-      - name: Install FFmpeg development headers
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libavcodec-dev libavformat-dev libavutil-dev libswresample-dev libswscale-dev pkg-config
-
-      - name: Build Rust transcoder library
-        run: |
-          rm -rf transcoder/target
-          make build-rust
-          echo "📂 Listing build artifacts:"
-          ls -R transcoder/target/release/
-
-      - name: Run transcoder tests (via make test-transcoder)
-        run: make test-transcoder
-
-      - name: Upload Rust artifacts
-        uses: actions/upload-artifact@v6 # v5
-        with:
-          name: rust-library
-          path: transcoder/target/release/libxg2g_transcoder.a
-          retention-days: 7
-
-  # ============================================================================
   # Job 4: Linting (Go, Markdown, OpenAPI)
   # ============================================================================
   lint:
@@ -266,7 +189,7 @@ jobs:
           golangci-lint --version
 
       - name: Run golangci-lint
-        run: golangci-lint run --timeout=5m --verbose --build-tags=nogpu ./...
+        run: golangci-lint run --timeout=5m --verbose ./...
 
       - name: Setup Node
         uses: actions/setup-node@v6
@@ -331,7 +254,7 @@ jobs:
         run: |
           set -euo pipefail
           BUILD_REF="${GITHUB_SHA:-dev}"
-          go build -v -trimpath -mod=readonly -buildvcs=false -tags=nogpu \
+          go build -v -trimpath -mod=readonly -buildvcs=false \
             -ldflags "-X main.version=${BUILD_REF}" \
             -o bin/xg2g ./cmd/daemon
 

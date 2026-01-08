@@ -26,7 +26,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: ["go", "c-cpp"]
+        language: ["go"]
 
     steps:
       - name: Checkout repository
@@ -38,27 +38,10 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Setup Rust
-        if: matrix.language == 'c-cpp'
-        uses: dtolnay/rust-toolchain@6d9817901c499d6b02debbb57edb38d33daa680b # stable
-        with:
-          toolchain: stable
-
-      - name: Install FFmpeg development headers
-        if: matrix.language == 'c-cpp'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libavcodec-dev libavformat-dev libavutil-dev libswresample-dev libswscale-dev pkg-config
-
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
-
-      - name: Build Rust Library (C/C++ Analysis)
-        if: matrix.language == 'c-cpp'
-        run: make build-rust
-
       - name: Build Go (Go Analysis)
         if: matrix.language == 'go'
         run: go build ./...
