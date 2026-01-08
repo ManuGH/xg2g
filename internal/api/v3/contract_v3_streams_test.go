@@ -208,7 +208,7 @@ func TestGetStreams_Contract_Slice53(t *testing.T) {
 
 			resp := w.Result()
 			require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
-			require.Equal(t, "application/json", resp.Header.Get("Content-Type"))
+			require.Equal(t, "application/problem+json", resp.Header.Get("Content-Type"))
 
 			var pd ProblemDetails
 			err := json.NewDecoder(resp.Body).Decode(&pd)
@@ -232,7 +232,7 @@ func TestGetStreams_Contract_Slice53(t *testing.T) {
 
 			resp := w.Result()
 			require.Equal(t, http.StatusInternalServerError, resp.StatusCode)
-			require.Equal(t, "application/json", resp.Header.Get("Content-Type"))
+			require.Equal(t, "application/problem+json", resp.Header.Get("Content-Type"))
 
 			var pd ProblemDetails
 			err := json.NewDecoder(resp.Body).Decode(&pd)

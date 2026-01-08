@@ -984,11 +984,24 @@ func (s *Server) DeleteTimer(w http.ResponseWriter, r *http.Request, timerId str
 	client := s.owi(cfg, snap)
 	err = client.DeleteTimer(r.Context(), sRef, begin, end)
 	if err != nil {
-		// If 404 from receiver? client.DeleteTimer returns error.
-		// If it's "not found", we should return 404?
-		// For now return 500 or 404 based on error?
 		log.L().Error().Err(err).Str("timerId", timerId).Msg("failed to delete timer")
-		writeProblem(w, http.StatusBadGateway, "dvr/delete_failed", "Delete Failed", "Receiver error while deleting timer", nil)
+
+		status := http.StatusBadGateway
+		errCode := "dvr/delete_failed"
+		title := "Delete Failed"
+		errStr := err.Error()
+
+		if strings.Contains(errStr, "not found") || strings.Contains(errStr, "nicht gefunden") || strings.Contains(errStr, "404") {
+			status = http.StatusNotFound
+			errCode = "dvr/not_found"
+			title = "Timer Not Found"
+		} else if strings.Contains(errStr, "connection") || strings.Contains(errStr, "refused") || strings.Contains(errStr, "timeout") {
+			status = http.StatusBadGateway
+			errCode = "dvr/receiver_unreachable"
+			title = "Receiver Unreachable"
+		}
+
+		writeProblem(w, status, errCode, title, errStr, nil)
 		return
 	}
 
@@ -1019,18 +1032,20 @@ func (s *Server) UpdateTimer(w http.ResponseWriter, r *http.Request, timerId str
 	// Resolve Old Timer (ensure it exists)
 	timers, err := client.GetTimers(ctx)
 	if err != nil {
-		writeProblem(w, http.StatusBadGateway, "dvr/receiver_unreachable", "Receiver Unreachable", "Failed to fetch timers", nil)
+		log.L().Error().Err(err).Msg("failed to fetch timers during update")
+		writeProblem(w, http.StatusBadGateway, "dvr/receiver_unreachable", "Receiver Unreachable", "Failed to verify existing timer", nil)
 		return
 	}
 	var existing *openwebif.Timer
+	// Match strictly on ID derived components
 	for _, t := range timers {
-		if t.ServiceRef == oldSRef && t.Begin == oldBegin && t.End == oldEnd {
+		if strings.TrimSuffix(t.ServiceRef, ":") == strings.TrimSuffix(oldSRef, ":") && t.Begin == oldBegin && t.End == oldEnd {
 			existing = &t
 			break
 		}
 	}
 	if existing == nil {
-		writeProblem(w, http.StatusNotFound, "dvr/not_found", "Timer Not Found", "The specified timer does not exist", nil)
+		writeProblem(w, http.StatusNotFound, "dvr/not_found", "Timer Not Found", "The specified timer does not exist on the receiver", nil)
 		return
 	}
 
@@ -1075,31 +1090,38 @@ func (s *Server) UpdateTimer(w http.ResponseWriter, r *http.Request, timerId str
 	if supportsNative {
 		err = client.UpdateTimer(ctx, oldSRef, oldBegin, oldEnd, newSRef, newBegin, newEnd, newName, newDesc, true)
 		if err != nil {
-			log.L().Error().Err(err).Msg("Native update failed, trying fallback?")
-			// Fallback or Error? User said: "Attempt receiver-native edit if available; else delete+add"
-			// If native fails, we might want to try fallback or just error.
-			// Let's error for now to be safe, or fallback?
-			// Fallback involves deleting the timer that might exist.
-			writeProblem(w, http.StatusBadGateway, "dvr/update_failed", "Update Failed", err.Error(), nil)
+			log.L().Error().Err(err).Str("timerId", timerId).Msg("native update failed")
+			// Map to conflict if message suggests it
+			status := http.StatusBadGateway
+			errCode := "dvr/update_failed"
+			errStr := err.Error()
+			if strings.Contains(errStr, "Konflikt") || strings.Contains(errStr, "Conflict") || strings.Contains(errStr, "overlap") {
+				status = http.StatusConflict
+			}
+			writeProblem(w, status, errCode, "Update Failed", errStr, nil)
 			return
 		}
 	} else {
 		// Fallback: Delete + Add (Atomic-ish)
-		// 1. Delete
+		log.L().Info().Str("timerId", timerId).Msg("performing delete+add fallback for update")
 		err = client.DeleteTimer(ctx, oldSRef, oldBegin, oldEnd)
 		if err != nil {
-			writeProblem(w, http.StatusInternalServerError, "dvr/delete_failed", "Failed to delete old timer during update", "", nil)
+			log.L().Error().Err(err).Str("timerId", timerId).Msg("fallback delete failed")
+			writeProblem(w, http.StatusBadGateway, "dvr/receiver_error", "Update Failed (Delete Step)", err.Error(), nil)
 			return
 		}
 
-		// 2. Add
 		err = client.AddTimer(ctx, newSRef, newBegin, newEnd, newName, newDesc)
 		if err != nil {
-			// CRITICAL: Rollback! Try to re-add old timer
-			log.L().Error().Err(err).Msg("Add failed during update, attempting rollback")
+			log.L().Error().Err(err).Str("timerId", timerId).Msg("fallback add failed, attempting rollback")
+			// Rollback: try to re-add the old one
 			_ = client.AddTimer(ctx, oldSRef, oldBegin, oldEnd, existing.Name, existing.Description)
 
-			writeProblem(w, http.StatusBadGateway, "dvr/receiver_inconsistent", "Failed to add new timer, attempted rollback of old timer", "", nil)
+			status := http.StatusBadGateway
+			if strings.Contains(err.Error(), "Konflikt") || strings.Contains(err.Error(), "Conflict") {
+				status = http.StatusConflict
+			}
+			writeProblem(w, status, "dvr/receiver_inconsistent", "Update Failed (Add Step)", err.Error(), nil)
 			return
 		}
 	}
@@ -1110,8 +1132,10 @@ func (s *Server) UpdateTimer(w http.ResponseWriter, r *http.Request, timerId str
 	for i := 0; i < 3; i++ {
 		checkTimers, err := client.GetTimers(ctx)
 		if err == nil {
+			targetNormalized := strings.TrimSuffix(newSRef, ":")
 			for _, t := range checkTimers {
-				if t.ServiceRef == newSRef && (t.Begin == newBegin || t.Begin == newBegin-1 || t.Begin == newBegin+1) {
+				candidateRef := strings.TrimSuffix(t.ServiceRef, ":")
+				if candidateRef == targetNormalized && (t.Begin >= newBegin-5 && t.Begin <= newBegin+5) {
 					verified = true
 					updatedTimer = &t
 					break
@@ -1125,7 +1149,8 @@ func (s *Server) UpdateTimer(w http.ResponseWriter, r *http.Request, timerId str
 	}
 
 	if !verified || updatedTimer == nil {
-		writeProblem(w, http.StatusBadGateway, "dvr/receiver_inconsistent", "Timer updated/added but verification failed", "", nil)
+		log.L().Warn().Str("timerId", timerId).Msg("timer update verification failed")
+		writeProblem(w, http.StatusBadGateway, "dvr/receiver_inconsistent", "Inconsistent Receiver State", "Timer updated but failed verification", nil)
 		return
 	}
 
@@ -1133,6 +1158,8 @@ func (s *Server) UpdateTimer(w http.ResponseWriter, r *http.Request, timerId str
 	newId := read.MakeTimerID(updatedTimer.ServiceRef, updatedTimer.Begin, updatedTimer.End)
 	// Return the updated timer
 	// ... encode response
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(Timer{
 		TimerId:     newId,
 		ServiceRef:  updatedTimer.ServiceRef,
@@ -1141,7 +1168,7 @@ func (s *Server) UpdateTimer(w http.ResponseWriter, r *http.Request, timerId str
 		Description: &updatedTimer.Description,
 		Begin:       updatedTimer.Begin,
 		End:         updatedTimer.End,
-		State:       TimerStateScheduled, // Simplified
+		State:       TimerStateScheduled,
 	})
 }
 
@@ -1211,7 +1238,8 @@ func (s *Server) GetDvrCapabilities(w http.ResponseWriter, r *http.Request) {
 
 	caps, err := read.GetDvrCapabilities(r.Context(), ds)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.L().Error().Err(err).Msg("failed to fetch dvr capabilities")
+		writeProblem(w, http.StatusInternalServerError, "dvr/provider_error", "Failed to Fetch Capabilities", err.Error(), nil)
 		return
 	}
 
@@ -1256,7 +1284,7 @@ func (s *Server) GetDvrCapabilities(w http.ResponseWriter, r *http.Request) {
 func (s *Server) GetTimer(w http.ResponseWriter, r *http.Request, timerId string) {
 	sRef, begin, end, err := read.ParseTimerID(timerId)
 	if err != nil {
-		http.Error(w, "Invalid Timer ID", http.StatusBadRequest)
+		writeProblem(w, http.StatusBadRequest, "dvr/invalid_id", "Invalid Timer ID", "", nil)
 		return
 	}
 
@@ -1269,7 +1297,8 @@ func (s *Server) GetTimer(w http.ResponseWriter, r *http.Request, timerId string
 
 	timers, err := client.GetTimers(ctx)
 	if err != nil {
-		http.Error(w, "Failed to fetch timers", http.StatusBadGateway)
+		log.L().Error().Err(err).Msg("failed to fetch timers for individual get")
+		writeProblem(w, http.StatusBadGateway, "dvr/receiver_unreachable", "Receiver Unreachable", "Failed to fetch timers", nil)
 		return
 	}
 
@@ -1291,7 +1320,7 @@ func (s *Server) GetTimer(w http.ResponseWriter, r *http.Request, timerId string
 			return
 		}
 	}
-	http.Error(w, "Timer not found", http.StatusNotFound)
+	writeProblem(w, http.StatusNotFound, "dvr/not_found", "Timer Not Found", "", nil)
 }
 
 // problemDetailsResponse defines the structure for RFC 7807 responses.

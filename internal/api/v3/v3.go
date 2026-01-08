@@ -186,7 +186,7 @@ func (s *Server) SetDependencies(
 	bus bus.Bus,
 	store store.StateStore,
 	resume resume.Store,
-	scan *scan.Manager,
+	scan scanner,
 	rpm *recordings.PathMapper,
 	cm *channels.Manager,
 	sm *dvr.Manager,
