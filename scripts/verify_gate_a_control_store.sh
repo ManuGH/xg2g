@@ -7,6 +7,13 @@
 
 set -e
 
+# Tooling dependency check
+command -v rg >/dev/null 2>&1 || {
+    echo "❌ ERROR: rg (ripgrep) is required but not installed"
+    echo "Install with: apt-get install ripgrep  OR  brew install ripgrep"
+    exit 2
+}
+
 echo "=== Gate A: Control Layer Store Purity Check ==="
 echo "Scope: internal/control/** only (legacy internal/api excluded)"
 echo ""
