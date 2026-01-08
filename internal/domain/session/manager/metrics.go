@@ -19,24 +19,6 @@ var (
 		[]string{"reason", "profile"},
 	)
 
-	// Golden Signal: Startup Latency (Availability)
-	readyDuration = promauto.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "xg2g_v3_ready_duration_seconds",
-			Help:    "Time taken for tuner/transcoder readiness.",
-			Buckets: []float64{0.1, 0.25, 0.5, 1, 2.5, 5, 10},
-		},
-		[]string{"outcome"}, // outcome: success, failure
-	)
-
-	readyOutcomeTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "xg2g_v3_ready_outcome_total",
-			Help: "Detailed outcome of readiness checks.",
-		},
-		[]string{"outcome"}, // outcome: success, timeout, wrong_ref, not_locked, upstream, canceled, other
-	)
-
 	timeToFirstPlaylist = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "xg2g_v3_time_to_first_playlist_seconds",

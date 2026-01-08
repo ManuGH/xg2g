@@ -470,68 +470,64 @@ func (o *Orchestrator) runExecutionLoop(
 	var failReason model.ReasonCode
 	var failDetail string
 
-	for attempt := 1; attempt <= 2; attempt++ {
-		var err error
-		handle, err = o.startPipeline(hbCtx, e, sessionCtx, currentProfileSpec, tunerSlot)
-		if err != nil {
-			return "", model.ProfileSpec{}, err
-		}
+	// Simplified Retry Logic (Step 4.2 Decoupling)
+	// We stripped classifyFailure (ffmpeg logs) so we treat all failures as "unknown" or "packager".
+	// For now, we abort after 1 attempt or blind retry.
+	// If fails, we just return error.
 
-		if attempt == 1 {
-			o.recordTransition(model.SessionStarting, model.SessionPriming)
-			_, err = o.Store.UpdateSession(ctx, e.SessionID, func(r *model.SessionRecord) error {
-				if r.State.IsTerminal() || r.State == model.SessionStopping {
-					return fmt.Errorf("session state %s, aborting priming", r.State)
-				}
-				r.State = model.SessionPriming
-				r.UpdatedAtUnix = time.Now().Unix()
-				return nil
-			})
-			if err != nil {
-				return "", model.ProfileSpec{}, err
-			}
-			if o.HLSRoot != "" {
-				sessionDir := filepath.Join(o.HLSRoot, "sessions", e.SessionID)
-				go observeFirstSegment(hbCtx, sessionDir, startTime, e.ProfileID)
-			}
-		}
-
-		playlistReadyResult := false
-		if o.HLSRoot != "" {
-			playlistPath := filepath.Join(o.HLSRoot, "sessions", e.SessionID, "index.m3u8")
-			var waitReason model.ReasonCode
-			var waitDetail string
-
-			playlistReadyResult, waitReason, waitDetail = o.waitForReady(
-				ctx, hbCtx, e, currentProfileSpec, handle,
-				playlistPath, sessionCtx.IsVOD, repairAttempted,
-				startTime, logger, &ttfpRecorded,
-			)
-
-			if !playlistReadyResult {
-				failReason = waitReason
-				failDetail = waitDetail
-			}
-		} else {
-			playlistReadyResult = true
-		}
-
-		if playlistReadyResult {
-			return handle, currentProfileSpec, nil
-		}
-
-		// Failure Handling
-		stopCtx, stopCancel := context.WithTimeout(context.Background(), o.PipelineStopTimeout)
-		_ = o.Pipeline.Stop(stopCtx, handle)
-		stopCancel()
-
-		// Simplified Retry Logic (Step 4.2 Decoupling)
-		// We stripped classifyFailure (ffmpeg logs) so we treat all failures as "unknown" or "packager".
-		// For now, we abort after 1 attempt or blind retry.
-		// If fails, we just return error.
-		return "", model.ProfileSpec{}, newReasonError(failReason, failDetail, nil)
+	var err error
+	handle, err = o.startPipeline(hbCtx, e, sessionCtx, currentProfileSpec, tunerSlot)
+	if err != nil {
+		return "", model.ProfileSpec{}, err
 	}
-	return "", model.ProfileSpec{}, newReasonError(model.RUnknown, "execution loop failed", nil)
+
+	o.recordTransition(model.SessionStarting, model.SessionPriming)
+	_, err = o.Store.UpdateSession(ctx, e.SessionID, func(r *model.SessionRecord) error {
+		if r.State.IsTerminal() || r.State == model.SessionStopping {
+			return fmt.Errorf("session state %s, aborting priming", r.State)
+		}
+		r.State = model.SessionPriming
+		r.UpdatedAtUnix = time.Now().Unix()
+		return nil
+	})
+	if err != nil {
+		return "", model.ProfileSpec{}, err
+	}
+	if o.HLSRoot != "" {
+		sessionDir := filepath.Join(o.HLSRoot, "sessions", e.SessionID)
+		go observeFirstSegment(hbCtx, sessionDir, startTime, e.ProfileID)
+	}
+
+	playlistReadyResult := false
+	if o.HLSRoot != "" {
+		playlistPath := filepath.Join(o.HLSRoot, "sessions", e.SessionID, "index.m3u8")
+		var waitReason model.ReasonCode
+		var waitDetail string
+
+		playlistReadyResult, waitReason, waitDetail = o.waitForReady(
+			ctx, hbCtx, e, currentProfileSpec, handle,
+			playlistPath, sessionCtx.IsVOD, repairAttempted,
+			startTime, logger, &ttfpRecorded,
+		)
+
+		if !playlistReadyResult {
+			failReason = waitReason
+			failDetail = waitDetail
+		}
+	} else {
+		playlistReadyResult = true
+	}
+
+	if playlistReadyResult {
+		return handle, currentProfileSpec, nil
+	}
+
+	// Failure Handling
+	stopCtx, stopCancel := context.WithTimeout(context.Background(), o.PipelineStopTimeout)
+	_ = o.Pipeline.Stop(stopCtx, handle)
+	stopCancel()
+
+	return "", model.ProfileSpec{}, newReasonError(failReason, failDetail, nil)
 }
 
 func (o *Orchestrator) finalizeDeferred(

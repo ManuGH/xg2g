@@ -87,7 +87,7 @@ RUN chmod +x /app/xg2g && \
 VOLUME ["/data"]
 
 # Expose API port (8080) and Stream Proxy port (18000)
-EXPOSE 8080 18000
+EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD wget -qO- http://localhost:8080/healthz || exit 1

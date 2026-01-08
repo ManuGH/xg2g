@@ -14,7 +14,7 @@ It handles the complex delivery so you don't have to.
 **Core Features:**
 
 - **Universal Delivery**: H.264/AAC/fMP4 for all devices.
-- **Hardware Acceleration**: VAAPI/NVENC detection.
+- **Processing**: Pure Go mit FFmpeg-CLI für Audio-Repair (CPU-only).
 - **Thin Client**: Zero-logic WebUI.
 - **Enterprise Observability**: Metrics, logging, health probes.
 

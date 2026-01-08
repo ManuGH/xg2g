@@ -68,7 +68,7 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 		return fmt.Errorf("PipelineStopTimeout must be > 0, got %v", o.PipelineStopTimeout)
 	}
 	if o.Owner == "" {
-		return errors.New("Owner must be set")
+		return errors.New("owner must be set")
 	}
 	if o.LeaseKeyFunc == nil {
 		o.LeaseKeyFunc = func(e model.StartSessionEvent) string {

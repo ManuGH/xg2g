@@ -80,7 +80,7 @@ func TestValidation_MissingConfigFails(t *testing.T) {
 					},
 				}
 			},
-			expectedErr: "Owner must be set",
+			expectedErr: "owner must be set",
 		},
 		{
 			name: "missing Sweeper.Interval",

@@ -899,7 +899,7 @@ http://stream/2
 #EXTINF:-1 tvg-id="id3" group-title="Favorites",Service 3
 http://stream/3
 `
-	err := os.WriteFile(filepath.Join(tempDir, "test.m3u"), []byte(m3uContent), 0644)
+	err := os.WriteFile(filepath.Join(tempDir, "test.m3u"), []byte(m3uContent), 0600)
 	require.NoError(t, err)
 
 	mockSvs := &mockServicesSource{
@@ -978,7 +978,7 @@ http://stream/3
 
 	t.Run("GetServices/Playlist_Empty", func(t *testing.T) {
 		// Create empty playlist
-		err := os.WriteFile(filepath.Join(tempDir, "test.m3u"), []byte(""), 0644)
+		err := os.WriteFile(filepath.Join(tempDir, "test.m3u"), []byte(""), 0600)
 		require.NoError(t, err)
 
 		req := httptest.NewRequest("GET", "/api/v3/services", nil)
@@ -1116,7 +1116,7 @@ http://stream/3
     <desc lang="en">Live Football</desc>
   </programme>
 </tv>`
-		err := os.WriteFile(filepath.Join(tempDir, "epg.xml"), []byte(xmltvContent), 0644)
+		err := os.WriteFile(filepath.Join(tempDir, "epg.xml"), []byte(xmltvContent), 0600)
 		require.NoError(t, err)
 
 		// Set XMLTVPath in config
@@ -1202,7 +1202,7 @@ http://stream/3
 		xmltvContent := `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE tv SYSTEM "xmltv.dtd">
 <tv><programme start="20240101120000 +0000" stop="20240101130000 +0000" channel="id1"><title>Event</title></programme></tv>`
-		err := os.WriteFile(filepath.Join(tempDir, "epg.xml"), []byte(xmltvContent), 0644)
+		err := os.WriteFile(filepath.Join(tempDir, "epg.xml"), []byte(xmltvContent), 0600)
 		require.NoError(t, err)
 
 		// Reset cache
@@ -1251,7 +1251,9 @@ func ptrInt(s string) *int {
 	}
 	// Parse int
 	var i int
-	fmt.Sscanf(s, "%d", &i)
+	if _, err := fmt.Sscanf(s, "%d", &i); err != nil {
+		return nil
+	}
 	return &i
 }
 

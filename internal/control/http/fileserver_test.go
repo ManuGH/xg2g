@@ -69,7 +69,7 @@ func TestSecureFileServer_OnlyAllowlist(t *testing.T) {
 
 	// Create a non-allowlisted file
 	forbiddenPath := filepath.Join(tmpDir, "forbidden.txt")
-	if err := os.WriteFile(forbiddenPath, []byte("secret"), 0644); err != nil {
+	if err := os.WriteFile(forbiddenPath, []byte("secret"), 0600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -94,7 +94,7 @@ func TestSecureFileServer_AllowlistAllowed(t *testing.T) {
 	// Create an allowlisted file
 	playlistPath := filepath.Join(tmpDir, "playlist.m3u")
 	content := []byte("#EXTM3U\ntest")
-	if err := os.WriteFile(playlistPath, content, 0644); err != nil {
+	if err := os.WriteFile(playlistPath, content, 0600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -167,7 +167,7 @@ func TestSecureFileServer_ETagCaching(t *testing.T) {
 	metrics := newTestMetrics()
 
 	playlistPath := filepath.Join(tmpDir, "playlist.m3u")
-	if err := os.WriteFile(playlistPath, []byte("#EXTM3U"), 0644); err != nil {
+	if err := os.WriteFile(playlistPath, []byte("#EXTM3U"), 0600); err != nil {
 		t.Fatal(err)
 	}
 

@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/url"
 	"os"
@@ -290,10 +289,6 @@ func (s *Server) GetServices(w http.ResponseWriter, r *http.Request, params GetS
 	if len(resp) == 0 {
 		if services.EmptyEncoding == read.EmptyEncodingNull {
 			resp = nil
-		} else {
-			// EmptyEncodingArray -> enforce []Service{} (make initialized len=0)
-			// resp is already make(..., 0, ...), so it serializes to [].
-			// Do nothing.
 		}
 	}
 
@@ -338,7 +333,7 @@ func (s *Server) GetStreams(w http.ResponseWriter, r *http.Request) {
 
 	if store == nil {
 		log.L().Error().Msg("v3 store not initialized")
-		writeProblem(w, http.StatusServiceUnavailable, "streams/unavailable", "V3 control plane not enabled", nil)
+		writeProblem(w, http.StatusServiceUnavailable, "streams/unavailable", "V3 control plane not enabled", "", nil)
 		return
 	}
 
@@ -351,7 +346,7 @@ func (s *Server) GetStreams(w http.ResponseWriter, r *http.Request) {
 	streams, err := read.GetStreams(r.Context(), cfg, snap, store, q)
 	if err != nil {
 		log.L().Error().Err(err).Msg("failed to get streams")
-		writeProblem(w, http.StatusInternalServerError, "streams/read_failed", "Failed to get streams", nil)
+		writeProblem(w, http.StatusInternalServerError, "streams/read_failed", "Failed to get streams", "", nil)
 		return
 	}
 
@@ -393,8 +388,9 @@ func (s *Server) GetStreams(w http.ResponseWriter, r *http.Request) {
 
 // DeleteStreamsId implements ServerInterface
 func (s *Server) DeleteStreamsId(w http.ResponseWriter, r *http.Request, id string) {
+	// Single source of truth for validation + contract shape
 	if id == "" || !model.IsSafeSessionID(id) {
-		http.Error(w, "invalid session id", http.StatusBadRequest)
+		writeProblem(w, http.StatusBadRequest, "streams/invalid_id", "Invalid Session ID", "The provided session ID contains unsafe characters", nil)
 		return
 	}
 
@@ -404,17 +400,17 @@ func (s *Server) DeleteStreamsId(w http.ResponseWriter, r *http.Request, id stri
 	s.mu.RUnlock()
 
 	if bus == nil || store == nil {
-		http.Error(w, "v3 control plane not enabled", http.StatusServiceUnavailable)
+		writeProblem(w, http.StatusServiceUnavailable, "streams/unavailable", "Control Plane Unavailable", "V3 control plane is not enabled", nil)
 		return
 	}
 
 	session, err := store.GetSession(r.Context(), id)
 	if err != nil {
-		http.Error(w, "failed to load session", http.StatusInternalServerError)
+		writeProblem(w, http.StatusInternalServerError, "streams/stop_failed", "Stop Failed", "Failed to load session", nil)
 		return
 	}
 	if session == nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeProblem(w, http.StatusNotFound, "streams/not_found", "Session Not Found", "The session does not exist", nil)
 		return
 	}
 
@@ -426,58 +422,11 @@ func (s *Server) DeleteStreamsId(w http.ResponseWriter, r *http.Request, id stri
 		RequestedAtUN: time.Now().Unix(),
 	}
 	if err := bus.Publish(r.Context(), string(model.EventStopSession), event); err != nil {
-		log.L().Error().Err(err).Str("session", id).Msg("failed to publish stop event")
-		http.Error(w, "failed to stop session", http.StatusInternalServerError)
+		writeProblem(w, http.StatusInternalServerError, "streams/stop_failed", "Stop Failed", "Failed to publish stop event", nil)
 		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func mapPlaylistNames(cfg config.AppConfig, snap config.Snapshot, wanted map[string]struct{}) map[string]string {
-	if len(wanted) == 0 || snap.Runtime.PlaylistFilename == "" {
-		return nil
-	}
-
-	path := filepath.Clean(filepath.Join(cfg.DataDir, snap.Runtime.PlaylistFilename))
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil
-	}
-
-	channels := m3u.Parse(string(data))
-	names := make(map[string]string, len(wanted))
-
-	for _, ch := range channels {
-		if len(names) == len(wanted) {
-			break
-		}
-
-		id := ch.TvgID
-		if id == "" {
-			id = ch.Name
-		}
-
-		serviceRef := read.ExtractServiceRef(ch.URL, id)
-		if serviceRef == "" {
-			continue
-		}
-		if _, ok := wanted[serviceRef]; !ok {
-			continue
-		}
-
-		name := ch.Name
-		if name == "" {
-			name = id
-		}
-		if name == "" {
-			continue
-		}
-
-		names[serviceRef] = name
-	}
-
-	return names
 }
 
 // handleNowNextEPG returns now/next EPG for a list of service references.
@@ -834,12 +783,12 @@ func (s *Server) GetTimers(w http.ResponseWriter, r *http.Request, params GetTim
 func (s *Server) AddTimer(w http.ResponseWriter, r *http.Request) {
 	var req TimerCreateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		writeProblem(w, http.StatusBadRequest, "dvr/invalid_input", "Invalid request body", "", nil)
 		return
 	}
 
 	if req.Begin >= req.End {
-		http.Error(w, "Begin time must be before End time", http.StatusUnprocessableEntity) // 422
+		writeProblem(w, http.StatusUnprocessableEntity, "dvr/invalid_time", "Begin must be before End", "", nil)
 		return
 	}
 
@@ -905,7 +854,7 @@ func (s *Server) AddTimer(w http.ResponseWriter, r *http.Request) {
 	existingTimers, err := client.GetTimers(ctx)
 	if err != nil {
 		log.L().Error().Err(err).Msg("failed to fetch timers for duplicate check")
-		http.Error(w, "Failed to verify existing timers", http.StatusBadGateway)
+		writeProblem(w, http.StatusBadGateway, "dvr/receiver_unreachable", "Receiver Unreachable", "Failed to verify existing timers", nil)
 		return
 	}
 
@@ -913,7 +862,7 @@ func (s *Server) AddTimer(w http.ResponseWriter, r *http.Request) {
 		// Strict Duplicate: Same ServiceRef + Exact Begin/End
 		if t.ServiceRef == realSRef && t.Begin == req.Begin && t.End == req.End {
 			// 409 Conflict (Duplicate)
-			writeProblem(w, http.StatusConflict, "dvr/duplicate", "Timer already exists", nil)
+			writeProblem(w, http.StatusConflict, "dvr/duplicate", "Timer already exists", "", nil)
 			return
 		}
 	}
@@ -951,7 +900,7 @@ func (s *Server) AddTimer(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Use writeProblem to return JSON error (RFC 7807) so frontend can parse the message
-		writeProblem(w, status, "dvr/add_failed", err.Error(), nil)
+		writeProblem(w, status, "dvr/add_failed", "Add Timer Failed", err.Error(), nil)
 		return
 	}
 
@@ -995,7 +944,7 @@ func (s *Server) AddTimer(w http.ResponseWriter, r *http.Request) {
 
 	if !verified {
 		log.L().Warn().Str("sref", req.ServiceRef).Msg("timer added but not verified in read-back")
-		writeProblem(w, http.StatusBadGateway, "dvr/receiver_inconsistent", "Timer added but failed verification", nil)
+		writeProblem(w, http.StatusBadGateway, "dvr/receiver_inconsistent", "Receiver Inconsistent", "Timer added but failed verification", nil)
 		return
 	}
 
@@ -1020,7 +969,7 @@ func (s *Server) AddTimer(w http.ResponseWriter, r *http.Request) {
 func (s *Server) DeleteTimer(w http.ResponseWriter, r *http.Request, timerId string) {
 	sRef, begin, end, err := read.ParseTimerID(timerId)
 	if err != nil {
-		http.Error(w, "Invalid Timer ID", http.StatusBadRequest)
+		writeProblem(w, http.StatusBadRequest, "dvr/invalid_id", "Invalid Timer ID", "", nil)
 		return
 	}
 
@@ -1036,7 +985,7 @@ func (s *Server) DeleteTimer(w http.ResponseWriter, r *http.Request, timerId str
 		// If it's "not found", we should return 404?
 		// For now return 500 or 404 based on error?
 		log.L().Error().Err(err).Str("timerId", timerId).Msg("failed to delete timer")
-		http.Error(w, fmt.Sprintf("Failed to delete timer: %v", err), http.StatusInternalServerError)
+		writeProblem(w, http.StatusBadGateway, "dvr/delete_failed", "Delete Failed", "Receiver error while deleting timer", nil)
 		return
 	}
 
@@ -1047,13 +996,13 @@ func (s *Server) DeleteTimer(w http.ResponseWriter, r *http.Request, timerId str
 func (s *Server) UpdateTimer(w http.ResponseWriter, r *http.Request, timerId string) {
 	var req TimerPatchRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		writeProblem(w, http.StatusBadRequest, "dvr/invalid_input", "Invalid request body", "", nil)
 		return
 	}
 
 	oldSRef, oldBegin, oldEnd, err := read.ParseTimerID(timerId)
 	if err != nil {
-		http.Error(w, "Invalid Timer ID", http.StatusBadRequest)
+		writeProblem(w, http.StatusBadRequest, "dvr/invalid_id", "Invalid Timer ID", "", nil)
 		return
 	}
 
@@ -1067,7 +1016,7 @@ func (s *Server) UpdateTimer(w http.ResponseWriter, r *http.Request, timerId str
 	// Resolve Old Timer (ensure it exists)
 	timers, err := client.GetTimers(ctx)
 	if err != nil {
-		http.Error(w, "Failed to fetch timers", http.StatusBadGateway)
+		writeProblem(w, http.StatusBadGateway, "dvr/receiver_unreachable", "Receiver Unreachable", "Failed to fetch timers", nil)
 		return
 	}
 	var existing *openwebif.Timer
@@ -1078,7 +1027,7 @@ func (s *Server) UpdateTimer(w http.ResponseWriter, r *http.Request, timerId str
 		}
 	}
 	if existing == nil {
-		http.Error(w, "Timer not found", http.StatusNotFound)
+		writeProblem(w, http.StatusNotFound, "dvr/not_found", "Timer Not Found", "The specified timer does not exist", nil)
 		return
 	}
 
@@ -1111,7 +1060,7 @@ func (s *Server) UpdateTimer(w http.ResponseWriter, r *http.Request, timerId str
 	}
 
 	if newBegin >= newEnd {
-		writeProblem(w, http.StatusUnprocessableEntity, "dvr/invalid_time", "Begin must be before End", nil)
+		writeProblem(w, http.StatusUnprocessableEntity, "dvr/invalid_time", "Begin must be before End", "", nil)
 		return
 	}
 
@@ -1128,7 +1077,7 @@ func (s *Server) UpdateTimer(w http.ResponseWriter, r *http.Request, timerId str
 			// If native fails, we might want to try fallback or just error.
 			// Let's error for now to be safe, or fallback?
 			// Fallback involves deleting the timer that might exist.
-			writeProblem(w, http.StatusBadGateway, "dvr/update_failed", err.Error(), nil)
+			writeProblem(w, http.StatusBadGateway, "dvr/update_failed", "Update Failed", err.Error(), nil)
 			return
 		}
 	} else {
@@ -1136,7 +1085,7 @@ func (s *Server) UpdateTimer(w http.ResponseWriter, r *http.Request, timerId str
 		// 1. Delete
 		err = client.DeleteTimer(ctx, oldSRef, oldBegin, oldEnd)
 		if err != nil {
-			writeProblem(w, http.StatusInternalServerError, "dvr/delete_failed", "Failed to delete old timer during update", nil)
+			writeProblem(w, http.StatusInternalServerError, "dvr/delete_failed", "Failed to delete old timer during update", "", nil)
 			return
 		}
 
@@ -1147,7 +1096,7 @@ func (s *Server) UpdateTimer(w http.ResponseWriter, r *http.Request, timerId str
 			log.L().Error().Err(err).Msg("Add failed during update, attempting rollback")
 			_ = client.AddTimer(ctx, oldSRef, oldBegin, oldEnd, existing.Name, existing.Description)
 
-			writeProblem(w, http.StatusBadGateway, "dvr/receiver_inconsistent", "Failed to add new timer, attempted rollback of old timer", nil)
+			writeProblem(w, http.StatusBadGateway, "dvr/receiver_inconsistent", "Failed to add new timer, attempted rollback of old timer", "", nil)
 			return
 		}
 	}
@@ -1173,7 +1122,7 @@ func (s *Server) UpdateTimer(w http.ResponseWriter, r *http.Request, timerId str
 	}
 
 	if !verified || updatedTimer == nil {
-		writeProblem(w, http.StatusBadGateway, "dvr/receiver_inconsistent", "Timer updated/added but verification failed", nil)
+		writeProblem(w, http.StatusBadGateway, "dvr/receiver_inconsistent", "Timer updated/added but verification failed", "", nil)
 		return
 	}
 
@@ -1197,13 +1146,13 @@ func (s *Server) UpdateTimer(w http.ResponseWriter, r *http.Request, timerId str
 func (s *Server) PreviewConflicts(w http.ResponseWriter, r *http.Request) {
 	var req TimerConflictPreviewRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		writeProblem(w, http.StatusBadRequest, "dvr/invalid_input", "Invalid request body", "", nil)
 		return
 	}
 
 	// Validate request
 	if req.Proposed.Begin >= req.Proposed.End {
-		writeProblem(w, http.StatusUnprocessableEntity, "dvr/validation", "Begin must be before End", nil)
+		writeProblem(w, http.StatusUnprocessableEntity, "dvr/validation", "Begin must be before End", "", nil)
 		return
 	}
 
@@ -1219,7 +1168,7 @@ func (s *Server) PreviewConflicts(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.L().Error().Err(err).Msg("failed to fetch timers for conflict preview")
 		// "Do not return canSchedule:true when you cannot fetch timers—fail closed."
-		writeProblem(w, http.StatusBadGateway, "dvr/receiver_unreachable", "Could not fetch existing timers", nil)
+		writeProblem(w, http.StatusBadGateway, "dvr/receiver_unreachable", "Could not fetch existing timers", "", nil)
 		return
 	}
 
@@ -1342,14 +1291,27 @@ func (s *Server) GetTimer(w http.ResponseWriter, r *http.Request, timerId string
 	http.Error(w, "Timer not found", http.StatusNotFound)
 }
 
-func writeProblem(w http.ResponseWriter, status int, problemType, title string, conflicts []TimerConflict) {
-	w.Header().Set("Content-Type", "application/json")
+// problemDetailsResponse defines the structure for RFC 7807 responses.
+// Note: This shadows the generated ProblemDetails to strictly enforce the "details" extension point
+// and avoid ambiguity with "conflicts".
+type problemDetailsResponse struct {
+	Status   int    `json:"status"`
+	Type     string `json:"type"`
+	Title    string `json:"title"`
+	Detail   string `json:"detail,omitempty"`
+	Instance string `json:"instance,omitempty"`
+	Details  any    `json:"details,omitempty"`
+}
+
+func writeProblem(w http.ResponseWriter, status int, problemType, title, detail string, details any) {
+	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(ProblemDetails{
-		Status:    status,
-		Type:      problemType,
-		Title:     title,
-		Conflicts: &conflicts,
+	_ = json.NewEncoder(w).Encode(problemDetailsResponse{
+		Status:  status,
+		Type:    problemType,
+		Title:   title,
+		Detail:  detail,
+		Details: details,
 	})
 }
 
