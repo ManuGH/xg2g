@@ -20,7 +20,7 @@ jobs:
   rust-build-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v3
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v3
 
       - name: Set up Rust
         uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af # v1
@@ -29,7 +29,7 @@ jobs:
           override: true
 
       - name: Set up Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v4
+        uses: actions/setup-go@ae252ee6fb24babc50e89fc67c4aa608e69fbf8f # v4
         with:
           go-version-file: go.mod
 

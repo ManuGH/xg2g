@@ -23,10 +23,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.1
+        uses: actions/checkout@v6
 
       - name: Setup Go
-        uses: actions/setup-go@v6.1.0 # v5
+        uses: actions/setup-go@v6 # v5
         with:
           go-version-file: go.mod
           cache: true
@@ -109,10 +109,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
 
       - name: Setup Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        uses: actions/setup-go@ae252ee6fb24babc50e89fc67c4aa608e69fbf8f # v5
         with:
           go-version-file: go.mod
           cache: true
@@ -161,10 +161,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.1
+        uses: actions/checkout@v6
 
       - name: Setup Go
-        uses: actions/setup-go@v6.1.0 # v5
+        uses: actions/setup-go@v6 # v5
         with:
           go-version-file: go.mod
           cache: true
@@ -235,10 +235,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.1
+        uses: actions/checkout@v6
 
       - name: Setup Go
-        uses: actions/setup-go@v6.1.0 # v5
+        uses: actions/setup-go@v6 # v5
         with:
           go-version-file: go.mod
           cache: true
@@ -303,10 +303,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.1
+        uses: actions/checkout@v6
 
       - name: Setup Go
-        uses: actions/setup-go@v6.1.0 # v5
+        uses: actions/setup-go@v6 # v5
         with:
           go-version-file: go.mod
           cache: true
@@ -365,7 +365,7 @@ jobs:
       TZ: UTC
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.1
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
