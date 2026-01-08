@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -31,8 +32,34 @@ var httpClient = &http.Client{
 	Timeout: 5 * time.Second,
 }
 
+var (
+	failAfterCreate = flag.String("fail-after-create", "", "Inject failure after creation: 'panic' or 'error'")
+	baseURLFlag     = flag.String("base-url", "", "Override V3_BASE_URL")
+)
+
 func main() {
-	baseURL := os.Getenv("V3_BASE_URL")
+	flag.Parse()
+	cfg := ProbeConfig{
+		BaseURL:         *baseURLFlag,
+		FailAfterCreate: *failAfterCreate,
+	}
+
+	if err := run(cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "Probe failed: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+type ProbeConfig struct {
+	BaseURL         string
+	FailAfterCreate string
+}
+
+func run(cfg ProbeConfig) error {
+	baseURL := cfg.BaseURL
+	if baseURL == "" {
+		baseURL = os.Getenv("V3_BASE_URL")
+	}
 	if baseURL == "" {
 		baseURL = "http://localhost:8088"
 	}
@@ -138,12 +165,13 @@ func main() {
 			// A. Create
 			begin := time.Now().Add(24 * time.Hour).Unix()
 			end := begin + 3600
+			probeRunID := fmt.Sprintf("v3probe-%d", time.Now().UnixNano())
 
 			createPayload := map[string]any{
 				"serviceRef":  serviceRef,
 				"serviceName": "V3Probe Test Service",
-				"name":        "V3Probe Test Timer",
-				"description": "Created by v3probe",
+				"name":        "V3Probe Test Timer " + probeRunID,
+				"description": "Created by v3probe " + probeRunID,
 				"begin":       begin,
 				"end":         end,
 			}
@@ -176,6 +204,31 @@ func main() {
 
 			if createdTimerID == "" {
 				return string(bodyBytes), fmt.Errorf("created timer ID is empty")
+			}
+
+			// --- PROBE HARDENING: IMMEDIATE CLEANUP REGISTRATION ---
+			// Invariant: Once we have an ID, we MUST attempt to clean it up.
+			// This defer handles panics and early returns.
+			defer func() {
+				// Best-effort cleanup
+				fmt.Printf("CLEANUP: Attempting to delete timer %s\n", createdTimerID)
+				delCode, _, _, delErr := doRequest("DELETE", baseURL+"/api/v3/timers/"+createdTimerID, nil)
+				if delErr != nil {
+					fmt.Printf("CLEANUP FAIL: net error %v\n", delErr)
+				} else if delCode != http.StatusNoContent && delCode != http.StatusNotFound {
+					fmt.Printf("CLEANUP FAIL: status %d\n", delCode)
+				} else {
+					fmt.Printf("CLEANUP SUCCESS: Timer %s deleted\n", createdTimerID)
+				}
+			}()
+
+			// --- PROBE HARDENING: FAILURE INJECTION ---
+			if cfg.FailAfterCreate != "" {
+				fmt.Printf("INJECTING FAILURE: %s\n", cfg.FailAfterCreate)
+				if cfg.FailAfterCreate == "panic" {
+					panic("simulated panic after create")
+				}
+				return "", fmt.Errorf("simulated error after create")
 			}
 
 			// B. Read Back (Verify Round Trip)
@@ -215,7 +268,11 @@ func main() {
 				return string(patchRespBody), fmt.Errorf("update status error: %d", patchCode)
 			}
 
-			// E. Delete
+			// E. Delete (Explicit check implies success, but defer doubles down safely)
+			// We can leave the actual delete to the defer, strictly speaking, but to test "delete works",
+			// we should probably do it here. If we do it here, the defer will 404, which is fine.
+			// Or we can rely on the defer logging.
+			// Let's do explicit delete to assert 204.
 			delCode, _, delBody, err := doRequest("DELETE", baseURL+"/api/v3/timers/"+createdTimerID, nil)
 			if err != nil {
 				return string(patchRespBody), fmt.Errorf("delete net error: %v", err)
@@ -256,7 +313,17 @@ func main() {
 	// Output Report
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
-	_ = enc.Encode(report)
+	if err := enc.Encode(report); err != nil {
+		return err
+	}
+
+	// Fail if any checks failed
+	for _, c := range report.Checks {
+		if !c.Passed {
+			return fmt.Errorf("one or more checks failed")
+		}
+	}
+	return nil
 }
 
 // Wraps http.NewRequest + Auth Injection + Client.Do + Body Read

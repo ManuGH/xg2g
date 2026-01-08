@@ -10,9 +10,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	infra "github.com/ManuGH/xg2g/internal/infra/ffmpeg"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/m3u"
-	"github.com/ManuGH/xg2g/internal/pipeline/exec/ffmpeg"
 )
 
 type ScanStatus struct {
@@ -171,7 +171,7 @@ func (m *Manager) scanInternal(ctx context.Context) error {
 
 		// Probe
 		log.L().Debug().Str("sref", sRef).Msg("scan: probing channel")
-		res, err := ffmpeg.ProbeURL(ctx, ch.URL)
+		res, err := infra.Probe(ctx, ch.URL)
 
 		scanned++
 		m.mu.Lock()
@@ -185,10 +185,10 @@ func (m *Manager) scanInternal(ctx context.Context) error {
 		} else {
 			cap := Capability{
 				ServiceRef: sRef,
-				Interlaced: res.Interlaced,
+				Interlaced: res.Video.Interlaced,
 				LastScan:   time.Now(),
-				Resolution: fmt.Sprintf("%dx%d", res.Width, res.Height),
-				Codec:      res.CodecName,
+				Resolution: fmt.Sprintf("%dx%d", res.Video.Width, res.Video.Height),
+				Codec:      res.Video.CodecName,
 			}
 
 			log.L().Info().

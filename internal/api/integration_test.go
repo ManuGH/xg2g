@@ -11,7 +11,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	v3 "github.com/ManuGH/xg2g/internal/api/v3"
+	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

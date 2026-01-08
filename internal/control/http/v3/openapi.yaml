@@ -1,0 +1,2169 @@
+openapi: 3.0.3
+info:
+  title: xg2g API
+  description: |
+    API for xg2g (Enigma2 to Plex/Jellyfin Proxy).
+
+    **License**: PolyForm Noncommercial License 1.0.0.
+    Commercial usage is restricted. See repository documentation for details.
+  version: 3.0.0
+servers:
+  - url: /api/v3
+    description: Production API
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    # ==================== V3 API Schemas ====================
+    APIError:
+      type: object
+      required: [code, message, request_id]
+      properties:
+        code:
+          type: string
+          description: Machine-readable error code
+          example: "UNAUTHORIZED"
+        message:
+          type: string
+          description: Human-readable error message
+          example: "Authentication required"
+        request_id:
+          type: string
+          description: Request ID for debugging
+          example: "req_abc123"
+        details:
+          description: Optional additional context
+          example: "Invalid token format"
+
+    IntentRequest:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [stream.start, stream.stop]
+          default: stream.start
+        serviceRef:
+          type: string
+          description: Required for stream.start. Enigma2 service reference (live playback only).
+          example: "1:0:1:445D:453:1:C00000:0:0:0:"
+
+        hwaccel:
+          type: string
+          enum: [auto, force, off]
+          default: auto
+          description: |
+            Hardware acceleration override (v3.1+).
+            - auto: Server decides based on GPU availability
+            - force: Force GPU encoding (fails if no GPU)
+            - off: Force CPU encoding
+          example: "auto"
+        correlationId:
+          type: string
+          description: Optional correlation ID for end-to-end tracing
+        sessionId:
+          type: string
+          format: uuid
+          description: Required for stream.stop intent
+        idempotencyKey:
+          type: string
+          description: Optional idempotency key for at-most-once semantics
+        params:
+          type: object
+          additionalProperties:
+            type: string
+          description: Additional parameters
+
+    SessionResponse:
+      type: object
+      required: [sessionId, state]
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+        serviceRef:
+          type: string
+        profile:
+          type: string
+        state:
+          type: string
+          description: |
+            Session lifecycle state. READY guarantees a playable HLS stream (playlist + at least one segment,
+            atomically published). PRIMING means FFmpeg is running but content is not yet playable.
+          enum:
+            [
+              NEW,
+              STARTING,
+              PRIMING,
+              READY,
+              DRAINING,
+              STOPPING,
+              STOPPED,
+              FAILED,
+              CANCELLED,
+            ]
+        reason:
+          type: string
+          description: Reason code; R_LEASE_BUSY means capacity rejection (no tuner available), not a system fault.
+          enum:
+            - R_NONE
+            - R_UNKNOWN
+            - R_BAD_REQUEST
+            - R_NOT_FOUND
+            - R_LEASE_BUSY
+            - R_TUNE_TIMEOUT
+            - R_LEASE_EXPIRED
+            - R_TUNE_FAILED
+            - R_INVARIANT_VIOLATION
+            - R_FFMPEG_START_FAILED
+            - R_PROCESS_ENDED
+            - R_PACKAGER_FAILED
+            - R_CANCELLED
+            - R_IDLE_TIMEOUT
+            - R_CLIENT_STOP
+        reasonDetail:
+          type: string
+        correlationId:
+          type: string
+        updatedAtMs:
+          type: integer
+        mode:
+          type: string
+          description: Playback mode for the session.
+          enum: [LIVE, RECORDING]
+        durationSeconds:
+          type: number
+          format: float
+          description: DVR window length for live sessions, in seconds.
+        seekableStartSeconds:
+          type: number
+          format: float
+          description: Earliest seekable position in seconds.
+        seekableEndSeconds:
+          type: number
+          format: float
+          description: Latest seekable position in seconds.
+        liveEdgeSeconds:
+          type: number
+          format: float
+          description: Current live edge position in seconds (live only).
+        playbackUrl:
+          type: string
+          description: Playback URL for the HLS playlist.
+          format: uri
+
+    Service:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        number:
+          type: string
+        group:
+          type: string
+        logo_url:
+          type: string
+          format: uri
+        enabled:
+          type: boolean
+        service_ref:
+          type: string
+          description: Service reference for streaming (extracted from M3U URL)
+
+    SessionRecord:
+      type: object
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+        serviceRef:
+          type: string
+        profile:
+          type: object
+        state:
+          type: string
+          description: |
+            Session lifecycle state. READY guarantees a playable HLS stream (playlist + at least one segment,
+            atomically published). PRIMING means FFmpeg is running but content is not yet playable.
+          enum:
+            [
+              NEW,
+              STARTING,
+              PRIMING,
+              READY,
+              DRAINING,
+              STOPPING,
+              STOPPED,
+              FAILED,
+              CANCELLED,
+            ]
+        reason:
+          type: string
+          description: Reason code; R_LEASE_BUSY means capacity rejection (no tuner available), not a system fault.
+          enum:
+            - R_NONE
+            - R_UNKNOWN
+            - R_BAD_REQUEST
+            - R_NOT_FOUND
+            - R_LEASE_BUSY
+            - R_TUNE_TIMEOUT
+            - R_LEASE_EXPIRED
+            - R_TUNE_FAILED
+            - R_INVARIANT_VIOLATION
+            - R_FFMPEG_START_FAILED
+            - R_PROCESS_ENDED
+            - R_PACKAGER_FAILED
+            - R_CANCELLED
+            - R_IDLE_TIMEOUT
+            - R_CLIENT_STOP
+        reasonDetail:
+          type: string
+        createdAtUnix:
+          type: integer
+          format: int64
+        updatedAtUnix:
+          type: integer
+          format: int64
+        lastAccessUnix:
+          type: integer
+          format: int64
+        tunerID:
+          type: string
+        correlationId:
+          type: string
+        contextData:
+          type: object
+          additionalProperties:
+            type: string
+
+    ScanStatus:
+      type: object
+      properties:
+        state:
+          type: string
+          enum: [idle, running, complete, failed, cancelled]
+        started_at:
+          type: integer
+          format: int64
+          description: Unix timestamp of when the current or last scan started
+        finished_at:
+          type: integer
+          format: int64
+          description: Unix timestamp of when the last scan completed
+        total_channels:
+          type: integer
+          description: Total number of channels in the playlist
+        scanned_channels:
+          type: integer
+          description: Number of attempts (successful/failed) to probe channels so far
+        updated_count:
+          type: integer
+          description: Number of capabilities successfully updated in the store
+        last_error:
+          type: string
+
+    PlaybackFeedbackRequest:
+      type: object
+      required: [event]
+      properties:
+        event:
+          type: string
+          enum: [error, warning, info]
+        code:
+          type: integer
+          description: MediaError code if applicable
+        message:
+          type: string
+        details:
+          type: object
+
+    # ==================== Legacy Schemas ====================
+    Error:
+      type: object
+      properties:
+        type:
+          type: string
+          format: uri
+          example: "about:blank"
+        title:
+          type: string
+          example: "Internal Server Error"
+        status:
+          type: integer
+          example: 500
+        detail:
+          type: string
+          example: "Failed to connect to database"
+
+    SystemHealth:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, error]
+        receiver:
+          $ref: "#/components/schemas/ComponentStatus"
+        epg:
+          $ref: "#/components/schemas/EPGStatus"
+        version:
+          type: string
+        uptime_seconds:
+          type: integer
+          format: int64
+
+    ComponentStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok, error]
+        last_check:
+          type: string
+          format: date-time
+
+    EPGStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok, missing]
+        missing_channels:
+          type: integer
+
+    OpenWebIFConfig:
+      type: object
+      properties:
+        baseUrl:
+          type: string
+        username:
+          type: string
+        password:
+          type: string
+        streamPort:
+          type: integer
+
+    EPGConfig:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        days:
+          type: integer
+        source:
+          type: string
+          enum: [bouquet, per-service]
+
+    PiconsConfig:
+      type: object
+      properties:
+        baseUrl:
+          type: string
+
+    StreamingConfig:
+      type: object
+      description: Streaming delivery policy configuration (ADR-00X)
+      properties:
+        delivery_policy:
+          type: string
+          enum: [universal]
+          description: Streaming delivery policy (only 'universal' is supported)
+          default: universal
+
+    FeatureFlags:
+      type: object
+      properties: {}
+
+    SeriesRuleRunReport:
+      type: object
+      properties:
+        ruleId: { type: string }
+        runId: { type: string }
+        trigger: { type: string }
+        startedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+        durationMs: { type: integer, format: int64 }
+        windowFrom: { type: integer, format: int64 }
+        windowTo: { type: integer, format: int64 }
+        status: { type: string, enum: [success, partial, failed] }
+        summary: { $ref: "#/components/schemas/RunSummary" }
+        snapshot: { $ref: "#/components/schemas/RuleSnapshot" }
+        decisions:
+          type: array
+          items: { $ref: "#/components/schemas/RunDecision" }
+        errors:
+          type: array
+          items: { $ref: "#/components/schemas/RunError" }
+        conflicts:
+          type: array
+          items: { $ref: "#/components/schemas/RunConflict" }
+
+    RunSummary:
+      type: object
+      properties:
+        epgItemsScanned: { type: integer }
+        epgItemsMatched: { type: integer }
+        timersAttempted: { type: integer }
+        timersCreated: { type: integer }
+        timersSkipped: { type: integer }
+        timersConflicted: { type: integer }
+        timersErrored: { type: integer }
+        maxTimersGlobalPerRunHit: { type: boolean }
+        maxMatchesScannedPerRuleHit: { type: boolean }
+        receiverUnreachable: { type: boolean }
+
+    RunDecision:
+      type: object
+      properties:
+        serviceRef: { type: string }
+        begin: { type: integer, format: int64 }
+        end: { type: integer, format: int64 }
+        title: { type: string }
+        action: { type: string }
+        reason: { type: string }
+        matchReason:
+          type: array
+          items: { type: string }
+        timerId: { type: string }
+        details: { type: string }
+
+    RunError:
+      type: object
+      properties:
+        type: { type: string }
+        message: { type: string }
+        at: { type: string, format: date-time }
+        retryable: { type: boolean }
+
+    RunConflict:
+      type: object
+      properties:
+        serviceRef: { type: string }
+        begin: { type: integer, format: int64 }
+        end: { type: integer, format: int64 }
+        title: { type: string }
+        blockingTimerId: { type: string }
+        overlapSeconds: { type: integer, format: int64 }
+        message: { type: string }
+
+    RuleSnapshot:
+      type: object
+      properties:
+        id: { type: string }
+        enabled: { type: boolean }
+        keyword: { type: string }
+        channelRef: { type: string }
+        days:
+          type: array
+          items: { type: integer }
+        startWindow: { type: string }
+        priority: { type: integer }
+    SeriesRule:
+      type: object
+      properties:
+        id:
+          type: string
+          readOnly: true
+        enabled:
+          type: boolean
+          default: true
+        keyword:
+          type: string
+          description: Search term or regex for event title
+        channel_ref:
+          type: string
+          description: Optional service reference to restrict rule
+        days:
+          type: array
+          items:
+            type: integer
+            minimum: 0
+            maximum: 6
+          description: Days of week (0=Sunday)
+        start_window:
+          type: string
+          description: Time window HHMM-HHMM
+        priority:
+          type: integer
+          default: 0
+        lastRunAt:
+          type: string
+          format: date-time
+        lastRunStatus:
+          type: string
+        lastRunSummary:
+          $ref: "#/components/schemas/RunSummary"
+
+    SeriesRuleUpdate:
+      type: object
+      required: [enabled, keyword, priority]
+      properties:
+        enabled:
+          type: boolean
+        keyword:
+          type: string
+          minLength: 1
+          description: Search term or regex for event title
+        channel_ref:
+          type: string
+          description: Optional service reference to restrict rule
+        days:
+          type: array
+          items:
+            type: integer
+            minimum: 0
+            maximum: 6
+          description: Days of week (0=Sunday)
+        start_window:
+          type: string
+          description: Time window HHMM-HHMM
+        priority:
+          type: integer
+
+    ConfigUpdate:
+      type: object
+      properties:
+        openWebIF:
+          $ref: "#/components/schemas/OpenWebIFConfig"
+        bouquets:
+          type: array
+          items:
+            type: string
+        epg:
+          $ref: "#/components/schemas/EPGConfig"
+        picons:
+          $ref: "#/components/schemas/PiconsConfig"
+        featureFlags:
+          $ref: "#/components/schemas/FeatureFlags"
+
+    AppConfig:
+      type: object
+      properties:
+        version:
+          type: string
+        dataDir:
+          type: string
+        logLevel:
+          type: string
+        openWebIF:
+          $ref: "#/components/schemas/OpenWebIFConfig"
+        bouquets:
+          type: array
+          items:
+            type: string
+        epg:
+          $ref: "#/components/schemas/EPGConfig"
+        picons:
+          $ref: "#/components/schemas/PiconsConfig"
+        streaming:
+          $ref: "#/components/schemas/StreamingConfig"
+        featureFlags:
+          $ref: "#/components/schemas/FeatureFlags"
+
+    Bouquet:
+      type: object
+      properties:
+        name:
+          type: string
+        services:
+          type: integer
+
+    NowNextRequest:
+      type: object
+      required: [services]
+      properties:
+        services:
+          type: array
+          minItems: 1
+          items:
+            type: string
+
+    NowNextEntry:
+      type: object
+      required: [title, start, end]
+      properties:
+        title:
+          type: string
+        start:
+          type: integer
+          description: Unix timestamp (seconds)
+        end:
+          type: integer
+          description: Unix timestamp (seconds)
+
+    NowNextItem:
+      type: object
+      required: [service_ref]
+      properties:
+        service_ref:
+          type: string
+        now:
+          $ref: "#/components/schemas/NowNextEntry"
+        next:
+          $ref: "#/components/schemas/NowNextEntry"
+
+    NowNextResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/NowNextItem"
+
+    ProblemDetails:
+      type: object
+      required: [type, title, status]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        fields:
+          type: object
+          additionalProperties: true
+        conflicts:
+          type: array
+          items: { $ref: "#/components/schemas/TimerConflict" }
+
+    Timer:
+      type: object
+      required: [timerId, serviceRef, begin, end, name, state]
+      properties:
+        timerId: { type: string }
+        serviceRef: { type: string }
+        begin: { type: integer, format: int64 }
+        end: { type: integer, format: int64 }
+        name: { type: string }
+        description: { type: string }
+        serviceName: { type: string }
+        state:
+          type: string
+          enum: [scheduled, recording, completed, disabled, unknown]
+        receiverState:
+          type: object
+          additionalProperties: true
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    PlaybackInfo:
+      type: object
+      required: [mode, url]
+      properties:
+        mode:
+          type: string
+          enum: [hls, direct_mp4]
+        url:
+          type: string
+        seekable:
+          type: boolean
+        reason:
+          type: string
+
+    TimerCreateRequest:
+      type: object
+      required: [serviceRef, begin, end, name]
+      properties:
+        serviceRef: { type: string }
+        begin: { type: integer, format: int64 }
+        end: { type: integer, format: int64 }
+        name: { type: string }
+        description: { type: string }
+        enabled: { type: boolean, default: true }
+        justPlay: { type: boolean, default: false }
+        afterEvent:
+          type: string
+          enum: [default, standby, deepstandby, nothing]
+          default: default
+        paddingBeforeSec: { type: integer, default: 0 }
+        paddingAfterSec: { type: integer, default: 0 }
+        idempotencyKey: { type: string }
+
+    TimerPatchRequest:
+      type: object
+      properties:
+        begin: { type: integer, format: int64 }
+        end: { type: integer, format: int64 }
+        name: { type: string }
+        description: { type: string }
+        enabled: { type: boolean }
+        paddingBeforeSec: { type: integer }
+        paddingAfterSec: { type: integer }
+
+    TimerConflict:
+      type: object
+      required: [type, blockingTimer]
+      properties:
+        type:
+          type: string
+          enum: [overlap, duplicate, tuner_limit, unknown]
+        blockingTimer: { $ref: "#/components/schemas/Timer" }
+        overlapSeconds: { type: integer }
+        message: { type: string }
+
+    TimerConflictPreviewRequest:
+      type: object
+      required: [proposed]
+      properties:
+        proposed:
+          $ref: "#/components/schemas/TimerCreateRequest"
+        mode:
+          type: string
+          enum: [conservative, receiverAware]
+          default: conservative
+
+    TimerConflictPreviewResponse:
+      type: object
+      required: [canSchedule, conflicts]
+      properties:
+        canSchedule: { type: boolean }
+        conflicts:
+          type: array
+          items: { $ref: "#/components/schemas/TimerConflict" }
+        suggestions:
+          type: array
+          items:
+            type: object
+            properties:
+              kind:
+                { type: string, enum: [reduce_padding, shift_start, shift_end] }
+              proposedBegin: { type: integer, format: int64 }
+              proposedEnd: { type: integer, format: int64 }
+              note: { type: string }
+
+    DvrCapabilities:
+      type: object
+      required: [timers, conflicts, series]
+      properties:
+        timers:
+          type: object
+          properties:
+            edit: { type: boolean }
+            delete: { type: boolean }
+            readBackVerify: { type: boolean }
+        conflicts:
+          type: object
+          properties:
+            preview: { type: boolean }
+            receiverAware: { type: boolean }
+        series:
+          type: object
+          properties:
+            supported: { type: boolean }
+            mode: { type: string, enum: [none, delegated, managed] }
+            delegatedProvider: { type: string }
+
+    RecordingStatus:
+      type: object
+      required: [isRecording]
+      properties:
+        isRecording: { type: boolean }
+        serviceName: { type: string }
+
+    RecordingBuildStatus:
+      type: object
+      required: [state]
+      properties:
+        state:
+          type: string
+          enum: [IDLE, RUNNING, FAILED, READY]
+        segment_count: { type: integer }
+        last_progress: { type: string, format: date-time }
+        started_at: { type: string, format: date-time }
+        attempt_mode: { type: string, enum: [fast, robust] }
+        error: { type: string }
+        progressive_ready:
+          type: boolean
+          description: True if a progressive (timeshift) playlist is playable.
+
+    TimerList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Timer" }
+
+    LogEntry:
+      type: object
+      properties:
+        time:
+          type: string
+          format: date-time
+        level:
+          type: string
+        message:
+          type: string
+        fields:
+          type: object
+          additionalProperties: true
+
+    StreamSession:
+      type: object
+      properties:
+        id:
+          type: string
+        client_ip:
+          type: string
+        channel_name:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        state:
+          type: string
+          enum: [active, idle]
+
+    RecordingRoot:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+
+    Breadcrumb:
+      type: object
+      properties:
+        name: { type: string }
+        path: { type: string }
+
+    DirectoryItem:
+      type: object
+      properties:
+        name: { type: string }
+        path: { type: string }
+
+    RecordingItem:
+      type: object
+      properties:
+        service_ref:
+          type: string
+          description: Legacy receiver service reference (read-only).
+        recording_id:
+          type: string
+          description: Base64url-encoded recording ID (RFC 4648, unpadded) to use for /recordings/{recordingId}.
+          pattern: "^[A-Za-z0-9_-]+$"
+          minLength: 16
+          maxLength: 2048
+          example: "MTowOjA6MDo6L21lZGlhL2hkZC9tb3ZpZS9mb28udHM"
+        title: { type: string }
+        description: { type: string }
+        begin_unix_seconds:
+          type: integer
+          format: int64
+          description: Recording start time as UNIX seconds.
+        duration_seconds:
+          type: integer
+          format: int64
+          description: Recording duration in seconds, if known.
+        length:
+          type: string
+          description: Human-readable duration string for display only.
+        filename: { type: string }
+        resume: { $ref: "#/components/schemas/ResumeSummary" }
+
+    ResumeSummary:
+      type: object
+      properties:
+        pos_seconds:
+          type: integer
+          format: int64
+        duration_seconds:
+          type: integer
+          format: int64
+        finished: { type: boolean }
+        updated_at: { type: string, format: date-time }
+
+    RecordingResponse:
+      type: object
+      properties:
+        roots:
+          type: array
+          items: { $ref: "#/components/schemas/RecordingRoot" }
+        current_root: { type: string }
+        current_path: { type: string }
+        breadcrumbs:
+          type: array
+          items: { $ref: "#/components/schemas/Breadcrumb" }
+        directories:
+          type: array
+          items: { $ref: "#/components/schemas/DirectoryItem" }
+        recordings:
+          type: array
+          items: { $ref: "#/components/schemas/RecordingItem" }
+
+security:
+  - BearerAuth: [v3:read]
+
+paths:
+  /system/health:
+    get:
+      summary: Get system health
+      responses:
+        "200":
+          description: Health status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemHealth"
+
+  /system/healthz:
+    get:
+      summary: Get minimal system health
+      operationId: getSystemHealthz
+      security: []
+      responses:
+        "200":
+          description: Health status
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                additionalProperties: false
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
+
+  /system/config:
+    get:
+      summary: Get system configuration
+      security:
+        - BearerAuth: [v3:admin]
+      responses:
+        "200":
+          description: Configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppConfig"
+    put:
+      summary: Update system configuration
+      security:
+        - BearerAuth: [v3:admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfigUpdate"
+      responses:
+        "200":
+          description: Configuration updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  restart_required:
+                    type: boolean
+        "400":
+          description: Invalid configuration
+        "500":
+          description: Failed to save configuration
+
+  /system/refresh:
+    post:
+      summary: Trigger data refresh (EPG/Channels)
+      security:
+        - BearerAuth: [v3:write]
+      responses:
+        "202":
+          description: Refresh started
+        "409":
+          description: Refresh already in progress
+
+  /services/bouquets:
+    get:
+      summary: List all bouquets
+      operationId: getServicesBouquets
+      tags:
+        - services
+      responses:
+        "200":
+          description: List of bouquets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Bouquet"
+
+  /services/now-next:
+    post:
+      summary: Get now/next EPG for a list of services
+      operationId: postServicesNowNext
+      tags:
+        - services
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NowNextRequest"
+      responses:
+        "200":
+          description: Now/next EPG entries per service
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NowNextResponse"
+        "400":
+          description: Invalid request
+
+  /epg:
+    get:
+      summary: Get EPG data
+      operationId: getEpg
+      tags:
+        - epg
+      parameters:
+        - name: from
+          in: query
+          schema:
+            type: integer
+          description: Start timestamp (unix seconds)
+        - name: to
+          in: query
+          schema:
+            type: integer
+          description: End timestamp (unix seconds)
+        - name: bouquet
+          in: query
+          schema:
+            type: string
+          description: Filter by bouquet name
+        - name: q
+          in: query
+          schema:
+            type: string
+          description: Filter by search query
+      responses:
+        "200":
+          description: EPG data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        service_ref:
+                          type: string
+                        title:
+                          type: string
+                        desc:
+                          type: string
+                        start:
+                          type: integer
+                        end:
+                          type: integer
+
+  /services:
+    get:
+      summary: List all services (channels)
+      parameters:
+        - in: query
+          name: bouquet
+          schema:
+            type: string
+          description: Filter by bouquet name
+      responses:
+        "200":
+          description: List of services
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Service"
+
+  /services/{id}/toggle:
+    post:
+      summary: Toggle service enabled state
+      security:
+        - BearerAuth: [v3:write]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+      responses:
+        "200":
+          description: Status updated
+        "404":
+          description: Service not found
+
+  /streams:
+    get:
+      summary: List active streams
+      security:
+        - BearerAuth: [v3:admin]
+      responses:
+        "200":
+          description: Active sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StreamSession"
+
+  /recordings:
+    get:
+      summary: Browse recordings
+      operationId: getRecordings
+      tags:
+        - recordings
+      parameters:
+        - name: root
+          in: query
+          schema:
+            type: string
+          description: Root location ID
+        - name: path
+          in: query
+          schema:
+            type: string
+          description: Relative path
+      responses:
+        "200":
+          description: Recordings list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordingResponse"
+
+  /recordings/{recordingId}:
+    delete:
+      summary: Delete a recording
+      description: Deletes the recording via OpenWebIF on the receiver.
+      security:
+        - BearerAuth: [v3:write]
+      operationId: deleteRecording
+      tags:
+        - recordings
+      parameters:
+        - name: recordingId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[A-Za-z0-9_-]+$"
+            minLength: 16
+            maxLength: 2048
+            example: "MTowOjA6MDo6L21lZGlhL2hkZC9tb3ZpZS9mb28udHM"
+          description: Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recording_id
+      responses:
+        "204":
+          description: Recording deleted
+        "400":
+          description: Invalid recording reference
+        "403":
+          description: Access denied
+        "404":
+          description: Recording not found
+        "500":
+          description: Failed to delete recording
+
+  /recordings/{recordingId}/status:
+    get:
+      summary: Get recording build status
+      parameters:
+        - in: path
+          name: recordingId
+          schema:
+            type: string
+          required: true
+      responses:
+        "200":
+          description: Build status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordingBuildStatus"
+        "400":
+          description: Invalid recording ID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+
+  /recordings/{recordingId}/stream-info:
+    get:
+      summary: Get playback strategy for a recording
+      operationId: getRecordingPlaybackInfo
+      tags: [recordings]
+      parameters:
+        - name: recordingId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Playback strategy info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlaybackInfo"
+        "404":
+          description: Recording not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+
+  /recordings/{recordingId}/stream.mp4:
+    get:
+      summary: Stream recording as MP4 (Direct VOD)
+      operationId: streamRecordingDirect
+      tags: [recordings]
+      parameters:
+        - name: recordingId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Video stream
+          content:
+            video/mp4:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Recording not found
+
+  /recordings/{recordingId}/playlist.m3u8:
+    get:
+      summary: Get VOD HLS playlist for a recording
+      operationId: getRecordingHLSPlaylist
+      tags:
+        - recordings
+      parameters:
+        - name: recordingId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[A-Za-z0-9_-]+$"
+            minLength: 16
+            maxLength: 2048
+            example: "MTowOjA6MDo6L21lZGlhL2hkZC9tb3ZpZS9mb28udHM"
+          description: Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recording_id
+      responses:
+        "200":
+          description: HLS Playlist
+          content:
+            application/vnd.apple.mpegurl:
+              schema:
+                type: string
+            application/x-mpegURL:
+              schema:
+                type: string
+        "400":
+          description: Invalid recording ID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+        "404":
+          description: Recording not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+        "503":
+          description: Recording not ready for VOD
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+    head:
+      summary: Get VOD HLS playlist metadata (Safari compatibility)
+      operationId: getRecordingHLSPlaylistHead
+      tags:
+        - recordings
+      parameters:
+        - name: recordingId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[A-Za-z0-9_-]+$"
+            minLength: 16
+            maxLength: 2048
+      responses:
+        "200":
+          description: HLS playlist metadata
+          headers:
+            Content-Type:
+              schema:
+                type: string
+            Content-Length:
+              schema:
+                type: integer
+        "404":
+          description: Recording not found
+
+  /recordings/{recordingId}/timeshift.m3u8:
+    get:
+      summary: Get timeshift HLS playlist for a recording
+      operationId: getRecordingHLSTimeshift
+      tags:
+        - recordings
+      parameters:
+        - name: recordingId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[A-Za-z0-9_-]+$"
+            minLength: 16
+            maxLength: 2048
+            example: "MTowOjA6MDo6L21lZGlhL2hkZC9tb3ZpZS9mb28udHM"
+          description: Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recording_id
+      responses:
+        "200":
+          description: HLS Playlist
+          content:
+            application/vnd.apple.mpegurl:
+              schema:
+                type: string
+            application/x-mpegURL:
+              schema:
+                type: string
+        "400":
+          description: Invalid recording ID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+        "404":
+          description: Recording not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+        "503":
+          description: Recording not ready for timeshift
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+    head:
+      summary: Get timeshift HLS playlist metadata (Safari compatibility)
+      operationId: getRecordingHLSTimeshiftHead
+      tags:
+        - recordings
+      parameters:
+        - name: recordingId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[A-Za-z0-9_-]+$"
+            minLength: 16
+            maxLength: 2048
+      responses:
+        "200":
+          description: HLS playlist metadata
+          headers:
+            Content-Type:
+              schema:
+                type: string
+            Content-Length:
+              schema:
+                type: integer
+        "404":
+          description: Recording not found
+
+  /recordings/{recordingId}/{segment}:
+    get:
+      summary: Get HLS segment for a recording
+      operationId: getRecordingHLSCustomSegment
+      tags:
+        - recordings
+      parameters:
+        - name: recordingId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[A-Za-z0-9_-]+$"
+            minLength: 16
+            maxLength: 2048
+            example: "MTowOjA6MDo6L21lZGlhL2hkZC9tb3ZpZS9mb28udHM"
+          description: Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recording_id
+        - name: segment
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '.*\.(ts|mp4|m4s|cmfv)$'
+      responses:
+        "200":
+          description: Media Segment
+          content:
+            video/mp2t:
+              schema:
+                type: string
+                format: binary
+            video/MP2T:
+              schema:
+                type: string
+                format: binary
+            video/iso.segment:
+              schema:
+                type: string
+                format: binary
+            video/mp4:
+              schema:
+                type: string
+                format: binary
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: Invalid recording ID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+        "404":
+          description: Recording not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+        "409":
+          description: Recording not ready
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+    head:
+      summary: Get HLS segment metadata (Safari compatibility)
+      operationId: getRecordingHLSCustomSegmentHead
+      tags:
+        - recordings
+      parameters:
+        - name: recordingId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[A-Za-z0-9_-]+$"
+            minLength: 16
+            maxLength: 2048
+        - name: segment
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '.*\.(ts|mp4|m4s|cmfv)$'
+      responses:
+        "200":
+          description: Segment metadata
+          headers:
+            Content-Type:
+              schema:
+                type: string
+            Content-Length:
+              schema:
+                type: integer
+        "404":
+          description: Segment not found
+
+  /auth/session:
+    post:
+      summary: Create session cookie
+      description: Exchanges the Bearer token for a secure HttpOnly session cookie, enabling native playback (HLS) without token in URL.
+      operationId: createSession
+      tags:
+        - auth
+      security:
+        - BearerAuth: [v3:read]
+      responses:
+        "204":
+          description: Session created
+        "401":
+          description: Unauthorized
+
+  /timers:
+    get:
+      summary: List all timers
+      operationId: getTimers
+      tags:
+        - timers
+      parameters:
+        - name: state
+          in: query
+          schema:
+            type: string
+            default: scheduled
+        - name: from
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of timers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimerList"
+    post:
+      summary: Create a timer
+      security:
+        - BearerAuth: [v3:write]
+      operationId: addTimer
+      tags:
+        - timers
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TimerCreateRequest"
+      responses:
+        "201":
+          description: Timer created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Timer"
+        "409":
+          description: Duplicate timer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "422":
+          description: Conflict or validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "502":
+          description: Receiver inconsistent (verification failed)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+  /timers/{timerId}:
+    get:
+      summary: Get timer
+      operationId: getTimer
+      tags:
+        - timers
+      parameters:
+        - name: timerId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Timer details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Timer"
+        "404":
+          description: Timer not found
+    patch:
+      summary: Edit timer
+      security:
+        - BearerAuth: [v3:write]
+      operationId: updateTimer
+      tags:
+        - timers
+      parameters:
+        - name: timerId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TimerPatchRequest"
+      responses:
+        "200":
+          description: Timer updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Timer"
+        "404":
+          description: Timer not found
+        "409":
+          description: Duplicate resulting from edit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "422":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "502":
+          description: Receiver fail / Rollback
+    delete:
+      summary: Delete timer
+      security:
+        - BearerAuth: [v3:write]
+      operationId: deleteTimer
+      tags:
+        - timers
+      parameters:
+        - name: timerId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+
+  /timers/conflicts:preview:
+    post:
+      summary: Preview conflicts
+      operationId: previewConflicts
+      tags:
+        - timers
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TimerConflictPreviewRequest"
+      responses:
+        "200":
+          description: Preview result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimerConflictPreviewResponse"
+
+  /dvr/capabilities:
+    get:
+      summary: Get DVR capabilities
+      operationId: getDvrCapabilities
+      tags:
+        - dvr
+      responses:
+        "200":
+          description: Capabilities
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DvrCapabilities"
+
+  /dvr/status:
+    get:
+      summary: Get DVR recording status
+      operationId: getDvrStatus
+      tags:
+        - dvr
+      responses:
+        "200":
+          description: Recording status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordingStatus"
+
+  /streams/{id}:
+    delete:
+      summary: Terminate a stream session
+      security:
+        - BearerAuth: [v3:write]
+      operationId: deleteStreamsId
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Session terminated
+        "404":
+          description: Session not found
+
+  /sessions/{sessionId}/feedback:
+    post:
+      summary: Report playback feedback (e.g. valid errors)
+      operationId: reportPlaybackFeedback
+      tags: [streams]
+      parameters:
+        - in: path
+          name: sessionId
+          schema:
+            type: string
+            format: uuid
+          required: true
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlaybackFeedbackRequest"
+      responses:
+        "202":
+          description: Feedback accepted
+        "404":
+          description: Session not found
+
+  /logs:
+    get:
+      summary: Get recent logs
+      security:
+        - BearerAuth: [v3:admin]
+      operationId: getLogs
+      responses:
+        "200":
+          description: Recent log entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LogEntry"
+
+  /series-rules:
+    get:
+      summary: List all series recording rules
+      operationId: getSeriesRules
+      tags:
+        - series
+      responses:
+        "200":
+          description: List of rules
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SeriesRule"
+    post:
+      summary: Create a new series rule
+      security:
+        - BearerAuth: [v3:write]
+      operationId: createSeriesRule
+      tags:
+        - series
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SeriesRule"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeriesRule"
+
+  /series-rules/{id}/run:
+    post:
+      summary: Run a specific series rule immediately
+      security:
+        - BearerAuth: [v3:write]
+      operationId: runSeriesRule
+      tags:
+        - series
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: trigger
+          in: query
+          schema:
+            type: string
+            default: manual
+      responses:
+        "200":
+          description: Run report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeriesRuleRunReport"
+        "404":
+          description: Rule not found
+
+  /series-rules/run:
+    post:
+      summary: Run all enabled series rules immediately
+      security:
+        - BearerAuth: [v3:write]
+      operationId: runAllSeriesRules
+      tags:
+        - series
+      parameters:
+        - name: trigger
+          in: query
+          schema:
+            type: string
+            default: manual
+      responses:
+        "200":
+          description: List of run reports
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SeriesRuleRunReport"
+
+  /series-rules/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    put:
+      summary: Update an existing series rule
+      security:
+        - BearerAuth: [v3:write]
+      operationId: updateSeriesRule
+      tags:
+        - series
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SeriesRuleUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeriesRule"
+        "404":
+          description: Rule not found
+        "400":
+          description: Invalid request
+    delete:
+      summary: Delete a series rule
+      security:
+        - BearerAuth: [v3:write]
+      operationId: deleteSeriesRule
+      tags:
+        - series
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Rule not found
+
+  # ==================== V3 Control Plane API ====================
+  /system/scan:
+    post:
+      summary: Trigger a background scan of all channels for capabilities
+      operationId: TriggerSystemScan
+      security:
+        - BearerAuth: []
+      responses:
+        "202":
+          description: Scan initiated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: "started" }
+        "200":
+          description: Scan already running
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: "already_running" }
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+    get:
+      summary: Get status of the capability scan
+      operationId: GetSystemScanStatus
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Current scan status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScanStatus"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+        "503":
+          description: Scanner not initialized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+  /intents:
+    post:
+      summary: Create stream intent (start or stop session)
+      operationId: createIntent
+      tags:
+        - v3
+      security:
+        - BearerAuth: [v3:write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IntentRequest"
+      responses:
+        "202":
+          description: Intent accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessionId:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                    enum: [accepted, idempotent_replay]
+                  correlationId:
+                    type: string
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+        "409":
+          description: Lease busy (capacity rejection; no session created)
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+              description: Seconds to wait before retry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+        "503":
+          description: V3 control plane unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+
+  /sessions:
+    get:
+      summary: List all sessions (admin only)
+      operationId: listSessions
+      tags:
+        - v3
+      security:
+        - BearerAuth: [v3:admin]
+      parameters:
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: Pagination offset
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+          description: Pagination limit (max 1000)
+      responses:
+        "200":
+          description: Sessions list with pagination metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SessionRecord"
+                  pagination:
+                    type: object
+                    properties:
+                      offset:
+                        type: integer
+                      limit:
+                        type: integer
+                      total:
+                        type: integer
+                      count:
+                        type: integer
+        "503":
+          description: V3 control plane unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+
+  /sessions/{sessionID}:
+    parameters:
+      - name: sessionID
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get session state
+      operationId: getSessionState
+      tags:
+        - v3
+      security:
+        - BearerAuth: [v3:read]
+      responses:
+        "200":
+          description: Session state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+        "400":
+          description: Invalid session ID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+        "404":
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+
+  /sessions/{sessionID}/hls/{filename}:
+    parameters:
+      - name: sessionID
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: filename
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: '^[a-zA-Z0-9_.-]+\.(m3u8|ts|m4s|mp4)$'
+    get:
+      summary: Serve HLS playlist or segment
+      operationId: serveHLS
+      tags:
+        - v3
+      security:
+        - BearerAuth: [v3:read]
+      responses:
+        "200":
+          description: HLS content
+          content:
+            application/vnd.apple.mpegurl:
+              schema:
+                type: string
+            video/MP2T:
+              schema:
+                type: string
+                format: binary
+            video/iso.segment:
+              schema:
+                type: string
+                format: binary
+            video/mp4:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: Invalid request
+        "404":
+          description: File not found
+        "503":
+          description: V3 control plane unavailable
+    head:
+      summary: Get HLS content metadata (Safari compatibility)
+      operationId: serveHLSHead
+      tags:
+        - v3
+      security:
+        - BearerAuth: [v3:read]
+      responses:
+        "200":
+          description: HLS content metadata (headers only)
+          headers:
+            Content-Type:
+              schema:
+                type: string
+            Content-Length:
+              schema:
+                type: integer
+            Cache-Control:
+              schema:
+                type: string
+        "404":
+          description: File not found
+        "503":
+          description: V3 control plane unavailable

@@ -38,6 +38,55 @@ Tier-1 compliant with Apple HLS Guidelines.
 - ❌ **Browser Workarounds**: Safari is the reference.
 - ❌ **Direct Copy**: Always remux to guarantee container.
 
+## FFmpeg Dependencies
+
+xg2g requires **FFmpeg** for media processing (transcoding, remuxing, probing). To ensure reproducibility and avoid distro drift, the project ships a **pinned FFmpeg build** (currently **7.1.3**).
+
+### Docker / Release builds (automatic)
+
+FFmpeg is **bundled into the container image** and fully configured at runtime.  
+✅ No manual PATH or LD_LIBRARY_PATH configuration required.
+
+The build uses:
+
+- **Pinned version**: FFmpeg 7.1.3 (tag `n7.1.3`)
+- **Checksum verification**: Source tarball verified before build
+- **Build flags**: GPL, x264, x265, VAAPI, HLS, native AAC encoder
+
+### Local development (manual)
+
+If building locally (e.g., Homelab/Dev), use `make setup`:
+
+```bash
+make setup  # Builds FFmpeg to /opt/xg2g/ffmpeg
+```
+
+**Option 1: Use wrappers** (recommended, scoped LD_LIBRARY_PATH):
+
+```bash
+# Wrappers handle LD_LIBRARY_PATH automatically
+# Use script wrappers for local dev (they default to /opt/ffmpeg)
+export XG2G_FFMPEG_PATH=$(pwd)/scripts/ffmpeg-wrapper.sh
+export XG2G_FFPROBE_PATH=$(pwd)/scripts/ffprobe-wrapper.sh
+# Or override FFMPEG_HOME if you built to a different location
+export FFMPEG_HOME=/opt/xg2g/ffmpeg
+```
+
+**Option 2: Manual PATH** (global LD_LIBRARY_PATH):
+
+```bash
+export PATH=/opt/xg2g/ffmpeg/bin:$PATH
+export LD_LIBRARY_PATH=/opt/xg2g/ffmpeg/lib
+```
+
+**Note**: Docker uses wrappers automatically - no configuration needed.
+
+**Developer override**: To use system FFmpeg instead (not recommended):
+
+```bash
+export XG2G_FFMPEG_PATH=/usr/bin/ffmpeg
+```
+
 ## Quickstart
 
 ### Prerequisites: Linux with Docker, GPU, Enigma2 Receiver

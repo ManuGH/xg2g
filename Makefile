@@ -12,7 +12,7 @@
 	quality-gates pre-commit install dev-tools check-tools \
         release-check release-build release-tag release-notes \
         dev up down status prod-up prod-down prod-logs check-env \
-        restart prod-restart ps prod-ps ui-build codex certs
+        restart prod-restart ps prod-ps ui-build codex certs setup build-ffmpeg
 
 # ===================================================================================================
 # Configuration and Variables
@@ -713,3 +713,23 @@ gate-a:
 	@./scripts/verify_gate_a_control_store.sh
 
 quality-gates: gate-a
+
+# ===================================================================================================
+# FFmpeg Build Automation
+# ===================================================================================================
+
+setup: build-ffmpeg ## One-time setup: build FFmpeg locally
+
+build-ffmpeg: ## Build FFmpeg 7.1.3 with HLS/VAAPI/x264/AAC support
+	@echo "Building FFmpeg 7.1.3..."
+	@./scripts/build-ffmpeg.sh
+	@echo "✅ FFmpeg built successfully"
+	@echo ""
+	@echo "Use wrappers for scoped LD_LIBRARY_PATH (recommended):"
+	@echo "  export XG2G_FFMPEG_PATH=\$$(pwd)/scripts/ffmpeg-wrapper.sh"
+	@echo "  export XG2G_FFPROBE_PATH=\$$(pwd)/scripts/ffprobe-wrapper.sh"
+	@echo ""
+	@echo "Or set PATH manually:"
+	@echo "  export PATH=/opt/xg2g/ffmpeg/bin:\$$PATH"
+	@echo "  export LD_LIBRARY_PATH=/opt/xg2g/ffmpeg/lib"
+
