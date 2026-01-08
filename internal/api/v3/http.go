@@ -19,13 +19,13 @@ func (s *Server) GetSystemHealth(w http.ResponseWriter, r *http.Request) {
 	s.mu.RUnlock()
 
 	if hm == nil {
-		http.Error(w, "health manager not initialized", http.StatusServiceUnavailable)
+		writeProblem(w, r, http.StatusServiceUnavailable, "system/unavailable", "Subsystem Unavailable", "UNAVAILABLE", "Health manager not initialized", nil)
 		return
 	}
 
 	info, err := read.GetHealthInfo(r.Context(), hm)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeProblem(w, r, http.StatusInternalServerError, "system/internal_error", "Health Read Error", "INTERNAL_ERROR", err.Error(), nil)
 		return
 	}
 
@@ -65,9 +65,7 @@ func (s *Server) GetSystemHealth(w http.ResponseWriter, r *http.Request) {
 
 // GetSystemHealthz implements ServerInterface (Simple liveness check)
 func (s *Server) GetSystemHealthz(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 // GetLogs implements ServerInterface
@@ -77,7 +75,7 @@ func (s *Server) GetLogs(w http.ResponseWriter, r *http.Request) {
 	s.mu.RUnlock()
 	entries, err := read.GetRecentLogs(ls)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeProblem(w, r, http.StatusInternalServerError, "system/internal_error", "Log Read Error", "INTERNAL_ERROR", err.Error(), nil)
 		return
 	}
 

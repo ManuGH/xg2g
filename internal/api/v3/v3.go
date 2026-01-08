@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -119,6 +120,9 @@ type Server struct {
 	servicesSource  ServicesSource
 	timersSource    TimersSource
 	epgSource       read.EpgSource
+
+	// Middlewares (injectable for tests)
+	AuthMiddlewareOverride func(http.Handler) http.Handler
 }
 
 // NewServer creates a new implemented v3 server.
@@ -156,6 +160,14 @@ func NewServer(cfg config.AppConfig, cfgMgr *config.Manager, rootCancel context.
 	}
 	s.epgSource = &epgSourceWrapper{s}
 	return s
+}
+
+// authMiddleware is the default authentication middleware.
+func (s *Server) authMiddleware(h http.Handler) http.Handler {
+	if s.AuthMiddlewareOverride != nil {
+		return s.AuthMiddlewareOverride(h)
+	}
+	return s.authMiddlewareImpl(h)
 }
 
 // UpdateConfig updates the internal configuration snapshot.

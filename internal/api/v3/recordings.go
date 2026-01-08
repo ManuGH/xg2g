@@ -229,7 +229,7 @@ func CheckSourceAvailability(ctx context.Context, sourceURL string) error {
 		// Drain and close HEAD response before retry
 		_, _ = io.CopyN(io.Discard, resp.Body, 4096)
 		// #nosec G304
-	_ = resp.Body.Close()
+		_ = resp.Body.Close()
 
 		// Create new GET request (avoid reusing potential state)
 		retryReq, rErr := http.NewRequestWithContext(ctx, "GET", cleanURL, nil)
@@ -458,7 +458,7 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 				qRootID = *rootList[0].Id
 			}
 		} else {
-			http.Error(w, "No recording roots configured", http.StatusInternalServerError)
+			writeProblem(w, r, http.StatusInternalServerError, "recordings/no_roots", "Internal Server Error", "INTERNAL_ERROR", "No recording roots configured", nil)
 			return
 		}
 	}
@@ -467,7 +467,7 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 	// Security: Strict confinement using SanitizeRecordingRelPath
 	rootAbs, ok := roots[qRootID]
 	if !ok {
-		http.Error(w, "Invalid root ID", http.StatusBadRequest)
+		writeProblem(w, r, http.StatusBadRequest, "recordings/invalid_root", "Invalid Root", "INVALID_ROOT", "The specified root ID is invalid", nil)
 		return
 	}
 
@@ -479,7 +479,7 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 	cleanRel, blocked := SanitizeRecordingRelPath(qPath)
 	if blocked {
 		log.L().Warn().Str("path", qPath).Msg("path traversal attempt detected")
-		http.Error(w, "Access denied", http.StatusForbidden)
+		writeProblem(w, r, http.StatusForbidden, "recordings/access_denied", "Access Denied", "FORBIDDEN", "Path traversal or security violation detected", nil)
 		return
 	}
 
@@ -788,7 +788,7 @@ func (s *Server) GetRecordingPlaybackInfo(w http.ResponseWriter, r *http.Request
 func (s *Server) StreamRecordingDirect(w http.ResponseWriter, r *http.Request, recordingId string) {
 	serviceRef := s.DecodeRecordingID(recordingId)
 	if serviceRef == "" {
-		http.Error(w, "Invalid ID", http.StatusBadRequest)
+		writeProblem(w, r, http.StatusBadRequest, "recordings/invalid_id", "Invalid ID", "INVALID_ID", "The provided recording ID is invalid", nil)
 		return
 	}
 
@@ -802,7 +802,7 @@ func (s *Server) StreamRecordingDirect(w http.ResponseWriter, r *http.Request, r
 	}
 
 	if localPath == "" {
-		http.Error(w, "Direct playback unavailable (remote source)", http.StatusNotFound)
+		writeProblem(w, r, http.StatusNotFound, "recordings/unavailable", "Unavailable", "NOT_FOUND", "Direct playback unavailable (remote source)", nil)
 		return
 	}
 
@@ -850,7 +850,7 @@ func (s *Server) StreamRecordingDirect(w http.ResponseWriter, r *http.Request, r
 	f, err := os.Open(cachePath)
 	if err != nil {
 		log.L().Error().Err(err).Str("path", cachePath).Msg("failed to open cached vod file")
-		http.Error(w, "Stream Error", http.StatusInternalServerError)
+		writeProblem(w, r, http.StatusInternalServerError, "recordings/stream_error", "Stream Error", "INTERNAL_ERROR", "Failed to initialize recording stream", nil)
 		return
 	}
 	defer func() { _ = f.Close() }()
@@ -891,23 +891,17 @@ func (s *Server) StreamRecordingDirect(w http.ResponseWriter, r *http.Request, r
 			eta = int(sizeMB/40.0) + 10
 		}
 
-		resp := map[string]interface{}{
-			"code":        "PREPARING",
-			"message":     fmt.Sprintf("Preparing video... Estimated wait: ~%ds", eta),
+		writeProblem(w, r, http.StatusServiceUnavailable, "recordings/preparing", "Preparing video", "PREPARING", fmt.Sprintf("Preparing video... Estimated wait: ~%ds", eta), map[string]any{
 			"eta_seconds": eta,
 			"retry_after": 5,
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Retry-After", "10")
-		w.WriteHeader(http.StatusServiceUnavailable)
-		_ = json.NewEncoder(w).Encode(resp)
+		})
 		return
 	}
 
 	// If not in map but ensure returned NotReady, it might be in queue or just failed.
 	// Fallback generic wait.
 	w.Header().Set("Retry-After", "5")
-	http.Error(w, "Starting VOD Preparation", http.StatusServiceUnavailable)
+	writeProblem(w, r, http.StatusServiceUnavailable, "recordings/priming", "Preparing Stream", "PREPARING", "Starting VOD Preparation", nil)
 }
 
 // ExtractPathFromServiceRef extracts the filesystem path from an Enigma2 service reference.
@@ -1100,7 +1094,7 @@ func (s *Server) GetRecordingHLSTimeshift(w http.ResponseWriter, r *http.Request
 		s.writeRecordingPlaybackError(w, r, serviceRef, errRecordingNotReady)
 		return
 	}
-	 // #nosec G304
+	// #nosec G304
 	data, err := os.ReadFile(filepath.Clean(playlistPath))
 	if err != nil {
 		s.writeRecordingPlaybackError(w, r, serviceRef, errRecordingNotReady)
@@ -1126,11 +1120,11 @@ func (s *Server) GetRecordingHLSCustomSegment(w http.ResponseWriter, r *http.Req
 
 	segment = filepath.Base(segment)
 	if segment == "." || segment == ".." || strings.Contains(segment, "\\") {
-		http.Error(w, "invalid segment name", http.StatusBadRequest)
+		writeProblem(w, r, http.StatusBadRequest, "recordings/invalid_name", "Invalid Name", "INVALID_NAME", "Invalid segment name", nil)
 		return
 	}
 	if !IsAllowedVideoSegment(segment) {
-		http.Error(w, "file type not allowed", http.StatusForbidden)
+		writeProblem(w, r, http.StatusForbidden, "recordings/forbidden", "Forbidden", "FORBIDDEN", "File type not allowed", nil)
 		return
 	}
 
@@ -1146,27 +1140,27 @@ func (s *Server) GetRecordingHLSCustomSegment(w http.ResponseWriter, r *http.Req
 	cacheDir, err := RecordingCacheDir(hlsRoot, serviceRef)
 	if err != nil {
 		log.L().Error().Err(err).Msg("recording cache dir unavailable")
-		http.Error(w, "recording storage unavailable", http.StatusServiceUnavailable)
+		writeProblem(w, r, http.StatusServiceUnavailable, "recordings/storage_unavailable", "Unavailable", "UNAVAILABLE", "Recording storage unavailable", nil)
 		return
 	}
 
 	filePath, err := fs.ConfineRelPath(cacheDir, segment)
 	if err != nil {
-		http.Error(w, "segment not found", http.StatusNotFound)
+		writeProblem(w, r, http.StatusNotFound, "recordings/not_found", "Not Found", "NOT_FOUND", "Segment not found", nil)
 		return
 	}
 
 	info, err := os.Stat(filePath)
 	if os.IsNotExist(err) {
-		http.Error(w, "segment not found", http.StatusNotFound)
+		writeProblem(w, r, http.StatusNotFound, "recordings/not_found", "Not Found", "NOT_FOUND", "Segment not found", nil)
 		return
 	}
 	if err != nil {
-		http.Error(w, "segment unavailable", http.StatusInternalServerError)
+		writeProblem(w, r, http.StatusInternalServerError, "recordings/storage_error", "Internal Error", "INTERNAL_ERROR", "Segment unavailable", nil)
 		return
 	}
 	if info.IsDir() {
-		http.Error(w, "segment not found", http.StatusNotFound)
+		writeProblem(w, r, http.StatusNotFound, "recordings/not_found", "Not Found", "NOT_FOUND", "Segment not found (is directory)", nil)
 		return
 	}
 
@@ -1187,7 +1181,7 @@ func (s *Server) GetRecordingHLSCustomSegment(w http.ResponseWriter, r *http.Req
 
 	f, err := os.Open(filePath) // #nosec G304 -- filePath is confined to recording cache dir.
 	if err != nil {
-		http.Error(w, "segment unavailable", http.StatusInternalServerError)
+		writeProblem(w, r, http.StatusInternalServerError, "recordings/storage_error", "Internal Error", "INTERNAL_ERROR", "Segment unavailable", nil)
 		return
 	}
 	defer func() { _ = f.Close() }()
@@ -1406,7 +1400,7 @@ func RecordingLivePlaylistReady(cacheDir string) (string, bool) {
 	}
 
 	// 2. Parse Playlist for valid segment reference
-	 // #nosec G304
+	// #nosec G304
 	data, err := os.ReadFile(filepath.Clean(livePath))
 	if err != nil {
 		return "", false
@@ -1853,7 +1847,7 @@ func GetSegmentStats(dir string) (int, time.Time, error) {
 // Finalize: Atomic read-modify-write-rename
 func (s *Server) finalizeRecordingPlaylist(cacheDir, livePath, finalPath string) error {
 	// 1. Check if source exists
-	 // #nosec G304
+	// #nosec G304
 	data, err := os.ReadFile(filepath.Clean(livePath))
 	if err != nil {
 		return fmt.Errorf("read live playlist: %w", err)
@@ -1968,7 +1962,7 @@ func RecordingPlaylistReady(cacheDir string) bool {
 	if err != nil || info.IsDir() {
 		return false
 	}
-	 // #nosec G304
+	// #nosec G304
 	data, err := os.ReadFile(filepath.Clean(playlistPath))
 	if err != nil {
 		return false
@@ -2597,14 +2591,14 @@ func ParseRecordingDurationSeconds(length string) (int64, error) {
 // Deletes the recording via OpenWebIF on the receiver.
 func (s *Server) DeleteRecording(w http.ResponseWriter, r *http.Request, recordingId string) {
 	if strings.TrimSpace(recordingId) == "" {
-		http.Error(w, "Missing recording ID", http.StatusBadRequest)
+		writeProblem(w, r, http.StatusBadRequest, "recordings/invalid_id", "Invalid ID", "INVALID_ID", "Missing recording ID", nil)
 		return
 	}
 
 	// Decode ID
 	serviceRef := s.DecodeRecordingID(recordingId)
 	if serviceRef == "" || ValidateRecordingRef(serviceRef) != nil {
-		http.Error(w, "Invalid recording ID", http.StatusBadRequest)
+		writeProblem(w, r, http.StatusBadRequest, "recordings/invalid_id", "Invalid ID", "INVALID_ID", "Invalid recording ID", nil)
 		return
 	}
 
@@ -2622,7 +2616,7 @@ func (s *Server) DeleteRecording(w http.ResponseWriter, r *http.Request, recordi
 	if err := client.DeleteMovie(r.Context(), serviceRef); err != nil {
 		log.L().Error().Err(err).Str("sref", serviceRef).Msg("failed to delete recording")
 		// Map generic error to 500. We could try to parse "not found" but OWI usually returns generic "false"
-		http.Error(w, fmt.Sprintf("Failed to delete recording: %v", err), http.StatusInternalServerError)
+		writeProblem(w, r, http.StatusInternalServerError, "recordings/delete_failed", "Delete Failed", "DELETE_FAILED", fmt.Sprintf("Failed to delete recording: %v", err), nil)
 		return
 	}
 

@@ -2856,7 +2856,7 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	}
 	if options.ErrorHandlerFunc == nil {
 		options.ErrorHandlerFunc = func(w http.ResponseWriter, r *http.Request, err error) {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeProblem(w, r, http.StatusBadRequest, "system/invalid_request", "Invalid Request", "INVALID_REQUEST", err.Error(), nil)
 		}
 	}
 	wrapper := ServerInterfaceWrapper{

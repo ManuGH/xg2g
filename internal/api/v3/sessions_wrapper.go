@@ -63,13 +63,9 @@ func (s *Server) TriggerSystemScan(w http.ResponseWriter, r *http.Request) {
 
 		// Run in background
 		if started := scanner.RunBackground(); started {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusAccepted)
-			_, _ = w.Write([]byte(`{"status":"started"}`))
+			writeJSON(w, http.StatusAccepted, map[string]string{"status": "started"})
 		} else {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"status":"already_running"}`))
+			writeJSON(w, http.StatusOK, map[string]string{"status": "already_running"})
 		}
 	})).ServeHTTP(w, r)
 }
@@ -83,7 +79,7 @@ func (s *Server) GetSystemScanStatus(w http.ResponseWriter, r *http.Request) {
 
 		st, err := read.GetScanStatus(r.Context(), ss)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			writeProblem(w, r, http.StatusInternalServerError, "system/internal_error", "Scan Status Error", "INTERNAL_ERROR", err.Error(), nil)
 			return
 		}
 

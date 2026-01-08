@@ -30,13 +30,13 @@ func (s *Server) GetSeriesRules(w http.ResponseWriter, r *http.Request) {
 func (s *Server) CreateSeriesRule(w http.ResponseWriter, r *http.Request) {
 	var req SeriesRule
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+		writeProblem(w, r, http.StatusBadRequest, "dvr/invalid_input", "Invalid JSON", "INVALID_INPUT", "The request body could not be decoded as JSON", nil)
 		return
 	}
 
 	// Validate keyword
 	if req.Keyword == nil || strings.TrimSpace(*req.Keyword) == "" {
-		http.Error(w, "keyword is required", http.StatusBadRequest)
+		writeProblem(w, r, http.StatusBadRequest, "dvr/invalid_input", "Keyword Required", "INVALID_INPUT", "The rule keyword cannot be empty", nil)
 		return
 	}
 
@@ -45,14 +45,14 @@ func (s *Server) CreateSeriesRule(w http.ResponseWriter, r *http.Request) {
 	// Persist
 	id, err := s.seriesManager.AddRule(dvrRule)
 	if err != nil {
-		http.Error(w, "failed to create rule", http.StatusInternalServerError)
+		writeProblem(w, r, http.StatusInternalServerError, "dvr/save_failed", "Save Failed", "SAVE_FAILED", "Failed to create rule", nil)
 		return
 	}
 
 	// Retrieve created rule with server-managed fields
 	created, ok := s.seriesManager.GetRule(id)
 	if !ok {
-		http.Error(w, "rule not found after creation", http.StatusInternalServerError)
+		writeProblem(w, r, http.StatusInternalServerError, "dvr/not_found", "Rule Not Found", "NOT_FOUND", "Rule not found after creation", nil)
 		return
 	}
 
@@ -67,13 +67,13 @@ func (s *Server) CreateSeriesRule(w http.ResponseWriter, r *http.Request) {
 func (s *Server) UpdateSeriesRule(w http.ResponseWriter, r *http.Request, id string) {
 	var req SeriesRuleUpdate
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+		writeProblem(w, r, http.StatusBadRequest, "dvr/invalid_input", "Invalid JSON", "INVALID_INPUT", "The request body could not be decoded as JSON", nil)
 		return
 	}
 
 	// Validate keyword (already required by schema, but check for empty)
 	if strings.TrimSpace(req.Keyword) == "" {
-		http.Error(w, "keyword cannot be empty", http.StatusBadRequest)
+		writeProblem(w, r, http.StatusBadRequest, "dvr/invalid_input", "Keyword Required", "INVALID_INPUT", "The rule keyword cannot be empty", nil)
 		return
 	}
 
@@ -81,17 +81,17 @@ func (s *Server) UpdateSeriesRule(w http.ResponseWriter, r *http.Request, id str
 
 	if err := s.seriesManager.UpdateRule(id, dvrRule); err != nil {
 		if errors.Is(err, dvr.ErrRuleNotFound) {
-			http.Error(w, "Rule not found", http.StatusNotFound)
+			writeProblem(w, r, http.StatusNotFound, "dvr/not_found", "Rule Not Found", "NOT_FOUND", "The specified rule does not exist", nil)
 			return
 		}
-		http.Error(w, "failed to update rule", http.StatusInternalServerError)
+		writeProblem(w, r, http.StatusInternalServerError, "dvr/save_failed", "Save Failed", "SAVE_FAILED", "Failed to update rule", nil)
 		return
 	}
 
 	// Retrieve updated rule with server-managed fields
 	updated, ok := s.seriesManager.GetRule(id)
 	if !ok {
-		http.Error(w, "Rule not found", http.StatusNotFound)
+		writeProblem(w, r, http.StatusNotFound, "dvr/not_found", "Rule Not Found", "NOT_FOUND", "The specified rule does not exist", nil)
 		return
 	}
 
@@ -104,10 +104,10 @@ func (s *Server) UpdateSeriesRule(w http.ResponseWriter, r *http.Request, id str
 func (s *Server) DeleteSeriesRule(w http.ResponseWriter, r *http.Request, id string) {
 	if err := s.seriesManager.DeleteRule(id); err != nil {
 		if errors.Is(err, dvr.ErrRuleNotFound) {
-			http.Error(w, "Rule not found", http.StatusNotFound)
+			writeProblem(w, r, http.StatusNotFound, "dvr/not_found", "Rule Not Found", "NOT_FOUND", "The specified rule does not exist", nil)
 			return
 		}
-		http.Error(w, "failed to delete rule", http.StatusInternalServerError)
+		writeProblem(w, r, http.StatusInternalServerError, "dvr/save_failed", "Save Failed", "SAVE_FAILED", "Failed to delete rule", nil)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -218,7 +218,7 @@ func (s *Server) RunAllSeriesRules(w http.ResponseWriter, r *http.Request, param
 
 	reports, err := s.seriesEngine.RunOnce(r.Context(), trigger, "")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeProblem(w, r, http.StatusInternalServerError, "dvr/engine_error", "Run Failed", "ENGINE_ERROR", err.Error(), nil)
 		return
 	}
 
@@ -241,15 +241,15 @@ func (s *Server) RunSeriesRule(w http.ResponseWriter, r *http.Request, id string
 	reports, err := s.seriesEngine.RunOnce(r.Context(), trigger, id)
 	if err != nil {
 		if err.Error() == "rule not found: "+id {
-			http.Error(w, "Rule not found", http.StatusNotFound)
+			writeProblem(w, r, http.StatusNotFound, "dvr/not_found", "Rule Not Found", "NOT_FOUND", "The specified rule does not exist", nil)
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeProblem(w, r, http.StatusInternalServerError, "dvr/engine_error", "Run Failed", "ENGINE_ERROR", err.Error(), nil)
 		return
 	}
 
 	if len(reports) == 0 {
-		http.Error(w, "No report generated", http.StatusInternalServerError)
+		writeProblem(w, r, http.StatusInternalServerError, "dvr/engine_error", "Run Failed", "ENGINE_ERROR", "No report generated", nil)
 		return
 	}
 

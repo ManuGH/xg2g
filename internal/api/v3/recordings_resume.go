@@ -35,25 +35,25 @@ func (s *Server) HandleRecordingResume(w http.ResponseWriter, r *http.Request) {
 	recordingID := chi.URLParam(r, "recordingId")
 	serviceRef := s.DecodeRecordingID(recordingID)
 	if serviceRef == "" {
-		http.Error(w, "Invalid recording ID", http.StatusBadRequest)
+		writeProblem(w, r, http.StatusBadRequest, "recordings/invalid_id", "Invalid ID", "INVALID_ID", "The provided recording ID is invalid", nil)
 		return
 	}
 
 	principal := auth.PrincipalFromContext(r.Context())
 	if principal == nil {
 		// Should be caught by auth middleware, but defensive check
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		writeProblem(w, r, http.StatusUnauthorized, "auth/unauthorized", "Unauthorized", "UNAUTHORIZED", "Authentication required", nil)
 		return
 	}
 
 	if s.resumeStore == nil {
-		http.Error(w, "Resume store not available", http.StatusServiceUnavailable)
+		writeProblem(w, r, http.StatusServiceUnavailable, "system/unavailable", "Subsystem Unavailable", "UNAVAILABLE", "Resume store not available", nil)
 		return
 	}
 
 	var req ResumeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		writeProblem(w, r, http.StatusBadRequest, "system/invalid_input", "Invalid Request", "INVALID_INPUT", "Invalid request body", nil)
 		return
 	}
 
@@ -85,7 +85,7 @@ func (s *Server) HandleRecordingResume(w http.ResponseWriter, r *http.Request) {
 
 	if err := s.resumeStore.Put(r.Context(), principal.ID, recordingID, state); err != nil {
 		log.L().Error().Err(err).Msg("failed to save resume point")
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		writeProblem(w, r, http.StatusInternalServerError, "system/save_failed", "Save Failed", "SAVE_FAILED", "Failed to save resume point", nil)
 		return
 	}
 

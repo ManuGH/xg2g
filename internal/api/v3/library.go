@@ -21,7 +21,7 @@ func (s *Server) GetLibraryRoots(w http.ResponseWriter, r *http.Request) {
 	s.mu.RUnlock()
 
 	if librarySvc == nil {
-		http.Error(w, "Library not enabled", http.StatusServiceUnavailable)
+		writeProblem(w, r, http.StatusServiceUnavailable, "system/unavailable", "Subsystem Unavailable", "UNAVAILABLE", "Library not enabled", nil)
 		return
 	}
 
@@ -45,7 +45,7 @@ func (s *Server) GetLibraryRootItems(w http.ResponseWriter, r *http.Request, roo
 	s.mu.RUnlock()
 
 	if librarySvc == nil {
-		http.Error(w, "Library not enabled", http.StatusServiceUnavailable)
+		writeProblem(w, r, http.StatusServiceUnavailable, "system/unavailable", "Subsystem Unavailable", "UNAVAILABLE", "Library not enabled", nil)
 		return
 	}
 

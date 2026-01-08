@@ -9,6 +9,7 @@ package v3
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/ManuGH/xg2g/internal/log"
 )
@@ -159,28 +160,25 @@ var (
 	}
 )
 
-// RespondError sends a structured error response to the client.
+// RespondError sends a structured error response to the client via writeProblem.
 // It automatically extracts the request ID from the context.
 func RespondError(w http.ResponseWriter, r *http.Request, statusCode int, apiErr *APIError, details ...any) {
-	// Clone the error to avoid modifying the original
-	response := &APIError{
-		Code:      apiErr.Code,
-		Message:   apiErr.Message,
-		RequestId: log.RequestIDFromContext(r.Context()),
-	}
-
-	// Add optional details if provided
+	var d any
 	if len(details) > 0 {
-		response.Details = &details[0]
+		d = details[0]
 	}
 
-	// Set headers
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
+	// Map generic APIError to RFC 7807 ProblemDetails
+	//   - title: Human-readable short label (APIError.Message)
+	//   - code: Stable machine-readable short code (APIError.Code)
+	//   - type: Prefixed code for URI reference
+	problemType := "error/" + strings.ToLower(apiErr.Code)
 
-	// Encode response
-	if err := json.NewEncoder(w).Encode(response); err != nil {
-		// Fallback if JSON encoding fails
-		http.Error(w, apiErr.Message, statusCode)
+	extra := make(map[string]any)
+	if d != nil {
+		extra["details"] = d
 	}
+
+	// title = Message (human), code = Code (machine), detail = ""
+	writeProblem(w, r, statusCode, problemType, apiErr.Message, apiErr.Code, "", extra)
 }

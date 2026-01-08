@@ -9,9 +9,10 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/ManuGH/xg2g/internal/control/middleware"
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/control/middleware"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/go-chi/chi/v5"
 )
 
 // NewHandler creates a V3 API handler with all required middleware wired in.
@@ -57,11 +58,21 @@ func NewHandler(svc *Server, cfg config.AppConfig) (http.Handler, error) {
 		svc.authMiddleware,
 	}
 
-	// 3. Create Handler
+	// 3. Create Router with RFC 7807 compliant 404/405 handlers
+	r := chi.NewRouter()
+	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
+		writeProblem(w, r, http.StatusNotFound, "system/not_found", "Not Found", "NOT_FOUND", "The requested resource was not found", nil)
+	})
+	r.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) {
+		writeProblem(w, r, http.StatusMethodNotAllowed, "system/method_not_allowed", "Method Not Allowed", "METHOD_NOT_ALLOWED", "The requested method is not allowed for this resource", nil)
+	})
+
+	// 4. Create Handler
 	// We use the generated HandlerWithOptions to apply the BaseURL and our middleware stack.
 	h := HandlerWithOptions(svc, ChiServerOptions{
 		BaseURL:     "/api/v3",
 		Middlewares: stack,
+		BaseRouter:  r,
 	})
 
 	return h, nil

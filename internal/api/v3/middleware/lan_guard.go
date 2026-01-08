@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/api/v3/problem"
 )
 
 type LANGuardConfig struct {
@@ -83,17 +83,14 @@ func parseCIDRs(cidrs []string) ([]*net.IPNet, error) {
 func (g *LANGuard) RequireLAN(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ip := g.resolveClientIP(r)
-		logger := log.WithComponentFromContext(r.Context(), "authz.lan")
 
 		if ip == nil {
-			logger.Warn().Str("remote_addr", r.RemoteAddr).Msg("failed to parse remote ip")
-			http.Error(w, "Forbidden", http.StatusForbidden)
+			problem.Write(w, r, http.StatusForbidden, "auth/forbidden", "Forbidden", "FORBIDDEN", "Failed to parse remote IP", nil)
 			return
 		}
 
 		if !g.isIPAllowed(ip, g.allowedClient) {
-			logger.Warn().Str("ip", ip.String()).Msg("access denied: not in allowed LAN CIDRs")
-			http.Error(w, "Forbidden", http.StatusForbidden)
+			problem.Write(w, r, http.StatusUnauthorized, "auth/unauthorized", "Unauthorized", "UNAUTHORIZED", "LAN access required", nil)
 			return
 		}
 		next.ServeHTTP(w, r)

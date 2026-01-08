@@ -20,8 +20,8 @@ type ctxPrincipalKey struct{}
 
 // Note: securityHeaders is defined in middleware.go
 
-// authMiddleware is a middleware that enforces API token authentication.
-func (s *Server) authMiddleware(next http.Handler) http.Handler {
+// authMiddlewareImpl is the implementation of the API token authentication middleware.
+func (s *Server) authMiddlewareImpl(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cfg := s.GetConfig()
 		hasTokens := cfg.APIToken != "" || len(cfg.APITokens) > 0
