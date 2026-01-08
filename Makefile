@@ -730,4 +730,10 @@ schema-validate: ## Validate all YAML config files against JSON Schema
 # Ensures internal/control/** does not directly access domain stores
 .PHONY: gate-a
 gate-a:
-./scripts/verify_gate_a_control_store.sh
+
+.PHONY: gate-a quality-gates
+
+gate-a:
+	@./scripts/verify_gate_a_control_store.sh
+
+quality-gates: gate-a
