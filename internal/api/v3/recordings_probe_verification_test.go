@@ -18,7 +18,7 @@ func TestProbeDurationIntegration(t *testing.T) {
 
 	// 2. Create a dummy test file (5 seconds)
 	tmpFile := "/tmp/xg2g_probe_regression_test.mp4"
-	defer os.Remove(tmpFile)
+	defer func() { _ = os.Remove(tmpFile) }()
 
 	// Generate 5s video using ffmpeg (assumed present if ffprobe is, or we fail which is fine for local verification)
 	// We can also check ffmpeg, but typically they come together.

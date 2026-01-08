@@ -50,12 +50,15 @@ func TestResolveHLSRoot_Matrix(t *testing.T) {
 		},
 		{
 			name:             "Default_TargetExists",
-			setupTarget:      func(d string) { os.MkdirAll(d, 0755) },
+			setupTarget:      func(d string) { _ = os.MkdirAll(d, 0750) },
 			expectRootSuffix: "hls",
 		},
 		{
-			name:             "Default_LegacyExists_NoTarget_Migrates",
-			setupLegacy:      func(d string) { os.MkdirAll(d, 0755); os.WriteFile(filepath.Join(d, "data.ts"), []byte("data"), 0644) },
+			name: "Default_LegacyExists_NoTarget_Migrates",
+			setupLegacy: func(d string) {
+				_ = os.MkdirAll(d, 0750)
+				_ = os.WriteFile(filepath.Join(d, "data.ts"), []byte("data"), 0600)
+			},
 			expectRootSuffix: "hls",
 			expectMigrated:   true,
 		},
@@ -63,21 +66,24 @@ func TestResolveHLSRoot_Matrix(t *testing.T) {
 			name: "Default_LegacySymlink_SkipsMigration",
 			setupLegacy: func(d string) {
 				realDir := filepath.Join(filepath.Dir(d), "real_legacy")
-				os.MkdirAll(realDir, 0755)
-				os.Symlink(realDir, d)
+				_ = os.MkdirAll(realDir, 0750)
+				_ = os.Symlink(realDir, d)
 			},
 			expectRootSuffix: "v3-hls",
 			expectSkipped:    true,
 		},
 		{
-			name:             "Default_BothExist_LegacyContent_TargetWins",
-			setupTarget:      func(d string) { os.MkdirAll(d, 0755) },
-			setupLegacy:      func(d string) { os.MkdirAll(d, 0755); os.WriteFile(filepath.Join(d, "data.ts"), []byte("data"), 0644) },
+			name:        "Default_BothExist_LegacyContent_TargetWins",
+			setupTarget: func(d string) { _ = os.MkdirAll(d, 0750) },
+			setupLegacy: func(d string) {
+				_ = os.MkdirAll(d, 0750)
+				_ = os.WriteFile(filepath.Join(d, "data.ts"), []byte("data"), 0600)
+			},
 			expectRootSuffix: "hls",
 		},
 		{
 			name:        "Error_TargetIsFile",
-			setupTarget: func(d string) { os.WriteFile(d, []byte("file"), 0644) },
+			setupTarget: func(d string) { _ = os.WriteFile(d, []byte("file"), 0600) },
 			expectError: true,
 		},
 	}
@@ -90,7 +96,7 @@ func TestResolveHLSRoot_Matrix(t *testing.T) {
 
 			// Isolated Data Dir
 			dataDir := filepath.Join(tmpDir, tt.name)
-			os.MkdirAll(dataDir, 0755)
+			_ = os.MkdirAll(dataDir, 0750)
 
 			targetPath := filepath.Join(dataDir, TargetDirName)
 			legacyPath := filepath.Join(dataDir, LegacyDirName)

@@ -1,0 +1,601 @@
+// Copyright (c) 2025 ManuGH
+// Licensed under the PolyForm Noncommercial License 1.0.0
+
+package manager
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/domain/session/ports"
+	"github.com/ManuGH/xg2g/internal/domain/session/store"
+	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/rs/zerolog"
+)
+
+type sessionContext struct {
+	Mode       string
+	ServiceRef string
+	IsVOD      bool
+}
+
+type terminationCause struct {
+	IsClean          bool
+	ContextCancelled bool
+	Error            error
+}
+
+type finalOutcome struct {
+	State  model.SessionState
+	Reason model.ReasonCode
+	Detail string
+}
+
+func (o *Orchestrator) resolveSession(ctx context.Context, e model.StartSessionEvent) (string, *model.SessionRecord, context.Context, error) {
+	correlationID := e.CorrelationID
+	var session *model.SessionRecord
+	if o.Store != nil {
+		if sess, err := o.Store.GetSession(ctx, e.SessionID); err == nil && sess != nil {
+			session = sess
+			if correlationID == "" {
+				correlationID = sess.CorrelationID
+			}
+		}
+	}
+	if correlationID != "" {
+		ctx = log.ContextWithCorrelationID(ctx, correlationID)
+	}
+	return correlationID, session, ctx, nil
+}
+
+func (o *Orchestrator) buildSessionContext(session *model.SessionRecord, e model.StartSessionEvent) (*sessionContext, error) {
+	sessionMode := model.ModeLive
+	if session.ContextData != nil {
+		if raw := strings.TrimSpace(session.ContextData[model.CtxKeyMode]); raw != "" {
+			sessionMode = strings.ToUpper(raw)
+		}
+	}
+	if sessionMode != model.ModeLive && sessionMode != model.ModeRecording {
+		sessionMode = model.ModeLive
+	}
+
+	playbackSource := e.ServiceRef
+	if sessionMode == model.ModeRecording {
+		if session.ContextData != nil {
+			playbackSource = strings.TrimSpace(session.ContextData[model.CtxKeySource])
+		}
+		if playbackSource == "" {
+			return nil, newReasonError(model.RInvariantViolation, "missing recording source", nil)
+		}
+	}
+
+	return &sessionContext{
+		Mode:       sessionMode,
+		ServiceRef: playbackSource,
+		IsVOD:      session.Profile.VOD || sessionMode == model.ModeRecording,
+	}, nil
+}
+
+func detectTerminationCause(ctx context.Context, retErr error) terminationCause {
+	if retErr == nil {
+		if ctx.Err() != nil {
+			return terminationCause{ContextCancelled: true}
+		}
+		return terminationCause{IsClean: true}
+	}
+	return terminationCause{Error: retErr}
+}
+
+func (o *Orchestrator) mapCauseToOutcome(cause terminationCause, vodMode bool) finalOutcome {
+	finalState := model.SessionFailed
+	var reason model.ReasonCode
+	detail := ""
+
+	if cause.IsClean {
+		if vodMode {
+			finalState = model.SessionDraining
+			reason = model.RNone
+			detail = "recording completed"
+		} else {
+			finalState = model.SessionFailed
+			reason = model.RProcessEnded
+		}
+	} else if cause.ContextCancelled {
+		finalState = model.SessionStopped
+		reason = model.RClientStop
+	} else {
+		reason, detail = classifyReason(cause.Error)
+		if reason == model.RClientStop {
+			finalState = model.SessionStopped
+		}
+	}
+
+	return finalOutcome{
+		State:  finalState,
+		Reason: reason,
+		Detail: detail,
+	}
+}
+
+type leaseAcquisition struct {
+	Slot         int
+	TunerLease   store.Lease
+	DedupLease   store.Lease
+	HBCancel     context.CancelFunc
+	HBCtx        context.Context
+	ReleaseDedup func()
+}
+
+func (o *Orchestrator) acquireLeases(
+	ctx context.Context,
+	sessionCtx *sessionContext,
+	event model.StartSessionEvent,
+	leaseOwner string,
+	logger zerolog.Logger,
+) (*leaseAcquisition, error) {
+	res := &leaseAcquisition{
+		Slot:         -1,
+		ReleaseDedup: func() {},
+		HBCancel:     func() {},
+	}
+
+	if sessionCtx.Mode == model.ModeLive {
+		dedupKey := o.LeaseKeyFunc(event)
+		dedupLease, ok, err := o.Store.TryAcquireLease(ctx, dedupKey, leaseOwner, o.LeaseTTL)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, newReasonError(model.RLeaseBusy, DedupLeaseHeldDetail, nil)
+		}
+		res.DedupLease = dedupLease
+		res.ReleaseDedup = func() {
+			ctxRel, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = o.Store.ReleaseLease(ctxRel, dedupLease.Key(), dedupLease.Owner())
+		}
+	}
+
+	if sessionCtx.Mode == model.ModeLive {
+		slot, tunerLease, ok, err := o.acquireTunerLease(ctx, o.TunerSlots, leaseOwner)
+		if err != nil {
+			res.ReleaseDedup()
+			return nil, err
+		}
+		if !ok {
+			res.ReleaseDedup()
+			tunerBusyTotal.WithLabelValues().Inc()
+			return nil, newReasonError(model.RLeaseBusy, "no tuner slots available", nil)
+		}
+		res.Slot = slot
+		res.TunerLease = tunerLease
+	}
+
+	hbCtx, hbCancel := context.WithCancel(ctx)
+	res.HBCancel = hbCancel
+	res.HBCtx = hbCtx
+
+	o.registerActive(event.SessionID, hbCancel)
+
+	if sessionCtx.Mode == model.ModeLive {
+		go func() {
+			t := time.NewTicker(o.HeartbeatEvery)
+			defer t.Stop()
+			for {
+				select {
+				case <-hbCtx.Done():
+					return
+				case <-t.C:
+					_, ok, err := o.Store.RenewLease(hbCtx, res.TunerLease.Key(), res.TunerLease.Owner(), o.LeaseTTL)
+					if err != nil {
+						logger.Warn().Err(err).Msg("heartbeat renewal error")
+					} else if !ok {
+						logger.Warn().Str("lease", res.TunerLease.Key()).Str("sid", event.SessionID).Msg("tuner lease lost, aborting")
+						leaseLostTotalLegacy.WithLabelValues().Inc()
+						_, _ = o.Store.UpdateSession(hbCtx, event.SessionID, func(r *model.SessionRecord) error {
+							if !r.State.IsTerminal() {
+								r.State = model.SessionFailed
+								r.Reason = model.RLeaseExpired
+								r.UpdatedAtUnix = time.Now().Unix()
+							}
+							return nil
+						})
+						hbCancel()
+						return
+					}
+				}
+			}
+		}()
+	}
+
+	return res, nil
+}
+
+// startPipeline uses the new MediaPipeline Port (Step 4.2).
+func (o *Orchestrator) startPipeline(
+	hbCtx context.Context,
+	e model.StartSessionEvent,
+	sessionCtx *sessionContext,
+	currentProfileSpec model.ProfileSpec,
+	tunerSlot int,
+) (ports.RunHandle, error) {
+	// Build StreamSpec (Domain Object)
+	spec := ports.StreamSpec{
+		SessionID: e.SessionID,
+		Mode:      ports.ModeLive, // Default
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard, // Hardcoded for simplified ProfileSpec mapping for now
+		Source: ports.StreamSource{
+			ID:        sessionCtx.ServiceRef,
+			Type:      ports.SourceTuner, // Default assumes Tuner/Ref
+			TunerSlot: tunerSlot,
+		},
+	}
+
+	if sessionCtx.Mode == model.ModeRecording {
+		spec.Mode = ports.ModeRecording
+		spec.Source.Type = ports.SourceFile // Recording builds from file source usually? Or Tuner?
+		// "Recording Mode" in Orchestrator meant processing a recording (viewing).
+		// Wait, "ModeRecording" in Orchestrator logic meant "Viewing a Recording".
+		// In that case SourceType is File.
+		spec.Source.Type = ports.SourceFile
+	} else if strings.HasPrefix(sessionCtx.ServiceRef, "http") {
+		spec.Source.Type = ports.SourceURL
+	}
+
+	// Profiles: map currentProfileSpec to Quality?
+	// For now, Adapter builder handles details (or ignores quality spec).
+
+	handle, err := o.Pipeline.Start(hbCtx, spec)
+	if err != nil {
+		return "", newReasonError(model.RPipelineStartFailed, "pipeline start failed", err)
+	}
+
+	return handle, nil
+}
+
+func (o *Orchestrator) waitForReady(
+	ctx context.Context,
+	hbCtx context.Context,
+	e model.StartSessionEvent,
+	currentProfileSpec model.ProfileSpec,
+	handle ports.RunHandle,
+	playlistPath string,
+	vodMode bool,
+	repairAttempted bool,
+	startTime time.Time,
+	logger zerolog.Logger,
+	ttfpRecorded *bool,
+) (ready bool, reason model.ReasonCode, detail string) {
+	playlistReadyTimeout := 45 * time.Second
+	if repairAttempted {
+		playlistReadyTimeout = 20 * time.Second
+	}
+	if vodMode {
+		playlistReadyTimeout = 2 * time.Minute
+	}
+	playlistPollInterval := 200 * time.Millisecond
+	playlistDeadline := time.Now().Add(playlistReadyTimeout)
+
+	logger.Info().
+		Str("session_id", e.SessionID).
+		Str("service_ref", e.ServiceRef).
+		Str("profile", currentProfileSpec.Name).
+		Bool("repair_mode", repairAttempted).
+		Dur("timeout", playlistReadyTimeout).
+		Msg("waiting for playlist to become ready")
+
+	for {
+		// Check process health first
+		status := o.Pipeline.Health(ctx, handle)
+		if !status.Healthy {
+			return false, model.RProcessEnded, "process died during startup: " + status.Message
+		}
+
+		ready, err := o.checkPlaylistReady(playlistPath, vodMode, ttfpRecorded, e.ProfileID, startTime)
+		if err == nil && ready {
+			return true, "", ""
+		}
+
+		if time.Now().After(playlistDeadline) {
+			// reason, detail := o.classifyFailure(...) // Removed for now due to complexity of mapping logs
+			return false, model.RPackagerFailed, "playlist not ready timeout"
+		}
+
+		select {
+		case <-hbCtx.Done():
+			return false, model.RClientStop, "context canceled"
+		case <-time.After(playlistPollInterval):
+			// continue
+		}
+	}
+}
+
+func (o *Orchestrator) waitForProcessExit(ctx context.Context, handle ports.RunHandle) error {
+	// Polling Wait Loop
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			status := o.Pipeline.Health(ctx, handle)
+			if !status.Healthy {
+				// Process exited
+				return nil
+			}
+		}
+	}
+}
+
+func (o *Orchestrator) checkPlaylistReady(
+	playlistPath string,
+	vodMode bool,
+	ttfpRecorded *bool,
+	profileID string,
+	startTime time.Time,
+) (bool, error) {
+	info, err := os.Stat(playlistPath)
+	if err != nil || info.Size() == 0 {
+		return false, err
+	}
+	// #nosec G304
+	content, err := os.ReadFile(filepath.Clean(playlistPath))
+	if err != nil {
+		return false, err
+	}
+	contentText := string(content)
+	if !strings.Contains(contentText, "#EXTM3U") {
+		return false, nil
+	}
+	if vodMode && !strings.Contains(contentText, "#EXT-X-ENDLIST") {
+		return false, nil
+	}
+	segmentURI := firstSegmentFromPlaylist(content)
+	if vodMode {
+		if lastSegment := lastSegmentFromPlaylist(content); lastSegment != "" {
+			segmentURI = lastSegment
+		}
+	}
+	if segmentURI == "" {
+		return false, nil
+	}
+	segmentPath := filepath.Join(filepath.Dir(playlistPath), segmentURI)
+	segInfo, segErr := os.Stat(segmentPath)
+	if segErr == nil && segInfo.Size() > 0 {
+		if !*ttfpRecorded {
+			observeTTFP(profileID, startTime)
+			*ttfpRecorded = true
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
+func firstSegmentFromPlaylist(content []byte) string {
+	scanner := bufio.NewScanner(bytes.NewReader(content))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if strings.Contains(line, "..") || filepath.IsAbs(line) {
+			continue
+		}
+		return line
+	}
+	return ""
+}
+
+func lastSegmentFromPlaylist(content []byte) string {
+	scanner := bufio.NewScanner(bytes.NewReader(content))
+	var last string
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if strings.Contains(line, "..") || filepath.IsAbs(line) {
+			continue
+		}
+		last = line
+	}
+	return last
+}
+
+func (o *Orchestrator) transitionStarting(ctx context.Context, e model.StartSessionEvent, sessionCtx *sessionContext, slot int) error {
+	o.recordTransition(model.SessionUnknown, model.SessionStarting)
+	_, err := o.Store.UpdateSession(ctx, e.SessionID, func(r *model.SessionRecord) error {
+		if r.State.IsTerminal() || r.State == model.SessionStopping {
+			return fmt.Errorf("session state %s, aborting start", r.State)
+		}
+		r.State = model.SessionStarting
+		r.UpdatedAtUnix = time.Now().Unix()
+		if r.ContextData == nil {
+			r.ContextData = make(map[string]string)
+		}
+		if sessionCtx.Mode == model.ModeLive && slot >= 0 {
+			r.ContextData[model.CtxKeyTunerSlot] = strconv.Itoa(slot)
+		}
+		return nil
+	})
+	if err != nil {
+		jobsTotal.WithLabelValues("failed_starting").Inc()
+		return err
+	}
+	return nil
+}
+
+func (o *Orchestrator) transitionReady(ctx context.Context, e model.StartSessionEvent) error {
+	o.recordTransition(model.SessionPriming, model.SessionReady)
+	_, err := o.Store.UpdateSession(ctx, e.SessionID, func(r *model.SessionRecord) error {
+		r.State = model.SessionReady
+		r.UpdatedAtUnix = time.Now().Unix()
+		r.LastAccessUnix = time.Now().Unix()
+		return nil
+	})
+	return err
+}
+
+func (o *Orchestrator) runExecutionLoop(
+	ctx context.Context,
+	hbCtx context.Context,
+	e model.StartSessionEvent,
+	sessionCtx *sessionContext,
+	session *model.SessionRecord,
+	startTime time.Time,
+	logger zerolog.Logger,
+	recordStart func(string, model.ReasonCode),
+	tunerSlot int,
+) (ports.RunHandle, model.ProfileSpec, error) {
+	initialProfileSpec := session.Profile
+	if sessionCtx.IsVOD {
+		initialProfileSpec.VOD = true
+	}
+	currentProfileSpec := initialProfileSpec
+	repairAttempted := false
+	ttfpRecorded := false
+
+	var handle ports.RunHandle
+	var failReason model.ReasonCode
+	var failDetail string
+
+	for attempt := 1; attempt <= 2; attempt++ {
+		var err error
+		handle, err = o.startPipeline(hbCtx, e, sessionCtx, currentProfileSpec, tunerSlot)
+		if err != nil {
+			return "", model.ProfileSpec{}, err
+		}
+
+		if attempt == 1 {
+			o.recordTransition(model.SessionStarting, model.SessionPriming)
+			_, err = o.Store.UpdateSession(ctx, e.SessionID, func(r *model.SessionRecord) error {
+				if r.State.IsTerminal() || r.State == model.SessionStopping {
+					return fmt.Errorf("session state %s, aborting priming", r.State)
+				}
+				r.State = model.SessionPriming
+				r.UpdatedAtUnix = time.Now().Unix()
+				return nil
+			})
+			if err != nil {
+				return "", model.ProfileSpec{}, err
+			}
+			if o.HLSRoot != "" {
+				sessionDir := filepath.Join(o.HLSRoot, "sessions", e.SessionID)
+				go observeFirstSegment(hbCtx, sessionDir, startTime, e.ProfileID)
+			}
+		}
+
+		playlistReadyResult := false
+		if o.HLSRoot != "" {
+			playlistPath := filepath.Join(o.HLSRoot, "sessions", e.SessionID, "index.m3u8")
+			var waitReason model.ReasonCode
+			var waitDetail string
+
+			playlistReadyResult, waitReason, waitDetail = o.waitForReady(
+				ctx, hbCtx, e, currentProfileSpec, handle,
+				playlistPath, sessionCtx.IsVOD, repairAttempted,
+				startTime, logger, &ttfpRecorded,
+			)
+
+			if !playlistReadyResult {
+				failReason = waitReason
+				failDetail = waitDetail
+			}
+		} else {
+			playlistReadyResult = true
+		}
+
+		if playlistReadyResult {
+			return handle, currentProfileSpec, nil
+		}
+
+		// Failure Handling
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), o.PipelineStopTimeout)
+		_ = o.Pipeline.Stop(stopCtx, handle)
+		stopCancel()
+
+		// Simplified Retry Logic (Step 4.2 Decoupling)
+		// We stripped classifyFailure (ffmpeg logs) so we treat all failures as "unknown" or "packager".
+		// For now, we abort after 1 attempt or blind retry.
+		// If fails, we just return error.
+		return "", model.ProfileSpec{}, newReasonError(failReason, failDetail, nil)
+	}
+	return "", model.ProfileSpec{}, newReasonError(model.RUnknown, "execution loop failed", nil)
+}
+
+func (o *Orchestrator) finalizeDeferred(
+	ctx context.Context,
+	event model.StartSessionEvent,
+	sessionPtr **model.SessionRecord,
+	sessionCtx *sessionContext,
+	logger zerolog.Logger,
+	startRecorded *bool,
+	recordStart func(string, model.ReasonCode),
+	startResultForReason func(model.ReasonCode) string,
+	retErr *error,
+) {
+	session := *sessionPtr
+	cause := detectTerminationCause(ctx, *retErr)
+	outcome := o.mapCauseToOutcome(cause, sessionCtx.IsVOD)
+
+	if outcome.Reason == model.RLeaseBusy && outcome.Detail == DedupLeaseHeldDetail {
+		return
+	}
+
+	_, _ = o.Store.UpdateSession(context.Background(), event.SessionID, func(r *model.SessionRecord) error {
+		if r.State.IsTerminal() && r.State != model.SessionStopping {
+			return nil
+		}
+
+		o.recordTransition(r.State, outcome.State)
+
+		r.State = outcome.State
+		if outcome.State == model.SessionFailed {
+			r.PipelineState = model.PipeFail
+		} else {
+			r.PipelineState = model.PipeStopped
+		}
+		if r.Reason == "" || r.Reason == model.RNone || r.Reason == model.RUnknown {
+			r.Reason = outcome.Reason
+		}
+		if outcome.Detail != "" {
+			r.ReasonDetail = outcome.Detail
+		}
+		r.UpdatedAtUnix = time.Now().Unix()
+		return nil
+	})
+
+	if !sessionCtx.IsVOD || outcome.State == model.SessionFailed {
+		o.cleanupFiles(event.SessionID)
+	}
+
+	sessionEndTotal.WithLabelValues(string(outcome.Reason), event.ProfileID).Inc()
+
+	logEvt := logger.Info().
+		Str("event", "hls.session_end").
+		Str("sid", event.SessionID).
+		Str("reason", string(outcome.Reason)).
+		Str("profile", event.ProfileID)
+
+	if outcome.Detail != "" {
+		logEvt.Str("detail", outcome.Detail)
+	}
+	logEvt.Msg("session ended")
+
+	o.ForceReleaseLeases(context.Background(), event.SessionID, event.ServiceRef, session)
+
+	if !*startRecorded {
+		recordStart(startResultForReason(outcome.Reason), outcome.Reason)
+	}
+}

@@ -17,9 +17,9 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
-	"github.com/ManuGH/xg2g/internal/pipeline/model"
+	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
-	"github.com/ManuGH/xg2g/internal/pipeline/store"
+	"github.com/ManuGH/xg2g/internal/domain/session/store"
 )
 
 // ---- SpyStore ----
@@ -248,7 +248,7 @@ func TestLANGuard_UntrustedProxy(t *testing.T) {
 
 		// XFF = Public IP
 		resp := doReq(t, client, http.MethodGet, srv.url+"/api/v3/sessions", nil, "token-admin", "8.8.8.8")
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusForbidden {
 			t.Errorf("expected 403 (XFF honored), got %d", resp.StatusCode)
@@ -264,7 +264,7 @@ func TestLANGuard_UntrustedProxy(t *testing.T) {
 
 		// XFF = Public IP
 		resp := doReq(t, client, http.MethodGet, srv.url+"/api/v3/sessions", nil, "token-admin", "8.8.8.8")
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode == http.StatusForbidden {
 			t.Errorf("expected NOT 403 (XFF ignored, Localhost used), got %d", resp.StatusCode)
@@ -290,7 +290,7 @@ func TestLANGuard_UntrustedProxy(t *testing.T) {
 
 		// XFF = "Public, TrustedInternal"
 		resp := doReq(t, client, http.MethodGet, srv.url+"/api/v3/sessions", nil, "token-admin", "8.8.8.8, 10.0.0.5")
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusForbidden {
 			t.Errorf("expected 403 (8.8.8.8 resolved as client), got %d", resp.StatusCode)
@@ -343,7 +343,7 @@ func newTestServerConfig(t *testing.T, spy *SpyStore, spyBus *SpyBus, fn func(*c
 	cfg.RateLimitEnabled = false
 	cfg.Engine.TunerSlots = []int{0}
 
-	_ = os.MkdirAll(cfg.DataDir+"/picons", 0755)
+	_ = os.MkdirAll(cfg.DataDir+"/picons", 0750)
 
 	cfg.APIToken = ""
 	cfg.APITokens = []config.ScopedToken{
@@ -514,7 +514,7 @@ func TestAuthEnforcement_TableDriven(t *testing.T) {
 			}
 
 			resp := doReq(t, client, c.method, srv.url+c.path, body, c.token, "")
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != c.wantStatus {
 				t.Errorf("expected %d, got %d", c.wantStatus, resp.StatusCode)
@@ -547,7 +547,7 @@ func TestV3WriteRouteRequiresWriteScope(t *testing.T) {
 	}
 
 	resp := doReq(t, client, http.MethodPost, srv.url+"/api/v3/intents", body, tok.read, "127.0.0.1")
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusForbidden {
 		t.Errorf("expected 403 for read token on write route, got %d", resp.StatusCode)
@@ -567,7 +567,7 @@ func TestLANGuard_PublicEndpoints(t *testing.T) {
 		t.Run("public_ip_forbidden_"+p, func(t *testing.T) {
 			// Simulate Public IP
 			resp := doReq(t, client, http.MethodGet, srv.url+p, nil, "token-admin", "8.8.8.8")
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != http.StatusForbidden {
 				t.Errorf("expected 403 for public IP, got %d", resp.StatusCode)
@@ -578,7 +578,7 @@ func TestLANGuard_PublicEndpoints(t *testing.T) {
 			// 10.x should be allowed
 			// Note: Response might be 404 (file missing) but NOT 403
 			resp := doReq(t, client, http.MethodGet, srv.url+p, nil, "token-admin", "10.10.55.123")
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode == http.StatusForbidden {
 				t.Errorf("expected not-403 for LAN IP, got %d", resp.StatusCode)
@@ -627,7 +627,7 @@ func runRaceTest(t *testing.T, srv testServer, tok testTokens, spy *SpyStore, sp
 				"serviceRef": "1:0:19:132F:3EF:1:C00000:0:0:0:RACETEST",
 			}
 			resp := doReq(t, client, http.MethodPost, srv.url+"/api/v3/intents", body, tok.write, "127.0.0.1")
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			statuses[idx] = resp.StatusCode
 
 			// Parse response for SessionID

@@ -37,12 +37,11 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
-	"github.com/ManuGH/xg2g/internal/pipeline/store"
+	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	fsplat "github.com/ManuGH/xg2g/internal/platform/fs"
 	"github.com/ManuGH/xg2g/internal/recordings"
 	"github.com/ManuGH/xg2g/internal/vod"
 	"github.com/go-chi/chi/v5"
-	"golang.org/x/sync/singleflight"
 
 	"github.com/ManuGH/xg2g/internal/resilience"
 )
@@ -73,18 +72,13 @@ type Server struct {
 	piconSemaphore chan struct{} // Limit concurrent upstream picon fetches
 
 	// EPG Cache (P1 Performance Fix)
-	epgCache      *epg.TV
-	epgCacheTime  time.Time
-	epgCacheMTime time.Time
-	epgSfg        singleflight.Group
+	epgCache *epg.TV
 
 	// Recording Playback (VOD cache generation)
 	// Phase B: SOA Refactor - VOD Manager
 	vodManager vod.ManagerAPI
 
 	// OpenWebIF Client Cache (P1 Performance Fix)
-	owiClient *openwebif.Client
-	owiEpoch  uint64
 
 	// v3 Integration
 	v3Handler   *v3.Server
@@ -95,9 +89,6 @@ type Server struct {
 
 	// Recording Playback Path Mapper
 	recordingPathMapper *recordings.PathMapper
-
-	// Phase 9: Health Stats
-	lastEviction int64 // Atomic unix timestamp
 
 	// P8.2: Hardening & Test Stability
 	preflightCheck v3.PreflightCheckFunc
@@ -243,6 +234,9 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager) *Server {
 	// Initialize a conservative default circuit breaker (3 failures -> 30s open)
 	s.cb = resilience.NewCircuitBreaker("api_refresh", 3, 30*time.Second, resilience.WithPanicRecovery(true))
 
+	// Initialize health manager
+	s.healthManager = health.NewManager(cfg.Version)
+
 	// Wire v3 Handler dependencies
 	s.v3Handler.SetDependencies(
 		s.v3Bus,
@@ -299,9 +293,6 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager) *Server {
 			Str("device_id", hdhrConf.DeviceID).
 			Msg("HDHomeRun emulation enabled")
 	}
-
-	// Initialize health manager
-	s.healthManager = health.NewManager(cfg.Version)
 
 	// Register health checkers
 	playlistName := s.snap.Runtime.PlaylistFilename

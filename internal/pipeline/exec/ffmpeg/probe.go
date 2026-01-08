@@ -72,6 +72,7 @@ func ProbeURL(ctx context.Context, url string) (*StreamProbeResult, error) {
 		"-i", url,
 	}
 
+	// #nosec G204
 	cmd := exec.CommandContext(ctx, "ffprobe", args...)
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout

@@ -7,7 +7,7 @@ package exec
 import (
 	"context"
 
-	"github.com/ManuGH/xg2g/internal/pipeline/model"
+	"github.com/ManuGH/xg2g/internal/domain/session/model"
 )
 
 // Tuner manages the tuning hardware or source.

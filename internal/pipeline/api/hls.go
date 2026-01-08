@@ -19,7 +19,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/platform/fs"
 	"github.com/ManuGH/xg2g/internal/log"
-	"github.com/ManuGH/xg2g/internal/pipeline/model"
+	"github.com/ManuGH/xg2g/internal/domain/session/model"
 )
 
 const hlsPlaylistWaitTimeout = 5 * time.Second

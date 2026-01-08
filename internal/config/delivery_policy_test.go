@@ -9,9 +9,9 @@ import (
 
 // setupEnv sets up the minimum required environment variables for validation to pass
 func setupEnv(t *testing.T) func() {
-	os.Setenv("XG2G_OWI_BASE", "http://test-enigma2-host")
+	_ = os.Setenv("XG2G_OWI_BASE", "http://test-enigma2-host")
 	return func() {
-		os.Unsetenv("XG2G_OWI_BASE")
+		_ = os.Unsetenv("XG2G_OWI_BASE")
 	}
 }
 
@@ -91,8 +91,8 @@ func TestDeliveryPolicyValidation_RejectsInvalid(t *testing.T) {
 // TestDeprecatedEnvVarFailStart verifies that XG2G_STREAM_PROFILE causes fail-start
 func TestDeprecatedEnvVarFailStart(t *testing.T) {
 	// Set the deprecated env var
-	os.Setenv("XG2G_STREAM_PROFILE", "auto")
-	defer os.Unsetenv("XG2G_STREAM_PROFILE")
+	_ = os.Setenv("XG2G_STREAM_PROFILE", "auto")
+	defer func() { _ = os.Unsetenv("XG2G_STREAM_PROFILE") }()
 
 	loader := config.NewLoader("", "test-version")
 
@@ -112,8 +112,8 @@ func TestNewEnvVarWorks(t *testing.T) {
 	cleanup := setupEnv(t)
 	defer cleanup()
 
-	os.Setenv("XG2G_STREAMING_POLICY", "universal")
-	defer os.Unsetenv("XG2G_STREAMING_POLICY")
+	_ = os.Setenv("XG2G_STREAMING_POLICY", "universal")
+	defer func() { _ = os.Unsetenv("XG2G_STREAMING_POLICY") }()
 
 	loader := config.NewLoader("", "test-version")
 

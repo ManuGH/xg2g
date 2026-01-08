@@ -11,8 +11,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/ManuGH/xg2g/internal/pipeline/model"
-	"github.com/ManuGH/xg2g/internal/pipeline/store"
+	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/domain/session/store"
 )
 
 const minimalManifest = "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:10\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-ENDLIST\n"

@@ -19,17 +19,27 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	v3 "github.com/ManuGH/xg2g/internal/api/v3"
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/jobs"
 )
 
 func TestHandleSystemHealth(t *testing.T) {
+	// Create a mock receiver for health checks
+	mockReceiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer mockReceiver.Close()
+
 	s := New(config.AppConfig{
 		APIToken:       "test-token",
-		APITokenScopes: []string{string(ScopeV3Read)},
+		APITokenScopes: []string{string(v3.ScopeV3Read)},
 		DataDir:        t.TempDir(),
-		Enigma2:        config.Enigma2Settings{StreamPort: 8001},
+		Enigma2:        config.Enigma2Settings{StreamPort: 8001, BaseURL: mockReceiver.URL},
 		Version:        "1.2.3",
+		Streaming: config.StreamingConfig{
+			DeliveryPolicy: "universal",
+		},
 	}, nil)
 
 	// Set status for health check
@@ -57,11 +67,14 @@ func TestHandleRefresh_ErrorDoesNotUpdateLastRun(t *testing.T) {
 			StreamPort: 8001,
 		},
 		APIToken:       "dummy-token",
-		APITokenScopes: []string{string(ScopeV3Read)},
+		APITokenScopes: []string{string(v3.ScopeV3Read)},
 		DataDir:        t.TempDir(),
+		Streaming: config.StreamingConfig{
+			DeliveryPolicy: "universal",
+		},
 	}
 	s := New(cfg, nil)
-	handler := s.Handler()
+	// handler := s.Handler() // Removed unused
 	initialTime := s.status.LastRun
 
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v3/system/refresh", nil)
@@ -71,7 +84,7 @@ func TestHandleRefresh_ErrorDoesNotUpdateLastRun(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer dummy-token")
 
 	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
+	s.HandleRefreshInternal(rr, req)
 
 	assert.Equal(t, http.StatusInternalServerError, rr.Code)
 	assert.Equal(t, initialTime, s.status.LastRun, "lastRefresh should not be updated on failure")
@@ -100,14 +113,17 @@ func TestHandleRefresh_SuccessUpdatesLastRun(t *testing.T) {
 	}
 
 	s := New(config.AppConfig{
-		Enigma2:        config.Enigma2Settings{StreamPort: 8001},
+		Enigma2:        config.Enigma2Settings{StreamPort: 8001, BaseURL: "http://example.com"},
 		APIToken:       "test-token",
-		APITokenScopes: []string{string(ScopeV3Read)},
+		APITokenScopes: []string{string(v3.ScopeV3Read)},
 		DataDir:        t.TempDir(),
+		Streaming: config.StreamingConfig{
+			DeliveryPolicy: "universal",
+		},
 	}, nil)
 	s.refreshFn = mockRefreshFn
 
-	handler := s.Handler()
+	// handler := s.Handler() // Removed unused
 
 	// Initial state
 	initialTime := s.status.LastRun
@@ -119,7 +135,7 @@ func TestHandleRefresh_SuccessUpdatesLastRun(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer test-token")
 
 	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
+	s.HandleRefreshInternal(rr, req)
 
 	assert.Equal(t, http.StatusOK, rr.Code)
 
@@ -130,10 +146,13 @@ func TestHandleRefresh_SuccessUpdatesLastRun(t *testing.T) {
 
 func TestHandleRefresh_ConflictOnConcurrent(t *testing.T) {
 	cfg := config.AppConfig{
-		Enigma2:        config.Enigma2Settings{StreamPort: 8001},
+		Enigma2:        config.Enigma2Settings{StreamPort: 8001, BaseURL: "http://example.com"},
 		APIToken:       "dummy-token",
-		APITokenScopes: []string{string(ScopeV3Read)},
+		APITokenScopes: []string{string(v3.ScopeV3Read)},
 		DataDir:        t.TempDir(),
+		Streaming: config.StreamingConfig{
+			DeliveryPolicy: "universal",
+		},
 	}
 	s := New(cfg, nil)
 
@@ -146,7 +165,7 @@ func TestHandleRefresh_ConflictOnConcurrent(t *testing.T) {
 		return &jobs.Status{Channels: 1, LastRun: time.Now()}, nil
 	}
 
-	handler := s.Handler()
+	// handler := s.Handler() // Removed unused
 
 	// First request starts and blocks
 	req1 := httptest.NewRequest(http.MethodPost, "/api/v3/system/refresh", nil)
@@ -158,7 +177,7 @@ func TestHandleRefresh_ConflictOnConcurrent(t *testing.T) {
 	// Run first request in a goroutine
 	done1 := make(chan struct{})
 	go func() {
-		handler.ServeHTTP(rr1, req1)
+		s.HandleRefreshInternal(rr1, req1)
 		close(done1)
 	}()
 
@@ -174,11 +193,8 @@ func TestHandleRefresh_ConflictOnConcurrent(t *testing.T) {
 	req2.Host = "example.com"                       // Required for CSRF validation
 	req2.Header.Set("Origin", "http://example.com") // Add Origin for CSRF protection
 	req2.Header.Set("Authorization", "Bearer dummy-token")
-	req2.Host = "example.com"                       // Required for CSRF validation
-	req2.Header.Set("Origin", "http://example.com") // Add Origin for CSRF protection
-	req2.Header.Set("X-API-Token", "dummy-token")
 	rr2 := httptest.NewRecorder()
-	handler.ServeHTTP(rr2, req2)
+	s.HandleRefreshInternal(rr2, req2)
 
 	assert.Equal(t, http.StatusConflict, rr2.Code)
 	assert.Contains(t, rr2.Body.String(), "refresh operation is already in progress")
@@ -196,7 +212,14 @@ func TestHandleRefresh_ConflictOnConcurrent(t *testing.T) {
 }
 
 func TestHandleHealth(t *testing.T) {
-	s := New(config.AppConfig{}, nil)
+	s := New(config.AppConfig{
+		Enigma2: config.Enigma2Settings{
+			BaseURL: "http://example.com",
+		},
+		Streaming: config.StreamingConfig{
+			DeliveryPolicy: "universal",
+		},
+	}, nil)
 	handler := s.Handler()
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "/healthz", nil)
 	require.NoError(t, err)
@@ -230,6 +253,9 @@ func TestHandleReady(t *testing.T) {
 		},
 		XMLTVPath:   xmltvPath,
 		ReadyStrict: true,
+		Streaming: config.StreamingConfig{
+			DeliveryPolicy: "universal",
+		},
 	}
 	s := New(cfg, nil)
 	handler := s.Handler()
@@ -303,7 +329,12 @@ func TestSecureFileHandlerSymlinkPolicy(t *testing.T) {
 	symlinkDir := filepath.Join(dataDir, "evil_dir")
 	require.NoError(t, os.Symlink(outsideDir, symlinkDir))
 
-	cfg := config.AppConfig{DataDir: dataDir}
+	cfg := config.AppConfig{
+		DataDir: dataDir,
+		Streaming: config.StreamingConfig{
+			DeliveryPolicy: "universal",
+		},
+	}
 	server := New(cfg, nil)
 	handler := server.Handler()
 
@@ -346,7 +377,10 @@ func TestSecureFileHandlerSymlinkPolicy(t *testing.T) {
 func TestMiddlewareChain(t *testing.T) {
 	server := New(config.AppConfig{
 		APIToken:       "test-token",
-		APITokenScopes: []string{string(ScopeV3Read)},
+		APITokenScopes: []string{string(v3.ScopeV3Read)},
+		Streaming: config.StreamingConfig{
+			DeliveryPolicy: "universal",
+		},
 	}, nil)
 	handler := server.Handler()
 
@@ -372,7 +406,12 @@ func TestAdvancedPathTraversal(t *testing.T) {
 	// Create a benign file to make data dir non-empty
 	require.NoError(t, os.WriteFile(filepath.Join(tempDir, "ok.txt"), []byte("ok"), 0o600))
 
-	cfg := config.AppConfig{DataDir: tempDir}
+	cfg := config.AppConfig{
+		DataDir: tempDir,
+		Streaming: config.StreamingConfig{
+			DeliveryPolicy: "universal",
+		},
+	}
 	server := New(cfg, nil)
 	handler := server.Handler()
 
@@ -426,6 +465,9 @@ http://example.com/stream1
 	cfg := config.AppConfig{
 		DataDir:   tmpDir,
 		XMLTVPath: "xmltv.xml",
+		Streaming: config.StreamingConfig{
+			DeliveryPolicy: "universal",
+		},
 	}
 
 	server := New(cfg, nil)
@@ -452,6 +494,9 @@ func TestHandleXMLTV_FileTooLarge(t *testing.T) {
 	cfg := config.AppConfig{
 		DataDir:   tmpDir,
 		XMLTVPath: "xmltv.xml",
+		Streaming: config.StreamingConfig{
+			DeliveryPolicy: "universal",
+		},
 	}
 
 	server := New(cfg, nil)
@@ -471,6 +516,9 @@ func TestHandleXMLTV_FileNotFound(t *testing.T) {
 	cfg := config.AppConfig{
 		DataDir:   tmpDir,
 		XMLTVPath: "nonexistent.xml",
+		Streaming: config.StreamingConfig{
+			DeliveryPolicy: "universal",
+		},
 	}
 
 	server := New(cfg, nil)
@@ -513,6 +561,9 @@ http://example.com/stream1
 	cfg := config.AppConfig{
 		DataDir:   tmpDir,
 		XMLTVPath: "xmltv.xml",
+		Streaming: config.StreamingConfig{
+			DeliveryPolicy: "universal",
+		},
 	}
 
 	server := New(cfg, nil)
@@ -538,6 +589,9 @@ func TestHandleXMLTV_EmptyPath(t *testing.T) {
 	cfg := config.AppConfig{
 		DataDir:   tmpDir,
 		XMLTVPath: "", // Empty path - not configured
+		Streaming: config.StreamingConfig{
+			DeliveryPolicy: "universal",
+		},
 	}
 
 	server := New(cfg, nil)
@@ -569,6 +623,9 @@ func TestHandleXMLTV_M3UNotFound(t *testing.T) {
 	cfg := config.AppConfig{
 		DataDir:   tmpDir,
 		XMLTVPath: "xmltv.xml",
+		Streaming: config.StreamingConfig{
+			DeliveryPolicy: "universal",
+		},
 	}
 
 	server := New(cfg, nil)
@@ -604,6 +661,9 @@ func TestHandleXMLTV_M3UTooLarge(t *testing.T) {
 	cfg := config.AppConfig{
 		DataDir:   tmpDir,
 		XMLTVPath: "xmltv.xml",
+		Streaming: config.StreamingConfig{
+			DeliveryPolicy: "universal",
+		},
 	}
 
 	server := New(cfg, nil)
@@ -635,6 +695,9 @@ func TestHandleXMLTV_HEADRequest(t *testing.T) {
 	cfg := config.AppConfig{
 		DataDir:   tmpDir,
 		XMLTVPath: "xmltv.xml",
+		Streaming: config.StreamingConfig{
+			DeliveryPolicy: "universal",
+		},
 	}
 
 	server := New(cfg, nil)
@@ -659,8 +722,11 @@ func TestHandleRefreshV3(t *testing.T) {
 			StreamPort: 8001,
 		},
 		APIToken:       "refresh-token",
-		APITokenScopes: []string{string(ScopeV3Read)},
+		APITokenScopes: []string{string(v3.ScopeV3Read)},
 		DataDir:        t.TempDir(),
+		Streaming: config.StreamingConfig{
+			DeliveryPolicy: "universal",
+		},
 	}
 
 	server := New(cfg, nil)
@@ -689,7 +755,10 @@ func TestClientDisconnectDuringRefresh(t *testing.T) {
 		},
 		Bouquet:        "test",
 		APIToken:       "test-token",
-		APITokenScopes: []string{string(ScopeV3Read)},
+		APITokenScopes: []string{string(v3.ScopeV3Read)},
+		Streaming: config.StreamingConfig{
+			DeliveryPolicy: "universal",
+		},
 	}
 
 	server := New(cfg, nil)

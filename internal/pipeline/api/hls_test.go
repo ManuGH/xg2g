@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ManuGH/xg2g/internal/pipeline/model"
+	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -116,7 +116,7 @@ func TestServeHLS_DVRWithStartTag(t *testing.T) {
 	tmpDir := t.TempDir()
 	sessionID := "dvr-test-session"
 	sessionDir := filepath.Join(tmpDir, "sessions", sessionID)
-	require.NoError(t, os.MkdirAll(sessionDir, 0755))
+	require.NoError(t, os.MkdirAll(sessionDir, 0750))
 
 	// Create minimal EVENT playlist WITHOUT EXT-X-START (will be injected)
 	rawManifest := `#EXTM3U
@@ -132,7 +132,7 @@ seg_000000.ts
 seg_000001.ts
 `
 	manifestPath := filepath.Join(sessionDir, "index.m3u8")
-	require.NoError(t, os.WriteFile(manifestPath, []byte(rawManifest), 0644))
+	require.NoError(t, os.WriteFile(manifestPath, []byte(rawManifest), 0600))
 
 	// Mock store with DVR profile
 	store := &MockStore{
@@ -185,7 +185,7 @@ func TestServeHLS_VODNoStartTag(t *testing.T) {
 	tmpDir := t.TempDir()
 	sessionID := "vod-test-session"
 	sessionDir := filepath.Join(tmpDir, "sessions", sessionID)
-	require.NoError(t, os.MkdirAll(sessionDir, 0755))
+	require.NoError(t, os.MkdirAll(sessionDir, 0750))
 
 	// Create VOD playlist
 	rawManifest := `#EXTM3U
@@ -196,7 +196,7 @@ seg_000000.ts
 #EXT-X-ENDLIST
 `
 	manifestPath := filepath.Join(sessionDir, "index.m3u8")
-	require.NoError(t, os.WriteFile(manifestPath, []byte(rawManifest), 0644))
+	require.NoError(t, os.WriteFile(manifestPath, []byte(rawManifest), 0600))
 
 	// Mock store with VOD profile
 	store := &MockStore{
@@ -230,7 +230,7 @@ func TestServeHLS_LiveNoStartTag(t *testing.T) {
 	tmpDir := t.TempDir()
 	sessionID := "live-test-session"
 	sessionDir := filepath.Join(tmpDir, "sessions", sessionID)
-	require.NoError(t, os.MkdirAll(sessionDir, 0755))
+	require.NoError(t, os.MkdirAll(sessionDir, 0750))
 
 	// Create live playlist
 	rawManifest := `#EXTM3U
@@ -241,7 +241,7 @@ func TestServeHLS_LiveNoStartTag(t *testing.T) {
 seg_000100.ts
 `
 	manifestPath := filepath.Join(sessionDir, "index.m3u8")
-	require.NoError(t, os.WriteFile(manifestPath, []byte(rawManifest), 0644))
+	require.NoError(t, os.WriteFile(manifestPath, []byte(rawManifest), 0600))
 
 	// Mock store with live profile (DVRWindowSec = 0)
 	store := &MockStore{

@@ -32,7 +32,7 @@ func NewStore(dbPath string) (*Store, error) {
 
 	// Verify connection
 	if err := db.Ping(); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("ping database: %w", err)
 	}
 
@@ -40,7 +40,7 @@ func NewStore(dbPath string) (*Store, error) {
 
 	// Run migrations
 	if err := store.migrate(); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("run migrations: %w", err)
 	}
 
@@ -106,7 +106,7 @@ func (s *Store) GetRoots(ctx context.Context) ([]Root, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var roots []Root
 	for rows.Next() {
@@ -222,7 +222,7 @@ func (s *Store) GetItems(ctx context.Context, rootID string, limit, offset int) 
 	if err != nil {
 		return nil, 0, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var items []Item
 	for rows.Next() {

@@ -17,7 +17,7 @@ func TestGetRecordings_Contract_UpstreamFailure(t *testing.T) {
 	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/movielist" {
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"result": false, "movies": [], "bookmarks": []}`))
+			_, _ = w.Write([]byte(`{"result": false, "movies": [], "bookmarks": []}`))
 			return
 		}
 		w.WriteHeader(http.StatusNotFound)

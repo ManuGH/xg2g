@@ -412,7 +412,6 @@ func (l *Loader) setDefaults(cfg *AppConfig) {
 	cfg.Enigma2.TuneTimeout = 10 * time.Second // Kept for logic compatibility
 	cfg.Enigma2.Retries = 2
 	cfg.Enigma2.Backoff = 200 * time.Millisecond
-	cfg.Enigma2.MaxBackoff = 2 * time.Second
 	cfg.Enigma2.RateLimit = 10
 	cfg.Enigma2.RateBurst = 20
 	cfg.Enigma2.UserAgent = "xg2g-engine"
@@ -448,6 +447,7 @@ func (l *Loader) setDefaults(cfg *AppConfig) {
 	// Recording Defaults
 	cfg.RecordingRoots = nil
 	cfg.RecordingPlaybackPolicy = "auto" // Local-first with receiver fallback
+	cfg.Streaming.DeliveryPolicy = "universal"
 	// P2: Increase stable window to 10s to avoid premature VOD detection (Safari endlist risk)
 	cfg.RecordingStableWindow = 10 * time.Second
 	cfg.RecordingPathMappings = nil
@@ -925,31 +925,6 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 // expandEnv expands environment variables in the format ${VAR} or $VAR
 func expandEnv(s string) string {
 	return os.ExpandEnv(s)
-}
-
-// Helper to parse map string: "id=path,id2=path2"
-func parseRecordingRoots(envVal string, defaults map[string]string) map[string]string {
-	if envVal == "" {
-		return defaults
-	}
-	out := make(map[string]string)
-	// preserve defaults? usually env overrides completely.
-	// let's say env overrides completely for simplicity.
-	parts := strings.Split(envVal, ",")
-	for _, p := range parts {
-		kv := strings.SplitN(p, "=", 2)
-		if len(kv) == 2 {
-			key := strings.TrimSpace(kv[0])
-			val := strings.TrimSpace(kv[1])
-			if key != "" && val != "" {
-				out[key] = val
-			}
-		}
-	}
-	if len(out) == 0 {
-		return defaults // Fallback if parsing failed completely
-	}
-	return out
 }
 
 // Helper to parse recording path mappings: "/receiver/path=/local/path;/other=/mount"

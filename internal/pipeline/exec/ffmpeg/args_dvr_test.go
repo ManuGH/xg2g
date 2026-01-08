@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ManuGH/xg2g/internal/pipeline/model"
+	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -17,38 +17,38 @@ import (
 // TestDVR_SegmentDurationPolicy validates Patch 1: 6s default for DVR
 func TestDVR_SegmentDurationPolicy(t *testing.T) {
 	tests := []struct {
-		name            string
-		dvrWindowSec    int
-		llhls           bool
-		expectedSegDur  int
+		name             string
+		dvrWindowSec     int
+		llhls            bool
+		expectedSegDur   int
 		expectedListSize int
 	}{
 		{
-			name:            "Standard DVR 3h",
-			dvrWindowSec:    10800,
-			llhls:           false,
-			expectedSegDur:  6,
-			expectedListSize: 0, // DVR keeps all segments (playlist grows)
+			name:             "Standard DVR 3h",
+			dvrWindowSec:     10800,
+			llhls:            false,
+			expectedSegDur:   6,
+			expectedListSize: 1800, // DVR keeps window segments (10800/6)
 		},
 		{
-			name:            "DVR minimum 30min",
-			dvrWindowSec:    1800,
-			llhls:           false,
-			expectedSegDur:  6,
-			expectedListSize: 0, // DVR keeps all segments
+			name:             "DVR minimum 30min",
+			dvrWindowSec:     1800,
+			llhls:            false,
+			expectedSegDur:   6,
+			expectedListSize: 300, // DVR keeps window segments (1800/6)
 		},
 		{
-			name:            "LL-HLS DVR",
-			dvrWindowSec:    10800,
-			llhls:           true,
-			expectedSegDur:  4,
-			expectedListSize: 0, // DVR keeps all segments
+			name:             "LL-HLS DVR",
+			dvrWindowSec:     10800,
+			llhls:            true,
+			expectedSegDur:   4,
+			expectedListSize: 2700, // DVR keeps window segments (10800/4)
 		},
 		{
-			name:            "No DVR (Live only)",
-			dvrWindowSec:    0,
-			llhls:           false,
-			expectedSegDur:  6,
+			name:             "No DVR (Live only)",
+			dvrWindowSec:     0,
+			llhls:            false,
+			expectedSegDur:   6,
 			expectedListSize: 3, // Minimum default
 		},
 	}
@@ -87,20 +87,20 @@ func TestDVR_SegmentDurationPolicy(t *testing.T) {
 // TestDVR_PlaylistType validates EVENT vs VOD playlist types
 func TestDVR_PlaylistType(t *testing.T) {
 	tests := []struct {
-		name             string
-		dvrWindowSec     int
-		vod              bool
-		expectedType     string
-		expectedFlags    []string
-		unexpectedFlags  []string
+		name            string
+		dvrWindowSec    int
+		vod             bool
+		expectedType    string
+		expectedFlags   []string
+		unexpectedFlags []string
 	}{
 		{
 			name:            "DVR Live (EVENT)",
 			dvrWindowSec:    10800,
 			vod:             false,
-			expectedType:    "event",
-			expectedFlags:   []string{"program_date_time", "independent_segments", "append_list"},
-			unexpectedFlags: []string{"delete_segments"}, // Segments kept for DVR/Timeline
+			expectedType:    "",                                                                       // Standard Live for Sliding Window
+			expectedFlags:   []string{"program_date_time", "independent_segments", "delete_segments"}, // Segments deleted for retention
+			unexpectedFlags: []string{},
 		},
 		{
 			name:            "VOD Recording",
@@ -204,10 +204,10 @@ func intArg(t *testing.T, args []string, idx int) int {
 // TestDeinterlace_ArgsPresent validates that yadif filter is present when Deinterlace=true
 func TestDeinterlace_ArgsPresent(t *testing.T) {
 	tests := []struct {
-		name            string
-		transcodeVideo  bool
-		deinterlace     bool
-		expectYadif     bool
+		name           string
+		transcodeVideo bool
+		deinterlace    bool
+		expectYadif    bool
 	}{
 		{
 			name:           "Transcode with Deinterlace",

@@ -37,7 +37,13 @@ func TestSecureFileServer_AllowlistDenylist(t *testing.T) {
 		}
 	}
 
-	cfg := config.AppConfig{DataDir: tmpDir, Version: "test"}
+	cfg := config.AppConfig{
+		DataDir: tmpDir,
+		Version: "test",
+		Streaming: config.StreamingConfig{
+			DeliveryPolicy: "universal",
+		},
+	}
 	srv := New(cfg, nil)
 	handler := http.StripPrefix("/files/", srv.secureFileServer())
 
@@ -80,6 +86,9 @@ func TestSecureFileServer_RangeRequests(t *testing.T) {
 	cfg := config.AppConfig{
 		DataDir: tmpDir,
 		Version: "test",
+		Streaming: config.StreamingConfig{
+			DeliveryPolicy: "universal",
+		},
 	}
 	srv := New(cfg, nil)
 
@@ -184,6 +193,9 @@ func TestSecureFileServer_ETagCaching(t *testing.T) {
 	cfg := config.AppConfig{
 		DataDir: tmpDir,
 		Version: "test",
+		Streaming: config.StreamingConfig{
+			DeliveryPolicy: "universal",
+		},
 	}
 	srv := New(cfg, nil)
 
@@ -224,6 +236,9 @@ func TestSecureFileServer_PathTraversal(t *testing.T) {
 	cfg := config.AppConfig{
 		DataDir: tmpDir,
 		Version: "test",
+		Streaming: config.StreamingConfig{
+			DeliveryPolicy: "universal",
+		},
 	}
 	srv := New(cfg, nil)
 
@@ -299,6 +314,9 @@ func TestSecureFileServer_ContentType(t *testing.T) {
 	cfg := config.AppConfig{
 		DataDir: tmpDir,
 		Version: "test",
+		Streaming: config.StreamingConfig{
+			DeliveryPolicy: "universal",
+		},
 	}
 	srv := New(cfg, nil)
 
@@ -349,6 +367,9 @@ func TestSecureFileServer_MethodNotAllowed(t *testing.T) {
 	cfg := config.AppConfig{
 		DataDir: tmpDir,
 		Version: "test",
+		Streaming: config.StreamingConfig{
+			DeliveryPolicy: "universal",
+		},
 	}
 	srv := New(cfg, nil)
 

@@ -64,11 +64,11 @@ func (s *Server) TriggerSystemScan(w http.ResponseWriter, r *http.Request) {
 		if started := scanner.RunBackground(); started {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusAccepted)
-			w.Write([]byte(`{"status":"started"}`))
+			_, _ = w.Write([]byte(`{"status":"started"}`))
 		} else {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{"status":"already_running"}`))
+			_, _ = w.Write([]byte(`{"status":"already_running"}`))
 		}
 	})).ServeHTTP(w, r)
 }
@@ -110,6 +110,6 @@ func (s *Server) GetSystemScanStatus(w http.ResponseWriter, r *http.Request) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	})).ServeHTTP(w, r)
 }

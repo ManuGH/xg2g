@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	v3 "github.com/ManuGH/xg2g/internal/api/v3"
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,7 +25,7 @@ func TestIntegration_SessionAndPlayback(t *testing.T) {
 	// Setup Server
 	cfg := config.AppConfig{
 		APIToken:       "integration-secret",
-		APITokenScopes: []string{string(ScopeV3Read)},
+		APITokenScopes: []string{string(v3.ScopeV3Read)},
 		DataDir:        t.TempDir(),
 		ForceHTTPS:     true, // Enable ForceHTTPS to verify Secure cookie
 	}

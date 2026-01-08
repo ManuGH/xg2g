@@ -60,7 +60,7 @@ func NewBoltStore(path string) (*BoltStore, error) {
 		return err
 	})
 	if err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("init resume bucket: %w", err)
 	}
 

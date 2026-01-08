@@ -9,19 +9,21 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	v3 "github.com/ManuGH/xg2g/internal/api/v3"
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestScopeMiddleware_DenyWriteByDefault(t *testing.T) {
-	s := &Server{
-		cfg: config.AppConfig{
-			APIToken:       "secret",
-			APITokenScopes: []string{string(ScopeV3Read)},
+	s := New(config.AppConfig{
+		APIToken:       "secret",
+		APITokenScopes: []string{string(v3.ScopeV3Read)},
+		Streaming: config.StreamingConfig{
+			DeliveryPolicy: "universal",
 		},
-	}
+	}, nil)
 
-	handler := s.authMiddleware(s.scopeMiddleware(ScopeV3Write)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := s.authMiddleware(s.scopeMiddleware(v3.ScopeV3Write)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})))
 
@@ -35,14 +37,15 @@ func TestScopeMiddleware_DenyWriteByDefault(t *testing.T) {
 }
 
 func TestScopeMiddleware_WriteImpliesRead(t *testing.T) {
-	s := &Server{
-		cfg: config.AppConfig{
-			APIToken:       "secret",
-			APITokenScopes: []string{string(ScopeV3Write)},
+	s := New(config.AppConfig{
+		APIToken:       "secret",
+		APITokenScopes: []string{string(v3.ScopeV3Write)},
+		Streaming: config.StreamingConfig{
+			DeliveryPolicy: "universal",
 		},
-	}
+	}, nil)
 
-	handler := s.authMiddleware(s.scopeMiddleware(ScopeV3Read)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := s.authMiddleware(s.scopeMiddleware(v3.ScopeV3Read)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})))
 
@@ -56,15 +59,16 @@ func TestScopeMiddleware_WriteImpliesRead(t *testing.T) {
 }
 
 func TestScopeMiddleware_TokenList(t *testing.T) {
-	s := &Server{
-		cfg: config.AppConfig{
-			APITokens: []config.ScopedToken{
-				{Token: "scoped", Scopes: []string{string(ScopeV3Write)}},
-			},
+	s := New(config.AppConfig{
+		APITokens: []config.ScopedToken{
+			{Token: "scoped", Scopes: []string{string(v3.ScopeV3Write)}},
 		},
-	}
+		Streaming: config.StreamingConfig{
+			DeliveryPolicy: "universal",
+		},
+	}, nil)
 
-	handler := s.authMiddleware(s.scopeMiddleware(ScopeV3Write)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := s.authMiddleware(s.scopeMiddleware(v3.ScopeV3Write)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})))
 
@@ -79,14 +83,15 @@ func TestScopeMiddleware_TokenList(t *testing.T) {
 
 func TestScopeMiddleware_EmptyScopesUnauthorized(t *testing.T) {
 	t.Run("api_token", func(t *testing.T) {
-		s := &Server{
-			cfg: config.AppConfig{
-				APIToken:       "secret",
-				APITokenScopes: nil,
+		s := New(config.AppConfig{
+			APIToken:       "secret",
+			APITokenScopes: nil,
+			Streaming: config.StreamingConfig{
+				DeliveryPolicy: "universal",
 			},
-		}
+		}, nil)
 
-		handler := s.authMiddleware(s.scopeMiddleware(ScopeV3Read)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handler := s.authMiddleware(s.scopeMiddleware(v3.ScopeV3Read)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		})))
 
@@ -100,15 +105,16 @@ func TestScopeMiddleware_EmptyScopesUnauthorized(t *testing.T) {
 	})
 
 	t.Run("token_list", func(t *testing.T) {
-		s := &Server{
-			cfg: config.AppConfig{
-				APITokens: []config.ScopedToken{
-					{Token: "scoped", Scopes: nil},
-				},
+		s := New(config.AppConfig{
+			APITokens: []config.ScopedToken{
+				{Token: "scoped", Scopes: nil},
 			},
-		}
+			Streaming: config.StreamingConfig{
+				DeliveryPolicy: "universal",
+			},
+		}, nil)
 
-		handler := s.authMiddleware(s.scopeMiddleware(ScopeV3Read)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handler := s.authMiddleware(s.scopeMiddleware(v3.ScopeV3Read)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		})))
 

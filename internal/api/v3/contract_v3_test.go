@@ -28,9 +28,9 @@ import (
 	v3api "github.com/ManuGH/xg2g/internal/pipeline/api"
 	v3bus "github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/ManuGH/xg2g/internal/pipeline/lease"
-	"github.com/ManuGH/xg2g/internal/pipeline/model"
+	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
-	v3store "github.com/ManuGH/xg2g/internal/pipeline/store"
+	v3store "github.com/ManuGH/xg2g/internal/domain/session/store"
 )
 
 const contractFixtureDir = "testdata/v3_contract"
@@ -67,7 +67,8 @@ func loadOpenAPIDoc(t *testing.T) *openapi3.T {
 func readFixture(t *testing.T, name string) []byte {
 	t.Helper()
 	path := filepath.Join(contractFixtureDir, name)
-	data, err := os.ReadFile(path)
+	 // #nosec G304
+	data, err := os.ReadFile(filepath.Clean(path))
 	require.NoError(t, err, "read fixture %s", name)
 	return data
 }
@@ -173,7 +174,7 @@ func TestV3Contract_IntentLeaseBusy(t *testing.T) {
 
 		sub, err := bus.Subscribe(ctx, string(model.EventStartSession))
 		require.NoError(t, err)
-		defer sub.Close()
+		defer func() { _ = sub.Close() }()
 
 		body := readFixture(t, "post_intents_request.json")
 
@@ -381,19 +382,19 @@ func writeHLSFixtures(t *testing.T, hlsRoot, sessionID string) (playlist []byte,
 	t.Helper()
 
 	sessionDir := filepath.Join(hlsRoot, "sessions", sessionID)
-	require.NoError(t, os.MkdirAll(sessionDir, 0755))
+	require.NoError(t, os.MkdirAll(sessionDir, 0750))
 
 	playlist = readFixture(t, "hls_index_response.m3u8")
-	require.NoError(t, os.WriteFile(filepath.Join(sessionDir, "index.m3u8"), playlist, 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(sessionDir, "index.m3u8"), playlist, 0600))
 
 	initSeg = readFixture(t, "hls_init_segment.bin")
-	require.NoError(t, os.WriteFile(filepath.Join(sessionDir, "init.mp4"), initSeg, 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(sessionDir, "init.mp4"), initSeg, 0600))
 
 	mediaSeg = readFixture(t, "hls_media_segment.bin")
-	require.NoError(t, os.WriteFile(filepath.Join(sessionDir, "seg_000001.m4s"), mediaSeg, 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(sessionDir, "seg_000001.m4s"), mediaSeg, 0600))
 
 	tsSeg := []byte{0x47, 0x40, 0x00, 0x10, 0x00}
-	require.NoError(t, os.WriteFile(filepath.Join(sessionDir, "seg_000000.ts"), tsSeg, 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(sessionDir, "seg_000000.ts"), tsSeg, 0600))
 
 	return playlist, initSeg, mediaSeg
 }

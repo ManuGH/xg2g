@@ -18,7 +18,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
-	"github.com/ManuGH/xg2g/internal/pipeline/model"
+	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/procgroup"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -350,6 +350,7 @@ func (r *Runner) runOnce(ctx context.Context, sessionID, source string, profileS
 				"--user-agent", "curl/8.14.1",
 				streamURL,
 			}
+			// #nosec G204
 			curlCmd = exec.CommandContext(ctx, "curl", curlArgs...)
 			procgroup.Set(curlCmd)
 			if stderrPipe, err := curlCmd.StderrPipe(); err == nil {

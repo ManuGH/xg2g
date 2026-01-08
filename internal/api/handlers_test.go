@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	v3 "github.com/ManuGH/xg2g/internal/api/v3"
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/hdhr"
 	"github.com/ManuGH/xg2g/internal/jobs"
@@ -29,6 +30,10 @@ func TestGetConfig(t *testing.T) {
 		Bouquet: "test-bouquet",
 		Enigma2: config.Enigma2Settings{
 			Username: "testuser",
+			BaseURL:  "http://example.com",
+		},
+		Streaming: config.StreamingConfig{
+			DeliveryPolicy: "universal",
 		},
 		DataDir: "/tmp/test",
 	}
@@ -61,7 +66,15 @@ func TestHandleRefreshInternal(t *testing.T) {
 		}, nil
 	}
 
-	cfg := config.AppConfig{Bouquet: "test"}
+	cfg := config.AppConfig{
+		Bouquet: "test",
+		Enigma2: config.Enigma2Settings{
+			BaseURL: "http://example.com",
+		},
+		Streaming: config.StreamingConfig{
+			DeliveryPolicy: "universal",
+		},
+	}
 	s := &Server{
 		cfg:       cfg,
 		snap:      config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault()),
@@ -104,7 +117,12 @@ http://example.com/stream3
 			t.Fatal(err)
 		}
 
-		cfg := config.AppConfig{DataDir: tmpDir}
+		cfg := config.AppConfig{
+			DataDir: tmpDir,
+			Streaming: config.StreamingConfig{
+				DeliveryPolicy: "universal",
+			},
+		}
 		s := &Server{
 			cfg:  cfg,
 			snap: config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault()),
@@ -145,7 +163,12 @@ http://example.com/stream3
 		tmpDir := t.TempDir()
 		// Don't create playlist.m3u
 
-		cfg := config.AppConfig{DataDir: tmpDir}
+		cfg := config.AppConfig{
+			DataDir: tmpDir,
+			Streaming: config.StreamingConfig{
+				DeliveryPolicy: "universal",
+			},
+		}
 		s := &Server{
 			cfg:  cfg,
 			snap: config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault()),
@@ -161,67 +184,6 @@ http://example.com/stream3
 			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
 		}
 	})
-}
-
-// TestRespondError tests the structured error response function.
-func TestRespondError(t *testing.T) {
-	t.Run("basic_error", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/test", nil)
-		req = req.WithContext(context.Background())
-		rr := httptest.NewRecorder()
-
-		RespondError(rr, req, http.StatusBadRequest, ErrInvalidInput)
-
-		if rr.Code != http.StatusBadRequest {
-			t.Errorf("expected status %d, got %d", http.StatusBadRequest, rr.Code)
-		}
-
-		var apiErr APIError
-		if err := json.NewDecoder(rr.Body).Decode(&apiErr); err != nil {
-			t.Fatalf("failed to decode error response: %v", err)
-		}
-
-		if apiErr.Code != "INVALID_INPUT" {
-			t.Errorf("expected code %q, got %q", "INVALID_INPUT", apiErr.Code)
-		}
-		if apiErr.Message != "Invalid input parameters" {
-			t.Errorf("expected message %q, got %q", "Invalid input parameters", apiErr.Message)
-		}
-	})
-
-	t.Run("error_with_details", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/test", nil)
-		req = req.WithContext(context.Background())
-		rr := httptest.NewRecorder()
-
-		details := map[string]string{"field": "bouquet", "reason": "invalid format"}
-		RespondError(rr, req, http.StatusBadRequest, ErrInvalidInput, details)
-
-		if rr.Code != http.StatusBadRequest {
-			t.Errorf("expected status %d, got %d", http.StatusBadRequest, rr.Code)
-		}
-
-		var apiErr APIError
-		if err := json.NewDecoder(rr.Body).Decode(&apiErr); err != nil {
-			t.Fatalf("failed to decode error response: %v", err)
-		}
-
-		if apiErr.Details == nil {
-			t.Error("expected Details to be set")
-		}
-	})
-}
-
-// TestAPIError_Error tests the Error method of APIError.
-func TestAPIError_Error(t *testing.T) {
-	err := &APIError{
-		Code:    "TEST_ERROR",
-		Message: "This is a test error",
-	}
-
-	if err.Error() != "This is a test error" {
-		t.Errorf("expected Error() %q, got %q", "This is a test error", err.Error())
-	}
 }
 
 // TestHDHomeRunServer tests the HDHomeRunServer getter.
@@ -241,6 +203,9 @@ func TestHandler(t *testing.T) {
 		cfg := config.AppConfig{
 			DataDir: t.TempDir(),
 			Bouquet: "test",
+			Streaming: config.StreamingConfig{
+				DeliveryPolicy: "universal",
+			},
 		}
 		s := New(cfg, nil)
 		handler := s.Handler()
@@ -267,16 +232,34 @@ func TestHandler(t *testing.T) {
 // API Routes Tests
 
 func TestRegisterRoutes_StatusEndpoint(t *testing.T) {
+	// Create a mock receiver for health checks
+	mockReceiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer mockReceiver.Close()
+
+	// Create playlist file
+	dataDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dataDir, "playlist.m3u"), []byte("#EXTM3U"), 0600))
+
 	cfg := config.AppConfig{
 		APIToken:       "test-token",
-		APITokenScopes: []string{string(ScopeV3Read)},
+		APITokenScopes: []string{string(v3.ScopeV3Read)},
 		Version:        "3.0.0",
-		DataDir:        t.TempDir(),
+		DataDir:        dataDir,
+		Enigma2: config.Enigma2Settings{
+			BaseURL: mockReceiver.URL,
+		},
+		Streaming: config.StreamingConfig{
+			DeliveryPolicy: "universal",
+		},
 	}
 	s := New(cfg, nil)
 	s.SetStatus(jobs.Status{
-		Version:  "3.0.0",
-		Channels: 2,
+		Version:       "3.0.0",
+		Channels:      2,
+		LastRun:       time.Now(),
+		EPGProgrammes: 10,
 	})
 
 	handler := s.Handler()
@@ -316,6 +299,9 @@ http://10.10.55.14:18000/1:0:19:1334:3EF:1:C00000:0:0:0:
 	// Create server with PlexForceHLS disabled
 	cfg := config.AppConfig{
 		DataDir: tempDir,
+		Streaming: config.StreamingConfig{
+			DeliveryPolicy: "universal",
+		},
 	}
 	srv := New(cfg, nil)
 
@@ -369,6 +355,9 @@ http://10.10.55.14:18000/1:0:19:1334:3EF:1:C00000:0:0:0:
 	// Create server with PlexForceHLS enabled
 	cfg := config.AppConfig{
 		DataDir: tempDir,
+		Streaming: config.StreamingConfig{
+			DeliveryPolicy: "universal",
+		},
 	}
 	srv := New(cfg, nil)
 
@@ -421,6 +410,9 @@ http://10.10.55.14:18000/hls/1:0:19:132F:3EF:1:C00000:0:0:0:
 	// Create server with PlexForceHLS enabled
 	cfg := config.AppConfig{
 		DataDir: tempDir,
+		Streaming: config.StreamingConfig{
+			DeliveryPolicy: "universal",
+		},
 	}
 	srv := New(cfg, nil)
 

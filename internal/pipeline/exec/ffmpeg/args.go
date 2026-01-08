@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/ManuGH/xg2g/internal/log"
-	"github.com/ManuGH/xg2g/internal/pipeline/model"
+	"github.com/ManuGH/xg2g/internal/domain/session/model"
 )
 
 // InputSpec defines the source stream parameters.

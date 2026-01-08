@@ -15,7 +15,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
 	"github.com/ManuGH/xg2g/internal/pipeline/shadow"
-	"github.com/ManuGH/xg2g/internal/pipeline/store"
+	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/rs/zerolog"
 )
 

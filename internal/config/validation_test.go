@@ -128,6 +128,9 @@ func TestValidate_TrustedProxies_Integration(t *testing.T) {
 				Enigma2: Enigma2Settings{
 					StreamPort: 8001,
 				},
+				Streaming: StreamingConfig{
+					DeliveryPolicy: "universal",
+				},
 			}
 			err := Validate(cfg)
 			if tt.shouldErr && err == nil {
@@ -162,6 +165,9 @@ func TestValidate_RateLimitWhitelist_Integration(t *testing.T) {
 				DataDir:            "/tmp",
 				Enigma2: Enigma2Settings{
 					StreamPort: 8001,
+				},
+				Streaming: StreamingConfig{
+					DeliveryPolicy: "universal",
 				},
 			}
 			err := Validate(cfg)

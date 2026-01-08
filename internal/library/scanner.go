@@ -63,7 +63,7 @@ func (sc *Scanner) ScanRoot(ctx context.Context, cfg RootConfig) (*ScanResult, e
 	// Ensure rollback on error
 	defer func() {
 		if result.FinalStatus == RootStatusFailed || result.ErrorCount > 0 {
-			tx.Rollback()
+			_ = tx.Rollback()
 		}
 	}()
 

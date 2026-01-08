@@ -173,11 +173,12 @@ func validateRoot(path string) error {
 
 // isActiveLegacyDir checks if the dir contains anything other than markers or emptiness
 func isActiveLegacyDir(path string) bool {
-	f, err := os.Open(path)
+	// #nosec G304
+	f, err := os.Open(filepath.Clean(path))
 	if err != nil {
 		return false
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	// Read a few entries
 	entries, _ := f.ReadDir(5)

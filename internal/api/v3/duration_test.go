@@ -92,19 +92,20 @@ func TestParseRecordingDurationSeconds_NeverPanic_Fuzz(t *testing.T) {
 	for i := 0; i < 1000; i++ {
 		s := ""
 		// Construct various "risky" strings
-		if i%3 == 0 {
+		switch i % 3 {
+		case 0:
 			// Random printable characters
 			for j := 0; j < 15; j++ {
 				s += string(rune(32 + (i*j)%95))
 			}
-		} else if i%3 == 1 {
+		case 1:
 			// Random colon placements
 			parts := make([]string, (i%5)+1)
 			for j := range parts {
 				parts[j] = fmt.Sprintf("%d", i*j)
 			}
 			s = strings.Join(parts, ":")
-		} else {
+		case 2:
 			// Random whitespace and suffixes
 			s = fmt.Sprintf("  %d  min  ", i)
 		}

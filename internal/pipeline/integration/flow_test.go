@@ -17,9 +17,9 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/api"
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/ManuGH/xg2g/internal/pipeline/lease"
-	"github.com/ManuGH/xg2g/internal/pipeline/model"
-	"github.com/ManuGH/xg2g/internal/pipeline/store"
-	"github.com/ManuGH/xg2g/internal/pipeline/worker"
+	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/domain/session/store"
+	"github.com/ManuGH/xg2g/internal/domain/session/manager"
 )
 
 // TestV3Flow verifies the end-to-end flow: Intent -> Bus -> Worker -> Store.
@@ -38,7 +38,7 @@ func TestV3Flow(t *testing.T) {
 	}
 
 	// Arrange: Worker
-	orch := worker.Orchestrator{
+	orch := manager.Orchestrator{
 		Store:          memStore,
 		Bus:            memBus,
 		LeaseTTL:       2 * time.Second,

@@ -12,7 +12,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/ManuGH/xg2g/internal/pipeline/store"
+	"github.com/ManuGH/xg2g/internal/domain/session/store"
 )
 
 // NewStateHandler returns an http.Handler that serves GET /api/v3/sessions/{id}.
