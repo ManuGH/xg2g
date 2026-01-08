@@ -6,7 +6,6 @@ package api
 
 import (
 	"context"
-	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,11 +22,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/control/middleware"
-	controlhttp "github.com/ManuGH/xg2g/internal/control/http"
 	v3 "github.com/ManuGH/xg2g/internal/api/v3"
 	"github.com/ManuGH/xg2g/internal/channels"
 	"github.com/ManuGH/xg2g/internal/config"
+	controlhttp "github.com/ManuGH/xg2g/internal/control/http"
+	"github.com/ManuGH/xg2g/internal/control/middleware"
+	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/dvr"
 	"github.com/ManuGH/xg2g/internal/epg"
 	"github.com/ManuGH/xg2g/internal/hdhr"
@@ -38,7 +38,6 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
-	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	fsplat "github.com/ManuGH/xg2g/internal/platform/fs"
 	"github.com/ManuGH/xg2g/internal/recordings"
 	"github.com/ManuGH/xg2g/internal/vod"
@@ -46,9 +45,6 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/resilience"
 )
-
-//go:embed dist/**
-var uiFS embed.FS
 
 // Server represents the HTTP API server for xg2g.
 type Server struct {
@@ -500,15 +496,10 @@ func (s *Server) routes() http.Handler {
 	r.Get("/readyz", s.handleReady)
 
 	// Web UI (read-only dashboard)
-	r.Handle("/ui/*", http.StripPrefix("/ui", func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// CRITICAL: Disable Caching for UI to prevent version skew
-			w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
-			w.Header().Set("Pragma", "no-cache")
-			w.Header().Set("Expires", "0")
-			next.ServeHTTP(w, r)
-		})
-	}(s.uiHandler())))
+	// UI serving (embedded Vite SPA) - now in control/http
+	r.Handle("/ui/*", http.StripPrefix("/ui", controlhttp.UIHandler(controlhttp.UIConfig{
+		CSP: middleware.DefaultCSP,
+	})))
 
 	r.Get("/ui", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/ui/", http.StatusMovedPermanently)

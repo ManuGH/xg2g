@@ -155,11 +155,11 @@ help: ## Show this help message
 ui-build: ## Build WebUI assets
 	@echo "Building WebUI assets..."
 	@cd webui && npm ci && npm run build
-	@echo "Copying to internal/api/dist..."
-	@rm -rf internal/api/dist/*
-	@mkdir -p internal/api/dist
-	@cp -r webui/dist/* internal/api/dist/
-	@touch internal/api/dist/.keep
+	@echo "Copying to internal/control/http/dist..."
+	@rm -rf internal/control/http/dist/*
+	@mkdir -p internal/control/http/dist
+	@cp -r webui/dist/* internal/control/http/dist/
+	@touch internal/control/http/dist/.keep
 	@echo "✅ WebUI build complete"
 
 generate: ## Generate Go code from OpenAPI spec
