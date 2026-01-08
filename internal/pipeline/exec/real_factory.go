@@ -1,14 +1,11 @@
-// Copyright (c) 2025 ManuGH
-// Licensed under the PolyForm Noncommercial License 1.0.0
-// Since v2.0.0, this software is restricted to non-commercial use only.
-
 package exec
 
 import (
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/infra/ffmpeg"
 	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
-	"github.com/ManuGH/xg2g/internal/pipeline/exec/ffmpeg"
+	"github.com/rs/zerolog"
 )
 
 // RealFactory produces real execution components (Enigma2 Tuner, Real/Stub Transcoder).
@@ -20,10 +17,11 @@ type RealFactory struct {
 	KillTimeout     time.Duration
 	AnalyzeDuration string
 	ProbeSize       string
+	Logger          zerolog.Logger
 }
 
 // NewRealFactory creates a RealFactory.
-func NewRealFactory(e2Client *enigma2.Client, tuneTimeout time.Duration, ffmpegBin, hlsRoot string, killTimeout time.Duration, analyzeDuration, probeSize string) *RealFactory {
+func NewRealFactory(e2Client *enigma2.Client, tuneTimeout time.Duration, ffmpegBin, hlsRoot string, killTimeout time.Duration, analyzeDuration, probeSize string, logger zerolog.Logger) *RealFactory {
 	return &RealFactory{
 		E2Client:        e2Client,
 		FFmpegBin:       ffmpegBin,
@@ -32,6 +30,7 @@ func NewRealFactory(e2Client *enigma2.Client, tuneTimeout time.Duration, ffmpegB
 		KillTimeout:     killTimeout,
 		AnalyzeDuration: analyzeDuration,
 		ProbeSize:       probeSize,
+		Logger:          logger,
 	}
 }
 
@@ -40,8 +39,8 @@ func (f *RealFactory) NewTuner(slot int) (Tuner, error) {
 }
 
 func (f *RealFactory) NewTranscoder() (Transcoder, error) {
-	runner := ffmpeg.NewRunner(f.FFmpegBin, f.HLSRoot, f.E2Client, f.KillTimeout)
-	runner.AnalyzeDuration = f.AnalyzeDuration
-	runner.ProbeSize = f.ProbeSize
-	return runner, nil
+	// Use new infra/ffmpeg.Executor with adapter
+	executor := ffmpeg.NewExecutor(f.FFmpegBin, f.Logger)
+	adapter := newTranscoderAdapter(executor)
+	return adapter, nil
 }

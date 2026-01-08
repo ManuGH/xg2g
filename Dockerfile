@@ -22,7 +22,7 @@ ENV TARGET_DIR=/opt/ffmpeg
 RUN ./build-ffmpeg.sh
 
 # Stage 2: Build xg2g application
-FROM golang:1.23-bookworm AS app-builder
+FROM golang:1.25-bookworm AS app-builder
 
 WORKDIR /app
 COPY go.mod go.sum ./

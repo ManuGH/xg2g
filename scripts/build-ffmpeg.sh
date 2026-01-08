@@ -23,7 +23,7 @@ fi
 
 # Verify checksum (sha256)
 echo "Verifying checksum..."
-EXPECTED_SHA256="4a87b6fa5d3de3b11a3b0c8f1c5e6f8e6c5a2c8f1a2b3c4d5e6f7a8b9c0d1e2f3"
+EXPECTED_SHA256="f0bf043299db9e3caacb435a712fc541fbb07df613c4b893e8b77e67baf3adbe"
 if command -v sha256sum &> /dev/null; then
     echo "${EXPECTED_SHA256}  ffmpeg-${FFMPEG_VERSION}.tar.xz" | sha256sum -c - || {
         echo "WARNING: Checksum verification failed. Proceeding anyway (update EXPECTED_SHA256)."
@@ -68,7 +68,7 @@ make install
 # Verify
 echo ""
 echo "=== FFmpeg Build Complete ==="
-export LD_LIBRARY_PATH="${TARGET_DIR}/lib:${LD_LIBRARY_PATH}"
+export LD_LIBRARY_PATH="${TARGET_DIR}/lib:${LD_LIBRARY_PATH:-}"
 "${TARGET_DIR}/bin/ffmpeg" -version | head -3
 echo ""
 echo "Installed to: ${TARGET_DIR}"
