@@ -13,7 +13,11 @@ import (
 )
 
 // transcoderAdapter adapts new infra/ffmpeg.Executor to old Transcoder interface.
-// This is a compatibility shim during migration.
+//
+// [DEBT] Timeboxed Migration Adapter
+// This is a compatibility shim to avoid breaking legacy pipeline code during Phase 8/9 hardening.
+// DEADLINE: Delete this by v3.2.0 (planned Phase-10 cleanup).
+// ADR: docs/adr/003-transcoder-infrastructure-migration.md
 type transcoderAdapter struct {
 	executor *ffmpeg.Executor
 	lastLogs []string

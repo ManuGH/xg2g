@@ -1,6 +1,6 @@
 # Multi-Stage Dockerfile for xg2g with embedded FFmpeg 7.1.3
-# Stage 1: Build FFmpeg (Debian-based for compatibility)
-FROM debian:bookworm-slim AS ffmpeg-builder
+# Stage 1: Build FFmpeg pinned version
+FROM debian@sha256:d5d3f9c23164ea16f31852f95bd5959aad1c5e854332fe00f7b3a20fcc9f635c AS ffmpeg-builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -22,7 +22,7 @@ ENV TARGET_DIR=/opt/ffmpeg
 RUN ./build-ffmpeg.sh
 
 # Stage 2: Build xg2g application
-FROM golang:1.25-bookworm AS app-builder
+FROM golang@sha256:2c7c65601b020ee79db4c1a32ebee0bf3d6b298969ec683e24fcbea29305f10e AS app-builder
 
 WORKDIR /app
 COPY go.mod go.sum ./
@@ -35,7 +35,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -ldflags="-s -w" -o /xg2g ./cmd/daemon
 
 # Stage 3: Final runtime image
-FROM debian:bookworm-slim AS runtime
+FROM debian@sha256:d5d3f9c23164ea16f31852f95bd5959aad1c5e854332fe00f7b3a20fcc9f635c AS runtime
 
 # Set production environment defaults
 ENV DEBIAN_FRONTEND=noninteractive \
