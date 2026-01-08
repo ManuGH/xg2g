@@ -21,16 +21,18 @@ import (
 	"sync/atomic"
 	"time"
 
-	v3 "github.com/ManuGH/xg2g/internal/api/v3"
 	"github.com/ManuGH/xg2g/internal/channels"
 	"github.com/ManuGH/xg2g/internal/config"
 	controlhttp "github.com/ManuGH/xg2g/internal/control/http"
+	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	"github.com/ManuGH/xg2g/internal/control/middleware"
+	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/dvr"
 	"github.com/ManuGH/xg2g/internal/epg"
 	"github.com/ManuGH/xg2g/internal/hdhr"
 	"github.com/ManuGH/xg2g/internal/health"
+	infra "github.com/ManuGH/xg2g/internal/infra/ffmpeg"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
@@ -39,7 +41,6 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
 	fsplat "github.com/ManuGH/xg2g/internal/platform/fs"
 	"github.com/ManuGH/xg2g/internal/recordings"
-	"github.com/ManuGH/xg2g/internal/vod"
 	"github.com/go-chi/chi/v5"
 
 	"github.com/ManuGH/xg2g/internal/resilience"
@@ -72,7 +73,7 @@ type Server struct {
 
 	// Recording Playback (VOD cache generation)
 	// Phase B: SOA Refactor - VOD Manager
-	vodManager vod.ManagerAPI
+	vodManager *vod.Manager
 
 	// OpenWebIF Client Cache (P1 Performance Fix)
 
@@ -211,7 +212,7 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager) *Server {
 		},
 		startTime:      time.Now(),
 		piconSemaphore: make(chan struct{}, 50),
-		vodManager:     vod.NewManager(&vod.DefaultExecutor{Logger: *log.L()}, *log.L()),
+		vodManager:     vod.NewManager(infra.NewExecutor("ffmpeg", *log.L()), infra.NewProber()),
 		preflightCheck: v3.CheckSourceAvailability,
 	}
 	s.v3Handler = v3.NewServer(cfg, cfgMgr, s.rootCancel)

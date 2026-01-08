@@ -36,7 +36,7 @@ const (
 // KnownTimerStates is a small, conservative map you can extend once verified.
 // Start with empty or minimal. Only add once you confirm via receiver logs/UI.
 var KnownTimerStates = map[int]RawStateMeaning{
-	// Example placeholders (DO NOT trust unless verified on your image):
+	// Examples (DO NOT trust unless verified on your image):
 	// 0: rawCompleted,
 	// 1: rawCanceled,
 	// 2: rawFailed,

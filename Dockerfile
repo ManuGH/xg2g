@@ -1,111 +1,76 @@
-# syntax=docker/dockerfile:1.7
+# Multi-Stage Dockerfile for xg2g with embedded FFmpeg 7.1.3
+# Stage 1: Build FFmpeg (Debian-based for compatibility)
+FROM debian:bookworm-slim AS ffmpeg-builder
 
-# =============================================================================
-# xg2g - Enigma2 to IPTV Gateway
-# Target: Linux amd64 only, Debian Trixie (FFmpeg 7.x)
-# Optimized for faster builds with aggressive caching
-# =============================================================================
-
-# =============================================================================
-# Stage 1: Build WebUI (React + Vite)
-# =============================================================================
-FROM node:24-slim AS node-builder
-WORKDIR /webui
-
-# Copy dependency manifests first for better layer caching
-COPY webui/package*.json ./
-RUN --mount=type=cache,target=/root/.npm \
-    npm ci --prefer-offline --no-audit --ignore-scripts
-
-# Copy source and build
-COPY webui/ .
-RUN npm run build
-
-# =============================================================================
-# Stage 2: Build Go Daemon
-# =============================================================================
-FROM golang:1.25-trixie AS go-builder
-
-WORKDIR /src
-
-# Copy Go module files first for better layer caching
-COPY go.mod go.sum ./
-RUN --mount=type=cache,target=/go/pkg/mod \
-    go mod download -x
-
-COPY . .
-
-# Copy WebUI artifacts from node-builder
-COPY --from=node-builder /webui/dist ./internal/api/dist
-
-# Build Go daemon
-ARG GIT_REF
-ARG VERSION
-ARG BUILD_REVISION=unknown
-
-RUN --mount=type=cache,target=/root/.cache/go-build \
-    set -eux; \
-    BUILD_REF="${GIT_REF:-${VERSION:-dev}}"; \
-    export GOAMD64=v3; \
-    export CGO_ENABLED=0; \
-    echo "🚀 Building xg2g for linux/amd64"; \
-    go build -buildvcs=false -trimpath \
-    -ldflags="-s -w -X 'main.version=${BUILD_REF}'" \
-    -o /out/xg2g ./cmd/daemon
-
-# =============================================================================
-# Stage 3: Runtime Image - Debian Trixie with FFmpeg 7.x
-# =============================================================================
-FROM debian:trixie-slim AS runtime
-
-# Install FFmpeg 7.x runtime libraries and dependencies
-# Using --no-install-recommends to minimize image size
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
     ca-certificates \
-    tzdata \
-    wget \
-    ffmpeg && \
-    groupadd -g 65532 xg2g && \
-    useradd -u 65532 -g xg2g -d /app -s /bin/false xg2g && \
-    usermod -aG video xg2g && \
-    (getent group render || groupadd -r render) && \
-    usermod -aG render xg2g && \
-    mkdir -p /data /app && \
-    chown -R xg2g:xg2g /data /app
+    yasm \
+    nasm \
+    pkg-config \
+    libx264-dev \
+    libx265-dev \
+    libfdk-aac-dev \
+    libva-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Build FFmpeg
+WORKDIR /build
+COPY scripts/build-ffmpeg.sh .
+ENV TARGET_DIR=/opt/ffmpeg
+RUN ./build-ffmpeg.sh
+
+# Stage 2: Build xg2g application
+FROM golang:1.23-bookworm AS app-builder
 
 WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
 
-# Copy Go daemon from builder stage
-COPY --from=go-builder --chown=xg2g:xg2g /out/xg2g .
+COPY . .
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -ldflags="-s -w" -o /xg2g ./cmd/daemon
 
-# Cache busting: BUILD_REVISION changes on every commit
-ARG BUILD_REVISION=unknown
-RUN chmod +x /app/xg2g && \
-    echo "Build: ${BUILD_REVISION}" > /app/.build-info
+# Stage 3: Runtime image (minimal)
+FROM debian:bookworm-slim
 
-VOLUME ["/data"]
+# Install runtime dependencies for FFmpeg
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    libx264-164 \
+    libx265-199 \
+    libfdk-aac2 \
+    libva2 \
+    libva-drm2 \
+    intel-media-va-driver \
+    && rm -rf /var/lib/apt/lists/*
 
-# Expose API port (8080)
-EXPOSE 8080
+# Copy FFmpeg from builder
+COPY --from=ffmpeg-builder /opt/ffmpeg /opt/ffmpeg
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD wget -qO- http://localhost:8080/healthz || exit 1
+# Install FFmpeg wrappers (scoped LD_LIBRARY_PATH, no global leak)
+COPY scripts/ffmpeg-wrapper.sh /usr/local/bin/ffmpeg
+COPY scripts/ffprobe-wrapper.sh /usr/local/bin/ffprobe
+RUN chmod +x /usr/local/bin/ffmpeg /usr/local/bin/ffprobe
 
-# Default configuration
-ENV XG2G_DATA=/data \
-    XG2G_LISTEN=:8080 \
-    XG2G_OWI_BASE= \
-    XG2G_BOUQUET= \
-    XG2G_FUZZY_MAX=2
+# Set FFMPEG_HOME for wrappers (optional, wrappers have defaults)
+ENV FFMPEG_HOME="/opt/ffmpeg"
 
-# Image metadata
-LABEL org.opencontainers.image.revision="${BUILD_REVISION}" \
-    org.opencontainers.image.source="https://github.com/ManuGH/xg2g" \
-    org.opencontainers.image.description="Enigma2 to IPTV Gateway with FFmpeg transcoding (Pure Go)"
+# Set xg2g FFmpeg paths to use wrappers (explicit contract)
+ENV XG2G_FFMPEG_PATH="/usr/local/bin/ffmpeg"
 
-# Run as non-root user (best practice)
-USER xg2g:xg2g
-ENTRYPOINT ["/app/xg2g"]
+# Copy xg2g binary
+COPY --from=app-builder /xg2g /usr/local/bin/xg2g
+
+# Expose ports (API + streaming)
+EXPOSE 8088 18000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s \
+    CMD ["/usr/local/bin/xg2g", "--version"] || exit 1
+
+ENTRYPOINT ["/usr/local/bin/xg2g"]

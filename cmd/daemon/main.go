@@ -31,9 +31,9 @@ import (
 )
 
 var (
-	version   = "3.1.2"
-	commit    = "none"
-	buildDate = "unknown"
+	version = "3.1.3"
+	commit  = "dev"
+	date    = "unknown"
 )
 
 // maskURL removes user info from a URL string for safe logging.
