@@ -3,6 +3,7 @@
 # =============================================================================
 # xg2g - Enigma2 to IPTV Gateway
 # Target: Linux amd64 only, Debian Trixie (FFmpeg 7.x)
+# Optimized for faster builds with aggressive caching
 # =============================================================================
 
 # =============================================================================
@@ -14,7 +15,7 @@ WORKDIR /webui
 # Copy dependency manifests first for better layer caching
 COPY webui/package*.json ./
 RUN --mount=type=cache,target=/root/.npm \
-    npm ci --prefer-offline --no-audit
+    npm ci --prefer-offline --no-audit --ignore-scripts
 
 # Copy source and build
 COPY webui/ .
@@ -30,7 +31,7 @@ WORKDIR /src
 # Copy Go module files first for better layer caching
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod \
-    go mod download
+    go mod download -x
 
 COPY . .
 
@@ -42,9 +43,10 @@ ARG GIT_REF
 ARG VERSION
 ARG BUILD_REVISION=unknown
 
-RUN set -eux; \
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    set -eux; \
     BUILD_REF="${GIT_REF:-${VERSION:-dev}}"; \
-    export GOAMD64=v2; \
+    export GOAMD64=v3; \
     export CGO_ENABLED=0; \
     echo "🚀 Building xg2g for linux/amd64"; \
     go build -buildvcs=false -trimpath \
@@ -58,14 +60,14 @@ FROM debian:trixie-slim AS runtime
 
 # Install FFmpeg 7.x runtime libraries and dependencies
 # Using --no-install-recommends to minimize image size
-RUN apt-get update && \
-    apt-get upgrade -y && \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
     apt-get install -y --no-install-recommends \
     ca-certificates \
     tzdata \
     wget \
-    ffmpeg \
-    && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* && \
+    ffmpeg && \
     groupadd -g 65532 xg2g && \
     useradd -u 65532 -g xg2g -d /app -s /bin/false xg2g && \
     usermod -aG video xg2g && \
@@ -86,7 +88,7 @@ RUN chmod +x /app/xg2g && \
 
 VOLUME ["/data"]
 
-# Expose API port (8080) and Stream Proxy port (18000)
+# Expose API port (8080)
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
@@ -102,11 +104,8 @@ ENV XG2G_DATA=/data \
 # Image metadata
 LABEL org.opencontainers.image.revision="${BUILD_REVISION}" \
     org.opencontainers.image.source="https://github.com/ManuGH/xg2g" \
-    org.opencontainers.image.description="Enigma2 to IPTV Gateway with FFmpeg transcoding"
+    org.opencontainers.image.description="Enigma2 to IPTV Gateway with FFmpeg transcoding (Pure Go)"
 
 # Run as non-root user (best practice)
-# NOTE: If running Docker inside LXC (Proxmox) and experiencing permission issues
-# with unprivileged ports, override with: docker run --user root ...
-# or in docker-compose.yml: user: "0:0"
 USER xg2g:xg2g
 ENTRYPOINT ["/app/xg2g"]
