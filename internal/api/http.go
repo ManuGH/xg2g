@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/control/middleware"
+	controlhttp "github.com/ManuGH/xg2g/internal/control/http"
 	v3 "github.com/ManuGH/xg2g/internal/api/v3"
 	"github.com/ManuGH/xg2g/internal/channels"
 	"github.com/ManuGH/xg2g/internal/config"
@@ -588,7 +589,7 @@ func (s *Server) routes() http.Handler {
 
 	// Harden file server: disable directory listing and use a secure handler
 	// NOTE: fileserver applies its own allowlist, but we add LAN guard for depth.
-	r.With(lanGuard.RequireLAN).Handle("/files/*", http.StripPrefix("/files/", s.secureFileServer()))
+	r.With(lanGuard.RequireLAN).Handle("/files/*", http.StripPrefix("/files/", controlhttp.SecureFileServer(s.cfg.DataDir, controlhttp.NewPromFileMetrics())))
 
 	return r
 }

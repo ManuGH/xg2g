@@ -4,7 +4,7 @@
 
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
-package api
+package http
 
 import (
 	"fmt"
@@ -18,16 +18,20 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-// secureFileServer creates a handler that serves files from the data directory
+// SecureFileServer creates a handler that serves files from the data directory
 // with comprehensive security checks against path traversal, symlink escapes,
 // and directory listing.
-func (s *Server) secureFileServer() http.Handler {
+func SecureFileServer(dataDir string, metrics FileMetrics) http.Handler {
+	if metrics == nil {
+		metrics = NewNoopFileMetrics()
+	}
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		logger := log.WithComponentFromContext(r.Context(), "api")
+		logger := log.WithComponentFromContext(r.Context(), "control.http")
 
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			logger.Warn().Str("event", "file_req.denied").Str("path", r.URL.Path).Str("reason", "method_not_allowed").Msg("method not allowed")
-			recordFileRequestDenied("method_not_allowed")
+			metrics.Denied("method_not_allowed")
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
@@ -57,10 +61,10 @@ func (s *Server) secureFileServer() http.Handler {
 
 			if isSensitive {
 				logger.Warn().Str("event", "file_req.denied").Str("path", path).Str("reason", "forbidden_extension").Msg("attempted access to sensitive file extension")
-				recordFileRequestDenied("forbidden_extension") // Metrics
+				metrics.Denied("forbidden_extension") // Metrics
 			} else {
 				logger.Warn().Str("event", "file_req.denied").Str("path", path).Str("reason", "not_allowlisted").Msg("file not in allowlist")
-				recordFileRequestDenied("forbidden_file") // Metrics
+				metrics.Denied("forbidden_file") // Metrics
 			}
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
@@ -70,21 +74,21 @@ func (s *Server) secureFileServer() http.Handler {
 		// Unicode normalization, mixed-case encodings, and NUL bytes.
 		if isPathTraversal(path) {
 			logger.Warn().Str("event", "file_req.denied").Str("path", r.URL.Path).Str("reason", "path_escape").Msg("detected traversal sequence")
-			recordFileRequestDenied("path_escape")
+			metrics.Denied("path_escape")
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}
 		if strings.HasSuffix(path, "/") || path == "" {
 			logger.Warn().Str("event", "file_req.denied").Str("path", r.URL.Path).Str("reason", "directory_listing").Msg("directory listing forbidden")
-			recordFileRequestDenied("directory_listing")
+			metrics.Denied("directory_listing")
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}
 
-		absDataDir, err := filepath.Abs(s.cfg.DataDir)
+		absDataDir, err := filepath.Abs(dataDir)
 		if err != nil {
 			logger.Error().Err(err).Str("event", "file_req.internal_error").Msg("could not get absolute data dir")
-			recordFileRequestDenied("internal_error")
+			metrics.Denied("internal_error")
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
@@ -96,12 +100,12 @@ func (s *Server) secureFileServer() http.Handler {
 		if err != nil {
 			if os.IsNotExist(err) {
 				logger.Info().Str("event", "file_req.not_found").Str("path", fullPath).Msg("file not found")
-				recordFileRequestDenied("not_found")
+				metrics.Denied("not_found")
 				http.Error(w, "Not found", http.StatusNotFound)
 				return
 			}
 			logger.Error().Err(err).Str("event", "file_req.internal_error").Str("path", fullPath).Msg("could not evaluate symlinks")
-			recordFileRequestDenied("internal_error")
+			metrics.Denied("internal_error")
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
@@ -110,7 +114,7 @@ func (s *Server) secureFileServer() http.Handler {
 		realDataDir, err := filepath.EvalSymlinks(absDataDir)
 		if err != nil {
 			logger.Error().Err(err).Str("event", "file_req.internal_error").Msg("could not evaluate symlinks on data dir")
-			recordFileRequestDenied("internal_error")
+			metrics.Denied("internal_error")
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
@@ -126,7 +130,7 @@ func (s *Server) secureFileServer() http.Handler {
 				Str("data_dir", realDataDir).
 				Str("reason", "path_escape").
 				Msg("path escapes data directory")
-			recordFileRequestDenied("path_escape")
+			metrics.Denied("path_escape")
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}
@@ -135,13 +139,13 @@ func (s *Server) secureFileServer() http.Handler {
 		info, err := os.Stat(realPath)
 		if err != nil {
 			logger.Error().Err(err).Str("event", "file_req.internal_error").Str("path", realPath).Msg("could not stat real path")
-			recordFileRequestDenied("internal_error")
+			metrics.Denied("internal_error")
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
 		if info.IsDir() {
 			logger.Warn().Str("event", "file_req.denied").Str("path", path).Str("reason", "directory_listing").Msg("resolved path is a directory")
-			recordFileRequestDenied("directory_listing")
+			metrics.Denied("directory_listing")
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}
@@ -151,7 +155,7 @@ func (s *Server) secureFileServer() http.Handler {
 		f, err := os.Open(realPath) // #nosec G304
 		if err != nil {
 			logger.Error().Err(err).Str("event", "file_req.internal_error").Str("path", realPath).Msg("could not open real path for serving")
-			recordFileRequestDenied("internal_error")
+			metrics.Denied("internal_error")
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
@@ -165,7 +169,7 @@ func (s *Server) secureFileServer() http.Handler {
 		info, err = f.Stat()
 		if err != nil {
 			logger.Error().Err(err).Str("event", "file_req.internal_error").Str("path", realPath).Msg("could not stat opened file")
-			recordFileRequestDenied("internal_error")
+			metrics.Denied("internal_error")
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
@@ -180,7 +184,7 @@ func (s *Server) secureFileServer() http.Handler {
 		// Check if the client already has the same version of the file.
 		if match := r.Header.Get("If-None-Match"); match != "" {
 			if match == etag {
-				recordFileCacheHit()
+				metrics.CacheHit()
 				w.WriteHeader(http.StatusNotModified)
 				return
 			}
@@ -200,8 +204,8 @@ func (s *Server) secureFileServer() http.Handler {
 		}
 
 		logger.Info().Str("event", "file_req.allowed").Str("path", path).Msg("serving file")
-		recordFileRequestAllowed()
-		recordFileCacheMiss()
+		metrics.Allowed()
+		metrics.CacheMiss()
 		http.ServeContent(w, r, info.Name(), info.ModTime(), f)
 	})
 }
