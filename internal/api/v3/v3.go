@@ -16,6 +16,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/channels"
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/control/read"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/dvr"
 	"github.com/ManuGH/xg2g/internal/epg"
@@ -44,6 +45,16 @@ type DvrSource interface {
 // ScanSource defines the minimal interface required for scan status.
 type ScanSource interface {
 	GetStatus() scan.ScanStatus
+}
+
+// ServicesSource defines the minimal interface required for service listing.
+type ServicesSource interface {
+	IsEnabled(id string) bool
+}
+
+// TimersSource defines the minimal interface required for timer listing.
+type TimersSource interface {
+	GetTimers(ctx context.Context) ([]openwebif.Timer, error)
 }
 
 // Server implements the v3 API handlers.
@@ -84,6 +95,9 @@ type Server struct {
 	logSource       interface{ GetRecentLogs() []log.LogEntry }
 	scanSource      ScanSource
 	dvrSource       DvrSource
+	servicesSource  ServicesSource
+	timersSource    TimersSource
+	epgSource       read.EpgSource
 }
 
 // NewServer creates a new implemented v3 server.
@@ -112,12 +126,14 @@ func NewServer(cfg config.AppConfig, cfgMgr *config.Manager, rootCancel context.
 		}
 	}
 
-	return &Server{
+	s := &Server{
 		cfg:            cfg,
 		configManager:  cfgMgr,
 		startTime:      time.Now(),
 		libraryService: librarySvc,
 	}
+	s.epgSource = &epgSourceWrapper{s}
+	return s
 }
 
 // UpdateConfig updates the internal configuration snapshot.
@@ -159,6 +175,8 @@ func (s *Server) SetDependencies(
 	ls interface{ GetRecentLogs() []log.LogEntry },
 	ss ScanSource,
 	ds DvrSource,
+	svs ServicesSource,
+	ts TimersSource,
 	requestShutdown func(context.Context) error,
 	preflightCheck PreflightCheckFunc,
 ) {
@@ -178,6 +196,8 @@ func (s *Server) SetDependencies(
 	s.logSource = ls
 	s.scanSource = ss
 	s.dvrSource = ds
+	s.servicesSource = svs
+	s.timersSource = ts
 	s.requestShutdown = requestShutdown
 	s.preflightCheck = preflightCheck
 }

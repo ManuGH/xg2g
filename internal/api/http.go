@@ -249,6 +249,8 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager) *Server {
 		logSourceWrapper{},
 		s.v3Scan,
 		&dvrSourceWrapper{s},
+		s.channelManager,
+		&dvrSourceWrapper{s},
 		s.requestShutdown,
 		s.preflightCheck,
 	)
@@ -1263,4 +1265,12 @@ func (d *dvrSourceWrapper) HasTimerChange(ctx context.Context) bool {
 	d.s.mu.RUnlock()
 	client := openwebif.New(cfg.Enigma2.BaseURL)
 	return client.HasTimerChange(ctx)
+}
+
+func (d *dvrSourceWrapper) GetTimers(ctx context.Context) ([]openwebif.Timer, error) {
+	d.s.mu.RLock()
+	cfg := d.s.cfg
+	d.s.mu.RUnlock()
+	client := openwebif.New(cfg.Enigma2.BaseURL)
+	return client.GetTimers(ctx)
 }

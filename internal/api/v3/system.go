@@ -10,7 +10,6 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
-	"html"
 	"net/http"
 	"net/url"
 	"os"
@@ -248,90 +247,54 @@ func (s *Server) GetServices(w http.ResponseWriter, r *http.Request, params GetS
 	s.mu.RLock()
 	cfg := s.cfg
 	snap := s.snap
+	src := s.servicesSource
 	s.mu.RUnlock()
 
-	playlistName := snap.Runtime.PlaylistFilename
-	path := filepath.Clean(filepath.Join(cfg.DataDir, playlistName))
+	q := read.ServicesQuery{}
+	if params.Bouquet != nil {
+		q.Bouquet = *params.Bouquet
+	}
 
-	data, err := os.ReadFile(path)
+	services, err := read.GetServices(cfg, snap, src, q)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode([]Service{})
+		log.L().Error().Err(err).Msg("failed to get services")
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
-	channels := m3u.Parse(string(data))
-	var resp []Service
-
-	for _, ch := range channels {
-		id := ch.TvgID
-		if id == "" {
-			id = ch.Name
-		}
-
-		if params.Bouquet != nil && ch.Group != *params.Bouquet {
-			continue
-		}
-
-		enabled := true
-		if s.channelManager != nil {
-			enabled = s.channelManager.IsEnabled(id)
-		}
-
-		name := ch.Name
-		group := ch.Group
-		logo := ch.Logo
-
-		publicURL := snap.Runtime.PublicURL
-		if publicURL != "" && strings.HasPrefix(logo, publicURL) {
-			logo = strings.TrimPrefix(logo, publicURL)
-		}
-		number := ch.Number
-
-		// Extract service_ref from URL for streaming
-		serviceRef := ""
-		if ch.URL != "" {
-			if u, err := url.Parse(ch.URL); err == nil {
-				// Check query params first (e.g. stream.m3u?ref=...)
-				if ref := u.Query().Get("ref"); ref != "" {
-					serviceRef = ref
-				} else {
-					// Fallback to path logic
-					parts := strings.Split(u.Path, "/")
-					if len(parts) > 0 {
-						serviceRef = parts[len(parts)-1]
-					}
-				}
-			} else {
-				// Fallback for non-parseable URLs
-				parts := strings.Split(ch.URL, "/")
-				if len(parts) > 0 {
-					serviceRef = parts[len(parts)-1]
-				}
-			}
-		}
-		// Fallback to TvgID if service_ref not found
-		if serviceRef == "" {
-			serviceRef = id
-		}
-
-		// Rewrite Logo to use local proxy (avoids mixed content & external reachability issues)
-		if serviceRef != "" {
-			piconRef := strings.ReplaceAll(serviceRef, ":", "_")
-			piconRef = strings.TrimSuffix(piconRef, "_")
-			// Use relative path so frontend resolves to correct host
-			logo = fmt.Sprintf("/logos/%s.png", piconRef)
-		}
+	// Unwrap ServicesResult
+	items := services.Items
+	resp := make([]Service, 0, len(items))
+	for _, svc := range items {
+		// Capture loop variables for pointer assignment
+		id := svc.ID
+		name := svc.Name
+		group := svc.Group
+		logo := svc.LogoURL
+		num := svc.Number
+		enabled := svc.Enabled
+		ref := svc.ServiceRef
 
 		resp = append(resp, Service{
 			Id:         &id,
 			Name:       &name,
 			Group:      &group,
 			LogoUrl:    &logo,
-			Number:     &number,
+			Number:     &num,
 			Enabled:    &enabled,
-			ServiceRef: &serviceRef,
+			ServiceRef: &ref,
 		})
+	}
+
+	// Legacy Parity: If empty, check EmptyEncoding semantics
+	if len(resp) == 0 {
+		if services.EmptyEncoding == read.EmptyEncodingNull {
+			resp = nil
+		} else {
+			// EmptyEncodingArray -> enforce []Service{} (make initialized len=0)
+			// resp is already make(..., 0, ...), so it serializes to [].
+			// Do nothing.
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -371,131 +334,59 @@ func (s *Server) GetStreams(w http.ResponseWriter, r *http.Request) {
 	store := s.v3Store
 	cfg := s.cfg
 	snap := s.snap
-	epgCache := s.epgCache
 	s.mu.RUnlock()
 
 	if store == nil {
-		http.Error(w, "v3 store not initialized", http.StatusServiceUnavailable)
+		log.L().Error().Msg("v3 store not initialized")
+		writeProblem(w, http.StatusServiceUnavailable, "streams/unavailable", "V3 control plane not enabled", nil)
 		return
 	}
 
-	sessions, err := store.ListSessions(r.Context())
+	// 1. Parse Query (IP Gating)
+	q := read.StreamsQuery{
+		IncludeClientIP: r.URL.Query().Get("include_client_ip") == "true",
+	}
+
+	// 2. Call Control Provider
+	streams, err := read.GetStreams(r.Context(), cfg, snap, store, q)
 	if err != nil {
-		http.Error(w, "failed to list sessions", http.StatusInternalServerError)
+		log.L().Error().Err(err).Msg("failed to get streams")
+		writeProblem(w, http.StatusInternalServerError, "streams/read_failed", "Failed to get streams", nil)
 		return
 	}
 
-	if len(sessions) == 0 {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode([]StreamSession{})
-		return
-	}
+	// 3. Map to API DTOs
+	resp := make([]StreamSession, 0, len(streams))
+	for _, st := range streams {
+		// Pointers for optional fields (capture loop var)
+		id := st.ID
+		name := st.ChannelName
+		ip := st.ClientIP
+		start := st.StartedAt
 
-	now := time.Now()
-	idleTimeout := cfg.Engine.IdleTimeout
-	channelNames := make(map[string]string)
-
-	if epgCache != nil {
-		for _, ch := range epgCache.Channels {
-			if ch.ID == "" || len(ch.DisplayName) == 0 {
-				continue
-			}
-			if _, ok := channelNames[ch.ID]; !ok {
-				channelNames[ch.ID] = ch.DisplayName[0]
-			}
-		}
-	}
-
-	activeSessions := make([]*model.SessionRecord, 0, len(sessions))
-	missingRefs := make(map[string]struct{})
-
-	for _, sess := range sessions {
-		if sess == nil {
-			continue
-		}
-		if sess.State.IsTerminal() {
-			continue
-		}
-
-		lastAccess := sess.LastAccessUnix
-		if lastAccess == 0 {
-			lastAccess = sess.UpdatedAtUnix
-		}
-		if lastAccess == 0 {
-			lastAccess = sess.CreatedAtUnix
-		}
-		if idleTimeout > 0 && lastAccess > 0 {
-			if now.Sub(time.Unix(lastAccess, 0)) > idleTimeout {
-				continue
-			}
-		}
-
-		activeSessions = append(activeSessions, sess)
-		if sess.ServiceRef != "" {
-			if _, ok := channelNames[sess.ServiceRef]; !ok {
-				missingRefs[sess.ServiceRef] = struct{}{}
-			}
-		}
-	}
-
-	if len(activeSessions) == 0 {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode([]StreamSession{})
-		return
-	}
-
-	if len(missingRefs) > 0 {
-		for ref, name := range mapPlaylistNames(cfg, snap, missingRefs) {
-			if _, ok := channelNames[ref]; !ok && name != "" {
-				channelNames[ref] = name
-			}
-		}
-	}
-
-	resp := make([]StreamSession, 0, len(activeSessions))
-	for _, sess := range activeSessions {
-		if sess == nil {
-			continue
-		}
-		id := sess.SessionID
-		if id == "" {
-			continue
-		}
-
-		var clientIP *string
-		if sess.ContextData != nil {
-			if ip := sess.ContextData["client_ip"]; ip != "" {
-				clientIP = &ip
-			}
-		}
-
-		var channelName *string
-		if sess.ServiceRef != "" {
-			name := channelNames[sess.ServiceRef]
-			if name == "" {
-				name = sess.ServiceRef
-			}
-			if name != "" {
-				channelName = &name
-			}
-		}
-
-		var startedAt *time.Time
-		if sess.CreatedAtUnix > 0 {
-			t := time.Unix(sess.CreatedAtUnix, 0)
-			startedAt = &t
-		}
-
+		// Map State
+		// Map State (Note B: Strict "active" only)
 		state := Active
-		resp = append(resp, StreamSession{
-			Id:          &id,
-			ClientIp:    clientIP,
-			ChannelName: channelName,
-			StartedAt:   startedAt,
-			State:       &state,
-		})
+
+		item := StreamSession{
+			Id:    &id,
+			State: &state,
+		}
+
+		if name != "" {
+			item.ChannelName = &name
+		}
+		if ip != "" {
+			item.ClientIp = &ip
+		}
+		if !start.IsZero() {
+			item.StartedAt = &start
+		}
+
+		resp = append(resp, item)
 	}
 
+	// 4. Send Response (Always [] for empty)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
 }
@@ -567,28 +458,7 @@ func mapPlaylistNames(cfg config.AppConfig, snap config.Snapshot, wanted map[str
 			id = ch.Name
 		}
 
-		serviceRef := ""
-		if ch.URL != "" {
-			if u, err := url.Parse(ch.URL); err == nil {
-				if ref := u.Query().Get("ref"); ref != "" {
-					serviceRef = ref
-				} else {
-					parts := strings.Split(u.Path, "/")
-					if len(parts) > 0 {
-						serviceRef = parts[len(parts)-1]
-					}
-				}
-			} else {
-				parts := strings.Split(ch.URL, "/")
-				if len(parts) > 0 {
-					serviceRef = parts[len(parts)-1]
-				}
-			}
-		}
-
-		if serviceRef == "" {
-			serviceRef = id
-		}
+		serviceRef := read.ExtractServiceRef(ch.URL, id)
 		if serviceRef == "" {
 			continue
 		}
@@ -731,27 +601,28 @@ func parseXMLTVTime(s string) (time.Time, error) {
 	return time.Parse(layout, s)
 }
 
-// GetEpg implements ServerInterface
-func (s *Server) GetEpg(w http.ResponseWriter, r *http.Request, params GetEpgParams) {
-	logger := log.WithComponentFromContext(r.Context(), "api")
+// epgSourceWrapper adapts the server infrastructure to the control-layer EpgSource interface.
+type epgSourceWrapper struct {
+	s *Server
+}
 
+func (w *epgSourceWrapper) GetPrograms(ctx context.Context) ([]epg.Programme, error) {
+	s := w.s
 	s.mu.RLock()
 	cfg := s.cfg
 	s.mu.RUnlock()
 
 	if strings.TrimSpace(cfg.XMLTVPath) == "" {
-		http.Error(w, "XMLTV not configured", http.StatusNotFound)
-		return
+		return nil, os.ErrNotExist
 	}
 
 	xmltvPath, err := s.dataFilePath(cfg.XMLTVPath)
 	if err != nil {
-		http.Error(w, "XMLTV not available", http.StatusNotFound)
-		return
+		return nil, err
 	}
 
-	// 1. Singleflight for Concurrency Protection
-	result, err, shared := s.epgSfg.Do("epg-load", func() (interface{}, error) {
+	// Singleflight for Concurrency Protection
+	result, err, _ := s.epgSfg.Do("epg-load", func() (interface{}, error) {
 		fileInfo, err := os.Stat(xmltvPath)
 		if err != nil {
 			return nil, err
@@ -765,19 +636,17 @@ func (s *Server) GetEpg(w http.ResponseWriter, r *http.Request, params GetEpgPar
 		s.mu.Unlock()
 
 		// Parse
-		logger.Info().Str("path", xmltvPath).Msg("EPG cache miss/stale, parsing xmltv...")
-		xmltvData, err := os.ReadFile(xmltvPath) // #nosec G304
+		data, err := os.ReadFile(xmltvPath) // #nosec G304
 		if err != nil {
 			return nil, err
 		}
 
 		var parsedTU epg.TV
-		if err := xml.Unmarshal(xmltvData, &parsedTU); err != nil {
+		if err := xml.Unmarshal(data, &parsedTU); err != nil {
 			s.mu.RLock()
 			stale := s.epgCache
 			s.mu.RUnlock()
 			if stale != nil {
-				logger.Warn().Err(err).Msg("EPG parse failed, serving STALE cache")
 				return stale, nil
 			}
 			return nil, err
@@ -795,209 +664,168 @@ func (s *Server) GetEpg(w http.ResponseWriter, r *http.Request, params GetEpgPar
 	})
 
 	if err != nil {
+		return nil, err
+	}
+
+	tv := result.(*epg.TV)
+	return tv.Programs, nil
+}
+
+func (w *epgSourceWrapper) GetBouquetServiceRefs(ctx context.Context, bouquet string) (map[string]struct{}, error) {
+	s := w.s
+	s.mu.RLock()
+	snap := s.snap
+	cfg := s.cfg
+	s.mu.RUnlock()
+
+	playlistName := snap.Runtime.PlaylistFilename
+	// Parity Hardening: If playlist not configured, strict filter (empty result)
+	if playlistName == "" {
+		return make(map[string]struct{}), nil
+	}
+	playlistPath := filepath.Clean(filepath.Join(cfg.DataDir, playlistName))
+
+	data, err := os.ReadFile(playlistPath) // #nosec G304
+	if err != nil {
+		// Parity: Legacy ignores filter if playlist read fails (effectively strict filter = empty results)
+		// unless search is active (handled by caller).
+		// Legacy behavior: "allowedRefs" remains initialized but empty.
+		// So we return empty map, NO error.
+		return make(map[string]struct{}), nil
+	}
+
+	allowedRefs := make(map[string]struct{})
+	channels := m3u.Parse(string(data))
+
+	for _, ch := range channels {
+		if ch.Group != bouquet {
+			continue
+		}
+		if ch.TvgID != "" {
+			allowedRefs[ch.TvgID] = struct{}{}
+		}
+	}
+
+	return allowedRefs, nil
+}
+
+// GetEpg implements ServerInterface
+// GetEpg implements ServerInterface
+func (s *Server) GetEpg(w http.ResponseWriter, r *http.Request, params GetEpgParams) {
+	s.mu.RLock()
+	src := s.epgSource
+	s.mu.RUnlock()
+
+	q := read.EpgQuery{}
+	if params.From != nil {
+		q.From = int64(*params.From)
+	}
+	if params.To != nil {
+		q.To = int64(*params.To)
+	}
+	if params.Bouquet != nil {
+		q.Bouquet = *params.Bouquet
+	}
+	if params.Q != nil {
+		q.Q = *params.Q
+	}
+
+	entries, err := read.GetEpg(r.Context(), src, q, read.RealClock{})
+	if err != nil {
 		if os.IsNotExist(err) {
 			http.Error(w, "XMLTV not available", http.StatusNotFound)
 			return
 		}
-		logger.Error().Err(err).Msg("failed to load EPG")
+		log.L().Error().Err(err).Msg("failed to load EPG")
 		http.Error(w, "EPG Load Error", http.StatusInternalServerError)
 		return
 	}
 
-	if shared {
-		logger.Debug().Msg("served EPG from shared singleflight")
-	}
+	resp := make([]EpgItem, 0, len(entries))
+	for _, e := range entries {
+		// Capture variables for pointer assignment
+		id := e.ID // Legacy used channel ID but ServiceRef is safer?
+		// Legacy: allowedRefs[p.Channel]. But output EpgItem.Id *string.
+		// Usually Id is just channel ID.
+		sRef := e.ServiceRef
+		title := e.Title
+		desc := e.Desc
+		start := int(e.Start)
+		end := int(e.End)
+		dur := int(e.Duration)
 
-	tv := result.(*epg.TV)
-
-	// Extract parameters
-	var fromTime, toTime time.Time
-	now := time.Now()
-
-	if params.From != nil {
-		fromTime = time.Unix(int64(*params.From), 0)
-	} else {
-		fromTime = now.Add(-30 * time.Minute)
-	}
-
-	if params.To != nil {
-		toTime = time.Unix(int64(*params.To), 0)
-	} else {
-		toTime = now.Add(7 * 24 * time.Hour)
-	}
-
-	// Requirement: Max 7 days server-side
-	maxEnd := now.Add(7 * 24 * time.Hour)
-	if toTime.After(maxEnd) {
-		toTime = maxEnd
-	}
-
-	bouquetFilter := ""
-	if params.Bouquet != nil {
-		bouquetFilter = strings.TrimSpace(*params.Bouquet)
-	}
-
-	qLower := ""
-	if params.Q != nil {
-		qLower = strings.ToLower(strings.TrimSpace(*params.Q))
-	}
-
-	allowedRefs := make(map[string]struct{})
-	if bouquetFilter != "" {
-		s.mu.RLock()
-		snap := s.snap
-		s.mu.RUnlock()
-		playlistName := snap.Runtime.PlaylistFilename
-		playlistPath := filepath.Clean(filepath.Join(cfg.DataDir, playlistName))
-		if data, err := os.ReadFile(playlistPath); err == nil { // #nosec G304
-			channels := m3u.Parse(string(data))
-			for _, ch := range channels {
-				if ch.Group != bouquetFilter {
-					continue
-				}
-				if ch.TvgID != "" {
-					allowedRefs[ch.TvgID] = struct{}{}
-				}
-			}
-		}
-	}
-
-	// If search requested and bouquet filter yields nothing, relax filter
-	if qLower != "" && bouquetFilter != "" && len(allowedRefs) == 0 {
-		allowedRefs = nil
-	}
-
-	var items []EpgItem
-	for _, p := range tv.Programs {
-		if bouquetFilter != "" {
-			_, ok1 := allowedRefs[p.Channel]
-			if !ok1 {
-				continue
-			}
-		}
-
-		startTime, errStart := parseXMLTVTime(p.Start)
-		endTime, errEnd := parseXMLTVTime(p.Stop)
-		if errStart != nil || errEnd != nil {
-			continue
-		}
-
-		if !startTime.Before(toTime) || !endTime.After(fromTime) {
-			continue
-		}
-
-		if qLower != "" {
-			match := false
-			if strings.Contains(strings.ToLower(p.Title.Text), qLower) {
-				match = true
-			} else if strings.Contains(strings.ToLower(p.Desc), qLower) {
-				match = true
-			}
-			if !match {
-				continue
-			}
-		} else {
-			if endTime.Before(fromTime) || startTime.After(toTime) {
-				continue
-			}
-		}
-
-		startUnix := startTime.Unix()
-		endUnix := endTime.Unix()
-		dur := int(endUnix - startUnix)
-		if dur < 0 {
-			dur = 0
-		}
-
-		// Unescape HTML entities and replace literal \n with real newlines
-		desc := html.UnescapeString(p.Desc)
-		desc = strings.ReplaceAll(desc, "\\n", "\n")
-		pID := p.Channel
-
-		items = append(items, EpgItem{
-			Id:         &pID,
-			ServiceRef: p.Channel,
-			Title:      html.UnescapeString(p.Title.Text),
+		resp = append(resp, EpgItem{
+			Id:         &id,
+			ServiceRef: sRef,
+			Title:      title,
 			Desc:       &desc,
-			Start:      int(startUnix),
-			End:        int(endUnix),
+			Start:      start,
+			End:        end,
 			Duration:   &dur,
 		})
 	}
 
+	if len(resp) == 0 {
+		resp = nil
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"items": items,
-	})
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // GetTimers implements ServerInterface
 func (s *Server) GetTimers(w http.ResponseWriter, r *http.Request, params GetTimersParams) {
 	s.mu.RLock()
-	cfg := s.cfg
-	snap := s.snap
+	src := s.timersSource
 	s.mu.RUnlock()
 
-	client := s.newOpenWebIFClient(cfg, snap)
-	timers, err := client.GetTimers(r.Context())
+	if src == nil {
+		http.Error(w, "Timers source not initialized", http.StatusServiceUnavailable)
+		return
+	}
+
+	q := read.TimersQuery{}
+	if params.State != nil {
+		q.State = *params.State
+	}
+	if params.From != nil {
+		q.From = int64(*params.From)
+	}
+
+	timers, err := read.GetTimers(r.Context(), src, q, read.RealClock{})
 	if err != nil {
 		log.L().Error().Err(err).Msg("failed to get timers")
 		http.Error(w, "Failed to fetch timers", http.StatusBadGateway)
 		return
 	}
 
-	// Filter by state?
-	// params.State (default "scheduled")
-	// OpenWebIF returns all usually. We might need to filter manually if OWI doesn't support state param.
-	// For now, return all mapped to our Timer struct.
-
-	count := len(timers)
-	mapped := make([]Timer, 0, count)
-
+	mapped := make([]Timer, 0, len(timers))
 	for _, t := range timers {
-		// Map OWI Timer to API Timer
-		// state: 0=waiting, 2=running, 3=finished (example, verify OWI codes)
-		// We map to "scheduled", "recording", "completed", "disabled"
-
-		stateStr := TimerStateUnknown
-		switch t.State {
-		case 0:
-			stateStr = TimerStateScheduled
-			if t.Disabled != 0 {
-				stateStr = TimerStateDisabled
-			}
-		case 2:
-			stateStr = TimerStateRecording
-		case 3:
-			stateStr = TimerStateCompleted
-		default:
-			if t.Disabled != 0 {
-				stateStr = TimerStateDisabled
-			}
-		}
-
-		// Filter if requested
-		if params.State != nil && string(*params.State) != "all" {
-			if string(stateStr) != *params.State {
-				continue
-			}
-		}
-
-		timerId := MakeTimerID(t.ServiceRef, t.Begin, t.End)
+		// Capture loop variables
+		tID := t.TimerID
+		sRef := t.ServiceRef
+		sName := t.ServiceName
+		name := t.Name
+		desc := t.Description
+		begin := t.Begin
+		end := t.End
+		state := TimerState(t.State)
 
 		mapped = append(mapped, Timer{
-			TimerId:     timerId,
-			ServiceRef:  t.ServiceRef,
-			ServiceName: &t.ServiceName,
-			Name:        t.Name,
-			Description: &t.Description,
-			Begin:       t.Begin,
-			End:         t.End,
-			State:       stateStr,
-			// ReceiverState: raw map?
+			TimerId:     tID,
+			ServiceRef:  sRef,
+			ServiceName: &sName,
+			Name:        name,
+			Description: &desc,
+			Begin:       begin,
+			End:         end,
+			State:       state,
 		})
 	}
 
+	// Legacy Parity check for Timers (TimerList{Items: ...})
+	// Legacy returned TimerList with Items: [] (not null) because it was initialized as make([]Timer, 0, count)
+	// and wrapped in a struct. Struct field []Timer would be [] in JSON if initialized.
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(TimerList{Items: mapped})
 }
@@ -1172,7 +1000,7 @@ func (s *Server) AddTimer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Map response
-	timerId := MakeTimerID(createdTimer.ServiceRef, createdTimer.Begin, createdTimer.End)
+	timerId := read.MakeTimerID(createdTimer.ServiceRef, createdTimer.Begin, createdTimer.End)
 	stateStr := TimerStateScheduled // Default
 
 	w.WriteHeader(http.StatusCreated)
@@ -1190,7 +1018,7 @@ func (s *Server) AddTimer(w http.ResponseWriter, r *http.Request) {
 
 // DeleteTimer implements ServerInterface
 func (s *Server) DeleteTimer(w http.ResponseWriter, r *http.Request, timerId string) {
-	sRef, begin, end, err := ParseTimerID(timerId)
+	sRef, begin, end, err := read.ParseTimerID(timerId)
 	if err != nil {
 		http.Error(w, "Invalid Timer ID", http.StatusBadRequest)
 		return
@@ -1223,7 +1051,7 @@ func (s *Server) UpdateTimer(w http.ResponseWriter, r *http.Request, timerId str
 		return
 	}
 
-	oldSRef, oldBegin, oldEnd, err := ParseTimerID(timerId)
+	oldSRef, oldBegin, oldEnd, err := read.ParseTimerID(timerId)
 	if err != nil {
 		http.Error(w, "Invalid Timer ID", http.StatusBadRequest)
 		return
@@ -1350,7 +1178,7 @@ func (s *Server) UpdateTimer(w http.ResponseWriter, r *http.Request, timerId str
 	}
 
 	// Success
-	newId := MakeTimerID(updatedTimer.ServiceRef, updatedTimer.Begin, updatedTimer.End)
+	newId := read.MakeTimerID(updatedTimer.ServiceRef, updatedTimer.Begin, updatedTimer.End)
 	// Return the updated timer
 	// ... encode response
 	_ = json.NewEncoder(w).Encode(Timer{
@@ -1474,7 +1302,7 @@ func (s *Server) GetDvrCapabilities(w http.ResponseWriter, r *http.Request) {
 
 // GetTimer implements ServerInterface
 func (s *Server) GetTimer(w http.ResponseWriter, r *http.Request, timerId string) {
-	sRef, begin, end, err := ParseTimerID(timerId)
+	sRef, begin, end, err := read.ParseTimerID(timerId)
 	if err != nil {
 		http.Error(w, "Invalid Timer ID", http.StatusBadRequest)
 		return

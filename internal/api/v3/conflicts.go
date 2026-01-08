@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/ManuGH/xg2g/internal/control/read"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 )
 
@@ -56,7 +57,7 @@ func DetectConflicts(proposed TimerCreateRequest, existing []openwebif.Timer) []
 			conflicts = append(conflicts, TimerConflict{
 				Type: TimerConflictTypeDuplicate,
 				BlockingTimer: Timer{
-					TimerId:     MakeTimerID(t.ServiceRef, t.Begin, t.End),
+					TimerId:     read.MakeTimerID(t.ServiceRef, t.Begin, t.End),
 					ServiceRef:  t.ServiceRef,
 					ServiceName: &t.ServiceName,
 					Name:        t.Name,
@@ -83,7 +84,7 @@ func DetectConflicts(proposed TimerCreateRequest, existing []openwebif.Timer) []
 			conflicts = append(conflicts, TimerConflict{
 				Type: TimerConflictTypeOverlap,
 				BlockingTimer: Timer{
-					TimerId:     MakeTimerID(t.ServiceRef, t.Begin, t.End),
+					TimerId:     read.MakeTimerID(t.ServiceRef, t.Begin, t.End),
 					ServiceRef:  t.ServiceRef,
 					ServiceName: &t.ServiceName,
 					Name:        t.Name,

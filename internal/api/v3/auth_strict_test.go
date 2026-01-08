@@ -366,7 +366,7 @@ func newTestServerConfig(t *testing.T, spy *SpyStore, spyBus *SpyBus, fn func(*c
 	} else {
 		b = bus.NewMemoryBus()
 	}
-	srv.SetDependencies(b, spy, resume.NewMemoryStore(), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	srv.SetDependencies(b, spy, resume.NewMemoryStore(), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	srv.SetPreflightCheck(nil)
 
 	// Initialize LAN Guard from config

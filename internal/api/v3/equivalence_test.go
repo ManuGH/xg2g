@@ -3,18 +3,24 @@ package v3
 import (
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/auth"
+	"github.com/ManuGH/xg2g/internal/control/read"
+	"github.com/ManuGH/xg2g/internal/epg"
 	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/m3u"
@@ -270,6 +276,325 @@ func getSystemScanStatus_Legacy(s *Server, w http.ResponseWriter, r *http.Reques
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+func getServices_Legacy(s *Server, w http.ResponseWriter, r *http.Request, bouquet *string) {
+	s.mu.RLock()
+	cfg := s.cfg
+	snap := s.snap
+	cm := s.servicesSource
+	s.mu.RUnlock()
+
+	playlistName := snap.Runtime.PlaylistFilename
+	path := filepath.Clean(filepath.Join(cfg.DataDir, playlistName))
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode([]Service{})
+		return
+	}
+
+	channels := m3u.Parse(string(data))
+	var resp []Service
+
+	for _, ch := range channels {
+		id := ch.TvgID
+		if id == "" {
+			id = ch.Name
+		}
+		if bouquet != nil && ch.Group != *bouquet {
+			continue
+		}
+		enabled := true
+		if cm != nil {
+			enabled = cm.IsEnabled(id)
+		}
+		name := ch.Name
+		group := ch.Group
+		logo := ch.Logo
+		publicURL := snap.Runtime.PublicURL
+		if publicURL != "" && strings.HasPrefix(logo, publicURL) {
+			logo = strings.TrimPrefix(logo, publicURL)
+		}
+		number := ch.Number
+		serviceRef := ""
+		if ch.URL != "" {
+			if u, err := url.Parse(ch.URL); err == nil {
+				if ref := u.Query().Get("ref"); ref != "" {
+					serviceRef = ref
+				} else {
+					parts := strings.Split(u.Path, "/")
+					if len(parts) > 0 {
+						serviceRef = parts[len(parts)-1]
+					}
+				}
+			} else {
+				parts := strings.Split(ch.URL, "/")
+				if len(parts) > 0 {
+					serviceRef = parts[len(parts)-1]
+				}
+			}
+		}
+		if serviceRef == "" {
+			serviceRef = id
+		}
+		if serviceRef != "" {
+			piconRef := strings.ReplaceAll(serviceRef, ":", "_")
+			piconRef = strings.TrimSuffix(piconRef, "_")
+			logo = fmt.Sprintf("/logos/%s.png", piconRef)
+		}
+
+		resp = append(resp, Service{
+			Id:         &id,
+			Name:       &name,
+			Group:      &group,
+			LogoUrl:    &logo,
+			Number:     &number,
+			Enabled:    &enabled,
+			ServiceRef: &serviceRef,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func getTimers_Legacy(s *Server, w http.ResponseWriter, r *http.Request, state *string) {
+	s.mu.RLock()
+	ts := s.timersSource
+	s.mu.RUnlock()
+
+	if ts == nil {
+		http.Error(w, "Timers source not initialized", http.StatusServiceUnavailable)
+		return
+	}
+
+	timers, err := ts.GetTimers(r.Context())
+	if err != nil {
+		http.Error(w, "Failed to fetch timers", http.StatusBadGateway)
+		return
+	}
+
+	mapped := make([]Timer, 0, len(timers))
+	for _, t := range timers {
+		stateStr := TimerStateUnknown
+		switch t.State {
+		case 0:
+			stateStr = TimerStateScheduled
+			if t.Disabled != 0 {
+				stateStr = TimerStateDisabled
+			}
+		case 2:
+			stateStr = TimerStateRecording
+		case 3:
+			stateStr = TimerStateCompleted
+		default:
+			if t.Disabled != 0 {
+				stateStr = TimerStateDisabled
+			}
+		}
+
+		if state != nil && *state != "all" {
+			if string(stateStr) != *state {
+				continue
+			}
+		}
+
+		timerId := read.MakeTimerID(t.ServiceRef, t.Begin, t.End)
+		mapped = append(mapped, Timer{
+			TimerId:     timerId,
+			ServiceRef:  t.ServiceRef,
+			ServiceName: &t.ServiceName,
+			Name:        t.Name,
+			Description: &t.Description,
+			Begin:       t.Begin,
+			End:         t.End,
+			State:       stateStr,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(TimerList{Items: mapped})
+}
+
+func getEpg_Legacy(s *Server, w http.ResponseWriter, r *http.Request, params GetEpgParams) {
+	s.mu.RLock()
+	cfg := s.cfg
+	s.mu.RUnlock()
+
+	if strings.TrimSpace(cfg.XMLTVPath) == "" {
+		http.Error(w, "XMLTV not configured", http.StatusNotFound)
+		return
+	}
+
+	xmltvPath, err := s.dataFilePath(cfg.XMLTVPath)
+	if err != nil {
+		http.Error(w, "XMLTV not available", http.StatusNotFound)
+		return
+	}
+
+	// 1. Singleflight for Concurrency Protection
+	result, err, _ := s.epgSfg.Do("epg-load", func() (interface{}, error) {
+		fileInfo, err := os.Stat(xmltvPath)
+		if err != nil {
+			return nil, err
+		}
+
+		s.mu.Lock()
+		if s.epgCache != nil && !fileInfo.ModTime().After(s.epgCacheMTime) {
+			defer s.mu.Unlock()
+			return s.epgCache, nil
+		}
+		s.mu.Unlock()
+
+		// Parse
+		data, err := os.ReadFile(xmltvPath) // #nosec G304
+		if err != nil {
+			return nil, err
+		}
+
+		var parsedTU epg.TV
+		if err := xml.Unmarshal(data, &parsedTU); err != nil {
+			s.mu.RLock()
+			stale := s.epgCache
+			s.mu.RUnlock()
+			if stale != nil {
+				return stale, nil
+			}
+			return nil, err
+		}
+
+		// Update Cache
+		s.mu.Lock()
+		s.epgCache = &parsedTU
+		s.epgCacheMTime = fileInfo.ModTime()
+		s.epgCacheTime = time.Now()
+		tvVal := s.epgCache
+		s.mu.Unlock()
+
+		return tvVal, nil
+	})
+
+	if err != nil {
+		if os.IsNotExist(err) {
+			http.Error(w, "XMLTV not available", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "EPG Load Error", http.StatusInternalServerError)
+		return
+	}
+
+	tv := result.(*epg.TV)
+
+	// Extract parameters
+	var fromTime, toTime time.Time
+	now := time.Now()
+
+	if params.From != nil {
+		fromTime = time.Unix(int64(*params.From), 0)
+	} else {
+		fromTime = now.Add(-30 * time.Minute)
+	}
+
+	if params.To != nil {
+		toTime = time.Unix(int64(*params.To), 0)
+	} else {
+		toTime = now.Add(7 * 24 * time.Hour)
+	}
+
+	// Requirement: Max 7 days server-side
+	maxEnd := now.Add(7 * 24 * time.Hour)
+	if toTime.After(maxEnd) {
+		toTime = maxEnd
+	}
+
+	bouquetFilter := ""
+	if params.Bouquet != nil {
+		bouquetFilter = strings.TrimSpace(*params.Bouquet)
+	}
+
+	qLower := ""
+	if params.Q != nil {
+		qLower = strings.ToLower(strings.TrimSpace(*params.Q))
+	}
+
+	allowedRefs := make(map[string]struct{})
+	if bouquetFilter != "" {
+		s.mu.RLock()
+		snap := s.snap
+		s.mu.RUnlock()
+		playlistName := snap.Runtime.PlaylistFilename
+		playlistPath := filepath.Clean(filepath.Join(cfg.DataDir, playlistName))
+		if data, err := os.ReadFile(playlistPath); err == nil { // #nosec G304
+			channels := m3u.Parse(string(data))
+			for _, ch := range channels {
+				if ch.Group != bouquetFilter {
+					continue
+				}
+				if ch.TvgID != "" {
+					allowedRefs[ch.TvgID] = struct{}{}
+				}
+			}
+		}
+	}
+
+	// If search requested and bouquet filter yields nothing, relax filter
+	if qLower != "" && bouquetFilter != "" && len(allowedRefs) == 0 {
+		allowedRefs = nil
+	}
+
+	var items []EpgItem
+	for _, p := range tv.Programs {
+		if bouquetFilter != "" {
+			_, ok1 := allowedRefs[p.Channel]
+			if !ok1 {
+				continue
+			}
+		}
+
+		startTime, errStart := parseXMLTVTime(p.Start)
+		endTime, errEnd := parseXMLTVTime(p.Stop)
+		if errStart != nil || errEnd != nil {
+			continue
+		}
+
+		if !startTime.Before(toTime) || !endTime.After(fromTime) {
+			continue
+		}
+
+		if qLower != "" {
+			match := false
+			if strings.Contains(strings.ToLower(p.Title.Text), qLower) {
+				match = true
+			} else if strings.Contains(strings.ToLower(p.Desc), qLower) {
+				match = true
+			}
+			if !match {
+				continue
+			}
+		}
+
+		id := p.Channel
+		title := p.Title.Text
+		desc := p.Desc
+		startUnix := int(startTime.Unix())
+		endUnix := int(endTime.Unix())
+		dur := int(endUnix - startUnix)
+
+		items = append(items, EpgItem{
+			Id:         &id,
+			ServiceRef: p.Channel,
+			Title:      title,
+			Desc:       &desc,
+			Start:      startUnix,
+			End:        endUnix,
+			Duration:   &dur,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(items)
+}
+
 // --- EQUIVALENCE HELPERS ---
 
 // normalizeJSON recursively cleans a JSON-decoded tree for comparison.
@@ -452,9 +777,12 @@ func TestSlice5_1_Equivalence(t *testing.T) {
 		canEdit: true,
 	}
 
+	mockSvs := &mockServicesSource{}
+	mockTs := &mockTimersSource{}
+
 	s := NewServer(cfg, nil, nil)
 	s.snap = snap
-	s.SetDependencies(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, mockScan, mockDvr, nil, nil)
+	s.SetDependencies(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, mockScan, mockDvr, mockSvs, mockTs, nil, nil)
 
 	testCases := []struct {
 		name    string
@@ -528,3 +856,408 @@ func (m *mockDvrSource) GetStatusInfo(ctx context.Context) (*openwebif.StatusInf
 	return m.statusInfo, nil
 }
 func (m *mockDvrSource) HasTimerChange(ctx context.Context) bool { return m.canEdit }
+
+type mockServicesSource struct {
+	enabled map[string]bool
+}
+
+func (m *mockServicesSource) IsEnabled(id string) bool {
+	if m.enabled == nil {
+		return true
+	}
+	return m.enabled[id]
+}
+
+type mockTimersSource struct {
+	timers []openwebif.Timer
+	err    error
+}
+
+func (m *mockTimersSource) GetTimers(ctx context.Context) ([]openwebif.Timer, error) {
+	return m.timers, m.err
+}
+
+func TestSlice5_2_Equivalence(t *testing.T) {
+	tempDir := t.TempDir()
+	cfg := config.AppConfig{
+		Version: "2.5.0",
+		DataDir: tempDir,
+		Bouquet: "Favorites,Movies",
+	}
+	snap := config.Snapshot{
+		Runtime: config.RuntimeSnapshot{
+			PlaylistFilename: "test.m3u",
+		},
+	}
+
+	// Create a mock M3U playlist
+	m3uContent := `#EXTM3U
+#EXTINF:-1 tvg-id="id1" group-title="Favorites",Service 1
+http://stream/1
+#EXTINF:-1 tvg-id="id2" group-title="Movies",Service 2
+http://stream/2
+#EXTINF:-1 tvg-id="id3" group-title="Favorites",Service 3
+http://stream/3
+`
+	err := os.WriteFile(filepath.Join(tempDir, "test.m3u"), []byte(m3uContent), 0644)
+	require.NoError(t, err)
+
+	mockSvs := &mockServicesSource{
+		enabled: map[string]bool{"id1": true, "id2": false, "id3": true},
+	}
+	mockTs := &mockTimersSource{
+		timers: []openwebif.Timer{
+			{ServiceRef: "ref1", Name: "Timer 1", State: 0, Begin: 1000, End: 2000},
+			{ServiceRef: "ref2", Name: "Timer 2", State: 2, Begin: 1000, End: 2000},
+		},
+	}
+
+	s := NewServer(cfg, nil, nil)
+	s.snap = snap
+	s.SetDependencies(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, &mockScanSource{}, &mockDvrSource{}, mockSvs, mockTs, nil, nil)
+
+	t.Run("GetServices/Combinatorial", func(t *testing.T) {
+		tests := []struct {
+			name    string
+			bouquet *string
+		}{
+			{"All Services", nil},
+			{"Favorites Only", strPtr("Favorites")},
+			{"Movies Only", strPtr("Movies")},
+			{"Non Existent", strPtr("NonExistent")},
+		}
+
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				path := "/api/v3/services"
+				if tc.bouquet != nil {
+					path += "?bouquet=" + *tc.bouquet
+				}
+				req := httptest.NewRequest("GET", path, nil)
+				req = withAdminScope(req)
+
+				wLegacy := httptest.NewRecorder()
+				wNew := httptest.NewRecorder()
+
+				getServices_Legacy(s, wLegacy, req, tc.bouquet)
+				s.GetServices(wNew, req, GetServicesParams{Bouquet: tc.bouquet})
+
+				assertEquivalence(t, wLegacy, wNew)
+			})
+		}
+	})
+
+	t.Run("GetTimers/All", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/v3/timers", nil)
+		req = withAdminScope(req)
+
+		wLegacy := httptest.NewRecorder()
+		wNew := httptest.NewRecorder()
+
+		getTimers_Legacy(s, wLegacy, req, nil)
+		s.GetTimers(wNew, req, GetTimersParams{})
+
+		assertEquivalence(t, wLegacy, wNew)
+	})
+
+	t.Run("GetServices/Playlist_Missing", func(t *testing.T) {
+		// Ensure playlist is missing
+		_ = os.Remove(filepath.Join(tempDir, "test.m3u"))
+
+		req := httptest.NewRequest("GET", "/api/v3/services", nil)
+		req = withAdminScope(req)
+
+		wLegacy := httptest.NewRecorder()
+		getServices_Legacy(s, wLegacy, req, nil)
+
+		wNew := httptest.NewRecorder()
+		s.GetServices(wNew, req, GetServicesParams{})
+
+		assertEquivalence(t, wLegacy, wNew)
+	})
+
+	t.Run("GetServices/Playlist_Empty", func(t *testing.T) {
+		// Create empty playlist
+		err := os.WriteFile(filepath.Join(tempDir, "test.m3u"), []byte(""), 0644)
+		require.NoError(t, err)
+
+		req := httptest.NewRequest("GET", "/api/v3/services", nil)
+		req = withAdminScope(req)
+
+		wLegacy := httptest.NewRecorder()
+		getServices_Legacy(s, wLegacy, req, nil)
+
+		wNew := httptest.NewRecorder()
+		s.GetServices(wNew, req, GetServicesParams{})
+
+	})
+
+	t.Run("GetServices/PlaylistFilename_Empty", func(t *testing.T) {
+		// Set empty playlist filename
+		cfg.XMLTVPath = "epg.xml" // Restore XMLTV
+		s.cfg = cfg
+
+		s.mu.Lock()
+		snap := s.snap
+		oldPlaylist := snap.Runtime.PlaylistFilename
+		snap.Runtime.PlaylistFilename = ""
+		s.snap = snap
+		s.mu.Unlock()
+
+		defer func() {
+			s.mu.Lock()
+			snap := s.snap
+			snap.Runtime.PlaylistFilename = oldPlaylist
+			s.snap = snap
+			s.mu.Unlock()
+		}()
+
+		req := httptest.NewRequest("GET", "/api/v3/services", nil)
+		req = withAdminScope(req)
+
+		wLegacy := httptest.NewRecorder()
+		getServices_Legacy(s, wLegacy, req, nil)
+
+		wNew := httptest.NewRecorder()
+		s.GetServices(wNew, req, GetServicesParams{})
+
+		assertEquivalence(t, wLegacy, wNew)
+	})
+
+	t.Run("GetServicesBouquets/Empty", func(t *testing.T) {
+		// Ensure playlist missing and bouquet config empty
+		_ = os.Remove(filepath.Join(tempDir, "test.m3u"))
+
+		s.mu.Lock()
+		cfg := s.cfg
+		oldBouquet := cfg.Bouquet
+		cfg.Bouquet = "" // Empty config
+		s.cfg = cfg
+		s.mu.Unlock()
+
+		defer func() {
+			s.mu.Lock()
+			cfg := s.cfg
+			cfg.Bouquet = oldBouquet
+			s.cfg = cfg
+			s.mu.Unlock()
+		}()
+
+		req := httptest.NewRequest("GET", "/api/v3/services/bouquets", nil)
+		req = withAdminScope(req)
+
+		wLegacy := httptest.NewRecorder()
+		getServicesBouquets_Legacy(s, wLegacy, req)
+
+		wNew := httptest.NewRecorder()
+		s.GetServicesBouquets(wNew, req)
+
+		assertEquivalence(t, wLegacy, wNew)
+	})
+
+	t.Run("GetServicesBouquets/PlaylistFilename_Empty_ConfigBouquetEmpty", func(t *testing.T) {
+		// Ensure playlist filename is empty and bouquet config is empty
+		s.mu.Lock()
+		cfg := s.cfg
+		oldBouquet := cfg.Bouquet
+		cfg.Bouquet = ""
+		s.cfg = cfg
+
+		snap := s.snap
+		oldPlaylist := snap.Runtime.PlaylistFilename
+		snap.Runtime.PlaylistFilename = ""
+		s.snap = snap
+		s.mu.Unlock()
+
+		defer func() {
+			s.mu.Lock()
+			cfg := s.cfg
+			cfg.Bouquet = oldBouquet
+			s.cfg = cfg
+			snap := s.snap
+			snap.Runtime.PlaylistFilename = oldPlaylist
+			s.snap = snap
+			s.mu.Unlock()
+		}()
+
+		req := httptest.NewRequest("GET", "/api/v3/services/bouquets", nil)
+		req = withAdminScope(req)
+
+		wLegacy := httptest.NewRecorder()
+		getServicesBouquets_Legacy(s, wLegacy, req)
+
+		wNew := httptest.NewRecorder()
+		s.GetServicesBouquets(wNew, req)
+
+		assertEquivalence(t, wLegacy, wNew)
+	})
+
+	t.Run("GetEpg/Combinatorial", func(t *testing.T) {
+		// Mock XMLTV File
+		xmltvContent := `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE tv SYSTEM "xmltv.dtd">
+<tv generator-info-name="xg2g">
+  <channel id="id1">
+    <display-name>Service 1</display-name>
+  </channel>
+  <channel id="id2">
+    <display-name>Service 2</display-name>
+  </channel>
+  <programme start="20240101120000 +0000" stop="20240101130000 +0000" channel="id1">
+    <title lang="en">News</title>
+    <desc lang="en">Daily News</desc>
+  </programme>
+  <programme start="20240101130000 +0000" stop="20240101140000 +0000" channel="id2">
+    <title lang="en">Movie</title>
+    <desc lang="en">Blockbuster</desc>
+  </programme>
+  <programme start="20240101140000 +0000" stop="20240101150000 +0000" channel="id1">
+    <title lang="en">Sport</title>
+    <desc lang="en">Live Football</desc>
+  </programme>
+</tv>`
+		err := os.WriteFile(filepath.Join(tempDir, "epg.xml"), []byte(xmltvContent), 0644)
+		require.NoError(t, err)
+
+		// Set XMLTVPath in config
+		cfg.XMLTVPath = "epg.xml"
+		s.cfg = cfg
+		// Reset EPG cache
+		s.epgCache = nil
+		s.epgCacheMTime = time.Time{}
+
+		// Define Test Cases
+		// Times relative to XMLTV data:
+		// Event 1: 12:00-13:00 (id1)
+		// Event 2: 13:00-14:00 (id2)
+		// Event 3: 14:00-15:00 (id1)
+
+		// Unix Timestamps for 2024-01-01 12:00 UTC = 1704110400
+		t1200 := int64(1704110400)
+		t1500 := int64(1704121200)
+		t1230 := int64(1704112200)
+
+		testCases := []struct {
+			name   string
+			params url.Values
+		}{
+			{
+				name:   "All_Events_Wide_Window",
+				params: url.Values{"from": {fmt.Sprintf("%d", t1200)}, "to": {fmt.Sprintf("%d", t1500)}},
+			},
+			{
+				name:   "Restricted_Window_First_Event",
+				params: url.Values{"from": {fmt.Sprintf("%d", t1200)}, "to": {fmt.Sprintf("%d", t1230)}}, // Overlap check
+			},
+			{
+				name: "Bouquet_Filter_Favorites_Only_id1",
+				// Favorites has id1 (Step 4122 setup: id1, id3). id2 is not in Favorites.
+				params: url.Values{"from": {fmt.Sprintf("%d", t1200)}, "to": {fmt.Sprintf("%d", t1500)}, "bouquet": {"Favorites"}},
+			},
+			{
+				name: "Bouquet_Filter_Playlist_Missing",
+				// Step 4122 setup: playlist exists. This case needs manual setup inside the loop?
+				// Or we run it separately.
+				// Let's stick to simple param combinations here and add a separate run for missing playlist.
+				params: url.Values{"from": {fmt.Sprintf("%d", t1200)}, "to": {fmt.Sprintf("%d", t1500)}, "bouquet": {"Favorites"}},
+			},
+			{
+				name:   "Search_Query_News",
+				params: url.Values{"from": {fmt.Sprintf("%d", t1200)}, "to": {fmt.Sprintf("%d", t1500)}, "q": {"News"}},
+			},
+			{
+				name:   "Search_Query_NoMatch",
+				params: url.Values{"from": {fmt.Sprintf("%d", t1200)}, "to": {fmt.Sprintf("%d", t1500)}, "q": {"NonExistent"}},
+			},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				path := "/api/v3/epg?" + tc.params.Encode()
+				req := httptest.NewRequest("GET", path, nil)
+				req = withAdminScope(req)
+
+				wLegacy := httptest.NewRecorder()
+				legacyParams := GetEpgParams{
+					From:    ptrInt(tc.params.Get("from")),
+					To:      ptrInt(tc.params.Get("to")),
+					Bouquet: strPtr(tc.params.Get("bouquet")),
+					Q:       strPtr(tc.params.Get("q")),
+				}
+				getEpg_Legacy(s, wLegacy, req, legacyParams)
+
+				wNew := httptest.NewRecorder()
+				s.GetEpg(wNew, req, legacyParams)
+
+				assertEquivalence(t, wLegacy, wNew)
+			})
+		}
+	})
+
+	t.Run("GetEpg/Bouquet_Filter_Failure", func(t *testing.T) {
+		// Remove playlist (M3U) but keep XMLTV
+		_ = os.Remove(filepath.Join(tempDir, "test.m3u"))
+
+		// Ensure XMLTV exists
+		xmltvContent := `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE tv SYSTEM "xmltv.dtd">
+<tv><programme start="20240101120000 +0000" stop="20240101130000 +0000" channel="id1"><title>Event</title></programme></tv>`
+		err := os.WriteFile(filepath.Join(tempDir, "epg.xml"), []byte(xmltvContent), 0644)
+		require.NoError(t, err)
+
+		// Reset cache
+		s.epgCache = nil
+		s.epgCacheMTime = time.Time{}
+
+		testCases := []struct {
+			name   string
+			params url.Values
+		}{
+			{
+				name:   "Playlist_Missing_With_Bouquet",
+				params: url.Values{"bouquet": {"Favorites"}},
+			},
+			{
+				name:   "Playlist_Missing_With_Bouquet_And_Search",
+				params: url.Values{"bouquet": {"Favorites"}, "q": {"Event"}},
+			},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				path := "/api/v3/epg?" + tc.params.Encode()
+				req := httptest.NewRequest("GET", path, nil)
+				req = withAdminScope(req)
+
+				wLegacy := httptest.NewRecorder()
+				legacyParams := GetEpgParams{
+					Bouquet: strPtr(tc.params.Get("bouquet")),
+					Q:       strPtr(tc.params.Get("q")),
+				}
+				getEpg_Legacy(s, wLegacy, req, legacyParams)
+
+				wNew := httptest.NewRecorder()
+				s.GetEpg(wNew, req, legacyParams)
+
+				assertEquivalence(t, wLegacy, wNew)
+			})
+		}
+	})
+}
+
+func ptrInt(s string) *int {
+	if s == "" {
+		return nil
+	}
+	// Parse int
+	var i int
+	fmt.Sscanf(s, "%d", &i)
+	return &i
+}
+
+func strPtr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}

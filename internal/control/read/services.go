@@ -1,6 +1,8 @@
 package read
 
 import (
+	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -9,6 +11,42 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/m3u"
 )
+
+// ServicesSource defines the interface needed to fetch service metadata.
+type ServicesSource interface {
+	IsEnabled(id string) bool
+}
+
+// ServicesQuery defines filtering parameters for services.
+type ServicesQuery struct {
+	Bouquet string
+}
+
+type EmptyEncoding int
+
+const (
+	EmptyEncodingNull  EmptyEncoding = iota // Default: return null
+	EmptyEncodingArray                      // Return []
+)
+
+// ServicesResult wraps the service list with encoding semantics.
+// When Items is empty, EmptyEncoding determines whether to return null (EmptyEncodingNull)
+// or [] (EmptyEncodingArray) to strictly match legacy behavior (e.g. read failure vs empty list).
+type ServicesResult struct {
+	Items         []Service
+	EmptyEncoding EmptyEncoding
+}
+
+// Service is a control-layer representation of a channel/service.
+type Service struct {
+	ID         string
+	Name       string
+	Group      string
+	LogoURL    string
+	Number     string
+	Enabled    bool
+	ServiceRef string
+}
 
 // GetBouquets returns a deduplicated and sorted list of channel groups (bouquets).
 func GetBouquets(cfg config.AppConfig, snap config.Snapshot) ([]string, error) {
@@ -50,9 +88,10 @@ func GetBouquets(cfg config.AppConfig, snap config.Snapshot) ([]string, error) {
 	// CTO Requirement: Deterministic ordering
 	sort.Strings(bouquets)
 
-	// CTO Requirement: Return empty slice instead of nil for JSON consistency
-	if bouquets == nil {
-		return []string{}, nil
+	// CTO Requirement: Return empty slice instead of nil for JSON consistency?
+	// User Requirement (Parity): "If Slice 5.x is truly legacy parity, change to return nil."
+	if len(bouquets) == 0 {
+		return nil, nil
 	}
 
 	return bouquets, nil
@@ -71,8 +110,118 @@ func getFallbackBouquets(cfg config.AppConfig) []string {
 		}
 	}
 	sort.Strings(bouquets)
-	if bouquets == nil {
-		return []string{}
+	if len(bouquets) == 0 {
+		return nil
 	}
 	return bouquets
+}
+
+// GetServices returns a list of services filtered by bouquet.
+func GetServices(cfg config.AppConfig, snap config.Snapshot, source ServicesSource, q ServicesQuery) (ServicesResult, error) {
+	playlistName := snap.Runtime.PlaylistFilename
+	if playlistName == "" {
+		// No playlist configured -> logic was "no services found" -> null?
+		// User says: "In the legacy code you included, an empty filename... os.ReadFile(dir) fails and legacy encodes [], not null."
+		// So we must return EmptyEncodingArray.
+		return ServicesResult{EmptyEncoding: EmptyEncodingArray}, nil
+	}
+	path := filepath.Clean(filepath.Join(cfg.DataDir, playlistName))
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// Playlist missing -> Legacy returns []
+			return ServicesResult{EmptyEncoding: EmptyEncodingArray}, nil
+		}
+		// Read failure (permissions etc) -> Legacy returns []?
+		// User said: "If os.ReadFile(path) fails -> it encodes []Service{} (JSON []), not null."
+		// So we strictly return EmptyEncodingArray and no error (unless it's a critical system error?)
+		// Legacy swallowed read errors?
+		// "if err == nil { ... } else { // do nothing, empty list }"
+		// So we return empty result with Array encoding, and NO error to avoid 500.
+		return ServicesResult{EmptyEncoding: EmptyEncodingArray}, nil
+	}
+
+	channels := m3u.Parse(string(data))
+	var services []Service
+
+	for _, ch := range channels {
+		id := ch.TvgID
+		if id == "" {
+			id = ch.Name
+		}
+
+		if q.Bouquet != "" && ch.Group != q.Bouquet {
+			continue
+		}
+
+		enabled := true
+		if source != nil {
+			enabled = source.IsEnabled(id)
+		}
+
+		name := ch.Name
+		group := ch.Group
+		logo := ch.Logo
+
+		publicURL := snap.Runtime.PublicURL
+		if publicURL != "" && strings.HasPrefix(logo, publicURL) {
+			logo = strings.TrimPrefix(logo, publicURL)
+		}
+		number := ch.Number
+
+		// Extract service_ref from URL for streaming
+		serviceRef := extractServiceRef(ch.URL, id)
+
+		// Rewrite Logo to use local proxy (avoids mixed content & external reachability issues)
+		if serviceRef != "" {
+			piconRef := strings.ReplaceAll(serviceRef, ":", "_")
+			piconRef = strings.TrimSuffix(piconRef, "_")
+			// Use relative path so frontend resolves to correct host
+			logo = fmt.Sprintf("/logos/%s.png", piconRef)
+		}
+
+		services = append(services, Service{
+			ID:         id,
+			Name:       name,
+			Group:      group,
+			LogoURL:    logo,
+			Number:     number,
+			Enabled:    enabled,
+			ServiceRef: serviceRef,
+		})
+	}
+
+	// If we found 0 services (and read was successful), legacy behavior: usually null (if initialized as nil)
+	// We return default EmptyEncodingNull.
+	return ServicesResult{Items: services}, nil
+}
+
+func extractServiceRef(rawURL string, id string) string {
+	serviceRef := ""
+	if rawURL != "" {
+		if u, err := url.Parse(rawURL); err == nil {
+			// Check query params first (e.g. stream.m3u?ref=...)
+			if ref := u.Query().Get("ref"); ref != "" {
+				serviceRef = ref
+			} else {
+				// Fallback to path logic
+				parts := strings.Split(u.Path, "/")
+				if len(parts) > 0 {
+					serviceRef = parts[len(parts)-1]
+				}
+			}
+		} else {
+			// Fallback for non-parseable URLs
+			parts := strings.Split(rawURL, "/")
+			if len(parts) > 0 {
+				serviceRef = parts[len(parts)-1]
+			}
+		}
+	}
+	// Fallback to TvgID if service_ref not found
+	if serviceRef == "" {
+		serviceRef = id
+	}
+	return serviceRef
 }
