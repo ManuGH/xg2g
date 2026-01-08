@@ -60,6 +60,26 @@ type TimersSource interface {
 // Server implements the v3 API handlers.
 // It encapsulates all logic for /api/v3 endpoints.
 // Field names are kept consistent with internal/api.Server for seamless migration.
+// Scanner abstracts the refresh/scan subsystem for testability.
+type scanner interface {
+	RunBackground() bool
+	GetCapability(serviceRef string) (scan.Capability, bool)
+}
+
+// openWebIFClient abstracts OpenWebIF client operations for DVR timers.
+// This enables deterministic testing without real receiver dependencies.
+// Note: *openwebif.Client satisfies this interface directly.
+type openWebIFClient interface {
+	GetTimers(ctx context.Context) ([]openwebif.Timer, error)
+	AddTimer(ctx context.Context, sRef string, begin, end int64, name, desc string) error
+	DeleteTimer(ctx context.Context, sRef string, begin, end int64) error
+	UpdateTimer(ctx context.Context, oldSRef string, oldBegin, oldEnd int64, newSRef string, newBegin, newEnd int64, name, description string, enabled bool) error
+	HasTimerChange(ctx context.Context) bool
+}
+
+// owiFactory creates an openWebIFClient instance.
+type owiFactory func(cfg config.AppConfig, snap config.Snapshot) openWebIFClient
+
 type Server struct {
 	mu sync.RWMutex
 
@@ -73,7 +93,8 @@ type Server struct {
 	v3Bus               bus.Bus
 	v3Store             store.StateStore
 	resumeStore         resume.Store
-	v3Scan              *scan.Manager
+	v3Scan              scanner
+	owiFactory          owiFactory // Factory for creating OpenWebIF clients (injectable for tests)
 	recordingPathMapper *recordings.PathMapper
 	channelManager      *channels.Manager
 	seriesManager       *dvr.Manager
@@ -131,6 +152,7 @@ func NewServer(cfg config.AppConfig, cfgMgr *config.Manager, rootCancel context.
 		configManager:  cfgMgr,
 		startTime:      time.Now(),
 		libraryService: librarySvc,
+		// owiFactory defaults to nil (uses newOpenWebIFClient in prod)
 	}
 	s.epgSource = &epgSourceWrapper{s}
 	return s
@@ -269,6 +291,15 @@ func (s *Server) dataFilePath(rel string) (string, error) {
 	}
 
 	return resolved, nil
+}
+
+// owi returns an OpenWebIF client, using the injected factory if present (tests)
+// or falling back to the cached production client.
+func (s *Server) owi(cfg config.AppConfig, snap config.Snapshot) openWebIFClient {
+	if s.owiFactory != nil {
+		return s.owiFactory(cfg, snap)
+	}
+	return s.newOpenWebIFClient(cfg, snap)
 }
 
 // newOpenWebIFClient gets or creates a cached client from config

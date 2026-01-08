@@ -797,7 +797,7 @@ func (s *Server) AddTimer(w http.ResponseWriter, r *http.Request) {
 	snap := s.snap
 	s.mu.RUnlock()
 
-	client := s.newOpenWebIFClient(cfg, snap)
+	client := s.owi(cfg, snap)
 	ctx := r.Context()
 
 	// 0. Resolve ServiceRef if it's an M3U Channel ID
@@ -928,7 +928,9 @@ func (s *Server) AddTimer(w http.ResponseWriter, r *http.Request) {
 				}
 
 				// Flexible match (Enigma might adjust seconds slightly)
-				if candidateRef == realSRef &&
+				// Normalize both refs to normalized-to-normalized comparison
+				targetNormalized := strings.TrimSuffix(realSRef, ":")
+				if candidateRef == targetNormalized &&
 					(t.Begin >= realBegin-5 && t.Begin <= realBegin+5) { // Increased tolerance to +/- 5s
 					verified = true
 					createdTimer = &t
@@ -952,6 +954,7 @@ func (s *Server) AddTimer(w http.ResponseWriter, r *http.Request) {
 	timerId := read.MakeTimerID(createdTimer.ServiceRef, createdTimer.Begin, createdTimer.End)
 	stateStr := TimerStateScheduled // Default
 
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(Timer{
 		TimerId:     timerId,
@@ -978,7 +981,7 @@ func (s *Server) DeleteTimer(w http.ResponseWriter, r *http.Request, timerId str
 	snap := s.snap
 	s.mu.RUnlock()
 
-	client := s.newOpenWebIFClient(cfg, snap)
+	client := s.owi(cfg, snap)
 	err = client.DeleteTimer(r.Context(), sRef, begin, end)
 	if err != nil {
 		// If 404 from receiver? client.DeleteTimer returns error.
@@ -1010,7 +1013,7 @@ func (s *Server) UpdateTimer(w http.ResponseWriter, r *http.Request, timerId str
 	cfg := s.cfg
 	snap := s.snap
 	s.mu.RUnlock()
-	client := s.newOpenWebIFClient(cfg, snap)
+	client := s.owi(cfg, snap)
 	ctx := r.Context()
 
 	// Resolve Old Timer (ensure it exists)
@@ -1161,7 +1164,7 @@ func (s *Server) PreviewConflicts(w http.ResponseWriter, r *http.Request) {
 	snap := s.snap
 	s.mu.RUnlock()
 
-	client := s.newOpenWebIFClient(cfg, snap)
+	client := s.owi(cfg, snap)
 
 	// Fetch existing timers
 	timers, err := client.GetTimers(r.Context())
@@ -1261,7 +1264,7 @@ func (s *Server) GetTimer(w http.ResponseWriter, r *http.Request, timerId string
 	cfg := s.cfg
 	snap := s.snap
 	s.mu.RUnlock()
-	client := s.newOpenWebIFClient(cfg, snap)
+	client := s.owi(cfg, snap)
 	ctx := r.Context()
 
 	timers, err := client.GetTimers(ctx)
@@ -1321,22 +1324,22 @@ func (s *Server) PostServicesNowNext(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	scan := s.v3Scan
+	s.mu.RUnlock()
 
-	// Rate limit or check if already running?
-	// For now, just trigger.
+	if scan == nil {
+		writeProblem(w, http.StatusServiceUnavailable, "system/unavailable", "Refresh Unavailable", "Refresh subsystem is not enabled", nil)
+		return
+	}
 
 	go func() {
 		start := time.Now()
-		// Trigger refresh via config manager if needed, or scan?
-		// In V3, refresh usually means scanning providers.
-		if s.v3Scan != nil {
-			s.v3Scan.RunBackground()
-		}
+		scan.RunBackground()
 		log.L().Info().Dur("duration", time.Since(start)).Msg("manual refresh triggered via API")
 	}()
 
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "refresh triggered"})
 }
