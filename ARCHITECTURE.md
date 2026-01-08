@@ -8,7 +8,8 @@
 
 ## Design Philosophy
 
-xg2g v3 is a **single-tenant, home-lab focused control plane** for live TV streaming from Enigma2 receivers. It optimizes for:
+xg2g v3 is a **single-tenant, home-lab focused control plane** for live TV
+streaming from Enigma2 receivers. It optimizes for:
 
 1. **Stability** → Reliable operation over weeks/months without intervention
 2. **Debuggability** → Clear observability when things go wrong
@@ -385,19 +386,31 @@ Response includes metadata: `total`, `count`, `offset`, `limit`
 
 ---
 
-## Stream Resolution Standards
+## Streaming Delivery Policy (Universal)
 
-**Critical operational standards** to prevent regression of stream resolution.
+xg2g uses a **single, server-defined streaming delivery policy**: `universal`.
 
-**Core Invariants**:
+**Philosophy**: If a browser doesn't play the stream, it's a bug in the pipeline—not a reason to introduce new policies or UI fallbacks.
 
-1. **NEVER hardcode stream ports** - Enigma2 dynamically assigns ports based on channel configuration
-2. **WebAPI is the source of truth** - Always resolve stream URLs via `/web/stream.m3u?ref=...` using `ResolveStreamURL()`
-3. **Parse returned URLs** - Extract host, port, and path from the WebAPI response
+**Guarantees**:
 
-**Why this matters**: Early versions hardcoded ports, causing silent failures (black screen) for certain channels. These invariants capture hard-won operational lessons.
+| Component | Specification |
+|---|---|
+| **Video Codec** | H.264 (AVC) |
+| **Audio Codec** | AAC |
+| **Container** | fMP4 (Fragmented MP4) |
+| **Delivery Protocol** | HLS (HTTP Live Streaming) |
+| **Compatibility** | Safari/iOS Tier-1 compliant |
 
-**Full specification**: See [STREAMING.md](docs/STREAMING.md) for detailed rules, implementation checklist, and common pitfalls.
+The `universal` policy enforces **server-side constraints** (GOP alignment,
+segment duration, fMP4 initialization) to ensure Safari/iOS compatibility
+without client-side configuration.
+
+**Non-Goals**:
+
+- ❌ **HEVC/x265 by default**: H.264 is the only video codec
+- ❌ **User-Agent detection**: No browser-specific logic
+- ❌ **Client-side fallbacks**: No auto-switching or profile selection
 
 ## VOD Playback Policy
 

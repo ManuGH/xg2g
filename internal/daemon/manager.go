@@ -15,14 +15,14 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
+	worker "github.com/ManuGH/xg2g/internal/domain/session/manager"
+	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/health"
 	memorybus "github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/ManuGH/xg2g/internal/pipeline/exec"
 	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
-	"github.com/ManuGH/xg2g/internal/pipeline/store"
-	"github.com/ManuGH/xg2g/internal/pipeline/worker"
 	"github.com/rs/zerolog"
 	"golang.org/x/time/rate"
 )

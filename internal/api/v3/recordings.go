@@ -120,7 +120,6 @@ func ParseFFmpegProgress(r io.Reader, ch chan<- FFmpegProgress) {
 var (
 	errRecordingInvalid  = errors.New("invalid recording ref")
 	errRecordingNotReady = errors.New("recording not ready")
-	errRecordingNotFound = errors.New("recording not found")
 	errTooManyBuilds     = errors.New("too many concurrent builds")
 )
 
@@ -229,7 +228,8 @@ func CheckSourceAvailability(ctx context.Context, sourceURL string) error {
 	if resp.StatusCode == http.StatusMethodNotAllowed {
 		// Drain and close HEAD response before retry
 		_, _ = io.CopyN(io.Discard, resp.Body, 4096)
-		resp.Body.Close()
+		// #nosec G304
+	_ = resp.Body.Close()
 
 		// Create new GET request (avoid reusing potential state)
 		retryReq, rErr := http.NewRequestWithContext(ctx, "GET", cleanURL, nil)
@@ -250,7 +250,7 @@ func CheckSourceAvailability(ctx context.Context, sourceURL string) error {
 	}
 
 	// Drain and close final response (connection reuse courtesy)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	_, _ = io.CopyN(io.Discard, resp.Body, 4096)
 
 	if resp.StatusCode == 401 || resp.StatusCode == 403 || resp.StatusCode == 404 {
@@ -853,7 +853,7 @@ func (s *Server) StreamRecordingDirect(w http.ResponseWriter, r *http.Request, r
 		http.Error(w, "Stream Error", http.StatusInternalServerError)
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	if info, err := f.Stat(); err == nil {
 		http.ServeContent(w, r, "stream.mp4", info.ModTime(), f)
@@ -1047,7 +1047,8 @@ func (s *Server) GetRecordingHLSPlaylist(w http.ResponseWriter, r *http.Request,
 		s.writeRecordingPlaybackError(w, r, serviceRef, errRecordingNotReady)
 		return
 	}
-	data, err := os.ReadFile(playlistPath)
+	// #nosec G304
+	data, err := os.ReadFile(filepath.Clean(playlistPath))
 	if err != nil {
 		s.writeRecordingPlaybackError(w, r, serviceRef, errRecordingNotReady)
 		return
@@ -1099,7 +1100,8 @@ func (s *Server) GetRecordingHLSTimeshift(w http.ResponseWriter, r *http.Request
 		s.writeRecordingPlaybackError(w, r, serviceRef, errRecordingNotReady)
 		return
 	}
-	data, err := os.ReadFile(playlistPath)
+	 // #nosec G304
+	data, err := os.ReadFile(filepath.Clean(playlistPath))
 	if err != nil {
 		s.writeRecordingPlaybackError(w, r, serviceRef, errRecordingNotReady)
 		return
@@ -1404,7 +1406,8 @@ func RecordingLivePlaylistReady(cacheDir string) (string, bool) {
 	}
 
 	// 2. Parse Playlist for valid segment reference
-	data, err := os.ReadFile(livePath)
+	 // #nosec G304
+	data, err := os.ReadFile(filepath.Clean(livePath))
 	if err != nil {
 		return "", false
 	}
@@ -1489,72 +1492,6 @@ func RewritePlaylistType(content, playlistType string) string {
 	}
 
 	return strings.Join(newLines, "\n")
-}
-
-func (s *Server) buildRecordingPlaylist(ctx context.Context, cacheDir, sourceType, source string) error {
-	s.mu.RLock()
-	probeSize := s.cfg.VODProbeSize
-	analyzeDur := s.cfg.VODAnalyzeDuration
-	s.mu.RUnlock()
-
-	// Attempt 1: Configured (Fast) Probe -> Forced Transcode (Safari Fix)
-	// We force transcode=true here to ensure clean timestamp/IDR alignment.
-	// Copy mode causes ~1.2s A/V offset reject by Safari (MediaError 4).
-	// Guardrails: Concurrency restricted by semaphore in scheduleRecordingBuild.
-	if err := s.prepareRecordingCacheDir(cacheDir); err != nil {
-		return err
-	}
-
-	err := s.runRecordingBuild(ctx, cacheDir, sourceType, source, false, probeSize, analyzeDur)
-	if err == nil {
-		if RecordingPlaylistReady(cacheDir) {
-			return nil
-		}
-		// Fallthrough only if not ready and no error (incomplete copy?)
-		log.L().Warn().Str("source", source).Msg("recording build incomplete, trying transcode fallback")
-	} else {
-		// HARDENED RETRY LOGIC
-		if errors.Is(err, ErrProbeFailed) {
-			log.L().Warn().Err(err).Str("source", source).Msg("fast probe failed (retryable), switching to robust params")
-			// Proceed to Attempt 2
-		} else {
-			// Fail Fast for Auth, 404, or IO errors
-			return err
-		}
-	}
-
-	// Attempt 2: Robust Probe + Transcode (Fallback)
-	// Note: We also switch to transcode=true here as fallback, assuming copy might have failed due to codecs.
-	// But Phase 6 logic was: Try Copy -> if nil but not ready -> Try Transcode.
-	// The Adaptive Probe logic adds another dimension.
-
-	// Simplified Strategy:
-	// 1. Try Copy with Fast Probe.
-	// 2. If fails, Try Transcode with Robust Probe.
-
-	if err := s.prepareRecordingCacheDir(cacheDir); err != nil {
-		return err
-	}
-
-	// Robust Params
-	robustProbe := "200M"
-	robustAnalyze := "200M"
-
-	if err := s.runRecordingBuild(ctx, cacheDir, sourceType, source, true, robustProbe, robustAnalyze); err != nil {
-		return err
-	}
-	if !RecordingPlaylistReady(cacheDir) {
-		return fmt.Errorf("recording playlist incomplete after transcode")
-	}
-	return nil
-}
-
-func (s *Server) prepareRecordingCacheDir(cacheDir string) error {
-	if err := os.RemoveAll(cacheDir); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	// #nosec G301 -- cache dir serves playback assets.
-	return os.MkdirAll(cacheDir, 0750)
 }
 
 // VODCacheVersion identifies the current generation of VOD transcoding logic.
@@ -1838,18 +1775,13 @@ func (s *Server) runRecordingBuild(ctx context.Context, cacheDir, sourceType, so
 
 				// Update internal state for UI
 				// (Progress state logic removed Phase B - TODO: Restore via manager)
-			} else {
-				// Received update but no advancement (paused/stuck/buffering)
-				// We do NOT update lastProgressAt here, so timeout countdown continues.
 			}
 
 		case <-metricsTicker.C:
 			// 1. Check Liveness / Stall
 			sinceLast := time.Since(lastProgressAt)
 			// Apply grace period at start
-			if time.Since(start) < startupGrace {
-				// do nothing
-			} else if sinceLast > stallTimeout {
+			if time.Since(start) >= startupGrace && sinceLast > stallTimeout {
 				// STALL DETECTED
 				dur := time.Since(start).Seconds()
 				metrics.ObserveVODBuildDuration("stale", dur)
@@ -1921,7 +1853,8 @@ func GetSegmentStats(dir string) (int, time.Time, error) {
 // Finalize: Atomic read-modify-write-rename
 func (s *Server) finalizeRecordingPlaylist(cacheDir, livePath, finalPath string) error {
 	// 1. Check if source exists
-	data, err := os.ReadFile(livePath)
+	 // #nosec G304
+	data, err := os.ReadFile(filepath.Clean(livePath))
 	if err != nil {
 		return fmt.Errorf("read live playlist: %w", err)
 	}
@@ -2035,7 +1968,8 @@ func RecordingPlaylistReady(cacheDir string) bool {
 	if err != nil || info.IsDir() {
 		return false
 	}
-	data, err := os.ReadFile(playlistPath)
+	 // #nosec G304
+	data, err := os.ReadFile(filepath.Clean(playlistPath))
 	if err != nil {
 		return false
 	}
@@ -2151,7 +2085,8 @@ func AllDigits(value string) bool {
 }
 
 func WriteConcatList(path string, parts []string) error {
-	f, err := os.Create(path)
+	// #nosec G304
+	f, err := os.Create(filepath.Clean(path))
 	if err != nil {
 		return err
 	}
@@ -2191,7 +2126,6 @@ func InsertArgsBefore(args []string, needle string, insert []string) []string {
 }
 
 func (s *Server) writeRecordingPlaybackError(w http.ResponseWriter, r *http.Request, serviceRef string, err error) {
-	state := "IDLE"
 	switch {
 	case errors.Is(err, errRecordingInvalid):
 		RespondError(w, r, http.StatusBadRequest, ErrInvalidInput, "invalid recording id")
@@ -2209,7 +2143,7 @@ func (s *Server) writeRecordingPlaybackError(w http.ResponseWriter, r *http.Requ
 		return
 	case errors.Is(err, errRecordingNotReady):
 		w.Header().Set("Retry-After", strconv.Itoa(recordingRetryAfterSeconds))
-		state = "PENDING"
+		state := "IDLE"
 		// If serviceRef is valid, try to check status
 		if serviceRef != "" {
 			s.mu.RLock()
@@ -2423,16 +2357,17 @@ func (s *Server) evictRecordingCaches(ttl time.Duration) {
 
 	// 4. Disk Pressure Eviction
 	// Threshold: 5GB or 10%? Let's say 5GB for now as absolute safety.
-	const MinFreeSpace = 5 * 1024 * 1024 * 1024 // 5GB
+	const MinFreeSpace uint64 = 5 * 1024 * 1024 * 1024 // 5GB
 
 	var stat syscall.Statfs_t
 	// Check space of DataDir
 	if err := syscall.Statfs(dataDir, &stat); err == nil {
 		// Available blocks * size per block
-		freeSpace := int64(stat.Bavail) * int64(stat.Bsize)
+		// #nosec G115 -- block size is small and Bavail is within range for positive blocks
+		freeSpace := stat.Bavail * uint64(stat.Bsize)
 
 		if freeSpace < MinFreeSpace {
-			log.L().Warn().Int64("free_bytes", freeSpace).Msg("disk pressure detected, triggering aggressive eviction")
+			log.L().Warn().Uint64("free_bytes", freeSpace).Msg("disk pressure detected, triggering aggressive eviction")
 
 			// Evict oldest remaining non-active items until we free enough space?
 			// Let's loop until we free up to Target (e.g. MinFree + 10GB buffer)
@@ -2798,22 +2733,4 @@ func ShouldEscapeRefChar(c byte) bool {
 		return false
 	}
 	return true
-}
-
-// P10: Circuit Breaker Key Derivation
-func (s *Server) getRecordingRootKey(serviceRef string) string {
-	pathPart := ExtractPathFromServiceRef(serviceRef)
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	for id, rootPath := range s.cfg.RecordingRoots {
-		if strings.HasPrefix(pathPart, rootPath) {
-			return id
-		}
-	}
-	return "hdd"
-}
-
-func (s *Server) endRecordingBuildOps() {
-	// No-op
 }

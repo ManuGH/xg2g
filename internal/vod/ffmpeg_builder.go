@@ -245,11 +245,6 @@ func BuildAudioFilterChain(delayMs int, enableResample bool) string {
 	// If delay detected (e.g. -1200ms or +500ms), we shift timestamps
 	// But in recent builds we disabled computeAudioDelayMs logic (returning 0)
 	// So this might be effectively static.
-	if delayMs != 0 {
-		// Example: "adelay=1000|1000" adds 1s silence
-		// "asetpts=PTS-1.0/TB" shifts
-		// Keeping simple for now as per current logic
-	}
 
 	// Force stereo downmix to handle 5.1 -> 2.0 safely
 	filter += ",pan=stereo|FL=FC+0.30*FL+0.30*BL|FR=FC+0.30*FR+0.30*BR"

@@ -4,7 +4,7 @@
 
 package api
 
-import "github.com/ManuGH/xg2g/internal/pipeline/model"
+import "github.com/ManuGH/xg2g/internal/domain/session/model"
 
 type IntentRequest struct {
 	Type       model.IntentType `json:"type"` // defaults to stream.start if empty

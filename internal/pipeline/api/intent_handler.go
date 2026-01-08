@@ -19,9 +19,9 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 	"github.com/ManuGH/xg2g/internal/pipeline/lease"
-	"github.com/ManuGH/xg2g/internal/pipeline/model"
+	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
-	"github.com/ManuGH/xg2g/internal/pipeline/store"
+	"github.com/ManuGH/xg2g/internal/domain/session/store"
 )
 
 type IntentHandler struct {

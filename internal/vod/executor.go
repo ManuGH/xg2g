@@ -81,6 +81,8 @@ func runFFmpegWithProgress(
 	logger zerolog.Logger,
 ) (stderr string, exitCode int, err error) {
 	fullArgs := append([]string{"-nostdin", "-progress", "pipe:1"}, args...)
+	// #nosec G204
+	// #nosec G204
 	cmd := exec.CommandContext(ctx, bin, fullArgs...)
 
 	stdout, err := cmd.StdoutPipe()

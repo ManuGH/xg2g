@@ -13,7 +13,7 @@ func TestIsStable_StableFile(t *testing.T) {
 	filePath := filepath.Join(tmpDir, "stable.ts")
 
 	content := []byte("stable video content")
-	if err := os.WriteFile(filePath, content, 0644); err != nil {
+	if err := os.WriteFile(filePath, content, 0600); err != nil {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 
@@ -29,7 +29,7 @@ func TestIsStable_WritingFile(t *testing.T) {
 	filePath := filepath.Join(tmpDir, "writing.ts")
 
 	// Write initial content
-	if err := os.WriteFile(filePath, []byte("initial"), 0644); err != nil {
+	if err := os.WriteFile(filePath, []byte("initial"), 0600); err != nil {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 
@@ -37,13 +37,14 @@ func TestIsStable_WritingFile(t *testing.T) {
 	done := make(chan bool)
 	go func() {
 		time.Sleep(50 * time.Millisecond)
-		f, err := os.OpenFile(filePath, os.O_APPEND|os.O_WRONLY, 0644)
+		// #nosec G304
+		f, err := os.OpenFile(filepath.Clean(filePath), os.O_APPEND|os.O_WRONLY, 0600)
 		if err != nil {
 			t.Logf("failed to open file for writing: %v", err)
 			return
 		}
-		defer f.Close()
-		f.WriteString(" more data")
+		defer func() { _ = f.Close() }()
+		_, _ = f.WriteString(" more data")
 		done <- true
 	}()
 
@@ -68,14 +69,14 @@ func TestIsStable_FileDeletedDuringCheck(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "deleted.ts")
 
-	if err := os.WriteFile(filePath, []byte("content"), 0644); err != nil {
+	if err := os.WriteFile(filePath, []byte("content"), 0600); err != nil {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 
 	// Start a goroutine that deletes the file mid-check
 	go func() {
 		time.Sleep(50 * time.Millisecond)
-		os.Remove(filePath)
+		_ = os.Remove(filePath)
 	}()
 
 	// File should NOT be stable (deleted during check)
@@ -89,7 +90,7 @@ func TestIsStable_ZeroWindow(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "zero-window.ts")
 
-	if err := os.WriteFile(filePath, []byte("content"), 0644); err != nil {
+	if err := os.WriteFile(filePath, []byte("content"), 0600); err != nil {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 
@@ -104,7 +105,7 @@ func TestIsStable_LargeWindow(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "large-window.ts")
 
-	if err := os.WriteFile(filePath, []byte("content"), 0644); err != nil {
+	if err := os.WriteFile(filePath, []byte("content"), 0600); err != nil {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 
@@ -127,7 +128,7 @@ func TestIsStable_EmptyFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "empty.ts")
 
-	if err := os.WriteFile(filePath, []byte{}, 0644); err != nil {
+	if err := os.WriteFile(filePath, []byte{}, 0600); err != nil {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 

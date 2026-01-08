@@ -433,10 +433,12 @@ func TestConfigHolder_LogChanges(t *testing.T) {
 // TestConfigHolder_Stop tests Stop method.
 func TestConfigHolder_Stop(t *testing.T) {
 	cfg := AppConfig{
-		Bouquet:     "test",
-		OWIBase:     "http://test.example.com",
-		OWIUsername: "user",
-		OWIPassword: "pass",
+		Bouquet: "test",
+		Enigma2: Enigma2Settings{
+			BaseURL:  "http://test.example.com",
+			Username: "user",
+			Password: "pass",
+		},
 	}
 	loader := NewLoader("", "test")
 	holder := NewConfigHolder(cfg, loader, "")
@@ -450,10 +452,12 @@ func TestConfigHolder_Stop(t *testing.T) {
 // TestConfigHolder_StartWatcher_EmptyPath tests watcher with empty path.
 func TestConfigHolder_StartWatcher_EmptyPath(t *testing.T) {
 	cfg := AppConfig{
-		Bouquet:     "test",
-		OWIBase:     "http://test.example.com",
-		OWIUsername: "user",
-		OWIPassword: "pass",
+		Bouquet: "test",
+		Enigma2: Enigma2Settings{
+			BaseURL:  "http://test.example.com",
+			Username: "user",
+			Password: "pass",
+		},
 	}
 	loader := NewLoader("", "test")
 	holder := NewConfigHolder(cfg, loader, "") // Empty config path

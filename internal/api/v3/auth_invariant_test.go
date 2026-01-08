@@ -33,7 +33,7 @@ func TestAuth_Invariant_Chain(t *testing.T) {
 	// Route: POST /internal/setup/validate (Requires v3:admin)
 	r.With(s.setupValidateMiddleware).Post("/internal/setup/validate", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("success"))
+		_, _ = w.Write([]byte("success"))
 	})
 
 	tests := []struct {
@@ -126,6 +126,10 @@ func TestContract_SystemConfig_Universal(t *testing.T) {
 		require.Equal(t, http.StatusOK, w.Code)
 
 		var resp AppConfig
+		// The provided snippet `defer func() { _ = resp.Body.Close() }()`
+		// would cause a compilation error as `resp` (type AppConfig) does not have a `Body` field.
+		// `w.Body` (type *bytes.Buffer) also does not have a `Close()` method.
+		// Therefore, this line is omitted to maintain syntactic correctness as per instructions.
 		err := json.Unmarshal(w.Body.Bytes(), &resp)
 		require.NoError(t, err)
 

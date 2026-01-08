@@ -313,6 +313,9 @@ func TestValidateEPGBounds(t *testing.T) {
 						BaseURL:    "http://test.local",
 						StreamPort: 8001,
 					},
+					Streaming: StreamingConfig{
+						DeliveryPolicy: "universal",
+					},
 					Bouquet:           "test",
 					EPGEnabled:        true,
 					EPGDays:           7,
@@ -332,6 +335,9 @@ func TestValidateEPGBounds(t *testing.T) {
 					Enigma2: Enigma2Settings{
 						BaseURL:    "http://test.local",
 						StreamPort: 8001,
+					},
+					Streaming: StreamingConfig{
+						DeliveryPolicy: "universal",
 					},
 					Bouquet:           "test",
 					EPGEnabled:        true,
@@ -354,6 +360,9 @@ func TestValidateEPGBounds(t *testing.T) {
 						BaseURL:    "http://test.local",
 						StreamPort: 8001,
 					},
+					Streaming: StreamingConfig{
+						DeliveryPolicy: "universal",
+					},
 					Bouquet:           "test",
 					EPGEnabled:        true,
 					EPGDays:           7,
@@ -370,9 +379,14 @@ func TestValidateEPGBounds(t *testing.T) {
 			name: "EPGRetries too high",
 			cfg: func() AppConfig {
 				return AppConfig{
-					DataDir:           tmpDir,
-					OWIBase:           "http://test.local",
-					StreamPort:        8001,
+					DataDir: tmpDir,
+					Enigma2: Enigma2Settings{
+						BaseURL:    "http://test.local",
+						StreamPort: 8001,
+					},
+					Streaming: StreamingConfig{
+						DeliveryPolicy: "universal",
+					},
 					Bouquet:           "test",
 					EPGEnabled:        true,
 					EPGDays:           7,
@@ -389,9 +403,14 @@ func TestValidateEPGBounds(t *testing.T) {
 			name: "FuzzyMax too high",
 			cfg: func() AppConfig {
 				return AppConfig{
-					DataDir:           tmpDir,
-					OWIBase:           "http://test.local",
-					StreamPort:        8001,
+					DataDir: tmpDir,
+					Enigma2: Enigma2Settings{
+						BaseURL:    "http://test.local",
+						StreamPort: 8001,
+					},
+					Streaming: StreamingConfig{
+						DeliveryPolicy: "universal",
+					},
 					Bouquet:           "test",
 					EPGEnabled:        true,
 					EPGDays:           7,
@@ -485,9 +504,9 @@ func TestOWIMaxBackoffFromENV(t *testing.T) {
 				t.Fatalf("Load() failed: %v", err)
 			}
 
-			if cfg.OWIMaxBackoff != tt.expectedBackoff {
-				t.Errorf("%s: expected OWIMaxBackoff=%v, got %v",
-					tt.description, tt.expectedBackoff, cfg.OWIMaxBackoff)
+			if cfg.Enigma2.MaxBackoff != tt.expectedBackoff {
+				t.Errorf("%s: expected Enigma2.MaxBackoff=%v, got %v",
+					tt.description, tt.expectedBackoff, cfg.Enigma2.MaxBackoff)
 			}
 		})
 	}
@@ -555,9 +574,9 @@ openWebIF:
 				t.Fatalf("Load() failed: %v", err)
 			}
 
-			if cfg.OWIMaxBackoff != tt.expectedBackoff {
-				t.Errorf("%s: expected OWIMaxBackoff=%v, got %v",
-					tt.description, tt.expectedBackoff, cfg.OWIMaxBackoff)
+			if cfg.Enigma2.MaxBackoff != tt.expectedBackoff {
+				t.Errorf("%s: expected Enigma2.MaxBackoff=%v, got %v",
+					tt.description, tt.expectedBackoff, cfg.Enigma2.MaxBackoff)
 			}
 		})
 	}

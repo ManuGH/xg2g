@@ -3,7 +3,7 @@ package ffmpeg
 import (
 	"testing"
 
-	"github.com/ManuGH/xg2g/internal/pipeline/model"
+	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

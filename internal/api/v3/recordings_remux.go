@@ -94,7 +94,7 @@ func ProbeStreams(ctx context.Context, ffprobeBin, inputPath string) (*StreamInf
 			}
 			info.Video.BitDepth = inferBitDepthFromPixFmt(s.PixFmt)
 			if info.Video.BitDepth == 0 && s.BitsPerRawSample != "" {
-				fmt.Sscanf(s.BitsPerRawSample, "%d", &info.Video.BitDepth)
+				_, _ = fmt.Sscanf(s.BitsPerRawSample, "%d", &info.Video.BitDepth)
 			}
 			if info.Video.BitDepth == 0 {
 				info.Video.BitDepth = 8
@@ -104,7 +104,7 @@ func ProbeStreams(ctx context.Context, ffprobeBin, inputPath string) (*StreamInf
 			audioCount++
 			if info.Audio.CodecName == "" {
 				info.Audio.CodecName = s.CodecName
-				fmt.Sscanf(s.SampleRate, "%d", &info.Audio.SampleRate)
+				_, _ = fmt.Sscanf(s.SampleRate, "%d", &info.Audio.SampleRate)
 				info.Audio.Channels = s.Channels
 				info.Audio.ChannelLayout = s.ChannelLayout
 				if s.StartTime != "" {
@@ -229,17 +229,6 @@ func buildRemuxArgs(info *StreamInfo, inputPath, outputPath, startTime string) *
 	}
 }
 
-// Delegation wrapper for fallback (must match signature used in vod.go if called directly)
-func buildFallbackRemuxArgs(inputPath, outputPath, startTime string, audioDelayMs int) []string {
-	in := vod.BuildArgsInput{
-		InputPath:    inputPath,
-		OutputPath:   outputPath,
-		StartTime:    startTime,
-		AudioDelayMs: audioDelayMs,
-	}
-	return vod.BuildFallbackRemuxArgs(in)
-}
-
 // Delegation wrapper for transcode
 func buildTranscodeArgs(inputPath, outputPath, startTime string, audioDelayMs int) []string {
 	in := vod.BuildArgsInput{
@@ -303,10 +292,6 @@ func shouldRetryWithFallback(err error) bool {
 		return true
 	}
 	return false
-}
-
-func shouldRetryWithTranscode(err error) bool {
-	return true
 }
 
 // OMITTED: insertArgsBefore (Exists in recordings.go)

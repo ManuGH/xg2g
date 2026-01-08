@@ -164,10 +164,10 @@ func TestClassifyLibrary_SiblingLock(t *testing.T) {
 	lockPath := moviePath + ".lock"
 
 	// Create both files
-	if err := os.WriteFile(moviePath, []byte("test"), 0644); err != nil {
+	if err := os.WriteFile(moviePath, []byte("test"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(lockPath, []byte(""), 0644); err != nil {
+	if err := os.WriteFile(lockPath, []byte(""), 0600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -196,7 +196,7 @@ func TestClassifyLibrary_SiblingLock(t *testing.T) {
 	// Now should be finished (but file too small - fix test)
 	// Create larger file
 	largeData := make([]byte, 2*1024*1024) // 2MB
-	if err := os.WriteFile(moviePath, largeData, 0644); err != nil {
+	if err := os.WriteFile(moviePath, largeData, 0600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Chtimes(moviePath, oldTime, oldTime); err != nil {

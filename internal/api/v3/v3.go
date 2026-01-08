@@ -26,7 +26,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
-	"github.com/ManuGH/xg2g/internal/pipeline/store"
+	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/recordings"
 	"github.com/ManuGH/xg2g/internal/vod"
 	"golang.org/x/sync/singleflight"

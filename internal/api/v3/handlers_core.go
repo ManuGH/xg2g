@@ -5,12 +5,10 @@
 package v3
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -23,11 +21,9 @@ import (
 	"github.com/ManuGH/xg2g/internal/log"
 	v3api "github.com/ManuGH/xg2g/internal/pipeline/api"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
-	"github.com/ManuGH/xg2g/internal/pipeline/lease"
-	"github.com/ManuGH/xg2g/internal/pipeline/model"
+	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
-	v3store "github.com/ManuGH/xg2g/internal/pipeline/store"
 )
 
 const (
@@ -110,13 +106,14 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	// 4. Generate Session ID (Strong UUID)
 	// For START, new ID. For STOP, use provided ID.
 	var sessionID string
-	if intentType == model.IntentTypeStreamStart {
+	switch intentType {
+	case model.IntentTypeStreamStart:
 		// New Session
 		sessionID = uuid.New().String()
 		if correlationID == "" {
 			correlationID = uuid.New().String()
 		}
-	} else if intentType == model.IntentTypeStreamStop {
+	case model.IntentTypeStreamStop:
 		// STOP logic remains same
 		if req.SessionID == "" {
 			RespondError(w, r, http.StatusBadRequest, ErrInvalidInput, "sessionId required for stop")
@@ -129,7 +126,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 				correlationID = session.CorrelationID
 			}
 		}
-	} else {
+	default:
 		RespondError(w, r, http.StatusBadRequest, ErrInvalidInput, "unsupported intent type")
 		return
 	}
@@ -139,16 +136,6 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		logger = logger.With().Str("correlation_id", correlationID).Logger()
 	}
 
-	// Extract ClientIP (Normalized)
-	clientIP := req.Params["client_ip"]
-	if clientIP == "" {
-		host, _, err := net.SplitHostPort(r.RemoteAddr)
-		if err == nil {
-			clientIP = host
-		} else {
-			clientIP = r.RemoteAddr
-		}
-	}
 	mode := model.ModeLive
 	if raw := strings.TrimSpace(req.Params["mode"]); raw != "" {
 		if strings.EqualFold(raw, model.ModeRecording) {
@@ -205,10 +192,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 
 		profileSpec := profiles.Resolve(reqProfileID, r.UserAgent(), int(cfg.HLS.DVRWindow.Seconds()), cap, hasGPU, hwaccelMode)
 
-		// Determine effective hwaccel outcome (for deterministic logging)
-		hwaccelEffective := "cpu"
-		hwaccelReason := "not_applicable"
-		encoderBackend := "sw"
+		var hwaccelEffective, hwaccelReason, encoderBackend string
 
 		if profileSpec.TranscodeVideo {
 			if profileSpec.HWAccel == "vaapi" {
@@ -450,20 +434,6 @@ func (s *Server) handleV3SessionsDebug(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, response)
-}
-
-func tryAcquireTunerLease(ctx context.Context, st v3store.StateStore, owner string, slots []int, ttl time.Duration) (slot int, l v3store.Lease, ok bool, err error) {
-	for _, s := range slots {
-		key := lease.LeaseKeyTunerSlot(s)
-		l, got, e := st.TryAcquireLease(ctx, key, owner, ttl)
-		if e != nil {
-			return 0, nil, false, e
-		}
-		if got {
-			return s, l, true, nil
-		}
-	}
-	return 0, nil, false, nil
 }
 
 // handleV3SessionState returns a single session state.

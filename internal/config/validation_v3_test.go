@@ -32,6 +32,9 @@ func baseV3Config(t *testing.T) AppConfig {
 		HLS: HLSConfig{
 			Root: filepath.Join(tmp, "v3-hls"),
 		},
+		Streaming: StreamingConfig{
+			DeliveryPolicy: "universal",
+		},
 	}
 }
 

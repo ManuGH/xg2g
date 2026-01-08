@@ -8,7 +8,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/pipeline/model"
+	"github.com/ManuGH/xg2g/internal/domain/session/model"
 )
 
 // StubFactory returns stub components.

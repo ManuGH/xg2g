@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/log"
-	"github.com/ManuGH/xg2g/internal/pipeline/model"
+	"github.com/ManuGH/xg2g/internal/domain/session/model"
 )
 
 // SessionHeartbeat handles POST /api/v3/sessions/{id}/heartbeat (ADR-009)
