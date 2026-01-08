@@ -88,7 +88,8 @@ function V3Player(props: V3PlayerProps) {
   // ADR-00X: Profile selection removed (universal policy only)
 
   // ADR-009: Session Lease Semantics
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [heartbeatInterval, setHeartbeatInterval] = useState<number | null>(null); // seconds from backend
+  // @ts-expect-error - TS6133: leaseExpiresAt used via setter, not directly read
   const [leaseExpiresAt, setLeaseExpiresAt] = useState<string | null>(null); // ISO 8601
 
   // PREPARING state for VOD remux UX

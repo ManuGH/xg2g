@@ -8,7 +8,6 @@ package daemon
 
 import (
 	"net/http"
-	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/health"
@@ -51,44 +50,12 @@ type Deps struct {
 	// ProxyOnly disables API + metrics servers when true.
 	// This is a runtime mode switch and must be computed at startup (and treated as immutable).
 	ProxyOnly bool
-
-	// V3Config contains v3 Worker configuration
-	V3Config *V3Config
 }
 
 // V3ComponentSetter defines the interface for injecting v3 components
 type V3ComponentSetter interface {
 	SetV3Components(b bus.Bus, st store.StateStore, rs resume.Store, sm *scan.Manager)
 	HealthManager() *health.Manager
-}
-
-// V3Config holds v3 worker/pipeline configuration.
-type V3Config struct {
-	Enabled           bool
-	Mode              string // "standard" or "virtual"
-	StoreBackend      string // "memory" or "bolt"
-	StorePath         string // Path to db file
-	TunerSlots        []int
-	UseWebIFStreams   bool
-	StreamPort        int // Direct stream port (e.g. 8001 for Enigma2, 17999 for OSCam-emu relay)
-	E2Host            string
-	E2TuneTimeout     time.Duration
-	E2Username        string
-	E2Password        string
-	E2Timeout         time.Duration
-	E2RespTimeout     time.Duration
-	E2Retries         int
-	E2Backoff         time.Duration
-	E2MaxBackoff      time.Duration
-	E2RateLimit       int
-	E2RateBurst       int
-	E2UserAgent       string
-	E2AnalyzeDuration string // FFmpeg -analyzeduration (e.g. "10s")
-	E2ProbeSize       string // FFmpeg -probesize (e.g. "10M")
-	FFmpegBin         string
-	FFmpegKillTimeout time.Duration
-	HLSRoot           string
-	IdleTimeout       time.Duration
 }
 
 // ProxyConfig holds proxy server configuration.

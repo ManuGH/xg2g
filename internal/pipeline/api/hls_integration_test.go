@@ -80,6 +80,9 @@ func TestSafariHLSSmoke(t *testing.T) {
 			SessionID:      sessionID,
 			State:          model.SessionReady,
 			LastAccessUnix: time.Now().Unix(),
+			Profile: model.ProfileSpec{
+				DVRWindowSec: 300, // 5 minutes
+			},
 		},
 	}
 

@@ -47,13 +47,15 @@ func writeValidConfig(t *testing.T, path string, bouquet string) {
 // TestNewConfigHolder tests the ConfigHolder constructor.
 func TestNewConfigHolder(t *testing.T) {
 	initial := AppConfig{
-		Bouquet:     "test-bouquet",
-		DataDir:     "/tmp/test",
-		EPGDays:     7,
-		EPGEnabled:  true,
-		OWIBase:     "http://test.example.com",
-		OWIUsername: "user",
-		OWIPassword: "pass",
+		Bouquet:    "test-bouquet",
+		DataDir:    "/tmp/test",
+		EPGDays:    7,
+		EPGEnabled: true,
+		Enigma2: Enigma2Settings{
+			BaseURL:  "http://test.example.com",
+			Username: "user",
+			Password: "pass",
+		},
 	}
 
 	loader := NewLoader("", "test-version")
@@ -74,13 +76,15 @@ func TestNewConfigHolder(t *testing.T) {
 
 func TestConfigHolder_Swap_AssignsMonotonicEpoch(t *testing.T) {
 	initial := AppConfig{
-		Bouquet:     "test-bouquet",
-		DataDir:     "/tmp/test",
-		EPGDays:     7,
-		EPGEnabled:  true,
-		OWIBase:     "http://test.example.com",
-		OWIUsername: "user",
-		OWIPassword: "pass",
+		Bouquet:    "test-bouquet",
+		DataDir:    "/tmp/test",
+		EPGDays:    7,
+		EPGEnabled: true,
+		Enigma2: Enigma2Settings{
+			BaseURL:  "http://test.example.com",
+			Username: "user",
+			Password: "pass",
+		},
 	}
 
 	loader := NewLoader("", "test")
@@ -118,11 +122,13 @@ func TestConfigHolder_Swap_AssignsMonotonicEpoch(t *testing.T) {
 // TestConfigHolder_Get tests thread-safe config read.
 func TestConfigHolder_Get(t *testing.T) {
 	cfg := AppConfig{
-		Bouquet:     "initial",
-		EPGDays:     5,
-		OWIBase:     "http://test.example.com",
-		OWIUsername: "user",
-		OWIPassword: "pass",
+		Bouquet: "initial",
+		EPGDays: 5,
+		Enigma2: Enigma2Settings{
+			BaseURL:  "http://test.example.com",
+			Username: "user",
+			Password: "pass",
+		},
 	}
 
 	loader := NewLoader("", "test")
@@ -392,23 +398,27 @@ func TestConfigHolder_ReloadDuringRequest_UsesSingleEpoch(t *testing.T) {
 // TestConfigHolder_LogChanges tests config change logging.
 func TestConfigHolder_LogChanges(t *testing.T) {
 	old := AppConfig{
-		Bouquet:     "old-bouquet",
-		EPGEnabled:  false,
-		EPGDays:     3,
-		StreamPort:  8080,
-		OWIBase:     "http://old.example.com",
-		OWIUsername: "user",
-		OWIPassword: "pass",
+		Bouquet:    "old-bouquet",
+		EPGEnabled: false,
+		EPGDays:    3,
+		Enigma2: Enigma2Settings{
+			StreamPort: 8080,
+			BaseURL:    "http://old.example.com",
+			Username:   "user",
+			Password:   "pass",
+		},
 	}
 
 	newCfg := AppConfig{
-		Bouquet:     "new-bouquet",
-		EPGEnabled:  true,
-		EPGDays:     7,
-		StreamPort:  9090,
-		OWIBase:     "http://new.example.com",
-		OWIUsername: "user",
-		OWIPassword: "pass",
+		Bouquet:    "new-bouquet",
+		EPGEnabled: true,
+		EPGDays:    7,
+		Enigma2: Enigma2Settings{
+			StreamPort: 9090,
+			BaseURL:    "http://new.example.com",
+			Username:   "user",
+			Password:   "pass",
+		},
 	}
 
 	loader := NewLoader("", "test")

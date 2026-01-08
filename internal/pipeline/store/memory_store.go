@@ -19,7 +19,6 @@ type MemoryStore struct {
 	mu sync.RWMutex
 
 	sessions   map[string]*model.SessionRecord
-	pipelines  map[string]*model.PipelineRecord
 	recordings map[string]*model.Recording // Added for testing
 
 	// key -> lease state
@@ -42,7 +41,6 @@ type idemState struct {
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
 		sessions:   make(map[string]*model.SessionRecord),
-		pipelines:  make(map[string]*model.PipelineRecord),
 		recordings: make(map[string]*model.Recording),
 		leases:     make(map[string]leaseState),
 		idem:       make(map[string]idemState),
@@ -290,26 +288,6 @@ func (m *MemoryStore) DeleteSession(ctx context.Context, id string) error {
 	return nil
 }
 
-func (m *MemoryStore) PutPipeline(ctx context.Context, rec *model.PipelineRecord) error {
-	m.mu.Lock()
-	cpy := *rec
-	m.pipelines[rec.PipelineID] = &cpy
-	m.mu.Unlock()
-	return nil
-}
-
-func (m *MemoryStore) GetPipeline(ctx context.Context, pipelineID string) (*model.PipelineRecord, error) {
-	m.mu.Lock()
-	rec, ok := m.pipelines[pipelineID]
-	if !ok {
-		m.mu.Unlock()
-		return nil, nil
-	}
-	cpy := *rec
-	m.mu.Unlock()
-	return &cpy, nil
-}
-
 func (m *MemoryStore) UpdateSession(ctx context.Context, id string, fn func(*model.SessionRecord) error) (*model.SessionRecord, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -332,23 +310,6 @@ func (m *MemoryStore) UpdateSession(ctx context.Context, id string, fn func(*mod
 	}
 	// Save back
 	m.sessions[id] = &cpy
-	return &cpy, nil
-}
-
-func (m *MemoryStore) UpdatePipeline(ctx context.Context, id string, fn func(*model.PipelineRecord) error) (*model.PipelineRecord, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	rec, ok := m.pipelines[id]
-	if !ok {
-		return nil, errors.New("not found")
-	}
-	// Copy
-	cpy := *rec
-	if err := fn(&cpy); err != nil {
-		return nil, err
-	}
-	m.pipelines[id] = &cpy
 	return &cpy, nil
 }
 

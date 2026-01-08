@@ -19,21 +19,19 @@ func TestRecordSessionStartOutcome_Busy(t *testing.T) {
 		"result":       "busy",
 		"reason_class": "lease_busy",
 		"profile":      "test-profile-busy",
-		"mode":         "standard",
 	}
 	capLabels := map[string]string{
 		"reason":  string(model.RLeaseBusy),
 		"profile": "test-profile-busy",
-		"mode":    "standard",
 	}
 
-	sessionStartsTotal.WithLabelValues("fail", "internal", "test-profile-busy", "standard")
-	capacityRejectionsTotal.WithLabelValues(string(model.RLeaseBusy), "test-profile-busy", "standard")
+	sessionStartsTotal.WithLabelValues("fail", "internal", "test-profile-busy")
+	capacityRejectionsTotal.WithLabelValues(string(model.RLeaseBusy), "test-profile-busy")
 
 	beforeStarts := getCounterValue(t, "xg2g_v3_session_starts_total", startLabels)
 	beforeCap := getCounterValue(t, "xg2g_v3_capacity_rejections_total", capLabels)
 
-	recordSessionStartOutcome("busy", model.RLeaseBusy, "test-profile-busy", "standard")
+	recordSessionStartOutcome("busy", model.RLeaseBusy, "test-profile-busy")
 
 	afterStarts := getCounterValue(t, "xg2g_v3_session_starts_total", startLabels)
 	afterCap := getCounterValue(t, "xg2g_v3_capacity_rejections_total", capLabels)
@@ -47,21 +45,19 @@ func TestRecordSessionStartOutcome_Fail(t *testing.T) {
 		"result":       "fail",
 		"reason_class": "tune_failed",
 		"profile":      "test-profile-fail",
-		"mode":         "standard",
 	}
 	capLabels := map[string]string{
 		"reason":  string(model.RLeaseBusy),
 		"profile": "test-profile-fail",
-		"mode":    "standard",
 	}
 
-	sessionStartsTotal.WithLabelValues("fail", "tune_failed", "test-profile-fail", "standard")
-	capacityRejectionsTotal.WithLabelValues(string(model.RLeaseBusy), "test-profile-fail", "standard")
+	sessionStartsTotal.WithLabelValues("fail", "tune_failed", "test-profile-fail")
+	capacityRejectionsTotal.WithLabelValues(string(model.RLeaseBusy), "test-profile-fail")
 
 	beforeStarts := getCounterValue(t, "xg2g_v3_session_starts_total", startLabels)
 	beforeCap := getCounterValue(t, "xg2g_v3_capacity_rejections_total", capLabels)
 
-	recordSessionStartOutcome("fail", model.RTuneFailed, "test-profile-fail", "standard")
+	recordSessionStartOutcome("fail", model.RTuneFailed, "test-profile-fail")
 
 	afterStarts := getCounterValue(t, "xg2g_v3_session_starts_total", startLabels)
 	afterCap := getCounterValue(t, "xg2g_v3_capacity_rejections_total", capLabels)
@@ -75,14 +71,13 @@ func TestRecordSessionStartOutcome_Success(t *testing.T) {
 		"result":       "success",
 		"reason_class": "none",
 		"profile":      "test-profile-success",
-		"mode":         "standard",
 	}
 
-	sessionStartsTotal.WithLabelValues("success", "none", "test-profile-success", "standard")
+	sessionStartsTotal.WithLabelValues("success", "none", "test-profile-success")
 
 	beforeStarts := getCounterValue(t, "xg2g_v3_session_starts_total", startLabels)
 
-	recordSessionStartOutcome("success", model.RNone, "test-profile-success", "standard")
+	recordSessionStartOutcome("success", model.RNone, "test-profile-success")
 
 	afterStarts := getCounterValue(t, "xg2g_v3_session_starts_total", startLabels)
 
@@ -92,22 +87,20 @@ func TestRecordSessionStartOutcome_Success(t *testing.T) {
 func TestObserveTTF(t *testing.T) {
 	playlistLabels := map[string]string{
 		"profile": "test-profile-ttfp",
-		"mode":    "standard",
 	}
 	segmentLabels := map[string]string{
 		"profile": "test-profile-ttfs",
-		"mode":    "standard",
 	}
 
-	timeToFirstPlaylist.WithLabelValues("test-profile-ttfp", "standard")
-	timeToFirstSegment.WithLabelValues("test-profile-ttfs", "standard")
+	timeToFirstPlaylist.WithLabelValues("test-profile-ttfp")
+	timeToFirstSegment.WithLabelValues("test-profile-ttfs")
 
 	beforePlaylist := getHistogramCount(t, "xg2g_v3_time_to_first_playlist_seconds", playlistLabels)
 	beforeSegment := getHistogramCount(t, "xg2g_v3_time_to_first_segment_seconds", segmentLabels)
 
 	start := time.Now().Add(-2 * time.Second)
-	observeTTFP("test-profile-ttfp", "standard", start)
-	observeTTFS("test-profile-ttfs", "standard", start)
+	observeTTFP("test-profile-ttfp", start)
+	observeTTFS("test-profile-ttfs", start)
 
 	afterPlaylist := getHistogramCount(t, "xg2g_v3_time_to_first_playlist_seconds", playlistLabels)
 	afterSegment := getHistogramCount(t, "xg2g_v3_time_to_first_segment_seconds", segmentLabels)

@@ -26,9 +26,11 @@ import (
 // TestGetConfig tests the GetConfig method.
 func TestGetConfig(t *testing.T) {
 	cfg := config.AppConfig{
-		Bouquet:     "test-bouquet",
-		OWIUsername: "testuser",
-		DataDir:     "/tmp/test",
+		Bouquet: "test-bouquet",
+		Enigma2: config.Enigma2Settings{
+			Username: "testuser",
+		},
+		DataDir: "/tmp/test",
 	}
 
 	s := &Server{
@@ -39,8 +41,8 @@ func TestGetConfig(t *testing.T) {
 	if got.Bouquet != cfg.Bouquet {
 		t.Errorf("expected Bouquet %q, got %q", cfg.Bouquet, got.Bouquet)
 	}
-	if got.OWIUsername != cfg.OWIUsername {
-		t.Errorf("expected OWIUsername %q, got %q", cfg.OWIUsername, got.OWIUsername)
+	if got.Enigma2.Username != cfg.Enigma2.Username {
+		t.Errorf("expected Enigma2.Username %q, got %q", cfg.Enigma2.Username, got.Enigma2.Username)
 	}
 	if got.DataDir != cfg.DataDir {
 		t.Errorf("expected DataDir %q, got %q", cfg.DataDir, got.DataDir)

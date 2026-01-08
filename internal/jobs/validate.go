@@ -20,8 +20,8 @@ func validateConfig(cfg config.AppConfig) error {
 	// Use centralized validation package
 	v := validate.New()
 
-	v.URL("OWIBase", cfg.OWIBase, []string{"http", "https"})
-	v.Port("StreamPort", cfg.StreamPort)
+	v.URL("Enigma2.BaseURL", cfg.Enigma2.BaseURL, []string{"http", "https"})
+	v.Port("Enigma2.StreamPort", cfg.Enigma2.StreamPort)
 	v.Directory("DataDir", cfg.DataDir, false)
 
 	if cfg.PiconBase != "" {

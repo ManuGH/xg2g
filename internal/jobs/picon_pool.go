@@ -66,7 +66,7 @@ func InitPiconPool(cfg config.AppConfig) {
 	globalPoolOnce.Do(func() {
 		upstreamBase := cfg.PiconBase
 		if upstreamBase == "" {
-			upstreamBase = cfg.OWIBase
+			upstreamBase = cfg.Enigma2.BaseURL
 		}
 
 		piconDir := filepath.Join(cfg.DataDir, "picons")

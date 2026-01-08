@@ -178,7 +178,7 @@ func (o *Orchestrator) acquireLeases(
 		}
 		if !ok {
 			res.ReleaseDedup()
-			tunerBusyTotal.WithLabelValues(o.modeLabel()).Inc()
+			tunerBusyTotal.WithLabelValues().Inc()
 			return nil, newReasonError(model.RLeaseBusy, "no tuner slots available", nil)
 		}
 		res.Slot = slot
@@ -208,7 +208,7 @@ func (o *Orchestrator) acquireLeases(
 						logger.Warn().Err(err).Msg("heartbeat renewal error")
 					} else if !ok {
 						logger.Warn().Str("lease", res.TunerLease.Key()).Str("sid", event.SessionID).Msg("tuner lease lost, aborting")
-						leaseLostTotalLegacy.WithLabelValues(o.modeLabel()).Inc()
+						leaseLostTotalLegacy.WithLabelValues().Inc()
 
 						// Fix 11-3: Lease Robustness
 						_, _ = o.Store.UpdateSession(hbCtx, event.SessionID, func(r *model.SessionRecord) error {
@@ -263,7 +263,6 @@ func (o *Orchestrator) waitForReady(
 	startTime time.Time,
 	ffmpegStartTime time.Time,
 	logger zerolog.Logger,
-	mode string,
 	ttfpRecorded *bool,
 ) (ready bool, reason model.ReasonCode, detail string) {
 	playlistReadyTimeout := 45 * time.Second
@@ -286,7 +285,7 @@ func (o *Orchestrator) waitForReady(
 
 	for {
 		// Success condition
-		ready, err := o.checkPlaylistReady(playlistPath, vodMode, ttfpRecorded, e.ProfileID, mode, startTime)
+		ready, err := o.checkPlaylistReady(playlistPath, vodMode, ttfpRecorded, e.ProfileID, startTime)
 		if err == nil && ready {
 			return true, "", ""
 		}
@@ -311,7 +310,6 @@ func (o *Orchestrator) checkPlaylistReady(
 	vodMode bool,
 	ttfpRecorded *bool,
 	profileID string,
-	mode string,
 	startTime time.Time,
 ) (bool, error) {
 	info, err := os.Stat(playlistPath)
@@ -342,7 +340,7 @@ func (o *Orchestrator) checkPlaylistReady(
 	segInfo, segErr := os.Stat(segmentPath)
 	if segErr == nil && segInfo.Size() > 0 {
 		if !*ttfpRecorded {
-			observeTTFP(profileID, mode, startTime)
+			observeTTFP(profileID, startTime)
 			*ttfpRecorded = true
 		}
 		return true, nil
@@ -445,7 +443,7 @@ func (o *Orchestrator) transitionStarting(ctx context.Context, e model.StartSess
 		return nil
 	})
 	if err != nil {
-		jobsTotal.WithLabelValues("failed_starting", o.modeLabel()).Inc()
+		jobsTotal.WithLabelValues("failed_starting").Inc()
 		return err
 	}
 	return nil
@@ -506,9 +504,9 @@ func (o *Orchestrator) tunePlaybackSource(
 		} else if errors.Is(tuneErr, context.Canceled) {
 			failReason = "canceled"
 		}
-		readyOutcomeTotal.WithLabelValues(failReason, o.modeLabel()).Inc()
+		readyOutcomeTotal.WithLabelValues(failReason).Inc()
 	}
-	readyDuration.WithLabelValues(outcome, o.modeLabel()).Observe(readyDurationVal)
+	readyDuration.WithLabelValues(outcome).Observe(readyDurationVal)
 
 	if tuneErr != nil {
 		if errors.Is(tuneErr, context.Canceled) {
@@ -530,7 +528,6 @@ func (o *Orchestrator) runExecutionLoop(
 	session *model.SessionRecord,
 	startTime time.Time,
 	logger zerolog.Logger,
-	mode string,
 	recordStart func(string, model.ReasonCode),
 ) (exec.Transcoder, model.ProfileSpec, error) {
 	initialProfileSpec := session.Profile
@@ -569,7 +566,7 @@ func (o *Orchestrator) runExecutionLoop(
 			}
 			if o.HLSRoot != "" {
 				sessionDir := filepath.Join(o.HLSRoot, "sessions", e.SessionID)
-				go observeFirstSegment(hbCtx, sessionDir, startTime, e.ProfileID, mode)
+				go observeFirstSegment(hbCtx, sessionDir, startTime, e.ProfileID)
 			}
 		}
 
@@ -581,7 +578,7 @@ func (o *Orchestrator) runExecutionLoop(
 			playlistReadyResult, waitReason, waitDetail = o.waitForReady(
 				ctx, hbCtx, e, currentProfileSpec, transcoder,
 				playlistPath, sessionCtx.IsVOD, repairAttempted,
-				startTime, ffmpegStartTime, logger, mode, &ttfpRecorded,
+				startTime, ffmpegStartTime, logger, &ttfpRecorded,
 			)
 
 			if !playlistReadyResult {
@@ -657,7 +654,6 @@ func (o *Orchestrator) finalizeDeferred(
 	startRecorded *bool,
 	recordStart func(string, model.ReasonCode),
 	startResultForReason func(model.ReasonCode) string,
-	mode string,
 	retErr *error,
 ) {
 	session := *sessionPtr
@@ -707,14 +703,13 @@ func (o *Orchestrator) finalizeDeferred(
 	}
 
 	// Phase 9-4: Golden Signals
-	sessionEndTotal.WithLabelValues(string(outcome.Reason), event.ProfileID, mode).Inc()
+	sessionEndTotal.WithLabelValues(string(outcome.Reason), event.ProfileID).Inc()
 
 	logEvt := logger.Info().
 		Str("event", "hls.session_end").
 		Str("sid", event.SessionID).
 		Str("reason", string(outcome.Reason)).
-		Str("profile", event.ProfileID).
-		Str("mode", mode)
+		Str("profile", event.ProfileID)
 
 	if outcome.Detail != "" {
 		logEvt.Str("detail", outcome.Detail)

@@ -16,7 +16,7 @@ var (
 			Name: "xg2g_v3_session_end_total",
 			Help: "Total number of finalized sessions by reason and profile.",
 		},
-		[]string{"reason", "profile", "mode"},
+		[]string{"reason", "profile"},
 	)
 
 	// Golden Signal: Startup Latency (Availability)
@@ -26,7 +26,7 @@ var (
 			Help:    "Time taken for tuner/transcoder readiness.",
 			Buckets: []float64{0.1, 0.25, 0.5, 1, 2.5, 5, 10},
 		},
-		[]string{"outcome", "mode"}, // outcome: success, failure
+		[]string{"outcome"}, // outcome: success, failure
 	)
 
 	readyOutcomeTotal = promauto.NewCounterVec(
@@ -34,7 +34,7 @@ var (
 			Name: "xg2g_v3_ready_outcome_total",
 			Help: "Detailed outcome of readiness checks.",
 		},
-		[]string{"outcome", "mode"}, // outcome: success, timeout, wrong_ref, not_locked, upstream, canceled, other
+		[]string{"outcome"}, // outcome: success, timeout, wrong_ref, not_locked, upstream, canceled, other
 	)
 
 	timeToFirstPlaylist = promauto.NewHistogramVec(
@@ -43,7 +43,7 @@ var (
 			Help:    "Time from session start to playlist readiness.",
 			Buckets: []float64{0.25, 0.5, 1, 2, 3, 5, 8, 13, 21},
 		},
-		[]string{"profile", "mode"},
+		[]string{"profile"},
 	)
 
 	timeToFirstSegment = promauto.NewHistogramVec(
@@ -52,7 +52,7 @@ var (
 			Help:    "Time from session start to first media segment readiness.",
 			Buckets: []float64{0.5, 1, 2, 3, 5, 8, 13, 21},
 		},
-		[]string{"profile", "mode"},
+		[]string{"profile"},
 	)
 
 	// Golden Signal: Resource Pressure
@@ -61,7 +61,7 @@ var (
 			Name: "xg2g_v3_tuner_busy_total",
 			Help: "Total times tuner lease acquisition failed due to all slots busy.",
 		},
-		[]string{"mode"},
+		[]string{},
 	)
 
 	jobsTotal = promauto.NewCounterVec(
@@ -69,7 +69,7 @@ var (
 			Name: "v3_worker_jobs_total",
 			Help: "Total worker jobs processed (Legacy)",
 		},
-		[]string{"result", "mode"},
+		[]string{"result"},
 	)
 
 	fsmTransitions = promauto.NewCounterVec(
@@ -77,7 +77,7 @@ var (
 			Name: "v3_fsm_transitions_total",
 			Help: "FSM state transitions",
 		},
-		[]string{"state_from", "state_to", "mode"},
+		[]string{"state_from", "state_to"},
 	)
 
 	leaseLostTotalLegacy = promauto.NewCounterVec(
@@ -85,7 +85,7 @@ var (
 			Name: "v3_worker_lease_lost_total",
 			Help: "Total leases lost during heartbeat",
 		},
-		[]string{"mode"},
+		[]string{},
 	)
 
 	sessionStartsTotal = promauto.NewCounterVec(
@@ -93,7 +93,7 @@ var (
 			Name: "xg2g_v3_session_starts_total",
 			Help: "Total session start outcomes by result and reason class.",
 		},
-		[]string{"result", "reason_class", "profile", "mode"},
+		[]string{"result", "reason_class", "profile"},
 	)
 
 	capacityRejectionsTotal = promauto.NewCounterVec(
@@ -101,7 +101,7 @@ var (
 			Name: "xg2g_v3_capacity_rejections_total",
 			Help: "Total session start rejections due to capacity constraints.",
 		},
-		[]string{"reason", "profile", "mode"},
+		[]string{"reason", "profile"},
 	)
 
 	// ADR-009: Session Lease Metrics
@@ -121,20 +121,20 @@ var (
 	)
 )
 
-func observeTTFP(profile, mode string, start time.Time) {
-	timeToFirstPlaylist.WithLabelValues(profile, mode).Observe(time.Since(start).Seconds())
+func observeTTFP(profile string, start time.Time) {
+	timeToFirstPlaylist.WithLabelValues(profile).Observe(time.Since(start).Seconds())
 }
 
-func observeTTFS(profile, mode string, start time.Time) {
-	timeToFirstSegment.WithLabelValues(profile, mode).Observe(time.Since(start).Seconds())
+func observeTTFS(profile string, start time.Time) {
+	timeToFirstSegment.WithLabelValues(profile).Observe(time.Since(start).Seconds())
 }
 
-func recordSessionStartOutcome(result string, reason model.ReasonCode, profile, mode string) {
+func recordSessionStartOutcome(result string, reason model.ReasonCode, profile string) {
 	if reason == model.RLeaseBusy {
-		capacityRejectionsTotal.WithLabelValues(string(reason), profile, mode).Inc()
+		capacityRejectionsTotal.WithLabelValues(string(reason), profile).Inc()
 		return
 	}
-	sessionStartsTotal.WithLabelValues(result, reasonClass(reason), profile, mode).Inc()
+	sessionStartsTotal.WithLabelValues(result, reasonClass(reason), profile).Inc()
 }
 
 func reasonClass(reason model.ReasonCode) string {

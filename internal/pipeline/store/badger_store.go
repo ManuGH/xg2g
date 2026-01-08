@@ -77,63 +77,6 @@ func (s *BadgerStore) UpdateSession(ctx context.Context, id string, fn func(*mod
 	return &out, nil
 }
 
-func (s *BadgerStore) PutPipeline(ctx context.Context, rec *model.PipelineRecord) error {
-	key := []byte("pipe:" + rec.PipelineID)
-	buf, err := json.Marshal(rec)
-	if err != nil {
-		return err
-	}
-	return s.db.Update(func(txn *badger.Txn) error {
-		return txn.Set(key, buf)
-	})
-}
-
-func (s *BadgerStore) GetPipeline(ctx context.Context, id string) (*model.PipelineRecord, error) {
-	key := []byte("pipe:" + id)
-	var out model.PipelineRecord
-	err := s.db.View(func(txn *badger.Txn) error {
-		item, err := txn.Get(key)
-		if err != nil {
-			return err
-		}
-		return item.Value(func(val []byte) error {
-			return json.Unmarshal(val, &out)
-		})
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-func (s *BadgerStore) UpdatePipeline(ctx context.Context, id string, fn func(*model.PipelineRecord) error) (*model.PipelineRecord, error) {
-	key := []byte("pipe:" + id)
-	var out model.PipelineRecord
-	err := s.db.Update(func(txn *badger.Txn) error {
-		item, err := txn.Get(key)
-		if err != nil {
-			return err
-		}
-		if err := item.Value(func(val []byte) error {
-			return json.Unmarshal(val, &out)
-		}); err != nil {
-			return err
-		}
-		if err := fn(&out); err != nil {
-			return err
-		}
-		buf, err := json.Marshal(out)
-		if err != nil {
-			return err
-		}
-		return txn.Set(key, buf)
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
 func (s *BadgerStore) GetSession(ctx context.Context, sessionID string) (*model.SessionRecord, error) {
 	key := []byte("sess:" + sessionID)
 	var out model.SessionRecord

@@ -100,24 +100,6 @@ func (i *instrumentedStore) DeleteSession(ctx context.Context, id string) (err e
 	return i.inner.DeleteSession(ctx, id)
 }
 
-func (i *instrumentedStore) PutPipeline(ctx context.Context, p *model.PipelineRecord) (err error) {
-	start := time.Now()
-	defer func() { i.observe("put_pipeline", start, err) }()
-	return i.inner.PutPipeline(ctx, p)
-}
-
-func (i *instrumentedStore) GetPipeline(ctx context.Context, id string) (rec *model.PipelineRecord, err error) {
-	start := time.Now()
-	defer func() { i.observe("get_pipeline", start, err) }()
-	return i.inner.GetPipeline(ctx, id)
-}
-
-func (i *instrumentedStore) UpdatePipeline(ctx context.Context, id string, fn func(*model.PipelineRecord) error) (rec *model.PipelineRecord, err error) {
-	start := time.Now()
-	defer func() { i.observe("update_pipeline", start, err) }()
-	return i.inner.UpdatePipeline(ctx, id, fn)
-}
-
 func (i *instrumentedStore) PutIdempotency(ctx context.Context, key, sessionID string, ttl time.Duration) (err error) {
 	start := time.Now()
 	defer func() { i.observe("put_idem", start, err) }()

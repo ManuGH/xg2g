@@ -108,7 +108,7 @@ func reloadRequiresRestart(oldCfg, newCfg config.AppConfig) bool {
 	if oldCfg.TLSCert != newCfg.TLSCert || oldCfg.TLSKey != newCfg.TLSKey || oldCfg.ForceHTTPS != newCfg.ForceHTTPS {
 		return true
 	}
-	if oldCfg.OWIBase != newCfg.OWIBase || oldCfg.StreamPort != newCfg.StreamPort || oldCfg.UseWebIFStreams != newCfg.UseWebIFStreams {
+	if oldCfg.Enigma2.BaseURL != newCfg.Enigma2.BaseURL || oldCfg.Enigma2.StreamPort != newCfg.Enigma2.StreamPort || oldCfg.Enigma2.UseWebIFStreams != newCfg.Enigma2.UseWebIFStreams {
 		return true
 	}
 	if oldCfg.TrustedProxies != newCfg.TrustedProxies {

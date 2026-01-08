@@ -57,11 +57,13 @@ func TestLoad_1500Services(t *testing.T) {
 	// Setup config
 	tmpDir := t.TempDir()
 	cfg := config.AppConfig{
-		DataDir:    tmpDir,
-		OWIBase:    server.URL,
-		Bouquet:    "Favourites",
-		StreamPort: 8001,
-		OWITimeout: 5 * time.Second,
+		DataDir: tmpDir,
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    server.URL,
+			StreamPort: 8001,
+			Timeout:    5 * time.Second,
+		},
+		Bouquet: "Favourites",
 	}
 
 	// Measure memory before

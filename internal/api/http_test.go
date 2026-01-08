@@ -28,7 +28,7 @@ func TestHandleSystemHealth(t *testing.T) {
 		APIToken:       "test-token",
 		APITokenScopes: []string{string(ScopeV3Read)},
 		DataDir:        t.TempDir(),
-		StreamPort:     8001,
+		Enigma2:        config.Enigma2Settings{StreamPort: 8001},
 		Version:        "1.2.3",
 	}, nil)
 
@@ -52,11 +52,13 @@ func TestHandleSystemHealth(t *testing.T) {
 
 func TestHandleRefresh_ErrorDoesNotUpdateLastRun(t *testing.T) {
 	cfg := config.AppConfig{
-		OWIBase:        "invalid-url",
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    "invalid-url",
+			StreamPort: 8001,
+		},
 		APIToken:       "dummy-token",
 		APITokenScopes: []string{string(ScopeV3Read)},
 		DataDir:        t.TempDir(),
-		StreamPort:     8001,
 	}
 	s := New(cfg, nil)
 	handler := s.Handler()
@@ -98,10 +100,10 @@ func TestHandleRefresh_SuccessUpdatesLastRun(t *testing.T) {
 	}
 
 	s := New(config.AppConfig{
+		Enigma2:        config.Enigma2Settings{StreamPort: 8001},
 		APIToken:       "test-token",
 		APITokenScopes: []string{string(ScopeV3Read)},
 		DataDir:        t.TempDir(),
-		StreamPort:     8001,
 	}, nil)
 	s.refreshFn = mockRefreshFn
 
@@ -128,10 +130,10 @@ func TestHandleRefresh_SuccessUpdatesLastRun(t *testing.T) {
 
 func TestHandleRefresh_ConflictOnConcurrent(t *testing.T) {
 	cfg := config.AppConfig{
+		Enigma2:        config.Enigma2Settings{StreamPort: 8001},
 		APIToken:       "dummy-token",
 		APITokenScopes: []string{string(ScopeV3Read)},
 		DataDir:        t.TempDir(),
-		StreamPort:     8001,
 	}
 	s := New(cfg, nil)
 
@@ -222,9 +224,11 @@ func TestHandleReady(t *testing.T) {
 	defer mockReceiver.Close()
 
 	cfg := config.AppConfig{
-		DataDir:     tempDir,
+		DataDir: tempDir,
+		Enigma2: config.Enigma2Settings{
+			BaseURL: mockReceiver.URL, // Use mock receiver for health check
+		},
 		XMLTVPath:   xmltvPath,
-		OWIBase:     mockReceiver.URL, // Use mock receiver for health check
 		ReadyStrict: true,
 	}
 	s := New(cfg, nil)
@@ -650,11 +654,13 @@ func TestHandleXMLTV_HEADRequest(t *testing.T) {
 
 func TestHandleRefreshV3(t *testing.T) {
 	cfg := config.AppConfig{
-		OWIBase:        "http://invalid-url-for-testing",
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    "http://invalid-url-for-testing",
+			StreamPort: 8001,
+		},
 		APIToken:       "refresh-token",
 		APITokenScopes: []string{string(ScopeV3Read)},
 		DataDir:        t.TempDir(),
-		StreamPort:     8001,
 	}
 
 	server := New(cfg, nil)
@@ -676,12 +682,14 @@ func TestClientDisconnectDuringRefresh(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	cfg := config.AppConfig{
-		DataDir:        tmpDir,
-		OWIBase:        "http://invalid-url-that-will-timeout",
+		DataDir: tmpDir,
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    "http://invalid-url-that-will-timeout",
+			StreamPort: 8001,
+		},
 		Bouquet:        "test",
 		APIToken:       "test-token",
 		APITokenScopes: []string{string(ScopeV3Read)},
-		StreamPort:     8001,
 	}
 
 	server := New(cfg, nil)

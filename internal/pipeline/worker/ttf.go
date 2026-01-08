@@ -16,7 +16,7 @@ const (
 	ttfsMaxWait      = 30 * time.Second
 )
 
-func observeFirstSegment(ctx context.Context, sessionDir string, start time.Time, profile, mode string) {
+func observeFirstSegment(ctx context.Context, sessionDir string, start time.Time, profile string) {
 	ticker := time.NewTicker(ttfsPollInterval)
 	defer ticker.Stop()
 
@@ -31,7 +31,7 @@ func observeFirstSegment(ctx context.Context, sessionDir string, start time.Time
 			return
 		case <-ticker.C:
 			if hasSegment(sessionDir) {
-				observeTTFS(profile, mode, start)
+				observeTTFS(profile, start)
 				return
 			}
 		}

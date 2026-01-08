@@ -250,16 +250,16 @@ func main() {
 		Msg("starting xg2g")
 
 	// Log key configuration
-	logger.Info().Msgf("→ Receiver: %s (auth: %v)", maskURL(cfg.OWIBase), cfg.OWIUsername != "")
+	logger.Info().Msgf("→ Receiver: %s (auth: %v)", maskURL(cfg.Enigma2.BaseURL), cfg.Enigma2.Username != "")
 	logger.Info().Msgf("→ Bouquet: %s", cfg.Bouquet)
-	if cfg.UseWebIFStreams {
-		if cfg.StreamPort > 0 {
-			logger.Info().Msgf("→ Stream: Direct port %d (V3 bypasses /web/stream.m3u)", cfg.StreamPort)
+	if cfg.Enigma2.UseWebIFStreams {
+		if cfg.Enigma2.StreamPort > 0 {
+			logger.Info().Msgf("→ Stream: Direct port %d (V3 bypasses /web/stream.m3u)", cfg.Enigma2.StreamPort)
 		} else {
 			logger.Info().Msg("→ Stream: OpenWebIF /web/stream.m3u (receiver decides port)")
 		}
 	} else {
-		logger.Info().Msgf("→ Stream port: %d (direct TS)", cfg.StreamPort)
+		logger.Info().Msgf("→ Stream port: %d (direct TS)", cfg.Enigma2.StreamPort)
 	}
 	logger.Info().Msgf("→ EPG: %s (%d days)", cfg.XMLTVPath, cfg.EPGDays)
 	// Enforce Fail-Closed Authentication
@@ -342,38 +342,6 @@ func main() {
 		}
 	}
 
-	// v3 Worker Config
-	var v3Config *daemon.V3Config
-	if cfg.Engine.Enabled {
-		v3Config = &daemon.V3Config{
-			Enabled:           cfg.Engine.Enabled,
-			Mode:              cfg.Engine.Mode,
-			StoreBackend:      cfg.Store.Backend,
-			StorePath:         cfg.Store.Path,
-			TunerSlots:        cfg.Engine.TunerSlots,
-			UseWebIFStreams:   cfg.UseWebIFStreams,
-			StreamPort:        cfg.StreamPort,
-			E2Host:            cfg.Enigma2.BaseURL,
-			E2TuneTimeout:     cfg.Enigma2.TuneTimeout,
-			E2Username:        cfg.Enigma2.Username,
-			E2Password:        cfg.Enigma2.Password,
-			E2Timeout:         cfg.Enigma2.Timeout,
-			E2RespTimeout:     cfg.Enigma2.ResponseHeaderTimeout,
-			E2Retries:         cfg.Enigma2.Retries,
-			E2Backoff:         cfg.Enigma2.Backoff,
-			E2MaxBackoff:      cfg.Enigma2.MaxBackoff,
-			E2RateLimit:       cfg.Enigma2.RateLimit,
-			E2RateBurst:       cfg.Enigma2.RateBurst,
-			E2UserAgent:       cfg.Enigma2.UserAgent,
-			FFmpegBin:         cfg.FFmpeg.Bin,
-			FFmpegKillTimeout: cfg.FFmpeg.KillTimeout,
-			HLSRoot:           cfg.HLS.Root,
-			IdleTimeout:       cfg.Engine.IdleTimeout,
-			E2AnalyzeDuration: cfg.Enigma2.AnalyzeDuration,
-			E2ProbeSize:       cfg.Enigma2.ProbeSize,
-		}
-	}
-
 	deps := daemon.Deps{
 		Logger:          logger,
 		Config:          cfg,
@@ -384,7 +352,6 @@ func main() {
 		MetricsAddr:     metricsAddr,
 
 		ProxyOnly: false, // Deprecated, always false now
-		V3Config:  v3Config,
 	}
 
 	// Create daemon manager
@@ -417,17 +384,17 @@ func main() {
 	if hm != nil {
 		hm.SetReadyStrict(cfg.ReadyStrict)
 		if cfg.ReadyStrict {
-			if cfg.OWIBase == "" {
+			if cfg.Enigma2.BaseURL == "" {
 				// Strict mode requires a target to check. Fail startup if missing.
 				logger.Fatal().Msg("Strict readiness enabled (XG2G_READY_STRICT=true) but OpenWebIF base URL is missing. Cannot perform strict checks.")
 			}
 
 			// Register strict OWI connectivity checker
 			checker := health.NewReceiverChecker(func(ctx context.Context) error {
-				client := openwebif.NewWithPort(cfg.OWIBase, 0, openwebif.Options{
+				client := openwebif.NewWithPort(cfg.Enigma2.BaseURL, 0, openwebif.Options{
 					Timeout:  2 * time.Second, // Client-side timeout
-					Username: cfg.OWIUsername,
-					Password: cfg.OWIPassword,
+					Username: cfg.Enigma2.Username,
+					Password: cfg.Enigma2.Password,
 				})
 				// Use the probe context (propagating the 2s timeout)
 				_, err := client.About(ctx)

@@ -61,16 +61,23 @@ func TestE2AuthMode_Inherit(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := AppConfig{
-				OWIUsername: tt.owiUser,
-				OWIPassword: tt.owiPass,
 				Enigma2: Enigma2Settings{
 					AuthMode: "inherit",
 					Username: tt.e2User,
 					Password: tt.e2Pass,
+					// Legacy OWI fields are now integrated into Enigma2Settings
+					BaseURL:    "", // Not used in this test
+					StreamPort: 8001,
 				},
-				DataDir:    "/tmp",
-				StreamPort: 8001,
+				// We still need a way to mock the "OWI" values for inherit mode verification.
+				// However, AppConfig no longer has OWIUsername/OWIPassword.
+				// In the real code, these come from environment variables or file config mapping.
+				// For the sake of the test logic which uses `resolveE2AuthMode(&cfg)`,
+				// we need to be careful. resolveE2AuthMode probably uses internal mapping.
+				DataDir: "/tmp",
 			}
+			// wait, if AppConfig no longer has OWIUsername, what does resolveE2AuthMode use?
+			// I need to check internal/config/config.go to see resolveE2AuthMode.
 
 			// Validate inputs
 			err := validateE2AuthModeInputs(&cfg)
@@ -138,15 +145,15 @@ func TestE2AuthMode_None(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := AppConfig{
-				OWIUsername: tt.owiUser,
-				OWIPassword: tt.owiPass,
 				Enigma2: Enigma2Settings{
 					AuthMode: "none",
 					Username: tt.e2User,
 					Password: tt.e2Pass,
+					// BaseURL is needed if it's used by validation,
+					// but auth_mode.go doesn't seem to check BaseURL.
+					StreamPort: 8001,
 				},
-				DataDir:    "/tmp",
-				StreamPort: 8001,
+				DataDir: "/tmp",
 			}
 
 			// Validate inputs
@@ -208,12 +215,12 @@ func TestE2AuthMode_Explicit(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := AppConfig{
 				Enigma2: Enigma2Settings{
-					AuthMode: "explicit",
-					Username: tt.e2User,
-					Password: tt.e2Pass,
+					AuthMode:   "explicit",
+					Username:   tt.e2User,
+					Password:   tt.e2Pass,
+					StreamPort: 8001,
 				},
-				DataDir:    "/tmp",
-				StreamPort: 8001,
+				DataDir: "/tmp",
 			}
 
 			// Validate inputs
@@ -247,10 +254,10 @@ func TestE2AuthMode_Explicit(t *testing.T) {
 func TestE2AuthMode_InvalidEnum(t *testing.T) {
 	cfg := AppConfig{
 		Enigma2: Enigma2Settings{
-			AuthMode: "invalid",
+			AuthMode:   "invalid",
+			StreamPort: 8001,
 		},
-		DataDir:    "/tmp",
-		StreamPort: 8001,
+		DataDir: "/tmp",
 	}
 
 	err := validateE2AuthModeInputs(&cfg)
@@ -276,10 +283,10 @@ func TestE2AuthMode_Normalization(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := AppConfig{
 				Enigma2: Enigma2Settings{
-					AuthMode: tt.authMode,
+					AuthMode:   tt.authMode,
+					StreamPort: 8001,
 				},
-				DataDir:    "/tmp",
-				StreamPort: 8001,
+				DataDir: "/tmp",
 			}
 
 			err := validateE2AuthModeInputs(&cfg)

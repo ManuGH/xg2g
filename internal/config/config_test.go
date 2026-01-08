@@ -30,14 +30,14 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.DataDir != "/tmp" {
 		t.Errorf("expected DataDir=/tmp, got %s", cfg.DataDir)
 	}
-	if cfg.StreamPort != 8001 {
-		t.Errorf("expected StreamPort=8001, got %d", cfg.StreamPort)
+	if cfg.Enigma2.StreamPort != 8001 {
+		t.Errorf("expected Enigma2.StreamPort=8001, got %d", cfg.Enigma2.StreamPort)
 	}
-	if cfg.OWITimeout != 10*time.Second {
-		t.Errorf("expected OWITimeout=10s, got %v", cfg.OWITimeout)
+	if cfg.Enigma2.Timeout != 10*time.Second {
+		t.Errorf("expected Enigma2.Timeout=10s, got %v", cfg.Enigma2.Timeout)
 	}
-	if cfg.OWIRetries != 3 {
-		t.Errorf("expected OWIRetries=3, got %d", cfg.OWIRetries)
+	if cfg.Enigma2.Retries != 2 { // Default is 2 now
+		t.Errorf("expected Enigma2.Retries=2, got %d", cfg.Enigma2.Retries)
 	}
 	if cfg.Version != "test-version" {
 		t.Errorf("expected Version=test-version, got %s", cfg.Version)
@@ -86,8 +86,8 @@ picons:
 	if cfg.DataDir != customDataDir {
 		t.Errorf("expected DataDir=%s, got %s", customDataDir, cfg.DataDir)
 	}
-	if cfg.OWIBase != "http://custom.local" {
-		t.Errorf("expected OWIBase=http://custom.local, got %s", cfg.OWIBase)
+	if cfg.Enigma2.BaseURL != "http://custom.local" {
+		t.Errorf("expected Enigma2.BaseURL=http://custom.local, got %s", cfg.Enigma2.BaseURL)
 	}
 	if cfg.Bouquet != "Favourites,Premium" {
 		t.Errorf("expected Bouquet=Favourites,Premium, got %s", cfg.Bouquet)
@@ -124,11 +124,11 @@ openWebIF:
 	if cfg.DataDir != envDataDir {
 		t.Errorf("expected ENV to override file: DataDir=%s, got %s", envDataDir, cfg.DataDir)
 	}
-	if cfg.OWIBase != "http://env.local" {
-		t.Errorf("expected ENV to override file: OWIBase=http://env.local, got %s", cfg.OWIBase)
+	if cfg.Enigma2.BaseURL != "http://env.local" {
+		t.Errorf("expected ENV to override file: Enigma2.BaseURL=http://env.local, got %s", cfg.Enigma2.BaseURL)
 	}
-	if cfg.StreamPort != 7001 {
-		t.Errorf("expected ENV to override file: StreamPort=7001, got %d", cfg.StreamPort)
+	if cfg.Enigma2.StreamPort != 7001 {
+		t.Errorf("expected ENV to override file: Enigma2.StreamPort=7001, got %d", cfg.Enigma2.StreamPort)
 	}
 }
 
@@ -162,16 +162,16 @@ epg:
 		t.Errorf("expected DataDir from file: %s, got %s", fileDataDir, cfg.DataDir)
 	}
 
-	if cfg.StreamPort != 9001 {
-		t.Errorf("expected StreamPort from file: 9001, got %d", cfg.StreamPort)
+	if cfg.Enigma2.StreamPort != 9001 {
+		t.Errorf("expected Enigma2.StreamPort from file: 9001, got %d", cfg.Enigma2.StreamPort)
 	}
 
 	if cfg.EPGDays != 5 {
 		t.Errorf("expected EPGDays from ENV: 5, got %d", cfg.EPGDays)
 	}
 
-	if cfg.OWIBase != "http://example.com" {
-		t.Errorf("expected OWIBase from file: http://example.com, got %s", cfg.OWIBase)
+	if cfg.Enigma2.BaseURL != "http://example.com" {
+		t.Errorf("expected Enigma2.BaseURL from file: http://example.com, got %s", cfg.Enigma2.BaseURL)
 	}
 }
 
@@ -308,9 +308,11 @@ func TestValidateEPGBounds(t *testing.T) {
 			name: "valid EPG config",
 			cfg: func() AppConfig {
 				return AppConfig{
-					DataDir:           tmpDir,
-					OWIBase:           "http://test.local",
-					StreamPort:        8001,
+					DataDir: tmpDir,
+					Enigma2: Enigma2Settings{
+						BaseURL:    "http://test.local",
+						StreamPort: 8001,
+					},
 					Bouquet:           "test",
 					EPGEnabled:        true,
 					EPGDays:           7,
@@ -326,9 +328,11 @@ func TestValidateEPGBounds(t *testing.T) {
 			name: "EPGTimeoutMS too low",
 			cfg: func() AppConfig {
 				return AppConfig{
-					DataDir:           tmpDir,
-					OWIBase:           "http://test.local",
-					StreamPort:        8001,
+					DataDir: tmpDir,
+					Enigma2: Enigma2Settings{
+						BaseURL:    "http://test.local",
+						StreamPort: 8001,
+					},
 					Bouquet:           "test",
 					EPGEnabled:        true,
 					EPGDays:           7,
@@ -345,9 +349,11 @@ func TestValidateEPGBounds(t *testing.T) {
 			name: "EPGTimeoutMS too high",
 			cfg: func() AppConfig {
 				return AppConfig{
-					DataDir:           tmpDir,
-					OWIBase:           "http://test.local",
-					StreamPort:        8001,
+					DataDir: tmpDir,
+					Enigma2: Enigma2Settings{
+						BaseURL:    "http://test.local",
+						StreamPort: 8001,
+					},
 					Bouquet:           "test",
 					EPGEnabled:        true,
 					EPGDays:           7,
@@ -585,13 +591,13 @@ openWebIF:
 	}
 
 	// Verify ENV overrides file
-	if cfg.OWIMaxBackoff != 10*time.Second {
-		t.Errorf("expected ENV to override file: OWIMaxBackoff=10s, got %v", cfg.OWIMaxBackoff)
+	if cfg.Enigma2.MaxBackoff != 10*time.Second {
+		t.Errorf("expected ENV to override file: Enigma2.MaxBackoff=10s, got %v", cfg.Enigma2.MaxBackoff)
 	}
 
 	// Verify backoff from file is still loaded
-	if cfg.OWIBackoff != 500*time.Millisecond {
-		t.Errorf("expected backoff from file: 500ms, got %v", cfg.OWIBackoff)
+	if cfg.Enigma2.Backoff != 500*time.Millisecond {
+		t.Errorf("expected backoff from file: 500ms, got %v", cfg.Enigma2.Backoff)
 	}
 }
 
@@ -621,17 +627,17 @@ openWebIF:
 	}
 
 	// Verify all timing configs
-	if cfg.OWITimeout != 15*time.Second {
-		t.Errorf("expected OWITimeout=15s, got %v", cfg.OWITimeout)
+	if cfg.Enigma2.Timeout != 15*time.Second {
+		t.Errorf("expected Enigma2.Timeout=15s, got %v", cfg.Enigma2.Timeout)
 	}
-	if cfg.OWIRetries != 5 {
-		t.Errorf("expected OWIRetries=5, got %d", cfg.OWIRetries)
+	if cfg.Enigma2.Retries != 5 {
+		t.Errorf("expected Enigma2.Retries=5, got %d", cfg.Enigma2.Retries)
 	}
-	if cfg.OWIBackoff != 300*time.Millisecond {
-		t.Errorf("expected OWIBackoff=300ms, got %v", cfg.OWIBackoff)
+	if cfg.Enigma2.Backoff != 300*time.Millisecond {
+		t.Errorf("expected Enigma2.Backoff=300ms, got %v", cfg.Enigma2.Backoff)
 	}
-	if cfg.OWIMaxBackoff != 5*time.Second {
-		t.Errorf("expected OWIMaxBackoff=5s, got %v", cfg.OWIMaxBackoff)
+	if cfg.Enigma2.MaxBackoff != 5*time.Second {
+		t.Errorf("expected Enigma2.MaxBackoff=5s, got %v", cfg.Enigma2.MaxBackoff)
 	}
 }
 
@@ -689,9 +695,9 @@ func TestOWIMaxBackoffInvalidValues(t *testing.T) {
 			}
 
 			if tt.expectDefault {
-				if cfg.OWIMaxBackoff != 30*time.Second {
-					t.Errorf("%s: expected default OWIMaxBackoff=30s, got %v",
-						tt.description, cfg.OWIMaxBackoff)
+				if cfg.Enigma2.MaxBackoff != 30*time.Second {
+					t.Errorf("%s: expected default Enigma2.MaxBackoff=30s, got %v",
+						tt.description, cfg.Enigma2.MaxBackoff)
 				}
 			}
 			// Note: For non-default cases, we just verify it parses without error

@@ -32,8 +32,8 @@ func TestLoad_ValidMinimal(t *testing.T) {
 	if cfg.DataDir != "/tmp/xg2g-config-test" {
 		t.Errorf("expected DataDir=/tmp/xg2g-config-test, got %s", cfg.DataDir)
 	}
-	if cfg.OWIBase != "http://receiver.local" {
-		t.Errorf("expected OWIBase=http://receiver.local, got %s", cfg.OWIBase)
+	if cfg.Enigma2.BaseURL != "http://receiver.local" {
+		t.Errorf("expected Enigma2.BaseURL=http://receiver.local, got %s", cfg.Enigma2.BaseURL)
 	}
 }
 

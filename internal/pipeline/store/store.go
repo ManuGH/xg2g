@@ -55,11 +55,6 @@ type StateStore interface {
 	ScanSessions(ctx context.Context, fn func(*model.SessionRecord) error) error
 	DeleteSession(ctx context.Context, id string) error
 
-	// --- Pipeline CRUD ---
-	PutPipeline(ctx context.Context, p *model.PipelineRecord) error
-	GetPipeline(ctx context.Context, id string) (*model.PipelineRecord, error)
-	UpdatePipeline(ctx context.Context, id string, fn func(*model.PipelineRecord) error) (*model.PipelineRecord, error)
-
 	// --- Idempotency window (start intents) ---
 	PutIdempotency(ctx context.Context, key, sessionID string, ttl time.Duration) error
 	GetIdempotency(ctx context.Context, key string) (sessionID string, ok bool, err error)

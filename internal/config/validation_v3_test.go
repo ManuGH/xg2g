@@ -15,10 +15,12 @@ func baseV3Config(t *testing.T) AppConfig {
 	t.Helper()
 	tmp := t.TempDir()
 	return AppConfig{
-		OWIBase:    "http://example.com",
-		DataDir:    tmp,
-		Bouquet:    "Premium",
-		StreamPort: 8001,
+		Enigma2: Enigma2Settings{
+			BaseURL:    "http://example.com",
+			StreamPort: 8001,
+		},
+		DataDir: tmp,
+		Bouquet: "Premium",
 		Engine: EngineConfig{
 			Enabled: true,
 			Mode:    "standard",
@@ -29,9 +31,6 @@ func baseV3Config(t *testing.T) AppConfig {
 		},
 		HLS: HLSConfig{
 			Root: filepath.Join(tmp, "v3-hls"),
-		},
-		Enigma2: Enigma2Settings{
-			BaseURL: "http://example.com",
 		},
 	}
 }
@@ -53,9 +52,9 @@ func TestValidate_AllowsEmptyBouquet(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestValidate_AllowsEmptyOWIBase(t *testing.T) {
+func TestValidate_AllowsEmptyEnigma2BaseURL(t *testing.T) {
 	cfg := baseV3Config(t)
-	cfg.OWIBase = ""
+	cfg.Enigma2.BaseURL = ""
 
 	err := Validate(cfg)
 	require.NoError(t, err)

@@ -62,7 +62,7 @@ func (s *Store) save() {
 		return
 	}
 
-	_ = os.WriteFile(s.path, data, 0644)
+	_ = os.WriteFile(s.path, data, 0600)
 }
 
 func (s *Store) Update(cap Capability) {

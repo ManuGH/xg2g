@@ -18,6 +18,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/dvr"
 	"github.com/ManuGH/xg2g/internal/epg"
+	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/ManuGH/xg2g/internal/library"
 	"github.com/ManuGH/xg2g/internal/log"
@@ -63,19 +64,16 @@ type Server struct {
 	epgCacheTime        time.Time
 	epgCacheMTime       time.Time
 	epgSfg              singleflight.Group
-	diagnosticsManager  *DiagnosticsManager // System diagnostics per ADR-SRE-002
-	libraryService      *library.Service    // Media library per ADR-ENG-002
+	libraryService      *library.Service // Media library per ADR-ENG-002
 
 	// Lifecycle
 	requestShutdown func(context.Context) error
 	preflightCheck  PreflightCheckFunc
+	healthManager   *health.Manager
 }
 
 // NewServer creates a new implemented v3 server.
 func NewServer(cfg config.AppConfig, cfgMgr *config.Manager, rootCancel context.CancelFunc) *Server {
-	// Initialize diagnostics manager per ADR-SRE-002
-	diagnosticsManager := NewDiagnosticsManager(cfg.OWIBase)
-
 	// Initialize library service if enabled (Phase 0 per ADR-ENG-002)
 	var librarySvc *library.Service
 	if cfg.Library.Enabled && len(cfg.Library.Roots) > 0 {
@@ -101,11 +99,10 @@ func NewServer(cfg config.AppConfig, cfgMgr *config.Manager, rootCancel context.
 	}
 
 	return &Server{
-		cfg:                cfg,
-		configManager:      cfgMgr,
-		startTime:          time.Now(),
-		diagnosticsManager: diagnosticsManager,
-		libraryService:     librarySvc,
+		cfg:            cfg,
+		configManager:  cfgMgr,
+		startTime:      time.Now(),
+		libraryService: librarySvc,
 	}
 }
 
@@ -144,6 +141,7 @@ func (s *Server) SetDependencies(
 	se *dvr.SeriesEngine,
 	vm vod.ManagerAPI,
 	epg *epg.TV,
+	hm *health.Manager,
 	requestShutdown func(context.Context) error,
 	preflightCheck PreflightCheckFunc,
 ) {
@@ -159,6 +157,7 @@ func (s *Server) SetDependencies(
 	s.seriesEngine = se
 	s.vodManager = vm
 	s.epgCache = epg
+	s.healthManager = hm
 	s.requestShutdown = requestShutdown
 	s.preflightCheck = preflightCheck
 }
@@ -257,11 +256,11 @@ func (s *Server) newOpenWebIFClient(cfg config.AppConfig, snap config.Snapshot) 
 	// Rebuild
 	log.L().Debug().Uint64("epoch", snap.Epoch).Msg("recreating OpenWebIF client")
 	enableHTTP2 := snap.Runtime.OpenWebIF.HTTPEnableHTTP2
-	client := openwebif.NewWithPort(cfg.OWIBase, cfg.StreamPort, openwebif.Options{
-		Timeout:                 cfg.OWITimeout,
-		Username:                cfg.OWIUsername,
-		Password:                cfg.OWIPassword,
-		UseWebIFStreams:         cfg.UseWebIFStreams,
+	client := openwebif.NewWithPort(cfg.Enigma2.BaseURL, cfg.Enigma2.StreamPort, openwebif.Options{
+		Timeout:                 cfg.Enigma2.Timeout,
+		Username:                cfg.Enigma2.Username,
+		Password:                cfg.Enigma2.Password,
+		UseWebIFStreams:         cfg.Enigma2.UseWebIFStreams,
 		StreamBaseURL:           snap.Runtime.OpenWebIF.StreamBaseURL,
 		HTTPMaxIdleConns:        snap.Runtime.OpenWebIF.HTTPMaxIdleConns,
 		HTTPMaxIdleConnsPerHost: snap.Runtime.OpenWebIF.HTTPMaxIdleConnsPerHost,

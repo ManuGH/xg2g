@@ -24,7 +24,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: ["go", "c-cpp"]
+        language: ["go"]
 
     steps:
       - name: Checkout repository
@@ -36,26 +36,12 @@ jobs:
           touch internal/api/dist/index.html
           echo "Dummy Asset for CI" > internal/api/dist/index.html
 
-      # Setup Go for both languages (Go analysis needs it, C++ build might interact with it)
+      # Setup Go
       - name: Setup Go
         uses: actions/setup-go@v6.1.0 # v5
         with:
           go-version-file: go.mod
           cache: true
-
-      # Setup Rust for C/C++ analysis (since our C/C++ comes from Rust FFI/deps)
-      - name: Setup Rust
-        if: matrix.language == 'c-cpp'
-        uses: dtolnay/rust-toolchain@6d9817901c499d6b02debbb57edb38d33daa680b # stable
-        with:
-          toolchain: stable
-
-      # Install dependencies for C/C++ build (FFmpeg)
-      - name: Install FFmpeg development headers
-        if: matrix.language == 'c-cpp'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libavcodec-dev libavformat-dev libavutil-dev libswresample-dev libswscale-dev pkg-config
 
       # Initialize CodeQL
       - name: Initialize CodeQL
@@ -68,12 +54,6 @@ jobs:
 
           # For more details on CodeQL's query packs, refer to: https://docs.github.com/en/code-security/code-scanning/automatically-scanning-your-code-for-vulnerabilities-and-errors/configuring-code-scanning#using-queries-in-ql-packs
           # queries: security-extended,security-and-quality
-
-      # Manual build steps for C/C++
-      - name: Build Rust Library (C/C++ Analysis)
-        if: matrix.language == 'c-cpp'
-        run: |
-          make build-rust
 
       # Manual build for Go
       - name: Build Go

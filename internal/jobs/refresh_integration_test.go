@@ -57,11 +57,13 @@ func TestRefresh_IntegrationSuccess(t *testing.T) {
 	}
 
 	cfg := config.AppConfig{
-		DataDir:    tmp,
-		OWIBase:    u.String(),
-		Bouquet:    "Favourites",
-		XMLTVPath:  "xmltv.xml",
-		StreamPort: 8001,
+		DataDir: tmp,
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    u.String(),
+			StreamPort: 8001,
+		},
+		Bouquet:   "Favourites",
+		XMLTVPath: "xmltv.xml",
 	}
 
 	status, err := Refresh(context.Background(), config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault()))

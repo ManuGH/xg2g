@@ -234,7 +234,7 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager) *Server {
 	// Initialize Series Engine
 	// Server (s) implements EpgProvider interface via GetEvents method
 	s.seriesEngine = dvr.NewSeriesEngine(cfg, sm, func() dvr.OWIClient {
-		return openwebif.New(cfg.OWIBase)
+		return openwebif.New(cfg.Enigma2.BaseURL)
 	})
 
 	// Default refresh function
@@ -255,6 +255,7 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager) *Server {
 		s.seriesEngine,
 		s.vodManager,
 		s.epgCache,
+		s.healthManager,
 		s.requestShutdown,
 		s.preflightCheck,
 	)
@@ -320,12 +321,12 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager) *Server {
 
 	// Receiver connectivity check
 	s.healthManager.RegisterChecker(health.NewReceiverChecker(func(ctx context.Context) error {
-		if cfg.OWIBase == "" {
+		if cfg.Enigma2.BaseURL == "" {
 			return fmt.Errorf("receiver not configured")
 		}
 		// Use client for check if possible, or keep simple HTTP
 		// Use the context provided by health manager (which includes timeout)
-		req, err := http.NewRequestWithContext(ctx, http.MethodHead, cfg.OWIBase, nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodHead, cfg.Enigma2.BaseURL, nil)
 		if err != nil {
 			return err
 		}
@@ -1125,7 +1126,7 @@ func (s *Server) handlePicons(w http.ResponseWriter, r *http.Request) {
 	// 2. CACHE MISS -> Download
 	upstreamBase := s.cfg.PiconBase
 	if upstreamBase == "" {
-		upstreamBase = s.cfg.OWIBase
+		upstreamBase = s.cfg.Enigma2.BaseURL
 	}
 	if upstreamBase == "" {
 		http.Error(w, "Picon backend not configured", http.StatusServiceUnavailable)

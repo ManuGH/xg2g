@@ -247,7 +247,7 @@ func fileConfigFromAppConfig(cfg config.AppConfig) config.FileConfig {
 	epgFuzzyMax := cfg.FuzzyMax
 
 	metricsEnabled := cfg.MetricsEnabled
-	useWebIFStreams := cfg.UseWebIFStreams
+	useWebIFStreams := cfg.Enigma2.UseWebIFStreams
 
 	return config.FileConfig{
 		Version:       config.EffectiveConfigVersion(cfg),
@@ -255,14 +255,14 @@ func fileConfigFromAppConfig(cfg config.AppConfig) config.FileConfig {
 		DataDir:       cfg.DataDir,
 		LogLevel:      cfg.LogLevel,
 		OpenWebIF: config.OpenWebIFConfig{
-			BaseURL:    cfg.OWIBase,
-			Username:   cfg.OWIUsername,
-			Password:   cfg.OWIPassword,
-			Timeout:    cfg.OWITimeout.String(),
-			Retries:    cfg.OWIRetries,
-			Backoff:    cfg.OWIBackoff.String(),
-			MaxBackoff: cfg.OWIMaxBackoff.String(),
-			StreamPort: cfg.StreamPort,
+			BaseURL:    cfg.Enigma2.BaseURL,
+			Username:   cfg.Enigma2.Username,
+			Password:   cfg.Enigma2.Password,
+			Timeout:    cfg.Enigma2.Timeout.String(),
+			Retries:    cfg.Enigma2.Retries,
+			Backoff:    cfg.Enigma2.Backoff.String(),
+			MaxBackoff: cfg.Enigma2.MaxBackoff.String(),
+			StreamPort: cfg.Enigma2.StreamPort,
 			UseWebIF:   &useWebIFStreams,
 		},
 		Bouquets: splitCSVString(cfg.Bouquet),

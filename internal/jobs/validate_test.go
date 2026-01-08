@@ -23,31 +23,37 @@ func TestValidateConfig_Comprehensive(t *testing.T) {
 		{
 			name: "valid minimal config",
 			cfg: config.AppConfig{
-				OWIBase:    "http://localhost:8080",
-				StreamPort: 8001,
-				DataDir:    t.TempDir(),
+				Enigma2: config.Enigma2Settings{
+					BaseURL:    "http://localhost:8080",
+					StreamPort: 8001,
+				},
+				DataDir: t.TempDir(),
 			},
 			wantErr: false,
 		},
 		{
 			name: "valid full config with picons",
 			cfg: config.AppConfig{
-				OWIBase:    "https://example.com:80",
-				StreamPort: 17999,
-				DataDir:    t.TempDir(),
-				PiconBase:  "https://example.com/picons",
-				XMLTVPath:  "/path/to/xmltv",
-				Bouquet:    "Premium,Favourites",
+				Enigma2: config.Enigma2Settings{
+					BaseURL:    "https://example.com:80",
+					StreamPort: 17999,
+				},
+				DataDir:   t.TempDir(),
+				PiconBase: "https://example.com/picons",
+				XMLTVPath: "/path/to/xmltv",
+				Bouquet:   "Premium,Favourites",
 			},
 			wantErr: false,
 		},
 		{
 			name: "valid config with empty picon base",
 			cfg: config.AppConfig{
-				OWIBase:    "http://192.168.1.1",
-				StreamPort: 8001,
-				DataDir:    t.TempDir(),
-				PiconBase:  "", // empty is valid
+				Enigma2: config.Enigma2Settings{
+					BaseURL:    "http://192.168.1.1",
+					StreamPort: 8001,
+				},
+				DataDir:   t.TempDir(),
+				PiconBase: "", // empty is valid
 			},
 			wantErr: false,
 		},
@@ -56,71 +62,85 @@ func TestValidateConfig_Comprehensive(t *testing.T) {
 		{
 			name: "missing OWIBase",
 			cfg: config.AppConfig{
-				OWIBase:    "",
-				StreamPort: 8001,
-				DataDir:    t.TempDir(),
+				Enigma2: config.Enigma2Settings{
+					BaseURL:    "",
+					StreamPort: 8001,
+				},
+				DataDir: t.TempDir(),
 			},
 			wantErr: true,
-			errSub:  "OWIBase",
+			errSub:  "Enigma2.BaseURL",
 		},
 		{
 			name: "invalid OWIBase scheme (ftp)",
 			cfg: config.AppConfig{
-				OWIBase:    "ftp://example.com",
-				StreamPort: 8001,
-				DataDir:    t.TempDir(),
+				Enigma2: config.Enigma2Settings{
+					BaseURL:    "ftp://example.com",
+					StreamPort: 8001,
+				},
+				DataDir: t.TempDir(),
 			},
 			wantErr: true,
-			errSub:  "OWIBase",
+			errSub:  "Enigma2.BaseURL",
 		},
 		{
 			name: "invalid OWIBase format",
 			cfg: config.AppConfig{
-				OWIBase:    "not-a-url",
-				StreamPort: 8001,
-				DataDir:    t.TempDir(),
+				Enigma2: config.Enigma2Settings{
+					BaseURL:    "not-a-url",
+					StreamPort: 8001,
+				},
+				DataDir: t.TempDir(),
 			},
 			wantErr: true,
-			errSub:  "OWIBase",
+			errSub:  "Enigma2.BaseURL",
 		},
 		{
 			name: "OWIBase missing host",
 			cfg: config.AppConfig{
-				OWIBase:    "http:///path",
-				StreamPort: 8001,
-				DataDir:    t.TempDir(),
+				Enigma2: config.Enigma2Settings{
+					BaseURL:    "http:///path",
+					StreamPort: 8001,
+				},
+				DataDir: t.TempDir(),
 			},
 			wantErr: true,
-			errSub:  "OWIBase",
+			errSub:  "Enigma2.BaseURL",
 		},
 
 		// StreamPort validation errors
 		{
 			name: "invalid port zero",
 			cfg: config.AppConfig{
-				OWIBase:    "http://localhost",
-				StreamPort: 0,
-				DataDir:    t.TempDir(),
+				Enigma2: config.Enigma2Settings{
+					BaseURL:    "http://localhost",
+					StreamPort: 0,
+				},
+				DataDir: t.TempDir(),
 			},
 			wantErr: true,
-			errSub:  "StreamPort",
+			errSub:  "Enigma2.StreamPort",
 		},
 		{
 			name: "invalid port negative",
 			cfg: config.AppConfig{
-				OWIBase:    "http://localhost",
-				StreamPort: -1,
-				DataDir:    t.TempDir(),
+				Enigma2: config.Enigma2Settings{
+					BaseURL:    "http://localhost",
+					StreamPort: -1,
+				},
+				DataDir: t.TempDir(),
 			},
 			wantErr: true,
-			errSub:  "StreamPort",
+			errSub:  "Enigma2.StreamPort",
 		},
 		{
 			name: "invalid port too high",
 			cfg: config.AppConfig{
-				OWIBase:    "http://localhost",
-				StreamPort: 99999,
-				DataDir:    t.TempDir(),
+				Enigma2: config.Enigma2Settings{
+					BaseURL:    "http://localhost",
+					StreamPort: 99999,
+				},
+				DataDir: t.TempDir(),
 			},
 			wantErr: true,
 			errSub:  "StreamPort",
@@ -130,9 +150,11 @@ func TestValidateConfig_Comprehensive(t *testing.T) {
 		{
 			name: "missing DataDir",
 			cfg: config.AppConfig{
-				OWIBase:    "http://localhost",
-				StreamPort: 8001,
-				DataDir:    "",
+				Enigma2: config.Enigma2Settings{
+					BaseURL:    "http://localhost",
+					StreamPort: 8001,
+				},
+				DataDir: "",
 			},
 			wantErr: true,
 			errSub:  "DataDir",
@@ -142,10 +164,12 @@ func TestValidateConfig_Comprehensive(t *testing.T) {
 		{
 			name: "invalid PiconBase scheme",
 			cfg: config.AppConfig{
-				OWIBase:    "http://localhost",
-				StreamPort: 8001,
-				DataDir:    t.TempDir(),
-				PiconBase:  "ftp://example.com/picons",
+				Enigma2: config.Enigma2Settings{
+					BaseURL:    "http://localhost",
+					StreamPort: 8001,
+				},
+				DataDir:   t.TempDir(),
+				PiconBase: "ftp://example.com/picons",
 			},
 			wantErr: true,
 			errSub:  "PiconBase",
@@ -153,10 +177,12 @@ func TestValidateConfig_Comprehensive(t *testing.T) {
 		{
 			name: "invalid PiconBase format",
 			cfg: config.AppConfig{
-				OWIBase:    "http://localhost",
-				StreamPort: 8001,
-				DataDir:    t.TempDir(),
-				PiconBase:  "not-a-url",
+				Enigma2: config.Enigma2Settings{
+					BaseURL:    "http://localhost",
+					StreamPort: 8001,
+				},
+				DataDir:   t.TempDir(),
+				PiconBase: "not-a-url",
 			},
 			wantErr: true,
 			errSub:  "PiconBase",
@@ -164,10 +190,12 @@ func TestValidateConfig_Comprehensive(t *testing.T) {
 		{
 			name: "PiconBase missing host",
 			cfg: config.AppConfig{
-				OWIBase:    "http://localhost",
-				StreamPort: 8001,
-				DataDir:    t.TempDir(),
-				PiconBase:  "http:///path",
+				Enigma2: config.Enigma2Settings{
+					BaseURL:    "http://localhost",
+					StreamPort: 8001,
+				},
+				DataDir:   t.TempDir(),
+				PiconBase: "http:///path",
 			},
 			wantErr: true,
 			errSub:  "PiconBase",
@@ -237,10 +265,12 @@ func TestValidateConfig_PiconBase(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := config.AppConfig{
-				OWIBase:    "http://localhost",
-				StreamPort: 8001,
-				DataDir:    t.TempDir(),
-				PiconBase:  tt.piconBase,
+				Enigma2: config.Enigma2Settings{
+					BaseURL:    "http://localhost",
+					StreamPort: 8001,
+				},
+				DataDir:   t.TempDir(),
+				PiconBase: tt.piconBase,
 			}
 
 			err := validateConfig(cfg)

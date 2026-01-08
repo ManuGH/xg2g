@@ -44,7 +44,7 @@ type ResolutionResult struct {
 
 // ResolveHLSRoot determines the HLS root directory based on configuration, environment, and filesystem state.
 // It implements a safe, idempotent migration from 'v3-hls' to 'hls'.
-func ResolveHLSRoot(configDataDir string) (ResolutionResult, error) {
+func ResolveHLSRoot(configDataDir, newEnv, legacyEnv string) (ResolutionResult, error) {
 	var res ResolutionResult
 
 	// 0. Validate base directory
@@ -53,9 +53,6 @@ func ResolveHLSRoot(configDataDir string) (ResolutionResult, error) {
 		return res, fmt.Errorf("configDataDir cannot be empty")
 	}
 	configDataDir = filepath.Clean(configDataDir)
-
-	legacyEnv := os.Getenv(EnvLegacyHLSRoot)
-	newEnv := os.Getenv(EnvHLSRoot)
 
 	// 1. Environment Variable Precedence
 	if newEnv != "" {
@@ -200,7 +197,7 @@ func writeMarker(dir, oldPath string) {
 	markerPath := filepath.Join(dir, MarkerFile)
 	content := fmt.Sprintf("Migrated from: %s\nDate: %s\n", oldPath, time.Now().UTC().Format(time.RFC3339))
 
-	if err := os.WriteFile(markerPath, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(markerPath, []byte(content), 0600); err != nil {
 		log.L().Warn().Err(err).Str("path", markerPath).Msg("Migration: Failed to write marker file")
 	}
 }

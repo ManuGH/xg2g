@@ -103,7 +103,7 @@ func TestResolveHLSRoot_Matrix(t *testing.T) {
 			}
 
 			// Exec
-			res, err := ResolveHLSRoot(dataDir)
+			res, err := ResolveHLSRoot(dataDir, os.Getenv(EnvHLSRoot), os.Getenv(EnvLegacyHLSRoot))
 
 			// Verify Error
 			if tt.expectError {

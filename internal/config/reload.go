@@ -324,16 +324,16 @@ func (h *ConfigHolder) logChanges(old, newCfg AppConfig) {
 			Int("new", newCfg.EPGDays).
 			Msg("config changed: EPGDays")
 	}
-	if old.StreamPort != newCfg.StreamPort {
+	if old.Enigma2.StreamPort != newCfg.Enigma2.StreamPort {
 		h.logger.Info().
-			Int("old", old.StreamPort).
-			Int("new", newCfg.StreamPort).
+			Int("old", old.Enigma2.StreamPort).
+			Int("new", newCfg.Enigma2.StreamPort).
 			Msg("config changed: StreamPort")
 	}
-	if old.UseWebIFStreams != newCfg.UseWebIFStreams {
+	if old.Enigma2.UseWebIFStreams != newCfg.Enigma2.UseWebIFStreams {
 		h.logger.Info().
-			Bool("old", old.UseWebIFStreams).
-			Bool("new", newCfg.UseWebIFStreams).
+			Bool("old", old.Enigma2.UseWebIFStreams).
+			Bool("new", newCfg.Enigma2.UseWebIFStreams).
 			Msg("config changed: UseWebIFStreams")
 	}
 	if old.RateLimitEnabled != newCfg.RateLimitEnabled {

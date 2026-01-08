@@ -42,7 +42,7 @@ type BoltStore struct {
 // NewBoltStore opens a BoltDB resume store.
 func NewBoltStore(path string) (*BoltStore, error) {
 	// Ensure directory exists
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
 		return nil, fmt.Errorf("create resume store dir: %w", err)
 	}
 

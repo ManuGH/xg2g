@@ -39,13 +39,13 @@ func validateE2AuthModeInputs(cfg *AppConfig) error {
 		}
 	}
 
-	// Mode "inherit": validate OWI credentials are also paired
+	// Mode "inherit": validate E2 credentials are also paired
 	if mode == "inherit" {
-		hasOWIUser := strings.TrimSpace(cfg.OWIUsername) != ""
-		hasOWIPass := strings.TrimSpace(cfg.OWIPassword) != ""
+		hasUser := strings.TrimSpace(cfg.Enigma2.Username) != ""
+		hasPass := strings.TrimSpace(cfg.Enigma2.Password) != ""
 
-		if hasOWIUser != hasOWIPass {
-			return fmt.Errorf("OWI credentials must be user+pass pair for XG2G_E2_AUTH_MODE=inherit (both XG2G_OWI_USER and XG2G_OWI_PASS required)")
+		if hasUser != hasPass {
+			return fmt.Errorf("Enigma2 credentials must be user+pass pair (both XG2G_E2_USER and XG2G_E2_PASS required or inherited)")
 		}
 	}
 
@@ -60,12 +60,9 @@ func resolveE2AuthMode(cfg *AppConfig) {
 
 	switch mode {
 	case "inherit":
-		// Copy OWI credentials to E2 if E2 is empty
-		if cfg.Enigma2.Username == "" && cfg.Enigma2.Password == "" {
-			cfg.Enigma2.Username = cfg.OWIUsername
-			cfg.Enigma2.Password = cfg.OWIPassword
-		}
-		// If E2 already has creds, leave them unchanged
+		// Credentials already set via merge logic or defaults.
+		// If both are empty, that's allowed (no auth).
+		// If only one set, validation already caught it.
 
 	case "none":
 		// Wipe E2 credentials (validation already ensured they weren't set)

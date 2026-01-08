@@ -176,12 +176,14 @@ func refreshWithClient(ctx context.Context, cfg config.AppConfig, cl OwiClient) 
 func TestRefreshWithClient_Success(t *testing.T) {
 	tmpdir := t.TempDir()
 	cfg := config.AppConfig{
-		DataDir:    tmpdir,
-		OWIBase:    "http://mock",
-		Bouquet:    "Favourites",
-		PiconBase:  "",
-		XMLTVPath:  "xmltv.xml", // Use relative path, not absolute
-		StreamPort: 8001,
+		DataDir: tmpdir,
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    "http://mock",
+			StreamPort: 8001,
+		},
+		Bouquet:   "Favourites",
+		PiconBase: "",
+		XMLTVPath: "xmltv.xml", // Use relative path, not absolute
 	}
 
 	mock := &mockOWI{
@@ -208,12 +210,14 @@ func TestRefreshWithClient_Success(t *testing.T) {
 func TestRefreshWithClient_EmptyBouquetUsesAll(t *testing.T) {
 	tmpdir := t.TempDir()
 	cfg := config.AppConfig{
-		DataDir:    tmpdir,
-		OWIBase:    "http://mock",
-		Bouquet:    "",
-		PiconBase:  "",
-		XMLTVPath:  "xmltv.xml",
-		StreamPort: 8001,
+		DataDir: tmpdir,
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    "http://mock",
+			StreamPort: 8001,
+		},
+		Bouquet:   "",
+		PiconBase: "",
+		XMLTVPath: "xmltv.xml",
 	}
 
 	mock := &mockOWI{
@@ -238,7 +242,14 @@ func TestRefreshWithClient_EmptyBouquetUsesAll(t *testing.T) {
 
 func TestRefreshWithClient_BouquetNotFound(t *testing.T) {
 	tmpdir := t.TempDir()
-	cfg := config.AppConfig{DataDir: tmpdir, OWIBase: "http://mock", Bouquet: "NonExistent", StreamPort: 8001}
+	cfg := config.AppConfig{
+		DataDir: tmpdir,
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    "http://mock",
+			StreamPort: 8001,
+		},
+		Bouquet: "NonExistent",
+	}
 	mock := &mockOWI{bouquets: map[string]string{"Favourites": "bref1"}, services: map[string][][2]string{}}
 
 	_, err := refreshWithClient(context.Background(), cfg, mock)
@@ -249,7 +260,14 @@ func TestRefreshWithClient_BouquetNotFound(t *testing.T) {
 
 func TestRefreshWithClient_ServicesError(t *testing.T) {
 	tmpdir := t.TempDir()
-	cfg := config.AppConfig{DataDir: tmpdir, OWIBase: "http://mock", Bouquet: "Favourites", StreamPort: 8001}
+	cfg := config.AppConfig{
+		DataDir: tmpdir,
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    "http://mock",
+			StreamPort: 8001,
+		},
+		Bouquet: "Favourites",
+	}
 	// mock that has bouquets but no services entry -> Services returns nil slice (treated as zero channels)
 	mock := &mockOWI{bouquets: map[string]string{"Favourites": "bref1"}, services: map[string][][2]string{}}
 
@@ -265,9 +283,11 @@ func TestRefreshWithClient_ServicesError(t *testing.T) {
 func TestRefresh_InvalidStreamPort(t *testing.T) {
 	ctx := context.Background()
 	cfg := config.AppConfig{
-		OWIBase:    "http://test.local",
-		DataDir:    "/tmp/test",
-		StreamPort: 70000, // Invalid port
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    "http://test.local",
+			StreamPort: 70000, // Invalid port
+		},
+		DataDir: "/tmp/test",
 	}
 
 	_, err := Refresh(ctx, config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault()))
@@ -283,7 +303,9 @@ func TestRefresh_InvalidStreamPort(t *testing.T) {
 func TestRefresh_ConfigValidation(t *testing.T) {
 	ctx := context.Background()
 	cfg := config.AppConfig{
-		OWIBase: "", // Invalid empty base URL
+		Enigma2: config.Enigma2Settings{
+			BaseURL: "", // Invalid empty base URL
+		},
 		DataDir: "/tmp/test",
 	}
 
@@ -303,10 +325,12 @@ func TestRefresh_M3UWriteError(t *testing.T) {
 	}
 
 	cfg := config.AppConfig{
-		DataDir:    tmpdir,
-		OWIBase:    "http://mock",
-		Bouquet:    "Favourites",
-		StreamPort: 8001,
+		DataDir: tmpdir,
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    "http://mock",
+			StreamPort: 8001,
+		},
+		Bouquet: "Favourites",
 	}
 
 	mock := &mockOWI{
@@ -332,106 +356,130 @@ func TestValidateConfig(t *testing.T) {
 		{
 			name: "http_ok",
 			cfg: config.AppConfig{
-				OWIBase:    "http://test.local",
-				DataDir:    "/tmp",
-				StreamPort: 8001,
+				Enigma2: config.Enigma2Settings{
+					BaseURL:    "http://test.local",
+					StreamPort: 8001,
+				},
+				DataDir: "/tmp",
 			},
 			wantErr: false,
 		},
 		{
 			name: "https_ok",
 			cfg: config.AppConfig{
-				OWIBase:    "https://test.local:8080",
-				DataDir:    "/tmp",
-				StreamPort: 8001,
+				Enigma2: config.Enigma2Settings{
+					BaseURL:    "https://test.local:8080",
+					StreamPort: 8001,
+				},
+				DataDir: "/tmp",
 			},
 			wantErr: false,
 		},
 		{
 			name: "empty_owiabase",
 			cfg: config.AppConfig{
-				DataDir:    "/tmp",
-				StreamPort: 8001,
+				Enigma2: config.Enigma2Settings{
+					StreamPort: 8001,
+				},
+				DataDir: "/tmp",
 			},
 			wantErr: true,
 		},
 		{
 			name: "missing_scheme",
 			cfg: config.AppConfig{
-				OWIBase:    "test.local",
-				DataDir:    "/tmp",
-				StreamPort: 8001,
+				Enigma2: config.Enigma2Settings{
+					BaseURL:    "test.local",
+					StreamPort: 8001,
+				},
+				DataDir: "/tmp",
 			},
 			wantErr: true,
 		},
 		{
 			name: "unsupported_scheme",
 			cfg: config.AppConfig{
-				OWIBase:    "ftp://test.local",
-				DataDir:    "/tmp",
-				StreamPort: 8001,
+				Enigma2: config.Enigma2Settings{
+					BaseURL:    "ftp://test.local",
+					StreamPort: 8001,
+				},
+				DataDir: "/tmp",
 			},
 			wantErr: true,
 		},
 		{
 			name: "invalid_port",
 			cfg: config.AppConfig{
-				OWIBase:    "http://test.local:abc",
-				DataDir:    "/tmp",
-				StreamPort: 8001,
+				Enigma2: config.Enigma2Settings{
+					BaseURL:    "http://test.local:abc",
+					StreamPort: 8001,
+				},
+				DataDir: "/tmp",
 			},
 			wantErr: true,
 		},
 		{
 			name: "port_too_large",
 			cfg: config.AppConfig{
-				OWIBase:    "http://test.local",
-				DataDir:    "/tmp",
-				StreamPort: 99999, // Invalid stream port
+				Enigma2: config.Enigma2Settings{
+					BaseURL:    "http://test.local",
+					StreamPort: 99999, // Invalid stream port
+				},
+				DataDir: "/tmp",
 			},
 			wantErr: true,
 		},
 		{
 			name: "empty_datadir",
 			cfg: config.AppConfig{
-				OWIBase:    "http://test.local",
-				StreamPort: 8001,
+				Enigma2: config.Enigma2Settings{
+					BaseURL:    "http://test.local",
+					StreamPort: 8001,
+				},
 			},
 			wantErr: true,
 		},
 		{
 			name: "path_traversal",
 			cfg: config.AppConfig{
-				OWIBase:    "http://test.local",
-				DataDir:    "../../../etc",
-				StreamPort: 8001,
+				Enigma2: config.Enigma2Settings{
+					BaseURL:    "http://test.local",
+					StreamPort: 8001,
+				},
+				DataDir: "../../../etc",
 			},
 			wantErr: true,
 		},
 		{
 			name: "invalid_stream_port_zero",
 			cfg: config.AppConfig{
-				OWIBase:    "http://test.local",
-				DataDir:    "/tmp",
-				StreamPort: 0,
+				Enigma2: config.Enigma2Settings{
+					BaseURL:    "http://test.local",
+					StreamPort: 0,
+				},
+				DataDir: "/tmp",
 			},
 			wantErr: true,
 		},
 		{
 			name: "invalid_stream_port_negative",
 			cfg: config.AppConfig{
-				OWIBase:    "http://test.local",
-				DataDir:    "/tmp",
-				StreamPort: -1,
+				Enigma2: config.Enigma2Settings{
+					BaseURL:    "http://test.local",
+					StreamPort: -1,
+				},
+				DataDir: "/tmp",
 			},
 			wantErr: true,
 		},
 		{
 			name: "missing_host",
 			cfg: config.AppConfig{
-				OWIBase:    "http:///", // scheme present but host missing
-				DataDir:    "/tmp",
-				StreamPort: 8001,
+				Enigma2: config.Enigma2Settings{
+					BaseURL:    "http:///", // scheme present but host missing
+					StreamPort: 8001,
+				},
+				DataDir: "/tmp",
 			},
 			wantErr: true,
 		},
@@ -546,11 +594,13 @@ func TestRefresh_VersionPersistence(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	cfg := config.AppConfig{
-		Version:    "v1.2.3-test",
-		DataDir:    tmpDir,
-		OWIBase:    "http://mock",
-		StreamPort: 8001,
-		OWITimeout: time.Second,
+		Version: "v1.2.3-test",
+		DataDir: tmpDir,
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    "http://mock",
+			StreamPort: 8001,
+			Timeout:    time.Second,
+		},
 	}
 
 	ctx := context.Background()

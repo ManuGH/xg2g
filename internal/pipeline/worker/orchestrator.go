@@ -42,7 +42,6 @@ type Orchestrator struct {
 
 	LeaseTTL       time.Duration
 	HeartbeatEvery time.Duration
-	VirtualMode    bool   // If true, mocks hardware/ffmpeg
 	Owner          string // Stable worker identity
 	TunerSlots     []int  // Available hardware slots
 	HLSRoot        string // Root directory for HLS segments
@@ -68,9 +67,6 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 	if o.Owner == "" {
 		host, _ := os.Hostname()
 		o.Owner = fmt.Sprintf("%s-%d-%s", host, os.Getpid(), uuid.New().String())
-	}
-	if o.ExecFactory == nil {
-		o.ExecFactory = &exec.StubFactory{}
 	}
 	if o.LeaseKeyFunc == nil {
 		o.LeaseKeyFunc = func(e model.StartSessionEvent) string {
@@ -174,7 +170,6 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 	}
 	leaseOwner := e.SessionID
 
-	mode := o.modeLabel()
 	startTime := time.Now()
 	startRecorded := false
 
@@ -183,7 +178,7 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 			return
 		}
 		startRecorded = true
-		recordSessionStartOutcome(result, reason, e.ProfileID, mode)
+		recordSessionStartOutcome(result, reason, e.ProfileID)
 	}
 	startResultForReason := func(reason model.ReasonCode) string {
 		switch reason {
@@ -209,7 +204,7 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 	// 0. Unified Finalization (Always Runs)
 	// Critical Fix 9-4: Must run even if tune/lease fail.
 	// CTO: Extracted to finalizeDeferred() for complexity reduction
-	defer o.finalizeDeferred(ctx, e, &session, sessionCtx, logger, &startRecorded, recordStart, startResultForReason, mode, &retErr)
+	defer o.finalizeDeferred(ctx, e, &session, sessionCtx, logger, &startRecorded, recordStart, startResultForReason, &retErr)
 
 	if session == nil {
 		return newReasonError(model.RNotFound, "session not found", nil)
@@ -266,10 +261,10 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 	}
 
 	// Ready Success Counter
-	readyOutcomeTotal.WithLabelValues("success", o.modeLabel()).Inc()
+	readyOutcomeTotal.WithLabelValues("success").Inc()
 
 	// Fix 12: Hybrid Repair Policy (Retry Loop)
-	transcoder, finalProfile, err := o.runExecutionLoop(ctx, leases.HBCtx, e, sessionCtx, session, startTime, logger, mode, recordStart)
+	transcoder, finalProfile, err := o.runExecutionLoop(ctx, leases.HBCtx, e, sessionCtx, session, startTime, logger, recordStart)
 	if err != nil {
 		return err
 	}
@@ -378,13 +373,6 @@ func (o *Orchestrator) acquireTunerLease(ctx context.Context, slots []int, owner
 	return 0, nil, false, nil
 }
 
-func (o *Orchestrator) modeLabel() string {
-	if o.VirtualMode {
-		return "virtual"
-	}
-	return "standard"
-}
-
 func (o *Orchestrator) ffmpegStopTimeout() time.Duration {
 	if o.FFmpegKillTimeout > 0 {
 		return o.FFmpegKillTimeout
@@ -393,7 +381,7 @@ func (o *Orchestrator) ffmpegStopTimeout() time.Duration {
 }
 
 func (o *Orchestrator) recordTransition(from, to model.SessionState) {
-	fsmTransitions.WithLabelValues(string(from), string(to), o.modeLabel()).Inc()
+	fsmTransitions.WithLabelValues(string(from), string(to)).Inc()
 }
 
 func (o *Orchestrator) cleanupFiles(sid string) {

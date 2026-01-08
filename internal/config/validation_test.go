@@ -125,7 +125,9 @@ func TestValidate_TrustedProxies_Integration(t *testing.T) {
 			cfg := AppConfig{
 				TrustedProxies: tt.proxies,
 				DataDir:        "/tmp",
-				StreamPort:     8001,
+				Enigma2: Enigma2Settings{
+					StreamPort: 8001,
+				},
 			}
 			err := Validate(cfg)
 			if tt.shouldErr && err == nil {
@@ -158,7 +160,9 @@ func TestValidate_RateLimitWhitelist_Integration(t *testing.T) {
 			cfg := AppConfig{
 				RateLimitWhitelist: tt.whitelist,
 				DataDir:            "/tmp",
-				StreamPort:         8001,
+				Enigma2: Enigma2Settings{
+					StreamPort: 8001,
+				},
 			}
 			err := Validate(cfg)
 			if tt.shouldErr && err == nil {

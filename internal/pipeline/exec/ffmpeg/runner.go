@@ -242,7 +242,7 @@ func (r *Runner) runOnce(ctx context.Context, sessionID, source string, profileS
 	sessionDir := SessionOutputDir(r.HLSRoot, sessionID)
 	// mkdir -p
 	// #nosec G301 -- 0755
-	if err := os.MkdirAll(sessionDir, 0755); err != nil {
+	if err := os.MkdirAll(sessionDir, 0750); err != nil {
 		r.mu.Unlock()
 		return 1, fmt.Errorf("failed to create session dir: %w", err)
 	}

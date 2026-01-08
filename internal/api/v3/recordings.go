@@ -8,7 +8,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -808,7 +807,7 @@ func (s *Server) StreamRecordingDirect(w http.ResponseWriter, r *http.Request, r
 	}
 
 	// 2. Compute Cache Path (Standardized VOD Cache)
-	hash := sha1.Sum([]byte(serviceRef))
+	hash := sha256.Sum256([]byte(serviceRef))
 	cacheName := fmt.Sprintf("%x.mp4", hash)
 	cacheDir := filepath.Join(s.cfg.DataDir, "vod-cache")
 	cachePath := filepath.Join(cacheDir, cacheName)
@@ -847,6 +846,7 @@ func (s *Server) StreamRecordingDirect(w http.ResponseWriter, r *http.Request, r
 
 	// Success! Cache is ready.
 	// Open file explicitly to ensure we can close it (ServeContent does not close)
+	// #nosec G304 -- cachePath is constructed from fixed root and SHA256 hash of serviceRef.
 	f, err := os.Open(cachePath)
 	if err != nil {
 		log.L().Error().Err(err).Str("path", cachePath).Msg("failed to open cached vod file")
@@ -953,13 +953,13 @@ func (s *Server) resolveRecordingPlaybackSource(ctx context.Context, serviceRef 
 	}
 
 	s.mu.RLock()
-	host := s.cfg.OWIBase
-	streamPort := s.cfg.StreamPort
+	host := s.cfg.Enigma2.BaseURL
+	streamPort := s.cfg.Enigma2.StreamPort
 	stableWindow := s.cfg.RecordingStableWindow
 	policy := strings.ToLower(strings.TrimSpace(s.cfg.RecordingPlaybackPolicy))
 	pathMapper := s.recordingPathMapper
-	username := s.cfg.OWIUsername
-	password := s.cfg.OWIPassword
+	username := s.cfg.Enigma2.Username
+	password := s.cfg.Enigma2.Password
 	s.mu.RUnlock()
 
 	allowLocal := policy != "receiver_only"
@@ -1554,7 +1554,7 @@ func (s *Server) prepareRecordingCacheDir(cacheDir string) error {
 		return err
 	}
 	// #nosec G301 -- cache dir serves playback assets.
-	return os.MkdirAll(cacheDir, 0755)
+	return os.MkdirAll(cacheDir, 0750)
 }
 
 // VODCacheVersion identifies the current generation of VOD transcoding logic.
@@ -1953,7 +1953,7 @@ func (s *Server) finalizeRecordingPlaylist(cacheDir, livePath, finalPath string)
 
 	// Write to temp final
 	tmpFinal := filepath.Join(cacheDir, "index.final.tmp")
-	if err := os.WriteFile(tmpFinal, []byte(strings.Join(newLines, "\n")), 0644); err != nil {
+	if err := os.WriteFile(tmpFinal, []byte(strings.Join(newLines, "\n")), 0600); err != nil {
 		return fmt.Errorf("write final tmp: %w", err)
 	}
 

@@ -166,15 +166,10 @@ type AppConfig struct {
 	DataDir           string
 	LogLevel          string
 	LogService        string
-	OWIBase           string
-	OWIUsername       string // Optional: HTTP Basic Auth username
-	OWIPassword       string // Optional: HTTP Basic Auth password
 	Bouquet           string // Comma-separated list of bouquets (empty = all)
 	XMLTVPath         string
 	PiconBase         string
 	FuzzyMax          int
-	StreamPort        int
-	UseWebIFStreams   bool
 	APIToken          string // Optional: for securing API endpoints (e.g., /api/v3/*)
 	APITokenScopes    []string
 	APITokens         []ScopedToken
@@ -183,10 +178,6 @@ type AppConfig struct {
 	TrustedProxies    string // Comma-separated list of trusted CIDRs
 	MetricsEnabled    bool   // Optional: enable Prometheus metrics server
 	MetricsAddr       string // Optional: metrics listen address (if enabled)
-	OWITimeout        time.Duration
-	OWIRetries        int
-	OWIBackoff        time.Duration
-	OWIMaxBackoff     time.Duration
 
 	// EPG Configuration
 	EPGEnabled        bool
@@ -311,6 +302,8 @@ type Enigma2Settings struct {
 	UserAgent             string
 	AnalyzeDuration       string
 	ProbeSize             string
+	StreamPort            int
+	UseWebIFStreams       bool
 }
 
 // Loader handles configuration loading with precedence
@@ -370,7 +363,10 @@ func (l *Loader) Load() (AppConfig, error) {
 
 	// 6. Resolve HLS Root (Migration & Path Safety)
 	// Must be done after DataDir is finalized
-	hlsRes, err := paths.ResolveHLSRoot(cfg.DataDir)
+	hlsRes, err := paths.ResolveHLSRoot(cfg.DataDir,
+		os.Getenv(paths.EnvHLSRoot),
+		os.Getenv(paths.EnvLegacyHLSRoot),
+	)
 	if err != nil {
 		return cfg, fmt.Errorf("resolve hls root: %w", err)
 	}
@@ -390,17 +386,7 @@ func (l *Loader) Load() (AppConfig, error) {
 // setDefaults sets default values for configuration
 func (l *Loader) setDefaults(cfg *AppConfig) {
 	cfg.DataDir = "/tmp" // Use /tmp as default to pass validation in tests
-	cfg.OWIBase = ""     // No default - must be explicitly configured
-	cfg.Bouquet = ""
-	cfg.StreamPort = 8001
-	cfg.UseWebIFStreams = true
-	cfg.APIListenAddr = ""
-	cfg.MetricsEnabled = false
-	cfg.MetricsAddr = ":9090"
-	cfg.OWITimeout = 10 * time.Second
-	cfg.OWIRetries = 3
-	cfg.OWIBackoff = 500 * time.Millisecond
-	cfg.OWIMaxBackoff = 30 * time.Second
+	cfg.Enigma2.MaxBackoff = 30 * time.Second
 	cfg.FuzzyMax = 2
 	cfg.LogLevel = "info"
 	cfg.ConfigVersion = V3ConfigVersion
@@ -432,6 +418,8 @@ func (l *Loader) setDefaults(cfg *AppConfig) {
 	cfg.Enigma2.UserAgent = "xg2g-engine"
 	cfg.Enigma2.AnalyzeDuration = "10s"
 	cfg.Enigma2.ProbeSize = "10M"
+	cfg.Enigma2.StreamPort = 8001
+	cfg.Enigma2.UseWebIFStreams = true
 
 	// FFmpeg defaults
 	cfg.FFmpeg.Bin = "ffmpeg"
@@ -553,21 +541,21 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 		dst.LogLevel = src.LogLevel
 	}
 
-	// OpenWebIF
+	// OpenWebIF (Enigma2 structure)
 	if src.OpenWebIF.BaseURL != "" {
-		dst.OWIBase = expandEnv(src.OpenWebIF.BaseURL)
+		dst.Enigma2.BaseURL = expandEnv(src.OpenWebIF.BaseURL)
 	}
 	if src.OpenWebIF.Username != "" {
-		dst.OWIUsername = expandEnv(src.OpenWebIF.Username)
+		dst.Enigma2.Username = expandEnv(src.OpenWebIF.Username)
 	}
 	if src.OpenWebIF.Password != "" {
-		dst.OWIPassword = expandEnv(src.OpenWebIF.Password)
+		dst.Enigma2.Password = expandEnv(src.OpenWebIF.Password)
 	}
 	if src.OpenWebIF.StreamPort > 0 {
-		dst.StreamPort = src.OpenWebIF.StreamPort
+		dst.Enigma2.StreamPort = src.OpenWebIF.StreamPort
 	}
 	if src.OpenWebIF.UseWebIF != nil {
-		dst.UseWebIFStreams = *src.OpenWebIF.UseWebIF
+		dst.Enigma2.UseWebIFStreams = *src.OpenWebIF.UseWebIF
 	}
 
 	// Parse durations from strings
@@ -576,24 +564,24 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 		if err != nil {
 			return fmt.Errorf("invalid openWebIF.timeout: %w", err)
 		}
-		dst.OWITimeout = d
+		dst.Enigma2.Timeout = d
 	}
 	if src.OpenWebIF.Backoff != "" {
 		d, err := time.ParseDuration(src.OpenWebIF.Backoff)
 		if err != nil {
 			return fmt.Errorf("invalid openWebIF.backoff: %w", err)
 		}
-		dst.OWIBackoff = d
+		dst.Enigma2.Backoff = d
 	}
 	if src.OpenWebIF.MaxBackoff != "" {
 		d, err := time.ParseDuration(src.OpenWebIF.MaxBackoff)
 		if err != nil {
 			return fmt.Errorf("invalid openWebIF.maxBackoff: %w", err)
 		}
-		dst.OWIMaxBackoff = d
+		dst.Enigma2.MaxBackoff = d
 	}
 	if src.OpenWebIF.Retries > 0 {
-		dst.OWIRetries = src.OpenWebIF.Retries
+		dst.Enigma2.Retries = src.OpenWebIF.Retries
 	}
 
 	// Bouquets (join if multiple)
@@ -795,31 +783,31 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	cfg.LogLevel = ParseString("XG2G_LOG_LEVEL", cfg.LogLevel)
 	cfg.LogService = ParseString("XG2G_LOG_SERVICE", cfg.LogService)
 
-	// OpenWebIF
-	cfg.OWIBase = ParseString("XG2G_OWI_BASE", cfg.OWIBase)
+	// Enigma2 (Legacy OWI compatibility)
+	cfg.Enigma2.BaseURL = ParseString("XG2G_OWI_BASE", cfg.Enigma2.BaseURL)
 
 	// Username: XG2G_OWI_USER
 	if v := ParseString("XG2G_OWI_USER", ""); v != "" {
-		cfg.OWIUsername = v
+		cfg.Enigma2.Username = v
 	}
 
 	// Password: XG2G_OWI_PASS
 	if v := ParseString("XG2G_OWI_PASS", ""); v != "" {
-		cfg.OWIPassword = v
+		cfg.Enigma2.Password = v
 	}
-	cfg.StreamPort = ParseInt("XG2G_STREAM_PORT", cfg.StreamPort)
-	cfg.UseWebIFStreams = ParseBool("XG2G_USE_WEBIF_STREAMS", cfg.UseWebIFStreams)
+	cfg.Enigma2.StreamPort = ParseInt("XG2G_STREAM_PORT", cfg.Enigma2.StreamPort)
+	cfg.Enigma2.UseWebIFStreams = ParseBool("XG2G_USE_WEBIF_STREAMS", cfg.Enigma2.UseWebIFStreams)
 
 	// OpenWebIF timeouts/retries
 	if ms := ParseInt("XG2G_OWI_TIMEOUT_MS", 0); ms > 0 {
-		cfg.OWITimeout = time.Duration(ms) * time.Millisecond
+		cfg.Enigma2.Timeout = time.Duration(ms) * time.Millisecond
 	}
-	cfg.OWIRetries = ParseInt("XG2G_OWI_RETRIES", cfg.OWIRetries)
+	cfg.Enigma2.Retries = ParseInt("XG2G_OWI_RETRIES", cfg.Enigma2.Retries)
 	if ms := ParseInt("XG2G_OWI_BACKOFF_MS", 0); ms > 0 {
-		cfg.OWIBackoff = time.Duration(ms) * time.Millisecond
+		cfg.Enigma2.Backoff = time.Duration(ms) * time.Millisecond
 	}
 	if ms := ParseInt("XG2G_OWI_MAX_BACKOFF_MS", 0); ms > 0 {
-		cfg.OWIMaxBackoff = time.Duration(ms) * time.Millisecond
+		cfg.Enigma2.MaxBackoff = time.Duration(ms) * time.Millisecond
 	}
 
 	// Global strict mode
@@ -916,11 +904,6 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	cfg.Enigma2.UserAgent = ParseString("XG2G_E2_USER_AGENT", cfg.Enigma2.UserAgent)
 	cfg.Enigma2.AnalyzeDuration = ParseString("XG2G_E2_ANALYZE_DURATION", cfg.Enigma2.AnalyzeDuration)
 	cfg.Enigma2.ProbeSize = ParseString("XG2G_E2_PROBE_SIZE", cfg.Enigma2.ProbeSize)
-
-	// Smart Defaulting: If E2Host is not set, inherit OWI config
-	if cfg.Enigma2.BaseURL == "" && cfg.OWIBase != "" {
-		cfg.Enigma2.BaseURL = cfg.OWIBase
-	}
 
 	// CANONICAL FFMPEG CONFIG
 	cfg.FFmpeg.Bin = ParseString("XG2G_FFMPEG_BIN", cfg.FFmpeg.Bin)

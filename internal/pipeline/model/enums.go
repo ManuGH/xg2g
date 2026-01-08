@@ -118,7 +118,6 @@ type ProfileSpec struct {
 	AudioBitrateK  int    `json:"audioBitrateK,omitempty"`
 	Preset         string `json:"preset,omitempty"`
 	Container      string `json:"container,omitempty"` // "ts" (default) or "fmp4"
-	// Future: Audio-only, subtitles, etc.
 }
 
 // SessionRecord is the state-store source of truth for client-visible state.
@@ -143,18 +142,6 @@ type SessionRecord struct {
 	LastHeartbeatUnix  int64             `json:"lastHeartbeatUnix,omitempty"`
 	StopReason         string            `json:"stopReason,omitempty"` // USER_STOPPED, LEASE_EXPIRED, FAILED, etc.
 	ContextData        map[string]string `json:"contextData,omitempty"`
-}
-
-// PipelineRecord tracks the internal worker state.
-type PipelineRecord struct {
-	PipelineID     string        `json:"pipelineId"`
-	ServiceKey     string        `json:"serviceKey"` // e.g. ref + profile
-	State          PipelineState `json:"state"`
-	LeaseOwner     string        `json:"leaseOwner"`
-	LeaseExpiresAt int64         `json:"leaseExpiresAt"`
-	Reason         ReasonCode    `json:"reason"`
-	CreatedAtUnix  int64         `json:"createdAtUnix"`
-	UpdatedAtUnix  int64         `json:"updatedAtUnix"`
 }
 
 // IntentType defines the type of intent (command).

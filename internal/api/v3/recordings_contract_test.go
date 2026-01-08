@@ -26,7 +26,9 @@ func TestGetRecordings_Contract_UpstreamFailure(t *testing.T) {
 
 	// 2. Setup xg2g Server with mock OWI
 	cfg := config.AppConfig{
-		OWIBase: mockServer.URL,
+		Enigma2: config.Enigma2Settings{
+			BaseURL: mockServer.URL,
+		},
 	}
 
 	s := &Server{
@@ -47,7 +49,7 @@ func TestGetRecordings_Contract_UpstreamFailure(t *testing.T) {
 	var apiErr APIError
 	err := json.Unmarshal(w.Body.Bytes(), &apiErr)
 	assert.NoError(t, err, "Response should be valid JSON")
-	assert.Equal(t, "UPSTREAM_UNAVAILABLE", apiErr.Code, "Expected code UPSTREAM_UNAVAILABLE")
+	assert.Equal(t, "UPSTREAM_RESULT_FALSE", apiErr.Code, "Expected code UPSTREAM_RESULT_FALSE")
 
 	// Ensure no path leaks in the error message or details
 	assert.NotContains(t, strings.ToLower(w.Body.String()), "/media/", "Response body should not contain absolute paths")

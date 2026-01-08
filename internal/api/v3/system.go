@@ -17,7 +17,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
@@ -49,58 +48,6 @@ type nowNextItem struct {
 	Next       *epgEntry `json:"next,omitempty"`
 }
 
-// GetSystemHealth implements ServerInterface
-func (s *Server) GetSystemHealth(w http.ResponseWriter, r *http.Request) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	status := SystemHealthStatusOk
-	if s.status.Error != "" {
-		status = SystemHealthStatusDegraded
-	}
-
-	receiverStatus := ComponentStatusStatusOk
-	if s.cfg.OWIBase == "" {
-		receiverStatus = ComponentStatusStatusError
-	} else if s.status.Error != "" {
-		receiverStatus = ComponentStatusStatusError
-	}
-
-	epgStatus := EPGStatusStatusOk
-	if s.status.EPGProgrammes == 0 && s.status.Channels > 0 {
-		epgStatus = EPGStatusStatusMissing
-	}
-
-	missing := 0
-	uptime := int64(time.Since(s.startTime).Seconds())
-
-	resp := SystemHealth{
-		Status: &status,
-		Receiver: &ComponentStatus{
-			Status:    &receiverStatus,
-			LastCheck: &s.status.LastRun,
-		},
-		Epg: &EPGStatus{
-			Status:          &epgStatus,
-			MissingChannels: &missing,
-		},
-		Version:       &s.status.Version,
-		UptimeSeconds: &uptime,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(resp)
-}
-
-// GetSystemHealthz implements ServerInterface
-func (s *Server) GetSystemHealthz(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(map[string]string{"status": "ok"}); err != nil {
-		log.L().Error().Err(err).Msg("failed to encode system healthz response")
-	}
-}
-
 // GetSystemConfig implements ServerInterface
 func (s *Server) GetSystemConfig(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
@@ -119,11 +66,11 @@ func (s *Server) GetSystemConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	openWebIF := &OpenWebIFConfig{
-		BaseUrl:    &cfg.OWIBase,
-		StreamPort: &cfg.StreamPort,
+		BaseUrl:    &cfg.Enigma2.BaseURL,
+		StreamPort: &cfg.Enigma2.StreamPort,
 	}
-	if cfg.OWIUsername != "" {
-		openWebIF.Username = &cfg.OWIUsername
+	if cfg.Enigma2.Username != "" {
+		openWebIF.Username = &cfg.Enigma2.Username
 	}
 
 	picons := &PiconsConfig{
@@ -175,16 +122,16 @@ func (s *Server) PutSystemConfig(w http.ResponseWriter, r *http.Request) {
 			if val != "" && !strings.HasPrefix(val, "http://") && !strings.HasPrefix(val, "https://") {
 				val = "http://" + val
 			}
-			next.OWIBase = val
+			next.Enigma2.BaseURL = val
 		}
 		if req.OpenWebIF.Username != nil {
-			next.OWIUsername = *req.OpenWebIF.Username
+			next.Enigma2.Username = *req.OpenWebIF.Username
 		}
 		if req.OpenWebIF.Password != nil {
-			next.OWIPassword = *req.OpenWebIF.Password
+			next.Enigma2.Password = *req.OpenWebIF.Password
 		}
 		if req.OpenWebIF.StreamPort != nil {
-			next.StreamPort = *req.OpenWebIF.StreamPort
+			next.Enigma2.StreamPort = *req.OpenWebIF.StreamPort
 		}
 	}
 
@@ -457,36 +404,6 @@ func (s *Server) PostServicesIdToggle(w http.ResponseWriter, r *http.Request, id
 	w.WriteHeader(http.StatusOK)
 }
 
-// GetLogs implements ServerInterface
-func (s *Server) GetLogs(w http.ResponseWriter, r *http.Request) {
-	logs := log.GetRecentLogs()
-	// Reverse
-	for i, j := 0, len(logs)-1; i < j; i, j = i+1, j-1 {
-		logs[i], logs[j] = logs[j], logs[i]
-	}
-
-	var resp []LogEntry
-	for _, l := range logs {
-		lvl := l.Level
-		msg := l.Message
-		t := l.Timestamp
-		fields := make(map[string]interface{})
-		for k, v := range l.Fields {
-			fields[k] = v
-		}
-
-		resp = append(resp, LogEntry{
-			Level:   &lvl,
-			Message: &msg,
-			Time:    &t,
-			Fields:  &fields,
-		})
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(resp)
-}
-
 // GetStreams implements ServerInterface
 func (s *Server) GetStreams(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
@@ -741,66 +658,71 @@ func (s *Server) handleNowNextEPG(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.mu.RLock()
-	cfg := s.cfg
-	snap := s.snap
+	epgCache := s.epgCache
 	s.mu.RUnlock()
 
-	client := s.newOpenWebIFClient(cfg, snap)
-
-	now := time.Now()
-	items := make([]nowNextItem, len(req.Services))
-
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, 6) // limit concurrency
-
-	for i, sref := range req.Services {
-		wg.Add(1)
-		sem <- struct{}{}
-		go func(idx int, ref string) {
-			defer wg.Done()
-			defer func() { <-sem }()
-
-			events, err := client.GetEPG(r.Context(), ref, 1)
-			if err != nil || len(events) == 0 {
-				items[idx] = nowNextItem{ServiceRef: ref}
-				return
-			}
-
-			var current *epgEntry
-			var next *epgEntry
-
-			for _, ev := range events {
-				start := time.Unix(ev.Begin, 0)
-				end := start.Add(time.Duration(ev.Duration) * time.Second)
-				if ev.Duration <= 0 {
-					end = start.Add(30 * time.Minute)
-				}
-
-				entry := epgEntry{
-					Title: ev.Title,
-					Start: start.Unix(),
-					End:   end.Unix(),
-				}
-
-				if now.After(start) && now.Before(end) {
-					current = &entry
-				} else if start.After(now) {
-					if next == nil || start.Before(time.Unix(next.Start, 0)) {
-						next = &entry
-					}
-				}
-			}
-
-			items[idx] = nowNextItem{
-				ServiceRef: ref,
-				Now:        current,
-				Next:       next,
-			}
-		}(i, sref)
+	if epgCache == nil {
+		items := make([]nowNextItem, len(req.Services))
+		for i, sref := range req.Services {
+			items[i] = nowNextItem{ServiceRef: sref}
+		}
+		writeNowNextResponse(w, items)
+		return
 	}
 
-	wg.Wait()
+	// Phase 9-5: Pre-index programs by channel for faster lookup
+	progMap := make(map[string][]epg.Programme)
+	for _, p := range epgCache.Programs {
+		progMap[p.Channel] = append(progMap[p.Channel], p)
+	}
 
+	now := time.Now()
+	xmltvFormat := "20060102150405 -0700"
+	items := make([]nowNextItem, 0, len(req.Services))
+
+	for _, sref := range req.Services {
+		progs, ok := progMap[sref]
+		if !ok {
+			items = append(items, nowNextItem{ServiceRef: sref})
+			continue
+		}
+
+		var current *epgEntry
+		var next *epgEntry
+
+		for _, p := range progs {
+			start, serr := time.Parse(xmltvFormat, p.Start)
+			stop, perr := time.Parse(xmltvFormat, p.Stop)
+			if serr != nil || perr != nil {
+				continue
+			}
+
+			entry := &epgEntry{
+				Title: p.Title.Text,
+				Start: start.Unix(),
+				End:   stop.Unix(),
+			}
+
+			if now.After(start) && now.Before(stop) {
+				current = entry
+			} else if start.After(now) {
+				if next == nil || start.Before(time.Unix(next.Start, 0)) {
+					next = entry
+				}
+			}
+		}
+
+		items = append(items, nowNextItem{
+			ServiceRef: sref,
+			Now:        current,
+			Next:       next,
+		})
+	}
+
+	writeNowNextResponse(w, items)
+}
+
+func writeNowNextResponse(w http.ResponseWriter, items []nowNextItem) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"items": items,

@@ -17,13 +17,13 @@ import (
 func Validate(cfg AppConfig) error {
 	v := validate.New()
 
-	// OpenWebIF URL (optional for setup mode)
-	if strings.TrimSpace(cfg.OWIBase) != "" {
-		v.URL("OWIBase", cfg.OWIBase, []string{"http", "https"})
+	// Enigma2 URL (Standardized)
+	if strings.TrimSpace(cfg.Enigma2.BaseURL) != "" {
+		v.URL("Enigma2.BaseURL", cfg.Enigma2.BaseURL, []string{"http", "https"})
 	}
 
 	// Stream port
-	v.Port("StreamPort", cfg.StreamPort)
+	v.Port("Enigma2.StreamPort", cfg.Enigma2.StreamPort)
 
 	// Data directory
 	v.Directory("DataDir", cfg.DataDir, false)
@@ -40,8 +40,8 @@ func Validate(cfg AppConfig) error {
 		v.Range("FuzzyMax", cfg.FuzzyMax, 0, 10)
 	}
 
-	// OWI retries
-	v.Range("OWIRetries", cfg.OWIRetries, 0, 10)
+	// Enigma2 retries
+	v.Range("Enigma2.Retries", cfg.Enigma2.Retries, 0, 10)
 
 	// Validate TLS Configuration
 	if cfg.TLSEnabled {

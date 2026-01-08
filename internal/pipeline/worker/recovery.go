@@ -66,7 +66,7 @@ func (o *Orchestrator) recoverStaleLeases(ctx context.Context) error {
 		// Function call wrapper or explicit release.
 		handleRecovery(ctx, o, s, lease, logger)
 		recoveredCount++
-		jobsTotal.WithLabelValues("recovered", o.modeLabel()).Inc()
+		jobsTotal.WithLabelValues("recovered").Inc()
 	}
 
 	logger.Info().

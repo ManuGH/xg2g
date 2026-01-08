@@ -35,27 +35,24 @@ func (m *Manager) Save(cfg *AppConfig) error {
 	// Map AppConfig back to FileConfig for serialization
 	// We only write fields that are user-configurable via the UI
 	//
-	// IMPORTANT: For Enigma2.BaseURL, only write it if it differs from OWIBase.
-	// This preserves the automatic fallback behavior (enigma2 inherits from openWebIF).
-	e2BaseURL := ""
-	if cfg.Enigma2.BaseURL != "" && cfg.Enigma2.BaseURL != cfg.OWIBase {
-		e2BaseURL = cfg.Enigma2.BaseURL
-	}
-
 	fileCfg := FileConfig{
 		Version:       EffectiveConfigVersion(*cfg),
 		ConfigVersion: V3ConfigVersion,
 		DataDir:       cfg.DataDir,
 		LogLevel:      cfg.LogLevel,
 		OpenWebIF: OpenWebIFConfig{
-			BaseURL:    cfg.OWIBase,
-			Username:   cfg.OWIUsername,
-			Password:   cfg.OWIPassword,
-			StreamPort: cfg.StreamPort,
-			UseWebIF:   boolPtr(cfg.UseWebIFStreams),
+			BaseURL:    cfg.Enigma2.BaseURL,
+			Username:   cfg.Enigma2.Username,
+			Password:   cfg.Enigma2.Password,
+			StreamPort: cfg.Enigma2.StreamPort,
+			UseWebIF:   boolPtr(cfg.Enigma2.UseWebIFStreams),
+			Timeout:    cfg.Enigma2.Timeout.String(),
+			Retries:    cfg.Enigma2.Retries,
+			Backoff:    cfg.Enigma2.Backoff.String(),
+			MaxBackoff: cfg.Enigma2.MaxBackoff.String(),
 		},
 		Enigma2: Enigma2Config{
-			BaseURL:               e2BaseURL,
+			BaseURL:               cfg.Enigma2.BaseURL, // Now always the same as OpenWebIF
 			Username:              cfg.Enigma2.Username,
 			Password:              cfg.Enigma2.Password,
 			Timeout:               cfg.Enigma2.Timeout.String(),

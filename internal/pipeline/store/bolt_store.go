@@ -294,59 +294,6 @@ func (b *BoltStore) ScanSessions(ctx context.Context, fn func(*model.SessionReco
 	})
 }
 
-// --- Pipeline CRUD ---
-
-func (b *BoltStore) PutPipeline(ctx context.Context, p *model.PipelineRecord) error {
-	return b.db.Update(func(tx *bolt.Tx) error {
-		val, err := json.Marshal(p)
-		if err != nil {
-			return err
-		}
-		return tx.Bucket(bucketPipelines).Put([]byte(p.PipelineID), val)
-	})
-}
-
-func (b *BoltStore) GetPipeline(ctx context.Context, id string) (*model.PipelineRecord, error) {
-	var rec model.PipelineRecord
-	err := b.db.View(func(tx *bolt.Tx) error {
-		val := tx.Bucket(bucketPipelines).Get([]byte(id))
-		if val == nil {
-			return nil
-		}
-		return json.Unmarshal(val, &rec)
-	})
-	if err != nil || rec.PipelineID == "" {
-		return nil, err
-	}
-	return &rec, nil
-}
-
-func (b *BoltStore) UpdatePipeline(ctx context.Context, id string, fn func(*model.PipelineRecord) error) (*model.PipelineRecord, error) {
-	var updated *model.PipelineRecord
-	err := b.db.Update(func(tx *bolt.Tx) error {
-		bkt := tx.Bucket(bucketPipelines)
-		val := bkt.Get([]byte(id))
-		if val == nil {
-			return errors.New("not found")
-		}
-		var rec model.PipelineRecord
-		if err := json.Unmarshal(val, &rec); err != nil {
-			return err
-		}
-		if err := fn(&rec); err != nil {
-			return err
-		}
-		newVal, err := json.Marshal(&rec)
-		if err != nil {
-			return err
-		}
-		err = bkt.Put([]byte(id), newVal)
-		updated = &rec
-		return err
-	})
-	return updated, err
-}
-
 // --- Idempotency ---
 
 func (b *BoltStore) PutIdempotency(ctx context.Context, key, sessionID string, ttl time.Duration) error {

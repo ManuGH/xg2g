@@ -114,7 +114,8 @@ func (m *manager) Start(ctx context.Context) error {
 
 	// Phase 7A: Start v3 Worker (if enabled)
 	// Phase 7A: Start v3 Worker (if enabled)
-	if m.deps.V3Config != nil && m.deps.V3Config.Enabled {
+	// Phase 7A: Start v3 Worker (if enabled)
+	if m.deps.Config.Engine.Enabled {
 		if err := m.startV3Worker(ctx, errChan); err != nil {
 			return fmt.Errorf("failed to start v3 worker: %w", err)
 		}
@@ -226,20 +227,21 @@ func (m *manager) startMetricsServer(_ context.Context, errChan chan<- error) er
 
 // startV3Worker initializes v3 Bus, Store, and Orchestrator
 func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error {
-	cfg := m.deps.V3Config
+	cfg := m.deps.Config
 	// Use INFO level for visibility during canary
 	m.logger.Info().
-		Str("mode", cfg.Mode).
-		Str("store", cfg.StorePath).
-		Str("hls_root", cfg.HLSRoot).
-		Str("e2_host", cfg.E2Host).
+		Str("mode", cfg.Engine.Mode).
+		Str("store", cfg.Store.Path).
+		Str("hls_root", cfg.HLS.Root).
+		Str("e2_host", cfg.Enigma2.BaseURL).
 		Msg("starting v3 worker (Phase 7A)")
 
 	// 1. Initialize Bus (Memory for MVP)
 	v3Bus := memorybus.NewMemoryBus()
 
 	// 2. Initialize Store (Factory)
-	v3Store, err := store.OpenStateStore(m.deps.V3Config.StoreBackend, m.deps.V3Config.StorePath)
+	// 2. Initialize Store (Factory)
+	v3Store, err := store.OpenStateStore(cfg.Store.Backend, cfg.Store.Path)
 	if err != nil {
 		m.logger.Error().Err(err).Msg("failed to open v3 store")
 		return err
@@ -253,7 +255,8 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 	}
 
 	// 2.5 Initialize Resume Store
-	resumeStore, err := resume.NewStore(m.deps.V3Config.StoreBackend, m.deps.V3Config.StorePath)
+	// 2.5 Initialize Resume Store
+	resumeStore, err := resume.NewStore(cfg.Store.Backend, cfg.Store.Path)
 	if err != nil {
 		m.logger.Error().Err(err).Msg("failed to open resume store")
 		return err
@@ -266,7 +269,8 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 	}
 
 	// 2.7 Initialize Smart Profile Scanner
-	scanStore := scan.NewStore(m.deps.V3Config.StorePath)
+	// 2.7 Initialize Smart Profile Scanner
+	scanStore := scan.NewStore(cfg.Store.Path)
 	playlistPath := "data/playlist.m3u"
 	if m.deps.ProxyConfig != nil && m.deps.ProxyConfig.PlaylistPath != "" {
 		playlistPath = m.deps.ProxyConfig.PlaylistPath
@@ -279,35 +283,34 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 		Bus:               v3Bus,
 		LeaseTTL:          30 * time.Second,
 		HeartbeatEvery:    10 * time.Second,
-		VirtualMode:       cfg.Mode == "virtual",
-		TunerSlots:        cfg.TunerSlots,
-		HLSRoot:           cfg.HLSRoot,
-		FFmpegKillTimeout: cfg.FFmpegKillTimeout,
+		TunerSlots:        cfg.Engine.TunerSlots,
+		HLSRoot:           cfg.HLS.Root,
+		FFmpegKillTimeout: cfg.FFmpeg.KillTimeout,
 		Sweeper: worker.SweeperConfig{
-			IdleTimeout: cfg.IdleTimeout,
+			IdleTimeout: cfg.Engine.IdleTimeout,
 		},
 	}
 
 	// Phase 8-3: Factory Wiring
 	e2Opts := enigma2.Options{
-		Timeout:               cfg.E2Timeout,
-		ResponseHeaderTimeout: cfg.E2RespTimeout,
-		MaxRetries:            cfg.E2Retries,
-		Backoff:               cfg.E2Backoff,
-		MaxBackoff:            cfg.E2MaxBackoff,
-		Username:              cfg.E2Username,
-		Password:              cfg.E2Password,
-		UserAgent:             cfg.E2UserAgent,
-		RateLimit:             rate.Limit(cfg.E2RateLimit),
-		RateLimitBurst:        cfg.E2RateBurst,
-		UseWebIFStreams:       cfg.UseWebIFStreams,
-		StreamPort:            cfg.StreamPort,
+		Timeout:               cfg.Enigma2.Timeout,
+		ResponseHeaderTimeout: cfg.Enigma2.ResponseHeaderTimeout,
+		MaxRetries:            cfg.Enigma2.Retries,
+		Backoff:               cfg.Enigma2.Backoff,
+		MaxBackoff:            cfg.Enigma2.MaxBackoff,
+		Username:              cfg.Enigma2.Username,
+		Password:              cfg.Enigma2.Password,
+		UserAgent:             cfg.Enigma2.UserAgent,
+		RateLimit:             rate.Limit(cfg.Enigma2.RateLimit),
+		RateLimitBurst:        cfg.Enigma2.RateBurst,
+		UseWebIFStreams:       cfg.Enigma2.UseWebIFStreams,
+		StreamPort:            cfg.Enigma2.StreamPort,
 	}
-	e2Client := enigma2.NewClientWithOptions(cfg.E2Host, e2Opts)
-	if cfg.Mode == "virtual" {
+	e2Client := enigma2.NewClientWithOptions(cfg.Enigma2.BaseURL, e2Opts)
+	if cfg.Engine.Mode == "virtual" {
 		orch.ExecFactory = &exec.StubFactory{}
 	} else {
-		orch.ExecFactory = exec.NewRealFactory(e2Client, cfg.E2TuneTimeout, cfg.FFmpegBin, cfg.HLSRoot, cfg.FFmpegKillTimeout, cfg.E2AnalyzeDuration, cfg.E2ProbeSize)
+		orch.ExecFactory = exec.NewRealFactory(e2Client, cfg.Enigma2.TuneTimeout, cfg.FFmpeg.Bin, cfg.HLS.Root, cfg.FFmpeg.KillTimeout, cfg.Enigma2.AnalyzeDuration, cfg.Enigma2.ProbeSize)
 	}
 
 	// 4. Inject into API Server (Shadow Receiving)
@@ -319,7 +322,8 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 	}
 
 	// 5. Register Health/Readiness Checks (Phase 9-1)
-	m.registerV3Checks(cfg, e2Client)
+	// 5. Register Health/Readiness Checks (Phase 9-1)
+	m.registerV3Checks(&cfg, e2Client)
 
 	// 6. Run Orchestrator
 	go func() {
@@ -419,7 +423,7 @@ func (m *manager) RegisterShutdownHook(name string, hook ShutdownHook) {
 }
 
 // registerV3Checks registers health and readiness checks for V3 components.
-func (m *manager) registerV3Checks(cfg *V3Config, e2Client *enigma2.Client) {
+func (m *manager) registerV3Checks(cfg *config.AppConfig, e2Client *enigma2.Client) {
 	hm := m.deps.APIServerSetter.HealthManager()
 	if hm == nil {
 		m.logger.Warn().Msg("HealthManager not available, skipping V3 checks")
@@ -427,8 +431,8 @@ func (m *manager) registerV3Checks(cfg *V3Config, e2Client *enigma2.Client) {
 	}
 
 	// 1. Storage Checks (Runtime Writeability)
-	hm.RegisterChecker(health.Informational(health.NewWritableDirChecker("v3_store_path", cfg.StorePath)))
-	hm.RegisterChecker(health.Informational(health.NewWritableDirChecker("v3_hls_root", cfg.HLSRoot)))
+	hm.RegisterChecker(health.Informational(health.NewWritableDirChecker("v3_store_path", cfg.Store.Path)))
+	hm.RegisterChecker(health.Informational(health.NewWritableDirChecker("v3_hls_root", cfg.HLS.Root)))
 
 	// 2. Connectivity Checks (Upstream/Receiver)
 	// Re-uses the existing network logic but scoped to V3 dependencies.
@@ -449,11 +453,11 @@ func (m *manager) registerV3Checks(cfg *V3Config, e2Client *enigma2.Client) {
 		if err != nil {
 			return err
 		}
-		if cfg.E2UserAgent != "" {
-			req.Header.Set("User-Agent", cfg.E2UserAgent)
+		if cfg.Enigma2.UserAgent != "" {
+			req.Header.Set("User-Agent", cfg.Enigma2.UserAgent)
 		}
-		if cfg.E2Username != "" || cfg.E2Password != "" {
-			req.SetBasicAuth(cfg.E2Username, cfg.E2Password)
+		if cfg.Enigma2.Username != "" || cfg.Enigma2.Password != "" {
+			req.SetBasicAuth(cfg.Enigma2.Username, cfg.Enigma2.Password)
 		}
 		resp, err := e2Client.HTTPClient.Do(req)
 		if err != nil {

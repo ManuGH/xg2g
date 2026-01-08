@@ -117,7 +117,7 @@ func newV3TestServer(t *testing.T, hlsRoot string) (*Server, *v3store.MemoryStor
 	}
 	s := NewServer(cfg, nil, nil)
 	st := v3store.NewMemoryStore()
-	s.SetDependencies(v3bus.NewMemoryBus(), st, resume.NewMemoryStore(), nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	s.SetDependencies(v3bus.NewMemoryBus(), st, resume.NewMemoryStore(), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	return s, st
 }
 

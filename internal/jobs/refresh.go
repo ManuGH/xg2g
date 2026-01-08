@@ -82,13 +82,13 @@ func Refresh(ctx context.Context, snap config.Snapshot) (*Status, error) {
 
 	enableHTTP2 := rt.OpenWebIF.HTTPEnableHTTP2
 	opts := openwebif.Options{
-		Timeout:         cfg.OWITimeout,
-		MaxRetries:      cfg.OWIRetries,
-		Backoff:         cfg.OWIBackoff,
-		MaxBackoff:      cfg.OWIMaxBackoff,
-		Username:        cfg.OWIUsername,
-		Password:        cfg.OWIPassword,
-		UseWebIFStreams: cfg.UseWebIFStreams,
+		Timeout:         cfg.Enigma2.Timeout,
+		MaxRetries:      cfg.Enigma2.Retries,
+		Backoff:         cfg.Enigma2.Backoff,
+		MaxBackoff:      cfg.Enigma2.MaxBackoff,
+		Username:        cfg.Enigma2.Username,
+		Password:        cfg.Enigma2.Password,
+		UseWebIFStreams: cfg.Enigma2.UseWebIFStreams,
 		StreamBaseURL:   rt.OpenWebIF.StreamBaseURL,
 
 		HTTPMaxIdleConns:        rt.OpenWebIF.HTTPMaxIdleConns,
@@ -97,7 +97,7 @@ func Refresh(ctx context.Context, snap config.Snapshot) (*Status, error) {
 		HTTPIdleTimeout:         rt.OpenWebIF.HTTPIdleTimeout,
 		HTTPEnableHTTP2:         &enableHTTP2,
 	}
-	client := openwebif.NewWithPort(cfg.OWIBase, cfg.StreamPort, opts)
+	client := openwebif.NewWithPort(cfg.Enigma2.BaseURL, cfg.Enigma2.StreamPort, opts)
 
 	// Fetch bouquets with tracing
 	span.AddEvent("fetching bouquets")

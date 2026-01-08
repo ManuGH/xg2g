@@ -202,7 +202,6 @@ func readTranscoderRuntime(getenv func(string) string) TranscoderRuntime {
 		FFmpegPath:        getString(getenv, "XG2G_FFMPEG_PATH", ""),
 		GPUEnabled:        gpuEnabled,
 		TranscoderURL:     getString(getenv, "XG2G_TRANSCODER_URL", ""),
-		UseRustRemuxer:    getBool(getenv, "XG2G_USE_RUST_REMUXER", true),
 		VideoTranscode:    videoTranscode,
 		VideoCodec:        getString(getenv, "XG2G_VIDEO_CODEC", ""),
 		VAAPIDevice:       getString(getenv, "XG2G_VAAPI_DEVICE", ""),

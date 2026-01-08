@@ -65,11 +65,13 @@ func NewTestServer(t *testing.T, opts TestServerOptions) *TestServer {
 	}
 
 	cfg := config.AppConfig{
-		DataDir:    opts.DataDir,
-		OWIBase:    opts.OWIBase,
-		StreamPort: opts.StreamPort,
-		APIToken:   opts.APIToken,
-		Bouquet:    opts.Bouquet,
+		DataDir: opts.DataDir,
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    opts.OWIBase,
+			StreamPort: opts.StreamPort,
+		},
+		APIToken: opts.APIToken,
+		Bouquet:  opts.Bouquet,
 	}
 
 	apiServer := api.New(cfg, nil)

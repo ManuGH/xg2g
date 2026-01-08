@@ -121,17 +121,6 @@ func (s *SpyStore) DeleteSession(ctx context.Context, id string) error {
 	s.IncWrite()
 	return nil
 }
-func (s *SpyStore) PutPipeline(ctx context.Context, p *model.PipelineRecord) error {
-	s.IncWrite()
-	return nil
-}
-func (s *SpyStore) GetPipeline(ctx context.Context, id string) (*model.PipelineRecord, error) {
-	return nil, nil
-}
-func (s *SpyStore) UpdatePipeline(ctx context.Context, id string, fn func(*model.PipelineRecord) error) (*model.PipelineRecord, error) {
-	s.IncWrite()
-	return nil, nil
-}
 func (s *SpyStore) PutIdempotency(ctx context.Context, key, sessionID string, ttl time.Duration) error {
 	s.IncWrite()
 	s.mu.Lock()
@@ -348,7 +337,7 @@ func newTestServerConfig(t *testing.T, spy *SpyStore, spyBus *SpyBus, fn func(*c
 	// defaults
 	cfg.DataDir = t.TempDir()
 	cfg.LogLevel = "error"
-	cfg.OWITimeout = 1 * time.Second
+	cfg.Enigma2.Timeout = 1 * time.Second
 	cfg.ConfigStrict = true
 	cfg.EPGEnabled = false
 	cfg.RateLimitEnabled = false
@@ -377,7 +366,7 @@ func newTestServerConfig(t *testing.T, spy *SpyStore, spyBus *SpyBus, fn func(*c
 	} else {
 		b = bus.NewMemoryBus()
 	}
-	srv.SetDependencies(b, spy, resume.NewMemoryStore(), nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	srv.SetDependencies(b, spy, resume.NewMemoryStore(), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	srv.SetPreflightCheck(nil)
 
 	// Initialize LAN Guard from config

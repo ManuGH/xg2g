@@ -92,7 +92,9 @@ func TestContract_SystemConfig_Universal(t *testing.T) {
 		Streaming: config.StreamingConfig{
 			DeliveryPolicy: "universal",
 		},
-		OWIBase: "http://localhost:8080", // valid BaseURL
+		Enigma2: config.Enigma2Settings{
+			BaseURL: "http://localhost:8080", // valid BaseURL
+		},
 		// Auth config to verify we pass auth
 		APIToken:       "test-token",
 		APITokenScopes: []string{"v3:read"},
