@@ -16,10 +16,10 @@ import (
 	"github.com/ManuGH/xg2g/internal/api/v3/middleware"
 
 	"github.com/ManuGH/xg2g/internal/config"
-	"github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
-	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
+	"github.com/ManuGH/xg2g/internal/pipeline/bus"
+	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 )
 
 // ---- SpyStore ----
@@ -366,7 +366,7 @@ func newTestServerConfig(t *testing.T, spy *SpyStore, spyBus *SpyBus, fn func(*c
 	} else {
 		b = bus.NewMemoryBus()
 	}
-	srv.SetDependencies(b, spy, resume.NewMemoryStore(), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	srv.SetDependencies(b, spy, resume.NewMemoryStore(), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	srv.SetPreflightCheck(nil)
 
 	// Initialize LAN Guard from config

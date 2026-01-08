@@ -15,17 +15,17 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/control/read"
+	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/epg"
 	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/m3u"
 	"github.com/ManuGH/xg2g/internal/openwebif"
-	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	cfgvalidate "github.com/ManuGH/xg2g/internal/validate"
 )
 
@@ -54,48 +54,36 @@ func (s *Server) GetSystemConfig(w http.ResponseWriter, r *http.Request) {
 	cfg := s.cfg
 	s.mu.RUnlock()
 
-	// Sanitize sensitive info is done by returning a new struct mostly
-	// But let's map it to the generated AppConfig
+	info := read.GetConfigInfo(cfg)
 
-	epgSource := EPGConfigSource(cfg.EPGSource)
-	bouquets := make([]string, 0)
-	for _, name := range strings.Split(cfg.Bouquet, ",") {
-		if trimmed := strings.TrimSpace(name); trimmed != "" {
-			bouquets = append(bouquets, trimmed)
-		}
-	}
+	epgSource := EPGConfigSource(info.EPGSource)
+	deliveryPolicy := StreamingConfigDeliveryPolicy(info.DeliveryPolicy)
 
 	openWebIF := &OpenWebIFConfig{
-		BaseUrl:    &cfg.Enigma2.BaseURL,
-		StreamPort: &cfg.Enigma2.StreamPort,
+		BaseUrl:    &info.Enigma2BaseURL,
+		StreamPort: &info.Enigma2StreamPort,
 	}
-	if cfg.Enigma2.Username != "" {
-		openWebIF.Username = &cfg.Enigma2.Username
-	}
-
-	picons := &PiconsConfig{
-		BaseUrl: &cfg.PiconBase,
-	}
-
-	// ADR-00X: Add streaming config (delivery_policy only)
-	deliveryPolicy := StreamingConfigDeliveryPolicy(cfg.Streaming.DeliveryPolicy)
-	streaming := &StreamingConfig{
-		DeliveryPolicy: &deliveryPolicy,
+	if info.Enigma2Username != "" {
+		openWebIF.Username = &info.Enigma2Username
 	}
 
 	resp := AppConfig{
-		Version:   &cfg.Version,
-		DataDir:   &cfg.DataDir,
-		LogLevel:  &cfg.LogLevel,
+		Version:   &info.Version,
+		DataDir:   &info.DataDir,
+		LogLevel:  &info.LogLevel,
 		OpenWebIF: openWebIF,
-		Bouquets:  &bouquets,
+		Bouquets:  &info.Bouquets,
 		Epg: &EPGConfig{
-			Days:    &cfg.EPGDays,
-			Enabled: &cfg.EPGEnabled,
+			Days:    &info.EPGDays,
+			Enabled: &info.EPGEnabled,
 			Source:  &epgSource,
 		},
-		Picons:    picons,
-		Streaming: streaming,
+		Picons: &PiconsConfig{
+			BaseUrl: &info.PiconBase,
+		},
+		Streaming: &StreamingConfig{
+			DeliveryPolicy: &deliveryPolicy,
+		},
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -245,41 +233,14 @@ func (s *Server) GetServicesBouquets(w http.ResponseWriter, r *http.Request) {
 	snap := s.snap
 	s.mu.RUnlock()
 
-	playlistName := snap.Runtime.PlaylistFilename
-	path := filepath.Clean(filepath.Join(cfg.DataDir, playlistName))
-
-	var bouquetNames []string
-
-	if data, err := os.ReadFile(path); err == nil {
-		channels := m3u.Parse(string(data))
-		seen := make(map[string]bool)
-		for _, ch := range channels {
-			if ch.Group != "" && !seen[ch.Group] {
-				bouquetNames = append(bouquetNames, ch.Group)
-				seen[ch.Group] = true
-			}
-		}
-	}
-
-	if len(bouquetNames) == 0 {
-		configured := strings.Split(cfg.Bouquet, ",")
-		for _, b := range configured {
-			if trimmed := strings.TrimSpace(b); trimmed != "" {
-				bouquetNames = append(bouquetNames, trimmed)
-			}
-		}
-	}
-	sort.Strings(bouquetNames)
-
-	var resp []Bouquet
-	for _, b := range bouquetNames {
-		name := b
-		count := 0
-		resp = append(resp, Bouquet{Name: &name, Services: &count})
+	bouquets, err := read.GetBouquets(cfg, snap)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(bouquets)
 }
 
 // GetServices implements ServerInterface
@@ -732,37 +693,21 @@ func writeNowNextResponse(w http.ResponseWriter, items []nowNextItem) {
 // GetDvrStatus implements ServerInterface
 func (s *Server) GetDvrStatus(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
-	cfg := s.cfg
-	snap := s.snap
+	ds := s.dvrSource
 	s.mu.RUnlock()
 
-	client := s.newOpenWebIFClient(cfg, snap)
-	statusInfo, err := client.GetStatusInfo(r.Context())
-
-	resp := RecordingStatus{
-		IsRecording: false,
-	}
+	st, err := read.GetDvrStatus(r.Context(), ds)
 
 	if err != nil {
-		// Log error but disable recording indicator (fail-closed)
 		log.L().Warn().Err(err).Msg("failed to get dvr status")
-		// User requested "Unknown" if unreachable?
-		// Frontend handles "unknown" if I return 500 or null?
-		// User said: "If unreachable/error: show 'Recording: Unknown' (do not show false)."
-		// So I should return error or specific state.
-		// RecordingStatus.IsRecording is boolean.
-		// Maybe I should return 503 Service Unavailable or 502 Bad Gateway so frontend knows it's unknown?
-		// Let's return 502.
 		http.Error(w, "Failed to get status", http.StatusBadGateway)
 		return
 	}
 
-	// Parse IsRecording string "true"/"false" from OWI
-	if statusInfo.IsRecording == "true" {
-		resp.IsRecording = true
+	resp := RecordingStatus{
+		IsRecording: st.IsRecording,
+		ServiceName: &st.ServiceName,
 	}
-	resp.ServiceName = &statusInfo.ServiceName
-	// OWI returns empty string or "N/A" sometimes?
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
@@ -1481,18 +1426,17 @@ func (s *Server) PreviewConflicts(w http.ResponseWriter, r *http.Request) {
 // GetDvrCapabilities implements ServerInterface
 func (s *Server) GetDvrCapabilities(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
-	cfg := s.cfg
-	snap := s.snap
+	ds := s.dvrSource
 	s.mu.RUnlock()
 
-	client := s.newOpenWebIFClient(cfg, snap)
-
-	editSupported := client.HasTimerChange(r.Context())
+	caps, err := read.GetDvrCapabilities(r.Context(), ds)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	ptr := func(b bool) *bool { return &b }
 	str := func(s string) *string { return &s }
-
-	mode := None // Series mode
 
 	resp := DvrCapabilities{
 		Timers: struct {
@@ -1500,25 +1444,28 @@ func (s *Server) GetDvrCapabilities(w http.ResponseWriter, r *http.Request) {
 			Edit           *bool `json:"edit,omitempty"`
 			ReadBackVerify *bool `json:"readBackVerify,omitempty"`
 		}{
-			Delete:         ptr(true),
-			Edit:           ptr(true),
-			ReadBackVerify: ptr(true),
+			Delete:         ptr(caps.CanDelete),
+			Edit:           ptr(caps.CanEdit),
+			ReadBackVerify: ptr(caps.ReadBackVerify),
 		},
 		Conflicts: struct {
 			Preview       *bool `json:"preview,omitempty"`
 			ReceiverAware *bool `json:"receiverAware,omitempty"`
 		}{
-			Preview:       ptr(true),
-			ReceiverAware: ptr(editSupported), // Assuming newer OWI that supports edit might support conflicts? No, false for now.
+			Preview:       ptr(caps.ConflictsPreview),
+			ReceiverAware: ptr(caps.ReceiverAware),
 		},
 		Series: struct {
 			DelegatedProvider *string                    `json:"delegatedProvider,omitempty"`
 			Mode              *DvrCapabilitiesSeriesMode `json:"mode,omitempty"`
 			Supported         *bool                      `json:"supported,omitempty"`
 		}{
-			Supported: ptr(false),
-			Mode:      (*DvrCapabilitiesSeriesMode)(str(string(mode))),
+			Supported: ptr(caps.SeriesSupported),
+			Mode:      (*DvrCapabilitiesSeriesMode)(str(caps.SeriesMode)),
 		},
+	}
+	if caps.DelegatedProvider != "" {
+		resp.Series.DelegatedProvider = &caps.DelegatedProvider
 	}
 
 	w.Header().Set("Content-Type", "application/json")

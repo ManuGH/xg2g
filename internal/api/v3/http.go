@@ -8,8 +8,8 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/ManuGH/xg2g/internal/control/read"
 	"github.com/ManuGH/xg2g/internal/health"
-	"github.com/ManuGH/xg2g/internal/log"
 )
 
 // GetSystemHealth implements ServerInterface
@@ -19,60 +19,44 @@ func (s *Server) GetSystemHealth(w http.ResponseWriter, r *http.Request) {
 	s.mu.RUnlock()
 
 	if hm == nil {
-		// Should not happen in production if initialized correctly
 		http.Error(w, "health manager not initialized", http.StatusServiceUnavailable)
 		return
 	}
 
-	respH := hm.Health(r.Context(), true)
+	info, err := read.GetHealthInfo(r.Context(), hm)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
+	// Map to generated types
 	status := SystemHealthStatusOk
-	if respH.Status != health.StatusHealthy {
+	if info.OverallStatus != string(health.StatusHealthy) {
 		status = SystemHealthStatusDegraded
 	}
 
-	// Map Receiver Status
 	receiverStatus := ComponentStatusStatusOk
-	if res, ok := respH.Checks["receiver_connection"]; ok {
-		if res.Status != health.StatusHealthy {
-			receiverStatus = ComponentStatusStatusError
-		}
-	} else {
-		// Fallback if check missing (e.g. not configured)
+	if info.ReceiverStatus != string(health.StatusHealthy) {
 		receiverStatus = ComponentStatusStatusError
 	}
 
-	// Map EPG Status
-	// We check for "epg_status" checker
 	epgStatus := EPGStatusStatusOk
-	if res, ok := respH.Checks["epg_status"]; ok {
-		if res.Status != health.StatusHealthy {
-			epgStatus = EPGStatusStatusMissing
-		}
-	} else {
+	if info.EpgStatus != string(health.StatusHealthy) {
 		epgStatus = EPGStatusStatusMissing
 	}
-
-	// Helper for safe dereference
-	int64Ptr := func(i int64) *int64 { return &i }
-
-	missing := 0
-	// Try to parse missing from message? Or just keep it 0 as it's not in HealthResponse detail
-	// The current HealthManager doesn't export "Calculated Missing Channels" directly in CheckResult
-	// We could improve HealthManager later, for now we keep the simplified view.
 
 	resp := SystemHealth{
 		Status: &status,
 		Receiver: &ComponentStatus{
 			Status:    &receiverStatus,
-			LastCheck: &respH.Timestamp,
+			LastCheck: &info.Timestamp,
 		},
 		Epg: &EPGStatus{
 			Status:          &epgStatus,
-			MissingChannels: &missing,
+			MissingChannels: &info.MissingChannels,
 		},
-		Version:       &respH.Version,
-		UptimeSeconds: int64Ptr(respH.Uptime),
+		Version:       &info.Version,
+		UptimeSeconds: &info.UptimeSeconds,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -83,34 +67,34 @@ func (s *Server) GetSystemHealth(w http.ResponseWriter, r *http.Request) {
 func (s *Server) GetSystemHealthz(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(map[string]string{"status": "ok"}); err != nil {
-		log.L().Error().Err(err).Msg("failed to encode system healthz response")
-	}
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
 // GetLogs implements ServerInterface
 func (s *Server) GetLogs(w http.ResponseWriter, r *http.Request) {
-	logs := log.GetRecentLogs()
-	// Reverse to show most recent first
-	for i, j := 0, len(logs)-1; i < j; i, j = i+1, j-1 {
-		logs[i], logs[j] = logs[j], logs[i]
+	s.mu.RLock()
+	ls := s.logSource
+	s.mu.RUnlock()
+	entries, err := read.GetRecentLogs(ls)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Reverse to show most recent first (Presentation Logic)
+	for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
+		entries[i], entries[j] = entries[j], entries[i]
 	}
 
 	var resp []LogEntry
-	for _, l := range logs {
-		lvl := l.Level
-		msg := l.Message
-		t := l.Timestamp
-		fields := make(map[string]interface{})
-		for k, v := range l.Fields {
-			fields[k] = v
-		}
-
+	for _, e := range entries {
+		// Scoping for pointer safety in loop
+		e := e
 		resp = append(resp, LogEntry{
-			Level:   &lvl,
-			Message: &msg,
-			Time:    &t,
-			Fields:  &fields,
+			Level:   &e.Level,
+			Message: &e.Message,
+			Time:    &e.Time,
+			Fields:  &e.Fields,
 		})
 	}
 

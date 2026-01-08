@@ -16,6 +16,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/channels"
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/dvr"
 	"github.com/ManuGH/xg2g/internal/epg"
 	"github.com/ManuGH/xg2g/internal/health"
@@ -26,7 +27,6 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
-	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/recordings"
 	"github.com/ManuGH/xg2g/internal/vod"
 	"golang.org/x/sync/singleflight"
@@ -34,6 +34,17 @@ import (
 
 // PreflightCheckFunc validates source accessibility before initiating a stream.
 type PreflightCheckFunc func(context.Context, string) error
+
+// DvrSource defines the minimal interface required for DVR read operations.
+type DvrSource interface {
+	GetStatusInfo(ctx context.Context) (*openwebif.StatusInfo, error)
+	HasTimerChange(ctx context.Context) bool
+}
+
+// ScanSource defines the minimal interface required for scan status.
+type ScanSource interface {
+	GetStatus() scan.ScanStatus
+}
 
 // Server implements the v3 API handlers.
 // It encapsulates all logic for /api/v3 endpoints.
@@ -70,6 +81,9 @@ type Server struct {
 	requestShutdown func(context.Context) error
 	preflightCheck  PreflightCheckFunc
 	healthManager   *health.Manager
+	logSource       interface{ GetRecentLogs() []log.LogEntry }
+	scanSource      ScanSource
+	dvrSource       DvrSource
 }
 
 // NewServer creates a new implemented v3 server.
@@ -142,6 +156,9 @@ func (s *Server) SetDependencies(
 	vm vod.ManagerAPI,
 	epg *epg.TV,
 	hm *health.Manager,
+	ls interface{ GetRecentLogs() []log.LogEntry },
+	ss ScanSource,
+	ds DvrSource,
 	requestShutdown func(context.Context) error,
 	preflightCheck PreflightCheckFunc,
 ) {
@@ -158,6 +175,9 @@ func (s *Server) SetDependencies(
 	s.vodManager = vm
 	s.epgCache = epg
 	s.healthManager = hm
+	s.logSource = ls
+	s.scanSource = ss
+	s.dvrSource = ds
 	s.requestShutdown = requestShutdown
 	s.preflightCheck = preflightCheck
 }

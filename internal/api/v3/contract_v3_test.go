@@ -25,12 +25,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	v3store "github.com/ManuGH/xg2g/internal/domain/session/store"
 	v3api "github.com/ManuGH/xg2g/internal/pipeline/api"
 	v3bus "github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/ManuGH/xg2g/internal/pipeline/lease"
-	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
-	v3store "github.com/ManuGH/xg2g/internal/domain/session/store"
 )
 
 const contractFixtureDir = "testdata/v3_contract"
@@ -67,7 +67,7 @@ func loadOpenAPIDoc(t *testing.T) *openapi3.T {
 func readFixture(t *testing.T, name string) []byte {
 	t.Helper()
 	path := filepath.Join(contractFixtureDir, name)
-	 // #nosec G304
+	// #nosec G304
 	data, err := os.ReadFile(filepath.Clean(path))
 	require.NoError(t, err, "read fixture %s", name)
 	return data
@@ -118,7 +118,7 @@ func newV3TestServer(t *testing.T, hlsRoot string) (*Server, *v3store.MemoryStor
 	}
 	s := NewServer(cfg, nil, nil)
 	st := v3store.NewMemoryStore()
-	s.SetDependencies(v3bus.NewMemoryBus(), st, resume.NewMemoryStore(), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	s.SetDependencies(v3bus.NewMemoryBus(), st, resume.NewMemoryStore(), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	return s, st
 }
 

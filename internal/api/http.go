@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
@@ -247,6 +246,9 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager) *Server {
 		s.vodManager,
 		s.epgCache,
 		s.healthManager,
+		logSourceWrapper{},
+		s.v3Scan,
+		&dvrSourceWrapper{s},
 		s.requestShutdown,
 		s.preflightCheck,
 	)
@@ -1018,36 +1020,6 @@ func addHLSProxyPrefix(raw string) string {
 	return parsed.String()
 }
 
-// uiHandler returns a handler that serves the embedded Web UI
-func (s *Server) uiHandler() http.Handler {
-	// Subdirectory "dist" matches the build output
-	subFS, err := fs.Sub(uiFS, "dist")
-	if err != nil {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			http.Error(w, "UI not available", http.StatusInternalServerError)
-		})
-	}
-	fileServer := http.FileServer(http.FS(subFS))
-
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Explicitly attach CSP so the main UI HTML allows blob: media (Safari HLS)
-		w.Header().Set("Content-Security-Policy", middleware.DefaultCSP)
-
-		// Assets (js, css, images) should be cached (hashed)
-		// Index.html should NOT be cached to ensure updates
-		path := r.URL.Path
-		if path == "/" || path == "/index.html" || path == "" || !strings.Contains(path, ".") {
-			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
-			w.Header().Set("Pragma", "no-cache")
-			w.Header().Set("Expires", "0")
-		} else {
-			// Assets in /assets/ are hashed usually
-			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-		}
-		fileServer.ServeHTTP(w, r)
-	})
-}
-
 // NewRouter creates and configures a new router with all middlewares and handlers.
 // This includes the logging middleware, security headers, and the API routes.
 func NewRouter(cfg config.AppConfig) http.Handler {
@@ -1265,4 +1237,30 @@ func parsePiconRef(raw string) (string, error) {
 		}
 	}
 	return decoded, nil
+}
+
+type logSourceWrapper struct{}
+
+func (l logSourceWrapper) GetRecentLogs() []log.LogEntry {
+	return log.GetRecentLogs()
+}
+
+type dvrSourceWrapper struct {
+	s *Server
+}
+
+func (d *dvrSourceWrapper) GetStatusInfo(ctx context.Context) (*openwebif.StatusInfo, error) {
+	d.s.mu.RLock()
+	cfg := d.s.cfg
+	d.s.mu.RUnlock()
+	client := openwebif.New(cfg.Enigma2.BaseURL)
+	return client.GetStatusInfo(ctx)
+}
+
+func (d *dvrSourceWrapper) HasTimerChange(ctx context.Context) bool {
+	d.s.mu.RLock()
+	cfg := d.s.cfg
+	d.s.mu.RUnlock()
+	client := openwebif.New(cfg.Enigma2.BaseURL)
+	return client.HasTimerChange(ctx)
 }

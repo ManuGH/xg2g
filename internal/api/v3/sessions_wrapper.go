@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/ManuGH/xg2g/internal/control/read"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
@@ -77,36 +78,28 @@ func (s *Server) TriggerSystemScan(w http.ResponseWriter, r *http.Request) {
 func (s *Server) GetSystemScanStatus(w http.ResponseWriter, r *http.Request) {
 	s.ScopeMiddleware(ScopeV3Admin)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s.mu.RLock()
-		scanner := s.v3Scan
+		ss := s.scanSource
 		s.mu.RUnlock()
 
-		if scanner == nil {
-			RespondError(w, r, http.StatusServiceUnavailable, &APIError{Code: "SCAN_UNAVAILABLE", Message: "Scanner not initialized"})
+		st, err := read.GetScanStatus(r.Context(), ss)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		st := scanner.GetStatus()
-
 		state := ScanStatusState(st.State)
-		start := st.StartedAt
-		total := st.TotalChannels
-		scanned := st.ScannedChannels
-		updated := st.UpdatedCount
-		lastErr := st.LastError
-
 		resp := ScanStatus{
 			State:           &state,
-			StartedAt:       &start,
-			TotalChannels:   &total,
-			ScannedChannels: &scanned,
-			UpdatedCount:    &updated,
+			StartedAt:       &st.StartedAt,
+			TotalChannels:   &st.TotalChannels,
+			ScannedChannels: &st.ScannedChannels,
+			UpdatedCount:    &st.UpdatedCount,
 		}
 		if st.FinishedAt > 0 {
-			finish := st.FinishedAt
-			resp.FinishedAt = &finish
+			resp.FinishedAt = &st.FinishedAt
 		}
 		if st.LastError != "" {
-			resp.LastError = &lastErr
+			resp.LastError = &st.LastError
 		}
 
 		w.Header().Set("Content-Type", "application/json")
