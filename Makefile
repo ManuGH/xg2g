@@ -725,3 +725,9 @@ schema-validate: ## Validate all YAML config files against JSON Schema
 		echo "⚠  check-jsonschema not installed, skipping schema validation"; \
 		echo "   Install with: pip install check-jsonschema"; \
 	fi
+
+# Gate A: Control Layer Store Purity (ADR-014 Phase 1)
+# Ensures internal/control/** does not directly access domain stores
+.PHONY: gate-a
+gate-a:
+./scripts/verify_gate_a_control_store.sh
