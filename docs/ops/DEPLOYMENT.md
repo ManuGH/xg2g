@@ -80,7 +80,7 @@
 **xg2g Configuration**:
 
 ```dockerfile
-ENV XG2G_FFMPEG_PATH="/usr/local/bin/ffmpeg"
+ENV XG2G_FFMPEG_BIN="/usr/local/bin/ffmpeg"
 ENV FFMPEG_HOME="/opt/ffmpeg"
 ```
 

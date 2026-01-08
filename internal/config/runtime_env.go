@@ -199,7 +199,7 @@ func readTranscoderRuntime(getenv func(string) string) TranscoderRuntime {
 		Codec:             getString(getenv, "XG2G_AUDIO_CODEC", "aac"),
 		Bitrate:           getString(getenv, "XG2G_AUDIO_BITRATE", "192k"),
 		Channels:          channels,
-		FFmpegPath:        getString(getenv, "XG2G_FFMPEG_PATH", ""),
+		FFmpegPath:        getString(getenv, "XG2G_FFMPEG_BIN", ""),
 		GPUEnabled:        gpuEnabled,
 		TranscoderURL:     getString(getenv, "XG2G_TRANSCODER_URL", ""),
 		VideoTranscode:    videoTranscode,
