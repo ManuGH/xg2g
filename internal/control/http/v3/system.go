@@ -691,7 +691,7 @@ func (s *Server) GetEpg(w http.ResponseWriter, r *http.Request, params GetEpgPar
 	entries, err := read.GetEpg(r.Context(), src, q, read.RealClock{})
 	if err != nil {
 		log.L().Error().Err(err).Msg("failed to load EPG")
-		writeProblem(w, r, http.StatusInternalServerError, "system/internal_error", "Internal Server Error", "INTERNAL_ERROR", "Failed to parse system config", nil)
+		writeProblem(w, r, http.StatusInternalServerError, "system/internal_error", "Internal Server Error", "INTERNAL_ERROR", "Failed to load EPG data", nil)
 		return
 	}
 
