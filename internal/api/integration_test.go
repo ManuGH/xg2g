@@ -11,8 +11,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	"github.com/ManuGH/xg2g/internal/config"
+	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -29,7 +29,7 @@ func TestIntegration_SessionAndPlayback(t *testing.T) {
 		DataDir:        t.TempDir(),
 		ForceHTTPS:     true, // Enable ForceHTTPS to verify Secure cookie
 	}
-	s := New(cfg, nil)
+	s := New(cfg, config.NewManager(""))
 
 	// Use the router to ensure middleware integration
 	handler := s.Handler()

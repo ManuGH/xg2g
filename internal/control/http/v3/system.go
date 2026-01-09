@@ -1342,7 +1342,7 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	scan := s.v3Scan
 	s.mu.RUnlock()
 
-	if scan == nil {
+	if isNil(scan) {
 		writeProblem(w, r, http.StatusServiceUnavailable, "system/unavailable", "Subsystem Unavailable", "UNAVAILABLE", "Scanner not enabled", nil)
 		return
 	}

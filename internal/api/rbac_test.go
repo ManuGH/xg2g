@@ -9,8 +9,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	"github.com/ManuGH/xg2g/internal/config"
+	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -21,7 +21,7 @@ func TestScopeMiddleware_DenyWriteByDefault(t *testing.T) {
 		Streaming: config.StreamingConfig{
 			DeliveryPolicy: "universal",
 		},
-	}, nil)
+	}, config.NewManager(""))
 
 	handler := s.authMiddleware(s.scopeMiddleware(v3.ScopeV3Write)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -43,7 +43,7 @@ func TestScopeMiddleware_WriteImpliesRead(t *testing.T) {
 		Streaming: config.StreamingConfig{
 			DeliveryPolicy: "universal",
 		},
-	}, nil)
+	}, config.NewManager(""))
 
 	handler := s.authMiddleware(s.scopeMiddleware(v3.ScopeV3Read)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -66,7 +66,7 @@ func TestScopeMiddleware_TokenList(t *testing.T) {
 		Streaming: config.StreamingConfig{
 			DeliveryPolicy: "universal",
 		},
-	}, nil)
+	}, config.NewManager(""))
 
 	handler := s.authMiddleware(s.scopeMiddleware(v3.ScopeV3Write)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -89,7 +89,7 @@ func TestScopeMiddleware_EmptyScopesUnauthorized(t *testing.T) {
 			Streaming: config.StreamingConfig{
 				DeliveryPolicy: "universal",
 			},
-		}, nil)
+		}, config.NewManager(""))
 
 		handler := s.authMiddleware(s.scopeMiddleware(v3.ScopeV3Read)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
@@ -112,7 +112,7 @@ func TestScopeMiddleware_EmptyScopesUnauthorized(t *testing.T) {
 			Streaming: config.StreamingConfig{
 				DeliveryPolicy: "universal",
 			},
-		}, nil)
+		}, config.NewManager(""))
 
 		handler := s.authMiddleware(s.scopeMiddleware(v3.ScopeV3Read)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)

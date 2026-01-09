@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	"github.com/ManuGH/xg2g/internal/config"
+	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	"github.com/ManuGH/xg2g/internal/hdhr"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/ManuGH/xg2g/internal/resilience"
@@ -207,7 +207,7 @@ func TestHandler(t *testing.T) {
 				DeliveryPolicy: "universal",
 			},
 		}
-		s := New(cfg, nil)
+		s := New(cfg, config.NewManager(""))
 		handler := s.Handler()
 
 		if handler == nil {
@@ -254,7 +254,7 @@ func TestRegisterRoutes_StatusEndpoint(t *testing.T) {
 			DeliveryPolicy: "universal",
 		},
 	}
-	s := New(cfg, nil)
+	s := New(cfg, config.NewManager(""))
 	s.SetStatus(jobs.Status{
 		Version:       "3.0.0",
 		Channels:      2,
@@ -303,7 +303,7 @@ http://10.10.55.14:18000/1:0:19:1334:3EF:1:C00000:0:0:0:
 			DeliveryPolicy: "universal",
 		},
 	}
-	srv := New(cfg, nil)
+	srv := New(cfg, config.NewManager(""))
 
 	// Initialize HDHomeRun with PlexForceHLS=false
 	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
@@ -359,7 +359,7 @@ http://10.10.55.14:18000/1:0:19:1334:3EF:1:C00000:0:0:0:
 			DeliveryPolicy: "universal",
 		},
 	}
-	srv := New(cfg, nil)
+	srv := New(cfg, config.NewManager(""))
 
 	// Initialize HDHomeRun with PlexForceHLS=true
 	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
@@ -414,7 +414,7 @@ http://10.10.55.14:18000/hls/1:0:19:132F:3EF:1:C00000:0:0:0:
 			DeliveryPolicy: "universal",
 		},
 	}
-	srv := New(cfg, nil)
+	srv := New(cfg, config.NewManager(""))
 
 	// Initialize HDHomeRun with PlexForceHLS=true
 	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()

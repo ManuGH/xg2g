@@ -85,16 +85,18 @@ WORKDIR /var/lib/xg2g
 # Expose ports (API + streaming)
 EXPOSE 8088 18000
 
-# Health check (uses the binary itself)
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
-    CMD ["/usr/local/bin/xg2g", "--version"] || exit 1
+# Readiness Probe (uses the healthcheck subcommand)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD ["xg2g", "healthcheck", "ready"]
 
-# Metadata
-LABEL maintainer="ManuGH" \
-    version="3.1.3" \
-    description="xg2g - High Performance Enigma2 to HLS/VOD Gateway" \
-    security="non-root, pinned-deps, multi-stage"
+# OCI Metadata (Enterprise Standard)
+LABEL org.opencontainers.image.title="xg2g" \
+    org.opencontainers.image.description="Enterprise-grade Enigma2 to HDHomeRun proxy and DVR" \
+    org.opencontainers.image.licenses="PolyForm-Noncommercial-1.0.0" \
+    org.opencontainers.image.vendor="ManuGH" \
+    org.opencontainers.image.version="3.1.3-RC1" \
+    org.opencontainers.image.source="https://github.com/ManuGH/xg2g"
 
 # Entrypoint configuration
-ENTRYPOINT ["/usr/local/bin/xg2g"]
-CMD ["--config", "/etc/xg2g/config.yaml"]
+ENTRYPOINT ["xg2g"]
+CMD ["daemon", "run"]

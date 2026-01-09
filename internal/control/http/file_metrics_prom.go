@@ -4,6 +4,8 @@
 package http
 
 import (
+	"sync"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -16,26 +18,34 @@ type promFileMetrics struct {
 	cacheMisses  prometheus.Counter
 }
 
+var (
+	metricsOnce sync.Once
+	metrics     *promFileMetrics
+)
+
 // NewPromFileMetrics creates a Prometheus-backed FileMetrics implementation.
 func NewPromFileMetrics() FileMetrics {
-	return &promFileMetrics{
-		deniedTotal: promauto.NewCounterVec(prometheus.CounterOpts{
-			Name: "xg2g_file_requests_denied_total",
-			Help: "Number of file requests denied for security reasons",
-		}, []string{"reason"}),
-		allowedTotal: promauto.NewCounter(prometheus.CounterOpts{
-			Name: "xg2g_file_requests_allowed_total",
-			Help: "Number of file requests allowed",
-		}),
-		cacheHits: promauto.NewCounter(prometheus.CounterOpts{
-			Name: "xg2g_file_cache_hits_total",
-			Help: "Number of file requests served as 304 Not Modified",
-		}),
-		cacheMisses: promauto.NewCounter(prometheus.CounterOpts{
-			Name: "xg2g_file_cache_misses_total",
-			Help: "Number of file requests resulting in 200 OK (content served)",
-		}),
-	}
+	metricsOnce.Do(func() {
+		metrics = &promFileMetrics{
+			deniedTotal: promauto.NewCounterVec(prometheus.CounterOpts{
+				Name: "xg2g_file_requests_denied_total",
+				Help: "Number of file requests denied for security reasons",
+			}, []string{"reason"}),
+			allowedTotal: promauto.NewCounter(prometheus.CounterOpts{
+				Name: "xg2g_file_requests_allowed_total",
+				Help: "Number of file requests allowed",
+			}),
+			cacheHits: promauto.NewCounter(prometheus.CounterOpts{
+				Name: "xg2g_file_cache_hits_total",
+				Help: "Number of file requests served as 304 Not Modified",
+			}),
+			cacheMisses: promauto.NewCounter(prometheus.CounterOpts{
+				Name: "xg2g_file_cache_misses_total",
+				Help: "Number of file requests resulting in 200 OK (content served)",
+			}),
+		}
+	})
+	return metrics
 }
 
 func (m *promFileMetrics) Denied(reason string) {

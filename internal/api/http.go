@@ -46,6 +46,10 @@ import (
 	"github.com/ManuGH/xg2g/internal/resilience"
 )
 
+// newV3Server allows overriding the v3 server factory for unit tests
+// to verify injection ordering and parameter passing.
+var newV3Server = v3.NewServer
+
 // Server represents the HTTP API server for xg2g.
 type Server struct {
 	mu             sync.RWMutex
@@ -175,6 +179,9 @@ func (s *Server) dataFilePath(rel string) (string, error) {
 
 // New creates and initializes a new HTTP API server.
 func New(cfg config.AppConfig, cfgMgr *config.Manager) *Server {
+	// 1. Initialized root context for server lifecycle (MUST be before v3Handler)
+	rootCtx, rootCancel := context.WithCancel(context.Background())
+
 	// Initialize channel manager
 	cm := channels.NewManager(cfg.DataDir)
 	if err := cm.Load(); err != nil {
@@ -190,9 +197,6 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager) *Server {
 		log.L().Error().Err(err).Msg("failed to load series rules")
 	}
 
-	// Initialize OpenWebIF Client
-	// Options can be tuned if needed (e.g. timeout, caching)
-
 	env, err := config.ReadOSRuntimeEnv()
 	if err != nil {
 		log.L().Warn().Err(err).Msg("failed to read runtime environment, using defaults")
@@ -202,9 +206,11 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager) *Server {
 
 	s := &Server{
 		cfg:                 cfg,
+		configManager:       cfgMgr,
+		rootCtx:             rootCtx,
+		rootCancel:          rootCancel,
 		snap:                snap,
 		channelManager:      cm,
-		configManager:       cfgMgr,
 		seriesManager:       sm,
 		recordingPathMapper: recordings.NewPathMapper(cfg.RecordingPathMappings),
 		status: jobs.Status{
@@ -215,9 +221,12 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager) *Server {
 		vodManager:     vod.NewManager(infra.NewExecutor("ffmpeg", *log.L()), infra.NewProber()),
 		preflightCheck: v3.CheckSourceAvailability,
 	}
-	s.v3Handler = v3.NewServer(cfg, cfgMgr, s.rootCancel)
-	// Initialized root context for server lifecycle
-	s.rootCtx, s.rootCancel = context.WithCancel(context.Background())
+
+	// v3Handler expects a valid root cancel function
+	if cfgMgr == nil {
+		log.L().Fatal().Msg("config.Manager is required for API server initialization")
+	}
+	s.v3Handler = newV3Server(cfg, cfgMgr, s.rootCancel)
 
 	// Initialize Series Engine
 	// Server (s) implements EpgProvider interface via GetEvents method
@@ -226,7 +235,6 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager) *Server {
 	})
 
 	// Default refresh function
-	s.refreshFn = jobs.Refresh
 	s.refreshFn = jobs.Refresh
 	// Initialize a conservative default circuit breaker (3 failures -> 30s open)
 	s.cb = resilience.NewCircuitBreaker("api_refresh", 3, 30*time.Second, resilience.WithPanicRecovery(true))
@@ -615,11 +623,32 @@ func (s *Server) GetConfig() config.AppConfig {
 // SetV3Components configures v3 event bus, store, and scan manager
 func (s *Server) SetV3Components(b bus.Bus, st store.StateStore, rs resume.Store, sm *scan.Manager) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.v3Bus = b
 	s.v3Store = st
 	s.resumeStore = rs
 	s.v3Scan = sm
+	s.mu.Unlock()
+
+	// Update sub-handler dependencies (it maintains its own state)
+	if s.v3Handler != nil {
+		s.v3Handler.SetDependencies(
+			b, st, rs, sm,
+			s.recordingPathMapper,
+			s.channelManager,
+			s.seriesManager,
+			s.seriesEngine,
+			s.vodManager,
+			s.epgCache,
+			s.healthManager,
+			logSourceWrapper{},
+			s.v3Scan,
+			&dvrSourceWrapper{s},
+			s.channelManager,
+			&dvrSourceWrapper{s},
+			s.requestShutdown,
+			s.preflightCheck,
+		)
+	}
 }
 
 // HandleRefreshInternal exposes the refresh handler for versioned APIs
@@ -1024,10 +1053,11 @@ func addHLSProxyPrefix(raw string) string {
 }
 
 // NewRouter creates and configures a new router with all middlewares and handlers.
-// This includes the logging middleware, security headers, and the API routes.
+//
+// [RC-WARNING] In production, use api.New() with a valid config.Manager.
+// This helper is kept for testing/simple setups but will panic if used.
 func NewRouter(cfg config.AppConfig) http.Handler {
-	server := New(cfg, nil)
-	return server.routes()
+	panic("api.NewRouter is deprecated for production. Use api.New(cfg, cfgMgr).routes()")
 }
 
 // handlePicons proxies picon requests to the backend receiver and caches them locally

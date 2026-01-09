@@ -1,7 +1,9 @@
-# GPU/CPU Selection + Homelab SOA Setup - Canonical Contract
+# GPU/CPU- **Verification**: Run `scripts/verify-runtime.sh` after build to ensure
 
-**Status**: CANONICAL - Single Source of Truth  
-**Last Updated**: 2026-01-08  
+  canonical contract compliance.
+
+**Status**: CANONICAL - Single Source of Truth
+**Last Updated**: 2026-01-08
 **Applies To**: v3.1.3+
 
 > [!IMPORTANT]
@@ -54,7 +56,9 @@
 **GPU Failure Handling**:
 
 - Start failure → `StateFailed` + `ReasonStartFail` + Cleanup
-- Mid-build crash → `StateFailed` + `ReasonCrash` + Cleanup  
+- Mid-build crash → `StateFailed` + `ReasonCrash` + Cleanup
+- **Policy**: No build tools (curl, git, gcc) in final stage. Minimal
+  packages for VAAPI/FFmpeg only.
 - **Never** leave partial artifacts
 
 ## 3. Runtime Contract (Docker + Host)
@@ -63,7 +67,7 @@
 
 **Production Behavior**:
 
-```
+```bash
 /usr/local/bin/ffmpeg  → wrapper script
 /usr/local/bin/ffprobe → wrapper script
 ↓
@@ -84,9 +88,23 @@ ENV XG2G_FFMPEG_BIN="/usr/local/bin/ffmpeg"
 ENV FFMPEG_HOME="/opt/ffmpeg"
 ```
 
-**NO FALLBACK to system FFmpeg.** Missing wrapper = hard fail.
+**NO FALLBACK to system FFmpeg.**
 
-### GPU Device Contract
+```bash
+# Verify user and groups
+docker exec xg2g-prod id
+```
+
+Missing wrapper = hard fail.
+
+### [P2] GPU Device Contract (VAAPI)
+
+```bash
+# Verify dri access
+docker exec xg2g-prod ls -l /dev/dri/renderD128
+```
+
+:/dev/dri/renderD128
 
 **Container Runtime**:
 
@@ -113,26 +131,28 @@ services:
     image: ghcr.io/manugh/xg2g:3.1.3
     container_name: xg2g
     restart: unless-stopped
-    
+
     # Network
     network_mode: host  # or bridge with port mapping
-    
+
     # GPU Access (Intel/AMD VAAPI)
     devices:
       - /dev/dri/renderD128:/dev/dri/renderD128
-    
+
     # Volumes
     volumes:
       - /var/lib/xg2g/recordings:/recordings
       - /var/lib/xg2g/tmp:/tmp/xg2g
       - /etc/xg2g/config.yaml:/etc/xg2g/config.yaml:ro
-    
+
     # Environment
     environment:
       - XG2G_CONFIG=/etc/xg2g/config.yaml
       - XG2G_DATA=/var/lib/xg2g
+      - **XG2G_HLS_ROOT**: Must point to `/var/lib/xg2g/hls` (canonical volume
+  mapping target).
       # FFmpeg paths already set in image
-    
+
     # Resources (optional, recommended)
     deploy:
       resources:
@@ -208,16 +228,23 @@ docker run --rm --device /dev/dri/renderD128 xg2g:3.1.3 ls -l /dev/dri/
 
 **Expected**: `renderD128` present
 
-**Command** (hwaccel test):
+Command (hwaccel test):
 
 ```bash
 docker run --rm --device /dev/dri/renderD128 xg2g:3.1.3 \
   ffmpeg -hwaccel vaapi -hwaccel_device /dev/dri/renderD128 -f lavfi -i testsrc -t 1 -f null -
 ```
 
-**Expected**: Success (exit 0)
+Expected: Success (exit 0)
 
-**Failure Test** (no device):
+#### Failure
+
+```bash
+# Verify non-root user (UID 10001)
+docker inspect --format='{{.Config.User}}' xg2g:3.1.3
+```
+
+Test (no device):
 
 ```bash
 docker run --rm xg2g:3.1.3 \
@@ -264,7 +291,7 @@ go test ./internal/control/vod -run TestVOD_AtomicPublish -v -count=1
       ffmpeg -version | grep -q "7.1.3" || exit 1
       [ "$XG2G_FFMPEG_PATH" = "/usr/local/bin/ffmpeg" ] || exit 1
     '
-    
+
     # VOD Safety (Gates M3/M4)
     go test ./internal/control/vod -run "TestVOD_Cleanup|TestVOD_AtomicPublish" -count=1
 ```
@@ -284,12 +311,12 @@ go test ./internal/control/vod -run TestVOD_AtomicPublish -v -count=1
 
 ### "FFmpeg binary not found"
 
-**Cause**: Wrapper cannot find `/opt/ffmpeg/bin/ffmpeg`  
+**Cause**: Wrapper cannot find `/opt/ffmpeg/bin/ffmpeg`
 **Fix**: Verify `FFMPEG_HOME` is set correctly, rebuild image if needed
 
 ### "Cannot open /dev/dri/renderD128"
 
-**Cause**: GPU device not mounted or permissions wrong  
+**Cause**: GPU device not mounted or permissions wrong
 **Fix**:
 
 - Add `--device /dev/dri/renderD128` to docker run
@@ -297,12 +324,13 @@ go test ./internal/control/vod -run TestVOD_AtomicPublish -v -count=1
 
 ### "Partial VOD output after crash"
 
-**Cause**: Phase-9 monitor not running or cleanup disabled  
+- **Check**: Audit binary size and dynamic dependencies (`ldd`) during CI as
+  detailed in Phase 10.
 **Fix**: Verify `BuildMonitor.Run()` is invoked, check logs for cleanup assertions
 
 ### "System FFmpeg used instead of pinned"
 
-**Cause**: Wrapper bypassed, `XG2G_FFMPEG_PATH` points to system binary  
+**Cause**: Wrapper bypassed, `XG2G_FFMPEG_PATH` points to system binary
 **Fix**: Set `XG2G_FFMPEG_PATH=/usr/local/bin/ffmpeg` explicitly
 
 ## 8. Golden Path Checklist

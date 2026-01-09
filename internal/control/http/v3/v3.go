@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -33,6 +34,21 @@ import (
 	"github.com/ManuGH/xg2g/internal/recordings"
 	"golang.org/x/sync/singleflight"
 )
+
+// isNil is a robust nil check that handles the "typed nil interface" trap
+// for all nillable types (Ptr, Map, Slice, Func, Interface, Chan).
+func isNil(i interface{}) bool {
+	if i == nil {
+		return true
+	}
+	v := reflect.ValueOf(i)
+	switch v.Kind() {
+	case reflect.Ptr, reflect.Map, reflect.Slice, reflect.Func, reflect.Interface, reflect.Chan:
+		return v.IsNil()
+	default:
+		return false
+	}
+}
 
 // PreflightCheckFunc validates source accessibility before initiating a stream.
 type PreflightCheckFunc func(context.Context, string) error
@@ -216,24 +232,113 @@ func (s *Server) SetDependencies(
 ) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.v3Bus = bus
-	s.v3Store = store
-	s.resumeStore = resume
-	s.v3Scan = scan
-	s.recordingPathMapper = rpm
-	s.channelManager = cm
-	s.seriesManager = sm
-	s.seriesEngine = se
-	s.vodManager = vm
-	s.epgCache = epg
-	s.healthManager = hm
-	s.logSource = ls
-	s.scanSource = ss
-	s.dvrSource = ds
-	s.servicesSource = svs
-	s.timersSource = ts
-	s.requestShutdown = requestShutdown
-	s.preflightCheck = preflightCheck
+	if !isNil(bus) {
+		s.v3Bus = bus
+	} else {
+		s.v3Bus = nil
+	}
+
+	if !isNil(store) {
+		s.v3Store = store
+	} else {
+		s.v3Store = nil
+	}
+
+	if !isNil(resume) {
+		s.resumeStore = resume
+	} else {
+		s.resumeStore = nil
+	}
+
+	if !isNil(scan) {
+		s.v3Scan = scan
+	} else {
+		s.v3Scan = nil
+	}
+
+	if !isNil(ss) {
+		s.scanSource = ss
+	} else {
+		s.scanSource = nil
+	}
+
+	if !isNil(ds) {
+		s.dvrSource = ds
+	} else {
+		s.dvrSource = nil
+	}
+
+	if !isNil(svs) {
+		s.servicesSource = svs
+	} else {
+		s.servicesSource = nil
+	}
+
+	if !isNil(ts) {
+		s.timersSource = ts
+	} else {
+		s.timersSource = nil
+	}
+
+	if !isNil(rpm) {
+		s.recordingPathMapper = rpm
+	} else {
+		s.recordingPathMapper = nil
+	}
+
+	if !isNil(cm) {
+		s.channelManager = cm
+	} else {
+		s.channelManager = nil
+	}
+
+	if !isNil(sm) {
+		s.seriesManager = sm
+	} else {
+		s.seriesManager = nil
+	}
+
+	if !isNil(se) {
+		s.seriesEngine = se
+	} else {
+		s.seriesEngine = nil
+	}
+
+	if !isNil(vm) {
+		s.vodManager = vm
+	} else {
+		s.vodManager = nil
+	}
+
+	if !isNil(epg) {
+		s.epgCache = epg
+	} else {
+		s.epgCache = nil
+	}
+
+	if !isNil(hm) {
+		s.healthManager = hm
+	} else {
+		s.healthManager = nil
+	}
+
+	if !isNil(ls) {
+		s.logSource = ls
+	} else {
+		s.logSource = nil
+	}
+
+	if !isNil(requestShutdown) {
+		s.requestShutdown = requestShutdown
+	} else {
+		s.requestShutdown = nil
+	}
+
+	if !isNil(preflightCheck) {
+		s.preflightCheck = preflightCheck
+	} else {
+		s.preflightCheck = nil
+	}
 }
 
 // GetConfig returns a copy of the current config.

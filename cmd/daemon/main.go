@@ -31,7 +31,7 @@ import (
 )
 
 var (
-	version   = "3.1.3"
+	version   = "3.1.4"
 	commit    = "dev"
 	buildDate = "unknown"
 )
@@ -47,8 +47,15 @@ func maskURL(rawURL string) string {
 }
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "config" {
-		os.Exit(runConfigCLI(os.Args[2:]))
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "config":
+			os.Exit(runConfigCLI(os.Args[2:]))
+		case "healthcheck":
+			os.Exit(runHealthcheckCLI(os.Args[2:]))
+		case "diagnostic":
+			os.Exit(runDiagnosticCLI(os.Args[2:]))
+		}
 	}
 
 	// Handle command-line flags

@@ -13,6 +13,12 @@ if [ ! -x "${FFMPEG_BIN}" ]; then
     exit 1
 fi
 
+# Handle special --print-realpath flag for diagnostic tools
+if [ "${1:-}" == "--print-realpath" ]; then
+    echo "${FFMPEG_BIN}"
+    exit 0
+fi
+
 # Scope LD_LIBRARY_PATH to this process only (no global leak)
 export LD_LIBRARY_PATH="${FFMPEG_LIB}"
 

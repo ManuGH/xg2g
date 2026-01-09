@@ -50,6 +50,7 @@ func TestPutSystemConfigTriggersShutdown(t *testing.T) {
 	cfg, err := config.NewLoader("", "test").Load()
 	require.NoError(t, err)
 	cfg.DataDir = t.TempDir()
+	cfg.Engine.Enabled = false // Skip ffmpeg/curl checks in test environment
 
 	configPath := filepath.Join(t.TempDir(), "config.yaml")
 	srv := NewServer(cfg, config.NewManager(configPath), nil)
