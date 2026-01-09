@@ -1,77 +1,24 @@
-version: "3.8"
-
 services:
   xg2g:
-    # NOTE: Build with 'make docker-build' to create this image
-    image: xg2g:latest
-    pull_policy: never
+    image: xg2g:3.1.5
     container_name: xg2g
-
-    # Run as root for internal testing simplicity (or use specific UID if needed)
-    user: "${DOCKER_USER:-0:0}"
-
-    # Use host networking for best compatibility (SSDP, etc.)
-    network_mode: host
-
-    # Alternative: Bridge mode (if you comment out network_mode: host)
-    # ports:
-    #   - "8088:8088" # API
-    #   - "9090:9090" # Metrics
-
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    cap_add:
-      - CHOWN
-      - SETGID
-      - SETUID
-      - NET_BIND_SERVICE
-
-    # Mounts for data and HLS
-    volumes:
-      - ./data:/data
-      - ./data/v3-store:/data/v3-store
-      - ./data/hls:/data/hls # [New Standard] Migrated from v3-hls automatically
-
-    env_file:
-      - .env
-
-    environment:
-      # Data Directory
-      - XG2G_DATA=/data
-
-      # Logging
-      - XG2G_LOG_LEVEL=${XG2G_LOG_LEVEL:-info}
-
-      # API Server
-      - XG2G_LISTEN=:8088
-
-      # Metrics
-      - XG2G_METRICS_LISTEN=:9090
-
-      # OpenWebIF (Can be empty for Setup Mode)
-      - XG2G_OWI_BASE=${XG2G_OWI_BASE:-}
-      - XG2G_OWI_USER=${XG2G_OWI_USER:-}
-      - XG2G_OWI_PASS=${XG2G_OWI_PASS:-}
-
-      # Security
-      - XG2G_API_TOKEN=${XG2G_API_TOKEN:-}
-      - XG2G_API_TOKEN_SCOPES=${XG2G_API_TOKEN_SCOPES:-v3:read,v3:write}
-
-      # Bouquets (Optional, comma-separated. Empty = All)
-      - XG2G_BOUQUET=${XG2G_BOUQUET:-}
-
-      # V3/Pipeline Streaming Backend
-      - XG2G_V3_WORKER_ENABLED=${XG2G_V3_WORKER_ENABLED:-true}
-      - XG2G_HLS_ROOT=/data/hls # [New Standard] Primary HLS mount
-      - XG2G_V3_STORE_PATH=/data/v3-store
-
-    healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8088/healthz"]
-      interval: 5s
-      timeout: 3s
-      retries: 3
-      start_period: 2s
-
     restart: unless-stopped
+    ports:
+      - "8088:8088"
+    environment:
+      - XG2G_DATA=/var/lib/xg2g
+      - XG2G_LOG_LEVEL=info
+      # Required secrets/config via .env file or explicit env
+      - XG2G_E2_HOST=${XG2G_E2_HOST}
+      - XG2G_API_TOKEN=${XG2G_API_TOKEN}
+      - XG2G_API_TOKEN_SCOPES=v3:admin,v3:read,v3:write
+    volumes:
+      - /var/lib/xg2g:/var/lib/xg2g
+      # Optional: Mount a custom config
+      # - ./config.yaml:/var/lib/xg2g/config.yaml:ro
+    healthcheck:
+      test: ["CMD", "xg2g", "healthcheck", "ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s

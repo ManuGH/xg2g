@@ -137,13 +137,11 @@ func checkTargetedValidations(logger zerolog.Logger, cfg config.AppConfig) error
 			if ffmpegBin == "" {
 				ffmpegBin = "ffmpeg"
 			}
-			if _, err := exec.LookPath(ffmpegBin); err != nil {
+			resolvedPath, err := exec.LookPath(ffmpegBin)
+			if err != nil {
 				return fmt.Errorf("ffmpeg binary not found (%s): %w", ffmpegBin, err)
 			}
-			if _, err := exec.LookPath("curl"); err != nil {
-				return fmt.Errorf("curl binary not found: %w", err)
-			}
-			logger.Info().Str("ffmpeg", ffmpegBin).Msg("✓ Engine dependencies available")
+			logger.Info().Str("ffmpeg", resolvedPath).Msg("✓ Engine dependencies available")
 		}
 
 		if strings.EqualFold(cfg.Store.Backend, "memory") {
