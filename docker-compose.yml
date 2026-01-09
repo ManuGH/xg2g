@@ -17,7 +17,7 @@ services:
       # Optional: Mount a custom config
       # - ./config.yaml:/var/lib/xg2g/config.yaml:ro
     healthcheck:
-      test: ["CMD", "xg2g", "healthcheck", "ready"]
+      test: ["CMD", "xg2g", "healthcheck", "-mode", "live"]
       interval: 10s
       timeout: 5s
       retries: 5
