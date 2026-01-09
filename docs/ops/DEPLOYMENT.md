@@ -363,3 +363,53 @@ Before deploying to production, verify:
 - FFmpeg Build: `docs/ops/FFMPEG_BUILD.md`
 - Phase-9 VOD Monitor: `phase9_walkthrough.md`
 - Test Charta: `docs/ops/TEST_CHARTA.md`
+
+## 10. System Operations Runbook (v3.1.5+)
+
+Canonical guide for managing the hardened `xg2g` daemon via systemd.
+
+### Installation
+Deploy the hardened unit file and enable the service:
+```bash
+cp docs/ops/xg2g.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now xg2g
+```
+
+### Lifecycle Management
+The service uses `docker compose` as the underlying engine but is supervised by systemd.
+
+| Action | Command | Effect |
+|--------|---------|--------|
+| **Start** | `systemctl start xg2g` | Upstreams configuration checks; starts containers. |
+| **Stop** | `systemctl stop xg2g` | gracefully stops containers (`docker compose stop`); preserves volumes/networks. |
+| **Reload** | `systemctl reload xg2g` | Re-applies configuration changes (`docker compose up -d`). |
+| **Status** | `systemctl status xg2g` | Shows service health and recent logs. |
+
+### Configuration Updates
+1. Edit the environment file:
+   ```bash
+   nano /etc/xg2g/xg2g.env
+   ```
+2. Apply changes without downtime (if possible):
+   ```bash
+   systemctl reload xg2g
+   ```
+
+### Log Access & Troubleshooting
+Access logs via Docker (source of truth) or systemd (capture).
+
+**Live Tail (Recommended)**:
+```bash
+cd /srv/xg2g
+docker compose logs -f --tail=200
+```
+
+**System Journal**:
+```bash
+journalctl -u xg2g -f
+```
+
+**Common Issues**:
+* **Start Fails immediately**: Check `systemctl status xg2g`. Ensure `XG2G_E2_HOST` and `XG2G_API_TOKEN` are set in `/etc/xg2g/xg2g.env`.
+* **Crash Loop**: If running manually via `docker compose` without the systemd safety checks, the container may restart indefinitely on missing config. Use `systemctl start` for fail-closed protection.
