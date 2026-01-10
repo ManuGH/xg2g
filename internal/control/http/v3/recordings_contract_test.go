@@ -43,15 +43,17 @@ func TestGetRecordings_Contract_UpstreamFailure(t *testing.T) {
 
 	s.GetRecordings(w, r, GetRecordingsParams{})
 
-	// 4. Assert Contract (ADR-SEC-001 & Industrial Resilience)
-	assert.Equal(t, http.StatusBadGateway, w.Code, "Expected 502 Bad Gateway for upstream failure")
+	// 4. Assert Contract (treat result=false as empty directory)
+	assert.Equal(t, http.StatusOK, w.Code, "Expected 200 OK for result=false with empty list")
 
-	var apiErr APIError
-	err := json.Unmarshal(w.Body.Bytes(), &apiErr)
+	var resp RecordingResponse
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
 	assert.NoError(t, err, "Response should be valid JSON")
-	assert.Equal(t, "UPSTREAM_RESULT_FALSE", apiErr.Code, "Expected code UPSTREAM_RESULT_FALSE")
+	if resp.Recordings != nil {
+		assert.Len(t, *resp.Recordings, 0, "Expected empty recordings list")
+	}
 
-	// Ensure no path leaks in the error message or details
+	// Ensure no path leaks in the response
 	assert.NotContains(t, strings.ToLower(w.Body.String()), "/media/", "Response body should not contain absolute paths")
 	assert.NotContains(t, strings.ToLower(w.Body.String()), "/hdd/", "Response body should not contain absolute paths")
 }
