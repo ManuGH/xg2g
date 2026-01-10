@@ -747,9 +747,6 @@ func (s *Server) GetRecordingPlaybackInfo(w http.ResponseWriter, r *http.Request
 			// True MP4 artifact (verified by prober)
 			mode := PlaybackInfoMode("direct_mp4")
 			url := fmt.Sprintf("/api/v3/recordings/%s/stream.mp4", recordingId)
-			if token := extractToken(r); token != "" {
-				url += "?token=" + token
-			}
 			reason := "artifact_ready"
 			resp := PlaybackInfo{
 				Mode:   mode,

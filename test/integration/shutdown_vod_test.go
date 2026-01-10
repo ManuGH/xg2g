@@ -168,12 +168,38 @@ func TestShutdownKillsRecordingFFmpeg(t *testing.T) {
 		t.Fatalf("daemon did not become ready. Output:\n%s", outputBuffer.String())
 	}
 
+	reqSession, err := http.NewRequest("POST", fmt.Sprintf("http://127.0.0.1:%d/api/v3/auth/session", port), nil)
+	if err != nil {
+		_ = cmd.Process.Kill()
+		t.Fatalf("failed to build session request: %v", err)
+	}
+	reqSession.Header.Set("Authorization", "Bearer "+apiToken)
+
+	respSession, err := http.DefaultClient.Do(reqSession)
+	if err != nil {
+		_ = cmd.Process.Kill()
+		t.Fatalf("failed to create session: %v", err)
+	}
+	_ = respSession.Body.Close()
+
+	var sessionCookie *http.Cookie
+	for _, c := range respSession.Cookies() {
+		if c.Name == "xg2g_session" {
+			sessionCookie = c
+			break
+		}
+	}
+	if sessionCookie == nil {
+		_ = cmd.Process.Kill()
+		t.Fatalf("session cookie missing from /auth/session response")
+	}
+
 	req, err := http.NewRequest("GET", fmt.Sprintf("http://127.0.0.1:%d/api/v3/recordings/%s/playlist.m3u8", port, recordingID), nil)
 	if err != nil {
 		_ = cmd.Process.Kill()
 		t.Fatalf("failed to build request: %v", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+apiToken)
+	req.AddCookie(sessionCookie)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

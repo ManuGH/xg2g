@@ -38,6 +38,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Token URL gate
+        run: |
+          set -euo pipefail
+          if git grep -n -i -E '(\?|&)(token|access_token|auth|jwt|bearer)=' -- .; then
+            echo "❌ denylisted auth-like query key found in URL parameters"
+            exit 1
+          fi
+          echo "✅ token URL gate passed"
+
       - name: Verify Go toolchain policy
         run: ./scripts/check-go-toolchain.sh
 

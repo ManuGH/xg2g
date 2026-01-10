@@ -22,8 +22,7 @@ func (m *mockV3Handler) StreamRecordingDirect(w http.ResponseWriter, r *http.Req
 // Minimal Auth Middleware stub for testing router wiring
 func stubAuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token := r.URL.Query().Get("token")
-		if token == "valid" {
+		if c, err := r.Cookie("xg2g_session"); err == nil && c.Value == "valid" {
 			next.ServeHTTP(w, r)
 		} else {
 			w.WriteHeader(http.StatusUnauthorized)
@@ -54,7 +53,8 @@ func TestHeadRouteRegistration(t *testing.T) {
 	})
 
 	// Test 1: HEAD with Token -> 200
-	req, _ := http.NewRequest("HEAD", "/api/v3/recordings/123/stream.mp4?token=valid", nil)
+	req, _ := http.NewRequest("HEAD", "/api/v3/recordings/123/stream.mp4", nil)
+	req.AddCookie(&http.Cookie{Name: "xg2g_session", Value: "valid"})
 	rr := httptest.NewRecorder()
 	r.ServeHTTP(rr, req)
 

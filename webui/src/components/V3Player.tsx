@@ -480,10 +480,7 @@ function V3Player(props: V3PlayerProps) {
         enableWorker: true,
         lowLatencyMode: false,
         backBufferLength: 300,
-        maxBufferLength: 60,
-        xhrSetup: (xhr) => {
-          if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-        }
+        maxBufferLength: 60
       });
       hlsRef.current = hls;
 
@@ -540,7 +537,7 @@ function V3Player(props: V3PlayerProps) {
         video.play().catch(e => console.warn("[V3Player] Native play blocked", e));
       }, { once: true });
     }
-  }, [token, t, updateStats, isSafari, reportError]);
+  }, [t, updateStats, isSafari, reportError]);
 
   const playDirectMp4 = useCallback((url: string) => {
     if (hlsRef.current) {
@@ -716,7 +713,6 @@ function V3Player(props: V3PlayerProps) {
         // Simple probe for HLS
         const res = await fetch(streamUrl, {
           method: 'HEAD',
-          headers: authHeaders(),
           signal: controller.signal
         });
 

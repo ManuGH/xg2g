@@ -623,7 +623,7 @@ func TestValidator_StreamURL(t *testing.T) {
 		},
 		{
 			name:    "valid https stream with query params",
-			url:     "https://stream.example.com/live?channel=123&auth=token",
+			url:     "https://stream.example.com/live?channel=123&sig=token",
 			wantErr: false,
 		},
 		{

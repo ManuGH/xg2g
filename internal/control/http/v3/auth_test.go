@@ -113,6 +113,48 @@ func TestAuthMiddleware_ValidCookie(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
+func TestAuthMiddleware_MediaRequiresSessionCookie(t *testing.T) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	s := &Server{
+		cfg: config.AppConfig{
+			APIToken:       "secret-token",
+			APITokenScopes: []string{string(ScopeV3Read)},
+		},
+	}
+	handler := s.authMiddleware(next)
+
+	paths := []string{
+		"/api/v3/recordings/abc/stream.mp4",
+		"/api/v3/recordings/abc/playlist.m3u8",
+		"/api/v3/sessions/00000000-0000-0000-0000-000000000000/hls/index.m3u8",
+	}
+
+	for _, path := range paths {
+		t.Run(path+"/bearer-only", func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			req.Header.Set("Authorization", "Bearer secret-token")
+			w := httptest.NewRecorder()
+
+			handler.ServeHTTP(w, req)
+
+			assert.Equal(t, http.StatusUnauthorized, w.Code)
+		})
+
+		t.Run(path+"/cookie", func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			req.AddCookie(&http.Cookie{Name: "xg2g_session", Value: "secret-token"})
+			w := httptest.NewRecorder()
+
+			handler.ServeHTTP(w, req)
+
+			assert.Equal(t, http.StatusOK, w.Code)
+		})
+	}
+}
+
 func TestAuthMiddleware_InvalidToken(t *testing.T) {
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("next handler should not be called")
@@ -236,4 +278,22 @@ func TestCreateSession(t *testing.T) {
 		}
 	}
 	assert.True(t, found, "xg2g_session cookie not found")
+}
+
+func TestCreateSession_RejectsCookieOnly(t *testing.T) {
+	s := &Server{
+		cfg: config.AppConfig{
+			APIToken:       "secret",
+			APITokenScopes: []string{string(ScopeV3Read)},
+			ForceHTTPS:     true,
+		},
+	}
+
+	req := httptest.NewRequest("POST", "/api/v3/auth/session", nil)
+	req.AddCookie(&http.Cookie{Name: "xg2g_session", Value: "secret"})
+	w := httptest.NewRecorder()
+
+	s.CreateSession(w, req)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }

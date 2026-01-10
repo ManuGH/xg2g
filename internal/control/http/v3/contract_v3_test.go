@@ -290,7 +290,7 @@ func TestV3Contract_ReadyImpliesPlayable(t *testing.T) {
 	require.Equal(t, "READY", state)
 
 	reqPlaylist := httptest.NewRequest(http.MethodGet, "/api/v3/sessions/"+sessionID+"/hls/index.m3u8", nil)
-	reqPlaylist.Header.Set("Authorization", "Bearer test-token")
+	reqPlaylist.AddCookie(&http.Cookie{Name: "xg2g_session", Value: "test-token"})
 	rrPlaylist := httptest.NewRecorder()
 	handler.ServeHTTP(rrPlaylist, reqPlaylist)
 
@@ -298,7 +298,7 @@ func TestV3Contract_ReadyImpliesPlayable(t *testing.T) {
 	segmentURI := firstSegmentURI(t, rrPlaylist.Body.Bytes())
 
 	reqSeg := httptest.NewRequest(http.MethodGet, "/api/v3/sessions/"+sessionID+"/hls/"+segmentURI, nil)
-	reqSeg.Header.Set("Authorization", "Bearer test-token")
+	reqSeg.AddCookie(&http.Cookie{Name: "xg2g_session", Value: "test-token"})
 	rrSeg := httptest.NewRecorder()
 	handler.ServeHTTP(rrSeg, reqSeg)
 
@@ -326,7 +326,7 @@ func TestV3Contract_HLS(t *testing.T) {
 	doc := loadOpenAPIDoc(t)
 
 	reqPlaylist := httptest.NewRequest(http.MethodGet, "/api/v3/sessions/"+sessionID+"/hls/index.m3u8", nil)
-	reqPlaylist.Header.Set("Authorization", "Bearer test-token")
+	reqPlaylist.AddCookie(&http.Cookie{Name: "xg2g_session", Value: "test-token"})
 	rrPlaylist := httptest.NewRecorder()
 	handler.ServeHTTP(rrPlaylist, reqPlaylist)
 
@@ -338,7 +338,7 @@ func TestV3Contract_HLS(t *testing.T) {
 	})
 
 	reqTS := httptest.NewRequest(http.MethodGet, "/api/v3/sessions/"+sessionID+"/hls/seg_000000.ts", nil)
-	reqTS.Header.Set("Authorization", "Bearer test-token")
+	reqTS.AddCookie(&http.Cookie{Name: "xg2g_session", Value: "test-token"})
 	rrTS := httptest.NewRecorder()
 	handler.ServeHTTP(rrTS, reqTS)
 
@@ -350,7 +350,7 @@ func TestV3Contract_HLS(t *testing.T) {
 	})
 
 	reqInit := httptest.NewRequest(http.MethodGet, "/api/v3/sessions/"+sessionID+"/hls/init.mp4", nil)
-	reqInit.Header.Set("Authorization", "Bearer test-token")
+	reqInit.AddCookie(&http.Cookie{Name: "xg2g_session", Value: "test-token"})
 	rrInit := httptest.NewRecorder()
 	handler.ServeHTTP(rrInit, reqInit)
 
@@ -363,7 +363,7 @@ func TestV3Contract_HLS(t *testing.T) {
 	})
 
 	reqM4s := httptest.NewRequest(http.MethodGet, "/api/v3/sessions/"+sessionID+"/hls/seg_000001.m4s", nil)
-	reqM4s.Header.Set("Authorization", "Bearer test-token")
+	reqM4s.AddCookie(&http.Cookie{Name: "xg2g_session", Value: "test-token"})
 	rrM4s := httptest.NewRecorder()
 	handler.ServeHTTP(rrM4s, reqM4s)
 
@@ -375,6 +375,37 @@ func TestV3Contract_HLS(t *testing.T) {
 	validateOpenAPIResponse(t, doc, reqM4s, rrM4s, &openapi3filter.Options{
 		ExcludeResponseBody: true,
 	})
+}
+
+func TestV3Contract_HLSRange(t *testing.T) {
+	hlsRoot := t.TempDir()
+	s, st := newV3TestServer(t, hlsRoot)
+	sessionID := "550e8400-e29b-41d4-a716-446655440000"
+
+	require.NoError(t, st.PutSession(context.Background(), &model.SessionRecord{
+		SessionID:  sessionID,
+		State:      model.SessionReady,
+		ServiceRef: "1:0:1:445D:453:1:C00000:0:0:0:",
+		Profile:    model.ProfileSpec{Name: "high"},
+	}))
+
+	_, initSeg, _ := writeHLSFixtures(t, hlsRoot, sessionID)
+	require.GreaterOrEqual(t, len(initSeg), 2, "init segment must be at least 2 bytes")
+
+	handler := HandlerWithOptions(s, ChiServerOptions{
+		BaseURL: "/api/v3",
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v3/sessions/"+sessionID+"/hls/init.mp4", nil)
+	req.Header.Set("Range", "bytes=0-1")
+	req.AddCookie(&http.Cookie{Name: "xg2g_session", Value: "test-token"})
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusPartialContent, rr.Code)
+	require.Equal(t, "video/mp4", rr.Header().Get("Content-Type"))
+	require.True(t, strings.HasPrefix(rr.Header().Get("Content-Range"), "bytes 0-1/"))
+	require.Equal(t, initSeg[:2], rr.Body.Bytes())
 }
 
 func validateUUID(value string) error {

@@ -7,8 +7,8 @@ package api
 import (
 	"net/http"
 
-	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	"github.com/ManuGH/xg2g/internal/control/auth"
+	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	"github.com/ManuGH/xg2g/internal/log"
 )
 
@@ -25,8 +25,13 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Use unified token extraction
-		reqToken := extractToken(r)
+		var reqToken string
+		if isMediaRequest(r) {
+			reqToken = auth.ExtractSessionToken(r)
+		} else {
+			// Use unified token extraction
+			reqToken = extractToken(r)
+		}
 
 		logger := log.FromContext(r.Context()).With().Str("component", "auth").Logger()
 

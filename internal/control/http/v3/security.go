@@ -6,17 +6,37 @@ package v3
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/ManuGH/xg2g/internal/control/auth"
 )
 
 // extractToken delegates to the shared internal/auth package to ensure parity with valid proxy auth.
 func extractToken(r *http.Request) string {
-	// 1. Try standard Header/Cookie extraction
-	t := auth.ExtractToken(r)
-	if t != "" {
-		return t
+	return auth.ExtractToken(r)
+}
+
+func extractBearerToken(r *http.Request) string {
+	if r == nil {
+		return ""
 	}
-	// 2. Fallback to Query Parameter (needed for direct media playback)
-	return r.URL.Query().Get("token")
+	if header := r.Header.Get("Authorization"); strings.HasPrefix(header, "Bearer ") {
+		return strings.TrimSpace(header[7:])
+	}
+	return ""
+}
+
+func isMediaRequest(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	path := r.URL.Path
+	if strings.HasPrefix(path, "/api/v3/recordings/") &&
+		(strings.HasSuffix(path, "/stream.mp4") || strings.HasSuffix(path, "/playlist.m3u8")) {
+		return true
+	}
+	if strings.HasPrefix(path, "/api/v3/sessions/") && strings.Contains(path, "/hls/") {
+		return true
+	}
+	return false
 }

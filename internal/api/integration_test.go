@@ -40,6 +40,13 @@ func TestIntegration_SessionAndPlayback(t *testing.T) {
 	handler.ServeHTTP(w1, req1)
 	assert.Equal(t, http.StatusUnauthorized, w1.Code, "Expected 401 without auth")
 
+	// 1b. Bearer-only access should be rejected for media
+	req1b := httptest.NewRequest("GET", "/api/v3/recordings/some-id/playlist.m3u8", nil)
+	req1b.Header.Set("Authorization", "Bearer integration-secret")
+	w1b := httptest.NewRecorder()
+	handler.ServeHTTP(w1b, req1b)
+	assert.Equal(t, http.StatusUnauthorized, w1b.Code, "Expected 401 with bearer-only media access")
+
 	// 2. Login to get session cookie
 	req2 := httptest.NewRequest("POST", "/api/v3/auth/session", nil)
 	req2.Header.Set("Authorization", "Bearer integration-secret")

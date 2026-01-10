@@ -548,7 +548,7 @@ func (s *Server) routes() http.Handler {
 	// Workaround: Manually register HEAD for stream.mp4 (missing in generated code)
 	// This is required for browsers (Safari/Chrome) that probe the stream before playing.
 	// We attach it to the same base router but MUST wrap it with the same auth middleware
-	// to ensure consistent behavior (query param auth relies on this).
+	// to ensure consistent auth behavior.
 	r.With(s.authMiddleware).Head("/api/v3/recordings/{recordingId}/stream.mp4", func(w http.ResponseWriter, r *http.Request) {
 		recordingId := chi.URLParam(r, "recordingId")
 		s.v3Handler.StreamRecordingDirect(w, r, recordingId)

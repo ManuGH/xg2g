@@ -42,7 +42,7 @@ func TestSpanNameFormatter(t *testing.T) {
 		t.Fatalf("unexpected span name: %s", got)
 	}
 
-	reqWithQuery := httptest.NewRequest(http.MethodGet, "/api/v3/system/health?token=secret", nil)
+	reqWithQuery := httptest.NewRequest(http.MethodGet, "/api/v3/system/health?foo=bar", nil)
 	if got := spanNameFormatter("HTTP GET", reqWithQuery); got != "HTTP GET /api/v3/system/health?" {
 		t.Fatalf("unexpected span name with query: %s", got)
 	}

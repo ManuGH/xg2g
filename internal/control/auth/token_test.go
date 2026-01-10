@@ -13,7 +13,7 @@ import (
 )
 
 func TestExtractToken_PriorityOrder(t *testing.T) {
-	r := httptest.NewRequest(http.MethodGet, "http://example.local/test?token=query", nil)
+	r := httptest.NewRequest(http.MethodGet, "http://example.local/test?foo=bar", nil)
 	r.Header.Set("Authorization", "Bearer bearer-token ")
 	r.Header.Set("X-API-Token", "header-token")
 	r.AddCookie(&http.Cookie{Name: "xg2g_session", Value: "session-token"})
@@ -24,8 +24,8 @@ func TestExtractToken_PriorityOrder(t *testing.T) {
 	}
 }
 
-func TestExtractToken_IgnoresQuery(t *testing.T) {
-	r := httptest.NewRequest(http.MethodGet, "http://example.local/test?token=query-token", nil)
+func TestExtractToken_IgnoresQueryParams(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "http://example.local/test?foo=bar", nil)
 
 	if got := ExtractToken(r); got != "" {
 		t.Fatalf("ExtractToken() = %q, want empty", got)
@@ -50,9 +50,9 @@ func TestAuthorizeToken(t *testing.T) {
 func TestAuthorizeRequest(t *testing.T) {
 	expected := "secret"
 
-	r := httptest.NewRequest(http.MethodGet, "http://example.local/test?token=secret", nil)
+	r := httptest.NewRequest(http.MethodGet, "http://example.local/test?foo=bar", nil)
 	if AuthorizeRequest(r, expected) != false {
-		t.Fatal("AuthorizeRequest should reject query token")
+		t.Fatal("AuthorizeRequest should reject missing token")
 	}
 
 	r = httptest.NewRequest(http.MethodGet, "http://example.local/test", nil)

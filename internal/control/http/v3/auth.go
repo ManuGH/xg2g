@@ -33,9 +33,14 @@ func (s *Server) authMiddlewareImpl(next http.Handler) http.Handler {
 			return
 		}
 
-		// Use unified token extraction
-		// For general API, we do NOT allow query parameter tokens, strictly enforcing Header/Cookie.
-		reqToken := extractToken(r)
+		var reqToken string
+		if isMediaRequest(r) {
+			reqToken = auth.ExtractSessionToken(r)
+		} else {
+			// Use unified token extraction
+			// For general API, we do NOT allow query parameter tokens, strictly enforcing Header/Cookie.
+			reqToken = extractToken(r)
+		}
 
 		logger := log.FromContext(r.Context()).With().Str("component", "auth").Logger()
 
@@ -68,16 +73,15 @@ func (s *Server) setupValidateMiddleware(next http.Handler) http.Handler {
 // POST /api/v3/auth/session
 // Requires Authentication (via Header) to be successful first.
 func (s *Server) CreateSession(w http.ResponseWriter, r *http.Request) {
-	// 1. Re-extract the token that was successfully validated
-	// We prefer the Bearer token from the header for this "login" exchange.
-	// We allow Header or Cookie (if refreshing). NO Query.
-	reqToken := extractToken(r)
+	// 1. Re-extract the token that was successfully validated.
+	// Require Bearer header for this "login" exchange.
+	reqToken := extractBearerToken(r)
 
 	// No implicit fallback; token must be presented.
 	cfg := s.GetConfig()
 	forceHTTPS := cfg.ForceHTTPS
 
-	// The client MUST present a valid token to exchange it for a session cookie.
+	// The client MUST present a valid bearer token to exchange it for a session cookie.
 	if reqToken == "" {
 		// Fail if no token presented and auth is required
 		RespondError(w, r, http.StatusUnauthorized, ErrUnauthorized)

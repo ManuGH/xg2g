@@ -12,6 +12,11 @@ import (
 	"strings"
 )
 
+const (
+	sessionCookieName = "xg2g_session"
+	legacyCookieName  = "X-API-Token"
+)
+
 // ExtractToken retrieves the API token from the request.
 // It enforces strict parity with the API's extraction logic.
 // 1. Authorization: Bearer <token>
@@ -25,8 +30,8 @@ func ExtractToken(r *http.Request) string {
 	}
 
 	// 2. Cookie
-	if c, err := r.Cookie("xg2g_session"); err == nil && c.Value != "" {
-		return c.Value
+	if t := ExtractSessionToken(r); t != "" {
+		return t
 	}
 
 	// 3. Legacy Header
@@ -35,10 +40,21 @@ func ExtractToken(r *http.Request) string {
 	}
 
 	// 4. Check for legacy Cookie (X-API-Token) as last resort
-	if c, err := r.Cookie("X-API-Token"); err == nil && c.Value != "" {
+	if c, err := r.Cookie(legacyCookieName); err == nil && c.Value != "" {
 		return c.Value
 	}
 
+	return ""
+}
+
+// ExtractSessionToken retrieves only the session cookie token (xg2g_session).
+func ExtractSessionToken(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	if c, err := r.Cookie(sessionCookieName); err == nil && c.Value != "" {
+		return c.Value
+	}
 	return ""
 }
 
