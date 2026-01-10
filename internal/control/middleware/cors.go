@@ -54,6 +54,7 @@ func CORS(allowedOrigins []string) func(http.Handler) http.Handler {
 
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, DELETE, PUT, PATCH")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Request-ID, X-API-Token, Authorization")
+			w.Header().Set("Access-Control-Expose-Headers", "Retry-After, Content-Length, Date, X-Request-ID")
 			w.Header().Set("Access-Control-Max-Age", "600")
 			w.Header().Set("Vary", "Origin, Access-Control-Request-Method, Access-Control-Request-Headers")
 

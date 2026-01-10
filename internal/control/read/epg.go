@@ -28,13 +28,13 @@ type EpgQuery struct {
 
 // EpgEntry is a control-layer representation of an EPG event.
 type EpgEntry struct {
-	ID         string
-	ServiceRef string
-	Title      string
-	Desc       string
-	Start      int64
-	End        int64
-	Duration   int64
+	ID         string `json:"id"`
+	ServiceRef string `json:"service_ref"`
+	Title      string `json:"title"`
+	Desc       string `json:"desc"`
+	Start      int64  `json:"start"`
+	End        int64  `json:"end"`
+	Duration   int64  `json:"duration"`
 }
 
 // GetEpg filters and processes EPG data.
@@ -70,22 +70,28 @@ func GetEpg(ctx context.Context, src EpgSource, q EpgQuery, clock Clock) ([]EpgE
 	now := clock.Now()
 	var fromTime, toTime time.Time
 
+	// 7 days past + 14 days future cap (user requested)
+	// We allow slightly more flexible boundaries if requested, but default to [now-7d, now+14d] if parameters missing.
+
 	if q.From > 0 {
 		fromTime = time.Unix(q.From, 0)
 	} else {
-		fromTime = now.Add(-30 * time.Minute)
+		// Default: Look back 7 days
+		fromTime = now.Add(-7 * 24 * time.Hour)
 	}
 
 	if q.To > 0 {
 		toTime = time.Unix(q.To, 0)
 	} else {
-		toTime = now.Add(7 * 24 * time.Hour)
+		// Default: Look ahead 14 days
+		toTime = now.Add(14 * 24 * time.Hour)
 	}
 
-	// Max 7 days cap
-	maxEnd := now.Add(7 * 24 * time.Hour)
-	if toTime.After(maxEnd) {
-		toTime = maxEnd
+	// Max window safety cap (e.g. 30 days total) to prevent huge allocations
+	// but respect the requested 14 days future.
+	maxFuture := now.Add(30 * 24 * time.Hour)
+	if toTime.After(maxFuture) {
+		toTime = maxFuture
 	}
 
 	var results []EpgEntry

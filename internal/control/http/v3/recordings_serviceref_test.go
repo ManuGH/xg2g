@@ -1,10 +1,10 @@
-// Copyright (c) 2025 ManuGH
-// Licensed under the PolyForm Noncommercial License 1.0.0
-// Since v2.0.0, this software is restricted to non-commercial use only.
-
 package v3
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/ManuGH/xg2g/internal/recordings"
+)
 
 func TestExtractPathFromServiceRef(t *testing.T) {
 	tests := []struct {
@@ -86,7 +86,7 @@ func TestExtractPathFromServiceRef(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := ExtractPathFromServiceRef(tt.input)
+			result := recordings.ExtractPathFromServiceRef(tt.input)
 			if result != tt.expected {
 				t.Errorf("extractPathFromServiceRef(%q) = %q, expected %q",
 					tt.input, result, tt.expected)
@@ -99,6 +99,6 @@ func TestExtractPathFromServiceRef(t *testing.T) {
 func BenchmarkExtractPathFromServiceRef(b *testing.B) {
 	serviceRef := "1:0:0:0:0:0:0:0:0:0:/media/hdd/movie/Film.ts"
 	for i := 0; i < b.N; i++ {
-		_ = ExtractPathFromServiceRef(serviceRef)
+		_ = recordings.ExtractPathFromServiceRef(serviceRef)
 	}
 }

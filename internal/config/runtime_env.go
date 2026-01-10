@@ -35,7 +35,7 @@ func ReadEnv(getenv func(string) string) (Env, error) {
 	}
 
 	rt := RuntimeSnapshot{
-		PlaylistFilename: getString(getenv, "XG2G_PLAYLIST_FILENAME", "playlist.m3u"),
+		PlaylistFilename: getString(getenv, "XG2G_PLAYLIST_FILENAME", "playlist.m3u8"),
 		PublicURL:        getString(getenv, "XG2G_PUBLIC_URL", ""),
 		XTvgURL:          getString(getenv, "XG2G_X_TVG_URL", ""),
 		UseProxyURLs:     getBool(getenv, "XG2G_USE_PROXY_URLS", false),

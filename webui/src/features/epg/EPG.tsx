@@ -11,6 +11,7 @@ import { addTimer } from '../../client-ts';
 import type { EpgChannel, EpgBouquet, Timer, EpgEvent } from './types';
 import { EpgToolbar } from './components/EpgToolbar';
 import { EpgChannelList } from './components/EpgChannelList';
+import { normalizeEpgText } from '../../utils/text';
 import './EPG.css';
 
 const RECORD_SUPPORTED = true; // Feature flag
@@ -66,7 +67,7 @@ export default function EPG({
             begin: event.start,
             end: event.end,
             name: event.title,
-            description: event.desc || '',
+            description: normalizeEpgText(event.desc) || '',
           },
         });
         alert(t('epg.recordSuccess'));
@@ -104,12 +105,13 @@ export default function EPG({
   const loadEpgEvents = useCallback(async () => {
     dispatch({ type: 'LOAD_START' });
     try {
-      const from = Math.floor(Date.now() / 1000) - 1800; // 30 min ago
-      const to = from + state.filters.timeRange * 3600;
+      const now = Math.floor(Date.now() / 1000);
+      const startFetch = now - 7 * 24 * 3600;
+      const endFetch = now + 14 * 24 * 3600;
 
       const events = await fetchEpgEvents({
-        from,
-        to,
+        from: startFetch,
+        to: endFetch,
         bouquet: state.filters.bouquetId || undefined,
       });
 

@@ -317,6 +317,72 @@ components:
           type: integer
           format: int64
 
+    SystemInfoData:
+      type: object
+      properties:
+        hardware:
+          type: object
+          properties:
+            brand: { type: string }
+            model: { type: string }
+            boxtype: { type: string }
+            chipset: { type: string }
+            chipset_description: { type: string }
+        software:
+          type: object
+          properties:
+            oe_version: { type: string }
+            image_distro: { type: string }
+            image_version: { type: string }
+            enigma_version: { type: string }
+            kernel_version: { type: string }
+            driver_date: { type: string }
+            webif_version: { type: string }
+        tuners:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              type: { type: string }
+              status: { type: string }
+        network:
+          type: object
+          properties:
+            interfaces:
+              type: array
+              items:
+                type: object
+                properties:
+                  name: { type: string }
+                  type: { type: string }
+                  speed: { type: string }
+                  mac: { type: string }
+                  ip: { type: string }
+                  ipv6: { type: string }
+                  dhcp: { type: boolean }
+        storage:
+          type: object
+          properties:
+            devices:
+              type: array
+              items:
+                type: object
+                properties:
+                  model: { type: string }
+                  capacity: { type: string }
+                  mount: { type: string }
+        runtime:
+          type: object
+          properties:
+            uptime: { type: string }
+        resource:
+          type: object
+          properties:
+            memory_total: { type: string }
+            memory_available: { type: string }
+            memory_used: { type: string }
+
     ComponentStatus:
       type: object
       properties:
@@ -335,6 +401,28 @@ components:
           enum: [ok, missing]
         missing_channels:
           type: integer
+
+    CurrentServiceInfo:
+      type: object
+      description: Current live service and EPG information from receiver
+      properties:
+        status: { type: string, enum: [ok, unavailable] }
+        channel:
+          type: object
+          properties:
+            name: { type: string }
+            ref: { type: string }
+        now:
+          type: object
+          properties:
+            title: { type: string }
+            description: { type: string }
+            begin_timestamp: { type: integer, format: int64 }
+            duration_sec: { type: integer }
+        next:
+          type: object
+          properties:
+            title: { type: string }
 
     OpenWebIFConfig:
       type: object
@@ -819,6 +907,13 @@ components:
         state:
           type: string
           enum: [active, idle]
+        program:
+          type: object
+          properties:
+            title: { type: string }
+            description: { type: string }
+            begin_timestamp: { type: integer, format: int64 }
+            duration_sec: { type: integer }
 
     RecordingRoot:
       type: object
@@ -967,6 +1062,51 @@ paths:
           description: Invalid configuration
         "500":
           description: Failed to save configuration
+
+  /receiver/current:
+    get:
+      summary: Get current service and EPG
+      operationId: getReceiverCurrent
+      description: Returns the currently playing service on the receiver with EPG information
+      tags:
+        - receiver
+      security:
+        - BearerAuth: [v3:read]
+      responses:
+        "200":
+          description: Current service information
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentServiceInfo"
+        "502":
+          description: Failed to query receiver
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "503":
+          description: Receiver client unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+  /system/info:
+    get:
+      summary: Get comprehensive system information
+      operationId: getSystemInfo
+      tags:
+        - system
+      security:
+        - BearerAuth: [v3:read]
+      responses:
+        "200":
+          description: System information
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemInfoData"
 
   /system/refresh:
     post:

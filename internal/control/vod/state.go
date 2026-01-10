@@ -46,6 +46,7 @@ const (
 	ReasonStartFail FailureReason = "START_FAIL"
 	ReasonInternal  FailureReason = "INTERNAL"
 	ReasonCanceled  FailureReason = "CANCELED"
+	ReasonContract  FailureReason = "RUNNER_CONTRACT"
 )
 
 // TransitionEvent describes a state transition trigger.

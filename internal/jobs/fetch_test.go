@@ -113,10 +113,10 @@ func TestBuildSRefMap(t *testing.T) {
 	srefMap := agg.buildSRefMap()
 
 	// Verify correct mappings
-	if srefMap["1:0:19:1234:3EF:1:C00000:0:0:0:"] != "ch1" {
+	if srefMap["1:0:19:1234:3EF:1:C00000:0:0:0:"] != "1:0:19:1234:3EF:1:C00000:0:0:0:" {
 		t.Error("expected sRef for ch1 to map correctly")
 	}
-	if srefMap["1:0:19:5678:3EF:1:C00000:0:0:0:"] != "ch2" {
+	if srefMap["1:0:19:5678:3EF:1:C00000:0:0:0:"] != "1:0:19:5678:3EF:1:C00000:0:0:0:" {
 		t.Error("expected sRef for ch2 to map correctly")
 	}
 

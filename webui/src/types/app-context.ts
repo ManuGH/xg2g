@@ -10,7 +10,8 @@ export type AppView =
   | 'series'
   | 'files'
   | 'logs'
-  | 'settings';
+  | 'settings'
+  | 'system';
 
 export interface AuthState {
   token: string | null;
@@ -73,4 +74,4 @@ export interface AppActions {
   loadBouquetsAndChannels: () => Promise<void>;
 }
 
-export interface AppContextType extends AppState, AppActions {}
+export interface AppContextType extends AppState, AppActions { }

@@ -12,6 +12,8 @@ type FS interface {
 
 	// Stat returns FileInfo for the named file.
 	Stat(name string) (os.FileInfo, error)
+	// MkdirAll creates a directory and any necessary parents.
+	MkdirAll(path string, perm os.FileMode) error
 }
 
 // RealFS uses actual os operations.
@@ -27,4 +29,8 @@ func (RealFS) RemoveAll(path string) error {
 
 func (RealFS) Stat(name string) (os.FileInfo, error) {
 	return os.Stat(name)
+}
+
+func (RealFS) MkdirAll(path string, perm os.FileMode) error {
+	return os.MkdirAll(path, perm)
 }

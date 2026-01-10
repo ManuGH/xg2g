@@ -331,7 +331,7 @@ function V3Player(props: V3PlayerProps) {
     } finally {
       // Small tick to ensure event loop cleanup clears any pending errors
       // User recommendation: 250-500ms window to catch trailing async errors
-      setTimeout(() => { isTeardownRef.current = false; }, 500);
+      setTimeout(() => { isTeardownRef.current = false; }, 50);
     }
   }, []);
 
@@ -612,6 +612,7 @@ function V3Player(props: V3PlayerProps) {
 
       retries++;
     }
+    console.warn('[V3Player] Direct Stream Timeout after', maxRetries, 'attempts');
     throw new Error(t('player.timeout'));
   }, [t]);
 
@@ -687,6 +688,7 @@ function V3Player(props: V3PlayerProps) {
       // --- DIRECT MP4 PATH ---
       if (mode === 'direct_mp4') {
         try {
+          isTeardownRef.current = false; // Force clear to prevent race condition
           // Probe with no-cache to handle "503 Preparing"
           await waitForDirectStream(streamUrl);
 

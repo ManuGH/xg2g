@@ -153,11 +153,11 @@ func TestAbout(t *testing.T) {
 	if info.Info.Model != "Mock Receiver" {
 		t.Fatalf("Model: want %q, got %q", "Mock Receiver", info.Info.Model)
 	}
-	if info.TunersCount != 2 {
-		t.Fatalf("TunersCount: want %d, got %d", 2, info.TunersCount)
+	if info.Info.TunersCount != 2 {
+		t.Fatalf("TunersCount: want %d, got %d", 2, info.Info.TunersCount)
 	}
-	if len(info.Tuners) != 2 {
-		t.Fatalf("Tuners length: want %d, got %d", 2, len(info.Tuners))
+	if len(info.Info.Tuners) != 2 {
+		t.Fatalf("Tuners length: want %d, got %d", 2, len(info.Info.Tuners))
 	}
 }
 

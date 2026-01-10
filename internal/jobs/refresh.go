@@ -247,8 +247,8 @@ func Refresh(ctx context.Context, snap config.Snapshot) (*Status, error) {
 
 			items = append(items, playlist.Item{
 				Name:       name,
-				TvgID:      makeTvgID(name, ref), // Human-readable by default
-				TvgChNo:    channelNumber,        // Sequential numbering based on bouquet position
+				TvgID:      ref,           // Use ServiceRef as TvgID (raw numbers preferred by user)
+				TvgChNo:    channelNumber, // Sequential numbering based on bouquet position
 				TvgLogo:    logoURL,
 				Group:      bouquetName, // Use actual bouquet name as group
 				URL:        streamURL,
@@ -300,7 +300,10 @@ func Refresh(ctx context.Context, snap config.Snapshot) (*Status, error) {
 	if cfg.XMLTVPath != "" {
 		xmlCh := make([]epg.Channel, 0, len(items))
 		for _, it := range items {
-			ch := epg.Channel{ID: it.TvgID, DisplayName: []string{it.Name}}
+			if len(xmlCh) < 5 {
+				logger.Info().Str("channel", it.Name).Str("sref", it.ServiceRef).Msg("Debug: XMLTV Channel")
+			}
+			ch := epg.Channel{ID: it.ServiceRef, DisplayName: []string{it.Name}}
 			if it.TvgLogo != "" {
 				// Use absolute URL for XMLTV as well (Plex requirement)
 				logo := it.TvgLogo

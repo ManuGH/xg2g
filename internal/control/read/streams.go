@@ -25,9 +25,14 @@ type StreamsQuery struct {
 type StreamSession struct {
 	ID          string
 	ChannelName string
+	ServiceRef  string
 	ClientIP    string
 	StartedAt   time.Time
 	State       string // "active" (strict, non-terminal)
+	Program     string
+	Description string
+	StartTime   int64
+	EndTime     int64
 }
 
 // StateStore defines the read interface needed from the session store.
@@ -107,6 +112,7 @@ func GetStreams(ctx context.Context, cfg config.AppConfig, snap config.Snapshot,
 		sessions = append(sessions, StreamSession{
 			ID:          r.SessionID,
 			ChannelName: name,
+			ServiceRef:  r.ServiceRef,
 			ClientIP:    ip,
 			StartedAt:   startedAt,
 			State:       state,

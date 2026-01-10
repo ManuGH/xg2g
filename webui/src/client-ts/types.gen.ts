@@ -179,6 +179,56 @@ export type SystemHealth = {
     uptime_seconds?: number;
 };
 
+export type SystemInfoData = {
+    hardware?: {
+        brand?: string;
+        model?: string;
+        boxtype?: string;
+        chipset?: string;
+        chipset_description?: string;
+    };
+    software?: {
+        oe_version?: string;
+        image_distro?: string;
+        image_version?: string;
+        enigma_version?: string;
+        kernel_version?: string;
+        driver_date?: string;
+        webif_version?: string;
+    };
+    tuners?: Array<{
+        name?: string;
+        type?: string;
+        status?: string;
+    }>;
+    network?: {
+        interfaces?: Array<{
+            name?: string;
+            type?: string;
+            speed?: string;
+            mac?: string;
+            ip?: string;
+            ipv6?: string;
+            dhcp?: boolean;
+        }>;
+    };
+    storage?: {
+        devices?: Array<{
+            model?: string;
+            capacity?: string;
+            mount?: string;
+        }>;
+    };
+    runtime?: {
+        uptime?: string;
+    };
+    resource?: {
+        memory_total?: string;
+        memory_available?: string;
+        memory_used?: string;
+    };
+};
+
 export type ComponentStatus = {
     status?: 'ok' | 'error';
     last_check?: string;
@@ -187,6 +237,26 @@ export type ComponentStatus = {
 export type EpgStatus = {
     status?: 'ok' | 'missing';
     missing_channels?: number;
+};
+
+/**
+ * Current live service and EPG information from receiver
+ */
+export type CurrentServiceInfo = {
+    status?: 'ok' | 'unavailable';
+    channel?: {
+        name?: string;
+        ref?: string;
+    };
+    now?: {
+        title?: string;
+        description?: string;
+        begin_timestamp?: number;
+        duration_sec?: number;
+    };
+    next?: {
+        title?: string;
+    };
 };
 
 export type OpenWebIfConfig = {
@@ -350,6 +420,65 @@ export type StreamingConfig = {
      * Strict delivery policy (v3.1+)
      */
     delivery_policy?: 'universal';
+};
+
+/**
+ * System-wide diagnostics per ADR-SRE-002
+ */
+export type SystemDiagnostics = {
+    /**
+     * When subsystems were last probed
+     */
+    measured_at: string;
+    /**
+     * When overall status was computed
+     */
+    derived_at: string;
+    /**
+     * Overall system health (per P0-A critical subsystem logic)
+     */
+    overall_status: 'ok' | 'degraded' | 'unavailable' | 'unknown';
+    /**
+     * Health status per subsystem
+     */
+    subsystems: {
+        [key: string]: unknown;
+    };
+    /**
+     * Actionable degradation items for failed subsystems
+     */
+    degradation_summary?: Array<{
+        subsystem?: string;
+        status?: 'degraded' | 'unavailable';
+        since?: string;
+        error_code?: string;
+        suggested_actions?: Array<string>;
+    }>;
+};
+
+export type LibraryRoot = {
+    id: string;
+    type: 'smb' | 'nfs' | 'local';
+    last_scan_time?: string;
+    last_scan_status: 'never' | 'running' | 'ok' | 'degraded' | 'failed';
+    total_items?: number;
+};
+
+export type LibraryItem = {
+    root_id: string;
+    rel_path: string;
+    filename: string;
+    size_bytes: number;
+    mod_time: string;
+    scan_time?: string;
+    status?: 'ok' | 'unreadable';
+};
+
+export type LibraryItemsResponse = {
+    items: Array<LibraryItem>;
+    total: number;
+    limit: number;
+    offset: number;
 };
 
 export type Bouquet = {
@@ -519,6 +648,12 @@ export type StreamSession = {
     channel_name?: string;
     started_at?: string;
     state?: 'active' | 'idle';
+    program?: {
+        title?: string;
+        description?: string;
+        begin_timestamp?: number;
+        duration_sec?: number;
+    };
 };
 
 export type RecordingRoot = {
@@ -622,6 +757,35 @@ export type SeriesRuleWritable = {
     lastRunSummary?: RunSummary;
 };
 
+export type GetReceiverCurrentData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/receiver/current';
+};
+
+export type GetReceiverCurrentErrors = {
+    /**
+     * Failed to query receiver
+     */
+    502: ProblemDetails;
+    /**
+     * Receiver client unavailable
+     */
+    503: ProblemDetails;
+};
+
+export type GetReceiverCurrentError = GetReceiverCurrentErrors[keyof GetReceiverCurrentErrors];
+
+export type GetReceiverCurrentResponses = {
+    /**
+     * Current service information
+     */
+    200: CurrentServiceInfo;
+};
+
+export type GetReceiverCurrentResponse = GetReceiverCurrentResponses[keyof GetReceiverCurrentResponses];
+
 export type GetSystemHealthData = {
     body?: never;
     path?: never;
@@ -637,6 +801,22 @@ export type GetSystemHealthResponses = {
 };
 
 export type GetSystemHealthResponse = GetSystemHealthResponses[keyof GetSystemHealthResponses];
+
+export type GetSystemInfoData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/system/info';
+};
+
+export type GetSystemInfoResponses = {
+    /**
+     * System information
+     */
+    200: SystemInfoData;
+};
+
+export type GetSystemInfoResponse = GetSystemInfoResponses[keyof GetSystemInfoResponses];
 
 export type GetSystemHealthzData = {
     body?: never;
@@ -701,6 +881,33 @@ export type PutSystemConfigResponses = {
 
 export type PutSystemConfigResponse = PutSystemConfigResponses[keyof PutSystemConfigResponses];
 
+export type GetSystemDiagnosticsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/system/diagnostics';
+};
+
+export type GetSystemDiagnosticsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Diagnostics check failed
+     */
+    500: unknown;
+};
+
+export type GetSystemDiagnosticsResponses = {
+    /**
+     * System diagnostics
+     */
+    200: SystemDiagnostics;
+};
+
+export type GetSystemDiagnosticsResponse = GetSystemDiagnosticsResponses[keyof GetSystemDiagnosticsResponses];
+
 export type PostSystemRefreshData = {
     body?: never;
     path?: never;
@@ -721,6 +928,54 @@ export type PostSystemRefreshResponses = {
      */
     202: unknown;
 };
+
+export type GetLibraryRootsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/library/roots';
+};
+
+export type GetLibraryRootsResponses = {
+    /**
+     * Library roots
+     */
+    200: Array<LibraryRoot>;
+};
+
+export type GetLibraryRootsResponse = GetLibraryRootsResponses[keyof GetLibraryRootsResponses];
+
+export type GetLibraryRootItemsData = {
+    body?: never;
+    path: {
+        root_id: string;
+    };
+    query?: {
+        limit?: number;
+        offset?: number;
+    };
+    url: '/library/roots/{root_id}/items';
+};
+
+export type GetLibraryRootItemsErrors = {
+    /**
+     * Root not found
+     */
+    404: unknown;
+    /**
+     * Scan in progress
+     */
+    503: unknown;
+};
+
+export type GetLibraryRootItemsResponses = {
+    /**
+     * Library items
+     */
+    200: LibraryItemsResponse;
+};
+
+export type GetLibraryRootItemsResponse = GetLibraryRootItemsResponses[keyof GetLibraryRootItemsResponses];
 
 export type GetServicesBouquetsData = {
     body?: never;

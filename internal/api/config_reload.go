@@ -55,6 +55,11 @@ func (s *Server) ApplySnapshot(snap *config.Snapshot) {
 	s.cfg = newCfg
 	s.snap = *snap
 	s.status.Version = snap.App.Version
+
+	// Propagate configuration to v3 handler
+	if s.v3Handler != nil {
+		s.v3Handler.UpdateConfig(newCfg, *snap)
+	}
 }
 
 func (s *Server) handleConfigReload(w http.ResponseWriter, r *http.Request) {

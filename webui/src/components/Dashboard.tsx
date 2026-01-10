@@ -2,147 +2,265 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
-import { useEffect, useState } from 'react';
-import { getSystemHealth, getLogs, getStreams, getDvrStatus, type SystemHealth, type LogEntry, type StreamSession } from '../client-ts';
-
-interface DvrStatus {
-  isRecording?: boolean;
-  serviceName?: string;
-}
+// Phase 1: TanStack Query Migration - Server-State Layer (2026 SOTA)
+import {
+  useSystemHealth,
+  useReceiverCurrent,
+  useStreams,
+  useDvrStatus,
+  useLogs
+} from '../hooks/useServerQueries';
+import type { SystemHealth, StreamSession } from '../client-ts';
+import './Dashboard.css';
 
 export default function Dashboard() {
-  const [health, setHealth] = useState<SystemHealth | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data: health, error, isLoading, refetch } = useSystemHealth();
 
-  const fetchHealth = async (): Promise<void> => {
-    try {
-      const result = await getSystemHealth();
-
-      if (result.error) {
-        if (result.response?.status === 401) {
-          window.dispatchEvent(new Event('auth-required'));
-          setError('Authentication required. Please enter your API token.');
-        } else {
-          setError('Failed to fetch health');
-        }
-      } else if (result.data) {
-        setHealth(result.data);
-      }
-    } catch (err) {
-      const error = err as Error;
-      setError(error.message || 'Failed to fetch health');
-    }
-  };
-
-  useEffect(() => {
-    fetchHealth();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  if (error) return <div className="error">Error: {error}</div>;
-  if (!health) return <div>Loading...</div>;
+  if (error) return <div className="error">Error: {(error as Error).message}</div>;
+  if (isLoading || !health) return <div>Loading...</div>;
 
   return (
     <div className="dashboard">
-      <div className="dashboard-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <h2>System Status</h2>
-        <div style={{ display: 'flex', gap: '10px' }}>
+      <div className="dashboard-header">
+        <h2>🎬 xg2g Dashboard</h2>
+        <div className="dashboard-actions">
           <RecordingStatusIndicator />
-          <button onClick={fetchHealth}>Refresh</button>
+          <button onClick={() => refetch()}>Refresh</button>
         </div>
       </div>
-      <div className="card-grid">
 
-        {/* Startup Safety Net Indicator */}
-        {((health.epg?.missing_channels || 0) > 0 && (health.uptime_seconds || 0) < 300) && (
-          <div className="card full-width warning-banner" style={{ background: '#fff3cd', color: '#856404', borderColor: '#ffeeba' }}>
-            <h3>⚠️ System Initializing</h3>
-            <p>The system is currently syncing with your receiver in the background. Some data may be missing temporarily.</p>
-            <small>This allows the UI to remain reachable while data loads. Please check "Recent Logs" below for progress.</small>
-          </div>
-        )}
-
-        {/* V3.0.0 Welcome Banner */}
-        {health.version === 'v3.0.0' && (
-          <div className="card full-width info-banner" style={{ background: '#d1e7dd', color: '#0f5132', borderColor: '#badbcc' }}>
-            <h3>🎉 New Version 3.0.0</h3>
-            <p>Welcome to the new major release! The application has been updated to version 3.0.0.</p>
-          </div>
-        )}
-
-        <div className="card">
-          <h3>System Status</h3>
-          <div className={`status-indicator ${health.status}`}>
-            {health.status === 'ok' ? 'HEALTHY' : 'DEGRADED'}
-          </div>
-          <p>Uptime: {formatUptime(health.uptime_seconds || 0)}</p>
-          <p>Version: {health.version}</p>
+      {/* Startup Warning Banner */}
+      {((health.epg?.missing_channels || 0) > 0 && (health.uptime_seconds || 0) < 300) && (
+        <div className="status-card" style={{ background: 'rgba(251, 191, 36, 0.1)', border: '1px solid rgba(251, 191, 36, 0.3)', marginBottom: '20px' }}>
+          <h3>⚠️ System Initializing</h3>
+          <p style={{ margin: 0, fontSize: '13px', color: 'rgba(255, 255, 255, 0.7)' }}>
+            xg2g is syncing with the receiver in the background. Some data may be temporarily missing.
+          </p>
         </div>
+      )}
 
-        <StreamsCard />
+      {/* Primary Row: Receiver Status (HDMI Output) */}
+      <div className="main-status-row" style={{ marginBottom: '20px' }}>
+        <LiveTVCard />
+      </div>
 
-        <div className="card">
-          <h3>Enigma2 Link</h3>
+      {/* Second Row: Streaming Status */}
+      <div className="status-grid">
+        <BoxStreamingCard />
+        <ProgramStatusCard health={health} />
+      </div>
+
+      {/* Active Streams Detail */}
+      <StreamsDetailSection />
+
+      {/* Bottom Row: EPG, Receiver, Info */}
+      <div className="bottom-row">
+        <div className="info-card">
+          <h3>📡 Enigma2 Link</h3>
           <div className={`status-indicator ${health.receiver?.status}`}>
             {health.receiver?.status === 'ok' ? 'CONNECTED' : 'ERROR'}
           </div>
           <p>Last Sync: {formatTimeAgo(health.receiver?.last_check)}</p>
         </div>
 
-        <div className="card">
-          <h3>EPG Data</h3>
+        <div className="info-card">
+          <h3>📺 EPG Data</h3>
           <div className={`status-indicator ${health.epg?.status}`}>
             {health.epg?.status === 'ok' ? 'SYNCED' : health.epg?.status === 'missing' ? 'PARTIAL' : 'ERROR'}
           </div>
           <p>{health.epg?.missing_channels || 0} channels missing data</p>
         </div>
 
+        <div className="info-card">
+          <h3>ℹ️ Program Info</h3>
+          <div className="program-info">
+            <div className="info-item">
+              <span className="info-label">Version</span>
+              <span className="info-value">{health.version}</span>
+            </div>
+            <div className="info-item">
+              <span className="info-label">Uptime</span>
+              <span className="info-value">{formatUptime(health.uptime_seconds || 0)}</span>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div className="recent-logs-section" style={{ marginTop: '30px' }}>
-        <h3>Recent Logs</h3>
+      {/* Recent Logs */}
+      <div className="recent-logs-section">
+        <h3>📝 Recent Logs</h3>
         <LogList />
       </div>
     </div>
   );
 }
 
+// Live TV Card (HDMI Output) - TanStack Query refactored
+function LiveTVCard() {
+  const { data: info, isLoading } = useReceiverCurrent();
+
+  if (isLoading && !info) return <div className="status-card loading">Loading Live TV info...</div>;
+
+  const hasNow = !!info?.now?.title;
+  const now = info?.now;
+  const channel = info?.channel;
+  const next = info?.next;
+
+  return (
+    <div className="status-card live-tv-card">
+      <div className="live-tv-header">
+        <div className="live-tv-title">
+          <h3>📺 Live on Receiver</h3>
+          <div className="badge-row">
+            <span className="source-badge hdmi">HDMI</span>
+            <span className="live-badge">LIVE</span>
+          </div>
+        </div>
+        <div className="receiver-channel">
+          {channel?.name || 'Unknown Channel'}
+        </div>
+      </div>
+
+      <div className="live-tv-content">
+        {hasNow && now ? (
+          <>
+            <div className="current-program">
+              <div className="program-title">{now.title}</div>
+              <div className="program-desc">{now.description}</div>
+            </div>
+            {now.begin_timestamp && now.duration_sec && (
+              <div className="program-progress-container">
+                <div className="program-times">
+                  <span>{new Date(now.begin_timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                  <span>{new Date((now.begin_timestamp + now.duration_sec) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                </div>
+                <div className="progress-bar">
+                  <div
+                    className="progress-fill"
+                    style={{
+                      width: `${Math.min(100, Math.max(0,
+                        ((Date.now() / 1000) - now.begin_timestamp) / now.duration_sec * 100
+                      ))}%`
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+            {next?.title && (
+              <div className="next-program-hint">
+                <span className="next-label">UP NEXT:</span> {next.title}
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="no-epg">
+            {info?.status === 'unavailable' ? 'Receiver currently unavailable' : 'No EPG information available'}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Box Streaming Status Card - TanStack Query refactored
+function BoxStreamingCard() {
+  const { data: streams = [] } = useStreams();
+  const streamCount = streams.length;
+
+  return (
+    <div className="status-card">
+      <h3>📡 Box Streaming</h3>
+      <div className="streaming-status">
+        <div className="streaming-item">
+          <span className="streaming-label">Enigma2 → xg2g</span>
+          <span className={`streaming-badge ${streamCount > 0 ? 'active' : 'idle'}`}>
+            {streamCount > 0 ? `🔴 STREAMING (${streamCount})` : '🟢 IDLE'}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Program Status Card - TanStack Query refactored
+function ProgramStatusCard({ health }: { health: SystemHealth }) {
+  const { data: streams = [] } = useStreams();
+  const streamCount = streams.length;
+
+  return (
+    <div className="status-card">
+      <h3>🚀 Program Status</h3>
+      <div className="streaming-status">
+        <div className="streaming-item">
+          <span className="streaming-label">xg2g → Clients</span>
+          <span className={`streaming-badge ${streamCount > 0 ? 'active' : 'idle'}`}>
+            {streamCount > 0 ? `🔴 ${streamCount} ACTIVE` : '🟢 IDLE'}
+          </span>
+        </div>
+      </div>
+      <div className="program-info" style={{ marginTop: '16px' }}>
+        <div className="info-item">
+          <span className="info-label">Health</span>
+          <span className="info-value">{health.status === 'ok' ? 'HEALTHY' : 'DEGRADED'}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Streams Detail Section - TanStack Query refactored
+function StreamsDetailSection() {
+  const { data: streams = [], error } = useStreams();
+  const count = streams.length;
+
+  if (count === 0) return null;
+
+  const maskIP = (ip: string | undefined): string => {
+    if (!ip) return '';
+    return ip.replace(/\.\d+$/, '.xxx');
+  };
+
+  return (
+    <div className="streams-section">
+      <h3>🎥 Active Streams ({count})</h3>
+      {error && <p style={{ color: '#ef4444' }}>Failed to load stream details</p>}
+      <div className="stream-grid">
+        {streams.map((s: StreamSession) => (
+          <div key={s.id} className="stream-card-enriched">
+            <div className="stream-card-header">
+              <div className="stream-card-channel-group">
+                <span className="source-badge stream">STREAM</span>
+                <div className="stream-card-channel">{s.channel_name || 'Unknown Channel'}</div>
+              </div>
+              <div className="stream-card-badge">ACTIVE</div>
+            </div>
+
+            <div className="stream-card-body">
+              {s.program?.title && (
+                <div className="stream-card-program">
+                  <div className="stream-program-title">{s.program.title}</div>
+                  <div className="stream-program-desc">{s.program.description}</div>
+                </div>
+              )}
+              <div className="stream-card-meta">
+                <div className="meta-item">
+                  <span className="meta-label">Client:</span> {maskIP(s.client_ip)}
+                </div>
+                <div className="meta-item">
+                  <span className="meta-label">Started:</span> {s.started_at ? formatDuration(new Date(s.started_at)) : 'unknown'}
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Recording Status Indicator - TanStack Query refactored
 function RecordingStatusIndicator() {
-  const [status, setStatus] = useState<DvrStatus | null>(null);
-
-  useEffect(() => {
-    let timeoutId: NodeJS.Timeout;
-    let mounted = true;
-
-    // CONTRACT-FE-002: Standard polling interval
-    const POLL_INTERVAL_MS = 30000; // 30s per contract
-
-    const fetch = async (): Promise<void> => {
-      try {
-        const result = await getDvrStatus();
-
-        if (!mounted) return;
-
-        if (result.data) {
-          setStatus(result.data as DvrStatus);
-          // Success: use standard interval
-          timeoutId = setTimeout(fetch, POLL_INTERVAL_MS);
-        }
-      } catch {
-        if (!mounted) return;
-        setStatus(null);
-        // Error: use standard interval (no custom backoff)
-        timeoutId = setTimeout(fetch, POLL_INTERVAL_MS);
-      }
-    };
-
-    fetch();
-
-    return () => {
-      mounted = false;
-      clearTimeout(timeoutId);
-    };
-  }, []);
+  const { data: status } = useDvrStatus();
 
   if (!status) {
     return <div className="recording-badge unknown">REC: UNKNOWN</div>;
@@ -155,76 +273,43 @@ function RecordingStatusIndicator() {
   );
 }
 
-function StreamsCard() {
-  const [streams, setStreams] = useState<StreamSession[]>([]);
-  const [error, setError] = useState<boolean>(false);
+// Log List Component - TanStack Query refactored
+function LogList() {
+  const { data: logs = [], isLoading, error } = useLogs(5);
 
-  useEffect(() => {
-    let timeoutId: NodeJS.Timeout;
-    let mounted = true;
-
-    // CONTRACT-FE-002: Standard polling for active streams
-    const POLL_INTERVAL_MS = 5000; // 5s for streams (less critical than diagnostics)
-
-    const fetch = async (): Promise<void> => {
-      try {
-        const result = await getStreams();
-
-        if (!mounted) return;
-
-        if (result.data) {
-          setStreams(result.data || []);
-          setError(false);
-          // Success: use standard interval
-          timeoutId = setTimeout(fetch, POLL_INTERVAL_MS);
-        }
-      } catch {
-        if (!mounted) return;
-        setError(true);
-        // Error: use standard interval (no custom backoff)
-        timeoutId = setTimeout(fetch, POLL_INTERVAL_MS);
-      }
-    };
-
-    fetch();
-
-    return () => {
-      mounted = false;
-      clearTimeout(timeoutId);
-    };
-  }, []);
-
-  const count = streams.length;
-
-  const maskIP = (ip: string | undefined): string => {
-    if (!ip) return '';
-    // Simple IPv4 masking: 1.2.3.4 -> 1.2.3.xxx
-    return ip.replace(/\.\d+$/, '.xxx');
-  };
+  if (error) return <div className="error-message">{(error as Error).message}</div>;
+  if (isLoading) return <div>Loading logs...</div>;
+  if (!logs || logs.length === 0) return <div className="no-data">No recent logs</div>;
 
   return (
-    <div className="card">
-      <h3>Active Streams</h3>
-      <div className={`status-indicator ${count > 0 ? 'active' : 'idle'}`}>
-        {error ? 'UNAVAILABLE' : `${count} Active`}
-      </div>
-      {streams.length > 0 && (
-        <ul className="stream-list">
-          {streams.map(s => (
-            <li key={s.id}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
-                <span className="channel">{s.channel_name || 'Unknown'}</span>
-                <span className="ip-hint" style={{ fontSize: '0.8em', color: '#888' }}>{maskIP(s.client_ip)}</span>
-              </div>
-              <div className="duration" style={{ fontSize: '0.85em' }}>{s.started_at ? formatDuration(new Date(s.started_at)) : ''}</div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+    <table className="log-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <thead>
+        <tr style={{ textAlign: 'left', borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}>
+          <th style={{ padding: '8px', color: 'rgba(255, 255, 255, 0.6)', fontSize: '12px' }}>Time</th>
+          <th style={{ padding: '8px', color: 'rgba(255, 255, 255, 0.6)', fontSize: '12px' }}>Level</th>
+          <th style={{ padding: '8px', color: 'rgba(255, 255, 255, 0.6)', fontSize: '12px' }}>Message</th>
+        </tr>
+      </thead>
+      <tbody>
+        {logs.map((log, i) => (
+          <tr key={i} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+            <td style={{ padding: '8px', fontSize: '12px', color: 'rgba(255, 255, 255, 0.7)' }}>
+              {new Date(log.time || '').toLocaleTimeString()}
+            </td>
+            <td className={`log-level ${(log.level || '').toLowerCase()}`} style={{ padding: '8px', fontSize: '12px' }}>
+              {log.level}
+            </td>
+            <td style={{ padding: '8px', fontSize: '12px', color: 'rgba(255, 255, 255, 0.8)' }}>
+              {log.message}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
+// Helper Functions
 function formatDuration(startDate: Date): string {
   const diff = Math.floor((new Date().getTime() - startDate.getTime()) / 1000);
   const h = Math.floor(diff / 3600);
@@ -232,58 +317,6 @@ function formatDuration(startDate: Date): string {
   const s = diff % 60;
   if (h > 0) return `${h}h ${m}m`;
   return `${m}m ${s}s`;
-}
-
-function LogList() {
-  const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const fetchLogs = async (): Promise<void> => {
-      try {
-        const result = await getLogs();
-
-        if (result.error) {
-          setError('Failed to load logs');
-        } else if (result.data) {
-          setLogs((result.data || []).slice(0, 5));
-        }
-      } catch (err) {
-        console.error('Failed to fetch logs', err);
-        setError('Failed to load logs');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchLogs();
-  }, []);
-
-  if (error) return <div className="error-message">{error}</div>;
-  if (loading) return <div>Loading logs...</div>;
-  if (!logs || logs.length === 0) return <div className="no-data">No recent logs</div>;
-
-  return (
-    <table className="log-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-      <thead>
-        <tr style={{ textAlign: 'left', borderBottom: '1px solid #ccc' }}>
-          <th>Time</th>
-          <th>Level</th>
-          <th>Message</th>
-        </tr>
-      </thead>
-      <tbody>
-        {logs.map((log, i) => (
-          <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
-            <td>{new Date(log.time || '').toLocaleTimeString()}</td>
-            <td className={`log-level ${(log.level || '').toLowerCase()}`}>{log.level}</td>
-            <td>{log.message}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
 }
 
 function formatUptime(seconds: number): string {
@@ -295,7 +328,6 @@ function formatUptime(seconds: number): string {
 function formatTimeAgo(dateString: string | undefined): string {
   if (!dateString) return 'Never';
   const date = new Date(dateString);
-  // Check for invalid date or crazy old dates (Year 1)
   if (isNaN(date.getTime()) || date.getFullYear() < 2000) return 'Never';
 
   const now = new Date();
@@ -304,5 +336,5 @@ function formatTimeAgo(dateString: string | undefined): string {
   if (diffSeconds < 60) return 'Just now';
   if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m ago`;
   if (diffSeconds < 86400) return `${Math.floor(diffSeconds / 3600)}h ago`;
-  return date.toLocaleDateString(); // > 1 day
+  return date.toLocaleDateString();
 }

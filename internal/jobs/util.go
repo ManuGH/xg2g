@@ -13,7 +13,3 @@ package jobs
 //   - Easier to debug and understand in logs/playlists
 //   - Better user experience in Plex/Jellyfin EPG mapping
 //   - Still stable and collision-resistant via hash suffix
-func makeTvgID(name, sref string) string {
-	// Default: human-readable IDs (new in v2.0)
-	return makeHumanReadableTvgID(name, sref)
-}

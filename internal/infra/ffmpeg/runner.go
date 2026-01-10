@@ -35,9 +35,16 @@ func NewExecutor(binaryPath string, logger zerolog.Logger) *Executor {
 }
 
 func (e *Executor) Start(ctx context.Context, spec vod.Spec) (vod.Handle, error) {
-	args := mapProfileToArgs(spec)
+	args, err := mapProfileToArgs(spec)
+	if err != nil {
+		return nil, fmt.Errorf("invalid spec: %w", err)
+	}
 
 	cmd := exec.CommandContext(ctx, e.BinaryPath, args...)
+	e.Logger.Debug().
+		Str("bin", e.BinaryPath).
+		Strs("args", args).
+		Msg("starting ffmpeg remux process")
 	// Set WorkDir context if needed, but we pass absolute paths usually.
 
 	// Capture pipes

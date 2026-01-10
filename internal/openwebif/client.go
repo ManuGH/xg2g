@@ -101,19 +101,92 @@ type Options struct {
 // AboutInfo represents a subset of /api/about metadata.
 type AboutInfo struct {
 	Info struct {
-		Model   string `json:"model"`
-		Boxtype string `json:"boxtype"`
-		Brand   string `json:"brand"`
+		// Basic identification
+		Model        string `json:"model"`
+		Boxtype      string `json:"boxtype"`
+		Brand        string `json:"brand"`
+		MachineBuild string `json:"machinebuild"`
+
+		// Hardware details
+		Chipset                    string `json:"chipset"`
+		FriendlyChipsetDescription string `json:"friendlychipsetdescription"`
+		FriendlyChipsetText        string `json:"friendlychipsettext"`
+
+		// Memory (OpenWebIF returns these in a non-intuitive order!)
+		Mem1 string `json:"mem1"` // FREE memory (not used!) e.g., "577 MB"
+		Mem2 string `json:"mem2"` // USED memory (not free!) e.g., "13 MB"
+		Mem3 string `json:"mem3"` // TOTAL memory e.g., "590 MB"
+
+		// Software versions
+		OEVer               string      `json:"oever"`               // OE-Alliance version
+		ImageVer            string      `json:"imagever"`            // OpenATV version
+		ImageDistro         string      `json:"imagedistro"`         // "openatv"
+		FriendlyImageDistro string      `json:"friendlyimagedistro"` // "OpenATV"
+		EnigmaVer           string      `json:"enigmaver"`           // Enigma2 date
+		KernelVer           string      `json:"kernelver"`           // Kernel version
+		DriverDate          string      `json:"driverdate"`          // Driver date
+		WebIFVer            string      `json:"webifver"`            // OWIF version
+		FPVersion           interface{} `json:"fp_version"`          // Front panel version (often null)
+
+		// Runtime
+		Uptime string `json:"uptime"` // e.g., "1d 07:40"
+
+		// Tuners
+		Tuners      []AboutTuner `json:"tuners"`
+		TunersCount int          `json:"tuners_count"`
+		FBCTuners   []AboutTuner `json:"fbc_tuners"`
+
+		// Capabilities
+		LCD              int  `json:"lcd"`              // Has LCD display
+		GrabPIP          int  `json:"grabpip"`          // Can grab PIP
+		Transcoding      bool `json:"transcoding"`      // Supports transcoding
+		TextInputSupport bool `json:"textinputsupport"` // Text input support
+
+		// Storage and Network
+		HDD    []HDDInfo          `json:"hdd"`    // Storage devices
+		IFaces []NetworkInterface `json:"ifaces"` // Network interfaces
+		Shares []interface{}      `json:"shares"` // Network shares (often empty)
+
+		// Additional fields
+		Streams interface{} `json:"streams"` // Active streams
 	} `json:"info"`
-	Tuners      []AboutTuner `json:"tuners"`
-	TunersCount int          `json:"tuners_count"`
-	FBCTuners   []AboutTuner `json:"fbc_tuners"`
+	Service interface{} `json:"service"` // Current service info
 }
 
 // AboutTuner represents a tuner entry in /api/about.
 type AboutTuner struct {
-	Name string `json:"name"`
-	Type string `json:"type"`
+	Name   string `json:"name"`   // "Tuner A"
+	Type   string `json:"type"`   // "Vuplus DVB-S NIM(45208 FBC) (DVB-S2)"
+	Live   string `json:"live"`   // Service ref if tuner is live
+	Rec    string `json:"rec"`    // Service ref if tuner is recording
+	Stream string `json:"stream"` // Service ref if tuner is streaming
+}
+
+// HDDInfo represents storage device information.
+type HDDInfo struct {
+	Model            string `json:"model"`
+	Capacity         string `json:"capacity"`
+	LabelledCapacity string `json:"labelled_capacity"`
+	Free             string `json:"free"`
+	Mount            string `json:"mount"`
+	FriendlyCapacity string `json:"friendlycapacity"` // "27.7 GB frei / 28.6 GB insgesamt"
+}
+
+// NetworkInterface represents a network interface.
+type NetworkInterface struct {
+	Name        string      `json:"name"`        // "eth0"
+	FriendlyNIC string      `json:"friendlynic"` // "Broadcom Gigabit Ethernet"
+	LinkSpeed   string      `json:"linkspeed"`   // "1 GBit/s"
+	MAC         string      `json:"mac"`         // "00:1d:ec:0f:e3:ed"
+	DHCP        bool        `json:"dhcp"`        // true if DHCP enabled
+	IP          string      `json:"ip"`          // IPv4 address
+	Mask        string      `json:"mask"`        // Netmask
+	Gateway     string      `json:"gw"`          // Gateway
+	IPv6        string      `json:"ipv6"`        // IPv6 address
+	IPMethod    string      `json:"ipmethod"`    // IP method
+	IPv4Method  string      `json:"ipv4method"`  // IPv4 method
+	V4Prefix    int         `json:"v4prefix"`    // IPv4 prefix
+	FirstPublic interface{} `json:"firstpublic"` // First public IP (often null)
 }
 
 const (
@@ -790,6 +863,20 @@ type CurrentInfo struct {
 		ONID        int    `json:"onid,omitempty"`
 		SID         int    `json:"sid,omitempty"`
 	} `json:"info"`
+	Now struct {
+		EventTitle               string `json:"title"`
+		EventDescription         string `json:"shortdesc"`
+		EventDescriptionExtended string `json:"longdesc"`
+		EventStart               int64  `json:"begin_timestamp"`
+		EventDuration            int    `json:"duration_sec"`
+	} `json:"now"`
+	Next struct {
+		EventTitle               string `json:"title"`
+		EventDescription         string `json:"shortdesc"`
+		EventDescriptionExtended string `json:"longdesc"`
+		EventStart               int64  `json:"begin_timestamp"`
+		EventDuration            int    `json:"duration_sec"`
+	} `json:"next"`
 }
 
 // SignalInfo represents the tuner signal stats from /api/signal

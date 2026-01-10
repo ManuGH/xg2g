@@ -11,12 +11,14 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"golang.org/x/sync/errgroup"
 
 	"github.com/ManuGH/xg2g/internal/api"
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/dvr"
+	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/rs/zerolog"
 )
 
@@ -126,6 +128,55 @@ func (a *App) Run(ctx context.Context) error {
 				return nil
 			})
 		}
+	}
+
+	// Jobs Scheduler (EPG)
+	// We run this as part of the daemon lifecycle.
+	if a.cfgHolder != nil {
+		g.Go(func() error {
+			current := a.cfgHolder.Current()
+			if current == nil || !current.App.EPGEnabled {
+				return nil
+			}
+
+			interval := current.App.EPGRefreshInterval
+			if interval <= 0 {
+				interval = 6 * time.Hour // Safety fallback
+			}
+
+			a.logger.Info().Dur("interval", interval).Msg("Starting background EPG refresh scheduler")
+
+			ticker := time.NewTicker(interval)
+			defer ticker.Stop()
+
+			for {
+				select {
+				case <-ctx.Done():
+					return nil
+				case <-ticker.C:
+					// Re-check config in case it changed (or disabled)
+					snap := a.cfgHolder.Current()
+					if snap != nil && snap.App.EPGEnabled {
+						// Update interval if changed
+						if snap.App.EPGRefreshInterval != interval && snap.App.EPGRefreshInterval > 0 {
+							interval = snap.App.EPGRefreshInterval
+							ticker.Reset(interval)
+							a.logger.Info().Dur("new_interval", interval).Msg("EPG refresh interval updated")
+						}
+
+						a.logger.Info().Msg("Starting scheduled EPG refresh")
+						if st, err := jobs.Refresh(ctx, *snap); err != nil {
+							a.logger.Error().Err(err).Msg("Scheduled EPG refresh failed")
+						} else {
+							a.logger.Info().Msg("Scheduled EPG refresh completed")
+							if a.apiServer != nil {
+								a.apiServer.UpdateStatus(*st)
+							}
+						}
+					}
+				}
+			}
+		})
 	}
 
 	// Main server lifecycle.

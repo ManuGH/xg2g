@@ -45,12 +45,19 @@ func newEPGAggregator(ctx context.Context, items []playlist.Item) *epgAggregator
 	}
 }
 
-// buildSRefMap creates a mapping from service reference to tvg-id
+// buildSRefMap creates a mapping from service reference to the desired Channel ID (which is now the ServiceRef)
 func (a *epgAggregator) buildSRefMap() map[string]string {
 	srefMap := make(map[string]string)
 	for _, item := range a.items {
-		if sref := extractSRefFromStreamURL(item.URL); sref != "" {
-			srefMap[sref] = item.TvgID
+		// Use explicit ServiceRef if available, otherwise try to extract from URL
+		sref := item.ServiceRef
+		if sref == "" {
+			sref = extractSRefFromStreamURL(item.URL)
+		}
+
+		if sref != "" {
+			// We map sref -> sref because the XMLTV Channel ID is now the ServiceRef
+			srefMap[sref] = sref
 		}
 	}
 	return srefMap

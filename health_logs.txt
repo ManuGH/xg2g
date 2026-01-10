@@ -1,0 +1,20 @@
+{"level":"info","service":"xg2g","version":"","component":"daemon","time":"2026-01-09T00:39:21Z","message":"→ EPG: xmltv.xml (7 days)"}
+{"level":"info","service":"xg2g","version":"","component":"daemon","event":"auth.configured","time":"2026-01-09T00:39:21Z","message":"→ API token: configured"}
+{"level":"info","service":"xg2g","version":"","component":"daemon","time":"2026-01-09T00:39:21Z","message":"→ Data dir: /var/lib/xg2g"}
+{"level":"info","service":"xg2g","version":"3.1.5","ttl":86400000,"time":"2026-01-09T00:39:21Z","message":"starting recording cache evicter"}
+{"level":"info","service":"xg2g","version":"","component":"daemon","time":"2026-01-09T00:39:21Z","message":"Starting daemon manager"}
+{"level":"info","service":"xg2g","version":"3.1.5","component":"config","event":"config.watcher_started","path":"/var/lib/xg2g/config.yaml","time":"2026-01-09T00:39:21Z","message":"watching config file for changes"}
+{"level":"info","service":"xg2g","version":"","component":"daemon","component":"manager","listen":":8088","read_timeout":60000,"write_timeout":0,"shutdown_timeout":15000,"time":"2026-01-09T00:39:21Z","message":"Starting daemon manager"}
+{"level":"info","service":"xg2g","version":"","component":"daemon","component":"manager","mode":"standard","store":"/var/lib/xg2g/store","hls_root":"/var/lib/xg2g/hls","e2_host":"http://localhost:80","time":"2026-01-09T00:39:21Z","message":"starting v3 worker (Phase 7A)"}
+{"level":"info","service":"xg2g","version":"","component":"daemon","component":"manager","time":"2026-01-09T00:39:21Z","message":"v3 components injected into API server"}
+{"level":"info","service":"xg2g","version":"","component":"daemon","component":"manager","addr":":8088","time":"2026-01-09T00:39:21Z","message":"API server listening (HTTP)"}
+{"level":"info","service":"xg2g","version":"3.1.5","component":"worker.recovery","time":"2026-01-09T00:39:21Z","message":"starting recovery sweep"}
+{"level":"info","service":"xg2g","version":"3.1.5","component":"worker.recovery","recovered_count":0,"duration":0.000801,"time":"2026-01-09T00:39:21Z","message":"recovery sweep complete"}
+{"level":"info","service":"xg2g","version":"3.1.5","interval":300000,"time":"2026-01-09T00:39:21Z","message":"background sweeper started"}
+{"level":"info","service":"xg2g","version":"3.1.5","component":"dvr.scheduler","time":"2026-01-09T00:39:21Z","message":"Series Scheduler started"}
+{"level":"info","service":"xg2g","version":"","component":"daemon","time":"2026-01-09T00:39:22Z","message":"performing initial data refresh (background)"}
+{"level":"info","service":"xg2g","version":"3.1.5","component":"jobs","event":"refresh.start","time":"2026-01-09T00:39:22Z","message":"starting refresh"}
+{"level":"info","service":"xg2g","version":"3.1.5","component":"openwebif","host":"localhost","rate_limit_rps":10,"burst":20,"time":"2026-01-09T00:39:22Z","message":"receiver rate limiting enabled"}
+{"level":"error","service":"xg2g","version":"3.1.5","component":"openwebif","host":"localhost","event":"openwebif.request","operation":"bouquets","method":"GET","endpoint":"/api/bouquets","attempt":1,"max_attempts":3,"duration_ms":0,"error_class":"network","error":"Get \"http://localhost:80/api/bouquets\": dial tcp [::1]:80: connect: connection refused","time":"2026-01-09T00:39:22Z","message":"openwebif request failed"}
+{"level":"error","service":"xg2g","version":"","component":"daemon","error":"failed to fetch bouquets: bouquets request failed: Get \"http://localhost:80/api/bouquets\": dial tcp [::1]:80: connect: connection refused","time":"2026-01-09T00:39:22Z","message":"initial data refresh failed"}
+{"level":"warn","service":"xg2g","version":"","component":"daemon","time":"2026-01-09T00:39:22Z","message":"→ Channels will be empty until manual refresh via /api/refresh"}

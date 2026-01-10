@@ -109,7 +109,7 @@ func refreshWithClient(ctx context.Context, cfg config.AppConfig, cl OwiClient) 
 
 			item := playlist.Item{
 				Name:    name,
-				TvgID:   makeTvgID(name, sref),
+				TvgID:   sref,
 				TvgChNo: channelNumber,
 				Group:   bouquetName,
 			}
@@ -165,7 +165,7 @@ func refreshWithClient(ctx context.Context, cfg config.AppConfig, cl OwiClient) 
 		}
 	}
 
-	status := &Status{LastRun: time.Now(), Channels: len(items)}
+	status := &Status{Version: cfg.Version, LastRun: time.Now(), Channels: len(items)}
 	logger.Info().
 		Str("event", "refresh.success").
 		Int("channels", status.Channels).
@@ -606,16 +606,18 @@ func TestRefresh_VersionPersistence(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Mock successful refresh (minimal setup)
-	status, err := Refresh(ctx, config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault()))
+	mock := &mockOWI{
+		bouquets: map[string]string{"Favourites": "bref1"},
+		services: map[string][][2]string{"bref1": {{"Channel A", "1:0:1"}}},
+	}
 
-	// We expect validation errors since we don't have a real OWI server,
-	// but the important part is that if Status is returned, it must contain the version
-	if err == nil && status != nil {
-		if status.Version != cfg.Version {
-			t.Errorf("Status.Version = %q, want %q (version must persist from config)",
-				status.Version, cfg.Version)
-		}
+	status, err := refreshWithClient(ctx, cfg, mock)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if status.Version != cfg.Version {
+		t.Errorf("Status.Version = %q, want %q (version must persist from config)",
+			status.Version, cfg.Version)
 	}
 
 	// This test primarily serves as documentation and catches future regressions

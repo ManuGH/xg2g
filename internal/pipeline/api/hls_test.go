@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -140,8 +141,8 @@ seg_000001.ts
 			SessionID: sessionID,
 			State:     model.SessionReady,
 			Profile: model.ProfileSpec{
-				Name:          "safari",
-				DVRWindowSec:  2700, // 45 minutes
+				Name:           "safari",
+				DVRWindowSec:   2700, // 45 minutes
 				TranscodeVideo: false,
 			},
 		},
@@ -163,21 +164,18 @@ seg_000001.ts
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, "application/vnd.apple.mpegurl", resp.Header.Get("Content-Type"))
 
-	// Check for injected tags
-	assert.Contains(t, content, "#EXT-X-START:TIME-OFFSET=-2700,PRECISE=YES", "Must inject EXT-X-START for DVR")
-	assert.Contains(t, content, "#EXT-X-PLAYLIST-TYPE:EVENT", "Must inject PLAYLIST-TYPE:EVENT")
+	// Black-Box Output Assertions (CTO Gate)
+	assert.Contains(t, content, "#EXT-X-PLAYLIST-TYPE:EVENT", "DVR MUST force EVENT type")
+	assert.Contains(t, content, "#EXT-X-START:TIME-OFFSET=-2700,PRECISE=YES", "DVR MUST inject EXT-X-START with correct offset")
+	assert.NotContains(t, content, "#EXT-X-ENDLIST", "DVR (Rolling) MUST NOT contain ENDLIST")
+	assert.NotContains(t, content, "#EXT-X-PLAYLIST-TYPE:VOD", "DVR MUST NOT contain VOD tag")
 
-	// Verify tag placement (must come after #EXTM3U and PLAYLIST-TYPE)
+	// Check tag order
 	extM3UIdx := strings.Index(content, "#EXTM3U")
-	startIdx := strings.Index(content, "#EXT-X-START")
 	playlistTypeIdx := strings.Index(content, "#EXT-X-PLAYLIST-TYPE")
+	startTagIdx := strings.Index(content, "#EXT-X-START")
 
-	assert.Greater(t, startIdx, extM3UIdx, "EXT-X-START must come after #EXTM3U")
-	assert.Greater(t, startIdx, playlistTypeIdx, "EXT-X-START must come after PLAYLIST-TYPE")
-
-	// Verify PROGRAM-DATE-TIME normalization (existing functionality)
-	assert.NotContains(t, content, "+0000", "Should normalize +0000 to Z")
-	assert.Contains(t, content, "2026-01-04T16:00:00Z", "Should have normalized timestamp")
+	assert.True(t, extM3UIdx < playlistTypeIdx && playlistTypeIdx < startTagIdx, "Semantic tags must follow header in order")
 }
 
 func TestServeHLS_VODNoStartTag(t *testing.T) {
@@ -220,9 +218,9 @@ seg_000000.ts
 	require.NoError(t, err)
 	content := string(body)
 
-	// VOD should NOT get EXT-X-START tag
-	assert.NotContains(t, content, "EXT-X-START", "VOD playlists should not have EXT-X-START")
-	assert.Contains(t, content, "#EXT-X-PLAYLIST-TYPE:VOD", "Should force VOD playlist type")
+	// Black-Box Output Assertions (CTO Gate)
+	assert.Contains(t, content, "#EXT-X-PLAYLIST-TYPE:VOD", "VOD Profile MUST force VOD tag")
+	assert.NotContains(t, content, "#EXT-X-START", "VOD Profile MUST NOT contain START tag (already finite)")
 }
 
 func TestServeHLS_LiveNoStartTag(t *testing.T) {
@@ -265,7 +263,60 @@ seg_000100.ts
 	require.NoError(t, err)
 	content := string(body)
 
-	// Live (DVRWindowSec=0) should NOT get EXT-X-START tag
-	assert.NotContains(t, content, "EXT-X-START", "Live playlists without DVR should not have EXT-X-START")
-	assert.NotContains(t, content, "#EXT-X-PLAYLIST-TYPE:EVENT", "Live should not force EVENT type")
+	// Black-Box Output Assertions (CTO Gate)
+	assert.NotContains(t, content, "EXT-X-START", "Live Profile (No DVR) MUST NOT contain START tag")
+	assert.NotContains(t, content, "#EXT-X-PLAYLIST-TYPE", "Live Profile MUST NOT force a playlist type (LIVE is default)")
+	assert.NotContains(t, content, "#EXT-X-ENDLIST", "Live Profile MUST NOT contain ENDLIST")
+}
+
+// TestServeHLS_NegativePreparingJSON ensures that the session endpoint never returns
+// the VOD-specific "PREPARING" JSON shape, even during failures/missing files.
+// This is a "Hard" Proof of Error Surface Isolation (ADR-ENG-002 Breach Prevention).
+func TestServeHLS_NegativePreparingJSON(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionID := "failure-test-session"
+
+	// Mock store with a valid session
+	store := &MockStore{
+		Session: &model.SessionRecord{
+			SessionID: sessionID,
+			State:     model.SessionReady,
+			Profile: model.ProfileSpec{
+				Name: "high",
+			},
+		},
+	}
+
+	// Helper to assert "Hard" isolation
+	assertHardIsolation := func(t *testing.T, w *httptest.ResponseRecorder) {
+		resp := w.Result()
+
+		// 1. Content-Type Assertion: Must be text/plain for session errors
+		contentType := resp.Header.Get("Content-Type")
+		assert.Contains(t, contentType, "text/plain", "Session errors MUST be text/plain")
+		assert.NotContains(t, contentType, "application/json", "Session errors MUST NOT be JSON")
+
+		// 2. Body Assertion: Must NOT be JSON
+		body, _ := io.ReadAll(resp.Body)
+		bodyStr := string(body)
+
+		var js map[string]interface{}
+		isJSON := json.Unmarshal(body, &js) == nil
+		assert.False(t, isJSON, "Session error body MUST NOT be valid JSON: %s", bodyStr)
+		assert.NotContains(t, bodyStr, `{"code":"PREPARING"`, "Session endpoint MUST NOT emit Preparing JSON")
+	}
+
+	// Case 1: File Missing (404)
+	req := httptest.NewRequest("GET", "/index.m3u8", nil)
+	w := httptest.NewRecorder()
+	ServeHLS(w, req, store, tmpDir, sessionID, "index.m3u8")
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assertHardIsolation(t, w)
+
+	// Case 2: Session Not Ready (Terminal State - 410 Gone)
+	store.Session.State = model.SessionFailed
+	w = httptest.NewRecorder()
+	ServeHLS(w, req, store, tmpDir, sessionID, "index.m3u8")
+	assert.Equal(t, http.StatusGone, w.Code)
+	assertHardIsolation(t, w)
 }

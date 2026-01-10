@@ -5,6 +5,8 @@ set -euo pipefail
 # Uses .env and delegates to 'make dev' for consistent builds.
 
 echo "🚀 Starting xg2g via 'make dev' (Loop Mode)..."
+export PATH="/opt/xg2g/ffmpeg/bin:$PATH"
+export LD_LIBRARY_PATH="/opt/xg2g/ffmpeg/lib:${LD_LIBRARY_PATH:-}"
 
 while true; do
     make dev >> logs/dev.log 2>&1

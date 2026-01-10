@@ -7,6 +7,7 @@ package config
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -180,12 +181,13 @@ type AppConfig struct {
 	MetricsAddr       string // Optional: metrics listen address (if enabled)
 
 	// EPG Configuration
-	EPGEnabled        bool
-	EPGDays           int    // Number of days to fetch EPG data (1-14)
-	EPGMaxConcurrency int    // Max parallel EPG requests (1-10)
-	EPGTimeoutMS      int    // Timeout per EPG request in milliseconds
-	EPGRetries        int    // Retry attempts for EPG requests
-	EPGSource         string // EPG fetch strategy: "bouquet" (fast, single request) or "per-service" (default, per-channel requests)
+	EPGEnabled         bool
+	EPGDays            int           // Number of days to fetch EPG data (1-14)
+	EPGMaxConcurrency  int           // Max parallel EPG requests (1-10)
+	EPGTimeoutMS       int           // Timeout per EPG request in milliseconds
+	EPGRetries         int           // Retry attempts for EPG requests
+	EPGSource          string        // EPG fetch strategy: "bouquet" (fast, single request) or "per-service" (default, per-channel requests)
+	EPGRefreshInterval time.Duration // Interval for background EPG refreshes
 
 	// TLS Configuration
 	TLSEnabled bool   // Enable TLS (auto-generate certs if cert/key empty)
@@ -345,6 +347,11 @@ func (l *Loader) Load() (AppConfig, error) {
 	// 3. Override with environment variables (highest priority)
 	l.mergeEnvConfig(&cfg)
 
+	// SAFETY: Ensure DataDir is absolute to prevent path traversal/platform errors
+	if abs, err := filepath.Abs(cfg.DataDir); err == nil {
+		cfg.DataDir = abs
+	}
+
 	// 4. Validate E2 Auth Mode inputs (before resolution to catch conflicts)
 	if err := validateE2AuthModeInputs(&cfg); err != nil {
 		return cfg, fmt.Errorf("e2 auth mode: %w", err)
@@ -426,11 +433,12 @@ func (l *Loader) setDefaults(cfg *AppConfig) {
 
 	// EPG defaults - enabled by default for complete out-of-the-box experience
 	cfg.EPGEnabled = true
-	cfg.EPGDays = 7
+	cfg.EPGDays = 14
 	cfg.EPGMaxConcurrency = 5
 	cfg.EPGTimeoutMS = 15000
 	cfg.EPGRetries = 2
 	cfg.EPGSource = "per-service" // Default to per-service for backward compatibility
+	cfg.EPGRefreshInterval = 6 * time.Hour
 
 	// TLS
 	cfg.TLSEnabled = false
@@ -588,6 +596,15 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 	if len(src.Bouquets) > 0 {
 		dst.Bouquet = strings.Join(src.Bouquets, ",")
 	}
+
+	// Recording Playback (Path Mappings)
+	dst.RecordingPlaybackPolicy = src.RecordingPlayback.PlaybackPolicy
+	if src.RecordingPlayback.StableWindow != "" {
+		if d, err := time.ParseDuration(src.RecordingPlayback.StableWindow); err == nil {
+			dst.RecordingStableWindow = d
+		}
+	}
+	dst.RecordingPathMappings = src.RecordingPlayback.Mappings
 
 	// EPG - use pointer types to allow false/0 values from YAML
 	if src.EPG.Enabled != nil {
@@ -865,20 +882,70 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	cfg.Engine.Mode = ParseString("XG2G_ENGINE_MODE", cfg.Engine.Mode)
 	cfg.Engine.IdleTimeout = ParseDuration("XG2G_ENGINE_IDLE_TIMEOUT", cfg.Engine.IdleTimeout)
 
-	// Tuner Slots: XG2G_TUNER_SLOTS
+	// Tuner Slots: Auto-Discovery with Manual Override
+	// LOGIC: Auto-discover by default, only skip if manually configured
+	manuallyConfigured := false
+
+	// Check environment variable XG2G_TUNER_SLOTS
 	if rawSlots, ok := os.LookupEnv("XG2G_TUNER_SLOTS"); ok {
 		logger := log.WithComponent("config")
 		if strings.TrimSpace(rawSlots) == "" {
-			logger.Warn().Str("key", "XG2G_TUNER_SLOTS").Msg("empty tuner slots, keeping defaults")
+			logger.Warn().Str("key", "XG2G_TUNER_SLOTS").Msg("empty tuner slots env var, will use auto-discovery")
 		} else if slots, err := ParseTunerSlots(rawSlots); err == nil {
 			cfg.Engine.TunerSlots = slots
+			manuallyConfigured = true
+			logger.Info().
+				Ints("tuner_slots", slots).
+				Msg("using manually configured tuner slots from environment")
 		} else {
-			logger.Warn().Str("key", "XG2G_TUNER_SLOTS").Str("value", rawSlots).Err(err).Msg("invalid tuner slots, keeping defaults")
+			logger.Warn().Str("key", "XG2G_TUNER_SLOTS").Str("value", rawSlots).Err(err).Msg("invalid tuner slots, will use auto-discovery")
 		}
 	}
-	// Defaulting Rule: Virtual Mode defaults to [0] if empty
-	if len(cfg.Engine.TunerSlots) == 0 && cfg.Engine.Mode == "virtual" {
-		cfg.Engine.TunerSlots = []int{0}
+
+	// Check if tunerSlots was set in YAML config
+	if !manuallyConfigured && len(cfg.Engine.TunerSlots) > 0 {
+		manuallyConfigured = true
+		logger := log.WithComponent("config")
+		logger.Info().
+			Ints("tuner_slots", cfg.Engine.TunerSlots).
+			Msg("using manually configured tuner slots from YAML")
+	}
+
+	// Auto-Discovery: Run ONLY if not manually configured
+	if !manuallyConfigured {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		if discovered, err := DiscoverTunerSlots(ctx, *cfg); err == nil && len(discovered) > 0 {
+			cfg.Engine.TunerSlots = discovered
+			logger := log.WithComponent("config")
+			logger.Info().
+				Ints("discovered_slots", discovered).
+				Msg("using auto-discovered tuner slots from receiver")
+		} else {
+			// Auto-discovery failed, use fallback
+			logger := log.WithComponent("config")
+			logger.Warn().
+				Err(err).
+				Msg("tuner slot auto-discovery failed, using fallback")
+
+			// Fallback: Virtual mode gets [0], otherwise log critical error
+			if cfg.Engine.Mode == "virtual" {
+				cfg.Engine.TunerSlots = []int{0}
+				logger.Info().
+					Msg("auto-discovery failed, defaulting to [0] for virtual mode")
+			} else {
+				logger.Error().
+					Msg("no tuner slots configured or discovered - streaming will fail with 503")
+			}
+		}
+	}
+
+	// Final validation
+	if len(cfg.Engine.TunerSlots) == 0 {
+		logger := log.WithComponent("config")
+		logger.Error().
+			Msg("CRITICAL: no tuner slots available - all streaming requests will fail with 503")
 	}
 
 	// CANONICAL STORE CONFIG

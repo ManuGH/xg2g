@@ -218,7 +218,7 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager) *Server {
 		},
 		startTime:      time.Now(),
 		piconSemaphore: make(chan struct{}, 50),
-		vodManager:     vod.NewManager(infra.NewExecutor("ffmpeg", *log.L()), infra.NewProber()),
+		vodManager:     vod.NewManager(infra.NewExecutor(cfg.FFmpeg.Bin, *log.L()), infra.NewProber(), recordings.NewPathMapper(cfg.RecordingPathMappings)),
 		preflightCheck: v3.CheckSourceAvailability,
 	}
 
@@ -538,10 +538,20 @@ func (s *Server) routes() http.Handler {
 		BaseRouter: r,
 		Middlewares: []v3.MiddlewareFunc{
 			// Apply Auth Middleware to all API routes
+			// Apply Auth Middleware to all API routes
 			func(next http.Handler) http.Handler {
 				return s.authMiddleware(next)
 			},
 		},
+	})
+
+	// Workaround: Manually register HEAD for stream.mp4 (missing in generated code)
+	// This is required for browsers (Safari/Chrome) that probe the stream before playing.
+	// We attach it to the same base router but MUST wrap it with the same auth middleware
+	// to ensure consistent behavior (query param auth relies on this).
+	r.With(s.authMiddleware).Head("/api/v3/recordings/{recordingId}/stream.mp4", func(w http.ResponseWriter, r *http.Request) {
+		recordingId := chi.URLParam(r, "recordingId")
+		s.v3Handler.StreamRecordingDirect(w, r, recordingId)
 	})
 
 	// Manually register Resume Endpoint (Extension to generated API)
@@ -579,8 +589,17 @@ func (s *Server) routes() http.Handler {
 		r.Method(http.MethodHead, "/xmltv.xml", http.HandlerFunc(s.handleXMLTV))
 
 		// Internal playlist export
+		// Internal playlist export
+		// Legacy endpoint: /playlist.m3u (serves the current playlist file, whatever it is)
 		r.Get("/playlist.m3u", func(w http.ResponseWriter, r *http.Request) {
 			path := filepath.Join(s.cfg.DataDir, s.snap.Runtime.PlaylistFilename)
+			http.ServeFile(w, r, path)
+		})
+
+		// Modern endpoint: /playlist.m3u8 (sets correct MIME type)
+		r.Get("/playlist.m3u8", func(w http.ResponseWriter, r *http.Request) {
+			path := filepath.Join(s.cfg.DataDir, s.snap.Runtime.PlaylistFilename)
+			w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 			http.ServeFile(w, r, path)
 		})
 	})
@@ -852,7 +871,8 @@ func (s *Server) handleXMLTV(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Read M3U to build tvg-id to tvg-chno mapping
-	m3uPath, err := s.dataFilePath("playlist.m3u")
+	// Read M3U to build tvg-id to tvg-chno mapping
+	m3uPath, err := s.dataFilePath(s.snap.Runtime.PlaylistFilename)
 	if err != nil {
 		logger.Warn().Err(err).Msg("playlist path rejected, serving raw XMLTV")
 		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
@@ -969,7 +989,8 @@ func (s *Server) handleLineupJSON(w http.ResponseWriter, r *http.Request) {
 	logger := log.WithComponentFromContext(r.Context(), "hdhr")
 
 	// Read the M3U playlist file
-	m3uPath, err := s.dataFilePath("playlist.m3u")
+	// Read the M3U playlist file
+	m3uPath, err := s.dataFilePath(s.snap.Runtime.PlaylistFilename)
 	if err != nil {
 		logger.Error().Err(err).Str("event", "lineup.invalid_path").Msg("playlist path rejected")
 		http.Error(w, "Lineup not available", http.StatusInternalServerError)

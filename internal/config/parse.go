@@ -5,10 +5,15 @@
 package config
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/openwebif"
 )
 
 // ParseTunerSlots parses XG2G_V3_TUNER_SLOTS.
@@ -100,4 +105,55 @@ func ParseTunerSlots(raw string) ([]int, error) {
 
 	sort.Ints(out)
 	return out, nil
+}
+
+// DiscoverTunerSlots queries the Enigma2 receiver to determine available tuner slots.
+// Returns a slice of tuner slot indices [0, 1, 2, ...] based on TunersCount.
+// Returns nil, error if discovery fails (network error, auth failure, etc.).
+func DiscoverTunerSlots(ctx context.Context, cfg AppConfig) ([]int, error) {
+	logger := log.WithComponent("config")
+
+	// Create OpenWebIF client using Enigma2 config
+	timeout := cfg.Enigma2.Timeout
+	if timeout <= 0 {
+		timeout = 10 * time.Second // Default
+	}
+
+	client := openwebif.NewWithPort(cfg.Enigma2.BaseURL, 0, openwebif.Options{
+		Username: cfg.Enigma2.Username,
+		Password: cfg.Enigma2.Password,
+		Timeout:  timeout,
+	})
+
+	// Query receiver info
+	info, err := client.About(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query receiver: %w", err)
+	}
+
+	// Use tuners array length instead of TunersCount field
+	// Some receivers (e.g., VU+ with FBC) don't populate tuners_count
+	tunerCount := len(info.Info.Tuners)
+	if tunerCount <= 0 {
+		//Fallback to TunersCount if tuners array is empty
+		tunerCount = info.Info.TunersCount
+	}
+
+	if tunerCount <= 0 {
+		return nil, fmt.Errorf("receiver reported %d tuners", tunerCount)
+	}
+
+	// Generate slot indices [0, 1, 2, ..., count-1]
+	slots := make([]int, tunerCount)
+	for i := 0; i < tunerCount; i++ {
+		slots[i] = i
+	}
+
+	logger.Info().
+		Int("tuner_count", tunerCount).
+		Ints("slots", slots).
+		Str("model", info.Info.Model).
+		Msg("discovered tuner slots from receiver")
+
+	return slots, nil
 }

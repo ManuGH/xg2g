@@ -11,7 +11,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 )
 
-func TestPathMapper_ResolveLocal_Success(t *testing.T) {
+func TestPathMapper_ResolveLocalUnsafe_Success(t *testing.T) {
 	mappings := []config.RecordingPathMapping{
 		{ReceiverRoot: "/media/net/movie", LocalRoot: "/mnt/nfs-recordings"},
 	}
@@ -45,12 +45,12 @@ func TestPathMapper_ResolveLocal_Success(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotLocal, gotOK := pm.ResolveLocal(tt.receiverPath)
+			gotLocal, gotOK := pm.ResolveLocalUnsafe(tt.receiverPath)
 			if gotOK != tt.wantOK {
-				t.Errorf("ResolveLocal() gotOK = %v, want %v", gotOK, tt.wantOK)
+				t.Errorf("ResolveLocalUnsafe() gotOK = %v, want %v", gotOK, tt.wantOK)
 			}
 			if gotLocal != tt.wantLocal {
-				t.Errorf("ResolveLocal() gotLocal = %q, want %q", gotLocal, tt.wantLocal)
+				t.Errorf("ResolveLocalUnsafe() gotLocal = %q, want %q", gotLocal, tt.wantLocal)
 			}
 		})
 	}
@@ -86,12 +86,12 @@ func TestPathMapper_LongestPrefixWins(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotLocal, gotOK := pm.ResolveLocal(tt.receiverPath)
+			gotLocal, gotOK := pm.ResolveLocalUnsafe(tt.receiverPath)
 			if gotOK != tt.wantOK {
-				t.Errorf("ResolveLocal() gotOK = %v, want %v", gotOK, tt.wantOK)
+				t.Errorf("ResolveLocalUnsafe() gotOK = %v, want %v", gotOK, tt.wantOK)
 			}
 			if gotLocal != tt.wantLocal {
-				t.Errorf("ResolveLocal() gotLocal = %q, want %q", gotLocal, tt.wantLocal)
+				t.Errorf("ResolveLocalUnsafe() gotLocal = %q, want %q", gotLocal, tt.wantLocal)
 			}
 		})
 	}
@@ -123,9 +123,9 @@ func TestPathMapper_TraversalBlocked(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, gotOK := pm.ResolveLocal(tt.receiverPath)
+			_, gotOK := pm.ResolveLocalUnsafe(tt.receiverPath)
 			if gotOK {
-				t.Errorf("ResolveLocal() should block traversal for %q", tt.receiverPath)
+				t.Errorf("ResolveLocalUnsafe() should block traversal for %q", tt.receiverPath)
 			}
 		})
 	}
@@ -157,9 +157,9 @@ func TestPathMapper_NonAbsolutePathBlocked(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, gotOK := pm.ResolveLocal(tt.receiverPath)
+			_, gotOK := pm.ResolveLocalUnsafe(tt.receiverPath)
 			if gotOK {
-				t.Errorf("ResolveLocal() should reject non-absolute path %q", tt.receiverPath)
+				t.Errorf("ResolveLocalUnsafe() should reject non-absolute path %q", tt.receiverPath)
 			}
 		})
 	}
@@ -199,12 +199,12 @@ func TestPathMapper_PathNormalization(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotLocal, gotOK := pm.ResolveLocal(tt.receiverPath)
+			gotLocal, gotOK := pm.ResolveLocalUnsafe(tt.receiverPath)
 			if gotOK != tt.wantOK {
-				t.Errorf("ResolveLocal() gotOK = %v, want %v", gotOK, tt.wantOK)
+				t.Errorf("ResolveLocalUnsafe() gotOK = %v, want %v", gotOK, tt.wantOK)
 			}
 			if gotLocal != tt.wantLocal {
-				t.Errorf("ResolveLocal() gotLocal = %q, want %q", gotLocal, tt.wantLocal)
+				t.Errorf("ResolveLocalUnsafe() gotLocal = %q, want %q", gotLocal, tt.wantLocal)
 			}
 		})
 	}
@@ -236,9 +236,9 @@ func TestPathMapper_NoMapping(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, gotOK := pm.ResolveLocal(tt.receiverPath)
+			_, gotOK := pm.ResolveLocalUnsafe(tt.receiverPath)
 			if gotOK {
-				t.Errorf("ResolveLocal() should return false for unmapped path %q", tt.receiverPath)
+				t.Errorf("ResolveLocalUnsafe() should return false for unmapped path %q", tt.receiverPath)
 			}
 		})
 	}
@@ -246,10 +246,10 @@ func TestPathMapper_NoMapping(t *testing.T) {
 
 func TestPathMapper_InvalidMappingsSkipped(t *testing.T) {
 	mappings := []config.RecordingPathMapping{
-		{ReceiverRoot: "relative/path", LocalRoot: "/mnt/valid"},        // Invalid: non-absolute receiver
-		{ReceiverRoot: "/valid", LocalRoot: "relative/local"},           // Invalid: non-absolute local
-		{ReceiverRoot: "/", LocalRoot: "/mnt/root"},                     // Invalid: root-only receiver
-		{ReceiverRoot: "/valid/path", LocalRoot: "/"},                   // Invalid: root-only local
+		{ReceiverRoot: "relative/path", LocalRoot: "/mnt/valid"},         // Invalid: non-absolute receiver
+		{ReceiverRoot: "/valid", LocalRoot: "relative/local"},            // Invalid: non-absolute local
+		{ReceiverRoot: "/", LocalRoot: "/mnt/root"},                      // Invalid: root-only receiver
+		{ReceiverRoot: "/valid/path", LocalRoot: "/"},                    // Invalid: root-only local
 		{ReceiverRoot: "/media/net/movie", LocalRoot: "/mnt/recordings"}, // Valid
 	}
 	pm := NewPathMapper(mappings)
@@ -260,21 +260,21 @@ func TestPathMapper_InvalidMappingsSkipped(t *testing.T) {
 	}
 
 	// Valid mapping should work
-	gotLocal, gotOK := pm.ResolveLocal("/media/net/movie/test.ts")
+	gotLocal, gotOK := pm.ResolveLocalUnsafe("/media/net/movie/test.ts")
 	if !gotOK {
-		t.Error("ResolveLocal() should work for valid mapping")
+		t.Error("ResolveLocalUnsafe() should work for valid mapping")
 	}
 	wantLocal := filepath.Join("/mnt/recordings", "test.ts")
 	if gotLocal != wantLocal {
-		t.Errorf("ResolveLocal() = %q, want %q", gotLocal, wantLocal)
+		t.Errorf("ResolveLocalUnsafe() = %q, want %q", gotLocal, wantLocal)
 	}
 }
 
 func TestPathMapper_EmptyMappings(t *testing.T) {
 	pm := NewPathMapper(nil)
 
-	_, gotOK := pm.ResolveLocal("/media/net/movie/test.ts")
+	_, gotOK := pm.ResolveLocalUnsafe("/media/net/movie/test.ts")
 	if gotOK {
-		t.Error("ResolveLocal() should return false when no mappings configured")
+		t.Error("ResolveLocalUnsafe() should return false when no mappings configured")
 	}
 }

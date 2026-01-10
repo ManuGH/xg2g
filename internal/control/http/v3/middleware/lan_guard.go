@@ -32,7 +32,9 @@ func NewLANGuard(cfg LANGuardConfig) (*LANGuard, error) {
 			"10.0.0.0/8",
 			"172.16.0.0/12",
 			"192.168.0.0/16",
-			"127.0.0.0/8", // Localhost
+			"127.0.0.0/8", // Localhost IPv4
+			"::1/128",     // Localhost IPv6
+			"fe80::/10",   // Link-Local IPv6
 		}
 	}
 	allowedClients, err := parseCIDRs(clientCIDRs)

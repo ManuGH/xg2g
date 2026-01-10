@@ -17,6 +17,7 @@ import (
 func TestVOD_Heartbeat(t *testing.T) {
 	ctx := context.Background()
 	clock := NewMockClock(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+	mockFS := &MockFS{}
 
 	// Create controllable progress channel
 	progressCh := make(chan ProgressEvent, 10)
@@ -30,10 +31,13 @@ func TestVOD_Heartbeat(t *testing.T) {
 	// Create monitor with injected clock
 	mon := NewBuildMonitor(BuildMonitorConfig{
 		JobID:  "test-job",
-		Spec:   Spec{WorkDir: "/tmp/test"},
+		Spec:   Spec{WorkDir: "/tmp/test", OutputTemp: "output.m3u8"},
 		Runner: runner,
 		Clock:  clock,
+		FS:     mockFS,
 	})
+
+	mockFS.SetExists("/tmp/test/output.m3u8", true)
 
 	// Start monitoring in background
 	done := make(chan struct{})

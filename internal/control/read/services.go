@@ -39,13 +39,13 @@ type ServicesResult struct {
 
 // Service is a control-layer representation of a channel/service.
 type Service struct {
-	ID         string
-	Name       string
-	Group      string
-	LogoURL    string
-	Number     string
-	Enabled    bool
-	ServiceRef string
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Group      string `json:"group"`
+	LogoURL    string `json:"logo_url"`
+	Number     string `json:"number"`
+	Enabled    bool   `json:"enabled"`
+	ServiceRef string `json:"service_ref"`
 }
 
 // GetBouquets returns a deduplicated and sorted list of channel groups (bouquets).
@@ -129,6 +129,7 @@ func GetServices(cfg config.AppConfig, snap config.Snapshot, source ServicesSour
 
 	data, err := os.ReadFile(path)
 	if err != nil {
+		fmt.Printf("DEBUG: GetServices ReadFile failed: %s, err=%v\n", path, err)
 		if os.IsNotExist(err) {
 			// Playlist missing -> Legacy returns []
 			return ServicesResult{EmptyEncoding: EmptyEncodingArray}, nil

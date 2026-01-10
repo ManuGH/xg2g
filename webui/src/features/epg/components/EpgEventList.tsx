@@ -3,6 +3,7 @@
 
 import { useState } from 'react';
 import type { EpgEvent } from '../types';
+import { normalizeEpgText } from '../../../utils/text';
 
 // Utility: Format Unix timestamp (seconds) to HH:MM
 function formatTime(ts: number): string {
@@ -81,7 +82,7 @@ export function EpgEventRow({
           <div className="epg-programme-title">{event.title || '—'}</div>
           {event.desc && (
             <div className={`epg-programme-desc${expanded ? ' expanded' : ''}`}>
-              {event.desc}
+              {normalizeEpgText(event.desc)}
             </div>
           )}
           {inProgress && (

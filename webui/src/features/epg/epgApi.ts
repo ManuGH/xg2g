@@ -61,7 +61,9 @@ export async function fetchEpgEvents(params: {
     throw new Error('Failed to fetch EPG events');
   }
 
-  return (result.data.items || []).map(mapSdkEvent);
+  // API returns direct array for EPG, unlike TimerList
+  const items = Array.isArray(result.data) ? result.data : (result.data as any).items || [];
+  return items.map(mapSdkEvent);
 }
 
 /**

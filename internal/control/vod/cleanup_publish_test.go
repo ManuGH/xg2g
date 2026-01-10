@@ -26,11 +26,12 @@ func TestVOD_Cleanup_OnStall(t *testing.T) {
 
 	mon := NewBuildMonitor(BuildMonitorConfig{
 		JobID:  "test-stall",
-		Spec:   Spec{WorkDir: "/tmp/stall-test"},
+		Spec:   Spec{WorkDir: "/tmp/stall-test", OutputTemp: "output.m3u8"},
 		Runner: runner,
 		Clock:  clock,
 		FS:     mockFS,
 	})
+	mockFS.SetExists("/tmp/stall-test/output.m3u8", true)
 
 	// Run monitor
 	done := make(chan struct{})
@@ -70,11 +71,12 @@ func TestVOD_Cleanup_OnCrash(t *testing.T) {
 
 	mon := NewBuildMonitor(BuildMonitorConfig{
 		JobID:  "test-crash",
-		Spec:   Spec{WorkDir: "/tmp/crash-test"},
+		Spec:   Spec{WorkDir: "/tmp/crash-test", OutputTemp: "output.m3u8"},
 		Runner: runner,
 		Clock:  clock,
 		FS:     mockFS,
 	})
+	mockFS.SetExists("/tmp/crash-test/output.m3u8", true)
 
 	mon.Run(ctx)
 
@@ -99,7 +101,7 @@ func TestVOD_Cleanup_OnStartFail(t *testing.T) {
 
 	mon := NewBuildMonitor(BuildMonitorConfig{
 		JobID:  "test-startfail",
-		Spec:   Spec{WorkDir: "/tmp/startfail-test"},
+		Spec:   Spec{WorkDir: "/tmp/startfail-test", OutputTemp: "output.m3u8"},
 		Runner: runner,
 		Clock:  clock,
 		FS:     mockFS,
@@ -146,6 +148,7 @@ func TestVOD_AtomicPublish_Success(t *testing.T) {
 		Clock:     clock,
 		FS:        mockFS,
 	})
+	mockFS.SetExists("/tmp/success-test/output.m3u8", true)
 
 	// Emit progress to prevent stall
 	progressCh <- ProgressEvent{}
@@ -185,6 +188,7 @@ func TestVOD_AtomicPublish_Failure_NoFinal(t *testing.T) {
 		Clock:     clock,
 		FS:        mockFS,
 	})
+	mockFS.SetExists("/tmp/failure-test/output.m3u8", true)
 
 	mon.Run(ctx)
 

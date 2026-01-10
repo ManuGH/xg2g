@@ -124,6 +124,7 @@ type Server struct {
 	epgCacheTime        time.Time
 	epgCacheMTime       time.Time
 	epgSfg              singleflight.Group
+	receiverSfg         singleflight.Group
 	libraryService      *library.Service // Media library per ADR-ENG-002
 
 	// Lifecycle
@@ -306,6 +307,8 @@ func (s *Server) SetDependencies(
 
 	if !isNil(vm) {
 		s.vodManager = vm
+		// Start the background prober pool (Phase 2 compliance)
+		s.vodManager.StartProberPool(context.Background())
 	} else {
 		s.vodManager = nil
 	}

@@ -1,13 +1,27 @@
 package ffmpeg
 
 import (
+	"fmt"
+	"path/filepath"
+	"strings"
+
 	"github.com/ManuGH/xg2g/internal/control/vod"
 )
 
 // mapProfileToArgs converts the high-level intent into FFmpeg flags.
-func mapProfileToArgs(spec vod.Spec) []string {
-	// TODO: Port full logic from internal/vod/ffmpeg_builder.go
-	// For now, minimal implementation to pass verification.
+func mapProfileToArgs(spec vod.Spec) ([]string, error) {
+	// Validation: OutputTemp must be a non-empty filename
+	if strings.TrimSpace(spec.OutputTemp) == "" {
+		return nil, fmt.Errorf("vod: OutputTemp is empty (workdir=%q)", spec.WorkDir)
+	}
+
+	// Build output path using filepath.Join for correct path handling
+	outputPath := filepath.Join(spec.WorkDir, spec.OutputTemp)
+
+	// Validation: Output must not be a directory
+	if strings.HasSuffix(outputPath, string(filepath.Separator)) {
+		return nil, fmt.Errorf("vod: output resolves to directory, expected file: %q", outputPath)
+	}
 
 	args := []string{
 		"-y", "-nostdin", "-hide_banner", "-loglevel", "error",
@@ -25,7 +39,18 @@ func mapProfileToArgs(spec vod.Spec) []string {
 		args = append(args, "-c:v", "copy", "-c:a", "copy")
 	}
 
+	// Map only video and audio streams (exclude subtitles/teletext)
+	args = append(args, "-map", "0:v", "-map", "0:a")
+
+	// HLS output format with proper settings
+	args = append(args,
+		"-f", "hls",
+		"-hls_time", "6",
+		"-hls_list_size", "0",
+		"-hls_segment_filename", filepath.Join(spec.WorkDir, "segment_%05d.ts"),
+	)
+
 	// Output to temp
-	args = append(args, spec.WorkDir+"/"+spec.OutputTemp)
-	return args
+	args = append(args, outputPath)
+	return args, nil
 }

@@ -13,6 +13,7 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.90.16",
     "hls.js": "^1.6.15",
     "i18next": "^25.7.3",
     "i18next-browser-languagedetector": "^8.2.0",

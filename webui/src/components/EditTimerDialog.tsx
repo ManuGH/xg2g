@@ -11,6 +11,7 @@ import {
   type TimerConflictPreviewResponse,
   type TimerCreateRequest
 } from '../client-ts';
+import { normalizeEpgText } from '../utils/text';
 import './EditTimerDialog.css';
 
 interface EditTimerDialogProps {
@@ -31,7 +32,7 @@ interface FormData {
 export default function EditTimerDialog({ timer, onClose, onSave, capabilities }: EditTimerDialogProps) {
   const [formData, setFormData] = useState<FormData>({
     name: timer.name || '',
-    description: timer.description || '',
+    description: normalizeEpgText(timer.description) || '',
     begin: timer.begin || 0,
     end: timer.end || 0,
     enabled: timer.state !== 'disabled',

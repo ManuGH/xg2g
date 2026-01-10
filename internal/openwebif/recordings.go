@@ -159,6 +159,7 @@ type MovieList struct {
 	Bookmarks BookmarkList `json:"bookmarks"`
 	Directory string       `json:"directory"`
 	Result    bool         `json:"result"`
+	Message   string       `json:"message"`
 }
 
 // GetRecordings retrieves the list of recordings from the receiver.
@@ -187,7 +188,7 @@ func (c *Client) GetRecordings(ctx context.Context, dirname string) (*MovieList,
 
 	if !list.Result {
 		// Log warning but proceed, empty dirs might return result=false
-		c.loggerFor(ctx).Warn().Str("dirname", dirname).Msg("movielist result=false")
+		c.loggerFor(ctx).Warn().Str("dirname", dirname).Str("message", list.Message).Str("body_snippet", string(body)).Msg("movielist result=false")
 	}
 
 	return &list, nil
