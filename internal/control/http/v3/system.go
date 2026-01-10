@@ -358,6 +358,17 @@ func (s *Server) GetStreams(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 3. Map to API DTOs
+	now := time.Now()
+	xmltvFormat := "20060102150405 -0700"
+
+	// Pre-index programs for faster lookup
+	progMap := make(map[string][]epg.Programme)
+	if snap.App.EPGEnabled && s.epgCache != nil {
+		for _, p := range s.epgCache.Programs {
+			progMap[p.Channel] = append(progMap[p.Channel], p)
+		}
+	}
+
 	resp := make([]StreamSession, 0, len(streams))
 	for _, st := range streams {
 		// Pointers for optional fields (capture loop var)
@@ -373,22 +384,46 @@ func (s *Server) GetStreams(w http.ResponseWriter, r *http.Request) {
 			activeState = Active
 		}
 
-		item := StreamSession{
-			Id:    &id,
-			State: &activeState,
+		var clientIP *string
+		if q.IncludeClientIP {
+			clientIP = &ip
+		}
+		dto := StreamSession{
+			Id:          &id,
+			ChannelName: &name,
+			ClientIp:    clientIP,
+			StartedAt:   &start,
+			State:       &activeState,
 		}
 
-		if name != "" {
-			item.ChannelName = &name
-		}
-		if ip != "" {
-			item.ClientIp = &ip
-		}
-		if !start.IsZero() {
-			item.StartedAt = &start
+		// Enrich with EPG if available
+		if progs, ok := progMap[st.ServiceRef]; ok {
+			for _, p := range progs {
+				pStart, serr := time.Parse(xmltvFormat, p.Start)
+				pStop, perr := time.Parse(xmltvFormat, p.Stop)
+				if serr == nil && perr == nil && now.After(pStart) && now.Before(pStop) {
+					pTitle := p.Title.Text
+					pDesc := p.Desc
+					pBegin := pStart.Unix()
+					pDuration := int(pStop.Sub(pStart).Seconds())
+
+					dto.Program = &struct {
+						BeginTimestamp *int64  `json:"begin_timestamp,omitempty"`
+						Description    *string `json:"description,omitempty"`
+						DurationSec    *int    `json:"duration_sec,omitempty"`
+						Title          *string `json:"title,omitempty"`
+					}{
+						Title:          &pTitle,
+						Description:    &pDesc,
+						BeginTimestamp: &pBegin,
+						DurationSec:    &pDuration,
+					}
+					break
+				}
+			}
 		}
 
-		resp = append(resp, item)
+		resp = append(resp, dto)
 	}
 
 	// 4. Send Response (Always [] for empty)
@@ -583,6 +618,7 @@ func (w *epgSourceWrapper) GetPrograms(ctx context.Context) ([]epg.Programme, er
 	result, err, _ := s.epgSfg.Do("epg-load", func() (interface{}, error) {
 		fileInfo, err := os.Stat(xmltvPath)
 		if err != nil {
+			log.L().Error().Err(err).Str("path", xmltvPath).Msg("EPG file stat failed")
 			return nil, err
 		}
 
