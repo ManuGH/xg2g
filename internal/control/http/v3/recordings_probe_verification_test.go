@@ -13,6 +13,9 @@ func TestProbeDurationIntegration(t *testing.T) {
 	if _, err := exec.LookPath("ffprobe"); err != nil {
 		t.Skip("ffprobe not found in PATH, skipping integration test")
 	}
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not found in PATH, skipping integration test")
+	}
 
 	// 2. Create a dummy test file (5 seconds)
 	tmpFile := "/tmp/xg2g_probe_regression_test.mp4"
