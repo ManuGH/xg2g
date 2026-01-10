@@ -73,7 +73,8 @@ func TestLoad_1500Services(t *testing.T) {
 	start := time.Now()
 
 	// Run refresh job
-	status, err := jobs.Refresh(context.Background(), config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault()))
+	snap := config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault())
+	status, err := jobs.Refresh(context.Background(), snap)
 	if err != nil {
 		t.Fatalf("Refresh failed: %v", err)
 	}
@@ -96,7 +97,7 @@ func TestLoad_1500Services(t *testing.T) {
 	t.Logf("Duration: %v", duration)
 
 	// Verify output file integrity
-	m3uPath := filepath.Join(tmpDir, "playlist.m3u")
+	m3uPath := filepath.Join(tmpDir, snap.Runtime.PlaylistFilename)
 	content, err := os.ReadFile(m3uPath) //nolint:gosec // tmpDir is controlled by the test
 	if err != nil {
 		t.Fatalf("Failed to read playlist: %v", err)

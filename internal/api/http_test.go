@@ -237,7 +237,7 @@ func TestHandleReady(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = os.RemoveAll(tempDir) }()
 
-	playlistPath := filepath.Join(tempDir, "playlist.m3u")
+	playlistPath := runtimePlaylistPath(tempDir)
 	xmltvPath := "epg.xml"
 	xmltvFullPath := filepath.Join(tempDir, xmltvPath)
 
@@ -443,7 +443,7 @@ func TestHandleXMLTV_Success(t *testing.T) {
 
 	// Create test XMLTV and M3U files
 	xmltvPath := filepath.Join(tmpDir, "xmltv.xml")
-	m3uPath := filepath.Join(tmpDir, "playlist.m3u")
+	m3uPath := runtimePlaylistPath(tmpDir)
 
 	xmltvContent := `<?xml version="1.0" encoding="UTF-8"?>
 <tv>
@@ -537,7 +537,7 @@ func TestHandleXMLTV_IDRemapping(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	xmltvPath := filepath.Join(tmpDir, "xmltv.xml")
-	m3uPath := filepath.Join(tmpDir, "playlist.m3u")
+	m3uPath := runtimePlaylistPath(tmpDir)
 
 	// XMLTV with channel IDs
 	xmltvContent := `<?xml version="1.0" encoding="UTF-8"?>
@@ -645,7 +645,7 @@ func TestHandleXMLTV_M3UNotFound(t *testing.T) {
 func TestHandleXMLTV_M3UTooLarge(t *testing.T) {
 	tmpDir := t.TempDir()
 	xmltvPath := filepath.Join(tmpDir, "xmltv.xml")
-	m3uPath := filepath.Join(tmpDir, "playlist.m3u")
+	m3uPath := runtimePlaylistPath(tmpDir)
 
 	xmltvContent := `<?xml version="1.0" encoding="UTF-8"?>
 <tv>

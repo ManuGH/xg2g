@@ -66,7 +66,8 @@ func TestRefresh_IntegrationSuccess(t *testing.T) {
 		XMLTVPath: "xmltv.xml",
 	}
 
-	status, err := Refresh(context.Background(), config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault()))
+	snap := config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault())
+	status, err := Refresh(context.Background(), snap)
 	if err != nil {
 		t.Fatalf("Refresh returned error: %v", err)
 	}
@@ -75,8 +76,8 @@ func TestRefresh_IntegrationSuccess(t *testing.T) {
 	}
 
 	// Verify files were written
-	if _, err := os.Stat(filepath.Join(tmp, "playlist.m3u")); err != nil {
-		t.Fatalf("playlist.m3u not written: %v", err)
+	if _, err := os.Stat(filepath.Join(tmp, snap.Runtime.PlaylistFilename)); err != nil {
+		t.Fatalf("playlist not written: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(tmp, "xmltv.xml")); err != nil {
 		t.Fatalf("xmltv.xml not written: %v", err)

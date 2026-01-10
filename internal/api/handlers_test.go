@@ -54,6 +54,11 @@ func TestGetConfig(t *testing.T) {
 	}
 }
 
+func runtimePlaylistPath(dir string) string {
+	snap := config.BuildSnapshot(config.AppConfig{DataDir: dir}, config.ReadOSRuntimeEnvOrDefault())
+	return filepath.Join(dir, snap.Runtime.PlaylistFilename)
+}
+
 // TestHandleRefreshInternal tests the HandleRefreshInternal wrapper.
 func TestHandleRefreshInternal(t *testing.T) {
 	// Create a mock refresh function that succeeds immediately
@@ -112,7 +117,7 @@ http://example.com/stream2
 #EXTINF:-1 tvg-chno="3" tvg-id="sref-3" tvg-name="Channel Three",Channel Three
 http://example.com/stream3
 `
-		m3uPath := filepath.Join(tmpDir, "playlist.m3u")
+		m3uPath := runtimePlaylistPath(tmpDir)
 		if err := os.WriteFile(m3uPath, []byte(m3uContent), 0600); err != nil {
 			t.Fatal(err)
 		}
@@ -161,7 +166,7 @@ http://example.com/stream3
 
 	t.Run("missing_playlist", func(t *testing.T) {
 		tmpDir := t.TempDir()
-		// Don't create playlist.m3u
+		// Don't create playlist file
 
 		cfg := config.AppConfig{
 			DataDir: tmpDir,
@@ -240,7 +245,7 @@ func TestRegisterRoutes_StatusEndpoint(t *testing.T) {
 
 	// Create playlist file
 	dataDir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dataDir, "playlist.m3u"), []byte("#EXTM3U"), 0600))
+	require.NoError(t, os.WriteFile(runtimePlaylistPath(dataDir), []byte("#EXTM3U"), 0600))
 
 	cfg := config.AppConfig{
 		APIToken:       "test-token",
@@ -293,7 +298,7 @@ http://10.10.55.14:18000/1:0:19:132F:3EF:1:C00000:0:0:0:
 #EXTINF:-1 tvg-chno="2" tvg-id="sref-test2" tvg-name="Test Channel 2",Test Channel 2
 http://10.10.55.14:18000/1:0:19:1334:3EF:1:C00000:0:0:0:
 `
-	m3uPath := filepath.Join(tempDir, "playlist.m3u")
+	m3uPath := runtimePlaylistPath(tempDir)
 	require.NoError(t, os.WriteFile(m3uPath, []byte(m3uContent), 0600))
 
 	// Create server with PlexForceHLS disabled
@@ -349,7 +354,7 @@ http://10.10.55.14:18000/1:0:19:132F:3EF:1:C00000:0:0:0:
 #EXTINF:-1 tvg-chno="2" tvg-id="sref-test2" tvg-name="Test Channel 2",Test Channel 2
 http://10.10.55.14:18000/1:0:19:1334:3EF:1:C00000:0:0:0:
 `
-	m3uPath := filepath.Join(tempDir, "playlist.m3u")
+	m3uPath := runtimePlaylistPath(tempDir)
 	require.NoError(t, os.WriteFile(m3uPath, []byte(m3uContent), 0600))
 
 	// Create server with PlexForceHLS enabled
@@ -404,7 +409,7 @@ func TestHandleLineupJSON_PlexForceHLS_NoDoublePrefix(t *testing.T) {
 #EXTINF:-1 tvg-chno="1" tvg-id="sref-test" tvg-name="Test Channel",Test Channel
 http://10.10.55.14:18000/hls/1:0:19:132F:3EF:1:C00000:0:0:0:
 `
-	m3uPath := filepath.Join(tempDir, "playlist.m3u")
+	m3uPath := runtimePlaylistPath(tempDir)
 	require.NoError(t, os.WriteFile(m3uPath, []byte(m3uContent), 0600))
 
 	// Create server with PlexForceHLS enabled

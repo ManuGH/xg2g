@@ -199,7 +199,8 @@ func TestRefreshWithClient_Success(t *testing.T) {
 		t.Fatalf("expected 2 channels, got %d", st.Channels)
 	}
 	// check files exist
-	if _, err := os.Stat(filepath.Join(tmpdir, "playlist.m3u")); err != nil {
+	rt := config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault()).Runtime
+	if _, err := os.Stat(filepath.Join(tmpdir, rt.PlaylistFilename)); err != nil {
 		t.Fatalf("playlist missing: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(tmpdir, "xmltv.xml")); err != nil {
