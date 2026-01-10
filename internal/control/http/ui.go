@@ -24,12 +24,12 @@ type UIConfig struct {
 func UIHandler(cfg UIConfig) http.Handler {
 	// Subdirectory "dist" matches the build output
 	subFS, err := fs.Sub(uiFS, "dist")
-	if err != nil {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			http.Error(w, "UI not available", http.StatusInternalServerError)
-		})
+	var fileServer http.Handler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "UI not available", http.StatusInternalServerError)
+	})
+	if err == nil {
+		fileServer = http.FileServer(http.FS(subFS))
 	}
-	fileServer := http.FileServer(http.FS(subFS))
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Explicitly attach CSP so the main UI HTML allows blob: media (Safari HLS)

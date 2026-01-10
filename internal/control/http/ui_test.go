@@ -5,6 +5,7 @@
 package http
 
 import (
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -32,8 +33,22 @@ func TestUIHandler_IndexNoCache(t *testing.T) {
 func TestUIHandler_AssetsCached(t *testing.T) {
 	handler := UIHandler(UIConfig{CSP: "default-src 'self'"})
 
-	// Test with asset-like path (contains dot, not index.html)
-	req := httptest.NewRequest(http.MethodGet, "/assets/index-D7U5IO28.js", nil)
+	entries, err := fs.ReadDir(uiFS, "dist/assets")
+	if err != nil || len(entries) == 0 {
+		t.Skip("no embedded assets available for cache test")
+	}
+	assetName := ""
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			assetName = entry.Name()
+			break
+		}
+	}
+	if assetName == "" {
+		t.Skip("no embedded assets available for cache test")
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/assets/"+assetName, nil)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
