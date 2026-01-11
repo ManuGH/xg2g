@@ -11,7 +11,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
-	"github.com/ManuGH/xg2g/internal/infrastructure/media/stub"
+	"github.com/ManuGH/xg2g/internal/infra/media/stub"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

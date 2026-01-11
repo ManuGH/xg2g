@@ -1,68 +1,19 @@
 package vod
 
 import (
-	"context"
-	"time"
+	vodtypes "github.com/ManuGH/xg2g/internal/domain/vod"
 )
 
-// Runner defines the contract for starting an external process.
-// This interface MUST be implemented by the Infrastructure layer.
-type Runner interface {
-	// Start launches the process defined by Spec.
-	// Returns immediate error if execution fails to start/fork.
-	Start(ctx context.Context, cmd Spec) (Handle, error)
-}
-
-// Handle controls a running process.
-type Handle interface {
-	// Wait blocks until the process exits.
-	// Returns nil if exit code 0, error otherwise.
-	Wait() error
-
-	// Stop attempts graceful termination (SIGTERM), then kills (SIGKILL) after killDelay.
-	// grace: duration to wait for graceful exit before sending KILL.
-	// kill: duration to wait for KILL to take effect before giving up (or internal timeout).
-	Stop(grace, kill time.Duration) error
-
-	// Progress returns a read-only channel of monotonic heartbeat events.
-	// Invariant: Any receive on this channel constitutes a heartbeat.
-	Progress() <-chan ProgressEvent
-
-	// Diagnostics returns a bounded snapshot of recent logs/errors (ring buffer).
-	Diagnostics() []string
-}
-
-// Spec defines the immutable configuration for a VOD build job.
-type Spec struct {
-	// Input matches the source stream or file path.
-	Input string
-
-	// WorkDir is the root of the temporary workspace owned by Control.
-	// Infrastructure MUST NOT write outside this directory.
-	WorkDir string
-
-	// OutputTemp is the filename relative to WorkDir where the artifact is built.
-	OutputTemp string
-
-	// Profile defines the transcoding/remuxing profile invariant.
-	Profile Profile
-}
-
-// Profile represents a strict configuration set for FFmpeg.
-type Profile int
+// Re-export domain types for backward compatibility.
+// New code should import github.com/ManuGH/xg2g/internal/domain/vod directly.
+type Spec = vodtypes.Spec
+type Profile = vodtypes.Profile
+type ProgressEvent = vodtypes.ProgressEvent
+type Runner = vodtypes.Runner
+type Handle = vodtypes.Handle
 
 const (
-	// ProfileDefault preserves input characteristics where possible (copy).
-	ProfileDefault Profile = iota
-	// ProfileHigh enforces high quality transcoding constraints.
-	ProfileHigh
-	// ProfileLow enforces bandwidth-constrained settings.
-	ProfileLow
+	ProfileDefault = vodtypes.ProfileDefault
+	ProfileHigh    = vodtypes.ProfileHigh
+	ProfileLow     = vodtypes.ProfileLow
 )
-
-// ProgressEvent signals activity.
-type ProgressEvent struct {
-	// At is the monotonic timestamp when this event was observed.
-	// It is informational; the act of receiving the event is the heartbeat.
-	At time.Time
-}

@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/ManuGH/xg2g/internal/control/vod"
+	"github.com/ManuGH/xg2g/internal/domain/vod"
 )
 
 // mapProfileToArgs converts the high-level intent into FFmpeg flags.

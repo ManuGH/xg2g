@@ -232,7 +232,7 @@ func TestHotPath_StampedePrevention(t *testing.T) {
 			mu.Lock()
 			count++
 			mu.Unlock()
-			time.Sleep(100 * time.Millisecond) // Simulate slow probe
+			time.Sleep(250 * time.Millisecond) // Simulate slow probe (forces 503 SLO hit)
 			return &vod.StreamInfo{
 				Video: vod.VideoStreamInfo{Duration: 3600},
 			}, nil
@@ -244,6 +244,7 @@ func TestHotPath_StampedePrevention(t *testing.T) {
 
 	mgr := vod.NewManager(nil, prober, pm)
 	s.vodManager = mgr
+	s.vodResolver = NewVODResolver(context.Background(), mgr, nil, pm, nil, vod.NewMockClock(time.Now()))
 	s.vodManager.StartProberPool(context.Background())
 
 	serviceRef := "1:0:0:0:0:0:0:0:0:" + tmpPath

@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/control/vod"
+	"github.com/ManuGH/xg2g/internal/domain/vod"
 	"github.com/rs/zerolog"
 )
 

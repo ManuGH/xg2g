@@ -1,16 +1,41 @@
+// Copyright (c) 2025 ManuGH
+// Licensed under the PolyForm Noncommercial License 1.0.0
+// Since v2.0.0, this software is restricted to non-commercial use only.
+
 package vod
 
 import (
 	"errors"
-
-	vodtypes "github.com/ManuGH/xg2g/internal/domain/vod"
 )
 
-// StreamInfo is re-exported from domain for backward compatibility.
-// New code should import github.com/ManuGH/xg2g/internal/domain/vod directly.
-type StreamInfo = vodtypes.StreamInfo
-type VideoStreamInfo = vodtypes.VideoStreamInfo
-type AudioStreamInfo = vodtypes.AudioStreamInfo
+// StreamInfo defines the properties needed for decision making.
+type StreamInfo struct {
+	Container string // e.g. "mov,mp4,m4a,3gp,3g2,mj2" or "mpegts"
+	Video     VideoStreamInfo
+	Audio     AudioStreamInfo
+}
+
+type VideoStreamInfo struct {
+	CodecName  string
+	PixFmt     string
+	Profile    string
+	Level      int
+	BitDepth   int
+	StartTime  float64
+	Duration   float64
+	Width      int
+	Height     int
+	Interlaced bool
+}
+
+type AudioStreamInfo struct {
+	CodecName     string
+	SampleRate    int
+	Channels      int
+	ChannelLayout string
+	TrackCount    int
+	StartTime     float64
+}
 
 // JobStatus is a stable DTO for API consumption.
 // It abstracts internal state.
