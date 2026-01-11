@@ -12,9 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	v3resolver "github.com/ManuGH/xg2g/internal/control/http/v3/recordings/resolver"
-	v3types "github.com/ManuGH/xg2g/internal/control/http/v3/types"
-	"github.com/ManuGH/xg2g/internal/control/playback"
+	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 )
 
 // TestVODPlayback_Path_Wiring_ScopeEnforcement verifies that scope policy is enforced at the router level.
@@ -60,9 +58,9 @@ enigma2:
 
 	// Inject Mock Resolver that Fails Test if called
 	mock := &mockResolver{
-		ResolveFunc: func(ctx context.Context, recordingID string, intent v3types.PlaybackIntent, profile playback.ClientProfile) (v3resolver.ResolveOK, *v3resolver.ResolveError) {
+		ResolveFunc: func(ctx context.Context, recordingID string, intent recservice.PlaybackIntent, profile recservice.PlaybackProfile) (recservice.PlaybackInfoResult, error) {
 			assert.Fail(t, "Resolver MUST NOT be called when auth/scope fails")
-			return v3resolver.ResolveOK{}, nil
+			return recservice.PlaybackInfoResult{}, nil
 		},
 	}
 	container.Server.SetResolver(mock)
