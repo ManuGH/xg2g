@@ -1,128 +1,131 @@
-// Copyright (c) 2025 ManuGH
-// Licensed under the PolyForm Noncommercial License 1.0.0
-// Since v2.0.0, this software is restricted to non-commercial use only.
-
-// Since v2.0.0, this software is restricted to non-commercial use only.
-
 package middleware
 
 import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/ManuGH/xg2g/internal/control/http/v3/problem"
 )
 
 // CSRFProtection creates a middleware that protects against Cross-Site Request Forgery (CSRF) attacks.
 // It validates the Origin and Referer headers for state-changing requests (POST, PUT, DELETE, PATCH).
 //
-// The middleware checks:
-// 1. Origin header matches allowed origins (preferred, per Fetch Standard)
-// 2. Referer header matches allowed origins (fallback for older browsers)
-// 3. Allows same-origin requests by default
-//
-//	r.Use(middleware.CSRFProtection(allowedOrigins))
+// The middleware enforces a strict fail-closed policy:
+// 1. Safe methods (GET, HEAD, OPTIONS) are allowed.
+// 2. Unsafe methods REQUIRE a valid Origin or Referer.
+// 3. If no allowedOrigins configured: Only strict same-origin (no proxies) allowed.
+// 4. If allowedOrigins configured: Explicit origins or strict same-origin allowed.
 func CSRFProtection(allowedOrigins []string) func(http.Handler) http.Handler {
 	// Create map for O(1) lookup
-	originsMap := make(map[string]bool)
-	for _, origin := range allowedOrigins {
-		originsMap[origin] = true
+	var originsMap map[string]bool
+	if len(allowedOrigins) > 0 {
+		originsMap = make(map[string]bool)
+		for _, origin := range allowedOrigins {
+			originsMap[origin] = true
+		}
 	}
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Only check state-changing methods (GET and HEAD are safe)
-			if r.Method != http.MethodPost && r.Method != http.MethodPut &&
-				r.Method != http.MethodDelete && r.Method != http.MethodPatch {
+			// 1. Safe methods are always allowed
+			if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions {
 				next.ServeHTTP(w, r)
 				return
 			}
 
-			// Extract request origin from Origin or Referer header
+			// 2. Extract request origin (MUST be present for unsafe methods)
 			requestOrigin := getRequestOrigin(r)
 			if requestOrigin == "" {
-				// No origin information available - reject for safety
-				http.Error(w, "Forbidden: Missing origin information", http.StatusForbidden)
+				writeCSRFProblem(w, r, "Missing origin or referer header")
 				return
 			}
 
-			// Check if request origin is allowed
+			// 3. Check if origin is allowed
 			if !isOriginAllowed(requestOrigin, originsMap, r) {
-				http.Error(w, "Forbidden: Cross-origin request not allowed", http.StatusForbidden)
+				writeCSRFProblem(w, r, "CSRF check failed: origin not trusted")
 				return
 			}
 
-			// Origin is valid - proceed with request
 			next.ServeHTTP(w, r)
 		})
 	}
 }
 
-// Helper to check allowlist
-// Removed implicit getAllowedOrigins env reader
-// getAllowedOrigins was removed in favor of explicit configuration.
+func writeCSRFProblem(w http.ResponseWriter, r *http.Request, detail string) {
+	problem.Write(w, r, http.StatusForbidden, "auth/csrf", "Forbidden", "CSRF_FORBIDDEN", detail, nil)
+}
 
-// getRequestOrigin extracts the origin from the request.
-// It checks Origin header first (preferred), then falls back to Referer.
+// getRequestOrigin extracts the origin from the request headers.
+// It checks Origin header first, then falls back to Referer.
 func getRequestOrigin(r *http.Request) string {
-	// 1. Check Origin header (standard for CORS and modern browsers)
 	origin := r.Header.Get("Origin")
 	if origin != "" {
 		return strings.TrimSuffix(origin, "/")
 	}
 
-	// 2. Fallback to Referer header (for older browsers or non-CORS requests)
 	referer := r.Header.Get("Referer")
 	if referer == "" {
 		return ""
 	}
 
-	// Extract origin from referer URL
 	refererURL, err := url.Parse(referer)
 	if err != nil {
 		return ""
 	}
 
-	// Reconstruct origin from referer (scheme + host)
 	refererOrigin := refererURL.Scheme + "://" + refererURL.Host
 	return strings.TrimSuffix(refererOrigin, "/")
 }
 
-// isOriginAllowed checks if the request origin is allowed.
-// It implements same-origin policy with configurable allowed origins.
+// isOriginAllowed implements the core CSRF decision logic (Option A).
 func isOriginAllowed(requestOrigin string, allowedOrigins map[string]bool, r *http.Request) bool {
-	// If no allowed origins configured, use same-origin policy
-	if allowedOrigins == nil {
-		return isSameOrigin(requestOrigin, r)
+	// 1. If explicitly allowed in config (including wildcard)
+	if allowedOrigins != nil {
+		if allowedOrigins["*"] || allowedOrigins[requestOrigin] {
+			return true
+		}
 	}
 
-	// Check if origin is in allowed list
-	if allowedOrigins[requestOrigin] {
-		return true
+	// 2. Fallback to strict same-origin check
+	// Same-origin is only trusted if NO proxy headers are present.
+	if hasProxyHeaders(r) {
+		return false
 	}
 
-	// Always allow same-origin requests even if not in allowed list
-	return isSameOrigin(requestOrigin, r)
+	return requestOrigin == getStrictSameOrigin(r)
 }
 
-// isSameOrigin checks if the request origin matches the request's target origin.
-func isSameOrigin(requestOrigin string, r *http.Request) bool {
-	// Construct expected origin from request
+// hasProxyHeaders checks for the presence of common proxy/forwarding headers.
+// Blindly trusting these without a trust-boundary is a security bug.
+func hasProxyHeaders(r *http.Request) bool {
+	headers := []string{
+		"Forwarded",
+		"X-Forwarded-For",
+		"X-Forwarded-Host",
+		"X-Forwarded-Proto",
+		"X-Forwarded-Server",
+	}
+	for _, h := range headers {
+		if r.Header.Get(h) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// getStrictSameOrigin reconstructs the expected origin from the local host name
+// and connection state, ignoring all forwarding headers.
+func getStrictSameOrigin(r *http.Request) string {
 	scheme := "http"
 	if r.TLS != nil {
 		scheme = "https"
 	}
 
-	// Check X-Forwarded-Proto for proxy scenarios
-	if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
-		scheme = proto
-	}
-
-	// Use Host header (includes port if non-standard)
 	host := r.Host
 	if host == "" {
-		return false
+		return ""
 	}
 
-	expectedOrigin := scheme + "://" + host
-	return requestOrigin == expectedOrigin
+	return scheme + "://" + host
 }

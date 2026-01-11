@@ -753,6 +753,14 @@ components:
           type: boolean
         reason:
           type: string
+        duration_seconds:
+          type: integer
+          format: int64
+          description: "Authoritative duration in seconds."
+        duration_source:
+          type: string
+          description: "Authoritative source of duration: cache, store, or probe."
+          enum: [cache, store, probe]
 
     TimerCreateRequest:
       type: object

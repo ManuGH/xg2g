@@ -34,6 +34,9 @@ func writeValidConfig(t *testing.T, path string, bouquet string) {
 			"enabled": true,
 			"days":    7,
 		},
+		"engine": map[string]interface{}{
+			"enabled": false,
+		},
 	}
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
@@ -55,6 +58,9 @@ func TestNewConfigHolder(t *testing.T) {
 			BaseURL:  "http://test.example.com",
 			Username: "user",
 			Password: "pass",
+		},
+		Engine: EngineConfig{
+			Enabled: false,
 		},
 	}
 
@@ -84,6 +90,9 @@ func TestConfigHolder_Swap_AssignsMonotonicEpoch(t *testing.T) {
 			BaseURL:  "http://test.example.com",
 			Username: "user",
 			Password: "pass",
+		},
+		Engine: EngineConfig{
+			Enabled: false,
 		},
 	}
 
@@ -128,6 +137,9 @@ func TestConfigHolder_Get(t *testing.T) {
 			BaseURL:  "http://test.example.com",
 			Username: "user",
 			Password: "pass",
+		},
+		Engine: EngineConfig{
+			Enabled: false,
 		},
 	}
 

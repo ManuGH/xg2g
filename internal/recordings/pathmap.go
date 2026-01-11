@@ -12,7 +12,12 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 )
 
-// PathMapper resolves receiver recording paths to local filesystem paths
+// Mapper resolves receiver recording paths to local filesystem paths
+type Mapper interface {
+	ResolveLocalExisting(receiverPath string) (string, bool)
+}
+
+// PathMapper resolves receiver recording paths to local filesystem paths using configured mappings.
 type PathMapper struct {
 	mappings []config.RecordingPathMapping
 }

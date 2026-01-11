@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
@@ -53,24 +54,32 @@ func Tracing(tracerName string) func(http.Handler) http.Handler {
 			ww := chimw.NewWrapResponseWriter(w, r.ProtoMajor)
 
 			// Add HTTP attributes to span
-			span.SetAttributes(telemetry.HTTPAttributes(
+			attrs := telemetry.HTTPAttributes(
 				r.Method,
 				route,
 				urlLabel,
 				0, // Will be set after response
-			)...)
+			)
+			if reqID := ww.Header().Get("X-Request-ID"); reqID != "" {
+				attrs = append(attrs, attribute.String("http.request_id", reqID))
+			}
+			span.SetAttributes(attrs...)
 
 			// Process request
 			next.ServeHTTP(ww, r.WithContext(ctx))
 
 			// Update span with response status
 			statusCode := ww.Status()
-			span.SetAttributes(telemetry.HTTPAttributes(
+			finalAttrs := telemetry.HTTPAttributes(
 				r.Method,
 				route,
 				urlLabel,
 				statusCode,
-			)...)
+			)
+			if reqID := ww.Header().Get("X-Request-ID"); reqID != "" {
+				finalAttrs = append(finalAttrs, attribute.String("http.request_id", reqID))
+			}
+			span.SetAttributes(finalAttrs...)
 
 			// Mark span as error if status code >= 500
 			if statusCode >= 500 {

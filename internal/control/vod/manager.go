@@ -428,6 +428,13 @@ type Prober interface {
 	Probe(ctx context.Context, path string) (*StreamInfo, error)
 }
 
+// SetProber allows injecting a mock prober for testing.
+func (m *Manager) SetProber(p Prober) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.prober = p
+}
+
 // CancelAll stops all active jobs.
 func (m *Manager) CancelAll() {
 	m.mu.Lock()

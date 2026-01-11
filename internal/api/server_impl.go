@@ -14,8 +14,8 @@ import (
 
 	"context" // This import is necessary for context.Context
 
-	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	"github.com/ManuGH/xg2g/internal/control/auth"
+	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 )
@@ -97,6 +97,7 @@ func (s *Server) handleSetupValidate(w http.ResponseWriter, r *http.Request) {
 
 // StartRecordingCacheEvicter delegates to the v3 handler.
 func (s *Server) StartRecordingCacheEvicter(ctx context.Context) {
+	s.started.Store(true)
 	s.v3Handler.StartRecordingCacheEvicter(ctx)
 }
 

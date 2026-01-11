@@ -145,6 +145,16 @@ func (s *Service) TriggerScan(ctx context.Context, rootID string) error {
 	return nil
 }
 
+// GetStore returns the underlying persistence store.
+func (s *Service) GetStore() *Store {
+	return s.store
+}
+
+// GetConfigs returns the root configurations.
+func (s *Service) GetConfigs() []RootConfig {
+	return s.configs
+}
+
 // ErrScanRunning is returned when a scan is already in progress.
 // Per P0+ Gate #2: This triggers a 503 response with Retry-After header.
 var ErrScanRunning = fmt.Errorf("scan already running")

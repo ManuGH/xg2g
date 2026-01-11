@@ -10,15 +10,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path"
 	"path/filepath"
-
-	"strings"
 	"sync"
 	"sync/atomic"
+
+	"strings"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/channels"
@@ -34,6 +35,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/health"
 	infra "github.com/ManuGH/xg2g/internal/infra/ffmpeg"
 	"github.com/ManuGH/xg2g/internal/jobs"
+	"github.com/ManuGH/xg2g/internal/library"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
@@ -45,10 +47,6 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/resilience"
 )
-
-// newV3Server allows overriding the v3 server factory for unit tests
-// to verify injection ordering and parameter passing.
-var newV3Server = v3.NewServer
 
 // Server represents the HTTP API server for xg2g.
 type Server struct {
@@ -78,8 +76,13 @@ type Server struct {
 	// Recording Playback (VOD cache generation)
 	// Phase B: SOA Refactor - VOD Manager
 	vodManager *vod.Manager
+	// P3: VOD Resolver injection for wiring tests
+	vodResolver v3.VODResolver
 
 	// OpenWebIF Client Cache (P1 Performance Fix)
+	owiClient  *openwebif.Client                                         // In-memory cache for openWebIF client
+	owiEpoch   uint64                                                    // Epoch for cache invalidation
+	owiFactory func(config.AppConfig, config.Snapshot) *openwebif.Client // Optional override for tests
 
 	// v3 Integration
 	v3Handler   *v3.Server
@@ -98,6 +101,10 @@ type Server struct {
 	rootCtx    context.Context
 	rootCancel context.CancelFunc
 	shutdownFn func(context.Context) error
+	started    atomic.Bool // P10: Lifecycle Invariant (Deliverable #4)
+
+	// Dependency Injection (Internal)
+	v3Factory func(config.AppConfig, *config.Manager, context.CancelFunc) *v3.Server
 }
 
 // AuditLogger interface for audit logging (optional).
@@ -110,6 +117,16 @@ type AuditLogger interface {
 	AuthFailure(remoteAddr, endpoint, reason string)
 	AuthMissing(remoteAddr, endpoint string)
 	RateLimitExceeded(remoteAddr, endpoint string)
+}
+
+// ServerOption allows functional configuration of the Server.
+type ServerOption func(*Server)
+
+// WithV3ServerFactory overrides the v3 server implementation (for tests).
+func WithV3ServerFactory(f func(config.AppConfig, *config.Manager, context.CancelFunc) *v3.Server) ServerOption {
+	return func(s *Server) {
+		s.v3Factory = f
+	}
 }
 
 // ConfigHolder interface allows hot configuration reloading without import cycles.
@@ -178,7 +195,7 @@ func (s *Server) dataFilePath(rel string) (string, error) {
 }
 
 // New creates and initializes a new HTTP API server.
-func New(cfg config.AppConfig, cfgMgr *config.Manager) *Server {
+func New(cfg config.AppConfig, cfgMgr *config.Manager, opts ...ServerOption) *Server {
 	// 1. Initialized root context for server lifecycle (MUST be before v3Handler)
 	rootCtx, rootCancel := context.WithCancel(context.Background())
 
@@ -220,13 +237,30 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager) *Server {
 		piconSemaphore: make(chan struct{}, 50),
 		vodManager:     vod.NewManager(infra.NewExecutor(cfg.FFmpeg.Bin, *log.L()), infra.NewProber(), recordings.NewPathMapper(cfg.RecordingPathMappings)),
 		preflightCheck: v3.CheckSourceAvailability,
+		v3Factory:      v3.NewServer, // Default factory
+	}
+
+	for _, opt := range opts {
+		opt(s)
 	}
 
 	// v3Handler expects a valid root cancel function
 	if cfgMgr == nil {
 		log.L().Fatal().Msg("config.Manager is required for API server initialization")
 	}
-	s.v3Handler = newV3Server(cfg, cfgMgr, s.rootCancel)
+	s.v3Handler = s.v3Factory(cfg, cfgMgr, s.rootCancel)
+
+	// P3: VOD Resolver Wiring
+	if libSvc := s.v3Handler.LibraryService(); libSvc != nil {
+		s.vodResolver = v3.NewVODResolver(
+			s.rootCtx,
+			s.vodManager,
+			libSvc.GetStore(),
+			s.recordingPathMapper,
+			libSvc.GetConfigs(),
+			vod.RealClock{},
+		)
+	}
 
 	// Initialize Series Engine
 	// Server (s) implements EpgProvider interface via GetEvents method
@@ -253,6 +287,7 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager) *Server {
 		s.seriesManager,
 		s.seriesEngine,
 		s.vodManager,
+		s.vodResolver, // P3: Injected via SetVODResolver or defaulted
 		s.epgCache,
 		s.healthManager,
 		logSourceWrapper{},
@@ -386,10 +421,15 @@ func (s *Server) Shutdown(ctx context.Context) error {
 }
 
 // SetRootContext ties server lifecycle to the provided parent context.
+// SetRootContext ties server lifecycle to the provided parent context.
 // It replaces any existing root context and cancels the previous one.
-func (s *Server) SetRootContext(ctx context.Context) {
+// Returns error if called after server usage has begun.
+func (s *Server) SetRootContext(ctx context.Context) error {
+	if s.started.Load() {
+		return fmt.Errorf("cannot SetRootContext after Start")
+	}
 	if ctx == nil {
-		return
+		return nil
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -397,6 +437,7 @@ func (s *Server) SetRootContext(ctx context.Context) {
 		s.rootCancel()
 	}
 	s.rootCtx, s.rootCancel = context.WithCancel(ctx)
+	return nil
 }
 
 // SetShutdownFunc wires a graceful shutdown trigger (daemon-level).
@@ -486,12 +527,21 @@ func (s *Server) GetSeriesEngine() *dvr.SeriesEngine {
 }
 
 func (s *Server) routes() http.Handler {
+	var trustedProxies []*net.IPNet
+	if list := strings.Split(s.cfg.TrustedProxies, ","); len(list) > 0 {
+		if tp, err := middleware.ParseCIDRs(list); err == nil {
+			trustedProxies = tp
+		}
+	}
+
 	r := middleware.NewRouter(middleware.StackConfig{
-		EnableCORS:     true,
-		AllowedOrigins: s.cfg.AllowedOrigins,
+		EnableCORS:           true,
+		AllowedOrigins:       s.cfg.AllowedOrigins,
+		CORSAllowCredentials: false, // PR3 requirement: hardcoded off
 
 		EnableSecurityHeaders: true,
 		CSP:                   middleware.DefaultCSP,
+		TrustedProxies:        trustedProxies,
 
 		EnableMetrics:  true,
 		TracingService: "xg2g-api",
@@ -553,6 +603,9 @@ func (s *Server) routes() http.Handler {
 		recordingId := chi.URLParam(r, "recordingId")
 		s.v3Handler.StreamRecordingDirect(w, r, recordingId)
 	})
+
+	// Manual P2 VOD Endpoint (Strict Thin-Client DTO)
+	r.With(s.authMiddleware, s.scopeMiddleware(v3.ScopeV3Read)).Get("/api/v3/vod/{recordingId}", s.v3Handler.HandleVODPlaybackInfo)
 
 	// Manually register Resume Endpoint (Extension to generated API)
 	r.With(s.authMiddleware, s.scopeMiddleware(v3.ScopeV3Write)).
@@ -639,6 +692,39 @@ func (s *Server) GetConfig() config.AppConfig {
 	return s.cfg
 }
 
+// SetVODResolver allows injecting the VOD Resolver strategy.
+// Required for dependency injection and testing seams.
+func (s *Server) SetVODResolver(vr v3.VODResolver) {
+	s.mu.Lock()
+	s.vodResolver = vr
+	s.mu.Unlock()
+
+	// Update dependencies to propagate the new resolver
+	if s.v3Handler != nil {
+		s.v3Handler.SetDependencies(
+			s.v3Bus,
+			s.v3Store,
+			s.resumeStore,
+			s.v3Scan,
+			s.recordingPathMapper,
+			s.channelManager,
+			s.seriesManager,
+			s.seriesEngine,
+			s.vodManager,
+			vr,
+			s.epgCache,
+			s.healthManager,
+			logSourceWrapper{},
+			s.v3Scan,
+			&dvrSourceWrapper{s},
+			s.channelManager,
+			&dvrSourceWrapper{s},
+			s.requestShutdown,
+			s.preflightCheck,
+		)
+	}
+}
+
 // SetV3Components configures v3 event bus, store, and scan manager
 func (s *Server) SetV3Components(b bus.Bus, st store.StateStore, rs resume.Store, sm *scan.Manager) {
 	s.mu.Lock()
@@ -657,6 +743,7 @@ func (s *Server) SetV3Components(b bus.Bus, st store.StateStore, rs resume.Store
 			s.seriesManager,
 			s.seriesEngine,
 			s.vodManager,
+			s.vodResolver,
 			s.epgCache,
 			s.healthManager,
 			logSourceWrapper{},
@@ -667,6 +754,26 @@ func (s *Server) SetV3Components(b bus.Bus, st store.StateStore, rs resume.Store
 			s.requestShutdown,
 			s.preflightCheck,
 		)
+	}
+}
+
+// LibraryService returns the underlying library service from v3 handler.
+func (s *Server) LibraryService() *library.Service {
+	if s.v3Handler != nil {
+		return s.v3Handler.LibraryService()
+	}
+	return nil
+}
+
+// VODManager returns the underlying VOD manager.
+func (s *Server) VODManager() *vod.Manager {
+	return s.vodManager
+}
+
+// SetVODProber injects a custom prober into the VOD manager for testing.
+func (s *Server) SetVODProber(p vod.Prober) {
+	if s.vodManager != nil {
+		s.vodManager.SetProber(p)
 	}
 }
 

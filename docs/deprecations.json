@@ -1,4 +1,16 @@
 {
   "version": 1,
-  "deprecations": []
+  "deprecations": [
+    {
+      "key": "XG2G_STREAM_PORT",
+      "target": "enigma2.streamPort",
+      "phase": "warn",
+      "message": "Use YAML config for streaming ports; ENV override will be removed in v3.5 (ADR-00X)"
+    },
+    {
+      "key": "XG2G_HTTP_ENABLE_HTTP2",
+      "phase": "fail",
+      "message": "HTTP/2 toggle removed. HTTP/2 is now always enabled for V3. Remove from ENV."
+    }
+  ]
 }

@@ -70,6 +70,8 @@ func TestHotPathLatencySLO(t *testing.T) {
 	prober := &blockingProber{}
 	mgr := vod.NewManager(nil, prober, nil)
 	s.vodManager = mgr
+	mapper := &mockMapper{localPath: "/tmp/test.ts"}
+	s.vodResolver = NewVODResolver(context.Background(), mgr, nil, mapper, nil, vod.NewMockClock(time.Now()))
 
 	t.Run("GetRecordings_Under_500ms", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v3/recordings", nil)
@@ -197,7 +199,7 @@ func TestSafeMetadataMutation(t *testing.T) {
 	mgr.UpdateMetadata(id, vod.Metadata{
 		State:        vod.ArtifactStateReady,
 		ArtifactPath: "/keep/this/path",
-		Duration:     123.45,
+		Duration:     123,
 	})
 
 	// Call MarkUnknown
@@ -207,7 +209,7 @@ func TestSafeMetadataMutation(t *testing.T) {
 	meta, _ := mgr.GetMetadata(id)
 	require.Equal(t, vod.ArtifactStateUnknown, meta.State)
 	require.Equal(t, "/keep/this/path", meta.ArtifactPath, "ArtifactPath must be preserved")
-	require.Equal(t, 123.45, meta.Duration, "Duration must be preserved")
+	require.Equal(t, int64(123), meta.Duration, "Duration must be preserved")
 }
 
 // TestTriggerProbe_RapidFireRevert has been moved to internal/control/vod/manager_race_test.go

@@ -144,7 +144,7 @@ func TestGetRecordingHLSPlaylist_FailedPromotesReady(t *testing.T) {
 
 	srv := NewServer(cfg, nil, nil)
 	vodMgr := vod.NewManager(nil, nil, nil)
-	srv.SetDependencies(nil, nil, nil, nil, nil, nil, nil, nil, vodMgr, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	srv.SetDependencies(nil, nil, nil, nil, nil, nil, nil, nil, vodMgr, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	cacheDir := filepath.Join(hlsRoot, "recordings", RecordingCacheKey(serviceRef))
 	require.NoError(t, os.MkdirAll(cacheDir, 0755))
@@ -179,7 +179,7 @@ func TestGetRecordingHLSPlaylist_Failed_Reconcile_BuildCallbackPromotesReady(t *
 
 	srv := NewServer(cfg, nil, nil)
 	vodMgr := vod.NewManager(&successRunner{}, nil, nil)
-	srv.SetDependencies(nil, nil, nil, nil, nil, nil, nil, nil, vodMgr, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	srv.SetDependencies(nil, nil, nil, nil, nil, nil, nil, nil, vodMgr, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	vodMgr.UpdateMetadata(serviceRef, vod.Metadata{
 		State: vod.ArtifactStateFailed,
@@ -218,7 +218,7 @@ func TestGetRecordingHLSPlaylist_FailedStampedeTriggersSingleBuild(t *testing.T)
 	srv := NewServer(cfg, nil, nil)
 	runner := newCountingRunner()
 	vodMgr := vod.NewManager(runner, nil, nil)
-	srv.SetDependencies(nil, nil, nil, nil, nil, nil, nil, nil, vodMgr, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	srv.SetDependencies(nil, nil, nil, nil, nil, nil, nil, nil, vodMgr, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	vodMgr.UpdateMetadata(serviceRef, vod.Metadata{
 		State: vod.ArtifactStateFailed,
@@ -273,7 +273,7 @@ func TestGetRecordingHLSPlaylist_FailedLatencySLO(t *testing.T) {
 	srv := NewServer(cfg, nil, nil)
 	runner := newCountingRunner()
 	vodMgr := vod.NewManager(runner, nil, nil)
-	srv.SetDependencies(nil, nil, nil, nil, nil, nil, nil, nil, vodMgr, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	srv.SetDependencies(nil, nil, nil, nil, nil, nil, nil, nil, vodMgr, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	vodMgr.UpdateMetadata(serviceRef, vod.Metadata{
 		State: vod.ArtifactStateFailed,
@@ -311,7 +311,7 @@ func TestGetRecordingHLSPlaylist_OpenFailure_ReconcileReady(t *testing.T) {
 
 	srv := NewServer(cfg, nil, nil)
 	vodMgr := vod.NewManager(&successRunner{}, &slowProber{delay: 50 * time.Millisecond}, pathMapper)
-	srv.SetDependencies(nil, nil, nil, nil, pathMapper, nil, nil, nil, vodMgr, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	srv.SetDependencies(nil, nil, nil, nil, pathMapper, nil, nil, nil, vodMgr, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	cacheDir, err := RecordingCacheDir(cfg.HLS.Root, serviceRef)
 	require.NoError(t, err)

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	controlhttp "github.com/ManuGH/xg2g/internal/control/http"
 	"github.com/ManuGH/xg2g/internal/log"
 )
 
@@ -29,13 +30,22 @@ func Write(w http.ResponseWriter, r *http.Request, status int, problemType, titl
 		instance = r.URL.EscapedPath()
 	}
 
-	// Build the response map to ensure Flattened "Extras" at top-level.
-	// Reserved keys (RFC 7807) are protected from being overwritten by extra.
+	// 1. Header-Truth: Request ID from context or response header (canonical)
+	reqID := ""
+	if r != nil {
+		reqID = log.RequestIDFromContext(r.Context())
+	}
+	if reqID == "" {
+		reqID = w.Header().Get(controlhttp.HeaderRequestID)
+	}
+
+	// 2. Build the response map (RFC 7807 compatible)
 	res := map[string]any{
-		"type":   problemType,
-		"title":  title,
-		"status": status,
-		"code":   code,
+		"type":                       problemType,
+		"title":                      title,
+		"status":                     status,
+		"code":                       code,
+		controlhttp.JSONKeyRequestID: reqID,
 	}
 
 	if detail != "" {

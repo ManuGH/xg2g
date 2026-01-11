@@ -363,6 +363,11 @@ func TestSecureFileHandlerSymlinkPolicy(t *testing.T) {
 			req, err := http.NewRequestWithContext(context.Background(), tt.method, tt.path, nil)
 			require.NoError(t, err)
 			req.RemoteAddr = "127.0.0.1:1234"
+			if tt.method == http.MethodPost || tt.method == http.MethodPut ||
+				tt.method == http.MethodPatch || tt.method == http.MethodDelete {
+				req.Host = "example.com"
+				req.Header.Set("Origin", "http://example.com")
+			}
 
 			rr := httptest.NewRecorder()
 			handler.ServeHTTP(rr, req)

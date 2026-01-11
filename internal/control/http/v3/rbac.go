@@ -16,11 +16,12 @@ import (
 type Scope string
 
 const (
-	ScopeAll     Scope = "*"
-	ScopeV3All   Scope = "v3:*"
-	ScopeV3Read  Scope = "v3:read"
-	ScopeV3Write Scope = "v3:write"
-	ScopeV3Admin Scope = "v3:admin"
+	ScopeAll      Scope = "*"
+	ScopeV3All    Scope = "v3:*"
+	ScopeV3Read   Scope = "v3:read"
+	ScopeV3Write  Scope = "v3:write"
+	ScopeV3Admin  Scope = "v3:admin"
+	ScopeV3Status Scope = "v3:status"
 )
 
 type scopeSet map[Scope]struct{}

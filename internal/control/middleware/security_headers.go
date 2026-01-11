@@ -7,6 +7,7 @@
 package middleware
 
 import (
+	"net"
 	"net/http"
 	"strings"
 )
@@ -16,7 +17,8 @@ import (
 const DefaultCSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://cdn.plyr.io; media-src 'self' blob: data: https://cdn.plyr.io; connect-src 'self' https://cdn.plyr.io; frame-ancestors 'none'"
 
 // SecurityHeaders returns a middleware that adds common security headers to all responses.
-func SecurityHeaders(csp string) func(http.Handler) http.Handler {
+// It requires trustedProxies to safely evaluate X-Forwarded-Proto headers.
+func SecurityHeaders(csp string, trustedProxies []*net.IPNet) func(http.Handler) http.Handler {
 	if csp == "" {
 		csp = DefaultCSP
 	}
@@ -24,7 +26,24 @@ func SecurityHeaders(csp string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Strict Transport Security (HSTS)
-			if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+			// Only honor X-Forwarded-Proto if the remote IP is a trusted proxy.
+			isHTTPS := r.TLS != nil
+			if !isHTTPS {
+				proto := r.Header.Get("X-Forwarded-Proto")
+				if strings.EqualFold(proto, "https") {
+					// Check trust
+					ipStr, _, _ := net.SplitHostPort(r.RemoteAddr)
+					if ipStr == "" {
+						ipStr = r.RemoteAddr
+					}
+					ip := net.ParseIP(ipStr)
+					if ip != nil && IsIPAllowed(ip, trustedProxies) {
+						isHTTPS = true
+					}
+				}
+			}
+
+			if isHTTPS {
 				w.Header().Set("Strict-Transport-Security", "max-age=15552000; includeSubDomains")
 			}
 

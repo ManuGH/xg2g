@@ -22,7 +22,7 @@ func baseV3Config(t *testing.T) AppConfig {
 		DataDir: tmp,
 		Bouquet: "Premium",
 		Engine: EngineConfig{
-			Enabled: true,
+			Enabled: false,
 			Mode:    "standard",
 		},
 		Store: StoreConfig{

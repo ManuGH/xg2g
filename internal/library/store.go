@@ -70,6 +70,7 @@ func (s *Store) migrate() error {
 		size_bytes INTEGER NOT NULL,
 		mod_time TEXT NOT NULL,
 		scan_time TEXT NOT NULL,
+		duration_seconds INTEGER NOT NULL DEFAULT 0,
 		status TEXT NOT NULL DEFAULT 'ok' CHECK(status IN ('ok', 'unreadable')),
 		PRIMARY KEY (root_id, rel_path)
 	);
@@ -178,13 +179,14 @@ func (s *Store) UpdateRootScanStatus(ctx context.Context, id string, status Root
 // Used within TX during scan.
 func (s *Store) UpsertItem(ctx context.Context, tx *sql.Tx, item Item) error {
 	query := `
-	INSERT INTO library_items (root_id, rel_path, filename, size_bytes, mod_time, scan_time, status)
-	VALUES (?, ?, ?, ?, ?, ?, ?)
+	INSERT INTO library_items (root_id, rel_path, filename, size_bytes, mod_time, scan_time, duration_seconds, status)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	ON CONFLICT(root_id, rel_path) DO UPDATE SET
 		filename = excluded.filename,
 		size_bytes = excluded.size_bytes,
 		mod_time = excluded.mod_time,
 		scan_time = excluded.scan_time,
+		duration_seconds = excluded.duration_seconds,
 		status = excluded.status
 	`
 
@@ -195,6 +197,7 @@ func (s *Store) UpsertItem(ctx context.Context, tx *sql.Tx, item Item) error {
 		item.SizeBytes,
 		item.ModTime.Format(time.RFC3339),
 		item.ScanTime.Format(time.RFC3339),
+		item.DurationSeconds,
 		item.Status.String(),
 	)
 	return err
@@ -211,7 +214,7 @@ func (s *Store) GetItems(ctx context.Context, rootID string, limit, offset int) 
 
 	// Get paginated items
 	query := `
-	SELECT root_id, rel_path, filename, size_bytes, mod_time, scan_time, status
+	SELECT root_id, rel_path, filename, size_bytes, mod_time, scan_time, duration_seconds, status
 	FROM library_items
 	WHERE root_id = ?
 	ORDER BY rel_path
@@ -236,6 +239,7 @@ func (s *Store) GetItems(ctx context.Context, rootID string, limit, offset int) 
 			&item.SizeBytes,
 			&modTimeStr,
 			&scanTimeStr,
+			&item.DurationSeconds,
 			&item.Status,
 		); err != nil {
 			return nil, 0, err

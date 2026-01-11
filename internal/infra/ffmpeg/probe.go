@@ -84,6 +84,7 @@ func Probe(ctx context.Context, path string) (*vod.StreamInfo, error) {
 			info.Video.Duration = d
 		}
 	}
+	info.Container = data.Format.FormatName
 
 	return info, nil
 }
@@ -100,6 +101,7 @@ type probeData struct {
 		FieldOrder       string `json:"field_order,omitempty"`
 	} `json:"streams"`
 	Format struct {
-		Duration string `json:"duration"`
+		Duration   string `json:"duration"`
+		FormatName string `json:"format_name"`
 	} `json:"format"`
 }

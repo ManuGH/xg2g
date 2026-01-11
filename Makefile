@@ -26,6 +26,7 @@ SOURCE_DATE_EPOCH ?= $(shell git log -1 --pretty=%ct 2>/dev/null || date -u +%s)
 export SOURCE_DATE_EPOCH
 export TZ := UTC
 export GOFLAGS := -trimpath -buildvcs=false -mod=readonly
+TOOLCHAIN_ENV := GOTOOLCHAIN=local
 
 # Build configuration
 BINARY_NAME := xg2g
@@ -169,7 +170,7 @@ generate: ## Generate Go code from OpenAPI spec
 build: ui-build ## Build the main daemon binary
 	@echo "Building xg2g daemon..."
 	@mkdir -p $(BUILD_DIR)
-	go build $(BUILD_FLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/daemon
+	$(TOOLCHAIN_ENV) go build $(BUILD_FLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/daemon
 	@echo "✅ Build complete: $(BUILD_DIR)/$(BINARY_NAME)"
 
 build-all: ## Build binaries for all supported platforms
@@ -189,7 +190,7 @@ build-all: ## Build binaries for all supported platforms
 build-repro: ui-build ## Build deterministic binary (reproducible across identical sources)
 	@echo "Building reproducible xg2g daemon..."
 	@mkdir -p $(BUILD_DIR)
-	@CGO_ENABLED=0 go build $(BUILD_FLAGS) -mod=readonly -o $(BUILD_DIR)/$(BINARY_NAME) \
+	@CGO_ENABLED=0 $(TOOLCHAIN_ENV) go build $(BUILD_FLAGS) -mod=readonly -o $(BUILD_DIR)/$(BINARY_NAME) \
 		-ldflags "-s -w -buildid= -X 'main.version=$(VERSION)' -X 'main.commit=$(COMMIT_HASH)' -X 'main.buildDate=$(SOURCE_DATE_EPOCH)'" \
 		./cmd/daemon
 	@echo "✅ Reproducible build complete: $(BUILD_DIR)/$(BINARY_NAME)"
@@ -200,7 +201,7 @@ clean: ## Remove build artifacts and temporary files
 	@rm -rf coverage.out coverage.html
 	@rm -rf *.prof *.test
 	@rm -rf dist/
-	@go clean -cache
+	@$(TOOLCHAIN_ENV) go clean -cache
 
 clean-certs: ## Remove auto-generated TLS certificates
 	@echo "Removing TLS certificates..."
@@ -220,7 +221,7 @@ certs: ## Generate self-signed TLS certificates
 	@echo "   export XG2G_TLS_ENABLED=true"
 
 clean-full: clean ## Remove all build artifacts
-	@go clean -cache -testcache -modcache
+	@$(TOOLCHAIN_ENV) go clean -cache -testcache -modcache
 	@echo "✅ Clean complete"
 
 # ===================================================================================================
@@ -244,23 +245,23 @@ lint-fix: ## Run golangci-lint with automatic fixes
 
 test: ## Run all unit tests
 	@echo "Running unit tests..."
-	@go test ./... -v
+	@$(TOOLCHAIN_ENV) go test ./... -v
 	@echo "✅ Unit tests passed"
 
 test-schema: ## Run JSON schema validation tests (requires check-jsonschema)
 	@echo "Running JSON schema validation tests..."
-	@go test -tags=schemacheck -v ./internal/config
+	@$(TOOLCHAIN_ENV) go test -tags=schemacheck -v ./internal/config
 	@echo "✅ Schema validation tests passed"
 
 test-race: ## Run tests with race detection
 	@echo "Running tests with race detection..."
-	@go test ./... -v -race
+	@$(TOOLCHAIN_ENV) go test ./... -v -race
 	@echo "✅ Race detection tests passed"
 
 test-cover: ## Run tests with coverage reporting
 	@echo "Running tests with coverage..."
-	@go test ./... -v -race -coverprofile=coverage.out -covermode=atomic
-	@go tool cover -html=coverage.out -o coverage.html
+	@$(TOOLCHAIN_ENV) go test ./... -v -race -coverprofile=coverage.out -covermode=atomic
+	@$(TOOLCHAIN_ENV) go tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
 	@echo "Overall coverage:"
 	@go tool cover -func=coverage.out | tail -1

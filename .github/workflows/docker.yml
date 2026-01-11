@@ -36,7 +36,7 @@ jobs:
           check-latest: true
           cache: true
         env:
-          GOTOOLCHAIN: auto
+          GOTOOLCHAIN: local
 
       - name: Verify modules
         run: |

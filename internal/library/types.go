@@ -65,13 +65,14 @@ func (i ItemStatus) String() string {
 
 // Item represents a single media file in the library.
 type Item struct {
-	RootID    string     `json:"root_id"`
-	RelPath   string     `json:"rel_path"` // Relative to root (safe to expose in API)
-	Filename  string     `json:"filename"`
-	SizeBytes int64      `json:"size_bytes"`
-	ModTime   time.Time  `json:"mod_time"`
-	ScanTime  time.Time  `json:"scan_time"`
-	Status    ItemStatus `json:"status"`
+	RootID          string     `json:"root_id"`
+	RelPath         string     `json:"rel_path"` // Relative to root (safe to expose in API)
+	Filename        string     `json:"filename"`
+	SizeBytes       int64      `json:"size_bytes"`
+	ModTime         time.Time  `json:"mod_time"`
+	ScanTime        time.Time  `json:"scan_time"`
+	DurationSeconds int64      `json:"duration_seconds"`
+	Status          ItemStatus `json:"status"`
 }
 
 // ScanResult represents the outcome of a library root scan.

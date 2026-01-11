@@ -35,13 +35,13 @@ func NewLANGuard(cfg LANGuardConfig) (*LANGuard, error) {
 			"127.0.0.0/8", // Localhost
 		}
 	}
-	allowedClients, err := parseCIDRs(clientCIDRs)
+	allowedClients, err := ParseCIDRs(clientCIDRs)
 	if err != nil {
 		return nil, err
 	}
 
 	// Parse Trusted Proxies
-	trustedProxies, err := parseCIDRs(cfg.TrustedProxyCIDRs)
+	trustedProxies, err := ParseCIDRs(cfg.TrustedProxyCIDRs)
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +49,7 @@ func NewLANGuard(cfg LANGuardConfig) (*LANGuard, error) {
 	return &LANGuard{allowedClient: allowedClients, trustedProxy: trustedProxies}, nil
 }
 
-func parseCIDRs(cidrs []string) ([]*net.IPNet, error) {
+func ParseCIDRs(cidrs []string) ([]*net.IPNet, error) {
 	var nets []*net.IPNet
 	for _, c := range cidrs {
 		if strings.TrimSpace(c) == "" {
@@ -91,7 +91,7 @@ func (g *LANGuard) RequireLAN(next http.Handler) http.Handler {
 			return
 		}
 
-		if !g.isIPAllowed(ip, g.allowedClient) {
+		if !IsIPAllowed(ip, g.allowedClient) {
 			logger.Warn().Str("ip", ip.String()).Msg("access denied: not in allowed LAN CIDRs")
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
@@ -100,7 +100,7 @@ func (g *LANGuard) RequireLAN(next http.Handler) http.Handler {
 	})
 }
 
-func (g *LANGuard) isIPAllowed(ip net.IP, subnets []*net.IPNet) bool {
+func IsIPAllowed(ip net.IP, subnets []*net.IPNet) bool {
 	ip = ip.To16()
 	if ip == nil {
 		return false
@@ -133,7 +133,7 @@ func (g *LANGuard) resolveClientIP(r *http.Request) net.IP {
 	}
 
 	// If RemoteAddr is NOT trusted, we must ignore headers
-	if !g.isIPAllowed(remoteIP, g.trustedProxy) {
+	if !IsIPAllowed(remoteIP, g.trustedProxy) {
 		return remoteIP
 	}
 
@@ -163,7 +163,7 @@ func (g *LANGuard) resolveClientIP(r *http.Request) net.IP {
 		}
 
 		// If this IP is trusted, it's just another proxy hop -> skip
-		if g.isIPAllowed(ip, g.trustedProxy) {
+		if IsIPAllowed(ip, g.trustedProxy) {
 			continue
 		}
 

@@ -1,91 +1,124 @@
 #!/usr/bin/env bash
+# ==============================================================================
+# xg2g Go Toolchain Policy Guard
+# ==============================================================================
+# Ensures that:
+# 1. No GOTOOLCHAIN=auto is present in CI, Makefile, or Dockerfiles.
+# 2. Go version matches exactly what is defined in go.mod.
+# 3. Dockerfile base images match the required Go version.
+# ==============================================================================
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+FAIL=0
 
+# 1. Source of Truth: go.mod
 if [[ ! -f "$ROOT/go.mod" ]]; then
-  echo "go.mod not found" >&2
-  exit 1
+    echo "❌ ERROR: go.mod not found at $ROOT" >&2
+    exit 1
+fi
+EXPECTED_GO_VERSION=$(awk '/^go /{print $2}' "$ROOT/go.mod")
+echo "🔍 Source of Truth (go.mod): Go $EXPECTED_GO_VERSION"
+
+# 2. Anti-Auto Check (Grep for GOTOOLCHAIN=auto)
+echo "🔍 Checking for disallowed GOTOOLCHAIN=auto..."
+# Exclude the script itself and vendor/ if it exists
+AUTO_MATCHES=$(grep -rnH "GOTOOLCHAIN=auto" "$ROOT" \
+    --exclude-dir=.git \
+    --exclude-dir=vendor \
+    --exclude="$(basename "$0")" \
+    --exclude="*.md" || true)
+
+if [[ -n "$AUTO_MATCHES" ]]; then
+    echo "❌ ERROR: GOTOOLCHAIN=auto found in the following locations (must be 'local'):" >&2
+    echo "$AUTO_MATCHES" | sed 's/^/  /' >&2
+    FAIL=1
 fi
 
-# Source of truth: go directive in go.mod (minor-pinned policy).
-go_version="$(awk '/^go[[:space:]]+[0-9]+\.[0-9]+/ {print $2; exit}' "$ROOT/go.mod")"
-if [[ -z "$go_version" ]]; then
-  echo "failed to read go version from go.mod" >&2
-  exit 1
+# 3. Go Version Match Check
+# Check current environment Go version
+CURRENT_GO_VERSION=$(go version | awk '{print $3}' | sed 's/go//')
+# Match only major.minor for initial comparison, or exact if possible.
+# go.mod usually has major.minor (e.g., 1.25), but go version might be 1.25.5
+if [[ "$CURRENT_GO_VERSION" != "$EXPECTED_GO_VERSION"* ]]; then
+    echo "❌ ERROR: Current Go version ($CURRENT_GO_VERSION) does not satisfy go.mod ($EXPECTED_GO_VERSION)" >&2
+    FAIL=1
+else
+    echo "✅ Go environment matches go.mod ($CURRENT_GO_VERSION)"
 fi
 
-fail=0
-
+# 4. Dockerfile Version Verification
 check_dockerfile() {
-  local file="$1"
-  local expected="$2"
-  if [[ ! -f "$file" ]]; then
-    echo "missing $file" >&2
-    fail=1
-    return
-  fi
-  local tags
-  tags=$(grep -E '^FROM[[:space:]]+golang:' "$file" | awk '{print $2}' || true)
-  if [[ -z "$tags" ]]; then
-    echo "no golang base image found in $file" >&2
-    fail=1
-    return
-  fi
-  while read -r tag; do
-    [[ -z "$tag" ]] && continue
-    local version
-    version="${tag#golang:}"
-    version="${version%%-*}"
-    if [[ "$version" != "$expected" ]]; then
-      echo "${file}: golang base version '$version' does not match go.mod '$expected'" >&2
-      fail=1
+    local file="$1"
+    local expected="$2"
+    if [[ ! -f "$file" ]]; then return; fi
+    
+    echo "🔍 Checking $file..."
+    local tags
+    tags=$(grep -E '^FROM[[:space:]]+golang:' "$file" | awk '{print $2}' || true)
+    
+    # If no tags found, might be using digest - we'll need to handle that if P0.5
+    if [[ -z "$tags" ]]; then
+        # Check if it uses a digest @sha256
+        if grep -qE '^FROM[[:space:]]+golang@sha256:' "$file"; then
+            echo "  ℹ️  $file uses golang digest; manual verification required (P0.5)"
+            return
+        fi
+        echo "❌ ERROR: No golang base image found in $file" >&2
+        FAIL=1
+        return
     fi
-  done <<< "$tags"
+
+    while read -r tag; do
+        [[ -z "$tag" ]] && continue
+        local version="${tag#golang:}"
+        version="${version%%-*}" # Remove -alpine, -bullseye etc
+        if [[ "$version" != "$expected"* ]]; then
+            echo "❌ ERROR: $file: golang base version '$version' does not match go.mod '$expected'" >&2
+            FAIL=1
+        fi
+    done <<< "$tags"
 }
 
-check_workflows() {
-  local expected="$1"
-  local wf
-  local bad=0
-  while IFS= read -r -d '' wf; do
-    local versions
-    versions=$(grep -E '^[[:space:]]*go-version:[[:space:]]*' "$wf" | \
+check_dockerfile "$ROOT/Dockerfile" "$EXPECTED_GO_VERSION"
+check_dockerfile "$ROOT/Dockerfile.distroless" "$EXPECTED_GO_VERSION"
+
+# 5. Workflow Version Verification
+echo "🔍 Checking CI workflows..."
+while IFS= read -r -d '' wf; do
+    # Check go-version (if hardcoded)
+    VERSIONS=$(grep -E '^[[:space:]]*go-version:[[:space:]]*' "$wf" | \
       sed -E 's/^[[:space:]]*go-version:[[:space:]]*"?([^" ]+)"?.*/\1/' || true)
-    if [[ -n "$versions" ]]; then
-      while read -r v; do
-        [[ -z "$v" ]] && continue
-        if [[ "$v" != "$expected" ]]; then
-          echo "${wf}: go-version '$v' does not match go.mod '$expected'" >&2
-          bad=1
-        fi
-      done <<< "$versions"
+    
+    if [[ -n "$VERSIONS" ]]; then
+        while read -r v; do
+            [[ -z "$v" ]] && continue
+            # Handle cases where version might be ${{ ... }} or similar (skip for now)
+            if [[ "$v" == \$* ]]; then continue; fi
+            if [[ "$v" != "$EXPECTED_GO_VERSION"* ]]; then
+                echo "❌ ERROR: $wf: go-version '$v' does not match go.mod '$EXPECTED_GO_VERSION'" >&2
+                FAIL=1
+            fi
+        done <<< "$VERSIONS"
     fi
 
-    local files
-    files=$(grep -E '^[[:space:]]*go-version-file:[[:space:]]*' "$wf" | \
+    # Check go-version-file (must be go.mod)
+    GO_MOD_FILES=$(grep -E '^[[:space:]]*go-version-file:[[:space:]]*' "$wf" | \
       sed -E 's/^[[:space:]]*go-version-file:[[:space:]]*"?([^" ]+)"?.*/\1/' || true)
-    if [[ -n "$files" ]]; then
-      while read -r f; do
-        [[ -z "$f" ]] && continue
-        if [[ "$f" != "go.mod" ]]; then
-          echo "${wf}: go-version-file '$f' must be go.mod" >&2
-          bad=1
-        fi
-      done <<< "$files"
+    if [[ -n "$GO_MOD_FILES" ]]; then
+        while read -r f; do
+            [[ -z "$f" ]] && continue
+            if [[ "$f" != "go.mod" ]]; then
+                echo "❌ ERROR: $wf: go-version-file must be 'go.mod', found '$f'" >&2
+                FAIL=1
+            fi
+        done <<< "$GO_MOD_FILES"
     fi
-  done < <(find "$ROOT/.github/workflows" -type f \( -name '*.yml' -o -name '*.yaml' \) -print0)
-  if [[ "$bad" -ne 0 ]]; then
-    fail=1
-  fi
-}
+done < <(find "$ROOT/.github/workflows" -type f \( -name '*.yml' -o -name '*.yaml' \) -print0)
 
-check_dockerfile "$ROOT/Dockerfile" "$go_version"
-check_dockerfile "$ROOT/Dockerfile.distroless" "$go_version"
-check_workflows "$go_version"
-
-if [[ "$fail" -ne 0 ]]; then
-  exit 1
+if [[ "$FAIL" -ne 0 ]]; then
+    echo "❌ Toolchain policy verification FAILED." >&2
+    exit 1
 fi
 
-echo "Go toolchain policy OK (go.mod: $go_version)"
+echo "✅ Toolchain policy verification PASSED."

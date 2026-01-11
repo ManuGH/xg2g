@@ -311,7 +311,9 @@ func main() {
 
 	// Create API handler
 	s := api.New(cfg, configMgr)
-	s.SetRootContext(ctx)
+	if err := s.SetRootContext(ctx); err != nil {
+		logger.Fatal().Err(err).Msg("failed to set root context")
+	}
 	s.SetConfigHolder(cfgHolder)
 	s.ApplySnapshot(cfgHolder.Current())
 

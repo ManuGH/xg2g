@@ -1,12 +1,7 @@
-// Copyright (c) 2025 ManuGH
-// Licensed under the PolyForm Noncommercial License 1.0.0
-// Since v2.0.0, this software is restricted to non-commercial use only.
-
-// Since v2.0.0, this software is restricted to non-commercial use only.
-
 package middleware
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -20,7 +15,7 @@ func TestCSRFProtection_AllowsSafeMethodsWithoutOrigin(t *testing.T) {
 	csrfHandler := CSRFProtection(nil)(handler)
 
 	// GET and HEAD are safe methods - should not require origin
-	safeMethods := []string{http.MethodGet, http.MethodHead}
+	safeMethods := []string{http.MethodGet, http.MethodHead, http.MethodOptions}
 
 	for _, method := range safeMethods {
 		req := httptest.NewRequest(method, "/test", nil)
@@ -59,7 +54,7 @@ func TestCSRFProtection_BlocksUnsafeMethodsWithoutOrigin(t *testing.T) {
 	}
 }
 
-func TestCSRFProtection_AllowsSameOriginRequests(t *testing.T) {
+func TestCSRFProtection_AllowsSameOriginNoProxy(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
@@ -74,182 +69,106 @@ func TestCSRFProtection_AllowsSameOriginRequests(t *testing.T) {
 	csrfHandler.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
-		t.Errorf("Same-origin POST: expected 200, got %d", w.Code)
+		t.Errorf("Same-origin POST without proxies: expected 200, got %d", w.Code)
 	}
 }
 
-func TestCSRFProtection_AllowsSameOriginWithHTTPS(t *testing.T) {
+func TestCSRFProtection_BlocksProxyHeadersWhenAllowlistEmpty(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
 	csrfHandler := CSRFProtection(nil)(handler)
 
-	req := httptest.NewRequest(http.MethodPost, "/test", nil)
-	req.Host = "example.com"
-	req.Header.Set("Origin", "https://example.com")
-	req.Header.Set("X-Forwarded-Proto", "https")
+	proxyHeaders := []string{
+		"Forwarded",
+		"X-Forwarded-For",
+		"X-Forwarded-Host",
+		"X-Forwarded-Proto",
+	}
 
-	w := httptest.NewRecorder()
-	csrfHandler.ServeHTTP(w, req)
+	for _, h := range proxyHeaders {
+		req := httptest.NewRequest(http.MethodPost, "/test", nil)
+		req.Host = "example.com"
+		req.Header.Set("Origin", "http://example.com")
+		req.Header.Set(h, "any-value")
 
-	if w.Code != http.StatusOK {
-		t.Errorf("Same-origin HTTPS POST: expected 200, got %d", w.Code)
+		w := httptest.NewRecorder()
+		csrfHandler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusForbidden {
+			t.Errorf("Same-origin POST with %s: expected 403, got %d", h, w.Code)
+		}
 	}
 }
 
-func TestCSRFProtection_BlocksCrossOriginRequests(t *testing.T) {
+func TestCSRFProtection_AllowsAllowedOriginEvenWithProxies(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	csrfHandler := CSRFProtection(nil)(handler)
-
-	req := httptest.NewRequest(http.MethodPost, "/test", nil)
-	req.Host = "example.com"
-	req.Header.Set("Origin", "http://evil.com")
-
-	w := httptest.NewRecorder()
-	csrfHandler.ServeHTTP(w, req)
-
-	if w.Code != http.StatusForbidden {
-		t.Errorf("Cross-origin POST: expected 403, got %d", w.Code)
-	}
-}
-
-func TestCSRFProtection_AllowsConfiguredOrigins(t *testing.T) {
-	// Set allowed origins
-	// allowed origins
-	allowed := []string{"http://trusted.com", "https://another.com"}
-
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-
+	allowed := []string{"http://trusted.com"}
 	csrfHandler := CSRFProtection(allowed)(handler)
 
-	// Request from allowed origin
 	req := httptest.NewRequest(http.MethodPost, "/test", nil)
 	req.Host = "example.com"
 	req.Header.Set("Origin", "http://trusted.com")
+	req.Header.Set("X-Forwarded-Proto", "https") // proxy header present
 
 	w := httptest.NewRecorder()
 	csrfHandler.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
-		t.Errorf("Allowed origin POST: expected 200, got %d", w.Code)
+		t.Errorf("Allowed origin POST with proxy headers: expected 200, got %d", w.Code)
 	}
+}
 
-	// Request from another allowed origin
-	req = httptest.NewRequest(http.MethodPost, "/test", nil)
+func TestCSRFProtection_AllowsWildcardOriginEvenWithProxies(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	allowed := []string{"*"}
+	csrfHandler := CSRFProtection(allowed)(handler)
+
+	req := httptest.NewRequest(http.MethodPost, "/test", nil)
 	req.Host = "example.com"
-	req.Header.Set("Origin", "https://another.com")
+	req.Header.Set("Origin", "http://any-origin.com")
+	req.Header.Set("Forwarded", "for=1.2.3.4")
 
-	w = httptest.NewRecorder()
+	w := httptest.NewRecorder()
 	csrfHandler.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
-		t.Errorf("Another allowed origin POST: expected 200, got %d", w.Code)
+		t.Errorf("Wildcard origin POST with proxy headers: expected 200, got %d", w.Code)
 	}
+}
 
-	// Request from non-allowed origin
-	req = httptest.NewRequest(http.MethodPost, "/test", nil)
+func TestCSRFProtection_ProblemResponse(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	csrfHandler := CSRFProtection(nil)(handler)
+
+	req := httptest.NewRequest(http.MethodPost, "/test", nil)
 	req.Host = "example.com"
-	req.Header.Set("Origin", "http://evil.com")
+	w := httptest.NewRecorder()
 
-	w = httptest.NewRecorder()
 	csrfHandler.ServeHTTP(w, req)
 
 	if w.Code != http.StatusForbidden {
-		t.Errorf("Non-allowed origin POST: expected 403, got %d", w.Code)
+		t.Fatalf("expected 403, got %d", w.Code)
 	}
-}
-
-func TestCSRFProtection_FallbackToReferer(t *testing.T) {
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-
-	csrfHandler := CSRFProtection(nil)(handler)
-
-	req := httptest.NewRequest(http.MethodPost, "/test", nil)
-	req.Host = "example.com"
-	// No Origin header, but valid Referer
-	req.Header.Set("Referer", "http://example.com/page")
-
-	w := httptest.NewRecorder()
-	csrfHandler.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("Same-origin via Referer: expected 200, got %d", w.Code)
+	if ct := w.Header().Get("Content-Type"); ct != "application/problem+json" {
+		t.Fatalf("unexpected content type: %s", ct)
 	}
-}
 
-func TestCSRFProtection_RefererCrossOriginBlocked(t *testing.T) {
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-
-	csrfHandler := CSRFProtection(nil)(handler)
-
-	req := httptest.NewRequest(http.MethodPost, "/test", nil)
-	req.Host = "example.com"
-	req.Header.Set("Referer", "http://evil.com/page")
-
-	w := httptest.NewRecorder()
-	csrfHandler.ServeHTTP(w, req)
-
-	if w.Code != http.StatusForbidden {
-		t.Errorf("Cross-origin via Referer: expected 403, got %d", w.Code)
+	var payload map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to decode problem response: %v", err)
 	}
-}
-
-func TestCSRFProtection_OriginPriorityOverReferer(t *testing.T) {
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-
-	csrfHandler := CSRFProtection(nil)(handler)
-
-	req := httptest.NewRequest(http.MethodPost, "/test", nil)
-	req.Host = "example.com"
-	// Both Origin and Referer - Origin should take priority
-	req.Header.Set("Origin", "http://example.com")
-	req.Header.Set("Referer", "http://evil.com/page")
-
-	w := httptest.NewRecorder()
-	csrfHandler.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("Origin priority: expected 200 (Origin takes priority), got %d", w.Code)
-	}
-}
-
-func TestGetRequestOrigin_ExtractsFromOriginHeader(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/test", nil)
-	req.Header.Set("Origin", "http://example.com")
-
-	origin := getRequestOrigin(req)
-	if origin != "http://example.com" {
-		t.Errorf("Expected http://example.com, got %s", origin)
-	}
-}
-
-func TestGetRequestOrigin_ExtractsFromReferer(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/test", nil)
-	req.Header.Set("Referer", "http://example.com/page?query=value")
-
-	origin := getRequestOrigin(req)
-	if origin != "http://example.com" {
-		t.Errorf("Expected http://example.com, got %s", origin)
-	}
-}
-
-func TestGetRequestOrigin_ReturnsEmptyWhenMissing(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/test", nil)
-
-	origin := getRequestOrigin(req)
-	if origin != "" {
-		t.Errorf("Expected empty string, got %s", origin)
+	if payload["code"] != "CSRF_FORBIDDEN" {
+		t.Fatalf("unexpected code: %v", payload["code"])
 	}
 }

@@ -3,6 +3,7 @@ package vod
 import (
 	"context"
 	"errors"
+	"math"
 	"os"
 	"time"
 
@@ -144,11 +145,13 @@ func (m *Manager) runProbe(req probeRequest) error {
 
 	log.Info().Str("id", id).Str("path", input).Msg("probing recording duration")
 
-	dur := 0.0
+	var dur int64
+	var res *StreamInfo
 	if m.prober != nil {
-		res, err := m.prober.Probe(probeCtx, input)
+		var err error
+		res, err = m.prober.Probe(probeCtx, input)
 		if err == nil && res != nil {
-			dur = res.Video.Duration
+			dur = int64(math.Round(res.Video.Duration))
 		} else if err != nil {
 			log.Warn().Err(err).Str("id", id).Msg("probe failed")
 		}
@@ -160,7 +163,11 @@ func (m *Manager) runProbe(req probeRequest) error {
 		ResolvedPath: input,
 		Duration:     dur,
 		Fingerprint:  fp,
-		UpdatedAt:    time.Now().Unix(),
+		// Populated from Probe (Deliverable #4)
+		Container:  res.Container,
+		VideoCodec: res.Video.CodecName,
+		AudioCodec: res.Audio.CodecName,
+		UpdatedAt:  time.Now().Unix(),
 	}
 
 	// Only treat as artifact if it's an MP4
@@ -170,6 +177,6 @@ func (m *Manager) runProbe(req probeRequest) error {
 
 	m.UpdateMetadata(id, meta)
 
-	log.Debug().Str("id", id).Float64("duration", dur).Msg("recording probe complete")
+	log.Debug().Str("id", id).Int64("duration", dur).Msg("recording probe complete")
 	return nil
 }

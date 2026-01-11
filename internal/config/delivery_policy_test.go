@@ -10,8 +10,10 @@ import (
 // setupEnv sets up the minimum required environment variables for validation to pass
 func setupEnv(t *testing.T) func() {
 	_ = os.Setenv("XG2G_OWI_BASE", "http://test-enigma2-host")
+	_ = os.Setenv("XG2G_ENGINE_ENABLED", "false")
 	return func() {
 		_ = os.Unsetenv("XG2G_OWI_BASE")
+		_ = os.Unsetenv("XG2G_ENGINE_ENABLED")
 	}
 }
 

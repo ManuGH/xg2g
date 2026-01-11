@@ -49,6 +49,8 @@ func TestIntegration_SessionAndPlayback(t *testing.T) {
 
 	// 2. Login to get session cookie
 	req2 := httptest.NewRequest("POST", "/api/v3/auth/session", nil)
+	req2.Host = "example.com"
+	req2.Header.Set("Origin", "http://example.com")
 	req2.Header.Set("Authorization", "Bearer integration-secret")
 	w2 := httptest.NewRecorder()
 	handler.ServeHTTP(w2, req2)

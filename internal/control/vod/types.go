@@ -1,9 +1,14 @@
 package vod
 
+import (
+	"errors"
+)
+
 // StreamInfo defines the properties needed for decision making.
 type StreamInfo struct {
-	Video VideoStreamInfo
-	Audio AudioStreamInfo
+	Container string // e.g. "mov,mp4,m4a,3gp,3g2,mj2" or "mpegts"
+	Video     VideoStreamInfo
+	Audio     AudioStreamInfo
 }
 
 type VideoStreamInfo struct {
@@ -64,12 +69,33 @@ type Metadata struct {
 	ResolvedPath string
 	ArtifactPath string // Authoritative path for the MP4 artifact
 	PlaylistPath string // Authoritative path for the HLS playlist
-	Duration     float64
-	Fingerprint  Fingerprint
-	Error        string
-	UpdatedAt    int64
-	StateGen     uint64 // Monotonic generation counter for race-safe updates
+	Duration     int64  // Duration in seconds (authoritative)
+	// Codec/Container Cache (Deliverable #4)
+	Container  string
+	VideoCodec string
+	AudioCodec string
+
+	Fingerprint Fingerprint
+	Error       string
+	UpdatedAt   int64
+	StateGen    uint64 // Monotonic generation counter for race-safe updates
+	FailureKind FailureKind
+	FailedAt    int64 // Unix timestamp of last failure
 }
+
+type FailureKind string
+
+const (
+	FailureNone      FailureKind = ""
+	FailureNotFound  FailureKind = "NOT_FOUND"
+	FailureCorrupt   FailureKind = "CORRUPT"
+	FailureTransient FailureKind = "TRANSIENT"
+)
+
+var (
+	ErrProbeNotFound = errors.New("probe: source not found")
+	ErrProbeCorrupt  = errors.New("probe: media corrupt or invalid")
+)
 
 // HasPlaylist returns true when a final playlist path is known.
 func (m Metadata) HasPlaylist() bool {

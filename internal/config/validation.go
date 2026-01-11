@@ -2,8 +2,6 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
-// Since v2.0.0, this software is restricted to non-commercial use only.
-
 // Package config provides configuration management for xg2g.
 package config
 
@@ -13,9 +11,55 @@ import (
 	"github.com/ManuGH/xg2g/internal/validate"
 )
 
+// ForbiddenRule defines a rule that rejects semantically invalid combinations of options.
+type ForbiddenRule struct {
+	Name           string
+	Predicate      func(cfg AppConfig) bool
+	ProblemDetails string
+}
+
+var forbiddenRules = []ForbiddenRule{
+	{
+		Name: "HTTPS_WITHOUT_TLS",
+		Predicate: func(cfg AppConfig) bool {
+			// Fix 1: Proxy-Aware HTTPS. Allow if TrustedProxies is set, as TLS might be upstream.
+			return cfg.ForceHTTPS && !cfg.TLSEnabled && strings.TrimSpace(cfg.TrustedProxies) == ""
+		},
+		ProblemDetails: "ForceHTTPS is enabled but TLSEnabled is false and no TrustedProxies are configured. HTTPS redirect will fail in non-proxy environments.",
+	},
+	{
+		Name: "EPG_ENABLED_WITHOUT_DAYS",
+		Predicate: func(cfg AppConfig) bool {
+			return cfg.EPGEnabled && cfg.EPGDays <= 0
+		},
+		ProblemDetails: "EPG is enabled but EPGDays is <= 0.",
+	},
+	{
+		Name: "DATA_COLLISION",
+		Predicate: func(cfg AppConfig) bool {
+			return cfg.HLS.Root != "" && cfg.Store.Path != "" && cfg.HLS.Root == cfg.Store.Path
+		},
+		ProblemDetails: "HLS Root and Store Path must not be the same directory.",
+	},
+	{
+		Name: "VOD_CONCURRENCY_NEGATIVE",
+		Predicate: func(cfg AppConfig) bool {
+			return cfg.VODMaxConcurrent < 0
+		},
+		ProblemDetails: "VODMaxConcurrent must be >= 0 (0 = unlimited).",
+	},
+}
+
 // Validate validates a AppConfig using the centralized validation package
 func Validate(cfg AppConfig) error {
 	v := validate.New()
+
+	// Check Forbidden Combinations (P1.2)
+	for _, rule := range forbiddenRules {
+		if rule.Predicate(cfg) {
+			v.AddError(rule.Name, rule.ProblemDetails, "")
+		}
+	}
 
 	// Enigma2 URL (Standardized)
 	if strings.TrimSpace(cfg.Enigma2.BaseURL) != "" {
@@ -75,11 +119,12 @@ func Validate(cfg AppConfig) error {
 	}
 
 	validScopes := map[string]struct{}{
-		"*":        {},
-		"v3:*":     {},
-		"v3:read":  {},
-		"v3:write": {},
-		"v3:admin": {},
+		"*":         {},
+		"v3:*":      {},
+		"v3:read":   {},
+		"v3:write":  {},
+		"v3:admin":  {},
+		"v3:status": {},
 	}
 
 	isValidScope := func(scope string) bool {
@@ -151,22 +196,22 @@ func Validate(cfg AppConfig) error {
 		if cfg.Enigma2.RateBurst < 0 {
 			v.AddError("Enigma2.RateBurst", "must be >= 0", cfg.Enigma2.RateBurst)
 		}
+	}
 
-		if cfg.ConfigStrict {
-			switch cfg.Engine.Mode {
-			case "standard", "virtual":
-			default:
-				v.AddError("Engine.Mode", "must be standard or virtual", cfg.Engine.Mode)
-			}
-
-			switch cfg.Store.Backend {
-			case "memory", "bolt":
-			default:
-				v.AddError("Store.Backend", "must be memory or bolt", cfg.Store.Backend)
-			}
-
-			v.URL("Enigma2.BaseURL", cfg.Enigma2.BaseURL, []string{"http", "https"})
+	if cfg.ConfigStrict {
+		switch cfg.Engine.Mode {
+		case "standard", "virtual":
+		default:
+			v.AddError("Engine.Mode", "must be standard or virtual", cfg.Engine.Mode)
 		}
+
+		switch cfg.Store.Backend {
+		case "memory", "bolt":
+		default:
+			v.AddError("Store.Backend", "must be memory or bolt", cfg.Store.Backend)
+		}
+
+		v.URL("Enigma2.BaseURL", cfg.Enigma2.BaseURL, []string{"http", "https"})
 	}
 
 	if !v.IsValid() {

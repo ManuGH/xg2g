@@ -10,25 +10,19 @@ import (
 
 	"github.com/google/uuid"
 
+	controlhttp "github.com/ManuGH/xg2g/internal/control/http"
 	"github.com/ManuGH/xg2g/internal/log"
 )
 
-// RequestID generates or uses existing X-Request-ID header and propagates it through context and response.
+// RequestID adds a unique ID to every request.
 func RequestID(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Get request ID from header or generate new one
-		reqID := r.Header.Get("X-Request-ID")
+		reqID := r.Header.Get(controlhttp.HeaderRequestID)
 		if reqID == "" {
 			reqID = uuid.New().String()
 		}
-
-		// Set response header
-		w.Header().Set("X-Request-ID", reqID)
-
-		// Add request ID to context
+		w.Header().Set(controlhttp.HeaderRequestID, reqID)
 		ctx := log.ContextWithRequestID(r.Context(), reqID)
-
-		// Continue
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

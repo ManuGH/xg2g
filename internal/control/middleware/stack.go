@@ -2,11 +2,11 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
-// Since v2.0.0, this software is restricted to non-commercial use only.
-
 package middleware
 
 import (
+	"net"
+
 	xglog "github.com/ManuGH/xg2g/internal/log"
 	"github.com/go-chi/chi/v5"
 )
@@ -15,12 +15,16 @@ import (
 // It is used by both the API server and the proxy server to prevent drift in cross-cutting concerns.
 type StackConfig struct {
 	// CORS
-	EnableCORS     bool
-	AllowedOrigins []string
+	EnableCORS           bool
+	AllowedOrigins       []string
+	CORSAllowCredentials bool
 
 	// Security headers
 	EnableSecurityHeaders bool
 	CSP                   string
+
+	// TrustedProxies defines which IPs are trusted to set X-Forwarded-Proto.
+	TrustedProxies []*net.IPNet
 
 	// Observability
 	EnableMetrics  bool
@@ -50,25 +54,27 @@ func ApplyStack(r chi.Router, cfg StackConfig) {
 	r.Use(RequestID)
 	// 3. CORS (so OPTIONS and browser clients behave)
 	if cfg.EnableCORS {
-		r.Use(CORS(cfg.AllowedOrigins))
+		r.Use(CORS(cfg.AllowedOrigins, cfg.CORSAllowCredentials))
 	}
-	// 4. Security headers
+	// 4. CSRF (fail-closed for state-changing requests)
+	r.Use(CSRFProtection(cfg.AllowedOrigins))
+	// 5. Security headers
 	if cfg.EnableSecurityHeaders {
-		r.Use(SecurityHeaders(cfg.CSP))
+		r.Use(SecurityHeaders(cfg.CSP, cfg.TrustedProxies))
 	}
-	// 5. Metrics (track all requests)
+	// 6. Metrics (track all requests)
 	if cfg.EnableMetrics {
 		r.Use(Metrics())
 	}
-	// 6. Tracing (distributed tracing with OpenTelemetry)
+	// 7. Tracing (distributed tracing with OpenTelemetry)
 	if cfg.TracingService != "" {
 		r.Use(Tracing(cfg.TracingService))
 	}
-	// 7. Logging (wraps handlers, captures full latency)
+	// 8. Logging (wraps handlers, captures full latency)
 	if cfg.EnableLogging {
 		r.Use(xglog.Middleware())
 	}
-	// 8. Rate limit (global protection)
+	// 9. Rate limit (global protection)
 	if cfg.EnableRateLimit {
 		r.Use(APIRateLimit(cfg.RateLimitEnabled, cfg.RateLimitGlobalRPS, cfg.RateLimitBurst, cfg.RateLimitWhitelist))
 	}

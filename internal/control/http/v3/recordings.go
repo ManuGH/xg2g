@@ -30,6 +30,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/ManuGH/xg2g/internal/control/auth"
+	"github.com/ManuGH/xg2g/internal/control/http/v3/problem"
+	"github.com/ManuGH/xg2g/internal/control/http/v3/types"
+	"github.com/ManuGH/xg2g/internal/control/playback"
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/metrics"
@@ -710,90 +713,44 @@ func (s *Server) attachResumeSummaries(ctx context.Context, principalID string, 
 }
 
 func (s *Server) GetRecordingPlaybackInfo(w http.ResponseWriter, r *http.Request, recordingId string) {
-	start := time.Now()
-	serviceRef := s.DecodeRecordingID(recordingId)
-	if serviceRef == "" {
-		s.writeRecordingPlaybackError(w, r, "", errRecordingInvalid)
-		return
-	}
-	if err := ValidateRecordingRef(serviceRef); err != nil {
-		s.writeRecordingPlaybackError(w, r, "", err)
-		return
-	}
+	// Determine intent and profile (Deliverable #4)
+	intent := types.IntentMetadata // Default for this endpoint
+	clientProfile := s.mapProfile(r)
+	profile := toPlaybackProfile(clientProfile)
 
-	// 1. Artifact State Machine (Non-blocking lookup)
-	meta, exists := s.vodManager.GetMetadata(serviceRef)
-	lookupMs := time.Since(start).Milliseconds()
+	// Delegate to V3 Resolver
+	mediaInfo, err := s.vodResolver.ResolveVOD(r.Context(), recordingId, intent, profile)
+	if err != nil {
+		// Map errors to RFC 7807 using typed knowledge
+		status := http.StatusNotFound
+		code := "VOD_NOT_FOUND"
+		msg := "Recording not found"
 
-	if !exists {
-		// UNKNOWN state: Kick off async probe and return 503
-		s.vodManager.TriggerProbe(serviceRef, "")
-		s.writePreparingResponse(w, r, recordingId, "UNKNOWN", 5)
-		log.L().Info().
-			Int64("meta_cache_ms", lookupMs).
-			Str("state", "UNKNOWN").
-			Str("recording_id", recordingId).
-			Msg("GetRecordingPlaybackInfo handled")
+		problem.Write(w, r, status, strings.ToLower(code), msg, code, err.Error(), nil)
 		return
 	}
 
-	state := string(meta.State)
-	switch meta.State {
-	case vod.ArtifactStatePreparing, vod.ArtifactStateUnknown:
-		s.writePreparingResponse(w, r, recordingId, state, 5)
-	case vod.ArtifactStateReady:
-		// READY means metadata is current; capabilities are derived from paths.
-		if meta.HasArtifact() {
-			// True MP4 artifact (verified by prober)
-			mode := PlaybackInfoMode("direct_mp4")
-			url := fmt.Sprintf("/api/v3/recordings/%s/stream.mp4", recordingId)
-			reason := "artifact_ready"
-			resp := PlaybackInfo{
-				Mode:   mode,
-				Url:    url,
-				Reason: &reason,
-			}
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(resp)
-		} else if meta.HasPlaylist() {
-			// TS file or other format -> Fallback to HLS
-			reason := "ready_hls_fallback"
-			// Note: DurationSeconds is not in PlaybackInfo, client uses metadata from listing.
-			resp := PlaybackInfo{
-				Mode:   PlaybackInfoMode("hls"),
-				Url:    fmt.Sprintf("/api/v3/recordings/%s/playlist.m3u8", recordingId),
-				Reason: &reason,
-			}
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(resp)
-		} else {
-			// READY without capabilities -> repair
-			s.vodManager.MarkUnknown(serviceRef)
-			s.vodManager.TriggerProbe(serviceRef, meta.ResolvedPath)
-			s.writePreparingResponse(w, r, recordingId, "REPAIR", 5)
-			return
-		}
-	case vod.ArtifactStateFailed:
-		writeProblem(w, r, http.StatusServiceUnavailable, "recordings/failed", "Failed", "FAILED", "Recording preparation failed: "+meta.Error, nil)
-	case vod.ArtifactStateMissing:
-		writeProblem(w, r, http.StatusNotFound, "recordings/missing", "Missing", "NOT_FOUND", "Recording source file not found", nil)
-	default:
-		// Fallback to HLS if state is ambiguous
-		reason := "fallback_hls"
-		resp := PlaybackInfo{
-			Mode:   PlaybackInfoMode("hls"),
-			Url:    fmt.Sprintf("/api/v3/recordings/%s/playlist.m3u8", recordingId),
-			Reason: &reason,
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(resp)
+	// Decision Engine
+	decision, err := playback.Decide(profile, mediaInfo, playback.Policy{})
+	if err != nil {
+		problem.Write(w, r, http.StatusInternalServerError, "vod/decision-error", "Playback Decision Failed", "DECISION_ERROR", err.Error(), nil)
+		return
+	}
+	if decision.Mode == playback.ModeError {
+		problem.Write(w, r, http.StatusNotFound, "vod/probe-failed", "Media Probe Failed", "PROBE_FAILED", string(decision.Reason), nil)
+		return
 	}
 
-	log.L().Info().
-		Int64("meta_cache_ms", lookupMs).
-		Str("state", state).
-		Str("recording_id", recordingId).
-		Msg("GetRecordingPlaybackInfo handled")
+	// Map Decision to DTO
+	resp := types.VODPlaybackResponse{
+		RecordingID:     recordingId,
+		StreamURL:       s.mapDecisionToURL(recordingId, decision, mediaInfo),
+		PlaybackType:    string(decision.Mode),
+		DurationSeconds: int64(mediaInfo.Duration),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
 
 func (s *Server) writePreparingResponse(w http.ResponseWriter, r *http.Request, recordingId, state string, retryAfter int) {
@@ -1129,6 +1086,7 @@ func (s *Server) GetRecordingHLSCustomSegment(w http.ResponseWriter, r *http.Req
 		writeProblem(w, r, http.StatusInternalServerError, "recordings/storage_error", "Internal Error", "INTERNAL_ERROR", "Segment unavailable", nil)
 		return
 	}
+
 	if info.IsDir() {
 		writeProblem(w, r, http.StatusNotFound, "recordings/not_found", "Not Found", "NOT_FOUND", "Segment not found (is directory)", nil)
 		return

@@ -119,10 +119,13 @@ func newV3TestServer(t *testing.T, hlsRoot string) (*Server, *v3store.MemoryStor
 	s := NewServer(cfg, nil, nil)
 	st := v3store.NewMemoryStore()
 	// Inject dependencies
-	bus := v3bus.NewMemoryBus()
-	store := st
-	resume := resume.NewMemoryStore()
-	s.SetDependencies(bus, store, resume, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	b := v3bus.NewMemoryBus()
+	// store := st // This line is effectively replaced by using 'st' directly
+	rs := resume.NewMemoryStore()
+	s.SetDependencies(
+		b, st, rs, nil, nil, nil, nil, nil, nil, nil, // P3: VODResolver
+		nil, nil, nil, nil, nil, nil, nil, nil, nil,
+	)
 	return s, st
 }
 

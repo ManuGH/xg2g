@@ -117,7 +117,8 @@ type Server struct {
 	seriesManager       *dvr.Manager
 	seriesEngine        *dvr.SeriesEngine
 	vodManager          *vod.Manager
-	epgCache            *epg.TV // EPG Cache reference
+	vodResolver         VODResolver // P3 Integration Boundary
+	epgCache            *epg.TV     // EPG Cache reference
 	owiClient           *openwebif.Client
 	owiEpoch            uint64
 	configManager       *config.Manager
@@ -179,6 +180,11 @@ func NewServer(cfg config.AppConfig, cfgMgr *config.Manager, rootCancel context.
 	return s
 }
 
+// LibraryService returns the underlying library service.
+func (s *Server) LibraryService() *library.Service {
+	return s.libraryService
+}
+
 // authMiddleware is the default authentication middleware.
 func (s *Server) authMiddleware(h http.Handler) http.Handler {
 	if s.AuthMiddlewareOverride != nil {
@@ -221,6 +227,7 @@ func (s *Server) SetDependencies(
 	sm *dvr.Manager,
 	se *dvr.SeriesEngine,
 	vm *vod.Manager,
+	vr VODResolver, // P3 Injection
 	epg *epg.TV,
 	hm *health.Manager,
 	ls interface{ GetRecentLogs() []log.LogEntry },
@@ -311,6 +318,12 @@ func (s *Server) SetDependencies(
 		s.vodManager.StartProberPool(context.Background())
 	} else {
 		s.vodManager = nil
+	}
+
+	if !isNil(vr) {
+		s.vodResolver = vr
+	} else {
+		s.vodResolver = nil
 	}
 
 	if !isNil(epg) {

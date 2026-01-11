@@ -19,19 +19,15 @@ func TestServer_PassesNonNilRootCancelToV3(t *testing.T) {
 	}
 	cfgMgr := config.NewManager("")
 
-	// Save original factory and restore after test
-	old := newV3Server
-	defer func() { newV3Server = old }()
-
 	var capturedCancel context.CancelFunc
 	// Override factory to capture the passed cancel function
-	newV3Server = func(cfg config.AppConfig, mgr *config.Manager, cancel context.CancelFunc) *v3.Server {
+	factory := func(cfg config.AppConfig, mgr *config.Manager, cancel context.CancelFunc) *v3.Server {
 		capturedCancel = cancel
 		// Return a minimal v3 server (not fully initialized, but enough for New)
 		return &v3.Server{}
 	}
 
-	s := New(cfg, cfgMgr)
+	s := New(cfg, cfgMgr, WithV3ServerFactory(factory))
 
 	require.NotNil(t, s.rootCancel, "Server's rootCancel must be initialized")
 	require.NotNil(t, capturedCancel, "v3 server factory must receive a non-nil cancel function")
