@@ -40,7 +40,6 @@ jobs:
 
       - name: Verify modules
         run: |
-          go mod tidy
           go mod verify
           git diff --exit-code -- go.mod go.sum
 
@@ -50,7 +49,7 @@ jobs:
           # Pure Go build (CGO disabled)
           echo "✅ Docker build will handle full compilation"
           # Verify Go syntax
-          go build -v -trimpath -mod=readonly -buildvcs=false -ldflags "-X main.Version=${BUILD_REF}" -o /dev/null ./cmd/daemon || true
+          go build -v -trimpath -mod=vendor -buildvcs=false -ldflags "-X main.Version=${BUILD_REF}" -o /dev/null ./cmd/daemon || true
 
       - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
 

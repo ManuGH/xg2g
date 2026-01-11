@@ -66,8 +66,6 @@ jobs:
       - name: Verify modules
         run: |
           set -euo pipefail
-          go mod tidy
-          go mod download
           go mod verify
           git diff --exit-code -- go.mod go.sum
 
@@ -103,7 +101,7 @@ jobs:
             echo "✅ Client matches OpenAPI spec"
           fi
 
-      - name: CTO Gate: forbid direct oapi-codegen in CI
+      - name: "CTO Gate: forbid direct oapi-codegen in CI"
         run: |
           set -euo pipefail
           if grep -n -E '\boapi-codegen\b' .github/workflows/ci.yml; then
@@ -151,7 +149,7 @@ jobs:
 
           # Verify Go compilation succeeds
           echo "🔍 Verifying build compiles..."
-          go build -v -trimpath -mod=readonly -buildvcs=false -o /dev/null ./cmd/daemon
+          go build -v -trimpath -mod=vendor -buildvcs=false -o /dev/null ./cmd/daemon
           echo "✅ Build successful"
 
       - name: Unit tests

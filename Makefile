@@ -25,7 +25,7 @@ BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 SOURCE_DATE_EPOCH ?= $(shell git log -1 --pretty=%ct 2>/dev/null || date -u +%s)
 export SOURCE_DATE_EPOCH
 export TZ := UTC
-export GOFLAGS := -trimpath -buildvcs=false -mod=readonly
+export GOFLAGS := -trimpath -buildvcs=false -mod=vendor
 TOOLCHAIN_ENV := GOTOOLCHAIN=local
 
 # Build configuration
@@ -194,7 +194,7 @@ build-all: ## Build binaries for all supported platforms
 build-repro: ui-build ## Build deterministic binary (reproducible across identical sources)
 	@echo "Building reproducible xg2g daemon..."
 	@mkdir -p $(BUILD_DIR)
-	@CGO_ENABLED=0 $(TOOLCHAIN_ENV) go build $(BUILD_FLAGS) -mod=readonly -o $(BUILD_DIR)/$(BINARY_NAME) \
+	@CGO_ENABLED=0 $(TOOLCHAIN_ENV) go build $(BUILD_FLAGS) -mod=vendor -o $(BUILD_DIR)/$(BINARY_NAME) \
 		-ldflags "-s -w -buildid= -X 'main.version=$(VERSION)' -X 'main.commit=$(COMMIT_HASH)' -X 'main.buildDate=$(SOURCE_DATE_EPOCH)'" \
 		./cmd/daemon
 	@echo "✅ Reproducible build complete: $(BUILD_DIR)/$(BINARY_NAME)"
@@ -459,13 +459,19 @@ security-vulncheck: ## Run Go vulnerability checker
 # Dependency Management
 # ===================================================================================================
 
-deps: deps-tidy deps-verify ## Install and verify dependencies
+deps: deps-tidy deps-vendor deps-verify ## Install and verify dependencies
 	@echo "✅ Dependencies installed and verified"
+
+deps-vendor: ## Refresh vendor directory
+	@echo "Vendoring dependencies..."
+	@go mod vendor
+	@echo "✅ Dependencies vendored"
 
 deps-update: ## Update dependencies to latest versions
 	@echo "Updating dependencies..."
 	@go get -u ./...
 	@go mod tidy
+	@$(MAKE) deps-vendor
 	@echo "✅ Dependencies updated"
 
 deps-tidy: ## Clean and organize Go modules
@@ -477,8 +483,12 @@ deps-tidy: ## Clean and organize Go modules
 deps-verify: ## Verify dependency integrity
 	@echo "Verifying dependency integrity..."
 	@go mod verify
-	@go mod download
 	@echo "✅ Dependencies verified"
+
+review-zip: ## Create a ZIP snapshot for offline review
+	@echo "Creating review ZIP artifact..."
+	@git archive --format=zip HEAD -o xg2g-main.zip
+	@echo "✅ Review ZIP created: xg2g-main.zip"
 
 deps-licenses: ## Generate dependency license report
 	@echo "Generating dependency license report..."

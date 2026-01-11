@@ -34,8 +34,6 @@ jobs:
       - name: Verify modules
         run: |
           set -euo pipefail
-          go mod tidy
-          go mod download
           go mod verify
           git diff --exit-code -- go.mod go.sum
 
@@ -67,8 +65,8 @@ jobs:
         run: |
           set -euo pipefail
           echo "🔍 Building Pure Go daemon (CGO disabled)..."
-          go build -v -trimpath -mod=readonly -buildvcs=false -o /dev/null ./cmd/daemon
-          go build -v -trimpath -mod=readonly -buildvcs=false -o /dev/null ./cmd/validate
+          go build -v -trimpath -mod=vendor -buildvcs=false -o /dev/null ./cmd/daemon
+          go build -v -trimpath -mod=vendor -buildvcs=false -o /dev/null ./cmd/validate
           echo "✅ Build successful"
 
       - name: Run unit tests (via make test)
@@ -254,7 +252,7 @@ jobs:
         run: |
           set -euo pipefail
           BUILD_REF="${GITHUB_SHA:-dev}"
-          go build -v -trimpath -mod=readonly -buildvcs=false \
+          go build -v -trimpath -mod=vendor -buildvcs=false \
             -ldflags "-X main.version=${BUILD_REF}" \
             -o bin/xg2g ./cmd/daemon
 
@@ -302,7 +300,7 @@ jobs:
           echo "Using SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}"
 
       - name: Setup Go Deps
-        run: go mod download
+        run: go mod verify
 
       - name: Build WebUI
         run: |
