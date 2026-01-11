@@ -489,6 +489,11 @@ review-zip: ## Create a ZIP snapshot for offline review
 	@echo "Creating review ZIP artifact..."
 	@git archive --format=zip HEAD -o xg2g-main.zip
 	@echo "✅ Review ZIP created: xg2g-main.zip"
+	@$(MAKE) verify-zip
+
+verify-zip: ## Verify the purity of the review ZIP artifact
+	@echo "Verifying review ZIP purity..."
+	@./scripts/ci_gate_zip_purity.py xg2g-main.zip
 
 deps-licenses: ## Generate dependency license report
 	@echo "Generating dependency license report..."
