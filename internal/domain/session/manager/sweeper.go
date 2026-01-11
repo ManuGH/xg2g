@@ -201,6 +201,18 @@ func (s *Sweeper) sweepFiles(ctx context.Context) {
 		return
 	}
 
+	// Build map of active sessions to avoid O(N²) lookups
+	activeSessions := make(map[string]bool)
+	allSessions, err := s.Orch.Store.ListSessions(ctx)
+	if err != nil {
+		log.L().Warn().Err(err).Msg("sweep files failed to list sessions, using slow path")
+		// Fallback to individual lookups
+	} else {
+		for _, sess := range allSessions {
+			activeSessions[sess.SessionID] = true
+		}
+	}
+
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
@@ -210,28 +222,30 @@ func (s *Sweeper) sweepFiles(ctx context.Context) {
 			continue // Skip unsafe/unknown paths
 		}
 
-		// Check if active in Store?
-		// Optimization: Gather all active SIDs first? Or check individual?
-		// Checking individual is slow (N store calls).
-		// Better: Build map of known SIDs from Store Scan?
-		// But Scan is expensive too.
-		// MVP: Check if dir mod time is old?
-
 		info, err := e.Info()
 		if err != nil {
 			continue
 		}
 
 		if info.ModTime().Before(cutoff) {
-			// Candidate for deep check: Is it in Store?
-			rec, err := s.Orch.Store.GetSession(ctx, sid)
-			if err != nil {
-				continue // Store error, skip safety
-			}
-			if rec == nil {
-				// Not in store, and old -> Orphan
-				s.Orch.cleanupFiles(sid)
-				orphanCount++
+			// Fast path: check in-memory map
+			if len(activeSessions) > 0 {
+				if !activeSessions[sid] {
+					// Not in active sessions -> Orphan
+					s.Orch.cleanupFiles(sid)
+					orphanCount++
+				}
+			} else {
+				// Slow path: individual lookup (fallback)
+				rec, err := s.Orch.Store.GetSession(ctx, sid)
+				if err != nil {
+					continue // Store error, skip safety
+				}
+				if rec == nil {
+					// Not in store, and old -> Orphan
+					s.Orch.cleanupFiles(sid)
+					orphanCount++
+				}
 			}
 		}
 	}
