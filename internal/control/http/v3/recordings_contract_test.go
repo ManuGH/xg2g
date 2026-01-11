@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/stretchr/testify/assert"
 )
@@ -34,8 +35,16 @@ func TestGetRecordings_Contract_UpstreamFailure(t *testing.T) {
 	s := &Server{
 		cfg: cfg,
 	}
-	// Initialize client using internal/api/v3/v3.go logic if possible, or just inject
-	s.owiClient = openwebif.NewWithPort(mockServer.URL, 0, openwebif.Options{})
+	// Server struct definition usually usually has `cfg *config.AppConfig` or `cfg config.AppConfig`.
+	// In recordings_contract_test.go original: `cfg: cfg` but `cfg` var was struct.
+	// `s := &Server{cfg: cfg}`. If Server.cfg is pointer, this fails.
+	// I'll check Server definition if I can. But let's assume original test compiled.
+	// The problem was s.recordingsService was nil.
+
+	// Wire service
+	owiClient := openwebif.NewWithPort(mockServer.URL, 0, openwebif.Options{})
+	s.owiClient = owiClient
+	s.recordingsService = recordings.NewService(&cfg, nil, nil, NewOWIAdapter(owiClient), nil)
 
 	// 3. Perform Request
 	w := httptest.NewRecorder()

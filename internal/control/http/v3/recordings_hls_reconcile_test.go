@@ -15,6 +15,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/config"
 	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
+	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/ManuGH/xg2g/internal/recordings"
 )
@@ -141,9 +142,21 @@ func (p *slowProber) Probe(ctx context.Context, path string) (*vod.StreamInfo, e
 	}
 }
 
+// signalRunner wraps successRunner and signals when Start has completed its IO.
+type signalRunner struct {
+	delegate *successRunner
+	done     chan struct{}
+	once     sync.Once
+}
+
+func (r *signalRunner) Start(ctx context.Context, spec vod.Spec) (vod.Handle, error) {
+	defer r.once.Do(func() { close(r.done) })
+	return r.delegate.Start(ctx, spec)
+}
+
 func TestGetRecordingHLSPlaylist_FailedPromotesReady(t *testing.T) {
 	serviceRef := "1:0:0:0:0:0:0:0:0:/media/test.ts"
-	recordingID := EncodeRecordingID(serviceRef)
+	recordingID := recservice.EncodeRecordingID(serviceRef)
 	hlsRoot := t.TempDir()
 	cfg := config.AppConfig{
 		HLS: config.HLSConfig{
@@ -154,7 +167,7 @@ func TestGetRecordingHLSPlaylist_FailedPromotesReady(t *testing.T) {
 	srv := NewServer(cfg, nil, nil)
 	// Use successRunner
 	vodMgr := vod.NewManager(&successRunner{fsRoot: t.TempDir()}, nil, nil)
-	srv.SetDependencies(nil, nil, nil, nil, nil, nil, nil, nil, vodMgr, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	srv.SetDependencies(nil, nil, nil, nil, nil, nil, nil, nil, vodMgr, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	cacheDir := filepath.Join(hlsRoot, "recordings", v3recordings.RecordingCacheKey(serviceRef))
 	require.NoError(t, os.MkdirAll(cacheDir, 0755))
@@ -179,7 +192,7 @@ func TestGetRecordingHLSPlaylist_FailedPromotesReady(t *testing.T) {
 
 func TestGetRecordingHLSPlaylist_Failed_Reconcile_BuildCallbackPromotesReady(t *testing.T) {
 	serviceRef := "1:0:0:0:0:0:0:0:0:/media/nfs/build.ts"
-	recordingID := EncodeRecordingID(serviceRef)
+	recordingID := recservice.EncodeRecordingID(serviceRef)
 
 	cfg := config.AppConfig{
 		HLS: config.HLSConfig{
@@ -190,7 +203,7 @@ func TestGetRecordingHLSPlaylist_Failed_Reconcile_BuildCallbackPromotesReady(t *
 	srv := NewServer(cfg, nil, nil)
 	// Use successRunner
 	vodMgr := vod.NewManager(&successRunner{fsRoot: t.TempDir()}, nil, nil)
-	srv.SetDependencies(nil, nil, nil, nil, nil, nil, nil, nil, vodMgr, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	srv.SetDependencies(nil, nil, nil, nil, nil, nil, nil, nil, vodMgr, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	vodMgr.UpdateMetadata(serviceRef, vod.Metadata{
 		State: vod.ArtifactStateFailed,
@@ -214,7 +227,7 @@ func TestGetRecordingHLSPlaylist_Failed_Reconcile_BuildCallbackPromotesReady(t *
 
 func TestGetRecordingHLSPlaylist_FailedStampedeTriggersSingleBuild(t *testing.T) {
 	serviceRef := "1:0:0:0:0:0:0:0:0:/media/nfs/test.ts"
-	recordingID := EncodeRecordingID(serviceRef)
+	recordingID := recservice.EncodeRecordingID(serviceRef)
 	cfg := config.AppConfig{
 		HLS: config.HLSConfig{
 			Root: t.TempDir(),
@@ -231,7 +244,7 @@ func TestGetRecordingHLSPlaylist_FailedStampedeTriggersSingleBuild(t *testing.T)
 
 	srv := NewServer(cfg, nil, nil)
 	vodMgr := vod.NewManager(runner, nil, mapper)
-	srv.SetDependencies(nil, nil, nil, nil, mapper, nil, nil, nil, vodMgr, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	srv.SetDependencies(nil, nil, nil, nil, mapper, nil, nil, nil, vodMgr, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	vodMgr.UpdateMetadata(serviceRef, vod.Metadata{
 		State: vod.ArtifactStateFailed,
@@ -261,18 +274,22 @@ func TestGetRecordingHLSPlaylist_FailedStampedeTriggersSingleBuild(t *testing.T)
 
 func TestGetRecordingHLSPlaylist_FailedLatencySLO(t *testing.T) {
 	serviceRef := "1:0:0:0:0:0:0:0:0:/media/nfs/latency.ts"
-	recordingID := EncodeRecordingID(serviceRef)
+	recordingID := recservice.EncodeRecordingID(serviceRef)
 	cfg := config.AppConfig{
 		HLS: config.HLSConfig{
 			Root: t.TempDir(),
 		},
 	}
 
-	// Use successRunner
-	vodMgr := vod.NewManager(&successRunner{fsRoot: t.TempDir()}, nil, nil)
+	// Use signalRunner to deterministically wait for async IO
+	runner := &signalRunner{
+		delegate: &successRunner{fsRoot: t.TempDir()},
+		done:     make(chan struct{}),
+	}
+	vodMgr := vod.NewManager(runner, nil, nil)
 
 	srv := NewServer(cfg, nil, nil)
-	srv.SetDependencies(nil, nil, nil, nil, nil, nil, nil, nil, vodMgr, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	srv.SetDependencies(nil, nil, nil, nil, nil, nil, nil, nil, vodMgr, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	vodMgr.UpdateMetadata(serviceRef, vod.Metadata{
 		State: vod.ArtifactStateFailed,
@@ -287,13 +304,24 @@ func TestGetRecordingHLSPlaylist_FailedLatencySLO(t *testing.T) {
 	// Should return 503 quickly (reconcile triggered async), not block
 	require.Less(t, time.Since(start), 50*time.Millisecond)
 	require.Equal(t, http.StatusServiceUnavailable, rr.Code)
+
+	// Wait for the async build to start/finish to ensure file handles are closed before cleanup
+	select {
+	case <-runner.done:
+		// Async work started and completed IO
+	case <-time.After(200 * time.Millisecond):
+		// If it never started, that's also fine (means no IO happened), but we expect it to start
+		// given the test setup. If this times out, "RemoveAll" might still be safe if no IO happened.
+		// However, knowing the system, it SHOULD start.
+		t.Log("Async build did not start within timeout")
+	}
 }
 
 func TestGetRecordingHLSPlaylist_OpenFailure_ReconcileReady(t *testing.T) {
 	t.Skip("Skipping flaky async reconciliation test")
 
 	serviceRef := "1:0:0:0:0:0:0:0:0:/media/test.ts"
-	recordingID := EncodeRecordingID(serviceRef)
+	recordingID := recservice.EncodeRecordingID(serviceRef)
 	localRoot := t.TempDir()
 
 	// Create dummy input file so resolveSource doesn't fail
@@ -312,7 +340,7 @@ func TestGetRecordingHLSPlaylist_OpenFailure_ReconcileReady(t *testing.T) {
 
 	srv := NewServer(cfg, nil, nil)
 	vodMgr := vod.NewManager(&successRunner{fsRoot: t.TempDir()}, &slowProber{delay: 50 * time.Millisecond}, pathMapper)
-	srv.SetDependencies(nil, nil, nil, nil, nil, nil, nil, nil, vodMgr, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	srv.SetDependencies(nil, nil, nil, nil, nil, nil, nil, nil, vodMgr, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	cacheDir, err := v3recordings.RecordingCacheDir(cfg.HLS.Root, serviceRef)
 	require.NoError(t, err)

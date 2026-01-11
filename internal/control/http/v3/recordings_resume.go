@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/control/auth"
+	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 	"github.com/go-chi/chi/v5"
@@ -33,8 +34,8 @@ func (s *Server) HandleRecordingResume(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
 	recordingID := chi.URLParam(r, "recordingId")
-	serviceRef := s.DecodeRecordingID(recordingID)
-	if serviceRef == "" {
+	serviceRef, ok := recservice.DecodeRecordingID(recordingID)
+	if !ok {
 		writeProblem(w, r, http.StatusBadRequest, "recordings/invalid_id", "Invalid ID", "INVALID_ID", "The provided recording ID is invalid", nil)
 		return
 	}

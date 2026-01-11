@@ -387,6 +387,7 @@ func newTestServerConfig(t *testing.T, spy *SpyStore, spyBus *SpyBus, fn func(*c
 		nil,
 		nil,
 		nil,
+		nil,
 	)
 	srv.SetPreflightCheck(nil)
 

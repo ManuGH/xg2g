@@ -59,6 +59,7 @@ func TestSetDependencies_HandlesTypedNil(t *testing.T) {
 		nil,         // ds
 		nil,         // svs
 		nil,         // ts
+		nil,         // recSvc
 		nil,         // requestShutdown
 		nil,         // preflightCheck
 	)

@@ -74,9 +74,7 @@ type Server struct {
 	vodManager *vod.Manager
 
 	// OpenWebIF Client Cache (P1 Performance Fix)
-	owiClient  *openwebif.Client                                         // In-memory cache for openWebIF client
-	owiEpoch   uint64                                                    // Epoch for cache invalidation
-	owiFactory func(config.AppConfig, config.Snapshot) *openwebif.Client // Optional override for tests
+	owiClient *openwebif.Client // In-memory cache for openWebIF client
 
 	// v3 Integration
 	v3Handler         *v3.Server

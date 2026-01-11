@@ -54,8 +54,3 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
-
-// setupValidateMiddleware enforces admin auth for setup validation.
-func (s *Server) setupValidateMiddleware(next http.Handler) http.Handler {
-	return s.authMiddleware(s.scopeMiddleware(v3.ScopeV3Admin)(next))
-}

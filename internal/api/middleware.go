@@ -1,10 +1,3 @@
-// Copyright (c) 2025 ManuGH
-// Licensed under the PolyForm Noncommercial License 1.0.0
-// Since v2.0.0, this software is restricted to non-commercial use only.
-
-// Since v2.0.0, this software is restricted to non-commercial use only.
-
-// Package api provides HTTP server functionality for the xg2g application.
 package api
 
 import (
@@ -15,14 +8,14 @@ import (
 )
 
 var (
-	trustedCIDRs     []*net.IPNet
-	trustedCIDRsOnce sync.Once
+	trustedIPNets     []*net.IPNet
+	trustedIPNetsOnce sync.Once
 )
 
 // SetTrustedProxies configures the list of trusted proxies/CIDRs.
 // This must be called at startup with configuration values.
 func SetTrustedProxies(csv string) {
-	trustedCIDRsOnce.Do(func() {
+	trustedIPNetsOnce.Do(func() {
 		if csv == "" {
 			return
 		}
@@ -32,7 +25,7 @@ func SetTrustedProxies(csv string) {
 				continue
 			}
 			if _, ipnet, err := net.ParseCIDR(p); err == nil {
-				trustedCIDRs = append(trustedCIDRs, ipnet)
+				trustedIPNets = append(trustedIPNets, ipnet)
 			}
 		}
 	})
@@ -40,9 +33,7 @@ func SetTrustedProxies(csv string) {
 
 // remoteIsTrusted checks if the remote IP is trusted
 func remoteIsTrusted(remote string) bool {
-	// Relies on SetTrustedProxies being called at startup.
-	// No lazy loading from ENV to ensure config immutability.
-	if len(trustedCIDRs) == 0 {
+	if len(trustedIPNets) == 0 {
 		return false
 	}
 	host, _, err := net.SplitHostPort(remote)
@@ -53,7 +44,7 @@ func remoteIsTrusted(remote string) bool {
 	if ip == nil {
 		return false
 	}
-	for _, n := range trustedCIDRs {
+	for _, n := range trustedIPNets {
 		if n.Contains(ip) {
 			return true
 		}
@@ -63,7 +54,6 @@ func remoteIsTrusted(remote string) bool {
 
 // clientIP determines the originating IP address (X-Forwarded-For / X-Real-IP / RemoteAddr)
 func clientIP(r *http.Request) string {
-	// Only trust proxy headers if the direct peer is in XG2G_TRUSTED_PROXIES
 	if remoteIsTrusted(r.RemoteAddr) {
 		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 			parts := strings.Split(xff, ",")

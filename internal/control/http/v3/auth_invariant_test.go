@@ -7,9 +7,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/resolver"
-	"github.com/ManuGH/xg2g/internal/control/http/v3/types"
-	"github.com/ManuGH/xg2g/internal/control/playback"
+	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -17,9 +15,9 @@ type mockResolver struct {
 	callCount int32
 }
 
-func (m *mockResolver) Resolve(ctx context.Context, recordingID string, intent types.PlaybackIntent, profile playback.ClientProfile) (resolver.ResolveOK, *resolver.ResolveError) {
+func (m *mockResolver) Resolve(ctx context.Context, recordingID string, intent recservice.PlaybackIntent, profile recservice.PlaybackProfile) (recservice.PlaybackInfoResult, error) {
 	atomic.AddInt32(&m.callCount, 1)
-	return resolver.ResolveOK{}, nil
+	return recservice.PlaybackInfoResult{}, nil
 }
 
 func TestSecurityFailClosedInvariant(t *testing.T) {

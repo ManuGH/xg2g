@@ -64,11 +64,6 @@ func (s *Server) authMiddlewareImpl(next http.Handler) http.Handler {
 	})
 }
 
-// setupValidateMiddleware enforces admin auth for setup validation.
-func (s *Server) setupValidateMiddleware(next http.Handler) http.Handler {
-	return s.authMiddleware(s.ScopeMiddleware(ScopeV3Admin)(next))
-}
-
 // CreateSession creates a secure HTTP-only session cookie exchange for the provided Bearer token.
 // POST /api/v3/auth/session
 // Requires Authentication (via Header) to be successful first.

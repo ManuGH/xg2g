@@ -25,12 +25,14 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	v3store "github.com/ManuGH/xg2g/internal/domain/session/store"
 	v3api "github.com/ManuGH/xg2g/internal/pipeline/api"
 	v3bus "github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/ManuGH/xg2g/internal/pipeline/lease"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
+	recinfra "github.com/ManuGH/xg2g/internal/recordings"
 )
 
 const contractFixtureDir = "testdata/v3_contract"
@@ -44,7 +46,7 @@ var (
 func loadOpenAPIDoc(t *testing.T) *openapi3.T {
 	t.Helper()
 	openapiOnce.Do(func() {
-		specPath := "openapi.yaml"
+		specPath := "../../../../api/openapi.yaml"
 		loader := openapi3.NewLoader()
 		loader.IsExternalRefsAllowed = true
 		doc, err := loader.LoadFromFile(specPath)
@@ -122,9 +124,20 @@ func newV3TestServer(t *testing.T, hlsRoot string) (*Server, *v3store.MemoryStor
 	b := v3bus.NewMemoryBus()
 	// store := st // This line is effectively replaced by using 'st' directly
 	rs := resume.NewMemoryStore()
+
+	// PR3: Fix contract tests needing VOD logic
+	pm := recinfra.NewPathMapper([]config.RecordingPathMapping{
+		{ReceiverRoot: "/media/hdd", LocalRoot: hlsRoot},
+		{ReceiverRoot: "/media", LocalRoot: hlsRoot},
+	})
+
+	// Create VOD Manager with successRunner (shared from recordings_hls_reconcile_test.go)
+	// We use "legacy" mode for now as contract test expects direct behavior
+	vm := vod.NewManager(&successRunner{fsRoot: hlsRoot}, nil, pm)
+
 	s.SetDependencies(
-		b, st, rs, nil, nil, nil, nil, nil, nil,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		b, st, rs, nil, pm, nil, nil, nil, vm,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 	)
 
 	return s, st

@@ -787,7 +787,7 @@ func TestSlice5_1_Equivalence(t *testing.T) {
 		nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		nil, nil, nil,
 		mockScan, mockDvr, mockSvs, mockTs,
-		nil, nil,
+		nil, nil, nil,
 	)
 
 	testCases := []struct {
@@ -923,7 +923,7 @@ http://stream/3
 
 	s := NewServer(cfg, nil, nil)
 	s.snap = snap
-	s.SetDependencies(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, &mockScanSource{}, &mockDvrSource{}, mockSvs, mockTs, nil, nil)
+	s.SetDependencies(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, &mockScanSource{}, &mockDvrSource{}, mockSvs, mockTs, nil, nil, nil)
 
 	t.Run("GetServices/Combinatorial", func(t *testing.T) {
 		tests := []struct {
@@ -931,9 +931,9 @@ http://stream/3
 			bouquet *string
 		}{
 			{"All Services", nil},
-			{"Favorites Only", strPtr("Favorites")},
-			{"Movies Only", strPtr("Movies")},
-			{"Non Existent", strPtr("NonExistent")},
+			{"Favorites Only", testStrPtr("Favorites")},
+			{"Movies Only", testStrPtr("Movies")},
+			{"Non Existent", testStrPtr("NonExistent")},
 		}
 
 		for _, tc := range tests {
@@ -1190,8 +1190,8 @@ http://stream/3
 				legacyParams := GetEpgParams{
 					From:    ptrInt(tc.params.Get("from")),
 					To:      ptrInt(tc.params.Get("to")),
-					Bouquet: strPtr(tc.params.Get("bouquet")),
-					Q:       strPtr(tc.params.Get("q")),
+					Bouquet: testStrPtr(tc.params.Get("bouquet")),
+					Q:       testStrPtr(tc.params.Get("q")),
 				}
 				getEpg_Legacy(s, wLegacy, req, legacyParams)
 
@@ -1240,8 +1240,8 @@ http://stream/3
 
 				wLegacy := httptest.NewRecorder()
 				legacyParams := GetEpgParams{
-					Bouquet: strPtr(tc.params.Get("bouquet")),
-					Q:       strPtr(tc.params.Get("q")),
+					Bouquet: testStrPtr(tc.params.Get("bouquet")),
+					Q:       testStrPtr(tc.params.Get("q")),
 				}
 				getEpg_Legacy(s, wLegacy, req, legacyParams)
 
@@ -1266,7 +1266,7 @@ func ptrInt(s string) *int {
 	return &i
 }
 
-func strPtr(s string) *string {
+func testStrPtr(s string) *string {
 	if s == "" {
 		return nil
 	}

@@ -3,6 +3,7 @@ package artifacts
 import (
 	"context"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -313,6 +314,10 @@ func (r *DefaultResolver) resolveSource(serviceRef string) (string, string, stri
 }
 
 func decodeRef(id string) (string, bool) {
+	// Try Hex (Priority)
+	if b, err := hex.DecodeString(id); err == nil {
+		return string(b), true
+	}
 	// Try RawURL (No Padding)
 	if b, err := base64.RawURLEncoding.DecodeString(id); err == nil {
 		return string(b), true
