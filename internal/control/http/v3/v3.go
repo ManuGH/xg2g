@@ -19,8 +19,9 @@ import (
 	"github.com/ManuGH/xg2g/internal/channels"
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/artifacts"
-	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/resolver"
 	"github.com/ManuGH/xg2g/internal/control/read"
+	"github.com/ManuGH/xg2g/internal/control/recordings"
+	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/dvr"
@@ -33,7 +34,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
-	"github.com/ManuGH/xg2g/internal/recordings"
+	recinfra "github.com/ManuGH/xg2g/internal/recordings"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -54,6 +55,18 @@ func isNil(i interface{}) bool {
 
 // PreflightCheckFunc validates source accessibility before initiating a stream.
 type PreflightCheckFunc func(context.Context, string) error
+
+// CheckSourceAvailability is a no-op preflight check that always succeeds.
+// TODO: Implement actual source validation if needed.
+func CheckSourceAvailability(ctx context.Context, source string) error {
+	return nil
+}
+
+// StartRecordingCacheEvicter starts a background task to clean up old recording cache entries.
+// TODO: Implement periodic cache cleanup based on age/size limits.
+func (s *Server) StartRecordingCacheEvicter(ctx context.Context) {
+	// No-op for now - implement cache eviction logic when needed
+}
 
 // DvrSource defines the minimal interface required for DVR read operations.
 type DvrSource interface {
@@ -114,12 +127,12 @@ type Server struct {
 	resumeStore         resume.Store
 	v3Scan              scanner
 	owiFactory          owiFactory // Factory for creating OpenWebIF clients (injectable for tests)
-	recordingPathMapper *recordings.PathMapper
+	recordingPathMapper *recinfra.PathMapper
 	channelManager      *channels.Manager
 	seriesManager       *dvr.Manager
 	seriesEngine        *dvr.SeriesEngine
 	vodManager          *vod.Manager
-	resolver            resolver.Resolver // Strict V4 Resolver
+	resolver            recservice.Resolver // Strict V4 Resolver (Domain)
 	artifacts           artifacts.Resolver
 	epgCache            *epg.TV // EPG Cache reference
 	owiClient           *openwebif.Client
@@ -132,15 +145,16 @@ type Server struct {
 	libraryService      *library.Service // Media library per ADR-ENG-002
 
 	// Lifecycle
-	requestShutdown func(context.Context) error
-	preflightCheck  PreflightCheckFunc
-	healthManager   *health.Manager
-	logSource       interface{ GetRecentLogs() []log.LogEntry }
-	scanSource      ScanSource
-	dvrSource       DvrSource
-	servicesSource  ServicesSource
-	timersSource    TimersSource
-	epgSource       read.EpgSource
+	requestShutdown   func(context.Context) error
+	preflightCheck    PreflightCheckFunc
+	healthManager     *health.Manager
+	logSource         interface{ GetRecentLogs() []log.LogEntry }
+	scanSource        ScanSource
+	dvrSource         DvrSource
+	servicesSource    ServicesSource
+	timersSource      TimersSource
+	epgSource         read.EpgSource
+	recordingsService recordings.Service
 
 	// Middlewares (injectable for tests)
 	AuthMiddlewareOverride func(http.Handler) http.Handler
@@ -189,7 +203,7 @@ func (s *Server) LibraryService() *library.Service {
 }
 
 // SetResolver sets the V4 resolver used by GetRecordingPlaybackInfo.
-func (s *Server) SetResolver(r resolver.Resolver) {
+func (s *Server) SetResolver(r recservice.Resolver) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.resolver = r
@@ -232,7 +246,7 @@ func (s *Server) SetDependencies(
 	store store.StateStore,
 	resume resume.Store,
 	scan scanner,
-	rpm *recordings.PathMapper,
+	rpm *recinfra.PathMapper,
 	cm *channels.Manager,
 	sm *dvr.Manager,
 	se *dvr.SeriesEngine,
@@ -245,6 +259,7 @@ func (s *Server) SetDependencies(
 	ds DvrSource,
 	svs ServicesSource,
 	ts TimersSource,
+	recSvc recservice.Service,
 	requestShutdown func(context.Context) error,
 	preflightCheck PreflightCheckFunc,
 ) {
@@ -361,6 +376,12 @@ func (s *Server) SetDependencies(
 		s.preflightCheck = preflightCheck
 	} else {
 		s.preflightCheck = nil
+	}
+
+	if !isNil(recSvc) {
+		s.recordingsService = recSvc
+	} else {
+		s.recordingsService = nil
 	}
 }
 

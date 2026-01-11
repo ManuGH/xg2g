@@ -41,8 +41,8 @@ type RefreshService interface {
 	Trigger(ctx context.Context, opts jobs.Options) (*jobs.Artifacts, error)
 }
 
-// Store defines the interface for accessing files in the data directory
-type Store interface {
+// DataStore defines the interface for accessing files in the data directory
+type DataStore interface {
 	Open(name string) (io.ReadSeeker, error)
 	Stat(name string) (size int64, mod time.Time, err error)
 }
@@ -53,6 +53,6 @@ type Deps struct {
 	Metrics Metrics
 	Auth    AuthService
 	Refresh RefreshService
-	Store   Store
+	Store   DataStore
 	Config  config.AppConfig
 }

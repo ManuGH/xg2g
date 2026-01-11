@@ -9,12 +9,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
-	"path"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -26,8 +23,8 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	controlhttp "github.com/ManuGH/xg2g/internal/control/http"
 	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
-	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/resolver"
 	"github.com/ManuGH/xg2g/internal/control/middleware"
+	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/dvr"
@@ -42,7 +39,6 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
-	fsplat "github.com/ManuGH/xg2g/internal/platform/fs"
 	"github.com/ManuGH/xg2g/internal/recordings"
 	"github.com/go-chi/chi/v5"
 
@@ -83,11 +79,12 @@ type Server struct {
 	owiFactory func(config.AppConfig, config.Snapshot) *openwebif.Client // Optional override for tests
 
 	// v3 Integration
-	v3Handler   *v3.Server
-	v3Bus       bus.Bus
-	v3Store     store.StateStore
-	resumeStore resume.Store
-	v3Scan      *scan.Manager
+	v3Handler         *v3.Server
+	v3Bus             bus.Bus
+	v3Store           store.StateStore
+	resumeStore       resume.Store
+	v3Scan            *scan.Manager
+	recordingsService recservice.Service
 
 	// Recording Playback Path Mapper
 	recordingPathMapper *recordings.PathMapper
@@ -248,15 +245,24 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager, opts ...ServerOption) *Se
 	}
 	s.v3Handler = s.v3Factory(cfg, cfgMgr, s.rootCancel)
 
-	// P4: Wire NEW V4 Resolver (recordings/resolver package)
+	// P4: Wire NEW V4 Resolver (recordings package)
 	// This is the canonical resolver used by GetRecordingPlaybackInfo
-	v4Resolver := resolver.New(&cfg, s.vodManager)
+	v4Resolver := recservice.NewResolver(&cfg, s.vodManager)
 	if libSvc := s.v3Handler.LibraryService(); libSvc != nil {
 		v4Resolver = v4Resolver.WithDurationStore(
-			resolver.NewLibraryDurationStore(libSvc.GetStore()),
-			resolver.NewLibraryPathResolver(s.recordingPathMapper, libSvc.GetConfigs()),
+			recservice.NewLibraryDurationStore(libSvc.GetStore()),
+			recservice.NewLibraryPathResolver(s.recordingPathMapper, libSvc.GetConfigs()),
 		)
 	}
+
+	// Create infrastructure adapters for domain service
+	owiAdapter := v3.NewOWIAdapter(s.owiClient)
+	resumeAdapter := v3.NewResumeAdapter(s.resumeStore)
+
+	// Create domain RecordingsService
+	// Note: v4Resolver here is a domain resolver because of the v3.Server.SetResolver signature change
+	s.recordingsService = recservice.NewService(&cfg, s.vodManager, v4Resolver, owiAdapter, resumeAdapter)
+
 	s.v3Handler.SetResolver(v4Resolver)
 
 	// Initialize Series Engine
@@ -291,6 +297,7 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager, opts ...ServerOption) *Se
 		&dvrSourceWrapper{s},
 		s.channelManager,
 		&dvrSourceWrapper{s},
+		s.recordingsService,
 		s.requestShutdown,
 		s.preflightCheck,
 	)
@@ -512,6 +519,12 @@ func (s *Server) HealthManager() *health.Manager {
 	return s.healthManager
 }
 
+func (s *Server) GetConfig() config.AppConfig {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.cfg
+}
+
 // HDHomeRunServer returns the HDHomeRun server instance if enabled
 func (s *Server) HDHomeRunServer() *hdhr.Server {
 	return s.hdhr
@@ -592,7 +605,10 @@ func (s *Server) routes() http.Handler {
 	})
 
 	// 7. Manual v3 Extensions (Strictly Scoped)
-	rRead.Get("/api/v3/vod/{recordingId}", s.v3Handler.HandleVODPlaybackInfo)
+	rRead.Get("/api/v3/vod/{recordingId}", func(w http.ResponseWriter, r *http.Request) {
+		recordingId := chi.URLParam(r, "recordingId")
+		s.v3Handler.GetRecordingPlaybackInfo(w, r, recordingId)
+	})
 
 	rRead.Head("/api/v3/recordings/{recordingId}/stream.mp4", func(w http.ResponseWriter, r *http.Request) {
 		recordingId := chi.URLParam(r, "recordingId")
@@ -604,12 +620,12 @@ func (s *Server) routes() http.Handler {
 
 	// 9. LAN Guard (Restrict discovery/legacy endpoints to private networks)
 	// trusted proxies are comma-separated in config
-	var trustedCIDRs []string
+	var proxies []string
 	if s.cfg.TrustedProxies != "" {
-		trustedCIDRs = strings.Split(s.cfg.TrustedProxies, ",")
+		proxies = strings.Split(s.cfg.TrustedProxies, ",")
 	}
 	lanGuard, _ := middleware.NewLANGuard(middleware.LANGuardConfig{
-		TrustedProxyCIDRs: trustedCIDRs,
+		TrustedProxyCIDRs: proxies,
 	})
 
 	// PROTECTED: Discovery / Legacy Endpoints
@@ -674,13 +690,6 @@ func (s *Server) UpdateStatus(status jobs.Status) {
 	s.status = status
 }
 
-// GetConfig returns the server's current configuration
-func (s *Server) GetConfig() config.AppConfig {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.cfg
-}
-
 // SetV3Components configures v3 event bus, store, and scan manager
 func (s *Server) SetV3Components(b bus.Bus, st store.StateStore, rs resume.Store, sm *scan.Manager) {
 	s.mu.Lock()
@@ -706,6 +715,7 @@ func (s *Server) SetV3Components(b bus.Bus, st store.StateStore, rs resume.Store
 			&dvrSourceWrapper{s},
 			s.channelManager,
 			&dvrSourceWrapper{s},
+			s.recordingsService,
 			s.requestShutdown,
 			s.preflightCheck,
 		)
@@ -733,7 +743,7 @@ func (s *Server) SetVODProber(p vod.Prober) {
 }
 
 // SetResolver injects a resolver into the v3 handler (tests).
-func (s *Server) SetResolver(r resolver.Resolver) {
+func (s *Server) SetResolver(r recservice.Resolver) {
 	if s.v3Handler != nil {
 		s.v3Handler.SetResolver(r)
 	}
@@ -878,268 +888,9 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	s.healthManager.ServeHealth(w, r)
-}
-
-func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
-	s.healthManager.ServeReady(w, r)
-}
-
-func (s *Server) handleXMLTV(w http.ResponseWriter, r *http.Request) {
-	logger := log.WithComponentFromContext(r.Context(), "api")
-
-	if strings.TrimSpace(s.cfg.XMLTVPath) == "" {
-		logger.Warn().Str("event", "xmltv.not_configured").Msg("XMLTV path not configured")
-		http.Error(w, "XMLTV file not available", http.StatusNotFound)
-		return
-	}
-
-	// Get XMLTV file path with traversal protection
-	xmltvPath, err := s.dataFilePath(s.cfg.XMLTVPath)
-	if err != nil {
-		logger.Error().Err(err).Str("event", "xmltv.invalid_path").Msg("XMLTV path rejected")
-		http.Error(w, "XMLTV file not available", http.StatusNotFound)
-		return
-	}
-
-	// Check if file exists
-	fileInfo, err := os.Stat(xmltvPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			logger.Warn().
-				Str("event", "xmltv.not_found").
-				Str("path", xmltvPath).
-				Msg("XMLTV file not found")
-			http.Error(w, "XMLTV file not available", http.StatusNotFound)
-			return
-		}
-		logger.Error().Err(err).Msg("failed to stat XMLTV file")
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-
-	// Security: Limit file size to prevent memory exhaustion (50MB max)
-	const maxFileSize = 50 * 1024 * 1024
-	if fileInfo.Size() > maxFileSize {
-		logger.Warn().
-			Int64("size", fileInfo.Size()).
-			Str("event", "xmltv.too_large").
-			Msg("XMLTV file exceeds maximum size")
-		http.Error(w, "XMLTV file too large", http.StatusRequestEntityTooLarge)
-		return
-	}
-
-	// Read XMLTV file
-	// #nosec G304 -- xmltvPath is validated by dataFilePath and confined to the data directory
-	xmltvData, err := os.ReadFile(xmltvPath)
-	if err != nil {
-		logger.Error().Err(err).Msg("failed to read XMLTV file")
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-
-	// Read M3U to build tvg-id to tvg-chno mapping
-	// Read M3U to build tvg-id to tvg-chno mapping
-	m3uPath, err := s.dataFilePath(s.snap.Runtime.PlaylistFilename)
-	if err != nil {
-		logger.Warn().Err(err).Msg("playlist path rejected, serving raw XMLTV")
-		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
-		w.Header().Set("Cache-Control", "public, max-age=300")
-		if _, writeErr := w.Write(xmltvData); writeErr != nil {
-			logger.Error().Err(writeErr).Msg("failed to write raw XMLTV response")
-		}
-		return
-	}
-
-	// Check M3U file size
-	m3uInfo, err := os.Stat(m3uPath)
-	if err != nil {
-		logger.Warn().Err(err).Msg("M3U file not found, serving raw XMLTV")
-		// Serve original XMLTV if M3U not available
-		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
-		w.Header().Set("Cache-Control", "public, max-age=300")
-		if _, err := w.Write(xmltvData); err != nil {
-			logger.Error().Err(err).Msg("failed to write raw XMLTV response")
-		}
-		return
-	}
-
-	// Security: Limit M3U file size (10MB max)
-	const maxM3USize = 10 * 1024 * 1024
-	if m3uInfo.Size() > maxM3USize {
-		logger.Warn().
-			Int64("size", m3uInfo.Size()).
-			Msg("M3U file too large, serving raw XMLTV")
-		// Serve original XMLTV if M3U is too large
-		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
-		w.Header().Set("Cache-Control", "public, max-age=300")
-		if _, err := w.Write(xmltvData); err != nil {
-			logger.Error().Err(err).Msg("failed to write raw XMLTV response")
-		}
-		return
-	}
-
-	// #nosec G304 -- m3uPath is validated by dataFilePath and confined to the data directory
-	m3uData, err := os.ReadFile(m3uPath)
-	if err != nil {
-		logger.Error().Err(err).Msg("failed to read M3U file")
-		// Serve original XMLTV if M3U not available
-		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
-		w.Header().Set("Cache-Control", "public, max-age=300")
-		if _, err := w.Write(xmltvData); err != nil {
-			logger.Error().Err(err).Msg("failed to write raw XMLTV response")
-		}
-		return
-	}
-
-	// Build mapping from tvg-id (sref-...) to tvg-chno (1, 2, 3...)
-	idToNumber := make(map[string]string)
-	m3uLines := strings.Split(string(m3uData), "\n")
-	for _, line := range m3uLines {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "#EXTINF:") {
-			var tvgID, tvgChno string
-
-			// Extract tvg-id
-			if idx := strings.Index(line, `tvg-id="`); idx != -1 {
-				start := idx + 8
-				if end := strings.Index(line[start:], `"`); end != -1 {
-					tvgID = line[start : start+end]
-				}
-			}
-
-			// Extract tvg-chno
-			if idx := strings.Index(line, `tvg-chno="`); idx != -1 {
-				start := idx + 10
-				if end := strings.Index(line[start:], `"`); end != -1 {
-					tvgChno = line[start : start+end]
-				}
-			}
-
-			if tvgID != "" && tvgChno != "" {
-				idToNumber[tvgID] = tvgChno
-			}
-		}
-	}
-
-	// Replace all channel IDs in XMLTV
-	xmltvString := string(xmltvData)
-	for oldID, newID := range idToNumber {
-		// Replace in channel elements: <channel id="sref-...">
-		xmltvString = strings.ReplaceAll(xmltvString, `id="`+oldID+`"`, `id="`+newID+`"`)
-		// Replace in programme elements: <programme channel="sref-...">
-		xmltvString = strings.ReplaceAll(xmltvString, `channel="`+oldID+`"`, `channel="`+newID+`"`)
-	}
-
-	// Serve the modified XMLTV
-	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
-	w.Header().Set("Cache-Control", "public, max-age=300") // Cache for 5 minutes
-	if _, err := w.Write([]byte(xmltvString)); err != nil {
-		logger.Error().Err(err).Msg("failed to write XMLTV response")
-		return
-	}
-
-	logger.Debug().
-		Str("event", "xmltv.served").
-		Str("path", xmltvPath).
-		Int("mappings", len(idToNumber)).
-		Msg("XMLTV file served with channel ID remapping")
-}
-
 // Handler returns the configured HTTP handler with all routes and middleware applied.
 func (s *Server) Handler() http.Handler {
 	return s.routes()
-}
-
-// handleLineupJSON handles /lineup.json endpoint for HDHomeRun emulation
-// It reads the M3U playlist and converts it to HDHomeRun lineup format
-func (s *Server) handleLineupJSON(w http.ResponseWriter, r *http.Request) {
-	logger := log.WithComponentFromContext(r.Context(), "hdhr")
-
-	// Read the M3U playlist file
-	// Read the M3U playlist file
-	m3uPath, err := s.dataFilePath(s.snap.Runtime.PlaylistFilename)
-	if err != nil {
-		logger.Error().Err(err).Str("event", "lineup.invalid_path").Msg("playlist path rejected")
-		http.Error(w, "Lineup not available", http.StatusInternalServerError)
-		return
-	}
-
-	// #nosec G304 -- m3uPath is validated by dataFilePath and confined to the data directory
-	data, err := os.ReadFile(m3uPath)
-	if err != nil {
-		logger.Error().Err(err).Str("path", m3uPath).Msg("failed to read playlist file")
-		http.Error(w, "Lineup not available", http.StatusInternalServerError)
-		return
-	}
-
-	// Parse M3U content to extract channels
-	var lineup []hdhr.LineupEntry
-	lines := strings.Split(string(data), "\n")
-	var currentChannel hdhr.LineupEntry
-	forceHLS := s.hdhr != nil && s.hdhr.PlexForceHLS()
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "#EXTINF:") {
-			// Parse channel info from EXTINF line
-			// Format: #EXTINF:-1 tvg-chno="X" tvg-id="sref-..." tvg-name="Channel Name",Display Name
-
-			// Extract tvg-chno (channel number) - Plex uses this for EPG matching with XMLTV
-			if idx := strings.Index(line, `tvg-chno="`); idx != -1 {
-				start := idx + 10
-				if end := strings.Index(line[start:], `"`); end != -1 {
-					currentChannel.GuideNumber = line[start : start+end]
-				}
-			}
-
-			// Extract channel name (after the last comma)
-			if idx := strings.LastIndex(line, ","); idx != -1 {
-				currentChannel.GuideName = strings.TrimSpace(line[idx+1:])
-			}
-		} else if len(line) > 0 && !strings.HasPrefix(line, "#") && currentChannel.GuideName != "" {
-			// This is the stream URL
-			streamURL := line
-			if forceHLS {
-				streamURL = addHLSProxyPrefix(streamURL)
-			}
-
-			currentChannel.URL = streamURL
-			lineup = append(lineup, currentChannel)
-			currentChannel = hdhr.LineupEntry{} // Reset for next channel
-		}
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(lineup); err != nil {
-		logger.Error().Err(err).Msg("failed to encode lineup")
-		return
-	}
-
-	logger.Debug().
-		Int("channels", len(lineup)).
-		Msg("HDHomeRun lineup served")
-}
-
-func addHLSProxyPrefix(raw string) string {
-	if raw == "" {
-		return raw
-	}
-	parsed, err := url.Parse(raw)
-	if err != nil {
-		return raw
-	}
-	if strings.HasPrefix(parsed.Path, "/hls/") {
-		return raw
-	}
-	trimmed := strings.TrimPrefix(parsed.Path, "/")
-	if trimmed == "" {
-		parsed.Path = "/hls"
-	} else {
-		parsed.Path = path.Join("/hls", trimmed)
-	}
-	return parsed.String()
 }
 
 // NewRouter creates and configures a new router with all middlewares and handlers.
@@ -1148,218 +899,6 @@ func addHLSProxyPrefix(raw string) string {
 // This helper is kept for testing/simple setups but will panic if used.
 func NewRouter(cfg config.AppConfig) http.Handler {
 	panic("api.NewRouter is deprecated for production. Use api.New(cfg, cfgMgr).routes()")
-}
-
-// handlePicons proxies picon requests to the backend receiver and caches them locally
-// Path: /logos/{ref}.png
-func (s *Server) handlePicons(w http.ResponseWriter, r *http.Request) {
-	rawRef := chi.URLParam(r, "ref")
-	if rawRef == "" {
-		http.Error(w, "Missing picon reference", http.StatusBadRequest)
-		return
-	}
-
-	ref, err := parsePiconRef(rawRef)
-	if err != nil {
-		http.Error(w, "Invalid picon reference", http.StatusBadRequest)
-		return
-	}
-
-	// normalizeRef is used for Upstream requests (needs colons usually)
-	// cacheRef is used for Local Filesystem (needs underscores for safety)
-
-	// Ensure we have a "Colon-style" ref for logical processing / upstream
-	processRef := strings.ReplaceAll(ref, "_", ":")
-
-	// Ensure we have an "Underscore-style" ref for filesystem
-	cacheRef := strings.ReplaceAll(processRef, ":", "_")
-
-	// Local Cache Path
-	piconDir, err := fsplat.ConfineRelPath(s.cfg.DataDir, "picons")
-	if err != nil {
-		log.L().Error().Err(err).Msg("failed to confine picon cache dir")
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-	if err := os.MkdirAll(piconDir, 0750); err != nil {
-		log.L().Error().Err(err).Msg("failed to create picon cache dir")
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-
-	localPath, err := fsplat.ConfineRelPath(s.cfg.DataDir, filepath.Join("picons", cacheRef+".png"))
-	if err != nil {
-		http.Error(w, "Invalid picon reference", http.StatusBadRequest)
-		return
-	}
-
-	// 1. CACHE HIT
-	if _, err := os.Stat(localPath); err == nil {
-		logger := log.WithComponentFromContext(r.Context(), "picon")
-		logger.Info().Str("ref", ref).Msg("Serving from cache")
-		http.ServeFile(w, r, localPath)
-		return
-	}
-
-	// 2. CACHE MISS -> Download
-	upstreamBase := s.cfg.PiconBase
-	if upstreamBase == "" {
-		upstreamBase = s.cfg.Enigma2.BaseURL
-	}
-	if upstreamBase == "" {
-		http.Error(w, "Picon backend not configured", http.StatusServiceUnavailable)
-		return
-	}
-
-	// Use processRef (Colons) for upstream URL generation as Enigma2 expects colons or underscores depending on config
-	// Usually PiconURL converts to underscores internally, but let's be safe.
-	// Actually openwebif.PiconURL *already* converts to underscores!
-	// So passing processRef (colons) is fine.
-	upstreamURL := openwebif.PiconURL(upstreamBase, processRef)
-	logger := log.WithComponentFromContext(r.Context(), "picon")
-
-	// Acquire semaphore to protect upstream limit
-	select {
-	case s.piconSemaphore <- struct{}{}:
-		defer func() { <-s.piconSemaphore }()
-	case <-r.Context().Done():
-		return // Client gave up
-	}
-
-	logger.Info().Str("ref", processRef).Str("upstream_url", upstreamURL).Msg("Picon: Downloading to cache")
-
-	client := http.Client{
-		Timeout: 30 * time.Second,
-	}
-
-	resp, err := client.Get(upstreamURL)
-
-	// Fallback Logic
-	// Enter fallback/error handling if: Request failed OR Status is not OK (e.g. 404, 500, 403)
-	if err != nil || (resp != nil && resp.StatusCode != http.StatusOK) {
-		if resp != nil && resp.StatusCode == http.StatusNotFound {
-			// It's a 404, we might try fallback
-			log.L().Debug().Msg("Internal: Upstream returned 404, attempting fallback logic")
-		}
-		// It's 500, 403, etc.
-		if resp != nil {
-			_ = resp.Body.Close()
-		}
-
-		// Normalize processRef (HD->SD fallback)
-		// e.g. 1:0:19... -> 1:0:1...
-		normalizedRef := openwebif.NormalizeServiceRefForPicon(processRef)
-		if normalizedRef != processRef {
-			fallbackURL := openwebif.PiconURL(upstreamBase, normalizedRef)
-			logger.Info().
-				Str("original_ref", processRef).
-				Str("normalized_ref", normalizedRef).
-				Str("fallback_url", fallbackURL).
-				Msg("Picon: attempting fallback to SD picon")
-
-			respFallback, errFallback := client.Get(fallbackURL)
-			if errFallback == nil && respFallback.StatusCode == http.StatusOK {
-				// Success! Use the fallback response
-				resp = respFallback
-				goto ServePicon
-			}
-
-			// Fallback failed
-			if respFallback != nil {
-				_ = respFallback.Body.Close()
-			}
-			logger.Debug().Err(errFallback).Msg("SD picon fallback failed")
-		}
-
-		// If we are here, both original and fallback failed
-		if err != nil {
-			logger.Warn().Err(err).Str("url", upstreamURL).Msg("upstream fetch failed")
-			http.Error(w, "Picon upstream unavailable", http.StatusBadGateway)
-			return
-		} else if resp != nil && resp.StatusCode != http.StatusNotFound {
-			logger.Warn().Int("status", resp.StatusCode).Str("url", upstreamURL).Msg("upstream returned error")
-			// Pass through 5xx errors from upstream
-			if resp.StatusCode >= 500 {
-				http.Error(w, "Picon upstream error", http.StatusBadGateway)
-			} else {
-				http.NotFound(w, r)
-			}
-			return
-		} else {
-			logger.Debug().Str("url", upstreamURL).Msg("upstream returned 404 (picon not found)")
-		}
-
-		http.NotFound(w, r)
-		return
-	}
-
-ServePicon:
-	defer func() {
-		if resp != nil {
-			_ = resp.Body.Close()
-		}
-	}()
-
-	// 3. SAVE TO CACHE
-	tempFile, err := os.CreateTemp(piconDir, "picon-*.tmp")
-	if err != nil {
-		logger.Error().Err(err).Msg("failed to create temp picon file")
-		_, _ = io.Copy(w, resp.Body)
-		return
-	}
-	defer func() {
-		_ = tempFile.Close()
-		_ = os.Remove(tempFile.Name())
-	}()
-
-	if _, err := io.Copy(tempFile, resp.Body); err != nil {
-		logger.Error().Err(err).Msg("failed to write to temp picon file")
-		http.Error(w, "Failed to cache picon", http.StatusInternalServerError)
-		return
-	}
-	_ = tempFile.Close() // Close before rename on Windows
-
-	if err := os.Rename(tempFile.Name(), localPath); err != nil {
-		logger.Error().Err(err).Msg("failed to rename temp picon file to cache")
-		// If rename fails, serve from the temp file if it still exists
-		if _, statErr := os.Stat(tempFile.Name()); statErr == nil {
-			http.ServeFile(w, r, tempFile.Name())
-		} else {
-			http.Error(w, "Failed to cache picon", http.StatusInternalServerError)
-		}
-		return
-	}
-
-	// Fix permissions so file can be read by http.ServeFile
-	if err := os.Chmod(localPath, 0600); err != nil {
-		logger.Warn().Err(err).Msg("failed to set picon file permissions")
-	}
-
-	// 4. SERVE
-	http.ServeFile(w, r, localPath)
-}
-
-func parsePiconRef(raw string) (string, error) {
-	decoded, err := url.PathUnescape(raw)
-	if err != nil {
-		return "", err
-	}
-	decoded = strings.TrimSpace(decoded)
-	if decoded == "" {
-		return "", fmt.Errorf("empty ref")
-	}
-	if strings.Contains(decoded, "/") || strings.Contains(decoded, "\\") {
-		return "", fmt.Errorf("path separator not allowed")
-	}
-	if strings.Contains(decoded, "..") {
-		return "", fmt.Errorf("path traversal not allowed")
-	}
-	for _, r := range decoded {
-		if r < 0x20 || r == 0x7f {
-			return "", fmt.Errorf("control characters not allowed")
-		}
-	}
-	return decoded, nil
 }
 
 type logSourceWrapper struct{}
