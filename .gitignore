@@ -55,10 +55,14 @@ livetest-data/
 /xg2g-*
 /daemon
 /daemon-*
+/v3probe
+/validate
 /api.test
 /test_output.txt
 transcoder.tar.gz
-test_parser.go
+
+# Test artifacts
+testdata/
 
 # IDE/Editor
 .vscode/
@@ -106,15 +110,6 @@ data/*.xml
 data/*.m3u
 picons/
 data/picons/*.png
-
-# Binaries at root
-/xg2g-*
-/xg2g-daemon
-/xg2g_new
-/daemon
-/validate
-/xg2g
-testdata/
 
 # Runtime artifacts
 *.pid

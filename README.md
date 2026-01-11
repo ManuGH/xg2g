@@ -87,6 +87,16 @@ export LD_LIBRARY_PATH=/opt/xg2g/ffmpeg/lib
 export XG2G_FFMPEG_PATH=/usr/bin/ffmpeg
 ```
 
+## Architecture & Decisions
+
+- 📘 **[Architecture Overview](docs/arch/ARCHITECTURE.md)** - Complete system explanation (10/10)
+- 📋 **[Architecture Decision Records (ADRs)](docs/adr/)** - Design rationale & trade-offs
+- 🔍 **[Repository Audit](docs/arch/AUDIT_REPO_STRUCTURE.md)** - Structure findings & improvements
+
+Key decisions:
+- [ADR-001: Universal Delivery Policy](docs/adr/001-universal-policy.md)
+- [ADR-002: Session Management](docs/adr/002-session-management.md)
+
 ## Quickstart
 
 ### Prerequisites: Linux with Docker, GPU, Enigma2 Receiver
