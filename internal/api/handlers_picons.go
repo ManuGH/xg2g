@@ -98,7 +98,15 @@ func (s *Server) handlePicons(w http.ResponseWriter, r *http.Request) {
 		Timeout: 30 * time.Second,
 	}
 
-	resp, err := client.Get(upstreamURL)
+	// Use request context so client disconnect cancels the download
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, upstreamURL, nil)
+	if err != nil {
+		logger.Error().Err(err).Msg("failed to create picon request")
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+
+	resp, err := client.Do(req)
 
 	// Fallback Logic
 	// Enter fallback/error handling if: Request failed OR Status is not OK (e.g. 404, 500, 403)
@@ -124,7 +132,8 @@ func (s *Server) handlePicons(w http.ResponseWriter, r *http.Request) {
 				Str("fallback_url", fallbackURL).
 				Msg("Picon: attempting fallback to SD picon")
 
-			respFallback, errFallback := client.Get(fallbackURL)
+			fallbackReq, _ := http.NewRequestWithContext(r.Context(), http.MethodGet, fallbackURL, nil)
+			respFallback, errFallback := client.Do(fallbackReq)
 			if errFallback == nil && respFallback.StatusCode == http.StatusOK {
 				// Success! Use the fallback response
 				resp = respFallback

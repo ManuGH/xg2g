@@ -126,6 +126,12 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 				return errors.New("event channel closed")
 			}
 			if evt, ok := msg.(model.StartSessionEvent); ok {
+				// Check cancellation first before acquiring semaphore
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				default:
+				}
 				// Acquire semaphore (blocking, cancellable)
 				select {
 				case o.startSem <- struct{}{}:
@@ -144,6 +150,12 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 				return errors.New("event channel closed")
 			}
 			if evt, ok := msg.(model.StopSessionEvent); ok {
+				// Check cancellation first before acquiring semaphore
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				default:
+				}
 				// Acquire semaphore (blocking, cancellable)
 				select {
 				case o.stopSem <- struct{}{}:
