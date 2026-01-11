@@ -137,13 +137,19 @@ func (m *manager) Start(ctx context.Context) error {
 	select {
 	case err := <-errChan:
 		m.logger.Error().Err(err).Msg("Server error, initiating shutdown")
-		if shutdownErr := m.Shutdown(context.Background()); shutdownErr != nil {
+		// Use bounded timeout for shutdown instead of Background
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if shutdownErr := m.Shutdown(shutdownCtx); shutdownErr != nil {
 			return fmt.Errorf("%w (shutdown: %v)", err, shutdownErr)
 		}
 		return err
 	case <-ctx.Done():
 		m.logger.Info().Msg("Shutdown signal received")
-		return m.Shutdown(context.Background())
+		// Use bounded timeout for shutdown instead of Background
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		return m.Shutdown(shutdownCtx)
 	}
 }
 

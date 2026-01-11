@@ -95,7 +95,14 @@ func shouldRecover(now time.Time, leaseTTL time.Duration, s *model.SessionRecord
 }
 
 func handleRecovery(ctx context.Context, o *Orchestrator, s *model.SessionRecord, l store.Lease, logger zerolog.Logger) bool {
-	defer func() { _ = o.Store.ReleaseLease(ctx, l.Key(), l.Owner()) }()
+	defer func() {
+		if err := o.Store.ReleaseLease(ctx, l.Key(), l.Owner()); err != nil {
+			logger.Error().Err(err).
+				Str("lease_key", l.Key()).
+				Str("owner", l.Owner()).
+				Msg("failed to release recovery lease")
+		}
+	}()
 
 	targetState := determineRecoveryTarget(s.State)
 	logger.Info().

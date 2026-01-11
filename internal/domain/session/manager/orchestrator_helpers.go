@@ -158,9 +158,15 @@ func (o *Orchestrator) acquireLeases(
 		}
 		res.DedupLease = dedupLease
 		res.ReleaseDedup = func() {
-			ctxRel, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			// Use parent context with timeout instead of Background to respect cancellation
+			ctxRel, cancel := context.WithTimeout(ctx, 5*time.Second)
 			defer cancel()
-			_ = o.Store.ReleaseLease(ctxRel, dedupLease.Key(), dedupLease.Owner())
+			if err := o.Store.ReleaseLease(ctxRel, dedupLease.Key(), dedupLease.Owner()); err != nil {
+				logger.Error().Err(err).
+					Str("lease_key", dedupLease.Key()).
+					Str("owner", dedupLease.Owner()).
+					Msg("failed to release dedup lease")
+			}
 		}
 	}
 
@@ -549,7 +555,11 @@ func (o *Orchestrator) finalizeDeferred(
 		return
 	}
 
-	_, _ = o.Store.UpdateSession(context.Background(), event.SessionID, func(r *model.SessionRecord) error {
+	// Use bounded timeout context for finalization instead of Background
+	finalizeCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, err := o.Store.UpdateSession(finalizeCtx, event.SessionID, func(r *model.SessionRecord) error {
 		if r.State.IsTerminal() && r.State != model.SessionStopping {
 			return nil
 		}
@@ -571,6 +581,12 @@ func (o *Orchestrator) finalizeDeferred(
 		r.UpdatedAtUnix = time.Now().Unix()
 		return nil
 	})
+	if err != nil {
+		logger.Error().Err(err).
+			Str("session_id", event.SessionID).
+			Str("outcome_state", string(outcome.State)).
+			Msg("failed to update session during finalization")
+	}
 
 	if !sessionCtx.IsVOD || outcome.State == model.SessionFailed {
 		o.cleanupFiles(event.SessionID)

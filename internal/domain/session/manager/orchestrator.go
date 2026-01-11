@@ -366,6 +366,7 @@ func (o *Orchestrator) cleanupFiles(sid string) {
 }
 
 func (o *Orchestrator) ForceReleaseLeases(ctx context.Context, sid, ref string, s *model.SessionRecord) {
+	logger := log.FromContext(ctx)
 	serviceRef := ref
 	if serviceRef == "" && s != nil {
 		serviceRef = s.ServiceRef
@@ -373,14 +374,25 @@ func (o *Orchestrator) ForceReleaseLeases(ctx context.Context, sid, ref string, 
 	if serviceRef != "" && o.LeaseKeyFunc != nil {
 		evt := model.StartSessionEvent{ServiceRef: serviceRef}
 		key := o.LeaseKeyFunc(evt)
-		_ = o.Store.ReleaseLease(ctx, key, sid)
+		if err := o.Store.ReleaseLease(ctx, key, sid); err != nil {
+			logger.Error().Err(err).
+				Str("lease_key", key).
+				Str("session_id", sid).
+				Msg("failed to release dedup lease during cleanup")
+		}
 	}
 
 	if s != nil && s.ContextData != nil {
 		if raw := s.ContextData[model.CtxKeyTunerSlot]; raw != "" {
 			if slot, err := strconv.Atoi(raw); err == nil {
 				key := model.LeaseKeyTunerSlot(slot)
-				_ = o.Store.ReleaseLease(ctx, key, sid)
+				if err := o.Store.ReleaseLease(ctx, key, sid); err != nil {
+					logger.Error().Err(err).
+						Str("lease_key", key).
+						Int("tuner_slot", slot).
+						Str("session_id", sid).
+						Msg("failed to release tuner lease during cleanup")
+				}
 			}
 		}
 	}
