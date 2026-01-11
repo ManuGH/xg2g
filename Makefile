@@ -160,12 +160,16 @@ ui-build: ## Build WebUI assets
 	@touch internal/control/http/dist/.keep
 	@echo "✅ WebUI build complete"
 
-generate: ## Generate Go code from OpenAPI spec
-	@echo "Generating API server code..."
+generate: ## Generate Go code from OpenAPI spec (v2 + v3)
+	@echo "Generating API server code (v2 + v3)..."
 	@mkdir -p internal/api
+	@mkdir -p internal/control/http/v3
 	@command -v $(OAPI_CODEGEN) >/dev/null 2>&1 || go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@$(OAPI_CODEGEN_VERSION)
 	@$(OAPI_CODEGEN) -package api -generate types,chi-server,spec -o internal/api/server_gen.go api/openapi.yaml
-	@echo "✅ Code generation complete: internal/api/server_gen.go"
+	@$(OAPI_CODEGEN) -package v3 -generate types,chi-server,spec -o internal/control/http/v3/server_gen.go internal/control/http/v3/openapi.yaml
+	@echo "✅ Code generation complete:"
+	@echo "   - internal/api/server_gen.go (v2)"
+	@echo "   - internal/control/http/v3/server_gen.go (v3)"
 
 build: ui-build ## Build the main daemon binary
 	@echo "Building xg2g daemon..."

@@ -16,6 +16,7 @@ on:
       - "webui/**"
       - "api/openapi.yaml"
       - "internal/api/**"
+      - "internal/control/http/v3/**"
 
 permissions:
   contents: read
@@ -102,17 +103,20 @@ jobs:
             echo "✅ Client matches OpenAPI spec"
           fi
 
-      - name: Verify OpenAPI server codegen is up-to-date
+      - name: CTO Gate: forbid direct oapi-codegen in CI
+        run: |
+          set -euo pipefail
+          if grep -n -E '\boapi-codegen\b' .github/workflows/ci.yml; then
+            echo "❌ Do not call oapi-codegen directly in ci.yml. Use: make generate"
+            exit 1
+          fi
+          echo "✅ No direct oapi-codegen in CI"
+
+      - name: Verify OpenAPI server codegen is up-to-date (v2 + v3)
         run: |
           set -euo pipefail
           make generate
-          git diff --exit-code -- internal/api/server_gen.go
-
-      - name: Verify V3 OpenAPI server codegen is up-to-date
-        run: |
-          set -euo pipefail
-          oapi-codegen -package v3 -generate types,chi-server,spec -o internal/api/v3/server_gen.go internal/api/v3/openapi.yaml
-          git diff --exit-code -- internal/api/v3/server_gen.go
+          git diff --exit-code -- internal/api/server_gen.go internal/control/http/v3/server_gen.go
 
       - name: Build WebUI
         run: |
