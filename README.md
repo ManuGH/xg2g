@@ -4,23 +4,28 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/ManuGH/xg2g)](https://goreportcard.com/report/github.com/ManuGH/xg2g)
 [![License](https://img.shields.io/badge/license-PolyForm%20NC-blue)](LICENSE)
 
-HLS streaming gateway for Enigma2 receivers – Universal delivery for modern clients.
+Production-grade HLS streaming gateway for Enigma2 satellite/DVB-T2
+receivers. Stream to Safari, iOS, Chrome, and any modern browser.
 
 > [!NOTE]
 > **Product Contract**: Universal streaming policy for modern clients.
 > No legacy profile switching or client-side transcoding decisions.
 
-## What is xg2g?
+## Why xg2g?
 
-xg2g bridges legacy **Enigma2 receivers** to modern **HLS clients**.
-It handles the complex delivery so you don't have to.
+| Your Problem | xg2g Solution |
+| :--- | :--- |
+| Enigma2 MPEG-TS doesn't work in Safari/iOS | ✅ Universal H.264/AAC/HLS |
+| Manual transcoding profiles per device | ✅ Server-enforced policy |
+| No observability in streaming stack | ✅ Metrics, logs, health probes |
+| Unstable DIY setups | ✅ Production-tested builds |
 
-**Core Features:**
+## Features
 
-- **Universal Delivery**: H.264/AAC/fMP4 for all devices.
-- **Processing**: Pure Go mit FFmpeg-CLI für Audio-Repair (CPU-only).
-- **Thin Client**: Zero-logic WebUI.
-- **Enterprise Observability**: Metrics, logging, health probes.
+- 🎯 **Universal Delivery**: H.264/AAC/fMP4 for all devices
+- 📊 **Enterprise Observability**: Prometheus, OpenTelemetry, logs
+- 🔒 **Security First**: Fail-closed auth, scope enforcement
+- ⚡ **Battle-Tested**: CI quality gates, contract tests
 
 ## The Universal Policy
 
