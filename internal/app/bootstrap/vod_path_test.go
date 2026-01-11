@@ -14,20 +14,20 @@ import (
 	"github.com/stretchr/testify/require"
 
 	controlhttp "github.com/ManuGH/xg2g/internal/control/http"
-	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
+	v3resolver "github.com/ManuGH/xg2g/internal/control/http/v3/recordings/resolver"
 	v3types "github.com/ManuGH/xg2g/internal/control/http/v3/types"
 	"github.com/ManuGH/xg2g/internal/control/playback"
 )
 
-type mockVODResolver struct {
-	ResolveVODFunc func(ctx context.Context, recordingID string, intent v3types.PlaybackIntent, profile playback.ClientProfile) (playback.MediaInfo, error)
+type mockResolver struct {
+	ResolveFunc func(ctx context.Context, recordingID string, intent v3types.PlaybackIntent, profile playback.ClientProfile) (v3resolver.ResolveOK, *v3resolver.ResolveError)
 }
 
-func (m *mockVODResolver) ResolveVOD(ctx context.Context, recordingID string, intent v3types.PlaybackIntent, profile playback.ClientProfile) (playback.MediaInfo, error) {
-	if m.ResolveVODFunc != nil {
-		return m.ResolveVODFunc(ctx, recordingID, intent, profile)
+func (m *mockResolver) Resolve(ctx context.Context, recordingID string, intent v3types.PlaybackIntent, profile playback.ClientProfile) (v3resolver.ResolveOK, *v3resolver.ResolveError) {
+	if m.ResolveFunc != nil {
+		return m.ResolveFunc(ctx, recordingID, intent, profile)
 	}
-	return playback.MediaInfo{}, nil
+	return v3resolver.ResolveOK{}, nil
 }
 
 // TestVODPlayback_Path_Wiring_ErrorPath verifies that the VOD failure path is wired correctly.
@@ -74,12 +74,15 @@ enigma2:
 	require.NoError(t, err)
 
 	// 4. Inject Mock Resolver (Simulate Not Found)
-	mock := &mockVODResolver{
-		ResolveVODFunc: func(ctx context.Context, recordingID string, intent v3types.PlaybackIntent, profile playback.ClientProfile) (playback.MediaInfo, error) {
-			return playback.MediaInfo{}, v3.ErrRecordingNotFound
+	mock := &mockResolver{
+		ResolveFunc: func(ctx context.Context, recordingID string, intent v3types.PlaybackIntent, profile playback.ClientProfile) (v3resolver.ResolveOK, *v3resolver.ResolveError) {
+			return v3resolver.ResolveOK{}, &v3resolver.ResolveError{
+				Code: v3resolver.CodeNotFound,
+				Err:  v3resolver.ErrRecordingNotFound,
+			}
 		},
 	}
-	container.Server.SetVODResolver(mock)
+	container.Server.SetResolver(mock)
 
 	// 4. Request Non-Existent Component
 	// Strict: Test URL matches router param definition /api/v3/vod/{recordingId}
@@ -167,21 +170,32 @@ enigma2:
 	require.NoError(t, err)
 
 	// 4. Inject Mock Resolver
-	mock := &mockVODResolver{
-		ResolveVODFunc: func(ctx context.Context, recordingID string, intent v3types.PlaybackIntent, profile playback.ClientProfile) (playback.MediaInfo, error) {
+	mock := &mockResolver{
+		ResolveFunc: func(ctx context.Context, recordingID string, intent v3types.PlaybackIntent, profile playback.ClientProfile) (v3resolver.ResolveOK, *v3resolver.ResolveError) {
 			if recordingID == "valid-recording-id" {
-				return playback.MediaInfo{
-					AbsPath:    "/valid/stream.mp4",
-					Container:  "mp4",
-					VideoCodec: "h264",
-					AudioCodec: "aac",
-					Duration:   3600.0,
+				return v3resolver.ResolveOK{
+					Decision: playback.Decision{
+						Mode:     playback.ModeDirectPlay,
+						Artifact: playback.ArtifactMP4,
+						Reason:   playback.ReasonDirectPlayMatch,
+					},
+					MediaInfo: playback.MediaInfo{
+						AbsPath:    "/valid/stream.mp4",
+						Container:  "mp4",
+						VideoCodec: "h264",
+						AudioCodec: "aac",
+						Duration:   3600.0,
+					},
+					Reason: "resolved_via_store",
 				}, nil
 			}
-			return playback.MediaInfo{}, v3.ErrRecordingNotFound
+			return v3resolver.ResolveOK{}, &v3resolver.ResolveError{
+				Code: v3resolver.CodeNotFound,
+				Err:  v3resolver.ErrRecordingNotFound,
+			}
 		},
 	}
-	container.Server.SetVODResolver(mock)
+	container.Server.SetResolver(mock)
 
 	handler := container.Server.Handler()
 	req := httptest.NewRequest("GET", "/api/v3/recordings/valid-recording-id/stream-info", nil)

@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	v3resolver "github.com/ManuGH/xg2g/internal/control/http/v3/recordings/resolver"
 	v3types "github.com/ManuGH/xg2g/internal/control/http/v3/types"
 	"github.com/ManuGH/xg2g/internal/control/playback"
 )
@@ -58,13 +59,13 @@ enigma2:
 	require.NoError(t, err)
 
 	// Inject Mock Resolver that Fails Test if called
-	mock := &mockVODResolver{
-		ResolveVODFunc: func(ctx context.Context, recordingID string, intent v3types.PlaybackIntent, profile playback.ClientProfile) (playback.MediaInfo, error) {
+	mock := &mockResolver{
+		ResolveFunc: func(ctx context.Context, recordingID string, intent v3types.PlaybackIntent, profile playback.ClientProfile) (v3resolver.ResolveOK, *v3resolver.ResolveError) {
 			assert.Fail(t, "Resolver MUST NOT be called when auth/scope fails")
-			return playback.MediaInfo{}, nil
+			return v3resolver.ResolveOK{}, nil
 		},
 	}
-	container.Server.SetVODResolver(mock)
+	container.Server.SetResolver(mock)
 
 	err = container.Start(ctx)
 	require.NoError(t, err)

@@ -15,12 +15,6 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/playback"
 )
 
-// VODResolver defines the boundary between HTTP and VOD Engine.
-// It resolves a recording ID to playback metadata (Pure Facts).
-type VODResolver interface {
-	ResolveVOD(ctx context.Context, recordingID string, intent types.PlaybackIntent, profile playback.ClientProfile) (playback.MediaInfo, error)
-}
-
 // HandleVODPlaybackInfo resolves playback assets for a recording.
 // GET /api/v3/vod/{recordingId}
 // Scopes: v3:read

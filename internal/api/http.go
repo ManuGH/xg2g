@@ -725,17 +725,17 @@ func (s *Server) VODManager() *vod.Manager {
 	return s.vodManager
 }
 
-// SetVODResolver allows injecting a legacy VOD resolver (tests).
-func (s *Server) SetVODResolver(vr v3.VODResolver) {
-	if s.v3Handler != nil {
-		s.v3Handler.SetVODResolver(vr)
-	}
-}
-
 // SetVODProber injects a custom prober into the VOD manager for testing.
 func (s *Server) SetVODProber(p vod.Prober) {
 	if s.vodManager != nil {
 		s.vodManager.SetProber(p)
+	}
+}
+
+// SetResolver injects a resolver into the v3 handler (tests).
+func (s *Server) SetResolver(r resolver.Resolver) {
+	if s.v3Handler != nil {
+		s.v3Handler.SetResolver(r)
 	}
 }
 

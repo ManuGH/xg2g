@@ -20,8 +20,6 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/artifacts"
 	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/resolver"
-	"github.com/ManuGH/xg2g/internal/control/http/v3/types"
-	"github.com/ManuGH/xg2g/internal/control/playback"
 	"github.com/ManuGH/xg2g/internal/control/read"
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
@@ -100,63 +98,6 @@ type openWebIFClient interface {
 
 // owiFactory creates an openWebIFClient instance.
 type owiFactory func(cfg config.AppConfig, snap config.Snapshot) openWebIFClient
-
-// vodResolverAdapter adapts the legacy VODResolver interface to the new resolver.Resolver interface.
-// This is a temporary bridge until all code is migrated to the new resolver abstraction.
-type vodResolverAdapter struct {
-	vr VODResolver
-}
-
-func (a *vodResolverAdapter) Resolve(ctx context.Context, recordingID string, intent types.PlaybackIntent, profile playback.ClientProfile) (resolver.ResolveOK, *resolver.ResolveError) {
-	mediaInfo, err := a.vr.ResolveVOD(ctx, recordingID, intent, profile)
-	if err != nil {
-		// Map legacy error to new error structure with proper type checking
-		code := resolver.CodeFailed
-		detail := err.Error()
-
-		// Check for specific error types
-		if errors.Is(err, ErrRecordingNotFound) || errors.Is(err, resolver.ErrRecordingNotFound) {
-			code = resolver.CodeNotFound
-			detail = "recording not found"
-		} else if errors.Is(err, context.DeadlineExceeded) {
-			code = resolver.CodePreparing
-			detail = "media is being analyzed"
-		} else if apiErr, ok := err.(*APIError); ok {
-			// Map APIError codes
-			switch apiErr.Code {
-			case "RECORDING_NOT_FOUND":
-				code = resolver.CodeNotFound
-			case "UPSTREAM_UNAVAILABLE":
-				code = resolver.CodeUpstream
-			case "INVALID_ID":
-				code = resolver.CodeInvalid
-			}
-			detail = apiErr.Message
-		}
-
-		return resolver.ResolveOK{}, &resolver.ResolveError{
-			Code:   code,
-			Err:    err,
-			Detail: detail,
-		}
-	}
-
-	decision, err := playback.Decide(profile, mediaInfo, playback.Policy{})
-	if err != nil {
-		return resolver.ResolveOK{}, &resolver.ResolveError{
-			Code:   resolver.CodeInternal,
-			Err:    err,
-			Detail: "decision engine error",
-		}
-	}
-
-	// Map success
-	return resolver.ResolveOK{
-		MediaInfo: mediaInfo,
-		Decision:  decision,
-		Reason:    "resolved_via_store",
-	}, nil
-}
 
 type Server struct {
 	mu sync.RWMutex
@@ -252,15 +193,6 @@ func (s *Server) SetResolver(r resolver.Resolver) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.resolver = r
-}
-
-// SetVODResolver adapts a legacy VODResolver to the V4 resolver interface.
-func (s *Server) SetVODResolver(vr VODResolver) {
-	if isNil(vr) {
-		s.SetResolver(nil)
-		return
-	}
-	s.SetResolver(&vodResolverAdapter{vr: vr})
 }
 
 // authMiddleware is the default authentication middleware.
