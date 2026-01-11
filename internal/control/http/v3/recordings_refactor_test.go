@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -14,6 +15,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/artifacts"
+	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/resolver"
 	"github.com/ManuGH/xg2g/internal/control/vod"
 )
 
@@ -62,16 +65,54 @@ func (p *blockingProber) Probe(ctx context.Context, path string) (*vod.StreamInf
 	return nil, ctx.Err()
 }
 
+type noopRunner struct{}
+
+func (n *noopRunner) Start(ctx context.Context, spec vod.Spec) (vod.Handle, error) {
+	if spec.WorkDir != "" && spec.OutputTemp != "" {
+		out := filepath.Join(spec.WorkDir, spec.OutputTemp)
+		_ = os.MkdirAll(filepath.Dir(out), 0755)
+		_ = os.WriteFile(out, []byte("#EXTM3U"), 0644)
+	}
+	// Return a handle that satisfies the contract immediately
+	return &noopHandle{progress: make(chan vod.ProgressEvent)}, nil
+}
+
+type noopHandle struct {
+	progress chan vod.ProgressEvent
+}
+
+func (h *noopHandle) Wait() error { return nil }
+func (h *noopHandle) Stop(grace, kill time.Duration) error {
+	select {
+	case <-h.progress:
+	default:
+		close(h.progress)
+	}
+	return nil
+}
+func (h *noopHandle) Progress() <-chan vod.ProgressEvent { return h.progress }
+func (h *noopHandle) Diagnostics() []string              { return nil }
+
 // TestHotPathLatencySLO verifies that hot endpoints stay responsive even if the backend stalls.
 func TestHotPathLatencySLO(t *testing.T) {
 	s, _ := newV3TestServer(t, t.TempDir())
+	t.Cleanup(func() {
+		if s.vodManager != nil {
+			s.vodManager.CancelAll()
+		}
+	})
 
 	// Inject a VOD Manager with a blocking prober
 	prober := &blockingProber{}
-	mgr := vod.NewManager(nil, prober, nil)
+	mgr := vod.NewManager(&noopRunner{}, prober, nil)
 	s.vodManager = mgr
-	mapper := &mockMapper{localPath: "/tmp/test.ts"}
-	s.vodResolver = NewVODResolver(context.Background(), mgr, nil, mapper, nil, vod.NewMockClock(time.Now()))
+	res := resolver.New(&s.cfg, mgr)
+	res.Probe = func(ctx context.Context, sourceURL string) error {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	s.resolver = res
+	s.artifacts = artifacts.New(&s.cfg, mgr, nil)
 
 	t.Run("GetRecordings_Under_500ms", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v3/recordings", nil)
@@ -227,25 +268,28 @@ func TestHotPath_StampedePrevention(t *testing.T) {
 	// Inject a prober that counts calls
 	var count int
 	var mu sync.Mutex
-	prober := &countProber{
-		probeFn: func(ctx context.Context, path string) (*vod.StreamInfo, error) {
-			mu.Lock()
-			count++
-			mu.Unlock()
-			time.Sleep(250 * time.Millisecond) // Simulate slow probe (forces 503 SLO hit)
-			return &vod.StreamInfo{
-				Video: vod.VideoStreamInfo{Duration: 3600},
-			}, nil
-		},
-	}
 
 	// Mock PathMapper that always succeeds
 	pm := &mockPathMapper{}
 
-	mgr := vod.NewManager(nil, prober, pm)
+	mgr := vod.NewManager(&noopRunner{}, nil, pm)
 	s.vodManager = mgr
-	s.vodResolver = NewVODResolver(context.Background(), mgr, nil, pm, nil, vod.NewMockClock(time.Now()))
-	s.vodManager.StartProberPool(context.Background())
+	res := resolver.New(&s.cfg, mgr)
+	res.Probe = func(ctx context.Context, sourceURL string) error {
+		mu.Lock()
+		count++
+		mu.Unlock()
+		select {
+		case <-time.After(250 * time.Millisecond):
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	s.resolver = res
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.vodManager.StartProberPool(ctx)
 
 	serviceRef := "1:0:0:0:0:0:0:0:0:" + tmpPath
 	recordingID := EncodeRecordingID(serviceRef)

@@ -22,7 +22,7 @@ func TestAttachResumeSummaries(t *testing.T) {
 	// Wire dependencies
 	s.SetDependencies(
 		nil, nil, rs, nil, nil, nil, nil, nil, nil, nil, // P3: VODResolver
-		nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil,
 	)
 
 	recID := "dGVzdC1yZWNvcmRpbmctbG9uZy1lbm91Z2g"

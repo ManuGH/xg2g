@@ -177,6 +177,31 @@ func (s *Server) ScopeMiddleware(required ...Scope) func(http.Handler) http.Hand
 	}
 }
 
+// ScopeMiddlewareFromContext enforces BearerAuthScopes from the generated router.
+func (s *Server) ScopeMiddlewareFromContext(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, ok := r.Context().Value(BearerAuthScopes).([]string)
+		if !ok || len(raw) == 0 {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		required := make([]Scope, 0, len(raw))
+		for _, scope := range raw {
+			if scope == "" {
+				continue
+			}
+			required = append(required, Scope(scope))
+		}
+		if len(required) == 0 {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		s.ScopeMiddleware(required...)(next).ServeHTTP(w, r)
+	})
+}
+
 func scopesToStrings(scopes []Scope) []string {
 	out := make([]string, 0, len(scopes))
 	for _, scope := range scopes {

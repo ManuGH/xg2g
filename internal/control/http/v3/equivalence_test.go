@@ -784,7 +784,7 @@ func TestSlice5_1_Equivalence(t *testing.T) {
 	s := NewServer(cfg, nil, nil)
 	s.snap = snap
 	s.SetDependencies(
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, // P3: VODResolver
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, // P3: VODResolver removed
 		nil, nil, nil,
 		mockScan, mockDvr, mockSvs, mockTs,
 		nil, nil,
@@ -923,7 +923,7 @@ http://stream/3
 
 	s := NewServer(cfg, nil, nil)
 	s.snap = snap
-	s.SetDependencies(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, &mockScanSource{}, &mockDvrSource{}, mockSvs, mockTs, nil, nil)
+	s.SetDependencies(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, &mockScanSource{}, &mockDvrSource{}, mockSvs, mockTs, nil, nil)
 
 	t.Run("GetServices/Combinatorial", func(t *testing.T) {
 		tests := []struct {

@@ -1,0 +1,333 @@
+package artifacts
+
+import (
+	"context"
+	"encoding/base64"
+	"errors"
+	"fmt"
+	"io"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/ManuGH/xg2g/internal/config"
+	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
+	"github.com/ManuGH/xg2g/internal/control/vod"
+	"github.com/ManuGH/xg2g/internal/platform/fs"
+	"github.com/ManuGH/xg2g/internal/recordings"
+)
+
+type Resolver interface {
+	ResolvePlaylist(ctx context.Context, recordingID string) (ArtifactOK, *ArtifactError)
+	ResolveTimeshift(ctx context.Context, recordingID string) (ArtifactOK, *ArtifactError)
+	ResolveSegment(ctx context.Context, recordingID string, segment string) (ArtifactOK, *ArtifactError)
+}
+
+type DefaultResolver struct {
+	cfg        *config.AppConfig
+	vodManager *vod.Manager
+	pathMapper *recordings.PathMapper
+}
+
+func New(cfg *config.AppConfig, manager *vod.Manager, mapper *recordings.PathMapper) *DefaultResolver {
+	return &DefaultResolver{
+		cfg:        cfg,
+		vodManager: manager,
+		pathMapper: mapper,
+	}
+}
+
+// ResolvePlaylist resolves the HLS playlist (index.m3u8), triggering builds if needed.
+func (r *DefaultResolver) ResolvePlaylist(ctx context.Context, recordingID string) (ArtifactOK, *ArtifactError) {
+	// 1. Validate ID
+	ref, ok := decodeRef(recordingID)
+	if !ok {
+		return ArtifactOK{}, &ArtifactError{Code: CodeInvalid, Detail: "invalid recording id"}
+	}
+
+	// Canonical Validation
+	if err := v3recordings.ValidateRecordingRef(ref); err != nil {
+		return ArtifactOK{}, &ArtifactError{Code: CodeInvalid, Err: err, Detail: "invalid recording ref"}
+	}
+
+	// 2. State Check
+	meta, exists := r.vodManager.GetMetadata(ref)
+	if !exists {
+		// First access: Start pipeline via EnsureSpec
+		if err := r.triggerBuild(ctx, ref); err != nil {
+			// If build trigger fails (e.g. source not found), map to correct error.
+			r.vodManager.TriggerProbe(ref, "build trigger failed: "+err.Error())
+		}
+		// Return PREPARING to indicate process started
+		return ArtifactOK{}, &ArtifactError{Code: CodePreparing, RetryAfter: 5 * time.Second, Detail: "preparing"}
+	}
+
+	// 3. FAILED Handling (Self-heal)
+	if meta.State == vod.ArtifactStateFailed {
+		if updated, ok := r.vodManager.PromoteFailedToReadyIfPlaylist(ref); ok {
+			meta = updated
+		}
+	}
+	if meta.State == vod.ArtifactStateFailed {
+		// Attempt reconcile
+		if _, transitioned := r.vodManager.MarkPreparingIfState(ref, vod.ArtifactStateFailed, "reconcile: retrying build"); transitioned {
+			_ = r.triggerBuild(ctx, ref)
+			return ArtifactOK{}, &ArtifactError{Code: CodePreparing, RetryAfter: 5 * time.Second, Detail: "preparing (reconciling)"}
+		}
+
+		return ArtifactOK{}, &ArtifactError{Code: CodePreparing, RetryAfter: 5 * time.Second, Detail: "preparing (failed state)"}
+	}
+
+	// 4. NOT READY
+	if meta.State != vod.ArtifactStateReady {
+		return ArtifactOK{}, &ArtifactError{Code: CodePreparing, RetryAfter: 5 * time.Second, Detail: string(meta.State)}
+	}
+
+	// 5. READY
+	playlistPath := meta.PlaylistPath
+	if playlistPath == "" {
+		r.vodManager.TriggerProbe(ref, "missing playlist path")
+		return ArtifactOK{}, &ArtifactError{Code: CodePreparing, RetryAfter: 2 * time.Second, Detail: "playlist path missing"}
+	}
+
+	// Open and Read for Rewrite
+	f, err := os.Open(playlistPath)
+	if err != nil {
+		r.vodManager.DemoteOnOpenFailure(ref, err)
+		// Trigger build immediately to recover
+		_ = r.triggerBuild(ctx, ref)
+		return ArtifactOK{}, &ArtifactError{Code: CodePreparing, RetryAfter: 2 * time.Second, Detail: "playlist open failed (reconciling)"}
+	}
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil {
+		return ArtifactOK{}, &ArtifactError{Code: CodeInternal, Err: err, Detail: "stat failed"}
+	}
+
+	data, err := io.ReadAll(f)
+	if err != nil {
+		return ArtifactOK{}, &ArtifactError{Code: CodeInternal, Err: err, Detail: "read failed"}
+	}
+
+	// Rewrite using canonical helper
+	rewritten := v3recordings.RewritePlaylistType(string(data), "VOD")
+
+	return ArtifactOK{
+		Data:         []byte(rewritten),
+		ModTime:      info.ModTime(),
+		ContentType:  "application/vnd.apple.mpegurl",
+		CacheControl: "max-age=2", // Playlist TTL
+	}, nil
+}
+
+func (r *DefaultResolver) ResolveTimeshift(ctx context.Context, recordingID string) (ArtifactOK, *ArtifactError) {
+	ref, ok := decodeRef(recordingID)
+	if !ok {
+		return ArtifactOK{}, &ArtifactError{Code: CodeInvalid, Detail: "invalid recording id"}
+	}
+
+	if err := v3recordings.ValidateRecordingRef(ref); err != nil {
+		return ArtifactOK{}, &ArtifactError{Code: CodeInvalid, Err: err, Detail: "invalid recording ref"}
+	}
+
+	meta, exists := r.vodManager.GetMetadata(ref)
+	if !exists || meta.State != vod.ArtifactStateReady {
+		// Timeshift piggybacks on VOD build.
+		if !exists || meta.State == vod.ArtifactStateFailed {
+			_ = r.triggerBuild(ctx, ref)
+		}
+		return ArtifactOK{}, &ArtifactError{Code: CodePreparing, RetryAfter: 2 * time.Second, Detail: "preparing"}
+	}
+
+	playlistPath := meta.PlaylistPath
+	f, err := os.Open(playlistPath)
+	if err != nil {
+		r.vodManager.DemoteOnOpenFailure(ref, err)
+		return ArtifactOK{}, &ArtifactError{Code: CodePreparing, RetryAfter: 2 * time.Second}
+	}
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil {
+		return ArtifactOK{}, &ArtifactError{Code: CodeInternal, Err: err}
+	}
+	data, err := io.ReadAll(f)
+	if err != nil {
+		return ArtifactOK{}, &ArtifactError{Code: CodeInternal, Err: err}
+	}
+
+	// Rewrite using canonical helper
+	rewritten := v3recordings.RewritePlaylistType(string(data), "EVENT")
+	return ArtifactOK{
+		Data:         []byte(rewritten),
+		ModTime:      info.ModTime(),
+		ContentType:  "application/vnd.apple.mpegurl",
+		CacheControl: "no-store", // DVR Semantics
+	}, nil
+}
+
+func (r *DefaultResolver) ResolveSegment(ctx context.Context, recordingID string, segment string) (ArtifactOK, *ArtifactError) {
+	ref, ok := decodeRef(recordingID)
+	if !ok {
+		return ArtifactOK{}, &ArtifactError{Code: CodeInvalid, Detail: "invalid recording id"}
+	}
+
+	if err := v3recordings.ValidateRecordingRef(ref); err != nil {
+		return ArtifactOK{}, &ArtifactError{Code: CodeInvalid, Err: err}
+	}
+
+	if !v3recordings.IsAllowedVideoSegment(segment) {
+		// Use CodeNotFound with generic detail to avoid revealing policy,
+		// or use CodeInvalid/Forbidden if we want to be explicit.
+		// User requested: "If you want correctness: add CodeForbidden... or 404 generic".
+		// We'll use CodeNotFound + generic message to be safe and consistent with "file not found".
+		return ArtifactOK{}, &ArtifactError{Code: CodeNotFound, Detail: "segment not found"}
+	}
+
+	cacheDir, err := v3recordings.RecordingCacheDir(r.cfg.HLS.Root, ref)
+	if err != nil {
+		return ArtifactOK{}, &ArtifactError{Code: CodeInternal, Err: err}
+	}
+
+	// Canonical Confinement
+	cleanPath, err := fs.ConfineRelPath(cacheDir, segment)
+	if err != nil {
+		return ArtifactOK{}, &ArtifactError{Code: CodeInvalid, Detail: "path traversal prohibited"}
+	}
+	// Extra safety: reject backslashes if standard confinement doesn't (fs.ConfineRelPath usually does)
+	if strings.Contains(segment, "\\") {
+		return ArtifactOK{}, &ArtifactError{Code: CodeInvalid, Detail: "invalid path"}
+	}
+
+	info, err := os.Stat(cleanPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			if status, ok := r.vodManager.Get(ctx, cacheDir); ok {
+				if status.State == vod.JobStateBuilding || status.State == vod.JobStateFinalizing {
+					return ArtifactOK{}, &ArtifactError{Code: CodePreparing, RetryAfter: 1 * time.Second, Detail: "segment building"}
+				}
+			}
+			return ArtifactOK{}, &ArtifactError{Code: CodeNotFound, Detail: "segment not found"}
+		}
+		return ArtifactOK{}, &ArtifactError{Code: CodeInternal, Err: err}
+	}
+
+	// Canonical Content-Type Mapping
+	contentType := "video/MP2T"
+	// init.mp4 is covered by .mp4 suffix, but keeping explicit if clarity helps.
+	// User note: "strings.HasSuffix(segment, ".mp4") deckt init.mp4 bereits ab; check ist redundant"
+	if strings.HasSuffix(segment, ".mp4") || strings.HasSuffix(segment, ".m4s") {
+		contentType = "video/mp4"
+	}
+
+	// Canonical Cache Control for Segments (immutable-ish)
+	cacheControl := "max-age=60"
+
+	return ArtifactOK{
+		AbsPath:      cleanPath,
+		ModTime:      info.ModTime(),
+		ContentType:  contentType,
+		CacheControl: cacheControl,
+	}, nil
+}
+
+// Internal Logic
+
+func (r *DefaultResolver) triggerBuild(ctx context.Context, ref string) error {
+	// 1. Resolve Source
+	srcType, srcURL, _, err := r.resolveSource(ref)
+	if err != nil {
+		return err
+	}
+
+	// 2. Determine Cache Dir
+	cacheDir, err := v3recordings.RecordingCacheDir(r.cfg.HLS.Root, ref)
+	if err != nil {
+		return err
+	}
+
+	// 3. Ensure Spec
+	finalPath := filepath.Join(cacheDir, "index.m3u8")
+	// Using EnsureSpec to start/resume build
+	_, err = r.vodManager.EnsureSpec(ctx, cacheDir, ref, srcURL, cacheDir, "index.live.m3u8", finalPath, vod.ProfileDefault)
+	_ = srcType // Unused for now
+	return err
+}
+
+func (r *DefaultResolver) resolveSource(serviceRef string) (string, string, string, error) {
+	// PR4.2 Invariant: Extract Path
+	receiverPath := recordings.ExtractPathFromServiceRef(serviceRef)
+	if !strings.HasPrefix(receiverPath, "/") {
+		return "", "", "", errors.New("invalid recording path")
+	}
+
+	host := r.cfg.Enigma2.BaseURL
+	streamPort := r.cfg.Enigma2.StreamPort
+	policy := strings.ToLower(strings.TrimSpace(r.cfg.RecordingPlaybackPolicy))
+	username := r.cfg.Enigma2.Username
+	password := r.cfg.Enigma2.Password
+
+	allowLocal := policy != config.PlaybackPolicyReceiverOnly
+	allowReceiver := policy != config.PlaybackPolicyLocalOnly
+
+	if allowLocal && r.pathMapper != nil {
+		if localPath, ok := r.pathMapper.ResolveLocalUnsafe(receiverPath); ok {
+			// Invariant: Return valid file:// URI structure
+			// User requested: "Baue file-URL über url.URL{Scheme:"file", Path: localPath}.String()"
+			u := url.URL{
+				Scheme: "file",
+				Path:   localPath,
+			}
+			return "local", u.String(), "", nil
+		}
+	}
+
+	if !allowReceiver {
+		return "", "", "", errors.New("recording not found (policy restricted)")
+	}
+
+	// PR4.2 Invariant: Canonical URL Escaping
+	// We use baseURL parsing logic or manual construction that respects encoded chars.
+	// Replicating PR4.2 logic:
+	u, err := url.Parse(fmt.Sprintf("http://%s:%d", host, streamPort))
+	if err != nil {
+		return "", "", "", fmt.Errorf("invalid base url: %w", err)
+	}
+
+	// RawPath MUST be set to preserved proper escaping of special chars (e.g. %)
+	// Path must be unescaped.
+	u.Path = "/" + serviceRef // e.g. /1:0:1.../path%20with%20spaces
+	// But serviceRef from ExtractPathFromServiceRef might strictly be the ID part?
+	// The serviceRef passed here is the full ID string (decoded).
+	// We need to escape it for RawPath.
+	u.RawPath = "/" + v3recordings.EscapeServiceRefPath(serviceRef)
+
+	if username != "" && password != "" {
+		u.User = url.UserPassword(username, password)
+	}
+
+	return "receiver", u.String(), "", nil
+}
+
+func decodeRef(id string) (string, bool) {
+	// Try RawURL (No Padding)
+	if b, err := base64.RawURLEncoding.DecodeString(id); err == nil {
+		return string(b), true
+	}
+	// Try URL Encoding (Padding)
+	if b, err := base64.URLEncoding.DecodeString(id); err == nil {
+		return string(b), true
+	}
+	// Try RawStd (No Padding)
+	if b, err := base64.RawStdEncoding.DecodeString(id); err == nil {
+		return string(b), true
+	}
+	// Fallback to StdEncoding (Padding)
+	if b, err := base64.StdEncoding.DecodeString(id); err == nil {
+		return string(b), true
+	}
+	return "", false
+}

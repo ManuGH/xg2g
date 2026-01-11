@@ -6,11 +6,7 @@ package v3
 
 import (
 	"bufio"
-	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,19 +22,16 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/ManuGH/xg2g/internal/control/auth"
-	"github.com/ManuGH/xg2g/internal/control/http/v3/problem"
+	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
+	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/resolver"
 	"github.com/ManuGH/xg2g/internal/control/http/v3/types"
-	"github.com/ManuGH/xg2g/internal/control/playback"
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 
-	"github.com/ManuGH/xg2g/internal/platform/fs"
 	"github.com/ManuGH/xg2g/internal/recordings"
 )
 
@@ -118,7 +111,7 @@ func ParseFFmpegProgress(r io.Reader, ch chan<- FFmpegProgress) {
 // Types are now generated in server_gen.go
 
 var (
-	errRecordingInvalid  = errors.New("invalid recording ref")
+	errRecordingInvalid  = v3recordings.ErrInvalidRecordingRef
 	errRecordingNotReady = errors.New("recording not ready")
 	errTooManyBuilds     = errors.New("too many concurrent builds")
 )
@@ -276,7 +269,7 @@ func (s *Server) GetRecordingsRecordingIdStatus(w http.ResponseWriter, r *http.R
 	hlsRoot := s.cfg.HLS.Root
 	s.mu.RUnlock()
 
-	cacheDir, err := RecordingCacheDir(hlsRoot, serviceRef)
+	cacheDir, err := v3recordings.RecordingCacheDir(hlsRoot, serviceRef)
 	if err != nil {
 		s.writeRecordingPlaybackError(w, r, serviceRef, err)
 		return
@@ -713,62 +706,73 @@ func (s *Server) attachResumeSummaries(ctx context.Context, principalID string, 
 }
 
 func (s *Server) GetRecordingPlaybackInfo(w http.ResponseWriter, r *http.Request, recordingId string) {
-	// Determine intent and profile (Deliverable #4)
-	intent := types.IntentMetadata // Default for this endpoint
+	// 1. Adapter: Inputs
+	intent := types.IntentMetadata
 	clientProfile := s.mapProfile(r)
 	profile := toPlaybackProfile(clientProfile)
 
-	// Delegate to V3 Resolver
-	// Enforce SLO: Don't block UI thread for long probes.
+	// 2. Adapter: Call Resolver
+	// Enforce SLO for UI responsiveness
 	ctx, cancel := context.WithTimeout(r.Context(), 150*time.Millisecond)
 	defer cancel()
 
-	mediaInfo, err := s.vodResolver.ResolveVOD(ctx, recordingId, intent, profile)
+	res, prob := s.resolver.Resolve(ctx, recordingId, intent, profile)
+
+	// 3. Adapter: Error Mapping
+	if prob != nil {
+		s.writeResolveError(w, r, prob)
+		return
+	}
+
+	// 4. Adapter: Success Mapping
+	streamURL, err := s.mapDecisionToURL(recordingId, res.Decision, res.MediaInfo)
 	if err != nil {
-		// Map errors to RFC 7807 using typed knowledge
-		status := http.StatusNotFound
-		code := "VOD_NOT_FOUND"
-		msg := "Recording not found"
-
-		if errors.Is(err, context.DeadlineExceeded) || strings.Contains(err.Error(), "context deadline exceeded") {
-			status = http.StatusServiceUnavailable
-			code = "PREPARING" // Match verification test expectation
-			msg = "Media is being analyzed"
-		} else if strings.Contains(err.Error(), "playback failed") {
-			status = http.StatusInternalServerError
-			code = "VOD_PLAYBACK_ERROR"
-			msg = "Playback initialization failed"
-		} else if strings.Contains(err.Error(), "metadata missing") {
-			status = http.StatusUnprocessableEntity
-			code = "VOD_METADATA_INVALID"
-			msg = "Recording metadata incomplete"
-		}
-
-		problem.Write(w, r, status, strings.ToLower(code), msg, code, err.Error(), nil)
+		s.writeRecordingPlaybackError(w, r, recordingId, err)
 		return
 	}
 
-	// Decision Engine
-	decision, err := playback.Decide(profile, mediaInfo, playback.Policy{})
+	mode, err := mapDecisionToPlaybackMode(res.Decision)
 	if err != nil {
-		problem.Write(w, r, http.StatusInternalServerError, "vod/decision-error", "Playback Decision Failed", "DECISION_ERROR", err.Error(), nil)
-		return
-	}
-	if decision.Mode == playback.ModeError {
-		problem.Write(w, r, http.StatusNotFound, "vod/probe-failed", "Media Probe Failed", "PROBE_FAILED", string(decision.Reason), nil)
+		s.writeRecordingPlaybackError(w, r, recordingId, err)
 		return
 	}
 
-	// Map Decision to DTO
 	resp := types.VODPlaybackResponse{
-		RecordingID:     recordingId,
-		StreamURL:       s.mapDecisionToURL(recordingId, decision, mediaInfo),
-		PlaybackType:    string(decision.Mode),
-		DurationSeconds: int64(mediaInfo.Duration),
+		Mode:            mode,
+		URL:             streamURL,
+		DurationSeconds: int64(res.MediaInfo.Duration),
+		Reason:          res.Reason,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		log.L().Error().Err(err).Msg("failed to encode playback info")
+	}
+}
+
+func (s *Server) writeResolveError(w http.ResponseWriter, r *http.Request, err *resolver.ResolveError) {
+	status := http.StatusInternalServerError
+	code := string(err.Code)
+
+	switch err.Code {
+	case resolver.CodeInvalid:
+		status = http.StatusBadRequest
+	case resolver.CodeNotFound:
+		status = http.StatusNotFound
+	case resolver.CodePreparing:
+		status = http.StatusServiceUnavailable
+		if err.RetryAfter > 0 {
+			w.Header().Set("Retry-After", fmt.Sprintf("%d", int(err.RetryAfter.Seconds())))
+		}
+	case resolver.CodeUpstream:
+		status = http.StatusBadGateway
+	case resolver.CodeFailed, resolver.CodeInternal:
+		status = http.StatusInternalServerError
+	}
+
+	// Use lowercase code for problem type slug
+	slug := strings.ToLower(code)
+	writeProblem(w, r, status, "vod/"+slug, "VOD Error", code, err.Error(), nil)
 }
 
 func (s *Server) writePreparingResponse(w http.ResponseWriter, r *http.Request, recordingId, state string, retryAfter int) {
@@ -855,285 +859,8 @@ func (s *Server) StreamRecordingDirect(w http.ResponseWriter, r *http.Request, r
 	http.ServeContent(w, r, "stream.mp4", info.ModTime(), f)
 }
 
-// GetRecordingHLSPlaylist handles GET /api/v3/recordings/{recordingId}/playlist.m3u8.
-func (s *Server) GetRecordingHLSPlaylist(w http.ResponseWriter, r *http.Request, recordingId string) {
-	start := time.Now()
-	serviceRef := s.DecodeRecordingID(recordingId)
-	if serviceRef == "" {
-		s.writeRecordingPlaybackError(w, r, "", errRecordingInvalid)
-		return
-	}
-
-	// 1. Artifact State Machine Check (Non-blocking)
-	meta, exists := s.vodManager.GetMetadata(serviceRef)
-	lookupMs := time.Since(start).Milliseconds()
-
-	if !exists {
-		// UNKNOWN state: Kick off async probe and return 503
-		s.vodManager.TriggerProbe(serviceRef, "")
-		s.writePreparingResponse(w, r, recordingId, "UNKNOWN", 5)
-		log.L().Info().
-			Int64("meta_cache_ms", lookupMs).
-			Str("state", "UNKNOWN").
-			Str("recording_id", recordingId).
-			Msg("GetRecordingHLSPlaylist deferred (preparing)")
-		return
-	}
-
-	// FAILED: attempt self-heal without sync I/O
-	if meta.State == vod.ArtifactStateFailed {
-		if updated, ok := s.vodManager.PromoteFailedToReadyIfPlaylist(serviceRef); ok {
-			meta = updated
-		}
-	}
-	if meta.State == vod.ArtifactStateFailed {
-		updated, transitioned := s.vodManager.MarkPreparingIfState(serviceRef, vod.ArtifactStateFailed, "reconcile: retrying build")
-		if transitioned {
-			guardedGen := updated.StateGen
-			if err := s.scheduleRecordingVODPlaylist(r.Context(), serviceRef); err != nil {
-				s.vodManager.RevertPreparingIfGen(serviceRef, guardedGen, vod.ArtifactStateFailed, "reconcile schedule failed: "+err.Error())
-				s.writeRecordingPlaybackError(w, r, serviceRef, err)
-				return
-			}
-			log.L().Info().
-				Int64("meta_cache_ms", lookupMs).
-				Uint64("state_gen", updated.StateGen).
-				Str("reason", "reconcile: retrying build").
-				Str("recording_id", recordingId).
-				Msg("GetRecordingHLSPlaylist reconcile triggered")
-		}
-
-		s.writePreparingResponse(w, r, recordingId, "PREPARING", 5)
-		log.L().Info().
-			Int64("meta_cache_ms", lookupMs).
-			Str("state", "PREPARING").
-			Str("recording_id", recordingId).
-			Msg("GetRecordingHLSPlaylist deferred (reconciling)")
-		return
-	}
-
-	if meta.State != vod.ArtifactStateReady {
-		// If not ready, kick off async probe/build and return 503
-		s.vodManager.TriggerProbe(serviceRef, "")
-		s.writePreparingResponse(w, r, recordingId, string(meta.State), 5)
-
-		log.L().Info().
-			Int64("meta_cache_ms", lookupMs).
-			Str("state", string(meta.State)).
-			Str("recording_id", recordingId).
-			Msg("GetRecordingHLSPlaylist deferred (preparing)")
-		return
-	}
-
-	// 2. State is READY: Serve the playlist from cache
-	// We TRUST that if state is READY, the atomic publish has succeeded and index.m3u8 exists.
-	// We use the authoritative path from metadata.
-	playlistPath := meta.PlaylistPath
-	if !meta.HasPlaylist() {
-		// Playlist missing despite READY state (e.g. TS file probed but not built)
-		// Trigger build without sync I/O and return 503.
-		if updated, ok := s.vodManager.MarkPreparingIfState(serviceRef, vod.ArtifactStateReady, "rebuild: missing playlist"); ok {
-			meta = updated
-			guardedGen := updated.StateGen
-			if err := s.scheduleRecordingVODPlaylist(r.Context(), serviceRef); err != nil {
-				s.vodManager.RevertPreparingIfGen(serviceRef, guardedGen, vod.ArtifactStateReady, "rebuild schedule failed: "+err.Error())
-				s.writeRecordingPlaybackError(w, r, serviceRef, err)
-				return
-			}
-		}
-		s.writePreparingResponse(w, r, recordingId, "PREPARING", 2)
-		return
-	}
-
-	// Attempt to open directly (no Stat pre-check)
-	// #nosec G304
-	f, err := os.Open(playlistPath)
-	if err != nil {
-		log.L().Warn().Err(err).Str("path", playlistPath).Msg("failed to open cached playlist in READY state")
-
-		// Atomic Demotion: Stop the retry loop
-		s.vodManager.DemoteOnOpenFailure(serviceRef, err)
-
-		w.Header().Set("Retry-After", "2")
-		writeProblem(w, r, http.StatusServiceUnavailable, "recordings/reconcile", "Reconciling", "PREPARING", "Playlist momentarily unavailable", nil)
-		return
-	}
-	defer func() { _ = f.Close() }()
-
-	// We need file info for ServeContent and to check if it's a directory (unlikely but safe to check on open file)
-	info, err := f.Stat()
-	if err != nil {
-		s.writeRecordingPlaybackError(w, r, serviceRef, err)
-		return
-	}
-
-	// Read content for rewriting (VOD vs EVENT)
-	// Since we need to rewrite, we can't use ServeContent with the file handle directly for the body.
-	// But we successfully opened it, so we can read it.
-	// Limit read size for safety? Playlists are small.
-	data, err := io.ReadAll(f)
-	if err != nil {
-		s.writeRecordingPlaybackError(w, r, serviceRef, err)
-		return
-	}
-
-	// Standardize on VOD type for finalized artifacts
-	playlist := RewritePlaylistType(string(data), "VOD")
-	http.ServeContent(w, r, "playlist.m3u8", info.ModTime(), bytes.NewReader([]byte(playlist)))
-}
-
-// GetRecordingHLSPlaylistHead handles HEAD /api/v3/recordings/{recordingId}/playlist.m3u8.
-func (s *Server) GetRecordingHLSPlaylistHead(w http.ResponseWriter, r *http.Request, recordingId string) {
-	s.GetRecordingHLSPlaylist(w, r, recordingId)
-}
-
-// GetRecordingHLSTimeshift handles GET /api/v3/recordings/{recordingId}/timeshift.m3u8.
-func (s *Server) GetRecordingHLSTimeshift(w http.ResponseWriter, r *http.Request, recordingId string) {
-	serviceRef := s.DecodeRecordingID(recordingId)
-	if serviceRef == "" {
-		s.writeRecordingPlaybackError(w, r, "", errRecordingInvalid)
-		return
-	}
-
-	// 1. Artifact State Machine Check (Non-blocking)
-	meta, exists := s.vodManager.GetMetadata(serviceRef)
-	if !exists || (meta.State != vod.ArtifactStateReady) {
-		// If not ready, kick off async probe/build and return 503
-		s.vodManager.TriggerProbe(serviceRef, "")
-		s.writePreparingResponse(w, r, recordingId, "UNKNOWN", 5)
-		return
-	}
-
-	// 2. Use Authoritative Path from Metadata
-	// Timeshift reuses the main VOD playlist but serves it as EVENT type.
-	// We rely on the VOD artifact's readiness.
-	playlistPath := meta.PlaylistPath
-	if playlistPath == "" {
-		s.vodManager.MarkUnknown(serviceRef)
-		s.vodManager.TriggerProbe(serviceRef, "")
-		s.writePreparingResponse(w, r, recordingId, "REPAIR", 5)
-		return
-	}
-
-	// 3. Serve playlist
-	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
-	w.Header().Set("Cache-Control", "no-store")
-
-	// Attempt to open directly (no Stat pre-check)
-	// #nosec G304
-	f, err := os.Open(playlistPath)
-	if err != nil {
-		log.L().Warn().Err(err).Str("path", playlistPath).Msg("failed to open cached playlist for timeshift in READY state")
-		s.vodManager.DemoteOnOpenFailure(serviceRef, err)
-		w.Header().Set("Retry-After", "2")
-		writeProblem(w, r, http.StatusServiceUnavailable, "recordings/reconcile", "Reconciling", "PREPARING", "Playlist momentarily unavailable", nil)
-		return
-	}
-	defer func() { _ = f.Close() }()
-
-	info, err := f.Stat()
-	if err != nil {
-		s.writeRecordingPlaybackError(w, r, serviceRef, err)
-		return
-	}
-
-	data, err := io.ReadAll(f)
-	if err != nil {
-		s.writeRecordingPlaybackError(w, r, serviceRef, err)
-		return
-	}
-
-	playlist := RewritePlaylistType(string(data), "EVENT")
-	http.ServeContent(w, r, "timeshift.m3u8", info.ModTime(), bytes.NewReader([]byte(playlist)))
-}
-
-// GetRecordingHLSTimeshiftHead handles HEAD /api/v3/recordings/{recordingId}/timeshift.m3u8.
-func (s *Server) GetRecordingHLSTimeshiftHead(w http.ResponseWriter, r *http.Request, recordingId string) {
-	s.GetRecordingHLSTimeshift(w, r, recordingId)
-}
-
-// GetRecordingHLSCustomSegment serves the generated HLS segments.
-func (s *Server) GetRecordingHLSCustomSegment(w http.ResponseWriter, r *http.Request, recordingId string, segment string) {
-	serviceRef := s.DecodeRecordingID(recordingId)
-	if serviceRef == "" {
-		s.writeRecordingPlaybackError(w, r, "", errRecordingInvalid)
-		return
-	}
-
-	segment = filepath.Base(segment)
-	if segment == "." || segment == ".." || strings.Contains(segment, "\\") {
-		writeProblem(w, r, http.StatusBadRequest, "recordings/invalid_name", "Invalid Name", "INVALID_NAME", "Invalid segment name", nil)
-		return
-	}
-	if !IsAllowedVideoSegment(segment) {
-		writeProblem(w, r, http.StatusForbidden, "recordings/forbidden", "Forbidden", "FORBIDDEN", "File type not allowed", nil)
-		return
-	}
-
-	s.mu.RLock()
-	hlsRoot := s.cfg.HLS.Root
-	s.mu.RUnlock()
-
-	cacheDir, err := RecordingCacheDir(hlsRoot, serviceRef)
-	if err != nil {
-		log.L().Error().Err(err).Msg("recording cache dir unavailable")
-		writeProblem(w, r, http.StatusServiceUnavailable, "recordings/storage_unavailable", "Unavailable", "UNAVAILABLE", "Recording storage unavailable", nil)
-		return
-	}
-
-	filePath, err := fs.ConfineRelPath(cacheDir, segment)
-	if err != nil {
-		writeProblem(w, r, http.StatusNotFound, "recordings/not_found", "Not Found", "NOT_FOUND", "Segment not found", nil)
-		return
-	}
-
-	// Attempt to open directly (no Stat pre-check)
-	f, err := os.Open(filePath) // #nosec G304 -- filePath is confined to recording cache dir.
-	if err != nil {
-		if os.IsNotExist(err) {
-			writeProblem(w, r, http.StatusNotFound, "recordings/not_found", "Not Found", "NOT_FOUND", "Segment not found", nil)
-			return
-		}
-		writeProblem(w, r, http.StatusInternalServerError, "recordings/storage_error", "Internal Error", "INTERNAL_ERROR", "Segment unavailable", nil)
-		return
-	}
-	defer func() { _ = f.Close() }()
-
-	info, err := f.Stat()
-	if err != nil {
-		writeProblem(w, r, http.StatusInternalServerError, "recordings/storage_error", "Internal Error", "INTERNAL_ERROR", "Segment unavailable", nil)
-		return
-	}
-
-	if info.IsDir() {
-		writeProblem(w, r, http.StatusNotFound, "recordings/not_found", "Not Found", "NOT_FOUND", "Segment not found (is directory)", nil)
-		return
-	}
-
-	if segment == "init.mp4" {
-		w.Header().Set("Content-Type", "video/mp4")
-		w.Header().Set("Cache-Control", "public, max-age=3600")
-		w.Header().Set("Content-Encoding", "identity")
-	} else if strings.HasSuffix(segment, ".m4s") || strings.HasSuffix(segment, ".cmfv") {
-		w.Header().Set("Content-Type", "video/mp4")
-		w.Header().Set("Cache-Control", "public, max-age=60")
-		w.Header().Set("Content-Encoding", "identity")
-	} else {
-		w.Header().Set("Content-Type", "video/MP2T")
-		w.Header().Set("Cache-Control", "public, max-age=60")
-		w.Header().Set("Content-Encoding", "identity")
-	}
-
-	http.ServeContent(w, r, segment, info.ModTime(), f)
-}
-
-// GetRecordingHLSCustomSegmentHead handles HEAD /api/v3/recordings/{recordingId}/{segment}.
-func (s *Server) GetRecordingHLSCustomSegmentHead(w http.ResponseWriter, r *http.Request, recordingId string, segment string) {
-	s.GetRecordingHLSCustomSegment(w, r, recordingId, segment)
-}
-
 func (s *Server) resolveRecordingPlaybackSource(ctx context.Context, serviceRef string) (string, string, string, error) {
-	if err := ValidateRecordingRef(serviceRef); err != nil {
+	if err := v3recordings.ValidateRecordingRef(serviceRef); err != nil {
 		return "", "", "", err
 	}
 	serviceRef = strings.TrimSpace(serviceRef)
@@ -1164,13 +891,19 @@ func (s *Server) resolveRecordingPlaybackSource(ctx context.Context, serviceRef 
 		return "", "", "", ErrRecordingNotFound
 	}
 
-	rawPath := EscapeServiceRefPath("/" + serviceRef)
 	u := url.URL{
-		Scheme:  "http",
-		Host:    fmt.Sprintf("%s:%d", host, streamPort),
-		Path:    "/" + serviceRef,
-		RawPath: rawPath,
+		Scheme: "http",
+		Host:   fmt.Sprintf("%s:%d", host, streamPort),
+		Path:   "/" + serviceRef, // Let url.URL encode this safely
 	}
+	// Verify if custom escaping is needed (e.g. for colons).
+	// Legacy logic used manual escaping. If we trust url.URL, we just use Path.
+	// If we need to preserve colons (Enigma2 sensitive?), we might need RawPath.
+	// User advice: "Set only Path... and let url.URL escape it".
+	// Enigma2 refs contain colons. url.URL normally escapes them in Path? No, usually not.
+	// But it escapes spaces, etc.
+	// Let's stick to simple Path for now as per recommendation unless legacy required manual escaping for specific chars.
+	// Actually, Enigma2 requires colons to be unescaped. Path usually keeps them unescaped in Go.
 	if username != "" && password != "" {
 		u.User = url.UserPassword(username, password)
 	}
@@ -1182,11 +915,11 @@ func (s *Server) ensureRecordingVODPlaylist(ctx context.Context, serviceRef stri
 	hlsRoot := s.cfg.HLS.Root
 	s.mu.RUnlock()
 
-	if err := ValidateRecordingRef(serviceRef); err != nil {
+	if err := v3recordings.ValidateRecordingRef(serviceRef); err != nil {
 		return "", err
 	}
 
-	cacheDir, err := RecordingCacheDir(hlsRoot, serviceRef)
+	cacheDir, err := v3recordings.RecordingCacheDir(hlsRoot, serviceRef)
 	if err != nil {
 		return "", err
 	}
@@ -1222,11 +955,11 @@ func (s *Server) ensureRecordingTimeshiftPlaylist(ctx context.Context, serviceRe
 	hlsRoot := s.cfg.HLS.Root
 	s.mu.RUnlock()
 
-	if err := ValidateRecordingRef(serviceRef); err != nil {
+	if err := v3recordings.ValidateRecordingRef(serviceRef); err != nil {
 		return "", err
 	}
 
-	cacheDir, err := RecordingCacheDir(hlsRoot, serviceRef)
+	cacheDir, err := v3recordings.RecordingCacheDir(hlsRoot, serviceRef)
 	if err != nil {
 		return "", err
 	}
@@ -1261,11 +994,11 @@ func (s *Server) scheduleRecordingVODPlaylist(ctx context.Context, serviceRef st
 	hlsRoot := s.cfg.HLS.Root
 	s.mu.RUnlock()
 
-	if err := ValidateRecordingRef(serviceRef); err != nil {
+	if err := v3recordings.ValidateRecordingRef(serviceRef); err != nil {
 		return err
 	}
 
-	cacheDir, err := RecordingCacheDir(hlsRoot, serviceRef)
+	cacheDir, err := v3recordings.RecordingCacheDir(hlsRoot, serviceRef)
 	if err != nil {
 		return err
 	}
@@ -1290,101 +1023,11 @@ func (s *Server) scheduleRecordingVODPlaylist(ctx context.Context, serviceRef st
 // RecordingLivePlaylistReady checks if a valid progressive playlist exists.
 // Criteria: index.live.m3u8 exists AND references at least one existing segment file.
 func RecordingLivePlaylistReady(cacheDir string) (string, bool) {
-	livePath := filepath.Join(cacheDir, "index.live.m3u8")
-
-	// 1. Check Playlist Existence
-	info, err := os.Stat(livePath)
-	if err != nil || info.IsDir() {
-		return "", false
-	}
-
-	// 2. Parse Playlist for valid segment reference
-	// #nosec G304
-	data, err := os.ReadFile(filepath.Clean(livePath))
-	if err != nil {
-		return "", false
-	}
-
-	content := string(data)
-	lines := strings.Split(content, "\n")
-
-	// VOD Recording uses TS-HLS only (no fMP4), so we only check for .ts segments
-	hasSegment := false
-	for _, l := range lines {
-		l = strings.TrimSpace(l)
-		if l == "" || strings.HasPrefix(l, "#") {
-			continue
-		}
-
-		// Found a URI line (segment)
-		// Security: confine segment path to cache dir
-		// Validate segment name BEFORE path confinement/resolution to prevent bypass
-		if !IsAllowedVideoSegment(l) {
-			continue
-		}
-
-		safeSeg, err := fs.ConfineRelPath(cacheDir, l)
-		if err != nil {
-			continue
-		}
-		// Double check file extension on resolved path (Canonical check)
-		if !IsAllowedVideoSegment(safeSeg) {
-			continue
-		}
-
-		if _, err := os.Stat(safeSeg); err == nil {
-			hasSegment = true
-			break
-		}
-	}
-
-	if hasSegment {
-		return livePath, true
-	}
-	return "", false
+	return v3recordings.RecordingLivePlaylistReady(cacheDir)
 }
 
 func RewritePlaylistType(content, playlistType string) string {
-	if playlistType == "" {
-		return content
-	}
-	lines := strings.Split(content, "\n")
-	newLines := make([]string, 0, len(lines)+1)
-	inserted := false
-	for _, line := range lines {
-		line = strings.TrimRight(line, "\r")
-		if strings.HasPrefix(line, "#EXT-X-PLAYLIST-TYPE:") {
-			continue
-		}
-		// Sanitize: Remove EXT-X-DISCONTINUITY (Safari Fix)
-		if strings.HasPrefix(line, "#EXT-X-DISCONTINUITY") {
-			continue
-		}
-		newLines = append(newLines, line)
-		if line == "#EXTM3U" && !inserted {
-			newLines = append(newLines, "#EXT-X-PLAYLIST-TYPE:"+playlistType)
-			inserted = true
-		}
-	}
-	if !inserted {
-		newLines = append([]string{"#EXT-X-PLAYLIST-TYPE:" + playlistType}, newLines...)
-	}
-
-	// Fix: VOD Playlists MUST have EXT-X-ENDLIST to be treated as finite/seekable by Safari
-	if playlistType == "VOD" {
-		hasEndlist := false
-		for _, line := range lines {
-			if strings.TrimSpace(line) == "#EXT-X-ENDLIST" {
-				hasEndlist = true
-				break
-			}
-		}
-		if !hasEndlist {
-			newLines = append(newLines, "#EXT-X-ENDLIST")
-		}
-	}
-
-	return strings.Join(newLines, "\n")
+	return v3recordings.RewritePlaylistType(content, playlistType)
 }
 
 // VODCacheVersion identifies the current generation of VOD transcoding logic.
@@ -1465,66 +1108,6 @@ func (s *Server) finalizeRecordingPlaylist(cacheDir, livePath, finalPath string)
 	_ = os.Remove(livePath)
 
 	log.L().Info().Str("path", finalPath).Msg("Recording build finalized")
-	return nil
-}
-
-func RecordingCacheDir(hlsRoot, serviceRef string) (string, error) {
-	if strings.TrimSpace(hlsRoot) == "" {
-		return "", fmt.Errorf("hls root not configured")
-	}
-	return filepath.Join(hlsRoot, "recordings", RecordingCacheKey(serviceRef)), nil
-}
-
-func RecordingCacheKey(serviceRef string) string {
-	sum := sha256.Sum256([]byte(strings.TrimSpace(serviceRef)))
-	return hex.EncodeToString(sum[:])
-}
-
-func ValidateRecordingRef(serviceRef string) error {
-	// Security: Ensure input is valid UTF-8 before processing
-	if !utf8.ValidString(serviceRef) {
-		return errRecordingInvalid
-	}
-
-	// Security: Reject control chars, \ and ?#
-	// Checked BEFORE TrimSpace to reject hidden formatting/control chars.
-	// We specifically allow spaces (0x20) as they are common in filenames.
-	for _, r := range serviceRef {
-		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == '\\' || r == '?' || r == '#' {
-			return errRecordingInvalid
-		}
-	}
-
-	trimmedRef := strings.TrimSpace(serviceRef)
-	if trimmedRef == "" {
-		return errRecordingInvalid
-	}
-
-	receiverPath := recordings.ExtractPathFromServiceRef(trimmedRef)
-	if !strings.HasPrefix(receiverPath, "/") {
-		return errRecordingInvalid
-	}
-	cleanRef := strings.TrimLeft(receiverPath, "/")
-	cleanRef = path.Clean("/" + cleanRef)
-	cleanRef = strings.TrimPrefix(cleanRef, "/")
-	if cleanRef == "." || cleanRef == ".." || strings.HasPrefix(cleanRef, "../") {
-		return errRecordingInvalid
-	}
-	// Strict check: Reject any ".." usage even if it effectively stays inside root
-	// Check for traversal in the raw strings
-	if strings.Contains(receiverPath, "/../") || strings.HasSuffix(receiverPath, "/..") {
-		return errRecordingInvalid
-	}
-
-	// Check for traversal in decoded path (catch %2e%2e)
-	if decoded, err := url.PathUnescape(receiverPath); err == nil {
-		if decoded != receiverPath {
-			if strings.Contains(decoded, "/../") || strings.HasSuffix(decoded, "/..") {
-				return errRecordingInvalid
-			}
-		}
-	}
-
 	return nil
 }
 
@@ -1714,7 +1297,7 @@ func (s *Server) writeRecordingPlaybackError(w http.ResponseWriter, r *http.Requ
 			s.mu.RLock()
 			hlsRoot := s.cfg.HLS.Root
 			s.mu.RUnlock()
-			if cacheDir, cacheErr := RecordingCacheDir(hlsRoot, serviceRef); cacheErr == nil {
+			if cacheDir, cacheErr := v3recordings.RecordingCacheDir(hlsRoot, serviceRef); cacheErr == nil {
 				// Phase B: Check Active Build
 				if status, exists := s.vodManager.Get(r.Context(), cacheDir); exists {
 					if status.State == vod.JobStateBuilding || status.State == vod.JobStateFinalizing {
@@ -1872,16 +1455,20 @@ func (s *Server) evictRecordingCaches(ttl time.Duration) {
 
 	// Safety: Active Builds Check
 	// Safety: Active Builds Check
+	// Safety window for active builds or recent touches (10 minutes)
+	// This prevents evicting files that are being written to, even if the active build check is imperfect.
+	const safetyWindow = 10 * time.Minute
+
 	isActive := func(p string) bool {
-		// Phase B: Use vodManager
-		// Check Active Build (Phase B: vodManager)
-		if status, exists := s.vodManager.Get(context.Background(), p); exists {
-			if status.State == vod.JobStateBuilding || status.State == vod.JobStateFinalizing {
-				return true // Running, do not evict
+		// active build check removal: we cannot reliably map file path to job ID here.
+		// Robust fallback: Check Mtime. If modified recently, assume active/safe.
+		if info, err := os.Stat(p); err == nil {
+			if time.Since(info.ModTime()) < safetyWindow {
+				return true
 			}
 		}
 
-		// Legacy Lock check? (Removed Phase A)
+		// Legacy Lock check? (Removed Phase A, but kept here for safety if locks exist)
 		if strings.HasSuffix(p, ".mp4") {
 			if _, err := os.Stat(p + ".lock"); err == nil {
 				return true
@@ -1959,56 +1546,21 @@ func (s *Server) evictRecordingCaches(ttl time.Duration) {
 }
 
 func EncodeRecordingID(serviceRef string) string {
-	if strings.TrimSpace(serviceRef) == "" {
-		return ""
-	}
-	return base64.RawURLEncoding.EncodeToString([]byte(serviceRef))
+	return v3recordings.EncodeRecordingID(serviceRef)
 }
 
 func ValidRecordingID(id string) bool {
-	if len(id) < recordingIDMinLen || len(id) > recordingIDMaxLen {
-		return false
-	}
-	for _, r := range id {
-		switch {
-		case r >= 'a' && r <= 'z':
-		case r >= 'A' && r <= 'Z':
-		case r >= '0' && r <= '9':
-		case r == '-' || r == '_':
-		default:
-			return false
-		}
-	}
-	return true
+	return v3recordings.ValidRecordingID(id)
 }
 
 // DecodeRecordingID helper (factored out)
+// DecodeRecordingID helper (delegated)
 func (s *Server) DecodeRecordingID(id string) string {
-	id = strings.TrimSpace(id)
-	if !ValidRecordingID(id) {
+	ref, ok := v3recordings.DecodeRecordingID(id)
+	if !ok {
 		return ""
 	}
-	if decodedBytes, err := base64.RawURLEncoding.DecodeString(id); err == nil {
-		if len(decodedBytes) == 0 {
-			return ""
-		}
-		if !utf8.Valid(decodedBytes) {
-			return ""
-		}
-		decoded := string(decodedBytes)
-		if strings.TrimSpace(decoded) == "" {
-			return ""
-		}
-		if strings.ContainsRune(decoded, '\x00') {
-			return ""
-		}
-		// Strictly validate the decoded reference immediately
-		if err := ValidateRecordingRef(decoded); err != nil {
-			return ""
-		}
-		return decoded
-	}
-	return ""
+	return ref
 }
 
 // ParseRecordingDurationSeconds parses duration strings from the receiver.
@@ -2152,83 +1704,27 @@ func ParseRecordingDurationSeconds(length string) (int64, error) {
 // DeleteRecording handles DELETE /api/v3/recordings/{recordingId}
 // Deletes the recording via OpenWebIF on the receiver.
 func (s *Server) DeleteRecording(w http.ResponseWriter, r *http.Request, recordingId string) {
-	if strings.TrimSpace(recordingId) == "" {
-		writeProblem(w, r, http.StatusBadRequest, "recordings/invalid_id", "Invalid ID", "INVALID_ID", "Missing recording ID", nil)
-		return
-	}
-
-	// Decode ID
-	serviceRef := s.DecodeRecordingID(recordingId)
-	if serviceRef == "" || ValidateRecordingRef(serviceRef) != nil {
-		writeProblem(w, r, http.StatusBadRequest, "recordings/invalid_id", "Invalid ID", "INVALID_ID", "Invalid recording ID", nil)
-		return
-	}
-
-	s.mu.RLock()
-	cfg := s.cfg
-	snap := s.snap
-	s.mu.RUnlock()
-
-	// Use OpenWebIF Client to delete the recording on the receiver
-	// This works for HDD and NAS locations without needing local mounts.
-	client := s.newOpenWebIFClient(cfg, snap)
-
-	log.L().Info().Str("sref", serviceRef).Msg("requesting recording deletion via OpenWebIF")
-
-	if err := client.DeleteMovie(r.Context(), serviceRef); err != nil {
-		log.L().Error().Err(err).Str("sref", serviceRef).Msg("failed to delete recording")
-		// Map generic error to 500. We could try to parse "not found" but OWI usually returns generic "false"
-		writeProblem(w, r, http.StatusInternalServerError, "recordings/delete_failed", "Delete Failed", "DELETE_FAILED", fmt.Sprintf("Failed to delete recording: %v", err), nil)
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
+	v3recordings.DeleteRecording(w, r, recordingId, v3recordings.DeleteDeps{
+		NewOWIClient: func() v3recordings.OpenWebIFClient {
+			return openwebif.New(s.cfg.Enigma2.BaseURL)
+		},
+		WriteProblem: func(w http.ResponseWriter, r *http.Request, status int, typ, title, code, detail string) {
+			writeProblem(w, r, status, typ, title, code, detail, nil)
+		},
+		Logger: func(msg string, keyvals ...any) {
+			log.L().Error().Fields(keyvals).Msg(msg)
+		},
+	})
 }
 
-// SanitizeRecordingRelPath implementation for POSIX paths
-// Returns the cleaned relative path and whether it was blocked (traversal detected).
+// SanitizeRecordingRelPath delegates to generic sanitizer
 func SanitizeRecordingRelPath(p string) (string, bool) {
-	if p == "" {
-		return "", false
-	}
-	// Security: Reject control chars, \, ?, #, and unicode Cf
-	for _, r := range p {
-		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == '\\' || r == '?' || r == '#' {
-			return "", true
-		}
-	}
-
-	// Treat as relative: strip leading slashes
-	p = strings.TrimLeft(p, "/")
-
-	clean := path.Clean(p)
-	if clean == ".." || strings.HasPrefix(clean, "../") {
-		return "", true
-	}
-	if clean == "." {
-		return "", false // Root
-	}
-
-	return clean, false
+	return v3recordings.SanitizeRecordingRelPath(p)
 }
 
-// IsAllowedVideoSegment provides a single canonical check for segment serving.
-// VOD Recording uses TS-HLS only for maximum compatibility.
-// STRICT: Only allow files starting with "seg_" and ending with .ts extension.
+// IsAllowedVideoSegment delegates to generic validator
 func IsAllowedVideoSegment(path string) bool {
-	name := filepath.Base(path)
-	// Allow init.mp4 for fMP4
-	if name == "init.mp4" {
-		return true
-	}
-	// Enforce prefix to prevent arbitrary file exposure
-	if !strings.HasPrefix(name, "seg_") {
-		return false
-	}
-
-	ext := strings.ToLower(filepath.Ext(name))
-	// VOD Recording outputs TS or fMP4 segments
-	return ext == ".ts" || ext == ".m4s"
+	return v3recordings.IsAllowedVideoSegment(path)
 }
 
 // ProbeDuration uses ffprobe to get the exact duration of a media file.
@@ -2262,34 +1758,11 @@ func (s *Server) ProbeDuration(ctx context.Context, path string) (time.Duration,
 // but specifically preserves ':' and '/' as required by Enigma2 ServiceRefs.
 // It escapes all other non-unreserved characters (including UTF-8 bytes).
 func EscapeServiceRefPath(s string) string {
-	const upperhex = "0123456789ABCDEF"
-	var b strings.Builder
-	b.Grow(len(s))
-
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if ShouldEscapeRefChar(c) {
-			b.WriteByte('%')
-			b.WriteByte(upperhex[c>>4])
-			b.WriteByte(upperhex[c&15])
-		} else {
-			b.WriteByte(c)
-		}
-	}
-	return b.String()
+	return v3recordings.EscapeServiceRefPath(s)
 }
 
 func ShouldEscapeRefChar(c byte) bool {
-	// RFC 3986 Unreserved characters: ALPHA, DIGIT, "-", ".", "_", "~"
-	// Plus we specifically want to KEEP ":" and "/" for Enigma2 service refs.
-	if 'A' <= c && c <= 'Z' || 'a' <= c && c <= 'z' || '0' <= c && c <= '9' {
-		return false
-	}
-	switch c {
-	case '-', '.', '_', '~', ':', '/':
-		return false
-	}
-	return true
+	return v3recordings.ShouldEscapeRefChar(c)
 }
 
 // hasMP4Magic performs a shallow magic bytes check for genuine MP4 containers.

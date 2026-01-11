@@ -123,9 +123,10 @@ func newV3TestServer(t *testing.T, hlsRoot string) (*Server, *v3store.MemoryStor
 	// store := st // This line is effectively replaced by using 'st' directly
 	rs := resume.NewMemoryStore()
 	s.SetDependencies(
-		b, st, rs, nil, nil, nil, nil, nil, nil, nil, // P3: VODResolver
+		b, st, rs, nil, nil, nil, nil, nil, nil, // P3: VODResolver removed
 		nil, nil, nil, nil, nil, nil, nil, nil, nil,
 	)
+
 	return s, st
 }
 

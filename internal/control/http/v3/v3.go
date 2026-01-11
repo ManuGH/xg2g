@@ -110,18 +110,51 @@ type vodResolverAdapter struct {
 func (a *vodResolverAdapter) Resolve(ctx context.Context, recordingID string, intent types.PlaybackIntent, profile playback.ClientProfile) (resolver.ResolveOK, *resolver.ResolveError) {
 	mediaInfo, err := a.vr.ResolveVOD(ctx, recordingID, intent, profile)
 	if err != nil {
-		// Map legacy error to new error structure
-		// Default to internal error for unknown error types
+		// Map legacy error to new error structure with proper type checking
+		code := resolver.CodeFailed
+		detail := err.Error()
+
+		// Check for specific error types
+		if errors.Is(err, ErrRecordingNotFound) || errors.Is(err, resolver.ErrRecordingNotFound) {
+			code = resolver.CodeNotFound
+			detail = "recording not found"
+		} else if errors.Is(err, context.DeadlineExceeded) {
+			code = resolver.CodePreparing
+			detail = "media is being analyzed"
+		} else if apiErr, ok := err.(*APIError); ok {
+			// Map APIError codes
+			switch apiErr.Code {
+			case "RECORDING_NOT_FOUND":
+				code = resolver.CodeNotFound
+			case "UPSTREAM_UNAVAILABLE":
+				code = resolver.CodeUpstream
+			case "INVALID_ID":
+				code = resolver.CodeInvalid
+			}
+			detail = apiErr.Message
+		}
+
 		return resolver.ResolveOK{}, &resolver.ResolveError{
-			Code:   resolver.CodeFailed,
+			Code:   code,
 			Err:    err,
-			Detail: err.Error(),
+			Detail: detail,
 		}
 	}
+
+	decision, err := playback.Decide(profile, mediaInfo, playback.Policy{})
+	if err != nil {
+		return resolver.ResolveOK{}, &resolver.ResolveError{
+			Code:   resolver.CodeInternal,
+			Err:    err,
+			Detail: "decision engine error",
+		}
+	}
+
 	// Map success
 	return resolver.ResolveOK{
 		MediaInfo: mediaInfo,
-		Decision:  playback.Decision{Mode: playback.ModeTranscode}, // Default decision
+		Decision:  decision,
+		Reason:    "resolved_via_store",
 	}, nil
 }
 
@@ -221,6 +254,15 @@ func (s *Server) SetResolver(r resolver.Resolver) {
 	s.resolver = r
 }
 
+// SetVODResolver adapts a legacy VODResolver to the V4 resolver interface.
+func (s *Server) SetVODResolver(vr VODResolver) {
+	if isNil(vr) {
+		s.SetResolver(nil)
+		return
+	}
+	s.SetResolver(&vodResolverAdapter{vr: vr})
+}
+
 // authMiddleware is the default authentication middleware.
 func (s *Server) authMiddleware(h http.Handler) http.Handler {
 	if s.AuthMiddlewareOverride != nil {
@@ -263,8 +305,8 @@ func (s *Server) SetDependencies(
 	sm *dvr.Manager,
 	se *dvr.SeriesEngine,
 	vm *vod.Manager,
-	vr VODResolver, // P3 Injection
 	epg *epg.TV,
+
 	hm *health.Manager,
 	ls interface{ GetRecentLogs() []log.LogEntry },
 	ss ScanSource,
@@ -357,15 +399,6 @@ func (s *Server) SetDependencies(
 	} else {
 		s.vodManager = nil
 		s.artifacts = nil
-	}
-
-	// Wire V4 Resolver (new resolver abstraction)
-	// This resolver is used by GetRecordingPlaybackInfo endpoint
-	if !isNil(vr) {
-		// Create adapter from legacy VODResolver to new Resolver interface
-		s.resolver = &vodResolverAdapter{vr: vr}
-	} else {
-		s.resolver = nil
 	}
 
 	if !isNil(epg) {

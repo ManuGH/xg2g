@@ -1,7 +1,0 @@
-time="2026-01-09T00:39:18Z" level=warning msg="No services to build"
- Network xg2g_default Creating 
- Network xg2g_default Created 
- Container xg2g Creating 
- Container xg2g Created 
- Container xg2g Starting 
- Container xg2g Started 

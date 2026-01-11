@@ -157,6 +157,15 @@ func (m *Manager) runProbe(req probeRequest) error {
 		}
 	}
 
+	var container string
+	var videoCodec string
+	var audioCodec string
+	if res != nil {
+		container = res.Container
+		videoCodec = res.Video.CodecName
+		audioCodec = res.Audio.CodecName
+	}
+
 	// 5. Update Success (Atomicity)
 	meta := Metadata{
 		State:        ArtifactStateReady,
@@ -164,9 +173,9 @@ func (m *Manager) runProbe(req probeRequest) error {
 		Duration:     dur,
 		Fingerprint:  fp,
 		// Populated from Probe (Deliverable #4)
-		Container:  res.Container,
-		VideoCodec: res.Video.CodecName,
-		AudioCodec: res.Audio.CodecName,
+		Container:  container,
+		VideoCodec: videoCodec,
+		AudioCodec: audioCodec,
 		UpdatedAt:  time.Now().Unix(),
 	}
 

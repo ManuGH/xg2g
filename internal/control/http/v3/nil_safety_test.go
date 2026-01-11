@@ -52,7 +52,6 @@ func TestSetDependencies_HandlesTypedNil(t *testing.T) {
 		nil,         // sm
 		nil,         // se
 		nil,         // vm
-		nil,         // VODResolver
 		nil,         // epg
 		nil,         // hm
 		nil,         // ls

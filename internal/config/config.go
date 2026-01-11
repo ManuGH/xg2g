@@ -97,6 +97,12 @@ type EPGConfig struct {
 }
 
 // RecordingPlaybackConfig holds recording playback configuration
+const (
+	PlaybackPolicyAuto         = "auto"
+	PlaybackPolicyLocalOnly    = "local_only"
+	PlaybackPolicyReceiverOnly = "receiver_only"
+)
+
 type RecordingPlaybackConfig struct {
 	PlaybackPolicy string                 `yaml:"playback_policy,omitempty"` // "auto" (default), "local_only", "receiver_only"
 	StableWindow   string                 `yaml:"stable_window,omitempty"`   // Duration string (e.g., "2s")

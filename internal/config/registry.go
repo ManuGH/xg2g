@@ -81,7 +81,7 @@ func buildRegistry() *Registry {
 		{Path: "enigma2.timeout", Env: "XG2G_OWI_TIMEOUT_MS", FieldPath: "Enigma2.Timeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 10 * time.Second},
 		{Path: "enigma2.responseHeaderTimeout", Env: "", FieldPath: "Enigma2.ResponseHeaderTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 10 * time.Second},
 		{Path: "enigma2.tuneTimeout", Env: "", FieldPath: "Enigma2.TuneTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 10 * time.Second},
-		{Path: "enigma2.retries", Env: "XG2G_OWI_RETRIES", FieldPath: "Enigma2.Retries", Profile: ProfileAdvanced, Status: StatusActive, Default: 3},
+		{Path: "enigma2.retries", Env: "XG2G_OWI_RETRIES", FieldPath: "Enigma2.Retries", Profile: ProfileAdvanced, Status: StatusActive, Default: 2},
 		{Path: "enigma2.backoff", Env: "XG2G_OWI_BACKOFF_MS", FieldPath: "Enigma2.Backoff", Profile: ProfileAdvanced, Status: StatusActive, Default: 200 * time.Millisecond},
 		{Path: "enigma2.maxBackoff", Env: "XG2G_OWI_MAX_BACKOFF_MS", FieldPath: "Enigma2.MaxBackoff", Profile: ProfileAdvanced, Status: StatusActive, Default: 30 * time.Second},
 		{Path: "enigma2.streamPort", Env: "XG2G_STREAM_PORT", FieldPath: "Enigma2.StreamPort", Profile: ProfileAdvanced, Status: StatusDeprecated, Default: 8001},

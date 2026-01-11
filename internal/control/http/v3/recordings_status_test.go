@@ -181,8 +181,9 @@ func newStatusTestServer(t *testing.T) (*Server, *vod.Manager) {
 	srv := NewServer(cfg, nil, nil)
 	vodMgr := vod.NewManager(nil, nil, nil) // Wire dependencies
 	srv.SetDependencies(
-		nil, nil, nil, nil, nil, nil, nil, nil, vodMgr, nil, // P3: VODResolver (nil)
+		nil, nil, nil, nil, nil, nil, nil, nil, vodMgr, // P3: VODResolver (removed)
 		nil, nil, nil, nil, nil, nil, nil, nil, nil,
 	)
+
 	return srv, vodMgr
 }

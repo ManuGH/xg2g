@@ -259,23 +259,18 @@ func (r *DefaultVODResolver) decodeID(id string) string {
 }
 
 func (r *DefaultVODResolver) mapResponse(id string, meta vod.Metadata, source string) *types.VODPlaybackResponse {
-	playbackType := "hls"
-	mime := "application/vnd.apple.mpegurl"
+	playbackType := string(Hls)
 	streamURL := fmt.Sprintf("/api/v3/recordings/%s/playlist.m3u8", id)
-
 	if strings.HasSuffix(strings.ToLower(meta.ResolvedPath), ".mp4") {
-		playbackType = "mp4"
-		mime = "video/mp4"
+		playbackType = string(DirectMp4)
 		streamURL = fmt.Sprintf("/api/v3/recordings/%s/stream.mp4", id)
 	}
 
 	return &types.VODPlaybackResponse{
-		RecordingID:     id,
-		StreamURL:       streamURL,
-		PlaybackType:    playbackType,
+		Mode:            playbackType,
+		URL:             streamURL,
 		DurationSeconds: int64(meta.Duration),
-		MimeType:        mime,
-		DurationSource:  source,
+		Reason:          source,
 	}
 }
 

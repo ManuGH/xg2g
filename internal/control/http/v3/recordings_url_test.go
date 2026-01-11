@@ -6,6 +6,7 @@ import (
 	"testing"
 	"unicode"
 
+	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -70,7 +71,7 @@ func TestValidateRecordingRef_Hardening(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// This calls the internal validation function
-			err := ValidateRecordingRef(tt.ref)
+			err := v3recordings.ValidateRecordingRef(tt.ref)
 			if tt.wantError {
 				assert.ErrorIs(t, err, errRecordingInvalid, "Expected errRecordingInvalid for input: %q", tt.ref)
 			} else {
@@ -83,7 +84,7 @@ func TestValidateRecordingRef_Hardening(t *testing.T) {
 	t.Run("Unicode Control Char U+009F", func(t *testing.T) {
 		ref := "1:0:0:0:0:0:0:0:0:0:/media/hdd/movie/test" + string(rune(0x009F))
 		assert.True(t, unicode.IsControl(rune(0x009F)))
-		err := ValidateRecordingRef(ref)
+		err := v3recordings.ValidateRecordingRef(ref)
 		assert.ErrorIs(t, err, errRecordingInvalid)
 	})
 
@@ -91,7 +92,7 @@ func TestValidateRecordingRef_Hardening(t *testing.T) {
 		// U+200B is category Cf
 		ref := "1:0:0:0:0:0:0:0:0:0:/media/hdd/movie/test" + string(rune(0x200B))
 		assert.True(t, unicode.Is(unicode.Cf, rune(0x200B)))
-		err := ValidateRecordingRef(ref)
+		err := v3recordings.ValidateRecordingRef(ref)
 		assert.ErrorIs(t, err, errRecordingInvalid)
 	})
 }

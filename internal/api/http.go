@@ -74,11 +74,8 @@ type Server struct {
 	// EPG Cache (P1 Performance Fix)
 	epgCache *epg.TV
 
-	// Recording Playback (VOD cache generation)
 	// Phase B: SOA Refactor - VOD Manager
 	vodManager *vod.Manager
-	// P3: VOD Resolver injection for wiring tests
-	vodResolver v3.VODResolver
 
 	// OpenWebIF Client Cache (P1 Performance Fix)
 	owiClient  *openwebif.Client                                         // In-memory cache for openWebIF client
@@ -251,21 +248,16 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager, opts ...ServerOption) *Se
 	}
 	s.v3Handler = s.v3Factory(cfg, cfgMgr, s.rootCancel)
 
-	// P3: VOD Resolver Wiring (Legacy - kept for backward compatibility)
-	if libSvc := s.v3Handler.LibraryService(); libSvc != nil {
-		s.vodResolver = v3.NewVODResolver(
-			s.rootCtx,
-			s.vodManager,
-			libSvc.GetStore(),
-			s.recordingPathMapper,
-			libSvc.GetConfigs(),
-			vod.RealClock{},
-		)
-	}
-
 	// P4: Wire NEW V4 Resolver (recordings/resolver package)
 	// This is the canonical resolver used by GetRecordingPlaybackInfo
-	s.v3Handler.SetResolver(resolver.New(&cfg, s.vodManager))
+	v4Resolver := resolver.New(&cfg, s.vodManager)
+	if libSvc := s.v3Handler.LibraryService(); libSvc != nil {
+		v4Resolver = v4Resolver.WithDurationStore(
+			resolver.NewLibraryDurationStore(libSvc.GetStore()),
+			resolver.NewLibraryPathResolver(s.recordingPathMapper, libSvc.GetConfigs()),
+		)
+	}
+	s.v3Handler.SetResolver(v4Resolver)
 
 	// Initialize Series Engine
 	// Server (s) implements EpgProvider interface via GetEvents method
@@ -292,7 +284,6 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager, opts ...ServerOption) *Se
 		s.seriesManager,
 		s.seriesEngine,
 		s.vodManager,
-		s.vodResolver, // P3: Injected via SetVODResolver or defaulted
 		s.epgCache,
 		s.healthManager,
 		logSourceWrapper{},
@@ -559,12 +550,10 @@ func (s *Server) routes() http.Handler {
 		RateLimitWhitelist: s.cfg.RateLimitWhitelist,
 	})
 
-	// Health checks (versionless - infrastructure endpoints)
+	// 1. PUBLIC Endpoints (No Auth)
 	r.Get("/healthz", s.handleHealth)
 	r.Get("/readyz", s.handleReady)
 
-	// Web UI (read-only dashboard)
-	// UI serving (embedded Vite SPA) - now in control/http
 	r.Handle("/ui/*", http.StripPrefix("/ui", controlhttp.UIHandler(controlhttp.UIConfig{
 		CSP: middleware.DefaultCSP,
 	})))
@@ -573,50 +562,45 @@ func (s *Server) routes() http.Handler {
 		http.Redirect(w, r, "/ui/", http.StatusMovedPermanently)
 	})
 
-	// EPG listing is now handled by the generated API client (GetEpg)
-	// Trigger config reload from disk (if a file-backed config is configured)
-	r.With(s.authMiddleware, s.scopeMiddleware(v3.ScopeV3Admin)).Post("/internal/system/config/reload", http.HandlerFunc(s.handleConfigReload))
-
-	// Setup Validation (Testing connection before save)
-	r.With(s.setupValidateMiddleware).Post("/internal/setup/validate", http.HandlerFunc(s.handleSetupValidate))
-
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/ui/", http.StatusTemporaryRedirect)
 	})
 
-	// Register Generated API v3 Routes
-	// We use the generated handler which attaches to our existing router 'r'
-	// and creates routes starting with /api
-	// NOTE: HandlerWithOptions creates its own handler stack, so we must re-apply middlewares
+	// 2. AUTHENTICATED Group (Fail-closed base)
+	rAuth := r.With(s.authMiddleware)
+
+	// 3. SCOPED Groups
+	rRead := rAuth.With(s.scopeMiddleware(v3.ScopeV3Read))
+	rWrite := rAuth.With(s.scopeMiddleware(v3.ScopeV3Write))
+	rAdmin := rAuth.With(s.scopeMiddleware(v3.ScopeV3Admin))
+
+	// 4. Admin Operations
+	rAdmin.Post("/internal/system/config/reload", http.HandlerFunc(s.handleConfigReload))
+
+	// 5. Setup Validation
+	rAuth.Post("/internal/setup/validate", http.HandlerFunc(s.handleSetupValidate))
+
+	// 6. Register Generated API v3 Routes
+	// NOTE: HandlerWithOptions creates its own handler stack.
+	// We pass rAuth as the BaseRouter to ensure all v3 routes are guarded by auth.
 	v3.HandlerWithOptions(s.v3Handler, v3.ChiServerOptions{
 		BaseURL:    "/api/v3",
-		BaseRouter: r,
+		BaseRouter: rAuth,
 		Middlewares: []v3.MiddlewareFunc{
-			// Apply Auth Middleware to all API routes
-			// Apply Auth Middleware to all API routes
-			func(next http.Handler) http.Handler {
-				return s.authMiddleware(next)
-			},
+			s.v3Handler.ScopeMiddlewareFromContext,
 		},
 	})
 
-	// Workaround: Manually register HEAD for stream.mp4 (missing in generated code)
-	// This is required for browsers (Safari/Chrome) that probe the stream before playing.
-	// We attach it to the same base router but MUST wrap it with the same auth middleware
-	// to ensure consistent auth behavior.
-	r.With(s.authMiddleware).Head("/api/v3/recordings/{recordingId}/stream.mp4", func(w http.ResponseWriter, r *http.Request) {
+	// 7. Manual v3 Extensions (Strictly Scoped)
+	rRead.Get("/api/v3/vod/{recordingId}", s.v3Handler.HandleVODPlaybackInfo)
+
+	rRead.Head("/api/v3/recordings/{recordingId}/stream.mp4", func(w http.ResponseWriter, r *http.Request) {
 		recordingId := chi.URLParam(r, "recordingId")
 		s.v3Handler.StreamRecordingDirect(w, r, recordingId)
 	})
 
-	// Manual P2 VOD Endpoint (Strict Thin-Client DTO)
-	r.With(s.authMiddleware, s.scopeMiddleware(v3.ScopeV3Read)).Get("/api/v3/vod/{recordingId}", s.v3Handler.HandleVODPlaybackInfo)
-
-	// Manually register Resume Endpoint (Extension to generated API)
-	r.With(s.authMiddleware, s.scopeMiddleware(v3.ScopeV3Write)).
-		Put("/api/v3/recordings/{recordingId}/resume", s.v3Handler.HandleRecordingResume)
-	r.With(s.authMiddleware, s.scopeMiddleware(v3.ScopeV3Write)).
-		Options("/api/v3/recordings/{recordingId}/resume", s.v3Handler.HandleRecordingResumeOptions)
+	rWrite.Put("/api/v3/recordings/{recordingId}/resume", s.v3Handler.HandleRecordingResume)
+	rWrite.Options("/api/v3/recordings/{recordingId}/resume", s.v3Handler.HandleRecordingResumeOptions)
 
 	// 9. LAN Guard (Restrict discovery/legacy endpoints to private networks)
 	// trusted proxies are comma-separated in config
@@ -697,39 +681,6 @@ func (s *Server) GetConfig() config.AppConfig {
 	return s.cfg
 }
 
-// SetVODResolver allows injecting the VOD Resolver strategy.
-// Required for dependency injection and testing seams.
-func (s *Server) SetVODResolver(vr v3.VODResolver) {
-	s.mu.Lock()
-	s.vodResolver = vr
-	s.mu.Unlock()
-
-	// Update dependencies to propagate the new resolver
-	if s.v3Handler != nil {
-		s.v3Handler.SetDependencies(
-			s.v3Bus,
-			s.v3Store,
-			s.resumeStore,
-			s.v3Scan,
-			s.recordingPathMapper,
-			s.channelManager,
-			s.seriesManager,
-			s.seriesEngine,
-			s.vodManager,
-			vr,
-			s.epgCache,
-			s.healthManager,
-			logSourceWrapper{},
-			s.v3Scan,
-			&dvrSourceWrapper{s},
-			s.channelManager,
-			&dvrSourceWrapper{s},
-			s.requestShutdown,
-			s.preflightCheck,
-		)
-	}
-}
-
 // SetV3Components configures v3 event bus, store, and scan manager
 func (s *Server) SetV3Components(b bus.Bus, st store.StateStore, rs resume.Store, sm *scan.Manager) {
 	s.mu.Lock()
@@ -748,7 +699,6 @@ func (s *Server) SetV3Components(b bus.Bus, st store.StateStore, rs resume.Store
 			s.seriesManager,
 			s.seriesEngine,
 			s.vodManager,
-			s.vodResolver,
 			s.epgCache,
 			s.healthManager,
 			logSourceWrapper{},
@@ -773,6 +723,13 @@ func (s *Server) LibraryService() *library.Service {
 // VODManager returns the underlying VOD manager.
 func (s *Server) VODManager() *vod.Manager {
 	return s.vodManager
+}
+
+// SetVODResolver allows injecting a legacy VOD resolver (tests).
+func (s *Server) SetVODResolver(vr v3.VODResolver) {
+	if s.v3Handler != nil {
+		s.v3Handler.SetVODResolver(vr)
+	}
 }
 
 // SetVODProber injects a custom prober into the VOD manager for testing.

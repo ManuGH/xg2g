@@ -55,6 +55,7 @@ func NewHandler(svc *Server, cfg config.AppConfig) (http.Handler, error) {
 		lg.RequireLAN,
 		// Simple logger adapter (uses internal/log.Middleware)
 		log.Middleware(),
+		svc.ScopeMiddlewareFromContext,
 		svc.authMiddleware,
 	}
 
