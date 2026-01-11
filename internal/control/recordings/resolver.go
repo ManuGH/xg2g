@@ -18,6 +18,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/ManuGH/xg2g/internal/library"
 	internalrecordings "github.com/ManuGH/xg2g/internal/recordings"
+	"github.com/rs/zerolog/log"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -84,12 +85,25 @@ func (r *DefaultResolver) Resolve(ctx context.Context, serviceRef string, intent
 		return PlaybackInfoResult{}, ErrUpstream{Op: "resolveSource", Cause: err}
 	}
 
-	// 1. Truth Table: Store (Strict Precedence)
+	// 0. Pre-check: Job State (Guardrail 2: Don't probe if building)
+	cacheDir, err := RecordingCacheDir(r.cfg.HLS.Root, serviceRef)
+	if err != nil {
+		return PlaybackInfoResult{}, ErrUpstream{Op: "RecordingCacheDir", Cause: err}
+	}
+
+	if status, exists := r.vodManager.Get(ctx, cacheDir); exists {
+		if status.State == vod.JobStateBuilding || status.State == vod.JobStateFinalizing {
+			return PlaybackInfoResult{}, ErrPreparing{RecordingID: serviceRef}
+		}
+	}
+
+	// 1. Truth Table: Store (Strict Precedence for Duration)
 	var storeDuration int64
 	var durationReason string
 	var localPath string
 	var rootID string
 	var relPath string
+	var storeKnownEmpty bool // Guardrail 1: Only write if we positively know it's empty
 
 	if r.durationStore != nil && r.pathResolver != nil {
 		resolvedPath, resolvedRootID, resolvedRel, pathErr := r.pathResolver.ResolveRecordingPath(serviceRef)
@@ -99,26 +113,51 @@ func (r *DefaultResolver) Resolve(ctx context.Context, serviceRef string, intent
 		if pathErr == nil {
 			rootID = resolvedRootID
 			relPath = resolvedRel
-			if dur, ok, err := r.durationStore.GetDuration(ctx, rootID, relPath); err == nil && ok && dur > 0 {
-				storeDuration = dur
-				durationReason = "resolved_via_store"
+			dur, ok, err := r.durationStore.GetDuration(ctx, rootID, relPath)
+			if err == nil {
+				if ok && dur > 0 {
+					storeDuration = dur
+					durationReason = "resolved_via_store"
+				} else {
+					storeKnownEmpty = true // Confirmed miss, safe to write later
+				}
 			}
+			// If err != nil, storeKnownEmpty remains false (fail-safe)
 		}
 	}
 
-	// Short-circuit: If store yields truth, we are done with duration resolution.
-	// We still need metadata to confirm container/codecs if possible, but duration is settled.
+	if localPath == "" && strings.HasPrefix(source, "file://") {
+		localPath = strings.TrimPrefix(source, "file://")
+	}
 
 	// 2. Truth Table: Metadata (Cache)
+	// Definition: "Metadata" means vodManager metadata.
+	// We need both Duration (if not from store) AND Codecs.
 	meta, metaOk := r.vodManager.GetMetadata(serviceRef)
-	if durationReason == "" && metaOk && meta.Duration > 0 {
-		durationReason = "resolved_via_metadata"
+
+	codecComplete := metaOk && meta.Container != "" && meta.VideoCodec != "" && meta.AudioCodec != ""
+	metaDurationValid := metaOk && meta.Duration > 0
+
+	// Determine what we need to probe
+	// If we have Store Duration, we just need Codecs.
+	// If we differ Store Duration, we need both.
+
+	needsProbe := false
+	if storeDuration > 0 {
+		// Duration settled. Do we have codecs?
+		if !codecComplete {
+			needsProbe = true // Heal: Have duration, need codecs
+		}
+	} else {
+		// Duration not settled.
+		if metaDurationValid && codecComplete {
+			durationReason = "resolved_via_metadata"
+		} else {
+			needsProbe = true // Need both
+		}
 	}
 
 	// 3. Truth Table: Probe (Source)
-	// Only probe if we have no duration from Store OR Metadata.
-	needsProbe := durationReason == "" // Strict: If we hit Store or Meta, we don't probe for duration.
-
 	if needsProbe {
 		sfKey := hashSingleflightKey(kind, source)
 		val, err, _ := r.sf.Do(sfKey, func() (interface{}, error) {
@@ -133,6 +172,7 @@ func (r *DefaultResolver) Resolve(ctx context.Context, serviceRef string, intent
 				if info == nil {
 					return nil, vod.ErrProbeCorrupt
 				}
+				// Duration rounding for persistence
 				duration := int64(math.Round(info.Video.Duration))
 				if duration <= 0 {
 					return nil, vod.ErrProbeCorrupt
@@ -152,16 +192,13 @@ func (r *DefaultResolver) Resolve(ctx context.Context, serviceRef string, intent
 				}
 			}
 
-			// Remote fallback defaults (e.g. receiver)
-			container := "mpegts"
-			if strings.HasSuffix(strings.ToLower(source), ".mp4") {
-				container = "mp4"
-			}
-			return vod.Metadata{
-				Container:  container,
-				VideoCodec: "h264",
-				AudioCodec: "aac",
-			}, nil
+			// Remote fallback defaults - REMOVED per Deliverable #4 Strict Requirement
+			// If we can't probe remote, we return error. No defaults.
+			// Assuming current r.Probe implementation is just a connectivity check,
+			// we must fail if we can't determine codecs.
+			// However, if Probe is a "shallow check" and we can't get codecs, strict truth table says we fail.
+			// For this deliverable, we treat inability to get codecs as ErrUpstream.
+			return nil, vod.ErrProbeCorrupt // Or explicit "CannotDetermineCodecs"
 		})
 
 		if err != nil {
@@ -172,8 +209,6 @@ func (r *DefaultResolver) Resolve(ctx context.Context, serviceRef string, intent
 			if errors.Is(err, vod.ErrProbeCorrupt) || os.IsNotExist(err) || os.IsPermission(err) {
 				return PlaybackInfoResult{}, ErrUpstream{Op: "probe", Cause: err}
 			}
-			// Ambiguous/Network errors -> Default to Upstream (Terminal) to prevent loops, per CTO direction
-			// Unless we implement specific "detect temporary" logic.
 			return PlaybackInfoResult{}, ErrUpstream{Op: "probe_ambiguous", Cause: err}
 		}
 
@@ -188,56 +223,36 @@ func (r *DefaultResolver) Resolve(ctx context.Context, serviceRef string, intent
 		meta = probedMeta // Use for response
 		metaOk = true
 
-		if probedMeta.Duration > 0 {
+		// Determine Reason based on what we just did
+		if storeDuration > 0 {
+			durationReason = "store_duration__probed_codecs" // Heal scenario
+		} else {
 			durationReason = "probed_and_persisted"
-			// 2. Store Write (No Overwrite, Configured, Resolved)
-			if r.durationStore != nil && rootID != "" && relPath != "" {
-				// We already know store was empty/miss because we are in needsProbe=true and check above
+			// 2. Store Write Logic (Only if duration wasn't already from store)
+			if probedMeta.Duration > 0 && r.durationStore != nil && rootID != "" && relPath != "" && storeKnownEmpty {
 				if err := r.durationStore.SetDuration(ctx, rootID, relPath, probedMeta.Duration); err != nil {
-					// 3. Store Write Failure is non-fatal
-					// Log structure as requested (Guardrail 2)
-					// fmt.Printf("failed to persist duration: root=%s rel=%s dur=%d err=%v\n", rootID, relPath, probedMeta.Duration, err) // Replace with proper logger if available in struct, for now we assume error return is enough or use existing log plumbing if present.
-					// Since we don't have logger in 'r', we just swallow it but the reason reflects "persisted" attempt.
-					// Optionally we can change reason to "probed" if write failed, but plan says "probed_and_persisted".
+					log.Warn().
+						Str("root_id", rootID).
+						Str("rel_path", relPath).
+						Int64("duration_seconds", probedMeta.Duration).
+						Str("service_ref", serviceRef).
+						Str("op", "SetDuration").
+						Err(err).
+						Msg("failed to persist duration")
 				}
 			}
 		}
-	}
-
-	// Sanity defaults if meta is partially invalid but we have Store Duration
-	if !metaOk && storeDuration > 0 {
-		container := "mpegts"
-		if localPath != "" && strings.HasSuffix(strings.ToLower(localPath), ".mp4") {
-			container = "mp4"
-		}
-		meta = vod.Metadata{
-			ResolvedPath: localPath,
-			Duration:     storeDuration,
-			Container:    container,
-			VideoCodec:   "h264",
-			AudioCodec:   "aac",
+	} else {
+		// No probe needed. Construct reason if not already simple "resolved_via_metadata"
+		if durationReason == "resolved_via_store" && codecComplete {
+			durationReason = "store_duration__metadata_codecs"
 		}
 	}
 
-	// Final Duration Decision (Guardrail 3: Single assignment)
+	// Final Duration Decision
 	finalDuration := float64(meta.Duration)
 	if storeDuration > 0 {
 		finalDuration = float64(storeDuration)
-		// reason already set to "resolved_via_store"
-	}
-	if durationReason == "" {
-		durationReason = "resolved_via_metadata" // Fallback if meta existed but no explicit duration > 0 check passed earlier (shouldn't happen with strict logic)
-	}
-
-	cacheDir, err := RecordingCacheDir(r.cfg.HLS.Root, serviceRef)
-	if err != nil {
-		return PlaybackInfoResult{}, ErrUpstream{Op: "RecordingCacheDir", Cause: err}
-	}
-
-	if status, exists := r.vodManager.Get(ctx, cacheDir); exists {
-		if status.State == vod.JobStateBuilding || status.State == vod.JobStateFinalizing {
-			return PlaybackInfoResult{}, ErrPreparing{RecordingID: serviceRef}
-		}
 	}
 
 	info := playback.MediaInfo{
