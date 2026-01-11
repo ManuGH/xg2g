@@ -326,8 +326,14 @@ func (o *Orchestrator) waitForReady(
 }
 
 func (o *Orchestrator) waitForProcessExit(ctx context.Context, handle ports.RunHandle) error {
-	// Polling Wait Loop
-	ticker := time.NewTicker(500 * time.Millisecond)
+	// Polling Wait Loop with max timeout and exponential backoff
+	const maxWait = 60 * time.Second
+	const initialInterval = 500 * time.Millisecond
+	const maxInterval = 5 * time.Second
+
+	deadline := time.Now().Add(maxWait)
+	interval := initialInterval
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for {
@@ -335,11 +341,22 @@ func (o *Orchestrator) waitForProcessExit(ctx context.Context, handle ports.RunH
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
+			if time.Now().After(deadline) {
+				return fmt.Errorf("timed out waiting for process exit after %v", maxWait)
+			}
+
 			status := o.Pipeline.Health(ctx, handle)
 			if !status.Healthy {
 				// Process exited
 				return nil
 			}
+
+			// Exponential backoff
+			interval = interval * 2
+			if interval > maxInterval {
+				interval = maxInterval
+			}
+			ticker.Reset(interval)
 		}
 	}
 }
