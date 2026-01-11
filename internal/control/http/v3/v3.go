@@ -18,6 +18,10 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/channels"
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/artifacts"
+	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/resolver"
+	"github.com/ManuGH/xg2g/internal/control/http/v3/types"
+	"github.com/ManuGH/xg2g/internal/control/playback"
 	"github.com/ManuGH/xg2g/internal/control/read"
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
@@ -97,6 +101,30 @@ type openWebIFClient interface {
 // owiFactory creates an openWebIFClient instance.
 type owiFactory func(cfg config.AppConfig, snap config.Snapshot) openWebIFClient
 
+// vodResolverAdapter adapts the legacy VODResolver interface to the new resolver.Resolver interface.
+// This is a temporary bridge until all code is migrated to the new resolver abstraction.
+type vodResolverAdapter struct {
+	vr VODResolver
+}
+
+func (a *vodResolverAdapter) Resolve(ctx context.Context, recordingID string, intent types.PlaybackIntent, profile playback.ClientProfile) (resolver.ResolveOK, *resolver.ResolveError) {
+	mediaInfo, err := a.vr.ResolveVOD(ctx, recordingID, intent, profile)
+	if err != nil {
+		// Map legacy error to new error structure
+		// Default to internal error for unknown error types
+		return resolver.ResolveOK{}, &resolver.ResolveError{
+			Code:   resolver.CodeFailed,
+			Err:    err,
+			Detail: err.Error(),
+		}
+	}
+	// Map success
+	return resolver.ResolveOK{
+		MediaInfo: mediaInfo,
+		Decision:  playback.Decision{Mode: playback.ModeTranscode}, // Default decision
+	}, nil
+}
+
 type Server struct {
 	mu sync.RWMutex
 
@@ -117,8 +145,9 @@ type Server struct {
 	seriesManager       *dvr.Manager
 	seriesEngine        *dvr.SeriesEngine
 	vodManager          *vod.Manager
-	vodResolver         VODResolver // P3 Integration Boundary
-	epgCache            *epg.TV     // EPG Cache reference
+	resolver            resolver.Resolver // Strict V4 Resolver
+	artifacts           artifacts.Resolver
+	epgCache            *epg.TV // EPG Cache reference
 	owiClient           *openwebif.Client
 	owiEpoch            uint64
 	configManager       *config.Manager
@@ -183,6 +212,13 @@ func NewServer(cfg config.AppConfig, cfgMgr *config.Manager, rootCancel context.
 // LibraryService returns the underlying library service.
 func (s *Server) LibraryService() *library.Service {
 	return s.libraryService
+}
+
+// SetResolver sets the V4 resolver used by GetRecordingPlaybackInfo.
+func (s *Server) SetResolver(r resolver.Resolver) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.resolver = r
 }
 
 // authMiddleware is the default authentication middleware.
@@ -316,14 +352,20 @@ func (s *Server) SetDependencies(
 		s.vodManager = vm
 		// Start the background prober pool (Phase 2 compliance)
 		s.vodManager.StartProberPool(context.Background())
+		// PR3: Initialize Artifacts Resolver
+		s.artifacts = artifacts.New(&s.cfg, vm, s.recordingPathMapper)
 	} else {
 		s.vodManager = nil
+		s.artifacts = nil
 	}
 
+	// Wire V4 Resolver (new resolver abstraction)
+	// This resolver is used by GetRecordingPlaybackInfo endpoint
 	if !isNil(vr) {
-		s.vodResolver = vr
+		// Create adapter from legacy VODResolver to new Resolver interface
+		s.resolver = &vodResolverAdapter{vr: vr}
 	} else {
-		s.vodResolver = nil
+		s.resolver = nil
 	}
 
 	if !isNil(epg) {

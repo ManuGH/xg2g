@@ -26,6 +26,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	controlhttp "github.com/ManuGH/xg2g/internal/control/http"
 	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
+	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/resolver"
 	"github.com/ManuGH/xg2g/internal/control/middleware"
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
@@ -250,7 +251,7 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager, opts ...ServerOption) *Se
 	}
 	s.v3Handler = s.v3Factory(cfg, cfgMgr, s.rootCancel)
 
-	// P3: VOD Resolver Wiring
+	// P3: VOD Resolver Wiring (Legacy - kept for backward compatibility)
 	if libSvc := s.v3Handler.LibraryService(); libSvc != nil {
 		s.vodResolver = v3.NewVODResolver(
 			s.rootCtx,
@@ -261,6 +262,10 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager, opts ...ServerOption) *Se
 			vod.RealClock{},
 		)
 	}
+
+	// P4: Wire NEW V4 Resolver (recordings/resolver package)
+	// This is the canonical resolver used by GetRecordingPlaybackInfo
+	s.v3Handler.SetResolver(resolver.New(&cfg, s.vodManager))
 
 	// Initialize Series Engine
 	// Server (s) implements EpgProvider interface via GetEvents method
