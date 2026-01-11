@@ -1,4 +1,4 @@
-# Repository Health & Quality Gates
+# CI/CD Workflows & Quality Gates
 
 This directory contains CI/CD workflows and checks to maintain repository quality.
 

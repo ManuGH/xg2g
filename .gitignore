@@ -50,6 +50,11 @@ livetest-data/
 *.xml
 *.gz
 
+# OpenAPI legacy files (single source: api/openapi.yaml)
+api/openapi-v2-legacy.yaml
+api/openapi-v3.yaml
+internal/control/http/v3/openapi.yaml
+
 # Build artifacts (binaries at repo root only)
 /xg2g
 /xg2g-*

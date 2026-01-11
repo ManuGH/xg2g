@@ -110,11 +110,17 @@ jobs:
           fi
           echo "✅ No direct oapi-codegen in CI"
 
-      - name: Verify OpenAPI server codegen is up-to-date (v2 + v3)
+      - name: Verify OpenAPI server codegen is up-to-date (v3 - single source)
         run: |
           set -euo pipefail
           make generate
           git diff --exit-code -- internal/api/server_gen.go internal/control/http/v3/server_gen.go
+          # Verify single source of truth
+          if [ -f internal/control/http/v3/openapi.yaml ]; then
+            echo "❌ Duplicate spec found. Use api/openapi.yaml as single source."
+            exit 1
+          fi
+          echo "✅ Single OpenAPI source verified"
 
       - name: Build WebUI
         run: |

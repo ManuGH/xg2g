@@ -1,6 +1,10 @@
 # xg2g - Next Gen to Go
 
-**Enigma2 Streaming Gateway**
+[![CI](https://github.com/ManuGH/xg2g/actions/workflows/ci.yml/badge.svg)](https://github.com/ManuGH/xg2g/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/ManuGH/xg2g)](https://goreportcard.com/report/github.com/ManuGH/xg2g)
+[![License](https://img.shields.io/badge/license-PolyForm%20NC-blue)](LICENSE)
+
+HLS streaming gateway for Enigma2 receivers – Universal delivery for modern clients.
 
 > [!NOTE]
 > **Product Contract**: Universal streaming policy for modern clients.
@@ -99,16 +103,15 @@ Key decisions:
 
 ## Quickstart
 
-### Prerequisites: Linux with Docker, GPU, Enigma2 Receiver
+**Prerequisites:** Docker + Enigma2 receiver on your network
 
-1. **Pull Image**: `docker pull ghcr.io/manugh/xg2g:latest`
-2. **Run**:
+```bash
+docker run -d --name xg2g --net=host \
+  -e XG2G_UPSTREAM_HOST="192.168.1.10" \
+  ghcr.io/manugh/xg2g:latest
+```
 
-   ```bash
-   docker run -d --name xg2g --net=host -e XG2G_UPSTREAM_HOST="192.168.1.10" ghcr.io/manugh/xg2g:latest
-   ```
-
-3. **Open**: `http://localhost:8080`
+Open [http://localhost:8080](http://localhost:8080)
 
 ## Configuration
 
@@ -126,4 +129,9 @@ See **[Architecture](ARCHITECTURE.md)** and the **[ADR Index](docs/adr/README.md
 | **WebUI** | Stable | Thin Client Passed |
 | **Streaming** | Production | Universal Policy |
 
-## License: PolyForm Noncommercial 1.0.0
+## License
+
+[PolyForm Noncommercial 1.0.0](LICENSE)
+
+- ✅ Free for personal, homelab, and educational use
+- ❌ Commercial use requires permission
