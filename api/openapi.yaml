@@ -367,11 +367,11 @@ components:
             devices:
               type: array
               items:
-                type: object
-                properties:
-                  model: { type: string }
-                  capacity: { type: string }
-                  mount: { type: string }
+                $ref: "#/components/schemas/StorageItem"
+            locations:
+              type: array
+              items:
+                $ref: "#/components/schemas/StorageItem"
         runtime:
           type: object
           properties:
@@ -382,6 +382,29 @@ components:
             memory_total: { type: string }
             memory_available: { type: string }
             memory_used: { type: string }
+
+    StorageItem:
+      type: object
+      additionalProperties: false
+      required: [mount_status, health_status, access, is_nas]
+      properties:
+        model: { type: string }
+        capacity: { type: string }
+        mount: { type: string }
+        mount_status:
+          type: string
+          enum: [mounted, unmounted, unknown]
+        health_status:
+          type: string
+          description: "Status of the storage device. 'skipped' indicates the monitor was too busy to evaluate."
+          enum: [ok, timeout, error, unknown, skipped]
+        access:
+          type: string
+          description: "Access level detected during probe."
+          enum: [none, ro, rw]
+        is_nas: { type: boolean }
+        fs_type: { type: string }
+        checked_at: { type: string, format: date-time }
 
     ComponentStatus:
       type: object

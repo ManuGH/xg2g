@@ -37,7 +37,6 @@ func TestProbeDurationIntegration(t *testing.T) {
 	// or finding a way to call infra.Probe directly is better but this checks the wrapping.
 	// Let's Skip for now to unblock compilation, as this is a regression test.
 	t.Skip("Skipping integration test requiring full server setup")
-	return
 	/*
 		start := time.Now()
 		dur, err := s.ProbeDuration(context.Background(), tmpFile)

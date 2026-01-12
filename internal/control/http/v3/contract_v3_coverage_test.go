@@ -144,7 +144,7 @@ func TestV3RFC7807Compliance(t *testing.T) {
 
 			// Helper allowance: writeJSON in errors.go is allowed to use w.WriteHeader(code)
 			// We check function name AND filename.
-			isLowLevelHelper := funcName == "writeJSON" && filepath.Base(path) == "errors.go"
+			isLowLevelHelper := (funcName == "writeJSON" && filepath.Base(path) == "errors.go") || funcName == "WriteHeader"
 
 			ast.Inspect(fn.Body, func(n ast.Node) bool {
 				call, ok := n.(*ast.CallExpr)

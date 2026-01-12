@@ -1,6 +1,7 @@
 package recordings
 
 import (
+	"errors"
 	"fmt"
 )
 
@@ -11,6 +12,7 @@ const (
 	ClassForbidden       ErrorClass = "forbidden"
 	ClassNotFound        ErrorClass = "not_found"
 	ClassPreparing       ErrorClass = "preparing"
+	ClassUnsupported     ErrorClass = "unsupported"
 	ClassUpstream        ErrorClass = "upstream"
 	ClassInternal        ErrorClass = "internal"
 )
@@ -64,6 +66,10 @@ func (e ErrPreparing) Error() string {
 func Classify(err error) ErrorClass {
 	if err == nil {
 		return ""
+	}
+	// ClassUnsupported is reserved for explicit capability limits (not a general bucket).
+	if errors.Is(err, ErrRemoteProbeUnsupported) {
+		return ClassUnsupported
 	}
 	switch err.(type) {
 	case ErrNotFound, *ErrNotFound:

@@ -956,10 +956,12 @@ verifyAddLoop:
 			break verifyAddLoop
 		}
 
+		retryTimer := time.NewTimer(100 * time.Millisecond)
 		select {
 		case <-r.Context().Done():
+			retryTimer.Stop()
 			break verifyAddLoop
-		case <-time.After(100 * time.Millisecond):
+		case <-retryTimer.C:
 			// continue
 		}
 	}
@@ -1164,11 +1166,13 @@ verifyUpdateLoop:
 			break verifyUpdateLoop
 		}
 
+		retryTimer := time.NewTimer(100 * time.Millisecond)
 		select {
 		case <-ctx.Done():
 			// Context canceled/deadline exceeded
+			retryTimer.Stop()
 			break verifyUpdateLoop
-		case <-time.After(100 * time.Millisecond):
+		case <-retryTimer.C:
 			// continue
 		}
 	}

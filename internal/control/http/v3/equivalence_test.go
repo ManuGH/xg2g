@@ -207,7 +207,7 @@ func getDvrCapabilities_Legacy(s *Server, w http.ResponseWriter, r *http.Request
 	ptr := func(b bool) *bool { return &b }
 	str := func(s string) *string { return &s }
 
-	mode := None // Series mode
+	mode := DvrCapabilitiesSeriesModeNone // Series mode
 
 	resp := DvrCapabilities{
 		Timers: struct {

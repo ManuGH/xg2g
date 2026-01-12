@@ -646,7 +646,7 @@ func (s *Server) ReportPlaybackFeedback(w http.ResponseWriter, r *http.Request, 
 
 	// 3. Check for MediaError 3 (Safari HLS decode error)
 	// We only trigger fallback if it's an error and specifically code 3
-	isDecodeError := req.Event == Error && req.Code != nil && *req.Code == 3
+	isDecodeError := req.Event == PlaybackFeedbackRequestEventError && req.Code != nil && *req.Code == 3
 
 	if !isDecodeError {
 		// Just log info/warnings

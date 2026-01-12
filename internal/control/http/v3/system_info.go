@@ -1,12 +1,16 @@
 package v3
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"runtime/debug"
+	"sort"
 	"strconv"
 	"strings"
 
+	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 )
 
@@ -23,22 +27,22 @@ type SystemInfo struct {
 
 // HardwareInfo represents hardware information
 type HardwareInfo struct {
-	Brand              string `json:"brand"`
-	Model              string `json:"model"`
-	Boxtype            string `json:"boxtype"`
-	Chipset            string `json:"chipset"`
-	ChipsetDescription string `json:"chipset_description"`
+	Brand              string `json:"brand,omitempty"`
+	Model              string `json:"model,omitempty"`
+	Boxtype            string `json:"boxtype,omitempty"`
+	Chipset            string `json:"chipset,omitempty"`
+	ChipsetDescription string `json:"chipset_description,omitempty"`
 }
 
 // SoftwareInfo represents software versions
 type SoftwareInfo struct {
-	OEVersion     string `json:"oe_version"`
-	ImageDistro   string `json:"image_distro"`
-	ImageVersion  string `json:"image_version"`
-	EnigmaVersion string `json:"enigma_version"`
-	KernelVersion string `json:"kernel_version"`
-	DriverDate    string `json:"driver_date"`
-	WebIFVersion  string `json:"webif_version"`
+	OEVersion     string `json:"oe_version,omitempty"`
+	ImageDistro   string `json:"image_distro,omitempty"`
+	ImageVersion  string `json:"image_version,omitempty"`
+	EnigmaVersion string `json:"enigma_version,omitempty"`
+	KernelVersion string `json:"kernel_version,omitempty"`
+	DriverDate    string `json:"driver_date,omitempty"`
+	WebIFVersion  string `json:"webif_version,omitempty"`
 }
 
 // TunerInfo represents a single tuner
@@ -66,14 +70,8 @@ type NetworkInterfaceInfo struct {
 
 // StorageInfo represents storage devices and shares
 type StorageInfo struct {
-	Devices []StorageDeviceInfo `json:"devices"`
-}
-
-// StorageDeviceInfo represents a storage device
-type StorageDeviceInfo struct {
-	Model    string `json:"model"`
-	Capacity string `json:"capacity"`
-	Mount    string `json:"mount"`
+	Devices   *[]StorageItem `json:"devices,omitempty"`
+	Locations *[]StorageItem `json:"locations,omitempty"`
 }
 
 // RuntimeInfo represents runtime information
@@ -91,6 +89,21 @@ type ResourceInfo struct {
 // GetSystemInfo implements the system info endpoint
 // GET /api/v3/system/info
 func (s *Server) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
+	// Wrap writer to track header status with transparent interface passthrough
+	w, tracker := wrapResponseWriter(w)
+
+	defer func() {
+		if p := recover(); p != nil {
+			log.L().Error().
+				Interface("panic", p).
+				Bytes("stack", debug.Stack()).
+				Msg("recovered from panic in GetSystemInfo")
+
+			if !tracker.WroteHeader() {
+				writeProblem(w, r, http.StatusInternalServerError, "system/panic", "Internal Server Error", "PANIC", "A serious error occurred while processing system information", nil)
+			}
+		}
+	}()
 	ctx := r.Context()
 
 	// Get OpenWebIF client using standard factory method
@@ -116,30 +129,49 @@ func (s *Server) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 			err.Error(), nil)
 		return
 	}
+	if info == nil {
+		writeProblem(w, r, http.StatusBadGateway,
+			"system/upstream_error",
+			"Empty Receiver Response",
+			"UPSTREAM_EMPTY",
+			"The receiver returned an empty response without an error", nil)
+		return
+	}
+
+	// Query recording locations (bookmarks)
+	locations, _ := client.GetLocations(ctx)
+	locationItems := make([]StorageItem, 0)
+	for _, loc := range locations {
+		if loc.Path != "" {
+			item := s.checkStorageItem(loc.Path, "Aufnahme-Verzeichnis", "")
+			locationItems = append(locationItems, item)
+		}
+	}
 
 	// Convert to API response
+	// Note: We use empty strings instead of "N/A" to allow omitempty to work.
 	resp := SystemInfo{
 		Hardware: HardwareInfo{
-			Brand:              orElse(info.Info.Brand, "N/A"),
-			Model:              orElse(info.Info.Model, "Unknown"),
-			Boxtype:            orElse(info.Info.Boxtype, "N/A"),
-			Chipset:            orElse(info.Info.Chipset, "N/A"),
-			ChipsetDescription: orElse(info.Info.FriendlyChipsetText, info.Info.Chipset),
+			Brand:              info.Info.Brand,
+			Model:              info.Info.Model,
+			Boxtype:            info.Info.Boxtype,
+			Chipset:            info.Info.Chipset,
+			ChipsetDescription: info.Info.FriendlyChipsetText,
 		},
 		Software: SoftwareInfo{
-			OEVersion:     orElse(info.Info.OEVer, "N/A"),
+			OEVersion:     info.Info.OEVer,
 			ImageDistro:   orElse(info.Info.FriendlyImageDistro, info.Info.ImageDistro),
-			ImageVersion:  orElse(info.Info.ImageVer, "N/A"),
-			EnigmaVersion: orElse(info.Info.EnigmaVer, "N/A"),
-			KernelVersion: orElse(info.Info.KernelVer, "N/A"),
-			DriverDate:    orElse(info.Info.DriverDate, "N/A"),
-			WebIFVersion:  orElse(info.Info.WebIFVer, "N/A"),
+			ImageVersion:  info.Info.ImageVer,
+			EnigmaVersion: info.Info.EnigmaVer,
+			KernelVersion: info.Info.KernelVer,
+			DriverDate:    info.Info.DriverDate,
+			WebIFVersion:  info.Info.WebIFVer,
 		},
 		Tuners:  convertTuners(info.Info.Tuners),
 		Network: convertNetwork(info.Info.IFaces),
-		Storage: convertStorage(info.Info.HDD),
+		Storage: s.convertStorage(info.Info.HDD, locationItems),
 		Runtime: RuntimeInfo{
-			Uptime: orElse(info.Info.Uptime, "N/A"),
+			Uptime: info.Info.Uptime,
 		},
 		Resource: calculateMemory(info.Info.Mem1, info.Info.Mem2),
 	}
@@ -148,7 +180,57 @@ func (s *Server) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+func (s *Server) getStoragePaths(ctx context.Context) []string {
+	unique := make(map[string]struct{})
+
+	// Fast OWI client access
+	client := s.owi(s.cfg, s.snap)
+	if c, ok := client.(*openwebif.Client); ok && c != nil {
+		if about, err := c.About(ctx); err == nil && about != nil {
+			for _, hdd := range about.Info.HDD {
+				if hdd.Mount != "" {
+					unique[hdd.Mount] = struct{}{}
+				}
+			}
+		}
+		if locs, err := c.GetLocations(ctx); err == nil {
+			for _, loc := range locs {
+				if loc.Path != "" {
+					unique[loc.Path] = struct{}{}
+				}
+			}
+		}
+	}
+
+	paths := make([]string, 0, len(unique))
+	for p := range unique {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+	return paths
+}
+
+// calculateMemory computes memory values from OpenWebIF data
+// OpenWebIF provides: Mem1=MemTotal, Mem2=MemAvailable
+// We calculate: MemUsed = MemTotal - MemAvailable
+func calculateMemory(totalStr, availableStr string) ResourceInfo {
+	total := parseMemKB(totalStr)
+	available := parseMemKB(availableStr)
+
+	used := total - available
+	if used < 0 {
+		used = 0
+	}
+
+	return ResourceInfo{
+		MemoryTotal:     totalStr,
+		MemoryAvailable: availableStr,
+		MemoryUsed:      formatMemKB(used),
+	}
+}
+
 // orElse returns fallback if value is empty
+
 func orElse(value, fallback string) string {
 	if value == "" {
 		return fallback
@@ -197,35 +279,82 @@ func convertNetwork(ifaces []openwebif.NetworkInterface) NetworkInfo {
 }
 
 // convertStorage converts HDDInfo to StorageInfo
-func convertStorage(devices []openwebif.HDDInfo) StorageInfo {
-	devs := make([]StorageDeviceInfo, len(devices))
-	for i, dev := range devices {
-		devs[i] = StorageDeviceInfo{
-			Model:    dev.Model,
-			Capacity: dev.FriendlyCapacity,
-			Mount:    dev.Mount,
+func (s *Server) convertStorage(devices []openwebif.HDDInfo, locations []StorageItem) StorageInfo {
+	var devsPtr *[]StorageItem
+	if len(devices) > 0 {
+		devs := make([]StorageItem, len(devices))
+		for i, dev := range devices {
+			devs[i] = s.checkStorageItem(dev.Mount, dev.Model, dev.FriendlyCapacity)
 		}
+		devsPtr = &devs
 	}
-	return StorageInfo{Devices: devs}
+
+	var locsPtr *[]StorageItem
+	if len(locations) > 0 {
+		locsPtr = &locations
+	}
+
+	return StorageInfo{
+		Devices:   devsPtr,
+		Locations: locsPtr,
+	}
 }
 
-// calculateMemory computes memory values from OpenWebIF data
-// OpenWebIF provides: Mem1=MemTotal, Mem2=MemAvailable
-// We calculate: MemUsed = MemTotal - MemAvailable
-func calculateMemory(totalStr, availableStr string) ResourceInfo {
-	total := parseMemKB(totalStr)
-	available := parseMemKB(availableStr)
-
-	used := total - available
-	if used < 0 {
-		used = 0
+// checkStorageItem performs accessibility checks and NAS detection
+func (s *Server) checkStorageItem(mount, model, capacity string) StorageItem {
+	item := StorageItem{}
+	if mount != "" {
+		item.Mount = &mount
+	}
+	if model != "" {
+		item.Model = &model
+	}
+	if capacity != "" {
+		item.Capacity = &capacity
 	}
 
-	return ResourceInfo{
-		MemoryTotal:     totalStr,
-		MemoryAvailable: availableStr,
-		MemoryUsed:      formatMemKB(used),
+	var health StorageHealth
+	if s.storageMonitor != nil {
+		health = s.storageMonitor.GetHealth(mount)
+	} else {
+		health = StorageHealth{
+			MountStatus:  StorageItemMountStatusUnknown,
+			HealthStatus: StorageItemHealthStatusUnknown,
+			Access:       StorageItemAccessNone,
+		}
 	}
+
+	item.MountStatus = health.MountStatus
+	item.HealthStatus = health.HealthStatus
+	item.Access = health.Access
+
+	if health.FsType != "" {
+		item.FsType = &health.FsType
+	}
+
+	if !health.CheckedAt.IsZero() {
+		item.CheckedAt = &health.CheckedAt
+	}
+
+	// NAS Detection (Heuristics + Mount Info)
+	lowMount := strings.ToLower(mount)
+	lowModel := strings.ToLower(model)
+
+	if health.FsType != "" {
+		item.IsNas = isNasFs(health.FsType)
+	} else if strings.Contains(lowMount, "nfs") ||
+		strings.Contains(lowMount, "smb") ||
+		strings.Contains(lowMount, "cifs") ||
+		strings.Contains(lowMount, "net") ||
+		strings.Contains(lowMount, "mergerfs") ||
+		strings.Contains(lowModel, "nas") ||
+		strings.Contains(lowModel, "net") {
+		item.IsNas = true
+	} else {
+		item.IsNas = false
+	}
+
+	return item
 }
 
 // parseMemKB extracts kB value from strings like "757824 kB"

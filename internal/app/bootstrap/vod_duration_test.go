@@ -2,7 +2,6 @@ package bootstrap
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -12,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -79,7 +79,7 @@ enigma2:
 	require.NoError(t, err)
 
 	serviceRef := "1:0:0:0:0:0:0:0:0:0:/hdd/movie/film.ts"
-	recordingID := base64.RawURLEncoding.EncodeToString([]byte(serviceRef))
+	recordingID := recservice.EncodeRecordingID(serviceRef)
 
 	v3Handler := container.Server.Handler()
 
@@ -90,7 +90,9 @@ enigma2:
 			ProbeFunc: func(ctx context.Context, path string) (*vod.StreamInfo, error) {
 				probeCalled++
 				return &vod.StreamInfo{
-					Video: vod.VideoStreamInfo{Duration: 123},
+					Video:     vod.VideoStreamInfo{Duration: 123, CodecName: "h264"},
+					Audio:     vod.AudioStreamInfo{CodecName: "aac"},
+					Container: "mpegts",
 				}, nil
 			},
 		}

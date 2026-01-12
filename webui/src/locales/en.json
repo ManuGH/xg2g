@@ -247,5 +247,34 @@
       "enableEpg": "Enable EPG (Electronic Program Guide)",
       "hint": "Automatically fetches program info for selected channels (3 days)."
     }
+  },
+  "system": {
+    "pageTitle": "System Information",
+    "receiverTitle": "Receiver Information",
+    "hardware": "Hardware",
+    "brandModel": "Brand & Model",
+    "software": "Software",
+    "distribution": "Distribution",
+    "version": "Version",
+    "kernel": "Kernel",
+    "webif": "WebIF",
+    "tuners": "Tuners",
+    "network": "Network",
+    "storage": "Storage & Recordings",
+    "drives": "Drives",
+    "internal": "Internal",
+    "paths": "Recording Paths",
+    "healthLabel": "Health",
+    "check": "Check",
+    "free": "Free",
+    "total": "Total",
+    "usage": "Usage",
+    "status": {
+      "mounted": "Connected",
+      "unmounted": "Not mounted",
+      "timeout": "Hanging (Timeout)",
+      "error": "Error",
+      "unknown": "Unknown"
+    }
   }
 }

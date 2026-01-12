@@ -49,7 +49,7 @@ func TestDetectConflicts(t *testing.T) {
 			existing: []openwebif.Timer{
 				{ServiceRef: "REF:1", Begin: 3600, End: 7200, Name: "Same Show", State: 0},
 			},
-			wantType: []TimerConflictType{TimerConflictTypeDuplicate},
+			wantType: []TimerConflictType{Duplicate},
 		},
 		{
 			name:     "Partial Overlap - Start",
@@ -57,7 +57,7 @@ func TestDetectConflicts(t *testing.T) {
 			existing: []openwebif.Timer{
 				{ServiceRef: "REF:1", Begin: 3000, End: 4000, Name: "Overlaps Start", State: 0},
 			},
-			wantType: []TimerConflictType{TimerConflictTypeOverlap},
+			wantType: []TimerConflictType{Overlap},
 		},
 		{
 			name:     "Partial Overlap - End",
@@ -65,7 +65,7 @@ func TestDetectConflicts(t *testing.T) {
 			existing: []openwebif.Timer{
 				{ServiceRef: "REF:1", Begin: 7000, End: 8000, Name: "Overlaps End", State: 0},
 			},
-			wantType: []TimerConflictType{TimerConflictTypeOverlap},
+			wantType: []TimerConflictType{Overlap},
 		},
 		{
 			name:     "Full Containment",
@@ -73,7 +73,7 @@ func TestDetectConflicts(t *testing.T) {
 			existing: []openwebif.Timer{
 				{ServiceRef: "REF:1", Begin: 2000, End: 8000, Name: "Long Show", State: 0},
 			},
-			wantType: []TimerConflictType{TimerConflictTypeOverlap},
+			wantType: []TimerConflictType{Overlap},
 		},
 		{
 			name:     "Contained Within",
@@ -81,7 +81,7 @@ func TestDetectConflicts(t *testing.T) {
 			existing: []openwebif.Timer{
 				{ServiceRef: "REF:1", Begin: 4000, End: 5000, Name: "Short Show", State: 0},
 			},
-			wantType: []TimerConflictType{TimerConflictTypeOverlap},
+			wantType: []TimerConflictType{Overlap},
 		},
 		{
 			name: "With Padding - Causes Overlap",
@@ -94,7 +94,7 @@ func TestDetectConflicts(t *testing.T) {
 			existing: []openwebif.Timer{
 				{ServiceRef: "REF:1", Begin: 3000, End: 3500, Name: "Safe without padding", State: 0},
 			},
-			wantType: []TimerConflictType{TimerConflictTypeOverlap},
+			wantType: []TimerConflictType{Overlap},
 		},
 		{
 			name:     "Ignore Finished/Disabled",
@@ -111,7 +111,7 @@ func TestDetectConflicts(t *testing.T) {
 			existing: []openwebif.Timer{
 				{ServiceRef: "REF:2", Begin: 3600, End: 7200, Name: "Other Channel", State: 0},
 			},
-			wantType: []TimerConflictType{TimerConflictTypeOverlap},
+			wantType: []TimerConflictType{Overlap},
 		},
 	}
 

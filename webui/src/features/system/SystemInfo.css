@@ -290,3 +290,121 @@
     opacity: 0.7;
   }
 }
+
+/* Storage & Recordings Enhancements */
+.storage-status-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 2px;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-right: 4px;
+}
+
+.status-dot.dot-ok {
+  background-color: #2ed573;
+  box-shadow: 0 0 6px rgba(46, 213, 115, 0.4);
+}
+
+.status-dot.dot-error {
+  background-color: #ff4757;
+  box-shadow: 0 0 6px rgba(255, 71, 87, 0.4);
+}
+
+.status-dot.dot-timeout {
+  background-color: #ff9800;
+  box-shadow: 0 0 6px rgba(255, 152, 0, 0.4);
+}
+
+.status-dot.dot-unknown {
+  background-color: #747d8c;
+}
+
+.tag {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.tag-nas {
+  background: rgba(84, 160, 255, 0.15);
+  color: #54a0ff;
+  border: 1px solid rgba(84, 160, 255, 0.3);
+}
+
+.tag-intern {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.storage-subinfo {
+  margin-top: 4px;
+  padding-left: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.storage-state-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.access-badge {
+  font-size: 9px;
+  font-weight: 800;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.access-rw {
+  background: rgba(46, 213, 115, 0.1);
+  color: #2ed573;
+}
+
+.access-ro {
+  background: rgba(255, 165, 2, 0.1);
+  color: #ffa502;
+}
+
+.status-text {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.status-text.ok {
+  color: #2ed573;
+}
+
+.status-text.error {
+  color: #ff4757;
+}
+
+.status-text.timeout {
+  color: #ff9800;
+}
+
+.checked-at {
+  font-size: 0.65rem;
+  color: rgba(255, 255, 255, 0.3);
+  margin-top: 2px;
+}
+
+.mono {
+  font-family: 'Courier New', monospace;
+}

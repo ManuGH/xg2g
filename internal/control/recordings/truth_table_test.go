@@ -93,12 +93,16 @@ func (r *mockPathResolver) ResolveRecordingPath(serviceRef string) (localPath, r
 
 // TestMediaTruth implements the Mechanical Verification Matrix for Deliverable #4
 func TestMediaTruth(t *testing.T) {
+	probeFnErr := errors.New("probe failed")
+
 	tests := []struct {
 		name string
 
 		// Inputs
-		storeDuration int64
-		storeError    error
+		serviceRef     string
+		playbackPolicy string
+		storeDuration  int64
+		storeError     error
 
 		metaDuration  int64
 		metaContainer string
@@ -108,6 +112,7 @@ func TestMediaTruth(t *testing.T) {
 
 		probeResult *vod.StreamInfo
 		probeError  error
+		probeFn     func(ctx context.Context, source string) error
 
 		resolveRootID string
 		resolvePath   string
@@ -115,14 +120,18 @@ func TestMediaTruth(t *testing.T) {
 		storeSetError error
 
 		// Expected Output
-		wantDuration float64
-		wantReason   string
-		wantErrorIs  error
+		wantDuration     float64
+		wantReason       string
+		wantErrorIs      error
+		wantErrorIsCause error
+		wantErrorOp      string
 
 		// Side Effects
 		wantProbeCalls    int
+		wantProbeFnCalls  int
 		wantStoreSetCalls int
 		wantMetaUpdates   int
+		wantResolveKind   string
 	}{
 		// --- Duration Truth Base Cases (Regression Checks) ---
 		{
@@ -228,6 +237,34 @@ func TestMediaTruth(t *testing.T) {
 			wantErrorIs:    ErrUpstream{}, // Must NOT return defaults
 			wantProbeCalls: 1,
 		},
+		{
+			name:             "Remote Probe Unsupported (No Codecs)",
+			serviceRef:       "1:0:0:0:0:0:0:0:0:0:/media/hdd/movie/x.ts",
+			playbackPolicy:   config.PlaybackPolicyReceiverOnly,
+			storeDuration:    0,
+			metaExists:       false,
+			probeFn:          func(ctx context.Context, source string) error { return nil },
+			wantErrorIs:      ErrUpstream{},
+			wantErrorIsCause: ErrRemoteProbeUnsupported,
+			wantErrorOp:      "probe_remote_unsupported",
+			wantProbeCalls:   0,
+			wantProbeFnCalls: 1,
+			wantResolveKind:  "receiver",
+		},
+		{
+			name:             "Remote Probe Failure (Upstream)",
+			serviceRef:       "1:0:0:0:0:0:0:0:0:0:/media/hdd/movie/x.ts",
+			playbackPolicy:   config.PlaybackPolicyReceiverOnly,
+			storeDuration:    0,
+			metaExists:       false,
+			probeFn:          func(ctx context.Context, source string) error { return probeFnErr },
+			wantErrorIs:      ErrUpstream{},
+			wantErrorIsCause: probeFnErr,
+			wantErrorOp:      "probe_ambiguous",
+			wantProbeCalls:   0,
+			wantProbeFnCalls: 1,
+			wantResolveKind:  "receiver",
+		},
 
 		// --- Guardrail Cases ---
 		{
@@ -298,19 +335,56 @@ func TestMediaTruth(t *testing.T) {
 			}
 
 			// Initialize Service
-			r := NewResolver(&config.AppConfig{
+			probeFnCalls := 0
+			var probeFn func(ctx context.Context, source string) error
+			if tt.probeFn != nil {
+				probeFn = func(ctx context.Context, source string) error {
+					probeFnCalls++
+					return tt.probeFn(ctx, source)
+				}
+			}
+
+			cfg := &config.AppConfig{
 				HLS: config.HLSConfig{Root: "/tmp/hls_root"},
-			}, mockMeta)
-			r.WithDurationStore(mockStore, mockResolver)
+			}
+			if tt.playbackPolicy != "" {
+				cfg.RecordingPlaybackPolicy = tt.playbackPolicy
+			}
+
+			r := NewResolver(cfg, mockMeta, ResolverOptions{
+				DurationStore: mockStore,
+				PathResolver:  mockResolver,
+				ProbeFn:       probeFn,
+			})
 
 			// Call Resolve
 			ctx := context.Background()
-			res, err := r.Resolve(ctx, "service:ref", "viewer", ProfileGeneric)
+			serviceRef := tt.serviceRef
+			if serviceRef == "" {
+				serviceRef = "service:ref"
+			}
+
+			if tt.wantResolveKind != "" {
+				kind, _, _, err := r.resolveSource(ctx, serviceRef)
+				require.NoError(t, err)
+				assert.Equal(t, tt.wantResolveKind, kind)
+			}
+
+			res, err := r.Resolve(ctx, serviceRef, "viewer", ProfileGeneric)
 
 			// Assertions
 			if tt.wantErrorIs != nil {
 				require.Error(t, err)
 				require.IsType(t, tt.wantErrorIs, err)
+				if tt.wantErrorIsCause != nil {
+					assert.ErrorIs(t, err, tt.wantErrorIsCause)
+				}
+				if tt.wantErrorOp != "" {
+					var up ErrUpstream
+					require.ErrorAs(t, err, &up)
+					assert.Equal(t, tt.wantErrorOp, up.Op)
+				}
+				assert.Equal(t, tt.wantProbeFnCalls, probeFnCalls, "ProbeFn calls mismatch")
 				return
 			}
 
@@ -320,6 +394,7 @@ func TestMediaTruth(t *testing.T) {
 
 			// Side Effects
 			assert.Equal(t, tt.wantProbeCalls, mockMeta.probeCalls, "Probe calls mismatch")
+			assert.Equal(t, tt.wantProbeFnCalls, probeFnCalls, "ProbeFn calls mismatch")
 			assert.Equal(t, tt.wantStoreSetCalls, mockStore.setCalls, "Store Set calls mismatch")
 			assert.Equal(t, tt.wantMetaUpdates, mockMeta.updateMetadataCalls, "Meta Update calls mismatch")
 		})
@@ -378,8 +453,10 @@ func TestMediaTruth_System_Heal(t *testing.T) {
 	// Initialize
 	r := NewResolver(&config.AppConfig{
 		HLS: config.HLSConfig{Root: "/tmp/hls_root"},
-	}, mockMeta)
-	r.WithDurationStore(mockStore, mockResolver)
+	}, mockMeta, ResolverOptions{
+		DurationStore: mockStore,
+		PathResolver:  mockResolver,
+	})
 
 	ctx := context.Background()
 	serviceRef := "1:0:0:0:0:0:0:0:0:/media/heal.ts"

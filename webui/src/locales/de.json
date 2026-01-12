@@ -247,5 +247,34 @@
       "enableEpg": "EPG aktivieren (Elektronischer Programmführer)",
       "hint": "Lädt automatisch Programminfos für die ausgewählten Sender (3 Tage)."
     }
+  },
+  "system": {
+    "pageTitle": "System-Informationen",
+    "receiverTitle": "Receiver-Informationen",
+    "hardware": "Hardware",
+    "brandModel": "Marke & Modell",
+    "software": "Software",
+    "distribution": "Distribution",
+    "version": "Version",
+    "kernel": "Kernel",
+    "webif": "WebIF",
+    "tuners": "Tuner",
+    "network": "Netzwerk",
+    "storage": "Speicher & Aufnahmen",
+    "drives": "Laufwerke",
+    "internal": "Intern",
+    "paths": "Aufnahme-Pfade",
+    "healthLabel": "Gesundheit",
+    "check": "Prüfung",
+    "free": "Frei",
+    "total": "Gesamt",
+    "usage": "Nutzung",
+    "status": {
+      "mounted": "Verbunden",
+      "unmounted": "Nicht eingehängt",
+      "timeout": "Hängt (Timeout)",
+      "error": "Fehler",
+      "unknown": "Unbekannt"
+    }
   }
 }

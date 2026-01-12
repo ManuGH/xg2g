@@ -23,10 +23,12 @@ import (
 )
 
 // Resolver interface in domain.
-// Resolver interface in domain.
 type Resolver interface {
 	Resolve(ctx context.Context, serviceRef string, intent PlaybackIntent, profile PlaybackProfile) (PlaybackInfoResult, error)
 }
+
+var ErrProbeNotConfigured = errors.New("probe not configured")
+var ErrRemoteProbeUnsupported = errors.New("remote probe cannot determine codecs; local mapping or metadata required")
 
 // DurationStore abstracts duration persistence from the resolver.
 type DurationStore interface {
@@ -57,30 +59,35 @@ type DefaultResolver struct {
 	sf            singleflight.Group
 }
 
-func NewResolver(cfg *config.AppConfig, manager MetadataManager) *DefaultResolver {
-	return &DefaultResolver{
-		cfg:        cfg,
-		vodManager: manager,
+type ResolverOptions struct {
+	DurationStore DurationStore
+	PathResolver  PathResolver
+	ProbeFn       func(ctx context.Context, sourceURL string) error
+}
+
+func NewResolver(cfg *config.AppConfig, manager MetadataManager, opts ResolverOptions) *DefaultResolver {
+	probe := opts.ProbeFn
+	if probe == nil {
+		probe = func(ctx context.Context, sourceURL string) error {
+			return ErrProbeNotConfigured
+		}
 	}
-}
-
-func (r *DefaultResolver) WithDurationStore(store DurationStore, pathResolver PathResolver) *DefaultResolver {
-	r.durationStore = store
-	r.pathResolver = pathResolver
-	return r
-}
-
-func (r *DefaultResolver) WithProbe(probe func(context.Context, string) error) *DefaultResolver {
-	r.Probe = probe
-	return r
+	return &DefaultResolver{
+		cfg:           cfg,
+		vodManager:    manager,
+		durationStore: opts.DurationStore,
+		pathResolver:  opts.PathResolver,
+		Probe:         probe,
+	}
 }
 
 func (r *DefaultResolver) Resolve(ctx context.Context, serviceRef string, intent PlaybackIntent, profile PlaybackProfile) (PlaybackInfoResult, error) {
 
 	kind, source, name, err := r.resolveSource(ctx, serviceRef)
 	if err != nil {
-		if errors.Is(err, ErrNotFound{}) {
-			return PlaybackInfoResult{}, err
+		var nf ErrNotFound
+		if errors.As(err, &nf) {
+			return PlaybackInfoResult{}, nf
 		}
 		return PlaybackInfoResult{}, ErrUpstream{Op: "resolveSource", Cause: err}
 	}
@@ -127,7 +134,16 @@ func (r *DefaultResolver) Resolve(ctx context.Context, serviceRef string, intent
 	}
 
 	if localPath == "" && strings.HasPrefix(source, "file://") {
-		localPath = strings.TrimPrefix(source, "file://")
+		if u, err := url.Parse(source); err == nil && u.Path != "" {
+			localPath = u.Path
+		} else {
+			rawPath := strings.TrimPrefix(source, "file://")
+			if decoded, err := url.PathUnescape(rawPath); err == nil {
+				localPath = decoded
+			} else {
+				localPath = rawPath
+			}
+		}
 	}
 
 	// 2. Truth Table: Metadata (Cache)
@@ -159,8 +175,7 @@ func (r *DefaultResolver) Resolve(ctx context.Context, serviceRef string, intent
 
 	// 3. Truth Table: Probe (Source)
 	if needsProbe {
-		sfKey := hashSingleflightKey(kind, source)
-		val, err, _ := r.sf.Do(sfKey, func() (interface{}, error) {
+		val, err, _ := r.sf.Do(hashSingleflightKey(kind, source), func() (interface{}, error) {
 			probeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 			defer cancel()
 
@@ -186,10 +201,8 @@ func (r *DefaultResolver) Resolve(ctx context.Context, serviceRef string, intent
 				}, nil
 			}
 
-			if r.Probe != nil {
-				if err := r.Probe(probeCtx, source); err != nil {
-					return nil, err
-				}
+			if err := r.Probe(probeCtx, source); err != nil {
+				return nil, err
 			}
 
 			// Remote fallback defaults - REMOVED per Deliverable #4 Strict Requirement
@@ -197,8 +210,7 @@ func (r *DefaultResolver) Resolve(ctx context.Context, serviceRef string, intent
 			// Assuming current r.Probe implementation is just a connectivity check,
 			// we must fail if we can't determine codecs.
 			// However, if Probe is a "shallow check" and we can't get codecs, strict truth table says we fail.
-			// For this deliverable, we treat inability to get codecs as ErrUpstream.
-			return nil, vod.ErrProbeCorrupt // Or explicit "CannotDetermineCodecs"
+			return nil, ErrRemoteProbeUnsupported
 		})
 
 		if err != nil {
@@ -206,7 +218,10 @@ func (r *DefaultResolver) Resolve(ctx context.Context, serviceRef string, intent
 			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 				return PlaybackInfoResult{}, ErrPreparing{RecordingID: serviceRef}
 			}
-			if errors.Is(err, vod.ErrProbeCorrupt) || os.IsNotExist(err) || os.IsPermission(err) {
+			if errors.Is(err, ErrRemoteProbeUnsupported) {
+				return PlaybackInfoResult{}, ErrUpstream{Op: "probe_remote_unsupported", Cause: err}
+			}
+			if errors.Is(err, vod.ErrProbeCorrupt) || errors.Is(err, ErrProbeNotConfigured) || os.IsNotExist(err) || os.IsPermission(err) {
 				return PlaybackInfoResult{}, ErrUpstream{Op: "probe", Cause: err}
 			}
 			return PlaybackInfoResult{}, ErrUpstream{Op: "probe_ambiguous", Cause: err}
@@ -298,7 +313,8 @@ func (r *DefaultResolver) resolveSource(ctx context.Context, serviceRef string) 
 	if allowLocal {
 		mapper := internalrecordings.NewPathMapper(r.cfg.RecordingPathMappings)
 		if localPath, ok := mapper.ResolveLocalExisting(receiverPath); ok {
-			return "local", "file://" + localPath, filepath.Base(localPath), nil
+			fileURL := (&url.URL{Scheme: "file", Path: localPath}).String()
+			return "local", fileURL, filepath.Base(localPath), nil
 		}
 	}
 

@@ -305,6 +305,8 @@ func (s *Server) writeRecordingError(w http.ResponseWriter, r *http.Request, err
 	case recservice.ClassPreparing:
 		w.Header().Set("Retry-After", "5")
 		writeProblem(w, r, http.StatusServiceUnavailable, "recordings/preparing", "Preparing", "PREPARING", msg, nil)
+	case recservice.ClassUnsupported:
+		writeProblem(w, r, http.StatusUnprocessableEntity, "recordings/remote-probe-unsupported", "Remote Probe Unsupported", "REMOTE_PROBE_UNSUPPORTED", msg, nil)
 	case recservice.ClassUpstream:
 		// 502 Bad Gateway is appropriate for upstream/backend errors
 		writeProblem(w, r, http.StatusBadGateway, "recordings/upstream", "Upstream Error", "UPSTREAM_ERROR", msg, nil)

@@ -1,6 +1,9 @@
 package vod
 
-import "time"
+import (
+	"sync"
+	"time"
+)
 
 // Clock abstracts time for deterministic testing.
 type Clock interface {
@@ -24,6 +27,7 @@ func (RealClock) After(d time.Duration) <-chan time.Time {
 
 // MockClock provides deterministic time control for testing.
 type MockClock struct {
+	mu       sync.Mutex
 	now      time.Time
 	afterChs []chan time.Time
 }
@@ -34,10 +38,14 @@ func NewMockClock(start time.Time) *MockClock {
 }
 
 func (m *MockClock) Now() time.Time {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	return m.now
 }
 
 func (m *MockClock) After(d time.Duration) <-chan time.Time {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	ch := make(chan time.Time, 1)
 	m.afterChs = append(m.afterChs, ch)
 	return ch
@@ -45,13 +53,17 @@ func (m *MockClock) After(d time.Duration) <-chan time.Time {
 
 // Advance advances the mock clock by the given duration and fires any pending timers.
 func (m *MockClock) Advance(d time.Duration) {
+	m.mu.Lock()
 	m.now = m.now.Add(d)
 	// Fire all pending After channels
-	for _, ch := range m.afterChs {
+	chs := m.afterChs
+	m.afterChs = nil
+	m.mu.Unlock()
+
+	for _, ch := range chs {
 		select {
 		case ch <- m.now:
 		default:
 		}
 	}
-	m.afterChs = nil
 }

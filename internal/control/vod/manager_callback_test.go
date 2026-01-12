@@ -145,6 +145,8 @@ type FakeHandle struct {
 	exitCode   int
 	progress   chan ProgressEvent
 	done       chan struct{}
+	wg         sync.WaitGroup
+	initOnce   sync.Once
 	stopOnce   sync.Once
 	closeOnce  sync.Once
 	stopCalled bool
@@ -152,11 +154,13 @@ type FakeHandle struct {
 
 func (f *FakeHandle) Wait() error {
 	// Initialize done channel once
-	if f.done == nil {
+	f.initOnce.Do(func() {
 		f.done = make(chan struct{})
 
-		// Send progress events in background (less frequently to avoid starving waitAsync)
+		// Send progress events in background
+		f.wg.Add(1)
 		go func() {
+			defer f.wg.Done()
 			ticker := time.NewTicker(50 * time.Millisecond)
 			defer ticker.Stop()
 
@@ -173,19 +177,18 @@ func (f *FakeHandle) Wait() error {
 				}
 			}
 		}()
-	}
+	})
 
 	// Wait for delay, then return
 	time.Sleep(f.delay)
 
 	// Signal background goroutine to stop (only once)
-	select {
-	case <-f.done:
-		// Already closed
-	default:
+	f.stopOnce.Do(func() {
 		close(f.done)
-		time.Sleep(5 * time.Millisecond) // Let it finish
-	}
+	})
+
+	// Wait for goroutine to finish before closing progress channel
+	f.wg.Wait()
 
 	// Close the progress channel
 	f.closeOnce.Do(func() { close(f.progress) })

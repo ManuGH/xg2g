@@ -155,6 +155,7 @@ type Server struct {
 	timersSource      TimersSource
 	epgSource         read.EpgSource
 	recordingsService recordings.Service
+	storageMonitor    *StorageMonitor
 
 	// Middlewares (injectable for tests)
 	AuthMiddlewareOverride func(http.Handler) http.Handler
@@ -191,6 +192,7 @@ func NewServer(cfg config.AppConfig, cfgMgr *config.Manager, rootCancel context.
 		configManager:  cfgMgr,
 		startTime:      time.Now(),
 		libraryService: librarySvc,
+		storageMonitor: NewStorageMonitor(),
 		// owiFactory defaults to nil (uses newOpenWebIFClient in prod)
 	}
 	s.epgSource = &epgSourceWrapper{s}
@@ -200,6 +202,13 @@ func NewServer(cfg config.AppConfig, cfgMgr *config.Manager, rootCancel context.
 // LibraryService returns the underlying library service.
 func (s *Server) LibraryService() *library.Service {
 	return s.libraryService
+}
+
+// StartMonitor begins the background storage health checks.
+func (s *Server) StartMonitor(ctx context.Context) {
+	if s.storageMonitor != nil {
+		go s.storageMonitor.Start(ctx, 30*time.Second, s)
+	}
 }
 
 // SetResolver sets the V4 resolver used by GetRecordingPlaybackInfo.

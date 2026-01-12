@@ -84,8 +84,11 @@ enigma2:
 	// Strict: Test URL matches router param definition /api/v3/vod/{recordingId}
 	handler := container.Server.Handler()
 
+	serviceRef := "1:0:0:0:0:0:0:0:0:0:/hdd/movie/missing.ts"
+	recordingID := recservice.EncodeRecordingID(serviceRef)
+
 	// Canonical: Use strict header constant
-	req := httptest.NewRequest("GET", "/api/v3/recordings/non-existent-rec-id/stream-info", nil)
+	req := httptest.NewRequest("GET", "/api/v3/recordings/"+recordingID+"/stream-info", nil)
 	req.Header.Set("Authorization", "Bearer test-token")
 	w := httptest.NewRecorder()
 
@@ -115,8 +118,8 @@ enigma2:
 	require.NoError(t, err, "Must decode RFC7807 body")
 
 	// Assertions
-	assert.Equal(t, "vod/vod_not_found", problem.Type)
-	assert.Equal(t, "VOD Error", problem.Title)
+	assert.Equal(t, "recordings/not-found", problem.Type)
+	assert.Equal(t, "Not Found", problem.Title)
 	assert.Equal(t, http.StatusNotFound, problem.Status)
 	assert.Equal(t, reqID, problem.RequestID, "Problem JSON request_id matches header")
 }
@@ -166,9 +169,12 @@ enigma2:
 	require.NoError(t, err)
 
 	// 4. Inject Mock Resolver
+	serviceRef := "1:0:0:0:0:0:0:0:0:0:/hdd/movie/film.ts"
+	recordingID := recservice.EncodeRecordingID(serviceRef)
+
 	mock := &mockResolver{
 		ResolveFunc: func(ctx context.Context, recordingID string, intent recservice.PlaybackIntent, profile recservice.PlaybackProfile) (recservice.PlaybackInfoResult, error) {
-			if recordingID == "valid-recording-id" {
+			if recordingID == serviceRef {
 				return recservice.PlaybackInfoResult{
 					Decision: playback.Decision{
 						Mode:     playback.ModeDirectPlay,
@@ -191,7 +197,7 @@ enigma2:
 	container.Server.SetResolver(mock)
 
 	handler := container.Server.Handler()
-	req := httptest.NewRequest("GET", "/api/v3/recordings/valid-recording-id/stream-info", nil)
+	req := httptest.NewRequest("GET", "/api/v3/recordings/"+recordingID+"/stream-info", nil)
 	req.Header.Set("Authorization", "Bearer test-token")
 	w := httptest.NewRecorder()
 
@@ -217,7 +223,7 @@ enigma2:
 	err = dec.Decode(&dto)
 	require.NoError(t, err, "Must strictly decode PlaybackInfo")
 
-	assert.Equal(t, "/api/v3/recordings/valid-recording-id/stream.mp4", dto.URL)
+	assert.Equal(t, "/api/v3/recordings/"+recordingID+"/stream.mp4", dto.URL)
 	assert.Equal(t, "direct_mp4", dto.Mode)
 	assert.Equal(t, int64(3600), dto.DurationSeconds)
 	assert.Contains(t, dto.Reason, "resolved_via_store")

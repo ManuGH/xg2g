@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { getSystemInfo } from '../../client-ts/sdk.gen';
 import './SystemInfo.css';
 
@@ -39,6 +40,23 @@ interface SystemInfoData {
       model: string;
       capacity: string;
       mount: string;
+      mount_status: 'mounted' | 'unmounted' | 'unknown';
+      health_status: 'ok' | 'timeout' | 'error' | 'unknown';
+      access: 'none' | 'ro' | 'rw';
+      is_nas: boolean;
+      fs_type?: string;
+      checked_at?: string;
+    }>;
+    locations: Array<{
+      model: string;
+      capacity: string;
+      mount: string;
+      mount_status: 'mounted' | 'unmounted' | 'unknown';
+      health_status: 'ok' | 'timeout' | 'error' | 'unknown';
+      access: 'none' | 'ro' | 'rw';
+      is_nas: boolean;
+      fs_type?: string;
+      checked_at?: string;
     }>;
   };
   runtime: {
@@ -52,6 +70,7 @@ interface SystemInfoData {
 }
 
 export function SystemInfo() {
+  const { t } = useTranslation();
   const [info, setInfo] = useState<SystemInfoData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -94,8 +113,8 @@ export function SystemInfo() {
   if (loading) {
     return (
       <div className="system-info-page">
-        <h1>📊 System Information</h1>
-        <div className="loading-spinner">Lade Receiver-Daten...</div>
+        <h1>📊 {t('system.pageTitle')}</h1>
+        <div className="loading-spinner">{t('common.loading')}</div>
       </div>
     );
   }
@@ -103,7 +122,7 @@ export function SystemInfo() {
   if (error) {
     return (
       <div className="system-info-page">
-        <h1>📊 System Information</h1>
+        <h1>📊 {t('system.pageTitle')}</h1>
         <div className="error-message">⚠️ {error}</div>
       </div>
     );
@@ -113,14 +132,14 @@ export function SystemInfo() {
 
   return (
     <div className="system-info-page">
-      <h1>📊 Receiver Information</h1>
+      <h1>📊 {t('system.receiverTitle')}</h1>
 
       <div className="info-grid">
         {/* Hardware Card */}
         <div className="info-card">
-          <h2>📦 Hardware</h2>
+          <h2>📦 {t('system.hardware')}</h2>
           <div className="info-row">
-            <span className="label">Marke & Modell:</span>
+            <span className="label">{t('system.brandModel')}:</span>
             <span className="value">{info.hardware.brand} {info.hardware.model}</span>
           </div>
           <div className="info-row">
@@ -131,28 +150,28 @@ export function SystemInfo() {
 
         {/* Software Card */}
         <div className="info-card">
-          <h2>💿 Software</h2>
+          <h2>💿 {t('system.software')}</h2>
           <div className="info-row">
-            <span className="label">Distribution:</span>
+            <span className="label">{t('system.distribution')}:</span>
             <span className="value">{info.software.image_distro}</span>
           </div>
           <div className="info-row">
-            <span className="label">Version:</span>
+            <span className="label">{t('system.version')}:</span>
             <span className="value">{info.software.image_version}</span>
           </div>
           <div className="info-row">
-            <span className="label">Kernel:</span>
+            <span className="label">{t('system.kernel')}:</span>
             <span className="value">{info.software.kernel_version}</span>
           </div>
           <div className="info-row">
-            <span className="label">WebIF:</span>
+            <span className="label">{t('system.webif')}:</span>
             <span className="value">{info.software.webif_version}</span>
           </div>
         </div>
 
         {/* Tuners Card */}
         <div className="info-card info-card-wide">
-          <h2>📡 Tuner ({info.tuners.length}x FBC)</h2>
+          <h2>📡 {t('system.tuners')} ({info.tuners.length}x FBC)</h2>
           <div className="tuner-grid">
             {info.tuners.map((tuner, idx) => (
               <div key={idx} className={`tuner-item tuner-${tuner.status}`}>
@@ -174,7 +193,7 @@ export function SystemInfo() {
         {/* Network Card */}
         {info.network.interfaces.length > 0 && (
           <div className="info-card">
-            <h2>🌐 Netzwerk</h2>
+            <h2>🌐 {t('system.network')}</h2>
             {info.network.interfaces.map((iface, idx) => (
               <div key={idx} className="info-section">
                 <div className="info-row">
@@ -197,17 +216,68 @@ export function SystemInfo() {
         )}
 
         {/* Storage Card */}
-        {info.storage.devices.length > 0 && (
-          <div className="info-card">
-            <h2>💾 Speicher</h2>
-            {info.storage.devices.map((dev, idx) => (
-              <div key={idx} className="info-row">
-                <span className="label">{dev.model}:</span>
-                <span className="value">{dev.capacity}</span>
-              </div>
-            ))}
-          </div>
-        )}
+        <div className="info-card">
+          <h2>💾 {t('system.storage')}</h2>
+          {info.storage.devices.length > 0 && (
+            <div className="info-section">
+              <h3>{t('system.drives')}</h3>
+              {info.storage.devices.map((dev, idx) => (
+                <div key={idx} className="info-row">
+                  <div className="storage-status-header">
+                    <span className={`status-dot dot-${dev.health_status}`} title={`${t('system.healthLabel')}: ${dev.health_status}`}></span>
+                    <span className="label text-truncate" title={dev.model}>{dev.model}:</span>
+                    <span className={`tag ${dev.is_nas ? 'tag-nas' : 'tag-intern'}`}>
+                      {dev.is_nas ? 'NAS' : t('system.internal')}
+                      {dev.fs_type && <small> ({dev.fs_type})</small>}
+                    </span>
+                  </div>
+                  <div className="storage-subinfo">
+                    <div className="storage-state-row">
+                      <span className="value">{dev.capacity || t('common.notAvailable')}</span>
+                      <span className={`access-badge access-${dev.access}`}>{dev.access === 'none' ? '–' : dev.access.toUpperCase()}</span>
+                    </div>
+                    {dev.checked_at && (
+                      <span className="checked-at">{t('system.check')}: {new Date(dev.checked_at).toLocaleTimeString()}</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {info.storage.locations.length > 0 && (
+            <div className="info-section">
+              <h3>{t('system.paths')}</h3>
+              {info.storage.locations.map((loc, idx) => (
+                <div key={idx} className="info-row">
+                  <div className="storage-status-header">
+                    <span className={`status-dot dot-${loc.health_status}`} title={`${t('system.healthLabel')}: ${loc.health_status}`}></span>
+                    <span className="value mono text-truncate" title={loc.mount}>{loc.mount}</span>
+                    <span className={`tag ${loc.is_nas ? 'tag-nas' : 'tag-intern'}`}>
+                      {loc.is_nas ? 'NAS' : t('system.internal')}
+                      {loc.fs_type && <small> ({loc.fs_type})</small>}
+                    </span>
+                  </div>
+                  <div className="storage-subinfo">
+                    <span className={`status-text ${loc.health_status}`}>
+                      {loc.mount_status === 'mounted' ? (
+                        loc.health_status === 'ok' ? `${t('system.status.mounted')} (${loc.access.toUpperCase()})` :
+                          t(`system.status.${loc.health_status}`)
+                      ) : t('system.status.unmounted')}
+                    </span>
+                    {loc.checked_at && (
+                      <span className="checked-at">{new Date(loc.checked_at).toLocaleTimeString()}</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {info.storage.devices.length === 0 && info.storage.locations.length === 0 && (
+            <div className="info-row">
+              <span className="value italic">Keine Informationen verfügbar</span>
+            </div>
+          )}
+        </div>
 
         {/* Runtime Card */}
         <div className="info-card">
@@ -236,16 +306,16 @@ export function SystemInfo() {
             </div>
             <div className="ram-stats">
               <span className="ram-stat">
-                <span className="ram-stat-label">Frei</span>
+                <span className="ram-stat-label">{t('system.free')}</span>
                 <span className="ram-stat-value">{formatBytes(parseMemory(info.resource.memory_available))}</span>
               </span>
               <span className="ram-stat">
-                <span className="ram-stat-label">Total</span>
+                <span className="ram-stat-label">{t('system.total')}</span>
                 <span className="ram-stat-value">{formatBytes(parseMemory(info.resource.memory_used) + parseMemory(info.resource.memory_available))}</span>
               </span>
               <span className="ram-stat">
-                <span className="ram-stat-label">Nutzung</span>
-                <span className="ram-stat-value">{calculateMemoryPercent(info.resource.memory_used, info.resource.memory_available)}%</span>
+                <span className="ram-stat-label">{t('system.usage')}</span>
+                <span className="ram-stat-value">{calculateMemoryPercent(info.resource.memory_used, info.resource.memory_total)}%</span>
               </span>
             </div>
           </div>

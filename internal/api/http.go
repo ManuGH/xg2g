@@ -242,16 +242,16 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager, opts ...ServerOption) *Se
 		log.L().Fatal().Msg("config.Manager is required for API server initialization")
 	}
 	s.v3Handler = s.v3Factory(cfg, cfgMgr, s.rootCancel)
+	s.v3Handler.StartMonitor(s.rootCtx)
 
 	// P4: Wire NEW V4 Resolver (recordings package)
 	// This is the canonical resolver used by GetRecordingPlaybackInfo
-	v4Resolver := recservice.NewResolver(&cfg, s.vodManager)
+	var resolverOpts recservice.ResolverOptions
 	if libSvc := s.v3Handler.LibraryService(); libSvc != nil {
-		v4Resolver = v4Resolver.WithDurationStore(
-			recservice.NewLibraryDurationStore(libSvc.GetStore()),
-			recservice.NewLibraryPathResolver(s.recordingPathMapper, libSvc.GetConfigs()),
-		)
+		resolverOpts.DurationStore = recservice.NewLibraryDurationStore(libSvc.GetStore())
+		resolverOpts.PathResolver = recservice.NewLibraryPathResolver(s.recordingPathMapper, libSvc.GetConfigs())
 	}
+	v4Resolver := recservice.NewResolver(&cfg, s.vodManager, resolverOpts)
 
 	// Create infrastructure adapters for domain service
 	owiAdapter := v3.NewOWIAdapter(s.owiClient)
@@ -744,6 +744,36 @@ func (s *Server) SetVODProber(p vod.Prober) {
 func (s *Server) SetResolver(r recservice.Resolver) {
 	if s.v3Handler != nil {
 		s.v3Handler.SetResolver(r)
+	}
+	if r == nil {
+		return
+	}
+
+	owiAdapter := v3.NewOWIAdapter(s.owiClient)
+	resumeAdapter := v3.NewResumeAdapter(s.resumeStore)
+	s.recordingsService = recservice.NewService(&s.cfg, s.vodManager, r, owiAdapter, resumeAdapter)
+	if s.v3Handler != nil {
+		s.v3Handler.SetDependencies(
+			s.v3Bus,
+			s.v3Store,
+			s.resumeStore,
+			s.v3Scan,
+			s.recordingPathMapper,
+			s.channelManager,
+			s.seriesManager,
+			s.seriesEngine,
+			s.vodManager,
+			s.epgCache,
+			s.healthManager,
+			logSourceWrapper{},
+			s.v3Scan,
+			&dvrSourceWrapper{s},
+			s.channelManager,
+			&dvrSourceWrapper{s},
+			s.recordingsService,
+			s.requestShutdown,
+			s.preflightCheck,
+		)
 	}
 }
 
