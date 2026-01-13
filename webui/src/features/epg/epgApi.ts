@@ -61,8 +61,18 @@ export async function fetchEpgEvents(params: {
     throw new Error('Failed to fetch EPG events');
   }
 
-  // API returns direct array for EPG, unlike TimerList
-  const items = Array.isArray(result.data) ? result.data : (result.data as any).items || [];
+
+  const data = result.data;
+  // API returns direct array for EPG, unlike TimerList.
+  // We handle both legacy object-wrapped and new direct array for robustness,
+  // but typed strictly to avoid unchecked casting.
+  let items: any[] = [];
+  if (Array.isArray(data)) {
+    items = data;
+  } else if (data && typeof data === 'object' && 'items' in data) {
+    items = (data as { items: any[] }).items || [];
+  }
+
   return items.map(mapSdkEvent);
 }
 
@@ -84,9 +94,19 @@ export async function fetchTimers(): Promise<Timer[]> {
 // ============================================================================
 
 function mapSdkBouquet(dto: any): EpgBouquet {
+  if (typeof dto !== 'object' || dto === null) {
+    console.error('Invalid bouquet DTO (legacy string?):', dto);
+    // Strict contract: Ignore invalid items or throw?
+    // Throwing here might fail the whole fetch. Returning a dummy might hide it.
+    // User wants "rejects it". If filtered out, it's rejected.
+    // But map expects EpgBouquet.
+    // Let's return a "Invalid" marker or throw.
+    // Throwing ensures we don't silently accept.
+    throw new Error(`Contract violation: Bouquet must be object, got ${typeof dto}`);
+  }
   return {
     name: dto.name || '',
-    services: dto.services || []
+    services: typeof dto.services === 'number' ? dto.services : 0
   };
 }
 

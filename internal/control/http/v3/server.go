@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -33,84 +32,9 @@ import (
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
-	"github.com/ManuGH/xg2g/internal/pipeline/scan"
 	recinfra "github.com/ManuGH/xg2g/internal/recordings"
 	"golang.org/x/sync/singleflight"
 )
-
-// isNil is a robust nil check that handles the "typed nil interface" trap
-// for all nillable types (Ptr, Map, Slice, Func, Interface, Chan).
-func isNil(i interface{}) bool {
-	if i == nil {
-		return true
-	}
-	v := reflect.ValueOf(i)
-	switch v.Kind() {
-	case reflect.Ptr, reflect.Map, reflect.Slice, reflect.Func, reflect.Interface, reflect.Chan:
-		return v.IsNil()
-	default:
-		return false
-	}
-}
-
-// PreflightCheckFunc validates source accessibility before initiating a stream.
-type PreflightCheckFunc func(context.Context, string) error
-
-// CheckSourceAvailability is a no-op preflight check that always succeeds.
-// TODO: Implement actual source validation if needed.
-func CheckSourceAvailability(ctx context.Context, source string) error {
-	return nil
-}
-
-// StartRecordingCacheEvicter starts a background task to clean up old recording cache entries.
-// TODO: Implement periodic cache cleanup based on age/size limits.
-func (s *Server) StartRecordingCacheEvicter(ctx context.Context) {
-	// No-op for now - implement cache eviction logic when needed
-}
-
-// DvrSource defines the minimal interface required for DVR read operations.
-type DvrSource interface {
-	GetStatusInfo(ctx context.Context) (*openwebif.StatusInfo, error)
-	HasTimerChange(ctx context.Context) bool
-}
-
-// ScanSource defines the minimal interface required for scan status.
-type ScanSource interface {
-	GetStatus() scan.ScanStatus
-}
-
-// ServicesSource defines the minimal interface required for service listing.
-type ServicesSource interface {
-	IsEnabled(id string) bool
-}
-
-// TimersSource defines the minimal interface required for timer listing.
-type TimersSource interface {
-	GetTimers(ctx context.Context) ([]openwebif.Timer, error)
-}
-
-// Server implements the v3 API handlers.
-// It encapsulates all logic for /api/v3 endpoints.
-// Field names are kept consistent with internal/api.Server for seamless migration.
-// Scanner abstracts the refresh/scan subsystem for testability.
-type scanner interface {
-	RunBackground() bool
-	GetCapability(serviceRef string) (scan.Capability, bool)
-}
-
-// openWebIFClient abstracts OpenWebIF client operations for DVR timers.
-// This enables deterministic testing without real receiver dependencies.
-// Note: *openwebif.Client satisfies this interface directly.
-type openWebIFClient interface {
-	GetTimers(ctx context.Context) ([]openwebif.Timer, error)
-	AddTimer(ctx context.Context, sRef string, begin, end int64, name, desc string) error
-	DeleteTimer(ctx context.Context, sRef string, begin, end int64) error
-	UpdateTimer(ctx context.Context, oldSRef string, oldBegin, oldEnd int64, newSRef string, newBegin, newEnd int64, name, description string, enabled bool) error
-	HasTimerChange(ctx context.Context) bool
-}
-
-// owiFactory creates an openWebIFClient instance.
-type owiFactory func(cfg config.AppConfig, snap config.Snapshot) openWebIFClient
 
 type Server struct {
 	mu sync.RWMutex
@@ -125,8 +49,8 @@ type Server struct {
 	v3Bus               bus.Bus
 	v3Store             store.StateStore
 	resumeStore         resume.Store
-	v3Scan              scanner
-	owiFactory          owiFactory // Factory for creating OpenWebIF clients (injectable for tests)
+	v3Scan              ChannelScanner
+	owiFactory          receiverControlFactory // Factory for creating OpenWebIF clients (injectable for tests)
 	recordingPathMapper *recinfra.PathMapper
 	channelManager      *channels.Manager
 	seriesManager       *dvr.Manager
@@ -150,9 +74,9 @@ type Server struct {
 	healthManager     *health.Manager
 	logSource         interface{ GetRecentLogs() []log.LogEntry }
 	scanSource        ScanSource
-	dvrSource         DvrSource
-	servicesSource    ServicesSource
-	timersSource      TimersSource
+	dvrSource         RecordingStatusProvider
+	servicesSource    ServiceStateReader
+	timersSource      TimerReader
 	epgSource         read.EpgSource
 	recordingsService recordings.Service
 	storageMonitor    *StorageMonitor
@@ -195,7 +119,7 @@ func NewServer(cfg config.AppConfig, cfgMgr *config.Manager, rootCancel context.
 		storageMonitor: NewStorageMonitor(),
 		// owiFactory defaults to nil (uses newOpenWebIFClient in prod)
 	}
-	s.epgSource = &epgSourceWrapper{s}
+	s.epgSource = &epgAdapter{s}
 	return s
 }
 
@@ -209,6 +133,12 @@ func (s *Server) StartMonitor(ctx context.Context) {
 	if s.storageMonitor != nil {
 		go s.storageMonitor.Start(ctx, 30*time.Second, s)
 	}
+}
+
+// StartRecordingCacheEvicter starts a background task to clean up old recording cache entries.
+// TODO: Implement periodic cache cleanup based on age/size limits.
+func (s *Server) StartRecordingCacheEvicter(ctx context.Context) {
+	// No-op for now - implement cache eviction logic when needed
 }
 
 // SetResolver sets the V4 resolver used by GetRecordingPlaybackInfo.
@@ -254,7 +184,7 @@ func (s *Server) SetDependencies(
 	bus bus.Bus,
 	store store.StateStore,
 	resume resume.Store,
-	scan scanner,
+	scan ChannelScanner,
 	rpm *recinfra.PathMapper,
 	cm *channels.Manager,
 	sm *dvr.Manager,
@@ -265,9 +195,9 @@ func (s *Server) SetDependencies(
 	hm *health.Manager,
 	ls interface{ GetRecentLogs() []log.LogEntry },
 	ss ScanSource,
-	ds DvrSource,
-	svs ServicesSource,
-	ts TimersSource,
+	ds RecordingStatusProvider,
+	svs ServiceStateReader,
+	ts TimerReader,
 	recSvc recservice.Service,
 	requestShutdown func(context.Context) error,
 	preflightCheck PreflightCheckFunc,
@@ -463,9 +393,9 @@ func (s *Server) dataFilePath(rel string) (string, error) {
 	return resolved, nil
 }
 
-// owi returns an OpenWebIF client, using the injected factory if present (tests)
+// owi returns a ReceiverControl, using the injected factory if present (tests)
 // or falling back to the cached production client.
-func (s *Server) owi(cfg config.AppConfig, snap config.Snapshot) openWebIFClient {
+func (s *Server) owi(cfg config.AppConfig, snap config.Snapshot) ReceiverControl {
 	if s.owiFactory != nil {
 		return s.owiFactory(cfg, snap)
 	}

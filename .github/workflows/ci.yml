@@ -91,11 +91,11 @@ jobs:
       - name: Verify Client is Up-to-Date (Contract Test)
         run: |
           set -euo pipefail
-          if [[ -n $(git status --porcelain webui/src/client) ]]; then
-            echo "❌ Error: helper 'webui/src/client' is out of sync with openapi.yaml"
+          if [[ -n $(git status --porcelain webui/src/client-ts) ]]; then
+            echo "❌ Error: helper 'webui/src/client-ts' is out of sync with openapi.yaml"
             echo "Please run 'npm run generate-client' locally and commit the changes."
-            git status webui/src/client
-            git diff webui/src/client
+            git status webui/src/client-ts
+            git diff webui/src/client-ts
             exit 1
           else
             echo "✅ Client matches OpenAPI spec"
@@ -121,6 +121,9 @@ jobs:
             exit 1
           fi
           echo "✅ Single OpenAPI source verified"
+
+      - name: Verify WebUI Contract (Gate)
+        run: ./scripts/ci-contract-gate.sh
 
       - name: Build WebUI
         run: |

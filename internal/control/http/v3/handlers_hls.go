@@ -11,16 +11,19 @@ import (
 
 // GetRecordingHLSPlaylist handles GET /api/v3/recordings/{recordingId}/playlist.m3u8
 func (s *Server) GetRecordingHLSPlaylist(w http.ResponseWriter, r *http.Request, recordingId string) {
-	// 1. Delegate to Resolver
-	artifact, artErr := s.artifacts.ResolvePlaylist(r.Context(), recordingId)
+	// 1. Detect Profile
+	profile := detectClientProfile(r)
 
-	// 2. Map Result
+	// 2. Delegate to Resolver
+	artifact, artErr := s.artifacts.ResolvePlaylist(r.Context(), recordingId, string(profile))
+
+	// 3. Map Result
 	if artErr != nil {
 		s.writeArtifactError(w, r, recordingId, artErr)
 		return
 	}
 
-	// 3. Serve Artifact
+	// 4. Serve Artifact
 	s.serveArtifact(w, r, artifact)
 }
 
@@ -31,7 +34,10 @@ func (s *Server) GetRecordingHLSPlaylistHead(w http.ResponseWriter, r *http.Requ
 
 // GetRecordingHLSTimeshift handles GET /api/v3/recordings/{recordingId}/timeshift.m3u8
 func (s *Server) GetRecordingHLSTimeshift(w http.ResponseWriter, r *http.Request, recordingId string) {
-	artifact, artErr := s.artifacts.ResolveTimeshift(r.Context(), recordingId)
+	// Detect Profile
+	profile := detectClientProfile(r)
+
+	artifact, artErr := s.artifacts.ResolveTimeshift(r.Context(), recordingId, string(profile))
 	if artErr != nil {
 		s.writeArtifactError(w, r, recordingId, artErr)
 		return

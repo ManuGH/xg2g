@@ -90,7 +90,8 @@ export function AppProvider({ children }: AppProviderProps) {
       setDataLoaded(true);
     } catch (err) {
       console.error('[DEBUG] Failed to load initial data:', err);
-      console.log('[DEBUG] Error status:', (err as any).status, 'Body:', (err as any).body);
+      const apiErr = err as { status?: number; body?: unknown };
+      console.log('[DEBUG] Error status:', apiErr.status, 'Body:', apiErr.body);
       if ((err as { status?: number }).status === 401) {
         console.log('[DEBUG] 401 detected in loadBouquetsAndChannels -> showing auth');
         setShowAuth(true);

@@ -11,5 +11,5 @@ package jobs
 //
 // Human-readable format:
 //   - Easier to debug and understand in logs/playlists
-//   - Better user experience in Plex/Jellyfin EPG mapping
+//   - Better user experience in Media Server EPG mapping
 //   - Still stable and collision-resistant via hash suffix

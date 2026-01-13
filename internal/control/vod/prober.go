@@ -139,22 +139,70 @@ func (m *Manager) runProbe(req probeRequest) error {
 	}
 	m.mu.Unlock()
 
-	// 4. Probe Duration (Long Pole: Isolation & Timeout)
+	// 4. Probe Duration & Truth Enforcement
 	probeCtx, cancelProbe := context.WithTimeout(context.Background(), ProbeTimeout)
 	defer cancelProbe()
 
 	log.Info().Str("id", id).Str("path", input).Msg("probing recording duration")
 
-	var dur int64
 	var res *StreamInfo
+	var probeErr error
 	if m.prober != nil {
-		var err error
-		res, err = m.prober.Probe(probeCtx, input)
-		if err == nil && res != nil {
-			dur = int64(math.Round(res.Video.Duration))
-		} else if err != nil {
-			log.Warn().Err(err).Str("id", id).Msg("probe failed")
+		res, probeErr = m.prober.Probe(probeCtx, input)
+	}
+
+	// B3/B4: Probe Failure Mapping
+	if probeErr != nil {
+		state := ArtifactStateFailed
+		errMsg := probeErr.Error()
+
+		if errors.Is(probeErr, context.DeadlineExceeded) || errors.Is(probeErr, context.Canceled) {
+			// B3: Timeout -> Preparing (Transient)
+			state = ArtifactStatePreparing
+			errMsg = "probe_timeout"
+		} else {
+			// B4: Corrupt/Missing -> Failed (Terminal)
+			errMsg = "probe_failed: " + errMsg
 		}
+
+		m.UpdateMetadata(id, Metadata{
+			State:        state,
+			ResolvedPath: input,
+			Fingerprint:  fp,
+			Error:        errMsg,
+			UpdatedAt:    time.Now().Unix(),
+		})
+		log.Warn().Err(probeErr).Str("id", id).Msg("probe failed")
+		return probeErr
+	}
+
+	var dur int64
+	if res != nil {
+		dur = int64(math.Round(res.Video.Duration))
+	}
+
+	// B2: Duration <= 0 Guard
+	if dur <= 0 {
+		m.mu.Lock()
+		old, exists := m.metadata[id]
+		m.mu.Unlock()
+
+		preservedDur := int64(0)
+		if exists && old.Duration > 0 {
+			preservedDur = old.Duration
+		}
+
+		m.UpdateMetadata(id, Metadata{
+			State:        ArtifactStateFailed, // Invalid duration is a failure condition
+			ResolvedPath: input,
+			Fingerprint:  fp,
+			Duration:     preservedDur, // Preserve old duration for visibility/debugging
+			Error:        "probe_duration_invalid",
+			UpdatedAt:    time.Now().Unix(),
+		})
+
+		log.Warn().Str("id", id).Int64("duration", dur).Msg("probe returned invalid duration")
+		return errors.New("probe_duration_invalid")
 	}
 
 	var container string
@@ -166,17 +214,16 @@ func (m *Manager) runProbe(req probeRequest) error {
 		audioCodec = res.Audio.CodecName
 	}
 
-	// 5. Update Success (Atomicity)
+	// 5. Update Success (B1)
 	meta := Metadata{
 		State:        ArtifactStateReady,
 		ResolvedPath: input,
 		Duration:     dur,
 		Fingerprint:  fp,
-		// Populated from Probe (Deliverable #4)
-		Container:  container,
-		VideoCodec: videoCodec,
-		AudioCodec: audioCodec,
-		UpdatedAt:  time.Now().Unix(),
+		Container:    container,
+		VideoCodec:   videoCodec,
+		AudioCodec:   audioCodec,
+		UpdatedAt:    time.Now().Unix(),
 	}
 
 	// Only treat as artifact if it's an MP4

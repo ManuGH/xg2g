@@ -43,7 +43,7 @@ func TestContract_PreviewConflicts(t *testing.T) {
 				return nil, errors.New("timeout")
 			},
 		}
-		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) openWebIFClient { return mock }}
+		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) ReceiverControl { return mock }}
 
 		body := `{"proposed": {"serviceRef": "1:0:1:C3:21:85:C00000:0:0:0:", "begin": 1000, "end": 2000, "name": "test"}}`
 		req := httptest.NewRequest("POST", "/api/v3/dvr/timers/conflicts/preview", bytes.NewBufferString(body))
@@ -60,7 +60,7 @@ func TestContract_PreviewConflicts(t *testing.T) {
 				return nil, nil // No existing timers
 			},
 		}
-		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) openWebIFClient { return mock }}
+		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) ReceiverControl { return mock }}
 
 		body := `{"proposed": {"serviceRef": "1:0:1:C3:21:85:C00000:0:0:0:", "begin": 1000, "end": 2000, "name": "test"}}`
 		req := httptest.NewRequest("POST", "/api/v3/dvr/timers/conflicts/preview", bytes.NewBufferString(body))
@@ -80,7 +80,7 @@ func TestContract_PreviewConflicts(t *testing.T) {
 				}, nil
 			},
 		}
-		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) openWebIFClient { return mock }}
+		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) ReceiverControl { return mock }}
 
 		body := `{"proposed": {"serviceRef": "1:0:1:C3:21:85:C00000:0:0:0:", "begin": 1000, "end": 2000, "name": "test"}}`
 		req := httptest.NewRequest("POST", "/api/v3/dvr/timers/conflicts/preview", bytes.NewBufferString(body))

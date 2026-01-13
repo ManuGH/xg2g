@@ -27,7 +27,7 @@ export interface EpgChannel {
 
 export interface EpgBouquet {
   name: string;
-  services?: string[];
+  services: number; // Count of services
 }
 
 export interface EpgFilters {

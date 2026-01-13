@@ -176,7 +176,7 @@ func readHLSRuntime(getenv func(string) string) HLSRuntime {
 func readTranscoderRuntime(getenv func(string) string) TranscoderRuntime {
 	// Keep defaults consistent with the legacy proxy package behaviour:
 	// - Audio transcoding defaults to enabled for iOS Safari compatibility.
-	// - H.264 stream repair defaults to enabled for Plex/Jellyfin compatibility.
+	// - H.264 stream repair defaults to enabled for external player compatibility.
 	//
 	// Both can be explicitly disabled via ENV.
 	audioEnabled := getBool(getenv, "XG2G_ENABLE_AUDIO_TRANSCODING", true)

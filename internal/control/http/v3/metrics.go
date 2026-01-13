@@ -25,6 +25,22 @@ var (
 		Name: "xg2g_v3_bus_publish_total",
 		Help: "Total bus events published by API.",
 	}, []string{"topic", "outcome"})
+
+	// Bouquets Observability (Hardening)
+	v3BouquetsMissingTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "xg2g_v3_bouquets_playlist_missing_total",
+		Help: "Total requests where bouquets fell back to config due to missing M3U.",
+	})
+
+	v3BouquetsEmptyTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "xg2g_v3_bouquets_playlist_empty_total",
+		Help: "Total requests where M3U exists but contains 0 bouquets.",
+	})
+
+	v3BouquetsReadErrorTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "xg2g_v3_bouquets_read_error_total",
+		Help: "Total requests where bouquets failed to read due to system error.",
+	}, []string{"cause"})
 )
 
 // RecordV3Intent observes the outcome of an intent request.

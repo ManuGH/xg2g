@@ -454,15 +454,15 @@ func writeHLSFixtures(t *testing.T, hlsRoot, sessionID string) (playlist []byte,
 func firstSegmentURI(t *testing.T, playlist []byte) string {
 	t.Helper()
 
-	scanner := bufio.NewScanner(bytes.NewReader(playlist))
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+	ChannelScanner := bufio.NewScanner(bytes.NewReader(playlist))
+	for ChannelScanner.Scan() {
+		line := strings.TrimSpace(ChannelScanner.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
 		return line
 	}
-	require.NoError(t, scanner.Err())
+	require.NoError(t, ChannelScanner.Err())
 	t.Fatal("no segment URI found in playlist")
 	return ""
 }

@@ -44,7 +44,7 @@ func TestContract_UpdateTimer(t *testing.T) {
 				return nil, nil // Empty list
 			},
 		}
-		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) openWebIFClient { return mock }}
+		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) ReceiverControl { return mock }}
 
 		timerId := read.MakeTimerID("1:0:1:C3:21:85:C00000:0:0:0:", 1000, 2000)
 		req := httptest.NewRequest("PATCH", "/api/v3/dvr/timers/"+timerId, bytes.NewBufferString(`{}`))
@@ -61,7 +61,7 @@ func TestContract_UpdateTimer(t *testing.T) {
 				return nil, errors.New("timeout")
 			},
 		}
-		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) openWebIFClient { return mock }}
+		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) ReceiverControl { return mock }}
 
 		timerId := read.MakeTimerID("1:0:1:C3:21:85:C00000:0:0:0:", 1000, 2000)
 		req := httptest.NewRequest("PATCH", "/api/v3/dvr/timers/"+timerId, bytes.NewBufferString(`{}`))
@@ -85,7 +85,7 @@ func TestContract_UpdateTimer(t *testing.T) {
 		mock.updateTimerFunc = func(ctx context.Context, oSRef string, oB, oE int64, nSRef string, nB, nE int64, name, desc string, en bool) error {
 			return nil
 		}
-		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) openWebIFClient { return mock }}
+		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) ReceiverControl { return mock }}
 
 		timerId := read.MakeTimerID(sRef, 1100, 2100) // Initial match
 		body := `{"name": "new name"}`
@@ -110,7 +110,7 @@ func TestContract_UpdateTimer(t *testing.T) {
 		mock.updateTimerFunc = func(ctx context.Context, oSRef string, oB, oE int64, nSRef string, nB, nE int64, name, desc string, en bool) error {
 			return errors.New("Conflict with event X")
 		}
-		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) openWebIFClient { return mock }}
+		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) ReceiverControl { return mock }}
 
 		timerId := read.MakeTimerID(sRef, 1000, 2000)
 		req := httptest.NewRequest("PATCH", "/api/v3/dvr/timers/"+timerId, bytes.NewBufferString(`{"begin": 1100}`))
@@ -136,7 +136,7 @@ func TestContract_UpdateTimer(t *testing.T) {
 		mock.deleteTimerFunc = func(ctx context.Context, s string, b, e int64) error { return nil }
 		mock.addTimerFunc = func(ctx context.Context, s string, b, e int64, n, d string) error { return nil }
 
-		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) openWebIFClient { return mock }}
+		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) ReceiverControl { return mock }}
 
 		timerId := read.MakeTimerID(sRef, 1000, 2000)
 		body := `{"begin": 1100, "end": 2100}`
@@ -167,7 +167,7 @@ func TestContract_UpdateTimer(t *testing.T) {
 			return nil
 		}
 
-		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) openWebIFClient { return mock }}
+		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) ReceiverControl { return mock }}
 
 		timerId := read.MakeTimerID(sRef, 1000, 2000)
 		req := httptest.NewRequest("PATCH", "/api/v3/dvr/timers/"+timerId, bytes.NewBufferString(`{"begin": 1100}`))
@@ -192,7 +192,7 @@ func TestContract_UpdateTimer(t *testing.T) {
 		mock.updateTimerFunc = func(ctx context.Context, oSRef string, oB, oE int64, nSRef string, nB, nE int64, name, desc string, en bool) error {
 			return nil
 		}
-		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) openWebIFClient { return mock }}
+		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) ReceiverControl { return mock }}
 
 		timerId := read.MakeTimerID(sRef, 1000, 2000)
 		req := httptest.NewRequest("PATCH", "/api/v3/dvr/timers/"+timerId, bytes.NewBufferString(`{"name": "test"}`))

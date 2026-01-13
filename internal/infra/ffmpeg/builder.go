@@ -2,6 +2,7 @@ package ffmpeg
 
 import (
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"strings"
 
@@ -23,9 +24,18 @@ func mapProfileToArgs(spec vod.Spec) ([]string, error) {
 		return nil, fmt.Errorf("vod: output resolves to directory, expected file: %q", outputPath)
 	}
 
+	// Handle file:// URI scheme for local files
+	inputPath := spec.Input
+	if strings.HasPrefix(inputPath, "file://") {
+		raw := strings.TrimPrefix(inputPath, "file://")
+		if decoded, err := url.PathUnescape(raw); err == nil {
+			inputPath = decoded
+		}
+	}
+
 	args := []string{
 		"-y", "-nostdin", "-hide_banner", "-loglevel", "error",
-		"-i", spec.Input,
+		"-i", inputPath,
 	}
 
 	switch spec.Profile {

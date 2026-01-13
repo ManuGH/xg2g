@@ -57,6 +57,7 @@ type DefaultResolver struct {
 	pathResolver  PathResolver
 	Probe         func(ctx context.Context, sourceURL string) error
 	sf            singleflight.Group
+	engine        *playback.DecisionEngine
 }
 
 type ResolverOptions struct {
@@ -72,240 +73,312 @@ func NewResolver(cfg *config.AppConfig, manager MetadataManager, opts ResolverOp
 			return ErrProbeNotConfigured
 		}
 	}
-	return &DefaultResolver{
+	r := &DefaultResolver{
 		cfg:           cfg,
 		vodManager:    manager,
 		durationStore: opts.DurationStore,
 		pathResolver:  opts.PathResolver,
 		Probe:         probe,
 	}
+
+	// Inject PIDE Engine
+	// We use a small adapter for Profile Resolution to avoid method collision
+	profResolver := &HeaderProfileResolver{}
+	r.engine = playback.NewDecisionEngine(r, profResolver)
+	return r
 }
 
+// Ensure DefaultResolver implements MediaTruthProvider (but NOT ClientProfileResolver directly)
+var _ playback.MediaTruthProvider = (*DefaultResolver)(nil)
+
+// HeaderProfileResolver implements playback.ClientProfileResolver
+type HeaderProfileResolver struct{}
+
+func (h *HeaderProfileResolver) Resolve(ctx context.Context, headers map[string]string) (playback.ClientProfile, error) {
+	// Extract profile alias from synthetic header
+	profileName := headers["X-Playback-Profile"]
+
+	var p playback.ClientProfile
+	p.Name = profileName
+	p.UserAgent = headers["User-Agent"]
+
+	// Map Profile Name to Capabilities
+	switch PlaybackProfile(profileName) {
+	case ProfileSafari:
+		p.Name = "safari_native"
+		p.IsSafari = true
+		p.SupportsNativeHLS = true
+		p.SupportsH264 = true
+		p.SupportsAAC = true
+		p.SupportsAC3 = true
+	case ProfileTVOS:
+		p.Name = "tvos"
+		p.IsSafari = true
+		p.SupportsNativeHLS = true
+		p.SupportsH264 = true
+		p.SupportsAAC = true
+		p.SupportsAC3 = true
+		p.CanPlayTS = true
+	case ProfileGeneric:
+		p.Name = "mse_hlsjs"
+		p.SupportsMSE = true
+		p.SupportsH264 = true
+		p.SupportsAAC = true
+		p.IsChrome = true
+	default:
+		p.Name = "unknown"
+		p.SupportsMSE = true
+		p.SupportsH264 = true
+	}
+	return p, nil
+}
+
+// Resolve delegates to the Decision Engine.
 func (r *DefaultResolver) Resolve(ctx context.Context, serviceRef string, intent PlaybackIntent, profile PlaybackProfile) (PlaybackInfoResult, error) {
-
-	kind, source, name, err := r.resolveSource(ctx, serviceRef)
-	if err != nil {
-		var nf ErrNotFound
-		if errors.As(err, &nf) {
-			return PlaybackInfoResult{}, nf
-		}
-		return PlaybackInfoResult{}, ErrUpstream{Op: "resolveSource", Cause: err}
+	// Construct PIDE Request
+	req := playback.ResolveRequest{
+		RecordingID: serviceRef,
+		Headers:     map[string]string{"X-Playback-Profile": string(profile)},
 	}
 
-	// 0. Pre-check: Job State (Guardrail 2: Don't probe if building)
-	cacheDir, err := RecordingCacheDir(r.cfg.HLS.Root, serviceRef)
+	plan, err := r.engine.Resolve(ctx, req)
 	if err != nil {
-		return PlaybackInfoResult{}, ErrUpstream{Op: "RecordingCacheDir", Cause: err}
-	}
-
-	if status, exists := r.vodManager.Get(ctx, cacheDir); exists {
-		if status.State == vod.JobStateBuilding || status.State == vod.JobStateFinalizing {
+		// Map Engine Errors to Domain Errors
+		if errors.Is(err, playback.ErrPreparing) {
 			return PlaybackInfoResult{}, ErrPreparing{RecordingID: serviceRef}
 		}
+		if errors.Is(err, playback.ErrForbidden) {
+			return PlaybackInfoResult{}, ErrForbidden{}
+		}
+		if errors.Is(err, playback.ErrNotFound) {
+			return PlaybackInfoResult{}, ErrNotFound{RecordingID: serviceRef}
+		}
+
+		// Legacy Error Mapping for Observability (Strict Type Checks)
+		if errors.Is(err, ErrRemoteProbeUnsupported) {
+			return PlaybackInfoResult{}, ErrUpstream{Op: "probe_remote_unsupported", Cause: err}
+		}
+		if errors.Is(err, vod.ErrProbeCorrupt) || errors.Is(err, ErrProbeNotConfigured) || os.IsNotExist(err) || os.IsPermission(err) {
+			// Engine propagates these raw errors via GetMediaTruth -> Resolve (error)
+			return PlaybackInfoResult{}, ErrUpstream{Op: "probe", Cause: err}
+		}
+
+		// Fail Closed Generic
+		if errors.Is(err, playback.ErrUpstream) {
+			// If engine generic error, we might want to wrap it
+			return PlaybackInfoResult{}, ErrUpstream{Op: "engine_decision", Cause: err}
+		}
+
+		// If it's a raw error falling through (e.g. probe ambiguous)
+		return PlaybackInfoResult{}, ErrUpstream{Op: "probe_ambiguous", Cause: err}
 	}
 
-	// 1. Truth Table: Store (Strict Precedence for Duration)
-	var storeDuration int64
-	var durationReason string
-	var localPath string
-	var rootID string
-	var relPath string
-	var storeKnownEmpty bool // Guardrail 1: Only write if we positively know it's empty
+	// Helper for pointer mapping
+	s := func(v string) *string { return &v }
+	i64 := func(v int64) *int64 { return &v }
 
-	if r.durationStore != nil && r.pathResolver != nil {
-		resolvedPath, resolvedRootID, resolvedRel, pathErr := r.pathResolver.ResolveRecordingPath(serviceRef)
-		if resolvedPath != "" {
-			localPath = resolvedPath
-		}
-		if pathErr == nil {
-			rootID = resolvedRootID
-			relPath = resolvedRel
-			dur, ok, err := r.durationStore.GetDuration(ctx, rootID, relPath)
-			if err == nil {
-				if ok && dur > 0 {
-					storeDuration = dur
-					durationReason = "resolved_via_store"
-				} else {
-					storeKnownEmpty = true // Confirmed miss, safe to write later
-				}
+	// Construct Result
+	isMP4 := plan.Container == "mp4" || plan.Container == "mov"
+	res := PlaybackInfoResult{
+		Decision: playback.Decision{
+			Mode:     plan.Mode,
+			Artifact: mapProtocolToArtifact(plan.Protocol),
+			Reason:   plan.DecisionReason,
+		},
+		MediaInfo: playback.MediaInfo{
+			Container:             plan.Container,
+			VideoCodec:            plan.VideoCodec,
+			AudioCodec:            plan.AudioCodec,
+			IsMP4FastPathEligible: isMP4, // PIDE Protocol Check acts as eligibility gate
+		},
+		Reason:     string(plan.DecisionReason), // Legacy string field
+		Container:  s(plan.Container),
+		VideoCodec: s(plan.VideoCodec),
+		AudioCodec: s(plan.AudioCodec),
+	}
+
+	// Use Duration from PIDE Plan (authoritative)
+	if plan.Duration > 0 {
+		res.DurationSeconds = i64(int64(plan.Duration))
+		res.MediaInfo.Duration = plan.Duration
+
+		// Map Source for legacy observability (best effort)
+		if meta, ok := r.vodManager.GetMetadata(serviceRef); ok {
+			if float64(meta.Duration) != plan.Duration {
+				ds := DurationSourceStore
+				res.DurationSource = &ds
+			} else {
+				ds := DurationSourceCache
+				res.DurationSource = &ds
 			}
-			// If err != nil, storeKnownEmpty remains false (fail-safe)
 		}
 	}
 
+	return res, nil
+}
+
+func mapProtocolToArtifact(p playback.Protocol) playback.ArtifactKind {
+	switch p {
+	case playback.ProtocolHLS:
+		return playback.ArtifactHLS
+	case playback.ProtocolMP4:
+		return playback.ArtifactMP4
+	default:
+		return playback.ArtifactNone
+	}
+}
+
+// --- PIDE Interface Implementations ---
+
+// GetMediaTruth implements playback.MediaTruthProvider.
+func (r *DefaultResolver) GetMediaTruth(ctx context.Context, serviceRef string) (playback.MediaTruth, error) {
+	kind, source, _, err := r.resolveSource(ctx, serviceRef)
+	if err != nil {
+		if errors.As(err, &ErrNotFound{}) {
+			return playback.MediaTruth{}, playback.ErrNotFound
+		}
+		return playback.MediaTruth{}, playback.ErrUpstream
+	}
+
+	// 0. Job State Gate
+	cacheDir, err := RecordingCacheDir(r.cfg.HLS.Root, serviceRef)
+	if err == nil {
+		if status, exists := r.vodManager.Get(ctx, cacheDir); exists {
+			if status.State == vod.JobStateBuilding || status.State == vod.JobStateFinalizing {
+				return playback.MediaTruth{State: playback.StatePreparing}, nil
+			}
+		}
+	}
+
+	// 1. Resolve Local Path
+	var localPath string
+	var rootID, relPath string
+	if r.pathResolver != nil {
+		resolvedPath, rID, rRel, pathErr := r.pathResolver.ResolveRecordingPath(serviceRef)
+		if pathErr == nil && resolvedPath != "" {
+			localPath = resolvedPath
+			rootID = rID
+			relPath = rRel
+		}
+	}
 	if localPath == "" && strings.HasPrefix(source, "file://") {
-		if u, err := url.Parse(source); err == nil && u.Path != "" {
+		if u, _ := url.Parse(source); u != nil {
 			localPath = u.Path
 		} else {
-			rawPath := strings.TrimPrefix(source, "file://")
-			if decoded, err := url.PathUnescape(rawPath); err == nil {
-				localPath = decoded
+			localPath = strings.TrimPrefix(source, "file://")
+		}
+	}
+
+	// 2. Duration Store Lookup (Precedence)
+	var storeDuration int64
+	var storeKnownEmpty bool
+	if r.durationStore != nil && rootID != "" && relPath != "" {
+		dur, ok, err := r.durationStore.GetDuration(ctx, rootID, relPath)
+		if err == nil {
+			if ok && dur > 0 {
+				storeDuration = dur
 			} else {
-				localPath = rawPath
+				storeKnownEmpty = true
 			}
 		}
 	}
 
-	// 2. Truth Table: Metadata (Cache)
-	// Definition: "Metadata" means vodManager metadata.
-	// We need both Duration (if not from store) AND Codecs.
+	// 3. Check Metadata Cache
 	meta, metaOk := r.vodManager.GetMetadata(serviceRef)
-
 	codecComplete := metaOk && meta.Container != "" && meta.VideoCodec != "" && meta.AudioCodec != ""
-	metaDurationValid := metaOk && meta.Duration > 0
 
-	// Determine what we need to probe
-	// If we have Store Duration, we just need Codecs.
-	// If we differ Store Duration, we need both.
-
+	// Needs Probe?
+	// Rule: If we lack Codecs -> Probe.
+	// Rule: If we lack Duration AND Store missed -> Probe.
 	needsProbe := false
-	if storeDuration > 0 {
-		// Duration settled. Do we have codecs?
-		if !codecComplete {
-			needsProbe = true // Heal: Have duration, need codecs
-		}
-	} else {
-		// Duration not settled.
-		if metaDurationValid && codecComplete {
-			durationReason = "resolved_via_metadata"
-		} else {
-			needsProbe = true // Need both
-		}
+	if !codecComplete {
+		needsProbe = true
+	} else if storeDuration <= 0 && meta.Duration <= 0 {
+		needsProbe = true
 	}
 
-	// 3. Truth Table: Probe (Source)
 	if needsProbe {
-		val, err, _ := r.sf.Do(hashSingleflightKey(kind, source), func() (interface{}, error) {
-			probeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-			defer cancel()
+		// Model B: Trigger Async Probe and Return Preparing immediately.
+		// We use singleflight to ensure only one actual probe happens per source.
+		// The caller receives StatePreparing (HTTP 202/503) and should retry.
+		go func() {
+			_, _, _ = r.sf.Do(hashSingleflightKey(kind, source), func() (interface{}, error) {
+				// Use a detached context for background work
+				bgCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+				defer cancel()
 
-			if localPath != "" {
-				info, err := r.vodManager.Probe(probeCtx, localPath)
-				if err != nil {
-					return nil, err
+				var probedMeta vod.Metadata
+				var probeErr error
+
+				// Local Probe
+				if localPath != "" {
+					info, err := r.vodManager.Probe(bgCtx, localPath)
+					if err != nil {
+						probeErr = err
+					} else if info == nil {
+						probeErr = vod.ErrProbeCorrupt
+					} else {
+						probedMeta = vod.Metadata{
+							ResolvedPath: localPath,
+							Duration:     int64(math.Round(info.Video.Duration)),
+							Container:    info.Container,
+							VideoCodec:   info.Video.CodecName,
+							AudioCodec:   info.Audio.CodecName,
+						}
+					}
+				} else {
+					// Remote Probe
+					if err := r.Probe(bgCtx, source); err != nil {
+						probeErr = err
+					} else {
+						// Remote probe success but no data returned (legacy behavior?)
+						// In original code, it returned ErrRemoteProbeUnsupported.
+						// We keep failing closed for remote probe without codecs.
+						probeErr = ErrRemoteProbeUnsupported
+					}
 				}
-				if info == nil {
-					return nil, vod.ErrProbeCorrupt
+
+				if probeErr != nil {
+					log.Warn().Err(probeErr).Str("source", source).Msg("async probe failed")
+					return nil, probeErr
 				}
-				// Duration rounding for persistence
-				duration := int64(math.Round(info.Video.Duration))
-				if duration <= 0 {
-					return nil, vod.ErrProbeCorrupt
+
+				// Success: Update Metadata
+				r.vodManager.UpdateMetadata(serviceRef, probedMeta)
+
+				// Success: Update Store if valid duration and store was empty
+				if probedMeta.Duration > 0 && r.durationStore != nil && rootID != "" && relPath != "" && storeKnownEmpty {
+					_ = r.durationStore.SetDuration(bgCtx, rootID, relPath, probedMeta.Duration)
 				}
-				return vod.Metadata{
-					ResolvedPath: localPath,
-					Duration:     duration,
-					Container:    info.Container,
-					VideoCodec:   info.Video.CodecName,
-					AudioCodec:   info.Audio.CodecName,
-				}, nil
-			}
 
-			if err := r.Probe(probeCtx, source); err != nil {
-				return nil, err
-			}
+				return nil, nil
+			})
+		}()
 
-			// Remote fallback defaults - REMOVED per Deliverable #4 Strict Requirement
-			// If we can't probe remote, we return error. No defaults.
-			// Assuming current r.Probe implementation is just a connectivity check,
-			// we must fail if we can't determine codecs.
-			// However, if Probe is a "shallow check" and we can't get codecs, strict truth table says we fail.
-			return nil, ErrRemoteProbeUnsupported
-		})
-
-		if err != nil {
-			// Error Classification
-			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-				return PlaybackInfoResult{}, ErrPreparing{RecordingID: serviceRef}
-			}
-			if errors.Is(err, ErrRemoteProbeUnsupported) {
-				return PlaybackInfoResult{}, ErrUpstream{Op: "probe_remote_unsupported", Cause: err}
-			}
-			if errors.Is(err, vod.ErrProbeCorrupt) || errors.Is(err, ErrProbeNotConfigured) || os.IsNotExist(err) || os.IsPermission(err) {
-				return PlaybackInfoResult{}, ErrUpstream{Op: "probe", Cause: err}
-			}
-			return PlaybackInfoResult{}, ErrUpstream{Op: "probe_ambiguous", Cause: err}
-		}
-
-		// Probe Success: Persistence Rules
-		probedMeta := val.(vod.Metadata)
-		if probedMeta.ResolvedPath == "" {
-			probedMeta.ResolvedPath = localPath
-		}
-
-		// 1. Always update Metadata Cache
-		r.vodManager.UpdateMetadata(serviceRef, probedMeta)
-		meta = probedMeta // Use for response
-		metaOk = true
-
-		// Determine Reason based on what we just did
-		if storeDuration > 0 {
-			durationReason = "store_duration__probed_codecs" // Heal scenario
-		} else {
-			durationReason = "probed_and_persisted"
-			// 2. Store Write Logic (Only if duration wasn't already from store)
-			if probedMeta.Duration > 0 && r.durationStore != nil && rootID != "" && relPath != "" && storeKnownEmpty {
-				if err := r.durationStore.SetDuration(ctx, rootID, relPath, probedMeta.Duration); err != nil {
-					log.Warn().
-						Str("root_id", rootID).
-						Str("rel_path", relPath).
-						Int64("duration_seconds", probedMeta.Duration).
-						Str("service_ref", serviceRef).
-						Str("op", "SetDuration").
-						Err(err).
-						Msg("failed to persist duration")
-				}
-			}
-		}
-	} else {
-		// No probe needed. Construct reason if not already simple "resolved_via_metadata"
-		if durationReason == "resolved_via_store" && codecComplete {
-			durationReason = "store_duration__metadata_codecs"
-		}
+		// Return StatePreparing immediately so GET is not blocked.
+		return playback.MediaTruth{State: playback.StatePreparing}, nil
 	}
 
-	// Final Duration Decision
+	// Determine Final Truth Duration
 	finalDuration := float64(meta.Duration)
 	if storeDuration > 0 {
 		finalDuration = float64(storeDuration)
 	}
 
-	info := playback.MediaInfo{
-		AbsPath:    source,
+	// Return Truth
+	return playback.MediaTruth{
+		State:      playback.StateReady,
 		Container:  meta.Container,
 		VideoCodec: meta.VideoCodec,
 		AudioCodec: meta.AudioCodec,
 		Duration:   finalDuration,
-	}
-
-	clientProfile := mapProfile(profile)
-	decision, err := playback.Decide(clientProfile, info, playback.Policy{})
-	if err != nil {
-		return PlaybackInfoResult{}, ErrUpstream{Op: "decide", Cause: err}
-	}
-
-	if decision.Mode == playback.ModeTranscode && decision.Artifact == playback.ArtifactHLS {
-		playlistName := "index.m3u8"
-		if kind == "receiver" {
-			playlistName = "index.live.m3u8"
-		}
-		finalPath := filepath.Join(cacheDir, playlistName)
-		_, err := r.vodManager.EnsureSpec(ctx, cacheDir, serviceRef, source, cacheDir, name, finalPath, vod.ProfileDefault)
-		if err != nil {
-			return PlaybackInfoResult{}, ErrUpstream{Op: "EnsureSpec", Cause: err}
-		}
-	}
-
-	return PlaybackInfoResult{
-		Decision:  decision,
-		MediaInfo: info,
-		Reason:    durationReason,
 	}, nil
 }
 
+// --- Rest of File (Helpers) ---
+
 func (r *DefaultResolver) resolveSource(ctx context.Context, serviceRef string) (kind, source, name string, err error) {
 	receiverPath := internalrecordings.ExtractPathFromServiceRef(serviceRef)
-
 	policy := r.cfg.RecordingPlaybackPolicy
 	allowLocal := policy != config.PlaybackPolicyReceiverOnly
 	allowReceiver := policy != config.PlaybackPolicyLocalOnly
@@ -313,46 +386,29 @@ func (r *DefaultResolver) resolveSource(ctx context.Context, serviceRef string) 
 	if allowLocal {
 		mapper := internalrecordings.NewPathMapper(r.cfg.RecordingPathMappings)
 		if localPath, ok := mapper.ResolveLocalExisting(receiverPath); ok {
-			fileURL := (&url.URL{Scheme: "file", Path: localPath}).String()
-			return "local", fileURL, filepath.Base(localPath), nil
+			return "local", (&url.URL{Scheme: "file", Path: localPath}).String(), filepath.Base(localPath), nil
 		}
 	}
-
 	if allowReceiver {
 		baseURL, err := url.Parse(r.cfg.Enigma2.BaseURL)
 		if err != nil {
 			return "", "", "", err
 		}
-
 		u := *baseURL
 		u.Host = fmt.Sprintf("%s:%d", baseURL.Hostname(), r.cfg.Enigma2.StreamPort)
 		if r.cfg.Enigma2.Username != "" {
 			u.User = url.UserPassword(r.cfg.Enigma2.Username, r.cfg.Enigma2.Password)
 		}
-
 		u.Path = "/" + serviceRef
 		u.RawPath = "/" + EscapeServiceRefPath(serviceRef)
-
 		return "receiver", u.String(), "", nil
 	}
-
 	return "", "", "", ErrNotFound{RecordingID: serviceRef}
 }
 
 func hashSingleflightKey(kind, source string) string {
 	sum := sha256.Sum256([]byte(kind + "|" + source))
 	return hex.EncodeToString(sum[:])
-}
-
-func mapProfile(p PlaybackProfile) playback.ClientProfile {
-	switch p {
-	case ProfileSafari:
-		return playback.ClientProfile{IsSafari: true}
-	case ProfileTVOS:
-		return playback.ClientProfile{CanPlayTS: true, CanPlayAC3: true}
-	default:
-		return playback.ClientProfile{}
-	}
 }
 
 // --- Library Adapters ---
@@ -402,13 +458,11 @@ func (r *LibraryPathResolver) ResolveRecordingPath(serviceRef string) (string, s
 	if r == nil || r.mapper == nil {
 		return "", "", "", errors.New("recording path mapper not configured")
 	}
-
 	receiverPath := internalrecordings.ExtractPathFromServiceRef(serviceRef)
 	localPath, ok := r.mapper.ResolveLocalExisting(receiverPath)
 	if !ok || localPath == "" {
 		return "", "", "", errors.New("recording path not mapped")
 	}
-
 	rootID, relPath, ok := matchLibraryRoot(localPath, r.roots)
 	if !ok {
 		return localPath, "", "", errors.New("recording path not in library roots")
@@ -420,7 +474,6 @@ func matchLibraryRoot(localPath string, roots []library.RootConfig) (string, str
 	localPath = filepath.Clean(localPath)
 	var bestRoot *library.RootConfig
 	longestPrefix := -1
-
 	for i := range roots {
 		root := &roots[i]
 		cleanRoot := filepath.Clean(root.Path)
@@ -431,11 +484,9 @@ func matchLibraryRoot(localPath string, roots []library.RootConfig) (string, str
 			}
 		}
 	}
-
 	if bestRoot == nil {
 		return "", "", false
 	}
-
 	rel, err := filepath.Rel(bestRoot.Path, localPath)
 	if err != nil {
 		return "", "", false
@@ -452,7 +503,6 @@ func hasPathPrefix(p, root string) bool {
 	if p == root {
 		return true
 	}
-
 	rootWithSep := root
 	if !strings.HasSuffix(rootWithSep, string(filepath.Separator)) {
 		rootWithSep += string(filepath.Separator)

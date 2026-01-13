@@ -31,7 +31,7 @@ func TestContract_DeleteTimer(t *testing.T) {
 				return errors.New("connection refused")
 			},
 		}
-		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) openWebIFClient { return mock }}
+		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) ReceiverControl { return mock }}
 
 		timerId := read.MakeTimerID("1:0:1:C3:21:85:C00000:0:0:0:", 1000, 2000)
 		req := httptest.NewRequest("DELETE", "/api/v3/dvr/timers/"+timerId, nil)
@@ -48,7 +48,7 @@ func TestContract_DeleteTimer(t *testing.T) {
 				return errors.New("timer not found")
 			},
 		}
-		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) openWebIFClient { return mock }}
+		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) ReceiverControl { return mock }}
 
 		timerId := read.MakeTimerID("1:0:1:C3:21:85:C00000:0:0:0:", 1000, 2000)
 		req := httptest.NewRequest("DELETE", "/api/v3/dvr/timers/"+timerId, nil)
@@ -65,7 +65,7 @@ func TestContract_DeleteTimer(t *testing.T) {
 				return nil
 			},
 		}
-		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) openWebIFClient { return mock }}
+		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) ReceiverControl { return mock }}
 
 		timerId := read.MakeTimerID("1:0:1:C3:21:85:C00000:0:0:0:", 1000, 2000)
 		req := httptest.NewRequest("DELETE", "/api/v3/dvr/timers/"+timerId, nil)

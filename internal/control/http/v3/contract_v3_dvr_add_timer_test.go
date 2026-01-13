@@ -85,7 +85,7 @@ func TestContract_AddTimer(t *testing.T) {
 				return nil, errors.New("connection reset by peer")
 			},
 		}
-		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) openWebIFClient { return mock }}
+		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) ReceiverControl { return mock }}
 
 		body := `{"serviceRef": "1:0:1:C3:21:85:C00000:0:0:0:", "begin": 1000, "end": 2000, "name": "test"}`
 		req := httptest.NewRequest("POST", "/api/v3/dvr/timers", bytes.NewBufferString(body))
@@ -104,7 +104,7 @@ func TestContract_AddTimer(t *testing.T) {
 				}, nil
 			},
 		}
-		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) openWebIFClient { return mock }}
+		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) ReceiverControl { return mock }}
 
 		body := `{"serviceRef": "1:0:1:C3:21:85:C00000:0:0:0:", "begin": 1000, "end": 2000, "name": "test"}`
 		req := httptest.NewRequest("POST", "/api/v3/dvr/timers", bytes.NewBufferString(body))
@@ -124,7 +124,7 @@ func TestContract_AddTimer(t *testing.T) {
 				return errors.New("Konflikt mit anderem Timer")
 			},
 		}
-		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) openWebIFClient { return mock }}
+		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) ReceiverControl { return mock }}
 
 		body := `{"serviceRef": "1:0:1:C3:21:85:C00000:0:0:0:", "begin": 1000, "end": 2000, "name": "test"}`
 		req := httptest.NewRequest("POST", "/api/v3/dvr/timers", bytes.NewBufferString(body))
@@ -142,7 +142,7 @@ func TestContract_AddTimer(t *testing.T) {
 				return errors.New("internal server error")
 			},
 		}
-		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) openWebIFClient { return mock }}
+		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) ReceiverControl { return mock }}
 
 		body := `{"serviceRef": "1:0:1:C3:21:85:C00000:0:0:0:", "begin": 1000, "end": 2000, "name": "test"}`
 		req := httptest.NewRequest("POST", "/api/v3/dvr/timers", bytes.NewBufferString(body))
@@ -162,7 +162,7 @@ func TestContract_AddTimer(t *testing.T) {
 				return nil
 			},
 		}
-		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) openWebIFClient { return mock }}
+		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) ReceiverControl { return mock }}
 
 		body := `{"serviceRef": "1:0:1:C3:21:85:C00000:0:0:0:", "begin": 1000, "end": 2000, "name": "test"}`
 		req := httptest.NewRequest("POST", "/api/v3/dvr/timers", bytes.NewBufferString(body))
@@ -189,7 +189,7 @@ func TestContract_AddTimer(t *testing.T) {
 		mock.addTimerFunc = func(ctx context.Context, sRef string, begin, end int64, name, desc string) error {
 			return nil
 		}
-		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) openWebIFClient { return mock }}
+		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) ReceiverControl { return mock }}
 
 		body := fmt.Sprintf(`{"serviceRef": "%s", "begin": 1000, "end": 2000, "name": "test"}`, sRef)
 		req := httptest.NewRequest("POST", "/api/v3/dvr/timers", bytes.NewBufferString(body))
@@ -223,7 +223,7 @@ func TestContract_AddTimer(t *testing.T) {
 			}
 			return nil
 		}
-		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) openWebIFClient { return mock }}
+		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) ReceiverControl { return mock }}
 
 		body := `{"serviceRef": "1:0:1:C3:21:85:C00000:0:0:0:", "begin": 1000, "end": 2000, "name": "test", "paddingBeforeSec": 60, "paddingAfterSec": 120}`
 		req := httptest.NewRequest("POST", "/api/v3/dvr/timers", bytes.NewBufferString(body))
@@ -253,7 +253,7 @@ func TestContract_AddTimer(t *testing.T) {
 			}
 			return nil
 		}
-		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) openWebIFClient { return mock }}
+		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) ReceiverControl { return mock }}
 
 		body := fmt.Sprintf(`{"serviceRef": "%s", "begin": 1000, "end": 2000, "name": "test"}`, sRefOriginal)
 		req := httptest.NewRequest("POST", "/api/v3/dvr/timers", bytes.NewBufferString(body))

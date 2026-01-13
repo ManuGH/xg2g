@@ -14,6 +14,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"net"
 	"net/http"
@@ -1415,10 +1416,15 @@ func (c *Client) fetchEPGFromURL(ctx context.Context, urlPath string) ([]EPGEven
 	// Note: Some OpenWebIF endpoints don't return a "result" field at all
 	// so we check for events directly rather than validating Result
 
-	// Filter out invalid events
+	// Filter out invalid events and unescape HTML entities
 	validEvents := make([]EPGEvent, 0, len(epgResp.Events))
 	for _, event := range epgResp.Events {
 		if event.Title != "" && event.Begin > 0 {
+			// Sanitize strings: OpenWebIF often sends HTML entities (e.g. &#x27;) in JSON
+			// We must unescape them here so the XMLTV generator doesn't double-escape them.
+			event.Title = html.UnescapeString(event.Title)
+			event.Description = html.UnescapeString(event.Description)
+			event.LongDesc = html.UnescapeString(event.LongDesc)
 			validEvents = append(validEvents, event)
 		}
 	}
@@ -1454,8 +1460,8 @@ func (c *Client) parseEPGXML(body []byte) ([]EPGEvent, error) {
 		if xmlEvent.Title != "" && xmlEvent.Start > 0 {
 			event := EPGEvent{
 				ID:          xmlEvent.ID,
-				Title:       xmlEvent.Title,
-				Description: xmlEvent.Description,
+				Title:       html.UnescapeString(xmlEvent.Title),
+				Description: html.UnescapeString(xmlEvent.Description),
 				Begin:       xmlEvent.Start,
 				Duration:    int64(xmlEvent.Duration),
 				SRef:        xmlEvent.ServiceRef,

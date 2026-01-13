@@ -1,49 +1,48 @@
 package v3
 
 import (
-	"bufio"
 	"io"
-	"net"
 	"net/http"
 	"sync/atomic"
 )
 
+// Purpose: Tracks header write + provides truthful optional interface passthrough.
 // HeaderTracker provides a read-only view of whether headers have been written.
 type HeaderTracker interface {
 	WroteHeader() bool
 }
 
-// bwBase is the core wrapper that tracks if headers were written.
-type bwBase struct {
+// baseResponseWriter is the core wrapper that tracks if headers were written.
+type baseResponseWriter struct {
 	http.ResponseWriter
 	wrote atomic.Bool
 }
 
-func (b *bwBase) WroteHeader() bool {
+func (b *baseResponseWriter) WroteHeader() bool {
 	return b.wrote.Load()
 }
 
-func (b *bwBase) WriteHeader(code int) {
+func (b *baseResponseWriter) WriteHeader(code int) {
 	b.wrote.Store(true)
 	b.ResponseWriter.WriteHeader(code)
 }
 
-func (b *bwBase) Write(p []byte) (int, error) {
+func (b *baseResponseWriter) Write(p []byte) (int, error) {
 	b.wrote.Store(true)
 	return b.ResponseWriter.Write(p)
 }
 
-func (b *bwBase) Unwrap() http.ResponseWriter {
+func (b *baseResponseWriter) Unwrap() http.ResponseWriter {
 	return b.ResponseWriter
 }
 
 // Concrete Combinatorial Wrapper Types
 // Naming: bw[RF][H][F][P] where RF=ReaderFrom, H=Hijacker, F=Flusher, P=Pusher
 
-type bw struct{ *bwBase }
+type bw struct{ *baseResponseWriter }
 
 type bwRF struct {
-	*bwBase
+	*baseResponseWriter
 	io.ReaderFrom
 }
 
@@ -53,22 +52,22 @@ func (b *bwRF) ReadFrom(r io.Reader) (int64, error) {
 }
 
 type bwH struct {
-	*bwBase
+	*baseResponseWriter
 	http.Hijacker
 }
 
 type bwF struct {
-	*bwBase
+	*baseResponseWriter
 	http.Flusher
 }
 
 type bwP struct {
-	*bwBase
+	*baseResponseWriter
 	http.Pusher
 }
 
 type bwRF_H struct {
-	*bwBase
+	*baseResponseWriter
 	io.ReaderFrom
 	http.Hijacker
 }
@@ -79,7 +78,7 @@ func (b *bwRF_H) ReadFrom(r io.Reader) (int64, error) {
 }
 
 type bwRF_F struct {
-	*bwBase
+	*baseResponseWriter
 	io.ReaderFrom
 	http.Flusher
 }
@@ -90,7 +89,7 @@ func (b *bwRF_F) ReadFrom(r io.Reader) (int64, error) {
 }
 
 type bwRF_P struct {
-	*bwBase
+	*baseResponseWriter
 	io.ReaderFrom
 	http.Pusher
 }
@@ -101,25 +100,25 @@ func (b *bwRF_P) ReadFrom(r io.Reader) (int64, error) {
 }
 
 type bwH_F struct {
-	*bwBase
+	*baseResponseWriter
 	http.Hijacker
 	http.Flusher
 }
 
 type bwH_P struct {
-	*bwBase
+	*baseResponseWriter
 	http.Hijacker
 	http.Pusher
 }
 
 type bwF_P struct {
-	*bwBase
+	*baseResponseWriter
 	http.Flusher
 	http.Pusher
 }
 
 type bwRF_H_F struct {
-	*bwBase
+	*baseResponseWriter
 	io.ReaderFrom
 	http.Hijacker
 	http.Flusher
@@ -131,7 +130,7 @@ func (b *bwRF_H_F) ReadFrom(r io.Reader) (int64, error) {
 }
 
 type bwRF_H_P struct {
-	*bwBase
+	*baseResponseWriter
 	io.ReaderFrom
 	http.Hijacker
 	http.Pusher
@@ -143,7 +142,7 @@ func (b *bwRF_H_P) ReadFrom(r io.Reader) (int64, error) {
 }
 
 type bwRF_F_P struct {
-	*bwBase
+	*baseResponseWriter
 	io.ReaderFrom
 	http.Flusher
 	http.Pusher
@@ -155,14 +154,14 @@ func (b *bwRF_F_P) ReadFrom(r io.Reader) (int64, error) {
 }
 
 type bwH_F_P struct {
-	*bwBase
+	*baseResponseWriter
 	http.Hijacker
 	http.Flusher
 	http.Pusher
 }
 
 type bwRF_H_F_P struct {
-	*bwBase
+	*baseResponseWriter
 	io.ReaderFrom
 	http.Hijacker
 	http.Flusher
@@ -176,14 +175,14 @@ func (b *bwRF_H_F_P) ReadFrom(r io.Reader) (int64, error) {
 
 // wrapResponseWriter detects capabilities of w and returns a truthful wrapper.
 func wrapResponseWriter(w http.ResponseWriter) (http.ResponseWriter, HeaderTracker) {
-	base := &bwBase{ResponseWriter: w}
+	base := &baseResponseWriter{ResponseWriter: w}
 
 	rf, isRF := w.(io.ReaderFrom)
 	h, isH := w.(http.Hijacker)
 	f, isF := w.(http.Flusher)
 	p, isP := w.(http.Pusher)
 
-	// Bitmask: RF=0, H=1, F=2, P=3
+	// Bitmask: bit 0=RF, bit 1=H, bit 2=F, bit 3=P
 	mask := 0
 	if isRF {
 		mask |= 1 << 0
@@ -235,33 +234,3 @@ func wrapResponseWriter(w http.ResponseWriter) (http.ResponseWriter, HeaderTrack
 		return &bw{base}, base
 	}
 }
-
-// Hijack implementation for types that embed http.Hijacker
-func (b *bwH) Hijack() (net.Conn, *bufio.ReadWriter, error)        { return b.Hijacker.Hijack() }
-func (b *bwRF_H) Hijack() (net.Conn, *bufio.ReadWriter, error)     { return b.Hijacker.Hijack() }
-func (b *bwH_F) Hijack() (net.Conn, *bufio.ReadWriter, error)      { return b.Hijacker.Hijack() }
-func (b *bwH_P) Hijack() (net.Conn, *bufio.ReadWriter, error)      { return b.Hijacker.Hijack() }
-func (b *bwRF_H_F) Hijack() (net.Conn, *bufio.ReadWriter, error)   { return b.Hijacker.Hijack() }
-func (b *bwRF_H_P) Hijack() (net.Conn, *bufio.ReadWriter, error)   { return b.Hijacker.Hijack() }
-func (b *bwH_F_P) Hijack() (net.Conn, *bufio.ReadWriter, error)    { return b.Hijacker.Hijack() }
-func (b *bwRF_H_F_P) Hijack() (net.Conn, *bufio.ReadWriter, error) { return b.Hijacker.Hijack() }
-
-// Flush implementation for types that embed http.Flusher
-func (b *bwF) Flush()        { b.Flusher.Flush() }
-func (b *bwH_F) Flush()      { b.Flusher.Flush() }
-func (b *bwF_P) Flush()      { b.Flusher.Flush() }
-func (b *bwRF_F) Flush()     { b.Flusher.Flush() }
-func (b *bwRF_H_F) Flush()   { b.Flusher.Flush() }
-func (b *bwRF_F_P) Flush()   { b.Flusher.Flush() }
-func (b *bwH_F_P) Flush()    { b.Flusher.Flush() }
-func (b *bwRF_H_F_P) Flush() { b.Flusher.Flush() }
-
-// Push implementation for types that embed http.Pusher
-func (b *bwP) Push(t string, o *http.PushOptions) error        { return b.Pusher.Push(t, o) }
-func (b *bwRF_P) Push(t string, o *http.PushOptions) error     { return b.Pusher.Push(t, o) }
-func (b *bwH_P) Push(t string, o *http.PushOptions) error      { return b.Pusher.Push(t, o) }
-func (b *bwF_P) Push(t string, o *http.PushOptions) error      { return b.Pusher.Push(t, o) }
-func (b *bwRF_H_P) Push(t string, o *http.PushOptions) error   { return b.Pusher.Push(t, o) }
-func (b *bwRF_F_P) Push(t string, o *http.PushOptions) error   { return b.Pusher.Push(t, o) }
-func (b *bwH_F_P) Push(t string, o *http.PushOptions) error    { return b.Pusher.Push(t, o) }
-func (b *bwRF_H_F_P) Push(t string, o *http.PushOptions) error { return b.Pusher.Push(t, o) }

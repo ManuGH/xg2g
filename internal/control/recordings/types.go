@@ -13,6 +13,12 @@ const (
 	IntentStream   PlaybackIntent = "stream"
 )
 
+const (
+	ReasonDirectPlayMatch = "directplay_match"
+	ReasonTranscodeAudio  = "transcode_audio"
+	ReasonTranscodeVideo  = "transcode_video"
+)
+
 type PlaybackProfile string
 
 const (
@@ -92,10 +98,23 @@ type PlaybackInfoInput struct {
 	Profile     PlaybackProfile
 }
 
+type DurationSource string
+
+const (
+	DurationSourceStore DurationSource = "store"
+	DurationSourceCache DurationSource = "cache"
+	DurationSourceProbe DurationSource = "probe"
+)
+
 type PlaybackInfoResult struct {
-	Decision  playback.Decision
-	MediaInfo playback.MediaInfo
-	Reason    string
+	Decision        playback.Decision
+	MediaInfo       playback.MediaInfo
+	Reason          string
+	DurationSeconds *int64
+	DurationSource  *DurationSource
+	Container       *string
+	VideoCodec      *string
+	AudioCodec      *string
 }
 
 type ResolveCode string

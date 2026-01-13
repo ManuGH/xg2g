@@ -16,7 +16,7 @@
     - Modern React WebUI (Dark Mode)&#13;
     - HLS Streaming (Mobile compatible)&#13;
     - Timeshift (Rewind Live TV)&#13;
-    - HDHomeRun Emulation (Plex/Jellyfin support)&#13;
+    - HDHomeRun Emulation (Media Server support)&#13;
     &#13;
     **Configuration**:&#13;
     Set the 'Receiver URL' to your Enigma2 box IP.&#13;

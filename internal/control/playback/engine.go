@@ -1,82 +1,205 @@
 package playback
 
-import "strings"
+import (
+	"context"
+)
 
-// Decide determines the playback strategy based on facts using a deterministic logic matrix.
-// This function is TOTAL: it handles every input combination with a valid Decision.
-// It performs NO side effects (IO/Network).
-func Decide(profile ClientProfile, media MediaInfo, policy Policy) (Decision, error) {
-	// 0. Invalid Inputs
-	if media.AbsPath == "" || media.Duration <= 0 {
-		return Decision{Mode: ModeError, Artifact: ArtifactNone, Reason: ReasonProbeFailed}, nil
+// --- Interfaces ---
+
+type MediaTruthProvider interface {
+	GetMediaTruth(ctx context.Context, id string) (MediaTruth, error)
+}
+
+type ClientProfileResolver interface {
+	Resolve(ctx context.Context, headers map[string]string) (ClientProfile, error)
+}
+
+// --- Engine ---
+
+type DecisionEngine struct {
+	truth   MediaTruthProvider
+	profile ClientProfileResolver
+}
+
+func NewDecisionEngine(truth MediaTruthProvider, profile ClientProfileResolver) *DecisionEngine {
+	return &DecisionEngine{
+		truth:   truth,
+		profile: profile,
+	}
+}
+
+func (e *DecisionEngine) Resolve(ctx context.Context, req ResolveRequest) (PlaybackPlan, error) {
+	// --- Phase 0: Inputs & Gating --- //
+
+	// 1. Resolve Profile (includes Auth check if profile resolver enforces it)
+	profile, err := e.profile.Resolve(ctx, req.Headers)
+	if err != nil {
+		// G1: Unauthorized is handled here if resolver returns ErrForbidden
+		return PlaybackPlan{}, err
 	}
 
-	// 1. Policy Overrides (e.g. from Settings or URL params)
-	if policy.ForceHLS {
-		return Decision{Mode: ModeTranscode, Artifact: ArtifactHLS, Reason: ReasonForceHLS}, nil
+	// 2. Get Truth
+	truth, err := e.truth.GetMediaTruth(ctx, req.RecordingID)
+	if err != nil {
+		// G2: NotFound handled here
+		return PlaybackPlan{}, err
 	}
 
-	// 2. Safari (Mobile/Desktop)
-	if profile.IsSafari {
-		// Safari requires HLS for MPEG-TS. Native player blocks TS.
-		if media.Container == "mpegts" {
-			return Decision{Mode: ModeTranscode, Artifact: ArtifactHLS, Reason: ReasonSafariTSNeedsHLS}, nil
+	// 3. State Gate
+	if truth.State == StatePreparing {
+		// G3: Preparing Gate
+		return PlaybackPlan{}, ErrPreparing
+	}
+	if truth.State == StateFailed {
+		return PlaybackPlan{}, ErrUpstream
+	}
+
+	// 4. Unknown Truth Gate (G9)
+	if truth.VideoCodec == "" || truth.VideoCodec == "unknown" ||
+		truth.AudioCodec == "" || truth.AudioCodec == "unknown" {
+		return PlaybackPlan{}, ErrUpstream
+	}
+
+	// --- Phase 1: Select Protocol --- //
+
+	// Default to HLS
+	protocol := ProtocolHLS
+
+	// Hint Overrides
+	if req.ProtocolHint == "mp4" {
+		protocol = ProtocolMP4
+	} else if req.ProtocolHint == "hls" {
+		protocol = ProtocolHLS
+	} else {
+		// Auto logic if no hint:
+		// If native HLS supported (Safari), prefer HLS
+		// If generic client and MP4 container, maybe MP4?
+		// For now, strict HLS default unless hinted, as per plan.
+		protocol = ProtocolHLS
+	}
+
+	// --- Phase 2: Analyze Compatibility --- //
+
+	// Check Codecs
+	videoCompatible := e.isVideoCompatible(profile, truth.VideoCodec)
+	audioCompatible := e.isAudioCompatible(profile, truth.AudioCodec)
+
+	// Check Container for selected Protocol
+	// If MP4 req: container must be MP4/MOV
+	// If HLS req: container is less strict IF we support remux (DirectStream)
+	// OR if client supports native TS (Safari)
+	containerCompatible := false
+	if protocol == ProtocolMP4 {
+		// Strict MP4
+		containerCompatible = isMP4Container(truth.Container)
+	} else {
+		// HLS
+		if profile.SupportsNativeHLS {
+			// Safari supports TS and fMP4 (via HLS)
+			containerCompatible = isNativeHLSContainer(truth.Container)
+		} else if profile.SupportsMSE {
+			// MSE (hls.js) typically needs fMP4/MP4 repacking or TS transmuxing client-side.
+			// Ideally engine treats "TS via HLS.js" as "Compatible" (DirectPlay) if hls.js handles TS.
+			// HLS.js handles TS. So TS is "compatible" for HLS protocol.
+			containerCompatible = true
 		}
-		// MP4/MOV is native.
-		if isMP4Container(media.Container) {
-			// We assume standard usage (H264/HEVC + AAC/AC3) which Safari handles.
-			// Ideally we verify codecs, but container check matches v2 behavior and is safe enough for v4 MVP.
-			return Decision{Mode: ModeDirectPlay, Artifact: ArtifactMP4, Reason: ReasonSafariDirectMP4}, nil
-		}
-		// Known unsupported container (MKV etc) -> Transcode
-		return Decision{Mode: ModeTranscode, Artifact: ArtifactHLS, Reason: ReasonTranscodeRequired}, nil
 	}
 
-	// 3. Chrome
-	if profile.IsChrome {
-		if isMP4Container(media.Container) {
-			// Chrome supports MP4 only if codecs are compatible (H264/VP9/AV1 + AAC/MP3/Opus).
-			// Chrome DOES NOT support AC3 in MP4 (usually).
-			// So we check stricter constraints.
-			if isChromeCompatibleVideo(media.VideoCodec) && isChromeCompatibleAudio(media.AudioCodec) {
-				return Decision{Mode: ModeDirectPlay, Artifact: ArtifactMP4, Reason: ReasonChromeDirectMP4}, nil
-			}
-			return Decision{Mode: ModeTranscode, Artifact: ArtifactHLS, Reason: ReasonTranscodeRequired}, nil
-		}
-		// Chrome doesn't play MKV/TS well natively
-		return Decision{Mode: ModeTranscode, Artifact: ArtifactHLS, Reason: ReasonTranscodeRequired}, nil
+	// --- Phase 3: Decision Matrix --- //
+
+	// G7/G8: Codec Incompatible -> Transcode
+	if !videoCompatible {
+		return PlaybackPlan{
+			Mode:           ModeTranscode,
+			Protocol:       protocol,
+			DecisionReason: ReasonTranscodeVideo,
+			TruthReason:    "codec_video_mismatch",
+			Container:      truth.Container,
+			VideoCodec:     truth.VideoCodec,
+			AudioCodec:     truth.AudioCodec,
+			Duration:       truth.Duration,
+		}, nil
 	}
 
-	// 4. VLC / Native / Generic Fallback
-	// If UserAgent implies a capable player (VLC), allow generic DirectPlay.
-	if strings.Contains(profile.UserAgent, "VLC") {
-		return Decision{Mode: ModeDirectPlay, Artifact: ArtifactMP4, Reason: ReasonDirectPlayMatch}, nil
+	if !audioCompatible {
+		return PlaybackPlan{
+			Mode:           ModeTranscode,
+			Protocol:       protocol,
+			DecisionReason: ReasonTranscodeAudio,
+			TruthReason:    "codec_audio_mismatch",
+			Container:      truth.Container,
+			VideoCodec:     truth.VideoCodec,
+			AudioCodec:     truth.AudioCodec,
+			Duration:       truth.Duration,
+		}, nil
 	}
 
-	// 5. Generic "Best Effort"
-	// If files are MP4, we default to DirectPlay as most modern clients handle it.
-	if isMP4Container(media.Container) {
-		return Decision{Mode: ModeDirectPlay, Artifact: ArtifactMP4, Reason: ReasonDirectPlayMatch}, nil
+	// G6: Codecs OK, Container Incompatible -> DirectStream
+	// (Example: MKV with H264/AAC requesting HLS)
+	// (Example: MKV with H264/AAC requesting MP4 -> technically Transcode/Remux, but engine calls it DirectStream)
+	if !containerCompatible {
+		// If protocol is MP4 and container is MKV -> DirectStream (Remux to MP4)
+		// If protocol is HLS and container is MKV -> DirectStream (Remux to TS/fMP4)
+		return PlaybackPlan{
+			Mode:           ModeDirectStream,
+			Protocol:       protocol,
+			DecisionReason: ReasonDirectStreamMatch,
+			TruthReason:    "container_mismatch",
+			Container:      truth.Container,
+			VideoCodec:     truth.VideoCodec,
+			AudioCodec:     truth.AudioCodec,
+			Duration:       truth.Duration,
+		}, nil
 	}
 
-	// Default safe fallback: If we don't know the client or the container, safe option is HLS Transcode.
-	// This covers TS files on unknown browsers, MKV, etc.
-	return Decision{Mode: ModeTranscode, Artifact: ArtifactHLS, Reason: ReasonUnknownContainer}, nil
+	// G4/G5: Everything Compatible -> DirectPlay
+	return PlaybackPlan{
+		Mode:           ModeDirectPlay,
+		Protocol:       protocol,
+		DecisionReason: ReasonDirectPlayMatch,
+		TruthReason:    "all_compatible",
+		Container:      truth.Container,
+		VideoCodec:     truth.VideoCodec,
+		AudioCodec:     truth.AudioCodec,
+		Duration:       truth.Duration,
+	}, nil
+}
+
+// --- Helpers ---
+
+func (e *DecisionEngine) isVideoCompatible(freq ClientProfile, codec string) bool {
+	// Simple mapping for now
+	switch codec {
+	case "h264":
+		return freq.SupportsH264
+	case "hevc":
+		return freq.SupportsHEVC
+	case "mpeg2video":
+		return freq.SupportsMPEG2
+	}
+	return false // Fail closed on unknown/unsupported types
+}
+
+func (e *DecisionEngine) isAudioCompatible(freq ClientProfile, codec string) bool {
+	switch codec {
+	case "aac":
+		return freq.SupportsAAC
+	case "ac3":
+		return freq.SupportsAC3
+	case "mp2":
+		// Assume generic support not present unless explicit?
+		// Actually modern browsers don't do MP2.
+		// Tests G7 implies Transcode needed for mpeg2/mp2.
+		return false
+	}
+	return false
 }
 
 func isMP4Container(c string) bool {
-	c = strings.ToLower(c)
 	return c == "mp4" || c == "mov" || c == "m4v"
 }
 
-func isChromeCompatibleVideo(v string) bool {
-	v = strings.ToLower(v)
-	// H264, VP8, VP9, AV1
-	return v == "h264" || v == "vp8" || v == "vp9" || v == "av1"
-}
-
-func isChromeCompatibleAudio(a string) bool {
-	a = strings.ToLower(a)
-	// AAC, MP3, Opus, FLAC. (AC3 is usually NOT supported in standard Chrome without passthrough)
-	return a == "aac" || a == "mp3" || a == "opus" || a == "flac"
+func isNativeHLSContainer(c string) bool {
+	// Safari plays TS, MP4, MOV via HLS
+	return c == "mpegts" || c == "ts" || isMP4Container(c)
 }

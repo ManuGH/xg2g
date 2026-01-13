@@ -770,7 +770,7 @@ func TestSlice5_1_Equivalence(t *testing.T) {
 			UpdatedCount:    5,
 		},
 	}
-	mockDvr := &mockDvrSource{
+	mockDvr := &mockRecordingStatusProvider{
 		statusInfo: &openwebif.StatusInfo{
 			IsRecording: "true",
 			ServiceName: "ZDF HD",
@@ -779,7 +779,7 @@ func TestSlice5_1_Equivalence(t *testing.T) {
 	}
 
 	mockSvs := &mockServicesSource{}
-	mockTs := &mockTimersSource{}
+	mockTs := &mockTimerReader{}
 
 	s := NewServer(cfg, nil, nil)
 	s.snap = snap
@@ -850,18 +850,18 @@ type mockScanSource struct {
 
 func (m *mockScanSource) GetStatus() scan.ScanStatus { return m.status }
 
-type mockDvrSource struct {
+type mockRecordingStatusProvider struct {
 	statusInfo *openwebif.StatusInfo
 	canEdit    bool
 }
 
-func (m *mockDvrSource) GetStatusInfo(ctx context.Context) (*openwebif.StatusInfo, error) {
+func (m *mockRecordingStatusProvider) GetStatusInfo(ctx context.Context) (*openwebif.StatusInfo, error) {
 	if m.statusInfo == nil {
 		return nil, errors.New("receiver unreachable")
 	}
 	return m.statusInfo, nil
 }
-func (m *mockDvrSource) HasTimerChange(ctx context.Context) bool { return m.canEdit }
+func (m *mockRecordingStatusProvider) HasTimerChange(ctx context.Context) bool { return m.canEdit }
 
 type mockServicesSource struct {
 	enabled map[string]bool
@@ -874,12 +874,12 @@ func (m *mockServicesSource) IsEnabled(id string) bool {
 	return m.enabled[id]
 }
 
-type mockTimersSource struct {
+type mockTimerReader struct {
 	timers []openwebif.Timer
 	err    error
 }
 
-func (m *mockTimersSource) GetTimers(ctx context.Context) ([]openwebif.Timer, error) {
+func (m *mockTimerReader) GetTimers(ctx context.Context) ([]openwebif.Timer, error) {
 	return m.timers, m.err
 }
 
@@ -912,7 +912,7 @@ http://stream/3
 		enabled: map[string]bool{"id1": true, "id2": false, "id3": true},
 	}
 	now := time.Now().Unix()
-	mockTs := &mockTimersSource{
+	mockTs := &mockTimerReader{
 		timers: []openwebif.Timer{
 			// Future timer: State 0 (Scheduled)
 			{ServiceRef: "ref1", Name: "Timer 1", State: 0, Begin: now + 3600, End: now + 7200},
@@ -923,7 +923,7 @@ http://stream/3
 
 	s := NewServer(cfg, nil, nil)
 	s.snap = snap
-	s.SetDependencies(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, &mockScanSource{}, &mockDvrSource{}, mockSvs, mockTs, nil, nil, nil)
+	s.SetDependencies(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, &mockScanSource{}, &mockRecordingStatusProvider{}, mockSvs, mockTs, nil, nil, nil)
 
 	t.Run("GetServices/Combinatorial", func(t *testing.T) {
 		tests := []struct {

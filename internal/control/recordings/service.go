@@ -10,10 +10,40 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/control/playback"
 	"github.com/ManuGH/xg2g/internal/control/vod"
 )
 
+// PlaybackResolution represents the truthful resolution of how to play a recording.
+type PlaybackResolution struct {
+	// Strategy: "hls" or "direct"
+	Strategy string
+
+	// CanSeek: Whether the stream supports seeking (e.g. valid duration/index)
+	CanSeek bool
+
+	// DurationSec: Authoritative duration in seconds (nil if unknown)
+	DurationSec *int64
+
+	// DurationSource: "store", "probe", "cache" (nil if unknown)
+	DurationSource *DurationSource
+
+	// Codec Truth (nil if unknown)
+	Container  *string
+	VideoCodec *string
+	AudioCodec *string
+
+	// Reason: Decision engine reason code
+	Reason string
+}
+
+const (
+	StrategyHLS    = "hls"
+	StrategyDirect = "direct"
+)
+
 type Service interface {
+	ResolvePlayback(ctx context.Context, recordingID, profile string) (PlaybackResolution, error)
 	List(ctx context.Context, in ListInput) (ListResult, error)
 	GetPlaybackInfo(ctx context.Context, in PlaybackInfoInput) (PlaybackInfoResult, error)
 	GetStatus(ctx context.Context, in StatusInput) (StatusResult, error)
@@ -123,11 +153,33 @@ func (s *service) List(ctx context.Context, in ListInput) (ListResult, error) {
 
 	recordingsList := make([]RecordingItem, 0, len(list.Movies))
 	for _, m := range list.Movies {
-		durationSeconds, _ := ParseRecordingDurationSeconds(m.Length)
-		if durationSeconds <= 0 && s.vodManager != nil {
-			if meta, ok := s.vodManager.GetMetadata(m.ServiceRef); ok && meta.Duration > 0 {
-				durationSeconds = int64(meta.Duration)
-			}
+		var meta vod.Metadata
+		var metaOk bool
+		if s.vodManager != nil {
+			meta, metaOk = s.vodManager.GetMetadata(m.ServiceRef)
+		}
+
+		// A4: Building State Gate
+		// If recording is being built/probed (PREPARING), we cannot trust any duration.
+		isBuilding := metaOk && meta.State == vod.ArtifactStatePreparing
+
+		// A1: Store Wins
+		durationSeconds, err := ParseRecordingDurationSeconds(m.Length)
+		if err != nil && m.Length != "" {
+			// A5: Parse Error Observability
+			// log.Warn().Str("ref", m.ServiceRef).Err(err).Msg("failed to parse store duration")
+		}
+
+		// A2/A3: Probe Fallback
+		// If store is invalid (<=0), check if we have a valid cached duration from probe.
+		// We DO NOT trigger a new probe here (Safe Read).
+		if durationSeconds <= 0 && metaOk && meta.Duration > 0 {
+			durationSeconds = meta.Duration
+		}
+
+		// Enforce Gate: If building, duration is explicitly unknown (nil)
+		if isBuilding {
+			durationSeconds = 0
 		}
 
 		var durationPtr *int64
@@ -202,6 +254,51 @@ func (s *service) GetPlaybackInfo(ctx context.Context, in PlaybackInfoInput) (Pl
 		return PlaybackInfoResult{}, ErrInvalidArgument{Field: "recordingID", Reason: "invalid format"}
 	}
 	return s.resolver.Resolve(ctx, serviceRef, PlaybackIntent(in.Intent), in.Profile)
+}
+
+func (s *service) ResolvePlayback(ctx context.Context, recordingID, profile string) (PlaybackResolution, error) {
+	// 1. Get raw domain decision
+	res, err := s.GetPlaybackInfo(ctx, PlaybackInfoInput{
+		RecordingID: recordingID,
+		Intent:      "stream", // We are resolving for streaming
+		Profile:     PlaybackProfile(profile),
+	})
+	if err != nil {
+		return PlaybackResolution{}, err
+	}
+
+	// 2. Map to Resolution
+	strategy := StrategyDirect
+	if res.Decision.Artifact == playback.ArtifactHLS {
+		strategy = StrategyHLS
+	}
+
+	// CanSeek?
+	// Logic:
+	// - Direct+MP4+FastPath = Seekable
+	// - HLS+Ready = Seekable
+	// Note: If HLS and Preparing, simple "GetPlaybackInfo" returns OK, but
+	// ResolvePlayback wrapper should ideally arguably fail-closed or return restricted status.
+	// But our contract says "ResolvePlayback" returns success if strategy is decided.
+	// We handle transient states via "GetPlaybackInfo" errors (ErrPreparing) which GetPlaybackInfo ALREADY returns!
+	// So if we are here, we are NOT preparing (unless resolver didn't check job, but it does).
+
+	canSeek := false
+	if strategy == StrategyHLS {
+		canSeek = true // VOD HLS is seekable if playlist exists (implied by success here)
+	} else if res.MediaInfo.IsMP4FastPathEligible {
+		canSeek = true
+	}
+
+	return PlaybackResolution{
+		Strategy:       strategy,
+		CanSeek:        canSeek,
+		DurationSec:    res.DurationSeconds, // Pass-through pointer
+		DurationSource: res.DurationSource,  // Pass-through pointer
+		VideoCodec:     res.VideoCodec,
+		AudioCodec:     res.AudioCodec,
+		Reason:         res.Reason,
+	}, nil
 }
 
 func (s *service) GetStatus(ctx context.Context, in StatusInput) (StatusResult, error) {

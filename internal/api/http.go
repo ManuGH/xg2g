@@ -253,6 +253,15 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager, opts ...ServerOption) *Se
 	}
 	v4Resolver := recservice.NewResolver(&cfg, s.vodManager, resolverOpts)
 
+	// Create OpenWebIF client using configured BaseURL and credentials
+	// We use the same configuration logic as the health checker
+	s.owiClient = openwebif.NewWithPort(cfg.Enigma2.BaseURL, 0, openwebif.Options{
+		Timeout:  cfg.Enigma2.Timeout,
+		Username: cfg.Enigma2.Username,
+		Password: cfg.Enigma2.Password,
+		// Using defaults for other options as they are not currently exposed in AppConfig for main client
+	})
+
 	// Create infrastructure adapters for domain service
 	owiAdapter := v3.NewOWIAdapter(s.owiClient)
 	resumeAdapter := v3.NewResumeAdapter(s.resumeStore)
@@ -615,6 +624,13 @@ func (s *Server) routes() http.Handler {
 
 	rWrite.Put("/api/v3/recordings/{recordingId}/resume", s.v3Handler.HandleRecordingResume)
 	rWrite.Options("/api/v3/recordings/{recordingId}/resume", s.v3Handler.HandleRecordingResumeOptions)
+
+	// 8. Client Integration (Neutral Shape)
+	// Supports DirectPlay decision logic without backend coupling
+	rRead.Post("/Items/{itemId}/PlaybackInfo", func(w http.ResponseWriter, r *http.Request) {
+		itemId := chi.URLParam(r, "itemId")
+		s.v3Handler.PostItemsPlaybackInfo(w, r, itemId)
+	})
 
 	// 9. LAN Guard (Restrict discovery/legacy endpoints to private networks)
 	// trusted proxies are comma-separated in config

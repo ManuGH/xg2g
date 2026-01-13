@@ -21,8 +21,8 @@ import (
 )
 
 type Resolver interface {
-	ResolvePlaylist(ctx context.Context, recordingID string) (ArtifactOK, *ArtifactError)
-	ResolveTimeshift(ctx context.Context, recordingID string) (ArtifactOK, *ArtifactError)
+	ResolvePlaylist(ctx context.Context, recordingID, profile string) (ArtifactOK, *ArtifactError)
+	ResolveTimeshift(ctx context.Context, recordingID, profile string) (ArtifactOK, *ArtifactError)
 	ResolveSegment(ctx context.Context, recordingID string, segment string) (ArtifactOK, *ArtifactError)
 }
 
@@ -41,7 +41,7 @@ func New(cfg *config.AppConfig, manager *vod.Manager, mapper *recordings.PathMap
 }
 
 // ResolvePlaylist resolves the HLS playlist (index.m3u8), triggering builds if needed.
-func (r *DefaultResolver) ResolvePlaylist(ctx context.Context, recordingID string) (ArtifactOK, *ArtifactError) {
+func (r *DefaultResolver) ResolvePlaylist(ctx context.Context, recordingID, profile string) (ArtifactOK, *ArtifactError) {
 	// 1. Validate ID
 	ref, ok := decodeRef(recordingID)
 	if !ok {
@@ -57,7 +57,7 @@ func (r *DefaultResolver) ResolvePlaylist(ctx context.Context, recordingID strin
 	meta, exists := r.vodManager.GetMetadata(ref)
 	if !exists {
 		// First access: Start pipeline via EnsureSpec
-		if err := r.triggerBuild(ctx, ref); err != nil {
+		if err := r.triggerBuild(ctx, ref, profile); err != nil {
 			// If build trigger fails (e.g. source not found), map to correct error.
 			r.vodManager.TriggerProbe(ref, "build trigger failed: "+err.Error())
 		}
@@ -74,7 +74,7 @@ func (r *DefaultResolver) ResolvePlaylist(ctx context.Context, recordingID strin
 	if meta.State == vod.ArtifactStateFailed {
 		// Attempt reconcile
 		if _, transitioned := r.vodManager.MarkPreparingIfState(ref, vod.ArtifactStateFailed, "reconcile: retrying build"); transitioned {
-			_ = r.triggerBuild(ctx, ref)
+			_ = r.triggerBuild(ctx, ref, profile)
 			return ArtifactOK{}, &ArtifactError{Code: CodePreparing, RetryAfter: 5 * time.Second, Detail: "preparing (reconciling)"}
 		}
 
@@ -98,7 +98,7 @@ func (r *DefaultResolver) ResolvePlaylist(ctx context.Context, recordingID strin
 	if err != nil {
 		r.vodManager.DemoteOnOpenFailure(ref, err)
 		// Trigger build immediately to recover
-		_ = r.triggerBuild(ctx, ref)
+		_ = r.triggerBuild(ctx, ref, profile)
 		return ArtifactOK{}, &ArtifactError{Code: CodePreparing, RetryAfter: 2 * time.Second, Detail: "playlist open failed (reconciling)"}
 	}
 	defer f.Close()
@@ -124,7 +124,7 @@ func (r *DefaultResolver) ResolvePlaylist(ctx context.Context, recordingID strin
 	}, nil
 }
 
-func (r *DefaultResolver) ResolveTimeshift(ctx context.Context, recordingID string) (ArtifactOK, *ArtifactError) {
+func (r *DefaultResolver) ResolveTimeshift(ctx context.Context, recordingID, profile string) (ArtifactOK, *ArtifactError) {
 	ref, ok := decodeRef(recordingID)
 	if !ok {
 		return ArtifactOK{}, &ArtifactError{Code: CodeInvalid, Detail: "invalid recording id"}
@@ -138,7 +138,7 @@ func (r *DefaultResolver) ResolveTimeshift(ctx context.Context, recordingID stri
 	if !exists || meta.State != vod.ArtifactStateReady {
 		// Timeshift piggybacks on VOD build.
 		if !exists || meta.State == vod.ArtifactStateFailed {
-			_ = r.triggerBuild(ctx, ref)
+			_ = r.triggerBuild(ctx, ref, profile)
 		}
 		return ArtifactOK{}, &ArtifactError{Code: CodePreparing, RetryAfter: 2 * time.Second, Detail: "preparing"}
 	}
@@ -237,7 +237,7 @@ func (r *DefaultResolver) ResolveSegment(ctx context.Context, recordingID string
 
 // Internal Logic
 
-func (r *DefaultResolver) triggerBuild(ctx context.Context, ref string) error {
+func (r *DefaultResolver) triggerBuild(ctx context.Context, ref, profile string) error {
 	// 1. Resolve Source
 	srcType, srcURL, _, err := r.resolveSource(ref)
 	if err != nil {
@@ -252,8 +252,14 @@ func (r *DefaultResolver) triggerBuild(ctx context.Context, ref string) error {
 
 	// 3. Ensure Spec
 	finalPath := filepath.Join(cacheDir, "index.m3u8")
+
+	buildProfile := vod.ProfileDefault
+	if profile == "safari" {
+		buildProfile = vod.ProfileLow
+	}
+
 	// Using EnsureSpec to start/resume build
-	_, err = r.vodManager.EnsureSpec(ctx, cacheDir, ref, srcURL, cacheDir, "index.live.m3u8", finalPath, vod.ProfileDefault)
+	_, err = r.vodManager.EnsureSpec(ctx, cacheDir, ref, srcURL, cacheDir, "index.live.m3u8", finalPath, buildProfile)
 	_ = srcType // Unused for now
 	return err
 }
@@ -265,7 +271,6 @@ func (r *DefaultResolver) resolveSource(serviceRef string) (string, string, stri
 		return "", "", "", errors.New("invalid recording path")
 	}
 
-	host := r.cfg.Enigma2.BaseURL
 	streamPort := r.cfg.Enigma2.StreamPort
 	policy := strings.ToLower(strings.TrimSpace(r.cfg.RecordingPlaybackPolicy))
 	username := r.cfg.Enigma2.Username
@@ -292,11 +297,14 @@ func (r *DefaultResolver) resolveSource(serviceRef string) (string, string, stri
 
 	// PR4.2 Invariant: Canonical URL Escaping
 	// We use baseURL parsing logic or manual construction that respects encoded chars.
-	// Replicating PR4.2 logic:
-	u, err := url.Parse(fmt.Sprintf("http://%s:%d", host, streamPort))
+	// Fix: Parse BaseURL first to preserve scheme/host/userinfo
+	baseURL, err := url.Parse(r.cfg.Enigma2.BaseURL)
 	if err != nil {
-		return "", "", "", fmt.Errorf("invalid base url: %w", err)
+		return "", "", "", fmt.Errorf("invalid config base url: %w", err)
 	}
+
+	u := *baseURL
+	u.Host = fmt.Sprintf("%s:%d", baseURL.Hostname(), streamPort)
 
 	// RawPath MUST be set to preserved proper escaping of special chars (e.g. %)
 	// Path must be unescaped.

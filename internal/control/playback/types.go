@@ -1,13 +1,35 @@
 package playback
 
+import "errors"
+
+// --- Errors ---
+
+var (
+	ErrForbidden   = errors.New("forbidden")
+	ErrNotFound    = errors.New("not found")
+	ErrPreparing   = errors.New("preparing")
+	ErrUpstream    = errors.New("upstream failed")
+	ErrUnsupported = errors.New("unsupported")
+)
+
+// --- Enums ---
+
 // PlaybackMode defines the calculated strategy.
 type PlaybackMode string
 
 const (
 	ModeDirectPlay   PlaybackMode = "direct_play"   // Client plays strict format directly
 	ModeDirectStream PlaybackMode = "direct_stream" // Remux container only (no re-encode)
-	ModeTranscode    PlaybackMode = "transcode"     // Re-encode required
+	ModeTranscode    PlaybackMode = "transcoder"    // Re-encode required
 	ModeError        PlaybackMode = "error"         // Hard failure (e.g. not found)
+)
+
+// Protocol defines the transport protocol.
+type Protocol string
+
+const (
+	ProtocolHLS Protocol = "hls"
+	ProtocolMP4 Protocol = "mp4"
 )
 
 // ArtifactKind defines what kind of file/stream we point to.
@@ -20,55 +42,82 @@ const (
 )
 
 // ReasonCode defines strictly why a decision was made.
-// Format: {PLATFORM}_{Constraint}_{Result}
 type ReasonCode string
 
 const (
-	ReasonSafariDirectMP4   ReasonCode = "SAFARI_MP4_READY"
-	ReasonSafariTSNeedsHLS  ReasonCode = "SAFARI_TS_REQUIRES_HLS"
-	ReasonChromeDirectMP4   ReasonCode = "CHROME_MP4_READY"
-	ReasonTranscodeRequired ReasonCode = "CODEC_MISMATCH_TRANSCODE"
-	ReasonForceHLS          ReasonCode = "POLICY_FORCE_HLS"
-	ReasonUnknownContainer  ReasonCode = "UNKNOWN_CONTAINER_TRANSCODE"
-	ReasonFileNotFound      ReasonCode = "MEDIA_NOT_FOUND"
-	ReasonProbeFailed       ReasonCode = "MEDIA_PROBE_FAILED"
-	ReasonDirectPlayMatch   ReasonCode = "GENERIC_DIRECT_PLAY_READY"
-	ReasonDirectStreamMatch ReasonCode = "GENERIC_DIRECT_STREAM_READY"
+	ReasonDirectPlayMatch   ReasonCode = "directplay_supported"
+	ReasonDirectStreamMatch ReasonCode = "directstream_remux"
+	ReasonTranscodeVideo    ReasonCode = "transcode_video"
+	ReasonTranscodeAudio    ReasonCode = "transcode_audio"
+	ReasonTranscodeRequired ReasonCode = "transcode_required"
+	ReasonProbeFailed       ReasonCode = "probe_failed"
+	ReasonForceHLS          ReasonCode = "force_hls"
+	ReasonSafariTSNeedsHLS  ReasonCode = "safari_ts_needs_hls"
+	ReasonSafariDirectMP4   ReasonCode = "safari_direct_mp4"
+	ReasonChromeDirectMP4   ReasonCode = "chrome_direct_mp4"
+	ReasonUnknownContainer  ReasonCode = "unknown_container"
 )
 
-// MediaInfo represents pure facts about the recording.
-// It is the output of the VODResolver.
+// --- Structs ---
+
+type ResolveRequest struct {
+	RecordingID  string
+	ProtocolHint string            // "hls", "mp4", ""
+	Headers      map[string]string // For ProfileResolver
+}
+
+type PlaybackPlan struct {
+	Mode           PlaybackMode
+	Protocol       Protocol
+	Container      string
+	VideoCodec     string
+	AudioCodec     string
+	DecisionReason ReasonCode
+	TruthReason    string
+	Duration       float64
+}
+
+// MediaInfo represents pure facts about the recording (used inside PlaybackInfoResult domain).
+// Note: PIDE uses MediaTruth internally, but Resolver exposes MediaInfo for DTO.
 type MediaInfo struct {
-	// AbsPath is the absolute filesystem path.
-	AbsPath string
-	// Container is the detected format (e.g., "mp4", "mpegts", "mkv").
-	Container string
-	// VideoCodec e.g., "h264", "hevc", "mpeg2video".
-	VideoCodec string
-	// AudioCodec e.g., "aac", "mp2", "ac3".
-	AudioCodec string
-	// Duration in seconds.
-	Duration float64
-	// IsMP4FastPathEligible indicates if the file can be streamed directly (e.g. moov atom optimized).
+	Container             string
+	VideoCodec            string
+	AudioCodec            string
+	Duration              float64
+	AbsPath               string
 	IsMP4FastPathEligible bool
+}
+
+// MediaTruth represents the source of truth for the media.
+type MediaTruth struct {
+	State      string // "READY", "PREPARING", "FAILED"
+	Container  string
+	VideoCodec string
+	AudioCodec string
+	Duration   float64
 }
 
 // ClientProfile defines what the client can handle.
 type ClientProfile struct {
-	UserAgent string
-	IsSafari  bool
-	IsChrome  bool
-	// Capabilities
-	CanPlayTS   bool
-	CanPlayHEVC bool
-	CanPlayAC3  bool
+	Name              string
+	UserAgent         string
+	IsSafari          bool
+	IsChrome          bool
+	SupportsNativeHLS bool
+	SupportsMSE       bool
+	SupportsH264      bool
+	SupportsHEVC      bool
+	SupportsAAC       bool
+	SupportsAC3       bool
+	SupportsMPEG2     bool
+	CanPlayTS         bool // Legacy alias support
 }
 
-// Policy allows overriding default behavior (e.g. force transcode).
-type Policy struct {
-	ForceTranscode bool
-	ForceHLS       bool
-}
+const (
+	StateReady     = "READY"
+	StatePreparing = "PREPARING"
+	StateFailed    = "FAILED"
+)
 
 // Decision represents the output of the engine.
 type Decision struct {

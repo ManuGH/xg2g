@@ -2,7 +2,9 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
-import { useEffect, lazy, Suspense } from 'react';
+import { useEffect, lazy, Suspense, useMemo } from 'react';
+
+
 import './App.css';
 import { useAppContext } from './context/AppContext';
 import Navigation from './components/Navigation';
@@ -128,7 +130,10 @@ function App() {
           {view === 'epg' && (
             <EPG
               channels={channels.channels}
-              bouquets={channels.bouquets as any}
+              bouquets={useMemo(() => (channels.bouquets || []).map(b => ({
+                name: b.name || 'Unknown',
+                services: b.services ?? 0
+              })), [channels.bouquets])}
               selectedBouquet={channels.selectedBouquet}
               onSelectBouquet={ctx.loadChannels}
               onPlay={ctx.handlePlay}

@@ -50,6 +50,8 @@ function Config() {
         const data = result.data;
         const normalized: AppConfig = {
           ...data,
+          // Normalization for Settings list (NOT API DTO).
+          // Legacy check in case backend sends raw strings for config values.
           bouquets: Array.isArray(data.bouquets) ? data.bouquets : []
         };
         setConfig(normalized);
@@ -93,7 +95,10 @@ function Config() {
 
     setConfig(prev => {
       if (!prev) return null;
-      const sectionData = (prev[section] as any) || {};
+      // Strict safe access
+      const currentSection = prev[section];
+      const sectionData = (currentSection && typeof currentSection === 'object') ? currentSection : {};
+
       return {
         ...prev,
         [section]: {
