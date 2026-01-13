@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import Hls from 'hls.js';
 import type { ErrorData, FragLoadedData, ManifestParsedData } from 'hls.js';
-import { createSession } from '../client-ts/sdk.gen';
+import { createSession, getRecordingPlaybackInfo } from '../client-ts/sdk.gen';
 import { client } from '../client-ts/client.gen';
 import type {
   V3PlayerProps,
@@ -43,7 +43,7 @@ function V3Player(props: V3PlayerProps) {
   const recordingId = 'recordingId' in props ? props.recordingId : undefined;
 
   const [sRef, setSRef] = useState<string>(
-    channel?.ref || channel?.id || '1:0:19:283D:3FB:1:C00000:0:0:0:'
+    channel?.service_ref || channel?.id || '1:0:19:283D:3FB:1:C00000:0:0:0:'
   );
 
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -576,33 +576,13 @@ function V3Player(props: V3PlayerProps) {
         }
 
         if (res.status === 503) {
-          // CONTRACT-FE-001: Strict Retry-After enforcement
-          const retryAfter = res.headers.get('Retry-After');
-
-          if (!retryAfter) {
-            // No Retry-After header → fail immediately per contract
-            setStatus('error');
-            setError(t('player.serverError'));
-            setErrorDetails('Server did not provide retry guidance (missing Retry-After header)');
-            setShowErrorDetails(true);
-            throw new Error('503 without Retry-After header');
-          }
-
-          const retrySeconds = parseInt(retryAfter, 10);
-          setStatus('starting');
-          setErrorDetails(`${t('player.preparing')} (retry in ${retrySeconds}s)`);
-          setShowErrorDetails(true);
-
-          // Wait exact retry_after duration
-          await new Promise(r => setTimeout(r, retrySeconds * 1000));
+          // Fixed backoff (1s) ignoring Retry-After headers on probes
+          await new Promise(r => setTimeout(r, 1000));
+          // Continue loop (implicit)
         } else {
           throw new Error(`Unexpected status: ${res.status}`);
         }
       } catch (e) {
-        // Network error or non-503 error → fail
-        if ((e as Error).message === '503 without Retry-After header') {
-          throw e; // Propagate contract violation error
-        }
         console.warn('[V3Player] Probe failed', e);
         throw new Error(t('player.networkError'));
       }
@@ -632,54 +612,87 @@ function V3Player(props: V3PlayerProps) {
       const hlsUrl = `${apiBase}/recordings/${id}/playlist.m3u8`;
       let streamUrl = hlsUrl;
       let mode = 'hls';
-      let rData: ResumeState | undefined;
+
 
       try {
-        // Use client.get to ensure correct Base URL, Auth, and Encoding
-        // The type parameter <any> bypasses strict typing for this manual call
-        const { data, error } = await client.get<any>({
-          url: '/recordings/{recordingId}/stream-info',
-          path: { recordingId: id }
-        });
+        // Use generated client with strict typing and contract enforcement
+        const maxMetaRetries = 20;
+        let pInfo: import('../client-ts/types.gen').PlaybackInfo | undefined;
 
-        if (error) {
-          throw new Error(JSON.stringify(error));
+        for (let i = 0; i < maxMetaRetries; i++) {
+          if (activeRecordingRef.current !== id) return;
+
+          const { data, error, response } = await getRecordingPlaybackInfo({
+            path: { recordingId: id }
+          });
+
+          if (error) {
+            // CONTRACT-FE-001: Strict Retry-After enforcement for PlaybackInfo
+            if (response.status === 503) {
+              const retryAfter = response.headers.get('Retry-After');
+              if (retryAfter) {
+                const seconds = parseInt(retryAfter, 10);
+                setStatus('building');
+                setErrorDetails(`${t('player.preparing')} (${seconds}s)`);
+                await sleep(seconds * 1000);
+                continue;
+              } else {
+                // Strict 503: Fail if no Retry-After
+                throw new Error('503 Service Unavailable (No Retry-After)');
+              }
+            }
+            throw new Error(JSON.stringify(error));
+          }
+
+          if (data) {
+            pInfo = data;
+            break;
+          }
         }
 
-        const info = { data };
-        if (info.data) {
-          console.debug('[V3Player] Playback Info:', info.data);
+        if (!pInfo) {
+          throw new Error("PlaybackInfo timeout");
+        }
 
-          if (info.data.mode === 'direct_mp4' && info.data.url) {
-            mode = 'direct_mp4';
-            streamUrl = info.data.url;
-            if (streamUrl.startsWith('/')) {
-              const origin = window.location.origin;
-              streamUrl = `${origin}${streamUrl}`;
-            }
-            // Add Cache Busting to prevent sticky 503s
-            streamUrl += (streamUrl.includes('?') ? '&' : '?') + `cb=${Date.now()}`;
+        console.debug('[V3Player] Playback Info:', pInfo);
+
+        if (pInfo.mode === 'direct_mp4' && pInfo.url) {
+          mode = 'direct_mp4';
+          streamUrl = pInfo.url;
+          if (streamUrl.startsWith('/')) {
+            const origin = window.location.origin;
+            streamUrl = `${origin}${streamUrl}`;
           }
+          // Add Cache Busting to prevent sticky 503s
+          streamUrl += (streamUrl.includes('?') ? '&' : '?') + `cb=${Date.now()}`;
+        }
 
-          // Use Backend-Provided Duration
-          if (info.data.durationSeconds && info.data.durationSeconds > 0) {
-            setDurationSeconds(info.data.durationSeconds);
-            setPlaybackMode('VOD');
-          }
+        // Use Backend-Provided Duration
+        if (pInfo.duration_seconds && pInfo.duration_seconds > 0) {
+          setDurationSeconds(pInfo.duration_seconds);
+          setPlaybackMode('VOD');
+        }
 
-          // Process Resume State
-          rData = (info?.data as any)?.resume as ResumeState | undefined;
-          if (rData && rData.pos_seconds >= 15 && (!rData.finished)) {
-            const d = rData.duration_seconds || (info.data.durationSeconds as number);
-            if (!d || rData.pos_seconds < d - 10) {
-              setResumeState(rData);
-              setShowResumeOverlay(true);
-            }
+        // Process Resume State (Strict Typed)
+        if (pInfo.resume && pInfo.resume.pos_seconds >= 15 && (!pInfo.resume.finished)) {
+          const d = pInfo.resume.duration_seconds || (pInfo.duration_seconds || 0);
+          if (!d || pInfo.resume.pos_seconds < d - 10) {
+            // Map to internal ResumeState (nullable vs optional alignment)
+            setResumeState({
+              pos_seconds: pInfo.resume.pos_seconds,
+              duration_seconds: pInfo.resume.duration_seconds || undefined,
+              finished: pInfo.resume.finished || undefined
+            });
+            setShowResumeOverlay(true);
           }
         }
       } catch (e: any) {
         console.warn('[V3Player] Failed to get playback info', e);
-        // Fallback to HLS defaults if stream-info fails, but show error if critical
+        // Fail-closed: Show error, do NOT fallback
+        if (activeRecordingRef.current !== id) return;
+        setStatus('error');
+        setError(e.message || t('player.serverError'));
+        return;
       }
 
       // --- DIRECT MP4 PATH ---
@@ -1112,10 +1125,15 @@ function V3Player(props: V3PlayerProps) {
       const v = videoRef.current;
 
       let dropped = 0;
+      // Webkit non-standard extension
+      interface WebkitVideoElement extends HTMLVideoElement {
+        webkitDroppedFrameCount?: number;
+      }
+
       if (v.getVideoPlaybackQuality) {
         dropped = v.getVideoPlaybackQuality().droppedVideoFrames;
-      } else if ((v as any).webkitDroppedFrameCount) {
-        dropped = (v as any).webkitDroppedFrameCount;
+      } else if ('webkitDroppedFrameCount' in v) {
+        dropped = (v as WebkitVideoElement).webkitDroppedFrameCount || 0;
       }
 
       let buffHealth = 0;
@@ -1232,7 +1250,7 @@ function V3Player(props: V3PlayerProps) {
   // Update sRef on channel change
   useEffect(() => {
     if (channel) {
-      const ref = channel.ref || channel.id;
+      const ref = channel.service_ref || channel.id;
       if (ref) setSRef(ref);
     }
   }, [channel]);

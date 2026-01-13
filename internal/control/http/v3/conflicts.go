@@ -55,7 +55,7 @@ func DetectConflicts(proposed TimerCreateRequest, existing []openwebif.Timer) []
 		// Given we calculated effective pBegin/pEnd, we should compare against t.Begin/t.End.
 		if t.ServiceRef == proposed.ServiceRef && t.Begin == pBegin && t.End == pEnd {
 			conflicts = append(conflicts, TimerConflict{
-				Type: Duplicate,
+				Type: TimerConflictTypeDuplicate,
 				BlockingTimer: Timer{
 					TimerId:     read.MakeTimerID(t.ServiceRef, t.Begin, t.End),
 					ServiceRef:  t.ServiceRef,
@@ -82,7 +82,7 @@ func DetectConflicts(proposed TimerCreateRequest, existing []openwebif.Timer) []
 			// User spec: "Strict inequality avoids false positives".
 
 			conflicts = append(conflicts, TimerConflict{
-				Type: Overlap,
+				Type: TimerConflictTypeOverlap,
 				BlockingTimer: Timer{
 					TimerId:     read.MakeTimerID(t.ServiceRef, t.Begin, t.End),
 					ServiceRef:  t.ServiceRef,

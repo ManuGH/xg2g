@@ -766,24 +766,70 @@ components:
     PlaybackInfo:
       type: object
       required: [mode, url]
+      additionalProperties: false
       properties:
         mode:
-          type: string
-          enum: [hls, direct_mp4]
+          $ref: "#/components/schemas/PlaybackInfoMode"
         url:
           type: string
+          description: Relative URL for the selected playback strategy.
         seekable:
           type: boolean
-        reason:
-          type: string
+          description: Whether the stream is seekable. Omitted if unknown.
         duration_seconds:
           type: integer
           format: int64
-          description: "Authoritative duration in seconds."
+          minimum: 1
+          description: Duration in seconds. Omitted if unknown or preparing.
         duration_source:
+          $ref: "#/components/schemas/PlaybackInfoDurationSource"
+        resume:
+          type: object
+          description: Optional resume state if available.
+          required: [pos_seconds]
+          properties:
+            pos_seconds:
+              type: number
+              description: last known playback position in seconds
+            duration_seconds:
+              type: integer
+              format: int64
+            finished:
+              type: boolean
+        container:
           type: string
-          description: "Authoritative source of duration: cache, store, or probe."
-          enum: [cache, store, probe]
+          description: Truthful container name if known (e.g., ts, mp4, mkv).
+        video_codec:
+          type: string
+          description: Truthful video codec if known (e.g., h264, hevc, mpeg2).
+        audio_codec:
+          type: string
+          description: Truthful audio codec if known (e.g., aac, ac3, mp2).
+        reason:
+          $ref: "#/components/schemas/PlaybackInfoReason"
+
+    PlaybackInfoMode:
+      type: string
+      enum: [hls, direct_mp4]
+      description: Selected playback strategy output mode.
+
+    PlaybackInfoDurationSource:
+      type: string
+      enum: [store, cache, probe]
+      description: Source of the reported duration, when duration_seconds is present.
+
+    PlaybackInfoReason:
+      type: string
+      enum:
+        [
+          directplay_match,
+          transcode_audio,
+          transcode_video,
+          transcode_all,
+          container_mismatch,
+          unknown,
+        ]
+      description: Reason for the playback decision.
 
     TimerCreateRequest:
       type: object
@@ -1425,6 +1471,37 @@ paths:
                 format: binary
         "404":
           description: Recording not found
+        "503":
+          description: Preparing (retryable)
+          headers:
+            Retry-After:
+              description: Seconds to wait before retry
+              schema:
+                type: string
+                example: "5"
+    head:
+      summary: Probe recording availability (Direct VOD)
+      operationId: probeRecordingMp4
+      tags: [recordings]
+      parameters:
+        - name: recordingId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Available
+        "404":
+          description: Not found
+        "503":
+          description: Preparing (retryable)
+          headers:
+            Retry-After:
+              description: Seconds to wait before retry
+              schema:
+                type: string
+                example: "5"
 
   /recordings/{recordingId}/playlist.m3u8:
     get:

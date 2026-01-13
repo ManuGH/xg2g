@@ -6,17 +6,12 @@ package v3
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
-	"strings"
-	"time"
 
 	"github.com/ManuGH/xg2g/internal/control/auth"
 	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
-	"github.com/ManuGH/xg2g/internal/control/http/v3/types"
-	"github.com/ManuGH/xg2g/internal/control/playback"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/log"
 )
@@ -160,69 +155,6 @@ func (s *Server) GetRecordingsRecordingIdStatus(w http.ResponseWriter, r *http.R
 	}
 }
 
-// GetRecordingPlaybackInfo determines the best playback strategy
-func (s *Server) GetRecordingPlaybackInfo(w http.ResponseWriter, r *http.Request, recordingId string) {
-	if s.recordingsService == nil {
-		writeProblem(w, r, http.StatusInternalServerError, "system/internal", "Internal Error", "INTERNAL_ERROR", "Recordings service not available", nil)
-		return
-	}
-
-	start := time.Now()
-	// 1. Adapter: Inputs
-	intent := recservice.IntentMetadata
-	if r.URL.Query().Get("intent") == "stream" {
-		intent = recservice.IntentStream
-	}
-
-	clientProfile := s.mapProfile(r)
-	var profile recservice.PlaybackProfile = recservice.ProfileGeneric
-	if strings.Contains(clientProfile.Name, "Safari") && !strings.Contains(clientProfile.Name, "Chrome") {
-		profile = recservice.ProfileSafari
-	}
-
-	// 2. Adapter: Call Service
-	info, err := s.recordingsService.GetPlaybackInfo(r.Context(), recservice.PlaybackInfoInput{
-		RecordingID: recordingId,
-		Intent:      string(intent),
-		Profile:     profile,
-	})
-	if err != nil {
-		s.writeRecordingError(w, r, err)
-		return
-	}
-
-	// 3. Adapter: Success Mapping
-	var mode string
-	var url string
-
-	// Use playback.Mode constants implicitly via decision
-	switch info.Decision.Mode {
-	case playback.ModeDirectPlay, playback.ModeDirectStream:
-		mode = "direct_mp4"
-		url = fmt.Sprintf("/api/v3/recordings/%s/stream.mp4", recordingId) // Using recordingID in URL
-	case playback.ModeTranscode:
-		mode = "hls"
-		url = fmt.Sprintf("/api/v3/recordings/%s/index.m3u8", recordingId)
-	default:
-		s.writeRecordingError(w, r, errors.New("unknown playback mode"))
-		return
-	}
-
-	resp := types.VODPlaybackResponse{
-		Mode:            mode,
-		URL:             url,
-		DurationSeconds: int64(info.MediaInfo.Duration),
-		Reason:          info.Reason,
-	}
-
-	_ = start // Suppress unused
-
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		log.L().Error().Err(err).Msg("failed to encode playback info")
-	}
-}
-
 // DeleteRecording handles DELETE /api/v3/recordings/{recordingId}
 func (s *Server) DeleteRecording(w http.ResponseWriter, r *http.Request, recordingId string) {
 	if s.recordingsService == nil {
@@ -290,6 +222,42 @@ func (s *Server) StreamRecordingDirect(w http.ResponseWriter, r *http.Request, r
 	http.ServeContent(w, r, "stream.mp4", info.ModTime(), f)
 }
 
+func (s *Server) ProbeRecordingMp4(w http.ResponseWriter, r *http.Request, recordingId string) {
+	if s.recordingsService == nil {
+		writeProblem(w, r, http.StatusInternalServerError, "system/internal", "Internal Error", "INTERNAL_ERROR", "Recordings service not available", nil)
+		return
+	}
+
+	// Delegate to Service.Stream (Thin Adapter) - Checks readiness
+	res, err := s.recordingsService.Stream(r.Context(), recservice.StreamInput{
+		RecordingID: recordingId,
+	})
+	if err != nil {
+		s.writeRecordingError(w, r, err)
+		return
+	}
+
+	if !res.Ready {
+		// Not Ready: Return 503 with Retry-After
+		w.Header().Set("Retry-After", fmt.Sprintf("%d", res.RetryAfter))
+		w.WriteHeader(http.StatusServiceUnavailable)
+		return
+	}
+
+	// Ready: Check file stats for headers
+	info, err := os.Stat(res.LocalPath)
+	if err != nil {
+		// Fallback if file missing despite ready
+		s.writeRecordingError(w, r, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "video/mp4")
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", info.Size()))
+	w.Header().Set("Last-Modified", info.ModTime().UTC().Format(http.TimeFormat))
+	w.WriteHeader(http.StatusOK)
+}
+
 func (s *Server) writeRecordingError(w http.ResponseWriter, r *http.Request, err error) {
 	// Map domain errors to HTTP problems using Classification
 	class := recservice.Classify(err)
@@ -324,33 +292,6 @@ func boolPtr(b bool) *bool    { return &b }
 // IsAllowedVideoSegment validates segment filenames (reused in other places)
 func IsAllowedVideoSegment(name string) bool {
 	return v3recordings.IsAllowedVideoSegment(name)
-}
-
-// mapProfile scans User-Agent for Safari/Chrome to assist playback decisions
-func (s *Server) mapProfile(r *http.Request) types.ClientProfile {
-	ua := r.Header.Get("User-Agent")
-	p := types.ClientProfile{
-		Name:        "Unknown",
-		VideoCodecs: []string{"h264"},
-		AudioCodecs: []string{"aac", "mp3"},
-		Containers:  []string{"mp4", "ts"},
-		SupportsHLS: false,
-	}
-
-	if strings.Contains(ua, "Safari") && !strings.Contains(ua, "Chrome") {
-		p.Name = "Safari"
-		p.VideoCodecs = append(p.VideoCodecs, "hevc")
-		p.SupportsHLS = true
-	} else if strings.Contains(ua, "VLC") {
-		p.Name = "VLC"
-		p.VideoCodecs = append(p.VideoCodecs, "hevc", "mpeg2")
-		p.SupportsHLS = true
-	} else if strings.Contains(ua, "Chrome") {
-		p.Name = "Chrome"
-		p.SupportsHLS = true
-	}
-
-	return p
 }
 
 func (s *Server) writePreparingResponse(w http.ResponseWriter, r *http.Request, recordingId, state string, retryAfter int) {

@@ -100,6 +100,19 @@ export type SessionResponse = {
     playbackUrl?: string;
 };
 
+export type Service = {
+    id?: string;
+    name?: string;
+    number?: string;
+    group?: string;
+    logo_url?: string;
+    enabled?: boolean;
+    /**
+     * Service reference for streaming (extracted from M3U URL)
+     */
+    service_ref?: string;
+};
+
 export type SessionRecord = {
     sessionId?: string;
     serviceRef?: string;
@@ -213,11 +226,8 @@ export type SystemInfoData = {
         }>;
     };
     storage?: {
-        devices?: Array<{
-            model?: string;
-            capacity?: string;
-            mount?: string;
-        }>;
+        devices?: Array<StorageItem>;
+        locations?: Array<StorageItem>;
     };
     runtime?: {
         uptime?: string;
@@ -227,6 +237,24 @@ export type SystemInfoData = {
         memory_available?: string;
         memory_used?: string;
     };
+};
+
+export type StorageItem = {
+    model?: string;
+    capacity?: string;
+    mount?: string;
+    mount_status: 'mounted' | 'unmounted' | 'unknown';
+    /**
+     * Status of the storage device. 'skipped' indicates the monitor was too busy to evaluate.
+     */
+    health_status: 'ok' | 'timeout' | 'error' | 'unknown' | 'skipped';
+    /**
+     * Access level detected during probe.
+     */
+    access: 'none' | 'ro' | 'rw';
+    is_nas: boolean;
+    fs_type?: string;
+    checked_at?: string;
 };
 
 export type ComponentStatus = {
@@ -276,8 +304,18 @@ export type PiconsConfig = {
     baseUrl?: string;
 };
 
+/**
+ * Streaming delivery policy configuration (ADR-00X)
+ */
+export type StreamingConfig = {
+    /**
+     * Streaming delivery policy (only 'universal' is supported)
+     */
+    delivery_policy?: 'universal';
+};
+
 export type FeatureFlags = {
-    instantTune?: boolean;
+    [key: string]: unknown;
 };
 
 export type SeriesRuleRunReport = {
@@ -411,74 +449,8 @@ export type AppConfig = {
     bouquets?: Array<string>;
     epg?: EpgConfig;
     picons?: PiconsConfig;
-    featureFlags?: FeatureFlags;
     streaming?: StreamingConfig;
-};
-
-export type StreamingConfig = {
-    /**
-     * Strict delivery policy (v3.1+)
-     */
-    delivery_policy?: 'universal';
-};
-
-/**
- * System-wide diagnostics per ADR-SRE-002
- */
-export type SystemDiagnostics = {
-    /**
-     * When subsystems were last probed
-     */
-    measured_at: string;
-    /**
-     * When overall status was computed
-     */
-    derived_at: string;
-    /**
-     * Overall system health (per P0-A critical subsystem logic)
-     */
-    overall_status: 'ok' | 'degraded' | 'unavailable' | 'unknown';
-    /**
-     * Health status per subsystem
-     */
-    subsystems: {
-        [key: string]: unknown;
-    };
-    /**
-     * Actionable degradation items for failed subsystems
-     */
-    degradation_summary?: Array<{
-        subsystem?: string;
-        status?: 'degraded' | 'unavailable';
-        since?: string;
-        error_code?: string;
-        suggested_actions?: Array<string>;
-    }>;
-};
-
-export type LibraryRoot = {
-    id: string;
-    type: 'smb' | 'nfs' | 'local';
-    last_scan_time?: string;
-    last_scan_status: 'never' | 'running' | 'ok' | 'degraded' | 'failed';
-    total_items?: number;
-};
-
-export type LibraryItem = {
-    root_id: string;
-    rel_path: string;
-    filename: string;
-    size_bytes: number;
-    mod_time: string;
-    scan_time?: string;
-    status?: 'ok' | 'unreadable';
-};
-
-export type LibraryItemsResponse = {
-    items: Array<LibraryItem>;
-    total: number;
-    limit: number;
-    offset: number;
+    featureFlags?: FeatureFlags;
 };
 
 export type Bouquet = {
@@ -541,11 +513,60 @@ export type Timer = {
 };
 
 export type PlaybackInfo = {
-    mode: 'hls' | 'direct_mp4';
+    mode: PlaybackInfoMode;
+    /**
+     * Relative URL for the selected playback strategy.
+     */
     url: string;
+    /**
+     * Whether the stream is seekable. Omitted if unknown.
+     */
     seekable?: boolean;
-    reason?: string;
+    /**
+     * Duration in seconds. Omitted if unknown or preparing.
+     */
+    duration_seconds?: number;
+    duration_source?: PlaybackInfoDurationSource;
+    /**
+     * Optional resume state if available.
+     */
+    resume?: {
+        /**
+         * last known playback position in seconds
+         */
+        pos_seconds: number;
+        duration_seconds?: number;
+        finished?: boolean;
+    };
+    /**
+     * Truthful container name if known (e.g., ts, mp4, mkv).
+     */
+    container?: string;
+    /**
+     * Truthful video codec if known (e.g., h264, hevc, mpeg2).
+     */
+    video_codec?: string;
+    /**
+     * Truthful audio codec if known (e.g., aac, ac3, mp2).
+     */
+    audio_codec?: string;
+    reason?: PlaybackInfoReason;
 };
+
+/**
+ * Selected playback strategy output mode.
+ */
+export type PlaybackInfoMode = 'hls' | 'direct_mp4';
+
+/**
+ * Source of the reported duration, when duration_seconds is present.
+ */
+export type PlaybackInfoDurationSource = 'store' | 'cache' | 'probe';
+
+/**
+ * Reason for the playback decision.
+ */
+export type PlaybackInfoReason = 'directplay_match' | 'transcode_audio' | 'transcode_video' | 'transcode_all' | 'container_mismatch' | 'unknown';
 
 export type TimerCreateRequest = {
     serviceRef: string;
@@ -705,25 +726,6 @@ export type ResumeSummary = {
     updated_at?: string;
 };
 
-export type Service = {
-    /**
-     * Service identifier
-     */
-    id?: string;
-    /**
-     * Service/channel name
-     */
-    name?: string;
-    /**
-     * Enigma2 service reference
-     */
-    ref?: string;
-    /**
-     * Whether service is enabled
-     */
-    enabled?: boolean;
-};
-
 export type RecordingResponse = {
     roots?: Array<RecordingRoot>;
     current_root?: string;
@@ -731,6 +733,10 @@ export type RecordingResponse = {
     breadcrumbs?: Array<Breadcrumb>;
     directories?: Array<DirectoryItem>;
     recordings?: Array<RecordingItem>;
+};
+
+export type FeatureFlagsWritable = {
+    [key: string]: unknown;
 };
 
 export type SeriesRuleWritable = {
@@ -757,35 +763,6 @@ export type SeriesRuleWritable = {
     lastRunSummary?: RunSummary;
 };
 
-export type GetReceiverCurrentData = {
-    body?: never;
-    path?: never;
-    query?: never;
-    url: '/receiver/current';
-};
-
-export type GetReceiverCurrentErrors = {
-    /**
-     * Failed to query receiver
-     */
-    502: ProblemDetails;
-    /**
-     * Receiver client unavailable
-     */
-    503: ProblemDetails;
-};
-
-export type GetReceiverCurrentError = GetReceiverCurrentErrors[keyof GetReceiverCurrentErrors];
-
-export type GetReceiverCurrentResponses = {
-    /**
-     * Current service information
-     */
-    200: CurrentServiceInfo;
-};
-
-export type GetReceiverCurrentResponse = GetReceiverCurrentResponses[keyof GetReceiverCurrentResponses];
-
 export type GetSystemHealthData = {
     body?: never;
     path?: never;
@@ -801,22 +778,6 @@ export type GetSystemHealthResponses = {
 };
 
 export type GetSystemHealthResponse = GetSystemHealthResponses[keyof GetSystemHealthResponses];
-
-export type GetSystemInfoData = {
-    body?: never;
-    path?: never;
-    query?: never;
-    url: '/system/info';
-};
-
-export type GetSystemInfoResponses = {
-    /**
-     * System information
-     */
-    200: SystemInfoData;
-};
-
-export type GetSystemInfoResponse = GetSystemInfoResponses[keyof GetSystemInfoResponses];
 
 export type GetSystemHealthzData = {
     body?: never;
@@ -881,32 +842,50 @@ export type PutSystemConfigResponses = {
 
 export type PutSystemConfigResponse = PutSystemConfigResponses[keyof PutSystemConfigResponses];
 
-export type GetSystemDiagnosticsData = {
+export type GetReceiverCurrentData = {
     body?: never;
     path?: never;
     query?: never;
-    url: '/system/diagnostics';
+    url: '/receiver/current';
 };
 
-export type GetSystemDiagnosticsErrors = {
+export type GetReceiverCurrentErrors = {
     /**
-     * Unauthorized
+     * Failed to query receiver
      */
-    401: unknown;
+    502: ProblemDetails;
     /**
-     * Diagnostics check failed
+     * Receiver client unavailable
      */
-    500: unknown;
+    503: ProblemDetails;
 };
 
-export type GetSystemDiagnosticsResponses = {
+export type GetReceiverCurrentError = GetReceiverCurrentErrors[keyof GetReceiverCurrentErrors];
+
+export type GetReceiverCurrentResponses = {
     /**
-     * System diagnostics
+     * Current service information
      */
-    200: SystemDiagnostics;
+    200: CurrentServiceInfo;
 };
 
-export type GetSystemDiagnosticsResponse = GetSystemDiagnosticsResponses[keyof GetSystemDiagnosticsResponses];
+export type GetReceiverCurrentResponse = GetReceiverCurrentResponses[keyof GetReceiverCurrentResponses];
+
+export type GetSystemInfoData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/system/info';
+};
+
+export type GetSystemInfoResponses = {
+    /**
+     * System information
+     */
+    200: SystemInfoData;
+};
+
+export type GetSystemInfoResponse = GetSystemInfoResponses[keyof GetSystemInfoResponses];
 
 export type PostSystemRefreshData = {
     body?: never;
@@ -928,54 +907,6 @@ export type PostSystemRefreshResponses = {
      */
     202: unknown;
 };
-
-export type GetLibraryRootsData = {
-    body?: never;
-    path?: never;
-    query?: never;
-    url: '/library/roots';
-};
-
-export type GetLibraryRootsResponses = {
-    /**
-     * Library roots
-     */
-    200: Array<LibraryRoot>;
-};
-
-export type GetLibraryRootsResponse = GetLibraryRootsResponses[keyof GetLibraryRootsResponses];
-
-export type GetLibraryRootItemsData = {
-    body?: never;
-    path: {
-        root_id: string;
-    };
-    query?: {
-        limit?: number;
-        offset?: number;
-    };
-    url: '/library/roots/{root_id}/items';
-};
-
-export type GetLibraryRootItemsErrors = {
-    /**
-     * Root not found
-     */
-    404: unknown;
-    /**
-     * Scan in progress
-     */
-    503: unknown;
-};
-
-export type GetLibraryRootItemsResponses = {
-    /**
-     * Library items
-     */
-    200: LibraryItemsResponse;
-};
-
-export type GetLibraryRootItemsResponse = GetLibraryRootItemsResponses[keyof GetLibraryRootItemsResponses];
 
 export type GetServicesBouquetsData = {
     body?: never;
@@ -1252,6 +1183,10 @@ export type StreamRecordingDirectErrors = {
      * Recording not found
      */
     404: unknown;
+    /**
+     * Preparing (retryable)
+     */
+    503: unknown;
 };
 
 export type StreamRecordingDirectResponses = {
@@ -1262,6 +1197,33 @@ export type StreamRecordingDirectResponses = {
 };
 
 export type StreamRecordingDirectResponse = StreamRecordingDirectResponses[keyof StreamRecordingDirectResponses];
+
+export type ProbeRecordingMp4Data = {
+    body?: never;
+    path: {
+        recordingId: string;
+    };
+    query?: never;
+    url: '/recordings/{recordingId}/stream.mp4';
+};
+
+export type ProbeRecordingMp4Errors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Preparing (retryable)
+     */
+    503: unknown;
+};
+
+export type ProbeRecordingMp4Responses = {
+    /**
+     * Available
+     */
+    200: unknown;
+};
 
 export type GetRecordingHlsPlaylistData = {
     body?: never;
