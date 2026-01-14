@@ -1,60 +1,11 @@
-// Copyright (c) 2025 ManuGH
-// Licensed under the PolyForm Noncommercial License 1.0.0
-// Since v2.0.0, this software is restricted to non-commercial use only.
-
-// Since v2.0.0, this software is restricted to non-commercial use only.
 package api
 
 import (
-	"net"
 	"net/http"
-	"strings"
 	"testing"
+
+	"github.com/ManuGH/xg2g/internal/api/testutil"
 )
-
-// Test helpers (moved from middleware.go to keep production code clean)
-
-// remoteIsTrusted checks if the remote IP is trusted
-func remoteIsTrusted(remote string) bool {
-	if len(trustedIPNets) == 0 {
-		return false
-	}
-	host, _, err := net.SplitHostPort(remote)
-	if err != nil {
-		host = remote
-	}
-	ip := net.ParseIP(host)
-	if ip == nil {
-		return false
-	}
-	for _, n := range trustedIPNets {
-		if n.Contains(ip) {
-			return true
-		}
-	}
-	return false
-}
-
-// clientIP determines the originating IP address
-func clientIP(r *http.Request) string {
-	if remoteIsTrusted(r.RemoteAddr) {
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			parts := strings.Split(xff, ",")
-			ip := strings.TrimSpace(parts[0])
-			if ip != "" {
-				return ip
-			}
-		}
-		if xr := r.Header.Get("X-Real-IP"); xr != "" {
-			return xr
-		}
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err == nil && host != "" {
-		return host
-	}
-	return r.RemoteAddr
-}
 
 func TestClientIP(t *testing.T) {
 	tests := []struct {
@@ -135,7 +86,7 @@ func TestClientIP(t *testing.T) {
 				req.Header.Set(k, v)
 			}
 
-			result := clientIP(req)
+			result := testutil.ClientIP(req)
 			if result != tt.expected {
 				t.Errorf("Expected IP %s, got %s", tt.expected, result)
 			}
@@ -193,7 +144,7 @@ func TestRemoteIsTrusted(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Call the function to exercise all code paths
-			result := remoteIsTrusted(tt.remote)
+			result := testutil.RemoteIsTrusted(tt.remote)
 			// Result depends on XG2G_TRUSTED_PROXIES env var
 			// We just verify it doesn't panic and returns a bool
 			_ = result

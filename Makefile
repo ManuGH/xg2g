@@ -175,8 +175,6 @@ verify-generate: generate ## Verify that generated code is up-to-date
 	@git diff --exit-code internal/api/server_gen.go internal/control/http/v3/server_gen.go || (echo "❌ Generated code is out of sync. Run 'make generate' and commit changes." && exit 1)
 	@echo "✅ Generated code is up-to-date"
 
-generate-api: generate ## Backwards compatible alias for CI workflows
-
 build: ui-build ## Build the main daemon binary
 	@echo "Building xg2g daemon..."
 	@mkdir -p $(BUILD_DIR)

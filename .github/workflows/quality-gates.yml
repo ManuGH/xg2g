@@ -47,29 +47,10 @@ jobs:
         with:
           go-version-file: "go.mod"
 
-      - name: Check OpenAPI Sync (Always, Hard Fail)
+      - name: Verify OpenAPI Sync (Strict Gate)
         run: |
-          echo "🔍 Verifying OpenAPI generation sync..."
-
-          # Hard fail if generate target missing (this is a required gate)
-          if ! grep -qE '^generate-api:' Makefile 2>/dev/null; then
-            echo "❌ Missing Makefile target: generate-api"
-            echo "This target is REQUIRED for OpenAPI drift prevention"
-            exit 1
-          fi
-
-          # Regenerate (always, not just when openapi.yaml changed)
-          echo "🔄 Running: make generate-api"
-          make generate-api
-
-          # Hard fail on ANY diff after generation
-          if ! git diff --exit-code; then
-            echo "❌ OpenAPI drift detected"
-            echo "Generated code doesn't match current state"
-            echo ""
-            echo "💡 Fix: make generate-api && git add -A && git commit"
-            exit 1
-          fi
+          echo "🔍 Running: make verify-generate"
+          make verify-generate
 
           echo "✅ OpenAPI and generated code in sync"
 
