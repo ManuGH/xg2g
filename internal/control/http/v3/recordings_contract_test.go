@@ -1,14 +1,17 @@
 package v3
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/recordings"
+	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/stretchr/testify/assert"
 )
@@ -44,7 +47,10 @@ func TestGetRecordings_Contract_UpstreamFailure(t *testing.T) {
 	// Wire service
 	owiClient := openwebif.NewWithPort(mockServer.URL, 0, openwebif.Options{})
 	s.owiClient = owiClient
-	s.recordingsService = recordings.NewService(&cfg, nil, nil, NewOWIAdapter(owiClient), nil)
+	// Dependency injection with dummy mocks to satisfy strict invariants
+	dummyMgr := vod.NewManager(&dummyRunner2{}, &dummyProber2{}, nil)
+	dummyRes := recordings.NewResolver(&cfg, dummyMgr, recordings.ResolverOptions{})
+	s.recordingsService = recordings.NewService(&cfg, dummyMgr, dummyRes, NewOWIAdapter(owiClient), nil)
 
 	// 3. Perform Request
 	w := httptest.NewRecorder()
@@ -65,4 +71,29 @@ func TestGetRecordings_Contract_UpstreamFailure(t *testing.T) {
 	// Ensure no path leaks in the response
 	assert.NotContains(t, strings.ToLower(w.Body.String()), "/media/", "Response body should not contain absolute paths")
 	assert.NotContains(t, strings.ToLower(w.Body.String()), "/hdd/", "Response body should not contain absolute paths")
+}
+
+// Helpers for Invariant Satisfaction in this test file
+type dummyRunner2 struct{}
+
+func (r *dummyRunner2) Start(ctx context.Context, spec vod.Spec) (vod.Handle, error) {
+	return &dummyHandle2{}, nil
+}
+
+type dummyHandle2 struct{}
+
+func (h *dummyHandle2) Wait() error                          { return nil }
+func (h *dummyHandle2) Stop(grace, kill time.Duration) error { return nil }
+func (h *dummyHandle2) Progress() <-chan vod.ProgressEvent {
+	return make(chan vod.ProgressEvent)
+}
+func (h *dummyHandle2) Diagnostics() []string { return nil }
+
+type dummyProber2 struct{}
+
+func (p *dummyProber2) Probe(ctx context.Context, path string) (*vod.StreamInfo, error) {
+	return &vod.StreamInfo{
+		Video: vod.VideoStreamInfo{CodecName: "h264"},
+		Audio: vod.AudioStreamInfo{CodecName: "aac"},
+	}, nil
 }

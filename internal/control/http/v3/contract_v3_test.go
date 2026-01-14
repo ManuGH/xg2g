@@ -133,7 +133,7 @@ func newV3TestServer(t *testing.T, hlsRoot string) (*Server, *v3store.MemoryStor
 
 	// Create VOD Manager with successRunner (shared from recordings_hls_reconcile_test.go)
 	// We use "legacy" mode for now as contract test expects direct behavior
-	vm := vod.NewManager(&successRunner{fsRoot: hlsRoot}, nil, pm)
+	vm := vod.NewManager(&successRunner{fsRoot: hlsRoot}, &noopProber{}, pm)
 
 	s.SetDependencies(
 		b, st, rs, nil, pm, nil, nil, nil, vm,
@@ -141,6 +141,16 @@ func newV3TestServer(t *testing.T, hlsRoot string) (*Server, *v3store.MemoryStor
 	)
 
 	return s, st
+}
+
+type noopProber struct{}
+
+func (p *noopProber) Probe(ctx context.Context, path string) (*vod.StreamInfo, error) {
+	return &vod.StreamInfo{
+		Container: "mp4",
+		Video:     vod.VideoStreamInfo{CodecName: "h264", Duration: 3600},
+		Audio:     vod.AudioStreamInfo{CodecName: "aac"},
+	}, nil
 }
 
 func TestV3Contract_Intents(t *testing.T) {

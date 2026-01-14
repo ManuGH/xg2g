@@ -31,7 +31,7 @@ func (m *MockMapper) ResolveLocalExisting(p string) (string, bool) { return p, t
 
 func setupManager(t *testing.T) (*Manager, *MockInfraProber, string) {
 	prober := new(MockInfraProber)
-	mgr := NewManager(nil, prober, &MockMapper{})
+	mgr := NewManager(&mockRunner{}, prober, &MockMapper{})
 
 	f, err := os.CreateTemp("", "test*.mp4")
 	if err != nil {
@@ -75,7 +75,7 @@ func TestTruth_Write_B2_ZeroDuration_Guard(t *testing.T) {
 	ref := "test:ref"
 
 	// Setup: Existing valid metadata
-	mgr.UpdateMetadata(ref, Metadata{
+	mgr.SeedMetadata(ref, Metadata{
 		State:     ArtifactStateReady,
 		Duration:  3600,
 		UpdatedAt: time.Now().Unix(),

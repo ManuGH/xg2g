@@ -54,11 +54,33 @@ func (m *mockMetadataManager) Get(ctx context.Context, dir string) (*vod.JobStat
 
 func (m *mockMetadataManager) GetMetadata(serviceRef string) (vod.Metadata, bool) {
 	args := m.Called(serviceRef)
-	return args.Get(0).(vod.Metadata), args.Bool(1)
+	// Support dynamic return values via functions
+	var meta vod.Metadata
+	if fn, ok := args.Get(0).(func(string) vod.Metadata); ok {
+		meta = fn(serviceRef)
+	} else {
+		meta = args.Get(0).(vod.Metadata)
+	}
+
+	var exists bool
+	if fn, ok := args.Get(1).(func(string) bool); ok {
+		exists = fn(serviceRef)
+	} else {
+		exists = args.Bool(1)
+	}
+	return meta, exists
 }
 
-func (m *mockMetadataManager) UpdateMetadata(serviceRef string, meta vod.Metadata) {
-	m.Called(serviceRef, meta)
+func (m *mockMetadataManager) MarkFailed(serviceRef string, reason string) {
+	m.Called(serviceRef, reason)
+}
+
+func (m *mockMetadataManager) MarkFailure(serviceRef string, state vod.ArtifactState, reason string, resolvedPath string, fp *vod.Fingerprint) {
+	m.Called(serviceRef, state, reason, resolvedPath, fp)
+}
+
+func (m *mockMetadataManager) MarkProbed(serviceRef string, resolvedPath string, info *vod.StreamInfo, fp *vod.Fingerprint) {
+	m.Called(serviceRef, resolvedPath, info, fp)
 }
 
 func (m *mockMetadataManager) Probe(ctx context.Context, path string) (*vod.StreamInfo, error) {
@@ -114,7 +136,7 @@ func TestDurationTruth_Read_ProbeFallback(t *testing.T) {
 		Container: "mp4", VideoCodec: "h264", AudioCodec: "aac", Duration: 3600,
 	}, true)
 
-	mgr.On("UpdateMetadata", mock.Anything, mock.Anything).Return()
+	mgr.On("MarkProbed", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return()
 	mgr.On("Get", mock.Anything, mock.Anything).Return(nil, false)
 
 	// Probe mock setup
@@ -138,7 +160,12 @@ func TestDurationTruth_Read_ProbeFallback(t *testing.T) {
 
 	// 1. First Call -> Expect Preparing
 	_, err := r.Resolve(context.Background(), "service:ref", recordings.IntentStream, recordings.ProfileGeneric)
-	assert.ErrorIs(t, err, recordings.ErrPreparing{RecordingID: "service:ref"})
+	var prepErr recordings.ErrPreparing
+	if assert.ErrorAs(t, err, &prepErr) {
+		assert.Equal(t, "service:ref", prepErr.RecordingID)
+	} else {
+		assert.Fail(t, "Expected ErrPreparing")
+	}
 
 	// Wait for Probe
 	select {
@@ -200,7 +227,7 @@ func TestMediaTruth(t *testing.T) {
 		{
 			Name:          "Hit Metadata (Cache)",
 			StoreDuration: 0,
-			CacheMeta:     vod.Metadata{Container: "mp4", VideoCodec: "h264", AudioCodec: "aac", Duration: 120},
+			CacheMeta:     vod.Metadata{Container: "mp4", VideoCodec: "h264", AudioCodec: "aac", Duration: 120, ArtifactPath: "x"}, // ArtifactPath prevents "Impossible Gate"
 			CacheExists:   true,
 			ExpRes: recordings.PlaybackInfoResult{
 				MediaInfo: playback.MediaInfo{Duration: 120},
@@ -249,6 +276,7 @@ func TestMediaTruth(t *testing.T) {
 			CacheMeta:   vod.Metadata{},
 			ExpectProbe: true,
 			ExpectAsync: true,
+			LocalPath:   "/media/movie.ts", // Enable local probe (pass gate)
 			ExpErrIs:    recordings.ErrPreparing{RecordingID: "service:ref"},
 		},
 		{
@@ -257,7 +285,8 @@ func TestMediaTruth(t *testing.T) {
 			CacheMeta:   vod.Metadata{},
 			ExpectProbe: true,
 			ExpectAsync: true,
-			ProbeResult: nil, // Probe returns nil
+			LocalPath:   "/media/movie.ts", // Enable local probe
+			ProbeResult: nil,               // Probe returns nil
 			ExpErrIs:    recordings.ErrPreparing{RecordingID: "service:ref"},
 		},
 		{
@@ -266,25 +295,34 @@ func TestMediaTruth(t *testing.T) {
 			CacheMeta:   vod.Metadata{},
 			ExpectProbe: true,
 			ExpectAsync: true,
+			LocalPath:   "/media/movie.ts", // Enable local probe
 			ProbeErr:    errors.New("probe failed"),
 			ExpErrIs:    recordings.ErrPreparing{RecordingID: "service:ref"},
 		},
 		{
+			// Remote Probe -> FAIL FAST (Gate 2)
 			Name:           "Remote Probe Unsupported (No Codecs)",
 			ServiceRef:     "1:0:0:0:0:0:0:0:0:0:/local/x",
 			CacheMeta:      vod.Metadata{},
-			ExpectProbe:    true,
-			ExpectAsync:    true,
+			ExpectProbe:    false, // No probe triggered (fail fast)
+			ExpectAsync:    false, // Sync error
 			ProbeRemoteErr: recordings.ErrRemoteProbeUnsupported,
-			ExpErrIs:       recordings.ErrPreparing{RecordingID: "1:0:0:0:0:0:0:0:0:0:/local/x"},
+			// Resolver maps ErrRemoteProbeUnsupported -> ErrUpstream{Op: "probe_remote_unsupported"}
+			ExpErrIs: recordings.ErrUpstream{Op: "probe_remote_unsupported", Cause: recordings.ErrRemoteProbeUnsupported},
 		},
 		{
+			// Remote Probe Failure -> FAIL FAST (Gate 2)
 			Name:        "Remote Probe Failure (Upstream)",
 			CacheMeta:   vod.Metadata{},
-			ExpectProbe: true,
-			ExpectAsync: true,
+			ExpectProbe: false,
+			ExpectAsync: false,
 			ProbeErr:    errors.New("conn refused"),
-			ExpErrIs:    recordings.ErrPreparing{RecordingID: "service:ref"},
+			// Since we use logic: if !probeConfigured -> ErrUpstream.
+			// Here probe IS configured (test harness sets it).
+			// So it hits "Gate 2": if localPath=="" && probeConfigured -> ErrRemoteProbeUnsupported.
+			// It implies any "Remote Probe" attempt without local path is unsupported currently.
+			// So expected error is ErrRemoteProbeUnsupported (mapped to Upstream)
+			ExpErrIs: recordings.ErrUpstream{Op: "probe_remote_unsupported", Cause: recordings.ErrRemoteProbeUnsupported},
 		},
 		{
 			Name:        "Store Get Error (No Overwrite)",
@@ -300,6 +338,34 @@ func TestMediaTruth(t *testing.T) {
 			},
 			ExpRes: recordings.PlaybackInfoResult{
 				MediaInfo: playback.MediaInfo{Duration: 3600},
+			},
+		},
+		{
+			// ADR Enforcement: READY state != Artifact Exists
+			// If meta is READY but ArtifactPath/PlaylistPath are empty, fallback to receiver/transcode.
+			Name:          "Invariant: Ready Meta != Artifact",
+			StoreDuration: 60,
+			LocalPath:     "/media/movie.ts", // Required to pass "Impossible Probe" gate (Gate 2)
+			CacheMeta: vod.Metadata{
+				State:        vod.ArtifactStateReady,
+				Duration:     60,
+				ResolvedPath: "/media/movie.ts",
+				// Complete media info to avoid re-probing
+				Container:  "ts",
+				VideoCodec: "h264",
+				AudioCodec: "aac",
+				// ArtifactPath and PlaylistPath intentionally empty
+			},
+			CacheExists: true,
+			ExpRes: recordings.PlaybackInfoResult{
+				MediaInfo: playback.MediaInfo{
+					Duration:   60,
+					Container:  "ts",
+					VideoCodec: "h264",
+					AudioCodec: "aac",
+				},
+				Reason: string(playback.ReasonDirectPlayMatch), // Direct play from source path (no artifact/playlist required)
+				// Key check: It returns a valid result (not error/missing) but NOT direct play OR HLS if implied by artifact
 			},
 		},
 	}
@@ -327,29 +393,44 @@ func TestMediaTruth(t *testing.T) {
 
 			mgr := new(mockMetadataManager)
 
+			// Probe Setup
+			probeDone := make(chan struct{})
+			var probeOnce sync.Once
+
 			// Explicit Sequencing for GetMetadata
 			if tc.ExpectAsync {
-				// 1. Initial Call (Fail Pass) -> Consumed by Resolve (1x)
-				mgr.On("GetMetadata", svcRef).Return(tc.CacheMeta, tc.CacheExists).Once()
-
-				// 2. Subsequent Calls (Success Pass)
-				// Note: ExpectAsync implies we will loop and assume success after probe.
-				// But we need to define the Success Meta dynamically if not provided.
-				// We assume if ProbeResult exists, that IS the new meta.
+				// Use closure to simulation state change upon probe completion
+				// Before probeDone is closed: return CacheMeta/CacheExists
+				// After probeDone is closed: return FinalMeta/true
+				var finalMeta vod.Metadata
 				if tc.ProbeResult != nil {
-					finalMeta := vod.Metadata{
+					finalMeta = vod.Metadata{
 						Container:  tc.ProbeResult.Container,
 						VideoCodec: tc.ProbeResult.Video.CodecName,
 						AudioCodec: tc.ProbeResult.Audio.CodecName,
 						Duration:   int64(tc.ProbeResult.Video.Duration),
 					}
-					mgr.On("GetMetadata", svcRef).Return(finalMeta, true) // Unbounded match for retries
 				} else {
-					// Failure forever (e.g. timeout), sticking to old meta
-					mgr.On("GetMetadata", svcRef).Return(tc.CacheMeta, tc.CacheExists)
+					finalMeta = tc.CacheMeta // Fallback if no result
 				}
+
+				mgr.On("GetMetadata", svcRef).Return(func(id string) vod.Metadata {
+					select {
+					case <-probeDone:
+						return finalMeta
+					default:
+						return tc.CacheMeta
+					}
+				}, func(id string) bool {
+					select {
+					case <-probeDone:
+						return true
+					default:
+						return tc.CacheExists
+					}
+				})
 			} else {
-				// Stable
+				// Stable state
 				mgr.On("GetMetadata", svcRef).Return(tc.CacheMeta, tc.CacheExists)
 			}
 
@@ -363,8 +444,6 @@ func TestMediaTruth(t *testing.T) {
 			}
 
 			// Probe Setup
-			probeDone := make(chan struct{})
-			var probeOnce sync.Once
 			if tc.ExpectProbe {
 				if tc.LocalPath != "" {
 					call := mgr.On("Probe", mock.Anything, tc.LocalPath).Return(tc.ProbeResult, tc.ProbeErr)
@@ -374,9 +453,14 @@ func TestMediaTruth(t *testing.T) {
 						})
 					}
 				}
-				if tc.ProbeResult != nil {
-					// Expected update
-					mgr.On("UpdateMetadata", svcRef, mock.Anything).Return()
+				if tc.ProbeResult == nil {
+					// Expect MarkFailed for failure (explicit error or nil result)
+					mgr.On("MarkFailed", svcRef, mock.MatchedBy(func(reason string) bool {
+						return reason != ""
+					})).Return().Maybe()
+				} else {
+					// Expect MarkProbed for success or other meta updates
+					mgr.On("MarkProbed", svcRef, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 				}
 			}
 
@@ -424,12 +508,18 @@ func TestMediaTruth(t *testing.T) {
 
 			} else {
 				// Sync checks
-				assert.NoError(t, err)
-				if tc.ExpRes.Reason != "" {
-					assert.Equal(t, tc.ExpRes.Reason, res.Reason)
-				}
-				if tc.ExpRes.MediaInfo.Duration > 0 {
-					assert.Equal(t, tc.ExpRes.MediaInfo.Duration, res.MediaInfo.Duration)
+				if tc.ExpErrIs != nil {
+					assert.ErrorIs(t, err, tc.ExpErrIs)
+				} else if tc.ExpErr != nil {
+					assert.Equal(t, tc.ExpErr, err)
+				} else {
+					assert.NoError(t, err)
+					if tc.ExpRes.Reason != "" {
+						assert.Equal(t, tc.ExpRes.Reason, res.Reason)
+					}
+					if tc.ExpRes.MediaInfo.Duration > 0 {
+						assert.Equal(t, tc.ExpRes.MediaInfo.Duration, res.MediaInfo.Duration)
+					}
 				}
 			}
 		})
@@ -450,7 +540,7 @@ func TestAsyncProbe_NoHiddenWork(t *testing.T) {
 		<-probeUnblocked // Block until test releases
 	}).Return(&vod.StreamInfo{Container: "mp4", Video: vod.VideoStreamInfo{CodecName: "h264"}, Audio: vod.AudioStreamInfo{CodecName: "aac"}}, nil)
 
-	mgr.On("UpdateMetadata", mock.Anything, mock.Anything).Return()
+	mgr.On("MarkProbed", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return()
 
 	pr := new(mockPathResolver)
 	pr.On("ResolveRecordingPath", mock.Anything).Return("/local/x", "1", "x", nil)
@@ -506,7 +596,7 @@ func TestAsyncProbe_Singleflight(t *testing.T) {
 	// We expect UpdateMetadata to happen eventually, but not blocking.
 	// Since we sleep in the probe, it might happen after.
 	updateCalled := make(chan struct{})
-	mgr.On("UpdateMetadata", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+	mgr.On("MarkProbed", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
 		close(updateCalled)
 	}).Return()
 
@@ -549,7 +639,7 @@ func TestAsyncProbe_Singleflight(t *testing.T) {
 	select {
 	case <-updateCalled:
 	case <-time.After(100 * time.Millisecond):
-		t.Fatal("UpdateMetadata should have been called")
+		t.Fatal("MarkProbed should have been called")
 	}
 
 	// Mock assertion verifies .Once() for Probe

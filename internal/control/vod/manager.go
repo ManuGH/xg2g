@@ -3,6 +3,7 @@ package vod
 import (
 	"context"
 	"errors"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -31,6 +32,13 @@ type PathMapper interface {
 }
 
 func NewManager(runner Runner, prober Prober, pathMapper PathMapper) *Manager {
+	if runner == nil {
+		panic("invariant violation: runner is nil in NewManager")
+	}
+	if prober == nil {
+		panic("invariant violation: prober is nil in NewManager")
+	}
+
 	return &Manager{
 		runner:     runner,
 		prober:     prober,
@@ -57,8 +65,10 @@ func (m *Manager) GetMetadata(id string) (Metadata, bool) {
 	return meta, ok
 }
 
-// UpdateMetadata updates the metadata cache for an artifact.
-func (m *Manager) UpdateMetadata(id string, meta Metadata) {
+// SeedMetadata directly sets the metadata cache for an artifact.
+// WARNING: This is a destructive overwrite. Use only for testing or initial seeding.
+// For production updates, use atomic methods like MarkProbed or MarkFailure.
+func (m *Manager) SeedMetadata(id string, meta Metadata) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.metadata == nil {
@@ -306,6 +316,24 @@ func (m *Manager) markReadyFromBuild(jobID string, metaID string, spec Spec, fin
 	log.Debug().Str("jobId", jobID).Msg("VOD manager: job removed from jobs map")
 }
 
+// MarkFailed atomically transitions state to FAILED without wiping existing metadata.
+func (m *Manager) MarkFailed(id string, reason string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	meta, ok := m.metadata[id]
+	if !ok {
+		meta = Metadata{
+			State: ArtifactStateUnknown,
+		}
+	}
+
+	meta.State = ArtifactStateFailed
+	meta.Error = reason
+	m.touch(&meta)
+	m.metadata[id] = meta
+}
+
 // markFailedFromBuild updates metadata to FAILED on build failure.
 func (m *Manager) markFailedFromBuild(jobID string, metaID string, reason string) {
 	m.mu.Lock()
@@ -324,6 +352,82 @@ func (m *Manager) markFailedFromBuild(jobID string, metaID string, reason string
 
 	delete(m.jobs, jobID)
 	log.Debug().Str("jobId", jobID).Msg("VOD manager: job removed from jobs map")
+}
+
+// MarkFailure updates metadata with a specific failure state and reason.
+// It preserves existing fields like ResolvedPath and Fingerprint if they explain the failure.
+func (m *Manager) MarkFailure(id string, state ArtifactState, reason string, resolvedPath string, fp *Fingerprint) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	meta, ok := m.metadata[id]
+	if !ok {
+		meta = Metadata{
+			State: ArtifactStateUnknown,
+		}
+	}
+
+	meta.State = state
+	meta.Error = reason
+	if resolvedPath != "" {
+		meta.ResolvedPath = resolvedPath
+	}
+	if fp != nil {
+		meta.Fingerprint = *fp
+	}
+	m.touch(&meta)
+	m.metadata[id] = meta
+}
+
+// MarkProbed atomically updates metadata with probe results while preserving existing fields.
+// This ensures that success paths (like failure paths) are non-destructive Read-Modify-Write operations.
+func (m *Manager) MarkProbed(id string, resolvedPath string, info *StreamInfo, fp *Fingerprint) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	meta, ok := m.metadata[id]
+	if !ok {
+		meta = Metadata{
+			State: ArtifactStateUnknown,
+		}
+	}
+
+	// Update ResolvedPath and infer ArtifactPath if provided
+	if resolvedPath != "" {
+		meta.ResolvedPath = resolvedPath
+		// Heuristic: if ResolvedPath points to an .mp4, it's an artifact.
+		if strings.HasSuffix(resolvedPath, ".mp4") {
+			meta.ArtifactPath = resolvedPath
+		}
+	}
+
+	// Update only the fields that the probe provides
+	if info != nil {
+		if info.Container != "" {
+			meta.Container = info.Container
+		}
+		if info.Video.CodecName != "" {
+			meta.VideoCodec = info.Video.CodecName
+		}
+		if info.Audio.CodecName != "" {
+			meta.AudioCodec = info.Audio.CodecName
+		}
+		if info.Video.Duration > 0 {
+			meta.Duration = int64(math.Round(info.Video.Duration))
+		}
+	}
+
+	if fp != nil {
+		meta.Fingerprint = *fp
+	}
+
+	// Probe success implies the artifact (or source) is accessible/ready
+	meta.State = ArtifactStateReady
+	// Clear any previous error
+	meta.Error = ""
+
+	m.touch(&meta)
+	m.metadata[id] = meta
 }
 
 // StartBuild initiates a VOD build.

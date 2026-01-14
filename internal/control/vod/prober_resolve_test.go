@@ -1,6 +1,7 @@
 package vod
 
 import (
+	"context"
 	"os"
 	"testing"
 )
@@ -14,6 +15,15 @@ func (m *stubPathMapper) ResolveLocalExisting(receiverPath string) (string, bool
 	return m.path, m.ok
 }
 
+type successProber struct{}
+
+func (p *successProber) Probe(ctx context.Context, path string) (*StreamInfo, error) {
+	// Return valid info so probe succeeds
+	return &StreamInfo{
+		Video: VideoStreamInfo{Duration: 60.0},
+	}, nil
+}
+
 func TestRunProbe_UsesResolvedPathFromMetadata(t *testing.T) {
 	tmpFile, err := os.CreateTemp("", "probe-meta-*.ts")
 	if err != nil {
@@ -21,9 +31,9 @@ func TestRunProbe_UsesResolvedPathFromMetadata(t *testing.T) {
 	}
 	defer os.Remove(tmpFile.Name())
 
-	mgr := NewManager(nil, nil, nil)
+	mgr := NewManager(&mockRunner{}, &successProber{}, nil)
 	id := "1:0:0:0:0:0:0:0:0:/media/test.ts"
-	mgr.UpdateMetadata(id, Metadata{
+	mgr.SeedMetadata(id, Metadata{
 		ResolvedPath: tmpFile.Name(),
 	})
 
@@ -49,7 +59,7 @@ func TestRunProbe_UsesPathMapperWhenInputEmpty(t *testing.T) {
 	defer os.Remove(tmpFile.Name())
 
 	pm := &stubPathMapper{path: tmpFile.Name(), ok: true}
-	mgr := NewManager(nil, nil, pm)
+	mgr := NewManager(&mockRunner{}, &successProber{}, pm)
 	id := "1:0:0:0:0:0:0:0:0:/media/test.ts"
 
 	_ = mgr.runProbe(probeRequest{ServiceRef: id, InputPath: ""})
@@ -67,7 +77,7 @@ func TestRunProbe_UsesPathMapperWhenInputEmpty(t *testing.T) {
 }
 
 func TestRunProbe_EmptyInputFailsWithoutResolver(t *testing.T) {
-	mgr := NewManager(nil, nil, nil)
+	mgr := NewManager(&mockRunner{}, &mockProber{}, nil)
 	id := "1:0:0:0:0:0:0:0:0:/media/test.ts"
 
 	_ = mgr.runProbe(probeRequest{ServiceRef: id, InputPath: ""})

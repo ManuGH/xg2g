@@ -3,6 +3,7 @@ package artifacts
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 
@@ -17,7 +18,7 @@ func TestArtifactResolver_ResolveSegment(t *testing.T) {
 			Root: t.TempDir(),
 		},
 	}
-	mgr := vod.NewManager(nil, nil, nil)
+	mgr := vod.NewManager(&dummyRunner{}, &dummyProber{}, nil)
 	r := New(cfg, mgr, nil)
 
 	// Valid Service Ref (Base64 Encoded "1:0:...")
@@ -55,4 +56,25 @@ func TestArtifactResolver_ResolveSegment(t *testing.T) {
 	// We can test success path if we can create the file in the right place.
 	// But v3recordings.RecordingCacheDir is used.
 	// Let's defer full integration test to the handler level or trust v3recordings.
+}
+
+type dummyRunner struct{}
+
+func (r *dummyRunner) Start(ctx context.Context, spec vod.Spec) (vod.Handle, error) {
+	return &dummyHandle{}, nil
+}
+
+type dummyHandle struct{}
+
+func (h *dummyHandle) Wait() error                          { return nil }
+func (h *dummyHandle) Stop(grace, kill time.Duration) error { return nil }
+func (h *dummyHandle) Progress() <-chan vod.ProgressEvent {
+	return make(chan vod.ProgressEvent)
+}
+func (h *dummyHandle) Diagnostics() []string { return nil }
+
+type dummyProber struct{}
+
+func (p *dummyProber) Probe(ctx context.Context, path string) (*vod.StreamInfo, error) {
+	return &vod.StreamInfo{}, nil
 }

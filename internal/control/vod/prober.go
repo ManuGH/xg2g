@@ -22,7 +22,6 @@ const (
 	MaxConcurrentProbes = 4
 	ProbeQueueSize      = 100
 	ProbeTimeout        = 30 * time.Second
-	StatTimeout         = 5 * time.Second
 )
 
 // StartProberPool initializes the background workers.
@@ -47,7 +46,10 @@ func (m *Manager) probeWorker(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case req := <-m.probeCh:
+		case req, ok := <-m.probeCh:
+			if !ok {
+				return
+			}
 			m.processProbe(req)
 		}
 	}
@@ -86,11 +88,7 @@ func (m *Manager) runProbe(req probeRequest) error {
 	}
 
 	if input == "" {
-		m.UpdateMetadata(id, Metadata{
-			State:     ArtifactStateFailed,
-			Error:     "missing or unresolvable input path",
-			UpdatedAt: time.Now().Unix(),
-		})
+		m.MarkFailure(id, ArtifactStateFailed, "missing or unresolvable input path", "", nil)
 		log.Warn().Str("id", id).Msg("probe failed: missing input path")
 		return errors.New("missing input path")
 	}
@@ -102,11 +100,7 @@ func (m *Manager) runProbe(req probeRequest) error {
 		if os.IsNotExist(err) {
 			state = ArtifactStateMissing
 		}
-		m.UpdateMetadata(id, Metadata{
-			State:     state,
-			Error:     err.Error(),
-			UpdatedAt: time.Now().Unix(),
-		})
+		m.MarkFailure(id, state, err.Error(), "", nil)
 		log.Warn().Err(err).Str("id", id).Msg("probe failed: stat error")
 		return err
 	}
@@ -119,27 +113,46 @@ func (m *Manager) runProbe(req probeRequest) error {
 		MTime: info.ModTime().Unix(),
 	}
 
-	// 3. Efficiency Check: Fingerprint-based skip
+	// 4. Efficiency Check: Fingerprint-based skip
 	m.mu.Lock()
 	current, exists := m.metadata[id]
-	if exists && current.State == ArtifactStateReady && current.Fingerprint == fp {
-		// Valid cache hit? Only if ArtifactPath logic aligns with file extension.
-		// If ArtifactPath is set, it MUST be an MP4. If it's a TS, ArtifactPath should be empty.
-		// If we see a mismatch (e.g. ArtifactPath set but file is TS), we must re-probe to fix it.
-		isMP4 := len(input) > 4 && input[len(input)-4:] == ".mp4"
-		hasArtifactPath := current.ArtifactPath != ""
-
-		if isMP4 == hasArtifactPath {
-			m.mu.Unlock()
-			log.Debug().Str("id", id).Msg("fingerprint match, skipping re-probe")
-			return nil
+	if exists {
+		// A. MISSING Backoff
+		if current.State == ArtifactStateMissing {
+			// Throttle re-probes for missing files (e.g. NAS unavailable)
+			// Backoff: 1 minute
+			lastProbe := time.Unix(0, current.UpdatedAt)
+			since := time.Since(lastProbe)
+			if since < 0 {
+				since = 0
+			}
+			if since < 1*time.Minute {
+				m.mu.Unlock()
+				log.Debug().Str("id", id).Msg("skipping probe for MISSING artifact (throttled)")
+				return nil
+			}
 		}
-		// Fallthrough: Cache invalid due to ArtifactPath mismatch (stale metadata)
-		log.Info().Str("id", id).Msg("fingerprint match but artifact mismatch, forcing re-probe")
+
+		// B. READY Fingerprint Match
+		if current.State == ArtifactStateReady && current.Fingerprint == fp {
+			// Valid cache hit? Only if ArtifactPath logic aligns with file extension.
+			// If ArtifactPath is set, it MUST be an MP4. If it's a TS, ArtifactPath should be empty.
+			// If we see a mismatch (e.g. ArtifactPath set but file is TS), we must re-probe to fix it.
+			isMP4 := len(input) > 4 && input[len(input)-4:] == ".mp4"
+			hasArtifactPath := current.ArtifactPath != ""
+
+			if isMP4 == hasArtifactPath {
+				m.mu.Unlock()
+				log.Debug().Str("id", id).Msg("fingerprint match, skipping re-probe")
+				return nil
+			}
+			// Fallthrough: Cache invalid due to ArtifactPath mismatch (stale metadata)
+			log.Info().Str("id", id).Msg("fingerprint match but artifact mismatch, forcing re-probe")
+		}
 	}
 	m.mu.Unlock()
 
-	// 4. Probe Duration & Truth Enforcement
+	// 5. Probe Duration & Truth Enforcement
 	probeCtx, cancelProbe := context.WithTimeout(context.Background(), ProbeTimeout)
 	defer cancelProbe()
 
@@ -165,13 +178,7 @@ func (m *Manager) runProbe(req probeRequest) error {
 			errMsg = "probe_failed: " + errMsg
 		}
 
-		m.UpdateMetadata(id, Metadata{
-			State:        state,
-			ResolvedPath: input,
-			Fingerprint:  fp,
-			Error:        errMsg,
-			UpdatedAt:    time.Now().Unix(),
-		})
+		m.MarkFailure(id, state, errMsg, input, &fp)
 		log.Warn().Err(probeErr).Str("id", id).Msg("probe failed")
 		return probeErr
 	}
@@ -183,55 +190,20 @@ func (m *Manager) runProbe(req probeRequest) error {
 
 	// B2: Duration <= 0 Guard
 	if dur <= 0 {
-		m.mu.Lock()
-		old, exists := m.metadata[id]
-		m.mu.Unlock()
-
-		preservedDur := int64(0)
-		if exists && old.Duration > 0 {
-			preservedDur = old.Duration
-		}
-
-		m.UpdateMetadata(id, Metadata{
-			State:        ArtifactStateFailed, // Invalid duration is a failure condition
-			ResolvedPath: input,
-			Fingerprint:  fp,
-			Duration:     preservedDur, // Preserve old duration for visibility/debugging
-			Error:        "probe_duration_invalid",
-			UpdatedAt:    time.Now().Unix(),
-		})
+		m.MarkFailure(id, ArtifactStateFailed, "probe_duration_invalid", input, &fp)
+		// Note regarding preservedDur: MarkFailure reads old meta inside, so we don't strictly need to pass it
+		// if we wanted to preserve it. However, MarkFailure doesn't explicitly preserve duration currently.
+		// TODO: Ensure duration is preserved if needed? Prober previously preserved it manually.
+		// Detailed check: MarkFailure preserves ResolvedPath and Fingerprint, but touches UpdateAt.
+		// It does NOT clear Duration (it modifies specific fields of existing meta).
+		// So Duration is preserved implicitly by Read-Modify-Write!
 
 		log.Warn().Str("id", id).Int64("duration", dur).Msg("probe returned invalid duration")
 		return errors.New("probe_duration_invalid")
 	}
 
-	var container string
-	var videoCodec string
-	var audioCodec string
-	if res != nil {
-		container = res.Container
-		videoCodec = res.Video.CodecName
-		audioCodec = res.Audio.CodecName
-	}
-
 	// 5. Update Success (B1)
-	meta := Metadata{
-		State:        ArtifactStateReady,
-		ResolvedPath: input,
-		Duration:     dur,
-		Fingerprint:  fp,
-		Container:    container,
-		VideoCodec:   videoCodec,
-		AudioCodec:   audioCodec,
-		UpdatedAt:    time.Now().Unix(),
-	}
-
-	// Only treat as artifact if it's an MP4
-	if len(input) > 4 && input[len(input)-4:] == ".mp4" {
-		meta.ArtifactPath = input
-	}
-
-	m.UpdateMetadata(id, meta)
+	m.MarkProbed(id, input, res, &fp)
 
 	log.Debug().Str("id", id).Int64("duration", dur).Msg("recording probe complete")
 	return nil

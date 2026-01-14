@@ -55,6 +55,12 @@ func (m *MockProber) Probe(ctx context.Context, path string) (*vod.StreamInfo, e
 	return args.Get(0).(*vod.StreamInfo), args.Error(1)
 }
 
+type dummyRunner struct{}
+
+func (d *dummyRunner) Start(ctx context.Context, spec vod.Spec) (vod.Handle, error) {
+	return nil, nil
+}
+
 // Helpers
 
 func setupService(t *testing.T) (Service, *MockOWIClient, *vod.Manager, *MockProber) {
@@ -66,11 +72,17 @@ func setupService(t *testing.T) (Service, *MockOWIClient, *vod.Manager, *MockPro
 	mapper := new(MockPathMapper)
 
 	// Use real VOD Manager to test interaction with metadata/jobs
-	mgr := vod.NewManager(nil, prober, mapper) // Runner nil as we don't start builds
+	mgr := vod.NewManager(&dummyRunner{}, prober, mapper)
 
 	// Mock resolver? We can pass nil for List tests, but Stream tests need it?
-	svc := NewService(cfg, mgr, nil, owi, nil)
+	svc := NewService(cfg, mgr, &mockResolver{}, owi, nil)
 	return svc, owi, mgr, prober
+}
+
+type mockResolver struct{}
+
+func (m *mockResolver) Resolve(ctx context.Context, ref string, intent PlaybackIntent, profile PlaybackProfile) (PlaybackInfoResult, error) {
+	return PlaybackInfoResult{}, nil
 }
 
 // Table A Tests (Read Path)
@@ -83,7 +95,7 @@ func TestDurationTruth_Read_StoreWins(t *testing.T) {
 	ref := "1:0:1:ABCD:1:1:C00000:0:0:0:/media/hdd/movie/test.ts"
 	storeLength := "60 min" // Parses to 3600
 
-	mgr.UpdateMetadata(ref, vod.Metadata{
+	mgr.SeedMetadata(ref, vod.Metadata{
 		State:     vod.ArtifactStateReady,
 		Duration:  3000, // 50 min
 		UpdatedAt: time.Now().Unix(),
@@ -117,7 +129,7 @@ func TestDurationTruth_Read_ProbeFallback(t *testing.T) {
 	ref := "1:0:1:ABCD:1:1:C00000:0:0:0:/media/hdd/movie/test.ts"
 
 	// Setup: Store invalid/missing, Metadata valid
-	mgr.UpdateMetadata(ref, vod.Metadata{
+	mgr.SeedMetadata(ref, vod.Metadata{
 		State:     vod.ArtifactStateReady,
 		Duration:  3000,
 		UpdatedAt: time.Now().Unix(),
@@ -176,7 +188,7 @@ func TestDurationTruth_Read_BuildingGate(t *testing.T) {
 	// Setup: Store valid (3600), but Metadata says PREPARING
 	// A4: Building State Guard overrides Store? "Regardless of Store/Probe"
 
-	mgr.UpdateMetadata(ref, vod.Metadata{
+	mgr.SeedMetadata(ref, vod.Metadata{
 		State:    vod.ArtifactStatePreparing,
 		Duration: 3000, // Even if it has a duration
 	})
@@ -202,7 +214,7 @@ func TestDurationTruth_Read_ParseErrorMetrics(t *testing.T) {
 	ref := "1:0:1:ABCD:1:1:C00000:0:0:0:/media/hdd/movie/test.ts"
 
 	// Setup: Malformed store
-	mgr.UpdateMetadata(ref, vod.Metadata{
+	mgr.SeedMetadata(ref, vod.Metadata{
 		State:    vod.ArtifactStateReady,
 		Duration: 3000,
 	})

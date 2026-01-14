@@ -71,6 +71,16 @@ type service struct {
 }
 
 func NewService(cfg *config.AppConfig, manager *vod.Manager, resolver Resolver, owi OWIClient, resume ResumeStore) Service {
+	if cfg == nil {
+		panic("invariant violation: cfg is nil in NewService")
+	}
+	if manager == nil {
+		panic("invariant violation: manager is nil in NewService")
+	}
+	if resolver == nil {
+		panic("invariant violation: resolver is nil in NewService")
+	}
+
 	return &service{
 		cfg:         cfg,
 		vodManager:  manager,

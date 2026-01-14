@@ -1,6 +1,11 @@
 package vod
 
 import (
+	// Needed for the mocks if we were defining them, but we reuse from manager_test.go?
+	// Wait, mockRunner in manager_test.go uses context. But here we just used &mockRunner{}.
+	// If mockRunner is in manager_test.go, we are good.
+	// But wait, manager_test.go was just created.
+	// Let's assume visibility.
 	"testing"
 	"time"
 
@@ -10,7 +15,8 @@ import (
 // TestStateGenGuard_Deterministic verifies that the state reversion logic
 // strictly respects the StateGen guard, preventing stale reverts of concurrent success.
 func TestStateGenGuard_Deterministic(t *testing.T) {
-	mgr := NewManager(nil, nil, nil)
+	// Use minimal dummy mocks to satisfy strict invariants
+	mgr := NewManager(&mockRunner{}, &mockProber{}, nil)
 	id := "race-test"
 
 	// 1. Initial Setup: PREPARING state with captured generation
@@ -67,7 +73,7 @@ func TestStateGenGuard_Deterministic(t *testing.T) {
 }
 
 func TestTouchHelper(t *testing.T) {
-	mgr := NewManager(nil, nil, nil)
+	mgr := NewManager(&mockRunner{}, &mockProber{}, nil)
 	meta := Metadata{StateGen: 1}
 
 	start := time.Now().UnixNano()

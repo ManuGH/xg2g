@@ -240,6 +240,14 @@ lint: ## Run golangci-lint with all checks
 	@"$(GOLANGCI_LINT)" run ./... --timeout=5m --concurrency=2
 	@echo "✅ Lint checks passed"
 
+lint-invariants: ## Check architectural invariants (SeedMetadata usage)
+	@echo "Checking for prohibited SeedMetadata usage..."
+	@if git grep -n "SeedMetadata(" -- ':!**/*_test.go' ':!internal/control/vod/manager.go' ':!Makefile'; then \
+		echo "❌ SeedMetadata found in production code (Strict Invariant Violation)"; \
+		exit 1; \
+	fi
+	@echo "✅ Invariant check passed"
+
 lint-fix: ## Run golangci-lint with automatic fixes
 	@echo "Ensuring golangci-lint is installed..."
 	@command -v $(GOLANGCI_LINT) >/dev/null 2>&1 || go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
@@ -355,9 +363,7 @@ codex: quality-gates ## Run Codex review bundle (lint + race/coverage + govulnch
 	@echo "✅ Codex review bundle completed"
 	@echo "   Includes: lint, race+coverage, govulncheck"
 
-quality-gates: lint test-cover security-vulncheck ## Validate all quality gates
-	@echo "Validating quality gates..."
-	@echo "✅ All quality gates passed"
+# quality-gates moved to end of file to combine dependencies
 
 # ===================================================================================================
 # Docker Operations
@@ -726,13 +732,11 @@ schema-validate: ## Validate all YAML config files against JSON Schema
 # Ensures internal/control/** does not directly access domain stores
 .PHONY: gate-a
 gate-a:
-
-.PHONY: gate-a quality-gates
-
-gate-a:
 	@./scripts/verify_gate_a_control_store.sh
 
-quality-gates: gate-a
+quality-gates: lint-invariants gate-a lint test-cover security-vulncheck ## Validate all quality gates
+	@echo "Validating quality gates..."
+	@echo "✅ All quality gates passed"
 
 # ===================================================================================================
 # FFmpeg Build Automation

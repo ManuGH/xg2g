@@ -36,7 +36,7 @@ func TestRecordingsStatusHTTP_MetaFailedIncludesError(t *testing.T) {
 	srv, vodMgr := newStatusTestServer(t)
 	serviceRef := "1:0:0:0:0:0:0:0:0:/media/test.ts"
 	recordingID := recservice.EncodeRecordingID(serviceRef)
-	vodMgr.UpdateMetadata(serviceRef, vod.Metadata{
+	vodMgr.SeedMetadata(serviceRef, vod.Metadata{
 		State: vod.ArtifactStateFailed,
 		Error: "oops",
 	})
@@ -62,8 +62,9 @@ func newStatusTestServer(t *testing.T) (*Server, *vod.Manager) {
 		},
 	}
 	srv := NewServer(cfg, nil, nil)
-	vodMgr := vod.NewManager(nil, nil, nil) // Wire dependencies
-	recSvc := recservice.NewService(&cfg, vodMgr, nil, nil, nil)
+	vodMgr := vod.NewManager(&successRunner{fsRoot: "/tmp"}, &noopProber{}, nil) // Wire dependencies
+	dummyRes := recservice.NewResolver(&cfg, vodMgr, recservice.ResolverOptions{})
+	recSvc := recservice.NewService(&cfg, vodMgr, dummyRes, nil, nil)
 
 	srv.SetDependencies(
 		nil, nil, nil, nil, nil, nil, nil, nil, vodMgr,

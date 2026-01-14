@@ -10,7 +10,7 @@ import (
 
 func TestSingleflightKeyGate(t *testing.T) {
 	fset := token.NewFileSet()
-	path := filepath.Join(".", "resolver.go")
+	path := filepath.Join(".", "truth.go")
 	file, err := parser.ParseFile(fset, path, nil, 0)
 	if err != nil {
 		t.Fatalf("parse resolver.go: %v", err)

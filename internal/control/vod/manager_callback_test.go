@@ -18,7 +18,7 @@ func TestCallbackExecution(t *testing.T) {
 			startDelay: 100 * time.Millisecond,
 			exitCode:   0,
 		}
-		manager := NewManager(runner, nil, nil)
+		manager := NewManager(runner, &mockProber{}, nil)
 
 		// Trigger build
 		id := "test-recording-id"
@@ -77,7 +77,7 @@ func TestCallbackExecution(t *testing.T) {
 			startDelay: 100 * time.Millisecond,
 			exitCode:   1, // Simulate failure
 		}
-		manager := NewManager(runner, nil, nil)
+		manager := NewManager(runner, &mockProber{}, nil)
 
 		// Trigger build
 		id := "test-recording-fail"
