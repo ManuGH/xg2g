@@ -1,0 +1,531 @@
+ok  	github.com/ManuGH/xg2g/cmd/daemon	(cached)
+?   	github.com/ManuGH/xg2g/cmd/gencert	[no test files]
+ok  	github.com/ManuGH/xg2g/cmd/v3probe	(cached)
+ok  	github.com/ManuGH/xg2g/cmd/validate	(cached)
+ok  	github.com/ManuGH/xg2g/internal/api	(cached)
+{"level":"info","service":"xg2g","version":"","component":"config","tuner_slots":[0],"time":"2026-01-14T21:46:05+01:00","message":"using manually configured tuner slots from YAML"}
+{"level":"info","service":"xg2g","version":"test-v3","component":"startup-check","time":"2026-01-14T21:46:05+01:00","message":"Running pre-flight startup checks..."}
+{"level":"info","service":"xg2g","version":"test-v3","component":"startup-check","path":"/tmp/xg2g-vod-duration-3860427856","time":"2026-01-14T21:46:05+01:00","message":"✓ Data directory is writable"}
+{"level":"info","service":"xg2g","version":"test-v3","component":"startup-check","addr":":0","time":"2026-01-14T21:46:05+01:00","message":"✓ API listen address is valid"}
+{"level":"info","service":"xg2g","version":"test-v3","component":"startup-check","url":"http://mock-receiver","time":"2026-01-14T21:46:05+01:00","message":"✓ OWI Base URL is valid"}
+{"level":"info","service":"xg2g","version":"test-v3","component":"startup-check","time":"2026-01-14T21:46:05+01:00","message":"✅ All startup checks passed"}
+{"level":"info","service":"xg2g","version":"test-v3","roots":1,"time":"2026-01-14T21:46:05+01:00","message":"library service initialized"}
+{"level":"info","service":"xg2g","version":"test-v3","component":"openwebif","host":"mock-receiver","rate_limit_rps":10,"burst":20,"time":"2026-01-14T21:46:05+01:00","message":"receiver rate limiting enabled"}
+==================
+WARNING: DATA RACE
+Write at 0x00c00031cda0 by goroutine 106:
+  github.com/ManuGH/xg2g/internal/control/http/v3.(*Server).UpdateConfig()
+      /root/xg2g/internal/control/http/v3/server.go:163 +0x97
+  github.com/ManuGH/xg2g/internal/api.(*Server).ApplySnapshot()
+      /root/xg2g/internal/api/config_reload.go:61 +0x4f8
+  github.com/ManuGH/xg2g/internal/app/bootstrap.WireServices()
+      /root/xg2g/internal/app/bootstrap/bootstrap.go:123 +0xe8b
+  github.com/ManuGH/xg2g/internal/app/bootstrap.TestVODPlayback_DurationTruth()
+      /root/xg2g/internal/app/bootstrap/vod_duration_test.go:76 +0x93d
+  testing.tRunner()
+      /usr/local/go/src/testing/testing.go:1934 +0x21c
+  testing.(*T).Run.gowrap1()
+      /usr/local/go/src/testing/testing.go:1997 +0x44
+
+Previous read at 0x00c00031cda0 by goroutine 108:
+  github.com/ManuGH/xg2g/internal/control/http/v3.(*Server).getStoragePaths()
+      /root/xg2g/internal/control/http/v3/system_info.go:187 +0x12d
+  github.com/ManuGH/xg2g/internal/control/http/v3.(*StorageMonitor).Start()
+      /root/xg2g/internal/control/http/v3/storage_monitor.go:67 +0xf2
+  github.com/ManuGH/xg2g/internal/control/http/v3.(*Server).StartMonitor.gowrap1()
+      /root/xg2g/internal/control/http/v3/server.go:134 +0x67
+
+Goroutine 106 (running) created at:
+  testing.(*T).Run()
+      /usr/local/go/src/testing/testing.go:1997 +0x9d2
+  testing.runTests.func1()
+      /usr/local/go/src/testing/testing.go:2477 +0x85
+  testing.tRunner()
+      /usr/local/go/src/testing/testing.go:1934 +0x21c
+  testing.runTests()
+      /usr/local/go/src/testing/testing.go:2475 +0x96c
+  testing.(*M).Run()
+      /usr/local/go/src/testing/testing.go:2337 +0xed4
+  main.main()
+      _testmain.go:53 +0x164
+
+Goroutine 108 (running) created at:
+  github.com/ManuGH/xg2g/internal/control/http/v3.(*Server).StartMonitor()
+      /root/xg2g/internal/control/http/v3/server.go:134 +0x15c
+  github.com/ManuGH/xg2g/internal/api.New()
+      /root/xg2g/internal/api/http.go:245 +0x148b
+  github.com/ManuGH/xg2g/internal/app/bootstrap.WireServices()
+      /root/xg2g/internal/app/bootstrap/bootstrap.go:116 +0xd5a
+  github.com/ManuGH/xg2g/internal/app/bootstrap.TestVODPlayback_DurationTruth()
+      /root/xg2g/internal/app/bootstrap/vod_duration_test.go:76 +0x93d
+  testing.tRunner()
+      /usr/local/go/src/testing/testing.go:1934 +0x21c
+  testing.(*T).Run.gowrap1()
+      /usr/local/go/src/testing/testing.go:1997 +0x44
+==================
+==================
+WARNING: DATA RACE
+Write at 0x00c00031d1f0 by goroutine 106:
+  github.com/ManuGH/xg2g/internal/control/http/v3.(*Server).UpdateConfig()
+      /root/xg2g/internal/control/http/v3/server.go:164 +0xec
+  github.com/ManuGH/xg2g/internal/api.(*Server).ApplySnapshot()
+      /root/xg2g/internal/api/config_reload.go:61 +0x4f8
+  github.com/ManuGH/xg2g/internal/app/bootstrap.WireServices()
+      /root/xg2g/internal/app/bootstrap/bootstrap.go:123 +0xe8b
+  github.com/ManuGH/xg2g/internal/app/bootstrap.TestVODPlayback_DurationTruth()
+      /root/xg2g/internal/app/bootstrap/vod_duration_test.go:76 +0x93d
+  testing.tRunner()
+      /usr/local/go/src/testing/testing.go:1934 +0x21c
+  testing.(*T).Run.gowrap1()
+      /usr/local/go/src/testing/testing.go:1997 +0x44
+
+Previous read at 0x00c00031d1f0 by goroutine 108:
+  github.com/ManuGH/xg2g/internal/control/http/v3.(*Server).getStoragePaths()
+      /root/xg2g/internal/control/http/v3/system_info.go:187 +0x15d
+  github.com/ManuGH/xg2g/internal/control/http/v3.(*StorageMonitor).Start()
+      /root/xg2g/internal/control/http/v3/storage_monitor.go:67 +0xf2
+  github.com/ManuGH/xg2g/internal/control/http/v3.(*Server).StartMonitor.gowrap1()
+      /root/xg2g/internal/control/http/v3/server.go:134 +0x67
+
+Goroutine 106 (running) created at:
+  testing.(*T).Run()
+      /usr/local/go/src/testing/testing.go:1997 +0x9d2
+  testing.runTests.func1()
+      /usr/local/go/src/testing/testing.go:2477 +0x85
+  testing.tRunner()
+      /usr/local/go/src/testing/testing.go:1934 +0x21c
+  testing.runTests()
+      /usr/local/go/src/testing/testing.go:2475 +0x96c
+  testing.(*M).Run()
+      /usr/local/go/src/testing/testing.go:2337 +0xed4
+  main.main()
+      _testmain.go:53 +0x164
+
+Goroutine 108 (running) created at:
+  github.com/ManuGH/xg2g/internal/control/http/v3.(*Server).StartMonitor()
+      /root/xg2g/internal/control/http/v3/server.go:134 +0x15c
+  github.com/ManuGH/xg2g/internal/api.New()
+      /root/xg2g/internal/api/http.go:245 +0x148b
+  github.com/ManuGH/xg2g/internal/app/bootstrap.WireServices()
+      /root/xg2g/internal/app/bootstrap/bootstrap.go:116 +0xd5a
+  github.com/ManuGH/xg2g/internal/app/bootstrap.TestVODPlayback_DurationTruth()
+      /root/xg2g/internal/app/bootstrap/vod_duration_test.go:76 +0x93d
+  testing.tRunner()
+      /usr/local/go/src/testing/testing.go:1934 +0x21c
+  testing.(*T).Run.gowrap1()
+      /usr/local/go/src/testing/testing.go:1997 +0x44
+==================
+{"level":"info","service":"xg2g","version":"test-v3","component":"openwebif","host":"mock-receiver","rate_limit_rps":10,"burst":20,"time":"2026-01-14T21:46:05+01:00","message":"receiver rate limiting enabled"}
+{"level":"warn","service":"xg2g","version":"test-v3","component":"openwebif","host":"mock-receiver","error":"context canceled","event":"openwebif.rate_limit","operation":"about","time":"2026-01-14T21:46:05+01:00","message":"rate limit wait cancelled"}
+{"level":"warn","service":"xg2g","version":"test-v3","component":"openwebif","host":"mock-receiver","error":"context canceled","event":"openwebif.rate_limit","operation":"getlocations","time":"2026-01-14T21:46:05+01:00","message":"rate limit wait cancelled"}
+{"level":"info","service":"xg2g","version":"test-v3","method":"GET","path":"/api/v3/recordings/313a303a303a303a303a303a303a303a303a303a2f6864642f6d6f7669652f66696c6d2e7473/stream-info","remote_addr":"192.0.2.1:1234","user_agent":"","request_id":"95ac6555-7caf-4cc1-84c9-0fc8b396f7ef","event":"request.handled","status":503,"duration":0.920447,"time":"2026-01-14T21:46:05+01:00","message":"http request"}
+{"level":"info","service":"xg2g","version":"test-v3","method":"GET","path":"/api/v3/recordings/313a303a303a303a303a303a303a303a303a303a2f6864642f6d6f7669652f66696c6d2e7473/stream-info","remote_addr":"192.0.2.1:1234","user_agent":"","request_id":"d090df11-8231-46e4-a012-fb9308856a5a","event":"request.handled","status":200,"duration":2.77668,"time":"2026-01-14T21:46:05+01:00","message":"http request"}
+--- FAIL: TestVODPlayback_DurationTruth (0.02s)
+    testing.go:1617: race detected during execution of test
+    --- FAIL: TestVODPlayback_DurationTruth/FallbackPath_ProbeAndPersist (0.00s)
+        vod_duration_test.go:107: 
+            	Error Trace:	/root/xg2g/internal/app/bootstrap/vod_duration_test.go:107
+            	Error:      	Not equal: 
+            	            	expected: 200
+            	            	actual  : 503
+            	Test:       	TestVODPlayback_DurationTruth/FallbackPath_ProbeAndPersist
+{"level":"info","service":"xg2g","version":"test-v3","component":"config","tuner_slots":[0],"time":"2026-01-14T21:46:05+01:00","message":"using manually configured tuner slots from YAML"}
+{"level":"info","service":"xg2g","version":"test-v3","component":"startup-check","time":"2026-01-14T21:46:05+01:00","message":"Running pre-flight startup checks..."}
+{"level":"info","service":"xg2g","version":"test-v3","component":"startup-check","path":"/tmp/xg2g-vod-error-1509487700","time":"2026-01-14T21:46:05+01:00","message":"✓ Data directory is writable"}
+{"level":"info","service":"xg2g","version":"test-v3","component":"startup-check","addr":":0","time":"2026-01-14T21:46:05+01:00","message":"✓ API listen address is valid"}
+{"level":"info","service":"xg2g","version":"test-v3","component":"startup-check","url":"http://mock-receiver","time":"2026-01-14T21:46:05+01:00","message":"✓ OWI Base URL is valid"}
+{"level":"info","service":"xg2g","version":"test-v3","component":"startup-check","time":"2026-01-14T21:46:05+01:00","message":"✅ All startup checks passed"}
+{"level":"info","service":"xg2g","version":"test-v3","component":"openwebif","host":"mock-receiver","rate_limit_rps":10,"burst":20,"time":"2026-01-14T21:46:05+01:00","message":"receiver rate limiting enabled"}
+{"level":"info","service":"xg2g","version":"test-v3","component":"openwebif","host":"mock-receiver","rate_limit_rps":10,"burst":20,"time":"2026-01-14T21:46:05+01:00","message":"receiver rate limiting enabled"}
+{"level":"warn","service":"xg2g","version":"test-v3","component":"openwebif","host":"mock-receiver","error":"context canceled","event":"openwebif.rate_limit","operation":"about","time":"2026-01-14T21:46:05+01:00","message":"rate limit wait cancelled"}
+{"level":"warn","service":"xg2g","version":"test-v3","component":"openwebif","host":"mock-receiver","error":"context canceled","event":"openwebif.rate_limit","operation":"getlocations","time":"2026-01-14T21:46:05+01:00","message":"rate limit wait cancelled"}
+{"level":"info","service":"xg2g","version":"test-v3","method":"GET","path":"/api/v3/recordings/313a303a303a303a303a303a303a303a303a303a2f6864642f6d6f7669652f6d697373696e672e7473/stream-info","remote_addr":"192.0.2.1:1234","user_agent":"","request_id":"82777b18-c109-4e53-8c50-8d6bccef9d7a","event":"request.handled","status":404,"duration":0.123669,"time":"2026-01-14T21:46:05+01:00","message":"http request"}
+{"level":"info","service":"xg2g","version":"test-v3","component":"config","tuner_slots":[0],"time":"2026-01-14T21:46:05+01:00","message":"using manually configured tuner slots from YAML"}
+{"level":"info","service":"xg2g","version":"test-v3","component":"startup-check","time":"2026-01-14T21:46:05+01:00","message":"Running pre-flight startup checks..."}
+{"level":"info","service":"xg2g","version":"test-v3","component":"startup-check","path":"/tmp/xg2g-vod-success-1681803315","time":"2026-01-14T21:46:05+01:00","message":"✓ Data directory is writable"}
+{"level":"info","service":"xg2g","version":"test-v3","component":"startup-check","addr":":0","time":"2026-01-14T21:46:05+01:00","message":"✓ API listen address is valid"}
+{"level":"info","service":"xg2g","version":"test-v3","component":"startup-check","url":"http://mock-receiver","time":"2026-01-14T21:46:05+01:00","message":"✓ OWI Base URL is valid"}
+{"level":"info","service":"xg2g","version":"test-v3","component":"startup-check","time":"2026-01-14T21:46:05+01:00","message":"✅ All startup checks passed"}
+{"level":"info","service":"xg2g","version":"test-v3","component":"openwebif","host":"mock-receiver","rate_limit_rps":10,"burst":20,"time":"2026-01-14T21:46:05+01:00","message":"receiver rate limiting enabled"}
+{"level":"info","service":"xg2g","version":"test-v3","component":"openwebif","host":"mock-receiver","rate_limit_rps":10,"burst":20,"time":"2026-01-14T21:46:05+01:00","message":"receiver rate limiting enabled"}
+{"level":"warn","service":"xg2g","version":"test-v3","component":"openwebif","host":"mock-receiver","error":"context canceled","event":"openwebif.rate_limit","operation":"about","time":"2026-01-14T21:46:05+01:00","message":"rate limit wait cancelled"}
+{"level":"warn","service":"xg2g","version":"test-v3","component":"openwebif","host":"mock-receiver","error":"context canceled","event":"openwebif.rate_limit","operation":"getlocations","time":"2026-01-14T21:46:05+01:00","message":"rate limit wait cancelled"}
+{"level":"info","service":"xg2g","version":"test-v3","method":"GET","path":"/api/v3/recordings/313a303a303a303a303a303a303a303a303a303a2f6864642f6d6f7669652f66696c6d2e7473/stream-info","remote_addr":"192.0.2.1:1234","user_agent":"","request_id":"c0a8d456-a1c7-4359-a14b-76193e52f261","event":"request.handled","status":200,"duration":0.149327,"time":"2026-01-14T21:46:05+01:00","message":"http request"}
+--- FAIL: TestVODPlayback_Path_Wiring_SuccessPath (0.00s)
+    vod_path_test.go:224: 
+        	Error Trace:	/root/xg2g/internal/app/bootstrap/vod_path_test.go:224
+        	Error:      	Received unexpected error:
+        	            	json: unknown field "seekable"
+        	Test:       	TestVODPlayback_Path_Wiring_SuccessPath
+        	Messages:   	Must strictly decode PlaybackInfo
+{"level":"info","service":"xg2g","version":"test-v3","component":"config","tuner_slots":[0],"time":"2026-01-14T21:46:05+01:00","message":"using manually configured tuner slots from YAML"}
+{"level":"info","service":"xg2g","version":"test-v3","component":"startup-check","time":"2026-01-14T21:46:05+01:00","message":"Running pre-flight startup checks..."}
+{"level":"info","service":"xg2g","version":"test-v3","component":"startup-check","path":"/tmp/xg2g-vod-scope-973597855","time":"2026-01-14T21:46:05+01:00","message":"✓ Data directory is writable"}
+{"level":"info","service":"xg2g","version":"test-v3","component":"startup-check","addr":":0","time":"2026-01-14T21:46:05+01:00","message":"✓ API listen address is valid"}
+{"level":"info","service":"xg2g","version":"test-v3","component":"startup-check","url":"http://mock-receiver","time":"2026-01-14T21:46:05+01:00","message":"✓ OWI Base URL is valid"}
+{"level":"info","service":"xg2g","version":"test-v3","component":"startup-check","time":"2026-01-14T21:46:05+01:00","message":"✅ All startup checks passed"}
+{"level":"info","service":"xg2g","version":"test-v3","component":"openwebif","host":"mock-receiver","rate_limit_rps":10,"burst":20,"time":"2026-01-14T21:46:05+01:00","message":"receiver rate limiting enabled"}
+{"level":"info","service":"xg2g","version":"test-v3","component":"openwebif","host":"mock-receiver","rate_limit_rps":10,"burst":20,"time":"2026-01-14T21:46:05+01:00","message":"receiver rate limiting enabled"}
+{"level":"warn","service":"xg2g","version":"test-v3","component":"openwebif","host":"mock-receiver","error":"context canceled","event":"openwebif.rate_limit","operation":"about","time":"2026-01-14T21:46:05+01:00","message":"rate limit wait cancelled"}
+{"level":"warn","service":"xg2g","version":"test-v3","component":"openwebif","host":"mock-receiver","error":"context canceled","event":"openwebif.rate_limit","operation":"getlocations","time":"2026-01-14T21:46:05+01:00","message":"rate limit wait cancelled"}
+{"level":"warn","service":"xg2g","version":"test-v3","method":"GET","path":"/api/v3/recordings/any-id/stream-info","remote_addr":"192.0.2.1:1234","user_agent":"","request_id":"3abae3e0-9338-43c7-ac72-fdc9c1a5d6a3","component":"authz","required_scopes":["v3:read"],"token_scopes":["v3:status"],"time":"2026-01-14T21:46:05+01:00","message":"insufficient scopes for request"}
+{"level":"info","service":"xg2g","version":"test-v3","method":"GET","path":"/api/v3/recordings/any-id/stream-info","remote_addr":"192.0.2.1:1234","user_agent":"","request_id":"3abae3e0-9338-43c7-ac72-fdc9c1a5d6a3","event":"request.handled","status":403,"duration":0.243101,"time":"2026-01-14T21:46:05+01:00","message":"http request"}
+{"level":"warn","service":"xg2g","version":"test-v3","method":"GET","path":"/api/v3/recordings/any-id/stream-info","remote_addr":"192.0.2.1:1234","user_agent":"","request_id":"3996a7dc-4775-46c5-9d7d-1bc62fce5ab4","component":"auth","event":"auth.missing_header","time":"2026-01-14T21:46:05+01:00","message":"authorization header/cookie missing"}
+{"level":"info","service":"xg2g","version":"test-v3","method":"GET","path":"/api/v3/recordings/any-id/stream-info","remote_addr":"192.0.2.1:1234","user_agent":"","request_id":"3996a7dc-4775-46c5-9d7d-1bc62fce5ab4","event":"request.handled","status":401,"duration":0.157623,"time":"2026-01-14T21:46:05+01:00","message":"http request"}
+{"level":"info","service":"xg2g","version":"test-v3","component":"config","tuner_slots":[0],"time":"2026-01-14T21:46:05+01:00","message":"using manually configured tuner slots from YAML"}
+{"level":"info","service":"xg2g","version":"test-v3","component":"startup-check","time":"2026-01-14T21:46:05+01:00","message":"Running pre-flight startup checks..."}
+{"level":"info","service":"xg2g","version":"test-v3","component":"startup-check","path":"/tmp/xg2g-wiring-399923063","time":"2026-01-14T21:46:05+01:00","message":"✓ Data directory is writable"}
+{"level":"info","service":"xg2g","version":"test-v3","component":"startup-check","addr":":0","time":"2026-01-14T21:46:05+01:00","message":"✓ API listen address is valid"}
+{"level":"info","service":"xg2g","version":"test-v3","component":"startup-check","url":"http://mock-receiver","time":"2026-01-14T21:46:05+01:00","message":"✓ OWI Base URL is valid"}
+{"level":"info","service":"xg2g","version":"test-v3","component":"startup-check","time":"2026-01-14T21:46:05+01:00","message":"✅ All startup checks passed"}
+{"level":"info","service":"xg2g","version":"test-v3","component":"openwebif","host":"mock-receiver","rate_limit_rps":10,"burst":20,"time":"2026-01-14T21:46:05+01:00","message":"receiver rate limiting enabled"}
+{"level":"info","service":"xg2g","version":"test-v3","component":"openwebif","host":"mock-receiver","rate_limit_rps":10,"burst":20,"time":"2026-01-14T21:46:05+01:00","message":"receiver rate limiting enabled"}
+{"level":"error","service":"xg2g","version":"test-v3","component":"openwebif","host":"mock-receiver","event":"openwebif.request","operation":"about","method":"GET","endpoint":"/api/about","attempt":1,"max_attempts":1,"duration_ms":0,"error_class":"network","error":"Get \"http://mock-receiver/api/about\": context canceled","time":"2026-01-14T21:46:05+01:00","message":"openwebif request failed"}
+{"level":"warn","service":"xg2g","version":"test-v3","component":"openwebif","host":"mock-receiver","error":"context canceled","event":"openwebif.rate_limit","operation":"getlocations","time":"2026-01-14T21:46:05+01:00","message":"rate limit wait cancelled"}
+{"level":"info","service":"xg2g","version":"test-v3","method":"GET","path":"/healthz","remote_addr":"192.0.2.1:1234","user_agent":"","request_id":"56ba4cf2-df83-47e2-90ba-900d9507dc8b","event":"request.handled","status":200,"duration":0.177109,"time":"2026-01-14T21:46:05+01:00","message":"http request"}
+FAIL
+FAIL	github.com/ManuGH/xg2g/internal/app/bootstrap	0.066s
+ok  	github.com/ManuGH/xg2g/internal/cache	(cached)
+?   	github.com/ManuGH/xg2g/internal/channels	[no test files]
+ok  	github.com/ManuGH/xg2g/internal/config	(cached)
+ok  	github.com/ManuGH/xg2g/internal/control	(cached)
+ok  	github.com/ManuGH/xg2g/internal/control/auth	(cached)
+?   	github.com/ManuGH/xg2g/internal/control/clientplayback	[no test files]
+ok  	github.com/ManuGH/xg2g/internal/control/http	(cached)
+{"level":"warn","service":"xg2g","version":"","component":"auth","event":"auth.missing_header","time":"2026-01-14T21:46:06+01:00","message":"authorization header/cookie missing"}
+{"level":"warn","service":"xg2g","version":"","component":"authz","required_scopes":["v3:write"],"token_scopes":["v3:read"],"time":"2026-01-14T21:46:06+01:00","message":"insufficient scopes for request"}
+{"level":"warn","service":"xg2g","version":"","component":"auth","event":"auth.missing_header","time":"2026-01-14T21:46:06+01:00","message":"authorization header/cookie missing"}
+{"level":"warn","service":"xg2g","version":"","component":"auth","event":"auth.missing_header","time":"2026-01-14T21:46:06+01:00","message":"authorization header/cookie missing"}
+{"level":"warn","service":"xg2g","version":"","component":"authz","required_scopes":["v3:write"],"token_scopes":["v3:read"],"time":"2026-01-14T21:46:06+01:00","message":"insufficient scopes for request"}
+{"level":"error","service":"xg2g","version":"","event":"auth.fail_closed","time":"2026-01-14T21:46:06+01:00","message":"No API tokens configured. Denying access."}
+{"level":"warn","service":"xg2g","version":"","component":"auth","event":"auth.missing_header","time":"2026-01-14T21:46:06+01:00","message":"authorization header/cookie missing"}
+{"level":"warn","service":"xg2g","version":"","component":"auth","event":"auth.missing_header","time":"2026-01-14T21:46:06+01:00","message":"authorization header/cookie missing"}
+{"level":"warn","service":"xg2g","version":"","component":"auth","event":"auth.missing_header","time":"2026-01-14T21:46:06+01:00","message":"authorization header/cookie missing"}
+{"level":"warn","service":"xg2g","version":"","component":"auth","event":"auth.missing_header","time":"2026-01-14T21:46:06+01:00","message":"authorization header/cookie missing"}
+{"level":"warn","service":"xg2g","version":"","component":"auth","event":"auth.invalid_token","time":"2026-01-14T21:46:06+01:00","message":"invalid api token"}
+{"level":"warn","service":"xg2g","version":"","component":"auth","event":"auth.invalid_token","time":"2026-01-14T21:46:06+01:00","message":"invalid api token"}
+{"level":"warn","service":"xg2g","version":"","component":"auth","event":"auth.invalid_token","time":"2026-01-14T21:46:06+01:00","message":"invalid api token"}
+{"level":"error","service":"xg2g","version":"","component":"config","time":"2026-01-14T21:46:06+01:00","message":"CRITICAL: no tuner slots available - all streaming requests will fail with 503"}
+{"level":"error","service":"xg2g","version":"","component":"config","time":"2026-01-14T21:46:06+01:00","message":"CRITICAL: no tuner slots available - all streaming requests will fail with 503"}
+{"level":"info","service":"xg2g","version":"","component":"startup-check","time":"2026-01-14T21:46:06+01:00","message":"Running pre-flight startup checks..."}
+{"level":"info","service":"xg2g","version":"","component":"startup-check","path":"/tmp/TestPutSystemConfigTriggersShutdown38683450/001","time":"2026-01-14T21:46:06+01:00","message":"✓ Data directory is writable"}
+{"level":"info","service":"xg2g","version":"","component":"startup-check","addr":":8088","time":"2026-01-14T21:46:06+01:00","message":"✓ API listen address is valid"}
+{"level":"info","service":"xg2g","version":"","component":"startup-check","url":"http://example.com","time":"2026-01-14T21:46:06+01:00","message":"✓ OWI Base URL is valid"}
+{"level":"info","service":"xg2g","version":"","component":"startup-check","time":"2026-01-14T21:46:06+01:00","message":"✅ All startup checks passed"}
+{"level":"info","service":"xg2g","version":"","time":"2026-01-14T21:46:06+01:00","message":"configuration updated, triggering graceful shutdown"}
+{"level":"warn","service":"xg2g","version":"","key":"title","problem_type":"test/type","time":"2026-01-14T21:46:06+01:00","message":"ignoring reserved key in problem extras"}
+{"level":"warn","service":"xg2g","version":"","key":"detail","problem_type":"test/type","time":"2026-01-14T21:46:06+01:00","message":"ignoring reserved key in problem extras"}
+{"level":"warn","service":"xg2g","version":"","key":"instance","problem_type":"test/type","time":"2026-01-14T21:46:06+01:00","message":"ignoring reserved key in problem extras"}
+{"level":"warn","service":"xg2g","version":"","key":"code","problem_type":"test/type","time":"2026-01-14T21:46:06+01:00","message":"ignoring reserved key in problem extras"}
+{"level":"warn","service":"xg2g","version":"","key":"status","problem_type":"test/type","time":"2026-01-14T21:46:06+01:00","message":"ignoring reserved key in problem extras"}
+{"level":"warn","service":"xg2g","version":"","key":"type","problem_type":"test/type","time":"2026-01-14T21:46:06+01:00","message":"ignoring reserved key in problem extras"}
+--- FAIL: TestV3RFC7807Compliance (0.06s)
+    contract_v3_coverage_test.go:169: recordings.go:recordings.go:239:3: Found manual WriteHeader with non-success code in ProbeRecordingMp4. Errors must use writeProblem(w, r, ...).
+{"level":"error","service":"xg2g","version":"","error":"connection reset by peer","time":"2026-01-14T21:46:06+01:00","message":"failed to fetch timers for duplicate check"}
+{"level":"error","service":"xg2g","version":"","error":"Konflikt mit anderem Timer","sref":"1:0:1:C3:21:85:C00000:0:0:0:","time":"2026-01-14T21:46:06+01:00","message":"failed to add timer"}
+{"level":"error","service":"xg2g","version":"","error":"internal server error","sref":"1:0:1:C3:21:85:C00000:0:0:0:","time":"2026-01-14T21:46:06+01:00","message":"failed to add timer"}
+{"level":"warn","service":"xg2g","version":"","sref":"1:0:1:C3:21:85:C00000:0:0:0:","time":"2026-01-14T21:46:07+01:00","message":"timer add verified failed"}
+{"level":"info","service":"xg2g","version":"","path":".","search_id":"M3U_CHANNEL_ID","time":"2026-01-14T21:46:07+01:00","message":"attempting to resolve service ref from playlist"}
+{"level":"warn","service":"xg2g","version":"","error":"read .: is a directory","path":".","time":"2026-01-14T21:46:07+01:00","message":"failed to read playlist for resolution"}
+{"level":"error","service":"xg2g","version":"","error":"connection refused","timerId":"MTowOjE6QzM6MjE6ODU6QzAwMDAwOjA6MDowOnwxMDAwfDIwMDA","time":"2026-01-14T21:46:07+01:00","message":"failed to delete timer"}
+{"level":"error","service":"xg2g","version":"","error":"timer not found","timerId":"MTowOjE6QzM6MjE6ODU6QzAwMDAwOjA6MDowOnwxMDAwfDIwMDA","time":"2026-01-14T21:46:07+01:00","message":"failed to delete timer"}
+{"level":"error","service":"xg2g","version":"","error":"timeout","time":"2026-01-14T21:46:07+01:00","message":"failed to fetch timers for conflict preview"}
+{"level":"error","service":"xg2g","version":"","error":"timeout","time":"2026-01-14T21:46:07+01:00","message":"failed to fetch timers during update"}
+{"level":"info","service":"xg2g","version":"","timerId":"MTowOjE6QzM6MjE6ODU6QzAwMDAwOjA6MDowOnwxMTAwfDIxMDA","native":true,"time":"2026-01-14T21:46:07+01:00","message":"Updating timer"}
+{"level":"info","service":"xg2g","version":"","timerId":"MTowOjE6QzM6MjE6ODU6QzAwMDAwOjA6MDowOnwxMDAwfDIwMDA","native":true,"time":"2026-01-14T21:46:07+01:00","message":"Updating timer"}
+{"level":"error","service":"xg2g","version":"","error":"Conflict with event X","timerId":"MTowOjE6QzM6MjE6ODU6QzAwMDAwOjA6MDowOnwxMDAwfDIwMDA","time":"2026-01-14T21:46:07+01:00","message":"native update failed"}
+{"level":"info","service":"xg2g","version":"","timerId":"MTowOjE6QzM6MjE6ODU6QzAwMDAwOjA6MDowOnwxMDAwfDIwMDA","native":false,"time":"2026-01-14T21:46:07+01:00","message":"Updating timer"}
+{"level":"info","service":"xg2g","version":"","timerId":"MTowOjE6QzM6MjE6ODU6QzAwMDAwOjA6MDowOnwxMDAwfDIwMDA","time":"2026-01-14T21:46:07+01:00","message":"performing delete+add fallback for update"}
+{"level":"info","service":"xg2g","version":"","timerId":"MTowOjE6QzM6MjE6ODU6QzAwMDAwOjA6MDowOnwxMDAwfDIwMDA","native":false,"time":"2026-01-14T21:46:07+01:00","message":"Updating timer"}
+{"level":"info","service":"xg2g","version":"","timerId":"MTowOjE6QzM6MjE6ODU6QzAwMDAwOjA6MDowOnwxMDAwfDIwMDA","time":"2026-01-14T21:46:07+01:00","message":"performing delete+add fallback for update"}
+{"level":"error","service":"xg2g","version":"","error":"Conflict","timerId":"MTowOjE6QzM6MjE6ODU6QzAwMDAwOjA6MDowOnwxMDAwfDIwMDA","time":"2026-01-14T21:46:07+01:00","message":"fallback add failed, attempting rollback"}
+{"level":"info","service":"xg2g","version":"","timerId":"MTowOjE6QzM6MjE6ODU6QzAwMDAwOjA6MDowOnwxMDAwfDIwMDA","native":true,"time":"2026-01-14T21:46:07+01:00","message":"Updating timer"}
+{"level":"warn","service":"xg2g","version":"","timerId":"MTowOjE6QzM6MjE6ODU6QzAwMDAwOjA6MDowOnwxMDAwfDIwMDA","time":"2026-01-14T21:46:07+01:00","message":"timer update verification failed"}
+{"level":"error","service":"xg2g","version":"","time":"2026-01-14T21:46:07+01:00","message":"v3 store not initialized"}
+{"level":"error","service":"xg2g","version":"","error":"db boom","time":"2026-01-14T21:46:07+01:00","message":"failed to get streams"}
+{"level":"info","service":"xg2g","version":"","duration":0.014096,"time":"2026-01-14T21:46:07+01:00","message":"manual refresh triggered via API"}
+{"level":"info","service":"xg2g","version":"","component":"api","correlation_id":"corr-intent-001","ua":"","profile":"high","dvr_window_sec":0,"idem_key":"ac5cc60bc97456f7ea6a06be0de9f8addfc7d8b08a863777a71329be54c725ea","gpu_available":true,"hwaccel_requested":"auto","hwaccel_effective":"off","hwaccel_reason":"passthrough","encoder_backend":"none","video_codec":"","container":"","llhls":false,"time":"2026-01-14T21:46:07+01:00","message":"intent profile resolved"}
+{"level":"info","service":"xg2g","version":"","component":"api","correlation_id":"corr-intent-001","time":"2026-01-14T21:46:07+01:00","message":"intent accepted"}
+{"level":"info","service":"xg2g","version":"","component":"api","correlation_id":"corr-intent-001","ua":"","profile":"high","dvr_window_sec":0,"idem_key":"ac5cc60bc97456f7ea6a06be0de9f8addfc7d8b08a863777a71329be54c725ea","gpu_available":true,"hwaccel_requested":"auto","hwaccel_effective":"off","hwaccel_reason":"passthrough","encoder_backend":"none","video_codec":"","container":"","llhls":false,"time":"2026-01-14T21:46:07+01:00","message":"intent profile resolved"}
+{"level":"info","service":"xg2g","version":"","component":"api","correlation_id":"corr-intent-001","time":"2026-01-14T21:46:07+01:00","message":"intent accepted"}
+{"level":"info","service":"xg2g","version":"","component":"api","correlation_id":"corr-intent-001","ua":"","profile":"high","dvr_window_sec":0,"idem_key":"ac5cc60bc97456f7ea6a06be0de9f8addfc7d8b08a863777a71329be54c725ea","gpu_available":true,"hwaccel_requested":"auto","hwaccel_effective":"off","hwaccel_reason":"passthrough","encoder_backend":"none","video_codec":"","container":"","llhls":false,"time":"2026-01-14T21:46:07+01:00","message":"intent profile resolved"}
+{"level":"info","service":"xg2g","version":"","component":"api","correlation_id":"corr-intent-001","existing_sid":"9b51759e-2c03-4922-9358-665e90408364","time":"2026-01-14T21:46:07+01:00","message":"idempotent replay detected"}
+{"level":"error","service":"xg2g","version":"","time":"2026-01-14T21:46:07+01:00","message":"v3 store not initialized"}
+{"level":"error","service":"xg2g","version":"","time":"2026-01-14T21:46:07+01:00","message":"v3 store not initialized"}
+--- FAIL: TestSlice5_1_Equivalence (0.00s)
+    --- FAIL: TestSlice5_1_Equivalence/Services_Bouquets (0.00s)
+        equivalence_test.go:836: JSON mismatch!
+            Legacy:
+            [
+              "Favorites",
+              "Movies"
+            ]
+            New:
+            [
+              {
+                "name": "Favorites",
+                "services": 0
+              },
+              {
+                "name": "Movies",
+                "services": 0
+              }
+            ]
+DEBUG: GetServices ReadFile failed: /tmp/TestSlice5_2_Equivalence3908330289/001/test.m3u, err=open /tmp/TestSlice5_2_Equivalence3908330289/001/test.m3u: no such file or directory
+--- FAIL: TestSlice5_2_Equivalence (0.01s)
+    --- FAIL: TestSlice5_2_Equivalence/GetServicesBouquets/Empty (0.00s)
+        equivalence_test.go:1064: JSON mismatch!
+            Legacy:
+            null
+            New:
+            []
+    --- FAIL: TestSlice5_2_Equivalence/GetServicesBouquets/PlaylistFilename_Empty_ConfigBouquetEmpty (0.00s)
+        equivalence_test.go:1101: JSON mismatch!
+            Legacy:
+            null
+            New:
+            []
+    --- FAIL: TestSlice5_2_Equivalence/GetEpg/Combinatorial (0.00s)
+        --- FAIL: TestSlice5_2_Equivalence/GetEpg/Combinatorial/All_Events_Wide_Window (0.00s)
+            equivalence_test.go:1201: JSON mismatch!
+                Legacy:
+                [
+                  {
+                    "desc": "Daily News",
+                    "duration": 3600,
+                    "end": 1704114000,
+                    "id": "id1",
+                    "service_ref": "id1",
+                    "start": 1704110400,
+                    "title": "News"
+                  },
+                  {
+                    "desc": "Blockbuster",
+                    "duration": 3600,
+                    "end": 1704117600,
+                    "id": "id2",
+                    "service_ref": "id2",
+                    "start": 1704114000,
+                    "title": "Movie"
+                  },
+                  {
+                    "desc": "Live Football",
+                    "duration": 3600,
+                    "end": 1704121200,
+                    "id": "id1",
+                    "service_ref": "id1",
+                    "start": 1704117600,
+                    "title": "Sport"
+                  }
+                ]
+                New:
+                {
+                  "items": [
+                    {
+                      "desc": "Daily News",
+                      "duration": 3600,
+                      "end": 1704114000,
+                      "id": "id1",
+                      "service_ref": "id1",
+                      "start": 1704110400,
+                      "title": "News"
+                    },
+                    {
+                      "desc": "Blockbuster",
+                      "duration": 3600,
+                      "end": 1704117600,
+                      "id": "id2",
+                      "service_ref": "id2",
+                      "start": 1704114000,
+                      "title": "Movie"
+                    },
+                    {
+                      "desc": "Live Football",
+                      "duration": 3600,
+                      "end": 1704121200,
+                      "id": "id1",
+                      "service_ref": "id1",
+                      "start": 1704117600,
+                      "title": "Sport"
+                    }
+                  ]
+                }
+        --- FAIL: TestSlice5_2_Equivalence/GetEpg/Combinatorial/Restricted_Window_First_Event (0.00s)
+            equivalence_test.go:1201: JSON mismatch!
+                Legacy:
+                [
+                  {
+                    "desc": "Daily News",
+                    "duration": 3600,
+                    "end": 1704114000,
+                    "id": "id1",
+                    "service_ref": "id1",
+                    "start": 1704110400,
+                    "title": "News"
+                  }
+                ]
+                New:
+                {
+                  "items": [
+                    {
+                      "desc": "Daily News",
+                      "duration": 3600,
+                      "end": 1704114000,
+                      "id": "id1",
+                      "service_ref": "id1",
+                      "start": 1704110400,
+                      "title": "News"
+                    }
+                  ]
+                }
+        --- FAIL: TestSlice5_2_Equivalence/GetEpg/Combinatorial/Bouquet_Filter_Favorites_Only_id1 (0.00s)
+            equivalence_test.go:1201: JSON mismatch!
+                Legacy:
+                null
+                New:
+                {
+                  "items": null
+                }
+        --- FAIL: TestSlice5_2_Equivalence/GetEpg/Combinatorial/Bouquet_Filter_Playlist_Missing (0.00s)
+            equivalence_test.go:1201: JSON mismatch!
+                Legacy:
+                null
+                New:
+                {
+                  "items": null
+                }
+        --- FAIL: TestSlice5_2_Equivalence/GetEpg/Combinatorial/Search_Query_News (0.00s)
+            equivalence_test.go:1201: JSON mismatch!
+                Legacy:
+                [
+                  {
+                    "desc": "Daily News",
+                    "duration": 3600,
+                    "end": 1704114000,
+                    "id": "id1",
+                    "service_ref": "id1",
+                    "start": 1704110400,
+                    "title": "News"
+                  }
+                ]
+                New:
+                {
+                  "items": [
+                    {
+                      "desc": "Daily News",
+                      "duration": 3600,
+                      "end": 1704114000,
+                      "id": "id1",
+                      "service_ref": "id1",
+                      "start": 1704110400,
+                      "title": "News"
+                    }
+                  ]
+                }
+        --- FAIL: TestSlice5_2_Equivalence/GetEpg/Combinatorial/Search_Query_NoMatch (0.00s)
+            equivalence_test.go:1201: JSON mismatch!
+                Legacy:
+                null
+                New:
+                {
+                  "items": null
+                }
+    --- FAIL: TestSlice5_2_Equivalence/GetEpg/Bouquet_Filter_Failure (0.00s)
+        --- FAIL: TestSlice5_2_Equivalence/GetEpg/Bouquet_Filter_Failure/Playlist_Missing_With_Bouquet (0.00s)
+            equivalence_test.go:1251: JSON mismatch!
+                Legacy:
+                null
+                New:
+                {
+                  "items": null
+                }
+        --- FAIL: TestSlice5_2_Equivalence/GetEpg/Bouquet_Filter_Failure/Playlist_Missing_With_Bouquet_And_Search (0.00s)
+            equivalence_test.go:1251: JSON mismatch!
+                Legacy:
+                null
+                New:
+                {
+                  "items": null
+                }
+{"level":"info","service":"xg2g","version":"","event":"client.playback_decision","id":"rec1","decision":"transcode","strategy":"direct","time":"2026-01-14T21:46:07+01:00","message":"resolved client playback"}
+{"level":"info","service":"xg2g","version":"","event":"client.playback_decision","id":"rec1","decision":"direct_play","strategy":"direct","container":"mp4","time":"2026-01-14T21:46:07+01:00","message":"resolved client playback"}
+{"level":"info","service":"xg2g","version":"","event":"client.playback_decision","id":"rec1","decision":"transcode","strategy":"direct","container":"mp4","time":"2026-01-14T21:46:07+01:00","message":"resolved client playback"}
+{"level":"info","service":"xg2g","version":"","event":"client.playback_decision","id":"rec1","decision":"transcode","strategy":"direct","time":"2026-01-14T21:46:07+01:00","message":"resolved client playback"}
+{"level":"error","service":"xg2g","version":"","error":"read /tmp/TestGetServicesBouquets_FailClosed3916706310/001/bad.m3u: is a directory","cause":"read","time":"2026-01-14T21:46:07+01:00","message":"failed to get bouquets"}
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","rate_limit_rps":10,"burst":20,"time":"2026-01-14T21:46:07+01:00","message":"receiver rate limiting enabled"}
+{"level":"error","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","event":"openwebif.request","operation":"getlocations","method":"GET","endpoint":"/api/getlocations","attempt":1,"max_attempts":1,"duration_ms":0,"error_class":"http_4xx","status":404,"time":"2026-01-14T21:46:07+01:00","message":"openwebif request failed"}
+{"level":"info","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","event":"openwebif.request","operation":"movielist","method":"GET","endpoint":"/api/movielist","attempt":1,"max_attempts":1,"duration_ms":0,"error_class":"ok","status":200,"time":"2026-01-14T21:46:07+01:00","message":"openwebif request completed"}
+{"level":"warn","service":"xg2g","version":"","component":"openwebif","host":"127.0.0.1","dirname":"/media/hdd/movie","message":"","body_snippet":"{\"result\": false, \"movies\": [], \"bookmarks\": []}","time":"2026-01-14T21:46:07+01:00","message":"movielist result=false"}
+{"level":"info","jobId":"/tmp/TestGetRecordingHLSPlaylist_Failed_Reconcile_BuildCallbackPromot3453865061/001/recordings/b88707d0e76991df0f88380e6f1f942866f17fbbf70b25b592a97e346b02c842","time":"2026-01-14T21:46:07+01:00","message":"VOD build process completed successfully"}
+{"level":"info","jobId":"/tmp/TestGetRecordingHLSPlaylist_Failed_Reconcile_BuildCallbackPromot3453865061/001/recordings/b88707d0e76991df0f88380e6f1f942866f17fbbf70b25b592a97e346b02c842","finalPath":"/tmp/TestGetRecordingHLSPlaylist_Failed_Reconcile_BuildCallbackPromot3453865061/001/recordings/b88707d0e76991df0f88380e6f1f942866f17fbbf70b25b592a97e346b02c842/index.m3u8","time":"2026-01-14T21:46:07+01:00","message":"VOD build published successfully"}
+{"level":"info","jobId":"/tmp/TestGetRecordingHLSPlaylist_Failed_Reconcile_BuildCallbackPromot3453865061/001/recordings/b88707d0e76991df0f88380e6f1f942866f17fbbf70b25b592a97e346b02c842","metaId":"1:0:0:0:0:0:0:0:0:/media/nfs/build.ts","oldState":"PREPARING","newState":"READY","playlistPath":"/tmp/TestGetRecordingHLSPlaylist_Failed_Reconcile_BuildCallbackPromot3453865061/001/recordings/b88707d0e76991df0f88380e6f1f942866f17fbbf70b25b592a97e346b02c842/index.m3u8","stateGen":2,"time":"2026-01-14T21:46:07+01:00","message":"VOD manager: metadata updated"}
+{"level":"info","jobId":"/tmp/TestGetRecordingHLSPlaylist_FailedLatencySLO565507421/001/recordings/0cf2e02b8da5160dd81b286e0fae78f966f5ba2dabe812871ecabcb4d63284e3","time":"2026-01-14T21:46:07+01:00","message":"VOD build process completed successfully"}
+{"level":"info","jobId":"/tmp/TestGetRecordingHLSPlaylist_FailedLatencySLO565507421/001/recordings/0cf2e02b8da5160dd81b286e0fae78f966f5ba2dabe812871ecabcb4d63284e3","finalPath":"/tmp/TestGetRecordingHLSPlaylist_FailedLatencySLO565507421/001/recordings/0cf2e02b8da5160dd81b286e0fae78f966f5ba2dabe812871ecabcb4d63284e3/index.m3u8","time":"2026-01-14T21:46:07+01:00","message":"VOD build published successfully"}
+{"level":"info","jobId":"/tmp/TestGetRecordingHLSPlaylist_FailedLatencySLO565507421/001/recordings/0cf2e02b8da5160dd81b286e0fae78f966f5ba2dabe812871ecabcb4d63284e3","metaId":"1:0:0:0:0:0:0:0:0:/media/nfs/latency.ts","oldState":"PREPARING","newState":"READY","playlistPath":"/tmp/TestGetRecordingHLSPlaylist_FailedLatencySLO565507421/001/recordings/0cf2e02b8da5160dd81b286e0fae78f966f5ba2dabe812871ecabcb4d63284e3/index.m3u8","stateGen":2,"time":"2026-01-14T21:46:07+01:00","message":"VOD manager: metadata updated"}
+FAIL
+FAIL	github.com/ManuGH/xg2g/internal/control/http/v3	1.417s
+?   	github.com/ManuGH/xg2g/internal/control/http/v3/middleware	[no test files]
+?   	github.com/ManuGH/xg2g/internal/control/http/v3/problem	[no test files]
+ok  	github.com/ManuGH/xg2g/internal/control/http/v3/recordings	(cached)
+ok  	github.com/ManuGH/xg2g/internal/control/http/v3/recordings/artifacts	(cached)
+ok  	github.com/ManuGH/xg2g/internal/control/http/v3/types	(cached)
+ok  	github.com/ManuGH/xg2g/internal/control/middleware	(cached)
+ok  	github.com/ManuGH/xg2g/internal/control/playback	(cached)
+ok  	github.com/ManuGH/xg2g/internal/control/read	(cached)
+ok  	github.com/ManuGH/xg2g/internal/control/recordings	(cached)
+ok  	github.com/ManuGH/xg2g/internal/control/vod	(cached)
+?   	github.com/ManuGH/xg2g/internal/core/openwebif	[no test files]
+?   	github.com/ManuGH/xg2g/internal/core/pathutil	[no test files]
+?   	github.com/ManuGH/xg2g/internal/core/profile	[no test files]
+?   	github.com/ManuGH/xg2g/internal/core/urlutil	[no test files]
+?   	github.com/ManuGH/xg2g/internal/core/useragent	[no test files]
+ok  	github.com/ManuGH/xg2g/internal/daemon	(cached)
+ok  	github.com/ManuGH/xg2g/internal/domain/session/manager	(cached)
+?   	github.com/ManuGH/xg2g/internal/domain/session/model	[no test files]
+?   	github.com/ManuGH/xg2g/internal/domain/session/ports	[no test files]
+ok  	github.com/ManuGH/xg2g/internal/domain/session/store	(cached)
+?   	github.com/ManuGH/xg2g/internal/domain/vod	[no test files]
+ok  	github.com/ManuGH/xg2g/internal/dvr	(cached)
+ok  	github.com/ManuGH/xg2g/internal/epg	(cached)
+?   	github.com/ManuGH/xg2g/internal/fsutil	[no test files]
+ok  	github.com/ManuGH/xg2g/internal/hdhr	(cached)
+ok  	github.com/ManuGH/xg2g/internal/health	(cached)
+?   	github.com/ManuGH/xg2g/internal/infra/bus	[no test files]
+?   	github.com/ManuGH/xg2g/internal/infra/ffmpeg	[no test files]
+?   	github.com/ManuGH/xg2g/internal/infra/media/ffmpeg	[no test files]
+?   	github.com/ManuGH/xg2g/internal/infra/media/stub	[no test files]
+?   	github.com/ManuGH/xg2g/internal/infra/platform	[no test files]
+ok  	github.com/ManuGH/xg2g/internal/jobs	(cached)
+?   	github.com/ManuGH/xg2g/internal/library	[no test files]
+ok  	github.com/ManuGH/xg2g/internal/log	(cached)
+ok  	github.com/ManuGH/xg2g/internal/m3u	(cached)
+ok  	github.com/ManuGH/xg2g/internal/metrics	(cached)
+ok  	github.com/ManuGH/xg2g/internal/metrics/gpu	(cached)
+?   	github.com/ManuGH/xg2g/internal/netutil	[no test files]
+ok  	github.com/ManuGH/xg2g/internal/openwebif	(cached)
+?   	github.com/ManuGH/xg2g/internal/pipeline	[no test files]
+ok  	github.com/ManuGH/xg2g/internal/pipeline/api	(cached)
+ok  	github.com/ManuGH/xg2g/internal/pipeline/bus	(cached)
+?   	github.com/ManuGH/xg2g/internal/pipeline/exec	[no test files]
+ok  	github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2	(cached)
+?   	github.com/ManuGH/xg2g/internal/pipeline/hardware	[no test files]
+?   	github.com/ManuGH/xg2g/internal/pipeline/lease	[no test files]
+ok  	github.com/ManuGH/xg2g/internal/pipeline/profiles	(cached)
+?   	github.com/ManuGH/xg2g/internal/pipeline/resume	[no test files]
+?   	github.com/ManuGH/xg2g/internal/pipeline/scan	[no test files]
+ok  	github.com/ManuGH/xg2g/internal/pipeline/shadow	(cached)
+ok  	github.com/ManuGH/xg2g/internal/platform/fs	(cached)
+ok  	github.com/ManuGH/xg2g/internal/platform/net	(cached)
+ok  	github.com/ManuGH/xg2g/internal/platform/paths	(cached)
+ok  	github.com/ManuGH/xg2g/internal/playlist	(cached)
+ok  	github.com/ManuGH/xg2g/internal/procgroup	(cached)
+ok  	github.com/ManuGH/xg2g/internal/recordings	(cached)
+ok  	github.com/ManuGH/xg2g/internal/resilience	(cached)
+ok  	github.com/ManuGH/xg2g/internal/telemetry	(cached)
+ok  	github.com/ManuGH/xg2g/internal/tls	(cached)
+ok  	github.com/ManuGH/xg2g/internal/types	(cached)
+ok  	github.com/ManuGH/xg2g/internal/validate	(cached)
+?   	github.com/ManuGH/xg2g/test/helpers	[no test files]
+ok  	github.com/ManuGH/xg2g/test/integration	(cached)
+ok  	github.com/ManuGH/xg2g/test/load	(cached)
+FAIL

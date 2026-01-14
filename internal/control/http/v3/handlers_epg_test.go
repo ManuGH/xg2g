@@ -79,19 +79,10 @@ func TestGetEpg_ResponseShape(t *testing.T) {
 	resp := w.Result()
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
-	var body map[string]json.RawMessage
-	err := json.NewDecoder(resp.Body).Decode(&body)
-	assert.NoError(t, err)
-
-	// Check for "items" key
-	if _, ok := body["items"]; !ok {
-		t.Fatal("Response does not contain 'items' key")
-	}
-
-	// Optionally decode items to verify content
+	// Response should be a bare array (not wrapped in {"items": ...})
 	var items []EpgItem
-	err = json.Unmarshal(body["items"], &items)
-	assert.NoError(t, err)
+	err := json.NewDecoder(resp.Body).Decode(&items)
+	assert.NoError(t, err, "Response should be a bare JSON array")
 	assert.Len(t, items, 1)
 	assert.Equal(t, "Test Show", items[0].Title)
 }

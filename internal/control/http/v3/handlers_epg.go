@@ -303,9 +303,7 @@ func (s *Server) GetEpg(w http.ResponseWriter, r *http.Request, params GetEpgPar
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"items": resp,
-	})
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // PostServicesNowNext implements POST /services/now-next.
