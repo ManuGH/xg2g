@@ -28,17 +28,17 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Create Dummy WebUI Assets (Strategy A)
         run: |
-          mkdir -p internal/api/dist
-          touch internal/api/dist/index.html
-          echo "Dummy Asset for CI" > internal/api/dist/index.html
+          mkdir -p internal/control/http/dist
+          touch internal/control/http/dist/index.html
+          echo "Dummy Asset for CI" > internal/control/http/dist/index.html
 
       # Setup Go
       - name: Setup Go
-        uses: actions/setup-go@v6 # v5
+        uses: actions/setup-go@v5 # v5
         with:
           go-version-file: go.mod
           cache: true

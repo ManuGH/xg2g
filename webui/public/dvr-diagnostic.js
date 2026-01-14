@@ -12,7 +12,9 @@
  * 3. Run: diagnoseDVR()
  */
 
-function diagnoseDVR() {
+/* eslint-disable no-unused-vars */
+/* global Hls */
+function diagnoseDVR(recordingUrl) {
     const video = document.querySelector('video');
 
     if (!video) {
