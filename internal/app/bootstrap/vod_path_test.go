@@ -174,8 +174,9 @@ enigma2:
 
 	mock := &mockResolver{
 		ResolveFunc: func(ctx context.Context, recID string, intent recservice.PlaybackIntent, profile recservice.PlaybackProfile) (recservice.PlaybackInfoResult, error) {
-			// Compare with encoded recordingID, not raw serviceRef
-			if recID == recordingID {
+			// Production handler DECODES the URL parameter before calling resolver
+			// Resolver receives canonical (decoded) recordingID, not URL-encoded
+			if recID == serviceRef {
 				return recservice.PlaybackInfoResult{
 					Decision: playback.Decision{
 						Mode:     playback.ModeDirectPlay,
