@@ -66,11 +66,12 @@ func (e *DecisionEngine) Resolve(ctx context.Context, req ResolveRequest) (Playb
 	protocol := ProtocolHLS
 
 	// Hint Overrides
-	if req.ProtocolHint == "mp4" {
+	switch req.ProtocolHint {
+	case "mp4":
 		protocol = ProtocolMP4
-	} else if req.ProtocolHint == "hls" {
+	case "hls":
 		protocol = ProtocolHLS
-	} else {
+	default:
 		// Auto logic if no hint:
 		// If native HLS supported (Safari), prefer HLS
 		// If generic client and MP4 container, maybe MP4?

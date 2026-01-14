@@ -99,6 +99,10 @@ func (m *MockPreparingServer) StreamRecordingDirect(w http.ResponseWriter, r *ht
 	})
 }
 
+func (m *MockPreparingServer) ProbeRecordingMp4(w http.ResponseWriter, r *http.Request, recordingId string) {
+	m.StreamRecordingDirect(w, r, recordingId)
+}
+
 func (m *MockPreparingServer) GetRecordingHLSPlaylist(w http.ResponseWriter, r *http.Request, recordingId string) {
 	w.Header().Set("Retry-After", "5")
 	w.Header().Set("Content-Type", "application/problem+json")

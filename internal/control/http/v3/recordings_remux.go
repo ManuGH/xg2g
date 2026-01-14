@@ -3,11 +3,8 @@ package v3
 import (
 	"context"
 	"errors"
-	"fmt"
-"os/exec"
+	"os/exec"
 	"strings"
-
-	"github.com/ManuGH/xg2g/internal/log"
 
 	"github.com/ManuGH/xg2g/internal/control/vod"
 )
@@ -16,13 +13,6 @@ import (
 
 // ProbeStreams: DEPRECATED/REMOVED. Use s.vodManager.Probe()
 // inferBitDepth: DEPRECATED/REMOVED type logic.
-
-func truncateForLog(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen] + fmt.Sprintf("... (truncated, %d bytes total)", len(s))
-}
 
 // RemuxStrategy represents the remux approach to use
 type RemuxStrategy string
@@ -76,19 +66,6 @@ func ComputeAudioDelayMs(info *vod.StreamInfo) int {
 	return 0
 }
 
-// buildDefaultRemuxArgs: REMOVED. Use infra.
-// Remaining logic moved to infra.
-
-// Helpers for vod.go compilation compatibility
-
-func logRemuxDecision(d *RemuxDecision, recordingID string) {
-	log.L().Info().
-		Str("strategy", string(d.Strategy)).
-		Str("reason", d.Reason).
-		Str("recording", recordingID).
-		Msg("remux decision calculated")
-}
-
 var (
 	ErrNonMonotonousDTS = errors.New("non-monotonous dts")
 	ErrInvalidDuration  = errors.New("invalid duration")
@@ -96,30 +73,3 @@ var (
 )
 
 // ErrFFmpegStalled is defined in recordings.go
-
-func classifyRemuxError(stderr string, exitCode int) error {
-	if exitCode == 0 {
-		return nil
-	}
-	if strings.Contains(stderr, "Non-monotonous DTS") {
-		return ErrNonMonotonousDTS
-	}
-	if strings.Contains(stderr, "Packet with invalid duration") {
-		return ErrInvalidDuration
-	}
-	if strings.Contains(stderr, "timestamps are unset") {
-		return ErrTimestampUnset
-	}
-	return fmt.Errorf("ffmpeg failed with exit code %d", exitCode)
-}
-
-func shouldRetryWithFallback(err error) bool {
-	if errors.Is(err, ErrNonMonotonousDTS) ||
-		errors.Is(err, ErrTimestampUnset) {
-		return true
-	}
-	return false
-}
-
-// OMITTED: insertArgsBefore (Exists in recordings.go)
-// OMITTED: runFFmpegWithProgress (Exists in recordings_vod.go)

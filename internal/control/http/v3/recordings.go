@@ -18,10 +18,6 @@ import (
 
 // Types are now generated in server_gen.go
 
-var (
-	errRecordingInvalid = v3recordings.ErrInvalidRecordingRef
-)
-
 // GetRecordings handles GET /api/v3/recordings
 // Query: ?root=<id>&path=<rel_path>
 func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params GetRecordingsParams) {

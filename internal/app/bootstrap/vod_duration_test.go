@@ -36,9 +36,9 @@ func TestVODPlayback_DurationTruth(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	moviePath := filepath.Join(tmpDir, "movies", "film.ts")
-	err = os.MkdirAll(filepath.Dir(moviePath), 0755)
+	err = os.MkdirAll(filepath.Dir(moviePath), 0750)
 	require.NoError(t, err)
-	err = os.WriteFile(moviePath, []byte("fake-stream"), 0644)
+	err = os.WriteFile(moviePath, []byte("fake-stream"), 0600)
 	require.NoError(t, err)
 
 	configPath := filepath.Join(tmpDir, "config.yaml")

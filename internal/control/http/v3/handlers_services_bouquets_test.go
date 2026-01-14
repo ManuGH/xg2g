@@ -35,7 +35,7 @@ rtmp://3
 #EXTINF:-1,No Group
 rtmp://4
 `
-	err := os.WriteFile(playlistPath, []byte(content), 0644)
+	err := os.WriteFile(playlistPath, []byte(content), 0600)
 	require.NoError(t, err)
 
 	cfg := config.AppConfig{
@@ -127,7 +127,7 @@ func TestGetServicesBouquets_Fallback(t *testing.T) {
 func TestGetServicesBouquets_EmptyFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	emptyPath := filepath.Join(tmpDir, "empty.m3u")
-	err := os.WriteFile(emptyPath, []byte(""), 0644)
+	err := os.WriteFile(emptyPath, []byte(""), 0600)
 	require.NoError(t, err)
 
 	cfg := config.AppConfig{
@@ -164,7 +164,7 @@ func TestGetServicesBouquets_FailClosed(t *testing.T) {
 	// Create a directory where a file is expected to trigger Read Error (EISDIR)
 	// Running as root bypasses 0000 permissions, so directory is a safer error trigger.
 	badPath := filepath.Join(tmpDir, "bad.m3u")
-	err := os.Mkdir(badPath, 0755)
+	err := os.Mkdir(badPath, 0750)
 	require.NoError(t, err)
 
 	cfg := config.AppConfig{

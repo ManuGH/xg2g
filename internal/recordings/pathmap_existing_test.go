@@ -18,23 +18,23 @@ func TestPathMapper_ResolveLocalExisting(t *testing.T) {
 
 	// Create root directory
 	recRoot := filepath.Join(tmpDir, "rec")
-	if err := os.Mkdir(recRoot, 0755); err != nil {
+	if err := os.Mkdir(recRoot, 0750); err != nil {
 		t.Fatalf("failed to create root dir: %v", err)
 	}
 
 	// Create a file inside root
 	validFile := filepath.Join(recRoot, "movie.ts")
-	if err := os.WriteFile(validFile, []byte("content"), 0644); err != nil {
+	if err := os.WriteFile(validFile, []byte("content"), 0600); err != nil {
 		t.Fatalf("failed to create valid file: %v", err)
 	}
 
 	// Create a directory outside root
 	secretDir := filepath.Join(tmpDir, "secret")
-	if err := os.Mkdir(secretDir, 0755); err != nil {
+	if err := os.Mkdir(secretDir, 0750); err != nil {
 		t.Fatalf("failed to create secret dir: %v", err)
 	}
 	secretFile := filepath.Join(secretDir, "passwd")
-	if err := os.WriteFile(secretFile, []byte("secret"), 0644); err != nil {
+	if err := os.WriteFile(secretFile, []byte("secret"), 0600); err != nil {
 		t.Fatalf("failed to create secret file: %v", err)
 	}
 
@@ -46,7 +46,7 @@ func TestPathMapper_ResolveLocalExisting(t *testing.T) {
 
 	// Create symlink INSIDE root pointing INSIDE root (valid)
 	subdir := filepath.Join(recRoot, "subdir")
-	if err := os.Mkdir(subdir, 0755); err != nil {
+	if err := os.Mkdir(subdir, 0750); err != nil {
 		t.Fatalf("failed to create subdir: %v", err)
 	}
 	linkValid := filepath.Join(recRoot, "valid_link")
@@ -57,11 +57,11 @@ func TestPathMapper_ResolveLocalExisting(t *testing.T) {
 	// Create a "prefix confusion" directory
 	// /tmp/pathmap_test/rec_evil
 	recEvil := filepath.Join(tmpDir, "rec_evil")
-	if err := os.Mkdir(recEvil, 0755); err != nil {
+	if err := os.Mkdir(recEvil, 0750); err != nil {
 		t.Fatalf("failed to create evil root: %v", err)
 	}
 	evilFile := filepath.Join(recEvil, "evil.ts")
-	if err := os.WriteFile(evilFile, []byte("evil"), 0644); err != nil {
+	if err := os.WriteFile(evilFile, []byte("evil"), 0600); err != nil {
 		t.Fatalf("failed to create evil file: %v", err)
 	}
 

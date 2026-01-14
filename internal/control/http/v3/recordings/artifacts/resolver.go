@@ -101,7 +101,7 @@ func (r *DefaultResolver) ResolvePlaylist(ctx context.Context, recordingID, prof
 		_ = r.triggerBuild(ctx, ref, profile)
 		return ArtifactOK{}, &ArtifactError{Code: CodePreparing, RetryAfter: 2 * time.Second, Detail: "playlist open failed (reconciling)"}
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	info, err := f.Stat()
 	if err != nil {
@@ -149,7 +149,7 @@ func (r *DefaultResolver) ResolveTimeshift(ctx context.Context, recordingID, pro
 		r.vodManager.DemoteOnOpenFailure(ref, err)
 		return ArtifactOK{}, &ArtifactError{Code: CodePreparing, RetryAfter: 2 * time.Second}
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	info, err := f.Stat()
 	if err != nil {

@@ -68,30 +68,10 @@ func (r *countingRunner) Start(ctx context.Context, spec vod.Spec) (vod.Handle, 
 	// Fix contract violation
 	if spec.WorkDir != "" && spec.OutputTemp != "" {
 		out := filepath.Join(spec.WorkDir, spec.OutputTemp)
-		_ = os.MkdirAll(filepath.Dir(out), 0755)
-		_ = os.WriteFile(out, []byte("#EXTM3U"), 0644)
+		_ = os.MkdirAll(filepath.Dir(out), 0750)
+		_ = os.WriteFile(out, []byte("#EXTM3U"), 0600)
 	}
 	return newBlockingHandle(), nil
-}
-
-type successHandle struct{}
-
-func (h *successHandle) Wait() error {
-	return nil
-}
-
-func (h *successHandle) Stop(grace, kill time.Duration) error {
-	return nil
-}
-
-func (h *successHandle) Progress() <-chan vod.ProgressEvent {
-	ch := make(chan vod.ProgressEvent)
-	close(ch)
-	return ch
-}
-
-func (h *successHandle) Diagnostics() []string {
-	return nil
 }
 
 type successRunner struct {
@@ -103,8 +83,8 @@ func (r *successRunner) Start(ctx context.Context, spec vod.Spec) (vod.Handle, e
 	if spec.WorkDir != "" && spec.OutputTemp != "" {
 		out := filepath.Join(spec.WorkDir, spec.OutputTemp)
 		// Ensure dir exists
-		_ = os.MkdirAll(filepath.Dir(out), 0755)
-		_ = os.WriteFile(out, []byte("#EXTM3U"), 0644)
+		_ = os.MkdirAll(filepath.Dir(out), 0750)
+		_ = os.WriteFile(out, []byte("#EXTM3U"), 0600)
 	}
 	return &immediateHandle{}, nil
 }
@@ -170,7 +150,7 @@ func TestGetRecordingHLSPlaylist_FailedPromotesReady(t *testing.T) {
 	srv.SetDependencies(nil, nil, nil, nil, nil, nil, nil, nil, vodMgr, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	cacheDir := filepath.Join(hlsRoot, "recordings", v3recordings.RecordingCacheKey(serviceRef))
-	require.NoError(t, os.MkdirAll(cacheDir, 0755))
+	require.NoError(t, os.MkdirAll(cacheDir, 0750))
 
 	playlistPath := filepath.Join(cacheDir, "index.m3u8")
 	playlist := "#EXTM3U\n#EXT-X-ENDLIST\nseg_0001.ts\n"

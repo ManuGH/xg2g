@@ -50,7 +50,7 @@ func TestContractDriftGate(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			defer file.Close()
+			defer func() { _ = file.Close() }()
 
 			scanner := bufio.NewScanner(file)
 			lineNum := 1

@@ -46,7 +46,8 @@ func Probe(ctx context.Context, path string) (*vod.StreamInfo, error) {
 
 	// Parse streams
 	for _, s := range data.Streams {
-		if s.CodecType == "video" {
+		switch s.CodecType {
+		case "video":
 			info.Video.CodecName = s.CodecName
 			info.Video.PixFmt = s.PixFmt
 			if s.BitsPerRawSample != "" {
@@ -72,7 +73,7 @@ func Probe(ctx context.Context, path string) (*vod.StreamInfo, error) {
 				info.Video.Interlaced = true
 			}
 
-		} else if s.CodecType == "audio" {
+		case "audio":
 			info.Audio.CodecName = s.CodecName
 			info.Audio.TrackCount++
 		}

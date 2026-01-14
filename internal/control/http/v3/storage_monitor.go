@@ -348,7 +348,7 @@ func parseMountInfo() (map[string]MountInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	mounts := make(map[string]MountInfo)
 	scanner := bufio.NewScanner(file)

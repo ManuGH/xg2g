@@ -42,7 +42,7 @@ func TestSafariHLSSmoke(t *testing.T) {
 
 	sessionID := "smoke-session-1"
 	sessionDir := filepath.Join(tmpDir, "sessions", sessionID)
-	err = os.MkdirAll(sessionDir, 0755)
+	err = os.MkdirAll(sessionDir, 0750)
 	require.NoError(t, err)
 
 	// 2. Generate minimal HLS stream using FFmpeg

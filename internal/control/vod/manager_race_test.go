@@ -35,7 +35,7 @@ func TestStateGenGuard_Deterministic(t *testing.T) {
 	mgr.revertStateGuard(id, capturedGen, ArtifactStateUnknown)
 
 	mgr.mu.Lock()
-	meta, _ = mgr.metadata[id]
+	meta = mgr.metadata[id]
 	mgr.mu.Unlock()
 
 	require.Equal(t, ArtifactStateUnknown, meta.State, "Should revert when gen matches")
@@ -65,7 +65,7 @@ func TestStateGenGuard_Deterministic(t *testing.T) {
 
 	// Assert: State is still READY, Gen is still 14 (no revert happened)
 	mgr.mu.Lock()
-	finalMeta, _ := mgr.metadata[id]
+	finalMeta := mgr.metadata[id]
 	mgr.mu.Unlock()
 
 	require.Equal(t, ArtifactStateReady, finalMeta.State, "Should NOT revert if concurrent update happened (Gen mismatch)")

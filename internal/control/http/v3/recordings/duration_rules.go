@@ -65,7 +65,7 @@ func ApplyDurationUpdate(meta *RecordingMeta, pol DurationPolicy, upd DurationUp
 		if upd.Source != DurationContainer {
 			// Strong default: only container duration can be final.
 			// If you later want to allow other sources, do it explicitly (policy flag).
-			if !(pol.AllowIndexFinal && upd.Source == DurationIndex) {
+			if !pol.AllowIndexFinal || upd.Source != DurationIndex {
 				return false, fmt.Errorf("duration: final update not allowed from source=%s", upd.Source)
 			}
 		}

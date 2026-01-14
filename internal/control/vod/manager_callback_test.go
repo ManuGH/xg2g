@@ -27,7 +27,7 @@ func TestCallbackExecution(t *testing.T) {
 		outputTemp := "index.live.m3u8"
 		finalPath := "/tmp/test-vod-callback/index.m3u8"
 
-		if err := os.MkdirAll(workDir, 0755); err != nil {
+		if err := os.MkdirAll(workDir, 0750); err != nil {
 			t.Fatalf("failed to create workDir: %v", err)
 		}
 		if err := os.WriteFile(workDir+"/"+outputTemp, []byte("#EXTM3U\n"), 0600); err != nil {
@@ -86,7 +86,7 @@ func TestCallbackExecution(t *testing.T) {
 		outputTemp := "index.live.m3u8"
 		finalPath := "/tmp/test-vod-callback-fail/index.m3u8"
 
-		if err := os.MkdirAll(workDir, 0755); err != nil {
+		if err := os.MkdirAll(workDir, 0750); err != nil {
 			t.Fatalf("failed to create workDir: %v", err)
 		}
 		if err := os.WriteFile(workDir+"/"+outputTemp, []byte("#EXTM3U\n"), 0600); err != nil {

@@ -386,7 +386,7 @@ func (s *service) Stream(ctx context.Context, in StreamInput) (StreamResult, err
 		s.vodManager.DemoteOnOpenFailure(serviceRef, err)
 		return StreamResult{}, ErrUpstream{Op: "OpenArtifact", Cause: err}
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	info, err := f.Stat()
 	if err != nil {

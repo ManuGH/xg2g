@@ -63,9 +63,9 @@ func TestPR42_SourceResolutionAndKeyHygiene(t *testing.T) {
 		}
 
 		targetPath := filepath.Join(tmpDir, "movie", "test.ts")
-		err := os.MkdirAll(filepath.Dir(targetPath), 0755)
+		err := os.MkdirAll(filepath.Dir(targetPath), 0750)
 		require.NoError(t, err)
-		err = os.WriteFile(targetPath, []byte("data"), 0644)
+		err = os.WriteFile(targetPath, []byte("data"), 0600)
 		require.NoError(t, err)
 
 		serviceRef := "1:0:1:0:0:0:0:0:0:0:/media/hdd/movie/test.ts"
@@ -86,9 +86,9 @@ func TestPR42_SourceResolutionAndKeyHygiene(t *testing.T) {
 		}
 
 		targetPath := filepath.Join(tmpDir, "movie", "My Recording.ts")
-		err := os.MkdirAll(filepath.Dir(targetPath), 0755)
+		err := os.MkdirAll(filepath.Dir(targetPath), 0750)
 		require.NoError(t, err)
-		err = os.WriteFile(targetPath, []byte("data"), 0644)
+		err = os.WriteFile(targetPath, []byte("data"), 0600)
 		require.NoError(t, err)
 
 		serviceRef := "1:0:1:0:0:0:0:0:0:0:/media/hdd/movie/My Recording.ts"
