@@ -742,7 +742,12 @@ schema-validate: ## Validate all YAML config files against JSON Schema
 gate-webui:
 	@./scripts/ci_gate_webui_audit.sh
 
-quality-gates: lint-invariants gate-a gate-webui verify-generate lint test-cover security-vulncheck ## Validate all quality gates
+# Gate C: Repository Hygiene (Zero Tolerance for Artifacts)
+.PHONY: gate-repo-hygiene
+gate-repo-hygiene:
+	@./scripts/ci_gate_repo_hygiene.sh
+
+quality-gates: lint-invariants gate-a gate-webui gate-repo-hygiene verify-generate lint test-cover security-vulncheck ## Validate all quality gates
 	@echo "Validating quality gates..."
 	@echo "✅ All quality gates passed"
 
