@@ -14,7 +14,7 @@ linters:
     - ineffassign
     - unused
     - gosec
-    # - errcheck # Disabled due to legacy debt (defer Close)
+    - errcheck # Enabled for strict quality gates
 
 linters-settings:
   staticcheck:
