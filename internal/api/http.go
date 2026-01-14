@@ -793,6 +793,13 @@ func (s *Server) SetResolver(r recservice.Resolver) {
 	}
 }
 
+// SetRecordingsService injects a recordings service into the v3 handler (tests).
+func (s *Server) SetRecordingsService(svc recservice.Service) {
+	if s.v3Handler != nil {
+		s.v3Handler.SetRecordingsService(svc)
+	}
+}
+
 // HandleRefreshInternal exposes the refresh handler for versioned APIs
 // This allows different API versions to wrap the core refresh logic
 func (s *Server) HandleRefreshInternal(w http.ResponseWriter, r *http.Request) {

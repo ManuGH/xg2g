@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	controlhttp "github.com/ManuGH/xg2g/internal/control/http"
-	"github.com/ManuGH/xg2g/internal/control/playback"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 )
 
@@ -168,35 +167,35 @@ enigma2:
 	err = container.Start(ctx)
 	require.NoError(t, err)
 
-	// 4. Inject Mock Resolver
+	// 4. Inject Mock RecordingsService
+	// Production handler calls recordingsService.ResolvePlayback(), NOT resolver.Resolve()
 	serviceRef := "1:0:0:0:0:0:0:0:0:0:/hdd/movie/film.ts"
 	recordingID := recservice.EncodeRecordingID(serviceRef)
 
-	mock := &mockResolver{
-		ResolveFunc: func(ctx context.Context, recID string, intent recservice.PlaybackIntent, profile recservice.PlaybackProfile) (recservice.PlaybackInfoResult, error) {
-			// Production handler DECODES the URL parameter before calling resolver
-			// Resolver receives canonical (decoded) recordingID, not URL-encoded
+	mockSvc := &mockRecordingsService{
+		resolvePlayback: func(ctx context.Context, recID, profile string) (recservice.PlaybackResolution, error) {
+			// Handler decodes URL parameter, so recID is canonical (decoded)
 			if recID == serviceRef {
-				return recservice.PlaybackInfoResult{
-					Decision: playback.Decision{
-						Mode:     playback.ModeDirectPlay,
-						Artifact: playback.ArtifactMP4,
-						Reason:   playback.ReasonDirectPlayMatch,
-					},
-					MediaInfo: playback.MediaInfo{
-						AbsPath:    "/valid/stream.mp4",
-						Container:  "mp4",
-						VideoCodec: "h264",
-						AudioCodec: "aac",
-						Duration:   3600.0,
-					},
-					Reason: "resolved_via_store",
+				dur := int64(3600)
+				container := "mp4"
+				vcodec := "h264"
+				acodec := "aac"
+				return recservice.PlaybackResolution{
+					Strategy:    "direct_mp4",
+					CanSeek:     true,
+					DurationSec: &dur,
+					Container:   &container,
+					VideoCodec:  &vcodec,
+					AudioCodec:  &acodec,
+					Reason:      "resolved_via_store",
 				}, nil
 			}
-			return recservice.PlaybackInfoResult{}, recservice.ErrNotFound{RecordingID: recID}
+			return recservice.PlaybackResolution{}, recservice.ErrNotFound{RecordingID: recID}
 		},
 	}
-	container.Server.SetResolver(mock)
+
+	// Inject mock into server (replaces real recordingsService)
+	container.Server.SetRecordingsService(mockSvc)
 
 	handler := container.Server.Handler()
 	req := httptest.NewRequest("GET", "/api/v3/recordings/"+recordingID+"/stream-info", nil)

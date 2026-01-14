@@ -148,6 +148,13 @@ func (s *Server) SetResolver(r recservice.Resolver) {
 	s.resolver = r
 }
 
+// SetRecordingsService sets the recordings service (for tests).
+func (s *Server) SetRecordingsService(svc recservice.Service) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.recordingsService = svc
+}
+
 // authMiddleware is the default authentication middleware.
 func (s *Server) authMiddleware(h http.Handler) http.Handler {
 	if s.AuthMiddlewareOverride != nil {
