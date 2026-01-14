@@ -1,4 +1,4 @@
-name: Complexity & Quality Gates
+name: Quality Gates (CTO Mandate)
 
 on:
   pull_request:
@@ -7,55 +7,8 @@ on:
     branches: [main]
 
 jobs:
-  complexity-check:
-    name: Check Cyclomatic Complexity
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: "go.mod" # Use go.mod version, not hardcoded
-
-      - name: Install gocyclo
-        run: go install github.com/fzipp/gocyclo/cmd/gocyclo@latest
-
-      - name: Check Complexity Threshold (Fail-Closed)
-        run: |
-          echo "🔍 Checking for functions with cyclomatic complexity >20..."
-          out="$(gocyclo -over 20 ./internal ./cmd || true)"
-          if [ -n "$out" ]; then
-            echo "❌ High complexity detected (>20):"
-            echo "$out"
-            echo ""
-            echo "💡 Refactor these functions or update threshold in workflow"
-            exit 1
-          fi
-          echo "✅ All functions below complexity threshold"
-
-  openapi-drift-check:
-    name: Prevent OpenAPI Drift (Fail-Closed)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: "go.mod"
-
-      - name: Verify OpenAPI Sync (Strict Gate)
-        run: |
-          echo "🔍 Running: make verify-generate"
-          make verify-generate
-
-          echo "✅ OpenAPI and generated code in sync"
-
-  lint-and-test:
-    name: Lint & Test (Hard Gates)
+  quality-gates:
+    name: Full Quality Gates (Single Source of Truth)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -65,14 +18,5 @@ jobs:
         with:
           go-version-file: "go.mod"
 
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v9
-        with:
-          version: latest
-          args: --timeout=5m
-
-      - name: Run Tests
-        run: go test ./... -v -race -coverprofile=coverage.out
-
-      - name: Go Vet
-        run: go vet ./...
+      - name: Run Quality Gates
+        run: make quality-gates

@@ -63,7 +63,18 @@ internal/control/http/v3/openapi.yaml
 /v3probe
 /validate
 /api.test
+
+# ZIP artifacts (CI-generated only, never commit)
+*.zip
+xg2g-main.zip
+
+# Test artifacts (never commit)
 /test_output.txt
+/test_report.txt
+test_*.txt
+coverage.out
+output.log
+*.prof
 transcoder.tar.gz
 
 # Test artifacts
