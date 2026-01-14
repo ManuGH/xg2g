@@ -19,8 +19,8 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/artifacts"
 	"github.com/ManuGH/xg2g/internal/control/read"
-	"github.com/ManuGH/xg2g/internal/control/recordings"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
+
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/dvr"
@@ -78,7 +78,7 @@ type Server struct {
 	servicesSource    ServiceStateReader
 	timersSource      TimerReader
 	epgSource         read.EpgSource
-	recordingsService recordings.Service
+	recordingsService recservice.Service
 	storageMonitor    *StorageMonitor
 
 	// Middlewares (injectable for tests)

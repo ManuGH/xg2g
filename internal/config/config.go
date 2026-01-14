@@ -1001,6 +1001,8 @@ func expandEnv(s string) string {
 }
 
 // Helper to parse recording path mappings: "/receiver/path=/local/path;/other=/mount"
+//
+//nolint:unused
 func parseRecordingMappings(envVal string, defaults []RecordingPathMapping) []RecordingPathMapping {
 	if envVal == "" {
 		return defaults

@@ -35,7 +35,7 @@ func (s *Server) GetServicesBouquets(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		// Metrics: Read Error with Cause Label
-		cause := "unknown"
+		var cause string
 		if os.IsPermission(err) {
 			cause = "permission"
 		} else if os.IsNotExist(err) {

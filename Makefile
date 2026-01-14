@@ -168,8 +168,12 @@ generate: ## Generate Go code from OpenAPI spec (v3 only)
 	@$(OAPI_CODEGEN) -package api -generate types,chi-server,spec -o internal/api/server_gen.go api/openapi.yaml
 	@$(OAPI_CODEGEN) -package v3 -generate types,chi-server,spec -o internal/control/http/v3/server_gen.go api/openapi.yaml
 	@echo "✅ Code generation complete (single source: api/openapi.yaml):"
-	@echo "   - internal/api/server_gen.go"
 	@echo "   - internal/control/http/v3/server_gen.go"
+
+verify-generate: generate ## Verify that generated code is up-to-date
+	@echo "Verifying generated code..."
+	@git diff --exit-code internal/api/server_gen.go internal/control/http/v3/server_gen.go || (echo "❌ Generated code is out of sync. Run 'make generate' and commit changes." && exit 1)
+	@echo "✅ Generated code is up-to-date"
 
 build: ui-build ## Build the main daemon binary
 	@echo "Building xg2g daemon..."
@@ -731,10 +735,14 @@ schema-validate: ## Validate all YAML config files against JSON Schema
 # Gate A: Control Layer Store Purity (ADR-014 Phase 1)
 # Ensures internal/control/** does not directly access domain stores
 .PHONY: gate-a
-gate-a:
 	@./scripts/verify_gate_a_control_store.sh
 
-quality-gates: lint-invariants gate-a lint test-cover security-vulncheck ## Validate all quality gates
+# Gate B: Thin-Client Audit (Prevent Business Logic Leakage)
+.PHONY: gate-webui
+gate-webui:
+	@./scripts/ci_gate_webui_audit.sh
+
+quality-gates: lint-invariants gate-a gate-webui verify-generate lint test-cover security-vulncheck ## Validate all quality gates
 	@echo "Validating quality gates..."
 	@echo "✅ All quality gates passed"
 

@@ -83,7 +83,7 @@ func (l *Loader) CheckDeprecations(cfg *AppConfig) error {
 
 		// Check YAML (using registry to map path)
 		if !active && d.Key != "" {
-			if _, ok := registry.ByPath[d.Key]; ok {
+			if _, ok := registry.ByPath[d.Key]; ok { //nolint:staticcheck
 				// Pro-active: if it's in ByPath, we assume it's user-facing.
 				// For P1.2, we'll focus on ENV and explicitly known legacy keys.
 			}

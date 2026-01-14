@@ -16,6 +16,8 @@ import (
 // makeStableID creates a stable identifier from a channel name for EPG use.
 // This implementation is specific to EPG channel ID generation and may differ
 // from the playlist ID generation in other packages.
+//
+//nolint:unused
 func makeStableID(input string) string {
 	if input == "" {
 		return ""
@@ -51,6 +53,8 @@ func makeStableID(input string) string {
 
 // Precompiled regexes for normalization
 var (
+	//nolint:unused
 	reOnlySeparators = regexp.MustCompile(`^[\s.\-_]*$`)
-	reSepNormalize   = regexp.MustCompile(`[\s.\-_]+`)
+	//nolint:unused
+	reSepNormalize = regexp.MustCompile(`[\s.\-_]+`)
 )

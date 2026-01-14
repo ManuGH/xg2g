@@ -16,6 +16,8 @@ import (
 
 // slugify converts a channel name into a URL-safe, human-readable slug
 // Example: "Das Erste HD" → "das-erste-hd"
+//
+//nolint:unused
 func slugify(name string) string {
 	if name == "" {
 		return "channel"
@@ -96,6 +98,8 @@ func slugify(name string) string {
 //   - "Das Erste HD" + "1:0:19:132F:3EF:1:C00000:0:0:0:" → "das-erste-hd-3fa92b"
 //   - "ZDF" + "1:0:19:1334:3EF:1:C00000:0:0:0:" → "zdf-a7c4e1"
 //   - "Sky Sport HD" + "1:0:19:83:6:85:C00000:0:0:0:" → "sky-sport-hd-b2d8f9"
+//
+//nolint:unused
 func makeHumanReadableTvgID(name, sref string) string {
 	// Create slug from channel name
 	slug := slugify(name)

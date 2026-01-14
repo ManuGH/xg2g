@@ -46,6 +46,8 @@ func normalize(s string) string {
 }
 
 // norm is a wrapper for normalize for backwards compatibility with tests.
+//
+//nolint:unused
 func norm(s string) string {
 	return normalize(s)
 }

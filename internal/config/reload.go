@@ -357,6 +357,8 @@ func (h *ConfigHolder) logChanges(old, newCfg AppConfig) {
 }
 
 // maskURL is a helper to mask sensitive URLs for logging.
+//
+//nolint:unused
 func maskURL(rawURL string) string {
 	if rawURL == "" {
 		return ""

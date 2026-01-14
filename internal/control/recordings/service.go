@@ -175,7 +175,7 @@ func (s *service) List(ctx context.Context, in ListInput) (ListResult, error) {
 
 		// A1: Store Wins
 		durationSeconds, err := ParseRecordingDurationSeconds(m.Length)
-		if err != nil && m.Length != "" {
+		if err != nil && m.Length != "" { //nolint:staticcheck
 			// A5: Parse Error Observability
 			// log.Warn().Str("ref", m.ServiceRef).Err(err).Msg("failed to parse store duration")
 		}

@@ -76,7 +76,10 @@ func ValidRecordingID(id string) bool {
 	}
 	// Hex only allows 0-9, a-f, A-F
 	for _, r := range id {
-		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+		isDigit := r >= '0' && r <= '9'
+		isAF := r >= 'a' && r <= 'f'
+		isAf := r >= 'A' && r <= 'F'
+		if !isDigit && !isAF && !isAf {
 			return false
 		}
 	}

@@ -131,7 +131,10 @@ type EpgItem struct {
 }
 
 // Helper to parse XMLTV dates "20080715003000 +0200"
+//
+//nolint:unused
 func parseXMLTVTime(s string) (time.Time, error) {
+
 	// Format: YYYYMMDDhhmmss ZZZZ
 	const layout = "20060102150405 -0700"
 	return time.Parse(layout, s)

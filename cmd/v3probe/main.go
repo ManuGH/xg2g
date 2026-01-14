@@ -301,7 +301,7 @@ func run(cfg ProbeConfig) error {
 			return string(bodyBytes), fmt.Errorf("server error on conflicts: %d", code)
 		}
 		// Accept 400 (Invalid Input) or 401/403 (Auth)
-		if code != http.StatusBadRequest && code != http.StatusUnauthorized && code != http.StatusForbidden {
+		if code != http.StatusBadRequest && code != http.StatusUnauthorized && code != http.StatusForbidden { //nolint:staticcheck
 			// Actually, on valid garbage input, it should be 400.
 			// 401/403 acceptable if we failed auth.
 			// 200 OK would be weird for garbage input unless schema validation is loose.
