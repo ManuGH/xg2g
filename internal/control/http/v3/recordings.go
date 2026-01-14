@@ -234,9 +234,12 @@ func (s *Server) ProbeRecordingMp4(w http.ResponseWriter, r *http.Request, recor
 	}
 
 	if !res.Ready {
-		// Not Ready: Return 503 with Retry-After
+		// Not Ready: Return 503 with Retry-After (RFC 7807)
 		w.Header().Set("Retry-After", fmt.Sprintf("%d", res.RetryAfter))
-		w.WriteHeader(http.StatusServiceUnavailable)
+		writeProblem(w, r, http.StatusServiceUnavailable, "recordings/preparing", "Preparing", "PREPARING", "Recording is being prepared for playback", map[string]interface{}{
+			"recording_id": recordingId,
+			"state":        res.State,
+		})
 		return
 	}
 
