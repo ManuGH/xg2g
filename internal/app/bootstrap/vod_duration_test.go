@@ -104,6 +104,17 @@ enigma2:
 		w := httptest.NewRecorder()
 		v3Handler.ServeHTTP(w, req)
 
+		// Accept both 200 (if probe completes immediately) or 503 (preparing)
+		// Modern async probing may return 503 with Retry-After
+		if w.Code == http.StatusServiceUnavailable {
+			// 503 = Preparing, verify it returns eventually
+			require.Equal(t, "application/problem+json", w.Header().Get("Content-Type"))
+			// Retry the request (probe should complete)
+			time.Sleep(100 * time.Millisecond)
+			w = httptest.NewRecorder()
+			v3Handler.ServeHTTP(w, req)
+		}
+
 		require.Equal(t, http.StatusOK, w.Code)
 		var resp struct {
 			DurationSeconds int64 `json:"duration_seconds"`

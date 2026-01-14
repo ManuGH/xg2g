@@ -173,8 +173,9 @@ enigma2:
 	recordingID := recservice.EncodeRecordingID(serviceRef)
 
 	mock := &mockResolver{
-		ResolveFunc: func(ctx context.Context, recordingID string, intent recservice.PlaybackIntent, profile recservice.PlaybackProfile) (recservice.PlaybackInfoResult, error) {
-			if recordingID == serviceRef {
+		ResolveFunc: func(ctx context.Context, recID string, intent recservice.PlaybackIntent, profile recservice.PlaybackProfile) (recservice.PlaybackInfoResult, error) {
+			// Compare with encoded recordingID, not raw serviceRef
+			if recID == recordingID {
 				return recservice.PlaybackInfoResult{
 					Decision: playback.Decision{
 						Mode:     playback.ModeDirectPlay,
@@ -191,7 +192,7 @@ enigma2:
 					Reason: "resolved_via_store",
 				}, nil
 			}
-			return recservice.PlaybackInfoResult{}, recservice.ErrNotFound{RecordingID: recordingID}
+			return recservice.PlaybackInfoResult{}, recservice.ErrNotFound{RecordingID: recID}
 		},
 	}
 	container.Server.SetResolver(mock)
@@ -215,6 +216,7 @@ enigma2:
 		Mode            string `json:"mode"`
 		DurationSeconds int64  `json:"duration_seconds"`
 		Reason          string `json:"reason"`
+		Seekable        *bool  `json:"seekable,omitempty"`
 	}
 
 	// Enforce strict JSON
