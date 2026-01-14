@@ -493,7 +493,7 @@ deps-verify: ## Verify dependency integrity
 
 review-zip: ## Create a ZIP snapshot for offline review
 	@echo "Creating review ZIP artifact..."
-	@git archive --format=zip HEAD -o xg2g-main.zip
+	@git archive --format=zip --prefix=xg2g-main/ HEAD -o xg2g-main.zip
 	@echo "✅ Review ZIP created: xg2g-main.zip"
 	@$(MAKE) verify-zip
 

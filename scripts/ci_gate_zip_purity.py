@@ -18,10 +18,25 @@ def check_purity(zip_path):
         b'\xca\xfe\xba\xbe': 'Universal Binary / Java Class (macOS/JVM)'
     }
 
+    banned_substrings = ['__MACOSX', '.DS_Store']
+    required_paths = ['xg2g-main/docs/review/walkthrough.md', 'xg2g-main/docs/review/task.md']
+    found_banned = []
+    missing_required = set(required_paths)
     found_binaries = []
 
     try:
         with zipfile.ZipFile(zip_path, 'r') as zf:
+            namelist = zf.namelist()
+            for name in namelist:
+                # Check for banned content
+                for banned in banned_substrings:
+                    if banned in name:
+                        found_banned.append(name)
+                
+                # Check for required content
+                if name in missing_required:
+                    missing_required.remove(name)
+
             for info in zf.infolist():
                 if info.is_dir():
                     continue
@@ -44,13 +59,32 @@ def check_purity(zip_path):
         print(f"Error reading ZIP: {e}")
         sys.exit(1)
 
+    failed = False
+
+    if found_banned:
+        print("❌ FAIL: Banned files/folders detected in review artifact:")
+        for name in found_banned[:5]: # Limit output
+            print(f"  - {name}")
+        if len(found_banned) > 5:
+            print(f"  ... and {len(found_banned)-5} more.")
+        failed = True
+
+    if missing_required:
+        print("❌ FAIL: Required artifacts missing from review artifact:")
+        for name in missing_required:
+            print(f"  - {name}")
+        failed = True
+
     if found_binaries:
         print("❌ FAIL: Binary executables detected in review artifact:")
         for name, desc in found_binaries:
             print(f"  - {name} ({desc})")
+        failed = True
+        
+    if failed:
         sys.exit(1)
 
-    print("✅ PASS: No binary executables found in review artifact.")
+    print("✅ PASS: ZIP purity and artifact check passed.")
     sys.exit(0)
 
 if __name__ == "__main__":
