@@ -34,7 +34,7 @@ func runHealthcheckCLI(args []string) int {
 		fmt.Fprintf(os.Stderr, "Healthcheck failed (network): %v\n", err)
 		return 1
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		fmt.Fprintf(os.Stderr, "Healthcheck failed (status): %d %s\n", resp.StatusCode, resp.Status)

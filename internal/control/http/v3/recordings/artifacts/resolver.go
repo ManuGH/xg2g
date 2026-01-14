@@ -94,6 +94,7 @@ func (r *DefaultResolver) ResolvePlaylist(ctx context.Context, recordingID, prof
 	}
 
 	// Open and Read for Rewrite
+	// #nosec G304 - playlistPath is trusted from internal metadata
 	f, err := os.Open(playlistPath)
 	if err != nil {
 		r.vodManager.DemoteOnOpenFailure(ref, err)
@@ -144,6 +145,7 @@ func (r *DefaultResolver) ResolveTimeshift(ctx context.Context, recordingID, pro
 	}
 
 	playlistPath := meta.PlaylistPath
+	// #nosec G304 - playlistPath is trusted from internal metadata
 	f, err := os.Open(playlistPath)
 	if err != nil {
 		r.vodManager.DemoteOnOpenFailure(ref, err)

@@ -48,7 +48,7 @@ func triggerV3Refresh(port int, token string) int {
 		fmt.Printf("FAILED: %v\n", err)
 		return 1
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusAccepted || resp.StatusCode == http.StatusOK {
 		fmt.Println("SUCCESS: Activity triggered")

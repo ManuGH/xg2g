@@ -243,6 +243,7 @@ func (m *StorageMonitor) probe(ctx context.Context, path string) ProbeResult {
 		_, _ = rand.Read(randID)
 		tempFile := filepath.Join(path, fmt.Sprintf(".xg2g_probe_%s", hex.EncodeToString(randID)))
 
+		// #nosec G304 - tempFile is randomized and explicitly localized to probe path
 		if f, err := os.OpenFile(tempFile, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0600); err == nil {
 			writable = true
 			_ = f.Close()

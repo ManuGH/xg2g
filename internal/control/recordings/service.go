@@ -381,6 +381,7 @@ func (s *service) Stream(ctx context.Context, in StreamInput) (StreamResult, err
 	// 3. Verify File Accessibility (Fail-Closed)
 	// We check existence/openability here to ensure the handler receives a guaranteed-ready file.
 	// We return an error if this fails, distinguishing "Broken" from "Preparing".
+	// #nosec G304 - cachePath is trusted from internal metadata
 	f, err := os.Open(cachePath)
 	if err != nil {
 		s.vodManager.DemoteOnOpenFailure(serviceRef, err)

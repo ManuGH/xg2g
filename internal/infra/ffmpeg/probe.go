@@ -31,6 +31,7 @@ func Probe(ctx context.Context, path string) (*vod.StreamInfo, error) {
 		path,
 	}
 
+	// #nosec G204 - ffprobe is hardcoded; args are strictly controlled and path is opaque
 	cmd := exec.CommandContext(ctx, "ffprobe", args...)
 	out, err := cmd.Output()
 	if err != nil {

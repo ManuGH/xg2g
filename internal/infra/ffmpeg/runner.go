@@ -40,6 +40,7 @@ func (e *Executor) Start(ctx context.Context, spec vod.Spec) (vod.Handle, error)
 		return nil, fmt.Errorf("invalid spec: %w", err)
 	}
 
+	// #nosec G204 - BinaryPath is trusted from config; args are generated from strict profile logic
 	cmd := exec.CommandContext(ctx, e.BinaryPath, args...)
 	e.Logger.Debug().
 		Str("bin", e.BinaryPath).

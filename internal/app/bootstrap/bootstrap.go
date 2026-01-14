@@ -114,7 +114,9 @@ func WireServices(ctx context.Context, version, commit, buildDate string, explic
 
 	// 7. Initialize API Server (The "Big Ball of Mud" Factory - wrapped here)
 	s := api.New(cfg, configMgr)
-	s.SetRootContext(ctx)
+	if err := s.SetRootContext(ctx); err != nil {
+		return nil, fmt.Errorf("failed to set root context: %w", err)
+	}
 	s.SetConfigHolder(cfgHolder)
 	// Apply initial snapshot
 	if current := cfgHolder.Current(); current != nil {

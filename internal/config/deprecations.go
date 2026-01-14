@@ -37,6 +37,7 @@ func LoadDeprecations() ([]Deprecation, error) {
 	for i := 0; i < 4; i++ {
 		path := filepath.Join(curr, "docs", "deprecations.json")
 		if _, err := os.Stat(path); err == nil {
+			// #nosec G304 - path is constructed locally with hardcoded filename relative to CWD
 			data, err := os.ReadFile(path)
 			if err != nil {
 				return nil, fmt.Errorf("read deprecations at %s: %w", path, err)

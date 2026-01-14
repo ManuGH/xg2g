@@ -349,7 +349,7 @@ func doRequest(method, urlStr string, body io.Reader) (int, http.Header, []byte,
 	if err != nil {
 		return 0, nil, nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	bodyBytes, err := io.ReadAll(resp.Body)
 	return resp.StatusCode, resp.Header, bodyBytes, err
