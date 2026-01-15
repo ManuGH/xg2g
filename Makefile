@@ -237,7 +237,7 @@ clean-full: clean ## Remove all build artifacts
 
 lint: ## Run golangci-lint with all checks
 	@echo "Ensuring golangci-lint is installed..."
-	@command -v $(GOLANGCI_LINT) >/dev/null 2>&1 || GOFLAGS="" go install github.com/golangci/golangci-lint/cmd/golangci-lint@v2
+	@command -v $(GOLANGCI_LINT) >/dev/null 2>&1 || GOFLAGS="" go install github.com/golangci/golangci-lint/cmd/golangci-lint@v2.8.0
 	@echo "Running golangci-lint..."
 	@$(GOLANGCI_LINT) --version
 	@"$(GOLANGCI_LINT)" run ./... --timeout=5m --concurrency=2
@@ -253,7 +253,7 @@ lint-invariants: ## Check architectural invariants (SeedMetadata usage)
 
 lint-fix: ## Run golangci-lint with automatic fixes
 	@echo "Ensuring golangci-lint is installed..."
-	@command -v $(GOLANGCI_LINT) >/dev/null 2>&1 || go install github.com/golangci/golangci-lint/cmd/golangci-lint@v2
+	@command -v $(GOLANGCI_LINT) >/dev/null 2>&1 || go install github.com/golangci/golangci-lint/cmd/golangci-lint@v2.8.0
 	@echo "Running golangci-lint with fixes..."
 	@"$(GOLANGCI_LINT)" run ./... --fix --timeout=5m
 	@echo "✅ Lint fixes applied"
@@ -459,7 +459,7 @@ security-gosec: ## Run Gosec security scanner
 
 security-vulncheck: ## Run Go vulnerability checker
 	@echo "Ensuring govulncheck is installed..."
-	@command -v $(GOVULNCHECK) >/dev/null 2>&1 || go install golang.org/x/vuln/cmd/govulncheck@v2
+	@command -v $(GOVULNCHECK) >/dev/null 2>&1 || go install golang.org/x/vuln/cmd/govulncheck@v2.8.0
 	@echo "Running Go vulnerability check..."
 	@"$(GOVULNCHECK)" ./...
 	@echo "✅ Go vulnerability check passed"
@@ -507,7 +507,7 @@ verify-zip: ## Verify the purity of the review ZIP artifact
 deps-licenses: ## Generate dependency license report
 	@echo "Generating dependency license report..."
 	@mkdir -p dist
-	@go-licenses report ./... > dist/licenses.txt 2>/dev/null || echo "go-licenses not available, install with: go install github.com/google/go-licenses@v2"
+	@go-licenses report ./... > dist/licenses.txt 2>/dev/null || echo "go-licenses not available, install with: go install github.com/google/go-licenses@v2.8.0"
 	@echo "✅ License report generated: dist/licenses.txt"
 
 # ===================================================================================================
@@ -517,17 +517,17 @@ deps-licenses: ## Generate dependency license report
 dev-tools: ## Install all development tools
 	@echo "Installing development tools..."
 	@echo "Installing golangci-lint..."
-	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@v2
+	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@v2.8.0
 	@echo "Installing oapi-codegen..."
-	@go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2
+	@go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.8.0
 	@echo "Installing govulncheck..."
-	@go install golang.org/x/vuln/cmd/govulncheck@v2
+	@go install golang.org/x/vuln/cmd/govulncheck@v2.8.0
 	@echo "Installing syft for SBOM generation..."
-	@go install github.com/anchore/syft/cmd/syft@v2
+	@go install github.com/anchore/syft/cmd/syft@v2.8.0
 	@echo "Installing grype for vulnerability scanning..."
-	@go install github.com/anchore/grype/cmd/grype@v2
+	@go install github.com/anchore/grype/cmd/grype@v2.8.0
 	@echo "Installing go-licenses for license reporting..."
-	@go install github.com/google/go-licenses@v2
+	@go install github.com/google/go-licenses@v2.8.0
 	@echo "✅ Development tools installed"
 
 check-tools: ## Verify development tools are installed
