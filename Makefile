@@ -164,8 +164,8 @@ generate: ## Generate Go code from OpenAPI spec (v3 only)
 	@echo "Generating API server code (v3)..."
 	@mkdir -p internal/api
 	@mkdir -p internal/control/http/v3
-	@command -v $(OAPI_CODEGEN) >/dev/null 2>&1 || go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@$(OAPI_CODEGEN_VERSION)
-	@$(OAPI_CODEGEN) -package api -generate types,chi-server,spec -o internal/api/server_gen.go api/openapi.yaml
+	@go run -mod=vendor github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen -package api -generate types,chi-server,spec -o internal/api/server_gen.go api/openapi.yaml
+	@go run -mod=vendor github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen -package v3 -generate types,chi-server,spec -o internal/control/http/v3/server_gen.go api/openapi.yaml
 	@$(OAPI_CODEGEN) -package v3 -generate types,chi-server,spec -o internal/control/http/v3/server_gen.go api/openapi.yaml
 	@echo "✅ Code generation complete (single source: api/openapi.yaml):"
 	@echo "   - internal/control/http/v3/server_gen.go"
