@@ -30,10 +30,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
+        uses: actions/checkout@v4  # Latest stable
 
       - name: Setup Go
-        uses: actions/setup-go@ae252ee6fb24babc50e89fc67c4aa608e69fbf8f # v5
+        uses: actions/setup-go@v5  # Latest stable
         with:
           go-version-file: go.mod
           cache: true
@@ -59,10 +59,10 @@ jobs:
       security-events: write
     steps:
       - name: Checkout
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
+        uses: actions/checkout@v4  # Latest stable
 
       - name: Setup Go
-        uses: actions/setup-go@ae252ee6fb24babc50e89fc67c4aa608e69fbf8f # v5
+        uses: actions/setup-go@v5  # Latest stable
         with:
           go-version-file: "go.mod"
           check-latest: true
@@ -177,12 +177,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
+        uses: actions/checkout@v4  # Latest stable
         with:
           fetch-depth: 0 # GoReleaser needs full history
 
       - name: Set up Go
-        uses: actions/setup-go@ae252ee6fb24babc50e89fc67c4aa608e69fbf8f # v5.0.0
+        uses: actions/setup-go@v5  # Latest stable.0.0
         with:
           go-version-file: go.mod
           check-latest: true
