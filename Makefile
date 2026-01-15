@@ -236,10 +236,11 @@ clean-full: clean ## Remove all build artifacts
 # ===================================================================================================
 
 lint: ## Run golangci-lint with all checks
-@echo "Running golangci-lint (v2.8.0)..."
-@command -v golangci-lint > /dev/null 2>&1 || GOFLAGS="" go install github.com/golangci/golangci-lint/cmd/golangci-lint@v2.8.0
-@golangci-lint run ./... --timeout=5m --concurrency=2
-@echo "✅ Lint checks passed"
+	@echo "Running golangci-lint..."
+	@command -v golangci-lint > /dev/null 2>&1 || GOFLAGS="" go install github.com/golangci/golangci-lint/cmd/golangci-lint@v2.8.0
+	@golangci-lint run ./... --timeout=5m --concurrency=2
+	@echo "✅ Lint checks passed"
+
 lint-invariants: ## Check architectural invariants (SeedMetadata usage)
 	@echo "Checking for prohibited SeedMetadata usage..."
 	@if git grep -n "SeedMetadata(" -- ':!**/*_test.go' ':!internal/control/vod/manager.go' ':!Makefile'; then \
