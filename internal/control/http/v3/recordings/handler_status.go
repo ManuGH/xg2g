@@ -32,13 +32,9 @@ type recordingBuildStatus struct {
 }
 
 // WriteStatus handles GET /recordings/{id}/status.
+// Mandate: Handlers are thin adapters and treat IDs as opaque.
 func WriteStatus(w http.ResponseWriter, r *http.Request, recordingID string, deps StatusDeps) {
-	serviceRef, ok := DecodeRecordingID(recordingID)
-	if !ok {
-		// Return 400 for invalid ID, don't just rely on WriteError if it defaults to 500
-		deps.WriteError(w, r, "", ErrInvalidRecordingRef)
-		return
-	}
+	serviceRef := recordingID // Treated as opaque
 
 	hlsRoot := deps.HLSRoot()
 	cacheDir, err := RecordingCacheDir(hlsRoot, serviceRef)

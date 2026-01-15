@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -133,7 +132,7 @@ func getServicesBouquets_Legacy(s *Server, w http.ResponseWriter, r *http.Reques
 	playlistName := snap.Runtime.PlaylistFilename
 	path := filepath.Clean(filepath.Join(cfg.DataDir, playlistName))
 
-	var bouquetNames []string
+	bouquetNames := []string{}
 
 	if data, err := os.ReadFile(path); err == nil {
 		channels := m3u.Parse(string(data))
@@ -155,10 +154,16 @@ func getServicesBouquets_Legacy(s *Server, w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	sort.Strings(bouquetNames)
+	resp := make([]map[string]any, 0, len(bouquetNames))
+	for _, name := range bouquetNames {
+		resp = append(resp, map[string]any{
+			"name":     name,
+			"services": 0,
+		})
+	}
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(bouquetNames)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func getDvrStatus_Legacy(s *Server, w http.ResponseWriter, r *http.Request) {

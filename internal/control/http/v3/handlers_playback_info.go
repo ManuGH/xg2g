@@ -34,6 +34,7 @@ func (s *Server) GetRecordingPlaybackInfo(w http.ResponseWriter, r *http.Request
 	profile := detectClientProfile(r)
 
 	// 2. Delegate to Service (Strict Resolution)
+	// Handlers are thin adapters: pass raw Hex ID, Service owns decoding.
 	resolution, err := s.recordingsService.ResolvePlayback(r.Context(), recordingId, string(profile))
 
 	// 3. Map Errors to HTTP Status (Fail-closed Policy)
@@ -90,7 +91,7 @@ func (s *Server) mapPlaybackError(w http.ResponseWriter, r *http.Request, id str
 }
 
 // mapPlaybackInfo maps the internal resolution to the truthful PlaybackInfo DTO.
-// Strict fail-closed policy.
+// Strict fail-closed policy. id must be the raw Hex ID for URL construction.
 func (s *Server) mapPlaybackInfo(id string, d recordings.PlaybackResolution, rState *resume.State) PlaybackInfo {
 	// Strict Mapping: No Defaults.
 

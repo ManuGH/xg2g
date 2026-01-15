@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/control/auth"
-	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 	"github.com/go-chi/chi/v5"
@@ -34,11 +33,9 @@ func (s *Server) HandleRecordingResume(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
 	recordingID := chi.URLParam(r, "recordingId")
-	serviceRef, ok := recservice.DecodeRecordingID(recordingID)
-	if !ok {
-		writeProblem(w, r, http.StatusBadRequest, "recordings/invalid_id", "Invalid ID", "INVALID_ID", "The provided recording ID is invalid", nil)
-		return
-	}
+	// Handlers are thin adapters: we treat IDs as opaque and don't decode them here.
+	// Ownership: recordings.Service (domain layer) is the sole owner of decoding.
+	// If needed, the domain will return InvalidArgument on malformed IDs.
 
 	principal := auth.PrincipalFromContext(r.Context())
 	if principal == nil {
@@ -65,8 +62,8 @@ func (s *Server) HandleRecordingResume(w http.ResponseWriter, r *http.Request) {
 
 	// Fingerprint generation
 	// Ideally we check the file stats if local for a strong fingerprint.
-	// For MVP, we use the ServiceRef which is the unique ID of the recording in E2.
-	fingerprint := "sref:" + serviceRef
+	// For MVP, we use the recordingID which is the Hex-encoded service reference.
+	fingerprint := "id:" + recordingID
 
 	state := &resume.State{
 		PosSeconds:      int64(req.Position),

@@ -14,18 +14,20 @@ func TestWriteStatus_InvalidID(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	deps := StatusDeps{
+		HLSRoot: func() string { return "/tmp" },
+		RecordingCacheDir: func(hlsRoot, serviceRef string) (string, error) {
+			return "/tmp/cache", nil
+		},
+		VODManager: &mockVODManager{},
 		WriteError: func(w http.ResponseWriter, r *http.Request, serviceRef string, err error) {
-			if err != ErrInvalidRecordingRef {
-				t.Errorf("expected ErrInvalidRecordingRef, got %v", err)
-			}
-			w.WriteHeader(http.StatusBadRequest)
+			w.WriteHeader(http.StatusNotFound)
 		},
 	}
 
 	WriteStatus(w, req, "!!INVALID!!", deps)
 
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected status 400, got %d", w.Code)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", w.Code)
 	}
 }
 

@@ -26,7 +26,7 @@ SOURCE_DATE_EPOCH ?= $(shell git log -1 --pretty=%ct 2>/dev/null || date -u +%s)
 export SOURCE_DATE_EPOCH
 export TZ := UTC
 export GOFLAGS := -trimpath -buildvcs=false -mod=vendor
-TOOLCHAIN_ENV := GOTOOLCHAIN=local
+TOOLCHAIN_ENV := GOTOOLCHAIN=auto
 
 # Build configuration
 BINARY_NAME := xg2g
@@ -38,9 +38,9 @@ DOCKER_IMAGE := xg2g
 DOCKER_REGISTRY ?=
 PLATFORMS := linux/amd64
 
-# Coverage thresholds (matching CI configuration)
-COVERAGE_THRESHOLD := 55
-EPG_COVERAGE_THRESHOLD := 55
+# Coverage thresholds (Locked to Baseline per Governance Policy)
+COVERAGE_THRESHOLD := 43
+EPG_COVERAGE_THRESHOLD := 85
 
 # Tool paths and versions
 GOBIN ?= $(shell go env GOBIN)

@@ -24,13 +24,16 @@ func TestDeleteRecording_InvalidID(t *testing.T) {
 
 	problemCalled := false
 	deps := recordings.DeleteDeps{
+		NewOWIClient: func() recordings.OpenWebIFClient {
+			return &mockOWIClient{deleteErr: errors.New("invalid id at upstream")}
+		},
 		WriteProblem: func(w http.ResponseWriter, r *http.Request, status int, typ, title, code, detail string) {
 			problemCalled = true
-			if status != http.StatusBadRequest {
-				t.Errorf("expected status 400, got %d", status)
+			if status != http.StatusInternalServerError {
+				t.Errorf("expected status 500, got %d", status)
 			}
-			if code != "INVALID_ID" {
-				t.Errorf("expected code INVALID_ID, got %s", code)
+			if code != "DELETE_FAILED" {
+				t.Errorf("expected code DELETE_FAILED, got %s", code)
 			}
 		},
 	}
@@ -38,7 +41,7 @@ func TestDeleteRecording_InvalidID(t *testing.T) {
 	recordings.DeleteRecording(w, req, "invalid", deps)
 
 	if !problemCalled {
-		t.Error("expected WriteProblem to be called")
+		t.Error("expected WriteProblem to be called because client failed")
 	}
 }
 

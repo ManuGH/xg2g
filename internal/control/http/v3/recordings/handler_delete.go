@@ -18,12 +18,9 @@ type OpenWebIFClient interface {
 }
 
 // DeleteRecording handles DELETE /recordings/{id}.
+// Mandate: Handlers are thin adapters and treat IDs as opaque.
 func DeleteRecording(w http.ResponseWriter, r *http.Request, recordingID string, deps DeleteDeps) {
-	serviceRef, ok := DecodeRecordingID(recordingID)
-	if !ok {
-		deps.WriteProblem(w, r, http.StatusBadRequest, "recordings/invalid_id", "Invalid ID", "INVALID_ID", "Invalid recording ID")
-		return
-	}
+	serviceRef := recordingID // Treated as opaque link to OpenWebIF
 
 	client := deps.NewOWIClient()
 	if err := client.DeleteMovie(r.Context(), serviceRef); err != nil {

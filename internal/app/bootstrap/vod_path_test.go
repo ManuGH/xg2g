@@ -71,13 +71,13 @@ enigma2:
 	err = container.Start(ctx)
 	require.NoError(t, err)
 
-	// 4. Inject Mock Resolver (Simulate Not Found)
-	mock := &mockResolver{
-		ResolveFunc: func(ctx context.Context, recordingID string, intent recservice.PlaybackIntent, profile recservice.PlaybackProfile) (recservice.PlaybackInfoResult, error) {
-			return recservice.PlaybackInfoResult{}, recservice.ErrNotFound{RecordingID: recordingID}
+	// 4. Inject Mock Service (Simulate Not Found)
+	mockSvc := &mockRecordingsService{
+		resolvePlayback: func(ctx context.Context, recID, profile string) (recservice.PlaybackResolution, error) {
+			return recservice.PlaybackResolution{}, recservice.ErrNotFound{RecordingID: recID}
 		},
 	}
-	container.Server.SetResolver(mock)
+	container.Server.SetRecordingsService(mockSvc)
 
 	// 4. Request Non-Existent Component
 	// Strict: Test URL matches router param definition /api/v3/vod/{recordingId}
@@ -174,8 +174,10 @@ enigma2:
 
 	mockSvc := &mockRecordingsService{
 		resolvePlayback: func(ctx context.Context, recID, profile string) (recservice.PlaybackResolution, error) {
+			t.Logf("MOCK CALLED: recID=%q profile=%q recordingID=%q", recID, profile, recordingID)
 			// Handler decodes URL parameter, so recID is canonical (decoded)
-			if recID == serviceRef {
+			if recID == recordingID {
+				t.Logf("MOCK MATCHED: returning success")
 				dur := int64(3600)
 				container := "mp4"
 				vcodec := "h264"
@@ -187,15 +189,18 @@ enigma2:
 					Container:   &container,
 					VideoCodec:  &vcodec,
 					AudioCodec:  &acodec,
-					Reason:      "resolved_via_store",
+					Reason:      recservice.ReasonDirectPlayMatch,
 				}, nil
 			}
+			t.Logf("MOCK NOT MATCHED: returning 404")
 			return recservice.PlaybackResolution{}, recservice.ErrNotFound{RecordingID: recID}
 		},
 	}
 
 	// Inject mock into server (replaces real recordingsService)
+	t.Logf("Injecting mock service...")
 	container.Server.SetRecordingsService(mockSvc)
+	t.Logf("Mock service injected")
 
 	handler := container.Server.Handler()
 	req := httptest.NewRequest("GET", "/api/v3/recordings/"+recordingID+"/stream-info", nil)
@@ -212,11 +217,14 @@ enigma2:
 
 	// Strict Decode
 	var dto struct {
-		URL             string `json:"url"`
-		Mode            string `json:"mode"`
-		DurationSeconds int64  `json:"duration_seconds"`
-		Reason          string `json:"reason"`
-		Seekable        *bool  `json:"seekable,omitempty"`
+		URL             string  `json:"url"`
+		Mode            string  `json:"mode"`
+		DurationSeconds *int64  `json:"duration_seconds,omitempty"`
+		Reason          *string `json:"reason,omitempty"`
+		Seekable        *bool   `json:"seekable,omitempty"`
+		Container       *string `json:"container,omitempty"`
+		VideoCodec      *string `json:"video_codec,omitempty"`
+		AudioCodec      *string `json:"audio_codec,omitempty"`
 	}
 
 	// Enforce strict JSON
@@ -227,6 +235,8 @@ enigma2:
 
 	assert.Equal(t, "/api/v3/recordings/"+recordingID+"/stream.mp4", dto.URL)
 	assert.Equal(t, "direct_mp4", dto.Mode)
-	assert.Equal(t, int64(3600), dto.DurationSeconds)
-	assert.Contains(t, dto.Reason, "resolved_via_store")
+	require.NotNil(t, dto.DurationSeconds)
+	assert.Equal(t, int64(3600), *dto.DurationSeconds)
+	require.NotNil(t, dto.Reason)
+	assert.Equal(t, "directplay_match", *dto.Reason)
 }

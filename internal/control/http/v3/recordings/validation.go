@@ -16,10 +16,7 @@ var (
 	ErrInvalidRecordingRef = errors.New("recording ref invalid")
 )
 
-const (
-	recordingIDMinLen = 1
-	recordingIDMaxLen = 1024
-)
+const ()
 
 // ValidateRecordingRef checks if the service reference string is valid.
 func ValidateRecordingRef(serviceRef string) error {
@@ -71,54 +68,6 @@ func EncodeRecordingID(serviceRef string) string {
 		return ""
 	}
 	return base64.RawURLEncoding.EncodeToString([]byte(serviceRef))
-}
-
-// ValidRecordingID checks if the ID conforms to our expected charset.
-func ValidRecordingID(id string) bool {
-	if len(id) < recordingIDMinLen || len(id) > recordingIDMaxLen {
-		return false
-	}
-	for _, r := range id {
-		switch {
-		case r >= 'a' && r <= 'z':
-		case r >= 'A' && r <= 'Z':
-		case r >= '0' && r <= '9':
-		case r == '-' || r == '_':
-		default:
-			return false
-		}
-	}
-	return true
-}
-
-// DecodeRecordingID decodes a recording ID back to its service reference.
-func DecodeRecordingID(id string) (string, bool) {
-	id = strings.TrimSpace(id)
-	if !ValidRecordingID(id) {
-		return "", false
-	}
-	decodedBytes, err := base64.RawURLEncoding.DecodeString(id)
-	if err != nil {
-		return "", false
-	}
-	if len(decodedBytes) == 0 {
-		return "", false
-	}
-	if !utf8.Valid(decodedBytes) {
-		return "", false
-	}
-	decoded := string(decodedBytes)
-	if strings.TrimSpace(decoded) == "" {
-		return "", false
-	}
-	if strings.ContainsRune(decoded, '\x00') {
-		return "", false
-	}
-	// Strictly validate the decoded reference immediately
-	if err := ValidateRecordingRef(decoded); err != nil {
-		return "", false
-	}
-	return decoded, true
 }
 
 // SanitizeRecordingRelPath implementation for POSIX paths.
