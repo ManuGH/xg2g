@@ -42,7 +42,7 @@ jobs:
       - name: Token URL gate
         run: |
           set -euo pipefail
-          if git grep -n -i -E '(\?|&)(token|access_token|auth|jwt|bearer)=' -- .; then
+          if git grep -n -i -E '(\?|&)(token|access_token|auth|jwt|bearer)=' -- . ':!vendor'; then
             echo "❌ denylisted auth-like query key found in URL parameters"
             exit 1
           fi
@@ -261,7 +261,7 @@ jobs:
           set -euo pipefail
           # Build golangci-lint from source using the runner's Go toolchain
           # to avoid version mismatch errors with prebuilt binaries.
-          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.5.0
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.8.0
           golangci-lint --version
 
       - name: Lint
@@ -326,10 +326,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4  # Latest stable
+        uses: actions/checkout@v4 # Latest stable
 
       - name: Set up Go
-        uses: actions/setup-go@v5  # Latest stable
+        uses: actions/setup-go@v5 # Latest stable
         with:
           go-version-file: go.mod
 

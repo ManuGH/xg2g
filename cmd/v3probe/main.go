@@ -11,6 +11,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/ManuGH/xg2g/internal/config"
 )
 
 type ProbeReport struct {
@@ -58,7 +60,7 @@ type ProbeConfig struct {
 func run(cfg ProbeConfig) error {
 	baseURL := cfg.BaseURL
 	if baseURL == "" {
-		baseURL = os.Getenv("V3_BASE_URL")
+		baseURL = config.ParseString("V3_BASE_URL", "")
 	}
 	if baseURL == "" {
 		baseURL = "http://localhost:8088"
@@ -69,7 +71,7 @@ func run(cfg ProbeConfig) error {
 		BaseURL:   baseURL,
 		Checks:    make([]CheckResult, 0),
 		Environment: map[string]string{
-			"USER": os.Getenv("USER"),
+			"USER": config.ParseString("USER", ""),
 		},
 	}
 
@@ -122,7 +124,7 @@ func run(cfg ProbeConfig) error {
 	var serviceRef string
 	runCheck("Setup_FetchServiceRef", func() (string, error) {
 		// Priority 1: Env Var
-		if s := os.Getenv("V3_SERVICE_REF"); s != "" {
+		if s := config.ParseString("V3_SERVICE_REF", ""); s != "" {
 			serviceRef = s
 			return "", nil
 		}
@@ -334,10 +336,10 @@ func doRequest(method, urlStr string, body io.Reader) (int, http.Header, []byte,
 	}
 
 	// Apply Auth
-	if token := os.Getenv("V3_AUTH_BEARER"); token != "" {
+	if token := config.ParseString("V3_AUTH_BEARER", ""); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
-	} else if user := os.Getenv("V3_AUTH_BASIC_USER"); user != "" {
-		pass := os.Getenv("V3_AUTH_BASIC_PASS")
+	} else if user := config.ParseString("V3_AUTH_BASIC_USER", ""); user != "" {
+		pass := config.ParseString("V3_AUTH_BASIC_PASS", "")
 		req.SetBasicAuth(user, pass)
 	} // else: no auth configured, try annonymous
 

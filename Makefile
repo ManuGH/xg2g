@@ -237,7 +237,7 @@ clean-full: clean ## Remove all build artifacts
 
 lint: ## Run golangci-lint with all checks
 	@echo "Running golangci-lint..."
-	@command -v golangci-lint > /dev/null 2>&1 || GOFLAGS="" go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	@command -v golangci-lint > /dev/null 2>&1 || GOFLAGS="" go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.8.0
 	@golangci-lint run ./... --timeout=5m --concurrency=2
 	@echo "✅ Lint checks passed"
 
@@ -251,7 +251,7 @@ lint-invariants: ## Check architectural invariants (SeedMetadata usage)
 
 lint-fix: ## Run golangci-lint with automatic fixes
 	@echo "Ensuring golangci-lint is installed..."
-	@command -v $(GOLANGCI_LINT) >/dev/null 2>&1 || go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	@command -v $(GOLANGCI_LINT) >/dev/null 2>&1 || go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.8.0
 	@echo "Running golangci-lint with fixes..."
 	@"$(GOLANGCI_LINT)" run ./... --fix --timeout=5m
 	@echo "✅ Lint fixes applied"
@@ -515,7 +515,7 @@ deps-licenses: ## Generate dependency license report
 dev-tools: ## Install all development tools
 	@echo "Installing development tools..."
 	@echo "Installing golangci-lint..."
-	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	@go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.8.0
 	@echo "Installing oapi-codegen..."
 	@go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.8.0
 	@echo "Installing govulncheck..."

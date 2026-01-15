@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
+
+	"github.com/ManuGH/xg2g/internal/config"
 )
 
 func runDiagnosticCLI(args []string) int {
@@ -20,7 +21,7 @@ func runDiagnosticCLI(args []string) int {
 
 	// If token is empty, try to read from env
 	if *token == "" {
-		*token = os.Getenv("XG2G_API_TOKEN")
+		*token = config.ParseString("XG2G_API_TOKEN", "")
 	}
 
 	switch *action {
