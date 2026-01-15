@@ -237,7 +237,7 @@ clean-full: clean ## Remove all build artifacts
 
 lint: ## Run golangci-lint with all checks
 	@echo "Ensuring golangci-lint is installed..."
-	@command -v $(GOLANGCI_LINT) >/dev/null 2>&1 || go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	@command -v $(GOLANGCI_LINT) >/dev/null 2>&1 || GOFLAGS="" go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 	@echo "Running golangci-lint..."
 	@$(GOLANGCI_LINT) --version
 	@"$(GOLANGCI_LINT)" run ./... --timeout=5m --concurrency=2
