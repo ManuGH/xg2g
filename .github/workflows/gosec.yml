@@ -56,6 +56,6 @@ jobs:
           args: -fmt=sarif -out=gosec.sarif -severity=medium -tags=nogpu -exclude-dir=test -exclude-dir=internal/test -exclude-dir=.github ./...
 
       - name: Upload SARIF to GitHub Security
-        uses: github/codeql-action/upload-sarif@v4.31.9
+        uses: github/codeql-action/upload-sarif@v4.31.10
         with:
           sarif_file: gosec.sarif
