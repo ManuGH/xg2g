@@ -26,7 +26,7 @@ SOURCE_DATE_EPOCH ?= $(shell git log -1 --pretty=%ct 2>/dev/null || date -u +%s)
 export SOURCE_DATE_EPOCH
 export TZ := UTC
 export GOFLAGS := -trimpath -buildvcs=false -mod=vendor
-TOOLCHAIN_ENV := GOTOOLCHAIN=auto
+TOOLCHAIN_ENV := GOTOOLCHAIN=go1.25.5
 
 # Build configuration
 BINARY_NAME := xg2g

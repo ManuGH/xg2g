@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -85,10 +86,10 @@ enigma2:
 
 	t.Run("FallbackPath_ProbeAndPersist", func(t *testing.T) {
 		// 1. Setup Mock Prober
-		probeCalled := 0
+		var probeCalled atomic.Int32
 		mock := &mockProber{
 			ProbeFunc: func(ctx context.Context, path string) (*vod.StreamInfo, error) {
-				probeCalled++
+				probeCalled.Add(1)
 				return &vod.StreamInfo{
 					Video:     vod.VideoStreamInfo{Duration: 123, CodecName: "h264"},
 					Audio:     vod.AudioStreamInfo{CodecName: "aac"},
@@ -122,7 +123,7 @@ enigma2:
 		err = json.Unmarshal(w.Body.Bytes(), &resp)
 		require.NoError(t, err)
 		assert.Equal(t, int64(123), resp.DurationSeconds)
-		assert.Equal(t, 1, probeCalled, "Probe should have been called once")
+		assert.Equal(t, int32(1), probeCalled.Load(), "Probe should have been called once")
 
 		// 3. Verify Persistence in Store
 		libSvc := container.Server.LibraryService()
@@ -138,10 +139,10 @@ enigma2:
 		container.Server.VODManager().MarkUnknown(serviceRef)
 
 		// Setup Mock Prober that should NOT be called
-		probeCalled := 0
+		var probeCalled atomic.Int32
 		mock := &mockProber{
 			ProbeFunc: func(ctx context.Context, path string) (*vod.StreamInfo, error) {
-				probeCalled++
+				probeCalled.Add(1)
 				return nil, fmt.Errorf("should not be called")
 			},
 		}
@@ -160,6 +161,6 @@ enigma2:
 		err = json.Unmarshal(w.Body.Bytes(), &resp)
 		require.NoError(t, err)
 		assert.Equal(t, int64(123), resp.DurationSeconds)
-		assert.Equal(t, 0, probeCalled, "Probe should NOT have been called")
+		assert.Equal(t, int32(0), probeCalled.Load(), "Probe should NOT have been called")
 	})
 }

@@ -183,8 +183,13 @@ func (s *Server) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 func (s *Server) getStoragePaths(ctx context.Context) []string {
 	unique := make(map[string]struct{})
 
-	// Fast OWI client access
-	client := s.owi(s.cfg, s.snap)
+	// 1. OWI Locations (Truth of receiver paths)
+	s.mu.RLock()
+	cfg := s.cfg
+	snap := s.snap
+	s.mu.RUnlock()
+
+	client := s.owi(cfg, snap)
 	if c, ok := client.(*openwebif.Client); ok && c != nil {
 		if about, err := c.About(ctx); err == nil && about != nil {
 			for _, hdd := range about.Info.HDD {

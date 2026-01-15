@@ -13,4 +13,7 @@ are deprecated and removed.
 
 ## Active Deprecations
 
-None.
+| Item | Replacement | Remove In |
+|:---|:---|:---|
+| XG2G_STREAM_PORT | enigma2.streamPort | v3.5.0 |
+| XG2G_HTTP_ENABLE_HTTP2 | Always Enabled | v3.1.0 |

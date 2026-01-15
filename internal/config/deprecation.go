@@ -1,0 +1,6 @@
+package config
+
+const (
+XG2G_STREAM_PORT_REMOVAL_VERSION = "v3.5.0"
+XG2G_HTTP_ENABLE_HTTP2_REMOVAL_VERSION = "v3.1.0"
+)
