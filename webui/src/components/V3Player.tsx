@@ -404,7 +404,7 @@ function V3Player(props: V3PlayerProps) {
         }
 
         if (res.status === 404) {
-          await sleep(500);
+          await sleep(100); // Fast retry for session creation
           continue;
         }
         if (!res.ok) throw new Error(t('player.failedToFetchSession'));
@@ -436,7 +436,7 @@ function V3Player(props: V3PlayerProps) {
           setStatus('starting');
         }
 
-        await sleep(500);
+        await sleep(100); // Fast polling for low-latency startup
       } catch (err) {
         const msg = (err as Error).message || '';
         // If it's a terminal, user-facing error, abort immediately
