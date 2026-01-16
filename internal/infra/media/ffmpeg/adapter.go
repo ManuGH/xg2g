@@ -600,7 +600,7 @@ func (a *LocalAdapter) buildArgs(spec ports.StreamSpec, inputURL string) ([]stri
 			"-c:v", "libx264",
 			"-preset", "veryfast", // Fast encoding for live streams
 			"-tune", "zerolatency", // Minimize buffering
-			"-crf", "20", // High quality (lower is better, 18-23 is standard high quality)
+			"-crf", "18", // Visually lossless quality (Gold Standard)
 			"-g", "30", // Force keyframe every 30 frames (~1s at 30fps)
 			"-sc_threshold", "0",
 			"-force_key_frames", "expr:gte(t,n_forced*6)",
