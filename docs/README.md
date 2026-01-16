@@ -19,6 +19,7 @@ Welcome to the xg2g documentation. All documents here represent the
 - [Configuration](guides/CONFIGURATION.md)
 - [Streaming Standards](guides/STREAMING.md)
 - [Smoke Test Records](ops/SMOKE_TEST_RECORDINGS.md)
+- [Preflight Troubleshooting](ops/PREFLIGHT.md)
 - [Health Endpoints](ops/HEALTH.md)
 
 ---

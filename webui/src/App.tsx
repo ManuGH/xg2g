@@ -81,6 +81,11 @@ function App() {
     window.location.reload();
   };
 
+  const memoizedBouquets = useMemo(() => (channels.bouquets || []).map(b => ({
+    name: b.name || 'Unknown',
+    services: b.services ?? 0
+  })), [channels.bouquets]);
+
   if (initializing) {
     return (
       <div className="app-container" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
@@ -130,10 +135,7 @@ function App() {
           {view === 'epg' && (
             <EPG
               channels={channels.channels}
-              bouquets={useMemo(() => (channels.bouquets || []).map(b => ({
-                name: b.name || 'Unknown',
-                services: b.services ?? 0
-              })), [channels.bouquets])}
+              bouquets={memoizedBouquets}
               selectedBouquet={channels.selectedBouquet}
               onSelectBouquet={ctx.loadChannels}
               onPlay={ctx.handlePlay}

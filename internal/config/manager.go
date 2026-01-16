@@ -63,6 +63,7 @@ func (m *Manager) Save(cfg *AppConfig) error {
 			RateLimit:             cfg.Enigma2.RateLimit,
 			RateBurst:             cfg.Enigma2.RateBurst,
 			UserAgent:             cfg.Enigma2.UserAgent,
+			FallbackTo8001:        boolPtr(cfg.Enigma2.FallbackTo8001),
 		},
 		Bouquets: splitCSV(cfg.Bouquet),
 		EPG: EPGConfig{
@@ -71,6 +72,7 @@ func (m *Manager) Save(cfg *AppConfig) error {
 			Source:         cfg.EPGSource,
 			MaxConcurrency: intPtr(cfg.EPGMaxConcurrency),
 			TimeoutMS:      intPtr(cfg.EPGTimeoutMS),
+			XMLTVPath:      cfg.XMLTVPath,
 		},
 		Picons: PiconsConfig{
 			BaseURL: cfg.PiconBase,

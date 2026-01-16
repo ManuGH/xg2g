@@ -17,9 +17,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/platform/fs"
-	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/platform/fs"
 )
 
 const hlsPlaylistWaitTimeout = 5 * time.Second
@@ -71,11 +71,12 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, s
 		return
 	}
 
-	isPlaylist := filename == "index.m3u8"
+	isPlaylist := filename == "index.m3u8" || filename == "stream.m3u8"
 	isSegment := strings.HasPrefix(filename, "seg_") && (strings.HasSuffix(filename, ".ts") || strings.HasSuffix(filename, ".m4s"))
+	isLegacySegment := strings.HasPrefix(filename, "stream") && strings.HasSuffix(filename, ".ts")
 	isInit := filename == "init.mp4"
 
-	if !isPlaylist && !isSegment && !isInit {
+	if !isPlaylist && !isSegment && !isLegacySegment && !isInit {
 		http.Error(w, "file type not allowed", http.StatusForbidden)
 		return
 	}
@@ -147,13 +148,29 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, s
 	}
 
 	// 3. Resolve File Path
-	// Layout: <root>/sessions/<sessionID>/<filename>
+	// Layout (current): <root>/sessions/<sessionID>/<filename>
+	// Legacy fallback: <root>/<sessionID>/<filename>
 	relPath := filepath.Join("sessions", sessionID, filename)
+	var legacyRelPath string
+	if isLegacySegment || filename == "stream.m3u8" {
+		relPath = filepath.Join(sessionID, filename)
+	} else if filename == "index.m3u8" {
+		legacyRelPath = filepath.Join(sessionID, "stream.m3u8")
+	}
+
 	filePath, err := fs.ConfineRelPath(hlsRoot, relPath)
 	if err != nil {
 		log.L().Warn().Err(err).Str("sid", sessionID).Str("file", filename).Msg("hls path confinement failed")
 		http.Error(w, "file not found", http.StatusNotFound)
 		return
+	}
+	legacyFilePath := ""
+	if legacyRelPath != "" {
+		if legacyPath, err := fs.ConfineRelPath(hlsRoot, legacyRelPath); err == nil {
+			legacyFilePath = legacyPath
+		} else {
+			log.L().Warn().Err(err).Str("sid", sessionID).Str("file", filename).Msg("legacy hls path confinement failed")
+		}
 	}
 
 	// Debug Logging
@@ -189,6 +206,16 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, s
 		logger.Error().Err(err).Msg("initial stat failed")
 	}
 
+	if os.IsNotExist(err) && legacyFilePath != "" {
+		legacyInfo, legacyErr := os.Stat(legacyFilePath)
+		if legacyErr == nil {
+			filePath = legacyFilePath
+			info = legacyInfo
+			err = nil
+			logger = logger.With().Str("path", filePath).Bool("legacy", true).Logger()
+		}
+	}
+
 	if os.IsNotExist(err) {
 		logger.Warn().Err(err).Msg("file not found (final)")
 		// Normal during startup for segments or if playlist not yet promoted
@@ -209,7 +236,7 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, s
 	if isPlaylist {
 		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 		w.Header().Set("Cache-Control", "no-store")
-	} else if isSegment {
+	} else if isSegment || isLegacySegment {
 		// TS segments: video/MP2T
 		// fMP4 segments (.m4s): video/mp4 (Safari REQUIRES video/mp4 for all fMP4 content)
 		if strings.HasSuffix(filename, ".m4s") {

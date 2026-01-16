@@ -81,6 +81,8 @@ type Enigma2Config struct {
 	// FFmpeg stream probing settings (for OSCam-emu relay compatibility)
 	AnalyzeDuration string `yaml:"analyzeDuration,omitempty"` // e.g. "10s", default: "2s"
 	ProbeSize       string `yaml:"probeSize,omitempty"`       // e.g. "10M", default: "10M"
+	// Fallback to direct 8001 when StreamRelay (17999) fails preflight.
+	FallbackTo8001 *bool `yaml:"fallbackTo8001,omitempty"`
 }
 
 // EPGConfig holds EPG configuration
@@ -324,6 +326,7 @@ type Enigma2Settings struct {
 	ProbeSize             string
 	StreamPort            int
 	UseWebIFStreams       bool
+	FallbackTo8001        bool
 }
 
 // Loader handles configuration loading with precedence
@@ -712,6 +715,9 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 	if src.Enigma2.ProbeSize != "" {
 		dst.Enigma2.ProbeSize = src.Enigma2.ProbeSize
 	}
+	if src.Enigma2.FallbackTo8001 != nil {
+		dst.Enigma2.FallbackTo8001 = *src.Enigma2.FallbackTo8001
+	}
 
 	// HDHomeRun
 	if src.HDHR.Enabled != nil {
@@ -885,6 +891,17 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	cfg.Engine.Mode = l.envString("XG2G_ENGINE_MODE", cfg.Engine.Mode)
 	cfg.Engine.IdleTimeout = l.envDuration("XG2G_ENGINE_IDLE_TIMEOUT", cfg.Engine.IdleTimeout)
 
+	// CANONICAL ENIGMA2 CONFIG (Move up for discovery)
+	cfg.Enigma2.BaseURL = l.envString("XG2G_E2_HOST", cfg.Enigma2.BaseURL)
+	cfg.Enigma2.Username = l.envString("XG2G_E2_USER", cfg.Enigma2.Username)
+	cfg.Enigma2.Password = l.envString("XG2G_E2_PASS", cfg.Enigma2.Password)
+	cfg.Enigma2.AuthMode = strings.ToLower(strings.TrimSpace(l.envString("XG2G_E2_AUTH_MODE", cfg.Enigma2.AuthMode)))
+	cfg.Enigma2.Timeout = l.envDuration("XG2G_E2_TIMEOUT", cfg.Enigma2.Timeout)
+	cfg.Enigma2.ResponseHeaderTimeout = l.envDuration("XG2G_E2_RESPONSE_HEADER_TIMEOUT", cfg.Enigma2.ResponseHeaderTimeout)
+	cfg.Enigma2.Retries = l.envInt("XG2G_E2_RETRIES", cfg.Enigma2.Retries)
+	cfg.Enigma2.Backoff = l.envDuration("XG2G_E2_BACKOFF", cfg.Enigma2.Backoff)
+	cfg.Enigma2.FallbackTo8001 = l.envBool("XG2G_E2_FALLBACK_TO_8001", cfg.Enigma2.FallbackTo8001)
+
 	// Tuner Slots: Auto-Discovery with Manual Override
 	// LOGIC: Auto-discover by default, only skip if manually configured
 	manuallyConfigured := false
@@ -958,22 +975,6 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	// CANONICAL HLS CONFIG
 	cfg.HLS.Root = l.envString("XG2G_HLS_ROOT", cfg.HLS.Root)
 	cfg.HLS.DVRWindow = l.envDuration("XG2G_HLS_DVR_WINDOW", cfg.HLS.DVRWindow)
-
-	// CANONICAL ENIGMA2 CONFIG
-	cfg.Enigma2.BaseURL = l.envString("XG2G_E2_HOST", cfg.Enigma2.BaseURL)
-	cfg.Enigma2.Username = l.envString("XG2G_E2_USER", cfg.Enigma2.Username)
-	cfg.Enigma2.Password = l.envString("XG2G_E2_PASS", cfg.Enigma2.Password)
-	cfg.Enigma2.AuthMode = strings.ToLower(strings.TrimSpace(l.envString("XG2G_E2_AUTH_MODE", cfg.Enigma2.AuthMode)))
-	cfg.Enigma2.Timeout = l.envDuration("XG2G_E2_TIMEOUT", cfg.Enigma2.Timeout)
-	cfg.Enigma2.ResponseHeaderTimeout = l.envDuration("XG2G_E2_RESPONSE_HEADER_TIMEOUT", cfg.Enigma2.ResponseHeaderTimeout)
-	cfg.Enigma2.Retries = l.envInt("XG2G_E2_RETRIES", cfg.Enigma2.Retries)
-	cfg.Enigma2.Backoff = l.envDuration("XG2G_E2_BACKOFF", cfg.Enigma2.Backoff)
-	cfg.Enigma2.MaxBackoff = l.envDuration("XG2G_E2_MAX_BACKOFF", cfg.Enigma2.MaxBackoff)
-	cfg.Enigma2.RateLimit = l.envInt("XG2G_E2_RATE_LIMIT", cfg.Enigma2.RateLimit)
-	cfg.Enigma2.RateBurst = l.envInt("XG2G_E2_RATE_BURST", cfg.Enigma2.RateBurst)
-	cfg.Enigma2.UserAgent = l.envString("XG2G_E2_USER_AGENT", cfg.Enigma2.UserAgent)
-	cfg.Enigma2.AnalyzeDuration = l.envString("XG2G_E2_ANALYZE_DURATION", cfg.Enigma2.AnalyzeDuration)
-	cfg.Enigma2.ProbeSize = l.envString("XG2G_E2_PROBE_SIZE", cfg.Enigma2.ProbeSize)
 
 	// CANONICAL FFMPEG CONFIG
 	cfg.FFmpeg.Bin = l.envString("XG2G_FFMPEG_BIN", cfg.FFmpeg.Bin)

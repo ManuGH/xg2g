@@ -32,17 +32,18 @@ type Client struct {
 	limiter    *rate.Limiter
 	maxRetries int
 	backoff    time.Duration
+	// streamPort was renamed to StreamPort
 	maxBackoff time.Duration
-	username   string
-	password   string
+	Username   string
+	Password   string
 	userAgent  string
 	rnd        *rand.Rand
 	mu         sync.Mutex
 	// When true, avoid explicit zapping and rely on WebIF stream tuning.
-	useWebIFStreams bool
+	UseWebIFStreams bool
 	// StreamPort is the port for direct stream URLs (e.g. 8001 for Enigma2, 17999 for OSCam-emu relay).
 	// When set, ResolveStreamURL will build direct URLs instead of querying /web/stream.m3u.
-	streamPort int
+	StreamPort int
 }
 
 // Options configures the Enigma2 client behavior.
@@ -108,12 +109,12 @@ func NewClientWithOptions(baseURL string, opts Options) *Client {
 		maxRetries:      nopts.MaxRetries,
 		backoff:         nopts.Backoff,
 		maxBackoff:      nopts.MaxBackoff,
-		username:        nopts.Username,
-		password:        nopts.Password,
+		Username:        nopts.Username,
+		Password:        nopts.Password,
 		userAgent:       nopts.UserAgent,
 		rnd:             rand.New(rand.NewSource(time.Now().UnixNano())), // #nosec G404 -- jitter only
-		useWebIFStreams: opts.UseWebIFStreams,
-		streamPort:      opts.StreamPort,
+		UseWebIFStreams: opts.UseWebIFStreams,
+		StreamPort:      opts.StreamPort,
 	}
 }
 
@@ -334,8 +335,8 @@ func (c *Client) applyHeaders(req *http.Request) {
 		req.Header.Set("User-Agent", c.userAgent)
 	}
 	req.Header.Set("Accept", "application/json")
-	if c.username != "" || c.password != "" {
-		req.SetBasicAuth(c.username, c.password)
+	if c.Username != "" || c.Password != "" {
+		req.SetBasicAuth(c.Username, c.Password)
 	}
 }
 

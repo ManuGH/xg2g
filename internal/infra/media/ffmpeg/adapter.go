@@ -2,10 +2,18 @@ package ffmpeg
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
+	"math"
+	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,33 +22,72 @@ import (
 	"github.com/rs/zerolog"
 )
 
+const (
+	preflightMinBytes = 188 * 3
+	preflightTimeout  = 1 * time.Second
+)
+
 // LocalAdapter implements ports.MediaPipeline using local exec.Command.
 type LocalAdapter struct {
-	BinPath string
-	HLSRoot string
-	Logger  zerolog.Logger
-	E2      *enigma2.Client // Dependency for Tuner operations
-	mu      sync.Mutex
+	BinPath         string
+	HLSRoot         string
+	AnalyzeDuration string
+	ProbeSize       string
+	DVRWindow       time.Duration
+	KillTimeout     time.Duration
+	httpClient      *http.Client
+	Logger          zerolog.Logger
+	E2              *enigma2.Client // Dependency for Tuner operations
+	FallbackTo8001  bool
+	mu              sync.Mutex
 	// activeProcs maps run handles to running commands
 	activeProcs map[ports.RunHandle]*exec.Cmd
 }
 
 // NewLocalAdapter creates a new adapter instance.
-func NewLocalAdapter(binPath string, hlsRoot string, e2 *enigma2.Client, logger zerolog.Logger) *LocalAdapter {
+func NewLocalAdapter(binPath string, hlsRoot string, e2 *enigma2.Client, logger zerolog.Logger, analyzeDuration string, probeSize string, dvrWindow time.Duration, killTimeout time.Duration, fallbackTo8001 bool) *LocalAdapter {
+	analyzeDuration = strings.TrimSpace(analyzeDuration)
+	probeSize = strings.TrimSpace(probeSize)
+	if analyzeDuration == "" {
+		analyzeDuration = "2000000" // 2s for fast live starts
+	}
+	if probeSize == "" {
+		probeSize = "5M" // 5MB for live streams
+	}
+	if killTimeout <= 0 {
+		killTimeout = 5 * time.Second
+	}
+	httpClient := &http.Client{
+		Timeout: preflightTimeout,
+		Transport: &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+			DialContext: (&net.Dialer{
+				Timeout: 2 * time.Second,
+			}).DialContext,
+			MaxIdleConnsPerHost:   2,
+			IdleConnTimeout:       30 * time.Second,
+			TLSHandshakeTimeout:   2 * time.Second,
+			ResponseHeaderTimeout: 2 * time.Second,
+			DisableCompression:    true,
+		},
+	}
 	return &LocalAdapter{
-		BinPath:     binPath,
-		HLSRoot:     hlsRoot,
-		E2:          e2,
-		Logger:      logger,
-		activeProcs: make(map[ports.RunHandle]*exec.Cmd),
+		BinPath:         binPath,
+		HLSRoot:         hlsRoot,
+		AnalyzeDuration: analyzeDuration,
+		ProbeSize:       probeSize,
+		DVRWindow:       dvrWindow,
+		KillTimeout:     killTimeout,
+		httpClient:      httpClient,
+		E2:              e2,
+		Logger:          logger,
+		FallbackTo8001:  fallbackTo8001,
+		activeProcs:     make(map[ports.RunHandle]*exec.Cmd),
 	}
 }
 
 // Start initiates the media process.
 func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.RunHandle, error) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
 	// 0. Tune if required
 	if spec.Source.Type == ports.SourceTuner && a.E2 != nil {
 		if spec.Source.TunerSlot < 0 {
@@ -57,8 +104,28 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 		}
 	}
 
+	inputURL := ""
+	if spec.Source.Type == ports.SourceTuner {
+		if a.E2 == nil {
+			return "", fmt.Errorf("tuner source requires enigma2 client")
+		}
+		streamURL, err := a.E2.ResolveStreamURL(ctx, spec.Source.ID)
+		if err != nil {
+			return "", fmt.Errorf("resolve stream url: %w", err)
+		}
+		streamURL = a.injectCredentialsIfAllowed(streamURL)
+
+		chosenURL, err := a.selectStreamURL(ctx, spec.SessionID, spec.Source.ID, streamURL)
+		if err != nil {
+			return "", err
+		}
+		inputURL = chosenURL
+	} else if spec.Source.Type == ports.SourceURL {
+		inputURL = spec.Source.ID
+	}
+
 	// 1. Generate Arguments from Spec
-	args, err := a.buildArgs(spec)
+	args, err := a.buildArgs(spec, inputURL)
 	if err != nil {
 		return "", fmt.Errorf("failed to build args: %w", err)
 	}
@@ -69,19 +136,23 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 
 	// 3. Setup Logging
 	cmd.Stdout = nil
-	cmd.Stderr = nil
+	cmd.Stderr = os.Stderr
 
 	// 4. Start
 	if err := cmd.Start(); err != nil {
 		return "", fmt.Errorf("ffmpeg start failed: %w", err)
 	}
 
-	handle := ports.RunHandle(fmt.Sprintf("%s-%d", spec.SessionID, cmd.Process.Pid))
+	// 6. Monitor Process
+	pid := cmd.Process.Pid
+	handle := ports.RunHandle(fmt.Sprintf("%s-%d", spec.SessionID, pid))
+	a.mu.Lock()
 	a.activeProcs[handle] = cmd
+	a.mu.Unlock()
 
 	a.Logger.Info().
 		Str("handle", string(handle)).
-		Str("spec_id", spec.SessionID).
+		Str("session_id", spec.SessionID).
 		Int("pid", cmd.Process.Pid).
 		Msg("started media process")
 
@@ -91,9 +162,12 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 // Stop terminates the process.
 func (a *LocalAdapter) Stop(ctx context.Context, handle ports.RunHandle) error {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-
 	cmd, exists := a.activeProcs[handle]
+	if exists {
+		delete(a.activeProcs, handle)
+	}
+	a.mu.Unlock()
+
 	if !exists {
 		return nil // Idempotent
 	}
@@ -106,14 +180,20 @@ func (a *LocalAdapter) Stop(ctx context.Context, handle ports.RunHandle) error {
 			done <- cmd.Wait()
 		}()
 
+		killTimeout := a.KillTimeout
+		if killTimeout <= 0 {
+			killTimeout = 5 * time.Second
+		}
 		select {
 		case <-done:
-		case <-time.After(5 * time.Second):
+		case <-ctx.Done():
+			_ = cmd.Process.Kill()
+			return ctx.Err()
+		case <-time.After(killTimeout):
 			_ = cmd.Process.Kill()
 		}
 	}
 
-	delete(a.activeProcs, handle)
 	return nil
 }
 
@@ -138,24 +218,357 @@ func (a *LocalAdapter) Health(ctx context.Context, handle ports.RunHandle) ports
 	}
 }
 
-func (a *LocalAdapter) buildArgs(spec ports.StreamSpec) ([]string, error) {
+type preflightResult struct {
+	ok     bool
+	bytes  int
+	reason string
+}
+
+type preflightFn func(context.Context, string) (preflightResult, error)
+
+func (a *LocalAdapter) selectStreamURL(ctx context.Context, sessionID, serviceRef, streamURL string) (string, error) {
+	return a.selectStreamURLWithPreflight(ctx, sessionID, serviceRef, streamURL, a.preflightTS)
+}
+
+func (a *LocalAdapter) selectStreamURLWithPreflight(ctx context.Context, sessionID, serviceRef, streamURL string, preflight preflightFn) (string, error) {
+	result, err := preflight(ctx, streamURL)
+	reason := preflightReason(result, err)
+	if err == nil && result.ok {
+		return streamURL, nil
+	}
+
+	resolvedLogURL := sanitizeURLForLog(streamURL)
+	isRelay := isStreamRelayURL(streamURL)
+	if isRelay {
+		a.Logger.Warn().
+			Str("event", "streamrelay_preflight_failed").
+			Str("session_id", sessionID).
+			Str("service_ref", serviceRef).
+			Str("resolved_url", resolvedLogURL).
+			Int("preflight_bytes", result.bytes).
+			Str("preflight_reason", reason).
+			Msg("streamrelay preflight failed")
+	}
+
+	if isRelay && a.FallbackTo8001 {
+		fallbackURL, buildErr := buildFallbackURL(streamURL, serviceRef)
+		if buildErr != nil {
+			a.Logger.Error().
+				Str("event", "preflight_failed_no_valid_ts").
+				Str("session_id", sessionID).
+				Str("service_ref", serviceRef).
+				Str("resolved_url", resolvedLogURL).
+				Str("preflight_reason", "fallback_url_invalid").
+				Msg("preflight failed and fallback url was invalid")
+			return "", &ports.PreflightError{Reason: "fallback_url_invalid"}
+		}
+		fallbackURL = a.injectCredentialsIfAllowed(fallbackURL)
+		fallbackLogURL := sanitizeURLForLog(fallbackURL)
+		a.Logger.Warn().
+			Str("event", "fallback_to_8001_activated").
+			Str("session_id", sessionID).
+			Str("service_ref", serviceRef).
+			Str("resolved_url", resolvedLogURL).
+			Str("fallback_url", fallbackLogURL).
+			Msg("fallback to 8001 activated after streamrelay preflight failure")
+
+		fallbackResult, fallbackErr := preflight(ctx, fallbackURL)
+		fallbackReason := preflightReason(fallbackResult, fallbackErr)
+		if fallbackErr == nil && fallbackResult.ok {
+			return fallbackURL, nil
+		}
+
+		a.Logger.Error().
+			Str("event", "preflight_failed_no_valid_ts").
+			Str("session_id", sessionID).
+			Str("service_ref", serviceRef).
+			Str("resolved_url", resolvedLogURL).
+			Str("fallback_url", fallbackLogURL).
+			Int("preflight_bytes", fallbackResult.bytes).
+			Str("preflight_reason", fallbackReason).
+			Msg("preflight failed for fallback stream url")
+		return "", &ports.PreflightError{Reason: "fallback_failed_" + fallbackReason}
+	}
+
+	a.Logger.Error().
+		Str("event", "preflight_failed_no_valid_ts").
+		Str("session_id", sessionID).
+		Str("service_ref", serviceRef).
+		Str("resolved_url", resolvedLogURL).
+		Int("preflight_bytes", result.bytes).
+		Str("preflight_reason", reason).
+		Msg("preflight failed for resolved stream url")
+	return "", &ports.PreflightError{Reason: reason}
+}
+
+func (a *LocalAdapter) preflightTS(ctx context.Context, rawURL string) (preflightResult, error) {
+	result := preflightResult{}
+	if strings.TrimSpace(rawURL) == "" {
+		result.reason = "empty_url"
+		return result, fmt.Errorf("preflight url empty")
+	}
+
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		result.reason = "invalid_url"
+		return result, err
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, preflightTimeout)
+	defer cancel()
+
+	reqURL := *parsed
+	user := reqURL.User
+	reqURL.User = nil
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL.String(), nil)
+	if err != nil {
+		result.reason = "request_build_failed"
+		return result, err
+	}
+	if user != nil {
+		username := user.Username()
+		password, _ := user.Password()
+		if username != "" || password != "" {
+			req.SetBasicAuth(username, password)
+		}
+	}
+
+	client := a.httpClient
+	if client == nil {
+		client = &http.Client{Timeout: preflightTimeout}
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		result.reason = "request_failed"
+		return result, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		result.reason = fmt.Sprintf("http_status_%d", resp.StatusCode)
+		return result, fmt.Errorf("preflight http status %d", resp.StatusCode)
+	}
+
+	buf := make([]byte, preflightMinBytes)
+	n, err := io.ReadAtLeast(resp.Body, buf, preflightMinBytes)
+	result.bytes = n
+	if err != nil {
+		result.reason = "short_read"
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			result.reason = "timeout"
+		}
+		return result, err
+	}
+
+	if !hasTSSync(buf) {
+		result.reason = "sync_miss"
+		return result, fmt.Errorf("preflight ts sync missing")
+	}
+
+	result.ok = true
+	return result, nil
+}
+
+func preflightReason(result preflightResult, err error) string {
+	if result.reason != "" {
+		return result.reason
+	}
+	if err != nil {
+		return "request_failed"
+	}
+	return "unknown"
+}
+
+func hasTSSync(buf []byte) bool {
+	if len(buf) < preflightMinBytes {
+		return false
+	}
+	return buf[0] == 0x47 && buf[188] == 0x47 && buf[376] == 0x47
+}
+
+func buildFallbackURL(resolvedURL, serviceRef string) (string, error) {
+	u, err := url.Parse(resolvedURL)
+	if err != nil {
+		return "", err
+	}
+	host := u.Hostname()
+	if host == "" {
+		return "", fmt.Errorf("missing host in resolved url")
+	}
+	scheme := u.Scheme
+	if scheme == "" {
+		scheme = "http"
+	}
+	u.Scheme = scheme
+	u.Host = fmt.Sprintf("%s:%d", host, 8001)
+	u.Path = "/" + serviceRef
+	u.RawQuery = ""
+	u.Fragment = ""
+	u.User = nil
+	return u.String(), nil
+}
+
+func isStreamRelayURL(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	port := u.Port()
+	if port == "" {
+		port = defaultPortForScheme(u.Scheme)
+	}
+	return port == "17999"
+}
+
+func defaultPortForScheme(scheme string) string {
+	if strings.EqualFold(scheme, "https") {
+		return "443"
+	}
+	return "80"
+}
+
+func sanitizeURLForLog(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	u.User = nil
+	return u.String()
+}
+
+func (a *LocalAdapter) injectCredentialsIfAllowed(streamURL string) string {
+	if a.E2 == nil {
+		return streamURL
+	}
+	if a.E2.Username == "" && a.E2.Password == "" {
+		return streamURL
+	}
+
+	u, err := url.Parse(streamURL)
+	if err != nil {
+		return streamURL
+	}
+
+	port := u.Port()
+	if port == "" {
+		port = defaultPortForScheme(u.Scheme)
+	}
+
+	if port == "80" || port == "443" || port == "8001" || port == "8002" {
+		if a.E2.Username != "" {
+			u.User = url.UserPassword(a.E2.Username, a.E2.Password)
+		}
+		return u.String()
+	}
+
+	return streamURL
+}
+
+func (a *LocalAdapter) buildArgs(spec ports.StreamSpec, inputURL string) ([]string, error) {
 	var args []string
+	fflags := "+genpts+discardcorrupt+flush_packets"
+	baseInputArgs := []string{
+		"-err_detect", "ignore_err+crccheck",
+		"-max_error_rate", "1.0",
+		"-ignore_unknown",
+	}
+	if spec.Source.Type != ports.SourceFile {
+		// Stream Relay (/web) often has broken DTS/PTS; use wallclock + resync for stable HLS.
+		// NOTE: Removed +nobuffer to prevent "Standbild" (frozen video) on start.
+		if !strings.Contains(fflags, "igndts") {
+			fflags += "+igndts"
+		}
+		baseInputArgs = append(baseInputArgs,
+			"-use_wallclock_as_timestamps", "1",
+			"-flags2", "+showall+export_mvs",
+			// OpenWebIF compatibility: VLC User-Agent + Icy-MetaData
+			"-user_agent", "VLC/3.0.21 LibVLC/3.0.21",
+			"-headers", "Icy-MetaData: 1\r\n",
+		)
+	}
+	baseInputArgs = append([]string{"-fflags", fflags}, baseInputArgs...)
+	if a.AnalyzeDuration != "" {
+		baseInputArgs = append(baseInputArgs, "-analyzeduration", a.AnalyzeDuration)
+	}
+	if a.ProbeSize != "" {
+		baseInputArgs = append(baseInputArgs, "-probesize", a.ProbeSize)
+	}
+	netInputArgs := append([]string{}, baseInputArgs...)
+	netInputArgs = append(netInputArgs,
+		"-reconnect", "1",
+		"-reconnect_at_eof", "1",
+		"-reconnect_streamed", "1",
+		"-reconnect_delay_max", "2",
+	)
 
 	// Input
 	switch spec.Source.Type {
 	case ports.SourceTuner:
-		args = append(args, "-i", spec.Source.ID)
+		if inputURL == "" {
+			return nil, fmt.Errorf("missing stream url for tuner source")
+		}
+		args = append(args, netInputArgs...)
+		args = append(args, "-i", inputURL)
 	case ports.SourceURL:
-		args = append(args, "-i", spec.Source.ID)
+		if inputURL == "" {
+			inputURL = spec.Source.ID
+		}
+		args = append(args, netInputArgs...)
+		args = append(args, "-i", inputURL)
 	case ports.SourceFile:
+		args = append(args, baseInputArgs...)
 		args = append(args, "-re", "-i", spec.Source.ID)
 	default:
 		return nil, fmt.Errorf("unsupported source type: %s", spec.Source.Type)
 	}
 
 	if spec.Mode == ports.ModeLive {
-		args = append(args, "-c:v", "libx264", "-f", "hls")
-		outputPath := filepath.Join(a.HLSRoot, spec.SessionID, "stream.m3u8")
+		const segmentDurationSec = 6
+		listSize := 10
+		if a.DVRWindow > 0 {
+			listSize = int(math.Ceil(a.DVRWindow.Seconds() / float64(segmentDurationSec)))
+			if listSize < 10 {
+				listSize = 10
+			}
+		}
+
+		// Use libx264 for video with fast preset for live streaming
+		// Use -sn to disable subtitles/teletext, as they often cause "Invalid data" errors
+		// during transcoding (mapped to WebVTT by default) with Stream Relay sources.
+		args = append(args,
+			"-map", "0:v:0",
+			"-map", "0:a:0?",
+			"-c:v", "libx264",
+			"-preset", "veryfast", // Fast encoding for live streams
+			"-tune", "zerolatency", // Minimize buffering
+			"-g", "30", // Force keyframe every 30 frames (~1s at 30fps)
+			"-sc_threshold", "0",
+			"-force_key_frames", "expr:gte(t,n_forced*6)",
+			"-pix_fmt", "yuv420p",
+			"-profile:v", "main",
+			"-c:a", "aac",
+			"-b:a", "160k",
+			"-ac", "2",
+			"-ar", "48000",
+			"-sn",
+			"-f", "hls",
+		)
+
+		// HLS segment configuration (Best Practice 2026)
+		// - hls_time: 6s segments (industry standard for live streaming)
+		// - hls_list_size: DVR window in segments (default 10)
+		// - hls_flags: delete old segments + append list + independent segments + program date time
+		// - hls_segment_type: mpegts for compatibility
+		args = append(args,
+			"-hls_time", "6",
+			"-hls_list_size", strconv.Itoa(listSize),
+			"-hls_flags", "delete_segments+append_list+independent_segments+program_date_time",
+			"-hls_segment_type", "mpegts",
+			"-hls_segment_filename", filepath.Join(a.HLSRoot, "sessions", spec.SessionID, "seg_%06d.ts"),
+		)
+
+		outputPath := filepath.Join(a.HLSRoot, "sessions", spec.SessionID, "index.m3u8")
 		_ = os.MkdirAll(filepath.Dir(outputPath), 0755) // #nosec G301
 		args = append(args, outputPath)
 	}

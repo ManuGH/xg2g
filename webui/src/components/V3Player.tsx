@@ -391,7 +391,7 @@ function V3Player(props: V3PlayerProps) {
     }
   }, []);
 
-  const waitForSessionReady = useCallback(async (sid: string, maxAttempts = 120): Promise<V3SessionStatusResponse> => {
+  const waitForSessionReady = useCallback(async (sid: string, maxAttempts = 180): Promise<V3SessionStatusResponse> => {
     for (let i = 0; i < maxAttempts; i++) {
       try {
         const res = await fetch(`${apiBase}/sessions/${sid}`, {

@@ -67,7 +67,10 @@ func Validate(cfg AppConfig) error {
 	}
 
 	// Stream port
-	v.Port("Enigma2.StreamPort", cfg.Enigma2.StreamPort)
+	// Stream port (0 = allowed, means use /web mechanism)
+	if cfg.Enigma2.StreamPort != 0 {
+		v.Port("Enigma2.StreamPort", cfg.Enigma2.StreamPort)
+	}
 
 	// Data directory
 	v.Directory("DataDir", cfg.DataDir, false)

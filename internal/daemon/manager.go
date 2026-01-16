@@ -302,7 +302,7 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 		StopConcurrency:     10,              // Bounded Stop concurrency
 		Sweeper: worker.SweeperConfig{
 			IdleTimeout:      cfg.Engine.IdleTimeout,
-			Interval:         5 * time.Minute, // Explicit default
+			Interval:         1 * time.Minute, // Explicit default
 			SessionRetention: 24 * time.Hour,  // Explicit default
 		},
 	}
@@ -323,10 +323,21 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 		StreamPort:            cfg.Enigma2.StreamPort,
 	}
 	e2Client := enigma2.NewClientWithOptions(cfg.Enigma2.BaseURL, e2Opts)
+
 	if cfg.Engine.Mode == "virtual" {
 		orch.Pipeline = stub.NewAdapter()
 	} else {
-		orch.Pipeline = ffmpeg.NewLocalAdapter(cfg.FFmpeg.Bin, cfg.HLS.Root, e2Client, m.logger)
+		orch.Pipeline = ffmpeg.NewLocalAdapter(
+			cfg.FFmpeg.Bin,
+			cfg.HLS.Root,
+			e2Client,
+			m.logger,
+			cfg.Enigma2.AnalyzeDuration,
+			cfg.Enigma2.ProbeSize,
+			cfg.HLS.DVRWindow,
+			cfg.FFmpeg.KillTimeout,
+			cfg.Enigma2.FallbackTo8001,
+		)
 	}
 
 	// 4. Inject into API Server (Shadow Receiving)

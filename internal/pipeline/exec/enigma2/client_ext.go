@@ -12,6 +12,49 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+func normalizeStreamURL(rawURL, sref string) string {
+	if rawURL == "" || sref == "" {
+		return rawURL
+	}
+	upperRef := strings.ToUpper(sref)
+	if strings.Contains(strings.ToUpper(rawURL), upperRef) {
+		return rawURL
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	if u.Path == "" || u.Path == "/" {
+		u.Path = "/" + upperRef
+		return u.String()
+	}
+	if strings.HasSuffix(rawURL, "/") {
+		return rawURL + upperRef
+	}
+	return rawURL
+}
+
+func resolveStreamLine(baseURL, line, sref string) (string, bool) {
+	if line == "" {
+		return "", false
+	}
+	if strings.HasPrefix(line, "http://") || strings.HasPrefix(line, "https://") {
+		return normalizeStreamURL(line, sref), true
+	}
+	if strings.HasPrefix(line, "/") {
+		base, err := url.Parse(baseURL)
+		if err != nil {
+			return "", false
+		}
+		rel, err := url.Parse(line)
+		if err != nil {
+			return "", false
+		}
+		return normalizeStreamURL(base.ResolveReference(rel).String(), sref), true
+	}
+	return "", false
+}
+
 func (c *Client) ResolveStreamURL(ctx context.Context, sref string) (string, error) {
 	// Bypass if sRef is already a direct URL (HTTP/HTTPS) as used by recordings
 	if _, ok := net.ParseDirectHTTPURL(sref); ok {
@@ -19,25 +62,25 @@ func (c *Client) ResolveStreamURL(ctx context.Context, sref string) (string, err
 	}
 
 	// Debug logging to verify streamPort configuration
-	log.Info().Int("streamPort", c.streamPort).Str("baseURL", c.BaseURL).Msg("ResolveStreamURL called")
+	log.Info().Int("streamPort", c.StreamPort).Str("baseURL", c.BaseURL).Msg("ResolveStreamURL called")
 
 	// If explicitly configured to use WebIF streams, always use /web/stream.m3u.
 	// This lets the receiver decide the correct stream URL (and often fixes metadata/SPS/PPS issues).
-	if c.useWebIFStreams {
+	if c.UseWebIFStreams {
 		log.Info().Msg("useWebIFStreams enabled, using /web/stream.m3u")
 		goto webStream
 	}
 
 	// If streamPort is configured, build direct URL instead of querying /web/stream.m3u
 	// This bypasses OSCam-emu relay issues and ensures predictable stream source
-	if c.streamPort > 0 {
+	if c.StreamPort > 0 {
 		u, err := url.Parse(c.BaseURL)
 		if err != nil {
 			return "", fmt.Errorf("invalid base URL: %w", err)
 		}
 
 		// Build direct stream URL: http://host:port/SREF
-		u.Host = fmt.Sprintf("%s:%d", u.Hostname(), c.streamPort)
+		u.Host = fmt.Sprintf("%s:%d", u.Hostname(), c.StreamPort)
 		u.Path = "/" + strings.ToUpper(sref)
 
 		directURL := u.String()
@@ -77,18 +120,8 @@ webStream:
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		if strings.HasPrefix(line, "http") {
-			// CRITICAL FIX: Some receivers (or specific port configurations like 17999) return just the root URL
-			// (e.g. http://ip:17999/) without the sRef path.
-			// If the URL ends in slash and appears to be a root, we append the sRef to form a valid request.
-			if strings.HasSuffix(line, "/") {
-				// Naive check: does it look like it's missing the sRef?
-				// If the sRef isn't in the URL, append it.
-				if !strings.Contains(line, sref) {
-					return line + strings.ToUpper(sref), nil
-				}
-			}
-			return line, nil
+		if resolved, ok := resolveStreamLine(c.BaseURL, line, sref); ok {
+			return resolved, nil
 		}
 	}
 

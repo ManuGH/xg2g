@@ -174,14 +174,6 @@ func main() {
 		}
 	}
 
-	// Legacy: Determine XMLTV path if EPG is enabled and no explicit path is set
-	if cfg.EPGEnabled && cfg.XMLTVPath == "" {
-		cfg.XMLTVPath = "xmltv.xml"
-		logger.Info().
-			Str("xmltv_path", cfg.XMLTVPath).
-			Msg("EPG enabled but no XMLTV path set, using default")
-	}
-
 	// -------------------------------------------------------------------------
 	// Pre-flight Checks (Fail Fast)
 	// -------------------------------------------------------------------------

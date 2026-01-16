@@ -84,14 +84,15 @@ func buildRegistry() *Registry {
 		{Path: "enigma2.retries", Env: "XG2G_OWI_RETRIES", FieldPath: "Enigma2.Retries", Profile: ProfileAdvanced, Status: StatusActive, Default: 2},
 		{Path: "enigma2.backoff", Env: "XG2G_OWI_BACKOFF_MS", FieldPath: "Enigma2.Backoff", Profile: ProfileAdvanced, Status: StatusActive, Default: 200 * time.Millisecond},
 		{Path: "enigma2.maxBackoff", Env: "XG2G_OWI_MAX_BACKOFF_MS", FieldPath: "Enigma2.MaxBackoff", Profile: ProfileAdvanced, Status: StatusActive, Default: 30 * time.Second},
-		{Path: "enigma2.streamPort", Env: "XG2G_STREAM_PORT", FieldPath: "Enigma2.StreamPort", Profile: ProfileAdvanced, Status: StatusDeprecated, Default: 8001},
+		{Path: "enigma2.streamPort", Env: "XG2G_STREAM_PORT", FieldPath: "Enigma2.StreamPort", Profile: ProfileAdvanced, Status: StatusDeprecated, Default: 0},
 		{Path: "enigma2.useWebIFStreams", Env: "XG2G_USE_WEBIF_STREAMS", FieldPath: "Enigma2.UseWebIFStreams", Profile: ProfileAdvanced, Status: StatusActive, Default: true},
+		{Path: "enigma2.fallbackTo8001", Env: "XG2G_E2_FALLBACK_TO_8001", FieldPath: "Enigma2.FallbackTo8001", Profile: ProfileIntegrator, Status: StatusActive, Default: false},
 		{Path: "enigma2.authMode", Env: "", FieldPath: "Enigma2.AuthMode", Profile: ProfileAdvanced, Status: StatusActive, Default: "inherit"},
 		{Path: "enigma2.rateLimit", Env: "", FieldPath: "Enigma2.RateLimit", Profile: ProfileAdvanced, Status: StatusActive},
 		{Path: "enigma2.rateBurst", Env: "", FieldPath: "Enigma2.RateBurst", Profile: ProfileAdvanced, Status: StatusActive},
 		{Path: "enigma2.userAgent", Env: "", FieldPath: "Enigma2.UserAgent", Profile: ProfileAdvanced, Status: StatusActive},
-		{Path: "enigma2.analyzeDuration", Env: "", FieldPath: "Enigma2.AnalyzeDuration", Profile: ProfileAdvanced, Status: StatusActive, Default: "2s"},
-		{Path: "enigma2.probeSize", Env: "", FieldPath: "Enigma2.ProbeSize", Profile: ProfileAdvanced, Status: StatusActive, Default: "10M"},
+		{Path: "enigma2.analyzeDuration", Env: "", FieldPath: "Enigma2.AnalyzeDuration", Profile: ProfileAdvanced, Status: StatusActive, Default: "10000000"},
+		{Path: "enigma2.probeSize", Env: "", FieldPath: "Enigma2.ProbeSize", Profile: ProfileAdvanced, Status: StatusActive, Default: "32M"},
 
 		// --- API ---
 		{Path: "api.listenAddr", Env: "XG2G_LISTEN", FieldPath: "APIListenAddr", Profile: ProfileSimple, Status: StatusActive, Default: ":8088"},
@@ -107,14 +108,14 @@ func buildRegistry() *Registry {
 		{Path: "epg.timeoutMs", Env: "XG2G_EPG_TIMEOUT_MS", FieldPath: "EPGTimeoutMS", Profile: ProfileAdvanced, Status: StatusActive, Default: 5000},
 		{Path: "epg.retries", Env: "XG2G_EPG_RETRIES", FieldPath: "EPGRetries", Profile: ProfileAdvanced, Status: StatusActive, Default: 2},
 		{Path: "epg.source", Env: "XG2G_EPG_SOURCE", FieldPath: "EPGSource", Profile: ProfileAdvanced, Status: StatusActive, Default: "per-service"},
-		{Path: "epg.xmltvPath", Env: "XG2G_XMLTV", FieldPath: "XMLTVPath", Profile: ProfileAdvanced, Status: StatusActive},
+		{Path: "epg.xmltvPath", Env: "XG2G_XMLTV", FieldPath: "XMLTVPath", Profile: ProfileAdvanced, Status: StatusActive, Default: "xmltv.xml"},
 		{Path: "epg.fuzzyMax", Env: "XG2G_FUZZY_MAX", FieldPath: "FuzzyMax", Profile: ProfileAdvanced, Status: StatusActive, Default: 2},
 		{FieldPath: "EPGRefreshInterval", Profile: ProfileInternal, Status: StatusInternal, Default: 6 * time.Hour},
 
 		// --- ENGINE ---
 		{Path: "engine.enabled", Env: "XG2G_ENGINE_ENABLED", FieldPath: "Engine.Enabled", Profile: ProfileAdvanced, Status: StatusActive, Default: false}, // Fix A: Secure by default
 		{Path: "engine.mode", Env: "XG2G_ENGINE_MODE", FieldPath: "Engine.Mode", Profile: ProfileAdvanced, Status: StatusActive, Default: "standard"},
-		{Path: "engine.idleTimeout", Env: "XG2G_ENGINE_IDLE_TIMEOUT", FieldPath: "Engine.IdleTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 30 * time.Minute},
+		{Path: "engine.idleTimeout", Env: "XG2G_ENGINE_IDLE_TIMEOUT", FieldPath: "Engine.IdleTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 1 * time.Minute},
 		{Path: "engine.tunerSlots", Env: "XG2G_TUNER_SLOTS", FieldPath: "Engine.TunerSlots", Profile: ProfileAdvanced, Status: StatusActive},
 
 		// --- STORE ---
@@ -126,7 +127,7 @@ func buildRegistry() *Registry {
 		{Path: "hls.dvrWindow", Env: "XG2G_HLS_DVR_WINDOW", FieldPath: "HLS.DVRWindow", Profile: ProfileAdvanced, Status: StatusActive, Default: 45 * time.Minute}, // Fix B key
 
 		// --- FFMPEG ---
-		{Path: "ffmpeg.bin", Env: "XG2G_FFMPEG_BIN", FieldPath: "FFmpeg.Bin", Profile: ProfileAdvanced, Status: StatusActive},
+		{Path: "ffmpeg.bin", Env: "XG2G_FFMPEG_BIN", FieldPath: "FFmpeg.Bin", Profile: ProfileAdvanced, Status: StatusActive, Default: "ffmpeg"},
 		{Path: "ffmpeg.killTimeout", Env: "", FieldPath: "FFmpeg.KillTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 5 * time.Second},
 
 		// --- TLS ---
@@ -168,7 +169,7 @@ func buildRegistry() *Registry {
 
 		// --- VOD ---
 		{Path: "vod.probeSize", Env: "", FieldPath: "VODProbeSize", Profile: ProfileAdvanced, Status: StatusActive, Default: "50M"},
-		{Path: "vod.analyzeDuration", Env: "", FieldPath: "VODAnalyzeDuration", Profile: ProfileAdvanced, Status: StatusActive, Default: "50M"},
+		{Path: "vod.analyzeDuration", Env: "", FieldPath: "VODAnalyzeDuration", Profile: ProfileAdvanced, Status: StatusActive, Default: "50000000"},
 		{Path: "vod.stallTimeout", Env: "", FieldPath: "VODStallTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 60 * time.Second},
 		{Path: "vod.maxConcurrent", Env: "", FieldPath: "VODMaxConcurrent", Profile: ProfileAdvanced, Status: StatusActive, Default: 2},
 		{Path: "vod.cacheTTL", Env: "", FieldPath: "VODCacheTTL", Profile: ProfileAdvanced, Status: StatusActive, Default: 24 * time.Hour},

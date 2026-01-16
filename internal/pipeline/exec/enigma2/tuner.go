@@ -42,8 +42,28 @@ func (t *Tuner) Tune(ctx context.Context, serviceRef string) error {
 	logger := log.L().With().Int("slot", t.Slot).Str("ref", serviceRef).Logger()
 	logger.Debug().Msg("initiating zap")
 
-	if t.Client != nil && t.Client.useWebIFStreams {
-		logger.Info().Msg("skipping zap for WebIF stream")
+	// CRITICAL FIX: Always force Zap, even if useWebIFStreams is true.
+	// Stream Relay (Port 17999) REQUIRES the receiver to be tuned to the service to decrypt/relay.
+	// Relying on "implicit tuning via stream URL" works for 8001 but fails for 17999.
+	// The overhead of an extra Zap is negligible compared to the stability gain.
+	// if t.Client != nil && t.Client.useWebIFStreams {
+	// 	logger.Info().Msg("skipping zap for WebIF stream")
+	// 	return nil
+	// }
+
+	// Skip Zap if UseWebIFStreams is enabled.
+	// Rationale: calling /web/stream.m3u implies that OpenWebIF handles zapping and port selection internally.
+	// Manual Zap from xg2g interferes with this logic or causes unnecessary main-tuner switches.
+	if t.Client != nil && t.Client.UseWebIFStreams {
+		logger.Info().Msg("skipping explicit zap for WebIF stream (OpenWebIF manages zap/port)")
+		return nil
+	}
+
+	// Skip Zap if StreamPort is configured (direct port access like 8001).
+	// Port 8001 provides direct streams without requiring tuner zap.
+	// This allows parallel usage: HDMI-TV stays on current channel, xg2g streams independently.
+	if t.Client != nil && t.Client.StreamPort > 0 {
+		logger.Info().Int("streamPort", t.Client.StreamPort).Msg("skipping zap for direct port access")
 		return nil
 	}
 
@@ -63,7 +83,11 @@ func (t *Tuner) Tune(ctx context.Context, serviceRef string) error {
 		return fmt.Errorf("tuner readiness failed: %w", err)
 	}
 
-	logger.Info().Msg("tuner locked and ready")
+	// Softcam/StreamRelay usually requires a moment to stabilize decryption after tuner lock.
+	// This prevents FFmpeg from reading initial scrambled/garbage packets.
+	time.Sleep(2000 * time.Millisecond)
+
+	logger.Info().Msg("tuner locked and ready (settled)")
 	return nil
 }
 

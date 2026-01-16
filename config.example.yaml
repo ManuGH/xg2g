@@ -49,7 +49,8 @@ openWebIF:
 # ------------------------------------------------------------------------------
 # Enigma2 (v3 Worker) Client Configuration [OPTIONAL]
 # ------------------------------------------------------------------------------
-# enigma2:
+enigma2:
+  # fallbackTo8001: false
   # Base URL for v3 worker (defaults to openWebIF.baseUrl if empty)
   # baseUrl: "http://127.0.0.1"
 

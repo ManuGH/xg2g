@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -262,6 +263,14 @@ func (o *Orchestrator) startPipeline(
 
 	handle, err := o.Pipeline.Start(hbCtx, spec)
 	if err != nil {
+		if errors.Is(err, ports.ErrNoValidTS) {
+			detail := "preflight failed no valid ts"
+			var pErr *ports.PreflightError
+			if errors.As(err, &pErr) && pErr.Reason != "" {
+				detail = "preflight failed no valid ts: " + pErr.Reason
+			}
+			return "", newReasonError(model.RPipelineStartFailed, detail, err)
+		}
 		return "", newReasonError(model.RPipelineStartFailed, "pipeline start failed", err)
 	}
 
@@ -281,7 +290,7 @@ func (o *Orchestrator) waitForReady(
 	logger zerolog.Logger,
 	ttfpRecorded *bool,
 ) (ready bool, reason model.ReasonCode, detail string) {
-	playlistReadyTimeout := 45 * time.Second
+	playlistReadyTimeout := 60 * time.Second
 	if repairAttempted {
 		playlistReadyTimeout = 20 * time.Second
 	}
@@ -326,12 +335,10 @@ func (o *Orchestrator) waitForReady(
 }
 
 func (o *Orchestrator) waitForProcessExit(ctx context.Context, handle ports.RunHandle) error {
-	// Polling Wait Loop with max timeout and exponential backoff
-	const maxWait = 60 * time.Second
+	// Polling wait loop with exponential backoff (no max timeout for live sessions).
 	const initialInterval = 500 * time.Millisecond
 	const maxInterval = 5 * time.Second
 
-	deadline := time.Now().Add(maxWait)
 	interval := initialInterval
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -341,10 +348,6 @@ func (o *Orchestrator) waitForProcessExit(ctx context.Context, handle ports.RunH
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			if time.Now().After(deadline) {
-				return fmt.Errorf("timed out waiting for process exit after %v", maxWait)
-			}
-
 			status := o.Pipeline.Health(ctx, handle)
 			if !status.Healthy {
 				// Process exited
@@ -362,6 +365,40 @@ func (o *Orchestrator) waitForProcessExit(ctx context.Context, handle ports.RunH
 }
 
 func (o *Orchestrator) checkPlaylistReady(
+	playlistPath string,
+	vodMode bool,
+	ttfpRecorded *bool,
+	profileID string,
+	startTime time.Time,
+) (bool, error) {
+	ready, err := o.checkPlaylistReadyAt(playlistPath, vodMode, ttfpRecorded, profileID, startTime)
+	if ready {
+		return true, nil
+	}
+
+	legacyPlaylistPath := ""
+	if filepath.Base(playlistPath) == "index.m3u8" {
+		sessionDir := filepath.Dir(playlistPath)
+		sessionsDir := filepath.Dir(sessionDir)
+		if filepath.Base(sessionsDir) == "sessions" {
+			legacyPlaylistPath = filepath.Join(filepath.Dir(sessionsDir), filepath.Base(sessionDir), "stream.m3u8")
+		}
+	}
+	if legacyPlaylistPath == "" {
+		return false, err
+	}
+
+	legacyReady, legacyErr := o.checkPlaylistReadyAt(legacyPlaylistPath, vodMode, ttfpRecorded, profileID, startTime)
+	if legacyReady {
+		return true, nil
+	}
+	if err == nil {
+		err = legacyErr
+	}
+	return false, err
+}
+
+func (o *Orchestrator) checkPlaylistReadyAt(
 	playlistPath string,
 	vodMode bool,
 	ttfpRecorded *bool,
