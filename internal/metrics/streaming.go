@@ -89,7 +89,23 @@ var (
 		Name: "xg2g_enigma2_invariant_violation_total",
 		Help: "Critical invariant violations (expected_ref != actual_ref at stream start)",
 	})
+
+	// PreflightLatency tracks the duration of the TS preflight check.
+	PreflightLatency = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "xg2g_preflight_latency_seconds",
+		Help:    "Duration of TS preflight check",
+		Buckets: []float64{0.1, 0.25, 0.5, 0.75, 1, 1.5, 2, 5},
+	}, []string{"port_type"})
 )
+
+// ObservePreflightLatency records the preflight latency.
+func ObservePreflightLatency(port int, duration time.Duration) {
+	portType := "direct"
+	if port == 17999 {
+		portType = "relay"
+	}
+	PreflightLatency.WithLabelValues(portType).Observe(duration.Seconds())
+}
 
 // ObserveStreamTuneDuration records the tune duration.
 func ObserveStreamTuneDuration(encrypted bool, duration time.Duration) {

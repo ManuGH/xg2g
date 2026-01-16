@@ -93,7 +93,7 @@ func buildRegistry() *Registry {
 		{Path: "enigma2.userAgent", Env: "", FieldPath: "Enigma2.UserAgent", Profile: ProfileAdvanced, Status: StatusActive},
 		{Path: "enigma2.analyzeDuration", Env: "", FieldPath: "Enigma2.AnalyzeDuration", Profile: ProfileAdvanced, Status: StatusActive, Default: "10000000"},
 		{Path: "enigma2.probeSize", Env: "", FieldPath: "Enigma2.ProbeSize", Profile: ProfileAdvanced, Status: StatusActive, Default: "32M"},
-
+		{Path: "enigma2.preflightTimeout", Env: "XG2G_E2_PREFLIGHT_TIMEOUT", FieldPath: "Enigma2.PreflightTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 2 * time.Second},
 		// --- API ---
 		{Path: "api.listenAddr", Env: "XG2G_LISTEN", FieldPath: "APIListenAddr", Profile: ProfileSimple, Status: StatusActive, Default: ":8088"},
 		{Path: "api.token", Env: "XG2G_API_TOKEN", FieldPath: "APIToken", Profile: ProfileSimple, Status: StatusActive},

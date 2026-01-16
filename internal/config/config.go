@@ -82,7 +82,8 @@ type Enigma2Config struct {
 	AnalyzeDuration string `yaml:"analyzeDuration,omitempty"` // e.g. "10s", default: "2s"
 	ProbeSize       string `yaml:"probeSize,omitempty"`       // e.g. "10M", default: "10M"
 	// Fallback to direct 8001 when StreamRelay (17999) fails preflight.
-	FallbackTo8001 *bool `yaml:"fallbackTo8001,omitempty"`
+	FallbackTo8001   *bool  `yaml:"fallbackTo8001,omitempty"`
+	PreflightTimeout string `yaml:"preflightTimeout,omitempty"` // e.g. "2s", default: "2s"
 }
 
 // EPGConfig holds EPG configuration
@@ -327,6 +328,7 @@ type Enigma2Settings struct {
 	StreamPort            int
 	UseWebIFStreams       bool
 	FallbackTo8001        bool
+	PreflightTimeout      time.Duration
 }
 
 // Loader handles configuration loading with precedence

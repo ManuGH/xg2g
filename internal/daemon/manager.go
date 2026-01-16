@@ -337,6 +337,7 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 			cfg.HLS.DVRWindow,
 			cfg.FFmpeg.KillTimeout,
 			cfg.Enigma2.FallbackTo8001,
+			cfg.Enigma2.PreflightTimeout,
 		)
 	}
 

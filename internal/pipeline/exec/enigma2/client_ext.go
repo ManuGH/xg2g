@@ -121,6 +121,7 @@ webStream:
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if resolved, ok := resolveStreamLine(c.BaseURL, line, sref); ok {
+			log.Info().Str("resolved_url", resolved).Str("sref", sref).Msg("Stream URL resolved")
 			return resolved, nil
 		}
 	}
