@@ -11,12 +11,12 @@ jobs:
     name: Full Quality Gates (Single Source of Truth)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4 # Latest stable v4
+      - uses: actions/checkout@v6 # Latest stable v4
         with:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v5 # Latest stable v5
+        uses: actions/setup-go@v6 # Latest stable v5
         with:
           go-version-file: "go.mod"
 
