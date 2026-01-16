@@ -600,14 +600,15 @@ func (a *LocalAdapter) buildArgs(spec ports.StreamSpec, inputURL string) ([]stri
 			"-c:v", "libx264",
 			"-preset", "veryfast", // Fast encoding for live streams
 			"-tune", "zerolatency", // Minimize buffering
+			"-crf", "20", // High quality (lower is better, 18-23 is standard high quality)
 			"-g", "30", // Force keyframe every 30 frames (~1s at 30fps)
 			"-sc_threshold", "0",
 			"-force_key_frames", "expr:gte(t,n_forced*6)",
 			"-pix_fmt", "yuv420p",
 			"-profile:v", "main",
 			"-c:a", "aac",
-			"-b:a", "160k",
-			"-ac", "2",
+			"-b:a", "384k", // Match typical DVB AC3 bitrate
+			"-ac", "6", // Preserve 5.1 Surround (6 channels) if present
 			"-ar", "48000",
 			"-sn",
 			"-f", "hls",

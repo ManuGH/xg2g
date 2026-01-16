@@ -12,6 +12,14 @@ Preflight is a fast, deterministic gate performed before starting an FFmpeg tran
 2. **Sync Check**: It looks for 0x47 sync bytes at 188-byte intervals.
 3. **Fallback**: If a Stream Relay source (port 17999) fails, it can optionally fall back to port 8001 (standard Enigma2 stream). Default is **off**.
 
+## 2a. Configuration
+
+Configurable parameters to tune preflight behavior for different environments (e.g. slow ECM, remote WAN).
+
+| Config Key | Environment Variable | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `enigma2.preflightTimeout` | `XG2G_E2_PREFLIGHT_TIMEOUT` | `10s` | Maximum duration to wait for initial TS sync byte. Increase for slow/encrypted channels (StreamRelay). |
+
 ## 2. Preflight Reasons (Log Analysis)
 
 When preflight fails, look for the `preflight_reason` field in the logs:
