@@ -582,12 +582,12 @@ func (a *LocalAdapter) buildArgs(spec ports.StreamSpec, inputURL string) ([]stri
 	}
 
 	if spec.Mode == ports.ModeLive {
-		const segmentDurationSec = 6
+		const segmentDurationSec = 1 // Match actual hls_time setting
 		listSize := 10
 		if a.DVRWindow > 0 {
 			listSize = int(math.Ceil(a.DVRWindow.Seconds() / float64(segmentDurationSec)))
-			if listSize < 10 {
-				listSize = 10
+			if listSize < 3 {
+				listSize = 3 // Minimum for stable playback
 			}
 		}
 
