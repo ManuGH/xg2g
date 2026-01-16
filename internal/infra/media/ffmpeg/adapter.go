@@ -18,34 +18,36 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
+	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
 	"github.com/rs/zerolog"
 )
 
 const (
 	preflightMinBytes = 188 * 3
-	preflightTimeout  = 1 * time.Second
+	preflightTimeout  = 2 * time.Second
 )
 
 // LocalAdapter implements ports.MediaPipeline using local exec.Command.
 type LocalAdapter struct {
-	BinPath         string
-	HLSRoot         string
-	AnalyzeDuration string
-	ProbeSize       string
-	DVRWindow       time.Duration
-	KillTimeout     time.Duration
-	httpClient      *http.Client
-	Logger          zerolog.Logger
-	E2              *enigma2.Client // Dependency for Tuner operations
-	FallbackTo8001  bool
-	mu              sync.Mutex
+	BinPath          string
+	HLSRoot          string
+	AnalyzeDuration  string
+	ProbeSize        string
+	DVRWindow        time.Duration
+	KillTimeout      time.Duration
+	httpClient       *http.Client
+	Logger           zerolog.Logger
+	E2               *enigma2.Client // Dependency for Tuner operations
+	FallbackTo8001   bool
+	PreflightTimeout time.Duration
+	mu               sync.Mutex
 	// activeProcs maps run handles to running commands
 	activeProcs map[ports.RunHandle]*exec.Cmd
 }
 
 // NewLocalAdapter creates a new adapter instance.
-func NewLocalAdapter(binPath string, hlsRoot string, e2 *enigma2.Client, logger zerolog.Logger, analyzeDuration string, probeSize string, dvrWindow time.Duration, killTimeout time.Duration, fallbackTo8001 bool) *LocalAdapter {
+func NewLocalAdapter(binPath string, hlsRoot string, e2 *enigma2.Client, logger zerolog.Logger, analyzeDuration string, probeSize string, dvrWindow time.Duration, killTimeout time.Duration, fallbackTo8001 bool, preflightTimeout time.Duration) *LocalAdapter {
 	analyzeDuration = strings.TrimSpace(analyzeDuration)
 	probeSize = strings.TrimSpace(probeSize)
 	if analyzeDuration == "" {
@@ -72,17 +74,18 @@ func NewLocalAdapter(binPath string, hlsRoot string, e2 *enigma2.Client, logger 
 		},
 	}
 	return &LocalAdapter{
-		BinPath:         binPath,
-		HLSRoot:         hlsRoot,
-		AnalyzeDuration: analyzeDuration,
-		ProbeSize:       probeSize,
-		DVRWindow:       dvrWindow,
-		KillTimeout:     killTimeout,
-		httpClient:      httpClient,
-		E2:              e2,
-		Logger:          logger,
-		FallbackTo8001:  fallbackTo8001,
-		activeProcs:     make(map[ports.RunHandle]*exec.Cmd),
+		BinPath:          binPath,
+		HLSRoot:          hlsRoot,
+		AnalyzeDuration:  analyzeDuration,
+		ProbeSize:        probeSize,
+		DVRWindow:        dvrWindow,
+		KillTimeout:      killTimeout,
+		PreflightTimeout: preflightTimeout,
+		httpClient:       httpClient,
+		E2:               e2,
+		Logger:           logger,
+		FallbackTo8001:   fallbackTo8001,
+		activeProcs:      make(map[ports.RunHandle]*exec.Cmd),
 	}
 }
 
@@ -219,9 +222,12 @@ func (a *LocalAdapter) Health(ctx context.Context, handle ports.RunHandle) ports
 }
 
 type preflightResult struct {
-	ok     bool
-	bytes  int
-	reason string
+	ok           bool
+	bytes        int
+	reason       string
+	httpStatus   int
+	latencyMs    int64
+	resolvedPort int
 }
 
 type preflightFn func(context.Context, string) (preflightResult, error)
@@ -247,6 +253,9 @@ func (a *LocalAdapter) selectStreamURLWithPreflight(ctx context.Context, session
 			Str("resolved_url", resolvedLogURL).
 			Int("preflight_bytes", result.bytes).
 			Str("preflight_reason", reason).
+			Int64("preflight_latency_ms", result.latencyMs).
+			Int("http_status", result.httpStatus).
+			Int("resolved_port", result.resolvedPort).
 			Msg("streamrelay preflight failed")
 	}
 
@@ -258,7 +267,11 @@ func (a *LocalAdapter) selectStreamURLWithPreflight(ctx context.Context, session
 				Str("session_id", sessionID).
 				Str("service_ref", serviceRef).
 				Str("resolved_url", resolvedLogURL).
+				Int("preflight_bytes", result.bytes).
 				Str("preflight_reason", "fallback_url_invalid").
+				Int64("preflight_latency_ms", result.latencyMs).
+				Int("http_status", result.httpStatus).
+				Int("resolved_port", result.resolvedPort).
 				Msg("preflight failed and fallback url was invalid")
 			return "", &ports.PreflightError{Reason: "fallback_url_invalid"}
 		}
@@ -270,6 +283,11 @@ func (a *LocalAdapter) selectStreamURLWithPreflight(ctx context.Context, session
 			Str("service_ref", serviceRef).
 			Str("resolved_url", resolvedLogURL).
 			Str("fallback_url", fallbackLogURL).
+			Int("preflight_bytes", result.bytes).
+			Str("preflight_reason", reason).
+			Int64("preflight_latency_ms", result.latencyMs).
+			Int("http_status", result.httpStatus).
+			Int("resolved_port", result.resolvedPort).
 			Msg("fallback to 8001 activated after streamrelay preflight failure")
 
 		fallbackResult, fallbackErr := preflight(ctx, fallbackURL)
@@ -286,6 +304,9 @@ func (a *LocalAdapter) selectStreamURLWithPreflight(ctx context.Context, session
 			Str("fallback_url", fallbackLogURL).
 			Int("preflight_bytes", fallbackResult.bytes).
 			Str("preflight_reason", fallbackReason).
+			Int64("preflight_latency_ms", fallbackResult.latencyMs).
+			Int("http_status", fallbackResult.httpStatus).
+			Int("resolved_port", fallbackResult.resolvedPort).
 			Msg("preflight failed for fallback stream url")
 		return "", &ports.PreflightError{Reason: "fallback_failed_" + fallbackReason}
 	}
@@ -297,12 +318,21 @@ func (a *LocalAdapter) selectStreamURLWithPreflight(ctx context.Context, session
 		Str("resolved_url", resolvedLogURL).
 		Int("preflight_bytes", result.bytes).
 		Str("preflight_reason", reason).
+		Int64("preflight_latency_ms", result.latencyMs).
+		Int("http_status", result.httpStatus).
+		Int("resolved_port", result.resolvedPort).
 		Msg("preflight failed for resolved stream url")
 	return "", &ports.PreflightError{Reason: reason}
 }
 
-func (a *LocalAdapter) preflightTS(ctx context.Context, rawURL string) (preflightResult, error) {
-	result := preflightResult{}
+func (a *LocalAdapter) preflightTS(ctx context.Context, rawURL string) (result preflightResult, err error) {
+	start := time.Now()
+	defer func() {
+		latency := time.Since(start)
+		result.latencyMs = latency.Milliseconds()
+		metrics.ObservePreflightLatency(result.resolvedPort, latency)
+	}()
+
 	if strings.TrimSpace(rawURL) == "" {
 		result.reason = "empty_url"
 		return result, fmt.Errorf("preflight url empty")
@@ -314,7 +344,21 @@ func (a *LocalAdapter) preflightTS(ctx context.Context, rawURL string) (prefligh
 		return result, err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, preflightTimeout)
+	port := parsed.Port()
+	if port == "" {
+		port = defaultPortForScheme(parsed.Scheme)
+	}
+	if port != "" {
+		if portInt, portErr := strconv.Atoi(port); portErr == nil {
+			result.resolvedPort = portInt
+		}
+	}
+
+	timeout := a.PreflightTimeout
+	if timeout <= 0 {
+		timeout = preflightTimeout // fallback to legacy constant
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	reqURL := *parsed
@@ -345,6 +389,7 @@ func (a *LocalAdapter) preflightTS(ctx context.Context, rawURL string) (prefligh
 	}
 	defer func() { _ = resp.Body.Close() }()
 
+	result.httpStatus = resp.StatusCode
 	if resp.StatusCode != http.StatusOK {
 		result.reason = fmt.Sprintf("http_status_%d", resp.StatusCode)
 		return result, fmt.Errorf("preflight http status %d", resp.StatusCode)
@@ -353,6 +398,17 @@ func (a *LocalAdapter) preflightTS(ctx context.Context, rawURL string) (prefligh
 	buf := make([]byte, preflightMinBytes)
 	n, err := io.ReadAtLeast(resp.Body, buf, preflightMinBytes)
 	result.bytes = n
+
+	latency := time.Since(start)
+	a.Logger.Info().
+		Str("url", sanitizeURLForLog(rawURL)).
+		Int("bytes", n).
+		Dur("latency", latency).
+		Int64("preflight_latency_ms", latency.Milliseconds()).
+		Int("http_status", result.httpStatus).
+		Int("resolved_port", result.resolvedPort).
+		Msg("preflight read completed")
+
 	if err != nil {
 		result.reason = "short_read"
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
@@ -469,18 +525,18 @@ func (a *LocalAdapter) buildArgs(spec ports.StreamSpec, inputURL string) ([]stri
 	var args []string
 	fflags := "+genpts+discardcorrupt+flush_packets"
 	baseInputArgs := []string{
-		"-err_detect", "ignore_err+crccheck",
+		"-err_detect", "ignore_err",
 		"-max_error_rate", "1.0",
 		"-ignore_unknown",
 	}
 	if spec.Source.Type != ports.SourceFile {
-		// Stream Relay (/web) often has broken DTS/PTS; use wallclock + resync for stable HLS.
-		// NOTE: Removed +nobuffer to prevent "Standbild" (frozen video) on start.
+		// Stream Relay (/web) often has broken DTS/PTS; igndts + genpts will regenerate timestamps.
+		// avoid_negative_ts prevents negative timestamps in HLS output (common with DVB corruption).
 		if !strings.Contains(fflags, "igndts") {
 			fflags += "+igndts"
 		}
 		baseInputArgs = append(baseInputArgs,
-			"-use_wallclock_as_timestamps", "1",
+			"-avoid_negative_ts", "make_zero",
 			"-flags2", "+showall+export_mvs",
 			// OpenWebIF compatibility: VLC User-Agent + Icy-MetaData
 			"-user_agent", "VLC/3.0.21 LibVLC/3.0.21",
@@ -499,7 +555,9 @@ func (a *LocalAdapter) buildArgs(spec ports.StreamSpec, inputURL string) ([]stri
 		"-reconnect", "1",
 		"-reconnect_at_eof", "1",
 		"-reconnect_streamed", "1",
-		"-reconnect_delay_max", "2",
+		"-reconnect_delay_max", "5",
+		"-reconnect_on_network_error", "1",
+		"-reconnect_on_http_error", "4xx,5xx",
 	)
 
 	// Input
