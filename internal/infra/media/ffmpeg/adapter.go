@@ -620,7 +620,7 @@ func (a *LocalAdapter) buildArgs(spec ports.StreamSpec, inputURL string) ([]stri
 		// - hls_flags: delete old segments + append list + independent segments + program date time
 		// - hls_segment_type: mpegts for compatibility
 		args = append(args,
-			"-hls_time", "2", // 2s segments for fast startup (Low Latency)
+			"-hls_time", "1", // 1s segments for instant startup
 			"-hls_list_size", strconv.Itoa(listSize),
 			"-hls_flags", "delete_segments+append_list+independent_segments+program_date_time",
 			"-hls_segment_type", "mpegts",
