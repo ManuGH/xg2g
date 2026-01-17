@@ -21,9 +21,7 @@ func validateConfig(cfg config.AppConfig) error {
 	v := validate.New()
 
 	v.URL("Enigma2.BaseURL", cfg.Enigma2.BaseURL, []string{"http", "https"})
-	if cfg.Enigma2.StreamPort != 0 {
-		v.Port("Enigma2.StreamPort", cfg.Enigma2.StreamPort)
-	}
+	v.Port("Enigma2.StreamPort", cfg.Enigma2.StreamPort)
 	v.Directory("DataDir", cfg.DataDir, false)
 
 	if cfg.PiconBase != "" {

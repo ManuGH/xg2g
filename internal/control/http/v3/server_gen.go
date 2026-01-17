@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	BearerAuthScopes = "BearerAuth.Scopes"
+	BearerAuthScopes = "BearerAuth.Scopes" // #nosec G101
 )
 
 // Defines values for ComponentStatusStatus.
