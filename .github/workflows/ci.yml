@@ -125,21 +125,19 @@ jobs:
         run: |
           set -euo pipefail
           cd webui
-          # Guard: Ensure dependencies exist (npm ci ran in previous step)
-          test -d node_modules || (echo "❌ node_modules missing; run npm ci first" && exit 1)
+          # CI owns installation (deterministic)
+          npm ci
           npm run build
-          # Secure Copy (Strategy A)
-          rm -rf ../internal/api/dist
-          mkdir -p ../internal/api/dist
-          cp -a dist/. ../internal/api/dist/
-          # Sanity Check
-          test -f ../internal/api/dist/index.html || (echo "❌ index.html missing" && exit 1)
-          # Assumes Vite assetsDir="assets" (default)
-          test -d ../internal/api/dist/assets || (echo "❌ assets/ missing" && exit 1)
+          # Secure Copy to internal/control/http/dist (matches ui.go embed path)
+          rm -rf ../internal/control/http/dist
+          mkdir -p ../internal/control/http/dist
+          cp -R dist/. ../internal/control/http/dist/
+          # Sanity Check (index.html is the contract)
+          test -f ../internal/control/http/dist/index.html || (echo "❌ index.html missing" && exit 1)
 
           # Debug: Log Integrity to Summary
-          FILES="$(find ../internal/api/dist -type f | wc -l | tr -d ' ')"
-          IDXHASH="$(sha256sum ../internal/api/dist/index.html | awk '{print $1}')"
+          FILES="$(find ../internal/control/http/dist -type f | wc -l | tr -d ' ')"
+          IDXHASH="$(sha256sum ../internal/control/http/dist/index.html | awk '{print $1}')"
           {
             echo "### WebUI Build Integrity"
             echo "- **Files**: ${FILES}"

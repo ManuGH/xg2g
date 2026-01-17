@@ -31,6 +31,8 @@ TOOLCHAIN_ENV := GOTOOLCHAIN=go1.25.5
 # Build configuration
 BINARY_NAME := xg2g
 BUILD_DIR := bin
+# WebUI Distribution
+WEBUI_DIST_DIR := internal/control/http/dist
 # Reproducible build flags
 BUILD_FLAGS := -trimpath -buildvcs=false
 LDFLAGS := -ldflags "-s -w -buildid= -X 'main.version=$(VERSION)' -X 'main.commit=$(COMMIT_HASH)' -X 'main.buildDate=$(BUILD_DATE)'"
@@ -153,11 +155,10 @@ help: ## Show this help message
 ui-build: ## Build WebUI assets
 	@echo "Building WebUI assets..."
 	@cd webui && npm ci && npm run build
-	@echo "Copying to internal/control/http/dist..."
-	@rm -rf internal/control/http/dist/*
-	@mkdir -p internal/control/http/dist
-	@cp -r webui/dist/* internal/control/http/dist/
-	@touch internal/control/http/dist/.keep
+	@echo "Copying to $(WEBUI_DIST_DIR)..."
+	@rm -rf "$(WEBUI_DIST_DIR)"
+	@mkdir -p "$(WEBUI_DIST_DIR)"
+	@cp -R webui/dist/. "$(WEBUI_DIST_DIR)"/
 	@echo "✅ WebUI build complete"
 
 generate: ## Generate Go code from OpenAPI spec (v3 only)
