@@ -101,14 +101,10 @@ jobs:
             echo "✅ Client matches OpenAPI spec"
           fi
 
-      - name: "CTO Gate: forbid direct oapi-codegen in CI"
+      - name: "CTO Gate: Hermetic Code Generation"
         run: |
-          set -euo pipefail
-          if grep -n -E '\boapi-codegen\b' .github/workflows/ci.yml; then
-            echo "❌ Do not call oapi-codegen directly in ci.yml. Use: make generate"
-            exit 1
-          fi
-          echo "✅ No direct oapi-codegen in CI"
+          chmod +x scripts/ci/ctogate_hermetic_codegen.sh
+          ./scripts/ci/ctogate_hermetic_codegen.sh .github/workflows/ci.yml
 
       - name: Verify OpenAPI server codegen is up-to-date (v3 - single source)
         run: |
@@ -168,6 +164,54 @@ jobs:
           set -euo pipefail
           # Pure Go tests (no CGO required)
           go test -v -coverprofile=coverage.out -covermode=atomic $(go list ./... | grep -v '/test$')
+
+      - name: "Hermetic Build Proof (Adversarial-Grade)"
+        env:
+          # Block all network escape hatches
+          GOPROXY: "off"
+          GOSUMDB: "off"
+          GOVCS: "*:off" # No VCS network fetches
+          GOTOOLCHAIN: "local" # No toolchain auto-download
+          GOFLAGS: "-mod=vendor" # Force vendor globally
+          GIT_TERMINAL_PROMPT: "0" # Fail fast on git prompts
+        run: |
+          set -euo pipefail
+
+          # Force cold cache (per-step unique, no warm cache cheating)
+          export GOMODCACHE="$(mktemp -d)"
+          export GOCACHE="$(mktemp -d)"
+
+          echo "🔒 Hermetic Build Proof - Adversarial Conditions"
+          echo "   GOPROXY=off, GOVCS=*:off, GOTOOLCHAIN=local"
+          echo "   Cold cache: GOMODCACHE=$GOMODCACHE"
+          echo "   Cold cache: GOCACHE=$GOCACHE"
+
+          # Print environment for audit trail
+          echo "📋 Go Environment (Hermetic Proof):"
+          go env | grep -E '(GOPROXY|GOMODCACHE|GOCACHE|GOTOOLCHAIN|GOVCS|GOFLAGS)'
+
+          # Clean build (but preserve vendor/)
+          make clean
+
+          # Generate code (must use vendored tools)
+          echo "🔧 Generating code with vendored tools..."
+          make generate
+
+          # Verify determinism (directory-based, not specific filenames)
+          echo "🔍 Verifying deterministic generation..."
+          if ! git diff --exit-code -- internal/api internal/control/http/v3; then
+            echo "❌ Generated code is non-deterministic or uncommitted"
+            echo "   Review changes above and commit if intentional"
+            exit 1
+          fi
+
+          # Build without network
+          echo "🏗️  Building binary offline..."
+          go build -v -mod=vendor -o /tmp/xg2g-hermetic ./cmd/daemon
+
+          echo "✅ Build succeeded under adversarial offline conditions"
+          echo "   → Truly hermetic (no network, no cache, no toolchain download)"
+          echo "   → Deterministic generation verified"
 
       - name: Setup Node for OpenAPI lint
         uses: actions/setup-node@v6

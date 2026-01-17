@@ -174,6 +174,37 @@ verify-generate: generate ## Verify that generated code is up-to-date
 	@git diff --exit-code internal/api/server_gen.go internal/control/http/v3/server_gen.go || (echo "❌ Generated code is out of sync. Run 'make generate' and commit changes." && exit 1)
 	@echo "✅ Generated code is up-to-date"
 
+verify-hermetic-codegen: ## Verify hermetic code generation invariants (CTO-grade)
+	@echo "Verifying hermetic code generation invariants..."
+	@# 1. Behavior-based validation: Check what 'make generate' would execute
+	@if ! make -n generate | grep -q 'go run -mod=vendor.*oapi-codegen'; then \
+		echo "❌ generate target must use 'go run -mod=vendor' for oapi-codegen"; \
+		echo "   This ensures hermetic code generation using vendored tools"; \
+		exit 1; \
+	fi
+	@# 2. Verify vendored module is listed in vendor/modules.txt (canonical source)
+	@if ! grep -q 'github.com/oapi-codegen/oapi-codegen' vendor/modules.txt; then \
+		echo "❌ oapi-codegen not found in vendor/modules.txt"; \
+		echo "   Run 'go mod vendor' to refresh vendor directory"; \
+		exit 1; \
+	fi
+	@# 3. Directory existence check (secondary guard against partial vendor)
+	@if [ ! -d vendor/github.com/oapi-codegen/oapi-codegen ]; then \
+		echo "❌ oapi-codegen directory missing from vendor/"; \
+		exit 1; \
+	fi
+	@# 4. Verify tools.go declares the tool dependency
+	@if ! grep -q 'github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen' tools.go; then \
+		echo "❌ tools.go must import oapi-codegen to track build-time dependency"; \
+		exit 1; \
+	fi
+	@echo "✅ Hermetic code generation invariants verified"
+	@echo "   → 'make generate' uses vendored tools"
+	@echo "   → vendor/modules.txt lists oapi-codegen"
+	@echo "   → tools.go tracks build-time dependency"
+
+.PHONY: verify-hermetic-codegen
+
 build: ui-build ## Build the main daemon binary
 	@echo "Building xg2g daemon..."
 	@mkdir -p $(BUILD_DIR)
@@ -744,7 +775,7 @@ gate-webui:
 gate-repo-hygiene:
 	@./scripts/ci_gate_repo_hygiene.sh
 
-quality-gates: lint-invariants gate-a gate-webui gate-repo-hygiene verify-generate lint test-cover security-vulncheck ## Validate all quality gates
+quality-gates: lint-invariants verify-hermetic-codegen gate-a gate-webui gate-repo-hygiene verify-generate lint test-cover security-vulncheck ## Validate all quality gates
 	@echo "Validating quality gates..."
 	@echo "✅ All quality gates passed"
 
