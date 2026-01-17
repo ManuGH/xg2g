@@ -36,7 +36,7 @@ All code generators (e.g., `oapi-codegen`) are strictly version-pinned in
 `internal/tools/tools.go` and vendored in `vendor/`. This prevents "silent
 drift" or un-audited updates to the generator logic.
 > [!NOTE]
-> See [HERMETICITY.md](file:///root/xg2g/docs/HERMETICITY.md) for the mechanical
+> See [HERMETICITY.md](./HERMETICITY.md) for the mechanical
 > implementation of this guarantee.
 
 #### B. The Code-Gen Contract
