@@ -295,6 +295,12 @@ func TestGetRecordingHLSPlaylist_FailedLatencySLO(t *testing.T) {
 		// However, knowing the system, it SHOULD start.
 		t.Log("Async build did not start within timeout")
 	}
+
+	// Double-check readiness to be absolutely sure all business logic finished
+	require.Eventually(t, func() bool {
+		m, ok := vodMgr.GetMetadata(serviceRef)
+		return ok && (m.State == vod.ArtifactStateReady || m.State == vod.ArtifactStateFailed)
+	}, 1*time.Second, 10*time.Millisecond)
 }
 
 func TestGetRecordingHLSPlaylist_OpenFailure_ReconcileReady(t *testing.T) {
