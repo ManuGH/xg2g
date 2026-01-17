@@ -49,27 +49,27 @@ openWebIF:
 # ------------------------------------------------------------------------------
 # Enigma2 (v3 Worker) Client Configuration [OPTIONAL]
 # ------------------------------------------------------------------------------
-enigma2:
-  # fallbackTo8001: false
-  # Base URL for v3 worker (defaults to openWebIF.baseUrl if empty)
-  # baseUrl: "http://127.0.0.1"
+# enigma2:
+#   fallbackTo8001: false
+#   # Base URL for v3 worker (defaults to openWebIF.baseUrl if empty)
+#   # baseUrl: "http://127.0.0.1"
 
-  # Optional: HTTP Basic Auth (if required by OpenWebIF)
-  # username: "root"
-  # password: "password"
+#   # Optional: HTTP Basic Auth (if required by OpenWebIF)
+#   # username: "root"
+#   # password: "password"
 
-  # Request settings
-  # timeout: "10s"
-  # responseHeaderTimeout: "10s"
-  # retries: 2
-  # backoff: "200ms"
-  # maxBackoff: "2s"
+#   # Request settings
+#   # timeout: "10s"
+#   # responseHeaderTimeout: "10s"
+#   # retries: 2
+#   # backoff: "200ms"
+#   # maxBackoff: "2s"
 
-  # Rate limiting (requests/sec)
-  # rateLimit: 10
-  # rateBurst: 20
+#   # Rate limiting (requests/sec)
+#   # rateLimit: 10
+#   # rateBurst: 20
 
-  # userAgent: "xg2g-v3"
+#   # userAgent: "xg2g-v3"
 
 # ------------------------------------------------------------------------------
 # Bouquets (Channel Lists) [OPTIONAL]
