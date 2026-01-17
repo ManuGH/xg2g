@@ -22,16 +22,16 @@ jobs:
       security-events: write # for SARIF upload
     steps:
       - name: Checkout
-        uses: actions/checkout@v4  # Latest stable
+        uses: actions/checkout@v4 # Latest stable
 
       - name: Create Dummy WebUI Assets (Strategy A)
         run: |
-          mkdir -p internal/api/dist
-          touch internal/api/dist/index.html
-          echo "Dummy Asset for CI" > internal/api/dist/index.html
+          mkdir -p internal/control/http/dist
+          touch internal/control/http/dist/index.html
+          echo "Dummy Asset for CI" > internal/control/http/dist/index.html
 
       - name: Setup Go
-        uses: actions/setup-go@v5  # Latest stable
+        uses: actions/setup-go@v5 # Latest stable
         with:
           go-version-file: "go.mod"
           check-latest: true

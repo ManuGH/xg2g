@@ -98,7 +98,7 @@ testdata/
 .copilot-instructions.md
 # CI-generated assets (do not commit)
 dist/
-internal/api/dist/
+internal/control/http/dist/
 
 # Test and development artifacts (local testing)
 test-*.sh
@@ -112,7 +112,7 @@ test-config.yaml
 node_modules/
 webui/dist/
 webui/node_modules/
-internal/api/ui/
+internal/control/http/ui/
 
 # TLS certificates (auto-generated)
 certs/

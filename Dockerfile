@@ -21,7 +21,15 @@ COPY scripts/build-ffmpeg.sh .
 ENV TARGET_DIR=/opt/ffmpeg
 RUN ./build-ffmpeg.sh
 
-# Stage 2: Build xg2g application
+# Stage 2: Build WebUI
+FROM node:20-slim AS webui-builder
+WORKDIR /webui
+COPY webui/package*.json ./
+RUN npm ci
+COPY webui/ ./
+RUN npm run build
+
+# Stage 3: Build xg2g application
 FROM golang@sha256:2c7c65601b020ee79db4c1a32ebee0bf3d6b298969ec683e24fcbea29305f10e AS app-builder
 
 WORKDIR /app
@@ -29,6 +37,9 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
+# Copy built WebUI assets to the correct location for Go embedding
+COPY --from=webui-builder /webui/dist ./internal/control/http/dist
+
 ARG TARGETOS=linux
 ARG TARGETARCH=amd64
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \

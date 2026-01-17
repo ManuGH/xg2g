@@ -136,7 +136,7 @@ internal/control/
 **Scope**: Fileserver, embedded UI, health/status
 
 - [ ] Move `internal/api/fileserver.go → internal/control/http/fileserver.go`
-- [ ] Move `internal/api/dist/ → internal/control/http/dist/` (or keep in api/, TBD)
+- [ ] Move `internal/control/http/dist/` (already done)
 - [ ] Move health/version endpoints (if separate)
 - [ ] **Gate**: `make build && go test ./... && make gate-a` all PASS
 

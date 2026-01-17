@@ -30,10 +30,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4  # Latest stable
+        uses: actions/checkout@v4 # Latest stable
 
       - name: Setup Go
-        uses: actions/setup-go@v5  # Latest stable
+        uses: actions/setup-go@v5 # Latest stable
         with:
           go-version-file: go.mod
           cache: true
@@ -59,10 +59,10 @@ jobs:
       security-events: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4  # Latest stable
+        uses: actions/checkout@v4 # Latest stable
 
       - name: Setup Go
-        uses: actions/setup-go@v5  # Latest stable
+        uses: actions/setup-go@v5 # Latest stable
         with:
           go-version-file: "go.mod"
           check-latest: true
@@ -177,12 +177,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4  # Latest stable
+        uses: actions/checkout@v4 # Latest stable
         with:
           fetch-depth: 0 # GoReleaser needs full history
 
       - name: Set up Go
-        uses: actions/setup-go@v5  # Latest stable.0.0
+        uses: actions/setup-go@v5 # Latest stable.0.0
         with:
           go-version-file: go.mod
           check-latest: true
@@ -207,11 +207,11 @@ jobs:
           npm ci
           npm run build
           # Ensure destination exists and is empty (Robust Strategy A)
-          rm -rf ../internal/api/dist
-          mkdir -p ../internal/api/dist
-          cp -a dist/. ../internal/api/dist/
+          rm -rf ../internal/control/http/dist
+          mkdir -p ../internal/control/http/dist
+          cp -a dist/. ../internal/control/http/dist/
           # Sanity Check: Fail if index.html is missing (ensures valid build)
-          test -f ../internal/api/dist/index.html || (echo "❌ internal/api/dist/index.html missing" && exit 1)
+          test -f ../internal/control/http/dist/index.html || (echo "❌ internal/control/http/dist/index.html missing" && exit 1)
 
       # =============================================
       # Pre-Release Checks

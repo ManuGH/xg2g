@@ -3,7 +3,7 @@ name: Safari HLS Smoke
 on:
   pull_request:
   push:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   safari-hls-smoke:
@@ -15,6 +15,11 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+
+      - name: Satisfy WebUI Embed
+        run: |
+          mkdir -p internal/control/http/dist
+          touch internal/control/http/dist/index.html
 
       - name: Install ffmpeg
         run: |

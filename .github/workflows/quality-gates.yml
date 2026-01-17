@@ -20,5 +20,10 @@ jobs:
         with:
           go-version-file: "go.mod"
 
+      - name: Satisfy WebUI Embed
+        run: |
+          mkdir -p internal/control/http/dist
+          touch internal/control/http/dist/index.html
+
       - name: Run Quality Gates
         run: make quality-gates

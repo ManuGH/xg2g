@@ -52,8 +52,8 @@ jobs:
           npm run generate-client
           npm test -- --run
           npm run build
-          mkdir -p ../internal/api/dist
-          cp -r dist/* ../internal/api/dist/
+          mkdir -p ../internal/control/http/dist
+          cp -r dist/* ../internal/control/http/dist/
 
       - name: Verify OpenAPI server codegen is up-to-date
         run: |
@@ -107,10 +107,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4  # Latest stable
+        uses: actions/checkout@v4 # Latest stable
 
       - name: Setup Go
-        uses: actions/setup-go@v5  # Latest stable
+        uses: actions/setup-go@v5 # Latest stable
         with:
           go-version-file: go.mod
           cache: true
@@ -177,8 +177,8 @@ jobs:
           cd webui
           npm ci
           npm run build
-          mkdir -p ../internal/api/dist
-          cp -r dist/* ../internal/api/dist/
+          mkdir -p ../internal/control/http/dist
+          cp -r dist/* ../internal/control/http/dist/
 
       - name: Install golangci-lint
         run: |
@@ -245,8 +245,8 @@ jobs:
           cd webui
           npm ci
           npm run build
-          mkdir -p ../internal/api/dist
-          cp -r dist/* ../internal/api/dist/
+          mkdir -p ../internal/control/http/dist
+          cp -r dist/* ../internal/control/http/dist/
 
       - name: Build daemon (stub transcoder)
         run: |
@@ -309,8 +309,8 @@ jobs:
           npm ci
           npm run generate-client
           npm run build
-          mkdir -p ../internal/api/dist
-          cp -r dist/* ../internal/api/dist/
+          mkdir -p ../internal/control/http/dist
+          cp -r dist/* ../internal/control/http/dist/
 
       - name: Build #1 (reference)
         run: |

@@ -30,4 +30,4 @@ data/
 # 1. Ignore global dist (release artifacts)
 dist/
 # 2. Ignore local WebUI builds (Docker builds its own via multi-stage)
-internal/api/dist/
+internal/control/http/dist/
