@@ -64,12 +64,12 @@ func NewLocalAdapter(binPath string, hlsRoot string, e2 *enigma2.Client, logger 
 		Transport: &http.Transport{
 			Proxy: http.ProxyFromEnvironment,
 			DialContext: (&net.Dialer{
-				Timeout: 2 * time.Second,
+				Timeout: preflightTimeout,
 			}).DialContext,
 			MaxIdleConnsPerHost:   2,
 			IdleConnTimeout:       30 * time.Second,
-			TLSHandshakeTimeout:   2 * time.Second,
-			ResponseHeaderTimeout: 2 * time.Second,
+			TLSHandshakeTimeout:   preflightTimeout,
+			ResponseHeaderTimeout: preflightTimeout,
 			DisableCompression:    true,
 		},
 	}
@@ -108,7 +108,8 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 	}
 
 	inputURL := ""
-	if spec.Source.Type == ports.SourceTuner {
+	switch spec.Source.Type {
+	case ports.SourceTuner:
 		if a.E2 == nil {
 			return "", fmt.Errorf("tuner source requires enigma2 client")
 		}
@@ -123,7 +124,7 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 			return "", err
 		}
 		inputURL = chosenURL
-	} else if spec.Source.Type == ports.SourceURL {
+	case ports.SourceURL:
 		inputURL = spec.Source.ID
 	}
 
@@ -380,7 +381,12 @@ func (a *LocalAdapter) preflightTS(ctx context.Context, rawURL string) (result p
 
 	client := a.httpClient
 	if client == nil {
-		client = &http.Client{Timeout: preflightTimeout}
+		client = &http.Client{
+			Timeout: timeout,
+			Transport: &http.Transport{
+				ResponseHeaderTimeout: timeout,
+			},
+		}
 	}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -603,7 +609,7 @@ func (a *LocalAdapter) buildArgs(spec ports.StreamSpec, inputURL string) ([]stri
 			"-crf", "20", // Excellent quality with fast encoding
 			"-g", "30", // Force keyframe every 30 frames (~1s at 30fps)
 			"-sc_threshold", "0",
-			"-force_key_frames", "expr:gte(t,n_forced*6)",
+			"-force_key_frames", "expr:gte(t,n_forced*1)",
 			"-pix_fmt", "yuv420p",
 			"-profile:v", "main",
 			"-c:a", "aac",
