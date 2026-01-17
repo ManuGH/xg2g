@@ -9,6 +9,10 @@
 # 1. Allow-list: Steps with "generate" in name must use exactly 'make generate'
 # 2. Global forbid: No direct tool invocations anywhere in workflow
 #    (scans only actual run: content, not comments or metadata)
+#
+# Note: This gate is a conservative textual scanner; it is designed to catch
+# policy violations in practice, not to fully parse YAML. Complex indentation,
+# heredocs, or shell eval constructs may evade detection (acceptable trade-off).
 
 set -euo pipefail
 

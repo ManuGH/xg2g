@@ -193,7 +193,7 @@ jobs:
           # Clean Go build cache (but preserve WebUI dist/ and vendor/)
           echo "🧹 Cleaning Go build artifacts..."
           rm -rf bin/
-          go clean -cache || true
+          go clean -cache -testcache || true
 
           # Generate code (must use vendored tools)
           echo "🔧 Generating code with vendored tools..."
