@@ -134,7 +134,8 @@ make verify-hermetic-codegen
 
 ### CI Proof
 
-See [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) - step "Hermetic Build Proof (Adversarial-Grade)"
+See [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) - step
+"Hermetic Build Proof (Adversarial-Grade)"
 
 Every push proves the guarantee under adversarial conditions.
 
@@ -215,6 +216,16 @@ This guarantee is **mechanically enforced**, not manually maintained:
 - **Quality gates** enforce invariants before merge
 
 **Future-proof**: Adding new code generators requires updating `tools.go` + vendoring. The gates will catch violations.
+
+---
+
+### Trust Boundaries
+
+The hermetic build process is the foundation for our security trust model.
+By proving that our tools and code-generation paths are immutable and
+deterministic, we can safely optimize scanner signal for handwritten code.
+See [SECURITY.md](file:///root/xg2g/docs/SECURITY.md) for details on signal
+governance and generated code trust.
 
 ---
 

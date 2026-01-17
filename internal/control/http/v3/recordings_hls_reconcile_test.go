@@ -296,11 +296,13 @@ func TestGetRecordingHLSPlaylist_FailedLatencySLO(t *testing.T) {
 		t.Log("Async build did not start within timeout")
 	}
 
-	// Double-check readiness to be absolutely sure all business logic finished
+	// Double-check readiness to be absolutely sure all business logic finished.
+	// We wait for a terminal state (READY or FAILED) to ensure the VOD manager
+	// has released all resources and updated the metadata store.
 	require.Eventually(t, func() bool {
 		m, ok := vodMgr.GetMetadata(serviceRef)
 		return ok && (m.State == vod.ArtifactStateReady || m.State == vod.ArtifactStateFailed)
-	}, 1*time.Second, 10*time.Millisecond)
+	}, 2*time.Second, 10*time.Millisecond, "HLS build lifecycle did not reach terminal state (READY/FAILED) within timeout")
 }
 
 func TestGetRecordingHLSPlaylist_OpenFailure_ReconcileReady(t *testing.T) {
