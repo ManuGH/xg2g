@@ -190,8 +190,10 @@ jobs:
           echo "📋 Go Environment (Hermetic Proof):"
           go env | grep -E '(GOPROXY|GOMODCACHE|GOCACHE|GOTOOLCHAIN|GOVCS|GOFLAGS)'
 
-          # Clean build (but preserve vendor/)
-          make clean
+          # Clean Go build cache (but preserve WebUI dist/ and vendor/)
+          echo "🧹 Cleaning Go build artifacts..."
+          rm -rf bin/
+          go clean -cache || true
 
           # Generate code (must use vendored tools)
           echo "🔧 Generating code with vendored tools..."
@@ -205,7 +207,7 @@ jobs:
             exit 1
           fi
 
-          # Build without network
+          # Build without network (WebUI dist/ already exists from earlier step)
           echo "🏗️  Building binary offline..."
           go build -v -mod=vendor -o /tmp/xg2g-hermetic ./cmd/daemon
 

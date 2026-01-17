@@ -39,7 +39,7 @@ No warm cache masking missing vendored dependencies.
 
 All build-time tools hermetically vendored:
 
-- Tools declared in [`tools.go`](file:///root/xg2g/tools.go)
+- Tools declared in [`tools.go`](../../tools.go)
 - Vendored in `vendor/github.com/oapi-codegen/`
 - Verified via `vendor/modules.txt` (canonical source)
 
@@ -69,7 +69,7 @@ Generated code (deterministic output)
 
 ### CTO Gate: Contract Enforcement
 
-**Script**: [`scripts/ci/ctogate_hermetic_codegen.sh`](file:///root/xg2g/scripts/ci/ctogate_hermetic_codegen.sh)
+**Script**: [`scripts/ci/ctogate_hermetic_codegen.sh`](../../scripts/ci/ctogate_hermetic_codegen.sh)
 
 - **Allow-list**: Codegen steps must use `make generate` only
 - **Global forbid**: Blocks direct `oapi-codegen`, `go install`, `curl`/`wget` invocations
@@ -134,7 +134,7 @@ make verify-hermetic-codegen
 
 ### CI Proof
 
-See [`.github/workflows/ci.yml`](file:///root/xg2g/.github/workflows/ci.yml) - step "Hermetic Build Proof (Adversarial-Grade)"
+See [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) - step "Hermetic Build Proof (Adversarial-Grade)"
 
 Every push proves the guarantee under adversarial conditions.
 
@@ -204,7 +204,7 @@ Every CI run includes:
 - `git diff` output (proves determinism or shows violations)
 - Offline build success/failure (proves network independence)
 
-**Evidence**: CI run logs provide cryptographic proof of hermetic guarantees.
+**Evidence**: CI run logs provide auditable, reproducible proof of hermetic guarantees.
 
 ## Maintenance
 

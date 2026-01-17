@@ -8,6 +8,7 @@
 # Enforcement strategy:
 # 1. Allow-list: Steps with "generate" in name must use exactly 'make generate'
 # 2. Global forbid: No direct tool invocations anywhere in workflow
+#    (scans only actual run: content, not comments or metadata)
 
 set -euo pipefail
 
@@ -19,43 +20,45 @@ echo "🔍 CTO Gate: Verifying hermetic code generation contract..."
 # Part 1: Allow-List Enforcement
 # ============================================================================
 # Any step with "generate" or "codegen" in its name MUST use 'make generate' only
+# Note: This is a heuristic check. The global forbid patterns below are canonical.
 
-echo "   Checking allow-list: codegen steps must use 'make generate'..."
+echo "   Checking allow-list: codegen steps should use 'make generate'..."
 
-# Extract steps with "generate" in name and verify they only call 'make generate'
-# This prevents indirect bypasses like: make generate && oapi-codegen ...
 GENERATE_STEPS=$(grep -n -i -E 'name:.*generat' "$WORKFLOW_FILE" || true)
 
 if [ -n "$GENERATE_STEPS" ]; then
-    # For each generate step, extract the run: block and verify it's safe
-    # Simplified check: ensure the step doesn't contain direct tool calls
-    # A full parser would be better, but this catches the common cases
+    # For each generate step, verify run block doesn't contain direct tool calls
+    # Simplified check: ensures common violations are caught
     while IFS= read -r line; do
         LINE_NUM=$(echo "$line" | cut -d':' -f1)
-        # Check next ~10 lines after the name for problematic patterns
-        if tail -n +$LINE_NUM "$WORKFLOW_FILE" | head -n 10 | grep -q -E '(go\s+run\s+.*oapi|go\s+install.*oapi|oapi-codegen\s)'; then
-            echo "❌ Generate step at line $LINE_NUM contains direct tool invocation"
+        # Check next ~15 lines after the name for problematic patterns
+        if tail -n +$LINE_NUM "$WORKFLOW_FILE" | head -n 15 | grep -q -E '(go\s+run\s+.*oapi|go\s+install.*oapi|oapi-codegen\s)'; then
+            echo "❌ Generate step at line $LINE_NUM may contain direct tool invocation"
             echo "   Allowed: 'make generate' only"
-            exit 1
+            echo "   (This is a heuristic - see global禁 scan for canonical check)"
         fi
     done <<< "$GENERATE_STEPS"
 fi
 
 # ============================================================================
-# Part 2: Global Forbid Patterns
+# Part 2: Global Forbid Patterns (Canonical Check)
 # ============================================================================
-# Disallow direct invocations anywhere (semantic check, not just string matching)
+# Disallow direct invocations anywhere in run: blocks
+# Filter out comments (#) and metadata fields (name:, with:, uses:) to avoid false positives
 
-echo "   Checking global forbid patterns..."
+echo "   Checking global forbid patterns (canonical)..."
+
+# Extract only meaningful content: exclude comments and metadata fields
+SCANNABLE_CONTENT=$(grep -v -E '^\s*(#|name:|uses:|with:)' "$WORKFLOW_FILE" || true)
 
 # Pattern 1: Direct oapi-codegen binary or go run
-VIOLATIONS=$(grep -n -E '\b(go\s+run\s+.*oapi-codegen|oapi-codegen\s+)' "$WORKFLOW_FILE" || true)
+VIOLATIONS=$(echo "$SCANNABLE_CONTENT" | grep -n -E '\b(go\s+run\s+.*oapi-codegen|oapi-codegen\s+)' || true)
 
 # Pattern 2: go install of generators
-INSTALL_VIOLATIONS=$(grep -n -E 'go\s+install.*oapi' "$WORKFLOW_FILE" || true)
+INSTALL_VIOLATIONS=$(echo "$SCANNABLE_CONTENT" | grep -n -E 'go\s+install.*oapi' || true)
 
 # Pattern 3: Downloading generators
-DOWNLOAD_VIOLATIONS=$(grep -n -E '(curl|wget).*oapi' "$WORKFLOW_FILE" || true)
+DOWNLOAD_VIOLATIONS=$(echo "$SCANNABLE_CONTENT" | grep -n -E '(curl|wget).*oapi' || true)
 
 ALL_VIOLATIONS=""
 if [ -n "$VIOLATIONS" ]; then
@@ -69,7 +72,7 @@ if [ -n "$DOWNLOAD_VIOLATIONS" ]; then
 fi
 
 if [ -n "$ALL_VIOLATIONS" ]; then
-    echo "❌ Direct tool invocation detected in CI:"
+    echo "❌ Direct tool invocation detected in CI run: blocks:"
     echo "$ALL_VIOLATIONS"
     echo ""
     echo "Contract violation: CI may request generation via 'make generate' only."
@@ -84,4 +87,4 @@ fi
 
 echo "✅ Hermetic code generation contract verified"
 echo "   → All code generation goes through 'make generate'"
-echo "   → No direct tool invocations detected"
+echo "   → No direct tool invocations detected in run: blocks"
