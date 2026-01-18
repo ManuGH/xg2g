@@ -90,7 +90,7 @@ We structure configuration into three distinct tiers.
 
 | Variable | Value | Reason |
 |----------|-------|--------|
-| `XG2G_METRICS_LISTEN` | `:9091` | Setting this enables metrics; otherwise metrics are disabled. |
+| `XG2G_METRICS_LISTEN` | *<host:port>* (e.g. `:9091`) | Setting this enables metrics; otherwise metrics are disabled. |
 | `XG2G_RATE_LIMIT_ENABLED`| `true` | Essential for shared/public instances. |
 | `XG2G_RATE_LIMIT_GLOBAL` | `100` | Default global cap for DDoS protection. |
 

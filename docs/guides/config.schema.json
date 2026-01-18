@@ -346,8 +346,7 @@
           "type": "string",
           "description": "Metrics server listen address (host:port)",
           "pattern": "^([a-zA-Z0-9.-]+)?:[0-9]+$",
-          "default": ":9090",
-          "examples": [":9090", "127.0.0.1:9090", "0.0.0.0:2112"]
+          "examples": [":9091", "127.0.0.1:9091", "0.0.0.0:2112"]
         }
       }
     },
@@ -399,7 +398,7 @@
       },
       "metrics": {
         "enabled": false,
-        "listenAddr": ":9090"
+        "listenAddr": ":9091"
       },
       "picons": {
         "baseUrl": "http://receiver.local/picon"

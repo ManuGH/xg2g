@@ -141,7 +141,7 @@ func buildRegistry() *Registry {
 
 		// --- METRICS ---
 		{Path: "metrics.enabled", Env: "", FieldPath: "MetricsEnabled", Profile: ProfileAdvanced, Status: StatusActive, Default: false},
-		{Path: "metrics.listenAddr", Env: "XG2G_METRICS_LISTEN", FieldPath: "MetricsAddr", Profile: ProfileAdvanced, Status: StatusActive, Default: ":9091"},
+		{Path: "metrics.listenAddr", Env: "XG2G_METRICS_LISTEN", FieldPath: "MetricsAddr", Profile: ProfileAdvanced, Status: StatusActive, Default: ""},
 
 		// --- RATE LIMIT ---
 		{Path: "rateLimit.enabled", Env: "", FieldPath: "RateLimitEnabled", Profile: ProfileAdvanced, Status: StatusActive, Default: true},

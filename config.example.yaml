@@ -129,11 +129,11 @@ api:
 metrics:
   # Enable Prometheus metrics endpoint
   # ENV: XG2G_METRICS_LISTEN (empty disables)
-  enabled: true
+  enabled: false
 
-  # Metrics server listen address
+  # Metrics server listen address (required when enabled)
   # ENV: XG2G_METRICS_LISTEN
-  listenAddr: ":9090"
+  listenAddr: ":9091"
 
 # Picons (Channel Logos) Configuration
 picons:
@@ -174,7 +174,7 @@ picons:
 #   listenAddr: ":8088"
 # metrics:
 #   enabled: true
-#   listenAddr: ":9090"
+#   listenAddr: ":9091"
 
 # Example 4: High-performance EPG collection
 # ---
@@ -291,7 +291,7 @@ picons:
 # - Enable debug logging for detailed information:
 #     XG2G_LOG_LEVEL=debug ./xg2g-daemon --config config.yaml
 #
-# - Check metrics at: http://localhost:9090/metrics
+# - Check metrics at: http://localhost:9091/metrics
 #
 # - Health check: curl http://localhost:8088/healthz
 # - API health (auth): curl -H "Authorization: Bearer <token>" http://localhost:8088/api/v2/system/health
