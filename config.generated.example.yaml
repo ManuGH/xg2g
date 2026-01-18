@@ -1,0 +1,106 @@
+# yaml-language-server: $schema=./docs/guides/config.schema.json
+# Generated from internal/config/registry.go. Do not edit by hand.
+api:
+  allowedOrigins: []
+  listenAddr: :8088
+  token: ""
+  tokenScopes: []
+  tokens: []
+bouquets: []
+configStrict: true
+dataDir: /tmp
+engine:
+  enabled: false
+  idleTimeout: 1m
+  mode: standard
+  tunerSlots: []
+enigma2:
+  analyzeDuration: "10000000"
+  authMode: inherit
+  fallbackTo8001: false
+  preflightTimeout: 10s
+  probeSize: 32M
+  rateBurst: 0
+  rateLimit: 0
+  responseHeaderTimeout: 10s
+  tuneTimeout: 10s
+  userAgent: ""
+openWebIF:
+  backoff: 200ms
+  baseUrl: http://127.0.0.1
+  maxBackoff: 30s
+  password: ""
+  retries: 2
+  streamPort: 8001
+  timeout: 10s
+  useWebIFStreams: true
+  username: ""
+epg:
+  days: 14
+  enabled: true
+  fuzzyMax: 2
+  maxConcurrency: 5
+  retries: 2
+  source: per-service
+  timeoutMs: 5000
+  xmltvPath: xmltv.xml
+ffmpeg:
+  bin: ffmpeg
+  killTimeout: 5s
+hdhr:
+  baseUrl: ""
+  deviceId: ""
+  enabled: false
+  firmwareName: ""
+  friendlyName: ""
+  modelNumber: ""
+  plexForceHls: false
+  tunerCount: 0
+hls:
+  dvrWindow: 45m
+  root: ""
+library:
+  db_path: ""
+  enabled: false
+  roots: []
+logLevel: info
+logService: ""
+metrics:
+  enabled: false
+  listenAddr: ""
+picons:
+  baseUrl: ""
+rateLimit:
+  auth: 10
+  burst: 20
+  enabled: true
+  global: 100
+  whitelist: []
+readyStrict: false
+recording_playback:
+  mappings: []
+  playback_policy: auto
+  stable_window: 10s
+recording_roots: {}
+sessions:
+  expiry_check_interval: 1m
+  heartbeat_interval: 30s
+  lease_ttl: 2h
+store:
+  backend: memory
+  path: /var/lib/xg2g/store
+streaming:
+  delivery_policy: universal
+tls:
+  cert: ""
+  enabled: false
+  forceHTTPS: false
+  key: ""
+trustedProxies: ""
+version: ""
+vod:
+  analyzeDuration: "50000000"
+  cacheTTL: 24h
+  maxConcurrent: 2
+  probeSize: 50M
+  stallTimeout: 1m

@@ -1,408 +1,844 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/ManuGH/xg2g/config.schema.json",
-  "title": "xg2g Configuration",
-  "description": "YAML configuration schema for xg2g - XMLTV EPG generator for Enigma2 receivers",
-  "type": "object",
-  "required": ["dataDir", "openWebIF", "epg"],
-  "properties": {
-    "version": {
-      "type": "string",
-      "description": "Deprecated/ignored. Configuration is fixed to v3.",
-      "default": "3.0.0",
-      "examples": ["3.0.0"]
-    },
-    "configVersion": {
-      "type": "string",
-      "description": "Deprecated/ignored. Configuration is fixed to v3.",
-      "default": "3.0.0",
-      "examples": ["3.0.0"]
-    },
-    "dataDir": {
-      "type": "string",
-      "description": "Base directory for generated XMLTV files and cache. Environment variables like ${HOME} are expanded.",
-      "examples": [
-        "/var/lib/xg2g",
-        "${HOME}/.local/share/xg2g",
-        "/tmp/xg2g"
-      ]
-    },
-    "logLevel": {
-      "type": "string",
-      "description": "Logging verbosity level",
-      "enum": ["debug", "info", "warn", "error"],
-      "default": "info"
-    },
-    "openWebIF": {
-      "type": "object",
-      "description": "OpenWebIF API configuration for Enigma2 receiver",
-      "required": ["baseUrl"],
-      "properties": {
-        "baseUrl": {
-          "type": "string",
-          "description": "Base URL of the Enigma2 receiver's OpenWebIF interface",
-          "format": "uri",
-          "pattern": "^https?://",
-          "examples": [
-            "http://receiver.local",
-            "http://192.168.1.100",
-            "https://enigma2.example.com"
-          ]
-        },
-        "username": {
-          "type": "string",
-          "description": "OpenWebIF authentication username (if required). Environment variables like ${USER} are expanded.",
-          "examples": ["root", "${ENIGMA_USER}"]
-        },
-        "password": {
-          "type": "string",
-          "writeOnly": true,
-          "description": "OpenWebIF authentication password (if required). Can also be provided via environment variable XG2G_OWI_PASS. Never logged in plaintext. Environment variables like ${PASS} are expanded.",
-          "examples": ["dreambox", "${ENIGMA_PASSWORD}"]
-        },
-        "timeout": {
-          "type": "string",
-          "description": "HTTP request timeout duration (Go duration format: 10s, 500ms, 1m)",
-          "pattern": "^[0-9]+(ns|us|µs|ms|s|m|h)$",
-          "default": "10s",
-          "examples": ["10s", "5s", "30s"]
-        },
-        "retries": {
-          "type": "integer",
-          "description": "Number of retry attempts for failed HTTP requests",
-          "minimum": 0,
-          "maximum": 10,
-          "default": 3,
-          "examples": [3, 5, 0]
-        },
-        "backoff": {
-          "type": "string",
-          "description": "Initial backoff duration between retries (Go duration format)",
-          "pattern": "^[0-9]+(ns|us|µs|ms|s|m|h)$",
-          "default": "500ms",
-          "examples": ["500ms", "1s", "100ms"]
-        },
-        "maxBackoff": {
-          "type": "string",
-          "description": "Maximum backoff duration for exponential backoff (Go duration format)",
-          "pattern": "^[0-9]+(ns|us|µs|ms|s|m|h)$",
-          "default": "30s",
-          "examples": ["30s", "1m", "10s"]
-        },
-        "streamPort": {
-          "type": "integer",
-          "description": "Port number for IPTV streaming URLs",
-          "minimum": 1,
-          "maximum": 65535,
-          "default": 8001,
-          "examples": [8001, 8002]
-        }
-      }
-    },
-    "enigma2": {
-      "type": "object",
-      "description": "Enigma2 client configuration for the V3 worker",
-      "properties": {
-        "baseUrl": {
-          "type": "string",
-          "description": "Base URL of the Enigma2 receiver (defaults to openWebIF.baseUrl)",
-          "format": "uri",
-          "pattern": "^https?://",
-          "examples": [
-            "http://receiver.local",
-            "http://192.168.1.100",
-            "https://enigma2.example.com"
-          ]
-        },
-        "username": {
-          "type": "string",
-          "description": "Enigma2 authentication username (if required). Environment variables like ${USER} are expanded.",
-          "examples": ["root", "${ENIGMA_USER}"]
-        },
-        "password": {
-          "type": "string",
-          "writeOnly": true,
-          "description": "Enigma2 authentication password (if required). Can also be provided via environment variable XG2G_V3_E2_PASS. Never logged in plaintext. Environment variables are expanded.",
-          "examples": ["dreambox", "${ENIGMA_PASSWORD}"]
-        },
-        "timeout": {
-          "type": "string",
-          "description": "HTTP request timeout duration (Go duration format: 10s, 500ms, 1m)",
-          "pattern": "^[0-9]+(ns|us|µs|ms|s|m|h)$",
-          "default": "10s",
-          "examples": ["10s", "5s", "30s"]
-        },
-        "responseHeaderTimeout": {
-          "type": "string",
-          "description": "Timeout to wait for HTTP response headers (Go duration format)",
-          "pattern": "^[0-9]+(ns|us|µs|ms|s|m|h)$",
-          "default": "10s",
-          "examples": ["10s", "5s", "30s"]
-        },
-        "retries": {
-          "type": "integer",
-          "description": "Number of retry attempts for failed HTTP requests",
-          "minimum": 0,
-          "maximum": 10,
-          "default": 2,
-          "examples": [2, 3, 0]
-        },
-        "backoff": {
-          "type": "string",
-          "description": "Initial backoff duration between retries (Go duration format)",
-          "pattern": "^[0-9]+(ns|us|µs|ms|s|m|h)$",
-          "default": "200ms",
-          "examples": ["200ms", "500ms", "1s"]
-        },
-        "maxBackoff": {
-          "type": "string",
-          "description": "Maximum backoff duration for exponential backoff (Go duration format)",
-          "pattern": "^[0-9]+(ns|us|µs|ms|s|m|h)$",
-          "default": "2s",
-          "examples": ["2s", "5s", "10s"]
-        },
-        "rateLimit": {
-          "type": "integer",
-          "description": "Receiver request rate limit in requests per second (0 uses default)",
-          "minimum": 0,
-          "default": 10,
-          "examples": [10, 5, 0]
-        },
-        "rateBurst": {
-          "type": "integer",
-          "description": "Burst capacity for receiver requests",
-          "minimum": 0,
-          "default": 20,
-          "examples": [20, 10, 0]
-        },
-        "userAgent": {
-          "type": "string",
-          "description": "User-Agent string for Enigma2 requests",
-          "default": "xg2g-v3",
-          "examples": ["xg2g-v3"]
-        },
-        "fallbackTo8001": {
-          "type": "boolean",
-          "description": "Fallback to direct 8001 stream when StreamRelay (17999) fails preflight",
-          "default": false,
-          "examples": [false, true]
-        }
-      }
-    },
-    "bouquets": {
-      "type": "array",
-      "description": "Optional list of Enigma2 bouquet references (empty uses all available bouquets)",
-      "items": {
-        "type": "string",
-        "minLength": 1,
-        "examples": [
-          "userbouquet.favourites.tv",
-          "userbouquet.dbe00.tv",
-          "1:7:1:0:0:0:0:0:0:0:FROM BOUQUET \"userbouquet.favourites.tv\" ORDER BY bouquet"
-        ]
-      },
-      "examples": [
-        [],
-        ["userbouquet.favourites.tv"],
-        ["userbouquet.dbe00.tv", "userbouquet.dbe01.tv"]
-      ]
-    },
-    "epg": {
-      "type": "object",
-      "description": "Electronic Program Guide (EPG) fetching and generation configuration",
-      "properties": {
-        "enabled": {
-          "type": "boolean",
-          "description": "Enable or disable EPG fetching and XMLTV generation",
-          "default": true
-        },
-        "days": {
-          "type": "integer",
-          "description": "Number of days of EPG data to fetch (1-14)",
-          "minimum": 1,
-          "maximum": 14,
-          "default": 7,
-          "examples": [7, 3, 14]
-        },
-        "maxConcurrency": {
-          "type": "integer",
-          "description": "Maximum concurrent EPG requests to the receiver (1-10)",
-          "minimum": 1,
-          "maximum": 10,
-          "default": 5,
-          "examples": [5, 3, 8]
-        },
-        "timeoutMs": {
-          "type": "integer",
-          "description": "Timeout in milliseconds for individual EPG requests (100-60000ms)",
-          "minimum": 100,
-          "maximum": 60000,
-          "default": 15000,
-          "examples": [15000, 10000, 30000]
-        },
-        "retries": {
-          "type": "integer",
-          "description": "Number of retry attempts for failed EPG requests (0-5)",
-          "minimum": 0,
-          "maximum": 5,
-          "default": 2,
-          "examples": [2, 3, 0]
-        },
-        "fuzzyMax": {
-          "type": "integer",
-          "description": "Maximum Levenshtein distance for fuzzy matching service names (0-10)",
-          "minimum": 0,
-          "maximum": 10,
-          "default": 2,
-          "examples": [2, 3, 0]
-        },
-        "xmltvPath": {
-          "type": "string",
-          "description": "Output path for generated XMLTV file (relative to dataDir or absolute)",
-          "examples": [
-            "xmltv.xml",
-            "xmltv/epg.xml",
-            "/var/www/epg/xmltv.xml"
-          ]
-        },
-        "source": {
-          "type": "string",
-          "description": "EPG data source: 'bouquet' (fetch full bouquet EPG) or 'per-service' (fetch per service)",
-          "enum": ["bouquet", "per-service"],
-          "default": "per-service",
-          "examples": ["per-service", "bouquet"]
-        }
-      }
-    },
-    "api": {
-      "type": "object",
-      "description": "HTTP API server configuration for runtime control",
-      "properties": {
-        "token": {
-          "type": "string",
-          "writeOnly": true,
-          "description": "Bearer token for API authentication. Can also be provided via environment variable XG2G_API_TOKEN. Never logged in plaintext. Environment variables are expanded.",
-          "examples": ["my-secret-token", "${API_TOKEN}"]
-        },
-        "tokenScopes": {
-          "type": "array",
-          "description": "Scopes granted to api.token (comma-separated via XG2G_API_TOKEN_SCOPES).",
-          "minItems": 1,
-          "uniqueItems": true,
-          "items": {
-            "type": "string",
-            "enum": ["*", "v3:*", "v3:read", "v3:write", "v3:admin"],
-            "examples": ["v3:read", "v3:write"]
-          }
-        },
-        "tokens": {
-          "type": "array",
-          "description": "Additional API tokens with scopes (XG2G_API_TOKENS). JSON array is recommended for env; legacy token=scopes;token2=scopes2 remains supported.",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["token", "scopes"],
-            "properties": {
-              "token": {
-                "type": "string",
-                "writeOnly": true,
-                "description": "API token value. Keep it secret.",
-                "examples": ["my-other-token"]
-              },
-              "scopes": {
-                "type": "array",
-                "description": "Scopes granted to this token.",
-                "minItems": 1,
-                "uniqueItems": true,
-                "items": {
-                  "type": "string",
-                  "enum": ["*", "v3:*", "v3:read", "v3:write", "v3:admin"],
-                  "examples": ["v3:read", "v3:write"]
-                }
-              }
-            }
-          },
-          "default": []
-        },
-        "listenAddr": {
-          "type": "string",
-          "description": "API server listen address (host:port)",
-          "pattern": "^([a-zA-Z0-9.-]+)?:[0-9]+$",
-          "default": ":8080",
-          "examples": [":8088", "127.0.0.1:8088", "0.0.0.0:9090"]
-        }
-      }
-    },
-    "metrics": {
-      "type": "object",
-      "description": "Prometheus metrics exporter configuration",
-      "properties": {
-        "enabled": {
-          "type": "boolean",
-          "description": "Enable or disable Prometheus metrics endpoint",
-          "default": false
-        },
-        "listenAddr": {
-          "type": "string",
-          "description": "Metrics server listen address (host:port)",
-          "pattern": "^([a-zA-Z0-9.-]+)?:[0-9]+$",
-          "examples": [":9091", "127.0.0.1:9091", "0.0.0.0:2112"]
-        }
-      }
-    },
-    "picons": {
-      "type": "object",
-      "description": "Picon/channel logo configuration",
-      "properties": {
-        "baseUrl": {
-          "type": "string",
-          "description": "Base URL for picon/logo images. Environment variables are expanded.",
-          "examples": [
-            "http://receiver.local/picon",
-            "https://picons.example.com",
-            "${PICON_URL}"
-          ]
-        }
-      }
-    }
-  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
+  "description": "YAML configuration schema for xg2g - XMLTV EPG generator for Enigma2 receivers",
   "examples": [
     {
-      "version": "1",
-      "dataDir": "/var/lib/xg2g",
-      "openWebIF": {
-        "baseUrl": "http://receiver.local",
-        "username": "root",
-        "password": "dreambox",
-        "timeout": "10s",
-        "retries": 3,
-        "streamPort": 8001
+      "api": {
+        "listenAddr": ":8088",
+        "token": "${API_TOKEN}"
       },
       "bouquets": [
         "userbouquet.favourites.tv"
       ],
+      "dataDir": "/var/lib/xg2g",
       "epg": {
-        "enabled": true,
         "days": 7,
-        "maxConcurrency": 5,
-        "timeoutMs": 15000,
-        "retries": 2,
+        "enabled": true,
         "fuzzyMax": 2,
-        "xmltvPath": "xmltv.xml",
-        "source": "per-service"
-      },
-      "api": {
-        "token": "${API_TOKEN}",
-        "listenAddr": ":8088"
+        "maxConcurrency": 5,
+        "retries": 2,
+        "source": "per-service",
+        "timeoutMs": 15000,
+        "xmltvPath": "xmltv.xml"
       },
       "metrics": {
         "enabled": false,
         "listenAddr": ":9091"
       },
+      "openWebIF": {
+        "baseUrl": "http://receiver.local",
+        "password": "dreambox",
+        "retries": 3,
+        "streamPort": 8001,
+        "timeout": "10s",
+        "username": "root"
+      },
       "picons": {
         "baseUrl": "http://receiver.local/picon"
-      }
+      },
+      "version": "1"
     }
-  ]
+  ],
+  "properties": {
+    "api": {
+      "description": "HTTP API server configuration for runtime control",
+      "properties": {
+        "allowedOrigins": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "listenAddr": {
+          "default": ":8088",
+          "description": "API server listen address (host:port)",
+          "examples": [
+            ":8088",
+            "127.0.0.1:8088",
+            "0.0.0.0:9090"
+          ],
+          "pattern": "^([a-zA-Z0-9.-]+)?:[0-9]+$",
+          "type": "string"
+        },
+        "token": {
+          "description": "Bearer token for API authentication. Can also be provided via environment variable XG2G_API_TOKEN. Never logged in plaintext. Environment variables are expanded.",
+          "examples": [
+            "my-secret-token",
+            "${API_TOKEN}"
+          ],
+          "type": "string",
+          "writeOnly": true
+        },
+        "tokenScopes": {
+          "description": "Scopes granted to api.token (comma-separated via XG2G_API_TOKEN_SCOPES).",
+          "items": {
+            "enum": [
+              "*",
+              "v3:*",
+              "v3:read",
+              "v3:write",
+              "v3:admin"
+            ],
+            "examples": [
+              "v3:read",
+              "v3:write"
+            ],
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "tokens": {
+          "default": [],
+          "description": "Additional API tokens with scopes (XG2G_API_TOKENS). JSON array is recommended for env; legacy token=scopes;token2=scopes2 remains supported.",
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "scopes": {
+                "description": "Scopes granted to this token.",
+                "items": {
+                  "enum": [
+                    "*",
+                    "v3:*",
+                    "v3:read",
+                    "v3:write",
+                    "v3:admin"
+                  ],
+                  "examples": [
+                    "v3:read",
+                    "v3:write"
+                  ],
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array",
+                "uniqueItems": true
+              },
+              "token": {
+                "description": "API token value. Keep it secret.",
+                "examples": [
+                  "my-other-token"
+                ],
+                "type": "string",
+                "writeOnly": true
+              }
+            },
+            "required": [
+              "token",
+              "scopes"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "bouquets": {
+      "description": "Optional list of Enigma2 bouquet references (empty uses all available bouquets)",
+      "examples": [
+        [],
+        [
+          "userbouquet.favourites.tv"
+        ],
+        [
+          "userbouquet.dbe00.tv",
+          "userbouquet.dbe01.tv"
+        ]
+      ],
+      "items": {
+        "examples": [
+          "userbouquet.favourites.tv",
+          "userbouquet.dbe00.tv",
+          "1:7:1:0:0:0:0:0:0:0:FROM BOUQUET \"userbouquet.favourites.tv\" ORDER BY bouquet"
+        ],
+        "minLength": 1,
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "configStrict": {
+      "default": true,
+      "type": "boolean"
+    },
+    "configVersion": {
+      "default": "3.0.0",
+      "description": "Deprecated/ignored. Configuration is fixed to v3.",
+      "examples": [
+        "3.0.0"
+      ],
+      "type": "string"
+    },
+    "dataDir": {
+      "default": "/tmp",
+      "description": "Base directory for generated XMLTV files and cache. Environment variables like ${HOME} are expanded.",
+      "examples": [
+        "/var/lib/xg2g",
+        "${HOME}/.local/share/xg2g",
+        "/tmp/xg2g"
+      ],
+      "type": "string"
+    },
+    "engine": {
+      "properties": {
+        "enabled": {
+          "default": false,
+          "type": "boolean"
+        },
+        "idleTimeout": {
+          "default": "1m",
+          "type": "string"
+        },
+        "mode": {
+          "default": "standard",
+          "type": "string"
+        },
+        "tunerSlots": {
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "enigma2": {
+      "description": "Enigma2 client configuration for the V3 worker",
+      "properties": {
+        "analyzeDuration": {
+          "default": "10000000",
+          "type": "string"
+        },
+        "authMode": {
+          "default": "inherit",
+          "type": "string"
+        },
+        "backoff": {
+          "default": "200ms",
+          "description": "Initial backoff duration between retries (Go duration format)",
+          "examples": [
+            "200ms",
+            "500ms",
+            "1s"
+          ],
+          "pattern": "^[0-9]+(ns|us|µs|ms|s|m|h)$",
+          "type": "string"
+        },
+        "baseUrl": {
+          "description": "Base URL of the Enigma2 receiver (defaults to openWebIF.baseUrl)",
+          "examples": [
+            "http://receiver.local",
+            "http://192.168.1.100",
+            "https://enigma2.example.com"
+          ],
+          "format": "uri",
+          "pattern": "^https?://",
+          "type": "string"
+        },
+        "fallbackTo8001": {
+          "default": false,
+          "description": "Fallback to direct 8001 stream when StreamRelay (17999) fails preflight",
+          "examples": [
+            false,
+            true
+          ],
+          "type": "boolean"
+        },
+        "maxBackoff": {
+          "default": "30s",
+          "description": "Maximum backoff duration for exponential backoff (Go duration format)",
+          "examples": [
+            "2s",
+            "5s",
+            "10s"
+          ],
+          "pattern": "^[0-9]+(ns|us|µs|ms|s|m|h)$",
+          "type": "string"
+        },
+        "password": {
+          "description": "Enigma2 authentication password (if required). Can also be provided via environment variable XG2G_V3_E2_PASS. Never logged in plaintext. Environment variables are expanded.",
+          "examples": [
+            "dreambox",
+            "${ENIGMA_PASSWORD}"
+          ],
+          "type": "string",
+          "writeOnly": true
+        },
+        "preflightTimeout": {
+          "default": "10s",
+          "type": "string"
+        },
+        "probeSize": {
+          "default": "32M",
+          "type": "string"
+        },
+        "rateBurst": {
+          "default": 20,
+          "description": "Burst capacity for receiver requests",
+          "examples": [
+            20,
+            10,
+            0
+          ],
+          "minimum": 0,
+          "type": "integer"
+        },
+        "rateLimit": {
+          "default": 10,
+          "description": "Receiver request rate limit in requests per second (0 uses default)",
+          "examples": [
+            10,
+            5,
+            0
+          ],
+          "minimum": 0,
+          "type": "integer"
+        },
+        "responseHeaderTimeout": {
+          "default": "10s",
+          "description": "Timeout to wait for HTTP response headers (Go duration format)",
+          "examples": [
+            "10s",
+            "5s",
+            "30s"
+          ],
+          "pattern": "^[0-9]+(ns|us|µs|ms|s|m|h)$",
+          "type": "string"
+        },
+        "retries": {
+          "default": 2,
+          "description": "Number of retry attempts for failed HTTP requests",
+          "examples": [
+            2,
+            3,
+            0
+          ],
+          "maximum": 10,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "streamPort": {
+          "default": 8001,
+          "type": "integer"
+        },
+        "timeout": {
+          "default": "10s",
+          "description": "HTTP request timeout duration (Go duration format: 10s, 500ms, 1m)",
+          "examples": [
+            "10s",
+            "5s",
+            "30s"
+          ],
+          "pattern": "^[0-9]+(ns|us|µs|ms|s|m|h)$",
+          "type": "string"
+        },
+        "tuneTimeout": {
+          "default": "10s",
+          "type": "string"
+        },
+        "useWebIFStreams": {
+          "default": true,
+          "type": "boolean"
+        },
+        "userAgent": {
+          "default": "xg2g-v3",
+          "description": "User-Agent string for Enigma2 requests",
+          "examples": [
+            "xg2g-v3"
+          ],
+          "type": "string"
+        },
+        "username": {
+          "description": "Enigma2 authentication username (if required). Environment variables like ${USER} are expanded.",
+          "examples": [
+            "root",
+            "${ENIGMA_USER}"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "epg": {
+      "description": "Electronic Program Guide (EPG) fetching and generation configuration",
+      "properties": {
+        "days": {
+          "default": 14,
+          "description": "Number of days of EPG data to fetch (1-14)",
+          "examples": [
+            7,
+            3,
+            14
+          ],
+          "maximum": 14,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "enabled": {
+          "default": true,
+          "description": "Enable or disable EPG fetching and XMLTV generation",
+          "type": "boolean"
+        },
+        "fuzzyMax": {
+          "default": 2,
+          "description": "Maximum Levenshtein distance for fuzzy matching service names (0-10)",
+          "examples": [
+            2,
+            3,
+            0
+          ],
+          "maximum": 10,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "maxConcurrency": {
+          "default": 5,
+          "description": "Maximum concurrent EPG requests to the receiver (1-10)",
+          "examples": [
+            5,
+            3,
+            8
+          ],
+          "maximum": 10,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "retries": {
+          "default": 2,
+          "description": "Number of retry attempts for failed EPG requests (0-5)",
+          "examples": [
+            2,
+            3,
+            0
+          ],
+          "maximum": 5,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "source": {
+          "default": "per-service",
+          "description": "EPG data source: 'bouquet' (fetch full bouquet EPG) or 'per-service' (fetch per service)",
+          "enum": [
+            "bouquet",
+            "per-service"
+          ],
+          "examples": [
+            "per-service",
+            "bouquet"
+          ],
+          "type": "string"
+        },
+        "timeoutMs": {
+          "default": 5000,
+          "description": "Timeout in milliseconds for individual EPG requests (100-60000ms)",
+          "examples": [
+            15000,
+            10000,
+            30000
+          ],
+          "maximum": 60000,
+          "minimum": 100,
+          "type": "integer"
+        },
+        "xmltvPath": {
+          "default": "xmltv.xml",
+          "description": "Output path for generated XMLTV file (relative to dataDir or absolute)",
+          "examples": [
+            "xmltv.xml",
+            "xmltv/epg.xml",
+            "/var/www/epg/xmltv.xml"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ffmpeg": {
+      "properties": {
+        "bin": {
+          "default": "ffmpeg",
+          "type": "string"
+        },
+        "killTimeout": {
+          "default": "5s",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hdhr": {
+      "properties": {
+        "baseUrl": {
+          "type": "string"
+        },
+        "deviceId": {
+          "type": "string"
+        },
+        "enabled": {
+          "default": false,
+          "type": "boolean"
+        },
+        "firmwareName": {
+          "type": "string"
+        },
+        "friendlyName": {
+          "type": "string"
+        },
+        "modelNumber": {
+          "type": "string"
+        },
+        "plexForceHls": {
+          "type": "boolean"
+        },
+        "tunerCount": {
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "hls": {
+      "properties": {
+        "dvrWindow": {
+          "default": "45m",
+          "type": "string"
+        },
+        "root": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "library": {
+      "properties": {
+        "db_path": {
+          "type": "string"
+        },
+        "enabled": {
+          "default": false,
+          "type": "boolean"
+        },
+        "roots": {
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "logLevel": {
+      "default": "info",
+      "description": "Logging verbosity level",
+      "enum": [
+        "debug",
+        "info",
+        "warn",
+        "error"
+      ],
+      "type": "string"
+    },
+    "logService": {
+      "type": "string"
+    },
+    "metrics": {
+      "description": "Prometheus metrics exporter configuration",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "description": "Enable or disable Prometheus metrics endpoint",
+          "type": "boolean"
+        },
+        "listenAddr": {
+          "default": "",
+          "description": "Metrics server listen address (host:port)",
+          "examples": [
+            ":9091",
+            "127.0.0.1:9091",
+            "0.0.0.0:2112"
+          ],
+          "pattern": "^$|^([a-zA-Z0-9.-]+)?:[0-9]+$",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "openWebIF": {
+      "description": "OpenWebIF API configuration for Enigma2 receiver",
+      "properties": {
+        "backoff": {
+          "default": "200ms",
+          "deprecated": true,
+          "description": "Initial backoff duration between retries (Go duration format)",
+          "examples": [
+            "500ms",
+            "1s",
+            "100ms"
+          ],
+          "pattern": "^[0-9]+(ns|us|µs|ms|s|m|h)$",
+          "type": "string"
+        },
+        "baseUrl": {
+          "deprecated": true,
+          "description": "Base URL of the Enigma2 receiver's OpenWebIF interface",
+          "examples": [
+            "http://receiver.local",
+            "http://192.168.1.100",
+            "https://enigma2.example.com"
+          ],
+          "format": "uri",
+          "pattern": "^https?://",
+          "type": "string"
+        },
+        "maxBackoff": {
+          "default": "30s",
+          "deprecated": true,
+          "description": "Maximum backoff duration for exponential backoff (Go duration format)",
+          "examples": [
+            "30s",
+            "1m",
+            "10s"
+          ],
+          "pattern": "^[0-9]+(ns|us|µs|ms|s|m|h)$",
+          "type": "string"
+        },
+        "password": {
+          "deprecated": true,
+          "description": "OpenWebIF authentication password (if required). Can also be provided via environment variable XG2G_OWI_PASS. Never logged in plaintext. Environment variables like ${PASS} are expanded.",
+          "examples": [
+            "dreambox",
+            "${ENIGMA_PASSWORD}"
+          ],
+          "type": "string",
+          "writeOnly": true
+        },
+        "retries": {
+          "default": 2,
+          "deprecated": true,
+          "description": "Number of retry attempts for failed HTTP requests",
+          "examples": [
+            3,
+            5,
+            0
+          ],
+          "maximum": 10,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "streamPort": {
+          "default": 8001,
+          "deprecated": true,
+          "description": "Port number for IPTV streaming URLs",
+          "examples": [
+            8001,
+            8002
+          ],
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "timeout": {
+          "default": "10s",
+          "deprecated": true,
+          "description": "HTTP request timeout duration (Go duration format: 10s, 500ms, 1m)",
+          "examples": [
+            "10s",
+            "5s",
+            "30s"
+          ],
+          "pattern": "^[0-9]+(ns|us|µs|ms|s|m|h)$",
+          "type": "string"
+        },
+        "useWebIFStreams": {
+          "default": true,
+          "deprecated": true,
+          "type": "boolean"
+        },
+        "username": {
+          "deprecated": true,
+          "description": "OpenWebIF authentication username (if required). Environment variables like ${USER} are expanded.",
+          "examples": [
+            "root",
+            "${ENIGMA_USER}"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "baseUrl"
+      ],
+      "type": "object"
+    },
+    "picons": {
+      "description": "Picon/channel logo configuration",
+      "properties": {
+        "baseUrl": {
+          "description": "Base URL for picon/logo images. Environment variables are expanded.",
+          "examples": [
+            "http://receiver.local/picon",
+            "https://picons.example.com",
+            "${PICON_URL}"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "rateLimit": {
+      "properties": {
+        "auth": {
+          "default": 10,
+          "type": "integer"
+        },
+        "burst": {
+          "default": 20,
+          "type": "integer"
+        },
+        "enabled": {
+          "default": true,
+          "type": "boolean"
+        },
+        "global": {
+          "default": 100,
+          "type": "integer"
+        },
+        "whitelist": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "readyStrict": {
+      "default": false,
+      "type": "boolean"
+    },
+    "recording_playback": {
+      "properties": {
+        "mappings": {
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "playback_policy": {
+          "default": "auto",
+          "type": "string"
+        },
+        "stable_window": {
+          "default": "10s",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "recording_roots": {
+      "type": "object"
+    },
+    "sessions": {
+      "properties": {
+        "expiry_check_interval": {
+          "default": "1m",
+          "type": "string"
+        },
+        "heartbeat_interval": {
+          "default": "30s",
+          "type": "string"
+        },
+        "lease_ttl": {
+          "default": "2h",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "store": {
+      "properties": {
+        "backend": {
+          "default": "memory",
+          "type": "string"
+        },
+        "path": {
+          "default": "/var/lib/xg2g/store",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "streaming": {
+      "properties": {
+        "delivery_policy": {
+          "default": "universal",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "tls": {
+      "properties": {
+        "cert": {
+          "type": "string"
+        },
+        "enabled": {
+          "default": false,
+          "type": "boolean"
+        },
+        "forceHTTPS": {
+          "default": false,
+          "type": "boolean"
+        },
+        "key": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "trustedProxies": {
+      "type": "string"
+    },
+    "version": {
+      "default": "3.0.0",
+      "description": "Deprecated/ignored. Configuration is fixed to v3.",
+      "examples": [
+        "3.0.0"
+      ],
+      "type": "string"
+    },
+    "vod": {
+      "properties": {
+        "analyzeDuration": {
+          "default": "50000000",
+          "type": "string"
+        },
+        "cacheTTL": {
+          "default": "24h",
+          "type": "string"
+        },
+        "maxConcurrent": {
+          "default": 2,
+          "type": "integer"
+        },
+        "probeSize": {
+          "default": "50M",
+          "type": "string"
+        },
+        "stallTimeout": {
+          "default": "1m",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "dataDir",
+    "openWebIF",
+    "epg"
+  ],
+  "title": "xg2g Configuration",
+  "type": "object"
 }
