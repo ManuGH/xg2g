@@ -838,6 +838,9 @@ components:
           description: Truthful audio codec if known (e.g., aac, ac3, mp2).
         reason:
           $ref: "#/components/schemas/PlaybackInfoReason"
+        decision:
+          $ref: "#/components/schemas/PlaybackDecision"
+          description: Backend playback decision (P4-1). Required when client provides capabilities.
 
     PlaybackInfoMode:
       type: string
@@ -852,15 +855,187 @@ components:
     PlaybackInfoReason:
       type: string
       enum:
-        [
-          directplay_match,
-          transcode_audio,
-          transcode_video,
-          transcode_all,
-          container_mismatch,
-          unknown,
-        ]
+        - directplay_match
+        - transcode_audio
+        - transcode_video
+        - transcode_all
+        - container_mismatch
+        - unknown
       description: Reason for the playback decision.
+
+    # ==================== P4-1: Decision Engine Schemas ====================
+
+    PlaybackCapabilities:
+      type: object
+      required: [capabilities_version, container, video_codecs, audio_codecs]
+      additionalProperties: false
+      description: Client capabilities for playback decision (P4-1)
+      properties:
+        capabilities_version:
+          type: integer
+          description: "Capabilities contract version (current: 1)"
+          example: 1
+        container:
+          type: array
+          items:
+            type: string
+          description: Supported container formats
+          example: ["mp4", "webm", "hls"]
+        video_codecs:
+          type: array
+          items:
+            type: string
+          description: Supported video codecs
+          example: ["h264", "hevc"]
+        audio_codecs:
+          type: array
+          items:
+            type: string
+          description: Supported audio codecs
+          example: ["aac", "ac3"]
+        max_video:
+          type: object
+          description: Optional resolution/FPS constraints
+          properties:
+            width:
+              type: integer
+              example: 1920
+            height:
+              type: integer
+              example: 1080
+            fps:
+              type: integer
+              example: 60
+        supports_hls:
+          type: boolean
+          description: Whether client supports HLS playlists
+          example: true
+        supports_range:
+          type: boolean
+          description: Whether client supports HTTP range requests
+          example: true
+        device_type:
+          type: string
+          description: Client device category for policy decisions
+          example: "desktop"
+
+    PlaybackDecision:
+      type: object
+      required: [mode, selected, outputs, constraints, reasons, trace]
+      additionalProperties: false
+      description: Complete playback decision from backend (P4-1)
+      properties:
+        mode:
+          type: string
+          enum: [direct_play, direct_stream, transcode, deny]
+          description: Playback mode decision
+        selected:
+          type: object
+          required: [container, video_codec, audio_codec]
+          description: Selected output format
+          properties:
+            container:
+              type: string
+              example: "mp4"
+            video_codec:
+              type: string
+              example: "h264"
+            audio_codec:
+              type: string
+              example: "aac"
+        outputs:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlaybackOutput"
+          description: Available output URLs/playlists
+        constraints:
+          type: array
+          items:
+            type: string
+          description: Applied constraints (e.g., downscale_required)
+          example: []
+        reasons:
+          type: array
+          items:
+            type: string
+          description: Machine-readable decision reason codes
+          example: ["source_compatible_with_client"]
+        trace:
+          type: object
+          required: [request_id]
+          description: Traceability information
+          properties:
+            request_id:
+              type: string
+              format: uuid
+            session_id:
+              type: string
+
+    PlaybackOutput:
+      type: object
+      required: [kind, url]
+      description: Output URL for client playback
+      properties:
+        kind:
+          type: string
+          enum: [file, hls, playlist]
+          description: Output type
+        url:
+          type: string
+          format: uri
+          description: Playback URL
+          example: "http://127.0.0.1:8088/api/v3/recordings/rec:xyz/stream.mp4"
+        playlist_url:
+          type: string
+          format: uri
+          description: HLS playlist URL (for kind=hls)
+
+    # ==================== RFC7807 Problem Details (P4-1) ====================
+
+    ProblemCapabilitiesMissing:
+      allOf:
+        - $ref: "#/components/schemas/ProblemDetails"
+        - type: object
+          properties:
+            code:
+              type: string
+              enum: [capabilities_missing]
+          example:
+            type: "about:blank"
+            title: "Precondition Failed"
+            status: 412
+            code: "capabilities_missing"
+            detail: "Client must provide capabilities (capabilities_version required)"
+
+    ProblemCapabilitiesInvalid:
+      allOf:
+        - $ref: "#/components/schemas/ProblemDetails"
+        - type: object
+          properties:
+            code:
+              type: string
+              enum: [capabilities_invalid]
+          example:
+            type: "about:blank"
+            title: "Bad Request"
+            status: 400
+            code: "capabilities_invalid"
+            detail: "capabilities_version 999 not supported (current: 1)"
+
+    ProblemDecisionAmbiguous:
+      allOf:
+        - $ref: "#/components/schemas/ProblemDetails"
+        - type: object
+          properties:
+            code:
+              type: string
+              enum: [decision_ambiguous]
+          example:
+            type: "about:blank"
+            title: "Unprocessable Entity"
+            status: 422
+            code: "decision_ambiguous"
+            detail: "No compatible playback path available"
 
     TimerCreateRequest:
       type: object
@@ -928,7 +1103,11 @@ components:
             type: object
             properties:
               kind:
-                { type: string, enum: [reduce_padding, shift_start, shift_end] }
+                type: string
+                enum:
+                  - reduce_padding
+                  - shift_start
+                  - shift_end
               proposedBegin: { type: integer, format: int64 }
               proposedEnd: { type: integer, format: int64 }
               note: { type: string }
