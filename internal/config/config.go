@@ -903,6 +903,7 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	cfg.Enigma2.Retries = l.envInt("XG2G_E2_RETRIES", cfg.Enigma2.Retries)
 	cfg.Enigma2.Backoff = l.envDuration("XG2G_E2_BACKOFF", cfg.Enigma2.Backoff)
 	cfg.Enigma2.FallbackTo8001 = l.envBool("XG2G_E2_FALLBACK_TO_8001", cfg.Enigma2.FallbackTo8001)
+	cfg.Enigma2.PreflightTimeout = l.envDuration("XG2G_E2_PREFLIGHT_TIMEOUT", cfg.Enigma2.PreflightTimeout)
 
 	// Tuner Slots: Auto-Discovery with Manual Override
 	// LOGIC: Auto-discover by default, only skip if manually configured
