@@ -81,6 +81,7 @@ function V3Player(props: V3PlayerProps) {
     duration && duration > 0 ? duration : null
   );
   const [playbackMode, setPlaybackMode] = useState<'LIVE' | 'VOD' | 'UNKNOWN'>('UNKNOWN');
+  const [vodStreamMode, setVodStreamMode] = useState<'direct_mp4' | 'hls' | null>(null);
   const [isPip, setIsPip] = useState(false);
   const [, setIsFullscreen] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -261,27 +262,30 @@ function V3Player(props: V3PlayerProps) {
   }, []);
 
   const toggleMute = useCallback(() => {
-    if (!videoRef.current) return;
-    if (isMuted) {
-      videoRef.current.muted = false;
-      setIsMuted(false);
-    } else {
-      videoRef.current.muted = true;
-      setIsMuted(true);
-    }
-  }, [isMuted]);
+    const video = videoRef.current;
+    if (!video) return;
+    const nextMuted = !video.muted;
+    video.muted = nextMuted;
+    setIsMuted(nextMuted);
+  }, []);
 
   const handleVolumeChange = useCallback((newVolume: number) => {
-    if (!videoRef.current) return;
-    videoRef.current.volume = newVolume;
+    const video = videoRef.current;
+    if (!video) return;
+    video.volume = newVolume;
     setVolume(newVolume);
-    if (newVolume === 0) {
-      setIsMuted(true);
-    } else if (isMuted) {
-      setIsMuted(false);
-      videoRef.current.muted = false;
-    }
-  }, [isMuted]);
+    const shouldMute = newVolume === 0;
+    video.muted = shouldMute;
+    setIsMuted(shouldMute);
+  }, []);
+
+  const applyAutoplayMute = useCallback(() => {
+    if (!autoStart) return;
+    const video = videoRef.current;
+    if (!video) return;
+    video.muted = true;
+    setIsMuted(true);
+  }, [autoStart]);
 
   // --- Core Helpers & Wrappers (Memoized) ---
 
@@ -612,6 +616,7 @@ function V3Player(props: V3PlayerProps) {
   const startRecordingPlayback = useCallback(async (id: string): Promise<void> => {
     activeRecordingRef.current = id;
     setActiveRecordingId(id);
+    setVodStreamMode(null);
     clearVodRetry();
     clearVodFetch();
     resetPlaybackEngine();
@@ -627,7 +632,7 @@ function V3Player(props: V3PlayerProps) {
       // Determine Playback Mode
       const hlsUrl = `${apiBase}/recordings/${id}/playlist.m3u8`;
       let streamUrl = hlsUrl;
-      let mode = 'hls';
+      let mode: 'hls' | 'direct_mp4' = 'hls';
 
 
       try {
@@ -682,6 +687,7 @@ function V3Player(props: V3PlayerProps) {
           // Add Cache Busting to prevent sticky 503s
           streamUrl += (streamUrl.includes('?') ? '&' : '?') + `cb=${Date.now()}`;
         }
+        setVodStreamMode(mode);
 
         // Use Backend-Provided Duration
         if (pInfo.duration_seconds && pInfo.duration_seconds > 0) {
@@ -804,6 +810,7 @@ function V3Player(props: V3PlayerProps) {
   const startStream = useCallback(async (refToUse?: string): Promise<void> => {
     if (startIntentInFlight.current) return;
     startIntentInFlight.current = true;
+    applyAutoplayMute();
 
     try {
       if (recordingId) {
@@ -820,6 +827,7 @@ function V3Player(props: V3PlayerProps) {
         // Reset state for local/src playback
         activeRecordingRef.current = null;
         setActiveRecordingId(null);
+        setVodStreamMode(null);
         clearVodRetry();
         clearVodFetch();
         sessionIdRef.current = null;
@@ -835,6 +843,7 @@ function V3Player(props: V3PlayerProps) {
       // Reset state for new live session
       activeRecordingRef.current = null;
       setActiveRecordingId(null);
+      setVodStreamMode(null);
       clearVodRetry();
       clearVodFetch();
       sessionIdRef.current = null;
@@ -915,7 +924,7 @@ function V3Player(props: V3PlayerProps) {
     } finally {
       startIntentInFlight.current = false;
     }
-  }, [src, recordingId, sRef, apiBase, authHeaders, ensureSessionCookie, waitForSessionReady, playHls, sendStopIntent, t, duration, startRecordingPlayback]);
+  }, [src, recordingId, sRef, apiBase, authHeaders, ensureSessionCookie, waitForSessionReady, playHls, sendStopIntent, t, duration, startRecordingPlayback, applyAutoplayMute]);
 
   const stopStream = useCallback(async (skipClose: boolean = false): Promise<void> => {
     if (hlsRef.current) hlsRef.current.destroy();
@@ -938,6 +947,7 @@ function V3Player(props: V3PlayerProps) {
     setSeekableEnd(0);
     setCurrentPlaybackTime(0);
     setStatus('stopped');
+    setVodStreamMode(null);
     if (onClose && !skipClose) onClose();
   }, [clearVodFetch, clearVodRetry, onClose, sendStopIntent, sessionId]);
 
@@ -966,7 +976,8 @@ function V3Player(props: V3PlayerProps) {
           toggleFullscreen();
           break;
         case 'm':
-          if (videoRef.current) videoRef.current.muted = !videoRef.current.muted;
+          e.preventDefault();
+          toggleMute();
           break;
         case ' ':
         case 'k':
@@ -990,7 +1001,7 @@ function V3Player(props: V3PlayerProps) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [toggleFullscreen, togglePlayPause, togglePiP, seekBy]);
+  }, [toggleFullscreen, togglePlayPause, togglePiP, toggleMute, seekBy]);
 
   // ADR-009: Session Heartbeat Loop
   useEffect(() => {
@@ -1333,7 +1344,7 @@ function V3Player(props: V3PlayerProps) {
 
   const spinnerLabel =
     status === 'starting' || status === 'priming' || status === 'buffering' || status === 'building'
-      ? (status === 'buffering' && playbackMode === 'VOD' && activeRecordingRef.current)
+      ? (status === 'buffering' && playbackMode === 'VOD' && activeRecordingRef.current && vodStreamMode === 'direct_mp4')
         ? t('player.preparingDirectPlay', 'Preparing Direct Play...') // Show explicit preparing for VOD buffering
         : `${t(`player.statusStates.${status}`, { defaultValue: status })}…`
       : '';
@@ -1444,7 +1455,6 @@ function V3Player(props: V3PlayerProps) {
           webkit-playsinline=""
           preload="metadata"
           autoPlay={!!autoStart}
-          muted={!!autoStart}
           className="video-element"
         />
       </div>
@@ -1542,6 +1552,15 @@ function V3Player(props: V3PlayerProps) {
             <input
               type="text"
               className="bg-input bg-input-service"
+              value={sRef}
+              onChange={(e) => setSRef(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  const nextRef = e.currentTarget.value;
+                  void startStream(nextRef);
+                }
+              }}
             />
           )
         )}

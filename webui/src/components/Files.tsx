@@ -14,10 +14,12 @@ function Files() {
 
   const fetchStatus = async () => {
     setLoading(true);
+    setError(null);
     try {
       const response = await getSystemHealth();
       if (response.data) {
         setHealth(response.data);
+        setError(null);
       } else if (response.error) {
         // @ts-ignore - response.error might be generic, status check is valid runtime
         if (response.response?.status === 401) {
@@ -45,6 +47,7 @@ function Files() {
   }, []);
 
   const handleRegenerate = async () => {
+    setError(null);
     setRegenerating(true);
     try {
       await postSystemRefresh();
@@ -62,7 +65,20 @@ function Files() {
   };
 
   if (loading && !health) return <div className="files-loading">Loading...</div>;
-  if (error) return <div className="files-alert files-alert-error">Error: {error}</div>;
+  if (error) {
+    return (
+      <div className="files-alert files-alert-error">
+        <div>Error: {error}</div>
+        <button
+          className="files-btn files-btn-secondary"
+          onClick={fetchStatus}
+          disabled={loading}
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   const hdhrUrl = `${window.location.protocol}//${window.location.host}/device.xml`;
   const m3uUrl = '/files/playlist.m3u';
@@ -86,7 +102,7 @@ function Files() {
       <div className="file-list">
         <div className="file-card">
           <h3>M3U Playlist</h3>
-          <p className="description">Standard M3U8 playlist for VLC, Kodi, TiviMate.</p>
+          <p className="description">Standard M3U playlist for VLC, Kodi, TiviMate.</p>
           <a href={m3uUrl} className="files-btn files-btn-primary" download>Download M3U</a>
         </div>
 
