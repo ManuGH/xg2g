@@ -35,6 +35,11 @@ func TestJSONSchemaValidation(t *testing.T) {
 			wantValid: true,
 		},
 		{
+			name:      "config.generated.example.yaml",
+			yamlFile:  filepath.Join("..", "..", "config.generated.example.yaml"),
+			wantValid: true,
+		},
+		{
 			name:      "config.example.yaml",
 			yamlFile:  filepath.Join("..", "..", "config.example.yaml"),
 			wantValid: true,

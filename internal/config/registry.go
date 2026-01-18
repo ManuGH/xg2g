@@ -194,6 +194,12 @@ func buildRegistry() *Registry {
 
 		// --- INTERNAL / CANDIDATES ---
 		{FieldPath: "apiTokensParseErr", Profile: ProfileInternal, Status: StatusInternal},
+		// Legacy VOD flat fields (backwards-compat only, use typed VOD.* instead)
+		{FieldPath: "VODProbeSize", Profile: ProfileInternal, Status: StatusInternal},
+		{FieldPath: "VODAnalyzeDuration", Profile: ProfileInternal, Status: StatusInternal},
+		{FieldPath: "VODStallTimeout", Profile: ProfileInternal, Status: StatusInternal},
+		{FieldPath: "VODMaxConcurrent", Profile: ProfileInternal, Status: StatusInternal},
+		{FieldPath: "VODCacheTTL", Profile: ProfileInternal, Status: StatusInternal},
 
 		// Zombie candidate examples (mapping existing env that might not be in AppConfig)
 		{Env: "XG2G_HTTP_ENABLE_HTTP2", FieldPath: "??", Profile: ProfileIntegrator, Status: StatusCandidate},

@@ -560,6 +560,9 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 	if err := l.checkAliasEnvConflicts(src); err != nil {
 		return err
 	}
+	if err := l.checkVODConflicts(src); err != nil {
+		return err
+	}
 	if src.DataDir != "" {
 		dst.DataDir = expandEnv(src.DataDir)
 	}
