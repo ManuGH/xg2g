@@ -1,0 +1,10 @@
+{
+				"status": 422,
+				"problem": {
+					"type": "about:blank",
+					"title": "Unprocessable Entity",
+					"status": 422,
+					"code": "decision_ambiguous",
+					"detail": "Media truth unavailable or unknown (cannot make deterministic decision)"
+				}
+			}

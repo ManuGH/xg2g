@@ -1,0 +1,58 @@
+{
+  "name": "04_transcode_audio_ac3_to_aac",
+  "description": "Transcode: audio codec unsupported (AC3 → AAC)",
+  "input": {
+    "source": {
+      "container": "mp4",
+      "video_codec": "h264",
+      "audio_codec": "ac3",
+      "bitrate_kbps": 6000,
+      "resolution": "1920x1080"
+    },
+    "capabilities": {
+      "capabilities_version": 1,
+      "container": [
+        "mp4",
+        "hls"
+      ],
+      "video_codecs": [
+        "h264"
+      ],
+      "audio_codecs": [
+        "aac"
+      ],
+      "supports_hls": true,
+      "device_type": "desktop"
+    },
+    "policy": {
+      "allow_transcode": true
+    },
+    "api_version": "v3.1"
+  },
+  "expected": {
+    "status": 200,
+    "decision": {
+      "mode": "transcode",
+      "selected": {
+        "container": "hls",
+        "video_codec": "h264",
+        "audio_codec": "aac"
+      },
+      "outputs": [
+        {
+          "kind": "hls",
+          "url": "/api/v3/recordings/test-rec/playlist.m3u8"
+        }
+      ],
+      "constraints": [
+        "audio_transcode_required"
+      ],
+      "reasons": [
+        "audio_codec_not_supported_by_client"
+      ],
+      "trace": {
+        "request_id_present": true
+      }
+    }
+  }
+}

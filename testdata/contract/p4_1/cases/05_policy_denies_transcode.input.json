@@ -1,0 +1,50 @@
+{
+  "name": "05_policy_denies_transcode",
+  "description": "Fail-closed: policy blocks transcode, no compatible path",
+  "input": {
+    "source": {
+      "container": "mp4",
+      "video_codec": "hevc",
+      "audio_codec": "aac",
+      "bitrate_kbps": 10000,
+      "resolution": "1920x1080"
+    },
+    "capabilities": {
+      "capabilities_version": 1,
+      "container": [
+        "mp4"
+      ],
+      "video_codecs": [
+        "h264"
+      ],
+      "audio_codecs": [
+        "aac"
+      ],
+      "supports_hls": false,
+      "device_type": "mobile"
+    },
+    "policy": {
+      "allow_transcode": false
+    },
+    "api_version": "v3.1"
+  },
+  "expected": {
+    "status": 200,
+    "decision": {
+      "mode": "deny",
+      "selected": {
+        "container": "none",
+        "video_codec": "none",
+        "audio_codec": "none"
+      },
+      "outputs": [],
+      "constraints": [],
+      "reasons": [
+        "policy_denies_transcode"
+      ],
+      "trace": {
+        "request_id_present": true
+      }
+    }
+  }
+}

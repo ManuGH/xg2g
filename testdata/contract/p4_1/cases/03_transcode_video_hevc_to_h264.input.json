@@ -1,0 +1,58 @@
+{
+  "name": "03_transcode_video_hevc_to_h264",
+  "description": "Transcode: video codec unsupported (HEVC → H.264)",
+  "input": {
+    "source": {
+      "container": "mp4",
+      "video_codec": "hevc",
+      "audio_codec": "aac",
+      "bitrate_kbps": 10000,
+      "resolution": "1920x1080"
+    },
+    "capabilities": {
+      "capabilities_version": 1,
+      "container": [
+        "mp4",
+        "hls"
+      ],
+      "video_codecs": [
+        "h264"
+      ],
+      "audio_codecs": [
+        "aac"
+      ],
+      "supports_hls": true,
+      "device_type": "desktop"
+    },
+    "policy": {
+      "allow_transcode": true
+    },
+    "api_version": "v3.1"
+  },
+  "expected": {
+    "status": 200,
+    "decision": {
+      "mode": "transcode",
+      "selected": {
+        "container": "hls",
+        "video_codec": "h264",
+        "audio_codec": "aac"
+      },
+      "outputs": [
+        {
+          "kind": "hls",
+          "url": "/api/v3/recordings/test-rec/playlist.m3u8"
+        }
+      ],
+      "constraints": [
+        "video_transcode_required"
+      ],
+      "reasons": [
+        "video_codec_not_supported_by_client"
+      ],
+      "trace": {
+        "request_id_present": true
+      }
+    }
+  }
+}

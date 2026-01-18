@@ -1,0 +1,57 @@
+{
+  "name": "01_happy_directplay_h264_aac_mp4",
+  "description": "DirectPlay: source fully compatible with client capabilities",
+  "input": {
+    "source": {
+      "container": "mp4",
+      "video_codec": "h264",
+      "audio_codec": "aac",
+      "bitrate_kbps": 5000,
+      "resolution": "1920x1080"
+    },
+    "capabilities": {
+      "capabilities_version": 1,
+      "container": [
+        "mp4",
+        "webm"
+      ],
+      "video_codecs": [
+        "h264"
+      ],
+      "audio_codecs": [
+        "aac"
+      ],
+      "supports_hls": true,
+      "supports_range": true,
+      "device_type": "desktop"
+    },
+    "policy": {
+      "allow_transcode": true
+    },
+    "api_version": "v3.1"
+  },
+  "expected": {
+    "status": 200,
+    "decision": {
+      "mode": "direct_play",
+      "selected": {
+        "container": "mp4",
+        "video_codec": "h264",
+        "audio_codec": "aac"
+      },
+      "outputs": [
+        {
+          "kind": "file",
+          "url": "/api/v3/recordings/test-rec/stream.mp4"
+        }
+      ],
+      "constraints": [],
+      "reasons": [
+        "source_compatible_with_client"
+      ],
+      "trace": {
+        "request_id_present": true
+      }
+    }
+  }
+}

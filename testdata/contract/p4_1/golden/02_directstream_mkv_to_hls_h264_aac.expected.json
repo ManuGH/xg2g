@@ -1,0 +1,17 @@
+{
+		"status": 200,
+		"decision": {
+			"mode": "deny",
+			"selected": {
+				"container": null,
+				"video_codec": null,
+				"audio_codec": null
+			},
+			"outputs": [],
+			"constraints": [],
+			"reasons": ["NOT_IMPLEMENTED_YET"],
+			"trace": {
+				"request_id": "stub-request-id"
+			}
+		}
+	}

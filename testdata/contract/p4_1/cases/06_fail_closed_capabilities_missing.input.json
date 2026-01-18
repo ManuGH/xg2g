@@ -1,0 +1,28 @@
+{
+  "name": "06_fail_closed_capabilities_missing",
+  "description": "Fail-closed: no capabilities provided (v3.1 enforcement)",
+  "input": {
+    "source": {
+      "container": "mp4",
+      "video_codec": "h264",
+      "audio_codec": "aac",
+      "bitrate_kbps": 5000,
+      "resolution": "1920x1080"
+    },
+    "capabilities": null,
+    "policy": {
+      "allow_transcode": true
+    },
+    "api_version": "v3.1"
+  },
+  "expected": {
+    "status": 412,
+    "problem": {
+      "type": "about:blank",
+      "title": "Precondition Failed",
+      "status": 412,
+      "code": "capabilities_missing",
+      "detail_pattern": "capabilities.*required"
+    }
+  }
+}

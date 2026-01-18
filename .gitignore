@@ -78,7 +78,8 @@ output.log
 transcoder.tar.gz
 
 # Test artifacts
-testdata/
+testdata/*
+!testdata/contract/
 
 # IDE/Editor
 .vscode/

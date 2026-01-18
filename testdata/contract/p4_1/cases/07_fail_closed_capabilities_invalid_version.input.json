@@ -1,0 +1,39 @@
+{
+  "name": "07_fail_closed_capabilities_invalid_version",
+  "description": "Fail-closed: unsupported capabilities_version",
+  "input": {
+    "source": {
+      "container": "mp4",
+      "video_codec": "h264",
+      "audio_codec": "aac",
+      "bitrate_kbps": 5000,
+      "resolution": "1920x1080"
+    },
+    "capabilities": {
+      "capabilities_version": 999,
+      "container": [
+        "mp4"
+      ],
+      "video_codecs": [
+        "h264"
+      ],
+      "audio_codecs": [
+        "aac"
+      ]
+    },
+    "policy": {
+      "allow_transcode": true
+    },
+    "api_version": "v3.1"
+  },
+  "expected": {
+    "status": 400,
+    "problem": {
+      "type": "about:blank",
+      "title": "Bad Request",
+      "status": 400,
+      "code": "capabilities_invalid",
+      "detail_pattern": "capabilities_version.*not supported"
+    }
+  }
+}

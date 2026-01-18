@@ -1,0 +1,17 @@
+{
+					"status": 200,
+					"decision": {
+						"mode": "deny",
+						"selected": {
+							"container": "none",
+							"video_codec": "none",
+							"audio_codec": "none"
+						},
+						"outputs": [],
+						"constraints": [],
+						"reasons": ["policy_denies_transcode"],
+						"trace": {
+							"request_id": "stub-request-id"
+						}
+					}
+				}

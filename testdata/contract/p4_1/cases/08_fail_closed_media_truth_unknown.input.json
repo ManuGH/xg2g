@@ -1,0 +1,41 @@
+{
+  "name": "08_fail_closed_media_truth_unknown",
+  "description": "Fail-closed: media truth missing/unknown, cannot make deterministic decision",
+  "input": {
+    "source": {
+      "container": "unknown",
+      "video_codec": "unknown",
+      "audio_codec": "unknown",
+      "bitrate_kbps": 0,
+      "resolution": "unknown"
+    },
+    "capabilities": {
+      "capabilities_version": 1,
+      "container": [
+        "mp4",
+        "hls"
+      ],
+      "video_codecs": [
+        "h264"
+      ],
+      "audio_codecs": [
+        "aac"
+      ],
+      "supports_hls": true
+    },
+    "policy": {
+      "allow_transcode": true
+    },
+    "api_version": "v3.1"
+  },
+  "expected": {
+    "status": 422,
+    "problem": {
+      "type": "about:blank",
+      "title": "Unprocessable Entity",
+      "status": 422,
+      "code": "decision_ambiguous",
+      "detail_pattern": "media.*truth|unknown.*codec|probe.*failed"
+    }
+  }
+}
