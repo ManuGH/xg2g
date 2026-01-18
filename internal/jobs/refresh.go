@@ -118,7 +118,7 @@ func Refresh(ctx context.Context, snap config.Snapshot) (*Status, error) {
 		bouquetRefs[ref] = name
 	}
 
-	// Support comma-separated bouquet list (e.g., "Premium,Favourites,Sports")
+	// Support comma-separated bouquet list (e.g., "Category A,Favourites,Sports")
 	requestedBouquets := make([]string, 0)
 	for _, name := range strings.Split(cfg.Bouquet, ",") {
 		trimmed := strings.TrimSpace(name)

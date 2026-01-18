@@ -33,8 +33,8 @@ func TestSlugify(t *testing.T) {
 		},
 		{
 			name:     "special characters",
-			input:    "Premium Sport 1 (HD)",
-			expected: "premium-sport-1-hd",
+			input:    "Sport Channel 1 (HD)",
+			expected: "sport-channel-1-hd",
 		},
 		{
 			name:     "multiple spaces",
@@ -126,10 +126,10 @@ func TestMakeHumanReadableTvgID(t *testing.T) {
 			wantSuffixRe: `^[a-f0-9]{6}$`,
 		},
 		{
-			name:         "Premium Sport HD with special chars",
-			channelName:  "Premium Sport 1 (HD)",
+			name:         "Sport Channel HD with special chars",
+			channelName:  "Sport Channel 1 (HD)",
 			serviceRef:   "1:0:19:83:6:85:C00000:0:0:0:",
-			wantPrefix:   "premium-sport-1-hd-",
+			wantPrefix:   "sport-channel-1-hd-",
 			wantSuffixRe: `^[a-f0-9]{6}$`,
 		},
 		{
@@ -214,7 +214,7 @@ func BenchmarkSlugify(b *testing.B) {
 	testCases := []string{
 		"Das Erste HD",
 		"RTL Größer & Schöner",
-		"Premium Sport 1 (HD)",
+		"Sport Channel 1 (HD)",
 		"This Is A Very Very Very Long Channel Name That Should Be Truncated",
 	}
 

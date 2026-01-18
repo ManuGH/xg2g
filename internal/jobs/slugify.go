@@ -97,7 +97,7 @@ func slugify(name string) string {
 // Examples:
 //   - "Example Channel HD" + "1:0:19:132F:3EF:1:C00000:0:0:0:" → "example-channel-hd-3fa92b"
 //   - "Channel 2" + "1:0:19:1334:3EF:1:C00000:0:0:0:" → "channel-2-a7c4e1"
-//   - "Premium Sport HD" + "1:0:19:83:6:85:C00000:0:0:0:" → "premium-sport-hd-b2d8f9"
+//   - "Sport Channel HD" + "1:0:19:83:6:85:C00000:0:0:0:" → "sport-channel-hd-b2d8f9"
 //
 //nolint:unused
 func makeHumanReadableTvgID(name, sref string) string {

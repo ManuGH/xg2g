@@ -90,12 +90,12 @@ func (m *MockServer) setDefaultDataNoLock() {
 	// Add bouquets
 	m.bouquets = map[string]string{
 		"1:7:1:0:0:0:0:0:0:0:FROM BOUQUET \"userbouquet.favourites.tv\" ORDER BY bouquet": "Favourites (TV)",
-		"1:7:1:0:0:0:0:0:0:0:FROM BOUQUET \"userbouquet.premium.tv\" ORDER BY bouquet":    "Premium",
+		"1:7:1:0:0:0:0:0:0:0:FROM BOUQUET \"userbouquet.category-a.tv\" ORDER BY bouquet": "Category A",
 		"1:7:1:0:0:0:0:0:0:0:FROM BOUQUET \"userbouquet.hd.tv\" ORDER BY bouquet":         "HD Channels",
 	}
 
-	// Add services for Premium bouquet
-	m.services["1:7:1:0:0:0:0:0:0:0:FROM BOUQUET \"userbouquet.premium.tv\" ORDER BY bouquet"] = [][2]string{
+	// Add services for Category A bouquet
+	m.services["1:7:1:0:0:0:0:0:0:0:FROM BOUQUET \"userbouquet.category-a.tv\" ORDER BY bouquet"] = [][2]string{
 		{"1:0:19:283D:3FB:1:C00000:0:0:0:", "Channel 1 HD"},
 		{"1:0:19:283E:3FB:1:C00000:0:0:0:", "Channel 2 HD"},
 		{"1:0:1:6DCA:44D:1:C00000:0:0:0:", "Channel 3"},
