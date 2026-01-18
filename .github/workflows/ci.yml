@@ -69,6 +69,11 @@ jobs:
           go mod verify
           git diff --exit-code -- go.mod go.sum
 
+      - name: Verify config surfaces (Drift Gate)
+        run: |
+          set -euo pipefail
+          make verify-config
+
       - name: Setup Node for WebUI
         uses: actions/setup-node@v6
         with:
@@ -393,11 +398,15 @@ jobs:
           set -euo pipefail
           . .venv/bin/activate
           check-jsonschema --schemafile docs/guides/config.schema.json config.example.yaml
+          check-jsonschema --schemafile docs/guides/config.schema.json config.generated.example.yaml
           find internal/config/testdata -name 'valid*.yaml' -maxdepth 1 -type f -print0 | xargs -0 -I{} check-jsonschema --schemafile docs/guides/config.schema.json {}
           if [ -d examples ]; then find examples -name '*.ya?ml' -type f -print0 | xargs -0 -I{} check-jsonschema --schemafile docs/guides/config.schema.json {}; fi
 
       - name: Build validate tool
         run: go build -o validate ./cmd/validate
+
+      - name: Validate generated config example
+        run: ./validate -f config.generated.example.yaml
 
       - name: Validate example configs with tool
         run: |
@@ -405,3 +414,33 @@ jobs:
           if [ -f config.yaml ]; then ./validate -f config.yaml; fi
           find internal/config/testdata -name 'valid*.yaml' -maxdepth 1 -type f -print0 | xargs -0 -I{} ./validate -f {}
           if [ -d examples ]; then find examples -name '*.ya?ml' -type f -print0 | xargs -0 -I{} ./validate -f {}; fi
+
+  contract-matrix:
+    name: Contract Matrix (P4-1)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          check-latest: true
+          cache: true
+
+      - name: Run Contract Matrix
+        run: make contract-matrix
+
+      - name: Fail if golden snapshots changed
+        run: |
+          set -euo pipefail
+          if [[ -n "$(git status --porcelain testdata/contract/p4_1)" ]]; then
+            echo "❌ Golden snapshots or contract cases have uncommitted changes"
+            echo "   This indicates contract drift or accidental golden regeneration"
+            git status testdata/contract/p4_1
+            git diff testdata/contract/p4_1
+            exit 1
+          fi
+          echo "✅ Contract matrix verified (no drift)"
