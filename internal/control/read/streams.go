@@ -2,6 +2,7 @@ package read
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -83,10 +84,20 @@ func GetStreams(ctx context.Context, cfg config.AppConfig, snap config.Snapshot,
 			continue
 		}
 
-		// Map State
+		// Map State: Domain → Contract
 		// Use the deterministic truth engine (PR-P3-2)
-		val := model.DeriveLifecycleState(r, time.Now())
-		state := string(val)
+		lifecycleState := model.DeriveLifecycleState(r, time.Now())
+
+		// Canonicalize: running states → "active", non-running → filter, unknown → fail
+		contractState, err := canonicalRunningState(r.SessionID, lifecycleState)
+		if err != nil {
+			// Fail-closed: unknown state leaked into provider
+			return []StreamSession{}, fmt.Errorf("state canonicalization failed: %w", err)
+		}
+		if contractState == "" {
+			// Non-running state (stalled/ending/idle/error) → filter out
+			continue
+		}
 
 		// Resolve Name
 		name := nameMap[r.ServiceRef]
@@ -114,7 +125,7 @@ func GetStreams(ctx context.Context, cfg config.AppConfig, snap config.Snapshot,
 			ServiceRef:  r.ServiceRef,
 			ClientIP:    ip,
 			StartedAt:   startedAt,
-			State:       state,
+			State:       contractState,
 		})
 	}
 

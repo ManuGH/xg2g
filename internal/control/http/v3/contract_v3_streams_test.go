@@ -301,7 +301,7 @@ func TestGetStreams_Contract_Slice53(t *testing.T) {
 				State:                model.SessionReady,
 				PipelineState:        model.PipeServing,
 				PlaylistPublishedAt:  now.Add(-1 * time.Minute),
-				LatestSegmentAt:      now.Add(-15 * time.Second), // > 12s
+				LatestSegmentAt:      now.Add(-15 * time.Second), // > 12s → stalled → filtered
 				LastPlaylistAccessAt: now.Add(-1 * time.Second),
 			},
 			{
@@ -310,7 +310,7 @@ func TestGetStreams_Contract_Slice53(t *testing.T) {
 				PipelineState:        model.PipeServing,
 				PlaylistPublishedAt:  now.Add(-1 * time.Minute),
 				LatestSegmentAt:      now.Add(-2 * time.Second),
-				LastPlaylistAccessAt: now.Add(-40 * time.Second), // > 30s
+				LastPlaylistAccessAt: now.Add(-40 * time.Second), // > 30s → idle → filtered
 			},
 		}
 
@@ -324,7 +324,10 @@ func TestGetStreams_Contract_Slice53(t *testing.T) {
 		var list []StreamSession
 		err := json.NewDecoder(w.Result().Body).Decode(&list)
 		require.NoError(t, err)
-		require.Len(t, list, 4)
+
+		// New governance: Only "running" sessions returned (starting/buffering/active)
+		// Non-running (stalled/idle) are filtered by canonicalize layer
+		require.Len(t, list, 2, "Only running sessions (buffering, active) returned; stalled/idle filtered")
 
 		stateMap := make(map[string]StreamSessionState)
 		for _, sess := range list {
@@ -333,9 +336,14 @@ func TestGetStreams_Contract_Slice53(t *testing.T) {
 			}
 		}
 
-		assert.Equal(t, StreamSessionStateBuffering, stateMap["buffering"])
-		assert.Equal(t, StreamSessionStateActive, stateMap["active"])
-		assert.Equal(t, StreamSessionStateStalled, stateMap["stalled"])
-		assert.Equal(t, StreamSessionStateIdle, stateMap["idle"])
+		// Both running sessions are mapped to "active" state
+		assert.Equal(t, StreamSessionStateActive, stateMap["buffering"], "buffering lifecycle → active contract state")
+		assert.Equal(t, StreamSessionStateActive, stateMap["active"], "active lifecycle → active contract state")
+
+		// stalled and idle no longer in response (filtered out)
+		_, hasStalled := stateMap["stalled"]
+		_, hasIdle := stateMap["idle"]
+		assert.False(t, hasStalled, "stalled sessions are filtered (non-running)")
+		assert.False(t, hasIdle, "idle sessions are filtered (non-running)")
 	})
 }
