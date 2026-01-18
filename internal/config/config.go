@@ -857,6 +857,39 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 		dst.RecordingPathMappings = append([]RecordingPathMapping(nil), src.RecordingPathMappings...)
 	}
 
+	// VOD (Typed config - with backwards-compat fallback to legacy flat fields)
+	if src.VOD != nil {
+		// Typed config takes precedence
+		if src.VOD.ProbeSize != "" {
+			dst.VODProbeSize = src.VOD.ProbeSize
+		}
+		if src.VOD.AnalyzeDuration != "" {
+			dst.VODAnalyzeDuration = src.VOD.AnalyzeDuration
+		}
+		if src.VOD.StallTimeout != "" {
+			if d, err := time.ParseDuration(src.VOD.StallTimeout); err == nil {
+				dst.VODStallTimeout = d
+			}
+		}
+		if src.VOD.MaxConcurrent > 0 {
+			dst.VODMaxConcurrent = src.VOD.MaxConcurrent
+		}
+		if src.VOD.CacheTTL != "" {
+			if d, err := time.ParseDuration(src.VOD.CacheTTL); err == nil {
+				dst.VODCacheTTL = d
+			}
+		}
+
+		// Keep typed config in sync
+		dst.VOD = VODConfig{
+			ProbeSize:       dst.VODProbeSize,
+			AnalyzeDuration: dst.VODAnalyzeDuration,
+			StallTimeout:    dst.VODStallTimeout.String(),
+			MaxConcurrent:   dst.VODMaxConcurrent,
+			CacheTTL:        dst.VODCacheTTL.String(),
+		}
+	}
+
 	return nil
 }
 

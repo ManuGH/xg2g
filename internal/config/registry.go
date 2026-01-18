@@ -167,12 +167,12 @@ func buildRegistry() *Registry {
 		{Path: "recording_playback.stable_window", Env: "", FieldPath: "RecordingStableWindow", Profile: ProfileAdvanced, Status: StatusActive, Default: 10 * time.Second},
 		{Path: "recording_playback.mappings", Env: "", FieldPath: "RecordingPathMappings", Profile: ProfileAdvanced, Status: StatusActive},
 
-		// --- VOD ---
-		{Path: "vod.probeSize", Env: "", FieldPath: "VODProbeSize", Profile: ProfileAdvanced, Status: StatusActive, Default: "50M"},
-		{Path: "vod.analyzeDuration", Env: "", FieldPath: "VODAnalyzeDuration", Profile: ProfileAdvanced, Status: StatusActive, Default: "50000000"},
-		{Path: "vod.stallTimeout", Env: "", FieldPath: "VODStallTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 60 * time.Second},
-		{Path: "vod.maxConcurrent", Env: "", FieldPath: "VODMaxConcurrent", Profile: ProfileAdvanced, Status: StatusActive, Default: 2},
-		{Path: "vod.cacheTTL", Env: "", FieldPath: "VODCacheTTL", Profile: ProfileAdvanced, Status: StatusActive, Default: 24 * time.Hour},
+		// --- VOD (Typed Config) ---
+		{Path: "vod.probeSize", Env: "", FieldPath: "VOD.ProbeSize", Profile: ProfileAdvanced, Status: StatusActive, Default: "50M"},
+		{Path: "vod.analyzeDuration", Env: "", FieldPath: "VOD.AnalyzeDuration", Profile: ProfileAdvanced, Status: StatusActive, Default: "50000000"},
+		{Path: "vod.stallTimeout", Env: "", FieldPath: "VOD.StallTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: "1m"},
+		{Path: "vod.maxConcurrent", Env: "", FieldPath: "VOD.MaxConcurrent", Profile: ProfileAdvanced, Status: StatusActive, Default: 2},
+		{Path: "vod.cacheTTL", Env: "", FieldPath: "VOD.CacheTTL", Profile: ProfileAdvanced, Status: StatusActive, Default: "24h"},
 
 		// --- FEATURE FLAGS ---
 		{Path: "readyStrict", Env: "XG2G_READY_STRICT", FieldPath: "ReadyStrict", Profile: ProfileAdvanced, Status: StatusActive, Default: false},
