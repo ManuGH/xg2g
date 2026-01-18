@@ -59,14 +59,18 @@ export type IntentRequest = {
 
 export type SessionResponse = {
     sessionId: string;
+    /**
+     * Request ID for debugging/tracing. Mandatory in P3-1.
+     */
+    requestId: string;
     serviceRef?: string;
     profile?: string;
     /**
-     * Session lifecycle state. READY guarantees a playable HLS stream (playlist + at least one segment,
-     * atomically published). PRIMING means FFmpeg is running but content is not yet playable.
+     * Session lifecycle state. STARTING guarantees a session ticket is allocated.
+     * READY/ACTIVE guarantees a playable HLS stream.
      *
      */
-    state: 'NEW' | 'STARTING' | 'PRIMING' | 'READY' | 'DRAINING' | 'STOPPING' | 'STOPPED' | 'FAILED' | 'CANCELLED';
+    state: 'STARTING' | 'BUFFERING' | 'ACTIVE' | 'STALLED' | 'ENDING' | 'IDLE' | 'ERROR' | 'NEW' | 'PRIMING' | 'READY' | 'DRAINING' | 'STOPPING' | 'STOPPED' | 'FAILED' | 'CANCELLED';
     /**
      * Reason code; R_LEASE_BUSY means capacity rejection (no tuner available), not a system fault.
      */
@@ -513,15 +517,39 @@ export type Timer = {
 };
 
 export type PlaybackInfo = {
+    /**
+     * Correlation ID for the request. Mandatory in P3-1.
+     */
+    requestId: string;
+    /**
+     * Unique ID for the stream session. Mandatory in P3-1.
+     */
+    sessionId: string;
     mode: PlaybackInfoMode;
     /**
      * Relative URL for the selected playback strategy.
      */
     url: string;
     /**
-     * Whether the stream is seekable. Omitted if unknown.
+     * Whether the stream is seekable. Omitted if unknown. Deprecated in favor of is_seekable.
      */
     seekable?: boolean;
+    /**
+     * Authoritative flag if the stream is seekable. Becomes required in P3-4.
+     */
+    is_seekable?: boolean;
+    /**
+     * Absolute DVR window length in seconds. Becomes required in P3-4.
+     */
+    dvr_window_seconds?: number;
+    /**
+     * wall-clock timestamp (UNIX) of the latest segment. Becomes required in P3-4.
+     */
+    live_edge_unix?: number;
+    /**
+     * wall-clock timestamp (UNIX) of the earliest segment in window. Becomes required in P3-4.
+     */
+    start_unix?: number;
     /**
      * Duration in seconds. Omitted if unknown or preparing.
      */
@@ -664,11 +692,22 @@ export type LogEntry = {
 };
 
 export type StreamSession = {
+    /**
+     * Internal database ID (deprecated).
+     */
     id?: string;
+    /**
+     * Mandatory stream lifecycle ID (domain truth).
+     */
+    sessionId: string;
+    /**
+     * Correlation ID for the trace. Mandatory in P3-1.
+     */
+    requestId: string;
     client_ip?: string;
     channel_name?: string;
     started_at?: string;
-    state?: 'active' | 'idle';
+    state: 'starting' | 'buffering' | 'active' | 'stalled' | 'ending' | 'idle' | 'error';
     program?: {
         title?: string;
         description?: string;
@@ -716,6 +755,10 @@ export type RecordingItem = {
      */
     length?: string;
     filename?: string;
+    /**
+     * Consolidated recording status. Becomes required in P3-3.
+     */
+    status?: 'pending' | 'recording' | 'completed' | 'failed' | 'deleting';
     resume?: ResumeSummary;
 };
 

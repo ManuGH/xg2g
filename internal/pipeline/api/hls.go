@@ -130,17 +130,19 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, s
 	// 2b. Touch access time for idle timeout tracking (playlist requests only, throttled).
 	if isPlaylist {
 		const minAccessUpdateIntervalSec = int64(5)
-		now := time.Now().Unix()
-		if rec.LastAccessUnix == 0 || now-rec.LastAccessUnix >= minAccessUpdateIntervalSec {
+		now := time.Now()
+		nowUnix := now.Unix()
+		if rec.LastAccessUnix == 0 || nowUnix-rec.LastAccessUnix >= minAccessUpdateIntervalSec {
 			if updater, ok := store.(hlsSessionUpdater); ok {
 				_, _ = updater.UpdateSession(r.Context(), sessionID, func(r *model.SessionRecord) error {
 					if r == nil {
 						return nil
 					}
-					if r.LastAccessUnix != 0 && now-r.LastAccessUnix < minAccessUpdateIntervalSec {
+					if r.LastAccessUnix != 0 && nowUnix-r.LastAccessUnix < minAccessUpdateIntervalSec {
 						return nil
 					}
-					r.LastAccessUnix = now
+					r.LastAccessUnix = nowUnix
+					r.LastPlaylistAccessAt = now // PR-P3-2: Deterministic idle truth
 					return nil
 				})
 			}

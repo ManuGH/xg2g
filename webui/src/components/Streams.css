@@ -1,0 +1,69 @@
+/* Streams View - Layout ONLY (CTO Contract) */
+
+.streams-section {
+  margin-top: 8px;
+}
+
+.streams-section--compact .streams-grid {
+  grid-template-columns: 1fr;
+}
+
+.streams-section h3 {
+  font-family: var(--font-heading);
+  font-size: var(--text-h1);
+  font-weight: 600;
+  margin: 0 0 16px 0;
+}
+
+.streams-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 20px;
+}
+
+/* Stream cards internal layout */
+.stream-card .stream-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.stream-card .stream-title-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.stream-card .stream-channel {
+  font-size: var(--text-base);
+  font-weight: 700;
+}
+
+.stream-card .stream-program {
+  margin-bottom: 12px;
+}
+
+.stream-card .stream-meta {
+  display: flex;
+  justify-content: space-between;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-base);
+}
+
+.stream-card .meta-item {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.stream-card .meta-label {
+  color: var(--text-tertiary);
+  font-weight: 600;
+  margin-right: 4px;
+}
+
+/* Mobile responsive */
+@media (max-width: 968px) {
+  .streams-grid {
+    grid-template-columns: 1fr;
+  }
+}

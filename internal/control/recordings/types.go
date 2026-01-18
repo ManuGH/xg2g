@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/control/playback"
+	"github.com/ManuGH/xg2g/internal/domain/recordings/model"
 )
 
 type PlaybackIntent string
@@ -58,6 +59,7 @@ type RecordingItem struct {
 	DurationSeconds  *int64
 	Length           string
 	Filename         string
+	Status           model.RecordingStatus
 	Resume           *ResumeSummary
 }
 

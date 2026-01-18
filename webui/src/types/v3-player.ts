@@ -62,12 +62,14 @@ export interface V3Intent {
 
 export interface V3SessionResponse {
   sessionId: string;
+  requestId?: string; // P3-5: Traceability
   status?: string;
   correlationId?: string;
 }
 
 export interface V3SessionStatusResponse {
   sessionId: string;
+  requestId?: string; // P3-5: Traceability
   state: string;
   reason?: string;
   reasonDetail?: string;

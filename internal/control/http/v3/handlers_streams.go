@@ -13,6 +13,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/epg"
 	"github.com/ManuGH/xg2g/internal/log"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
 // Responsibility: Handles Active Streams list and deletion.
@@ -66,9 +67,25 @@ func (s *Server) GetStreams(w http.ResponseWriter, r *http.Request) {
 		start := st.StartedAt
 
 		// Map State
-		activeState := Idle
-		if st.State == "active" {
-			activeState = Active
+		activeState := StreamSessionStateError // Default safe fallback
+		switch st.State {
+		case "active":
+			activeState = StreamSessionStateActive
+		case "buffering":
+			activeState = StreamSessionStateBuffering
+		case "stalled":
+			activeState = StreamSessionStateStalled
+		case "starting":
+			activeState = StreamSessionStateStarting
+		case "ending":
+			activeState = StreamSessionStateEnding
+		case "idle":
+			activeState = StreamSessionStateIdle
+		case "error":
+			activeState = StreamSessionStateError
+		default:
+			log.L().Warn().Str("state", st.State).Msg("unknown stream state")
+			activeState = StreamSessionStateError
 		}
 
 		var clientIP *string
@@ -77,10 +94,12 @@ func (s *Server) GetStreams(w http.ResponseWriter, r *http.Request) {
 		}
 		dto := StreamSession{
 			Id:          &id,
+			SessionId:   openapi_types.UUID(parseUUID(st.ID)),
 			ChannelName: &name,
 			ClientIp:    clientIP,
 			StartedAt:   &start,
-			State:       &activeState,
+			RequestId:   requestID(r.Context()),
+			State:       activeState,
 		}
 
 		// Enrich with EPG if available
@@ -112,6 +131,8 @@ func (s *Server) GetStreams(w http.ResponseWriter, r *http.Request) {
 
 		resp = append(resp, dto)
 	}
+
+	ensureTraceHeader(w, r.Context())
 
 	// 4. Send Response (Always [] for empty)
 	w.Header().Set("Content-Type", "application/json")

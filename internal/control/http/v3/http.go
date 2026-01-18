@@ -30,9 +30,9 @@ func (s *Server) GetSystemHealth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Map to generated types
-	status := SystemHealthStatusOk
+	status := Ok
 	if info.OverallStatus != string(health.StatusHealthy) {
-		status = SystemHealthStatusDegraded
+		status = Degraded
 	}
 
 	receiverStatus := ComponentStatusStatusOk

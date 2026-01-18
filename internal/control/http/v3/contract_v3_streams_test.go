@@ -12,6 +12,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
+	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -241,5 +242,100 @@ func TestGetStreams_Contract_Slice53(t *testing.T) {
 			assert.Equal(t, "streams/read_failed", pd.Type)
 			assert.Equal(t, "Failed to get streams", pd.Title)
 		})
+	})
+
+	t.Run("Mandatory_Traceability_Fields", func(t *testing.T) {
+		id := "00000000-0000-0000-0000-000000000001"
+		mockStore := &MockStoreForStreams{
+			Sessions: []*model.SessionRecord{
+				{
+					SessionID:     id,
+					CorrelationID: "req_test_123",
+					State:         model.SessionReady,
+					CreatedAtUnix: 1000,
+					// PR-P3-2: Make it strictly Active
+					PipelineState:        model.PipeServing,
+					LatestSegmentAt:      time.Now(),
+					LastPlaylistAccessAt: time.Now(),
+				},
+			},
+		}
+		s := &Server{
+			cfg:     cfg,
+			snap:    snap,
+			v3Store: mockStore,
+		}
+
+		req := httptest.NewRequest("GET", "/api/v3/streams", nil)
+		req = req.WithContext(log.ContextWithRequestID(req.Context(), "req_test_123"))
+
+		w := httptest.NewRecorder()
+		s.GetStreams(w, req)
+
+		var list []StreamSession
+		json.NewDecoder(w.Result().Body).Decode(&list)
+
+		require.Len(t, list, 1)
+		assert.Equal(t, id, *list[0].Id)
+		assert.Equal(t, id, list[0].SessionId.String())
+		assert.Equal(t, "req_test_123", list[0].RequestId)
+		assert.Equal(t, StreamSessionStateActive, list[0].State)
+	})
+	t.Run("Lifecycle_Truth_Mapping", func(t *testing.T) {
+		now := time.Now()
+		sessions := []*model.SessionRecord{
+			{
+				SessionID: "buffering",
+				State:     model.SessionPriming,
+			},
+			{
+				SessionID:            "active",
+				State:                model.SessionReady,
+				PipelineState:        model.PipeServing,
+				PlaylistPublishedAt:  now.Add(-1 * time.Minute),
+				LatestSegmentAt:      now.Add(-2 * time.Second),
+				LastPlaylistAccessAt: now.Add(-1 * time.Second),
+			},
+			{
+				SessionID:            "stalled",
+				State:                model.SessionReady,
+				PipelineState:        model.PipeServing,
+				PlaylistPublishedAt:  now.Add(-1 * time.Minute),
+				LatestSegmentAt:      now.Add(-15 * time.Second), // > 12s
+				LastPlaylistAccessAt: now.Add(-1 * time.Second),
+			},
+			{
+				SessionID:            "idle",
+				State:                model.SessionReady,
+				PipelineState:        model.PipeServing,
+				PlaylistPublishedAt:  now.Add(-1 * time.Minute),
+				LatestSegmentAt:      now.Add(-2 * time.Second),
+				LastPlaylistAccessAt: now.Add(-40 * time.Second), // > 30s
+			},
+		}
+
+		mockStore := &MockStoreForStreams{Sessions: sessions}
+		s := &Server{cfg: cfg, snap: snap, v3Store: mockStore}
+
+		req := httptest.NewRequest("GET", "/api/v3/streams", nil)
+		w := httptest.NewRecorder()
+		s.GetStreams(w, req)
+
+		var list []StreamSession
+		err := json.NewDecoder(w.Result().Body).Decode(&list)
+		require.NoError(t, err)
+		require.Len(t, list, 4)
+
+		stateMap := make(map[string]StreamSessionState)
+		for _, sess := range list {
+			if sess.Id != nil {
+				stateMap[*sess.Id] = sess.State
+			}
+		}
+
+		assert.Equal(t, StreamSessionStateBuffering, stateMap["buffering"])
+		assert.Equal(t, StreamSessionStateActive, stateMap["active"])
+		assert.Equal(t, StreamSessionStateStalled, stateMap["stalled"])
+		assert.Equal(t, StreamSessionStateIdle, stateMap["idle"])
 	})
 }

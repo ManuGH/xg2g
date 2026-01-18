@@ -5,12 +5,16 @@
 package v3
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 
 	"github.com/ManuGH/xg2g/internal/control/auth"
+	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/artifacts"
 	"github.com/ManuGH/xg2g/internal/control/recordings"
+	"github.com/ManuGH/xg2g/internal/hls"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 )
@@ -43,6 +47,28 @@ func (s *Server) GetRecordingPlaybackInfo(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// 3b. Segment Truth Extraction (PR-P3-4)
+	var segmentTruth *hls.SegmentTruth
+	var attemptedTruth bool
+	if s.artifacts != nil && resolution.Strategy == recordings.StrategyHLS {
+		attemptedTruth = true
+		// We must inspect the playlist to determine truth
+		if artifact, artErr := s.artifacts.ResolvePlaylist(r.Context(), recordingId, string(profile)); artErr == nil {
+			content, readErr := readArtifactContent(artifact)
+			if readErr == nil {
+				truth, extractErr := hls.ExtractSegmentTruth(content)
+				if extractErr == nil {
+					segmentTruth = truth
+				} else {
+					log.L().Warn().Err(extractErr).Str("id", recordingId).Msg("hls truth extraction failed")
+					// segmentTruth remains nil -> mapPlaybackInfo will handle fail-closed
+				}
+			} else {
+				log.L().Warn().Err(readErr).Str("id", recordingId).Msg("failed to read hls playlist for truth")
+			}
+		}
+	}
+
 	// 4. Resolve Resume State (User Context)
 	var resumeState *resume.State
 	if s.resumeStore != nil {
@@ -57,7 +83,7 @@ func (s *Server) GetRecordingPlaybackInfo(w http.ResponseWriter, r *http.Request
 
 	// 5. Transform to DTO (Fail-closed Mapping)
 	// We map ONLY what is strictly known.
-	dto := s.mapPlaybackInfo(recordingId, resolution, resumeState)
+	dto := s.mapPlaybackInfo(r.Context(), recordingId, resolution, resumeState, segmentTruth, attemptedTruth)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(dto)
@@ -92,7 +118,7 @@ func (s *Server) mapPlaybackError(w http.ResponseWriter, r *http.Request, id str
 
 // mapPlaybackInfo maps the internal resolution to the truthful PlaybackInfo DTO.
 // Strict fail-closed policy. id must be the raw Hex ID for URL construction.
-func (s *Server) mapPlaybackInfo(id string, d recordings.PlaybackResolution, rState *resume.State) PlaybackInfo {
+func (s *Server) mapPlaybackInfo(ctx context.Context, id string, d recordings.PlaybackResolution, rState *resume.State, truth *hls.SegmentTruth, attemptedTruth bool) PlaybackInfo {
 	// Strict Mapping: No Defaults.
 
 	mode := DirectMp4
@@ -106,7 +132,78 @@ func (s *Server) mapPlaybackInfo(id string, d recordings.PlaybackResolution, rSt
 	}
 
 	// Deterministic fields
-	canSeek := d.CanSeek
+	// P3-4: Seekable logic depends on Truth if HLS
+	canSeek := d.CanSeek // Default from resolver (usually true for VODs)
+
+	var (
+		dvrWindow  *int64
+		startUnix  *int64
+		liveEdge   *int64
+		isSeekable *bool
+	)
+
+	if d.Strategy == recordings.StrategyHLS {
+		if truth != nil {
+			if truth.IsVOD {
+				// Case C: VOD (Robust)
+				// Seekable = true, Window = Duration
+				cs := true
+				isSeekable = &cs
+				canSeek = true
+
+				dur := int64(truth.TotalDuration.Seconds())
+				dvrWindow = &dur
+			} else {
+				// Case A/B: Live/Event
+				if truth.HasPDT {
+					s := truth.FirstPDT.Unix()
+					// LiveEdge = LastPDT + LastDuration
+					edge := truth.LastPDT.Add(truth.LastDuration).Unix()
+					w := edge - s
+
+					// Guard: Plausibility (Stop-the-line)
+					if w <= 0 || edge <= s {
+						// Case D: Implausible Live (Broken Timestamps)
+						// Fail-Closed
+						cs := false
+						isSeekable = &cs
+						canSeek = false
+					} else {
+						// Case A: Valid Live
+						cs := true
+						isSeekable = &cs
+						canSeek = true
+
+						startUnix = &s
+						liveEdge = &edge
+						dvrWindow = &w
+					}
+				} else {
+					// Case B: Broken Live (Missing PDT)
+					// Fail-Closed
+					cs := false
+					isSeekable = &cs
+					canSeek = false
+				}
+			}
+		} else {
+			// Extraction Failed or Not Attempted
+			if attemptedTruth {
+				// We tried to extract truth and failed (Corrupt Playlist, IO Error)
+				// Stop-the-line: Fail Closed.
+				cs := false
+				isSeekable = &cs
+				canSeek = false
+			} else {
+				// We didn't try (Testing environment without Artifacts)
+				// Fallback to legacy
+			}
+		}
+	}
+
+	if isSeekable == nil {
+		isSeekable = &canSeek
+	}
 
 	// Duration Source Truth (Strict Enums)
 	var durSrc *PlaybackInfoDurationSource
@@ -168,7 +265,8 @@ func (s *Server) mapPlaybackInfo(id string, d recordings.PlaybackResolution, rSt
 	return PlaybackInfo{
 		Mode:            mode,
 		Url:             url,
-		Seekable:        &canSeek,
+		Seekable:        isSeekable,
+		IsSeekable:      isSeekable,    // P3-4 New Field
 		DurationSeconds: d.DurationSec, // Pass-through pointer
 		DurationSource:  durSrc,
 		Container:       d.Container,  // Pass-through pointer
@@ -176,5 +274,22 @@ func (s *Server) mapPlaybackInfo(id string, d recordings.PlaybackResolution, rSt
 		AudioCodec:      d.AudioCodec, // Pass-through pointer
 		Reason:          &reason,
 		Resume:          resDTO,
+		RequestId:       log.RequestIDFromContext(ctx), // Source of Truth
+		SessionId:       fmt.Sprintf("rec:%s", id),     // Namespaced Session ID
+		// P3-4 Truth Fields
+		StartUnix:        startUnix,
+		LiveEdgeUnix:     liveEdge,
+		DvrWindowSeconds: dvrWindow,
 	}
+}
+
+func readArtifactContent(a artifacts.ArtifactOK) (string, error) {
+	if a.Data != nil {
+		return string(a.Data), nil
+	}
+	if a.AbsPath != "" {
+		b, err := os.ReadFile(a.AbsPath)
+		return string(b), err
+	}
+	return "", fmt.Errorf("empty artifact")
 }

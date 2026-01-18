@@ -65,6 +65,7 @@ func Write(w http.ResponseWriter, r *http.Request, status int, problemType, titl
 		res[k] = v
 	}
 
+	w.Header().Set(controlhttp.HeaderRequestID, reqID)
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(status)
 

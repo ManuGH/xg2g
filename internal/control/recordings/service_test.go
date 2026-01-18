@@ -94,6 +94,7 @@ func TestService_List_Success(t *testing.T) {
 	s, owi, _, _, _ := setupServiceTest(t)
 
 	owi.On("GetLocations", mock.Anything).Return([]OWILocation{}, nil)
+	owi.On("GetTimers", mock.Anything).Return([]OWITimer{}, nil)
 	owi.On("GetRecordings", mock.Anything, "/media/hdd/movie").Return(OWIRecordingsList{
 		Result: true,
 		Movies: []OWIMovie{

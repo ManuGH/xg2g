@@ -31,9 +31,10 @@ type Orchestrator struct {
 	HLSRoot        string // Root directory for HLS segments
 	Sweeper        SweeperConfig
 
-	Pipeline     ports.MediaPipeline
-	Platform     ports.Platform // OS/FS operations
-	LeaseKeyFunc func(model.StartSessionEvent) string
+	Pipeline        ports.MediaPipeline
+	Platform        ports.Platform         // OS/FS operations
+	HeartbeatSource SegmentHeartbeatSource // PR-P3-2: Pluggable truth source
+	LeaseKeyFunc    func(model.StartSessionEvent) string
 
 	PipelineStopTimeout time.Duration
 

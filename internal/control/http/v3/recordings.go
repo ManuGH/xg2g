@@ -64,6 +64,13 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 			Length:           strPtr(m.Length),
 			Filename:         strPtr(m.Filename),
 		}
+
+		// P3-3-4: Status Mapping
+		if m.Status != "" && m.Status != "unknown" {
+			apiStatus := RecordingItemStatus(m.Status)
+			item.Status = &apiStatus
+		}
+
 		if m.DurationSeconds != nil {
 			item.DurationSeconds = m.DurationSeconds
 		}
@@ -95,11 +102,14 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 	}
 
 	resp := RecordingResponse{
+		RequestId:   requestID(r.Context()),
 		Recordings:  &recordingsList,
 		Directories: &directoriesList,
 		Roots:       &rootNodes,
 		Breadcrumbs: &[]Breadcrumb{},
 	}
+
+	ensureTraceHeader(w, r.Context())
 
 	crumbs := make([]Breadcrumb, 0, len(listing.Breadcrumbs))
 	for _, c := range listing.Breadcrumbs {
@@ -134,7 +144,12 @@ func (s *Server) GetRecordingsRecordingIdStatus(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	resp := RecordingBuildStatus{State: RecordingBuildStatusStateIDLE}
+	resp := RecordingBuildStatus{
+		RequestId: requestID(r.Context()),
+		State:     RecordingBuildStatusStateIDLE,
+	}
+	ensureTraceHeader(w, r.Context())
+
 	switch status.State {
 	case "RUNNING":
 		resp.State = RecordingBuildStatusStateRUNNING

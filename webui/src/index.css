@@ -1,49 +1,101 @@
 :root {
-  /* Premium Dark Theme (Enforced) */
-  --bg-color: #0f172a;
-  /* Slate 900 */
-  --text-color: #f8fafc;
-  /* Slate 50 */
-  --card-bg: #1e293b;
-  /* Slate 800 */
-  --card-text: #f1f5f9;
-  /* Slate 100 */
-  --border-color: #334155;
-  /* Slate 700 */
-  --active-color: #3b82f6;
-  /* Blue 500 */
-  --accent-primary: var(--active-color);
-  --accent-primary-hover: #2563eb;
-  /* Blue 600 */
-  --active-color-hover: var(--accent-primary-hover);
-  --accent-warning: #fbbf24;
-  /* Amber 400 */
-  --accent-success: #22c55e;
-  /* Green 500 */
-  --accent-danger: #ef4444;
-  /* Red 500 */
+  /* ========================================
+     BROADCAST CONSOLE 2026 - TOKEN SET
+     CTO Contract: Source of truth, no hardcoded values
+     ======================================== */
 
-  /* Semantic Colors */
-  --text-primary: var(--text-color);
-  --text-muted: #94a3b8;
-  /* Slate 400 */
-  --text-secondary: #cbd5e1;
-  /* Slate 300 */
-  --bg-secondary: #0f172a;
-  /* Darker background for inputs */
-  --bg-hover: #334155;
-  /* Slate 700 */
-  --border-subtle: #334155;
-  /* Slate 700 */
+  /* Typography Stack */
+  --font-heading: 'Space Grotesk', -apple-system, sans-serif;
+  --font-body: 'IBM Plex Sans', -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Courier New', monospace;
 
-  /* UI Tokens */
-  --radius-sm: 4px;
-  --radius-md: 8px;
+  /* Type Scale (16px base) */
+  --text-display: 2rem;
+  /* 32px */
+  --text-h1: 1.5rem;
+  /* 24px */
+  --text-h2: 1.25rem;
+  /* 20px */
+  --text-h3: 1rem;
+  /* 16px */
+  --text-base: 1rem;
+  /* 16px */
+  --text-sm: 0.875rem;
+  /* 14px */
+  --text-xs: 0.75rem;
+  /* 12px */
+  --text-mono-base: 0.875rem;
+  /* 14px */
+  --text-mono-sm: 0.75rem;
+  /* 12px */
+
+  /* Background Layers (Warm Neutrals) */
+  --bg-base: #0d0e12;
+  /* Warm black */
+  --bg-elevated: #16171d;
+  /* Cards, panels */
+  --bg-overlay: #1d1f26;
+  /* Modals */
+  --bg-hover: #24262e;
+  /* Interactive hover */
+  --bg-input: #1a1c23;
+  /* Form inputs */
+
+  /* Text Hierarchy */
+  --text-primary: #f5f5f7;
+  /* High contrast */
+  --text-secondary: #a1a5b3;
+  /* Standard UI */
+  --text-tertiary: #6b7080;
+  /* Metadata */
+  --text-disabled: #4a4d5a;
+  /* Disabled */
+
+  /* Dual-Accent System */
+  /* Blue = Action/Interactive */
+  --accent-action: #4a90f5;
+  --accent-action-hover: #5c9ff7;
+  --accent-action-pressed: #3a7fe3;
+  --accent-action-subtle: rgba(74, 144, 245, 0.12);
+
+  /* Amber = Live/Recording */
+  --accent-live: #f59f0a;
+  --accent-live-hover: #f7b035;
+  --accent-live-pulse: #fbbf33;
+  --accent-live-subtle: rgba(245, 159, 10, 0.12);
+
+  /* Semantic States */
+  --status-success: #34d399;
+  --status-warning: #fbbf24;
+  --status-error: #f87171;
+  --status-info: #60a5fa;
+
+  /* Borders */
+  --border-base: rgba(255, 255, 255, 0.08);
+  --border-elevated: rgba(255, 255, 255, 0.12);
+  --border-focus: var(--accent-action);
+
+  /* Shadow System */
+  --shadow-card: inset 0 1px 0 rgba(255, 255, 255, 0.03), 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-hover: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 4px 16px rgba(0, 0, 0, 0.5);
+  --shadow-accent-live: inset 0 1px 0 rgba(245, 159, 10, 0.15), 0 4px 16px rgba(245, 159, 10, 0.12);
+  --shadow-accent-action: inset 0 1px 0 rgba(74, 144, 245, 0.15), 0 4px 16px rgba(74, 144, 245, 0.12);
+
+  /* Spacing */
+  --radius-sm: 6px;
+  --radius-md: 10px;
   --radius-lg: 12px;
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
 
-  --glass-bg: rgba(15, 23, 42, 0.85);
-  --glass-border: rgba(255, 255, 255, 0.1);
+  /* Legacy Aliases (for compatibility during migration) */
+  --bg-color: var(--bg-base);
+  --card-bg: var(--bg-elevated);
+  --text-color: var(--text-primary);
+  --active-color: var(--accent-action);
+  --border-color: var(--border-base);
+  --accent-primary: var(--accent-action);
+  --accent-danger: var(--status-error);
+  --accent-success: var(--status-success);
+  --text-muted: var(--text-tertiary);
 
   /* Safe Areas */
   --sat: env(safe-area-inset-top, 0px);
@@ -55,14 +107,19 @@
   --nav-height: 60px;
 }
 
-/* Typography */
-body {
-  font-family: 'Inter', -apple-system, sans-serif;
-  background-color: var(--bg-color);
-  color: var(--text-color);
+/* Reset & Base */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
+/* Typography */
 body {
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  background-color: var(--bg-base);
+  color: var(--text-primary);
   margin: 0;
   padding: 0;
   display: flex;
@@ -70,86 +127,181 @@ body {
   min-width: 320px;
   min-height: 100vh;
   min-height: -webkit-fill-available;
-  /* Safari full height fix */
-  background-color: var(--bg-color);
-  color: var(--text-color);
   overscroll-behavior-y: none;
-  /* Prevent rubber-banding on body */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  position: relative;
 }
 
-/* Typography & Layout */
-h1 {
-  font-size: 2em;
-  /* Reduced from 3.2em for mobile */
+/* Grain/Scanline Background (CTO Performance Guard: opacity ≤ 0.04) */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    repeating-linear-gradient(0deg,
+      rgba(255, 255, 255, 0.015) 0px,
+      transparent 1px,
+      transparent 2px);
+  pointer-events: none;
+  opacity: 0.5;
+  z-index: -1;
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><filter id="n"><feTurbulence baseFrequency="0.9" numOctaves="3"/></filter><rect width="200" height="200" filter="url(%23n)" opacity="0.05"/></svg>');
+  background-size: 200px 200px;
+  opacity: 0.03;
+  /* Hard limit: ≤ 0.04 */
+  pointer-events: none;
+  mix-blend-mode: overlay;
+  z-index: -1;
+}
+
+#root {
+  position: relative;
+  z-index: 1;
+}
+
+/* Typography Hierarchy */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-heading);
+  font-weight: 600;
   line-height: 1.2;
-  margin: 0.5em 0;
-  font-weight: 700;
-  letter-spacing: -0.5px;
+  margin: 0;
 }
 
-/* Inputs: Prevent Zoom on iOS */
+h1 {
+  font-size: var(--text-display);
+  font-weight: 700;
+}
+
+h2 {
+  font-size: var(--text-h1);
+}
+
+h3 {
+  font-size: var(--text-h2);
+}
+
+/* Form Controls */
 input,
 select,
 textarea {
   font-size: 16px !important;
-  /* Critical for iOS */
+  /* iOS zoom prevention */
   max-width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--border-base);
+  color: var(--text-primary);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  font-family: var(--font-body);
+  transition: border-color 180ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Touch Targets: Minimum 44px */
-button,
-a,
-.interactive {
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px var(--accent-action-subtle);
+}
+
+/* Buttons */
+button {
   min-height: 44px;
   min-width: 44px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  padding: 0 18px;
+  font-size: var(--text-base);
+  font-weight: 600;
+  font-family: var(--font-body);
+  background: var(--accent-action);
+  color: white;
+  cursor: pointer;
+  transition: all 180ms cubic-bezier(0.4, 0, 0.2, 1);
+  -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
-  /* Remove double-tap zoom delay */
 }
 
-button {
-  border-radius: 10px;
-  /* iOS corner radius */
-  border: 1px solid transparent;
-  padding: 0 16px;
-  font-size: 17px;
-  /* iOS standard body size */
-  font-weight: 600;
-  font-family: inherit;
-  background-color: var(--card-bg);
-  color: var(--active-color);
-  cursor: pointer;
-  transition: all 0.2s ease;
-  -webkit-tap-highlight-color: transparent;
+button:hover {
+  background: var(--accent-action-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(74, 144, 245, 0.3);
 }
 
 button:active {
-  opacity: 0.7;
-  transform: scale(0.98);
+  transform: translateY(0);
+  background: var(--accent-action-pressed);
 }
 
 button:focus-visible {
-  outline: 2px solid var(--active-color);
-  outline-offset: 2px;
+  outline: 2px solid var(--border-focus);
+  outline-offset: 3px;
 }
 
+/* Links */
 a {
-  font-weight: 500;
-  color: var(--active-color);
+  color: var(--accent-action);
   text-decoration: none;
+  font-weight: 500;
+  transition: color 180ms;
+}
+
+a:hover {
+  color: var(--accent-action-hover);
 }
 
 /* Utilities */
 .glass {
-  background: var(--glass-bg);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border-top: 0.5px solid var(--glass-border);
+  background: rgba(13, 14, 18, 0.75);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-top: 0.5px solid var(--border-elevated);
 }
 
-/* Hide scrollbar but allow scrolling */
+.tabular {
+  font-family: var(--font-mono);
+  font-feature-settings: 'tnum' 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-input);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--accent-action);
+  border-radius: 10px;
+  border: 2px solid var(--bg-input);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-action-hover);
+}
+
+/* Hide scrollbar (utility) */
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
@@ -157,4 +309,83 @@ a {
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+/* Loading Spinner */
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid var(--accent-action-subtle);
+  border-top-color: var(--accent-action);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+/* ========================================
+   GLOBAL PRIMITIVE ANIMATIONS
+   Gate 2 Exception: These are allowed global primitives.
+   ======================================== */
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes enterFade {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes statusPulse {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.6;
+  }
+}
+
+.animate-enter {
+  animation: enterFade 200ms ease-out forwards;
+}
+
+.spinner-base {
+  border: 4px solid var(--border-elevated);
+  border-radius: 50%;
+  border-top-color: var(--accent-action);
+  animation: spin 1s linear infinite;
+}
+
+/* ========================================
+   ACCESSIBILITY: REDUCED MOTION
+   CTO Contract: Mandatory, all animations disabled
+   ======================================== */
+@media (prefers-reduced-motion: reduce) {
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  *:focus-visible {
+    transition: none !important;
+  }
+
+  body::before,
+  body::after {
+    display: none;
+  }
 }

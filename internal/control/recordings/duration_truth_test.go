@@ -31,6 +31,11 @@ func (m *MockOWIClient) DeleteRecording(ctx context.Context, serviceRef string) 
 	return m.Called(ctx, serviceRef).Error(0)
 }
 
+func (m *MockOWIClient) GetTimers(ctx context.Context) ([]OWITimer, error) {
+	args := m.Called(ctx)
+	return args.Get(0).([]OWITimer), args.Error(1)
+}
+
 type MockPathMapper struct {
 	mock.Mock
 }
@@ -102,6 +107,7 @@ func TestDurationTruth_Read_StoreWins(t *testing.T) {
 	})
 
 	owi.On("GetLocations", ctx).Return([]OWILocation{}, nil)
+	owi.On("GetTimers", ctx).Return([]OWITimer{}, nil)
 	owi.On("GetRecordings", ctx, "/media/hdd/movie").Return(OWIRecordingsList{
 		Result: true,
 		Movies: []OWIMovie{
@@ -136,6 +142,7 @@ func TestDurationTruth_Read_ProbeFallback(t *testing.T) {
 	})
 
 	owi.On("GetLocations", ctx).Return([]OWILocation{}, nil)
+	owi.On("GetTimers", ctx).Return([]OWITimer{}, nil)
 	owi.On("GetRecordings", ctx, "/media/hdd/movie").Return(OWIRecordingsList{
 		Result: true,
 		Movies: []OWIMovie{
@@ -163,6 +170,7 @@ func TestDurationTruth_Read_Unknown(t *testing.T) {
 	// (No metadata in mgr)
 
 	owi.On("GetLocations", ctx).Return([]OWILocation{}, nil)
+	owi.On("GetTimers", ctx).Return([]OWITimer{}, nil)
 	owi.On("GetRecordings", ctx, "/media/hdd/movie").Return(OWIRecordingsList{
 		Result: true,
 		Movies: []OWIMovie{
@@ -194,6 +202,7 @@ func TestDurationTruth_Read_BuildingGate(t *testing.T) {
 	})
 
 	owi.On("GetLocations", ctx).Return([]OWILocation{}, nil)
+	owi.On("GetTimers", ctx).Return([]OWITimer{}, nil)
 	owi.On("GetRecordings", ctx, "/media/hdd/movie").Return(OWIRecordingsList{
 		Result: true,
 		Movies: []OWIMovie{
@@ -220,6 +229,7 @@ func TestDurationTruth_Read_ParseErrorMetrics(t *testing.T) {
 	})
 
 	owi.On("GetLocations", ctx).Return([]OWILocation{}, nil)
+	owi.On("GetTimers", ctx).Return([]OWITimer{}, nil)
 	owi.On("GetRecordings", ctx, "/media/hdd/movie").Return(OWIRecordingsList{
 		Result: true,
 		Movies: []OWIMovie{

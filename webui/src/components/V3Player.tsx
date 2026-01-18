@@ -15,6 +15,7 @@ import type {
 } from '../types/v3-player';
 import { useResume } from '../features/resume/useResume';
 import { ResumeState } from '../features/resume/api';
+import { Card, StatusChip } from './ui';
 import './V3Player.css';
 
 interface PlayerStats {
@@ -45,6 +46,9 @@ function V3Player(props: V3PlayerProps) {
   const [sRef, setSRef] = useState<string>(
     channel?.service_ref || channel?.id || '1:0:19:283D:3FB:1:C00000:0:0:0:'
   );
+
+  // Traceability State
+  const [traceId, setTraceId] = useState<string>('-');
 
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [status, setStatus] = useState<PlayerStatus>('idle');
@@ -79,7 +83,13 @@ function V3Player(props: V3PlayerProps) {
   const [playbackMode, setPlaybackMode] = useState<'LIVE' | 'VOD' | 'UNKNOWN'>('UNKNOWN');
   const [isPip, setIsPip] = useState(false);
   const [, setIsFullscreen] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false); // Track play/pause state
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  // P3-4: Truth State
+  const [canSeek, setCanSeek] = useState(true);
+  const [startUnix, setStartUnix] = useState<number | null>(null);
+  const [, setLiveEdgeUnix] = useState<number | null>(null);
+  // unused: liveEdgeUnix used for calculation but not directly in render yet, keeping state for completeness
   const isSafari = useMemo(() => {
     if (typeof navigator === 'undefined') return false;
     const ua = navigator.userAgent.toLowerCase();
@@ -135,6 +145,12 @@ function V3Player(props: V3PlayerProps) {
     const s = totalSeconds % 60;
     const pad = (n: number) => n.toString().padStart(2, '0');
     return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+  }, []);
+
+  const formatTimeOfDay = useCallback((unixSeconds: number): string => {
+    if (!unixSeconds || unixSeconds <= 0) return '--:--:--';
+    const date = new Date(unixSeconds * 1000);
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
   }, []);
 
   const refreshSeekableState = useCallback(() => {
@@ -673,7 +689,17 @@ function V3Player(props: V3PlayerProps) {
           setPlaybackMode('VOD');
         }
 
-        // Process Resume State (Strict Typed)
+
+        // P3-4: Truth Consumption
+        if (pInfo.requestId) setTraceId(pInfo.requestId);
+        if (pInfo.is_seekable !== undefined) {
+          setCanSeek(pInfo.is_seekable);
+        }
+        if (pInfo.start_unix) setStartUnix(pInfo.start_unix);
+        if (pInfo.live_edge_unix) setLiveEdgeUnix(pInfo.live_edge_unix);
+        if (pInfo.dvr_window_seconds) setDurationSeconds(pInfo.dvr_window_seconds);
+
+        // Resume State (Strict Typed)
         if (pInfo.resume && pInfo.resume.pos_seconds >= 15 && (!pInfo.resume.finished)) {
           const d = pInfo.resume.duration_seconds || (pInfo.duration_seconds || 0);
           if (!d || pInfo.resume.pos_seconds < d - 10) {
@@ -868,6 +894,7 @@ function V3Player(props: V3PlayerProps) {
         if (!res.ok) throw new Error(`${t('player.apiError')}: ${res.status}`);
         const data: V3SessionResponse = await res.json();
         newSessionId = data.sessionId;
+        if (data.requestId) setTraceId(data.requestId);
         sessionIdRef.current = newSessionId;
         setSessionId(newSessionId);
         const session = await waitForSessionReady(newSessionId);
@@ -1300,25 +1327,9 @@ function V3Player(props: V3PlayerProps) {
   }, [clearVodFetch, clearVodRetry, sendStopIntent]);
 
   // Overlay styles
-  const containerStyle: React.CSSProperties = onClose ? {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    width: '100vw',
-    height: '100vh',
-    background: 'rgba(0,0,0,0.95)',
-    zIndex: 9999,
-    display: 'flex',
-    flexDirection: 'column',
-    justifyContent: 'center',
-    alignItems: 'center',
-  } : {};
+  // ADR-00X: Overlay styles moved to .v3-player-overlay in V3Player.css
 
-  const videoStyle = {
-    width: '100%',
-    aspectRatio: '16/9',
-    display: 'block'
-  };
+  // Static styles moved to .video-element in V3Player.css
 
   const spinnerLabel =
     status === 'starting' || status === 'priming' || status === 'buffering' || status === 'building'
@@ -1329,12 +1340,22 @@ function V3Player(props: V3PlayerProps) {
 
   const windowDuration = Math.max(0, seekableEnd - seekableStart);
   const relativePosition = Math.min(windowDuration, Math.max(0, currentPlaybackTime - seekableStart));
-  const hasSeekWindow = windowDuration > 0;
+  const hasSeekWindow = canSeek && windowDuration > 0;
   const isLiveMode = playbackMode === 'LIVE';
   const isAtLiveEdge = isLiveMode && windowDuration > 0 && Math.abs(seekableEnd - currentPlaybackTime) < 2;
 
+  // P3-4: Absolute Timeline Formatting
+  const startTimeDisplay = startUnix
+    ? formatTimeOfDay(startUnix + relativePosition)
+    : formatClock(relativePosition);
+
+  const endTimeDisplay = startUnix
+    ? formatTimeOfDay(startUnix + windowDuration)
+    : formatClock(windowDuration);
+
   return (
-    <div ref={containerRef} className="v3-player-container" style={containerStyle}>
+    <div ref={containerRef} className={`v3-player-container animate-enter ${onClose ? 'v3-player-overlay' : ''}`.trim()}
+    >
       {onClose && (
         <button
           onClick={() => void stopStream()}
@@ -1348,15 +1369,60 @@ function V3Player(props: V3PlayerProps) {
       {/* Stats Overlay */}
       {showStats && (
         <div className="stats-overlay">
-          <div className="stats-row"><span className="stats-label">{t('player.status')}</span> <span className="stats-value" style={{ textTransform: 'capitalize' }}>{t(`player.statusStates.${status}`, { defaultValue: status })}</span></div>
-          <div className="stats-row"><span className="stats-label">{t('player.resolution')}</span> <span className="stats-value">{stats.resolution}</span></div>
-          <div className="stats-row"><span className="stats-label">{t('player.bandwidth')}</span> <span className="stats-value">{stats.bandwidth} kbps</span></div>
-          <div className="stats-row"><span className="stats-label">{t('player.bufferHealth')}</span> <span className="stats-value">{stats.bufferHealth}s</span></div>
-          <div className="stats-row"><span className="stats-label">{t('player.latency')}</span> <span className="stats-value">{stats.latency !== null ? stats.latency + 's' : '-'}</span></div>
-          <div className="stats-row"><span className="stats-label">{t('player.fps')}</span> <span className="stats-value">{stats.fps}</span></div>
-          <div className="stats-row"><span className="stats-label">{t('player.dropped')}</span> <span className="stats-value">{stats.droppedFrames}</span></div>
-          <div className="stats-row"><span className="stats-label">{t('player.hlsLevel')}</span> <span className="stats-value">{stats.levelIndex}</span></div>
-          <div className="stats-row"><span className="stats-label">{t('player.segDuration')}</span> <span className="stats-value">{stats.buffer}s</span></div>
+          <Card variant="standard">
+            <Card.Header>
+              <Card.Title>{t('player.statsTitle', { defaultValue: 'Technical Stats' })}</Card.Title>
+            </Card.Header>
+            <Card.Content className="stats-grid">
+              <div className="stats-row">
+                <span className="stats-label">{t('player.status')}</span>
+                <StatusChip
+                  state={status === 'ready' ? 'live' : status === 'error' ? 'error' : 'idle'}
+                  label={t(`player.statusStates.${status}`, { defaultValue: status })}
+                />
+              </div>
+              <div className="stats-row">
+                <span className="stats-label">{t('common.session', { defaultValue: 'Session' })}</span>
+                <span className="stats-value">{sessionIdRef.current || '-'}</span>
+              </div>
+              <div className="stats-row">
+                <span className="stats-label">{t('common.requestId', { defaultValue: 'Request ID' })}</span>
+                <span className="stats-value">{traceId}</span>
+              </div>
+              <div className="stats-row">
+                <span className="stats-label">{t('player.resolution')}</span>
+                <span className="stats-value">{stats.resolution}</span>
+              </div>
+              <div className="stats-row">
+                <span className="stats-label">{t('player.bandwidth')}</span>
+                <span className="stats-value">{stats.bandwidth} kbps</span>
+              </div>
+              <div className="stats-row">
+                <span className="stats-label">{t('player.bufferHealth')}</span>
+                <span className="stats-value">{stats.bufferHealth}s</span>
+              </div>
+              <div className="stats-row">
+                <span className="stats-label">{t('player.latency')}</span>
+                <span className="stats-value">{stats.latency !== null ? stats.latency + 's' : '-'}</span>
+              </div>
+              <div className="stats-row">
+                <span className="stats-label">{t('player.fps')}</span>
+                <span className="stats-value">{stats.fps}</span>
+              </div>
+              <div className="stats-row">
+                <span className="stats-label">{t('player.dropped')}</span>
+                <span className="stats-value">{stats.droppedFrames}</span>
+              </div>
+              <div className="stats-row">
+                <span className="stats-label">{t('player.hlsLevel')}</span>
+                <span className="stats-value">{stats.levelIndex}</span>
+              </div>
+              <div className="stats-row">
+                <span className="stats-label">{t('player.segDuration')}</span>
+                <span className="stats-value">{stats.buffer}s</span>
+              </div>
+            </Card.Content>
+          </Card>
         </div>
       )}
 
@@ -1366,7 +1432,7 @@ function V3Player(props: V3PlayerProps) {
         {/* PREPARING Overlay (VOD Remux) */}
         {(status === 'starting' || status === 'priming' || status === 'buffering' || status === 'building') && (
           <div className="spinner-overlay">
-            <div className="spinner"></div>
+            <div className="spinner spinner-base"></div>
             <div className="spinner-label">{spinnerLabel}</div>
           </div>
         )}
@@ -1379,7 +1445,7 @@ function V3Player(props: V3PlayerProps) {
           preload="metadata"
           autoPlay={!!autoStart}
           muted={!!autoStart}
-          style={videoStyle}
+          className="video-element"
         />
       </div>
 
@@ -1433,7 +1499,7 @@ function V3Player(props: V3PlayerProps) {
             </button>
 
             <div className="seek-slider-group">
-              <span className="vod-time">{formatClock(relativePosition)}</span>
+              <span className="vod-time">{startTimeDisplay}</span>
               <input
                 type="range"
                 min="0"
@@ -1446,7 +1512,7 @@ function V3Player(props: V3PlayerProps) {
                   seekTo(seekableStart + newVal);
                 }}
               />
-              <span className="vod-time-total">{formatClock(windowDuration)}</span>
+              <span className="vod-time-total">{endTimeDisplay}</span>
             </div>
 
             <div className="seek-buttons">
@@ -1475,11 +1541,7 @@ function V3Player(props: V3PlayerProps) {
           !channel && !recordingId && !src && (
             <input
               type="text"
-              className="bg-input"
-              value={sRef}
-              onChange={(e) => setSRef(e.target.value)}
-              placeholder={t('player.serviceRefPlaceholder')}
-              style={{ width: '300px' }}
+              className="bg-input bg-input-service"
             />
           )
         )}
@@ -1498,10 +1560,9 @@ function V3Player(props: V3PlayerProps) {
 
         {/* DVR Mode Button (Safari Only / Fallback) */}
         <button
-          className="btn-primary"
+          className={`btn-primary btn-dvr ${isSafari ? '' : 'v3-hidden'}`.trim()}
           onClick={enterDVRMode}
           title={t('player.dvrMode', 'DVR Mode (Native)')}
-          style={{ display: isSafari ? 'inline-flex' : 'none', background: 'rgba(234, 179, 8, 0.8)', borderColor: 'rgba(234, 179, 8, 0.4)' }}
         >
           📺 DVR
         </button>

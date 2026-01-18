@@ -60,6 +60,26 @@ func (a *OWIAdapter) DeleteRecording(ctx context.Context, serviceRef string) err
 	return a.client.DeleteMovie(ctx, serviceRef)
 }
 
+func (a *OWIAdapter) GetTimers(ctx context.Context) ([]recordings.OWITimer, error) {
+	timers, err := a.client.GetTimers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	res := make([]recordings.OWITimer, len(timers))
+	for i, t := range timers {
+		res[i] = recordings.OWITimer{
+			ServiceRef: t.ServiceRef,
+			Name:       t.Name,
+			Begin:      int(t.Begin),
+			End:        int(t.End),
+			State:      t.State,
+			JustPlay:   t.JustPlay,
+			Disabled:   t.Disabled,
+		}
+	}
+	return res, nil
+}
+
 // ResumeAdapter bridges resume.Store to recordings.ResumeStore
 type ResumeAdapter struct {
 	store resume.Store

@@ -13,11 +13,11 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/log"
-	v3api "github.com/ManuGH/xg2g/internal/pipeline/api"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 )
 
@@ -107,26 +107,80 @@ func (s *Server) handleV3SessionState(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := v3api.SessionResponse{
-		SessionID:     session.SessionID,
-		ServiceRef:    session.ServiceRef,
-		Profile:       session.Profile.Name,
-		State:         session.State,
-		Reason:        session.Reason,
-		ReasonDetail:  session.ReasonDetail,
-		CorrelationID: session.CorrelationID,
-		UpdatedAtMs:   session.UpdatedAtUnix * 1000,
+	resp := SessionResponse{
+		SessionId:     openapi_types.UUID(parseUUID(session.SessionID)),
+		ServiceRef:    &session.ServiceRef,
+		Profile:       &session.Profile.Name,
+		UpdatedAtMs:   toPtr(int(session.UpdatedAtUnix * 1000)),
+		RequestId:     requestID(r.Context()),
+		CorrelationId: &session.CorrelationID,
 	}
+
+	ensureTraceHeader(w, r.Context())
+
+	// Map State
+	resp.State = mapSessionState(session.State)
+
+	if session.Reason != "" {
+		r := SessionResponseReason(session.Reason)
+		resp.Reason = &r
+	}
+	resp.ReasonDetail = &session.ReasonDetail
+
 	mode, durationSeconds, seekableStart, seekableEnd, liveEdge := sessionPlaybackInfo(session, time.Now())
-	resp.Mode = mode
-	resp.DurationSeconds = durationSeconds
-	resp.SeekableStartSeconds = seekableStart
-	resp.SeekableEndSeconds = seekableEnd
-	resp.LiveEdgeSeconds = liveEdge
-	resp.PlaybackURL = fmt.Sprintf("/api/v3/sessions/%s/hls/index.m3u8", session.SessionID)
+	if mode != "" {
+		m := SessionResponseMode(mode)
+		resp.Mode = &m
+	}
+	resp.DurationSeconds = toFloat32Ptr(durationSeconds)
+	resp.SeekableStartSeconds = toFloat32Ptr(seekableStart)
+	resp.SeekableEndSeconds = toFloat32Ptr(seekableEnd)
+	resp.LiveEdgeSeconds = toFloat32Ptr(liveEdge)
+	pUrl := fmt.Sprintf("/api/v3/sessions/%s/hls/index.m3u8", session.SessionID)
+	resp.PlaybackUrl = &pUrl
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func mapSessionState(s model.SessionState) SessionResponseState {
+	switch s {
+	case model.SessionStarting:
+		return STARTING
+	case model.SessionPriming:
+		return PRIMING
+	case model.SessionReady:
+		return READY
+	case model.SessionDraining:
+		return DRAINING
+	case model.SessionStopping:
+		return STOPPING
+	case model.SessionStopped:
+		return STOPPED
+	case model.SessionFailed:
+		return FAILED
+	case model.SessionCancelled:
+		return CANCELLED
+	default:
+		return IDLE
+	}
+}
+
+func toPtr[T any](v T) *T {
+	return &v
+}
+
+func toFloat32Ptr(v *float64) *float32 {
+	if v == nil {
+		return nil
+	}
+	f32 := float32(*v)
+	return &f32
+}
+
+func parseUUID(s string) uuid.UUID {
+	u, _ := uuid.Parse(s)
+	return u
 }
 
 // ReportPlaybackFeedback handles POST /sessions/{sessionId}/feedback

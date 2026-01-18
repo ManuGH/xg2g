@@ -1,12 +1,12 @@
 :root {
-  /* Modern Color Palette (2025 Dark Mode) */
-  --bg-primary: #0f1115;
-  --bg-secondary: #181b21;
-  --bg-card: #22262e;
-  --bg-hover: #2c323c;
+  /* Modern Color Palette (2026 Enhanced) */
+  --bg-primary: #0a0b0f;
+  --bg-secondary: #13151a;
+  --bg-card: #1a1d26;
+  --bg-hover: #252932;
 
   --text-primary: #ffffff;
-  --text-secondary: #a0a8b8;
+  --text-secondary: #a8b3c8;
   --text-muted: #6b7280;
 
   --accent-primary: #3b82f6;
@@ -15,15 +15,15 @@
   --accent-danger: #ef4444;
   --accent-success: #10b981;
 
-  --border-subtle: rgba(255, 255, 255, 0.08);
-  --glass-bg: rgba(15, 17, 21, 0.85);
+  --border-subtle: rgba(255, 255, 255, 0.1);
+  --glass-bg: rgba(10, 11, 15, 0.8);
 
   --radius-lg: 16px;
   --radius-md: 12px;
   --radius-sm: 8px;
 
   --font-main: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  --shadow-lg: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 12px 40px -12px rgba(0, 0, 0, 0.6);
 
   /* Alias tokens for shared components */
   --bg-color: var(--bg-primary);
@@ -39,13 +39,15 @@
 body {
   background-color: var(--bg-primary);
   background-image:
-    radial-gradient(1200px 800px at 12% -10%, rgba(59, 130, 246, 0.18), transparent 60%),
-    radial-gradient(900px 700px at 88% 10%, rgba(16, 185, 129, 0.12), transparent 65%);
+    radial-gradient(1200px 800px at 12% -10%, rgba(59, 130, 246, 0.12), transparent 60%),
+    radial-gradient(900px 700px at 88% 10%, rgba(16, 185, 129, 0.08), transparent 65%);
   background-repeat: no-repeat;
   background-size: cover;
+  background-attachment: fixed;
   color: var(--text-primary);
   font-family: var(--font-main);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   margin: 0;
   padding: 0;
 }
@@ -80,17 +82,38 @@ body {
 }
 
 .card {
-  background: var(--bg-card);
+  background: linear-gradient(135deg, rgba(26, 29, 38, 0.95), rgba(19, 21, 26, 0.95));
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   padding: 24px;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 16px -4px rgba(0, 0, 0, 0.4);
+  position: relative;
+  overflow: hidden;
+}
+
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.5), transparent);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.card:hover::before {
+  opacity: 1;
 }
 
 .card:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-lg);
-  border-color: rgba(255, 255, 255, 0.1);
+  transform: translateY(-4px);
+  box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.5);
+  border-color: rgba(59, 130, 246, 0.2);
 }
 
 .card h2 {
@@ -768,4 +791,22 @@ body {
 .player-overlay {
   animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   /* iOS Spring-like ease */
+}/* Add to App.css - Main layout for vertical rail */
+
+.app-container {
+  margin-left: 60px; /* Account for vertical rail on desktop */
+  min-height: 100vh;
+  padding: 20px;
+}
+
+@media (max-width: 768px) {
+  .app-container {
+    margin-left: 0; /* No rail on mobile */
+    padding-bottom: 72px; /* Account for bottom nav */
+  }
+}
+
+.content-area {
+  max-width: 1400px;
+  margin: 0 auto;
 }

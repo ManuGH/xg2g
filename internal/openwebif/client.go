@@ -485,6 +485,7 @@ type Timer struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Disabled    int    `json:"disabled"`
+	JustPlay    int    `json:"justplay"`
 	Begin       int64  `json:"begin"`
 	End         int64  `json:"end"`
 	Duration    int64  `json:"duration"`

@@ -1,0 +1,90 @@
+/* StatusChip Primitive - Broadcast Console 2026
+   CTO Contract: Single pattern, semantic states, pulse only for live/rec/error */
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.status-chip__icon {
+  font-size: 10px;
+  line-height: 1;
+}
+
+.status-chip__label {
+  line-height: 1;
+}
+
+/* Semantic States - CTO Contract: LIVE/REC=Amber, ERROR=Red */
+
+.status-chip[data-state="idle"] {
+  background: rgba(107, 112, 128, 0.12);
+  /* var(--text-tertiary) subtle */
+  color: var(--text-tertiary);
+  border: 1px solid rgba(107, 112, 128, 0.2);
+}
+
+.status-chip[data-state="success"] {
+  background: rgba(52, 211, 153, 0.12);
+  /* var(--status-success) subtle */
+  color: var(--status-success);
+  border: 1px solid rgba(52, 211, 153, 0.25);
+}
+
+.status-chip[data-state="warning"] {
+  background: rgba(251, 191, 36, 0.12);
+  /* var(--status-warning) subtle */
+  color: var(--status-warning);
+  border: 1px solid rgba(251, 191, 36, 0.25);
+}
+
+.status-chip[data-state="error"] {
+  background: rgba(248, 113, 113, 0.12);
+  /* var(--status-error) subtle */
+  color: var(--status-error);
+  border: 1px solid rgba(248, 113, 113, 0.3);
+}
+
+.status-chip[data-state="live"],
+.status-chip[data-state="recording"] {
+  background: var(--accent-live-subtle);
+  color: var(--accent-live);
+  border: 1px solid var(--accent-live);
+}
+
+/* Status Pulse - CTO Stop Criterion #2: ONLY live/recording/error */
+.status-chip[data-state="live"] .status-chip__icon,
+.status-chip[data-state="recording"] .status-chip__icon {
+  animation: statusPulse 2s ease-in-out infinite;
+}
+
+.status-chip[data-state="error"] .status-chip__icon {
+  animation: statusPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes statusPulse {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.6;
+  }
+}
+
+/* Accessibility: Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  .status-chip__icon {
+    animation: none !important;
+  }
+}

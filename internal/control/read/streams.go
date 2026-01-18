@@ -84,10 +84,9 @@ func GetStreams(ctx context.Context, cfg config.AppConfig, snap config.Snapshot,
 		}
 
 		// Map State
-		// Generated Enum: active, idle.
-		// We map running states -> active.
-		// Map State (Note B: Strict "active" only)
-		state := "active"
+		// Use the deterministic truth engine (PR-P3-2)
+		val := model.DeriveLifecycleState(r, time.Now())
+		state := string(val)
 
 		// Resolve Name
 		name := nameMap[r.ServiceRef]

@@ -80,11 +80,15 @@ components:
 
     SessionResponse:
       type: object
-      required: [sessionId, state]
+      required: [sessionId, requestId, state]
       properties:
         sessionId:
           type: string
           format: uuid
+        requestId:
+          type: string
+          description: Request ID for debugging/tracing. Mandatory in P3-1.
+          example: "req_abc123"
         serviceRef:
           type: string
         profile:
@@ -92,12 +96,18 @@ components:
         state:
           type: string
           description: |
-            Session lifecycle state. READY guarantees a playable HLS stream (playlist + at least one segment,
-            atomically published). PRIMING means FFmpeg is running but content is not yet playable.
+            Session lifecycle state. STARTING guarantees a session ticket is allocated.
+            READY/ACTIVE guarantees a playable HLS stream.
           enum:
             [
-              NEW,
               STARTING,
+              BUFFERING,
+              ACTIVE,
+              STALLED,
+              ENDING,
+              IDLE,
+              ERROR,
+              NEW,
               PRIMING,
               READY,
               DRAINING,
@@ -765,9 +775,15 @@ components:
 
     PlaybackInfo:
       type: object
-      required: [mode, url]
+      required: [mode, url, requestId, sessionId]
       additionalProperties: false
       properties:
+        requestId:
+          type: string
+          description: Correlation ID for the request. Mandatory in P3-1.
+        sessionId:
+          type: string
+          description: Unique ID for the stream session. Mandatory in P3-1.
         mode:
           $ref: "#/components/schemas/PlaybackInfoMode"
         url:
@@ -775,7 +791,22 @@ components:
           description: Relative URL for the selected playback strategy.
         seekable:
           type: boolean
-          description: Whether the stream is seekable. Omitted if unknown.
+          description: Whether the stream is seekable. Omitted if unknown. Deprecated in favor of is_seekable.
+        is_seekable:
+          type: boolean
+          description: Authoritative flag if the stream is seekable. Becomes required in P3-4.
+        dvr_window_seconds:
+          type: integer
+          format: int64
+          description: Absolute DVR window length in seconds. Becomes required in P3-4.
+        live_edge_unix:
+          type: integer
+          format: int64
+          description: wall-clock timestamp (UNIX) of the latest segment. Becomes required in P3-4.
+        start_unix:
+          type: integer
+          format: int64
+          description: wall-clock timestamp (UNIX) of the earliest segment in window. Becomes required in P3-4.
         duration_seconds:
           type: integer
           format: int64
@@ -933,8 +964,11 @@ components:
 
     RecordingBuildStatus:
       type: object
-      required: [state]
+      required: [state, requestId]
       properties:
+        requestId:
+          type: string
+          description: Correlation ID for the request.
         state:
           type: string
           enum: [IDLE, RUNNING, FAILED, READY]
@@ -971,9 +1005,18 @@ components:
 
     StreamSession:
       type: object
+      required: [sessionId, requestId, state]
       properties:
         id:
           type: string
+          description: Internal database ID (deprecated).
+        sessionId:
+          type: string
+          format: uuid
+          description: Mandatory stream lifecycle ID (domain truth).
+        requestId:
+          type: string
+          description: Correlation ID for the trace. Mandatory in P3-1.
         client_ip:
           type: string
         channel_name:
@@ -983,7 +1026,7 @@ components:
           format: date-time
         state:
           type: string
-          enum: [active, idle]
+          enum: [starting, buffering, active, stalled, ending, idle, error]
         program:
           type: object
           properties:
@@ -1037,6 +1080,10 @@ components:
           type: string
           description: Human-readable duration string for display only.
         filename: { type: string }
+        status:
+          type: string
+          description: Consolidated recording status. Becomes required in P3-3.
+          enum: [pending, recording, completed, failed, deleting]
         resume: { $ref: "#/components/schemas/ResumeSummary" }
 
     ResumeSummary:
@@ -1053,7 +1100,11 @@ components:
 
     RecordingResponse:
       type: object
+      required: [requestId]
       properties:
+        requestId:
+          type: string
+          description: Correlation ID for the request.
         roots:
           type: array
           items: { $ref: "#/components/schemas/RecordingRoot" }

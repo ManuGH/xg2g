@@ -1,0 +1,54 @@
+/* SystemHealthPanel - Layout ONLY (CTO Contract: No colors/shadows/animations)
+   Uses Card primitive, only defines grid layout */
+
+.health-panel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.health-panel-tile {
+  /* Card primitive handles all styling */
+  min-height: 90px;
+}
+
+.health-panel-tile__content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.health-panel-tile__label {
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-tertiary);
+}
+
+.health-panel-tile__value {
+  font-family: var(--font-mono);
+  font-size: var(--text-h2);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .health-panel-grid {
+    grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
+    gap: 8px;
+  }
+
+  .health-panel-tile {
+    min-height: 80px;
+  }
+
+  .health-panel-tile__value {
+    font-size: var(--text-h3);
+  }
+}

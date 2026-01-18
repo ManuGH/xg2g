@@ -137,11 +137,17 @@ type SessionRecord struct {
 	LastAccessUnix int64         `json:"lastAccessUnix,omitempty"`
 	ExpiresAtUnix  int64         `json:"expiresAtUnix"` // TTL for garbage collection.
 	// ADR-009: Session Lease Semantics
-	LeaseExpiresAtUnix int64             `json:"leaseExpiresAtUnix"`
-	HeartbeatInterval  int               `json:"heartbeatInterval"`
-	LastHeartbeatUnix  int64             `json:"lastHeartbeatUnix,omitempty"`
-	StopReason         string            `json:"stopReason,omitempty"` // USER_STOPPED, LEASE_EXPIRED, FAILED, etc.
-	ContextData        map[string]string `json:"contextData,omitempty"`
+	LeaseExpiresAtUnix int64  `json:"leaseExpiresAtUnix"`
+	HeartbeatInterval  int    `json:"heartbeatInterval"`
+	LastHeartbeatUnix  int64  `json:"lastHeartbeatUnix,omitempty"`
+	StopReason         string `json:"stopReason,omitempty"` // USER_STOPPED, LEASE_EXPIRED, FAILED, etc.
+
+	// PR-P3-2: Deterministic Lifecycle Fields
+	LatestSegmentAt      time.Time `json:"latestSegmentAt,omitempty"`
+	LastPlaylistAccessAt time.Time `json:"lastPlaylistAccessAt,omitempty"`
+	PlaylistPublishedAt  time.Time `json:"playlistPublishedAt,omitempty"`
+
+	ContextData map[string]string `json:"contextData,omitempty"`
 }
 
 // IntentType defines the type of intent (command).

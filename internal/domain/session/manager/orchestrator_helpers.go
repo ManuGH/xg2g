@@ -500,6 +500,7 @@ func (o *Orchestrator) transitionReady(ctx context.Context, e model.StartSession
 	o.recordTransition(model.SessionPriming, model.SessionReady)
 	_, err := o.Store.UpdateSession(ctx, e.SessionID, func(r *model.SessionRecord) error {
 		r.State = model.SessionReady
+		r.PlaylistPublishedAt = time.Now() // PR-P3-2: Truth for buffering/active derivation
 		r.UpdatedAtUnix = time.Now().Unix()
 		r.LastAccessUnix = time.Now().Unix()
 		return nil
@@ -554,8 +555,8 @@ func (o *Orchestrator) runExecutionLoop(
 		return "", model.ProfileSpec{}, err
 	}
 	if o.HLSRoot != "" {
-		sessionDir := filepath.Join(o.HLSRoot, "sessions", e.SessionID)
-		go observeFirstSegment(hbCtx, sessionDir, startTime, e.ProfileID)
+		// PR-P3-2: Start continuous heartbeat monitor (interim FS polling)
+		go o.startHeartbeatMonitor(hbCtx, e.SessionID)
 	}
 
 	playlistReadyResult := false
