@@ -217,14 +217,26 @@ enigma2:
 
 	// Strict Decode
 	var dto struct {
-		URL             string  `json:"url"`
-		Mode            string  `json:"mode"`
-		DurationSeconds *int64  `json:"duration_seconds,omitempty"`
-		Reason          *string `json:"reason,omitempty"`
-		Seekable        *bool   `json:"seekable,omitempty"`
-		Container       *string `json:"container,omitempty"`
-		VideoCodec      *string `json:"video_codec,omitempty"`
-		AudioCodec      *string `json:"audio_codec,omitempty"`
+		URL              string    `json:"url"`
+		Mode             string    `json:"mode"`
+		DurationSeconds  *int64    `json:"duration_seconds,omitempty"`
+		Reason           *string   `json:"reason,omitempty"`
+		Seekable         *bool     `json:"seekable,omitempty"`    // deprecated alias
+		IsSeekable       *bool     `json:"is_seekable,omitempty"` // canonical (P3-4)
+		Container        *string   `json:"container,omitempty"`
+		VideoCodec       *string   `json:"video_codec,omitempty"`
+		AudioCodec       *string   `json:"audio_codec,omitempty"`
+		RequestId        string    `json:"requestId"`                    // traceability
+		SessionId        string    `json:"sessionId"`                    // traceability
+		DurationSource   *string   `json:"duration_source,omitempty"`    // P3-4 truth
+		StartUnix        *int64    `json:"start_unix,omitempty"`         // P3-4 truth (live)
+		LiveEdgeUnix     *int64    `json:"live_edge_unix,omitempty"`     // P3-4 truth (live)
+		DvrWindowSeconds *int64    `json:"dvr_window_seconds,omitempty"` // P3-4 truth
+		Resume           *struct { // P3-4 resume state
+			PosSeconds      float32 `json:"pos_seconds"`
+			DurationSeconds *int64  `json:"duration_seconds,omitempty"`
+			Finished        *bool   `json:"finished,omitempty"`
+		} `json:"resume,omitempty"`
 	}
 
 	// Enforce strict JSON
@@ -239,4 +251,6 @@ enigma2:
 	assert.Equal(t, int64(3600), *dto.DurationSeconds)
 	require.NotNil(t, dto.Reason)
 	assert.Equal(t, "directplay_match", *dto.Reason)
+	require.NotNil(t, dto.IsSeekable)
+	assert.True(t, *dto.IsSeekable)
 }
