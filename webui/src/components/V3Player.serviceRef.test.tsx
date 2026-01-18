@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, afterEach, beforeEach, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import V3Player from './V3Player';
 import type { V3PlayerProps } from '../types/v3-player';
 
@@ -14,32 +14,6 @@ vi.mock('react-i18next', () => ({
 
 describe('V3Player ServiceRef Input', () => {
   let originalFetch: typeof globalThis.fetch;
-  let originalPause: typeof window.HTMLMediaElement.prototype.pause;
-  let originalVideoPause: typeof window.HTMLVideoElement.prototype.pause;
-
-  beforeAll(() => {
-    originalPause = window.HTMLMediaElement.prototype.pause;
-    originalVideoPause = window.HTMLVideoElement.prototype.pause;
-    Object.defineProperty(window.HTMLMediaElement.prototype, 'pause', {
-      configurable: true,
-      value: vi.fn()
-    });
-    Object.defineProperty(window.HTMLVideoElement.prototype, 'pause', {
-      configurable: true,
-      value: vi.fn()
-    });
-  });
-
-  afterAll(() => {
-    Object.defineProperty(window.HTMLMediaElement.prototype, 'pause', {
-      configurable: true,
-      value: originalPause
-    });
-    Object.defineProperty(window.HTMLVideoElement.prototype, 'pause', {
-      configurable: true,
-      value: originalVideoPause
-    });
-  });
 
   beforeEach(() => {
     originalFetch = globalThis.fetch;

@@ -106,6 +106,7 @@ function V3Player(props: V3PlayerProps) {
   // PREPARING state for VOD remux UX
   const [volume, setVolume] = useState(1); // 0.0 to 1.0
   const [isMuted, setIsMuted] = useState(false);
+  const lastNonZeroVolumeRef = useRef<number>(1);
   const [stats, setStats] = useState<PlayerStats>({
     bandwidth: 0,
     resolution: '-',
@@ -264,9 +265,22 @@ function V3Player(props: V3PlayerProps) {
   const toggleMute = useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
-    const nextMuted = !video.muted;
-    video.muted = nextMuted;
-    setIsMuted(nextMuted);
+    if (!video.muted) {
+      if (video.volume > 0) {
+        lastNonZeroVolumeRef.current = video.volume;
+      }
+      video.muted = true;
+      setIsMuted(true);
+      return;
+    }
+
+    const restoreVolume = lastNonZeroVolumeRef.current > 0 ? lastNonZeroVolumeRef.current : video.volume;
+    if (restoreVolume > 0 && video.volume !== restoreVolume) {
+      video.volume = restoreVolume;
+      setVolume(restoreVolume);
+    }
+    video.muted = false;
+    setIsMuted(false);
   }, []);
 
   const handleVolumeChange = useCallback((newVolume: number) => {
@@ -274,6 +288,9 @@ function V3Player(props: V3PlayerProps) {
     if (!video) return;
     video.volume = newVolume;
     setVolume(newVolume);
+    if (newVolume > 0) {
+      lastNonZeroVolumeRef.current = newVolume;
+    }
     const shouldMute = newVolume === 0;
     video.muted = shouldMute;
     setIsMuted(shouldMute);
@@ -1241,6 +1258,9 @@ function V3Player(props: V3PlayerProps) {
     if (videoRef.current) {
       setVolume(videoRef.current.volume);
       setIsMuted(videoRef.current.muted);
+      if (videoRef.current.volume > 0) {
+        lastNonZeroVolumeRef.current = videoRef.current.volume;
+      }
     }
   }, []);
 
