@@ -22,11 +22,6 @@ vi.mock('../src/client-ts', () => ({
   }),
 }));
 
-// Mock i18next
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key })
-}));
-
 describe('Frontend Smoke Tests', () => {
   it('Settings page loads and shows Universal Policy (read-only) from API', async () => {
     render(<Settings />);

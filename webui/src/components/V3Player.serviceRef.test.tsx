@@ -8,10 +8,6 @@ vi.mock('../client-ts/sdk.gen', () => ({
   getRecordingPlaybackInfo: vi.fn()
 }));
 
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key })
-}));
-
 describe('V3Player ServiceRef Input', () => {
   let originalFetch: typeof globalThis.fetch;
 

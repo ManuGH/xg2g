@@ -8,10 +8,6 @@ vi.mock('../client-ts/sdk.gen', () => ({
   getRecordingPlaybackInfo: vi.fn()
 }));
 
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key })
-}));
-
 describe('V3Player Volume Restore', () => {
   it('restores last non-zero volume when unmuting after slider hits zero', async () => {
     const props = { autoStart: false } as unknown as V3PlayerProps;

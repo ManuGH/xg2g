@@ -24,3 +24,24 @@ if (videoProto && !('requestPictureInPicture' in videoProto)) {
     value: vi.fn().mockResolvedValue(undefined)
   });
 }
+
+vi.mock('react-i18next', async () => {
+  const actual = await vi.importActual<any>('react-i18next');
+  return {
+    ...actual,
+    useTranslation: () => ({
+      t: (key: string, opts?: Record<string, unknown>) => {
+        if (opts && typeof opts === 'object' && 'defaultValue' in opts) {
+          return String(opts.defaultValue);
+        }
+        return key;
+      },
+      i18n: {
+        language: 'en',
+        changeLanguage: async () => {}
+      }
+    }),
+    Trans: ({ i18nKey, defaults }: { i18nKey?: string; defaults?: string }) =>
+      defaults ?? i18nKey
+  };
+});
