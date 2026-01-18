@@ -96,32 +96,32 @@ func (m *MockServer) setDefaultDataNoLock() {
 
 	// Add services for Premium bouquet
 	m.services["1:7:1:0:0:0:0:0:0:0:FROM BOUQUET \"userbouquet.premium.tv\" ORDER BY bouquet"] = [][2]string{
-		{"1:0:19:283D:3FB:1:C00000:0:0:0:", "ARD HD"},
-		{"1:0:19:283E:3FB:1:C00000:0:0:0:", "ZDF HD"},
-		{"1:0:1:6DCA:44D:1:C00000:0:0:0:", "RTL"},
-		{"1:0:1:6DCB:44D:1:C00000:0:0:0:", "Pro7"},
+		{"1:0:19:283D:3FB:1:C00000:0:0:0:", "Channel 1 HD"},
+		{"1:0:19:283E:3FB:1:C00000:0:0:0:", "Channel 2 HD"},
+		{"1:0:1:6DCA:44D:1:C00000:0:0:0:", "Channel 3"},
+		{"1:0:1:6DCB:44D:1:C00000:0:0:0:", "Channel 4"},
 	}
 
 	// Add services for HD Channels bouquet
 	m.services["1:7:1:0:0:0:0:0:0:0:FROM BOUQUET \"userbouquet.hd.tv\" ORDER BY bouquet"] = [][2]string{
-		{"1:0:19:283D:3FB:1:C00000:0:0:0:", "ARD HD"},
-		{"1:0:19:283E:3FB:1:C00000:0:0:0:", "ZDF HD"},
-		{"1:0:19:2855:401:1:C00000:0:0:0:", "RTL HD"},
+		{"1:0:19:283D:3FB:1:C00000:0:0:0:", "Channel 1 HD"},
+		{"1:0:19:283E:3FB:1:C00000:0:0:0:", "Channel 2 HD"},
+		{"1:0:19:2855:401:1:C00000:0:0:0:", "Channel 3 HD"},
 	}
 
-	// Add EPG events for ARD HD
+	// Add EPG events for Channel 1 HD
 	m.epgEvents["1:0:19:283D:3FB:1:C00000:0:0:0:"] = []EPGEvent{
 		{
 			ID:          32845,
-			Title:       "Tagesschau",
-			Description: "Nachrichten und Wetterbericht",
+			Title:       "News Program",
+			Description: "Daily news and weather",
 			Begin:       1700000000,
 			Duration:    900,
 		},
 		{
 			ID:          32846,
-			Title:       "Tatort",
-			Description: "Krimiserie",
+			Title:       "Evening Movie",
+			Description: "Feature film",
 			Begin:       1700000900,
 			Duration:    5400,
 		},

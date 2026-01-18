@@ -95,9 +95,9 @@ func slugify(name string) string {
 // - Collision resistance (different service refs → different IDs)
 //
 // Examples:
-//   - "Das Erste HD" + "1:0:19:132F:3EF:1:C00000:0:0:0:" → "das-erste-hd-3fa92b"
-//   - "ZDF" + "1:0:19:1334:3EF:1:C00000:0:0:0:" → "zdf-a7c4e1"
-//   - "Sky Sport HD" + "1:0:19:83:6:85:C00000:0:0:0:" → "sky-sport-hd-b2d8f9"
+//   - "Example Channel HD" + "1:0:19:132F:3EF:1:C00000:0:0:0:" → "example-channel-hd-3fa92b"
+//   - "Channel 2" + "1:0:19:1334:3EF:1:C00000:0:0:0:" → "channel-2-a7c4e1"
+//   - "Premium Sport HD" + "1:0:19:83:6:85:C00000:0:0:0:" → "premium-sport-hd-b2d8f9"
 //
 //nolint:unused
 func makeHumanReadableTvgID(name, sref string) string {
