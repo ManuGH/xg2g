@@ -28,6 +28,12 @@ type FileConfig struct {
 	DataDir       string `yaml:"dataDir,omitempty"`
 	LogLevel      string `yaml:"logLevel,omitempty"`
 
+	// Registry-exposed root-level fields (Governance: FileConfig must transport Registry truth)
+	ConfigStrict   *bool  `yaml:"configStrict,omitempty"`
+	ReadyStrict    *bool  `yaml:"readyStrict,omitempty"`
+	LogService     string `yaml:"logService,omitempty"`
+	TrustedProxies string `yaml:"trustedProxies,omitempty"`
+
 	OpenWebIF             OpenWebIFConfig         `yaml:"openWebIF"`
 	Enigma2               Enigma2Config           `yaml:"enigma2,omitempty"`
 	Bouquets              []string                `yaml:"bouquets,omitempty"`
@@ -42,6 +48,15 @@ type FileConfig struct {
 	TLS                   TLSConfig               `yaml:"tls,omitempty"`
 	Library               LibraryConfig           `yaml:"library,omitempty"`
 	RecordingPathMappings []RecordingPathMapping  `yaml:"recordingPathMappings,omitempty"`
+
+	// Advanced/internal configuration (Registry-exposed)
+	FFmpeg    *FFmpegConfig    `yaml:"ffmpeg,omitempty"`
+	HLS       *HLSConfig       `yaml:"hls,omitempty"`
+	VOD       *VODConfig       `yaml:"vod,omitempty"`
+	RateLimit *RateLimitConfig `yaml:"rateLimit,omitempty"`
+	Sessions  *SessionsConfig  `yaml:"sessions,omitempty"`
+	Store     *StoreConfig     `yaml:"store,omitempty"`
+	Streaming *StreamingConfig `yaml:"streaming,omitempty"`
 }
 
 // TLSConfig holds TLS settings
@@ -84,6 +99,9 @@ type Enigma2Config struct {
 	// Fallback to direct 8001 when StreamRelay (17999) fails preflight.
 	FallbackTo8001   *bool  `yaml:"fallbackTo8001,omitempty"`
 	PreflightTimeout string `yaml:"preflightTimeout,omitempty"` // e.g. "2s", default: "2s"
+	// Registry-exposed fields (FileConfig mapping)
+	AuthMode    string `yaml:"authMode,omitempty"`    // "inherit", "basic", "digest"
+	TuneTimeout string `yaml:"tuneTimeout,omitempty"` // e.g. "10s"
 }
 
 // EPGConfig holds EPG configuration
@@ -246,12 +264,15 @@ type AppConfig struct {
 	RecordingStableWindow   time.Duration          // File stability check duration (default: 2s)
 	RecordingPathMappings   []RecordingPathMapping // Receiver→Local path mappings
 
-	// VOD Optimization
+	// VOD Optimization (Legacy flat fields - kept for backwards compatibility)
 	VODProbeSize       string        // ffmpeg probesize (e.g. "50M")
 	VODAnalyzeDuration string        // ffmpeg analyzeduration (e.g. "50M")
 	VODStallTimeout    time.Duration // Supervisor stall timeout
 	VODMaxConcurrent   int           `json:"vodMaxConcurrentBuilds,omitempty"`
 	VODCacheTTL        time.Duration `json:"vodCacheTTL,omitempty"`
+
+	// VOD (Typed config - source of truth for YAML/Registry)
+	VOD VODConfig
 
 	// HDHomeRun Configuration
 	HDHR HDHRConfig
@@ -308,6 +329,30 @@ type HLSConfig struct {
 	DVRWindow time.Duration `yaml:"dvrWindow"`
 }
 
+// VODConfig groups all VOD-specific tuning knobs under `vod.*` for YAML,
+// schema generation, and registry-driven docs.
+// Keep this minimal and 1:1 with the existing flat AppConfig VOD* fields.
+type VODConfig struct {
+	// ProbeSize controls how many bytes are probed for container/codec detection.
+	// Example: "50M"
+	ProbeSize string `yaml:"probeSize" json:"probeSize"`
+
+	// AnalyzeDuration controls how long ffprobe analyzes the stream.
+	// Example: "50000000" (microseconds)
+	AnalyzeDuration string `yaml:"analyzeDuration" json:"analyzeDuration"`
+
+	// StallTimeout is the timeout for detecting a stalled VOD pipeline.
+	// Example: "1m"
+	StallTimeout string `yaml:"stallTimeout" json:"stallTimeout"`
+
+	// MaxConcurrent limits concurrent VOD probes/transcodes.
+	MaxConcurrent int `yaml:"maxConcurrent" json:"maxConcurrent"`
+
+	// CacheTTL controls how long VOD-derived artifacts are cached.
+	// Example: "24h"
+	CacheTTL string `yaml:"cacheTTL" json:"cacheTTL"`
+}
+
 // Enigma2Settings holds the runtime Enigma2 settings (using time.Duration)
 type Enigma2Settings struct {
 	BaseURL               string
@@ -336,6 +381,7 @@ type Loader struct {
 	configPath      string
 	version         string
 	ConsumedEnvKeys map[string]struct{} // Mechanical tracking of consumed keys
+	filePresence    *aliasPresence
 }
 
 // NewLoader creates a new configuration loader
@@ -397,6 +443,9 @@ func (l *Loader) Load() (AppConfig, error) {
 	}
 
 	// 3. Override with environment variables (highest priority)
+	if err := l.checkAliasEnvToEnvConflicts(); err != nil {
+		return cfg, err
+	}
 	l.mergeEnvConfig(&cfg)
 
 	// 3.5. Enforce Deprecation Policy (P1.2)
@@ -474,6 +523,12 @@ func (l *Loader) loadFile(path string) (*FileConfig, error) {
 		return nil, fmt.Errorf("read file: %w", err)
 	}
 
+	presence, err := parseAliasPresence(data)
+	if err != nil {
+		return nil, fmt.Errorf("parse alias presence: %w", err)
+	}
+	l.filePresence = presence
+
 	// Parse YAML with strict mode (unknown fields cause errors)
 	var fileCfg FileConfig
 	dec := yaml.NewDecoder(bytes.NewReader(data))
@@ -499,6 +554,12 @@ func (l *Loader) loadFile(path string) (*FileConfig, error) {
 
 // mergeFileConfig merges file configuration into jobs.Config
 func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
+	if err := l.checkAliasConflicts(src); err != nil {
+		return err
+	}
+	if err := l.checkAliasEnvConflicts(src); err != nil {
+		return err
+	}
 	if src.DataDir != "" {
 		dst.DataDir = expandEnv(src.DataDir)
 	}
