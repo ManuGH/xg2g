@@ -60,13 +60,13 @@ Fallback is an explicit emergency tool. It is **off by default** and should not 
 > [!IMPORTANT]
 > Fallback only triggers for sources originally resolved to port `17999`. It attempts to reach the same host on port `8001` with the same Service Reference.
 
-## 5. Deep Dive: Stream Relay & Port 17999
+## 5. Deep Dive: Optional Middleware & Port 17999
 
-When using `xg2g` with a receiver that has **Stream Relay** enabled (e.g., for encrypted channels like Sky DE), the stream resolution works as follows:
+When using `xg2g` with a receiver that has **optional middleware** enabled (e.g., for specific channel processing), the stream resolution works as follows:
 
 1. **Resolution**: `xg2g` calls `/web/stream.m3u` on the receiver (port 80).
-2. **Redirection**: OpenWebIF decides based on channel settings which port to use. For encrypted channels, it usually returns a URL pointing to **port 17999**.
-3. **Delivery**: The Stream Relay process (Oscam-emu) on the receiver picks up the request on 17999, cleans the stream, and delivers TS packets.
+2. **Redirection**: OpenWebIF decides based on channel settings which port to use. For certain configurations, it may return a URL pointing to **port 17999**.
+3. **Delivery**: Optional middleware on the receiver processes the request on 17999 and delivers TS packets.
 
 ### Diagnostic Runbook
 
@@ -86,7 +86,7 @@ curl -m 5 -v "http://<IP>:17999/<SREF>" | hexdump -C | head -n 5
 ```
 
 - **Success**: You see data starting with `47` (TS Sync Byte).
-- **Failure (Empty)**: Connection successful, but no data. Check **oscam.log** for ECM errors.
+- **Failure (Empty)**: Connection successful, but no data. Check middleware logs for processing errors.
 - **Failure (Timeout)**: No connection. Check **Firewall**, **Whitelist/policy** (ServiceRef and/or client ACL), or if the process is running.
 
 #### Step 3 (One-time): StreamRelay Exclusivity Check (17999)
@@ -120,10 +120,10 @@ Interpretation:
 
 ### Common Root Causes for 17999 Issues
 
-- **Whitelist / policy**: ServiceRef is not enabled in `/etc/enigma2/whitelist_streamrelay` and/or the client is blocked by IP/ACL.
-- **ECM/CA readiness**: If decryption is slow, fix it on the receiver (OSCam/ECM/relay readiness).
-- **Latency > 500ms**: If `preflight_latency_ms` is consistently high, check for Oscam ECM delays on the receiver.
-- **Oscam/Emu Down**: The decryption process is not running or misconfigured.
+- **Configuration**: Channel may not be configured for middleware processing.
+- **Readiness**: Middleware may need initialization time.
+- **Latency > 500ms**: If `preflight_latency_ms` is consistently high, check receiver configuration.
+- **Process Status**: Middleware process may not be running or misconfigured.
 
 ### Cleanup (Manual Tests)
 

@@ -72,7 +72,7 @@ func (c *Client) ResolveStreamURL(ctx context.Context, sref string) (string, err
 	}
 
 	// If streamPort is configured, build direct URL instead of querying /web/stream.m3u
-	// This bypasses OSCam-emu relay issues and ensures predictable stream source
+	// This bypasses optional middleware issues and ensures predictable stream source
 	if c.StreamPort > 0 {
 		u, err := url.Parse(c.BaseURL)
 		if err != nil {

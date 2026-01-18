@@ -8,7 +8,7 @@
 
 This section documents the **real-world Enigma2 streaming chain** as deployed in production Sky DE + FBC environments. This is not a theoretical model - it's the canonical topology that xg2g correctly implements.
 
-**Key Insight:** xg2g doesn't "emulate IPTV" - it models the actual DVB-S2 → Enigma2 → OSCam → HTTP streaming pipeline used by thousands of setups.
+**Key Insight:** xg2g doesn't "emulate IPTV" - it models the actual DVB-S2 → Enigma2 → HTTP streaming pipeline used by thousands of setups.
 
 ---
 
@@ -34,11 +34,11 @@ DVB-S2 Satellite (e.g., Orbital Position 19.2°E)
          │
          ▼
 ┌─────────────────┐
-│   OSCam-emu     │  Port 17999 (Stream Relay)
-│ (Descrambling)  │
+│ Optional        │  Port 17999 (Stream Processing)
+│ Middleware      │
 └────────┬────────┘
          │
-         ├─ Decryption Layer (CAIDs → Cleartext)
+         ├─ Stream Processing Layer
          ├─ Proxies request to Enigma2 Port 8001
          │
          ▼

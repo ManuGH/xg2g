@@ -23,7 +23,7 @@ This document details the critical configuration required for stable streaming f
 
 - **Setting**: `Enigma2.StreamPort: 8001` (or 8002)
 - **Mechanism**: `xg2g` constructs `http://<ip>:8001/<ServiceRef>` directly.
-- **Risk**: Bypasses transcoding logic; may fail if receiver uses a different port (e.g., OSCam-emu relay on 17999) or requires specific auth tokens not present in a raw direct URL.
+- **Risk**: Bypasses transcoding logic; may fail if receiver uses a different port (e.g., optional middleware on 17999) or requires specific auth tokens not present in a raw direct URL.
 
 ## Credentials & Authentication
 

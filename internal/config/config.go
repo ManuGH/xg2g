@@ -78,7 +78,7 @@ type Enigma2Config struct {
 	RateLimit             int    `yaml:"rateLimit,omitempty"`  // requests/sec
 	RateBurst             int    `yaml:"rateBurst,omitempty"`
 	UserAgent             string `yaml:"userAgent,omitempty"`
-	// FFmpeg stream probing settings (for OSCam-emu relay compatibility)
+	// FFmpeg stream probing settings (for optional middleware compatibility)
 	AnalyzeDuration string `yaml:"analyzeDuration,omitempty"` // e.g. "10s", default: "2s"
 	ProbeSize       string `yaml:"probeSize,omitempty"`       // e.g. "10M", default: "10M"
 	// Fallback to direct 8001 when StreamRelay (17999) fails preflight.

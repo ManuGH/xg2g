@@ -39,9 +39,9 @@ type Client struct {
 	userAgent  string
 	rnd        *rand.Rand
 	mu         sync.Mutex
-	// When true, avoid explicit zapping and rely on WebIF stream tuning.
+	// This bypasses optional middleware issues and ensures predictable stream sourcening.
 	UseWebIFStreams bool
-	// StreamPort is the port for direct stream URLs (e.g. 8001 for Enigma2, 17999 for OSCam-emu relay).
+	// StreamPort is the port for direct stream URLs (e.g. 8001 for Enigma2, 17999 for optional middleware).
 	// When set, ResolveStreamURL will build direct URLs instead of querying /web/stream.m3u.
 	StreamPort int
 }

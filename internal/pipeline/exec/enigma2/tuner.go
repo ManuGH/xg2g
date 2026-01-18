@@ -43,8 +43,8 @@ func (t *Tuner) Tune(ctx context.Context, serviceRef string) error {
 	logger.Debug().Msg("initiating zap")
 
 	// CRITICAL FIX: Always force Zap, even if useWebIFStreams is true.
-	// Stream Relay (Port 17999) REQUIRES the receiver to be tuned to the service to decrypt/relay.
-	// Relying on "implicit tuning via stream URL" works for 8001 but fails for 17999.
+	// Optional middleware (Port 17999) may REQUIRE the receiver to be tuned to the service for proper processing.
+	// Relying on "implicit tuning via stream URL" works for 8001 but may fail for 17999.
 	// The overhead of an extra Zap is negligible compared to the stability gain.
 	// if t.Client != nil && t.Client.useWebIFStreams {
 	// 	logger.Info().Msg("skipping zap for WebIF stream")
@@ -83,8 +83,8 @@ func (t *Tuner) Tune(ctx context.Context, serviceRef string) error {
 		return fmt.Errorf("tuner readiness failed: %w", err)
 	}
 
-	// Softcam/StreamRelay usually requires a moment to stabilize decryption after tuner lock.
-	// This prevents FFmpeg from reading initial scrambled/garbage packets.
+	// Optional middleware may require a moment to stabilize stream processing after tuner lock.
+	// This prevents FFmpeg from reading initial unstable packets.
 	time.Sleep(2000 * time.Millisecond)
 
 	logger.Info().Msg("tuner locked and ready (settled)")
