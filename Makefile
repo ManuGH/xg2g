@@ -9,7 +9,7 @@
         docker docker-build docker-build-cpu docker-build-gpu docker-build-all docker-security docker-tag docker-push docker-clean \
         sbom deps deps-update deps-tidy deps-verify deps-licenses \
 	security security-scan security-audit security-vulncheck \
-	quality-gates pre-commit install dev-tools check-tools \
+	quality-gates pre-commit install dev-tools check-tools generate-config verify-config \
         release-check release-build release-tag release-notes \
         dev up down status prod-up prod-down prod-logs check-env \
         restart prod-restart ps prod-ps ui-build codex certs setup build-ffmpeg
@@ -76,6 +76,8 @@ help: ## Show this help message
 	@echo "  lint              Run golangci-lint with all checks"
 	@echo "  lint-fix          Run golangci-lint with automatic fixes"
 	@echo "  generate          Generate Go code from OpenAPI spec"
+	@echo "  generate-config   Generate config surfaces from registry"
+	@echo "  verify-config     Verify generated config surfaces are up-to-date"
 	@echo "  test              Run all unit tests"
 	@echo "  test-schema       Run JSON schema validation tests"
 	@echo "  test-race         Run tests with race detection"
@@ -174,6 +176,21 @@ verify-generate: generate ## Verify that generated code is up-to-date
 	@echo "Verifying generated code..."
 	@git diff --exit-code internal/api/server_gen.go internal/control/http/v3/server_gen.go || (echo "❌ Generated code is out of sync. Run 'make generate' and commit changes." && exit 1)
 	@echo "✅ Generated code is up-to-date"
+
+generate-config: ## Generate config surfaces from registry
+	@echo "Generating config surfaces from registry..."
+	@go run ./cmd/configgen --allow-create
+	@echo "✅ Config surfaces generated"
+
+verify-config: ## Verify generated config surfaces are up-to-date
+	@echo "Verifying generated config surfaces..."
+	@go run ./cmd/configgen
+	@if git ls-files --error-unmatch .env >/dev/null 2>&1; then \
+		echo "❌ .env must not be tracked in the repo. Use .env.example instead."; \
+		exit 1; \
+	fi
+	@git diff --exit-code docs/guides/CONFIGURATION.md docs/guides/config.schema.json config.generated.example.yaml docs/guides/CONFIG_SURFACES.md || (echo "❌ Config surfaces are out of sync. Run 'make generate-config' and commit changes." && exit 1)
+	@echo "✅ Config surfaces are up-to-date"
 
 verify-hermetic-codegen: ## Verify hermetic code generation invariants (CTO-grade)
 	@echo "Verifying hermetic code generation invariants..."
@@ -753,6 +770,7 @@ schema-validate: ## Validate all YAML config files against JSON Schema
 	@echo "Validating config files against JSON Schema..."
 	@if command -v check-jsonschema >/dev/null 2>&1; then \
 		check-jsonschema --schemafile docs/guides/config.schema.json config.example.yaml; \
+		check-jsonschema --schemafile docs/guides/config.schema.json config.generated.example.yaml; \
 		find internal/config/testdata -name 'valid-*.yaml' -type f -print0 2>/dev/null | xargs -0 -I{} check-jsonschema --schemafile docs/guides/config.schema.json {} || true; \
 		if [ -d examples ]; then find examples -name '*.ya?ml' -type f -print0 | xargs -0 -I{} check-jsonschema --schemafile docs/guides/config.schema.json {} || true; fi; \
 		echo "✓ Schema validation complete"; \
@@ -776,7 +794,7 @@ gate-webui:
 gate-repo-hygiene:
 	@./scripts/ci_gate_repo_hygiene.sh
 
-quality-gates: lint-invariants verify-hermetic-codegen gate-a gate-webui gate-repo-hygiene verify-generate lint test-cover security-vulncheck ## Validate all quality gates
+quality-gates: lint-invariants verify-hermetic-codegen gate-a gate-webui gate-repo-hygiene verify-generate verify-config lint test-cover security-vulncheck ## Validate all quality gates
 	@echo "Validating quality gates..."
 	@echo "✅ All quality gates passed"
 
@@ -799,3 +817,15 @@ build-ffmpeg: ## Build FFmpeg 7.1.3 with HLS/VAAPI/x264/AAC support
 	@echo "  export PATH=/opt/xg2g/ffmpeg/bin:\$$PATH"
 	@echo "  export LD_LIBRARY_PATH=/opt/xg2g/ffmpeg/lib"
 
+
+.PHONY: contract-matrix
+contract-matrix: ## P4-1: Run contract matrix golden snapshot gate
+	@set -euo pipefail; \
+	echo "Running Contract Matrix (P4-1)..."; \
+	go test ./test/contract/p4_1 -v; \
+	GOLDEN_COUNT=$$(find testdata/contract/p4_1/golden -name '*.expected.json' -type f 2>/dev/null | wc -l | tr -d ' '); \
+	if [ "$$GOLDEN_COUNT" -lt 8 ]; then \
+		echo "❌ Contract Matrix requires >= 8 golden snapshots, found $$GOLDEN_COUNT"; \
+		exit 1; \
+	fi; \
+	echo "✅ Contract Matrix OK ($$GOLDEN_COUNT golden snapshots)"

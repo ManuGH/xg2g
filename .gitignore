@@ -132,3 +132,4 @@ data/picons/*.png
 *.lock
 *.tmp
 server.pid
+!testdata/contract/
