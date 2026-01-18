@@ -62,14 +62,14 @@ DVB-S2 Satellite (e.g., Orbital Position 19.2°E)
 
 ### Port Mapping & Responsibilities
 
-| Port  | Service          | Responsibility                                | Protocol      |
+| Port       | Component          | Responsibility                           | Protocol      |
 |-------|------------------|----------------------------------------------|---------------|
 | **80/443** | OpenWebIF    | Web UI, API endpoints, M3U generation        | HTTP(S)       |
 | **8001**   | Enigma2 Stream | **Native streaming port** (canonical)       | HTTP (MPEG-TS)|
-| **17999**  | OSCam Stream Relay | Decryption proxy (Provider CAIDs)        | HTTP (cleartext) |
+| **17999**  | Optional Middleware | Stream processing proxy (optional)        | HTTP (MPEG-TS) |
 
 **Critical Default:** `StreamPort = 8001`  
-→ This is **truth**, not configuration. OSCam internally calls Enigma2:8001 for the raw stream.
+→ This is **truth**, not configuration. Optional middleware internally calls Enigma2:8001 for the raw stream.
 
 ---
 
@@ -132,26 +132,25 @@ xg2g requests 2nd stream     Tuner #3 (allocated)          (unchanged)
 
 ---
 
-### OSCam Stream Relay Configuration
+### Optional Stream Middleware (Port 17999)
 
-Production `oscam.conf` snippet (validated):
+**Configuration (if used):**
 
 ```ini
-[streamrelay]
+[middleware]
 stream_relay_enabled = 1
-stream_relay_ctab    = XXXX,YYYY   # Provider-specific CAIDs
 stream_relay_port    = 17999
 ```
 
-**How Stream Relay Works:**
+**How Optional Middleware Works:**
 
-1. **VLC** requests: `http://192.0.2.10:17999/{serviceref}`
-2. **OSCam** receives encrypted stream from **Enigma2:8001**
-3. **OSCam** descrambles using configured CAIDs
-4. **OSCam** returns **cleartext stream** to VLC
+1. **Client** requests: `http://192.0.2.10:17999/{serviceref}`
+2. **Middleware** receives stream from **Enigma2:8001**
+3. **Middleware** processes stream as configured
+4. **Middleware** returns processed stream to client
 
 **xg2g Integration:**  
-xg2g calls `http://{enigma2}:8001/...` directly (native port), bypassing OSCam for non-encrypted streams or when OSCam is disabled.
+xg2g calls `http://{enigma2}:8001/...` directly (native port), using standard Enigma2 streaming.
 
 ---
 
@@ -179,16 +178,16 @@ No artificial limits. The system scales to the **physical FBC capacity** defined
 
 **Historical Context:**
 
-Before OSCam:
+Before optional middleware:
 
 ```
 Client → Enigma2:8001 (native stream)
 ```
 
-With OSCam Stream Relay:
+With optional middleware:
 
 ```
-Client → OSCam:17999 → Enigma2:8001 (proxy)
+Client → Middleware:17999 → Enigma2:8001 (proxy)
 ```
 
 **xg2g Default:**
@@ -200,15 +199,15 @@ Client → OSCam:17999 → Enigma2:8001 (proxy)
 
 **Why 8001 is Canonical:**
 
-1. OSCam **always** calls Enigma2:8001 in the background (hardcoded in stream relay)
-2. Direct streaming (no OSCam) uses 8001 as the native port
-3. Changing this breaks **all** OSCam configurations in production
+1. Optional middleware typically calls Enigma2:8001 in the background
+2. Direct streaming uses 8001 as the native port
+3. Changing this breaks compatibility with existing setups
 
 **Deprecation Note:**  
 `StreamPort` is deprecated because:
 
 - Modern setups use **automatic port discovery** (OpenWebIF API)
-- OSCam relay abstracts the underlying port
+- Optional middleware abstracts the underlying port
 - Hardcoding 8001 is correct for 99.9% of real-world deployments
 
 ---
@@ -218,8 +217,8 @@ Client → OSCam:17999 → Enigma2:8001 (proxy)
 **Setup:**
 
 - Enigma2 receiver with FBC support (8 virtual tuners)
-- OSCam with stream relay enabled
-- Encrypted DVB-S2 provider subscription
+- Optional middleware enabled (if required)
+- DVB-S2 provider subscription
 
 **Test:**
 
@@ -249,12 +248,12 @@ Calls `http://192.0.2.10:8001/{serviceref}` → Same behavior, no zapping, indep
 
 **What xg2g Does NOT Do:**
 
-- ❌ Descramble encrypted streams (delegates to OSCam)
+- ❌ Process encrypted streams (delegates to middleware if configured)
 - ❌ Manage DVB tuners directly (delegates to Enigma2)
 - ❌ Implement DVR scheduling (delegates to Enigma2 timers)
 
 **Role Summary:**  
-xg2g is an **orchestration layer**, not a replacement for Enigma2/OSCam.
+xg2g is an **orchestration layer**, not a replacement for Enigma2 or optional middleware.
 
 ---
 
@@ -265,7 +264,7 @@ xg2g is an **orchestration layer**, not a replacement for Enigma2/OSCam.
 The streaming chain documented here is:
 
 - ✅ **Field-proven** (generic DVB-S2 production deployments)
-- ✅ **Mechanically enforced** (defaults align with OSCam + Enigma2)
+- ✅ **Mechanically enforced** (defaults align with optional middleware + Enigma2)
 - ✅ **Testable** (integration tests validate port behavior)
 
 **Consequence:**  
@@ -275,7 +274,7 @@ Any "fix" that deviates from Port 8001 or the FBC allocation model **breaks comp
 
 **References:**
 
-- [OSCam Wiki: Stream Relay](https://www.streamboard.tv/wiki/OSCam/en/Config/oscam.conf#stream_relay)
 - [Enigma2 OpenWebIF API Docs](https://dream.reichholf.net/wiki/Hauptseite)
+- [Enigma2 Community Forums](https://www.opena.tv/)
 
 ---
