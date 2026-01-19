@@ -107,10 +107,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4 # Latest stable
+        uses: actions/checkout@v6 # Latest stable
 
       - name: Setup Go
-        uses: actions/setup-go@v5 # Latest stable
+        uses: actions/setup-go@v6 # Latest stable
         with:
           go-version-file: go.mod
           cache: true
