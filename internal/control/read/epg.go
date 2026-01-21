@@ -29,7 +29,7 @@ type EpgQuery struct {
 // EpgEntry is a control-layer representation of an EPG event.
 type EpgEntry struct {
 	ID         string `json:"id"`
-	ServiceRef string `json:"service_ref"`
+	ServiceRef string `json:"serviceRef"`
 	Title      string `json:"title"`
 	Desc       string `json:"desc"`
 	Start      int64  `json:"start"`
@@ -123,7 +123,7 @@ func GetEpg(ctx context.Context, src EpgSource, q EpgQuery, clock Clock) ([]EpgE
 			match := false
 			if strings.Contains(strings.ToLower(p.Title.Text), qLower) {
 				match = true
-			} else if strings.Contains(strings.ToLower(p.Desc), qLower) {
+			} else if p.Desc != nil && strings.Contains(strings.ToLower(p.Desc.Text), qLower) {
 				match = true
 			}
 			if !match {
@@ -142,10 +142,15 @@ func GetEpg(ctx context.Context, src EpgSource, q EpgQuery, clock Clock) ([]EpgE
 			ID:         p.Channel,
 			ServiceRef: p.Channel,
 			Title:      p.Title.Text,
-			Desc:       p.Desc,
-			Start:      startTime.Unix(),
-			End:        endTime.Unix(),
-			Duration:   int64(endTime.Sub(startTime).Seconds()),
+			Desc: func() string {
+				if p.Desc != nil {
+					return p.Desc.Text
+				}
+				return ""
+			}(),
+			Start:    startTime.Unix(),
+			End:      endTime.Unix(),
+			Duration: int64(endTime.Sub(startTime).Seconds()),
 		})
 	}
 

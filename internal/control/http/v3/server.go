@@ -21,6 +21,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/read"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 
+	"github.com/ManuGH/xg2g/internal/admission"
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/dvr"
@@ -67,6 +68,7 @@ type Server struct {
 	epgSfg              singleflight.Group
 	receiverSfg         singleflight.Group
 	libraryService      *library.Service // Media library per ADR-ENG-002
+	admission           *admission.ResourceMonitor
 
 	// Lifecycle
 	requestShutdown   func(context.Context) error
@@ -153,6 +155,13 @@ func (s *Server) SetRecordingsService(svc recservice.Service) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.recordingsService = svc
+}
+
+// SetAdmission sets the resource monitor for admission control.
+func (s *Server) SetAdmission(adm *admission.ResourceMonitor) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.admission = adm
 }
 
 // authMiddleware is the default authentication middleware.

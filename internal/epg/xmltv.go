@@ -63,10 +63,8 @@ func BuildNameToIDMap(xmltvPath string) (map[string]string, error) {
 	}
 	defer func() {
 		if err := f.Close(); err != nil {
-			// best-effort: log to stderr but do not fail the operation
-			// this satisfies errcheck while keeping behavior unchanged
-			// (no logging package imported here to avoid changing API surface)
-			_ = err
+			// best-effort: log to stderr
+			_, _ = fmt.Fprintf(os.Stderr, "xmltv: failed to close file: %v\n", err)
 		}
 	}()
 

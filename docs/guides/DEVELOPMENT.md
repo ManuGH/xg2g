@@ -48,6 +48,14 @@ docker compose down
 systemctl stop xg2g
 ```
 
+### Local Compose Overrides
+
+For local development with Compose, apply the dev override:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+```
+
 *Note: This script targets only `xg2g` and `run_dev.sh` processes.*
 
 ### Containerized Testing

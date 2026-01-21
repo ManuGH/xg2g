@@ -51,7 +51,7 @@
         "video_codec_not_supported_by_client"
       ],
       "trace": {
-        "request_id_present": true
+        "requestIdPresent": true
       }
     }
   }

@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/ManuGH/xg2g/internal/control/http/v3/problem"
+	"github.com/ManuGH/xg2g/internal/control/http/problem"
 )
 
 type LANGuardConfig struct {

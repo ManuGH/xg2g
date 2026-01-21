@@ -1,0 +1,2 @@
+internal/resilience/circuit_breaker.go:104:				panic(r) // Re-throw to let caller handle if they wish, or crash
+internal/api/legacy_router_test.go:14:	panic("api.NewRouter is deprecated for production. Use api.New(cfg, cfgMgr).routes()")

@@ -3,6 +3,8 @@
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
 // Since v2.0.0, this software is restricted to non-commercial use only.
+//go:build loadtest
+
 package load
 
 import (

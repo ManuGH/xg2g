@@ -9,13 +9,14 @@ package daemon
 import (
 	"net/http"
 
+	"github.com/ManuGH/xg2g/internal/admission"
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
 	"github.com/ManuGH/xg2g/internal/pipeline/shadow"
-	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/rs/zerolog"
 )
 
@@ -55,6 +56,7 @@ type Deps struct {
 // V3ComponentSetter defines the interface for injecting v3 components
 type V3ComponentSetter interface {
 	SetV3Components(b bus.Bus, st store.StateStore, rs resume.Store, sm *scan.Manager)
+	SetAdmission(adm *admission.ResourceMonitor)
 	HealthManager() *health.Manager
 }
 

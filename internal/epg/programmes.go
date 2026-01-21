@@ -41,7 +41,7 @@ func ProgrammesFromEPG(events []openwebif.EPGEvent, channelID string) []Programm
 				Lang: "",                               // No lang attribute for xg2g
 				Text: html.UnescapeString(event.Title), // Decode HTML entities (&#x27; -> ')
 			},
-			Desc: html.UnescapeString(buildDescription(event)), // Decode HTML entities in description
+			Desc: &Description{Text: html.UnescapeString(buildDescription(event))}, // Decode HTML entities in description
 		}
 
 		programmes = append(programmes, prog)

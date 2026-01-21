@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/control/playback"
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -77,10 +78,17 @@ func setupService(t *testing.T) (Service, *MockOWIClient, *vod.Manager, *MockPro
 	mapper := new(MockPathMapper)
 
 	// Use real VOD Manager to test interaction with metadata/jobs
-	mgr := vod.NewManager(&dummyRunner{}, prober, mapper)
+	mgr, err := vod.NewManager(&dummyRunner{}, prober, mapper)
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
 
-	// Mock resolver? We can pass nil for List tests, but Stream tests need it?
-	svc := NewService(cfg, mgr, &mockResolver{}, owi, nil)
+	// Mock resolver
+	mr := &mockResolver{}
+	svc, err := NewService(cfg, mgr, mr, owi, nil, mr)
+	if err != nil {
+		t.Fatalf("NewService failed: %v", err)
+	}
 	return svc, owi, mgr, prober
 }
 
@@ -88,6 +96,10 @@ type mockResolver struct{}
 
 func (m *mockResolver) Resolve(ctx context.Context, ref string, intent PlaybackIntent, profile PlaybackProfile) (PlaybackInfoResult, error) {
 	return PlaybackInfoResult{}, nil
+}
+
+func (m *mockResolver) GetMediaTruth(ctx context.Context, id string) (playback.MediaTruth, error) {
+	return playback.MediaTruth{}, nil
 }
 
 // Table A Tests (Read Path)

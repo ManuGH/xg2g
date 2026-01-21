@@ -2,7 +2,6 @@ package v3
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 
 	controlhttp "github.com/ManuGH/xg2g/internal/control/http"
@@ -17,12 +16,6 @@ func requestID(ctx context.Context) string {
 	// Note: We do not auto-generate here. Middleware must own generation.
 	// Contract Tests must assert id != "" to verify Middleware wiring.
 	return id
-}
-
-// recordingSessionID returns the namespaced session ID for recording playback.
-// Format: rec:<id>
-func recordingSessionID(id string) string {
-	return fmt.Sprintf("rec:%s", id)
 }
 
 // ensureTraceHeader ensures the response header X-Request-Id is set from the context.

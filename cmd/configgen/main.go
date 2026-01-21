@@ -42,7 +42,10 @@ func main() {
 		fail(err)
 	}
 
-	registry := config.GetRegistry()
+	registry, err := config.GetRegistry()
+	if err != nil {
+		fail(fmt.Errorf("get registry: %w", err))
+	}
 	entries := registryEntries(registry)
 
 	if err := updateConfigDoc(root, entries); err != nil {
@@ -83,6 +86,7 @@ func registryEntries(reg *config.Registry) []config.ConfigEntry {
 
 func updateConfigDoc(root string, entries []config.ConfigEntry) error {
 	path := filepath.Join(root, configDocPath)
+	// #nosec G304 -- CLI tool, path provided by user argument
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("read config doc: %w", err)
@@ -94,7 +98,7 @@ func updateConfigDoc(root string, entries []config.ConfigEntry) error {
 		return fmt.Errorf("update config doc: %w", err)
 	}
 
-	if err := os.WriteFile(path, []byte(out), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(out), 0600); err != nil {
 		return fmt.Errorf("write config doc: %w", err)
 	}
 	return nil
@@ -205,6 +209,7 @@ func examplePathsForEntry(entry config.ConfigEntry) []string {
 
 func updateSchemaDefaults(root string, entries []config.ConfigEntry, allowCreate bool) error {
 	path := filepath.Join(root, configSchemaPath)
+	// #nosec G304 -- CLI tool, path provided by user argument
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("read schema: %w", err)
@@ -227,7 +232,7 @@ func updateSchemaDefaults(root string, entries []config.ConfigEntry, allowCreate
 	if err != nil {
 		return fmt.Errorf("marshal schema: %w", err)
 	}
-	if err := os.WriteFile(path, out, 0644); err != nil {
+	if err := os.WriteFile(path, out, 0600); err != nil {
 		return fmt.Errorf("write schema: %w", err)
 	}
 	return nil
@@ -326,7 +331,7 @@ func writeGeneratedExample(root string, entries []config.ConfigEntry) error {
 		return fmt.Errorf("encode generated example: %w", err)
 	}
 	path := filepath.Join(root, configGeneratedExamplePath)
-	if err := os.WriteFile(path, buf.Bytes(), 0644); err != nil {
+	if err := os.WriteFile(path, buf.Bytes(), 0600); err != nil {
 		return fmt.Errorf("write generated example: %w", err)
 	}
 	return nil
@@ -554,12 +559,8 @@ func formatDuration(d time.Duration) string {
 	}
 	s := d.String()
 	if strings.ContainsAny(s, "hm") {
-		if strings.HasSuffix(s, "0s") {
-			s = strings.TrimSuffix(s, "0s")
-		}
-		if strings.HasSuffix(s, "0m") {
-			s = strings.TrimSuffix(s, "0m")
-		}
+		s = strings.TrimSuffix(s, "0s")
+		s = strings.TrimSuffix(s, "0m")
 	}
 	return s
 }
@@ -608,7 +609,7 @@ func writeConfigInventory(root string) error {
 	}
 
 	path := filepath.Join(root, configInventory)
-	if err := os.WriteFile(path, []byte(b.String()), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(b.String()), 0600); err != nil {
 		return fmt.Errorf("write inventory: %w", err)
 	}
 	return nil
@@ -664,6 +665,7 @@ func fileContains(path, needle string) bool {
 	if info.Size() > 1024*1024 {
 		return false
 	}
+	// #nosec G304 -- intended CLI behavior
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return false

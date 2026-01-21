@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -47,17 +48,23 @@ type Registry struct {
 	ByEnv   map[string]ConfigEntry
 }
 
-var globalRegistry *Registry
+var (
+	globalRegistry    *Registry
+	globalRegistryErr error
+	registryOnce      sync.Once
+)
 
 // GetRegistry returns the global configuration registry.
-func GetRegistry() *Registry {
-	if globalRegistry == nil {
-		globalRegistry = buildRegistry()
-	}
-	return globalRegistry
+// It returns an error if the registry contains duplicates or is otherwise invalid.
+// Thread-safe via sync.Once.
+func GetRegistry() (*Registry, error) {
+	registryOnce.Do(func() {
+		globalRegistry, globalRegistryErr = buildRegistry()
+	})
+	return globalRegistry, globalRegistryErr
 }
 
-func buildRegistry() *Registry {
+func buildRegistry() (*Registry, error) {
 	r := &Registry{
 		ByPath:  make(map[string]ConfigEntry),
 		ByField: make(map[string]ConfigEntry),
@@ -117,6 +124,9 @@ func buildRegistry() *Registry {
 		{Path: "engine.mode", Env: "XG2G_ENGINE_MODE", FieldPath: "Engine.Mode", Profile: ProfileAdvanced, Status: StatusActive, Default: "standard"},
 		{Path: "engine.idleTimeout", Env: "XG2G_ENGINE_IDLE_TIMEOUT", FieldPath: "Engine.IdleTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 1 * time.Minute},
 		{Path: "engine.tunerSlots", Env: "XG2G_TUNER_SLOTS", FieldPath: "Engine.TunerSlots", Profile: ProfileAdvanced, Status: StatusActive},
+		{Path: "engine.maxPool", Env: "XG2G_ENGINE_MAX_POOL", FieldPath: "Engine.MaxPool", Profile: ProfileAdvanced, Status: StatusActive, Default: 2},
+		{Path: "engine.gpuLimit", Env: "XG2G_ENGINE_GPU_LIMIT", FieldPath: "Engine.GPULimit", Profile: ProfileAdvanced, Status: StatusActive, Default: 8},
+		{Path: "engine.cpuThresholdScale", Env: "XG2G_ENGINE_CPU_SCALE", FieldPath: "Engine.CPUThresholdScale", Profile: ProfileAdvanced, Status: StatusActive, Default: 1.5},
 
 		// --- STORE ---
 		{Path: "store.backend", Env: "XG2G_STORE_BACKEND", FieldPath: "Store.Backend", Profile: ProfileAdvanced, Status: StatusActive, Default: "memory"}, // Consistent with setDefaults
@@ -208,25 +218,25 @@ func buildRegistry() *Registry {
 	for _, e := range entries {
 		if e.Path != "" {
 			if _, dup := r.ByPath[e.Path]; dup {
-				panic(fmt.Sprintf("duplicate registry path: %s", e.Path))
+				return nil, fmt.Errorf("duplicate registry path: %s", e.Path)
 			}
 			r.ByPath[e.Path] = e
 		}
 		if e.FieldPath != "" && e.FieldPath != "??" {
 			if _, dup := r.ByField[e.FieldPath]; dup {
-				panic(fmt.Sprintf("duplicate registry field: %s", e.FieldPath))
+				return nil, fmt.Errorf("duplicate registry field: %s", e.FieldPath)
 			}
 			r.ByField[e.FieldPath] = e
 		}
 		if e.Env != "" {
 			if _, dup := r.ByEnv[e.Env]; dup {
-				panic(fmt.Sprintf("duplicate registry env: %s", e.Env))
+				return nil, fmt.Errorf("duplicate registry env: %s", e.Env)
 			}
 			r.ByEnv[e.Env] = e
 		}
 	}
 
-	return r
+	return r, nil
 }
 
 // ValidateFieldCoverage uses reflection to ensure every field in AppConfig is registered.
@@ -269,22 +279,20 @@ func (r *Registry) validateStruct(prefix string, t reflect.Type) error {
 }
 
 // ApplyDefaults applies registered default values to the given AppConfig.
-func (r *Registry) ApplyDefaults(cfg *AppConfig) {
+// Returns an error if any default cannot be set (indicates registry misconfiguration).
+func (r *Registry) ApplyDefaults(cfg *AppConfig) error {
 	v := reflect.ValueOf(cfg).Elem()
 	for _, entry := range r.ByField {
 		if entry.Default == nil {
 			continue
 		}
 
-		// Skip internal if they shouldn't be set this way?
-		// Actually, all defaults should be set.
-
 		err := setField(v, entry.FieldPath, entry.Default)
 		if err != nil {
-			// This shouldn't happen if registry is correct, but let's log or panic in test
-			panic(fmt.Sprintf("failed to set default for %s: %v", entry.FieldPath, err))
+			return fmt.Errorf("failed to set default for %s: %w", entry.FieldPath, err)
 		}
 	}
+	return nil
 }
 
 func setField(v reflect.Value, fieldPath string, value any) error {

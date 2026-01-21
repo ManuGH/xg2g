@@ -22,7 +22,7 @@ components:
     # ==================== V3 API Schemas ====================
     APIError:
       type: object
-      required: [code, message, request_id]
+      required: [code, message, requestId]
       properties:
         code:
           type: string
@@ -32,7 +32,7 @@ components:
           type: string
           description: Human-readable error message
           example: "Authentication required"
-        request_id:
+        requestId:
           type: string
           description: Request ID for debugging
           example: "req_abc123"
@@ -177,12 +177,12 @@ components:
           type: string
         group:
           type: string
-        logo_url:
+        logoUrl:
           type: string
           format: uri
         enabled:
           type: boolean
-        service_ref:
+        serviceRef:
           type: string
           description: Service reference for streaming (extracted from M3U URL)
 
@@ -258,24 +258,24 @@ components:
         state:
           type: string
           enum: [idle, running, complete, failed, cancelled]
-        started_at:
+        startedAt:
           type: integer
           format: int64
           description: Unix timestamp of when the current or last scan started
-        finished_at:
+        finishedAt:
           type: integer
           format: int64
           description: Unix timestamp of when the last scan completed
-        total_channels:
+        totalChannels:
           type: integer
           description: Total number of channels in the playlist
-        scanned_channels:
+        scannedChannels:
           type: integer
           description: Number of attempts (successful/failed) to probe channels so far
-        updated_count:
+        updatedCount:
           type: integer
           description: Number of capabilities successfully updated in the store
-        last_error:
+        lastError:
           type: string
 
     PlaybackFeedbackRequest:
@@ -323,7 +323,7 @@ components:
           $ref: "#/components/schemas/EPGStatus"
         version:
           type: string
-        uptime_seconds:
+        uptimeSeconds:
           type: integer
           format: int64
 
@@ -337,17 +337,17 @@ components:
             model: { type: string }
             boxtype: { type: string }
             chipset: { type: string }
-            chipset_description: { type: string }
+            chipsetDescription: { type: string }
         software:
           type: object
           properties:
-            oe_version: { type: string }
-            image_distro: { type: string }
-            image_version: { type: string }
-            enigma_version: { type: string }
-            kernel_version: { type: string }
-            driver_date: { type: string }
-            webif_version: { type: string }
+            oeVersion: { type: string }
+            imageDistro: { type: string }
+            imageVersion: { type: string }
+            enigmaVersion: { type: string }
+            kernelVersion: { type: string }
+            driverDate: { type: string }
+            webifVersion: { type: string }
         tuners:
           type: array
           items:
@@ -389,22 +389,22 @@ components:
         resource:
           type: object
           properties:
-            memory_total: { type: string }
-            memory_available: { type: string }
-            memory_used: { type: string }
+            memoryTotal: { type: string }
+            memoryAvailable: { type: string }
+            memoryUsed: { type: string }
 
     StorageItem:
       type: object
       additionalProperties: false
-      required: [mount_status, health_status, access, is_nas]
+      required: [mountStatus, healthStatus, access, isNas]
       properties:
         model: { type: string }
         capacity: { type: string }
         mount: { type: string }
-        mount_status:
+        mountStatus:
           type: string
           enum: [mounted, unmounted, unknown]
-        health_status:
+        healthStatus:
           type: string
           description: "Status of the storage device. 'skipped' indicates the monitor was too busy to evaluate."
           enum: [ok, timeout, error, unknown, skipped]
@@ -412,9 +412,9 @@ components:
           type: string
           description: "Access level detected during probe."
           enum: [none, ro, rw]
-        is_nas: { type: boolean }
-        fs_type: { type: string }
-        checked_at: { type: string, format: date-time }
+        isNas: { type: boolean }
+        fsType: { type: string }
+        checkedAt: { type: string, format: date-time }
 
     ComponentStatus:
       type: object
@@ -422,7 +422,7 @@ components:
         status:
           type: string
           enum: [ok, error]
-        last_check:
+        lastCheck:
           type: string
           format: date-time
 
@@ -432,7 +432,7 @@ components:
         status:
           type: string
           enum: [ok, missing]
-        missing_channels:
+        missingChannels:
           type: integer
 
     CurrentServiceInfo:
@@ -450,8 +450,8 @@ components:
           properties:
             title: { type: string }
             description: { type: string }
-            begin_timestamp: { type: integer, format: int64 }
-            duration_sec: { type: integer }
+            beginTimestamp: { type: integer, format: int64 }
+            durationSec: { type: integer }
         next:
           type: object
           properties:
@@ -490,7 +490,7 @@ components:
       type: object
       description: Streaming delivery policy configuration (ADR-00X)
       properties:
-        delivery_policy:
+        deliveryPolicy:
           type: string
           enum: [universal]
           description: Streaming delivery policy (only 'universal' is supported)
@@ -596,7 +596,7 @@ components:
         keyword:
           type: string
           description: Search term or regex for event title
-        channel_ref:
+        channelRef:
           type: string
           description: Optional service reference to restrict rule
         days:
@@ -606,7 +606,7 @@ components:
             minimum: 0
             maximum: 6
           description: Days of week (0=Sunday)
-        start_window:
+        startWindow:
           type: string
           description: Time window HHMM-HHMM
         priority:
@@ -630,7 +630,7 @@ components:
           type: string
           minLength: 1
           description: Search term or regex for event title
-        channel_ref:
+        channelRef:
           type: string
           description: Optional service reference to restrict rule
         days:
@@ -640,7 +640,7 @@ components:
             minimum: 0
             maximum: 6
           description: Days of week (0=Sunday)
-        start_window:
+        startWindow:
           type: string
           description: Time window HHMM-HHMM
         priority:
@@ -719,9 +719,9 @@ components:
 
     NowNextItem:
       type: object
-      required: [service_ref]
+      required: [serviceRef]
       properties:
-        service_ref:
+        serviceRef:
           type: string
         now:
           $ref: "#/components/schemas/NowNextEntry"
@@ -775,7 +775,7 @@ components:
 
     PlaybackInfo:
       type: object
-      required: [mode, url, requestId, sessionId]
+      required: [mode, requestId, sessionId]
       additionalProperties: false
       properties:
         requestId:
@@ -788,11 +788,11 @@ components:
           $ref: "#/components/schemas/PlaybackInfoMode"
         url:
           type: string
-          description: Relative URL for the selected playback strategy.
+          description: Relative URL for the selected playback strategy. Optional for deny or decision-led cases.
         seekable:
           type: boolean
-          description: Whether the stream is seekable. Omitted if unknown. Deprecated in favor of is_seekable.
-        is_seekable:
+          description: Whether the stream is seekable. Omitted if unknown. Deprecated in favor of isSeekable.
+        isSeekable:
           type: boolean
           description: Authoritative flag if the stream is seekable. Becomes required in P3-4.
         dvr_window_seconds:
@@ -803,26 +803,26 @@ components:
           type: integer
           format: int64
           description: wall-clock timestamp (UNIX) of the latest segment. Becomes required in P3-4.
-        start_unix:
+        startUnix:
           type: integer
           format: int64
           description: wall-clock timestamp (UNIX) of the earliest segment in window. Becomes required in P3-4.
-        duration_seconds:
+        durationSeconds:
           type: integer
           format: int64
           minimum: 1
           description: Duration in seconds. Omitted if unknown or preparing.
-        duration_source:
+        durationSource:
           $ref: "#/components/schemas/PlaybackInfoDurationSource"
         resume:
           type: object
           description: Optional resume state if available.
-          required: [pos_seconds]
+          required: [posSeconds]
           properties:
-            pos_seconds:
+            posSeconds:
               type: number
               description: last known playback position in seconds
-            duration_seconds:
+            durationSeconds:
               type: integer
               format: int64
             finished:
@@ -830,10 +830,10 @@ components:
         container:
           type: string
           description: Truthful container name if known (e.g., ts, mp4, mkv).
-        video_codec:
+        videoCodec:
           type: string
           description: Truthful video codec if known (e.g., h264, hevc, mpeg2).
-        audio_codec:
+        audioCodec:
           type: string
           description: Truthful audio codec if known (e.g., aac, ac3, mp2).
         reason:
@@ -844,13 +844,13 @@ components:
 
     PlaybackInfoMode:
       type: string
-      enum: [hls, direct_mp4]
+      enum: [hls, direct_mp4, deny]
       description: Selected playback strategy output mode.
 
     PlaybackInfoDurationSource:
       type: string
       enum: [store, cache, probe]
-      description: Source of the reported duration, when duration_seconds is present.
+      description: Source of the reported duration, when durationSeconds is present.
 
     PlaybackInfoReason:
       type: string
@@ -867,11 +867,11 @@ components:
 
     PlaybackCapabilities:
       type: object
-      required: [capabilities_version, container, video_codecs, audio_codecs]
+      required: [capabilitiesVersion, container, videoCodecs, audioCodecs]
       additionalProperties: false
       description: Client capabilities for playback decision (P4-1)
       properties:
-        capabilities_version:
+        capabilitiesVersion:
           type: integer
           description: "Capabilities contract version (current: 1)"
           example: 1
@@ -881,19 +881,19 @@ components:
             type: string
           description: Supported container formats
           example: ["mp4", "webm", "hls"]
-        video_codecs:
+        videoCodecs:
           type: array
           items:
             type: string
           description: Supported video codecs
           example: ["h264", "hevc"]
-        audio_codecs:
+        audioCodecs:
           type: array
           items:
             type: string
           description: Supported audio codecs
           example: ["aac", "ac3"]
-        max_video:
+        maxVideo:
           type: object
           description: Optional resolution/FPS constraints
           properties:
@@ -906,22 +906,37 @@ components:
             fps:
               type: integer
               example: 60
-        supports_hls:
+        supportsHls:
           type: boolean
           description: Whether client supports HLS playlists
           example: true
-        supports_range:
+        supportsRange:
           type: boolean
           description: Whether client supports HTTP range requests
           example: true
-        device_type:
+        deviceType:
           type: string
           description: Client device category for policy decisions
           example: "desktop"
+        allowTranscode:
+          type: boolean
+          description: Whether client allows transcoding (force bypass)
+          default: true
+          example: true
 
     PlaybackDecision:
       type: object
-      required: [mode, selected, outputs, constraints, reasons, trace]
+      required:
+        [
+          mode,
+          selected,
+          outputs,
+          constraints,
+          reasons,
+          trace,
+          selectedOutputUrl,
+          selectedOutputKind,
+        ]
       additionalProperties: false
       description: Complete playback decision from backend (P4-1)
       properties:
@@ -929,18 +944,27 @@ components:
           type: string
           enum: [direct_play, direct_stream, transcode, deny]
           description: Playback mode decision
+        selectedOutputUrl:
+          type: string
+          format: uri
+          description: The explicitly selected playback URL (backend-driven).
+        selectedOutputKind:
+          type: string
+          enum: [file, hls]
+          description: The explicitly selected playback kind.
         selected:
           type: object
-          required: [container, video_codec, audio_codec]
+          required: [container, videoCodec, audioCodec]
+          additionalProperties: false
           description: Selected output format
           properties:
             container:
               type: string
               example: "mp4"
-            video_codec:
+            videoCodec:
               type: string
               example: "h264"
-            audio_codec:
+            audioCodec:
               type: string
               example: "aac"
         outputs:
@@ -961,34 +985,73 @@ components:
           description: Machine-readable decision reason codes
           example: ["source_compatible_with_client"]
         trace:
-          type: object
-          required: [request_id]
-          description: Traceability information
-          properties:
-            request_id:
-              type: string
-              format: uuid
-            session_id:
-              type: string
+          $ref: "#/components/schemas/PlaybackTrace"
+      example:
+        mode: "direct_play"
+        selectedOutputUrl: "/api/v3/recordings/rec:123/stream.mp4"
+        selectedOutputKind: "file"
+        selected:
+          container: "mp4"
+          videoCodec: "h264"
+          audioCodec: "aac"
+        outputs:
+          - kind: "file"
+            url: "/api/v3/recordings/rec:123/stream.mp4"
+        constraints: []
+        reasons: ["source_compatible_with_client"]
+        trace:
+          requestId: "550e8400-e29b-41d4-a716-446655440000"
+    PlaybackTrace:
+      type: object
+      required: [requestId]
+      additionalProperties: false
+      description: Traceability information
+      properties:
+        requestId:
+          type: string
+          description: Correlation ID (UUID or prefixed string like req_abc123)
+        sessionId:
+          type: string
+          nullable: true
 
     PlaybackOutput:
+      description: Output URL for client playback
+      oneOf:
+        - $ref: "#/components/schemas/PlaybackOutputFile"
+        - $ref: "#/components/schemas/PlaybackOutputHls"
+
+    PlaybackOutputFile:
       type: object
       required: [kind, url]
-      description: Output URL for client playback
+      additionalProperties: false
       properties:
         kind:
           type: string
-          enum: [file, hls, playlist]
-          description: Output type
+          enum: [file]
+          description: Static file output
         url:
           type: string
           format: uri
-          description: Playback URL
-          example: "http://127.0.0.1:8088/api/v3/recordings/rec:xyz/stream.mp4"
-        playlist_url:
+          description: Direct playback URL
+
+    PlaybackOutputHls:
+      type: object
+      required: [kind, playlistUrl]
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+          enum: [hls]
+          description: HLS stream output
+        playlistUrl:
           type: string
           format: uri
-          description: HLS playlist URL (for kind=hls)
+          description: Canonical HLS playlist URL (.m3u8)
+        url:
+          type: string
+          format: uri
+          description: Alternate playback URL (optional)
+          example: "/api/v3/recordings/rec:xyz/stream.mp4"
 
     # ==================== RFC7807 Problem Details (P4-1) ====================
 
@@ -1001,11 +1064,11 @@ components:
               type: string
               enum: [capabilities_missing]
           example:
-            type: "about:blank"
-            title: "Precondition Failed"
+            type: "recordings/capabilities-missing"
+            title: "Capabilities Missing"
             status: 412
             code: "capabilities_missing"
-            detail: "Client must provide capabilities (capabilities_version required)"
+            detail: "Client must provide capabilities (capabilitiesVersion required)"
 
     ProblemCapabilitiesInvalid:
       allOf:
@@ -1016,11 +1079,11 @@ components:
               type: string
               enum: [capabilities_invalid]
           example:
-            type: "about:blank"
-            title: "Bad Request"
+            type: "recordings/capabilities-invalid"
+            title: "Capabilities Invalid"
             status: 400
             code: "capabilities_invalid"
-            detail: "capabilities_version 999 not supported (current: 1)"
+            detail: "capabilitiesVersion 999 not supported (current: 1)"
 
     ProblemDecisionAmbiguous:
       allOf:
@@ -1031,8 +1094,8 @@ components:
               type: string
               enum: [decision_ambiguous]
           example:
-            type: "about:blank"
-            title: "Unprocessable Entity"
+            type: "recordings/decision-ambiguous"
+            title: "Decision Ambiguous"
             status: 422
             code: "decision_ambiguous"
             detail: "No compatible playback path available"
@@ -1151,12 +1214,12 @@ components:
         state:
           type: string
           enum: [IDLE, RUNNING, FAILED, READY]
-        segment_count: { type: integer }
-        last_progress: { type: string, format: date-time }
-        started_at: { type: string, format: date-time }
-        attempt_mode: { type: string, enum: [fast, robust] }
+        segmentCount: { type: integer }
+        lastProgress: { type: string, format: date-time }
+        startedAt: { type: string, format: date-time }
+        attemptMode: { type: string, enum: [fast, robust] }
         error: { type: string }
-        progressive_ready:
+        progressiveReady:
           type: boolean
           description: True if a progressive (timeshift) playlist is playable.
 
@@ -1196,11 +1259,11 @@ components:
         requestId:
           type: string
           description: Correlation ID for the trace. Mandatory in P3-1.
-        client_ip:
+        clientIp:
           type: string
-        channel_name:
+        channelName:
           type: string
-        started_at:
+        startedAt:
           type: string
           format: date-time
         state:
@@ -1211,8 +1274,8 @@ components:
           properties:
             title: { type: string }
             description: { type: string }
-            begin_timestamp: { type: integer, format: int64 }
-            duration_sec: { type: integer }
+            beginTimestamp: { type: integer, format: int64 }
+            durationSec: { type: integer }
 
     RecordingRoot:
       type: object
@@ -1235,10 +1298,10 @@ components:
     RecordingItem:
       type: object
       properties:
-        service_ref:
+        serviceRef:
           type: string
           description: Legacy receiver service reference (read-only).
-        recording_id:
+        recordingId:
           type: string
           description: Base64url-encoded recording ID (RFC 4648, unpadded) to use for /recordings/{recordingId}.
           pattern: "^[A-Za-z0-9_-]+$"
@@ -1251,7 +1314,7 @@ components:
           type: integer
           format: int64
           description: Recording start time as UNIX seconds.
-        duration_seconds:
+        durationSeconds:
           type: integer
           format: int64
           description: Recording duration in seconds, if known.
@@ -1268,14 +1331,14 @@ components:
     ResumeSummary:
       type: object
       properties:
-        pos_seconds:
+        posSeconds:
           type: integer
           format: int64
-        duration_seconds:
+        durationSeconds:
           type: integer
           format: int64
         finished: { type: boolean }
-        updated_at: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
 
     RecordingResponse:
       type: object
@@ -1287,8 +1350,8 @@ components:
         roots:
           type: array
           items: { $ref: "#/components/schemas/RecordingRoot" }
-        current_root: { type: string }
-        current_path: { type: string }
+        currentRoot: { type: string }
+        currentPath: { type: string }
         breadcrumbs:
           type: array
           items: { $ref: "#/components/schemas/Breadcrumb" }
@@ -1363,7 +1426,7 @@ paths:
               schema:
                 type: object
                 properties:
-                  restart_required:
+                  restartRequired:
                     type: boolean
         "400":
           description: Invalid configuration
@@ -1504,7 +1567,7 @@ paths:
                     items:
                       type: object
                       properties:
-                        service_ref:
+                        serviceRef:
                           type: string
                         title:
                           type: string
@@ -1619,7 +1682,7 @@ paths:
             minLength: 16
             maxLength: 2048
             example: "MTowOjA6MDo6L21lZGlhL2hkZC9tb3ZpZS9mb28udHM"
-          description: Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recording_id
+          description: Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recordingId
       responses:
         "204":
           description: Recording deleted
@@ -1657,7 +1720,7 @@ paths:
 
   /recordings/{recordingId}/stream-info:
     get:
-      summary: Get playback strategy for a recording
+      summary: Get playback strategy for a recording (Legacy/Anonymous)
       operationId: getRecordingPlaybackInfo
       tags: [recordings]
       parameters:
@@ -1679,6 +1742,78 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/APIError"
+        "503":
+          description: Preparing (media truth unknown, retryable)
+          headers:
+            Retry-After:
+              description: Seconds to wait before retry
+              schema:
+                type: string
+                example: "5"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+    post:
+      summary: Get playback decision with client capabilities (v3.1)
+      operationId: postRecordingPlaybackInfo
+      tags: [recordings]
+      parameters:
+        - name: recordingId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: Client capabilities for decision making
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlaybackCapabilities"
+      responses:
+        "200":
+          description: Playback decision and info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlaybackInfo"
+        "400":
+          description: Invalid capabilities
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemCapabilitiesInvalid"
+        "412":
+          description: Capabilities missing (required for v3.1+)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemCapabilitiesMissing"
+        "422":
+          description: Decision ambiguous (media truth unknown)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDecisionAmbiguous"
+        "404":
+          description: Recording not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+        "503":
+          description: Preparing (media truth unknown, retryable)
+          headers:
+            Retry-After:
+              description: Seconds to wait before retry
+              schema:
+                type: string
+                example: "5"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
 
   /recordings/{recordingId}/stream.mp4:
     get:
@@ -1749,7 +1884,7 @@ paths:
             minLength: 16
             maxLength: 2048
             example: "MTowOjA6MDo6L21lZGlhL2hkZC9tb3ZpZS9mb28udHM"
-          description: Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recording_id
+          description: Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recordingId
       responses:
         "200":
           description: HLS Playlist
@@ -1774,10 +1909,16 @@ paths:
                 $ref: "#/components/schemas/APIError"
         "503":
           description: Recording not ready for VOD
-          content:
-            application/json:
+          headers:
+            Retry-After:
+              description: Seconds to wait before retry
               schema:
-                $ref: "#/components/schemas/APIError"
+                type: string
+                example: "5"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
     head:
       summary: Get VOD HLS playlist metadata (Safari compatibility)
       operationId: getRecordingHLSPlaylistHead
@@ -1821,7 +1962,7 @@ paths:
             minLength: 16
             maxLength: 2048
             example: "MTowOjA6MDo6L21lZGlhL2hkZC9tb3ZpZS9mb28udHM"
-          description: Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recording_id
+          description: Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recordingId
       responses:
         "200":
           description: HLS Playlist
@@ -1893,7 +2034,7 @@ paths:
             minLength: 16
             maxLength: 2048
             example: "MTowOjA6MDo6L21lZGlhL2hkZC9tb3ZpZS9mb28udHM"
-          description: Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recording_id
+          description: Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recordingId
         - name: segment
           in: path
           required: true

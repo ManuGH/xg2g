@@ -1,0 +1,37 @@
+{
+  "name": "web_conservative_mkv",
+  "input": {
+    "truth": {
+      "container": "mkv",
+      "video_codec": "h264",
+      "audio_codec": "aac",
+      "width": 1920,
+      "height": 1080,
+      "fps": 25
+    },
+    "capabilities": {
+      "version": 1,
+      "containers": [
+        "mp4"
+      ],
+      "video_codecs": [
+        "h264"
+      ],
+      "audio_codecs": [
+        "aac"
+      ],
+      "supports_hls": true,
+      "supports_range": true
+    },
+    "policy": {
+      "allow_transcode": true
+    }
+  },
+  "expected": {
+    "mode": "deny",
+    "protocol": "none",
+    "reasons": [
+      "container_not_supported_by_client"
+    ]
+  }
+}

@@ -2,9 +2,10 @@
 # FFprobe wrapper - sets LD_LIBRARY_PATH scoped to FFprobe process only
 set -euo pipefail
 
-FFMPEG_HOME="${FFMPEG_HOME:-/opt/ffmpeg}"
-FFPROBE_BIN="${FFPROBE_BIN:-${FFMPEG_HOME}/bin/ffprobe}"
-FFMPEG_LIB="${FFMPEG_LIB:-${FFMPEG_HOME}/lib}"
+# FIX: Point to the actual binary location in this environment
+FFMPEG_HOME="/usr"
+FFPROBE_BIN="${FFMPEG_HOME}/bin/ffprobe"
+FFMPEG_LIB="${FFMPEG_HOME}/lib/x86_64-linux-gnu"
 
 # Validate FFprobe binary exists
 if [ ! -x "${FFPROBE_BIN}" ]; then

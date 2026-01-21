@@ -10,5 +10,5 @@ const (
 // Canonical JSON Field Names
 const (
 	// JSONKeyRequestID is the canonical JSON key for request correlation in DTOs.
-	JSONKeyRequestID = "request_id"
+	JSONKeyRequestID = "requestId"
 )

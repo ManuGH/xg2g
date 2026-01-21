@@ -49,6 +49,7 @@ type Service interface {
 	List(ctx context.Context, in ListInput) (ListResult, error)
 	GetPlaybackInfo(ctx context.Context, in PlaybackInfoInput) (PlaybackInfoResult, error)
 	GetStatus(ctx context.Context, in StatusInput) (StatusResult, error)
+	GetMediaTruth(ctx context.Context, recordingID string) (playback.MediaTruth, error)
 	Stream(ctx context.Context, in StreamInput) (StreamResult, error)
 	Delete(ctx context.Context, in DeleteInput) (DeleteResult, error)
 }
@@ -70,17 +71,21 @@ type service struct {
 	resolver    Resolver
 	owiClient   OWIClient
 	resumeStore ResumeStore
+	truth       playback.MediaTruthProvider
 }
 
-func NewService(cfg *config.AppConfig, manager *vod.Manager, resolver Resolver, owi OWIClient, resume ResumeStore) Service {
+func NewService(cfg *config.AppConfig, manager *vod.Manager, resolver Resolver, owi OWIClient, resume ResumeStore, truth playback.MediaTruthProvider) (Service, error) {
 	if cfg == nil {
-		panic("invariant violation: cfg is nil in NewService")
+		return nil, fmt.Errorf("NewService: cfg is nil")
 	}
 	if manager == nil {
-		panic("invariant violation: manager is nil in NewService")
+		return nil, fmt.Errorf("NewService: manager is nil")
 	}
 	if resolver == nil {
-		panic("invariant violation: resolver is nil in NewService")
+		return nil, fmt.Errorf("NewService: resolver is nil")
+	}
+	if truth == nil {
+		return nil, fmt.Errorf("NewService: truth is nil")
 	}
 
 	return &service{
@@ -89,7 +94,8 @@ func NewService(cfg *config.AppConfig, manager *vod.Manager, resolver Resolver, 
 		resolver:    resolver,
 		owiClient:   owi,
 		resumeStore: resume,
-	}
+		truth:       truth,
+	}, nil
 }
 
 func (s *service) List(ctx context.Context, in ListInput) (ListResult, error) {
@@ -111,6 +117,7 @@ func (s *service) List(ctx context.Context, in ListInput) (ListResult, error) {
 	}
 
 	const standardHddPath = "/media/hdd/movie"
+	// Determine if standard HDD path is already covered
 	hddFound := false
 	for _, p := range roots {
 		if p == standardHddPath {
@@ -118,7 +125,11 @@ func (s *service) List(ctx context.Context, in ListInput) (ListResult, error) {
 			break
 		}
 	}
-	if !hddFound {
+
+	// Only add default "hdd" -> "/media/hdd/movie" if:
+	// 1. That path isn't already mapped by another key (hddFound)
+	// 2. The key "hdd" isn't already used by config (e.g. mapping to "/media/hdd")
+	if _, ok := roots["hdd"]; !ok && !hddFound {
 		roots["hdd"] = standardHddPath
 	}
 
@@ -315,6 +326,7 @@ func (s *service) ResolvePlayback(ctx context.Context, recordingID, profile stri
 		CanSeek:        canSeek,
 		DurationSec:    res.DurationSeconds, // Pass-through pointer
 		DurationSource: res.DurationSource,  // Pass-through pointer
+		Container:      res.Container,
 		VideoCodec:     res.VideoCodec,
 		AudioCodec:     res.AudioCodec,
 		Reason:         res.Reason,
@@ -349,6 +361,14 @@ func (s *service) GetStatus(ctx context.Context, in StatusInput) (StatusResult, 
 		State: state,
 		Error: errStr,
 	}, nil
+}
+
+func (s *service) GetMediaTruth(ctx context.Context, recordingID string) (playback.MediaTruth, error) {
+	serviceRef, ok := DecodeRecordingID(recordingID)
+	if !ok {
+		return playback.MediaTruth{}, ErrInvalidArgument{Field: "recordingID", Reason: "invalid format"}
+	}
+	return s.truth.GetMediaTruth(ctx, serviceRef)
 }
 
 func (s *service) Stream(ctx context.Context, in StreamInput) (StreamResult, error) {

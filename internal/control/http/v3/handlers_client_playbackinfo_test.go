@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ManuGH/xg2g/internal/control/clientplayback"
+	"github.com/ManuGH/xg2g/internal/control/playback"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -34,6 +35,10 @@ func (m *mockRecSvc2) Stream(ctx context.Context, in recservice.StreamInput) (re
 }
 func (m *mockRecSvc2) Delete(ctx context.Context, in recservice.DeleteInput) (recservice.DeleteResult, error) {
 	return recservice.DeleteResult{}, nil
+}
+func (m *mockRecSvc2) GetMediaTruth(ctx context.Context, recordingID string) (playback.MediaTruth, error) {
+	args := m.Called(ctx, recordingID)
+	return args.Get(0).(playback.MediaTruth), args.Error(1)
 }
 
 func TestClientPlaybackInfo_StrictFailClosed(t *testing.T) {

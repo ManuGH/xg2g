@@ -84,29 +84,22 @@ func TestRecordSessionStartOutcome_Success(t *testing.T) {
 	require.Equal(t, beforeStarts+1, afterStarts)
 }
 
+// TestObserveTTFS removed as metric was deleted in PR-3
 func TestObserveTTF(t *testing.T) {
 	playlistLabels := map[string]string{
 		"profile": "test-profile-ttfp",
 	}
-	segmentLabels := map[string]string{
-		"profile": "test-profile-ttfs",
-	}
 
 	timeToFirstPlaylist.WithLabelValues("test-profile-ttfp")
-	timeToFirstSegment.WithLabelValues("test-profile-ttfs")
 
 	beforePlaylist := getHistogramCount(t, "xg2g_v3_time_to_first_playlist_seconds", playlistLabels)
-	beforeSegment := getHistogramCount(t, "xg2g_v3_time_to_first_segment_seconds", segmentLabels)
 
 	start := time.Now().Add(-2 * time.Second)
 	observeTTFP("test-profile-ttfp", start)
-	observeTTFS("test-profile-ttfs", start)
 
 	afterPlaylist := getHistogramCount(t, "xg2g_v3_time_to_first_playlist_seconds", playlistLabels)
-	afterSegment := getHistogramCount(t, "xg2g_v3_time_to_first_segment_seconds", segmentLabels)
 
 	require.Equal(t, beforePlaylist+1, afterPlaylist)
-	require.Equal(t, beforeSegment+1, afterSegment)
 }
 
 func getCounterValue(t *testing.T, name string, labels map[string]string) float64 {

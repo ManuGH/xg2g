@@ -34,7 +34,7 @@ type epgEntry struct {
 }
 
 type nowNextItem struct {
-	ServiceRef string    `json:"service_ref"`
+	ServiceRef string    `json:"serviceRef"`
 	Now        *epgEntry `json:"now,omitempty"`
 	Next       *epgEntry `json:"next,omitempty"`
 }
@@ -122,7 +122,7 @@ func writeNowNextResponse(w http.ResponseWriter, items []nowNextItem) {
 // EpgItem defines the JSON response structure for an EPG program
 type EpgItem struct {
 	Id         *string `json:"id,omitempty"`
-	ServiceRef string  `json:"service_ref,omitempty"`
+	ServiceRef string  `json:"serviceRef,omitempty"`
 	Title      string  `json:"title,omitempty"`
 	Desc       *string `json:"desc,omitempty"`
 	Start      int     `json:"start,omitempty"`

@@ -47,6 +47,7 @@ export async function fetchEpgEvents(params: {
   to?: number;
   bouquet?: string;
   query?: string;
+  signal?: AbortSignal;
 }): Promise<EpgEvent[]> {
   const result = await getEpg({
     query: {
@@ -54,7 +55,8 @@ export async function fetchEpgEvents(params: {
       to: params.to,
       bouquet: params.bouquet,
       q: params.query
-    }
+    },
+    signal: params.signal
   });
 
   if (result.error || !result.data) {
@@ -112,13 +114,10 @@ function mapSdkBouquet(dto: any): EpgBouquet {
 
 function mapSdkChannel(dto: any): EpgChannel {
   return {
-    id: dto.id || dto.service_ref || '',
-    service_ref: dto.service_ref,
-    serviceRef: dto.serviceRef,
+    id: dto.id || dto.serviceRef || '',
     name: dto.name || 'Unknown',
     number: dto.number,
     group: dto.group,
-    logo_url: dto.logo_url,
     logoUrl: dto.logoUrl,
     logo: dto.logo
   };
@@ -126,7 +125,7 @@ function mapSdkChannel(dto: any): EpgChannel {
 
 function mapSdkEvent(dto: any): EpgEvent {
   return {
-    service_ref: dto.service_ref || '',
+    serviceRef: dto.serviceRef || '',
     start: dto.start || 0,
     end: dto.end || 0,
     title: dto.title || '',

@@ -107,9 +107,9 @@ function Settings() {
                   <span className={`status-dot ${scanStatus.state}`}></span>
                   <span className="status-text">{t(`settings.scan.status.${scanStatus.state || 'idle'}`)}</span>
                 </div>
-                {scanStatus.started_at && scanStatus.started_at > 0 && (
+                {scanStatus.startedAt && scanStatus.startedAt > 0 && (
                   <div className="scan-time">
-                    {new Date(scanStatus.started_at * 1000).toLocaleTimeString()}
+                    {new Date(scanStatus.startedAt * 1000).toLocaleTimeString()}
                   </div>
                 )}
               </div>
@@ -118,23 +118,23 @@ function Settings() {
                 <div
                   className="scan-progress-bar"
                   style={{
-                    width: `${Math.min(100, Math.max(0, ((scanStatus.scanned_channels || 0) / (scanStatus.total_channels || 1)) * 100))}%`
+                    width: `${Math.min(100, Math.max(0, ((scanStatus.scannedChannels || 0) / (scanStatus.totalChannels || 1)) * 100))}%`
                   }}
                 />
               </div>
 
               <div className="scan-stats-row">
                 <div className="scan-stat-item">
-                  <span className="stat-value">{scanStatus.scanned_channels} / {scanStatus.total_channels}</span>
+                  <span className="stat-value">{scanStatus.scannedChannels} / {scanStatus.totalChannels}</span>
                   <span className="stat-label">{t('settings.scan.stats.scanned')}</span>
                 </div>
                 <div className="scan-stat-item">
-                  <span className="stat-value">{scanStatus.updated_count}</span>
+                  <span className="stat-value">{scanStatus.updatedCount}</span>
                   <span className="stat-label">{t('settings.scan.stats.updated')}</span>
                 </div>
-                {scanStatus.finished_at && scanStatus.finished_at > 0 && (
+                {scanStatus.finishedAt && scanStatus.finishedAt > 0 && (
                   <div className="scan-stat-item">
-                    <span className="stat-value">{new Date(scanStatus.finished_at * 1000).toLocaleTimeString()}</span>
+                    <span className="stat-value">{new Date(scanStatus.finishedAt * 1000).toLocaleTimeString()}</span>
                     <span className="stat-label">Finished</span>
                   </div>
                 )}
@@ -153,7 +153,7 @@ function Settings() {
           <div className="input-with-button">
             <input
               type="text"
-              value={config?.streaming?.delivery_policy === 'universal' ? "Universal (H.264/AAC/fMP4)" : (config?.streaming?.delivery_policy || "Loading...")}
+              value={config?.streaming?.deliveryPolicy === 'universal' ? "Universal (H.264/AAC/fMP4)" : (config?.streaming?.deliveryPolicy || "Loading...")}
               disabled
               className="input-readonly"
             />

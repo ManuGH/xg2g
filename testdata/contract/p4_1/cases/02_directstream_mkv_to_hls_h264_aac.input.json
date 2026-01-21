@@ -49,7 +49,7 @@
         "container_incompatible_but_codecs_compatible"
       ],
       "trace": {
-        "request_id_present": true
+        "requestIdPresent": true
       }
     }
   }

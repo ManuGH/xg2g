@@ -154,9 +154,12 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 	a.activeProcs[handle] = cmd
 	a.mu.Unlock()
 
+	// Metrics: Record pipeline spawn with cause="admitted" only AFTER successful start.
+	// We use engine="ffmpeg" as per truth.
+	metrics.RecordPipelineSpawn("ffmpeg", "admitted")
 	a.Logger.Info().
 		Str("handle", string(handle)).
-		Str("session_id", spec.SessionID).
+		Str("sessionId", spec.SessionID).
 		Int("pid", cmd.Process.Pid).
 		Msg("started media process")
 
@@ -249,7 +252,7 @@ func (a *LocalAdapter) selectStreamURLWithPreflight(ctx context.Context, session
 	if isRelay {
 		a.Logger.Warn().
 			Str("event", "streamrelay_preflight_failed").
-			Str("session_id", sessionID).
+			Str("sessionId", sessionID).
 			Str("service_ref", serviceRef).
 			Str("resolved_url", resolvedLogURL).
 			Int("preflight_bytes", result.bytes).
@@ -265,7 +268,7 @@ func (a *LocalAdapter) selectStreamURLWithPreflight(ctx context.Context, session
 		if buildErr != nil {
 			a.Logger.Error().
 				Str("event", "preflight_failed_no_valid_ts").
-				Str("session_id", sessionID).
+				Str("sessionId", sessionID).
 				Str("service_ref", serviceRef).
 				Str("resolved_url", resolvedLogURL).
 				Int("preflight_bytes", result.bytes).
@@ -280,7 +283,7 @@ func (a *LocalAdapter) selectStreamURLWithPreflight(ctx context.Context, session
 		fallbackLogURL := sanitizeURLForLog(fallbackURL)
 		a.Logger.Warn().
 			Str("event", "fallback_to_8001_activated").
-			Str("session_id", sessionID).
+			Str("sessionId", sessionID).
 			Str("service_ref", serviceRef).
 			Str("resolved_url", resolvedLogURL).
 			Str("fallback_url", fallbackLogURL).
@@ -299,7 +302,7 @@ func (a *LocalAdapter) selectStreamURLWithPreflight(ctx context.Context, session
 
 		a.Logger.Error().
 			Str("event", "preflight_failed_no_valid_ts").
-			Str("session_id", sessionID).
+			Str("sessionId", sessionID).
 			Str("service_ref", serviceRef).
 			Str("resolved_url", resolvedLogURL).
 			Str("fallback_url", fallbackLogURL).
@@ -314,7 +317,7 @@ func (a *LocalAdapter) selectStreamURLWithPreflight(ctx context.Context, session
 
 	a.Logger.Error().
 		Str("event", "preflight_failed_no_valid_ts").
-		Str("session_id", sessionID).
+		Str("sessionId", sessionID).
 		Str("service_ref", serviceRef).
 		Str("resolved_url", resolvedLogURL).
 		Int("preflight_bytes", result.bytes).

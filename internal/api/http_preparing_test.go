@@ -81,6 +81,8 @@ func (m *MockPreparingServer) PreviewConflicts(w http.ResponseWriter, r *http.Re
 func (m *MockPreparingServer) DeleteTimer(w http.ResponseWriter, r *http.Request, timerId string) {}
 func (m *MockPreparingServer) GetTimer(w http.ResponseWriter, r *http.Request, timerId string)    {}
 func (m *MockPreparingServer) UpdateTimer(w http.ResponseWriter, r *http.Request, timerId string) {}
+func (m *MockPreparingServer) PostRecordingPlaybackInfo(w http.ResponseWriter, r *http.Request, recordingId string) {
+}
 
 // Optional Extensions (if needed by router)
 func (m *MockPreparingServer) HandleRecordingResume(w http.ResponseWriter, r *http.Request, recordingId string) {

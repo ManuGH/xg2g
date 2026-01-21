@@ -25,6 +25,7 @@ type VideoStreamInfo struct {
 	Duration   float64
 	Width      int
 	Height     int
+	FPS        float64
 	Interlaced bool
 }
 
@@ -78,6 +79,10 @@ type Metadata struct {
 	Container  string
 	VideoCodec string
 	AudioCodec string
+	Width      int
+	Height     int
+	FPS        float64
+	Interlaced bool
 
 	Fingerprint Fingerprint
 	Error       string

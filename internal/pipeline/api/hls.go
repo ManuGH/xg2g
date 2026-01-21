@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	xg2ghttp "github.com/ManuGH/xg2g/internal/control/http"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/platform/fs"
@@ -184,22 +185,37 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, s
 		// If playlist is missing but session is potentially starting, wait a bit.
 		if isPlaylist && (rec.State == model.SessionNew || rec.State == model.SessionStarting || rec.State == model.SessionPriming) {
 			logger.Info().Msg("playlist missing during start, polling...")
-			deadline := time.Now().Add(hlsPlaylistWaitTimeout)
-			for time.Now().Before(deadline) {
-				time.Sleep(250 * time.Millisecond)
-				info, err = os.Stat(filePath)
-				if err == nil {
-					logger.Info().Msg("playlist appeared during polling")
-					break
+
+			// Poll with Context + Timeout + Ticker
+			ticker := time.NewTicker(250 * time.Millisecond)
+			defer ticker.Stop()
+
+			timeout := time.NewTimer(hlsPlaylistWaitTimeout)
+			defer timeout.Stop()
+
+		PollLoop:
+			for {
+				select {
+				case <-r.Context().Done():
+					// Context cancelled
+					logger.Info().Msg("polling cancelled by request context")
+					break PollLoop
+				case <-timeout.C:
+					// Timeout
+					logger.Info().Msg("polling finished without success (timeout)")
+					break PollLoop
+				case <-ticker.C:
+					info, err = os.Stat(filePath)
+					if err == nil {
+						logger.Info().Msg("playlist appeared during polling")
+						break PollLoop
+					}
+					if !os.IsNotExist(err) {
+						// Real error
+						logger.Error().Err(err).Msg("playlist stat error during polling")
+						break PollLoop
+					}
 				}
-				if !os.IsNotExist(err) {
-					// Real error
-					logger.Error().Err(err).Msg("playlist stat error during polling")
-					break
-				}
-			}
-			if err != nil {
-				logger.Info().Err(err).Msg("polling finished without success")
 			}
 		} else {
 			logger.Info().Str("state", string(rec.State)).Msg("playlist missing, not polling (state mismatch)")
@@ -236,15 +252,14 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, s
 
 	// 5. Set Headers
 	if isPlaylist {
-		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+		w.Header().Set("Content-Type", xg2ghttp.ContentTypeHLSPlaylist)
 		w.Header().Set("Cache-Control", "no-store")
 	} else if isSegment || isLegacySegment {
-		// TS segments: video/MP2T
-		// fMP4 segments (.m4s): video/mp4 (Safari REQUIRES video/mp4 for all fMP4 content)
+		// Set segment headers based on artifact kind (TS vs fMP4)
 		if strings.HasSuffix(filename, ".m4s") {
-			w.Header().Set("Content-Type", "video/mp4")
+			w.Header().Set("Content-Type", xg2ghttp.ContentTypeFMP4Segment)
 		} else {
-			w.Header().Set("Content-Type", "video/mp2t")
+			w.Header().Set("Content-Type", xg2ghttp.ContentTypeHLSSegment)
 		}
 		// User Req: "Cache-Control: public, max-age=60"
 		w.Header().Set("Cache-Control", "public, max-age=60")
@@ -252,7 +267,7 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, s
 		// Safari cannot decode gzip-compressed fMP4 segments
 		w.Header().Set("Content-Encoding", "identity")
 	} else if isInit {
-		w.Header().Set("Content-Type", "video/mp4")
+		w.Header().Set("Content-Type", xg2ghttp.ContentTypeFMP4Segment)
 		w.Header().Set("Cache-Control", "public, max-age=3600")
 		// CRITICAL: Disable compression for init segment (proxy-safe)
 		w.Header().Set("Content-Encoding", "identity")

@@ -196,3 +196,7 @@ func TestContract_StopStream_DeleteStreamsId(t *testing.T) {
 		assert.NotZero(t, ev.RequestedAtUN)
 	})
 }
+
+func (s *mockStore) GetLease(ctx context.Context, key string) (store.Lease, bool, error) {
+return nil, false, nil
+}

@@ -32,7 +32,7 @@ interface PlayerStats {
 interface ApiErrorResponse {
   code?: string;
   message?: string;
-  request_id?: string;
+  requestId?: string;
   details?: unknown;
 }
 
@@ -44,7 +44,7 @@ function V3Player(props: V3PlayerProps) {
   const recordingId = 'recordingId' in props ? props.recordingId : undefined;
 
   const [sRef, setSRef] = useState<string>(
-    channel?.service_ref || channel?.id || '1:0:19:283D:3FB:1:C00000:0:0:0:'
+    channel?.serviceRef || channel?.id || '1:0:19:283D:3FB:1:C00000:0:0:0:'
   );
 
   // Traceability State
@@ -89,7 +89,7 @@ function V3Player(props: V3PlayerProps) {
   // P3-4: Truth State
   const [canSeek, setCanSeek] = useState(true);
   const [startUnix, setStartUnix] = useState<number | null>(null);
-  const [, setLiveEdgeUnix] = useState<number | null>(null);
+  const [] = useState<number | null>(null);
   // unused: liveEdgeUnix used for calculation but not directly in render yet, keeping state for completeness
   const isSafari = useMemo(() => {
     if (typeof navigator === 'undefined') return false;
@@ -643,17 +643,16 @@ function V3Player(props: V3PlayerProps) {
     setShowErrorDetails(false);
     setPlaybackMode('VOD');
 
+    let abortController: AbortController | null = null;
+
     try {
       await ensureSessionCookie();
 
       // Determine Playback Mode
-      const hlsUrl = `${apiBase}/recordings/${id}/playlist.m3u8`;
-      let streamUrl = hlsUrl;
-      let mode: 'hls' | 'direct_mp4' = 'hls';
-
+      let streamUrl = '';
+      let mode: 'hls' | 'direct_mp4' | 'deny' = 'deny';
 
       try {
-        // Use generated client with strict typing and contract enforcement
         const maxMetaRetries = 20;
         let pInfo: import('../client-ts/types.gen').PlaybackInfo | undefined;
 
@@ -665,7 +664,6 @@ function V3Player(props: V3PlayerProps) {
           });
 
           if (error) {
-            // CONTRACT-FE-001: Strict Retry-After enforcement for PlaybackInfo
             if (response.status === 503) {
               const retryAfter = response.headers.get('Retry-After');
               if (retryAfter) {
@@ -675,7 +673,6 @@ function V3Player(props: V3PlayerProps) {
                 await sleep(seconds * 1000);
                 continue;
               } else {
-                // Strict 503: Fail if no Retry-After
                 throw new Error('503 Service Unavailable (No Retry-After)');
               }
             }
@@ -694,133 +691,125 @@ function V3Player(props: V3PlayerProps) {
 
         console.debug('[V3Player] Playback Info:', pInfo);
 
-        if (pInfo.mode === 'direct_mp4' && pInfo.url) {
-          mode = 'direct_mp4';
-          streamUrl = pInfo.url;
-          if (streamUrl.startsWith('/')) {
-            const origin = window.location.origin;
-            streamUrl = `${origin}${streamUrl}`;
+        // GOVERNANCE: Prefer explicitly selected backend output (P4.6+)
+        if (pInfo.decision?.mode === 'deny') {
+          throw new Error(t('player.playbackDenied', 'Playback denied by policy'));
+        }
+
+        if (pInfo.decision?.selectedOutputUrl) {
+          streamUrl = pInfo.decision.selectedOutputUrl;
+          mode = pInfo.decision.selectedOutputKind === 'hls' ? 'hls' : 'direct_mp4';
+        } else if (pInfo.decision?.outputs) {
+          // GOVERNANCE: direct outputs[] access is forbidden.
+          // Fallback to legacy path if selected is missing despite decision existing
+          throw new Error(t('player.playbackError', 'Decision-led playback missing explicit selection'));
+        } else {
+          // Legacy Compatibility Path (P3-x)
+          if (pInfo.mode === 'deny') {
+            throw new Error(t('player.playbackDenied', 'Playback denied by policy'));
           }
-          // Add Cache Busting to prevent sticky 503s
-          streamUrl += (streamUrl.includes('?') ? '&' : '?') + `cb=${Date.now()}`;
-        }
-        setVodStreamMode(mode);
-
-        // Use Backend-Provided Duration
-        if (pInfo.duration_seconds && pInfo.duration_seconds > 0) {
-          setDurationSeconds(pInfo.duration_seconds);
-          setPlaybackMode('VOD');
+          if (!pInfo.url) {
+            throw new Error(t('player.notAvailable', 'Playback not available'));
+          }
+          mode = pInfo.mode as any;
+          streamUrl = pInfo.url;
         }
 
+        if (streamUrl.startsWith('/')) {
+          streamUrl = `${window.location.origin}${streamUrl}`;
+        }
 
-        // P3-4: Truth Consumption
+        // Add Cache Busting to prevent sticky 503s
+        streamUrl += (streamUrl.includes('?') ? '&' : '?') + `cb=${Date.now()}`;
+
+        setVodStreamMode(mode as any);
+
+        // Truth Consumption
+        if (pInfo.durationSeconds && pInfo.durationSeconds > 0) {
+          setDurationSeconds(pInfo.durationSeconds);
+        }
+
         if (pInfo.requestId) setTraceId(pInfo.requestId);
-        if (pInfo.is_seekable !== undefined) {
-          setCanSeek(pInfo.is_seekable);
-        }
-        if (pInfo.start_unix) setStartUnix(pInfo.start_unix);
-        if (pInfo.live_edge_unix) setLiveEdgeUnix(pInfo.live_edge_unix);
-        if (pInfo.dvr_window_seconds) setDurationSeconds(pInfo.dvr_window_seconds);
+        if (pInfo.isSeekable !== undefined) setCanSeek(pInfo.isSeekable);
+        if (pInfo.startUnix) setStartUnix(pInfo.startUnix);
 
-        // Resume State (Strict Typed)
-        if (pInfo.resume && pInfo.resume.pos_seconds >= 15 && (!pInfo.resume.finished)) {
-          const d = pInfo.resume.duration_seconds || (pInfo.duration_seconds || 0);
-          if (!d || pInfo.resume.pos_seconds < d - 10) {
-            // Map to internal ResumeState (nullable vs optional alignment)
+        // Resume State
+        if (pInfo.resume && pInfo.resume.posSeconds >= 15 && (!pInfo.resume.finished)) {
+          const d = pInfo.resume.durationSeconds || (pInfo.durationSeconds || 0);
+          if (!d || pInfo.resume.posSeconds < d - 10) {
             setResumeState({
-              pos_seconds: pInfo.resume.pos_seconds,
-              duration_seconds: pInfo.resume.duration_seconds || undefined,
+              posSeconds: pInfo.resume.posSeconds,
+              durationSeconds: pInfo.resume.durationSeconds || undefined,
               finished: pInfo.resume.finished || undefined
             });
             setShowResumeOverlay(true);
           }
         }
       } catch (e: any) {
-        console.warn('[V3Player] Failed to get playback info', e);
-        // Fail-closed: Show error, do NOT fallback
         if (activeRecordingRef.current !== id) return;
         setStatus('error');
         setError(e.message || t('player.serverError'));
         return;
       }
 
-      // --- DIRECT MP4 PATH ---
+      // --- EXECUTION PATHS ---
       if (mode === 'direct_mp4') {
         try {
-          isTeardownRef.current = false; // Force clear to prevent race condition
-          // Probe with no-cache to handle "503 Preparing"
+          isTeardownRef.current = false;
           await waitForDirectStream(streamUrl);
-
-          // If cancelled during wait
           if (activeRecordingRef.current !== id) return;
-
           setStatus('buffering');
           playDirectMp4(streamUrl);
-          return; // EXIT: Success
+          return;
         } catch (err) {
-          console.warn('[V3Player] Direct MP4 Probe Failed:', err);
-          // Verify if we should show error or fallback
           if (activeRecordingRef.current !== id) return;
-
           setStatus('error');
           setError(t('player.timeout'));
           return;
         }
       }
 
-      // --- HLS PATH (FALLBACK) ---
-      const controller = new AbortController();
-      vodFetchRef.current = controller;
-      try {
-        // Simple probe for HLS
-        const res = await fetch(streamUrl, {
-          method: 'HEAD',
-          signal: controller.signal
-        });
+      if (mode === 'hls') {
+        const controller = new AbortController();
+        abortController = controller;
+        vodFetchRef.current = controller;
+        try {
+          const res = await fetch(streamUrl, {
+            method: 'HEAD',
+            signal: controller.signal
+          });
 
-        // HLS logic remains correctly handled by standard players usually, 
-        // but we handle basic errors here.
-        if (res.status === 404) {
-          setError(t('player.recordingNotFound'));
-          setStatus('error');
-          return;
-        }
-
-        // 503 logic for HLS (Rare, usually handled by playlist retry, but good to have)
-        if (res.status === 503) {
-          // CONTRACT-FE-001: Strict Retry-After enforcement
-          const retryAfter = res.headers.get('Retry-After');
-
-          if (!retryAfter) {
-            // No header → show error instead of guessing
-            setError(t('player.serverBusy'));
-            setErrorDetails('Server did not provide retry guidance');
-            setStatus('error');
-            return;
+          if (res.status === 404) {
+            throw new Error(t('player.recordingNotFound'));
           }
 
-          const delay = parseInt(retryAfter, 10) * 1000;
-          setStatus('building');
-          vodRetryRef.current = window.setTimeout(() => {
-            if (activeRecordingRef.current === id) startRecordingPlayback(id);
-          }, delay);
-          return;
+          if (res.status === 503) {
+            const retryAfter = res.headers.get('Retry-After');
+            if (retryAfter) {
+              const delay = parseInt(retryAfter, 10) * 1000;
+              setStatus('building');
+              vodRetryRef.current = window.setTimeout(() => {
+                if (activeRecordingRef.current === id) startRecordingPlayback(id);
+              }, delay);
+              return;
+            }
+            throw new Error('503 Service Unavailable (No Retry-After)');
+          }
+
+          if (activeRecordingRef.current !== id) return;
+          setStatus('buffering');
+          playHls(streamUrl);
+        } finally {
+          if (vodFetchRef.current === controller) vodFetchRef.current = null;
         }
-
-        if (activeRecordingRef.current !== id) return;
-
-        setStatus('buffering');
-        playHls(streamUrl);
-
-      } finally {
-        if (vodFetchRef.current === controller) vodFetchRef.current = null;
       }
-
-    } catch (err) {
+    } catch (err: any) {
       if (activeRecordingRef.current !== id) return;
       console.error(err);
-      setError((err as Error).message);
+      setError(err.message);
       setStatus('error');
+    } finally {
+      if (vodFetchRef.current === abortController) vodFetchRef.current = null;
     }
   }, [apiBase, authHeaders, client, clearVodFetch, clearVodRetry, playDirectMp4, playHls, resetPlaybackEngine, t, waitForDirectStream, ensureSessionCookie]);
 
@@ -906,10 +895,10 @@ function V3Player(props: V3PlayerProps) {
           }
           setStatus('error');
           setError(`${t('player.leaseBusy')}${retryHint}`);
-          if (apiErr?.code || apiErr?.request_id) {
+          if (apiErr?.code || apiErr?.requestId) {
             const parts = [];
             if (apiErr.code) parts.push(`code=${apiErr.code}`);
-            if (apiErr.request_id) parts.push(`request_id=${apiErr.request_id}`);
+            if (apiErr.requestId) parts.push(`requestId=${apiErr.requestId}`);
             setErrorDetails(parts.join(' '));
           } else {
             setErrorDetails(null);
@@ -926,7 +915,10 @@ function V3Player(props: V3PlayerProps) {
         const session = await waitForSessionReady(newSessionId);
 
         setStatus('ready');
-        const streamUrl = session.playbackUrl || `${apiBase}/sessions/${newSessionId}/hls/index.m3u8`;
+        const streamUrl = session.playbackUrl;
+        if (!streamUrl) {
+          throw new Error(t('player.streamUrlMissing', 'Stream URL missing in session response'));
+        }
         playHls(streamUrl);
 
       } catch (err) {
@@ -1308,7 +1300,7 @@ function V3Player(props: V3PlayerProps) {
   // Update sRef on channel change
   useEffect(() => {
     if (channel) {
-      const ref = channel.service_ref || channel.id;
+      const ref = channel.serviceRef || channel.id;
       if (ref) setSRef(ref);
     }
   }, [channel]);
@@ -1653,12 +1645,12 @@ function V3Player(props: V3PlayerProps) {
         <div className="v3-player-resume-overlay">
           <div className="v3-player-resume-content">
             <h3>{t('player.resumeTitle', 'Resume Playback?')}</h3>
-            <p>{t('player.resumePrompt', { time: formatClock(resumeState.pos_seconds) })}</p>
+            <p>{t('player.resumePrompt', { time: formatClock(resumeState.posSeconds) })}</p>
             <div className="v3-player-resume-actions">
               <button
                 className="v3-button primary"
                 onClick={() => {
-                  seekWhenReady(resumeState.pos_seconds);
+                  seekWhenReady(resumeState.posSeconds);
                   setShowResumeOverlay(false);
                 }}
               >

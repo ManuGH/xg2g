@@ -347,3 +347,7 @@ func TestGetStreams_Contract_Slice53(t *testing.T) {
 		assert.False(t, hasIdle, "idle sessions are filtered (non-running)")
 	})
 }
+
+func (s *MockStoreForStreams) GetLease(ctx context.Context, key string) (store.Lease, bool, error) {
+return nil, false, nil
+}

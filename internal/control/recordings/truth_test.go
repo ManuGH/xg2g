@@ -32,8 +32,10 @@ func TestPR42_SourceResolutionAndKeyHygiene(t *testing.T) {
 		RecordingPlaybackPolicy: config.PlaybackPolicyReceiverOnly,
 	}
 	// Use mocks consistent with package
-	mgr := vod.NewManager(&dummyRunner{}, &MockProber{}, nil)
-	tp := NewTruthProvider(cfg, mgr, ResolverOptions{})
+	mgr, err := vod.NewManager(&dummyRunner{}, &MockProber{}, nil)
+	require.NoError(t, err)
+	tp, err := NewTruthProvider(cfg, mgr, ResolverOptions{})
+	require.NoError(t, err)
 
 	t.Run("Receiver URL escaping uses RawPath correctly", func(t *testing.T) {
 		serviceRef := "1:0:1:1:1:1:1:0:0:0:/media/hdd/movie/My Recording.ts"
@@ -162,7 +164,8 @@ func TestTruthProvider_ImpossibleProbe_FailsFast(t *testing.T) {
 				opts.PathResolver = &mockPathResolver{path: tt.localPath}
 			}
 
-			tp := NewTruthProvider(cfg, mgr, opts)
+			tp, err := NewTruthProvider(cfg, mgr, opts)
+			require.NoError(t, err)
 
 			// We must ensure the file exists for the "local path" logic to work if it checks FS?
 			// The logic in GetMediaTruth is:
@@ -218,7 +221,8 @@ func TestTruthProvider_ProbeFailure_PersistsState(t *testing.T) {
 		PathResolver: &mockPathResolver{path: "/tmp/fake"},
 	}
 
-	tp := NewTruthProvider(cfg, mgr, opts)
+	tp, err := NewTruthProvider(cfg, mgr, opts)
+	require.NoError(t, err)
 
 	// 1. First Call: Should return Preparing and trigger probe
 	got, err := tp.GetMediaTruth(context.Background(), "ref")

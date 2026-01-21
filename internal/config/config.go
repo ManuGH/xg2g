@@ -102,6 +102,8 @@ type Enigma2Config struct {
 	// Registry-exposed fields (FileConfig mapping)
 	AuthMode    string `yaml:"authMode,omitempty"`    // "inherit", "basic", "digest"
 	TuneTimeout string `yaml:"tuneTimeout,omitempty"` // e.g. "10s"
+	UseWebIF    *bool  `yaml:"useWebIFStreams,omitempty"`
+	StreamPort  *int   `yaml:"streamPort,omitempty"`
 }
 
 // EPGConfig holds EPG configuration
@@ -303,12 +305,14 @@ type LibraryRootConfig struct {
 	IncludeExt []string `yaml:"include_ext"`
 }
 
-// EngineConfig holds the Orchestrator engine settings
 type EngineConfig struct {
-	Enabled     bool          `yaml:"enabled"`
-	Mode        string        `yaml:"mode"` // "standard" or "virtual"
-	IdleTimeout time.Duration `yaml:"idleTimeout"`
-	TunerSlots  []int         `yaml:"tunerSlots"`
+	Enabled           bool          `yaml:"enabled"`
+	Mode              string        `yaml:"mode"` // "standard" or "virtual"
+	IdleTimeout       time.Duration `yaml:"idleTimeout"`
+	TunerSlots        []int         `yaml:"tunerSlots"`
+	MaxPool           int           `yaml:"maxPool"`
+	GPULimit          int           `yaml:"gpuLimit"`
+	CPUThresholdScale float64       `yaml:"cpuThresholdScale"`
 }
 
 // StoreConfig holds the state store settings
@@ -415,6 +419,11 @@ func (l *Loader) envDuration(key string, defaultVal time.Duration) time.Duration
 	return ParseDuration(key, defaultVal)
 }
 
+func (l *Loader) envFloat(key string, defaultVal float64) float64 {
+	l.ConsumedEnvKeys[key] = struct{}{}
+	return ParseFloat(key, defaultVal)
+}
+
 func (l *Loader) envLookup(key string) (string, bool) {
 	l.ConsumedEnvKeys[key] = struct{}{}
 	return os.LookupEnv(key)
@@ -429,7 +438,9 @@ func (l *Loader) Load() (AppConfig, error) {
 	cfg := AppConfig{}
 
 	// 1. Set defaults
-	l.setDefaults(&cfg)
+	if err := l.setDefaults(&cfg); err != nil {
+		return cfg, fmt.Errorf("set defaults: %w", err)
+	}
 
 	// 2. Load from file (if provided)
 	if l.configPath != "" {
@@ -497,12 +508,19 @@ func (l *Loader) Load() (AppConfig, error) {
 }
 
 // setDefaults sets default values for configuration
-func (l *Loader) setDefaults(cfg *AppConfig) {
+func (l *Loader) setDefaults(cfg *AppConfig) error {
 	// P1.4 Mechanical Truth: Apply defaults from Registry
-	GetRegistry().ApplyDefaults(cfg)
+	registry, err := GetRegistry()
+	if err != nil {
+		return fmt.Errorf("get registry: %w", err)
+	}
+	if err := registry.ApplyDefaults(cfg); err != nil {
+		return fmt.Errorf("apply defaults: %w", err)
+	}
 
 	// Fields not yet in Registry (internal state)
 	cfg.ConfigVersion = V3ConfigVersion
+	return nil
 }
 
 // loadFile loads configuration from a YAML file with STRICT parsing.
@@ -585,6 +603,9 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 	}
 	if src.OpenWebIF.UseWebIF != nil {
 		dst.Enigma2.UseWebIFStreams = *src.OpenWebIF.UseWebIF
+	}
+	if src.Enigma2.UseWebIF != nil {
+		dst.Enigma2.UseWebIFStreams = *src.Enigma2.UseWebIF
 	}
 
 	// Parse durations from strings
@@ -989,6 +1010,9 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	cfg.Engine.Enabled = l.envBool("XG2G_ENGINE_ENABLED", cfg.Engine.Enabled)
 	cfg.Engine.Mode = l.envString("XG2G_ENGINE_MODE", cfg.Engine.Mode)
 	cfg.Engine.IdleTimeout = l.envDuration("XG2G_ENGINE_IDLE_TIMEOUT", cfg.Engine.IdleTimeout)
+	cfg.Engine.CPUThresholdScale = l.envFloat("XG2G_ENGINE_CPU_SCALE", cfg.Engine.CPUThresholdScale)
+	cfg.Engine.MaxPool = l.envInt("XG2G_ENGINE_MAX_POOL", cfg.Engine.MaxPool)
+	cfg.Engine.GPULimit = l.envInt("XG2G_ENGINE_GPU_LIMIT", cfg.Engine.GPULimit)
 
 	// CANONICAL ENIGMA2 CONFIG (Move up for discovery)
 	cfg.Enigma2.BaseURL = l.envString("XG2G_E2_HOST", cfg.Enigma2.BaseURL)

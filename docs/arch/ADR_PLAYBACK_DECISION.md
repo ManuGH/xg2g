@@ -4,6 +4,10 @@
 **Date**: 2026-01-18  
 **Context**: Phase 4 - Backend-Driven Playback Path Selection
 
+> [!NOTE]
+> **Post-P6 Contract Hardening**: This ADR predates the camelCase v3 API hardening.
+> JSON examples may use `request_id`. Normative external contract as of Phase 6+ uses `requestId`.
+
 ---
 
 ## Problem

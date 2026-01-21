@@ -1,0 +1,38 @@
+{
+  "name": "tvos_h265_aac",
+  "input": {
+    "truth": {
+      "container": "mkv",
+      "video_codec": "h265",
+      "audio_codec": "aac",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30
+    },
+    "capabilities": {
+      "version": 1,
+      "containers": [
+        "mp4",
+        "mkv"
+      ],
+      "video_codecs": [
+        "h265"
+      ],
+      "audio_codecs": [
+        "aac"
+      ],
+      "supports_hls": true,
+      "supports_range": false
+    },
+    "policy": {
+      "allow_transcode": true
+    }
+  },
+  "expected": {
+    "mode": "direct_stream",
+    "protocol": "hls",
+    "reasons": [
+      "directstream_match"
+    ]
+  }
+}

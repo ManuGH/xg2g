@@ -25,7 +25,8 @@ type mockProber struct{}
 func (p *mockProber) Probe(ctx context.Context, path string) (*StreamInfo, error) { return nil, nil }
 
 func TestManager_MarkFailed_PreservesFields(t *testing.T) {
-	mgr := NewManager(&mockRunner{}, &mockProber{}, nil)
+	mgr, err := NewManager(&mockRunner{}, &mockProber{}, nil)
+	require.NoError(t, err)
 	id := "service:ref"
 
 	// 1. Seed initial metadata with rich state
@@ -68,7 +69,8 @@ func TestManager_MarkFailed_PreservesFields(t *testing.T) {
 }
 
 func TestManager_MarkFailed_InitializeUnknown(t *testing.T) {
-	mgr := NewManager(&mockRunner{}, &mockProber{}, nil)
+	mgr, err := NewManager(&mockRunner{}, &mockProber{}, nil)
+	require.NoError(t, err)
 	id := "new:ref"
 
 	// Call MarkFailed on non-existent item

@@ -206,9 +206,23 @@ func (m *Manager) scanInternal(ctx context.Context) error {
 
 		// Rate limit
 		if m.ProbeDelay > 0 {
-			time.Sleep(m.ProbeDelay)
+			if err := sleepCtx(ctx, m.ProbeDelay); err != nil {
+				// If sleep is interrupted by context, we should stop scanning
+				return err
+			}
 		}
 	}
 
 	return nil
+}
+
+func sleepCtx(ctx context.Context, d time.Duration) error {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }

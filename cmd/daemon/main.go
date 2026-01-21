@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"os/signal"
@@ -22,10 +23,14 @@ import (
 	"github.com/ManuGH/xg2g/internal/api"
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/daemon"
+	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	xglog "github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
+	"github.com/ManuGH/xg2g/internal/pipeline/bus"
+	"github.com/ManuGH/xg2g/internal/pipeline/resume"
+	"github.com/ManuGH/xg2g/internal/pipeline/scan"
 	xgtls "github.com/ManuGH/xg2g/internal/tls"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -46,9 +51,67 @@ func maskURL(rawURL string) string {
 	return parsedURL.String()
 }
 
+func printMainUsage(w io.Writer) {
+	_, _ = fmt.Fprintln(w, "xg2g - Next Gen to Go")
+	_, _ = fmt.Fprintln(w, "")
+	_, _ = fmt.Fprintln(w, "Usage:")
+	_, _ = fmt.Fprintln(w, "  xg2g [--config path] [--version]")
+	_, _ = fmt.Fprintln(w, "  xg2g config <command> [flags]")
+	_, _ = fmt.Fprintln(w, "  xg2g healthcheck [flags]")
+	_, _ = fmt.Fprintln(w, "  xg2g diagnostic [flags]")
+	_, _ = fmt.Fprintln(w, "  xg2g help [command]")
+	_, _ = fmt.Fprintln(w, "")
+	_, _ = fmt.Fprintln(w, "Commands:")
+	_, _ = fmt.Fprintln(w, "  config       Validate, dump, and migrate config files")
+	_, _ = fmt.Fprintln(w, "  healthcheck  Probe API readiness/liveness endpoints")
+	_, _ = fmt.Fprintln(w, "  diagnostic   Trigger diagnostic actions against the API")
+	_, _ = fmt.Fprintln(w, "  help         Show help for a command")
+	_, _ = fmt.Fprintln(w, "")
+	_, _ = fmt.Fprintln(w, "Flags:")
+	_, _ = fmt.Fprintln(w, "  --config string  path to config file (YAML)")
+	_, _ = fmt.Fprintln(w, "  --version        print version and exit")
+	_, _ = fmt.Fprintln(w, "")
+	_, _ = fmt.Fprintln(w, "Notes:")
+	_, _ = fmt.Fprintln(w, "  Running without a subcommand starts the daemon.")
+	_, _ = fmt.Fprintln(w, "")
+	_, _ = fmt.Fprintln(w, "Examples:")
+	_, _ = fmt.Fprintln(w, "  xg2g --config /etc/xg2g/config.yaml")
+	_, _ = fmt.Fprintln(w, "  xg2g config validate -f /etc/xg2g/config.yaml")
+	_, _ = fmt.Fprintln(w, "  xg2g healthcheck --mode=ready --port=8088")
+	_, _ = fmt.Fprintln(w, "  xg2g diagnostic --action=refresh --token $XG2G_API_TOKEN")
+}
+
+func runHelp(args []string) int {
+	if len(args) == 0 {
+		printMainUsage(os.Stdout)
+		return 0
+	}
+
+	switch args[0] {
+	case "config":
+		printConfigUsage(os.Stdout)
+		return 0
+	case "healthcheck":
+		printHealthcheckUsage(os.Stdout)
+		return 0
+	case "diagnostic":
+		printDiagnosticUsage(os.Stdout)
+		return 0
+	case "daemon":
+		printMainUsage(os.Stdout)
+		return 0
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown help topic: %s\n\n", args[0])
+		printMainUsage(os.Stderr)
+		return 2
+	}
+}
+
 func main() {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
+		case "help":
+			os.Exit(runHelp(os.Args[2:]))
 		case "config":
 			os.Exit(runConfigCLI(os.Args[2:]))
 		case "healthcheck":
@@ -59,6 +122,9 @@ func main() {
 	}
 
 	// Handle command-line flags
+	flag.Usage = func() {
+		printMainUsage(flag.CommandLine.Output())
+	}
 	showVersion := flag.Bool("version", false, "print version and exit")
 	configPath := flag.String("config", "", "path to config file (YAML)")
 	flag.Parse()
@@ -307,7 +373,28 @@ func main() {
 		logger.Fatal().Err(err).Msg("failed to set root context")
 	}
 	s.SetConfigHolder(cfgHolder)
-	s.ApplySnapshot(cfgHolder.Current())
+	// Initialize v3 components
+	// Bus (In-Memory for MVP)
+	v3Bus := bus.NewMemoryBus()
+
+	// Session Store (Memory for MVP, TODO: Bolt/SQLite)
+	v3Store := store.NewMemoryStore()
+
+	// Resume Store (Bolt if persisted, Memory otherwise)
+	resumeStore, err := resume.NewStore("bolt", cfg.DataDir)
+	if err != nil {
+		logger.Warn().Err(err).Msg("failed to initialize resume store, falling back to memory")
+		resumeStore, _ = resume.NewStore("memory", "")
+	}
+
+	// Scan Manager & Store
+	v3ScanStore := scan.NewStore(cfg.DataDir)
+	// Playlist filename from runtime or config (default internal/playlist.m3u)
+	playlistPath := filepath.Join(cfg.DataDir, snap.Runtime.PlaylistFilename)
+	v3Scan := scan.NewManager(v3ScanStore, playlistPath)
+
+	// Inject v3 components into API server
+	s.SetV3Components(v3Bus, v3Store, resumeStore, v3Scan)
 
 	// Phase 8: Start Recording Cache Eviction Worker (Background)
 	go s.StartRecordingCacheEvicter(ctx)
@@ -327,6 +414,10 @@ func main() {
 				logger.Info().Msg("initial data refresh completed successfully")
 				// Update server status so UI shows correct "Last Sync" time
 				s.UpdateStatus(*st)
+
+				// Trigger v3 scan logic to ingest the newly written playlist
+				logger.Info().Msg("triggering v3 data ingest")
+				v3Scan.RunBackground()
 			}
 		}()
 	} else {

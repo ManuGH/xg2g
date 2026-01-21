@@ -1,8 +1,8 @@
 import { client } from '../../client-ts/client.gen';
 
 export interface ResumeState {
-  pos_seconds: number;
-  duration_seconds?: number;
+  posSeconds: number;
+  durationSeconds?: number;
   finished?: boolean;
 }
 

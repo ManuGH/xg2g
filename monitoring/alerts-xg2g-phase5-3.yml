@@ -1,0 +1,99 @@
+groups:
+  - name: xg2g_phase5_3_hard_invariants
+    interval: 30s
+    rules:
+      - alert: XG2G_GPUTokenLeakSuspected
+        expr: |
+          (xg2g_gpu_tokens_in_use{job="xg2g",instance="xg2g-main"} > 0)
+          and
+          (sum(xg2g_active_sessions{job="xg2g",instance="xg2g-main"}) == 0)
+        for: 5m
+        labels:
+          severity: critical
+          phase: "5.3"
+          gate: "nightly"
+        annotations:
+          summary: "GPU Token Leak Suspected (Tokens > 0 with 0 active sessions)"
+          description: "gpu_tokens_in_use remains >0 while active_sessions sum == 0. Check orphan recovery/token cleanup."
+
+      - alert: XG2G_TunerLeakSuspected
+        expr: |
+          (xg2g_tuners_in_use{job="xg2g",instance="xg2g-main"} > 0)
+          and
+          (sum(xg2g_active_sessions{job="xg2g",instance="xg2g-main"}) == 0)
+        for: 5m
+        labels:
+          severity: critical
+          phase: "5.3"
+          gate: "nightly"
+        annotations:
+          summary: "Tuner Leak Suspected (Tuners > 0 with 0 active sessions)"
+          description: "Tuners not released or session tracking inconsistent."
+
+      - alert: XG2G_PreemptUnexpectedSpike
+        expr: |
+          increase(xg2g_preempt_total{job="xg2g",instance="xg2g-main"}[10m]) > 0
+          and
+          increase(xg2g_admission_admit_total{job="xg2g",instance="xg2g-main",priority="recording"}[10m]) == 0
+        for: 2m
+        labels:
+          severity: critical
+          phase: "5.3"
+          gate: "nightly"
+        annotations:
+          summary: "Preemption without Recording admits (possible logic bug)"
+          description: "Preempts counted but no recording admissions in last 10 minutes."
+
+  - name: xg2g_phase5_3_drift_warnings
+    interval: 30s
+    rules:
+      - alert: XG2G_RejectStormWhileResourcesFree
+        expr: |
+          (increase(xg2g_admission_reject_total{job="xg2g",instance="xg2g-main"}[5m]) > 50)
+          and (xg2g_gpu_tokens_in_use{job="xg2g",instance="xg2g-main"} < 1)
+          and (xg2g_tuners_in_use{job="xg2g",instance="xg2g-main"} < 1)
+        for: 5m
+        labels:
+          severity: warning
+          phase: "5.3"
+          gate: "nightly"
+        annotations:
+          summary: "Many rejects while resources appear free"
+          description: "Rejects rising but GPU/Tuner gauges low. Check CPU pressure window, pool limit."
+
+      - alert: XG2G_NoAdmissionsForLong
+        expr: |
+          increase(xg2g_admission_admit_total{job="xg2g",instance="xg2g-main"}[10m]) == 0
+        for: 10m
+        labels:
+          severity: warning
+          phase: "5.3"
+          gate: "nightly"
+        annotations:
+          summary: "No admissions in 10 minutes"
+          description: "Expected soak traffic but no admits. Check harness/auth/network/gatekeeper."
+
+      - alert: XG2G_UTIExitAnomalous
+        expr: |
+          increase(xg2g_uti_exit_total{job="xg2g",instance="xg2g-main"}[10m]) > 20
+        for: 5m
+        labels:
+          severity: warning
+          phase: "5.3"
+          gate: "nightly"
+        annotations:
+          summary: "Many UTI exits in short time"
+          description: "UTI processes terminating frequently. Check exit codes, orphan kills, hermetic bundle."
+
+  - name: xg2g_phase5_3_recording_rules
+    interval: 30s
+    rules:
+      - record: xg2g:admission_reject_rate_5m
+        expr: |
+          sum(rate(xg2g_admission_reject_total{job="xg2g",instance="xg2g-main"}[5m]))
+      - record: xg2g:admission_admit_rate_5m
+        expr: |
+          sum(rate(xg2g_admission_admit_total{job="xg2g",instance="xg2g-main"}[5m]))
+      - record: xg2g:preempt_rate_5m
+        expr: |
+          sum(rate(xg2g_preempt_total{job="xg2g",instance="xg2g-main"}[5m]))

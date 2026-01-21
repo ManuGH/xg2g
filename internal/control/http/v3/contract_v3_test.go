@@ -24,6 +24,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/ManuGH/xg2g/internal/admission"
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
@@ -133,12 +134,14 @@ func newV3TestServer(t *testing.T, hlsRoot string) (*Server, *v3store.MemoryStor
 
 	// Create VOD Manager with successRunner (shared from recordings_hls_reconcile_test.go)
 	// We use "legacy" mode for now as contract test expects direct behavior
-	vm := vod.NewManager(&successRunner{fsRoot: hlsRoot}, &noopProber{}, pm)
+	vm, err := vod.NewManager(&successRunner{fsRoot: hlsRoot}, &noopProber{}, pm)
+	require.NoError(t, err)
 
 	s.SetDependencies(
 		b, st, rs, nil, pm, nil, nil, nil, vm,
 		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 	)
+	s.SetAdmission(admission.NewResourceMonitor(10, 10, 0))
 
 	return s, st
 }

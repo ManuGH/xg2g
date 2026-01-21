@@ -77,7 +77,7 @@ export default function StreamsList({ compact = false }: StreamsListProps) {
                 <div className="stream-header">
                   <div className="stream-title-group">
                     <StatusChip state="success" label="STREAM" showIcon={false} />
-                    <div className="stream-channel">{s.channel_name || 'Unknown Channel'}</div>
+                    <div className="stream-channel">{s.channelName || 'Unknown Channel'}</div>
                   </div>
                   <StatusChip state={chip.state} label={chip.label} />
                 </div>
@@ -93,11 +93,11 @@ export default function StreamsList({ compact = false }: StreamsListProps) {
                 <div className="stream-meta">
                   <div className="meta-item">
                     <span className="meta-label">Client:</span>
-                    <span className="tabular">{maskIP(s.client_ip)}</span>
+                    <span className="tabular">{maskIP(s.clientIp)}</span>
                   </div>
                   <div className="meta-item">
                     <span className="meta-label">Started:</span>
-                    <span className="tabular">{s.started_at ? formatDuration(new Date(s.started_at)) : 'unknown'}</span>
+                    <span className="tabular">{s.startedAt ? formatDuration(new Date(s.startedAt)) : 'unknown'}</span>
                   </div>
                 </div>
               </CardBody>

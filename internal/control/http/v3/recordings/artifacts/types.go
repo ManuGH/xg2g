@@ -2,6 +2,15 @@ package artifacts
 
 import "time"
 
+const (
+	ArtifactKindPlaylist ArtifactKind = iota
+	ArtifactKindSegmentTS
+	ArtifactKindSegmentFMP4
+	ArtifactKindSegmentInit
+)
+
+type ArtifactKind int
+
 // ArtifactOK represents a successful artifact resolution
 type ArtifactOK struct {
 	// AbsPath is the absolute filesystem path (if servicing from disk directly)
@@ -11,9 +20,8 @@ type ArtifactOK struct {
 	// If Data is non-nil, it takes precedence over AbsPath
 	Data []byte
 
-	ContentType  string
-	CacheControl string
-	ModTime      time.Time
+	ModTime time.Time
+	Kind    ArtifactKind
 }
 
 // ArtifactError types (mapped to HTTP status by handler)

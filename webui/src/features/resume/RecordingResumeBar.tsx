@@ -19,15 +19,15 @@ function formatClock(value: number): string {
 export function isResumeEligible(resume?: ResumeSummary, durationSeconds?: number | null): boolean {
   if (!resume) return false;
   if (resume.finished) return false;
-  if (resume.pos_seconds < 15) return false;
+  if (resume.posSeconds < 15) return false;
 
-  const d = (resume.duration_seconds ?? durationSeconds ?? 0);
+  const d = (resume.durationSeconds ?? durationSeconds ?? 0);
 
   // PRODUCT DECISION:
   // If duration is missing (d <= 0) but we have significant progress (> 15s), show the "Resume at..." label.
   // The progress bar itself will be hidden (percent calculation requires valid duration).
   // This avoids hiding useful resume context just because duration probe failed.
-  if (d > 0 && resume.pos_seconds >= d - 10) return false;
+  if (d > 0 && resume.posSeconds >= d - 10) return false;
 
   return true;
 }
@@ -37,17 +37,17 @@ export default function RecordingResumeBar(props: {
   durationSeconds?: number | null;
 }) {
   const { resume, durationSeconds } = props;
-  const d = resume.duration_seconds ?? durationSeconds ?? 0;
+  const d = resume.durationSeconds ?? durationSeconds ?? 0;
 
   const percent = useMemo(() => {
     if (!d || d <= 0) return 0;
-    return Math.round(clamp(resume.pos_seconds / d, 0, 1) * 100);
-  }, [resume.pos_seconds, d]);
+    return Math.round(clamp(resume.posSeconds / d, 0, 1) * 100);
+  }, [resume.posSeconds, d]);
 
   return (
     <div className="resume-summary">
       <div className="resume-meta">
-        <span className="resume-label">Resume at {formatClock(resume.pos_seconds)}</span>
+        <span className="resume-label">Resume at {formatClock(resume.posSeconds)}</span>
         {d > 0 && <span className="resume-percent">{percent}%</span>}
       </div>
       {d > 0 && (

@@ -143,7 +143,7 @@ func (s *Server) PutSystemConfig(w http.ResponseWriter, r *http.Request) {
 	restartRequired := true // Conservative default
 
 	respObj := struct {
-		RestartRequired bool `json:"restart_required"`
+		RestartRequired bool `json:"restartRequired"`
 	}{
 		RestartRequired: restartRequired,
 	}

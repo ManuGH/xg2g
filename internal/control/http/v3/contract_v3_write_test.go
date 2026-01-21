@@ -193,3 +193,7 @@ func TestContract_Global_ProblemDetails(t *testing.T) {
 		assert.False(t, existsConflicts, "conflicts field should be absent")
 	})
 }
+
+func (s *Phase6MockStore) GetLease(ctx context.Context, key string) (store.Lease, bool, error) {
+return nil, false, nil
+}

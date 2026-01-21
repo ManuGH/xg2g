@@ -34,6 +34,11 @@ func (m *MockResolverForService) Resolve(ctx context.Context, serviceRef string,
 	return args.Get(0).(PlaybackInfoResult), args.Error(1)
 }
 
+func (m *MockResolverForService) GetMediaTruth(ctx context.Context, recordingID string) (playback.MediaTruth, error) {
+	// Simple stub for tests that don't verify truth specifically
+	return playback.MediaTruth{}, nil
+}
+
 type MockRunnerForService struct {
 	mock.Mock
 }
@@ -76,7 +81,10 @@ func setupServiceTest(t *testing.T) (*service, *MockOWIClient, *MockResumeStore,
 	runner := new(MockRunnerForService)
 	prober := new(MockProber)
 	mapper := new(MockPathMapper)
-	vm := vod.NewManager(runner, prober, mapper)
+	vm, err := vod.NewManager(runner, prober, mapper)
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
 
 	s := &service{
 		cfg:         cfg,

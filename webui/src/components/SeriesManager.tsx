@@ -55,9 +55,9 @@ const DaySelector = ({ value, onChange }: DaySelectorProps) => {
 interface RuleFormState {
   id?: string;
   keyword: string;
-  channel_ref: string;
+  channelRef: string;
   days: number[];
-  start_window: string;
+  startWindow: string;
   priority: number | string; // Handle input string temporarily
   enabled: boolean;
 }
@@ -103,18 +103,18 @@ function SeriesManager() {
       setCurrentRule({
         id: rule.id,
         keyword: rule.keyword || '',
-        channel_ref: rule.channel_ref || '',
+        channelRef: rule.channelRef || '',
         days: rule.days || [],
-        start_window: rule.start_window || '',
+        startWindow: rule.startWindow || '',
         priority: rule.priority || 0,
         enabled: rule.enabled !== false
       });
     } else {
       setCurrentRule({
         keyword: '',
-        channel_ref: '',
+        channelRef: '',
         days: [],
-        start_window: '',
+        startWindow: '',
         priority: 0,
         enabled: true
       });
@@ -152,8 +152,8 @@ function SeriesManager() {
           enabled: currentRule.enabled,
           keyword: currentRule.keyword,
           priority: Number(currentRule.priority) || 0,
-          ...(currentRule.channel_ref?.trim() ? { channel_ref: currentRule.channel_ref.trim() } : {}),
-          ...(currentRule.start_window?.trim() ? { start_window: currentRule.start_window.trim() } : {}),
+          ...(currentRule.channelRef?.trim() ? { channelRef: currentRule.channelRef.trim() } : {}),
+          ...(currentRule.startWindow?.trim() ? { startWindow: currentRule.startWindow.trim() } : {}),
           ...(currentRule.days?.length ? { days: currentRule.days } : {})
         };
 
@@ -166,9 +166,9 @@ function SeriesManager() {
         // Create new rule
         const createPayload: SeriesRuleWritable = {
           keyword: currentRule.keyword,
-          channel_ref: currentRule.channel_ref,
+          channelRef: currentRule.channelRef,
           days: currentRule.days || [],
-          start_window: currentRule.start_window,
+          startWindow: currentRule.startWindow,
           priority: Number(currentRule.priority) || 0,
           enabled: currentRule.enabled
         };
@@ -226,7 +226,7 @@ function SeriesManager() {
             <div className="rule-meta text-secondary">
               <div className="meta-row">
                 <span className="label">Channel:</span>
-                <span className="value">{rule.channel_ref ? (channels.find(c => (c.service_ref || c.id) === rule.channel_ref)?.name || rule.channel_ref) : 'All Channels'}</span>
+                <span className="value">{rule.channelRef ? (channels.find(c => (c.serviceRef || c.id) === rule.channelRef)?.name || rule.channelRef) : 'All Channels'}</span>
 
               </div>
               <div className="meta-row">
@@ -239,7 +239,7 @@ function SeriesManager() {
               </div>
               <div className="meta-row">
                 <span className="label">Time:</span>
-                <span className="value">{rule.start_window || 'Anytime'}</span>
+                <span className="value">{rule.startWindow || 'Anytime'}</span>
               </div>
             </div>
 
@@ -296,13 +296,13 @@ function SeriesManager() {
                 <label>Channel</label>
                 <div className="select-wrapper">
                   <select
-                    value={currentRule.channel_ref}
-                    onChange={e => setCurrentRule({ ...currentRule, channel_ref: e.target.value })}
+                    value={currentRule.channelRef}
+                    onChange={e => setCurrentRule({ ...currentRule, channelRef: e.target.value })}
                     className="input-field"
                   >
                     <option value="">-- All Channels (Slower) --</option>
                     {channels.map(c => (
-                      <option key={c.id || c.service_ref} value={c.service_ref || c.id}>
+                      <option key={c.id || c.serviceRef} value={c.serviceRef || c.id}>
 
                         {c.name}
                       </option>
@@ -324,8 +324,8 @@ function SeriesManager() {
                 <label>Time Window (HHMM-HHMM)</label>
                 <input
                   type="text"
-                  value={currentRule.start_window}
-                  onChange={e => setCurrentRule({ ...currentRule, start_window: e.target.value })}
+                  value={currentRule.startWindow}
+                  onChange={e => setCurrentRule({ ...currentRule, startWindow: e.target.value })}
                   placeholder="e.g. 2015-2200"
                   className="input-field"
                 />

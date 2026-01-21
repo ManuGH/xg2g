@@ -45,13 +45,13 @@ func TestObservability_ProblemResponseMatchesHeaderTruth(t *testing.T) {
 	headerID := w.Header().Get("X-Request-ID")
 	assert.Equal(t, customID, headerID, "Response Header X-Request-ID must match request input")
 
-	// Assert: JSON Body contains request_id
+	// Assert: JSON Body contains requestId
 	var body map[string]any
 	err := json.Unmarshal(w.Body.Bytes(), &body)
 	require.NoError(t, err)
 
-	bodyID, ok := body["request_id"].(string)
-	assert.True(t, ok, "request_id must be present in JSON body")
+	bodyID, ok := body["requestId"].(string)
+	assert.True(t, ok, "requestId must be present in JSON body")
 	assert.Equal(t, headerID, bodyID, "Request-ID in Body must match Header truth")
 	assert.Equal(t, "CSRF_FORBIDDEN", body["code"])
 }
@@ -83,7 +83,7 @@ func TestObservability_GeneratedIDMatchesBody(t *testing.T) {
 	err := json.Unmarshal(w.Body.Bytes(), &body)
 	require.NoError(t, err)
 
-	bodyID, ok := body["request_id"].(string)
+	bodyID, ok := body["requestId"].(string)
 	assert.True(t, ok)
 	assert.Equal(t, headerID, bodyID, "Generated ID must be consistent across Header and Body")
 }

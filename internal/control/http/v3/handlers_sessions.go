@@ -107,6 +107,18 @@ func (s *Server) handleV3SessionState(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// CTO Contract (Phase 5.3): Terminal sessions return 410 Gone with JSON body
+	if session.State.IsTerminal() {
+		writeProblem(w, r, http.StatusGone,
+			"urn:xg2g:error:session:gone",
+			"Session Gone",
+			"session_gone",
+			"Session is in a terminal state (stopped, failed, or cancelled).",
+			map[string]any{"session": session.SessionID},
+		)
+		return
+	}
+
 	resp := SessionResponse{
 		SessionId:     openapi_types.UUID(parseUUID(session.SessionID)),
 		ServiceRef:    &session.ServiceRef,
@@ -213,7 +225,7 @@ func (s *Server) ReportPlaybackFeedback(w http.ResponseWriter, r *http.Request, 
 	if !isDecodeError {
 		// Just log info/warnings
 		log.L().Info().
-			Str("session_id", sessionId.String()).
+			Str("sessionId", sessionId.String()).
 			Str("event", string(req.Event)).
 			Int("code", derefInt(req.Code)).
 			Str("msg", derefString(req.Message)).
@@ -262,14 +274,14 @@ func (s *Server) ReportPlaybackFeedback(w http.ResponseWriter, r *http.Request, 
 	}
 
 	if !changed {
-		log.L().Info().Str("session_id", sessionId.String()).Msg("fallback already active, ignoring request")
+		log.L().Info().Str("sessionId", sessionId.String()).Msg("fallback already active, ignoring request")
 		w.WriteHeader(http.StatusAccepted)
 		return
 	}
 
 	// Trigger Restart only if we actually applied the fallback
 	sess = updatedSess
-	log.L().Warn().Str("session_id", sess.SessionID).Msg("activating safari fallback (fmp4) due to client error")
+	log.L().Warn().Str("sessionId", sess.SessionID).Msg("activating safari fallback (fmp4) due to client error")
 
 	// Stop existing session
 	stopEvt := model.StopSessionEvent{

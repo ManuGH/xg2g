@@ -191,3 +191,38 @@ func ReadOSRuntimeEnvOrDefault() Env {
 	}
 	return env
 }
+
+// ParseFloat reads a float64 from environment variable or returns default value.
+func ParseFloat(key string, defaultValue float64) float64 {
+	logger := log.WithComponent("config")
+	if v, ok := os.LookupEnv(key); ok {
+		if v == "" {
+			logger.Debug().
+				Str("key", key).
+				Float64("default", defaultValue).
+				Str("source", "default").
+				Msg("using default value (environment variable is empty)")
+			return defaultValue
+		}
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			logger.Debug().
+				Str("key", key).
+				Float64("value", f).
+				Str("source", "environment").
+				Msg("using environment variable")
+			return f
+		}
+		logger.Warn().
+			Str("key", key).
+			Str("value", v).
+			Float64("default", defaultValue).
+			Msg("invalid float in environment variable, using default")
+		return defaultValue
+	}
+	logger.Debug().
+		Str("key", key).
+		Float64("default", defaultValue).
+		Str("source", "default").
+		Msg("using default value")
+	return defaultValue
+}

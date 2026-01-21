@@ -45,12 +45,12 @@ type TruthProvider struct {
 }
 
 // NewTruthProvider creates a new TruthProvider with strict invariant enforcement.
-func NewTruthProvider(cfg *config.AppConfig, manager MetadataManager, opts ResolverOptions) *TruthProvider {
+func NewTruthProvider(cfg *config.AppConfig, manager MetadataManager, opts ResolverOptions) (*TruthProvider, error) {
 	if cfg == nil {
-		panic("invariant violation: cfg is nil in NewTruthProvider")
+		return nil, fmt.Errorf("NewTruthProvider: cfg is nil")
 	}
 	if manager == nil {
-		panic("invariant violation: manager is nil in NewTruthProvider")
+		return nil, fmt.Errorf("NewTruthProvider: manager is nil")
 	}
 
 	probe := opts.ProbeFn
@@ -69,7 +69,7 @@ func NewTruthProvider(cfg *config.AppConfig, manager MetadataManager, opts Resol
 		pathResolver:    opts.PathResolver,
 		probeFn:         probe,
 		probeConfigured: probeConfigured,
-	}
+	}, nil
 }
 
 // GetMediaTruth implements playback.MediaTruthProvider.
@@ -235,6 +235,10 @@ func (t *TruthProvider) GetMediaTruth(ctx context.Context, serviceRef string) (p
 		VideoCodec: meta.VideoCodec,
 		AudioCodec: meta.AudioCodec,
 		Duration:   finalDuration,
+		Width:      meta.Width,
+		Height:     meta.Height,
+		FPS:        meta.FPS,
+		Interlaced: meta.Interlaced,
 	}, nil
 }
 

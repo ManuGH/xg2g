@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strings"
 
+	xg2ghttp "github.com/ManuGH/xg2g/internal/control/http"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
 )
@@ -51,7 +52,7 @@ func NewHLSOriginHandler(st store.StateStore, downstream http.Handler) http.Hand
 			downstream.ServeHTTP(w, r)
 			return
 		case model.SessionStarting, model.SessionPriming, model.SessionNew:
-			w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+			w.Header().Set("Content-Type", xg2ghttp.ContentTypeHLSPlaylist)
 			w.Header().Set("Cache-Control", "no-store")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(minimalManifest))

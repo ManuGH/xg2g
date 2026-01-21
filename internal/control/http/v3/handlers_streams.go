@@ -67,7 +67,7 @@ func (s *Server) GetStreams(w http.ResponseWriter, r *http.Request) {
 		start := st.StartedAt
 
 		// Map State
-		activeState := StreamSessionStateError // Default safe fallback
+		var activeState StreamSessionState
 		switch st.State {
 		case "active":
 			activeState = StreamSessionStateActive
@@ -109,14 +109,17 @@ func (s *Server) GetStreams(w http.ResponseWriter, r *http.Request) {
 				pStop, perr := time.Parse(xmltvFormat, p.Stop)
 				if serr == nil && perr == nil && now.After(pStart) && now.Before(pStop) {
 					pTitle := p.Title.Text
-					pDesc := p.Desc
+					pDesc := ""
+					if p.Desc != nil {
+						pDesc = p.Desc.Text
+					}
 					pBegin := pStart.Unix()
 					pDuration := int(pStop.Sub(pStart).Seconds())
 
 					dto.Program = &struct {
-						BeginTimestamp *int64  `json:"begin_timestamp,omitempty"`
+						BeginTimestamp *int64  `json:"beginTimestamp,omitempty"`
 						Description    *string `json:"description,omitempty"`
-						DurationSec    *int    `json:"duration_sec,omitempty"`
+						DurationSec    *int    `json:"durationSec,omitempty"`
 						Title          *string `json:"title,omitempty"`
 					}{
 						Title:          &pTitle,

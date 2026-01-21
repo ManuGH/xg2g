@@ -18,7 +18,7 @@ describe('V3Player ServiceRef Input', () => {
       status: 409,
       ok: false,
       headers,
-      json: vi.fn().mockResolvedValue({ code: 'LEASE_BUSY', request_id: 'test' })
+      json: vi.fn().mockResolvedValue({ code: 'LEASE_BUSY', requestId: 'test' })
     });
   });
 

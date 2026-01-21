@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/admission"
 	"github.com/ManuGH/xg2g/internal/config"
 	worker "github.com/ManuGH/xg2g/internal/domain/session/manager"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
@@ -283,6 +284,14 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 	}
 	scanManager := scan.NewManager(scanStore, playlistPath)
 
+	// 2.8 Initialize Admission Control (Phase 5.2/5.3)
+	adm := admission.NewResourceMonitor(cfg.Engine.MaxPool, cfg.Engine.GPULimit, cfg.Engine.CPUThresholdScale)
+	m.logger.Info().
+		Int("max_pool", cfg.Engine.MaxPool).
+		Int("gpu_limit", cfg.Engine.GPULimit).
+		Float64("cpu_scale", cfg.Engine.CPUThresholdScale).
+		Msg("Admission control initialized")
+
 	// 3. Initialize Orchestrator
 	// Generate stable worker identity (replacing domain-level OS calls)
 	host, _ := os.Hostname()
@@ -292,6 +301,7 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 		Store:               v3Store,
 		Bus:                 bus.NewAdapter(v3Bus),    // Injected Adapter
 		Platform:            platform.NewOSPlatform(), // Platform Port
+		Admission:           adm,                      // Phase 5.2 Gatekeeper
 		LeaseTTL:            30 * time.Second,         // Explicit default
 		HeartbeatEvery:      10 * time.Second,         // Explicit default
 		Owner:               workerOwner,              // Explicit generation
@@ -344,7 +354,8 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 	// 4. Inject into API Server (Shadow Receiving)
 	if m.deps.APIServerSetter != nil {
 		m.deps.APIServerSetter.SetV3Components(v3Bus, v3Store, resumeStore, scanManager)
-		m.logger.Info().Msg("v3 components injected into API server")
+		m.deps.APIServerSetter.SetAdmission(adm)
+		m.logger.Info().Msg("v3 components and admission gate injected into API server")
 	} else {
 		m.logger.Warn().Msg("API Server Setter not available - shadow intents will not be processed")
 	}

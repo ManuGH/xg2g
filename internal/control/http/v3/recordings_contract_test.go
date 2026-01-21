@@ -14,6 +14,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestGetRecordings_Contract_UpstreamFailure(t *testing.T) {
@@ -48,9 +49,13 @@ func TestGetRecordings_Contract_UpstreamFailure(t *testing.T) {
 	owiClient := openwebif.NewWithPort(mockServer.URL, 0, openwebif.Options{})
 	s.owiClient = owiClient
 	// Dependency injection with dummy mocks to satisfy strict invariants
-	dummyMgr := vod.NewManager(&dummyRunner2{}, &dummyProber2{}, nil)
-	dummyRes := recordings.NewResolver(&cfg, dummyMgr, recordings.ResolverOptions{})
-	s.recordingsService = recordings.NewService(&cfg, dummyMgr, dummyRes, NewOWIAdapter(owiClient), nil)
+	dummyMgr, err := vod.NewManager(&dummyRunner2{}, &dummyProber2{}, nil)
+	require.NoError(t, err)
+	dummyRes, err := recordings.NewResolver(&cfg, dummyMgr, recordings.ResolverOptions{})
+	require.NoError(t, err)
+	recSvc, err := recordings.NewService(&cfg, dummyMgr, dummyRes, NewOWIAdapter(owiClient), nil, dummyRes)
+	require.NoError(t, err)
+	s.recordingsService = recSvc
 
 	// 3. Perform Request
 	w := httptest.NewRecorder()
@@ -62,7 +67,7 @@ func TestGetRecordings_Contract_UpstreamFailure(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code, "Expected 200 OK for result=false with empty list")
 
 	var resp RecordingResponse
-	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	err = json.Unmarshal(w.Body.Bytes(), &resp)
 	assert.NoError(t, err, "Response should be valid JSON")
 	if resp.Recordings != nil {
 		assert.Len(t, *resp.Recordings, 0, "Expected empty recordings list")

@@ -16,9 +16,9 @@ type ScanStatus struct {
 	State           string `json:"state"`
 	StartedAt       int64  `json:"started_at,omitempty"`
 	FinishedAt      int64  `json:"finished_at,omitempty"`
-	TotalChannels   int    `json:"total_channels"`
-	ScannedChannels int    `json:"scanned_channels"`
-	UpdatedCount    int    `json:"updated_count"`
+	TotalChannels   int    `json:"totalChannels"`
+	ScannedChannels int    `json:"scannedChannels"`
+	UpdatedCount    int    `json:"updatedCount"`
 	LastError       string `json:"last_error,omitempty"`
 }
 

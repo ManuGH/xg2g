@@ -22,7 +22,7 @@ func TestVODPlaybackResponse_Contract(t *testing.T) {
 	data, err := json.Marshal(resp)
 	require.NoError(t, err)
 
-	expected := `{"url":"/api/v3/stream.m3u8","mode":"hls","duration_seconds":120,"seekable":true,"reason":"resolved_via_test"}`
+	expected := `{"url":"/api/v3/stream.m3u8","mode":"hls","durationSeconds":120,"seekable":true,"reason":"resolved_via_test"}`
 	assert.JSONEq(t, expected, string(data), "JSON shape mismatch")
 
 	// 2. Verify JSON Unmarshal (Client Input - strictness simulation)

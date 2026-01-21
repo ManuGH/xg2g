@@ -50,8 +50,8 @@ func main() {
 
 	// Ensure directories exist in write mode
 	if !*check {
-		must(os.MkdirAll(*fixturesDir, 0o755))
-		must(os.MkdirAll(filepath.Dir(*manifestPath), 0o755))
+		must(os.MkdirAll(*fixturesDir, 0o750))
+		must(os.MkdirAll(filepath.Dir(*manifestPath), 0o750))
 	}
 
 	hashes := make(map[string]string, len(profiles))
@@ -84,6 +84,7 @@ func main() {
 
 		if *check {
 			// Read existing fixture and compare
+			// #nosec G304 -- dev tool, safe file read
 			existing, err := os.ReadFile(filePath)
 			if err != nil {
 				fail(fmt.Sprintf("fixture missing: %s (run generator without --check)", filePath))
@@ -93,7 +94,7 @@ func main() {
 			}
 		} else {
 			// Write fixture
-			must(os.WriteFile(filePath, canonicalJSON, 0o644))
+			must(os.WriteFile(filePath, canonicalJSON, 0o600))
 		}
 
 		sum := sha256.Sum256(canonicalJSON)
@@ -117,7 +118,7 @@ func main() {
 			fail("manifest drift detected (run generator without --check and commit): " + *manifestPath)
 		}
 	} else {
-		must(os.WriteFile(*manifestPath, manifestJSON, 0o644))
+		must(os.WriteFile(*manifestPath, manifestJSON, 0o600))
 	}
 
 	fmt.Printf("OK: %d fixtures processed. mode=%s\n", len(profiles), ternary(*check, "check", "write"))

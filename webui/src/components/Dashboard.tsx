@@ -35,7 +35,7 @@ export default function Dashboard() {
       </div>
 
       {/* Startup Warning Banner */}
-      {((health.epg?.missing_channels || 0) > 0 && (health.uptime_seconds || 0) < 300) && (
+      {((health.epg?.missingChannels || 0) > 0 && (health.uptimeSeconds || 0) < 300) && (
         <Card className="dashboard__warning">
           <CardHeader>
             <CardTitle>System Initializing</CardTitle>
@@ -72,7 +72,7 @@ export default function Dashboard() {
               state={health.receiver?.status === 'ok' ? 'success' : 'error'}
               label={health.receiver?.status === 'ok' ? 'CONNECTED' : 'ERROR'}
             />
-            <p className="info-text">Last Sync: {formatTimeAgo(health.receiver?.last_check)}</p>
+            <p className="info-text">Last Sync: {formatTimeAgo(health.receiver?.lastCheck)}</p>
           </CardBody>
         </Card>
 
@@ -91,7 +91,7 @@ export default function Dashboard() {
                   health.epg?.status === 'missing' ? 'PARTIAL' : 'ERROR'
               }
             />
-            <p className="info-text tabular">{health.epg?.missing_channels || 0} channels missing data</p>
+            <p className="info-text tabular">{health.epg?.missingChannels || 0} channels missing data</p>
           </CardBody>
         </Card>
 
@@ -107,7 +107,7 @@ export default function Dashboard() {
               </div>
               <div className="info-item">
                 <span className="info-label">Uptime</span>
-                <span className="info-value tabular">{formatUptime(health.uptime_seconds || 0)}</span>
+                <span className="info-value tabular">{formatUptime(health.uptimeSeconds || 0)}</span>
               </div>
             </div>
           </CardBody>
@@ -154,16 +154,16 @@ function LiveTVCard() {
               <div className="program-title">{now.title}</div>
               <div className="program-desc">{now.description}</div>
             </div>
-            {now.begin_timestamp && now.duration_sec && (
+            {now.beginTimestamp && now.durationSec && (
               <div className="program-progress">
                 <div className="program-times tabular">
-                  <span>{new Date(now.begin_timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                  <span>{new Date((now.begin_timestamp + now.duration_sec) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                  <span>{new Date(now.beginTimestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                  <span>{new Date((now.beginTimestamp + now.durationSec) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                 </div>
                 <div className="progress-bar">
                   <div
                     className="progress-fill"
-                    style={{ '--xg2g-prog': `${Math.min(100, Math.max(0, ((Date.now() / 1000) - now.begin_timestamp) / now.duration_sec * 100))}%` } as React.CSSProperties & { [key: string]: string }}
+                    style={{ '--xg2g-prog': `${Math.min(100, Math.max(0, ((Date.now() / 1000) - now.beginTimestamp) / now.durationSec * 100))}%` } as React.CSSProperties & { [key: string]: string }}
                   />
                 </div>
               </div>

@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/ManuGH/xg2g/internal/control/http/v3/problem"
+	"github.com/ManuGH/xg2g/internal/control/http/problem"
 )
 
 // CSRFProtection creates a middleware that protects against Cross-Site Request Forgery (CSRF) attacks.

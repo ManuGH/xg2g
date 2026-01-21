@@ -260,7 +260,7 @@ func (l *Loader) checkAliasEnvToEnvConflicts() error {
 }
 
 func aliasConflictError(openKey, e2Key string) error {
-	return fmt.Errorf("openWebIF.%s conflicts with enigma2.%s (compat alias). Prefer enigma2.* and remove openWebIF.*.", openKey, e2Key)
+	return fmt.Errorf("openWebIF.%s conflicts with enigma2.%s (compat alias). Prefer enigma2.* and remove openWebIF.*", openKey, e2Key)
 }
 
 func equalDurationEnv(yamlValue string, envValue time.Duration) bool {

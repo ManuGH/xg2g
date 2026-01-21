@@ -31,7 +31,10 @@ func TestRunProbe_UsesResolvedPathFromMetadata(t *testing.T) {
 	}
 	defer os.Remove(tmpFile.Name())
 
-	mgr := NewManager(&mockRunner{}, &successProber{}, nil)
+	mgr, err := NewManager(&mockRunner{}, &successProber{}, nil)
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
 	id := "1:0:0:0:0:0:0:0:0:/media/test.ts"
 	mgr.SeedMetadata(id, Metadata{
 		ResolvedPath: tmpFile.Name(),
@@ -59,7 +62,10 @@ func TestRunProbe_UsesPathMapperWhenInputEmpty(t *testing.T) {
 	defer os.Remove(tmpFile.Name())
 
 	pm := &stubPathMapper{path: tmpFile.Name(), ok: true}
-	mgr := NewManager(&mockRunner{}, &successProber{}, pm)
+	mgr, err := NewManager(&mockRunner{}, &successProber{}, pm)
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
 	id := "1:0:0:0:0:0:0:0:0:/media/test.ts"
 
 	_ = mgr.runProbe(probeRequest{ServiceRef: id, InputPath: ""})
@@ -77,7 +83,10 @@ func TestRunProbe_UsesPathMapperWhenInputEmpty(t *testing.T) {
 }
 
 func TestRunProbe_EmptyInputFailsWithoutResolver(t *testing.T) {
-	mgr := NewManager(&mockRunner{}, &mockProber{}, nil)
+	mgr, err := NewManager(&mockRunner{}, &mockProber{}, nil)
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
 	id := "1:0:0:0:0:0:0:0:0:/media/test.ts"
 
 	_ = mgr.runProbe(probeRequest{ServiceRef: id, InputPath: ""})

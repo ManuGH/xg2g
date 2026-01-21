@@ -4,12 +4,14 @@
 package p4_1_test
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/ManuGH/xg2g/internal/control/recordings/decision"
 	"github.com/stretchr/testify/require"
 )
 
@@ -55,8 +57,8 @@ func TestContractMatrix_P4_1(t *testing.T) {
 			goldenPath := filepath.Join(goldenDir, baseName+".expected.json")
 
 			// Call decision engine (STUB for P4-1 contract phase)
-			// TODO: Replace with actual handler when engine is implemented
-			actualJSON := stubDecisionResponse(t, testCase.Input)
+			// TODO: Replace with actual handler
+			actualJSON := stubDecisionResponse(testCase.Input)
 
 			// Verify golden snapshot
 			if _, err := os.Stat(goldenPath); os.IsNotExist(err) {
@@ -94,136 +96,120 @@ func TestContractMatrix_P4_1(t *testing.T) {
 
 // stubDecisionResponse returns deterministic stub response for P4-1 contract testing
 // TODO: Replace with actual decision engine handler when implemented
-func stubDecisionResponse(t *testing.T, inputJSON json.RawMessage) []byte {
-	t.Helper()
-
+func stubDecisionResponse(inputJSON []byte) []byte {
+	// Parse input
 	var input map[string]interface{}
 	err := json.Unmarshal(inputJSON, &input)
-	require.NoError(t, err)
+	if err != nil {
+		panic("failed to parse input: " + err.Error())
+	}
 
-	caps, hasCaps := input["capabilities"]
-	apiVersion := input["api_version"]
+	// Extract fields for decision engine
 	source, _ := input["source"].(map[string]interface{})
+	capsRaw, hasCaps := input["capabilities"]
+	policy, _ := input["policy"].(map[string]interface{})
+	apiVersion, _ := input["api_version"].(string)
 
-	// Fail-closed: unknown/missing media truth (indeterminate decision)
+	// Build decision.Input
+	decInput := decision.Input{
+		RequestID:  "stub-request-id",
+		APIVersion: apiVersion,
+	}
+
+	// Source (media truth)
 	if source != nil {
-		srcVideo, _ := source["video_codec"].(string)
-		srcAudio, _ := source["audio_codec"].(string)
-		if srcVideo == "unknown" || srcAudio == "unknown" || srcVideo == "" || srcAudio == "" {
-			return []byte(`{
-				"status": 422,
-				"problem": {
-					"type": "about:blank",
-					"title": "Unprocessable Entity",
-					"status": 422,
-					"code": "decision_ambiguous",
-					"detail": "Media truth unavailable or unknown (cannot make deterministic decision)"
-				}
-			}`)
+		decInput.Source = decision.Source{
+			Container:   getStringOrEmpty(source, "container"),
+			VideoCodec:  getStringOrEmpty(source, "video_codec"),
+			AudioCodec:  getStringOrEmpty(source, "audio_codec"),
+			BitrateKbps: getIntOrZero(source, "bitrate_kbps"),
 		}
 	}
 
-	// Fail-closed: missing capabilities
-	if !hasCaps || caps == nil {
-		if apiVersion == "v3.1" {
-			return []byte(`{
-				"status": 412,
-				"problem": {
-					"type": "about:blank",
-					"title": "Precondition Failed",
-					"status": 412,
-					"code": "capabilities_missing",
-					"detail": "Client must provide capabilities (capabilities_version required)"
-				}
-			}`)
-		}
-	}
-
-	// Fail-closed: invalid capabilities version
-	if capsMap, ok := caps.(map[string]interface{}); ok {
-		if version, ok := capsMap["capabilities_version"].(float64); ok && version != 1 {
-			return []byte(`{
-				"status": 400,
-				"problem": {
-					"type": "about:blank",
-					"title": "Bad Request",
-					"status": 400,
-					"code": "capabilities_invalid",
-					"detail": "capabilities_version 999 not supported (current: 1)"
-				}
-			}`)
-		}
-
-		// Deterministic deny: incompatible source + transcode disabled = policy block (not error)
-		source, _ := input["source"].(map[string]interface{})
-		policy, _ := input["policy"].(map[string]interface{})
-		allowTranscode, _ := policy["allow_transcode"].(bool)
-
-		if source != nil && !allowTranscode {
-			srcVideo, _ := source["video_codec"].(string)
-			srcAudio, _ := source["audio_codec"].(string)
-
-			capsVideoCodecs, _ := capsMap["video_codecs"].([]interface{})
-			capsAudioCodecs, _ := capsMap["audio_codecs"].([]interface{})
-
-			videoCompatible := false
-			audioCompatible := false
-
-			for _, codec := range capsVideoCodecs {
-				if codecStr, ok := codec.(string); ok && codecStr == srcVideo {
-					videoCompatible = true
-					break
-				}
-			}
-
-			for _, codec := range capsAudioCodecs {
-				if codecStr, ok := codec.(string); ok && codecStr == srcAudio {
-					audioCompatible = true
-					break
-				}
-			}
-
-			// Deterministic decision: policy blocks transcode, no compatible direct path
-			if !videoCompatible || !audioCompatible {
-				return []byte(`{
-					"status": 200,
-					"decision": {
-						"mode": "deny",
-						"selected": {
-							"container": "none",
-							"video_codec": "none",
-							"audio_codec": "none"
-						},
-						"outputs": [],
-						"constraints": [],
-						"reasons": ["policy_denies_transcode"],
-						"trace": {
-							"request_id": "stub-request-id"
-						}
-					}
-				}`)
+	// Capabilities
+	if hasCaps {
+		if capsMap, ok := capsRaw.(map[string]interface{}); ok {
+			decInput.Capabilities = decision.Capabilities{
+				Version:     getIntOrZero(capsMap, "capabilities_version"),
+				Containers:  getStringSlice(capsMap, "container"),
+				VideoCodecs: getStringSlice(capsMap, "video_codecs"),
+				AudioCodecs: getStringSlice(capsMap, "audio_codecs"),
+				SupportsHLS: getBoolOrFalse(capsMap, "supports_hls"),
+				DeviceType:  getStringOrEmpty(capsMap, "device_type"),
 			}
 		}
 	}
 
-	// Stub: return NOT_IMPLEMENTED for valid inputs (engine not yet implemented)
-	return []byte(`{
-		"status": 200,
-		"decision": {
-			"mode": "deny",
-			"selected": {
-				"container": null,
-				"video_codec": null,
-				"audio_codec": null
-			},
-			"outputs": [],
-			"constraints": [],
-			"reasons": ["NOT_IMPLEMENTED_YET"],
-			"trace": {
-				"request_id": "stub-request-id"
+	// Policy
+	if policy != nil {
+		decInput.Policy = decision.Policy{
+			AllowTranscode: getBoolOrFalse(policy, "allow_transcode"),
+		}
+	}
+
+	// Call decision engine
+	status, dec, prob := decision.Decide(context.Background(), decInput)
+
+	// Marshal response
+	var response interface{}
+	if prob != nil {
+		response = map[string]interface{}{
+			"status":  status,
+			"problem": prob,
+		}
+	} else {
+		decisionMap := make(map[string]any)
+		decBytes, _ := json.Marshal(dec)
+		json.Unmarshal(decBytes, &decisionMap)
+		normalizeDecisionKeys(decisionMap)
+
+		response = map[string]interface{}{
+			"status":   status,
+			"decision": decisionMap,
+		}
+	}
+
+	responseJSON, err := json.MarshalIndent(response, "\t\t\t\t", "\t")
+	if err != nil {
+		panic("failed to marshal response: " + err.Error())
+	}
+
+	return responseJSON
+}
+
+// Helper functions to extract typed values from map[string]interface{}
+func getStringOrEmpty(m map[string]interface{}, key string) string {
+	if v, ok := m[key].(string); ok {
+		return v
+	}
+	return ""
+}
+
+func getIntOrZero(m map[string]interface{}, key string) int {
+	if v, ok := m[key].(float64); ok {
+		return int(v)
+	}
+	return 0
+}
+
+func getBoolOrFalse(m map[string]interface{}, key string) bool {
+	if v, ok := m[key].(bool); ok {
+		return v
+	}
+	return false
+}
+
+func getStringSlice(m map[string]interface{}, key string) []string {
+	if v, ok := m[key].([]interface{}); ok {
+		result := make([]string, 0, len(v))
+		for _, item := range v {
+			if str, ok := item.(string); ok {
+				result = append(result, str)
 			}
 		}
-	}`)
+		return result
+	}
+	return []string{}
 }
 
 // verifyContractStructure validates response matches expected contract structure
@@ -258,13 +244,13 @@ func verifyContractStructure(t *testing.T, expected, actual interface{}) {
 		require.Contains(t, actualDecision, "reasons", "Decision must have reasons")
 		require.Contains(t, actualDecision, "trace", "Decision must have trace")
 
-		// Verify trace.request_id_present if specified
+		// Verify trace.requestIdPresent if specified
 		if trace, ok := expectedDecision["trace"].(map[string]interface{}); ok {
-			if reqIDPresent, ok := trace["request_id_present"].(bool); ok && reqIDPresent {
+			if reqIDPresent, ok := trace["requestIdPresent"].(bool); ok && reqIDPresent {
 				actualTrace, ok := actualDecision["trace"].(map[string]interface{})
 				require.True(t, ok, "Trace must be object")
-				_, hasReqID := actualTrace["request_id"]
-				require.True(t, hasReqID, "Trace must have request_id")
+				_, hasReqID := actualTrace["requestId"]
+				require.True(t, hasReqID, "Trace must have requestId")
 			}
 		}
 	}
@@ -283,6 +269,28 @@ func verifyContractStructure(t *testing.T, expected, actual interface{}) {
 			actualCode, ok := actualProblem["code"].(string)
 			require.True(t, ok, "Problem must have code")
 			require.Equal(t, expectedCode, actualCode, "Problem code mismatch")
+		}
+	}
+}
+func normalizeDecisionKeys(m map[string]interface{}) {
+	remap := map[string]string{
+		"audioCodec":         "audio_codec",
+		"videoCodec":         "video_codec",
+		"selectedOutputUrl":  "selected_output_url",
+		"selectedOutputKind": "selected_output_kind",
+	}
+
+	for oldKey, newKey := range remap {
+		if val, ok := m[oldKey]; ok {
+			m[newKey] = val
+			delete(m, oldKey)
+		}
+	}
+
+	// Recursive for nested maps
+	for _, v := range m {
+		if nm, ok := v.(map[string]interface{}); ok {
+			normalizeDecisionKeys(nm)
 		}
 	}
 }

@@ -9,6 +9,7 @@ package jobs
 import (
 	"context"
 	"fmt"
+	"html"
 	"net/url"
 	"strings"
 	"sync"
@@ -95,8 +96,17 @@ func (a *epgAggregator) aggregateEvents(events []openwebif.EPGEvent, srefMap map
 				Start:   formatTime(event.Begin),
 				Stop:    formatTime(event.Begin + event.Duration),
 				Channel: channelID,
-				Title:   epg.Title{Text: event.Title},
-				Desc:    event.Description + "\n\n" + event.LongDesc,
+				Title: epg.Title{
+					Text: html.UnescapeString(event.Title), // Match epg logic
+				},
+				Desc: &epg.Description{
+					Text: html.UnescapeString(func() string {
+						if event.LongDesc != "" && event.LongDesc != event.Description {
+							return event.LongDesc
+						}
+						return event.Description
+					}()),
+				},
 				Date:    meta.Year,
 				Country: meta.Country,
 			}

@@ -18,34 +18,29 @@
 # ------------------------------------------------------------------------------
 # Log level: debug, info, warn, error
 logLevel: "info"
-
 # Data directory for cache, playlists, and recordings
-dataDir: "/tmp/xg2g-data"
-
+dataDir: "/tmp"
 # ------------------------------------------------------------------------------
 # OpenWebIF (Receiver) Configuration [REQUIRED for streaming]
+# Compatibility alias for enigma2.* (prefer enigma2.* for new configs)
 # ------------------------------------------------------------------------------
 openWebIF:
   # Base URL of your Enigma2 receiver (e.g. http://192.168.1.50)
   baseUrl: "http://127.0.0.1"
-
   # Optional: HTTP Basic Auth
   # username: "root"
   # password: "password"
 
   # Connection settings
-  timeout: "5s"
-  retries: 3
-
+  timeout: "10s"
+  retries: 2
   # Streaming
   # 8001 = Non-transcoded (Direct)
   # 8002 = Transcoded (if supported by receiver)
   streamPort: 8001
-
   # Use /web/stream.m3u logic? (Recommended: true)
   # If true, asks receiver to generate stream URL (handles 17999 transcoding automatically).
   useWebIFStreams: true
-
 # ------------------------------------------------------------------------------
 # Enigma2 (v3 Worker) Client Configuration [OPTIONAL]
 # ------------------------------------------------------------------------------
@@ -84,31 +79,25 @@ openWebIF:
 # ------------------------------------------------------------------------------
 epg:
   enabled: true
-
   # How many days of EPG to fetch (1-14)
-  days: 7
-
+  days: 14
   # Path to save/load XMLTV file (Default: xmltv.xml)
   xmltvPath: "xmltv.xml"
-
   # Maximum Levenshtein distance for fuzzy channel matching (0-5)
   # 0 = exact match only, higher = more lenient matching
   # ENV: XG2G_EPG_FUZZY_MAX
   fuzzyMax: 2
-
   # EPG Fetch Strategy
   # - "per-service": Fetch EPG for each channel individually (default, compatible with all receivers)
   # - "bouquet": Fetch full bouquet EPG in one request (faster, but may fail on some receivers)
   # ENV: XG2G_EPG_SOURCE
   source: "per-service"
-
 # API Server Configuration
 api:
   # Bearer token for API authentication (leave empty to disable)
   # Generate a secure token: openssl rand -hex 32
   # ENV: XG2G_API_TOKEN
   token: ""
-
   # Scopes for the primary token (v3 RBAC, required when token is set)
   # ENV: XG2G_API_TOKEN_SCOPES
   # tokenScopes:
@@ -124,17 +113,14 @@ api:
   # API server listen address
   # ENV: XG2G_LISTEN
   listenAddr: ":8088"
-
 # Prometheus Metrics Configuration
 metrics:
   # Enable Prometheus metrics endpoint
   # ENV: XG2G_METRICS_LISTEN (empty disables)
   enabled: false
-
   # Metrics server listen address (required when enabled)
   # ENV: XG2G_METRICS_LISTEN
-  listenAddr: ":9091"
-
+  listenAddr: ""
 # Picons (Channel Logos) Configuration
 picons:
   # Base URL for channel logos/picons

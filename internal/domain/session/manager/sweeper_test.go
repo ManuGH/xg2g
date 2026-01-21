@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/admission"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/infra/media/stub"
@@ -31,6 +32,7 @@ func TestSweeper_StoreCleanup(t *testing.T) {
 		LeaseTTL:         30 * time.Second,
 		HeartbeatEvery:   10 * time.Second,
 		Owner:            "sweeper-test",
+		Admission:        admission.NewResourceMonitor(10, 10, 0),
 		StartConcurrency: 5,
 		StopConcurrency:  5,
 		HLSRoot:          hlsRoot,
@@ -83,6 +85,7 @@ func TestSweeper_FileCleanup(t *testing.T) {
 		LeaseTTL:         30 * time.Second,
 		HeartbeatEvery:   10 * time.Second,
 		Owner:            "sweeper-file-test",
+		Admission:        admission.NewResourceMonitor(10, 10, 0),
 		StartConcurrency: 5,
 		StopConcurrency:  5,
 		HLSRoot:          hlsRoot,
@@ -132,7 +135,8 @@ func TestSweeper_IdleStop(t *testing.T) {
 
 	st := store.NewMemoryStore()
 	orch := &Orchestrator{
-		Store: st,
+		Store:     st,
+		Admission: admission.NewResourceMonitor(10, 10, 0),
 	}
 	sweeper := &Sweeper{
 		Orch: orch,

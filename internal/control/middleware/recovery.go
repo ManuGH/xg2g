@@ -42,7 +42,7 @@ func Recoverer(next http.Handler) http.Handler {
 					Str("method", r.Method).
 					Str("path", pathLabel).
 					Str("remote_addr", r.RemoteAddr).
-					Str("request_id", reqID).
+					Str("requestId", reqID).
 					Interface("panic_value", rec).
 					Str("stack_trace", stack).
 					Msg("panic recovered in HTTP handler")
@@ -52,7 +52,7 @@ func Recoverer(next http.Handler) http.Handler {
 				w.WriteHeader(http.StatusInternalServerError)
 				_ = json.NewEncoder(w).Encode(map[string]any{
 					"error":      "Internal server error",
-					"request_id": reqID,
+					"requestId": reqID,
 					"message":    "An unexpected error occurred. Please try again later.",
 				})
 			}

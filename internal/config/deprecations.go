@@ -69,7 +69,11 @@ func (l *Loader) CheckDeprecations(cfg *AppConfig) error {
 		return nil // Non-fatal for now
 	}
 
-	registry := GetRegistry()
+	registry, err := GetRegistry()
+	if err != nil {
+		logger.Warn().Err(err).Msg("failed to get registry for deprecation check")
+		return nil // Non-fatal, continue without registry-based checks
+	}
 
 	for _, d := range deps {
 		active := false

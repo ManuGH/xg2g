@@ -1,6 +1,3 @@
-//go:build v3
-// +build v3
-
 // Copyright (c) 2025 ManuGH
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
@@ -176,6 +173,27 @@ func (s *BadgerStore) ScanSessions(ctx context.Context, fn func(*model.SessionRe
 	})
 }
 
+// QuerySessions returns sessions matching filter criteria.
+func (s *BadgerStore) QuerySessions(ctx context.Context, filter SessionFilter) ([]*model.SessionRecord, error) {
+	var result []*model.SessionRecord
+	stateMatch := make(map[model.SessionState]bool)
+	for _, state := range filter.States {
+		stateMatch[state] = true
+	}
+
+	err := s.ScanSessions(ctx, func(rec *model.SessionRecord) error {
+		if len(filter.States) > 0 && !stateMatch[rec.State] {
+			return nil
+		}
+		if filter.LeaseExpiresBefore > 0 && rec.LeaseExpiresAtUnix > filter.LeaseExpiresBefore {
+			return nil
+		}
+		result = append(result, rec)
+		return nil
+	})
+	return result, err
+}
+
 func (s *BadgerStore) PutIdempotency(ctx context.Context, idemKey, sessionID string, ttl time.Duration) error {
 	key := []byte("idem:" + idemKey)
 	entry := badger.NewEntry(key, []byte(sessionID)).WithTTL(ttl)
@@ -310,6 +328,31 @@ func (s *BadgerStore) ReleaseLease(ctx context.Context, leaseKey, owner string) 
 		}
 		return nil
 	})
+}
+
+func (s *BadgerStore) GetLease(ctx context.Context, leaseKey string) (Lease, bool, error) {
+	key := []byte("lease:" + leaseKey)
+	var current leaseEnvelope
+	err := s.db.View(func(txn *badger.Txn) error {
+		item, err := txn.Get(key)
+		if err != nil {
+			return err
+		}
+		return item.Value(func(val []byte) error {
+			return json.Unmarshal(val, &current)
+		})
+	})
+	if err != nil {
+		if err == badger.ErrKeyNotFound {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	// Check Expiry (Read-Only)
+	if time.Now().After(current.ExpiresAt) {
+		return nil, false, nil
+	}
+	return &badgerLease{s: s, leaseKey: leaseKey, owner: current.Owner, expiresAt: current.ExpiresAt}, true, nil
 }
 
 func (s *BadgerStore) DeleteAllLeases(ctx context.Context) (int, error) {

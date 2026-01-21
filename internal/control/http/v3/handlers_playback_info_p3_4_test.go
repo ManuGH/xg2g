@@ -8,13 +8,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/artifacts"
+	"github.com/ManuGH/xg2g/internal/control/playback"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
+
+func s(v string) *string { return &v }
 
 // MockArtifactsResolver helpers
 type MockArtifactsResolver struct {
@@ -36,14 +40,23 @@ func (m *MockArtifactsResolver) ResolveTimeshift(ctx context.Context, recordingI
 	return artifacts.ArtifactOK{}, nil
 }
 
+func createTestServerP34(svc recservice.Service, art artifacts.Resolver) *Server {
+	cfg := config.AppConfig{}
+	cfg.FFmpeg.Bin = "/usr/bin/ffmpeg"
+	cfg.HLS.Root = "/tmp/hls"
+	s := &Server{cfg: cfg, recordingsService: svc, artifacts: art}
+	return s
+}
+
 func TestGetRecordingPlaybackInfo_P3_4_SegmentTruth(t *testing.T) {
 	type testPlaybackInfoDTO struct {
-		IsSeekable       *bool  `json:"is_seekable"`
-		StartUnix        *int64 `json:"start_unix"`
-		LiveEdgeUnix     *int64 `json:"live_edge_unix"`
-		DvrWindowSeconds *int64 `json:"dvr_window_seconds"`
-		SessionId        string `json:"sessionId"`
-		RequestId        string `json:"requestId"`
+		Mode             PlaybackInfoMode `json:"mode"`
+		IsSeekable       *bool            `json:"isSeekable"`
+		StartUnix        *int64           `json:"startUnix"`
+		LiveEdgeUnix     *int64           `json:"live_edge_unix"`
+		DvrWindowSeconds *int64           `json:"dvr_window_seconds"`
+		SessionId        string           `json:"sessionId"`
+		RequestId        string           `json:"requestId"`
 	}
 
 	t.Run("Traceability_Propagation", func(t *testing.T) {
@@ -51,13 +64,15 @@ func TestGetRecordingPlaybackInfo_P3_4_SegmentTruth(t *testing.T) {
 		recordingID := recservice.EncodeRecordingID("1:0:0:0:0:0:0:0:0:0:/hdd/movie/trace.ts")
 
 		svc := new(MockRecordingsService)
-		// Mock logic: DirectMp4 resolution (simplest path to verify DTO enrichment)
-		svc.On("ResolvePlayback", mock.Anything, recordingID, "generic").Return(recservice.PlaybackResolution{
-			Strategy: recservice.StrategyDirect,
-			CanSeek:  true,
+		// Mock logic: Force transcode (HLS)
+		svc.On("GetMediaTruth", mock.Anything, recordingID).Return(playback.MediaTruth{
+			Container:  "ts",
+			VideoCodec: "vp9", // Force transcode
+			AudioCodec: "mp2",
+			Duration:   3600,
 		}, nil)
 
-		s := &Server{recordingsService: svc}
+		s_srv := createTestServerP34(svc, nil)
 
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest("GET", "/api/v3/recordings/"+recordingID+"/stream-info", nil)
@@ -66,7 +81,7 @@ func TestGetRecordingPlaybackInfo_P3_4_SegmentTruth(t *testing.T) {
 		ctx := log.ContextWithRequestID(r.Context(), "req-test-123")
 		r = r.WithContext(ctx)
 
-		s.GetRecordingPlaybackInfo(w, r, recordingID)
+		s_srv.GetRecordingPlaybackInfo(w, r, recordingID)
 
 		require.Equal(t, http.StatusOK, w.Code)
 		var dto testPlaybackInfoDTO
@@ -77,18 +92,15 @@ func TestGetRecordingPlaybackInfo_P3_4_SegmentTruth(t *testing.T) {
 	})
 
 	t.Run("Live_FailClosed_ImplausibleWindow", func(t *testing.T) {
-		// Scenario: Live stream where edge calculation implies zero/neg window (e.g. single 0s segment)
-		// Expectation: Seekable=false (Fail-Closed)
-
 		recordingID := recservice.EncodeRecordingID("1:0:0:0:0:0:0:0:0:0:/hdd/zero_window.ts")
 
 		svc := new(MockRecordingsService)
-		svc.On("ResolvePlayback", mock.Anything, recordingID, "generic").Return(recservice.PlaybackResolution{
-			Strategy: recservice.StrategyHLS,
-			CanSeek:  true,
+		svc.On("GetMediaTruth", mock.Anything, recordingID).Return(playback.MediaTruth{
+			Container:  "ts",
+			VideoCodec: "vp9", // Force transcode
+			AudioCodec: "mp2",
 		}, nil)
 
-		// Playlist: Live, 1 segment, 0 duration? (Edge case)
 		playlist := `#EXTM3U
 #EXT-X-TARGETDURATION:10
 #EXT-X-PROGRAM-DATE-TIME:2024-01-01T12:00:00Z
@@ -96,15 +108,15 @@ func TestGetRecordingPlaybackInfo_P3_4_SegmentTruth(t *testing.T) {
 seg1.ts`
 
 		art := new(MockArtifactsResolver)
-		art.On("ResolvePlaylist", mock.Anything, recordingID, "generic").Return(artifacts.ArtifactOK{
+		art.On("ResolvePlaylist", mock.Anything, recordingID, "").Return(artifacts.ArtifactOK{
 			Data: []byte(playlist),
 		}, nil)
 
-		s := &Server{recordingsService: svc, artifacts: art}
+		s_srv := createTestServerP34(svc, art)
 
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest("GET", "/api/v3/recordings/"+recordingID+"/stream-info", nil)
-		s.GetRecordingPlaybackInfo(w, r, recordingID)
+		s_srv.GetRecordingPlaybackInfo(w, r, recordingID)
 
 		require.Equal(t, http.StatusOK, w.Code)
 		var dto testPlaybackInfoDTO
@@ -115,20 +127,15 @@ seg1.ts`
 	})
 
 	t.Run("Live_FailClosed_PartialPDT", func(t *testing.T) {
-		// Scenario: Live stream (no ENDLIST) with missing PDT on one segment
-		// Expectation: Seekable=false due to strict check
-
 		recordingID := recservice.EncodeRecordingID("1:0:0:0:0:0:0:0:0:0:/hdd/fail_live.ts")
 
-		// 1. Mock Service Resolution (HLS)
 		svc := new(MockRecordingsService)
-		svc.On("ResolvePlayback", mock.Anything, recordingID, "generic").Return(recservice.PlaybackResolution{
-			Strategy: recservice.StrategyHLS,
-			CanSeek:  true, // Service thinks it's seekable (file exists), but Truth says otherwise
+		svc.On("GetMediaTruth", mock.Anything, recordingID).Return(playback.MediaTruth{
+			Container:  "ts",
+			VideoCodec: "vp9", // Force transcode
+			AudioCodec: "mp2",
 		}, nil)
 
-		// 2. Mock Artifact (Broken Playlist)
-		// Segment 2 missing PDT
 		playlist := `#EXTM3U
 #EXT-X-TARGETDURATION:10
 #EXT-X-PROGRAM-DATE-TIME:2024-01-01T12:00:00Z
@@ -138,18 +145,15 @@ seg1.ts
 seg2.ts`
 
 		art := new(MockArtifactsResolver)
-		art.On("ResolvePlaylist", mock.Anything, recordingID, "generic").Return(artifacts.ArtifactOK{
+		art.On("ResolvePlaylist", mock.Anything, recordingID, "").Return(artifacts.ArtifactOK{
 			Data: []byte(playlist),
 		}, nil)
 
-		s := &Server{
-			recordingsService: svc,
-			artifacts:         art,
-		}
+		s_srv := createTestServerP34(svc, art)
 
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest("GET", "/api/v3/recordings/"+recordingID+"/stream-info", nil)
-		s.GetRecordingPlaybackInfo(w, r, recordingID)
+		s_srv.GetRecordingPlaybackInfo(w, r, recordingID)
 
 		require.Equal(t, http.StatusOK, w.Code)
 		var dto testPlaybackInfoDTO
@@ -161,18 +165,15 @@ seg2.ts`
 	})
 
 	t.Run("VOD_Robust_NoPDT", func(t *testing.T) {
-		// Scenario: VOD stream (ENDLIST) with NO PDT
-		// Expectation: Seekable=true (Robust), Window=Duration, Unix=Nil
-
 		recordingID := recservice.EncodeRecordingID("1:0:0:0:0:0:0:0:0:0:/hdd/vod.ts")
 
 		svc := new(MockRecordingsService)
-		svc.On("ResolvePlayback", mock.Anything, recordingID, "generic").Return(recservice.PlaybackResolution{
-			Strategy: recservice.StrategyHLS,
-			CanSeek:  true,
+		svc.On("GetMediaTruth", mock.Anything, recordingID).Return(playback.MediaTruth{
+			Container:  "ts",
+			VideoCodec: "vp9", // Force transcode
+			AudioCodec: "mp2",
 		}, nil)
 
-		// Playlist: VOD, 20s duration
 		playlist := `#EXTM3U
 #EXT-X-TARGETDURATION:10
 #EXTINF:10.0,
@@ -182,15 +183,15 @@ seg2.ts
 #EXT-X-ENDLIST`
 
 		art := new(MockArtifactsResolver)
-		art.On("ResolvePlaylist", mock.Anything, recordingID, "generic").Return(artifacts.ArtifactOK{
+		art.On("ResolvePlaylist", mock.Anything, recordingID, "").Return(artifacts.ArtifactOK{
 			Data: []byte(playlist),
 		}, nil)
 
-		s := &Server{recordingsService: svc, artifacts: art}
+		s_srv := createTestServerP34(svc, art)
 
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest("GET", "/api/v3/recordings/"+recordingID+"/stream-info", nil)
-		s.GetRecordingPlaybackInfo(w, r, recordingID)
+		s_srv.GetRecordingPlaybackInfo(w, r, recordingID)
 
 		require.Equal(t, http.StatusOK, w.Code)
 		var dto testPlaybackInfoDTO
@@ -206,20 +207,15 @@ seg2.ts
 	})
 
 	t.Run("Live_Valid_FullTruth", func(t *testing.T) {
-		// Scenario: Live stream with valid PDT
-		// Expectation: Seekable=true, Unix fields populated
-
 		recordingID := recservice.EncodeRecordingID("1:0:0:0:0:0:0:0:0:0:/hdd/live.ts")
 
 		svc := new(MockRecordingsService)
-		svc.On("ResolvePlayback", mock.Anything, recordingID, "generic").Return(recservice.PlaybackResolution{
-			Strategy: recservice.StrategyHLS,
-			CanSeek:  true,
+		svc.On("GetMediaTruth", mock.Anything, recordingID).Return(playback.MediaTruth{
+			Container:  "ts",
+			VideoCodec: "vp9", // Force transcode
+			AudioCodec: "mp2",
 		}, nil)
 
-		// Playlist: Live, 20s span
-		// Start: 12:00:00Z
-		// End: 12:00:20Z (Last Start 12:00:10 + 10s)
 		playlist := `#EXTM3U
 #EXT-X-TARGETDURATION:10
 #EXT-X-PROGRAM-DATE-TIME:2024-01-01T12:00:00Z
@@ -230,15 +226,15 @@ seg1.ts
 seg2.ts`
 
 		art := new(MockArtifactsResolver)
-		art.On("ResolvePlaylist", mock.Anything, recordingID, "generic").Return(artifacts.ArtifactOK{
+		art.On("ResolvePlaylist", mock.Anything, recordingID, "").Return(artifacts.ArtifactOK{
 			Data: []byte(playlist),
 		}, nil)
 
-		s := &Server{recordingsService: svc, artifacts: art}
+		s_srv := createTestServerP34(svc, art)
 
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest("GET", "/api/v3/recordings/"+recordingID+"/stream-info", nil)
-		s.GetRecordingPlaybackInfo(w, r, recordingID)
+		s_srv.GetRecordingPlaybackInfo(w, r, recordingID)
 
 		require.Equal(t, http.StatusOK, w.Code)
 		var dto testPlaybackInfoDTO
@@ -246,6 +242,8 @@ seg2.ts`
 
 		require.NotNil(t, dto.IsSeekable)
 		assert.True(t, *dto.IsSeekable)
+
+		assert.Equal(t, PlaybackInfoModeHls, dto.Mode)
 
 		require.NotNil(t, dto.StartUnix)
 		start := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC).Unix()

@@ -1,0 +1,16 @@
+{
+  "sessionId": "550e8400-e29b-41d4-a716-446655440000",
+  "serviceRef": "1:0:1:445D:453:1:C00000:0:0:0:",
+  "profile": "high",
+  "state": "READY",
+  "reason": "R_NONE",
+  "reasonDetail": "baseline",
+  "requestId": "",
+  "correlationId": "corr-test-001",
+  "updatedAtMs": 1700000000000,
+  "mode": "LIVE",
+  "seekableStartSeconds": 0,
+  "seekableEndSeconds": 0,
+  "liveEdgeSeconds": 0,
+  "playbackUrl": "/api/v3/sessions/550e8400-e29b-41d4-a716-446655440000/hls/index.m3u8"
+}

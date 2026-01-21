@@ -31,12 +31,12 @@ type PathMapper interface {
 	ResolveLocalExisting(receiverPath string) (string, bool)
 }
 
-func NewManager(runner Runner, prober Prober, pathMapper PathMapper) *Manager {
+func NewManager(runner Runner, prober Prober, pathMapper PathMapper) (*Manager, error) {
 	if runner == nil {
-		panic("invariant violation: runner is nil in NewManager")
+		return nil, errors.New("NewManager: runner is nil")
 	}
 	if prober == nil {
-		panic("invariant violation: prober is nil in NewManager")
+		return nil, errors.New("NewManager: prober is nil")
 	}
 
 	return &Manager{
@@ -46,7 +46,7 @@ func NewManager(runner Runner, prober Prober, pathMapper PathMapper) *Manager {
 		jobs:       make(map[string]*BuildMonitor),
 		metadata:   make(map[string]Metadata),
 		probeCh:    make(chan probeRequest, ProbeQueueSize),
-	}
+	}, nil
 }
 
 // Probe delegates to the infra prober
@@ -415,6 +415,10 @@ func (m *Manager) MarkProbed(id string, resolvedPath string, info *StreamInfo, f
 		if info.Video.Duration > 0 {
 			meta.Duration = int64(math.Round(info.Video.Duration))
 		}
+		meta.Width = info.Video.Width
+		meta.Height = info.Video.Height
+		meta.FPS = info.Video.FPS
+		meta.Interlaced = info.Video.Interlaced
 	}
 
 	if fp != nil {

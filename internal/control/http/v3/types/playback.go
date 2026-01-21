@@ -20,12 +20,12 @@ const (
 // ClientProfile represents the capabilities of the playback client.
 type ClientProfile struct {
 	Name           string   `json:"name"`
-	VideoCodecs    []string `json:"video_codecs"`
-	AudioCodecs    []string `json:"audio_codecs"`
+	VideoCodecs    []string `json:"videoCodecs"`
+	AudioCodecs    []string `json:"audioCodecs"`
 	Containers     []string `json:"containers"`
-	MaxVideoWidth  int      `json:"max_video_width"`
-	MaxVideoHeight int      `json:"max_video_height"`
-	SupportsHLS    bool     `json:"supports_hls"`
+	MaxVideoWidth  int      `json:"maxVideo_width"`
+	MaxVideoHeight int      `json:"maxVideo_height"`
+	SupportsHLS    bool     `json:"supportsHls"`
 }
 
 // Hash returns a stable hash of the profile capabilities.

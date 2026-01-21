@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"context"
 
+	"github.com/ManuGH/xg2g/internal/control/playback"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 )
 
@@ -10,6 +11,7 @@ import (
 // Only ResolvePlayback is functional; other methods return empty results.
 type mockRecordingsService struct {
 	resolvePlayback func(ctx context.Context, recordingID, profile string) (recservice.PlaybackResolution, error)
+	getMediaTruth   func(ctx context.Context, recordingID string) (playback.MediaTruth, error)
 }
 
 func (m *mockRecordingsService) ResolvePlayback(ctx context.Context, recordingID, profile string) (recservice.PlaybackResolution, error) {
@@ -37,4 +39,11 @@ func (m *mockRecordingsService) Stream(ctx context.Context, in recservice.Stream
 
 func (m *mockRecordingsService) Delete(ctx context.Context, in recservice.DeleteInput) (recservice.DeleteResult, error) {
 	return recservice.DeleteResult{}, nil
+}
+
+func (m *mockRecordingsService) GetMediaTruth(ctx context.Context, recordingID string) (playback.MediaTruth, error) {
+	if m.getMediaTruth != nil {
+		return m.getMediaTruth(ctx, recordingID)
+	}
+	return playback.MediaTruth{}, nil
 }

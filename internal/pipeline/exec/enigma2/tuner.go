@@ -20,6 +20,7 @@ type Tuner struct {
 	Slot         int
 	Timeout      time.Duration
 	PollInterval time.Duration
+	PostZapDelay time.Duration
 }
 
 // NewTuner returns a new Enigma2 tuner instance.
@@ -30,6 +31,7 @@ func NewTuner(client *Client, slot int, timeout time.Duration) *Tuner {
 		Slot:         slot,
 		Timeout:      timeout,
 		PollInterval: 500 * time.Millisecond,
+		PostZapDelay: 2 * time.Second,
 	}
 }
 
@@ -85,10 +87,23 @@ func (t *Tuner) Tune(ctx context.Context, serviceRef string) error {
 
 	// Optional middleware may require a moment to stabilize stream processing after tuner lock.
 	// This prevents FFmpeg from reading initial unstable packets.
-	time.Sleep(2000 * time.Millisecond)
+	if err := sleepCtx(ctx, t.PostZapDelay); err != nil {
+		return err
+	}
 
 	logger.Info().Msg("tuner locked and ready (settled)")
 	return nil
+}
+
+func sleepCtx(ctx context.Context, d time.Duration) error {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // Healthy checks if the tuner is still locked and active.

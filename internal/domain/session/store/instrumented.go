@@ -130,6 +130,12 @@ func (i *instrumentedStore) ReleaseLease(ctx context.Context, key, owner string)
 	return i.inner.ReleaseLease(ctx, key, owner)
 }
 
+func (i *instrumentedStore) GetLease(ctx context.Context, key string) (l Lease, ok bool, err error) {
+	start := time.Now()
+	defer func() { i.observe("get_lease", start, err) }()
+	return i.inner.GetLease(ctx, key)
+}
+
 func (i *instrumentedStore) DeleteAllLeases(ctx context.Context) (count int, err error) {
 	start := time.Now()
 	defer func() { i.observe("delete_all_leases", start, err) }()

@@ -4,9 +4,10 @@ export type EpgLoadState = 'idle' | 'loading' | 'ready' | 'error';
 
 // Constants
 export const DEFAULT_TIME_RANGE = 6; // hours
+export const EPG_MAX_HORIZON_HOURS = 336; // 14 days (CTO Normative)
 
 export interface EpgEvent {
-  service_ref: string;
+  serviceRef: string;
   start: number; // Unix timestamp (seconds)
   end: number; // Unix timestamp (seconds)
   title: string;
@@ -15,12 +16,10 @@ export interface EpgEvent {
 
 export interface EpgChannel {
   id?: string;
-  service_ref?: string;
   serviceRef?: string;
   name?: string;
   number?: string;
   group?: string;
-  logo_url?: string;
   logoUrl?: string;
   logo?: string;
 }
@@ -66,8 +65,6 @@ export interface EpgState {
 export interface Timer {
   timerId?: string;
   serviceRef?: string;
-  serviceref?: string;
-  service_ref?: string;
   begin: number;
   end: number;
   name?: string;

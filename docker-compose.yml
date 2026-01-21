@@ -6,15 +6,14 @@ services:
     restart: unless-stopped
     ports:
       - "8088:8088"
+    # Production compose: deterministic paths (use docker-compose.dev.yml for local overrides).
+    env_file:
+      - /etc/xg2g/xg2g.env
     environment:
       - XG2G_DATA=/var/lib/xg2g
       - XG2G_LOG_LEVEL=info
-      # Required secrets/config via .env file or explicit env
-      - XG2G_OWI_BASE=http://root:Kiddy99@10.10.55.64
-      - XG2G_API_TOKEN=${XG2G_API_TOKEN}
-      - XG2G_API_TOKEN_SCOPES=v3:admin,v3:read,v3:write
     volumes:
-      - ./data:/var/lib/xg2g
+      - /var/lib/xg2g:/var/lib/xg2g
       # Optional: Mount a custom config
       # - ./config.yaml:/var/lib/xg2g/config.yaml:ro
     healthcheck:

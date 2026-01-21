@@ -55,7 +55,7 @@ func TestProgrammesFromEPG(t *testing.T) {
 		t.Errorf("expected channel 'test.channel', got %q", prog1.Channel)
 	}
 
-	if prog1.Desc != "Long description" {
+	if prog1.Desc.Text != "Long description" {
 		t.Errorf("expected long description, got %q", prog1.Desc)
 	}
 

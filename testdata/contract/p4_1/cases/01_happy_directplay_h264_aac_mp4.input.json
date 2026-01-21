@@ -50,7 +50,7 @@
         "source_compatible_with_client"
       ],
       "trace": {
-        "request_id_present": true
+        "requestIdPresent": true
       }
     }
   }

@@ -11,7 +11,7 @@ type MediaTruthProvider interface {
 }
 
 type ClientProfileResolver interface {
-	Resolve(ctx context.Context, headers map[string]string) (ClientProfile, error)
+	Resolve(ctx context.Context, headers map[string]string) (PlaybackCapabilities, error)
 }
 
 // --- Engine ---
@@ -28,36 +28,27 @@ func NewDecisionEngine(truth MediaTruthProvider, profile ClientProfileResolver) 
 	}
 }
 
-func (e *DecisionEngine) Resolve(ctx context.Context, req ResolveRequest) (PlaybackPlan, error) {
-	// --- Phase 0: Inputs & Gating --- //
+func (e *DecisionEngine) GetMediaTruth(ctx context.Context, id string) (MediaTruth, error) {
+	return e.truth.GetMediaTruth(ctx, id)
+}
 
-	// 1. Resolve Profile (includes Auth check if profile resolver enforces it)
-	profile, err := e.profile.Resolve(ctx, req.Headers)
-	if err != nil {
-		// G1: Unauthorized is handled here if resolver returns ErrForbidden
-		return PlaybackPlan{}, err
-	}
-
-	// 2. Get Truth
-	truth, err := e.truth.GetMediaTruth(ctx, req.RecordingID)
-	if err != nil {
-		// G2: NotFound handled here
-		return PlaybackPlan{}, err
-	}
-
+func (e *DecisionEngine) Decide(truth MediaTruth, caps PlaybackCapabilities, protocolHint string) (PlaybackPlan, error) {
 	// 3. State Gate
 	if truth.State == StatePreparing {
-		// G3: Preparing Gate
 		return PlaybackPlan{}, ErrPreparing
 	}
 	if truth.State == StateFailed {
 		return PlaybackPlan{}, ErrUpstream
 	}
 
-	// 4. Unknown Truth Gate (G9)
-	if truth.VideoCodec == "" || truth.VideoCodec == "unknown" ||
+	// 4. Unknown Truth Gate (G9) -> Fail Closed (422)
+	// Mandatory fields must be present and not "unknown".
+	if truth.Container == "" || truth.Container == "unknown" ||
+		truth.VideoCodec == "" || truth.VideoCodec == "unknown" ||
 		truth.AudioCodec == "" || truth.AudioCodec == "unknown" {
-		return PlaybackPlan{}, ErrUpstream
+		return PlaybackPlan{
+			DecisionReason: ReasonProbeFailed,
+		}, ErrDecisionAmbiguous
 	}
 
 	// --- Phase 1: Select Protocol --- //
@@ -66,34 +57,32 @@ func (e *DecisionEngine) Resolve(ctx context.Context, req ResolveRequest) (Playb
 	protocol := ProtocolHLS
 
 	// Hint Overrides
-	if req.ProtocolHint == "mp4" {
+	if protocolHint == "mp4" {
 		protocol = ProtocolMP4
 	}
 
 	// --- Phase 2: Analyze Compatibility --- //
 
 	// Check Codecs
-	videoCompatible := e.isVideoCompatible(profile, truth.VideoCodec)
-	audioCompatible := e.isAudioCompatible(profile, truth.AudioCodec)
+	videoCompatible := contains(caps.VideoCodecs, truth.VideoCodec)
+	audioCompatible := contains(caps.AudioCodecs, truth.AudioCodec)
 
 	// Check Container for selected Protocol
 	// If MP4 req: container must be MP4/MOV
-	// If HLS req: container is less strict IF we support remux (DirectStream)
-	// OR if client supports native TS (Safari)
+	// If HLS req: container acts as the segment format.
+	// We check if the client supports this container via its capabilities.
 	containerCompatible := false
 	if protocol == ProtocolMP4 {
 		// Strict MP4
-		containerCompatible = isMP4Container(truth.Container)
+		containerCompatible = isMP4Container(truth.Container) && contains(caps.Containers, truth.Container)
 	} else {
 		// HLS
-		if profile.SupportsNativeHLS {
-			// Safari supports TS and fMP4 (via HLS)
-			containerCompatible = isNativeHLSContainer(truth.Container)
-		} else if profile.SupportsMSE {
-			// MSE (hls.js) typically needs fMP4/MP4 repacking or TS transmuxing client-side.
-			// Ideally engine treats "TS via HLS.js" as "Compatible" (DirectPlay) if hls.js handles TS.
-			// HLS.js handles TS. So TS is "compatible" for HLS protocol.
-			containerCompatible = true
+		if caps.SupportsHLS {
+			// If HLS is supported, we check if the underlying container (segment format)
+			// is in the client's supported containers list.
+			// e.g. Safari supports "ts", "mp4".
+			// e.g. MSE supports "mp4"; "ts" support (via JS transmuxing) should be explicitly listed in caps.Containers.
+			containerCompatible = contains(caps.Containers, truth.Container)
 		}
 	}
 
@@ -127,11 +116,7 @@ func (e *DecisionEngine) Resolve(ctx context.Context, req ResolveRequest) (Playb
 	}
 
 	// G6: Codecs OK, Container Incompatible -> DirectStream
-	// (Example: MKV with H264/AAC requesting HLS)
-	// (Example: MKV with H264/AAC requesting MP4 -> technically Transcode/Remux, but engine calls it DirectStream)
 	if !containerCompatible {
-		// If protocol is MP4 and container is MKV -> DirectStream (Remux to MP4)
-		// If protocol is HLS and container is MKV -> DirectStream (Remux to TS/fMP4)
 		return PlaybackPlan{
 			Mode:           ModeDirectStream,
 			Protocol:       protocol,
@@ -145,8 +130,14 @@ func (e *DecisionEngine) Resolve(ctx context.Context, req ResolveRequest) (Playb
 	}
 
 	// G4/G5: Everything Compatible -> DirectPlay
-	return PlaybackPlan{
-		Mode:           ModeDirectPlay,
+	mode := ModeDirectPlay
+	if protocol == ProtocolMP4 && !isMP4Container(truth.Container) {
+		// If requesting MP4 but source is TS -> Must remux (DirectStream)
+		mode = ModeDirectStream
+	}
+
+	plan := PlaybackPlan{
+		Mode:           mode,
 		Protocol:       protocol,
 		DecisionReason: ReasonDirectPlayMatch,
 		TruthReason:    "all_compatible",
@@ -154,44 +145,35 @@ func (e *DecisionEngine) Resolve(ctx context.Context, req ResolveRequest) (Playb
 		VideoCodec:     truth.VideoCodec,
 		AudioCodec:     truth.AudioCodec,
 		Duration:       truth.Duration,
-	}, nil
-}
-
-// --- Helpers ---
-
-func (e *DecisionEngine) isVideoCompatible(freq ClientProfile, codec string) bool {
-	// Simple mapping for now
-	switch codec {
-	case "h264":
-		return freq.SupportsH264
-	case "hevc":
-		return freq.SupportsHEVC
-	case "mpeg2video":
-		return freq.SupportsMPEG2
 	}
-	return false // Fail closed on unknown/unsupported types
+	return plan, nil
 }
 
-func (e *DecisionEngine) isAudioCompatible(freq ClientProfile, codec string) bool {
-	switch codec {
-	case "aac":
-		return freq.SupportsAAC
-	case "ac3":
-		return freq.SupportsAC3
-	case "mp2":
-		// Assume generic support not present unless explicit?
-		// Actually modern browsers don't do MP2.
-		// Tests G7 implies Transcode needed for mpeg2/mp2.
-		return false
+func (e *DecisionEngine) Resolve(ctx context.Context, req ResolveRequest) (PlaybackPlan, error) {
+	// 1. Resolve Profile
+	caps, err := e.profile.Resolve(ctx, req.Headers)
+	if err != nil {
+		return PlaybackPlan{}, err
+	}
+
+	// 2. Get Truth
+	truth, err := e.truth.GetMediaTruth(ctx, req.RecordingID)
+	if err != nil {
+		return PlaybackPlan{}, err
+	}
+
+	return e.Decide(truth, caps, req.ProtocolHint)
+}
+
+func contains(slice []string, val string) bool {
+	for _, s := range slice {
+		if s == val {
+			return true
+		}
 	}
 	return false
 }
 
 func isMP4Container(c string) bool {
 	return c == "mp4" || c == "mov" || c == "m4v"
-}
-
-func isNativeHLSContainer(c string) bool {
-	// Safari plays TS, MP4, MOV via HLS
-	return c == "mpegts" || c == "ts" || isMP4Container(c)
 }

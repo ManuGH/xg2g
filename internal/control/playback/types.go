@@ -5,11 +5,12 @@ import "errors"
 // --- Errors ---
 
 var (
-	ErrForbidden   = errors.New("forbidden")
-	ErrNotFound    = errors.New("not found")
-	ErrPreparing   = errors.New("preparing")
-	ErrUpstream    = errors.New("upstream failed")
-	ErrUnsupported = errors.New("unsupported")
+	ErrForbidden         = errors.New("forbidden")
+	ErrNotFound          = errors.New("not found")
+	ErrPreparing         = errors.New("preparing")
+	ErrUpstream          = errors.New("upstream failed")
+	ErrUnsupported       = errors.New("unsupported")
+	ErrDecisionAmbiguous = errors.New("decision_ambiguous")
 )
 
 // --- Enums ---
@@ -95,22 +96,33 @@ type MediaTruth struct {
 	VideoCodec string
 	AudioCodec string
 	Duration   float64
+	Width      int
+	Height     int
+	FPS        float64
+	Interlaced bool
 }
 
-// ClientProfile defines what the client can handle.
-type ClientProfile struct {
-	Name              string
-	UserAgent         string
-	IsSafari          bool
-	IsChrome          bool
-	SupportsNativeHLS bool
-	SupportsMSE       bool
-	SupportsH264      bool
-	SupportsHEVC      bool
-	SupportsAAC       bool
-	SupportsAC3       bool
-	SupportsMPEG2     bool
-	CanPlayTS         bool // Legacy alias support
+// PlaybackCapabilities represents the core capability set for playback decisions.
+// This struct is intended to be the domain truth, mapped to/from OpenAPI or shims.
+type PlaybackCapabilities struct {
+	CapabilitiesVersion int      `json:"capabilitiesVersion"`
+	Containers          []string `json:"containers"`
+	VideoCodecs         []string `json:"videoCodecs"`
+	AudioCodecs         []string `json:"audioCodecs"`
+	SupportsHLS         bool     `json:"supportsHls"`
+
+	// DeviceType is optional but helpful for identity-bound profiles
+	DeviceType string `json:"deviceType,omitempty"`
+
+	// Allowed constraints ONLY (per ADR P7):
+	AllowTranscode *bool     `json:"allowTranscode,omitempty"`
+	MaxVideo       *MaxVideo `json:"maxVideo,omitempty"`
+}
+
+type MaxVideo struct {
+	Width  int     `json:"width"`
+	Height int     `json:"height"`
+	FPS    float64 `json:"fps"`
 }
 
 const (

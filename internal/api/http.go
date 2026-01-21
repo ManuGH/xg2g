@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/admission"
 	"github.com/ManuGH/xg2g/internal/channels"
 	"github.com/ManuGH/xg2g/internal/config"
 	controlhttp "github.com/ManuGH/xg2g/internal/control/http"
@@ -228,10 +229,16 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager, opts ...ServerOption) *Se
 		},
 		startTime:      time.Now(),
 		piconSemaphore: make(chan struct{}, 50),
-		vodManager:     vod.NewManager(infra.NewExecutor(cfg.FFmpeg.Bin, *log.L()), infra.NewProber(), recordings.NewPathMapper(cfg.RecordingPathMappings)),
 		preflightCheck: v3.CheckSourceAvailability,
 		v3Factory:      v3.NewServer, // Default factory
 	}
+
+	// Initialize VOD Manager with error handling
+	vodMgr, err := vod.NewManager(infra.NewExecutor(cfg.FFmpeg.Bin, *log.L()), infra.NewProber(), recordings.NewPathMapper(cfg.RecordingPathMappings))
+	if err != nil {
+		log.L().Fatal().Err(err).Msg("failed to initialize VOD manager")
+	}
+	s.vodManager = vodMgr
 
 	for _, opt := range opts {
 		opt(s)
@@ -242,6 +249,8 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager, opts ...ServerOption) *Se
 		log.L().Fatal().Msg("config.Manager is required for API server initialization")
 	}
 	s.v3Handler = s.v3Factory(cfg, cfgMgr, s.rootCancel)
+	// Initialize v3Handler with current snapshot to ensure Runtime settings are available immediately
+	s.v3Handler.UpdateConfig(cfg, s.snap)
 	s.v3Handler.StartMonitor(s.rootCtx)
 
 	// P4: Wire NEW V4 Resolver (recordings package)
@@ -251,7 +260,10 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager, opts ...ServerOption) *Se
 		resolverOpts.DurationStore = recservice.NewLibraryDurationStore(libSvc.GetStore())
 		resolverOpts.PathResolver = recservice.NewLibraryPathResolver(s.recordingPathMapper, libSvc.GetConfigs())
 	}
-	v4Resolver := recservice.NewResolver(&cfg, s.vodManager, resolverOpts)
+	v4Resolver, err := recservice.NewResolver(&cfg, s.vodManager, resolverOpts)
+	if err != nil {
+		log.L().Fatal().Err(err).Msg("failed to initialize recordings resolver")
+	}
 
 	// Create OpenWebIF client using configured BaseURL and credentials
 	// We use the same configuration logic as the health checker
@@ -268,7 +280,11 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager, opts ...ServerOption) *Se
 
 	// Create domain RecordingsService
 	// Note: v4Resolver here is a domain resolver because of the v3.Server.SetResolver signature change
-	s.recordingsService = recservice.NewService(&cfg, s.vodManager, v4Resolver, owiAdapter, resumeAdapter)
+	recSvc, err := recservice.NewService(&cfg, s.vodManager, v4Resolver, owiAdapter, resumeAdapter, v4Resolver)
+	if err != nil {
+		log.L().Fatal().Err(err).Msg("failed to initialize recordings service")
+	}
+	s.recordingsService = recSvc
 
 	s.v3Handler.SetResolver(v4Resolver)
 
@@ -308,6 +324,12 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager, opts ...ServerOption) *Se
 		s.requestShutdown,
 		s.preflightCheck,
 	)
+
+	// P10: Wired Admission Control (Deliverable #5)
+	// Initialize with conservative defaults (10 concurrent transcodes, 10 CPU-heavy ops)
+	// In the future this should come from config.
+	adm := admission.NewResourceMonitor(10, 10, 0)
+	s.v3Handler.SetAdmission(adm)
 
 	// Initialize HDHomeRun emulation if enabled
 	logger := log.WithComponent("api")
@@ -510,7 +532,7 @@ func (s *Server) GetEvents(from, to time.Time) ([]openwebif.EPGEvent, error) {
 		// Convert to EPGEvent
 		evt := openwebif.EPGEvent{
 			Title:       p.Title.Text,
-			Description: p.Desc,
+			Description: p.Desc.Text,
 			Begin:       start.Unix(),
 			Duration:    int64(stop.Sub(start).Seconds()),
 			SRef:        p.Channel, // Channel ID in XMLTV is SRef
@@ -671,7 +693,7 @@ func (s *Server) routes() http.Handler {
 		// Modern endpoint: /playlist.m3u8 (sets correct MIME type)
 		r.Get("/playlist.m3u8", func(w http.ResponseWriter, r *http.Request) {
 			path := filepath.Join(s.cfg.DataDir, s.snap.Runtime.PlaylistFilename)
-			w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+			w.Header().Set("Content-Type", controlhttp.ContentTypeHLSPlaylist)
 			http.ServeFile(w, r, path)
 		})
 	})
@@ -767,7 +789,12 @@ func (s *Server) SetResolver(r recservice.Resolver) {
 
 	owiAdapter := v3.NewOWIAdapter(s.owiClient)
 	resumeAdapter := v3.NewResumeAdapter(s.resumeStore)
-	s.recordingsService = recservice.NewService(&s.cfg, s.vodManager, r, owiAdapter, resumeAdapter)
+	recSvc, err := recservice.NewService(&s.cfg, s.vodManager, r, owiAdapter, resumeAdapter, r)
+	if err != nil {
+		log.L().Error().Err(err).Msg("failed to re-initialize recordings service")
+		return
+	}
+	s.recordingsService = recSvc
 	if s.v3Handler != nil {
 		s.v3Handler.SetDependencies(
 			s.v3Bus,
@@ -797,6 +824,14 @@ func (s *Server) SetResolver(r recservice.Resolver) {
 func (s *Server) SetRecordingsService(svc recservice.Service) {
 	if s.v3Handler != nil {
 		s.v3Handler.SetRecordingsService(svc)
+	}
+	s.recordingsService = svc
+}
+
+// SetAdmission sets the resource monitor for admission control.
+func (s *Server) SetAdmission(adm *admission.ResourceMonitor) {
+	if s.v3Handler != nil {
+		s.v3Handler.SetAdmission(adm)
 	}
 }
 
@@ -942,14 +977,6 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 // Handler returns the configured HTTP handler with all routes and middleware applied.
 func (s *Server) Handler() http.Handler {
 	return s.routes()
-}
-
-// NewRouter creates and configures a new router with all middlewares and handlers.
-//
-// [RC-WARNING] In production, use api.New() with a valid config.Manager.
-// This helper is kept for testing/simple setups but will panic if used.
-func NewRouter(cfg config.AppConfig) http.Handler {
-	panic("api.NewRouter is deprecated for production. Use api.New(cfg, cfgMgr).routes()")
 }
 
 type logSourceWrapper struct{}

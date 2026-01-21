@@ -9,7 +9,8 @@ import (
 )
 
 func TestManager_MarkProbed_PreservesFields(t *testing.T) {
-	mgr := NewManager(&mockRunner{}, &mockProber{}, nil)
+	mgr, err := NewManager(&mockRunner{}, &mockProber{}, nil)
+	require.NoError(t, err)
 	id := "probing:ref"
 
 	// 1. Seed initial metadata (e.g. from previous partial state or manual set)
@@ -64,7 +65,8 @@ func TestManager_MarkProbed_PreservesFields(t *testing.T) {
 }
 
 func TestManager_MarkFailure_PreservesFields(t *testing.T) {
-	mgr := NewManager(&mockRunner{}, &mockProber{}, nil)
+	mgr, err := NewManager(&mockRunner{}, &mockProber{}, nil)
+	require.NoError(t, err)
 	id := "fail:ref"
 
 	// 1. Seed initial meaningful metadata

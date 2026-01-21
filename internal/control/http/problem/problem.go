@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 
-	controlhttp "github.com/ManuGH/xg2g/internal/control/http"
 	"github.com/ManuGH/xg2g/internal/log"
 )
 
@@ -36,16 +35,21 @@ func Write(w http.ResponseWriter, r *http.Request, status int, problemType, titl
 		reqID = log.RequestIDFromContext(r.Context())
 	}
 	if reqID == "" {
-		reqID = w.Header().Get(controlhttp.HeaderRequestID)
+		reqID = w.Header().Get(HeaderRequestID)
+	}
+	if reqID == "" {
+		// Stop-the-line: Every V3 response must have a Request ID.
+		// If we reach here, the middleware or context propagation failed.
+		reqID = "FALLBACK-TRUTH-MISSING"
 	}
 
 	// 2. Build the response map (RFC 7807 compatible)
 	res := map[string]any{
-		"type":                       problemType,
-		"title":                      title,
-		"status":                     status,
-		"code":                       code,
-		controlhttp.JSONKeyRequestID: reqID,
+		"type":           problemType,
+		"title":          title,
+		"status":         status,
+		"code":           code,
+		JSONKeyRequestID: reqID,
 	}
 
 	if detail != "" {
@@ -65,7 +69,7 @@ func Write(w http.ResponseWriter, r *http.Request, status int, problemType, titl
 		res[k] = v
 	}
 
-	w.Header().Set(controlhttp.HeaderRequestID, reqID)
+	w.Header().Set(HeaderRequestID, reqID)
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(status)
 

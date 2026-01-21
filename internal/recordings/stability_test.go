@@ -1,6 +1,7 @@
 package recordings
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -18,8 +19,8 @@ func TestIsStable_StableFile(t *testing.T) {
 	}
 
 	// File should be stable (size unchanged)
-	if !IsStable(filePath, 100*time.Millisecond) {
-		t.Error("expected file to be stable, but it wasn't")
+	if stable, err := IsStableCtx(context.Background(), filePath, 100*time.Millisecond); err != nil || !stable {
+		t.Errorf("expected stable; got stable=%v err=%v", stable, err)
 	}
 }
 
@@ -49,9 +50,12 @@ func TestIsStable_WritingFile(t *testing.T) {
 	}()
 
 	// File should NOT be stable (size changing)
-	stable := IsStable(filePath, 100*time.Millisecond)
+	stable, err := IsStableCtx(context.Background(), filePath, 100*time.Millisecond)
 	<-done
 
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if stable {
 		t.Error("expected file to be unstable (size changing), but it was reported as stable")
 	}
@@ -59,8 +63,8 @@ func TestIsStable_WritingFile(t *testing.T) {
 
 func TestIsStable_NonExistentFile(t *testing.T) {
 	// File doesn't exist
-	if IsStable("/nonexistent/path/file.ts", 100*time.Millisecond) {
-		t.Error("expected non-existent file to be unstable, but it was reported as stable")
+	if stable, err := IsStableCtx(context.Background(), "/nonexistent/path/file.ts", 100*time.Millisecond); err != nil || stable {
+		t.Errorf("expected unstable (and no error for missing file?); got stable=%v err=%v", stable, err)
 	}
 }
 
@@ -79,9 +83,9 @@ func TestIsStable_FileDeletedDuringCheck(t *testing.T) {
 		_ = os.Remove(filePath)
 	}()
 
-	// File should NOT be stable (deleted during check)
-	if IsStable(filePath, 100*time.Millisecond) {
-		t.Error("expected file deleted during check to be unstable, but it was reported as stable")
+	// File should NOT be stable (deleted during check) -- stat2 fails
+	if stable, err := IsStableCtx(context.Background(), filePath, 100*time.Millisecond); stable {
+		t.Errorf("expected unstable; got stable=%v err=%v", stable, err)
 	}
 }
 
@@ -95,8 +99,8 @@ func TestIsStable_ZeroWindow(t *testing.T) {
 	}
 
 	// Zero window should still work (immediate re-check)
-	if !IsStable(filePath, 0) {
-		t.Error("expected stable file with zero window to be stable")
+	if stable, err := IsStableCtx(context.Background(), filePath, 0); err != nil || !stable {
+		t.Errorf("expected stable; got stable=%v err=%v", stable, err)
 	}
 }
 
@@ -110,10 +114,9 @@ func TestIsStable_LargeWindow(t *testing.T) {
 	}
 
 	// Larger window (500ms) should still detect stable file
-	// Note: This makes the test slower but more realistic
 	start := time.Now()
-	if !IsStable(filePath, 500*time.Millisecond) {
-		t.Error("expected stable file with large window to be stable")
+	if stable, err := IsStableCtx(context.Background(), filePath, 500*time.Millisecond); err != nil || !stable {
+		t.Errorf("expected stable; got stable=%v err=%v", stable, err)
 	}
 	elapsed := time.Since(start)
 
@@ -133,7 +136,61 @@ func TestIsStable_EmptyFile(t *testing.T) {
 	}
 
 	// Empty file (size=0) should be stable
+	if stable, err := IsStableCtx(context.Background(), filePath, 100*time.Millisecond); err != nil || !stable {
+		t.Errorf("expected stable; got stable=%v err=%v", stable, err)
+	}
+}
+
+func TestIsStable_ContextCancelled(t *testing.T) {
+	// Create temp file
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "cancel.ts")
+
+	if err := os.WriteFile(filePath, []byte("content"), 0600); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	// Create context that cancels quickly
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Start IsStable with long window
+	start := time.Now()
+
+	// Sleep briefly then cancel
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+
+	stable, err := IsStableCtx(ctx, filePath, 2*time.Second)
+	elapsed := time.Since(start)
+
+	// Should return error
+	if err == nil {
+		t.Fatal("expected error due to context cancellation, got nil")
+	}
+	if stable {
+		t.Error("expected not stable on cancel")
+	}
+
+	// Should return quickly (much less than 2s)
+	if elapsed > 500*time.Millisecond {
+		t.Errorf("IsStable took too long to cancel: %v", elapsed)
+	}
+}
+
+func TestIsStable_LegacyWrapper(t *testing.T) {
+	// Create temp file with content
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "legacy.ts")
+
+	content := []byte("stable video content")
+	if err := os.WriteFile(filePath, content, 0600); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	// Legacy wrapper should still work
 	if !IsStable(filePath, 100*time.Millisecond) {
-		t.Error("expected empty file to be stable")
+		t.Error("expected file to be stable using legacy wrapper")
 	}
 }

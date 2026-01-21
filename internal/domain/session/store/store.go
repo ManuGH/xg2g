@@ -62,6 +62,8 @@ type StateStore interface {
 	// --- Leases (single-writer) ---
 	TryAcquireLease(ctx context.Context, key, owner string, ttl time.Duration) (Lease, bool, error)
 	RenewLease(ctx context.Context, key, owner string, ttl time.Duration) (Lease, bool, error)
+	// GetLease returns the current lease state without acquiring it. (Phase 5.3 Truth Reconciliation)
+	GetLease(ctx context.Context, key string) (Lease, bool, error)
 	ReleaseLease(ctx context.Context, key, owner string) error
 	DeleteAllLeases(ctx context.Context) (int, error)
 }

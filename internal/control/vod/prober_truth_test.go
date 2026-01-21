@@ -31,7 +31,10 @@ func (m *MockMapper) ResolveLocalExisting(p string) (string, bool) { return p, t
 
 func setupManager(t *testing.T) (*Manager, *MockInfraProber, string) {
 	prober := new(MockInfraProber)
-	mgr := NewManager(&mockRunner{}, prober, &MockMapper{})
+	mgr, err := NewManager(&mockRunner{}, prober, &MockMapper{})
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
 
 	f, err := os.CreateTemp("", "test*.mp4")
 	if err != nil {

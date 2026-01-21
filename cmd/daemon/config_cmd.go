@@ -8,8 +8,10 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,7 +22,7 @@ import (
 
 func runConfigCLI(args []string) int {
 	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
-		printConfigUsage()
+		printConfigUsage(os.Stdout)
 		return 0
 	}
 
@@ -33,16 +35,60 @@ func runConfigCLI(args []string) int {
 		return runConfigMigrate(args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown subcommand: %s\n\n", args[0])
-		printConfigUsage()
+		printConfigUsage(os.Stderr)
 		return 2
 	}
 }
 
-func printConfigUsage() {
-	fmt.Fprintln(os.Stderr, "Usage:")
-	fmt.Fprintln(os.Stderr, "  xg2g config validate [--file|-f config.yaml]")
-	fmt.Fprintln(os.Stderr, "  xg2g config dump --effective [--file|-f config.yaml] [--format=yaml|json]")
-	fmt.Fprintln(os.Stderr, "  xg2g config migrate --file|-f config.yaml [--to VERSION] [--write]")
+func printConfigUsage(w io.Writer) {
+	// best-effort CLI output
+	_, _ = fmt.Fprintln(w, "Usage:")
+	_, _ = fmt.Fprintln(w, "  xg2g config validate [--file|-f config.yaml]")
+	_, _ = fmt.Fprintln(w, "  xg2g config dump --effective [--file|-f config.yaml] [--format=yaml|json]")
+	_, _ = fmt.Fprintln(w, "  xg2g config migrate --file|-f config.yaml [--to VERSION] [--write]")
+	_, _ = fmt.Fprintln(w, "")
+	_, _ = fmt.Fprintln(w, "Notes:")
+	_, _ = fmt.Fprintln(w, "  If --file is omitted, $XG2G_DATA/config.yaml is used when present.")
+}
+
+func printConfigValidateUsage(w io.Writer) {
+	// best-effort CLI output
+	_, _ = fmt.Fprintln(w, "Usage:")
+	_, _ = fmt.Fprintln(w, "  xg2g config validate [--file|-f config.yaml]")
+	_, _ = fmt.Fprintln(w, "")
+	_, _ = fmt.Fprintln(w, "Flags:")
+	_, _ = fmt.Fprintln(w, "  -f, --file string  path to YAML configuration file")
+	_, _ = fmt.Fprintln(w, "")
+	_, _ = fmt.Fprintln(w, "Notes:")
+	_, _ = fmt.Fprintln(w, "  If --file is omitted, $XG2G_DATA/config.yaml is used when present.")
+}
+
+func printConfigDumpUsage(w io.Writer) {
+	// best-effort CLI output
+	_, _ = fmt.Fprintln(w, "Usage:")
+	_, _ = fmt.Fprintln(w, "  xg2g config dump --effective [--file|-f config.yaml] [--format=yaml|json]")
+	_, _ = fmt.Fprintln(w, "")
+	_, _ = fmt.Fprintln(w, "Flags:")
+	_, _ = fmt.Fprintln(w, "  -f, --file string   path to YAML configuration file")
+	_, _ = fmt.Fprintln(w, "  --effective         dump effective configuration (required)")
+	_, _ = fmt.Fprintln(w, "  --format string     output format: yaml or json (default: yaml)")
+	_, _ = fmt.Fprintln(w, "")
+	_, _ = fmt.Fprintln(w, "Notes:")
+	_, _ = fmt.Fprintln(w, "  If --file is omitted, $XG2G_DATA/config.yaml is used when present.")
+}
+
+func printConfigMigrateUsage(w io.Writer) {
+	// best-effort CLI output
+	_, _ = fmt.Fprintln(w, "Usage:")
+	_, _ = fmt.Fprintln(w, "  xg2g config migrate --file|-f config.yaml [--to VERSION] [--write]")
+	_, _ = fmt.Fprintln(w, "")
+	_, _ = fmt.Fprintln(w, "Flags:")
+	_, _ = fmt.Fprintln(w, "  -f, --file string  path to YAML configuration file")
+	_, _ = fmt.Fprintf(w, "  --to string        target config version (default: %s)\n", config.V3ConfigVersion)
+	_, _ = fmt.Fprintln(w, "  --write            write changes to file")
+	_, _ = fmt.Fprintln(w, "")
+	_, _ = fmt.Fprintln(w, "Notes:")
+	_, _ = fmt.Fprintln(w, "  If --file is omitted, $XG2G_DATA/config.yaml is used when present.")
 }
 
 func resolveDefaultConfigPath() string {
@@ -60,12 +106,18 @@ func resolveDefaultConfigPath() string {
 func runConfigValidate(args []string) int {
 	fs := flag.NewFlagSet("xg2g config validate", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
+	fs.Usage = func() {
+		printConfigValidateUsage(fs.Output())
+	}
 
 	var file string
 	fs.StringVar(&file, "file", "", "path to YAML configuration file")
 	fs.StringVar(&file, "f", "", "path to YAML configuration file (shorthand)")
 
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
 		return 2
 	}
 
@@ -91,6 +143,9 @@ func runConfigValidate(args []string) int {
 func runConfigDump(args []string) int {
 	fs := flag.NewFlagSet("xg2g config dump", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
+	fs.Usage = func() {
+		printConfigDumpUsage(fs.Output())
+	}
 
 	var file string
 	var format string
@@ -102,6 +157,9 @@ func runConfigDump(args []string) int {
 	fs.BoolVar(&effective, "effective", false, "dump effective configuration (defaults + file + env)")
 
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
 		return 2
 	}
 
@@ -156,6 +214,9 @@ func runConfigDump(args []string) int {
 func runConfigMigrate(args []string) int {
 	fs := flag.NewFlagSet("xg2g config migrate", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
+	fs.Usage = func() {
+		printConfigMigrateUsage(fs.Output())
+	}
 
 	var file string
 	var targetVersion string
@@ -167,6 +228,9 @@ func runConfigMigrate(args []string) int {
 	fs.BoolVar(&write, "write", false, "write changes to file")
 
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
 		return 2
 	}
 

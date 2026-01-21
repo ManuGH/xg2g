@@ -13,10 +13,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/admission"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/metrics"
 )
 
 // Orchestrator consumes intents and drives pipelines.
@@ -37,6 +39,7 @@ type Orchestrator struct {
 	LeaseKeyFunc    func(model.StartSessionEvent) string
 
 	PipelineStopTimeout time.Duration
+	Admission           *admission.ResourceMonitor
 
 	// Concurrency Control
 	StartConcurrency int
@@ -97,14 +100,59 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 	}
 	defer func() { _ = subStop.Close() }()
 
+	// CTO Hardening: Startup Guard
+	// Prevents split-brain by ensuring we are the only active instance.
+	guardKey := "system:orchestrator:guard_lock"
+	if _, acquired, err := o.Store.TryAcquireLease(ctx, guardKey, o.Owner, o.LeaseTTL); err != nil {
+		return fmt.Errorf("failed to check guard lease: %w", err)
+	} else if !acquired {
+		// Verify ownership strictly (Fatal on Ambiguity)
+		held, ok, err := o.Store.GetLease(ctx, guardKey)
+		if err != nil {
+			return fmt.Errorf("fatal: failed to verify guard lease ownership (store error): %w", err)
+		}
+		if !ok || held == nil {
+			return fmt.Errorf("fatal: guard lease acquisition failed but lease not found (ambiguous state); refusing to start")
+		}
+		if held.Owner() != o.Owner {
+			return fmt.Errorf("fatal: orchestrator guard lock held by %q; refusing to start (single-writer constraint)", held.Owner())
+		}
+		// We own it (restarting). Safe to proceed.
+	}
+
+	// Safe to wipe (we are leader or restarting)
 	if count, err := o.Store.DeleteAllLeases(ctx); err != nil {
 		log.L().Error().Err(err).Msg("failed to flush old leases on startup, continuing but may block for TTL")
 	} else if count > 0 {
 		log.L().Info().Int("cleared_leases", count).Msg("startup: flushed stale leases")
 	}
 
+	// Re-acquire guard immediately and maintain it
+	if _, acquired, err := o.Store.TryAcquireLease(ctx, guardKey, o.Owner, o.LeaseTTL); err != nil {
+		return fmt.Errorf("failed to re-acquire guard lease: %w", err)
+	} else if !acquired {
+		// CTO Stop-the-line: If we can't acquire after deleting all, something is very wrong (race or store failure).
+		// We must not proceed without the guard.
+		return fmt.Errorf("fatal: failed to acquire guard lease after wipe; split-brain risk")
+	}
+
+	guardFail := make(chan error, 1)
+	go o.maintainGuardLease(ctx, guardKey, guardFail)
+
+	// Best-effort release on shutdown
+	defer func() {
+		releaseCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = o.Store.ReleaseLease(releaseCtx, guardKey, o.Owner)
+	}()
+
 	if err := o.recoverStaleLeases(ctx); err != nil {
 		return fmt.Errorf("recovery sweep failed: %w", err)
+	}
+
+	// CTO Fix #5: Reconcile Tuner Gauge on Startup (Truth Snapshot)
+	if err := o.reconcileTunerMetrics(ctx); err != nil {
+		return fmt.Errorf("tuner metric reconciliation failed: %w", err)
 	}
 
 	// Validation: Sweeper config must be set
@@ -120,6 +168,9 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 
 	for {
 		select {
+		case err := <-guardFail:
+			// CTO Stop-the-line: Guard lease lost!
+			return fmt.Errorf("fatal: guard lease lost (split-brain risk): %w", err)
 		case <-ctx.Done():
 			return ctx.Err()
 		case msg, ok := <-subStart.C():
@@ -217,6 +268,43 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 		return newReasonError(model.RNotFound, "session not found", nil)
 	}
 
+	priority := o.getPriority(session)
+	admitted, reason := o.Admission.CanAdmit(ctx, priority)
+	if !admitted {
+		// Map admission reason to model.ReasonCode if needed, or use detailed error
+		return newReasonError(model.RLeaseBusy, string(reason), nil)
+	}
+
+	// EXECUTE PREEMPTION IF NEEDED
+	for {
+		targetID, found := o.Admission.SelectPreemptionTarget(priority)
+		if !found {
+			break
+		}
+
+		// We found a target. Abruptly terminate it.
+		logger.Warn().Str("target_sid", targetID).Msg("preempting session to reclaim resources")
+		stopEvt := model.StopSessionEvent{
+			Type:          model.EventStopSession,
+			SessionID:     targetID,
+			Reason:        model.RLeaseBusy, // Re-use LeaseBusy as "Preempted" signal for now
+			CorrelationID: correlationID,
+			RequestedAtUN: time.Now().Unix(),
+		}
+		// Signal stop immediately
+		if err := o.handleStop(ctx, stopEvt); err != nil {
+			logger.Error().Err(err).Str("target_sid", targetID).Msg("failed to signal preemption stop")
+		}
+
+		// Small wait for resource release (Phase 5.2 - Condition G: Deterministic admission)
+		if err := sleepCtx(ctx, 250*time.Millisecond); err != nil {
+			return err
+		}
+	}
+
+	o.Admission.TrackSessionStart(priority, e.SessionID)
+	defer o.Admission.TrackSessionEnd(priority, e.SessionID)
+
 	sessionCtx, err = o.buildSessionContext(session, e)
 	if err != nil {
 		return err
@@ -241,6 +329,12 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 	defer leases.HBCancel()
 	defer o.unregisterActive(e.SessionID)
 
+	// Phase 5.3: Tuner Gauge Truth (Option A - Session Manager)
+	if leases.Slot >= 0 {
+		metrics.IncTunersInUse()
+		defer metrics.DecTunersInUse()
+	}
+
 	if err := o.transitionStarting(ctx, e, sessionCtx, leases.Slot); err != nil {
 		return err
 	}
@@ -250,6 +344,14 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 	}
 
 	// EXECUTION LOOP (Step 4.2 Port First)
+	// Guard: Ensure we are admitted (Defensive Coding / Invariant Protection)
+	if !admitted {
+		// This path should be unreachable due to check above, but protects against logic drift.
+		metrics.RecordInvariantViolation("spawn_on_reject")
+		logger.Error().Msg("BUG: runExecutionLoop called despite rejected admission status")
+		return newReasonError(model.RInvariantViolation, "spawn on reject", nil)
+	}
+
 	// We no longer manually Tune or create execution components.
 	// The MediaPipeline.Start call (inside runExecutionLoop) handles everything.
 
@@ -377,7 +479,6 @@ func (o *Orchestrator) cleanupFiles(sid string) {
 		log.L().Error().Err(err).Str("path", targetDir).Msg("failed to remove session directory")
 	}
 }
-
 func (o *Orchestrator) ForceReleaseLeases(ctx context.Context, sid, ref string, s *model.SessionRecord) {
 	logger := log.FromContext(ctx)
 	serviceRef := ref
@@ -408,5 +509,115 @@ func (o *Orchestrator) ForceReleaseLeases(ctx context.Context, sid, ref string, 
 				}
 			}
 		}
+	}
+}
+
+func (o *Orchestrator) getPriority(s *model.SessionRecord) admission.Priority {
+	if s == nil {
+		return admission.PriorityPulse
+	}
+
+	// Default priority logic based on Mode and Profile
+	mode := model.ModeLive
+	if s.ContextData != nil {
+		if raw := strings.TrimSpace(s.ContextData[model.CtxKeyMode]); raw != "" {
+			mode = strings.ToUpper(raw)
+		}
+	}
+
+	// For now, mapping ModeRecording to Live as it's viewing.
+	// In the future, real-time recording tasks will be PriorityRecording.
+	if mode == model.ModeRecording {
+		return admission.PriorityLive
+	}
+
+	if strings.Contains(strings.ToLower(s.Profile.Name), "pulse") {
+		return admission.PriorityPulse
+	}
+
+	return admission.PriorityLive
+}
+
+// reconcileTunerMetrics computes the truth snapshot of tuners in use
+// based on currently held leases/context data, and updates the gauge.
+func (o *Orchestrator) reconcileTunerMetrics(ctx context.Context) error {
+	// List all sessions (Control Plane Truth)
+	sessions, err := o.Store.ListSessions(ctx)
+	if err != nil {
+		return err
+	}
+
+	tunerCount := 0
+	countedSlots := make(map[int]bool)
+
+	for _, s := range sessions {
+		// Only counting active sessions that hold a tuner slot
+		if s.State.IsTerminal() {
+			continue
+		}
+		if s.ContextData != nil {
+			if slotStr := s.ContextData[model.CtxKeyTunerSlot]; slotStr != "" {
+				// Tenant Truth: Session says "I have slot X"
+				// Store Truth: Lease for slot X must belong to Session
+				if slot, err := strconv.Atoi(slotStr); err == nil {
+					if countedSlots[slot] {
+						log.L().Warn().Str("sid", s.SessionID).Int("slot", slot).Msg("invariant violation: duplicate slot claim detected")
+						metrics.RecordInvariantViolation("duplicate_slot_claim")
+						continue
+					}
+
+					key := model.LeaseKeyTunerSlot(slot)
+					l, ok, err := o.Store.GetLease(ctx, key)
+					if err != nil {
+						log.L().Error().Err(err).Str("key", key).Msg("failed to check lease during reconciliation")
+						continue
+					}
+					if ok && l != nil && l.Owner() == s.SessionID {
+						tunerCount++
+						countedSlots[slot] = true
+					} else {
+						log.L().Warn().Str("sid", s.SessionID).Int("slot", slot).Msg("session claims slot but lease not held (drift/orphan)")
+					}
+				}
+			}
+		}
+	}
+
+	// Reconcile Gauge
+	metrics.SetTunersInUse(float64(tunerCount))
+	log.L().Info().Int("count", tunerCount).Msg("reconciled tuner metrics from store truth")
+	return nil
+}
+
+func (o *Orchestrator) maintainGuardLease(ctx context.Context, key string, fail chan<- error) {
+	ticker := time.NewTicker(o.LeaseTTL / 2)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			// CTO Stop-the-line: Must enable fail-closed behavior
+			_, ok, err := o.Store.RenewLease(ctx, key, o.Owner, o.LeaseTTL)
+			if err != nil {
+				fail <- fmt.Errorf("renew failed: %w", err)
+				return
+			}
+			if !ok {
+				fail <- fmt.Errorf("lease stolen or expired")
+				return
+			}
+		}
+	}
+}
+
+func sleepCtx(ctx context.Context, d time.Duration) error {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }

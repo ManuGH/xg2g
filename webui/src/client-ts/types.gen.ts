@@ -16,7 +16,7 @@ export type ApiError = {
     /**
      * Request ID for debugging
      */
-    request_id: string;
+    requestId: string;
     /**
      * Optional additional context
      */
@@ -109,12 +109,12 @@ export type Service = {
     name?: string;
     number?: string;
     group?: string;
-    logo_url?: string;
+    logoUrl?: string;
     enabled?: boolean;
     /**
      * Service reference for streaming (extracted from M3U URL)
      */
-    service_ref?: string;
+    serviceRef?: string;
 };
 
 export type SessionRecord = {
@@ -149,24 +149,24 @@ export type ScanStatus = {
     /**
      * Unix timestamp of when the current or last scan started
      */
-    started_at?: number;
+    startedAt?: number;
     /**
      * Unix timestamp of when the last scan completed
      */
-    finished_at?: number;
+    finishedAt?: number;
     /**
      * Total number of channels in the playlist
      */
-    total_channels?: number;
+    totalChannels?: number;
     /**
      * Number of attempts (successful/failed) to probe channels so far
      */
-    scanned_channels?: number;
+    scannedChannels?: number;
     /**
      * Number of capabilities successfully updated in the store
      */
-    updated_count?: number;
-    last_error?: string;
+    updatedCount?: number;
+    lastError?: string;
 };
 
 export type PlaybackFeedbackRequest = {
@@ -193,7 +193,7 @@ export type SystemHealth = {
     receiver?: ComponentStatus;
     epg?: EpgStatus;
     version?: string;
-    uptime_seconds?: number;
+    uptimeSeconds?: number;
 };
 
 export type SystemInfoData = {
@@ -202,16 +202,16 @@ export type SystemInfoData = {
         model?: string;
         boxtype?: string;
         chipset?: string;
-        chipset_description?: string;
+        chipsetDescription?: string;
     };
     software?: {
-        oe_version?: string;
-        image_distro?: string;
-        image_version?: string;
-        enigma_version?: string;
-        kernel_version?: string;
-        driver_date?: string;
-        webif_version?: string;
+        oeVersion?: string;
+        imageDistro?: string;
+        imageVersion?: string;
+        enigmaVersion?: string;
+        kernelVersion?: string;
+        driverDate?: string;
+        webifVersion?: string;
     };
     tuners?: Array<{
         name?: string;
@@ -237,9 +237,9 @@ export type SystemInfoData = {
         uptime?: string;
     };
     resource?: {
-        memory_total?: string;
-        memory_available?: string;
-        memory_used?: string;
+        memoryTotal?: string;
+        memoryAvailable?: string;
+        memoryUsed?: string;
     };
 };
 
@@ -247,28 +247,28 @@ export type StorageItem = {
     model?: string;
     capacity?: string;
     mount?: string;
-    mount_status: 'mounted' | 'unmounted' | 'unknown';
+    mountStatus: 'mounted' | 'unmounted' | 'unknown';
     /**
      * Status of the storage device. 'skipped' indicates the monitor was too busy to evaluate.
      */
-    health_status: 'ok' | 'timeout' | 'error' | 'unknown' | 'skipped';
+    healthStatus: 'ok' | 'timeout' | 'error' | 'unknown' | 'skipped';
     /**
      * Access level detected during probe.
      */
     access: 'none' | 'ro' | 'rw';
-    is_nas: boolean;
-    fs_type?: string;
-    checked_at?: string;
+    isNas: boolean;
+    fsType?: string;
+    checkedAt?: string;
 };
 
 export type ComponentStatus = {
     status?: 'ok' | 'error';
-    last_check?: string;
+    lastCheck?: string;
 };
 
 export type EpgStatus = {
     status?: 'ok' | 'missing';
-    missing_channels?: number;
+    missingChannels?: number;
 };
 
 /**
@@ -283,8 +283,8 @@ export type CurrentServiceInfo = {
     now?: {
         title?: string;
         description?: string;
-        begin_timestamp?: number;
-        duration_sec?: number;
+        beginTimestamp?: number;
+        durationSec?: number;
     };
     next?: {
         title?: string;
@@ -315,7 +315,7 @@ export type StreamingConfig = {
     /**
      * Streaming delivery policy (only 'universal' is supported)
      */
-    delivery_policy?: 'universal';
+    deliveryPolicy?: 'universal';
 };
 
 export type FeatureFlags = {
@@ -401,7 +401,7 @@ export type SeriesRule = {
     /**
      * Optional service reference to restrict rule
      */
-    channel_ref?: string;
+    channelRef?: string;
     /**
      * Days of week (0=Sunday)
      */
@@ -409,7 +409,7 @@ export type SeriesRule = {
     /**
      * Time window HHMM-HHMM
      */
-    start_window?: string;
+    startWindow?: string;
     priority?: number;
     lastRunAt?: string;
     lastRunStatus?: string;
@@ -425,7 +425,7 @@ export type SeriesRuleUpdate = {
     /**
      * Optional service reference to restrict rule
      */
-    channel_ref?: string;
+    channelRef?: string;
     /**
      * Days of week (0=Sunday)
      */
@@ -433,7 +433,7 @@ export type SeriesRuleUpdate = {
     /**
      * Time window HHMM-HHMM
      */
-    start_window?: string;
+    startWindow?: string;
     priority: number;
 };
 
@@ -479,7 +479,7 @@ export type NowNextEntry = {
 };
 
 export type NowNextItem = {
-    service_ref: string;
+    serviceRef: string;
     now?: NowNextEntry;
     next?: NowNextEntry;
 };
@@ -527,17 +527,17 @@ export type PlaybackInfo = {
     sessionId: string;
     mode: PlaybackInfoMode;
     /**
-     * Relative URL for the selected playback strategy.
+     * Relative URL for the selected playback strategy. Optional for deny or decision-led cases.
      */
-    url: string;
+    url?: string;
     /**
-     * Whether the stream is seekable. Omitted if unknown. Deprecated in favor of is_seekable.
+     * Whether the stream is seekable. Omitted if unknown. Deprecated in favor of isSeekable.
      */
     seekable?: boolean;
     /**
      * Authoritative flag if the stream is seekable. Becomes required in P3-4.
      */
-    is_seekable?: boolean;
+    isSeekable?: boolean;
     /**
      * Absolute DVR window length in seconds. Becomes required in P3-4.
      */
@@ -549,12 +549,12 @@ export type PlaybackInfo = {
     /**
      * wall-clock timestamp (UNIX) of the earliest segment in window. Becomes required in P3-4.
      */
-    start_unix?: number;
+    startUnix?: number;
     /**
      * Duration in seconds. Omitted if unknown or preparing.
      */
-    duration_seconds?: number;
-    duration_source?: PlaybackInfoDurationSource;
+    durationSeconds?: number;
+    durationSource?: PlaybackInfoDurationSource;
     /**
      * Optional resume state if available.
      */
@@ -562,8 +562,8 @@ export type PlaybackInfo = {
         /**
          * last known playback position in seconds
          */
-        pos_seconds: number;
-        duration_seconds?: number;
+        posSeconds: number;
+        durationSeconds?: number;
         finished?: boolean;
     };
     /**
@@ -573,21 +573,22 @@ export type PlaybackInfo = {
     /**
      * Truthful video codec if known (e.g., h264, hevc, mpeg2).
      */
-    video_codec?: string;
+    videoCodec?: string;
     /**
      * Truthful audio codec if known (e.g., aac, ac3, mp2).
      */
-    audio_codec?: string;
+    audioCodec?: string;
     reason?: PlaybackInfoReason;
+    decision?: PlaybackDecision;
 };
 
 /**
  * Selected playback strategy output mode.
  */
-export type PlaybackInfoMode = 'hls' | 'direct_mp4';
+export type PlaybackInfoMode = 'hls' | 'direct_mp4' | 'deny';
 
 /**
- * Source of the reported duration, when duration_seconds is present.
+ * Source of the reported duration, when durationSeconds is present.
  */
 export type PlaybackInfoDurationSource = 'store' | 'cache' | 'probe';
 
@@ -595,6 +596,145 @@ export type PlaybackInfoDurationSource = 'store' | 'cache' | 'probe';
  * Reason for the playback decision.
  */
 export type PlaybackInfoReason = 'directplay_match' | 'transcode_audio' | 'transcode_video' | 'transcode_all' | 'container_mismatch' | 'unknown';
+
+/**
+ * Client capabilities for playback decision (P4-1)
+ */
+export type PlaybackCapabilities = {
+    /**
+     * Capabilities contract version (current: 1)
+     */
+    capabilitiesVersion: number;
+    /**
+     * Supported container formats
+     */
+    container: Array<string>;
+    /**
+     * Supported video codecs
+     */
+    videoCodecs: Array<string>;
+    /**
+     * Supported audio codecs
+     */
+    audioCodecs: Array<string>;
+    /**
+     * Optional resolution/FPS constraints
+     */
+    maxVideo?: {
+        width?: number;
+        height?: number;
+        fps?: number;
+    };
+    /**
+     * Whether client supports HLS playlists
+     */
+    supportsHls?: boolean;
+    /**
+     * Whether client supports HTTP range requests
+     */
+    supportsRange?: boolean;
+    /**
+     * Client device category for policy decisions
+     */
+    deviceType?: string;
+    /**
+     * Whether client allows transcoding (force bypass)
+     */
+    allowTranscode?: boolean;
+};
+
+/**
+ * Complete playback decision from backend (P4-1)
+ */
+export type PlaybackDecision = {
+    /**
+     * Playback mode decision
+     */
+    mode: 'direct_play' | 'direct_stream' | 'transcode' | 'deny';
+    /**
+     * The explicitly selected playback URL (backend-driven).
+     */
+    selectedOutputUrl: string;
+    /**
+     * The explicitly selected playback kind.
+     */
+    selectedOutputKind: 'file' | 'hls';
+    /**
+     * Selected output format
+     */
+    selected: {
+        container: string;
+        videoCodec: string;
+        audioCodec: string;
+    };
+    /**
+     * Available output URLs/playlists
+     */
+    outputs: Array<PlaybackOutput>;
+    /**
+     * Applied constraints (e.g., downscale_required)
+     */
+    constraints: Array<string>;
+    /**
+     * Machine-readable decision reason codes
+     */
+    reasons: Array<string>;
+    trace: PlaybackTrace;
+};
+
+/**
+ * Traceability information
+ */
+export type PlaybackTrace = {
+    /**
+     * Correlation ID (UUID or prefixed string like req_abc123)
+     */
+    requestId: string;
+    sessionId?: string | null;
+};
+
+/**
+ * Output URL for client playback
+ */
+export type PlaybackOutput = PlaybackOutputFile | PlaybackOutputHls;
+
+export type PlaybackOutputFile = {
+    /**
+     * Static file output
+     */
+    kind: 'file';
+    /**
+     * Direct playback URL
+     */
+    url: string;
+};
+
+export type PlaybackOutputHls = {
+    /**
+     * HLS stream output
+     */
+    kind: 'hls';
+    /**
+     * Canonical HLS playlist URL (.m3u8)
+     */
+    playlistUrl: string;
+    /**
+     * Alternate playback URL (optional)
+     */
+    url?: string;
+};
+
+export type ProblemCapabilitiesMissing = ProblemDetails & {
+    code?: 'capabilities_missing';
+};
+
+export type ProblemCapabilitiesInvalid = ProblemDetails & {
+    code?: 'capabilities_invalid';
+};
+
+export type ProblemDecisionAmbiguous = ProblemDetails & {
+    code?: 'decision_ambiguous';
+};
 
 export type TimerCreateRequest = {
     serviceRef: string;
@@ -666,16 +806,20 @@ export type RecordingStatus = {
 };
 
 export type RecordingBuildStatus = {
+    /**
+     * Correlation ID for the request.
+     */
+    requestId: string;
     state: 'IDLE' | 'RUNNING' | 'FAILED' | 'READY';
-    segment_count?: number;
-    last_progress?: string;
-    started_at?: string;
-    attempt_mode?: 'fast' | 'robust';
+    segmentCount?: number;
+    lastProgress?: string;
+    startedAt?: string;
+    attemptMode?: 'fast' | 'robust';
     error?: string;
     /**
      * True if a progressive (timeshift) playlist is playable.
      */
-    progressive_ready?: boolean;
+    progressiveReady?: boolean;
 };
 
 export type TimerList = {
@@ -704,15 +848,15 @@ export type StreamSession = {
      * Correlation ID for the trace. Mandatory in P3-1.
      */
     requestId: string;
-    client_ip?: string;
-    channel_name?: string;
-    started_at?: string;
+    clientIp?: string;
+    channelName?: string;
+    startedAt?: string;
     state: 'starting' | 'buffering' | 'active' | 'stalled' | 'ending' | 'idle' | 'error';
     program?: {
         title?: string;
         description?: string;
-        begin_timestamp?: number;
-        duration_sec?: number;
+        beginTimestamp?: number;
+        durationSec?: number;
     };
 };
 
@@ -735,11 +879,11 @@ export type RecordingItem = {
     /**
      * Legacy receiver service reference (read-only).
      */
-    service_ref?: string;
+    serviceRef?: string;
     /**
      * Base64url-encoded recording ID (RFC 4648, unpadded) to use for /recordings/{recordingId}.
      */
-    recording_id?: string;
+    recordingId?: string;
     title?: string;
     description?: string;
     /**
@@ -749,7 +893,7 @@ export type RecordingItem = {
     /**
      * Recording duration in seconds, if known.
      */
-    duration_seconds?: number;
+    durationSeconds?: number;
     /**
      * Human-readable duration string for display only.
      */
@@ -763,16 +907,20 @@ export type RecordingItem = {
 };
 
 export type ResumeSummary = {
-    pos_seconds?: number;
-    duration_seconds?: number;
+    posSeconds?: number;
+    durationSeconds?: number;
     finished?: boolean;
-    updated_at?: string;
+    updatedAt?: string;
 };
 
 export type RecordingResponse = {
+    /**
+     * Correlation ID for the request.
+     */
+    requestId: string;
     roots?: Array<RecordingRoot>;
-    current_root?: string;
-    current_path?: string;
+    currentRoot?: string;
+    currentPath?: string;
     breadcrumbs?: Array<Breadcrumb>;
     directories?: Array<DirectoryItem>;
     recordings?: Array<RecordingItem>;
@@ -791,7 +939,7 @@ export type SeriesRuleWritable = {
     /**
      * Optional service reference to restrict rule
      */
-    channel_ref?: string;
+    channelRef?: string;
     /**
      * Days of week (0=Sunday)
      */
@@ -799,7 +947,7 @@ export type SeriesRuleWritable = {
     /**
      * Time window HHMM-HHMM
      */
-    start_window?: string;
+    startWindow?: string;
     priority?: number;
     lastRunAt?: string;
     lastRunStatus?: string;
@@ -879,7 +1027,7 @@ export type PutSystemConfigResponses = {
      * Configuration updated
      */
     200: {
-        restart_required?: boolean;
+        restartRequired?: boolean;
     };
 };
 
@@ -1020,7 +1168,7 @@ export type GetEpgResponses = {
      */
     200: {
         items?: Array<{
-            service_ref?: string;
+            serviceRef?: string;
             title?: string;
             desc?: string;
             start?: number;
@@ -1122,7 +1270,7 @@ export type DeleteRecordingData = {
     body?: never;
     path: {
         /**
-         * Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recording_id
+         * Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recordingId
          */
         recordingId: string;
     };
@@ -1199,6 +1347,10 @@ export type GetRecordingPlaybackInfoErrors = {
      * Recording not found
      */
     404: ApiError;
+    /**
+     * Preparing (media truth unknown, retryable)
+     */
+    503: ProblemDetails;
 };
 
 export type GetRecordingPlaybackInfoError = GetRecordingPlaybackInfoErrors[keyof GetRecordingPlaybackInfoErrors];
@@ -1211,6 +1363,52 @@ export type GetRecordingPlaybackInfoResponses = {
 };
 
 export type GetRecordingPlaybackInfoResponse = GetRecordingPlaybackInfoResponses[keyof GetRecordingPlaybackInfoResponses];
+
+export type PostRecordingPlaybackInfoData = {
+    /**
+     * Client capabilities for decision making
+     */
+    body: PlaybackCapabilities;
+    path: {
+        recordingId: string;
+    };
+    query?: never;
+    url: '/recordings/{recordingId}/stream-info';
+};
+
+export type PostRecordingPlaybackInfoErrors = {
+    /**
+     * Invalid capabilities
+     */
+    400: ProblemCapabilitiesInvalid;
+    /**
+     * Recording not found
+     */
+    404: ApiError;
+    /**
+     * Capabilities missing (required for v3.1+)
+     */
+    412: ProblemCapabilitiesMissing;
+    /**
+     * Decision ambiguous (media truth unknown)
+     */
+    422: ProblemDecisionAmbiguous;
+    /**
+     * Preparing (media truth unknown, retryable)
+     */
+    503: ProblemDetails;
+};
+
+export type PostRecordingPlaybackInfoError = PostRecordingPlaybackInfoErrors[keyof PostRecordingPlaybackInfoErrors];
+
+export type PostRecordingPlaybackInfoResponses = {
+    /**
+     * Playback decision and info
+     */
+    200: PlaybackInfo;
+};
+
+export type PostRecordingPlaybackInfoResponse = PostRecordingPlaybackInfoResponses[keyof PostRecordingPlaybackInfoResponses];
 
 export type StreamRecordingDirectData = {
     body?: never;
@@ -1272,7 +1470,7 @@ export type GetRecordingHlsPlaylistData = {
     body?: never;
     path: {
         /**
-         * Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recording_id
+         * Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recordingId
          */
         recordingId: string;
     };
@@ -1292,7 +1490,7 @@ export type GetRecordingHlsPlaylistErrors = {
     /**
      * Recording not ready for VOD
      */
-    503: ApiError;
+    503: ProblemDetails;
 };
 
 export type GetRecordingHlsPlaylistError = GetRecordingHlsPlaylistErrors[keyof GetRecordingHlsPlaylistErrors];
@@ -1333,7 +1531,7 @@ export type GetRecordingHlsTimeshiftData = {
     body?: never;
     path: {
         /**
-         * Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recording_id
+         * Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recordingId
          */
         recordingId: string;
     };
@@ -1394,7 +1592,7 @@ export type GetRecordingHlsCustomSegmentData = {
     body?: never;
     path: {
         /**
-         * Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recording_id
+         * Base64url-encoded recording ID (RFC 4648, unpadded) from RecordingItem.recordingId
          */
         recordingId: string;
         segment: string;

@@ -91,9 +91,9 @@ enigma2:
 			ProbeFunc: func(ctx context.Context, path string) (*vod.StreamInfo, error) {
 				probeCalled.Add(1)
 				return &vod.StreamInfo{
-					Video:     vod.VideoStreamInfo{Duration: 123, CodecName: "h264"},
+					Video:     vod.VideoStreamInfo{Duration: 123, CodecName: "h264", Width: 1920, Height: 1080, FPS: 25.0},
 					Audio:     vod.AudioStreamInfo{CodecName: "aac"},
-					Container: "mpegts",
+					Container: "mp4",
 				}, nil
 			},
 		}
@@ -116,9 +116,12 @@ enigma2:
 			v3Handler.ServeHTTP(w, req)
 		}
 
+		if w.Code != http.StatusOK {
+			t.Logf("Response Body: %s", w.Body.String())
+		}
 		require.Equal(t, http.StatusOK, w.Code)
 		var resp struct {
-			DurationSeconds int64 `json:"duration_seconds"`
+			DurationSeconds int64 `json:"durationSeconds"`
 		}
 		err = json.Unmarshal(w.Body.Bytes(), &resp)
 		require.NoError(t, err)
@@ -156,7 +159,7 @@ enigma2:
 
 		require.Equal(t, http.StatusOK, w.Code)
 		var resp struct {
-			DurationSeconds int64 `json:"duration_seconds"`
+			DurationSeconds int64 `json:"durationSeconds"`
 		}
 		err = json.Unmarshal(w.Body.Bytes(), &resp)
 		require.NoError(t, err)

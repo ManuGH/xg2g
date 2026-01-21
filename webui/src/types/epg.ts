@@ -3,7 +3,7 @@
 import type { Service, Bouquet } from '../client-ts';
 
 export interface Programme {
-  service_ref: string;
+  serviceRef: string;
   start: number; // Unix timestamp
   end: number; // Unix timestamp
   title: string;
@@ -14,8 +14,6 @@ export interface Timer {
   begin: number;
   end: number;
   serviceRef?: string;
-  serviceref?: string;
-  service_ref?: string;
   name?: string;
   description?: string;
 }

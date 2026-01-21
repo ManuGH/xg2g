@@ -9,6 +9,7 @@ import { epgReducer, createInitialEpgState } from './epgModel';
 import { fetchEpgEvents, fetchTimers } from './epgApi';
 import { addTimer } from '../../client-ts';
 import type { EpgChannel, EpgBouquet, Timer, EpgEvent } from './types';
+import { EPG_MAX_HORIZON_HOURS } from './types';
 import { EpgToolbar } from './components/EpgToolbar';
 import { EpgChannelList } from './components/EpgChannelList';
 import { normalizeEpgText } from '../../utils/text';
@@ -34,6 +35,7 @@ export default function EPG({
   const { t } = useTranslation();
   const [state, dispatch] = useReducer(epgReducer, undefined, createInitialEpgState);
   const [timers, setTimers] = React.useState<Timer[]>([]);
+  const abortControllerRef = React.useRef<AbortController | null>(null);
 
   // ============================================================================
   // Timer Management (for recording feedback)
@@ -63,7 +65,7 @@ export default function EPG({
       try {
         await addTimer({
           body: {
-            serviceRef: event.service_ref,
+            serviceRef: event.serviceRef,
             begin: event.start,
             end: event.end,
             name: event.title,
@@ -88,9 +90,9 @@ export default function EPG({
 
   const isRecorded = useCallback(
     (event: EpgEvent): boolean => {
-      const progRef = event.service_ref;
+      const progRef = event.serviceRef;
       return timers.some((t) => {
-        const tRef = t.serviceRef || t.serviceref || t.service_ref;
+        const tRef = t.serviceRef;
         if (tRef && progRef && tRef !== progRef) return false;
         return t.begin < event.end && t.end > event.start;
       });
@@ -103,32 +105,43 @@ export default function EPG({
   // ============================================================================
 
   const loadEpgEvents = useCallback(async () => {
+    // Race Control: Abort previous request
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = new AbortController();
+    const { signal } = abortControllerRef.current;
+
     dispatch({ type: 'LOAD_START' });
     try {
+      // Pin now per load cycle
       const now = Math.floor(Date.now() / 1000);
-      const startFetch = now - 7 * 24 * 3600;
-      const endFetch = now + 14 * 24 * 3600;
+
+      // Compute range (Force cap for safety)
+      const rangeHours = Math.min(state.filters.timeRange, EPG_MAX_HORIZON_HOURS);
+      const fetchFrom = now - 4 * 3600;
+      const fetchTo = now + rangeHours * 3600;
 
       const events = await fetchEpgEvents({
-        from: startFetch,
-        to: endFetch,
+        from: fetchFrom,
+        to: fetchTo,
         bouquet: state.filters.bouquetId || undefined,
+        signal,
       });
+
+      if (signal.aborted) return;
+
+      // Observability (DEV only)
+      const isDev = (import.meta as any).env?.DEV;
+      if (isDev) {
+        console.group('EPG Load [%s]', state.filters.timeRange === 336 ? 'All' : `${state.filters.timeRange}h`);
+        console.log('Window: %s to %s', new Date(fetchFrom * 1000).toISOString(), new Date(fetchTo * 1000).toISOString());
+        console.log('Events received: %d', events.length);
+        console.groupEnd();
+      }
 
       dispatch({ type: 'LOAD_SUCCESS', payload: { events } });
     } catch (err: any) {
-      console.error(err);
-      // We need to resolve language for error string here or just set a key if reducer supported it?
-      // Reducer takes string. We should use a key or translate here?
-      // Since reducer state.error is displayed directly, we should translate here OR store key.
-      // Storing translated string is easier for now given existing typing.
-      // But hooks can change language... if we store "EPG failed" and switch lang, it stays "EPG failed".
-      // Ideally we store error CODE and translate in render.
-      // For now, let's translate here, user will refresh on error anyway.
-      // wait, useCallback dep needs 't'.
-      // PROPER FIX: Pass error CODE/KEY to state, translate in render.
-      // But invalidating typing... let's hack: use unique error keys and checking in render?
-      // Or just ignore hot-swapping language for errors.
+      if (err.name === 'AbortError') return;
+      console.error('EPG load failed:', err);
       dispatch({ type: 'LOAD_ERROR', payload: { error: 'epg.loadError' } });
     }
   }, [state.filters.timeRange, state.filters.bouquetId]);
@@ -184,11 +197,11 @@ export default function EPG({
   // Data Preparation for UI Components
   // ============================================================================
 
-  // Group events by service_ref for efficient lookup
+  // Group events by serviceRef for efficient lookup
   const mainEventsByServiceRef = useMemo(() => {
     const map = new Map<string, EpgEvent[]>();
     state.events.forEach((event) => {
-      const ref = event.service_ref;
+      const ref = event.serviceRef;
       if (!map.has(ref)) map.set(ref, []);
       map.get(ref)!.push(event);
     });
@@ -204,7 +217,7 @@ export default function EPG({
   const searchEventsByServiceRef = useMemo(() => {
     const map = new Map<string, EpgEvent[]>();
     state.searchEvents.forEach((event) => {
-      const ref = event.service_ref;
+      const ref = event.serviceRef;
       if (!map.has(ref)) map.set(ref, []);
       map.get(ref)!.push(event);
     });
@@ -278,6 +291,7 @@ export default function EPG({
               channels={channels}
               eventsByServiceRef={searchEventsByServiceRef}
               currentTime={state.currentTime}
+              timeRangeHours={state.filters.timeRange}
               expandedChannels={state.expandedSearchChannels}
               onToggleExpand={handleToggleSearchChannel}
               onPlay={onPlay}
@@ -299,6 +313,7 @@ export default function EPG({
           channels={channels}
           eventsByServiceRef={mainEventsByServiceRef}
           currentTime={state.currentTime}
+          timeRangeHours={state.filters.timeRange}
           expandedChannels={state.expandedChannels}
           onToggleExpand={handleToggleChannel}
           onPlay={onPlay}

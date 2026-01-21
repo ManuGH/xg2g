@@ -61,7 +61,7 @@ func Tracing(tracerName string) func(http.Handler) http.Handler {
 				0, // Will be set after response
 			)
 			if reqID := ww.Header().Get("X-Request-ID"); reqID != "" {
-				attrs = append(attrs, attribute.String("http.request_id", reqID))
+				attrs = append(attrs, attribute.String("http.requestId", reqID))
 			}
 			span.SetAttributes(attrs...)
 
@@ -77,7 +77,7 @@ func Tracing(tracerName string) func(http.Handler) http.Handler {
 				statusCode,
 			)
 			if reqID := ww.Header().Get("X-Request-ID"); reqID != "" {
-				finalAttrs = append(finalAttrs, attribute.String("http.request_id", reqID))
+				finalAttrs = append(finalAttrs, attribute.String("http.requestId", reqID))
 			}
 			span.SetAttributes(finalAttrs...)
 

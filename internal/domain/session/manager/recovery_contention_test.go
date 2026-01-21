@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/admission"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/infra/media/stub"
@@ -29,8 +30,9 @@ func TestContention_Blocked(t *testing.T) {
 		HeartbeatEvery: 1 * time.Second,
 		Owner:          "worker-1",
 		TunerSlots:     []int{0},
+		Admission:      admission.NewResourceMonitor(10, 10, 0),
 		Pipeline:       stub.NewAdapter(),
-		Platform:         NewStubPlatform(),
+		Platform:       NewStubPlatform(),
 		LeaseKeyFunc: func(e model.StartSessionEvent) string {
 			return model.LeaseKeyService(e.ServiceRef)
 		},
@@ -67,8 +69,9 @@ func TestRecovery_StaleTunerLease(t *testing.T) {
 	ctx := context.Background()
 	st := store.NewMemoryStore()
 	orch := &Orchestrator{
-		Store:    st,
-		LeaseTTL: 100 * time.Millisecond,
+		Store:     st,
+		Admission: admission.NewResourceMonitor(10, 10, 0),
+		LeaseTTL:  100 * time.Millisecond,
 	}
 
 	sessID := "stale-tuner-sess"
@@ -95,8 +98,9 @@ func TestRecovery_ActiveTunerLease(t *testing.T) {
 	ctx := context.Background()
 	st := store.NewMemoryStore()
 	orch := &Orchestrator{
-		Store:    st,
-		LeaseTTL: 5 * time.Second,
+		Store:     st,
+		Admission: admission.NewResourceMonitor(10, 10, 0),
+		LeaseTTL:  5 * time.Second,
 	}
 
 	sessID := "active-tuner-sess"

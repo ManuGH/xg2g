@@ -1,0 +1,38 @@
+{
+  "name": "web_conservative_ac3",
+  "input": {
+    "truth": {
+      "container": "mp4",
+      "video_codec": "h264",
+      "audio_codec": "ac3",
+      "width": 1920,
+      "height": 1080,
+      "fps": 25
+    },
+    "capabilities": {
+      "version": 1,
+      "containers": [
+        "mp4"
+      ],
+      "video_codecs": [
+        "h264"
+      ],
+      "audio_codecs": [
+        "aac",
+        "mp3"
+      ],
+      "supports_hls": true,
+      "supports_range": true
+    },
+    "policy": {
+      "allow_transcode": true
+    }
+  },
+  "expected": {
+    "mode": "transcode",
+    "protocol": "hls",
+    "reasons": [
+      "audio_codec_not_supported_by_client"
+    ]
+  }
+}

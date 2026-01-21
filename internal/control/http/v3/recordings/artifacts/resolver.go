@@ -118,10 +118,9 @@ func (r *DefaultResolver) ResolvePlaylist(ctx context.Context, recordingID, prof
 	rewritten := v3recordings.RewritePlaylistType(string(data), "VOD")
 
 	return ArtifactOK{
-		Data:         []byte(rewritten),
-		ModTime:      info.ModTime(),
-		ContentType:  "application/vnd.apple.mpegurl",
-		CacheControl: "max-age=2", // Playlist TTL
+		Data:    []byte(rewritten),
+		ModTime: info.ModTime(),
+		Kind:    ArtifactKindPlaylist,
 	}, nil
 }
 
@@ -165,10 +164,9 @@ func (r *DefaultResolver) ResolveTimeshift(ctx context.Context, recordingID, pro
 	// Rewrite using canonical helper
 	rewritten := v3recordings.RewritePlaylistType(string(data), "EVENT")
 	return ArtifactOK{
-		Data:         []byte(rewritten),
-		ModTime:      info.ModTime(),
-		ContentType:  "application/vnd.apple.mpegurl",
-		CacheControl: "no-store", // DVR Semantics
+		Data:    []byte(rewritten),
+		ModTime: info.ModTime(),
+		Kind:    ArtifactKindPlaylist,
 	}, nil
 }
 
@@ -218,22 +216,18 @@ func (r *DefaultResolver) ResolveSegment(ctx context.Context, recordingID string
 		return ArtifactOK{}, &ArtifactError{Code: CodeInternal, Err: err}
 	}
 
-	// Canonical Content-Type Mapping
-	contentType := "video/MP2T"
-	// init.mp4 is covered by .mp4 suffix, but keeping explicit if clarity helps.
-	// User note: "strings.HasSuffix(segment, ".mp4") deckt init.mp4 bereits ab; check ist redundant"
-	if strings.HasSuffix(segment, ".mp4") || strings.HasSuffix(segment, ".m4s") {
-		contentType = "video/mp4"
+	// Canonical Kind Mapping
+	kind := ArtifactKindSegmentTS
+	if segment == "init.mp4" {
+		kind = ArtifactKindSegmentInit
+	} else if strings.HasSuffix(segment, ".m4s") || strings.HasSuffix(segment, ".mp4") {
+		kind = ArtifactKindSegmentFMP4
 	}
 
-	// Canonical Cache Control for Segments (immutable-ish)
-	cacheControl := "max-age=60"
-
 	return ArtifactOK{
-		AbsPath:      cleanPath,
-		ModTime:      info.ModTime(),
-		ContentType:  contentType,
-		CacheControl: cacheControl,
+		AbsPath: cleanPath,
+		ModTime: info.ModTime(),
+		Kind:    kind,
 	}, nil
 }
 

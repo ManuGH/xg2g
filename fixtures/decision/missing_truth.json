@@ -1,0 +1,37 @@
+{
+  "name": "missing_truth",
+  "input": {
+    "truth": {
+      "container": "",
+      "video_codec": "",
+      "audio_codec": "",
+      "width": 0,
+      "height": 0,
+      "fps": 0
+    },
+    "capabilities": {
+      "version": 1,
+      "containers": [
+        "mp4"
+      ],
+      "video_codecs": [
+        "h264"
+      ],
+      "audio_codecs": [
+        "aac"
+      ],
+      "supports_hls": true,
+      "supports_range": true
+    },
+    "policy": {
+      "allow_transcode": true
+    }
+  },
+  "expected": {
+    "is_problem": true,
+    "problem": {
+      "status": 422,
+      "code": "decision_ambiguous"
+    }
+  }
+}

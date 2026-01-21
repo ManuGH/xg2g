@@ -16,12 +16,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 	"github.com/ManuGH/xg2g/internal/pipeline/lease"
-	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
-	"github.com/ManuGH/xg2g/internal/domain/session/store"
 )
 
 type IntentHandler struct {
@@ -107,10 +107,6 @@ func (h IntentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if len(h.TunerSlots) == 0 {
 		http.Error(w, "no tuner slots configured", http.StatusServiceUnavailable)
 		return
-	}
-	dvrWindowSec := h.DVRWindowSec
-	if dvrWindowSec <= 0 {
-		dvrWindowSec = 300
 	}
 	dvrWindowSec := h.DVRWindowSec
 	if dvrWindowSec <= 0 {

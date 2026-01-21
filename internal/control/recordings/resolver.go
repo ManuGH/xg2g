@@ -3,6 +3,7 @@ package recordings
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 
 	"github.com/ManuGH/xg2g/internal/config"
@@ -13,6 +14,7 @@ import (
 // Resolver interface in domain.
 type Resolver interface {
 	Resolve(ctx context.Context, serviceRef string, intent PlaybackIntent, profile PlaybackProfile) (PlaybackInfoResult, error)
+	GetMediaTruth(ctx context.Context, serviceRef string) (playback.MediaTruth, error)
 }
 
 var ErrProbeNotConfigured = errors.New("probe not configured")
@@ -43,16 +45,19 @@ type ResolverOptions struct {
 
 // NewResolver creates a new Resolver with strict invariant enforcement.
 // It acts as a thin adapter, wiring up TruthProvider and ProfileResolver.
-func NewResolver(cfg *config.AppConfig, manager MetadataManager, opts ResolverOptions) Resolver {
+func NewResolver(cfg *config.AppConfig, manager MetadataManager, opts ResolverOptions) (Resolver, error) {
 	if cfg == nil {
-		panic("invariant violation: cfg is nil in NewResolver")
+		return nil, fmt.Errorf("NewResolver: cfg is nil")
 	}
 	if manager == nil {
-		panic("invariant violation: manager is nil in NewResolver")
+		return nil, fmt.Errorf("NewResolver: manager is nil")
 	}
 
 	// 1. Build Truth Provider (Centralized Truth)
-	truth := NewTruthProvider(cfg, manager, opts)
+	truth, err := NewTruthProvider(cfg, manager, opts)
+	if err != nil {
+		return nil, fmt.Errorf("NewResolver: truth provider: %w", err)
+	}
 
 	// 2. Build Profile Resolver
 	profile := NewProfileResolver()
@@ -64,7 +69,7 @@ func NewResolver(cfg *config.AppConfig, manager MetadataManager, opts ResolverOp
 		cfg:        cfg,
 		vodManager: manager,
 		engine:     engine,
-	}
+	}, nil
 }
 
 // Resolve delegates to the Decision Engine and maps the result to the domain DTO.
@@ -149,6 +154,10 @@ func (r *PlaybackInfoResolver) Resolve(ctx context.Context, serviceRef string, i
 	}
 
 	return res, nil
+}
+
+func (r *PlaybackInfoResolver) GetMediaTruth(ctx context.Context, serviceRef string) (playback.MediaTruth, error) {
+	return r.engine.GetMediaTruth(ctx, serviceRef)
 }
 
 func mapProtocolToArtifact(p playback.Protocol) playback.ArtifactKind {

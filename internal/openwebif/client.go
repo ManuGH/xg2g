@@ -463,13 +463,15 @@ type svcPayloadFlat struct {
 
 // EPGEvent represents a single programme entry from OpenWebIF EPG API
 type EPGEvent struct {
-	ID          int    `json:"id"` // Changed from string to int
-	Title       string `json:"title"`
-	Description string `json:"shortdesc"`
-	LongDesc    string `json:"longdesc"`
-	Begin       int64  `json:"begin_timestamp"`
-	Duration    int64  `json:"duration_sec"`
-	SRef        string `json:"sref"`
+	ID                  int    `json:"id"`
+	Title               string `json:"title"`
+	Description         string `json:"shortdesc"`
+	DescriptionFallback string `json:"description"`
+	LongDesc            string `json:"longdesc"`
+	LongDescFallback    string `json:"descriptionextended"`
+	Begin               int64  `json:"begin_timestamp"`
+	Duration            int64  `json:"duration_sec"`
+	SRef                string `json:"sref"`
 }
 
 // EPGResponse represents the OpenWebIF EPG API response structure
@@ -1421,6 +1423,14 @@ func (c *Client) fetchEPGFromURL(ctx context.Context, urlPath string) ([]EPGEven
 	validEvents := make([]EPGEvent, 0, len(epgResp.Events))
 	for _, event := range epgResp.Events {
 		if event.Title != "" && event.Begin > 0 {
+			// Resolve fallbacks
+			if event.Description == "" {
+				event.Description = event.DescriptionFallback
+			}
+			if event.LongDesc == "" {
+				event.LongDesc = event.LongDescFallback
+			}
+
 			// Sanitize strings: OpenWebIF often sends HTML entities (e.g. &#x27;) in JSON
 			// We must unescape them here so the XMLTV generator doesn't double-escape them.
 			event.Title = html.UnescapeString(event.Title)
@@ -1440,13 +1450,14 @@ type xmlEPGResponse struct {
 }
 
 type xmlEPGEvent struct {
-	ID          int    `xml:"e2eventid"`
-	Title       string `xml:"e2eventtitle"`
-	Description string `xml:"e2eventdescription"`
-	Start       int64  `xml:"e2eventstart"`
-	Duration    int    `xml:"e2eventduration"`
-	ServiceRef  string `xml:"e2eventservicereference"`
-	Genre       string `xml:"e2eventgenre"`
+	ID              int    `xml:"e2eventid"`
+	Title           string `xml:"e2eventtitle"`
+	Description     string `xml:"e2eventdescription"`
+	LongDescription string `xml:"e2eventdescriptionextended"`
+	Start           int64  `xml:"e2eventstart"`
+	Duration        int    `xml:"e2eventduration"`
+	ServiceRef      string `xml:"e2eventservicereference"`
+	Genre           string `xml:"e2eventgenre"`
 }
 
 func (c *Client) parseEPGXML(body []byte) ([]EPGEvent, error) {
@@ -1463,6 +1474,7 @@ func (c *Client) parseEPGXML(body []byte) ([]EPGEvent, error) {
 				ID:          xmlEvent.ID,
 				Title:       html.UnescapeString(xmlEvent.Title),
 				Description: html.UnescapeString(xmlEvent.Description),
+				LongDesc:    html.UnescapeString(xmlEvent.LongDescription),
 				Begin:       xmlEvent.Start,
 				Duration:    int64(xmlEvent.Duration),
 				SRef:        xmlEvent.ServiceRef,

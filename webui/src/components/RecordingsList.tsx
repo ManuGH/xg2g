@@ -54,7 +54,7 @@ function mapRecordingToChip(item: RecordingItem): { state: ChipState; label: str
   // Priority 1: Resume State (High Value / Orthogonal)
   // "WATCHED" or partial progress overrides "Completed"/"New" status for display utility.
   if (item.resume?.finished) return { state: 'success', label: 'WATCHED' };
-  if (item.resume?.pos_seconds && item.resume.pos_seconds > 0) return { state: 'warning', label: 'RESUME' };
+  if (item.resume?.posSeconds && item.resume.posSeconds > 0) return { state: 'warning', label: 'RESUME' };
 
   // Priority 2: Explicit Truth Status (P3-3)
   // Stop-the-line: If backend provides status, WE TRUST IT. Do not fallback to title parsing.
@@ -112,11 +112,11 @@ export default function RecordingsList() {
 
       if (initialLoad.current) {
         initialLoad.current = false;
-        if (res.current_root && res.current_root !== r) {
-          setRoot(res.current_root);
+        if (res.currentRoot && res.currentRoot !== r) {
+          setRoot(res.currentRoot);
         }
-        if (res.current_path !== undefined && res.current_path !== p) {
-          setPath(res.current_path);
+        if (res.currentPath !== undefined && res.currentPath !== p) {
+          setPath(res.currentPath);
         }
       }
     } catch (err: any) {
@@ -148,12 +148,12 @@ export default function RecordingsList() {
 
   const handlePlay = async (item: RecordingItem) => {
     if (selectionMode) return;
-    if (!item.recording_id) return;
+    if (!item.recordingId) return;
 
     setPlaying({
-      recordingId: item.recording_id,
+      recordingId: item.recordingId,
       title: item.title || 'Recording',
-      duration: item.duration_seconds ?? 0
+      duration: item.durationSeconds ?? 0
     });
   };
 
@@ -298,7 +298,7 @@ export default function RecordingsList() {
 
         {/* Recordings */}
         {data?.recordings?.map((rec, i) => {
-          const isSelected = rec.recording_id ? selectedIds.has(rec.recording_id) : false;
+          const isSelected = rec.recordingId ? selectedIds.has(rec.recordingId) : false;
           const { state, label } = mapRecordingToChip(rec);
 
           return (
@@ -307,7 +307,7 @@ export default function RecordingsList() {
               interactive
               className={isSelected ? 'selected' : ''}
               variant={state === 'recording' || state === 'live' ? 'live' : 'standard'}
-              onClick={() => selectionMode && rec.recording_id ? toggleSelect(rec.recording_id) : handlePlay(rec)}
+              onClick={() => selectionMode && rec.recordingId ? toggleSelect(rec.recordingId) : handlePlay(rec)}
             >
               <CardBody className="recording-item-content">
                 <div className="icon-wrapper">
@@ -330,15 +330,15 @@ export default function RecordingsList() {
                     const r = (rec as RecordingItem).resume!;
                     const safeResume = {
                       ...r,
-                      pos_seconds: r.pos_seconds || 0,
-                      duration_seconds: r.duration_seconds || 0,
+                      posSeconds: r.posSeconds || 0,
+                      durationSeconds: r.durationSeconds || 0,
                       finished: r.finished || false
                     };
-                    return isResumeEligible(safeResume, rec.duration_seconds) && (
+                    return isResumeEligible(safeResume, rec.durationSeconds) && (
                       <div className="recording-resume-container">
                         <RecordingResumeBar
                           resume={safeResume}
-                          durationSeconds={rec.duration_seconds}
+                          durationSeconds={rec.durationSeconds}
                         />
                       </div>
                     );

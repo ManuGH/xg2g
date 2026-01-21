@@ -31,18 +31,18 @@ type HardwareInfo struct {
 	Model              string `json:"model,omitempty"`
 	Boxtype            string `json:"boxtype,omitempty"`
 	Chipset            string `json:"chipset,omitempty"`
-	ChipsetDescription string `json:"chipset_description,omitempty"`
+	ChipsetDescription string `json:"chipsetDescription,omitempty"`
 }
 
 // SoftwareInfo represents software versions
 type SoftwareInfo struct {
-	OEVersion     string `json:"oe_version,omitempty"`
-	ImageDistro   string `json:"image_distro,omitempty"`
-	ImageVersion  string `json:"image_version,omitempty"`
-	EnigmaVersion string `json:"enigma_version,omitempty"`
-	KernelVersion string `json:"kernel_version,omitempty"`
-	DriverDate    string `json:"driver_date,omitempty"`
-	WebIFVersion  string `json:"webif_version,omitempty"`
+	OEVersion     string `json:"oeVersion,omitempty"`
+	ImageDistro   string `json:"imageDistro,omitempty"`
+	ImageVersion  string `json:"imageVersion,omitempty"`
+	EnigmaVersion string `json:"enigmaVersion,omitempty"`
+	KernelVersion string `json:"kernelVersion,omitempty"`
+	DriverDate    string `json:"driverDate,omitempty"`
+	WebIFVersion  string `json:"webifVersion,omitempty"`
 }
 
 // TunerInfo represents a single tuner
@@ -81,9 +81,9 @@ type RuntimeInfo struct {
 
 // ResourceInfo represents CPU and memory usage
 type ResourceInfo struct {
-	MemoryTotal     string `json:"memory_total"`
-	MemoryAvailable string `json:"memory_available"`
-	MemoryUsed      string `json:"memory_used"`
+	MemoryTotal     string `json:"memoryTotal"`
+	MemoryAvailable string `json:"memoryAvailable"`
+	MemoryUsed      string `json:"memoryUsed"`
 }
 
 // GetSystemInfo implements the system info endpoint

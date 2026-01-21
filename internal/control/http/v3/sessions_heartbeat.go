@@ -61,13 +61,13 @@ func (s *Server) SessionHeartbeat(w http.ResponseWriter, r *http.Request, sessio
 	if timeSinceLastHB < int64(session.HeartbeatInterval) {
 		// No-op: Return current expiry (idempotent)
 		logger.Debug().
-			Str("session_id", sessionID).
+			Str("sessionId", sessionID).
 			Int64("time_since_last", timeSinceLastHB).
 			Msg("heartbeat idempotent (within interval)")
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"session_id":       sessionID,
+			"sessionId":       sessionID,
 			"lease_expires_at": time.Unix(session.LeaseExpiresAtUnix, 0).Format(time.RFC3339),
 			"acknowledged":     true,
 		})
@@ -85,20 +85,20 @@ func (s *Server) SessionHeartbeat(w http.ResponseWriter, r *http.Request, sessio
 	})
 
 	if err != nil {
-		logger.Error().Err(err).Str("session_id", sessionID).Msg("failed to extend lease")
+		logger.Error().Err(err).Str("sessionId", sessionID).Msg("failed to extend lease")
 		RespondError(w, r, http.StatusInternalServerError, ErrInternalServer)
 		return
 	}
 
 	logger.Debug().
-		Str("session_id", sessionID).
+		Str("sessionId", sessionID).
 		Int64("new_expiry", newExpiry).
 		Msg("session lease extended")
 
 	// 5. Return new expiry
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"session_id":       sessionID,
+		"sessionId":       sessionID,
 		"lease_expires_at": time.Unix(newExpiry, 0).Format(time.RFC3339),
 		"acknowledged":     true,
 	})

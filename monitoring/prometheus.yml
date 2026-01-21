@@ -2,9 +2,12 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
+rule_files:
+  - "alerts-xg2g-phase5-3.yml"
+
 scrape_configs:
-  - job_name: 'xg2g'
+  - job_name: "xg2g"
     static_configs:
-      - targets: ['host.docker.internal:9090']
+      - targets: ["xg2g:9091"]
         labels:
-          instance: 'xg2g-main'
+          instance: "xg2g-main"

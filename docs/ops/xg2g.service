@@ -4,6 +4,14 @@ Wants=network-online.target
 After=network-online.target docker.service
 Requires=docker.service
 
+# Truth model: systemd orchestrates Compose only; Docker is runtime truth.
+# Compose file path is frozen to /srv/xg2g/docker-compose.yml.
+
+# Fail fast if working dir / compose file missing
+ConditionPathIsDirectory=/srv/xg2g
+ConditionPathExists=/srv/xg2g/docker-compose.yml
+ConditionPathIsDirectory=/var/lib/xg2g
+
 [Service]
 Type=oneshot
 RemainAfterExit=yes
@@ -12,24 +20,41 @@ WorkingDirectory=/srv/xg2g
 # Load env (explicitly required)
 EnvironmentFile=/etc/xg2g/xg2g.env
 
-# Fail-closed: enforce mandatory config
-# These checks fail cleanly before any containers are touched.
-ExecStartPre=/usr/bin/test -n ${XG2G_E2_HOST}
-ExecStartPre=/usr/bin/test -n ${XG2G_API_TOKEN}
+# Fail-closed: enforce mandatory config (XG2G_E2_HOST or XG2G_OWI_BASE)
+# These checks fail cleanly before any containers are touched and reject whitespace-only values.
+ExecStartPre=/bin/sh -eu -c '/usr/bin/docker info >/dev/null'
+ExecStartPre=/bin/sh -eu -c 'test -w /var/lib/xg2g'
+ExecStartPre=/bin/sh -eu -c 'h="${XG2G_E2_HOST:-}"; o="${XG2G_OWI_BASE:-}"; h="$(printf %s "$h" | tr -d "[:space:]")"; o="$(printf %s "$o" | tr -d "[:space:]")"; if [ -z "${h}${o}" ]; then echo "Missing XG2G_E2_HOST or XG2G_OWI_BASE" >&2; exit 1; fi; if [ -n "$h" ] && [ -n "$o" ] && [ "$h" != "$o" ]; then hm="$(printf %s "$h" | sed -E "s#(https?://)[^/@]+@#\\1#")"; om="$(printf %s "$o" | sed -E "s#(https?://)[^/@]+@#\\1#")"; echo "XG2G_E2_HOST and XG2G_OWI_BASE differ (E2_HOST=${hm}, OWI_BASE=${om})" >&2; exit 1; fi'
+ExecStartPre=/bin/sh -eu -c 't="${XG2G_API_TOKEN:-}"; t="$(printf %s "$t" | tr -d "[:space:]")"; test -n "$t"'
 
-# Stronger: reject whitespace-only tokens
-ExecStartPre=/usr/bin/test "${XG2G_API_TOKEN}" != " "
+# Fail-closed: ensure compose file is valid before touching containers
+ExecStartPre=/usr/bin/docker compose --project-name xg2g config -q
+
+# Fail-closed: enforce production compose contract (env_file + volume + no interpolation).
+ExecStartPre=/srv/xg2g/scripts/verify-compose-contract.sh
+
+# Fail-closed: enforce service name invariant (health gate relies on it).
+# Parses the frozen compose file directly to avoid format drift in rendered output.
+ExecStartPre=/bin/sh -eu -c 'awk '"'"'$0 ~ /^[[:space:]]*services:[[:space:]]*$/ {in=1; next} in && $0 ~ /^[[:space:]]*#/ {next} in && $0 ~ /^[[:space:]]*$/ {next} in && $0 ~ /^[[:space:]]+xg2g:[[:space:]]*$/ {found=1} in && $0 !~ /^[[:space:]]+/ {in=0} END {exit(found?0:1)}'"'"' /srv/xg2g/docker-compose.yml'
 
 # Bring up stack
-ExecStart=/usr/bin/docker compose up -d --remove-orphans
+ExecStart=/usr/bin/docker compose --project-name xg2g up -d --remove-orphans
 
-# Safer stop semantics for a daemon service (keeps networks; doesn’t tear down volumes)
-ExecStop=/usr/bin/docker compose stop
+# Safer stop semantics for a daemon service (keeps networks; doesn't tear down volumes)
+ExecStop=/usr/bin/docker compose --project-name xg2g stop
 
 # Operator-friendly reload: apply config changes
-ExecReload=/usr/bin/docker compose up -d --remove-orphans
+ExecReload=/usr/bin/docker compose --project-name xg2g up -d --remove-orphans
 
-TimeoutStartSec=0
+# Gate "start" on container health within TimeoutStartSec (requires service name: xg2g).
+ExecStartPost=/bin/sh -eu -c 'cid="$(/usr/bin/docker compose --project-name xg2g ps -q xg2g)"; test -n "$cid"; i=0; while [ "$i" -lt 150 ]; do status="$(/usr/bin/docker inspect --format "{{.State.Health.Status}}" "$cid" 2>/dev/null || true)"; if [ -z "$status" ] || [ "$status" = "<no value>" ]; then echo "Healthcheck not configured" >&2; exit 1; fi; if [ "$status" = "healthy" ]; then exit 0; fi; if [ "$status" = "unhealthy" ]; then echo "Container is unhealthy" >&2; exit 1; fi; sleep 1; i=$((i+1)); done; echo "Timed out waiting for healthy" >&2; exit 1'
+
+TimeoutStartSec=180
+TimeoutStopSec=60
+
+# Host-side hygiene only (does not harden the container runtime).
+UMask=0077
+NoNewPrivileges=true
 
 [Install]
 WantedBy=multi-user.target

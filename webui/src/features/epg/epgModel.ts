@@ -46,6 +46,18 @@ export function createInitialEpgState(currentTime: number = nowSeconds()): EpgSt
   };
 }
 
+/**
+ * CTO Predicate: overlapsNow || (start < to)
+ * Refined for UX: (end > now) && (start < to)
+ * Ensures:
+ * 1. Finished events are excluded (end <= now).
+ * 2. Currently playing events are included (end > now && start <= now).
+ * 3. Future events starting before rangeTo are included (start < to).
+ */
+export function isEventVisible(event: { start: number; end: number }, now: number, to: number): boolean {
+  return (event.end > now) && (event.start < to);
+}
+
 function toggleSetValue(set: Set<string>, id: string): Set<string> {
   const next = new Set(set);
   if (next.has(id)) next.delete(id);

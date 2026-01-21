@@ -42,10 +42,10 @@ type Service struct {
 	ID         string `json:"id"`
 	Name       string `json:"name"`
 	Group      string `json:"group"`
-	LogoURL    string `json:"logo_url"`
+	LogoURL    string `json:"logoUrl"`
 	Number     string `json:"number"`
 	Enabled    bool   `json:"enabled"`
-	ServiceRef string `json:"service_ref"`
+	ServiceRef string `json:"serviceRef"`
 }
 
 // GetBouquets returns a deduplicated and sorted list of channel groups (bouquets).
@@ -291,7 +291,7 @@ func GetServices(cfg config.AppConfig, snap config.Snapshot, source ServicesSour
 		}
 		number := ch.Number
 
-		// Extract service_ref from URL for streaming
+		// Extract serviceRef from URL for streaming
 		serviceRef := extractServiceRef(ch.URL, id)
 
 		// Rewrite Logo to use local proxy (avoids mixed content & external reachability issues)
@@ -340,7 +340,7 @@ func extractServiceRef(rawURL string, id string) string {
 			}
 		}
 	}
-	// Fallback to TvgID if service_ref not found
+	// Fallback to TvgID if serviceRef not found
 	if serviceRef == "" {
 		serviceRef = id
 	}

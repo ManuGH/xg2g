@@ -15,8 +15,11 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/ManuGH/xg2g/internal/admission"
+	"github.com/ManuGH/xg2g/internal/control/auth"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/metrics"
 	v3api "github.com/ManuGH/xg2g/internal/pipeline/api"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
@@ -71,7 +74,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	logger := log.WithComponentFromContext(r.Context(), "api")
 	correlationProvided := correlationID != ""
 	if correlationProvided {
-		logger = logger.With().Str("correlation_id", correlationID).Logger()
+		logger = logger.With().Str("correlationId", correlationID).Logger()
 	}
 
 	intentType := req.Type
@@ -124,7 +127,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !correlationProvided && correlationID != "" {
-		logger = logger.With().Str("correlation_id", correlationID).Logger()
+		logger = logger.With().Str("correlationId", correlationID).Logger()
 	}
 
 	mode := model.ModeLive
@@ -182,6 +185,48 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		}
 
 		profileSpec := profiles.Resolve(reqProfileID, r.UserAgent(), int(cfg.HLS.DVRWindow.Seconds()), cap, hasGPU, hwaccelMode)
+
+		// 5.1 Admission Control Gate (Phase 5.2)
+		priority := admission.PriorityLive
+		if strings.Contains(strings.ToLower(profileSpec.Name), "pulse") {
+			priority = admission.PriorityPulse
+		}
+		// Recording playback is Live. (Real-time recording intents would be PriorityRecording)
+
+		admitted, reason := s.admission.CanAdmit(r.Context(), priority)
+		if !admitted {
+			// Record reject metric (Phase 5.3)
+			metrics.RecordReject(string(reason), priority.String())
+
+			// ADR-DEGRADATION: Return 503 Service Unavailable
+			w.Header().Set("Retry-After", "5")
+
+			// Condition E: Coarse header for external, detailed for authenticated only
+			if p := auth.PrincipalFromContext(r.Context()); p != nil {
+				// Authenticated: detailed taxonomy
+				w.Header().Set("X-Admission-Factor", string(reason))
+			} else {
+				// External: coarse only
+				w.Header().Set("X-Admission-Factor", "capacity-full")
+			}
+
+			// Always log detailed reason with request context for operators
+			log.L().Info().
+				Str("serviceRef", req.ServiceRef).
+				Str("reason", string(reason)).
+				Int("priority", int(priority)).
+				Msg("admission rejected")
+
+			RecordV3Intent(string(model.IntentTypeStreamStart), "admission", string(reason))
+			RespondError(w, r, http.StatusServiceUnavailable, &APIError{
+				Code:    "ADMISSION_REJECTED",
+				Message: "service saturated",
+			})
+			return
+		}
+
+		// Record admit metric (Phase 5.3)
+		metrics.RecordAdmit(priority.String())
 
 		var hwaccelEffective, hwaccelReason, encoderBackend string
 
@@ -249,7 +294,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 			"bucket":  bucket,
 		}
 		if correlationID != "" {
-			requestParams["correlation_id"] = correlationID
+			requestParams["correlationId"] = correlationID
 		}
 		if mode != "" {
 			requestParams[model.CtxKeyMode] = mode
@@ -292,7 +337,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 			if err == nil && existingSession != nil && existingSession.CorrelationID != "" {
 				replayCorrelation = existingSession.CorrelationID
 			} else if err == nil && existingSession != nil && existingSession.ContextData != nil {
-				if cid := existingSession.ContextData["correlation_id"]; cid != "" {
+				if cid := existingSession.ContextData["correlationId"]; cid != "" {
 					replayCorrelation = cid
 				}
 			}

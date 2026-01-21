@@ -1,5 +1,4 @@
 {
-					"status": 200,
 					"decision": {
 						"mode": "deny",
 						"selected": {
@@ -9,9 +8,14 @@
 						},
 						"outputs": [],
 						"constraints": [],
-						"reasons": ["policy_denies_transcode"],
+						"reasons": [
+							"policy_denies_transcode"
+						],
 						"trace": {
-							"request_id": "stub-request-id"
-						}
-					}
+							"requestId": "stub-request-id"
+						},
+						"selected_output_url": "",
+						"selected_output_kind": ""
+					},
+					"status": 200
 				}

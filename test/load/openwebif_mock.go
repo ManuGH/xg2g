@@ -5,6 +5,8 @@
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
 // Package load provides realistic OpenWebIF mocks for load and performance testing
+//go:build loadtest
+
 package load
 
 import (

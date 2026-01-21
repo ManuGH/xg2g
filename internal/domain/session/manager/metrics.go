@@ -28,15 +28,6 @@ var (
 		[]string{"profile"},
 	)
 
-	timeToFirstSegment = promauto.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "xg2g_v3_time_to_first_segment_seconds",
-			Help:    "Time from session start to first media segment readiness.",
-			Buckets: []float64{0.5, 1, 2, 3, 5, 8, 13, 21},
-		},
-		[]string{"profile"},
-	)
-
 	// Golden Signal: Resource Pressure
 	tunerBusyTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
@@ -98,10 +89,6 @@ var (
 
 func observeTTFP(profile string, start time.Time) {
 	timeToFirstPlaylist.WithLabelValues(profile).Observe(time.Since(start).Seconds())
-}
-
-func observeTTFS(profile string, start time.Time) {
-	timeToFirstSegment.WithLabelValues(profile).Observe(time.Since(start).Seconds())
 }
 
 func recordSessionStartOutcome(result string, reason model.ReasonCode, profile string) {

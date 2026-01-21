@@ -32,6 +32,13 @@ GitHub Actions may call scripts directly **only when**:
 
 This is **not a blanket exception** - prefer `make` in CI whenever possible.
 
+## Exception: Operator Verification
+These operator-grade scripts are designed to be run directly on hosts:
+- `scripts/verify-systemd-unit.sh`
+- `scripts/verify-installed-unit.sh`
+- `scripts/verify-compose-contract.sh`
+- `scripts/run-service-smoke.sh`
+
 ---
 
 **If you need a standalone command, open an issue to discuss adding it to `cmd/`.**

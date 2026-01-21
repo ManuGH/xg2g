@@ -3,6 +3,7 @@
 
 import { useTranslation } from 'react-i18next';
 import type { EpgFilters, EpgBouquet, EpgLoadState } from '../types';
+import { EPG_MAX_HORIZON_HOURS } from '../types';
 
 export interface EpgToolbarProps {
   channelCount: number;
@@ -71,7 +72,7 @@ export function EpgToolbar({
             { label: t('epg.rangeEvening', { defaultValue: 'Evening' }), value: 12 },
             { label: t('epg.rangeDay', { defaultValue: 'Day' }), value: 24 },
             { label: t('epg.rangeWeek', { defaultValue: 'Week' }), value: 168 },
-            { label: t('epg.rangeAll', { defaultValue: 'All' }), value: 336 },
+            { label: t('epg.rangeAll', { defaultValue: 'All' }), value: EPG_MAX_HORIZON_HOURS },
           ].map((opt) => (
             <button
               key={opt.value}

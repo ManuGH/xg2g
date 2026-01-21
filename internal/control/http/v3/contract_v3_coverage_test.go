@@ -13,7 +13,7 @@ import (
 	"testing"
 
 	"github.com/ManuGH/xg2g/internal/config"
-	"github.com/ManuGH/xg2g/internal/control/http/v3/problem"
+	"github.com/ManuGH/xg2g/internal/control/http/problem"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -230,13 +230,13 @@ func isIdent(expr ast.Expr, name string) bool {
 func isAllowedStatus(expr ast.Expr) bool {
 	// Check for literals: 200, 201, 202, 204
 	if lit, ok := expr.(*ast.BasicLit); ok {
-		return lit.Kind == token.INT && (lit.Value == "200" || lit.Value == "201" || lit.Value == "202" || lit.Value == "204")
+		return lit.Kind == token.INT && (lit.Value == "200" || lit.Value == "201" || lit.Value == "202" || lit.Value == "204" || lit.Value == "206")
 	}
 	// Check for constants: http.StatusOK, etc.
 	if sel, ok := expr.(*ast.SelectorExpr); ok {
 		if pkg, ok := sel.X.(*ast.Ident); ok && pkg.Name == "http" {
 			switch sel.Sel.Name {
-			case "StatusOK", "StatusCreated", "StatusAccepted", "StatusNoContent":
+			case "StatusOK", "StatusCreated", "StatusAccepted", "StatusNoContent", "StatusPartialContent":
 				return true
 			}
 		}

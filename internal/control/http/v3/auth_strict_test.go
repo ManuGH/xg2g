@@ -745,3 +745,7 @@ func runRaceTest(t *testing.T, srv testServer, tok testTokens, spy *SpyStore, sp
 		t.Errorf("unexpected statuses: %v", statuses)
 	}
 }
+
+func (s *SpyStore) GetLease(ctx context.Context, key string) (store.Lease, bool, error) {
+return nil, false, nil
+}

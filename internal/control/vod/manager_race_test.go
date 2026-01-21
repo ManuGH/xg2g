@@ -16,7 +16,8 @@ import (
 // strictly respects the StateGen guard, preventing stale reverts of concurrent success.
 func TestStateGenGuard_Deterministic(t *testing.T) {
 	// Use minimal dummy mocks to satisfy strict invariants
-	mgr := NewManager(&mockRunner{}, &mockProber{}, nil)
+	mgr, err := NewManager(&mockRunner{}, &mockProber{}, nil)
+	require.NoError(t, err)
 	id := "race-test"
 
 	// 1. Initial Setup: PREPARING state with captured generation
@@ -73,7 +74,8 @@ func TestStateGenGuard_Deterministic(t *testing.T) {
 }
 
 func TestTouchHelper(t *testing.T) {
-	mgr := NewManager(&mockRunner{}, &mockProber{}, nil)
+	mgr, err := NewManager(&mockRunner{}, &mockProber{}, nil)
+	require.NoError(t, err)
 	meta := Metadata{StateGen: 1}
 
 	start := time.Now().UnixNano()

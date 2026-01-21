@@ -18,7 +18,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/auth"
-	"github.com/ManuGH/xg2g/internal/control/http/v3/problem"
+	"github.com/ManuGH/xg2g/internal/control/http/problem"
 	"github.com/ManuGH/xg2g/internal/control/read"
 	"github.com/ManuGH/xg2g/internal/epg"
 	"github.com/ManuGH/xg2g/internal/health"
@@ -571,7 +571,7 @@ func getEpg_Legacy(s *Server, w http.ResponseWriter, r *http.Request, params Get
 			match := false
 			if strings.Contains(strings.ToLower(p.Title.Text), qLower) {
 				match = true
-			} else if strings.Contains(strings.ToLower(p.Desc), qLower) {
+			} else if p.Desc != nil && strings.Contains(strings.ToLower(p.Desc.Text), qLower) {
 				match = true
 			}
 			if !match {
@@ -581,7 +581,10 @@ func getEpg_Legacy(s *Server, w http.ResponseWriter, r *http.Request, params Get
 
 		id := p.Channel
 		title := p.Title.Text
-		desc := p.Desc
+		desc := ""
+		if p.Desc != nil {
+			desc = p.Desc.Text
+		}
 		startUnix := int(startTime.Unix())
 		endUnix := int(endTime.Unix())
 		dur := int(endUnix - startUnix)
@@ -614,7 +617,7 @@ func normalizeJSON(v any) any {
 		newMap := make(map[string]any)
 		for k, v := range x {
 			// Normalize unstable timestamps
-			if k == "last_check" {
+			if k == "lastCheck" {
 				newMap[k] = "STABLE_TIMESTAMP"
 				continue
 			}

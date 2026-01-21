@@ -43,7 +43,7 @@
         "policy_denies_transcode"
       ],
       "trace": {
-        "request_id_present": true
+        "requestIdPresent": true
       }
     }
   }

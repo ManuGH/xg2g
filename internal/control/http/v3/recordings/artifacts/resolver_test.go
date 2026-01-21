@@ -18,7 +18,10 @@ func TestArtifactResolver_ResolveSegment(t *testing.T) {
 			Root: t.TempDir(),
 		},
 	}
-	mgr := vod.NewManager(&dummyRunner{}, &dummyProber{}, nil)
+	mgr, err := vod.NewManager(&dummyRunner{}, &dummyProber{}, nil)
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
 	r := New(cfg, mgr, nil)
 
 	// Valid Service Ref (Base64 Encoded "1:0:...")

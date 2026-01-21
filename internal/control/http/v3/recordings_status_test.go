@@ -62,9 +62,12 @@ func newStatusTestServer(t *testing.T) (*Server, *vod.Manager) {
 		},
 	}
 	srv := NewServer(cfg, nil, nil)
-	vodMgr := vod.NewManager(&successRunner{fsRoot: "/tmp"}, &noopProber{}, nil) // Wire dependencies
-	dummyRes := recservice.NewResolver(&cfg, vodMgr, recservice.ResolverOptions{})
-	recSvc := recservice.NewService(&cfg, vodMgr, dummyRes, nil, nil)
+	vodMgr, err := vod.NewManager(&successRunner{fsRoot: "/tmp"}, &noopProber{}, nil) // Wire dependencies
+	require.NoError(t, err)
+	dummyRes, err := recservice.NewResolver(&cfg, vodMgr, recservice.ResolverOptions{})
+	require.NoError(t, err)
+	recSvc, err := recservice.NewService(&cfg, vodMgr, dummyRes, nil, nil, dummyRes)
+	require.NoError(t, err)
 
 	srv.SetDependencies(
 		nil, nil, nil, nil, nil, nil, nil, nil, vodMgr,

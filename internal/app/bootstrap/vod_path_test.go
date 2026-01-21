@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	controlhttp "github.com/ManuGH/xg2g/internal/control/http"
+	"github.com/ManuGH/xg2g/internal/control/playback"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 )
 
@@ -26,6 +27,10 @@ func (m *mockResolver) Resolve(ctx context.Context, recordingID string, intent r
 		return m.ResolveFunc(ctx, recordingID, intent, profile)
 	}
 	return recservice.PlaybackInfoResult{}, nil
+}
+
+func (m *mockResolver) GetMediaTruth(ctx context.Context, id string) (playback.MediaTruth, error) {
+	return playback.MediaTruth{}, nil
 }
 
 // TestVODPlayback_Path_Wiring_ErrorPath verifies that the VOD failure path is wired correctly.
@@ -76,6 +81,9 @@ enigma2:
 		resolvePlayback: func(ctx context.Context, recID, profile string) (recservice.PlaybackResolution, error) {
 			return recservice.PlaybackResolution{}, recservice.ErrNotFound{RecordingID: recID}
 		},
+		getMediaTruth: func(ctx context.Context, id string) (playback.MediaTruth, error) {
+			return playback.MediaTruth{}, recservice.ErrNotFound{RecordingID: id}
+		},
 	}
 	container.Server.SetRecordingsService(mockSvc)
 
@@ -110,7 +118,7 @@ enigma2:
 		Status    int    `json:"status"`
 		Detail    string `json:"detail"`
 		Instance  string `json:"instance"`
-		RequestID string `json:"request_id"`
+		RequestID string `json:"requestId"`
 	}
 
 	err = json.NewDecoder(resp.Body).Decode(&problem)
@@ -195,6 +203,17 @@ enigma2:
 			t.Logf("MOCK NOT MATCHED: returning 404")
 			return recservice.PlaybackResolution{}, recservice.ErrNotFound{RecordingID: recID}
 		},
+		getMediaTruth: func(ctx context.Context, recordingID string) (playback.MediaTruth, error) {
+			return playback.MediaTruth{
+				Container:  "mp4",
+				VideoCodec: "h264",
+				AudioCodec: "aac",
+				Width:      1920,
+				Height:     1080,
+				FPS:        25,
+				Duration:   3600,
+			}, nil
+		},
 	}
 
 	// Inject mock into server (replaces real recordingsService)
@@ -219,24 +238,25 @@ enigma2:
 	var dto struct {
 		URL              string    `json:"url"`
 		Mode             string    `json:"mode"`
-		DurationSeconds  *int64    `json:"duration_seconds,omitempty"`
+		DurationSeconds  *int64    `json:"durationSeconds,omitempty"`
 		Reason           *string   `json:"reason,omitempty"`
-		Seekable         *bool     `json:"seekable,omitempty"`    // deprecated alias
-		IsSeekable       *bool     `json:"is_seekable,omitempty"` // canonical (P3-4)
+		Seekable         *bool     `json:"seekable,omitempty"`   // deprecated alias
+		IsSeekable       *bool     `json:"isSeekable,omitempty"` // canonical (P3-4)
 		Container        *string   `json:"container,omitempty"`
-		VideoCodec       *string   `json:"video_codec,omitempty"`
-		AudioCodec       *string   `json:"audio_codec,omitempty"`
+		VideoCodec       *string   `json:"videoCodec,omitempty"`
+		AudioCodec       *string   `json:"audioCodec,omitempty"`
 		RequestId        string    `json:"requestId"`                    // traceability
 		SessionId        string    `json:"sessionId"`                    // traceability
-		DurationSource   *string   `json:"duration_source,omitempty"`    // P3-4 truth
-		StartUnix        *int64    `json:"start_unix,omitempty"`         // P3-4 truth (live)
+		DurationSource   *string   `json:"durationSource,omitempty"`     // P3-4 truth
+		StartUnix        *int64    `json:"startUnix,omitempty"`          // P3-4 truth (live)
 		LiveEdgeUnix     *int64    `json:"live_edge_unix,omitempty"`     // P3-4 truth (live)
 		DvrWindowSeconds *int64    `json:"dvr_window_seconds,omitempty"` // P3-4 truth
 		Resume           *struct { // P3-4 resume state
-			PosSeconds      float32 `json:"pos_seconds"`
-			DurationSeconds *int64  `json:"duration_seconds,omitempty"`
+			PosSeconds      float32 `json:"posSeconds"`
+			DurationSeconds *int64  `json:"durationSeconds,omitempty"`
 			Finished        *bool   `json:"finished,omitempty"`
 		} `json:"resume,omitempty"`
+		Decision interface{} `json:"decision,omitempty"`
 	}
 
 	// Enforce strict JSON
@@ -245,12 +265,12 @@ enigma2:
 	err = dec.Decode(&dto)
 	require.NoError(t, err, "Must strictly decode PlaybackInfo")
 
-	assert.Equal(t, "/api/v3/recordings/"+recordingID+"/stream.mp4", dto.URL)
-	assert.Equal(t, "direct_mp4", dto.Mode)
+	assert.Equal(t, "/api/v3/recordings/"+recordingID+"/playlist.m3u8", dto.URL)
+	assert.Equal(t, "hls", dto.Mode)
 	require.NotNil(t, dto.DurationSeconds)
 	assert.Equal(t, int64(3600), *dto.DurationSeconds)
 	require.NotNil(t, dto.Reason)
-	assert.Equal(t, "directplay_match", *dto.Reason)
+	assert.Equal(t, "directstream_match", *dto.Reason)
 	require.NotNil(t, dto.IsSeekable)
 	assert.True(t, *dto.IsSeekable)
 }

@@ -129,6 +129,20 @@ func (m *MemoryStore) RenewLease(ctx context.Context, key, owner string, ttl tim
 	return &memoryLease{store: m, key: key, owner: owner, ttl: ttl, exp: exp}, true, nil
 }
 
+func (m *MemoryStore) GetLease(ctx context.Context, key string) (Lease, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	st, ok := m.leases[key]
+	if !ok {
+		return nil, false, nil
+	}
+	if time.Now().After(st.exp) {
+		delete(m.leases, key)
+		return nil, false, nil
+	}
+	return &memoryLease{store: m, key: key, owner: st.owner, exp: st.exp}, true, nil
+}
+
 func (m *MemoryStore) ReleaseLease(ctx context.Context, key, owner string) error {
 	m.mu.Lock()
 	st, ok := m.leases[key]

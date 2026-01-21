@@ -182,6 +182,9 @@ generate-config: ## Generate config surfaces from registry
 	@go run ./cmd/configgen --allow-create
 	@echo "✅ Config surfaces generated"
 
+.PHONY: verify
+verify: verify-config verify-capabilities contract-matrix verify-purity contract-freeze-check verify-no-sleep verify-no-panic verify-no-ignored-errors ## Phase 4.7: Run all governance verification gates
+
 verify-config: ## Verify generated config surfaces are up-to-date
 	@echo "Verifying generated config surfaces..."
 	@go run ./cmd/configgen
@@ -192,36 +195,106 @@ verify-config: ## Verify generated config surfaces are up-to-date
 	@git diff --exit-code docs/guides/CONFIGURATION.md docs/guides/config.schema.json config.generated.example.yaml docs/guides/CONFIG_SURFACES.md || (echo "❌ Config surfaces are out of sync. Run 'make generate-config' and commit changes." && exit 1)
 	@echo "✅ Config surfaces are up-to-date"
 
+.PHONY: verify-hermetic-codegen
 verify-hermetic-codegen: ## Verify hermetic code generation invariants (CTO-grade)
+	$(MAKE) verify-hermetic-codegen-internal
+
+.PHONY: verify-hermetic-codegen-internal
+verify-hermetic-codegen-internal:
 	@echo "Verifying hermetic code generation invariants..."
 	@# 1. Behavior-based validation: Check what 'make generate' would execute
 	@if ! make -n generate | grep -q 'go run -mod=vendor.*oapi-codegen'; then \
 		echo "❌ generate target must use 'go run -mod=vendor' for oapi-codegen"; \
-		echo "   This ensures hermetic code generation using vendored tools"; \
 		exit 1; \
 	fi
-	@# 2. Verify vendored module is listed in vendor/modules.txt (canonical source)
+	@# 2. Verify vendored module is listed in vendor/modules.txt
 	@if ! grep -q 'github.com/oapi-codegen/oapi-codegen' vendor/modules.txt; then \
 		echo "❌ oapi-codegen not found in vendor/modules.txt"; \
-		echo "   Run 'go mod vendor' to refresh vendor directory"; \
 		exit 1; \
 	fi
-	@# 3. Directory existence check (secondary guard against partial vendor)
+	@# 3. Directory existence check
 	@if [ ! -d vendor/github.com/oapi-codegen/oapi-codegen ]; then \
 		echo "❌ oapi-codegen directory missing from vendor/"; \
 		exit 1; \
 	fi
 	@# 4. Verify tools.go declares the tool dependency
 	@if ! grep -q 'github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen' tools.go; then \
-		echo "❌ tools.go must import oapi-codegen to track build-time dependency"; \
+		echo "❌ tools.go must import oapi-codegen"; \
 		exit 1; \
 	fi
-	@echo "✅ Hermetic code generation invariants verified"
-	@echo "   → 'make generate' uses vendored tools"
-	@echo "   → vendor/modules.txt lists oapi-codegen"
-	@echo "   → tools.go tracks build-time dependency"
+	@echo "✅ Hermetic code generation verified"
 
-.PHONY: verify-hermetic-codegen
+.PHONY: verify-purity
+verify-purity: ## Phase 4.7: Verify UI purity, decision ownership, OpenAPI hygiene + lint
+	@./scripts/verify-ui-purity.sh
+	@./scripts/verify-decision-ownership.sh
+	@./scripts/verify-openapi-hygiene.sh
+	@./scripts/verify-openapi-lint.sh
+
+.PHONY: contract-freeze-check
+contract-freeze-check: ## Phase 4.7: Verify contract goldens against baseline manifest
+	@./scripts/verify-golden-freeze.sh
+
+.PHONY: verify-capabilities
+verify-capabilities: ## Phase 7: Verify capability fixtures against manifest and runtime resolver
+	@echo "--- verify-capabilities ---"
+	@go test ./test/invariants -run Invariant -v
+	@go run ./cmd/generate-capability-fixtures/main.go -check
+
+verify-decision-goldens:
+	@echo "--- verify-decision-goldens ---"
+	@go test ./test/invariants -run TestDecisionGoldens -v
+
+verify-decision-invariants:
+	@echo "--- verify-decision-invariants ---"
+	@go test ./test/invariants -run TestDecisionOutputInvariants -v
+
+verify-observability:
+	@echo "--- verify-observability ---"
+	@go test ./test/invariants -run TestDecisionObservabilityContract -v
+
+verify-p8: verify-capabilities verify-decision-goldens verify-decision-invariants verify-observability
+
+verify-hls-goldens:
+	@echo "--- verify-hls-goldens ---"
+	@go test ./internal/hls -v -run TestExtractSegmentTruth
+
+verify-hls-http:
+	@echo "--- verify-hls-http ---"
+	@go test -tags v3 ./internal/control/http/v3 -v -run HLS
+
+verify-hls-hygiene:
+	@echo "--- verify-hls-hygiene ---"
+	@! grep -r "application/vnd.apple.mpegurl" internal/ | grep -v "hls_contract.go" | grep -v "test.go" | grep -v server_gen.go | grep -v "/dist/"
+	@! grep -r "video/mp2t" internal/ | grep -v "hls_contract.go" | grep -v "test.go" | grep -v server_gen.go | grep -v "/dist/"
+
+.PHONY: verify-no-sleep verify-no-panic verify-no-ignored-errors
+
+verify-no-sleep: ## Gate: No time.Sleep in production code
+	@echo "Checking for time.Sleep in production code..."
+	@if grep -r "time.Sleep" internal/ --include="*.go" | grep -v "_test.go" | grep -v "mock_server.go"; then \
+		echo "❌ time.Sleep found in production code"; \
+		exit 1; \
+	fi
+	@echo "✅ No production time.Sleep"
+
+verify-no-panic: ## Gate: No panics in production code
+	@echo "Checking for panics in production code..."
+	@if grep -rn "panic(" internal/ --include="*.go" | grep -v "_test.go" | grep -vFf panic_allowlist.txt; then \
+		echo "❌ Panic found in production code (not in allowlist)"; \
+		exit 1; \
+	fi
+	@echo "✅ No production panics"
+
+verify-no-ignored-errors: ## Gate: No ignored errors
+	@echo "Checking for ignored errors..."
+	@if grep -r "_ = err" internal/ --include="*.go" | grep -v "_test.go"; then \
+		echo "❌ Ignored error found"; \
+		exit 1; \
+	fi
+	@echo "✅ No ignored errors"
+
+verify-p9: verify-hls-goldens verify-hls-http verify-hls-hygiene
 
 build: ui-build ## Build the main daemon binary
 	@echo "Building xg2g daemon..."

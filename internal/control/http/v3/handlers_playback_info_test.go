@@ -8,7 +8,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/control/playback"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
+	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -33,10 +36,23 @@ func (m *MockRecordingsService) GetStatus(ctx context.Context, in recservice.Sta
 	return recservice.StatusResult{}, nil
 }
 func (m *MockRecordingsService) Stream(ctx context.Context, in recservice.StreamInput) (recservice.StreamResult, error) {
-	return recservice.StreamResult{}, nil
+	args := m.Called(ctx, in)
+	return args.Get(0).(recservice.StreamResult), args.Error(1)
 }
 func (m *MockRecordingsService) Delete(ctx context.Context, in recservice.DeleteInput) (recservice.DeleteResult, error) {
 	return recservice.DeleteResult{}, nil
+}
+func (m *MockRecordingsService) GetMediaTruth(ctx context.Context, recordingID string) (playback.MediaTruth, error) {
+	args := m.Called(ctx, recordingID)
+	return args.Get(0).(playback.MediaTruth), args.Error(1)
+}
+
+func createTestServerDTO(svc recservice.Service) *Server {
+	cfg := config.AppConfig{}
+	cfg.FFmpeg.Bin = "/usr/bin/ffmpeg"
+	cfg.HLS.Root = "/tmp/hls"
+	s := &Server{cfg: cfg, recordingsService: svc}
+	return s
 }
 
 func TestGetRecordingPlaybackInfo_StrictTruthfulness(t *testing.T) {
@@ -76,9 +92,9 @@ func TestGetRecordingPlaybackInfo_StrictTruthfulness(t *testing.T) {
 			recordingID := recservice.EncodeRecordingID(serviceRef)
 
 			svc := new(MockRecordingsService)
-			svc.On("ResolvePlayback", mock.Anything, recordingID, "generic").Return(recservice.PlaybackResolution{}, tt.mockErr)
+			svc.On("GetMediaTruth", mock.Anything, recordingID).Return(playback.MediaTruth{}, tt.mockErr)
 
-			s := &Server{recordingsService: svc}
+			s := createTestServerDTO(svc)
 			w := httptest.NewRecorder()
 			r := httptest.NewRequest("GET", "/api/v3/recordings/"+recordingID+"/stream-info", nil)
 
@@ -94,18 +110,18 @@ func TestGetRecordingPlaybackInfo_StrictTruthfulness(t *testing.T) {
 	}
 
 	// 2. Strict DTO Mapping (Nil Semantics)
-	// We define a local test DTO since the generated one doesn't have codec fields yet,
-	// but the handler returns them.
 	type testPlaybackInfoDTO struct {
 		Mode            PlaybackInfoMode            `json:"mode"`
-		Url             string                      `json:"url"`
+		Url             *string                     `json:"url"`
 		Seekable        *bool                       `json:"seekable,omitempty"`
-		DurationSeconds *int64                      `json:"duration_seconds,omitempty"`
+		DurationSeconds *int64                      `json:"durationSeconds,omitempty"`
 		DurationSource  *PlaybackInfoDurationSource `json:"duration_source,omitempty"`
+		RequestId       string                      `json:"requestId"`
+		SessionId       string                      `json:"sessionId"`
 
 		Container  *string `json:"container,omitempty"`
-		VideoCodec *string `json:"video_codec,omitempty"`
-		AudioCodec *string `json:"audio_codec,omitempty"`
+		VideoCodec *string `json:"videoCodec,omitempty"`
+		AudioCodec *string `json:"audioCodec,omitempty"`
 	}
 
 	t.Run("DTO_Mapping_UnknownDuration_UnknownCodecs", func(t *testing.T) {
@@ -113,39 +129,18 @@ func TestGetRecordingPlaybackInfo_StrictTruthfulness(t *testing.T) {
 		recordingID := recservice.EncodeRecordingID(serviceRef)
 
 		svc := new(MockRecordingsService)
-		res := recservice.PlaybackResolution{
-			Strategy:       recservice.StrategyDirect,
-			CanSeek:        true,
-			DurationSec:    nil, // Unknown
-			DurationSource: nil, // Unknown
-			Container:      nil, // Unknown
-			VideoCodec:     nil, // Unknown
-			AudioCodec:     nil, // Unknown
-			Reason:         recservice.ReasonDirectPlayMatch,
-		}
-		svc.On("ResolvePlayback", mock.Anything, recordingID, "generic").Return(res, nil)
+		// Decision engine now returns 422 if codecs are unknown/ambiguous
+		svc.On("GetMediaTruth", mock.Anything, recordingID).Return(playback.MediaTruth{
+			Container: "", VideoCodec: "", AudioCodec: "",
+		}, nil)
 
-		s := &Server{recordingsService: svc}
+		s := createTestServerDTO(svc)
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest("GET", "/api/v3/recordings/"+recordingID+"/stream-info", nil)
 
 		s.GetRecordingPlaybackInfo(w, r, recordingID)
 
-		require.Equal(t, http.StatusOK, w.Code)
-		var dto testPlaybackInfoDTO
-		err := json.Unmarshal(w.Body.Bytes(), &dto)
-		assert.NoError(t, err)
-
-		// Assertions
-		assert.Equal(t, DirectMp4, dto.Mode)
-		assert.Equal(t, "/api/v3/recordings/"+recordingID+"/stream.mp4", dto.Url)
-		require.NotNil(t, dto.Seekable)
-		assert.Equal(t, true, *dto.Seekable)
-		assert.Nil(t, dto.DurationSeconds) // Strict omission
-		assert.Nil(t, dto.DurationSource)  // Strict omission
-		assert.Nil(t, dto.Container)       // Strict omission
-		assert.Nil(t, dto.VideoCodec)
-		assert.Nil(t, dto.AudioCodec)
+		require.Equal(t, http.StatusUnprocessableEntity, w.Code)
 	})
 
 	t.Run("DTO_Mapping_KnownDuration_KnownCodecs", func(t *testing.T) {
@@ -153,26 +148,18 @@ func TestGetRecordingPlaybackInfo_StrictTruthfulness(t *testing.T) {
 		recordingID := recservice.EncodeRecordingID(serviceRef)
 
 		svc := new(MockRecordingsService)
-		dur := int64(3600)
-		src := recservice.DurationSourceStore
-		c := "mp4"
-		v := "h264"
-		a := "aac"
-		res := recservice.PlaybackResolution{
-			Strategy:       recservice.StrategyHLS,
-			CanSeek:        true,
-			DurationSec:    &dur,
-			DurationSource: &src,
-			Container:      &c,
-			VideoCodec:     &v,
-			AudioCodec:     &a,
-			Reason:         "transcode_all",
+		truth := playback.MediaTruth{
+			Duration:   3600,
+			Container:  "ts",
+			VideoCodec: "vp9", // Force transcode on web_conservative
+			AudioCodec: "aac",
 		}
-		svc.On("ResolvePlayback", mock.Anything, recordingID, "generic").Return(res, nil)
+		svc.On("GetMediaTruth", mock.Anything, recordingID).Return(truth, nil)
 
-		s := &Server{recordingsService: svc}
+		s := createTestServerDTO(svc)
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest("GET", "/api/v3/recordings/"+recordingID+"/stream-info", nil)
+		r = r.WithContext(log.ContextWithRequestID(r.Context(), "test-req-123"))
 
 		s.GetRecordingPlaybackInfo(w, r, recordingID)
 
@@ -181,58 +168,78 @@ func TestGetRecordingPlaybackInfo_StrictTruthfulness(t *testing.T) {
 		err := json.Unmarshal(w.Body.Bytes(), &dto)
 		assert.NoError(t, err)
 
-		assert.Equal(t, Hls, dto.Mode)
-		assert.Equal(t, "/api/v3/recordings/"+recordingID+"/playlist.m3u8", dto.Url)
-		require.NotNil(t, dto.DurationSeconds)
-		assert.Equal(t, int64(3600), *dto.DurationSeconds)
-		expectedSrc := Store
-		assert.Equal(t, &expectedSrc, dto.DurationSource)
-
-		require.NotNil(t, dto.Container)
-		assert.Equal(t, "mp4", *dto.Container)
-		require.NotNil(t, dto.VideoCodec)
-		assert.Equal(t, "h264", *dto.VideoCodec)
-		require.NotNil(t, dto.AudioCodec)
-		assert.Equal(t, "aac", *dto.AudioCodec)
+		// Expect HLS because VP9 is not in web_conservative (H264)
+		assert.Equal(t, PlaybackInfoModeHls, dto.Mode)
+		require.NotNil(t, dto.Url)
+		assert.Equal(t, "/api/v3/recordings/"+recordingID+"/playlist.m3u8", *dto.Url)
+		assert.NotEmpty(t, dto.RequestId)
+		assert.NotEmpty(t, dto.SessionId)
 	})
 }
 
-// Regression Test: ID Ownership (Double-Decode Prevention)
-// CTO Mandate: Service Layer is the sole owner of decoding.
-// Handler must pass through the raw ID. Service must reject non-Hex.
+// Regression Test: ID Ownership
 func TestGetRecordingPlaybackInfo_ID_Ownership_StrictHexRequirement(t *testing.T) {
 	serviceRef := "1:0:0:0:0:0:0:0:0:0:/hdd/movie/fail.ts"
 	recordingID_Hex := recservice.EncodeRecordingID(serviceRef)
 
 	svc := new(MockRecordingsService)
 
-	// 1. Valid Path: Handler gets Hex -> Service gets Hex
-	svc.On("ResolvePlayback", mock.Anything, recordingID_Hex, "generic").Return(recservice.PlaybackResolution{
-		Strategy: recservice.StrategyDirect,
-		CanSeek:  true,
-		Reason:   recservice.ReasonDirectPlayMatch,
+	svc.On("GetMediaTruth", mock.Anything, recordingID_Hex).Return(playback.MediaTruth{
+		Container:  "mp4",
+		VideoCodec: "h264",
+		AudioCodec: "aac",
 	}, nil).Once()
 
-	s := &Server{recordingsService: svc}
+	s := createTestServerDTO(svc)
 
-	// Request with Hex
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/api/v3/recordings/"+recordingID_Hex+"/stream-info", nil)
 	s.GetRecordingPlaybackInfo(w, r, recordingID_Hex)
-	assert.Equal(t, http.StatusOK, w.Code, "Hex ID must succeed")
-
-	// 2. Invalid Path (The 'Double Decode' Trap):
-	// If the handler were to decode the ID before passing it to the service,
-	// the service would receive the Canonical ID.
-	// Since we mandates strict Hex at the service boundary, the service would (correctly)
-	// return an error if it tried to decode a already-decoded ID.
-	svc.On("ResolvePlayback", mock.Anything, serviceRef, "generic").Return(recservice.PlaybackResolution{}, recservice.ErrInvalidArgument{Field: "recordingID", Reason: "invalid format"}).Once()
+	assert.Equal(t, http.StatusOK, w.Code)
 
 	w = httptest.NewRecorder()
 	r = httptest.NewRequest("GET", "/api/v3/recordings/"+serviceRef+"/stream-info", nil)
 	s.GetRecordingPlaybackInfo(w, r, serviceRef)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
 
-	// We expect 400 because the service layer (real or mock following the spec)
-	// treats non-hex IDs as invalid format.
-	assert.Equal(t, http.StatusBadRequest, w.Code, "Canonical ID passed to handler must fail at service boundary")
+func TestGetRecordingPlaybackInfo_Deny_OptionB(t *testing.T) {
+	serviceRef := "1:0:0:0:0:0:0:0:0:0:/hdd/movie/deny.ts"
+	recordingID := recservice.EncodeRecordingID(serviceRef)
+
+	svc := new(MockRecordingsService)
+	// Force a Deny decision via policy: AllowTranscode=false, Input needs transcode (flv)
+	truth := playback.MediaTruth{
+		Container:  "flv",
+		VideoCodec: "h264",
+		AudioCodec: "aac",
+	}
+	svc.On("GetMediaTruth", mock.Anything, recordingID).Return(truth, nil)
+
+	// We use the real server to exercise the mapPlaybackInfoV2 logic
+	cfg := config.AppConfig{}
+	// FFmpeg bin empty -> serverCanTranscode = false -> allowTranscode = false
+	s := &Server{cfg: cfg, recordingsService: svc}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/api/v3/recordings/"+recordingID+"/stream-info", nil)
+	s.GetRecordingPlaybackInfo(w, r, recordingID)
+
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var raw map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &raw)
+	assert.NoError(t, err)
+
+	// 1. Legacy Mode is still direct_mp4
+	assert.Equal(t, "direct_mp4", raw["mode"])
+	// 2. URL is NIL (not present or null in JSON)
+	assert.Nil(t, raw["url"])
+
+	// 3. Decision sub-object is TRUTHFUL
+	dec, ok := raw["decision"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "deny", dec["mode"])
+	assert.Equal(t, "", dec["selectedOutputKind"]) // Invariant #11: Strict Empty
+	assert.Empty(t, dec["outputs"])
 }

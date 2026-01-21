@@ -1,17 +1,21 @@
 {
-		"status": 200,
-		"decision": {
-			"mode": "deny",
-			"selected": {
-				"container": null,
-				"video_codec": null,
-				"audio_codec": null
-			},
-			"outputs": [],
-			"constraints": [],
-			"reasons": ["NOT_IMPLEMENTED_YET"],
-			"trace": {
-				"request_id": "stub-request-id"
-			}
-		}
-	}
+					"decision": {
+						"mode": "deny",
+						"selected": {
+							"container": "none",
+							"video_codec": "none",
+							"audio_codec": "none"
+						},
+						"outputs": [],
+						"constraints": [],
+						"reasons": [
+							"container_not_supported_by_client"
+						],
+						"trace": {
+							"requestId": "stub-request-id"
+						},
+						"selected_output_url": "",
+						"selected_output_kind": ""
+					},
+					"status": 200
+				}

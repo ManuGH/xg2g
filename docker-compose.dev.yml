@@ -1,0 +1,6 @@
+services:
+  xg2g:
+    env_file:
+      - ${XG2G_ENV_FILE:-./.env}
+    volumes:
+      - ${XG2G_DATA_DIR:-./data}:/var/lib/xg2g

@@ -13,8 +13,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/log"
 	bolt "go.etcd.io/bbolt"
 )
 
@@ -48,7 +48,7 @@ type leaseRecord struct {
 
 // IdemRecord stored in DB
 type idemRecord struct {
-	SessionID string    `json:"session_id"`
+	SessionID string    `json:"sessionId"`
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
@@ -450,6 +450,33 @@ func (b *BoltStore) ReleaseLease(ctx context.Context, key, owner string) error {
 		// Not owner, no-op (or error if strictly desired, but no-op safest for generic release)
 		return nil
 	})
+}
+
+func (b *BoltStore) GetLease(ctx context.Context, key string) (Lease, bool, error) {
+	var rec leaseRecord
+	var found bool
+	err := b.db.View(func(tx *bolt.Tx) error {
+		val := tx.Bucket(bucketLeases).Get([]byte(key))
+		if val == nil {
+			return nil
+		}
+		if err := json.Unmarshal(val, &rec); err != nil {
+			return nil // Corrupt
+		}
+		// Check Expiry (Read-Only)
+		if time.Now().After(rec.ExpiresAt) {
+			return nil
+		}
+		found = true
+		return nil
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	if !found {
+		return nil, false, nil
+	}
+	return &boltLease{store: b, key: key, owner: rec.Owner, exp: rec.ExpiresAt}, true, nil
 }
 
 func (b *BoltStore) DeleteAllLeases(ctx context.Context) (int, error) {

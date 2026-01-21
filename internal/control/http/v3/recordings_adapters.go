@@ -36,11 +36,16 @@ func (a *OWIAdapter) GetRecordings(ctx context.Context, path string) (recordings
 	}
 	res := recordings.OWIRecordingsList{
 		Result:    list.Result,
-		Movies:    make([]recordings.OWIMovie, len(list.Movies)),
-		Bookmarks: make([]recordings.OWILocation, len(list.Bookmarks)),
+		Movies:    mapMovies(list.Movies),
+		Bookmarks: mapLocations(list.Bookmarks),
 	}
-	for i, m := range list.Movies {
-		res.Movies[i] = recordings.OWIMovie{
+	return res, nil
+}
+
+func mapMovies(movies []openwebif.Movie) []recordings.OWIMovie {
+	res := make([]recordings.OWIMovie, len(movies))
+	for i, m := range movies {
+		res[i] = recordings.OWIMovie{
 			ServiceRef:          m.ServiceRef,
 			Title:               m.Title,
 			Description:         m.Description,
@@ -48,12 +53,18 @@ func (a *OWIAdapter) GetRecordings(ctx context.Context, path string) (recordings
 			Length:              m.Length,
 			Filename:            m.Filename,
 			Begin:               int(m.Begin),
+			Filesize:            m.Filesize,
 		}
 	}
-	for i, l := range list.Bookmarks {
-		res.Bookmarks[i] = recordings.OWILocation{Name: l.Name, Path: l.Path}
+	return res
+}
+
+func mapLocations(locs []openwebif.MovieLocation) []recordings.OWILocation {
+	res := make([]recordings.OWILocation, len(locs))
+	for i, l := range locs {
+		res[i] = recordings.OWILocation{Name: l.Name, Path: l.Path}
 	}
-	return res, nil
+	return res
 }
 
 func (a *OWIAdapter) DeleteRecording(ctx context.Context, serviceRef string) error {
@@ -65,6 +76,10 @@ func (a *OWIAdapter) GetTimers(ctx context.Context) ([]recordings.OWITimer, erro
 	if err != nil {
 		return nil, err
 	}
+	return mapTimers(timers), nil
+}
+
+func mapTimers(timers []openwebif.Timer) []recordings.OWITimer {
 	res := make([]recordings.OWITimer, len(timers))
 	for i, t := range timers {
 		res[i] = recordings.OWITimer{
@@ -77,7 +92,7 @@ func (a *OWIAdapter) GetTimers(ctx context.Context) ([]recordings.OWITimer, erro
 			Disabled:   t.Disabled,
 		}
 	}
-	return res, nil
+	return res
 }
 
 // ResumeAdapter bridges resume.Store to recordings.ResumeStore

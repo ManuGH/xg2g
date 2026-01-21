@@ -23,9 +23,9 @@ type MockProfileResolver struct {
 	mock.Mock
 }
 
-func (m *MockProfileResolver) Resolve(ctx context.Context, headers map[string]string) (ClientProfile, error) {
+func (m *MockProfileResolver) Resolve(ctx context.Context, headers map[string]string) (PlaybackCapabilities, error) {
 	args := m.Called(ctx, headers)
-	return args.Get(0).(ClientProfile), args.Error(1)
+	return args.Get(0).(PlaybackCapabilities), args.Error(1)
 }
 
 // --- Setup ---
@@ -42,7 +42,7 @@ func setupEngine(t *testing.T) (*DecisionEngine, *MockTruthProvider, *MockProfil
 func TestPlaybackInfo_G1_Unauthorized_FailsClosed(t *testing.T) {
 	e, _, prof := setupEngine(t)
 	// G1: Profile Resolver returns Forbidden -> Engine fails closed
-	prof.On("Resolve", mock.Anything, mock.Anything).Return(ClientProfile{}, ErrForbidden)
+	prof.On("Resolve", mock.Anything, mock.Anything).Return(PlaybackCapabilities{}, ErrForbidden)
 
 	_, err := e.Resolve(context.Background(), ResolveRequest{RecordingID: "rec1"})
 	assert.ErrorIs(t, err, ErrForbidden)
@@ -52,7 +52,7 @@ func TestPlaybackInfo_G1_Unauthorized_FailsClosed(t *testing.T) {
 
 func TestPlaybackInfo_G2_NotFound_Terminal(t *testing.T) {
 	e, truth, prof := setupEngine(t)
-	prof.On("Resolve", mock.Anything, mock.Anything).Return(ClientProfile{}, nil)
+	prof.On("Resolve", mock.Anything, mock.Anything).Return(PlaybackCapabilities{}, nil)
 	truth.On("GetMediaTruth", mock.Anything, "rec1").Return(MediaTruth{}, ErrNotFound)
 
 	_, err := e.Resolve(context.Background(), ResolveRequest{RecordingID: "rec1"})
@@ -63,7 +63,7 @@ func TestPlaybackInfo_G2_NotFound_Terminal(t *testing.T) {
 
 func TestPlaybackInfo_G3_Preparing_ReturnsPreparing(t *testing.T) {
 	e, truth, prof := setupEngine(t)
-	prof.On("Resolve", mock.Anything, mock.Anything).Return(ClientProfile{}, nil)
+	prof.On("Resolve", mock.Anything, mock.Anything).Return(PlaybackCapabilities{}, nil)
 	truth.On("GetMediaTruth", mock.Anything, "rec1").Return(MediaTruth{State: StatePreparing}, nil)
 
 	_, err := e.Resolve(context.Background(), ResolveRequest{RecordingID: "rec1"})
@@ -82,10 +82,10 @@ func TestPlaybackInfo_G4_DirectPlay_H264_AAC_MP4(t *testing.T) {
 		AudioCodec: "aac",
 	}, nil)
 
-	prof.On("Resolve", mock.Anything, mock.Anything).Return(ClientProfile{
-		Name:         "mse_hlsjs",
-		SupportsH264: true,
-		SupportsAAC:  true,
+	prof.On("Resolve", mock.Anything, mock.Anything).Return(PlaybackCapabilities{
+		Containers:  []string{"mp4"},
+		VideoCodecs: []string{"h264"},
+		AudioCodecs: []string{"aac"},
 	}, nil)
 
 	req := ResolveRequest{RecordingID: "rec1", ProtocolHint: "mp4"}
@@ -109,11 +109,11 @@ func TestPlaybackInfo_G5_DirectPlay_SafariNative_HLS(t *testing.T) {
 		AudioCodec: "aac",
 	}, nil)
 
-	prof.On("Resolve", mock.Anything, mock.Anything).Return(ClientProfile{
-		Name:              "safari_native",
-		SupportsNativeHLS: true,
-		SupportsH264:      true,
-		SupportsAAC:       true,
+	prof.On("Resolve", mock.Anything, mock.Anything).Return(PlaybackCapabilities{
+		SupportsHLS: true,
+		Containers:  []string{"mpegts"},
+		VideoCodecs: []string{"h264"},
+		AudioCodecs: []string{"aac"},
 	}, nil)
 
 	req := ResolveRequest{RecordingID: "rec1", ProtocolHint: "hls"}
@@ -137,10 +137,10 @@ func TestPlaybackInfo_G6_DirectStream_RemuxOnly(t *testing.T) {
 		AudioCodec: "aac",
 	}, nil)
 
-	prof.On("Resolve", mock.Anything, mock.Anything).Return(ClientProfile{
-		Name:         "mse_hlsjs",
-		SupportsH264: true,
-		SupportsAAC:  true,
+	prof.On("Resolve", mock.Anything, mock.Anything).Return(PlaybackCapabilities{
+		SupportsHLS: true,
+		VideoCodecs: []string{"h264"},
+		AudioCodecs: []string{"aac"},
 	}, nil)
 
 	req := ResolveRequest{RecordingID: "rec1", ProtocolHint: "hls"}
@@ -163,10 +163,9 @@ func TestPlaybackInfo_G7_Transcode_VideoIncompatible_MPEG2(t *testing.T) {
 		AudioCodec: "mp2",
 	}, nil)
 
-	prof.On("Resolve", mock.Anything, mock.Anything).Return(ClientProfile{
-		Name:          "chrome",
-		SupportsH264:  true,
-		SupportsMPEG2: false,
+	prof.On("Resolve", mock.Anything, mock.Anything).Return(PlaybackCapabilities{
+		VideoCodecs: []string{"h264"}, // No mpeg2
+		AudioCodecs: []string{"mp2"},
 	}, nil)
 
 	req := ResolveRequest{RecordingID: "rec1", ProtocolHint: "hls"}
@@ -189,11 +188,9 @@ func TestPlaybackInfo_G8_Transcode_AudioOnly_AC3(t *testing.T) {
 		AudioCodec: "ac3",
 	}, nil)
 
-	prof.On("Resolve", mock.Anything, mock.Anything).Return(ClientProfile{
-		Name:         "chrome",
-		SupportsH264: true,
-		SupportsAC3:  false,
-		SupportsAAC:  true,
+	prof.On("Resolve", mock.Anything, mock.Anything).Return(PlaybackCapabilities{
+		VideoCodecs: []string{"h264"},
+		AudioCodecs: []string{"aac"}, // No AC3
 	}, nil)
 
 	req := ResolveRequest{RecordingID: "rec1", ProtocolHint: "hls"}
@@ -210,7 +207,7 @@ func TestPlaybackInfo_G8_Transcode_AudioOnly_AC3(t *testing.T) {
 func TestPlaybackInfo_G9_UnknownCodecTruth_FailsClosed(t *testing.T) {
 	e, truth, prof := setupEngine(t)
 
-	prof.On("Resolve", mock.Anything, mock.Anything).Return(ClientProfile{}, nil)
+	prof.On("Resolve", mock.Anything, mock.Anything).Return(PlaybackCapabilities{}, nil)
 	truth.On("GetMediaTruth", mock.Anything, "rec1").Return(MediaTruth{
 		State:      StateReady,
 		Container:  "mp4",
@@ -221,7 +218,7 @@ func TestPlaybackInfo_G9_UnknownCodecTruth_FailsClosed(t *testing.T) {
 	_, err := e.Resolve(context.Background(), ResolveRequest{RecordingID: "rec1"})
 
 	assert.Error(t, err)
-	assert.ErrorIs(t, err, ErrUpstream)
+	assert.ErrorIs(t, err, ErrDecisionAmbiguous)
 }
 
 // --- Group 10: Determinism ---
@@ -232,10 +229,13 @@ func TestPlaybackInfo_G10_RepeatedCalls_StableDecision(t *testing.T) {
 	truth.On("GetMediaTruth", mock.Anything, "rec1").Return(MediaTruth{
 		State: StateReady, Container: "mp4", VideoCodec: "h264", AudioCodec: "aac"}, nil).Twice()
 
-	prof.On("Resolve", mock.Anything, mock.Anything).Return(ClientProfile{
-		Name: "mse_hlsjs", SupportsH264: true, SupportsAAC: true}, nil).Twice()
+	prof.On("Resolve", mock.Anything, mock.Anything).Return(PlaybackCapabilities{
+		Containers:  []string{"mp4"},
+		VideoCodecs: []string{"h264"},
+		AudioCodecs: []string{"aac"},
+	}, nil).Twice()
 
-	req := ResolveRequest{RecordingID: "rec1", ProtocolHint: "hls"}
+	req := ResolveRequest{RecordingID: "rec1", ProtocolHint: "mp4"}
 
 	plan1, err1 := e.Resolve(context.Background(), req)
 	plan2, err2 := e.Resolve(context.Background(), req)

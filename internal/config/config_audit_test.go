@@ -15,17 +15,19 @@ import (
 )
 
 func TestConfigAudit_FieldCoverage(t *testing.T) {
-	registry := GetRegistry()
+	registry, err := GetRegistry()
+	require.NoError(t, err)
 	cfg := AppConfig{}
 
-	err := registry.ValidateFieldCoverage(cfg)
+	err = registry.ValidateFieldCoverage(cfg)
 	if err != nil {
 		t.Errorf("Mechanical coverage check failed: %v. Every exported field in AppConfig must be in registry.go", err)
 	}
 }
 
 func TestConfigAudit_RegistryIntegrity(t *testing.T) {
-	registry := GetRegistry()
+	registry, err := GetRegistry()
+	require.NoError(t, err)
 
 	// 1. All entries must have a profile and status
 	for path, entry := range registry.ByPath {
@@ -116,7 +118,8 @@ tls:
 }
 
 func TestConfigAudit_RegistryDefaultsTypes(t *testing.T) {
-	registry := GetRegistry()
+	registry, err := GetRegistry()
+	require.NoError(t, err)
 	cfg := AppConfig{}
 	cfgType := reflect.TypeOf(cfg)
 
@@ -174,7 +177,8 @@ func TestConfigAudit_RegistryTruth_Defaults(t *testing.T) {
 		t.Logf("Loader validation error ignored for defaults audit: %v", err)
 	}
 
-	registry := GetRegistry()
+	registry, err := GetRegistry()
+	require.NoError(t, err)
 	cfgVal := reflect.ValueOf(cfg)
 
 	for _, entry := range registry.ByField {
@@ -218,7 +222,8 @@ func TestConfigAudit_RegistryTruth_EnvKeys(t *testing.T) {
 	_, _ = l.Load()
 
 	// 3. Verify Consumption via Tracker
-	registry := GetRegistry()
+	registry, err := GetRegistry()
+	require.NoError(t, err)
 
 	for _, entry := range registry.ByField {
 		if entry.Env == "" {
@@ -247,7 +252,8 @@ func TestConfigAudit_PointerDefaults_PreserveZeroValues(t *testing.T) {
 	fieldPath := "HDHR.Enabled"
 
 	// Inject a test default into Registry
-	reg := GetRegistry()
+	reg, err := GetRegistry()
+	require.NoError(t, err)
 	original, exists := reg.ByField[fieldPath]
 
 	// Set default to TRUE

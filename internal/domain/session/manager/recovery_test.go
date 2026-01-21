@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/admission"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
 )
@@ -21,8 +22,9 @@ func TestRecoverySweep_RecoverStale(t *testing.T) {
 	defer func() { _ = s.Close() }()
 
 	orch := &Orchestrator{
-		Store:    s,
-		LeaseTTL: 100 * time.Millisecond,
+		Store:     s,
+		Admission: admission.NewResourceMonitor(10, 10, 0),
+		LeaseTTL:  100 * time.Millisecond,
 	}
 
 	ctx := context.Background()
@@ -62,8 +64,9 @@ func TestRecoverySweep_IgnoreActive(t *testing.T) {
 	defer func() { _ = s.Close() }()
 
 	orch := &Orchestrator{
-		Store:    s,
-		LeaseTTL: 100 * time.Millisecond,
+		Store:     s,
+		Admission: admission.NewResourceMonitor(10, 10, 0),
+		LeaseTTL:  100 * time.Millisecond,
 	}
 	ctx := context.Background()
 
@@ -96,7 +99,7 @@ func TestRecoverySweep_IgnoreTerminal(t *testing.T) {
 	s, _ := store.OpenBoltStore(tmpDir)
 	defer func() { _ = s.Close() }()
 
-	orch := &Orchestrator{Store: s}
+	orch := &Orchestrator{Store: s, Admission: admission.NewResourceMonitor(10, 10, 0)}
 	ctx := context.Background()
 
 	// TestRecoverySweep_IgnoreTerminal only checks truly terminal states now (FAILED, STOPPED)
@@ -122,7 +125,7 @@ func TestRecoverySweep_RecoverReady(t *testing.T) {
 	s, _ := store.OpenBoltStore(tmpDir)
 	defer func() { _ = s.Close() }()
 
-	orch := &Orchestrator{Store: s, LeaseTTL: 100 * time.Millisecond}
+	orch := &Orchestrator{Store: s, LeaseTTL: 100 * time.Millisecond, Admission: admission.NewResourceMonitor(10, 10, 0)}
 	ctx := context.Background()
 
 	// Setup Zombie READY session (Stale Lease)

@@ -17,7 +17,7 @@ export type PlayerStatus =
 
 export interface Channel {
   id?: string;
-  service_ref?: string;
+  serviceRef?: string;
   name?: string;
   [key: string]: unknown;
 }

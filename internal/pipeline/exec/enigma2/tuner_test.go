@@ -46,6 +46,7 @@ func TestTuner_Tune_Success(t *testing.T) {
 	client := NewClient(ts.URL, 1*time.Second)
 	tuner := NewTuner(client, 0, 1*time.Second)
 	tuner.PollInterval = 10 * time.Millisecond // Fast poll
+	tuner.PostZapDelay = 10 * time.Millisecond // Fast zap
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()

@@ -11,7 +11,7 @@ import (
 
 	"reflect"
 
-	"github.com/ManuGH/xg2g/internal/control/http/v3/problem"
+	"github.com/ManuGH/xg2g/internal/control/http/problem"
 )
 
 // ClientProfile represents the detected capability bucket of the client.

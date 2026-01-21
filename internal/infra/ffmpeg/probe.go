@@ -1,13 +1,16 @@
 package ffmpeg
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strconv"
+	"strings"
 
 	"github.com/ManuGH/xg2g/internal/domain/vod"
+	"github.com/rs/zerolog/log"
 )
 
 // Prober implements vod.Prober interface using ffprobe.
@@ -24,7 +27,7 @@ func (p *Prober) Probe(ctx context.Context, path string) (*vod.StreamInfo, error
 // Probe executes ffprobe and returns stream info.
 func Probe(ctx context.Context, path string) (*vod.StreamInfo, error) {
 	args := []string{
-		"-v", "quiet",
+		"-v", "error",
 		"-print_format", "json",
 		"-show_format",
 		"-show_streams",
@@ -33,14 +36,61 @@ func Probe(ctx context.Context, path string) (*vod.StreamInfo, error) {
 
 	// #nosec G204 - ffprobe is hardcoded; args are strictly controlled and path is opaque
 	cmd := exec.CommandContext(ctx, "ffprobe", args...)
+
+	// Capture stderr for diagnostics (because exit code might be non-zero even with valid JSON)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
 	out, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("ffprobe failed: %w", err)
-	}
 
 	var data probeData
-	if err := json.Unmarshal(out, &data); err != nil {
-		return nil, fmt.Errorf("json decode: %w", err)
+	jsonErr := json.Unmarshal(out, &data)
+
+	// Validate: Must be valid JSON AND have actual playable content (Video or Audio with codec)
+	// Audio-only recordings are considered playable; video truth is not required for probe success.
+	hasPlayableStream := false
+	if jsonErr == nil {
+		for _, s := range data.Streams {
+			// Require CodecName to be present to treat as valid stream
+			if (s.CodecType == "video" || s.CodecType == "audio") && s.CodecName != "" {
+				hasPlayableStream = true
+				break
+			}
+		}
+	}
+
+	isValid := jsonErr == nil && data.Format.FormatName != "" && hasPlayableStream
+
+	if isValid {
+		// Valid JSON with content.
+		if err != nil {
+			// Log warning about non-zero exit (likely partial file or warnings).
+			// Truncate stderr to prevent log explosion on massive dumps.
+			errStr := stderr.String()
+			if len(errStr) > 4096 {
+				errStr = errStr[:4096] + "..."
+			}
+			log.Warn().Err(err).Str("path", path).Str("stderr", errStr).Msg("ffprobe non-zero exit but JSON accepted")
+		}
+		// Explicitly clear error to signal success
+		// err = nil // ineffassign: err is shadowing or re-assigned anyway later? No, it's just never used after this block because we return info, nil
+		// Actually, we don't return nil here? Wait, we fall through to return info, nil at end of function.
+		// logic: if isValid { if err!=nil log.Warn(); err = nil; }
+		// The `err` variable is checked in `else if err != nil` below.
+		// But since we are inside `if isValid`, the `else` blocks won't run.
+		// And we return `info, nil` at the end.
+		// So `err` is indeed effectively unused after this block.
+	} else if err != nil {
+		// Execution failed AND/OR no usable JSON.
+		errStr := stderr.String()
+		if len(errStr) > 4096 {
+			errStr = errStr[:4096] + "..."
+		}
+		return nil, fmt.Errorf("ffprobe failed: %w (stderr: %s)", err, errStr)
+	} else if jsonErr != nil {
+		return nil, fmt.Errorf("json decode: %w", jsonErr)
+	} else {
+		return nil, fmt.Errorf("ffprobe returned empty data (no playable streams)")
 	}
 
 	info := &vod.StreamInfo{}
@@ -73,6 +123,16 @@ func Probe(ctx context.Context, path string) (*vod.StreamInfo, error) {
 			if s.FieldOrder != "" && s.FieldOrder != "progressive" {
 				info.Video.Interlaced = true
 			}
+			if s.AvgFrameRate != "" && s.AvgFrameRate != "0/0" {
+				parts := strings.Split(s.AvgFrameRate, "/")
+				if len(parts) == 2 {
+					num, _ := strconv.ParseFloat(parts[0], 64)
+					den, _ := strconv.ParseFloat(parts[1], 64)
+					if den > 0 {
+						info.Video.FPS = num / den
+					}
+				}
+			}
 
 		case "audio":
 			info.Audio.CodecName = s.CodecName
@@ -86,7 +146,25 @@ func Probe(ctx context.Context, path string) (*vod.StreamInfo, error) {
 			info.Video.Duration = d
 		}
 	}
-	info.Container = data.Format.FormatName
+
+	// Normalize container vocab (handle comma-lists and prefer mpegts -> ts)
+	parts := strings.Split(data.Format.FormatName, ",")
+	canonical := ""
+	for _, p := range parts {
+		t := strings.TrimSpace(p)
+		if t == "mpegts" {
+			canonical = "ts"
+			break
+		}
+		if canonical == "" && t != "" {
+			canonical = t
+		}
+	}
+
+	if canonical == "" {
+		return nil, fmt.Errorf("ffprobe returned empty format_name token list")
+	}
+	info.Container = canonical
 
 	return info, nil
 }
@@ -101,6 +179,7 @@ type probeData struct {
 		Width            int    `json:"width,omitempty"`
 		Height           int    `json:"height,omitempty"`
 		FieldOrder       string `json:"field_order,omitempty"`
+		AvgFrameRate     string `json:"avg_frame_rate,omitempty"`
 	} `json:"streams"`
 	Format struct {
 		Duration   string `json:"duration"`

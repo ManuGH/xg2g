@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 // TestCallbackExecution verifies that BuildMonitor calls Manager callbacks on success/failure.
@@ -18,7 +20,8 @@ func TestCallbackExecution(t *testing.T) {
 			startDelay: 100 * time.Millisecond,
 			exitCode:   0,
 		}
-		manager := NewManager(runner, &mockProber{}, nil)
+		manager, err := NewManager(runner, &mockProber{}, nil)
+		require.NoError(t, err)
 
 		// Trigger build
 		id := "test-recording-id"
@@ -77,7 +80,8 @@ func TestCallbackExecution(t *testing.T) {
 			startDelay: 100 * time.Millisecond,
 			exitCode:   1, // Simulate failure
 		}
-		manager := NewManager(runner, &mockProber{}, nil)
+		manager, err := NewManager(runner, &mockProber{}, nil)
+		require.NoError(t, err)
 
 		// Trigger build
 		id := "test-recording-fail"
@@ -93,7 +97,7 @@ func TestCallbackExecution(t *testing.T) {
 			t.Fatalf("failed to create output temp: %v", err)
 		}
 
-		_, err := manager.StartBuild(context.Background(), id, id, input, workDir, outputTemp, finalPath, ProfileDefault)
+		_, err = manager.StartBuild(context.Background(), id, id, input, workDir, outputTemp, finalPath, ProfileDefault)
 		if err != nil {
 			t.Fatalf("StartBuild failed: %v", err)
 		}

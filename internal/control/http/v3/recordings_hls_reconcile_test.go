@@ -146,7 +146,8 @@ func TestGetRecordingHLSPlaylist_FailedPromotesReady(t *testing.T) {
 
 	srv := NewServer(cfg, nil, nil)
 	// Use successRunner
-	vodMgr := vod.NewManager(&successRunner{fsRoot: t.TempDir()}, &noopProber{}, nil)
+	vodMgr, err := vod.NewManager(&successRunner{fsRoot: t.TempDir()}, &noopProber{}, nil)
+	require.NoError(t, err)
 	srv.SetDependencies(nil, nil, nil, nil, nil, nil, nil, nil, vodMgr, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	cacheDir := filepath.Join(hlsRoot, "recordings", v3recordings.RecordingCacheKey(serviceRef))
@@ -182,7 +183,8 @@ func TestGetRecordingHLSPlaylist_Failed_Reconcile_BuildCallbackPromotesReady(t *
 
 	srv := NewServer(cfg, nil, nil)
 	// Use successRunner
-	vodMgr := vod.NewManager(&successRunner{fsRoot: t.TempDir()}, &noopProber{}, nil)
+	vodMgr, err := vod.NewManager(&successRunner{fsRoot: t.TempDir()}, &noopProber{}, nil)
+	require.NoError(t, err)
 	srv.SetDependencies(nil, nil, nil, nil, nil, nil, nil, nil, vodMgr, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	vodMgr.SeedMetadata(serviceRef, vod.Metadata{
@@ -223,7 +225,8 @@ func TestGetRecordingHLSPlaylist_FailedStampedeTriggersSingleBuild(t *testing.T)
 	})
 
 	srv := NewServer(cfg, nil, nil)
-	vodMgr := vod.NewManager(runner, &noopProber{}, mapper)
+	vodMgr, err := vod.NewManager(runner, &noopProber{}, mapper)
+	require.NoError(t, err)
 	srv.SetDependencies(nil, nil, nil, nil, mapper, nil, nil, nil, vodMgr, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	vodMgr.SeedMetadata(serviceRef, vod.Metadata{
@@ -266,7 +269,8 @@ func TestGetRecordingHLSPlaylist_FailedLatencySLO(t *testing.T) {
 		delegate: &successRunner{fsRoot: t.TempDir()},
 		done:     make(chan struct{}),
 	}
-	vodMgr := vod.NewManager(runner, &noopProber{}, nil)
+	vodMgr, err := vod.NewManager(runner, &noopProber{}, nil)
+	require.NoError(t, err)
 
 	srv := NewServer(cfg, nil, nil)
 	srv.SetDependencies(nil, nil, nil, nil, nil, nil, nil, nil, vodMgr, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
@@ -327,7 +331,8 @@ func TestGetRecordingHLSPlaylist_OpenFailure_ReconcileReady(t *testing.T) {
 	})
 
 	srv := NewServer(cfg, nil, nil)
-	vodMgr := vod.NewManager(&successRunner{fsRoot: t.TempDir()}, &slowProber{delay: 50 * time.Millisecond}, pathMapper)
+	vodMgr, err := vod.NewManager(&successRunner{fsRoot: t.TempDir()}, &slowProber{delay: 50 * time.Millisecond}, pathMapper)
+	require.NoError(t, err)
 	srv.SetDependencies(nil, nil, nil, nil, nil, nil, nil, nil, vodMgr, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	cacheDir, err := v3recordings.RecordingCacheDir(cfg.HLS.Root, serviceRef)

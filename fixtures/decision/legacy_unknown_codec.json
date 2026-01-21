@@ -1,0 +1,37 @@
+{
+  "name": "legacy_unknown_codec",
+  "input": {
+    "truth": {
+      "container": "mp4",
+      "video_codec": "vp9",
+      "audio_codec": "aac",
+      "width": 1280,
+      "height": 720,
+      "fps": 30
+    },
+    "capabilities": {
+      "version": 1,
+      "containers": [
+        "mp4"
+      ],
+      "video_codecs": [
+        "h264"
+      ],
+      "audio_codecs": [
+        "aac"
+      ],
+      "supports_hls": true,
+      "supports_range": true
+    },
+    "policy": {
+      "allow_transcode": false
+    }
+  },
+  "expected": {
+    "mode": "deny",
+    "protocol": "none",
+    "reasons": [
+      "policy_denies_transcode"
+    ]
+  }
+}

@@ -52,9 +52,9 @@ func (s *Server) GetReceiverCurrent(w http.ResponseWriter, r *http.Request) {
 			Ref:  &current.Info.ServiceRef,
 		},
 		Now: &struct {
-			BeginTimestamp *int64  `json:"begin_timestamp,omitempty"`
+			BeginTimestamp *int64  `json:"beginTimestamp,omitempty"`
 			Description    *string `json:"description,omitempty"`
-			DurationSec    *int    `json:"duration_sec,omitempty"`
+			DurationSec    *int    `json:"durationSec,omitempty"`
 			Title          *string `json:"title,omitempty"`
 		}{
 			Title:          &current.Now.EventTitle,

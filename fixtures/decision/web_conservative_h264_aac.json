@@ -1,0 +1,38 @@
+{
+  "name": "web_conservative_h264_aac",
+  "input": {
+    "truth": {
+      "container": "mp4",
+      "video_codec": "h264",
+      "audio_codec": "aac",
+      "width": 1920,
+      "height": 1080,
+      "fps": 25
+    },
+    "capabilities": {
+      "version": 1,
+      "containers": [
+        "mp4"
+      ],
+      "video_codecs": [
+        "h264"
+      ],
+      "audio_codecs": [
+        "aac",
+        "mp3"
+      ],
+      "supports_hls": true,
+      "supports_range": true
+    },
+    "policy": {
+      "allow_transcode": true
+    }
+  },
+  "expected": {
+    "mode": "direct_play",
+    "protocol": "mp4",
+    "reasons": [
+      "directplay_match"
+    ]
+  }
+}

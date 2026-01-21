@@ -15,7 +15,7 @@ type VODPlaybackResponse struct {
 
 	// DurationSeconds is the authoritative duration.
 	// UI must not guess this from file headers.
-	DurationSeconds int64 `json:"duration_seconds,omitempty"`
+	DurationSeconds int64 `json:"durationSeconds,omitempty"`
 
 	// Seekable indicates if the media supports seeking.
 	Seekable bool `json:"seekable,omitempty"`

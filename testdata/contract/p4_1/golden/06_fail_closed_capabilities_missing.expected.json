@@ -1,10 +1,10 @@
 {
-				"status": 412,
-				"problem": {
-					"type": "about:blank",
-					"title": "Precondition Failed",
-					"status": 412,
-					"code": "capabilities_missing",
-					"detail": "Client must provide capabilities (capabilities_version required)"
+					"problem": {
+						"type": "recordings/capabilities-missing",
+						"title": "Capabilities Missing",
+						"status": 412,
+						"code": "capabilities_missing",
+						"detail": "Client must provide capabilities (capabilities_version required)"
+					},
+					"status": 412
 				}
-			}

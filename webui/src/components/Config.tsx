@@ -212,7 +212,7 @@ function Config() {
       const result = await putSystemConfig({ body: payload });
 
       if (result.data) {
-        if (result.data.restart_required) {
+        if (result.data.restartRequired) {
           setSuccessMsg(t('setup.messages.savedRestart'));
           setRestarting(true);
           checkHealthAndReload();

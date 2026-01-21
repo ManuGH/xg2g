@@ -52,7 +52,7 @@ func TestXMLStructureValidation(t *testing.T) {
 				Stop:    "202501010100 +0000",
 				Channel: "c1",
 				Title:   Title{Lang: "en", Text: "Show1"},
-				Desc:    "Description1",
+				Desc:    &Description{Text: "Description1"},
 			},
 			{
 				Start:   "202501010100 +0000",
@@ -123,7 +123,7 @@ func TestGoldenXMLTV(t *testing.T) {
 		GeneratorURL: "https://github.com/ManuGH/xg2g",
 		Channels:     []Channel{{ID: "c1", DisplayName: []string{"Chan1"}}},
 		Programs: []Programme{
-			{Start: "202501010000 +0000", Stop: "202501010100 +0000", Channel: "c1", Title: Title{Lang: "en", Text: "Show1"}, Desc: "Description1"},
+			{Start: "202501010000 +0000", Stop: "202501010100 +0000", Channel: "c1", Title: Title{Lang: "en", Text: "Show1"}, Desc: &Description{Text: "Description1"}},
 			{Start: "202501010100 +0000", Stop: "202501010200 +0000", Channel: "c1", Title: Title{Text: "Show2"}},
 		},
 	}
@@ -162,14 +162,14 @@ func TestUmlautsAndUTF8Encoding(t *testing.T) {
 			Stop:    "202501010100 +0000",
 			Channel: "orf1",
 			Title:   Title{Text: "Tagesschau"},
-			Desc:    "Aktuelle Nachrichten aus Österreich",
+			Desc:    &Description{Text: "Aktuelle Nachrichten aus Österreich"},
 		},
 		{
 			Start:   "202501010100 +0000",
 			Stop:    "202501010200 +0000",
 			Channel: "ard",
 			Title:   Title{Text: "Fußball-Bundesliga"},
-			Desc:    "München spielt gegen Köln",
+			Desc:    &Description{Text: "München spielt gegen Köln"},
 		},
 	}
 
@@ -233,7 +233,7 @@ func TestUmlautsAndUTF8Encoding(t *testing.T) {
 		t.Errorf("expected 2 programmes, got %d", len(tv.Programs))
 	}
 
-	if tv.Programs[0].Desc != "Aktuelle Nachrichten aus Österreich" {
+	if tv.Programs[0].Desc.Text != "Aktuelle Nachrichten aus Österreich" {
 		t.Errorf("expected umlaut in description, got %q", tv.Programs[0].Desc)
 	}
 

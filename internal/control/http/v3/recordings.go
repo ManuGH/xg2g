@@ -6,11 +6,13 @@ package v3
 
 import (
 	"encoding/json"
-	"fmt"
+	"io"
 	"net/http"
 	"os"
+	"strconv"
 
 	"github.com/ManuGH/xg2g/internal/control/auth"
+	xg2ghttp "github.com/ManuGH/xg2g/internal/control/http"
 	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/log"
@@ -185,13 +187,20 @@ func (s *Server) DeleteRecording(w http.ResponseWriter, r *http.Request, recordi
 }
 
 func (s *Server) StreamRecordingDirect(w http.ResponseWriter, r *http.Request, recordingId string) {
+	s.serveRecordingDirect(w, r, recordingId, false)
+}
+
+func (s *Server) ProbeRecordingMp4(w http.ResponseWriter, r *http.Request, recordingId string) {
+	s.serveRecordingDirect(w, r, recordingId, true)
+}
+
+func (s *Server) serveRecordingDirect(w http.ResponseWriter, r *http.Request, recordingId string, isHead bool) {
 	if s.recordingsService == nil {
 		writeProblem(w, r, http.StatusInternalServerError, "system/internal", "Internal Error", "INTERNAL_ERROR", "Recordings service not available", nil)
 		return
 	}
 
-	// Delegate to Service.Stream (Thin Adapter)
-	// Service handles orchestration, probing, and file readiness checks.
+	// 1. Check readiness and get artifact path
 	res, err := s.recordingsService.Stream(r.Context(), recservice.StreamInput{
 		RecordingID: recordingId,
 	})
@@ -201,23 +210,13 @@ func (s *Server) StreamRecordingDirect(w http.ResponseWriter, r *http.Request, r
 	}
 
 	if !res.Ready {
-		// Not Ready: Return 503 with Retry-After (RFC 7807)
-		w.Header().Set("Retry-After", fmt.Sprintf("%d", res.RetryAfter))
-		writeProblem(w, r, http.StatusServiceUnavailable, "recordings/preparing", "Preparing", "PREPARING", "Recording is being prepared for playback", map[string]interface{}{
-			"recording_id": recordingId,
-			"state":        res.State,
-		})
+		s.writePreparingResponse(w, r, recordingId, res.State, res.RetryAfter)
 		return
 	}
 
-	// Ready: Serve Content
-	// We use http.ServeContent which handles Range requests efficiently.
-	// Since we are the "adapter", we are allowed to open the file for writing to the response,
-	// provided the service has guaranteed its readiness and path.
+	// 2. Open file and get status
 	f, err := os.Open(res.LocalPath)
 	if err != nil {
-		// Race condition or file deletion? Service said ready.
-		// Fallback to error
 		log.L().Error().Err(err).Str("path", res.LocalPath).Msg("failed to open ready artifact")
 		s.writeRecordingError(w, r, err)
 		return
@@ -229,47 +228,47 @@ func (s *Server) StreamRecordingDirect(w http.ResponseWriter, r *http.Request, r
 		s.writeRecordingError(w, r, err)
 		return
 	}
+	size := info.Size()
 
-	http.ServeContent(w, r, "stream.mp4", info.ModTime(), f)
-}
-
-func (s *Server) ProbeRecordingMp4(w http.ResponseWriter, r *http.Request, recordingId string) {
-	if s.recordingsService == nil {
-		writeProblem(w, r, http.StatusInternalServerError, "system/internal", "Internal Error", "INTERNAL_ERROR", "Recordings service not available", nil)
-		return
-	}
-
-	// Delegate to Service.Stream (Thin Adapter) - Checks readiness
-	res, err := s.recordingsService.Stream(r.Context(), recservice.StreamInput{
-		RecordingID: recordingId,
-	})
-	if err != nil {
-		s.writeRecordingError(w, r, err)
-		return
-	}
-
-	if !res.Ready {
-		// Not Ready: Return 503 with Retry-After (RFC 7807)
-		w.Header().Set("Retry-After", fmt.Sprintf("%d", res.RetryAfter))
-		writeProblem(w, r, http.StatusServiceUnavailable, "recordings/preparing", "Preparing", "PREPARING", "Recording is being prepared for playback", map[string]interface{}{
-			"recording_id": recordingId,
-			"state":        res.State,
-		})
-		return
-	}
-
-	// Ready: Check file stats for headers
-	info, err := os.Stat(res.LocalPath)
-	if err != nil {
-		// Fallback if file missing despite ready
-		s.writeRecordingError(w, r, err)
-		return
-	}
-
+	// 3. Set Base Headers
 	w.Header().Set("Content-Type", "video/mp4")
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", info.Size()))
+	w.Header().Set("Accept-Ranges", "bytes")
 	w.Header().Set("Last-Modified", info.ModTime().UTC().Format(http.TimeFormat))
-	w.WriteHeader(http.StatusOK)
+
+	// 4. Case A: No Range
+	rangeHeader := r.Header.Get("Range")
+	if rangeHeader == "" {
+		w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
+		w.WriteHeader(http.StatusOK)
+		if !isHead {
+			_, _ = io.Copy(w, f)
+		}
+		return
+	}
+
+	// 5. Case B: Range Header Present (Parse via SSOT)
+	rng, err := xg2ghttp.ParseRange(rangeHeader, size)
+	if err != nil {
+		// Policy A: Invalid or Multi-range -> 416
+		xg2ghttp.Write416(w, size)
+		return
+	}
+
+	// 6. Respond with 206 Partial Content
+	contentLength := rng.End - rng.Start + 1
+	w.Header().Set("Content-Range", xg2ghttp.FormatContentRange(rng, size))
+	w.Header().Set("Content-Length", strconv.FormatInt(contentLength, 10))
+	w.WriteHeader(http.StatusPartialContent)
+
+	if !isHead {
+		if _, err := f.Seek(rng.Start, io.SeekStart); err != nil {
+			log.L().Error().Err(err).Int64("start", rng.Start).Msg("failed to seek in artifact")
+			// Already sent 206, but haven't written body.
+			// Too late for WriteHeader, but we can't do much here.
+			return
+		}
+		_, _ = io.CopyN(w, f, contentLength)
+	}
 }
 
 func (s *Server) writeRecordingError(w http.ResponseWriter, r *http.Request, err error) {
@@ -309,9 +308,5 @@ func IsAllowedVideoSegment(name string) bool {
 }
 
 func (s *Server) writePreparingResponse(w http.ResponseWriter, r *http.Request, recordingId, state string, retryAfter int) {
-	w.Header().Set("Retry-After", fmt.Sprintf("%d", retryAfter))
-	writeProblem(w, r, http.StatusServiceUnavailable, "recordings/preparing", "Preparing", "PREPARING", "Recording is being prepared for playback", map[string]interface{}{
-		"recording_id": recordingId,
-		"state":        state,
-	})
+	xg2ghttp.WritePreparingHLS(w, r, recordingId, state, retryAfter)
 }

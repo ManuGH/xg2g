@@ -13,6 +13,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 // --- Mocks ---
@@ -111,10 +112,11 @@ func TestDurationTruth_Read_StoreWins(t *testing.T) {
 	pr := new(mockPathResolver)
 	pr.On("ResolveRecordingPath", mock.Anything).Return("/local/movie.ts", "1", "movie.ts", nil)
 
-	r := recordings.NewResolver(&config.AppConfig{}, mgr, recordings.ResolverOptions{
+	r, err := recordings.NewResolver(&config.AppConfig{}, mgr, recordings.ResolverOptions{
 		DurationStore: ds,
 		PathResolver:  pr,
 	})
+	require.NoError(t, err)
 
 	res, err := r.Resolve(context.Background(), "service:ref", recordings.IntentStream, recordings.ProfileGeneric)
 	assert.NoError(t, err)
@@ -153,13 +155,14 @@ func TestDurationTruth_Read_ProbeFallback(t *testing.T) {
 	pr := new(mockPathResolver)
 	pr.On("ResolveRecordingPath", mock.Anything).Return("/local/movie.ts", "1", "movie.ts", nil)
 
-	r := recordings.NewResolver(&config.AppConfig{}, mgr, recordings.ResolverOptions{
+	r, err := recordings.NewResolver(&config.AppConfig{}, mgr, recordings.ResolverOptions{
 		DurationStore: ds,
 		PathResolver:  pr,
 	})
+	require.NoError(t, err)
 
 	// 1. First Call -> Expect Preparing
-	_, err := r.Resolve(context.Background(), "service:ref", recordings.IntentStream, recordings.ProfileGeneric)
+	_, err = r.Resolve(context.Background(), "service:ref", recordings.IntentStream, recordings.ProfileGeneric)
 	var prepErr recordings.ErrPreparing
 	if assert.ErrorAs(t, err, &prepErr) {
 		assert.Equal(t, "service:ref", prepErr.RecordingID)
@@ -464,7 +467,7 @@ func TestMediaTruth(t *testing.T) {
 				}
 			}
 
-			r := recordings.NewResolver(&config.AppConfig{}, mgr, recordings.ResolverOptions{
+			r, err := recordings.NewResolver(&config.AppConfig{}, mgr, recordings.ResolverOptions{
 				DurationStore: ds,
 				PathResolver:  pr,
 				ProbeFn: func(ctx context.Context, u string) error {
@@ -474,6 +477,7 @@ func TestMediaTruth(t *testing.T) {
 					return tc.ProbeRemoteErr
 				},
 			})
+			require.NoError(t, err)
 
 			// 1. First Call
 			res, err := r.Resolve(context.Background(), svcRef, recordings.IntentStream, recordings.ProfileGeneric)
@@ -549,15 +553,16 @@ func TestAsyncProbe_NoHiddenWork(t *testing.T) {
 	ds.On("GetDuration", mock.Anything, "1", "x").Return(int64(0), false, nil)
 	ds.On("SetDuration", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
 
-	r := recordings.NewResolver(&config.AppConfig{}, mgr, recordings.ResolverOptions{
+	r, err := recordings.NewResolver(&config.AppConfig{}, mgr, recordings.ResolverOptions{
 		DurationStore: ds,
 		PathResolver:  pr,
 	})
+	require.NoError(t, err)
 
 	// Call Resolve - Trigger Probe
 	// Structural Assertion: We have NOT closed probeUnblocked yet.
 	// If Resolve returns now, it PROVES it did not wait for the probe.
-	_, err := r.Resolve(context.Background(), "service:ref", recordings.IntentStream, recordings.ProfileGeneric)
+	_, err = r.Resolve(context.Background(), "service:ref", recordings.IntentStream, recordings.ProfileGeneric)
 
 	// Assert immediate return with correct error
 	assert.ErrorIs(t, err, recordings.ErrPreparing{RecordingID: "service:ref"})
@@ -608,10 +613,11 @@ func TestAsyncProbe_Singleflight(t *testing.T) {
 	// Relax SetDuration: it might or might not happen depending on code path/timing in background
 	ds.On("SetDuration", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 
-	r := recordings.NewResolver(&config.AppConfig{}, mgr, recordings.ResolverOptions{
+	r, err := recordings.NewResolver(&config.AppConfig{}, mgr, recordings.ResolverOptions{
 		DurationStore: ds,
 		PathResolver:  pr,
 	})
+	require.NoError(t, err)
 
 	// Concurrent Stampede
 	concurrency := 10

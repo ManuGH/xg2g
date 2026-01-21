@@ -4,6 +4,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import type { EpgEvent, EpgChannel } from '../types';
+import { isEventVisible } from '../epgModel';
 import { EpgEventRow } from './EpgEventList';
 
 // Helper: Get localized day string "Do 28.12."
@@ -35,7 +36,7 @@ interface ChannelHeaderProps {
 
 function ChannelHeader({ channel, displayName, onPlay }: ChannelHeaderProps) {
   const { t } = useTranslation();
-  const logo = channel?.logo_url || channel?.logoUrl || channel?.logo;
+  const logo = channel?.logoUrl || channel?.logoUrl || channel?.logo;
 
   return (
     <div className="epg-channel">
@@ -79,6 +80,7 @@ interface ChannelCardProps {
   channel: EpgChannel;
   events: EpgEvent[];
   currentTime: number;
+  timeRangeHours: number;
   isExpanded: boolean;
   onToggleExpand: () => void;
   onPlay?: (channel: EpgChannel) => void;
@@ -90,6 +92,7 @@ function ChannelCard({
   channel,
   events,
   currentTime,
+  timeRangeHours,
   isExpanded,
   onToggleExpand,
   onPlay,
@@ -101,8 +104,14 @@ function ChannelCard({
     ? `${channel.number ? `${channel.number} · ` : ''}${channel.name || channel.id || 'Unknown'}`
     : 'Unknown';
 
-  const current = events.find((e) => currentTime >= e.start && currentTime < e.end) || events[0];
-  const others = events.filter((e) => e !== current);
+  const now = currentTime;
+  const to = now + timeRangeHours * 3600;
+
+  // CTO Predicate: overlapsNow || (start < to)
+  const visibleEvents = events.filter(e => isEventVisible(e, now, to));
+
+  const current = visibleEvents.find((e) => now >= e.start && now < e.end) || visibleEvents[0];
+  const others = visibleEvents.filter((e) => e !== current);
   const todayLabel = getTodayLabel();
 
   return (
@@ -112,7 +121,7 @@ function ChannelCard({
       <div className="epg-programmes">
         {current && (
           <EpgEventRow
-            key={`${current.service_ref}-${current.start}-current`}
+            key={`${current.serviceRef}-${current.start}-current`}
             event={current}
             currentTime={currentTime}
             highlight
@@ -156,7 +165,7 @@ function ChannelCard({
 
                   return (
                     <EpgEventRow
-                      key={`${event.service_ref}-${event.start}`}
+                      key={`${event.serviceRef}-${event.start}`}
                       event={event}
                       currentTime={currentTime}
                       highlight={currentTime >= event.start && currentTime < event.end}
@@ -198,7 +207,7 @@ function SearchGroup({
   isRecorded,
 }: SearchGroupProps) {
   const { t } = useTranslation();
-  const serviceRef = channel.service_ref || channel.id || '';
+  const serviceRef = channel.serviceRef || channel.id || '';
   const displayName = channel
     ? `${channel.number ? `${channel.number} · ` : ''}${channel.name || channel.id || serviceRef}`
     : serviceRef || 'Unknown';
@@ -226,7 +235,7 @@ function SearchGroup({
           }
           return (
             <EpgEventRow
-              key={`${event.service_ref}-${event.start}`}
+              key={`${event.serviceRef}-${event.start}`}
               event={event}
               currentTime={currentTime}
               highlight={currentTime >= event.start && currentTime < event.end}
@@ -265,7 +274,7 @@ function SearchGroup({
 
                   return (
                     <EpgEventRow
-                      key={`${event.service_ref}-${event.start}`}
+                      key={`${event.serviceRef}-${event.start}`}
                       event={event}
                       currentTime={currentTime}
                       highlight={currentTime >= event.start && currentTime < event.end}
@@ -290,6 +299,7 @@ export interface EpgChannelListProps {
   channels: EpgChannel[];
   eventsByServiceRef: Map<string, EpgEvent[]>;
   currentTime: number;
+  timeRangeHours: number;
   expandedChannels: Set<string>;
   onToggleExpand: (serviceRef: string) => void;
   onPlay?: (channel: EpgChannel) => void;
@@ -302,6 +312,7 @@ export function EpgChannelList({
   channels,
   eventsByServiceRef,
   currentTime,
+  timeRangeHours,
   expandedChannels,
   onToggleExpand,
   onPlay,
@@ -332,8 +343,8 @@ export function EpgChannelList({
     return (
       <>
         {sortedChannels.map((channel) => {
-          // Use channel.service_ref to match EPG events (XMLTV channel IDs)
-          const ref = channel.service_ref || channel.id || '';
+          // Use channel.serviceRef to match EPG events (XMLTV channel IDs)
+          const ref = channel.serviceRef || channel.id || '';
           const events = eventsByServiceRef.get(ref) || [];
           const isExpanded = expandedChannels.has(ref);
 
@@ -343,6 +354,7 @@ export function EpgChannelList({
               channel={channel}
               events={events}
               currentTime={currentTime}
+              timeRangeHours={timeRangeHours}
               isExpanded={isExpanded}
               onToggleExpand={() => onToggleExpand(ref)}
               onPlay={onPlay}
@@ -375,8 +387,8 @@ export function EpgChannelList({
 
     // Sort groups by channel number/name
     groups.sort(([refA], [refB]) => {
-      const chA = channels.find((c) => c.service_ref === refA || c.id === refA);
-      const chB = channels.find((c) => c.service_ref === refB || c.id === refB);
+      const chA = channels.find((c) => c.serviceRef === refA || c.id === refA);
+      const chB = channels.find((c) => c.serviceRef === refB || c.id === refB);
       const numA = parseInt(chA?.number || '', 10);
       const numB = parseInt(chB?.number || '', 10);
       const validA = !Number.isNaN(numA);
@@ -398,8 +410,8 @@ export function EpgChannelList({
     <>
       {searchGroups.map(([serviceRef, events]) => {
         const channel =
-          channels.find((c) => c.service_ref === serviceRef || c.id === serviceRef) ||
-          ({ service_ref: serviceRef, id: serviceRef, name: serviceRef } as EpgChannel);
+          channels.find((c) => c.serviceRef === serviceRef || c.id === serviceRef) ||
+          ({ serviceRef: serviceRef, id: serviceRef, name: serviceRef } as EpgChannel);
         const isExpanded = expandedChannels.has(serviceRef);
 
         return (

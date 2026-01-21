@@ -17,8 +17,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	controlhttp "github.com/ManuGH/xg2g/internal/control/http"
+	"github.com/ManuGH/xg2g/internal/control/playback"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/log"
 )
 
@@ -69,6 +71,11 @@ func (m *MockTraceabilityService) Stream(ctx context.Context, in recservice.Stre
 }
 func (m *MockTraceabilityService) Delete(ctx context.Context, in recservice.DeleteInput) (recservice.DeleteResult, error) {
 	return recservice.DeleteResult{}, nil
+}
+
+func (m *MockTraceabilityService) GetMediaTruth(ctx context.Context, recordingID string) (playback.MediaTruth, error) {
+	args := m.Called(ctx, recordingID)
+	return args.Get(0).(playback.MediaTruth), args.Error(1)
 }
 
 type MockTraceabilityStore struct {
@@ -203,13 +210,17 @@ func TestTraceability_RFC7807_Error(t *testing.T) {
 
 	type Problem struct {
 		Type      string `json:"type"`
-		RequestId string `json:"request_id"`
+		RequestId string `json:"requestId"`
 	}
 	var p Problem
 	err := json.Unmarshal(w.Body.Bytes(), &p)
 	require.NoError(t, err)
 
-	assert.NotEmpty(t, p.RequestId, "RFC7807: request_id field must be present")
-	assert.Equal(t, "req-test-error", p.RequestId, "RFC7807: request_id must match context")
+	assert.NotEmpty(t, p.RequestId, "RFC7807: requestId field must be present")
+	assert.Equal(t, "req-test-error", p.RequestId, "RFC7807: requestId must match context")
 	assert.Equal(t, "req-test-error", w.Header().Get(controlhttp.HeaderRequestID), "RFC7807: Response Header must match context")
+}
+
+func (s *MockTraceabilityStore) GetLease(ctx context.Context, key string) (store.Lease, bool, error) {
+	return nil, false, nil
 }

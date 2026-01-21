@@ -1,0 +1,38 @@
+{
+  "name": "vlc_h265_eac3",
+  "input": {
+    "truth": {
+      "container": "mkv",
+      "video_codec": "h265",
+      "audio_codec": "eac3",
+      "width": 3840,
+      "height": 2160,
+      "fps": 60
+    },
+    "capabilities": {
+      "version": 1,
+      "containers": [
+        "mkv"
+      ],
+      "video_codecs": [
+        "h265"
+      ],
+      "audio_codecs": [
+        "eac3",
+        "aac"
+      ],
+      "supports_hls": true,
+      "supports_range": true
+    },
+    "policy": {
+      "allow_transcode": true
+    }
+  },
+  "expected": {
+    "mode": "direct_stream",
+    "protocol": "hls",
+    "reasons": [
+      "directstream_match"
+    ]
+  }
+}

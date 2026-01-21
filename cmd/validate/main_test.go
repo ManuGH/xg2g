@@ -128,31 +128,58 @@ func TestValidateCLI_Version(t *testing.T) {
 	}
 }
 
-// TestValidateCLI_RealConfig tests validation with the example config file
-func TestValidateCLI_RealConfig(t *testing.T) {
-	// Skip if config.example.yaml doesn't exist
-	exampleConfig := "../../config.example.yaml"
-	if _, err := os.Stat(exampleConfig); os.IsNotExist(err) {
-		t.Skip("config.example.yaml not found, skipping")
+// TestValidateCLI_CuratedSurface tests the curated operator surface (config.example.yaml)
+func TestValidateCLI_CuratedSurface(t *testing.T) {
+	cfg := "../../config.example.yaml"
+	if _, err := os.Stat(cfg); os.IsNotExist(err) {
+		t.Skipf("%s not found, skipping", cfg)
 	}
 
 	// Build the validate binary for testing
 	binaryPath := filepath.Join(t.TempDir(), "validate-test")
-	// #nosec G204 -- Test code: building test binary with controlled arguments
+	// #nosec G204
 	buildCmd := exec.Command("go", "build", "-o", binaryPath, ".")
 	if out, err := buildCmd.CombinedOutput(); err != nil {
 		t.Fatalf("failed to build validate binary: %v\n%s", err, out)
 	}
 
-	// #nosec G204 -- Test code: running test binary with controlled arguments
-	cmd := exec.Command(binaryPath, "-f", exampleConfig)
+	// #nosec G204
+	cmd := exec.Command(binaryPath, "-f", cfg)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("validate failed for config.example.yaml: %v\nOutput:\n%s", err, output)
+		t.Fatalf("validate failed for curated surface %s: %v\nOutput:\n%s", cfg, err, output)
+	}
+	if !strings.Contains(string(output), "is valid") {
+		t.Errorf("expected success message, got:\n%s", string(output))
+	}
+}
+
+// TestValidateCLI_RegistryParity tests the full registry surface (config.generated.example.yaml).
+// Warning: This test is expected to fail until VODConfig convergence (ADR-014).
+func TestValidateCLI_RegistryParity(t *testing.T) {
+	cfg := "../../config.generated.example.yaml"
+	if _, err := os.Stat(cfg); os.IsNotExist(err) {
+		t.Skipf("%s not found, skipping", cfg)
 	}
 
-	outputStr := string(output)
-	if !strings.Contains(outputStr, "is valid") {
-		t.Errorf("expected success message, got:\n%s", outputStr)
+	// Build the validate binary for testing
+	binaryPath := filepath.Join(t.TempDir(), "validate-test")
+	// #nosec G204
+	buildCmd := exec.Command("go", "build", "-o", binaryPath, ".")
+	if out, err := buildCmd.CombinedOutput(); err != nil {
+		t.Fatalf("failed to build validate binary: %v\n%s", err, out)
+	}
+
+	// #nosec G204
+	cmd := exec.Command(binaryPath, "-f", cfg)
+	output, err := cmd.CombinedOutput()
+
+	// ADR-014: High-Governance Exemption
+	// We expect this to pass if FileConfig covers the generated example.
+	if err != nil {
+		t.Fatalf("validate failed for registry example %s: %v\nOutput:\n%s", cfg, err, output)
+	}
+	if !strings.Contains(string(output), "is valid") {
+		t.Errorf("expected success message, got:\n%s", string(output))
 	}
 }
