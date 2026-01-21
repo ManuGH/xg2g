@@ -47,8 +47,11 @@ This section is generated from `internal/config/registry.go`. Do not edit by han
 
 | Path | Env | Default | Status | Profile |
 | --- | --- | --- | --- | --- |
+| `engine.cpuThresholdScale` | `XG2G_ENGINE_CPU_SCALE` | `1.5` | Active | Advanced |
 | `engine.enabled` | `XG2G_ENGINE_ENABLED` | `false` | Active | Advanced |
+| `engine.gpuLimit` | `XG2G_ENGINE_GPU_LIMIT` | `8` | Active | Advanced |
 | `engine.idleTimeout` | `XG2G_ENGINE_IDLE_TIMEOUT` | `1m` | Active | Advanced |
+| `engine.maxPool` | `XG2G_ENGINE_MAX_POOL` | `2` | Active | Advanced |
 | `engine.mode` | `XG2G_ENGINE_MODE` | `standard` | Active | Advanced |
 | `engine.tunerSlots` | `XG2G_TUNER_SLOTS` | - | Active | Advanced |
 

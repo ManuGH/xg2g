@@ -10,8 +10,11 @@ bouquets: []
 configStrict: true
 dataDir: /tmp
 engine:
+  cpuThresholdScale: 1.5
   enabled: false
+  gpuLimit: 8
   idleTimeout: 1m
+  maxPool: 2
   mode: standard
   tunerSlots: []
 enigma2:

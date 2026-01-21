@@ -1,0 +1,10 @@
+{
+  "version": "p7-capabilities-baseline-v1",
+  "hashes": {
+    "android_tv.json": "c811d3b35af9e1ad923856682beebcf0e8e6a81b2468930966b43e43cde081cb",
+    "stb_enigma2.json": "8f3696aa00a1fcdf0fef2453f2bd9f94b0f25bf65226ac51dcd2c82f2358d6cf",
+    "tvos.json": "31918c6de668f5b4b4f06fb5e6d3b62fe2a68674b5642353313fa106b41a365e",
+    "vlc_desktop.json": "27d7471c53bc58d7e3295d1751a886fc5cf9ff3a0c87bd7a0c476528551fc8b1",
+    "web_conservative.json": "3d9df7b19a3b638917882145e0eb3912c99e7d87c8c54c136e4e1b5362b21d91"
+  }
+}

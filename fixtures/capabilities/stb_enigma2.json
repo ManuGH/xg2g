@@ -1,0 +1,15 @@
+{
+  "capabilities_version": 1,
+  "containers": [
+    "ts"
+  ],
+  "video_codecs": [
+    "h264",
+    "mpeg2"
+  ],
+  "audio_codecs": [
+    "ac3",
+    "mp2"
+  ],
+  "supports_hls": true
+}

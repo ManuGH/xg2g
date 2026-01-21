@@ -385,6 +385,10 @@ func yamlScalar(def any) (string, string) {
 		return fmt.Sprintf("%d", v), "!!int"
 	case int64:
 		return fmt.Sprintf("%d", v), "!!int"
+	case float32:
+		return fmt.Sprintf("%g", v), "!!float"
+	case float64:
+		return fmt.Sprintf("%g", v), "!!float"
 	case time.Duration:
 		return formatDuration(v), "!!str"
 	default:

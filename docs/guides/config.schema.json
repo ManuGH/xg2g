@@ -184,13 +184,25 @@
     },
     "engine": {
       "properties": {
+        "cpuThresholdScale": {
+          "default": 1.5,
+          "type": "number"
+        },
         "enabled": {
           "default": false,
           "type": "boolean"
         },
+        "gpuLimit": {
+          "default": 8,
+          "type": "integer"
+        },
         "idleTimeout": {
           "default": "1m",
           "type": "string"
+        },
+        "maxPool": {
+          "default": 2,
+          "type": "integer"
         },
         "mode": {
           "default": "standard",

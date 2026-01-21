@@ -1,0 +1,16 @@
+{
+  "capabilities_version": 1,
+  "containers": [
+    "mkv",
+    "mp4",
+    "ts"
+  ],
+  "video_codecs": [
+    "h264"
+  ],
+  "audio_codecs": [
+    "aac",
+    "mp3"
+  ],
+  "supports_hls": true
+}
