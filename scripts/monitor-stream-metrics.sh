@@ -10,7 +10,6 @@ echo ""
 
 # Timestamps for metric calculation
 declare -A stream_start_times
-declare -A ready_times
 
 # Process journalctl output line by line
 journalctl -u xg2g -f --no-pager -o json | while read -r line; do
@@ -45,7 +44,6 @@ journalctl -u xg2g -f --no-pager -o json | while read -r line; do
 
         # Check for success
         if echo "$msg" | grep -qi "ready"; then
-            ready_times["$session_id"]=$ts_sec
             if [[ -n "${stream_start_times[$session_id]:-}" ]]; then
                 duration=$((ts_sec - stream_start_times[$session_id]))
                 echo "[$(date -d @${ts_sec} '+%H:%M:%S')] ✅ READY after ${duration}s (Target: >12s optimal)"

@@ -8,7 +8,7 @@ set -e
 echo "🔍 Checking repository hygiene (Zero Tolerance Policy)..."
 
 # Check for tracked binaries, ZIPs, coverage, test outputs
-VIOLATIONS=$(git ls-files | egrep -i '(^|/)(bin/|daemon$|xg2g$|v3probe$|.*\.zip$|coverage\.out$|coverage\.html$|test_.*\.txt$|output\.log$)' || true)
+VIOLATIONS=$(git ls-files | grep -Ei '(^|/)(bin/|daemon$|xg2g$|v3probe$|.*\.zip$|coverage\.out$|coverage\.html$|test_.*\.txt$|output\.log$)' || true)
 
 if [ -n "$VIOLATIONS" ]; then
     echo "❌ FAIL: Artifacts tracked in git (violates Zero Tolerance):"

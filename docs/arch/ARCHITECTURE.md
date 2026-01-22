@@ -36,7 +36,7 @@ xg2g is a **DVB-T2/Satellite streaming gateway** that:
 
 ### Layer Model (Outside-In)
 
-```
+```text
 ┌─────────────────────────────────────────────┐
 │  cmd/                (Entry Points)         │
 │  - daemon, validate, v3probe, gencert       │
@@ -179,7 +179,7 @@ c2, _ := bootstrap.WireServices(ctx, ...)
 
 **Structure:**
 
-```
+```text
 control/
 ├── auth/             # Authentication & authorization (principal, token, context)
 ├── middleware/       # HTTP middleware (CORS, CSRF, security headers, tracing)
@@ -232,7 +232,7 @@ control/
 
 **Structure:**
 
-```
+```text
 domain/
 └── session/
     ├── manager/      # Session lifecycle (start, stop, recovery, sweeper)
@@ -282,7 +282,7 @@ func (r *FFmpegRunner) Run(cmd Command) error { ... }
 
 **Structure:**
 
-```
+```text
 infra/
 ├── ffmpeg/       # FFmpeg command building & execution (probe, transcode)
 ├── bus/          # Event bus adapter (memory bus, future: Redis/Kafka)
@@ -323,7 +323,7 @@ infra/
 
 **Structure:**
 
-```
+```text
 platform/
 ├── fs/       # Filesystem operations (writable checks, path security)
 ├── net/      # Network utilities (IP parsing, CIDR validation)
@@ -351,7 +351,7 @@ platform/
 
 **Structure:**
 
-```
+```text
 config/
 ├── config.go         # AppConfig struct (canonical schema)
 ├── validation.go     # Validation rules (URL, port, directory, CIDR)
@@ -396,7 +396,7 @@ ERROR: invalid config: api_listen_addr: must be valid host:port
 
 **Structure:**
 
-```
+```text
 library/
 ├── service.go    # Library service (CRUD for VOD metadata)
 ├── store.go      # In-memory + disk persistence (duration cache)
@@ -427,7 +427,7 @@ library/
 
 **Structure:**
 
-```
+```text
 pipeline/
 ├── exec/         # FFmpeg execution (transcoding, HLS segmentation)
 ├── resume/       # Resume logic (DVR restart from last position)

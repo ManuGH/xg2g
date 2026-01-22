@@ -4,7 +4,6 @@
 set -euo pipefail
 
 FFMPEG_VERSION="7.1.3"
-FFMPEG_TAG="n${FFMPEG_VERSION}"
 FFMPEG_URL="https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.xz"
 TARGET_DIR="${TARGET_DIR:-/opt/xg2g/ffmpeg}"
 BUILD_DIR="${BUILD_DIR:-/tmp/ffmpeg-build}"
@@ -58,7 +57,7 @@ echo "Configuring FFmpeg..."
 
 # Build
 echo "Building (using $(nproc) cores)..."
-make -j$(nproc)
+make -j"$(nproc)"
 
 # Install
 echo "Installing to ${TARGET_DIR}..."

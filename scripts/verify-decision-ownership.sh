@@ -33,6 +33,20 @@ echo "  - test/contract/p4_1/contract_matrix_test.go"
 echo "  - test/contract/regression_directplay_test.go"
 echo "  - internal/control/http/v3/handlers_playback_info.go"
 
+# Self-check: fail-fast if allowlisted exact-files are missing (prevents silent drift)
+ALLOWLIST_EXACT_FILES=(
+    "test/contract/p4_1/contract_matrix_test.go"
+    "test/contract/regression_directplay_test.go"
+    "internal/control/http/v3/handlers_playback_info.go"
+)
+for f in "${ALLOWLIST_EXACT_FILES[@]}"; do
+    if [ ! -f "$f" ]; then
+        echo "❌ FAIL: allowlisted file missing: $f"
+        echo "   → Update ALLOWLIST_PATTERN and ALLOWLIST_EXACT_FILES if file was moved/renamed."
+        exit 1
+    fi
+done
+
 FILES=$(git ls-files "*.go" | grep -vE "$EXCLUDE_PATTERN" || true)
 
 if [ -z "$FILES" ]; then
@@ -40,6 +54,8 @@ if [ -z "$FILES" ]; then
     exit 0
 fi
 
+# Note: unquoted $FILES assumes no whitespace in Go filenames – accepted trade-off.
+# Rationale: Go projects never use spaces; robustifying would add complexity for zero real-world benefit.
 for FILE in $FILES; do
     # Skip decision engine itself
     if [[ "$FILE" == internal/control/recordings/decision/* ]]; then
@@ -93,7 +109,7 @@ done
 
 echo ""
 echo "Summary:"
-echo "  # HITS_TOTAL counts matched lines (import hits + call hits), not files."
+echo "  # HITS_TOTAL = matched lines (imports and calls counted independently, even within the same file)."
 echo "  HITS_TOTAL=$HITS_TOTAL"
 echo "  HITS_EXCLUDED=$HITS_EXCLUDED"
 echo "  HITS_ACTIONABLE=$HITS_ACTIONABLE"
