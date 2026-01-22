@@ -52,7 +52,7 @@ jobs:
         run: ./scripts/check-go-toolchain.sh
 
       - name: Set Reproducible Build Headers
-        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)" >> $GITHUB_ENV
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)" >> "$GITHUB_ENV"
 
       - name: Setup Go
         uses: actions/setup-go@v6 # v5
@@ -166,7 +166,7 @@ jobs:
         run: |
           set -euo pipefail
           # Pure Go tests (no CGO required)
-          go test -v -coverprofile=coverage.out -covermode=atomic $(go list ./... | grep -v '/test$')
+          go test -v -coverprofile=coverage.out -covermode=atomic "$(go list ./... | grep -v '/test$')"
 
       - name: "Hermetic Build Proof (Adversarial-Grade)"
         env:
@@ -181,8 +181,10 @@ jobs:
           set -euo pipefail
 
           # Force cold cache (per-step unique, no warm cache cheating)
-          export GOMODCACHE="$(mktemp -d)"
-          export GOCACHE="$(mktemp -d)"
+          GOMODCACHE="$(mktemp -d)"
+          export GOMODCACHE
+          GOCACHE="$(mktemp -d)"
+          export GOCACHE
 
           echo "🔒 Hermetic Build Proof - Adversarial Conditions"
           echo "   GOPROXY=off, GOVCS=*:off, GOTOOLCHAIN=local"
@@ -328,7 +330,7 @@ jobs:
         run: |
           set -euo pipefail
           # Pure Go tests with race detection
-          go test -race $(go list ./... | grep -v '/test$') -v
+          go test -race "$(go list ./... | grep -v '/test$')" -v
 
       - name: Upload artifacts
         if: always()
