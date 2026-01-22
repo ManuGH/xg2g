@@ -36,3 +36,26 @@
 **Invariant**: Accessing a session in `STOPPED`, `FAILED`, or `CANCELLED` state via API v3 returns `410 Gone`.
 **Enforcement**: `handleV3SessionState` checks `session.State.IsTerminal()`.
 **Body**: Returns `application/problem+json` with `requestId` for debugging.
+
+## 4. Decision Ownership – Gate Semantics
+
+**Invariant**: Only `internal/control/recordings/decision/**` may directly import or call the decision engine.
+
+**Enforcement**: `scripts/verify-decision-ownership.sh` (CI stop-the-line gate).
+
+### Metric Design (FROZEN)
+
+- **`HITS_TOTAL`**: Counts **matched lines** (imports + calls), not files.
+- **Rationale**: Line-granularity exposes severity and density of violations. A file with 1 import + 3 calls = 4 leaks, not "1 problem".
+- **Explicit Non-Bug**: This is intentional. Renaming to `MATCHED_LINES` was deliberately rejected to avoid churn and interpretation drift.
+
+### Allowlist (Minimal, Auditable)
+
+| Pattern | Type | Justification |
+|---------|------|---------------|
+| `test/invariants/**` | Tree | Invariant validation tests |
+| `test/contract/p4_1/contract_matrix_test.go` | Exact | Contract matrix validation |
+| `test/contract/regression_directplay_test.go` | Exact | Regression test |
+| `internal/control/http/v3/handlers_playback_info.go` | Exact | Authorized production adapter |
+
+**Consequence**: Any import or call outside the allowlist fails CI immediately.
