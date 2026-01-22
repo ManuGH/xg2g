@@ -51,8 +51,8 @@ for FILE in $FILES; do
         IS_EXCLUDED=true
     fi
 
-    # Import Check (normative): Direct package import
-    IMPORT_MATCHES=$(grep -n "\"$DECISION_PKG\"" "$FILE" 2>/dev/null || true)
+    # Import Check (normative): Direct package import – fixed-string match
+    IMPORT_MATCHES=$(grep -nF "\"$DECISION_PKG\"" "$FILE" 2>/dev/null || true)
     if [ -n "$IMPORT_MATCHES" ]; then
         while IFS= read -r match; do
             [ -z "$match" ] && continue
@@ -70,7 +70,8 @@ for FILE in $FILES; do
         done <<< "$IMPORT_MATCHES"
     fi
 
-    # Call Check (smell detector): decision.Decide( with canonical name
+    # Call Check (smell detector, best-effort): decision.Decide( pattern
+    # Note: normative enforcement is the import rule; this catches aliased imports
     CALL_MATCHES=$(grep -nE "decision\.Decide\(" "$FILE" 2>/dev/null || true)
     if [ -n "$CALL_MATCHES" ]; then
         while IFS= read -r match; do
@@ -92,6 +93,7 @@ done
 
 echo ""
 echo "Summary:"
+echo "  # HITS_TOTAL counts matched lines (import hits + call hits), not files."
 echo "  HITS_TOTAL=$HITS_TOTAL"
 echo "  HITS_EXCLUDED=$HITS_EXCLUDED"
 echo "  HITS_ACTIONABLE=$HITS_ACTIONABLE"
