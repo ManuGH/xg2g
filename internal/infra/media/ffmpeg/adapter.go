@@ -41,13 +41,14 @@ type LocalAdapter struct {
 	E2               *enigma2.Client // Dependency for Tuner operations
 	FallbackTo8001   bool
 	PreflightTimeout time.Duration
+	SegmentSeconds   int
 	mu               sync.Mutex
 	// activeProcs maps run handles to running commands
 	activeProcs map[ports.RunHandle]*exec.Cmd
 }
 
 // NewLocalAdapter creates a new adapter instance.
-func NewLocalAdapter(binPath string, hlsRoot string, e2 *enigma2.Client, logger zerolog.Logger, analyzeDuration string, probeSize string, dvrWindow time.Duration, killTimeout time.Duration, fallbackTo8001 bool, preflightTimeout time.Duration) *LocalAdapter {
+func NewLocalAdapter(binPath string, hlsRoot string, e2 *enigma2.Client, logger zerolog.Logger, analyzeDuration string, probeSize string, dvrWindow time.Duration, killTimeout time.Duration, fallbackTo8001 bool, preflightTimeout time.Duration, segmentSeconds int) *LocalAdapter {
 	analyzeDuration = strings.TrimSpace(analyzeDuration)
 	probeSize = strings.TrimSpace(probeSize)
 	if analyzeDuration == "" {
@@ -58,6 +59,9 @@ func NewLocalAdapter(binPath string, hlsRoot string, e2 *enigma2.Client, logger 
 	}
 	if killTimeout <= 0 {
 		killTimeout = 5 * time.Second
+	}
+	if segmentSeconds <= 0 {
+		segmentSeconds = 6 // Best Practice 2026 default
 	}
 	httpClient := &http.Client{
 		Timeout: preflightTimeout,
@@ -81,6 +85,7 @@ func NewLocalAdapter(binPath string, hlsRoot string, e2 *enigma2.Client, logger 
 		DVRWindow:        dvrWindow,
 		KillTimeout:      killTimeout,
 		PreflightTimeout: preflightTimeout,
+		SegmentSeconds:   segmentSeconds,
 		httpClient:       httpClient,
 		E2:               e2,
 		Logger:           logger,
@@ -129,7 +134,7 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 	}
 
 	// 1. Generate Arguments from Spec
-	args, err := a.buildArgs(spec, inputURL)
+	args, err := a.buildArgs(ctx, spec, inputURL)
 	if err != nil {
 		return "", fmt.Errorf("failed to build args: %w", err)
 	}
@@ -530,7 +535,7 @@ func (a *LocalAdapter) injectCredentialsIfAllowed(streamURL string) string {
 	return streamURL
 }
 
-func (a *LocalAdapter) buildArgs(spec ports.StreamSpec, inputURL string) ([]string, error) {
+func (a *LocalAdapter) buildArgs(ctx context.Context, spec ports.StreamSpec, inputURL string) ([]string, error) {
 	var args []string
 	fflags := "+genpts+discardcorrupt+flush_packets"
 	baseInputArgs := []string{
@@ -591,7 +596,25 @@ func (a *LocalAdapter) buildArgs(spec ports.StreamSpec, inputURL string) ([]stri
 	}
 
 	if spec.Mode == ports.ModeLive {
-		const segmentDurationSec = 1 // Match actual hls_time setting
+		segmentDurationSec := a.SegmentSeconds
+
+		// Detect FPS with fallback strategies
+		// Default: 30 (Generic/NTSC), Fallback for Tuner/Relay: 25 (DVB/PAL)
+		fps := 30
+		if spec.Source.Type == ports.SourceTuner || isStreamRelayURL(inputURL) {
+			fps = 25
+		}
+
+		// Attempt dynamic detection (Best Practice 2026: Input-Robustness)
+		if detected, err := a.detectFPS(ctx, inputURL); err == nil && detected >= 15 && detected <= 120 {
+			fps = detected
+			a.Logger.Debug().Str("sessionId", spec.SessionID).Int("fps", fps).Str("url", sanitizeURLForLog(inputURL)).Msg("detected input fps")
+		} else {
+			a.Logger.Warn().Str("sessionId", spec.SessionID).Err(err).Int("fallback_fps", fps).Str("url", sanitizeURLForLog(inputURL)).Msg("fps detection failed, using fallback")
+		}
+
+		gop := fps * segmentDurationSec
+
 		listSize := 10
 		if a.DVRWindow > 0 {
 			listSize = int(math.Ceil(a.DVRWindow.Seconds() / float64(segmentDurationSec)))
@@ -610,14 +633,14 @@ func (a *LocalAdapter) buildArgs(spec ports.StreamSpec, inputURL string) ([]stri
 			"-preset", "ultrafast", // Ultra-fast encoding for low latency
 			"-tune", "zerolatency", // Minimize buffering
 			"-crf", "20", // Excellent quality with fast encoding
-			"-g", "30", // Force keyframe every 30 frames (~1s at 30fps)
-			"-sc_threshold", "0",
-			"-force_key_frames", "expr:gte(t,n_forced*1)",
+			"-x264-params", fmt.Sprintf("keyint=%d:min-keyint=%d:scenecut=0", gop, gop),
+			"-g", strconv.Itoa(gop), // Force GOP size matching keyint
+			"-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%d)", a.SegmentSeconds),
 			"-pix_fmt", "yuv420p",
 			"-profile:v", "main",
 			"-c:a", "aac",
-			"-b:a", "384k", // Match typical DVB AC3 bitrate
-			"-ac", "6", // Preserve 5.1 Surround (6 channels) if present
+			"-b:a", "192k", // Universal Stereo (Best Practice 2026)
+			"-ac", "2", // Force Stereo for compatibility
 			"-ar", "48000",
 			"-sn",
 			"-f", "hls",
@@ -629,7 +652,7 @@ func (a *LocalAdapter) buildArgs(spec ports.StreamSpec, inputURL string) ([]stri
 		// - hls_flags: delete old segments + append list + independent segments + program date time
 		// - hls_segment_type: mpegts for compatibility
 		args = append(args,
-			"-hls_time", "1", // 1s segments for instant startup
+			"-hls_time", strconv.Itoa(a.SegmentSeconds),
 			"-hls_list_size", strconv.Itoa(listSize),
 			"-hls_flags", "delete_segments+append_list+independent_segments+program_date_time",
 			"-hls_segment_type", "mpegts",
@@ -642,4 +665,51 @@ func (a *LocalAdapter) buildArgs(spec ports.StreamSpec, inputURL string) ([]stri
 	}
 
 	return args, nil
+}
+
+func (a *LocalAdapter) detectFPS(ctx context.Context, inputURL string) (int, error) {
+	// 1.5s rigid timeout for probe to avoid delaying startup
+	ctx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
+	defer cancel()
+
+	// #nosec G204 -- binPath is trusted
+	cmd := exec.CommandContext(ctx, "ffprobe",
+		"-v", "error",
+		"-select_streams", "v:0",
+		"-show_entries", "stream=r_frame_rate",
+		"-of", "default=noprint_wrappers=1:nokey=1",
+		inputURL,
+	)
+
+	out, err := cmd.Output()
+	if err != nil {
+		return 0, err
+	}
+
+	output := strings.TrimSpace(string(out))
+	if output == "" {
+		return 0, fmt.Errorf("empty output")
+	}
+
+	return parseFPS(output)
+}
+
+func parseFPS(output string) (int, error) {
+	// Parse fraction "num/den" or "num"
+	parts := strings.Split(output, "/")
+	if len(parts) == 1 {
+		val, err := strconv.Atoi(parts[0])
+		return val, err
+	}
+	if len(parts) == 2 {
+		num, err1 := strconv.Atoi(parts[0])
+		den, err2 := strconv.Atoi(parts[1])
+		if err1 != nil || err2 != nil || den == 0 {
+			return 0, fmt.Errorf("invalid fractional fps: %s", output)
+		}
+		// Round to nearest integer
+		return int(math.Round(float64(num) / float64(den))), nil
+	}
+
+	return 0, fmt.Errorf("unrecognized fps format: %s", output)
 }

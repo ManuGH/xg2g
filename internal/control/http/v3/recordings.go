@@ -78,7 +78,7 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 		}
 		if m.Resume != nil {
 			item.Resume = &ResumeSummary{
-				PosSeconds:      int64Ptr(m.Resume.PosSeconds),
+				PosSeconds:      m.Resume.PosSeconds,
 				DurationSeconds: int64Ptr(m.Resume.DurationSeconds), // DTO expects *int64
 				Finished:        boolPtr(m.Resume.Finished),
 				UpdatedAt:       m.Resume.UpdatedAt, // Domain has *time.Time

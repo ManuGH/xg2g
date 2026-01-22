@@ -329,8 +329,9 @@ type FFmpegConfig struct {
 
 // HLSConfig holds HLS output settings
 type HLSConfig struct {
-	Root      string        `yaml:"root"`
-	DVRWindow time.Duration `yaml:"dvrWindow"`
+	Root           string        `yaml:"root"`
+	DVRWindow      time.Duration `yaml:"dvrWindow"`
+	SegmentSeconds int           `yaml:"segmentSeconds"` // Best Practice 2026: 6s
 }
 
 // VODConfig groups all VOD-specific tuning knobs under `vod.*` for YAML,
@@ -832,6 +833,19 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 		dst.HDHR.PlexForceHLS = src.HDHR.PlexForceHLS
 	}
 
+	// HLS (Typed Config)
+	if src.HLS != nil {
+		if src.HLS.Root != "" {
+			dst.HLS.Root = expandEnv(src.HLS.Root)
+		}
+		if src.HLS.DVRWindow > 0 {
+			dst.HLS.DVRWindow = src.HLS.DVRWindow
+		}
+		if src.HLS.SegmentSeconds > 0 {
+			dst.HLS.SegmentSeconds = src.HLS.SegmentSeconds
+		}
+	}
+
 	// Engine mapping (P1.2 Harden)
 	if src.Engine.Enabled {
 		dst.Engine.Enabled = true
@@ -1099,6 +1113,7 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	// CANONICAL HLS CONFIG
 	cfg.HLS.Root = l.envString("XG2G_HLS_ROOT", cfg.HLS.Root)
 	cfg.HLS.DVRWindow = l.envDuration("XG2G_HLS_DVR_WINDOW", cfg.HLS.DVRWindow)
+	cfg.HLS.SegmentSeconds = l.envInt("XG2G_HLS_SEGMENT_SECONDS", cfg.HLS.SegmentSeconds)
 
 	// CANONICAL FFMPEG CONFIG
 	cfg.FFmpeg.Bin = l.envString("XG2G_FFMPEG_BIN", cfg.FFmpeg.Bin)

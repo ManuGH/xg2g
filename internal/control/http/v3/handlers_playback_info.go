@@ -257,11 +257,7 @@ func (s *Server) mapPlaybackInfoV2(ctx context.Context, id string, dec *decision
 	decDTO.Reasons = decision.ReasonsAsStrings(dec, nil)
 
 	// 4. Resume DTO
-	var resDTO *struct {
-		DurationSeconds *int64  `json:"durationSeconds,omitempty"`
-		Finished        *bool   `json:"finished,omitempty"`
-		PosSeconds      float32 `json:"posSeconds"`
-	}
+	var resDTO *ResumeSummary
 	if rState != nil {
 		fin := rState.Finished
 		var dur *int64
@@ -269,12 +265,8 @@ func (s *Server) mapPlaybackInfoV2(ctx context.Context, id string, dec *decision
 			v := rState.DurationSeconds
 			dur = &v
 		}
-		resDTO = &struct {
-			DurationSeconds *int64  `json:"durationSeconds,omitempty"`
-			Finished        *bool   `json:"finished,omitempty"`
-			PosSeconds      float32 `json:"posSeconds"`
-		}{
-			PosSeconds:      float32(rState.PosSeconds),
+		resDTO = &ResumeSummary{
+			PosSeconds:      rState.PosSeconds,
 			DurationSeconds: dur,
 			Finished:        &fin,
 		}
@@ -303,13 +295,9 @@ func (s *Server) mapPlaybackInfoV2(ctx context.Context, id string, dec *decision
 		AudioCodec:      &audioCodec,
 		Reason:          &mainReason,
 		Decision:        &decDTO,
-		Resume: (*struct {
-			DurationSeconds *int64  "json:\"durationSeconds,omitempty\""
-			Finished        *bool   "json:\"finished,omitempty\""
-			PosSeconds      float32 "json:\"posSeconds\""
-		})(resDTO),
-		RequestId: dec.Trace.RequestID,
-		SessionId: sessionID,
+		Resume:          resDTO,
+		RequestId:       dec.Trace.RequestID,
+		SessionId:       sessionID,
 	}
 
 	// 7. Apply Truth (P3-4component)

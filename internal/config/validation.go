@@ -7,6 +7,7 @@ package config
 
 import (
 	"strings"
+	"time"
 
 	"github.com/ManuGH/xg2g/internal/validate"
 )
@@ -171,6 +172,21 @@ func Validate(cfg AppConfig) error {
 	if cfg.Engine.Enabled {
 		v.WritableDirectory("Store.Path", cfg.Store.Path, false)
 		v.WritableDirectory("HLS.Root", cfg.HLS.Root, false)
+
+		// HLS Segment Integrity (Best Practice 2026)
+		switch cfg.HLS.SegmentSeconds {
+		case 1: // Low Latency Profile
+			if cfg.HLS.DVRWindow < 10*time.Second {
+				v.AddError("HLS.DVRWindow", "must be >= 10s for low latency", cfg.HLS.DVRWindow)
+			}
+		case 6: // Standard Profile
+			if cfg.HLS.DVRWindow < 1*time.Minute {
+				v.AddError("HLS.DVRWindow", "must be >= 1m for standard profile", cfg.HLS.DVRWindow)
+			}
+		default:
+			v.AddError("HLS.SegmentSeconds", "must be 1 (Low Latency) or 6 (Standard Profile)", cfg.HLS.SegmentSeconds)
+		}
+
 		if cfg.Engine.IdleTimeout < 0 {
 			v.AddError("Engine.IdleTimeout", "must be >= 0", cfg.Engine.IdleTimeout)
 		}

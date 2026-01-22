@@ -316,7 +316,7 @@ export default function RecordingsList() {
                 <div className="item-details">
                   <div className="item-name">{rec.title}</div>
                   <div className="item-meta-row tabular">
-                    <span className="meta-date">{formatTime(rec.begin_unix_seconds)}</span>
+                    <span className="meta-date">{formatTime(rec.beginUnixSeconds)}</span>
                     <span className="meta-length">{rec.length}</span>
                   </div>
                   <p className="item-desc">{rec.description}</p>

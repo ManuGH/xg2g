@@ -160,17 +160,28 @@ Modern Enigma2 receivers with FBC support use **FBC (Flexible Band Concatenation
 
 **Tuner Pool Behavior:**
 
-- **8 virtual tuners** per physical tuner module
-- Shared within the **same transponder frequency**
-- Independent allocation for **different transponders**
+- **8 virtual tuners** per physical tuner module.
+- Shared within the **same transponder frequency**.
+- Independent allocation for **different transponders**.
 
-**Example Scenario:**
+#### Real-World Example (Verified 2026-01-22)
 
-- Tuner 1-4: All on **11.XXX GHz H** (same transponder) → Share 1 physical tuner
-- Tuner 5-8: Different frequencies → Require additional physical tuners
+- **TV Output**: Watching ORF1 HD (Transponder `0x03EF`, 11302.750 MHz) on **Tuner A**.
+- **Laptop Stream**: Streaming SAT.1 HD (Transponder `0x03F9`, 11464.250 MHz) on **Tuner C**.
+- **Outcome**: The receiver automatically tuners to the second transponder using a free FBC tuner. **No zapping/switching occurs** because the FBC pool allows up to 8 independent transponders.
 
-**xg2g Respects This:**  
-No artificial limits. The system scales to the **physical FBC capacity** defined by Enigma2.
+### The Stream Request Flow (Middleware Layer)
+
+In setups with decryption middleware (e.g. OSCam-emu), the flow is as follows:
+
+1. **Client** → OpenWebif (Port 80) `/web/stream.m3u?ref=...`
+2. **OpenWebif** → Determines if the stream requires relaying.
+3. **M3U Response** → Returns a URL like `http://IP:17999/{serviceref}`.
+4. **Client** → Port 17999 (Decryption Wrapper).
+5. **Middleware** → Fetches raw stream from `localhost:8001` (Enigma2 Native).
+6. **Enigma2:8001** → Delivers MPEG-TS via Tuner.
+
+**XG2G Integration:** By using `useWebIFStreams: true`, xg2g follows this entire chain automatically, respecting the receiver's choice of port (8001 vs 17999).
 
 ---
 

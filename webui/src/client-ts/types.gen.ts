@@ -492,6 +492,14 @@ export type ProblemDetails = {
     type: string;
     title: string;
     status: number;
+    /**
+     * Correlation ID (UUID or prefixed string like req_abc123)
+     */
+    requestId: string;
+    /**
+     * Stable machine-readable short code (e.g. "NOT_FOUND")
+     */
+    code?: string;
     detail?: string;
     instance?: string;
     fields?: {
@@ -541,11 +549,11 @@ export type PlaybackInfo = {
     /**
      * Absolute DVR window length in seconds. Becomes required in P3-4.
      */
-    dvr_window_seconds?: number;
+    dvrWindowSeconds?: number;
     /**
      * wall-clock timestamp (UNIX) of the latest segment. Becomes required in P3-4.
      */
-    live_edge_unix?: number;
+    liveEdgeUnix?: number;
     /**
      * wall-clock timestamp (UNIX) of the earliest segment in window. Becomes required in P3-4.
      */
@@ -555,17 +563,7 @@ export type PlaybackInfo = {
      */
     durationSeconds?: number;
     durationSource?: PlaybackInfoDurationSource;
-    /**
-     * Optional resume state if available.
-     */
-    resume?: {
-        /**
-         * last known playback position in seconds
-         */
-        posSeconds: number;
-        durationSeconds?: number;
-        finished?: boolean;
-    };
+    resume?: ResumeSummary;
     /**
      * Truthful container name if known (e.g., ts, mp4, mkv).
      */
@@ -889,7 +887,7 @@ export type RecordingItem = {
     /**
      * Recording start time as UNIX seconds.
      */
-    begin_unix_seconds?: number;
+    beginUnixSeconds?: number;
     /**
      * Recording duration in seconds, if known.
      */
@@ -907,7 +905,7 @@ export type RecordingItem = {
 };
 
 export type ResumeSummary = {
-    posSeconds?: number;
+    posSeconds: number;
     durationSeconds?: number;
     finished?: boolean;
     updatedAt?: string;

@@ -6,6 +6,7 @@ Welcome to the xg2g documentation. All documents here represent the
 ## 🏛 Architecture & Design
 
 - [ADR Index](adr/README.md) - Design decisions and invariants.
+- [Streaming Topology](arch/ENIGMA2_STREAMING_TOPOLOGY.md) - Deep dive into E2 ports and FBC tuners.
 - [CI Contract](CI_CONTRACT.md) - Technical quality gates.
 
 ## 🚀 Release Management

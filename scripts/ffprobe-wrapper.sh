@@ -3,21 +3,21 @@
 set -euo pipefail
 
 # FIX: Point to the actual binary location in this environment
-FFMPEG_HOME="/usr"
+FFMPEG_HOME="${FFMPEG_HOME:-/opt/ffmpeg}"
 FFPROBE_BIN="${FFMPEG_HOME}/bin/ffprobe"
-FFMPEG_LIB="${FFMPEG_HOME}/lib/x86_64-linux-gnu"
+FFMPEG_LIB="${FFMPEG_HOME}/lib"
+
+# Handle special --print-realpath flag for diagnostic tools
+if [ "${1:-}" == "--print-realpath" ]; then
+    echo "${FFPROBE_BIN}"
+    exit 0
+fi
 
 # Validate FFprobe binary exists
 if [ ! -x "${FFPROBE_BIN}" ]; then
     echo "ERROR: FFprobe binary not found or not executable: ${FFPROBE_BIN}" >&2
     echo "Set FFMPEG_HOME or FFPROBE_BIN to the correct location" >&2
     exit 1
-fi
-
-# Handle special --print-realpath flag for diagnostic tools
-if [ "${1:-}" == "--print-realpath" ]; then
-    echo "${FFPROBE_BIN}"
-    exit 0
 fi
 
 # Scope LD_LIBRARY_PATH to this process only (no global leak)
