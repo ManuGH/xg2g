@@ -21,7 +21,8 @@ fi
 LINT_OUTPUT=$(npx --yes @redocly/cli lint "$OPENAPI_FILE" --format=stylish 2>&1 || true)
 
 # Count errors (not warnings)
-ERROR_COUNT=$(echo "$LINT_OUTPUT" | grep -c "error " || echo "0")
+ERROR_COUNT=$(grep -c "error " <<<"$LINT_OUTPUT" || true)
+ERROR_COUNT=${ERROR_COUNT:-0}
 
 if [ "$ERROR_COUNT" -gt 0 ]; then
     echo "❌ FAIL: OpenAPI schema has $ERROR_COUNT error(s):"
@@ -32,7 +33,8 @@ if [ "$ERROR_COUNT" -gt 0 ]; then
 else
     echo "✅ OpenAPI lint passed (errors=0)."
     # Show warning count for awareness
-    WARNING_COUNT=$(echo "$LINT_OUTPUT" | grep -c "warning " || echo "0")
+    WARNING_COUNT=$(grep -c "warning " <<<"$LINT_OUTPUT" || true)
+        WARNING_COUNT=${WARNING_COUNT:-0}
     if [ "$WARNING_COUNT" -gt 0 ]; then
         echo "   → $WARNING_COUNT warning(s) present (acceptable)"
     fi
