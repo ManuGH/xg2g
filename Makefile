@@ -183,7 +183,7 @@ generate-config: ## Generate config surfaces from registry
 	@echo "✅ Config surfaces generated"
 
 .PHONY: verify
-verify: verify-config verify-capabilities contract-matrix verify-purity contract-freeze-check verify-no-sleep verify-no-panic verify-no-ignored-errors ## Phase 4.7: Run all governance verification gates
+verify: verify-config verify-doc-links verify-capabilities contract-matrix verify-purity contract-freeze-check verify-no-sleep verify-no-panic verify-no-ignored-errors ## Phase 4.7: Run all governance verification gates
 
 verify-config: ## Verify generated config surfaces are up-to-date
 	@echo "Verifying generated config surfaces..."
@@ -194,6 +194,9 @@ verify-config: ## Verify generated config surfaces are up-to-date
 	fi
 	@git diff --exit-code docs/guides/CONFIGURATION.md docs/guides/config.schema.json config.generated.example.yaml docs/guides/CONFIG_SURFACES.md || (echo "❌ Config surfaces are out of sync. Run 'make generate-config' and commit changes." && exit 1)
 	@echo "✅ Config surfaces are up-to-date"
+
+verify-doc-links: ## Verify docs contains no broken relative links
+	@./scripts/verify-doc-links.sh
 
 .PHONY: verify-hermetic-codegen
 verify-hermetic-codegen: ## Verify hermetic code generation invariants (CTO-grade)

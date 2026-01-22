@@ -90,7 +90,7 @@ recording_playback:
       local_root: /mnt/recordings
 ```
 
-See [Configuration Guide](docs/guides/CONFIGURATION.md#recording-playback) for
+See [Configuration Guide](../guides/CONFIGURATION.md#recording-playback) for
 detailed setup instructions.
 
 ### migration_guide
@@ -105,7 +105,7 @@ No migration required. The feature is opt-in via configuration.
 - [ ] **Governance Check**: Run `make quality-gates` to verify contract hygiene, zero shadowing, and JSON shape stability.
 - [ ] **Contract Audit**: Verify `ProblemDetails.requestId` is populated and `posSeconds` remains a stable integer.
 
-See [CHANGELOG_V3.md](CHANGELOG_V3.md) for the full breaking change log and rollback strategy.
+See [CHANGELOG_V3.md](../../CHANGELOG_V3.md) for the full breaking change log and rollback strategy.
 
 ---
 
