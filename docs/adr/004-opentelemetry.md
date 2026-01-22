@@ -24,7 +24,6 @@ The sharp edges in `xg2g` are in streaming and receiver integration. When failur
 
 ## References (Docs / Code)
 
-- Observability guide: `docs/OBSERVABILITY.md`
-- Middleware wiring: `internal/api/middleware/stack.go`
+- Observability guide: `docs/ops/OBSERVABILITY.md`
+- Middleware wiring: `internal/control/middleware/stack.go`
 - Telemetry setup: `internal/telemetry`
-
