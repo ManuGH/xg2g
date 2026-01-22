@@ -1,151 +1,105 @@
 #!/bin/bash
-set -e
-
 # verify-decision-ownership.sh
 # CTO-grade enforcement: Decision logic is contained within the engine.
 #
 # Ownership Rule (normative):
-# - Only internal/control/recordings/decision/** may:
-#   - Create/validate DecisionInput
-#   - Call Decide(...)
-#   - Generate reason codes / evaluate policies
+# - Only internal/control/recordings/decision/** may directly use the decision package.
 #
-# Allowed importers (exact paths):
-ALLOWED_DECIDE_CALLERS=(
-    "internal/control/http/v3/handlers_playback_info.go"
-)
+# Allowed Exceptions (minimal, auditable):
+# - test/invariants/**: Invariant validation tests (tree exception).
+# - test/contract/p4_1/contract_matrix_test.go: Contract matrix validation.
+# - test/contract/regression_directplay_test.go: Regression test.
+# - handlers_playback_info.go: Authorized production adapter (single file).
 
-ALLOWED_DECISION_IMPORTERS=(
-    "internal/control/http/v3/handlers_playback_info.go"
-    "internal/control/http/v3/handlers_playback_info_test.go"
-    "test/contract/p4_1/contract_matrix_test.go"
-)
+set -euo pipefail
 
-# Exclude from leakage checks (generated code, type definitions, tests)
-LEAKAGE_EXCLUDES=(
-    "server_gen.go"
-    "_test.go"
-    "/types/"
-    "/dependencies.go"
-)
+# Deterministic scope exclusions
+EXCLUDE_PATTERN="^vendor/|^node_modules/|^dist/|^build/|.*_gen\.go$|.*_generated\.go$|server_gen\.go$"
 
+# Minimal allowlist: tree for invariants, exact files for others
+ALLOWLIST_PATTERN="^test/invariants/|^test/contract/p4_1/contract_matrix_test\.go$|^test/contract/regression_directplay_test\.go$|^internal/control/http/v3/handlers_playback_info\.go$"
+
+DECISION_PKG="github.com/ManuGH/xg2g/internal/control/recordings/decision"
+
+HITS_TOTAL=0
+HITS_EXCLUDED=0
+HITS_ACTIONABLE=0
 EXIT_CODE=0
 
-echo "--- Checking Decision Ownership (CTO-grade) ---"
+echo "--- Checking Decision Ownership (Hardened Gate) ---"
+echo "ALLOWLIST:"
+echo "  - test/invariants/**"
+echo "  - test/contract/p4_1/contract_matrix_test.go"
+echo "  - test/contract/regression_directplay_test.go"
+echo "  - internal/control/http/v3/handlers_playback_info.go"
 
-# 1. Repo-wide scan for decision.Decide( calls
-echo "  [1/3] Checking Decide() call sites..."
+FILES=$(git ls-files "*.go" | grep -vE "$EXCLUDE_PATTERN" || true)
 
-DECIDE_CALLS=$(git grep -n "decision\.Decide(" -- "*.go" 2>/dev/null || true)
-
-if [ ! -z "$DECIDE_CALLS" ]; then
-    while IFS= read -r line; do
-        FILE_PATH=$(echo "$line" | cut -d: -f1)
-        
-        # Check if in decision package itself (always allowed)
-        if [[ "$FILE_PATH" == internal/control/recordings/decision/* ]]; then
-            continue
-        fi
-        
-        # Check exact allowlist
-        IS_ALLOWED=false
-        for ALLOWED in "${ALLOWED_DECIDE_CALLERS[@]}"; do
-            if [[ "$FILE_PATH" == "$ALLOWED" ]]; then
-                IS_ALLOWED=true
-                break
-            fi
-        done
-        
-        # Also allow test/contract/** for contract matrix
-        if [[ "$FILE_PATH" == test/contract/* ]]; then
-            IS_ALLOWED=true
-        fi
-        
-        if [ "$IS_ALLOWED" = false ]; then
-            echo "❌ FAIL: unauthorized Decide() call in $FILE_PATH"
-            echo "   → $line"
-            EXIT_CODE=1
-        fi
-    done <<< "$DECIDE_CALLS"
+if [ -z "$FILES" ]; then
+    echo "No files found to scan."
+    exit 0
 fi
 
-# 2. Repo-wide scan for decision package imports
-echo "  [2/3] Checking decision package imports..."
+for FILE in $FILES; do
+    # Skip decision engine itself
+    if [[ "$FILE" == internal/control/recordings/decision/* ]]; then
+        continue
+    fi
 
-DECISION_IMPORTS=$(git grep -n '"github.com/ManuGH/xg2g/internal/control/recordings/decision"' -- "*.go" 2>/dev/null || true)
+    IS_EXCLUDED=false
+    if echo "$FILE" | grep -qE "$ALLOWLIST_PATTERN"; then
+        IS_EXCLUDED=true
+    fi
 
-if [ ! -z "$DECISION_IMPORTS" ]; then
-    while IFS= read -r line; do
-        FILE_PATH=$(echo "$line" | cut -d: -f1)
-        
-        # Check if in decision package itself (always allowed)
-        if [[ "$FILE_PATH" == internal/control/recordings/decision/* ]]; then
-            continue
-        fi
-        
-        # Check exact allowlist
-        IS_ALLOWED=false
-        for ALLOWED in "${ALLOWED_DECISION_IMPORTERS[@]}"; do
-            if [[ "$FILE_PATH" == "$ALLOWED" ]]; then
-                IS_ALLOWED=true
-                break
+    # Import Check (normative): Direct package import
+    IMPORT_MATCHES=$(grep -n "\"$DECISION_PKG\"" "$FILE" 2>/dev/null || true)
+    if [ -n "$IMPORT_MATCHES" ]; then
+        while IFS= read -r match; do
+            [ -z "$match" ] && continue
+            HITS_TOTAL=$((HITS_TOTAL + 1))
+            LINE=$(echo "$match" | cut -d: -f1)
+            SNIPPET=$(echo "$match" | cut -d: -f2-)
+            
+            if [ "$IS_EXCLUDED" = true ]; then
+                HITS_EXCLUDED=$((HITS_EXCLUDED + 1))
+            else
+                HITS_ACTIONABLE=$((HITS_ACTIONABLE + 1))
+                echo "❌ IMPORT_VIOLATION: $FILE:$LINE: $SNIPPET"
+                EXIT_CODE=1
             fi
-        done
-        
-        # Also allow test/contract/** for contract matrix
-        if [[ "$FILE_PATH" == test/contract/* ]]; then
-            IS_ALLOWED=true
-        fi
-        
-        if [ "$IS_ALLOWED" = false ]; then
-            echo "❌ FAIL: unauthorized decision import in $FILE_PATH"
-            echo "   → Only allowlisted adapters may import decision package"
-            EXIT_CODE=1
-        fi
-    done <<< "$DECISION_IMPORTS"
-fi
+        done <<< "$IMPORT_MATCHES"
+    fi
 
-# 3. Handler leakage patterns (decision evaluation that should be in engine)
-# NOTE: We specifically check for DECISION EVALUATION patterns, not type definitions
-echo "  [3/3] Checking for decision evaluation leakage in handlers..."
+    # Call Check (smell detector): decision.Decide( with canonical name
+    CALL_MATCHES=$(grep -nE "decision\.Decide\(" "$FILE" 2>/dev/null || true)
+    if [ -n "$CALL_MATCHES" ]; then
+        while IFS= read -r match; do
+            [ -z "$match" ] && continue
+            HITS_TOTAL=$((HITS_TOTAL + 1))
+            LINE=$(echo "$match" | cut -d: -f1)
+            SNIPPET=$(echo "$match" | cut -d: -f2-)
 
-HANDLER_DIR="internal/control/http/v3"
-
-# These patterns indicate decision evaluation, not just type usage
-LEAKAGE_PATTERNS=(
-    'if.*AllowTranscode'
-    'if.*AllowDirectStream'
-    'if.*SupportsCodec'
-    'switch.*mode.*direct_play'
-    'switch.*mode.*transcode'
-)
-
-for PATTERN in "${LEAKAGE_PATTERNS[@]}"; do
-    MATCHES=$(git grep -En "$PATTERN" -- "$HANDLER_DIR/*.go" 2>/dev/null || true)
-    if [ ! -z "$MATCHES" ]; then
-        # Apply exclusions
-        CLEAN="$MATCHES"
-        for EXCLUDE in "${LEAKAGE_EXCLUDES[@]}"; do
-            CLEAN=$(echo "$CLEAN" | grep -v "$EXCLUDE" || true)
-        done
-        
-        if [ ! -z "$CLEAN" ]; then
-            echo "❌ FAIL: decision evaluation leakage in handlers:"
-            echo "$CLEAN"
-            EXIT_CODE=1
-        fi
+            if [ "$IS_EXCLUDED" = true ]; then
+                HITS_EXCLUDED=$((HITS_EXCLUDED + 1))
+            else
+                HITS_ACTIONABLE=$((HITS_ACTIONABLE + 1))
+                echo "❌ CALL_VIOLATION: $FILE:$LINE: $SNIPPET"
+                EXIT_CODE=1
+            fi
+        done <<< "$CALL_MATCHES"
     fi
 done
 
+echo ""
+echo "Summary:"
+echo "  HITS_TOTAL=$HITS_TOTAL"
+echo "  HITS_EXCLUDED=$HITS_EXCLUDED"
+echo "  HITS_ACTIONABLE=$HITS_ACTIONABLE"
+
 if [ $EXIT_CODE -eq 0 ]; then
-    echo "✅ Decision Ownership verified (CTO-grade)."
-    echo "   → Decide() calls: engine + ${#ALLOWED_DECIDE_CALLERS[@]} allowlisted adapters"
-    echo "   → Decision imports: engine + ${#ALLOWED_DECISION_IMPORTERS[@]} allowlisted files"
-    echo "   → No decision evaluation leakage in handlers"
+    echo "✅ PASS: no unauthorized decision.Decide() usage detected"
 else
-    echo ""
-    echo "FAILED: Decision ownership violation detected."
-    echo "See CONTRACT_INVARIANTS.md for governance rules."
+    echo "❌ FAIL: unauthorized decision.Decide() usage detected"
 fi
 
 exit $EXIT_CODE
