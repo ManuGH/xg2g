@@ -62,6 +62,7 @@ hdhr:
 hls:
   dvrWindow: 45m
   root: ""
+  segmentSeconds: 6
 library:
   db_path: ""
   enabled: false

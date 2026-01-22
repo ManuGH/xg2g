@@ -281,6 +281,7 @@ components:
     PlaybackFeedbackRequest:
       type: object
       required: [event]
+      additionalProperties: false
       properties:
         event:
           type: string
@@ -540,6 +541,7 @@ components:
 
     RunDecision:
       type: object
+      additionalProperties: false
       properties:
         serviceRef: { type: string }
         begin: { type: integer, format: int64 }
@@ -739,11 +741,18 @@ components:
 
     ProblemDetails:
       type: object
-      required: [type, title, status]
+      required: [type, title, status, requestId]
+      additionalProperties: false
       properties:
         type: { type: string }
         title: { type: string }
         status: { type: integer }
+        requestId:
+          type: string
+          description: Correlation ID (UUID or prefixed string like req_abc123)
+        code:
+          type: string
+          description: Stable machine-readable short code (e.g. "NOT_FOUND")
         detail: { type: string }
         instance: { type: string }
         fields:
@@ -795,11 +804,11 @@ components:
         isSeekable:
           type: boolean
           description: Authoritative flag if the stream is seekable. Becomes required in P3-4.
-        dvr_window_seconds:
+        dvrWindowSeconds:
           type: integer
           format: int64
           description: Absolute DVR window length in seconds. Becomes required in P3-4.
-        live_edge_unix:
+        liveEdgeUnix:
           type: integer
           format: int64
           description: wall-clock timestamp (UNIX) of the latest segment. Becomes required in P3-4.
@@ -815,18 +824,7 @@ components:
         durationSource:
           $ref: "#/components/schemas/PlaybackInfoDurationSource"
         resume:
-          type: object
-          description: Optional resume state if available.
-          required: [posSeconds]
-          properties:
-            posSeconds:
-              type: number
-              description: last known playback position in seconds
-            durationSeconds:
-              type: integer
-              format: int64
-            finished:
-              type: boolean
+          $ref: "#/components/schemas/ResumeSummary"
         container:
           type: string
           description: Truthful container name if known (e.g., ts, mp4, mkv).
@@ -1310,7 +1308,7 @@ components:
           example: "MTowOjA6MDo6L21lZGlhL2hkZC9tb3ZpZS9mb28udHM"
         title: { type: string }
         description: { type: string }
-        begin_unix_seconds:
+        beginUnixSeconds:
           type: integer
           format: int64
           description: Recording start time as UNIX seconds.
@@ -1330,6 +1328,7 @@ components:
 
     ResumeSummary:
       type: object
+      required: [posSeconds]
       properties:
         posSeconds:
           type: integer

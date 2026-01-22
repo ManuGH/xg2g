@@ -120,6 +120,7 @@ Aliases: `openWebIF.*` (compat; prefer `enigma2.*`).
 | --- | --- | --- | --- | --- |
 | `hls.dvrWindow` | `XG2G_HLS_DVR_WINDOW` | `45m` | Active | Advanced |
 | `hls.root` | `XG2G_HLS_ROOT` | - | Active | Advanced |
+| `hls.segmentSeconds` | `XG2G_HLS_SEGMENT_SECONDS` | `6` | Active | Advanced |
 
 ### library
 

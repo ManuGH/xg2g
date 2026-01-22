@@ -229,7 +229,9 @@ verify-purity: ## Phase 4.7: Verify UI purity, decision ownership, OpenAPI hygie
 	@./scripts/verify-ui-purity.sh
 	@./scripts/verify-decision-ownership.sh
 	@./scripts/verify-openapi-hygiene.sh
+	@python3 ./scripts/verify-openapi-no-duplicate-keys.py api/openapi.yaml
 	@./scripts/verify-openapi-lint.sh
+	@./scripts/verify-v3-shadowing.sh
 
 .PHONY: contract-freeze-check
 contract-freeze-check: ## Phase 4.7: Verify contract goldens against baseline manifest
@@ -852,9 +854,7 @@ schema-validate: ## Validate all YAML config files against JSON Schema
 		echo "   Install with: pip install check-jsonschema"; \
 	fi
 
-# Gate A: Control Layer Store Purity (ADR-014 Phase 1)
-# Ensures internal/control/** does not directly access domain stores
-.PHONY: gate-a
+gate-a: ## Gate A: Control Layer Store Purity (ADR-014 Phase 1)
 	@./scripts/verify_gate_a_control_store.sh
 
 # Gate B: Thin-Client Audit (Prevent Business Logic Leakage)
@@ -867,7 +867,16 @@ gate-webui:
 gate-repo-hygiene:
 	@./scripts/ci_gate_repo_hygiene.sh
 
-quality-gates: lint-invariants verify-hermetic-codegen gate-a gate-webui gate-repo-hygiene verify-generate verify-config lint test-cover security-vulncheck ## Validate all quality gates
+# Gate V3: OpenAPI v3 Contract Governance (CTO Hardrail)
+.PHONY: gate-v3-contract
+gate-v3-contract: ## Verify v3 contract hygiene, casing, and shadowing
+	@echo "--- gate-v3-contract ---"
+	@python3 ./scripts/verify-openapi-no-duplicate-keys.py api/openapi.yaml
+	@python3 ./scripts/lib/openapi_v3_scope.py api/openapi.yaml scripts/openapi-legacy-allowlist.json
+	@./scripts/verify-v3-shadowing.sh
+	@go test -v -count=1 ./internal/control/http/v3 -run "(TestV3_ResponseGolden|TestProblemDetails_Compliance|TestPlaybackInfo_SchemaCompliance)"
+
+quality-gates: lint-invariants verify-hermetic-codegen gate-a gate-webui gate-repo-hygiene gate-v3-contract verify-generate verify-config lint test-cover security-vulncheck ## Validate all quality gates
 	@echo "Validating quality gates..."
 	@echo "✅ All quality gates passed"
 

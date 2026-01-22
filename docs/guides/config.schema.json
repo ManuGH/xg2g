@@ -519,6 +519,11 @@
         },
         "root": {
           "type": "string"
+        },
+        "segmentSeconds": {
+          "default": 6,
+          "description": "HLS segment duration in seconds.",
+          "type": "integer"
         }
       },
       "type": "object"

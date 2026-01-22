@@ -71,7 +71,7 @@ for entry in "${FORBIDDEN[@]}"; do
 
     if [ -n "$matches" ]; then
         # Filter out lines with the allow-tag
-        violations=$(echo "$matches" | grep -v "xg2g:allow-webui-logic")
+        violations=$(echo "$matches" | grep -v "xg2g:allow-webui-logic" || true)
         
         if [ -n "$violations" ]; then
             echo "❌ Forbidden Pattern Found: '$pattern'"

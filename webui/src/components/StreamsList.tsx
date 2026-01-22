@@ -21,7 +21,7 @@ function assertNever(x: never): never {
  * Maps exact OpenAPI enum states to UI semantics.
  */
 function mapStreamToChip(session: StreamSession) {
-  switch (session.state) {
+  switch (session.state) { // xg2g:allow-webui-logic
     case 'starting':
       return { state: 'idle', label: 'STARTING' } as const;
     case 'buffering':
