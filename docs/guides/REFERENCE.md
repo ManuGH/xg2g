@@ -4,7 +4,7 @@ This document provides a technical reference for environment variables,
 configuration files, and health endpoints.
 
 > [!NOTE]
-> For architectural details, see [ARCHITECTURE.md](../../ARCHITECTURE.md). For
+> For architectural details, see [ARCHITECTURE.md](../arch/ARCHITECTURE.md). For
 > build/deploy facts, see [BUILD.md](../../BUILD.md).
 
 ## 1. Environment Variables
