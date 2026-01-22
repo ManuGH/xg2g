@@ -93,7 +93,21 @@ recording_playback:
 See [Configuration Guide](docs/guides/CONFIGURATION.md#recording-playback) for
 detailed setup instructions.
 
+### migration_guide
+
+No migration required. The feature is opt-in via configuration.
+
 ---
 
-**Release Date**: TBD
-**Contributors**: Claude Sonnet 4.5, ManuGH
+## 🎖️ CTO Release Checklist (Contract Purity)
+
+- [ ] **Client Regeneration**: All v3 consumers MUST regenerate DTOs/clients. **snake_case is rejected** in v3.
+- [ ] **Governance Check**: Run `make quality-gates` to verify contract hygiene, zero shadowing, and JSON shape stability.
+- [ ] **Contract Audit**: Verify `ProblemDetails.requestId` is populated and `posSeconds` remains a stable integer.
+
+See [CHANGELOG_V3.md](CHANGELOG_V3.md) for the full breaking change log and rollback strategy.
+
+---
+
+**Release Date**: 2026-01-22
+**Contributors**: Antigravity, ManuGH
