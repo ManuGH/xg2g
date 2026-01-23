@@ -27,6 +27,21 @@ func TestGate5_NoDualDurable(t *testing.T) {
 	t.Logf("✅ Gate 5 Passed: Received expected error: %v", err)
 }
 
+func TestAdversarialGate5_FactoryBypass(t *testing.T) {
+	// 1. Setup
+	tmpDir := t.TempDir()
+
+	// 2. Set SQLite as Truth
+	t.Setenv("XG2G_STORAGE", "sqlite")
+
+	// 3. Attempt to use the factory to open Bolt
+	_, err := store.OpenStateStore("bolt", filepath.Join(tmpDir, "st.db"))
+	if err == nil {
+		t.Fatal("Adversarial Gate 5 Failed: Factory allowed opening Bolt while SQLite is Truth")
+	}
+	t.Logf("✅ Adversarial Gate 5 Passed: Factory blocked Bolt with error: %v", err)
+}
+
 func TestGate4_SchemaVersion(t *testing.T) {
 	tmpDir := t.TempDir()
 	sqlitePath := filepath.Join(tmpDir, "sessions.sqlite")

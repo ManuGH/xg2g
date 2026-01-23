@@ -9,6 +9,7 @@ set -euo pipefail
 # - Find relative links/images in Markdown
 # - Ignore: http(s), mailto, tel, pure anchors, code blocks
 # - Support: path.md#anchor (checks file exists), URL-encoded paths
+# - Fail-closed: verify files exist before reading (prevent git index inconsistency)
 #
 # Non-goals:
 # - Anchor existence check (too expensive/fragile)
@@ -34,6 +35,14 @@ trim() { sed -E 's/^[[:space:]]+|[[:space:]]+$//g'; }
 # Iterate files safely line-by-line
 while IFS= read -r FILE; do
   [[ -z "$FILE" ]] && continue
+
+  # Fail-closed: verify file exists in working tree before reading
+  if [[ ! -f "$FILE" ]]; then
+    echo "❌ INTERNAL ERROR: git ls-files returned non-existent file: $FILE"
+    echo "   This indicates git index inconsistency (deleted but not committed, or rename in progress)."
+    echo "   Run 'git status' and commit or stash changes before re-running."
+    exit 1
+  fi
 
   # Read file line-by-line; skip fenced code blocks
   in_code=0

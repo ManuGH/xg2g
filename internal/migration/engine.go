@@ -1,7 +1,9 @@
 package migration
 
 import (
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 )
 
 // Module constants
@@ -59,4 +61,13 @@ func GetHistory(db *sql.DB, module string) (*HistoryRecord, error) {
 		return nil, nil
 	}
 	return &rec, err
+}
+
+// CalculateChecksum computes a deterministic hash for a set of byte slices.
+func CalculateChecksum(data [][]byte) string {
+	h := sha256.New()
+	for _, d := range data {
+		h.Write(d)
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
