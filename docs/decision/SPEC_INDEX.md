@@ -7,7 +7,7 @@ operational procedures.
 ## 1. Normative Hierarchy
 
 1. **ADR-009 suite**: Foundational contract and semantics.
-    - [ADR-009: Decision Engine Core](file:///root/xg2g/docs/ADR/009-playback-decision-engine.md)
+    - [ADR-009: Decision Engine Core](file:///root/xg2g/docs/ADR/009-playback-decision-spec.md)
     - [ADR-009.1: Container Neutrality Patch](file:///root/xg2g/docs/ADR/009.1-playback-decision-spec-patch.md)
     - [ADR-009.2: Hash & Unicode Normality](file:///root/xg2g/docs/ADR/009.2-hash-semantics.md)
 2. **Property Proofs**: Frozen mechanical invariants (`proof_test.go`).

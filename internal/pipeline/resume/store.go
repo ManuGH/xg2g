@@ -23,6 +23,11 @@ func NewStore(backend, dir string) (Store, error) {
 		backend = "sqlite" // Default for Phase 2.3
 	}
 
+	// Gate 5: No Dual Durable
+	if backend == "bolt" && os.Getenv("XG2G_STORAGE") == "sqlite" && os.Getenv("XG2G_MIGRATION_MODE") != "true" {
+		return nil, fmt.Errorf("Single Durable Truth violation: Bolt initialization blocked by factory")
+	}
+
 	switch backend {
 	case "bolt":
 		if dir == "" {

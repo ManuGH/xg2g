@@ -6,12 +6,19 @@ package store
 
 import (
 	"fmt"
+	"os"
 )
 
 // OpenStateStore creates a StateStore based on the backend configuration.
 func OpenStateStore(backend, path string) (StateStore, error) {
 	if backend == "" {
 		backend = "sqlite" // Default for Phase 2.3
+	}
+
+	// Gate 5: No Dual Durable
+	// If truth is SQLite, explicitly block legacy Bolt initialization
+	if backend == "bolt" && os.Getenv("XG2G_STORAGE") == "sqlite" && os.Getenv("XG2G_MIGRATION_MODE") != "true" {
+		return nil, fmt.Errorf("Single Durable Truth violation: Bolt initialization blocked by factory")
 	}
 
 	switch backend {

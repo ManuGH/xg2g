@@ -2,6 +2,7 @@ package scan
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -29,6 +30,11 @@ type CapabilityStore interface {
 func NewStore(backend, storagePath string) (CapabilityStore, error) {
 	if backend == "" {
 		backend = "sqlite" // Default for Phase 2.3
+	}
+
+	// Gate 5: No Dual Durable
+	if backend == "json" && os.Getenv("XG2G_STORAGE") == "sqlite" && os.Getenv("XG2G_MIGRATION_MODE") != "true" {
+		return nil, fmt.Errorf("Single Durable Truth violation: JSON Capability initialization blocked by factory")
 	}
 
 	switch backend {
