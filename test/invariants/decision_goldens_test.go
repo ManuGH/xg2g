@@ -79,7 +79,7 @@ func TestDecisionGoldens(t *testing.T) {
 			require.NoError(t, err, "Failed to unmarshal golden fixture")
 
 			// 3. Map to Internal Input
-			input := decision.Input{
+			input := decision.DecisionInput{
 				Source: decision.Source{
 					Container:   golden.Input.Truth.Container,
 					VideoCodec:  golden.Input.Truth.VideoCodec,

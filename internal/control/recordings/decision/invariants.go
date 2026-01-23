@@ -15,7 +15,7 @@ func (e ErrInvariantViolation) Error() string {
 
 // validateOutputInvariants enforces P8 Output Invariants (#9-#11).
 // It runs AFTER normalization.
-func validateOutputInvariants(dec *Decision, input Input) error {
+func validateOutputInvariants(dec *Decision, input DecisionInput) error {
 	switch dec.Mode {
 	case ModeDirectPlay:
 		// Invariant #9: Direct Play Eligibility

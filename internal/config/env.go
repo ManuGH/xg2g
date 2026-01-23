@@ -226,3 +226,8 @@ func ParseFloat(key string, defaultValue float64) float64 {
 		Msg("using default value")
 	return defaultValue
 }
+
+// expandEnv expands environment variables in the format ${VAR} or $VAR
+func expandEnv(s string) string {
+	return os.ExpandEnv(s)
+}

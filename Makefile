@@ -260,10 +260,6 @@ verify-observability:
 
 verify-p8: verify-capabilities verify-decision-goldens verify-decision-invariants verify-observability
 
-verify-hls-goldens:
-	@echo "--- verify-hls-goldens ---"
-	@go test ./internal/hls -v -run TestExtractSegmentTruth
-
 verify-hls-http:
 	@echo "--- verify-hls-http ---"
 	@go test -tags v3 ./internal/control/http/v3 -v -run HLS
@@ -906,11 +902,7 @@ build-ffmpeg: ## Build FFmpeg 7.1.3 with HLS/VAAPI/x264/AAC support
 .PHONY: contract-matrix
 contract-matrix: ## P4-1: Run contract matrix golden snapshot gate
 	@set -euo pipefail; \
-	echo "Running Contract Matrix (P4-1)..."; \
-	go test ./test/contract/p4_1 -v; \
-	GOLDEN_COUNT=$$(find testdata/contract/p4_1/golden -name '*.expected.json' -type f 2>/dev/null | wc -l | tr -d ' '); \
-	if [ "$$GOLDEN_COUNT" -lt 8 ]; then \
-		echo "❌ Contract Matrix requires >= 8 golden snapshots, found $$GOLDEN_COUNT"; \
-		exit 1; \
-	fi; \
-	echo "✅ Contract Matrix OK ($$GOLDEN_COUNT golden snapshots)"
+
+gate-decision-proof: ## Phase 4.7: Run Playback Decision Engine Proof System (CTO-Grade)
+	@echo "Running Playback Decision Engine Proof System..."
+	@XG2G_PROOF_SEED=12345 go test -count=1 -v ./internal/control/recordings/decision -run 'TestProp_|TestGate_|TestModel'

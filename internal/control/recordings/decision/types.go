@@ -12,8 +12,8 @@ const (
 	ModeDeny         Mode = "deny"
 )
 
-// Input contains all data needed for the decision engine.
-type Input struct {
+// DecisionInput contains all data needed for the decision engine.
+type DecisionInput struct {
 	Source       Source
 	Capabilities Capabilities
 	Policy       Policy
@@ -82,8 +82,18 @@ type Output struct {
 }
 
 // Trace contains request tracing metadata.
+// Structured to ensure low-cardinality observability.
 type Trace struct {
-	RequestID string `json:"requestId"`
+	RequestID string   `json:"requestId"`
+	InputHash string   `json:"inputHash"` // SHA-256 of canonical input
+	RuleHits  []string `json:"ruleHits"`  // Ordered list of rules evaluated
+	Why       []Reason `json:"why"`       // Structured explanation
+}
+
+// Reason provides structured explanation for decisions.
+type Reason struct {
+	Code ReasonCode        `json:"code"`
+	Meta map[string]string `json:"meta,omitempty"`
 }
 
 // Problem represents an RFC7807 problem detail (non-200 responses).
@@ -118,7 +128,7 @@ type Predicates struct {
 
 // Decide is the pure decision engine entry point.
 // Returns (httpStatus, decision, problem). Exactly one of decision/problem is non-nil.
-func Decide(ctx context.Context, input Input) (int, *Decision, *Problem) {
+func Decide(ctx context.Context, input DecisionInput) (int, *Decision, *Problem) {
 	// Start Decision Span (Correction 2: Owned by Decide)
 	ctx, span := StartDecisionSpan(ctx)
 	defer span.End()
@@ -135,10 +145,10 @@ func Decide(ctx context.Context, input Input) (int, *Decision, *Problem) {
 
 	// Phase 3: Decision table evaluation (first match wins)
 	// (Returns Mode and ReasonCodes per ADR-P8)
-	mode, reasons := evaluateDecision(pred, input.Capabilities, input.Policy)
+	mode, reasons, rules := evaluateDecision(pred, input.Capabilities, input.Policy)
 
 	// Phase 4: Build decision response
-	decision := buildDecision(mode, pred, input, reasons)
+	decision := buildDecision(mode, pred, input, reasons, rules)
 
 	// Phase 5: Output Invariants Enforcement (P8-3)
 	// Stop-the-line: Normalize and validate to prevent semantic lies.
@@ -156,7 +166,10 @@ func Decide(ctx context.Context, input Input) (int, *Decision, *Problem) {
 		return 500, nil, prob
 	}
 
-	// Phase 6: Observability (Success)
+	// Phase 6: Observability (Success) (P4 Observability)
+	// Populate Trace with Hash and Rules
+	// (Note: rule/why logic belongs in engine, but Hash is pure input)
+	decision.Trace.InputHash = input.ComputeHash()
 	EmitDecisionObs(ctx, input, decision, nil)
 
 	return 200, decision, nil

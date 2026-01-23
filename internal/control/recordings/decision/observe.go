@@ -32,7 +32,7 @@ var allowedAttributes = map[string]bool{
 // It sets attributes on the current span and records metrics.
 // It performs STRICT Attribute Whitelisting.
 // P8-5 Refactor: Consumes Single Mapping Truth (mapping.go).
-func EmitDecisionObs(ctx context.Context, input Input, dec *Decision, prob *Problem) {
+func EmitDecisionObs(ctx context.Context, input DecisionInput, dec *Decision, prob *Problem) {
 	span := trace.SpanFromContext(ctx)
 
 	// Runtime Provider Lookup (No Init-Time Rebinding)

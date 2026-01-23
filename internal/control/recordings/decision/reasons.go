@@ -69,3 +69,11 @@ func ValidateReasons(reasons []ReasonCode) error {
 	}
 	return nil
 }
+
+// ReasonCodeSlice attaches the methods of sort.Interface to []ReasonCode,
+// sorting in increasing order.
+type ReasonCodeSlice []ReasonCode
+
+func (p ReasonCodeSlice) Len() int           { return len(p) }
+func (p ReasonCodeSlice) Less(i, j int) bool { return p[i] < p[j] }
+func (p ReasonCodeSlice) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }

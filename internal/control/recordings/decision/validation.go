@@ -4,7 +4,7 @@ import "strings"
 
 // validateInput performs V-1, V-2, V-3 fail-closed validation.
 // Returns RFC7807 problem or nil if valid.
-func validateInput(input Input) *Problem {
+func validateInput(input DecisionInput) *Problem {
 	// V-1: Capabilities presence (for API v3.1+)
 	if strings.HasPrefix(input.APIVersion, "v3.1") || strings.HasPrefix(input.APIVersion, "v3.") {
 		if input.Capabilities.Version == 0 && len(input.Capabilities.Containers) == 0 {

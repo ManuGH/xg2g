@@ -47,14 +47,14 @@ func TestDecisionObservabilityContract(t *testing.T) {
 	trueVal := true
 	tests := []struct {
 		Name          string
-		Input         decision.Input
+		Input         decision.DecisionInput
 		ExpectedAttrs map[string]string // STRICT Exact Match
 		ExpectedMode  decision.Mode
 		IsProblem     bool
 	}{
 		{
 			Name: "Direct Play (Happy Path)",
-			Input: decision.Input{
+			Input: decision.DecisionInput{
 				Source: decision.Source{
 					Container: "mp4", VideoCodec: "h264", AudioCodec: "aac",
 				},
@@ -75,7 +75,7 @@ func TestDecisionObservabilityContract(t *testing.T) {
 		},
 		{
 			Name: "Deny (Container Unsupported)",
-			Input: decision.Input{
+			Input: decision.DecisionInput{
 				Source: decision.Source{
 					Container: "avi", VideoCodec: "h264", AudioCodec: "aac",
 				},
@@ -93,7 +93,7 @@ func TestDecisionObservabilityContract(t *testing.T) {
 		},
 		{
 			Name: "Problem (Missing Truth)",
-			Input: decision.Input{
+			Input: decision.DecisionInput{
 				Source: decision.Source{}, // Empty source -> Problem
 			},
 			ExpectedAttrs: map[string]string{

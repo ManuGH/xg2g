@@ -110,8 +110,8 @@ func stubDecisionResponse(inputJSON []byte) []byte {
 	policy, _ := input["policy"].(map[string]interface{})
 	apiVersion, _ := input["api_version"].(string)
 
-	// Build decision.Input
-	decInput := decision.Input{
+	// Build decision.DecisionInput
+	decInput := decision.DecisionInput{
 		RequestID:  "stub-request-id",
 		APIVersion: apiVersion,
 	}

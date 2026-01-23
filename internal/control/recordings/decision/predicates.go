@@ -1,5 +1,9 @@
 package decision
 
+import (
+	"strings"
+)
+
 // computePredicates evaluates all compatibility predicates (Section 6.2).
 // All predicates are pure boolean functions with no side effects.
 func computePredicates(source Source, caps Capabilities, policy Policy) Predicates {
@@ -10,15 +14,17 @@ func computePredicates(source Source, caps Capabilities, policy Policy) Predicat
 
 	// Direct play: client can play source container+codecs directly via static MP4
 	// Strict: Container MUST be mp4/mov/m4v (Protocol Limitation)
+	// AND Client MUST support Range requests (for seeking/progressive)
 	isMP4 := source.Container == "mp4" || source.Container == "mov" || source.Container == "m4v"
-	directPlayPossible := canContainer && canVideo && canAudio && isMP4
+	hasRange := caps.SupportsRange != nil && *caps.SupportsRange
+	directPlayPossible := canContainer && canVideo && canAudio && isMP4 && hasRange
 
 	// Direct stream: no re-encode, but may remux/package to HLS
 	// Requires: HLS support + compatible codecs (container may differ)
 	directStreamPossible := caps.SupportsHLS && canVideo && canAudio
 
-	// Transcode needed: any incompatibility that requires re-encode
-	transcodeNeeded := !canVideo || !canAudio || (!canContainer && !directStreamPossible)
+	// Transcode needed: any incompatibility OR protocol gap (neither DP nor DS possible)
+	transcodeNeeded := !canVideo || !canAudio || (!directPlayPossible && !directStreamPossible)
 
 	// Transcode possible: purely policy-gated (no resource modeling in P4-2)
 	transcodePossible := policy.AllowTranscode
@@ -34,10 +40,11 @@ func computePredicates(source Source, caps Capabilities, policy Policy) Predicat
 	}
 }
 
-// contains checks if a slice contains a specific string (case-sensitive).
+// contains checks if a slice contains a specific string (case-insensitive).
 func contains(slice []string, item string) bool {
+	item = strings.ToLower(strings.TrimSpace(item))
 	for _, s := range slice {
-		if s == item {
+		if strings.ToLower(strings.TrimSpace(s)) == item {
 			return true
 		}
 	}

@@ -15,7 +15,7 @@ import (
 // the assertion to be flipped back to "direct_play".
 func TestRegression_DirectPlay_Fallback(t *testing.T) {
 	// Fixture: Standard H264/AAC MP4 that should be DirectPlay but is currently DirectStream
-	input := decision.Input{
+	input := decision.DecisionInput{
 		RequestID: "regression-check",
 		Source: decision.Source{
 			Container:   "mp4",

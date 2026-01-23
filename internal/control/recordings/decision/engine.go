@@ -1,5 +1,7 @@
 package decision
 
+import "sort"
+
 const (
 	// Sentinel value for deny mode (ADR P4-2 requirement).
 	sentinelNone = "none"
@@ -9,62 +11,107 @@ const (
 // Evaluates in order D-1 through D-5; first match wins.
 // evaluateDecision implements the strict logic from ADR-P8.
 // Returns Mode and a list of normative ReasonCodes.
-func evaluateDecision(pred Predicates, caps Capabilities, policy Policy) (Mode, []ReasonCode) {
-	// Step 2: Container Not Supported
+func evaluateDecision(pred Predicates, caps Capabilities, policy Policy) (Mode, []ReasonCode, []string) {
+	var reasons []ReasonCode
+	var rules []string
+
+	// Collect incompatibility reasons (Step 1-3)
+	// These are accumulated to explain why higher modes failed.
 	if !pred.CanContainer {
-		return ModeDeny, []ReasonCode{ReasonContainerNotSupported}
+		reasons = append(reasons, ReasonContainerNotSupported)
+		// Rule-Container evaluated (Hit means exclusion or check)
+		// ADR implies "Rule Hits" is the path taken.
+		// Use standard names: "rule_container", "rule_video", "rule_audio"
+	} else {
+		// Passed
 	}
 
-	// Step 3: Video Codec Not Supported
+	// Simplify: Always record rules evaluated in order?
+	// Or only "Hit" rules that triggered specific logic?
+	// User said: "Ordered list of rules evaluated/hit".
+	// Let's log *evaluations* that had normative impact.
+
+	rules = append(rules, "rule_container")
+	if !pred.CanContainer {
+		return ModeDeny, []ReasonCode{ReasonContainerNotSupported}, rules
+	}
+
+	rules = append(rules, "rule_video")
+	rules = append(rules, "rule_audio")
+
 	if !pred.CanVideo {
-		if policy.AllowTranscode {
-			return ModeTranscode, []ReasonCode{ReasonVideoCodecNotSupported}
-		}
-		// Step 5: Transcode Required (implied by !CanVideo) BUT Policy Denies
-		return ModeDeny, []ReasonCode{ReasonPolicyDeniesTranscode}
+		reasons = append(reasons, ReasonVideoCodecNotSupported)
 	}
-
-	// Step 4: Audio Codec Not Supported
 	if !pred.CanAudio {
+		reasons = append(reasons, ReasonAudioCodecNotSupported)
+	}
+
+	// If any codec mismatch...
+	if !pred.CanVideo || !pred.CanAudio {
+		rules = append(rules, "rule_transcode") // Implicit checkout
+		// Just logic:
+		// Logic is: !Video -> Check Transcode.
 		if policy.AllowTranscode {
-			return ModeTranscode, []ReasonCode{ReasonAudioCodecNotSupported}
+			return ModeTranscode, reasons, append(rules, "rule_transcode_allowed")
 		}
-		// Step 5: Transcode Required (implied by !CanAudio) BUT Policy Denies
-		return ModeDeny, []ReasonCode{ReasonPolicyDeniesTranscode}
+		// If here, either !AllowTranscode OR (logic fallthrough).
+		// Wait, structure in my previous rewrite was:
+		// Collect reasons -> Check DP -> Check DS -> Check Transcode -> Deny.
+		// Trace should reflect *that* structure.
 	}
 
-	// Step 6: MP4 Fast-Path
-	// Requires: Container=mp4/mov AND Codecs Supported AND Range Supported
-	// Note: pred.DirectPlayPossible checks Container && Video && Audio (but not Range/HLS/etc)
+	// Step 4: DirectPlay
+	rules = append(rules, "rule_directplay")
 	if pred.DirectPlayPossible {
-		supportsRange := caps.SupportsRange != nil && *caps.SupportsRange
-		if supportsRange {
-			return ModeDirectPlay, []ReasonCode{ReasonDirectPlayMatch}
-		}
-		// If Range not supported, we fall through to next steps (HLS).
+		return ModeDirectPlay, []ReasonCode{ReasonDirectPlayMatch}, rules
 	}
 
-	// Step 7: HLS Direct
-	// Requires: Codecs Supported AND SupportsHLS
-	if caps.SupportsHLS && pred.CanVideo && pred.CanAudio {
-		// pred.CanVideo/Audio guaranteed true here if we passed Steps 3 & 4.
-		// So we just check HLS support.
-		return ModeDirectStream, []ReasonCode{ReasonDirectStreamMatch}
+	// Step 5: DirectStream
+	rules = append(rules, "rule_directstream")
+	if pred.DirectStreamPossible {
+		return ModeDirectStream, []ReasonCode{ReasonDirectStreamMatch}, rules
 	}
 
-	// Step 8: Fallback
-	// No compatible playback path found (e.g. MP4 blocked by Range, HLS blocked by SupportsHLS=false).
-	return ModeDeny, []ReasonCode{ReasonNoCompatiblePlaybackPath}
+	// Step 6: Transcode
+	rules = append(rules, "rule_transcode")
+	if pred.TranscodeNeeded && pred.TranscodePossible {
+		return ModeTranscode, reasons, rules
+	}
+
+	// Step 7: Deny
+	if pred.TranscodeNeeded && !pred.TranscodePossible {
+		reasons = append(reasons, ReasonPolicyDeniesTranscode)
+		return ModeDeny, reasons, rules
+	}
+
+	// Fallback
+	if len(reasons) == 0 {
+		reasons = append(reasons, ReasonNoCompatiblePlaybackPath)
+	}
+	return ModeDeny, reasons, rules
 }
 
+func reasonsToRuleHits(r string) string { return r } // Dummy helper if needed
+
 // buildDecision constructs the final Decision response.
-func buildDecision(mode Mode, pred Predicates, input Input, reasons []ReasonCode) *Decision {
+func buildDecision(mode Mode, pred Predicates, input DecisionInput, reasons []ReasonCode, rules []string) *Decision {
 	outputs := buildOutputs(mode, input.Source)
 
 	var selURL, selKind string
 	if len(outputs) > 0 {
 		selURL = outputs[0].URL
 		selKind = outputs[0].Kind
+	}
+
+	// Sort reasons for determinism (ADR-009)
+	sort.Sort(ReasonCodeSlice(reasons))
+
+	// Construct Trace details
+	// Phase 1: Simple mapping of Reasons -> Trace.Why
+	// In Phase 2, this will include specific constraints (want/got).
+	why := make([]Reason, len(reasons))
+	for i, r := range reasons {
+		why[i] = Reason{Code: r}
 	}
 
 	decision := &Decision{
@@ -75,6 +122,8 @@ func buildDecision(mode Mode, pred Predicates, input Input, reasons []ReasonCode
 		Reasons:     reasons,
 		Trace: Trace{
 			RequestID: input.RequestID,
+			RuleHits:  rules,
+			Why:       why,
 		},
 		SelectedOutputURL:  selURL,
 		SelectedOutputKind: selKind,

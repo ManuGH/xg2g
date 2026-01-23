@@ -113,7 +113,7 @@ func (s *Server) handlePlaybackInfo(w http.ResponseWriter, r *http.Request, reco
 	allowTranscode := serverCanTranscode && clientAllowsTranscode
 
 	// 3. Construct Decision Input
-	input := decision.Input{
+	input := decision.DecisionInput{
 		RequestID:  log.RequestIDFromContext(r.Context()),
 		APIVersion: apiVersion,
 		Source: decision.Source{

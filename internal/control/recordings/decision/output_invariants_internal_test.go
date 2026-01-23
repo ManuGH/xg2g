@@ -15,7 +15,7 @@ func TestValidateOutputInvariants_Negative(t *testing.T) {
 	tests := []struct {
 		Name        string
 		Dec         *Decision
-		Input       Input
+		Input       DecisionInput
 		ExpectedErr string
 	}{
 		{
@@ -24,7 +24,7 @@ func TestValidateOutputInvariants_Negative(t *testing.T) {
 				Mode:               ModeDirectPlay,
 				SelectedOutputKind: "hls", // LIE: Should be file
 			},
-			Input: Input{
+			Input: DecisionInput{
 				Capabilities: Capabilities{SupportsRange: &trueVal},
 				Source:       Source{Container: "mp4"},
 			},
@@ -36,7 +36,7 @@ func TestValidateOutputInvariants_Negative(t *testing.T) {
 				Mode:               ModeDirectPlay,
 				SelectedOutputKind: "file",
 			},
-			Input: Input{
+			Input: DecisionInput{
 				Capabilities: Capabilities{SupportsRange: nil}, // LIE: Cap missing
 				Source:       Source{Container: "mp4"},
 			},
@@ -48,7 +48,7 @@ func TestValidateOutputInvariants_Negative(t *testing.T) {
 				Mode:               ModeDirectPlay,
 				SelectedOutputKind: "file",
 			},
-			Input: Input{
+			Input: DecisionInput{
 				Capabilities: Capabilities{SupportsRange: &trueVal},
 				Source:       Source{Container: "avi"}, // LIE: Not MP4/MOV
 			},
@@ -60,7 +60,7 @@ func TestValidateOutputInvariants_Negative(t *testing.T) {
 				Mode:               ModeTranscode,
 				SelectedOutputKind: "file", // LIE: Transcode is always HLS
 			},
-			Input:       Input{},
+			Input:       DecisionInput{},
 			ExpectedErr: "invariant #10 violation: transcode requires kind='hls'",
 		},
 		{
@@ -70,7 +70,7 @@ func TestValidateOutputInvariants_Negative(t *testing.T) {
 				SelectedOutputURL:  "http://foo.bar", // LIE: Deny has no URL
 				SelectedOutputKind: "",
 			},
-			Input:       Input{},
+			Input:       DecisionInput{},
 			ExpectedErr: "invariant #11 violation: deny mode must have empty output URL",
 		},
 		{
@@ -80,7 +80,7 @@ func TestValidateOutputInvariants_Negative(t *testing.T) {
 				SelectedOutputURL:  "",
 				SelectedOutputKind: "file", // LIE: Deny has empty kind
 			},
-			Input:       Input{},
+			Input:       DecisionInput{},
 			ExpectedErr: "invariant #11 violation: deny mode must have empty output kind",
 		},
 		{
@@ -91,7 +91,7 @@ func TestValidateOutputInvariants_Negative(t *testing.T) {
 				SelectedOutputKind: "",
 				Outputs:            []Output{{Kind: "file", URL: "foo"}}, // LIE: Output list not empty
 			},
-			Input:       Input{},
+			Input:       DecisionInput{},
 			ExpectedErr: "invariant #11 violation: deny mode must have zero outputs",
 		},
 	}

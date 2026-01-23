@@ -11,7 +11,7 @@ import (
 
 type invariantTest struct {
 	Name         string
-	Input        decision.Input
+	Input        decision.DecisionInput
 	ExpectedMode decision.Mode
 	ExpectedErr  string // Empty if success expected, else substring of invariant error
 }
@@ -38,7 +38,7 @@ func TestDecisionOutputInvariants(t *testing.T) {
 	}
 
 	// 1. Direct Play Eligible (Pass)
-	inputDirectPlay := decision.Input{
+	inputDirectPlay := decision.DecisionInput{
 		Source:       validSource,
 		Capabilities: validCaps,
 		Policy:       decision.Policy{AllowTranscode: true},
@@ -71,7 +71,7 @@ func TestDecisionOutputInvariants(t *testing.T) {
 	// unless we modify the code, because `buildOutputs` also checks mode.
 	// BUT we can verify that Deny result IS empty.
 
-	inputDeny := decision.Input{
+	inputDeny := decision.DecisionInput{
 		Source: decision.Source{
 			Container:  "avi", // Unsupported container
 			VideoCodec: "h264",

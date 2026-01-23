@@ -86,7 +86,7 @@ func TestInvariant7_WebConservativeAC3Transcode(t *testing.T) {
 	assert.NotContains(t, caps.AudioCodecs, "ac3")
 
 	// 2. Setup Decision Input (Source with AC3)
-	input := decision.Input{
+	input := decision.DecisionInput{
 		APIVersion: "v3.1",
 		Source: decision.Source{
 			Container:  "mp4",  // supported
@@ -137,7 +137,7 @@ func TestInvariant8_AllowTranscodeConstraint(t *testing.T) {
 	// allowTranscode := serverCanTranscode && clientAllowsTranscode
 	finalPolicyAllow := serverCaps && (*resolved.AllowTranscode)
 
-	input := decision.Input{
+	input := decision.DecisionInput{
 		APIVersion: "v3.1",
 		Source: decision.Source{
 			Container:  "mp4",
