@@ -3,6 +3,7 @@ package migration
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
@@ -18,13 +19,16 @@ var (
 )
 
 // MigrateSessions moves session data from Bolt to SQLite.
-func MigrateSessions(ctx context.Context, boltDB *bolt.DB, sqliteStore *store.SqliteStore, dryRun bool) (int, error) {
+func MigrateSessions(ctx context.Context, boltDB *bolt.DB, sqliteStore *store.SqliteStore, dryRun bool) (int, string, error) {
 	count := 0
+	var checksumData [][]byte
 
 	err := boltDB.View(func(tx *bolt.Tx) error {
 		// 1. Sessions
 		bSessions := tx.Bucket(sessBucketSessions)
 		if bSessions != nil {
+			// To ensure deterministic checksum, we need stable ordering.
+			// Bolt's ForEach is lexicographical by key, so it's already stable.
 			err := bSessions.ForEach(func(k, v []byte) error {
 				var rec model.SessionRecord
 				if err := json.Unmarshal(v, &rec); err != nil {
@@ -37,6 +41,11 @@ func MigrateSessions(ctx context.Context, boltDB *bolt.DB, sqliteStore *store.Sq
 						return err
 					}
 				}
+
+				// Deep content integrity: checksum the mapped record (canonical JSON)
+				serialized, _ := json.Marshal(mapped)
+				checksumData = append(checksumData, serialized)
+
 				count++
 				return nil
 			})
@@ -64,6 +73,9 @@ func MigrateSessions(ctx context.Context, boltDB *bolt.DB, sqliteStore *store.Sq
 						return err
 					}
 				}
+
+				// Checksum leases too
+				checksumData = append(checksumData, []byte(fmt.Sprintf("%s:%s:%d", key, owner, expMs)))
 				return nil
 			})
 			if err != nil {
@@ -90,6 +102,9 @@ func MigrateSessions(ctx context.Context, boltDB *bolt.DB, sqliteStore *store.Sq
 						return err
 					}
 				}
+
+				// Checksum idempotency
+				checksumData = append(checksumData, []byte(fmt.Sprintf("%s:%s:%d", key, sid, expMs)))
 				return nil
 			})
 			if err != nil {
@@ -100,5 +115,5 @@ func MigrateSessions(ctx context.Context, boltDB *bolt.DB, sqliteStore *store.Sq
 		return nil
 	})
 
-	return count, err
+	return count, CalculateChecksum(checksumData), err
 }

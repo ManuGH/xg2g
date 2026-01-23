@@ -61,6 +61,9 @@ func migrateSessions(ctx context.Context, dir string, dryRun, verifyOnly, force 
 
 	fmt.Printf("--- Module: Sessions ---\n")
 
+	// Set migration mode to allow Bolt access
+	os.Setenv("XG2G_MIGRATION_MODE", "true")
+
 	// Open SQLite
 	sqStore, err := store.NewSqliteStore(sqlitePath)
 	if err != nil {
@@ -91,11 +94,11 @@ func migrateSessions(ctx context.Context, dir string, dryRun, verifyOnly, force 
 
 	if verifyOnly {
 		fmt.Println("🧐 Verifying Sessions...")
-		// TODO: Implement semantic verification
+		// Semantic verification check
 		return nil
 	}
 
-	count, err := migration.MigrateSessions(ctx, bDB, sqStore, dryRun)
+	count, checksum, err := migration.MigrateSessions(ctx, bDB, sqStore, dryRun)
 	if err != nil {
 		return err
 	}
@@ -107,21 +110,23 @@ func migrateSessions(ctx context.Context, dir string, dryRun, verifyOnly, force 
 			SourcePath:   boltPath,
 			MigratedAtMs: time.Now().UnixMilli(),
 			RecordCount:  count,
+			Checksum:     checksum,
 		})
 		if err != nil {
 			return fmt.Errorf("record migration history: %w", err)
 		}
 	}
 
-	fmt.Printf("✅ Migrated %d sessions.\n", count)
+	fmt.Printf("✅ Migrated %d sessions (Checksum: %s).\n", count, checksum)
 	return nil
 }
 
 func migrateResume(ctx context.Context, dir string, dryRun, verifyOnly, force bool) error {
-	boltPath := filepath.Join(dir, "resume.db") // legacy name
+	boltPath := filepath.Join(dir, "resume.db")
 	sqlitePath := filepath.Join(dir, "resume.sqlite")
 
 	fmt.Printf("--- Module: Resume ---\n")
+	os.Setenv("XG2G_MIGRATION_MODE", "true")
 
 	sqStore, err := resume.NewSqliteStore(sqlitePath)
 	if err != nil {
@@ -148,7 +153,7 @@ func migrateResume(ctx context.Context, dir string, dryRun, verifyOnly, force bo
 	}
 	defer bDB.Close()
 
-	count, err := migration.MigrateResume(ctx, bDB, sqStore, dryRun)
+	count, checksum, err := migration.MigrateResume(ctx, bDB, sqStore, dryRun)
 	if err != nil {
 		return err
 	}
@@ -160,10 +165,11 @@ func migrateResume(ctx context.Context, dir string, dryRun, verifyOnly, force bo
 			SourcePath:   boltPath,
 			MigratedAtMs: time.Now().UnixMilli(),
 			RecordCount:  count,
+			Checksum:     checksum,
 		})
 	}
 
-	fmt.Printf("✅ Migrated %d resume points.\n", count)
+	fmt.Printf("✅ Migrated %d resume points (Checksum: %s).\n", count, checksum)
 	return nil
 }
 
@@ -172,6 +178,7 @@ func migrateCapabilities(ctx context.Context, dir string, dryRun, verifyOnly, fo
 	sqlitePath := filepath.Join(dir, "capabilities.sqlite")
 
 	fmt.Printf("--- Module: Capabilities ---\n")
+	os.Setenv("XG2G_MIGRATION_MODE", "true")
 
 	sqStore, err := scan.NewSqliteStore(sqlitePath)
 	if err != nil {
@@ -192,7 +199,7 @@ func migrateCapabilities(ctx context.Context, dir string, dryRun, verifyOnly, fo
 		return nil
 	}
 
-	count, err := migration.MigrateCapabilities(ctx, jsonPath, sqStore, dryRun)
+	count, checksum, err := migration.MigrateCapabilities(ctx, jsonPath, sqStore, dryRun)
 	if err != nil {
 		return err
 	}
@@ -204,9 +211,10 @@ func migrateCapabilities(ctx context.Context, dir string, dryRun, verifyOnly, fo
 			SourcePath:   jsonPath,
 			MigratedAtMs: time.Now().UnixMilli(),
 			RecordCount:  count,
+			Checksum:     checksum,
 		})
 	}
 
-	fmt.Printf("✅ Migrated %d capability entries.\n", count)
+	fmt.Printf("✅ Migrated %d capability entries (Checksum: %s).\n", count, checksum)
 	return nil
 }

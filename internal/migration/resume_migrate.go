@@ -13,8 +13,9 @@ const (
 )
 
 // MigrateResume moves user playback progress from Bolt to SQLite.
-func MigrateResume(ctx context.Context, boltDB *bolt.DB, sqliteStore *resume.SqliteStore, dryRun bool) (int, error) {
+func MigrateResume(ctx context.Context, boltDB *bolt.DB, sqliteStore *resume.SqliteStore, dryRun bool) (int, string, error) {
 	count := 0
+	var checksumData [][]byte
 
 	err := boltDB.View(func(tx *bolt.Tx) error {
 		bkt := tx.Bucket([]byte(resumeBucketName))
@@ -28,28 +29,23 @@ func MigrateResume(ctx context.Context, boltDB *bolt.DB, sqliteStore *resume.Sql
 				return nil
 			}
 
-			// Semantic Mapping: Resume uses time.Time and int seconds.
-			// No unit conversion needed for xg2g 2.0 -> 3.0 resume,
-			// but we use the explicit SqliteStore.Put to ensure SQLite format.
 			if !dryRun {
-				// Parse composite key (principal\x00recording)
-				// For the Put method we need the separate IDs.
-				// However, SqliteStore.Put takes principalID and recordingID.
-				// We'll extract them if we can, or just store them as opaque if the store allows.
-				// In sqlite_store.go: Put(ctx, principalID, recordingID, state)
-
-				// Extract IDs
 				principal, recording := splitResumeKey(string(k))
 				if err := sqliteStore.Put(ctx, principal, recording, &state); err != nil {
 					return err
 				}
 			}
+
+			// Deep content integrity: checksum key + raw value
+			checksumData = append(checksumData, k)
+			checksumData = append(checksumData, v)
+
 			count++
 			return nil
 		})
 	})
 
-	return count, err
+	return count, CalculateChecksum(checksumData), err
 }
 
 func splitResumeKey(key string) (string, string) {

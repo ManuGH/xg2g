@@ -35,11 +35,17 @@ func TestAdversarialGate5_FactoryBypass(t *testing.T) {
 	t.Setenv("XG2G_STORAGE", "sqlite")
 
 	// 3. Attempt to use the factory to open Bolt
-	_, err := store.OpenStateStore("bolt", filepath.Join(tmpDir, "st.db"))
+	boltPath := filepath.Join(tmpDir, "st.db")
+	_, err := store.OpenStateStore("bolt", boltPath)
 	if err == nil {
 		t.Fatal("Adversarial Gate 5 Failed: Factory allowed opening Bolt while SQLite is Truth")
 	}
 	t.Logf("✅ Adversarial Gate 5 Passed: Factory blocked Bolt with error: %v", err)
+
+	// 4. Assert no side effects (Bolt file should not be created by OpenBoltStore)
+	if _, err := os.Stat(boltPath); err == nil {
+		t.Fatal("Adversarial Gate 5 Failed: Bolt file was created despite blockage")
+	}
 }
 
 func TestGate4_SchemaVersion(t *testing.T) {
@@ -96,4 +102,17 @@ func TestGate1_Idempotence(t *testing.T) {
 		t.Fatal("Gate 1 Failed: Module not marked as migrated")
 	}
 	t.Log("✅ Gate 1 Passed: Idempotence marker verified")
+}
+
+func TestChecksum_Deterministic(t *testing.T) {
+	data1 := [][]byte{[]byte("row1"), []byte("row2")}
+	data2 := [][]byte{[]byte("row1"), []byte("row2")}
+
+	c1 := CalculateChecksum(data1)
+	c2 := CalculateChecksum(data2)
+
+	if c1 != c2 {
+		t.Fatal("Checksum not deterministic")
+	}
+	t.Logf("✅ Checksum verified: %s", c1)
 }
