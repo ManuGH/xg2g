@@ -49,10 +49,10 @@ import (
     "database/sql"
     "fmt"
     "os"
-    _ "github.com/mattn/go-sqlite3"
+    _ "modernc.org/sqlite"
 )
 func main() {
-    db, _ := sql.Open("sqlite3", "tmp/verify-storage/capabilities.sqlite")
+    db, _ := sql.Open("sqlite", "tmp/verify-storage/capabilities.sqlite")
     defer db.Close()
     var v int
     db.QueryRow("PRAGMA user_version").Scan(&v)
