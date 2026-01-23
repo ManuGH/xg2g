@@ -107,16 +107,16 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4 # Latest stable
+        uses: actions/checkout@v6 # Latest stable
 
       - name: Setup Go
-        uses: actions/setup-go@v5 # Latest stable
+        uses: actions/setup-go@v6 # Latest stable
         with:
           go-version-file: go.mod
           cache: true
 
       - name: Setup Python
-        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v5
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v5
         with:
           python-version: "3.x"
 
