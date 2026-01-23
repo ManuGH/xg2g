@@ -31,7 +31,7 @@ Open [http://localhost:8080](http://localhost:8080)
 **Next steps:**
 [Configuration](docs/guides/CONFIGURATION.md) •
 [Architecture](docs/arch/ARCHITECTURE.md) •
-[ADRs](docs/adr/)
+[ADRs](docs/ADR/)
 
 ## Features
 
@@ -72,7 +72,7 @@ Tier-1 compliant with Apple HLS Guidelines.
 
 - 📘 [Architecture Overview](docs/arch/ARCHITECTURE.md) - Complete system
   explanation
-- 📋 [ADRs](docs/adr/) - Design decisions and trade-offs
+- 📋 [ADRs](docs/ADR/) - Design decisions and trade-offs
 - 🔍 [Repository Audit](docs/arch/AUDIT_REPO_STRUCTURE.md) - Structure
   findings
 - ⚙️ [Configuration Guide](docs/guides/CONFIGURATION.md)

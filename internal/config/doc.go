@@ -5,5 +5,5 @@
 // Package config provides configuration management for xg2g.
 //
 // For package architecture and file responsibilities, see:
-// docs/adr/008-config-package-structure.md
+// docs/ADR/008-config-package-structure.md
 package config
