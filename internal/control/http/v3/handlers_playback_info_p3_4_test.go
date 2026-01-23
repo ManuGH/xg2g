@@ -53,8 +53,8 @@ func TestGetRecordingPlaybackInfo_P3_4_SegmentTruth(t *testing.T) {
 		Mode             PlaybackInfoMode `json:"mode"`
 		IsSeekable       *bool            `json:"isSeekable"`
 		StartUnix        *int64           `json:"startUnix"`
-		LiveEdgeUnix     *int64           `json:"live_edge_unix"`
-		DvrWindowSeconds *int64           `json:"dvr_window_seconds"`
+		LiveEdgeUnix     *int64           `json:"liveEdgeUnix"`
+		DvrWindowSeconds *int64           `json:"dvrWindowSeconds"`
 		SessionId        string           `json:"sessionId"`
 		RequestId        string           `json:"requestId"`
 	}

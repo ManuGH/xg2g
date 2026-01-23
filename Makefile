@@ -12,7 +12,7 @@
 	quality-gates pre-commit install dev-tools check-tools generate-config verify-config \
         release-check release-build release-tag release-notes \
         dev up down status prod-up prod-down prod-logs check-env \
-        restart prod-restart ps prod-ps ui-build codex certs setup build-ffmpeg
+        restart prod-restart ps prod-ps ui-build codex certs setup build-ffmpeg build-migrate verify-storage-cutover
 
 # ===================================================================================================
 # Configuration and Variables
@@ -31,6 +31,9 @@ TOOLCHAIN_ENV := GOTOOLCHAIN=go1.25.5
 # Build configuration
 BINARY_NAME := xg2g
 BUILD_DIR := bin
+# Artifacts and Temporary Directories
+ARTIFACTS_DIR := artifacts
+TMP_DIR := tmp
 # WebUI Distribution
 WEBUI_DIST_DIR := internal/control/http/dist
 # Reproducible build flags
@@ -317,13 +320,17 @@ build-all: ## Build binaries for all supported platforms
 	@echo "✅ Multi-platform build complete"
 	@ls -la $(BUILD_DIR)/
 
-build-repro: ui-build ## Build deterministic binary (reproducible across identical sources)
-	@echo "Building reproducible xg2g daemon..."
-	@mkdir -p $(BUILD_DIR)
-	@CGO_ENABLED=0 $(TOOLCHAIN_ENV) go build $(BUILD_FLAGS) -mod=vendor -o $(BUILD_DIR)/$(BINARY_NAME) \
-		-ldflags "-s -w -buildid= -X 'main.version=$(VERSION)' -X 'main.commit=$(COMMIT_HASH)' -X 'main.buildDate=$(SOURCE_DATE_EPOCH)'" \
-		./cmd/daemon
 	@echo "✅ Reproducible build complete: $(BUILD_DIR)/$(BINARY_NAME)"
+
+build-migrate: ## Build the storage migration tool
+	@echo "Building xg2g-migrate..."
+	@mkdir -p $(BUILD_DIR)
+	$(TOOLCHAIN_ENV) go build $(BUILD_FLAGS) $(LDFLAGS) -o $(BUILD_DIR)/xg2g-migrate ./cmd/xg2g-migrate
+	@echo "✅ Build complete: $(BUILD_DIR)/xg2g-migrate"
+
+verify-storage-cutover: build-migrate ## [Phase 2.3] Run the 5 mandatory storage cutover gates
+	@echo "--- verify-storage-cutover ---"
+	@./scripts/verify_storage_cutover.sh
 
 clean: ## Remove build artifacts and temporary files
 	@echo "Cleaning build artifacts..."
@@ -396,14 +403,15 @@ test-race: ## Run tests with race detection
 
 test-cover: ## Run tests with coverage reporting
 	@echo "Running tests with coverage..."
-	@$(TOOLCHAIN_ENV) go test ./... -v -race -coverprofile=coverage.out -covermode=atomic
-	@$(TOOLCHAIN_ENV) go tool cover -html=coverage.out -o coverage.html
-	@echo "Coverage report generated: coverage.html"
+	@mkdir -p $(ARTIFACTS_DIR)
+	@$(TOOLCHAIN_ENV) go test ./... -v -race -coverprofile=$(ARTIFACTS_DIR)/coverage.out -covermode=atomic
+	@$(TOOLCHAIN_ENV) go tool cover -html=$(ARTIFACTS_DIR)/coverage.out -o $(ARTIFACTS_DIR)/coverage.html
+	@echo "Coverage report generated: $(ARTIFACTS_DIR)/coverage.html"
 	@echo "Overall coverage:"
-	@go tool cover -func=coverage.out | tail -1
+	@go tool cover -func=$(ARTIFACTS_DIR)/coverage.out | tail -1
 	@echo "Checking coverage thresholds..."
-	@total_coverage=$$(go tool cover -func=coverage.out | tail -1 | awk '{print $$3}' | sed 's/%//'); \
-	epg_coverage=$$(go tool cover -func=coverage.out | grep 'internal/epg' | awk '{sum+=$$3; count++} END {if(count>0) printf "%.1f", sum/count; else print "0"}'); \
+	@total_coverage=$$(go tool cover -func=$(ARTIFACTS_DIR)/coverage.out | tail -1 | awk '{print $$3}' | sed 's/%//'); \
+	epg_coverage=$$(go tool cover -func=$(ARTIFACTS_DIR)/coverage.out | grep 'internal/epg' | awk '{sum+=$$3; count++} END {if(count>0) printf "%.1f", sum/count; else print "0"}'); \
 	echo "Total coverage: $$total_coverage% (threshold: $(COVERAGE_THRESHOLD)%)"; \
 	echo "EPG coverage: $$epg_coverage% (threshold: $(EPG_COVERAGE_THRESHOLD)%)"; \
 	if [ $$(echo "$$total_coverage >= $(COVERAGE_THRESHOLD)" | bc -l) -eq 1 ] && [ $$(echo "$$epg_coverage >= $(EPG_COVERAGE_THRESHOLD)" | bc -l) -eq 1 ]; then \
@@ -444,30 +452,33 @@ test-integration-slow: ## Run slow integration tests
 
 smoke-test: ## Run E2E smoke test (Builds & Runs daemon)
 	@echo "Building binary for smoke test..."
-	@go build -tags=nogpu -o bin/xg2g-smoke ./cmd/daemon
+	@mkdir -p $(BUILD_DIR)
+	@go build -tags=nogpu -o $(BUILD_DIR)/xg2g-smoke ./cmd/daemon
 	@echo "Running E2E smoke test..."
-	@XG2G_SMOKE_BIN=$$(pwd)/bin/xg2g-smoke go test -v -tags=smoke,nogpu -timeout=30s ./test/smoke/...
+	@XG2G_SMOKE_BIN=$$(pwd)/$(BUILD_DIR)/xg2g-smoke go test -v -tags=smoke,nogpu -timeout=30s ./test/smoke/...
 	@echo "✅ Smoke test passed"
 
 coverage: ## Generate and view coverage report locally
 	@echo "Generating coverage report..."
-	@go test -covermode=atomic -coverprofile=coverage.out -coverpkg=./... ./...
-	@go tool cover -html=coverage.out -o coverage.html
-	@echo "Coverage report generated: coverage.html"
-	@COVERAGE=$$(go tool cover -func=coverage.out | grep total | awk '{print $$3}' | sed 's/%//'); \
+	@mkdir -p $(ARTIFACTS_DIR)
+	@go test -covermode=atomic -coverprofile=$(ARTIFACTS_DIR)/coverage.out -coverpkg=./... ./...
+	@go tool cover -html=$(ARTIFACTS_DIR)/coverage.out -o $(ARTIFACTS_DIR)/coverage.html
+	@echo "Coverage report generated: $(ARTIFACTS_DIR)/coverage.html"
+	@COVERAGE=$$(go tool cover -func=$(ARTIFACTS_DIR)/coverage.out | grep total | awk '{print $$3}' | sed 's/%//'); \
 	echo "Overall Coverage: $$COVERAGE%"; \
 	if command -v open >/dev/null 2>&1; then \
-		open coverage.html; \
+		open $(ARTIFACTS_DIR)/coverage.html; \
 	elif command -v xdg-open >/dev/null 2>&1; then \
-		xdg-open coverage.html; \
+		xdg-open $(ARTIFACTS_DIR)/coverage.html; \
 	else \
-		echo "Open coverage.html in your browser to view the report"; \
+		echo "Open $(ARTIFACTS_DIR)/coverage.html in your browser to view the report"; \
 	fi
 
 coverage-check: ## Check if coverage meets threshold
 	@echo "Checking coverage threshold..."
-	@go test -covermode=atomic -coverprofile=coverage.out ./...
-	@COVERAGE=$$(go tool cover -func=coverage.out | grep total | awk '{print $$3}' | sed 's/%//'); \
+	@mkdir -p $(ARTIFACTS_DIR)
+	@go test -covermode=atomic -coverprofile=$(ARTIFACTS_DIR)/coverage.out ./...
+	@COVERAGE=$$(go tool cover -func=$(ARTIFACTS_DIR)/coverage.out | grep total | awk '{print $$3}' | sed 's/%//'); \
 	THRESHOLD=50; \
 	echo "Current coverage: $$COVERAGE%"; \
 	echo "Threshold: $$THRESHOLD%"; \
@@ -546,25 +557,26 @@ docker-clean: ## Remove Docker build cache
 
 sbom: dev-tools ## Generate Software Bill of Materials
 	@echo "Generating SBOM..."
-	@mkdir -p dist
-	@"$(SYFT)" scan dir:. -o spdx-json --source-name xg2g --source-version $(VERSION) > dist/sbom.spdx.json
-	@"$(SYFT)" scan dir:. -o cyclonedx-json --source-name xg2g --source-version $(VERSION) > dist/sbom.cyclonedx.json
-	@"$(SYFT)" scan dir:. -o syft-table --source-name xg2g --source-version $(VERSION) > dist/sbom.txt
+	@mkdir -p $(ARTIFACTS_DIR)
+	@"$(SYFT)" scan dir:. -o spdx-json --source-name xg2g --source-version $(VERSION) > $(ARTIFACTS_DIR)/sbom.spdx.json
+	@"$(SYFT)" scan dir:. -o cyclonedx-json --source-name xg2g --source-version $(VERSION) > $(ARTIFACTS_DIR)/sbom.cyclonedx.json
+	@"$(SYFT)" scan dir:. -o syft-table --source-name xg2g --source-version $(VERSION) > $(ARTIFACTS_DIR)/sbom.txt
 	@echo "Validating SBOM files..."
-	@jq -e '.spdxVersion' dist/sbom.spdx.json > /dev/null || (echo "❌ SPDX SBOM validation failed"; exit 1)
-	@jq -e '.bomFormat == "CycloneDX"' dist/sbom.cyclonedx.json > /dev/null || (echo "❌ CycloneDX SBOM validation failed"; exit 1)
+	@jq -e '.spdxVersion' $(ARTIFACTS_DIR)/sbom.spdx.json > /dev/null || (echo "❌ SPDX SBOM validation failed"; exit 1)
+	@jq -e '.bomFormat == "CycloneDX"' $(ARTIFACTS_DIR)/sbom.cyclonedx.json > /dev/null || (echo "❌ CycloneDX SBOM validation failed"; exit 1)
 	@echo "✅ SBOM generated and validated:"
-	@echo "   - SPDX: dist/sbom.spdx.json"
-	@echo "   - CycloneDX: dist/sbom.cyclonedx.json"
-	@echo "   - Table: dist/sbom.txt"
+	@echo "   - SPDX: $(ARTIFACTS_DIR)/sbom.spdx.json"
+	@echo "   - CycloneDX: $(ARTIFACTS_DIR)/sbom.cyclonedx.json"
+	@echo "   - Table: $(ARTIFACTS_DIR)/sbom.txt"
 
 security: security-vulncheck security-audit sbom ## Run comprehensive security analysis
 	@echo "✅ Comprehensive security analysis completed"
 
 security-scan: dev-tools ## Run container vulnerability scanning
 	@echo "Running container vulnerability scan..."
-	@"$(GRYPE)" dir:. -o table -o json=dist/vulnerabilities.json || echo "⚠️  Grype scan completed with findings"
-	@echo "✅ Vulnerability scan completed: dist/vulnerabilities.json"
+	@mkdir -p $(ARTIFACTS_DIR)
+	@"$(GRYPE)" dir:. -o table -o json=$(ARTIFACTS_DIR)/vulnerabilities.json || echo "⚠️  Grype scan completed with findings"
+	@echo "✅ Vulnerability scan completed: $(ARTIFACTS_DIR)/vulnerabilities.json"
 
 security-audit: ## Run dependency vulnerability audit
 	@echo "Running dependency security audit..."

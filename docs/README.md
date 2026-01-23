@@ -1,28 +1,41 @@
-# xg2g Documentation Index
+# xg2g Documentation Portal
 
-Welcome to the xg2g documentation. All documents here represent the
-**Current Source of Truth**. Historical ballast has been purged.
+Welcome to the normative documentation for xg2g.
+To ensure consistency and "Operator-Grade" quality,
+all documentation follows a strict hierarchy.
 
-## 🏛 Architecture & Design
+## 🏁 Entry Point
 
-- [ADR Index](adr/README.md) - Design decisions and invariants.
-- [Streaming Topology](arch/ENIGMA2_STREAMING_TOPOLOGY.md) - Deep dive into E2 ports and FBC tuners.
-- [CI Contract](CI_CONTRACT.md) - Technical quality gates.
+The single source of truth for the system's design
+and decision logic is the **Spec Index**:
 
-## 🚀 Release Management
-
-- [Backend Changelog](release/v3_changelog.md)
-- [Frontend Changelog](release/frontend_changelog.md)
-- [Release Notes v3.1.0](release/RELEASE_NOTES_v3.1.0.md)
-
-## 🛠 Operations & Guides
-
-- [Configuration](guides/CONFIGURATION.md)
-- [Streaming Standards](guides/STREAMING.md)
-- [Smoke Test Records](ops/SMOKE_TEST_RECORDINGS.md)
-- [Preflight Troubleshooting](ops/PREFLIGHT.md)
-- [Health Endpoints](ops/HEALTH.md)
+👉 **[SPEC_INDEX.md](file:///root/xg2g/docs/decision/SPEC_INDEX.md)**
 
 ---
-> [!IMPORTANT]
-> Documentation is a product part. Git is the archive. If it's not here, it's obsolete.
+
+## 📚 Documentation Structure
+
+### [ADR/](file:///root/xg2g/docs/ADR/)
+
+Architectural Decision Records. These are immutable once accepted
+and define the "why" behind the system's construction.
+
+### [ops/](file:///root/xg2g/docs/ops/)
+
+Operational playbooks, incident management, and deployment invariants.
+
+### [arch/](file:///root/xg2g/docs/arch/)
+
+High-level architectural diagrams and service boundary definitions.
+
+### [archive/](file:///root/xg2g/docs/archive/)
+
+Legacy documentation and superseded ADRs. Reference only.
+
+---
+
+## 🏛️ Governance
+
+All changes to the documentation MUST be reflected in the
+[SPEC_INDEX.md](file:///root/xg2g/docs/decision/SPEC_INDEX.md) and
+adhere to the [PRODUCT_POLICY.md](file:///root/xg2g/docs/PRODUCT_POLICY.md).

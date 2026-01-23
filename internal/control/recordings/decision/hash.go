@@ -5,27 +5,31 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"sort"
-	"strings"
 )
 
 // ComputeHash calculates a stable SHA-256 hash of the DecisionInput.
-// It normalizes inputs (sorts slices, lowercase) to ensure bit-level determinism.
-// This is critical for the Proof System (Prop_Determinism).
+// ADR-009.2: Hash is SEMANTIC - excludes RequestID, normalizes nil/false equivalence.
+// This is critical for caching, dedup, and drift detection.
 func (i DecisionInput) ComputeHash() string {
-	b, _ := i.CanonicalJSON()
+	b, _ := i.CanonicalJSONForHash()
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])
 }
 
-// CanonicalJSON returns the stable, normalized JSON representation of the input.
-// Usage: This MUST be used for failure artifacts to ensure reproducibility.
-func (i DecisionInput) CanonicalJSON() ([]byte, error) {
-	// Create a canonical representation
+// CanonicalJSONForHash returns the semantic canonical JSON (excludes RequestID).
+// Use for hash computation and semantic comparison.
+func (i DecisionInput) CanonicalJSONForHash() ([]byte, error) {
+	// ADR-009.2: Normalize SupportsRange nil -> false
+	supportsRange := false
+	if i.Capabilities.SupportsRange != nil {
+		supportsRange = *i.Capabilities.SupportsRange
+	}
+
 	c := canonicalInput{
 		Source: canonicalSource{
-			Container:   norm(i.Source.Container),
-			VideoCodec:  norm(i.Source.VideoCodec),
-			AudioCodec:  norm(i.Source.AudioCodec),
+			Container:   robustNorm(i.Source.Container),
+			VideoCodec:  robustNorm(i.Source.VideoCodec),
+			AudioCodec:  robustNorm(i.Source.AudioCodec),
 			BitrateKbps: i.Source.BitrateKbps,
 			Width:       i.Source.Width,
 			Height:      i.Source.Height,
@@ -37,24 +41,69 @@ func (i DecisionInput) CanonicalJSON() ([]byte, error) {
 			VideoCodecs:   sortedUnique(i.Capabilities.VideoCodecs),
 			AudioCodecs:   sortedUnique(i.Capabilities.AudioCodecs),
 			SupportsHLS:   i.Capabilities.SupportsHLS,
-			SupportsRange: i.Capabilities.SupportsRange,
-			MaxVideo:      i.Capabilities.MaxVideo, // Struct is already ordered
-			DeviceType:    norm(i.Capabilities.DeviceType),
+			SupportsRange: &supportsRange, // Always *bool, never nil
+			MaxVideo:      i.Capabilities.MaxVideo,
+			DeviceType:    robustNorm(i.Capabilities.DeviceType),
 		},
 		Policy: canonicalPolicy{
 			AllowTranscode: i.Policy.AllowTranscode,
 		},
-		APIVersion: i.APIVersion, // Opaque string, but we hash it
+		APIVersion: robustNorm(i.APIVersion),
+		// RequestID explicitly EXCLUDED (ADR-009.2)
 	}
 
-	// Marshal to JSON (Go's encoder sorts map keys by default, confirming stability)
 	return json.Marshal(c)
 }
 
-// norm normalizes strings (trim space + lower).
-func norm(s string) string {
-	return strings.ToLower(strings.TrimSpace(s))
+// CanonicalJSON returns the full canonical JSON including RequestID.
+// Use for failure artifacts and replay (not for hash).
+func (i DecisionInput) CanonicalJSON() ([]byte, error) {
+	supportsRange := false
+	if i.Capabilities.SupportsRange != nil {
+		supportsRange = *i.Capabilities.SupportsRange
+	}
+
+	c := canonicalInputFull{
+		Source: canonicalSource{
+			Container:   robustNorm(i.Source.Container),
+			VideoCodec:  robustNorm(i.Source.VideoCodec),
+			AudioCodec:  robustNorm(i.Source.AudioCodec),
+			BitrateKbps: i.Source.BitrateKbps,
+			Width:       i.Source.Width,
+			Height:      i.Source.Height,
+			FPS:         i.Source.FPS,
+		},
+		Capabilities: canonicalCapabilities{
+			Version:       i.Capabilities.Version,
+			Containers:    sortedUnique(i.Capabilities.Containers),
+			VideoCodecs:   sortedUnique(i.Capabilities.VideoCodecs),
+			AudioCodecs:   sortedUnique(i.Capabilities.AudioCodecs),
+			SupportsHLS:   i.Capabilities.SupportsHLS,
+			SupportsRange: &supportsRange,
+			MaxVideo:      i.Capabilities.MaxVideo,
+			DeviceType:    robustNorm(i.Capabilities.DeviceType),
+		},
+		Policy: canonicalPolicy{
+			AllowTranscode: i.Policy.AllowTranscode,
+		},
+		APIVersion: robustNorm(i.APIVersion),
+		RequestID:  i.RequestID, // Included for replay artifacts
+	}
+
+	return json.Marshal(c)
 }
+
+// canonicalInputFull includes RequestID (for replay artifacts)
+type canonicalInputFull struct {
+	Source       canonicalSource       `json:"source"`
+	Capabilities canonicalCapabilities `json:"caps"`
+	Policy       canonicalPolicy       `json:"policy"`
+	APIVersion   string                `json:"api"`
+	RequestID    string                `json:"rid,omitempty"`
+}
+
+// robustNormHash is just an alias to remind that normalization is semantic.
+// (Already implemented in normalize.go as robustNorm)
 
 // sortedUnique returns a sorted, deduplicated slice.
 func sortedUnique(in []string) []string {
@@ -67,7 +116,7 @@ func sortedUnique(in []string) []string {
 
 	// Normalize first
 	for i := range out {
-		out[i] = norm(out[i])
+		out[i] = robustNorm(out[i])
 	}
 
 	sort.Strings(out)

@@ -42,6 +42,7 @@ func TestDecisionOutputInvariants(t *testing.T) {
 		Source:       validSource,
 		Capabilities: validCaps,
 		Policy:       decision.Policy{AllowTranscode: true},
+		APIVersion:   "v3",
 	}
 
 	// 2. Direct Play with Range=nil (Invariant #9 Violation)
@@ -81,6 +82,7 @@ func TestDecisionOutputInvariants(t *testing.T) {
 		},
 		Capabilities: validCaps,
 		Policy:       decision.Policy{AllowTranscode: true},
+		APIVersion:   "v3",
 	}
 
 	tests := []invariantTest{
@@ -100,7 +102,7 @@ func TestDecisionOutputInvariants(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.Name, func(t *testing.T) {
-			_, dec, prob := decision.Decide(ctx, tt.Input)
+			_, dec, prob := decision.Decide(ctx, tt.Input, "test")
 
 			if tt.ExpectedErr != "" {
 				// Expecting Invariant Violation (500)

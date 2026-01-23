@@ -59,16 +59,19 @@ func TestDecisionObservabilityContract(t *testing.T) {
 					Container: "mp4", VideoCodec: "h264", AudioCodec: "aac",
 				},
 				Capabilities: decision.Capabilities{
+					Version:       1,
 					Containers:    []string{"mp4"},
 					VideoCodecs:   []string{"h264"},
 					AudioCodecs:   []string{"aac"},
 					SupportsRange: &trueVal,
 				},
+				APIVersion: "v3",
 			},
 			ExpectedAttrs: map[string]string{
 				"xg2g.decision.mode":           "direct_play",
 				"xg2g.decision.protocol":       "mp4",
 				"xg2g.decision.reason_primary": "directplay_match",
+				"xg2g.decision.schema":         "test",
 				// reasons list also checked separately
 			},
 			ExpectedMode: decision.ModeDirectPlay,
@@ -80,14 +83,23 @@ func TestDecisionObservabilityContract(t *testing.T) {
 					Container: "avi", VideoCodec: "h264", AudioCodec: "aac",
 				},
 				Capabilities: decision.Capabilities{
-					Containers: []string{"mp4"},
+					Version:     1,
+					Containers:  []string{"mp4"},
+					VideoCodecs: []string{"h264"},
+					AudioCodecs: []string{"aac"},
+					SupportsHLS: false,
 				},
+				Policy: decision.Policy{
+					AllowTranscode: true,
+				},
+				APIVersion: "v3",
 			},
 			ExpectedAttrs: map[string]string{
 				"xg2g.decision.mode":           "deny",
 				"xg2g.decision.protocol":       "none",
 				"xg2g.decision.reason_primary": "container_not_supported_by_client",
 				"xg2g.decision.reasons":        "container_not_supported_by_client", // Partial check
+				"xg2g.decision.schema":         "test",
 			},
 			ExpectedMode: decision.ModeDeny,
 		},
@@ -95,11 +107,16 @@ func TestDecisionObservabilityContract(t *testing.T) {
 			Name: "Problem (Missing Truth)",
 			Input: decision.DecisionInput{
 				Source: decision.Source{}, // Empty source -> Problem
+				Capabilities: decision.Capabilities{
+					Version: 1,
+				},
+				APIVersion: "v3",
 			},
 			ExpectedAttrs: map[string]string{
 				"xg2g.decision.mode":           "deny", // Hardened Fallback
 				"xg2g.decision.protocol":       "none",
 				"xg2g.decision.reason_primary": "decision_ambiguous",
+				"xg2g.decision.schema":         "test",
 			},
 			IsProblem: true,
 		},
@@ -111,7 +128,7 @@ func TestDecisionObservabilityContract(t *testing.T) {
 
 			// Act
 			ctx := context.Background()
-			_, _, _ = decision.Decide(ctx, tt.Input)
+			_, _, _ = decision.Decide(ctx, tt.Input, "test")
 
 			// Assert SPAN
 			spans := spanExporter.GetSpans()
@@ -159,6 +176,7 @@ func TestDecisionObservabilityContract(t *testing.T) {
 				"xg2g.decision.reasons":        true,
 				"xg2g.decision.reason_primary": true,
 				"xg2g.requestId":               true,
+				"xg2g.decision.schema":         true,
 			}
 
 			for k := range attrMap {

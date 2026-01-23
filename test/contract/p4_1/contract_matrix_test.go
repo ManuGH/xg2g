@@ -148,7 +148,7 @@ func stubDecisionResponse(inputJSON []byte) []byte {
 	}
 
 	// Call decision engine
-	status, dec, prob := decision.Decide(context.Background(), decInput)
+	status, dec, prob := decision.Decide(context.Background(), decInput, "test")
 
 	// Marshal response
 	var response interface{}

@@ -1,26 +1,39 @@
 {
 					"decision": {
+						"constraints": [],
 						"mode": "transcode",
-						"selected": {
-							"container": "mp4",
-							"video_codec": "h264",
-							"audio_codec": "ac3"
-						},
 						"outputs": [
 							{
 								"kind": "hls",
 								"url": "placeholder://transcode.m3u8"
 							}
 						],
-						"constraints": [],
 						"reasons": [
 							"audio_codec_not_supported_by_client"
 						],
-						"trace": {
-							"requestId": "stub-request-id"
+						"selected": {
+							"audio_codec": "ac3",
+							"container": "mp4",
+							"video_codec": "h264"
 						},
+						"selected_output_kind": "hls",
 						"selected_output_url": "placeholder://transcode.m3u8",
-						"selected_output_kind": "hls"
+						"trace": {
+							"inputHash": "29c6be0eff30d880c33a0e423e2c43720047cc263e5f798aeabb4d8a4c336e83",
+							"requestId": "stub-request-id",
+							"ruleHits": [
+								"rule_container",
+								"rule_video",
+								"rule_audio",
+								"rule_transcode",
+								"rule_transcode_allowed"
+							],
+							"why": [
+								{
+									"code": "audio_codec_not_supported_by_client"
+								}
+							]
+						}
 					},
 					"status": 200
 				}

@@ -1,6 +1,9 @@
 package decision
 
-import "fmt"
+import (
+	"fmt"
+	"sort"
+)
 
 // ReasonCode represents a frozen vocabulary of machine-readable reason codes.
 // No ad-hoc strings allowed. Any addition requires ADR + OpenAPI + golden update.
@@ -16,6 +19,7 @@ const (
 	ReasonContainerNotSupported  ReasonCode = "container_not_supported_by_client"
 	ReasonVideoCodecNotSupported ReasonCode = "video_codec_not_supported_by_client"
 	ReasonAudioCodecNotSupported ReasonCode = "audio_codec_not_supported_by_client"
+	ReasonHLSNotSupported        ReasonCode = "hls_not_supported_by_client"
 
 	// Policy Violations (Priority 5)
 	ReasonPolicyDeniesTranscode ReasonCode = "policy_denies_transcode"
@@ -34,6 +38,7 @@ var validReasons = map[ReasonCode]bool{
 	ReasonContainerNotSupported:    true,
 	ReasonVideoCodecNotSupported:   true,
 	ReasonAudioCodecNotSupported:   true,
+	ReasonHLSNotSupported:          true,
 	ReasonPolicyDeniesTranscode:    true,
 	ReasonDirectPlayMatch:          true,
 	ReasonDirectStreamMatch:        true,
@@ -53,6 +58,7 @@ func AllReasonCodes() []ReasonCode {
 		ReasonContainerNotSupported,
 		ReasonVideoCodecNotSupported,
 		ReasonAudioCodecNotSupported,
+		ReasonHLSNotSupported,
 		ReasonPolicyDeniesTranscode,
 		ReasonDirectPlayMatch,
 		ReasonDirectStreamMatch,
@@ -68,6 +74,52 @@ func ValidateReasons(reasons []ReasonCode) error {
 		}
 	}
 	return nil
+}
+
+var reasonPriority = map[ReasonCode]int{
+	ReasonPolicyDeniesTranscode:    0,
+	ReasonContainerNotSupported:    1,
+	ReasonVideoCodecNotSupported:   1,
+	ReasonAudioCodecNotSupported:   1,
+	ReasonHLSNotSupported:          1,
+	ReasonNoCompatiblePlaybackPath: 2,
+	ReasonDirectPlayMatch:          3,
+	ReasonDirectStreamMatch:        3,
+	ReasonAmbiguous:                4,
+}
+
+func reasonRank(r ReasonCode) int {
+	if rank, ok := reasonPriority[r]; ok {
+		return rank
+	}
+	return 100
+}
+
+func sortReasonsByPriority(reasons []ReasonCode) {
+	sort.SliceStable(reasons, func(i, j int) bool {
+		ri := reasonRank(reasons[i])
+		rj := reasonRank(reasons[j])
+		if ri != rj {
+			return ri < rj
+		}
+		return reasons[i] < reasons[j]
+	})
+}
+
+func primaryReason(reasons []ReasonCode) ReasonCode {
+	if len(reasons) == 0 {
+		return ReasonAmbiguous
+	}
+	best := reasons[0]
+	bestRank := reasonRank(best)
+	for _, r := range reasons[1:] {
+		rank := reasonRank(r)
+		if rank < bestRank || (rank == bestRank && r < best) {
+			best = r
+			bestRank = rank
+		}
+	}
+	return best
 }
 
 // ReasonCodeSlice attaches the methods of sort.Interface to []ReasonCode,

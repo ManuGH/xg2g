@@ -28,10 +28,10 @@
     }
   },
   "expected": {
-    "mode": "deny",
-    "protocol": "none",
+    "mode": "direct_stream",
+    "protocol": "hls",
     "reasons": [
-      "container_not_supported_by_client"
+      "directstream_match"
     ]
   }
 }

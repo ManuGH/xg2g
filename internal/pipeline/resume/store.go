@@ -17,19 +17,26 @@ const (
 	dbName     = "resume.db"
 )
 
-// NewStore creates a resume store based on the backend (bolt or memory).
-// If path is empty and backend is bolt, it defaults to memory.
+// NewStore creates a resume store based on the backend (bolt, sqlite, or memory).
 func NewStore(backend, dir string) (Store, error) {
+	if backend == "" {
+		backend = "sqlite" // Default for Phase 2.3
+	}
+
 	switch backend {
 	case "bolt":
 		if dir == "" {
 			return NewMemoryStore(), nil
 		}
 		return NewBoltStore(filepath.Join(dir, dbName))
+	case "sqlite":
+		if dir == "" {
+			return NewMemoryStore(), nil
+		}
+		return NewSqliteStore(filepath.Join(dir, "resume.sqlite"))
 	case "memory":
 		return NewMemoryStore(), nil
 	default:
-		// Default to memory for safety
 		return NewMemoryStore(), nil
 	}
 }
@@ -41,6 +48,11 @@ type BoltStore struct {
 
 // NewBoltStore opens a BoltDB resume store.
 func NewBoltStore(path string) (*BoltStore, error) {
+	// Gate 5: No Dual Durable
+	if os.Getenv("XG2G_STORAGE") == "sqlite" && os.Getenv("XG2G_MIGRATION_MODE") != "true" {
+		return nil, fmt.Errorf("Single Durable Truth violation: Bolt initialization blocked by XG2G_STORAGE=sqlite")
+	}
+
 	// Ensure directory exists
 	if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
 		return nil, fmt.Errorf("create resume store dir: %w", err)

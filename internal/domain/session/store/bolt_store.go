@@ -53,6 +53,11 @@ type idemRecord struct {
 }
 
 func OpenBoltStore(path string) (*BoltStore, error) {
+	// Gate 5: No Dual Durable
+	if os.Getenv("XG2G_STORAGE") == "sqlite" && os.Getenv("XG2G_MIGRATION_MODE") != "true" {
+		return nil, fmt.Errorf("Single Durable Truth violation: Bolt initialization blocked by XG2G_STORAGE=sqlite")
+	}
+
 	if path == "" {
 		return nil, errors.New("bolt store path required")
 	}

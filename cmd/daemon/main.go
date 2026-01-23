@@ -388,7 +388,10 @@ func main() {
 	}
 
 	// Scan Manager & Store
-	v3ScanStore := scan.NewStore(cfg.DataDir)
+	v3ScanStore, err := scan.NewStore(cfg.Store.Backend, cfg.DataDir)
+	if err != nil {
+		logger.Fatal().Err(err).Msg("failed to initialize scan store")
+	}
 	// Playlist filename from runtime or config (default internal/playlist.m3u)
 	playlistPath := filepath.Join(cfg.DataDir, snap.Runtime.PlaylistFilename)
 	v3Scan := scan.NewManager(v3ScanStore, playlistPath)

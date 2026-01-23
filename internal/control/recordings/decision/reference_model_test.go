@@ -47,15 +47,17 @@ func ReferenceDecide(input DecisionInput) *Decision {
 	canAudio := modelContains(input.Capabilities.AudioCodecs, input.Source.AudioCodec)
 
 	// Rule 4: DirectPlay (MP4/MOV/M4V + Ranges)
-	isMp4 := input.Source.Container == "mp4" || input.Source.Container == "mov" || input.Source.Container == "m4v"
+	// FIX R2-001: Normalize container to match modelContains() behavior
+	containerNorm := strings.ToLower(strings.TrimSpace(input.Source.Container))
+	isMp4 := containerNorm == "mp4" || containerNorm == "mov" || containerNorm == "m4v"
 	supportsRange := input.Capabilities.SupportsRange != nil && *input.Capabilities.SupportsRange
 	directPlayPossible := isMp4 && supportsRange && canContainer && canVideo && canAudio
 
 	// Rule 5: Direct Stream (HLS + Codecs)
 	directStreamPossible := input.Capabilities.SupportsHLS && canVideo && canAudio
 
-	// Rule 6: Transcode
-	transcodePossible := input.Policy.AllowTranscode
+	// Rule 6: Transcode (requires HLS support)
+	transcodePossible := input.Policy.AllowTranscode && input.Capabilities.SupportsHLS
 
 	// 3. Evaluation (Precedence Order)
 	var reasons []ReasonCode
@@ -65,9 +67,8 @@ func ReferenceDecide(input DecisionInput) *Decision {
 	rules = append(rules, "rule_container")
 	if !canContainer {
 		reasons = append(reasons, ReasonContainerNotSupported)
-		// If container fails, engine checks rule_container and returns immediately for this rule?
-		// Engine: if !pred.CanContainer { return Deny }
-		return makeRefDecision(ModeDeny, reasons, rules)
+		// ADR-009.1: Container mismatch does NOT block DirectStream/Transcode.
+		// It only blocks DirectPlay (which is checked later via directPlayPossible).
 	}
 
 	// Rule-Video / Rule-Audio
@@ -78,6 +79,9 @@ func ReferenceDecide(input DecisionInput) *Decision {
 	}
 	if !canAudio {
 		reasons = append(reasons, ReasonAudioCodecNotSupported)
+	}
+	if !input.Capabilities.SupportsHLS {
+		reasons = append(reasons, ReasonHLSNotSupported)
 	}
 
 	// Rule-Transcode (Implicit Check if mismatch)
@@ -90,9 +94,10 @@ func ReferenceDecide(input DecisionInput) *Decision {
 			// "return ModeTranscode, reasons, rules"
 			return makeRefDecision(ModeTranscode, reasons, rules)
 		}
-		// If !AllowTranscode, engine continues to next checks?
-		// Engine: "if here, either !AllowTranscode OR (logic fallthrough)."
-		// (fallthrough)
+		if !input.Policy.AllowTranscode {
+			reasons = append(reasons, ReasonPolicyDeniesTranscode)
+		}
+		return makeRefDecision(ModeDeny, reasons, rules)
 	}
 
 	// Rule-DirectPlay
@@ -120,7 +125,9 @@ func ReferenceDecide(input DecisionInput) *Decision {
 
 	// Rule-Deny
 	// Engine: if TranscodeNeeded && !TranscodePossible { append PolicyDenies; return Deny }
-	reasons = append(reasons, ReasonPolicyDeniesTranscode)
+	if !input.Policy.AllowTranscode {
+		reasons = append(reasons, ReasonPolicyDeniesTranscode)
+	}
 	return makeRefDecision(ModeDeny, reasons, rules)
 }
 
@@ -156,7 +163,7 @@ func TestModelConsistency(t *testing.T) {
 		}
 
 		// 1. Engine
-		_, engineDec, _ := Decide(ctx, input)
+		_, engineDec, _ := Decide(ctx, input, "test")
 
 		// 2. Model
 		modelDec := ReferenceDecide(input)

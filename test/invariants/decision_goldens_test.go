@@ -101,12 +101,12 @@ func TestDecisionGoldens(t *testing.T) {
 				Policy: decision.Policy{
 					AllowTranscode: golden.Input.Policy.AllowTranscode,
 				},
-				APIVersion: "p8-frozen", // Virtual API context
+				APIVersion: "v3",
 				RequestID:  "golden-test-request",
 			}
 
 			// 4. Run Decision Engine (Black Box)
-			_, dec, prob := decision.Decide(ctx, input)
+			_, dec, prob := decision.Decide(ctx, input, "test")
 
 			// 5. Assertions
 			if golden.Expected.IsProblem {

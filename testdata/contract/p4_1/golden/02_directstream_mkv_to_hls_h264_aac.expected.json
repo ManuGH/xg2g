@@ -1,21 +1,39 @@
 {
 					"decision": {
-						"mode": "deny",
-						"selected": {
-							"container": "none",
-							"video_codec": "none",
-							"audio_codec": "none"
-						},
-						"outputs": [],
 						"constraints": [],
-						"reasons": [
-							"container_not_supported_by_client"
+						"mode": "direct_stream",
+						"outputs": [
+							{
+								"kind": "hls",
+								"url": "placeholder://direct-stream.m3u8"
+							}
 						],
-						"trace": {
-							"requestId": "stub-request-id"
+						"reasons": [
+							"directstream_match"
+						],
+						"selected": {
+							"audio_codec": "aac",
+							"container": "mkv",
+							"video_codec": "h264"
 						},
-						"selected_output_url": "",
-						"selected_output_kind": ""
+						"selected_output_kind": "hls",
+						"selected_output_url": "placeholder://direct-stream.m3u8",
+						"trace": {
+							"inputHash": "52d3378a2c53ccc098587dad932b1866164272eed7b4028b6462d4db9e9eead8",
+							"requestId": "stub-request-id",
+							"ruleHits": [
+								"rule_container",
+								"rule_video",
+								"rule_audio",
+								"rule_directplay",
+								"rule_directstream"
+							],
+							"why": [
+								{
+									"code": "directstream_match"
+								}
+							]
+						}
 					},
 					"status": 200
 				}

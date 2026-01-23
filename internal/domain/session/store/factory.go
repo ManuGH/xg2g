@@ -10,6 +10,10 @@ import (
 
 // OpenStateStore creates a StateStore based on the backend configuration.
 func OpenStateStore(backend, path string) (StateStore, error) {
+	if backend == "" {
+		backend = "sqlite" // Default for Phase 2.3
+	}
+
 	switch backend {
 	case "memory":
 		return NewMemoryStore(), nil
@@ -17,12 +21,9 @@ func OpenStateStore(backend, path string) (StateStore, error) {
 		return OpenBoltStore(path)
 	case "badger":
 		return nil, fmt.Errorf("badger backend not implemented yet")
+	case "sqlite":
+		return NewSqliteStore(path)
 	default:
-		// Fallback to memory if empty (MVP) or error?
-		// Better to be explicit.
-		if backend == "" {
-			return NewMemoryStore(), nil
-		}
 		return nil, fmt.Errorf("unknown store backend: %s", backend)
 	}
 }

@@ -1,21 +1,41 @@
 {
 					"decision": {
-						"mode": "deny",
-						"selected": {
-							"container": "none",
-							"video_codec": "none",
-							"audio_codec": "none"
-						},
-						"outputs": [],
 						"constraints": [],
+						"mode": "deny",
+						"outputs": [],
 						"reasons": [
-							"policy_denies_transcode"
+							"policy_denies_transcode",
+							"hls_not_supported_by_client",
+							"video_codec_not_supported_by_client"
 						],
-						"trace": {
-							"requestId": "stub-request-id"
+						"selected": {
+							"audio_codec": "none",
+							"container": "none",
+							"video_codec": "none"
 						},
+						"selected_output_kind": "",
 						"selected_output_url": "",
-						"selected_output_kind": ""
+						"trace": {
+							"inputHash": "fc877a9de3a3a1da2e170d2d52dd0480d96566ad0c8562f031a25bc729559fa1",
+							"requestId": "stub-request-id",
+							"ruleHits": [
+								"rule_container",
+								"rule_video",
+								"rule_audio",
+								"rule_transcode"
+							],
+							"why": [
+								{
+									"code": "policy_denies_transcode"
+								},
+								{
+									"code": "hls_not_supported_by_client"
+								},
+								{
+									"code": "video_codec_not_supported_by_client"
+								}
+							]
+						}
 					},
 					"status": 200
 				}

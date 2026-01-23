@@ -33,9 +33,10 @@ func TestRegression_DirectPlay_Fallback(t *testing.T) {
 		Policy: decision.Policy{
 			AllowTranscode: true,
 		},
+		APIVersion: "v3",
 	}
 
-	status, dec, _ := decision.Decide(context.Background(), input)
+	status, dec, _ := decision.Decide(context.Background(), input, "test")
 
 	// ASSERTION OF TRUTH (Phase 5.3):
 	// We accept DirectStream as the safe fallback for now.

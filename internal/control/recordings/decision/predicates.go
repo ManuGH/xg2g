@@ -15,7 +15,9 @@ func computePredicates(source Source, caps Capabilities, policy Policy) Predicat
 	// Direct play: client can play source container+codecs directly via static MP4
 	// Strict: Container MUST be mp4/mov/m4v (Protocol Limitation)
 	// AND Client MUST support Range requests (for seeking/progressive)
-	isMP4 := source.Container == "mp4" || source.Container == "mov" || source.Container == "m4v"
+	// FIX R2-001: Normalize container to match contains() behavior
+	containerNorm := strings.ToLower(strings.TrimSpace(source.Container))
+	isMP4 := containerNorm == "mp4" || containerNorm == "mov" || containerNorm == "m4v"
 	hasRange := caps.SupportsRange != nil && *caps.SupportsRange
 	directPlayPossible := canContainer && canVideo && canAudio && isMP4 && hasRange
 
@@ -26,8 +28,8 @@ func computePredicates(source Source, caps Capabilities, policy Policy) Predicat
 	// Transcode needed: any incompatibility OR protocol gap (neither DP nor DS possible)
 	transcodeNeeded := !canVideo || !canAudio || (!directPlayPossible && !directStreamPossible)
 
-	// Transcode possible: purely policy-gated (no resource modeling in P4-2)
-	transcodePossible := policy.AllowTranscode
+	// Transcode possible: policy-gated + client must accept HLS output
+	transcodePossible := policy.AllowTranscode && caps.SupportsHLS
 
 	return Predicates{
 		CanContainer:         canContainer,

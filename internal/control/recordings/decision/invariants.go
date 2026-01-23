@@ -1,6 +1,9 @@
 package decision
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // ErrInvariantViolation indicates a semantic breach of the decision contract.
 // This is a 500 Internal Error (Stop-the-line), not a 4xx.
@@ -90,8 +93,10 @@ func normalizeDecision(dec *Decision) {
 }
 
 // Helpers for Invariants
+// FIX R2-001: Normalize container to match predicates logic
 func isMP4Container(c string) bool {
-	return c == "mp4" || c == "mov" || c == "m4v"
+	norm := strings.ToLower(strings.TrimSpace(c))
+	return norm == "mp4" || norm == "mov" || norm == "m4v"
 }
 
 // contains is already defined in predicates.go

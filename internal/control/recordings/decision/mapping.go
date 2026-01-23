@@ -33,7 +33,7 @@ func ReasonPrimaryFrom(dec *Decision, prob *Problem) string {
 	}
 
 	if len(dec.Reasons) > 0 {
-		return string(dec.Reasons[0])
+		return string(primaryReason(dec.Reasons))
 	}
 
 	// Fallback logic for success/deny modes if reasons empty

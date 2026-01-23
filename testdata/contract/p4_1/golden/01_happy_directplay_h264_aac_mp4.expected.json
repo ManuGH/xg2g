@@ -1,26 +1,39 @@
 {
 					"decision": {
+						"constraints": [],
 						"mode": "direct_stream",
-						"selected": {
-							"container": "mp4",
-							"video_codec": "h264",
-							"audio_codec": "aac"
-						},
 						"outputs": [
 							{
 								"kind": "hls",
 								"url": "placeholder://direct-stream.m3u8"
 							}
 						],
-						"constraints": [],
 						"reasons": [
 							"directstream_match"
 						],
-						"trace": {
-							"requestId": "stub-request-id"
+						"selected": {
+							"audio_codec": "aac",
+							"container": "mp4",
+							"video_codec": "h264"
 						},
+						"selected_output_kind": "hls",
 						"selected_output_url": "placeholder://direct-stream.m3u8",
-						"selected_output_kind": "hls"
+						"trace": {
+							"inputHash": "f1487c99c3ae639929872323cae7775053be2e9f934130fbef94ba4f5f8947d8",
+							"requestId": "stub-request-id",
+							"ruleHits": [
+								"rule_container",
+								"rule_video",
+								"rule_audio",
+								"rule_directplay",
+								"rule_directstream"
+							],
+							"why": [
+								{
+									"code": "directstream_match"
+								}
+							]
+						}
 					},
 					"status": 200
 				}

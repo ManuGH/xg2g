@@ -35,6 +35,6 @@
 
 ## References
 
-- ADR: `docs/adr/004-opentelemetry.md`
+- ADR: `docs/ADR/004-opentelemetry.md`
 - Middleware stack: `internal/control/middleware/stack.go`
 - Telemetry setup: `internal/telemetry/`

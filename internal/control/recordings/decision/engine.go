@@ -1,6 +1,64 @@
 package decision
 
-import "sort"
+import (
+	"context"
+)
+
+// Decide is the pure decision engine entry point.
+// Returns (httpStatus, decision, problem). Exactly one of decision/problem is non-nil.
+// R5-A: Accept schemaType for server-side telemetry.
+func Decide(ctx context.Context, input DecisionInput, schemaType string) (int, *Decision, *Problem) {
+	// P8-1: Normalization (CTO-Grade Robustness)
+	// (Input is already normalized by DecodeDecisionInput, but we keep it here for defense-in-depth)
+	input = NormalizeInput(input)
+
+	// Start Decision Span (Correction 2: Owned by Decide)
+	ctx, span := StartDecisionSpan(ctx)
+	defer span.End()
+
+	// Phase 1: Input validation (fail-closed)
+	if prob := validateInput(input); prob != nil {
+		// Observability (Phase 6a: Input Failure)
+		EmitDecisionObs(ctx, input, nil, prob, schemaType)
+		return prob.Status, nil, prob
+	}
+
+	// Phase 2: Compute compatibility predicates
+	pred := computePredicates(input.Source, input.Capabilities, input.Policy)
+
+	// Phase 3: Decision table evaluation (first match wins)
+	// (Returns Mode and ReasonCodes per ADR-P8)
+	mode, reasons, rules := evaluateDecision(pred, input.Capabilities, input.Policy)
+
+	// Phase 4: Build decision response
+	decision := buildDecision(mode, pred, input, reasons, rules)
+
+	// Phase 5: Output Invariants Enforcement (P8-3)
+	// Stop-the-line: Normalize and validate to prevent semantic lies.
+	normalizeDecision(decision)
+	if err := validateOutputInvariants(decision, input); err != nil {
+		prob := &Problem{
+			Type:   "recordings/invariant-violation",
+			Title:  "Invariant Violation",
+			Status: 500,
+			Code:   string(ProblemInvariantViolation),
+			Detail: err.Error(),
+		}
+		// Observability (Phase 6b: Invariant Violation)
+		EmitDecisionObs(ctx, input, nil, prob, schemaType)
+		return 500, nil, prob
+	}
+
+	// Phase 6: Observability (Success) (P4 Observability)
+	// Populate Trace with Hash and Rules
+	// (Note: rule/why logic belongs in engine, but Hash is pure input)
+	decision.Trace.InputHash = input.ComputeHash()
+
+	// Add telemetry (R5-A Condition 3: Server-side only)
+	EmitDecisionObs(ctx, input, decision, nil, schemaType)
+
+	return 200, decision, nil
+}
 
 const (
 	// Sentinel value for deny mode (ADR P4-2 requirement).
@@ -15,25 +73,12 @@ func evaluateDecision(pred Predicates, caps Capabilities, policy Policy) (Mode, 
 	var reasons []ReasonCode
 	var rules []string
 
-	// Collect incompatibility reasons (Step 1-3)
-	// These are accumulated to explain why higher modes failed.
-	if !pred.CanContainer {
-		reasons = append(reasons, ReasonContainerNotSupported)
-		// Rule-Container evaluated (Hit means exclusion or check)
-		// ADR implies "Rule Hits" is the path taken.
-		// Use standard names: "rule_container", "rule_video", "rule_audio"
-	} else {
-		// Passed
-	}
-
-	// Simplify: Always record rules evaluated in order?
-	// Or only "Hit" rules that triggered specific logic?
-	// User said: "Ordered list of rules evaluated/hit".
-	// Let's log *evaluations* that had normative impact.
-
+	// ADR-009.1 §3: Container mismatch blocks only DirectPlay, not DirectStream/Transcode.
+	// Record reason for observability, but DO NOT return early.
 	rules = append(rules, "rule_container")
 	if !pred.CanContainer {
-		return ModeDeny, []ReasonCode{ReasonContainerNotSupported}, rules
+		reasons = append(reasons, ReasonContainerNotSupported)
+		// Flow continues to DP/DS/Transcode checks.
 	}
 
 	rules = append(rules, "rule_video")
@@ -45,19 +90,22 @@ func evaluateDecision(pred Predicates, caps Capabilities, policy Policy) (Mode, 
 	if !pred.CanAudio {
 		reasons = append(reasons, ReasonAudioCodecNotSupported)
 	}
+	if !caps.SupportsHLS {
+		reasons = append(reasons, ReasonHLSNotSupported)
+	}
 
 	// If any codec mismatch...
 	if !pred.CanVideo || !pred.CanAudio {
 		rules = append(rules, "rule_transcode") // Implicit checkout
 		// Just logic:
 		// Logic is: !Video -> Check Transcode.
-		if policy.AllowTranscode {
+		if pred.TranscodePossible {
 			return ModeTranscode, reasons, append(rules, "rule_transcode_allowed")
 		}
-		// If here, either !AllowTranscode OR (logic fallthrough).
-		// Wait, structure in my previous rewrite was:
-		// Collect reasons -> Check DP -> Check DS -> Check Transcode -> Deny.
-		// Trace should reflect *that* structure.
+		if !policy.AllowTranscode {
+			reasons = append(reasons, ReasonPolicyDeniesTranscode)
+		}
+		return ModeDeny, reasons, rules
 	}
 
 	// Step 4: DirectPlay
@@ -80,7 +128,9 @@ func evaluateDecision(pred Predicates, caps Capabilities, policy Policy) (Mode, 
 
 	// Step 7: Deny
 	if pred.TranscodeNeeded && !pred.TranscodePossible {
-		reasons = append(reasons, ReasonPolicyDeniesTranscode)
+		if !policy.AllowTranscode {
+			reasons = append(reasons, ReasonPolicyDeniesTranscode)
+		}
 		return ModeDeny, reasons, rules
 	}
 
@@ -103,8 +153,8 @@ func buildDecision(mode Mode, pred Predicates, input DecisionInput, reasons []Re
 		selKind = outputs[0].Kind
 	}
 
-	// Sort reasons for determinism (ADR-009)
-	sort.Sort(ReasonCodeSlice(reasons))
+	// Sort reasons by priority for deterministic ordering.
+	sortReasonsByPriority(reasons)
 
 	// Construct Trace details
 	// Phase 1: Simple mapping of Reasons -> Trace.Why

@@ -231,15 +231,15 @@ func TestGetRecordingPlaybackInfo_Deny_OptionB(t *testing.T) {
 	err := json.Unmarshal(w.Body.Bytes(), &raw)
 	assert.NoError(t, err)
 
-	// 1. Legacy Mode is still direct_mp4
-	assert.Equal(t, "direct_mp4", raw["mode"])
-	// 2. URL is NIL (not present or null in JSON)
-	assert.Nil(t, raw["url"])
+	// 1. Mode uses HLS when DirectStream is selected
+	assert.Equal(t, "hls", raw["mode"])
+	// 2. URL points at HLS playlist
+	assert.Equal(t, "/api/v3/recordings/"+recordingID+"/playlist.m3u8", raw["url"])
 
 	// 3. Decision sub-object is TRUTHFUL
 	dec, ok := raw["decision"].(map[string]interface{})
 	require.True(t, ok)
-	assert.Equal(t, "deny", dec["mode"])
-	assert.Equal(t, "", dec["selectedOutputKind"]) // Invariant #11: Strict Empty
-	assert.Empty(t, dec["outputs"])
+	assert.Equal(t, "direct_stream", dec["mode"])
+	assert.Equal(t, "hls", dec["selectedOutputKind"])
+	assert.NotEmpty(t, dec["outputs"])
 }

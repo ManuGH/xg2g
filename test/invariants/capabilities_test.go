@@ -102,7 +102,7 @@ func TestInvariant7_WebConservativeAC3Transcode(t *testing.T) {
 	}
 
 	// 3. Decide
-	_, dec, prob := decision.Decide(ctx, input)
+	_, dec, prob := decision.Decide(ctx, input, "test")
 	require.Nil(t, prob)
 
 	// 4. Assert Transcode
@@ -153,7 +153,7 @@ func TestInvariant8_AllowTranscodeConstraint(t *testing.T) {
 	}
 
 	// 4. Decide
-	_, dec, prob := decision.Decide(ctx, input)
+	_, dec, prob := decision.Decide(ctx, input, "test")
 	require.Nil(t, prob)
 
 	// 5. Assert Deny (Transcoding needed but disallowed)

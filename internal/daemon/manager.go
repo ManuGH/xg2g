@@ -277,7 +277,11 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 	}
 
 	// 2.7 Initialize Smart Profile Scanner
-	scanStore := scan.NewStore(cfg.Store.Path)
+	scanStore, err := scan.NewStore(cfg.Store.Backend, cfg.Store.Path)
+	if err != nil {
+		m.logger.Error().Err(err).Msg("failed to open scan store")
+		return err
+	}
 	playlistPath := "data/playlist.m3u"
 	if m.deps.ProxyConfig != nil && m.deps.ProxyConfig.PlaylistPath != "" {
 		playlistPath = m.deps.ProxyConfig.PlaylistPath

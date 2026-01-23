@@ -1,20 +1,52 @@
 package decision
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
+
+var allowedAPIVersions = map[string]struct{}{
+	"v3":   {},
+	"v3.0": {},
+	"v3.1": {},
+}
 
 // validateInput performs V-1, V-2, V-3 fail-closed validation.
 // Returns RFC7807 problem or nil if valid.
 func validateInput(input DecisionInput) *Problem {
-	// V-1: Capabilities presence (for API v3.1+)
-	if strings.HasPrefix(input.APIVersion, "v3.1") || strings.HasPrefix(input.APIVersion, "v3.") {
-		if input.Capabilities.Version == 0 && len(input.Capabilities.Containers) == 0 {
-			// Capabilities appear missing/empty
+	// V-0: API Version required
+	apiVersion := robustNorm(input.APIVersion)
+	if isEmpty(apiVersion) {
+		return &Problem{
+			Type:   "recordings/capabilities-invalid",
+			Title:  "API Version Missing",
+			Status: 400,
+			Code:   string(ProblemCapabilitiesInvalid),
+			Detail: "Fail-Closed: 'api' (compact) or 'APIVersion' (legacy) is required",
+		}
+	}
+
+	// V-1: Capabilities presence (for API v3.x family)
+	if _, ok := allowedAPIVersions[apiVersion]; !ok {
+		return &Problem{
+			Type:   "recordings/capabilities-invalid",
+			Title:  "API Version Invalid",
+			Status: 400,
+			Code:   string(ProblemCapabilitiesInvalid),
+			Detail: fmt.Sprintf("Fail-Closed: unsupported api version %q", apiVersion),
+		}
+	}
+
+	// V-1: Capabilities presence (for API v3.x family)
+	if strings.HasPrefix(apiVersion, "v3") {
+		if input.Capabilities.Version == 0 {
+			// Capabilities version missing
 			return &Problem{
 				Type:   "recordings/capabilities-missing",
 				Title:  "Capabilities Missing",
 				Status: 412,
 				Code:   string(ProblemCapabilitiesMissing),
-				Detail: "Client must provide capabilities (capabilities_version required)",
+				Detail: "Client must provide capabilities (capabilities_version required for v3)",
 			}
 		}
 	}

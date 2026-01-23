@@ -4,7 +4,7 @@
 						"title": "Capabilities Missing",
 						"status": 412,
 						"code": "capabilities_missing",
-						"detail": "Client must provide capabilities (capabilities_version required)"
+						"detail": "Client must provide capabilities (capabilities_version required for v3)"
 					},
 					"status": 412
 				}

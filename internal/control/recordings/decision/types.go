@@ -1,7 +1,5 @@
 package decision
 
-import "context"
-
 // Mode represents the playback mode decision.
 type Mode string
 
@@ -13,46 +11,47 @@ const (
 )
 
 // DecisionInput contains all data needed for the decision engine.
+// ADR-009.2: Uses compact tags by default, but supports verbose tags via UnmarshalJSON.
 type DecisionInput struct {
-	Source       Source
-	Capabilities Capabilities
-	Policy       Policy
-	APIVersion   string
-	RequestID    string
+	Source       Source       `json:"source"`
+	Capabilities Capabilities `json:"caps"`
+	Policy       Policy       `json:"policy"`
+	APIVersion   string       `json:"api"`
+	RequestID    string       `json:"rid,omitempty"`
 }
 
 // Source represents media truth (known container, codecs, etc.).
 type Source struct {
-	Container   string  `json:"container"`
-	VideoCodec  string  `json:"videoCodec"`
-	AudioCodec  string  `json:"audioCodec"`
-	BitrateKbps int     `json:"bitrateKbps"`
-	Width       int     `json:"width"`
-	Height      int     `json:"height"`
+	Container   string  `json:"c"`
+	VideoCodec  string  `json:"v"`
+	AudioCodec  string  `json:"a"`
+	BitrateKbps int     `json:"br"`
+	Width       int     `json:"w"`
+	Height      int     `json:"h"`
 	FPS         float64 `json:"fps"`
 }
 
 // MaxVideoDimensions defines video resolution limits.
 type MaxVideoDimensions struct {
-	Width  int `json:"width"`
-	Height int `json:"height"`
+	Width  int `json:"w"`
+	Height int `json:"h"`
 }
 
 // Capabilities represents client capabilities.
 type Capabilities struct {
-	Version       int                 `json:"version"`
-	Containers    []string            `json:"containers"`
-	VideoCodecs   []string            `json:"videoCodecs"`
-	AudioCodecs   []string            `json:"audioCodecs"`
-	SupportsHLS   bool                `json:"supportsHls"`
-	SupportsRange *bool               `json:"supportsRange"`
-	MaxVideo      *MaxVideoDimensions `json:"maxVideo"`
-	DeviceType    string              `json:"deviceType"`
+	Version       int                 `json:"v"`
+	Containers    []string            `json:"c"`
+	VideoCodecs   []string            `json:"vc"`
+	AudioCodecs   []string            `json:"ac"`
+	SupportsHLS   bool                `json:"hls"`
+	SupportsRange *bool               `json:"rng,omitempty"`
+	MaxVideo      *MaxVideoDimensions `json:"mv,omitempty"`
+	DeviceType    string              `json:"dev"`
 }
 
 // Policy represents server policy constraints.
 type Policy struct {
-	AllowTranscode bool `json:"allowTranscode"`
+	AllowTranscode bool `json:"tx"`
 }
 
 // Decision represents a successful playback decision (HTTP 200).
@@ -124,53 +123,4 @@ type Predicates struct {
 	DirectStreamPossible bool
 	TranscodeNeeded      bool
 	TranscodePossible    bool
-}
-
-// Decide is the pure decision engine entry point.
-// Returns (httpStatus, decision, problem). Exactly one of decision/problem is non-nil.
-func Decide(ctx context.Context, input DecisionInput) (int, *Decision, *Problem) {
-	// Start Decision Span (Correction 2: Owned by Decide)
-	ctx, span := StartDecisionSpan(ctx)
-	defer span.End()
-
-	// Phase 1: Input validation (fail-closed)
-	if prob := validateInput(input); prob != nil {
-		// Observability (Phase 6a: Input Failure)
-		EmitDecisionObs(ctx, input, nil, prob)
-		return prob.Status, nil, prob
-	}
-
-	// Phase 2: Compute compatibility predicates
-	pred := computePredicates(input.Source, input.Capabilities, input.Policy)
-
-	// Phase 3: Decision table evaluation (first match wins)
-	// (Returns Mode and ReasonCodes per ADR-P8)
-	mode, reasons, rules := evaluateDecision(pred, input.Capabilities, input.Policy)
-
-	// Phase 4: Build decision response
-	decision := buildDecision(mode, pred, input, reasons, rules)
-
-	// Phase 5: Output Invariants Enforcement (P8-3)
-	// Stop-the-line: Normalize and validate to prevent semantic lies.
-	normalizeDecision(decision)
-	if err := validateOutputInvariants(decision, input); err != nil {
-		prob := &Problem{
-			Type:   "recordings/invariant-violation",
-			Title:  "Invariant Violation",
-			Status: 500,
-			Code:   string(ProblemInvariantViolation),
-			Detail: err.Error(),
-		}
-		// Observability (Phase 6b: Invariant Violation)
-		EmitDecisionObs(ctx, input, nil, prob)
-		return 500, nil, prob
-	}
-
-	// Phase 6: Observability (Success) (P4 Observability)
-	// Populate Trace with Hash and Rules
-	// (Note: rule/why logic belongs in engine, but Hash is pure input)
-	decision.Trace.InputHash = input.ComputeHash()
-	EmitDecisionObs(ctx, input, decision, nil)
-
-	return 200, decision, nil
 }

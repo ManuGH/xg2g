@@ -28,7 +28,7 @@ import (
 
 // GetRecordingPlaybackInfo implements ServerInterface (Legacy GET)
 func (s *Server) GetRecordingPlaybackInfo(w http.ResponseWriter, r *http.Request, recordingId string) {
-	s.handlePlaybackInfo(w, r, recordingId, nil, "legacy")
+	s.handlePlaybackInfo(w, r, recordingId, nil, "v3", "legacy")
 }
 
 // PostRecordingPlaybackInfo implements ServerInterface (v3.1 POST)
@@ -45,10 +45,10 @@ func (s *Server) PostRecordingPlaybackInfo(w http.ResponseWriter, r *http.Reques
 		writeProblem(w, r, http.StatusBadRequest, "recordings/invalid", "Invalid Request", "INVALID_CAPABILITIES", "capabilities_version must be >= 1", nil)
 		return
 	}
-	s.handlePlaybackInfo(w, r, recordingId, &caps, "v3.1")
+	s.handlePlaybackInfo(w, r, recordingId, &caps, "v3.1", "compact")
 }
 
-func (s *Server) handlePlaybackInfo(w http.ResponseWriter, r *http.Request, recordingId string, caps *PlaybackCapabilities, apiVersion string) {
+func (s *Server) handlePlaybackInfo(w http.ResponseWriter, r *http.Request, recordingId string, caps *PlaybackCapabilities, apiVersion string, schemaType string) {
 	// 1. Safety: Service Access
 	s.mu.RLock()
 	svc := s.recordingsService
@@ -131,7 +131,7 @@ func (s *Server) handlePlaybackInfo(w http.ResponseWriter, r *http.Request, reco
 	}
 
 	// 4. Call Decision Engine
-	_, dec, prob := decision.Decide(r.Context(), input)
+	_, dec, prob := decision.Decide(r.Context(), input, schemaType)
 
 	// 5. Handle RFC7807 Problems from Engine
 	if prob != nil {

@@ -26,7 +26,7 @@ type ScanStatus struct {
 }
 
 type Manager struct {
-	store      *Store
+	store      CapabilityStore
 	m3uPath    string
 	isScanning atomic.Bool
 
@@ -36,7 +36,7 @@ type Manager struct {
 	status ScanStatus
 }
 
-func NewManager(store *Store, m3uPath string) *Manager {
+func NewManager(store CapabilityStore, m3uPath string) *Manager {
 	return &Manager{
 		store:      store,
 		m3uPath:    m3uPath,
@@ -143,7 +143,6 @@ func (m *Manager) scanInternal(ctx context.Context) error {
 	scanned := 0
 
 	defer func() {
-		m.store.Save()
 		// Capture completion status if not already failed
 		m.mu.Lock()
 		if m.status.State == "running" {

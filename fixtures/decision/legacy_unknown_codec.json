@@ -31,7 +31,8 @@
     "mode": "deny",
     "protocol": "none",
     "reasons": [
-      "policy_denies_transcode"
+      "policy_denies_transcode",
+      "video_codec_not_supported_by_client"
     ]
   }
 }

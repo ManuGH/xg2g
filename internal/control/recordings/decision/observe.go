@@ -17,6 +17,7 @@ const (
 	AttrReasons       = "xg2g.decision.reasons"
 	AttrReasonPrimary = "xg2g.decision.reason_primary"
 	AttrRequestID     = "xg2g.requestId"
+	AttrSchema        = "xg2g.decision.schema"
 )
 
 // Frozen Whitelist for Enforcement
@@ -26,13 +27,14 @@ var allowedAttributes = map[string]bool{
 	AttrReasons:       true,
 	AttrReasonPrimary: true,
 	AttrRequestID:     true,
+	AttrSchema:        true,
 }
 
 // EmitDecisionObs enforces the Observability Decision Contract.
 // It sets attributes on the current span and records metrics.
 // It performs STRICT Attribute Whitelisting.
 // P8-5 Refactor: Consumes Single Mapping Truth (mapping.go).
-func EmitDecisionObs(ctx context.Context, input DecisionInput, dec *Decision, prob *Problem) {
+func EmitDecisionObs(ctx context.Context, input DecisionInput, dec *Decision, prob *Problem, schemaType string) {
 	span := trace.SpanFromContext(ctx)
 
 	// Runtime Provider Lookup (No Init-Time Rebinding)
@@ -62,6 +64,7 @@ func EmitDecisionObs(ctx context.Context, input DecisionInput, dec *Decision, pr
 			attribute.String("mode", mode),
 			attribute.String("protocol", protocol),
 			attribute.String("reason_primary", reasonPrimary),
+			attribute.String("schema", schemaType),
 		))
 	}
 
@@ -72,6 +75,7 @@ func EmitDecisionObs(ctx context.Context, input DecisionInput, dec *Decision, pr
 		attribute.StringSlice(AttrReasons, reasons),
 		attribute.String(AttrReasonPrimary, reasonPrimary),
 		attribute.String(AttrRequestID, input.RequestID),
+		attribute.String(AttrSchema, schemaType),
 	}
 
 	// STRICT Whitelist Enforcement
