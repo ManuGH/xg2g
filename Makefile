@@ -237,6 +237,7 @@ verify-purity: ## Phase 4.7: Verify UI purity, decision ownership, OpenAPI hygie
 	@./scripts/verify-openapi-hygiene.sh
 	@python3 ./scripts/verify-openapi-no-duplicate-keys.py api/openapi.yaml
 	@./scripts/ci_gate_adr_case.sh
+	@./scripts/ci_gate_storage_purity.sh
 	@./scripts/verify-openapi-lint.sh
 	@./scripts/verify-v3-shadowing.sh
 
