@@ -26,24 +26,22 @@ type CapabilityStore interface {
 	Close() error
 }
 
-// NewStore creates a CapabilityStore based on the backend (sqlite or json).
+// NewStore creates a CapabilityStore based on the backend.
+// Per ADR-021: Only sqlite backend is supported in production.
 func NewStore(backend, storagePath string) (CapabilityStore, error) {
 	if backend == "" {
-		backend = "sqlite" // Default for Phase 2.3
-	}
-
-	// Gate 5: No Dual Durable
-	if backend == "json" && os.Getenv("XG2G_STORAGE") == "sqlite" && os.Getenv("XG2G_MIGRATION_MODE") != "true" {
-		return nil, fmt.Errorf("Single Durable Truth violation: JSON Capability initialization blocked by factory")
+		backend = "sqlite" // Default: SQLite is Single Durable Truth (ADR-020, ADR-021)
 	}
 
 	switch backend {
 	case "sqlite":
 		return NewSqliteStore(filepath.Join(storagePath, "capabilities.sqlite"))
 	case "json":
-		return NewJsonStore(storagePath), nil
+		// ADR-021: JSON file backend is DEPRECATED and removed.
+		// Migration: Use 'xg2g-migrate' to convert json to sqlite.
+		return nil, fmt.Errorf("DEPRECATED: json backend removed (ADR-021). Use 'sqlite' or run 'xg2g-migrate' to convert existing data")
 	default:
-		return NewJsonStore(storagePath), nil
+		return nil, fmt.Errorf("unknown capability store backend: %s (supported: sqlite)", backend)
 	}
 }
 

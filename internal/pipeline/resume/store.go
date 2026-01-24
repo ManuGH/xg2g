@@ -17,23 +17,14 @@ const (
 	dbName     = "resume.db"
 )
 
-// NewStore creates a resume store based on the backend (bolt, sqlite, or memory).
+// NewStore creates a resume store based on the backend.
+// Per ADR-021: Only sqlite and memory backends are supported in production.
 func NewStore(backend, dir string) (Store, error) {
 	if backend == "" {
-		backend = "sqlite" // Default for Phase 2.3
-	}
-
-	// Gate 5: No Dual Durable
-	if backend == "bolt" && os.Getenv("XG2G_STORAGE") == "sqlite" && os.Getenv("XG2G_MIGRATION_MODE") != "true" {
-		return nil, fmt.Errorf("Single Durable Truth violation: Bolt initialization blocked by factory")
+		backend = "sqlite" // Default: SQLite is Single Durable Truth (ADR-020, ADR-021)
 	}
 
 	switch backend {
-	case "bolt":
-		if dir == "" {
-			return NewMemoryStore(), nil
-		}
-		return NewBoltStore(filepath.Join(dir, dbName))
 	case "sqlite":
 		if dir == "" {
 			return NewMemoryStore(), nil
@@ -41,8 +32,12 @@ func NewStore(backend, dir string) (Store, error) {
 		return NewSqliteStore(filepath.Join(dir, "resume.sqlite"))
 	case "memory":
 		return NewMemoryStore(), nil
+	case "bolt", "badger":
+		// ADR-021: BoltDB/BadgerDB are DEPRECATED and removed.
+		// Migration: Use 'xg2g-migrate' to convert bolt/badger to sqlite.
+		return nil, fmt.Errorf("DEPRECATED: %s backend removed (ADR-021). Use 'sqlite' or run 'xg2g-migrate' to convert existing data", backend)
 	default:
-		return NewMemoryStore(), nil
+		return nil, fmt.Errorf("unknown resume store backend: %s (supported: sqlite, memory)", backend)
 	}
 }
 
