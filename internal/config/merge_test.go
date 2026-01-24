@@ -20,7 +20,7 @@ func TestWorkerEnvMergePreservesConfigValues(t *testing.T) {
 	cfg.Engine.IdleTimeout = 45 * time.Second
 	cfg.Engine.TunerSlots = []int{1, 3}
 
-	cfg.Store.Backend = "bolt"
+	cfg.Store.Backend = "sqlite"
 	cfg.Store.Path = "/tmp/xg2g-store"
 
 	cfg.HLS.Root = "/tmp/xg2g-hls"
@@ -55,8 +55,8 @@ func TestWorkerEnvMergePreservesConfigValues(t *testing.T) {
 	if cfg.Engine.Mode != "virtual" {
 		t.Errorf("expected WorkerMode to remain %q, got %q", "virtual", cfg.Engine.Mode)
 	}
-	if cfg.Store.Backend != "bolt" {
-		t.Errorf("expected StoreBackend to remain %q, got %q", "bolt", cfg.Store.Backend)
+	if cfg.Store.Backend != "sqlite" {
+		t.Errorf("expected StoreBackend to remain %q, got %q", "sqlite", cfg.Store.Backend)
 	}
 	if cfg.Store.Path != "/tmp/xg2g-store" {
 		t.Errorf("expected StorePath to remain %q, got %q", "/tmp/xg2g-store", cfg.Store.Path)

@@ -305,7 +305,7 @@ type EngineConfig struct {
 
 // StoreConfig holds the state store settings
 type StoreConfig struct {
-	Backend string `yaml:"backend"` // "memory" or "bolt"
+	Backend string `yaml:"backend"` // "memory" or "sqlite" (per ADR-021: bolt/badger removed)
 	Path    string `yaml:"path"`
 }
 

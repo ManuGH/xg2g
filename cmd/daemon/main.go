@@ -377,11 +377,12 @@ func main() {
 	// Bus (In-Memory for MVP)
 	v3Bus := bus.NewMemoryBus()
 
-	// Session Store (Memory for MVP, TODO: Bolt/SQLite)
+	// Session Store (Memory for MVP, TODO: migrate to SQLite per ADR-021)
 	v3Store := store.NewMemoryStore()
 
-	// Resume Store (Bolt if persisted, Memory otherwise)
-	resumeStore, err := resume.NewStore("bolt", cfg.DataDir)
+	// Resume Store (SQLite if persisted, Memory otherwise)
+	// Per ADR-021: Only sqlite and memory backends supported
+	resumeStore, err := resume.NewStore("sqlite", cfg.DataDir)
 	if err != nil {
 		logger.Warn().Err(err).Msg("failed to initialize resume store, falling back to memory")
 		resumeStore, _ = resume.NewStore("memory", "")
