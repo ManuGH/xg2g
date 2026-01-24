@@ -50,14 +50,20 @@ func TestNormalizeInput_Determinism_INV_NORM_002(t *testing.T) {
 	}
 }
 
-// INV-NORM-003: Unicode normalization produces canonical equivalence.
-// Different unicode representations -> same normalized output.
+// INV-NORM-003: Edge Trimming, Case Folding, and Ordering.
+// Normalization is NON-DESTRUCTIVE: preserves interior content byte-for-byte.
+// Only edges are trimmed, case is folded, slices are ordered/deduped.
 //
-// Tests robustNorm behavior with:
-// - Whitespace variants (space, NBSP, tabs, newlines)
-// - Zero-width characters (ZWSP, ZWNJ, ZWJ, BOM)
-// - Case folding (ToLower)
-func TestNormalizeInput_UnicodeCanonical_INV_NORM_003(t *testing.T) {
+// DOES NOT enforce NFC/NFD canonical equivalence - literal bytes preserved.
+//
+// Tests robustNorm behavior:
+// - Edge trimming: Whitespace variants (space, NBSP, tabs, newlines)
+// - Edge trimming: Zero-width characters (ZWSP, ZWNJ, ZWJ, BOM)
+// - Case folding: ToLower applied globally
+// - Slice ordering: Sort + dedupe applied
+//
+// Interior characters (including unicode) are PRESERVED as-is.
+func TestNormalizeInput_EdgeTrimCaseFold_INV_NORM_003(t *testing.T) {
 	t.Parallel()
 
 	type pair struct {
@@ -222,7 +228,7 @@ func TestNormalizeInput_UnicodeCanonical_INV_NORM_003(t *testing.T) {
 			nb := NormalizeInput(tc.b)
 
 			if !reflect.DeepEqual(na, nb) {
-				t.Fatalf("unicode canonical equivalence violated\nA=%+v\nB=%+v\nnorm(A)=%+v\nnorm(B)=%+v",
+				t.Fatalf("normalization equivalence violated (edge trim/case/ordering)\nA=%+v\nB=%+v\nnorm(A)=%+v\nnorm(B)=%+v",
 					tc.a, tc.b, na, nb)
 			}
 		})
