@@ -6,31 +6,25 @@ package store
 
 import (
 	"fmt"
-	"os"
 )
 
 // OpenStateStore creates a StateStore based on the backend configuration.
+// Per ADR-021: Only sqlite and memory backends are supported in production.
 func OpenStateStore(backend, path string) (StateStore, error) {
 	if backend == "" {
-		backend = "sqlite" // Default for Phase 2.3
-	}
-
-	// Gate 5: No Dual Durable
-	// If truth is SQLite, explicitly block legacy Bolt initialization
-	if backend == "bolt" && os.Getenv("XG2G_STORAGE") == "sqlite" && os.Getenv("XG2G_MIGRATION_MODE") != "true" {
-		return nil, fmt.Errorf("Single Durable Truth violation: Bolt initialization blocked by factory")
+		backend = "sqlite" // Default: SQLite is Single Durable Truth (ADR-020, ADR-021)
 	}
 
 	switch backend {
-	case "memory":
-		return NewMemoryStore(), nil
-	case "bolt":
-		return OpenBoltStore(path)
-	case "badger":
-		return nil, fmt.Errorf("badger backend not implemented yet")
 	case "sqlite":
 		return NewSqliteStore(path)
+	case "memory":
+		return NewMemoryStore(), nil // Ephemeral only (testing/dev)
+	case "bolt", "badger":
+		// ADR-021: BoltDB/BadgerDB are DEPRECATED and removed.
+		// Migration: Use 'xg2g-migrate' to convert bolt/badger to sqlite.
+		return nil, fmt.Errorf("DEPRECATED: %s backend removed (ADR-021). Use 'sqlite' or run 'xg2g-migrate' to convert existing data", backend)
 	default:
-		return nil, fmt.Errorf("unknown store backend: %s", backend)
+		return nil, fmt.Errorf("unknown store backend: %s (supported: sqlite, memory)", backend)
 	}
 }
