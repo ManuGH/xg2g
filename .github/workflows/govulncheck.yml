@@ -22,10 +22,10 @@ jobs:
       security-events: write # for SARIF upload
     steps:
       - name: Checkout
-        uses: actions/checkout@v6 # Latest stable
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # Latest stable
 
       - name: Setup Go
-        uses: actions/setup-go@v6 # Latest stable
+        uses: actions/setup-go@3041dee5d64473ef0bad009d902ffdbccf9d1a33 # Latest stable
         with:
           go-version-file: "go.mod"
           check-latest: true
@@ -69,7 +69,7 @@ jobs:
 
       - name: Upload SARIF to code scanning
         if: always()
-        uses: github/codeql-action/upload-sarif@v4.31.10
+        uses: github/codeql-action/upload-sarif@b2a30dc39999a382061266ed139b439e6a2b8e0e
         with:
           sarif_file: govulncheck.sarif
           category: govulncheck

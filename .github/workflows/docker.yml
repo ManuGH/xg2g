@@ -28,9 +28,9 @@ jobs:
       packages: write # for pushing to GHCR
       id-token: write # for cosign keyless signing
     steps:
-      - uses: actions/checkout@v6  # Latest stable
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # Latest stable
 
-      - uses: actions/setup-go@v6  # Latest stable
+      - uses: actions/setup-go@3041dee5d64473ef0bad009d902ffdbccf9d1a33  # Latest stable
         with:
           go-version-file: go.mod
           check-latest: true

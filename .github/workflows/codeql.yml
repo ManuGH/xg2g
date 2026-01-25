@@ -28,18 +28,18 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       # Setup Go
       - name: Setup Go
-        uses: actions/setup-go@v6 # v6
+        uses: actions/setup-go@3041dee5d64473ef0bad009d902ffdbccf9d1a33 # v6
         with:
           go-version-file: go.mod
           cache: true
 
       # Initialize CodeQL
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4.31.10
+        uses: github/codeql-action/@b2a30dc39999a382061266ed139b439e6a2b8e0e
         with:
           languages: ${{ matrix.language }}
           # If you wish to specify custom queries, you can do so here or in a config file.
@@ -56,6 +56,6 @@ jobs:
           go build -tags=nogpu ./...
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v4.31.10
+        uses: github/codeql-action/@b2a30dc39999a382061266ed139b439e6a2b8e0e
         with:
           category: "/language:${{ matrix.language }}"

@@ -37,7 +37,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Token URL gate
         run: |
@@ -221,7 +221,7 @@ jobs:
           echo "   → Deterministic generation verified"
 
       - name: Setup Node for OpenAPI lint
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@1d42962bbd92a94ed090950669d6739985926c0d
         with:
           node-version: "lts/*"
 
@@ -351,9 +351,9 @@ jobs:
   #   if: ${{ github.event_name == 'workflow_dispatch' }}
   #   steps:
   #     - name: Checkout
-  #       uses: actions/checkout@v6
+  #       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
   #     - name: Setup Go
-  #       uses: actions/setup-go@v6 # v5
+  #       uses: actions/setup-go@3041dee5d64473ef0bad009d902ffdbccf9d1a33 # v5
   #       with:
   #         go-version-file: go.mod
   #         cache: true
@@ -423,7 +423,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Setup Go
         uses: actions/setup-go@3041dee5d64473ef0bad009d902ffdbccf9d1a33 # v6

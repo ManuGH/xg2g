@@ -21,10 +21,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6 # Latest stable
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # Latest stable
 
       - name: Set up Go
-        uses: actions/setup-go@v6 # Latest stable
+        uses: actions/setup-go@3041dee5d64473ef0bad009d902ffdbccf9d1a33 # Latest stable
         with:
           go-version-file: go.mod
 
@@ -38,6 +38,6 @@ jobs:
           args: -fmt=sarif -out=gosec.sarif -severity=medium -tags=nogpu -exclude-generated -exclude-dir=test -exclude-dir=internal/test -exclude-dir=internal/api -exclude-dir=.github -exclude-dir=vendor ./...
 
       - name: Upload SARIF to GitHub Security
-        uses: github/codeql-action/upload-sarif@v4.31.10
+        uses: github/codeql-action/upload-sarif@b2a30dc39999a382061266ed139b439e6a2b8e0e
         with:
           sarif_file: gosec.sarif

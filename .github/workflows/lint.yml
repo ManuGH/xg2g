@@ -10,7 +10,7 @@ jobs:
   check-env-access:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Enforce Config Determinism (Env Reads)
         shell: bash
@@ -40,7 +40,7 @@ jobs:
   check-deprecations:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Check Deprecation Registry
         run: python3 scripts/check_deprecations.py
@@ -51,8 +51,8 @@ jobs:
       run:
         working-directory: webui
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@1d42962bbd92a94ed090950669d6739985926c0d
         with:
           node-version: 20
           cache: "npm"

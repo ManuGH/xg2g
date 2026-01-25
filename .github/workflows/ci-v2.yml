@@ -23,10 +23,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Setup Go
-        uses: actions/setup-go@v6 # v5
+        uses: actions/setup-go@3041dee5d64473ef0bad009d902ffdbccf9d1a33 # v5
         with:
           go-version-file: go.mod
           cache: true
@@ -38,7 +38,7 @@ jobs:
           git diff --exit-code -- go.mod go.sum
 
       - name: Setup Node for WebUI
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@1d42962bbd92a94ed090950669d6739985926c0d
         with:
           node-version: "20"
           cache: "npm"
@@ -91,7 +91,7 @@ jobs:
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload coverage
-        uses: actions/upload-artifact@v6 # v5
+        uses: actions/upload-artifact@4cea002c0b490497914856006bbd902ffdbccf9d1a33 # v5
         with:
           name: coverage-unit-tests
           path: coverage.out
@@ -107,10 +107,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6 # Latest stable
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # Latest stable
 
       - name: Setup Go
-        uses: actions/setup-go@v6 # Latest stable
+        uses: actions/setup-go@3041dee5d64473ef0bad009d902ffdbccf9d1a33 # Latest stable
         with:
           go-version-file: go.mod
           cache: true
@@ -156,16 +156,16 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Setup Go
-        uses: actions/setup-go@v6 # v5
+        uses: actions/setup-go@3041dee5d64473ef0bad009d902ffdbccf9d1a33 # v5
         with:
           go-version-file: go.mod
           cache: true
 
       - name: Setup Node for WebUI
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@1d42962bbd92a94ed090950669d6739985926c0d
         with:
           node-version: "20"
           cache: "npm"
@@ -190,7 +190,7 @@ jobs:
         run: golangci-lint run --timeout=5m --verbose ./...
 
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@1d42962bbd92a94ed090950669d6739985926c0d
         with:
           node-version: "lts/*"
 
@@ -207,7 +207,7 @@ jobs:
 
       - name: Upload OpenAPI lint report
         if: always()
-        uses: actions/upload-artifact@v6 # v5
+        uses: actions/upload-artifact@4cea002c0b490497914856006bbd902ffdbccf9d1a33 # v5
         with:
           name: openapi-lint
           path: /tmp/openapi-lint.txt
@@ -224,16 +224,16 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Setup Go
-        uses: actions/setup-go@v6 # v5
+        uses: actions/setup-go@3041dee5d64473ef0bad009d902ffdbccf9d1a33 # v5
         with:
           go-version-file: go.mod
           cache: true
 
       - name: Setup Node for WebUI
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@1d42962bbd92a94ed090950669d6739985926c0d
         with:
           node-version: "20"
           cache: "npm"
@@ -286,7 +286,7 @@ jobs:
       TZ: UTC
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           fetch-depth: 0
 
@@ -336,7 +336,7 @@ jobs:
           )
 
       - name: Upload reproducible binary
-        uses: actions/upload-artifact@v6 # v5
+        uses: actions/upload-artifact@4cea002c0b490497914856006bbd902ffdbccf9d1a33 # v5
         with:
           name: reproducible-daemon
           path: bin/xg2g
