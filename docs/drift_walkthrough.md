@@ -110,3 +110,42 @@ After reload, memory becomes "debug". File is "debug". Hashes match. Drift resol
 xg2g status
 # Output: ✅ System Healthy ...
 ```
+
+## Homelab Configuration (Optional)
+
+In homelab environments, you might want to disable verification or change the interval to reduce I/O or noise.
+
+### 1. Disable Verification
+
+To turn off the background worker completely:
+
+```bash
+export XG2G_VERIFY_ENABLED=false
+# Restart daemon
+```
+
+### 2. Change Interval (Cadence)
+
+To run verification less frequently (e.g., every 10 minutes):
+
+```bash
+export XG2G_VERIFY_INTERVAL=10m
+# Restart daemon
+```
+
+### 3. Expected Effects
+
+* `/api/v3/status`: The drift block remains stable. If the daemon was previously running, it shows the last known state from `drift_state.json`. If verification is disabled, this file is not updated.
+- **Logs**: `drift_detected` / `drift_resolved` events are edge-triggered. If the worker is stopped, no new logs will appear.
+- **Metrics**: `xg2g_drift_detected` gauge remains at its last set value (or 0 if restarted with verification disabled).
+
+### 4. Systemd Example
+
+For persistent configuration in `/etc/default/xg2g` or a drop-in:
+
+```ini
+# /etc/systemd/system/xg2g.service.d/override.conf
+[Service]
+Environment="XG2G_VERIFY_ENABLED=true"
+Environment="XG2G_VERIFY_INTERVAL=5m"
+```

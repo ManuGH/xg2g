@@ -452,12 +452,37 @@ func main() {
 	runtimeCheck := checks.NewRuntimeChecker(checks.NewRealRunner(), runtime.Version(), "7.1.3")
 
 	// 3. Worker
-	// 60s cadence
-	verifier := verification.NewWorker(verifyStore, 60*time.Second, configCheck, runtimeCheck)
-	go verifier.Start(ctx)
+	// 60s cadence (or configured)
+	if !cfg.Verification.Enabled {
+		logger.Info().Msg("Verification worker disabled by config (XG2G_VERIFY_ENABLED=false)")
+		verification.InitMetrics() // Ensure gauges serve 0 (Clean) instead of missing
+	} else {
+		verifier := verification.NewWorker(verifyStore, cfg.Verification.Interval, configCheck, runtimeCheck)
+		go verifier.Start(ctx)
+		s.SetVerificationStore(verifyStore) // Only expose status if we plan to write to it?
+		// Actually, even if worker is off, reading from store (previous state) might be useful?
+		// But if disabled, we probably shouldn't show stale state as "current".
+		// User said: "Backout: Stop starting verification.Worker... /status will remain stable".
+		// The store itself is just a file reader. Injecting it is safe.
+		// So we inject it regardless? No, if we want to "disable drift detection", maybe we shouldn't show the drift block.
+		// However, `s.SetVerificationStore` allows the API to read.
+		// If the file exists from a previous run, it will show drift.
+		// If the user effectively wants to turn it off, they might delete the file or ignore it.
+		// But keeping it consistent: The API reads the file. The worker updates the file.
+		// If worker is stopped, file is stale.
+		// Current API implementation shows `LastCheck`. If it's old, it's old.
+		// But okay, let's keep injection inside the 'else' block?
+		// If I inject it, `/status` works.
+		// If I don't inject it, `Drift` field is nil (clean).
+		// User said: "/status will remain stable (no drift field) if worker is disabled." -> This implies I should NOT inject the store if disabled.
+	}
 
-	// 4. Inject into API
-	s.SetVerificationStore(verifyStore)
+	// Inject store ONLY if enabled (or always? see user note).
+	// User said: "Stop starting verification.Worker ... /status will remain stable ... with no drift field".
+	// This implies `s.Drift` will be nil. Use `s.SetVerificationStore` only if enabled.
+	if cfg.Verification.Enabled {
+		s.SetVerificationStore(verifyStore)
+	}
 
 	// Initial refresh (Async "Safety Net" for fast startup)
 	// We run this in the background so the HTTP server binds ports immediately.
