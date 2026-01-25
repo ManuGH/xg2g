@@ -105,7 +105,7 @@ LABEL org.opencontainers.image.title="xg2g" \
     org.opencontainers.image.description="Enterprise-grade Enigma2 to HDHomeRun proxy and DVR" \
     org.opencontainers.image.licenses="PolyForm-Noncommercial-1.0.0" \
     org.opencontainers.image.vendor="ManuGH" \
-    org.opencontainers.image.version="3.1.5" \
+    org.opencontainers.image.version="3.1.7" \
     org.opencontainers.image.source="https://github.com/ManuGH/xg2g"
 
 # Entrypoint configuration
