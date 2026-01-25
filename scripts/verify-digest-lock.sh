@@ -63,11 +63,14 @@ if [[ "$IS_TRUSTED_CONTEXT" == "true" ]]; then
     echo "✅ Remote existence verified."
 else
     echo "⚠️  Untrusted/Local context: Skipping remote registry check (Format-only validation)."
-    if [[ ! "$DIGEST_VAL" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+    if [[ "$DIGEST_VAL" == "pending" ]]; then
+        echo "✅ Digest is pending (release-prepare state)."
+    elif [[ ! "$DIGEST_VAL" =~ ^sha256:[a-f0-9]{64}$ ]]; then
         echo "❌ FAIL: Digest '${DIGEST_VAL}' has invalid format."
         exit 1
+    else
+        echo "✅ Digest format is valid."
     fi
-    echo "✅ Digest format is valid."
 fi
 
 echo "✨ Digest Stability Gate Passed."

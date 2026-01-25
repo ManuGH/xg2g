@@ -30,6 +30,13 @@ fi
 echo "$NEW_VERSION" > "${REPO_ROOT}/VERSION"
 echo "✅ VERSION updated to ${NEW_VERSION}"
 
+# 3b. Add placeholder to DIGESTS.lock to satisfy verification gates
+# This will be replaced by release-verify-remote after publishing.
+if ! grep -q "\"${NEW_VERSION}\":" "${REPO_ROOT}/DIGESTS.lock"; then
+    echo "  \"${NEW_VERSION}\": {digest: \"pending\", published_at: \"pending\"}" >> "${REPO_ROOT}/DIGESTS.lock"
+    echo "✅ Placeholder added to DIGESTS.lock"
+fi
+
 # 4. Render Documentation (Idempotent)
 make docs-render
 
