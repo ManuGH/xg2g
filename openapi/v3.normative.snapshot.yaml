@@ -165,6 +165,26 @@ components:
           type: string
           description: Playback URL for the HLS playlist.
           format: uri
+        # ADR-009: Session Lease Semantics
+        lease_expires_at:
+          type: string
+          format: date-time
+          description: ISO 8601 timestamp when session lease expires (backend-controlled)
+        heartbeat_interval:
+          type: integer
+          description: Recommended heartbeat interval in seconds
+        last_heartbeat:
+          type: string
+          format: date-time
+          description: Last heartbeat timestamp (optional)
+        stop_reason:
+          type: string
+          description: Reason for session termination
+          enum:
+            - USER_STOPPED
+            - LEASE_EXPIRED
+            - FAILED
+            - CLEANUP
 
     Service:
       type: object
@@ -2708,6 +2728,52 @@ paths:
                 $ref: "#/components/schemas/APIError"
         "404":
           description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+
+  /sessions/{sessionID}/heartbeat:
+    post:
+      summary: Extend session lease
+      description: |
+        Renews session lease if not expired. Best-effort operation controlled by backend.
+        Idempotent within heartbeat_interval.
+      operationId: sessionHeartbeat
+      tags:
+        - v3
+      security:
+        - BearerAuth: [v3:write]
+      parameters:
+        - name: sessionID
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Session identifier
+      responses:
+        "200":
+          description: Lease extended successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_id:
+                    type: string
+                  lease_expires_at:
+                    type: string
+                    format: date-time
+                  acknowledged:
+                    type: boolean
+        "404":
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+        "410":
+          description: Session lease already expired
           content:
             application/json:
               schema:
