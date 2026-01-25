@@ -30,12 +30,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Create Dummy WebUI Assets (Strategy A)
-        run: |
-          mkdir -p internal/control/http/dist
-          touch internal/control/http/dist/index.html
-          echo "Dummy Asset for CI" > internal/control/http/dist/index.html
-
       # Setup Go
       - name: Setup Go
         uses: actions/setup-go@v6 # v6

@@ -52,6 +52,7 @@ webui/dist/
 webui/node_modules/
 internal/control/http/ui/
 internal/control/http/dist/
+!internal/control/http/dist/.gitkeep
 dist/
 
 # ==============================================================================

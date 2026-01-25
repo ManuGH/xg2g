@@ -28,24 +28,6 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Set up Node.js
-        uses: actions/setup-node@65d868f8d4d85d7d4abb7de0875cde3fcc8798f5 # v4
-        with:
-          node-version: 20
-          cache: "npm"
-          cache-dependency-path: webui/package-lock.json
-
-      - name: Build WebUI
-        working-directory: webui
-        run: |
-          npm ci
-          npm run build
-
-      - name: Copy WebUI assets
-        run: |
-          mkdir -p internal/control/http/dist
-          cp -r webui/dist/* internal/control/http/dist/
-
       - name: Run gosec security scan
         uses: securego/gosec@424fc4cd9c82ea0fd6bee9cd49c2db2c3cc0c93f # v2.22.11
         with:
