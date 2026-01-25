@@ -127,6 +127,16 @@ func main() {
 			os.Exit(runHealthcheckCLI(os.Args[2:]))
 		case "diagnostic":
 			os.Exit(runDiagnosticCLI(os.Args[2:]))
+		case "status":
+			if err := statusCmd.Execute(); err != nil {
+				os.Exit(1)
+			}
+			os.Exit(0)
+		case "report":
+			if err := reportCmd.Execute(); err != nil {
+				os.Exit(1)
+			}
+			os.Exit(0)
 		}
 	}
 

@@ -28,6 +28,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
+	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 	"golang.org/x/time/rate"
@@ -318,6 +319,15 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 			IdleTimeout:      cfg.Engine.IdleTimeout,
 			Interval:         1 * time.Minute, // Explicit default
 			SessionRetention: 24 * time.Hour,  // Explicit default
+		},
+		OutboundPolicy: platformnet.OutboundPolicy{
+			Enabled: cfg.Network.Outbound.Enabled,
+			Allow: platformnet.OutboundAllowlist{
+				Hosts:   append([]string(nil), cfg.Network.Outbound.Allow.Hosts...),
+				CIDRs:   append([]string(nil), cfg.Network.Outbound.Allow.CIDRs...),
+				Ports:   append([]int(nil), cfg.Network.Outbound.Allow.Ports...),
+				Schemes: append([]string(nil), cfg.Network.Outbound.Allow.Schemes...),
+			},
 		},
 	}
 

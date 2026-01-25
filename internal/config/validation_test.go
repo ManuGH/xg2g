@@ -177,3 +177,26 @@ func TestValidate_RateLimitWhitelist_Integration(t *testing.T) {
 		})
 	}
 }
+
+func TestValidate_OutboundPolicy(t *testing.T) {
+	t.Run("enabled without allowlist", func(t *testing.T) {
+		cfg := baseValidationConfig()
+		cfg.Network.Outbound.Enabled = true
+		err := Validate(cfg)
+		if err == nil {
+			t.Fatal("expected error for missing outbound allowlist")
+		}
+	})
+
+	t.Run("enabled with allowlist", func(t *testing.T) {
+		cfg := baseValidationConfig()
+		cfg.Network.Outbound.Enabled = true
+		cfg.Network.Outbound.Allow.Hosts = []string{"192.0.2.10"}
+		cfg.Network.Outbound.Allow.Ports = []int{80}
+		cfg.Network.Outbound.Allow.Schemes = []string{"http"}
+		err := Validate(cfg)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+	})
+}

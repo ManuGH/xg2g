@@ -24,6 +24,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
+	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
 )
 
 // Responsibility: Handles Intent creation (Start/Stop stream signals).
@@ -80,6 +81,17 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	intentType := req.Type
 	if intentType == "" {
 		intentType = model.IntentTypeStreamStart
+	}
+
+	if intentType == model.IntentTypeStreamStart {
+		if u, ok := platformnet.ParseDirectHTTPURL(req.ServiceRef); ok {
+			normalized, err := platformnet.ValidateOutboundURL(r.Context(), u.String(), outboundPolicyFromConfig(cfg))
+			if err != nil {
+				RespondError(w, r, http.StatusBadRequest, ErrInvalidInput, "direct URL serviceRef rejected by outbound policy")
+				return
+			}
+			req.ServiceRef = normalized
+		}
 	}
 
 	// 3. Compute Idempotency Key (Server-Side)

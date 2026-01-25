@@ -19,6 +19,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/log"
+	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
 	"github.com/rs/zerolog"
 )
 
@@ -254,8 +255,13 @@ func (o *Orchestrator) startPipeline(
 		// Wait, "ModeRecording" in Orchestrator logic meant "Viewing a Recording".
 		// In that case SourceType is File.
 		spec.Source.Type = ports.SourceFile
-	} else if strings.HasPrefix(sessionCtx.ServiceRef, "http") {
+	} else if u, ok := platformnet.ParseDirectHTTPURL(sessionCtx.ServiceRef); ok {
+		normalized, err := platformnet.ValidateOutboundURL(hbCtx, u.String(), o.OutboundPolicy)
+		if err != nil {
+			return "", newReasonError(model.RBadRequest, "outbound url rejected by policy", err)
+		}
 		spec.Source.Type = ports.SourceURL
+		spec.Source.ID = normalized
 	}
 
 	// Profiles: map currentProfileSpec to Quality?

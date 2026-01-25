@@ -119,3 +119,32 @@ func TestHTTPPreflightProvider_StatusMapping(t *testing.T) {
 		})
 	}
 }
+
+func TestHTTPPreflightProvider_NoRedirect(t *testing.T) {
+	redirected := false
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/final", http.StatusFound)
+	})
+	mux.HandleFunc("/final", func(w http.ResponseWriter, r *http.Request) {
+		redirected = true
+		w.WriteHeader(http.StatusOK)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	provider := NewHTTPPreflightProvider(srv.Client(), 0)
+	res, err := provider.Check(context.Background(), SourceRef{URL: srv.URL})
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if redirected {
+		t.Fatal("expected no redirect follow")
+	}
+	if res.Outcome != PreflightInternal {
+		t.Fatalf("expected outcome %q, got %q", PreflightInternal, res.Outcome)
+	}
+	if res.HTTPStatus != http.StatusFound {
+		t.Fatalf("expected status %d, got %d", http.StatusFound, res.HTTPStatus)
+	}
+}

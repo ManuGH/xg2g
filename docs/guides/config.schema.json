@@ -582,6 +582,49 @@
       },
       "type": "object"
     },
+    "network": {
+      "properties": {
+        "outbound": {
+          "properties": {
+            "allow": {
+              "properties": {
+                "cidrs": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "hosts": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "ports": {
+                  "items": {
+                    "type": "integer"
+                  },
+                  "type": "array"
+                },
+                "schemes": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "type": "object"
+            },
+            "enabled": {
+              "default": false,
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
     "openWebIF": {
       "description": "OpenWebIF API configuration for Enigma2 receiver",
       "properties": {

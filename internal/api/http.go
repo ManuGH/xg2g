@@ -597,6 +597,7 @@ func (s *Server) routes() http.Handler {
 	// 1. PUBLIC Endpoints (No Auth)
 	r.Get("/healthz", s.handleHealth)
 	r.Get("/readyz", s.handleReady)
+	r.Get("/status", controlhttp.NewStatusHandler().ServeHTTP)
 
 	r.Handle("/ui/*", http.StripPrefix("/ui", controlhttp.UIHandler(controlhttp.UIConfig{
 		CSP: middleware.DefaultCSP,

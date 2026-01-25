@@ -132,6 +132,46 @@ func Validate(cfg AppConfig) error {
 		v.AddError("RateLimitWhitelist", err.Error(), "")
 	}
 
+	// Validate Network Outbound Policy
+	outbound := cfg.Network.Outbound
+	if outbound.Enabled {
+		if len(outbound.Allow.Hosts) == 0 && len(outbound.Allow.CIDRs) == 0 {
+			v.AddError("Network.Outbound.Allow", "at least one host or CIDR must be configured", "")
+		}
+		if len(outbound.Allow.Schemes) == 0 {
+			v.AddError("Network.Outbound.Allow.Schemes", "must include http and/or https", "")
+		}
+		if len(outbound.Allow.Ports) == 0 {
+			v.AddError("Network.Outbound.Allow.Ports", "must include at least one port", "")
+		}
+	}
+	if len(outbound.Allow.Schemes) > 0 {
+		for _, scheme := range outbound.Allow.Schemes {
+			switch strings.ToLower(strings.TrimSpace(scheme)) {
+			case "http", "https":
+			default:
+				v.AddError("Network.Outbound.Allow.Schemes", "unsupported scheme", scheme)
+			}
+		}
+	}
+	if len(outbound.Allow.Ports) > 0 {
+		for _, port := range outbound.Allow.Ports {
+			v.Port("Network.Outbound.Allow.Ports", port)
+		}
+	}
+	if len(outbound.Allow.CIDRs) > 0 {
+		if err := validateCIDRList("XG2G_OUTBOUND_ALLOW_CIDRS", outbound.Allow.CIDRs); err != nil {
+			v.AddError("Network.Outbound.Allow.CIDRs", err.Error(), "")
+		}
+	}
+	if len(outbound.Allow.Hosts) > 0 {
+		for _, host := range outbound.Allow.Hosts {
+			if _, err := platformnet.NormalizeHost(host); err != nil {
+				v.AddError("Network.Outbound.Allow.Hosts", err.Error(), host)
+			}
+		}
+	}
+
 	if cfg.apiTokensParseErr != nil {
 		v.AddError("APITokens", cfg.apiTokensParseErr.Error(), "")
 	}

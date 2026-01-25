@@ -50,7 +50,11 @@ func (s *Server) resolvePreflightSourceURL(ctx context.Context, cfg config.AppCo
 	}
 
 	if u, ok := platformnet.ParseDirectHTTPURL(serviceRef); ok {
-		return u.String(), nil
+		normalized, err := platformnet.ValidateOutboundURL(ctx, u.String(), outboundPolicyFromConfig(cfg))
+		if err != nil {
+			return "", err
+		}
+		return normalized, nil
 	}
 
 	receiver := s.owi(cfg, snap)

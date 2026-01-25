@@ -19,6 +19,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/metrics"
+	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
 )
 
 // Orchestrator consumes intents and drives pipelines.
@@ -40,6 +41,7 @@ type Orchestrator struct {
 
 	PipelineStopTimeout time.Duration
 	Admission           *admission.ResourceMonitor
+	OutboundPolicy      platformnet.OutboundPolicy
 
 	// Concurrency Control
 	StartConcurrency int

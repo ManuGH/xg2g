@@ -20,6 +20,13 @@ type HTTPPreflightProvider struct {
 func NewHTTPPreflightProvider(client *http.Client, timeout time.Duration) *HTTPPreflightProvider {
 	if client == nil {
 		client = &http.Client{}
+	} else {
+		// Shallow copy to avoid mutating the passed client
+		c := *client
+		client = &c
+	}
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
 	}
 	return &HTTPPreflightProvider{
 		client:  client,

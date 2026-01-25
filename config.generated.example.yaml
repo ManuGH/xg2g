@@ -72,6 +72,14 @@ logService: ""
 metrics:
   enabled: false
   listenAddr: ""
+network:
+  outbound:
+    allow:
+      cidrs: []
+      hosts: []
+      ports: []
+      schemes: []
+    enabled: false
 picons:
   baseUrl: ""
 rateLimit:

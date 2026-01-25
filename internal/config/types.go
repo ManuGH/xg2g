@@ -160,7 +160,7 @@ type NetworkFileConfig struct {
 
 // OutboundFileConfig controls outbound HTTP(S) access.
 type OutboundFileConfig struct {
-	Enabled *bool            `yaml:"enabled,omitempty"`
+	Enabled *bool             `yaml:"enabled,omitempty"`
 	Allow   OutboundAllowlist `yaml:"allow,omitempty"`
 }
 

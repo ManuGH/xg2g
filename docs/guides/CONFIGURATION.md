@@ -137,6 +137,16 @@ Aliases: `openWebIF.*` (compat; prefer `enigma2.*`).
 | `metrics.enabled` | - | `false` | Active | Advanced |
 | `metrics.listenAddr` | `XG2G_METRICS_LISTEN` | `""` | Active | Advanced |
 
+### network
+
+| Path | Env | Default | Status | Profile |
+| --- | --- | --- | --- | --- |
+| `network.outbound.allow.cidrs` | `XG2G_OUTBOUND_ALLOW_CIDRS` | - | Active | Advanced |
+| `network.outbound.allow.hosts` | `XG2G_OUTBOUND_ALLOW_HOSTS` | - | Active | Advanced |
+| `network.outbound.allow.ports` | `XG2G_OUTBOUND_ALLOW_PORTS` | - | Active | Advanced |
+| `network.outbound.allow.schemes` | `XG2G_OUTBOUND_ALLOW_SCHEMES` | - | Active | Advanced |
+| `network.outbound.enabled` | `XG2G_OUTBOUND_ENABLED` | `false` | Active | Advanced |
+
 ### picons
 
 | Path | Env | Default | Status | Profile |

@@ -785,6 +785,7 @@ func parseCommaSeparatedInts(envVal string, defaults []int) []int {
 	if envVal == "" {
 		return defaults
 	}
+	logger := log.WithComponent("config")
 	var out []int
 	parts := strings.Split(envVal, ",")
 	for _, p := range parts {
@@ -794,8 +795,7 @@ func parseCommaSeparatedInts(envVal string, defaults []int) []int {
 		}
 		val, err := strconv.Atoi(p)
 		if err != nil {
-			log.WithComponent("config").
-				Warn().
+			logger.Warn().
 				Str("value", p).
 				Msg("invalid integer in environment list; skipping")
 			continue
