@@ -13,9 +13,9 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@tanstack/react-query": "^5.90.16",
+    "@tanstack/react-query": "^5.90.20",
     "hls.js": "^1.6.15",
-    "i18next": "^25.7.3",
+    "i18next": "^25.8.0",
     "i18next-browser-languagedetector": "^8.2.0",
     "plyr": "^3.8.3",
     "react": "^19.2.0",
@@ -25,24 +25,24 @@
   "devDependencies": {
     "@eslint/js": "^9.39.1",
     "@hey-api/client-fetch": "^0.13.1",
-    "@hey-api/openapi-ts": "^0.89.2",
+    "@hey-api/openapi-ts": "^0.90.10",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
-    "@testing-library/react": "^16.3.1",
-    "@types/node": "^25.0.3",
-    "@types/react": "^19.2.5",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^25.0.10",
+    "@types/react": "^19.2.9",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.26",
     "fast-check": "^4.5.3",
-    "globals": "^16.5.0",
+    "globals": "^17.1.0",
     "jsdom": "^27.4.0",
     "openapi-typescript": "^7.10.1",
     "openapi-typescript-codegen": "^0.30.0",
     "typescript": "^5.9.3",
     "vite": "^7.2.4",
-    "vitest": "^4.0.16"
+    "vitest": "^4.0.18"
   }
 }
