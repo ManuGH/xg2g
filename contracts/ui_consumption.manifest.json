@@ -1,0 +1,69 @@
+{
+  "$schema": "./manifest.schema.json",
+  "entries": [
+    {
+      "endpoint": "/admin/config",
+      "fieldPath": "profiles",
+      "category": "forbidden",
+      "component": "AdminConfig",
+      "rationale": "Obsolete in V3. Use profile settings directly.",
+      "introducedIn": "5.0.0"
+    },
+    {
+      "endpoint": "/admin/config",
+      "fieldPath": "transcodeParams",
+      "category": "forbidden",
+      "component": "AdminConfig",
+      "rationale": "Backend internal state.",
+      "introducedIn": "5.0.0"
+    },
+    {
+      "endpoint": "/playbackinfo",
+      "fieldPath": "decision.mode",
+      "category": "normative",
+      "component": "V3Player",
+      "rationale": "Session steering mode (hls/direct_mp4/deny)",
+      "introducedIn": "5.0.0"
+    },
+    {
+      "endpoint": "/playbackinfo",
+      "fieldPath": "decision.outputs",
+      "category": "forbidden",
+      "component": "V3Player",
+      "rationale": "Raw output array access is restricted to backend only",
+      "introducedIn": "5.0.0"
+    },
+    {
+      "endpoint": "/playbackinfo",
+      "fieldPath": "decision.selectedOutputUrl",
+      "category": "normative",
+      "component": "V3Player",
+      "rationale": "Single normative URL provided by backend",
+      "introducedIn": "5.0.0"
+    },
+    {
+      "endpoint": "/playbackinfo",
+      "fieldPath": "mode",
+      "category": "legacy",
+      "component": "V3Player",
+      "rationale": "Fallback for P3-x backends",
+      "introducedIn": "5.0.0"
+    },
+    {
+      "endpoint": "/playbackinfo",
+      "fieldPath": "url",
+      "category": "legacy",
+      "component": "V3Player",
+      "rationale": "Fallback for P3-x backends",
+      "introducedIn": "5.0.0"
+    },
+    {
+      "endpoint": "telemetry",
+      "fieldPath": "requestId",
+      "category": "telemetry",
+      "component": "V3Player",
+      "rationale": "Traceability link for backend logs",
+      "introducedIn": "5.0.0"
+    }
+  ]
+}

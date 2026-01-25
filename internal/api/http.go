@@ -27,6 +27,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/middleware"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/control/vod"
+	"github.com/ManuGH/xg2g/internal/control/vod/preflight"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/dvr"
 	"github.com/ManuGH/xg2g/internal/epg"
@@ -89,7 +90,7 @@ type Server struct {
 	recordingPathMapper *recordings.PathMapper
 
 	// P8.2: Hardening & Test Stability
-	preflightCheck v3.PreflightCheckFunc
+	preflightProvider v3.PreflightProvider
 
 	// P9: Safety & Shutdown
 	rootCtx    context.Context
@@ -227,10 +228,10 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager, opts ...ServerOption) *Se
 		status: jobs.Status{
 			Version: cfg.Version, // Initialize version from config
 		},
-		startTime:      time.Now(),
-		piconSemaphore: make(chan struct{}, 50),
-		preflightCheck: v3.CheckSourceAvailability,
-		v3Factory:      v3.NewServer, // Default factory
+		startTime:         time.Now(),
+		piconSemaphore:    make(chan struct{}, 50),
+		preflightProvider: preflight.NewHTTPPreflightProvider(nil, cfg.Enigma2.PreflightTimeout),
+		v3Factory:         v3.NewServer, // Default factory
 	}
 
 	// Initialize VOD Manager with error handling
@@ -322,7 +323,7 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager, opts ...ServerOption) *Se
 		&dvrSourceWrapper{s},
 		s.recordingsService,
 		s.requestShutdown,
-		s.preflightCheck,
+		s.preflightProvider,
 	)
 
 	// P10: Wired Admission Control (Deliverable #5)
@@ -753,7 +754,7 @@ func (s *Server) SetV3Components(b bus.Bus, st store.StateStore, rs resume.Store
 			&dvrSourceWrapper{s},
 			s.recordingsService,
 			s.requestShutdown,
-			s.preflightCheck,
+			s.preflightProvider,
 		)
 	}
 }
@@ -815,7 +816,7 @@ func (s *Server) SetResolver(r recservice.Resolver) {
 			&dvrSourceWrapper{s},
 			s.recordingsService,
 			s.requestShutdown,
-			s.preflightCheck,
+			s.preflightProvider,
 		)
 	}
 }

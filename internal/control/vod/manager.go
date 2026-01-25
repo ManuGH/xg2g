@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -63,6 +64,94 @@ func (m *Manager) GetMetadata(id string) (Metadata, bool) {
 	defer m.mu.Unlock()
 	meta, ok := m.metadata[id]
 	return meta, ok
+}
+
+// MetadataPruneResult captures the outcome of a metadata cache prune.
+type MetadataPruneResult struct {
+	RemovedTTL        int
+	RemovedMaxEntries int
+	Remaining         int
+}
+
+// PruneMetadata evicts cached metadata using TTL and max entries.
+// TTL eviction is applied first, then oldest-first to enforce maxEntries.
+func (m *Manager) PruneMetadata(now time.Time, ttl time.Duration, maxEntries int) MetadataPruneResult {
+	if maxEntries <= 0 {
+		return MetadataPruneResult{}
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if len(m.metadata) == 0 {
+		return MetadataPruneResult{}
+	}
+
+	type entry struct {
+		id        string
+		updatedAt int64
+	}
+
+	entries := make([]entry, 0, len(m.metadata))
+	for id, meta := range m.metadata {
+		entries = append(entries, entry{
+			id:        id,
+			updatedAt: meta.UpdatedAt,
+		})
+	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].updatedAt == entries[j].updatedAt {
+			return entries[i].id < entries[j].id
+		}
+		return entries[i].updatedAt < entries[j].updatedAt
+	})
+
+	remove := make(map[string]string)
+	if ttl > 0 {
+		cutoff := now.Add(-ttl).UnixNano()
+		for _, e := range entries {
+			if e.updatedAt < cutoff {
+				remove[e.id] = CacheEvictReasonTTL
+			}
+		}
+	}
+
+	remaining := make([]entry, 0, len(entries))
+	for _, e := range entries {
+		if _, marked := remove[e.id]; !marked {
+			remaining = append(remaining, e)
+		}
+	}
+
+	if len(remaining) > maxEntries {
+		overflow := len(remaining) - maxEntries
+		for i := 0; i < overflow; i++ {
+			if _, marked := remove[remaining[i].id]; !marked {
+				remove[remaining[i].id] = CacheEvictReasonMaxEntries
+			}
+		}
+	}
+
+	removedTTL := 0
+	removedMax := 0
+	for id, reason := range remove {
+		if _, ok := m.metadata[id]; ok {
+			delete(m.metadata, id)
+			switch reason {
+			case CacheEvictReasonTTL:
+				removedTTL++
+			case CacheEvictReasonMaxEntries:
+				removedMax++
+			}
+		}
+	}
+
+	return MetadataPruneResult{
+		RemovedTTL:        removedTTL,
+		RemovedMaxEntries: removedMax,
+		Remaining:         len(m.metadata),
+	}
 }
 
 // SeedMetadata directly sets the metadata cache for an artifact.

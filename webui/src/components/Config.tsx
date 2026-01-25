@@ -22,13 +22,28 @@ interface ValidationResponse {
 
 type ConnectionStatus = 'untested' | 'valid' | 'invalid';
 
-function Config() {
+/**
+ * UI-INV-001: Pure predicate to determine if the system is configured.
+ * Gating logic depends solely on backend state (baseUrl presence).
+ */
+export const isConfigured = (config: AppConfig | null): boolean => {
+  return !!config?.openWebIF?.baseUrl;
+};
+
+interface ConfigProps {
+  onUpdate?: () => void;
+  showTitle?: boolean;
+}
+
+function Config(props: ConfigProps = { showTitle: true }) {
   const { t } = useTranslation();
+  // ... (rest of component remains same until return)
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string>('');
+  const [configured, setConfigured] = useState<boolean>(false);
 
   // New: Restarting State
   const [restarting, setRestarting] = useState<boolean>(false);
@@ -55,6 +70,7 @@ function Config() {
           bouquets: Array.isArray(data.bouquets) ? data.bouquets : []
         };
         setConfig(normalized);
+        setConfigured(isConfigured(normalized));
         setError(null);
         // Reset validation state on load
         setConnectionStatus('untested');
@@ -193,20 +209,15 @@ function Config() {
     setSuccessMsg('');
 
     try {
-      // Smart Defaults for missing advanced fields
+      // UI-INV-002: Construct payload purely from backend state + user edits.
+      // No synthesized UI-local defaults (e.g. no streamPort: 8001 fallback).
+      // Conditional spreads ensure true field omission (no undefined keys in JSON).
       const payload: ConfigUpdate = {
-        openWebIF: {
-          ...config.openWebIF,
-          streamPort: config.openWebIF?.streamPort || 8001 // Default to 8001 if missing
-        },
-        bouquets: config.bouquets,
-        epg: {
-          enabled: config.epg?.enabled || false,
-          days: 3,
-          source: 'bouquet' as const
-        },
-        // picons: Omitted (backend handles default)
-        featureFlags: config.featureFlags
+        ...(config.openWebIF ? { openWebIF: config.openWebIF } : {}),
+        ...(config.bouquets ? { bouquets: config.bouquets } : {}),
+        ...(config.epg ? { epg: config.epg } : {}),
+        ...(config.picons !== undefined ? { picons: config.picons } : {}),
+        ...(config.featureFlags ? { featureFlags: config.featureFlags } : {})
       };
 
       const result = await putSystemConfig({ body: payload });
@@ -218,8 +229,10 @@ function Config() {
           checkHealthAndReload();
         } else {
           setSuccessMsg(t('setup.messages.saved'));
-          // Reload to ensure we have the latest state
+          // UI-INV-003: re-fetch from backend and re-render the absolute truth
           await loadConfig();
+          // Notify parent of update if callback provided
+          if (props.onUpdate) props.onUpdate();
         }
       } else {
         setError(t('setup.errors.saveFailed'));
@@ -250,8 +263,11 @@ function Config() {
   const selectedBouquets = config.bouquets || [];
 
   return (
-    <div className="config-container">
-      <h2>{t('setup.title')}</h2>
+    <div
+      className="config-container"
+      data-testid={configured ? "config-settings" : "config-wizard"}
+    >
+      {props.showTitle && <h2>{configured ? t('nav.config') : t('setup.title')}</h2>}
 
       {error && <div className="alert error">{error}</div>}
       {successMsg && !restarting && <div className="alert success">{successMsg}</div>}
@@ -301,6 +317,7 @@ function Config() {
               className={`btn-secondary ${connectionStatus}`}
               onClick={validateConnection}
               disabled={validating || !config.openWebIF?.baseUrl}
+              data-testid="config-validate"
             >
               {validating
                 ? t('setup.actions.connecting')
@@ -356,8 +373,11 @@ function Config() {
             type="submit"
             disabled={saving || connectionStatus !== 'valid'}
             className="btn-primary"
+            data-testid="config-save"
           >
-            {t('setup.actions.finishSetup')}
+            {saving
+              ? t('common.loading')
+              : (configured ? t('setup.actions.saveConfig') : t('setup.actions.finishSetup'))}
           </button>
         </div>
       </form>

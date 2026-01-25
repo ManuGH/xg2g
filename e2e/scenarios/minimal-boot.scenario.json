@@ -1,0 +1,25 @@
+{
+  "meta": {
+    "id": "minimal-boot",
+    "description": "Minimal scenario to verify E2E harness wiring."
+  },
+  "capabilities": {
+    "contracts.playbackInfoDecision": "absent"
+  },
+  "endpoints": [
+    {
+      "method": "GET",
+      "path": "/api/v3/system/capabilities",
+      "response": {
+        "status": 200,
+        "body": {
+          "contracts.playbackInfoDecision": "absent"
+        }
+      }
+    }
+  ],
+  "expectations": {
+    "ui": [],
+    "telemetry": []
+  }
+}

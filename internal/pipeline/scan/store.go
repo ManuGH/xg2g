@@ -1,14 +1,9 @@
 package scan
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
-	"sync"
 	"time"
-
-	"github.com/ManuGH/xg2g/internal/log"
 )
 
 type Capability struct {
@@ -36,85 +31,11 @@ func NewStore(backend, storagePath string) (CapabilityStore, error) {
 	switch backend {
 	case "sqlite":
 		return NewSqliteStore(filepath.Join(storagePath, "capabilities.sqlite"))
-	case "json":
+	case "json": // ADR-021 removed
 		// ADR-021: JSON file backend is DEPRECATED and removed.
-		// Migration: Use 'xg2g-migrate' to convert json to sqlite.
-		return nil, fmt.Errorf("DEPRECATED: json backend removed (ADR-021). Use 'sqlite' or run 'xg2g-migrate' to convert existing data")
+		// See docs/ops/BACKUP_RESTORE.md for SQLite-only operations.
+		return nil, fmt.Errorf("DEPRECATED: json backend removed (ADR-021). Only SQLite is supported in production")
 	default:
 		return nil, fmt.Errorf("unknown capability store backend: %s (supported: sqlite)", backend)
 	}
-}
-
-// JsonStore implements CapabilityStore using a JSON file.
-type JsonStore struct {
-	path string
-	mu   sync.RWMutex
-	caps map[string]Capability
-}
-
-func NewJsonStore(storagePath string) *JsonStore {
-	// Gate 5: No Dual Durable
-	if os.Getenv("XG2G_STORAGE") == "sqlite" && os.Getenv("XG2G_MIGRATION_MODE") != "true" {
-		log.L().Error().Msg("Single Durable Truth violation: JSON Capability initialization blocked by XG2G_STORAGE=sqlite")
-		// We can't return error from NewJsonStore as per signature, but we can fail loud
-		// or handle it in the factory.
-	}
-
-	s := &JsonStore{
-		path: filepath.Join(storagePath, "v3-capabilities.json"),
-		caps: make(map[string]Capability),
-	}
-	s.load()
-	return s
-}
-
-func (s *JsonStore) load() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	data, err := os.ReadFile(s.path)
-	if err != nil {
-		if !os.IsNotExist(err) {
-			log.L().Error().Err(err).Msg("scan: failed to load capabilities")
-		}
-		return
-	}
-
-	var loaded map[string]Capability
-	if err := json.Unmarshal(data, &loaded); err != nil {
-		log.L().Error().Err(err).Msg("scan: failed to parse capabilities")
-		return
-	}
-	s.caps = loaded
-}
-
-func (s *JsonStore) save() {
-	s.mu.RLock()
-	data, err := json.MarshalIndent(s.caps, "", "  ")
-	s.mu.RUnlock()
-
-	if err != nil {
-		return
-	}
-
-	_ = os.WriteFile(s.path, data, 0600)
-}
-
-func (s *JsonStore) Update(cap Capability) {
-	s.mu.Lock()
-	s.caps[cap.ServiceRef] = cap
-	s.mu.Unlock()
-	s.save()
-}
-
-func (s *JsonStore) Get(serviceRef string) (Capability, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	c, ok := s.caps[serviceRef]
-	return c, ok
-}
-
-func (s *JsonStore) Close() error {
-	s.save()
-	return nil
 }

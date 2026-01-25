@@ -45,10 +45,10 @@ func Open(dbPath string, cfg Config) (*sql.DB, error) {
 	// Apply Mandatory PRAGMAs
 	// We execute these manually to ensure they are set regardless of DSN parser logic.
 	pragmas := []string{
-		fmt.Sprintf("PRAGMA journal_mode=WAL"),
-		fmt.Sprintf("PRAGMA synchronous=NORMAL"),
+		"PRAGMA journal_mode=WAL",
+		"PRAGMA synchronous=NORMAL",
 		fmt.Sprintf("PRAGMA busy_timeout=%d", cfg.BusyTimeout.Milliseconds()),
-		fmt.Sprintf("PRAGMA foreign_keys=ON"),
+		"PRAGMA foreign_keys=ON",
 	}
 
 	for _, p := range pragmas {

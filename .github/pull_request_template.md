@@ -4,6 +4,16 @@
 
 Briefly describe the objective and technical approach.
 
+## Scope
+
+- In scope:
+- Non-goals:
+
+## Observability
+
+- SLO/alert signal metric:
+- Supporting metrics/logs/traces:
+
 ## Change Type
 
 - [ ] Bug fix

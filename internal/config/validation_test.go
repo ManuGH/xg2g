@@ -8,6 +8,19 @@ import (
 	"testing"
 )
 
+func baseValidationConfig() AppConfig {
+	return AppConfig{
+		DataDir: "/tmp",
+		Enigma2: Enigma2Settings{
+			StreamPort: 8001,
+		},
+		Streaming: StreamingConfig{
+			DeliveryPolicy: "universal",
+		},
+		VODCacheMaxEntries: 256,
+	}
+}
+
 // TestValidateCIDRList_TrustedProxies_MustFail tests forbidden CIDRs for TrustedProxies
 func TestValidateCIDRList_TrustedProxies_MustFail(t *testing.T) {
 	tests := []struct {
@@ -122,16 +135,8 @@ func TestValidate_TrustedProxies_Integration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := AppConfig{
-				TrustedProxies: tt.proxies,
-				DataDir:        "/tmp",
-				Enigma2: Enigma2Settings{
-					StreamPort: 8001,
-				},
-				Streaming: StreamingConfig{
-					DeliveryPolicy: "universal",
-				},
-			}
+			cfg := baseValidationConfig()
+			cfg.TrustedProxies = tt.proxies
 			err := Validate(cfg)
 			if tt.shouldErr && err == nil {
 				t.Errorf("expected error for %q, got nil", tt.proxies)
@@ -160,16 +165,8 @@ func TestValidate_RateLimitWhitelist_Integration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := AppConfig{
-				RateLimitWhitelist: tt.whitelist,
-				DataDir:            "/tmp",
-				Enigma2: Enigma2Settings{
-					StreamPort: 8001,
-				},
-				Streaming: StreamingConfig{
-					DeliveryPolicy: "universal",
-				},
-			}
+			cfg := baseValidationConfig()
+			cfg.RateLimitWhitelist = tt.whitelist
 			err := Validate(cfg)
 			if tt.shouldErr && err == nil {
 				t.Errorf("expected error for %v, got nil", tt.whitelist)

@@ -61,7 +61,7 @@ func TestSetDependencies_HandlesTypedNil(t *testing.T) {
 		nil,         // ts
 		nil,         // recSvc
 		nil,         // requestShutdown
-		nil,         // preflightCheck
+		nil,         // preflightProvider
 	)
 
 	assert.Nil(t, srv.v3Bus, "v3Bus field must be TRULY nil after receiving a typed nil pointer")

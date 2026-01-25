@@ -1,0 +1,23 @@
+{
+  "policies": {
+    "V3Player.PlaybackInfo": {
+      "description": "Determines whether to use Decision (normative) or URL (legacy)",
+      "requireNormativeWhenPresent": true,
+      "legacyFallbackAllowedIf": [
+        {
+          "capability": "contracts.playbackInfoDecision",
+          "equals": "absent"
+        }
+      ],
+      "failClosedIf": [
+        {
+          "capability": "contracts.playbackInfoDecision",
+          "equals": "required",
+          "and": {
+            "missing": "decision.selectedOutputUrl"
+          }
+        }
+      ]
+    }
+  }
+}

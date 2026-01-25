@@ -186,6 +186,11 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 
 		profileSpec := profiles.Resolve(reqProfileID, r.UserAgent(), int(cfg.HLS.DVRWindow.Seconds()), cap, hasGPU, hwaccelMode)
 
+		// 5.0 Preflight Source Check (fail-closed)
+		if s.enforcePreflight(r.Context(), w, r, cfg, req.ServiceRef) {
+			return
+		}
+
 		// 5.1 Admission Control Gate (Phase 5.2)
 		priority := admission.PriorityLive
 		if strings.Contains(strings.ToLower(profileSpec.Name), "pulse") {

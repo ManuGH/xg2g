@@ -24,21 +24,6 @@ github.com/cespare/xxhash/v2
 # github.com/davecgh/go-spew v1.1.1
 ## explicit
 github.com/davecgh/go-spew/spew
-# github.com/dgraph-io/badger/v4 v4.9.0
-## explicit; go 1.23.0
-github.com/dgraph-io/badger/v4
-github.com/dgraph-io/badger/v4/fb
-github.com/dgraph-io/badger/v4/options
-github.com/dgraph-io/badger/v4/pb
-github.com/dgraph-io/badger/v4/skl
-github.com/dgraph-io/badger/v4/table
-github.com/dgraph-io/badger/v4/trie
-github.com/dgraph-io/badger/v4/y
-# github.com/dgraph-io/ristretto/v2 v2.2.0
-## explicit; go 1.23.0
-github.com/dgraph-io/ristretto/v2
-github.com/dgraph-io/ristretto/v2/z
-github.com/dgraph-io/ristretto/v2/z/simd
 # github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f
 ## explicit
 github.com/dgryski/go-rendezvous
@@ -82,9 +67,6 @@ github.com/go-openapi/jsonpointer
 # github.com/go-openapi/swag/jsonname v0.25.4
 ## explicit; go 1.24.0
 github.com/go-openapi/swag/jsonname
-# github.com/google/flatbuffers v25.2.10+incompatible
-## explicit
-github.com/google/flatbuffers/go
 # github.com/google/go-cmp v0.7.0
 ## explicit; go 1.21
 github.com/google/go-cmp/cmp
@@ -106,19 +88,6 @@ github.com/grpc-ecosystem/grpc-gateway/v2/utilities
 # github.com/josharian/intern v1.0.0
 ## explicit; go 1.5
 github.com/josharian/intern
-# github.com/klauspost/compress v1.18.0
-## explicit; go 1.22
-github.com/klauspost/compress
-github.com/klauspost/compress/fse
-github.com/klauspost/compress/huff0
-github.com/klauspost/compress/internal/cpuinfo
-github.com/klauspost/compress/internal/le
-github.com/klauspost/compress/internal/race
-github.com/klauspost/compress/internal/snapref
-github.com/klauspost/compress/s2
-github.com/klauspost/compress/snappy
-github.com/klauspost/compress/zstd
-github.com/klauspost/compress/zstd/internal/xxhash
 # github.com/klauspost/cpuid/v2 v2.3.0
 ## explicit; go 1.22
 github.com/klauspost/cpuid/v2
@@ -246,12 +215,6 @@ github.com/yuin/gopher-lua/pm
 # github.com/zeebo/xxh3 v1.0.2
 ## explicit; go 1.17
 github.com/zeebo/xxh3
-# go.etcd.io/bbolt v1.4.3
-## explicit; go 1.23
-go.etcd.io/bbolt
-go.etcd.io/bbolt/errors
-go.etcd.io/bbolt/internal/common
-go.etcd.io/bbolt/internal/freelist
 # go.opentelemetry.io/auto/sdk v1.2.1
 ## explicit; go 1.24.0
 go.opentelemetry.io/auto/sdk

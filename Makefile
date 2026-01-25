@@ -241,9 +241,29 @@ verify-purity: ## Phase 4.7: Verify UI purity, decision ownership, OpenAPI hygie
 	@./scripts/verify-openapi-lint.sh
 	@./scripts/verify-v3-shadowing.sh
 
-.PHONY: contract-freeze-check
 contract-freeze-check: ## Phase 4.7: Verify contract goldens against baseline manifest
 	@./scripts/verify-golden-freeze.sh
+
+.PHONY: verify-contract-manifest
+verify-contract-manifest: ## Phase 6.0: Verify normative contract manifest integrity
+	@echo "--- verify-contract-manifest ---"
+	@cd webui && npx vitest run tests/contracts/manifest-integrity.test.ts
+
+.PHONY: verify-openapi-drift
+verify-openapi-drift: ## Phase 6.0: Verify OpenAPI normative snapshot stability
+	@./scripts/verify-openapi-drift.sh
+	@./scripts/verify-ui-consumption-vs-openapi.sh
+
+.PHONY: verify-ui-contract-scan
+verify-ui-contract-scan: ## Phase 6.0: Verify UI codebase not violating contract manifest
+	@echo "--- verify-ui-contract-scan ---"
+	@npx tsx scripts/ts-ast-contract-scan.ts
+
+.PHONY: verify-telemetry-schema
+verify-telemetry-schema: ## Phase 6.1: Verify Telemetry Schema Integrity
+	@echo "--- verify-telemetry-schema ---"
+	@npx tsx scripts/verify-telemetry-schema.ts
+	@./scripts/verify-telemetry-drift.sh
 
 .PHONY: verify-capabilities
 verify-capabilities: ## Phase 7: Verify capability fixtures against manifest and runtime resolver
@@ -324,11 +344,7 @@ build-all: ## Build binaries for all supported platforms
 
 	@echo "✅ Reproducible build complete: $(BUILD_DIR)/$(BINARY_NAME)"
 
-build-migrate: ## Build the storage migration tool
-	@echo "Building xg2g-migrate..."
-	@mkdir -p $(BUILD_DIR)
-	$(TOOLCHAIN_ENV) go build $(BUILD_FLAGS) $(LDFLAGS) -o $(BUILD_DIR)/xg2g-migrate ./cmd/xg2g-migrate
-	@echo "✅ Build complete: $(BUILD_DIR)/xg2g-migrate"
+# xg2g-migrate target removed as of v3.0.0 (Phase 3.0 Sunset complete)
 
 verify-storage-cutover: build-migrate ## [Phase 2.3] Run the 5 mandatory storage cutover gates
 	@echo "--- verify-storage-cutover ---"

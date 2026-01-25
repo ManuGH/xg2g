@@ -35,6 +35,7 @@ func baseV3Config(t *testing.T) AppConfig {
 		Streaming: StreamingConfig{
 			DeliveryPolicy: "universal",
 		},
+		VODCacheMaxEntries: 256,
 	}
 }
 

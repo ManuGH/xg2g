@@ -295,10 +295,30 @@ var (
 		Help: "Total number of stale VOD builds terminated",
 	}, []string{"method"}) // method=cancel|kill
 
-	vodCacheEvictedTotal = promauto.NewCounter(prometheus.CounterOpts{
+	recordingCacheEntries = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "xg2g_recording_cache_entries",
+		Help: "Number of recording cache directories",
+	})
+
+	vodCacheEvictedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "xg2g_vod_cache_evicted_total",
 		Help: "Total number of VOD cache directories evicted",
+	}, []string{"reason"}) // reason=ttl|max_entries
+
+	vodCacheEvictionErrorsTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "xg2g_vod_cache_eviction_errors_total",
+		Help: "Total number of VOD cache eviction runs with errors",
 	})
+
+	vodPreflightFailTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "xg2g_vod_preflight_fail_total",
+		Help: "Total number of VOD preflight failures by reason",
+	}, []string{"reason"}) // reason=unreachable|timeout|unauthorized|forbidden|not_found|bad_gateway|internal
+
+	vodMetadataPrunedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "xg2g_vod_metadata_pruned_total",
+		Help: "Total number of VOD metadata entries pruned",
+	}, []string{"reason"}) // reason=ttl|max_entries
 
 	vodBuildDurationSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "xg2g_vod_build_duration_seconds",
@@ -346,8 +366,42 @@ func IncVODBuildStaleKilled(method string) {
 	vodBuildsStaleKilledTotal.WithLabelValues(method).Inc()
 }
 
-func IncVODCacheEvicted() {
-	vodCacheEvictedTotal.Inc()
+const (
+	CacheEvictReasonTTL        = "ttl"
+	CacheEvictReasonMaxEntries = "max_entries"
+)
+
+func IncVODCacheEvicted(reason string) {
+	vodCacheEvictedTotal.WithLabelValues(reason).Inc()
+}
+
+func AddVODCacheEvicted(reason string, count int) {
+	if count <= 0 {
+		return
+	}
+	vodCacheEvictedTotal.WithLabelValues(reason).Add(float64(count))
+}
+
+func IncVODCacheEvictionErrors() {
+	vodCacheEvictionErrorsTotal.Inc()
+}
+
+func IncVODPreflightFail(reason string) {
+	if reason == "" {
+		return
+	}
+	vodPreflightFailTotal.WithLabelValues(reason).Inc()
+}
+
+func SetRecordingCacheEntries(count int) {
+	recordingCacheEntries.Set(float64(count))
+}
+
+func AddVODMetadataPruned(reason string, count int) {
+	if count <= 0 {
+		return
+	}
+	vodMetadataPrunedTotal.WithLabelValues(reason).Add(float64(count))
 }
 
 func ObserveVODSetupLatency(stage, mode string, duration float64) {

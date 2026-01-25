@@ -30,6 +30,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/ManuGH/xg2g/internal/library"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
@@ -72,7 +73,7 @@ type Server struct {
 
 	// Lifecycle
 	requestShutdown   func(context.Context) error
-	preflightCheck    PreflightCheckFunc
+	preflightProvider PreflightProvider
 	healthManager     *health.Manager
 	logSource         interface{ GetRecentLogs() []log.LogEntry }
 	scanSource        ScanSource
@@ -138,9 +139,77 @@ func (s *Server) StartMonitor(ctx context.Context) {
 }
 
 // StartRecordingCacheEvicter starts a background task to clean up old recording cache entries.
-// TODO: Implement periodic cache cleanup based on age/size limits.
 func (s *Server) StartRecordingCacheEvicter(ctx context.Context) {
-	// No-op for now - implement cache eviction logic when needed
+	// Fixed cadence: eviction runs every 10 minutes. Effective TTL is bounded by this interval.
+	const interval = 10 * time.Minute
+
+	warnedCadenceMismatch := false
+	runOnce := func() {
+		cfg := s.GetConfig()
+		if strings.TrimSpace(cfg.HLS.Root) == "" {
+			metrics.SetRecordingCacheEntries(0)
+			return
+		}
+		if cfg.VODCacheMaxEntries <= 0 {
+			log.L().Error().Int("maxEntries", cfg.VODCacheMaxEntries).Msg("recording cache eviction disabled: invalid maxEntries")
+			return
+		}
+		if cfg.VODCacheTTL > 0 && cfg.VODCacheTTL < interval {
+			if !warnedCadenceMismatch {
+				log.L().Warn().
+					Dur("ttl", cfg.VODCacheTTL).
+					Dur("interval", interval).
+					Msg("recording cache eviction cadence exceeds ttl")
+				warnedCadenceMismatch = true
+			}
+		} else {
+			warnedCadenceMismatch = false
+		}
+
+		res, err := vod.EvictRecordingCache(cfg.HLS.Root, cfg.VODCacheTTL, cfg.VODCacheMaxEntries, vod.RealClock{})
+		if err != nil {
+			log.L().Error().Err(err).Msg("recording cache eviction failed")
+			return
+		}
+
+		metrics.SetRecordingCacheEntries(res.Entries)
+		metrics.AddVODCacheEvicted(metrics.CacheEvictReasonTTL, res.EvictedTTL)
+		metrics.AddVODCacheEvicted(metrics.CacheEvictReasonMaxEntries, res.EvictedMaxEntries)
+		if res.Errors > 0 {
+			metrics.IncVODCacheEvictionErrors()
+			log.L().Warn().Int("errors", res.Errors).Msg("recording cache eviction completed with errors")
+		}
+
+		s.mu.RLock()
+		vodMgr := s.vodManager
+		s.mu.RUnlock()
+		if vodMgr != nil {
+			pruned := vodMgr.PruneMetadata(time.Now(), cfg.VODCacheTTL, cfg.VODCacheMaxEntries)
+			metrics.AddVODMetadataPruned(metrics.CacheEvictReasonTTL, pruned.RemovedTTL)
+			metrics.AddVODMetadataPruned(metrics.CacheEvictReasonMaxEntries, pruned.RemovedMaxEntries)
+			if pruned.RemovedTTL+pruned.RemovedMaxEntries > 0 {
+				log.L().Info().
+					Int("removed_ttl", pruned.RemovedTTL).
+					Int("removed_max_entries", pruned.RemovedMaxEntries).
+					Int("remaining", pruned.Remaining).
+					Msg("recording metadata cache pruned")
+			}
+		}
+	}
+
+	runOnce()
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			runOnce()
+		}
+	}
 }
 
 // SetResolver sets the V4 resolver used by GetRecordingPlaybackInfo.
@@ -189,10 +258,10 @@ func (s *Server) UpdateStatus(st jobs.Status) {
 }
 
 // SetPreflightCheck sets the source availability validator.
-func (s *Server) SetPreflightCheck(fn PreflightCheckFunc) {
+func (s *Server) SetPreflightCheck(fn PreflightProvider) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.preflightCheck = fn
+	s.preflightProvider = fn
 }
 
 // SetDependencies injects shared services into the handler.
@@ -216,7 +285,7 @@ func (s *Server) SetDependencies(
 	ts TimerReader,
 	recSvc recservice.Service,
 	requestShutdown func(context.Context) error,
-	preflightCheck PreflightCheckFunc,
+	preflightProvider PreflightProvider,
 ) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -327,10 +396,10 @@ func (s *Server) SetDependencies(
 		s.requestShutdown = nil
 	}
 
-	if !isNil(preflightCheck) {
-		s.preflightCheck = preflightCheck
+	if !isNil(preflightProvider) {
+		s.preflightProvider = preflightProvider
 	} else {
-		s.preflightCheck = nil
+		s.preflightProvider = nil
 	}
 
 	if !isNil(recSvc) {

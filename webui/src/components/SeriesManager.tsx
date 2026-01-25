@@ -163,14 +163,14 @@ function SeriesManager() {
         });
         */
       } else {
-        // Create new rule
+        // UI-INV-SERIES-001: Omit empty filters to avoid unnecessary state synthesis.
         const createPayload: SeriesRuleWritable = {
           keyword: currentRule.keyword,
-          channelRef: currentRule.channelRef,
-          days: currentRule.days || [],
-          startWindow: currentRule.startWindow,
           priority: Number(currentRule.priority) || 0,
-          enabled: currentRule.enabled
+          enabled: currentRule.enabled,
+          ...(currentRule.channelRef?.trim() ? { channelRef: currentRule.channelRef.trim() } : {}),
+          ...(currentRule.days?.length ? { days: currentRule.days } : {}),
+          ...(currentRule.startWindow?.trim() ? { startWindow: currentRule.startWindow.trim() } : {})
         };
 
         await createSeriesRule({ body: createPayload });
@@ -208,7 +208,11 @@ function SeriesManager() {
     <div className="series-manager">
       <div className="sm-header">
         <h2>Series Recording Rules</h2>
-        <button className="btn-primary" onClick={() => handleEdit(null)}>
+        <button
+          className="btn-primary"
+          onClick={() => handleEdit(null)}
+          data-testid="series-add-btn"
+        >
           + New Rule
         </button>
       </div>
@@ -288,6 +292,7 @@ function SeriesManager() {
                   onChange={e => setCurrentRule({ ...currentRule, keyword: e.target.value })}
                   placeholder="e.g. Tatort"
                   className="input-field"
+                  data-testid="series-edit-keyword"
                 />
                 <small>Case-insensitive partial match on program title.</small>
               </div>
@@ -345,7 +350,13 @@ function SeriesManager() {
 
             <div className="modal-footer">
               <button className="btn-secondary" onClick={() => setIsEditing(false)}>Cancel</button>
-              <button className="btn-primary" onClick={handleSave}>Confirm & Save</button>
+              <button
+                className="btn-primary"
+                onClick={handleSave}
+                data-testid="series-edit-save"
+              >
+                Confirm & Save
+              </button>
             </div>
           </div>
         </div>

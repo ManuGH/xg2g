@@ -1,0 +1,74 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Version Matrix Policy",
+  "description": "Defines behavioral policies based on capabilities.",
+  "type": "object",
+  "properties": {
+    "policies": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/PolicyRule"
+      }
+    }
+  },
+  "required": [
+    "policies"
+  ],
+  "definitions": {
+    "PolicyRule": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "requireNormativeWhenPresent": {
+          "type": "boolean"
+        },
+        "legacyFallbackAllowedIf": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Condition"
+          }
+        },
+        "failClosedIf": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Condition"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "Condition": {
+      "type": "object",
+      "properties": {
+        "capability": {
+          "type": "string"
+        },
+        "equals": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "missing": {
+          "type": "string"
+        },
+        "and": {
+          "$ref": "#/definitions/Condition"
+        },
+        "or": {
+          "$ref": "#/definitions/Condition"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

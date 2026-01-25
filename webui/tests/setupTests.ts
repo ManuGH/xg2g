@@ -30,7 +30,8 @@ vi.mock('react-i18next', async () => {
   return {
     ...actual,
     useTranslation: () => ({
-      t: (key: string, opts?: Record<string, unknown>) => {
+      t: (key: string, opts?: any) => {
+        if (typeof opts === 'string') return opts;
         if (opts && typeof opts === 'object' && 'defaultValue' in opts) {
           return String(opts.defaultValue);
         }
@@ -38,7 +39,7 @@ vi.mock('react-i18next', async () => {
       },
       i18n: {
         language: 'en',
-        changeLanguage: async () => {}
+        changeLanguage: async () => { }
       }
     }),
     Trans: ({ i18nKey, defaults }: { i18nKey?: string; defaults?: string }) =>

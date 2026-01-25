@@ -45,3 +45,14 @@ All SQLite instances MUST use:
 - **Invariant**: Only approved storage engines (SQLite) may be imported
   into the shipping dependency graph of module `internal/`.
 - **Enforcement**: Validated by `scripts/ci_gate_storage_purity.sh`.
+
+## 6. Recording Cache Bounds (VOD)
+
+- **Invariant**: Recording cache directories are bounded by `vod.cacheMaxEntries` and `vod.cacheTTL`.
+- **Cadence**: Eviction runs every 10 minutes. Effective TTL can be up to `vod.cacheTTL + 10m`.
+- **Ordering**: "Oldest" uses directory `modTime` (filesystem metadata). This is best-effort and may be influenced by external processes, but the bounded size invariant still holds.
+- **SLO / Alert Suggestion**:
+  - Alert if `xg2g_recording_cache_entries` equals `vod.cacheMaxEntries` for > 20 minutes.
+  - Alert if `rate(xg2g_vod_cache_evicted_total{reason="max_entries"})` remains elevated (sustained pressure).
+  - `xg2g_vod_cache_eviction_errors_total` indicates eviction runs with errors; sustained increases require investigation.
+  - Supporting metric: `xg2g_vod_metadata_pruned_total{reason=...}`.

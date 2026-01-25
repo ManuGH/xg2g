@@ -4,6 +4,10 @@ import Hls from 'hls.js';
 import type { ErrorData, FragLoadedData, ManifestParsedData } from 'hls.js';
 import { createSession, getRecordingPlaybackInfo } from '../client-ts/sdk.gen';
 import { client } from '../client-ts/client.gen';
+import { telemetry } from '../services/TelemetryService';
+import { resolvePlaybackInfoPolicy } from '../contracts/PolicyEngine';
+import { useCapabilities } from '../hooks/useCapabilities';
+import { NormativePlaybackInfo } from '../contracts/consumption';
 import type {
   V3PlayerProps,
   PlayerStatus,
@@ -38,13 +42,14 @@ interface ApiErrorResponse {
 
 function V3Player(props: V3PlayerProps) {
   const { t } = useTranslation();
+  const { capabilities } = useCapabilities();
   const { token, autoStart, onClose, duration } = props;
   const channel = 'channel' in props ? props.channel : undefined;
   const src = 'src' in props ? props.src : undefined;
   const recordingId = 'recordingId' in props ? props.recordingId : undefined;
 
   const [sRef, setSRef] = useState<string>(
-    channel?.serviceRef || channel?.id || '1:0:19:283D:3FB:1:C00000:0:0:0:'
+    channel?.serviceRef || channel?.id || ''
   );
 
   // Traceability State
@@ -664,10 +669,28 @@ function V3Player(props: V3PlayerProps) {
           });
 
           if (error) {
+            if (response.status === 401 || response.status === 403) {
+              telemetry.emit('ui.error', { status: response.status, code: 'AUTH_DENIED' });
+              throw new Error(t('player.playbackDenied', 'Playback denied (Auth)'));
+            }
+            if (response.status === 410) {
+              telemetry.emit('ui.error', { status: 410, code: 'GONE' });
+              throw new Error(t('player.notAvailable', 'Playback not available (Gone)'));
+            }
+            if (response.status === 409) {
+              const retryAfterHeader = response.headers.get('Retry-After');
+              const retryAfter = retryAfterHeader ? parseInt(retryAfterHeader, 10) : 0;
+              const retryHint = retryAfter > 0 ? ` ${t('player.retryAfter', { seconds: retryAfter })}` : '';
+              telemetry.emit('ui.error', { status: 409, code: 'LEASE_BUSY', retry_after: retryAfter });
+              setStatus('error');
+              setError(`${t('player.leaseBusy')}${retryHint}`);
+              return;
+            }
             if (response.status === 503) {
               const retryAfter = response.headers.get('Retry-After');
               if (retryAfter) {
                 const seconds = parseInt(retryAfter, 10);
+                telemetry.emit('ui.error', { status: 503, code: 'UNAVAILABLE', retry_after: seconds });
                 setStatus('building');
                 setErrorDetails(`${t('player.preparing')} (${seconds}s)`);
                 await sleep(seconds * 1000);
@@ -691,28 +714,46 @@ function V3Player(props: V3PlayerProps) {
 
         console.debug('[V3Player] Playback Info:', pInfo);
 
-        // GOVERNANCE: Prefer explicitly selected backend output (P4.6+)
-        if (pInfo.decision?.mode === 'deny') {
-          throw new Error(t('player.playbackDenied', 'Playback denied by policy'));
-        }
+        const resolution = resolvePlaybackInfoPolicy(capabilities, pInfo);
 
-        if (pInfo.decision?.selectedOutputUrl) {
-          streamUrl = pInfo.decision.selectedOutputUrl;
-          mode = pInfo.decision.selectedOutputKind === 'hls' ? 'hls' : 'direct_mp4';
-        } else if (pInfo.decision?.outputs) {
-          // GOVERNANCE: direct outputs[] access is forbidden.
-          // Fallback to legacy path if selected is missing despite decision existing
-          throw new Error(t('player.playbackError', 'Decision-led playback missing explicit selection'));
-        } else {
-          // Legacy Compatibility Path (P3-x)
+        import { NormativePlaybackInfo } from '../contracts/consumption';
+        if (resolution.mode === 'normative') {
+          // Type Assertion: We treat the object as strictly normative here.
+          // Any access to pInfo.url or decision.outputs will now fail compile-time check (if we used the var).
+          const normativePInfo = pInfo as unknown as NormativePlaybackInfo;
+
+          // TS-Guard
+          if (!normativePInfo.decision?.selectedOutputUrl) {
+            throw new Error("Invariant violation: Normative mode but missing selection");
+          }
+          streamUrl = normativePInfo.decision.selectedOutputUrl;
+          mode = normativePInfo.decision.selectedOutputKind === 'hls' ? 'hls' : 'direct_mp4';
+          telemetry.emit('ui.contract.consumed', {
+            mode: 'normative',
+            fields: ['decision.selectedOutputUrl']
+          });
+        }
+        else if (resolution.mode === 'legacy') {
           if (pInfo.mode === 'deny') {
             throw new Error(t('player.playbackDenied', 'Playback denied by policy'));
           }
           if (!pInfo.url) {
             throw new Error(t('player.notAvailable', 'Playback not available'));
           }
-          mode = pInfo.mode as any;
           streamUrl = pInfo.url;
+          mode = pInfo.mode as any;
+          telemetry.emit('ui.contract.consumed', {
+            mode: 'legacy',
+            fields: ['url', 'mode']
+          });
+        }
+        else {
+          // Fail Closed
+          telemetry.emit('ui.failclosed', {
+            context: 'V3Player.PolicyEngine',
+            reason: resolution.reason
+          });
+          throw new Error(t('player.playbackError', `Policy Violation: ${resolution.reason}`));
         }
 
         if (streamUrl.startsWith('/')) {
@@ -1307,7 +1348,9 @@ function V3Player(props: V3PlayerProps) {
 
   useEffect(() => {
     if (!autoStart || mounted.current) return;
-    if (src || recordingId || sRef) {
+    // UI-INV-PLAYER-001: Autostart requires an explicit source.
+    const hasSource = !!(src || recordingId || sRef);
+    if (hasSource) {
       mounted.current = true;
       startStream(sRef);
     }
@@ -1473,7 +1516,7 @@ function V3Player(props: V3PlayerProps) {
 
       {/* Error Toast */}
       {error && (
-        <div className="error-toast" aria-live="polite">
+        <div className="error-toast" aria-live="polite" role="alert">
           <div className="error-main">
             <span className="error-text">⚠ {error}</span>
             <button onClick={handleRetry} className="btn-retry">{t('common.retry')}</button>

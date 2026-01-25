@@ -85,9 +85,7 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, s
 	// 2. Session Check
 	rec, err := store.GetSession(r.Context(), sessionID)
 	if err != nil || rec == nil {
-		// Store error or Not Found logic
-		// BoltStore returns specialized errors or we check for nil?
-		// Assuming GetSession returns error if not found or system fail.
+		// Session not found or system failure.
 		// Detailed error handling would check typical "not found" semantics.
 		// For 8-6 MVP: 404
 		http.Error(w, "session not found", http.StatusNotFound)

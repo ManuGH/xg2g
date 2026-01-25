@@ -376,6 +376,9 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 				dst.VODCacheTTL = d
 			}
 		}
+		if src.VOD.CacheMaxEntries > 0 {
+			dst.VODCacheMaxEntries = src.VOD.CacheMaxEntries
+		}
 
 		// Keep typed config in sync
 		dst.VOD = VODConfig{
@@ -384,6 +387,7 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 			StallTimeout:    dst.VODStallTimeout.String(),
 			MaxConcurrent:   dst.VODMaxConcurrent,
 			CacheTTL:        dst.VODCacheTTL.String(),
+			CacheMaxEntries: dst.VODCacheMaxEntries,
 		}
 	}
 

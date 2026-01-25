@@ -5,9 +5,9 @@
 }
 
 .config-section {
-  background: var(--card-bg);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-lg);
   padding: 1.5rem;
   margin-bottom: 1.5rem;
 }
@@ -15,9 +15,9 @@
 .config-section h3 {
   margin-top: 0;
   margin-bottom: 1rem;
-  font-size: 1.2rem;
-  color: var(--text-color);
-  border-bottom: 1px solid var(--border-color);
+  font-size: var(--text-h3);
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-base);
   padding-bottom: 0.5rem;
 }
 
@@ -95,23 +95,25 @@
 }
 
 .btn-primary {
-  background-color: #007bff;
+  background-color: var(--accent-action);
   color: white;
   border: none;
   padding: 0.75rem 1.5rem;
-  font-size: 1rem;
-  border-radius: 4px;
+  font-size: var(--text-base);
+  border-radius: var(--radius-md);
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: all 180ms ease;
 }
 
-.btn-primary:hover {
-  background-color: #0056b3;
+.btn-primary:hover:not(:disabled) {
+  background-color: var(--accent-action-hover);
+  transform: translateY(-1px);
 }
 
 .btn-primary:disabled {
-  background-color: #ccc;
+  background-color: var(--text-disabled);
   cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .alert {
@@ -121,15 +123,15 @@
 }
 
 .alert.error {
-  background-color: #fde8e8;
-  color: #c81e1e;
-  border: 1px solid #fecaca;
+  background-color: rgba(248, 113, 113, 0.1);
+  color: var(--status-error);
+  border: 1px solid var(--status-error);
 }
 
 .alert.success {
-  background-color: #def7ec;
-  color: #03543f;
-  border: 1px solid #bcf0da;
+  background-color: rgba(52, 211, 153, 0.1);
+  color: var(--status-success);
+  border: 1px solid var(--status-success);
 }
 
 .alert.warning {

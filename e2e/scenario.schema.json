@@ -1,0 +1,93 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "E2E Scenario",
+  "type": "object",
+  "required": [
+    "meta",
+    "capabilities",
+    "endpoints"
+  ],
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": [
+        "id",
+        "description"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "endpoints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "method",
+          "path",
+          "response"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "GET",
+              "POST",
+              "PUT",
+              "DELETE"
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "response": {
+            "type": "object",
+            "required": [
+              "status"
+            ],
+            "properties": {
+              "status": {
+                "type": "integer"
+              },
+              "body": {
+                "type": [
+                  "object",
+                  "string"
+                ]
+              },
+              "headers": {
+                "type": "object"
+              },
+              "delayMs": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      }
+    },
+    "expectations": {
+      "type": "object",
+      "properties": {
+        "telemetry": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "ui": {
+          "type": "array"
+        }
+      }
+    }
+  }
+}

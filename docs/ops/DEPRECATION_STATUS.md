@@ -13,6 +13,9 @@ operational view used for release planning and enforcement.
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `XG2G_STREAM_PORT` | `enigma2.streamPort` | warn | v3.5.0 | `internal/config/registry.go`, `internal/config/merge.go` | `docs/deprecations.json`, `docs/DEPRECATION_POLICY.md` |
 | `XG2G_HTTP_ENABLE_HTTP2` | Always enabled | fail | v3.1.0 | `internal/config/runtime_env.go` | `docs/deprecations.json`, `docs/DEPRECATION_POLICY.md` |
+| `XG2G_RESUME_BACKEND` | Removed | fail | v3.0.0 | `internal/pipeline/resume/store.go` | ADR-021 |
+| `XG2G_SESSION_BACKEND` | Removed | fail | v3.0.0 | `internal/domain/session/store/factory.go` | ADR-021 |
+| `XG2G_CAPABILITIES_BACKEND` | Removed | fail | v3.0.0 | `internal/pipeline/scan/store.go` | ADR-021 |
 
 ### Schema/Protocol Deprecations
 
@@ -32,10 +35,10 @@ operational view used for release planning and enforcement.
 
 ### Storage Backends
 
-- BoltDB/BadgerDB are deprecated; SQLite is the durable truth.
-  - ADR: `docs/ADR/ADR-020_STORAGE_STRATEGY.md`
-  - Code: `internal/domain/session/store/bolt_store.go`, `internal/domain/session/store/badger_store.go`,
-    `internal/pipeline/resume/store.go`, `internal/config/types.go`
+- BoltDB/BadgerDB/JSON are REMOVED; SQLite is the durable truth.
+  - ADR: `docs/ADR/ADR-020_STORAGE_STRATEGY.md`, `ADR-021`
+  - Code: `internal/domain/session/store/sqlite_store.go`, `internal/pipeline/resume/sqlite_store.go`,
+    `internal/pipeline/scan/sqlite_store.go`
 
 ## Best Practice Checklist (Removal Process)
 
@@ -52,5 +55,5 @@ operational view used for release planning and enforcement.
   Treat as overdue and plan removal with a short compat window if needed.
 - Legacy decision schema: keep telemetry (`xg2g.decision.schema`) until
   sunset criteria are met, then remove decode support in v4.0.
-- Bolt/Badger: gate usage to migration-only paths, then remove backends when
-  SQLite adoption is complete.
+- Bolt/Badger/JSON: Durable = SQLite only; Ephemeral = memory; migration via `xg2g-migrate`.
+  Implementations removed from production packages as of Phase 2.4.

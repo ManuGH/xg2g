@@ -48,6 +48,20 @@ var forbiddenRules = []ForbiddenRule{
 		},
 		ProblemDetails: "VODMaxConcurrent must be >= 0 (0 = unlimited).",
 	},
+	{
+		Name: "VOD_CACHE_TTL_NEGATIVE",
+		Predicate: func(cfg AppConfig) bool {
+			return cfg.VODCacheTTL < 0
+		},
+		ProblemDetails: "VODCacheTTL must be >= 0.",
+	},
+	{
+		Name: "VOD_CACHE_MAX_ENTRIES_INVALID",
+		Predicate: func(cfg AppConfig) bool {
+			return cfg.VODCacheMaxEntries <= 0
+		},
+		ProblemDetails: "VODCacheMaxEntries must be > 0.",
+	},
 }
 
 // Validate validates a AppConfig using the centralized validation package
@@ -224,9 +238,9 @@ func Validate(cfg AppConfig) error {
 		}
 
 		switch cfg.Store.Backend {
-		case "memory", "bolt":
+		case "memory", "sqlite":
 		default:
-			v.AddError("Store.Backend", "must be memory or bolt", cfg.Store.Backend)
+			v.AddError("Store.Backend", "must be memory or sqlite", cfg.Store.Backend)
 		}
 
 		v.URL("Enigma2.BaseURL", cfg.Enigma2.BaseURL, []string{"http", "https"})

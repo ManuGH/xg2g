@@ -184,6 +184,7 @@ func buildRegistry() (*Registry, error) {
 		{Path: "vod.stallTimeout", Env: "", FieldPath: "VOD.StallTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: "1m"},
 		{Path: "vod.maxConcurrent", Env: "", FieldPath: "VOD.MaxConcurrent", Profile: ProfileAdvanced, Status: StatusActive, Default: 2},
 		{Path: "vod.cacheTTL", Env: "", FieldPath: "VOD.CacheTTL", Profile: ProfileAdvanced, Status: StatusActive, Default: "24h"},
+		{Path: "vod.cacheMaxEntries", Env: "", FieldPath: "VOD.CacheMaxEntries", Profile: ProfileAdvanced, Status: StatusActive, Default: 256},
 
 		// --- FEATURE FLAGS ---
 		{Path: "readyStrict", Env: "XG2G_READY_STRICT", FieldPath: "ReadyStrict", Profile: ProfileAdvanced, Status: StatusActive, Default: false},
@@ -210,7 +211,8 @@ func buildRegistry() (*Registry, error) {
 		{FieldPath: "VODAnalyzeDuration", Profile: ProfileInternal, Status: StatusInternal},
 		{FieldPath: "VODStallTimeout", Profile: ProfileInternal, Status: StatusInternal},
 		{FieldPath: "VODMaxConcurrent", Profile: ProfileInternal, Status: StatusInternal},
-		{FieldPath: "VODCacheTTL", Profile: ProfileInternal, Status: StatusInternal},
+		{FieldPath: "VODCacheTTL", Profile: ProfileInternal, Status: StatusInternal, Default: 24 * time.Hour},
+		{FieldPath: "VODCacheMaxEntries", Profile: ProfileInternal, Status: StatusInternal, Default: 256},
 
 		// Zombie candidate examples (mapping existing env that might not be in AppConfig)
 		{Env: "XG2G_HTTP_ENABLE_HTTP2", FieldPath: "??", Profile: ProfileIntegrator, Status: StatusCandidate},

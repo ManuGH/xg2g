@@ -8,18 +8,13 @@ import (
 	"context"
 
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/control/vod/preflight"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
 )
 
-// PreflightCheckFunc validates source accessibility before initiating a stream.
-type PreflightCheckFunc func(context.Context, string) error
-
-// CheckSourceAvailability is a no-op preflight check that always succeeds.
-// TODO: Implement actual source validation if needed.
-func CheckSourceAvailability(ctx context.Context, source string) error {
-	return nil
-}
+// PreflightProvider validates source accessibility before initiating a stream.
+type PreflightProvider = preflight.PreflightProvider
 
 // RecordingStatusProvider defines the minimal interface required for DVR read operations.
 type RecordingStatusProvider interface {

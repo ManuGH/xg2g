@@ -226,7 +226,7 @@ picons:
 #   XG2G_V3_WORKER_ENABLED       - Enable v3 worker/store
 #   XG2G_V3_WORKER_MODE          - Worker mode (standard or virtual)
 #   XG2G_V3_CONFIG_STRICT        - Enable strict v3 config validation
-#   XG2G_V3_STORE_BACKEND        - Store backend (memory or bolt)
+#   XG2G_V3_STORE_BACKEND        - Store backend (memory or sqlite)
 #   XG2G_V3_STORE_PATH           - Store path for bolt backend
 #   XG2G_V3_HLS_ROOT             - HLS output root for v3 sessions
 #   XG2G_V3_SHADOW_INTENTS       - Enable shadow intents from v2 proxy

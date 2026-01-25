@@ -7,6 +7,7 @@ package manager
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -18,8 +19,12 @@ import (
 func TestRecoverySweep_RecoverStale(t *testing.T) {
 	tmpDir, _ := os.MkdirTemp("", "recovery_test")
 	defer func() { _ = os.RemoveAll(tmpDir) }()
-	s, _ := store.OpenBoltStore(tmpDir) // Use real bolt store to test lease logic
-	defer func() { _ = s.Close() }()
+	s, _ := store.OpenStateStore("sqlite", filepath.Join(tmpDir, "sessions.sqlite"))
+	defer func() {
+		if closer, ok := s.(interface{ Close() error }); ok {
+			_ = closer.Close()
+		}
+	}()
 
 	orch := &Orchestrator{
 		Store:     s,
@@ -60,8 +65,12 @@ func TestRecoverySweep_RecoverStale(t *testing.T) {
 func TestRecoverySweep_IgnoreActive(t *testing.T) {
 	tmpDir, _ := os.MkdirTemp("", "recovery_active")
 	defer func() { _ = os.RemoveAll(tmpDir) }()
-	s, _ := store.OpenBoltStore(tmpDir)
-	defer func() { _ = s.Close() }()
+	s, _ := store.OpenStateStore("sqlite", filepath.Join(tmpDir, "sessions.sqlite"))
+	defer func() {
+		if closer, ok := s.(interface{ Close() error }); ok {
+			_ = closer.Close()
+		}
+	}()
 
 	orch := &Orchestrator{
 		Store:     s,
@@ -96,8 +105,12 @@ func TestRecoverySweep_IgnoreActive(t *testing.T) {
 func TestRecoverySweep_IgnoreTerminal(t *testing.T) {
 	tmpDir, _ := os.MkdirTemp("", "recovery_term")
 	defer func() { _ = os.RemoveAll(tmpDir) }()
-	s, _ := store.OpenBoltStore(tmpDir)
-	defer func() { _ = s.Close() }()
+	s, _ := store.OpenStateStore("sqlite", filepath.Join(tmpDir, "sessions.sqlite"))
+	defer func() {
+		if closer, ok := s.(interface{ Close() error }); ok {
+			_ = closer.Close()
+		}
+	}()
 
 	orch := &Orchestrator{Store: s, Admission: admission.NewResourceMonitor(10, 10, 0)}
 	ctx := context.Background()
@@ -122,8 +135,12 @@ func TestRecoverySweep_RecoverReady(t *testing.T) {
 	// Fix 11-1: READY sessions without lease must be recovered to FAILED (Zombies)
 	tmpDir, _ := os.MkdirTemp("", "recovery_ready")
 	defer func() { _ = os.RemoveAll(tmpDir) }()
-	s, _ := store.OpenBoltStore(tmpDir)
-	defer func() { _ = s.Close() }()
+	s, _ := store.OpenStateStore("sqlite", filepath.Join(tmpDir, "sessions.sqlite"))
+	defer func() {
+		if closer, ok := s.(interface{ Close() error }); ok {
+			_ = closer.Close()
+		}
+	}()
 
 	orch := &Orchestrator{Store: s, LeaseTTL: 100 * time.Millisecond, Admission: admission.NewResourceMonitor(10, 10, 0)}
 	ctx := context.Background()

@@ -3,6 +3,7 @@
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
 import { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   updateTimer,
   previewConflicts,
@@ -11,7 +12,6 @@ import {
   type TimerConflictPreviewResponse,
   type TimerCreateRequest
 } from '../client-ts';
-import { normalizeEpgText } from '../utils/text';
 import './EditTimerDialog.css';
 
 interface EditTimerDialogProps {
@@ -30,9 +30,11 @@ interface FormData {
 }
 
 export default function EditTimerDialog({ timer, onClose, onSave, capabilities }: EditTimerDialogProps) {
+  const { t } = useTranslation();
   const [formData, setFormData] = useState<FormData>({
     name: timer.name || '',
-    description: normalizeEpgText(timer.description) || '',
+    // UI-INV-TIMER-001: Preserve raw truth. Normalization happens ONLY for display if needed.
+    description: timer.description || '',
     begin: timer.begin || 0,
     end: timer.end || 0,
     enabled: timer.state !== 'disabled',
@@ -133,29 +135,41 @@ export default function EditTimerDialog({ timer, onClose, onSave, capabilities }
     setSaving(true);
     setError(null);
     try {
+      // UI-INV-TIMER-001: Dirty-field write strategy (Seal Model B).
+      // Only include fields that have definitively changed compared to props.
+      const body: any = {};
+
+      if (formData.name !== (timer.name || '')) body.name = formData.name;
+      if (formData.description !== (timer.description || '')) body.description = formData.description;
+      if (formData.begin !== (timer.begin || 0)) body.begin = formData.begin;
+      if (formData.end !== (timer.end || 0)) body.end = formData.end;
+
+      const isEnabled = timer.state !== 'disabled';
+      if (formData.enabled !== isEnabled) body.enabled = formData.enabled;
+
+      if (Object.keys(body).length === 0) {
+        onClose(); // No changes to save
+        return;
+      }
+
       await updateTimer({
         path: { timerId: timer.timerId },
-        body: {
-          name: formData.name,
-          description: formData.description,
-          begin: formData.begin,
-          end: formData.end,
-          enabled: formData.enabled
-        }
+        body
       });
-      onSave(); // Parent refresh
+      onSave(); // Trigger parent refresh
       onClose();
     } catch (err: any) {
-      // Map errors
-      if (err.status === 409) {
-        setError("Timer existiert bereits.");
-      } else if (err.status === 422) {
-        setError("Konflikt mit vorhandenem Timer.");
-      } else if (err.status === 502) {
-        setError("Receiver hat die Änderung nicht bestätigt. Bitte Receiver prüfen.");
-      } else {
-        setError("Fehler beim Speichern: " + (err.body?.detail || err.message));
+      console.error("Save failed", err);
+
+      // RFC7807 Discipline: Extract title/detail
+      let msg = t('common.saveFailed', 'Save failed');
+      if (err.data && err.data.detail) {
+        msg = `${err.data.title || msg}: ${err.data.detail}`;
+      } else if (err.message) {
+        msg = err.message;
       }
+
+      setError(msg);
     } finally {
       setSaving(false);
     }
@@ -189,6 +203,7 @@ export default function EditTimerDialog({ timer, onClose, onSave, capabilities }
               value={formData.name}
               onChange={e => handleChange('name', e.target.value)}
               disabled={!canEdit}
+              data-testid="timer-edit-name"
             />
           </div>
           <div className="form-group">
@@ -198,6 +213,7 @@ export default function EditTimerDialog({ timer, onClose, onSave, capabilities }
               value={formData.description}
               onChange={e => handleChange('description', e.target.value)}
               disabled={!canEdit}
+              data-testid="timer-edit-description"
             />
           </div>
 
@@ -270,6 +286,7 @@ export default function EditTimerDialog({ timer, onClose, onSave, capabilities }
             onClick={handleSave}
             disabled={!canEdit || saving || (conflict !== null && (conflict.conflicts?.length || 0) > 0)}
             className="timer-btn btn-save"
+            data-testid="timer-edit-save"
           >
             {saving ? 'Saving...' : 'Save'}
           </button>

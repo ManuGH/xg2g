@@ -1,0 +1,140 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Runtime Telemetry Contract",
+  "description": "Defines the shape of operational truth emitted by the UI",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": [
+        "ui.contract.consumed",
+        "ui.contract.violation",
+        "ui.error",
+        "ui.failclosed",
+        "ui.session.heartbeat",
+        "ui.startup"
+      ]
+    },
+    "payload": {
+      "type": "object",
+      "oneOf": [
+        {
+          "$ref": "#/definitions/ContractConsumed"
+        },
+        {
+          "$ref": "#/definitions/ContractViolation"
+        },
+        {
+          "$ref": "#/definitions/UIError"
+        },
+        {
+          "$ref": "#/definitions/FailClosed"
+        }
+      ]
+    },
+    "meta": {
+      "type": "object",
+      "required": [
+        "requestId",
+        "timestamp"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "number"
+        },
+        "component": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "required": [
+    "type",
+    "payload",
+    "meta"
+  ],
+  "definitions": {
+    "ContractConsumed": {
+      "type": "object",
+      "properties": {
+        "fields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "normative",
+            "legacy",
+            "fallback"
+          ]
+        }
+      },
+      "required": [
+        "fields",
+        "mode"
+      ]
+    },
+    "ContractViolation": {
+      "type": "object",
+      "properties": {
+        "check": {
+          "type": "string"
+        },
+        "details": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "check"
+      ]
+    },
+    "UIError": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "integer"
+        },
+        "code": {
+          "type": "string"
+        },
+        "retry_after": {
+          "type": "integer"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "code"
+      ]
+    },
+    "FailClosed": {
+      "type": "object",
+      "properties": {
+        "context": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "context",
+        "reason"
+      ]
+    }
+  }
+}

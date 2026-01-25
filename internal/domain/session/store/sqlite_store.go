@@ -317,8 +317,29 @@ func (s *SqliteStore) UpdateSession(ctx context.Context, id string, fn func(*mod
 
 	rec.UpdatedAtUnix = time.Now().Unix()
 
-	// Implementation of Put with Tx would go here. For now, we Re-Put.
-	// ... (Skipping for brevity in shadow proof, but in production this should be a shared helper)
+	profileJSON, _ := json.Marshal(rec.Profile)
+	contextJSON, _ := json.Marshal(rec.ContextData)
+
+	updateQuery := `
+		UPDATE sessions SET
+			service_ref = ?, profile_json = ?, state = ?, pipeline_state = ?, reason = ?,
+			reason_detail = ?, fallback_reason = ?, fallback_at_ms = ?, correlation_id = ?,
+			updated_at_ms = ?, last_access_ms = ?, expires_at_ms = ?, lease_expires_at_ms = ?,
+			heartbeat_interval = ?, last_heartbeat_ms = ?, stop_reason = ?, latest_segment_at = ?,
+			last_playlist_access_at = ?, playlist_published_at = ?, context_data_json = ?
+		WHERE session_id = ?
+		`
+	_, err = tx.ExecContext(ctx, updateQuery,
+		rec.ServiceRef, profileJSON, rec.State, rec.PipelineState, rec.Reason, rec.ReasonDetail,
+		rec.FallbackReason, s2ms(rec.FallbackAtUnix), rec.CorrelationID, s2ms(rec.UpdatedAtUnix),
+		s2ms(rec.LastAccessUnix), s2ms(rec.ExpiresAtUnix), s2ms(rec.LeaseExpiresAtUnix), rec.HeartbeatInterval,
+		s2ms(rec.LastHeartbeatUnix), rec.StopReason, timeToNullString(rec.LatestSegmentAt),
+		timeToNullString(rec.LastPlaylistAccessAt), timeToNullString(rec.PlaylistPublishedAt), contextJSON,
+		rec.SessionID,
+	)
+	if err != nil {
+		return nil, err
+	}
 
 	if err := tx.Commit(); err != nil {
 		return nil, err

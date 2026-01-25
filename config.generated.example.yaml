@@ -104,6 +104,7 @@ trustedProxies: ""
 version: ""
 vod:
   analyzeDuration: "50000000"
+  cacheMaxEntries: 256
   cacheTTL: 24h
   maxConcurrent: 2
   probeSize: 50M

@@ -234,6 +234,8 @@
       "connectionVerified": "Verbindung geprüft",
       "testConnection": "Verbindung testen",
       "statusOnline": "Online",
+      "saveConfig": "Konfiguration speichern",
+      "rerunSetup": "Setup erneut ausführen",
       "finishSetup": "Setup abschließen"
     },
     "step2": {

@@ -20,10 +20,10 @@ func OpenStateStore(backend, path string) (StateStore, error) {
 		return NewSqliteStore(path)
 	case "memory":
 		return NewMemoryStore(), nil // Ephemeral only (testing/dev)
-	case "bolt", "badger":
+	case "bolt", "badger": // ADR-021 removed
 		// ADR-021: BoltDB/BadgerDB are DEPRECATED and removed.
-		// Migration: Use 'xg2g-migrate' to convert bolt/badger to sqlite.
-		return nil, fmt.Errorf("DEPRECATED: %s backend removed (ADR-021). Use 'sqlite' or run 'xg2g-migrate' to convert existing data", backend)
+		// See docs/ops/BACKUP_RESTORE.md for SQLite-only operations.
+		return nil, fmt.Errorf("DEPRECATED: %s backend removed (ADR-021). Only SQLite is supported in production", backend)
 	default:
 		return nil, fmt.Errorf("unknown store backend: %s (supported: sqlite, memory)", backend)
 	}

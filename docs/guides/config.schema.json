@@ -831,6 +831,10 @@
           "default": "50000000",
           "type": "string"
         },
+        "cacheMaxEntries": {
+          "default": 256,
+          "type": "integer"
+        },
         "cacheTTL": {
           "default": "24h",
           "type": "string"

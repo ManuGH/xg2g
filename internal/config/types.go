@@ -260,6 +260,7 @@ type AppConfig struct {
 	VODStallTimeout    time.Duration // Supervisor stall timeout
 	VODMaxConcurrent   int           `json:"vodMaxConcurrentBuilds,omitempty"`
 	VODCacheTTL        time.Duration `json:"vodCacheTTL,omitempty"`
+	VODCacheMaxEntries int           `json:"vodCacheMaxEntries,omitempty"`
 
 	// VOD (Typed config - source of truth for YAML/Registry)
 	VOD VODConfig
@@ -344,6 +345,9 @@ type VODConfig struct {
 	// CacheTTL controls how long VOD-derived artifacts are cached.
 	// Example: "24h"
 	CacheTTL string `yaml:"cacheTTL" json:"cacheTTL"`
+
+	// CacheMaxEntries bounds the number of cached recording artifacts.
+	CacheMaxEntries int `yaml:"cacheMaxEntries" json:"cacheMaxEntries"`
 }
 
 // Enigma2Settings holds the runtime Enigma2 settings (using time.Duration)

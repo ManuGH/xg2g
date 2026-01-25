@@ -210,6 +210,7 @@ Aliases: `openWebIF.*` (compat; prefer `enigma2.*`).
 | Path | Env | Default | Status | Profile |
 | --- | --- | --- | --- | --- |
 | `vod.analyzeDuration` | - | `50000000` | Active | Advanced |
+| `vod.cacheMaxEntries` | - | `256` | Active | Advanced |
 | `vod.cacheTTL` | - | `24h` | Active | Advanced |
 | `vod.maxConcurrent` | - | `2` | Active | Advanced |
 | `vod.probeSize` | - | `50M` | Active | Advanced |

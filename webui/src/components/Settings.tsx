@@ -6,7 +6,7 @@ import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getSystemScanStatus, triggerSystemScan, getSystemConfig } from '../client-ts';
 import type { ScanStatus, AppConfig } from '../client-ts/types.gen';
-import Config from './Config';
+import Config, { isConfigured } from './Config';
 import './Settings.css';
 
 function Settings() {
@@ -17,6 +17,18 @@ function Settings() {
   const [scanStatus, setScanStatus] = useState<ScanStatus | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
   const [config, setConfig] = useState<AppConfig | null>(null);
+  const [showSetup, setShowSetup] = useState<boolean>(false);
+
+  const configured = isConfigured(config);
+
+  const fetchConfig = async () => {
+    try {
+      const { data } = await getSystemConfig();
+      if (data) setConfig(data);
+    } catch (err) {
+      console.error("Failed to load config", err);
+    }
+  };
 
   // Poll scan status
   useEffect(() => {
@@ -34,15 +46,6 @@ function Settings() {
         if (!scanStatus) {
           setScanError("Failed to load status");
         }
-      }
-    };
-
-    const fetchConfig = async () => {
-      try {
-        const { data } = await getSystemConfig();
-        if (data) setConfig(data);
-      } catch (err) {
-        console.error("Failed to load config", err);
       }
     };
 
@@ -81,7 +84,26 @@ function Settings() {
       </div>
 
       <div className="settings-setup">
-        <Config />
+        {!configured ? (
+          <Config onUpdate={fetchConfig} />
+        ) : (
+          <div className="settings-section accordion-section">
+            <div className="section-header-row" onClick={() => setShowSetup(!showSetup)}>
+              <h3>{t('setup.title')}</h3>
+              <button
+                className="settings-button secondary small"
+                data-testid="config-rerun-setup"
+              >
+                {showSetup ? t('common.hideDetails') : t('setup.actions.rerunSetup') || 'Re-run Setup'}
+              </button>
+            </div>
+            {showSetup && (
+              <div className="animate-fade-in">
+                <Config onUpdate={fetchConfig} showTitle={false} />
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="settings-section">
@@ -125,11 +147,11 @@ function Settings() {
 
               <div className="scan-stats-row">
                 <div className="scan-stat-item">
-                  <span className="stat-value">{scanStatus.scannedChannels} / {scanStatus.totalChannels}</span>
+                  <span className="stat-value tabular">{scanStatus.scannedChannels} / {scanStatus.totalChannels}</span>
                   <span className="stat-label">{t('settings.scan.stats.scanned')}</span>
                 </div>
                 <div className="scan-stat-item">
-                  <span className="stat-value">{scanStatus.updatedCount}</span>
+                  <span className="stat-value tabular">{scanStatus.updatedCount}</span>
                   <span className="stat-label">{t('settings.scan.stats.updated')}</span>
                 </div>
                 {scanStatus.finishedAt && scanStatus.finishedAt > 0 && (
@@ -162,18 +184,7 @@ function Settings() {
         </div>
       </div>
 
-      <div className="settings-section settings-section-disabled">
-        <h3>{t('settings.streaming.adaptive.title')}</h3>
-        <div className="settings-group">
-          <label className="settings-inline">
-            <input type="checkbox" disabled />
-            {t('settings.streaming.adaptive.toggle')}
-          </label>
-          <span className="settings-hint">
-            {t('settings.streaming.adaptive.hint')}
-          </span>
-        </div>
-      </div>
+      {/* Adaptive Bitrate removed as per 2026 Design Contract (Trust Hardening) */}
 
       {/* ADR-00X: Saved message removed (was for profile save feedback) */}
 

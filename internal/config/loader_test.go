@@ -176,6 +176,26 @@ epg:
 
 func TestValidateEPGBounds(t *testing.T) {
 	tmpDir := t.TempDir()
+	baseCfg := func() AppConfig {
+		return AppConfig{
+			DataDir: tmpDir,
+			Enigma2: Enigma2Settings{
+				BaseURL:    "http://test.local",
+				StreamPort: 8001,
+			},
+			Streaming: StreamingConfig{
+				DeliveryPolicy: "universal",
+			},
+			Bouquet:            "test",
+			EPGEnabled:         true,
+			EPGDays:            7,
+			EPGMaxConcurrency:  5,
+			EPGTimeoutMS:       5000,
+			EPGRetries:         2,
+			FuzzyMax:           2,
+			VODCacheMaxEntries: 256,
+		}
+	}
 
 	tests := []struct {
 		name      string
@@ -186,46 +206,16 @@ func TestValidateEPGBounds(t *testing.T) {
 		{
 			name: "valid EPG config",
 			cfg: func() AppConfig {
-				return AppConfig{
-					DataDir: tmpDir,
-					Enigma2: Enigma2Settings{
-						BaseURL:    "http://test.local",
-						StreamPort: 8001,
-					},
-					Streaming: StreamingConfig{
-						DeliveryPolicy: "universal",
-					},
-					Bouquet:           "test",
-					EPGEnabled:        true,
-					EPGDays:           7,
-					EPGMaxConcurrency: 5,
-					EPGTimeoutMS:      5000,
-					EPGRetries:        2,
-					FuzzyMax:          2,
-				}
+				return baseCfg()
 			},
 			shouldErr: false,
 		},
 		{
 			name: "EPGTimeoutMS too low",
 			cfg: func() AppConfig {
-				return AppConfig{
-					DataDir: tmpDir,
-					Enigma2: Enigma2Settings{
-						BaseURL:    "http://test.local",
-						StreamPort: 8001,
-					},
-					Streaming: StreamingConfig{
-						DeliveryPolicy: "universal",
-					},
-					Bouquet:           "test",
-					EPGEnabled:        true,
-					EPGDays:           7,
-					EPGMaxConcurrency: 5,
-					EPGTimeoutMS:      50, // Too low
-					EPGRetries:        2,
-					FuzzyMax:          2,
-				}
+				cfg := baseCfg()
+				cfg.EPGTimeoutMS = 50
+				return cfg
 			},
 			shouldErr: true,
 			errMsg:    "EPGTimeoutMS",
@@ -233,23 +223,9 @@ func TestValidateEPGBounds(t *testing.T) {
 		{
 			name: "EPGTimeoutMS too high",
 			cfg: func() AppConfig {
-				return AppConfig{
-					DataDir: tmpDir,
-					Enigma2: Enigma2Settings{
-						BaseURL:    "http://test.local",
-						StreamPort: 8001,
-					},
-					Streaming: StreamingConfig{
-						DeliveryPolicy: "universal",
-					},
-					Bouquet:           "test",
-					EPGEnabled:        true,
-					EPGDays:           7,
-					EPGMaxConcurrency: 5,
-					EPGTimeoutMS:      100000, // Too high
-					EPGRetries:        2,
-					FuzzyMax:          2,
-				}
+				cfg := baseCfg()
+				cfg.EPGTimeoutMS = 100000
+				return cfg
 			},
 			shouldErr: true,
 			errMsg:    "EPGTimeoutMS",
@@ -257,23 +233,9 @@ func TestValidateEPGBounds(t *testing.T) {
 		{
 			name: "EPGRetries too high",
 			cfg: func() AppConfig {
-				return AppConfig{
-					DataDir: tmpDir,
-					Enigma2: Enigma2Settings{
-						BaseURL:    "http://test.local",
-						StreamPort: 8001,
-					},
-					Streaming: StreamingConfig{
-						DeliveryPolicy: "universal",
-					},
-					Bouquet:           "test",
-					EPGEnabled:        true,
-					EPGDays:           7,
-					EPGMaxConcurrency: 5,
-					EPGTimeoutMS:      5000,
-					EPGRetries:        10, // Too high
-					FuzzyMax:          2,
-				}
+				cfg := baseCfg()
+				cfg.EPGRetries = 10
+				return cfg
 			},
 			shouldErr: true,
 			errMsg:    "EPGRetries",
@@ -281,23 +243,9 @@ func TestValidateEPGBounds(t *testing.T) {
 		{
 			name: "FuzzyMax too high",
 			cfg: func() AppConfig {
-				return AppConfig{
-					DataDir: tmpDir,
-					Enigma2: Enigma2Settings{
-						BaseURL:    "http://test.local",
-						StreamPort: 8001,
-					},
-					Streaming: StreamingConfig{
-						DeliveryPolicy: "universal",
-					},
-					Bouquet:           "test",
-					EPGEnabled:        true,
-					EPGDays:           7,
-					EPGMaxConcurrency: 5,
-					EPGTimeoutMS:      5000,
-					EPGRetries:        2,
-					FuzzyMax:          50, // Too high
-				}
+				cfg := baseCfg()
+				cfg.FuzzyMax = 50
+				return cfg
 			},
 			shouldErr: true,
 			errMsg:    "FuzzyMax",
