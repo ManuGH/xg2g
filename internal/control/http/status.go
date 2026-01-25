@@ -4,15 +4,17 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/ManuGH/xg2g/internal/verification"
 	"github.com/ManuGH/xg2g/internal/version"
 )
 
 // StatusResponse represents the system status contract.
 type StatusResponse struct {
-	Status  string      `json:"status"` // healthy, degraded, recovering
-	Release string      `json:"release"`
-	Digest  string      `json:"digest"`
-	Runtime RuntimeInfo `json:"runtime"`
+	Status  string                   `json:"status"` // healthy, degraded, recovering
+	Release string                   `json:"release"`
+	Digest  string                   `json:"digest"`
+	Runtime RuntimeInfo              `json:"runtime"`
+	Drift   *verification.DriftState `json:"drift,omitempty"`
 }
 
 type RuntimeInfo struct {
@@ -22,26 +24,33 @@ type RuntimeInfo struct {
 
 // StatusHandler returns the system status.
 type StatusHandler struct {
-	// In a real implementation, we would inject a drift detector / verification service here
-	// For now, we rely on the static truth as verified by the architecture
+	store verification.Store
 }
 
-func NewStatusHandler() *StatusHandler {
-	return &StatusHandler{}
+func NewStatusHandler(store verification.Store) *StatusHandler {
+	return &StatusHandler{
+		store: store,
+	}
 }
 
 func (h *StatusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Current state is considered healthy by definition of the "Verified" architecture
-	// In a future iteration, this would query the VerifyRuntime() result dynamically
-
 	resp := StatusResponse{
-		Status:  "healthy",
-		Release: version.Version, // Assuming we have a version package, otherwise hardcode for now or inject
-		Digest:  version.Commit,  // Assuming version package has Commit
+		Status:  "healthy", // Logic could be enhanced based on drift detected
+		Release: version.Version,
+		Digest:  version.Commit,
 		Runtime: RuntimeInfo{
-			FFmpeg: "7.1.3",  // Hardcoded as per verified base image
-			Go:     "1.25.3", // Hardcoded as per verified go.mod
+			FFmpeg: "7.1.3",
+			Go:     "1.25.3",
 		},
+	}
+
+	if h.store != nil {
+		if drift, ok := h.store.Get(r.Context()); ok {
+			resp.Drift = &drift
+			if drift.Detected {
+				resp.Status = "degraded" // Simple logic: drift = degraded
+			}
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

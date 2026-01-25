@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -33,6 +34,8 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
 	"github.com/ManuGH/xg2g/internal/platform/paths"
 	xgtls "github.com/ManuGH/xg2g/internal/tls"
+	"github.com/ManuGH/xg2g/internal/verification"
+	"github.com/ManuGH/xg2g/internal/verification/checks"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -396,19 +399,22 @@ func main() {
 	// Bus (In-Memory for MVP)
 	v3Bus := bus.NewMemoryBus()
 
-	// Session Store (Memory for MVP, TODO: migrate to SQLite per ADR-021)
-	v3Store := store.NewMemoryStore()
+	// Session Store (Factory honors store.backend/store.path)
+	v3Store, err := store.OpenStateStore(cfg.Store.Backend, filepath.Join(cfg.Store.Path, "sessions.sqlite"))
+	if err != nil {
+		logger.Fatal().Err(err).Msg("failed to initialize session store")
+	}
 
 	// Resume Store (SQLite if persisted, Memory otherwise)
 	// Per ADR-021: Only sqlite and memory backends supported
-	resumeStore, err := resume.NewStore("sqlite", cfg.DataDir)
+	resumeStore, err := resume.NewStore(cfg.Store.Backend, cfg.Store.Path)
 	if err != nil {
 		logger.Warn().Err(err).Msg("failed to initialize resume store, falling back to memory")
 		resumeStore, _ = resume.NewStore("memory", "")
 	}
 
 	// Scan Manager & Store
-	v3ScanStore, err := scan.NewStore(cfg.Store.Backend, cfg.DataDir)
+	v3ScanStore, err := scan.NewStore(cfg.Store.Backend, cfg.Store.Path)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("failed to initialize scan store")
 	}
@@ -424,6 +430,34 @@ func main() {
 
 	// Phase 8: Start Recording Cache Eviction Worker (Background)
 	go s.StartRecordingCacheEvicter(ctx)
+
+	// Phase 8: Verification / Drift Detection
+	// 1. Store (Secure Path)
+	driftStatePath, err := paths.ResolveDataFilePath(cfg.DataDir, "drift_state.json", true)
+	if err != nil {
+		logger.Fatal().Err(err).Msg("failed to resolve drift state path")
+	}
+	verifyStore, err := verification.NewFileStore(driftStatePath)
+	if err != nil {
+		logger.Fatal().Err(err).Msg("failed to initialize verification store")
+	}
+
+	// 2. Checkers
+	// Config Checker (Safe Provider)
+	// cfgHolder implements checks.ConfigProvider interface (Current() *config.Snapshot)
+	configCheck := checks.NewConfigChecker(effectiveConfigPath, cfgHolder)
+
+	// Runtime Checker (FFmpeg + Go)
+	// Use embedded runner
+	runtimeCheck := checks.NewRuntimeChecker(checks.NewRealRunner(), runtime.Version(), "7.1.3")
+
+	// 3. Worker
+	// 60s cadence
+	verifier := verification.NewWorker(verifyStore, 60*time.Second, configCheck, runtimeCheck)
+	go verifier.Start(ctx)
+
+	// 4. Inject into API
+	s.SetVerificationStore(verifyStore)
 
 	// Initial refresh (Async "Safety Net" for fast startup)
 	// We run this in the background so the HTTP server binds ports immediately.

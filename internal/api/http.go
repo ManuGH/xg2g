@@ -43,6 +43,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
 	"github.com/ManuGH/xg2g/internal/platform/paths"
 	"github.com/ManuGH/xg2g/internal/recordings"
+	"github.com/ManuGH/xg2g/internal/verification"
 	"github.com/go-chi/chi/v5"
 
 	"github.com/ManuGH/xg2g/internal/resilience"
@@ -83,6 +84,7 @@ type Server struct {
 	v3Handler         *v3.Server
 	v3Bus             bus.Bus
 	v3Store           store.StateStore
+	verificationStore verification.Store // P8.3: Verification Store
 	resumeStore       resume.Store
 	v3Scan            *scan.Manager
 	recordingsService recservice.Service
@@ -623,7 +625,7 @@ func (s *Server) routes() http.Handler {
 
 	// 4.1 Status (Operator-Grade Contract)
 	rStatus := rAuth.With(s.scopeMiddleware(v3.ScopeV3Status))
-	rStatus.Get("/api/v3/status", controlhttp.NewStatusHandler().ServeHTTP)
+	rStatus.Get("/api/v3/status", controlhttp.NewStatusHandler(s.verificationStore).ServeHTTP)
 
 	// 5. Setup Validation
 	rAuth.Post("/internal/setup/validate", http.HandlerFunc(s.handleSetupValidate))
@@ -782,6 +784,13 @@ func (s *Server) SetV3Components(b bus.Bus, st store.StateStore, rs resume.Store
 			s.preflightProvider,
 		)
 	}
+}
+
+// SetVerificationStore configures the verification store for drift detection status
+func (s *Server) SetVerificationStore(st verification.Store) {
+	s.mu.Lock()
+	s.verificationStore = st
+	s.mu.Unlock()
 }
 
 // LibraryService returns the underlying library service from v3 handler.

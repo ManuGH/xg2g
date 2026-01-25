@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/verification"
 	"github.com/spf13/cobra"
 )
 
@@ -81,6 +82,7 @@ var statusCmd = &cobra.Command{
 				FFmpeg string `json:"ffmpeg"`
 				Go     string `json:"go"`
 			} `json:"runtime"`
+			Drift *verification.DriftState `json:"drift"`
 		}
 		if err := json.Unmarshal(body, &s); err != nil {
 			fmt.Printf("❌ Invalid JSON from API: %v\n", err)
@@ -90,11 +92,26 @@ var statusCmd = &cobra.Command{
 		if s.Status == "healthy" {
 			fmt.Printf("✅ System Healthy (%s)\n", s.Release)
 			fmt.Printf("   Runtime: Go %s / FFmpeg %s\n", s.Runtime.Go, s.Runtime.FFmpeg)
-			os.Exit(0)
+
+			// Show warnings even if status is healthy (e.g. minor drift or not detected yet?)
+			// Status should be degraded if drift detected.
 		} else {
 			fmt.Printf("⚠️ System Status: %s (%s)\n", s.Status, s.Release)
-			os.Exit(1)
+			fmt.Printf("   Runtime: Go %s / FFmpeg %s\n", s.Runtime.Go, s.Runtime.FFmpeg)
 		}
+
+		if s.Drift != nil && s.Drift.Detected {
+			fmt.Println("\n⚠️  DRIFT DETECTED:")
+			fmt.Printf("   Last Check: %s\n", s.Drift.LastCheck.Format(time.RFC3339))
+			for _, m := range s.Drift.Mismatches {
+				fmt.Printf("   - [%s] %s: expected '%s', got '%s'\n", m.Kind, m.Key, m.Expected, m.Actual)
+			}
+			os.Exit(1)
+		} else if s.Drift != nil {
+			fmt.Printf("   Verification: Clean (Last check: %s)\n", s.Drift.LastCheck.Format(time.RFC822))
+		}
+
+		os.Exit(0)
 		return nil
 	},
 }
