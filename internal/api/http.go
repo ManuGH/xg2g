@@ -597,7 +597,6 @@ func (s *Server) routes() http.Handler {
 	// 1. PUBLIC Endpoints (No Auth)
 	r.Get("/healthz", s.handleHealth)
 	r.Get("/readyz", s.handleReady)
-	r.Get("/status", controlhttp.NewStatusHandler().ServeHTTP)
 
 	r.Handle("/ui/*", http.StripPrefix("/ui", controlhttp.UIHandler(controlhttp.UIConfig{
 		CSP: middleware.DefaultCSP,
@@ -621,6 +620,10 @@ func (s *Server) routes() http.Handler {
 
 	// 4. Admin Operations
 	rAdmin.Post("/internal/system/config/reload", http.HandlerFunc(s.handleConfigReload))
+
+	// 4.1 Status (Operator-Grade Contract)
+	rStatus := rAuth.With(s.scopeMiddleware(v3.ScopeV3Status))
+	rStatus.Get("/api/v3/status", controlhttp.NewStatusHandler().ServeHTTP)
 
 	// 5. Setup Validation
 	rAuth.Post("/internal/setup/validate", http.HandlerFunc(s.handleSetupValidate))

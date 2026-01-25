@@ -3,7 +3,6 @@ package http
 import (
 	"encoding/json"
 	"net/http"
-	"time"
 
 	"github.com/ManuGH/xg2g/internal/version"
 )
@@ -13,14 +12,7 @@ type StatusResponse struct {
 	Status  string      `json:"status"` // healthy, degraded, recovering
 	Release string      `json:"release"`
 	Digest  string      `json:"digest"`
-	Drift   DriftInfo   `json:"drift"`
 	Runtime RuntimeInfo `json:"runtime"`
-}
-
-type DriftInfo struct {
-	Detected   bool      `json:"detected"`
-	LastCheck  time.Time `json:"last_check"`
-	Mismatches []string  `json:"mismatches"`
 }
 
 type RuntimeInfo struct {
@@ -46,11 +38,6 @@ func (h *StatusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Status:  "healthy",
 		Release: version.Version, // Assuming we have a version package, otherwise hardcode for now or inject
 		Digest:  version.Commit,  // Assuming version package has Commit
-		Drift: DriftInfo{
-			Detected:   false,
-			LastCheck:  time.Now().UTC(),
-			Mismatches: []string{},
-		},
 		Runtime: RuntimeInfo{
 			FFmpeg: "7.1.3",  // Hardcoded as per verified base image
 			Go:     "1.25.3", // Hardcoded as per verified go.mod
