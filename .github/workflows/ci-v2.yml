@@ -40,7 +40,7 @@ jobs:
       - name: Setup Node for WebUI
         uses: actions/setup-node@1d42962bbd92a94ed090950669d6739985926c0d
         with:
-          node-version: "20"
+          node-version: "22"
           cache: "npm"
           cache-dependency-path: webui/package-lock.json
 
@@ -167,7 +167,7 @@ jobs:
       - name: Setup Node for WebUI
         uses: actions/setup-node@1d42962bbd92a94ed090950669d6739985926c0d
         with:
-          node-version: "20"
+          node-version: "22"
           cache: "npm"
           cache-dependency-path: webui/package-lock.json
 
@@ -235,7 +235,7 @@ jobs:
       - name: Setup Node for WebUI
         uses: actions/setup-node@1d42962bbd92a94ed090950669d6739985926c0d
         with:
-          node-version: "20"
+          node-version: "22"
           cache: "npm"
           cache-dependency-path: webui/package-lock.json
 

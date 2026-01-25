@@ -36,6 +36,7 @@ type FileConfig struct {
 	Recording             map[string]string       `yaml:"recording_roots,omitempty"`
 	RecordingPlayback     RecordingPlaybackConfig `yaml:"recording_playback,omitempty"`
 	API                   APIConfig               `yaml:"api"`
+	Network               NetworkFileConfig       `yaml:"network,omitempty"`
 	Metrics               MetricsConfig           `yaml:"metrics,omitempty"`
 	Picons                PiconsConfig            `yaml:"picons,omitempty"`
 	HDHR                  HDHRConfig              `yaml:"hdhr,omitempty"`
@@ -152,6 +153,25 @@ type RateLimitConfig struct {
 	Whitelist []string `yaml:"whitelist,omitempty"` // CIDRs or IPs to exempt
 }
 
+// NetworkFileConfig holds network policy configuration.
+type NetworkFileConfig struct {
+	Outbound OutboundFileConfig `yaml:"outbound,omitempty"`
+}
+
+// OutboundFileConfig controls outbound HTTP(S) access.
+type OutboundFileConfig struct {
+	Enabled *bool            `yaml:"enabled,omitempty"`
+	Allow   OutboundAllowlist `yaml:"allow,omitempty"`
+}
+
+// OutboundAllowlist defines outbound network allowlist rules.
+type OutboundAllowlist struct {
+	Hosts   []string `yaml:"hosts,omitempty"`
+	CIDRs   []string `yaml:"cidrs,omitempty"`
+	Ports   []int    `yaml:"ports,omitempty"`
+	Schemes []string `yaml:"schemes,omitempty"`
+}
+
 // MetricsConfig holds Prometheus metrics configuration
 // Uses pointer for Enabled to distinguish between "not set" and "explicitly disabled"
 type MetricsConfig struct {
@@ -246,6 +266,7 @@ type AppConfig struct {
 	RateLimitBurst     int
 	RateLimitWhitelist []string
 	AllowedOrigins     []string
+	Network            NetworkConfig
 
 	RecordingRoots map[string]string // ID -> Absolute Path (e.g. "hdd" -> "/media/hdd/movie")
 
@@ -308,6 +329,17 @@ type EngineConfig struct {
 type StoreConfig struct {
 	Backend string `yaml:"backend"` // "memory" or "sqlite" (per ADR-021: bolt/badger removed)
 	Path    string `yaml:"path"`
+}
+
+// NetworkConfig holds outbound network policy.
+type NetworkConfig struct {
+	Outbound OutboundConfig
+}
+
+// OutboundConfig controls outbound HTTP(S) allowlist enforcement.
+type OutboundConfig struct {
+	Enabled bool
+	Allow   OutboundAllowlist
 }
 
 // FFmpegConfig holds the FFmpeg binary settings

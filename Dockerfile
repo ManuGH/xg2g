@@ -1,6 +1,6 @@
 # Multi-Stage Dockerfile for xg2g with embedded FFmpeg 7.1.3
 # Stage 1: Build FFmpeg pinned version
-FROM debian@sha256:d5d3f9c23164ea16f31852f95bd5959aad1c5e854332fe00f7b3a20fcc9f635c AS ffmpeg-builder
+FROM debian:trixie-slim AS ffmpeg-builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -22,11 +22,12 @@ ENV TARGET_DIR=/opt/ffmpeg
 RUN ./build-ffmpeg.sh
 
 # Stage 2: Build WebUI
-FROM node:20-slim AS webui-builder
+FROM node:22-slim AS webui-builder
 WORKDIR /webui
 COPY webui/package*.json ./
 RUN npm ci
 COPY webui/ ./
+COPY contracts/version_matrix.json ../contracts/version_matrix.json
 RUN npm run build
 
 # Stage 3: Build xg2g application
@@ -46,7 +47,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -ldflags="-s -w" -o /xg2g ./cmd/daemon
 
 # Stage 3: Final runtime image
-FROM debian@sha256:d5d3f9c23164ea16f31852f95bd5959aad1c5e854332fe00f7b3a20fcc9f635c AS runtime
+FROM debian:trixie-slim AS runtime
 
 # Set production environment defaults
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -62,7 +63,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libva-drm2 \
     libva2 \
     libx264-164 \
-    libx265-199 \
+    libx265-215 \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user (UID 10001 for cloud-native compatibility)

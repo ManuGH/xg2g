@@ -149,6 +149,11 @@ func buildRegistry() (*Registry, error) {
 
 		// --- SECURITY / PROXIES ---
 		{Path: "trustedProxies", Env: "XG2G_TRUSTED_PROXIES", FieldPath: "TrustedProxies", Profile: ProfileAdvanced, Status: StatusActive}, // Fix D: Active now
+		{Path: "network.outbound.enabled", Env: "XG2G_OUTBOUND_ENABLED", FieldPath: "Network.Outbound.Enabled", Profile: ProfileAdvanced, Status: StatusActive, Default: false},
+		{Path: "network.outbound.allow.hosts", Env: "XG2G_OUTBOUND_ALLOW_HOSTS", FieldPath: "Network.Outbound.Allow.Hosts", Profile: ProfileAdvanced, Status: StatusActive},
+		{Path: "network.outbound.allow.cidrs", Env: "XG2G_OUTBOUND_ALLOW_CIDRS", FieldPath: "Network.Outbound.Allow.CIDRs", Profile: ProfileAdvanced, Status: StatusActive},
+		{Path: "network.outbound.allow.ports", Env: "XG2G_OUTBOUND_ALLOW_PORTS", FieldPath: "Network.Outbound.Allow.Ports", Profile: ProfileAdvanced, Status: StatusActive},
+		{Path: "network.outbound.allow.schemes", Env: "XG2G_OUTBOUND_ALLOW_SCHEMES", FieldPath: "Network.Outbound.Allow.Schemes", Profile: ProfileAdvanced, Status: StatusActive},
 
 		// --- METRICS ---
 		{Path: "metrics.enabled", Env: "", FieldPath: "MetricsEnabled", Profile: ProfileAdvanced, Status: StatusActive, Default: false},

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
 	"github.com/ManuGH/xg2g/internal/validate"
 )
 

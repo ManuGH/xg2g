@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -190,6 +191,23 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 	}
 	if len(src.API.AllowedOrigins) > 0 {
 		dst.AllowedOrigins = src.API.AllowedOrigins
+	}
+
+	// Network outbound policy
+	if src.Network.Outbound.Enabled != nil {
+		dst.Network.Outbound.Enabled = *src.Network.Outbound.Enabled
+	}
+	if src.Network.Outbound.Allow.Hosts != nil {
+		dst.Network.Outbound.Allow.Hosts = append([]string(nil), src.Network.Outbound.Allow.Hosts...)
+	}
+	if src.Network.Outbound.Allow.CIDRs != nil {
+		dst.Network.Outbound.Allow.CIDRs = append([]string(nil), src.Network.Outbound.Allow.CIDRs...)
+	}
+	if src.Network.Outbound.Allow.Ports != nil {
+		dst.Network.Outbound.Allow.Ports = append([]int(nil), src.Network.Outbound.Allow.Ports...)
+	}
+	if src.Network.Outbound.Allow.Schemes != nil {
+		dst.Network.Outbound.Allow.Schemes = append([]string(nil), src.Network.Outbound.Allow.Schemes...)
 	}
 
 	// Metrics
@@ -480,6 +498,21 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	cfg.TLSKey = l.envString("XG2G_TLS_KEY", cfg.TLSKey)
 	cfg.ForceHTTPS = l.envBool("XG2G_FORCE_HTTPS", cfg.ForceHTTPS)
 
+	// Network outbound policy
+	cfg.Network.Outbound.Enabled = l.envBool("XG2G_OUTBOUND_ENABLED", cfg.Network.Outbound.Enabled)
+	if raw, ok := l.envLookup("XG2G_OUTBOUND_ALLOW_HOSTS"); ok {
+		cfg.Network.Outbound.Allow.Hosts = parseCommaSeparated(raw, nil)
+	}
+	if raw, ok := l.envLookup("XG2G_OUTBOUND_ALLOW_CIDRS"); ok {
+		cfg.Network.Outbound.Allow.CIDRs = parseCommaSeparated(raw, nil)
+	}
+	if raw, ok := l.envLookup("XG2G_OUTBOUND_ALLOW_PORTS"); ok {
+		cfg.Network.Outbound.Allow.Ports = parseCommaSeparatedInts(raw, nil)
+	}
+	if raw, ok := l.envLookup("XG2G_OUTBOUND_ALLOW_SCHEMES"); ok {
+		cfg.Network.Outbound.Allow.Schemes = parseCommaSeparated(raw, nil)
+	}
+
 	// Feature Flags
 	cfg.ReadyStrict = l.envBool("XG2G_READY_STRICT", cfg.ReadyStrict)
 
@@ -744,6 +777,30 @@ func parseCommaSeparated(envVal string, defaults []string) []string {
 		if p != "" {
 			out = append(out, p)
 		}
+	}
+	return out
+}
+
+func parseCommaSeparatedInts(envVal string, defaults []int) []int {
+	if envVal == "" {
+		return defaults
+	}
+	var out []int
+	parts := strings.Split(envVal, ",")
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		val, err := strconv.Atoi(p)
+		if err != nil {
+			log.WithComponent("config").
+				Warn().
+				Str("value", p).
+				Msg("invalid integer in environment list; skipping")
+			continue
+		}
+		out = append(out, val)
 	}
 	return out
 }
