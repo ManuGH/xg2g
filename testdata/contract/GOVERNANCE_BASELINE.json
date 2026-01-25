@@ -1,10 +1,10 @@
 {
-  "testdata/contract/p4_1/golden/01_happy_directplay_h264_aac_mp4.expected.json": "f21db788e9704dee55f7308a8865660f6c4bf5404ea12c755cb611c5dfc4c516",
-  "testdata/contract/p4_1/golden/02_directstream_mkv_to_hls_h264_aac.expected.json": "d292c0c4f91c1413bca1792170b11959ae3b30538b4945377818d99334571c01",
-  "testdata/contract/p4_1/golden/03_transcode_video_hevc_to_h264.expected.json": "5cb60dc5df47c4ed6d8a4f2191265f6f942b2e6cae71d38f4f5cf10203baf7bb",
-  "testdata/contract/p4_1/golden/04_transcode_audio_ac3_to_aac.expected.json": "07b25d98dc62dc8155ab8f402c66b13919e821b1e91dfb2f86fb8ebbc4e6ac48",
-  "testdata/contract/p4_1/golden/05_policy_denies_transcode.expected.json": "37b6bd6dd22973d67bb4d902fe4dec0df8586e011080e812cd465c0615de9fa4",
-  "testdata/contract/p4_1/golden/06_fail_closed_capabilities_missing.expected.json": "b7bde6378bbc5d0a3393b5a6693b1079de48059517502ba0c9916b7467b87f01",
+  "testdata/contract/p4_1/golden/01_happy_directplay_h264_aac_mp4.expected.json": "07379b45c683ee422b256c2650572db5d2b60009a4aaed9537f9e67b68461b68",
+  "testdata/contract/p4_1/golden/02_directstream_mkv_to_hls_h264_aac.expected.json": "ae548fc550bb536fc8c1592ac827f715d4a993a8e9048f625312749586a71623",
+  "testdata/contract/p4_1/golden/03_transcode_video_hevc_to_h264.expected.json": "6c52f14650525e498c22b3b8c5641df900915e70309733f4a8b1ec50c47458b7",
+  "testdata/contract/p4_1/golden/04_transcode_audio_ac3_to_aac.expected.json": "575338c416a1f867374e5fc49fc50dd612b37e355ecae6bbfc79af757688409a",
+  "testdata/contract/p4_1/golden/05_policy_denies_transcode.expected.json": "59f57f457e31ef7efcc32e344daaf7f83774d06c8c84439c50827404454be6f2",
+  "testdata/contract/p4_1/golden/06_fail_closed_capabilities_missing.expected.json": "958ff53a4390a6621ec343caa7bf3c89d80b78a4535bde7f60ac8cdaf5e307e2",
   "testdata/contract/p4_1/golden/07_fail_closed_capabilities_invalid_version.expected.json": "d35fea7350b2b646f2315049c2e6755613ec7cbe2ab567d1a4f6566543dd8894",
   "testdata/contract/p4_1/golden/08_fail_closed_media_truth_unknown.expected.json": "5cd897f1e8ac692ef57292d67214a0b47b33db74c449e1745ccdb5558bcb854f"
 }
