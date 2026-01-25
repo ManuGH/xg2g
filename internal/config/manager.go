@@ -33,9 +33,39 @@ func (m *Manager) Save(cfg *AppConfig) error {
 	}
 
 	// Map AppConfig back to FileConfig for serialization
-	// We only write fields that are user-configurable via the UI
-	//
-	fileCfg := FileConfig{
+	fileCfg := ToFileConfig(cfg)
+
+	// Encode to YAML (atomic write: temp file + rename)
+	dir := filepath.Dir(m.configPath)
+	tmp, err := os.CreateTemp(dir, "config-*.tmp")
+	if err != nil {
+		return fmt.Errorf("create temp config file: %w", err)
+	}
+	defer func() { _ = os.Remove(tmp.Name()) }()
+
+	enc := yaml.NewEncoder(tmp)
+	enc.SetIndent(2)
+	if err := enc.Encode(fileCfg); err != nil {
+		return fmt.Errorf("encode config: %w", err)
+	}
+	if err := enc.Close(); err != nil {
+		return fmt.Errorf("close encoder: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temp config file: %w", err)
+	}
+
+	if err := os.Rename(tmp.Name(), m.configPath); err != nil {
+		return fmt.Errorf("rename config file: %w", err)
+	}
+
+	return nil
+}
+
+// Helper functions for mapping
+
+func ToFileConfig(cfg *AppConfig) FileConfig {
+	return FileConfig{
 		Version:       EffectiveConfigVersion(*cfg),
 		ConfigVersion: V3ConfigVersion,
 		DataDir:       cfg.DataDir,
@@ -78,35 +108,7 @@ func (m *Manager) Save(cfg *AppConfig) error {
 			BaseURL: cfg.PiconBase,
 		},
 	}
-
-	// Encode to YAML (atomic write: temp file + rename)
-	dir := filepath.Dir(m.configPath)
-	tmp, err := os.CreateTemp(dir, "config-*.tmp")
-	if err != nil {
-		return fmt.Errorf("create temp config file: %w", err)
-	}
-	defer func() { _ = os.Remove(tmp.Name()) }()
-
-	enc := yaml.NewEncoder(tmp)
-	enc.SetIndent(2)
-	if err := enc.Encode(fileCfg); err != nil {
-		return fmt.Errorf("encode config: %w", err)
-	}
-	if err := enc.Close(); err != nil {
-		return fmt.Errorf("close encoder: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("close temp config file: %w", err)
-	}
-
-	if err := os.Rename(tmp.Name(), m.configPath); err != nil {
-		return fmt.Errorf("rename config file: %w", err)
-	}
-
-	return nil
 }
-
-// Helper functions for mapping
 
 func splitCSV(s string) []string {
 	if s == "" {
