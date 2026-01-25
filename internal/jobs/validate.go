@@ -7,10 +7,6 @@
 package jobs
 
 import (
-	"fmt"
-	"path/filepath"
-	"strings"
-
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/validate"
 )
@@ -33,37 +29,6 @@ func validateConfig(cfg config.AppConfig) error {
 	}
 
 	return nil
-}
-
-// sanitizeFilename sanitizes a playlist filename to prevent path traversal attacks
-func sanitizeFilename(name string) (string, error) {
-	if name == "" {
-		return "playlist.m3u", nil
-	}
-
-	// Strip any directory components
-	base := filepath.Base(name)
-
-	// Reject if still contains traversal
-	if strings.Contains(base, "..") {
-		return "", fmt.Errorf("invalid filename: contains traversal")
-	}
-
-	// Clean the filename
-	cleaned := filepath.Clean(base)
-
-	// Ensure it's local
-	if !filepath.IsLocal(cleaned) {
-		return "", fmt.Errorf("invalid filename: not local")
-	}
-
-	// Validate extension
-	ext := filepath.Ext(cleaned)
-	if ext != ".m3u" && ext != ".m3u8" {
-		cleaned += ".m3u"
-	}
-
-	return cleaned, nil
 }
 
 // clampConcurrency ensures concurrency is within sane bounds [1, maxVal]

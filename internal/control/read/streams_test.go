@@ -35,8 +35,8 @@ func TestGetStreams_Provider_StateStrictness(t *testing.T) {
 	}
 
 	store := &MockStore{Sessions: sessions}
-	cfg := config.AppConfig{}
-	snap := config.Snapshot{} // No playlist needed for this test
+	cfg := config.AppConfig{DataDir: t.TempDir()}
+	snap := config.Snapshot{Runtime: config.RuntimeSnapshot{PlaylistFilename: "missing.m3u"}} // No playlist needed for this test
 
 	streams, err := GetStreams(context.Background(), cfg, snap, store, StreamsQuery{})
 	require.NoError(t, err)
@@ -135,8 +135,8 @@ func TestGetStreams_Provider_ThinClientAudit_Test28(t *testing.T) {
 		{SessionID: "fail", State: model.SessionFailed, CreatedAtUnix: t2.Unix()}, // Terminal -> Gone
 	}
 	store := &MockStore{Sessions: sessions}
-	cfg := config.AppConfig{}
-	snap := config.Snapshot{}
+	cfg := config.AppConfig{DataDir: t.TempDir()}
+	snap := config.Snapshot{Runtime: config.RuntimeSnapshot{PlaylistFilename: "missing.m3u"}}
 
 	streams, err := GetStreams(context.Background(), cfg, snap, store, StreamsQuery{})
 	require.NoError(t, err)

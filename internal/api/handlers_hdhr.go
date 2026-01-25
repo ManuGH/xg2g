@@ -10,6 +10,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/hdhr"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/platform/paths"
 )
 
 // handleLineupJSON handles /lineup.json endpoint for HDHomeRun emulation
@@ -18,7 +19,7 @@ func (s *Server) handleLineupJSON(w http.ResponseWriter, r *http.Request) {
 	logger := log.WithComponentFromContext(r.Context(), "hdhr")
 
 	// Read the M3U playlist file
-	m3uPath, err := s.dataFilePath(s.snap.Runtime.PlaylistFilename)
+	m3uPath, err := paths.ValidatePlaylistPath(s.cfg.DataDir, s.snap.Runtime.PlaylistFilename)
 	if err != nil {
 		logger.Error().Err(err).Str("event", "lineup.invalid_path").Msg("playlist path rejected")
 		http.Error(w, "Lineup not available", http.StatusInternalServerError)

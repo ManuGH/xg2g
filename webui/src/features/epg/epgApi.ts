@@ -3,6 +3,7 @@
 
 import { getEpg, getServices, getServicesBouquets, getTimers } from '../../client-ts';
 import type { EpgEvent, EpgChannel, EpgBouquet, Timer } from './types';
+import { debugError } from '../../utils/logging';
 
 // ============================================================================
 // API Fetch Functions (client-ts SDK only)
@@ -97,7 +98,7 @@ export async function fetchTimers(): Promise<Timer[]> {
 
 function mapSdkBouquet(dto: any): EpgBouquet {
   if (typeof dto !== 'object' || dto === null) {
-    console.error('Invalid bouquet DTO (legacy string?):', dto);
+    debugError('Invalid bouquet DTO (legacy string?):', dto);
     // Strict contract: Ignore invalid items or throw?
     // Throwing here might fail the whole fetch. Returning a dummy might hide it.
     // User wants "rejects it". If filtered out, it's rejected.

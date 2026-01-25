@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -17,6 +16,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/m3u"
 	"github.com/ManuGH/xg2g/internal/openwebif"
+	"github.com/ManuGH/xg2g/internal/platform/paths"
 )
 
 // Responsibility: Handles Timer and DVR management including conflicts and scheduling.
@@ -91,7 +91,11 @@ func (s *Server) AddTimer(w http.ResponseWriter, r *http.Request) {
 	realSRef := req.ServiceRef
 	if !strings.Contains(realSRef, ":") {
 		// Doesn't look like Enigma2 Ref (1:0:1...), try to resolve from Playlist
-		playlistPath := filepath.Clean(filepath.Join(cfg.DataDir, snap.Runtime.PlaylistFilename))
+		playlistPath, err := paths.ValidatePlaylistPath(cfg.DataDir, snap.Runtime.PlaylistFilename)
+		if err != nil {
+			writeProblem(w, r, http.StatusInternalServerError, "system/invalid_playlist_path", "Invalid Playlist Path", "INVALID_PLAYLIST_PATH", err.Error(), nil)
+			return
+		}
 		log.L().Info().Str("path", playlistPath).Str("search_id", req.ServiceRef).Msg("attempting to resolve service ref from playlist")
 
 		if data, err := os.ReadFile(playlistPath); err == nil { // #nosec G304

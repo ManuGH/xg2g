@@ -1009,15 +1009,15 @@ http://stream/3
 
 	})
 
-	t.Run("GetServices/PlaylistFilename_Empty", func(t *testing.T) {
-		// Set empty playlist filename
+	t.Run("GetServices/PlaylistFilename_Missing", func(t *testing.T) {
+		// Set playlist filename to a missing file
 		cfg.XMLTVPath = "epg.xml" // Restore XMLTV
 		s.cfg = cfg
 
 		s.mu.Lock()
 		snap := s.snap
 		oldPlaylist := snap.Runtime.PlaylistFilename
-		snap.Runtime.PlaylistFilename = ""
+		snap.Runtime.PlaylistFilename = "missing.m3u"
 		s.snap = snap
 		s.mu.Unlock()
 
@@ -1072,8 +1072,8 @@ http://stream/3
 		assertEquivalence(t, wLegacy, wNew)
 	})
 
-	t.Run("GetServicesBouquets/PlaylistFilename_Empty_ConfigBouquetEmpty", func(t *testing.T) {
-		// Ensure playlist filename is empty and bouquet config is empty
+	t.Run("GetServicesBouquets/PlaylistFilename_Missing_ConfigBouquetEmpty", func(t *testing.T) {
+		// Ensure playlist filename is missing and bouquet config is empty
 		s.mu.Lock()
 		cfg := s.cfg
 		oldBouquet := cfg.Bouquet
@@ -1082,7 +1082,7 @@ http://stream/3
 
 		snap := s.snap
 		oldPlaylist := snap.Runtime.PlaylistFilename
-		snap.Runtime.PlaylistFilename = ""
+		snap.Runtime.PlaylistFilename = "missing.m3u"
 		s.snap = snap
 		s.mu.Unlock()
 

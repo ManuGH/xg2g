@@ -117,13 +117,13 @@ FFMPEG_HOME=/nonexistent ./scripts/ffmpeg-wrapper.sh -version 2>&1 | head -2
 # Expected: ERROR: FFmpeg binary not found...
 
 # Container: After docker build
-docker run --rm xg2g:latest which ffmpeg
+docker run --rm xg2g:3.1.5 which ffmpeg
 # Expected: /usr/local/bin/ffmpeg
 
-docker run --rm xg2g:latest ffmpeg -version | head -1
+docker run --rm xg2g:3.1.5 ffmpeg -version | head -1
 # Expected: ffmpeg version 7.1.3
 
-docker run --rm xg2g:latest sh -c 'echo $XG2G_FFMPEG_PATH'
+docker run --rm xg2g:3.1.5 sh -c 'echo $XG2G_FFMPEG_PATH'
 # Expected: /usr/local/bin/ffmpeg
 ```
 
@@ -186,9 +186,9 @@ export LD_LIBRARY_PATH=/opt/xg2g/ffmpeg/lib
 ```yaml
 - name: Verify FFmpeg Build
   run: |
-    docker run --rm xg2g:latest ffmpeg -version | grep -q "7.1.3"
-    docker run --rm xg2g:latest sh -c '[ "$(which ffmpeg)" = "/usr/local/bin/ffmpeg" ]'
-    docker run --rm xg2g:latest sh -c '[ "$XG2G_FFMPEG_PATH" = "/usr/local/bin/ffmpeg" ]'
+    docker run --rm xg2g:3.1.5 ffmpeg -version | grep -q "7.1.3"
+    docker run --rm xg2g:3.1.5 sh -c '[ "$(which ffmpeg)" = "/usr/local/bin/ffmpeg" ]'
+    docker run --rm xg2g:3.1.5 sh -c '[ "$XG2G_FFMPEG_PATH" = "/usr/local/bin/ffmpeg" ]'
 ```
 
 **Why**:

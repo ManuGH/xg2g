@@ -8,7 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "generate-client": "openapi-ts --input ../api/openapi.yaml --output ./src/client-ts",
     "generate-client:legacy": "openapi --input ../api/openapi.yaml --output ./src/client-legacy --client fetch",
-    "lint": "eslint .",
+    "lint": "eslint . && bash ../scripts/ci_gate_webui_logging.sh",
     "preview": "vite preview",
     "type-check": "tsc --noEmit"
   },

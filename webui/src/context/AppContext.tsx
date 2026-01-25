@@ -6,6 +6,8 @@ import { getServices, getServicesBouquets, getSystemConfig } from '../client-ts'
 import { client } from '../client-ts/client.gen';
 import type { AppContextType, AppView } from '../types/app-context';
 import type { Service, Bouquet } from '../client-ts';
+import { debugError, debugLog, formatError } from '../utils/logging';
+import { clearStoredToken, getStoredToken, setStoredToken } from '../utils/tokenStorage';
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
@@ -26,9 +28,7 @@ export function AppProvider({ children }: AppProviderProps) {
   const [view, setView] = useState<AppView>('epg');
 
   // Auth State
-  const [token, setTokenState] = useState<string>(
-    localStorage.getItem('XG2G_API_TOKEN') || ''
-  );
+  const [token, setTokenState] = useState<string>(getStoredToken());
   const [showAuth, setShowAuth] = useState<boolean>(false);
 
   // Channel State
@@ -47,10 +47,14 @@ export function AppProvider({ children }: AppProviderProps) {
   // Actions
   const setToken = useCallback((newToken: string) => {
     setTokenState(newToken);
-    localStorage.setItem('XG2G_API_TOKEN', newToken);
+    if (newToken) {
+      setStoredToken(newToken);
+    } else {
+      clearStoredToken();
+    }
     client.setConfig({
       headers: {
-        Authorization: `Bearer ${newToken}`
+        Authorization: newToken ? `Bearer ${newToken}` : null
       }
     });
   }, []);
@@ -58,18 +62,18 @@ export function AppProvider({ children }: AppProviderProps) {
   const loadChannels = useCallback(async (bouquetName: string): Promise<void> => {
     setLoading(true);
     try {
-      console.log('[DEBUG] Fetching channels for:', bouquetName);
+      debugLog('[DEBUG] Fetching channels for:', bouquetName);
       const response = await getServices(
         bouquetName ? { query: { bouquet: bouquetName } } : undefined
       );
       const data = response.data || [];
       setChannels(data);
       setSelectedBouquet(bouquetName);
-      console.log('[DEBUG] Channels loaded. Count:', data.length);
+      debugLog('[DEBUG] Channels loaded. Count:', data.length);
     } catch (err) {
-      console.error('[DEBUG] Failed to load channels:', err);
+      debugError('[DEBUG] Failed to load channels:', formatError(err));
       if ((err as { status?: number }).status === 401) {
-        console.log('[DEBUG] 401 detected in loadChannels -> showing auth');
+        debugLog('[DEBUG] 401 detected in loadChannels -> showing auth');
         setShowAuth(true);
       }
     } finally {
@@ -80,20 +84,20 @@ export function AppProvider({ children }: AppProviderProps) {
   const loadBouquetsAndChannels = useCallback(async (): Promise<void> => {
     setLoading(true);
     try {
-      console.log('[DEBUG] Fetching bouquets...');
+      debugLog('[DEBUG] Fetching bouquets...');
       const response = await getServicesBouquets();
       const bouquetData = response.data || [];
       setBouquets(bouquetData);
-      console.log('[DEBUG] Bouquets loaded:', bouquetData);
+      debugLog('[DEBUG] Bouquets loaded. Count:', bouquetData.length);
 
       await loadChannels(selectedBouquet);
       setDataLoaded(true);
     } catch (err) {
-      console.error('[DEBUG] Failed to load initial data:', err);
-      const apiErr = err as { status?: number; body?: unknown };
-      console.log('[DEBUG] Error status:', apiErr.status, 'Body:', apiErr.body);
+      debugError('[DEBUG] Failed to load initial data:', formatError(err));
+      const apiErr = err as { status?: number };
+      debugLog('[DEBUG] Error status:', apiErr.status ?? 'unknown');
       if ((err as { status?: number }).status === 401) {
-        console.log('[DEBUG] 401 detected in loadBouquetsAndChannels -> showing auth');
+        debugLog('[DEBUG] 401 detected in loadBouquetsAndChannels -> showing auth');
         setShowAuth(true);
       }
     } finally {
@@ -105,18 +109,18 @@ export function AppProvider({ children }: AppProviderProps) {
     try {
       const response = await getSystemConfig();
       const config = response.data;
-      console.log('[DEBUG] System Config:', config);
+      debugLog('[DEBUG] System config loaded');
 
       if (!config?.openWebIF?.baseUrl) {
-        console.log('[DEBUG] No Base URL configured. Switching to Setup Mode.');
+        debugLog('[DEBUG] No Base URL configured. Switching to Setup Mode.');
         setView('settings');
         return;
       }
 
       await loadBouquetsAndChannels();
     } catch (err) {
-      console.error('[DEBUG] Failed to check config:', err);
-      console.log('[DEBUG] Config check failed. Defaulting to Setup Mode.');
+      debugError('[DEBUG] Failed to check config:', formatError(err));
+      debugLog('[DEBUG] Config check failed. Defaulting to Setup Mode.');
       setView('settings');
 
       if ((err as { status?: number }).status === 401) {

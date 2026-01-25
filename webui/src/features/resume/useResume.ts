@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { saveResume } from './api';
+import { debugWarn, formatError } from '../../utils/logging';
 
 const SAVE_INTERVAL_MS = 10000;
 const JUMP_THRESHOLD = 30;
@@ -47,7 +48,7 @@ export function useResume({ recordingId, duration, videoElement, isPlaying }: Us
       });
       lastSavedTime.current = currentTime;
     } catch (err) {
-      console.warn('[useResume] Failed to save resume state', err);
+      debugWarn('[useResume] Failed to save resume state', formatError(err));
     }
   }, [recordingId, videoElement, duration]);
 

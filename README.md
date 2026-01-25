@@ -1,3 +1,4 @@
+<!-- GENERATED FILE - DO NOT EDIT. Source: templates/README.md.tmpl -->
 # xg2g - Next Gen to Go
 
 [![CI](https://github.com/ManuGH/xg2g/actions/workflows/ci.yml/badge.svg)](https://github.com/ManuGH/xg2g/actions/workflows/ci.yml)
@@ -23,7 +24,7 @@ Stream to Safari, iOS, Chrome, and any modern browser.
 ```bash
 docker run -d --name xg2g --net=host \
   -e XG2G_UPSTREAM_HOST="192.168.1.10" \
-  ghcr.io/manugh/xg2g:latest
+  ghcr.io/manugh/xg2g:3.1.6
 ```
 
 Open [http://localhost:8080](http://localhost:8080)

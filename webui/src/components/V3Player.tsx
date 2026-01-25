@@ -7,7 +7,7 @@ import { client } from '../client-ts/client.gen';
 import { telemetry } from '../services/TelemetryService';
 import { resolvePlaybackInfoPolicy } from '../contracts/PolicyEngine';
 import { useCapabilities } from '../hooks/useCapabilities';
-import { NormativePlaybackInfo } from '../contracts/consumption';
+import type { NormativePlaybackInfo } from '../contracts/consumption';
 import type {
   V3PlayerProps,
   PlayerStatus,
@@ -20,6 +20,7 @@ import type {
 import { useResume } from '../features/resume/useResume';
 import { ResumeState } from '../features/resume/api';
 import { Card, StatusChip } from './ui';
+import { debugError, debugLog, debugWarn } from '../utils/logging';
 import './V3Player.css';
 
 interface PlayerStats {
@@ -202,7 +203,7 @@ function V3Player(props: V3PlayerProps) {
 
     const doSeek = () => {
       seekTo(target);
-      v.play().catch(e => console.warn("Seek play failed", e));
+      v.play().catch(e => debugWarn("Seek play failed", e));
     };
 
     if (v.readyState >= 1) { // HAVE_METADATA
@@ -216,7 +217,7 @@ function V3Player(props: V3PlayerProps) {
   const togglePlayPause = useCallback(() => {
     if (!videoRef.current) return;
     if (videoRef.current.paused) {
-      videoRef.current.play().catch(e => console.warn("Play failed", e));
+      videoRef.current.play().catch(e => debugWarn("Play failed", e));
     } else {
       videoRef.current.pause();
     }
@@ -235,7 +236,7 @@ function V3Player(props: V3PlayerProps) {
         // Use container fullscreen to preserve custom controls on Safari
         await containerRef.current?.requestFullscreen();
       } catch (err) {
-        console.warn("Fullscreen failed", err);
+        debugWarn("Fullscreen failed", err);
       }
     } else {
       await document.exitFullscreen();
@@ -263,7 +264,7 @@ function V3Player(props: V3PlayerProps) {
         setIsPip(true);
       }
     } catch (err) {
-      console.warn("PiP failed", err);
+      debugWarn("PiP failed", err);
     }
   }, []);
 
@@ -333,7 +334,7 @@ function V3Player(props: V3PlayerProps) {
         })
       });
     } catch (e) {
-      console.warn('Failed to send feedback', e);
+      debugWarn('Failed to send feedback', e);
     }
   }, [apiBase, authHeaders]);
 
@@ -348,7 +349,7 @@ function V3Player(props: V3PlayerProps) {
         await createSession();
         sessionCookieRef.current.token = token;
       } catch (err) {
-        console.warn('Failed to create session cookie', err);
+        debugWarn('Failed to create session cookie', err);
       } finally {
         sessionCookieRef.current.pending = null;
       }
@@ -413,7 +414,7 @@ function V3Player(props: V3PlayerProps) {
         })
       });
     } catch (err) {
-      console.warn('Failed to stop v3 session', err);
+      debugWarn('Failed to stop v3 session', err);
     }
   }, [apiBase, authHeaders]);
 
@@ -535,7 +536,7 @@ function V3Player(props: V3PlayerProps) {
             setStats(prev => ({ ...prev, fps: first.frameRate || 0 }));
           }
         }
-        videoRef.current?.play().catch(e => console.warn("Autoplay failed", e));
+        videoRef.current?.play().catch(e => debugWarn("Autoplay failed", e));
       });
 
       hls.on(Hls.Events.FRAG_LOADED, (_e, data: FragLoadedData) => {
@@ -576,7 +577,7 @@ function V3Player(props: V3PlayerProps) {
       // Safari Native
       video.src = url;
       video.addEventListener('loadedmetadata', () => {
-        video.play().catch(e => console.warn("[V3Player] Native play blocked", e));
+        video.play().catch(e => debugWarn("[V3Player] Native play blocked", e));
       }, { once: true });
     }
   }, [t, updateStats, isSafari, reportError]);
@@ -593,12 +594,12 @@ function V3Player(props: V3PlayerProps) {
     setStats(prev => ({ ...prev, bandwidth: 0, resolution: 'Original (Direct)', fps: 0, levelIndex: -1 }));
 
     // Log for verification
-    console.debug('[V3Player] Switching to Direct MP4 Mode:', url);
+    debugLog('[V3Player] Switching to Direct MP4 Mode:', url);
 
     // Native playback
     video.src = url;
     video.load();
-    video.play().catch(e => console.warn("Autoplay failed", e));
+    video.play().catch(e => debugWarn("Autoplay failed", e));
   }, []);
 
   const waitForDirectStream = useCallback(async (url: string): Promise<void> => {
@@ -625,13 +626,13 @@ function V3Player(props: V3PlayerProps) {
           throw new Error(`Unexpected status: ${res.status}`);
         }
       } catch (e) {
-        console.warn('[V3Player] Probe failed', e);
+        debugWarn('[V3Player] Probe failed', e);
         throw new Error(t('player.networkError'));
       }
 
       retries++;
     }
-    console.warn('[V3Player] Direct Stream Timeout after', maxRetries, 'attempts');
+    debugWarn('[V3Player] Direct Stream Timeout after', maxRetries, 'attempts');
     throw new Error(t('player.timeout'));
   }, [t]);
 
@@ -712,11 +713,10 @@ function V3Player(props: V3PlayerProps) {
           throw new Error("PlaybackInfo timeout");
         }
 
-        console.debug('[V3Player] Playback Info:', pInfo);
+        debugLog('[V3Player] Playback Info:', pInfo);
 
         const resolution = resolvePlaybackInfoPolicy(capabilities, pInfo);
 
-        import { NormativePlaybackInfo } from '../contracts/consumption';
         if (resolution.mode === 'normative') {
           // Type Assertion: We treat the object as strictly normative here.
           // Any access to pInfo.url or decision outputs will now fail compile-time check (if we used the var).
@@ -846,7 +846,7 @@ function V3Player(props: V3PlayerProps) {
       }
     } catch (err: any) {
       if (activeRecordingRef.current !== id) return;
-      console.error(err);
+      debugError(err);
       setError(err.message);
       setStatus('error');
     } finally {
@@ -861,16 +861,16 @@ function V3Player(props: V3PlayerProps) {
 
     try {
       if (recordingId) {
-        console.info('[V3Player] startStream: recordingId path', { recordingId, hasSrc: !!src });
+        debugLog('[V3Player] startStream: recordingId path', { recordingId, hasSrc: !!src });
         if (src) {
-          console.warn('[V3Player] Both recordingId and src provided; prioritizing recordingId (VOD path).');
+          debugWarn('[V3Player] Both recordingId and src provided; prioritizing recordingId (VOD path).');
         }
         await startRecordingPlayback(recordingId);
         return;
       }
 
       if (src) {
-        console.info('[V3Player] startStream: src path', { hasSrc: true });
+        debugLog('[V3Player] startStream: src path', { hasSrc: true });
         // Reset state for local/src playback
         activeRecordingRef.current = null;
         setActiveRecordingId(null);
@@ -966,7 +966,7 @@ function V3Player(props: V3PlayerProps) {
         if (newSessionId) {
           await sendStopIntent(newSessionId);
         }
-        console.error(err);
+        debugError(err);
         setError((err as Error).message);
         setErrorDetails((err as Error).stack || null);
         setStatus('error');
@@ -1060,7 +1060,7 @@ function V3Player(props: V3PlayerProps) {
     }
 
     const intervalMs = heartbeatInterval * 1000;
-    console.debug('[V3Player][Heartbeat] Starting heartbeat loop:', { sessionId, intervalMs });
+    debugLog('[V3Player][Heartbeat] Starting heartbeat loop:', { sessionId, intervalMs });
 
     const timerId = setInterval(async () => {
       try {
@@ -1072,10 +1072,10 @@ function V3Player(props: V3PlayerProps) {
         if (res.status === 200) {
           const data = await res.json();
           setLeaseExpiresAt(data.lease_expires_at);
-          console.debug('[V3Player][Heartbeat] Lease extended:', data.lease_expires_at);
+          debugLog('[V3Player][Heartbeat] Lease extended:', data.lease_expires_at);
         } else if (res.status === 410) {
           // Terminal: Session lease expired
-          console.error('[V3Player][Heartbeat] Session expired (410)');
+          debugError('[V3Player][Heartbeat] Session expired (410)');
           clearInterval(timerId);
           setStatus('error');
           setError(t('player.sessionExpired') || 'Session expired. Please restart.');
@@ -1083,7 +1083,7 @@ function V3Player(props: V3PlayerProps) {
             videoRef.current.pause();
           }
         } else if (res.status === 404) {
-          console.warn('[V3Player][Heartbeat] Session not found (404)');
+          debugWarn('[V3Player][Heartbeat] Session not found (404)');
           clearInterval(timerId);
           setStatus('error');
           setError(t('player.sessionNotFound') || 'Session no longer exists.');
@@ -1092,13 +1092,13 @@ function V3Player(props: V3PlayerProps) {
           }
         }
       } catch (error) {
-        console.error('[V3Player][Heartbeat] Network error:', error);
+        debugError('[V3Player][Heartbeat] Network error:', error);
         // Allow retry on next interval (no infinite loops)
       }
     }, intervalMs);
 
     return () => {
-      console.debug('[V3Player][Heartbeat] Cleanup: Clearing heartbeat timer');
+      debugLog('[V3Player][Heartbeat] Cleanup: Clearing heartbeat timer');
       clearInterval(timerId);
     };
   }, [sessionId, heartbeatInterval, status, apiBase, authHeaders, t]);
@@ -1149,7 +1149,7 @@ function V3Player(props: V3PlayerProps) {
         hlsJsActive: !!hlsRef.current
       };
 
-      console.error('[V3Player] Video Element Error:', diagnostics);
+      debugError('[V3Player] Video Element Error:', diagnostics);
 
       // Report to backend (triggers fallback if code=3)
       if (err && sessionIdRef.current) {

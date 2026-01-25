@@ -1,3 +1,4 @@
+<!-- GENERATED FILE - DO NOT EDIT. Source: templates/docs/ops/OPERATIONS_MODEL.md.tmpl -->
 # xg2g Operations Model (Operator-Grade 2026)
 
 This document defines the immutable operational contract for the `xg2g` service. Adherence to these invariants is mandatory for system stability.
@@ -9,7 +10,7 @@ This document defines the immutable operational contract for the `xg2g` service.
 - **Repo Truth**: The installed systemd unit MUST strictly match `/root/xg2g/docs/ops/xg2g.service`.
 - **Identity Isolation**: The service MUST run as UID `10001` (xg2g) within the container.
 - **Fail-Closed Auth**: No endpoint beyond `/healthz` and `/readyz` is accessible without a valid `XG2G_API_TOKEN`.
-- **Resource Pinning**: The container MUST use the pinned image `ghcr.io/manugh/xg2g:3.1.5`.
+- **Resource Pinning**: The container MUST use the pinned image `ghcr.io/manugh/xg2g:3.1.6`.
 
 ## 2. What Is Allowed To Fail (Controlled Transients)
 

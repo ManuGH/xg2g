@@ -31,6 +31,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
+	"github.com/ManuGH/xg2g/internal/platform/paths"
 	xgtls "github.com/ManuGH/xg2g/internal/tls"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -402,7 +403,10 @@ func main() {
 		logger.Fatal().Err(err).Msg("failed to initialize scan store")
 	}
 	// Playlist filename from runtime or config (default internal/playlist.m3u)
-	playlistPath := filepath.Join(cfg.DataDir, snap.Runtime.PlaylistFilename)
+	playlistPath, err := paths.ValidatePlaylistPath(cfg.DataDir, snap.Runtime.PlaylistFilename)
+	if err != nil {
+		logger.Fatal().Err(err).Msg("invalid playlist path")
+	}
 	v3Scan := scan.NewManager(v3ScanStore, playlistPath)
 
 	// Inject v3 components into API server

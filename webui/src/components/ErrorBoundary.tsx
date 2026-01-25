@@ -3,6 +3,7 @@
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
 import React, { type ReactNode, type ErrorInfo } from 'react';
+import { debugError } from '../utils/logging';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -27,7 +28,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
     // You can also log the error to an error reporting service
-    console.error("Uncaught error:", error, errorInfo);
+    debugError('Uncaught error:', error, errorInfo);
     this.setState({ errorInfo });
   }
 

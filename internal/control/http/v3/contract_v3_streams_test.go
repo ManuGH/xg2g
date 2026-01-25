@@ -65,9 +65,9 @@ func (m *MockStoreForStreams) DeleteAllLeases(ctx context.Context) (int, error) 
 
 func TestGetStreams_Contract_Slice53(t *testing.T) {
 	// Base Config
-	cfg := config.AppConfig{}
+	cfg := config.AppConfig{DataDir: t.TempDir()}
 	snap := config.Snapshot{Runtime: config.RuntimeSnapshot{
-		PlaylistFilename: "", // No playlist -> no name resolution (names will be empty/ServiceRef)
+		PlaylistFilename: "missing.m3u", // Missing playlist -> no name resolution (names will be empty/ServiceRef)
 	}}
 
 	t.Run("Empty_Returns_EmptyList", func(t *testing.T) {

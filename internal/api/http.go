@@ -41,6 +41,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
+	"github.com/ManuGH/xg2g/internal/platform/paths"
 	"github.com/ManuGH/xg2g/internal/recordings"
 	"github.com/go-chi/chi/v5"
 
@@ -687,15 +688,35 @@ func (s *Server) routes() http.Handler {
 		// Internal playlist export
 		// Legacy endpoint: /playlist.m3u (serves the current playlist file, whatever it is)
 		r.Get("/playlist.m3u", func(w http.ResponseWriter, r *http.Request) {
-			path := filepath.Join(s.cfg.DataDir, s.snap.Runtime.PlaylistFilename)
-			http.ServeFile(w, r, path)
+			s.mu.RLock()
+			cfg := s.cfg
+			snap := s.snap
+			s.mu.RUnlock()
+
+			playlistPath, err := paths.ValidatePlaylistPath(cfg.DataDir, snap.Runtime.PlaylistFilename)
+			if err != nil {
+				log.L().Error().Err(err).Msg("playlist path rejected")
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+				return
+			}
+			http.ServeFile(w, r, playlistPath)
 		})
 
 		// Modern endpoint: /playlist.m3u8 (sets correct MIME type)
 		r.Get("/playlist.m3u8", func(w http.ResponseWriter, r *http.Request) {
-			path := filepath.Join(s.cfg.DataDir, s.snap.Runtime.PlaylistFilename)
+			s.mu.RLock()
+			cfg := s.cfg
+			snap := s.snap
+			s.mu.RUnlock()
+
+			playlistPath, err := paths.ValidatePlaylistPath(cfg.DataDir, snap.Runtime.PlaylistFilename)
+			if err != nil {
+				log.L().Error().Err(err).Msg("playlist path rejected")
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+				return
+			}
 			w.Header().Set("Content-Type", controlhttp.ContentTypeHLSPlaylist)
-			http.ServeFile(w, r, path)
+			http.ServeFile(w, r, playlistPath)
 		})
 	})
 

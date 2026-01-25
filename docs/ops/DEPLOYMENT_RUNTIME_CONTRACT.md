@@ -1,10 +1,11 @@
+<!-- GENERATED FILE - DO NOT EDIT. Source: templates/docs/ops/DEPLOYMENT_RUNTIME_CONTRACT.md.tmpl -->
 # GPU/CPU- **Verification**: Run `scripts/verify-runtime.sh` after build to ensure
 
   canonical contract compliance.
 
 **Status**: CANONICAL - Single Source of Truth
 **Last Updated**: 2026-01-08
-**Applies To**: v3.1.3+
+**Applies To**: v3.1.6+
 
 > [!IMPORTANT]
 > This document defines **non-negotiable** behavior. No bauchgefühl, no interpretation.
@@ -128,7 +129,7 @@ version: '3.8'
 
 services:
   xg2g:
-    image: ghcr.io/manugh/xg2g:3.1.3
+    image: ghcr.io/manugh/xg2g:3.1.6
     container_name: xg2g
     restart: unless-stopped
 
@@ -140,6 +141,8 @@ services:
       - /dev/dri/renderD128:/dev/dri/renderD128
 
     # Volumes
+    # Advanced: Digest-Pinning (High-Assurance Enforcement)
+    # image: ghcr.io/manugh/xg2g@sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
     volumes:
       - /var/lib/xg2g/recordings:/recordings
       - /var/lib/xg2g/tmp:/tmp/xg2g
@@ -189,7 +192,7 @@ services:
 **Command**:
 
 ```bash
-docker run --rm xg2g:3.1.3 which ffmpeg
+docker run --rm xg2g:3.1.6 which ffmpeg
 ```
 
 **Expected**: `/usr/local/bin/ffmpeg`
@@ -197,7 +200,7 @@ docker run --rm xg2g:3.1.3 which ffmpeg
 **Command**:
 
 ```bash
-docker run --rm xg2g:3.1.3 ffmpeg -version | head -1
+docker run --rm xg2g:3.1.6 ffmpeg -version | head -1
 ```
 
 **Expected**: `ffmpeg version 7.1.3`
@@ -205,7 +208,7 @@ docker run --rm xg2g:3.1.3 ffmpeg -version | head -1
 **Command**:
 
 ```bash
-docker run --rm xg2g:3.1.3 sh -c 'echo $XG2G_FFMPEG_PATH'
+docker run --rm xg2g:3.1.6 sh -c 'echo $XG2G_FFMPEG_PATH'
 ```
 
 **Expected**: `/usr/local/bin/ffmpeg`
@@ -213,7 +216,7 @@ docker run --rm xg2g:3.1.3 sh -c 'echo $XG2G_FFMPEG_PATH'
 **Failure Test**:
 
 ```bash
-docker run --rm -e FFMPEG_HOME=/nonexistent xg2g:3.1.3 ffmpeg -version
+docker run --rm -e FFMPEG_HOME=/nonexistent xg2g:3.1.6 ffmpeg -version
 ```
 
 **Expected**: `ERROR: FFmpeg binary not found or not executable: /nonexistent/bin/ffmpeg` (exit 1)
@@ -223,7 +226,7 @@ docker run --rm -e FFMPEG_HOME=/nonexistent xg2g:3.1.3 ffmpeg -version
 **Command** (with GPU device):
 
 ```bash
-docker run --rm --device /dev/dri/renderD128 xg2g:3.1.3 ls -l /dev/dri/
+docker run --rm --device /dev/dri/renderD128 xg2g:3.1.6 ls -l /dev/dri/
 ```
 
 **Expected**: `renderD128` present
@@ -231,7 +234,7 @@ docker run --rm --device /dev/dri/renderD128 xg2g:3.1.3 ls -l /dev/dri/
 Command (hwaccel test):
 
 ```bash
-docker run --rm --device /dev/dri/renderD128 xg2g:3.1.3 \
+docker run --rm --device /dev/dri/renderD128 xg2g:3.1.6 \
   ffmpeg -hwaccel vaapi -hwaccel_device /dev/dri/renderD128 -f lavfi -i testsrc -t 1 -f null -
 ```
 
@@ -241,13 +244,13 @@ Expected: Success (exit 0)
 
 ```bash
 # Verify non-root user (UID 10001)
-docker inspect --format='{{.Config.User}}' xg2g:3.1.3
+docker inspect --format='{{.Config.User}}' xg2g:3.1.6
 ```
 
 Test (no device):
 
 ```bash
-docker run --rm xg2g:3.1.3 \
+docker run --rm xg2g:3.1.6 \
   ffmpeg -hwaccel vaapi -hwaccel_device /dev/dri/renderD128 -f lavfi -i testsrc -t 1 -f null -
 ```
 
@@ -286,7 +289,7 @@ go test ./internal/control/vod -run TestVOD_AtomicPublish -v -count=1
 - name: Verify Deployment Contract
   run: |
     # FFmpeg wrapper
-    docker run --rm xg2g:latest sh -c '
+    docker run --rm xg2g:3.1.6 sh -c '
       [ "$(which ffmpeg)" = "/usr/local/bin/ffmpeg" ] || exit 1
       ffmpeg -version | grep -q "7.1.3" || exit 1
       [ "$XG2G_FFMPEG_PATH" = "/usr/local/bin/ffmpeg" ] || exit 1
@@ -302,7 +305,7 @@ go test ./internal/control/vod -run TestVOD_AtomicPublish -v -count=1
 - name: GPU Fail-Closed Test
   run: |
     # Without device, hwaccel=force MUST fail
-    docker run --rm xg2g:latest \
+    docker run --rm xg2g:3.1.6 \
       ffmpeg -hwaccel vaapi -hwaccel_device /dev/dri/renderD128 \
       -f lavfi -i testsrc -t 1 -f null - 2>&1 | grep -q "Cannot open"
 ```
@@ -363,4 +366,3 @@ Before deploying to production, verify:
 - FFmpeg Build: `docs/ops/FFMPEG_BUILD.md`
 - Phase-9 VOD Monitor: `phase9_walkthrough.md`
 - Test Charta: `docs/ops/TEST_CHARTA.md`
-

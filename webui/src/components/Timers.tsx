@@ -5,6 +5,7 @@
 import { useState, useEffect } from 'react';
 import { getTimers, deleteTimer, getDvrCapabilities, type Timer, type DvrCapabilities } from '../client-ts';
 import EditTimerDialog from './EditTimerDialog';
+import { debugError, debugWarn, formatError } from '../utils/logging';
 import './Timers.css';
 
 function formatDateTime(ts: number | undefined): string {
@@ -40,7 +41,7 @@ export default function Timers() {
         setTimers(result.data.items || []);
       }
     } catch (err) {
-      console.error("Failed to load timers:", err);
+      debugError('Failed to load timers:', formatError(err));
       setError("Failed to load timers. Ensure backend is running and authenticated.");
     } finally {
       setLoading(false);
@@ -55,7 +56,7 @@ export default function Timers() {
         setCapabilities(result.data);
       }
     } catch (err) {
-      console.warn("Failed to fetch capabilities", err);
+      debugWarn('Failed to fetch capabilities', formatError(err));
     }
   };
 
@@ -78,7 +79,7 @@ export default function Timers() {
         }
         fetchTimers();
       } else {
-        console.warn("No timerId found");
+        debugWarn('No timerId found');
       }
     } catch (err) {
       const error = err as Error;

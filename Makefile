@@ -12,7 +12,8 @@
 	quality-gates pre-commit install dev-tools check-tools generate-config verify-config \
         release-check release-build release-tag release-notes \
         dev up down status prod-up prod-down prod-logs check-env \
-        restart prod-restart ps prod-ps ui-build codex certs setup build-ffmpeg build-migrate verify-storage-cutover
+        restart prod-restart ps prod-ps ui-build codex certs setup build-ffmpeg build-migrate verify-storage-cutover \
+        docs-render verify-docs-compiled release-prepare release-verify-remote
 
 # ===================================================================================================
 # Configuration and Variables
@@ -186,7 +187,7 @@ generate-config: ## Generate config surfaces from registry
 	@echo "✅ Config surfaces generated"
 
 .PHONY: verify
-verify: verify-config verify-doc-links verify-capabilities contract-matrix verify-purity contract-freeze-check verify-no-sleep verify-no-panic verify-no-ignored-errors ## Phase 4.7: Run all governance verification gates
+verify: verify-config verify-doc-links verify-capabilities contract-matrix verify-purity contract-freeze-check verify-no-sleep verify-no-panic verify-no-ignored-errors verify-doc-image-tags verify-docs-compiled verify-digest-lock verify-release-policy ## Phase 4.7: Run all governance verification gates
 
 verify-config: ## Verify generated config surfaces are up-to-date
 	@echo "Verifying generated config surfaces..."
@@ -200,6 +201,48 @@ verify-config: ## Verify generated config surfaces are up-to-date
 
 verify-doc-links: ## Verify docs contains no broken relative links
 	@./scripts/verify-doc-links.sh
+
+verify-doc-image-tags: ## Verify Docker image tags are pinned and consistent (Best Practice 2026)
+	@echo "--- verify-doc-image-tags ---"
+	@./scripts/verify-doc-image-tags.sh
+
+verify-doc-image-tags-negative: ## Mechanical negative test for the image tag gate
+	@echo "--- verify-doc-image-tags-negative ---"
+	@mkdir -p tmp/gate-test
+	@echo "3.1.5" > tmp/gate-test/VERSION
+	@echo "ghcr.io/manugh/xg2g:latest" > tmp/gate-test/README.md
+	@echo "Testing negative case (forbidden :latest)..."
+	@IMAGE_TAG_TEST_ROOT=tmp/gate-test bash -c 'CANONICAL_VERSION=3.1.5 REPO_ROOT=tmp/gate-test ./scripts/verify-doc-image-tags.sh' && (echo "❌ Gate failed to catch :latest"; exit 1) || echo "✅ Gate correctly caught :latest"
+	@echo "ghcr.io/manugh/xg2g:3.1.4" > tmp/gate-test/README.md
+	@echo "Testing negative case (tag drift)..."
+	@IMAGE_TAG_TEST_ROOT=tmp/gate-test bash -c 'CANONICAL_VERSION=3.1.5 REPO_ROOT=tmp/gate-test ./scripts/verify-doc-image-tags.sh' && (echo "❌ Gate failed to catch tag drift"; exit 1) || echo "✅ Gate correctly caught tag drift"
+	@rm -rf tmp/gate-test
+	@echo "✅ Negative tests passed"
+
+docs-render: ## Render templates into documentation and units (Zero-Drift)
+	@echo "--- docs:render ---"
+	@./scripts/render-docs.sh
+
+verify-docs-compiled: docs-render ## Verify that all docs and units are up-to-date with templates
+	@echo "--- verify-docs-compiled ---"
+	@git diff --exit-code README.md docs/ops/xg2g.service docker-compose.yml || (echo "❌ Documentation drift detected. Run 'make docs:render' and commit changes." && exit 1)
+	@echo "✅ All documents and units are up-to-date"
+
+verify-digest-lock: ## Verify DIGESTS.lock stability and remote existence
+	@echo "--- verify-digest-lock ---"
+	@./scripts/verify-digest-lock.sh
+
+verify-release-policy: ## Verify Release PR diff scope policy
+	@echo "--- verify-release-policy ---"
+	@./scripts/verify-release-policy.sh
+
+release-prepare: ## Prepare a new release (VERSION=X.Y.Z)
+	@echo "--- release-prepare ---"
+	@./scripts/release-prepare.sh $(VERSION)
+
+release-verify-remote: ## Verify release image in GHCR and update DIGESTS.lock
+	@echo "--- release-verify-remote ---"
+	@./scripts/release-verify-remote.sh
 
 .PHONY: verify-hermetic-codegen
 verify-hermetic-codegen: ## Verify hermetic code generation invariants (CTO-grade)

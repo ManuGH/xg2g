@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getSystemInfo } from '../../client-ts/sdk.gen';
+import { debugError, formatError } from '../../utils/logging';
 import './SystemInfo.css';
 
 interface SystemInfoData {
@@ -95,7 +96,7 @@ export function SystemInfo() {
         setError(null);
       } catch (err) {
         if (!mounted) return;
-        console.error('Failed to load system info:', err);
+        debugError('Failed to load system info:', formatError(err));
         setError((err as Error).message || 'Unbekannter Fehler');
         setLoading(false);
       }

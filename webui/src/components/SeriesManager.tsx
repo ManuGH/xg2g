@@ -15,6 +15,7 @@ import {
   type SeriesRuleWritable,
   // type SeriesRuleUpdate // Missing in SDK
 } from '../client-ts';
+import { debugError, formatError } from '../utils/logging';
 import './SeriesManager.css';
 
 interface DaySelectorProps {
@@ -83,7 +84,7 @@ function SeriesManager() {
       // SDK returns { data: SeriesRule[] }
       setRules(response.data || []);
     } catch (err) {
-      console.error('Failed to load rules:', err);
+      debugError('Failed to load rules:', formatError(err));
     } finally {
       setLoading(false);
     }
@@ -94,7 +95,7 @@ function SeriesManager() {
       const response = await getServices({ query: { bouquet: '' } });
       setChannels(response.data || []);
     } catch (err) {
-      console.error('Failed to load channels:', err);
+      debugError('Failed to load channels:', formatError(err));
     }
   };
 

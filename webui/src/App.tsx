@@ -8,6 +8,8 @@ import { useEffect, lazy, Suspense, useMemo } from 'react';
 import './App.css';
 import { useAppContext } from './context/AppContext';
 import Navigation from './components/Navigation';
+import { debugLog, redactToken } from './utils/logging';
+import { getStoredToken } from './utils/tokenStorage';
 
 // Lazy load feature views (Phase 4: Bundle optimization)
 // V3Player is lazy loaded because it includes heavy HLS.js dependency
@@ -50,16 +52,17 @@ function App() {
   }, []);
 
   useEffect(() => {
-    console.log('[DEBUG] App mounted. showingAuth:', showAuth);
+    debugLog('[DEBUG] App mounted. showingAuth:', showAuth);
     const handleAuth = () => {
-      console.log('[DEBUG] auth-required event received');
+      debugLog('[DEBUG] auth-required event received');
       setShowAuth(true);
     };
     window.addEventListener('auth-required', handleAuth);
 
     // Initialize client with token if available
-    const storedToken = localStorage.getItem('XG2G_API_TOKEN');
-    console.log('[DEBUG] Stored token:', storedToken);
+    const storedToken = getStoredToken();
+    const storedCredential = redactToken(storedToken);
+    debugLog('[DEBUG] Stored credential:', storedCredential);
     if (storedToken) {
       setToken(storedToken);
     }

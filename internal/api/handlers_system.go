@@ -11,6 +11,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
+	"github.com/ManuGH/xg2g/internal/platform/paths"
 )
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -75,21 +76,17 @@ func (s *Server) handleXMLTV(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Read M3U to build tvg-id to tvg-chno mapping
-	m3uPath, err := s.dataFilePath(s.snap.Runtime.PlaylistFilename)
+	playlistPath, err := paths.ValidatePlaylistPath(s.cfg.DataDir, s.snap.Runtime.PlaylistFilename)
 	if err != nil {
-		logger.Warn().Err(err).Msg("playlist path rejected, serving raw XMLTV")
-		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
-		w.Header().Set("Cache-Control", "public, max-age=300")
-		if _, writeErr := w.Write(xmltvData); writeErr != nil {
-			logger.Error().Err(writeErr).Msg("failed to write raw XMLTV response")
-		}
+		logger.Error().Err(err).Msg("playlist path rejected")
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
-	// #nosec G304 -- m3uPath is validated by dataFilePath and confined to the data directory
-	data, err := os.ReadFile(m3uPath)
+	// #nosec G304 -- playlistPath is validated and confined to the data directory
+	data, err := os.ReadFile(playlistPath)
 	if err != nil {
-		logger.Warn().Err(err).Str("path", m3uPath).Msg("failed to read playlist for XMLTV mapping")
+		logger.Warn().Err(err).Str("path", playlistPath).Msg("failed to read playlist for XMLTV mapping")
 		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 		w.Header().Set("Cache-Control", "public, max-age=300")
 		_, _ = w.Write(xmltvData)

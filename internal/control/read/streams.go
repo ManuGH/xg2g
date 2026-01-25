@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/m3u"
+	"github.com/ManuGH/xg2g/internal/platform/paths"
 )
 
 // PlaylistFileReader allows mocking file reads for testing.
@@ -57,21 +57,22 @@ func GetStreams(ctx context.Context, cfg config.AppConfig, snap config.Snapshot,
 	// 2. Resolve Channel Names (Best Effort)
 	nameMap := make(map[string]string)
 	playlistName := snap.Runtime.PlaylistFilename
-	if playlistName != "" {
-		path := filepath.Clean(filepath.Join(cfg.DataDir, playlistName))
-		if data, err := PlaylistFileReader(path); err == nil {
-			channels := m3u.Parse(string(data))
-			for _, ch := range channels {
-				// Note A: Centralized ServiceRef extraction to prevent drift
-				ref := ExtractServiceRef(ch.URL, ch.TvgID)
+	path, err := paths.ValidatePlaylistPath(cfg.DataDir, playlistName)
+	if err != nil {
+		return []StreamSession{}, err
+	}
+	if data, err := PlaylistFileReader(path); err == nil {
+		channels := m3u.Parse(string(data))
+		for _, ch := range channels {
+			// Note A: Centralized ServiceRef extraction to prevent drift
+			ref := ExtractServiceRef(ch.URL, ch.TvgID)
 
-				displayName := ch.Name
-				if displayName == "" {
-					displayName = ch.TvgID
-				}
-				if ref != "" {
-					nameMap[ref] = displayName
-				}
+			displayName := ch.Name
+			if displayName == "" {
+				displayName = ch.TvgID
+			}
+			if ref != "" {
+				nameMap[ref] = displayName
 			}
 		}
 	}

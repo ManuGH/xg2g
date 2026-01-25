@@ -23,6 +23,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/playlist"
+	"github.com/ManuGH/xg2g/internal/platform/paths"
 	"github.com/ManuGH/xg2g/internal/telemetry"
 	"github.com/ManuGH/xg2g/internal/validate"
 	"go.opentelemetry.io/otel/attribute"
@@ -260,12 +261,11 @@ func Refresh(ctx context.Context, snap config.Snapshot) (*Status, error) {
 	metrics.RecordChannelTypeCounts(hd, sd, radio, unknown)
 
 	// Write M3U playlist (filename configurable via ENV)
-	playlistName := rt.PlaylistFilename
-	// Sanitize filename for security
-	safeName, err := sanitizeFilename(playlistName)
+	playlistPath, err := paths.ValidatePlaylistPath(cfg.DataDir, rt.PlaylistFilename)
 	if err != nil {
-		logger.Warn().Err(err).Msg("failed to sanitize playlist filename, using default")
-		safeName = "playlist.m3u"
+		logger.Error().Err(err).Str("playlist", rt.PlaylistFilename).Msg("invalid playlist path")
+		metrics.IncRefreshFailure("playlist_path_invalid")
+		return nil, fmt.Errorf("invalid playlist path: %w", err)
 	}
 
 	// Trigger background picon pre-warm (don't block refresh)
@@ -274,7 +274,6 @@ func Refresh(ctx context.Context, snap config.Snapshot) (*Status, error) {
 	}
 
 	// Generate M3U
-	playlistPath := filepath.Join(cfg.DataDir, safeName)
 	// Pass Public URL to M3U writer for absolute paths in M3U (Plex compatibility)
 	// WebUI uses relative paths internally
 	publicURL := rt.PublicURL

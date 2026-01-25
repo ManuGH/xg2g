@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next';
 import RecordingResumeBar, { isResumeEligible } from '../features/resume/RecordingResumeBar';
 import { Card, CardBody } from './ui/Card';
 import { StatusChip, type ChipState } from './ui/StatusChip';
+import { debugError, formatError } from '../utils/logging';
 import './Recordings.css';
 
 const V3Player = lazy(() => import('./V3Player'));
@@ -120,7 +121,7 @@ export default function RecordingsList() {
         }
       }
     } catch (err: any) {
-      console.error(err);
+      debugError(formatError(err));
       setError(err.body?.detail || err.statusText || 'Failed to load recordings');
     } finally {
       setLoading(false);

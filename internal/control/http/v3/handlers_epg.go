@@ -10,7 +10,6 @@ import (
 	"encoding/xml"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -18,6 +17,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/epg"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/m3u"
+	"github.com/ManuGH/xg2g/internal/platform/paths"
 )
 
 // Responsibility: Handles EPG data retrieval and serving.
@@ -219,11 +219,10 @@ func (w *epgAdapter) GetBouquetServiceRefs(ctx context.Context, bouquet string) 
 	s.mu.RUnlock()
 
 	playlistName := snap.Runtime.PlaylistFilename
-	// Parity Hardening: If playlist not configured, strict filter (empty result)
-	if playlistName == "" {
-		return make(map[string]struct{}), nil
+	playlistPath, err := paths.ValidatePlaylistPath(cfg.DataDir, playlistName)
+	if err != nil {
+		return nil, err
 	}
-	playlistPath := filepath.Clean(filepath.Join(cfg.DataDir, playlistName))
 
 	data, err := os.ReadFile(playlistPath) // #nosec G304
 	if err != nil {

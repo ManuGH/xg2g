@@ -1,7 +1,8 @@
+# GENERATED FILE - DO NOT EDIT. Source: templates/docker-compose.yml.tmpl
 services:
   xg2g:
     build: .
-    image: xg2g:local
+    image: ${XG2G_IMAGE:-ghcr.io/manugh/xg2g:3.1.6}
     container_name: xg2g
     restart: unless-stopped
     ports:

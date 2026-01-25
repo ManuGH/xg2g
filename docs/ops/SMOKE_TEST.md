@@ -13,7 +13,7 @@
 docker run -d --name xg2g-smoke -p 8088:8088 \
   -v /tmp/xg2g-test:/data \
   -e XG2G_E2_HOST="192.168.1.50" \
-  xg2g:latest
+  xg2g:3.1.5
 
 sleep 5
 curl -f http://localhost:8088/healthz  # Expect: 200 OK
@@ -92,7 +92,7 @@ ls /tmp/xg2g-test/vod/  # Should have complete files only, no .tmp
 ```yaml
 - name: E2E Smoke
   run: |
-    docker run -d --name smoke -p 8088:8088 xg2g:latest
+    docker run -d --name smoke -p 8088:8088 xg2g:3.1.5
     sleep 5
     curl -f http://localhost:8088/healthz || exit 1
     docker stop smoke && docker rm smoke

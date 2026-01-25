@@ -1,3 +1,4 @@
+import { debugWarn } from '../utils/logging';
 
   const waitForDirectStream = useCallback(async (url: string): Promise<void> => {
     const maxRetries = 100; // 5 minutes max wait
@@ -28,7 +29,7 @@
            throw new Error(`Unexpected status: ${res.status}`);
         }
       } catch (e) {
-         console.warn('[V3Player] Probe failed', e);
+         debugWarn('[V3Player] Probe failed', e);
          // Network error? retry.
       }
 

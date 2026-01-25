@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/m3u"
+	"github.com/ManuGH/xg2g/internal/platform/paths"
 )
 
 // ServicesSource defines the interface needed to fetch service metadata.
@@ -51,10 +51,10 @@ type Service struct {
 // GetBouquets returns a deduplicated and sorted list of channel groups (bouquets).
 func GetBouquets(cfg config.AppConfig, snap config.Snapshot) ([]string, error) {
 	playlistName := snap.Runtime.PlaylistFilename
-	if playlistName == "" {
-		return getFallbackBouquets(cfg), nil
+	path, err := paths.ValidatePlaylistPath(cfg.DataDir, playlistName)
+	if err != nil {
+		return nil, err
 	}
-	path := filepath.Clean(filepath.Join(cfg.DataDir, playlistName))
 
 	var bouquets []string
 	seen := make(map[string]bool)
@@ -116,12 +116,11 @@ type BouquetWithCount struct {
 //   - Error: Other -> Return error (Fail Closed).
 func GetBouquetsWithCounts(cfg config.AppConfig, snap config.Snapshot) ([]BouquetWithCount, bool, error) {
 	playlistName := snap.Runtime.PlaylistFilename
-	// 1. Fallback if no playlist name
-	if playlistName == "" {
-		return getFallbackBouquetsWithCounts(cfg), true, nil
+	path, err := paths.ValidatePlaylistPath(cfg.DataDir, playlistName)
+	if err != nil {
+		return nil, false, err
 	}
 
-	path := filepath.Clean(filepath.Join(cfg.DataDir, playlistName))
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -239,13 +238,10 @@ func getFallbackBouquets(cfg config.AppConfig) []string {
 // GetServices returns a list of services filtered by bouquet.
 func GetServices(cfg config.AppConfig, snap config.Snapshot, source ServicesSource, q ServicesQuery) (ServicesResult, error) {
 	playlistName := snap.Runtime.PlaylistFilename
-	if playlistName == "" {
-		// No playlist configured -> logic was "no services found" -> null?
-		// User says: "In the legacy code you included, an empty filename... os.ReadFile(dir) fails and legacy encodes [], not null."
-		// So we must return EmptyEncodingArray.
-		return ServicesResult{EmptyEncoding: EmptyEncodingArray}, nil
+	path, err := paths.ValidatePlaylistPath(cfg.DataDir, playlistName)
+	if err != nil {
+		return ServicesResult{}, err
 	}
-	path := filepath.Clean(filepath.Join(cfg.DataDir, playlistName))
 
 	data, err := os.ReadFile(path)
 	if err != nil {

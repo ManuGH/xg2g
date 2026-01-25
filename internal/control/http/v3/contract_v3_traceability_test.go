@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/mock" // Import mock
 	"github.com/stretchr/testify/require"
 
+	"github.com/ManuGH/xg2g/internal/config"
 	controlhttp "github.com/ManuGH/xg2g/internal/control/http"
 	"github.com/ManuGH/xg2g/internal/control/playback"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
@@ -167,6 +168,8 @@ func TestTraceability_GetStreams(t *testing.T) {
 		v3Store: store,
 		// minimal dependencies for GetStreams
 	}
+	s.cfg = config.AppConfig{DataDir: t.TempDir()}
+	s.snap = config.Snapshot{Runtime: config.RuntimeSnapshot{PlaylistFilename: "missing.m3u"}}
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/api/v3/streams", nil)

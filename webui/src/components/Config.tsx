@@ -5,6 +5,8 @@
 import { useState, useEffect, FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getSystemConfig, putSystemConfig, type AppConfig, type ConfigUpdate } from '../client-ts';
+import { debugError, formatError } from '../utils/logging';
+import { getStoredToken } from '../utils/tokenStorage';
 import './Config.css';
 
 interface ValidationResponse {
@@ -85,7 +87,7 @@ function Config(props: ConfigProps = { showTitle: true }) {
         }
       }
     } catch (err: any) {
-      console.error('Failed to load config:', err);
+      debugError('Failed to load config:', formatError(err));
       setError(t('setup.errors.loadFailed'));
     } finally {
       setLoading(false);
@@ -137,7 +139,7 @@ function Config(props: ConfigProps = { showTitle: true }) {
     setSuccessMsg('');
 
     try {
-      const token = localStorage.getItem('XG2G_API_TOKEN');
+      const token = getStoredToken();
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) {
         headers.Authorization = `Bearer ${token}`;
@@ -174,7 +176,7 @@ function Config(props: ConfigProps = { showTitle: true }) {
         setError(result.message || t('setup.errors.connectionFailed'));
       }
     } catch (err) {
-      console.error('Validation failed:', err);
+      debugError('Validation failed:', formatError(err));
       setConnectionStatus('invalid');
       setError(t('setup.errors.networkValidation'));
     } finally {
@@ -239,7 +241,7 @@ function Config(props: ConfigProps = { showTitle: true }) {
       }
 
     } catch (err) {
-      console.error('Failed to save config:', err);
+      debugError('Failed to save config:', formatError(err));
       setError(t('setup.errors.saveFailedLogs'));
     } finally {
       setSaving(false);

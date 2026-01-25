@@ -12,6 +12,7 @@ import {
   type TimerConflictPreviewResponse,
   type TimerCreateRequest
 } from '../client-ts';
+import { debugError, formatError } from '../utils/logging';
 import './EditTimerDialog.css';
 
 interface EditTimerDialogProps {
@@ -121,7 +122,7 @@ export default function EditTimerDialog({ timer, onClose, onSave, capabilities }
         }
       } catch (err) {
         if (!signal.aborted) {
-          console.error("Preview failed", err);
+          debugError('Preview failed', formatError(err));
         }
       } finally {
         if (!signal.aborted) setValidating(false);
@@ -159,7 +160,7 @@ export default function EditTimerDialog({ timer, onClose, onSave, capabilities }
       onSave(); // Trigger parent refresh
       onClose();
     } catch (err: any) {
-      console.error("Save failed", err);
+      debugError('Save failed', formatError(err));
 
       // RFC7807 Discipline: Extract title/detail
       let msg = t('common.saveFailed', 'Save failed');

@@ -3,6 +3,8 @@
 // In real world, this would batch and send to /api/telemetry
 // For now, it logs to console and exposes hooks for testing.
 
+import { debugLog } from '../utils/logging';
+
 export type TelemetryEventType =
   | 'ui.contract.consumed'
   | 'ui.contract.violation'
@@ -33,7 +35,7 @@ class TelemetryService {
     this.listeners.forEach(l => l(event));
 
     // Console output for "Dashboard" visibility (dev mode)
-    console.debug(`[TELEMETRY] ${type}`, payload);
+    debugLog(`[TELEMETRY] ${type}`, payload);
   }
 
   // Test hook

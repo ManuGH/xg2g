@@ -10,8 +10,8 @@ const DEFAULT_CAPABILITIES: Capabilities = {
 // In real app: Fetch from /api/v3/system/capabilities
 // Here: Mock implementation or attempt fetch
 export function useCapabilities() {
-  const [capabilities, setCapabilities] = useState<Capabilities>(DEFAULT_CAPABILITIES);
-  const [loading, setLoading] = useState(false); // Assume loaded for simplified synchronous testing loops, or use async
+  const [capabilities] = useState<Capabilities>(DEFAULT_CAPABILITIES);
+  const [loading] = useState(false); // Assume loaded for simplified synchronous testing loops, or use async
 
   useEffect(() => {
     // Attempt fetch?

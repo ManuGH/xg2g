@@ -13,6 +13,7 @@ import { EPG_MAX_HORIZON_HOURS } from './types';
 import { EpgToolbar } from './components/EpgToolbar';
 import { EpgChannelList } from './components/EpgChannelList';
 import { normalizeEpgText } from '../../utils/text';
+import { debugError, debugLog, formatError } from '../../utils/logging';
 import './EPG.css';
 
 const RECORD_SUPPORTED = true; // Feature flag
@@ -46,7 +47,7 @@ export default function EPG({
       const data = await fetchTimers();
       setTimers(data);
     } catch (err) {
-      console.error('Failed to fetch timers for EPG', err);
+      debugError('Failed to fetch timers for EPG', formatError(err));
     }
   }, []);
 
@@ -75,7 +76,7 @@ export default function EPG({
         alert(t('epg.recordSuccess'));
         loadTimers(); // Refresh feedback immediately
       } catch (err: any) {
-        console.error(err);
+        debugError(formatError(err));
         let msg = err.message || JSON.stringify(err);
         if (err.body?.title) {
           msg = err.body.title;
@@ -132,16 +133,22 @@ export default function EPG({
       // Observability (DEV only)
       const isDev = (import.meta as any).env?.DEV;
       if (isDev) {
-        console.group('EPG Load [%s]', state.filters.timeRange === 336 ? 'All' : `${state.filters.timeRange}h`);
-        console.log('Window: %s to %s', new Date(fetchFrom * 1000).toISOString(), new Date(fetchTo * 1000).toISOString());
-        console.log('Events received: %d', events.length);
-        console.groupEnd();
+        debugLog(
+          'EPG Load [%s]',
+          state.filters.timeRange === 336 ? 'All' : `${state.filters.timeRange}h`
+        );
+        debugLog(
+          'Window: %s to %s',
+          new Date(fetchFrom * 1000).toISOString(),
+          new Date(fetchTo * 1000).toISOString()
+        );
+        debugLog('Events received: %d', events.length);
       }
 
       dispatch({ type: 'LOAD_SUCCESS', payload: { events } });
     } catch (err: any) {
       if (err.name === 'AbortError') return;
-      console.error('EPG load failed:', err);
+      debugError('EPG load failed:', formatError(err));
       dispatch({ type: 'LOAD_ERROR', payload: { error: 'epg.loadError' } });
     }
   }, [state.filters.timeRange, state.filters.bouquetId]);
@@ -170,7 +177,7 @@ export default function EPG({
 
       dispatch({ type: 'SEARCH_SUCCESS', payload: { events } });
     } catch (err: any) {
-      console.error(err);
+      debugError(formatError(err));
       dispatch({ type: 'SEARCH_ERROR', payload: { error: 'epg.searchError' } });
     }
   }, [state.filters.query, state.filters.bouquetId]);

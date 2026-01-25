@@ -21,6 +21,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/channels"
 	"github.com/ManuGH/xg2g/internal/m3u"
+	"github.com/ManuGH/xg2g/internal/platform/paths"
 	"github.com/rs/zerolog"
 	"golang.org/x/net/ipv4"
 )
@@ -173,7 +174,12 @@ func (s *Server) HandleLineup(w http.ResponseWriter, _ *http.Request) {
 	if strings.TrimSpace(playlistName) == "" {
 		playlistName = "playlist.m3u"
 	}
-	path := filepath.Join(s.config.DataDir, playlistName)
+	path, err := paths.ValidatePlaylistPath(s.config.DataDir, playlistName)
+	if err != nil {
+		s.logger.Error().Err(err).Msg("invalid playlist path")
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
 
 	// #nosec G304 -- path is constructed from safe config
 	data, err := os.ReadFile(path)

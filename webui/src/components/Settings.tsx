@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { getSystemScanStatus, triggerSystemScan, getSystemConfig } from '../client-ts';
 import type { ScanStatus, AppConfig } from '../client-ts/types.gen';
 import Config, { isConfigured } from './Config';
+import { debugError, formatError } from '../utils/logging';
 import './Settings.css';
 
 function Settings() {
@@ -26,7 +27,7 @@ function Settings() {
       const { data } = await getSystemConfig();
       if (data) setConfig(data);
     } catch (err) {
-      console.error("Failed to load config", err);
+      debugError('Failed to load config', formatError(err));
     }
   };
 
@@ -64,7 +65,7 @@ function Settings() {
       const { data } = await getSystemScanStatus();
       if (data) setScanStatus(data);
     } catch (err) {
-      console.error("Failed to start scan", err);
+      debugError('Failed to start scan', formatError(err));
       setScanError("Failed to start scan");
     }
   };
