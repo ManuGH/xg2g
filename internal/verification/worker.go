@@ -45,13 +45,26 @@ var (
 
 // NewWorker creates a new verification worker.
 func NewWorker(store Store, cadence time.Duration, checkers ...Checker) *Worker {
-	return &Worker{
+	w := &Worker{
 		store:      store,
 		cadence:    cadence,
 		checkers:   checkers,
 		logger:     xglog.WithComponent("verification"),
 		driftGauge: driftGauge,
 	}
+	// Seal-Check 1: Type Safety
+	w.lastState.Store(DriftState{})
+	// Ensure metrics are initialized
+	InitMetrics()
+	return w
+}
+
+// InitMetrics sets all known drift metrics to 0 (Clean).
+// Call this on startup to ensure no "missing data" gaps / stale alerts.
+func InitMetrics() {
+	driftGauge.WithLabelValues(string(KindConfig)).Set(0)
+	driftGauge.WithLabelValues(string(KindRuntime)).Set(0)
+	driftGauge.WithLabelValues(string(KindBinary)).Set(0)
 }
 
 // Start begins the verification loop. It blocks until context is canceled.
@@ -155,13 +168,8 @@ func (w *Worker) handleStateChange(newState DriftState) {
 	// Detect edges per kind
 	currentKinds := countKinds(newState)
 
-	// Safe load of last state
-	var lastKinds map[MismatchKind]int
-	if v := w.lastState.Load(); v != nil {
-		lastKinds = countKinds(v.(DriftState))
-	} else {
-		lastKinds = make(map[MismatchKind]int)
-	}
+	// Safe load of last state (initialized in NewWorker, safe cast)
+	lastKinds := countKinds(w.lastState.Load().(DriftState))
 
 	// Check for introduced drift
 	for k, count := range currentKinds {

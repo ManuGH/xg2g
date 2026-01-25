@@ -455,6 +455,7 @@ func main() {
 	// 60s cadence (or configured)
 	if !cfg.Verification.Enabled {
 		logger.Info().Msg("Verification worker disabled by config (XG2G_VERIFY_ENABLED=false)")
+		verification.InitMetrics() // Ensure gauges serve 0 (Clean) instead of missing
 	} else {
 		verifier := verification.NewWorker(verifyStore, cfg.Verification.Interval, configCheck, runtimeCheck)
 		go verifier.Start(ctx)

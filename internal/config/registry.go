@@ -172,6 +172,10 @@ func buildRegistry() (*Registry, error) {
 		// --- STREAMING (ADR-00X) ---
 		{Path: "streaming.delivery_policy", Env: "XG2G_STREAMING_POLICY", FieldPath: "Streaming.DeliveryPolicy", Profile: ProfileSimple, Status: StatusActive, Default: "universal"},
 
+		// --- VERIFICATION ---
+		{Path: "verification.enabled", Env: "XG2G_VERIFY_ENABLED", FieldPath: "Verification.Enabled", Profile: ProfileAdvanced, Status: StatusActive, Default: true},
+		{Path: "verification.interval", Env: "XG2G_VERIFY_INTERVAL", FieldPath: "Verification.Interval", Profile: ProfileAdvanced, Status: StatusActive, Default: 60 * time.Second},
+
 		// --- SESSIONS (ADR-009) ---
 		{Path: "sessions.lease_ttl", Env: "", FieldPath: "Sessions.LeaseTTL", Profile: ProfileAdvanced, Status: StatusActive, Default: 2 * time.Hour},
 		{Path: "sessions.heartbeat_interval", Env: "", FieldPath: "Sessions.HeartbeatInterval", Profile: ProfileAdvanced, Status: StatusActive, Default: 30 * time.Second},

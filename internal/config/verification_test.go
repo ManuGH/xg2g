@@ -1,7 +1,6 @@
 package config
 
 import (
-	"os"
 	"testing"
 	"time"
 
@@ -10,8 +9,9 @@ import (
 )
 
 func TestVerification_Defaults(t *testing.T) {
-	os.Clearenv()
-	os.Setenv("XG2G_E2_HOST", "http://localhost") // Required
+	// Use t.Setenv for automatic cleanup and isolation
+	t.Setenv("XG2G_E2_HOST", "http://localhost")
+
 	loader := NewLoader("", "test")
 	cfg, err := loader.Load()
 	require.NoError(t, err)
@@ -21,10 +21,8 @@ func TestVerification_Defaults(t *testing.T) {
 }
 
 func TestVerification_EnvOverride_Disabled(t *testing.T) {
-	os.Clearenv()
-	os.Setenv("XG2G_E2_HOST", "http://localhost")
-	os.Setenv("XG2G_VERIFY_ENABLED", "false")
-	defer os.Unsetenv("XG2G_VERIFY_ENABLED")
+	t.Setenv("XG2G_E2_HOST", "http://localhost")
+	t.Setenv("XG2G_VERIFY_ENABLED", "false")
 
 	loader := NewLoader("", "test")
 	cfg, err := loader.Load()
@@ -34,10 +32,8 @@ func TestVerification_EnvOverride_Disabled(t *testing.T) {
 }
 
 func TestVerification_EnvOverride_Interval(t *testing.T) {
-	os.Clearenv()
-	os.Setenv("XG2G_E2_HOST", "http://localhost")
-	os.Setenv("XG2G_VERIFY_INTERVAL", "30s")
-	defer os.Unsetenv("XG2G_VERIFY_INTERVAL")
+	t.Setenv("XG2G_E2_HOST", "http://localhost")
+	t.Setenv("XG2G_VERIFY_INTERVAL", "30s")
 
 	loader := NewLoader("", "test")
 	cfg, err := loader.Load()
