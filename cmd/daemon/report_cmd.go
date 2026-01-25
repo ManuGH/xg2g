@@ -38,32 +38,7 @@ var reportCmd = &cobra.Command{
 		}
 
 		// 2. Data Gathering
-		report := make(map[string]interface{})
-
-		// A. Status (API)
-		url := fmt.Sprintf("http://localhost:%d/api/v3/status", reportPort)
-		client := &http.Client{Timeout: 5 * time.Second}
-		req, _ := http.NewRequest("GET", url, nil)
-		req.Header.Set("Authorization", "Bearer "+reportToken)
-
-		resp, err := client.Do(req)
-		if err == nil && resp.StatusCode == 200 {
-			var status interface{}
-			json.NewDecoder(resp.Body).Decode(&status)
-			report["status"] = status
-			resp.Body.Close()
-		} else {
-			report["status_error"] = fmt.Sprintf("failed to fetch status: %v", err)
-		}
-
-		// B. Fingerprint (Local)
-		report["fingerprint"] = map[string]interface{}{
-			"os":            runtime.GOOS,
-			"arch":          runtime.GOARCH,
-			"cpus":          runtime.NumCPU(),
-			"go_version":    runtime.Version(),
-			"timestamp_utc": time.Now().UTC(),
-		}
+		report := buildReportData(reportPort, reportToken)
 
 		// 3. Serialize & Output
 		data, _ := json.MarshalIndent(report, "", "  ")
@@ -80,4 +55,41 @@ var reportCmd = &cobra.Command{
 
 		return nil
 	},
+}
+
+func buildReportData(port int, token string) map[string]interface{} {
+	report := make(map[string]interface{})
+
+	// A. Status (API)
+	url := fmt.Sprintf("http://localhost:%d/api/v3/status", port)
+	client := &http.Client{Timeout: 5 * time.Second}
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := client.Do(req)
+	if err == nil && resp.StatusCode == 200 {
+		var status interface{}
+		json.NewDecoder(resp.Body).Decode(&status)
+		report["status"] = status
+		resp.Body.Close()
+	} else {
+		msg := "unknown error"
+		if err != nil {
+			msg = err.Error()
+		} else {
+			msg = fmt.Sprintf("HTTP %d", resp.StatusCode)
+		}
+		report["status_error"] = fmt.Sprintf("failed to fetch status: %s", msg)
+	}
+
+	// B. Fingerprint (Local)
+	report["fingerprint"] = map[string]interface{}{
+		"os":            runtime.GOOS,
+		"arch":          runtime.GOARCH,
+		"cpus":          runtime.NumCPU(),
+		"go_version":    runtime.Version(),
+		"timestamp_utc": time.Now().UTC(),
+	}
+
+	return report
 }
