@@ -54,7 +54,7 @@ func NewMemoryStore() *MemoryStore {
 
 func (m *MemoryStore) Close() error { return nil }
 
-func (m *MemoryStore) UpsertIdempotency(ctx context.Context, idemKey, sessionID string, ttl time.Duration) error {
+func (m *MemoryStore) PutIdempotency(ctx context.Context, idemKey, sessionID string, ttl time.Duration) error {
 	if idemKey == "" {
 		return nil
 	}
