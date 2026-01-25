@@ -719,7 +719,7 @@ function V3Player(props: V3PlayerProps) {
         import { NormativePlaybackInfo } from '../contracts/consumption';
         if (resolution.mode === 'normative') {
           // Type Assertion: We treat the object as strictly normative here.
-          // Any access to pInfo.url or decision.outputs will now fail compile-time check (if we used the var).
+          // Any access to pInfo.url or decision outputs will now fail compile-time check (if we used the var).
           const normativePInfo = pInfo as unknown as NormativePlaybackInfo;
 
           // TS-Guard
