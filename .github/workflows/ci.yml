@@ -232,7 +232,7 @@ jobs:
 
       - name: Attach OpenAPI lint report
         if: always()
-        uses: actions/upload-artifact@v6 # v5
+        uses: actions/upload-artifact@4cea002c0b490497914856006bbd902ffdbccf9d1a33 # v4.0.0
         with:
           name: openapi-lint
           path: /tmp/openapi-lint.txt
@@ -334,7 +334,7 @@ jobs:
 
       - name: Upload artifacts
         if: always()
-        uses: actions/upload-artifact@v6 # v5
+        uses: actions/upload-artifact@4cea002c0b490497914856006bbd902ffdbccf9d1a33 # v4.0.0
         with:
           name: logs-and-reports
           path: |
@@ -377,15 +377,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6 # Latest stable
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set up Go
-        uses: actions/setup-go@v6 # Latest stable
+        uses: actions/setup-go@3041dee5d64473ef0bad009d902ffdbccf9d1a33 # v6
         with:
           go-version-file: go.mod
 
       - name: Set up Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v5
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v5.3.0
         with:
           python-version: "3.x"
 
@@ -426,7 +426,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@3041dee5d64473ef0bad009d902ffdbccf9d1a33 # v6
         with:
           go-version-file: go.mod
           check-latest: true
