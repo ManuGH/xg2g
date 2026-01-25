@@ -8,6 +8,11 @@ import (
 	"sort"
 	"sync/atomic"
 	"time"
+
+	xglog "github.com/ManuGH/xg2g/internal/log"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/rs/zerolog"
 )
 
 // Checker performs a specific verification logic.
@@ -23,14 +28,29 @@ type Worker struct {
 	cadence  time.Duration
 	busy     atomic.Bool
 	lastHash atomic.Value // types: string
+
+	// Observability
+	logger     zerolog.Logger
+	lastState  atomic.Value // DriftState tracked for edge-triggered logging
+	driftGauge *prometheus.GaugeVec
 }
+
+var (
+	// Metric definition (singleton registration)
+	driftGauge = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "xg2g_drift_detected",
+		Help: "Indicates if drift is detected (1) or clean (0) per kind.",
+	}, []string{"kind"})
+)
 
 // NewWorker creates a new verification worker.
 func NewWorker(store Store, cadence time.Duration, checkers ...Checker) *Worker {
 	return &Worker{
-		store:    store,
-		cadence:  cadence,
-		checkers: checkers,
+		store:      store,
+		cadence:    cadence,
+		checkers:   checkers,
+		logger:     xglog.WithComponent("verification"),
+		driftGauge: driftGauge,
 	}
 }
 
@@ -120,11 +140,86 @@ func (w *Worker) runOnce(ctx context.Context) {
 		}
 	}
 
+	w.handleStateChange(newState) // Log & Metrics (Decoupled from store write)
+	w.updateMetrics(newState)     // Metrics update
+	w.lastState.Store(newState)   // Update in-memory state
+
 	if shouldWrite {
 		if err := w.store.Set(ctx, newState); err == nil {
 			w.lastHash.Store(contentHash)
 		}
 	}
+}
+
+func (w *Worker) handleStateChange(newState DriftState) {
+	// Detect edges per kind
+	currentKinds := countKinds(newState)
+
+	// Safe load of last state
+	var lastKinds map[MismatchKind]int
+	if v := w.lastState.Load(); v != nil {
+		lastKinds = countKinds(v.(DriftState))
+	} else {
+		lastKinds = make(map[MismatchKind]int)
+	}
+
+	// Check for introduced drift
+	for k, count := range currentKinds {
+		if lastKinds[k] == 0 {
+			w.logger.Warn().
+				Str("event", "drift_detected").
+				Str("kind", string(k)).
+				Int("mismatches", count).
+				Msg("verification drift detected")
+		}
+	}
+
+	// Check for resolved drift
+	for k := range lastKinds {
+		if currentKinds[k] == 0 {
+			w.logger.Info().
+				Str("event", "drift_resolved").
+				Str("kind", string(k)).
+				Msg("verification drift resolved")
+		}
+	}
+}
+
+func (w *Worker) updateMetrics(state DriftState) {
+	counts := countKinds(state)
+	// Known kinds to always report (or just report what we see + explicit 0 for resolved?)
+	// User said "xg2g_drift_detected{kind=config} 0|1".
+	// We should probably init the gauge with 0 for all KNOWN kinds if possible, but dynamic is safer.
+	// For now, iterate known kinds from counts + last state to ensure 0s are set.
+
+	// Union of all kinds we've ever seen?
+	// Or just "config", "runtime"?
+	// Let's rely on constants if possible, but map iteration is generic.
+	allKinds := map[MismatchKind]bool{
+		KindConfig:  true,
+		KindRuntime: true,
+		KindBinary:  true,
+	}
+	// Add any dynamic ones encountered
+	for k := range counts {
+		allKinds[k] = true
+	}
+
+	for k := range allKinds {
+		val := 0.0
+		if counts[k] > 0 {
+			val = 1.0
+		}
+		w.driftGauge.WithLabelValues(string(k)).Set(val)
+	}
+}
+
+func countKinds(st DriftState) map[MismatchKind]int {
+	m := make(map[MismatchKind]int)
+	for _, mis := range st.Mismatches {
+		m[mis.Kind]++
+	}
+	return m
 }
 
 // normalizeState sorts mismatches to ensure determinism.

@@ -46,13 +46,20 @@ type FileConfig struct {
 	RecordingPathMappings []RecordingPathMapping  `yaml:"recordingPathMappings,omitempty"`
 
 	// Advanced/internal configuration (Registry-exposed)
-	FFmpeg    *FFmpegConfig    `yaml:"ffmpeg,omitempty"`
-	HLS       *HLSConfig       `yaml:"hls,omitempty"`
-	VOD       *VODConfig       `yaml:"vod,omitempty"`
-	RateLimit *RateLimitConfig `yaml:"rateLimit,omitempty"`
-	Sessions  *SessionsConfig  `yaml:"sessions,omitempty"`
-	Store     *StoreConfig     `yaml:"store,omitempty"`
-	Streaming *StreamingConfig `yaml:"streaming,omitempty"`
+	FFmpeg       *FFmpegConfig       `yaml:"ffmpeg,omitempty"`
+	HLS          *HLSConfig          `yaml:"hls,omitempty"`
+	VOD          *VODConfig          `yaml:"vod,omitempty"`
+	RateLimit    *RateLimitConfig    `yaml:"rateLimit,omitempty"`
+	Sessions     *SessionsConfig     `yaml:"sessions,omitempty"`
+	Store        *StoreConfig        `yaml:"store,omitempty"`
+	Streaming    *StreamingConfig    `yaml:"streaming,omitempty"`
+	Verification *VerificationConfig `yaml:"verification,omitempty"`
+}
+
+// VerificationConfig holds drift verification settings
+type VerificationConfig struct {
+	Enabled  *bool  `yaml:"enabled,omitempty"`
+	Interval string `yaml:"interval,omitempty"` // e.g. "60s"
 }
 
 // TLSConfig holds TLS settings
@@ -297,6 +304,15 @@ type AppConfig struct {
 
 	// Library Configuration (Phase 0 per ADR-ENG-002)
 	Library LibraryConfig
+
+	// Verification (Drift Detection)
+	Verification VerificationSettings
+}
+
+// VerificationSettings holds runtime verification settings
+type VerificationSettings struct {
+	Enabled  bool
+	Interval time.Duration
 }
 
 // LibraryConfig holds library configuration

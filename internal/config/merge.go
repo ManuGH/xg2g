@@ -28,6 +28,11 @@ func (l *Loader) setDefaults(cfg *AppConfig) error {
 
 	// Fields not yet in Registry (internal state)
 	cfg.ConfigVersion = V3ConfigVersion
+
+	// Default Verification Policies (Homelab Friendly)
+	cfg.Verification.Enabled = true
+	cfg.Verification.Interval = 60 * time.Second
+
 	return nil
 }
 
@@ -372,6 +377,20 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 		dst.RecordingPathMappings = append([]RecordingPathMapping(nil), src.RecordingPathMappings...)
 	}
 
+	// Verification (Drift)
+	if src.Verification != nil {
+		if src.Verification.Enabled != nil {
+			dst.Verification.Enabled = *src.Verification.Enabled
+		}
+		if src.Verification.Interval != "" {
+			d, err := time.ParseDuration(src.Verification.Interval)
+			if err != nil {
+				return fmt.Errorf("invalid verification.interval: %w", err)
+			}
+			dst.Verification.Interval = d
+		}
+	}
+
 	// VOD (Typed config - with backwards-compat fallback to legacy flat fields)
 	if src.VOD != nil {
 		// Typed config takes precedence
@@ -629,6 +648,10 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 
 	// Streaming Config (Canonical)
 	cfg.Streaming.DeliveryPolicy = l.envString("XG2G_STREAMING_POLICY", cfg.Streaming.DeliveryPolicy)
+
+	// Verification (Drift Detection)
+	cfg.Verification.Enabled = l.envBool("XG2G_VERIFY_ENABLED", cfg.Verification.Enabled)
+	cfg.Verification.Interval = l.envDuration("XG2G_VERIFY_INTERVAL", cfg.Verification.Interval)
 }
 
 // Helper to parse recording path mappings: "/receiver/path=/local/path;/other=/mount"
