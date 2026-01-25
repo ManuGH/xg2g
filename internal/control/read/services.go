@@ -50,26 +50,30 @@ type Service struct {
 
 // GetBouquets returns a deduplicated and sorted list of channel groups (bouquets).
 func GetBouquets(cfg config.AppConfig, snap config.Snapshot) ([]string, error) {
-	playlistName := snap.Runtime.PlaylistFilename
-	path, err := paths.ValidatePlaylistPath(cfg.DataDir, playlistName)
-	if err != nil {
-		return nil, err
-	}
-
 	var bouquets []string
 	seen := make(map[string]bool)
 
-	data, err := os.ReadFile(path)
-	if err == nil {
-		channels := m3u.Parse(string(data))
-		for _, ch := range channels {
-			if ch.Group != "" && !seen[ch.Group] {
-				bouquets = append(bouquets, ch.Group)
-				seen[ch.Group] = true
+	playlistName := strings.TrimSpace(snap.Runtime.PlaylistFilename)
+	if playlistName != "" {
+		path, err := paths.ValidatePlaylistPath(cfg.DataDir, playlistName)
+		if err != nil {
+			if !os.IsNotExist(err) {
+				return nil, err
+			}
+		} else {
+			data, err := os.ReadFile(path)
+			if err == nil {
+				channels := m3u.Parse(string(data))
+				for _, ch := range channels {
+					if ch.Group != "" && !seen[ch.Group] {
+						bouquets = append(bouquets, ch.Group)
+						seen[ch.Group] = true
+					}
+				}
+			} else if !os.IsNotExist(err) {
+				return nil, err
 			}
 		}
-	} else if !os.IsNotExist(err) {
-		return nil, err
 	}
 
 	// Fallback to configured bouquets if none found in playlist (or playlist missing)
@@ -115,9 +119,15 @@ type BouquetWithCount struct {
 //   - Error: os.ErrNotExist -> Fallback to Config strings (Count=0), fallback=true.
 //   - Error: Other -> Return error (Fail Closed).
 func GetBouquetsWithCounts(cfg config.AppConfig, snap config.Snapshot) ([]BouquetWithCount, bool, error) {
-	playlistName := snap.Runtime.PlaylistFilename
+	playlistName := strings.TrimSpace(snap.Runtime.PlaylistFilename)
+	if playlistName == "" {
+		return getFallbackBouquetsWithCounts(cfg), true, nil
+	}
 	path, err := paths.ValidatePlaylistPath(cfg.DataDir, playlistName)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return getFallbackBouquetsWithCounts(cfg), true, nil
+		}
 		return nil, false, err
 	}
 
@@ -237,9 +247,15 @@ func getFallbackBouquets(cfg config.AppConfig) []string {
 
 // GetServices returns a list of services filtered by bouquet.
 func GetServices(cfg config.AppConfig, snap config.Snapshot, source ServicesSource, q ServicesQuery) (ServicesResult, error) {
-	playlistName := snap.Runtime.PlaylistFilename
+	playlistName := strings.TrimSpace(snap.Runtime.PlaylistFilename)
+	if playlistName == "" {
+		return ServicesResult{EmptyEncoding: EmptyEncodingArray}, nil
+	}
 	path, err := paths.ValidatePlaylistPath(cfg.DataDir, playlistName)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return ServicesResult{EmptyEncoding: EmptyEncodingArray}, nil
+		}
 		return ServicesResult{}, err
 	}
 

@@ -60,6 +60,15 @@ func TestGetStreams_Provider_StateStrictness(t *testing.T) {
 	assert.False(t, ids["stopped"])
 }
 
+func TestGetStreams_Provider_InvalidPlaylistPath(t *testing.T) {
+	store := &MockStore{Sessions: nil}
+	cfg := config.AppConfig{DataDir: t.TempDir()}
+	snap := config.Snapshot{Runtime: config.RuntimeSnapshot{PlaylistFilename: "../escape.m3u"}}
+
+	_, err := GetStreams(context.Background(), cfg, snap, store, StreamsQuery{})
+	require.Error(t, err)
+}
+
 func TestGetStreams_Provider_NameResolution(t *testing.T) {
 	// Test 23: NameResolution_UsesServiceRefNotTvgIdOnly
 

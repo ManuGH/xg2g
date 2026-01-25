@@ -55,8 +55,9 @@ func (m *mockOWI) HasTimerChange(ctx context.Context) bool {
 }
 
 func TestContract_AddTimer(t *testing.T) {
-	cfg := config.AppConfig{}
-	snap := config.Snapshot{}
+	tempDir := t.TempDir()
+	cfg := config.AppConfig{DataDir: tempDir}
+	snap := config.Snapshot{Runtime: config.RuntimeSnapshot{PlaylistFilename: "missing.m3u"}}
 
 	t.Run("23_InvalidJSON_400", func(t *testing.T) {
 		s := &Server{cfg: cfg, snap: snap}

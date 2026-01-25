@@ -93,6 +93,32 @@ func TestGetStreams_Contract_Slice53(t *testing.T) {
 		assert.Equal(t, 0, len(list))
 	})
 
+	t.Run("PlaylistFilename_Empty_BestEffort", func(t *testing.T) {
+		mockStore := &MockStoreForStreams{Sessions: []*model.SessionRecord{
+			{SessionID: "A", State: model.SessionReady, ServiceRef: "svc1"},
+		}}
+		s := &Server{
+			cfg:  config.AppConfig{},
+			snap: config.Snapshot{Runtime: config.RuntimeSnapshot{PlaylistFilename: ""}},
+			// No playlist configured; best-effort name resolution should still succeed.
+			v3Store: mockStore,
+		}
+
+		req := httptest.NewRequest("GET", "/api/v3/streams", nil)
+		w := httptest.NewRecorder()
+
+		s.GetStreams(w, req)
+
+		resp := w.Result()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		var list []StreamSession
+		err := json.NewDecoder(resp.Body).Decode(&list)
+		require.NoError(t, err)
+		require.Len(t, list, 1)
+		assert.Equal(t, "svc1", *list[0].ChannelName)
+	})
+
 	t.Run("Sorting_Deterministic", func(t *testing.T) {
 		// Prepare data
 		ts1 := int64(1000)
@@ -349,5 +375,5 @@ func TestGetStreams_Contract_Slice53(t *testing.T) {
 }
 
 func (s *MockStoreForStreams) GetLease(ctx context.Context, key string) (store.Lease, bool, error) {
-return nil, false, nil
+	return nil, false, nil
 }

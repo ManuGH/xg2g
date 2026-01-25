@@ -219,8 +219,15 @@ func (w *epgAdapter) GetBouquetServiceRefs(ctx context.Context, bouquet string) 
 	s.mu.RUnlock()
 
 	playlistName := snap.Runtime.PlaylistFilename
+	playlistName = strings.TrimSpace(playlistName)
+	if playlistName == "" {
+		return make(map[string]struct{}), nil
+	}
 	playlistPath, err := paths.ValidatePlaylistPath(cfg.DataDir, playlistName)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return make(map[string]struct{}), nil
+		}
 		return nil, err
 	}
 

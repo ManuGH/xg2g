@@ -91,48 +91,54 @@ func (s *Server) AddTimer(w http.ResponseWriter, r *http.Request) {
 	realSRef := req.ServiceRef
 	if !strings.Contains(realSRef, ":") {
 		// Doesn't look like Enigma2 Ref (1:0:1...), try to resolve from Playlist
-		playlistPath, err := paths.ValidatePlaylistPath(cfg.DataDir, snap.Runtime.PlaylistFilename)
-		if err != nil {
-			writeProblem(w, r, http.StatusInternalServerError, "system/invalid_playlist_path", "Invalid Playlist Path", "INVALID_PLAYLIST_PATH", err.Error(), nil)
-			return
-		}
-		log.L().Info().Str("path", playlistPath).Str("search_id", req.ServiceRef).Msg("attempting to resolve service ref from playlist")
+		playlistName := strings.TrimSpace(snap.Runtime.PlaylistFilename)
+		if playlistName != "" {
+			playlistPath, err := paths.ValidatePlaylistPath(cfg.DataDir, playlistName)
+			if err != nil {
+				if !os.IsNotExist(err) {
+					writeProblem(w, r, http.StatusInternalServerError, "system/invalid_playlist_path", "Invalid Playlist Path", "INVALID_PLAYLIST_PATH", err.Error(), nil)
+					return
+				}
+			} else {
+				log.L().Info().Str("path", playlistPath).Str("search_id", req.ServiceRef).Msg("attempting to resolve service ref from playlist")
 
-		if data, err := os.ReadFile(playlistPath); err == nil { // #nosec G304
-			channels := m3u.Parse(string(data))
-			log.L().Info().Int("channels", len(channels)).Msg("parsed playlist for resolution")
+				if data, err := os.ReadFile(playlistPath); err == nil { // #nosec G304
+					channels := m3u.Parse(string(data))
+					log.L().Info().Int("channels", len(channels)).Msg("parsed playlist for resolution")
 
-			for _, ch := range channels {
-				if ch.TvgID == req.ServiceRef {
-					// Found it! Extract Ref from URL
-					u, err := url.Parse(ch.URL)
-					if err == nil {
-						// OpenWebIF stream URL analysis
-						ref := u.Query().Get("ref")
-						if ref != "" {
-							if strings.Contains(ref, ":") {
-								realSRef = strings.TrimSuffix(ref, ":")
-								log.L().Info().Str("id", req.ServiceRef).Str("resolved", realSRef).Msg("resolved channel id to service ref (via query)")
-							}
-						} else {
-							// Check path (OpenWebIF 8001 port style)
-							parts := strings.Split(u.Path, "/")
-							if len(parts) > 0 {
-								candidate := parts[len(parts)-1]
-								if strings.Contains(candidate, ":") {
-									realSRef = strings.TrimSuffix(candidate, ":")
-									log.L().Info().Str("id", req.ServiceRef).Str("resolved", realSRef).Msg("resolved channel id to service ref (via path)")
+					for _, ch := range channels {
+						if ch.TvgID == req.ServiceRef {
+							// Found it! Extract Ref from URL
+							u, err := url.Parse(ch.URL)
+							if err == nil {
+								// OpenWebIF stream URL analysis
+								ref := u.Query().Get("ref")
+								if ref != "" {
+									if strings.Contains(ref, ":") {
+										realSRef = strings.TrimSuffix(ref, ":")
+										log.L().Info().Str("id", req.ServiceRef).Str("resolved", realSRef).Msg("resolved channel id to service ref (via query)")
+									}
+								} else {
+									// Check path (OpenWebIF 8001 port style)
+									parts := strings.Split(u.Path, "/")
+									if len(parts) > 0 {
+										candidate := parts[len(parts)-1]
+										if strings.Contains(candidate, ":") {
+											realSRef = strings.TrimSuffix(candidate, ":")
+											log.L().Info().Str("id", req.ServiceRef).Str("resolved", realSRef).Msg("resolved channel id to service ref (via path)")
+										}
+									}
 								}
+							} else {
+								log.L().Warn().Err(err).Str("url", ch.URL).Msg("failed to parse channel url during resolution")
 							}
+							break
 						}
-					} else {
-						log.L().Warn().Err(err).Str("url", ch.URL).Msg("failed to parse channel url during resolution")
 					}
-					break
+				} else {
+					log.L().Warn().Err(err).Str("path", playlistPath).Msg("failed to read playlist for resolution")
 				}
 			}
-		} else {
-			log.L().Warn().Err(err).Str("path", playlistPath).Msg("failed to read playlist for resolution")
 		}
 	}
 

@@ -24,7 +24,7 @@ Stream to Safari, iOS, Chrome, and any modern browser.
 ```bash
 docker run -d --name xg2g --net=host \
   -e XG2G_UPSTREAM_HOST="192.168.1.10" \
-  ghcr.io/manugh/xg2g:3.1.6
+  ghcr.io/manugh/xg2g:3.1.7
 ```
 
 Open [http://localhost:8080](http://localhost:8080)

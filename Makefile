@@ -13,7 +13,7 @@
         release-check release-build release-tag release-notes \
         dev up down status prod-up prod-down prod-logs check-env \
         restart prod-restart ps prod-ps ui-build codex certs setup build-ffmpeg build-migrate verify-storage-cutover \
-        docs-render verify-docs-compiled release-prepare release-verify-remote
+        docs-render verify-docs-compiled release-prepare release-verify-remote recover verify-runtime
 
 # ===================================================================================================
 # Configuration and Variables
@@ -187,7 +187,7 @@ generate-config: ## Generate config surfaces from registry
 	@echo "✅ Config surfaces generated"
 
 .PHONY: verify
-verify: verify-config verify-doc-links verify-capabilities contract-matrix verify-purity contract-freeze-check verify-no-sleep verify-no-panic verify-no-ignored-errors verify-doc-image-tags verify-docs-compiled verify-digest-lock verify-release-policy ## Phase 4.7: Run all governance verification gates
+verify: verify-config verify-doc-links verify-capabilities contract-matrix verify-purity contract-freeze-check verify-no-sleep verify-no-panic verify-no-ignored-errors verify-doc-image-tags verify-docs-compiled verify-digest-lock verify-release-policy verify-runtime ## Phase 4.7: Run all governance verification gates
 
 verify-config: ## Verify generated config surfaces are up-to-date
 	@echo "Verifying generated config surfaces..."
@@ -243,6 +243,27 @@ release-prepare: ## Prepare a new release (VERSION=X.Y.Z)
 release-verify-remote: ## Verify release image in GHCR and update DIGESTS.lock
 	@echo "--- release-verify-remote ---"
 	@./scripts/release-verify-remote.sh
+
+recover: ## Force recovery/deployment of a specific release (VERSION=X.Y.Z)
+	@echo "--- recover ---"
+	@./scripts/recover.sh $(VERSION)
+
+verify-runtime: ## Verify live runtime truth against repo truth
+	@echo "--- verify-runtime ---"
+	@./scripts/verify-runtime.sh
+
+verify-runtime-continuous: ## Run continuous verification (Rate-limited observer)
+	@echo "--- verify-runtime-continuous ---"
+	@./scripts/continuous-verify.sh
+
+verify-runtime-timer-setup: ## Setup systemd timer for continuous verification
+	@echo "--- verify-runtime-timer-setup ---"
+	@if [ "$$(id -u)" -ne 0 ]; then echo "❌ Error: Must run as root"; exit 1; fi
+	@cp docs/ops/xg2g-verifier.service /etc/systemd/system/
+	@cp docs/ops/xg2g-verifier.timer /etc/systemd/system/
+	@systemctl daemon-reload
+	@systemctl enable --now xg2g-verifier.timer
+	@echo "✅ xg2g-verifier.timer enabled (15m interval)"
 
 .PHONY: verify-hermetic-codegen
 verify-hermetic-codegen: ## Verify hermetic code generation invariants (CTO-grade)

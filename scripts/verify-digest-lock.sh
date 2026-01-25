@@ -46,7 +46,7 @@ if [[ "${TRUSTED_RELEASE_CONTEXT:-}" == "true" ]]; then
     IS_TRUSTED_CONTEXT=true
 fi
 
-DIGEST_VAL=$(grep -A 1 "\"${VERSION}\":" "$LOCK_FILE" | grep "digest:" | awk '{print $2}' | tr -d '"' | tr -d '[:space:]')
+DIGEST_VAL=$(grep -A 1 "\"${VERSION}\":" "$LOCK_FILE" | grep "digest:" | sed 's/.*digest:[[:space:]]*//' | tr -d '"' | tr -d '[:space:]' | tr -d '{}')
 IMAGE_REPO=$(grep "image:" "$LOCK_FILE" | awk '{print $2}' | tr -d '[:space:]')
 
 if [[ -z "$DIGEST_VAL" ]]; then

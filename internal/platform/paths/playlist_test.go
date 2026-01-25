@@ -32,6 +32,11 @@ func TestValidatePlaylistPath(t *testing.T) {
 			wantSuffix: filepath.Join("sub", "playlist.m3u8"),
 		},
 		{
+			name:       "cleaned dotdot within base",
+			input:      "sub/../clean.m3u",
+			wantSuffix: "clean.m3u",
+		},
+		{
 			name:    "empty",
 			input:   "",
 			wantErr: true,
