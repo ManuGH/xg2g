@@ -37,15 +37,19 @@ API Response:
 curl -s -H "Authorization: Bearer $XG2G_API_TOKEN" http://localhost:8088/api/v3/status | jq
 ```
 
-Expected: `drift` field is either absent or `detected: false`.
+Expected: `drift.detected` is `false` (field may be absent momentarily before the first verification run completes).
 
 ## Step 3: Simulate Config Drift
 
 Modify the configuration file directly on disk (simulating an unauthorized edit).
-Define your config path (default or custom):
+Define your config path (ensure this matches the running daemon):
 
 ```bash
-CFG=${XG2G_CONFIG:-/root/xg2g/config.yaml}
+CFG=${XG2G_CONFIG:-}
+if [ -z "$CFG" ]; then
+  CFG="${XG2G_DATA:-/tmp}/config.yaml"
+fi
+echo "Using config: $CFG"
 ```
 
 ```bash
