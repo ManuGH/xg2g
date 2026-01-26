@@ -23,7 +23,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Setup Go
         uses: actions/setup-go@3041dee5d64473ef0bad009d902ffdbccf9d1a33 # v5
@@ -107,7 +107,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # Latest stable
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # Latest stable
 
       - name: Setup Go
         uses: actions/setup-go@3041dee5d64473ef0bad009d902ffdbccf9d1a33 # Latest stable
@@ -156,7 +156,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Setup Go
         uses: actions/setup-go@3041dee5d64473ef0bad009d902ffdbccf9d1a33 # v5
@@ -224,7 +224,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Setup Go
         uses: actions/setup-go@3041dee5d64473ef0bad009d902ffdbccf9d1a33 # v5
@@ -286,7 +286,7 @@ jobs:
       TZ: UTC
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           fetch-depth: 0
 
