@@ -49,7 +49,7 @@ func (s *SqliteStore) migrate() error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	schema := `
 	CREATE TABLE IF NOT EXISTS resume_states (

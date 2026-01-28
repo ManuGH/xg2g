@@ -84,8 +84,15 @@ Tier-1 compliant with Apple HLS Guidelines.
 xg2g requires FFmpeg for media processing. Docker images include a pinned
 FFmpeg build (7.1.3) - no manual configuration needed.
 
-For local development: `make setup` builds FFmpeg to `/opt/xg2g/ffmpeg`.
-See [FFmpeg Build Guide](docs/ops/FFMPEG_BUILD.md) for details.
+For local development: `make setup` builds FFmpeg to `/opt/xg2g/ffmpeg` (Linux)
+or your custom prefix. See [FFmpeg Build Guide](docs/ops/FFMPEG_BUILD.md) for
+details.
+
+To use your local build:
+```bash
+export XG2G_FFMPEG_BIN="/opt/xg2g/ffmpeg/bin/ffmpeg"
+export LD_LIBRARY_PATH="/opt/xg2g/ffmpeg/lib"
+```
 
 ## License
 

@@ -1017,27 +1017,78 @@ func classifyError(err error, status int) string {
 }
 
 func wrapError(operation string, err error, status int, body []byte) error {
-	if err != nil {
-		return fmt.Errorf("%s request failed: %w", operation, err)
-	}
-	if status > 0 {
-		msg := fmt.Sprintf("%s: HTTP %d", operation, status)
-		// Append body snippet if available (useful for Enigma2 stack traces)
-		if len(body) > 0 {
-			// Limit to 500 chars to avoid log spam, but enough for a stack trace header
-			limit := 500
-			if len(body) < limit {
-				limit = len(body)
-			}
-			snippet := string(body[:limit])
-			// Sanitize newlines for log clarity (optional, but good for error strings)
-			snippet = strings.ReplaceAll(snippet, "\n", " ")
-			snippet = strings.ReplaceAll(snippet, "\r", "")
-			msg = fmt.Sprintf("%s - Response: %s", msg, snippet)
+	var sentinel error
+	var snippet string
+
+	// Append body snippet if available (useful for Enigma2 stack traces)
+	if len(body) > 0 {
+		limit := 500
+		if len(body) < limit {
+			limit = len(body)
 		}
-		return errors.New(msg)
+		snippet = string(body[:limit])
+		snippet = strings.ReplaceAll(snippet, "\n", " ")
+		snippet = strings.ReplaceAll(snippet, "\r", "")
+
+		// Crude redaction for sensitive patterns (tokens, passwords, session keys)
+		sensitivePatterns := []string{"token=", "password=", "secret=", "key=", "sid="}
+		for _, pattern := range sensitivePatterns {
+			if idx := strings.Index(strings.ToLower(snippet), pattern); idx != -1 {
+				// Redact 16 chars or until space after the pattern
+				start := idx + len(pattern)
+				end := start + 16
+				if end > len(snippet) {
+					end = len(snippet)
+				}
+				if spaceIdx := strings.Index(snippet[start:end], " "); spaceIdx != -1 {
+					end = start + spaceIdx
+				}
+				snippet = snippet[:start] + "[REDACTED]" + snippet[end:]
+			}
+		}
 	}
-	return fmt.Errorf("%s: unknown error", operation)
+
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			sentinel = ErrTimeout
+		} else {
+			var netErr net.Error
+			if errors.As(err, &netErr) && netErr.Timeout() {
+				sentinel = ErrTimeout
+			} else {
+				sentinel = ErrUpstreamUnavailable
+			}
+		}
+		return &OWIError{
+			Sentinel:  sentinel,
+			Operation: operation,
+			Status:    status,
+			Body:      snippet,
+			Err:       err,
+		}
+	}
+
+	switch status {
+	case http.StatusNotFound:
+		sentinel = ErrNotFound
+	case http.StatusUnauthorized, http.StatusForbidden:
+		sentinel = ErrForbidden
+	default:
+		if status >= 500 {
+			sentinel = ErrUpstreamError
+		} else if status >= 400 {
+			sentinel = ErrUpstreamBadResponse
+		} else {
+			sentinel = ErrUpstreamBadResponse // Treat non-200/4xx/5xx as bad response
+		}
+	}
+
+	return &OWIError{
+		Sentinel:  sentinel,
+		Operation: operation,
+		Status:    status,
+		Body:      snippet,
+	}
 }
 
 func logPath(path string) string {

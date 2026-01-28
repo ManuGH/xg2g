@@ -57,8 +57,8 @@ render "${REPO_ROOT}/templates/docs/ops/DEPLOYMENT_RUNTIME_CONTRACT.md.tmpl" "${
 # 5. Operations Model
 render "${REPO_ROOT}/templates/docs/ops/OPERATIONS_MODEL.md.tmpl" "${REPO_ROOT}/docs/ops/OPERATIONS_MODEL.md" "md"
 
-# 6. Continuous Verifier Units
-render "${REPO_ROOT}/templates/docs/ops/xg2g-verifier.service.tmpl" "${REPO_ROOT}/docs/ops/xg2g-verifier.service" "shell"
-render "${REPO_ROOT}/templates/docs/ops/xg2g-verifier.timer.tmpl" "${REPO_ROOT}/docs/ops/xg2g-verifier.timer" "shell"
+# 6. Continuous Verifier Units (FIXME: Templates missing from repo)
+# render "${REPO_ROOT}/templates/docs/ops/xg2g-verifier.service.tmpl" "${REPO_ROOT}/docs/ops/xg2g-verifier.service" "shell"
+# render "${REPO_ROOT}/templates/docs/ops/xg2g-verifier.timer.tmpl" "${REPO_ROOT}/docs/ops/xg2g-verifier.timer" "shell"
 
 echo "✨ Documentation rendering complete (idempotent)."

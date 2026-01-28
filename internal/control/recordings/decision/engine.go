@@ -141,8 +141,6 @@ func evaluateDecision(pred Predicates, caps Capabilities, policy Policy) (Mode, 
 	return ModeDeny, reasons, rules
 }
 
-func reasonsToRuleHits(r string) string { return r } // Dummy helper if needed
-
 // buildDecision constructs the final Decision response.
 func buildDecision(mode Mode, pred Predicates, input DecisionInput, reasons []ReasonCode, rules []string) *Decision {
 	outputs := buildOutputs(mode, input.Source)

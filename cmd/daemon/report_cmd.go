@@ -41,10 +41,13 @@ var reportCmd = &cobra.Command{
 		report := buildReportData(reportPort, reportToken)
 
 		// 3. Serialize & Output
-		data, _ := json.MarshalIndent(report, "", "  ")
+		data, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			return err
+		}
 
 		if reportOut != "" {
-			err := os.WriteFile(reportOut, data, 0644)
+			err := os.WriteFile(reportOut, data, 0600)
 			if err != nil {
 				return err
 			}
@@ -63,17 +66,21 @@ func buildReportData(port int, token string) map[string]interface{} {
 	// A. Status (API)
 	url := fmt.Sprintf("http://localhost:%d/api/v3/status", port)
 	client := &http.Client{Timeout: 5 * time.Second}
-	req, _ := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		report["status_error"] = fmt.Sprintf("failed to create request: %v", err)
+		return report
+	}
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := client.Do(req)
 	if err == nil && resp.StatusCode == 200 {
 		var status interface{}
-		json.NewDecoder(resp.Body).Decode(&status)
+		_ = json.NewDecoder(resp.Body).Decode(&status)
 		report["status"] = status
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	} else {
-		msg := "unknown error"
+		var msg string
 		if err != nil {
 			msg = err.Error()
 		} else {

@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/admission"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/stretchr/testify/assert"
@@ -29,7 +28,7 @@ func TestValidation_MissingConfigFails(t *testing.T) {
 				return &Orchestrator{
 					Store:               st,
 					Bus:                 bus,
-					Admission:           admission.NewResourceMonitor(10, 10, 0),
+					Admission:           newAdmissionMonitor(10, 10, 0),
 					LeaseTTL:            30 * time.Second,
 					HeartbeatEvery:      10 * time.Second,
 					Owner:               "test",
@@ -50,7 +49,7 @@ func TestValidation_MissingConfigFails(t *testing.T) {
 				return &Orchestrator{
 					Store:               st,
 					Bus:                 bus,
-					Admission:           admission.NewResourceMonitor(10, 10, 0),
+					Admission:           newAdmissionMonitor(10, 10, 0),
 					LeaseTTL:            0, // INVALID
 					HeartbeatEvery:      10 * time.Second,
 					Owner:               "test",
@@ -71,7 +70,7 @@ func TestValidation_MissingConfigFails(t *testing.T) {
 				return &Orchestrator{
 					Store:               st,
 					Bus:                 bus,
-					Admission:           admission.NewResourceMonitor(10, 10, 0),
+					Admission:           newAdmissionMonitor(10, 10, 0),
 					LeaseTTL:            30 * time.Second,
 					HeartbeatEvery:      10 * time.Second,
 					Owner:               "", // INVALID
@@ -92,7 +91,7 @@ func TestValidation_MissingConfigFails(t *testing.T) {
 				return &Orchestrator{
 					Store:               st,
 					Bus:                 bus,
-					Admission:           admission.NewResourceMonitor(10, 10, 0),
+					Admission:           newAdmissionMonitor(10, 10, 0),
 					LeaseTTL:            30 * time.Second,
 					HeartbeatEvery:      10 * time.Second,
 					Owner:               "test",

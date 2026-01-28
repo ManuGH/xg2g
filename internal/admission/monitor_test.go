@@ -7,6 +7,9 @@ import (
 
 func TestResourceMonitor_GPUAdmission(t *testing.T) {
 	m := NewResourceMonitor(2, 8, 1.5) // maxPool=2, gpuLimit=8
+	for i := 0; i < 20; i++ {
+		m.ObserveCPULoad(0.1)
+	}
 
 	// 1. Admit first two
 	if ok, _ := m.CanAdmit(context.Background(), PriorityLive); !ok {
@@ -48,6 +51,9 @@ func TestResourceMonitor_PriorityOrdering(t *testing.T) {
 
 func TestResourceMonitor_TokenCleanup(t *testing.T) {
 	m := NewResourceMonitor(8, 1, 1.5) // maxPool=8, gpuLimit=1 (testing token limit)
+	for i := 0; i < 20; i++ {
+		m.ObserveCPULoad(0.1)
+	}
 
 	if !m.AcquireVAAPIToken() {
 		t.Fatal("Should acquire token")
@@ -66,6 +72,9 @@ func TestResourceMonitor_TokenCleanup(t *testing.T) {
 
 func TestResourceMonitor_TunerAdmission(t *testing.T) {
 	m := NewResourceMonitor(4, 8, 1.5) // maxPool=4, gpuLimit=8
+	for i := 0; i < 20; i++ {
+		m.ObserveCPULoad(0.1)
+	}
 
 	// 1. Fill 4 sessions with Live
 	for i := 0; i < 4; i++ {
@@ -87,6 +96,9 @@ func TestResourceMonitor_TunerAdmission(t *testing.T) {
 
 func TestResourceMonitor_PreemptionPredicates(t *testing.T) {
 	m := NewResourceMonitor(8, 8, 1.5) // maxPool=8, gpuLimit=8
+	for i := 0; i < 20; i++ {
+		m.ObserveCPULoad(0.1)
+	}
 
 	// Pulse < Live < Recording
 	m.TrackSessionStart(PriorityPulse, "p1")

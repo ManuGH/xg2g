@@ -61,7 +61,7 @@ func TestTruth_Write_B1_Success(t *testing.T) {
 	prober.On("Probe", mock.Anything, path).Return(info, nil)
 
 	req := probeRequest{ServiceRef: ref, InputPath: path}
-	err := mgr.runProbe(req)
+	err := mgr.runProbe(context.Background(), req)
 
 	assert.NoError(t, err)
 
@@ -91,7 +91,7 @@ func TestTruth_Write_B2_ZeroDuration_Guard(t *testing.T) {
 	prober.On("Probe", mock.Anything, path).Return(info, nil)
 
 	req := probeRequest{ServiceRef: ref, InputPath: path}
-	err := mgr.runProbe(req)
+	err := mgr.runProbe(context.Background(), req)
 
 	// Expectation: Error returned (Invalid Duration)
 	assert.Error(t, err)
@@ -111,7 +111,7 @@ func TestTruth_Write_B3_Timeout_Mapping(t *testing.T) {
 	prober.On("Probe", mock.Anything, path).Return(nil, context.DeadlineExceeded)
 
 	req := probeRequest{ServiceRef: ref, InputPath: path}
-	err := mgr.runProbe(req)
+	err := mgr.runProbe(context.Background(), req)
 
 	// Expectation: specific error, State should NOT be Ready
 	assert.Error(t, err)
@@ -121,7 +121,6 @@ func TestTruth_Write_B3_Timeout_Mapping(t *testing.T) {
 	assert.Equal(t, ArtifactStatePreparing, meta.State)
 }
 
-// B4: Corrupt -> Failed
 func TestTruth_Write_B4_Corrupt(t *testing.T) {
 	mgr, prober, path := setupManager(t)
 	defer os.Remove(path)
@@ -130,11 +129,52 @@ func TestTruth_Write_B4_Corrupt(t *testing.T) {
 	prober.On("Probe", mock.Anything, path).Return(nil, errors.New("corrupt file"))
 
 	req := probeRequest{ServiceRef: ref, InputPath: path}
-	err := mgr.runProbe(req)
+	err := mgr.runProbe(context.Background(), req)
 
 	assert.Error(t, err)
 
 	meta, ok := mgr.GetMetadata(ref)
 	assert.True(t, ok)
 	assert.Equal(t, ArtifactStateFailed, meta.State)
+}
+
+// B5: Probe failure MUST preserve existing Duration (Option A invariant).
+// This test proves:
+// 1. Pre-condition: Metadata has valid Duration (3600s)
+// 2. Action: Probe fails → MarkFailure is called
+// 3. Post-condition: Duration unchanged, but State/Error DID change (proves MarkFailure ran)
+func TestTruth_Write_B5_ProbeFailPreservesDuration(t *testing.T) {
+	mgr, prober, path := setupManager(t)
+	defer os.Remove(path)
+	ref := "test:ref:b5"
+
+	// Pre-condition: Existing metadata with valid duration
+	originalDuration := int64(3600)
+	mgr.SeedMetadata(ref, Metadata{
+		State:     ArtifactStateReady,
+		Duration:  originalDuration,
+		UpdatedAt: time.Now().Add(-1 * time.Hour).Unix(), // Old timestamp
+	})
+
+	// Mock: Probe returns network error (not corrupt, not timeout)
+	probeErr := errors.New("network unreachable")
+	prober.On("Probe", mock.Anything, path).Return(nil, probeErr)
+
+	req := probeRequest{ServiceRef: ref, InputPath: path}
+	err := mgr.runProbe(context.Background(), req)
+
+	// Must return error
+	assert.Error(t, err)
+
+	// Read back metadata via same path as API/Decision Engine
+	meta, ok := mgr.GetMetadata(ref)
+	assert.True(t, ok, "metadata must exist after probe failure")
+
+	// INVARIANT: Duration preserved (Option A)
+	assert.Equal(t, originalDuration, meta.Duration, "Duration MUST NOT be degraded by probe failure")
+
+	// Proof that MarkFailure executed (side-effects):
+	assert.Equal(t, ArtifactStateFailed, meta.State, "State must change to Failed")
+	assert.Contains(t, meta.Error, "probe_failed", "Error must be set by MarkFailure")
+	assert.Greater(t, meta.UpdatedAt, int64(0), "UpdatedAt must be touched")
 }

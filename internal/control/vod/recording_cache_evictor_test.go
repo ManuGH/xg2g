@@ -88,6 +88,9 @@ func TestEvictRecordingCache_LongSequence(t *testing.T) {
 	require.LessOrEqual(t, countCacheDirs(t, cacheRoot), maxEntries)
 }
 
+// NOTE: Known flaky under high scheduler contention.
+// Observed once during go test ./... after CPU/admission changes.
+// Tracked under issue: "Flaky: TestEvictRecordingCache_Concurrent under concurrent eviction"
 func TestEvictRecordingCache_Concurrent(t *testing.T) {
 	root := t.TempDir()
 	cacheRoot := filepath.Join(root, "recordings")

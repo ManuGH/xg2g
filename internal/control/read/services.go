@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -61,7 +62,7 @@ func GetBouquets(cfg config.AppConfig, snap config.Snapshot) ([]string, error) {
 				return nil, err
 			}
 		} else {
-			data, err := os.ReadFile(path)
+			data, err := os.ReadFile(filepath.Clean(path))
 			if err == nil {
 				channels := m3u.Parse(string(data))
 				for _, ch := range channels {
@@ -131,7 +132,7 @@ func GetBouquetsWithCounts(cfg config.AppConfig, snap config.Snapshot) ([]Bouque
 		return nil, false, err
 	}
 
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(filepath.Clean(path))
 	if err != nil {
 		if os.IsNotExist(err) {
 			// 2. Fallback if file not found
@@ -226,25 +227,6 @@ func getFallbackBouquetsWithCounts(cfg config.AppConfig) []BouquetWithCount {
 	return result
 }
 
-func getFallbackBouquets(cfg config.AppConfig) []string {
-	var bouquets []string
-	seen := make(map[string]bool)
-	configured := strings.Split(cfg.Bouquet, ",")
-	for _, b := range configured {
-		if trimmed := strings.TrimSpace(b); trimmed != "" {
-			if !seen[trimmed] {
-				bouquets = append(bouquets, trimmed)
-				seen[trimmed] = true
-			}
-		}
-	}
-	sort.Strings(bouquets) // Legacy sorts
-	if len(bouquets) == 0 {
-		return nil
-	}
-	return bouquets
-}
-
 // GetServices returns a list of services filtered by bouquet.
 func GetServices(cfg config.AppConfig, snap config.Snapshot, source ServicesSource, q ServicesQuery) (ServicesResult, error) {
 	playlistName := strings.TrimSpace(snap.Runtime.PlaylistFilename)
@@ -259,7 +241,7 @@ func GetServices(cfg config.AppConfig, snap config.Snapshot, source ServicesSour
 		return ServicesResult{}, err
 	}
 
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(filepath.Clean(path))
 	if err != nil {
 		fmt.Printf("DEBUG: GetServices ReadFile failed: %s, err=%v\n", path, err)
 		if os.IsNotExist(err) {
@@ -267,7 +249,7 @@ func GetServices(cfg config.AppConfig, snap config.Snapshot, source ServicesSour
 			return ServicesResult{EmptyEncoding: EmptyEncodingArray}, nil
 		}
 		// Read failure (permissions etc) -> Legacy returns []?
-		// User said: "If os.ReadFile(path) fails -> it encodes []Service{} (JSON []), not null."
+		// User said: "If os.ReadFile(filepath.Clean(path)) fails -> it encodes []Service{} (JSON []), not null."
 		// So we strictly return EmptyEncodingArray and no error (unless it's a critical system error?)
 		// Legacy swallowed read errors?
 		// "if err == nil { ... } else { // do nothing, empty list }"

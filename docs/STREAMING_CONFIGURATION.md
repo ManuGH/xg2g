@@ -59,6 +59,25 @@ export XG2G_E2_PASS="YOUR_PASSWORD"     # Your specific receiver password
 2. Verify `XG2G_E2_HOST`, `USER`, and `PASS` are correct so `ResolveStreamURL` succeeds.
 3. If using a direct port, ensure it's actually open on the receiver.
 
+-
+
+## HLS Segment Configuration (ADR-011)
+
+`xg2g` uses a unified segmentation policy to ensure compatibility with Safari and iOS. This is configurable via:
+
+- **`HLS.SegmentSeconds` (Default: 6)**: The target duration for each `.ts` or `.m4s` segment.
+- **Setting**: `6` for standard performance, `1` for low-latency channel grazing.
+
+**Example `config.yaml`:**
+
+```yaml
+hls:
+  segmentSeconds: 6 # Best Practice 2026 default
+```
+
+> [!IMPORTANT]
+> Changing this value mid-session will cause a buffer reset in most players.
+
 ## Summary Checklist
 
 - [ ] `XG2G_STREAM_PORT` is **UNSET** or `0`.

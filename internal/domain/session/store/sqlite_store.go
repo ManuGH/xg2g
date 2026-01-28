@@ -56,7 +56,7 @@ func (s *SqliteStore) migrate() error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Drop existing if version mismatch (it's shadow impl, so we can be destructive during dev)
 	if currentVersion > 0 && currentVersion < 2 {
@@ -181,7 +181,7 @@ func (s *SqliteStore) PutSessionWithIdempotency(ctx context.Context, rec *model.
 	if err != nil {
 		return "", false, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// 1. Check idempotency
 	var existingID string
@@ -283,7 +283,7 @@ func (s *SqliteStore) QuerySessions(ctx context.Context, filter SessionFilter) (
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var results []*model.SessionRecord
 	for rows.Next() {
@@ -301,7 +301,7 @@ func (s *SqliteStore) UpdateSession(ctx context.Context, id string, fn func(*mod
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	rec, err := scanSession(tx.QueryRowContext(ctx, "SELECT * FROM sessions WHERE session_id = ?", id))
 	if err != nil {
@@ -356,7 +356,7 @@ func (s *SqliteStore) ScanSessions(ctx context.Context, fn func(*model.SessionRe
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		rec, err := scanSession(rows)
@@ -402,7 +402,7 @@ func (s *SqliteStore) TryAcquireLease(ctx context.Context, key, owner string, tt
 	if err != nil {
 		return nil, false, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	now := time.Now().UnixMilli()
 	expiresAt := time.Now().Add(ttl).UnixMilli()

@@ -17,7 +17,7 @@ func VerifyIntegrity(path string, mode string) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database for verification: %w", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// 2. Determine Pragma
 	pragma := "PRAGMA quick_check;"
@@ -30,7 +30,7 @@ func VerifyIntegrity(path string, mode string) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("integrity pragma failed: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var results []string
 	for rows.Next() {

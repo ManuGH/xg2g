@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/admission"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/infra/media/stub"
@@ -29,7 +28,7 @@ func TestOrchestrator_HandleStart_StubExecution(t *testing.T) {
 		HeartbeatEvery: 1 * time.Second,
 		Owner:          "test-worker-1",
 		TunerSlots:     []int{0},
-		Admission:      admission.NewResourceMonitor(10, 10, 0),
+		Admission:      newAdmissionMonitor(10, 10, 0),
 		Pipeline:       stub.NewAdapter(),
 		Platform:       NewStubPlatform(),
 		LeaseKeyFunc: func(e model.StartSessionEvent) string {

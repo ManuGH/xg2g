@@ -58,7 +58,7 @@ func (s *FileStore) load() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	data, err := os.ReadFile(s.path)
+	data, err := os.ReadFile(filepath.Clean(s.path))
 	if err != nil {
 		return err
 	}
@@ -109,7 +109,7 @@ func (s *FileStore) persist(st DriftState) error {
 	}
 
 	// Directory Sync (POSIX Durability)
-	if f, err := os.Open(dir); err == nil {
+	if f, err := os.Open(filepath.Clean(dir)); err == nil {
 		_ = f.Sync()
 		_ = f.Close()
 	}

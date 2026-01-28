@@ -54,6 +54,9 @@ func TestHardenedClient_ResponseHeaderTimeout(t *testing.T) {
 // This is a helper to make the test more robust against different
 // underlying error messages.
 func isTimeoutError(err error) bool {
+	if errors.Is(err, ErrTimeout) {
+		return true
+	}
 	var netErr net.Error
 	if errors.As(err, &netErr) {
 		return netErr.Timeout()

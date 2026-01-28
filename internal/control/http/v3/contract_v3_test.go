@@ -141,7 +141,9 @@ func newV3TestServer(t *testing.T, hlsRoot string) (*Server, *v3store.MemoryStor
 		b, st, rs, nil, pm, nil, nil, nil, vm,
 		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 	)
-	s.SetAdmission(admission.NewResourceMonitor(10, 10, 0))
+	adm := admission.NewResourceMonitor(10, 10, 0)
+	adm.ObserveCPULoad(0.1)
+	s.SetAdmission(adm)
 
 	return s, st
 }

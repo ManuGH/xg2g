@@ -109,6 +109,9 @@ tls:
   forceHTTPS: false
   key: ""
 trustedProxies: ""
+verification:
+  enabled: true
+  interval: 1m
 version: ""
 vod:
   analyzeDuration: "50000000"

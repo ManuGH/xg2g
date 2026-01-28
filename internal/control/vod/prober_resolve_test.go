@@ -40,7 +40,7 @@ func TestRunProbe_UsesResolvedPathFromMetadata(t *testing.T) {
 		ResolvedPath: tmpFile.Name(),
 	})
 
-	_ = mgr.runProbe(probeRequest{ServiceRef: id, InputPath: ""})
+	_ = mgr.runProbe(context.Background(), probeRequest{ServiceRef: id, InputPath: ""})
 
 	meta, ok := mgr.GetMetadata(id)
 	if !ok {
@@ -68,7 +68,7 @@ func TestRunProbe_UsesPathMapperWhenInputEmpty(t *testing.T) {
 	}
 	id := "1:0:0:0:0:0:0:0:0:/media/test.ts"
 
-	_ = mgr.runProbe(probeRequest{ServiceRef: id, InputPath: ""})
+	_ = mgr.runProbe(context.Background(), probeRequest{ServiceRef: id, InputPath: ""})
 
 	meta, ok := mgr.GetMetadata(id)
 	if !ok {
@@ -89,7 +89,7 @@ func TestRunProbe_EmptyInputFailsWithoutResolver(t *testing.T) {
 	}
 	id := "1:0:0:0:0:0:0:0:0:/media/test.ts"
 
-	_ = mgr.runProbe(probeRequest{ServiceRef: id, InputPath: ""})
+	_ = mgr.runProbe(context.Background(), probeRequest{ServiceRef: id, InputPath: ""})
 
 	meta, ok := mgr.GetMetadata(id)
 	if !ok {

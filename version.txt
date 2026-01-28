@@ -1,1 +1,0 @@
-{"level":"fatal","service":"xg2g","version":"","component":"daemon","error":"config validation failed: validation failed for APITokenScopes: must be set when APIToken is configured","event":"config.load_failed","config_path":"","time":"2026-01-09T00:39:18Z","message":"failed to load configuration"}

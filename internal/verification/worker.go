@@ -251,15 +251,10 @@ func normalizeState(st *DriftState) {
 func hashContent(st DriftState) string {
 	clone := st
 	clone.LastCheck = time.Time{}
-	bytes, _ := json.Marshal(clone)
-	sum := sha256.Sum256(bytes)
-	return hex.EncodeToString(sum[:])
-}
-
-// hashState computes hash of full state (unused if we split logic)
-// Deprecated: used hashContent instead
-func hashState(st DriftState) string {
-	bytes, _ := json.Marshal(st)
+	bytes, err := json.Marshal(clone)
+	if err != nil {
+		return ""
+	}
 	sum := sha256.Sum256(bytes)
 	return hex.EncodeToString(sum[:])
 }

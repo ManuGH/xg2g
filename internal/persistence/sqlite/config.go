@@ -25,8 +25,13 @@ func DefaultConfig() Config {
 // Open initializes a SQLite connection pool with mandatory PRAGMAs.
 // It enforces WAL mode and busy_timeout per STORAGE_INVARIANTS.md.
 func Open(dbPath string, cfg Config) (*sql.DB, error) {
-	// Open database with base DSN
-	db, err := sql.Open("sqlite", dbPath)
+	// Construct DSN with mandatory PRAGMAs to ensure they apply to ALL connections in the pool.
+	// modernc.org/sqlite supports _pragma in the DSN.
+	// Format: file:path?_pragma=foo(bar)&_pragma=baz(qux)
+	dsn := fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(%d)&_pragma=synchronous(NORMAL)&_pragma=foreign_keys(ON)",
+		dbPath, cfg.BusyTimeout.Milliseconds())
+
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: open failed: %w", err)
 	}
@@ -40,22 +45,6 @@ func Open(dbPath string, cfg Config) (*sql.DB, error) {
 	if err := db.Ping(); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("sqlite: ping failed: %w", err)
-	}
-
-	// Apply Mandatory PRAGMAs
-	// We execute these manually to ensure they are set regardless of DSN parser logic.
-	pragmas := []string{
-		"PRAGMA journal_mode=WAL",
-		"PRAGMA synchronous=NORMAL",
-		fmt.Sprintf("PRAGMA busy_timeout=%d", cfg.BusyTimeout.Milliseconds()),
-		"PRAGMA foreign_keys=ON",
-	}
-
-	for _, p := range pragmas {
-		if _, err := db.Exec(p); err != nil {
-			_ = db.Close()
-			return nil, fmt.Errorf("sqlite: pragma %q failed: %w", p, err)
-		}
 	}
 
 	return db, nil

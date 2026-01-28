@@ -64,7 +64,7 @@ func (p *HTTPPreflightProvider) Check(ctx context.Context, src SourceRef) (Prefl
 		}
 		return PreflightResult{Outcome: PreflightUnreachable}, nil
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	result := PreflightResult{
 		HTTPStatus: resp.StatusCode,

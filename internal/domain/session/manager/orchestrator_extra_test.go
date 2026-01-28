@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/admission"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
@@ -32,7 +31,7 @@ func TestOrchestrator_Observability_TuneFailure(t *testing.T) {
 		HeartbeatEvery: 1 * time.Second,
 		Owner:          "test-worker-obs",
 		TunerSlots:     []int{0},
-		Admission:      admission.NewResourceMonitor(10, 10, 0),
+		Admission:      newAdmissionMonitor(10, 10, 0),
 		Pipeline:       failPipe,
 		LeaseKeyFunc: func(e model.StartSessionEvent) string {
 			return model.LeaseKeyService(e.ServiceRef)
@@ -87,7 +86,7 @@ func TestReconcileTuners_UniqueSlotCount(t *testing.T) {
 	orch := &Orchestrator{
 		Store:      st,
 		TunerSlots: []int{1}, // Slot 1
-		Admission:  admission.NewResourceMonitor(10, 10, 0),
+		Admission:  newAdmissionMonitor(10, 10, 0),
 	}
 
 	// 1. Create two sessions claiming slot "1" (Context Data)

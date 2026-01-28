@@ -41,7 +41,10 @@ var statusCmd = &cobra.Command{
 		// 2. Fetch Status
 		url := fmt.Sprintf("http://localhost:%d/api/v3/status", statusPort)
 		client := &http.Client{Timeout: 5 * time.Second}
-		req, _ := http.NewRequest("GET", url, nil)
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			return err
+		}
 		req.Header.Set("Authorization", "Bearer "+statusToken)
 
 		resp, err := client.Do(req)
@@ -53,7 +56,7 @@ var statusCmd = &cobra.Command{
 			}
 			os.Exit(2)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		// 3. Handle Errors
 		if resp.StatusCode != 200 {

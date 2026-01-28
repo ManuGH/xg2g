@@ -1,26 +1,22 @@
 package config_test
 
 import (
-	"os"
 	"testing"
 
 	"github.com/ManuGH/xg2g/internal/config"
 )
 
 // setupEnv sets up the minimum required environment variables for validation to pass
-func setupEnv(t *testing.T) func() {
-	_ = os.Setenv("XG2G_OWI_BASE", "http://test-enigma2-host")
-	_ = os.Setenv("XG2G_ENGINE_ENABLED", "false")
-	return func() {
-		_ = os.Unsetenv("XG2G_OWI_BASE")
-		_ = os.Unsetenv("XG2G_ENGINE_ENABLED")
-	}
+func setupEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("XG2G_OWI_BASE", "http://test-enigma2-host")
+	t.Setenv("XG2G_ENGINE_ENABLED", "false")
+	t.Setenv("XG2G_E2_HOST", "")
 }
 
 // TestDeliveryPolicyDefaults verifies that the default delivery_policy is "universal"
 func TestDeliveryPolicyDefaults(t *testing.T) {
-	cleanup := setupEnv(t)
-	defer cleanup()
+	setupEnv(t)
 
 	loader := config.NewLoader("", "test-version")
 
@@ -36,8 +32,7 @@ func TestDeliveryPolicyDefaults(t *testing.T) {
 
 // TestDeliveryPolicyValidation_Universal verifies that "universal" is accepted
 func TestDeliveryPolicyValidation_Universal(t *testing.T) {
-	cleanup := setupEnv(t)
-	defer cleanup()
+	setupEnv(t)
 
 	loader := config.NewLoader("", "test-version")
 
@@ -56,8 +51,7 @@ func TestDeliveryPolicyValidation_Universal(t *testing.T) {
 
 // TestDeliveryPolicyValidation_RejectsInvalid verifies that non-universal values are rejected
 func TestDeliveryPolicyValidation_RejectsInvalid(t *testing.T) {
-	cleanup := setupEnv(t)
-	defer cleanup()
+	setupEnv(t)
 
 	testCases := []struct {
 		name   string
@@ -92,9 +86,7 @@ func TestDeliveryPolicyValidation_RejectsInvalid(t *testing.T) {
 
 // TestDeprecatedEnvVarFailStart verifies that XG2G_STREAM_PROFILE causes fail-start
 func TestDeprecatedEnvVarFailStart(t *testing.T) {
-	// Set the deprecated env var
-	_ = os.Setenv("XG2G_STREAM_PROFILE", "auto")
-	defer func() { _ = os.Unsetenv("XG2G_STREAM_PROFILE") }()
+	t.Setenv("XG2G_STREAM_PROFILE", "auto")
 
 	loader := config.NewLoader("", "test-version")
 
@@ -111,11 +103,9 @@ func TestDeprecatedEnvVarFailStart(t *testing.T) {
 
 // TestNewEnvVarWorks verifies that XG2G_STREAMING_POLICY works correctly
 func TestNewEnvVarWorks(t *testing.T) {
-	cleanup := setupEnv(t)
-	defer cleanup()
+	setupEnv(t)
 
-	_ = os.Setenv("XG2G_STREAMING_POLICY", "universal")
-	defer func() { _ = os.Unsetenv("XG2G_STREAMING_POLICY") }()
+	t.Setenv("XG2G_STREAMING_POLICY", "universal")
 
 	loader := config.NewLoader("", "test-version")
 

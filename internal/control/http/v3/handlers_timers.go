@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -102,7 +103,7 @@ func (s *Server) AddTimer(w http.ResponseWriter, r *http.Request) {
 			} else {
 				log.L().Info().Str("path", playlistPath).Str("search_id", req.ServiceRef).Msg("attempting to resolve service ref from playlist")
 
-				if data, err := os.ReadFile(playlistPath); err == nil { // #nosec G304
+				if data, err := os.ReadFile(filepath.Clean(playlistPath)); err == nil { // #nosec G304
 					channels := m3u.Parse(string(data))
 					log.L().Info().Int("channels", len(channels)).Msg("parsed playlist for resolution")
 

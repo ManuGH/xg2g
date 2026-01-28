@@ -50,15 +50,15 @@ func (m *Manager) probeWorker(ctx context.Context) {
 			if !ok {
 				return
 			}
-			m.processProbe(req)
+			m.processProbe(ctx, req)
 		}
 	}
 }
 
-func (m *Manager) processProbe(req probeRequest) {
+func (m *Manager) processProbe(ctx context.Context, req probeRequest) {
 	// Stampede prevention
 	_, err, _ := m.sfg.Do(req.ServiceRef, func() (interface{}, error) {
-		if runErr := m.runProbe(req); runErr != nil {
+		if runErr := m.runProbe(ctx, req); runErr != nil {
 			return nil, runErr
 		}
 		return nil, nil
@@ -68,7 +68,7 @@ func (m *Manager) processProbe(req probeRequest) {
 	}
 }
 
-func (m *Manager) runProbe(req probeRequest) error {
+func (m *Manager) runProbe(ctx context.Context, req probeRequest) error {
 	id := req.ServiceRef
 	input := req.InputPath
 
@@ -153,7 +153,8 @@ func (m *Manager) runProbe(req probeRequest) error {
 	m.mu.Unlock()
 
 	// 5. Probe Duration & Truth Enforcement
-	probeCtx, cancelProbe := context.WithTimeout(context.Background(), ProbeTimeout)
+	// Propagate caller context (worker lifecycle) but wrap with a specialized timeout.
+	probeCtx, cancelProbe := context.WithTimeout(ctx, ProbeTimeout)
 	defer cancelProbe()
 
 	log.Info().Str("id", id).Str("path", input).Msg("probing recording duration")
@@ -191,12 +192,8 @@ func (m *Manager) runProbe(req probeRequest) error {
 	// B2: Duration <= 0 Guard
 	if dur <= 0 {
 		m.MarkFailure(id, ArtifactStateFailed, "probe_duration_invalid", input, &fp)
-		// Note regarding preservedDur: MarkFailure reads old meta inside, so we don't strictly need to pass it
-		// if we wanted to preserve it. However, MarkFailure doesn't explicitly preserve duration currently.
-		// TODO: Ensure duration is preserved if needed? Prober previously preserved it manually.
-		// Detailed check: MarkFailure preserves ResolvedPath and Fingerprint, but touches UpdateAt.
-		// It does NOT clear Duration (it modifies specific fields of existing meta).
-		// So Duration is preserved implicitly by Read-Modify-Write!
+		// Duration is preserved by MarkFailure's read-modify-write contract.
+		// See: TestTruth_Write_B5_ProbeFailPreservesDuration
 
 		log.Warn().Str("id", id).Int64("duration", dur).Msg("probe returned invalid duration")
 		return errors.New("probe_duration_invalid")

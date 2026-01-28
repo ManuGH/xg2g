@@ -413,7 +413,7 @@ func TestSqliteStore_WAL_ConcurrentReaders_INV_SQLITE_008(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		tx, _ := store.DB.Begin()
-		defer tx.Rollback()
+		defer func() { _ = tx.Rollback() }()
 
 		// Simulate slow write
 		_, _ = tx.Exec(`

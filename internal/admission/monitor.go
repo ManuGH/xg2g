@@ -2,11 +2,14 @@ package admission
 
 import (
 	"context"
+	"math"
 	"runtime"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/ManuGH/xg2g/internal/metrics"
+	"github.com/rs/zerolog"
 )
 
 // Priority defines the admission priority classes as per Phase 5.2 contract.
@@ -42,6 +45,7 @@ const (
 	ReasonGPUBusy      AdmissionReason = "gpu_busy"
 	ReasonTunerBusy    AdmissionReason = "tuner_busy"
 	ReasonCPUSaturated AdmissionReason = "cpu_saturated"
+	ReasonCPUUnknown   AdmissionReason = "cpu_unknown"
 	ReasonInternalErr  AdmissionReason = "internal_error"
 )
 
@@ -55,13 +59,26 @@ type ResourceState struct {
 // ResourceMonitor provides the mechanical gatekeeper logic.
 // Phase 5.3: maxPool and gpuLimit are now distinct limits.
 type ResourceMonitor struct {
-	activeVAAPI  int64
-	mu           sync.RWMutex
-	sessionIDs   map[Priority][]string
-	maxPool      int64   // Maximum concurrent sessions (engine.maxPool)
-	gpuLimit     int64   // Maximum VAAPI tokens (GPU discovery/config)
-	cpuThreshold float64 // CPU load multiplier (cores * threshold)
-	cores        float64
+	activeVAAPI   int64
+	mu            sync.RWMutex
+	sessionIDs    map[Priority][]string
+	maxPool       int64   // Maximum concurrent sessions (engine.maxPool)
+	gpuLimit      int64   // Maximum VAAPI tokens (GPU discovery/config)
+	cpuThreshold  float64 // CPU load multiplier (cores * threshold)
+	cores         float64
+	cpuMu         sync.Mutex
+	cpuSamples    []cpuSample
+	cpuWindow     time.Duration
+	cpuMinSamples int     // Minimum samples for a valid decision (fail-closed)
+	cpuRatio      float64 // Ratio of samples over threshold to trigger block (e.g. 0.5)
+	lastWarnAt    time.Time
+	logger        zerolog.Logger
+	clock         func() time.Time
+}
+
+type cpuSample struct {
+	at   time.Time
+	load float64
 }
 
 // NewResourceMonitor creates a new ResourceMonitor with separate limits.
@@ -69,10 +86,10 @@ type ResourceMonitor struct {
 // gpuLimit: maximum VAAPI tokens (GPU capability)
 // cpuThresholdScale: CPU load threshold multiplier (e.g., 1.5 = cores*1.5)
 func NewResourceMonitor(maxPool, gpuLimit int, cpuThresholdScale float64) *ResourceMonitor {
-	if maxPool <= 0 {
+	if maxPool < 0 {
 		maxPool = 2 // Default pool limit per Phase 5.2
 	}
-	if gpuLimit <= 0 {
+	if gpuLimit < 0 {
 		gpuLimit = 8 // Default based on Phase 5.1 discovery expectation
 	}
 	if cpuThresholdScale <= 0 {
@@ -80,12 +97,22 @@ func NewResourceMonitor(maxPool, gpuLimit int, cpuThresholdScale float64) *Resou
 	}
 
 	return &ResourceMonitor{
-		maxPool:      int64(maxPool),
-		gpuLimit:     int64(gpuLimit),
-		cpuThreshold: cpuThresholdScale,
-		cores:        float64(runtime.NumCPU()),
-		sessionIDs:   make(map[Priority][]string),
+		maxPool:       int64(maxPool),
+		gpuLimit:      int64(gpuLimit),
+		cpuThreshold:  cpuThresholdScale,
+		cores:         float64(runtime.NumCPU()),
+		sessionIDs:    make(map[Priority][]string),
+		cpuWindow:     30 * time.Second,
+		cpuMinSamples: 15,  // 50% of 1s samples in 30s window
+		cpuRatio:      0.5, // Block if >= 50% of samples are over threshold
+		logger:        zerolog.Nop(),
+		clock:         time.Now,
 	}
+}
+
+// SetLogger injects a logger into the ResourceMonitor for operational awareness.
+func (m *ResourceMonitor) SetLogger(l zerolog.Logger) {
+	m.logger = l
 }
 
 // CanAdmit evaluates the current ResourceState against the request priority.
@@ -111,9 +138,96 @@ func (m *ResourceMonitor) CanAdmit(ctx context.Context, p Priority) (bool, Admis
 		// Live/Recording can still proceed (may preempt GPU at orchestrator level)
 	}
 
-	// 3. CPU Pressure Check - TODO: implement 30s window
+	// 3. CPU Pressure Check - 30s rolling window (fail-closed on missing samples)
+	if ok, reason := m.cpuWithinLimits(); !ok {
+		return false, reason
+	}
 
 	return true, ReasonAdmitted
+}
+
+// ObserveCPULoad records a CPU load sample for rolling-window admission checks.
+func (m *ResourceMonitor) ObserveCPULoad(load float64) {
+	m.observeCPULoadAt(load, m.clock())
+}
+
+func (m *ResourceMonitor) observeCPULoadAt(load float64, at time.Time) {
+	if math.IsNaN(load) || math.IsInf(load, 0) || load < 0 {
+		return
+	}
+	m.cpuMu.Lock()
+	defer m.cpuMu.Unlock()
+
+	m.cpuSamples = append(m.cpuSamples, cpuSample{at: at, load: load})
+	m.pruneCPUSamplesLocked(at)
+}
+
+func (m *ResourceMonitor) cpuWithinLimits() (bool, AdmissionReason) {
+	m.cpuMu.Lock()
+	defer m.cpuMu.Unlock()
+
+	now := m.clock()
+	m.pruneCPUSamplesLocked(now)
+
+	// Guard: Fail-closed on missing samples
+	if len(m.cpuSamples) < m.cpuMinSamples {
+		if now.Sub(m.lastWarnAt) >= 1*time.Minute {
+			m.lastWarnAt = now
+			m.logger.Warn().
+				Int("samples", len(m.cpuSamples)).
+				Int("min_needed", m.cpuMinSamples).
+				Msg("Admission blocked: CPU data insufficient (fail-closed)")
+		}
+		return false, ReasonCPUUnknown
+	}
+
+	threshold := m.cores * m.cpuThreshold
+	var overCount int
+	for _, s := range m.cpuSamples {
+		if s.load >= threshold {
+			overCount++
+		}
+	}
+
+	ratio := float64(overCount) / float64(len(m.cpuSamples))
+	if ratio >= m.cpuRatio {
+		if now.Sub(m.lastWarnAt) >= 1*time.Minute {
+			m.lastWarnAt = now
+			m.logger.Warn().
+				Float64("ratio", ratio).
+				Float64("threshold", threshold).
+				Msg("Admission blocked: CPU pressure exceeded threshold")
+		}
+		return false, ReasonCPUSaturated
+	}
+
+	return true, ReasonAdmitted
+}
+
+func (m *ResourceMonitor) cpuAverage(now time.Time) (float64, bool) {
+	m.cpuMu.Lock()
+	defer m.cpuMu.Unlock()
+
+	m.pruneCPUSamplesLocked(now)
+	if len(m.cpuSamples) == 0 {
+		return 0, false
+	}
+	var sum float64
+	for _, s := range m.cpuSamples {
+		sum += s.load
+	}
+	return sum / float64(len(m.cpuSamples)), true
+}
+
+func (m *ResourceMonitor) pruneCPUSamplesLocked(now time.Time) {
+	cutoff := now.Add(-m.cpuWindow)
+	keep := m.cpuSamples[:0]
+	for _, s := range m.cpuSamples {
+		if !s.at.Before(cutoff) {
+			keep = append(keep, s)
+		}
+	}
+	m.cpuSamples = keep
 }
 
 // AcquireVAAPIToken reserves a GPU slot.

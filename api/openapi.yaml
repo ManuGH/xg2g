@@ -501,6 +501,17 @@ components:
       type: object
       properties: {}
 
+    VerificationConfig:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+          default: true
+        interval:
+          type: string
+          description: Drift verification interval (e.g. "1m")
+          default: "1m"
+
     SeriesRuleRunReport:
       type: object
       properties:
@@ -663,6 +674,8 @@ components:
           $ref: "#/components/schemas/PiconsConfig"
         featureFlags:
           $ref: "#/components/schemas/FeatureFlags"
+        verification:
+          $ref: "#/components/schemas/VerificationConfig"
 
     AppConfig:
       type: object
@@ -687,6 +700,8 @@ components:
           $ref: "#/components/schemas/StreamingConfig"
         featureFlags:
           $ref: "#/components/schemas/FeatureFlags"
+        verification:
+          $ref: "#/components/schemas/VerificationConfig"
 
     Bouquet:
       type: object

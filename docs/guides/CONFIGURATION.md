@@ -215,6 +215,13 @@ Aliases: `openWebIF.*` (compat; prefer `enigma2.*`).
 | `tls.forceHTTPS` | `XG2G_FORCE_HTTPS` | `false` | Active | Advanced |
 | `tls.key` | `XG2G_TLS_KEY` | - | Active | Advanced |
 
+### verification
+
+| Path | Env | Default | Status | Profile |
+| --- | --- | --- | --- | --- |
+| `verification.enabled` | `XG2G_VERIFY_ENABLED` | `true` | Active | Advanced |
+| `verification.interval` | `XG2G_VERIFY_INTERVAL` | `1m` | Active | Advanced |
+
 ### vod
 
 | Path | Env | Default | Status | Profile |

@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/admission"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
@@ -42,7 +41,7 @@ func TestConcurrency_BoundedStart(t *testing.T) {
 		HeartbeatEvery:      1 * time.Second,
 		Owner:               "test-flood",
 		TunerSlots:          []int{0, 1, 2, 3, 4}, // Enough slots
-		Admission:           admission.NewResourceMonitor(10, 10, 0),
+		Admission:           newAdmissionMonitor(10, 10, 0),
 		Pipeline:            trackingPipeline,
 		PipelineStopTimeout: 1 * time.Second,
 		StartConcurrency:    concurrencyLimit,
@@ -140,7 +139,7 @@ func TestConcurrency_ValidationFails(t *testing.T) {
 	orch := &Orchestrator{
 		Store:            st,
 		Bus:              bus,
-		Admission:        admission.NewResourceMonitor(10, 10, 0),
+		Admission:        newAdmissionMonitor(10, 10, 0),
 		StartConcurrency: 0, // INVALID
 		StopConcurrency:  5,
 	}

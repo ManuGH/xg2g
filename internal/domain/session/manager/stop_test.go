@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/admission"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/infra/media/stub"
@@ -27,7 +26,7 @@ func TestOrchestrator_Stop_Ready(t *testing.T) {
 		HeartbeatEvery:      1 * time.Second,
 		Owner:               "test-stop",
 		TunerSlots:          []int{1},
-		Admission:           admission.NewResourceMonitor(10, 10, 0),
+		Admission:           newAdmissionMonitor(10, 10, 0),
 		StartConcurrency:    100,
 		StopConcurrency:     100,
 		PipelineStopTimeout: 100 * time.Millisecond,
@@ -81,7 +80,7 @@ func TestOrchestrator_Stop_Starting(t *testing.T) {
 		HeartbeatEvery:      1 * time.Second,
 		Owner:               "test-stop-starting",
 		TunerSlots:          []int{1},
-		Admission:           admission.NewResourceMonitor(10, 10, 0),
+		Admission:           newAdmissionMonitor(10, 10, 0),
 		StartConcurrency:    100,
 		StopConcurrency:     100,
 		PipelineStopTimeout: 100 * time.Millisecond,
@@ -135,7 +134,7 @@ func TestOrchestrator_Stop_Idempotency(t *testing.T) {
 		HeartbeatEvery:      1 * time.Second,
 		Owner:               "test-stop-idem",
 		TunerSlots:          []int{1},
-		Admission:           admission.NewResourceMonitor(10, 10, 0),
+		Admission:           newAdmissionMonitor(10, 10, 0),
 		StartConcurrency:    100,
 		StopConcurrency:     100,
 		PipelineStopTimeout: 100 * time.Millisecond,

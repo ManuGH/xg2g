@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/admission"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/infra/media/stub"
@@ -30,7 +29,7 @@ func TestSweeper_SweepOnce_PrunesExpiredSessions(t *testing.T) {
 		Owner:            "sweeper-prune-test",
 		StartConcurrency: 5,
 		TunerSlots:       []int{1},
-		Admission:        admission.NewResourceMonitor(10, 10, 0),
+		Admission:        newAdmissionMonitor(10, 10, 0),
 		StopConcurrency:  5,
 		HLSRoot:          "/tmp/test",
 		LeaseKeyFunc:     func(e model.StartSessionEvent) string { return e.ServiceRef },
@@ -112,7 +111,7 @@ func TestSweeper_SweepOnce_RemovesFilesForPrunedSession(t *testing.T) {
 		StartConcurrency: 5,
 		StopConcurrency:  5,
 		TunerSlots:       []int{1},
-		Admission:        admission.NewResourceMonitor(10, 10, 0),
+		Admission:        newAdmissionMonitor(10, 10, 0),
 		HLSRoot:          hlsRoot,
 	}
 

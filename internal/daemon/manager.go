@@ -296,6 +296,8 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 		Int("gpu_limit", cfg.Engine.GPULimit).
 		Float64("cpu_scale", cfg.Engine.CPUThresholdScale).
 		Msg("Admission control initialized")
+	// CPU load sampler (fail-closed if samples are missing/invalid).
+	admission.StartCPUSampler(ctx, adm, 0, nil)
 
 	// 3. Initialize Orchestrator
 	// Generate stable worker identity (replacing domain-level OS calls)

@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	dbName = "resume.db"
+	_ = "resume.db"
 )
 
 // NewStore creates a resume store based on the backend.

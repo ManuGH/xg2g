@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/admission"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/infra/media/stub"
@@ -30,7 +29,7 @@ func TestContention_Blocked(t *testing.T) {
 		HeartbeatEvery: 1 * time.Second,
 		Owner:          "worker-1",
 		TunerSlots:     []int{0},
-		Admission:      admission.NewResourceMonitor(10, 10, 0),
+		Admission:      newAdmissionMonitor(10, 10, 0),
 		Pipeline:       stub.NewAdapter(),
 		Platform:       NewStubPlatform(),
 		LeaseKeyFunc: func(e model.StartSessionEvent) string {
@@ -70,7 +69,7 @@ func TestRecovery_StaleTunerLease(t *testing.T) {
 	st := store.NewMemoryStore()
 	orch := &Orchestrator{
 		Store:     st,
-		Admission: admission.NewResourceMonitor(10, 10, 0),
+		Admission: newAdmissionMonitor(10, 10, 0),
 		LeaseTTL:  100 * time.Millisecond,
 	}
 
@@ -99,7 +98,7 @@ func TestRecovery_ActiveTunerLease(t *testing.T) {
 	st := store.NewMemoryStore()
 	orch := &Orchestrator{
 		Store:     st,
-		Admission: admission.NewResourceMonitor(10, 10, 0),
+		Admission: newAdmissionMonitor(10, 10, 0),
 		LeaseTTL:  5 * time.Second,
 	}
 

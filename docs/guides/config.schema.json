@@ -860,6 +860,19 @@
     "trustedProxies": {
       "type": "string"
     },
+    "verification": {
+      "properties": {
+        "enabled": {
+          "default": true,
+          "type": "boolean"
+        },
+        "interval": {
+          "default": "1m",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "version": {
       "default": "3.0.0",
       "description": "Deprecated/ignored. Configuration is fixed to v3.",

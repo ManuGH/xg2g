@@ -18,25 +18,43 @@ headers for maximum interoperability:
 > Since P9-2, we use lowercase MIME types (e.g., `video/mp2t`) to ensure
 > compatibility with case-sensitive proxies and clients.
 
-## 2. Cache-Control Strategy
+## 2. Segment Duration Truth (Best Practice 2026)
+
+To ensure predictable buffering and seek accuracy, xg2g enforces specific
+HLS segment durations:
+
+- **Standard Policy**: 6 seconds (Default). Balanced for stability and DVR performance.
+- **Low-Latency Policy**: 1 second. Optimized for real-time channel switching.
+
+| Profile | `HLSSegmentSeconds` | Target Segment Duration |
+| :--- | :--- | :--- |
+| `standard` | 6 | 6.0s (Nominal) |
+| `low_latency` | 1 | 1.0s (Nominal) |
+
+> [!NOTE]
+> Segment durations are nominal and may drift slightly based on upstream GOP
+> boundaries (ServiceRef keyframes). xg2g uses `-force_key_frames` to align
+> FFmpeg cuts to these exact targets.
+
+## 3. Cache-Control Strategy
 
 To balance playback startup latency, seek performance, and DVR freshness,
 the following caching rules are enforced:
 
-### 2.1 Playlists (`index.m3u8`, `timeshift.m3u8`)
+### 3.1 Playlists (`index.m3u8`, `timeshift.m3u8`)
 
 - **Policy**: `no-store`
 - **Rationale**: Playlists are dynamic and must never be cached by proxies
   or browsers. Stale playlists cause "Source Buffer Full" errors or infinite
   loops if the segment lists drift.
 
-### 2.2 Fragments / Initialization Segments (`init.mp4`, `seg_X.m4s`)
+### 3.2 Fragments / Initialization Segments (`init.mp4`, `seg_X.m4s`)
 
 - **Policy**: `public, max-age=3600`
 - **Rationale**: Initialization segments are immutable for the duration of
   a session.
 
-### 2.3 Media Segments (`seg_X.ts`, `seg_X.m4s`)
+### 3.3 Media Segments (`seg_X.ts`, `seg_X.m4s`)
 
 - **Policy**: `public, max-age=60`
 - **Rationale**: Media segments are immutable once written. A 1-minute cache
@@ -45,7 +63,7 @@ the following caching rules are enforced:
   recording is deleted and restarted with same segment names. 1 minute is
   the chosen safety/performance compromise.
 
-## 3. Range Support (206/416)
+## 4. Range Support (206/416)
 
 HLS Segments MUST support `Range` requests to allow clients to probe headers
 or resume partial downloads.
@@ -55,7 +73,7 @@ or resume partial downloads.
 - **Pre-ready**: Requests for segments of a "PREPARING" recording return
   `503 Service Unavailable` with a RFC 7807 problem body.
 
-## 4. Error Semantics (RFC 7807)
+## 5. Error Semantics (RFC 7807)
 
 All V3 HLS errors MUST return an `application/problem+json` body.
 

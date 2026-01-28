@@ -8,6 +8,12 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func seedCPULoad(rm *admission.ResourceMonitor) {
+	for i := 0; i < 20; i++ {
+		rm.ObserveCPULoad(0.1)
+	}
+}
+
 // TestResourceMonitor_NoSpawnGuarantee verifies that when the ResourceMonitor
 // rejects admission (pool full or CPU saturated), no session can be started.
 // This is the "No-Spawn" guarantee: admission failure prevents transcoding.
@@ -15,6 +21,7 @@ func TestResourceMonitor_NoSpawnGuarantee(t *testing.T) {
 	t.Run("PoolFull_RejectsWhenNoPreemptibleSessions", func(t *testing.T) {
 		// MaxPool = 1, so after 1 Live session, a same-priority session is rejected
 		rm := admission.NewResourceMonitor(1, 8, 1.5)
+		seedCPULoad(rm)
 
 		// Track first session - should be tracked
 		rm.TrackSessionStart(admission.PriorityLive, "session-1")
@@ -36,6 +43,7 @@ func TestResourceMonitor_NoSpawnGuarantee(t *testing.T) {
 	t.Run("ZeroPool_RejectsEverything", func(t *testing.T) {
 		// MaxPool = 0 means admission should always fail
 		rm := admission.NewResourceMonitor(0, 8, 1.5)
+		seedCPULoad(rm)
 
 		ctx := context.Background()
 		admitted, reason := rm.CanAdmit(ctx, admission.PriorityLive)
@@ -48,6 +56,7 @@ func TestResourceMonitor_NoSpawnGuarantee(t *testing.T) {
 	t.Run("PreemptionScenario_HigherPriorityCanPreemptLower", func(t *testing.T) {
 		// MaxPool = 1, with a Pulse session, Live should be admitted (can preempt)
 		rm := admission.NewResourceMonitor(1, 8, 1.5)
+		seedCPULoad(rm)
 
 		// Start a Pulse session (lowest priority)
 		rm.TrackSessionStart(admission.PriorityPulse, "pulse-session")
@@ -65,6 +74,7 @@ func TestResourceMonitor_NoSpawnGuarantee(t *testing.T) {
 	t.Run("RecordingCannotPreemptRecording", func(t *testing.T) {
 		// Recordings are precious - never preempted by other recordings
 		rm := admission.NewResourceMonitor(1, 8, 1.5)
+		seedCPULoad(rm)
 
 		// Start a Recording session
 		rm.TrackSessionStart(admission.PriorityRecording, "rec-session")
@@ -84,6 +94,7 @@ func TestResourceMonitor_NoSpawnGuarantee(t *testing.T) {
 // TestResourceMonitor_SessionTracking verifies session ID tracking works correctly.
 func TestResourceMonitor_SessionTracking(t *testing.T) {
 	rm := admission.NewResourceMonitor(5, 8, 1.5)
+	seedCPULoad(rm)
 
 	// Add sessions
 	rm.TrackSessionStart(admission.PriorityLive, "live-1")

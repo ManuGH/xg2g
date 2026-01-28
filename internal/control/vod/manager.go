@@ -444,7 +444,14 @@ func (m *Manager) markFailedFromBuild(jobID string, metaID string, reason string
 }
 
 // MarkFailure updates metadata with a specific failure state and reason.
-// It preserves existing fields like ResolvedPath and Fingerprint if they explain the failure.
+//
+// Contract (Invariants):
+//   - PRESERVES: Duration (failure paths never degrade Duration to 0/unknown)
+//   - MUTATES: State, Error, ResolvedPath (if provided), Fingerprint (if provided), UpdatedAt
+//   - Concurrency: Read-modify-write under mutex; last write wins
+//
+// Note: Duration may be updated on successful probe via MarkProbed (zero-guarded).
+// See: TestTruth_Write_B5_ProbeFailPreservesDuration
 func (m *Manager) MarkFailure(id string, state ArtifactState, reason string, resolvedPath string, fp *Fingerprint) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
