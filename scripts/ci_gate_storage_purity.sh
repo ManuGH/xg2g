@@ -90,6 +90,11 @@ for STR in "${FORBIDDEN_STRINGS[@]}"; do
                 fi
             fi
 
+            # False positive protection for CLI flags
+            if echo "$line" | grep -q "Flags()."; then
+                continue
+            fi
+
             echo "❌ VIOLATION: Legacy backend string '$STR' found in production code: $line"
             VIOLATIONS=$((VIOLATIONS + 1))
         done <<< "$FOUND"

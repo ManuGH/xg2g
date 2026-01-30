@@ -33,16 +33,15 @@ func (s *Server) authMiddlewareImpl(next http.Handler) http.Handler {
 			return
 		}
 
-		var reqToken string
-		if isMediaRequest(r) {
-			reqToken = auth.ExtractSessionToken(r)
-		} else {
-			// Use unified token extraction
-			// For general API, we do NOT allow query parameter tokens, strictly enforcing Header/Cookie.
-			reqToken = extractToken(r)
-		}
+		// Use unified token extraction
+		// For general API, we allow both Header (Bearer) and Cookie (xg2g_session).
+		reqToken, authSource := extractTokenDetailed(r)
 
 		logger := log.FromContext(r.Context()).With().Str("component", "auth").Logger()
+
+		if reqToken != "" {
+			logger.Debug().Str("method", authSource).Msg("authenticated request")
+		}
 
 		if reqToken == "" {
 			logger.Warn().Str("event", "auth.missing_header").Msg("authorization header/cookie missing")

@@ -227,6 +227,13 @@ func GetRecentLogs() []LogEntry {
 	return result
 }
 
+// ClearRecentLogs clears the in-memory log buffer (test-only utility).
+func ClearRecentLogs() {
+	logBufferMu.Lock()
+	defer logBufferMu.Unlock()
+	logBuffer = nil
+}
+
 //nolint:gochecknoinits // Required to ensure logger is initialized before any usage
 // Init removed to prevent side-effect environment reads.
 // Configure must be called explicitly, or logger() will lazy-init with defaults.

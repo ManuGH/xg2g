@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
@@ -161,18 +162,15 @@ func (h IntentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		acquiredLeases = append(acquiredLeases, tunerLease)
 	}
 
-	rec := &model.SessionRecord{
-		SessionID:     sessionID,
-		ServiceRef:    req.ServiceRef,
-		Profile:       prof,
-		State:         model.SessionStarting,
-		CorrelationID: correlationID,
-		CreatedAtUnix: time.Now().Unix(),
-		UpdatedAtUnix: time.Now().Unix(),
-		ContextData: map[string]string{
-			model.CtxKeyMode: mode,
-		},
+	rec := lifecycle.NewSessionRecord(time.Now())
+	rec.SessionID = sessionID
+	rec.ServiceRef = req.ServiceRef
+	rec.Profile = prof
+	rec.CorrelationID = correlationID
+	rec.ContextData = map[string]string{
+		model.CtxKeyMode: mode,
 	}
+	_, _ = lifecycle.Dispatch(rec, lifecycle.PhaseFromState(rec.State), lifecycle.Event{Kind: lifecycle.EvStartRequested}, nil, false, time.Now())
 	if err := h.Store.PutSession(ctx, rec); err != nil {
 		releaseLeases()
 		http.Error(w, "failed to persist session", http.StatusInternalServerError)

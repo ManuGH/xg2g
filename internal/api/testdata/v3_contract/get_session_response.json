@@ -4,7 +4,7 @@
   "profile": "high",
   "state": "READY",
   "reason": "R_NONE",
-  "reasonDetail": "baseline",
+  "reasonDetail": "",
   "correlationId": "corr-test-001",
   "updatedAtMs": 1700000000000,
   "mode": "LIVE",

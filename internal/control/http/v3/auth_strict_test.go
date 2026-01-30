@@ -399,8 +399,8 @@ func newTestServerConfig(t *testing.T, spy *SpyStore, spyBus *SpyBus, fn func(*c
 		t.Fatalf("failed to init lan guard: %v", err)
 	}
 
-	ts := httptest.NewServer(HandlerWithOptions(srv, ChiServerOptions{
-		BaseURL: "/api/v3",
+	ts := httptest.NewServer(NewRouter(srv, RouterOptions{
+		BaseURL: V3BaseURL,
 		Middlewares: []MiddlewareFunc{
 			lg.RequireLAN,
 			srv.authMiddleware,
@@ -747,5 +747,5 @@ func runRaceTest(t *testing.T, srv testServer, tok testTokens, spy *SpyStore, sp
 }
 
 func (s *SpyStore) GetLease(ctx context.Context, key string) (store.Lease, bool, error) {
-return nil, false, nil
+	return nil, false, nil
 }

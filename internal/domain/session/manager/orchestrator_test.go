@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/domain/session/manager/testkit"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
-	"github.com/ManuGH/xg2g/internal/infra/media/stub"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -19,18 +19,18 @@ func TestOrchestrator_HandleStart_StubExecution(t *testing.T) {
 	// Setup
 	ctx := context.Background()
 	st := store.NewMemoryStore()
-	memBus := NewStubBus()
+	pipe := testkit.NewStepperPipeline()
 
 	orch := &Orchestrator{
-		Bus:            memBus,
-		Store:          st,
-		LeaseTTL:       5 * time.Second,
-		HeartbeatEvery: 1 * time.Second,
-		Owner:          "test-worker-1",
-		TunerSlots:     []int{0},
-		Admission:      newAdmissionMonitor(10, 10, 0),
-		Pipeline:       stub.NewAdapter(),
-		Platform:       NewStubPlatform(),
+		Store:               st,
+		LeaseTTL:            24 * time.Hour,
+		HeartbeatEvery:      0,
+		Owner:               "test-worker-1",
+		TunerSlots:          []int{0},
+		Admission:           testkit.NewAdmissibleAdmission(),
+		Pipeline:            pipe,
+		Platform:            NewStubPlatform(),
+		PipelineStopTimeout: 0,
 		LeaseKeyFunc: func(e model.StartSessionEvent) string {
 			return model.LeaseKeyService(e.ServiceRef)
 		},
@@ -60,16 +60,17 @@ func TestOrchestrator_HandleStart_StubExecution(t *testing.T) {
 		errCh <- orch.handleStart(execCtx, evt)
 	}()
 
-	assert.Eventually(t, func() bool {
-		s, err := st.GetSession(ctx, sessionID)
-		if err != nil {
-			return false
-		}
-		return s.State == model.SessionReady
-	}, 2*time.Second, 50*time.Millisecond, "Session should reach READY state")
-
+	<-pipe.StartCalled()
 	cancel()
+	pipe.AllowStart()
+	_ = <-pipe.StartReturned()
 
 	err := <-errCh
-	assert.ErrorIs(t, err, context.Canceled, "Should exit with context canceled")
+	assert.ErrorIs(t, err, ErrSessionCanceled, "Should exit with session canceled")
+
+	s, err := st.GetSession(ctx, sessionID)
+	require.NoError(t, err)
+	assert.Equal(t, model.SessionCancelled, s.State)
+	assert.Equal(t, model.RCancelled, s.Reason)
+	assert.Equal(t, model.DContextCanceled, s.ReasonDetailCode)
 }

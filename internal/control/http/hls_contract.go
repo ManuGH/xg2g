@@ -19,6 +19,8 @@ func WriteHLSPlaylistHeaders(w http.ResponseWriter, modTime time.Time) {
 	w.Header().Set("Content-Type", ContentTypeHLSPlaylist)
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Last-Modified", modTime.UTC().Format(http.TimeFormat))
+	// Signal READY state to simplify client buffering logic (Phase 11 Fix)
+	w.Header().Set("X-Playback-Session-State", "READY")
 }
 
 // WriteHLSSegmentHeaders applies deterministic headers for HLS segments.

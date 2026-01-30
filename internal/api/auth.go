@@ -25,15 +25,13 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		var reqToken string
-		if isMediaRequest(r) {
-			reqToken = auth.ExtractSessionToken(r)
-		} else {
-			// Use unified token extraction
-			reqToken = extractToken(r)
-		}
-
+		// Use unified token extraction
+		reqToken, authSource := auth.ExtractTokenDetailed(r)
 		logger := log.FromContext(r.Context()).With().Str("component", "auth").Logger()
+
+		if reqToken != "" {
+			logger.Debug().Str("method", authSource).Msg("authenticated request")
+		}
 
 		if reqToken == "" {
 			logger.Warn().Str("event", "auth.missing_header").Msg("authorization header/cookie missing")

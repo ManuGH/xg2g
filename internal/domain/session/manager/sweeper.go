@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/log"
 )
@@ -133,11 +134,10 @@ func (s *Sweeper) sweepStore(ctx context.Context) {
 			if r.State.IsTerminal() {
 				return nil // Already handled
 			}
-			r.State = model.SessionStopped
-			r.PipelineState = model.PipeStopped
-			r.Reason = model.RIdleTimeout
-			r.ReasonDetail = "sweeper_forced_stop_stuck"
-			r.UpdatedAtUnix = time.Now().Unix()
+			_, err := lifecycle.Dispatch(r, lifecycle.PhaseFromState(r.State), lifecycle.Event{Kind: lifecycle.EvSweeperForcedStop}, nil, false, time.Now())
+			if err != nil {
+				return err
+			}
 			return nil
 		})
 		if err != nil {

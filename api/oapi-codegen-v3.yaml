@@ -1,0 +1,9 @@
+package: v3
+generate:
+  models: true
+  chi-server: true
+  embedded-spec: true
+output-options:
+  user-templates:
+    chi/chi-middleware.tmpl: tools/oapi/templates/chi/chi-middleware.tmpl
+    chi/chi-handler.tmpl: tools/oapi/templates/chi/chi-handler.tmpl

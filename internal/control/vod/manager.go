@@ -491,9 +491,16 @@ func (m *Manager) MarkProbed(id string, resolvedPath string, info *StreamInfo, f
 	// Update ResolvedPath and infer ArtifactPath if provided
 	if resolvedPath != "" {
 		meta.ResolvedPath = resolvedPath
-		// Heuristic: if ResolvedPath points to an .mp4, it's an artifact.
-		if strings.HasSuffix(resolvedPath, ".mp4") {
+		switch {
+		case strings.HasSuffix(resolvedPath, ".mp4"):
 			meta.ArtifactPath = resolvedPath
+			meta.PlaylistPath = ""
+		case strings.HasSuffix(resolvedPath, ".m3u8"):
+			meta.PlaylistPath = resolvedPath
+			meta.ArtifactPath = ""
+		default:
+			meta.ArtifactPath = ""
+			meta.PlaylistPath = ""
 		}
 	}
 
@@ -511,10 +518,18 @@ func (m *Manager) MarkProbed(id string, resolvedPath string, info *StreamInfo, f
 		if info.Video.Duration > 0 {
 			meta.Duration = int64(math.Round(info.Video.Duration))
 		}
-		meta.Width = info.Video.Width
-		meta.Height = info.Video.Height
-		meta.FPS = info.Video.FPS
-		meta.Interlaced = info.Video.Interlaced
+		if info.Video.Width > 0 {
+			meta.Width = info.Video.Width
+		}
+		if info.Video.Height > 0 {
+			meta.Height = info.Video.Height
+		}
+		if info.Video.FPS > 0 {
+			meta.FPS = info.Video.FPS
+		}
+		if info.Video.Interlaced {
+			meta.Interlaced = true
+		}
 	}
 
 	if fp != nil {

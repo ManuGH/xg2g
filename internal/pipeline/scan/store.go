@@ -3,6 +3,7 @@ package scan
 import (
 	"fmt"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -31,11 +32,42 @@ func NewStore(backend, storagePath string) (CapabilityStore, error) {
 	switch backend {
 	case "sqlite":
 		return NewSqliteStore(filepath.Join(storagePath, "capabilities.sqlite"))
+	case "memory":
+		return NewMemoryStore(), nil
 	case "json": // ADR-021 removed
 		// ADR-021: JSON file backend is DEPRECATED and removed.
 		// See docs/ops/BACKUP_RESTORE.md for SQLite-only operations.
 		return nil, fmt.Errorf("DEPRECATED: json backend removed (ADR-021). Only SQLite is supported in production")
 	default:
-		return nil, fmt.Errorf("unknown capability store backend: %s (supported: sqlite)", backend)
+		return nil, fmt.Errorf("unknown capability store backend: %s (supported: sqlite, memory)", backend)
 	}
+}
+
+// MemoryStore implements an in-memory CapabilityStore (ephemeral).
+type MemoryStore struct {
+	mu   sync.RWMutex
+	data map[string]Capability
+}
+
+func NewMemoryStore() *MemoryStore {
+	return &MemoryStore{
+		data: make(map[string]Capability),
+	}
+}
+
+func (s *MemoryStore) Update(cap Capability) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.data[cap.ServiceRef] = cap
+}
+
+func (s *MemoryStore) Get(serviceRef string) (Capability, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	cap, ok := s.data[serviceRef]
+	return cap, ok
+}
+
+func (s *MemoryStore) Close() error {
+	return nil
 }

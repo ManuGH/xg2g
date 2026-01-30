@@ -40,10 +40,25 @@
   transform: translateY(8px);
 }
 
-.v3-player-container:hover .v3-player-controls-header,
+.v3-player-container:hover:not(.user-idle) .v3-player-controls-header,
 .v3-player-controls-header:focus-within {
   opacity: 1;
   transform: translateY(0);
+}
+
+.v3-player-container.user-idle {
+  cursor: none;
+}
+
+/* Ensure controls hide when idle */
+.v3-player-container.user-idle .v3-player-controls-header,
+.v3-player-container.user-idle .vod-controls,
+.v3-player-container.user-idle .volume-control,
+.v3-player-container.user-idle .close-btn,
+.v3-player-container.user-idle .overlay-title {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.5s ease-out;
 }
 
 /* Video Wrapper */
@@ -78,7 +93,7 @@
   transition: opacity var(--motion-standard);
 }
 
-.v3-player-container:hover .overlay-title {
+.v3-player-container:hover:not(.user-idle) .overlay-title {
   opacity: 1;
 }
 

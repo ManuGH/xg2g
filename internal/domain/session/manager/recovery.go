@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/log"
@@ -112,8 +113,16 @@ func handleRecovery(ctx context.Context, o *Orchestrator, s *model.SessionRecord
 		Msg("recovering stale session")
 
 	_, err := o.Store.UpdateSession(ctx, s.SessionID, func(r *model.SessionRecord) error {
-		r.State = targetState
-		r.UpdatedAtUnix = time.Now().Unix()
+		var ev lifecycle.Event
+		switch targetState {
+		case model.SessionNew:
+			ev = lifecycle.Event{Kind: lifecycle.EvRecoveryReset}
+		default:
+			ev = lifecycle.Event{Kind: lifecycle.EvRecoveryFail}
+		}
+		if _, err := lifecycle.Dispatch(r, lifecycle.PhaseFromState(r.State), ev, nil, false, time.Now()); err != nil {
+			return err
+		}
 		if r.ContextData == nil {
 			r.ContextData = make(map[string]string)
 		}

@@ -24,6 +24,10 @@ import (
 //
 // This is the canonical way to mount the V3 API.
 func NewHandler(svc *Server, cfg config.AppConfig) (http.Handler, error) {
+	return newHandlerWithMiddlewares(svc, cfg, nil)
+}
+
+func newHandlerWithMiddlewares(svc *Server, cfg config.AppConfig, extra []MiddlewareFunc) (http.Handler, error) {
 	// 1. Initialize LAN Guard
 	// We rely on config.TrustedProxies to determine trust.
 	// We enforce LAN access for the entire V3 API surface by default.
@@ -58,6 +62,11 @@ func NewHandler(svc *Server, cfg config.AppConfig) (http.Handler, error) {
 		svc.ScopeMiddlewareFromContext,
 		svc.authMiddleware,
 	}
+	if len(extra) > 0 {
+		// Note: server_gen wrapper applies middlewares in order, so the last
+		// middleware runs first. Prepending ensures extras run last (post-auth).
+		stack = append(extra, stack...)
+	}
 
 	// 3. Create Router with RFC 7807 compliant 404/405 handlers
 	r := chi.NewRouter()
@@ -69,9 +78,9 @@ func NewHandler(svc *Server, cfg config.AppConfig) (http.Handler, error) {
 	})
 
 	// 4. Create Handler
-	// We use the generated HandlerWithOptions to apply the BaseURL and our middleware stack.
-	h := HandlerWithOptions(svc, ChiServerOptions{
-		BaseURL:     "/api/v3",
+	// Use handwritten router to inject scope policy and keep generated code transport-only.
+	h := NewRouter(svc, RouterOptions{
+		BaseURL:     V3BaseURL,
 		Middlewares: stack,
 		BaseRouter:  r,
 	})

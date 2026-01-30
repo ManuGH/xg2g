@@ -92,12 +92,27 @@ const (
 	RInvariantViolation  ReasonCode = "R_INVARIANT_VIOLATION"
 	RPipelineStartFailed ReasonCode = "R_PIPELINE_START_FAILED"
 
-	RProcessEnded    ReasonCode = "R_PROCESS_ENDED"
-	RPackagerFailed  ReasonCode = "R_PACKAGER_FAILED"
-	RCancelled       ReasonCode = "R_CANCELLED"
-	RIdleTimeout     ReasonCode = "R_IDLE_TIMEOUT"
-	RClientStop      ReasonCode = "R_CLIENT_STOP"
-	RUpstreamCorrupt ReasonCode = "R_UPSTREAM_CORRUPT" // Upstream source is corrupt or missing keyframes
+	RProcessEnded            ReasonCode = "R_PROCESS_ENDED"
+	RPackagerFailed          ReasonCode = "R_PACKAGER_FAILED"
+	RCancelled               ReasonCode = "R_CANCELLED"
+	RDeadlineExceeded        ReasonCode = "R_DEADLINE_EXCEEDED"
+	RIdleTimeout             ReasonCode = "R_IDLE_TIMEOUT"
+	RClientStop              ReasonCode = "R_CLIENT_STOP"
+	RUpstreamCorrupt         ReasonCode = "R_UPSTREAM_CORRUPT" // Upstream source is corrupt or missing keyframes
+	RInternalInvariantBreach ReasonCode = "R_INTERNAL_INVARIANT_BREACH"
+)
+
+// ReasonDetailCode is a canonical, public-safe detail code.
+// Free-text details must never be exposed via the API.
+type ReasonDetailCode string
+
+const (
+	DNone                    ReasonDetailCode = "D_NONE"
+	DContextCanceled         ReasonDetailCode = "D_CONTEXT_CANCELED"
+	DDeadlineExceeded        ReasonDetailCode = "D_DEADLINE_EXCEEDED"
+	DRecordingComplete       ReasonDetailCode = "D_RECORDING_COMPLETE"
+	DSweeperForcedStopStuck  ReasonDetailCode = "D_SWEEPER_FORCED_STOP_STUCK"
+	DInternalInvariantBreach ReasonDetailCode = "D_INTERNAL_INVARIANT_BREACH"
 )
 
 // ProfileSpec is data-driven and future-proof (VisionOS, embedded clients, etc.).
@@ -122,20 +137,21 @@ type ProfileSpec struct {
 
 // SessionRecord is the state-store source of truth for client-visible state.
 type SessionRecord struct {
-	SessionID      string        `json:"sessionId"`
-	ServiceRef     string        `json:"serviceRef"`
-	Profile        ProfileSpec   `json:"profile"`
-	State          SessionState  `json:"state"`
-	PipelineState  PipelineState `json:"pipelineState"`
-	Reason         ReasonCode    `json:"reason"`
-	ReasonDetail   string        `json:"reasonDetail,omitempty"`
-	FallbackReason string        `json:"fallbackReason,omitempty"`
-	FallbackAtUnix int64         `json:"fallbackAtUnix,omitempty"`
-	CorrelationID  string        `json:"correlationId"`
-	CreatedAtUnix  int64         `json:"createdAtUnix"`
-	UpdatedAtUnix  int64         `json:"updatedAtUnix"`
-	LastAccessUnix int64         `json:"lastAccessUnix,omitempty"`
-	ExpiresAtUnix  int64         `json:"expiresAtUnix"` // TTL for garbage collection.
+	SessionID         string           `json:"sessionId"`
+	ServiceRef        string           `json:"serviceRef"`
+	Profile           ProfileSpec      `json:"profile"`
+	State             SessionState     `json:"state"`
+	PipelineState     PipelineState    `json:"pipelineState"`
+	Reason            ReasonCode       `json:"reason"`
+	ReasonDetailCode  ReasonDetailCode `json:"reasonDetailCode,omitempty"`
+	ReasonDetailDebug string           `json:"reasonDetailDebug,omitempty"`
+	FallbackReason    string           `json:"fallbackReason,omitempty"`
+	FallbackAtUnix    int64            `json:"fallbackAtUnix,omitempty"`
+	CorrelationID     string           `json:"correlationId"`
+	CreatedAtUnix     int64            `json:"createdAtUnix"`
+	UpdatedAtUnix     int64            `json:"updatedAtUnix"`
+	LastAccessUnix    int64            `json:"lastAccessUnix,omitempty"`
+	ExpiresAtUnix     int64            `json:"expiresAtUnix"` // TTL for garbage collection.
 	// ADR-009: Session Lease Semantics
 	LeaseExpiresAtUnix int64  `json:"leaseExpiresAtUnix"`
 	HeartbeatInterval  int    `json:"heartbeatInterval"`

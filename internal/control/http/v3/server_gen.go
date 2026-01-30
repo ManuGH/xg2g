@@ -6,7 +6,6 @@ package v3
 import (
 	"bytes"
 	"compress/gzip"
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -1966,12 +1965,6 @@ type MiddlewareFunc func(http.Handler) http.Handler
 // CreateSession operation middleware
 func (siw *ServerInterfaceWrapper) CreateSession(w http.ResponseWriter, r *http.Request) {
 
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
-
-	r = r.WithContext(ctx)
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CreateSession(w, r)
 	}))
@@ -1986,12 +1979,6 @@ func (siw *ServerInterfaceWrapper) CreateSession(w http.ResponseWriter, r *http.
 // GetDvrCapabilities operation middleware
 func (siw *ServerInterfaceWrapper) GetDvrCapabilities(w http.ResponseWriter, r *http.Request) {
 
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
-
-	r = r.WithContext(ctx)
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetDvrCapabilities(w, r)
 	}))
@@ -2005,12 +1992,6 @@ func (siw *ServerInterfaceWrapper) GetDvrCapabilities(w http.ResponseWriter, r *
 
 // GetDvrStatus operation middleware
 func (siw *ServerInterfaceWrapper) GetDvrStatus(w http.ResponseWriter, r *http.Request) {
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
-
-	r = r.WithContext(ctx)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetDvrStatus(w, r)
@@ -2027,12 +2008,6 @@ func (siw *ServerInterfaceWrapper) GetDvrStatus(w http.ResponseWriter, r *http.R
 func (siw *ServerInterfaceWrapper) GetEpg(w http.ResponseWriter, r *http.Request) {
 
 	var err error
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
-
-	r = r.WithContext(ctx)
 
 	// Parameter object where we will unmarshal all parameters from the context
 	var params GetEpgParams
@@ -2083,12 +2058,6 @@ func (siw *ServerInterfaceWrapper) GetEpg(w http.ResponseWriter, r *http.Request
 // CreateIntent operation middleware
 func (siw *ServerInterfaceWrapper) CreateIntent(w http.ResponseWriter, r *http.Request) {
 
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:write"})
-
-	r = r.WithContext(ctx)
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CreateIntent(w, r)
 	}))
@@ -2103,12 +2072,6 @@ func (siw *ServerInterfaceWrapper) CreateIntent(w http.ResponseWriter, r *http.R
 // GetLogs operation middleware
 func (siw *ServerInterfaceWrapper) GetLogs(w http.ResponseWriter, r *http.Request) {
 
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:admin"})
-
-	r = r.WithContext(ctx)
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetLogs(w, r)
 	}))
@@ -2122,12 +2085,6 @@ func (siw *ServerInterfaceWrapper) GetLogs(w http.ResponseWriter, r *http.Reques
 
 // GetReceiverCurrent operation middleware
 func (siw *ServerInterfaceWrapper) GetReceiverCurrent(w http.ResponseWriter, r *http.Request) {
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
-
-	r = r.WithContext(ctx)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetReceiverCurrent(w, r)
@@ -2144,12 +2101,6 @@ func (siw *ServerInterfaceWrapper) GetReceiverCurrent(w http.ResponseWriter, r *
 func (siw *ServerInterfaceWrapper) GetRecordings(w http.ResponseWriter, r *http.Request) {
 
 	var err error
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
-
-	r = r.WithContext(ctx)
 
 	// Parameter object where we will unmarshal all parameters from the context
 	var params GetRecordingsParams
@@ -2195,12 +2146,6 @@ func (siw *ServerInterfaceWrapper) DeleteRecording(w http.ResponseWriter, r *htt
 		return
 	}
 
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:write"})
-
-	r = r.WithContext(ctx)
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.DeleteRecording(w, r, recordingId)
 	}))
@@ -2225,12 +2170,6 @@ func (siw *ServerInterfaceWrapper) GetRecordingHLSPlaylist(w http.ResponseWriter
 		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "recordingId", Err: err})
 		return
 	}
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
-
-	r = r.WithContext(ctx)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetRecordingHLSPlaylist(w, r, recordingId)
@@ -2257,12 +2196,6 @@ func (siw *ServerInterfaceWrapper) GetRecordingHLSPlaylistHead(w http.ResponseWr
 		return
 	}
 
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
-
-	r = r.WithContext(ctx)
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetRecordingHLSPlaylistHead(w, r, recordingId)
 	}))
@@ -2287,12 +2220,6 @@ func (siw *ServerInterfaceWrapper) GetRecordingsRecordingIdStatus(w http.Respons
 		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "recordingId", Err: err})
 		return
 	}
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
-
-	r = r.WithContext(ctx)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetRecordingsRecordingIdStatus(w, r, recordingId)
@@ -2319,12 +2246,6 @@ func (siw *ServerInterfaceWrapper) GetRecordingPlaybackInfo(w http.ResponseWrite
 		return
 	}
 
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
-
-	r = r.WithContext(ctx)
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetRecordingPlaybackInfo(w, r, recordingId)
 	}))
@@ -2349,12 +2270,6 @@ func (siw *ServerInterfaceWrapper) PostRecordingPlaybackInfo(w http.ResponseWrit
 		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "recordingId", Err: err})
 		return
 	}
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
-
-	r = r.WithContext(ctx)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PostRecordingPlaybackInfo(w, r, recordingId)
@@ -2381,12 +2296,6 @@ func (siw *ServerInterfaceWrapper) StreamRecordingDirect(w http.ResponseWriter, 
 		return
 	}
 
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
-
-	r = r.WithContext(ctx)
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.StreamRecordingDirect(w, r, recordingId)
 	}))
@@ -2411,12 +2320,6 @@ func (siw *ServerInterfaceWrapper) ProbeRecordingMp4(w http.ResponseWriter, r *h
 		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "recordingId", Err: err})
 		return
 	}
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
-
-	r = r.WithContext(ctx)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ProbeRecordingMp4(w, r, recordingId)
@@ -2443,12 +2346,6 @@ func (siw *ServerInterfaceWrapper) GetRecordingHLSTimeshift(w http.ResponseWrite
 		return
 	}
 
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
-
-	r = r.WithContext(ctx)
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetRecordingHLSTimeshift(w, r, recordingId)
 	}))
@@ -2473,12 +2370,6 @@ func (siw *ServerInterfaceWrapper) GetRecordingHLSTimeshiftHead(w http.ResponseW
 		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "recordingId", Err: err})
 		return
 	}
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
-
-	r = r.WithContext(ctx)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetRecordingHLSTimeshiftHead(w, r, recordingId)
@@ -2514,12 +2405,6 @@ func (siw *ServerInterfaceWrapper) GetRecordingHLSCustomSegment(w http.ResponseW
 		return
 	}
 
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
-
-	r = r.WithContext(ctx)
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetRecordingHLSCustomSegment(w, r, recordingId, segment)
 	}))
@@ -2554,12 +2439,6 @@ func (siw *ServerInterfaceWrapper) GetRecordingHLSCustomSegmentHead(w http.Respo
 		return
 	}
 
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
-
-	r = r.WithContext(ctx)
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetRecordingHLSCustomSegmentHead(w, r, recordingId, segment)
 	}))
@@ -2574,12 +2453,6 @@ func (siw *ServerInterfaceWrapper) GetRecordingHLSCustomSegmentHead(w http.Respo
 // GetSeriesRules operation middleware
 func (siw *ServerInterfaceWrapper) GetSeriesRules(w http.ResponseWriter, r *http.Request) {
 
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
-
-	r = r.WithContext(ctx)
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetSeriesRules(w, r)
 	}))
@@ -2593,12 +2466,6 @@ func (siw *ServerInterfaceWrapper) GetSeriesRules(w http.ResponseWriter, r *http
 
 // CreateSeriesRule operation middleware
 func (siw *ServerInterfaceWrapper) CreateSeriesRule(w http.ResponseWriter, r *http.Request) {
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:write"})
-
-	r = r.WithContext(ctx)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CreateSeriesRule(w, r)
@@ -2615,12 +2482,6 @@ func (siw *ServerInterfaceWrapper) CreateSeriesRule(w http.ResponseWriter, r *ht
 func (siw *ServerInterfaceWrapper) RunAllSeriesRules(w http.ResponseWriter, r *http.Request) {
 
 	var err error
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:write"})
-
-	r = r.WithContext(ctx)
 
 	// Parameter object where we will unmarshal all parameters from the context
 	var params RunAllSeriesRulesParams
@@ -2658,12 +2519,6 @@ func (siw *ServerInterfaceWrapper) DeleteSeriesRule(w http.ResponseWriter, r *ht
 		return
 	}
 
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:write"})
-
-	r = r.WithContext(ctx)
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.DeleteSeriesRule(w, r, id)
 	}))
@@ -2689,12 +2544,6 @@ func (siw *ServerInterfaceWrapper) UpdateSeriesRule(w http.ResponseWriter, r *ht
 		return
 	}
 
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:write"})
-
-	r = r.WithContext(ctx)
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpdateSeriesRule(w, r, id)
 	}))
@@ -2719,12 +2568,6 @@ func (siw *ServerInterfaceWrapper) RunSeriesRule(w http.ResponseWriter, r *http.
 		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
 		return
 	}
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:write"})
-
-	r = r.WithContext(ctx)
 
 	// Parameter object where we will unmarshal all parameters from the context
 	var params RunSeriesRuleParams
@@ -2753,12 +2596,6 @@ func (siw *ServerInterfaceWrapper) GetServices(w http.ResponseWriter, r *http.Re
 
 	var err error
 
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
-
-	r = r.WithContext(ctx)
-
 	// Parameter object where we will unmarshal all parameters from the context
 	var params GetServicesParams
 
@@ -2784,12 +2621,6 @@ func (siw *ServerInterfaceWrapper) GetServices(w http.ResponseWriter, r *http.Re
 // GetServicesBouquets operation middleware
 func (siw *ServerInterfaceWrapper) GetServicesBouquets(w http.ResponseWriter, r *http.Request) {
 
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
-
-	r = r.WithContext(ctx)
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetServicesBouquets(w, r)
 	}))
@@ -2803,12 +2634,6 @@ func (siw *ServerInterfaceWrapper) GetServicesBouquets(w http.ResponseWriter, r 
 
 // PostServicesNowNext operation middleware
 func (siw *ServerInterfaceWrapper) PostServicesNowNext(w http.ResponseWriter, r *http.Request) {
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
-
-	r = r.WithContext(ctx)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PostServicesNowNext(w, r)
@@ -2835,12 +2660,6 @@ func (siw *ServerInterfaceWrapper) PostServicesIdToggle(w http.ResponseWriter, r
 		return
 	}
 
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:write"})
-
-	r = r.WithContext(ctx)
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PostServicesIdToggle(w, r, id)
 	}))
@@ -2856,12 +2675,6 @@ func (siw *ServerInterfaceWrapper) PostServicesIdToggle(w http.ResponseWriter, r
 func (siw *ServerInterfaceWrapper) ListSessions(w http.ResponseWriter, r *http.Request) {
 
 	var err error
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:admin"})
-
-	r = r.WithContext(ctx)
 
 	// Parameter object where we will unmarshal all parameters from the context
 	var params ListSessionsParams
@@ -2907,12 +2720,6 @@ func (siw *ServerInterfaceWrapper) GetSessionState(w http.ResponseWriter, r *htt
 		return
 	}
 
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
-
-	r = r.WithContext(ctx)
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetSessionState(w, r, sessionID)
 	}))
@@ -2946,12 +2753,6 @@ func (siw *ServerInterfaceWrapper) ServeHLS(w http.ResponseWriter, r *http.Reque
 		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filename", Err: err})
 		return
 	}
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
-
-	r = r.WithContext(ctx)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ServeHLS(w, r, sessionID, filename)
@@ -2987,12 +2788,6 @@ func (siw *ServerInterfaceWrapper) ServeHLSHead(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
-
-	r = r.WithContext(ctx)
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ServeHLSHead(w, r, sessionID, filename)
 	}))
@@ -3018,12 +2813,6 @@ func (siw *ServerInterfaceWrapper) ReportPlaybackFeedback(w http.ResponseWriter,
 		return
 	}
 
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
-
-	r = r.WithContext(ctx)
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ReportPlaybackFeedback(w, r, sessionId)
 	}))
@@ -3037,12 +2826,6 @@ func (siw *ServerInterfaceWrapper) ReportPlaybackFeedback(w http.ResponseWriter,
 
 // GetStreams operation middleware
 func (siw *ServerInterfaceWrapper) GetStreams(w http.ResponseWriter, r *http.Request) {
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:admin"})
-
-	r = r.WithContext(ctx)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetStreams(w, r)
@@ -3069,12 +2852,6 @@ func (siw *ServerInterfaceWrapper) DeleteStreamsId(w http.ResponseWriter, r *htt
 		return
 	}
 
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:write"})
-
-	r = r.WithContext(ctx)
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.DeleteStreamsId(w, r, id)
 	}))
@@ -3088,12 +2865,6 @@ func (siw *ServerInterfaceWrapper) DeleteStreamsId(w http.ResponseWriter, r *htt
 
 // GetSystemConfig operation middleware
 func (siw *ServerInterfaceWrapper) GetSystemConfig(w http.ResponseWriter, r *http.Request) {
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:admin"})
-
-	r = r.WithContext(ctx)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetSystemConfig(w, r)
@@ -3109,12 +2880,6 @@ func (siw *ServerInterfaceWrapper) GetSystemConfig(w http.ResponseWriter, r *htt
 // PutSystemConfig operation middleware
 func (siw *ServerInterfaceWrapper) PutSystemConfig(w http.ResponseWriter, r *http.Request) {
 
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:admin"})
-
-	r = r.WithContext(ctx)
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PutSystemConfig(w, r)
 	}))
@@ -3128,12 +2893,6 @@ func (siw *ServerInterfaceWrapper) PutSystemConfig(w http.ResponseWriter, r *htt
 
 // GetSystemHealth operation middleware
 func (siw *ServerInterfaceWrapper) GetSystemHealth(w http.ResponseWriter, r *http.Request) {
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
-
-	r = r.WithContext(ctx)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetSystemHealth(w, r)
@@ -3163,12 +2922,6 @@ func (siw *ServerInterfaceWrapper) GetSystemHealthz(w http.ResponseWriter, r *ht
 // GetSystemInfo operation middleware
 func (siw *ServerInterfaceWrapper) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
-
-	r = r.WithContext(ctx)
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetSystemInfo(w, r)
 	}))
@@ -3182,12 +2935,6 @@ func (siw *ServerInterfaceWrapper) GetSystemInfo(w http.ResponseWriter, r *http.
 
 // PostSystemRefresh operation middleware
 func (siw *ServerInterfaceWrapper) PostSystemRefresh(w http.ResponseWriter, r *http.Request) {
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:write"})
-
-	r = r.WithContext(ctx)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PostSystemRefresh(w, r)
@@ -3203,12 +2950,6 @@ func (siw *ServerInterfaceWrapper) PostSystemRefresh(w http.ResponseWriter, r *h
 // GetSystemScanStatus operation middleware
 func (siw *ServerInterfaceWrapper) GetSystemScanStatus(w http.ResponseWriter, r *http.Request) {
 
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
-
-	r = r.WithContext(ctx)
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetSystemScanStatus(w, r)
 	}))
@@ -3222,12 +2963,6 @@ func (siw *ServerInterfaceWrapper) GetSystemScanStatus(w http.ResponseWriter, r 
 
 // TriggerSystemScan operation middleware
 func (siw *ServerInterfaceWrapper) TriggerSystemScan(w http.ResponseWriter, r *http.Request) {
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
-
-	r = r.WithContext(ctx)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.TriggerSystemScan(w, r)
@@ -3244,12 +2979,6 @@ func (siw *ServerInterfaceWrapper) TriggerSystemScan(w http.ResponseWriter, r *h
 func (siw *ServerInterfaceWrapper) GetTimers(w http.ResponseWriter, r *http.Request) {
 
 	var err error
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
-
-	r = r.WithContext(ctx)
 
 	// Parameter object where we will unmarshal all parameters from the context
 	var params GetTimersParams
@@ -3284,12 +3013,6 @@ func (siw *ServerInterfaceWrapper) GetTimers(w http.ResponseWriter, r *http.Requ
 // AddTimer operation middleware
 func (siw *ServerInterfaceWrapper) AddTimer(w http.ResponseWriter, r *http.Request) {
 
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:write"})
-
-	r = r.WithContext(ctx)
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.AddTimer(w, r)
 	}))
@@ -3303,12 +3026,6 @@ func (siw *ServerInterfaceWrapper) AddTimer(w http.ResponseWriter, r *http.Reque
 
 // PreviewConflicts operation middleware
 func (siw *ServerInterfaceWrapper) PreviewConflicts(w http.ResponseWriter, r *http.Request) {
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
-
-	r = r.WithContext(ctx)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PreviewConflicts(w, r)
@@ -3335,12 +3052,6 @@ func (siw *ServerInterfaceWrapper) DeleteTimer(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:write"})
-
-	r = r.WithContext(ctx)
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.DeleteTimer(w, r, timerId)
 	}))
@@ -3366,12 +3077,6 @@ func (siw *ServerInterfaceWrapper) GetTimer(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:read"})
-
-	r = r.WithContext(ctx)
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetTimer(w, r, timerId)
 	}))
@@ -3396,12 +3101,6 @@ func (siw *ServerInterfaceWrapper) UpdateTimer(w http.ResponseWriter, r *http.Re
 		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "timerId", Err: err})
 		return
 	}
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"v3:write"})
-
-	r = r.WithContext(ctx)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpdateTimer(w, r, timerId)
@@ -3515,11 +3214,6 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 
 	if r == nil {
 		r = chi.NewRouter()
-	}
-	if options.ErrorHandlerFunc == nil {
-		options.ErrorHandlerFunc = func(w http.ResponseWriter, r *http.Request, err error) {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-		}
 	}
 	wrapper := ServerInterfaceWrapper{
 		Handler:            si,

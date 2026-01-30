@@ -34,7 +34,7 @@ func mapProfileToArgs(spec vod.Spec) ([]string, error) {
 	}
 
 	args := []string{
-		"-y", "-nostdin", "-hide_banner", "-loglevel", "error",
+		"-y", "-nostdin", "-hide_banner", "-progress", "pipe:2", "-loglevel", "warning",
 		"-i", inputPath,
 	}
 
@@ -57,7 +57,7 @@ func mapProfileToArgs(spec vod.Spec) ([]string, error) {
 		"-f", "hls",
 		"-hls_time", "6",
 		"-hls_list_size", "0",
-		"-hls_segment_filename", filepath.Join(spec.WorkDir, "segment_%05d.ts"),
+		"-hls_segment_filename", filepath.Join(spec.WorkDir, "seg_%05d.ts"),
 	)
 
 	// Output to temp

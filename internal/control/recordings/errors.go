@@ -3,6 +3,8 @@ package recordings
 import (
 	"errors"
 	"fmt"
+
+	"github.com/ManuGH/xg2g/internal/control/playback"
 )
 
 type ErrorClass string
@@ -68,9 +70,22 @@ func Classify(err error) ErrorClass {
 		return ""
 	}
 	// ClassUnsupported is reserved for explicit capability limits (not a general bucket).
-	if errors.Is(err, ErrRemoteProbeUnsupported) {
+	if errors.Is(err, ErrRemoteProbeUnsupported) || errors.Is(err, playback.ErrUnsupported) {
 		return ClassUnsupported
 	}
+	if errors.Is(err, playback.ErrUpstream) {
+		return ClassUpstream
+	}
+	if errors.Is(err, playback.ErrNotFound) {
+		return ClassNotFound
+	}
+	if errors.Is(err, playback.ErrPreparing) {
+		return ClassPreparing
+	}
+	if errors.Is(err, playback.ErrForbidden) {
+		return ClassForbidden
+	}
+
 	switch err.(type) {
 	case ErrNotFound, *ErrNotFound:
 		return ClassNotFound

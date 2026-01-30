@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import Hls from 'hls.js';
-import type { ErrorData, FragLoadedData, ManifestParsedData } from 'hls.js';
+import type { ErrorData, FragLoadedData, ManifestParsedData, LevelLoadedData } from 'hls.js';
 import { createSession, getRecordingPlaybackInfo } from '../client-ts/sdk.gen';
 import { client } from '../client-ts/client.gen';
 import { telemetry } from '../services/TelemetryService';
@@ -89,7 +89,7 @@ function V3Player(props: V3PlayerProps) {
   const [playbackMode, setPlaybackMode] = useState<'LIVE' | 'VOD' | 'UNKNOWN'>('UNKNOWN');
   const [vodStreamMode, setVodStreamMode] = useState<'direct_mp4' | 'hls' | null>(null);
   const [isPip, setIsPip] = useState(false);
-  const [, setIsFullscreen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
 
   // P3-4: Truth State
@@ -498,13 +498,16 @@ function V3Player(props: V3PlayerProps) {
 
   const updateStats = useCallback((hls: Hls) => {
     if (!hls) return;
-    const level = hls.levels[hls.currentLevel];
+    // Handle Auto (-1) or manual level
+    const idx = hls.currentLevel === -1 ? 0 : hls.currentLevel; // Fallback to 0 for stats
+    const level = hls.levels[idx];
+
     if (level) {
       setStats(prev => ({
         ...prev,
         bandwidth: Math.round(level.bitrate / 1024),
         resolution: level.width ? `${level.width}x${level.height}` : '-',
-        levelIndex: hls.currentLevel,
+        levelIndex: hls.currentLevel, // Keep actual -1 for display truth
       }));
     }
   }, []);
@@ -523,12 +526,20 @@ function V3Player(props: V3PlayerProps) {
         enableWorker: true,
         lowLatencyMode: false,
         backBufferLength: 300,
-        maxBufferLength: 60
+        maxBufferLength: 60,
+        capLevelToPlayerSize: true // Optimize for windowed mode
       });
       hlsRef.current = hls;
 
       hls.on(Hls.Events.LEVEL_SWITCHED, () => updateStats(hls));
       hls.on(Hls.Events.MANIFEST_PARSED, (_e, data: ManifestParsedData) => {
+        debugLog('[V3Player] HLS Manifest Parsed', { levels: data.levels.length });
+
+        // Phase 12 Fix: Ensure we start on a valid level (Auto)
+        if (hls.currentLevel === -1 && data.levels.length > 0) {
+          hls.startLevel = -1; // Explicitly set Auto start
+        }
+
         updateStats(hls);
         if (data.levels && data.levels.length > 0) {
           const first = data.levels[0];
@@ -536,13 +547,40 @@ function V3Player(props: V3PlayerProps) {
             setStats(prev => ({ ...prev, fps: first.frameRate || 0 }));
           }
         }
-        videoRef.current?.play().catch(e => debugWarn("Autoplay failed", e));
+        videoRef.current?.play().catch(e => {
+          debugWarn("[V3Player] Autoplay failed", e);
+          setStatus('ready'); // Force ready so user can click play
+        });
+      });
+
+      // Phase 5 Fix: Consume backend READY signal to force UI state
+      hls.on(Hls.Events.LEVEL_LOADED, (_e, data: LevelLoadedData) => {
+        // Check custom header from backend (injected in hls_contract.go)
+        // hls.js exposes response headers via stats or network details depending on version/loader
+        // For standard fetch loader, we might not get headers easily in event data.
+        // Fallback: If we have levels, duration OR valid live fragments, we are effectively ready.
+        // For LIVE, totalduration can be 0 or small window, so check fragments length.
+        const hasContent = data.details.totalduration > 0 || (data.details.fragments && data.details.fragments.length > 0);
+
+        if (hasContent && status === 'buffering') {
+          debugLog('[V3Player] Level Loaded with content, forcing READY state');
+          setStatus('ready');
+        }
       });
 
       hls.on(Hls.Events.FRAG_LOADED, (_e, data: FragLoadedData) => {
+        debugLog('[V3Player] HLS Frag Loaded', { sn: data.frag.sn, dur: data.frag.duration });
+
+        // Ensure stats are current
+        const currentLevel = hls.currentLevel;
+        if (currentLevel >= 0) {
+          updateStats(hls);
+        }
+
         setStats(prev => ({
           ...prev,
-          buffer: Math.round(data.frag.duration * 100) / 100
+          buffer: Math.round(data.frag.duration * 100) / 100,
+          levelIndex: hls.currentLevel // Force sync
         }));
       });
 
@@ -1108,11 +1146,54 @@ function V3Player(props: V3PlayerProps) {
     const videoEl = videoRef.current;
     if (!videoEl) return;
 
-    const onWaiting = () => setStatus('buffering');
-    const onStalled = () => setStatus('buffering');
-    const onSeeking = () => setStatus('buffering');
+    const onWaiting = () => {
+      // Phase 15 Fix: Ignore waiting if we have forward buffer (micro-stalls)
+      let buffHealth = 0;
+      if (videoEl.buffered.length > 0) {
+        for (let i = 0; i < videoEl.buffered.length; i++) {
+          if (videoEl.currentTime >= videoEl.buffered.start(i) && videoEl.currentTime <= videoEl.buffered.end(i)) {
+            buffHealth = videoEl.buffered.end(i) - videoEl.currentTime;
+            break;
+          }
+        }
+      }
+
+      if (videoEl.readyState >= 3 && buffHealth > 0.5) {
+        debugLog('[V3Player] Event: waiting (ignored, buffer=' + buffHealth.toFixed(1) + 's)');
+        return;
+      }
+
+      debugLog('[V3Player] Event: waiting -> buffering', { readyState: videoEl.readyState, buff: buffHealth.toFixed(1) });
+      setStatus('buffering');
+    };
+
+    const onStalled = () => {
+      // Stalled means network fetch stopped, but if we have buffer, we are fine.
+      let buffHealth = 0;
+      if (videoEl.buffered.length > 0) {
+        for (let i = 0; i < videoEl.buffered.length; i++) {
+          if (videoEl.currentTime >= videoEl.buffered.start(i) && videoEl.currentTime <= videoEl.buffered.end(i)) {
+            buffHealth = videoEl.buffered.end(i) - videoEl.currentTime;
+            break;
+          }
+        }
+      }
+
+      if (buffHealth > 1.0) {
+        debugLog('[V3Player] Event: stalled (ignored, buffer=' + buffHealth.toFixed(1) + 's)');
+        return;
+      }
+
+      debugLog('[V3Player] Event: stalled -> buffering');
+      setStatus('buffering');
+    };
+    const onSeeking = () => {
+      debugLog('[V3Player] Event: seeking -> buffering');
+      setStatus('buffering');
+    };
 
     const onPlaying = () => {
+      debugLog('[V3Player] Event: playing -> playing');
       setStatus('playing');
       setError(null);
       setErrorDetails(null);
@@ -1262,6 +1343,21 @@ function V3Player(props: V3PlayerProps) {
         latency: lat !== null ? parseFloat(lat.toFixed(2)) : null
       }));
 
+      // Phase 13 Fix: Failsafe state transition
+      // If we have data and are playing, but UI says buffering, force it.
+      // Use functional update to access fresh state vs closure capture
+      setStatus(prevStatus => {
+        if (v.readyState >= 3 && !v.paused && (prevStatus === 'buffering' || prevStatus === 'starting' || prevStatus === 'priming')) {
+          debugLog('[V3Player] Monitor: readyState=' + v.readyState + ', forcing PLAYING');
+          return 'playing';
+        }
+        if (v.readyState >= 3 && v.paused && (prevStatus === 'buffering' || prevStatus === 'starting')) {
+          debugLog('[V3Player] Monitor: readyState=' + v.readyState + ' (paused), forcing READY');
+          return 'ready';
+        }
+        return prevStatus;
+      });
+
     }, 1000);
     return () => clearInterval(interval);
   }, [showStats, playbackMode]);
@@ -1336,6 +1432,43 @@ function V3Player(props: V3PlayerProps) {
       }
     };
   }, [isSafari, stopStream, startStream, src]);
+
+  // Idle Detection (Autohide UI)
+  const [isIdle, setIsIdle] = useState(false);
+  const idleTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    // If no container, we can't listen.
+    if (!container) return;
+
+    const resetIdle = () => {
+      setIsIdle(false);
+      if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current);
+      idleTimerRef.current = window.setTimeout(() => setIsIdle(true), 3000);
+    };
+
+    // Initial start
+    resetIdle();
+
+    const onMove = () => resetIdle();
+    const onClick = () => resetIdle();
+    const onKey = () => resetIdle();
+
+    container.addEventListener('mousemove', onMove);
+    container.addEventListener('click', onClick);
+    container.addEventListener('keydown', onKey);
+    // Also listen to touch for mobile
+    container.addEventListener('touchstart', onClick);
+
+    return () => {
+      if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current);
+      container.removeEventListener('mousemove', onMove);
+      container.removeEventListener('click', onClick);
+      container.removeEventListener('keydown', onKey);
+      container.removeEventListener('touchstart', onClick);
+    };
+  }, []);
 
 
   // Update sRef on channel change
@@ -1420,7 +1553,7 @@ function V3Player(props: V3PlayerProps) {
     : formatClock(windowDuration);
 
   return (
-    <div ref={containerRef} className={`v3-player-container animate-enter ${onClose ? 'v3-player-overlay' : ''}`.trim()}
+    <div ref={containerRef} className={`v3-player-container animate-enter ${onClose ? 'v3-player-overlay' : ''} ${isIdle ? 'user-idle' : ''}`.trim()}
     >
       {onClose && (
         <button
@@ -1481,7 +1614,7 @@ function V3Player(props: V3PlayerProps) {
               </div>
               <div className="stats-row">
                 <span className="stats-label">{t('player.hlsLevel')}</span>
-                <span className="stats-value">{stats.levelIndex}</span>
+                <span className="stats-value">{stats.levelIndex === -1 ? 'Auto' : stats.levelIndex}</span>
               </div>
               <div className="stats-row">
                 <span className="stats-label">{t('player.segDuration')}</span>
@@ -1497,7 +1630,7 @@ function V3Player(props: V3PlayerProps) {
 
         {/* PREPARING Overlay (VOD Remux) */}
         {(status === 'starting' || status === 'priming' || status === 'buffering' || status === 'building') && (
-          <div className="spinner-overlay">
+          <div className="spinner-overlay" ref={() => debugLog('[V3Player] Spinner Rendered', { status, fullscreen: isFullscreen })}>
             <div className="spinner spinner-base"></div>
             <div className="spinner-label">{spinnerLabel}</div>
           </div>

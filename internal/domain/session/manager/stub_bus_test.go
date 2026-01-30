@@ -9,13 +9,17 @@ import (
 
 // StubBus implements ports.Bus for testing without legacy dependencies.
 type StubBus struct {
-	mu   sync.Mutex
-	subs map[string][]chan interface{}
+	mu     sync.Mutex
+	subs   map[string][]chan interface{}
+	ready  map[string]chan struct{}
+	closed map[string]bool
 }
 
 func NewStubBus() *StubBus {
 	return &StubBus{
-		subs: make(map[string][]chan interface{}),
+		subs:   make(map[string][]chan interface{}),
+		ready:  make(map[string]chan struct{}),
+		closed: make(map[string]bool),
 	}
 }
 
@@ -37,7 +41,25 @@ func (b *StubBus) Subscribe(ctx context.Context, topic string) (ports.Subscripti
 	defer b.mu.Unlock()
 	ch := make(chan interface{}, 10)
 	b.subs[topic] = append(b.subs[topic], ch)
+	if _, ok := b.ready[topic]; !ok {
+		b.ready[topic] = make(chan struct{})
+	}
+	if !b.closed[topic] {
+		close(b.ready[topic])
+		b.closed[topic] = true
+	}
 	return &StubSubscription{ch: ch}, nil
+}
+
+func (b *StubBus) WaitForSubscriber(topic string) {
+	b.mu.Lock()
+	ch, ok := b.ready[topic]
+	if !ok {
+		ch = make(chan struct{})
+		b.ready[topic] = ch
+	}
+	b.mu.Unlock()
+	<-ch
 }
 
 type StubSubscription struct {

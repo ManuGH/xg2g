@@ -796,6 +796,9 @@ func (c *Client) StreamURL(ctx context.Context, ref, name string) (string, error
 			Path:     "/web/stream.m3u",
 			RawQuery: fmt.Sprintf("ref=%s&name=%s", url.QueryEscape(ref), url.QueryEscape(name)),
 		}
+		if c.username != "" {
+			u.User = url.UserPassword(c.username, c.password)
+		}
 		return u.String(), nil
 	}
 

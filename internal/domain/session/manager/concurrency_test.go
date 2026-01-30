@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/domain/session/manager/testkit"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
@@ -17,31 +18,33 @@ import (
 
 // TestConcurrency_BoundedStart floods 200 Start events and asserts no more than N concurrent executions
 func TestConcurrency_BoundedStart(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	st := store.NewMemoryStore()
 	bus := NewStubBus()
 
-	concurrencyLimit := 5
+	concurrencyLimit := 3
 	var concurrentCount int32
 	var maxConcurrent int32
 
 	// Pipeline that tracks concurrency
+	eventCount := concurrencyLimit + 1
 	trackingPipeline := &ConcurrencyTrackingPipeline{
 		concurrentCount: &concurrentCount,
 		maxConcurrent:   &maxConcurrent,
-		delay:           50 * time.Millisecond, // Slow enough to cause backlog
+		entered:         make(chan struct{}, eventCount),
+		release:         make(chan struct{}),
 	}
 
 	orch := &Orchestrator{
 		Store:               st,
 		Bus:                 bus,
-		LeaseTTL:            5 * time.Second,
-		HeartbeatEvery:      1 * time.Second,
+		LeaseTTL:            24 * time.Hour,
+		HeartbeatEvery:      24 * time.Hour,
 		Owner:               "test-flood",
-		TunerSlots:          []int{0, 1, 2, 3, 4}, // Enough slots
-		Admission:           newAdmissionMonitor(10, 10, 0),
+		TunerSlots:          []int{0, 1, 2}, // Enough slots for limit
+		Admission:           testkit.NewAdmissibleAdmission(),
 		Pipeline:            trackingPipeline,
 		PipelineStopTimeout: 1 * time.Second,
 		StartConcurrency:    concurrencyLimit,
@@ -59,10 +62,9 @@ func TestConcurrency_BoundedStart(t *testing.T) {
 	go func() {
 		_ = orch.Run(ctx)
 	}()
-	time.Sleep(100 * time.Millisecond) // Let it initialize
+	bus.WaitForSubscriber(string(model.EventStartSession))
 
 	// Flood 200 Start events
-	eventCount := 200
 	var wg sync.WaitGroup
 	for i := 0; i < eventCount; i++ {
 		sessionID := fmt.Sprintf("flood-test-%d", i)
@@ -87,22 +89,26 @@ func TestConcurrency_BoundedStart(t *testing.T) {
 	// Wait for all events to be published
 	wg.Wait()
 
-	// Wait for processing (allow time for all to be handled)
-	time.Sleep(3 * time.Second)
+	for i := 0; i < concurrencyLimit; i++ {
+		<-trackingPipeline.entered
+	}
 
 	// Assertions
 	observed := atomic.LoadInt32(&maxConcurrent)
 	t.Logf("Max concurrent executions observed: %d (limit: %d)", observed, concurrencyLimit)
 
-	assert.LessOrEqual(t, int(observed), concurrencyLimit,
-		"Concurrency exceeded limit: observed %d concurrent executions with limit %d", observed, concurrencyLimit)
+	assert.Equal(t, int32(concurrencyLimit), observed,
+		"Concurrency should reach limit exactly when backlog exists")
+
+	close(trackingPipeline.release)
 }
 
 // ConcurrencyTrackingPipeline tracks concurrency during Start
 type ConcurrencyTrackingPipeline struct {
 	concurrentCount *int32
 	maxConcurrent   *int32
-	delay           time.Duration
+	entered         chan struct{}
+	release         chan struct{}
 }
 
 func (p *ConcurrencyTrackingPipeline) Start(ctx context.Context, spec ports.StreamSpec) (ports.RunHandle, error) {
@@ -117,8 +123,8 @@ func (p *ConcurrencyTrackingPipeline) Start(ctx context.Context, spec ports.Stre
 		}
 	}
 
-	// Simulate work
-	time.Sleep(p.delay)
+	p.entered <- struct{}{}
+	<-p.release
 	return ports.RunHandle(spec.SessionID), nil
 }
 
@@ -127,7 +133,7 @@ func (p *ConcurrencyTrackingPipeline) Stop(ctx context.Context, handle ports.Run
 }
 
 func (p *ConcurrencyTrackingPipeline) Health(ctx context.Context, handle ports.RunHandle) ports.HealthStatus {
-	return ports.HealthStatus{Healthy: true}
+	return ports.HealthStatus{Healthy: false}
 }
 
 // TestConcurrency_ValidationFails tests that missing config fails fast

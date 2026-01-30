@@ -16,6 +16,10 @@ func extractToken(r *http.Request) string {
 	return auth.ExtractToken(r)
 }
 
+func extractTokenDetailed(r *http.Request) (string, string) {
+	return auth.ExtractTokenDetailed(r)
+}
+
 func extractBearerToken(r *http.Request) string {
 	if r == nil {
 		return ""

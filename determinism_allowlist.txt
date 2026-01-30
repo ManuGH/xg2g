@@ -1,0 +1,16 @@
+# Allowlist for time-based tests that are treated as integration/legacy for now.
+# Prefer deterministic harnesses; shrink this list over time.
+internal/control/http/v3/contract_v3_test.go
+internal/control/http/v3/contract_v3_system_refresh_test.go
+internal/control/http/v3/config_update_test.go
+internal/control/http/v3/recordings_hls_reconcile_test.go
+internal/control/vod/mock_runner_test.go
+internal/control/vod/monitor_contract_test.go
+internal/control/vod/cleanup_publish_test.go
+internal/control/recordings/truth_table_test.go
+internal/control/recordings/service_test.go
+internal/control/vod/monitor_test.go
+internal/control/vod/manager_callback_test.go
+internal/control/recordings/truth_test.go
+internal/control/vod/manager_test.go
+internal/control/vod/manager_probed_test.go

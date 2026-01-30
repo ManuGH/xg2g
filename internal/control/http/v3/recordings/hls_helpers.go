@@ -77,10 +77,6 @@ func RewritePlaylistType(content, playlistType string) string {
 		if strings.HasPrefix(line, "#EXT-X-PLAYLIST-TYPE:") {
 			continue
 		}
-		// Sanitize: Remove EXT-X-DISCONTINUITY (Safari Fix)
-		if strings.HasPrefix(line, "#EXT-X-DISCONTINUITY") {
-			continue
-		}
 		newLines = append(newLines, line)
 		if line == "#EXTM3U" && !inserted {
 			newLines = append(newLines, "#EXT-X-PLAYLIST-TYPE:"+playlistType)

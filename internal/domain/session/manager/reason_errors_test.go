@@ -21,6 +21,7 @@ func TestClassifyReason(t *testing.T) {
 		name           string
 		err            error
 		wantReason     model.ReasonCode
+		wantCode       model.ReasonDetailCode
 		wantDetail     string
 		detailContains bool
 	}{
@@ -28,54 +29,63 @@ func TestClassifyReason(t *testing.T) {
 			name:       "lease busy explicit",
 			err:        newReasonError(model.RLeaseBusy, "no tuner slots available", nil),
 			wantReason: model.RLeaseBusy,
+			wantCode:   model.DNone,
 			wantDetail: "no tuner slots available",
 		},
 		{
 			name:       "detail sanitized",
 			err:        newReasonError(model.RLeaseBusy, "line1\nline2", nil),
 			wantReason: model.RLeaseBusy,
+			wantCode:   model.DNone,
 			wantDetail: "line1 line2",
 		},
 		{
 			name:       "tune timeout",
 			err:        fmt.Errorf("tuner readiness failed: %w", errors.New("tuner ready timeout")),
 			wantReason: model.RTuneTimeout,
+			wantCode:   model.DNone,
 			wantDetail: "tuner ready timeout",
 		},
 		{
 			name:       "tune failed upstream",
 			err:        fmt.Errorf("zap failed: %w", errors.New("upstream unavailable")),
 			wantReason: model.RTuneFailed,
+			wantCode:   model.DNone,
 			wantDetail: "upstream unavailable",
 		},
 		{
 			name:       "ffmpeg start failed",
 			err:        newReasonError(model.RPipelineStartFailed, "transcoder init failed", errors.New("boom")),
 			wantReason: model.RPipelineStartFailed,
+			wantCode:   model.DNone,
 			wantDetail: "transcoder init failed",
 		},
 		{
 			name:       "playlist not ready",
 			err:        newReasonError(model.RPackagerFailed, "playlist not ready after 10s", nil),
 			wantReason: model.RPackagerFailed,
+			wantCode:   model.DNone,
 			wantDetail: "playlist not ready after 10s",
 		},
 		{
 			name:       "context canceled",
 			err:        context.Canceled,
-			wantReason: model.RClientStop,
-			wantDetail: "context canceled",
+			wantReason: model.RCancelled,
+			wantCode:   model.DContextCanceled,
+			wantDetail: "",
 		},
 		{
 			name:       "deadline exceeded",
 			err:        context.DeadlineExceeded,
 			wantReason: model.RTuneTimeout,
-			wantDetail: "deadline exceeded",
+			wantCode:   model.DDeadlineExceeded,
+			wantDetail: "",
 		},
 		{
 			name:           "unmapped error",
 			err:            errors.New("some unknown"),
 			wantReason:     model.RUnknown,
+			wantCode:       model.DNone,
 			wantDetail:     "some unknown",
 			detailContains: true,
 		},
@@ -83,8 +93,9 @@ func TestClassifyReason(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			reason, detail := classifyReason(tc.err)
+			reason, code, detail := classifyReason(tc.err)
 			require.Equal(t, tc.wantReason, reason)
+			require.Equal(t, tc.wantCode, code)
 			if tc.wantDetail != "" {
 				if tc.detailContains {
 					require.True(t, strings.Contains(detail, tc.wantDetail), "detail should contain %q, got %q", tc.wantDetail, detail)
@@ -106,7 +117,18 @@ func TestClassifyReason_ProcessExit(t *testing.T) {
 		t.Skip("no exec exit error available")
 	}
 
-	reason, detail := classifyReason(err)
+	reason, _, detail := classifyReason(err)
 	require.Equal(t, model.RProcessEnded, reason)
 	require.True(t, strings.Contains(detail, "process exit code 2"))
+}
+
+func TestReasonError_ErrorIsClass(t *testing.T) {
+	err := newReasonError(model.RLeaseBusy, "no tuner slots", nil)
+	require.ErrorIs(t, err, ErrAdmissionRejected)
+
+	err = newReasonError(model.RPipelineStartFailed, "pipeline failed", errors.New("boom"))
+	require.ErrorIs(t, err, ErrPipelineFailure)
+
+	wrapped := wrapWithReasonClass(context.Canceled)
+	require.ErrorIs(t, wrapped, ErrSessionCanceled)
 }

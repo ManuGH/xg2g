@@ -12,7 +12,7 @@
 	quality-gates pre-commit install dev-tools check-tools generate-config verify-config \
         release-check release-build release-tag release-notes \
         dev up down status prod-up prod-down prod-logs check-env \
-        restart prod-restart ps prod-ps ui-build codex certs setup build-ffmpeg build-migrate verify-storage-cutover \
+        restart prod-restart ps prod-ps ui-build codex certs setup build-ffmpeg \
         docs-render verify-docs-compiled release-prepare release-verify-remote recover verify-runtime
 
 # ===================================================================================================
@@ -171,8 +171,8 @@ generate: ## Generate Go code from OpenAPI spec (v3 only)
 	@echo "Generating API server code (v3)..."
 	@mkdir -p internal/api
 	@mkdir -p internal/control/http/v3
-	@go run -mod=vendor github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen -package api -generate types,chi-server,spec -o internal/api/server_gen.go api/openapi.yaml
-	@go run -mod=vendor github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen -package v3 -generate types,chi-server,spec -o internal/control/http/v3/server_gen.go api/openapi.yaml
+	@go run -mod=vendor github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen -config api/oapi-codegen-api.yaml -o internal/api/server_gen.go api/openapi.yaml
+	@go run -mod=vendor github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen -config api/oapi-codegen-v3.yaml -o internal/control/http/v3/server_gen.go api/openapi.yaml
 	@echo "✅ Code generation complete (single source: api/openapi.yaml):"
 	@echo "   - internal/control/http/v3/server_gen.go"
 
@@ -181,13 +181,34 @@ verify-generate: generate ## Verify that generated code is up-to-date
 	@git diff --exit-code internal/api/server_gen.go internal/control/http/v3/server_gen.go || (echo "❌ Generated code is out of sync. Run 'make generate' and commit changes." && exit 1)
 	@echo "✅ Generated code is up-to-date"
 
+verify-codegen-transport: ## Verify codegen is transport-only (no scope injection or default http.Error)
+	@./scripts/verify-codegen-transport-only.sh
+
+verify-router-parity: ## Verify v3 router parity against OpenAPI
+	@./scripts/verify-router-parity.sh
+
+verify-oapi-codegen-version: ## Verify pinned oapi-codegen version in vendor/modules.txt
+	@./scripts/verify-oapi-codegen-version.sh
+
+verify-no-hardcoded-baseurl: ## Verify V3 base URL is not hardcoded in internal packages
+	@./scripts/verify-no-hardcoded-baseurl.sh
+
+verify-no-adhoc-terminal-mapping: ## Verify terminal outcomes only set via lifecycle SSOT
+	@./scripts/verify-no-adhoc-terminal-mapping.sh
+
+verify-no-adhoc-session-mapping: ## Verify session API mappings only set via session_mapping SSOT
+	@./scripts/verify-no-adhoc-session-mapping.sh
+
+verify-fuzz: ## Optional fuzz invariants (nightly)
+	@go test ./internal/domain/session/lifecycle -fuzz=Fuzz -fuzztime=3s
+
 generate-config: ## Generate config surfaces from registry
 	@echo "Generating config surfaces from registry..."
 	@go run ./cmd/configgen --allow-create
 	@echo "✅ Config surfaces generated"
 
 .PHONY: verify
-verify: verify-config verify-doc-links verify-capabilities contract-matrix verify-purity contract-freeze-check verify-no-sleep verify-no-panic verify-no-ignored-errors verify-doc-image-tags verify-docs-compiled verify-digest-lock verify-release-policy verify-runtime ## Phase 4.7: Run all governance verification gates
+verify: verify-config verify-doc-links verify-capabilities contract-matrix verify-purity contract-freeze-check verify-no-sleep verify-no-panic verify-no-ignored-errors verify-determinism verify-codegen-transport verify-router-parity verify-oapi-codegen-version verify-no-hardcoded-baseurl verify-no-adhoc-terminal-mapping verify-no-adhoc-session-mapping verify-doc-image-tags verify-docs-compiled verify-digest-lock verify-release-policy verify-runtime ## Phase 4.7: Run all governance verification gates
 
 verify-config: ## Verify generated config surfaces are up-to-date
 	@echo "Verifying generated config surfaces..."
@@ -359,6 +380,9 @@ verify-hls-hygiene:
 	@! grep -r "video/mp2t" internal/ | grep -v "hls_contract.go" | grep -v "test.go" | grep -v server_gen.go | grep -v "/dist/"
 
 .PHONY: verify-no-sleep verify-no-panic verify-no-ignored-errors
+verify-determinism: ## Gate: Deterministic tests in critical packages
+	@echo "Checking deterministic test contract (critical packages)..."
+	@REPO_ROOT=$(PWD) ./scripts/verify-determinism.sh
 
 verify-no-sleep: ## Gate: No time.Sleep in production code
 	@echo "Checking for time.Sleep in production code..."
@@ -409,10 +433,6 @@ build-all: ## Build binaries for all supported platforms
 	@echo "✅ Reproducible build complete: $(BUILD_DIR)/$(BINARY_NAME)"
 
 # xg2g-migrate target removed as of v3.0.0 (Phase 3.0 Sunset complete)
-
-verify-storage-cutover: build-migrate ## [Phase 2.3] Run the 5 mandatory storage cutover gates
-	@echo "--- verify-storage-cutover ---"
-	@./scripts/verify_storage_cutover.sh
 
 clean: ## Remove build artifacts and temporary files
 	@echo "Cleaning build artifacts..."

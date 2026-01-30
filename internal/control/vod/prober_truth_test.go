@@ -178,3 +178,98 @@ func TestTruth_Write_B5_ProbeFailPreservesDuration(t *testing.T) {
 	assert.Contains(t, meta.Error, "probe_failed", "Error must be set by MarkFailure")
 	assert.Greater(t, meta.UpdatedAt, int64(0), "UpdatedAt must be touched")
 }
+
+func TestTruth_Write_B6_MarkProbedClearsArtifactPathForNonMP4(t *testing.T) {
+	mgr, _, path := setupManager(t)
+	defer os.Remove(path)
+	ref := "test:ref:b6"
+
+	mgr.SeedMetadata(ref, Metadata{
+		ArtifactPath: "old.mp4",
+		PlaylistPath: "old.m3u8",
+	})
+
+	info := &StreamInfo{
+		Video: VideoStreamInfo{Duration: 10},
+	}
+
+	mgr.MarkProbed(ref, "/tmp/source.ts", info, &Fingerprint{})
+
+	meta, ok := mgr.GetMetadata(ref)
+	assert.True(t, ok)
+	assert.Empty(t, meta.ArtifactPath)
+	assert.Empty(t, meta.PlaylistPath)
+	assert.Equal(t, "/tmp/source.ts", meta.ResolvedPath)
+}
+
+func TestTruth_Write_B7_MarkProbedSetsPlaylistPathForM3U8(t *testing.T) {
+	mgr, _, path := setupManager(t)
+	defer os.Remove(path)
+	ref := "test:ref:b7"
+
+	mgr.SeedMetadata(ref, Metadata{
+		ArtifactPath: "old.mp4",
+	})
+
+	info := &StreamInfo{
+		Video: VideoStreamInfo{Duration: 10},
+	}
+
+	mgr.MarkProbed(ref, "/tmp/playlist.m3u8", info, &Fingerprint{})
+
+	meta, ok := mgr.GetMetadata(ref)
+	assert.True(t, ok)
+	assert.Empty(t, meta.ArtifactPath)
+	assert.Equal(t, "/tmp/playlist.m3u8", meta.PlaylistPath)
+	assert.Equal(t, "/tmp/playlist.m3u8", meta.ResolvedPath)
+}
+
+func TestTruth_Write_B8_MarkProbedDoesNotDegradeVideoFields(t *testing.T) {
+	mgr, _, path := setupManager(t)
+	defer os.Remove(path)
+	ref := "test:ref:b8"
+
+	mgr.SeedMetadata(ref, Metadata{
+		Width:      1920,
+		Height:     1080,
+		FPS:        29.97,
+		Interlaced: true,
+	})
+
+	info := &StreamInfo{
+		Video: VideoStreamInfo{
+			Duration:   10,
+			Width:      0,
+			Height:     0,
+			FPS:        0,
+			Interlaced: false,
+		},
+	}
+
+	mgr.MarkProbed(ref, "", info, nil)
+
+	meta, ok := mgr.GetMetadata(ref)
+	assert.True(t, ok)
+	assert.Equal(t, 1920, meta.Width)
+	assert.Equal(t, 1080, meta.Height)
+	assert.Equal(t, 29.97, meta.FPS)
+	assert.True(t, meta.Interlaced)
+}
+
+func TestTruth_Write_B9_CanceledIsFailed(t *testing.T) {
+	mgr, prober, path := setupManager(t)
+	defer os.Remove(path)
+	ref := "test:ref:b9"
+
+	prober.On("Probe", mock.Anything, path).Return(nil, context.Canceled)
+
+	req := probeRequest{ServiceRef: ref, InputPath: path}
+	err := mgr.runProbe(context.Background(), req)
+
+	assert.Error(t, err)
+
+	meta, ok := mgr.GetMetadata(ref)
+	assert.True(t, ok)
+	assert.Equal(t, ArtifactStateFailed, meta.State)
+	assert.Equal(t, "probe_canceled", meta.Error)
+}

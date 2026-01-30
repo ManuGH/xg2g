@@ -4,6 +4,10 @@ info:
   description: |
     API for xg2g (Enigma2 to Plex/Jellyfin Proxy).
 
+    **Authentication**:
+    All endpoints support both **Bearer Token** (`Authorization: Bearer <token>`) and **Cookie** (`xg2g_session=<token>`) authentication.
+    Streaming and media requests specifically support unified authentication since v3.1.5.
+
     **License**: PolyForm Noncommercial License 1.0.0.
     Commercial usage is restricted. See repository documentation for details.
   version: 3.0.0
@@ -1383,6 +1387,7 @@ paths:
   /system/health:
     get:
       summary: Get system health
+      operationId: getSystemHealth
       responses:
         "200":
           description: Health status
@@ -1413,6 +1418,7 @@ paths:
   /system/config:
     get:
       summary: Get system configuration
+      operationId: getSystemConfig
       security:
         - BearerAuth: [v3:admin]
       responses:
@@ -1424,6 +1430,7 @@ paths:
                 $ref: "#/components/schemas/AppConfig"
     put:
       summary: Update system configuration
+      operationId: putSystemConfig
       security:
         - BearerAuth: [v3:admin]
       requestBody:
@@ -1495,6 +1502,7 @@ paths:
   /system/refresh:
     post:
       summary: Trigger data refresh (EPG/Channels)
+      operationId: postSystemRefresh
       security:
         - BearerAuth: [v3:write]
       responses:
@@ -1595,6 +1603,7 @@ paths:
   /services:
     get:
       summary: List all services (channels)
+      operationId: getServices
       parameters:
         - in: query
           name: bouquet
@@ -1614,6 +1623,7 @@ paths:
   /services/{id}/toggle:
     post:
       summary: Toggle service enabled state
+      operationId: postServicesIdToggle
       security:
         - BearerAuth: [v3:write]
       parameters:
@@ -1640,6 +1650,7 @@ paths:
   /streams:
     get:
       summary: List active streams
+      operationId: getStreams
       security:
         - BearerAuth: [v3:admin]
       responses:
@@ -1712,6 +1723,7 @@ paths:
   /recordings/{recordingId}/status:
     get:
       summary: Get recording build status
+      operationId: getRecordingsRecordingIdStatus
       parameters:
         - in: path
           name: recordingId

@@ -264,8 +264,8 @@ func TestSqliteStore_Transaction_Commit_Atomic_INV_SQLITE_004(t *testing.T) {
 	sessionIDs := []string{"atomic-1", "atomic-2", "atomic-3"}
 	for _, sid := range sessionIDs {
 		_, err = tx.Exec(`
-			INSERT INTO sessions (session_id, service_ref, profile_json, state, pipeline_state, reason, reason_detail, fallback_reason, correlation_id, created_at_ms, updated_at_ms, expires_at_ms, lease_expires_at_ms, heartbeat_interval, stop_reason)
-			VALUES (?, 'svc', '{}', 'NEW', 'INIT', 'R_NONE', '', '', 'id', 0, 0, 0, 0, 0, '')
+			INSERT INTO sessions (session_id, service_ref, profile_json, state, pipeline_state, reason, reason_detail, reason_detail_code, reason_detail_debug, fallback_reason, correlation_id, created_at_ms, updated_at_ms, expires_at_ms, lease_expires_at_ms, heartbeat_interval, stop_reason)
+			VALUES (?, 'svc', '{}', 'NEW', 'INIT', 'R_NONE', '', 'D_NONE', '', '', 'id', 0, 0, 0, 0, 0, '')
 		`, sid)
 		if err != nil {
 			t.Fatalf("Insert %s in transaction failed: %v", sid, err)
@@ -311,8 +311,8 @@ func TestSqliteStore_SchemaVersion_INV_SQLITE_005(t *testing.T) {
 		t.Fatalf("PRAGMA user_version query failed: %v", err)
 	}
 
-	// Expected version: 3 (as per store implementation const schemaVersion = 3)
-	expectedVersion := 3
+	// Expected version: 4 (as per store implementation const schemaVersion = 4)
+	expectedVersion := 4
 	if version != expectedVersion {
 		t.Errorf("Schema version mismatch: got %d, want %d", version, expectedVersion)
 	}

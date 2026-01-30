@@ -170,10 +170,13 @@ func (m *Manager) runProbe(ctx context.Context, req probeRequest) error {
 		state := ArtifactStateFailed
 		errMsg := probeErr.Error()
 
-		if errors.Is(probeErr, context.DeadlineExceeded) || errors.Is(probeErr, context.Canceled) {
+		if errors.Is(probeErr, context.DeadlineExceeded) {
 			// B3: Timeout -> Preparing (Transient)
 			state = ArtifactStatePreparing
 			errMsg = "probe_timeout"
+		} else if errors.Is(probeErr, context.Canceled) {
+			state = ArtifactStateFailed
+			errMsg = "probe_canceled"
 		} else {
 			// B4: Corrupt/Missing -> Failed (Terminal)
 			errMsg = "probe_failed: " + errMsg

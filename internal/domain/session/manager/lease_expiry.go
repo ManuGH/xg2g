@@ -9,9 +9,10 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
-	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
+	"github.com/ManuGH/xg2g/internal/log"
 )
 
 // LeaseExpiryWorker runs a background goroutine that expires sessions
@@ -93,9 +94,11 @@ func (w *LeaseExpiryWorker) expireStaleSessions(ctx context.Context) {
 			if s.State.IsTerminal() {
 				return nil
 			}
-			s.State = model.SessionStopped
+			_, err := lifecycle.Dispatch(s, lifecycle.PhaseFromState(s.State), lifecycle.Event{Kind: lifecycle.EvLeaseExpired}, nil, false, time.Unix(now, 0))
+			if err != nil {
+				return err
+			}
 			s.StopReason = stopReason
-			s.UpdatedAtUnix = now
 			return nil
 		})
 

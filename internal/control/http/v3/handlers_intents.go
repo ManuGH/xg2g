@@ -17,6 +17,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/admission"
 	"github.com/ManuGH/xg2g/internal/control/auth"
+	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/metrics"
@@ -51,10 +52,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 
 	if bus == nil || store == nil {
 		// V3 Worker not running
-		RespondError(w, r, http.StatusServiceUnavailable, &APIError{
-			Code:    "V3_UNAVAILABLE",
-			Message: "v3 control plane not enabled",
-		})
+		respondIntentFailure(w, r, IntentErrV3Unavailable)
 		return
 	}
 
@@ -63,12 +61,12 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields() // Hardening
 	if err := dec.Decode(&req); err != nil {
-		RespondError(w, r, http.StatusBadRequest, ErrInvalidInput, err.Error())
+		respondIntentFailure(w, r, IntentErrInvalidInput, err.Error())
 		return
 	}
 	correlationID, err := v3api.NormalizeCorrelationID(req.CorrelationID)
 	if err != nil {
-		RespondError(w, r, http.StatusBadRequest, ErrInvalidInput, err.Error())
+		respondIntentFailure(w, r, IntentErrInvalidInput, err.Error())
 		return
 	}
 
@@ -87,7 +85,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		if u, ok := platformnet.ParseDirectHTTPURL(req.ServiceRef); ok {
 			normalized, err := platformnet.ValidateOutboundURL(r.Context(), u.String(), outboundPolicyFromConfig(cfg))
 			if err != nil {
-				RespondError(w, r, http.StatusBadRequest, ErrInvalidInput, "direct URL serviceRef rejected by outbound policy")
+				respondIntentFailure(w, r, IntentErrInvalidInput, "direct URL serviceRef rejected by outbound policy")
 				return
 			}
 			req.ServiceRef = normalized
@@ -124,7 +122,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	case model.IntentTypeStreamStop:
 		// STOP logic remains same
 		if req.SessionID == "" {
-			RespondError(w, r, http.StatusBadRequest, ErrInvalidInput, "sessionId required for stop")
+			respondIntentFailure(w, r, IntentErrInvalidInput, "sessionId required for stop")
 			return
 		}
 		sessionID = req.SessionID
@@ -134,7 +132,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	default:
-		RespondError(w, r, http.StatusBadRequest, ErrInvalidInput, "unsupported intent type")
+		respondIntentFailure(w, r, IntentErrInvalidInput, "unsupported intent type")
 		return
 	}
 
@@ -145,11 +143,11 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	mode := model.ModeLive
 	if raw := strings.TrimSpace(req.Params["mode"]); raw != "" {
 		if strings.EqualFold(raw, model.ModeRecording) {
-			RespondError(w, r, http.StatusBadRequest, ErrInvalidInput, "recording playback uses /recordings")
+			respondIntentFailure(w, r, IntentErrInvalidInput, "recording playback uses /recordings")
 			return
 		}
 		if !strings.EqualFold(raw, model.ModeLive) {
-			RespondError(w, r, http.StatusBadRequest, ErrInvalidInput, "unsupported playback mode")
+			respondIntentFailure(w, r, IntentErrInvalidInput, "unsupported playback mode")
 			return
 		}
 	}
@@ -182,7 +180,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 			default:
 				// Strict validation: unknown hwaccel → 400 Bad Request
 				RecordV3Intent(string(model.IntentTypeStreamStart), "phase0", "invalid_hwaccel")
-				RespondError(w, r, http.StatusBadRequest, ErrInvalidInput,
+				respondIntentFailure(w, r, IntentErrInvalidInput,
 					fmt.Sprintf("invalid hwaccel value: %q (must be auto, force, or off)", hwaccel))
 				return
 			}
@@ -191,7 +189,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		// Hard-fail if force requested but no GPU available
 		if hwaccelMode == profiles.HWAccelForce && !hasGPU {
 			RecordV3Intent(string(model.IntentTypeStreamStart), "phase0", "hwaccel_unavailable")
-			RespondError(w, r, http.StatusBadRequest, ErrInvalidInput,
+			respondIntentFailure(w, r, IntentErrInvalidInput,
 				"hwaccel=force requested but GPU not available (no /dev/dri/renderD128)")
 			return
 		}
@@ -235,10 +233,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 				Msg("admission rejected")
 
 			RecordV3Intent(string(model.IntentTypeStreamStart), "admission", string(reason))
-			RespondError(w, r, http.StatusServiceUnavailable, &APIError{
-				Code:    "ADMISSION_REJECTED",
-				Message: "service saturated",
-			})
+			respondIntentFailure(w, r, IntentErrAdmissionRejected)
 			return
 		}
 
@@ -298,7 +293,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		if len(cfg.Engine.TunerSlots) == 0 {
 			RecordV3Intent(string(model.IntentTypeStreamStart), "phase0", "no_slots")
 			w.Header().Set("Retry-After", "10")
-			RespondError(w, r, http.StatusServiceUnavailable, ErrServiceUnavailable, "no tuner slots configured")
+			respondIntentFailure(w, r, IntentErrNoTunerSlots, "no tuner slots configured")
 			return
 		}
 
@@ -318,26 +313,22 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Create Session Record (Starting state)
-		session := &model.SessionRecord{
-			SessionID:     sessionID,
-			State:         model.SessionNew,
-			ServiceRef:    req.ServiceRef,
-			Profile:       profileSpec,
-			CorrelationID: correlationID,
-			CreatedAtUnix: time.Now().Unix(),
-			UpdatedAtUnix: time.Now().Unix(),
-			// ADR-009: Session Lease (config-driven, CTO Patch 1 compliant)
-			LeaseExpiresAtUnix: time.Now().Add(cfg.Sessions.LeaseTTL).Unix(),
-			HeartbeatInterval:  int(cfg.Sessions.HeartbeatInterval.Seconds()),
-			ContextData:        requestParams, // Store context params
-		}
+		session := lifecycle.NewSessionRecord(time.Now())
+		session.SessionID = sessionID
+		session.ServiceRef = req.ServiceRef
+		session.Profile = profileSpec
+		session.CorrelationID = correlationID
+		// ADR-009: Session Lease (config-driven, CTO Patch 1 compliant)
+		session.LeaseExpiresAtUnix = time.Now().Add(cfg.Sessions.LeaseTTL).Unix()
+		session.HeartbeatInterval = int(cfg.Sessions.HeartbeatInterval.Seconds())
+		session.ContextData = requestParams // Store context params
 
 		// Atomic Write
 		existingID, exists, err := store.PutSessionWithIdempotency(r.Context(), session, idempotencyKey, admissionLeaseTTL)
 		if err != nil {
 			logger.Error().Err(err).Msg("failed to persist intent")
 			RecordV3Intent(string(model.IntentTypeStreamStart), phaseLabel, "store_error")
-			RespondError(w, r, http.StatusInternalServerError, ErrInternalServer, "failed to persist intent")
+			respondIntentFailure(w, r, IntentErrStoreUnavailable, "failed to persist intent")
 			return
 		}
 
@@ -384,7 +375,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 			logger.Error().Err(err).Msg("failed to publish start event")
 			RecordV3Publish("session.start", "error")
 			RecordV3Intent(string(model.IntentTypeStreamStart), phaseLabel, "publish_error")
-			RespondError(w, r, http.StatusInternalServerError, ErrInternalServer, "failed to publish event")
+			respondIntentFailure(w, r, IntentErrPublishUnavailable, "failed to publish event")
 			return
 		}
 		RecordV3Publish("session.start", "ok")
@@ -410,7 +401,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 			logger.Error().Err(err).Msg("failed to publish stop event")
 			RecordV3Publish("session.stop", "error")
 			RecordV3Intent(string(model.IntentTypeStreamStop), "any", "publish_error")
-			RespondError(w, r, http.StatusInternalServerError, ErrInternalServer, "failed to dispatch intent")
+			respondIntentFailure(w, r, IntentErrPublishUnavailable, "failed to dispatch intent")
 			return
 		}
 		RecordV3Publish("session.stop", "ok")
@@ -423,7 +414,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		})
 
 	default:
-		RespondError(w, r, http.StatusBadRequest, ErrInvalidInput, "unsupported intent type")
+		respondIntentFailure(w, r, IntentErrInvalidInput, "unsupported intent type")
 	}
 }
 

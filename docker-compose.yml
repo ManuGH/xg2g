@@ -16,8 +16,12 @@ services:
       - XG2G_FFMPEG_BIN=/usr/local/bin/ffmpeg
       - XG2G_FFPROBE_BIN=/usr/local/bin/ffprobe
       - FFMPEG_HOME=/opt/ffmpeg
+      - FFMPEG_BIN=/opt/ffmpeg/bin/ffmpeg
+      - FFMPEG_LIB=/opt/ffmpeg/lib
+      - FFPROBE_BIN=/opt/ffmpeg/bin/ffprobe
     volumes:
       - /var/lib/xg2g:/var/lib/xg2g
+      - /media/nfs-recordings:/media/nfs-recordings
       # Optional: Mount a custom config
       # - ./config.yaml:/var/lib/xg2g/config.yaml:ro
     healthcheck:

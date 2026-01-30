@@ -69,6 +69,8 @@ func (s *Server) serveHLSPlaylist(w http.ResponseWriter, r *http.Request, record
 		w.Header().Set("Cache-Control", "no-store")
 	}
 
+	w.Header().Set("X-Playback-Session-Id", "rec:"+recordingId)
+	w.Header().Set("Content-Length", strconv.Itoa(len(artifact.Data)))
 	w.WriteHeader(http.StatusOK)
 	if !isHead {
 		if artifact.Data != nil {

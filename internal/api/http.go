@@ -625,16 +625,15 @@ func (s *Server) routes() http.Handler {
 
 	// 4.1 Status (Operator-Grade Contract)
 	rStatus := rAuth.With(s.scopeMiddleware(v3.ScopeV3Status))
-	rStatus.Get("/api/v3/status", controlhttp.NewStatusHandler(s.verificationStore).ServeHTTP)
+	rStatus.Get(v3.V3BaseURL+"/status", controlhttp.NewStatusHandler(s.verificationStore).ServeHTTP)
 
 	// 5. Setup Validation
 	rAuth.Post("/internal/setup/validate", http.HandlerFunc(s.handleSetupValidate))
 
-	// 6. Register Generated API v3 Routes
-	// NOTE: HandlerWithOptions creates its own handler stack.
+	// 6. Register API v3 Routes via handwritten router (scope policy injected)
 	// We pass rAuth as the BaseRouter to ensure all v3 routes are guarded by auth.
-	v3.HandlerWithOptions(s.v3Handler, v3.ChiServerOptions{
-		BaseURL:    "/api/v3",
+	v3.NewRouter(s.v3Handler, v3.RouterOptions{
+		BaseURL:    v3.V3BaseURL,
 		BaseRouter: rAuth,
 		Middlewares: []v3.MiddlewareFunc{
 			s.v3Handler.ScopeMiddlewareFromContext,
@@ -642,18 +641,18 @@ func (s *Server) routes() http.Handler {
 	})
 
 	// 7. Manual v3 Extensions (Strictly Scoped)
-	rRead.Get("/api/v3/vod/{recordingId}", func(w http.ResponseWriter, r *http.Request) {
+	rRead.Get(v3.V3BaseURL+"/vod/{recordingId}", func(w http.ResponseWriter, r *http.Request) {
 		recordingId := chi.URLParam(r, "recordingId")
 		s.v3Handler.GetRecordingPlaybackInfo(w, r, recordingId)
 	})
 
-	rRead.Head("/api/v3/recordings/{recordingId}/stream.mp4", func(w http.ResponseWriter, r *http.Request) {
+	rRead.Head(v3.V3BaseURL+"/recordings/{recordingId}/stream.mp4", func(w http.ResponseWriter, r *http.Request) {
 		recordingId := chi.URLParam(r, "recordingId")
 		s.v3Handler.StreamRecordingDirect(w, r, recordingId)
 	})
 
-	rWrite.Put("/api/v3/recordings/{recordingId}/resume", s.v3Handler.HandleRecordingResume)
-	rWrite.Options("/api/v3/recordings/{recordingId}/resume", s.v3Handler.HandleRecordingResumeOptions)
+	rWrite.Put(v3.V3BaseURL+"/recordings/{recordingId}/resume", s.v3Handler.HandleRecordingResume)
+	rWrite.Options(v3.V3BaseURL+"/recordings/{recordingId}/resume", s.v3Handler.HandleRecordingResumeOptions)
 
 	// 8. Client Integration (Neutral Shape)
 	// Supports DirectPlay decision logic without backend coupling

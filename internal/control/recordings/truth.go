@@ -77,11 +77,13 @@ func NewTruthProvider(cfg *config.AppConfig, manager MetadataManager, opts Resol
 func (t *TruthProvider) GetMediaTruth(ctx context.Context, serviceRef string) (playback.MediaTruth, error) {
 	kind, source, _, err := t.resolveSource(ctx, serviceRef)
 	if err != nil {
+		log.Warn().Err(err).Str("sref", serviceRef).Msg("GetMediaTruth: resolveSource failed")
 		if errors.As(err, &ErrNotFound{}) {
 			return playback.MediaTruth{}, playback.ErrNotFound
 		}
 		return playback.MediaTruth{}, playback.ErrUpstream
 	}
+	log.Info().Str("sref", serviceRef).Str("kind", kind).Str("source", source).Msg("GetMediaTruth: source resolved")
 
 	// 0. Job State Gate (Active Build?)
 	cacheDir, err := RecordingCacheDir(t.cfg.HLS.Root, serviceRef)

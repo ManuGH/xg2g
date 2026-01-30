@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
 )
 
@@ -41,15 +42,16 @@ func NewStateHandler(st store.StateStore) http.Handler {
 			return
 		}
 
+		out := lifecycle.PublicOutcomeFromRecord(sess)
 		resp := SessionResponse{
-			SessionID:       sess.SessionID,
-			ServiceRef:      sess.ServiceRef,
-			Profile:         sess.Profile.Name,
-			State:           sess.State,
-			Reason:          sess.Reason,
-			ReasonDetail:    sess.ReasonDetail,
-			CorrelationID:   sess.CorrelationID,
-			UpdatedAtMs:     sess.UpdatedAtUnix * 1000,
+			SessionID:     sess.SessionID,
+			ServiceRef:    sess.ServiceRef,
+			Profile:       sess.Profile.Name,
+			State:         out.State,
+			Reason:        out.Reason,
+			ReasonDetail:  out.Detail,
+			CorrelationID: sess.CorrelationID,
+			UpdatedAtMs:   sess.UpdatedAtUnix * 1000,
 		}
 
 		w.Header().Set("Content-Type", "application/json")

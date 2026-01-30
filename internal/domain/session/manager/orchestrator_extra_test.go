@@ -2,9 +2,11 @@ package manager
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/domain/session/manager/testkit"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
@@ -27,11 +29,11 @@ func TestOrchestrator_Observability_TuneFailure(t *testing.T) {
 	orch := &Orchestrator{
 		Bus:            memBus,
 		Store:          st,
-		LeaseTTL:       5 * time.Second,
-		HeartbeatEvery: 1 * time.Second,
+		LeaseTTL:       24 * time.Hour,
+		HeartbeatEvery: 0,
 		Owner:          "test-worker-obs",
 		TunerSlots:     []int{0},
-		Admission:      newAdmissionMonitor(10, 10, 0),
+		Admission:      testkit.NewAdmissibleAdmission(),
 		Pipeline:       failPipe,
 		LeaseKeyFunc: func(e model.StartSessionEvent) string {
 			return model.LeaseKeyService(e.ServiceRef)
@@ -53,18 +55,23 @@ func TestOrchestrator_Observability_TuneFailure(t *testing.T) {
 
 	err := orch.handleStart(ctx, evt)
 
-	assert.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.ErrorIs(t, err, ErrPipelineFailure)
+	assert.True(t, failPipe.StartCalled())
 
 	s, storeErr := st.GetSession(ctx, "sess-obs-1")
 	require.NoError(t, storeErr)
 	assert.Equal(t, model.SessionFailed, s.State)
+	assert.Equal(t, model.RTuneTimeout, s.Reason)
+	assert.Equal(t, model.DDeadlineExceeded, s.ReasonDetailCode)
 }
 
 type FailingPipeline struct {
-	StartErr error
+	StartErr    error
+	startCalled atomic.Bool
 }
 
 func (f *FailingPipeline) Start(ctx context.Context, spec ports.StreamSpec) (ports.RunHandle, error) {
+	f.startCalled.Store(true)
 	return "", f.StartErr
 }
 
@@ -74,6 +81,10 @@ func (f *FailingPipeline) Stop(ctx context.Context, handle ports.RunHandle) erro
 
 func (f *FailingPipeline) Health(ctx context.Context, handle ports.RunHandle) ports.HealthStatus {
 	return ports.HealthStatus{Healthy: false}
+}
+
+func (f *FailingPipeline) StartCalled() bool {
+	return f.startCalled.Load()
 }
 
 func TestReconcileTuners_UniqueSlotCount(t *testing.T) {

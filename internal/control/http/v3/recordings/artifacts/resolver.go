@@ -89,8 +89,10 @@ func (r *DefaultResolver) ResolvePlaylist(ctx context.Context, recordingID, prof
 	// 5. READY
 	playlistPath := meta.PlaylistPath
 	if playlistPath == "" {
-		r.vodManager.TriggerProbe(ref, "missing playlist path")
-		return ArtifactOK{}, &ArtifactError{Code: CodePreparing, RetryAfter: 2 * time.Second, Detail: "playlist path missing"}
+		// Metadata is ready, but we lack an HLS artifact.
+		// Trigger/Resume build instead of re-probing to avoid stuck StatePreparing loops.
+		_ = r.triggerBuild(ctx, ref, profile)
+		return ArtifactOK{}, &ArtifactError{Code: CodePreparing, RetryAfter: 2 * time.Second, Detail: "playlist building"}
 	}
 
 	// Open and Read for Rewrite

@@ -91,6 +91,14 @@ var (
 		Code:    "LEASE_BUSY",
 		Message: "No tuner available; retry later",
 	}
+	ErrAdmissionRejected = &APIError{
+		Code:    "ADMISSION_REJECTED",
+		Message: "service saturated",
+	}
+	ErrV3Unavailable = &APIError{
+		Code:    "V3_UNAVAILABLE",
+		Message: "v3 control plane not enabled",
+	}
 	ErrRecordingNotReady = &APIError{
 		Code:    "R_RECORDING_NOT_READY",
 		Message: "Recording not ready",

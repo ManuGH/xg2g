@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
@@ -36,9 +37,9 @@ type terminationCause struct {
 }
 
 type finalOutcome struct {
-	State  model.SessionState
-	Reason model.ReasonCode
-	Detail string
+	State       model.SessionState
+	Reason      model.ReasonCode
+	DetailDebug string
 }
 
 func (o *Orchestrator) resolveSession(ctx context.Context, e model.StartSessionEvent) (string, *model.SessionRecord, context.Context, error) {
@@ -96,34 +97,11 @@ func detectTerminationCause(ctx context.Context, retErr error) terminationCause 
 	return terminationCause{Error: retErr}
 }
 
-func (o *Orchestrator) mapCauseToOutcome(cause terminationCause, vodMode bool) finalOutcome {
-	finalState := model.SessionFailed
-	var reason model.ReasonCode
-	detail := ""
-
-	if cause.IsClean {
-		if vodMode {
-			finalState = model.SessionDraining
-			reason = model.RNone
-			detail = "recording completed"
-		} else {
-			finalState = model.SessionFailed
-			reason = model.RProcessEnded
-		}
-	} else if cause.ContextCancelled {
-		finalState = model.SessionStopped
-		reason = model.RClientStop
-	} else {
-		reason, detail = classifyReason(cause.Error)
-		if reason == model.RClientStop {
-			finalState = model.SessionStopped
-		}
-	}
-
+func mapOutcome(out lifecycle.Outcome) finalOutcome {
 	return finalOutcome{
-		State:  finalState,
-		Reason: reason,
-		Detail: detail,
+		State:       out.State,
+		Reason:      out.Reason,
+		DetailDebug: out.DetailDebug,
 	}
 }
 
@@ -193,7 +171,7 @@ func (o *Orchestrator) acquireLeases(
 
 	o.registerActive(event.SessionID, hbCancel)
 
-	if sessionCtx.Mode == model.ModeLive {
+	if sessionCtx.Mode == model.ModeLive && o.HeartbeatEvery > 0 {
 		go func() {
 			t := time.NewTicker(o.HeartbeatEvery)
 			defer t.Stop()
@@ -210,9 +188,8 @@ func (o *Orchestrator) acquireLeases(
 						leaseLostTotalLegacy.WithLabelValues().Inc()
 						_, _ = o.Store.UpdateSession(hbCtx, event.SessionID, func(r *model.SessionRecord) error {
 							if !r.State.IsTerminal() {
-								r.State = model.SessionFailed
-								r.Reason = model.RLeaseExpired
-								r.UpdatedAtUnix = time.Now().Unix()
+								cause := lifecycle.NewReasonError(model.RLeaseExpired, "", nil)
+								_, _ = lifecycle.Dispatch(r, lifecycle.PhaseFromState(r.State), lifecycle.Event{Kind: lifecycle.EvTerminalize}, cause, false, time.Now())
 							}
 							return nil
 						})
@@ -269,6 +246,12 @@ func (o *Orchestrator) startPipeline(
 
 	handle, err := o.Pipeline.Start(hbCtx, spec)
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return "", newReasonErrorWithDetail(model.RCancelled, model.DContextCanceled, "", err)
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			return "", newReasonErrorWithDetail(model.RTuneTimeout, model.DDeadlineExceeded, "", err)
+		}
 		if errors.Is(err, ports.ErrNoValidTS) {
 			detail := "preflight failed no valid ts"
 			var pErr *ports.PreflightError
@@ -305,6 +288,8 @@ func (o *Orchestrator) waitForReady(
 	}
 	playlistPollInterval := 200 * time.Millisecond
 	playlistDeadline := time.Now().Add(playlistReadyTimeout)
+	ticker := time.NewTicker(playlistPollInterval)
+	defer ticker.Stop()
 
 	logger.Info().
 		Str("session_id", e.SessionID).
@@ -333,8 +318,8 @@ func (o *Orchestrator) waitForReady(
 
 		select {
 		case <-hbCtx.Done():
-			return false, model.RClientStop, "context canceled"
-		case <-time.After(playlistPollInterval):
+			return false, model.RClientStop, ""
+		case <-ticker.C:
 			// continue
 		}
 	}
@@ -344,6 +329,12 @@ func (o *Orchestrator) waitForProcessExit(ctx context.Context, handle ports.RunH
 	// Polling wait loop with exponential backoff (no max timeout for live sessions).
 	const initialInterval = 500 * time.Millisecond
 	const maxInterval = 5 * time.Second
+
+	status := o.Pipeline.Health(ctx, handle)
+	if !status.Healthy {
+		// Process already exited.
+		return nil
+	}
 
 	interval := initialInterval
 	ticker := time.NewTicker(interval)
@@ -485,8 +476,10 @@ func (o *Orchestrator) transitionStarting(ctx context.Context, e model.StartSess
 		if r.State.IsTerminal() || r.State == model.SessionStopping {
 			return fmt.Errorf("session state %s, aborting start", r.State)
 		}
-		r.State = model.SessionStarting
-		r.UpdatedAtUnix = time.Now().Unix()
+		_, err := lifecycle.Dispatch(r, lifecycle.PhaseFromState(r.State), lifecycle.Event{Kind: lifecycle.EvStartRequested}, nil, false, time.Now())
+		if err != nil {
+			return err
+		}
 		if r.ContextData == nil {
 			r.ContextData = make(map[string]string)
 		}
@@ -505,9 +498,11 @@ func (o *Orchestrator) transitionStarting(ctx context.Context, e model.StartSess
 func (o *Orchestrator) transitionReady(ctx context.Context, e model.StartSessionEvent) error {
 	o.recordTransition(model.SessionPriming, model.SessionReady)
 	_, err := o.Store.UpdateSession(ctx, e.SessionID, func(r *model.SessionRecord) error {
-		r.State = model.SessionReady
+		_, err := lifecycle.Dispatch(r, lifecycle.PhaseFromState(r.State), lifecycle.Event{Kind: lifecycle.EvReady}, nil, false, time.Now())
+		if err != nil {
+			return err
+		}
 		r.PlaylistPublishedAt = time.Now() // PR-P3-2: Truth for buffering/active derivation
-		r.UpdatedAtUnix = time.Now().Unix()
 		r.LastAccessUnix = time.Now().Unix()
 		return nil
 	})
@@ -553,8 +548,10 @@ func (o *Orchestrator) runExecutionLoop(
 		if r.State.IsTerminal() || r.State == model.SessionStopping {
 			return fmt.Errorf("session state %s, aborting priming", r.State)
 		}
-		r.State = model.SessionPriming
-		r.UpdatedAtUnix = time.Now().Unix()
+		_, err := lifecycle.Dispatch(r, lifecycle.PhaseFromState(r.State), lifecycle.Event{Kind: lifecycle.EvPrimingStarted}, nil, false, time.Now())
+		if err != nil {
+			return err
+		}
 		return nil
 	})
 	if err != nil {
@@ -610,11 +607,15 @@ func (o *Orchestrator) finalizeDeferred(
 ) {
 	session := *sessionPtr
 	cause := detectTerminationCause(ctx, *retErr)
-	outcome := o.mapCauseToOutcome(cause, sessionCtx.IsVOD)
-
-	if outcome.Reason == model.RLeaseBusy && outcome.Detail == DedupLeaseHeldDetail {
+	errForOutcome := cause.Error
+	if errForOutcome == nil && cause.ContextCancelled {
+		errForOutcome = context.Canceled
+	}
+	reason, _, detailDebug := lifecycle.ClassifyReason(errForOutcome)
+	if reason == model.RLeaseBusy && detailDebug == DedupLeaseHeldDetail {
 		return
 	}
+	var outcome finalOutcome
 
 	// Use bounded timeout context for finalization instead of Background
 	finalizeCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -625,20 +626,24 @@ func (o *Orchestrator) finalizeDeferred(
 			return nil
 		}
 
-		o.recordTransition(r.State, outcome.State)
+		stopIntent := r.State == model.SessionStopping || r.Reason == model.RClientStop
+		errForOutcome := cause.Error
+		if errForOutcome == nil && cause.ContextCancelled {
+			errForOutcome = context.Canceled
+		}
+		phase := lifecycle.PhaseFromState(r.State)
+		if cause.IsClean && sessionCtx.IsVOD {
+			phase = lifecycle.PhaseVODComplete
+		}
+		fromState := r.State
+		tr, err := lifecycle.Dispatch(r, phase, lifecycle.Event{Kind: lifecycle.EvTerminalize}, errForOutcome, stopIntent, time.Now())
+		if err != nil {
+			return err
+		}
+		outcome = finalOutcome{State: tr.To, Reason: tr.Reason, DetailDebug: tr.DetailDebug}
 
-		r.State = outcome.State
-		if outcome.State == model.SessionFailed {
-			r.PipelineState = model.PipeFail
-		} else {
-			r.PipelineState = model.PipeStopped
-		}
-		if r.Reason == "" || r.Reason == model.RNone || r.Reason == model.RUnknown {
-			r.Reason = outcome.Reason
-		}
-		if outcome.Detail != "" {
-			r.ReasonDetail = outcome.Detail
-		}
+		o.recordTransition(fromState, outcome.State)
+
 		r.UpdatedAtUnix = time.Now().Unix()
 		return nil
 	})
@@ -661,12 +666,12 @@ func (o *Orchestrator) finalizeDeferred(
 		Str("reason", string(outcome.Reason)).
 		Str("profile", event.ProfileID)
 
-	if outcome.Detail != "" {
-		logEvt.Str("detail", outcome.Detail)
+	if outcome.DetailDebug != "" {
+		logEvt.Str("detail", outcome.DetailDebug)
 	}
 	logEvt.Msg("session ended")
 
-	o.ForceReleaseLeases(context.Background(), event.SessionID, event.ServiceRef, session)
+	o.ForceReleaseLeases(finalizeCtx, event.SessionID, event.ServiceRef, session)
 
 	if !*startRecorded {
 		recordStart(startResultForReason(outcome.Reason), outcome.Reason)

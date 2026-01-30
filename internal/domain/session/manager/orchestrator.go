@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/admission"
+	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
@@ -264,6 +265,11 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 		IsVOD:      false,
 	}
 
+	defer func() {
+		if retErr != nil {
+			retErr = wrapWithReasonClass(retErr)
+		}
+	}()
 	defer o.finalizeDeferred(ctx, e, &session, sessionCtx, logger, &startRecorded, recordStart, startResultForReason, &retErr)
 
 	if session == nil {
@@ -401,18 +407,26 @@ func (o *Orchestrator) handleStop(ctx context.Context, e model.StopSessionEvent)
 			return nil
 		}
 		if r.State == model.SessionNew {
-			r.State = model.SessionStopped
-			r.PipelineState = model.PipeStopped
-			r.Reason = e.Reason
-			r.UpdatedAtUnix = time.Now().Unix()
+			if e.Reason == model.RIdleTimeout {
+				_, err := lifecycle.Dispatch(r, lifecycle.PhaseFromState(r.State), lifecycle.Event{Kind: lifecycle.EvSweeperForcedStop}, nil, false, time.Now())
+				if err != nil {
+					return err
+				}
+			} else {
+				_, err := lifecycle.Dispatch(r, lifecycle.PhaseFromState(r.State), lifecycle.Event{Kind: lifecycle.EvTerminalize}, nil, true, time.Now())
+				if err != nil {
+					return err
+				}
+			}
 			shortCircuitCleanup = true
 			return nil
 		}
 
-		r.State = model.SessionStopping
+		_, err := lifecycle.Dispatch(r, lifecycle.PhaseFromState(r.State), lifecycle.Event{Kind: lifecycle.EvStopRequested, Reason: e.Reason}, nil, false, time.Now())
+		if err != nil {
+			return err
+		}
 		r.PipelineState = model.PipeStopRequested
-		r.Reason = e.Reason
-		r.UpdatedAtUnix = time.Now().Unix()
 		return nil
 	})
 

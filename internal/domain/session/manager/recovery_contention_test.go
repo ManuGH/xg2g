@@ -9,29 +9,31 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/domain/session/manager/testkit"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
-	"github.com/ManuGH/xg2g/internal/infra/media/stub"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestContention_Blocked(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := context.Background()
 
 	st := store.NewMemoryStore()
 	b := NewStubBus()
+	pipe := testkit.NewStepperPipeline()
 	orch := &Orchestrator{
-		Store:          st,
-		Bus:            b,
-		LeaseTTL:       5 * time.Second,
-		HeartbeatEvery: 1 * time.Second,
-		Owner:          "worker-1",
-		TunerSlots:     []int{0},
-		Admission:      newAdmissionMonitor(10, 10, 0),
-		Pipeline:       stub.NewAdapter(),
-		Platform:       NewStubPlatform(),
+		Store: st,
+		Bus:   b,
+		// Deterministic setup: no heartbeat ticker, and large TTL to avoid expiry paths.
+		LeaseTTL:            24 * time.Hour,
+		HeartbeatEvery:      0,
+		Owner:               "worker-1",
+		TunerSlots:          []int{0},
+		Admission:           testkit.NewAdmissibleAdmission(),
+		Pipeline:            pipe,
+		Platform:            NewStubPlatform(),
+		PipelineStopTimeout: 0,
 		LeaseKeyFunc: func(e model.StartSessionEvent) string {
 			return model.LeaseKeyService(e.ServiceRef)
 		},
@@ -41,27 +43,52 @@ func TestContention_Blocked(t *testing.T) {
 	refA := "ref:A"
 	require.NoError(t, st.PutSession(ctx, &model.SessionRecord{SessionID: sessA, ServiceRef: refA, State: model.SessionNew}))
 
+	errCh := make(chan error, 1)
 	go func() {
-		_ = orch.handleStart(ctx, model.StartSessionEvent{SessionID: sessA, ServiceRef: refA, ProfileID: "p1"})
+		errCh <- orch.handleStart(ctx, model.StartSessionEvent{SessionID: sessA, ServiceRef: refA, ProfileID: "p1"})
 	}()
 
-	require.Eventually(t, func() bool {
-		s, err := st.GetSession(ctx, sessA)
-		return err == nil && s.State == model.SessionReady
-	}, 1*time.Second, 10*time.Millisecond)
+	<-pipe.StartCalled()
+
+	lease, ok, err := st.GetLease(ctx, model.LeaseKeyTunerSlot(0))
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, sessA, lease.Owner())
+
+	sA, err := st.GetSession(ctx, sessA)
+	require.NoError(t, err)
+	assert.Equal(t, model.SessionStarting, sA.State)
 
 	sessB := "session-B"
 	refB := "ref:B" // Different service, should NOT block on dedup lease
 	require.NoError(t, st.PutSession(ctx, &model.SessionRecord{SessionID: sessB, ServiceRef: refB, State: model.SessionNew}))
 
-	err := orch.handleStart(ctx, model.StartSessionEvent{SessionID: sessB, ServiceRef: refB, ProfileID: "p1"})
+	err = orch.handleStart(ctx, model.StartSessionEvent{SessionID: sessB, ServiceRef: refB, ProfileID: "p1"})
 
-	assert.Error(t, err)
+	assert.ErrorIs(t, err, ErrAdmissionRejected)
 
 	sB, err := st.GetSession(ctx, sessB)
 	require.NoError(t, err)
 	assert.Equal(t, model.SessionFailed, sB.State, "Session B should fail due to tuner contention")
 	assert.Equal(t, model.RLeaseBusy, sB.Reason, "Session B should report lease busy reason")
+
+	pipe.AllowStart()
+	pipe.SetHealthy(false)
+	_ = <-pipe.StartReturned()
+	_ = <-errCh
+
+	sA, err = st.GetSession(ctx, sessA)
+	require.NoError(t, err)
+	assert.True(t, sA.State.IsTerminal())
+	assert.Equal(t, model.SessionFailed, sA.State)
+	assert.Equal(t, model.RProcessEnded, sA.Reason)
+
+	_, ok, err = st.GetLease(ctx, model.LeaseKeyTunerSlot(0))
+	require.NoError(t, err)
+	assert.False(t, ok)
+	_, ok, err = st.GetLease(ctx, model.LeaseKeyService(refA))
+	require.NoError(t, err)
+	assert.False(t, ok)
 }
 
 func TestRecovery_StaleTunerLease(t *testing.T) {
@@ -70,7 +97,7 @@ func TestRecovery_StaleTunerLease(t *testing.T) {
 	orch := &Orchestrator{
 		Store:     st,
 		Admission: newAdmissionMonitor(10, 10, 0),
-		LeaseTTL:  100 * time.Millisecond,
+		LeaseTTL:  24 * time.Hour,
 	}
 
 	sessID := "stale-tuner-sess"
@@ -99,7 +126,7 @@ func TestRecovery_ActiveTunerLease(t *testing.T) {
 	orch := &Orchestrator{
 		Store:     st,
 		Admission: newAdmissionMonitor(10, 10, 0),
-		LeaseTTL:  5 * time.Second,
+		LeaseTTL:  24 * time.Hour,
 	}
 
 	sessID := "active-tuner-sess"

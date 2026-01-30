@@ -26,8 +26,10 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/admission"
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/control/http/problem"
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/log"
 	v3store "github.com/ManuGH/xg2g/internal/domain/session/store"
 	v3api "github.com/ManuGH/xg2g/internal/pipeline/api"
 	v3bus "github.com/ManuGH/xg2g/internal/pipeline/bus"
@@ -106,7 +108,29 @@ func validateOpenAPIResponse(t *testing.T, doc *openapi3.T, req *http.Request, r
 	require.NoError(t, openapi3filter.ValidateResponse(context.Background(), input), "openapi response validation")
 }
 
+type admissionHarnessMode int
+
+const (
+	admissionHarnessAdmissible admissionHarnessMode = iota
+	admissionHarnessUnseeded
+)
+
+const admissionSeedSamples = 15
+
+func seedAdmissionSamples(adm *admission.ResourceMonitor) {
+	// Contract-harness invariant: admission decisions are deterministic here.
+	// ResourceMonitor fails closed until it has >= 15 CPU samples; seed them so
+	// contract tests validate API semantics, not throttling behavior.
+	for i := 0; i < admissionSeedSamples; i++ {
+		adm.ObserveCPULoad(0.1)
+	}
+}
+
 func newV3TestServer(t *testing.T, hlsRoot string) (*Server, *v3store.MemoryStore) {
+	return newV3TestServerWithAdmission(t, hlsRoot, admissionHarnessAdmissible)
+}
+
+func newV3TestServerWithAdmission(t *testing.T, hlsRoot string, mode admissionHarnessMode) (*Server, *v3store.MemoryStore) {
 	t.Helper()
 	cfg := config.AppConfig{
 		APIToken:       "test-token",
@@ -142,7 +166,9 @@ func newV3TestServer(t *testing.T, hlsRoot string) (*Server, *v3store.MemoryStor
 		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 	)
 	adm := admission.NewResourceMonitor(10, 10, 0)
-	adm.ObserveCPULoad(0.1)
+	if mode == admissionHarnessAdmissible {
+		seedAdmissionSamples(adm)
+	}
 	s.SetAdmission(adm)
 
 	return s, st
@@ -162,13 +188,13 @@ func TestV3Contract_Intents(t *testing.T) {
 	s, st := newV3TestServer(t, t.TempDir())
 	body := readFixture(t, "post_intents_request.json")
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v3/intents", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, V3BaseURL+"/intents", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer test-token")
 	req.Header.Set("Content-Type", "application/json")
 
 	rr := httptest.NewRecorder()
-	HandlerWithOptions(s, ChiServerOptions{
-		BaseURL: "/api/v3",
+	NewRouter(s, RouterOptions{
+		BaseURL: V3BaseURL,
 	}).ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusAccepted, rr.Code)
@@ -193,6 +219,33 @@ func TestV3Contract_Intents(t *testing.T) {
 	require.JSONEq(t, string(readFixture(t, "post_intents_response.json")), string(gotJSON))
 }
 
+func TestV3Contract_Intents_AdmissionRejected(t *testing.T) {
+	s, _ := newV3TestServerWithAdmission(t, t.TempDir(), admissionHarnessUnseeded)
+	body := readFixture(t, "post_intents_request.json")
+
+	req := httptest.NewRequest(http.MethodPost, V3BaseURL+"/intents", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer test-token")
+	req.Header.Set("Content-Type", "application/json")
+
+	rr := httptest.NewRecorder()
+	NewRouter(s, RouterOptions{
+		BaseURL: V3BaseURL,
+	}).ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusServiceUnavailable, rr.Code)
+	require.Contains(t, rr.Header().Get("Content-Type"), "application/problem+json")
+
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &got))
+	require.Equal(t, float64(http.StatusServiceUnavailable), got["status"])
+	require.Equal(t, "error/admission_rejected", got["type"])
+	require.Equal(t, "ADMISSION_REJECTED", got["code"])
+
+	reqID, ok := got[problem.JSONKeyRequestID].(string)
+	require.True(t, ok)
+	require.NotEmpty(t, reqID)
+}
+
 func TestV3Contract_IntentLeaseBusy(t *testing.T) {
 	t.Run("phase2_idempotent_replay", func(t *testing.T) {
 		s, st := newV3TestServer(t, t.TempDir())
@@ -215,12 +268,12 @@ func TestV3Contract_IntentLeaseBusy(t *testing.T) {
 		body := readFixture(t, "post_intents_request.json")
 
 		send := func() (*http.Request, *httptest.ResponseRecorder, v3api.IntentResponse) {
-			req := httptest.NewRequest(http.MethodPost, "/api/v3/intents", bytes.NewReader(body))
+			req := httptest.NewRequest(http.MethodPost, V3BaseURL+"/intents", bytes.NewReader(body))
 			req.Header.Set("Authorization", "Bearer test-token")
 			req.Header.Set("Content-Type", "application/json")
 			rr := httptest.NewRecorder()
-			HandlerWithOptions(s, ChiServerOptions{
-				BaseURL: "/api/v3",
+			NewRouter(s, RouterOptions{
+				BaseURL: V3BaseURL,
 			}).ServeHTTP(rr, req)
 			return req, rr, decodeIntentResponse(t, rr.Body.Bytes())
 		}
@@ -269,16 +322,17 @@ func TestV3Contract_SessionState(t *testing.T) {
 		Profile:       model.ProfileSpec{Name: "high"},
 		State:         model.SessionReady,
 		Reason:        model.RNone,
-		ReasonDetail:  "baseline",
+		ReasonDetailCode:  model.DNone,
+		ReasonDetailDebug: "baseline",
 		CorrelationID: "corr-test-001",
 		UpdatedAtUnix: updatedAtUnix,
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v3/sessions/"+sessionID, nil)
+	req := httptest.NewRequest(http.MethodGet, V3BaseURL+"/sessions/"+sessionID, nil)
 	req.Header.Set("Authorization", "Bearer test-token")
 
-	handler := HandlerWithOptions(s, ChiServerOptions{
-		BaseURL: "/api/v3",
+	handler := NewRouter(s, RouterOptions{
+		BaseURL: V3BaseURL,
 	})
 
 	rr := httptest.NewRecorder()
@@ -288,6 +342,102 @@ func TestV3Contract_SessionState(t *testing.T) {
 	require.JSONEq(t, string(readFixture(t, "get_session_response.json")), rr.Body.String())
 
 	validateOpenAPIResponse(t, loadOpenAPIDoc(t), req, rr, nil)
+}
+
+func TestV3Contract_SessionState_TerminalOutcomeMatrix(t *testing.T) {
+	// NOTE: Uses global log buffer; do not run in parallel.
+	cases := []struct {
+		name             string
+		state            model.SessionState
+		reason           model.ReasonCode
+		detailCode       model.ReasonDetailCode
+		detailDebug      string
+		wantState        string
+		wantReason       string
+		wantDetail       string
+		expectCorrection bool
+	}{
+		{
+			name:       "cancelled_context",
+			state:      model.SessionCancelled,
+			reason:     model.RCancelled,
+			detailCode: model.DContextCanceled,
+			wantState:  "CANCELLED",
+			wantReason: string(model.RCancelled),
+			wantDetail: "context canceled",
+		},
+		{
+			name:             "stopped_strips_cancel_detail",
+			state:            model.SessionStopped,
+			reason:           model.RClientStop,
+			detailCode:       model.DContextCanceled,
+			wantState:        "STOPPED",
+			wantReason:       string(model.RClientStop),
+			wantDetail:       "",
+			expectCorrection: true,
+		},
+		{
+			name:       "failed_tune_timeout",
+			state:      model.SessionFailed,
+			reason:     model.RTuneTimeout,
+			detailCode: model.DDeadlineExceeded,
+			wantState:  "FAILED",
+			wantReason: string(model.RTuneTimeout),
+			wantDetail: "deadline exceeded",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s, st := newV3TestServer(t, t.TempDir())
+			sessionID := "550e8400-e29b-41d4-a716-446655440000"
+
+			require.NoError(t, st.PutSession(context.Background(), &model.SessionRecord{
+				SessionID:     sessionID,
+				ServiceRef:    "1:0:1:445D:453:1:C00000:0:0:0:",
+				Profile:       model.ProfileSpec{Name: "high"},
+				State:         tc.state,
+				Reason:        tc.reason,
+				ReasonDetailCode:  tc.detailCode,
+				ReasonDetailDebug: tc.detailDebug,
+				CorrelationID: "corr-test-002",
+			}))
+
+			req := httptest.NewRequest(http.MethodGet, V3BaseURL+"/sessions/"+sessionID, nil)
+			req.Header.Set("Authorization", "Bearer test-token")
+
+			handler := NewRouter(s, RouterOptions{
+				BaseURL: V3BaseURL,
+			})
+
+			log.ClearRecentLogs()
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, req)
+
+			require.Equal(t, http.StatusGone, rr.Code)
+
+			var problem map[string]any
+			require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &problem))
+
+			require.Equal(t, tc.wantState, problem["state"])
+			require.Equal(t, tc.wantReason, problem["reason"])
+			require.Equal(t, tc.wantDetail, problem["reason_detail"])
+			_, ok := problem["reason_detail"]
+			require.True(t, ok, "reason_detail must be present")
+
+			after := log.GetRecentLogs()
+			if tc.expectCorrection {
+				found := false
+				for _, entry := range after {
+					if entry.Message == "corrected stopped detail_code" {
+						found = true
+						break
+					}
+				}
+				require.True(t, found, "expected correction log entry")
+			}
+		})
+	}
 }
 
 func TestV3Contract_ReadyImpliesPlayable(t *testing.T) {
@@ -304,12 +454,12 @@ func TestV3Contract_ReadyImpliesPlayable(t *testing.T) {
 
 	_, _, _ = writeHLSFixtures(t, hlsRoot, sessionID)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v3/sessions/"+sessionID, nil)
+	req := httptest.NewRequest(http.MethodGet, V3BaseURL+"/sessions/"+sessionID, nil)
 	req.Header.Set("Authorization", "Bearer test-token")
 
 	rr := httptest.NewRecorder()
-	handler := HandlerWithOptions(s, ChiServerOptions{
-		BaseURL: "/api/v3",
+	handler := NewRouter(s, RouterOptions{
+		BaseURL: V3BaseURL,
 	})
 	handler.ServeHTTP(rr, req)
 
@@ -321,7 +471,7 @@ func TestV3Contract_ReadyImpliesPlayable(t *testing.T) {
 	state, _ := sessionResp["state"].(string)
 	require.Equal(t, "READY", state)
 
-	reqPlaylist := httptest.NewRequest(http.MethodGet, "/api/v3/sessions/"+sessionID+"/hls/index.m3u8", nil)
+	reqPlaylist := httptest.NewRequest(http.MethodGet, V3BaseURL+"/sessions/"+sessionID+"/hls/index.m3u8", nil)
 	reqPlaylist.AddCookie(&http.Cookie{Name: "xg2g_session", Value: "test-token"})
 	rrPlaylist := httptest.NewRecorder()
 	handler.ServeHTTP(rrPlaylist, reqPlaylist)
@@ -329,7 +479,7 @@ func TestV3Contract_ReadyImpliesPlayable(t *testing.T) {
 	require.Equal(t, http.StatusOK, rrPlaylist.Code)
 	segmentURI := firstSegmentURI(t, rrPlaylist.Body.Bytes())
 
-	reqSeg := httptest.NewRequest(http.MethodGet, "/api/v3/sessions/"+sessionID+"/hls/"+segmentURI, nil)
+	reqSeg := httptest.NewRequest(http.MethodGet, V3BaseURL+"/sessions/"+sessionID+"/hls/"+segmentURI, nil)
 	reqSeg.AddCookie(&http.Cookie{Name: "xg2g_session", Value: "test-token"})
 	rrSeg := httptest.NewRecorder()
 	handler.ServeHTTP(rrSeg, reqSeg)
@@ -352,12 +502,12 @@ func TestV3Contract_HLS(t *testing.T) {
 
 	playlist, initSeg, mediaSeg := writeHLSFixtures(t, hlsRoot, sessionID)
 
-	handler := HandlerWithOptions(s, ChiServerOptions{
-		BaseURL: "/api/v3",
+	handler := NewRouter(s, RouterOptions{
+		BaseURL: V3BaseURL,
 	})
 	doc := loadOpenAPIDoc(t)
 
-	reqPlaylist := httptest.NewRequest(http.MethodGet, "/api/v3/sessions/"+sessionID+"/hls/index.m3u8", nil)
+	reqPlaylist := httptest.NewRequest(http.MethodGet, V3BaseURL+"/sessions/"+sessionID+"/hls/index.m3u8", nil)
 	reqPlaylist.AddCookie(&http.Cookie{Name: "xg2g_session", Value: "test-token"})
 	rrPlaylist := httptest.NewRecorder()
 	handler.ServeHTTP(rrPlaylist, reqPlaylist)
@@ -369,7 +519,7 @@ func TestV3Contract_HLS(t *testing.T) {
 		ExcludeResponseBody: true,
 	})
 
-	reqTS := httptest.NewRequest(http.MethodGet, "/api/v3/sessions/"+sessionID+"/hls/seg_000000.ts", nil)
+	reqTS := httptest.NewRequest(http.MethodGet, V3BaseURL+"/sessions/"+sessionID+"/hls/seg_000000.ts", nil)
 	reqTS.AddCookie(&http.Cookie{Name: "xg2g_session", Value: "test-token"})
 	rrTS := httptest.NewRecorder()
 	handler.ServeHTTP(rrTS, reqTS)
@@ -381,7 +531,7 @@ func TestV3Contract_HLS(t *testing.T) {
 		ExcludeResponseBody: true,
 	})
 
-	reqInit := httptest.NewRequest(http.MethodGet, "/api/v3/sessions/"+sessionID+"/hls/init.mp4", nil)
+	reqInit := httptest.NewRequest(http.MethodGet, V3BaseURL+"/sessions/"+sessionID+"/hls/init.mp4", nil)
 	reqInit.AddCookie(&http.Cookie{Name: "xg2g_session", Value: "test-token"})
 	rrInit := httptest.NewRecorder()
 	handler.ServeHTTP(rrInit, reqInit)
@@ -394,7 +544,7 @@ func TestV3Contract_HLS(t *testing.T) {
 		ExcludeResponseBody: true,
 	})
 
-	reqM4s := httptest.NewRequest(http.MethodGet, "/api/v3/sessions/"+sessionID+"/hls/seg_000001.m4s", nil)
+	reqM4s := httptest.NewRequest(http.MethodGet, V3BaseURL+"/sessions/"+sessionID+"/hls/seg_000001.m4s", nil)
 	reqM4s.AddCookie(&http.Cookie{Name: "xg2g_session", Value: "test-token"})
 	rrM4s := httptest.NewRecorder()
 	handler.ServeHTTP(rrM4s, reqM4s)
@@ -424,11 +574,11 @@ func TestV3Contract_HLSRange(t *testing.T) {
 	_, initSeg, _ := writeHLSFixtures(t, hlsRoot, sessionID)
 	require.GreaterOrEqual(t, len(initSeg), 2, "init segment must be at least 2 bytes")
 
-	handler := HandlerWithOptions(s, ChiServerOptions{
-		BaseURL: "/api/v3",
+	handler := NewRouter(s, RouterOptions{
+		BaseURL: V3BaseURL,
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v3/sessions/"+sessionID+"/hls/init.mp4", nil)
+	req := httptest.NewRequest(http.MethodGet, V3BaseURL+"/sessions/"+sessionID+"/hls/init.mp4", nil)
 	req.Header.Set("Range", "bytes=0-1")
 	req.AddCookie(&http.Cookie{Name: "xg2g_session", Value: "test-token"})
 	rr := httptest.NewRecorder()

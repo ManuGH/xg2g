@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
+	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
@@ -109,12 +110,23 @@ func (s *Server) handleV3SessionState(w http.ResponseWriter, r *http.Request) {
 
 	// CTO Contract (Phase 5.3): Terminal sessions return 410 Gone with JSON body
 	if session.State.IsTerminal() {
+		out := lifecycle.PublicOutcomeFromRecord(session)
+		state := string(mapSessionState(out.State))
+		reason, ok := mapSessionReason(out.Reason)
+		extra := map[string]any{
+			"session":       session.SessionID,
+			"state":         state,
+			"reason_detail": mapDetailCode(out.DetailCode),
+		}
+		if ok {
+			extra["reason"] = string(reason)
+		}
 		writeProblem(w, r, http.StatusGone,
 			"urn:xg2g:error:session:gone",
 			"Session Gone",
 			"session_gone",
 			"Session is in a terminal state (stopped, failed, or cancelled).",
-			map[string]any{"session": session.SessionID},
+			extra,
 		)
 		return
 	}
@@ -130,14 +142,14 @@ func (s *Server) handleV3SessionState(w http.ResponseWriter, r *http.Request) {
 
 	ensureTraceHeader(w, r.Context())
 
-	// Map State
-	resp.State = mapSessionState(session.State)
-
-	if session.Reason != "" {
-		r := SessionResponseReason(session.Reason)
+	// Map State/Reason/Detail
+	out := lifecycle.PublicOutcomeFromRecord(session)
+	resp.State = mapSessionState(out.State)
+	if r, ok := mapSessionReason(out.Reason); ok {
 		resp.Reason = &r
 	}
-	resp.ReasonDetail = &session.ReasonDetail
+	detail := mapDetailCode(out.DetailCode)
+	resp.ReasonDetail = &detail
 
 	mode, durationSeconds, seekableStart, seekableEnd, liveEdge := sessionPlaybackInfo(session, time.Now())
 	if mode != "" {
@@ -148,34 +160,11 @@ func (s *Server) handleV3SessionState(w http.ResponseWriter, r *http.Request) {
 	resp.SeekableStartSeconds = toFloat32Ptr(seekableStart)
 	resp.SeekableEndSeconds = toFloat32Ptr(seekableEnd)
 	resp.LiveEdgeSeconds = toFloat32Ptr(liveEdge)
-	pUrl := fmt.Sprintf("/api/v3/sessions/%s/hls/index.m3u8", session.SessionID)
+	pUrl := fmt.Sprintf("%s/sessions/%s/hls/index.m3u8", V3BaseURL, session.SessionID)
 	resp.PlaybackUrl = &pUrl
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
-}
-
-func mapSessionState(s model.SessionState) SessionResponseState {
-	switch s {
-	case model.SessionStarting:
-		return STARTING
-	case model.SessionPriming:
-		return PRIMING
-	case model.SessionReady:
-		return READY
-	case model.SessionDraining:
-		return DRAINING
-	case model.SessionStopping:
-		return STOPPING
-	case model.SessionStopped:
-		return STOPPED
-	case model.SessionFailed:
-		return FAILED
-	case model.SessionCancelled:
-		return CANCELLED
-	default:
-		return IDLE
-	}
 }
 
 func toPtr[T any](v T) *T {

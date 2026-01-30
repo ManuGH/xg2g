@@ -11,6 +11,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/ManuGH/xg2g/internal/control/auth"
 	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/artifacts"
@@ -228,20 +229,29 @@ func (s *Server) mapPlaybackInfoV2(ctx context.Context, id string, dec *decision
 	decDTO.Selected.VideoCodec = dec.Selected.VideoCodec
 	decDTO.Selected.AudioCodec = dec.Selected.AudioCodec
 	decDTO.SelectedOutputUrl = dec.SelectedOutputURL
+	if strings.HasPrefix(decDTO.SelectedOutputUrl, "placeholder://") {
+		decDTO.SelectedOutputUrl = url
+	}
 	decDTO.SelectedOutputKind = PlaybackDecisionSelectedOutputKind(dec.SelectedOutputKind)
 
 	for _, out := range dec.Outputs {
 		var raw json.RawMessage
+		// Replace placeholder URLs with functional relative URLs
+		effectiveURL := out.URL
+		if strings.HasPrefix(effectiveURL, "placeholder://") {
+			effectiveURL = url
+		}
+
 		switch out.Kind {
 		case "file":
 			raw, _ = json.Marshal(PlaybackOutputFile{
 				Kind: PlaybackOutputFileKindFile,
-				Url:  out.URL,
+				Url:  effectiveURL,
 			})
 		case "hls":
 			raw, _ = json.Marshal(PlaybackOutputHls{
 				Kind:        Hls,
-				PlaylistUrl: out.URL,
+				PlaylistUrl: effectiveURL,
 			})
 		}
 		if raw != nil {
