@@ -180,7 +180,7 @@ func (s *Server) handlePicons(w http.ResponseWriter, r *http.Request) {
 	// 3. SAVE TO CACHE
 	tempFile, err := os.CreateTemp(piconDir, "picon-*.tmp")
 	if err != nil {
-		logger.Error().Err(err).Msg("failed to create temp picon file")
+		logger.Warn().Err(err).Msg("skipping picon cache (write failed)")
 		_, _ = io.Copy(w, resp.Body)
 		return
 	}
@@ -190,8 +190,14 @@ func (s *Server) handlePicons(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	if _, err := io.Copy(tempFile, resp.Body); err != nil {
-		logger.Error().Err(err).Msg("failed to write to temp picon file")
-		http.Error(w, "Failed to cache picon", http.StatusInternalServerError)
+		logger.Warn().Err(err).Msg("skipping picon cache (copy failed)")
+		// If write fails, we can't rewind the body easily if it's a stream,
+		// but typically we can't save it. However, the client needs the data.
+		// Since we wrote to tempFile, we failed mid-stream.
+		// Actually, we should io.TeeReader if we want to be robust, or just buffer it.
+		// But for picons (small), copy to temp, then serve file is safer.
+		// If copy fails, we abort.
+		http.Error(w, "Picon transfer failed", http.StatusInternalServerError)
 		return
 	}
 	_ = tempFile.Close() // Close before rename on Windows

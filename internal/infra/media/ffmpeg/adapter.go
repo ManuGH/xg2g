@@ -300,24 +300,36 @@ func (a *LocalAdapter) selectStreamURLWithPreflight(ctx context.Context, session
 			Msg("fallback to 8001 activated after streamrelay preflight failure")
 
 		fallbackResult, fallbackErr := preflight(ctx, fallbackURL)
-		fallbackReason := preflightReason(fallbackResult, fallbackErr)
 		if fallbackErr == nil && fallbackResult.ok {
 			return fallbackURL, nil
 		}
+		a.Logger.Warn().Str("url", fallbackLogURL).Msg("fallback 8001 failed, trying original WebIF URL")
+
+		// Fallback 2: Original WebIF URL (M3U)
+		// Reconstruct standard OpenWebIF M3U URL
+		// http://host/web/stream.m3u?ref=...
+		if a.E2 != nil && a.E2.BaseURL != "" {
+			u, _ := url.Parse(a.E2.BaseURL)
+			u.Path = "/web/stream.m3u"
+			q := u.Query()
+			q.Set("ref", serviceRef)
+			u.RawQuery = q.Encode()
+			origURL := u.String()
+
+			// Preflight for M3U: expect 200 OK, ignore TS sync
+			origRes, origErr := preflight(ctx, origURL)
+			if (origErr == nil && origRes.httpStatus == 200) || (origRes.httpStatus == 200 && origRes.bytes > 0) {
+				a.Logger.Info().Str("url", sanitizeURLForLog(origURL)).Msg("fallback to original URL succeeded (M3U)")
+				return origURL, nil
+			}
+		}
 
 		a.Logger.Error().
-			Str("event", "preflight_failed_no_valid_ts").
+			Str("event", "all_fallbacks_failed").
 			Str("sessionId", sessionID).
-			Str("service_ref", serviceRef).
-			Str("resolved_url", resolvedLogURL).
-			Str("fallback_url", fallbackLogURL).
-			Int("preflight_bytes", fallbackResult.bytes).
-			Str("preflight_reason", fallbackReason).
-			Int64("preflight_latency_ms", fallbackResult.latencyMs).
-			Int("http_status", fallbackResult.httpStatus).
-			Int("resolved_port", fallbackResult.resolvedPort).
-			Msg("preflight failed for fallback stream url")
-		return "", &ports.PreflightError{Reason: "fallback_failed_" + fallbackReason}
+			Msg("all stream source fallbacks failed")
+		// Return original error (or fallback error)
+		return "", &ports.PreflightError{Reason: "fallback_failed_all"}
 	}
 
 	a.Logger.Error().

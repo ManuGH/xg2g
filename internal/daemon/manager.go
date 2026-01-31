@@ -18,20 +18,15 @@ import (
 	"github.com/ManuGH/xg2g/internal/admission"
 	"github.com/ManuGH/xg2g/internal/config"
 	worker "github.com/ManuGH/xg2g/internal/domain/session/manager"
-	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/infra/bus"
 	"github.com/ManuGH/xg2g/internal/infra/media/ffmpeg"
 	"github.com/ManuGH/xg2g/internal/infra/media/stub"
 	"github.com/ManuGH/xg2g/internal/infra/platform"
-	memorybus "github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
-	"github.com/ManuGH/xg2g/internal/pipeline/resume"
-	"github.com/ManuGH/xg2g/internal/pipeline/scan"
 	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
-	"golang.org/x/time/rate"
 )
 
 // ShutdownHook is a function that performs cleanup during graceful shutdown.
@@ -247,29 +242,22 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 		Str("e2_host", cfg.Enigma2.BaseURL).
 		Msg("starting v3 worker (Phase 7A)")
 
-	// 1. Initialize Bus (Memory for MVP)
-	v3Bus := memorybus.NewMemoryBus()
+	// 1. Initialize Bus (Shared)
+	v3Bus := m.deps.V3Bus
 
-	// 2. Initialize Store (Factory)
-	v3Store, err := store.OpenStateStore(cfg.Store.Backend, cfg.Store.Path)
-	if err != nil {
-		m.logger.Error().Err(err).Msg("failed to open v3 store")
-		return err
-	}
+	// 2. Initialize Store (Shared)
+	v3Store := m.deps.V3Store
 
-	// Phase 7B-2: Register Shutdown Hook for Store
+	// Phase 7B-2: Register Shutdown Hook for Store (if needed)
 	if c, ok := v3Store.(interface{ Close() error }); ok {
 		m.RegisterShutdownHook("v3_store_close", func(ctx context.Context) error {
 			return c.Close()
 		})
 	}
 
-	// 2.5 Initialize Resume Store
-	resumeStore, err := resume.NewStore(cfg.Store.Backend, cfg.Store.Path)
-	if err != nil {
-		m.logger.Error().Err(err).Msg("failed to open resume store")
-		return err
-	}
+	// 2.5 Initialize Resume Store (Shared)
+	resumeStore := m.deps.ResumeStore
+
 	// Register Shutdown Hook for Resume Store
 	if c, ok := resumeStore.(interface{ Close() error }); ok {
 		m.RegisterShutdownHook("resume_store_close", func(ctx context.Context) error {
@@ -277,17 +265,11 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 		})
 	}
 
-	// 2.7 Initialize Smart Profile Scanner
-	scanStore, err := scan.NewStore(cfg.Store.Backend, cfg.Store.Path)
-	if err != nil {
-		m.logger.Error().Err(err).Msg("failed to open scan store")
-		return err
-	}
-	playlistPath := "data/playlist.m3u"
-	if m.deps.ProxyConfig != nil && m.deps.ProxyConfig.PlaylistPath != "" {
-		playlistPath = m.deps.ProxyConfig.PlaylistPath
-	}
-	scanManager := scan.NewManager(scanStore, playlistPath)
+	// 2.6 Initialize E2 Client (Shared)
+	e2Client := m.deps.E2Client
+
+	// 2.7 Initialize Smart Profile Scanner (Shared)
+	scanManager := m.deps.ScanManager
 
 	// 2.8 Initialize Admission Control (Phase 5.2/5.3)
 	adm := admission.NewResourceMonitor(cfg.Engine.MaxPool, cfg.Engine.GPULimit, cfg.Engine.CPUThresholdScale)
@@ -332,23 +314,6 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 			},
 		},
 	}
-
-	// Phase 8-3: Factory Wiring
-	e2Opts := enigma2.Options{
-		Timeout:               cfg.Enigma2.Timeout,
-		ResponseHeaderTimeout: cfg.Enigma2.ResponseHeaderTimeout,
-		MaxRetries:            cfg.Enigma2.Retries,
-		Backoff:               cfg.Enigma2.Backoff,
-		MaxBackoff:            cfg.Enigma2.MaxBackoff,
-		Username:              cfg.Enigma2.Username,
-		Password:              cfg.Enigma2.Password,
-		UserAgent:             cfg.Enigma2.UserAgent,
-		RateLimit:             rate.Limit(cfg.Enigma2.RateLimit),
-		RateLimitBurst:        cfg.Enigma2.RateBurst,
-		UseWebIFStreams:       cfg.Enigma2.UseWebIFStreams,
-		StreamPort:            cfg.Enigma2.StreamPort,
-	}
-	e2Client := enigma2.NewClientWithOptions(cfg.Enigma2.BaseURL, e2Opts)
 
 	if cfg.Engine.Mode == "virtual" {
 		orch.Pipeline = stub.NewAdapter()

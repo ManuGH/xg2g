@@ -8,7 +8,17 @@
     "files": "Files",
     "logs": "Logs",
     "playerSettings": "Settings",
-    "config": "Setup"
+    "config": "Setup",
+    "cards": {
+      "boxStreaming": {
+        "title": "Receiver Connection",
+        "inputLabel": "Signal from Receiver"
+      },
+      "programStatus": {
+        "title": "Distribution Status",
+        "outputLabel": "Connected Devices"
+      }
+    }
   },
   "common": {
     "language": "Language",
@@ -24,7 +34,10 @@
     "showDetails": "Show Details",
     "hideDetails": "Hide Details",
     "startStream": "Start Stream",
-    "loading": "Loading..."
+    "loading": "Loading...",
+    "receiverStandby": "Receiver in Standby",
+    "receiverUnavailable": "Receiver is in standby (idle)",
+    "noCurrentProgram": "No current program information"
   },
   "player": {
     "status": "Status",

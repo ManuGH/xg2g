@@ -44,6 +44,18 @@ export function AppProvider({ children }: AppProviderProps) {
   const [initializing, setInitializing] = useState<boolean>(true);
   const [dataLoaded, setDataLoaded] = useState<boolean>(false);
 
+  // Initialize client with stored token on mount (Address Phase 1/13 Refactor gap)
+  useCallback(() => {
+    const storedToken = getStoredToken();
+    if (storedToken) {
+      client.setConfig({
+        headers: {
+          Authorization: `Bearer ${storedToken}`
+        }
+      });
+    }
+  }, [])();
+
   // Actions
   const setToken = useCallback((newToken: string) => {
     setTokenState(newToken);

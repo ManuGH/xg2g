@@ -93,7 +93,7 @@ func buildRegistry() (*Registry, error) {
 		{Path: "enigma2.maxBackoff", Env: "XG2G_OWI_MAX_BACKOFF_MS", FieldPath: "Enigma2.MaxBackoff", Profile: ProfileAdvanced, Status: StatusActive, Default: 30 * time.Second},
 		{Path: "enigma2.streamPort", Env: "XG2G_STREAM_PORT", FieldPath: "Enigma2.StreamPort", Profile: ProfileAdvanced, Status: StatusDeprecated, Default: 8001},
 		{Path: "enigma2.useWebIFStreams", Env: "XG2G_USE_WEBIF_STREAMS", FieldPath: "Enigma2.UseWebIFStreams", Profile: ProfileAdvanced, Status: StatusActive, Default: true},
-		{Path: "enigma2.fallbackTo8001", Env: "XG2G_E2_FALLBACK_TO_8001", FieldPath: "Enigma2.FallbackTo8001", Profile: ProfileIntegrator, Status: StatusActive, Default: false},
+		{Path: "enigma2.fallbackTo8001", Env: "XG2G_E2_FALLBACK_TO_8001", FieldPath: "Enigma2.FallbackTo8001", Profile: ProfileIntegrator, Status: StatusActive, Default: true},
 		{Path: "enigma2.authMode", Env: "", FieldPath: "Enigma2.AuthMode", Profile: ProfileAdvanced, Status: StatusActive, Default: "inherit"},
 		{Path: "enigma2.rateLimit", Env: "", FieldPath: "Enigma2.RateLimit", Profile: ProfileAdvanced, Status: StatusActive},
 		{Path: "enigma2.rateBurst", Env: "", FieldPath: "Enigma2.RateBurst", Profile: ProfileAdvanced, Status: StatusActive},
@@ -120,7 +120,7 @@ func buildRegistry() (*Registry, error) {
 		{FieldPath: "EPGRefreshInterval", Profile: ProfileInternal, Status: StatusInternal, Default: 6 * time.Hour},
 
 		// --- ENGINE ---
-		{Path: "engine.enabled", Env: "XG2G_ENGINE_ENABLED", FieldPath: "Engine.Enabled", Profile: ProfileAdvanced, Status: StatusActive, Default: false}, // Fix A: Secure by default
+		{Path: "engine.enabled", Env: "XG2G_ENGINE_ENABLED", FieldPath: "Engine.Enabled", Profile: ProfileAdvanced, Status: StatusActive, Default: true}, // Fix A: Secure by default
 		{Path: "engine.mode", Env: "XG2G_ENGINE_MODE", FieldPath: "Engine.Mode", Profile: ProfileAdvanced, Status: StatusActive, Default: "standard"},
 		{Path: "engine.idleTimeout", Env: "XG2G_ENGINE_IDLE_TIMEOUT", FieldPath: "Engine.IdleTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 1 * time.Minute},
 		{Path: "engine.tunerSlots", Env: "XG2G_TUNER_SLOTS", FieldPath: "Engine.TunerSlots", Profile: ProfileAdvanced, Status: StatusActive},

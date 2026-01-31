@@ -30,6 +30,7 @@ import (
 	xglog "github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
+	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
 	"github.com/ManuGH/xg2g/internal/platform/paths"
@@ -37,6 +38,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/verification"
 	"github.com/ManuGH/xg2g/internal/verification/checks"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"golang.org/x/time/rate"
 )
 
 var (
@@ -423,7 +425,24 @@ func main() {
 	if err != nil {
 		logger.Fatal().Err(err).Msg("invalid playlist path")
 	}
-	v3Scan := scan.NewManager(v3ScanStore, playlistPath)
+	// Initialize E2 Client for Smart Scanning (avoid dumb-scanner race condition)
+	e2Opts := enigma2.Options{
+		Timeout:               cfg.Enigma2.Timeout,
+		ResponseHeaderTimeout: cfg.Enigma2.ResponseHeaderTimeout,
+		MaxRetries:            cfg.Enigma2.Retries,
+		Backoff:               cfg.Enigma2.Backoff,
+		MaxBackoff:            cfg.Enigma2.MaxBackoff,
+		Username:              cfg.Enigma2.Username,
+		Password:              cfg.Enigma2.Password,
+		UserAgent:             cfg.Enigma2.UserAgent,
+		RateLimit:             rate.Limit(cfg.Enigma2.RateLimit),
+		RateLimitBurst:        cfg.Enigma2.RateBurst,
+		UseWebIFStreams:       cfg.Enigma2.UseWebIFStreams,
+		StreamPort:            cfg.Enigma2.StreamPort,
+	}
+	e2Client := enigma2.NewClientWithOptions(cfg.Enigma2.BaseURL, e2Opts)
+
+	v3Scan := scan.NewManager(v3ScanStore, playlistPath, e2Client)
 
 	// Inject v3 components into API server
 	s.SetV3Components(v3Bus, v3Store, resumeStore, v3Scan)
@@ -529,6 +548,13 @@ func main() {
 		MetricsAddr:     metricsAddr,
 
 		ProxyOnly: false, // Deprecated, always false now
+
+		// Inject Shared V3 Components
+		V3Bus:       v3Bus,
+		V3Store:     v3Store,
+		ResumeStore: resumeStore,
+		ScanManager: v3Scan,
+		E2Client:    e2Client,
 	}
 
 	// Create daemon manager

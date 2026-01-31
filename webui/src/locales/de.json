@@ -8,7 +8,17 @@
     "files": "Dateien",
     "logs": "Logs",
     "playerSettings": "Einstellungen",
-    "config": "Einrichtung"
+    "config": "Einrichtung",
+    "cards": {
+      "boxStreaming": {
+        "title": "Receiver Verbindung",
+        "inputLabel": "Signal vom Receiver"
+      },
+      "programStatus": {
+        "title": "Verteiler Status",
+        "outputLabel": "Verbundene Geräte"
+      }
+    }
   },
   "common": {
     "language": "Sprache",
@@ -24,7 +34,10 @@
     "showDetails": "Details anzeigen",
     "hideDetails": "Details verbergen",
     "startStream": "Stream starten",
-    "loading": "Laden..."
+    "loading": "Laden...",
+    "receiverStandby": "Receiver im Standby",
+    "receiverUnavailable": "Receiver ist im Standby (Leerlauf)",
+    "noCurrentProgram": "Keine aktuellen Programminformationen"
   },
   "player": {
     "status": "Status",

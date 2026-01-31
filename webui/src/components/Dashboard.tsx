@@ -12,6 +12,7 @@ import {
   useDvrStatus,
   useLogs
 } from '../hooks/useServerQueries';
+import { useTranslation } from 'react-i18next';
 import type { SystemHealth } from '../client-ts';
 import StreamsList from './StreamsList';
 import { Card, CardHeader, CardTitle, CardBody } from './ui/Card';
@@ -125,14 +126,17 @@ export default function Dashboard() {
 
 // Live TV Card (HDMI Output) - Refactored to primitives
 function LiveTVCard() {
+  const { t } = useTranslation();
   const { data: info, isLoading } = useReceiverCurrent();
 
-  if (isLoading && !info) return <Card><CardBody>Loading Live TV info...</CardBody></Card>;
+  if (isLoading && !info) return <Card><CardBody>{t('common.loading')}</CardBody></Card>;
 
   const hasNow = !!info?.now?.title;
   const now = info?.now;
   const channel = info?.channel;
   const next = info?.next;
+
+  const isUnavailable = info?.status === 'unavailable';
 
   return (
     <Card variant="live" className="live-tv-card">
@@ -140,11 +144,14 @@ function LiveTVCard() {
         <div className="live-tv-header">
           <CardTitle>Live on Receiver</CardTitle>
           <div className="badge-group">
-            <StatusChip state="warning" label="HDMI" />
-            <StatusChip state="live" label="LIVE" />
+            {!isUnavailable && <StatusChip state="idle" label="HDMI" showIcon={false} />}
+            {!isUnavailable && <StatusChip state="live" label="LIVE" />}
+            {isUnavailable && <StatusChip state="idle" label="STANDBY" />}
           </div>
         </div>
-        <div className="receiver-channel">{channel?.name || 'Unknown Channel'}</div>
+        <div className="receiver-channel">
+          {isUnavailable ? t('common.receiverStandby') : (channel?.name || 'Unknown Channel')}
+        </div>
       </CardHeader>
 
       <CardBody>
@@ -176,7 +183,16 @@ function LiveTVCard() {
           </>
         ) : (
           <div className="no-data">
-            {info?.status === 'unavailable' ? 'Receiver currently unavailable' : 'No EPG information available'}
+            {next?.title ? (
+              <div className="program-next-only">
+                <div className="program-current-missing">{t('common.noCurrentProgram')}</div>
+                <div className="program-next">
+                  <span className="next-label">UP NEXT:</span> {next.title}
+                </div>
+              </div>
+            ) : (
+              <>{info?.status === 'unavailable' ? t('common.receiverUnavailable') : 'No EPG information available'}</>
+            )}
           </div>
         )}
       </CardBody>
@@ -187,17 +203,18 @@ function LiveTVCard() {
 // Box Streaming Card - Refactored to primitives
 function BoxStreamingCard() {
   const { data: streams = [] } = useStreams();
+  const { t } = useTranslation();
   const streamCount = streams.length;
   const isStreaming = streamCount > 0;
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Box Streaming</CardTitle>
+        <CardTitle>{t('nav.cards.boxStreaming.title')}</CardTitle>
       </CardHeader>
       <CardBody>
         <div className="status-row">
-          <span className="status-label">Enigma2 → xg2g</span>
+          <span className="status-label">{t('nav.cards.boxStreaming.inputLabel')}</span>
           <StatusChip
             state={isStreaming ? 'live' : 'idle'}
             label={isStreaming ? `STREAMING (${streamCount})` : 'IDLE'}
@@ -211,17 +228,18 @@ function BoxStreamingCard() {
 // Program Status Card - Refactored to primitives
 function ProgramStatusCard({ health }: { health: SystemHealth }) {
   const { data: streams = [] } = useStreams();
+  const { t } = useTranslation();
   const streamCount = streams.length;
   const isActive = streamCount > 0;
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Program Status</CardTitle>
+        <CardTitle>{t('nav.cards.programStatus.title')}</CardTitle>
       </CardHeader>
       <CardBody>
         <div className="status-row">
-          <span className="status-label">xg2g → Clients</span>
+          <span className="status-label">{t('nav.cards.programStatus.outputLabel')}</span>
           <StatusChip
             state={isActive ? 'live' : 'idle'}
             label={isActive ? `${streamCount} ACTIVE` : 'IDLE'}

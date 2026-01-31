@@ -14,6 +14,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
+	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
 	"github.com/ManuGH/xg2g/internal/pipeline/shadow"
@@ -51,6 +52,13 @@ type Deps struct {
 	// ProxyOnly disables API + metrics servers when true.
 	// This is a runtime mode switch and must be computed at startup (and treated as immutable).
 	ProxyOnly bool
+
+	// V3 Components (Injected from main to allow shared state between API and Worker)
+	V3Bus       bus.Bus
+	V3Store     store.StateStore
+	ResumeStore resume.Store
+	ScanManager *scan.Manager
+	E2Client    *enigma2.Client
 }
 
 // V3ComponentSetter defines the interface for injecting v3 components

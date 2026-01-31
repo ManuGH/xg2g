@@ -103,7 +103,7 @@ func NewResourceMonitor(maxPool, gpuLimit int, cpuThresholdScale float64) *Resou
 		cores:         float64(runtime.NumCPU()),
 		sessionIDs:    make(map[Priority][]string),
 		cpuWindow:     30 * time.Second,
-		cpuMinSamples: 15,  // 50% of 1s samples in 30s window
+		cpuMinSamples: 10,  // 33% buffer for jitter (was 15/15)
 		cpuRatio:      0.5, // Block if >= 50% of samples are over threshold
 		logger:        zerolog.Nop(),
 		clock:         time.Now,
@@ -176,9 +176,9 @@ func (m *ResourceMonitor) cpuWithinLimits() (bool, AdmissionReason) {
 			m.logger.Warn().
 				Int("samples", len(m.cpuSamples)).
 				Int("min_needed", m.cpuMinSamples).
-				Msg("Admission blocked: CPU data insufficient (fail-closed)")
+				Msg("CPU data insufficient: Admission proceeding (fail-open)")
 		}
-		return false, ReasonCPUUnknown
+		return true, ReasonAdmitted
 	}
 
 	threshold := m.cores * m.cpuThreshold

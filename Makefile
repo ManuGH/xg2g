@@ -864,6 +864,13 @@ dev: stop-local ## Run daemon locally with .env configuration
 	go build $(BUILD_FLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/daemon && \
 	./$(BUILD_DIR)/$(BINARY_NAME)
 
+up-dev: ## Start docker dev stack (with .env + local build)
+	@echo "Starting xg2g (Dev Container)..."
+	@if [ ! -f .env ]; then cp .env.example .env; echo "Created .env from example"; fi
+	@docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+	@echo "✅ Dev stack started at http://localhost:8088"
+	@echo "📊 Check status: make status"
+
 up: ## Start docker-compose.yml stack
 	@echo "Starting xg2g via docker compose..."
 	@./scripts/check_env.sh

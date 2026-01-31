@@ -1443,6 +1443,17 @@ func convertLatin1ToUTF8(latin1 []byte) []byte {
 	return buf
 }
 
+// GetServiceEPG fetches EPG events for a specific service reference
+func (c *Client) GetServiceEPG(ctx context.Context, serviceRef string) ([]EPGEvent, error) {
+	// API expects sRef parameter
+	// e.g. /api/epgservice?sRef=1:0:19:132F:3EF:1:C00000:0:0:0:
+	params := url.Values{}
+	params.Set("sRef", serviceRef)
+	urlPath := fmt.Sprintf("/api/epgservice?%s", params.Encode())
+
+	return c.fetchEPGFromURL(ctx, urlPath)
+}
+
 func (c *Client) fetchEPGFromURL(ctx context.Context, urlPath string) ([]EPGEvent, error) {
 	decorate := func(zc *zerolog.Context) {
 		zc.Str("path", urlPath)

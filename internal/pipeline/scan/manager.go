@@ -1,8 +1,10 @@
 package scan
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"strings"
@@ -13,6 +15,7 @@ import (
 	infra "github.com/ManuGH/xg2g/internal/infra/ffmpeg"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/m3u"
+	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
 )
 
 type ScanStatus struct {
@@ -28,6 +31,7 @@ type ScanStatus struct {
 type Manager struct {
 	store      CapabilityStore
 	m3uPath    string
+	e2Client   *enigma2.Client
 	isScanning atomic.Bool
 
 	ProbeDelay time.Duration
@@ -36,10 +40,16 @@ type Manager struct {
 	status ScanStatus
 }
 
-func NewManager(store CapabilityStore, m3uPath string) *Manager {
+func NewManager(store CapabilityStore, m3uPath string, e2Client *enigma2.Client) *Manager {
+	if e2Client == nil {
+		log.L().Warn().Msg("scan: manager created with NIL enigma2 client (dumb mode)")
+	} else {
+		log.L().Info().Msg("scan: manager created with enigma2 client (smart mode)")
+	}
 	return &Manager{
 		store:      store,
 		m3uPath:    m3uPath,
+		e2Client:   e2Client,
 		ProbeDelay: 500 * time.Millisecond,
 		status: ScanStatus{
 			State: "idle",
@@ -69,6 +79,13 @@ func ExtractServiceRef(rawURL string) string {
 		}
 		return ""
 	}
+
+	// 1. Try 'ref' query parameter (OpenWebIF style)
+	if ref := u.Query().Get("ref"); ref != "" {
+		return ref
+	}
+
+	// 2. Try path splitting (Direct Stream style)
 	// Path should be /ServiceRef
 	// Handle trailing slashes or query params
 	path := strings.TrimSuffix(u.Path, "/")
@@ -168,9 +185,78 @@ func (m *Manager) scanInternal(ctx context.Context) error {
 			continue
 		}
 
-		// Probe
+		// Resolve stream URL:
+		// 1. Try Enigma2 Client resolution (Smart Player Logic)
+		// 2. Fallback to M3U resolution (Stale Playlist)
+		probeURL := ch.URL
+		resolved := false
+
+		if m.e2Client != nil && sRef != "" {
+			// Use a short context for resolution
+			resCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+			freshURL, err := m.e2Client.ResolveStreamURL(resCtx, sRef)
+			cancel()
+
+			if err == nil && freshURL != "" {
+				probeURL = freshURL
+				resolved = true
+				log.L().Debug().Str("sref", sRef).Str("fresh_url", freshURL).Msg("scan: resolved fresh stream url")
+			} else {
+				log.L().Warn().Err(err).Str("sref", sRef).Msg("scan: failed to resolve fresh url, falling back to m3u")
+			}
+		}
+
+		if !resolved {
+			if res, err := resolveStreamURL(ctx, ch.URL); err == nil && res != "" {
+				probeURL = res
+			}
+		}
+
+		// Probe with strict timeout (prevent hanging on zombie streams)
+		probeCtx, probeCancel := context.WithTimeout(ctx, 10*time.Second)
 		log.L().Debug().Str("sref", sRef).Msg("scan: probing channel")
-		res, err := infra.Probe(ctx, ch.URL)
+		res, err := infra.Probe(probeCtx, probeURL)
+		probeCancel() // Start fresh context for fallback if needed
+
+		// Fallback Logic: If probe fails and we have a resolved URL (or even if not), try 8001
+		// This handles the case where "official" stream URL (17999) is closed but 8001 works.
+		if err != nil {
+			log.L().Warn().Err(err).Str("sref", sRef).Msg("scan: initial probe failed, attempting port 8001 fallback")
+
+			fallbackURL, buildErr := buildFallbackURL(probeURL, sRef)
+			if buildErr == nil {
+				// Use fresh timeout for fallback
+				fbCtx, fbCancel := context.WithTimeout(ctx, 10*time.Second)
+				resFallback, errFallback := infra.Probe(fbCtx, fallbackURL)
+				fbCancel()
+
+				if errFallback == nil {
+					log.L().Info().Str("sref", sRef).Msg("scan: fallback to 8001 succeeded")
+					res = resFallback
+					err = nil
+				} else {
+					log.L().Warn().Err(errFallback).Str("sref", sRef).Msg("scan: fallback 8001 probe failed")
+				}
+			}
+		}
+
+		// Fallback Logic Level 3: Original URL (e.g. /web/stream.m3u)
+		// If explicit ports failed, try the original M3U URL provided in the playlist.
+		// This respects "UseWebIFStreams" scenarios where the user relies on the API endpoint itself.
+		if err != nil {
+			log.L().Warn().Str("sref", sRef).Msg("scan: attempting fallback to original URL (web)")
+			fbCtx, fbCancel := context.WithTimeout(ctx, 10*time.Second)
+			resOrig, errOrig := infra.Probe(fbCtx, ch.URL)
+			fbCancel()
+
+			if errOrig == nil {
+				log.L().Info().Str("sref", sRef).Msg("scan: fallback to original URL succeeded")
+				res = resOrig
+				err = nil
+			} else {
+				log.L().Warn().Err(errOrig).Str("sref", sRef).Msg("scan: final fallback failed")
+			}
+		}
 
 		scanned++
 		m.mu.Lock()
@@ -224,4 +310,58 @@ func sleepCtx(ctx context.Context, d time.Duration) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+// resolveStreamURL follows M3U playlists to find the actual stream URL.
+// Returns original URL if not M3U or on error.
+func resolveStreamURL(ctx context.Context, urlStr string) (string, error) {
+	u, err := url.Parse(urlStr)
+	if err != nil {
+		return urlStr, nil // fallback
+	}
+	if !strings.HasSuffix(strings.ToLower(u.Path), ".m3u") {
+		return urlStr, nil
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "GET", urlStr, nil)
+	if err != nil {
+		return "", err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("status %d", resp.StatusCode)
+	}
+
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line != "" && !strings.HasPrefix(line, "#") {
+			return line, nil
+		}
+	}
+	return "", fmt.Errorf("empty playlist")
+}
+
+func buildFallbackURL(resolvedURL, serviceRef string) (string, error) {
+	u, err := url.Parse(resolvedURL)
+	if err != nil {
+		return "", err
+	}
+	host := u.Hostname()
+	if host == "" {
+		return "", fmt.Errorf("missing host in resolved url")
+	}
+	u.Scheme = "http"
+	u.Host = fmt.Sprintf("%s:%d", host, 8001)
+	u.Path = "/" + serviceRef
+	u.RawQuery = ""
+	u.Fragment = ""
+	u.User = nil
+	return u.String(), nil
 }

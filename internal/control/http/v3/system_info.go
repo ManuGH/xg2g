@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
@@ -119,8 +120,12 @@ func (s *Server) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Use short timeout for upstream calls to prevent blocking the dashboard if receiver is offline
+	upstreamCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
 	// Query receiver info
-	info, err := client.About(ctx)
+	info, err := client.About(upstreamCtx)
 	if err != nil {
 		writeProblem(w, r, http.StatusBadGateway,
 			"system/upstream_error",
@@ -139,7 +144,7 @@ func (s *Server) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Query recording locations (bookmarks)
-	locations, _ := client.GetLocations(ctx)
+	locations, _ := client.GetLocations(upstreamCtx)
 	locationItems := make([]StorageItem, 0)
 	for _, loc := range locations {
 		if loc.Path != "" {
