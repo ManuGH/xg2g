@@ -2,8 +2,6 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
-// Since v2.0.0, this software is restricted to non-commercial use only.
-
 // Package log provides structured logging utilities.
 package log
 
@@ -16,9 +14,10 @@ import (
 type ctxKey string
 
 const (
-	requestIDKey     ctxKey = "request_id"
-	correlationIDKey ctxKey = "correlation_id"
-	jobIDKey         ctxKey = "job_id"
+	requestIDKey       ctxKey = "request_id"
+	clientRequestIDKey ctxKey = "client_request_id"
+	correlationIDKey   ctxKey = "correlation_id"
+	jobIDKey           ctxKey = "job_id"
 )
 
 // ContextWithRequestID stores the provided request ID in the context.
@@ -27,6 +26,14 @@ func ContextWithRequestID(ctx context.Context, id string) context.Context {
 		ctx = context.Background()
 	}
 	return context.WithValue(ctx, requestIDKey, id)
+}
+
+// ContextWithClientRequestID stores the provided client request ID in the context.
+func ContextWithClientRequestID(ctx context.Context, id string) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, clientRequestIDKey, id)
 }
 
 // ContextWithCorrelationID stores the provided correlation ID in the context.
@@ -51,6 +58,17 @@ func RequestIDFromContext(ctx context.Context) string {
 		return ""
 	}
 	if v, ok := ctx.Value(requestIDKey).(string); ok {
+		return v
+	}
+	return ""
+}
+
+// ClientRequestIDFromContext extracts the client request ID from context if present.
+func ClientRequestIDFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	if v, ok := ctx.Value(clientRequestIDKey).(string); ok {
 		return v
 	}
 	return ""
@@ -87,6 +105,10 @@ func WithContext(ctx context.Context, logger zerolog.Logger) zerolog.Logger {
 	added := false
 	if rid := RequestIDFromContext(ctx); rid != "" {
 		builder = builder.Str("request_id", rid)
+		added = true
+	}
+	if crid := ClientRequestIDFromContext(ctx); crid != "" {
+		builder = builder.Str("client_request_id", crid)
 		added = true
 	}
 	if cid := CorrelationIDFromContext(ctx); cid != "" {

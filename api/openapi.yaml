@@ -501,9 +501,6 @@ components:
           description: Streaming delivery policy (only 'universal' is supported)
           default: universal
 
-    FeatureFlags:
-      type: object
-      properties: {}
 
     VerificationConfig:
       type: object
@@ -676,10 +673,11 @@ components:
           $ref: "#/components/schemas/EPGConfig"
         picons:
           $ref: "#/components/schemas/PiconsConfig"
-        featureFlags:
-          $ref: "#/components/schemas/FeatureFlags"
         verification:
           $ref: "#/components/schemas/VerificationConfig"
+        logLevel:
+          type: string
+          description: Log level to set (debug, info, warn, error)
 
     AppConfig:
       type: object
@@ -702,8 +700,6 @@ components:
           $ref: "#/components/schemas/PiconsConfig"
         streaming:
           $ref: "#/components/schemas/StreamingConfig"
-        featureFlags:
-          $ref: "#/components/schemas/FeatureFlags"
         verification:
           $ref: "#/components/schemas/VerificationConfig"
 

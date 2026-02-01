@@ -15,6 +15,21 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/http/problem"
 )
 
+var intentErrorKinds = []IntentErrorKind{
+	IntentErrInvalidInput,
+	IntentErrV3Unavailable,
+	IntentErrSessionsFull,
+	IntentErrTranscodesFull,
+	IntentErrNoTuners,
+	IntentErrEngineDisabled,
+	IntentErrAdmissionUnknown,
+	IntentErrNoTunerSlots,
+	IntentErrStoreUnavailable,
+	IntentErrPublishUnavailable,
+	IntentErrLeaseBusy,
+	IntentErrInternal,
+}
+
 func TestIntentErrorMapping_Table(t *testing.T) {
 	for _, kind := range intentErrorKinds {
 		spec, ok := intentErrorMap[kind]

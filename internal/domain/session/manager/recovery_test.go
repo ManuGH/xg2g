@@ -26,9 +26,8 @@ func TestRecoverySweep_RecoverStale(t *testing.T) {
 	}()
 
 	orch := &Orchestrator{
-		Store:     s,
-		Admission: newAdmissionMonitor(10, 10, 0),
-		LeaseTTL:  0,
+		Store:    s,
+		LeaseTTL: 0,
 	}
 
 	ctx := context.Background()
@@ -69,9 +68,8 @@ func TestRecoverySweep_IgnoreActive(t *testing.T) {
 	}()
 
 	orch := &Orchestrator{
-		Store:     s,
-		Admission: newAdmissionMonitor(10, 10, 0),
-		LeaseTTL:  0,
+		Store:    s,
+		LeaseTTL: 0,
 	}
 	ctx := context.Background()
 
@@ -108,10 +106,13 @@ func TestRecoverySweep_IgnoreTerminal(t *testing.T) {
 		}
 	}()
 
-	orch := &Orchestrator{Store: s, Admission: newAdmissionMonitor(10, 10, 0)}
 	ctx := context.Background()
 
 	// TestRecoverySweep_IgnoreTerminal only checks truly terminal states now (FAILED, STOPPED)
+	orch := &Orchestrator{
+		Store:    s,
+		LeaseTTL: 0,
+	}
 	_ = s.PutSession(ctx, &model.SessionRecord{SessionID: "s2", State: model.SessionFailed})
 	_ = s.PutSession(ctx, &model.SessionRecord{SessionID: "s3", State: model.SessionStopped})
 
@@ -138,9 +139,12 @@ func TestRecoverySweep_RecoverReady(t *testing.T) {
 		}
 	}()
 
-	orch := &Orchestrator{Store: s, LeaseTTL: 100 * time.Millisecond, Admission: newAdmissionMonitor(10, 10, 0)}
 	ctx := context.Background()
 
+	orch := &Orchestrator{
+		Store:    s,
+		LeaseTTL: 0,
+	}
 	// Setup Zombie READY session (Stale Lease)
 	_ = s.PutSession(ctx, &model.SessionRecord{SessionID: "zombie", State: model.SessionReady})
 	// Cheat: Acquire/Wait to expire lease (implicit or explicit)

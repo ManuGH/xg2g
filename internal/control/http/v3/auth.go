@@ -8,6 +8,7 @@ package v3
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/ManuGH/xg2g/internal/control/auth"
 	"github.com/ManuGH/xg2g/internal/log"
@@ -45,6 +46,18 @@ func (s *Server) authMiddlewareImpl(next http.Handler) http.Handler {
 
 		if reqToken == "" {
 			logger.Warn().Str("event", "auth.missing_header").Msg("authorization header/cookie missing")
+			RespondError(w, r, http.StatusUnauthorized, ErrUnauthorized)
+			return
+		}
+
+		// Security Invariant (P3-Auth): Media endpoints (HLS/Direct Stream) REQUIRE session cookies.
+		// Bearer tokens are for API only. This prevents certain classes of leakage/hotlinking.
+		if isMediaRequest(r) && !strings.Contains(authSource, "cookie") {
+			logger.Warn().
+				Str("event", "auth.media_forbidden_source").
+				Str("source", authSource).
+				Str("path", r.URL.Path).
+				Msg("media request denied: bearer token not allowed for media (cookie required)")
 			RespondError(w, r, http.StatusUnauthorized, ErrUnauthorized)
 			return
 		}

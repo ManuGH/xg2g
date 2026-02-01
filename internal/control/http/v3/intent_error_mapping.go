@@ -11,7 +11,11 @@ type IntentErrorKind uint8
 const (
 	IntentErrInvalidInput IntentErrorKind = iota
 	IntentErrV3Unavailable
-	IntentErrAdmissionRejected
+	IntentErrSessionsFull
+	IntentErrTranscodesFull
+	IntentErrNoTuners
+	IntentErrEngineDisabled
+	IntentErrAdmissionUnknown
 	IntentErrNoTunerSlots
 	IntentErrStoreUnavailable
 	IntentErrPublishUnavailable
@@ -24,25 +28,18 @@ type intentErrorSpec struct {
 	apiErr *APIError
 }
 
-var intentErrorKinds = []IntentErrorKind{
-	IntentErrInvalidInput,
-	IntentErrV3Unavailable,
-	IntentErrAdmissionRejected,
-	IntentErrNoTunerSlots,
-	IntentErrStoreUnavailable,
-	IntentErrPublishUnavailable,
-	IntentErrLeaseBusy,
-	IntentErrInternal,
-}
-
 var intentErrorMap = map[IntentErrorKind]intentErrorSpec{
 	IntentErrInvalidInput:       {status: http.StatusBadRequest, apiErr: ErrInvalidInput},
 	IntentErrV3Unavailable:      {status: http.StatusServiceUnavailable, apiErr: ErrV3Unavailable},
-	IntentErrAdmissionRejected:  {status: http.StatusServiceUnavailable, apiErr: ErrAdmissionRejected},
-	IntentErrNoTunerSlots:       {status: http.StatusServiceUnavailable, apiErr: ErrServiceUnavailable},
+	IntentErrSessionsFull:       {status: http.StatusServiceUnavailable, apiErr: ErrAdmissionSessionsFull},
+	IntentErrTranscodesFull:     {status: http.StatusServiceUnavailable, apiErr: ErrAdmissionTranscodesFull},
+	IntentErrNoTuners:           {status: http.StatusServiceUnavailable, apiErr: ErrAdmissionNoTuners},
+	IntentErrEngineDisabled:     {status: http.StatusServiceUnavailable, apiErr: ErrAdmissionEngineDisabled},
+	IntentErrAdmissionUnknown:   {status: http.StatusServiceUnavailable, apiErr: ErrAdmissionStateUnknown},
+	IntentErrNoTunerSlots:       {status: http.StatusServiceUnavailable, apiErr: ErrAdmissionNoTuners},
 	IntentErrStoreUnavailable:   {status: http.StatusServiceUnavailable, apiErr: ErrServiceUnavailable},
 	IntentErrPublishUnavailable: {status: http.StatusServiceUnavailable, apiErr: ErrServiceUnavailable},
-	IntentErrLeaseBusy:          {status: http.StatusConflict, apiErr: ErrLeaseBusy},
+	IntentErrLeaseBusy:          {status: http.StatusServiceUnavailable, apiErr: ErrAdmissionNoTuners},
 	IntentErrInternal:           {status: http.StatusInternalServerError, apiErr: ErrInternalServer},
 }
 

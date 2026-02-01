@@ -31,14 +31,27 @@ const (
 	StatusInternal   Status = "Internal"
 )
 
+// ValueType defines the expected data type for a configuration value.
+type ValueType string
+
+const (
+	TypeBool   ValueType = "bool"
+	TypeString ValueType = "string"
+	TypeInt    ValueType = "int"
+	TypeFloat  ValueType = "float64"
+	TypeAny    ValueType = "any"
+)
+
 // ConfigEntry defines a single configuration option's metadata.
 type ConfigEntry struct {
-	Path      string  // User-facing Path (e.g. "api.listenAddr")
-	Env       string  // Environment Variable (e.g. "XG2G_LISTEN")
-	FieldPath string  // Internal Field Path (e.g. "APIListenAddr")
-	Profile   Profile // Operator Profile
-	Status    Status  // Lifecycle Status
-	Default   any     // Default value
+	Path          string    // User-facing Path (e.g. "api.listenAddr")
+	Env           string    // Environment Variable (e.g. "XG2G_LISTEN")
+	FieldPath     string    // Internal Field Path (e.g. "APIListenAddr")
+	Profile       Profile   // Operator Profile
+	Status        Status    // Lifecycle Status
+	Default       any       // Default value
+	HotReloadable bool      // Whether changes can be applied without restart
+	Type          ValueType // Expected value type
 }
 
 // Registry manages the configuration surface inventory.
@@ -77,7 +90,7 @@ func buildRegistry() (*Registry, error) {
 		{Path: "configVersion", Env: "", FieldPath: "ConfigVersion", Profile: ProfileInternal, Status: StatusInternal, Default: "v3"},
 		{Path: "configStrict", Env: "XG2G_CONFIG_STRICT", FieldPath: "ConfigStrict", Profile: ProfileAdvanced, Status: StatusActive, Default: true},
 		{Path: "dataDir", Env: "XG2G_DATA", FieldPath: "DataDir", Profile: ProfileSimple, Status: StatusActive, Default: "/tmp"},
-		{Path: "logLevel", Env: "XG2G_LOG_LEVEL", FieldPath: "LogLevel", Profile: ProfileSimple, Status: StatusActive, Default: "info"},
+		{Path: "logLevel", Env: "XG2G_LOG_LEVEL", FieldPath: "LogLevel", Profile: ProfileSimple, Status: StatusActive, Default: "info", HotReloadable: true},
 		{Path: "logService", Env: "XG2G_LOG_SERVICE", FieldPath: "LogService", Profile: ProfileAdvanced, Status: StatusActive},
 		{Path: "bouquets", Env: "XG2G_BOUQUET", FieldPath: "Bouquet", Profile: ProfileSimple, Status: StatusActive},
 
@@ -197,7 +210,6 @@ func buildRegistry() (*Registry, error) {
 
 		// --- FEATURE FLAGS ---
 		{Path: "readyStrict", Env: "XG2G_READY_STRICT", FieldPath: "ReadyStrict", Profile: ProfileAdvanced, Status: StatusActive, Default: false},
-
 		// --- HDHR ---
 		{Path: "hdhr.enabled", Env: "", FieldPath: "HDHR.Enabled", Profile: ProfileAdvanced, Status: StatusActive, Default: false},
 		{Path: "hdhr.deviceId", Env: "", FieldPath: "HDHR.DeviceID", Profile: ProfileAdvanced, Status: StatusActive},
@@ -212,6 +224,21 @@ func buildRegistry() (*Registry, error) {
 		{Path: "library.enabled", Env: "", FieldPath: "Library.Enabled", Profile: ProfileAdvanced, Status: StatusActive, Default: false},
 		{Path: "library.db_path", Env: "", FieldPath: "Library.DBPath", Profile: ProfileAdvanced, Status: StatusActive},
 		{Path: "library.roots", Env: "", FieldPath: "Library.Roots", Profile: ProfileAdvanced, Status: StatusActive},
+
+		// --- RESILIENCE: LIMITS ---
+		{Path: "limits.max_sessions", Env: "XG2G_MAX_SESSIONS", FieldPath: "Limits.MaxSessions", Profile: ProfileAdvanced, Status: StatusActive, Default: 8},
+		{Path: "limits.max_transcodes", Env: "XG2G_MAX_TRANSCODES", FieldPath: "Limits.MaxTranscodes", Profile: ProfileAdvanced, Status: StatusActive, Default: 2},
+
+		// --- RESILIENCE: TIMEOUTS ---
+		{Path: "timeouts.transcode_start", Env: "", FieldPath: "Timeouts.TranscodeStart", Profile: ProfileAdvanced, Status: StatusActive, Default: 15 * time.Second},
+		{Path: "timeouts.transcode_no_progress", Env: "", FieldPath: "Timeouts.TranscodeNoProgress", Profile: ProfileAdvanced, Status: StatusActive, Default: 30 * time.Second},
+		{Path: "timeouts.kill_grace", Env: "", FieldPath: "Timeouts.KillGrace", Profile: ProfileAdvanced, Status: StatusActive, Default: 2 * time.Second},
+
+		// --- RESILIENCE: BREAKER ---
+		{Path: "breaker.window", Env: "", FieldPath: "Breaker.Window", Profile: ProfileAdvanced, Status: StatusActive, Default: 5 * time.Minute},
+		{Path: "breaker.min_attempts", Env: "", FieldPath: "Breaker.MinAttempts", Profile: ProfileAdvanced, Status: StatusActive, Default: 10},
+		{Path: "breaker.failures_threshold", Env: "", FieldPath: "Breaker.FailuresThreshold", Profile: ProfileAdvanced, Status: StatusActive, Default: 7},
+		{Path: "breaker.consecutive_threshold", Env: "", FieldPath: "Breaker.ConsecutiveThreshold", Profile: ProfileAdvanced, Status: StatusActive, Default: 5},
 
 		// --- INTERNAL / CANDIDATES ---
 		{FieldPath: "apiTokensParseErr", Profile: ProfileInternal, Status: StatusInternal},

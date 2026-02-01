@@ -13,17 +13,43 @@ import (
 )
 
 // State represents the circuit breaker state.
-type State string
+type State int
 
 const (
-	StateClosed   State = "closed"
-	StateOpen     State = "open"
-	StateHalfOpen State = "half-open"
+	StateClosed State = iota
+	StateOpen
+	StateHalfOpen
 )
+
+func (s State) String() string {
+	switch s {
+	case StateClosed:
+		return "closed"
+	case StateOpen:
+		return "open"
+	case StateHalfOpen:
+		return "half-open"
+	default:
+		return "unknown"
+	}
+}
 
 var (
 	ErrCircuitOpen = errors.New("circuit breaker is open")
 )
+
+type EventKind int
+
+const (
+	EventAttempt EventKind = iota
+	EventSuccess
+	EventTechFailure
+)
+
+type event struct {
+	ts   time.Time
+	kind EventKind
+}
 
 // clock abstracts time operations for testability.
 type clock interface {
@@ -34,22 +60,28 @@ type realClock struct{}
 
 func (realClock) Now() time.Time { return time.Now() }
 
-// CircuitBreaker implements a state machine to prevent cascading failures.
-// It combines the safety features of previous implementations (panic recovery)
-// with the robust state management of the OpenWebIF implementation.
+// CircuitBreaker implements a sliding-window state machine to prevent cascading failures.
 type CircuitBreaker struct {
-	mu           sync.Mutex
-	name         string // Component name for metrics
-	state        State
-	failures     int
-	threshold    int
-	resetTimeout time.Duration
-	openedAt     time.Time
-	clock        clock
+	mu sync.Mutex
 
-	// Optional: Panic recovery handler
-	// If set, panics in the executed function will be caught, recorded as failure, and then re-panicked.
-	recoverPanic bool
+	name string
+
+	state    State
+	openedAt time.Time
+
+	// Sliding window events
+	events []event
+	window time.Duration
+
+	// Thresholds
+	threshold        int           // Max failures in window
+	minAttempts      int           // Min attempts in window before tripping
+	successes        int           // Successes in HALF_OPEN
+	successThreshold int           // Successes required to close from HALF_OPEN
+	resetTimeout     time.Duration // Cooldown before HALF_OPEN
+
+	clock         clock
+	panicRecovery bool
 }
 
 // Option configuration pattern
@@ -59,132 +91,202 @@ func WithClock(c clock) Option {
 	return func(cb *CircuitBreaker) { cb.clock = c }
 }
 
-func WithPanicRecovery(enabled bool) Option {
-	return func(cb *CircuitBreaker) { cb.recoverPanic = enabled }
+func WithHalfOpenSuccessThreshold(n int) Option {
+	return func(cb *CircuitBreaker) { cb.successThreshold = n }
 }
 
-// NewCircuitBreaker creates a new circuit breaker.
-func NewCircuitBreaker(name string, threshold int, resetTimeout time.Duration, opts ...Option) *CircuitBreaker {
+func WithPanicRecovery(enabled bool) Option {
+	return func(cb *CircuitBreaker) { cb.panicRecovery = enabled }
+}
+
+// NewCircuitBreaker creates a new sliding-window circuit breaker.
+func NewCircuitBreaker(name string, threshold int, minAttempts int, window time.Duration, resetTimeout time.Duration, opts ...Option) *CircuitBreaker {
 	if threshold <= 0 {
 		threshold = 3
+	}
+	if minAttempts <= 0 {
+		minAttempts = 5
+	}
+	if window <= 0 {
+		window = 60 * time.Second
 	}
 	if resetTimeout <= 0 {
 		resetTimeout = 30 * time.Second
 	}
 
 	cb := &CircuitBreaker{
-		name:         name,
-		state:        StateClosed,
-		threshold:    threshold,
-		resetTimeout: resetTimeout,
-		clock:        realClock{},
-		recoverPanic: false, // Default to false (explicit opt-in)
+		name:             name,
+		state:            StateClosed,
+		threshold:        threshold,
+		minAttempts:      minAttempts,
+		window:           window,
+		resetTimeout:     resetTimeout,
+		successThreshold: 3, // Default N=3 successes to close
+		clock:            realClock{},
 	}
 
 	for _, opt := range opts {
 		opt(cb)
 	}
 
-	// Initialize metric
-	metrics.SetCircuitBreakerState(cb.name, string(cb.state))
+	metrics.SetCircuitBreakerState(cb.name, cb.state.String())
+	metrics.SetCircuitBreakerStatus(cb.name, int(cb.state))
 	return cb
 }
 
-// Execute runs the given function respecting the breaker state.
-func (cb *CircuitBreaker) Execute(fn func() error) (err error) {
-	if !cb.allowRequest() {
+// Execute wraps a function call with circuit breaker logic and optional panic recovery.
+func (cb *CircuitBreaker) Execute(fn func() error) error {
+	if !cb.AllowRequest() {
 		return ErrCircuitOpen
 	}
 
-	// Panic recovery handling
-	if cb.recoverPanic {
+	if cb.panicRecovery {
 		defer func() {
 			if r := recover(); r != nil {
-				cb.recordFailure()
-				panic(r) // Re-throw to let caller handle if they wish, or crash
+				cb.RecordTechnicalFailure()
+				// We don't swallow the panic, just record it as a failure
+				panic(r)
 			}
 		}()
 	}
 
-	// Run function
-	err = fn()
-
+	err := fn()
 	if err != nil {
-		cb.recordFailure()
+		// Note: We don't know if this is a technical failure here
+		// so we assume any error returned by the function is a failure
+		// for the sake of backward compatibility with the old Execute()
+		cb.RecordTechnicalFailure()
 		return err
 	}
 
-	cb.recordSuccess()
+	cb.RecordSuccess()
 	return nil
 }
 
-func (cb *CircuitBreaker) allowRequest() bool {
+// AllowRequest checks if a request is permitted and handles transitions to HALF_OPEN.
+func (cb *CircuitBreaker) AllowRequest() bool {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
+
+	cb.prune()
 
 	if cb.state == StateClosed {
 		return true
 	}
 
 	if cb.state == StateOpen {
-		if cb.clock.Now().Sub(cb.openedAt) > cb.resetTimeout {
-			cb.transitionTo(StateHalfOpen)
+		if cb.clock.Now().Sub(cb.openedAt) >= cb.resetTimeout {
+			cb.transitionInto(StateHalfOpen)
 			return true
 		}
 		return false
 	}
 
-	// StateHalfOpen
-	// In strict implementations we might allow only 1 concurrent request.
-	// For simplicity and matching previous behavior, we allow it.
+	// HALF_OPEN
 	return true
 }
 
-func (cb *CircuitBreaker) recordFailure() {
+// RecordAttempt marks a transcode spawn commit.
+func (cb *CircuitBreaker) RecordAttempt() {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
 
-	cb.failures++
+	cb.events = append(cb.events, event{ts: cb.clock.Now(), kind: EventAttempt})
+	cb.prune()
+	cb.evaluate()
+}
+
+// RecordSuccess marks a successful completion or intentional cancel.
+func (cb *CircuitBreaker) RecordSuccess() {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
+	cb.events = append(cb.events, event{ts: cb.clock.Now(), kind: EventSuccess})
+	cb.prune()
 
 	if cb.state == StateHalfOpen {
-		// Failed probe
-		metrics.RecordCircuitBreakerTrip(cb.name, "half_open_failure")
-		cb.transitionTo(StateOpen)
-		return
-	}
-
-	if cb.state == StateClosed && cb.failures >= cb.threshold {
-		metrics.RecordCircuitBreakerTrip(cb.name, "threshold_exceeded")
-		cb.transitionTo(StateOpen)
+		cb.successes++
+		if cb.successes >= cb.successThreshold {
+			cb.transitionInto(StateClosed)
+		}
 	}
 }
 
-func (cb *CircuitBreaker) recordSuccess() {
+// RecordTechnicalFailure marks a crash, start-timeout, or stall.
+func (cb *CircuitBreaker) RecordTechnicalFailure() {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
 
-	cb.failures = 0
+	cb.events = append(cb.events, event{ts: cb.clock.Now(), kind: EventTechFailure})
+	cb.prune()
+
+	if cb.state == StateHalfOpen {
+		// First technical failure in HALF_OPEN trips it back to OPEN
+		cb.transitionInto(StateOpen)
+		return
+	}
+
+	cb.evaluate()
+}
+
+func (cb *CircuitBreaker) prune() {
+	cutoff := cb.clock.Now().Add(-cb.window)
+	n := 0
+	for i := range cb.events {
+		if !cb.events[i].ts.Before(cutoff) {
+			cb.events = cb.events[i:]
+			n = 1
+			break
+		}
+	}
+	if n == 0 {
+		cb.events = nil
+	}
+}
+
+func (cb *CircuitBreaker) evaluate() {
 	if cb.state != StateClosed {
-		cb.transitionTo(StateClosed)
-	}
-}
-
-// transitionTo handles state transitions and updates metrics.
-// Caller must hold lock.
-func (cb *CircuitBreaker) transitionTo(newState State) {
-	if cb.state == newState {
 		return
 	}
-	cb.state = newState
-	if newState == StateOpen {
-		cb.openedAt = cb.clock.Now()
+
+	var attempts, failures int
+	for _, e := range cb.events {
+		switch e.kind {
+		case EventAttempt:
+			attempts++
+		case EventTechFailure:
+			failures++
+		}
 	}
-	metrics.SetCircuitBreakerState(cb.name, string(newState))
+
+	if attempts >= cb.minAttempts && failures >= cb.threshold {
+		cb.transitionInto(StateOpen)
+	}
 }
 
-// State returns the current state.
-func (cb *CircuitBreaker) State() string {
+func (cb *CircuitBreaker) transitionInto(s State) {
+	if cb.state == s {
+		return
+	}
+
+	cb.state = s
+	switch s {
+	case StateOpen:
+		cb.openedAt = cb.clock.Now()
+		metrics.RecordCircuitBreakerTrip(cb.name, "tech_failure_threshold")
+	case StateHalfOpen:
+		cb.successes = 0
+	case StateClosed:
+		cb.events = nil // Reset window on recovery? Usually good to clear old noise
+	}
+
+	metrics.SetCircuitBreakerState(cb.name, s.String())
+	metrics.SetCircuitBreakerStatus(cb.name, int(s))
+}
+
+// GetState returns current state for metrics.
+func (cb *CircuitBreaker) GetState() State {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
-	return string(cb.state)
+	return cb.state
 }

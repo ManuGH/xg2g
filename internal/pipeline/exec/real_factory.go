@@ -15,19 +15,23 @@ type RealFactory struct {
 	HLSRoot         string
 	TuneTimeout     time.Duration
 	KillTimeout     time.Duration
+	StartTimeout    time.Duration
+	StallTimeout    time.Duration
 	AnalyzeDuration string
 	ProbeSize       string
 	Logger          zerolog.Logger
 }
 
 // NewRealFactory creates a RealFactory.
-func NewRealFactory(e2Client *enigma2.Client, tuneTimeout time.Duration, ffmpegBin, hlsRoot string, killTimeout time.Duration, analyzeDuration, probeSize string, logger zerolog.Logger) *RealFactory {
+func NewRealFactory(e2Client *enigma2.Client, tuneTimeout time.Duration, ffmpegBin, hlsRoot string, killTimeout time.Duration, startTimeout, stallTimeout time.Duration, analyzeDuration, probeSize string, logger zerolog.Logger) *RealFactory {
 	return &RealFactory{
 		E2Client:        e2Client,
 		FFmpegBin:       ffmpegBin,
 		HLSRoot:         hlsRoot,
 		TuneTimeout:     tuneTimeout,
 		KillTimeout:     killTimeout,
+		StartTimeout:    startTimeout,
+		StallTimeout:    stallTimeout,
 		AnalyzeDuration: analyzeDuration,
 		ProbeSize:       probeSize,
 		Logger:          logger,
@@ -40,7 +44,7 @@ func (f *RealFactory) NewTuner(slot int) (Tuner, error) {
 
 func (f *RealFactory) NewTranscoder() (Transcoder, error) {
 	// Use new infra/ffmpeg.Executor with adapter
-	executor := ffmpeg.NewExecutor(f.FFmpegBin, f.Logger)
+	executor := ffmpeg.NewExecutor(f.FFmpegBin, f.Logger, f.StartTimeout, f.StallTimeout)
 	adapter := newTranscoderAdapter(executor)
 	return adapter, nil
 }

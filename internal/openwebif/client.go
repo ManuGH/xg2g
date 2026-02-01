@@ -335,7 +335,7 @@ func NewWithPort(base string, streamPort int, opts Options) *Client {
 		cache:           opts.Cache, // Optional cache (nil = no caching)
 		cacheTTL:        cacheTTL,
 		receiverLimiter: rate.NewLimiter(receiverRPS, receiverBurst),
-		cb:              resilience.NewCircuitBreaker("openwebif", 5, 30*time.Second), // 5 failures, 30s reset
+		cb:              resilience.NewCircuitBreaker("openwebif", 5, 10, 60*time.Second, 30*time.Second),
 	}
 
 	// Log cache status
@@ -1168,25 +1168,41 @@ func (c *Client) get(ctx context.Context, path, operation string, decorate func(
 	}
 
 	// Wrap request in Circuit Breaker
-	var result []byte
-	cbErr := c.cb.Execute(func() error {
-		var innerErr error
-		result, innerErr = c.doGet(ctx, path, operation, decorate)
-		return innerErr
-	})
-
-	if cbErr != nil {
-		if errors.Is(cbErr, resilience.ErrCircuitOpen) {
-			c.loggerFor(ctx).Warn().
-				Str("event", "circuit_breaker.open").
-				Str("operation", operation).
-				Msg("request blocked by circuit breaker")
-			return nil, cbErr
-		}
-		return nil, cbErr
+	if !c.cb.AllowRequest() {
+		c.loggerFor(ctx).Warn().
+			Str("event", "circuit_breaker.open").
+			Str("operation", operation).
+			Msg("request blocked by circuit breaker")
+		return nil, resilience.ErrCircuitOpen
 	}
 
+	result, err := c.doGet(ctx, path, operation, decorate)
+	if err != nil {
+		// Only record technical failures (network, timeout, etc.)
+		if isTechnicalError(err) {
+			c.cb.RecordTechnicalFailure()
+		}
+		return nil, err
+	}
+
+	c.cb.RecordSuccess()
 	return result, nil
+}
+
+func isTechnicalError(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Connection errors, timeouts, and context cancellations are technical failures
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return true
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return true
+	}
+	// For HTTP, we might want to check status code if wrapped
+	return false
 }
 
 // doGet performs the actual HTTP request with retries (extracted from get)

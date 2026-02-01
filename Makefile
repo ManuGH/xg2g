@@ -208,7 +208,7 @@ generate-config: ## Generate config surfaces from registry
 	@echo "✅ Config surfaces generated"
 
 .PHONY: verify
-verify: verify-config verify-doc-links verify-capabilities contract-matrix verify-purity contract-freeze-check verify-no-sleep verify-no-panic verify-no-ignored-errors verify-determinism verify-codegen-transport verify-router-parity verify-oapi-codegen-version verify-no-hardcoded-baseurl verify-no-adhoc-terminal-mapping verify-no-adhoc-session-mapping verify-doc-image-tags verify-docs-compiled verify-digest-lock verify-release-policy verify-runtime ## Phase 4.7: Run all governance verification gates
+verify: verify-config verify-doc-links verify-capabilities contract-matrix verify-purity contract-freeze-check verify-no-sleep verify-no-panic verify-no-ignored-errors verify-determinism verify-codegen-transport verify-router-parity verify-oapi-codegen-version verify-no-hardcoded-baseurl verify-no-adhoc-terminal-mapping verify-no-adhoc-session-mapping verify-doc-image-tags verify-docs-compiled verify-digest-lock verify-release-policy verify-runtime verify-hot-reload-governance ## Phase 4.7: Run all governance verification gates
 
 verify-config: ## Verify generated config surfaces are up-to-date
 	@echo "Verifying generated config surfaces..."
@@ -272,6 +272,14 @@ recover: ## Force recovery/deployment of a specific release (VERSION=X.Y.Z)
 verify-runtime: ## Verify live runtime truth against repo truth
 	@echo "--- verify-runtime ---"
 	@./scripts/verify-runtime.sh
+
+verify-hot-reload-governance: ## Verify that only approved fields are marked HotReloadable
+	@echo "--- verify-hot-reload-governance ---"
+	@go run scripts/verify-hot-reload-governance.go
+
+verify-hot-reload: ## Verify hot-reload functionality with race detection
+	@echo "--- verify-hot-reload ---"
+	@go test -race ./internal/control/http/v3 -run TestHotReload -v
 
 verify-runtime-continuous: ## Run continuous verification (Rate-limited observer)
 	@echo "--- verify-runtime-continuous ---"

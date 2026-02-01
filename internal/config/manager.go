@@ -107,6 +107,21 @@ func ToFileConfig(cfg *AppConfig) FileConfig {
 		Picons: PiconsConfig{
 			BaseURL: cfg.PiconBase,
 		},
+		Limits: &LimitsConfig{
+			MaxSessions:   cfg.Limits.MaxSessions,
+			MaxTranscodes: cfg.Limits.MaxTranscodes,
+		},
+		Timeouts: &TimeoutsConfig{
+			TranscodeStart:      cfg.Timeouts.TranscodeStart,
+			TranscodeNoProgress: cfg.Timeouts.TranscodeNoProgress,
+			KillGrace:           cfg.Timeouts.KillGrace,
+		},
+		Breaker: &BreakerConfig{
+			Window:               cfg.Breaker.Window,
+			MinAttempts:          cfg.Breaker.MinAttempts,
+			FailuresThreshold:    cfg.Breaker.FailuresThreshold,
+			ConsecutiveThreshold: cfg.Breaker.ConsecutiveThreshold,
+		},
 	}
 }
 

@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/domain/session/manager/testkit"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
@@ -44,7 +43,6 @@ func TestConcurrency_BoundedStart(t *testing.T) {
 		HeartbeatEvery:      24 * time.Hour,
 		Owner:               "test-flood",
 		TunerSlots:          []int{0, 1, 2}, // Enough slots for limit
-		Admission:           testkit.NewAdmissibleAdmission(),
 		Pipeline:            trackingPipeline,
 		PipelineStopTimeout: 1 * time.Second,
 		StartConcurrency:    concurrencyLimit,
@@ -145,7 +143,6 @@ func TestConcurrency_ValidationFails(t *testing.T) {
 	orch := &Orchestrator{
 		Store:            st,
 		Bus:              bus,
-		Admission:        newAdmissionMonitor(10, 10, 0),
 		StartConcurrency: 0, // INVALID
 		StopConcurrency:  5,
 	}

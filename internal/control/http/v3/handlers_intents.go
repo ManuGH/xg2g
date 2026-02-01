@@ -15,8 +15,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/ManuGH/xg2g/internal/admission"
-	"github.com/ManuGH/xg2g/internal/control/auth"
+	"github.com/ManuGH/xg2g/internal/control/admission"
 	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/log"
@@ -201,44 +200,40 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// 5.1 Admission Control Gate (Phase 5.2)
-		priority := admission.PriorityLive
-		if strings.Contains(strings.ToLower(profileSpec.Name), "pulse") {
-			priority = admission.PriorityPulse
-		}
-		// Recording playback is Live. (Real-time recording intents would be PriorityRecording)
+		// 5.1 Admission Control Gate (Slice 2)
+		state := CollectRuntimeState(r.Context(), s.admissionState)
+		wantsTranscode := profileSpec.TranscodeVideo // Profile knows if transcode is needed
 
-		admitted, reason := s.admission.CanAdmit(r.Context(), priority)
-		if !admitted {
-			// Record reject metric (Phase 5.3)
-			metrics.RecordReject(string(reason), priority.String())
-
-			// ADR-DEGRADATION: Return 503 Service Unavailable
-			w.Header().Set("Retry-After", "5")
-
-			// Condition E: Coarse header for external, detailed for authenticated only
-			if p := auth.PrincipalFromContext(r.Context()); p != nil {
-				// Authenticated: detailed taxonomy
-				w.Header().Set("X-Admission-Factor", string(reason))
-			} else {
-				// External: coarse only
-				w.Header().Set("X-Admission-Factor", "capacity-full")
+		decision := s.admission.Check(r.Context(), admission.Request{WantsTranscode: wantsTranscode}, state)
+		if !decision.Allow {
+			// Record reject metric (Slice 2)
+			if decision.Problem != nil {
+				metrics.RecordReject(decision.Problem.Code, "live") // Simplified priority for now
 			}
 
-			// Always log detailed reason with request context for operators
+			// Add Retry-After if applicable
+			if decision.RetryAfterSeconds != nil {
+				w.Header().Set("Retry-After", fmt.Sprintf("%d", *decision.RetryAfterSeconds))
+			} else if decision.Problem != nil && (decision.Problem.Code == admission.CodeNoTuners || decision.Problem.Code == admission.CodeSessionsFull) {
+				// Deterministic overrides if controller didn't spec it (though controller should?)
+				// For Slice 2, let's stick to Problem.
+				w.Header().Set("Retry-After", "5") // Safe default for capacity
+			}
+
+			// Log rejection
 			log.L().Info().
 				Str("serviceRef", req.ServiceRef).
-				Str("reason", string(reason)).
-				Int("priority", int(priority)).
+				Str("code", decision.Problem.Code).
 				Msg("admission rejected")
 
-			RecordV3Intent(string(model.IntentTypeStreamStart), "admission", string(reason))
-			respondIntentFailure(w, r, IntentErrAdmissionRejected)
+			RecordV3Intent(string(model.IntentTypeStreamStart), "admission", decision.Problem.Code)
+			admission.WriteProblem(w, r, decision.Problem)
 			return
 		}
 
 		// Record admit metric (Phase 5.3)
-		metrics.RecordAdmit(priority.String())
+		// Record admit metric (Phase 5.3)
+		metrics.RecordAdmit("live") // Simplified for Slice 2
 
 		var hwaccelEffective, hwaccelReason, encoderBackend string
 

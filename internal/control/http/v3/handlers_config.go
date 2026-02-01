@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/control/auth"
 	"github.com/ManuGH/xg2g/internal/control/read"
 	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/log"
@@ -72,11 +73,13 @@ func (s *Server) PutSystemConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.mu.RLock()
-	current := s.cfg
-	s.mu.RUnlock()
+	// 1. Serialization: dedicated config lock.
+	s.configMu.Lock()
+	defer s.configMu.Unlock()
 
-	next := current
+	// 2. Clone: current baseline for modification and diffing.
+	current := s.GetConfig()
+	next := config.Clone(current)
 
 	if req.OpenWebIF != nil {
 		if req.OpenWebIF.BaseUrl != nil {
@@ -97,8 +100,21 @@ func (s *Server) PutSystemConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if req.Verification != nil {
+		if req.Verification.Enabled != nil {
+			next.Verification.Enabled = *req.Verification.Enabled
+		}
+		if req.Verification.Interval != nil {
+			dur, err := time.ParseDuration(*req.Verification.Interval)
+			if err != nil {
+				writeProblem(w, r, http.StatusBadRequest, "system/invalid_input", "Invalid Interval", "INVALID_INPUT", "Verification interval must be a valid duration string", nil)
+				return
+			}
+			next.Verification.Interval = dur
+		}
+	}
+
 	if req.Bouquets != nil {
-		// Join array to comma-separated string
 		next.Bouquet = strings.Join(*req.Bouquets, ",")
 	}
 
@@ -120,6 +136,11 @@ func (s *Server) PutSystemConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if req.LogLevel != nil {
+		next.LogLevel = *req.LogLevel
+	}
+
+	// 3. Validate & Sanity Check
 	if err := config.Validate(next); err != nil {
 		respondConfigValidationError(w, r, err)
 		return
@@ -129,18 +150,40 @@ func (s *Server) PutSystemConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Persist to disk
+	// 4. Persistence
 	if err := s.configManager.Save(&next); err != nil {
 		log.L().Error().Err(err).Msg("failed to save configuration")
 		writeProblem(w, r, http.StatusInternalServerError, "system/save_failed", "Save Failed", "SAVE_FAILED", "Failed to save configuration change to disk", nil)
 		return
 	}
+
+	// 5. Atomic Apply
 	s.mu.Lock()
 	s.cfg = next
 	s.mu.Unlock()
 
-	// Determine if restart is required
-	restartRequired := true // Conservative default
+	// 6. Side Effects (Hot Reload vs Restart)
+	diff, err := config.Diff(current, next)
+	if err != nil {
+		log.L().Error().Err(err).Msg("failed to diff configuration")
+		writeProblem(w, r, http.StatusInternalServerError, "system/diff_failed", "Diff Failed", "DIFF_FAILED", "Failed to compute configuration differences", nil)
+		return
+	}
+	restartRequired := diff.RestartRequired
+
+	if req.LogLevel != nil {
+		principalID := "anonymous"
+		var scopes []string
+		if p := auth.PrincipalFromContext(r.Context()); p != nil {
+			principalID = p.ID
+			scopes = p.Scopes
+		}
+		if err := log.SetLevel(r.Context(), principalID, scopes, *req.LogLevel); err != nil {
+			log.L().Error().Err(err).Msg("failed to hot-reload log level")
+			// We continue here as the config IS already saved and applied to memory.
+			// The log level failure is a secondary side-effect.
+		}
+	}
 
 	respObj := struct {
 		RestartRequired bool `json:"restartRequired"`
@@ -155,8 +198,6 @@ func (s *Server) PutSystemConfig(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, status, respObj)
 
 	if restartRequired {
-		// Explicitly flush the 202 Accepted response to the client
-		// before initiating shutdown.
 		if rc := http.NewResponseController(w); rc != nil {
 			_ = rc.Flush()
 		}

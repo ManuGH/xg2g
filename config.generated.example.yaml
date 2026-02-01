@@ -7,11 +7,16 @@ api:
   tokenScopes: []
   tokens: []
 bouquets: []
+breaker:
+  consecutive_threshold: 5
+  failures_threshold: 7
+  min_attempts: 10
+  window: 5m
 configStrict: true
 dataDir: /tmp
 engine:
   cpuThresholdScale: 1.5
-  enabled: false
+  enabled: true
   gpuLimit: 8
   idleTimeout: 1m
   maxPool: 2
@@ -20,7 +25,7 @@ engine:
 enigma2:
   analyzeDuration: "10000000"
   authMode: inherit
-  fallbackTo8001: false
+  fallbackTo8001: true
   preflightTimeout: 10s
   probeSize: 32M
   rateBurst: 0
@@ -67,6 +72,9 @@ library:
   db_path: ""
   enabled: false
   roots: []
+limits:
+  max_sessions: 8
+  max_transcodes: 2
 logLevel: info
 logService: ""
 metrics:
@@ -103,6 +111,10 @@ store:
   path: /var/lib/xg2g/store
 streaming:
   delivery_policy: universal
+timeouts:
+  kill_grace: 2s
+  transcode_no_progress: 30s
+  transcode_start: 15s
 tls:
   cert: ""
   enabled: false

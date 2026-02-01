@@ -5,7 +5,6 @@
 package config
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -329,8 +328,8 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 	}
 
 	// Engine mapping (P1.2 Harden)
-	if src.Engine.Enabled {
-		dst.Engine.Enabled = true
+	if src.Engine.Enabled != nil {
+		dst.Engine.Enabled = *src.Engine.Enabled
 	}
 	if src.Engine.Mode != "" {
 		dst.Engine.Mode = src.Engine.Mode
@@ -356,19 +355,26 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 		dst.ForceHTTPS = *src.TLS.ForceHTTPS
 	}
 
-	// Library mapping
-	if src.Library.Enabled {
-		dst.Library.Enabled = true
-		dst.Library.DBPath = expandEnv(src.Library.DBPath)
-		dst.Library.Roots = nil // Reset defaults if YAML provided
-		for _, r := range src.Library.Roots {
-			dst.Library.Roots = append(dst.Library.Roots, LibraryRootConfig{
-				ID:         r.ID,
-				Path:       expandEnv(r.Path),
-				Type:       r.Type,
-				MaxDepth:   r.MaxDepth,
-				IncludeExt: r.IncludeExt,
-			})
+	// Library mapping (symmetric, fail-open-safe)
+	if src.Library.Enabled != nil {
+		dst.Library.Enabled = *src.Library.Enabled
+	}
+
+	if dst.Library.Enabled {
+		if src.Library.DBPath != "" {
+			dst.Library.DBPath = expandEnv(src.Library.DBPath)
+		}
+		if src.Library.Roots != nil {
+			dst.Library.Roots = nil
+			for _, r := range src.Library.Roots {
+				dst.Library.Roots = append(dst.Library.Roots, LibraryRootConfig{
+					ID:         r.ID,
+					Path:       expandEnv(r.Path),
+					Type:       r.Type,
+					MaxDepth:   r.MaxDepth,
+					IncludeExt: r.IncludeExt,
+				})
+			}
 		}
 	}
 
@@ -388,6 +394,43 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 				return fmt.Errorf("invalid verification.interval: %w", err)
 			}
 			dst.Verification.Interval = d
+		}
+	}
+
+	// Sprint 1: Resilience Core (YAML Mapping)
+	if src.Limits != nil {
+		if src.Limits.MaxSessions > 0 {
+			dst.Limits.MaxSessions = src.Limits.MaxSessions
+		}
+		if src.Limits.MaxTranscodes >= 0 { // 0 is valid "disable transcodes"
+			dst.Limits.MaxTranscodes = src.Limits.MaxTranscodes
+		}
+	}
+
+	if src.Timeouts != nil {
+		if src.Timeouts.TranscodeStart > 0 {
+			dst.Timeouts.TranscodeStart = src.Timeouts.TranscodeStart
+		}
+		if src.Timeouts.TranscodeNoProgress > 0 {
+			dst.Timeouts.TranscodeNoProgress = src.Timeouts.TranscodeNoProgress
+		}
+		if src.Timeouts.KillGrace > 0 {
+			dst.Timeouts.KillGrace = src.Timeouts.KillGrace
+		}
+	}
+
+	if src.Breaker != nil {
+		if src.Breaker.Window > 0 {
+			dst.Breaker.Window = src.Breaker.Window
+		}
+		if src.Breaker.MinAttempts > 0 {
+			dst.Breaker.MinAttempts = src.Breaker.MinAttempts
+		}
+		if src.Breaker.FailuresThreshold > 0 {
+			dst.Breaker.FailuresThreshold = src.Breaker.FailuresThreshold
+		}
+		if src.Breaker.ConsecutiveThreshold > 0 {
+			dst.Breaker.ConsecutiveThreshold = src.Breaker.ConsecutiveThreshold
 		}
 	}
 
@@ -519,18 +562,10 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 
 	// Network outbound policy
 	cfg.Network.Outbound.Enabled = l.envBool("XG2G_OUTBOUND_ENABLED", cfg.Network.Outbound.Enabled)
-	if raw, ok := l.envLookup("XG2G_OUTBOUND_ALLOW_HOSTS"); ok {
-		cfg.Network.Outbound.Allow.Hosts = parseCommaSeparated(raw, nil)
-	}
-	if raw, ok := l.envLookup("XG2G_OUTBOUND_ALLOW_CIDRS"); ok {
-		cfg.Network.Outbound.Allow.CIDRs = parseCommaSeparated(raw, nil)
-	}
-	if raw, ok := l.envLookup("XG2G_OUTBOUND_ALLOW_PORTS"); ok {
-		cfg.Network.Outbound.Allow.Ports = parseCommaSeparatedInts(raw, nil)
-	}
-	if raw, ok := l.envLookup("XG2G_OUTBOUND_ALLOW_SCHEMES"); ok {
-		cfg.Network.Outbound.Allow.Schemes = parseCommaSeparated(raw, nil)
-	}
+	cfg.Network.Outbound.Allow.Hosts = parseCommaSeparated(l.envString("XG2G_OUTBOUND_ALLOW_HOSTS", ""), cfg.Network.Outbound.Allow.Hosts)
+	cfg.Network.Outbound.Allow.CIDRs = parseCommaSeparated(l.envString("XG2G_OUTBOUND_ALLOW_CIDRS", ""), cfg.Network.Outbound.Allow.CIDRs)
+	cfg.Network.Outbound.Allow.Ports = parseCommaSeparatedInts(l.envString("XG2G_OUTBOUND_ALLOW_PORTS", ""), cfg.Network.Outbound.Allow.Ports)
+	cfg.Network.Outbound.Allow.Schemes = parseCommaSeparated(l.envString("XG2G_OUTBOUND_ALLOW_SCHEMES", ""), cfg.Network.Outbound.Allow.Schemes)
 
 	// Feature Flags
 	cfg.ReadyStrict = l.envBool("XG2G_READY_STRICT", cfg.ReadyStrict)
@@ -555,70 +590,20 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	cfg.Enigma2.FallbackTo8001 = l.envBool("XG2G_E2_FALLBACK_TO_8001", cfg.Enigma2.FallbackTo8001)
 	cfg.Enigma2.PreflightTimeout = l.envDuration("XG2G_E2_PREFLIGHT_TIMEOUT", cfg.Enigma2.PreflightTimeout)
 
-	// Tuner Slots: Auto-Discovery with Manual Override
-	// LOGIC: Auto-discover by default, only skip if manually configured
-	manuallyConfigured := false
-
-	// Check environment variable XG2G_TUNER_SLOTS
-	if rawSlots, ok := l.envLookup("XG2G_TUNER_SLOTS"); ok {
-		logger := log.WithComponent("config")
-		if strings.TrimSpace(rawSlots) == "" {
-			logger.Warn().Str("key", "XG2G_TUNER_SLOTS").Msg("empty tuner slots env var, will use auto-discovery")
-		} else if slots, err := ParseTunerSlots(rawSlots); err == nil {
+	// Tuner Slots: Manual Override only (Auto-Discovery moved to runtime bootstrap)
+	if rawSlots, ok := l.envLookup("XG2G_TUNER_SLOTS"); ok && strings.TrimSpace(rawSlots) != "" {
+		if slots, err := ParseTunerSlots(rawSlots); err == nil {
 			cfg.Engine.TunerSlots = slots
-			manuallyConfigured = true
-			logger.Info().
-				Ints("tuner_slots", slots).
-				Msg("using manually configured tuner slots from environment")
-		} else {
-			logger.Warn().Str("key", "XG2G_TUNER_SLOTS").Str("value", rawSlots).Err(err).Msg("invalid tuner slots, will use auto-discovery")
 		}
 	}
 
-	// Check if tunerSlots was set in YAML config
-	if !manuallyConfigured && len(cfg.Engine.TunerSlots) > 0 {
-		manuallyConfigured = true
-		logger := log.WithComponent("config")
-		logger.Info().
-			Ints("tuner_slots", cfg.Engine.TunerSlots).
-			Msg("using manually configured tuner slots from YAML")
+	// Sprint 1: Resilience Core ENV overrides
+	if v := l.envInt("XG2G_MAX_SESSIONS", 0); v > 0 {
+		cfg.Limits.MaxSessions = v
 	}
-
-	// Auto-Discovery: Run ONLY if not manually configured AND Engine is enabled
-	if !manuallyConfigured && cfg.Engine.Enabled {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		if discovered, err := DiscoverTunerSlots(ctx, *cfg); err == nil && len(discovered) > 0 {
-			cfg.Engine.TunerSlots = discovered
-			logger := log.WithComponent("config")
-			logger.Info().
-				Ints("discovered_slots", discovered).
-				Msg("using auto-discovered tuner slots from receiver")
-		} else {
-			// Auto-discovery failed, use fallback
-			logger := log.WithComponent("config")
-			logger.Warn().
-				Err(err).
-				Msg("tuner slot auto-discovery failed, using fallback")
-
-			// Fallback: Virtual mode gets [0], otherwise log critical error
-			if cfg.Engine.Mode == "virtual" {
-				cfg.Engine.TunerSlots = []int{0}
-				logger.Info().
-					Msg("auto-discovery failed, defaulting to [0] for virtual mode")
-			} else {
-				logger.Error().
-					Msg("no tuner slots configured or discovered - streaming will fail with 503")
-			}
-		}
-	}
-
-	// Final validation
-	if len(cfg.Engine.TunerSlots) == 0 {
-		logger := log.WithComponent("config")
-		logger.Error().
-			Msg("CRITICAL: no tuner slots available - all streaming requests will fail with 503")
+	// 0 is a valid value for XG2G_MAX_TRANSCODES (disable transcodes)
+	if v := l.envInt("XG2G_MAX_TRANSCODES", -1); v >= 0 {
+		cfg.Limits.MaxTranscodes = v
 	}
 
 	// CANONICAL STORE CONFIG

@@ -27,7 +27,6 @@ func TestStopDuringStart(t *testing.T) {
 		HeartbeatEvery:      0,
 		Owner:               "worker-stop-start",
 		TunerSlots:          []int{0},
-		Admission:           testkit.NewAdmissibleAdmission(),
 		Pipeline:            pipe,
 		Platform:            NewStubPlatform(),
 		PipelineStopTimeout: 10 * time.Second,

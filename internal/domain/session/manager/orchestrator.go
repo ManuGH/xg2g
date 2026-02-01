@@ -13,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/admission"
 	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
@@ -41,7 +40,6 @@ type Orchestrator struct {
 	LeaseKeyFunc    func(model.StartSessionEvent) string
 
 	PipelineStopTimeout time.Duration
-	Admission           *admission.ResourceMonitor
 	OutboundPolicy      platformnet.OutboundPolicy
 
 	// Concurrency Control
@@ -276,43 +274,6 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 		return newReasonError(model.RNotFound, "session not found", nil)
 	}
 
-	priority := o.getPriority(session)
-	admitted, reason := o.Admission.CanAdmit(ctx, priority)
-	if !admitted {
-		// Map admission reason to model.ReasonCode if needed, or use detailed error
-		return newReasonError(model.RLeaseBusy, string(reason), nil)
-	}
-
-	// EXECUTE PREEMPTION IF NEEDED
-	for {
-		targetID, found := o.Admission.SelectPreemptionTarget(priority)
-		if !found {
-			break
-		}
-
-		// We found a target. Abruptly terminate it.
-		logger.Warn().Str("target_sid", targetID).Msg("preempting session to reclaim resources")
-		stopEvt := model.StopSessionEvent{
-			Type:          model.EventStopSession,
-			SessionID:     targetID,
-			Reason:        model.RLeaseBusy, // Re-use LeaseBusy as "Preempted" signal for now
-			CorrelationID: correlationID,
-			RequestedAtUN: time.Now().Unix(),
-		}
-		// Signal stop immediately
-		if err := o.handleStop(ctx, stopEvt); err != nil {
-			logger.Error().Err(err).Str("target_sid", targetID).Msg("failed to signal preemption stop")
-		}
-
-		// Small wait for resource release (Phase 5.2 - Condition G: Deterministic admission)
-		if err := sleepCtx(ctx, 250*time.Millisecond); err != nil {
-			return err
-		}
-	}
-
-	o.Admission.TrackSessionStart(priority, e.SessionID)
-	defer o.Admission.TrackSessionEnd(priority, e.SessionID)
-
 	sessionCtx, err = o.buildSessionContext(session, e)
 	if err != nil {
 		return err
@@ -353,15 +314,7 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 
 	// EXECUTION LOOP (Step 4.2 Port First)
 	// Guard: Ensure we are admitted (Defensive Coding / Invariant Protection)
-	if !admitted {
-		// This path should be unreachable due to check above, but protects against logic drift.
-		metrics.RecordInvariantViolation("spawn_on_reject")
-		logger.Error().Msg("BUG: runExecutionLoop called despite rejected admission status")
-		return newReasonError(model.RInvariantViolation, "spawn on reject", nil)
-	}
-
-	// We no longer manually Tune or create execution components.
-	// The MediaPipeline.Start call (inside runExecutionLoop) handles everything.
+	// EXECUTION LOOP (Step 4.2 Port First)
 
 	runHandle, finalProfile, err := o.runExecutionLoop(ctx, leases.HBCtx, e, sessionCtx, session, startTime, logger, recordStart, leases.Slot)
 	if err != nil {
@@ -528,32 +481,6 @@ func (o *Orchestrator) ForceReleaseLeases(ctx context.Context, sid, ref string, 
 	}
 }
 
-func (o *Orchestrator) getPriority(s *model.SessionRecord) admission.Priority {
-	if s == nil {
-		return admission.PriorityPulse
-	}
-
-	// Default priority logic based on Mode and Profile
-	mode := model.ModeLive
-	if s.ContextData != nil {
-		if raw := strings.TrimSpace(s.ContextData[model.CtxKeyMode]); raw != "" {
-			mode = strings.ToUpper(raw)
-		}
-	}
-
-	// For now, mapping ModeRecording to Live as it's viewing.
-	// In the future, real-time recording tasks will be PriorityRecording.
-	if mode == model.ModeRecording {
-		return admission.PriorityLive
-	}
-
-	if strings.Contains(strings.ToLower(s.Profile.Name), "pulse") {
-		return admission.PriorityPulse
-	}
-
-	return admission.PriorityLive
-}
-
 // reconcileTunerMetrics computes the truth snapshot of tuners in use
 // based on currently held leases/context data, and updates the gauge.
 func (o *Orchestrator) reconcileTunerMetrics(ctx context.Context) error {
@@ -624,16 +551,5 @@ func (o *Orchestrator) maintainGuardLease(ctx context.Context, key string, fail 
 				return
 			}
 		}
-	}
-}
-
-func sleepCtx(ctx context.Context, d time.Duration) error {
-	t := time.NewTimer(d)
-	defer t.Stop()
-	select {
-	case <-t.C:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
 	}
 }

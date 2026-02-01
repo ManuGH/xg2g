@@ -83,18 +83,47 @@ var (
 		Code:    "REFRESH_FAILED",
 		Message: "Refresh operation failed",
 	}
-	ErrCircuitOpen = &APIError{
-		Code:    "CIRCUIT_OPEN",
-		Message: "Service temporarily unavailable due to repeated failures",
+	ErrBreakerOpen = &APIError{
+		Code:    "BREAKER_OPEN",
+		Message: "Service temporarily degraded due to repeated failures",
 	}
-	ErrLeaseBusy = &APIError{
-		Code:    "LEASE_BUSY",
-		Message: "No tuner available; retry later",
+	ErrAdmissionSessionsFull = &APIError{
+		Code:    "ADMISSION_SESSIONS_FULL",
+		Message: "Maximum concurrent sessions reached",
 	}
-	ErrAdmissionRejected = &APIError{
-		Code:    "ADMISSION_REJECTED",
-		Message: "service saturated",
+	ErrAdmissionTranscodesFull = &APIError{
+		Code:    "ADMISSION_TRANSCODES_FULL",
+		Message: "Maximum concurrent transcodes reached",
 	}
+	ErrAdmissionNoTuners = &APIError{
+		Code:    "ADMISSION_NO_TUNERS",
+		Message: "No tuners available for this request",
+	}
+	ErrAdmissionEngineDisabled = &APIError{
+		Code:    "ADMISSION_ENGINE_DISABLED",
+		Message: "Transcode engine is disabled",
+	}
+	ErrAdmissionStateUnknown = &APIError{
+		Code:    "ADMISSION_STATE_UNKNOWN",
+		Message: "Admission controller state is unknown",
+	}
+	ErrTranscodeStartTimeout = &APIError{
+		Code:    "TRANSCODE_START_TIMEOUT",
+		Message: "Transcode failed to start within time limit",
+	}
+	ErrTranscodeStalledTimeout = &APIError{
+		Code:    "TRANSCODE_STALLED_TIMEOUT",
+		Message: "Transcode stalled - no progress detected",
+	}
+	ErrTranscodeFailed = &APIError{
+		Code:    "TRANSCODE_FAILED",
+		Message: "Transcode process exited with error",
+	}
+	ErrTranscodeCanceled = &APIError{
+		Code:    "TRANSCODE_CANCELED",
+		Message: "Transcode was intentionally canceled",
+	}
+
 	ErrV3Unavailable = &APIError{
 		Code:    "V3_UNAVAILABLE",
 		Message: "v3 control plane not enabled",

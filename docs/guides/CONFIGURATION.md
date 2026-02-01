@@ -25,6 +25,7 @@ Note: YAML compatibility keys under `openWebIF.*` map to the registry's `enigma2
 Defaults and env bindings are listed under `enigma2.*` below.
 
 Generated artifacts:
+
 - `config.generated.example.yaml` is the canonical defaults projection (fully generated).
 - `config.example.yaml` is a curated operator tutorial and may be selective.
 
@@ -43,12 +44,21 @@ This section is generated from `internal/config/registry.go`. Do not edit by han
 | `api.tokenScopes` | `XG2G_API_TOKEN_SCOPES` | - | Active | Advanced |
 | `api.tokens` | `XG2G_API_TOKENS` | - | Active | Advanced |
 
+### breaker
+
+| Path | Env | Default | Status | Profile |
+| --- | --- | --- | --- | --- |
+| `breaker.consecutive_threshold` | - | `5` | Active | Advanced |
+| `breaker.failures_threshold` | - | `7` | Active | Advanced |
+| `breaker.min_attempts` | - | `10` | Active | Advanced |
+| `breaker.window` | - | `5m` | Active | Advanced |
+
 ### engine
 
 | Path | Env | Default | Status | Profile |
 | --- | --- | --- | --- | --- |
 | `engine.cpuThresholdScale` | `XG2G_ENGINE_CPU_SCALE` | `1.5` | Active | Advanced |
-| `engine.enabled` | `XG2G_ENGINE_ENABLED` | `false` | Active | Advanced |
+| `engine.enabled` | `XG2G_ENGINE_ENABLED` | `true` | Active | Advanced |
 | `engine.gpuLimit` | `XG2G_ENGINE_GPU_LIMIT` | `8` | Active | Advanced |
 | `engine.idleTimeout` | `XG2G_ENGINE_IDLE_TIMEOUT` | `1m` | Active | Advanced |
 | `engine.maxPool` | `XG2G_ENGINE_MAX_POOL` | `2` | Active | Advanced |
@@ -65,7 +75,7 @@ Aliases: `openWebIF.*` (compat; prefer `enigma2.*`).
 | `enigma2.authMode` | - | `inherit` | Active | Advanced |
 | `enigma2.backoff` | `XG2G_OWI_BACKOFF_MS` | `200ms` | Active | Advanced |
 | `enigma2.baseUrl` | `XG2G_OWI_BASE` | - | Active | Simple |
-| `enigma2.fallbackTo8001` | `XG2G_E2_FALLBACK_TO_8001` | `false` | Active | Integrator |
+| `enigma2.fallbackTo8001` | `XG2G_E2_FALLBACK_TO_8001` | `true` | Active | Integrator |
 | `enigma2.maxBackoff` | `XG2G_OWI_MAX_BACKOFF_MS` | `30s` | Active | Advanced |
 | `enigma2.password` | `XG2G_OWI_PASS` | - | Active | Simple |
 | `enigma2.preflightTimeout` | `XG2G_E2_PREFLIGHT_TIMEOUT` | `10s` | Active | Advanced |
@@ -129,6 +139,13 @@ Aliases: `openWebIF.*` (compat; prefer `enigma2.*`).
 | `library.db_path` | - | - | Active | Advanced |
 | `library.enabled` | - | `false` | Active | Advanced |
 | `library.roots` | - | - | Active | Advanced |
+
+### limits
+
+| Path | Env | Default | Status | Profile |
+| --- | --- | --- | --- | --- |
+| `limits.max_sessions` | `XG2G_MAX_SESSIONS` | `8` | Active | Advanced |
+| `limits.max_transcodes` | `XG2G_MAX_TRANSCODES` | `2` | Active | Advanced |
 
 ### metrics
 
@@ -205,6 +222,14 @@ Aliases: `openWebIF.*` (compat; prefer `enigma2.*`).
 | Path | Env | Default | Status | Profile |
 | --- | --- | --- | --- | --- |
 | `streaming.delivery_policy` | `XG2G_STREAMING_POLICY` | `universal` | Active | Simple |
+
+### timeouts
+
+| Path | Env | Default | Status | Profile |
+| --- | --- | --- | --- | --- |
+| `timeouts.kill_grace` | - | `2s` | Active | Advanced |
+| `timeouts.transcode_no_progress` | - | `30s` | Active | Advanced |
+| `timeouts.transcode_start` | - | `15s` | Active | Advanced |
 
 ### tls
 

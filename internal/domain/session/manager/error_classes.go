@@ -6,7 +6,6 @@ package manager
 
 import (
 	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
-	"github.com/ManuGH/xg2g/internal/domain/session/model"
 )
 
 var (
@@ -18,7 +17,3 @@ var (
 	ErrInvariantViolation = lifecycle.ErrInvariantViolation
 	ErrUnknown            = lifecycle.ErrUnknown
 )
-
-func reasonErrorClass(reason model.ReasonCode) error {
-	return lifecycle.ReasonErrorClass(reason)
-}

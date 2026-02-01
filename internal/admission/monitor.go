@@ -103,7 +103,7 @@ func NewResourceMonitor(maxPool, gpuLimit int, cpuThresholdScale float64) *Resou
 		cores:         float64(runtime.NumCPU()),
 		sessionIDs:    make(map[Priority][]string),
 		cpuWindow:     30 * time.Second,
-		cpuMinSamples: 10,  // 33% buffer for jitter (was 15/15)
+		cpuMinSamples: 15,  // Hardening: 50% of 30s window (was 10)
 		cpuRatio:      0.5, // Block if >= 50% of samples are over threshold
 		logger:        zerolog.Nop(),
 		clock:         time.Now,
@@ -169,16 +169,9 @@ func (m *ResourceMonitor) cpuWithinLimits() (bool, AdmissionReason) {
 	now := m.clock()
 	m.pruneCPUSamplesLocked(now)
 
-	// Guard: Fail-closed on missing samples
+	// Guard: Fail-closed on missing samples (Phase 5.2 - Condition B)
 	if len(m.cpuSamples) < m.cpuMinSamples {
-		if now.Sub(m.lastWarnAt) >= 1*time.Minute {
-			m.lastWarnAt = now
-			m.logger.Warn().
-				Int("samples", len(m.cpuSamples)).
-				Int("min_needed", m.cpuMinSamples).
-				Msg("CPU data insufficient: Admission proceeding (fail-open)")
-		}
-		return true, ReasonAdmitted
+		return false, ReasonCPUUnknown
 	}
 
 	threshold := m.cores * m.cpuThreshold
@@ -202,21 +195,6 @@ func (m *ResourceMonitor) cpuWithinLimits() (bool, AdmissionReason) {
 	}
 
 	return true, ReasonAdmitted
-}
-
-func (m *ResourceMonitor) cpuAverage(now time.Time) (float64, bool) {
-	m.cpuMu.Lock()
-	defer m.cpuMu.Unlock()
-
-	m.pruneCPUSamplesLocked(now)
-	if len(m.cpuSamples) == 0 {
-		return 0, false
-	}
-	var sum float64
-	for _, s := range m.cpuSamples {
-		sum += s.load
-	}
-	return sum / float64(len(m.cpuSamples)), true
 }
 
 func (m *ResourceMonitor) pruneCPUSamplesLocked(now time.Time) {

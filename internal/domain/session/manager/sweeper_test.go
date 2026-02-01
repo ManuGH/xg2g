@@ -31,7 +31,6 @@ func TestSweeper_StoreCleanup(t *testing.T) {
 		LeaseTTL:         30 * time.Second,
 		HeartbeatEvery:   10 * time.Second,
 		Owner:            "sweeper-test",
-		Admission:        newAdmissionMonitor(10, 10, 0),
 		StartConcurrency: 5,
 		StopConcurrency:  5,
 		HLSRoot:          hlsRoot,
@@ -84,7 +83,6 @@ func TestSweeper_FileCleanup(t *testing.T) {
 		LeaseTTL:         30 * time.Second,
 		HeartbeatEvery:   10 * time.Second,
 		Owner:            "sweeper-file-test",
-		Admission:        newAdmissionMonitor(10, 10, 0),
 		StartConcurrency: 5,
 		StopConcurrency:  5,
 		HLSRoot:          hlsRoot,
@@ -135,7 +133,6 @@ func TestSweeper_IdleStop(t *testing.T) {
 	st := store.NewMemoryStore()
 	orch := &Orchestrator{
 		Store:     st,
-		Admission: newAdmissionMonitor(10, 10, 0),
 	}
 	sweeper := &Sweeper{
 		Orch: orch,

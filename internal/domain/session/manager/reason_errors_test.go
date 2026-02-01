@@ -12,9 +12,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/stretchr/testify/require"
 )
+
+func classifyReason(err error) (model.ReasonCode, model.ReasonDetailCode, string) {
+	return lifecycle.ClassifyReason(err)
+}
 
 func TestClassifyReason(t *testing.T) {
 	cases := []struct {

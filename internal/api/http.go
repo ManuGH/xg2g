@@ -19,9 +19,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/admission"
 	"github.com/ManuGH/xg2g/internal/channels"
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/control/admission"
 	controlhttp "github.com/ManuGH/xg2g/internal/control/http"
 	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	"github.com/ManuGH/xg2g/internal/control/middleware"
@@ -238,7 +238,7 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager, opts ...ServerOption) *Se
 	}
 
 	// Initialize VOD Manager with error handling
-	vodMgr, err := vod.NewManager(infra.NewExecutor(cfg.FFmpeg.Bin, *log.L()), infra.NewProber(), recordings.NewPathMapper(cfg.RecordingPathMappings))
+	vodMgr, err := vod.NewManager(infra.NewExecutor(cfg.FFmpeg.Bin, *log.L(), cfg.Timeouts.TranscodeStart, cfg.Timeouts.TranscodeNoProgress), infra.NewProber(), recordings.NewPathMapper(cfg.RecordingPathMappings))
 	if err != nil {
 		log.L().Fatal().Err(err).Msg("failed to initialize VOD manager")
 	}
@@ -301,7 +301,7 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager, opts ...ServerOption) *Se
 	// Default refresh function
 	s.refreshFn = jobs.Refresh
 	// Initialize a conservative default circuit breaker (3 failures -> 30s open)
-	s.cb = resilience.NewCircuitBreaker("api_refresh", 3, 30*time.Second, resilience.WithPanicRecovery(true))
+	s.cb = resilience.NewCircuitBreaker("v2-api", 5, 10, 60*time.Second, 30*time.Second, resilience.WithPanicRecovery(true))
 
 	// Initialize health manager
 	s.healthManager = health.NewManager(cfg.Version)
@@ -332,7 +332,7 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager, opts ...ServerOption) *Se
 	// P10: Wired Admission Control (Deliverable #5)
 	// Initialize with conservative defaults (10 concurrent transcodes, 10 CPU-heavy ops)
 	// In the future this should come from config.
-	adm := admission.NewResourceMonitor(10, 10, 0)
+	adm := admission.NewController(cfg)
 	s.v3Handler.SetAdmission(adm)
 
 	// Initialize HDHomeRun emulation if enabled
@@ -862,8 +862,8 @@ func (s *Server) SetRecordingsService(svc recservice.Service) {
 	s.recordingsService = svc
 }
 
-// SetAdmission sets the resource monitor for admission control.
-func (s *Server) SetAdmission(adm *admission.ResourceMonitor) {
+// SetAdmission sets the controller for admission control.
+func (s *Server) SetAdmission(adm *admission.Controller) {
 	if s.v3Handler != nil {
 		s.v3Handler.SetAdmission(adm)
 	}

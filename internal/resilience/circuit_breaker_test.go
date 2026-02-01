@@ -5,95 +5,124 @@
 package resilience
 
 import (
-	"errors"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 )
 
-// fakeClock abstracts time for deterministic testing
-type fakeClock struct {
+type mockClock struct {
 	now time.Time
 }
 
-func (f *fakeClock) Now() time.Time { return f.now }
+func (m *mockClock) Now() time.Time { return m.now }
 
-func (f *fakeClock) Advance(d time.Duration) { f.now = f.now.Add(d) }
+func TestCircuitBreaker_SlidingWindowPruning(t *testing.T) {
+	clock := &mockClock{now: time.Now()}
+	cb := NewCircuitBreaker("test", 3, 5, 10*time.Second, 30*time.Second, WithClock(clock))
 
-func TestCircuitBreaker_StateTransitions(t *testing.T) {
-	clk := &fakeClock{now: time.Now()}
-	cb := NewCircuitBreaker("test_cb", 2, 100*time.Millisecond, WithClock(clk))
+	for i := 0; i < 10; i++ {
+		cb.RecordAttempt()
+		clock.now = clock.now.Add(1 * time.Second)
+	}
 
-	// Initial state: Closed
-	assert.Equal(t, "closed", cb.State())
+	assert.Equal(t, 10, len(cb.events))
 
-	// 1st Failure: Should remain Closed
-	err := cb.Execute(func() error { return errors.New("fail") })
-	assert.Error(t, err)
-	assert.Equal(t, "closed", cb.State())
+	// Move time beyond some events
+	clock.now = clock.now.Add(5 * time.Second)
+	cb.AllowRequest() // Triggers prune
 
-	// 2nd Failure: Should switch to Open
-	err = cb.Execute(func() error { return errors.New("fail") })
-	assert.Error(t, err)
-	assert.Equal(t, "open", cb.State())
-
-	// Request while Open: Should return ErrCircuitOpen immediately
-	err = cb.Execute(func() error { return nil })
-	assert.True(t, errors.Is(err, ErrCircuitOpen))
-
-	// Advance time past timeout
-	clk.Advance(150 * time.Millisecond)
-
-	// Next request: Should be allowed (HalfOpen) -> Success -> Closed
-	err = cb.Execute(func() error { return nil })
-	assert.NoError(t, err)
-	assert.Equal(t, "closed", cb.State())
+	// Cutoff is now - 10s. events were [T0, T1, ... T9].
+	// now is T0+15. Cutoff is T0+5.
+	// events [T0..T4] should be pruned.
+	assert.Equal(t, 5, len(cb.events))
 }
 
-func TestCircuitBreaker_HalfOpenFailure(t *testing.T) {
-	clk := &fakeClock{now: time.Now()}
-	cb := NewCircuitBreaker("test_cb", 1, 100*time.Millisecond, WithClock(clk))
+func TestCircuitBreaker_TechnicalFailureTrigger(t *testing.T) {
+	clock := &mockClock{now: time.Now()}
+	// Threshold 3, MinAttempts 5
+	cb := NewCircuitBreaker("test", 3, 5, 60*time.Second, 30*time.Second, WithClock(clock))
 
-	// Open the circuit
-	_ = cb.Execute(func() error { return errors.New("fail") })
-	assert.Equal(t, "open", cb.State())
+	// 1. Record 2 failures; should stays CLOSED (not enough failures, not enough attempts)
+	cb.RecordAttempt()
+	cb.RecordTechnicalFailure()
+	cb.RecordAttempt()
+	cb.RecordTechnicalFailure()
+	assert.Equal(t, StateClosed, cb.GetState())
 
-	// Wait for reset
-	clk.Advance(150 * time.Millisecond)
+	// 2. Record more attempts to reach minAttempts=5
+	cb.RecordAttempt()
+	cb.RecordAttempt()
+	cb.RecordAttempt() // total 5 attempts
+	assert.Equal(t, StateClosed, cb.GetState())
 
-	// HalfOpen failure: Should go back to Open
-	err := cb.Execute(func() error { return errors.New("fail") })
-	assert.Error(t, err)
-	assert.Equal(t, "open", cb.State())
+	// 3. Record 3rd failure -> trips to OPEN
+	cb.RecordTechnicalFailure()
+	assert.Equal(t, StateOpen, cb.GetState())
 }
 
-func TestCircuitBreaker_PanicRecovery(t *testing.T) {
-	cb := NewCircuitBreaker("panic_cb", 1, time.Minute, WithPanicRecovery(true))
+func TestCircuitBreaker_Exclusions(t *testing.T) {
+	clock := &mockClock{now: time.Now()}
+	cb := NewCircuitBreaker("test", 2, 2, 60*time.Second, 30*time.Second, WithClock(clock))
 
-	// Execute function that panics
-	assert.Panics(t, func() {
-		_ = cb.Execute(func() error {
-			panic("oops")
-		})
-	})
+	// Capacity FULL or Canceled should not be recorded as failure.
+	// Only Success or TechFailure are recorded in our model.
+	// In the real system, we just DON'T call RecordTechnicalFailure for these.
 
-	// Should have counted as a failure and opened the circuit
-	assert.Equal(t, "open", cb.State())
+	cb.RecordAttempt()
+	// Simulate success for capacity exceeded/canceled (per plan: no breaker penalty)
+	cb.RecordSuccess()
+	assert.Equal(t, StateClosed, cb.GetState())
+
+	cb.RecordAttempt()
+	cb.RecordTechnicalFailure()
+	assert.Equal(t, StateClosed, cb.GetState(), "Only 1 failure; threshold is 2")
 }
 
-func TestCircuitBreaker_NoPanicRecovery(t *testing.T) {
-	cb := NewCircuitBreaker("no_panic_cb", 1, time.Minute, WithPanicRecovery(false))
+func TestCircuitBreaker_HalfOpenBehavior(t *testing.T) {
+	clock := &mockClock{now: time.Now()}
+	cb := NewCircuitBreaker("test", 1, 1, 60*time.Second, 10*time.Second, WithClock(clock), WithHalfOpenSuccessThreshold(2))
 
-	// Execute function that panics
-	assert.Panics(t, func() {
-		_ = cb.Execute(func() error {
-			panic("oops")
-		})
-	})
+	// 1. Trip it
+	cb.RecordAttempt()
+	cb.RecordTechnicalFailure()
+	assert.Equal(t, StateOpen, cb.GetState())
 
-	// Should NOT have counted as a failure (failures incremented manually)
-	// Actually, if it panics and we don't recover, we don't hit recordFailure line 113.
-	// So state remains closed.
-	assert.Equal(t, "closed", cb.State())
+	// 2. Wait for reset timeout
+	clock.now = clock.now.Add(11 * time.Second)
+	assert.True(t, cb.AllowRequest(), "Should allow in half-open")
+	assert.Equal(t, StateHalfOpen, cb.GetState())
+
+	// 3. One success; stays HALF_OPEN (need 2)
+	cb.RecordSuccess()
+	assert.Equal(t, StateHalfOpen, cb.GetState())
+
+	// 4. One tech failure in HALF_OPEN -> immediately OPEN
+	cb.RecordTechnicalFailure()
+	assert.Equal(t, StateOpen, cb.GetState())
+
+	// 5. Recover again
+	clock.now = clock.now.Add(11 * time.Second)
+	cb.AllowRequest()
+	assert.Equal(t, StateHalfOpen, cb.GetState())
+
+	// 6. Two successes -> CLOSED
+	cb.RecordSuccess()
+	cb.RecordSuccess()
+	assert.Equal(t, StateClosed, cb.GetState())
+}
+
+func TestCircuitBreaker_BoundedMemory(t *testing.T) {
+	clock := &mockClock{now: time.Now()}
+	cb := NewCircuitBreaker("test", 3, 5, 60*time.Second, 30*time.Second, WithClock(clock))
+
+	// Fill with 10k events over 10 minutes
+	for i := 0; i < 600; i++ {
+		cb.RecordAttempt()
+		clock.now = clock.now.Add(1 * time.Second)
+	}
+
+	// Should have approx 60 samples (last 60s)
+	// On every RecordAttempt it prunes.
+	assert.LessOrEqual(t, len(cb.events), 61)
 }

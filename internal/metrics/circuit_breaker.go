@@ -21,6 +21,11 @@ var (
 		Name: "xg2g_circuit_breaker_trips_total",
 		Help: "Total number of circuit breaker trips (transitions to open state)",
 	}, []string{"component", "reason"})
+
+	circuitBreakerStatus = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "xg2g_circuit_breaker_status",
+		Help: "Numeric circuit breaker status for component (0=CLOSED, 1=OPEN, 2=HALF_OPEN)",
+	}, []string{"component"})
 )
 
 var circuitStates = []string{"closed", "half-open", "open"}
@@ -39,4 +44,9 @@ func SetCircuitBreakerState(component, state string) {
 // RecordCircuitBreakerTrip increments the trip counter when circuit breaker opens.
 func RecordCircuitBreakerTrip(component, reason string) {
 	circuitBreakerTrips.WithLabelValues(component, reason).Inc()
+}
+
+// SetCircuitBreakerStatus records the numeric status for a component.
+func SetCircuitBreakerStatus(component string, status int) {
+	circuitBreakerStatus.WithLabelValues(component).Set(float64(status))
 }

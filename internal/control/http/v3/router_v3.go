@@ -99,7 +99,7 @@ func NewRouter(si ServerInterface, options RouterOptions) http.Handler {
 func withScopes(operationID string, next http.Handler) http.Handler {
 	scopes := authz.MustScopes(operationID)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := context.WithValue(r.Context(), BearerAuthScopes, scopes)
+		ctx := context.WithValue(r.Context(), bearerAuthScopesKey, scopes)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

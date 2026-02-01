@@ -97,14 +97,6 @@ func detectTerminationCause(ctx context.Context, retErr error) terminationCause 
 	return terminationCause{Error: retErr}
 }
 
-func mapOutcome(out lifecycle.Outcome) finalOutcome {
-	return finalOutcome{
-		State:       out.State,
-		Reason:      out.Reason,
-		DetailDebug: out.DetailDebug,
-	}
-}
-
 type leaseAcquisition struct {
 	Slot         int
 	TunerLease   store.Lease

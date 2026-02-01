@@ -6,6 +6,7 @@ package config
 
 import (
 	"testing"
+	"time"
 )
 
 func baseValidationConfig() AppConfig {
@@ -13,6 +14,20 @@ func baseValidationConfig() AppConfig {
 		DataDir: "/tmp",
 		Enigma2: Enigma2Settings{
 			StreamPort: 8001,
+		},
+		Limits: LimitsConfig{
+			MaxSessions:   10,
+			MaxTranscodes: 5,
+		},
+		Timeouts: TimeoutsConfig{
+			TranscodeStart:      10 * time.Second,
+			TranscodeNoProgress: 30 * time.Second,
+			KillGrace:           5 * time.Second,
+		},
+		Breaker: BreakerConfig{
+			Window:            60 * time.Second,
+			MinAttempts:       10,
+			FailuresThreshold: 5,
 		},
 		Streaming: StreamingConfig{
 			DeliveryPolicy: "universal",

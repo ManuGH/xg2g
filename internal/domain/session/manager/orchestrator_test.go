@@ -27,7 +27,6 @@ func TestOrchestrator_HandleStart_StubExecution(t *testing.T) {
 		HeartbeatEvery:      0,
 		Owner:               "test-worker-1",
 		TunerSlots:          []int{0},
-		Admission:           testkit.NewAdmissibleAdmission(),
 		Pipeline:            pipe,
 		Platform:            NewStubPlatform(),
 		PipelineStopTimeout: 0,

@@ -8,10 +8,11 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/domain/vod"
+	"github.com/ManuGH/xg2g/internal/media/ffmpeg/watchdog"
+	"github.com/ManuGH/xg2g/internal/procgroup"
 	"github.com/rs/zerolog"
 )
 
@@ -20,17 +21,27 @@ var _ vod.Runner = (*Executor)(nil)
 
 // Executor implements the vod.Runner interface.
 type Executor struct {
-	BinaryPath string
-	Logger     zerolog.Logger
+	BinaryPath   string
+	Logger       zerolog.Logger
+	StartTimeout time.Duration
+	StallTimeout time.Duration
 }
 
-func NewExecutor(binaryPath string, logger zerolog.Logger) *Executor {
+func NewExecutor(binaryPath string, logger zerolog.Logger, startTimeout, stallTimeout time.Duration) *Executor {
 	if binaryPath == "" {
 		binaryPath = "ffmpeg"
 	}
+	if startTimeout <= 0 {
+		startTimeout = 10 * time.Second
+	}
+	if stallTimeout <= 0 {
+		stallTimeout = 30 * time.Second
+	}
 	return &Executor{
-		BinaryPath: binaryPath,
-		Logger:     logger,
+		BinaryPath:   binaryPath,
+		Logger:       logger,
+		StartTimeout: startTimeout,
+		StallTimeout: stallTimeout,
 	}
 }
 
@@ -42,6 +53,8 @@ func (e *Executor) Start(ctx context.Context, spec vod.Spec) (vod.Handle, error)
 
 	// #nosec G204 - BinaryPath is trusted from config; args are generated from strict profile logic
 	cmd := exec.CommandContext(ctx, e.BinaryPath, args...)
+	procgroup.Set(cmd) // Mandatory for group cleanup
+
 	e.Logger.Debug().
 		Str("bin", e.BinaryPath).
 		Strs("args", args).
@@ -63,6 +76,8 @@ func (e *Executor) Start(ctx context.Context, spec vod.Spec) (vod.Handle, error)
 		progress: make(chan vod.ProgressEvent, 10), // Buffered to prevent blocking
 		done:     make(chan error, 1),
 		ring:     NewRingBuffer(100),
+		wd:       watchdog.New(e.StartTimeout, e.StallTimeout),
+		logger:   e.Logger,
 	}
 
 	// Start monitor
@@ -76,6 +91,8 @@ type handle struct {
 	progress chan vod.ProgressEvent
 	done     chan error
 	ring     *RingBuffer
+	wd       *watchdog.Watchdog
+	logger   zerolog.Logger
 	mu       sync.Mutex
 }
 
@@ -91,17 +108,8 @@ func (h *handle) Stop(grace, kill time.Duration) error {
 		return nil
 	}
 
-	// Graceful
-	_ = h.cmd.Process.Signal(syscall.SIGTERM)
-
-	// Deadline for Kill
-	if kill > 0 {
-		time.AfterFunc(kill, func() {
-			_ = h.cmd.Process.Kill()
-		})
-	}
-
-	return nil // Actual exit observed via Wait()
+	// Use procgroup for deterministic tree reaping
+	return procgroup.KillGroup(h.cmd.Process.Pid, grace, kill)
 }
 
 func (h *handle) Progress() <-chan vod.ProgressEvent {
@@ -116,25 +124,48 @@ func (h *handle) monitor(stderr io.Reader) {
 	defer close(h.done)
 	defer close(h.progress)
 
+	// Start watchdog in background
+	wdCtx, wdCancel := context.WithCancel(context.Background())
+	defer wdCancel()
+
+	wdErrCh := make(chan error, 1)
+	go func() {
+		wdErrCh <- h.wd.Run(wdCtx)
+	}()
+
 	// Scanning stderr for progress
 	scanner := bufio.NewScanner(stderr)
-	// Default split function is ScanLines
 
 	for scanner.Scan() {
 		line := scanner.Text()
 		h.ring.Add(line)
+		h.wd.ParseLine(line)
 
-		// Heuristic: If line contains frame= or size=, emit heartbeat
+		// Heuristic: If line contains frame= or size=, emit heartbeat for legacy consumers
 		if strings.Contains(line, "frame=") || strings.Contains(line, "size=") || strings.Contains(line, "time=") {
 			select {
-			case h.progress <- vod.ProgressEvent{}:
+			case h.progress <- vod.ProgressEvent{At: time.Now()}:
 			default:
-				// Dropped heartbeat is fine, we just need frequent enough ones
+				// Dropped heartbeat is fine
 			}
 		}
 	}
 
-	h.done <- h.cmd.Wait()
+	// Wait for process or watchdog
+	waitErr := h.cmd.Wait()
+	wdCancel() // Stop watchdog if process exited first
+
+	select {
+	case wdErr := <-wdErrCh:
+		if wdErr != nil {
+			h.logger.Error().Err(wdErr).Int("state", int(h.wd.State())).Msg("watchdog triggered failure")
+			h.done <- wdErr
+			return
+		}
+	default:
+	}
+
+	h.done <- waitErr
 }
 
 // RingBuffer simple implementation

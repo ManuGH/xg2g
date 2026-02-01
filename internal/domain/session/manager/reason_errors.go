@@ -21,7 +21,3 @@ func newReasonErrorWithDetail(reason model.ReasonCode, detailCode model.ReasonDe
 func wrapWithReasonClass(err error) error {
 	return lifecycle.WrapWithReasonClass(err)
 }
-
-func classifyReason(err error) (model.ReasonCode, model.ReasonDetailCode, string) {
-	return lifecycle.ClassifyReason(err)
-}

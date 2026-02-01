@@ -61,7 +61,8 @@ func TestPutSystemConfigTriggersShutdown(t *testing.T) {
 		return nil
 	}
 
-	req := httptest.NewRequest(http.MethodPut, "/api/v3/system/config", strings.NewReader(`{"featureFlags":{"instantTune":true}}`))
+	// 'bouquets' is not hot-reloadable, should trigger shutdown
+	req := httptest.NewRequest(http.MethodPut, "/api/v3/system/config", strings.NewReader(`{"bouquets":["A","B"]}`))
 	w := httptest.NewRecorder()
 
 	srv.PutSystemConfig(w, req)
@@ -75,4 +76,35 @@ func TestPutSystemConfigTriggersShutdown(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("expected shutdown to be requested")
 	}
+}
+
+func TestPutSystemConfigDoesNotAliasCurrent(t *testing.T) {
+	t.Setenv("XG2G_OWI_BASE", "http://example.com")
+	cfg, err := config.NewLoader("", "test").Load()
+	require.NoError(t, err)
+
+	cfg.DataDir = t.TempDir()
+
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	srv := NewServer(cfg, config.NewManager(configPath), nil)
+
+	// Mock shutdown to avoid panic on restart-required updates
+	srv.requestShutdown = func(ctx context.Context) error { return nil }
+
+	// Snapshot before
+	before := srv.GetConfig()
+
+	// Update that changes the string
+	req := httptest.NewRequest(http.MethodPut, "/api/v3/system/config", strings.NewReader(`{"bouquets":["A","B"]}`))
+	w := httptest.NewRecorder()
+
+	srv.PutSystemConfig(w, req)
+	require.Equal(t, http.StatusAccepted, w.Code)
+
+	// Check after
+	after := srv.GetConfig()
+	require.Equal(t, "A,B", after.Bouquet)
+
+	// Assert "before" was NOT mutated (alias safety)
+	require.Empty(t, before.Bouquet, "original config must not be mutated by update (aliasing)")
 }

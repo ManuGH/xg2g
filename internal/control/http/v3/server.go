@@ -21,7 +21,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/read"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 
-	"github.com/ManuGH/xg2g/internal/admission"
+	"github.com/ManuGH/xg2g/internal/control/admission"
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/dvr"
@@ -64,12 +64,14 @@ type Server struct {
 	owiClient           *openwebif.Client
 	owiEpoch            uint64
 	configManager       *config.Manager
+	configMu            sync.Mutex // Serializes configuration updates
 	epgCacheTime        time.Time
 	epgCacheMTime       time.Time
 	epgSfg              singleflight.Group
 	receiverSfg         singleflight.Group
 	libraryService      *library.Service // Media library per ADR-ENG-002
-	admission           *admission.ResourceMonitor
+	admission           *admission.Controller
+	admissionState      AdmissionState
 
 	// Lifecycle
 	requestShutdown   func(context.Context) error
@@ -120,6 +122,7 @@ func NewServer(cfg config.AppConfig, cfgMgr *config.Manager, rootCancel context.
 		startTime:      time.Now(),
 		libraryService: librarySvc,
 		storageMonitor: NewStorageMonitor(),
+		admission:      admission.NewController(cfg),
 		// owiFactory defaults to nil (uses newOpenWebIFClient in prod)
 	}
 	s.epgSource = &epgAdapter{s}
@@ -227,10 +230,18 @@ func (s *Server) SetRecordingsService(svc recservice.Service) {
 }
 
 // SetAdmission sets the resource monitor for admission control.
-func (s *Server) SetAdmission(adm *admission.ResourceMonitor) {
+// SetAdmission sets the controller for admission control.
+func (s *Server) SetAdmission(ctrl *admission.Controller) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.admission = adm
+	s.admission = ctrl
+}
+
+// SetShutdownHandler sets the function to call for graceful shutdown.
+func (s *Server) SetShutdownHandler(fn func(context.Context) error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.requestShutdown = fn
 }
 
 // authMiddleware is the default authentication middleware.
@@ -406,6 +417,12 @@ func (s *Server) SetDependencies(
 		s.recordingsService = recSvc
 	} else {
 		s.recordingsService = nil
+	}
+
+	// Initialize Admission State Source (Store-backed)
+	s.admissionState = &storeAdmissionState{
+		store:      store,
+		tunerCount: len(s.cfg.Engine.TunerSlots),
 	}
 }
 

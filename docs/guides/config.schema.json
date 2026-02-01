@@ -160,6 +160,27 @@
       },
       "type": "array"
     },
+    "breaker": {
+      "properties": {
+        "consecutive_threshold": {
+          "default": 5,
+          "type": "integer"
+        },
+        "failures_threshold": {
+          "default": 7,
+          "type": "integer"
+        },
+        "min_attempts": {
+          "default": 10,
+          "type": "integer"
+        },
+        "window": {
+          "default": "5m",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "configStrict": {
       "default": true,
       "type": "boolean"
@@ -189,7 +210,7 @@
           "type": "number"
         },
         "enabled": {
-          "default": false,
+          "default": true,
           "type": "boolean"
         },
         "gpuLimit": {
@@ -251,7 +272,7 @@
           "type": "string"
         },
         "fallbackTo8001": {
-          "default": false,
+          "default": true,
           "description": "Fallback to direct 8001 stream when StreamRelay (17999) fails preflight",
           "examples": [
             false,
@@ -468,6 +489,26 @@
       },
       "type": "object"
     },
+    "featureFlags": {
+      "properties": {
+        "AUDIO_TRANSCODING": {
+          "type": "string"
+        },
+        "EPG": {
+          "type": "string"
+        },
+        "GPU_TRANSCODE": {
+          "type": "string"
+        },
+        "METRICS": {
+          "type": "string"
+        },
+        "TELEMETRY": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "ffmpeg": {
       "properties": {
         "bin": {
@@ -542,6 +583,19 @@
             "type": "object"
           },
           "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "limits": {
+      "properties": {
+        "max_sessions": {
+          "default": 8,
+          "type": "integer"
+        },
+        "max_transcodes": {
+          "default": 2,
+          "type": "integer"
         }
       },
       "type": "object"
@@ -833,6 +887,23 @@
       "properties": {
         "delivery_policy": {
           "default": "universal",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "timeouts": {
+      "properties": {
+        "kill_grace": {
+          "default": "2s",
+          "type": "string"
+        },
+        "transcode_no_progress": {
+          "default": "30s",
+          "type": "string"
+        },
+        "transcode_start": {
+          "default": "15s",
           "type": "string"
         }
       },

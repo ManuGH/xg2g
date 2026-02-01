@@ -6,7 +6,7 @@ require (
 	github.com/alicebob/miniredis/v2 v2.35.0
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/getkin/kin-openapi v0.133.0
-	github.com/go-chi/chi/v5 v5.2.3
+	github.com/go-chi/chi/v5 v5.2.4
 	github.com/go-chi/httprate v0.15.0
 	github.com/google/go-cmp v0.7.0
 	github.com/google/renameio/v2 v2.0.1

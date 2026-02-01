@@ -1,3 +1,5 @@
+//go:build ignore
+
 // Copyright (c) 2025 ManuGH
 // Licensed under the PolyForm Noncommercial License 1.0.0
 

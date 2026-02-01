@@ -90,6 +90,11 @@ func Validate(cfg AppConfig) error {
 	// Data directory
 	v.Directory("DataDir", cfg.DataDir, false)
 
+	// Log level validation
+	if cfg.LogLevel != "" {
+		v.OneOf("LogLevel", strings.ToLower(cfg.LogLevel), []string{"debug", "info", "warn", "error", "fatal", "panic", "disabled", "trace"})
+	}
+
 	// EPG settings (if enabled)
 	if cfg.EPGEnabled {
 		v.Range("EPGDays", cfg.EPGDays, 1, 14)
@@ -287,16 +292,53 @@ func Validate(cfg AppConfig) error {
 		v.URL("Enigma2.BaseURL", cfg.Enigma2.BaseURL, []string{"http", "https"})
 	}
 
-	if !v.IsValid() {
-		return v.Err()
-	}
-
 	// Validate Streaming Config (ADR-00X: universal policy only)
 	if cfg.Streaming.DeliveryPolicy != "universal" {
 		v.AddError("Streaming.DeliveryPolicy",
 			"only 'universal' policy is supported (ADR-00X)",
 			cfg.Streaming.DeliveryPolicy)
 	}
+
+	// Sprint 1: Resilience Core Validation
+	// Limits: Hard floor
+	if cfg.Limits.MaxSessions < 1 {
+		v.AddError("Limits.MaxSessions", "must be >= 1", cfg.Limits.MaxSessions)
+	}
+	if cfg.Limits.MaxTranscodes < 0 {
+		v.AddError("Limits.MaxTranscodes", "must be >= 0", cfg.Limits.MaxTranscodes)
+	}
+
+	// Timeouts: Logical consistency
+	if cfg.Timeouts.TranscodeStart <= 0 {
+		v.AddError("Timeouts.TranscodeStart", "must be > 0", cfg.Timeouts.TranscodeStart)
+	}
+	if cfg.Timeouts.TranscodeNoProgress <= cfg.Timeouts.TranscodeStart {
+		v.AddError("Timeouts.TranscodeNoProgress", "must be > TranscodeStart", cfg.Timeouts.TranscodeNoProgress)
+	}
+	if cfg.Timeouts.KillGrace <= 0 {
+		v.AddError("Timeouts.KillGrace", "must be > 0", cfg.Timeouts.KillGrace)
+	}
+	if cfg.Timeouts.KillGrace >= cfg.Timeouts.TranscodeNoProgress {
+		v.AddError("Timeouts.KillGrace", "must be < TranscodeNoProgress", cfg.Timeouts.KillGrace)
+	}
+
+	// Breaker: Logic
+	if cfg.Breaker.Window <= 0 {
+		v.AddError("Breaker.Window", "must be > 0", cfg.Breaker.Window)
+	}
+	if cfg.Breaker.MinAttempts < 1 {
+		v.AddError("Breaker.MinAttempts", "must be >= 1", cfg.Breaker.MinAttempts)
+	}
+	if cfg.Breaker.FailuresThreshold < 1 {
+		v.AddError("Breaker.FailuresThreshold", "must be >= 1", cfg.Breaker.FailuresThreshold)
+	}
+
+	// FailuresThreshold should not exceed MinAttempts significantly (can be debated, but generally Failures must be possible)
+	// We allow threshold > min_attempts if window covers multiple min_attempt blocks, but simplistic is threshold <= min
+	// User didn't mandate this, but "failures_threshold als absolute Zahl (z. B. 7 von min 10)" implies relation.
+	// I will skip enforcing Threshold <= MinAttempts to allow "bursty failure" tolerance if desired, but typically Threshold <= Min makes sense for fast reaction.
+	// Actually, if FailuresThreshold > MinAttempts, you might never trip if sample size isn't big enough?
+	// Sliding Window accumulates. So it's fine.
 
 	if !v.IsValid() {
 		return v.Err()

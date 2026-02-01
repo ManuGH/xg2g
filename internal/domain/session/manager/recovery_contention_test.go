@@ -30,7 +30,6 @@ func TestContention_Blocked(t *testing.T) {
 		HeartbeatEvery:      0,
 		Owner:               "worker-1",
 		TunerSlots:          []int{0},
-		Admission:           testkit.NewAdmissibleAdmission(),
 		Pipeline:            pipe,
 		Platform:            NewStubPlatform(),
 		PipelineStopTimeout: 0,
@@ -96,7 +95,6 @@ func TestRecovery_StaleTunerLease(t *testing.T) {
 	st := store.NewMemoryStore()
 	orch := &Orchestrator{
 		Store:     st,
-		Admission: newAdmissionMonitor(10, 10, 0),
 		LeaseTTL:  24 * time.Hour,
 	}
 
@@ -125,7 +123,6 @@ func TestRecovery_ActiveTunerLease(t *testing.T) {
 	st := store.NewMemoryStore()
 	orch := &Orchestrator{
 		Store:     st,
-		Admission: newAdmissionMonitor(10, 10, 0),
 		LeaseTTL:  24 * time.Hour,
 	}
 

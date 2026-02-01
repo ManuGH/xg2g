@@ -5,7 +5,6 @@
 package config
 
 import (
-	"fmt"
 	"time"
 )
 
@@ -40,9 +39,9 @@ type FileConfig struct {
 	Metrics               MetricsConfig           `yaml:"metrics,omitempty"`
 	Picons                PiconsConfig            `yaml:"picons,omitempty"`
 	HDHR                  HDHRConfig              `yaml:"hdhr,omitempty"`
-	Engine                EngineConfig            `yaml:"engine,omitempty"`
+	Engine                EngineFileConfig        `yaml:"engine,omitempty"`
 	TLS                   TLSConfig               `yaml:"tls,omitempty"`
-	Library               LibraryConfig           `yaml:"library,omitempty"`
+	Library               LibraryFileConfig       `yaml:"library,omitempty"`
 	RecordingPathMappings []RecordingPathMapping  `yaml:"recordingPathMappings,omitempty"`
 
 	// Advanced/internal configuration (Registry-exposed)
@@ -53,6 +52,9 @@ type FileConfig struct {
 	Sessions     *SessionsConfig     `yaml:"sessions,omitempty"`
 	Store        *StoreConfig        `yaml:"store,omitempty"`
 	Streaming    *StreamingConfig    `yaml:"streaming,omitempty"`
+	Limits       *LimitsConfig       `yaml:"limits,omitempty"`
+	Timeouts     *TimeoutsConfig     `yaml:"timeouts,omitempty"`
+	Breaker      *BreakerConfig      `yaml:"breaker,omitempty"`
 	Verification *VerificationConfig `yaml:"verification,omitempty"`
 }
 
@@ -215,6 +217,27 @@ type SessionsConfig struct {
 	ExpiryCheckInterval time.Duration `yaml:"expiry_check_interval"`
 }
 
+// LimitsConfig holds admission limits
+type LimitsConfig struct {
+	MaxSessions   int `yaml:"max_sessions"`
+	MaxTranscodes int `yaml:"max_transcodes"`
+}
+
+// TimeoutsConfig holds execution timeouts
+type TimeoutsConfig struct {
+	TranscodeStart      time.Duration `yaml:"transcode_start"`
+	TranscodeNoProgress time.Duration `yaml:"transcode_no_progress"`
+	KillGrace           time.Duration `yaml:"kill_grace"`
+}
+
+// BreakerConfig holds circuit breaker settings
+type BreakerConfig struct {
+	Window               time.Duration `yaml:"window"`
+	MinAttempts          int           `yaml:"min_attempts"`
+	FailuresThreshold    int           `yaml:"failures_threshold"`
+	ConsecutiveThreshold int           `yaml:"consecutive_threshold"`
+}
+
 // AppConfig holds all configuration for the application
 type AppConfig struct {
 	Version           string
@@ -302,6 +325,11 @@ type AppConfig struct {
 	// ADR-009: Session Lease Configuration
 	Sessions SessionsConfig
 
+	// Sprint 1: Resilience Core
+	Limits   LimitsConfig
+	Timeouts TimeoutsConfig
+	Breaker  BreakerConfig
+
 	// Library Configuration (Phase 0 per ADR-ENG-002)
 	Library LibraryConfig
 
@@ -315,7 +343,14 @@ type VerificationSettings struct {
 	Interval time.Duration
 }
 
-// LibraryConfig holds library configuration
+// LibraryFileConfig holds library configuration for FileConfig (YAML)
+type LibraryFileConfig struct {
+	Enabled *bool               `yaml:"enabled,omitempty"`
+	DBPath  string              `yaml:"db_path,omitempty"`
+	Roots   []LibraryRootConfig `yaml:"roots,omitempty"`
+}
+
+// LibraryConfig holds library configuration (Runtime)
 type LibraryConfig struct {
 	Enabled bool                `yaml:"enabled"`
 	DBPath  string              `yaml:"db_path"`
@@ -331,6 +366,17 @@ type LibraryRootConfig struct {
 	IncludeExt []string `yaml:"include_ext"`
 }
 
+// EngineFileConfig holds Engine configuration for FileConfig (YAML)
+type EngineFileConfig struct {
+	Enabled           *bool         `yaml:"enabled,omitempty"`
+	Mode              string        `yaml:"mode,omitempty"`
+	IdleTimeout       time.Duration `yaml:"idleTimeout,omitempty"`
+	TunerSlots        []int         `yaml:"tunerSlots,omitempty"`
+	MaxPool           int           `yaml:"maxPool,omitempty"`
+	GPULimit          int           `yaml:"gpuLimit,omitempty"`
+	CPUThresholdScale float64       `yaml:"cpuThresholdScale,omitempty"`
+}
+
 type EngineConfig struct {
 	Enabled           bool          `yaml:"enabled"`
 	Mode              string        `yaml:"mode"` // "standard" or "virtual"
@@ -339,36 +385,6 @@ type EngineConfig struct {
 	MaxPool           int           `yaml:"maxPool"`
 	GPULimit          int           `yaml:"gpuLimit"`
 	CPUThresholdScale float64       `yaml:"cpuThresholdScale"`
-}
-
-// StoreConfig holds the state store settings
-type StoreConfig struct {
-	Backend string `yaml:"backend"` // "memory" or "sqlite" (per ADR-021: bolt/badger removed)
-	Path    string `yaml:"path"`
-}
-
-// NetworkConfig holds outbound network policy.
-type NetworkConfig struct {
-	Outbound OutboundConfig
-}
-
-// OutboundConfig controls outbound HTTP(S) allowlist enforcement.
-type OutboundConfig struct {
-	Enabled bool
-	Allow   OutboundAllowlist
-}
-
-// FFmpegConfig holds the FFmpeg binary settings
-type FFmpegConfig struct {
-	Bin         string        `yaml:"bin"`
-	KillTimeout time.Duration `yaml:"killTimeout"`
-}
-
-// HLSConfig holds HLS output settings
-type HLSConfig struct {
-	Root           string        `yaml:"root"`
-	DVRWindow      time.Duration `yaml:"dvrWindow"`
-	SegmentSeconds int           `yaml:"segmentSeconds"` // Best Practice 2026: 6s
 }
 
 // VODConfig groups all VOD-specific tuning knobs under `vod.*` for YAML,
@@ -426,11 +442,32 @@ type scopedTokenJSON struct {
 	Scopes []string `json:"scopes"`
 }
 
-// String implements fmt.Stringer to provide a redacted string representation of the config.
-// This ensures that sensitive fields are not leaked in logs when printing the config struct.
-func (c AppConfig) String() string {
-	masked := MaskSecrets(c)
-	// Use json for cleaner output, or simple struct dump
-	// Since MaskSecrets returns map[string]any for structs, we can just print that
-	return fmt.Sprintf("%+v", masked)
+// FFmpegConfig holds the FFmpeg binary settings
+type FFmpegConfig struct {
+	Bin         string        `yaml:"bin"`
+	KillTimeout time.Duration `yaml:"killTimeout"`
+}
+
+// HLSConfig holds HLS output settings
+type HLSConfig struct {
+	Root           string        `yaml:"root"`
+	DVRWindow      time.Duration `yaml:"dvrWindow"`
+	SegmentSeconds int           `yaml:"segmentSeconds"` // Best Practice 2026: 6s
+}
+
+// StoreConfig holds the state store settings
+type StoreConfig struct {
+	Backend string `yaml:"backend"` // "memory" or "sqlite" (per ADR-021: bolt/badger removed)
+	Path    string `yaml:"path"`
+}
+
+// NetworkConfig holds outbound network policy.
+type NetworkConfig struct {
+	Outbound OutboundConfig
+}
+
+// OutboundConfig controls outbound HTTP(S) allowlist enforcement.
+type OutboundConfig struct {
+	Enabled bool
+	Allow   OutboundAllowlist
 }

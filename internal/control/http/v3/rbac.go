@@ -153,6 +153,11 @@ func (s *Server) RequestScopes(r *http.Request) (scopeSet, bool) {
 	return nil, false
 }
 
+// contextKey is a private type for context keys to avoid collisions.
+type contextKey string
+
+const bearerAuthScopesKey contextKey = contextKey(BearerAuthScopes)
+
 // ScopeMiddleware enforces that a request has at least one required scope.
 func (s *Server) ScopeMiddleware(required ...Scope) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -180,7 +185,7 @@ func (s *Server) ScopeMiddleware(required ...Scope) func(http.Handler) http.Hand
 // ScopeMiddlewareFromContext enforces BearerAuthScopes injected by the v3 router.
 func (s *Server) ScopeMiddlewareFromContext(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		raw, ok := r.Context().Value(BearerAuthScopes).([]string)
+		raw, ok := r.Context().Value(bearerAuthScopesKey).([]string)
 		if !ok || len(raw) == 0 {
 			next.ServeHTTP(w, r)
 			return

@@ -359,7 +359,7 @@ func (m opMatcher) requiredFor(method, path string) ([]string, bool) {
 func testAuthMiddleware(t *testing.T, matcher opMatcher, allowUnscopedWithoutToken bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			required, _ := r.Context().Value(BearerAuthScopes).([]string)
+			required, _ := r.Context().Value(bearerAuthScopesKey).([]string)
 			if expected, ok := matcher.requiredFor(r.Method, strings.TrimPrefix(r.URL.Path, V3BaseURL)); ok {
 				if len(expected) > 0 && len(required) == 0 {
 					t.Fatalf("missing BearerAuthScopes for scoped op: %s %s", r.Method, r.URL.Path)

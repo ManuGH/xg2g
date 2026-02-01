@@ -58,6 +58,17 @@ func (s SessionState) IsTerminal() bool {
 	return false
 }
 
+// IsResourceOccupying returns true if the session in this state is expected
+// to occupy system resources (tuner slots, transcoding slots, etc.).
+func IsResourceOccupying(s SessionState) bool {
+	switch s {
+	case SessionNew, SessionStarting, SessionPriming, SessionReady, SessionDraining, SessionStopping:
+		return true
+	default:
+		return false
+	}
+}
+
 // PipelineState is the internal worker lifecycle.
 // This is where “real truth” lives for tuning, FFmpeg, packaging, etc.
 type PipelineState string

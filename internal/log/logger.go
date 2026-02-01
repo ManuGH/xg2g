@@ -2,13 +2,15 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
-// Since v2.0.0, this software is restricted to non-commercial use only.
-
 // Package log provides structured logging utilities.
 package log
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -21,6 +23,9 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+// ErrInvalidLogLevel is returned when a level string cannot be parsed.
+var ErrInvalidLogLevel = errors.New("invalid log level")
+
 // Config captures options for configuring the global logger.
 type Config struct {
 	Level   string    // optional log level ("debug", "info", etc.)
@@ -30,15 +35,17 @@ type Config struct {
 }
 
 var (
-	mu   sync.RWMutex
-	base zerolog.Logger
-	once sync.Once
+	mu          sync.RWMutex
+	base        zerolog.Logger
+	auditBase   zerolog.Logger
+	initialized bool
 )
 
-// Configure initialises the global zerolog logger.
+// Configure initialises the global zerolog logger with the provided configuration.
 func Configure(cfg Config) {
 	mu.Lock()
 	defer mu.Unlock()
+
 	level := zerolog.InfoLevel
 	if cfg.Level != "" {
 		if parsed, err := zerolog.ParseLevel(cfg.Level); err == nil {
@@ -60,55 +67,126 @@ func Configure(cfg Config) {
 
 	version := cfg.Version
 
-	base = zerolog.New(writer).With().
+	// We use a MultiWriter to feed both the output and our structured buffer.
+	bufferWriter := &structuredBufferWriter{}
+	multi := io.MultiWriter(writer, bufferWriter)
+
+	base = zerolog.New(multi).With().
 		Timestamp().
 		Str("service", service).
 		Str("version", version).
-		Logger().Hook(bufferHook{})
+		Logger()
+
+	auditBase = zerolog.New(multi).With().
+		Timestamp().
+		Str("service", service).
+		Str("version", version).
+		Str("component", "audit").
+		Logger()
+
+	initialized = true
+}
+
+func ensureInitialized() {
+	mu.RLock()
+	if initialized {
+		mu.RUnlock()
+		return
+	}
+	mu.RUnlock()
+
+	Configure(Config{})
+}
+
+// SetLevel updates the global log level using a thread-safe transition.
+func SetLevel(ctx context.Context, principal string, scopes []string, newLevel string) error {
+	ensureInitialized()
+	parsed, err := zerolog.ParseLevel(newLevel)
+	if err != nil {
+		return fmt.Errorf("%w: %s", ErrInvalidLogLevel, newLevel)
+	}
+
+	mu.Lock()
+	oldLevel := zerolog.GlobalLevel()
+	if oldLevel == parsed {
+		mu.Unlock()
+		return nil
+	}
+	zerolog.SetGlobalLevel(parsed)
+	mu.Unlock()
+
+	// Audit Trail: Functional API ensures no-silence policy.
+	AuditInfo(ctx, "log.level_changed", "runtime log level updated", map[string]any{
+		"who":    principal,
+		"scopes": scopes,
+		"from":   oldLevel.String(),
+		"to":     parsed.String(),
+	})
+
+	return nil
+}
+
+// AuditInfo records a governance-critical event.
+// It bypasses the global log level filter to ensure a complete audit trail.
+func AuditInfo(ctx context.Context, event string, msg string, fields map[string]any) {
+	ensureInitialized()
+	mu.RLock()
+	logger := auditBase
+	mu.RUnlock()
+
+	// Bypass GlobalLevel gating by using .Log()
+	ev := logger.Log().
+		Str("audit_severity", "info"). // Honest governance field
+		Str("event", event).
+		Str("request_id", RequestIDFromContext(ctx))
+
+	for k, v := range fields {
+		ev = ev.Interface(k, v)
+	}
+
+	ev.Msg(msg)
 }
 
 func logger() zerolog.Logger {
-	once.Do(func() {
-		Configure(Config{})
-	})
+	ensureInitialized()
 	mu.RLock()
 	defer mu.RUnlock()
 	return base
 }
 
-// Base returns the configured base logger instance.
+// Base returns the configured base logger instance by value.
 func Base() zerolog.Logger {
 	return logger()
 }
 
-// L provides access to the global logger instance.
+// L provides access to the global logger instance as a pointer to a copy.
 func L() *zerolog.Logger {
-	once.Do(func() {
-		Configure(Config{})
-	})
-	mu.RLock()
-	defer mu.RUnlock()
-	return &base
+	l := logger()
+	return &l
 }
 
-// Middleware returns a new http.Handler middleware that logs requests using zerolog.
+// Middleware returns a http.Handler middleware that logs requests using zerolog.
 func Middleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
 
 			ctx := r.Context()
+
+			// Request-ID Continuity: Don't overwrite if subrouter/upstream already set it.
 			reqID := RequestIDFromContext(ctx)
 			if reqID == "" {
-				// Fallback for callers that don't run the RequestID middleware.
-				reqID = r.Header.Get("X-Request-ID")
-				if reqID == "" {
-					reqID = uuid.New().String()
-				}
+				reqID = uuid.New().String()
 				ctx = ContextWithRequestID(ctx, reqID)
-				if w.Header().Get("X-Request-ID") == "" {
-					w.Header().Set("X-Request-ID", reqID)
-				}
+			}
+
+			// Secondary metadata for correlation.
+			if clientID := r.Header.Get("X-Request-ID"); clientID != "" {
+				ctx = ContextWithClientRequestID(ctx, clientID)
+			}
+
+			if w.Header().Get("X-Request-ID") == "" {
+				w.Header().Set("X-Request-ID", reqID)
 			}
 
 			logCtx := logger().With().
@@ -117,7 +195,6 @@ func Middleware() func(http.Handler) http.Handler {
 				Str("remote_addr", r.RemoteAddr).
 				Str("user_agent", r.UserAgent())
 
-			// Add trace context if available (OpenTelemetry integration)
 			span := trace.SpanFromContext(r.Context())
 			if span.SpanContext().IsValid() {
 				logCtx = logCtx.
@@ -126,17 +203,11 @@ func Middleware() func(http.Handler) http.Handler {
 			}
 
 			l := WithContext(ctx, logCtx.Logger())
-
-			// Add the logger to the request context
 			r = r.WithContext(l.WithContext(ctx))
 
-			// Capture status while preserving streaming interfaces (Flusher/Hijacker/etc).
 			ww := chimw.NewWrapResponseWriter(w, r.ProtoMajor)
-
-			// Process the request
 			next.ServeHTTP(ww, r)
 
-			// Log the request details
 			l.Info().
 				Str("event", "request.handled").
 				Int("status", ww.Status()).
@@ -162,7 +233,6 @@ func Derive(build func(*zerolog.Context)) zerolog.Logger {
 }
 
 // WithTraceContext returns a logger enriched with trace_id and span_id from the context.
-// This enables correlation between logs and distributed traces.
 func WithTraceContext(ctx context.Context) zerolog.Logger {
 	l := logger()
 	span := trace.SpanFromContext(ctx)
@@ -190,30 +260,144 @@ var (
 	logBuffer   []LogEntry
 )
 
-type bufferHook struct{}
+// structuredBufferWriter is an io.Writer that robustly parses JSON logs for the buffer.
+type structuredBufferWriter struct {
+	mu      sync.Mutex
+	partial bytes.Buffer
+}
 
-func (h bufferHook) Run(e *zerolog.Event, level zerolog.Level, msg string) {
-	if level < zerolog.InfoLevel {
+const (
+	maxPartialBytes = 1 << 20  // 1 MiB: limit accumulation of non-terminated lines
+	maxLineBytes    = 64 << 10 // 64 KiB: limit parsing of giant log lines
+)
+
+// BufferMetrics captures telemetry about the diagnostic log buffer.
+type BufferMetrics struct {
+	DroppedTooLargeLines   int64
+	DroppedPartialOverflow int64
+	DroppedIrrelevant      int64
+	UnmarshalFailures      int64
+}
+
+var bufferMetrics BufferMetrics
+
+// GetBufferMetrics returns current log buffer telemetry.
+func GetBufferMetrics() BufferMetrics {
+	logBufferMu.RLock()
+	defer logBufferMu.RUnlock()
+	return bufferMetrics
+}
+
+func (w *structuredBufferWriter) Write(p []byte) (n int, err error) {
+	w.mu.Lock()
+	if w.partial.Len()+len(p) > maxPartialBytes {
+		// Prevent OOM: if accumulation exceeds 1MiB without a newline, reset.
+		w.partial.Reset()
+		bufferMetrics.DroppedPartialOverflow++
+		w.mu.Unlock()
+		return len(p), nil
+	}
+	w.partial.Write(p)
+	data := w.partial.Bytes()
+
+	lastNL := bytes.LastIndexByte(data, '\n')
+	if lastNL == -1 {
+		w.mu.Unlock()
+		return len(p), nil
+	}
+
+	// Extract full lines
+	lines := make([]byte, lastNL+1)
+	copy(lines, data[:lastNL+1])
+
+	// Keep remainder
+	remainder := data[lastNL+1:]
+	w.partial.Reset()
+	w.partial.Write(remainder)
+	w.mu.Unlock()
+
+	// Process lines outside of the framing lock to reduce contention
+	start := 0
+	for i := 0; i < len(lines); i++ {
+		if lines[i] == '\n' {
+			w.processLine(lines[start:i])
+			start = i + 1
+		}
+	}
+
+	return len(p), nil
+}
+
+func (w *structuredBufferWriter) processLine(line []byte) {
+	if len(line) == 0 {
+		return
+	}
+	if len(line) > maxLineBytes {
+		logBufferMu.Lock()
+		bufferMetrics.DroppedTooLargeLines++
+		logBufferMu.Unlock()
 		return
 	}
 
-	logBufferMu.Lock()
-	defer logBufferMu.Unlock()
-
-	// Create entry
-	entry := LogEntry{
-		Timestamp: time.Now(),
-		Level:     level.String(),
-		Message:   msg,
-		// Note: We can't easily get fields here without reflection or custom hook logic
-		// For now, simple message capture is enough for UI
+	// HARTER HINWEIS: Filter for relevance before Allocation/Unmarshal
+	// CONTRACT: Only component:audit or event:request.handled are captured.
+	isAudit := bytes.Contains(line, []byte("\"component\":\"audit\""))
+	isRequest := bytes.Contains(line, []byte("\"event\":\"request.handled\""))
+	if !isAudit && !isRequest {
+		logBufferMu.Lock()
+		bufferMetrics.DroppedIrrelevant++
+		logBufferMu.Unlock()
+		return
 	}
 
-	// Append and trim
+	var raw map[string]any
+	if err := json.Unmarshal(line, &raw); err != nil {
+		logBufferMu.Lock()
+		bufferMetrics.UnmarshalFailures++
+		logBufferMu.Unlock()
+		return
+	}
+
+	entry := LogEntry{Fields: make(map[string]any)}
+
+	// Extract known fields
+	if ts, ok := raw["time"].(string); ok {
+		if t, err := time.Parse(time.RFC3339, ts); err == nil {
+			entry.Timestamp = t
+		}
+	}
+	if entry.Timestamp.IsZero() {
+		entry.Timestamp = time.Now()
+	}
+
+	if lvl, ok := raw["level"].(string); ok {
+		entry.Level = lvl
+	} else if as, ok := raw["audit_severity"].(string); ok {
+		entry.Level = as
+	} else {
+		entry.Level = "info"
+	}
+
+	if msg, ok := raw["message"].(string); ok {
+		entry.Message = msg
+	}
+
+	// Capture all other fields
+	for k, v := range raw {
+		switch k {
+		case "time", "level", "message", "audit_severity":
+			continue
+		default:
+			entry.Fields[k] = v
+		}
+	}
+
+	logBufferMu.Lock()
 	logBuffer = append(logBuffer, entry)
 	if len(logBuffer) > maxLogEntries {
 		logBuffer = logBuffer[1:]
 	}
+	logBufferMu.Unlock()
 }
 
 // GetRecentLogs returns the most recent log entries
@@ -221,19 +405,14 @@ func GetRecentLogs() []LogEntry {
 	logBufferMu.RLock()
 	defer logBufferMu.RUnlock()
 
-	// Return copy
 	result := make([]LogEntry, len(logBuffer))
 	copy(result, logBuffer)
 	return result
 }
 
-// ClearRecentLogs clears the in-memory log buffer (test-only utility).
+// ClearRecentLogs clears the in-memory log buffer.
 func ClearRecentLogs() {
 	logBufferMu.Lock()
 	defer logBufferMu.Unlock()
 	logBuffer = nil
 }
-
-//nolint:gochecknoinits // Required to ensure logger is initialized before any usage
-// Init removed to prevent side-effect environment reads.
-// Configure must be called explicitly, or logger() will lazy-init with defaults.

@@ -12,8 +12,8 @@ import (
 
 // Outcome is the canonical terminal mapping for a session.
 type Outcome struct {
-	State  model.SessionState
-	Reason model.ReasonCode
+	State       model.SessionState
+	Reason      model.ReasonCode
 	DetailCode  model.ReasonDetailCode
 	DetailDebug string
 }
@@ -22,10 +22,10 @@ type Outcome struct {
 func TerminalOutcome(stopIntent bool, phase Phase, err error) Outcome {
 	if stopIntent {
 		return Outcome{
-			State:        model.SessionStopped,
-			Reason:       model.RClientStop,
-			DetailCode:   model.DNone,
-			DetailDebug:  "",
+			State:       model.SessionStopped,
+			Reason:      model.RClientStop,
+			DetailCode:  model.DNone,
+			DetailDebug: "",
 		}
 	}
 
@@ -74,11 +74,12 @@ func TerminalOutcome(stopIntent bool, phase Phase, err error) Outcome {
 
 	reason, detailCode, detailDebug := ClassifyReason(err)
 	state := model.SessionFailed
-	if reason == model.RClientStop {
+	switch reason {
+	case model.RClientStop:
 		state = model.SessionStopped
 		detailCode = model.DNone
 		detailDebug = ""
-	} else if reason == model.RCancelled {
+	case model.RCancelled:
 		state = model.SessionCancelled
 		detailCode = model.DContextCanceled
 		detailDebug = ""

@@ -84,7 +84,7 @@ func TestHandleRefreshInternal(t *testing.T) {
 		cfg:       cfg,
 		snap:      config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault()),
 		refreshFn: mockRefreshFn,
-		cb:        resilience.NewCircuitBreaker("test", 3, 5*time.Second),
+		cb:        resilience.NewCircuitBreaker("test", 3, 5, 60*time.Second, 5*time.Second),
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/refresh", nil)

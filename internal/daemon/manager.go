@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/admission"
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/control/admission"
 	worker "github.com/ManuGH/xg2g/internal/domain/session/manager"
 	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/infra/bus"
@@ -272,14 +272,14 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 	scanManager := m.deps.ScanManager
 
 	// 2.8 Initialize Admission Control (Phase 5.2/5.3)
-	adm := admission.NewResourceMonitor(cfg.Engine.MaxPool, cfg.Engine.GPULimit, cfg.Engine.CPUThresholdScale)
+	// 2.8 Initialize Admission Control (Slice 2)
+	adm := admission.NewController(cfg)
 	m.logger.Info().
-		Int("max_pool", cfg.Engine.MaxPool).
-		Int("gpu_limit", cfg.Engine.GPULimit).
-		Float64("cpu_scale", cfg.Engine.CPUThresholdScale).
+		Int("max_sessions", cfg.Limits.MaxSessions).
+		Int("max_transcodes", cfg.Limits.MaxTranscodes).
 		Msg("Admission control initialized")
-	// CPU load sampler (fail-closed if samples are missing/invalid).
-	admission.StartCPUSampler(ctx, adm, 0, nil)
+		// CPU load sampler (fail-closed if samples are missing/invalid).
+		// admission.StartCPUSampler(ctx, adm, 0, nil)
 
 	// 3. Initialize Orchestrator
 	// Generate stable worker identity (replacing domain-level OS calls)
@@ -287,13 +287,13 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 	workerOwner := fmt.Sprintf("%s-%d-%s", host, os.Getpid(), uuid.New().String())
 
 	orch := &worker.Orchestrator{
-		Store:               v3Store,
-		Bus:                 bus.NewAdapter(v3Bus),    // Injected Adapter
-		Platform:            platform.NewOSPlatform(), // Platform Port
-		Admission:           adm,                      // Phase 5.2 Gatekeeper
-		LeaseTTL:            30 * time.Second,         // Explicit default
-		HeartbeatEvery:      10 * time.Second,         // Explicit default
-		Owner:               workerOwner,              // Explicit generation
+		Store:    v3Store,
+		Bus:      bus.NewAdapter(v3Bus),    // Injected Adapter
+		Platform: platform.NewOSPlatform(), // Platform Port
+		// Admission:           adm,                      // Phase 5.2 Gatekeeper (Removed from Orchestrator)
+		LeaseTTL:            30 * time.Second, // Explicit default
+		HeartbeatEvery:      10 * time.Second, // Explicit default
+		Owner:               workerOwner,      // Explicit generation
 		TunerSlots:          cfg.Engine.TunerSlots,
 		HLSRoot:             cfg.HLS.Root,
 		PipelineStopTimeout: 5 * time.Second, // Explicit default (fallback if cfg missing)
@@ -330,6 +330,8 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 			cfg.Enigma2.FallbackTo8001,
 			cfg.Enigma2.PreflightTimeout,
 			cfg.HLS.SegmentSeconds,
+			cfg.Timeouts.TranscodeStart,
+			cfg.Timeouts.TranscodeNoProgress,
 		)
 	}
 
