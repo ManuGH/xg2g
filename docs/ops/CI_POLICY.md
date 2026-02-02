@@ -44,3 +44,10 @@ Purpose: Make CI deterministic, offline-reproducible, and not dependent on GitHu
 - Flaky tests are treated as bugs.
 - Any flake is removed or fixed before it can be required.
 
+## Operational Documents
+
+- **CI Failure Playbook**  
+  See `CI_FAILURE_PLAYBOOK.md` for the mandatory triage and fix path when required PR checks fail.
+
+- **External Audit Mode**  
+  See `EXTERNAL_AUDIT_MODE.md` for source-only ZIP review and offline verification protocol.
