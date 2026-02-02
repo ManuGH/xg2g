@@ -9,6 +9,10 @@ on:
     paths:
       - 'webui/src/**'
 
+concurrency:
+  group: repo-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check-migrations:
     runs-on: ubuntu-latest

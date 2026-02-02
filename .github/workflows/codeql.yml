@@ -2,8 +2,10 @@ name: "CodeQL"
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "23 10 * * 0"
+
+concurrency:
+  group: repo-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read

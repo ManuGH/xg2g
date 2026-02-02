@@ -2,14 +2,12 @@ name: CI Nightly
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "17 2 * * *" # Daily at 02:17 UTC
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-nightly-${{ github.workflow }}-${{ github.ref }}
+  group: repo-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:

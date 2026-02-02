@@ -9,6 +9,10 @@ on:
       - "webui/src/components/SystemHealthPanel.*"
       - "webui/src/index.css"
 
+concurrency:
+  group: repo-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   ui-contract-gate:
     name: Check UI Design Contract

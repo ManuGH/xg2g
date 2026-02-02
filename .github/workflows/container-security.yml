@@ -14,13 +14,14 @@ on:
       - "Dockerfile"
       - "deploy/docker/Dockerfile.*"
       - ".github/workflows/container-security.yml"
-  schedule:
-    # Run daily at 2 AM UTC to catch new vulnerabilities
-    - cron: "0 2 * * *"
   workflow_dispatch:
 
 permissions:
   contents: read # Global read-only, write per job
+
+concurrency:
+  group: repo-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   secrets-scan:

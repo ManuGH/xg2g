@@ -2,11 +2,9 @@ name: govulncheck
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "23 3 * * *"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: repo-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:

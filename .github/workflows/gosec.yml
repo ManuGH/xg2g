@@ -2,8 +2,10 @@ name: Security - Gosec
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "41 2 * * *"
+
+concurrency:
+  group: repo-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read

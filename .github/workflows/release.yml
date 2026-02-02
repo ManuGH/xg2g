@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read # Top-level read-only
 
+concurrency:
+  group: repo-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
@@ -105,7 +109,7 @@ jobs:
 
       - name: Upload SARIF to code scanning
         if: always()
-        uses: github/codeql-action/init@b2a30dc39999a382061266ed139b439e6a2b8e0e # v3
+        uses: github/codeql-action/upload-sarif@b2a30dc39999a382061266ed139b439e6a2b8e0e # v3
         with:
           sarif_file: govulncheck.sarif
           category: govulncheck
@@ -350,7 +354,7 @@ jobs:
       # Scan for Vulnerabilities
       # =============================================
       - name: Scan image with Trivy
-        uses: aquasecurity/trivy-action@18f3a29fecd7f34b3597bc6acb0a98b03d33ff8 # v0.29.0
+        uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # 0.33.1
         with:
           image-ref: ghcr.io/manugh/xg2g@${{ steps.build-push.outputs.digest }}
           format: "sarif"
@@ -358,7 +362,7 @@ jobs:
           trivy-config: .github/security/trivy.yaml
 
       - name: Upload Trivy results to GitHub Security
-        uses: github/codeql-action/init@b2a30dc39999a382061266ed139b439e6a2b8e0e # v3
+        uses: github/codeql-action/upload-sarif@b2a30dc39999a382061266ed139b439e6a2b8e0e # v3
         with:
           sarif_file: "trivy-results.sarif"
 
