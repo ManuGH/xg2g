@@ -1,16 +1,21 @@
 # RED SPEC BREAK 001
 
-**Severity:** CRITICAL
+**Severity:** HIGH
+**Impact:** Falsche DirectPlay-Entscheidung bei Profile/Level-Mismatch (operational playback risk)
 **Category:** Incompleteness
 **Spec Version:** ADR-009 (2026-01-23)
 **Discovered By:** Team Red
-**Status:** OPEN
+**Status:** ACCEPTED (Scope Cut, ADR-009.1 §1)
+**Release Gate:** Non-blocking (accepted risk)
+**Spec Patch:** ADR-009.1 §1 (Codec Granularity / Scope Limitation)
 
 ---
 
 ## 1. Kurzfassung (Executive Summary)
 
 Die Spec definiert Codec-Kompatibilität rein als String-Match (`h264` vs `h264`). In der Realität ist `h264` unvollständig ohne **Profile** (Baseline, Main, High) und **Level** (3.1, 4.0, 5.2). Dieser Blind Spot führt dazu, dass die Engine `DirectPlay` genehmigt, obwohl der Client das Video (z. B. High Profile) nicht dekodieren kann, was zu **Black Screen / Client Failure** führt.
+
+**Statushinweis:** Seit ADR-009.1 §1 ist diese Einschränkung **explizit als Scope-Cut** dokumentiert. Kein Spec-Bug mehr, aber ein reales operatives Risiko.
 
 ---
 
@@ -82,8 +87,9 @@ Fail-Closed wird verletzt, weil das System "Open" fehlschlägt (Sendet Daten, di
 
 ## 7. Erzwingende Konsequenz
 
-- **Zusätzliches Input-Feld nötig**: `Codecs` müssen Objekte sein (`{id: "h264", profile: "high", level: "5.1"}`) oder RFC-6381 Strings (`avc1.640028`) unterstützen.
-- **ADR-009 muss präzisiert werden**: String-Matching allein ist unzureichend für Video.
+- **Scope-Cut bestätigt (ADR-009.1 §1):** Profile/Level-Prüfung ist **bewusst** nicht Teil der Engine.
+- **Tech-Debt-Marker:** Erweiterung erst, sobald der TruthProvider Profile/Level zuverlässig liefert.
+- **Exit-Bedingung:** `Source.VideoProfile/VideoLevel` (oder RFC-6381) verfügbar **und** Capabilities können Profile/Level abbilden.
 
 ---
 

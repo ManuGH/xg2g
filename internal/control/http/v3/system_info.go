@@ -196,21 +196,34 @@ func (s *Server) getStoragePaths(ctx context.Context) []string {
 
 	client := s.owi(cfg, snap)
 	if c, ok := client.(*openwebif.Client); ok && c != nil {
-		if about, err := c.About(ctx); err == nil && about != nil {
+		about, err := c.About(ctx)
+		if err != nil {
+			log.L().Error().Err(err).Msg("storage_monitor: failed to get About info")
+		} else if about != nil {
+			log.L().Debug().Int("hdd_count", len(about.Info.HDD)).Msg("storage_monitor: found HDDs in About")
 			for _, hdd := range about.Info.HDD {
 				if hdd.Mount != "" {
 					unique[hdd.Mount] = struct{}{}
 				}
 			}
 		}
-		if locs, err := c.GetLocations(ctx); err == nil {
+
+		locs, err := c.GetLocations(ctx)
+		if err != nil {
+			log.L().Error().Err(err).Msg("storage_monitor: failed to get Locations")
+		} else {
+			log.L().Debug().Int("location_count", len(locs)).Msg("storage_monitor: found locations")
 			for _, loc := range locs {
 				if loc.Path != "" {
 					unique[loc.Path] = struct{}{}
 				}
 			}
 		}
+	} else {
+		log.L().Warn().Msg("storage_monitor: OpenWebIF client not available or wrong type")
 	}
+
+	log.L().Debug().Int("unique_paths", len(unique)).Msg("storage_monitor: getStoragePaths result")
 
 	paths := make([]string, 0, len(unique))
 	for p := range unique {

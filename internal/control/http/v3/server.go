@@ -85,6 +85,8 @@ type Server struct {
 	epgSource         read.EpgSource
 	recordingsService recservice.Service
 	storageMonitor    *StorageMonitor
+	monitorStarted    bool
+	monitorMu         sync.Mutex
 
 	// Middlewares (injectable for tests)
 	AuthMiddlewareOverride func(http.Handler) http.Handler
@@ -136,8 +138,13 @@ func (s *Server) LibraryService() *library.Service {
 
 // StartMonitor begins the background storage health checks.
 func (s *Server) StartMonitor(ctx context.Context) {
-	if s.storageMonitor != nil {
+	s.monitorMu.Lock()
+	defer s.monitorMu.Unlock()
+
+	if s.storageMonitor != nil && !s.monitorStarted {
+		s.monitorStarted = true
 		go s.storageMonitor.Start(ctx, 30*time.Second, s)
+		log.L().Info().Msg("storage_monitor: background loop started")
 	}
 }
 
@@ -528,18 +535,13 @@ func (s *Server) newOpenWebIFClient(cfg config.AppConfig, snap config.Snapshot) 
 
 	// Rebuild
 	log.L().Debug().Uint64("epoch", snap.Epoch).Msg("recreating OpenWebIF client")
-	enableHTTP2 := snap.Runtime.OpenWebIF.HTTPEnableHTTP2
 	client := openwebif.NewWithPort(cfg.Enigma2.BaseURL, cfg.Enigma2.StreamPort, openwebif.Options{
-		Timeout:                 cfg.Enigma2.Timeout,
-		Username:                cfg.Enigma2.Username,
-		Password:                cfg.Enigma2.Password,
-		UseWebIFStreams:         cfg.Enigma2.UseWebIFStreams,
-		StreamBaseURL:           snap.Runtime.OpenWebIF.StreamBaseURL,
-		HTTPMaxIdleConns:        snap.Runtime.OpenWebIF.HTTPMaxIdleConns,
-		HTTPMaxIdleConnsPerHost: snap.Runtime.OpenWebIF.HTTPMaxIdleConnsPerHost,
-		HTTPMaxConnsPerHost:     snap.Runtime.OpenWebIF.HTTPMaxConnsPerHost,
-		HTTPIdleTimeout:         snap.Runtime.OpenWebIF.HTTPIdleTimeout,
-		HTTPEnableHTTP2:         &enableHTTP2,
+		Timeout:             cfg.Enigma2.Timeout,
+		Username:            cfg.Enigma2.Username,
+		Password:            cfg.Enigma2.Password,
+		UseWebIFStreams:     cfg.Enigma2.UseWebIFStreams,
+		StreamBaseURL:       snap.Runtime.OpenWebIF.StreamBaseURL,
+		HTTPMaxConnsPerHost: snap.Runtime.OpenWebIF.HTTPMaxConnsPerHost,
 	})
 
 	s.owiClient = client

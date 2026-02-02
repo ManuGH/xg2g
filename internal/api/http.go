@@ -255,7 +255,6 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager, opts ...ServerOption) *Se
 	s.v3Handler = s.v3Factory(cfg, cfgMgr, s.rootCancel)
 	// Initialize v3Handler with current snapshot to ensure Runtime settings are available immediately
 	s.v3Handler.UpdateConfig(cfg, s.snap)
-	s.v3Handler.StartMonitor(s.rootCtx)
 
 	// P4: Wire NEW V4 Resolver (recordings package)
 	// This is the canonical resolver used by GetRecordingPlaybackInfo
@@ -431,6 +430,18 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager, opts ...ServerOption) *Se
 	}))
 
 	return s
+}
+
+// StartMonitors starts all background monitoring tasks.
+func (s *Server) StartMonitors() {
+	s.mu.RLock()
+	v3Handler := s.v3Handler
+	rootCtx := s.rootCtx
+	s.mu.RUnlock()
+
+	if v3Handler != nil && rootCtx != nil {
+		v3Handler.StartMonitor(rootCtx)
+	}
 }
 
 // Shutdown performs a graceful shutdown of the server.
@@ -1031,12 +1042,12 @@ func (d *dvrSourceWrapper) GetStatusInfo(ctx context.Context) (*openwebif.Status
 	return client.GetStatusInfo(ctx)
 }
 
-func (d *dvrSourceWrapper) HasTimerChange(ctx context.Context) bool {
+func (d *dvrSourceWrapper) DetectTimerChange(ctx context.Context) (openwebif.TimerChangeCap, error) {
 	d.s.mu.RLock()
 	cfg := d.s.cfg
 	d.s.mu.RUnlock()
 	client := openwebif.New(cfg.Enigma2.BaseURL)
-	return client.HasTimerChange(ctx)
+	return client.DetectTimerChange(ctx)
 }
 
 func (d *dvrSourceWrapper) GetTimers(ctx context.Context) ([]openwebif.Timer, error) {

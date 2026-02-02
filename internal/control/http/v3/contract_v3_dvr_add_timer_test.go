@@ -14,12 +14,12 @@ import (
 )
 
 type mockOWI struct {
-	getTimersFunc      func(ctx context.Context) ([]openwebif.Timer, error)
-	addTimerFunc       func(ctx context.Context, sRef string, begin, end int64, name, desc string) error
-	deleteTimerFunc    func(ctx context.Context, sRef string, begin, end int64) error
-	updateTimerFunc    func(ctx context.Context, oldSRef string, oldBegin, oldEnd int64, newSRef string, newBegin, newEnd int64, name, description string, enabled bool) error
-	hasTimerChangeFunc func(ctx context.Context) bool
-	getTimersCount     int
+	getTimersFunc         func(ctx context.Context) ([]openwebif.Timer, error)
+	addTimerFunc          func(ctx context.Context, sRef string, begin, end int64, name, desc string) error
+	deleteTimerFunc       func(ctx context.Context, sRef string, begin, end int64) error
+	updateTimerFunc       func(ctx context.Context, oldSRef string, oldBegin, oldEnd int64, newSRef string, newBegin, newEnd int64, name, description string, enabled bool) error
+	detectTimerChangeFunc func(ctx context.Context) (openwebif.TimerChangeCap, error)
+	getTimersCount        int
 }
 
 func (m *mockOWI) GetTimers(ctx context.Context) ([]openwebif.Timer, error) {
@@ -47,11 +47,11 @@ func (m *mockOWI) UpdateTimer(ctx context.Context, oldSRef string, oldBegin, old
 	}
 	return m.updateTimerFunc(ctx, oldSRef, oldBegin, oldEnd, newSRef, newBegin, newEnd, name, description, enabled)
 }
-func (m *mockOWI) HasTimerChange(ctx context.Context) bool {
-	if m.hasTimerChangeFunc == nil {
-		return false
+func (m *mockOWI) DetectTimerChange(ctx context.Context) (openwebif.TimerChangeCap, error) {
+	if m.detectTimerChangeFunc == nil {
+		return openwebif.TimerChangeCap{}, nil
 	}
-	return m.hasTimerChangeFunc(ctx)
+	return m.detectTimerChangeFunc(ctx)
 }
 
 func TestContract_AddTimer(t *testing.T) {

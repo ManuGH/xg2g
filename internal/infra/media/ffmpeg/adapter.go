@@ -66,7 +66,7 @@ func NewLocalAdapter(binPath string, hlsRoot string, e2 *enigma2.Client, logger 
 		killTimeout = 5 * time.Second
 	}
 	if segmentSeconds <= 0 {
-		segmentSeconds = 6 // Best Practice 2026 default
+		segmentSeconds = 4 // Best Practice 2026 Low Latency default
 	}
 	httpClient := &http.Client{
 		Timeout: preflightTimeout,
@@ -682,6 +682,7 @@ func (a *LocalAdapter) buildArgs(ctx context.Context, spec ports.StreamSpec, inp
 			"-x264-params", fmt.Sprintf("keyint=%d:min-keyint=%d:scenecut=0", gop, gop),
 			"-g", strconv.Itoa(gop), // Force GOP size matching keyint
 			"-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%d)", a.SegmentSeconds),
+			"-flags", "+cgop", // Closed GOP for clean segment boundaries
 			"-pix_fmt", "yuv420p",
 			"-profile:v", "main",
 			"-c:a", "aac",

@@ -1,4 +1,4 @@
-# github.com/alicebob/miniredis/v2 v2.35.0
+# github.com/alicebob/miniredis/v2 v2.36.1
 ## explicit; go 1.17
 github.com/alicebob/miniredis/v2
 github.com/alicebob/miniredis/v2/fpconv
@@ -74,13 +74,13 @@ github.com/google/go-cmp/cmp/internal/diff
 github.com/google/go-cmp/cmp/internal/flags
 github.com/google/go-cmp/cmp/internal/function
 github.com/google/go-cmp/cmp/internal/value
-# github.com/google/renameio/v2 v2.0.1
-## explicit; go 1.13
+# github.com/google/renameio/v2 v2.0.2
+## explicit; go 1.25
 github.com/google/renameio/v2
 # github.com/google/uuid v1.6.0
 ## explicit
 github.com/google/uuid
-# github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.3
+# github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.7
 ## explicit; go 1.24.0
 github.com/grpc-ecosystem/grpc-gateway/v2/internal/httprule
 github.com/grpc-ecosystem/grpc-gateway/v2/runtime
@@ -151,7 +151,7 @@ github.com/prometheus/client_golang/prometheus/testutil/promlint/validations
 # github.com/prometheus/client_model v0.6.2
 ## explicit; go 1.22.0
 github.com/prometheus/client_model/go
-# github.com/prometheus/common v0.67.4
+# github.com/prometheus/common v0.67.5
 ## explicit; go 1.24.0
 github.com/prometheus/common/expfmt
 github.com/prometheus/common/model
@@ -160,7 +160,7 @@ github.com/prometheus/common/model
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
 github.com/prometheus/procfs/internal/util
-# github.com/redis/go-redis/v9 v9.17.2
+# github.com/redis/go-redis/v9 v9.17.3
 ## explicit; go 1.18
 github.com/redis/go-redis/v9
 github.com/redis/go-redis/v9/auth
@@ -185,22 +185,22 @@ github.com/rs/zerolog
 github.com/rs/zerolog/internal/cbor
 github.com/rs/zerolog/internal/json
 github.com/rs/zerolog/log
-# github.com/speakeasy-api/jsonpath v0.6.0
+# github.com/speakeasy-api/jsonpath v0.6.2
 ## explicit; go 1.22
 github.com/speakeasy-api/jsonpath/pkg/jsonpath
 github.com/speakeasy-api/jsonpath/pkg/jsonpath/config
 github.com/speakeasy-api/jsonpath/pkg/jsonpath/token
-# github.com/speakeasy-api/openapi-overlay v0.10.2
-## explicit; go 1.22
+# github.com/speakeasy-api/openapi-overlay v0.10.3
+## explicit; go 1.24
 github.com/speakeasy-api/openapi-overlay/pkg/loader
 github.com/speakeasy-api/openapi-overlay/pkg/overlay
-# github.com/spf13/cobra v1.7.0
+# github.com/spf13/cobra v1.10.2
 ## explicit; go 1.15
 github.com/spf13/cobra
-# github.com/spf13/pflag v1.0.5
+# github.com/spf13/pflag v1.0.10
 ## explicit; go 1.12
 github.com/spf13/pflag
-# github.com/stretchr/objx v0.5.2
+# github.com/stretchr/objx v0.5.3
 ## explicit; go 1.20
 github.com/stretchr/objx
 # github.com/stretchr/testify v1.11.1
@@ -390,7 +390,7 @@ golang.org/x/tools/internal/stdlib
 golang.org/x/tools/internal/typeparams
 golang.org/x/tools/internal/typesinternal
 golang.org/x/tools/internal/versions
-# google.golang.org/genproto/googleapis/api v0.0.0-20251213004720-97cd9d5aeac2
+# google.golang.org/genproto/googleapis/api v0.0.0-20260128011058-8636f8732409
 ## explicit; go 1.24.0
 google.golang.org/genproto/googleapis/api/httpbody
 # google.golang.org/genproto/googleapis/rpc v0.0.0-20260128011058-8636f8732409

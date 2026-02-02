@@ -22,8 +22,8 @@ import (
 	xglog "github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/openwebif"
-	"github.com/ManuGH/xg2g/internal/playlist"
 	"github.com/ManuGH/xg2g/internal/platform/paths"
+	"github.com/ManuGH/xg2g/internal/playlist"
 	"github.com/ManuGH/xg2g/internal/telemetry"
 	"github.com/ManuGH/xg2g/internal/validate"
 	"go.opentelemetry.io/otel/attribute"
@@ -81,7 +81,6 @@ func Refresh(ctx context.Context, snap config.Snapshot) (*Status, error) {
 		return nil, err
 	}
 
-	enableHTTP2 := rt.OpenWebIF.HTTPEnableHTTP2
 	opts := openwebif.Options{
 		Timeout:         cfg.Enigma2.Timeout,
 		MaxRetries:      cfg.Enigma2.Retries,
@@ -92,11 +91,7 @@ func Refresh(ctx context.Context, snap config.Snapshot) (*Status, error) {
 		UseWebIFStreams: cfg.Enigma2.UseWebIFStreams,
 		StreamBaseURL:   rt.OpenWebIF.StreamBaseURL,
 
-		HTTPMaxIdleConns:        rt.OpenWebIF.HTTPMaxIdleConns,
-		HTTPMaxIdleConnsPerHost: rt.OpenWebIF.HTTPMaxIdleConnsPerHost,
-		HTTPMaxConnsPerHost:     rt.OpenWebIF.HTTPMaxConnsPerHost,
-		HTTPIdleTimeout:         rt.OpenWebIF.HTTPIdleTimeout,
-		HTTPEnableHTTP2:         &enableHTTP2,
+		HTTPMaxConnsPerHost: rt.OpenWebIF.HTTPMaxConnsPerHost,
 	}
 	client := openwebif.NewWithPort(cfg.Enigma2.BaseURL, cfg.Enigma2.StreamPort, opts)
 

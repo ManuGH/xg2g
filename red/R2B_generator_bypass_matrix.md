@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-Team Red systematically attacked the proof system for canonicalization drift and semantic equivalence issues. **No critical bugs found.** The system's canonicalization layer (`hash.go`) correctly normalizes duplicates, nil slices, and case variants.
+Team Red systematically attacked the proof system for canonicalization drift and semantic equivalence issues. **No critical bugs found.** The system's canonicalization layer (`hash.go`) correctly normalizes duplicates, nil slices, case variants **and targeted Unicode whitespace/invisible variants** (NBSP/ZWSP/BOM via `robustNorm`).
 
 ---
 
@@ -41,11 +41,10 @@ Team Red systematically attacked the proof system for canonicalization drift and
 
 ### Attack #4: Unicode Whitespace
 
-**Status:** Not implemented (low priority for MVP).
+**Status:** ✅ Implemented + Verified
 
-- `TrimSpace` only trims ASCII whitespace.
-- NBSP (`\u00A0`) would NOT be trimmed.
-- Recommendation: Add unicode normalization in future hardening pass.
+- `robustNorm` trims Unicode whitespace/invisible variants relevant to bypass (`normalize.go`).
+- Property test: `TestProp_UnicodeWhitespace_Equivalence` verifies hash+decision equivalence across NBSP/ZWSP/BOM variants.
 
 ---
 
@@ -64,5 +63,4 @@ Team Red systematically attacked the proof system for canonicalization drift and
 The proof system is **robust against canonicalization attacks** tested. No critical findings.
 Recommendations for future hardening:
 
-1. Unicode whitespace normalization.
-2. Fuzz testing with property-based framework (e.g., `gopter`).
+1. Fuzz testing with property-based framework (e.g., `gopter`).

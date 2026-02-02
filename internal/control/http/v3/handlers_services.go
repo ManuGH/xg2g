@@ -96,18 +96,29 @@ func (s *Server) GetServices(w http.ResponseWriter, r *http.Request, params GetS
 	var items []Service
 	if res.Items != nil {
 		items = make([]Service, 0, len(res.Items))
-		for _, s := range res.Items {
+		for _, item := range res.Items {
 			// Scoping
-			s := s
-			items = append(items, Service{
-				Id:         &s.ID,
-				Name:       &s.Name,
-				Group:      &s.Group,
-				LogoUrl:    &s.LogoURL,
-				Number:     &s.Number,
-				Enabled:    &s.Enabled,
-				ServiceRef: &s.ServiceRef,
-			})
+			item := item
+			svc := Service{
+				Id:         &item.ID,
+				Name:       &item.Name,
+				Group:      &item.Group,
+				LogoUrl:    &item.LogoURL,
+				Number:     &item.Number,
+				Enabled:    &item.Enabled,
+				ServiceRef: &item.ServiceRef,
+			}
+
+			// Enhance with functionality data if scanner is available
+			// Optimization: Check memory-cached capabilities
+			if s.v3Scan != nil {
+				if cap, found := s.v3Scan.GetCapability(item.ServiceRef); found {
+					svc.Resolution = &cap.Resolution
+					svc.Codec = &cap.Codec
+				}
+			}
+
+			items = append(items, svc)
 		}
 	} else if res.EmptyEncoding == read.EmptyEncodingArray {
 		items = make([]Service, 0)

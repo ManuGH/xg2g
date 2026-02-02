@@ -52,16 +52,9 @@ func ReadEnv(getenv func(string) string) (Env, error) {
 }
 
 func readOpenWebIFRuntime(getenv func(string) string) OpenWebIFRuntime {
-	// Defaults mirror previous behaviour in internal/openwebif (but without env reads there).
-	forceHTTP2 := strings.ToLower(getString(getenv, "XG2G_HTTP_ENABLE_HTTP2", "true")) != "false"
-
 	return OpenWebIFRuntime{
-		HTTPMaxIdleConns:        getInt(getenv, "XG2G_HTTP_MAX_IDLE_CONNS", 100),
-		HTTPMaxIdleConnsPerHost: getInt(getenv, "XG2G_HTTP_MAX_IDLE_CONNS_PER_HOST", 20),
-		HTTPMaxConnsPerHost:     getInt(getenv, "XG2G_HTTP_MAX_CONNS_PER_HOST", 50),
-		HTTPIdleTimeout:         getDuration(getenv, "XG2G_HTTP_IDLE_TIMEOUT", 90*time.Second),
-		HTTPEnableHTTP2:         forceHTTP2,
-		StreamBaseURL:           getString(getenv, "XG2G_STREAM_BASE", ""),
+		HTTPMaxConnsPerHost: getInt(getenv, "XG2G_HTTP_MAX_CONNS_PER_HOST", 50),
+		StreamBaseURL:       getString(getenv, "XG2G_STREAM_BASE", ""),
 	}
 }
 

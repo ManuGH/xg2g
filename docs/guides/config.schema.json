@@ -218,7 +218,7 @@
           "type": "integer"
         },
         "idleTimeout": {
-          "default": "1m",
+          "default": "5m",
           "type": "string"
         },
         "maxPool": {
@@ -242,7 +242,7 @@
       "description": "Enigma2 client configuration for the V3 worker",
       "properties": {
         "analyzeDuration": {
-          "default": "10000000",
+          "default": "2000000",
           "type": "string"
         },
         "authMode": {
@@ -305,7 +305,7 @@
           "type": "string"
         },
         "probeSize": {
-          "default": "32M",
+          "default": "5M",
           "type": "string"
         },
         "rateBurst": {
@@ -555,14 +555,14 @@
     "hls": {
       "properties": {
         "dvrWindow": {
-          "default": "45m",
+          "default": "3h",
           "type": "string"
         },
         "root": {
           "type": "string"
         },
         "segmentSeconds": {
-          "default": 6,
+          "default": 4,
           "description": "HLS segment duration in seconds.",
           "type": "integer"
         }

@@ -19,7 +19,7 @@ type PreflightProvider = preflight.PreflightProvider
 // RecordingStatusProvider defines the minimal interface required for DVR read operations.
 type RecordingStatusProvider interface {
 	GetStatusInfo(ctx context.Context) (*openwebif.StatusInfo, error)
-	HasTimerChange(ctx context.Context) bool
+	DetectTimerChange(ctx context.Context) (openwebif.TimerChangeCap, error)
 }
 
 // ScanSource defines the minimal interface required for scan status.
@@ -55,7 +55,7 @@ type TimerWriter interface {
 type ReceiverControl interface {
 	TimerReader
 	TimerWriter
-	HasTimerChange(ctx context.Context) bool
+	DetectTimerChange(ctx context.Context) (openwebif.TimerChangeCap, error)
 }
 
 // receiverControlFactory creates a ReceiverControl instance.

@@ -102,6 +102,8 @@ func (m *StorageMonitor) Refresh(ctx context.Context, paths []string) {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 
+	log.L().Debug().Int("mounts_detected", len(mounts)).Msg("storage_monitor: mounts parsed")
+
 	for _, path := range paths {
 		if path == "" {
 			continue
@@ -116,6 +118,12 @@ func (m *StorageMonitor) Refresh(ctx context.Context, paths []string) {
 		} else if parseFailed {
 			status = StorageItemMountStatusUnknown
 		}
+
+		log.L().Debug().
+			Str("path", path).
+			Str("mount_point_found", mountInfo.MountPoint).
+			Str("status", string(status)).
+			Msg("storage_monitor: refresh check")
 
 		wg.Add(1)
 		go func(p string, mStatus StorageItemMountStatus, mInfo MountInfo) {

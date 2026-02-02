@@ -50,7 +50,7 @@ func NewManager(store CapabilityStore, m3uPath string, e2Client *enigma2.Client)
 		store:      store,
 		m3uPath:    m3uPath,
 		e2Client:   e2Client,
-		ProbeDelay: 500 * time.Millisecond,
+		ProbeDelay: 100 * time.Millisecond,
 		status: ScanStatus{
 			State: "idle",
 		},
@@ -185,6 +185,14 @@ func (m *Manager) scanInternal(ctx context.Context) error {
 			continue
 		}
 
+		// Optimization: Check if we already have this capability in store
+		// If found, skip expensive probing (especially critical for single-tuner setups with 20s lock time)
+		if cap, found := m.store.Get(sRef); found && cap.Resolution != "" {
+			log.L().Debug().Str("sref", sRef).Msg("scan: found in cache, skipping probe")
+			scanned++ // Count as scanned for stats
+			continue
+		}
+
 		// Resolve stream URL:
 		// 1. Try Enigma2 Client resolution (Smart Player Logic)
 		// 2. Fallback to M3U resolution (Stale Playlist)
@@ -213,7 +221,7 @@ func (m *Manager) scanInternal(ctx context.Context) error {
 		}
 
 		// Probe with strict timeout (prevent hanging on zombie streams)
-		probeCtx, probeCancel := context.WithTimeout(ctx, 10*time.Second)
+		probeCtx, probeCancel := context.WithTimeout(ctx, 2*time.Second)
 		log.L().Debug().Str("sref", sRef).Msg("scan: probing channel")
 		res, err := infra.Probe(probeCtx, probeURL)
 		probeCancel() // Start fresh context for fallback if needed
@@ -226,7 +234,7 @@ func (m *Manager) scanInternal(ctx context.Context) error {
 			fallbackURL, buildErr := buildFallbackURL(probeURL, sRef)
 			if buildErr == nil {
 				// Use fresh timeout for fallback
-				fbCtx, fbCancel := context.WithTimeout(ctx, 10*time.Second)
+				fbCtx, fbCancel := context.WithTimeout(ctx, 2*time.Second)
 				resFallback, errFallback := infra.Probe(fbCtx, fallbackURL)
 				fbCancel()
 
@@ -245,7 +253,7 @@ func (m *Manager) scanInternal(ctx context.Context) error {
 		// This respects "UseWebIFStreams" scenarios where the user relies on the API endpoint itself.
 		if err != nil {
 			log.L().Warn().Str("sref", sRef).Msg("scan: attempting fallback to original URL (web)")
-			fbCtx, fbCancel := context.WithTimeout(ctx, 10*time.Second)
+			fbCtx, fbCancel := context.WithTimeout(ctx, 2*time.Second)
 			resOrig, errOrig := infra.Probe(fbCtx, ch.URL)
 			fbCancel()
 
@@ -328,6 +336,8 @@ func resolveStreamURL(ctx context.Context, urlStr string) (string, error) {
 		return "", err
 	}
 
+	req.Header.Set("Connection", "close")
+	req.Close = true
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return "", err
@@ -362,6 +372,5 @@ func buildFallbackURL(resolvedURL, serviceRef string) (string, error) {
 	u.Path = "/" + serviceRef
 	u.RawQuery = ""
 	u.Fragment = ""
-	u.User = nil
 	return u.String(), nil
 }

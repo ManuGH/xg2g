@@ -28,6 +28,7 @@ func (p *Prober) Probe(ctx context.Context, path string) (*vod.StreamInfo, error
 func Probe(ctx context.Context, path string) (*vod.StreamInfo, error) {
 	args := []string{
 		"-v", "error",
+		"-headers", "Connection: close\r\n",
 		"-print_format", "json",
 		"-show_format",
 		"-show_streams",

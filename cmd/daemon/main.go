@@ -396,6 +396,7 @@ func main() {
 	if err := s.SetRootContext(ctx); err != nil {
 		logger.Fatal().Err(err).Msg("failed to set root context")
 	}
+	s.StartMonitors()
 	s.SetConfigHolder(cfgHolder)
 	// Initialize v3 components
 	// Bus (In-Memory for MVP)

@@ -335,6 +335,8 @@ func (c *Client) applyHeaders(req *http.Request) {
 		req.Header.Set("User-Agent", c.userAgent)
 	}
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Connection", "close")
+	req.Close = true
 	if c.Username != "" || c.Password != "" {
 		req.SetBasicAuth(c.Username, c.Password)
 	}

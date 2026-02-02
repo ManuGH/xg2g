@@ -8,6 +8,8 @@ import (
 // All predicates are pure boolean functions with no side effects.
 func computePredicates(source Source, caps Capabilities, policy Policy) Predicates {
 	// Element-wise compatibility checks
+	// ADR-009.1 §1 Scope Cut: codec compatibility is string-only (no profile/level).
+	// Exit condition: TruthProvider provides profile/level or RFC-6381, and Capabilities can express them.
 	canContainer := contains(caps.Containers, source.Container)
 	canVideo := contains(caps.VideoCodecs, source.VideoCodec)
 	canAudio := contains(caps.AudioCodecs, source.AudioCodec)

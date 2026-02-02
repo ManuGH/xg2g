@@ -18,6 +18,7 @@
 ```
 
 **Decision Requirement:** MUST be normalized to "mp4" and produce same hash as pure "mp4".
+**Status:** ✅ Implemented (`robustNorm` + `TestProp_UnicodeWhitespace_Equivalence`).
 
 ---
 
@@ -41,8 +42,8 @@
 
 ### Normalization Policy (Design Decision)
 
-1. **ASCII Trim:** Already implemented (`strings.TrimSpace`).
-2. **Unicode Trim:** **REQUIRED** for NBSP, ZWSP, etc.
+1. **ASCII Trim:** Covered by `robustNorm` (via `unicode.IsSpace`).
+2. **Unicode Trim:** **IMPLEMENTED** via `robustNorm` (NBSP, ZWSP, BOM, etc.).
 3. **Casing:** Already implemented (lowercase).
 4. **Emoji/Symbols:** **OUT OF SCOPE** (treated as unrecognized characters).
 
@@ -50,6 +51,6 @@
 
 ## Deliverables
 
-- [ ] Implement `unicodeNorm` helper.
-- [ ] Property: `Prop_UnicodeWhitespace_Equivalence`.
-- [ ] Logic Gate: `Decide` must use `unicodeNorm` before predicates.
+- [x] Implement `robustNorm` helper (`normalize.go`).
+- [x] Property: `Prop_UnicodeWhitespace_Equivalence`.
+- [x] Logic Gate: `Decide` uses normalization before predicates (`NormalizeInput`).

@@ -60,7 +60,7 @@ This section is generated from `internal/config/registry.go`. Do not edit by han
 | `engine.cpuThresholdScale` | `XG2G_ENGINE_CPU_SCALE` | `1.5` | Active | Advanced |
 | `engine.enabled` | `XG2G_ENGINE_ENABLED` | `true` | Active | Advanced |
 | `engine.gpuLimit` | `XG2G_ENGINE_GPU_LIMIT` | `8` | Active | Advanced |
-| `engine.idleTimeout` | `XG2G_ENGINE_IDLE_TIMEOUT` | `1m` | Active | Advanced |
+| `engine.idleTimeout` | `XG2G_ENGINE_IDLE_TIMEOUT` | `5m` | Active | Advanced |
 | `engine.maxPool` | `XG2G_ENGINE_MAX_POOL` | `2` | Active | Advanced |
 | `engine.mode` | `XG2G_ENGINE_MODE` | `standard` | Active | Advanced |
 | `engine.tunerSlots` | `XG2G_TUNER_SLOTS` | - | Active | Advanced |
@@ -71,7 +71,7 @@ Aliases: `openWebIF.*` (compat; prefer `enigma2.*`).
 
 | Path | Env | Default | Status | Profile |
 | --- | --- | --- | --- | --- |
-| `enigma2.analyzeDuration` | - | `10000000` | Active | Advanced |
+| `enigma2.analyzeDuration` | - | `2000000` | Active | Advanced |
 | `enigma2.authMode` | - | `inherit` | Active | Advanced |
 | `enigma2.backoff` | `XG2G_OWI_BACKOFF_MS` | `200ms` | Active | Advanced |
 | `enigma2.baseUrl` | `XG2G_OWI_BASE` | - | Active | Simple |
@@ -79,7 +79,7 @@ Aliases: `openWebIF.*` (compat; prefer `enigma2.*`).
 | `enigma2.maxBackoff` | `XG2G_OWI_MAX_BACKOFF_MS` | `30s` | Active | Advanced |
 | `enigma2.password` | `XG2G_OWI_PASS` | - | Active | Simple |
 | `enigma2.preflightTimeout` | `XG2G_E2_PREFLIGHT_TIMEOUT` | `10s` | Active | Advanced |
-| `enigma2.probeSize` | - | `32M` | Active | Advanced |
+| `enigma2.probeSize` | - | `5M` | Active | Advanced |
 | `enigma2.rateBurst` | - | - | Active | Advanced |
 | `enigma2.rateLimit` | - | - | Active | Advanced |
 | `enigma2.responseHeaderTimeout` | - | `10s` | Active | Advanced |
@@ -128,9 +128,9 @@ Aliases: `openWebIF.*` (compat; prefer `enigma2.*`).
 
 | Path | Env | Default | Status | Profile |
 | --- | --- | --- | --- | --- |
-| `hls.dvrWindow` | `XG2G_HLS_DVR_WINDOW` | `45m` | Active | Advanced |
+| `hls.dvrWindow` | `XG2G_HLS_DVR_WINDOW` | `3h` | Active | Advanced |
 | `hls.root` | `XG2G_HLS_ROOT` | - | Active | Advanced |
-| `hls.segmentSeconds` | `XG2G_HLS_SEGMENT_SECONDS` | `6` | Active | Advanced |
+| `hls.segmentSeconds` | `XG2G_HLS_SEGMENT_SECONDS` | `4` | Active | Advanced |
 
 ### library
 

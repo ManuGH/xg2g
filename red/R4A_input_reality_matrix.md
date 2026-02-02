@@ -6,7 +6,13 @@
 
 ---
 
-## Class 1: Missing Fields (Expected: 400)
+## Class 1: Missing / Empty Fields (Expected: 422 `decision_ambiguous`)
+
+**Semantik:** syntaktisch valide, aber semantisch unentscheidbar (P4-2). Missing fields sind **kein** "Bad Request", sondern fehlende Truth.
+
+**Why not 400?**
+- 400 = syntaktisch/formatmäßig falsch.
+- 422 = formal ok, aber nicht deterministisch entscheidbar.
 
 ### Repro M1: Empty Container
 
@@ -14,7 +20,7 @@
 {"source":{"c":"","v":"h264","a":"aac","br":3000,"w":1920,"h":1080,"fps":30},"caps":{"v":1,"c":["mp4"],"vc":["h264"],"ac":["aac"],"hls":true,"rng":true,"dev":"test"},"policy":{"tx":true},"api":"v3"}
 ```
 
-**Expected:** Status 400, Problem.Code = "decision_ambiguous"
+**Expected:** Status 422, Problem.Code = "decision_ambiguous"
 
 ### Repro M2: Empty VideoCodec
 
@@ -22,7 +28,7 @@
 {"source":{"c":"mp4","v":"","a":"aac","br":3000,"w":1920,"h":1080,"fps":30},"caps":{"v":1,"c":["mp4"],"vc":["h264"],"ac":["aac"],"hls":true,"rng":true,"dev":"test"},"policy":{"tx":true},"api":"v3"}
 ```
 
-**Expected:** Status 400
+**Expected:** Status 422
 
 ### Repro M3: Empty AudioCodec
 
@@ -30,7 +36,7 @@
 {"source":{"c":"mp4","v":"h264","a":"","br":3000,"w":1920,"h":1080,"fps":30},"caps":{"v":1,"c":["mp4"],"vc":["h264"],"ac":["aac"],"hls":true,"rng":true,"dev":"test"},"policy":{"tx":true},"api":"v3"}
 ```
 
-**Expected:** Status 400
+**Expected:** Status 422
 
 ### Repro M4: Whitespace-only fields
 
@@ -38,7 +44,7 @@
 {"source":{"c":"   ","v":"h264","a":"aac","br":3000,"w":1920,"h":1080,"fps":30},"caps":{"v":1,"c":["mp4"],"vc":["h264"],"ac":["aac"],"hls":true,"rng":true,"dev":"test"},"policy":{"tx":true},"api":"v3"}
 ```
 
-**Expected:** Status 400 (TrimSpace makes it empty)
+**Expected:** Status 422 (TrimSpace makes it empty)
 
 ---
 
@@ -116,5 +122,5 @@
 
 ## Properties to Implement
 
-1. **Prop_MissingFields_Always400**: Missing/empty source fields → 400
+1. **Prop_MissingFields_Always422**: Missing/empty source fields → 422 (`decision_ambiguous`)
 2. **Prop_UnrecognizedValues_NeverCauseDenyIfTranscodeAllowed**: Unrecognized codec + AllowTranscode → Transcode, never Deny

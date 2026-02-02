@@ -7,8 +7,6 @@
 package config
 
 import (
-	"time"
-
 	streamprofile "github.com/ManuGH/xg2g/internal/core/profile"
 )
 
@@ -38,11 +36,7 @@ type RuntimeSnapshot struct {
 }
 
 type OpenWebIFRuntime struct {
-	HTTPMaxIdleConns        int
-	HTTPMaxIdleConnsPerHost int
-	HTTPMaxConnsPerHost     int
-	HTTPIdleTimeout         time.Duration
-	HTTPEnableHTTP2         bool
+	HTTPMaxConnsPerHost int
 
 	StreamBaseURL string
 }

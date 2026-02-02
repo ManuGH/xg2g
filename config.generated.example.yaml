@@ -18,16 +18,16 @@ engine:
   cpuThresholdScale: 1.5
   enabled: true
   gpuLimit: 8
-  idleTimeout: 1m
+  idleTimeout: 5m
   maxPool: 2
   mode: standard
   tunerSlots: []
 enigma2:
-  analyzeDuration: "10000000"
+  analyzeDuration: "2000000"
   authMode: inherit
   fallbackTo8001: true
   preflightTimeout: 10s
-  probeSize: 32M
+  probeSize: 5M
   rateBurst: 0
   rateLimit: 0
   responseHeaderTimeout: 10s
@@ -65,7 +65,7 @@ hdhr:
   plexForceHls: false
   tunerCount: 0
 hls:
-  dvrWindow: 45m
+  dvrWindow: 3h
   root: ""
   segmentSeconds: 6
 library:

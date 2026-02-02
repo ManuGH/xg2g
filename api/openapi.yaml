@@ -189,6 +189,12 @@ components:
         serviceRef:
           type: string
           description: Service reference for streaming (extracted from M3U URL)
+        resolution:
+          type: string
+          description: Video resolution (e.g. 1920x1080)
+        codec:
+          type: string
+          description: Video codec (e.g. h264)
 
     SessionRecord:
       type: object

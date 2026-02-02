@@ -207,7 +207,10 @@ func getDvrCapabilities_Legacy(s *Server, w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	editSupported := ds.HasTimerChange(r.Context())
+	editSupported := true
+	if cap, err := ds.DetectTimerChange(r.Context()); err == nil {
+		editSupported = cap.Supported
+	}
 
 	ptr := func(b bool) *bool { return &b }
 	str := func(s string) *string { return &s }
@@ -869,7 +872,9 @@ func (m *mockRecordingStatusProvider) GetStatusInfo(ctx context.Context) (*openw
 	}
 	return m.statusInfo, nil
 }
-func (m *mockRecordingStatusProvider) HasTimerChange(ctx context.Context) bool { return m.canEdit }
+func (m *mockRecordingStatusProvider) DetectTimerChange(ctx context.Context) (openwebif.TimerChangeCap, error) {
+	return openwebif.TimerChangeCap{Supported: m.canEdit}, nil
+}
 
 type mockServicesSource struct {
 	enabled map[string]bool

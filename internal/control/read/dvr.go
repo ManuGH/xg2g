@@ -7,9 +7,10 @@ import (
 )
 
 // DvrSource defines the minimal interface required to fetch DVR status and capabilities.
+// DvrSource defines the minimal interface required to fetch DVR status and capabilities.
 type DvrSource interface {
 	GetStatusInfo(ctx context.Context) (*openwebif.StatusInfo, error)
-	HasTimerChange(ctx context.Context) bool
+	DetectTimerChange(ctx context.Context) (openwebif.TimerChangeCap, error)
 }
 
 // DvrCapabilities represents the capabilities of the DVR subsystem.
@@ -36,7 +37,11 @@ func GetDvrCapabilities(ctx context.Context, src DvrSource) (DvrCapabilities, er
 		return DvrCapabilities{SeriesMode: "none"}, nil
 	}
 
-	canEdit := src.HasTimerChange(ctx)
+	canEdit := true // Defaults to true via fallback?
+	cap, err := src.DetectTimerChange(ctx)
+	if err == nil {
+		canEdit = cap.Supported
+	}
 
 	return DvrCapabilities{
 		CanDelete:        true,
