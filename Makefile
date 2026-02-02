@@ -9,7 +9,7 @@
         docker docker-build docker-build-cpu docker-build-gpu docker-build-all docker-security docker-tag docker-push docker-clean \
         sbom deps deps-update deps-tidy deps-verify deps-licenses \
 	security security-scan security-audit security-vulncheck \
-	quality-gates quality-gates-offline quality-gates-online pre-commit install dev-tools check-tools generate-config verify-config \
+	quality-gates quality-gates-offline quality-gates-online ci-pr ci-nightly pre-commit install dev-tools check-tools generate-config verify-config \
         release-check release-build release-tag release-notes \
         dev up down status prod-up prod-down prod-logs check-env \
         restart prod-restart ps prod-ps ui-build codex certs setup build-ffmpeg \
@@ -103,6 +103,8 @@ help: ## Show this help message
 	@echo "  quality-gates     Validate all online quality gates (coverage, lint, security)"
 	@echo "  quality-gates-offline  Validate offline-only gates (no network)"
 	@echo "  quality-gates-online   Validate online gates (coverage, lint, security)"
+	@echo "  ci-pr             Fast, deterministic PR gate (required checks)"
+	@echo "  ci-nightly        Deep, expensive gates (nightly/dispatch)"
 	@echo ""
 	@echo "Docker Operations:"
 	@echo "  docker              Build Docker image"
@@ -1003,6 +1005,12 @@ quality-gates-offline: ## Offline-only gates (no network, no codegen)
 quality-gates-online: verify-config verify-docs-compiled verify-generate verify-hermetic-codegen gate-repo-hygiene gate-v3-contract gate-a gate-webui lint-invariants lint test-cover security-vulncheck ## Validate all online quality gates
 	@echo "Validating quality gates..."
 	@echo "✅ All quality gates passed"
+
+ci-pr: verify-config verify-docs-compiled verify-generate gate-repo-hygiene lint-invariants lint test ## Fast, deterministic PR gate
+	@echo "✅ CI PR gate passed"
+
+ci-nightly: quality-gates-online contract-matrix test-race test-fuzz smoke-test ## Deep, expensive gates for nightly/dispatch
+	@echo "✅ CI nightly gates passed"
 
 # ===================================================================================================
 # FFmpeg Build Automation

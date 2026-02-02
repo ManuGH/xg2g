@@ -1,4 +1,4 @@
-name: CI (v2)
+name: CI Nightly
 
 on:
   workflow_dispatch:
@@ -9,375 +9,56 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-v2-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ci-nightly-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  # ============================================================================
-  # Job 1: Unit Tests (Fast, Stub Transcoder, Always Runs)
-  # ============================================================================
-  unit-tests:
-    name: Unit Tests (Stub Transcoder)
+  ci-nightly:
+    name: Nightly Gates (Deep & Expensive)
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 45
+    env:
+      GOTOOLCHAIN: local
+      TZ: UTC
 
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
-      - name: Setup Go
-        uses: actions/setup-go@3041dee5d64473ef0bad009d902ffdbccf9d1a33 # v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Verify modules
-        run: |
-          set -euo pipefail
-          go mod verify
-          git diff --exit-code -- go.mod go.sum
-
-      - name: Setup Node for WebUI
-        uses: actions/setup-node@1d42962bbd92a94ed090950669d6739985926c0d
-        with:
-          node-version: "22"
-          cache: "npm"
-          cache-dependency-path: webui/package-lock.json
-
-      - name: Build WebUI
-        run: |
-          set -euo pipefail
-          cd webui
-          npm ci
-          npm run generate-client
-          npm test -- --run
-          npm run build
-          mkdir -p ../internal/control/http/dist
-          cp -r dist/* ../internal/control/http/dist/
-
-      - name: Verify OpenAPI server codegen is up-to-date
-        run: |
-          set -euo pipefail
-          make generate
-          git diff --exit-code -- internal/api/server_gen.go
-
-      - name: Build (stub transcoder)
-        run: |
-          set -euo pipefail
-          echo "🔍 Building Pure Go daemon (CGO disabled)..."
-          go build -v -trimpath -mod=vendor -buildvcs=false -o /dev/null ./cmd/daemon
-          go build -v -trimpath -mod=vendor -buildvcs=false -o /dev/null ./cmd/validate
-          echo "✅ Build successful"
-
-      - name: Run unit tests (via make test)
-        run: make test
-
-      - name: Run unit tests with race detector
-        run: |
-          set -euo pipefail
-          go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
-
-      - name: Generate coverage report
-        run: |
-          set -euo pipefail
-          COV=$(go tool cover -func=coverage.out | awk '/total:/ {print $3}')
-          echo "## Coverage Report" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Total Coverage:** ${COV}" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "### Top Packages" >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          go tool cover -func=coverage.out | grep -E '^github.com/ManuGH/xg2g' | sort -k3 -rn | head -20 >> "$GITHUB_STEP_SUMMARY" || true
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload coverage
-        uses: actions/upload-artifact@4cea002c0b490497914856006bbd902ffdbccf9d1a33 # v5
-        with:
-          name: coverage-unit-tests
-          path: coverage.out
-          retention-days: 14
-
-  # ============================================================================
-  # Job 2: Schema Validation Tests (Requires check-jsonschema)
-  # ============================================================================
-  schema-validation:
-    name: Schema Validation
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # Latest stable
+      - name: Verify Go toolchain policy
+        run: ./scripts/check-go-toolchain.sh
 
       - name: Setup Go
-        uses: actions/setup-go@3041dee5d64473ef0bad009d902ffdbccf9d1a33 # Latest stable
+        uses: actions/setup-go@3041dee5d64473ef0bad009d902ffdbccf9d1a33 # v6
         with:
           go-version-file: go.mod
+          check-latest: true
           cache: true
+        env:
+          GOTOOLCHAIN: local
 
-      - name: Setup Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v5
-        with:
-          python-version: "3.x"
-
-      - name: Install check-jsonschema
-        run: |
-          python -m venv .venv
-          . .venv/bin/activate
-          pip install check-jsonschema==0.31.0
-
-      - name: Run schema tests (via make test-schema)
-        run: make test-schema
-
-      - name: Validate configs with check-jsonschema
+      - name: Install golangci-lint (built with runner Go)
         run: |
           set -euo pipefail
-          . .venv/bin/activate
-          check-jsonschema --schemafile docs/guides/config.schema.json config.example.yaml
-          find internal/config/testdata -name 'valid*.yaml' -maxdepth 1 -type f -print0 | \
-            xargs -0 -I{} check-jsonschema --schemafile docs/guides/config.schema.json {}
-
-      - name: Build validate tool
-        run: go build -o bin/validate ./cmd/validate
-
-      - name: Validate configs with CLI tool
-        run: |
-          set -euo pipefail
-          find internal/config/testdata -name 'valid*.yaml' -maxdepth 1 -type f -print0 | \
-            xargs -0 -I{} ./bin/validate -f {}
-
-  # ============================================================================
-  # Job 4: Linting (Go, Markdown, OpenAPI)
-  # ============================================================================
-  lint:
-    name: Lint (Go, Markdown, OpenAPI)
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-
-      - name: Setup Go
-        uses: actions/setup-go@3041dee5d64473ef0bad009d902ffdbccf9d1a33 # v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Setup Node for WebUI
-        uses: actions/setup-node@1d42962bbd92a94ed090950669d6739985926c0d
-        with:
-          node-version: "22"
-          cache: "npm"
-          cache-dependency-path: webui/package-lock.json
-
-      - name: Build WebUI
-        run: |
-          set -euo pipefail
-          cd webui
-          npm ci
-          npm run build
-          mkdir -p ../internal/control/http/dist
-          cp -r dist/* ../internal/control/http/dist/
-
-      - name: Install golangci-lint
-        run: |
-          set -euo pipefail
-          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.5.0
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.8.0
           golangci-lint --version
 
-      - name: Run golangci-lint
-        run: golangci-lint run --timeout=5m --verbose ./...
-
-      - name: Setup Node
-        uses: actions/setup-node@1d42962bbd92a94ed090950669d6739985926c0d
+      - name: Setup Node for OpenAPI + Markdown lint
+        uses: actions/setup-node@1d42962bbd92a94ed090950669d6739985926c0d # v6
         with:
-          node-version: "lts/*"
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: webui/package-lock.json
 
-      - name: Lint OpenAPI
+      - name: Lint OpenAPI (nightly)
         run: |
           set -euo pipefail
           npx --yes @redocly/cli@1.31.0 lint api/openapi.yaml --format=stylish | tee /tmp/openapi-lint.txt
 
-      - name: Lint Markdown
-        continue-on-error: true
+      - name: Lint Markdown (nightly)
         run: |
           set -euo pipefail
           npx --yes markdownlint-cli2@0.14.0 "docs/**/*.md" ".github/**/*.md" "*.md"
 
-      - name: Upload OpenAPI lint report
-        if: always()
-        uses: actions/upload-artifact@4cea002c0b490497914856006bbd902ffdbccf9d1a33 # v5
-        with:
-          name: openapi-lint
-          path: /tmp/openapi-lint.txt
-          retention-days: 14
-
-  # ============================================================================
-  # Job 5: Integration Tests (Stub + Daemon)
-  # ============================================================================
-  integration-tests:
-    name: Integration Tests (Daemon + Stub OpenWebIF)
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    needs: [unit-tests] # Only run after unit tests pass
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-
-      - name: Setup Go
-        uses: actions/setup-go@3041dee5d64473ef0bad009d902ffdbccf9d1a33 # v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Setup Node for WebUI
-        uses: actions/setup-node@1d42962bbd92a94ed090950669d6739985926c0d
-        with:
-          node-version: "22"
-          cache: "npm"
-          cache-dependency-path: webui/package-lock.json
-
-      - name: Build WebUI
-        run: |
-          set -euo pipefail
-          cd webui
-          npm ci
-          npm run build
-          mkdir -p ../internal/control/http/dist
-          cp -r dist/* ../internal/control/http/dist/
-
-      - name: Build daemon (stub transcoder)
-        run: |
-          set -euo pipefail
-          BUILD_REF="${GITHUB_SHA:-dev}"
-          go build -v -trimpath -mod=vendor -buildvcs=false \
-            -ldflags "-X main.version=${BUILD_REF}" \
-            -o bin/xg2g ./cmd/daemon
-
-          echo "🔍 Verifying version injection..."
-          ./bin/xg2g --version
-          if ! ./bin/xg2g --version | grep -q "${BUILD_REF}"; then
-            echo "❌ Version mismatch: Expected connection to contain '${BUILD_REF}'"
-            exit 1
-          fi
-          echo "✅ Version verified"
-          echo "✅ Daemon built successfully"
-
-      - name: Run smoke test (includes integration validation)
-        run: |
-          set -euo pipefail
-          echo "🧪 Running smoke test..."
-          make smoke-test
-
-  # ============================================================================
-  # Job 6: Reproducible Build Check
-  # ============================================================================
-  reproducible-build:
-    name: Reproducible Build Check
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    container:
-      image: golang:1.25-trixie
-      env:
-        CGO_ENABLED: 0
-    env:
-      TZ: UTC
-    steps:
-      - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          fetch-depth: 0
-
-      - name: Set SOURCE_DATE_EPOCH
-        run: |
-          set -eu
-          apt-get update && apt-get install -y git nodejs npm
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          SOURCE_DATE_EPOCH="$(git log -1 --pretty=%ct)"
-          echo "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}" >> "$GITHUB_ENV"
-          echo "Using SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}"
-
-      - name: Setup Go Deps
-        run: go mod verify
-
-      - name: Build WebUI
-        run: |
-          set -eu
-          cd webui
-          npm ci
-          npm run generate-client
-          npm run build
-          mkdir -p ../internal/control/http/dist
-          cp -r dist/* ../internal/control/http/dist/
-
-      - name: Build #1 (reference)
-        run: |
-          set -eu
-          mkdir -p bin
-          make build-repro
-          sha256sum bin/xg2g > /tmp/expected.sha256
-
-      - name: Build #2 (must match)
-        run: |
-          set -eu
-          rm -rf bin
-          make build-repro
-          sha256sum bin/xg2g | diff - /tmp/expected.sha256 || ( \
-            echo "❌ Binary hashes differ!" && \
-            apt-get update && apt-get install -y xxd && \
-            xxd bin/xg2g > /tmp/build2.hex && \
-            make build-repro && \
-            xxd bin/xg2g > /tmp/build3.hex && \
-            echo "Diffing build2 vs build3:" && \
-            diff -u /tmp/build2.hex /tmp/build3.hex | head -n 50 && \
-            exit 1 \
-          )
-
-      - name: Upload reproducible binary
-        uses: actions/upload-artifact@4cea002c0b490497914856006bbd902ffdbccf9d1a33 # v5
-        with:
-          name: reproducible-daemon
-          path: bin/xg2g
-          retention-days: 7
-
-  # ============================================================================
-  # Summary Job (Always Runs)
-  # ============================================================================
-  ci-summary:
-    name: CI Summary
-    runs-on: ubuntu-latest
-    needs:
-      [
-        unit-tests,
-        schema-validation,
-        lint,
-        integration-tests,
-        reproducible-build,
-      ]
-    if: always()
-
-    steps:
-      - name: Check job results
-        run: |
-          echo "## CI Pipeline Summary" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Job | Status |" >> "$GITHUB_STEP_SUMMARY"
-          echo "|-----|--------|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Unit Tests | ${{ needs.unit-tests.result }} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Schema Validation | ${{ needs.schema-validation.result }} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Lint | ${{ needs.lint.result }} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Integration Tests | ${{ needs.integration-tests.result }} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Reproducible Build | ${{ needs.reproducible-build.result }} |" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Fail if any required job failed
-        if: |
-          needs.unit-tests.result == 'failure' ||
-          needs.schema-validation.result == 'failure' ||
-          needs.lint.result == 'failure' ||
-          needs.integration-tests.result == 'failure' ||
-          needs.reproducible-build.result == 'failure'
-        run: |
-          echo "❌ One or more required CI jobs failed"
-          exit 1
+      - name: Run nightly gates
+        run: make ci-nightly
