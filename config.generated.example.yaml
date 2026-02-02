@@ -47,7 +47,7 @@ epg:
   days: 14
   enabled: true
   fuzzyMax: 2
-  maxConcurrency: 5
+  maxConcurrency: 1
   retries: 2
   source: per-service
   timeoutMs: 5000
@@ -65,7 +65,7 @@ hdhr:
   plexForceHls: false
   tunerCount: 0
 hls:
-  dvrWindow: 3h
+  dvrWindow: 45m
   root: ""
   segmentSeconds: 6
 library:
@@ -107,7 +107,7 @@ sessions:
   heartbeat_interval: 30s
   lease_ttl: 2h
 store:
-  backend: memory
+  backend: sqlite
   path: /var/lib/xg2g/store
 streaming:
   delivery_policy: universal

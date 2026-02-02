@@ -98,7 +98,7 @@ Aliases: `openWebIF.*` (compat; prefer `enigma2.*`).
 | `epg.days` | `XG2G_EPG_DAYS` | `14` | Active | Simple |
 | `epg.enabled` | `XG2G_EPG_ENABLED` | `true` | Active | Simple |
 | `epg.fuzzyMax` | `XG2G_FUZZY_MAX` | `2` | Active | Advanced |
-| `epg.maxConcurrency` | `XG2G_EPG_MAX_CONCURRENCY` | `5` | Active | Advanced |
+| `epg.maxConcurrency` | `XG2G_EPG_MAX_CONCURRENCY` | `1` | Active | Advanced |
 | `epg.retries` | `XG2G_EPG_RETRIES` | `2` | Active | Advanced |
 | `epg.source` | `XG2G_EPG_SOURCE` | `per-service` | Active | Advanced |
 | `epg.timeoutMs` | `XG2G_EPG_TIMEOUT_MS` | `5000` | Active | Advanced |
@@ -128,9 +128,9 @@ Aliases: `openWebIF.*` (compat; prefer `enigma2.*`).
 
 | Path | Env | Default | Status | Profile |
 | --- | --- | --- | --- | --- |
-| `hls.dvrWindow` | `XG2G_HLS_DVR_WINDOW` | `3h` | Active | Advanced |
+| `hls.dvrWindow` | `XG2G_HLS_DVR_WINDOW` | `45m` | Active | Advanced |
 | `hls.root` | `XG2G_HLS_ROOT` | - | Active | Advanced |
-| `hls.segmentSeconds` | `XG2G_HLS_SEGMENT_SECONDS` | `4` | Active | Advanced |
+| `hls.segmentSeconds` | `XG2G_HLS_SEGMENT_SECONDS` | `6` | Active | Advanced |
 
 ### library
 
@@ -214,7 +214,7 @@ Aliases: `openWebIF.*` (compat; prefer `enigma2.*`).
 
 | Path | Env | Default | Status | Profile |
 | --- | --- | --- | --- | --- |
-| `store.backend` | `XG2G_STORE_BACKEND` | `memory` | Active | Advanced |
+| `store.backend` | `XG2G_STORE_BACKEND` | `sqlite` | Active | Advanced |
 | `store.path` | `XG2G_STORE_PATH` | `/var/lib/xg2g/store` | Active | Advanced |
 
 ### streaming

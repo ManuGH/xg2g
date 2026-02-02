@@ -428,7 +428,7 @@
           "type": "integer"
         },
         "maxConcurrency": {
-          "default": 5,
+          "default": 1,
           "description": "Maximum concurrent EPG requests to the receiver (1-10)",
           "examples": [
             5,
@@ -555,14 +555,14 @@
     "hls": {
       "properties": {
         "dvrWindow": {
-          "default": "3h",
+          "default": "45m",
           "type": "string"
         },
         "root": {
           "type": "string"
         },
         "segmentSeconds": {
-          "default": 4,
+          "default": 6,
           "description": "HLS segment duration in seconds.",
           "type": "integer"
         }
@@ -873,7 +873,7 @@
     "store": {
       "properties": {
         "backend": {
-          "default": "memory",
+          "default": "sqlite",
           "type": "string"
         },
         "path": {
