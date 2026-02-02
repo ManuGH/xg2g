@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-v2-${{ github.ref }}
+  group: ci-v2-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -197,13 +197,13 @@ jobs:
       - name: Lint OpenAPI
         run: |
           set -euo pipefail
-          npx --yes @redocly/cli@latest lint api/openapi.yaml --format=stylish | tee /tmp/openapi-lint.txt
+          npx --yes @redocly/cli@1.31.0 lint api/openapi.yaml --format=stylish | tee /tmp/openapi-lint.txt
 
       - name: Lint Markdown
         continue-on-error: true
         run: |
           set -euo pipefail
-          npx --yes markdownlint-cli2 "docs/**/*.md" ".github/**/*.md" "*.md"
+          npx --yes markdownlint-cli2@0.14.0 "docs/**/*.md" ".github/**/*.md" "*.md"
 
       - name: Upload OpenAPI lint report
         if: always()
