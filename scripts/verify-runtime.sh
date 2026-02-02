@@ -45,7 +45,7 @@ echo "📡 Probing API on port ${API_PORT}..."
 # Note: This requires the container to be 'ready'.
 
 # 3. Validation against DIGESTS.lock
-EXPECTED_DIGEST=$(grep -A 1 "\"${TARGET_VERSION}\":" "$LOCK_FILE" | grep "digest:" | sed 's/.*digest:[[:space:]]*//' | tr -d '"' | tr -d '[:space:]' | tr -d '{}')
+EXPECTED_DIGEST=$(grep -A 1 "\"${TARGET_VERSION}\":" "$LOCK_FILE" | grep "digest" | sed 's/.*"digest":[[:space:]]*//' | tr -d '"' | tr -d '[:space:]' | tr -d ',' | tr -d '{}')
 
 if [[ -n "$CHECK_VALUE" ]] && [[ "$EXPECTED_DIGEST" != "pending" ]]; then
     if [[ "$CHECK_VALUE" != "$EXPECTED_DIGEST" ]]; then
