@@ -27,7 +27,8 @@ SOURCE_DATE_EPOCH ?= $(shell git log -1 --pretty=%ct 2>/dev/null || date -u +%s)
 export SOURCE_DATE_EPOCH
 export TZ := UTC
 export GOFLAGS := -trimpath -buildvcs=false -mod=vendor
-TOOLCHAIN_ENV := GOTOOLCHAIN=go1.25.6
+export GOTOOLCHAIN := go1.25.6
+GO := go
 
 # Build configuration
 BINARY_NAME := xg2g
@@ -49,10 +50,17 @@ COVERAGE_THRESHOLD := 43
 EPG_COVERAGE_THRESHOLD := 85
 
 # Tool paths and versions
-GOBIN ?= $(shell go env GOBIN)
-GOPATH_BIN := $(shell go env GOPATH)/bin
+GOBIN ?= $(shell $(GO) env GOBIN)
+GOPATH_BIN := $(shell $(GO) env GOPATH)/bin
 TOOL_DIR := $(if $(GOBIN),$(GOBIN),$(GOPATH_BIN))
+
+# Locked Tool Versions (Sourced from tools.go / Baseline Policy)
+GOLANGCI_LINT_VERSION := v1.63.4
 OAPI_CODEGEN_VERSION := v2.5.1
+GOVULNCHECK_VERSION := v1.1.3
+SYFT_VERSION := v1.19.0
+GRYPE_VERSION := v0.87.0
+GOSEC_VERSION := v2.22.1
 
 # Tool executables
 GOLANGCI_LINT := $(TOOL_DIR)/golangci-lint
@@ -171,8 +179,8 @@ generate: ## Generate Go code from OpenAPI spec (v3 only)
 	@echo "Generating API server code (v3)..."
 	@mkdir -p internal/api
 	@mkdir -p internal/control/http/v3
-	@$(TOOLCHAIN_ENV) go run -mod=vendor github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen -config api/oapi-codegen-api.yaml -o internal/api/server_gen.go api/openapi.yaml
-	@$(TOOLCHAIN_ENV) go run -mod=vendor github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen -config api/oapi-codegen-v3.yaml -o internal/control/http/v3/server_gen.go api/openapi.yaml
+	@$(GO) run -mod=vendor github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen -config api/oapi-codegen-api.yaml -o internal/api/server_gen.go api/openapi.yaml
+	@$(GO) run -mod=vendor github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen -config api/oapi-codegen-v3.yaml -o internal/control/http/v3/server_gen.go api/openapi.yaml
 	@echo "✅ Code generation complete (single source: api/openapi.yaml):"
 	@echo "   - internal/control/http/v3/server_gen.go"
 
@@ -200,11 +208,11 @@ verify-no-adhoc-session-mapping: ## Verify session API mappings only set via ses
 	@./scripts/verify-no-adhoc-session-mapping.sh
 
 verify-fuzz: ## Optional fuzz invariants (nightly)
-	@$(TOOLCHAIN_ENV) go test ./internal/domain/session/lifecycle -fuzz=Fuzz -fuzztime=3s
+	@$(GO) test ./internal/domain/session/lifecycle -fuzz=Fuzz -fuzztime=3s
 
 generate-config: ## Generate config surfaces from registry
 	@echo "Generating config surfaces from registry..."
-	@$(TOOLCHAIN_ENV) go run ./cmd/configgen --allow-create
+	@$(GO) run ./cmd/configgen --allow-create
 	@echo "✅ Config surfaces generated"
 
 .PHONY: verify
@@ -212,7 +220,7 @@ verify: verify-config verify-doc-links verify-capabilities contract-matrix verif
 
 verify-config: ## Verify generated config surfaces are up-to-date
 	@echo "Verifying generated config surfaces..."
-	@$(TOOLCHAIN_ENV) go run ./cmd/configgen
+	@$(GO) run ./cmd/configgen
 	@if git ls-files --error-unmatch .env >/dev/null 2>&1; then \
 		echo "❌ .env must not be tracked in the repo. Use .env.example instead."; \
 		exit 1; \
@@ -275,11 +283,11 @@ verify-runtime: ## Verify live runtime truth against repo truth
 
 verify-hot-reload-governance: ## Verify that only approved fields are marked HotReloadable
 	@echo "--- verify-hot-reload-governance ---"
-	@$(TOOLCHAIN_ENV) go run scripts/verify-hot-reload-governance.go
+	@$(GO) run scripts/verify-hot-reload-governance.go
 
 verify-hot-reload: ## Verify hot-reload functionality with race detection
 	@echo "--- verify-hot-reload ---"
-	@$(TOOLCHAIN_ENV) go test -race ./internal/control/http/v3 -run TestHotReload -v
+	@$(GO) test -race ./internal/control/http/v3 -run TestHotReload -v
 
 verify-runtime-continuous: ## Run continuous verification (Rate-limited observer)
 	@echo "--- verify-runtime-continuous ---"
@@ -355,32 +363,32 @@ verify-ui-contract-scan: ## Phase 6.0: Verify UI codebase not violating contract
 .PHONY: verify-telemetry-schema
 verify-telemetry-schema: ## Phase 6.1: Verify Telemetry Schema Integrity
 	@echo "--- verify-telemetry-schema ---"
-	@$(TOOLCHAIN_ENV) npx tsx scripts/verify-telemetry-schema.ts
+	@ npx tsx scripts/verify-telemetry-schema.ts
 	@./scripts/verify-telemetry-drift.sh
 
 .PHONY: verify-capabilities
 verify-capabilities: ## Phase 7: Verify capability fixtures against manifest and runtime resolver
 	@echo "--- verify-capabilities ---"
-	@$(TOOLCHAIN_ENV) go test ./test/invariants -run Invariant -v
-	@$(TOOLCHAIN_ENV) go run ./cmd/generate-capability-fixtures/main.go -check
+	@$(GO) test ./test/invariants -run Invariant -v
+	@$(GO) run ./cmd/generate-capability-fixtures/main.go -check
 
 verify-decision-goldens:
 	@echo "--- verify-decision-goldens ---"
-	@$(TOOLCHAIN_ENV) go test ./test/invariants -run TestDecisionGoldens -v
+	@$(GO) test ./test/invariants -run TestDecisionGoldens -v
 
 verify-decision-invariants:
 	@echo "--- verify-decision-invariants ---"
-	@$(TOOLCHAIN_ENV) go test ./test/invariants -run TestDecisionOutputInvariants -v
+	@$(GO) test ./test/invariants -run TestDecisionOutputInvariants -v
 
 verify-observability:
 	@echo "--- verify-observability ---"
-	@$(TOOLCHAIN_ENV) go test ./test/invariants -run TestDecisionObservabilityContract -v
+	@$(GO) test ./test/invariants -run TestDecisionObservabilityContract -v
 
 verify-p8: verify-capabilities verify-decision-goldens verify-decision-invariants verify-observability
 
 verify-hls-http:
 	@echo "--- verify-hls-http ---"
-	@$(TOOLCHAIN_ENV) go test -tags v3 ./internal/control/http/v3 -v -run HLS
+	@$(GO) test -tags v3 ./internal/control/http/v3 -v -run HLS
 
 verify-hls-hygiene:
 	@echo "--- verify-hls-hygiene ---"
@@ -410,7 +418,7 @@ verify-no-panic: ## Gate: No panics in production code
 
 verify-no-ignored-errors: ## Gate: No ignored errors
 	@echo "Checking for ignored errors..."
-	@if $(TOOLCHAIN_ENV) grep -r "_ = err" internal/ --include="*.go" | grep -v "_test.go"; then \
+	@if $(GO) grep -r "_ = err" internal/ --include="*.go" | grep -v "_test.go"; then \
 		echo "❌ Ignored error found"; \
 		exit 1; \
 	fi
@@ -418,27 +426,11 @@ verify-no-ignored-errors: ## Gate: No ignored errors
 
 verify-p9: verify-hls-goldens verify-hls-http verify-hls-hygiene
 
-build: ui-build ## Build the main daemon binary
-	@echo "Building xg2g daemon..."
+build: ui-build ## Build xg2g binary
+	@echo "Building xg2g..."
 	@mkdir -p $(BUILD_DIR)
-	$(TOOLCHAIN_ENV) go build $(BUILD_FLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/daemon
+	@$(GO) build $(BUILD_FLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/daemon
 	@echo "✅ Build complete: $(BUILD_DIR)/$(BINARY_NAME)"
-
-build-all: ## Build binaries for all supported platforms
-	@echo "Building for all platforms..."
-	@mkdir -p $(BUILD_DIR)
-	@for platform in $$(echo "$(PLATFORMS)" | tr ',' '\n'); do \
-		os=$$(echo $$platform | cut -d'/' -f1); \
-		arch=$$(echo $$platform | cut -d'/' -f2); \
-		output="$(BUILD_DIR)/$(BINARY_NAME)-$$os-$$arch"; \
-		if [ "$$os" = "windows" ]; then output="$$output.exe"; fi; \
-		echo "Building for $$os/$$arch..."; \
-		GOOS=$$os GOARCH=$$arch go build $(BUILD_FLAGS) $(LDFLAGS) -o $$output ./cmd/daemon || exit 1; \
-	done
-	@echo "✅ Multi-platform build complete"
-	@ls -la $(BUILD_DIR)/
-
-	@echo "✅ Reproducible build complete: $(BUILD_DIR)/$(BINARY_NAME)"
 
 # xg2g-migrate target removed as of v3.0.0 (Phase 3.0 Sunset complete)
 
@@ -448,17 +440,17 @@ clean: ## Remove build artifacts and temporary files
 	@rm -rf coverage.out coverage.html
 	@rm -rf *.prof *.test
 	@rm -rf dist/
-	@$(TOOLCHAIN_ENV) go clean -cache
+	@$(GO) clean -cache
 
 clean-certs: ## Remove auto-generated TLS certificates
-	@echo "Removing TLS certificates..."
+	@echo "Cleaning certificates..."
 	@rm -rf certs/
-	@echo "✅ TLS certificates removed"
+	@echo "✅ Certificates cleaned"
 
 certs: ## Generate self-signed TLS certificates
 	@echo "Generating self-signed TLS certificates..."
 	@mkdir -p certs
-	@$(TOOLCHAIN_ENV) go run -trimpath ./cmd/gencert
+	@$(GO) run -trimpath ./cmd/gencert
 	@echo ""
 	@echo "To use these certificates, set:"
 	@echo "   export XG2G_TLS_CERT=certs/xg2g.crt"
@@ -468,7 +460,7 @@ certs: ## Generate self-signed TLS certificates
 	@echo "   export XG2G_TLS_ENABLED=true"
 
 clean-full: clean ## Remove all build artifacts
-	@$(TOOLCHAIN_ENV) go clean -cache -testcache -modcache
+	@$(GO) clean -cache -testcache -modcache
 	@echo "✅ Clean complete"
 
 # ===================================================================================================
@@ -477,9 +469,8 @@ clean-full: clean ## Remove all build artifacts
 
 lint: ## Run golangci-lint with all checks
 	@echo "Running golangci-lint..."
-	@command -v golangci-lint > /dev/null 2>&1 || GOFLAGS="" go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.8.0
-	@golangci-lint run ./... --timeout=5m --concurrency=2
-	@echo "✅ Lint checks passed"
+	@$(GOLANGCI_LINT) run --timeout=5m --verbose ./...
+	@echo "✅ Linting passed"
 
 lint-invariants: ## Check architectural invariants (SeedMetadata usage)
 	@echo "Checking for prohibited SeedMetadata usage..."
@@ -490,32 +481,30 @@ lint-invariants: ## Check architectural invariants (SeedMetadata usage)
 	@echo "✅ Invariant check passed"
 
 lint-fix: ## Run golangci-lint with automatic fixes
-	@echo "Ensuring golangci-lint is installed..."
-	@command -v $(GOLANGCI_LINT) >/dev/null 2>&1 || go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.8.0
-	@echo "Running golangci-lint with fixes..."
-	@"$(GOLANGCI_LINT)" run ./... --fix --timeout=5m
-	@echo "✅ Lint fixes applied"
+	@echo "Running golangci-lint fix..."
+	@$(GOLANGCI_LINT) run --fix ./...
+	@echo "✅ Linting fixes applied"
 
 test: ## Run all unit tests
 	@echo "Running unit tests..."
-	@$(TOOLCHAIN_ENV) go test ./... -v
+	@$(GO) test ./... -v
 	@echo "✅ Unit tests passed"
 
 test-schema: ## Run JSON schema validation tests (requires check-jsonschema)
 	@echo "Running JSON schema validation tests..."
-	@$(TOOLCHAIN_ENV) go test -tags=schemacheck -v ./internal/config
+	@$(GO) test -tags=schemacheck -v ./internal/config
 	@echo "✅ Schema validation tests passed"
 
 test-race: ## Run tests with race detection
 	@echo "Running tests with race detection..."
-	@$(TOOLCHAIN_ENV) go test ./... -v -race
+	@$(GO) test ./... -v -race
 	@echo "✅ Race detection tests passed"
 
 test-cover: ## Run tests with coverage reporting
 	@echo "Running tests with coverage..."
 	@mkdir -p $(ARTIFACTS_DIR)
-	@$(TOOLCHAIN_ENV) go test ./... -v -race -coverprofile=$(ARTIFACTS_DIR)/coverage.out -covermode=atomic
-	@$(TOOLCHAIN_ENV) go tool cover -html=$(ARTIFACTS_DIR)/coverage.out -o $(ARTIFACTS_DIR)/coverage.html
+	@$(GO) test ./... -v -race -coverprofile=$(ARTIFACTS_DIR)/coverage.out -covermode=atomic
+	@$(GO) tool cover -html=$(ARTIFACTS_DIR)/coverage.out -o $(ARTIFACTS_DIR)/coverage.html
 	@echo "Coverage report generated: $(ARTIFACTS_DIR)/coverage.html"
 	@echo "Overall coverage:"
 	@go tool cover -func=$(ARTIFACTS_DIR)/coverage.out | tail -1
@@ -536,45 +525,45 @@ cover: test-cover ## Alias for test-cover
 test-fuzz: ## Run comprehensive fuzzing tests
 	@echo "Running fuzzing tests..."
 	@echo "Fuzzing EPG generator..."
-	@$(TOOLCHAIN_ENV) go test ./internal/epg -fuzz=FuzzGenerator -fuzztime=30s
+	@$(GO) test ./internal/epg -fuzz=FuzzGenerator -fuzztime=30s
 	@echo "Fuzzing EPG fuzzy matcher..."
-	@$(TOOLCHAIN_ENV) go test ./internal/epg -fuzz=FuzzFuzzyMatch -fuzztime=30s
+	@$(GO) test ./internal/epg -fuzz=FuzzFuzzyMatch -fuzztime=30s
 	@echo "Fuzzing EPG XMLTV writer..."
-	@$(TOOLCHAIN_ENV) go test ./internal/epg -fuzz=FuzzXMLTVWrite -fuzztime=30s
+	@$(GO) test ./internal/epg -fuzz=FuzzXMLTVWrite -fuzztime=30s
 	@echo "✅ Fuzzing tests completed"
 
 test-all: test-race test-cover test-fuzz ## Run complete test suite
 
 test-integration: ## Run integration tests
 	@echo "Running integration tests..."
-	@$(TOOLCHAIN_ENV) go test -tags=integration -v -timeout=5m ./test/integration/...
+	@$(GO) test -tags=integration -v -timeout=5m ./test/integration/...
 	@echo "✅ Integration tests passed"
 
 test-integration-fast: ## Run fast integration tests
 	@echo "Running fast integration tests..."
-	@$(TOOLCHAIN_ENV) go test -tags=integration_fast -v -timeout=3m ./test/integration/... -run="^TestAPIFast"
+	@$(GO) test -tags=integration_fast -v -timeout=3m ./test/integration/... -run="^TestAPIFast"
 	@echo "✅ Fast integration tests passed"
 
 test-integration-slow: ## Run slow integration tests
 	@echo "Running slow integration tests..."
-	@$(TOOLCHAIN_ENV) go test -tags=integration_slow -v -timeout=10m ./test/integration/... -run="^TestSlow"
+	@$(GO) test -tags=integration_slow -v -timeout=10m ./test/integration/... -run="^TestSlow"
 	@echo "✅ Slow tests passed"
 
 smoke-test: ## Run E2E smoke test (Builds & Runs daemon)
 	@echo "Building binary for smoke test..."
 	@mkdir -p $(BUILD_DIR)
-	@$(TOOLCHAIN_ENV) go build -tags=nogpu -o $(BUILD_DIR)/xg2g-smoke ./cmd/daemon
+	@$(GO) build -tags=nogpu -o $(BUILD_DIR)/xg2g-smoke ./cmd/daemon
 	@echo "Running E2E smoke test..."
-	@XG2G_SMOKE_BIN=$$(pwd)/$(BUILD_DIR)/xg2g-smoke $(TOOLCHAIN_ENV) go test -v -tags=smoke,nogpu -timeout=30s ./test/smoke/...
+	@XG2G_SMOKE_BIN=$$(pwd)/$(BUILD_DIR)/xg2g-smoke $(GO) test -v -tags=smoke,nogpu -timeout=30s ./test/smoke/...
 	@echo "✅ Smoke test passed"
 
 coverage: ## Generate and view coverage report locally
 	@echo "Generating coverage report..."
 	@mkdir -p $(ARTIFACTS_DIR)
-	@$(TOOLCHAIN_ENV) go test -covermode=atomic -coverprofile=$(ARTIFACTS_DIR)/coverage.out -coverpkg=./... ./...
-	@go tool cover -html=$(ARTIFACTS_DIR)/coverage.out -o $(ARTIFACTS_DIR)/coverage.html
+	@$(GO) test -covermode=atomic -coverprofile=$(ARTIFACTS_DIR)/coverage.out -coverpkg=./... ./...
+	@$(GO) tool cover -html=$(ARTIFACTS_DIR)/coverage.out -o $(ARTIFACTS_DIR)/coverage.html
 	@echo "Coverage report generated: $(ARTIFACTS_DIR)/coverage.html"
-	@COVERAGE=$$(go tool cover -func=$(ARTIFACTS_DIR)/coverage.out | grep total | awk '{print $$3}' | sed 's/%//'); \
+	@COVERAGE=$$($(GO) tool cover -func=$(ARTIFACTS_DIR)/coverage.out | grep total | awk '{print $$3}' | sed 's/%//'); \
 	echo "Overall Coverage: $$COVERAGE%"; \
 	if command -v open >/dev/null 2>&1; then \
 		open $(ARTIFACTS_DIR)/coverage.html; \
@@ -587,8 +576,8 @@ coverage: ## Generate and view coverage report locally
 coverage-check: ## Check if coverage meets threshold
 	@echo "Checking coverage threshold..."
 	@mkdir -p $(ARTIFACTS_DIR)
-	@$(TOOLCHAIN_ENV) go test -covermode=atomic -coverprofile=$(ARTIFACTS_DIR)/coverage.out ./...
-	@COVERAGE=$$(go tool cover -func=$(ARTIFACTS_DIR)/coverage.out | grep total | awk '{print $$3}' | sed 's/%//'); \
+	@$(GO) test -covermode=atomic -coverprofile=$(ARTIFACTS_DIR)/coverage.out ./...
+	@COVERAGE=$$($(GO) tool cover -func=$(ARTIFACTS_DIR)/coverage.out | grep total | awk '{print $$3}' | sed 's/%//'); \
 	THRESHOLD=50; \
 	echo "Current coverage: $$COVERAGE%"; \
 	echo "Threshold: $$THRESHOLD%"; \
@@ -626,7 +615,6 @@ docker-build: ## Build Docker image
 		--load \
 		--platform $(PLATFORMS) \
 		-t $(DOCKER_IMAGE):$(VERSION) \
-		-t $(DOCKER_IMAGE):latest \
 		.
 	@echo "✅ Docker image built and loaded"
 
@@ -639,7 +627,6 @@ docker-tag: ## Tag Docker image with version
 	@echo "Tagging Docker image..."
 	@if [ -n "$(DOCKER_REGISTRY)" ]; then \
 		docker tag $(DOCKER_IMAGE):$(VERSION) $(DOCKER_REGISTRY)/$(DOCKER_IMAGE):$(VERSION); \
-		docker tag $(DOCKER_IMAGE):latest $(DOCKER_REGISTRY)/$(DOCKER_IMAGE):latest; \
 		echo "✅ Images tagged for registry: $(DOCKER_REGISTRY)"; \
 	else \
 		echo "✅ Local tags applied"; \
@@ -652,7 +639,6 @@ docker-push: docker-tag ## Push Docker image to registry
 	fi
 	@echo "Pushing Docker images to $(DOCKER_REGISTRY)..."
 	@docker push $(DOCKER_REGISTRY)/$(DOCKER_IMAGE):$(VERSION)
-	@docker push $(DOCKER_REGISTRY)/$(DOCKER_IMAGE):latest
 	@echo "✅ Docker images pushed"
 
 docker-clean: ## Remove Docker build cache
@@ -690,7 +676,7 @@ security-scan: dev-tools ## Run container vulnerability scanning
 
 security-audit: ## Run dependency vulnerability audit
 	@echo "Running dependency security audit..."
-	@go list -json -deps ./... | nancy sleuth || echo "⚠️  Nancy audit completed with findings"
+	@$(GO) list -json -deps ./... | nancy sleuth || echo "⚠️  Nancy audit completed with findings"
 	@echo "✅ Dependency audit completed"
 
 security-gosec: ## Run Gosec security scanner
@@ -702,9 +688,9 @@ security-gosec: ## Run Gosec security scanner
 
 security-vulncheck: ## Run Go vulnerability checker
 	@echo "Ensuring govulncheck is installed..."
-	@command -v $(GOVULNCHECK) >/dev/null 2>&1 || $(TOOLCHAIN_ENV) go install golang.org/x/vuln/cmd/govulncheck@v2.8.0
+	@command -v $(GOVULNCHECK) >/dev/null 2>&1 || $(GO) install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
 	@echo "Running Go vulnerability check..."
-	@$(TOOLCHAIN_ENV) "$(GOVULNCHECK)" ./...
+	@$(GO) run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
 	@echo "✅ Go vulnerability check passed"
 
 # ===================================================================================================
@@ -716,25 +702,25 @@ deps: deps-tidy deps-vendor deps-verify ## Install and verify dependencies
 
 deps-vendor: ## Refresh vendor directory
 	@echo "Vendoring dependencies..."
-	@$(TOOLCHAIN_ENV) go mod vendor
+	@$(GO) mod vendor
 	@echo "✅ Dependencies vendored"
 
 deps-update: ## Update dependencies to latest versions
 	@echo "Updating dependencies..."
-	@$(TOOLCHAIN_ENV) go get -u ./...
-	@$(TOOLCHAIN_ENV) go mod tidy
+	@$(GO) get -u ./...
+	@$(GO) mod tidy
 	@$(MAKE) deps-vendor
 	@echo "✅ Dependencies updated"
 
 deps-tidy: ## Clean and organize Go modules
 	@echo "Tidying Go modules..."
-	@$(TOOLCHAIN_ENV) go mod tidy
-	@$(TOOLCHAIN_ENV) go mod verify
+	@$(GO) mod tidy
+	@$(GO) mod verify
 	@echo "✅ Go modules tidied"
 
 deps-verify: ## Verify dependency integrity
 	@echo "Verifying dependency integrity..."
-	@$(TOOLCHAIN_ENV) go mod verify
+	@$(GO) mod verify
 	@echo "✅ Dependencies verified"
 
 review-zip: ## Create a ZIP snapshot for offline review
@@ -750,7 +736,7 @@ verify-zip: ## Verify the purity of the review ZIP artifact
 deps-licenses: ## Generate dependency license report
 	@echo "Generating dependency license report..."
 	@mkdir -p dist
-	@go-licenses report ./... > dist/licenses.txt 2>/dev/null || echo "go-licenses not available, install with: go install github.com/google/go-licenses@v2.8.0"
+	@go-licenses report ./... > dist/licenses.txt 2>/dev/null || echo "go-licenses not available, install with: $(GO) install github.com/google/go-licenses@v2.8.0"
 	@echo "✅ License report generated: dist/licenses.txt"
 
 # ===================================================================================================
@@ -760,17 +746,17 @@ deps-licenses: ## Generate dependency license report
 dev-tools: ## Install all development tools
 	@echo "Installing development tools..."
 	@echo "Installing golangci-lint..."
-	@go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.8.0
+	@$(GO) install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 	@echo "Installing oapi-codegen..."
-	@go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.8.0
+	@$(GO) install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@$(OAPI_CODEGEN_VERSION)
 	@echo "Installing govulncheck..."
-	@go install golang.org/x/vuln/cmd/govulncheck@v2.8.0
+	@$(GO) install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
 	@echo "Installing syft for SBOM generation..."
-	@go install github.com/anchore/syft/cmd/syft@v2.8.0
+	@$(GO) install github.com/anchore/syft/cmd/syft@$(SYFT_VERSION)
 	@echo "Installing grype for vulnerability scanning..."
-	@go install github.com/anchore/grype/cmd/grype@v2.8.0
-	@echo "Installing go-licenses for license reporting..."
-	@go install github.com/google/go-licenses@v2.8.0
+	@$(GO) install github.com/anchore/grype/cmd/grype@$(GRYPE_VERSION)
+	@echo "Installing go-licenses..."
+	@$(GO) install github.com/google/go-licenses@v1.6.0
 	@echo "✅ Development tools installed"
 
 check-tools: ## Verify development tools are installed
@@ -869,7 +855,7 @@ dev: stop-local ## Run daemon locally with .env configuration
 	export XG2G_OWI_BASE=$${XG2G_OWI_BASE:-}; \
 	export XG2G_BOUQUET=$${XG2G_BOUQUET:-}; \
 	export XG2G_LISTEN=$${XG2G_LISTEN:-:8088}; \
-	go build $(BUILD_FLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/daemon && \
+	$(GO) build $(BUILD_FLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/daemon && \
 	./$(BUILD_DIR)/$(BINARY_NAME)
 
 up-dev: ## Start docker dev stack (with .env + local build)
@@ -962,7 +948,7 @@ check-env: ## Check .env configuration
 	@docker compose config
 
 validate: check-env ## Validate configuration
-	@test -f config.yaml && go run ./cmd/validate -f config.yaml || go run ./cmd/validate -f config.example.yaml
+	@test -f config.yaml && $(GO) run ./cmd/validate -f config.yaml || $(GO) run ./cmd/validate -f config.example.yaml
 
 schema-docs: ## Generate docs/config.md from JSON Schema
 	@echo "Generating config documentation from JSON Schema..."
@@ -1034,4 +1020,4 @@ contract-matrix: ## P4-1: Run contract matrix golden snapshot gate
 
 gate-decision-proof: ## Phase 4.7: Run Playback Decision Engine Proof System (CTO-Grade)
 	@echo "Running Playback Decision Engine Proof System..."
-	@XG2G_PROOF_SEED=12345 go test -count=1 -v ./internal/control/recordings/decision -run 'TestProp_|TestGate_|TestModel'
+	@XG2G_PROOF_SEED=12345 $(GO) test -count=1 -v ./internal/control/recordings/decision -run 'TestProp_|TestGate_|TestModel'

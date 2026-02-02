@@ -4,11 +4,23 @@
 
 set -euo pipefail
 
+# Fail-closed toolchain governance
+export GOTOOLCHAIN=local
+
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 NEW_VERSION="${1:-}"
 
 if [[ -z "$NEW_VERSION" ]]; then
     echo "❌ Usage: $0 <VERSION> (e.g. 3.1.6)"
+    exit 1
+fi
+
+# 0. Behavioral Changes Check (Governance Gate)
+# Ensures that significant changes (like config defaults) are officially acknowledged.
+if [[ ! -f "docs/releases/v${NEW_VERSION}_behavioral_changes.txt" ]]; then
+    echo "⚠️  No behavioral changes file found: docs/releases/v${NEW_VERSION}_behavioral_changes.txt"
+    echo "   If there are NO behavioral changes, create an empty file with that name."
+    echo "   If there ARE changes (e.g. HLS.SegmentSeconds 4->6), document them there."
     exit 1
 fi
 
@@ -43,6 +55,12 @@ fi
 
 # 4. Render Documentation (Idempotent)
 make docs-render
+
+# 4b. Record Behavioral Changes to Walkthrough/Changelog
+# This ensures they are part of the commit history.
+echo "### Behavioral Changes (v${NEW_VERSION})" >> "${REPO_ROOT}/CHANGELOG.md"
+cat "docs/releases/v${NEW_VERSION}_behavioral_changes.txt" >> "${REPO_ROOT}/CHANGELOG.md"
+echo -e "\n" >> "${REPO_ROOT}/CHANGELOG.md"
 
 # 5. Update RELEASE_MANIFEST.json
 # Updated exclusively here per Hard Condition #1

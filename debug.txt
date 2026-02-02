@@ -1,0 +1,7 @@
+Test: Whitelist_UnknownParameter
+Err Type: *openwebif.OWIError
+Target Type: **openwebif.OWIError
+errors.As result: true
+Unwrapped Status: 0
+shouldPromoteAToB result: false (want true)
+
