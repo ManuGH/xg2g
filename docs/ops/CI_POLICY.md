@@ -51,3 +51,22 @@ Purpose: Make CI deterministic, offline-reproducible, and not dependent on GitHu
 
 - **External Audit Mode**  
   See `EXTERNAL_AUDIT_MODE.md` for source-only ZIP review and offline verification protocol.
+
+## Active Workflow Triggers
+
+| Workflow | Triggers | Notes |
+| --- | --- | --- |
+| CI (PR Gate) | `pull_request`, `push(main)`, `workflow_dispatch` | Required check |
+| Repository Health Checks | `pull_request`, `push(main)` | Required checks |
+| Runner Smoke Test | `workflow_dispatch` | Diagnostic only |
+| CI Nightly | `workflow_dispatch` | Deep/expensive |
+| Lint Invariants | `workflow_dispatch` | Informational |
+| Phase 4 Guardrails | `workflow_dispatch` | Informational |
+| UI Contract Enforcement | `workflow_dispatch` | Informational |
+| CodeQL | `workflow_dispatch` | Security (async) |
+| Gosec | `workflow_dispatch` | Security (async) |
+| Govulncheck | `workflow_dispatch` | Security (async) |
+| Scorecard | `workflow_dispatch` | Security (async) |
+| Docker | `push(tags)`, `workflow_dispatch` | Release pipeline |
+| Container Security | `push(tags)`, `workflow_dispatch` | Release pipeline |
+| Release | `push(tags)`, `workflow_dispatch` | Release pipeline |
