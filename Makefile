@@ -1004,7 +1004,7 @@ gate-v3-contract: ## Verify v3 contract hygiene, casing, and shadowing
 	@./scripts/verify-v3-shadowing.sh
 	@go test -v -count=1 ./internal/control/http/v3 -run "(TestV3_ResponseGolden|TestProblemDetails_Compliance|TestPlaybackInfo_SchemaCompliance)"
 
-quality-gates: lint-invariants verify-hermetic-codegen gate-a gate-webui gate-repo-hygiene gate-v3-contract verify-generate verify-config lint test-cover security-vulncheck ## Validate all quality gates
+quality-gates: verify-config verify-docs-compiled verify-generate verify-hermetic-codegen gate-repo-hygiene gate-v3-contract gate-a gate-webui lint-invariants lint test-cover security-vulncheck ## Validate all quality gates
 	@echo "Validating quality gates..."
 	@echo "✅ All quality gates passed"
 

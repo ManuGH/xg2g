@@ -22,9 +22,10 @@ var (
 
 func observeTimerUpdate(result, reason string, nativeFlavor TimerChangeFlavor, cap TimerChangeCap) {
 	nf := "none"
-	if nativeFlavor == TimerChangeFlavorA {
+	switch nativeFlavor {
+	case TimerChangeFlavorA:
 		nf = "A"
-	} else if nativeFlavor == TimerChangeFlavorB {
+	case TimerChangeFlavorB:
 		nf = "B"
 	}
 

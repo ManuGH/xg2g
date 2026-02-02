@@ -19,7 +19,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
@@ -62,8 +61,7 @@ type Client struct {
 	// Request caching (v1.3.0+)
 
 	// Timer Change Capabilities (v2.1.0+)
-	timerChangeOnce sync.Once
-	timerChangeCap  atomic.Value // stores *TimerChangeCap
+	timerChangeCap atomic.Value // stores *TimerChangeCap
 
 	cache    Cacher
 	cacheTTL time.Duration

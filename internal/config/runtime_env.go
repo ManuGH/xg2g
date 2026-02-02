@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
 	streamprofile "github.com/ManuGH/xg2g/internal/core/profile"
 )
@@ -218,18 +217,6 @@ func getInt(getenv func(string) string, key string, defaultValue int) int {
 		return defaultValue
 	}
 	return i
-}
-
-func getDuration(getenv func(string) string, key string, defaultValue time.Duration) time.Duration {
-	raw := getenv(key)
-	if raw == "" {
-		return defaultValue
-	}
-	d, err := time.ParseDuration(raw)
-	if err != nil {
-		return defaultValue
-	}
-	return d
 }
 
 func getBool(getenv func(string) string, key string, defaultValue bool) bool {
