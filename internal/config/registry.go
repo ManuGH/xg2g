@@ -111,8 +111,8 @@ func buildRegistry() (*Registry, error) {
 		{Path: "enigma2.rateLimit", Env: "", FieldPath: "Enigma2.RateLimit", Profile: ProfileAdvanced, Status: StatusActive},
 		{Path: "enigma2.rateBurst", Env: "", FieldPath: "Enigma2.RateBurst", Profile: ProfileAdvanced, Status: StatusActive},
 		{Path: "enigma2.userAgent", Env: "", FieldPath: "Enigma2.UserAgent", Profile: ProfileAdvanced, Status: StatusActive},
-		{Path: "enigma2.analyzeDuration", Env: "", FieldPath: "Enigma2.AnalyzeDuration", Profile: ProfileAdvanced, Status: StatusActive, Default: "10000000"},
-		{Path: "enigma2.probeSize", Env: "", FieldPath: "Enigma2.ProbeSize", Profile: ProfileAdvanced, Status: StatusActive, Default: "32M"},
+		{Path: "enigma2.analyzeDuration", Env: "", FieldPath: "Enigma2.AnalyzeDuration", Profile: ProfileAdvanced, Status: StatusActive, Default: "2000000"},
+		{Path: "enigma2.probeSize", Env: "", FieldPath: "Enigma2.ProbeSize", Profile: ProfileAdvanced, Status: StatusActive, Default: "5M"},
 		{Path: "enigma2.preflightTimeout", Env: "XG2G_E2_PREFLIGHT_TIMEOUT", FieldPath: "Enigma2.PreflightTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 10 * time.Second},
 		// --- API ---
 		{Path: "api.listenAddr", Env: "XG2G_LISTEN", FieldPath: "APIListenAddr", Profile: ProfileSimple, Status: StatusActive, Default: ":8088"},
@@ -124,7 +124,7 @@ func buildRegistry() (*Registry, error) {
 		// --- EPG ---
 		{Path: "epg.enabled", Env: "XG2G_EPG_ENABLED", FieldPath: "EPGEnabled", Profile: ProfileSimple, Status: StatusActive, Default: true},
 		{Path: "epg.days", Env: "XG2G_EPG_DAYS", FieldPath: "EPGDays", Profile: ProfileSimple, Status: StatusActive, Default: 14},
-		{Path: "epg.maxConcurrency", Env: "XG2G_EPG_MAX_CONCURRENCY", FieldPath: "EPGMaxConcurrency", Profile: ProfileAdvanced, Status: StatusActive, Default: 5},
+		{Path: "epg.maxConcurrency", Env: "XG2G_EPG_MAX_CONCURRENCY", FieldPath: "EPGMaxConcurrency", Profile: ProfileAdvanced, Status: StatusActive, Default: 1},
 		{Path: "epg.timeoutMs", Env: "XG2G_EPG_TIMEOUT_MS", FieldPath: "EPGTimeoutMS", Profile: ProfileAdvanced, Status: StatusActive, Default: 5000},
 		{Path: "epg.retries", Env: "XG2G_EPG_RETRIES", FieldPath: "EPGRetries", Profile: ProfileAdvanced, Status: StatusActive, Default: 2},
 		{Path: "epg.source", Env: "XG2G_EPG_SOURCE", FieldPath: "EPGSource", Profile: ProfileAdvanced, Status: StatusActive, Default: "per-service"},
@@ -135,20 +135,20 @@ func buildRegistry() (*Registry, error) {
 		// --- ENGINE ---
 		{Path: "engine.enabled", Env: "XG2G_ENGINE_ENABLED", FieldPath: "Engine.Enabled", Profile: ProfileAdvanced, Status: StatusActive, Default: true}, // Fix A: Secure by default
 		{Path: "engine.mode", Env: "XG2G_ENGINE_MODE", FieldPath: "Engine.Mode", Profile: ProfileAdvanced, Status: StatusActive, Default: "standard"},
-		{Path: "engine.idleTimeout", Env: "XG2G_ENGINE_IDLE_TIMEOUT", FieldPath: "Engine.IdleTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 1 * time.Minute},
+		{Path: "engine.idleTimeout", Env: "XG2G_ENGINE_IDLE_TIMEOUT", FieldPath: "Engine.IdleTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 5 * time.Minute},
 		{Path: "engine.tunerSlots", Env: "XG2G_TUNER_SLOTS", FieldPath: "Engine.TunerSlots", Profile: ProfileAdvanced, Status: StatusActive},
 		{Path: "engine.maxPool", Env: "XG2G_ENGINE_MAX_POOL", FieldPath: "Engine.MaxPool", Profile: ProfileAdvanced, Status: StatusActive, Default: 2},
 		{Path: "engine.gpuLimit", Env: "XG2G_ENGINE_GPU_LIMIT", FieldPath: "Engine.GPULimit", Profile: ProfileAdvanced, Status: StatusActive, Default: 8},
 		{Path: "engine.cpuThresholdScale", Env: "XG2G_ENGINE_CPU_SCALE", FieldPath: "Engine.CPUThresholdScale", Profile: ProfileAdvanced, Status: StatusActive, Default: 1.5},
 
 		// --- STORE ---
-		{Path: "store.backend", Env: "XG2G_STORE_BACKEND", FieldPath: "Store.Backend", Profile: ProfileAdvanced, Status: StatusActive, Default: "memory"}, // Consistent with setDefaults
+		{Path: "store.backend", Env: "XG2G_STORE_BACKEND", FieldPath: "Store.Backend", Profile: ProfileAdvanced, Status: StatusActive, Default: "sqlite"}, // Consistent with setDefaults
 		{Path: "store.path", Env: "XG2G_STORE_PATH", FieldPath: "Store.Path", Profile: ProfileAdvanced, Status: StatusActive, Default: "/var/lib/xg2g/store"},
 
 		// --- HLS ---
 		{Path: "hls.root", Env: "XG2G_HLS_ROOT", FieldPath: "HLS.Root", Profile: ProfileAdvanced, Status: StatusActive},
 		{Path: "hls.dvrWindow", Env: "XG2G_HLS_DVR_WINDOW", FieldPath: "HLS.DVRWindow", Profile: ProfileAdvanced, Status: StatusActive, Default: 45 * time.Minute}, // Fix B key
-		{Path: "hls.segmentSeconds", Env: "XG2G_HLS_SEGMENT_SECONDS", FieldPath: "HLS.SegmentSeconds", Profile: ProfileAdvanced, Status: StatusActive, Default: 6}, // Best Practice 2026
+		{Path: "hls.segmentSeconds", Env: "XG2G_HLS_SEGMENT_SECONDS", FieldPath: "HLS.SegmentSeconds", Profile: ProfileAdvanced, Status: StatusActive, Default: 6}, // Best Practice 2026 Standard Profile (was 4, which failed validation)
 
 		// --- FFMPEG ---
 		{Path: "ffmpeg.bin", Env: "XG2G_FFMPEG_BIN", FieldPath: "FFmpeg.Bin", Profile: ProfileAdvanced, Status: StatusActive, Default: "ffmpeg"},

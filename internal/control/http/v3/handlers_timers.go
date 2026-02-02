@@ -6,6 +6,7 @@ package v3
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/url"
 	"os"
@@ -357,44 +358,39 @@ func (s *Server) UpdateTimer(w http.ResponseWriter, r *http.Request, timerId str
 		return
 	}
 
-	supportsNative := client.HasTimerChange(ctx)
+	supportsNative := false
+	cap, err := client.DetectTimerChange(ctx)
+	if err == nil {
+		supportsNative = cap.Supported
+	}
 	log.L().Info().Str("timerId", timerId).Bool("native", supportsNative).Msg("Updating timer")
 
-	if supportsNative {
-		err = client.UpdateTimer(ctx, oldSRef, oldBegin, oldEnd, newSRef, newBegin, newEnd, newName, newDesc, true)
-		if err != nil {
-			log.L().Error().Err(err).Str("timerId", timerId).Msg("native update failed")
-			status := http.StatusBadGateway
-			errStr := err.Error()
-			if strings.Contains(err.Error(), "Konflikt") || strings.Contains(err.Error(), "Conflict") || strings.Contains(err.Error(), "overlap") {
-				status = http.StatusConflict
-			}
-			writeProblem(w, r, status, "dvr/update_failed", "Update Failed", "UPDATE_FAILED", errStr, nil)
-			return
-		}
-	} else {
-		// Fallback: Delete + Add
-		log.L().Info().Str("timerId", timerId).Msg("performing delete+add fallback for update")
-		err = client.DeleteTimer(ctx, oldSRef, oldBegin, oldEnd)
-		if err != nil {
-			log.L().Error().Err(err).Str("timerId", timerId).Msg("delete failed")
-			writeProblem(w, r, http.StatusInternalServerError, "dvr/receiver_error", "Delete Failed", "DELETE_FAILED", "Failed to delete timer from receiver during update", nil)
+	newEnabled := existing.Disabled == 0
+	if req.Enabled != nil {
+		newEnabled = *req.Enabled
+	}
+
+	// Execute Update (Client encapsulates Detection, Flavor Logic, Promotion, and Fail-Closed Fallback)
+	err = client.UpdateTimer(ctx, oldSRef, oldBegin, oldEnd, newSRef, newBegin, newEnd, newName, newDesc, newEnabled)
+	if err != nil {
+		// Strict Error Mapping (no string matching!)
+		if errors.Is(err, openwebif.ErrTimerUpdatePartial) {
+			// Critical Partial Failure: Add Succeeded, Delete Failed.
+			// Return 502 Bad Gateway to indicate upstream inconsistency (Receiver State vs Request).
+			// Problem Type: dvr/receiver_inconsistent
+			log.L().Error().Str("timerId", timerId).Err(err).Msg("partial failure in timer update")
+			writeProblem(w, r, http.StatusBadGateway, "dvr/receiver_inconsistent", "Partial failure: Timer added but old timer could not be deleted. Please check for duplicates.", "RECEIVER_INCONSISTENT", err.Error(), nil)
 			return
 		}
 
-		err = client.AddTimer(ctx, newSRef, newBegin, newEnd, newName, newDesc)
-		if err != nil {
-			log.L().Error().Err(err).Str("timerId", timerId).Msg("fallback add failed, attempting rollback")
-			// Rollback
-			_ = client.AddTimer(ctx, oldSRef, oldBegin, oldEnd, existing.Name, existing.Description)
-
-			status := http.StatusBadGateway
-			if strings.Contains(err.Error(), "Konflikt") || strings.Contains(err.Error(), "Conflict") {
-				status = http.StatusConflict
-			}
-			writeProblem(w, r, status, "dvr/receiver_inconsistent", "Update Failed (Add Step)", "RECEIVER_INCONSISTENT", err.Error(), nil)
-			return
+		log.L().Error().Err(err).Str("timerId", timerId).Msg("update failed")
+		status := http.StatusBadGateway
+		errStr := err.Error()
+		if strings.Contains(err.Error(), "Konflikt") || strings.Contains(err.Error(), "Conflict") || strings.Contains(err.Error(), "overlap") {
+			status = http.StatusConflict
 		}
+		writeProblem(w, r, status, "dvr/update_failed", "Update Failed", "UPDATE_FAILED", errStr, nil)
+		return
 	}
 
 	// Verify Existence of NEW timer
