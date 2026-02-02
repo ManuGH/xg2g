@@ -9,7 +9,7 @@
         docker docker-build docker-build-cpu docker-build-gpu docker-build-all docker-security docker-tag docker-push docker-clean \
         sbom deps deps-update deps-tidy deps-verify deps-licenses \
 	security security-scan security-audit security-vulncheck \
-	quality-gates pre-commit install dev-tools check-tools generate-config verify-config \
+	quality-gates quality-gates-offline quality-gates-online pre-commit install dev-tools check-tools generate-config verify-config \
         release-check release-build release-tag release-notes \
         dev up down status prod-up prod-down prod-logs check-env \
         restart prod-restart ps prod-ps ui-build codex certs setup build-ffmpeg \
@@ -27,7 +27,8 @@ SOURCE_DATE_EPOCH ?= $(shell git log -1 --pretty=%ct 2>/dev/null || date -u +%s)
 export SOURCE_DATE_EPOCH
 export TZ := UTC
 export GOFLAGS := -trimpath -buildvcs=false -mod=vendor
-export GOTOOLCHAIN := go1.25.6
+GOTOOLCHAIN ?= go1.25.6
+export GOTOOLCHAIN
 GO := go
 
 # Build configuration
@@ -99,7 +100,9 @@ help: ## Show this help message
 	@echo ""
 	@echo "Enterprise Testing:"
 	@echo "  codex             Run the Codex review bundle (lint + race/coverage + govulncheck)"
-	@echo "  quality-gates     Validate all quality gates (coverage, lint, security)"
+	@echo "  quality-gates     Validate all online quality gates (coverage, lint, security)"
+	@echo "  quality-gates-offline  Validate offline-only gates (no network)"
+	@echo "  quality-gates-online   Validate online gates (coverage, lint, security)"
 	@echo ""
 	@echo "Docker Operations:"
 	@echo "  docker              Build Docker image"
@@ -418,7 +421,7 @@ verify-no-panic: ## Gate: No panics in production code
 
 verify-no-ignored-errors: ## Gate: No ignored errors
 	@echo "Checking for ignored errors..."
-	@if $(GO) grep -r "_ = err" internal/ --include="*.go" | grep -v "_test.go"; then \
+	@if grep -r "_ = err" internal/ --include="*.go" | grep -v "_test.go"; then \
 		echo "❌ Ignored error found"; \
 		exit 1; \
 	fi
@@ -503,15 +506,13 @@ test-race: ## Run tests with race detection
 test-cover: ## Run tests with coverage reporting
 	@echo "Running tests with coverage..."
 	@mkdir -p $(ARTIFACTS_DIR)
-	@$(GO) test ./... -v -race -coverprofile=$(ARTIFACTS_DIR)/coverage.out -covermode=atomic
+	@$(GO) test -covermode=atomic -coverprofile=$(ARTIFACTS_DIR)/coverage.out -coverpkg=./... ./...
 	@$(GO) tool cover -html=$(ARTIFACTS_DIR)/coverage.out -o $(ARTIFACTS_DIR)/coverage.html
 	@echo "Coverage report generated: $(ARTIFACTS_DIR)/coverage.html"
-	@echo "Overall coverage:"
-	@go tool cover -func=$(ARTIFACTS_DIR)/coverage.out | tail -1
-	@echo "Checking coverage thresholds..."
-	@total_coverage=$$(go tool cover -func=$(ARTIFACTS_DIR)/coverage.out | tail -1 | awk '{print $$3}' | sed 's/%//'); \
-	epg_coverage=$$(go tool cover -func=$(ARTIFACTS_DIR)/coverage.out | grep 'internal/epg' | awk '{sum+=$$3; count++} END {if(count>0) printf "%.1f", sum/count; else print "0"}'); \
-	echo "Total coverage: $$total_coverage% (threshold: $(COVERAGE_THRESHOLD)%)"; \
+	@$(GO) tool cover -func=$(ARTIFACTS_DIR)/coverage.out | tail -1
+	@total_coverage=$$($(GO) tool cover -func=$(ARTIFACTS_DIR)/coverage.out | tail -1 | awk '{print $$3}' | sed 's/%//'); \
+	epg_coverage=$$($(GO) tool cover -func=$(ARTIFACTS_DIR)/coverage.out | grep 'internal/epg' | awk '{sum+=$$3; count++} END {if(count>0) printf "%.1f", sum/count; else print "0"}'); \
+	echo "Overall Coverage: $$total_coverage% (threshold: $(COVERAGE_THRESHOLD)%)"; \
 	echo "EPG coverage: $$epg_coverage% (threshold: $(EPG_COVERAGE_THRESHOLD)%)"; \
 	if [ $$(echo "$$total_coverage >= $(COVERAGE_THRESHOLD)" | bc -l) -eq 1 ] && [ $$(echo "$$epg_coverage >= $(EPG_COVERAGE_THRESHOLD)" | bc -l) -eq 1 ]; then \
 		echo "✅ Coverage thresholds met"; \
@@ -952,7 +953,7 @@ validate: check-env ## Validate configuration
 
 schema-docs: ## Generate docs/config.md from JSON Schema
 	@echo "Generating config documentation from JSON Schema..."
-	@go run ./tools/schema-docs ./docs/guides/config.schema.json ./docs/guides/config.md
+	@$(GO) run cmd/schemadocs/main.go > docs/config.md
 	@echo "✓ Generated docs/config.md"
 
 schema-validate: ## Validate all YAML config files against JSON Schema
@@ -985,12 +986,21 @@ gate-repo-hygiene:
 .PHONY: gate-v3-contract
 gate-v3-contract: ## Verify v3 contract hygiene, casing, and shadowing
 	@echo "--- gate-v3-contract ---"
+	@$(GO) test -v ./internal/control/http/v3 -run TestContractHygiene
 	@python3 ./scripts/verify-openapi-no-duplicate-keys.py api/openapi.yaml
 	@python3 ./scripts/lib/openapi_v3_scope.py api/openapi.yaml scripts/openapi-legacy-allowlist.json
 	@./scripts/verify-v3-shadowing.sh
 	@go test -v -count=1 ./internal/control/http/v3 -run "(TestV3_ResponseGolden|TestProblemDetails_Compliance|TestPlaybackInfo_SchemaCompliance)"
 
-quality-gates: verify-config verify-docs-compiled verify-generate verify-hermetic-codegen gate-repo-hygiene gate-v3-contract gate-a gate-webui lint-invariants lint test-cover security-vulncheck ## Validate all quality gates
+quality-gates: quality-gates-online ## Validate all online quality gates (coverage, lint, security)
+
+quality-gates-offline: ## Offline-only gates (no network, no codegen)
+	@echo "Validating offline gates..."
+	@$(GO) test ./...
+	@$(GO) vet ./...
+	@echo "✅ Offline gates passed"
+
+quality-gates-online: verify-config verify-docs-compiled verify-generate verify-hermetic-codegen gate-repo-hygiene gate-v3-contract gate-a gate-webui lint-invariants lint test-cover security-vulncheck ## Validate all online quality gates
 	@echo "Validating quality gates..."
 	@echo "✅ All quality gates passed"
 
