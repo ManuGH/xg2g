@@ -2,15 +2,8 @@ name: docker
 
 on:
   push:
-    branches: [main]
     tags:
       - "v*"
-    paths:
-      - Dockerfile
-      - "**/*.go"
-      - go.mod
-      - go.sum
-      - .github/workflows/docker.yml
   workflow_dispatch:
 
 concurrency:

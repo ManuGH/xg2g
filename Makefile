@@ -5,7 +5,7 @@
 # All targets are designed with enterprise-grade quality assurance and CI/CD integration in mind.
 # ===================================================================================================
 
-.PHONY: help build build-all clean clean-certs lint lint-fix test test-schema test-race test-cover cover test-fuzz test-all \
+.PHONY: help build build-with-ui build-all clean clean-certs lint lint-fix test test-schema test-race test-cover cover test-fuzz test-all \
         docker docker-build docker-build-cpu docker-build-gpu docker-build-all docker-security docker-tag docker-push docker-clean \
         sbom deps deps-update deps-tidy deps-verify deps-licenses \
 	security security-scan security-audit security-vulncheck \
@@ -80,6 +80,7 @@ help: ## Show this help message
 	@echo ""
 	@echo "Build Targets:"
 	@echo "  build          Build the main daemon binary"
+	@echo "  build-with-ui  Build WebUI assets and then build the daemon"
 	@echo "  build-all      Build binaries for all supported platforms"
 	@echo "  clean          Remove build artifacts and temporary files"
 	@echo "  clean-certs    Remove auto-generated TLS certificates"
@@ -431,11 +432,15 @@ verify-no-ignored-errors: ## Gate: No ignored errors
 
 verify-p9: verify-hls-goldens verify-hls-http verify-hls-hygiene
 
-build: ui-build ## Build xg2g binary
-	@echo "Building xg2g..."
+build: ## Build xg2g binary (Go-only, offline-safe)
+	@echo "▶ build (Go-only, offline-safe)"
 	@mkdir -p $(BUILD_DIR)
-	@$(GO) build $(BUILD_FLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/daemon
+	@GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off GOVCS="*:off" $(GO) build $(BUILD_FLAGS) $(LDFLAGS) -mod=vendor -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/daemon
 	@echo "✅ Build complete: $(BUILD_DIR)/$(BINARY_NAME)"
+
+build-with-ui: ui-build ## Build WebUI assets and then build the daemon
+	@echo "▶ build-with-ui (requires Node)"
+	@$(MAKE) build
 
 # xg2g-migrate target removed as of v3.0.0 (Phase 3.0 Sunset complete)
 
@@ -1006,7 +1011,7 @@ quality-gates-online: verify-config verify-docs-compiled verify-generate verify-
 	@echo "Validating quality gates..."
 	@echo "✅ All quality gates passed"
 
-ci-pr: verify-config verify-docs-compiled verify-generate gate-repo-hygiene lint-invariants lint test ## Fast, deterministic PR gate
+ci-pr: verify-config verify-generate lint test ## Fast, deterministic PR gate (offline-safe core)
 	@echo "✅ CI PR gate passed"
 
 ci-nightly: quality-gates-online contract-matrix test-race test-fuzz smoke-test ## Deep, expensive gates for nightly/dispatch

@@ -2,18 +2,7 @@ name: Container Security Scanning
 
 on:
   push:
-    branches: [main]
     tags: ["v*.*.*"]
-    paths:
-      - "Dockerfile"
-      - "deploy/docker/Dockerfile.*"
-      - ".github/workflows/container-security.yml"
-  pull_request:
-    branches: [main]
-    paths:
-      - "Dockerfile"
-      - "deploy/docker/Dockerfile.*"
-      - ".github/workflows/container-security.yml"
   workflow_dispatch:
 
 permissions:

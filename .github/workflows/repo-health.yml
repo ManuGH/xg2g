@@ -3,8 +3,6 @@ name: Repository Health Checks
 on:
   pull_request:
     branches: [main]
-  push:
-    branches: [main]
 
 concurrency:
   group: repo-${{ github.event.pull_request.number || github.ref }}

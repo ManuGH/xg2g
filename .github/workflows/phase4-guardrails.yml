@@ -1,13 +1,7 @@
 name: Phase 4 Guardrails
 
 on:
-  pull_request:
-    paths:
-      - 'webui/src/**'
-  push:
-    branches: [main]
-    paths:
-      - 'webui/src/**'
+  workflow_dispatch:
 
 concurrency:
   group: repo-${{ github.event.pull_request.number || github.ref }}

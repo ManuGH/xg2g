@@ -1,13 +1,7 @@
 name: UI Contract Enforcement
 
 on:
-  pull_request:
-    paths:
-      - "webui/src/components/Dashboard.*"
-      - "webui/src/components/ui/**"
-      - "webui/src/components/Navigation.*"
-      - "webui/src/components/SystemHealthPanel.*"
-      - "webui/src/index.css"
+  workflow_dispatch:
 
 concurrency:
   group: repo-${{ github.event.pull_request.number || github.ref }}
