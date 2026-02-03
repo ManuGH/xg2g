@@ -99,7 +99,11 @@ jobs:
           touch internal/control/http/dist/index.html
 
       - name: Install System Dependencies
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+        run: |
+          sudo apt-get update && sudo apt-get install -y ffmpeg
+          which ffmpeg
+          ffmpeg -version
+          echo "PATH=$PATH"
 
       - name: Run PR gate
         run: make ci-pr
