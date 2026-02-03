@@ -65,7 +65,7 @@ jobs:
 
       - name: Upload SARIF to code scanning
         if: always()
-        uses: github/codeql-action/upload-sarif@b2a30dc39999a382061266ed139b439e6a2b8e0e
+        uses: github/codeql-action/init@9e8d0789d4a0fa9ceb6b1738f7e269594bdd67f0
         with:
           sarif_file: govulncheck.sarif
           category: govulncheck

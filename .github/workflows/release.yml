@@ -43,7 +43,7 @@ jobs:
           cache: true
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@b2a30dc39999a382061266ed139b439e6a2b8e0e
+        uses: github/codeql-action/init@9e8d0789d4a0fa9ceb6b1738f7e269594bdd67f0
         with:
           languages: ${{ matrix.language }}
       - name: Build Go (Go Analysis)
@@ -51,7 +51,7 @@ jobs:
         run: go build ./...
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@b2a30dc39999a382061266ed139b439e6a2b8e0e
+        uses: github/codeql-action/init@9e8d0789d4a0fa9ceb6b1738f7e269594bdd67f0
         with:
           category: "/language:${{ matrix.language }}"
 
@@ -109,7 +109,7 @@ jobs:
 
       - name: Upload SARIF to code scanning
         if: always()
-        uses: github/codeql-action/upload-sarif@b2a30dc39999a382061266ed139b439e6a2b8e0e # v3
+        uses: github/codeql-action/init@9e8d0789d4a0fa9ceb6b1738f7e269594bdd67f0 # v3
         with:
           sarif_file: govulncheck.sarif
           category: govulncheck
@@ -237,7 +237,7 @@ jobs:
       # Build Binaries with GoReleaser
       # =============================================
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@90a305d70b25797387b0a88099839659b2075674 # v6.2.1
+        uses: goreleaser/goreleaser-action@90a3faa9d0182683851fbfa97ca1a2cb983bfca3 # v6.2.1
         with:
           distribution: goreleaser
           version: latest
@@ -253,7 +253,7 @@ jobs:
         uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aed5d3f1fd7ad90c2ea # v3.10.0
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.10.0
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
@@ -264,7 +264,7 @@ jobs:
 
       - name: Extract metadata
         id: meta
-        uses: docker/metadata-action@369eb321f4291c739507f2d9e3b027c240a6bb23 # v5.7.0
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.7.0
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
@@ -275,7 +275,7 @@ jobs:
 
       - name: Build and push Docker image
         id: build-push
-        uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c8918c0b38 # v6.15.0
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.15.0
         with:
           context: .
           platforms: linux/amd64
@@ -346,7 +346,7 @@ jobs:
       # Upload SBOM to Release
       # =============================================
       - name: Upload SBOM to release
-        uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8ad5bf0dda2335 # v2.2.1
+        uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda # v2.2.1
         with:
           files: dist/sbom.spdx.json
 
@@ -362,7 +362,7 @@ jobs:
           trivy-config: .github/security/trivy.yaml
 
       - name: Upload Trivy results to GitHub Security
-        uses: github/codeql-action/upload-sarif@b2a30dc39999a382061266ed139b439e6a2b8e0e # v3
+        uses: github/codeql-action/init@9e8d0789d4a0fa9ceb6b1738f7e269594bdd67f0 # v3
         with:
           sarif_file: "trivy-results.sarif"
 

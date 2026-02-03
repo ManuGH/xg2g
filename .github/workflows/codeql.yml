@@ -36,7 +36,7 @@ jobs:
           cache: true
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@b2a30dc39999a382061266ed139b439e6a2b8e0e
+        uses: github/codeql-action/init@9e8d0789d4a0fa9ceb6b1738f7e269594bdd67f0
         with:
           languages: ${{ matrix.language }}
           # If you wish to specify custom queries, you can do so here or in a config file.
@@ -53,6 +53,6 @@ jobs:
           go build -tags=nogpu ./...
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@b2a30dc39999a382061266ed139b439e6a2b8e0e
+        uses: github/codeql-action/init@9e8d0789d4a0fa9ceb6b1738f7e269594bdd67f0
         with:
           category: "/language:${{ matrix.language }}"
