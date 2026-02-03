@@ -37,7 +37,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Setup Go
-        uses: actions/setup-go@3041dee5d64473ef0bad009d902ffdbccf9d1a33 # Latest stable
+        uses: actions/setup-go@f3787be646645f6c7bfecfa3e48f82a00d113834 # Latest stable
         with:
           go-version-file: go.mod
           cache: true
@@ -66,7 +66,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # Latest stable
 
       - name: Setup Go
-        uses: actions/setup-go@3041dee5d64473ef0bad009d902ffdbccf9d1a33 # Latest stable
+        uses: actions/setup-go@f3787be646645f6c7bfecfa3e48f82a00d113834 # Latest stable
         with:
           go-version-file: "go.mod"
           check-latest: true
@@ -186,7 +186,7 @@ jobs:
           fetch-depth: 0 # GoReleaser needs full history
 
       - name: Set up Go
-        uses: actions/setup-go@3041dee5d64473ef0bad009d902ffdbccf9d1a33 # v6
+        uses: actions/setup-go@f3787be646645f6c7bfecfa3e48f82a00d113834 # v6
         with:
           go-version-file: go.mod
           check-latest: true
@@ -198,7 +198,7 @@ jobs:
       # Build WebUI (Strategy A: CI-generated)
       # =============================================
       - name: Setup Node for WebUI
-        uses: actions/setup-node@65d868f8d4d85d7d4abb7de0875cde3fcc8798f5 # v4
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v4
         with:
           node-version: "22"
           cache: "npm"

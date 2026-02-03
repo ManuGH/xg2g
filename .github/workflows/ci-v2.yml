@@ -27,7 +27,7 @@ jobs:
         run: ./scripts/check-go-toolchain.sh
 
       - name: Setup Go
-        uses: actions/setup-go@3041dee5d64473ef0bad009d902ffdbccf9d1a33 # v6
+        uses: actions/setup-go@f3787be646645f6c7bfecfa3e48f82a00d113834 # v6
         with:
           go-version-file: go.mod
           check-latest: true
@@ -42,7 +42,7 @@ jobs:
           golangci-lint --version
 
       - name: Setup Node for OpenAPI + Markdown lint
-        uses: actions/setup-node@1d42962bbd92a94ed090950669d6739985926c0d # v6
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6
         with:
           node-version: "22"
           cache: "npm"

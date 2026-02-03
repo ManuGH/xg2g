@@ -160,7 +160,7 @@ jobs:
           exit-code: "0"
 
       - name: Upload configuration scan results
-        uses: actions/upload-artifact@4cea002c0b490497914856006bbd902ffdbccf9d1a33 # v4.4.3
+        uses: actions/upload-artifact@47309c993abb98030a35d55ef7ff34b7fa1074b5 # v4.4.3
         if: always()
         with:
           name: trivy-config-report
@@ -229,7 +229,7 @@ jobs:
           scan-type: "image"
 
       - name: Download previous SBOM (for diff)
-        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372fd98eef6 # v6.0.0
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v6.0.0
         continue-on-error: true
         with:
           name: container-sbom
@@ -252,7 +252,7 @@ jobs:
           fi
 
       - name: Upload SBOM
-        uses: actions/upload-artifact@4cea002c0b490497914856006bbd902ffdbccf9d1a33 # v4.4.3
+        uses: actions/upload-artifact@47309c993abb98030a35d55ef7ff34b7fa1074b5 # v4.4.3
         with:
           name: container-sbom
           path: sbom-production.json
