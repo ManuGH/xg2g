@@ -162,13 +162,28 @@ func createCacheDir(t *testing.T, cacheRoot, name string, modTime time.Time) str
 
 func createCacheDirNoFail(cacheRoot, name string, modTime time.Time) error {
 	dir := filepath.Join(cacheRoot, name)
-	if err := os.MkdirAll(dir, 0750); err != nil {
-		return err
+	// Retry loop to handle race with evictor
+	for attempt := 0; attempt < 3; attempt++ {
+		if err := os.MkdirAll(dir, 0750); err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(dir, "index.m3u8"), []byte("#EXTM3U"), 0600); err != nil {
+			if os.IsNotExist(err) {
+				// Evictor beat us to it. Retry.
+				continue
+			}
+			return err
+		}
+		// Chtimes might also fail if directory is gone
+		if err := os.Chtimes(dir, modTime, modTime); err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return err
+		}
+		return nil
 	}
-	if err := os.WriteFile(filepath.Join(dir, "index.m3u8"), []byte("#EXTM3U"), 0600); err != nil {
-		return err
-	}
-	return os.Chtimes(dir, modTime, modTime)
+	return fmt.Errorf("failed to create cache dir %s after retries (eviction race)", name)
 }
 
 func countCacheDirs(t *testing.T, cacheRoot string) int {
