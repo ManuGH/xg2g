@@ -22,6 +22,7 @@ import (
 // 3. Resolver MUST NOT be called.
 func TestVODPlayback_Path_Wiring_ScopeEnforcement(t *testing.T) {
 	t.Setenv("XG2G_INITIAL_REFRESH", "false")
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	tmpDir, err := os.MkdirTemp("", "xg2g-vod-scope-*")
 	require.NoError(t, err)
 	defer os.RemoveAll(tmpDir)

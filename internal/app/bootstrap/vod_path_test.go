@@ -42,6 +42,7 @@ func (m *mockResolver) GetMediaTruth(ctx context.Context, id string) (playback.M
 func TestVODPlayback_Path_Wiring_ErrorPath(t *testing.T) {
 	// 1. Setup minimal test config (Option A: Real components, temp dir)
 	t.Setenv("XG2G_INITIAL_REFRESH", "false") // Disable background refresh to prevent test hangs/noise
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
 	tmpDir, err := os.MkdirTemp("", "xg2g-vod-error-*")
 	require.NoError(t, err)
@@ -140,6 +141,7 @@ enigma2:
 func TestVODPlayback_Path_Wiring_SuccessPath(t *testing.T) {
 	// 1. Setup minimal test config
 	t.Setenv("XG2G_INITIAL_REFRESH", "false")
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
 	tmpDir, err := os.MkdirTemp("", "xg2g-vod-success-*")
 	require.NoError(t, err)

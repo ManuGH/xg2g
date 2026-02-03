@@ -18,6 +18,7 @@ func TestLoad_ValidMinimal(t *testing.T) {
 	// Ensure test directory exists (validation checks this)
 	testDir := t.TempDir()
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_DATA", testDir)
 
 	loader := NewLoader(filepath.Join("testdata", "valid-minimal.yaml"), "test")
 	cfg, err := loader.Load()
