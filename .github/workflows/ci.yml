@@ -98,5 +98,8 @@ jobs:
           touch internal/control/http/dist/.gitkeep
           touch internal/control/http/dist/index.html
 
+      - name: Install System Dependencies
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
       - name: Run PR gate
         run: make ci-pr
