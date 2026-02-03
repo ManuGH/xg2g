@@ -17,7 +17,11 @@ import (
 func TestLoadDefaults(t *testing.T) {
 	// Set OWIBase to keep defaults deterministic for this test.
 	_ = os.Setenv("XG2G_OWI_BASE", "http://example.com")
-	defer func() { _ = os.Unsetenv("XG2G_OWI_BASE") }()
+	_ = os.Setenv("XG2G_STORE_PATH", t.TempDir())
+	defer func() {
+		_ = os.Unsetenv("XG2G_OWI_BASE")
+		_ = os.Unsetenv("XG2G_STORE_PATH")
+	}()
 
 	loader := NewLoader("", "test-version")
 	cfg, err := loader.Load()
@@ -45,6 +49,7 @@ func TestLoadDefaults(t *testing.T) {
 
 func TestLoadFromYAML(t *testing.T) {
 	tmpDir := t.TempDir()
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	configPath := filepath.Join(tmpDir, "config.yaml")
 	customDataDir := filepath.Join(tmpDir, "custom-data")
 
@@ -95,6 +100,7 @@ picons:
 
 func TestENVOverridesFile(t *testing.T) {
 	tmpDir := t.TempDir()
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	configPath := filepath.Join(tmpDir, "config.yaml")
 	fileDataDir := filepath.Join(tmpDir, "file-data")
 	envDataDir := filepath.Join(tmpDir, "env-data")
@@ -133,6 +139,7 @@ openWebIF:
 
 func TestPrecedenceOrder(t *testing.T) {
 	tmpDir := t.TempDir()
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	configPath := filepath.Join(tmpDir, "config.yaml")
 	fileDataDir := filepath.Join(tmpDir, "file-data")
 
@@ -176,6 +183,7 @@ epg:
 
 func TestValidateEPGBounds(t *testing.T) {
 	tmpDir := t.TempDir()
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	baseCfg := func() AppConfig {
 		return AppConfig{
 			DataDir: tmpDir,
@@ -333,7 +341,7 @@ func TestOWIMaxBackoffFromENV(t *testing.T) {
 
 			// Set OWIBase for test clarity
 			t.Setenv("XG2G_OWI_BASE", "http://example.com")
-	t.Setenv("XG2G_STORE_PATH", t.TempDir())
+			t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
 			// Set test-specific ENV
 			if tt.envValue != "" {
@@ -356,6 +364,7 @@ func TestOWIMaxBackoffFromENV(t *testing.T) {
 
 // TestOWIMaxBackoffFromFile tests that maxBackoff from YAML config is read correctly
 func TestOWIMaxBackoffFromFile(t *testing.T) {
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	tests := []struct {
 		name            string
 		yamlBackoff     string
@@ -427,6 +436,7 @@ openWebIF:
 // TestOWIMaxBackoffENVOverridesFile tests precedence: ENV > File > Default
 func TestOWIMaxBackoffENVOverridesFile(t *testing.T) {
 	tmpDir := t.TempDir()
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	configPath := filepath.Join(tmpDir, "config.yaml")
 
 	// File config: 5s maxBackoff
@@ -465,6 +475,7 @@ openWebIF:
 // TestOWIBackoffConfigConsistency tests that all OWI timing configs work together
 func TestOWIBackoffConfigConsistency(t *testing.T) {
 	tmpDir := t.TempDir()
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	configPath := filepath.Join(tmpDir, "config.yaml")
 
 	yamlContent := fmt.Sprintf(`
@@ -504,6 +515,7 @@ openWebIF:
 
 // TestOWIMaxBackoffInvalidValues tests handling of invalid maxBackoff values
 func TestOWIMaxBackoffInvalidValues(t *testing.T) {
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	tests := []struct {
 		name          string
 		envValue      string
@@ -543,7 +555,7 @@ func TestOWIMaxBackoffInvalidValues(t *testing.T) {
 
 			// Set OWIBase for test clarity
 			t.Setenv("XG2G_OWI_BASE", "http://example.com")
-	t.Setenv("XG2G_STORE_PATH", t.TempDir())
+			t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
 			// Set test-specific ENV
 			if tt.envValue != "" {
@@ -574,6 +586,7 @@ func TestOWIMaxBackoffInvalidValues(t *testing.T) {
 // This test ensures that YAML can explicitly disable features and set zero values.
 func TestYAMLCanDisableFeatures(t *testing.T) {
 	tmpDir := t.TempDir()
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	configPath := filepath.Join(tmpDir, "config.yaml")
 	dataDir := filepath.Join(tmpDir, "data")
 
@@ -683,6 +696,7 @@ func TestParseScopedTokensFromEnv(t *testing.T) {
 
 func TestAPITokenRequiresScopes(t *testing.T) {
 	t.Setenv("XG2G_API_TOKEN", "token-only")
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
 	loader := NewLoader("", "test")
 	_, err := loader.Load()
@@ -693,6 +707,7 @@ func TestAPITokenRequiresScopes(t *testing.T) {
 
 func TestYAMLRejectsMissingTokenScopes(t *testing.T) {
 	tmpDir := t.TempDir()
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	configPath := filepath.Join(tmpDir, "config.yaml")
 
 	yamlContent := `
@@ -713,6 +728,7 @@ api:
 
 func TestYAMLRejectsTokenWithoutScopes(t *testing.T) {
 	tmpDir := t.TempDir()
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	configPath := filepath.Join(tmpDir, "config.yaml")
 
 	yamlContent := `
