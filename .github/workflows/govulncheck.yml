@@ -26,7 +26,7 @@ jobs:
           go-version-file: "go.mod"
           check-latest: true
         env:
-          GOTOOLCHAIN: local
+          GOTOOLCHAIN: auto
 
       - name: Install govulncheck
         uses: golang/govulncheck-action@b625fbe08f3bccbe446d94fbf87fcc875a4f50ee # v1

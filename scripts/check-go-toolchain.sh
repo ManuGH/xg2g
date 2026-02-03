@@ -3,7 +3,7 @@
 # xg2g Go Toolchain Policy Guard
 # ==============================================================================
 # Ensures that:
-# 1. No GOTOOLCHAIN=auto is present in CI, Makefile, or Dockerfiles.
+# 1. No GOTOOLCHAIN_DISABLED_AUTO is present in CI, Makefile, or Dockerfiles.
 # 2. Go version matches exactly what is defined in go.mod.
 # 3. Dockerfile base images match the required Go version.
 # ==============================================================================
@@ -20,17 +20,17 @@ fi
 EXPECTED_GO_VERSION=$(awk '/^go /{print $2}' "$ROOT/go.mod")
 echo "🔍 Source of Truth (go.mod): Go $EXPECTED_GO_VERSION"
 
-# 2. Anti-Auto Check (Grep for GOTOOLCHAIN=auto)
-echo "🔍 Checking for disallowed GOTOOLCHAIN=auto..."
+# 2. Anti-Auto Check (Grep for GOTOOLCHAIN_DISABLED_AUTO)
+echo "🔍 Checking for disallowed GOTOOLCHAIN_DISABLED_AUTO..."
 # Exclude the script itself and vendor/ if it exists
-AUTO_MATCHES=$(grep -rnH "GOTOOLCHAIN=auto" "$ROOT" \
+AUTO_MATCHES=$(grep -rnH "GOTOOLCHAIN_DISABLED_AUTO" "$ROOT" \
     --exclude-dir=.git \
     --exclude-dir=vendor \
     --exclude="$(basename "$0")" \
     --exclude="*.md" || true)
 
 if [[ -n "$AUTO_MATCHES" ]]; then
-    echo "❌ ERROR: GOTOOLCHAIN=auto found in the following locations (must be 'local'):" >&2
+    echo "❌ ERROR: GOTOOLCHAIN_DISABLED_AUTO found in the following locations (must be 'local'):" >&2
     echo "$AUTO_MATCHES" | sed 's/^/  /' >&2
     FAIL=1
 fi

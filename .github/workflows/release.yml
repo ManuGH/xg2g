@@ -71,7 +71,7 @@ jobs:
           go-version-file: "go.mod"
           check-latest: true
         env:
-          GOTOOLCHAIN: local
+          GOTOOLCHAIN: auto
 
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.3
@@ -192,7 +192,7 @@ jobs:
           check-latest: true
           cache: true
         env:
-          GOTOOLCHAIN: local
+          GOTOOLCHAIN: auto
 
       # =============================================
       # Build WebUI (Strategy A: CI-generated)

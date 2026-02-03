@@ -30,7 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      GOTOOLCHAIN: local
+      GOTOOLCHAIN: auto
       TZ: UTC
 
     steps:
@@ -61,7 +61,7 @@ jobs:
           check-latest: true
           cache: true
         env:
-          GOTOOLCHAIN: local
+          GOTOOLCHAIN: auto
 
       - name: Verify modules
         run: |
