@@ -13,6 +13,15 @@ import (
 	"testing"
 )
 
+// setCISafeEnv sets environment variables on cmd to avoid permission issues in CI.
+// It sets XG2G_STORE_PATH and XG2G_DATA to the provided temp directory.
+func setCISafeEnv(cmd *exec.Cmd, tmpDir string) {
+	cmd.Env = append(os.Environ(),
+		"XG2G_STORE_PATH="+tmpDir,
+		"XG2G_DATA="+tmpDir,
+	)
+}
+
 // TestValidateCLI tests the validate binary with various config files
 func TestValidateCLI(t *testing.T) {
 	// Build the validate binary for testing
@@ -62,6 +71,7 @@ func TestValidateCLI(t *testing.T) {
 		},
 	}
 
+	tmpDir := t.TempDir()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var cmd *exec.Cmd
@@ -73,6 +83,7 @@ func TestValidateCLI(t *testing.T) {
 				// #nosec G204 -- Test code: running test binary with controlled arguments
 				cmd = exec.Command(binaryPath, "-f", tt.configFile)
 			}
+			setCISafeEnv(cmd, tmpDir)
 
 			output, err := cmd.CombinedOutput()
 			exitCode := 0
@@ -145,6 +156,7 @@ func TestValidateCLI_CuratedSurface(t *testing.T) {
 
 	// #nosec G204
 	cmd := exec.Command(binaryPath, "-f", cfg)
+	setCISafeEnv(cmd, t.TempDir())
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("validate failed for curated surface %s: %v\nOutput:\n%s", cfg, err, output)
@@ -172,6 +184,7 @@ func TestValidateCLI_RegistryParity(t *testing.T) {
 
 	// #nosec G204
 	cmd := exec.Command(binaryPath, "-f", cfg)
+	setCISafeEnv(cmd, t.TempDir())
 	output, err := cmd.CombinedOutput()
 
 	// ADR-014: High-Governance Exemption

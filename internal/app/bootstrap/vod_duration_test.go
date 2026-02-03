@@ -35,6 +35,7 @@ func TestVODPlayback_DurationTruth(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "xg2g-vod-duration-*")
 	require.NoError(t, err)
 	defer os.RemoveAll(tmpDir)
+	t.Setenv("XG2G_STORE_PATH", tmpDir)
 
 	moviePath := filepath.Join(tmpDir, "movies", "film.ts")
 	err = os.MkdirAll(filepath.Dir(moviePath), 0750)
