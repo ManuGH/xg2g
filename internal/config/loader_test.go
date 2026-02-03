@@ -333,6 +333,7 @@ func TestOWIMaxBackoffFromENV(t *testing.T) {
 
 			// Set OWIBase for test clarity
 			t.Setenv("XG2G_OWI_BASE", "http://example.com")
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
 			// Set test-specific ENV
 			if tt.envValue != "" {
@@ -542,6 +543,7 @@ func TestOWIMaxBackoffInvalidValues(t *testing.T) {
 
 			// Set OWIBase for test clarity
 			t.Setenv("XG2G_OWI_BASE", "http://example.com")
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
 			// Set test-specific ENV
 			if tt.envValue != "" {
@@ -617,6 +619,7 @@ epg:
 func TestParseScopedTokensFromEnv(t *testing.T) {
 	// Set valid OWIBase to satisfy validation (Enigma2 inherits this)
 	t.Setenv("XG2G_OWI_BASE", "http://example.com")
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
 	t.Run("json_format", func(t *testing.T) {
 		t.Setenv("XG2G_API_TOKENS", `[{"token":"read","scopes":["v3:read"]},{"token":"ops","scopes":["v3:read","v3:write"]}]`)
