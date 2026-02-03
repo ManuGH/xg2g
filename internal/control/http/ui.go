@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-//go:embed dist/**
+//go:embed all:dist
 var uiFS embed.FS
 
 // UIConfig configures the UI handler
