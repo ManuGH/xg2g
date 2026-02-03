@@ -82,7 +82,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            git diff --name-only "origin/${{ github.base_ref }}"..."${{ github.sha }}" | grep -q '^webui/' && echo "changed=true" >> "$GITHUB_OUTPUT" || echo "changed=false" >> "$GITHUB_OUTPUT"
+            git diff --name-only "origin/${{ github.base_ref }}...${{ github.sha }}" | grep -q '^webui/' && echo "changed=true" >> "$GITHUB_OUTPUT" || echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             git diff --name-only HEAD~1..HEAD | grep -q '^webui/' && echo "changed=true" >> "$GITHUB_OUTPUT" || echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
