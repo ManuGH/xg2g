@@ -96,6 +96,7 @@ jobs:
         run: |
           mkdir -p internal/control/http/dist
           touch internal/control/http/dist/.gitkeep
+          touch internal/control/http/dist/index.html
 
       - name: Run PR gate
         run: make ci-pr
