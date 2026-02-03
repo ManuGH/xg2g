@@ -7,7 +7,6 @@
 package config
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -16,11 +15,9 @@ import (
 // TestLoad_ValidMinimal tests loading a valid minimal configuration.
 func TestLoad_ValidMinimal(t *testing.T) {
 	// Ensure test directory exists (validation checks this)
-	testDir := "/tmp/xg2g-config-test"
-	if err := os.MkdirAll(testDir, 0750); err != nil {
-		t.Fatalf("failed to create test directory: %v", err)
-	}
-	defer func() { _ = os.RemoveAll(testDir) }()
+	// Ensure test directory exists (validation checks this)
+	testDir := t.TempDir()
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
 	loader := NewLoader(filepath.Join("testdata", "valid-minimal.yaml"), "test")
 	cfg, err := loader.Load()
@@ -29,8 +26,8 @@ func TestLoad_ValidMinimal(t *testing.T) {
 	}
 
 	// Verify some basic fields were loaded
-	if cfg.DataDir != "/tmp/xg2g-config-test" {
-		t.Errorf("expected DataDir=/tmp/xg2g-config-test, got %s", cfg.DataDir)
+	if cfg.DataDir != testDir {
+		t.Errorf("expected DataDir=%s, got %s", testDir, cfg.DataDir)
 	}
 	if cfg.Enigma2.BaseURL != "http://receiver.local" {
 		t.Errorf("expected Enigma2.BaseURL=http://receiver.local, got %s", cfg.Enigma2.BaseURL)

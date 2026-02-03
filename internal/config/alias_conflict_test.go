@@ -61,6 +61,7 @@ enigma2:
 	for _, tc := range cases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("XG2G_STORE_PATH", t.TempDir())
 			path := filepath.Join(t.TempDir(), "config.yaml")
 			if err := os.WriteFile(path, []byte(strings.TrimSpace(tc.yaml)), 0644); err != nil {
 				t.Fatalf("write temp config: %v", err)
@@ -87,6 +88,7 @@ enigma2:
 
 func TestAliasConflictEnvToEnv(t *testing.T) {
 	t.Run("env mismatch fails", func(t *testing.T) {
+		t.Setenv("XG2G_STORE_PATH", t.TempDir())
 		t.Setenv("XG2G_OWI_TIMEOUT_MS", "10000")
 		t.Setenv("XG2G_E2_TIMEOUT", "5s")
 		t.Setenv("XG2G_E2_HOST", "http://example.com")
@@ -102,6 +104,7 @@ func TestAliasConflictEnvToEnv(t *testing.T) {
 	})
 
 	t.Run("env match passes", func(t *testing.T) {
+		t.Setenv("XG2G_STORE_PATH", t.TempDir())
 		t.Setenv("XG2G_OWI_TIMEOUT_MS", "10000")
 		t.Setenv("XG2G_E2_TIMEOUT", "10s")
 		t.Setenv("XG2G_E2_HOST", "http://example.com")
@@ -116,6 +119,7 @@ func TestAliasConflictEnvToEnv(t *testing.T) {
 
 func TestAliasConflictYamlVsEnv(t *testing.T) {
 	t.Run("yaml openWebIF vs env enigma2 mismatch", func(t *testing.T) {
+		t.Setenv("XG2G_STORE_PATH", t.TempDir())
 		t.Setenv("XG2G_E2_TIMEOUT", "5s")
 		path := filepath.Join(t.TempDir(), "config.yaml")
 		cfg := `
@@ -137,6 +141,7 @@ openWebIF:
 	})
 
 	t.Run("yaml enigma2 vs env openWebIF mismatch", func(t *testing.T) {
+		t.Setenv("XG2G_STORE_PATH", t.TempDir())
 		t.Setenv("XG2G_OWI_TIMEOUT_MS", "5000")
 		path := filepath.Join(t.TempDir(), "config.yaml")
 		cfg := `

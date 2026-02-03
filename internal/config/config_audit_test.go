@@ -45,6 +45,8 @@ func TestConfigAudit_StrictLoadingFailsOnUnknownKey(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(tmpDir)
 
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
+
 	configPath := filepath.Join(tmpDir, "invalid.yaml")
 	content := `
 version: v3
@@ -68,6 +70,8 @@ func TestConfigAudit_StrictLoadingFailsOnNestedUnknownKey(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(tmpDir)
 
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
+
 	configPath := filepath.Join(tmpDir, "invalid-nested.yaml")
 	content := `
 version: v3
@@ -89,6 +93,8 @@ func TestConfigGovernance_ForbiddenCombination_ProxyAware(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "xg2g-gov-test-*")
 	require.NoError(t, err)
 	defer os.RemoveAll(tmpDir)
+
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
 	configPath := filepath.Join(tmpDir, "forbidden.yaml")
 	// Case 1: ForceHTTPS=true, TLSEnabled=false, TrustedProxies=empty -> FAIL
@@ -168,6 +174,7 @@ func getFieldValue(t *testing.T, v reflect.Value, path string) (reflect.Value, b
 
 // Gate: Ensure Registry Defaults are the Single Source of Truth for runtime configuration
 func TestConfigAudit_RegistryTruth_Defaults(t *testing.T) {
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	// 1. Load config only with defaults (no file, no env)
 	loader := NewLoader("", "vTest")
 	cfg, err := loader.Load()
@@ -215,6 +222,7 @@ func TestConfigAudit_RegistryTruth_EnvKeys(t *testing.T) {
 	// We need to set these to avoid "no tuner slots" critical error or other blockers
 	os.Setenv("XG2G_ENGINE_ENABLED", "false") // Disable engine to skip auto-discovery
 	defer os.Unsetenv("XG2G_ENGINE_ENABLED")
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
 	// 2. Load Config
 	l := NewLoader("", "vTest")
@@ -301,6 +309,7 @@ func TestConfigGovernance_DeprecationFail(t *testing.T) {
 	// Provide minimal valid config to avoid unrelated validation errors
 	os.Setenv("XG2G_OWI_BASE", "http://localhost")
 	defer os.Unsetenv("XG2G_OWI_BASE")
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
 	loader := NewLoader("", "test-version")
 	_, err := loader.Load()
@@ -318,6 +327,7 @@ func TestConfigGovernance_DeprecationWarn(t *testing.T) {
 	// Provide minimal valid config
 	os.Setenv("XG2G_OWI_BASE", "http://localhost")
 	defer os.Unsetenv("XG2G_OWI_BASE")
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
 	loader := NewLoader("", "test-version")
 	_, err := loader.Load()
