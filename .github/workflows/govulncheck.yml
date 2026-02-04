@@ -21,7 +21,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # Latest stable
 
       - name: Setup Go
-        uses: actions/setup-go@f3787be646645f6c7bfecfa3e48f82a00d113834 # Latest stable
+        uses: actions/setup-go@a5f9b05d2d216f63e13859e0d847461041025775 # Latest stable
         with:
           go-version-file: "go.mod"
           check-latest: true
@@ -65,7 +65,7 @@ jobs:
 
       - name: Upload SARIF to code scanning
         if: always()
-        uses: github/codeql-action/init@9e8d0789d4a0fa9ceb6b1738f7e269594bdd67f0
+        uses: github/codeql-action/init@6bc82e05fd0ea64601dd4b465378bbcf57de0314
         with:
           sarif_file: govulncheck.sarif
           category: govulncheck
