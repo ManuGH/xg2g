@@ -40,6 +40,17 @@ make build
 ## PR Rules
 
 - `main` requires PRs.
-- 1 approving review required.
+- Review required in team setups; for solo work reviews can be optional.
 - Required CI checks must be green.
 
+## Deployment (Homelab + Real Ops)
+
+Canonical mode is **systemd supervising Docker Compose** on Linux (homelab and production).
+This matches `docs/ops/RUNBOOK_SYSTEMD_COMPOSE.md` and avoids drift.
+
+- Use `/srv/xg2g` as working directory.
+- Use `/srv/xg2g/docker-compose.yml`.
+- Use `/var/lib/xg2g` for data.
+- Manage via `systemctl` (start/reload/stop).
+
+Direct `docker compose up` is acceptable only for short-lived dev/testing.
