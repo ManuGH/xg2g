@@ -48,6 +48,9 @@ func (p *HTTPPreflightProvider) Check(ctx context.Context, src SourceRef) (Prefl
 		defer cancel()
 	}
 
+	// Invariant: src.URL is validated upstream by ValidateOutboundURL in preflight_gate.go.
+	// SSRF protection: scheme/host/port allowlist + DNS rebinding block.
+	// See: internal/platform/net/outbound.go, internal/control/http/v3/preflight_gate.go
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, src.URL, nil)
 	if err != nil {
 		return PreflightResult{Outcome: PreflightInternal}, err

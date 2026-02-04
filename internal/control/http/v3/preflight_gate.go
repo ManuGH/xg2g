@@ -62,7 +62,14 @@ func (s *Server) resolvePreflightSourceURL(ctx context.Context, cfg config.AppCo
 	if !ok {
 		return "", fmt.Errorf("stream url provider unavailable")
 	}
-	return streamer.StreamURL(ctx, serviceRef, "")
+	rawURL, err := streamer.StreamURL(ctx, serviceRef, "")
+	if err != nil {
+		return "", err
+	}
+	// Defense in depth: validate receiver-derived URLs against outbound policy.
+	// Even though Enigma2.BaseURL is admin-controlled, we apply the same SSRF
+	// protection (scheme/host/port allowlist + DNS rebinding block) for consistency.
+	return platformnet.ValidateOutboundURL(ctx, rawURL, outboundPolicyFromConfig(cfg))
 }
 
 func (s *Server) rejectPreflight(w http.ResponseWriter, r *http.Request, outcome preflight.PreflightOutcome, err error) bool {

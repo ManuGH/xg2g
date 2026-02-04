@@ -50,7 +50,13 @@ func newPreflightIntentServer(t *testing.T, provider preflight.PreflightProvider
 
 	s, _ := newV3TestServer(t, t.TempDir())
 	cfg := s.GetConfig()
-	cfg.Enigma2.BaseURL = "http://example.invalid"
+	// Use localhost IP to avoid DNS resolution in tests
+	cfg.Enigma2.BaseURL = "http://127.0.0.1:8001"
+	// Enable outbound policy for preflight validation with CIDR allowlist (no DNS lookup)
+	cfg.Network.Outbound.Enabled = true
+	cfg.Network.Outbound.Allow.CIDRs = []string{"127.0.0.0/8"}
+	cfg.Network.Outbound.Allow.Schemes = []string{"http", "https"}
+	cfg.Network.Outbound.Allow.Ports = []int{80, 443, 8001}
 	s.UpdateConfig(cfg, config.BuildSnapshot(cfg, config.DefaultEnv()))
 	s.SetPreflightCheck(provider)
 	return s
