@@ -37,6 +37,20 @@ make build
 ./xg2g --config /path/to/config.yaml
 ```
 
+### WebUI (Dev Mode)
+
+The WebUI can run independently via Vite (fast reload) while the backend runs separately:
+
+```bash
+cd webui
+npm install
+npm run dev
+```
+
+- Dev server: `http://<host>:5173/ui/`
+- API is proxied to `http://localhost:8080` (see `webui/vite.config.js`).
+- You can restart the WebUI without touching the backend.
+
 ## PR Rules
 
 - `main` requires PRs.
