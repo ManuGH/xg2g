@@ -27,7 +27,7 @@ jobs:
         run: ./scripts/check-go-toolchain.sh
 
       - name: Setup Go
-        uses: actions/setup-go@f3787be646645f6c7bfecfa3e48f82a00d113834 # v6
+        uses: actions/setup-go@a5f9b05d2d216f63e13859e0d847461041025775 # v6
         with:
           go-version-file: go.mod
           check-latest: true

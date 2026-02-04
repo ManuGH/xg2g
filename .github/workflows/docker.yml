@@ -23,7 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # Latest stable
 
-      - uses: actions/setup-go@f3787be646645f6c7bfecfa3e48f82a00d113834  # Latest stable
+      - uses: actions/setup-go@a5f9b05d2d216f63e13859e0d847461041025775  # Latest stable
         with:
           go-version-file: go.mod
           check-latest: true
