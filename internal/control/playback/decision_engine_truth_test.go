@@ -97,6 +97,31 @@ func TestPlaybackInfo_G4_DirectPlay_H264_AAC_MP4(t *testing.T) {
 	assert.Equal(t, ReasonDirectPlayMatch, plan.DecisionReason)
 }
 
+func TestPlaybackInfo_G4_DirectPlay_CaseInsensitiveTokens(t *testing.T) {
+	e, truth, prof := setupEngine(t)
+
+	truth.On("GetMediaTruth", mock.Anything, "rec1").Return(MediaTruth{
+		State:      StateReady,
+		Container:  "MP4",
+		VideoCodec: "H264",
+		AudioCodec: "AAC",
+	}, nil)
+
+	prof.On("Resolve", mock.Anything, mock.Anything).Return(PlaybackCapabilities{
+		Containers:  []string{"mp4"},
+		VideoCodecs: []string{"h264"},
+		AudioCodecs: []string{"aac"},
+	}, nil)
+
+	req := ResolveRequest{RecordingID: "rec1", ProtocolHint: "MP4"}
+	plan, err := e.Resolve(context.Background(), req)
+
+	assert.NoError(t, err)
+	assert.Equal(t, ModeDirectPlay, plan.Mode)
+	assert.Equal(t, ProtocolMP4, plan.Protocol)
+	assert.Equal(t, ReasonDirectPlayMatch, plan.DecisionReason)
+}
+
 // --- Group 5: DirectPlay HLS on Safari ---
 
 func TestPlaybackInfo_G5_DirectPlay_SafariNative_HLS(t *testing.T) {
