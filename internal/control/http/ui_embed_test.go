@@ -6,6 +6,7 @@ package http
 
 import (
 	"io/fs"
+	"os"
 	"testing"
 )
 
@@ -26,6 +27,11 @@ func TestUIEmbedContract(t *testing.T) {
 	// HARD REQUIREMENT: index.html must exist (entry file)
 	indexFile, err := subFS.Open("index.html")
 	if err != nil {
+		// Locally we allow API-only builds/tests without the WebUI bundle.
+		// In CI/release builds we still want to enforce the embed contract.
+		if os.Getenv("CI") == "" && os.Getenv("XG2G_UI_EMBED_REQUIRED") == "" {
+			t.Skipf("dist/index.html not found in embedded FS (%v). Run 'make ui-build' to enable WebUI embed checks.", err)
+		}
 		t.Fatalf("dist/index.html not found in embedded FS: %v\n"+
 			"Ensure 'make ui-build' or CI copies WebUI to internal/control/http/dist/", err)
 	}

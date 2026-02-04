@@ -340,22 +340,34 @@ func (r *LibraryPathResolver) ResolveRecordingPath(serviceRef string) (string, s
 
 func matchLibraryRoot(localPath string, roots []library.RootConfig) (string, string, bool) {
 	localPath = filepath.Clean(localPath)
+	if rp, err := filepath.EvalSymlinks(localPath); err == nil {
+		localPath = filepath.Clean(rp)
+	}
+
 	var bestRoot *library.RootConfig
+	var bestRootResolved string
 	longestPrefix := -1
 	for i := range roots {
 		root := &roots[i]
 		cleanRoot := filepath.Clean(root.Path)
-		if hasPathPrefix(localPath, cleanRoot) {
-			if len(cleanRoot) > longestPrefix {
-				longestPrefix = len(cleanRoot)
+		rootResolved := cleanRoot
+		if rr, err := filepath.EvalSymlinks(cleanRoot); err == nil {
+			rootResolved = filepath.Clean(rr)
+		}
+
+		if hasPathPrefix(localPath, rootResolved) {
+			if len(rootResolved) > longestPrefix {
+				longestPrefix = len(rootResolved)
 				bestRoot = root
+				bestRootResolved = rootResolved
 			}
 		}
 	}
 	if bestRoot == nil {
 		return "", "", false
 	}
-	rel, err := filepath.Rel(bestRoot.Path, localPath)
+	// Use the resolved root path to avoid macOS /var vs /private/var mismatches.
+	rel, err := filepath.Rel(bestRootResolved, localPath)
 	if err != nil {
 		return "", "", false
 	}

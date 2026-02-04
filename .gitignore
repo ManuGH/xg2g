@@ -55,6 +55,12 @@ internal/control/http/dist/
 !internal/control/http/dist/.gitkeep
 dist/
 
+# Allow placeholder files needed for `go:embed` compilation/tests when WebUI isn't built.
+!internal/control/http/dist/
+!internal/control/http/dist/assets/
+!internal/control/http/dist/.gitkeep
+!internal/control/http/dist/assets/.gitkeep
+
 # ==============================================================================
 # Project Specific
 # ==============================================================================

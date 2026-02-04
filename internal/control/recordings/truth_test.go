@@ -76,7 +76,10 @@ func TestPR42_SourceResolutionAndKeyHygiene(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "local", kind)
 
-		expectedSource := "file://" + targetPath
+		// ResolveLocalExisting resolves symlinks; on macOS temp dirs may be under /var -> /private/var.
+		resolvedTargetPath, err := filepath.EvalSymlinks(targetPath)
+		require.NoError(t, err)
+		expectedSource := "file://" + resolvedTargetPath
 		assert.Equal(t, expectedSource, source)
 	})
 
@@ -99,7 +102,9 @@ func TestPR42_SourceResolutionAndKeyHygiene(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "local", kind)
 
-		expectedSource := (&url.URL{Scheme: "file", Path: targetPath}).String()
+		resolvedTargetPath, err := filepath.EvalSymlinks(targetPath)
+		require.NoError(t, err)
+		expectedSource := (&url.URL{Scheme: "file", Path: resolvedTargetPath}).String()
 		assert.Equal(t, expectedSource, source)
 		assert.NotContains(t, source, " ")
 		assert.Contains(t, source, "%20")

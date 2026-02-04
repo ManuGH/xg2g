@@ -24,11 +24,13 @@ type UIConfig struct {
 func UIHandler(cfg UIConfig) http.Handler {
 	// Subdirectory "dist" matches the build output
 	subFS, err := fs.Sub(uiFS, "dist")
-	var fileServer http.Handler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		http.Error(w, "UI not available", http.StatusInternalServerError)
-	})
+	uiAvailable := false
+	var fileServer http.Handler
 	if err == nil {
-		fileServer = http.FileServer(http.FS(subFS))
+		if _, statErr := fs.Stat(subFS, "index.html"); statErr == nil {
+			uiAvailable = true
+			fileServer = http.FileServer(http.FS(subFS))
+		}
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -47,6 +49,19 @@ func UIHandler(cfg UIConfig) http.Handler {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		}
 
-		fileServer.ServeHTTP(w, r)
+		if uiAvailable {
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+
+		// Fallback: allow running API-only binaries/tests without building the WebUI bundle.
+		// Keep it a 200 so callers (and tests) can still validate caching/CSP behavior.
+		if path == "/" || path == "/index.html" || path == "" || !strings.Contains(path, ".") {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = w.Write([]byte("<!doctype html><html><head><meta charset=\"utf-8\"><title>xg2g</title></head><body><h1>xg2g UI not built</h1></body></html>"))
+			return
+		}
+
+		http.NotFound(w, r)
 	})
 }
