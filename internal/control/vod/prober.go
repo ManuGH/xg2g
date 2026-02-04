@@ -5,6 +5,8 @@ import (
 	"errors"
 	"math"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/recordings"
@@ -138,7 +140,7 @@ func (m *Manager) runProbe(ctx context.Context, req probeRequest) error {
 			// Valid cache hit? Only if ArtifactPath logic aligns with file extension.
 			// If ArtifactPath is set, it MUST be an MP4. If it's a TS, ArtifactPath should be empty.
 			// If we see a mismatch (e.g. ArtifactPath set but file is TS), we must re-probe to fix it.
-			isMP4 := len(input) > 4 && input[len(input)-4:] == ".mp4"
+			isMP4 := strings.EqualFold(filepath.Ext(input), ".mp4")
 			hasArtifactPath := current.ArtifactPath != ""
 
 			if isMP4 == hasArtifactPath {

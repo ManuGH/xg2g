@@ -2,6 +2,7 @@ package playback
 
 import (
 	"context"
+	"strings"
 )
 
 // --- Interfaces ---
@@ -43,9 +44,9 @@ func (e *DecisionEngine) Decide(truth MediaTruth, caps PlaybackCapabilities, pro
 
 	// 4. Unknown Truth Gate (G9) -> Fail Closed (422)
 	// Mandatory fields must be present and not "unknown".
-	if truth.Container == "" || truth.Container == "unknown" ||
-		truth.VideoCodec == "" || truth.VideoCodec == "unknown" ||
-		truth.AudioCodec == "" || truth.AudioCodec == "unknown" {
+	if isUnknownToken(truth.Container) ||
+		isUnknownToken(truth.VideoCodec) ||
+		isUnknownToken(truth.AudioCodec) {
 		return PlaybackPlan{
 			DecisionReason: ReasonProbeFailed,
 		}, ErrDecisionAmbiguous
@@ -57,8 +58,11 @@ func (e *DecisionEngine) Decide(truth MediaTruth, caps PlaybackCapabilities, pro
 	protocol := ProtocolHLS
 
 	// Hint Overrides
-	if protocolHint == "mp4" {
+	switch normalizeToken(protocolHint) {
+	case "mp4":
 		protocol = ProtocolMP4
+	case "hls":
+		protocol = ProtocolHLS
 	}
 
 	// --- Phase 2: Analyze Compatibility --- //
@@ -166,8 +170,12 @@ func (e *DecisionEngine) Resolve(ctx context.Context, req ResolveRequest) (Playb
 }
 
 func contains(slice []string, val string) bool {
+	val = normalizeToken(val)
+	if val == "" {
+		return false
+	}
 	for _, s := range slice {
-		if s == val {
+		if normalizeToken(s) == val {
 			return true
 		}
 	}
@@ -175,5 +183,15 @@ func contains(slice []string, val string) bool {
 }
 
 func isMP4Container(c string) bool {
-	return c == "mp4" || c == "mov" || c == "m4v"
+	norm := normalizeToken(c)
+	return norm == "mp4" || norm == "mov" || norm == "m4v"
+}
+
+func isUnknownToken(s string) bool {
+	norm := normalizeToken(s)
+	return norm == "" || norm == "unknown"
+}
+
+func normalizeToken(s string) string {
+	return strings.ToLower(strings.TrimSpace(s))
 }
