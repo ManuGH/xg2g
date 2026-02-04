@@ -16,6 +16,7 @@ on:
       - "scripts/**"
       - "Makefile"
       - "webui/**"
+      - "WORKFLOW.md"
 
 permissions:
   contents: read
