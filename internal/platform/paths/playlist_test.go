@@ -90,8 +90,13 @@ func TestValidatePlaylistPath(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if !strings.HasPrefix(got, baseDir) {
-				t.Fatalf("path %q does not start with baseDir %q", got, baseDir)
+			// ConfineRelPath resolves symlinks; on macOS temp dirs may be under /var -> /private/var.
+			resolvedBase, err := filepath.EvalSymlinks(baseDir)
+			if err != nil {
+				resolvedBase = baseDir
+			}
+			if !strings.HasPrefix(got, resolvedBase) {
+				t.Fatalf("path %q does not start with baseDir %q", got, resolvedBase)
 			}
 			if tt.wantSuffix != "" && !strings.HasSuffix(got, filepath.FromSlash(tt.wantSuffix)) {
 				t.Fatalf("path %q does not end with %q", got, tt.wantSuffix)
