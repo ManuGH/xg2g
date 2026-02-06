@@ -79,7 +79,7 @@
 
 .nav-item[aria-current="page"] {
   color: var(--accent-action);
-  background: rgba(74, 144, 245, 0.08);
+  background: var(--accent-action-subtle);
 }
 
 /* Icon */

@@ -16,6 +16,7 @@ on:
       - "scripts/**"
       - "Makefile"
       - "webui/**"
+      - "WORKFLOW.md"
 
 permissions:
   contents: read
@@ -60,7 +61,8 @@ jobs:
           go-version-file: go.mod
           check-latest: true
           cache-dependency-path: go.sum
-          cache: true
+          # Cache restore has been flaky (tar exit code 2). Disable to keep CI deterministic.
+          cache: false
         env:
           GOTOOLCHAIN: auto
 

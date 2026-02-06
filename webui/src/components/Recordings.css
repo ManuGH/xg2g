@@ -201,7 +201,7 @@
 .check-icon {
     width: 14px;
     height: 14px;
-    color: white;
+    color: var(--text-primary);
 }
 
 /* Play Overlay - Simplified, no gradients */
@@ -224,7 +224,7 @@
 
 .play-label {
     background: var(--accent-action);
-    color: white;
+    color: var(--text-primary);
     padding: 6px 16px;
     border-radius: 20px;
     font-weight: 600;
@@ -267,7 +267,7 @@
 
 .btn-danger {
     background: var(--status-error);
-    color: white;
+    color: var(--text-primary);
     border: none;
     padding: 8px 16px;
     border-radius: var(--radius-md);

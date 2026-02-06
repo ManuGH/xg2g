@@ -90,13 +90,13 @@
 }
 
 .btn-secondary:hover {
-  background-color: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.2);
+  background-color: var(--bg-hover);
+  border-color: var(--border-elevated);
 }
 
 .btn-primary {
   background-color: var(--accent-action);
-  color: white;
+  color: var(--text-primary);
   border: none;
   padding: 0.75rem 1.5rem;
   font-size: var(--text-base);
@@ -123,21 +123,21 @@
 }
 
 .alert.error {
-  background-color: rgba(248, 113, 113, 0.1);
+  background-color: var(--status-error-subtle);
   color: var(--status-error);
-  border: 1px solid var(--status-error);
+  border: 1px solid var(--status-error-border);
 }
 
 .alert.success {
-  background-color: rgba(52, 211, 153, 0.1);
+  background-color: var(--status-success-subtle);
   color: var(--status-success);
-  border: 1px solid var(--status-success);
+  border: 1px solid var(--status-success-border);
 }
 
 .alert.warning {
-  background-color: #fdf6b2;
-  color: #723b13;
-  border: 1px solid #fce96a;
+  background-color: var(--status-warning-subtle);
+  color: var(--status-warning);
+  border: 1px solid var(--status-warning-border);
 }
 
 /* --- Smart Wizard Styles --- */
@@ -161,7 +161,7 @@
 
 .valid-input {
   border-color: var(--accent-success) !important;
-  background-color: rgba(16, 185, 129, 0.05) !important;
+  background-color: var(--status-success-subtle) !important;
 }
 
 .validation-actions {
@@ -183,9 +183,9 @@
 }
 
 .status-badge.success {
-  background: rgba(16, 185, 129, 0.2);
+  background: var(--status-success-subtle);
   color: var(--accent-success);
-  border: 1px solid rgba(16, 185, 129, 0.3);
+  border: 1px solid var(--status-success-border);
 }
 
 .bouquets-grid {
@@ -217,7 +217,7 @@
 }
 
 .bouquet-card.selected {
-  background: rgba(59, 130, 246, 0.15);
+  background: var(--accent-action-subtle);
   border-color: var(--accent-primary);
   color: var(--accent-primary);
   font-weight: 500;
@@ -266,7 +266,7 @@
 }
 
 .btn-primary:hover {
-  background-color: #2563eb; /* Darker blue */
+  background-color: var(--accent-action-hover);
 }
 
 .btn-secondary.valid {
