@@ -490,6 +490,13 @@ func (o *Orchestrator) transitionStarting(ctx context.Context, e model.StartSess
 func (o *Orchestrator) transitionReady(ctx context.Context, e model.StartSessionEvent) error {
 	o.recordTransition(model.SessionPriming, model.SessionReady)
 	_, err := o.Store.UpdateSession(ctx, e.SessionID, func(r *model.SessionRecord) error {
+		if r.State == model.SessionStopping || r.State.IsTerminal() {
+			reason := r.Reason
+			if reason == "" {
+				reason = model.RCancelled
+			}
+			return newReasonError(reason, "stop requested before ready", nil)
+		}
 		_, err := lifecycle.Dispatch(r, lifecycle.PhaseFromState(r.State), lifecycle.Event{Kind: lifecycle.EvReady}, nil, false, time.Now())
 		if err != nil {
 			return err
