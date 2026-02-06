@@ -32,6 +32,7 @@ COPY --from=builder /xg2g /xg2g
 # If we need CA certs, distroless/static includes them.
 
 # Expose port (default 8080 or whatever config uses)
-EXPOSE 8080
+# Default config: API listens on :8088; streaming proxy uses :18000.
+EXPOSE 8088 18000
 
 ENTRYPOINT ["/xg2g"]

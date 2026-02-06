@@ -23,11 +23,13 @@ Stream to Safari, iOS, Chrome, and any modern browser.
 
 ```bash
 docker run -d --name xg2g --net=host \
-  -e XG2G_UPSTREAM_HOST="192.168.1.10" \
+  -e XG2G_OWI_BASE="http://192.168.1.10" \
+  -e XG2G_API_TOKEN="$(openssl rand -hex 32)" \
+  -e XG2G_API_TOKEN_SCOPES="v3:admin" \
   ghcr.io/manugh/xg2g:3.1.7
 ```
 
-Open [http://localhost:8080](http://localhost:8080)
+Open [http://localhost:8088/ui/](http://localhost:8088/ui/)
 
 **Next steps:**
 [Configuration](docs/guides/CONFIGURATION.md) •

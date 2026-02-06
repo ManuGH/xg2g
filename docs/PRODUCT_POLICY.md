@@ -6,7 +6,7 @@ core playback/recording semantics.
 ## Policy
 
 - Live means Live + DVR (default behavior).
-- DVRWindow default: 4h.
+- DVRWindow default: 45m.
 - VOD includes only completed recordings.
 - No in-progress VOD.
 - No automatic DVR -> VOD transition.
