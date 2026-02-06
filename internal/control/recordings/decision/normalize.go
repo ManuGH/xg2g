@@ -2,8 +2,8 @@ package decision
 
 import (
 	"sort"
-	"strings"
-	"unicode"
+
+	"github.com/ManuGH/xg2g/internal/core/normalize"
 )
 
 // NormalizeInput produces a semantically equivalent DecisionInput with all
@@ -46,13 +46,7 @@ func NormalizeInput(in DecisionInput) DecisionInput {
 
 // robustNorm normalizes a string: trim Unicode whitespace + invisible characters + lowercase.
 func robustNorm(s string) string {
-	return strings.ToLower(strings.TrimFunc(s, func(r rune) bool {
-		return unicode.IsSpace(r) ||
-			r == '\u200B' || // Zero Width Space
-			r == '\u200C' || // Zero Width Non-Joiner
-			r == '\u200D' || // Zero Width Joiner
-			r == '\uFEFF' // Zero Width Non-Breaking Space (BOM)
-	}))
+	return normalize.Token(s)
 }
 
 // normSlice normalizes a string slice: nil->empty, dedupe, sort, normalize elements.

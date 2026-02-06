@@ -5,11 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/playback"
 	"github.com/ManuGH/xg2g/internal/control/vod"
+	"github.com/ManuGH/xg2g/internal/core/normalize"
 )
 
 // Resolver interface in domain.
@@ -118,7 +118,7 @@ func (r *PlaybackInfoResolver) Resolve(ctx context.Context, serviceRef string, i
 	i64 := func(v int64) *int64 { return &v }
 
 	// Construct Result
-	containerNorm := strings.ToLower(strings.TrimSpace(plan.Container))
+	containerNorm := normalize.Token(plan.Container)
 	isMP4 := containerNorm == "mp4" || containerNorm == "mov" || containerNorm == "m4v"
 	res := PlaybackInfoResult{
 		Decision: playback.Decision{

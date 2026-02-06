@@ -10,12 +10,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/ManuGH/xg2g/internal/control/admission"
+	"github.com/ManuGH/xg2g/internal/core/normalize"
 	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/log"
@@ -140,12 +140,14 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	mode := model.ModeLive
-	if raw := strings.TrimSpace(req.Params["mode"]); raw != "" {
-		if strings.EqualFold(raw, model.ModeRecording) {
+	modeRecording := normalize.Token(model.ModeRecording)
+	modeLive := normalize.Token(model.ModeLive)
+	if raw := normalize.Token(req.Params["mode"]); raw != "" {
+		if raw == modeRecording {
 			respondIntentFailure(w, r, IntentErrInvalidInput, "recording playback uses /recordings")
 			return
 		}
-		if !strings.EqualFold(raw, model.ModeLive) {
+		if raw != modeLive {
 			respondIntentFailure(w, r, IntentErrInvalidInput, "unsupported playback mode")
 			return
 		}
@@ -168,8 +170,8 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 
 		// Parse hwaccel parameter (v3.1+)
 		hwaccelMode := profiles.HWAccelAuto // Default
-		if hwaccel := strings.TrimSpace(req.Params["hwaccel"]); hwaccel != "" {
-			switch strings.ToLower(hwaccel) {
+		if hwaccel := normalize.Token(req.Params["hwaccel"]); hwaccel != "" {
+			switch hwaccel {
 			case "force":
 				hwaccelMode = profiles.HWAccelForce
 			case "off":
