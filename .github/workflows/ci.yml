@@ -29,6 +29,7 @@ on:
 
 permissions:
   contents: read
+  statuses: write
 
 concurrency:
   group: repo-${{ github.event.pull_request.number || github.ref }}
@@ -118,3 +119,55 @@ jobs:
 
       - name: Run PR gate
         run: make ci-pr
+
+      # Branch protection currently requires this context as a legacy "commit status"
+      # (not just a GitHub Actions check run). Publish it explicitly so merges don't
+      # require manual status injection.
+      - name: Publish required status context
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          context="CI / PR Gate (Fast & Deterministic)"
+
+          case "${{ job.status }}" in
+            success)
+              state="success"
+              description="CI run passed"
+              ;;
+            cancelled)
+              state="error"
+              description="CI run cancelled"
+              ;;
+            *)
+              state="failure"
+              description="CI run failed"
+              ;;
+          esac
+
+          export STATE="$state"
+          export CONTEXT="$context"
+          export DESCRIPTION="$description"
+
+          payload="$(python3 - <<'PY'
+import json, os
+print(json.dumps({
+    "state": os.environ["STATE"],
+    "context": os.environ["CONTEXT"],
+    "description": os.environ["DESCRIPTION"],
+    "target_url": os.environ["RUN_URL"],
+}))
+PY
+)"
+
+          curl -sSf -X POST \
+            -H "Authorization: token ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${REPO}/statuses/${SHA}" \
+            -d "${payload}"
+        shell: bash
