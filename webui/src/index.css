@@ -109,6 +109,7 @@
   --radius-lg: 12px;
 
   /* Legacy Aliases (for compatibility during migration) */
+  --bg-app: var(--bg-base);
   --bg-primary: var(--bg-base);
   --bg-secondary: var(--bg-input);
   --bg-card: var(--bg-elevated);
