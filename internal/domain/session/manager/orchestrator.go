@@ -335,6 +335,21 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 	}()
 
 	playlistReadyDuration := time.Since(startTime)
+
+	// Defensive guard: if a stop arrived during start, do not transition to READY.
+	if latest, err := o.Store.GetSession(ctx, e.SessionID); err != nil {
+		return err
+	} else if latest != nil {
+		session = latest
+		if latest.State == model.SessionStopping || latest.State.IsTerminal() {
+			reason := latest.Reason
+			if reason == "" {
+				reason = model.RCancelled
+			}
+			return newReasonError(reason, "stop requested before ready", nil)
+		}
+	}
+
 	logger.Info().
 		Str("session_id", e.SessionID).
 		Str("profile", finalProfile.Name).
