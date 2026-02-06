@@ -26,31 +26,27 @@
 /* Semantic States - CTO Contract: LIVE/REC=Amber, ERROR=Red */
 
 .status-chip[data-state="idle"] {
-  background: rgba(107, 112, 128, 0.12);
-  /* var(--text-tertiary) subtle */
+  background: var(--status-neutral-subtle);
   color: var(--text-tertiary);
-  border: 1px solid rgba(107, 112, 128, 0.2);
+  border: 1px solid var(--status-neutral-border);
 }
 
 .status-chip[data-state="success"] {
-  background: rgba(52, 211, 153, 0.12);
-  /* var(--status-success) subtle */
+  background: var(--status-success-subtle);
   color: var(--status-success);
-  border: 1px solid rgba(52, 211, 153, 0.25);
+  border: 1px solid var(--status-success-border);
 }
 
 .status-chip[data-state="warning"] {
-  background: rgba(251, 191, 36, 0.12);
-  /* var(--status-warning) subtle */
+  background: var(--status-warning-subtle);
   color: var(--status-warning);
-  border: 1px solid rgba(251, 191, 36, 0.25);
+  border: 1px solid var(--status-warning-border);
 }
 
 .status-chip[data-state="error"] {
-  background: rgba(248, 113, 113, 0.12);
-  /* var(--status-error) subtle */
+  background: var(--status-error-subtle);
   color: var(--status-error);
-  border: 1px solid rgba(248, 113, 113, 0.3);
+  border: 1px solid var(--status-error-border);
 }
 
 .status-chip[data-state="live"],
