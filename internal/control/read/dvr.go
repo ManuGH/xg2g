@@ -45,7 +45,7 @@ func GetDvrCapabilities(ctx context.Context, src DvrSource) (DvrCapabilities, er
 
 	return DvrCapabilities{
 		CanDelete:        true,
-		CanEdit:          true,
+		CanEdit:          canEdit,
 		ReadBackVerify:   true,
 		ConflictsPreview: true,
 		ReceiverAware:    canEdit,
