@@ -7,8 +7,8 @@ package profiles
 import (
 	"strings"
 
-	"github.com/ManuGH/xg2g/internal/core/normalize"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/normalize"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
 )
 

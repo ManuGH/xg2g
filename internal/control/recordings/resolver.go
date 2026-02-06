@@ -9,7 +9,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/playback"
 	"github.com/ManuGH/xg2g/internal/control/vod"
-	"github.com/ManuGH/xg2g/internal/core/normalize"
+	"github.com/ManuGH/xg2g/internal/normalize"
 )
 
 // Resolver interface in domain.

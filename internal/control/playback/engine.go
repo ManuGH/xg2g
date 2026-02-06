@@ -3,7 +3,7 @@ package playback
 import (
 	"context"
 
-	"github.com/ManuGH/xg2g/internal/core/normalize"
+	"github.com/ManuGH/xg2g/internal/normalize"
 )
 
 // --- Interfaces ---

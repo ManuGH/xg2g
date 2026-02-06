@@ -3,7 +3,7 @@ package clientplayback
 import (
 	"strings"
 
-	"github.com/ManuGH/xg2g/internal/core/normalize"
+	"github.com/ManuGH/xg2g/internal/normalize"
 )
 
 type Truth struct {

@@ -3,7 +3,7 @@ package decision
 import (
 	"sort"
 
-	"github.com/ManuGH/xg2g/internal/core/normalize"
+	"github.com/ManuGH/xg2g/internal/normalize"
 )
 
 // NormalizeInput produces a semantically equivalent DecisionInput with all
