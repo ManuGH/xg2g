@@ -7,6 +7,7 @@ package profiles
 import (
 	"strings"
 
+	"github.com/ManuGH/xg2g/internal/core/normalize"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
 )
@@ -71,7 +72,7 @@ func shouldUseGPU(hasGPU bool, mode HWAccelMode) bool {
 // dvrWindowSec controls the DVR window for DVR profiles; <=0 disables DVR.
 // hwaccelMode allows explicit GPU/CPU override (default: auto).
 func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability, hasGPU bool, hwaccelMode HWAccelMode) model.ProfileSpec {
-	requested = strings.ToLower(strings.TrimSpace(requested))
+	requested = normalize.Token(requested)
 	canonical, ok := aliasMap[requested]
 	if !ok {
 		canonical = ProfileAuto

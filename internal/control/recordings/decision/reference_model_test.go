@@ -3,7 +3,6 @@ package decision
 import (
 	"context"
 	"math/rand"
-	"strings"
 	"testing"
 )
 
@@ -48,7 +47,7 @@ func ReferenceDecide(input DecisionInput) *Decision {
 
 	// Rule 4: DirectPlay (MP4/MOV/M4V + Ranges)
 	// FIX R2-001: Normalize container to match modelContains() behavior
-	containerNorm := strings.ToLower(strings.TrimSpace(input.Source.Container))
+	containerNorm := robustNorm(input.Source.Container)
 	isMp4 := containerNorm == "mp4" || containerNorm == "mov" || containerNorm == "m4v"
 	supportsRange := input.Capabilities.SupportsRange != nil && *input.Capabilities.SupportsRange
 	directPlayPossible := isMp4 && supportsRange && canContainer && canVideo && canAudio
@@ -133,13 +132,14 @@ func ReferenceDecide(input DecisionInput) *Decision {
 
 // Helpers for model
 func isUnknown(s string) bool {
-	return s == "" || strings.ToLower(s) == "unknown"
+	norm := robustNorm(s)
+	return norm == "" || norm == "unknown"
 }
 
 func modelContains(list []string, item string) bool {
-	item = strings.ToLower(strings.TrimSpace(item))
+	item = robustNorm(item)
 	for _, v := range list {
-		if strings.ToLower(strings.TrimSpace(v)) == item {
+		if robustNorm(v) == item {
 			return true
 		}
 	}
