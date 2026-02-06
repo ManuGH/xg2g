@@ -8,14 +8,23 @@ on:
     branches: [main]
     paths:
       - "**/*.go"
+      - ".github/**"
       - go.mod
       - go.sum
-      - .github/workflows/ci.yml
       - "api/openapi.yaml"
+      - "config.example.yaml"
+      - "config.generated.example.yaml"
+      - "docs/**"
       - "internal/**"
+      - "Dockerfile"
+      - "Dockerfile.*"
+      - "docker-compose*.yml"
+      - "README.md"
       - "scripts/**"
       - "Makefile"
+      - "templates/**"
       - "webui/**"
+      - "VERSION"
       - "WORKFLOW.md"
 
 permissions:
