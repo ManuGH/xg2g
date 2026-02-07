@@ -2,6 +2,12 @@ name: govulncheck
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "57 3 * * 0" # weekly
 
 concurrency:
   group: repo-${{ github.event.pull_request.number || github.ref }}
@@ -65,7 +71,7 @@ jobs:
 
       - name: Upload SARIF to code scanning
         if: always()
-        uses: github/codeql-action/init@6bc82e05fd0ea64601dd4b465378bbcf57de0314
+        uses: github/codeql-action/upload-sarif@6bc82e05fd0ea64601dd4b465378bbcf57de0314
         with:
           sarif_file: govulncheck.sarif
           category: govulncheck

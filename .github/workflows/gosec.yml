@@ -2,6 +2,12 @@ name: Security - Gosec
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "37 3 * * 0" # weekly
 
 concurrency:
   group: repo-${{ github.event.pull_request.number || github.ref }}
@@ -38,6 +44,7 @@ jobs:
           args: -fmt=sarif -out=gosec.sarif -severity=medium -tags=nogpu -exclude-generated -exclude-dir=test -exclude-dir=internal/test -exclude-dir=internal/api -exclude-dir=.github -exclude-dir=vendor ./...
 
       - name: Upload SARIF to GitHub Security
-        uses: github/codeql-action/init@6bc82e05fd0ea64601dd4b465378bbcf57de0314
+        if: always()
+        uses: github/codeql-action/upload-sarif@6bc82e05fd0ea64601dd4b465378bbcf57de0314
         with:
           sarif_file: gosec.sarif
