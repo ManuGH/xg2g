@@ -305,12 +305,23 @@ func TestConfigAudit_PointerDefaults_PreserveZeroValues(t *testing.T) {
 	})
 }
 
-func TestConfigGovernance_DeprecationFail(t *testing.T) {
-	// Set an environment variable marked as "fail" in docs/deprecations.json
+func TestConfigGovernance_RemovedEnvWarnOnly(t *testing.T) {
 	os.Setenv("XG2G_HTTP_ENABLE_HTTP2", "true")
 	defer os.Unsetenv("XG2G_HTTP_ENABLE_HTTP2")
 
-	// Provide minimal valid config to avoid unrelated validation errors
+	// Assert the key is detected as removed.
+	removed := FindActiveRemovedEnvKeys()
+	require.NotEmpty(t, removed)
+	found := false
+	for _, k := range removed {
+		if k.Key == "XG2G_HTTP_ENABLE_HTTP2" {
+			found = true
+			break
+		}
+	}
+	require.True(t, found, "expected XG2G_HTTP_ENABLE_HTTP2 to be flagged as removed")
+
+	// Provide minimal valid config to avoid unrelated validation errors. Loader must not fail.
 	os.Setenv("XG2G_OWI_BASE", "http://localhost")
 	defer os.Unsetenv("XG2G_OWI_BASE")
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
@@ -318,9 +329,7 @@ func TestConfigGovernance_DeprecationFail(t *testing.T) {
 	loader := NewLoader("", "test-version")
 	_, err := loader.Load()
 
-	require.Error(t, err, "Should fail due to 'fail' phase deprecation")
-	assert.Contains(t, err.Error(), "XG2G_HTTP_ENABLE_HTTP2")
-	assert.Contains(t, err.Error(), "removed")
+	assert.NoError(t, err, "removed env vars should be ignored (warn-only)")
 }
 
 func TestConfigGovernance_DeprecationWarn(t *testing.T) {
