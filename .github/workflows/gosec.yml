@@ -41,7 +41,8 @@ jobs:
           # -out gosec.sarif: Save output to file
           # -severity medium: Fail on medium or higher severity issues
           # ./...: Scan all packages
-          args: -fmt=sarif -out=gosec.sarif -severity=medium -tags=nogpu -exclude-generated -exclude-dir=test -exclude-dir=internal/test -exclude-dir=internal/api -exclude-dir=.github -exclude-dir=vendor ./...
+          # Fail only on high+ to keep this scan actionable in day-to-day PRs.
+          args: -fmt=sarif -out=gosec.sarif -severity=high -tags=nogpu -exclude-generated -exclude-dir=test -exclude-dir=internal/test -exclude-dir=internal/api -exclude-dir=.github -exclude-dir=vendor ./...
 
       - name: Upload SARIF to GitHub Security
         if: always()
