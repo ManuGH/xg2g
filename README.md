@@ -91,7 +91,6 @@ or your custom prefix. See [FFmpeg Build Guide](docs/ops/FFMPEG_BUILD.md) for
 details.
 
 To use your local build:
-
 ```bash
 export XG2G_FFMPEG_BIN="/opt/xg2g/ffmpeg/bin/ffmpeg"
 export LD_LIBRARY_PATH="/opt/xg2g/ffmpeg/lib"
@@ -104,7 +103,6 @@ This repository supports deterministic offline testing (air-gap capable).
 See: OFFLINE_TEST.md
 
 Quick check:
-
 ```bash
 export GOTOOLCHAIN=local
 export GOPROXY=off GOSUMDB=off GOVCS="*:off"
