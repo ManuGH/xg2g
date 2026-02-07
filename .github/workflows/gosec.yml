@@ -34,18 +34,26 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Install gosec (pinned)
+        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.22.11
+
       - name: Run gosec security scan
-        uses: securego/gosec@424fc4cd9c82ea0fd6bee9cd49c2db2c3cc0c93f # v2.22.11
-        with:
-          # -fmt sarif: Output in SARIF format
-          # -out gosec.sarif: Save output to file
-          # -severity medium: Fail on medium or higher severity issues
-          # ./...: Scan all packages
-          # Fail only on high+ to keep this scan actionable in day-to-day PRs.
-          args: -fmt=sarif -out=gosec.sarif -severity=high -tags=nogpu -exclude-generated -exclude-dir=test -exclude-dir=internal/test -exclude-dir=internal/api -exclude-dir=.github -exclude-dir=vendor ./...
+        run: |
+          gosec \
+            -fmt=sarif \
+            -out=gosec.sarif \
+            -severity=high \
+            -tags=nogpu \
+            -exclude-generated \
+            -exclude-dir=test \
+            -exclude-dir=internal/test \
+            -exclude-dir=internal/api \
+            -exclude-dir=.github \
+            -exclude-dir=vendor \
+            ./...
 
       - name: Upload SARIF to GitHub Security
-        if: always()
+        if: always() && hashFiles('gosec.sarif') != ''
         uses: github/codeql-action/upload-sarif@6bc82e05fd0ea64601dd4b465378bbcf57de0314
         with:
           sarif_file: gosec.sarif
