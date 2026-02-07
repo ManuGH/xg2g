@@ -7,7 +7,7 @@
 package config
 
 import (
-	streamprofile "github.com/ManuGH/xg2g/internal/core/profile"
+	"github.com/ManuGH/xg2g/internal/streamprofile"
 )
 
 // Snapshot is the immutable, effective runtime configuration for xg2g.

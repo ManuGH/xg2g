@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	streamprofile "github.com/ManuGH/xg2g/internal/core/profile"
+	"github.com/ManuGH/xg2g/internal/streamprofile"
 )
 
 // Env captures all runtime settings sourced from environment variables.
