@@ -72,6 +72,7 @@ func (l *Loader) envLookup(key string) (string, bool) {
 func (l *Loader) Load() (AppConfig, error) {
 	// Pre-Release Guardrail: Fail fast if legacy keys are found
 	CheckLegacyEnv()
+	WarnRemovedEnvKeys()
 
 	cfg := AppConfig{}
 

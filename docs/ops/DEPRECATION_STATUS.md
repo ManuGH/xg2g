@@ -12,10 +12,6 @@ operational view used for release planning and enforcement.
 | Item | Replacement | Phase | Remove In | Code Usage (non-exhaustive) | Source |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `XG2G_STREAM_PORT` | `enigma2.streamPort` | warn | v3.5.0 | `internal/config/registry.go`, `internal/config/merge.go` | `docs/deprecations.json`, `docs/DEPRECATION_POLICY.md` |
-| `XG2G_HTTP_ENABLE_HTTP2` | Always enabled | fail | v3.1.0 | `internal/config/runtime_env.go` | `docs/deprecations.json`, `docs/DEPRECATION_POLICY.md` |
-| `XG2G_RESUME_BACKEND` | Removed | fail | v3.0.0 | `internal/pipeline/resume/store.go` | ADR-021 |
-| `XG2G_SESSION_BACKEND` | Removed | fail | v3.0.0 | `internal/domain/session/store/factory.go` | ADR-021 |
-| `XG2G_CAPABILITIES_BACKEND` | Removed | fail | v3.0.0 | `internal/pipeline/scan/store.go` | ADR-021 |
 
 ### Schema/Protocol Deprecations
 
@@ -51,8 +47,6 @@ operational view used for release planning and enforcement.
 
 ## Current Actions (Suggested)
 
-- `XG2G_HTTP_ENABLE_HTTP2`: removal target is v3.1.0 but code path still exists.
-  Treat as overdue and plan removal with a short compat window if needed.
 - Legacy decision schema: keep telemetry (`xg2g.decision.schema`) until
   sunset criteria are met, then remove decode support in v4.0.
 - Bolt/Badger/JSON: Durable = SQLite only; Ephemeral = memory; migration via `xg2g-migrate`.

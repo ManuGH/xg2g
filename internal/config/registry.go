@@ -249,9 +249,6 @@ func buildRegistry() (*Registry, error) {
 		{FieldPath: "VODMaxConcurrent", Profile: ProfileInternal, Status: StatusInternal},
 		{FieldPath: "VODCacheTTL", Profile: ProfileInternal, Status: StatusInternal, Default: 24 * time.Hour},
 		{FieldPath: "VODCacheMaxEntries", Profile: ProfileInternal, Status: StatusInternal, Default: 256},
-
-		// Zombie candidate examples (mapping existing env that might not be in AppConfig)
-		{Env: "XG2G_HTTP_ENABLE_HTTP2", FieldPath: "??", Profile: ProfileIntegrator, Status: StatusCandidate},
 	}
 
 	for _, e := range entries {
