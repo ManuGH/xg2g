@@ -142,6 +142,7 @@ func TestSmoke(t *testing.T) {
 	cmd.Env = withEnv(cmd.Env, "XG2G_PROXY_LISTEN", ":0")    // Random proxy port
 	cmd.Env = withEnv(cmd.Env, "XG2G_PROXY_PORT", "0")       // Fallback
 	cmd.Env = withEnv(cmd.Env, "XG2G_API_TOKEN", "smoke-secret")
+	cmd.Env = withEnv(cmd.Env, "XG2G_API_TOKEN_SCOPES", "*")
 	cmd.Env = withEnv(cmd.Env, "XG2G_METRICS_LISTEN", ":58081") // Metrics port
 
 	// Capture output
