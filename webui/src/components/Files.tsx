@@ -4,7 +4,8 @@
 
 import { useEffect, useState } from 'react';
 import { getSystemHealth, postSystemRefresh, type SystemHealth } from '../client-ts';
-import './Files.css';
+import { Button, ButtonLink } from './ui';
+import styles from './Files.module.css';
 
 function Files() {
   const [health, setHealth] = useState<SystemHealth | null>(null);
@@ -64,18 +65,19 @@ function Files() {
     }
   };
 
-  if (loading && !health) return <div className="files-loading">Loading...</div>;
+  if (loading && !health) return <div className={styles.loading}>Loading...</div>;
   if (error) {
     return (
-      <div className="files-alert files-alert-error">
+      <div className={`${styles.alert} ${styles.alertError}`.trim()}>
         <div>Error: {error}</div>
-        <button
-          className="files-btn files-btn-secondary"
+        <Button
+          variant="secondary"
+          size="sm"
           onClick={fetchStatus}
           disabled={loading}
         >
           Retry
-        </button>
+        </Button>
       </div>
     );
   }
@@ -85,56 +87,67 @@ function Files() {
   const xmltvUrl = `${window.location.protocol}//${window.location.host}/xmltv.xml`;
 
   return (
-    <div className="files-container">
-      <div className="files-header">
+    <div className={`${styles.container} animate-enter`.trim()}>
+      <div className={styles.header}>
         <h2>Playlist & EPG</h2>
-        <button onClick={handleRegenerate} disabled={regenerating} className="files-btn files-btn-primary">
+        <Button onClick={handleRegenerate} disabled={regenerating}>
           {regenerating ? 'Regenerating...' : 'Regenerate Files'}
-        </button>
+        </Button>
       </div>
 
       {health?.epg?.status && (
-        <div className="files-subtle">
-          EPG status: <span className={`files-status ${health.epg.status === 'ok' ? 'is-ok' : 'is-warn'}`}>{health.epg.status}</span>
+        <div className={styles.subtle}>
+          EPG status:{' '}
+          <span
+            className={[
+              styles.status,
+              health.epg.status === 'ok' ? styles.statusOk : styles.statusWarn,
+            ].filter(Boolean).join(' ')}
+          >
+            {health.epg.status}
+          </span>
         </div>
       )}
 
-      <div className="file-list">
-        <div className="file-card">
+      <div className={styles.list}>
+        <div className={styles.card}>
           <h3>M3U Playlist</h3>
-          <p className="description">Standard M3U playlist for VLC, Kodi, TiviMate.</p>
-          <a href={m3uUrl} className="files-btn files-btn-primary" download>Download M3U</a>
+          <p className={styles.description}>Standard M3U playlist for VLC, Kodi, TiviMate.</p>
+          <ButtonLink href={m3uUrl} download size="sm">
+            Download M3U
+          </ButtonLink>
         </div>
 
-        <div className="file-card">
+        <div className={styles.card}>
           <h3>XMLTV Guide</h3>
-          <p className="description">EPG Data.</p>
+          <p className={styles.description}>EPG Data.</p>
           {health?.epg?.status === 'ok' ? (
-            <p className="files-alert files-alert-success">EPG Loaded</p>
+            <p className={`${styles.alert} ${styles.alertSuccess}`.trim()}>EPG Loaded</p>
           ) : (
-            <p className="files-alert files-alert-warning">EPG Missing or Partial</p>
+            <p className={`${styles.alert} ${styles.alertWarning}`.trim()}>EPG Missing or Partial</p>
           )}
-          <div className="code-block" aria-label="XMLTV URL">{xmltvUrl}</div>
-          <div className="actions-row">
-            <button className="files-btn files-btn-secondary" onClick={() => navigator.clipboard.writeText(xmltvUrl)}>
+          <div className={styles.codeBlock} aria-label="XMLTV URL">{xmltvUrl}</div>
+          <div className={styles.actionsRow}>
+            <Button variant="secondary" size="sm" onClick={() => navigator.clipboard.writeText(xmltvUrl)}>
               Copy URL
-            </button>
-            <a href="/xmltv.xml" className="files-btn files-btn-secondary" download>
+            </Button>
+            <ButtonLink href="/xmltv.xml" variant="secondary" size="sm" download>
               Download
-            </a>
+            </ButtonLink>
           </div>
         </div>
 
-        <div className="file-card">
+        <div className={styles.card}>
           <h3>HDHomeRun (Plex)</h3>
-          <p className="description">Use this IP/URL to add xg2g as a DVR in Plex or Jellyfin.</p>
-          <div className="code-block" aria-label="HDHomeRun base URL">{hdhrUrl.replace('/device.xml', '')}</div>
-          <button
-            className="files-btn files-btn-secondary"
+          <p className={styles.description}>Use this IP/URL to add xg2g as a DVR in Plex or Jellyfin.</p>
+          <div className={styles.codeBlock} aria-label="HDHomeRun base URL">{hdhrUrl.replace('/device.xml', '')}</div>
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={() => navigator.clipboard.writeText(hdhrUrl.replace('/device.xml', ''))}
           >
             Copy IP
-          </button>
+          </Button>
         </div>
       </div>
     </div>

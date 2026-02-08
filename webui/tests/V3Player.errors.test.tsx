@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import V3Player from '../src/components/V3Player';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as sdk from '../src/client-ts/sdk.gen';
@@ -50,16 +50,12 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
   });
 
   it('handles 401/403 Authentication Failure', async () => {
-    (globalThis.fetch as any).mockImplementation((url: string) => {
-      if (url.includes('/sessions/ping')) {
-        return Promise.resolve({
-          ok: false,
-          status: 401,
-          headers: new Map(),
-          json: async () => ({ detail: 'Invalid token' })
-        });
+    (sdk.getRecordingPlaybackInfo as any).mockResolvedValue({
+      error: { title: 'Unauthorized' },
+      response: {
+        status: 401,
+        headers: new Map(),
       }
-      return Promise.resolve({ ok: true, status: 200, json: async () => ({}) });
     });
 
     render(<V3Player autoStart={true} recordingId="rec-1" />);
@@ -95,24 +91,35 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
 
     vi.useFakeTimers();
 
-    // Render with channel to trigger LIVE path which has heartbeats
-    const mockChannel = { id: 'ch-1', serviceRef: '1:0:1:...' };
-    render(<V3Player autoStart={true} channel={mockChannel as any} />);
+    try {
+      // Render with channel to trigger LIVE path which has heartbeats
+      const mockChannel = { id: 'ch-1', serviceRef: '1:0:1:...' };
+      render(<V3Player autoStart={true} channel={mockChannel as any} />);
 
-    // Wait for READY state (Live path)
-    await waitFor(() => {
-      expect(screen.getByText(/player.statusStates.ready/i)).toBeInTheDocument();
-    });
+      // Let the async autostart path progress far enough to create + poll the session.
+      await act(async () => {
+        await flushMicrotasks();
+        await flushMicrotasks();
+      });
+      const calls = (globalThis.fetch as any).mock.calls.map((c: any[]) => String(c[0]));
+      expect(calls.some((u: string) => u.includes('/sessions/sess-123') && !u.includes('/heartbeat'))).toBe(true);
 
-    // Advance time to trigger first heartbeat (success)
-    await vi.advanceTimersByTimeAsync(1100);
-    // Trigger second (failing) heartbeat
-    await vi.advanceTimersByTimeAsync(1100);
+      // Trigger first heartbeat (success) + flush the async interval callback.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+        await flushMicrotasks();
+      });
 
-    await waitFor(() => {
+      // Trigger second heartbeat (410) + flush the async interval callback.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+        await flushMicrotasks();
+      });
+
+      // With fake timers enabled, avoid waitFor here (it schedules timeouts).
       expect(screen.getByText(/player.sessionExpired/i)).toBeInTheDocument();
-    });
-
-    vi.useRealTimers();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

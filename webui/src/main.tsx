@@ -8,8 +8,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import './i18n';
 import './index.css';
 import App from './App.tsx';
-import ErrorBoundary from './components/ErrorBoundary.jsx';
+import ErrorBoundary from './components/ErrorBoundary';
 import { AppProvider } from './context/AppContext.tsx';
+import { UiOverlayProvider } from './context/UiOverlayContext.tsx';
 
 // TanStack Query Client Configuration
 // Phase 1: Server-State Layer (2026 State-of-the-Art)
@@ -27,9 +28,11 @@ const queryClient = new QueryClient({
 createRoot(document.getElementById('root')!).render(
   <ErrorBoundary>
     <QueryClientProvider client={queryClient}>
-      <AppProvider>
-        <App />
-      </AppProvider>
+      <UiOverlayProvider>
+        <AppProvider>
+          <App />
+        </AppProvider>
+      </UiOverlayProvider>
     </QueryClientProvider>
   </ErrorBoundary>,
 );

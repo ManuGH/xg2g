@@ -14,7 +14,8 @@ import { EpgToolbar } from './components/EpgToolbar';
 import { EpgChannelList } from './components/EpgChannelList';
 import { normalizeEpgText } from '../../utils/text';
 import { debugError, debugLog, formatError } from '../../utils/logging';
-import './EPG.css';
+import { useUiOverlay } from '../../context/UiOverlayContext';
+import styles from './EPG.module.css';
 
 const RECORD_SUPPORTED = true; // Feature flag
 
@@ -34,6 +35,7 @@ export default function EPG({
   onPlay,
 }: EpgProps) {
   const { t } = useTranslation();
+  const { confirm, toast } = useUiOverlay();
   const [state, dispatch] = useReducer(epgReducer, undefined, createInitialEpgState);
   const [timers, setTimers] = React.useState<Timer[]>([]);
   const abortControllerRef = React.useRef<AbortController | null>(null);
@@ -59,9 +61,14 @@ export default function EPG({
 
   const handleRecord = useCallback(
     async (event: EpgEvent) => {
-      // Note: confirm/alert are blocking, but simple enough for this scope.
-      // Ideally move to a proper modal or toast.
-      if (!confirm(t('epg.confirmRecord', { title: event.title }))) return;
+      const ok = await confirm({
+        title: 'Schedule Recording',
+        message: t('epg.confirmRecord', { title: event.title }),
+        confirmLabel: 'Record',
+        cancelLabel: 'Cancel',
+        tone: 'action',
+      });
+      if (!ok) return;
 
       try {
         await addTimer({
@@ -73,7 +80,7 @@ export default function EPG({
             description: normalizeEpgText(event.desc) || '',
           },
         });
-        alert(t('epg.recordSuccess'));
+        toast({ kind: 'success', message: t('epg.recordSuccess') });
         loadTimers(); // Refresh feedback immediately
       } catch (err: any) {
         debugError(formatError(err));
@@ -83,10 +90,10 @@ export default function EPG({
         } else if (err.body) {
           msg = JSON.stringify(err.body);
         }
-        alert(t('epg.recordError', { error: msg }));
+        toast({ kind: 'error', message: t('epg.recordError', { error: msg }) });
       }
     },
-    [loadTimers, t]
+    [confirm, loadTimers, t, toast]
   );
 
   const isRecorded = useCallback(
@@ -256,7 +263,7 @@ export default function EPG({
   const showMainList = state.loadState === 'ready' && !showSearchResults;
 
   return (
-    <div className="epg-page">
+    <div className={[styles.page, 'animate-enter'].join(' ')}>
       {/* Toolbar */}
       <EpgToolbar
         channelCount={channels.length}
@@ -270,29 +277,29 @@ export default function EPG({
       />
 
       {/* Search Error */}
-      {state.searchError && <div className="epg-card epg-error">{t(state.searchError)}</div>}
+      {state.searchError && <div className={[styles.card, styles.cardError].join(' ')}>{t(state.searchError)}</div>}
 
       {/* Search No Results */}
       {state.searchLoadState === 'ready' &&
         state.searchEvents.length === 0 &&
         !state.searchError &&
         state.filters.query?.trim() && (
-          <div className="epg-card">
+          <div className={styles.card}>
             {t('epg.noResults', { query: state.filters.query.trim() })}
           </div>
         )}
 
       {/* Search Results */}
       {showSearchResults && (
-        <div className="epg-card">
-          <div className="epg-channel">
-            <div className="epg-channel-meta">
-              <div className="epg-channel-name">
+        <div className={styles.card}>
+          <div className={styles.channel}>
+            <div className={styles.channelMeta}>
+              <div className={styles.channelName}>
                 {t('epg.searchResults', { query: state.filters.query?.trim() })}
               </div>
             </div>
           </div>
-          <div className="epg-programmes">
+          <div className={styles.programmes}>
             <EpgChannelList
               mode="search"
               channels={channels}
@@ -310,8 +317,8 @@ export default function EPG({
       )}
 
       {/* Main View Loading/Error */}
-      {state.loadState === 'loading' && <div className="epg-card">{t('epg.loading')}</div>}
-      {state.error && <div className="epg-card epg-error">{t(state.error)}</div>}
+      {state.loadState === 'loading' && <div className={styles.card}>{t('epg.loading')}</div>}
+      {state.error && <div className={[styles.card, styles.cardError].join(' ')}>{t(state.error)}</div>}
 
       {/* Main Channel List */}
       {showMainList && (

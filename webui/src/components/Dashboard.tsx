@@ -15,29 +15,28 @@ import {
 import { useTranslation } from 'react-i18next';
 import type { SystemHealth } from '../client-ts';
 import StreamsList from './StreamsList';
-import { Card, CardHeader, CardTitle, CardBody } from './ui/Card';
-import { StatusChip } from './ui/StatusChip';
-import './Dashboard.css';
+import { Button, Card, CardHeader, CardTitle, CardBody, StatusChip } from './ui';
+import styles from './Dashboard.module.css';
 
 export default function Dashboard() {
   const { data: health, error, isLoading, refetch } = useSystemHealth();
 
-  if (error) return <div className="error">Error: {(error as Error).message}</div>;
+  if (error) return <div className={styles.errorText}>Error: {(error as Error).message}</div>;
   if (isLoading || !health) return <div>Loading...</div>;
 
   return (
-    <div className="dashboard animate-enter">
-      <div className="dashboard-header">
+    <div className={`${styles.page} animate-enter`.trim()}>
+      <div className={styles.header}>
         <h2>xg2g Dashboard</h2>
-        <div className="dashboard-actions">
+        <div className={styles.actions}>
           <RecordingStatusIndicator />
-          <button onClick={() => refetch()}>Refresh</button>
+          <Button variant="secondary" onClick={() => refetch()}>Refresh</Button>
         </div>
       </div>
 
       {/* Startup Warning Banner */}
       {((health.epg?.missingChannels || 0) > 0 && (health.uptimeSeconds || 0) < 300) && (
-        <Card className="dashboard__warning">
+        <Card className={styles.warning}>
           <CardHeader>
             <CardTitle>System Initializing</CardTitle>
             <StatusChip state="warning" label="SYNC" />
@@ -49,12 +48,12 @@ export default function Dashboard() {
       )}
 
       {/* Primary Row: Receiver Status (HDMI Output) */}
-      <div className="dashboard__primary">
+      <div className={styles.primary}>
         <LiveTVCard />
       </div>
 
       {/* Second Row: Streaming Status */}
-      <div className="dashboard__status-grid">
+      <div className={styles.statusGrid}>
         <BoxStreamingCard />
         <ProgramStatusCard health={health} />
       </div>
@@ -63,7 +62,7 @@ export default function Dashboard() {
       <StreamsDetailSection />
 
       {/* Bottom Row: EPG, Receiver, Info */}
-      <div className="dashboard__info-grid">
+      <div className={styles.infoGrid}>
         <Card>
           <CardHeader>
             <CardTitle>Enigma2 Link</CardTitle>
@@ -73,7 +72,7 @@ export default function Dashboard() {
               state={health.receiver?.status === 'ok' ? 'success' : 'error'}
               label={health.receiver?.status === 'ok' ? 'CONNECTED' : 'ERROR'}
             />
-            <p className="info-text">Last Sync: {formatTimeAgo(health.receiver?.lastCheck)}</p>
+            <p className={styles.infoText}>Last Sync: {formatTimeAgo(health.receiver?.lastCheck)}</p>
           </CardBody>
         </Card>
 
@@ -92,7 +91,7 @@ export default function Dashboard() {
                   health.epg?.status === 'missing' ? 'PARTIAL' : 'ERROR'
               }
             />
-            <p className="info-text tabular">{health.epg?.missingChannels || 0} channels missing data</p>
+            <p className={`${styles.infoText} tabular`.trim()}>{health.epg?.missingChannels || 0} channels missing data</p>
           </CardBody>
         </Card>
 
@@ -101,14 +100,14 @@ export default function Dashboard() {
             <CardTitle>Program Info</CardTitle>
           </CardHeader>
           <CardBody>
-            <div className="info-list">
-              <div className="info-item">
-                <span className="info-label">Version</span>
-                <span className="info-value">{health.version}</span>
+            <div className={styles.infoList}>
+              <div className={styles.infoItem}>
+                <span className={styles.infoLabel}>Version</span>
+                <span className={styles.infoValue}>{health.version}</span>
               </div>
-              <div className="info-item">
-                <span className="info-label">Uptime</span>
-                <span className="info-value tabular">{formatUptime(health.uptimeSeconds || 0)}</span>
+              <div className={styles.infoItem}>
+                <span className={styles.infoLabel}>Uptime</span>
+                <span className={`${styles.infoValue} tabular`.trim()}>{formatUptime(health.uptimeSeconds || 0)}</span>
               </div>
             </div>
           </CardBody>
@@ -116,7 +115,7 @@ export default function Dashboard() {
       </div>
 
       {/* Recent Logs */}
-      <div className="dashboard__logs">
+      <div className={styles.logs}>
         <h3>Recent Logs</h3>
         <LogList />
       </div>
@@ -139,17 +138,17 @@ function LiveTVCard() {
   const isUnavailable = info?.status === 'unavailable';
 
   return (
-    <Card variant="live" className="live-tv-card">
+    <Card variant="live" className={styles.liveTvCard}>
       <CardHeader>
-        <div className="live-tv-header">
+        <div className={styles.liveTvHeader}>
           <CardTitle>Live on Receiver</CardTitle>
-          <div className="badge-group">
+          <div className={styles.badgeGroup}>
             {!isUnavailable && <StatusChip state="idle" label="HDMI" showIcon={false} />}
             {!isUnavailable && <StatusChip state="live" label="LIVE" />}
             {isUnavailable && <StatusChip state="idle" label="STANDBY" />}
           </div>
         </div>
-        <div className="receiver-channel">
+        <div className={styles.receiverChannel}>
           {isUnavailable ? t('common.receiverStandby') : (channel?.name || 'Unknown Channel')}
         </div>
       </CardHeader>
@@ -157,37 +156,37 @@ function LiveTVCard() {
       <CardBody>
         {hasNow && now ? (
           <>
-            <div className="program-current">
-              <div className="program-title">{now.title}</div>
-              <div className="program-desc">{now.description}</div>
+            <div className={styles.programCurrent}>
+              <div className={styles.programTitle}>{now.title}</div>
+              <div className={styles.programDesc}>{now.description}</div>
             </div>
             {now.beginTimestamp && now.durationSec && (
-              <div className="program-progress">
-                <div className="program-times tabular">
+              <div className={styles.programProgress}>
+                <div className={`${styles.programTimes} tabular`.trim()}>
                   <span>{new Date(now.beginTimestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                   <span>{new Date((now.beginTimestamp + now.durationSec) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                 </div>
-                <div className="progress-bar">
+                <div className={styles.progressBar}>
                   <div
-                    className="progress-fill"
+                    className={styles.progressFill}
                     style={{ '--xg2g-prog': `${Math.min(100, Math.max(0, ((Date.now() / 1000) - now.beginTimestamp) / now.durationSec * 100))}%` } as React.CSSProperties & { [key: string]: string }}
                   />
                 </div>
               </div>
             )}
             {next?.title && (
-              <div className="program-next">
-                <span className="next-label">UP NEXT:</span> {next.title}
+              <div className={styles.programNext}>
+                <span className={styles.nextLabel}>UP NEXT:</span> {next.title}
               </div>
             )}
           </>
         ) : (
-          <div className="no-data">
+          <div className={styles.noData}>
             {next?.title ? (
-              <div className="program-next-only">
-                <div className="program-current-missing">{t('common.noCurrentProgram')}</div>
-                <div className="program-next">
-                  <span className="next-label">UP NEXT:</span> {next.title}
+              <div>
+                <div>{t('common.noCurrentProgram')}</div>
+                <div className={styles.programNext}>
+                  <span className={styles.nextLabel}>UP NEXT:</span> {next.title}
                 </div>
               </div>
             ) : (
@@ -213,8 +212,8 @@ function BoxStreamingCard() {
         <CardTitle>{t('nav.cards.boxStreaming.title')}</CardTitle>
       </CardHeader>
       <CardBody>
-        <div className="status-row">
-          <span className="status-label">{t('nav.cards.boxStreaming.inputLabel')}</span>
+        <div className={styles.statusRow}>
+          <span className={styles.statusLabel}>{t('nav.cards.boxStreaming.inputLabel')}</span>
           <StatusChip
             state={isStreaming ? 'live' : 'idle'}
             label={isStreaming ? `STREAMING (${streamCount})` : 'IDLE'}
@@ -238,16 +237,16 @@ function ProgramStatusCard({ health }: { health: SystemHealth }) {
         <CardTitle>{t('nav.cards.programStatus.title')}</CardTitle>
       </CardHeader>
       <CardBody>
-        <div className="status-row">
-          <span className="status-label">{t('nav.cards.programStatus.outputLabel')}</span>
+        <div className={styles.statusRow}>
+          <span className={styles.statusLabel}>{t('nav.cards.programStatus.outputLabel')}</span>
           <StatusChip
             state={isActive ? 'live' : 'idle'}
             label={isActive ? `${streamCount} ACTIVE` : 'IDLE'}
           />
         </div>
-        <div className="info-list">
-          <div className="info-item">
-            <span className="info-label">Health</span>
+        <div className={styles.infoList}>
+          <div className={styles.infoItem}>
+            <span className={styles.infoLabel}>Health</span>
             <StatusChip
               state={health.status === 'ok' ? 'success' : 'warning'}
               label={health.status === 'ok' ? 'HEALTHY' : 'DEGRADED'}
@@ -263,7 +262,7 @@ function ProgramStatusCard({ health }: { health: SystemHealth }) {
 // Streams Detail Section - Refactored to primitive grid
 function StreamsDetailSection() {
   return (
-    <div className="dashboard__streams">
+    <div className={styles.streams}>
       <h3>Active Streams</h3>
       <StreamsList />
     </div>
@@ -290,12 +289,12 @@ function RecordingStatusIndicator() {
 function LogList() {
   const { data: logs = [], isLoading, error } = useLogs(5);
 
-  if (error) return <div className="error-text">{(error as Error).message}</div>;
+  if (error) return <div className={styles.errorText}>{(error as Error).message}</div>;
   if (isLoading) return <div>Loading logs...</div>;
-  if (!logs || logs.length === 0) return <div className="no-data">No recent logs</div>;
+  if (!logs || logs.length === 0) return <div className={styles.noData}>No recent logs</div>;
 
   return (
-    <table className="log-table">
+    <table className={styles.logTable}>
       <thead>
         <tr>
           <th>Time</th>
@@ -307,7 +306,7 @@ function LogList() {
         {logs.map((log, i) => (
           <tr key={i}>
             <td className="tabular">{new Date(log.time || '').toLocaleTimeString()}</td>
-            <td className={`log-level log-level--${(log.level || '').toLowerCase()}`}>
+            <td className={styles.logLevel} data-level={(log.level || '').toLowerCase() || undefined}>
               {log.level}
             </td>
             <td>{log.message}</td>

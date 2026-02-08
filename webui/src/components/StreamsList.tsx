@@ -4,7 +4,7 @@
 import { useStreams } from '../hooks/useServerQueries';
 import { Card, CardHeader, CardBody, StatusChip } from './ui';
 import type { StreamSession } from '../client-ts';
-import './Streams.css';
+import styles from './Streams.module.css';
 
 interface StreamsListProps {
   compact?: boolean;
@@ -64,20 +64,24 @@ export default function StreamsList({ compact = false }: StreamsListProps) {
   if (count === 0 && !error) return null;
 
   return (
-    <div className={`streams-section ${compact ? 'streams-section--compact' : ''}`}>
-      {!compact && <h3>Active Streams <span className="tabular">({count})</span></h3>}
-      {error && <p className="error-text">Failed to load stream details</p>}
+    <div className={[styles.section, compact ? styles.sectionCompact : null].filter(Boolean).join(' ')}>
+      {!compact && (
+        <h3 className={styles.heading}>
+          Active Streams <span className="tabular">({count})</span>
+        </h3>
+      )}
+      {error && <p className={styles.errorText}>Failed to load stream details</p>}
 
-      <div className="streams-grid">
+      <div className={styles.grid}>
         {streams.map((s: StreamSession) => {
           const chip = mapStreamToChip(s);
           return (
-            <Card key={s.id} variant="standard" className="stream-card" interactive>
+            <Card key={s.id} variant="standard" className={styles.streamCard} interactive>
               <CardHeader>
-                <div className="stream-header">
-                  <div className="stream-title-group">
+                <div className={styles.streamHeader}>
+                  <div className={styles.streamTitleGroup}>
                     <StatusChip state="success" label="STREAM" showIcon={false} />
-                    <div className="stream-channel">{s.channelName || 'Unknown Channel'}</div>
+                    <div className={styles.streamChannel}>{s.channelName || 'Unknown Channel'}</div>
                   </div>
                   <StatusChip state={chip.state} label={chip.label} />
                 </div>
@@ -85,18 +89,18 @@ export default function StreamsList({ compact = false }: StreamsListProps) {
 
               <CardBody>
                 {s.program?.title && (
-                  <div className="stream-program">
-                    <div className="program-title">{s.program.title}</div>
-                    <div className="program-desc">{s.program.description}</div>
+                  <div className={styles.streamProgram}>
+                    <div className={styles.programTitle}>{s.program.title}</div>
+                    <div className={styles.programDesc}>{s.program.description}</div>
                   </div>
                 )}
-                <div className="stream-meta">
-                  <div className="meta-item">
-                    <span className="meta-label">Client:</span>
+                <div className={styles.streamMeta}>
+                  <div className={styles.metaItem}>
+                    <span className={styles.metaLabel}>Client:</span>
                     <span className="tabular">{maskIP(s.clientIp)}</span>
                   </div>
-                  <div className="meta-item">
-                    <span className="meta-label">Started:</span>
+                  <div className={styles.metaItem}>
+                    <span className={styles.metaLabel}>Started:</span>
                     <span className="tabular">{s.startedAt ? formatDuration(new Date(s.startedAt)) : 'unknown'}</span>
                   </div>
                 </div>

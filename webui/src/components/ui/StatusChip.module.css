@@ -1,7 +1,7 @@
 /* StatusChip Primitive - Broadcast Console 2026
    CTO Contract: Single pattern, semantic states, pulse only for live/rec/error */
 
-.status-chip {
+.chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -14,73 +14,55 @@
   text-transform: uppercase;
 }
 
-.status-chip__icon {
+.icon {
   font-size: 10px;
   line-height: 1;
 }
 
-.status-chip__label {
+.label {
   line-height: 1;
 }
 
 /* Semantic States - CTO Contract: LIVE/REC=Amber, ERROR=Red */
 
-.status-chip[data-state="idle"] {
+.chip[data-state="idle"] {
   background: var(--status-neutral-subtle);
   color: var(--text-tertiary);
   border: 1px solid var(--status-neutral-border);
 }
 
-.status-chip[data-state="success"] {
+.chip[data-state="success"] {
   background: var(--status-success-subtle);
   color: var(--status-success);
   border: 1px solid var(--status-success-border);
 }
 
-.status-chip[data-state="warning"] {
+.chip[data-state="warning"] {
   background: var(--status-warning-subtle);
   color: var(--status-warning);
   border: 1px solid var(--status-warning-border);
 }
 
-.status-chip[data-state="error"] {
+.chip[data-state="error"] {
   background: var(--status-error-subtle);
   color: var(--status-error);
   border: 1px solid var(--status-error-border);
 }
 
-.status-chip[data-state="live"],
-.status-chip[data-state="recording"] {
+.chip[data-state="live"],
+.chip[data-state="recording"] {
   background: var(--accent-live-subtle);
   color: var(--accent-live);
   border: 1px solid var(--accent-live);
 }
 
 /* Status Pulse - CTO Stop Criterion #2: ONLY live/recording/error */
-.status-chip[data-state="live"] .status-chip__icon,
-.status-chip[data-state="recording"] .status-chip__icon {
+.chip[data-state="live"] .icon,
+.chip[data-state="recording"] .icon {
   animation: statusPulse 2s ease-in-out infinite;
 }
 
-.status-chip[data-state="error"] .status-chip__icon {
+.chip[data-state="error"] .icon {
   animation: statusPulse 1.5s ease-in-out infinite;
 }
 
-@keyframes statusPulse {
-
-  0%,
-  100% {
-    opacity: 1;
-  }
-
-  50% {
-    opacity: 0.6;
-  }
-}
-
-/* Accessibility: Reduced Motion */
-@media (prefers-reduced-motion: reduce) {
-  .status-chip__icon {
-    animation: none !important;
-  }
-}

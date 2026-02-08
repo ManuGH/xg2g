@@ -1,4 +1,4 @@
-.system-info-page {
+.page {
   padding: 20px;
   max-width: 1600px;
   margin: 0 auto;
@@ -6,41 +6,40 @@
   height: calc(100vh - 120px);
 }
 
-.system-info-page h1 {
+.page h1 {
   font-size: 22px;
   font-weight: 700;
   margin-bottom: 16px;
   color: var(--text-primary);
 }
 
-.info-grid {
+.grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 14px;
   grid-auto-rows: minmax(auto, 1fr);
 }
 
-/* Tuner card spans 2 columns */
-.info-card-wide {
+.cardWide {
   grid-column: span 2;
 }
 
-.info-card {
+.card {
   background: var(--bg-elevated);
   border: 1px solid var(--border-base);
   border-radius: 12px;
   padding: 14px 16px;
   backdrop-filter: blur(10px);
-  transition: all 0.2s;
+  transition: all var(--motion-standard) var(--ease-standard);
 }
 
-.info-card:hover {
+.card:hover {
   background: var(--bg-hover);
   border-color: var(--border-elevated);
   transform: translateY(-2px);
 }
 
-.info-card h2 {
+.card h2 {
   font-size: 13px;
   font-weight: 700;
   color: var(--text-secondary);
@@ -49,7 +48,7 @@
   letter-spacing: 0.5px;
 }
 
-.info-row {
+.row {
   display: flex;
   justify-content: space-between;
   padding: 8px 0;
@@ -57,7 +56,7 @@
   align-items: flex-start;
 }
 
-.info-row .label {
+.label {
   font-size: 12px;
   color: var(--text-tertiary);
   font-weight: 500;
@@ -65,7 +64,7 @@
   min-width: 90px;
 }
 
-.info-row .value {
+.value {
   font-size: 12px;
   color: var(--text-primary);
   font-weight: 600;
@@ -73,74 +72,74 @@
   word-break: break-word;
   overflow-wrap: break-word;
   max-width: 100%;
+  min-width: 0;
 }
 
-.info-row .value.small {
+.small {
   font-size: 10px;
   font-family: var(--font-mono);
   color: var(--text-secondary);
   line-height: 1.4;
 }
 
-.info-section {
+.section {
   padding: 10px 0;
   border-bottom: 1px solid var(--border-base);
 }
 
-.info-section:last-child {
+.section:last-child {
   border-bottom: none;
   padding-bottom: 0;
 }
 
-.loading-spinner,
-.error-message {
+.loading,
+.error {
   text-align: center;
   padding: 40px;
   font-size: 14px;
   color: var(--text-secondary);
 }
 
-.error-message {
+.error {
   color: var(--status-error);
 }
 
-/* Tuner Grid - 2 columns for better readability */
-.tuner-grid {
+.tunerGrid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 10px;
   margin-top: 12px;
 }
 
-.tuner-item {
+.tunerItem {
   background: var(--bg-elevated);
   border: 1px solid var(--border-base);
   border-radius: 8px;
   padding: 12px 14px;
-  transition: all 0.2s;
+  transition: all var(--motion-standard) var(--ease-standard);
 }
 
-.tuner-item:hover {
+.tunerItem:hover {
   background: var(--bg-hover);
   border-color: var(--border-elevated);
   transform: translateY(-1px);
 }
 
-.tuner-header {
+.tunerHeader {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 8px;
 }
 
-.tuner-number {
+.tunerNumber {
   font-size: 11px;
   font-weight: 600;
   color: var(--text-tertiary);
   letter-spacing: 0.5px;
 }
 
-.tuner-type {
+.tunerType {
   font-size: 11px;
   color: var(--text-secondary);
   font-weight: 500;
@@ -148,7 +147,7 @@
   padding: 3px 0;
 }
 
-.tuner-status-badge {
+.tunerStatusBadge {
   font-size: 10px;
   font-weight: 700;
   padding: 3px 8px;
@@ -156,57 +155,51 @@
   letter-spacing: 0.5px;
 }
 
-.tuner-status-badge.status-live {
+.statusLive,
+.statusRecording {
   background: var(--accent-live-subtle);
   color: var(--accent-live);
   border: 1px solid var(--accent-live);
 }
 
-.tuner-status-badge.status-recording {
-  background: var(--accent-live-subtle);
-  color: var(--accent-live);
-  border: 1px solid var(--accent-live);
-}
-
-.tuner-status-badge.status-streaming {
+.statusStreaming {
   background: var(--status-info-subtle);
   color: var(--status-info);
   border: 1px solid var(--status-info-border);
 }
 
-.tuner-status-badge.status-idle {
+.statusIdle {
   background: var(--status-neutral-subtle);
   color: var(--text-tertiary);
   border: 1px solid var(--status-neutral-border);
 }
 
-/* RAM Display - Consumption gauge style */
-.ram-summary {
+.ramSummary {
   display: flex;
   flex-direction: column;
   gap: 12px;
   padding-top: 6px;
 }
 
-.ram-consumption {
+.ramConsumption {
   display: flex;
   align-items: baseline;
   gap: 6px;
 }
 
-.ram-used {
+.ramUsed {
   font-weight: 700;
   font-size: 26px;
   color: var(--status-info);
 }
 
-.ram-label {
+.ramLabel {
   font-size: 13px;
   color: var(--text-secondary);
   font-weight: 500;
 }
 
-.ram-bar-container {
+.ramBarContainer {
   width: 100%;
   height: 10px;
   background: var(--bg-hover);
@@ -215,53 +208,40 @@
   position: relative;
 }
 
-.ram-bar-fill {
+.ramBarFill {
   height: 100%;
   border-radius: 5px;
   transition: width 0.5s ease, background 0.3s ease;
 }
 
-.ram-bar-fill.normal {
+.ramNormal {
   background: var(--status-success);
 }
 
-.ram-bar-fill.warning {
+.ramWarning {
   background: var(--status-warning);
 }
 
-.ram-bar-fill.critical {
+.ramCritical {
   background: var(--status-error);
-  animation: pulse-glow 2s ease-in-out infinite;
+  box-shadow: var(--shadow-status-error);
+  animation: statusPulse 2s ease-in-out infinite;
 }
 
-@keyframes pulse-glow {
-
-  0%,
-  100% {
-    opacity: 1;
-    box-shadow: var(--shadow-status-error);
-  }
-
-  50% {
-    opacity: 0.85;
-    box-shadow: var(--shadow-status-error-strong);
-  }
-}
-
-.ram-stats {
+.ramStats {
   display: flex;
   justify-content: space-between;
   gap: 12px;
 }
 
-.ram-stat {
+.ramStat {
   display: flex;
   flex-direction: column;
   gap: 2px;
   flex: 1;
 }
 
-.ram-stat-label {
+.ramStatLabel {
   font-size: 10px;
   color: var(--text-tertiary);
   text-transform: uppercase;
@@ -269,34 +249,22 @@
   font-weight: 600;
 }
 
-.ram-stat-value {
+.ramStatValue {
   font-size: 12px;
   color: var(--text-primary);
   font-weight: 700;
   font-family: var(--font-mono);
 }
 
-@keyframes pulse {
-
-  0%,
-  100% {
-    opacity: 1;
-  }
-
-  50% {
-    opacity: 0.7;
-  }
-}
-
-/* Storage & Recordings Enhancements */
-.storage-status-header {
+.storageStatusHeader {
   display: flex;
   align-items: center;
   gap: 4px;
   margin-bottom: 2px;
+  min-width: 0;
 }
 
-.status-dot {
+.statusDot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
@@ -304,22 +272,22 @@
   margin-right: 4px;
 }
 
-.status-dot.dot-ok {
+.dotOk {
   background-color: var(--status-success);
   box-shadow: var(--shadow-status-success);
 }
 
-.status-dot.dot-error {
+.dotError {
   background-color: var(--status-error);
   box-shadow: var(--shadow-status-error);
 }
 
-.status-dot.dot-timeout {
+.dotTimeout {
   background-color: var(--status-warning);
   box-shadow: var(--shadow-status-warning);
 }
 
-.status-dot.dot-unknown {
+.dotUnknown {
   background-color: var(--text-disabled);
 }
 
@@ -330,73 +298,77 @@
   border-radius: 4px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  flex-shrink: 0;
 }
 
-.tag-nas {
+.tagNas {
   background: var(--status-info-subtle);
   color: var(--status-info);
   border: 1px solid var(--status-info-border);
 }
 
-.tag-intern {
+.tagIntern {
   background: var(--status-neutral-subtle);
   color: var(--text-secondary);
   border: 1px solid var(--status-neutral-border);
 }
 
-.storage-subinfo {
+.storageSubinfo {
   margin-top: 4px;
   padding-left: 12px;
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
 }
 
-.storage-state-row {
+.storageStateRow {
   display: flex;
   justify-content: space-between;
   align-items: center;
   width: 100%;
+  gap: 8px;
 }
 
-.access-badge {
+.accessBadge {
   font-size: 9px;
   font-weight: 800;
   padding: 1px 4px;
   border-radius: 3px;
   background: var(--status-neutral-subtle);
   color: var(--text-tertiary);
+  flex-shrink: 0;
 }
 
-.access-rw {
+.accessRw {
   background: var(--status-success-subtle);
   color: var(--status-success);
 }
 
-.access-ro {
+.accessRo {
   background: var(--status-warning-subtle);
   color: var(--status-warning);
 }
 
-.status-text {
+.statusText {
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
 }
 
-.status-text.ok {
+.textOk {
   color: var(--status-success);
 }
 
-.status-text.error {
+.textError {
   color: var(--status-error);
 }
 
-.status-text.timeout {
+.textTimeout {
   color: var(--status-warning);
 }
 
-.checked-at {
+.checkedAt {
   font-size: 0.65rem;
   color: var(--text-tertiary);
   margin-top: 2px;
@@ -405,3 +377,15 @@
 .mono {
   font-family: var(--font-mono);
 }
+
+.italic {
+  font-style: italic;
+}
+
+.textTruncate {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+

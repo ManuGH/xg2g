@@ -1,0 +1,252 @@
+/* SeriesManager - scoped styles (CSS Modules) */
+
+.container {
+  /* layout handled by parent */
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.header h2 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.loadingState {
+  padding: 24px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 24px;
+}
+
+.textSecondary {
+  color: var(--text-secondary);
+}
+
+/* Rule Card */
+.ruleCard {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.ruleHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 12px;
+}
+
+.ruleHeader h3 {
+  margin: 0;
+  font-size: 18px;
+  color: var(--text-primary);
+}
+
+.ruleMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.metaRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.metaLabel {
+  color: var(--text-muted);
+}
+
+.metaValue {
+  color: var(--text-primary);
+  font-weight: 500;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ruleStats {
+  background: var(--bg-overlay);
+  padding: 8px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.lastRunInfo {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-secondary);
+}
+
+.runStatus {
+  white-space: nowrap;
+}
+
+.runStatusSuccess {
+  color: var(--accent-success);
+}
+
+.runStatusFailed {
+  color: var(--accent-danger);
+}
+
+.ruleActions {
+  display: flex;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.ruleAction {
+  flex: 1;
+}
+
+/* Modal */
+.modalOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--overlay-backdrop);
+  display: grid;
+  place-items: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
+.modal {
+  width: 90%;
+  max-width: 500px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-hover);
+  display: flex;
+  flex-direction: column;
+  max-height: 90vh;
+}
+
+.modalHeader {
+  padding: 20px;
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modalHeader h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.closeButton {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 24px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.modalBody {
+  padding: 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.formGroup label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.inputField {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 15px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.helpText {
+  display: block;
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.modalFooter {
+  padding: 20px;
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+/* Day Selector */
+.daySelector {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dayButton {
+  flex: 1;
+  min-width: 40px;
+  padding: 8px 0;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  transition:
+    background var(--motion-standard) var(--ease-standard),
+    color var(--motion-standard) var(--ease-standard),
+    border-color var(--motion-standard) var(--ease-standard);
+}
+
+.dayButtonActive {
+  background: var(--accent-primary);
+  color: var(--text-primary);
+  border-color: var(--accent-primary);
+}
+
+.dayButton:hover:not(.dayButtonActive) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* Logic: Focus Visible */
+.dayButton:focus-visible,
+.closeButton:focus-visible,
+.inputField:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+

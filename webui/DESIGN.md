@@ -251,7 +251,7 @@ body::after {
 
 ## Motion System - Purposeful Only
 
-> **CTO Contract:** Continuous motion is **FORBIDDEN** except status pulse (LIVE/REC).
+> **CTO Contract:** Continuous motion is **FORBIDDEN** except status pulse (LIVE/REC) and functional loading spinners.
 
 ### Allowed Animations
 
@@ -281,8 +281,8 @@ body::after {
 #### 2. Interactions (User Feedback)
 
 ```css
-transition-duration: 180ms;  /* Range: 160-220ms */
-transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+transition-duration: var(--motion-standard);  /* 180ms, range 160-220ms */
+transition-timing-function: var(--ease-standard);
 ```
 
 **Applied to:**
@@ -291,6 +291,14 @@ transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 - Card hover
 - Navigation selection
 - Focus states
+
+**Token Mapping (SSoT)**
+
+Tokens are defined in `src/index.css` and mirrored here (DESIGN.md is the contract):
+
+- `--motion-standard`: 180ms (interactions)
+- `--motion-slow`: 220ms (non-critical UI transitions)
+- `--ease-standard`: cubic-bezier(0.4, 0, 0.2, 1)
 
 #### 3. Status Pulse (Live/Recording ONLY)
 
@@ -307,6 +315,10 @@ transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 ```
 
 **Exclusive to:** Live broadcasts, active recordings, critical errors
+
+#### 4. Loading (Functional Only)
+
+Allowed: spinner rotation for loading states, defined globally in `index.css` (`.loading-spinner` / `.spinner-base`). This is functional feedback, not decoration.
 
 ### Forbidden Animations
 

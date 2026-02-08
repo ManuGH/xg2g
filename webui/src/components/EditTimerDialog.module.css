@@ -1,4 +1,6 @@
-.dialog-overlay {
+/* EditTimerDialog - scoped styles (CSS Modules) */
+
+.overlay {
   position: fixed;
   inset: 0;
   background: var(--overlay-backdrop-strong);
@@ -6,10 +8,10 @@
   align-items: center;
   justify-content: center;
   z-index: 50;
-  animation: fadeIn 0.2s ease-out;
+  padding: calc(16px + var(--sat)) calc(16px + var(--sar)) calc(16px + var(--sab)) calc(16px + var(--sal));
 }
 
-.dialog-card {
+.card {
   background: var(--bg-elevated);
   padding: 24px;
   border-radius: var(--radius-lg);
@@ -21,15 +23,14 @@
   overflow-y: auto;
 }
 
-.dialog-title {
+.title {
   font-size: 20px;
   font-weight: 700;
-  margin-bottom: 16px;
-  margin-top: 0;
+  margin: 0 0 16px 0;
   color: var(--text-primary);
 }
 
-.readonly-msg {
+.readonlyMsg {
   background: var(--status-warning-subtle);
   color: var(--status-warning);
   padding: 8px 12px;
@@ -38,27 +39,27 @@
   font-size: 14px;
 }
 
-.dialog-form {
+.form {
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
 
-.form-group {
+.formGroup {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.form-label {
+.label {
   display: block;
   font-size: 14px;
   color: var(--text-muted);
   font-weight: 500;
 }
 
-.form-input,
-.form-textarea {
+.input,
+.textarea {
   width: 100%;
   background: var(--bg-input);
   border: 1px solid var(--border-base);
@@ -67,45 +68,45 @@
   color: var(--text-primary);
   font-size: 14px;
   box-sizing: border-box;
-  transition: border-color 0.2s;
+  transition: border-color var(--motion-standard) var(--ease-standard);
 }
 
-.form-input:focus,
-.form-textarea:focus {
+.input:focus,
+.textarea:focus {
   outline: none;
   border-color: var(--border-focus);
 }
 
-.form-input:disabled,
-.form-textarea:disabled {
+.input:disabled,
+.textarea:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
 
-.form-input-checkbox {
+.inputCheckbox {
   margin-top: 8px;
   width: 18px;
   height: 18px;
 }
 
-.form-grid {
+.grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 16px;
 }
 
-.form-static-text {
+.staticText {
   font-size: 14px;
   color: var(--text-secondary);
   padding: 8px 0;
 }
 
-.dialog-status-text {
+.statusText {
   font-size: 14px;
   color: var(--text-muted);
 }
 
-.conflict-alert {
+.conflictAlert {
   background: var(--status-error-subtle);
   border: 1px solid var(--status-error-border);
   padding: 12px;
@@ -114,49 +115,26 @@
   color: var(--status-error);
 }
 
-.conflict-title {
+.conflictTitle {
   font-weight: 700;
+  margin: 0 0 6px 0;
 }
 
-.conflict-list {
-  margin-top: 4px;
-  margin-left: 20px;
+.conflictList {
+  margin: 4px 0 0 20px;
   list-style-type: disc;
 }
 
-.error-alert {
+.errorAlert {
   color: var(--accent-danger);
   font-size: 14px;
   font-weight: 600;
 }
 
-.dialog-actions {
+.actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
   margin-top: 24px;
 }
 
-.btn-cancel {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.btn-cancel:hover {
-  background: var(--bg-input);
-}
-
-.btn-save {
-  background: var(--accent-action);
-  color: var(--text-primary);
-  font-weight: 600;
-}
-
-.btn-save:hover {
-  background: var(--accent-action-hover);
-}
-
-.btn-save:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}

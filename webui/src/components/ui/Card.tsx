@@ -3,7 +3,7 @@
 // Token-only, no gradients, glow only for status variants
 
 import React from 'react';
-import './Card.css';
+import styles from './Card.module.css';
 
 export type CardVariant = 'standard' | 'live' | 'action';
 
@@ -22,15 +22,33 @@ export function Card({
   className = '',
   onClick
 }: CardProps) {
-  const variantClass = variant !== 'standard' ? `card--accent-${variant}` : '';
-  const interactiveClass = interactive ? 'card--interactive' : '';
+  const hasClick = typeof onClick === 'function';
+  const isInteractive = interactive || hasClick;
+  const variantClass =
+    variant === 'live'
+      ? styles.accentLive
+      : variant === 'action'
+        ? styles.accentAction
+        : '';
+  const interactiveClass = isInteractive ? styles.interactive : '';
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!hasClick) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onClick();
+    }
+  };
 
   return (
     <div
-      className={`card ${variantClass} ${interactiveClass} ${className}`.trim()}
+      data-ui="card"
+      data-interactive={isInteractive ? 'true' : undefined}
+      className={[styles.card, variantClass, interactiveClass, className].filter(Boolean).join(' ')}
       onClick={onClick}
-      role={interactive ? 'button' : undefined}
-      tabIndex={interactive ? 0 : undefined}
+      onKeyDown={hasClick ? handleKeyDown : undefined}
+      role={hasClick ? 'button' : undefined}
+      tabIndex={hasClick ? 0 : undefined}
     >
       {children}
     </div>
@@ -38,23 +56,23 @@ export function Card({
 }
 
 export function CardHeader({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <div className={`card__header ${className}`.trim()}>{children}</div>;
+  return <div className={[styles.header, className].filter(Boolean).join(' ')}>{children}</div>;
 }
 
 export function CardTitle({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <h3 className={`card__title ${className}`.trim()}>{children}</h3>;
+  return <h3 className={[styles.title, className].filter(Boolean).join(' ')}>{children}</h3>;
 }
 
 export function CardSubtitle({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <div className={`card__subtitle ${className}`.trim()}>{children}</div>;
+  return <div className={[styles.subtitle, className].filter(Boolean).join(' ')}>{children}</div>;
 }
 
 export function CardBody({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <div className={`card__body ${className}`.trim()}>{children}</div>;
+  return <div className={[styles.body, className].filter(Boolean).join(' ')}>{children}</div>;
 }
 
 export function CardFooter({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <div className={`card__footer ${className}`.trim()}>{children}</div>;
+  return <div className={[styles.footer, className].filter(Boolean).join(' ')}>{children}</div>;
 }
 
 // Attach sub-components for a nicer API

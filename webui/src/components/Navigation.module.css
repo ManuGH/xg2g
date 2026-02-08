@@ -1,6 +1,6 @@
-/* Vertical Rail Navigation - Broadcast Console 2026 */
+/* Vertical Rail Navigation - Broadcast Console 2026 (scoped) */
 
-.nav-rail-container {
+.railContainer {
   display: flex;
   height: 100vh;
   position: fixed;
@@ -10,7 +10,7 @@
   z-index: 1000;
 }
 
-.nav-rail {
+.rail {
   width: 60px;
   background: var(--bg-elevated);
   border-right: 1px solid var(--border-base);
@@ -21,7 +21,7 @@
   box-shadow: var(--shadow-card);
 }
 
-.nav-rail__quick-actions {
+.quickActions {
   padding-bottom: 12px;
   margin-bottom: 12px;
   border-bottom: 1px solid var(--border-base);
@@ -30,14 +30,14 @@
   gap: 4px;
 }
 
-.nav-rail__main {
+.main {
   flex: 1;
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
-.nav-rail__footer {
+.footer {
   margin-top: auto;
   padding-top: 12px;
   border-top: 1px solid var(--border-base);
@@ -46,27 +46,37 @@
   gap: 4px;
 }
 
-.nav-item {
+.item {
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   height: 48px;
+  width: 100%;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: background 180ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background var(--motion-standard) var(--ease-standard), color var(--motion-standard) var(--ease-standard);
   border-radius: 0;
+  background: transparent;
+  border: none;
+  padding: 0;
   text-decoration: none;
   font-size: 20px;
 }
 
-.nav-item:hover {
+.item:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+  transform: none;
+  box-shadow: none;
+}
+
+.item:active {
+  transform: none;
 }
 
 /* Active State: Inset Bar (NO GLOW - CTO Stop Criterion #1) */
-.nav-item[aria-current="page"]::before {
+.item[aria-current="page"]::before {
   content: '';
   position: absolute;
   left: 0;
@@ -77,13 +87,12 @@
   border-radius: 0 2px 2px 0;
 }
 
-.nav-item[aria-current="page"] {
+.item[aria-current="page"] {
   color: var(--accent-action);
   background: var(--accent-action-subtle);
 }
 
-/* Icon */
-.nav-item__icon {
+.icon {
   width: 24px;
   height: 24px;
   display: flex;
@@ -92,8 +101,7 @@
   font-size: 20px;
 }
 
-/* Tooltip on hover (appears to the right) */
-.nav-item__tooltip {
+.tooltip {
   position: absolute;
   left: 68px;
   background: var(--bg-overlay);
@@ -108,17 +116,18 @@
   box-shadow: var(--shadow-hover);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 180ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: opacity var(--motion-standard) var(--ease-standard);
   z-index: 1001;
 }
 
-.nav-item:hover .nav-item__tooltip {
+.item:hover .tooltip,
+.item:focus-visible .tooltip {
   opacity: 1;
 }
 
 /* Mobile: Bottom Bar (unchanged for now - CTO Phase 2A directive) */
 @media (max-width: 768px) {
-  .nav-rail-container {
+  .railContainer {
     position: fixed;
     bottom: 0;
     top: auto;
@@ -128,7 +137,7 @@
     z-index: 1000;
   }
 
-  .nav-rail {
+  .rail {
     width: 100%;
     height: calc(56px + var(--sab));
     flex-direction: row;
@@ -141,19 +150,19 @@
     -webkit-backdrop-filter: blur(24px);
   }
 
-  .nav-rail__quick-actions,
-  .nav-rail__footer {
+  .quickActions,
+  .footer {
     display: none;
   }
 
-  .nav-rail__main {
+  .main {
     flex-direction: row;
     flex: none;
     width: 100%;
     justify-content: space-around;
   }
 
-  .nav-item {
+  .item {
     flex: 1;
     height: 56px;
     flex-direction: column;
@@ -162,16 +171,16 @@
     background: transparent;
   }
 
-  .nav-item__icon {
+  .icon {
     font-size: 22px;
   }
 
-  .nav-item__tooltip {
+  .tooltip {
     display: none;
   }
 
   /* Active state on mobile: bottom accent bar */
-  .nav-item[aria-current="page"]::before {
+  .item[aria-current="page"]::before {
     left: 12px;
     right: 12px;
     top: auto;
@@ -181,13 +190,13 @@
     border-radius: 2px 2px 0 0;
   }
 
-  .nav-item[aria-current="page"] {
+  .item[aria-current="page"] {
     color: var(--accent-action);
     background: transparent;
   }
 
   /* Show label on mobile */
-  .nav-item__label {
+  .label {
     display: block !important;
     font-size: 10px;
     font-weight: 600;
@@ -198,7 +207,8 @@
 
 /* Desktop: hide label, show in tooltip */
 @media (min-width: 769px) {
-  .nav-item__label {
+  .label {
     display: none;
   }
 }
+

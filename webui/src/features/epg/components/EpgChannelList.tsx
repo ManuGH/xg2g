@@ -6,6 +6,8 @@ import { useTranslation } from 'react-i18next';
 import type { EpgEvent, EpgChannel } from '../types';
 import { isEventVisible } from '../epgModel';
 import { EpgEventRow } from './EpgEventList';
+import { Button } from '../../../components/ui';
+import styles from '../EPG.module.css';
 
 // Helper: Get localized day string "Do 28.12."
 // Returns null if date matches "today" (relative to currentTime, but user said "same day no date")
@@ -39,8 +41,8 @@ function ChannelHeader({ channel, displayName, onPlay }: ChannelHeaderProps) {
   const logo = channel?.logoUrl || channel?.logoUrl || channel?.logo;
 
   return (
-    <div className="epg-channel">
-      <div className="epg-logo">
+    <div className={styles.channel}>
+      <div className={styles.logo}>
         {logo ? (
           <img
             src={logo}
@@ -55,21 +57,23 @@ function ChannelHeader({ channel, displayName, onPlay }: ChannelHeaderProps) {
           <span>🎬</span>
         )}
       </div>
-      <div className="epg-channel-meta">
-        <div className="epg-channel-name">{displayName}</div>
-        {channel?.group && <div className="epg-channel-group">{channel.group}</div>}
+      <div className={styles.channelMeta}>
+        <div className={styles.channelName}>{displayName}</div>
+        {channel?.group && <div className={styles.channelGroup}>{channel.group}</div>}
       </div>
       {onPlay && (
-        <button
-          className="btn-play header-play"
+        <Button
+          className={styles.play}
           onClick={(e) => {
             e.stopPropagation();
             onPlay(channel);
           }}
           title={t('epg.playStream')}
+          size="sm"
+          active
         >
           <span>▶</span> Play
-        </button>
+        </Button>
       )}
     </div>
   );
@@ -115,10 +119,10 @@ function ChannelCard({
   const todayLabel = getTodayLabel();
 
   return (
-    <div className="epg-card">
+    <div className={styles.card}>
       <ChannelHeader channel={channel} displayName={displayName} onPlay={onPlay} />
 
-      <div className="epg-programmes">
+      <div className={styles.programmes}>
         {current && (
           <EpgEventRow
             key={`${current.serviceRef}-${current.start}-current`}
@@ -133,14 +137,14 @@ function ChannelCard({
         )}
 
         {others.length > 0 && (
-          <div className="epg-dropdown">
-            <button className="epg-toggle" onClick={onToggleExpand}>
+          <div className={styles.dropdown}>
+            <button className={styles.toggle} onClick={onToggleExpand}>
               {isExpanded
                 ? t('epg.hideOtherShows')
                 : t('epg.moreShows', { count: others.length })}
             </button>
             {isExpanded && (
-              <div className="epg-programmes-noncurrent">
+              <div className={styles.programmesNoncurrent}>
                 {others.map((event, index) => {
                   const eventDate = getDateLabel(event.start);
                   // Calculate if we need a header
@@ -217,10 +221,10 @@ function SearchGroup({
   const todayLabel = getTodayLabel();
 
   return (
-    <div className="epg-search-group">
+    <div className={styles.searchGroup}>
       <ChannelHeader channel={channel} displayName={displayName} onPlay={onPlay} />
 
-      <div className="epg-programmes">
+      <div className={styles.programmes}>
         {top2.map((event, index) => {
           const eventDate = getDateLabel(event.start);
           let showHeader = false;
@@ -247,12 +251,12 @@ function SearchGroup({
         })}
 
         {rest.length > 0 && (
-          <div className="epg-dropdown">
-            <button className="epg-toggle" onClick={onToggleExpand}>
+          <div className={styles.dropdown}>
+            <button className={styles.toggle} onClick={onToggleExpand}>
               {isExpanded ? t('epg.showLess') : t('epg.moreShows', { count: rest.length })}
             </button>
             {isExpanded && (
-              <div className="epg-programmes-noncurrent">
+              <div className={styles.programmesNoncurrent}>
                 {rest.map((event, index) => {
                   const eventDate = getDateLabel(event.start);
                   let showHeader = false;
@@ -431,4 +435,3 @@ export function EpgChannelList({
     </>
   );
 }
-

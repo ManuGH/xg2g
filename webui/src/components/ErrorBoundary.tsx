@@ -46,7 +46,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
             margin: '20px',
           }}
         >
-          <h2>❌ Something went wrong.</h2>
+          <h2>Something went wrong.</h2>
           <details style={{ whiteSpace: 'pre-wrap', marginTop: '10px' }}>
             {this.state.error && this.state.error.toString()}
             <br />

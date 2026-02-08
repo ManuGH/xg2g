@@ -16,7 +16,9 @@ import {
   // type SeriesRuleUpdate // Missing in SDK
 } from '../client-ts';
 import { debugError, formatError } from '../utils/logging';
-import './SeriesManager.css';
+import { useUiOverlay } from '../context/UiOverlayContext';
+import { Button, Card, StatusChip } from './ui';
+import styles from './SeriesManager.module.css';
 
 interface DaySelectorProps {
   value: number[];
@@ -34,11 +36,14 @@ const DaySelector = ({ value, onChange }: DaySelectorProps) => {
   };
 
   return (
-    <div className="day-selector">
+    <div className={styles.daySelector}>
       {days.map((d, i) => (
         <button
           key={i}
-          className={`day-btn ${value.includes(i) ? 'active' : ''}`}
+          className={[
+            styles.dayButton,
+            value.includes(i) ? styles.dayButtonActive : '',
+          ].filter(Boolean).join(' ')}
           onClick={() => toggleDay(i)}
           type="button"
         >
@@ -64,6 +69,7 @@ interface RuleFormState {
 }
 
 function SeriesManager() {
+  const { confirm, toast } = useUiOverlay();
   const [rules, setRules] = useState<SeriesRule[]>([]);
   const [channels, setChannels] = useState<Service[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
@@ -124,14 +130,21 @@ function SeriesManager() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Are you sure you want to delete this rule?')) return;
+    const ok = await confirm({
+      title: 'Delete Rule',
+      message: 'Are you sure you want to delete this rule?',
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      tone: 'danger',
+    });
+    if (!ok) return;
     try {
       // Fix: id/ruleId key name depends on SDK. 
       // User says: "DeleteSeriesRuleData: path: { id: string }"
       await deleteSeriesRule({ path: { id } });
       loadRules();
     } catch (err: any) {
-      alert('Failed to delete rule: ' + (err.message || 'Unknown error'));
+      toast({ kind: 'error', message: 'Failed to delete rule', details: err.message || 'Unknown error' });
     }
   };
 
@@ -140,13 +153,17 @@ function SeriesManager() {
 
     try {
       if (!currentRule.keyword) {
-        alert("Keyword is required");
+        toast({ kind: 'warning', message: 'Keyword is required' });
         return;
       }
 
       // Prepare payload
       if (currentRule.id) {
-        alert("Update not implemented in this version (SDK mismatch). Please delete and recreate.");
+        toast({
+          kind: 'warning',
+          message: 'Update not implemented in this version (SDK mismatch). Please delete and recreate.',
+        });
+        return;
         /*
         // Update existing rule
         const updatePayload: SeriesRuleUpdate = {
@@ -179,7 +196,7 @@ function SeriesManager() {
       setIsEditing(false);
       loadRules();
     } catch (err: any) {
-      alert('Failed to save rule: ' + (err.message || 'Unknown Error'));
+      toast({ kind: 'error', message: 'Failed to save rule', details: err.message || 'Unknown error' });
     }
   };
 
@@ -193,171 +210,191 @@ function SeriesManager() {
       });
       const report = response.data;
       if (report) {
-        alert(`Run Complete!\nMatched: ${report.summary?.epgItemsMatched}\nCreated: ${report.summary?.timersCreated}\nErrors: ${report.summary?.timersErrored}`);
+        toast({
+          kind: 'success',
+          message: 'Run complete',
+          details: `Matched: ${report.summary?.epgItemsMatched ?? 0} | Created: ${report.summary?.timersCreated ?? 0} | Errors: ${report.summary?.timersErrored ?? 0}`,
+        });
       }
       loadRules();
     } catch (err: any) {
-      alert('Run failed: ' + (err.message || 'Unknown Error'));
+      toast({ kind: 'error', message: 'Run failed', details: err.message || 'Unknown error' });
     } finally {
       setReportLoading(false);
     }
   };
 
-  if (loading && !rules.length) return <div className="loading-state">Loading Rules...</div>;
+  if (loading && !rules.length) return <div className={styles.loadingState}>Loading Rules...</div>;
 
   return (
-    <div className="series-manager">
-      <div className="sm-header">
+    <div className={`${styles.container} animate-enter`.trim()}>
+      <div className={styles.header}>
         <h2>Series Recording Rules</h2>
-        <button
-          className="btn-primary"
-          onClick={() => handleEdit(null)}
-          data-testid="series-add-btn"
-        >
+        <Button onClick={() => handleEdit(null)} data-testid="series-add-btn">
           + New Rule
-        </button>
+        </Button>
       </div>
 
-      <div className="card-grid">
+      <div className={styles.grid}>
         {rules.map(rule => (
-          <div key={rule.id} className="card rule-card">
-            <div className="rule-header">
+          <Card key={rule.id} className={styles.ruleCard}>
+            <div className={styles.ruleHeader}>
               <h3>{rule.keyword}</h3>
-              <span className={`status-badge ${rule.enabled ? 'active' : 'inactive'}`}>
-                {rule.enabled ? 'Active' : 'Disabled'}
-              </span>
+              <StatusChip
+                state={rule.enabled ? 'success' : 'idle'}
+                label={rule.enabled ? 'ACTIVE' : 'DISABLED'}
+              />
             </div>
 
-            <div className="rule-meta text-secondary">
-              <div className="meta-row">
-                <span className="label">Channel:</span>
-                <span className="value">{rule.channelRef ? (channels.find(c => (c.serviceRef || c.id) === rule.channelRef)?.name || rule.channelRef) : 'All Channels'}</span>
+            <div className={`${styles.ruleMeta} ${styles.textSecondary}`.trim()}>
+              <div className={styles.metaRow}>
+                <span className={styles.metaLabel}>Channel:</span>
+                <span className={styles.metaValue}>{rule.channelRef ? (channels.find(c => (c.serviceRef || c.id) === rule.channelRef)?.name || rule.channelRef) : 'All Channels'}</span>
 
               </div>
-              <div className="meta-row">
-                <span className="label">Days:</span>
-                <span className="value">
+              <div className={styles.metaRow}>
+                <span className={styles.metaLabel}>Days:</span>
+                <span className={styles.metaValue}>
                   {rule.days?.length
                     ? rule.days.map(d => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d]).join(', ')
                     : 'Everyday'}
                 </span>
               </div>
-              <div className="meta-row">
-                <span className="label">Time:</span>
-                <span className="value">{rule.startWindow || 'Anytime'}</span>
+              <div className={styles.metaRow}>
+                <span className={styles.metaLabel}>Time:</span>
+                <span className={styles.metaValue}>{rule.startWindow || 'Anytime'}</span>
               </div>
             </div>
 
-            <div className="rule-stats">
+            <div className={styles.ruleStats}>
               {rule.lastRunAt ? (
-                <div className="last-run-info">
+                <div className={styles.lastRunInfo}>
                   <span>Last Run: {new Date(rule.lastRunAt).toLocaleDateString()} {new Date(rule.lastRunAt).toLocaleTimeString()}</span>
-                  <span className={`run-status ${rule.lastRunStatus}`}>
+                  <span
+                    className={[
+                      styles.runStatus,
+                      rule.lastRunStatus === 'success' ? styles.runStatusSuccess : '',
+                      rule.lastRunStatus === 'failed' ? styles.runStatusFailed : '',
+                    ].filter(Boolean).join(' ')}
+                  >
                     {rule.lastRunStatus || 'Unknown'} ({(rule.lastRunSummary?.timersCreated || 0)} Created)
                   </span>
                 </div>
               ) : (
-                <div className="last-run-info">Never Run</div>
+                <div className={styles.lastRunInfo}>Never Run</div>
               )}
             </div>
 
-            <div className="rule-actions">
-              <button
-                className="btn-secondary"
+            <div className={styles.ruleActions}>
+              <Button
+                variant="secondary"
                 onClick={() => rule.id && handleRunNow(rule.id)}
                 disabled={reportLoading === rule.id}
+                className={styles.ruleAction}
               >
                 {reportLoading === rule.id ? 'Running...' : 'Run Now'}
-              </button>
-              <button className="btn-secondary" onClick={() => handleEdit(rule)}>Edit</button>
-              <button className="btn-danger" onClick={() => rule.id && handleDelete(rule.id)}>Delete</button>
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => handleEdit(rule)}
+                className={styles.ruleAction}
+              >
+                Edit
+              </Button>
+              <Button
+                variant="danger"
+                onClick={() => rule.id && handleDelete(rule.id)}
+                className={styles.ruleAction}
+              >
+                Delete
+              </Button>
             </div>
-          </div>
+          </Card>
         ))}
       </div>
 
       {isEditing && currentRule && (
-        <div className="modal-overlay">
-          <div className="modal glass">
-            <div className="modal-header">
+        <div className={styles.modalOverlay}>
+          <div className={styles.modal}>
+            <div className={styles.modalHeader}>
               <h2>{currentRule.id ? 'Edit Rule' : 'New Series Rule'}</h2>
-              <button className="close-btn" onClick={() => setIsEditing(false)}>×</button>
+              <button
+                type="button"
+                className={styles.closeButton}
+                aria-label="Close"
+                onClick={() => setIsEditing(false)}
+              >
+                ×
+              </button>
             </div>
 
-            <div className="modal-body">
-              <div className="form-group">
+            <div className={styles.modalBody}>
+              <div className={styles.formGroup}>
                 <label>Keyword (Title Match)</label>
                 <input
                   type="text"
                   value={currentRule.keyword}
                   onChange={e => setCurrentRule({ ...currentRule, keyword: e.target.value })}
                   placeholder="e.g. Tatort"
-                  className="input-field"
+                  className={styles.inputField}
                   data-testid="series-edit-keyword"
                 />
-                <small>Case-insensitive partial match on program title.</small>
+                <small className={styles.helpText}>Case-insensitive partial match on program title.</small>
               </div>
 
-              <div className="form-group">
+              <div className={styles.formGroup}>
                 <label>Channel</label>
-                <div className="select-wrapper">
-                  <select
-                    value={currentRule.channelRef}
-                    onChange={e => setCurrentRule({ ...currentRule, channelRef: e.target.value })}
-                    className="input-field"
-                  >
-                    <option value="">-- All Channels (Slower) --</option>
-                    {channels.map(c => (
-                      <option key={c.id || c.serviceRef} value={c.serviceRef || c.id}>
-
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <select
+                  value={currentRule.channelRef}
+                  onChange={e => setCurrentRule({ ...currentRule, channelRef: e.target.value })}
+                  className={styles.inputField}
+                >
+                  <option value="">-- All Channels (Slower) --</option>
+                  {channels.map(c => (
+                    <option key={c.id || c.serviceRef} value={c.serviceRef || c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
               </div>
 
-              <div className="form-group">
+              <div className={styles.formGroup}>
                 <label>Day Filter</label>
                 <DaySelector
                   value={currentRule.days || []}
                   onChange={v => setCurrentRule({ ...currentRule, days: v })}
                 />
-                <small>Select specific days to record. Empty = Any day.</small>
+                <small className={styles.helpText}>Select specific days to record. Empty = Any day.</small>
               </div>
 
-              <div className="form-group">
+              <div className={styles.formGroup}>
                 <label>Time Window (HHMM-HHMM)</label>
                 <input
                   type="text"
                   value={currentRule.startWindow}
                   onChange={e => setCurrentRule({ ...currentRule, startWindow: e.target.value })}
                   placeholder="e.g. 2015-2200"
-                  className="input-field"
+                  className={styles.inputField}
                 />
-                <small>Only match start times within this range.</small>
+                <small className={styles.helpText}>Only match start times within this range.</small>
               </div>
 
-              <div className="form-group">
+              <div className={styles.formGroup}>
                 <label>Priority</label>
                 <input
                   type="number"
                   value={currentRule.priority}
                   onChange={e => setCurrentRule({ ...currentRule, priority: e.target.value })}
-                  className="input-field"
+                  className={styles.inputField}
                 />
               </div>
             </div>
 
-            <div className="modal-footer">
-              <button className="btn-secondary" onClick={() => setIsEditing(false)}>Cancel</button>
-              <button
-                className="btn-primary"
-                onClick={handleSave}
-                data-testid="series-edit-save"
-              >
+            <div className={styles.modalFooter}>
+              <Button variant="secondary" onClick={() => setIsEditing(false)}>Cancel</Button>
+              <Button onClick={handleSave} data-testid="series-edit-save">
                 Confirm & Save
-              </button>
+              </Button>
             </div>
           </div>
         </div>

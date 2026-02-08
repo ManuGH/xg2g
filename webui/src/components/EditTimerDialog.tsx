@@ -13,7 +13,8 @@ import {
   type TimerCreateRequest
 } from '../client-ts';
 import { debugError, formatError } from '../utils/logging';
-import './EditTimerDialog.css';
+import { Button } from './ui';
+import styles from './EditTimerDialog.module.css';
 
 interface EditTimerDialogProps {
   timer: Timer;
@@ -72,6 +73,14 @@ export default function EditTimerDialog({ timer, onClose, onSave, capabilities }
       }
     };
   }, []);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
 
   const debouncedValidate = (data: FormData) => {
     // Cancel pending execution
@@ -190,27 +199,34 @@ export default function EditTimerDialog({ timer, onClose, onSave, capabilities }
   const readOnlyMsg = !canEdit ? "Bearbeitung nicht unterstützt." : null;
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog-card">
-        <h2 className="dialog-title">Edit Timer</h2>
+    <div
+      className={`${styles.overlay} animate-enter`.trim()}
+      role="presentation"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className={styles.card} role="dialog" aria-modal="true" aria-labelledby="timer-edit-title">
+        <h2 id="timer-edit-title" className={styles.title}>Edit Timer</h2>
 
-        {readOnlyMsg && <div className="readonly-msg">{readOnlyMsg}</div>}
+        {readOnlyMsg && <div className={styles.readonlyMsg}>{readOnlyMsg}</div>}
 
-        <div className="dialog-form">
-          <div className="form-group">
-            <label className="form-label">Name</label>
+        <div className={styles.form}>
+          <div className={styles.formGroup}>
+            <label className={styles.label}>Name</label>
             <input
-              className="form-input"
+              className={styles.input}
               value={formData.name}
               onChange={e => handleChange('name', e.target.value)}
               disabled={!canEdit}
               data-testid="timer-edit-name"
+              autoFocus
             />
           </div>
-          <div className="form-group">
-            <label className="form-label">Description</label>
+          <div className={styles.formGroup}>
+            <label className={styles.label}>Description</label>
             <textarea
-              className="form-textarea"
+              className={styles.textarea}
               value={formData.description}
               onChange={e => handleChange('description', e.target.value)}
               disabled={!canEdit}
@@ -218,39 +234,39 @@ export default function EditTimerDialog({ timer, onClose, onSave, capabilities }
             />
           </div>
 
-          <div className="form-grid">
-            <div className="form-group">
-              <label className="form-label">Ref</label>
-              <div className="form-static-text">{timer.serviceName || timer.serviceRef}</div>
+          <div className={styles.grid}>
+            <div className={styles.formGroup}>
+              <label className={styles.label}>Ref</label>
+              <div className={styles.staticText}>{timer.serviceName || timer.serviceRef}</div>
             </div>
-            <div className="form-group">
-              <label className="form-label">Enabled</label>
+            <div className={styles.formGroup}>
+              <label className={styles.label}>Enabled</label>
               <input
                 type="checkbox"
                 checked={formData.enabled}
                 onChange={e => handleChange('enabled', e.target.checked)}
                 disabled={!canEdit}
-                className="form-input-checkbox"
+                className={styles.inputCheckbox}
               />
             </div>
           </div>
 
-          <div className="form-grid">
-            <div className="form-group">
-              <label className="form-label">Start</label>
+          <div className={styles.grid}>
+            <div className={styles.formGroup}>
+              <label className={styles.label}>Start</label>
               <input
                 type="datetime-local"
-                className="form-input"
+                className={styles.input}
                 value={toLocal(formData.begin)}
                 onChange={e => handleChange('begin', toUnix(e.target.value))}
                 disabled={!canEdit}
               />
             </div>
-            <div className="form-group">
-              <label className="form-label">End</label>
+            <div className={styles.formGroup}>
+              <label className={styles.label}>End</label>
               <input
                 type="datetime-local"
-                className="form-input"
+                className={styles.input}
                 value={toLocal(formData.end)}
                 onChange={e => handleChange('end', toUnix(e.target.value))}
                 disabled={!canEdit}
@@ -259,11 +275,11 @@ export default function EditTimerDialog({ timer, onClose, onSave, capabilities }
           </div>
 
           {/* Conflict Warning */}
-          {validating && <div className="dialog-status-text">Prüfe auf Konflikte...</div>}
+          {validating && <div className={styles.statusText}>Prüfe auf Konflikte...</div>}
           {conflict && (
-            <div className="conflict-alert">
-              <p className="conflict-title">Konflikt gefunden:</p>
-              <ul className="conflict-list">
+            <div className={styles.conflictAlert}>
+              <p className={styles.conflictTitle}>Konflikt gefunden:</p>
+              <ul className={styles.conflictList}>
                 {conflict.conflicts?.map((c, i) => (
                   <li key={i}>
                     {c.blockingTimer?.name} ({Math.round((c.overlapSeconds || 0) / 60)} min Überschneidung)
@@ -273,24 +289,24 @@ export default function EditTimerDialog({ timer, onClose, onSave, capabilities }
             </div>
           )}
 
-          {error && <div className="error-alert">{error}</div>}
+          {error && <div className={styles.errorAlert} role="alert">{error}</div>}
         </div>
 
-        <div className="dialog-actions">
-          <button
+        <div className={styles.actions}>
+          <Button
             onClick={onClose}
-            className="timer-btn btn-cancel"
+            variant="secondary"
+            disabled={saving}
           >
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
             onClick={handleSave}
             disabled={!canEdit || saving || (conflict !== null && (conflict.conflicts?.length || 0) > 0)}
-            className="timer-btn btn-save"
             data-testid="timer-edit-save"
           >
             {saving ? 'Saving...' : 'Save'}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

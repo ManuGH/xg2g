@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import SeriesManager from '../src/components/SeriesManager';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as client from '../src/client-ts';
+import { UiOverlayProvider } from '../src/context/UiOverlayContext';
 
 // Mock the API client
 vi.mock('../src/client-ts', async () => {
@@ -21,7 +22,11 @@ describe('SeriesManager Truth Sealing (UI-INV-SERIES-001)', () => {
   });
 
   it('omits optional filters from create payload if not set', async () => {
-    render(<SeriesManager />);
+    render(
+      <UiOverlayProvider>
+        <SeriesManager />
+      </UiOverlayProvider>
+    );
 
     // Open "New Rule" modal (Wait for loading to finish)
     const addBtn = await screen.findByTestId('series-add-btn');

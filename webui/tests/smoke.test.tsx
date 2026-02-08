@@ -4,9 +4,15 @@ import Settings from '../src/components/Settings';
 import { describe, it, expect, vi } from 'vitest';
 
 // Mock Config component (child) to isolate Settings test
-vi.mock('../src/components/Config', () => ({
-  default: () => <div data-testid="mock-config">Config Component</div>
-}));
+vi.mock('../src/components/Config', async (importOriginal) => {
+  const actual = await importOriginal<any>();
+  return {
+    ...actual,
+    default: () => <div data-testid="mock-config">Config Component</div>,
+    // Smoke tests focus on the Settings page contract, not setup gating.
+    isConfigured: () => true,
+  };
+});
 
 // Mock API client
 vi.mock('../src/client-ts', () => ({
@@ -16,7 +22,7 @@ vi.mock('../src/client-ts', () => ({
   getSystemConfig: vi.fn().mockResolvedValue({
     data: {
       streaming: {
-        delivery_policy: 'universal' // Strict backend contract value
+        deliveryPolicy: 'universal' // Strict backend contract value
       }
     }
   }),

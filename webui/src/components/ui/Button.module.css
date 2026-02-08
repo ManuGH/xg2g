@@ -1,0 +1,107 @@
+.button {
+  min-height: 44px;
+  min-width: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 0 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition:
+    background var(--motion-standard) var(--ease-standard),
+    color var(--motion-standard) var(--ease-standard),
+    border-color var(--motion-standard) var(--ease-standard),
+    opacity var(--motion-standard) var(--ease-standard);
+}
+
+.button:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 3px;
+}
+
+.button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.button[data-size="sm"] {
+  padding: 0 12px;
+  font-size: var(--text-sm);
+}
+
+.button[data-size="icon"] {
+  padding: 0;
+  width: 44px;
+  height: 44px;
+}
+
+.button[data-variant="primary"] {
+  background: var(--accent-action);
+  color: var(--text-primary);
+}
+
+.button[data-variant="primary"]:hover:not(:disabled) {
+  background: var(--accent-action-hover);
+}
+
+.button[data-variant="secondary"] {
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border-color: var(--border-base);
+}
+
+.button[data-variant="secondary"]:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border-elevated);
+}
+
+.button[data-variant="danger"] {
+  background: var(--status-error);
+  color: var(--text-primary);
+}
+
+.button[data-variant="danger"]:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--status-error) 88%, var(--bg-base));
+}
+
+.button[data-variant="ghost"] {
+  background: transparent;
+  color: var(--text-primary);
+  border-color: var(--border-base);
+}
+
+.button[data-variant="ghost"]:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border-elevated);
+}
+
+.button[data-active="true"] {
+  background: var(--accent-action-subtle);
+  border-color: var(--accent-action);
+  color: var(--accent-action);
+}
+
+.button[data-active="true"]:hover:not(:disabled) {
+  background: var(--accent-action);
+  color: var(--text-primary);
+  border-color: var(--accent-action);
+  box-shadow: var(--shadow-accent-action);
+}
+
+.button[data-variant="secondary"][data-state="valid"] {
+  border-color: var(--status-success);
+  color: var(--status-success);
+}
+
+.button[data-variant="secondary"][data-state="invalid"] {
+  border-color: var(--status-error);
+  color: var(--status-error);
+}

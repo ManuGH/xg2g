@@ -4,6 +4,7 @@
 import { useState } from 'react';
 import type { EpgEvent } from '../types';
 import { normalizeEpgText } from '../../../utils/text';
+import styles from '../EPG.module.css';
 
 // Utility: Format Unix timestamp (seconds) to HH:MM
 function formatTime(ts: number): string {
@@ -47,27 +48,36 @@ export function EpgEventRow({
     setExpanded(!expanded);
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      setExpanded(prev => !prev);
+    }
+  };
+
   return (
     <>
       {/* Date Header Insert */}
-      {dateLabel && <div className="epg-date-label">{dateLabel}</div>}
+      {dateLabel && <div className={styles.dateLabel}>{dateLabel}</div>}
 
       <div
-        className={`epg-programme${highlight ? ' epg-programme-current' : ''}${expanded ? ' expanded' : ''}`}
+        className={[styles.programme, highlight ? styles.programmeCurrent : null].filter(Boolean).join(' ')}
         onClick={handleToggle}
+        onKeyDown={handleKeyDown}
         role="button"
         tabIndex={0}
+        aria-expanded={expanded}
       >
-        <div className="epg-programme-time">
+        <div className={styles.programmeTime}>
           {formatRange(event.start, event.end)}
           {onRecord &&
             (isRecorded ? (
-              <span title="Aufnahme geplant" className="epg-record-indicator">
+              <span title="Aufnahme geplant" className={styles.recordIndicator}>
                 🔴
               </span>
             ) : (
               <button
-                className="epg-record-btn"
+                className={styles.recordButton}
                 onClick={(e) => {
                   e.stopPropagation();
                   onRecord(event);
@@ -78,19 +88,19 @@ export function EpgEventRow({
               </button>
             ))}
         </div>
-        <div className="epg-programme-body">
-          <div className="epg-programme-title">{event.title || '—'}</div>
+        <div className={styles.programmeBody}>
+          <div className={styles.programmeTitle}>{event.title || '—'}</div>
           {event.desc && (
-            <div className={`epg-programme-desc${expanded ? ' expanded' : ''}`}>
+            <div className={[styles.programmeDesc, expanded ? styles.programmeDescExpanded : null].filter(Boolean).join(' ')}>
               {normalizeEpgText(event.desc)}
             </div>
           )}
           {inProgress && (
-            <div className="epg-progress-container">
-              <div className="epg-progress">
-                <div className="epg-progress-bar" style={{ width: `${pct}%` }} />
+            <div className={styles.progressContainer}>
+              <div className={styles.progress}>
+                <div className={styles.progressBar} style={{ width: `${pct}%` }} />
               </div>
-              <div className="epg-progress-meta">
+              <div className={styles.progressMeta}>
                 <span>{formatTime(event.start)}</span>
                 <span>{pct}%</span>
                 <span>{formatTime(event.end)}</span>
@@ -102,4 +112,3 @@ export function EpgEventRow({
     </>
   );
 }
-

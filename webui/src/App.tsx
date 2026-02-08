@@ -8,6 +8,7 @@ import { useEffect, lazy, Suspense, useMemo } from 'react';
 import './App.css';
 import { useAppContext } from './context/AppContext';
 import Navigation from './components/Navigation';
+import { Button } from './components/ui';
 import { debugLog, redactToken } from './utils/logging';
 import { getStoredToken } from './utils/tokenStorage';
 
@@ -39,17 +40,6 @@ function App() {
     checkConfigAndLoad,
     setPlayingChannel
   } = ctx;
-
-  // Force mobile viewport
-  useEffect(() => {
-    let meta = document.querySelector('meta[name="viewport"]') as HTMLMetaElement | null;
-    if (!meta) {
-      meta = document.createElement('meta');
-      meta.name = 'viewport';
-      document.head.appendChild(meta);
-    }
-    meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
-  }, []);
 
   useEffect(() => {
     debugLog('[DEBUG] App mounted. showingAuth:', showAuth);
@@ -103,7 +93,7 @@ function App() {
       {showAuth && (
         <div className="auth-overlay">
           <div className="auth-modal">
-            <h2>🔐 Authentication Required</h2>
+            <h2>Authentication Required</h2>
             <form onSubmit={handleAuthSubmit}>
               <input
                 type="password"
@@ -112,7 +102,7 @@ function App() {
                 autoFocus
                 required
               />
-              <button type="submit">Authenticate</button>
+              <Button type="submit">Authenticate</Button>
             </form>
           </div>
         </div>

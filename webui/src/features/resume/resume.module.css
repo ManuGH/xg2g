@@ -1,9 +1,9 @@
-.resume-summary {
+.summary {
   margin-top: 6px;
   width: 100%;
 }
 
-.resume-meta {
+.meta {
   display: flex;
   justify-content: space-between;
   font-size: 11px;
@@ -12,7 +12,15 @@
   color: var(--text-secondary);
 }
 
-.resume-bar {
+.label {
+  min-width: 0;
+}
+
+.percent {
+  flex-shrink: 0;
+}
+
+.bar {
   width: 100%;
   height: 4px;
   background: var(--bg-hover);
@@ -20,8 +28,9 @@
   overflow: hidden;
 }
 
-.resume-bar-fill {
+.barFill {
   height: 100%;
   background: var(--accent-action);
   opacity: 0.9;
 }
+

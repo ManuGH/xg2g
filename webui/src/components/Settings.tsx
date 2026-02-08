@@ -8,7 +8,8 @@ import { getSystemScanStatus, triggerSystemScan, getSystemConfig } from '../clie
 import type { ScanStatus, AppConfig } from '../client-ts/types.gen';
 import Config, { isConfigured } from './Config';
 import { debugError, formatError } from '../utils/logging';
-import './Settings.css';
+import { Button } from './ui';
+import styles from './Settings.module.css';
 
 function Settings() {
   const { t } = useTranslation();
@@ -73,92 +74,95 @@ function Settings() {
   // ADR-00X: Profile persistence removed (universal policy only)
 
   return (
-    <div className="settings-page">
-      <div className="settings-header">
+    <div className={`${styles.page} animate-enter`.trim()}>
+      <div className={styles.header}>
         <div>
-          <p className="settings-kicker">{t('settings.kicker')}</p>
+          <p className={styles.kicker}>{t('settings.kicker')}</p>
           <h2>{t('settings.title')}</h2>
-          <p className="settings-subtitle">
+          <p className={styles.subtitle}>
             {t('settings.subtitle')}
           </p>
         </div>
       </div>
 
-      <div className="settings-setup">
+      <div className={styles.setup}>
         {!configured ? (
           <Config onUpdate={fetchConfig} />
         ) : (
-          <div className="settings-section accordion-section">
-            <div className="section-header-row" onClick={() => setShowSetup(!showSetup)}>
+          <div className={styles.section}>
+            <div className={styles.accordionHeader}>
               <h3>{t('setup.title')}</h3>
-              <button
-                className="settings-button secondary small"
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setShowSetup(v => !v)}
                 data-testid="config-rerun-setup"
+                aria-expanded={showSetup}
+                aria-controls="settings-setup-details"
               >
                 {showSetup ? t('common.hideDetails') : t('setup.actions.rerunSetup') || 'Re-run Setup'}
-              </button>
+              </Button>
             </div>
             {showSetup && (
-              <div className="animate-fade-in">
-                <Config onUpdate={fetchConfig} showTitle={false} />
+              <div id="settings-setup-details" className="animate-enter">
+                <Config onUpdate={fetchConfig} showTitle={false} compact />
               </div>
             )}
           </div>
         )}
       </div>
 
-      <div className="settings-section">
+      <div className={styles.section}>
         <h3>{t('settings.scan.title')}</h3>
-        <p className="settings-subtitle">{t('settings.scan.description')}</p>
+        <p className={styles.subtitle}>{t('settings.scan.description')}</p>
 
-        <div className="settings-group">
-          <div className="scan-controls">
-            <button
-              className="settings-button primary"
+        <div className={styles.group}>
+          <div className={styles.scanControls}>
+            <Button
               onClick={handleStartScan}
               disabled={scanStatus?.state === 'running'}
             >
               {scanStatus?.state === 'running' ? t('settings.scan.status.running') : t('settings.scan.start')}
-            </button>
-            {scanError && <span className="settings-error-inline">{scanError}</span>}
+            </Button>
+            {scanError && <span className={styles.errorInline}>{scanError}</span>}
           </div>
 
           {scanStatus && (
-            <div className={`scan-card ${scanStatus.state}`}>
-              <div className="scan-header">
-                <div className="scan-status-badge">
-                  <span className={`status-dot ${scanStatus.state}`}></span>
-                  <span className="status-text">{t(`settings.scan.status.${scanStatus.state || 'idle'}`)}</span>
+            <div className={styles.scanCard} data-state={scanStatus.state || undefined}>
+              <div className={styles.scanHeader}>
+                <div className={styles.scanBadge}>
+                  <span className={styles.statusDot} data-state={scanStatus.state || undefined}></span>
+                  <span className={styles.statusText}>{t(`settings.scan.status.${scanStatus.state || 'idle'}`)}</span>
                 </div>
                 {scanStatus.startedAt && scanStatus.startedAt > 0 && (
-                  <div className="scan-time">
+                  <div className={styles.scanTime}>
                     {new Date(scanStatus.startedAt * 1000).toLocaleTimeString()}
                   </div>
                 )}
               </div>
 
-              <div className="scan-progress-container">
+              <div className={styles.progressContainer}>
                 <div
-                  className="scan-progress-bar"
+                  className={styles.progressBar}
                   style={{
                     width: `${Math.min(100, Math.max(0, ((scanStatus.scannedChannels || 0) / (scanStatus.totalChannels || 1)) * 100))}%`
                   }}
                 />
               </div>
 
-              <div className="scan-stats-row">
-                <div className="scan-stat-item">
-                  <span className="stat-value tabular">{scanStatus.scannedChannels} / {scanStatus.totalChannels}</span>
-                  <span className="stat-label">{t('settings.scan.stats.scanned')}</span>
+              <div className={styles.statsRow}>
+                <div className={styles.statItem}>
+                  <span className={`${styles.statValue} tabular`.trim()}>{scanStatus.scannedChannels} / {scanStatus.totalChannels}</span>
+                  <span className={styles.statLabel}>{t('settings.scan.stats.scanned')}</span>
                 </div>
-                <div className="scan-stat-item">
-                  <span className="stat-value tabular">{scanStatus.updatedCount}</span>
-                  <span className="stat-label">{t('settings.scan.stats.updated')}</span>
+                <div className={styles.statItem}>
+                  <span className={`${styles.statValue} tabular`.trim()}>{scanStatus.updatedCount}</span>
+                  <span className={styles.statLabel}>{t('settings.scan.stats.updated')}</span>
                 </div>
                 {scanStatus.finishedAt && scanStatus.finishedAt > 0 && (
-                  <div className="scan-stat-item">
-                    <span className="stat-value">{new Date(scanStatus.finishedAt * 1000).toLocaleTimeString()}</span>
-                    <span className="stat-label">Finished</span>
+                  <div className={styles.statItem}>
+                    <span className={styles.statValue}>{new Date(scanStatus.finishedAt * 1000).toLocaleTimeString()}</span>
+                    <span className={styles.statLabel}>Finished</span>
                   </div>
                 )}
               </div>
@@ -167,20 +171,20 @@ function Settings() {
         </div>
       </div>
 
-      <div className="settings-section">
+      <div className={styles.section}>
         <h3>{t('settings.streaming.title')}</h3>
 
         {/* Note: Profile selection removed in favor of Universal Policy */}
-        <div className="settings-group">
+        <div className={styles.group}>
           <label>{t('settings.streaming.policy') || 'Delivery Policy'}</label>
-          <div className="input-with-button">
+          <div className={styles.inputRow}>
             <input
               type="text"
               value={config?.streaming?.deliveryPolicy === 'universal' ? "Universal (H.264/AAC/fMP4)" : (config?.streaming?.deliveryPolicy || "Loading...")}
               disabled
-              className="input-readonly"
+              className={styles.inputReadonly}
             />
-            <span className="settings-hint">Strict Universal-Only</span>
+            <span className={styles.hint}>Strict Universal-Only</span>
           </div>
         </div>
       </div>
@@ -190,7 +194,7 @@ function Settings() {
       {/* ADR-00X: Saved message removed (was for profile save feedback) */}
 
 
-      <div className="settings-footer">
+      <div className={styles.footer}>
         <p>
           <strong>{t('settings.footer.noteTitle')}</strong> {t('settings.footer.noteBody')}
         </p>

@@ -6,7 +6,9 @@ import { useState, useEffect } from 'react';
 import { getTimers, deleteTimer, getDvrCapabilities, type Timer, type DvrCapabilities } from '../client-ts';
 import EditTimerDialog from './EditTimerDialog';
 import { debugError, debugWarn, formatError } from '../utils/logging';
-import './Timers.css';
+import { useUiOverlay } from '../context/UiOverlayContext';
+import { Button } from './ui';
+import styles from './Timers.module.css';
 
 function formatDateTime(ts: number | undefined): string {
   if (!ts) return '';
@@ -21,6 +23,7 @@ function formatDateTime(ts: number | undefined): string {
 }
 
 export default function Timers() {
+  const { confirm, toast } = useUiOverlay();
   const [timers, setTimers] = useState<Timer[]>([]);
   const [capabilities, setCapabilities] = useState<DvrCapabilities | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
@@ -67,7 +70,14 @@ export default function Timers() {
   }, []);
 
   const handleDelete = async (timer: Timer): Promise<void> => {
-    if (!confirm(`Delete timer for "${timer.name}"?`)) return;
+    const ok = await confirm({
+      title: 'Delete Timer',
+      message: `Delete timer for "${timer.name}"?`,
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      tone: 'danger',
+    });
+    if (!ok) return;
 
     try {
       // Use timerId for v2 delete
@@ -83,50 +93,64 @@ export default function Timers() {
       }
     } catch (err) {
       const error = err as Error;
-      alert("Failed to delete timer: " + error.message);
+      toast({ kind: 'error', message: 'Failed to delete timer', details: error.message });
     }
   };
 
   return (
-    <div className="timers-view">
-      <div className="timers-toolbar">
+    <div className={`${styles.view} animate-enter`.trim()}>
+      <div className={styles.toolbar}>
         <h2>Scheduled Recordings</h2>
-        <button onClick={fetchTimers} className="timer-refresh-btn">Refresh</button>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={fetchTimers}
+          disabled={loading}
+        >
+          Refresh
+        </Button>
       </div>
 
-      {loading && <div className="timers-loading">Loading...</div>}
-      {error && <div className="status-indicator error w-full justify-center">{error}</div>}
+      {loading && <div className={styles.loading}>Loading...</div>}
+      {error && <div className={styles.errorBanner} role="alert">{error}</div>}
 
       {!loading && !error && timers.length === 0 && (
-        <div className="timers-empty">No timers scheduled.</div>
+        <div className={styles.empty}>No timers scheduled.</div>
       )}
 
-      <div className="timers-list">
+      <div className={styles.list}>
         {timers.map((t, idx) => (
-          <div key={t.timerId || idx} className="timer-card">
-            <div className="timer-info">
-              <div className="timer-name">{t.name}</div>
-              <div className="timer-service">{t.serviceName || t.serviceRef}</div>
-              <div className="timer-time">
+          <div key={t.timerId || idx} className={styles.card}>
+            <div className={styles.info}>
+              <div className={styles.name}>{t.name}</div>
+              <div className={styles.service}>{t.serviceName || t.serviceRef}</div>
+              <div className={styles.time}>
                 {formatDateTime(t.begin)} - {formatDateTime(t.end)}
               </div>
-              <div className={`timer-state ${t.state === 'recording' ? 'status-recording' : 'status-scheduled'}`}>
+              <div
+                className={[
+                  styles.state,
+                  t.state === 'recording' ? styles.stateRecording : styles.stateScheduled,
+                ].filter(Boolean).join(' ')}
+              >
                 {t.state}
               </div>
             </div>
-            <div className="timer-actions">
-              <button
+            <div className={styles.actions}>
+              <Button
+                variant="secondary"
+                size="sm"
                 onClick={() => setEditingTimer(t)}
-                className="timer-btn btn-edit"
               >
                 Edit
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
                 onClick={() => handleDelete(t)}
-                className="timer-btn btn-delete"
               >
                 Delete
-              </button>
+              </Button>
             </div>
           </div>
         ))}

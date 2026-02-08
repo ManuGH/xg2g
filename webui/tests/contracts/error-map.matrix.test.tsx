@@ -23,12 +23,12 @@ describe('User-Facing Error Matrix (ERROR_MAP.md)', () => {
     {
       status: 401,
       name: '401 UNAUTHORIZED',
-      expectText: new RegExp('player.playbackDenied|Playback denied', 'i'),
+      expectText: new RegExp('player.authFailed|Authentication failed', 'i'),
     },
     {
       status: 403,
       name: '403 FORBIDDEN',
-      expectText: new RegExp('player.playbackDenied|Playback denied', 'i'),
+      expectText: new RegExp('player.authFailed|Authentication failed', 'i'),
     },
     {
       status: 409,
