@@ -18,7 +18,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/media/ffmpeg/watchdog"
 	"github.com/ManuGH/xg2g/internal/metrics"
@@ -804,17 +803,16 @@ func (a *LocalAdapter) buildArgs(ctx context.Context, spec ports.StreamSpec, inp
 		)
 
 		// Video encoding (two paths: VAAPI GPU or CPU)
-		prof := spec.Profile
-		if prof.HWAccel == "vaapi" {
-			args = a.buildVaapiVideoArgs(args, prof, gop, segmentDurationSec, spec.SessionID)
+		if spec.Profile.HWAccel == "vaapi" {
+			args = a.buildVaapiVideoArgs(args, spec, gop, segmentDurationSec)
 		} else {
-			args = a.buildCPUVideoArgs(args, prof, gop, segmentDurationSec, spec.SessionID)
+			args = a.buildCPUVideoArgs(args, spec, gop, segmentDurationSec)
 		}
 
 		// Audio (same for all paths)
 		audioBitrate := "192k"
-		if prof.AudioBitrateK > 0 {
-			audioBitrate = fmt.Sprintf("%dk", prof.AudioBitrateK)
+		if spec.Profile.AudioBitrateK > 0 {
+			audioBitrate = fmt.Sprintf("%dk", spec.Profile.AudioBitrateK)
 		}
 		args = append(args,
 			"-c:a", "aac",
@@ -848,9 +846,10 @@ func (a *LocalAdapter) buildArgs(ctx context.Context, spec ports.StreamSpec, inp
 
 // buildVaapiVideoArgs constructs video encoding arguments for the VAAPI GPU pipeline.
 // Frames are already in GPU memory from -hwaccel vaapi -hwaccel_output_format vaapi.
-func (a *LocalAdapter) buildVaapiVideoArgs(args []string, prof model.ProfileSpec, gop, segmentSec int, sessionID string) []string {
+func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec, gop, segmentSec int) []string {
+	prof := spec.Profile
 	a.Logger.Info().
-		Str("sessionId", sessionID).
+		Str("sessionId", spec.SessionID).
 		Str("transcode.mode", "vaapi").
 		Str("vaapi.device", a.VaapiDevice).
 		Str("video.codec", prof.VideoCodec).
@@ -901,7 +900,8 @@ func (a *LocalAdapter) buildVaapiVideoArgs(args []string, prof model.ProfileSpec
 // When ProfileSpec is zero-valued (VideoCodec="" + TranscodeVideo=false), applies
 // legacy defaults: libx264 + yadif + ultrafast + CRF 20. This ensures backwards
 // compat for code paths that don't set ProfileSpec yet.
-func (a *LocalAdapter) buildCPUVideoArgs(args []string, prof model.ProfileSpec, gop, segmentSec int, sessionID string) []string {
+func (a *LocalAdapter) buildCPUVideoArgs(args []string, spec ports.StreamSpec, gop, segmentSec int) []string {
+	prof := spec.Profile
 	// Detect zero-valued profile → apply legacy defaults.
 	// A zero-valued ProfileSpec has VideoCodec="" and TranscodeVideo=false,
 	// which happens when the orchestrator doesn't pass a resolved profile.
@@ -930,7 +930,7 @@ func (a *LocalAdapter) buildCPUVideoArgs(args []string, prof model.ProfileSpec, 
 	}
 
 	a.Logger.Info().
-		Str("sessionId", sessionID).
+		Str("sessionId", spec.SessionID).
 		Str("transcode.mode", "cpu").
 		Str("video.codec", codec).
 		Int("video.crf", crf).
