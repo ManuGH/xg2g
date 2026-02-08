@@ -1,16 +1,16 @@
-/* EPG.css - Modern Glassmorphic Design */
+/* EPG - Feature stylesheet (CSS Modules)
+   Scope all classes to avoid global collisions. */
 
-.epg-page {
+.page {
   display: flex;
   flex-direction: column;
   height: 100%;
   color: var(--text-primary);
   background: var(--bg-app);
-  /* Ensure deep background */
 }
 
 /* --- Floating Glass Toolbar --- */
-.epg-toolbar {
+.toolbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -25,7 +25,7 @@
   box-shadow: var(--shadow-card);
 }
 
-.epg-toolbar-left h3 {
+.toolbarLeft h3 {
   margin: 0;
   font-size: 22px;
   font-weight: 700;
@@ -33,19 +33,19 @@
   letter-spacing: -0.5px;
 }
 
-.epg-toolbar-left p {
+.toolbarLeft p {
   margin: 4px 0 0;
   color: var(--text-muted);
   font-size: 13px;
   font-weight: 500;
 }
 
-.epg-toolbar-right {
+.toolbarRight {
   display: flex;
   gap: 12px;
 }
 
-.epg-toolbar-right button {
+.toolbarRight button {
   background: var(--bg-input);
   border: 1px solid var(--border-base);
   color: var(--text-primary);
@@ -54,26 +54,26 @@
   cursor: pointer;
   font-size: 13px;
   font-weight: 600;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all var(--motion-standard) var(--ease-standard);
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.epg-toolbar-right button:hover:not(:disabled) {
+.toolbarRight button:hover:not(:disabled) {
   background: var(--bg-hover);
   border-color: var(--border-elevated);
   transform: translateY(-1px);
   box-shadow: var(--shadow-card);
 }
 
-.epg-toolbar-right button:disabled {
+.toolbarRight button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
 /* --- Controls Section --- */
-.epg-controls {
+.controls {
   padding: 16px 24px;
   display: flex;
   gap: 20px;
@@ -83,7 +83,7 @@
   border-bottom: 1px solid var(--border-base);
 }
 
-.epg-controls label {
+.controls label {
   font-size: 13px;
   color: var(--text-secondary);
   display: flex;
@@ -92,7 +92,7 @@
   font-weight: 500;
 }
 
-.epg-controls select {
+.controls select {
   background: var(--bg-input);
   color: var(--text-primary);
   border: 1px solid var(--border-base);
@@ -100,24 +100,24 @@
   padding: 6px 12px;
   outline: none;
   font-size: 13px;
-  transition: border-color 0.2s;
+  transition: border-color var(--motion-standard) var(--ease-standard);
   min-width: 140px;
 }
 
-.epg-controls select:focus-visible {
+.controls select:focus-visible {
   border-color: var(--border-focus);
   box-shadow: 0 0 0 2px var(--accent-action-subtle);
 }
 
 /* --- Search Bar --- */
-.epg-search {
+.search {
   padding: 16px 24px;
   display: flex;
   gap: 12px;
   background: var(--bg-overlay);
 }
 
-.epg-search-left {
+.searchLeft {
   flex: 1;
   position: relative;
   display: flex;
@@ -126,22 +126,22 @@
   border: 1px solid var(--border-base);
   border-radius: 10px;
   padding: 0 16px;
-  transition: all 0.2s;
+  transition: all var(--motion-standard) var(--ease-standard);
 }
 
-.epg-search-left:focus-within {
+.searchLeft:focus-within {
   background: var(--bg-hover);
   border-color: var(--border-focus);
   box-shadow: 0 0 0 1px var(--border-focus), var(--shadow-card);
 }
 
-.epg-search-icon {
+.searchIcon {
   color: var(--text-muted);
   font-size: 16px;
   margin-right: 12px;
 }
 
-.epg-search input {
+.search input {
   background: transparent;
   border: none;
   color: var(--text-primary);
@@ -151,7 +151,7 @@
   outline: none;
 }
 
-.epg-search-right button {
+.searchRight button {
   background: var(--accent-action);
   color: var(--text-primary);
   border: none;
@@ -159,35 +159,40 @@
   border-radius: 10px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--motion-standard) var(--ease-standard);
   box-shadow: var(--shadow-accent-action);
 }
 
-.epg-search-right button:hover:not(:disabled) {
+.searchRight button:hover:not(:disabled) {
   transform: translateY(-1px);
   background: var(--accent-action-hover);
   box-shadow: var(--shadow-accent-action);
 }
 
 /* --- Channel Cards --- */
-.epg-card {
+.card {
   background: var(--bg-elevated);
   margin: 0 24px 16px;
-  /* Spacing between cards */
   border-radius: 12px;
   border: 1px solid var(--border-base);
   padding: 20px;
-  transition: all 0.2s ease;
+  transition: all var(--motion-standard) var(--ease-standard);
 }
 
-.epg-card:hover {
+.card:hover {
   background: var(--bg-hover);
   border-color: var(--border-elevated);
   transform: translateY(-2px);
   box-shadow: var(--shadow-hover);
 }
 
-.epg-channel {
+.cardError {
+  background: var(--status-error-subtle);
+  border-color: var(--status-error-border);
+  color: var(--status-error);
+}
+
+.channel {
   display: flex;
   align-items: center;
   gap: 20px;
@@ -196,7 +201,7 @@
   border-bottom: 1px solid var(--border-base);
 }
 
-.epg-logo {
+.logo {
   width: 60px;
   height: 40px;
   background: var(--bg-input);
@@ -207,22 +212,29 @@
   overflow: hidden;
   padding: 4px;
   border: 1px solid var(--border-base);
+  flex-shrink: 0;
 }
 
-.epg-logo img {
+.logo img {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
 }
 
-.epg-channel-name {
+.channelMeta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.channelName {
   font-weight: 700;
   font-size: 17px;
   color: var(--text-primary);
   letter-spacing: -0.01em;
 }
 
-.epg-channel-group {
+.channelGroup {
   font-size: 12px;
   color: var(--text-tertiary);
   margin-top: 4px;
@@ -233,59 +245,46 @@
   display: inline-block;
   padding: 2px 8px;
   border-radius: 4px;
+  align-self: flex-start;
 }
 
-.btn-play {
-  background: var(--accent-action-subtle);
-  color: var(--accent-action);
-  border: 1px solid var(--accent-action);
-  padding: 8px 16px;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  transition: all 0.2s;
+.play {
   margin-left: auto;
 }
 
-.btn-play:hover {
-  background: var(--accent-action);
-  color: var(--text-primary);
-  border-color: var(--accent-action);
-  box-shadow: var(--shadow-accent-action);
-}
-
 /* --- Program List --- */
-.epg-programmes {
+.programmes {
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
-.epg-programme {
+.programme {
   display: flex;
   gap: 20px;
   padding: 12px 16px;
   border-radius: 10px;
-  transition: all 0.2s;
+  transition: all var(--motion-standard) var(--ease-standard);
   position: relative;
   overflow: hidden;
 }
 
-.epg-programme:hover {
+.programme:hover {
   background: var(--bg-hover);
 }
 
+.programme:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
 /* Current Program Highlight */
-.epg-programme-current {
+.programmeCurrent {
   background: color-mix(in srgb, var(--accent-action) 12%, transparent);
   border-left: 4px solid var(--accent-action);
 }
 
-.epg-programme-time {
+.programmeTime {
   min-width: 100px;
   font-size: 14px;
   font-variant-numeric: tabular-nums;
@@ -293,33 +292,70 @@
   font-weight: 500;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
-.epg-programme-title {
+.recordIndicator {
+  font-size: 12px;
+  line-height: 1;
+  opacity: 0.9;
+}
+
+.recordButton {
+  width: 28px;
+  height: 24px;
+  border-radius: 6px;
+  border: 1px solid var(--border-base);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--motion-standard) var(--ease-standard), border-color var(--motion-standard) var(--ease-standard);
+}
+
+.recordButton:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-elevated);
+}
+
+.programmeBody {
+  flex: 1;
+  min-width: 0;
+}
+
+.programmeTitle {
   font-weight: 600;
   font-size: 15px;
   color: var(--text-primary);
   margin-bottom: 6px;
 }
 
-.epg-programme-desc {
+.programmeDesc {
   font-size: 13px;
   color: var(--text-tertiary);
   line-height: 1.5;
   opacity: 0.8;
   white-space: pre-wrap;
+  max-height: 3.6em;
+  overflow: hidden;
+}
+
+.programmeDescExpanded {
+  max-height: none;
+  opacity: 1;
 }
 
 /* --- Progress Bar --- */
-.epg-progress-container {
+.progressContainer {
   margin-top: 12px;
   background: var(--bg-overlay);
   border-radius: 4px;
   padding: 2px;
 }
 
-.epg-progress {
+.progress {
   height: 6px;
   background: var(--bg-input);
   border-radius: 3px;
@@ -327,14 +363,21 @@
   margin-bottom: 6px;
 }
 
-.epg-progress-bar {
+.progressBar {
   height: 100%;
   background: var(--accent-action);
   border-radius: 3px;
 }
 
+.progressMeta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
 /* --- Labels & Misc --- */
-.epg-date-label {
+.dateLabel {
   padding: 12px 0 8px;
   font-size: 11px;
   font-weight: 700;
@@ -348,7 +391,7 @@
   gap: 8px;
 }
 
-.epg-date-label::before {
+.dateLabel::before {
   content: '';
   width: 4px;
   height: 4px;
@@ -356,7 +399,7 @@
   border-radius: 50%;
 }
 
-.epg-empty-state {
+.emptyState {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -366,26 +409,59 @@
   text-align: center;
 }
 
+.dropdown {
+  margin-top: 12px;
+}
+
+.toggle {
+  width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--border-base);
+  color: var(--text-secondary);
+  padding: 10px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background var(--motion-standard) var(--ease-standard), border-color var(--motion-standard) var(--ease-standard), color var(--motion-standard) var(--ease-standard);
+}
+
+.toggle:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-elevated);
+  color: var(--text-primary);
+}
+
+.programmesNoncurrent {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.searchGroup {
+  border-top: 1px solid var(--border-base);
+  padding-top: 12px;
+}
+
 /* Scrollbar Styling */
-.epg-page::-webkit-scrollbar {
+.page::-webkit-scrollbar {
   width: 8px;
 }
 
-.epg-page::-webkit-scrollbar-track {
+.page::-webkit-scrollbar-track {
   background: var(--bg-overlay);
 }
 
-.epg-page::-webkit-scrollbar-thumb {
+.page::-webkit-scrollbar-thumb {
   background: var(--bg-hover);
   border-radius: 4px;
 }
 
-.epg-page::-webkit-scrollbar-thumb:hover {
+.page::-webkit-scrollbar-thumb:hover {
   background: var(--border-elevated);
 }
 
-/* --- Pill Selector (Modern Replacement for Dropdowns) --- */
-.epg-pills {
+/* --- Pill Selector --- */
+.pills {
   display: flex;
   background: var(--bg-overlay);
   padding: 4px;
@@ -394,7 +470,7 @@
   border: 1px solid var(--border-base);
 }
 
-.epg-pill {
+.pill {
   background: transparent;
   border: none;
   color: var(--text-secondary);
@@ -403,16 +479,17 @@
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--motion-standard) var(--ease-standard);
 }
 
-.epg-pill:hover {
+.pill:hover {
   color: var(--text-primary);
   background: var(--bg-hover);
 }
 
-.epg-pill.active {
+.pillActive {
   background: var(--accent-action);
   color: var(--text-primary);
   box-shadow: var(--shadow-accent-action);
 }
+

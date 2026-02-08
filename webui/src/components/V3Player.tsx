@@ -19,9 +19,9 @@ import type {
 } from '../types/v3-player';
 import { useResume } from '../features/resume/useResume';
 import { ResumeState } from '../features/resume/api';
-import { Card, StatusChip } from './ui';
+import { Button, Card, StatusChip } from './ui';
 import { debugError, debugLog, debugWarn } from '../utils/logging';
-import './V3Player.css';
+import styles from './V3Player.module.css';
 
 interface PlayerStats {
   bandwidth: number;
@@ -710,11 +710,13 @@ function V3Player(props: V3PlayerProps) {
           if (error) {
             if (response.status === 401 || response.status === 403) {
               telemetry.emit('ui.error', { status: response.status, code: 'AUTH_DENIED' });
-              throw new Error(t('player.playbackDenied', 'Playback denied (Auth)'));
+              setStatus('error');
+              setError(t('player.authFailed'));
+              return;
             }
             if (response.status === 410) {
               telemetry.emit('ui.error', { status: 410, code: 'GONE' });
-              throw new Error(t('player.notAvailable', 'Playback not available (Gone)'));
+              throw new Error(t('player.notAvailable'));
             }
             if (response.status === 409) {
               const retryAfterHeader = response.headers.get('Retry-After');
@@ -755,14 +757,18 @@ function V3Player(props: V3PlayerProps) {
 
         const resolution = resolvePlaybackInfoPolicy(capabilities, pInfo);
 
-        if (resolution.mode === 'normative') {
+          if (resolution.mode === 'normative') {
           // Type Assertion: We treat the object as strictly normative here.
           // Any access to pInfo.url or decision outputs will now fail compile-time check (if we used the var).
           const normativePInfo = pInfo as unknown as NormativePlaybackInfo;
 
           // TS-Guard
           if (!normativePInfo.decision?.selectedOutputUrl) {
-            throw new Error("Invariant violation: Normative mode but missing selection");
+            telemetry.emit('ui.failclosed', {
+              context: 'V3Player.decision.selectionMissing',
+              reason: 'DECISION_SELECTION_MISSING'
+            });
+            throw new Error('Decision-led playback missing explicit selection');
           }
           streamUrl = normativePInfo.decision.selectedOutputUrl;
           mode = normativePInfo.decision.selectedOutputKind === 'hls' ? 'hls' : 'direct_mp4';
@@ -773,10 +779,10 @@ function V3Player(props: V3PlayerProps) {
         }
         else if (resolution.mode === 'legacy') {
           if (pInfo.mode === 'deny') {
-            throw new Error(t('player.playbackDenied', 'Playback denied by policy'));
+            throw new Error(t('player.playbackDenied'));
           }
           if (!pInfo.url) {
-            throw new Error(t('player.notAvailable', 'Playback not available'));
+            throw new Error(t('player.notAvailable'));
           }
           streamUrl = pInfo.url;
           mode = pInfo.mode as any;
@@ -791,7 +797,11 @@ function V3Player(props: V3PlayerProps) {
             context: 'V3Player.PolicyEngine',
             reason: resolution.reason
           });
-          throw new Error(t('player.playbackError', `Policy Violation: ${resolution.reason}`));
+          setStatus('error');
+          // Contract/Governance failure: keep the user-facing error, but surface the reason explicitly.
+          setError(`${t('player.playbackError')} (Policy Violation)`);
+          setErrorDetails(`reason=${resolution.reason}`);
+          return;
         }
 
         if (streamUrl.startsWith('/')) {
@@ -996,7 +1006,7 @@ function V3Player(props: V3PlayerProps) {
         setStatus('ready');
         const streamUrl = session.playbackUrl;
         if (!streamUrl) {
-          throw new Error(t('player.streamUrlMissing', 'Stream URL missing in session response'));
+          throw new Error(t('player.streamUrlMissing'));
         }
         playHls(streamUrl);
 
@@ -1526,14 +1536,13 @@ function V3Player(props: V3PlayerProps) {
   }, [clearVodFetch, clearVodRetry, sendStopIntent]);
 
   // Overlay styles
-  // ADR-00X: Overlay styles moved to .v3-player-overlay in V3Player.css
-
-  // Static styles moved to .video-element in V3Player.css
+  // ADR-00X: Overlay styles are controlled via styles.overlay in V3Player.module.css
+  // Static layout styles are in V3Player.module.css (scoped)
 
   const spinnerLabel =
     status === 'starting' || status === 'priming' || status === 'buffering' || status === 'building'
       ? (status === 'buffering' && playbackMode === 'VOD' && activeRecordingRef.current && vodStreamMode === 'direct_mp4')
-        ? t('player.preparingDirectPlay', 'Preparing Direct Play...') // Show explicit preparing for VOD buffering
+        ? t('player.preparingDirectPlay') // Show explicit preparing for VOD buffering
         : `${t(`player.statusStates.${status}`, { defaultValue: status })}…`
       : '';
 
@@ -1553,12 +1562,19 @@ function V3Player(props: V3PlayerProps) {
     : formatClock(windowDuration);
 
   return (
-    <div ref={containerRef} className={`v3-player-container animate-enter ${onClose ? 'v3-player-overlay' : ''} ${isIdle ? 'user-idle' : ''}`.trim()}
+    <div
+      ref={containerRef}
+      className={[
+        styles.container,
+        'animate-enter',
+        onClose ? styles.overlay : null,
+        isIdle ? styles.userIdle : null,
+      ].filter(Boolean).join(' ')}
     >
       {onClose && (
         <button
           onClick={() => void stopStream()}
-          className="close-btn"
+          className={styles.closeButton}
           aria-label={t('player.closePlayer')}
         >
           ✕
@@ -1567,72 +1583,72 @@ function V3Player(props: V3PlayerProps) {
 
       {/* Stats Overlay */}
       {showStats && (
-        <div className="stats-overlay">
+        <div className={styles.statsOverlay}>
           <Card variant="standard">
             <Card.Header>
               <Card.Title>{t('player.statsTitle', { defaultValue: 'Technical Stats' })}</Card.Title>
             </Card.Header>
-            <Card.Content className="stats-grid">
-              <div className="stats-row">
-                <span className="stats-label">{t('player.status')}</span>
+            <Card.Content className={styles.statsGrid}>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.status')}</span>
                 <StatusChip
                   state={status === 'ready' ? 'live' : status === 'error' ? 'error' : 'idle'}
                   label={t(`player.statusStates.${status}`, { defaultValue: status })}
                 />
               </div>
-              <div className="stats-row">
-                <span className="stats-label">{t('common.session', { defaultValue: 'Session' })}</span>
-                <span className="stats-value">{sessionIdRef.current || '-'}</span>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('common.session', { defaultValue: 'Session' })}</span>
+                <span className={styles.statsValue}>{sessionIdRef.current || '-'}</span>
               </div>
-              <div className="stats-row">
-                <span className="stats-label">{t('common.requestId', { defaultValue: 'Request ID' })}</span>
-                <span className="stats-value">{traceId}</span>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('common.requestId', { defaultValue: 'Request ID' })}</span>
+                <span className={styles.statsValue}>{traceId}</span>
               </div>
-              <div className="stats-row">
-                <span className="stats-label">{t('player.resolution')}</span>
-                <span className="stats-value">{stats.resolution}</span>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.resolution')}</span>
+                <span className={styles.statsValue}>{stats.resolution}</span>
               </div>
-              <div className="stats-row">
-                <span className="stats-label">{t('player.bandwidth')}</span>
-                <span className="stats-value">{stats.bandwidth} kbps</span>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.bandwidth')}</span>
+                <span className={styles.statsValue}>{stats.bandwidth} kbps</span>
               </div>
-              <div className="stats-row">
-                <span className="stats-label">{t('player.bufferHealth')}</span>
-                <span className="stats-value">{stats.bufferHealth}s</span>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.bufferHealth')}</span>
+                <span className={styles.statsValue}>{stats.bufferHealth}s</span>
               </div>
-              <div className="stats-row">
-                <span className="stats-label">{t('player.latency')}</span>
-                <span className="stats-value">{stats.latency !== null ? stats.latency + 's' : '-'}</span>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.latency')}</span>
+                <span className={styles.statsValue}>{stats.latency !== null ? stats.latency + 's' : '-'}</span>
               </div>
-              <div className="stats-row">
-                <span className="stats-label">{t('player.fps')}</span>
-                <span className="stats-value">{stats.fps}</span>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.fps')}</span>
+                <span className={styles.statsValue}>{stats.fps}</span>
               </div>
-              <div className="stats-row">
-                <span className="stats-label">{t('player.dropped')}</span>
-                <span className="stats-value">{stats.droppedFrames}</span>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.dropped')}</span>
+                <span className={styles.statsValue}>{stats.droppedFrames}</span>
               </div>
-              <div className="stats-row">
-                <span className="stats-label">{t('player.hlsLevel')}</span>
-                <span className="stats-value">{stats.levelIndex === -1 ? 'Auto' : stats.levelIndex}</span>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.hlsLevel')}</span>
+                <span className={styles.statsValue}>{stats.levelIndex === -1 ? 'Auto' : stats.levelIndex}</span>
               </div>
-              <div className="stats-row">
-                <span className="stats-label">{t('player.segDuration')}</span>
-                <span className="stats-value">{stats.buffer}s</span>
+              <div className={styles.statsRow}>
+                <span className={styles.statsLabel}>{t('player.segDuration')}</span>
+                <span className={styles.statsValue}>{stats.buffer}s</span>
               </div>
             </Card.Content>
           </Card>
         </div>
       )}
 
-      <div className="video-wrapper">
-        {channel && <h3 className="overlay-title">{channel.name}</h3>}
+      <div className={styles.videoWrapper}>
+        {channel && <h3 className={styles.overlayTitle}>{channel.name}</h3>}
 
         {/* PREPARING Overlay (VOD Remux) */}
         {(status === 'starting' || status === 'priming' || status === 'buffering' || status === 'building') && (
-          <div className="spinner-overlay" ref={() => debugLog('[V3Player] Spinner Rendered', { status, fullscreen: isFullscreen })}>
-            <div className="spinner spinner-base"></div>
-            <div className="spinner-label">{spinnerLabel}</div>
+          <div className={styles.spinnerOverlay} ref={() => debugLog('[V3Player] Spinner Rendered', { status, fullscreen: isFullscreen })}>
+            <div className={`${styles.spinner} spinner-base`}></div>
+            <div className={styles.spinnerLabel}>{spinnerLabel}</div>
           </div>
         )}
 
@@ -1643,27 +1659,27 @@ function V3Player(props: V3PlayerProps) {
           webkit-playsinline=""
           preload="metadata"
           autoPlay={!!autoStart}
-          className="video-element"
+          className={styles.videoElement}
         />
       </div>
 
       {/* Error Toast */}
       {error && (
-        <div className="error-toast" aria-live="polite" role="alert">
-          <div className="error-main">
-            <span className="error-text">⚠ {error}</span>
-            <button onClick={handleRetry} className="btn-retry">{t('common.retry')}</button>
-          </div>
-          {errorDetails && (
-            <button
-              onClick={() => setShowErrorDetails(!showErrorDetails)}
-              className="error-details-btn"
-            >
-              {showErrorDetails ? t('common.hideDetails') : t('common.showDetails')}
-            </button>
+          <div className={styles.errorToast} aria-live="polite" role="alert">
+            <div className={styles.errorMain}>
+              <span className={styles.errorText}>⚠ {error}</span>
+              <Button variant="secondary" size="sm" onClick={handleRetry}>{t('common.retry')}</Button>
+            </div>
+            {errorDetails && (
+              <button
+                onClick={() => setShowErrorDetails(!showErrorDetails)}
+                className={styles.errorDetailsButton}
+              >
+                {showErrorDetails ? t('common.hideDetails') : t('common.showDetails')}
+              </button>
           )}
           {showErrorDetails && errorDetails && (
-            <div className="error-details-content">
+            <div className={styles.errorDetailsContent}>
               {errorDetails}
               <br />
               {t('common.session')}: {sessionIdRef.current || t('common.notAvailable')}
@@ -1673,63 +1689,65 @@ function V3Player(props: V3PlayerProps) {
       )}
 
       {/* Controls & Status Bar */}
-      <div className="v3-player-controls-header">
+      <div className={styles.controlsHeader}>
         {hasSeekWindow ? (
-          <div className="vod-controls seek-controls">
-            <div className="seek-buttons">
-              <button className="btn-icon" onClick={() => seekBy(-900)} title={t('player.seekBack15m', 'Back 15m')}>
+          <div className={[styles.vodControls, styles.seekControls].join(' ')}>
+            <div className={styles.seekButtons}>
+              <Button variant="ghost" size="sm" onClick={() => seekBy(-900)} title={t('player.seekBack15m')} aria-label={t('player.seekBack15m')}>
                 ↺ 15m
-              </button>
-              <button className="btn-icon" onClick={() => seekBy(-60)} title={t('player.seekBack60s', 'Back 60s')}>
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => seekBy(-60)} title={t('player.seekBack60s')} aria-label={t('player.seekBack60s')}>
                 ↺ 60s
-              </button>
-              <button className="btn-icon" onClick={() => seekBy(-15)} title={t('player.seekBack15s', 'Back 15s')}>
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => seekBy(-15)} title={t('player.seekBack15s')} aria-label={t('player.seekBack15s')}>
                 ↺ 15s
-              </button>
+              </Button>
             </div>
 
-            <button
-              className="vod-play-btn"
+            <Button
+              variant="primary"
+              size="icon"
               onClick={togglePlayPause}
-              title={isPlaying ? t('player.pause', 'Pause') : t('player.play', 'Play')}
+              title={isPlaying ? t('player.pause') : t('player.play')}
+              aria-label={isPlaying ? t('player.pause') : t('player.play')}
             >
               {isPlaying ? '⏸' : '▶'}
-            </button>
+            </Button>
 
-            <div className="seek-slider-group">
-              <span className="vod-time">{startTimeDisplay}</span>
+            <div className={styles.seekSliderGroup}>
+              <span className={styles.vodTime}>{startTimeDisplay}</span>
               <input
                 type="range"
                 min="0"
                 max={windowDuration}
                 step="0.1"
-                className="vod-slider"
+                className={styles.vodSlider}
                 value={relativePosition}
                 onChange={(e) => {
                   const newVal = parseFloat(e.target.value);
                   seekTo(seekableStart + newVal);
                 }}
               />
-              <span className="vod-time-total">{endTimeDisplay}</span>
+              <span className={styles.vodTimeTotal}>{endTimeDisplay}</span>
             </div>
 
-            <div className="seek-buttons">
-              <button className="btn-icon" onClick={() => seekBy(15)} title={t('player.seekForward15s', 'Forward 15s')}>
+            <div className={styles.seekButtons}>
+              <Button variant="ghost" size="sm" onClick={() => seekBy(15)} title={t('player.seekForward15s')} aria-label={t('player.seekForward15s')}>
                 +15s
-              </button>
-              <button className="btn-icon" onClick={() => seekBy(60)} title={t('player.seekForward60s', 'Forward 60s')}>
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => seekBy(60)} title={t('player.seekForward60s')} aria-label={t('player.seekForward60s')}>
                 +60s
-              </button>
-              <button className="btn-icon" onClick={() => seekBy(900)} title={t('player.seekForward15m', 'Forward 15m')}>
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => seekBy(900)} title={t('player.seekForward15m')} aria-label={t('player.seekForward15m')}>
                 +15m
-              </button>
+              </Button>
             </div>
 
             {isLiveMode && (
               <button
-                className={`live-btn ${isAtLiveEdge ? 'active' : ''}`}
+                className={[styles.liveButton, isAtLiveEdge ? styles.liveButtonActive : null].filter(Boolean).join(' ')}
                 onClick={() => seekTo(seekableEnd)}
-                title={t('player.goLive', 'Go live')}
+                title={t('player.goLive')}
               >
                 LIVE
               </button>
@@ -1739,7 +1757,7 @@ function V3Player(props: V3PlayerProps) {
           !channel && !recordingId && !src && (
             <input
               type="text"
-              className="bg-input bg-input-service"
+              className={styles.serviceInput}
               value={sRef}
               onChange={(e) => setSRef(e.target.value)}
               onKeyDown={(e) => {
@@ -1756,30 +1774,27 @@ function V3Player(props: V3PlayerProps) {
         {/* ADR-00X: Profile dropdown removed (universal policy only) */}
 
         {!autoStart && !src && !recordingId && (
-          <button
-            className="btn-primary"
+          <Button
             onClick={() => startStream()}
             disabled={status === 'starting' || status === 'priming'}
           >
             ▶ {t('common.startStream')}
-          </button>
+          </Button>
         )}
 
         {/* DVR Mode Button (Safari Only / Fallback) */}
-        <button
-          className={`btn-primary btn-dvr ${isSafari ? '' : 'v3-hidden'}`.trim()}
-          onClick={enterDVRMode}
-          title={t('player.dvrMode', 'DVR Mode (Native)')}
-        >
-          📺 DVR
-        </button>
+        {isSafari && (
+          <Button onClick={enterDVRMode} title={t('player.dvrMode')}>
+            📺 DVR
+          </Button>
+        )}
 
         {/* Volume Control */}
-        <div className="volume-control">
+        <div className={styles.volumeControl}>
           <button
-            className="volume-btn"
+            className={styles.volumeButton}
             onClick={toggleMute}
-            title={isMuted ? t('player.unmute', 'Unmute') : t('player.mute', 'Mute')}
+            title={isMuted ? t('player.unmute') : t('player.mute')}
           >
             {isMuted ? '🔇' : volume > 0.5 ? '🔊' : volume > 0 ? '🔉' : '🔈'}
           </button>
@@ -1788,59 +1803,62 @@ function V3Player(props: V3PlayerProps) {
             min="0"
             max="1"
             step="0.05"
-            className="volume-slider"
+            className={styles.volumeSlider}
             value={isMuted ? 0 : volume}
             onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
           />
         </div>
 
-        <button
-          className={`btn-icon ${isPip ? 'active' : ''}`}
+        <Button
+          variant="ghost"
+          size="sm"
+          active={isPip}
           onClick={togglePiP}
           title={t('player.pipTitle')}
         >
           📺 {t('player.pipLabel')}
-        </button>
+        </Button>
 
-        <button
-          className={`btn-icon ${showStats ? 'active' : ''}`}
+        <Button
+          variant="ghost"
+          size="sm"
+          active={showStats}
           onClick={() => setShowStats(!showStats)}
           title={t('player.statsTitle')}
         >
           📊 {t('player.statsLabel')}
-        </button>
+        </Button>
 
         {!onClose && (
-          <button onClick={() => void stopStream()} className="btn-danger">
+          <Button variant="danger" onClick={() => void stopStream()}>
             ⏹ {t('common.stop')}
-          </button>
+          </Button>
         )}
       </div>
       {/* Resume Overlay */}
       {showResumeOverlay && resumeState && (
-        <div className="v3-player-resume-overlay">
-          <div className="v3-player-resume-content">
-            <h3>{t('player.resumeTitle', 'Resume Playback?')}</h3>
+        <div className={styles.resumeOverlay}>
+          <div className={styles.resumeContent}>
+            <h3>{t('player.resumeTitle')}</h3>
             <p>{t('player.resumePrompt', { time: formatClock(resumeState.posSeconds) })}</p>
-            <div className="v3-player-resume-actions">
-              <button
-                className="v3-button primary"
+            <div className={styles.resumeActions}>
+              <Button
                 onClick={() => {
                   seekWhenReady(resumeState.posSeconds);
                   setShowResumeOverlay(false);
                 }}
               >
-                {t('player.resumeAction', 'Resume')}
-              </button>
-              <button
-                className="v3-button secondary"
+                {t('player.resumeAction')}
+              </Button>
+              <Button
+                variant="secondary"
                 onClick={() => {
                   seekWhenReady(0);
                   setShowResumeOverlay(false);
                 }}
               >
-                {t('player.startOver', 'Start Over')}
-              </button>
+                {t('player.startOver')}
+              </Button>
             </div>
           </div>
         </div>

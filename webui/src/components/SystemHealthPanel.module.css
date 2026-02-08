@@ -1,19 +1,19 @@
 /* SystemHealthPanel - Layout ONLY (CTO Contract: No colors/shadows/animations)
    Uses Card primitive, only defines grid layout */
 
-.health-panel-grid {
+.grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
   gap: 12px;
   margin-bottom: 24px;
 }
 
-.health-panel-tile {
+.tile {
   /* Card primitive handles all styling */
   min-height: 90px;
 }
 
-.health-panel-tile__content {
+.tileContent {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -21,7 +21,7 @@
   text-align: center;
 }
 
-.health-panel-tile__label {
+.tileLabel {
   font-family: var(--font-body);
   font-size: var(--text-xs);
   font-weight: 600;
@@ -30,7 +30,7 @@
   color: var(--text-tertiary);
 }
 
-.health-panel-tile__value {
+.tileValue {
   font-family: var(--font-mono);
   font-size: var(--text-h2);
   font-weight: 500;
@@ -39,16 +39,17 @@
 
 /* Mobile responsive */
 @media (max-width: 768px) {
-  .health-panel-grid {
+  .grid {
     grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
     gap: 8px;
   }
 
-  .health-panel-tile {
+  .tile {
     min-height: 80px;
   }
 
-  .health-panel-tile__value {
+  .tileValue {
     font-size: var(--text-h3);
   }
 }
+

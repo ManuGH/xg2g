@@ -4,6 +4,7 @@
 import { useTranslation } from 'react-i18next';
 import type { EpgFilters, EpgBouquet, EpgLoadState } from '../types';
 import { EPG_MAX_HORIZON_HOURS } from '../types';
+import styles from '../EPG.module.css';
 
 export interface EpgToolbarProps {
   channelCount: number;
@@ -34,12 +35,12 @@ export function EpgToolbar({
   return (
     <>
       {/* Header Bar */}
-      <div className="epg-toolbar">
-        <div className="epg-toolbar-left">
+      <div className={styles.toolbar}>
+        <div className={styles.toolbarLeft}>
           <h3>{t('epg.pageTitle', { count: channelCount })}</h3>
           <p>{t('epg.timeRange')}: {t('epg.rangeNowTo' + filters.timeRange + 'h', { defaultValue: 'now to +' + filters.timeRange + 'h' })}</p>
         </div>
-        <div className="epg-toolbar-right">
+        <div className={styles.toolbarRight}>
           <button onClick={onRefresh} disabled={loading}>
             {t('epg.reload')}
           </button>
@@ -47,7 +48,7 @@ export function EpgToolbar({
       </div>
 
       {/* Filter Controls */}
-      <div className="epg-controls">
+      <div className={styles.controls}>
         {bouquets.length > 0 && (
           <label>
             {t('epg.bouquet')}:
@@ -66,7 +67,7 @@ export function EpgToolbar({
         )}
 
         <label>{t('epg.timeRange')}:</label>
-        <div className="epg-pills">
+        <div className={styles.pills}>
           {[
             { label: t('epg.rangeNow', { defaultValue: 'Now' }), value: 6 },
             { label: t('epg.rangeEvening', { defaultValue: 'Evening' }), value: 12 },
@@ -76,7 +77,7 @@ export function EpgToolbar({
           ].map((opt) => (
             <button
               key={opt.value}
-              className={`epg-pill ${filters.timeRange === opt.value ? 'active' : ''}`}
+              className={[styles.pill, filters.timeRange === opt.value ? styles.pillActive : null].filter(Boolean).join(' ')}
               onClick={() => onFilterChange({ timeRange: opt.value })}
             >
               {opt.label}
@@ -86,9 +87,9 @@ export function EpgToolbar({
       </div>
 
       {/* Search Bar */}
-      <div className="epg-search">
-        <div className="epg-search-left">
-          <div className="epg-search-icon">⏎</div>
+      <div className={styles.search}>
+        <div className={styles.searchLeft}>
+          <div className={styles.searchIcon}>⏎</div>
           <input
             type="text"
             value={filters.query || ''}
@@ -117,7 +118,7 @@ export function EpgToolbar({
             </select>
           )}
         </div>
-        <div className="epg-search-right">
+        <div className={styles.searchRight}>
           <button
             onClick={onSearch}
             disabled={searchLoading || !filters.query?.trim()}

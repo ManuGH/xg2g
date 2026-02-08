@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getSystemInfo } from '../../client-ts/sdk.gen';
 import { debugError, formatError } from '../../utils/logging';
-import './SystemInfo.css';
+import styles from './SystemInfo.module.css';
 
 interface SystemInfoData {
   hardware: {
@@ -113,79 +113,92 @@ export function SystemInfo() {
 
   if (loading) {
     return (
-      <div className="system-info-page">
-        <h1>📊 {t('system.pageTitle')}</h1>
-        <div className="loading-spinner">{t('common.loading')}</div>
+      <div className={styles.page}>
+        <h1>{t('system.pageTitle')}</h1>
+        <div className={styles.loading}>{t('common.loading')}</div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="system-info-page">
-        <h1>📊 {t('system.pageTitle')}</h1>
-        <div className="error-message">⚠️ {error}</div>
+      <div className={styles.page}>
+        <h1>{t('system.pageTitle')}</h1>
+        <div className={styles.error}>Error: {error}</div>
       </div>
     );
   }
 
   if (!info) return null;
 
-  return (
-    <div className="system-info-page">
-      <h1>📊 {t('system.receiverTitle')}</h1>
+  const ramLevel = getRamLevel(info.resource.memoryUsed, info.resource.memoryTotal);
 
-      <div className="info-grid">
+  return (
+    <div className={styles.page}>
+      <h1>{t('system.receiverTitle')}</h1>
+
+      <div className={styles.grid}>
         {/* Hardware Card */}
-        <div className="info-card">
+        <div className={styles.card}>
           <h2>📦 {t('system.hardware')}</h2>
-          <div className="info-row">
-            <span className="label">{t('system.brandModel')}:</span>
-            <span className="value">{info.hardware.brand} {info.hardware.model}</span>
+          <div className={styles.row}>
+            <span className={styles.label}>{t('system.brandModel')}:</span>
+            <span className={styles.value}>{info.hardware.brand} {info.hardware.model}</span>
           </div>
-          <div className="info-row">
-            <span className="label">Chipset:</span>
-            <span className="value">{info.hardware.chipsetDescription}</span>
+          <div className={styles.row}>
+            <span className={styles.label}>Chipset:</span>
+            <span className={styles.value}>{info.hardware.chipsetDescription}</span>
           </div>
         </div>
 
         {/* Software Card */}
-        <div className="info-card">
+        <div className={styles.card}>
           <h2>💿 {t('system.software')}</h2>
-          <div className="info-row">
-            <span className="label">{t('system.distribution')}:</span>
-            <span className="value">{info.software.imageDistro}</span>
+          <div className={styles.row}>
+            <span className={styles.label}>{t('system.distribution')}:</span>
+            <span className={styles.value}>{info.software.imageDistro}</span>
           </div>
-          <div className="info-row">
-            <span className="label">{t('system.version')}:</span>
-            <span className="value">{info.software.imageVersion}</span>
+          <div className={styles.row}>
+            <span className={styles.label}>{t('system.version')}:</span>
+            <span className={styles.value}>{info.software.imageVersion}</span>
           </div>
-          <div className="info-row">
-            <span className="label">{t('system.kernel')}:</span>
-            <span className="value">{info.software.kernelVersion}</span>
+          <div className={styles.row}>
+            <span className={styles.label}>{t('system.kernel')}:</span>
+            <span className={styles.value}>{info.software.kernelVersion}</span>
           </div>
-          <div className="info-row">
-            <span className="label">{t('system.webif')}:</span>
-            <span className="value">{info.software.webifVersion}</span>
+          <div className={styles.row}>
+            <span className={styles.label}>{t('system.webif')}:</span>
+            <span className={styles.value}>{info.software.webifVersion}</span>
           </div>
         </div>
 
         {/* Tuners Card */}
-        <div className="info-card info-card-wide">
+        <div className={[styles.card, styles.cardWide].join(' ')}>
           <h2>📡 {t('system.tuners')} ({info.tuners.length}x FBC)</h2>
-          <div className="tuner-grid">
+          <div className={styles.tunerGrid}>
             {info.tuners.map((tuner, idx) => (
-              <div key={idx} className={`tuner-item tuner-${tuner.status}`}>
-                <div className="tuner-header">
-                  <span className="tuner-number">#{idx + 1}</span>
-                  <div className={`tuner-status-badge status-${tuner.status}`}>
+              <div key={idx} className={styles.tunerItem}>
+                <div className={styles.tunerHeader}>
+                  <span className={styles.tunerNumber}>#{idx + 1}</span>
+                  <div
+                    className={[
+                      styles.tunerStatusBadge,
+                      tuner.status === 'live'
+                        ? styles.statusLive
+                        : tuner.status === 'recording'
+                          ? styles.statusRecording
+                          : tuner.status === 'streaming'
+                            ? styles.statusStreaming
+                            : styles.statusIdle,
+                    ].join(' ')}
+                  >
                     {tuner.status === 'live' && '🟢 LIVE'}
                     {tuner.status === 'recording' && '🔴 REC'}
                     {tuner.status === 'streaming' && '🔵 STREAM'}
                     {tuner.status === 'idle' && '⚪ IDLE'}
                   </div>
                 </div>
-                <div className="tuner-type">{tuner.type.replace('DVB-', '')}</div>
+                <div className={styles.tunerType}>{tuner.type.replace('DVB-', '')}</div>
               </div>
             ))}
           </div>
@@ -193,22 +206,22 @@ export function SystemInfo() {
 
         {/* Network Card */}
         {info.network.interfaces.length > 0 && (
-          <div className="info-card">
+          <div className={styles.card}>
             <h2>🌐 {t('system.network')}</h2>
             {info.network.interfaces.map((iface, idx) => (
-              <div key={idx} className="info-section">
-                <div className="info-row">
-                  <span className="label">{iface.name}:</span>
-                  <span className="value">{iface.type} ({iface.speed})</span>
+              <div key={idx} className={styles.section}>
+                <div className={styles.row}>
+                  <span className={styles.label}>{iface.name}:</span>
+                  <span className={styles.value}>{iface.type} ({iface.speed})</span>
                 </div>
-                <div className="info-row">
-                  <span className="label">IPv4:</span>
-                  <span className="value">{iface.ip || 'N/A'}</span>
+                <div className={styles.row}>
+                  <span className={styles.label}>IPv4:</span>
+                  <span className={styles.value}>{iface.ip || 'N/A'}</span>
                 </div>
                 {iface.ipv6 && (
-                  <div className="info-row">
-                    <span className="label">IPv6:</span>
-                    <span className="value small">{iface.ipv6}</span>
+                  <div className={styles.row}>
+                    <span className={styles.label}>IPv6:</span>
+                    <span className={[styles.value, styles.small].join(' ')}>{iface.ipv6}</span>
                   </div>
                 )}
               </div>
@@ -217,28 +230,49 @@ export function SystemInfo() {
         )}
 
         {/* Storage Card */}
-        <div className="info-card">
+        <div className={styles.card}>
           <h2>💾 {t('system.storage')}</h2>
           {info.storage.devices.length > 0 && (
-            <div className="info-section">
+            <div className={styles.section}>
               <h3>{t('system.drives')}</h3>
               {info.storage.devices.map((dev, idx) => (
-                <div key={idx} className="info-row">
-                  <div className="storage-status-header">
-                    <span className={`status-dot dot-${dev.healthStatus}`} title={`${t('system.healthLabel')}: ${dev.healthStatus}`}></span>
-                    <span className="label text-truncate" title={dev.model}>{dev.model}:</span>
-                    <span className={`tag ${dev.isNas ? 'tag-nas' : 'tag-intern'}`}>
+                <div key={idx} className={styles.row}>
+                  <div className={styles.storageStatusHeader}>
+                    <span
+                      className={[
+                        styles.statusDot,
+                        dev.healthStatus === 'ok'
+                          ? styles.dotOk
+                          : dev.healthStatus === 'error'
+                            ? styles.dotError
+                            : dev.healthStatus === 'timeout'
+                              ? styles.dotTimeout
+                              : styles.dotUnknown,
+                      ].join(' ')}
+                      title={`${t('system.healthLabel')}: ${dev.healthStatus}`}
+                    />
+                    <span className={[styles.label, styles.textTruncate].join(' ')} title={dev.model}>
+                      {dev.model}:
+                    </span>
+                    <span className={[styles.tag, dev.isNas ? styles.tagNas : styles.tagIntern].join(' ')}>
                       {dev.isNas ? 'NAS' : t('system.internal')}
                       {dev.fsType && <small> ({dev.fsType})</small>}
                     </span>
                   </div>
-                  <div className="storage-subinfo">
-                    <div className="storage-state-row">
-                      <span className="value">{dev.capacity || t('common.notAvailable')}</span>
-                      <span className={`access-badge access-${dev.access}`}>{dev.access === 'none' ? '–' : dev.access.toUpperCase()}</span>
+                  <div className={styles.storageSubinfo}>
+                    <div className={styles.storageStateRow}>
+                      <span className={styles.value}>{dev.capacity || t('common.notAvailable')}</span>
+                      <span
+                        className={[
+                          styles.accessBadge,
+                          dev.access === 'rw' ? styles.accessRw : dev.access === 'ro' ? styles.accessRo : null,
+                        ].filter(Boolean).join(' ')}
+                      >
+                        {dev.access === 'none' ? '–' : dev.access.toUpperCase()}
+                      </span>
                     </div>
                     {dev.checkedAt && (
-                      <span className="checked-at">{t('system.check')}: {new Date(dev.checkedAt).toLocaleTimeString()}</span>
+                      <span className={styles.checkedAt}>{t('system.check')}: {new Date(dev.checkedAt).toLocaleTimeString()}</span>
                     )}
                   </div>
                 </div>
@@ -246,27 +280,52 @@ export function SystemInfo() {
             </div>
           )}
           {info.storage.locations.length > 0 && (
-            <div className="info-section">
+            <div className={styles.section}>
               <h3>{t('system.paths')}</h3>
               {info.storage.locations.map((loc, idx) => (
-                <div key={idx} className="info-row">
-                  <div className="storage-status-header">
-                    <span className={`status-dot dot-${loc.healthStatus}`} title={`${t('system.healthLabel')}: ${loc.healthStatus}`}></span>
-                    <span className="value mono text-truncate" title={loc.mount}>{loc.mount}</span>
-                    <span className={`tag ${loc.isNas ? 'tag-nas' : 'tag-intern'}`}>
+                <div key={idx} className={styles.row}>
+                  <div className={styles.storageStatusHeader}>
+                    <span
+                      className={[
+                        styles.statusDot,
+                        loc.healthStatus === 'ok'
+                          ? styles.dotOk
+                          : loc.healthStatus === 'error'
+                            ? styles.dotError
+                            : loc.healthStatus === 'timeout'
+                              ? styles.dotTimeout
+                              : styles.dotUnknown,
+                      ].join(' ')}
+                      title={`${t('system.healthLabel')}: ${loc.healthStatus}`}
+                    />
+                    <span className={[styles.value, styles.mono, styles.textTruncate].join(' ')} title={loc.mount}>
+                      {loc.mount}
+                    </span>
+                    <span className={[styles.tag, loc.isNas ? styles.tagNas : styles.tagIntern].join(' ')}>
                       {loc.isNas ? 'NAS' : t('system.internal')}
                       {loc.fsType && <small> ({loc.fsType})</small>}
                     </span>
                   </div>
-                  <div className="storage-subinfo">
-                    <span className={`status-text ${loc.healthStatus}`}>
+                  <div className={styles.storageSubinfo}>
+                    <span
+                      className={[
+                        styles.statusText,
+                        loc.healthStatus === 'ok'
+                          ? styles.textOk
+                          : loc.healthStatus === 'error'
+                            ? styles.textError
+                            : loc.healthStatus === 'timeout'
+                              ? styles.textTimeout
+                              : null,
+                      ].filter(Boolean).join(' ')}
+                    >
                       {loc.mountStatus === 'mounted' ? (
                         loc.healthStatus === 'ok' ? `${t('system.status.mounted')} (${loc.access.toUpperCase()})` :
                           t(`system.status.${loc.healthStatus}`)
                       ) : t('system.status.unmounted')}
                     </span>
                     {loc.checkedAt && (
-                      <span className="checked-at">{new Date(loc.checkedAt).toLocaleTimeString()}</span>
+                      <span className={styles.checkedAt}>{new Date(loc.checkedAt).toLocaleTimeString()}</span>
                     )}
                   </div>
                 </div>
@@ -274,49 +333,56 @@ export function SystemInfo() {
             </div>
           )}
           {info.storage.devices.length === 0 && info.storage.locations.length === 0 && (
-            <div className="info-row">
-              <span className="value italic">Keine Informationen verfügbar</span>
+            <div className={styles.row}>
+              <span className={[styles.value, styles.italic].join(' ')}>Keine Informationen verfügbar</span>
             </div>
           )}
         </div>
 
         {/* Runtime Card */}
-        <div className="info-card">
+        <div className={styles.card}>
           <h2>⏱️ Laufzeit</h2>
-          <div className="info-row">
-            <span className="label">Uptime:</span>
-            <span className="value">{info.runtime.uptime}</span>
+          <div className={styles.row}>
+            <span className={styles.label}>Uptime:</span>
+            <span className={styles.value}>{info.runtime.uptime}</span>
           </div>
         </div>
 
         {/* Resources Card */}
-        <div className="info-card">
+        <div className={styles.card}>
           <h2>📊 RAM</h2>
-          <div className="ram-summary">
-            <div className="ram-consumption">
-              <span className="ram-used">{formatBytes(parseMemory(info.resource.memoryUsed))}</span>
-              <span className="ram-label"> verbraucht</span>
+          <div className={styles.ramSummary}>
+            <div className={styles.ramConsumption}>
+              <span className={styles.ramUsed}>{formatBytes(parseMemory(info.resource.memoryUsed))}</span>
+              <span className={styles.ramLabel}> verbraucht</span>
             </div>
-            <div className="ram-bar-container">
+            <div className={styles.ramBarContainer}>
               <div
-                className={`ram-bar-fill ${getRamColorClass(info.resource.memoryUsed, info.resource.memoryTotal)}`}
+                className={[
+                  styles.ramBarFill,
+                  ramLevel === 'critical'
+                    ? styles.ramCritical
+                    : ramLevel === 'warning'
+                      ? styles.ramWarning
+                      : styles.ramNormal
+                ].join(' ')}
                 style={{
                   width: `${calculateMemoryPercent(info.resource.memoryUsed, info.resource.memoryTotal)}%`
                 }}
               />
             </div>
-            <div className="ram-stats">
-              <span className="ram-stat">
-                <span className="ram-stat-label">{t('system.free')}</span>
-                <span className="ram-stat-value">{formatBytes(parseMemory(info.resource.memoryAvailable))}</span>
+            <div className={styles.ramStats}>
+              <span className={styles.ramStat}>
+                <span className={styles.ramStatLabel}>{t('system.free')}</span>
+                <span className={styles.ramStatValue}>{formatBytes(parseMemory(info.resource.memoryAvailable))}</span>
               </span>
-              <span className="ram-stat">
-                <span className="ram-stat-label">{t('system.total')}</span>
-                <span className="ram-stat-value">{formatBytes(parseMemory(info.resource.memoryUsed) + parseMemory(info.resource.memoryAvailable))}</span>
+              <span className={styles.ramStat}>
+                <span className={styles.ramStatLabel}>{t('system.total')}</span>
+                <span className={styles.ramStatValue}>{formatBytes(parseMemory(info.resource.memoryUsed) + parseMemory(info.resource.memoryAvailable))}</span>
               </span>
-              <span className="ram-stat">
-                <span className="ram-stat-label">{t('system.usage')}</span>
-                <span className="ram-stat-value">{calculateMemoryPercent(info.resource.memoryUsed, info.resource.memoryTotal)}%</span>
+              <span className={styles.ramStat}>
+                <span className={styles.ramStatLabel}>{t('system.usage')}</span>
+                <span className={styles.ramStatValue}>{calculateMemoryPercent(info.resource.memoryUsed, info.resource.memoryTotal)}%</span>
               </span>
             </div>
           </div>
@@ -367,8 +433,9 @@ function calculateMemoryPercent(usedStr: string, totalStr: string): number {
   return Math.round((used / total) * 100);
 }
 
-// Get RAM bar color based on usage
-function getRamColorClass(usedStr: string, totalStr: string): string {
+type RamLevel = 'normal' | 'warning' | 'critical';
+
+function getRamLevel(usedStr: string, totalStr: string): RamLevel {
   const percent = calculateMemoryPercent(usedStr, totalStr);
   if (percent >= 85) return 'critical';
   if (percent >= 70) return 'warning';

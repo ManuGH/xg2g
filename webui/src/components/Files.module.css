@@ -1,14 +1,13 @@
-/* Files.css */
+/* Files view - scoped styles (CSS Modules) */
 
-.files-container {
+.container {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  animation: fadeIn 0.4s ease-out;
   padding-bottom: 80px;
 }
 
-.files-header {
+.header {
   background: var(--card-bg);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
@@ -20,114 +19,72 @@
   flex-wrap: wrap;
 }
 
-.files-header h2 {
+.header h2 {
   margin: 0;
   font-size: 20px;
   font-weight: 700;
   color: var(--text-color);
 }
 
-.files-subtle {
+.subtle {
   color: var(--text-muted);
   font-size: 13px;
   padding: 0 2px;
 }
 
-.files-status {
+.status {
   font-weight: 650;
   text-transform: uppercase;
   font-size: 12px;
   letter-spacing: 0.4px;
 }
 
-.files-status.is-ok {
+.statusOk {
   color: var(--accent-success);
 }
 
-.files-status.is-warn {
+.statusWarn {
   color: var(--accent-warning);
 }
 
-.files-loading {
+.loading {
   padding: 24px;
   color: var(--text-muted);
 }
 
-.files-alert {
+.alert {
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-subtle);
   padding: 12px 14px;
   background: var(--card-bg);
   color: var(--text-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
-.files-alert-error {
+.alertError {
   border-color: color-mix(in srgb, var(--accent-danger) 45%, var(--border-subtle));
   background: color-mix(in srgb, var(--accent-danger) 10%, var(--card-bg));
 }
 
-.files-alert-success {
+.alertSuccess {
   border-color: color-mix(in srgb, var(--accent-success) 45%, var(--border-subtle));
   background: color-mix(in srgb, var(--accent-success) 10%, var(--card-bg));
 }
 
-.files-alert-warning {
+.alertWarning {
   border-color: color-mix(in srgb, var(--accent-warning) 45%, var(--border-subtle));
   background: color-mix(in srgb, var(--accent-warning) 10%, var(--card-bg));
 }
 
-/* Buttons (shared pattern across Files) */
-.files-btn {
-  min-height: 44px;
-  padding: 0 16px;
-  border-radius: var(--radius-md);
-  border: 1px solid transparent;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 650;
-  cursor: pointer;
-  transition: background-color 0.2s, transform 0.1s, opacity 0.2s;
-  text-decoration: none;
-}
-
-.files-btn-primary {
-  background: var(--accent-primary);
-  color: var(--text-primary);
-}
-
-.files-btn-primary:hover {
-  background: var(--accent-primary-hover);
-}
-
-.files-btn-secondary {
-  background: color-mix(in srgb, var(--bg-hover) 35%, var(--card-bg));
-  color: var(--text-color);
-  border-color: var(--border-subtle);
-}
-
-.files-btn-secondary:hover {
-  background: var(--bg-hover);
-}
-
-.files-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.files-btn:focus-visible {
-  outline: 2px solid var(--accent-primary);
-  outline-offset: 2px;
-}
-
-/* Cards */
-.file-list {
+.list {
   display: grid;
   grid-template-columns: repeat(12, 1fr);
   gap: 16px;
 }
 
-.file-card {
+.card {
   grid-column: span 12;
   background: var(--card-bg);
   border: 1px solid var(--border-subtle);
@@ -138,7 +95,7 @@
   gap: 12px;
 }
 
-.file-card h3 {
+.card h3 {
   margin: 0;
   font-size: 16px;
   font-weight: 700;
@@ -153,8 +110,7 @@
   line-height: 1.35;
 }
 
-/* Code block */
-.code-block {
+.codeBlock {
   font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.4;
@@ -166,15 +122,15 @@
   word-break: break-all;
 }
 
-/* Action row */
-.actions-row {
+.actionsRow {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
 }
 
 @media (min-width: 900px) {
-  .file-card {
+  .card {
     grid-column: span 4;
   }
 }
+

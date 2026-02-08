@@ -7,7 +7,7 @@ cd "$ROOT_DIR"
 PATTERN='#[0-9a-fA-F]{3,8}'
 
 if command -v rg >/dev/null 2>&1; then
-  if rg -n "$PATTERN" src --glob 'src/**/*.{css,ts,tsx}' --glob '!index.css'; then
+  if rg -n --glob '*.{css,ts,tsx}' --glob '!index.css' "$PATTERN" src; then
     echo "❌ Hardcoded hex colors detected in webui/src. Use design tokens instead."
     exit 1
   fi

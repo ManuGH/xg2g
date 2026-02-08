@@ -4,7 +4,7 @@
 
 import { Card } from './ui/Card';
 import { StatusChip, type ChipState } from './ui/StatusChip';
-import './SystemHealthPanel.css';
+import styles from './SystemHealthPanel.module.css';
 
 export interface HealthTileData {
   label: string;
@@ -18,16 +18,16 @@ export interface SystemHealthPanelProps {
 
 export function SystemHealthPanel({ tiles }: SystemHealthPanelProps) {
   return (
-    <div className="health-panel-grid" role="status" aria-label="System Health">
+    <div className={styles.grid} role="status" aria-label="System Health">
       {tiles.map((tile, index) => (
         <Card
           key={index}
           variant={tile.status === 'live' || tile.status === 'recording' ? 'live' : 'standard'}
-          className="health-panel-tile"
+          className={styles.tile}
         >
-          <div className="health-panel-tile__content">
-            <div className="health-panel-tile__label">{tile.label}</div>
-            <div className="health-panel-tile__value tabular">{tile.value}</div>
+          <div className={styles.tileContent}>
+            <div className={styles.tileLabel}>{tile.label}</div>
+            <div className={`${styles.tileValue} tabular`.trim()}>{tile.value}</div>
             {tile.status !== 'idle' && (
               <StatusChip state={tile.status} label="" showIcon={true} />
             )}

@@ -1,7 +1,7 @@
 /* Dashboard - Layout ONLY (CTO Contract: No colors/shadows/animations)
    All styling comes from Card + StatusChip primitives */
 
-.dashboard {
+.page {
   display: flex;
   flex-direction: column;
   gap: 24px;
@@ -10,91 +10,104 @@
   margin: 0 auto;
 }
 
-.dashboard-header {
+.header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 8px;
 }
 
-.dashboard-header h2 {
+.header h2 {
   font-family: var(--font-heading);
   font-size: var(--text-display);
   font-weight: 700;
   margin: 0;
 }
 
-.dashboard-actions {
+.actions {
   display: flex;
   gap: 12px;
   align-items: center;
 }
 
-/* Warning card */
-.dashboard__warning {
+.warning {
   margin-bottom: 8px;
 }
 
-/* Layout grids */
-.dashboard__primary {
+.primary {
   margin-bottom: 4px;
 }
 
-.dashboard__status-grid {
+.statusGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 20px;
   margin-bottom: 8px;
 }
 
-.dashboard__info-grid {
+.infoGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 20px;
 }
 
+.streams {
+  margin-top: 8px;
+}
+
+.logs {
+  margin-top: 8px;
+}
+
+.logs h3 {
+  font-family: var(--font-heading);
+  font-size: var(--text-h1);
+  font-weight: 600;
+  margin: 0 0 16px 0;
+}
+
 /* Live TV card internal layout */
-.live-tv-card .live-tv-header {
+.liveTvHeader {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   margin-bottom: 12px;
 }
 
-.live-tv-card .badge-group {
+.badgeGroup {
   display: flex;
   gap: 8px;
 }
 
-.live-tv-card .receiver-channel {
+.receiverChannel {
   font-family: var(--font-heading);
   font-size: var(--text-h2);
   font-weight: 700;
   margin-top: 8px;
 }
 
-.live-tv-card .program-current {
+.programCurrent {
   margin-bottom: 16px;
 }
 
-.live-tv-card .program-title {
+.programTitle {
   font-size: var(--text-h2);
   font-weight: 700;
   margin-bottom: 6px;
 }
 
-.live-tv-card .program-desc {
+.programDesc {
   font-size: var(--text-sm);
   color: var(--text-secondary);
   line-height: 1.5;
 }
 
-.live-tv-card .program-progress {
+.programProgress {
   margin-top: 12px;
   margin-bottom: 12px;
 }
 
-.live-tv-card .program-times {
+.programTimes {
   display: flex;
   justify-content: space-between;
   font-size: var(--text-xs);
@@ -102,61 +115,60 @@
   margin-bottom: 8px;
 }
 
-.live-tv-card .progress-bar {
+.progressBar {
   height: 8px;
   background: var(--bg-hover);
   border-radius: 10px;
   overflow: hidden;
 }
 
-.live-tv-card .progress-fill {
+.progressFill {
   height: 100%;
   background: var(--accent-action);
-  /* Solid color, no gradient (CTO) */
   border-radius: 10px;
   width: var(--xg2g-prog, 0%);
   transition: width var(--motion-slow) linear;
 }
 
-.live-tv-card .program-next {
+.programNext {
   font-size: var(--text-sm);
   color: var(--text-tertiary);
   padding-top: 12px;
   border-top: 1px solid var(--border-base);
 }
 
-.live-tv-card .next-label {
+.nextLabel {
   font-weight: 700;
   margin-right: 8px;
 }
 
 /* Status rows */
-.status-row {
+.statusRow {
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
-.status-label {
+.statusLabel {
   font-size: var(--text-sm);
   color: var(--text-secondary);
 }
 
 /* Info lists */
-.info-list {
+.infoList {
   display: flex;
   flex-direction: column;
   gap: 12px;
   margin-top: 12px;
 }
 
-.info-item {
+.infoItem {
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
-.info-label {
+.infoLabel {
   font-size: var(--text-xs);
   color: var(--text-tertiary);
   text-transform: uppercase;
@@ -164,36 +176,25 @@
   font-weight: 600;
 }
 
-.info-value {
+.infoValue {
   font-size: var(--text-sm);
   font-weight: 600;
   color: var(--text-primary);
 }
 
-.info-text {
+.infoText {
   font-size: var(--text-sm);
   color: var(--text-secondary);
   margin: 8px 0 0 0;
 }
 
-/* Logs section */
-.dashboard__logs {
-  margin-top: 8px;
-}
-
-.dashboard__logs h3 {
-  font-family: var(--font-heading);
-  font-size: var(--text-h1);
-  font-weight: 600;
-  margin: 0 0 16px 0;
-}
-
-.log-table {
+/* Log table */
+.logTable {
   width: 100%;
   border-collapse: collapse;
 }
 
-.log-table th {
+.logTable th {
   text-align: left;
   padding: 12px;
   font-size: var(--text-xs);
@@ -204,56 +205,59 @@
   border-bottom: 1px solid var(--border-base);
 }
 
-.log-table td {
+.logTable td {
   padding: 10px 12px;
   font-size: var(--text-sm);
   border-bottom: 1px solid var(--border-base);
 }
 
-.log-table .log-level {
+.logLevel {
   font-weight: 600;
   text-transform: uppercase;
 }
 
-.log-level--info {
+.logLevel[data-level="info"] {
   color: var(--status-info);
 }
 
-.log-level--warn {
+.logLevel[data-level="warn"],
+.logLevel[data-level="warning"] {
   color: var(--status-warning);
 }
 
-.log-level--error {
+.logLevel[data-level="error"] {
   color: var(--status-error);
 }
 
-/* Utility classes */
-.no-data,
-.error-text {
+.noData {
   font-size: var(--text-sm);
   color: var(--text-tertiary);
   text-align: center;
   padding: 20px;
 }
 
-.error-text {
+.errorText {
+  font-size: var(--text-sm);
   color: var(--status-error);
+  text-align: center;
+  padding: 20px;
 }
 
 /* Mobile responsive */
 @media (max-width: 968px) {
-  .dashboard {
+  .page {
     padding: 16px;
   }
 
-  .dashboard__status-grid,
-  .dashboard__info-grid {
+  .statusGrid,
+  .infoGrid {
     grid-template-columns: 1fr;
   }
 
-  .dashboard-header {
+  .header {
     flex-direction: column;
     align-items: flex-start;
     gap: 12px;
   }
 }
+

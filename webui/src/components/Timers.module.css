@@ -1,12 +1,13 @@
-.timers-view {
+/* Timers view - scoped styles (CSS Modules) */
+
+.view {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  animation: fadeIn 0.4s ease-out;
   padding-bottom: 80px;
 }
 
-.timers-toolbar {
+.toolbar {
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
@@ -14,37 +15,31 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
 }
 
-.timers-toolbar h2 {
+.toolbar h2 {
   margin: 0;
   font-size: 18px;
   font-weight: 600;
 }
 
-.timer-refresh-btn {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-  border: 1px solid var(--border-subtle);
-  padding: 6px 14px;
-  border-radius: 8px;
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.2s;
+.errorBanner {
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--status-error-border);
+  background: var(--status-error-subtle);
+  color: var(--status-error);
+  font-weight: 600;
 }
 
-.timer-refresh-btn:hover {
-  background: var(--bg-input);
-  border-color: var(--text-muted);
-}
-
-.timers-list {
+.list {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 12px;
 }
 
-.timer-card {
+.card {
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
@@ -52,24 +47,25 @@
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  transition: transform 0.2s, border-color 0.2s;
+  transition:
+    border-color var(--motion-standard) var(--ease-standard),
+    background var(--motion-standard) var(--ease-standard);
 }
 
-.timer-card:hover {
-  border-color: var(--active-color);
-  transform: translateY(-1px);
+.card:hover {
+  border-color: var(--border-elevated);
+  background: var(--bg-hover);
 }
 
-.timer-info {
+.info {
   display: flex;
   flex-direction: column;
   gap: 4px;
   flex-grow: 1;
   min-width: 0;
-  /* Enable text truncation */
 }
 
-.timer-name {
+.name {
   font-weight: 600;
   font-size: 15px;
   color: var(--text-primary);
@@ -78,7 +74,7 @@
   text-overflow: ellipsis;
 }
 
-.timer-service {
+.service {
   font-size: 13px;
   color: var(--text-muted);
   white-space: nowrap;
@@ -86,14 +82,14 @@
   text-overflow: ellipsis;
 }
 
-.timer-time {
+.time {
   font-size: 12px;
   color: var(--text-secondary);
   margin-top: 4px;
   font-variant-numeric: tabular-nums;
 }
 
-.timer-state {
+.state {
   font-size: 12px;
   font-weight: 500;
   margin-top: 4px;
@@ -102,47 +98,22 @@
   gap: 6px;
 }
 
-.status-recording {
+.stateRecording {
   color: var(--accent-live);
 }
 
-.status-scheduled {
+.stateScheduled {
   color: var(--status-warning);
 }
 
-.timer-actions {
+.actions {
   display: flex;
   gap: 8px;
   margin-left: 12px;
   flex-shrink: 0;
 }
 
-.timer-btn {
-  padding: 6px 12px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  border: none;
-  transition: opacity 0.2s;
-}
-
-.timer-btn:hover {
-  opacity: 0.8;
-}
-
-.btn-edit {
-  background: var(--accent-action-subtle);
-  color: var(--accent-action);
-}
-
-.btn-delete {
-  background: var(--status-error-subtle);
-  color: var(--status-error);
-}
-
-/* Empty State */
-.timers-empty {
+.empty {
   text-align: center;
   padding: 60px 20px;
   color: var(--text-muted);
@@ -151,8 +122,9 @@
   border: 1px dashed var(--border-subtle);
 }
 
-.timers-loading {
+.loading {
   padding: 32px;
   text-align: center;
   color: var(--text-muted);
 }
+

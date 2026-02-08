@@ -1,61 +1,81 @@
 /* Streams View - Layout ONLY (CTO Contract) */
 
-.streams-section {
+.section {
   margin-top: 8px;
 }
 
-.streams-section--compact .streams-grid {
+.sectionCompact .grid {
   grid-template-columns: 1fr;
 }
 
-.streams-section h3 {
+.heading {
   font-family: var(--font-heading);
   font-size: var(--text-h1);
   font-weight: 600;
   margin: 0 0 16px 0;
 }
 
-.streams-grid {
+.errorText {
+  margin: 0 0 12px;
+  color: var(--status-error);
+  font-size: var(--text-sm);
+}
+
+.grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
   gap: 20px;
 }
 
 /* Stream cards internal layout */
-.stream-card .stream-header {
+.streamCard .streamHeader {
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
-.stream-card .stream-title-group {
+.streamCard .streamTitleGroup {
   display: flex;
   align-items: center;
   gap: 12px;
 }
 
-.stream-card .stream-channel {
+.streamCard .streamChannel {
   font-size: var(--text-base);
   font-weight: 700;
 }
 
-.stream-card .stream-program {
+.streamCard .streamProgram {
   margin-bottom: 12px;
 }
 
-.stream-card .stream-meta {
+.programTitle {
+  font-weight: 700;
+  margin-bottom: 2px;
+  color: var(--text-primary);
+}
+
+.programDesc {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.streamCard .streamMeta {
   display: flex;
   justify-content: space-between;
   padding-top: 12px;
   border-top: 1px solid var(--border-base);
+  gap: 12px;
 }
 
-.stream-card .meta-item {
+.streamCard .metaItem {
   font-size: var(--text-xs);
   color: var(--text-secondary);
+  min-width: 0;
 }
 
-.stream-card .meta-label {
+.streamCard .metaLabel {
   color: var(--text-tertiary);
   font-weight: 600;
   margin-right: 4px;
@@ -63,7 +83,8 @@
 
 /* Mobile responsive */
 @media (max-width: 968px) {
-  .streams-grid {
+  .grid {
     grid-template-columns: 1fr;
   }
 }
+

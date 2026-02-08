@@ -1,0 +1,146 @@
+/* UI Overlays - Toasts + Confirm Modal */
+
+.toastViewport {
+  position: fixed;
+  right: calc(16px + var(--sar));
+  bottom: calc(16px + var(--sab));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 2000;
+  width: min(420px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  background: var(--bg-overlay);
+  border: 1px solid var(--border-elevated);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-hover);
+  padding: 12px 14px;
+}
+
+.toast[data-kind="success"] {
+  background: var(--status-success-subtle);
+  border-color: var(--status-success-border);
+}
+
+.toast[data-kind="warning"] {
+  background: var(--status-warning-subtle);
+  border-color: var(--status-warning-border);
+}
+
+.toast[data-kind="error"] {
+  background: var(--status-error-subtle);
+  border-color: var(--status-error-border);
+}
+
+.toast[data-kind="info"] {
+  background: var(--status-info-subtle);
+  border-color: var(--status-info-border);
+}
+
+.toastMain {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.toastText {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.toastTitle {
+  color: var(--text-primary);
+  font-weight: 700;
+  font-size: var(--text-sm);
+}
+
+.toastMessage {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.toastDetails {
+  margin-top: 2px;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  word-break: break-word;
+}
+
+.toastClose {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-tertiary);
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background var(--motion-standard) var(--ease-standard), color var(--motion-standard) var(--ease-standard);
+}
+
+.toastClose:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.confirmOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2100;
+  background: var(--overlay-backdrop);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(16px + var(--sat)) calc(16px + var(--sar)) calc(16px + var(--sab)) calc(16px + var(--sal));
+}
+
+.confirmModal {
+  width: min(520px, 100%);
+  background: var(--bg-overlay);
+  border: 1px solid var(--border-elevated);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-hover);
+  overflow: hidden;
+}
+
+.confirmHeader {
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border-base);
+}
+
+.confirmTitle {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: var(--text-h2);
+  color: var(--text-primary);
+}
+
+.confirmBody {
+  padding: 16px 18px;
+}
+
+.confirmMessage {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.confirmActions {
+  padding: 14px 18px;
+  border-top: 1px solid var(--border-base);
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}

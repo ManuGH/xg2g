@@ -3,8 +3,8 @@
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
 import { useTranslation } from 'react-i18next';
-import './Navigation.css';
 import { type AppView } from '../types/app-context';
+import styles from './Navigation.module.css';
 
 // Simple Unicode Icons for vertical rail
 const NavIcons: Record<AppView, string> = {
@@ -46,34 +46,31 @@ export default function Navigation({ activeView, onViewChange }: NavigationProps
   ];
 
   const renderNavItem = (item: NavItem) => (
-    <a
+    <button
       key={item.id}
-      href={`#${item.id}`}
-      className="nav-item"
+      type="button"
+      className={styles.item}
       aria-current={activeView === item.id ? 'page' : undefined}
-      onClick={(e) => {
-        e.preventDefault();
-        onViewChange(item.id);
-      }}
+      onClick={() => onViewChange(item.id)}
     >
-      <span className="nav-item__icon">{NavIcons[item.id]}</span>
-      <span className="nav-item__label">{item.label}</span>
-      <span className="nav-item__tooltip">{item.label}</span>
-    </a>
+      <span className={styles.icon}>{NavIcons[item.id]}</span>
+      <span className={styles.label}>{item.label}</span>
+      <span className={styles.tooltip}>{item.label}</span>
+    </button>
   );
 
   return (
-    <div className="nav-rail-container">
-      <nav className="nav-rail" role="navigation" aria-label="Main navigation">
-        <div className="nav-rail__quick-actions">
+    <div className={styles.railContainer}>
+      <nav className={styles.rail} role="navigation" aria-label="Main navigation">
+        <div className={styles.quickActions}>
           {navItems.filter(item => item.section === 'quick').map(renderNavItem)}
         </div>
         
-        <div className="nav-rail__main">
+        <div className={styles.main}>
           {navItems.filter(item => item.section === 'main').map(renderNavItem)}
         </div>
         
-        <div className="nav-rail__footer">
+        <div className={styles.footer}>
           {navItems.filter(item => item.section === 'footer').map(renderNavItem)}
         </div>
       </nav>

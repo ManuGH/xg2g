@@ -1,0 +1,296 @@
+/* Recordings - Layout ONLY (CTO Contract: No hardcoded colors/shadows/animations)
+   All styling comes from Card + StatusChip primitives */
+
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 20px;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding-bottom: 80px; /* Safe area for player */
+}
+
+.toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-lg);
+}
+
+@media (min-width: 768px) {
+  .toolbar {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
+}
+
+.toolbarGroup {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.infoLabel {
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.toolbarGroup select {
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border: 1px solid var(--border-base);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  min-width: 150px;
+}
+
+.toolbarActions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.breadcrumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-sm);
+}
+
+.crumb {
+  cursor: pointer;
+  color: var(--text-secondary);
+  padding: 4px 8px;
+  border-radius: var(--radius-md);
+  transition: background var(--motion-standard) var(--ease-standard), color var(--motion-standard) var(--ease-standard);
+}
+
+.crumb:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.separator {
+  color: var(--text-tertiary);
+  opacity: 0.5;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 20px;
+}
+
+.itemContent {
+  display: flex;
+  gap: 16px;
+  width: 100%;
+}
+
+.iconWrapper {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-hover);
+  border-radius: var(--radius-md);
+}
+
+.folderIcon {
+  width: 24px;
+  height: 24px;
+  color: var(--accent-live);
+}
+
+.fileIcon {
+  width: 24px;
+  height: 24px;
+  color: var(--text-tertiary);
+}
+
+.itemDetails {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.itemName {
+  font-family: var(--font-heading);
+  font-weight: 600;
+  font-size: var(--text-base);
+  color: var(--text-primary);
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.itemMetaRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  margin-bottom: 8px;
+}
+
+.metaDate {
+  min-width: 0;
+}
+
+.metaLength {
+  background: var(--bg-hover);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+}
+
+.itemDesc {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.badgeGroup {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.resumeContainer {
+  margin-top: 12px;
+}
+
+.recordingCard {
+  position: relative;
+  overflow: hidden;
+}
+
+.selected {
+  /* visual selection state handled via indicator; avoid duplicating accent rules here */
+}
+
+.selectionIndicator {
+  display: none;
+}
+
+.selectionMode .selectionIndicator {
+  display: flex;
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid var(--border-base);
+  background: var(--bg-elevated);
+  align-items: center;
+  justify-content: center;
+  transition: all var(--motion-standard) var(--ease-standard);
+}
+
+.selectionMode .selected .selectionIndicator {
+  background: var(--accent-action);
+  border-color: var(--accent-action);
+}
+
+.checkIcon {
+  width: 14px;
+  height: 14px;
+  color: var(--text-primary);
+}
+
+.playOverlay {
+  position: absolute;
+  inset: 0;
+  background: var(--bg-base);
+  opacity: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity var(--motion-standard) var(--ease-standard);
+  pointer-events: none;
+}
+
+.recordingCard:hover .playOverlay {
+  opacity: 0.8;
+}
+
+.playLabel {
+  background: var(--accent-action);
+  color: var(--text-primary);
+  padding: 6px 16px;
+  border-radius: 20px;
+  font-weight: 600;
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.emptyState {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 60px;
+  color: var(--text-tertiary);
+  background: var(--bg-elevated);
+  border-radius: var(--radius-lg);
+  border: 1px dashed var(--border-base);
+}
+
+.iconButton {
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 8px;
+  border-radius: var(--radius-md);
+  transition: all var(--motion-standard) var(--ease-standard);
+}
+
+.iconButton:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.iconSm {
+  width: 20px;
+  height: 20px;
+}
+
+.errorAlert {
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: var(--status-error-subtle);
+  border: 1px solid var(--status-error-border);
+  color: var(--status-error);
+  font-size: var(--text-sm);
+}
+
+.playerFallback {
+  margin-top: 20px;
+}
+
+@media (max-width: 640px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
+

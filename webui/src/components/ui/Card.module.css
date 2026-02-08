@@ -3,52 +3,45 @@
 
 .card {
   background: var(--bg-elevated);
-  /* Solid only - no gradients */
   border: 1px solid var(--border-base);
   border-radius: var(--radius-lg);
   padding: 24px;
   box-shadow: var(--shadow-card);
-  /* Includes 1px top highlight */
   transition: none;
-  /* No animation by default */
 }
 
-/* Interactive variant: adds hover lift */
-.card--interactive {
-  transition: transform 180ms cubic-bezier(0.4, 0, 0.2, 1),
-    box-shadow 180ms cubic-bezier(0.4, 0, 0.2, 1);
+/* Interactive variant: adds hover lift (see prefers-reduced-motion override in src/index.css) */
+.interactive {
+  transition:
+    transform var(--motion-standard) var(--ease-standard),
+    box-shadow var(--motion-standard) var(--ease-standard);
   cursor: pointer;
 }
 
-.card--interactive:hover {
+.interactive:hover {
   transform: translateY(-2px);
-  /* CTO: -2px not -4px */
   box-shadow: var(--shadow-hover);
-  /* NO GLOW - Stop Criterion #1 */
 }
 
 /* Accent variant: Live/Recording ONLY */
-.card--accent-live {
+.accentLive {
   border-color: var(--accent-live);
   box-shadow: var(--shadow-accent-live);
-  /* Includes amber glow */
 }
 
 /* Action variant: Primary CTA areas */
-.card--accent-action {
+.accentAction {
   border-color: var(--accent-action);
   box-shadow: var(--shadow-accent-action);
-  /* Includes blue glow */
 }
 
-/* Card header */
-.card__header {
+.header {
   margin-bottom: 16px;
   padding-bottom: 12px;
   border-bottom: 1px solid var(--border-base);
 }
 
-.card__title {
+.title {
   font-family: var(--font-heading);
   font-size: var(--text-h2);
   font-weight: 600;
@@ -56,22 +49,20 @@
   margin: 0;
 }
 
-.card__subtitle {
+.subtitle {
   font-family: var(--font-body);
   font-size: var(--text-sm);
   color: var(--text-tertiary);
   margin: 4px 0 0 0;
 }
 
-/* Card body */
-.card__body {
+.body {
   color: var(--text-secondary);
   font-size: var(--text-base);
   line-height: 1.5;
 }
 
-/* Card footer */
-.card__footer {
+.footer {
   margin-top: 16px;
   padding-top: 12px;
   border-top: 1px solid var(--border-base);
@@ -80,15 +71,3 @@
   align-items: center;
 }
 
-/* Accessibility: Reduced Motion */
-@media (prefers-reduced-motion: reduce) {
-
-  .card,
-  .card--interactive {
-    transition: none !important;
-  }
-
-  .card--interactive:hover {
-    transform: none;
-  }
-}

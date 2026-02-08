@@ -1,4 +1,4 @@
-.v3-player-container {
+.container {
   font-family: var(--font-body);
   overflow: hidden;
   background-color: var(--bg-base);
@@ -9,7 +9,7 @@
   flex-direction: column;
 }
 
-.v3-player-container.v3-player-overlay {
+.container.overlay {
   position: fixed;
   top: 0;
   left: 0;
@@ -21,8 +21,7 @@
   align-items: center;
 }
 
-/* Controls Header - Layout Only */
-.v3-player-controls-header {
+.controlsHeader {
   position: absolute;
   bottom: 0;
   left: 0;
@@ -36,50 +35,50 @@
   align-items: center;
   flex-wrap: wrap;
   opacity: 0;
-  transition: opacity var(--motion-standard) var(--ease-out), transform var(--motion-standard) var(--ease-out);
+  transition:
+    opacity var(--motion-standard) var(--ease-standard),
+    transform var(--motion-standard) var(--ease-standard);
   transform: translateY(8px);
 }
 
-.v3-player-container:hover:not(.user-idle) .v3-player-controls-header,
-.v3-player-controls-header:focus-within {
+.container:hover:not(.userIdle) .controlsHeader,
+.controlsHeader:focus-within {
   opacity: 1;
   transform: translateY(0);
 }
 
-.v3-player-container.user-idle {
+.container.userIdle {
   cursor: none;
 }
 
-/* Ensure controls hide when idle */
-.v3-player-container.user-idle .v3-player-controls-header,
-.v3-player-container.user-idle .vod-controls,
-.v3-player-container.user-idle .volume-control,
-.v3-player-container.user-idle .close-btn,
-.v3-player-container.user-idle .overlay-title {
+.container.userIdle .controlsHeader,
+.container.userIdle .vodControls,
+.container.userIdle .volumeControl,
+.container.userIdle .closeButton,
+.container.userIdle .overlayTitle {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.5s ease-out;
 }
 
-/* Video Wrapper */
-.video-wrapper {
+.videoWrapper {
   width: 100%;
   height: 100%;
-  background: var(--bg-deep);
+  background: var(--bg-base);
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.video-element {
+.videoElement {
   width: 100%;
   aspect-ratio: 16 / 9;
   display: block;
   object-fit: contain;
 }
 
-.overlay-title {
+.overlayTitle {
   position: absolute;
   top: 24px;
   left: 24px;
@@ -93,12 +92,11 @@
   transition: opacity var(--motion-standard);
 }
 
-.v3-player-container:hover:not(.user-idle) .overlay-title {
+.container:hover:not(.userIdle) .overlayTitle {
   opacity: 1;
 }
 
-/* Buffering Spinner - Animation defined in index.css (permitted) */
-.spinner-overlay {
+.spinnerOverlay {
   position: absolute;
   top: 50%;
   left: 50%;
@@ -114,16 +112,15 @@
 .spinner {
   width: 40px;
   height: 40px;
-  /* Uses shared 'spin' from index.css to pass Gate 2 scoped check */
+  /* Uses shared .spinner-base (src/index.css) for keyframes */
 }
 
-.spinner-label {
+.spinnerLabel {
   color: var(--text-secondary);
   font-size: var(--text-sm);
 }
 
-/* Stats for Nerds Overlay - Layout Only */
-.stats-overlay {
+.statsOverlay {
   position: absolute;
   top: 24px;
   right: 72px;
@@ -131,40 +128,41 @@
   width: 300px;
 }
 
-.stats-grid {
+.statsGrid {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.stats-row {
+.statsRow {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 4px 0;
   border-bottom: 1px solid var(--border-base);
+  gap: 12px;
 }
 
-.stats-row:last-child {
+.statsRow:last-child {
   border-bottom: none;
 }
 
-.stats-label {
+.statsLabel {
   color: var(--text-tertiary);
   font-size: var(--text-xs);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
-.stats-value {
+.statsValue {
   color: var(--text-primary);
   font-family: var(--font-mono);
   font-size: var(--text-mono-sm);
   font-feature-settings: 'tnum' 1;
+  text-align: right;
 }
 
-/* Error Toast UI */
-.error-toast {
+.errorToast {
   position: absolute;
   bottom: 100px;
   left: 50%;
@@ -181,20 +179,20 @@
   max-width: 90vw;
 }
 
-.error-main {
+.errorMain {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 20px;
 }
 
-.error-text {
+.errorText {
   color: var(--status-error);
   font-weight: 600;
   font-size: var(--text-sm);
 }
 
-.error-details-btn {
+.errorDetailsButton {
   background: none;
   border: none;
   color: var(--text-tertiary);
@@ -204,7 +202,7 @@
   padding: 0;
 }
 
-.error-details-content {
+.errorDetailsContent {
   font-family: var(--font-mono);
   font-size: var(--text-mono-sm);
   color: var(--text-secondary);
@@ -216,7 +214,7 @@
   overflow-y: auto;
 }
 
-.close-btn {
+.closeButton {
   position: absolute;
   top: 24px;
   right: 24px;
@@ -235,14 +233,13 @@
   transition: all var(--motion-standard);
 }
 
-.close-btn:hover {
+.closeButton:hover {
   background: var(--status-error);
   color: var(--text-primary);
   transform: rotate(90deg);
 }
 
-/* VOD Controls - Layout Only */
-.vod-controls {
+.vodControls {
   flex: 1;
   display: flex;
   align-items: center;
@@ -254,8 +251,26 @@
   min-width: 300px;
 }
 
-.vod-time,
-.vod-time-total {
+.seekControls {
+  min-width: 520px;
+}
+
+.seekButtons {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.seekSliderGroup {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 220px;
+}
+
+.vodTime,
+.vodTimeTotal {
   font-family: var(--font-mono);
   font-size: var(--text-mono-sm);
   font-feature-settings: 'tnum' 1;
@@ -263,15 +278,15 @@
   text-align: center;
 }
 
-.vod-time {
+.vodTime {
   color: var(--text-primary);
 }
 
-.vod-time-total {
+.vodTimeTotal {
   color: var(--text-tertiary);
 }
 
-.vod-slider {
+.vodSlider {
   flex: 1;
   height: 4px;
   -webkit-appearance: none;
@@ -282,7 +297,7 @@
   cursor: pointer;
 }
 
-.vod-slider::-webkit-slider-thumb {
+.vodSlider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
   width: 14px;
@@ -293,12 +308,15 @@
   transition: transform var(--motion-standard);
 }
 
-.vod-slider::-webkit-slider-thumb:hover {
+.vodSlider::-webkit-slider-thumb:hover {
   transform: scale(1.2);
 }
 
-/* Volume Control */
-.volume-control {
+.serviceInput {
+  width: min(520px, 100%);
+}
+
+.volumeControl {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -308,7 +326,7 @@
   border: 1px solid var(--border-base);
 }
 
-.volume-btn {
+.volumeButton {
   background: none;
   border: none;
   color: var(--text-secondary);
@@ -320,11 +338,11 @@
   transition: color var(--motion-standard);
 }
 
-.volume-btn:hover {
+.volumeButton:hover {
   color: var(--accent-action);
 }
 
-.volume-slider {
+.volumeSlider {
   width: 80px;
   height: 4px;
   -webkit-appearance: none;
@@ -334,7 +352,7 @@
   outline: none;
 }
 
-.volume-slider::-webkit-slider-thumb {
+.volumeSlider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
   width: 12px;
@@ -344,32 +362,68 @@
   cursor: pointer;
 }
 
-/* Fix for .live-btn found in violations */
-.live-btn {
+.liveButton {
   background: var(--bg-elevated);
-  border: 1px solid var(--status-live);
+  border: 1px solid var(--accent-live);
   color: var(--text-primary);
   padding: 4px 12px;
   border-radius: var(--radius-sm);
   cursor: pointer;
 }
 
-.live-btn.active {
-  background: var(--status-live);
+.liveButtonActive {
+  background: var(--accent-live);
   color: var(--bg-base);
+}
+
+.resumeOverlay {
+  position: absolute;
+  inset: 0;
+  background: var(--overlay-backdrop);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 120;
+}
+
+.resumeContent {
+  width: min(520px, 100%);
+  background: var(--bg-overlay);
+  border: 1px solid var(--border-elevated);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-hover);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.resumeContent h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--text-h1);
+}
+
+.resumeActions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
 }
 
 /* Mobile Adjustments */
 @media (max-width: 768px) {
-  .v3-player-controls-header {
+  .controlsHeader {
     padding: 16px;
     opacity: 1;
     transform: none;
   }
 
-  .stats-overlay {
+  .statsOverlay {
     right: 16px;
     top: 72px;
     width: calc(100% - 32px);
   }
 }
+

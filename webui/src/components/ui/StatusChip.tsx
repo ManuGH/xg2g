@@ -2,7 +2,7 @@
 // CTO Contract: Single source of truth for all status indicators
 
 
-import './StatusChip.css';
+import styles from './StatusChip.module.css';
 
 export type ChipState = 'idle' | 'success' | 'warning' | 'error' | 'live' | 'recording';
 
@@ -31,17 +31,17 @@ export function StatusChip({
 }: StatusChipProps) {
   return (
     <span
-      className={`status-chip ${className}`.trim()}
+      className={[styles.chip, className].filter(Boolean).join(' ')}
       data-state={state}
       role="status"
       aria-label={`${label} - ${state}`}
     >
       {showIcon && (
-        <span className="status-chip__icon" aria-hidden="true">
+        <span className={styles.icon} aria-hidden="true">
           {StateIcons[state]}
         </span>
       )}
-      <span className="status-chip__label">{label}</span>
+      <span className={styles.label}>{label}</span>
     </span>
   );
 }

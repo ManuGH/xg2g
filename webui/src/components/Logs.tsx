@@ -4,7 +4,8 @@
 
 import { useEffect, useState } from 'react';
 import { getLogs, type LogEntry } from '../client-ts';
-import './Logs.css';
+import { Button } from './ui';
+import styles from './Logs.module.css';
 
 export default function Logs() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -42,21 +43,21 @@ export default function Logs() {
   }, []);
 
   return (
-    <div className="logs-view">
-      <div className="logs-header">
+    <div className={`${styles.view} animate-enter`.trim()}>
+      <div className={styles.header}>
         <h3>Recent Logs</h3>
-        <button onClick={fetchLogs} disabled={loading} className="logs-btn logs-btn-primary">
+        <Button onClick={fetchLogs} disabled={loading} variant="secondary" size="sm">
           {loading ? 'Refreshing...' : 'Refresh'}
-        </button>
+        </Button>
       </div>
 
-      {error && <div className="logs-alert logs-alert-error">Error: {error}</div>}
+      {error && <div className={`${styles.alert} ${styles.alertError}`.trim()} role="alert">Error: {error}</div>}
 
       {logs.length === 0 && !loading ? (
-        <p className="logs-empty">No logs available.</p>
+        <p className={styles.empty}>No logs available.</p>
       ) : (
-        <div className="logs-table-wrap">
-          <table className="logs-table">
+        <div className={styles.tableWrap}>
+          <table className={styles.table}>
             <thead>
               <tr>
                 <th>Time</th>
@@ -67,11 +68,15 @@ export default function Logs() {
             </thead>
             <tbody>
               {logs.map((log, idx) => (
-                <tr key={idx} className={`log-row level-${String(log.level || '').toLowerCase()}`}>
-                  <td className="log-time">{new Date(log.time || '').toLocaleTimeString()}</td>
-                  <td className="log-level">{log.level}</td>
-                  <td className="log-component">{(log.fields?.component as string) || ''}</td>
-                  <td className="log-message">{log.message}</td>
+                <tr
+                  key={idx}
+                  className={styles.row}
+                  data-level={String(log.level || '').toLowerCase() || undefined}
+                >
+                  <td className={styles.time}>{new Date(log.time || '').toLocaleTimeString()}</td>
+                  <td className={styles.level}>{log.level}</td>
+                  <td>{(log.fields?.component as string) || ''}</td>
+                  <td className={styles.message}>{log.message}</td>
                 </tr>
               ))}
             </tbody>

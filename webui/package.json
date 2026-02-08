@@ -8,8 +8,10 @@
     "build": "tsc --noEmit && vite build",
     "generate-client": "openapi-ts --input ../api/openapi.yaml --output ./src/client-ts",
     "generate-client:legacy": "openapi --input ../api/openapi.yaml --output ./src/client-legacy --client fetch",
-    "lint": "eslint . && bash ../scripts/ci_gate_webui_logging.sh",
+    "design:check": "bash scripts/verify-no-hardcoded-colors.sh && bash scripts/verify-motion-contract.sh && bash scripts/verify-no-window-dialogs.sh && bash scripts/verify-no-btn-classes.sh",
+    "lint": "eslint . && bash ../scripts/ci_gate_webui_logging.sh && npm run design:check",
     "preview": "vite preview",
+    "test": "vitest run",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {

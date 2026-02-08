@@ -10,10 +10,10 @@ import { getRecordings, deleteRecording, type RecordingResponse, type RecordingI
 import { useAppContext } from '../context/AppContext';
 import { useTranslation } from 'react-i18next';
 import RecordingResumeBar, { isResumeEligible } from '../features/resume/RecordingResumeBar';
-import { Card, CardBody } from './ui/Card';
-import { StatusChip, type ChipState } from './ui/StatusChip';
+import { useUiOverlay } from '../context/UiOverlayContext';
+import { Button, Card, CardBody, StatusChip, type ChipState } from './ui';
 import { debugError, formatError } from '../utils/logging';
-import './Recordings.css';
+import styles from './Recordings.module.css';
 
 const V3Player = lazy(() => import('./V3Player'));
 
@@ -84,6 +84,7 @@ function mapRecordingToChip(item: RecordingItem): { state: ChipState; label: str
 export default function RecordingsList() {
   const { auth } = useAppContext();
   const { t } = useTranslation();
+  const { confirm, toast } = useUiOverlay();
 
   // State
   const [root, setRoot] = useState<string>(''); // Selected Root ID
@@ -181,7 +182,14 @@ export default function RecordingsList() {
 
   const handleBulkDelete = async () => {
     if (selectedIds.size === 0) return;
-    if (!window.confirm(t('recordings.confirmDelete', { count: selectedIds.size }))) return;
+    const ok = await confirm({
+      title: 'Delete recordings',
+      message: t('recordings.confirmDelete', { count: selectedIds.size }),
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      tone: 'danger',
+    });
+    if (!ok) return;
 
     setDeleteLoading(true);
     try {
@@ -192,6 +200,7 @@ export default function RecordingsList() {
       await fetchData(root, path);
       setSelectionMode(false);
       setSelectedIds(new Set());
+      toast({ kind: 'success', message: `Deleted ${ids.length} recording(s)` });
     } finally {
       setDeleteLoading(false);
     }
@@ -204,7 +213,7 @@ export default function RecordingsList() {
 
   if (loading && !data) {
     return (
-      <div className="recordings-container animate-enter">
+      <div className={[styles.container, 'animate-enter'].join(' ')}>
         <Card><CardBody>Loading recordings...</CardBody></Card>
       </div>
     );
@@ -212,14 +221,14 @@ export default function RecordingsList() {
 
   if (error) {
     return (
-      <div className="recordings-container animate-enter">
+      <div className={[styles.container, 'animate-enter'].join(' ')}>
         <Card>
           <CardBody>
-            <div className="alert-error">
+            <div className={styles.errorAlert}>
               <h3>Error Loading Recordings</h3>
               <StatusChip state="error" label="ERROR" />
               <p>{error}</p>
-              <button className="btn-secondary" onClick={() => fetchData(root, path)}>Retry</button>
+              <Button variant="secondary" onClick={() => fetchData(root, path)}>Retry</Button>
             </div>
           </CardBody>
         </Card>
@@ -228,11 +237,11 @@ export default function RecordingsList() {
   }
 
   return (
-    <div className="recordings-container animate-enter">
+    <div className={[styles.container, 'animate-enter'].join(' ')}>
       {/* Header / Toolbar */}
-      <div className="recordings-toolbar">
-        <div className="toolbar-group">
-          <label className="info-label">Location:</label>
+      <div className={styles.toolbar}>
+        <div className={styles.toolbarGroup}>
+          <label className={styles.infoLabel}>Location:</label>
           <select value={root} onChange={handleRootChange} disabled={loading || deleteLoading}>
             {data?.roots?.map(r => (
               <option key={r.id} value={r.id}>{r.name} ({r.id})</option>
@@ -240,44 +249,44 @@ export default function RecordingsList() {
           </select>
         </div>
 
-        <div className="breadcrumbs">
-          <span className="crumb" onClick={() => handleNavigate('')}>Home</span>
+        <div className={styles.breadcrumbs}>
+          <span className={styles.crumb} onClick={() => handleNavigate('')}>Home</span>
           {data?.breadcrumbs?.map((crumb, i) => (
             <React.Fragment key={i}>
-              <span className="separator">/</span>
-              <span className="crumb" onClick={() => handleNavigate(crumb.path || '')}>{crumb.name}</span>
+              <span className={styles.separator}>/</span>
+              <span className={styles.crumb} onClick={() => handleNavigate(crumb.path || '')}>{crumb.name}</span>
             </React.Fragment>
           ))}
         </div>
 
-        <div className="toolbar-actions">
+        <div className={styles.toolbarActions}>
           {selectionMode ? (
             <>
-              <button
-                className="btn-danger"
+              <Button
+                variant="danger"
                 disabled={selectedIds.size === 0 || deleteLoading}
                 onClick={handleBulkDelete}
               >
                 {deleteLoading ? t('common.loading') : t('recordings.deleteSelected', { count: selectedIds.size })}
-              </button>
-              <button className="btn-secondary" onClick={toggleSelectionMode} disabled={deleteLoading}>
+              </Button>
+              <Button variant="secondary" onClick={toggleSelectionMode} disabled={deleteLoading}>
                 {t('recordings.cancelSelection')}
-              </button>
+              </Button>
             </>
           ) : (
             <button
-              className="icon-btn"
+              className={styles.iconButton}
               title={t('recordings.selectionMode')}
               onClick={toggleSelectionMode}
             >
-              <TrashIcon className="icon-sm" />
+              <TrashIcon className={styles.iconSm} />
             </button>
           )}
         </div>
       </div>
 
       {/* Content Grid */}
-      <div className={`recordings-grid ${selectionMode ? 'selection-mode' : ''}`}>
+      <div className={[styles.grid, selectionMode ? styles.selectionMode : null].filter(Boolean).join(' ')}>
         {/* Directories */}
         {data?.directories?.map((dir, i) => (
           <Card
@@ -285,12 +294,12 @@ export default function RecordingsList() {
             interactive
             onClick={() => handleNavigate(dir.path || '')}
           >
-            <CardBody className="recording-item-content">
-              <div className="icon-wrapper">
-                <FolderIcon className="folder-icon" />
+            <CardBody className={styles.itemContent}>
+              <div className={styles.iconWrapper}>
+                <FolderIcon className={styles.folderIcon} />
               </div>
-              <div className="item-details">
-                <span className="item-name">{dir.name}</span>
+              <div className={styles.itemDetails}>
+                <span className={styles.itemName}>{dir.name}</span>
                 <StatusChip state="idle" label="Directory" showIcon={false} />
               </div>
             </CardBody>
@@ -306,23 +315,23 @@ export default function RecordingsList() {
             <Card
               key={`rec-${i}`}
               interactive
-              className={isSelected ? 'selected' : ''}
+              className={[styles.recordingCard, isSelected ? styles.selected : null].filter(Boolean).join(' ')}
               variant={state === 'recording' || state === 'live' ? 'live' : 'standard'}
               onClick={() => selectionMode && rec.recordingId ? toggleSelect(rec.recordingId) : handlePlay(rec)}
             >
-              <CardBody className="recording-item-content">
-                <div className="icon-wrapper">
-                  <FileIcon className="file-icon" />
+              <CardBody className={styles.itemContent}>
+                <div className={styles.iconWrapper}>
+                  <FileIcon className={styles.fileIcon} />
                 </div>
-                <div className="item-details">
-                  <div className="item-name">{rec.title}</div>
-                  <div className="item-meta-row tabular">
-                    <span className="meta-date">{formatTime(rec.beginUnixSeconds)}</span>
-                    <span className="meta-length">{rec.length}</span>
+                <div className={styles.itemDetails}>
+                  <div className={styles.itemName}>{rec.title}</div>
+                  <div className={`${styles.itemMetaRow} tabular`.trim()}>
+                    <span className={styles.metaDate}>{formatTime(rec.beginUnixSeconds)}</span>
+                    <span className={styles.metaLength}>{rec.length}</span>
                   </div>
-                  <p className="item-desc">{rec.description}</p>
+                  <p className={styles.itemDesc}>{rec.description}</p>
 
-                  <div className="badge-group">
+                  <div className={styles.badgeGroup}>
                     <StatusChip state={state} label={label} />
                   </div>
 
@@ -336,7 +345,7 @@ export default function RecordingsList() {
                       finished: r.finished || false
                     };
                     return isResumeEligible(safeResume, rec.durationSeconds) && (
-                      <div className="recording-resume-container">
+                      <div className={styles.resumeContainer}>
                         <RecordingResumeBar
                           resume={safeResume}
                           durationSeconds={rec.durationSeconds}
@@ -347,14 +356,14 @@ export default function RecordingsList() {
                 </div>
 
                 {selectionMode && (
-                  <div className={`selection-indicator ${isSelected ? 'active' : ''}`}>
-                    {isSelected && <CheckCircleIcon className="check-icon" />}
+                  <div className={styles.selectionIndicator}>
+                    {isSelected && <CheckCircleIcon className={styles.checkIcon} />}
                   </div>
                 )}
 
                 {!selectionMode && (
-                  <div className="play-overlay">
-                    <span className="play-label">Play</span>
+                  <div className={styles.playOverlay}>
+                    <span className={styles.playLabel}>Play</span>
                   </div>
                 )}
               </CardBody>
@@ -364,7 +373,7 @@ export default function RecordingsList() {
 
         {/* Empty State */}
         {(!data?.directories?.length && !data?.recordings?.length) && (
-          <div className="empty-state">
+          <div className={styles.emptyState}>
             <p>No recordings found in this location.</p>
           </div>
         )}
@@ -373,7 +382,7 @@ export default function RecordingsList() {
       {/* V3Player Overlay */}
       {playing && (
         <Suspense fallback={
-          <div className="player-fallback">
+          <div className={styles.playerFallback}>
             <Card><CardBody>Loading Player...</CardBody></Card>
           </div>
         }>

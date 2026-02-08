@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import type { ResumeSummary } from './types';
-import './resume.css';
+import styles from './resume.module.css';
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
@@ -45,14 +45,14 @@ export default function RecordingResumeBar(props: {
   }, [resume.posSeconds, d]);
 
   return (
-    <div className="resume-summary">
-      <div className="resume-meta">
-        <span className="resume-label">Resume at {formatClock(resume.posSeconds)}</span>
-        {d > 0 && <span className="resume-percent">{percent}%</span>}
+    <div className={styles.summary}>
+      <div className={styles.meta}>
+        <span className={styles.label}>Resume at {formatClock(resume.posSeconds)}</span>
+        {d > 0 && <span className={styles.percent}>{percent}%</span>}
       </div>
       {d > 0 && (
-        <div className="resume-bar">
-          <div className="resume-bar-fill" style={{ width: `${percent}%` }} />
+        <div className={styles.bar}>
+          <div className={styles.barFill} style={{ width: `${percent}%` }} />
         </div>
       )}
     </div>

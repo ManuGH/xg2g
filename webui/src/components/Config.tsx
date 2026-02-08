@@ -7,7 +7,8 @@ import { useTranslation } from 'react-i18next';
 import { getSystemConfig, putSystemConfig, type AppConfig, type ConfigUpdate } from '../client-ts';
 import { debugError, formatError } from '../utils/logging';
 import { getStoredToken } from '../utils/tokenStorage';
-import './Config.css';
+import { Button, StatusChip } from './ui';
+import styles from './Config.module.css';
 
 interface ValidationResponse {
   valid: boolean;
@@ -35,9 +36,11 @@ export const isConfigured = (config: AppConfig | null): boolean => {
 interface ConfigProps {
   onUpdate?: () => void;
   showTitle?: boolean;
+  compact?: boolean;
 }
 
 function Config(props: ConfigProps = { showTitle: true }) {
+  const cx = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(' ');
   const { t } = useTranslation();
   // ... (rest of component remains same until return)
   const [config, setConfig] = useState<AppConfig | null>(null);
@@ -250,7 +253,7 @@ function Config(props: ConfigProps = { showTitle: true }) {
 
   if (restarting) {
     return (
-      <div className="config-container restarting-overlay">
+      <div className={cx(styles.container, styles.restartingOverlay)}>
         <div className="loading-spinner"></div>
         <h2>{t('setup.restart.title')}</h2>
         <p>{t('setup.restart.subtitle')}</p>
@@ -258,42 +261,42 @@ function Config(props: ConfigProps = { showTitle: true }) {
     );
   }
 
-  if (loading) return <div className="loading">{t('setup.loading')}</div>;
-  if (!config) return <div className="error">{t('setup.loadError')}</div>;
+  if (loading) return <div className={styles.loading}>{t('setup.loading')}</div>;
+  if (!config) return <div className={styles.error}>{t('setup.loadError')}</div>;
 
   const availableBouquets = validationResult?.bouquets || [];
   const selectedBouquets = config.bouquets || [];
 
   return (
     <div
-      className="config-container"
+      className={cx(styles.container, props.compact ? styles.containerCompact : undefined)}
       data-testid={configured ? "config-settings" : "config-wizard"}
     >
       {props.showTitle && <h2>{configured ? t('nav.config') : t('setup.title')}</h2>}
 
-      {error && <div className="alert error">{error}</div>}
-      {successMsg && !restarting && <div className="alert success">{successMsg}</div>}
+      {error && <div className={cx(styles.alert, styles.alertError)}>{error}</div>}
+      {successMsg && !restarting && <div className={cx(styles.alert, styles.alertSuccess)}>{successMsg}</div>}
 
-      <form onSubmit={handleSave} className="config-form">
-        <section className="config-section">
+      <form onSubmit={handleSave}>
+        <section className={styles.section}>
           <h3>{t('setup.step1.title')}</h3>
-          <p className="hint-text">{t('setup.step1.hint')}</p>
+          <p className={styles.hintText}>{t('setup.step1.hint')}</p>
 
-          <div className="form-group">
+          <div className={styles.formGroup}>
             <label>{t('setup.fields.receiverUrl')}</label>
-            <div className="input-with-button">
+            <div className={styles.inputWithButton}>
               <input
                 type="text"
                 value={config.openWebIF?.baseUrl || ''}
                 onChange={e => handleChange('openWebIF', 'baseUrl', e.target.value)}
                 placeholder="http://192.168.1.50"
-                className={connectionStatus === 'valid' ? 'valid-input' : ''}
+                className={connectionStatus === 'valid' ? styles.validInput : undefined}
               />
             </div>
           </div>
 
-          <div className="form-row">
-            <div className="form-group">
+          <div className={styles.formRow}>
+            <div className={styles.formGroup}>
               <label>{t('setup.fields.username')}</label>
               <input
                 type="text"
@@ -302,7 +305,7 @@ function Config(props: ConfigProps = { showTitle: true }) {
                 placeholder={t('setup.placeholders.username')}
               />
             </div>
-            <div className="form-group">
+            <div className={styles.formGroup}>
               <label>{t('setup.fields.password')}</label>
               <input
                 type="password"
@@ -313,10 +316,10 @@ function Config(props: ConfigProps = { showTitle: true }) {
             </div>
           </div>
 
-          <div className="validation-actions">
-            <button
-              type="button"
-              className={`btn-secondary ${connectionStatus}`}
+          <div className={styles.validationActions}>
+            <Button
+              variant="secondary"
+              state={connectionStatus}
               onClick={validateConnection}
               disabled={validating || !config.openWebIF?.baseUrl}
               data-testid="config-validate"
@@ -324,19 +327,24 @@ function Config(props: ConfigProps = { showTitle: true }) {
               {validating
                 ? t('setup.actions.connecting')
                 : (connectionStatus === 'valid' ? `✓ ${t('setup.actions.connectionVerified')}` : t('setup.actions.testConnection'))}
-            </button>
-            {connectionStatus === 'valid' && <span className="status-badge success">{t('setup.actions.statusOnline')}</span>}
+            </Button>
+            {connectionStatus === 'valid' && (
+              <StatusChip state="success" label={t('setup.actions.statusOnline')} />
+            )}
           </div>
         </section>
 
         {connectionStatus === 'valid' && (
-          <section className="config-section animate-fade-in">
+          <section className={cx(styles.section, 'animate-enter')}>
             <h3>{t('setup.step2.title')}</h3>
-            <p className="hint-text">{t('setup.step2.hint')}</p>
+            <p className={styles.hintText}>{t('setup.step2.hint')}</p>
 
-            <div className="bouquets-grid">
+            <div className={styles.bouquetsGrid}>
               {availableBouquets.length > 0 ? availableBouquets.map(b => (
-                <label key={b} className={`bouquet-card ${selectedBouquets.includes(b) ? 'selected' : ''}`}>
+                <label
+                  key={b}
+                  className={cx(styles.bouquetCard, selectedBouquets.includes(b) ? styles.bouquetCardSelected : undefined)}
+                >
                   <input
                     type="checkbox"
                     checked={selectedBouquets.includes(b)}
@@ -345,7 +353,7 @@ function Config(props: ConfigProps = { showTitle: true }) {
                   <span>{b}</span>
                 </label>
               )) : (
-                <div className="empty-bouquets">
+                <div className={styles.emptyBouquets}>
                   {t('setup.step2.empty')} <small>{t('setup.step2.emptyHint')}</small>
                 </div>
               )}
@@ -353,9 +361,9 @@ function Config(props: ConfigProps = { showTitle: true }) {
           </section>
         )}
 
-        <section className="config-section">
+        <section className={styles.section}>
           <h3>{t('setup.step3.title')}</h3>
-          <div className="form-group checkbox-group">
+          <div className={cx(styles.formGroup, styles.checkboxGroup)}>
             <label>
               <input
                 type="checkbox"
@@ -364,23 +372,22 @@ function Config(props: ConfigProps = { showTitle: true }) {
               />
               {t('setup.step3.enableEpg')}
             </label>
-            <small className="hint-text" style={{ marginTop: '4px', marginLeft: '24px' }}>
+            <small className={cx(styles.hintInline, styles.epgHintText)}>
               {t('setup.step3.hint')}
             </small>
           </div>
         </section>
 
-        <div className="form-actions sticky-footer">
-          <button
+        <div className={cx(styles.formActions, styles.stickyFooter)}>
+          <Button
             type="submit"
             disabled={saving || connectionStatus !== 'valid'}
-            className="btn-primary"
             data-testid="config-save"
           >
             {saving
               ? t('common.loading')
               : (configured ? t('setup.actions.saveConfig') : t('setup.actions.finishSetup'))}
-          </button>
+          </Button>
         </div>
       </form>
     </div>
