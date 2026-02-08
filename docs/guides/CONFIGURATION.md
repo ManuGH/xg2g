@@ -111,6 +111,7 @@ Aliases: `openWebIF.*` (compat; prefer `enigma2.*`).
 | `ffmpeg.bin` | `XG2G_FFMPEG_BIN` | `ffmpeg` | Active | Advanced |
 | `ffmpeg.ffprobeBin` | `XG2G_FFPROBE_BIN` | - | Active | Advanced |
 | `ffmpeg.killTimeout` | `XG2G_FFMPEG_KILL_TIMEOUT` | `5s` | Active | Advanced |
+| `ffmpeg.vaapiDevice` | `XG2G_VAAPI_DEVICE` | `""` | Active | Advanced |
 
 ### hdhr
 

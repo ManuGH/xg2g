@@ -521,6 +521,10 @@
         "killTimeout": {
           "default": "5s",
           "type": "string"
+        },
+        "vaapiDevice": {
+          "default": "",
+          "type": "string"
         }
       },
       "type": "object"
