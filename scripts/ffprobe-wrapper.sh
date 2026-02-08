@@ -4,7 +4,7 @@ set -euo pipefail
 
 # FIX: Point to the actual binary location in this environment
 FFMPEG_HOME="${FFMPEG_HOME:-/opt/ffmpeg}"
-FFPROBE_BIN="${FFMPEG_HOME}/bin/ffprobe"
+FFPROBE_BIN="${FFPROBE_BIN:-${FFMPEG_HOME}/bin/ffprobe}"
 FFMPEG_LIB="${FFMPEG_HOME}/lib"
 
 # Handle special --print-realpath flag for diagnostic tools

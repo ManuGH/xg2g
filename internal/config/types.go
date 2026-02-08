@@ -445,6 +445,7 @@ type scopedTokenJSON struct {
 // FFmpegConfig holds the FFmpeg binary settings
 type FFmpegConfig struct {
 	Bin         string        `yaml:"bin"`
+	FFprobeBin  string        `yaml:"ffprobeBin,omitempty"`
 	KillTimeout time.Duration `yaml:"killTimeout"`
 }
 

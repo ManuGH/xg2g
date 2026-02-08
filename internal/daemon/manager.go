@@ -320,6 +320,7 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 	} else {
 		orch.Pipeline = ffmpeg.NewLocalAdapter(
 			cfg.FFmpeg.Bin,
+			cfg.FFmpeg.FFprobeBin,
 			cfg.HLS.Root,
 			e2Client,
 			m.logger,

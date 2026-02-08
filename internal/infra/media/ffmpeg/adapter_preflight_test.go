@@ -25,7 +25,7 @@ func TestPreflightTS_SyncOK(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	adapter := NewLocalAdapter("", "", nil, zerolog.New(io.Discard), "", "", 0, 0, false, 2*time.Second, 6, 0, 0)
+	adapter := NewLocalAdapter("", "", "", nil, zerolog.New(io.Discard), "", "", 0, 0, false, 2*time.Second, 6, 0, 0)
 	result, err := adapter.preflightTS(context.Background(), srv.URL)
 	if err != nil {
 		t.Fatalf("expected preflight success, got error: %v", err)
@@ -46,7 +46,7 @@ func TestPreflightTS_SyncMiss(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	adapter := NewLocalAdapter("", "", nil, zerolog.New(io.Discard), "", "", 0, 0, false, 2*time.Second, 6, 0, 0)
+	adapter := NewLocalAdapter("", "", "", nil, zerolog.New(io.Discard), "", "", 0, 0, false, 2*time.Second, 6, 0, 0)
 	result, err := adapter.preflightTS(context.Background(), srv.URL)
 	if err == nil {
 		t.Fatalf("expected preflight error, got nil")
@@ -64,7 +64,7 @@ func TestPreflightTS_ShortRead(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	adapter := NewLocalAdapter("", "", nil, zerolog.New(io.Discard), "", "", 0, 0, false, 2*time.Second, 6, 0, 0)
+	adapter := NewLocalAdapter("", "", "", nil, zerolog.New(io.Discard), "", "", 0, 0, false, 2*time.Second, 6, 0, 0)
 	result, err := adapter.preflightTS(context.Background(), srv.URL)
 	if err == nil {
 		t.Fatalf("expected preflight error, got nil")
@@ -75,7 +75,7 @@ func TestPreflightTS_ShortRead(t *testing.T) {
 }
 
 func TestSelectStreamURL_FallbackOffFails(t *testing.T) {
-	adapter := NewLocalAdapter("", "", nil, zerolog.New(io.Discard), "", "", 0, 0, false, 2*time.Second, 6, 0, 0)
+	adapter := NewLocalAdapter("", "", "", nil, zerolog.New(io.Discard), "", "", 0, 0, false, 2*time.Second, 6, 0, 0)
 
 	calls := 0
 	preflight := func(ctx context.Context, rawURL string) (preflightResult, error) {
@@ -102,7 +102,7 @@ func TestSelectStreamURL_FallbackOffFails(t *testing.T) {
 }
 
 func TestSelectStreamURL_NoFallbackWhenNotRelay(t *testing.T) {
-	adapter := NewLocalAdapter("", "", nil, zerolog.New(io.Discard), "", "", 0, 0, true, 2*time.Second, 6, 0, 0)
+	adapter := NewLocalAdapter("", "", "", nil, zerolog.New(io.Discard), "", "", 0, 0, true, 2*time.Second, 6, 0, 0)
 
 	calls := 0
 	preflight := func(ctx context.Context, rawURL string) (preflightResult, error) {
@@ -129,7 +129,7 @@ func TestSelectStreamURL_NoFallbackWhenNotRelay(t *testing.T) {
 }
 
 func TestSelectStreamURL_FallbackTo8001(t *testing.T) {
-	adapter := NewLocalAdapter("", "", nil, zerolog.New(io.Discard), "", "", 0, 0, true, 2*time.Second, 6, 0, 0)
+	adapter := NewLocalAdapter("", "", "", nil, zerolog.New(io.Discard), "", "", 0, 0, true, 2*time.Second, 6, 0, 0)
 
 	serviceRef := "1:0:19:2B66:3F3:1:C00000:0:0:0:"
 	resolved := "http://127.0.0.1:17999/" + serviceRef
@@ -163,7 +163,7 @@ func TestSelectStreamURL_FallbackTo8001(t *testing.T) {
 }
 
 func TestPreflight_HttpClientWiring(t *testing.T) {
-	adapter := NewLocalAdapter("", "", nil, zerolog.New(io.Discard), "", "", 0, 0, false, 2*time.Second, 6, 0, 0)
+	adapter := NewLocalAdapter("", "", "", nil, zerolog.New(io.Discard), "", "", 0, 0, false, 2*time.Second, 6, 0, 0)
 
 	if adapter.httpClient == nil {
 		t.Fatal("httpClient should not be nil")

@@ -152,7 +152,8 @@ func buildRegistry() (*Registry, error) {
 
 		// --- FFMPEG ---
 		{Path: "ffmpeg.bin", Env: "XG2G_FFMPEG_BIN", FieldPath: "FFmpeg.Bin", Profile: ProfileAdvanced, Status: StatusActive, Default: "ffmpeg"},
-		{Path: "ffmpeg.killTimeout", Env: "", FieldPath: "FFmpeg.KillTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 5 * time.Second},
+		{Path: "ffmpeg.ffprobeBin", Env: "XG2G_FFPROBE_BIN", FieldPath: "FFmpeg.FFprobeBin", Profile: ProfileAdvanced, Status: StatusActive},
+		{Path: "ffmpeg.killTimeout", Env: "XG2G_FFMPEG_KILL_TIMEOUT", FieldPath: "FFmpeg.KillTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 5 * time.Second},
 
 		// --- TLS ---
 		{Path: "tls.enabled", Env: "XG2G_TLS_ENABLED", FieldPath: "TLSEnabled", Profile: ProfileAdvanced, Status: StatusActive, Default: false},

@@ -617,6 +617,7 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 
 	// CANONICAL FFMPEG CONFIG
 	cfg.FFmpeg.Bin = l.envString("XG2G_FFMPEG_BIN", cfg.FFmpeg.Bin)
+	cfg.FFmpeg.FFprobeBin = l.envString("XG2G_FFPROBE_BIN", cfg.FFmpeg.FFprobeBin)
 	cfg.FFmpeg.KillTimeout = l.envDuration("XG2G_FFMPEG_KILL_TIMEOUT", cfg.FFmpeg.KillTimeout)
 
 	// Rate Limiting

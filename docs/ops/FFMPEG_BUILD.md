@@ -29,7 +29,7 @@ Source → Checksum Verify → Configure → Build → Install → Wrapper → C
 
 - **Container**: FFmpeg accessed via `/usr/local/bin/ffmpeg` (wrapper script)
 - **Wrapper**: Sets `LD_LIBRARY_PATH=/opt/ffmpeg/lib` (scoped to FFmpeg process only)
-- **xg2g Config**: `ENV XG2G_FFMPEG_PATH="/usr/local/bin/ffmpeg"`
+- **xg2g Config**: `ENV XG2G_FFMPEG_BIN="/usr/local/bin/ffmpeg"` + `ENV XG2G_FFPROBE_BIN="/usr/local/bin/ffprobe"`
 
 ## Production Readiness Gates
 
@@ -97,9 +97,9 @@ FFMPEG_HOME=/nonexistent ./scripts/ffmpeg-wrapper.sh -version
 
 **Config Verification**:
 
-- Source: `internal/config/runtime_env.go:202`
-- Variable: `XG2G_FFMPEG_PATH` (environment-configurable)
-- Dockerfile: `ENV XG2G_FFMPEG_PATH="/usr/local/bin/ffmpeg"`
+- Source: `internal/config/merge.go`
+- Variables: `XG2G_FFMPEG_BIN` + `XG2G_FFPROBE_BIN`
+- Dockerfile: `ENV XG2G_FFMPEG_BIN="/usr/local/bin/ffmpeg"` + `ENV XG2G_FFPROBE_BIN="/usr/local/bin/ffprobe"`
 
 **Status**: EXPLICIT CONTRACT ✅
 
@@ -123,7 +123,7 @@ docker run --rm xg2g:3.1.5 which ffmpeg
 docker run --rm xg2g:3.1.5 ffmpeg -version | head -1
 # Expected: ffmpeg version 7.1.3
 
-docker run --rm xg2g:3.1.5 sh -c 'echo $XG2G_FFMPEG_PATH'
+docker run --rm xg2g:3.1.5 sh -c 'echo $XG2G_FFMPEG_BIN'
 # Expected: /usr/local/bin/ffmpeg
 ```
 
@@ -166,7 +166,8 @@ make setup  # Builds to /opt/xg2g/ffmpeg (or set TARGET_DIR)
 ### Use Wrappers (Recommended)
 
 ```bash
-export XG2G_FFMPEG_PATH=$(pwd)/scripts/ffmpeg-wrapper.sh
+export XG2G_FFMPEG_BIN=$(pwd)/scripts/ffmpeg-wrapper.sh
+export XG2G_FFPROBE_BIN=$(pwd)/scripts/ffprobe-wrapper.sh
 export FFMPEG_HOME=/opt/xg2g/ffmpeg  # If built to custom location
 ```
 
@@ -188,7 +189,7 @@ export LD_LIBRARY_PATH=/opt/xg2g/ffmpeg/lib
   run: |
     docker run --rm xg2g:3.1.5 ffmpeg -version | grep -q "7.1.3"
     docker run --rm xg2g:3.1.5 sh -c '[ "$(which ffmpeg)" = "/usr/local/bin/ffmpeg" ]'
-    docker run --rm xg2g:3.1.5 sh -c '[ "$XG2G_FFMPEG_PATH" = "/usr/local/bin/ffmpeg" ]'
+    docker run --rm xg2g:3.1.5 sh -c '[ "$XG2G_FFMPEG_BIN" = "/usr/local/bin/ffmpeg" ]'
 ```
 
 **Why**:

@@ -208,7 +208,7 @@ docker run --rm xg2g:3.1.7 ffmpeg -version | head -1
 **Command**:
 
 ```bash
-docker run --rm xg2g:3.1.7 sh -c 'echo $XG2G_FFMPEG_PATH'
+docker run --rm xg2g:3.1.7 sh -c 'echo $XG2G_FFMPEG_BIN'
 ```
 
 **Expected**: `/usr/local/bin/ffmpeg`
@@ -292,7 +292,7 @@ go test ./internal/control/vod -run TestVOD_AtomicPublish -v -count=1
     docker run --rm xg2g:3.1.7 sh -c '
       [ "$(which ffmpeg)" = "/usr/local/bin/ffmpeg" ] || exit 1
       ffmpeg -version | grep -q "7.1.3" || exit 1
-      [ "$XG2G_FFMPEG_PATH" = "/usr/local/bin/ffmpeg" ] || exit 1
+      [ "$XG2G_FFMPEG_BIN" = "/usr/local/bin/ffmpeg" ] || exit 1
     '
 
     # VOD Safety (Gates M3/M4)
@@ -333,8 +333,8 @@ go test ./internal/control/vod -run TestVOD_AtomicPublish -v -count=1
 
 ### "System FFmpeg used instead of pinned"
 
-**Cause**: Wrapper bypassed, `XG2G_FFMPEG_PATH` points to system binary
-**Fix**: Set `XG2G_FFMPEG_PATH=/usr/local/bin/ffmpeg` explicitly
+**Cause**: Wrapper bypassed; `ffmpeg` resolves to a system binary instead of the pinned wrapper
+**Fix**: Set `XG2G_FFMPEG_BIN=/usr/local/bin/ffmpeg` explicitly
 
 ## 8. Golden Path Checklist
 

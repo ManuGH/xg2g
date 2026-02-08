@@ -34,6 +34,7 @@ const (
 // LocalAdapter implements ports.MediaPipeline using local exec.Command.
 type LocalAdapter struct {
 	BinPath          string
+	FFprobeBin       string
 	HLSRoot          string
 	AnalyzeDuration  string
 	ProbeSize        string
@@ -53,7 +54,7 @@ type LocalAdapter struct {
 }
 
 // NewLocalAdapter creates a new adapter instance.
-func NewLocalAdapter(binPath string, hlsRoot string, e2 *enigma2.Client, logger zerolog.Logger, analyzeDuration string, probeSize string, dvrWindow time.Duration, killTimeout time.Duration, fallbackTo8001 bool, preflightTimeout time.Duration, segmentSeconds int, startTimeout, stallTimeout time.Duration) *LocalAdapter {
+func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enigma2.Client, logger zerolog.Logger, analyzeDuration string, probeSize string, dvrWindow time.Duration, killTimeout time.Duration, fallbackTo8001 bool, preflightTimeout time.Duration, segmentSeconds int, startTimeout, stallTimeout time.Duration) *LocalAdapter {
 	analyzeDuration = strings.TrimSpace(analyzeDuration)
 	probeSize = strings.TrimSpace(probeSize)
 	if analyzeDuration == "" {
@@ -84,6 +85,7 @@ func NewLocalAdapter(binPath string, hlsRoot string, e2 *enigma2.Client, logger 
 	}
 	return &LocalAdapter{
 		BinPath:          binPath,
+		FFprobeBin:       strings.TrimSpace(ffprobeBin),
 		HLSRoot:          hlsRoot,
 		AnalyzeDuration:  analyzeDuration,
 		ProbeSize:        probeSize,
@@ -719,8 +721,13 @@ func (a *LocalAdapter) detectFPS(ctx context.Context, inputURL string) (int, err
 	ctx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
 	defer cancel()
 
+	ffprobeBin := a.FFprobeBin
+	if strings.TrimSpace(ffprobeBin) == "" {
+		ffprobeBin = "ffprobe" // PATH fallback (last resort)
+	}
+
 	// #nosec G204 -- binPath is trusted
-	cmd := exec.CommandContext(ctx, "ffprobe",
+	cmd := exec.CommandContext(ctx, ffprobeBin,
 		"-v", "error",
 		"-select_streams", "v:0",
 		"-show_entries", "stream=r_frame_rate",

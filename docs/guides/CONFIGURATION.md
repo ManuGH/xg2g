@@ -109,7 +109,8 @@ Aliases: `openWebIF.*` (compat; prefer `enigma2.*`).
 | Path | Env | Default | Status | Profile |
 | --- | --- | --- | --- | --- |
 | `ffmpeg.bin` | `XG2G_FFMPEG_BIN` | `ffmpeg` | Active | Advanced |
-| `ffmpeg.killTimeout` | - | `5s` | Active | Advanced |
+| `ffmpeg.ffprobeBin` | `XG2G_FFPROBE_BIN` | - | Active | Advanced |
+| `ffmpeg.killTimeout` | `XG2G_FFMPEG_KILL_TIMEOUT` | `5s` | Active | Advanced |
 
 ### hdhr
 

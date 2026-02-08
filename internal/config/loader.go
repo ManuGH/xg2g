@@ -97,6 +97,8 @@ func (l *Loader) Load() (AppConfig, error) {
 		return cfg, err
 	}
 	l.mergeEnvConfig(&cfg)
+	// Resolve ffprobe path from canonical config (ENV -> derive from ffmpeg.bin -> PATH fallback).
+	cfg.FFmpeg.FFprobeBin = ResolveFFprobeBin(cfg.FFmpeg.FFprobeBin, cfg.FFmpeg.Bin)
 
 	// 3.5. Enforce Deprecation Policy (P1.2)
 	if err := l.CheckDeprecations(&cfg); err != nil {
