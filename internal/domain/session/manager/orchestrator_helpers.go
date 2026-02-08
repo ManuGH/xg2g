@@ -210,6 +210,7 @@ func (o *Orchestrator) startPipeline(
 		Mode:      ports.ModeLive, // Default
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard, // Hardcoded for simplified ProfileSpec mapping for now
+		Profile:   currentProfileSpec,    // Pass through resolved profile (GPU, codec, quality)
 		Source: ports.StreamSource{
 			ID:        sessionCtx.ServiceRef,
 			Type:      ports.SourceTuner, // Default assumes Tuner/Ref

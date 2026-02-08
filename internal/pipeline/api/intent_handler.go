@@ -125,7 +125,7 @@ func (h IntentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	policyID := "universal"
 
 	// Resolve profile (universal)
-	prof := profiles.Resolve(policyID, r.UserAgent(), dvrWindowSec, nil, hardware.HasVAAPI(), profiles.HWAccelAuto)
+	prof := profiles.Resolve(policyID, r.UserAgent(), dvrWindowSec, nil, hardware.IsVAAPIReady(), profiles.HWAccelAuto)
 
 	var acquiredLeases []store.Lease
 	releaseLeases := func() {

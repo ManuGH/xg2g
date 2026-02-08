@@ -1,6 +1,10 @@
 package ports
 
-import "time"
+import (
+	"time"
+
+	"github.com/ManuGH/xg2g/internal/domain/session/model"
+)
 
 // StreamMode defines the intent of the stream.
 type StreamMode string
@@ -55,6 +59,7 @@ type StreamSpec struct {
 	Format    StreamFormat
 	Quality   QualityProfile
 	Source    StreamSource
+	Profile   model.ProfileSpec // Transcoding profile (GPU, codec, quality knobs)
 }
 
 // RunHandle is an opaque token for a running pipeline.
