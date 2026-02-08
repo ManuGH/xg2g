@@ -22,6 +22,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/media/ffmpeg/watchdog"
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
+	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 	"github.com/ManuGH/xg2g/internal/procgroup"
 	"github.com/rs/zerolog"
 )
@@ -30,6 +31,9 @@ const (
 	preflightMinBytes = 188 * 3
 	preflightTimeout  = 2 * time.Second
 )
+
+// vaapiEncodersToTest is the list of VAAPI encoders verified during preflight.
+var vaapiEncodersToTest = []string{"h264_vaapi", "hevc_vaapi"}
 
 // LocalAdapter implements ports.MediaPipeline using local exec.Command.
 type LocalAdapter struct {
@@ -48,13 +52,17 @@ type LocalAdapter struct {
 	SegmentSeconds   int
 	StartTimeout     time.Duration
 	StallTimeout     time.Duration
+	VaapiDevice        string            // e.g. "/dev/dri/renderD128"; empty = no VAAPI
+	vaapiEncoders      map[string]bool   // per-encoder preflight results ("h264_vaapi" -> true)
+	vaapiDeviceChecked bool              // device-level preflight ran
+	vaapiDeviceErr     error             // device-level preflight error
 	mu               sync.Mutex
 	// activeProcs maps run handles to running commands
 	activeProcs map[ports.RunHandle]*exec.Cmd
 }
 
 // NewLocalAdapter creates a new adapter instance.
-func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enigma2.Client, logger zerolog.Logger, analyzeDuration string, probeSize string, dvrWindow time.Duration, killTimeout time.Duration, fallbackTo8001 bool, preflightTimeout time.Duration, segmentSeconds int, startTimeout, stallTimeout time.Duration) *LocalAdapter {
+func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enigma2.Client, logger zerolog.Logger, analyzeDuration string, probeSize string, dvrWindow time.Duration, killTimeout time.Duration, fallbackTo8001 bool, preflightTimeout time.Duration, segmentSeconds int, startTimeout, stallTimeout time.Duration, vaapiDevice string) *LocalAdapter {
 	analyzeDuration = strings.TrimSpace(analyzeDuration)
 	probeSize = strings.TrimSpace(probeSize)
 	if analyzeDuration == "" {
@@ -99,8 +107,102 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 		FallbackTo8001:   fallbackTo8001,
 		StartTimeout:     startTimeout,
 		StallTimeout:     stallTimeout,
+		VaapiDevice:      strings.TrimSpace(vaapiDevice),
 		activeProcs:      make(map[ports.RunHandle]*exec.Cmd),
 	}
+}
+
+// PreflightVAAPI validates that the configured VAAPI device is functional.
+// Tests each available encoder (h264_vaapi, hevc_vaapi) independently.
+// Results are cached per-encoder: buildArgs checks the specific encoder.
+func (a *LocalAdapter) PreflightVAAPI() error {
+	if a.VaapiDevice == "" {
+		return nil
+	}
+	if a.vaapiDeviceChecked {
+		return a.vaapiDeviceErr
+	}
+
+	a.vaapiEncoders = make(map[string]bool)
+	a.vaapiDeviceChecked = true
+
+	a.Logger.Info().Str("device", a.VaapiDevice).Msg("vaapi preflight: starting")
+
+	// 1. Device accessible
+	if _, err := os.Stat(a.VaapiDevice); err != nil {
+		a.vaapiDeviceErr = fmt.Errorf("vaapi device not accessible: %w", err)
+		a.Logger.Error().Err(a.vaapiDeviceErr).Str("device", a.VaapiDevice).Msg("vaapi preflight: device stat failed")
+		hardware.SetVAAPIPreflightResult(false)
+		return a.vaapiDeviceErr
+	}
+
+	// 2. Enumerate available VAAPI encoders
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	// #nosec G204 -- BinPath is trusted from config
+	checkCmd := exec.CommandContext(ctx, a.BinPath, "-hide_banner", "-encoders")
+	checkOut, err := checkCmd.Output()
+	if err != nil {
+		a.vaapiDeviceErr = fmt.Errorf("vaapi preflight: ffmpeg -encoders failed: %w", err)
+		a.Logger.Error().Err(a.vaapiDeviceErr).Msg("vaapi preflight: encoder check failed")
+		hardware.SetVAAPIPreflightResult(false)
+		return a.vaapiDeviceErr
+	}
+	encoderList := string(checkOut)
+
+	// 3. Test each encoder with a real 5-frame encode
+	for _, enc := range vaapiEncodersToTest {
+		if !strings.Contains(encoderList, enc) {
+			a.Logger.Info().Str("encoder", enc).Msg("vaapi preflight: encoder not in ffmpeg build, skipping")
+			continue
+		}
+		if err := a.testVaapiEncoder(enc); err != nil {
+			a.Logger.Warn().Err(err).Str("encoder", enc).Msg("vaapi preflight: encoder test failed")
+		} else {
+			a.vaapiEncoders[enc] = true
+			a.Logger.Info().Str("encoder", enc).Msg("vaapi preflight: encoder verified")
+		}
+	}
+
+	if len(a.vaapiEncoders) == 0 {
+		a.vaapiDeviceErr = fmt.Errorf("vaapi preflight: no working VAAPI encoders found")
+		a.Logger.Error().Err(a.vaapiDeviceErr).Msg("vaapi preflight: failed")
+		hardware.SetVAAPIPreflightResult(false)
+		return a.vaapiDeviceErr
+	}
+
+	hardware.SetVAAPIPreflightResult(true)
+	a.Logger.Info().
+		Str("device", a.VaapiDevice).
+		Int("verified_encoders", len(a.vaapiEncoders)).
+		Msg("vaapi preflight: passed")
+	return nil
+}
+
+// testVaapiEncoder runs a real 5-frame encode test for a specific VAAPI encoder.
+func (a *LocalAdapter) testVaapiEncoder(encoder string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	// #nosec G204 -- BinPath and VaapiDevice are trusted from config
+	cmd := exec.CommandContext(ctx, a.BinPath,
+		"-vaapi_device", a.VaapiDevice,
+		"-f", "lavfi",
+		"-i", "testsrc=duration=0.2:size=1280x720:rate=25",
+		"-vf", "format=nv12,hwupload",
+		"-c:v", encoder,
+		"-frames:v", "5",
+		"-f", "null", "-",
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("encode test failed: %w (output: %s)", err, string(out))
+	}
+	return nil
+}
+
+// VaapiEncoderVerified returns true if the given encoder passed preflight.
+func (a *LocalAdapter) VaapiEncoderVerified(encoder string) bool {
+	return a.vaapiEncoders[encoder]
 }
 
 // Start initiates the media process.
@@ -620,6 +722,27 @@ func (a *LocalAdapter) buildArgs(ctx context.Context, spec ports.StreamSpec, inp
 		"-reconnect_on_http_error", "4xx,5xx",
 	)
 
+	// VAAPI device init (must come before -i for hwaccel decode).
+	// Fail-closed: two independent checks must pass before VAAPI args are emitted.
+	if spec.Profile.HWAccel == "vaapi" {
+		if a.VaapiDevice == "" {
+			return nil, fmt.Errorf("vaapi requested by profile but no vaapi device configured on adapter")
+		}
+		// Resolve the encoder name for per-encoder preflight check
+		reqEncoder := "h264_vaapi"
+		if spec.Profile.VideoCodec == "hevc" {
+			reqEncoder = "hevc_vaapi"
+		}
+		if !a.VaapiEncoderVerified(reqEncoder) {
+			return nil, fmt.Errorf("vaapi encoder %s not verified by preflight (device=%s, deviceErr=%v)", reqEncoder, a.VaapiDevice, a.vaapiDeviceErr)
+		}
+		args = append(args,
+			"-vaapi_device", a.VaapiDevice,
+			"-hwaccel", "vaapi",
+			"-hwaccel_output_format", "vaapi",
+		)
+	}
+
 	// Input
 	switch spec.Source.Type {
 	case ports.SourceTuner:
@@ -671,25 +794,30 @@ func (a *LocalAdapter) buildArgs(ctx context.Context, spec ports.StreamSpec, inp
 			}
 		}
 
-		// Use libx264 for video with fast preset for live streaming
+		// Stream mapping (same for all paths)
 		// Use -sn to disable subtitles/teletext, as they often cause "Invalid data" errors
 		// during transcoding (mapped to WebVTT by default) with Stream Relay sources.
 		args = append(args,
 			"-map", "0:v:0?",
 			"-map", "0:a:0?",
-			"-c:v", "libx264",
-			"-preset", "ultrafast", // Ultra-fast encoding for low latency
-			"-tune", "zerolatency", // Minimize buffering
-			"-crf", "20", // Excellent quality with fast encoding
-			"-x264-params", fmt.Sprintf("keyint=%d:min-keyint=%d:scenecut=0", gop, gop),
-			"-g", strconv.Itoa(gop), // Force GOP size matching keyint
-			"-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%d)", a.SegmentSeconds),
-			"-flags", "+cgop", // Closed GOP for clean segment boundaries
-			"-pix_fmt", "yuv420p",
-			"-profile:v", "main",
+		)
+
+		// Video encoding (two paths: VAAPI GPU or CPU)
+		if spec.Profile.HWAccel == "vaapi" {
+			args = a.buildVaapiVideoArgs(args, spec, gop, segmentDurationSec)
+		} else {
+			args = a.buildCPUVideoArgs(args, spec, gop, segmentDurationSec)
+		}
+
+		// Audio (same for all paths)
+		audioBitrate := "192k"
+		if spec.Profile.AudioBitrateK > 0 {
+			audioBitrate = fmt.Sprintf("%dk", spec.Profile.AudioBitrateK)
+		}
+		args = append(args,
 			"-c:a", "aac",
-			"-b:a", "192k", // Universal Stereo (Best Practice 2026)
-			"-ac", "2", // Force Stereo for compatibility
+			"-b:a", audioBitrate,
+			"-ac", "2",
 			"-ar", "48000",
 			"-sn",
 			"-f", "hls",
@@ -714,6 +842,129 @@ func (a *LocalAdapter) buildArgs(ctx context.Context, spec ports.StreamSpec, inp
 	}
 
 	return args, nil
+}
+
+// buildVaapiVideoArgs constructs video encoding arguments for the VAAPI GPU pipeline.
+// Frames are already in GPU memory from -hwaccel vaapi -hwaccel_output_format vaapi.
+func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec, gop, segmentSec int) []string {
+	prof := spec.Profile
+	a.Logger.Info().
+		Str("sessionId", spec.SessionID).
+		Str("transcode.mode", "vaapi").
+		Str("vaapi.device", a.VaapiDevice).
+		Str("video.codec", prof.VideoCodec).
+		Int("video.maxRateK", prof.VideoMaxRateK).
+		Int("video.bufSizeK", prof.VideoBufSizeK).
+		Bool("deinterlace", prof.Deinterlace).
+		Msg("pipeline video: vaapi")
+
+	// Filter: frames are VAAPI surfaces from hwaccel decode
+	if prof.Deinterlace {
+		args = append(args, "-vf", "deinterlace_vaapi")
+	}
+
+	// Encoder
+	encoder := "h264_vaapi"
+	if prof.VideoCodec == "hevc" {
+		encoder = "hevc_vaapi"
+	}
+	args = append(args, "-c:v", encoder)
+
+	// Quality: VAAPI has no CRF; use VBR rate control from ProfileSpec
+	if prof.VideoMaxRateK > 0 {
+		args = append(args,
+			"-b:v", fmt.Sprintf("%dk", prof.VideoMaxRateK),
+			"-maxrate", fmt.Sprintf("%dk", prof.VideoMaxRateK),
+		)
+		if prof.VideoBufSizeK > 0 {
+			args = append(args, "-bufsize", fmt.Sprintf("%dk", prof.VideoBufSizeK))
+		}
+	} else {
+		// Safe default when no rate specified
+		args = append(args, "-global_quality", "23")
+	}
+
+	// GOP / keyframes (same logic as CPU path)
+	args = append(args,
+		"-g", strconv.Itoa(gop),
+		"-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%d)", segmentSec),
+		"-flags", "+cgop",
+	)
+
+	args = append(args, "-profile:v", "main")
+	return args
+}
+
+// buildCPUVideoArgs constructs video encoding arguments for the CPU transcode path.
+// Handles both explicit ProfileSpec values and zero-valued ProfileSpec.
+// When ProfileSpec is zero-valued (VideoCodec="" + TranscodeVideo=false), applies
+// legacy defaults: libx264 + yadif + ultrafast + CRF 20. This ensures backwards
+// compat for code paths that don't set ProfileSpec yet.
+func (a *LocalAdapter) buildCPUVideoArgs(args []string, spec ports.StreamSpec, gop, segmentSec int) []string {
+	prof := spec.Profile
+	// Detect zero-valued profile → apply legacy defaults.
+	// A zero-valued ProfileSpec has VideoCodec="" and TranscodeVideo=false,
+	// which happens when the orchestrator doesn't pass a resolved profile.
+	legacy := prof.VideoCodec == "" && !prof.TranscodeVideo
+
+	codec := "libx264"
+	preset := "ultrafast" // legacy default
+	crf := 20
+	deinterlace := true // legacy default: always deinterlace DVB streams
+
+	if !legacy {
+		if prof.VideoCodec == "hevc" {
+			codec = "libx265"
+		} else if prof.VideoCodec != "" && prof.VideoCodec != "h264" {
+			codec = prof.VideoCodec
+		}
+		if prof.Preset != "" {
+			preset = prof.Preset
+		} else {
+			preset = "superfast"
+		}
+		if prof.VideoCRF > 0 {
+			crf = prof.VideoCRF
+		}
+		deinterlace = prof.Deinterlace
+	}
+
+	a.Logger.Info().
+		Str("sessionId", spec.SessionID).
+		Str("transcode.mode", "cpu").
+		Str("video.codec", codec).
+		Int("video.crf", crf).
+		Bool("deinterlace", deinterlace).
+		Bool("legacy_defaults", legacy).
+		Msg("pipeline video: cpu")
+
+	if deinterlace {
+		args = append(args, "-vf", "yadif")
+	}
+
+	args = append(args, "-c:v", codec)
+	args = append(args, "-preset", preset)
+	args = append(args, "-tune", "zerolatency")
+	args = append(args, "-crf", strconv.Itoa(crf))
+
+	if !legacy && prof.VideoMaxRateK > 0 {
+		args = append(args, "-maxrate", fmt.Sprintf("%dk", prof.VideoMaxRateK))
+		if prof.VideoBufSizeK > 0 {
+			args = append(args, "-bufsize", fmt.Sprintf("%dk", prof.VideoBufSizeK))
+		}
+	}
+
+	if codec == "libx264" {
+		args = append(args, "-x264-params", fmt.Sprintf("keyint=%d:min-keyint=%d:scenecut=0", gop, gop))
+	}
+	args = append(args,
+		"-g", strconv.Itoa(gop),
+		"-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%d)", segmentSec),
+		"-flags", "+cgop",
+		"-pix_fmt", "yuv420p",
+		"-profile:v", "main",
+	)
+	return args
 }
 
 func (a *LocalAdapter) detectFPS(ctx context.Context, inputURL string) (int, error) {

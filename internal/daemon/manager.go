@@ -318,7 +318,7 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 	if cfg.Engine.Mode == "virtual" {
 		orch.Pipeline = stub.NewAdapter()
 	} else {
-		orch.Pipeline = ffmpeg.NewLocalAdapter(
+		adapter := ffmpeg.NewLocalAdapter(
 			cfg.FFmpeg.Bin,
 			cfg.FFmpeg.FFprobeBin,
 			cfg.HLS.Root,
@@ -333,7 +333,16 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 			cfg.HLS.SegmentSeconds,
 			cfg.Timeouts.TranscodeStart,
 			cfg.Timeouts.TranscodeNoProgress,
+			cfg.FFmpeg.VaapiDevice,
 		)
+		// VAAPI preflight (fail-fast at startup if configured but broken)
+		if cfg.FFmpeg.VaapiDevice != "" {
+			if err := adapter.PreflightVAAPI(); err != nil {
+				m.logger.Warn().Err(err).Str("device", cfg.FFmpeg.VaapiDevice).
+					Msg("VAAPI preflight failed; GPU transcoding will be unavailable for sessions requesting it")
+			}
+		}
+		orch.Pipeline = adapter
 	}
 
 	// 4. Inject into API Server (Shadow Receiving)

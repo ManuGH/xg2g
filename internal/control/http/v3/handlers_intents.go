@@ -166,7 +166,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 				cap = &c
 			}
 		}
-		hasGPU := hardware.HasVAAPI()
+		hasGPU := hardware.IsVAAPIReady()
 
 		// Parse hwaccel parameter (v3.1+)
 		hwaccelMode := profiles.HWAccelAuto // Default
@@ -187,11 +187,15 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// Hard-fail if force requested but no GPU available
+		// Hard-fail if force requested but GPU not verified
 		if hwaccelMode == profiles.HWAccelForce && !hasGPU {
+			reason := "no /dev/dri/renderD128"
+			if hardware.HasVAAPI() {
+				reason = "VAAPI preflight encode test failed"
+			}
 			RecordV3Intent(string(model.IntentTypeStreamStart), "phase0", "hwaccel_unavailable")
 			respondIntentFailure(w, r, IntentErrInvalidInput,
-				"hwaccel=force requested but GPU not available (no /dev/dri/renderD128)")
+				fmt.Sprintf("hwaccel=force requested but GPU not available (%s)", reason))
 			return
 		}
 

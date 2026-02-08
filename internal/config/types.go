@@ -447,6 +447,13 @@ type FFmpegConfig struct {
 	Bin         string        `yaml:"bin"`
 	FFprobeBin  string        `yaml:"ffprobeBin,omitempty"`
 	KillTimeout time.Duration `yaml:"killTimeout"`
+	// VaapiDevice is the DRM render node for VAAPI GPU transcoding.
+	// Set to e.g. "/dev/dri/renderD128" (or XG2G_VAAPI_DEVICE env) to enable.
+	// Empty (default) = VAAPI disabled; all transcoding uses CPU (libx264).
+	// When set, a real 5-frame encode preflight runs at startup. Profiles
+	// with HWAccel="vaapi" are only produced when the preflight passes;
+	// otherwise sessions requesting VAAPI will fail-closed.
+	VaapiDevice string `yaml:"vaapiDevice,omitempty"`
 }
 
 // HLSConfig holds HLS output settings

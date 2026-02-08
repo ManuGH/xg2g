@@ -327,6 +327,22 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 		}
 	}
 
+	// FFmpeg (Typed Config)
+	if src.FFmpeg != nil {
+		if src.FFmpeg.Bin != "" {
+			dst.FFmpeg.Bin = expandEnv(src.FFmpeg.Bin)
+		}
+		if src.FFmpeg.FFprobeBin != "" {
+			dst.FFmpeg.FFprobeBin = expandEnv(src.FFmpeg.FFprobeBin)
+		}
+		if src.FFmpeg.KillTimeout > 0 {
+			dst.FFmpeg.KillTimeout = src.FFmpeg.KillTimeout
+		}
+		if src.FFmpeg.VaapiDevice != "" {
+			dst.FFmpeg.VaapiDevice = expandEnv(src.FFmpeg.VaapiDevice)
+		}
+	}
+
 	// Engine mapping (P1.2 Harden)
 	if src.Engine.Enabled != nil {
 		dst.Engine.Enabled = *src.Engine.Enabled
@@ -619,6 +635,7 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	cfg.FFmpeg.Bin = l.envString("XG2G_FFMPEG_BIN", cfg.FFmpeg.Bin)
 	cfg.FFmpeg.FFprobeBin = l.envString("XG2G_FFPROBE_BIN", cfg.FFmpeg.FFprobeBin)
 	cfg.FFmpeg.KillTimeout = l.envDuration("XG2G_FFMPEG_KILL_TIMEOUT", cfg.FFmpeg.KillTimeout)
+	cfg.FFmpeg.VaapiDevice = l.envString("XG2G_VAAPI_DEVICE", cfg.FFmpeg.VaapiDevice)
 
 	// Rate Limiting
 	cfg.RateLimitEnabled = l.envBool("XG2G_RATE_LIMIT_ENABLED", cfg.RateLimitEnabled)

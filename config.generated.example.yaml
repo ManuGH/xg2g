@@ -56,6 +56,7 @@ ffmpeg:
   bin: ffmpeg
   ffprobeBin: ""
   killTimeout: 5s
+  vaapiDevice: ""
 hdhr:
   baseUrl: ""
   deviceId: ""
