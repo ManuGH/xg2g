@@ -11,7 +11,8 @@ on:
 
 concurrency:
   group: repo-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # CodeQL is relatively heavy; queue newer runs instead of canceling in-progress work.
+  cancel-in-progress: false
 
 permissions:
   contents: read
