@@ -15,6 +15,7 @@ import (
 func TestBuildArgs_UsesOptionalVideoMap(t *testing.T) {
 	adapter := NewLocalAdapter(
 		"",
+		"",
 		t.TempDir(),
 		nil,
 		zerolog.New(io.Discard),

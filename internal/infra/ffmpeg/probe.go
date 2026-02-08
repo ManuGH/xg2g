@@ -14,18 +14,26 @@ import (
 )
 
 // Prober implements vod.Prober interface using ffprobe.
-type Prober struct{}
+type Prober struct {
+	BinaryPath string
+}
 
-func NewProber() *Prober {
-	return &Prober{}
+func NewProber(binaryPath string) *Prober {
+	return &Prober{BinaryPath: strings.TrimSpace(binaryPath)}
 }
 
 func (p *Prober) Probe(ctx context.Context, path string) (*vod.StreamInfo, error) {
-	return Probe(ctx, path)
+	return ProbeWithBin(ctx, p.BinaryPath, path)
 }
 
 // Probe executes ffprobe and returns stream info.
 func Probe(ctx context.Context, path string) (*vod.StreamInfo, error) {
+	return ProbeWithBin(ctx, "", path)
+}
+
+// ProbeWithBin executes ffprobe and returns stream info.
+// If binaryPath is empty, it falls back to PATH resolution ("ffprobe").
+func ProbeWithBin(ctx context.Context, binaryPath string, path string) (*vod.StreamInfo, error) {
 	args := []string{
 		"-v", "error",
 		"-headers", "Connection: close\r\n",
@@ -35,8 +43,13 @@ func Probe(ctx context.Context, path string) (*vod.StreamInfo, error) {
 		path,
 	}
 
-	// #nosec G204 - ffprobe is hardcoded; args are strictly controlled and path is opaque
-	cmd := exec.CommandContext(ctx, "ffprobe", args...)
+	ffprobeBin := strings.TrimSpace(binaryPath)
+	if ffprobeBin == "" {
+		ffprobeBin = "ffprobe" // PATH fallback (last resort)
+	}
+
+	// #nosec G204 - ffprobe path is configured; args are strictly controlled and path is opaque
+	cmd := exec.CommandContext(ctx, ffprobeBin, args...)
 
 	// Capture stderr for diagnostics (because exit code might be non-zero even with valid JSON)
 	var stderr bytes.Buffer
@@ -63,7 +76,7 @@ func Probe(ctx context.Context, path string) (*vod.StreamInfo, error) {
 	isValid := jsonErr == nil && data.Format.FormatName != "" && hasPlayableStream
 
 	if isValid {
-		// Valid JSON with content.
+		// Treat valid JSON with playable content as success even if ffprobe exits non-zero.
 		if err != nil {
 			// Log warning about non-zero exit (likely partial file or warnings).
 			// Truncate stderr to prevent log explosion on massive dumps.
@@ -73,14 +86,6 @@ func Probe(ctx context.Context, path string) (*vod.StreamInfo, error) {
 			}
 			log.Warn().Err(err).Str("path", path).Str("stderr", errStr).Msg("ffprobe non-zero exit but JSON accepted")
 		}
-		// Explicitly clear error to signal success
-		// err = nil // ineffassign: err is shadowing or re-assigned anyway later? No, it's just never used after this block because we return info, nil
-		// Actually, we don't return nil here? Wait, we fall through to return info, nil at end of function.
-		// logic: if isValid { if err!=nil log.Warn(); err = nil; }
-		// The `err` variable is checked in `else if err != nil` below.
-		// But since we are inside `if isValid`, the `else` blocks won't run.
-		// And we return `info, nil` at the end.
-		// So `err` is indeed effectively unused after this block.
 	} else if err != nil {
 		// Execution failed AND/OR no usable JSON.
 		errStr := stderr.String()

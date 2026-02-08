@@ -261,8 +261,8 @@ func TestHardeningSuite(t *testing.T) {
 			fmt.Sprintf("XG2G_PROXY_LISTEN=:%d", proxyPort),
 			"XG2G_OWI_BASE=" + mockOWI.URL,
 			"XG2G_INITIAL_REFRESH=false",
-			"XG2G_BOUQUET=Test",                    // REQUIRED
-			"XG2G_FFMPEG_PATH=/nonexistent/ffmpeg", // Trigger "FFmpeg not found"
+			"XG2G_BOUQUET=Test",                   // REQUIRED
+			"XG2G_FFMPEG_BIN=/nonexistent/ffmpeg", // Trigger "FFmpeg not found"
 			"PATH=" + os.Getenv("PATH"),
 		}
 

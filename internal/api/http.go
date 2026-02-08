@@ -238,7 +238,7 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager, opts ...ServerOption) *Se
 	}
 
 	// Initialize VOD Manager with error handling
-	vodMgr, err := vod.NewManager(infra.NewExecutor(cfg.FFmpeg.Bin, *log.L(), cfg.Timeouts.TranscodeStart, cfg.Timeouts.TranscodeNoProgress), infra.NewProber(), recordings.NewPathMapper(cfg.RecordingPathMappings))
+	vodMgr, err := vod.NewManager(infra.NewExecutor(cfg.FFmpeg.Bin, *log.L(), cfg.Timeouts.TranscodeStart, cfg.Timeouts.TranscodeNoProgress), infra.NewProber(cfg.FFmpeg.FFprobeBin), recordings.NewPathMapper(cfg.RecordingPathMappings))
 	if err != nil {
 		log.L().Fatal().Err(err).Msg("failed to initialize VOD manager")
 	}

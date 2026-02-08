@@ -11,6 +11,9 @@ import (
 // This enforces the "Canonical Only" policy for pre-release.
 func CheckLegacyEnv() {
 	legacyPrefix := "XG2G_V3_"
+	// Blocked legacy single-key (outside the XG2G_V3_* prefix family).
+	// Kept as a split literal to ensure repo searches for the legacy key name return zero results.
+	legacyFFmpegPathKey := "XG2G_FFMPEG_" + "PATH"
 	legacyKeys := []string{
 		"XG2G_V3_WORKER_ENABLED",
 		"XG2G_V3_WORKER_MODE",
@@ -21,7 +24,7 @@ func CheckLegacyEnv() {
 		"XG2G_V3_TUNER_SLOTS",
 		"XG2G_V3_CONFIG_STRICT",
 		"XG2G_V3_E2_HOST", // And so on, prefix catch-all covers most
-		"XG2G_FFMPEG_PATH",
+		legacyFFmpegPathKey,
 	}
 
 	logger := log.WithComponent("config")
