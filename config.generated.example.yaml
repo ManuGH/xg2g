@@ -54,6 +54,7 @@ epg:
   xmltvPath: xmltv.xml
 ffmpeg:
   bin: ffmpeg
+  ffprobeBin: ""
   killTimeout: 5s
 hdhr:
   baseUrl: ""

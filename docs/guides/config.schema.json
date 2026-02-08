@@ -515,6 +515,9 @@
           "default": "ffmpeg",
           "type": "string"
         },
+        "ffprobeBin": {
+          "type": "string"
+        },
         "killTimeout": {
           "default": "5s",
           "type": "string"
