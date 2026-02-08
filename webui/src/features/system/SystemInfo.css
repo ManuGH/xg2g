@@ -10,7 +10,7 @@
   font-size: 22px;
   font-weight: 700;
   margin-bottom: 16px;
-  color: #fff;
+  color: var(--text-primary);
 }
 
 .info-grid {
@@ -26,8 +26,8 @@
 }
 
 .info-card {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-base);
   border-radius: 12px;
   padding: 14px 16px;
   backdrop-filter: blur(10px);
@@ -35,15 +35,15 @@
 }
 
 .info-card:hover {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(100, 200, 255, 0.3);
+  background: var(--bg-hover);
+  border-color: var(--border-elevated);
   transform: translateY(-2px);
 }
 
 .info-card h2 {
   font-size: 13px;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--text-secondary);
   margin-bottom: 10px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -59,7 +59,7 @@
 
 .info-row .label {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--text-tertiary);
   font-weight: 500;
   flex-shrink: 0;
   min-width: 90px;
@@ -67,7 +67,7 @@
 
 .info-row .value {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--text-primary);
   font-weight: 600;
   text-align: right;
   word-break: break-word;
@@ -77,14 +77,14 @@
 
 .info-row .value.small {
   font-size: 10px;
-  font-family: 'Courier New', monospace;
-  color: rgba(255, 255, 255, 0.7);
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
   line-height: 1.4;
 }
 
 .info-section {
   padding: 10px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--border-base);
 }
 
 .info-section:last-child {
@@ -97,11 +97,11 @@
   text-align: center;
   padding: 40px;
   font-size: 14px;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--text-secondary);
 }
 
 .error-message {
-  color: #ff4757;
+  color: var(--status-error);
 }
 
 /* Tuner Grid - 2 columns for better readability */
@@ -113,16 +113,16 @@
 }
 
 .tuner-item {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-base);
   border-radius: 8px;
   padding: 12px 14px;
   transition: all 0.2s;
 }
 
 .tuner-item:hover {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(100, 200, 255, 0.3);
+  background: var(--bg-hover);
+  border-color: var(--border-elevated);
   transform: translateY(-1px);
 }
 
@@ -136,13 +136,13 @@
 .tuner-number {
   font-size: 11px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--text-tertiary);
   letter-spacing: 0.5px;
 }
 
 .tuner-type {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--text-secondary);
   font-weight: 500;
   text-align: center;
   padding: 3px 0;
@@ -157,27 +157,27 @@
 }
 
 .tuner-status-badge.status-live {
-  background: rgba(46, 213, 115, 0.15);
-  color: #2ed573;
-  border: 1px solid rgba(46, 213, 115, 0.3);
+  background: var(--accent-live-subtle);
+  color: var(--accent-live);
+  border: 1px solid var(--accent-live);
 }
 
 .tuner-status-badge.status-recording {
-  background: rgba(255, 71, 87, 0.15);
-  color: #ff4757;
-  border: 1px solid rgba(255, 71, 87, 0.3);
+  background: var(--accent-live-subtle);
+  color: var(--accent-live);
+  border: 1px solid var(--accent-live);
 }
 
 .tuner-status-badge.status-streaming {
-  background: rgba(84, 160, 255, 0.15);
-  color: #54a0ff;
-  border: 1px solid rgba(84, 160, 255, 0.3);
+  background: var(--status-info-subtle);
+  color: var(--status-info);
+  border: 1px solid var(--status-info-border);
 }
 
 .tuner-status-badge.status-idle {
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.4);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--status-neutral-subtle);
+  color: var(--text-tertiary);
+  border: 1px solid var(--status-neutral-border);
 }
 
 /* RAM Display - Consumption gauge style */
@@ -197,22 +197,19 @@
 .ram-used {
   font-weight: 700;
   font-size: 26px;
-  background: linear-gradient(135deg, #54a0ff, #5f27cd);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--status-info);
 }
 
 .ram-label {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--text-secondary);
   font-weight: 500;
 }
 
 .ram-bar-container {
   width: 100%;
   height: 10px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--bg-hover);
   border-radius: 5px;
   overflow: hidden;
   position: relative;
@@ -225,15 +222,15 @@
 }
 
 .ram-bar-fill.normal {
-  background: linear-gradient(90deg, #2ed573, #26de81);
+  background: var(--status-success);
 }
 
 .ram-bar-fill.warning {
-  background: linear-gradient(90deg, #ffa502, #ff6348);
+  background: var(--status-warning);
 }
 
 .ram-bar-fill.critical {
-  background: linear-gradient(90deg, #ff4757, #ff3838);
+  background: var(--status-error);
   animation: pulse-glow 2s ease-in-out infinite;
 }
 
@@ -242,12 +239,12 @@
   0%,
   100% {
     opacity: 1;
-    box-shadow: 0 0 10px rgba(255, 71, 87, 0.5);
+    box-shadow: var(--shadow-status-error);
   }
 
   50% {
     opacity: 0.85;
-    box-shadow: 0 0 20px rgba(255, 71, 87, 0.8);
+    box-shadow: var(--shadow-status-error-strong);
   }
 }
 
@@ -266,7 +263,7 @@
 
 .ram-stat-label {
   font-size: 10px;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--text-tertiary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   font-weight: 600;
@@ -274,9 +271,9 @@
 
 .ram-stat-value {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--text-primary);
   font-weight: 700;
-  font-family: 'Courier New', monospace;
+  font-family: var(--font-mono);
 }
 
 @keyframes pulse {
@@ -308,22 +305,22 @@
 }
 
 .status-dot.dot-ok {
-  background-color: #2ed573;
-  box-shadow: 0 0 6px rgba(46, 213, 115, 0.4);
+  background-color: var(--status-success);
+  box-shadow: var(--shadow-status-success);
 }
 
 .status-dot.dot-error {
-  background-color: #ff4757;
-  box-shadow: 0 0 6px rgba(255, 71, 87, 0.4);
+  background-color: var(--status-error);
+  box-shadow: var(--shadow-status-error);
 }
 
 .status-dot.dot-timeout {
-  background-color: #ff9800;
-  box-shadow: 0 0 6px rgba(255, 152, 0, 0.4);
+  background-color: var(--status-warning);
+  box-shadow: var(--shadow-status-warning);
 }
 
 .status-dot.dot-unknown {
-  background-color: #747d8c;
+  background-color: var(--text-disabled);
 }
 
 .tag {
@@ -336,15 +333,15 @@
 }
 
 .tag-nas {
-  background: rgba(84, 160, 255, 0.15);
-  color: #54a0ff;
-  border: 1px solid rgba(84, 160, 255, 0.3);
+  background: var(--status-info-subtle);
+  color: var(--status-info);
+  border: 1px solid var(--status-info-border);
 }
 
 .tag-intern {
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--status-neutral-subtle);
+  color: var(--text-secondary);
+  border: 1px solid var(--status-neutral-border);
 }
 
 .storage-subinfo {
@@ -367,18 +364,18 @@
   font-weight: 800;
   padding: 1px 4px;
   border-radius: 3px;
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.4);
+  background: var(--status-neutral-subtle);
+  color: var(--text-tertiary);
 }
 
 .access-rw {
-  background: rgba(46, 213, 115, 0.1);
-  color: #2ed573;
+  background: var(--status-success-subtle);
+  color: var(--status-success);
 }
 
 .access-ro {
-  background: rgba(255, 165, 2, 0.1);
-  color: #ffa502;
+  background: var(--status-warning-subtle);
+  color: var(--status-warning);
 }
 
 .status-text {
@@ -388,23 +385,23 @@
 }
 
 .status-text.ok {
-  color: #2ed573;
+  color: var(--status-success);
 }
 
 .status-text.error {
-  color: #ff4757;
+  color: var(--status-error);
 }
 
 .status-text.timeout {
-  color: #ff9800;
+  color: var(--status-warning);
 }
 
 .checked-at {
   font-size: 0.65rem;
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--text-tertiary);
   margin-top: 2px;
 }
 
 .mono {
-  font-family: 'Courier New', monospace;
+  font-family: var(--font-mono);
 }

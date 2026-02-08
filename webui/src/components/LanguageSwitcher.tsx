@@ -24,8 +24,8 @@ export function LanguageSwitcher() {
         style={{
           padding: "4px 8px",
           borderRadius: "4px",
-          background: "rgba(255, 255, 255, 0.1)",
-          border: "1px solid rgba(255, 255, 255, 0.2)",
+          background: "var(--bg-input)",
+          border: "1px solid var(--border-base)",
           color: "inherit",
           cursor: "pointer"
         }}

@@ -2,7 +2,6 @@ package decision
 
 import (
 	"fmt"
-	"strings"
 )
 
 // ErrInvariantViolation indicates a semantic breach of the decision contract.
@@ -95,7 +94,7 @@ func normalizeDecision(dec *Decision) {
 // Helpers for Invariants
 // FIX R2-001: Normalize container to match predicates logic
 func isMP4Container(c string) bool {
-	norm := strings.ToLower(strings.TrimSpace(c))
+	norm := robustNorm(c)
 	return norm == "mp4" || norm == "mov" || norm == "m4v"
 }
 

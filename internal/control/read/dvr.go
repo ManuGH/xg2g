@@ -37,7 +37,7 @@ func GetDvrCapabilities(ctx context.Context, src DvrSource) (DvrCapabilities, er
 		return DvrCapabilities{SeriesMode: "none"}, nil
 	}
 
-	canEdit := true // Defaults to true via fallback?
+	canEdit := false // Fail-closed when capability detection fails
 	cap, err := src.DetectTimerChange(ctx)
 	if err == nil {
 		canEdit = cap.Supported
@@ -45,7 +45,7 @@ func GetDvrCapabilities(ctx context.Context, src DvrSource) (DvrCapabilities, er
 
 	return DvrCapabilities{
 		CanDelete:        true,
-		CanEdit:          true,
+		CanEdit:          canEdit,
 		ReadBackVerify:   true,
 		ConflictsPreview: true,
 		ReceiverAware:    canEdit,

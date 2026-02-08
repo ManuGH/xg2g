@@ -673,7 +673,7 @@ func (a *LocalAdapter) buildArgs(ctx context.Context, spec ports.StreamSpec, inp
 		// Use -sn to disable subtitles/teletext, as they often cause "Invalid data" errors
 		// during transcoding (mapped to WebVTT by default) with Stream Relay sources.
 		args = append(args,
-			"-map", "0:v:0",
+			"-map", "0:v:0?",
 			"-map", "0:a:0?",
 			"-c:v", "libx264",
 			"-preset", "ultrafast", // Ultra-fast encoding for low latency

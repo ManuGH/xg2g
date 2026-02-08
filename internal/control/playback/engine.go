@@ -2,7 +2,8 @@ package playback
 
 import (
 	"context"
-	"strings"
+
+	"github.com/ManuGH/xg2g/internal/normalize"
 )
 
 // --- Interfaces ---
@@ -58,7 +59,7 @@ func (e *DecisionEngine) Decide(truth MediaTruth, caps PlaybackCapabilities, pro
 	protocol := ProtocolHLS
 
 	// Hint Overrides
-	switch normalizeToken(protocolHint) {
+	switch normalize.Token(protocolHint) {
 	case "mp4":
 		protocol = ProtocolMP4
 	case "hls":
@@ -170,12 +171,12 @@ func (e *DecisionEngine) Resolve(ctx context.Context, req ResolveRequest) (Playb
 }
 
 func contains(slice []string, val string) bool {
-	val = normalizeToken(val)
+	val = normalize.Token(val)
 	if val == "" {
 		return false
 	}
 	for _, s := range slice {
-		if normalizeToken(s) == val {
+		if normalize.Token(s) == val {
 			return true
 		}
 	}
@@ -183,15 +184,11 @@ func contains(slice []string, val string) bool {
 }
 
 func isMP4Container(c string) bool {
-	norm := normalizeToken(c)
+	norm := normalize.Token(c)
 	return norm == "mp4" || norm == "mov" || norm == "m4v"
 }
 
 func isUnknownToken(s string) bool {
-	norm := normalizeToken(s)
+	norm := normalize.Token(s)
 	return norm == "" || norm == "unknown"
-}
-
-func normalizeToken(s string) string {
-	return strings.ToLower(strings.TrimSpace(s))
 }

@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 concurrency:
-  group: repo-${{ github.event.pull_request.number || github.ref }}
+  group: repo-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -86,3 +86,23 @@ jobs:
           fi
 
           echo "✅ No test files in root directory"
+
+  repo-hygiene:
+    name: Repo Hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+      - name: Verify single Git root + no drift copies
+        run: ./hack/verify-repo-hygiene.sh
+
+  docs-drift:
+    name: Docs Drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+      - name: Verify docs are rendered and committed (no drift)
+        run: ./hack/verify-docs-drift.sh

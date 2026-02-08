@@ -8,25 +8,35 @@ on:
     branches: [main]
     paths:
       - "**/*.go"
+      - ".github/**"
       - go.mod
       - go.sum
-      - .github/workflows/ci.yml
       - "api/openapi.yaml"
+      - "config.example.yaml"
+      - "config.generated.example.yaml"
+      - "docs/**"
       - "internal/**"
+      - "Dockerfile"
+      - "Dockerfile.*"
+      - "docker-compose*.yml"
+      - "README.md"
       - "scripts/**"
       - "Makefile"
+      - "templates/**"
       - "webui/**"
+      - "VERSION"
+      - "WORKFLOW.md"
 
 permissions:
   contents: read
 
 concurrency:
-  group: repo-${{ github.event.pull_request.number || github.ref }}
+  group: repo-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   ci-pr:
-    name: PR Gate (Fast & Deterministic)
+    name: CI / PR Gate (Fast & Deterministic)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -60,7 +70,8 @@ jobs:
           go-version-file: go.mod
           check-latest: true
           cache-dependency-path: go.sum
-          cache: true
+          # Cache restore has been flaky (tar exit code 2). Disable to keep CI deterministic.
+          cache: false
         env:
           GOTOOLCHAIN: auto
 

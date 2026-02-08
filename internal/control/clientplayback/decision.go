@@ -1,6 +1,10 @@
 package clientplayback
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/ManuGH/xg2g/internal/normalize"
+)
 
 type Truth struct {
 	Container  *string
@@ -28,12 +32,12 @@ func Decide(req *PlaybackInfoRequest, t Truth) Decision {
 		return DecisionTranscode
 	}
 
-	c := norm(*t.Container)
-	v := norm(*t.VideoCodec)
-	a := norm(*t.AudioCodec)
+	c := normalize.Token(*t.Container)
+	v := normalize.Token(*t.VideoCodec)
+	a := normalize.Token(*t.AudioCodec)
 
 	for _, p := range req.DeviceProfile.DirectPlayProfiles {
-		if p.Type != "" && norm(p.Type) != "video" {
+		if p.Type != "" && normalize.Token(p.Type) != "video" {
 			continue
 		}
 		if !containsToken(p.Container, c) {
@@ -51,19 +55,16 @@ func Decide(req *PlaybackInfoRequest, t Truth) Decision {
 	return DecisionTranscode
 }
 
-func norm(s string) string {
-	return strings.ToLower(strings.TrimSpace(s))
-}
-
 // containsToken checks if list contains the token, where list is comma-separated.
 // Empty list => no match (fail-closed).
 func containsToken(list, want string) bool {
 	list = strings.TrimSpace(list)
+	want = normalize.Token(want)
 	if list == "" || want == "" {
 		return false
 	}
 	for _, part := range strings.Split(list, ",") {
-		if norm(part) == want {
+		if normalize.Token(part) == want {
 			return true
 		}
 	}

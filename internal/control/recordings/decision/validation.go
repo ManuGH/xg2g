@@ -89,11 +89,11 @@ func validateInput(input DecisionInput) *Problem {
 
 // isEmpty checks if a string is empty or whitespace-only.
 func isEmpty(s string) bool {
-	return strings.TrimSpace(s) == ""
+	return robustNorm(s) == ""
 }
 
 // isUnknownSentinel checks if a value indicates unknown/contradictory truth.
 func isUnknownSentinel(s string) bool {
-	lower := strings.ToLower(strings.TrimSpace(s))
+	lower := robustNorm(s)
 	return lower == "unknown" || lower == "none" || lower == "null"
 }

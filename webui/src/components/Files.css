@@ -93,7 +93,7 @@
 
 .files-btn-primary {
   background: var(--accent-primary);
-  color: #ffffff;
+  color: var(--text-primary);
 }
 
 .files-btn-primary:hover {
@@ -155,7 +155,7 @@
 
 /* Code block */
 .code-block {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.4;
   color: var(--text-secondary);
