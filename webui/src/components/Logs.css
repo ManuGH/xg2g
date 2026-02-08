@@ -40,7 +40,7 @@
 
 .logs-btn-primary {
   background: var(--accent-primary);
-  color: #ffffff;
+  color: var(--text-primary);
 }
 
 .logs-btn-primary:hover {

@@ -34,7 +34,7 @@
 }
 
 .timer-refresh-btn:hover {
-  background: var(--bg-secondary);
+  background: var(--bg-input);
   border-color: var(--text-muted);
 }
 
@@ -103,11 +103,11 @@
 }
 
 .status-recording {
-  color: var(--accent-success);
+  color: var(--accent-live);
 }
 
 .status-scheduled {
-  color: var(--accent-warning);
+  color: var(--status-warning);
 }
 
 .timer-actions {
@@ -132,17 +132,13 @@
 }
 
 .btn-edit {
-  background: rgba(59, 130, 246, 0.15);
-  /* Blue/15 */
-  color: #60a5fa;
-  /* Blue-400 */
+  background: var(--accent-action-subtle);
+  color: var(--accent-action);
 }
 
 .btn-delete {
-  background: rgba(239, 68, 68, 0.15);
-  /* Red/15 */
-  color: #f87171;
-  /* Red-400 */
+  background: var(--status-error-subtle);
+  color: var(--status-error);
 }
 
 /* Empty State */

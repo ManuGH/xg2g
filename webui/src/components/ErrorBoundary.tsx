@@ -36,7 +36,16 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
     if (this.state.hasError) {
       // You can render any custom fallback UI
       return (
-        <div style={{ padding: '20px', color: '#ff4444', background: '#330000', borderRadius: '8px', margin: '20px' }}>
+        <div
+          style={{
+            padding: '20px',
+            color: 'var(--status-error)',
+            background: 'var(--status-error-subtle)',
+            border: '1px solid var(--status-error-border)',
+            borderRadius: '8px',
+            margin: '20px',
+          }}
+        >
           <h2>❌ Something went wrong.</h2>
           <details style={{ whiteSpace: 'pre-wrap', marginTop: '10px' }}>
             {this.state.error && this.state.error.toString()}
@@ -45,7 +54,15 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
           </details>
           <button
             onClick={() => window.location.reload()}
-            style={{ marginTop: '20px', padding: '8px 16px', background: '#444', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+            style={{
+              marginTop: '20px',
+              padding: '8px 16px',
+              background: 'var(--bg-hover)',
+              color: 'var(--text-primary)',
+              border: '1px solid var(--border-base)',
+              borderRadius: '4px',
+              cursor: 'pointer',
+            }}
           >
             Reload Page
           </button>

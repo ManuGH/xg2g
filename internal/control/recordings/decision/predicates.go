@@ -1,9 +1,5 @@
 package decision
 
-import (
-	"strings"
-)
-
 // computePredicates evaluates all compatibility predicates (Section 6.2).
 // All predicates are pure boolean functions with no side effects.
 func computePredicates(source Source, caps Capabilities, policy Policy) Predicates {
@@ -18,7 +14,7 @@ func computePredicates(source Source, caps Capabilities, policy Policy) Predicat
 	// Strict: Container MUST be mp4/mov/m4v (Protocol Limitation)
 	// AND Client MUST support Range requests (for seeking/progressive)
 	// FIX R2-001: Normalize container to match contains() behavior
-	containerNorm := strings.ToLower(strings.TrimSpace(source.Container))
+	containerNorm := robustNorm(source.Container)
 	isMP4 := containerNorm == "mp4" || containerNorm == "mov" || containerNorm == "m4v"
 	hasRange := caps.SupportsRange != nil && *caps.SupportsRange
 	directPlayPossible := canContainer && canVideo && canAudio && isMP4 && hasRange
@@ -46,9 +42,9 @@ func computePredicates(source Source, caps Capabilities, policy Policy) Predicat
 
 // contains checks if a slice contains a specific string (case-insensitive).
 func contains(slice []string, item string) bool {
-	item = strings.ToLower(strings.TrimSpace(item))
+	item = robustNorm(item)
 	for _, s := range slice {
-		if strings.ToLower(strings.TrimSpace(s)) == item {
+		if robustNorm(s) == item {
 			return true
 		}
 	}

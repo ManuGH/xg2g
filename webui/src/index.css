@@ -70,6 +70,23 @@
   --status-error: #f87171;
   --status-info: #60a5fa;
 
+  /* Semantic State Surfaces */
+  --status-success-subtle: rgba(52, 211, 153, 0.12);
+  --status-warning-subtle: rgba(251, 191, 36, 0.12);
+  --status-error-subtle: rgba(248, 113, 113, 0.12);
+  --status-info-subtle: rgba(96, 165, 250, 0.12);
+  --status-neutral-subtle: rgba(107, 112, 128, 0.12);
+
+  --status-success-border: rgba(52, 211, 153, 0.3);
+  --status-warning-border: rgba(251, 191, 36, 0.3);
+  --status-error-border: rgba(248, 113, 113, 0.3);
+  --status-info-border: rgba(96, 165, 250, 0.3);
+  --status-neutral-border: rgba(107, 112, 128, 0.2);
+
+  /* Overlays */
+  --overlay-backdrop: rgba(0, 0, 0, 0.7);
+  --overlay-backdrop-strong: rgba(0, 0, 0, 0.8);
+
   /* Borders */
   --border-base: rgba(255, 255, 255, 0.08);
   --border-elevated: rgba(255, 255, 255, 0.12);
@@ -80,6 +97,11 @@
   --shadow-hover: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 4px 16px rgba(0, 0, 0, 0.5);
   --shadow-accent-live: inset 0 1px 0 rgba(245, 159, 10, 0.15), 0 4px 16px rgba(245, 159, 10, 0.12);
   --shadow-accent-action: inset 0 1px 0 rgba(74, 144, 245, 0.15), 0 4px 16px rgba(74, 144, 245, 0.12);
+  --shadow-status-success: 0 0 6px rgba(52, 211, 153, 0.4);
+  --shadow-status-warning: 0 0 6px rgba(251, 191, 36, 0.4);
+  --shadow-status-info: 0 0 6px rgba(96, 165, 250, 0.4);
+  --shadow-status-error: 0 0 10px rgba(248, 113, 113, 0.5);
+  --shadow-status-error-strong: 0 0 20px rgba(248, 113, 113, 0.8);
 
   /* Spacing */
   --radius-sm: 6px;
@@ -87,14 +109,24 @@
   --radius-lg: 12px;
 
   /* Legacy Aliases (for compatibility during migration) */
+  --bg-app: var(--bg-base);
+  --bg-primary: var(--bg-base);
+  --bg-secondary: var(--bg-input);
+  --bg-card: var(--bg-elevated);
   --bg-color: var(--bg-base);
   --card-bg: var(--bg-elevated);
   --text-color: var(--text-primary);
   --active-color: var(--accent-action);
+  --active-color-hover: var(--accent-action-hover);
+  --border: var(--border-base);
+  --border-subtle: var(--border-base);
   --border-color: var(--border-base);
   --accent-primary: var(--accent-action);
+  --accent-primary-hover: var(--accent-action-hover);
+  --accent-primary-pressed: var(--accent-action-pressed);
   --accent-danger: var(--status-error);
   --accent-success: var(--status-success);
+  --accent-warning: var(--status-warning);
   --text-muted: var(--text-tertiary);
 
   /* Safe Areas */
@@ -231,7 +263,7 @@ button {
   font-weight: 600;
   font-family: var(--font-body);
   background: var(--accent-action);
-  color: white;
+  color: var(--text-primary);
   cursor: pointer;
   transition: all 180ms cubic-bezier(0.4, 0, 0.2, 1);
   -webkit-tap-highlight-color: transparent;

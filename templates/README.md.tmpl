@@ -22,11 +22,13 @@ Stream to Safari, iOS, Chrome, and any modern browser.
 
 ```bash
 docker run -d --name xg2g --net=host \
-  -e XG2G_UPSTREAM_HOST="192.168.1.10" \
+  -e XG2G_OWI_BASE="http://192.168.1.10" \
+  -e XG2G_API_TOKEN="$(openssl rand -hex 32)" \
+  -e XG2G_API_TOKEN_SCOPES="v3:admin" \
   ghcr.io/manugh/xg2g:{{VERSION}}
 ```
 
-Open [http://localhost:8080](http://localhost:8080)
+Open [http://localhost:8088/ui/](http://localhost:8088/ui/)
 
 **Next steps:**
 [Configuration](docs/guides/CONFIGURATION.md) •
@@ -88,6 +90,7 @@ or your custom prefix. See [FFmpeg Build Guide](docs/ops/FFMPEG_BUILD.md) for
 details.
 
 To use your local build:
+
 ```bash
 export XG2G_FFMPEG_BIN="/opt/xg2g/ffmpeg/bin/ffmpeg"
 export LD_LIBRARY_PATH="/opt/xg2g/ffmpeg/lib"
@@ -100,6 +103,7 @@ This repository supports deterministic offline testing (air-gap capable).
 See: OFFLINE_TEST.md
 
 Quick check:
+
 ```bash
 export GOTOOLCHAIN=local
 export GOPROXY=off GOSUMDB=off GOVCS="*:off"

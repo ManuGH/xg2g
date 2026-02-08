@@ -480,6 +480,7 @@ clean-full: clean ## Remove all build artifacts
 lint: ## Run golangci-lint with all checks
 	@echo "Running golangci-lint..."
 	@$(GOLANGCI_LINT) run --timeout=5m --verbose ./...
+	@./webui/scripts/verify-no-hardcoded-colors.sh
 	@echo "✅ Linting passed"
 
 lint-invariants: ## Check architectural invariants (SeedMetadata usage)

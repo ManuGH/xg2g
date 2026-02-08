@@ -222,7 +222,7 @@ func TestProp_Normalization_DirectPlay(t *testing.T) {
 }
 
 func isMP4Family(container string) bool {
-	norm := strings.ToLower(strings.TrimSpace(container))
+	norm := robustNorm(container)
 	return norm == "mp4" || norm == "mov" || norm == "m4v"
 }
 

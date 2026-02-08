@@ -29,7 +29,7 @@
 
 .btn-primary {
     background: var(--accent-primary);
-    color: white;
+    color: var(--text-primary);
     border: none;
     padding: 10px 20px;
     border-radius: var(--radius-md);
@@ -48,7 +48,7 @@
 }
 
 .btn-secondary {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--bg-input);
     color: var(--text-primary);
     border: 1px solid var(--border-subtle);
     padding: 8px 16px;
@@ -58,7 +58,7 @@
 }
 
 .btn-secondary:hover {
-    background: rgba(255, 255, 255, 0.15);
+    background: var(--bg-hover);
 }
 
 .btn-danger {
@@ -147,7 +147,7 @@
 }
 
 .rule-stats {
-    background: rgba(0, 0, 0, 0.2);
+    background: var(--bg-overlay);
     padding: 8px;
     border-radius: 6px;
     font-size: 12px;
@@ -188,7 +188,7 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.7);
+    background: var(--overlay-backdrop);
     display: grid;
     place-items: center;
     z-index: 1000;
@@ -198,17 +198,17 @@
 .modal {
     width: 90%;
     max-width: 500px;
-    background: var(--bg-card);
+    background: var(--bg-elevated);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-lg);
+    box-shadow: var(--shadow-hover);
     display: flex;
     flex-direction: column;
     max-height: 90vh;
 }
 
 .modal.glass {
-    background: var(--bg-card);
+    background: var(--bg-elevated);
 }
 
 .modal-header {
@@ -253,8 +253,8 @@
     padding: 10px 12px;
     border-radius: 8px;
     border: 1px solid var(--border-subtle);
-    background: var(--bg-secondary);
-    color: white;
+    background: var(--bg-input);
+    color: var(--text-primary);
     font-size: 15px;
     outline: none;
     box-sizing: border-box;
@@ -290,7 +290,7 @@ small {
     flex: 1;
     min-width: 40px;
     padding: 8px 0;
-    background: var(--bg-secondary);
+    background: var(--bg-input);
     border: 1px solid var(--border-subtle);
     color: var(--text-muted);
     border-radius: 6px;
@@ -301,7 +301,7 @@ small {
 
 .day-btn.active {
     background: var(--accent-primary);
-    color: white;
+    color: var(--text-primary);
     border-color: var(--accent-primary);
 }
 

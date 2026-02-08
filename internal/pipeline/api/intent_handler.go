@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
@@ -30,7 +31,7 @@ type IntentHandler struct {
 	Bus   bus.Bus
 	// TTL for idempotency key mapping.
 	IdempotencyTTL time.Duration
-	// DVRWindowSec overrides DVR window for DVR profiles; 0 uses internal default.
+	// DVRWindowSec overrides DVR window for DVR profiles; 0 uses config default.
 	DVRWindowSec int
 	// LeaseTTL controls admission lease duration; 0 uses default.
 	LeaseTTL time.Duration
@@ -111,7 +112,7 @@ func (h IntentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	dvrWindowSec := h.DVRWindowSec
 	if dvrWindowSec <= 0 {
-		dvrWindowSec = 300
+		dvrWindowSec = defaultDVRWindowSec()
 	}
 
 	// ADR-00X: Streaming Profiles are removed.
@@ -198,6 +199,19 @@ func (h IntentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.respond202(ctx, w, sessionID, correlationID)
+}
+
+func defaultDVRWindowSec() int {
+	reg, err := config.GetRegistry()
+	if err == nil {
+		if entry, ok := reg.ByPath["hls.dvrWindow"]; ok {
+			if d, ok := entry.Default.(time.Duration); ok && d > 0 {
+				return int(d.Seconds())
+			}
+		}
+	}
+	// Safety net (registry should always provide a default)
+	return int((45 * time.Minute).Seconds())
 }
 
 func tryAcquireTunerLease(ctx context.Context, st store.StateStore, owner string, slots []int, ttl time.Duration) (store.Lease, bool, error) {

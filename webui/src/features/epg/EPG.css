@@ -15,23 +15,21 @@
   justify-content: space-between;
   align-items: center;
   padding: 16px 24px;
-  background: rgba(20, 20, 30, 0.6);
+  background: var(--bg-overlay);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--border-base);
   position: sticky;
   top: 0;
   z-index: 50;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--shadow-card);
 }
 
 .epg-toolbar-left h3 {
   margin: 0;
   font-size: 22px;
   font-weight: 700;
-  background: linear-gradient(135deg, #fff 0%, #a5b4fc 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--text-primary);
   letter-spacing: -0.5px;
 }
 
@@ -48,8 +46,8 @@
 }
 
 .epg-toolbar-right button {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--bg-input);
+  border: 1px solid var(--border-base);
   color: var(--text-primary);
   padding: 8px 16px;
   border-radius: 8px;
@@ -63,10 +61,10 @@
 }
 
 .epg-toolbar-right button:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.2);
+  background: var(--bg-hover);
+  border-color: var(--border-elevated);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--shadow-card);
 }
 
 .epg-toolbar-right button:disabled {
@@ -81,8 +79,8 @@
   gap: 20px;
   flex-wrap: wrap;
   align-items: center;
-  background: rgba(0, 0, 0, 0.2);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  background: var(--bg-overlay);
+  border-bottom: 1px solid var(--border-base);
 }
 
 .epg-controls label {
@@ -95,9 +93,9 @@
 }
 
 .epg-controls select {
-  background: rgba(0, 0, 0, 0.3);
+  background: var(--bg-input);
   color: var(--text-primary);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--border-base);
   border-radius: 6px;
   padding: 6px 12px;
   outline: none;
@@ -107,8 +105,8 @@
 }
 
 .epg-controls select:focus-visible {
-  border-color: var(--accent-primary);
-  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 2px var(--accent-action-subtle);
 }
 
 /* --- Search Bar --- */
@@ -116,7 +114,7 @@
   padding: 16px 24px;
   display: flex;
   gap: 12px;
-  background: rgba(0, 0, 0, 0.1);
+  background: var(--bg-overlay);
 }
 
 .epg-search-left {
@@ -124,17 +122,17 @@
   position: relative;
   display: flex;
   align-items: center;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--bg-input);
+  border: 1px solid var(--border-base);
   border-radius: 10px;
   padding: 0 16px;
   transition: all 0.2s;
 }
 
 .epg-search-left:focus-within {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: var(--accent-primary);
-  box-shadow: 0 0 0 1px var(--accent-primary), 0 4px 12px rgba(0, 0, 0, 0.1);
+  background: var(--bg-hover);
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 1px var(--border-focus), var(--shadow-card);
 }
 
 .epg-search-icon {
@@ -154,39 +152,39 @@
 }
 
 .epg-search-right button {
-  background: var(--accent-primary);
-  color: white;
+  background: var(--accent-action);
+  color: var(--text-primary);
   border: none;
   padding: 0 24px;
   border-radius: 10px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+  box-shadow: var(--shadow-accent-action);
 }
 
 .epg-search-right button:hover:not(:disabled) {
   transform: translateY(-1px);
-  filter: brightness(1.1);
-  box-shadow: 0 6px 16px rgba(99, 102, 241, 0.4);
+  background: var(--accent-action-hover);
+  box-shadow: var(--shadow-accent-action);
 }
 
 /* --- Channel Cards --- */
 .epg-card {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--bg-elevated);
   margin: 0 24px 16px;
   /* Spacing between cards */
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-base);
   padding: 20px;
   transition: all 0.2s ease;
 }
 
 .epg-card:hover {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.1);
+  background: var(--bg-hover);
+  border-color: var(--border-elevated);
   transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--shadow-hover);
 }
 
 .epg-channel {
@@ -195,27 +193,26 @@
   gap: 20px;
   margin-bottom: 20px;
   padding-bottom: 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--border-base);
 }
 
 .epg-logo {
   width: 60px;
   height: 40px;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--bg-input);
   border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
   padding: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--border-base);
 }
 
 .epg-logo img {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
 }
 
 .epg-channel-name {
@@ -227,21 +224,21 @@
 
 .epg-channel-group {
   font-size: 12px;
-  color: var(--text-muted);
+  color: var(--text-tertiary);
   margin-top: 4px;
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--bg-hover);
   display: inline-block;
   padding: 2px 8px;
   border-radius: 4px;
 }
 
 .btn-play {
-  background: rgba(99, 102, 241, 0.15);
-  color: #818cf8;
-  border: 1px solid rgba(99, 102, 241, 0.3);
+  background: var(--accent-action-subtle);
+  color: var(--accent-action);
+  border: 1px solid var(--accent-action);
   padding: 8px 16px;
   border-radius: 8px;
   font-size: 13px;
@@ -255,10 +252,10 @@
 }
 
 .btn-play:hover {
-  background: var(--accent-primary);
-  color: white;
-  border-color: var(--accent-primary);
-  box-shadow: 0 0 15px rgba(99, 102, 241, 0.4);
+  background: var(--accent-action);
+  color: var(--text-primary);
+  border-color: var(--accent-action);
+  box-shadow: var(--shadow-accent-action);
 }
 
 /* --- Program List --- */
@@ -279,13 +276,13 @@
 }
 
 .epg-programme:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--bg-hover);
 }
 
 /* Current Program Highlight */
 .epg-programme-current {
-  background: linear-gradient(90deg, rgba(99, 102, 241, 0.1), transparent);
-  border-left: 4px solid var(--accent-primary);
+  background: color-mix(in srgb, var(--accent-action) 12%, transparent);
+  border-left: 4px solid var(--accent-action);
 }
 
 .epg-programme-time {
@@ -308,7 +305,7 @@
 
 .epg-programme-desc {
   font-size: 13px;
-  color: var(--text-muted);
+  color: var(--text-tertiary);
   line-height: 1.5;
   opacity: 0.8;
   white-space: pre-wrap;
@@ -317,14 +314,14 @@
 /* --- Progress Bar --- */
 .epg-progress-container {
   margin-top: 12px;
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--bg-overlay);
   border-radius: 4px;
   padding: 2px;
 }
 
 .epg-progress {
   height: 6px;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--bg-input);
   border-radius: 3px;
   overflow: hidden;
   margin-bottom: 6px;
@@ -332,9 +329,8 @@
 
 .epg-progress-bar {
   height: 100%;
-  background: linear-gradient(90deg, var(--accent-primary), #a5b4fc);
+  background: var(--accent-action);
   border-radius: 3px;
-  box-shadow: 0 0 10px rgba(99, 102, 241, 0.5);
 }
 
 /* --- Labels & Misc --- */
@@ -342,11 +338,11 @@
   padding: 12px 0 8px;
   font-size: 11px;
   font-weight: 700;
-  color: #818cf8;
+  color: var(--accent-action);
   letter-spacing: 1px;
   text-transform: uppercase;
   margin-top: 12px;
-  border-top: 1px dashed rgba(255, 255, 255, 0.1);
+  border-top: 1px dashed var(--border-base);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -376,26 +372,26 @@
 }
 
 .epg-page::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.1);
+  background: var(--bg-overlay);
 }
 
 .epg-page::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--bg-hover);
   border-radius: 4px;
 }
 
 .epg-page::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--border-elevated);
 }
 
 /* --- Pill Selector (Modern Replacement for Dropdowns) --- */
 .epg-pills {
   display: flex;
-  background: rgba(0, 0, 0, 0.3);
+  background: var(--bg-overlay);
   padding: 4px;
   border-radius: 8px;
   gap: 2px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--border-base);
 }
 
 .epg-pill {
@@ -412,11 +408,11 @@
 
 .epg-pill:hover {
   color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--bg-hover);
 }
 
 .epg-pill.active {
-  background: var(--accent-primary);
-  color: white;
-  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
+  background: var(--accent-action);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-accent-action);
 }

@@ -132,10 +132,10 @@
   bottom: 20px;
   right: 20px;
   background: var(--success);
-  color: white;
+  color: var(--text-primary);
   padding: 12px 20px;
   border-radius: 4px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--shadow-card);
   animation: slideIn 0.3s ease-out;
 }
 
@@ -183,7 +183,7 @@
 
 .settings-button.primary {
   background-color: var(--primary);
-  color: white;
+  color: var(--text-primary);
   border: none;
   padding: 10px 24px;
   border-radius: 6px;
@@ -206,8 +206,8 @@
 }
 
 .settings-error-inline {
-  color: var(--error, #ef4444);
-  background: rgba(239, 68, 68, 0.1);
+  color: var(--status-error);
+  background: var(--status-error-subtle);
   padding: 8px 12px;
   border-radius: 4px;
   font-size: 0.9em;
@@ -260,7 +260,7 @@
 }
 
 .status-dot.failed {
-  background-color: var(--error, #ef4444);
+  background-color: var(--status-error);
 }
 
 .status-text {
