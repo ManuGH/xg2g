@@ -2,12 +2,23 @@ package hardware
 
 import "testing"
 
-func TestIsVAAPIReady_DefaultFalse(t *testing.T) {
-	// Reset global state for test isolation
+func resetVaapiState(t *testing.T) {
+	t.Helper()
 	vaapiMu.Lock()
 	vaapiChecked = false
 	vaapiPassed = false
 	vaapiMu.Unlock()
+
+	t.Cleanup(func() {
+		vaapiMu.Lock()
+		vaapiChecked = false
+		vaapiPassed = false
+		vaapiMu.Unlock()
+	})
+}
+
+func TestIsVAAPIReady_DefaultFalse(t *testing.T) {
+	resetVaapiState(t)
 
 	if IsVAAPIReady() {
 		t.Fatal("IsVAAPIReady must be false before preflight runs (fail-closed)")
@@ -15,39 +26,21 @@ func TestIsVAAPIReady_DefaultFalse(t *testing.T) {
 }
 
 func TestIsVAAPIReady_AfterPassedPreflight(t *testing.T) {
-	vaapiMu.Lock()
-	vaapiChecked = false
-	vaapiPassed = false
-	vaapiMu.Unlock()
+	resetVaapiState(t)
 
 	SetVAAPIPreflightResult(true)
 
 	if !IsVAAPIReady() {
 		t.Fatal("IsVAAPIReady must be true after preflight passed")
 	}
-
-	// cleanup
-	vaapiMu.Lock()
-	vaapiChecked = false
-	vaapiPassed = false
-	vaapiMu.Unlock()
 }
 
 func TestIsVAAPIReady_AfterFailedPreflight(t *testing.T) {
-	vaapiMu.Lock()
-	vaapiChecked = false
-	vaapiPassed = false
-	vaapiMu.Unlock()
+	resetVaapiState(t)
 
 	SetVAAPIPreflightResult(false)
 
 	if IsVAAPIReady() {
 		t.Fatal("IsVAAPIReady must be false after preflight failed")
 	}
-
-	// cleanup
-	vaapiMu.Lock()
-	vaapiChecked = false
-	vaapiPassed = false
-	vaapiMu.Unlock()
 }

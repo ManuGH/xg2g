@@ -33,6 +33,9 @@ const (
 	preflightTimeout  = 2 * time.Second
 )
 
+// vaapiEncodersToTest is the list of VAAPI encoders verified during preflight.
+var vaapiEncodersToTest = []string{"h264_vaapi", "hevc_vaapi"}
+
 // LocalAdapter implements ports.MediaPipeline using local exec.Command.
 type LocalAdapter struct {
 	BinPath          string
@@ -149,7 +152,7 @@ func (a *LocalAdapter) PreflightVAAPI() error {
 	encoderList := string(checkOut)
 
 	// 3. Test each encoder with a real 5-frame encode
-	for _, enc := range []string{"h264_vaapi", "hevc_vaapi"} {
+	for _, enc := range vaapiEncodersToTest {
 		if !strings.Contains(encoderList, enc) {
 			a.Logger.Info().Str("encoder", enc).Msg("vaapi preflight: encoder not in ffmpeg build, skipping")
 			continue
