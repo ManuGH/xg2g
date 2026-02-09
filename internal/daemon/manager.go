@@ -17,6 +17,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/admission"
+	"github.com/ManuGH/xg2g/internal/core/urlutil"
 	worker "github.com/ManuGH/xg2g/internal/domain/session/manager"
 	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/infra/bus"
@@ -239,7 +240,7 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 		Str("mode", cfg.Engine.Mode).
 		Str("store", cfg.Store.Path).
 		Str("hls_root", cfg.HLS.Root).
-		Str("e2_host", cfg.Enigma2.BaseURL).
+		Str("e2_host", urlutil.SanitizeURL(cfg.Enigma2.BaseURL)).
 		Msg("starting v3 worker (Phase 7A)")
 
 	// 1. Initialize Bus (Shared)
