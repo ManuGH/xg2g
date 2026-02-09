@@ -140,14 +140,13 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	case model.IntentTypeStreamStart:
 		// Smart Profile Lookup
 		var cap *scan.Capability
-		if s.v3Scan != nil {
-			if c, found := s.v3Scan.GetCapability(req.ServiceRef); found {
-				cap = &c
+			if s.v3Scan != nil {
+				if c, found := s.v3Scan.GetCapability(req.ServiceRef); found {
+					cap = &c
+				}
 			}
-		}
-		}
 
-		hasGPU := hardware.IsVAAPIReady()
+			hasGPU := hardware.IsVAAPIReady()
 		av1OK := hardware.IsVAAPIEncoderReady("av1_vaapi")
 		hevcOK := hardware.IsVAAPIEncoderReady("hevc_vaapi")
 		h264OK := hardware.IsVAAPIEncoderReady("h264_vaapi")
