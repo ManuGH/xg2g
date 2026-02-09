@@ -172,6 +172,7 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 		// Strict constraints for Apple HLS compatibility (fMP4 implied by args builder)
 		spec.TranscodeVideo = true
 		spec.VideoCodec = "hevc"
+		spec.Container = "fmp4"
 		spec.Deinterlace = true
 		spec.VideoCRF = 22        // Conservative start for x265
 		spec.VideoMaxRateK = 5000 // Strict VBV Cap
@@ -183,6 +184,7 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 		// 10x faster than CPU, ~10% CPU usage per stream
 		spec.TranscodeVideo = true
 		spec.VideoCodec = "hevc"
+		spec.Container = "fmp4"
 		spec.Deinterlace = true
 		spec.VideoMaxRateK = 5000 // VBV Cap
 		spec.VideoBufSizeK = 10000
@@ -203,6 +205,7 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 		// Combines GPU encoding (~10% CPU) with LL-HLS (<3s latency)
 		spec.TranscodeVideo = true
 		spec.VideoCodec = "hevc"
+		spec.Container = "fmp4"
 		spec.Deinterlace = true
 		spec.LLHLS = true // Enable Low-Latency HLS with 0.5s part-segments
 		spec.VideoMaxRateK = 5000

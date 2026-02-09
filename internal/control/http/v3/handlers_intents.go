@@ -91,24 +91,6 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 3. Compute Idempotency Key (Server-Side)
-	var idempotencyKey string
-	if intentType == model.IntentTypeStreamStart {
-		// ADR-00X: Universal Delivery Policy
-		// Profile selection is removed. We enforce "universal".
-		requestedProfile := "universal"
-
-		// Bucket: 0 for Live, StartTime/1000 for VOD
-		bucket := "0"
-		if req.StartMs != nil && *req.StartMs > 0 {
-			// VOD/Catchup bucket (1 second resolution)
-			bucket = fmt.Sprintf("%d", *req.StartMs/1000)
-		}
-
-		// Compute Usage Key
-		idempotencyKey = ComputeIdemKey(model.IntentTypeStreamStart, req.ServiceRef, requestedProfile, bucket)
-	}
-
 	// 4. Generate Session ID (Strong UUID)
 	var sessionID string
 	switch intentType {
@@ -156,9 +138,6 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	// 5. Build & Publish Event
 	switch intentType {
 	case model.IntentTypeStreamStart:
-		// Re-resolve profileSpec to get details (Name, etc)
-		reqProfileID := "universal"
-
 		// Smart Profile Lookup
 		var cap *scan.Capability
 		if s.v3Scan != nil {
@@ -198,6 +177,25 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 				fmt.Sprintf("hwaccel=force requested but GPU not available (%s)", reason))
 			return
 		}
+
+		// Resolve Profile ID (Testing override allowed via params).
+		// When profile isn't explicitly specified, honor client codec preferences
+		// (e.g. "av1,hevc,h264") to pick the best output profile.
+		reqProfileID := "universal"
+		if p := normalize.Token(req.Params["profile"]); p != "" {
+			reqProfileID = p
+		} else if picked := pickProfileForCodecs(req.Params["codecs"], hasGPU, hwaccelMode); picked != "" {
+			reqProfileID = picked
+		}
+
+		// Bucket: 0 for Live, StartTime/1000 for VOD (1 second resolution).
+		bucket := "0"
+		if req.StartMs != nil && *req.StartMs > 0 {
+			bucket = fmt.Sprintf("%d", *req.StartMs/1000)
+		}
+
+		// Compute Idempotency Key (Server-Side) after final profile selection.
+		idempotencyKey := ComputeIdemKey(model.IntentTypeStreamStart, req.ServiceRef, reqProfileID, bucket)
 
 		profileSpec := profiles.Resolve(reqProfileID, r.UserAgent(), int(cfg.HLS.DVRWindow.Seconds()), cap, hasGPU, hwaccelMode)
 
@@ -270,12 +268,6 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 			encoderBackend = "none"
 		}
 
-		// Recalculate bucket for idempotency consistency in this scope
-		bucket := "0"
-		if req.StartMs != nil && *req.StartMs > 0 {
-			bucket = fmt.Sprintf("%d", *req.StartMs/1000)
-		}
-
 		logger.Info().
 			Str("ua", r.UserAgent()).
 			Str("profile", profileSpec.Name).
@@ -305,6 +297,9 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		requestParams := map[string]string{
 			"profile": reqProfileID,
 			"bucket":  bucket,
+		}
+		if raw := req.Params["codecs"]; raw != "" {
+			requestParams["codecs"] = raw
 		}
 		if correlationID != "" {
 			requestParams["correlationId"] = correlationID
