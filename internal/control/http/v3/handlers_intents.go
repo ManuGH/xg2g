@@ -145,7 +145,12 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 				cap = &c
 			}
 		}
+		}
+
 		hasGPU := hardware.IsVAAPIReady()
+		av1OK := hardware.IsVAAPIEncoderReady("av1_vaapi")
+		hevcOK := hardware.IsVAAPIEncoderReady("hevc_vaapi")
+		h264OK := hardware.IsVAAPIEncoderReady("h264_vaapi")
 
 		// Parse hwaccel parameter (v3.1+)
 		hwaccelMode := profiles.HWAccelAuto // Default
@@ -184,7 +189,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		reqProfileID := "universal"
 		if p := normalize.Token(req.Params["profile"]); p != "" {
 			reqProfileID = p
-		} else if picked := pickProfileForCodecs(req.Params["codecs"], hasGPU, hwaccelMode); picked != "" {
+		} else if picked := pickProfileForCodecs(req.Params["codecs"], av1OK, hevcOK, h264OK, hwaccelMode); picked != "" {
 			reqProfileID = picked
 		}
 
@@ -197,7 +202,19 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		// Compute Idempotency Key (Server-Side) after final profile selection.
 		idempotencyKey := ComputeIdemKey(model.IntentTypeStreamStart, req.ServiceRef, reqProfileID, bucket)
 
-		profileSpec := profiles.Resolve(reqProfileID, r.UserAgent(), int(cfg.HLS.DVRWindow.Seconds()), cap, hasGPU, hwaccelMode)
+		// Resolve() uses a single hasGPU boolean to decide whether VAAPI is eligible.
+		// For codec-specific profiles (AV1/HEVC/H264), we only pass hasGPU=true when
+		// the corresponding encoder was verified by VAAPI preflight.
+		resolveHasGPU := hasGPU
+		switch reqProfileID {
+		case profiles.ProfileAV1HW:
+			resolveHasGPU = av1OK
+		case profiles.ProfileSafariHEVCHW:
+			resolveHasGPU = hevcOK
+		case profiles.ProfileH264FMP4:
+			resolveHasGPU = h264OK
+		}
+		profileSpec := profiles.Resolve(reqProfileID, r.UserAgent(), int(cfg.HLS.DVRWindow.Seconds()), cap, resolveHasGPU, hwaccelMode)
 
 		// 5.0 Preflight Source Check (fail-closed)
 		if s.enforcePreflight(r.Context(), w, r, cfg, req.ServiceRef) {

@@ -22,6 +22,8 @@ const (
 	ProfileSafariHEVC     = "safari_hevc"
 	ProfileSafariHEVCHW   = "safari_hevc_hw"    // GPU-accelerated HEVC
 	ProfileSafariHEVCHWLL = "safari_hevc_hw_ll" // GPU-accelerated HEVC + LL-HLS
+	ProfileAV1HW          = "av1_hw"            // GPU-accelerated AV1 (VAAPI only)
+	ProfileH264FMP4       = "h264_fmp4"         // Always transcode H.264 + fMP4 (optional VAAPI)
 	ProfileCopy           = "copy"
 	ProfileRepair         = "repair" // High + Transcode (Rescue Mode)
 )
@@ -43,6 +45,8 @@ var aliasMap = map[string]string{
 	"safari_hevc":       ProfileSafariHEVC,
 	"safari_hevc_hw":    ProfileSafariHEVCHW,
 	"safari_hevc_hw_ll": ProfileSafariHEVCHWLL,
+	"av1_hw":            ProfileAV1HW,
+	"h264_fmp4":         ProfileH264FMP4,
 	"copy":              ProfileCopy,
 }
 
@@ -160,6 +164,36 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 		if dvrWindowSec > 0 {
 			spec.DVRWindowSec = dvrWindowSec
 		}
+	case ProfileH264FMP4:
+		// Always transcode to H.264 with fMP4 segments.
+		// Useful for explicit client capability negotiation: "h264" means "make it H.264".
+		spec.TranscodeVideo = true
+		spec.Container = "fmp4"
+		spec.AudioBitrateK = 192
+
+		if cap == nil || cap.Interlaced {
+			spec.Deinterlace = true
+		}
+
+		// HWAccel Decision (respects override)
+		useGPU := shouldUseGPU(hasGPU, hwaccelMode)
+		if useGPU {
+			spec.HWAccel = "vaapi"
+			spec.VideoCodec = "h264"
+			spec.VideoCRF = 16
+			spec.VideoMaxRateK = 20000
+			spec.VideoBufSizeK = 40000
+		} else {
+			spec.VideoCodec = "libx264"
+			spec.VideoCRF = 18
+			spec.VideoMaxRateK = 8000
+			spec.VideoBufSizeK = 16000
+			spec.Preset = "veryfast"
+		}
+
+		if dvrWindowSec > 0 {
+			spec.DVRWindowSec = dvrWindowSec
+		}
 	case ProfileDVR:
 		spec.TranscodeVideo = true
 		spec.Deinterlace = true
@@ -219,6 +253,24 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 			// CPU Fallback: x265 with LL-HLS
 			spec.VideoCodec = "hevc"
 			spec.VideoCRF = 22
+		}
+
+		if dvrWindowSec > 0 {
+			spec.DVRWindowSec = dvrWindowSec
+		}
+	case ProfileAV1HW:
+		// GPU-Accelerated AV1 (VAAPI).
+		// AV1 mandates fMP4 segments (not TS).
+		spec.TranscodeVideo = true
+		spec.VideoCodec = "av1"
+		spec.Container = "fmp4"
+		spec.Deinterlace = true
+		spec.VideoMaxRateK = 6000
+		spec.VideoBufSizeK = 12000
+		spec.AudioBitrateK = 192
+
+		if shouldUseGPU(hasGPU, hwaccelMode) {
+			spec.HWAccel = "vaapi"
 		}
 
 		if dvrWindowSec > 0 {

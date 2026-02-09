@@ -9,9 +9,11 @@ import (
 // pickProfileForCodecs maps a client-preferred codec list (in order) to a concrete profile ID.
 // It returns "" when no override should be applied.
 //
-// This is intentionally conservative: AV1 is only selected when GPU encoding is possible.
-// HEVC can fall back to CPU (x265) via safari_hevc(_hw) profiles.
-func pickProfileForCodecs(raw string, hasGPU bool, hwaccelMode profiles.HWAccelMode) string {
+// This is intentionally conservative:
+// - AV1 is selected only when av1_vaapi is verified (GPU-only).
+// - HEVC prefers VAAPI when hevc_vaapi is verified, otherwise falls back to CPU HEVC profile.
+// - H.264 maps to a dedicated always-transcode profile, with optional VAAPI when h264_vaapi is verified.
+func pickProfileForCodecs(raw string, av1OK, hevcOK, h264OK bool, hwaccelMode profiles.HWAccelMode) string {
 	codecs := parseCodecList(raw)
 	if len(codecs) == 0 {
 		return ""
@@ -23,16 +25,17 @@ func pickProfileForCodecs(raw string, hasGPU bool, hwaccelMode profiles.HWAccelM
 	for _, c := range codecs {
 		switch c {
 		case "av1":
-			if hwAllowed && hasGPU {
+			if hwAllowed && av1OK {
 				return profiles.ProfileAV1HW
 			}
 		case "hevc":
-			// Prefer HW profile when possible, but allow CPU fallback via the same profile.
-			// Resolve() will choose vaapi when hasGPU+auto/force.
-			return profiles.ProfileSafariHEVCHW
+			if hwAllowed && hevcOK {
+				return profiles.ProfileSafariHEVCHW
+			}
+			return profiles.ProfileSafariHEVC
 		case "h264":
-			// Prefer Safari profile for fMP4 output + VAAPI H.264 when available.
-			return profiles.ProfileSafari
+			_ = h264OK // Resolve() will choose VAAPI when h264OK is passed as hasGPU.
+			return profiles.ProfileH264FMP4
 		}
 	}
 
@@ -76,4 +79,3 @@ func parseCodecList(raw string) []string {
 	}
 	return out
 }
-

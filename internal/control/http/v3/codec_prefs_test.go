@@ -22,14 +22,14 @@ func TestPickProfileForCodecs(t *testing.T) {
 	t.Parallel()
 
 	// AV1 only when GPU is available + hwaccel not off.
-	require.Equal(t, profiles.ProfileAV1HW, pickProfileForCodecs("av1,hevc,h264", true, profiles.HWAccelAuto))
-	require.Equal(t, profiles.ProfileSafariHEVCHW, pickProfileForCodecs("av1,hevc,h264", false, profiles.HWAccelAuto))
-	require.Equal(t, profiles.ProfileSafariHEVCHW, pickProfileForCodecs("av1,hevc,h264", true, profiles.HWAccelOff))
+	require.Equal(t, profiles.ProfileAV1HW, pickProfileForCodecs("av1,hevc,h264", true, true, true, profiles.HWAccelAuto))
+	require.Equal(t, profiles.ProfileSafariHEVC, pickProfileForCodecs("av1,hevc,h264", false, false, true, profiles.HWAccelAuto))
+	require.Equal(t, profiles.ProfileSafariHEVC, pickProfileForCodecs("av1,hevc,h264", true, true, true, profiles.HWAccelOff))
 
 	// HEVC wins when listed first.
-	require.Equal(t, profiles.ProfileSafariHEVCHW, pickProfileForCodecs("hevc,h264", true, profiles.HWAccelAuto))
+	require.Equal(t, profiles.ProfileSafariHEVCHW, pickProfileForCodecs("hevc,h264", false, true, true, profiles.HWAccelAuto))
+	require.Equal(t, profiles.ProfileSafariHEVC, pickProfileForCodecs("hevc,h264", false, false, true, profiles.HWAccelAuto))
 
 	// H264 falls back.
-	require.Equal(t, profiles.ProfileSafari, pickProfileForCodecs("h264", true, profiles.HWAccelAuto))
+	require.Equal(t, profiles.ProfileH264FMP4, pickProfileForCodecs("h264", false, false, true, profiles.HWAccelAuto))
 }
-

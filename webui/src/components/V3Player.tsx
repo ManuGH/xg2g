@@ -1039,7 +1039,6 @@ function V3Player(props: V3PlayerProps) {
         await ensureSessionCookie();
 
         const preferredCodecs = await detectPreferredCodecs(videoRef.current as unknown as HTMLVideoElement | null);
-        debugLog('[V3Player] codec prefs', { preferredCodecs });
 
         const res = await fetch(`${apiBase}/intents`, {
           method: 'POST',
