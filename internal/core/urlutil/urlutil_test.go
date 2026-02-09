@@ -3,7 +3,7 @@ package urlutil
 import "testing"
 
 func TestSanitizeURL_RemovesUserInfoAndQuery(t *testing.T) {
-	in := "http://user:pass@example.com:1234/some/path?ref=abc&x=1"
+	in := "http://user:pass@example.com:1234/some/path?token=abc&x=1"
 	got := SanitizeURL(in)
 	if got == in {
 		t.Fatalf("expected sanitized URL to differ, got same: %q", got)
@@ -20,4 +20,3 @@ func TestSanitizeURL_InvalidInputDoesNotLeak(t *testing.T) {
 		t.Fatalf("unexpected sanitized value: %q", got)
 	}
 }
-
