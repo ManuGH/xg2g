@@ -18,6 +18,11 @@ if grep -q '\${' "$COMPOSE_FILE"; then
   exit 1
 fi
 
+if grep -qE '^[[:space:]]*build:[[:space:]]*' "$COMPOSE_FILE"; then
+  echo "ERROR: Prod docker-compose.yml contains build: (forbidden; must be image-only)." >&2
+  exit 1
+fi
+
 cfg="$(mktemp)"
 trap 'rm -f "$cfg"' EXIT
 

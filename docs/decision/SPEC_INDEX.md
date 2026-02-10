@@ -7,14 +7,14 @@ operational procedures.
 ## 1. Normative Hierarchy
 
 1. **ADR-009 suite**: Foundational contract and semantics.
-    - [ADR-009: Decision Engine Core](file:///root/xg2g/docs/ADR/009-playback-decision-spec.md)
-    - [ADR-009.1: Container Neutrality Patch](file:///root/xg2g/docs/ADR/009.1-playback-decision-spec-patch.md)
-    - [ADR-009.2: Hash & Unicode Normality](file:///root/xg2g/docs/ADR/009.2-hash-semantics.md)
+    - [ADR-009: Decision Engine Core](../ADR/009-playback-decision-spec.md)
+    - [ADR-009.1: Container Neutrality Patch](../ADR/009.1-playback-decision-spec-patch.md)
+    - [ADR-009.2: Hash & Unicode Normality](../ADR/009.2-hash-semantics.md)
 2. **Property Proofs**: Frozen mechanical invariants (`proof_test.go`).
-3. **Operation Policy**: [Client Profiles (Range/HLS Policy)](file:///root/xg2g/docs/ops/CLIENT_PROFILES.md).
-4. **Incident Playbook**: [Playback Triage](file:///root/xg2g/docs/ops/INCIDENT_PLAYBOOK_DECISION.md).
-5. **Storage Strategy**: [ADR-020: SQLite Truth](file:///root/xg2g/docs/ADR/ADR-020_STORAGE_STRATEGY.md)
-   and [Storage Invariants](file:///root/xg2g/docs/ops/STORAGE_INVARIANTS.md).
+3. **Operation Policy**: [Client Profiles (Range/HLS Policy)](../ops/CLIENT_PROFILES.md).
+4. **Incident Playbook**: [Playback Triage](../ops/INCIDENT_PLAYBOOK_DECISION.md).
+5. **Storage Strategy**: [ADR-020: SQLite Truth](../ADR/ADR-020_STORAGE_STRATEGY.md)
+   and [Storage Invariants](../ops/STORAGE_INVARIANTS.md).
 6. **Normative Root Keys**: Shared list defined in `decode.go` (`rootKeys`).
 
 ---

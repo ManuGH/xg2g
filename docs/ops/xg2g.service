@@ -20,7 +20,6 @@ WorkingDirectory=/srv/xg2g
 
 # Load env (explicitly required)
 EnvironmentFile=/etc/xg2g/xg2g.env
-Environment=XG2G_IMAGE=ghcr.io/manugh/xg2g:3.1.7
 
 # Fail-closed: enforce mandatory config (XG2G_E2_HOST or XG2G_OWI_BASE)
 # These checks fail cleanly before any containers are touched and reject whitespace-only values.

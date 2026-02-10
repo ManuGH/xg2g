@@ -28,8 +28,9 @@ Precedence: **Environment Variables** > **Configuration File** > **Defaults**.
 | :--- | :--- | :--- |
 | `XG2G_ENGINE_ENABLED` | `true` | Enable V3 worker/orchestrator |
 | `XG2G_ENGINE_MODE` | `standard` | Mode: `standard` or `virtual` |
-| `XG2G_STORE_BACKEND` | `memory` | Cache: `memory` or `sqlite` |
-| `XG2G_HLS_ROOT` | `/var/lib/xg2g/hls` | Directory for HLS segments |
+| `XG2G_STORE_BACKEND` | `sqlite` | State store: `sqlite` or `memory` |
+| `XG2G_STORE_PATH` | `/var/lib/xg2g/store` | Store path (sqlite) |
+| `XG2G_HLS_ROOT` | `${XG2G_DATA}/hls` | Directory for HLS segments |
 | `XG2G_STREAMING_POLICY`| `universal` | Only `universal` supported (ADR-00X) |
 | `XG2G_TUNER_SLOTS` | (auto) | Range (e.g., `0-3`) or CSV (`0,1,2`) |
 

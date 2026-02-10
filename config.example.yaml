@@ -222,26 +222,21 @@ picons:
 # Picons:
 #   XG2G_PICON_BASE              - Base URL for channel logos
 #
-# v3 (/api/v3/*; env-first, enigma2 also configurable via config.yaml):
-#   XG2G_V3_WORKER_ENABLED       - Enable v3 worker/store
-#   XG2G_V3_WORKER_MODE          - Worker mode (standard or virtual)
-#   XG2G_V3_CONFIG_STRICT        - Enable strict v3 config validation
-#   XG2G_V3_STORE_BACKEND        - Store backend (memory or sqlite)
-#   XG2G_V3_STORE_PATH           - Store path for bolt backend
-#   XG2G_V3_HLS_ROOT             - HLS output root for v3 sessions
-#   XG2G_V3_SHADOW_INTENTS       - Enable shadow intents from v2 proxy
-#   XG2G_V3_SHADOW_TARGET        - Shadow intents target URL
-#   XG2G_V3_E2_HOST              - Enigma2 receiver base URL (defaults to XG2G_OWI_BASE)
-#   XG2G_V3_E2_USER              - Enigma2 username (v3)
-#   XG2G_V3_E2_PASS              - Enigma2 password (v3)
-#   XG2G_V3_E2_TIMEOUT           - Enigma2 HTTP timeout (e.g., 10s)
-#   XG2G_V3_E2_RESPONSE_HEADER_TIMEOUT - Enigma2 response header timeout (e.g., 10s)
-#   XG2G_V3_E2_RETRIES           - Enigma2 retry attempts
-#   XG2G_V3_E2_BACKOFF           - Enigma2 retry backoff (e.g., 200ms)
-#   XG2G_V3_E2_MAX_BACKOFF       - Enigma2 max backoff (e.g., 2s)
-#   XG2G_V3_E2_RATE_LIMIT        - Enigma2 rate limit (req/sec)
-#   XG2G_V3_E2_RATE_BURST        - Enigma2 burst capacity
-#   XG2G_V3_E2_USER_AGENT        - Enigma2 User-Agent
+# Streaming Engine (/api/v3/*; env-first, enigma2 also configurable via config.yaml):
+# Note: legacy `XG2G_V3_*` keys are blocked by config guardrails in current releases.
+#   XG2G_ENGINE_ENABLED          - Enable streaming engine (true/false)
+#   XG2G_ENGINE_MODE             - Engine mode (standard or virtual)
+#   XG2G_ENGINE_IDLE_TIMEOUT     - Engine idle timeout (e.g., 5m)
+#   XG2G_STORE_BACKEND           - Store backend (sqlite recommended)
+#   XG2G_STORE_PATH              - Store path (default: /var/lib/xg2g/store)
+#   XG2G_HLS_ROOT                - HLS output root (default: $XG2G_DATA/hls)
+#   XG2G_TUNER_SLOTS             - Allowed tuner slots (range or CSV)
+#   XG2G_E2_HOST                 - Enigma2 receiver base URL (defaults to XG2G_OWI_BASE)
+#   XG2G_E2_USER                 - Enigma2 username
+#   XG2G_E2_PASS                 - Enigma2 password
+#   XG2G_E2_TIMEOUT              - Enigma2 HTTP timeout (e.g., 10s)
+#   XG2G_E2_RETRIES              - Enigma2 retry attempts
+#   XG2G_USE_WEBIF_STREAMS       - Use /web/stream.m3u8 when available (true/false)
 #
 # ==============================================================================
 # Usage Examples
