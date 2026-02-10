@@ -82,9 +82,8 @@
 }
 
 /* Mobile responsive */
-@media (max-width: 968px) {
+@media (max-width: 768px) {
   .grid {
     grid-template-columns: 1fr;
   }
 }
-

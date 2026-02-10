@@ -31,6 +31,8 @@
   padding: 14px 16px;
   backdrop-filter: blur(10px);
   transition: all var(--motion-standard) var(--ease-standard);
+  /* Glass gradient shimmer */
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, transparent 40%);
 }
 
 .card:hover {
@@ -215,15 +217,15 @@
 }
 
 .ramNormal {
-  background: var(--status-success);
+  background: linear-gradient(90deg, var(--status-success), #2dd4bf);
 }
 
 .ramWarning {
-  background: var(--status-warning);
+  background: linear-gradient(90deg, var(--status-warning), #fb923c);
 }
 
 .ramCritical {
-  background: var(--status-error);
+  background: linear-gradient(90deg, var(--status-error), #ef4444);
   box-shadow: var(--shadow-status-error);
   animation: statusPulse 2s ease-in-out infinite;
 }
@@ -295,7 +297,7 @@
   font-size: 9px;
   font-weight: 700;
   padding: 1px 6px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   flex-shrink: 0;
@@ -389,3 +391,35 @@
   white-space: nowrap;
 }
 
+/* Mobile: collapse grids */
+@media (max-width: 768px) {
+  .page {
+    padding: 12px;
+    height: auto;
+    overflow-y: visible;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cardWide {
+    grid-column: span 1;
+  }
+
+  .card {
+    padding: 12px 14px;
+  }
+
+  .card:hover {
+    transform: none;
+  }
+
+  .tunerGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .ramUsed {
+    font-size: 22px;
+  }
+}

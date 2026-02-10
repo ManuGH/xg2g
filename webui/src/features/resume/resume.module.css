@@ -30,7 +30,6 @@
 
 .barFill {
   height: 100%;
-  background: var(--accent-action);
+  background: var(--gradient-action);
   opacity: 0.9;
 }
-

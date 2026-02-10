@@ -44,12 +44,15 @@
 }
 
 .button[data-variant="primary"] {
-  background: var(--accent-action);
+  background: var(--gradient-action);
   color: var(--text-primary);
+  border-color: transparent;
+  box-shadow: 0 2px 8px rgba(74, 144, 245, 0.25);
 }
 
 .button[data-variant="primary"]:hover:not(:disabled) {
   background: var(--accent-action-hover);
+  box-shadow: 0 4px 16px rgba(74, 144, 245, 0.35);
 }
 
 .button[data-variant="secondary"] {
@@ -104,4 +107,17 @@
 .button[data-variant="secondary"][data-state="invalid"] {
   border-color: var(--status-error);
   color: var(--status-error);
+}
+
+/* Mobile: ensure touch targets */
+@media (max-width: 768px) {
+  .button {
+    min-height: 44px;
+  }
+
+  .button[data-variant="primary"]:active:not(:disabled) {
+    transform: scale(0.97);
+    box-shadow: 0 1px 4px rgba(74, 144, 245, 0.2);
+    transition: transform var(--motion-micro) var(--ease-standard);
+  }
 }

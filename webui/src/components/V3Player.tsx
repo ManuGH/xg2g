@@ -209,6 +209,20 @@ function V3Player(props: V3PlayerProps) {
     const ua = navigator.userAgent.toLowerCase();
     return ua.includes('safari') && !ua.includes('chrome') && !ua.includes('chromium') && !ua.includes('android');
   }, []);
+
+  // Mobile Detection (iOS 26 optimized controls)
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
+    return window.matchMedia('(max-width: 768px)').matches;
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const mql = window.matchMedia('(max-width: 768px)');
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mql.addEventListener('change', handler);
+    return () => mql.removeEventListener('change', handler);
+  }, []);
   // ADR-00X: Profile selection removed (universal policy only)
 
   // ADR-009: Session Lease Semantics
@@ -575,8 +589,8 @@ function V3Player(props: V3PlayerProps) {
             | undefined;
           const reasonDetail =
             (json && typeof json === 'object' ? (json.reason_detail ?? json.reasonDetail ?? json.detail) : undefined) as
-              | string
-              | undefined;
+            | string
+            | undefined;
 
           const combined = `${reason ?? 'GONE'}${reasonDetail ? `: ${reasonDetail}` : ''}`;
           const details = {
@@ -939,7 +953,7 @@ function V3Player(props: V3PlayerProps) {
 
         const resolution = resolvePlaybackInfoPolicy(capabilities, pInfo);
 
-          if (resolution.mode === 'normative') {
+        if (resolution.mode === 'normative') {
           // Type Assertion: We treat the object as strictly normative here.
           // Any access to pInfo.url or decision outputs will now fail compile-time check (if we used the var).
           const normativePInfo = pInfo as unknown as NormativePlaybackInfo;
@@ -1648,10 +1662,13 @@ function V3Player(props: V3PlayerProps) {
     // If no container, we can't listen.
     if (!container) return;
 
+    // iOS 26: longer timeout on touch devices for better UX
+    const idleTimeoutMs = isMobile ? 5000 : 3000;
+
     const resetIdle = () => {
       setIsIdle(false);
       if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current);
-      idleTimerRef.current = window.setTimeout(() => setIsIdle(true), 3000);
+      idleTimerRef.current = window.setTimeout(() => setIsIdle(true), idleTimeoutMs);
     };
 
     // Initial start
@@ -1661,20 +1678,41 @@ function V3Player(props: V3PlayerProps) {
     const onClick = () => resetIdle();
     const onKey = () => resetIdle();
 
+    // Touch: tap-to-toggle (show → start idle timer; if already visible, toggle off)
+    const onTouch = (e: TouchEvent) => {
+      // Don't toggle if tapping on controls themselves
+      const target = e.target as HTMLElement;
+      if (target.closest('button') || target.closest('input') || target.closest('[role="slider"]')) {
+        resetIdle();
+        return;
+      }
+      if (isIdle) {
+        resetIdle(); // Show controls
+      } else {
+        setIsIdle(true); // Hide controls
+        if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current);
+      }
+    };
+
     container.addEventListener('mousemove', onMove);
     container.addEventListener('click', onClick);
     container.addEventListener('keydown', onKey);
-    // Also listen to touch for mobile
-    container.addEventListener('touchstart', onClick);
+    // Mobile: tap-to-toggle instead of simple reset
+    if (isMobile) {
+      container.addEventListener('touchstart', onTouch, { passive: true });
+    } else {
+      container.addEventListener('touchstart', onClick);
+    }
 
     return () => {
       if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current);
       container.removeEventListener('mousemove', onMove);
       container.removeEventListener('click', onClick);
       container.removeEventListener('keydown', onKey);
+      container.removeEventListener('touchstart', onTouch);
       container.removeEventListener('touchstart', onClick);
     };
-  }, []);
+  }, [isMobile, isIdle]);
 
 
   // Update sRef on channel change
@@ -1861,18 +1899,18 @@ function V3Player(props: V3PlayerProps) {
 
       {/* Error Toast */}
       {error && (
-          <div className={styles.errorToast} aria-live="polite" role="alert">
-            <div className={styles.errorMain}>
-              <span className={styles.errorText}>⚠ {error}</span>
-              <Button variant="secondary" size="sm" onClick={handleRetry}>{t('common.retry')}</Button>
-            </div>
-            {errorDetails && (
-              <button
-                onClick={() => setShowErrorDetails(!showErrorDetails)}
-                className={styles.errorDetailsButton}
-              >
-                {showErrorDetails ? t('common.hideDetails') : t('common.showDetails')}
-              </button>
+        <div className={styles.errorToast} aria-live="polite" role="alert">
+          <div className={styles.errorMain}>
+            <span className={styles.errorText}>⚠ {error}</span>
+            <Button variant="secondary" size="sm" onClick={handleRetry}>{t('common.retry')}</Button>
+          </div>
+          {errorDetails && (
+            <button
+              onClick={() => setShowErrorDetails(!showErrorDetails)}
+              className={styles.errorDetailsButton}
+            >
+              {showErrorDetails ? t('common.hideDetails') : t('common.showDetails')}
+            </button>
           )}
           {showErrorDetails && errorDetails && (
             <div className={styles.errorDetailsContent}>
@@ -1889,12 +1927,16 @@ function V3Player(props: V3PlayerProps) {
         {hasSeekWindow ? (
           <div className={[styles.vodControls, styles.seekControls].join(' ')}>
             <div className={styles.seekButtons}>
-              <Button variant="ghost" size="sm" onClick={() => seekBy(-900)} title={t('player.seekBack15m')} aria-label={t('player.seekBack15m')}>
-                ↺ 15m
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => seekBy(-60)} title={t('player.seekBack60s')} aria-label={t('player.seekBack60s')}>
-                ↺ 60s
-              </Button>
+              {!isMobile && (
+                <Button variant="ghost" size="sm" onClick={() => seekBy(-900)} title={t('player.seekBack15m')} aria-label={t('player.seekBack15m')}>
+                  ↺ 15m
+                </Button>
+              )}
+              {!isMobile && (
+                <Button variant="ghost" size="sm" onClick={() => seekBy(-60)} title={t('player.seekBack60s')} aria-label={t('player.seekBack60s')}>
+                  ↺ 60s
+                </Button>
+              )}
               <Button variant="ghost" size="sm" onClick={() => seekBy(-15)} title={t('player.seekBack15s')} aria-label={t('player.seekBack15s')}>
                 ↺ 15s
               </Button>
@@ -1931,12 +1973,16 @@ function V3Player(props: V3PlayerProps) {
               <Button variant="ghost" size="sm" onClick={() => seekBy(15)} title={t('player.seekForward15s')} aria-label={t('player.seekForward15s')}>
                 +15s
               </Button>
-              <Button variant="ghost" size="sm" onClick={() => seekBy(60)} title={t('player.seekForward60s')} aria-label={t('player.seekForward60s')}>
-                +60s
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => seekBy(900)} title={t('player.seekForward15m')} aria-label={t('player.seekForward15m')}>
-                +15m
-              </Button>
+              {!isMobile && (
+                <Button variant="ghost" size="sm" onClick={() => seekBy(60)} title={t('player.seekForward60s')} aria-label={t('player.seekForward60s')}>
+                  +60s
+                </Button>
+              )}
+              {!isMobile && (
+                <Button variant="ghost" size="sm" onClick={() => seekBy(900)} title={t('player.seekForward15m')} aria-label={t('player.seekForward15m')}>
+                  +15m
+                </Button>
+              )}
             </div>
 
             {isLiveMode && (
