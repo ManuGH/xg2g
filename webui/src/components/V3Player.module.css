@@ -209,6 +209,7 @@
   background: var(--bg-input);
   padding: 12px;
   border-radius: var(--radius-sm);
+  white-space: pre-wrap;
   word-break: break-all;
   max-height: 200px;
   overflow-y: auto;
@@ -426,4 +427,3 @@
     width: calc(100% - 32px);
   }
 }
-
