@@ -19,13 +19,6 @@ import (
 func TestLayeringRules(t *testing.T) {
 	projectRoot := findProjectRoot(t)
 
-	// Known tech debt: temporary exemptions (to be removed incrementally)
-	exemptions := map[string]bool{
-		"internal/infra/ffmpeg/builder.go -> github.com/ManuGH/xg2g/internal/control/vod": true,
-		"internal/infra/ffmpeg/probe.go -> github.com/ManuGH/xg2g/internal/control/vod":   true,
-		"internal/infra/ffmpeg/runner.go -> github.com/ManuGH/xg2g/internal/control/vod":  true,
-	}
-
 	violations := []string{}
 
 	// Rule 1: control/http/v3 MUST NOT directly import infra/* (bypasses domain layer)
@@ -90,27 +83,9 @@ func TestLayeringRules(t *testing.T) {
 		"Do not import internal/infrastructure (use internal/infra instead)",
 	)...)
 
-	// Filter out known exemptions
-	filteredViolations := []string{}
-	for _, v := range violations {
-		if !isExempted(exemptions, v) {
-			filteredViolations = append(filteredViolations, v)
-		}
-	}
-
-	if len(filteredViolations) > 0 {
+	if len(violations) > 0 {
 		t.Errorf("Layering violations detected:\n\n%s\n\nSee docs/arch/PACKAGE_LAYOUT.md for policy details.",
-			strings.Join(filteredViolations, "\n"))
-	}
-
-	// Warn about exemptions (not a failure, just visibility)
-	if len(violations) > len(filteredViolations) {
-		t.Logf("⚠️  %d known layering violations are exempted (tech debt):", len(violations)-len(filteredViolations))
-		for _, v := range violations {
-			if isExempted(exemptions, v) {
-				t.Logf("  %s", strings.Split(v, "\n")[0])
-			}
-		}
+			strings.Join(violations, "\n"))
 	}
 }
 
@@ -218,26 +193,6 @@ func checkForbiddenImportExcept(t *testing.T, projectRoot, sourceDir, forbiddenI
 	}
 
 	return violations
-}
-
-// isExempted checks if a violation is in the known exemption list.
-func isExempted(exemptions map[string]bool, violation string) bool {
-	// Extract file path and import from violation string
-	// Format: "  ❌ <file> imports <import>\n     Reason: <reason>"
-	lines := strings.Split(violation, "\n")
-	if len(lines) == 0 {
-		return false
-	}
-	firstLine := strings.TrimSpace(lines[0])
-	firstLine = strings.TrimPrefix(firstLine, "❌ ")
-	parts := strings.Split(firstLine, " imports ")
-	if len(parts) != 2 {
-		return false
-	}
-	file := strings.TrimSpace(parts[0])
-	imp := strings.TrimSpace(parts[1])
-	key := file + " -> " + imp
-	return exemptions[key]
 }
 
 func findGoFiles(root string) ([]string, error) {

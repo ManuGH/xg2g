@@ -29,7 +29,8 @@ func RecordingLivePlaylistReady(cacheDir string) (string, bool) {
 	content := string(data)
 	lines := strings.Split(content, "\n")
 
-	// VOD Recording uses TS-HLS only (no fMP4), so we only check for .ts segments
+	// The playlist may reference TS-HLS segments or CMAF/fMP4 segments.
+	// We only consider URI lines (non-#), which correspond to media segment filenames.
 	hasSegment := false
 	for _, l := range lines {
 		l = strings.TrimSpace(l)

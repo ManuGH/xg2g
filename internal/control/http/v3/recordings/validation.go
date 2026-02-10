@@ -16,8 +16,6 @@ var (
 	ErrInvalidRecordingRef = errors.New("recording ref invalid")
 )
 
-const ()
-
 // ValidateRecordingRef checks if the service reference string is valid.
 func ValidateRecordingRef(serviceRef string) error {
 	// Security: Ensure input is valid UTF-8 before processing
@@ -127,12 +125,18 @@ func ShouldEscapeRefChar(c byte) bool {
 	return true
 }
 
-// IsAllowedVideoSegment provides a single canonical check for segment serving.
-// VOD Recording uses TS-HLS only for maximum compatibility.
-// STRICT: Only allow files starting with "seg_" and ending with .ts extension.
+// IsAllowedVideoSegment provides a single canonical allowlist for recordings HLS artifact serving.
+//
+// Allowed artifacts (by base name):
+// - init.mp4 (fMP4/CMAF init segment)
+// - seg_*.ts (MPEG-TS segments)
+// - seg_*.m4s (fMP4/CMAF media segments)
+// - seg_*.cmfv (CMAF video segments; alternative extension used by some toolchains)
+//
+// Security: This is intentionally strict to prevent arbitrary file exposure.
 func IsAllowedVideoSegment(path string) bool {
-	name := strings.Split(path, "/")
-	base := name[len(name)-1]
+	parts := strings.Split(path, "/")
+	base := parts[len(parts)-1]
 
 	// Allow init.mp4 for fMP4
 	if base == "init.mp4" {
@@ -143,8 +147,11 @@ func IsAllowedVideoSegment(path string) bool {
 		return false
 	}
 
-	// VOD Recording outputs TS or fMP4 segments
-	// Use case-insensitive check on the extension ONLY (or end of string) of the BASE name.
 	baseLower := strings.ToLower(base)
-	return strings.HasSuffix(baseLower, ".ts") || strings.HasSuffix(baseLower, ".m4s") || strings.HasSuffix(baseLower, ".cmfv")
+	for _, ext := range []string{".ts", ".m4s", ".cmfv"} {
+		if strings.HasSuffix(baseLower, ext) {
+			return true
+		}
+	}
+	return false
 }
