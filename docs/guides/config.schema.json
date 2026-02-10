@@ -292,7 +292,7 @@
           "type": "string"
         },
         "password": {
-          "description": "Enigma2 authentication password (if required). Can also be provided via environment variable XG2G_V3_E2_PASS. Never logged in plaintext. Environment variables are expanded.",
+          "description": "Enigma2 authentication password (if required). Can also be provided via environment variable XG2G_E2_PASS (canonical) or XG2G_OWI_PASS (legacy). Never logged in plaintext. Environment variables are expanded.",
           "examples": [
             "dreambox",
             "${ENIGMA_PASSWORD}"
