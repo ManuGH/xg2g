@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/control/http/v3/middleware"
+	"github.com/ManuGH/xg2g/internal/control/middleware"
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
