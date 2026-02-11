@@ -83,6 +83,9 @@ metrics:
   enabled: false
   listenAddr: ""
 network:
+  lan:
+    allow:
+      cidrs: []
   outbound:
     allow:
       cidrs: []

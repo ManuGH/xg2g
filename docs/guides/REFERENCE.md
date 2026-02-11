@@ -44,6 +44,10 @@ Precedence: **Environment Variables** > **Configuration File** > **Defaults**.
 | `XG2G_E2_PASS` | - | Enigma2 password |
 | `XG2G_E2_TIMEOUT` | `10s` | HTTP timeout |
 | `XG2G_E2_RETRIES` | `2` | Number of retry attempts |
+| `XG2G_E2_MAX_BACKOFF` | `30s` | Max retry backoff duration (canonical) |
+| `XG2G_E2_STREAM_PORT` | `8001` | Deprecated direct stream port override (canonical) |
+
+Legacy fallback keys (compat only): `XG2G_OWI_MAX_BACKOFF_MS`, `XG2G_STREAM_PORT`.
 
 ### Feature Flags & Safety
 

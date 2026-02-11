@@ -282,7 +282,7 @@
         },
         "maxBackoff": {
           "default": "30s",
-          "description": "Maximum backoff duration for exponential backoff (Go duration format)",
+          "description": "Maximum backoff duration for exponential backoff (Go duration format). Environment: XG2G_E2_MAX_BACKOFF (canonical), XG2G_OWI_MAX_BACKOFF_MS (legacy fallback).",
           "examples": [
             "2s",
             "5s",
@@ -355,6 +355,8 @@
         },
         "streamPort": {
           "default": 8001,
+          "deprecated": true,
+          "description": "Deprecated direct stream port override. Environment: XG2G_E2_STREAM_PORT (canonical), XG2G_STREAM_PORT (legacy fallback).",
           "type": "integer"
         },
         "timeout": {
@@ -645,6 +647,22 @@
     },
     "network": {
       "properties": {
+        "lan": {
+          "properties": {
+            "allow": {
+              "properties": {
+                "cidrs": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
         "outbound": {
           "properties": {
             "allow": {
@@ -716,7 +734,7 @@
         "maxBackoff": {
           "default": "30s",
           "deprecated": true,
-          "description": "Maximum backoff duration for exponential backoff (Go duration format)",
+          "description": "Legacy alias for enigma2.maxBackoff. Environment fallback: XG2G_OWI_MAX_BACKOFF_MS.",
           "examples": [
             "30s",
             "1m",
@@ -751,7 +769,7 @@
         "streamPort": {
           "default": 8001,
           "deprecated": true,
-          "description": "Port number for IPTV streaming URLs",
+          "description": "Legacy alias for enigma2.streamPort. Environment fallback: XG2G_STREAM_PORT.",
           "examples": [
             8001,
             8002

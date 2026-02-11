@@ -76,7 +76,7 @@ Aliases: `openWebIF.*` (compat; prefer `enigma2.*`).
 | `enigma2.backoff` | `XG2G_OWI_BACKOFF_MS` | `200ms` | Active | Advanced |
 | `enigma2.baseUrl` | `XG2G_OWI_BASE` | - | Active | Simple |
 | `enigma2.fallbackTo8001` | `XG2G_E2_FALLBACK_TO_8001` | `true` | Active | Integrator |
-| `enigma2.maxBackoff` | `XG2G_OWI_MAX_BACKOFF_MS` | `30s` | Active | Advanced |
+| `enigma2.maxBackoff` | `XG2G_E2_MAX_BACKOFF` | `30s` | Active | Advanced |
 | `enigma2.password` | `XG2G_OWI_PASS` | - | Active | Simple |
 | `enigma2.preflightTimeout` | `XG2G_E2_PREFLIGHT_TIMEOUT` | `10s` | Active | Advanced |
 | `enigma2.probeSize` | - | `5M` | Active | Advanced |
@@ -84,7 +84,7 @@ Aliases: `openWebIF.*` (compat; prefer `enigma2.*`).
 | `enigma2.rateLimit` | - | - | Active | Advanced |
 | `enigma2.responseHeaderTimeout` | - | `10s` | Active | Advanced |
 | `enigma2.retries` | `XG2G_OWI_RETRIES` | `2` | Active | Advanced |
-| `enigma2.streamPort` | `XG2G_STREAM_PORT` | `8001` | Deprecated | Advanced |
+| `enigma2.streamPort` | `XG2G_E2_STREAM_PORT` | `8001` | Deprecated | Advanced |
 | `enigma2.timeout` | `XG2G_OWI_TIMEOUT_MS` | `10s` | Active | Advanced |
 | `enigma2.tuneTimeout` | - | `10s` | Active | Advanced |
 | `enigma2.useWebIFStreams` | `XG2G_USE_WEBIF_STREAMS` | `true` | Active | Advanced |
@@ -160,6 +160,7 @@ Aliases: `openWebIF.*` (compat; prefer `enigma2.*`).
 
 | Path | Env | Default | Status | Profile |
 | --- | --- | --- | --- | --- |
+| `network.lan.allow.cidrs` | `XG2G_LAN_ALLOW_CIDRS` | - | Active | Advanced |
 | `network.outbound.allow.cidrs` | `XG2G_OUTBOUND_ALLOW_CIDRS` | - | Active | Advanced |
 | `network.outbound.allow.hosts` | `XG2G_OUTBOUND_ALLOW_HOSTS` | - | Active | Advanced |
 | `network.outbound.allow.ports` | `XG2G_OUTBOUND_ALLOW_PORTS` | - | Active | Advanced |
