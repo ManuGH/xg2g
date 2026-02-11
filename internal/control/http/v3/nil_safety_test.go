@@ -42,27 +42,9 @@ func TestSetDependencies_HandlesTypedNil(t *testing.T) {
 
 	// Insecure assignment would do: srv.v3Bus = typedNilBus (srv.v3Bus != nil)
 	// Secure assignment via SetDependencies:
-	srv.SetDependencies(
-		typedNilBus, // bus
-		nil,         // store
-		nil,         // resume
-		nil,         // scan
-		nil,         // rpm
-		nil,         // cm
-		nil,         // sm
-		nil,         // se
-		nil,         // vm
-		nil,         // epg
-		nil,         // hm
-		nil,         // ls
-		nil,         // ss
-		nil,         // ds
-		nil,         // svs
-		nil,         // ts
-		nil,         // recSvc
-		nil,         // requestShutdown
-		nil,         // preflightProvider
-	)
+	srv.SetDependencies(Dependencies{
+		Bus: typedNilBus,
+	})
 
 	assert.Nil(t, srv.v3Bus, "v3Bus field must be TRULY nil after receiving a typed nil pointer")
 }

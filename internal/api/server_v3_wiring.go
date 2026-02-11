@@ -72,27 +72,27 @@ func (s *Server) syncV3HandlerDependencies() {
 		return
 	}
 
-	deps.handler.SetDependencies(
-		deps.bus,
-		deps.store,
-		deps.resume,
-		deps.scan,
-		deps.recordingPathMapper,
-		deps.channelManager,
-		deps.seriesManager,
-		deps.seriesEngine,
-		deps.vodManager,
-		deps.epgCache,
-		deps.healthManager,
-		logSourceWrapper{},
-		deps.scan,
-		&dvrSourceWrapper{s},
-		deps.channelManager,
-		&dvrSourceWrapper{s},
-		deps.recordingsService,
-		deps.requestShutdown,
-		deps.preflightProvider,
-	)
+	deps.handler.SetDependencies(v3.Dependencies{
+		Bus:               deps.bus,
+		Store:             deps.store,
+		ResumeStore:       deps.resume,
+		Scan:              deps.scan,
+		PathMapper:        deps.recordingPathMapper,
+		ChannelManager:    deps.channelManager,
+		SeriesManager:     deps.seriesManager,
+		SeriesEngine:      deps.seriesEngine,
+		VODManager:        deps.vodManager,
+		EPGCache:          deps.epgCache,
+		HealthManager:     deps.healthManager,
+		LogSource:         logSourceWrapper{},
+		ScanSource:        deps.scan,
+		DVRSource:         &dvrSourceWrapper{s},
+		ServicesSource:    deps.channelManager,
+		TimersSource:      &dvrSourceWrapper{s},
+		RecordingsService: deps.recordingsService,
+		RequestShutdown:   deps.requestShutdown,
+		PreflightProvider: deps.preflightProvider,
+	})
 }
 
 // WireV3Runtime applies runtime-provided v3 dependencies in one DI call.
@@ -115,11 +115,6 @@ func (s *Server) WireV3Runtime(
 	if handler != nil && adm != nil {
 		handler.SetAdmission(adm)
 	}
-}
-
-// SetV3Components configures v3 event bus, store, and scan manager.
-func (s *Server) SetV3Components(b bus.Bus, st store.StateStore, rs resume.Store, sm *scan.Manager) {
-	s.WireV3Runtime(b, st, rs, sm, nil)
 }
 
 // SetVerificationStore configures the verification store for drift detection status.
@@ -173,13 +168,6 @@ func (s *Server) SetResolver(r recservice.Resolver) {
 func (s *Server) SetRecordingsService(svc recservice.Service) {
 	s.recordingsService = svc
 	s.syncV3HandlerDependencies()
-}
-
-// SetAdmission sets the controller for admission control.
-func (s *Server) SetAdmission(adm *admission.Controller) {
-	if s.v3Handler != nil {
-		s.v3Handler.SetAdmission(adm)
-	}
 }
 
 type logSourceWrapper struct{}

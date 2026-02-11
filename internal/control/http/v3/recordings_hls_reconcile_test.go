@@ -148,7 +148,7 @@ func TestGetRecordingHLSPlaylist_FailedPromotesReady(t *testing.T) {
 	// Use successRunner
 	vodMgr, err := vod.NewManager(&successRunner{fsRoot: t.TempDir()}, &noopProber{}, nil)
 	require.NoError(t, err)
-	srv.SetDependencies(nil, nil, nil, nil, nil, nil, nil, nil, vodMgr, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	srv.SetDependencies(Dependencies{VODManager: vodMgr})
 
 	cacheDir := filepath.Join(hlsRoot, "recordings", v3recordings.RecordingCacheKey(serviceRef))
 	require.NoError(t, os.MkdirAll(cacheDir, 0750))
@@ -185,7 +185,7 @@ func TestGetRecordingHLSPlaylist_Failed_Reconcile_BuildCallbackPromotesReady(t *
 	// Use successRunner
 	vodMgr, err := vod.NewManager(&successRunner{fsRoot: t.TempDir()}, &noopProber{}, nil)
 	require.NoError(t, err)
-	srv.SetDependencies(nil, nil, nil, nil, nil, nil, nil, nil, vodMgr, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	srv.SetDependencies(Dependencies{VODManager: vodMgr})
 
 	vodMgr.SeedMetadata(serviceRef, vod.Metadata{
 		State: vod.ArtifactStateFailed,
@@ -227,7 +227,7 @@ func TestGetRecordingHLSPlaylist_FailedStampedeTriggersSingleBuild(t *testing.T)
 	srv := NewServer(cfg, nil, nil)
 	vodMgr, err := vod.NewManager(runner, &noopProber{}, mapper)
 	require.NoError(t, err)
-	srv.SetDependencies(nil, nil, nil, nil, mapper, nil, nil, nil, vodMgr, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	srv.SetDependencies(Dependencies{PathMapper: mapper, VODManager: vodMgr})
 
 	vodMgr.SeedMetadata(serviceRef, vod.Metadata{
 		State: vod.ArtifactStateFailed,
@@ -273,7 +273,7 @@ func TestGetRecordingHLSPlaylist_FailedLatencySLO(t *testing.T) {
 	require.NoError(t, err)
 
 	srv := NewServer(cfg, nil, nil)
-	srv.SetDependencies(nil, nil, nil, nil, nil, nil, nil, nil, vodMgr, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	srv.SetDependencies(Dependencies{VODManager: vodMgr})
 
 	vodMgr.SeedMetadata(serviceRef, vod.Metadata{
 		State: vod.ArtifactStateFailed,
@@ -333,7 +333,7 @@ func TestGetRecordingHLSPlaylist_OpenFailure_ReconcileReady(t *testing.T) {
 	srv := NewServer(cfg, nil, nil)
 	vodMgr, err := vod.NewManager(&successRunner{fsRoot: t.TempDir()}, &slowProber{delay: 50 * time.Millisecond}, pathMapper)
 	require.NoError(t, err)
-	srv.SetDependencies(nil, nil, nil, nil, nil, nil, nil, nil, vodMgr, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	srv.SetDependencies(Dependencies{VODManager: vodMgr})
 
 	cacheDir, err := v3recordings.RecordingCacheDir(cfg.HLS.Root, serviceRef)
 	require.NoError(t, err)
