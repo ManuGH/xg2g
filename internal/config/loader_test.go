@@ -137,10 +137,9 @@ openWebIF:
 	}
 }
 
-func TestENVCanonicalStreamPortOverridesLegacy(t *testing.T) {
+func TestENVCanonicalStreamPortUsedWhenSet(t *testing.T) {
 	t.Setenv("XG2G_OWI_BASE", "http://example.com")
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
-	t.Setenv("XG2G_STREAM_PORT", "7001")
 	t.Setenv("XG2G_E2_STREAM_PORT", "7101")
 
 	loader := NewLoader("", "test-version")
@@ -150,7 +149,23 @@ func TestENVCanonicalStreamPortOverridesLegacy(t *testing.T) {
 	}
 
 	if cfg.Enigma2.StreamPort != 7101 {
-		t.Errorf("expected canonical stream port to override legacy: 7101, got %d", cfg.Enigma2.StreamPort)
+		t.Errorf("expected canonical stream port: 7101, got %d", cfg.Enigma2.StreamPort)
+	}
+}
+
+func TestENVStreamPortAliasConflictFails(t *testing.T) {
+	t.Setenv("XG2G_OWI_BASE", "http://example.com")
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_STREAM_PORT", "7001")
+	t.Setenv("XG2G_E2_STREAM_PORT", "7101")
+
+	loader := NewLoader("", "test-version")
+	_, err := loader.Load()
+	if err == nil {
+		t.Fatal("expected alias conflict error, got nil")
+	}
+	if !strings.Contains(err.Error(), "openWebIF.streamPort conflicts with enigma2.streamPort") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

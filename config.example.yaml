@@ -21,10 +21,9 @@ logLevel: "info"
 # Data directory for cache, playlists, and recordings
 dataDir: "/tmp"
 # ------------------------------------------------------------------------------
-# OpenWebIF (Receiver) Configuration [REQUIRED for streaming]
-# Compatibility alias for enigma2.* (prefer enigma2.* for new configs)
+# Enigma2 (Receiver) Configuration [REQUIRED for streaming]
 # ------------------------------------------------------------------------------
-openWebIF:
+enigma2:
   # Base URL of your Enigma2 receiver (e.g. http://192.168.1.50)
   baseUrl: "http://127.0.0.1"
   # Optional: HTTP Basic Auth
@@ -41,13 +40,19 @@ openWebIF:
   # Use /web/stream.m3u logic? (Recommended: true)
   # If true, asks receiver to generate stream URL (handles 17999 transcoding automatically).
   useWebIFStreams: true
+
+# Legacy YAML alias (compat only):
+# openWebIF:
+#   baseUrl: "http://127.0.0.1"
+#   timeout: "10s"
+#   retries: 2
+#   streamPort: 8001
+#   useWebIFStreams: true
 # ------------------------------------------------------------------------------
-# Enigma2 (v3 Worker) Client Configuration [OPTIONAL]
+# Enigma2 Advanced Options [OPTIONAL]
 # ------------------------------------------------------------------------------
 # enigma2:
 #   fallbackTo8001: false
-#   # Base URL for v3 worker (defaults to openWebIF.baseUrl if empty)
-#   # baseUrl: "http://127.0.0.1"
 
 #   # Optional: HTTP Basic Auth (if required by OpenWebIF)
 #   # username: "root"
@@ -187,16 +192,31 @@ picons:
 #   XG2G_DATA                    - Data directory path
 #   XG2G_LOG_LEVEL               - Log level (debug, info, warn, error)
 #
-# OpenWebIF:
-#   XG2G_OWI_BASE                - Base URL (REQUIRED)
-#   XG2G_OWI_USER                - Username for authentication
-#   XG2G_OWI_PASS                - Password for authentication
-#   XG2G_OWI_TIMEOUT_MS          - Request timeout in milliseconds
-#   XG2G_OWI_RETRIES             - Maximum retry attempts
-#   XG2G_OWI_BACKOFF_MS          - Initial backoff delay in milliseconds
-#   XG2G_OWI_MAX_BACKOFF_MS      - Maximum backoff delay in milliseconds
-#   XG2G_STREAM_PORT             - Stream port number
-#   XG2G_USE_WEBIF_STREAMS       - Use /web/stream.m3u URLs (true/false)
+# Enigma2 (canonical):
+#   XG2G_E2_HOST                 - Base URL (REQUIRED)
+#   XG2G_E2_USER                 - Username for authentication
+#   XG2G_E2_PASS                 - Password for authentication
+#   XG2G_E2_TIMEOUT              - Request timeout (Go duration, e.g. 10s)
+#   XG2G_E2_RETRIES              - Maximum retry attempts
+#   XG2G_E2_BACKOFF              - Initial backoff (Go duration, e.g. 200ms)
+#   XG2G_E2_MAX_BACKOFF          - Maximum backoff (Go duration, e.g. 30s)
+#   XG2G_E2_STREAM_PORT          - Deprecated direct stream port override
+#   XG2G_E2_USE_WEBIF_STREAMS    - Use /web/stream.m3u URLs (true/false)
+#   XG2G_E2_RESPONSE_HEADER_TIMEOUT - HTTP response header timeout (Go duration)
+#   XG2G_E2_TUNE_TIMEOUT         - Tune timeout (Go duration)
+#   XG2G_E2_AUTH_MODE            - inherit|none|explicit
+#   XG2G_E2_RATE_LIMIT           - Optional per-session request rate limit
+#   XG2G_E2_RATE_BURST           - Optional burst allowance for rate limit
+#   XG2G_E2_USER_AGENT           - Optional User-Agent override
+#   XG2G_E2_ANALYZE_DURATION     - FFmpeg analyze duration
+#   XG2G_E2_PROBE_SIZE           - FFmpeg probe size
+#   XG2G_E2_FALLBACK_TO_8001     - Fallback to :8001 when relay fails
+#   XG2G_E2_PREFLIGHT_TIMEOUT    - TS preflight timeout
+#
+# Enigma2 legacy fallback (compat only):
+#   XG2G_OWI_BASE, XG2G_OWI_USER, XG2G_OWI_PASS
+#   XG2G_OWI_TIMEOUT_MS, XG2G_OWI_RETRIES, XG2G_OWI_BACKOFF_MS, XG2G_OWI_MAX_BACKOFF_MS
+#   XG2G_STREAM_PORT, XG2G_USE_WEBIF_STREAMS
 #
 # Bouquets:
 #   XG2G_BOUQUET                 - Comma-separated list of bouquet names (empty = all)
@@ -231,12 +251,12 @@ picons:
 #   XG2G_STORE_PATH              - Store path (default: /var/lib/xg2g/store)
 #   XG2G_HLS_ROOT                - HLS output root (default: $XG2G_DATA/hls)
 #   XG2G_TUNER_SLOTS             - Allowed tuner slots (range or CSV)
-#   XG2G_E2_HOST                 - Enigma2 receiver base URL (defaults to XG2G_OWI_BASE)
+#   XG2G_E2_HOST                 - Enigma2 receiver base URL (preferred; legacy fallback: XG2G_OWI_BASE)
 #   XG2G_E2_USER                 - Enigma2 username
 #   XG2G_E2_PASS                 - Enigma2 password
 #   XG2G_E2_TIMEOUT              - Enigma2 HTTP timeout (e.g., 10s)
 #   XG2G_E2_RETRIES              - Enigma2 retry attempts
-#   XG2G_USE_WEBIF_STREAMS       - Use /web/stream.m3u8 when available (true/false)
+#   XG2G_E2_USE_WEBIF_STREAMS    - Use /web/stream.m3u8 when available (true/false)
 #
 # ==============================================================================
 # Usage Examples
@@ -246,7 +266,7 @@ picons:
 #    ./xg2g-daemon --config config.yaml
 #
 # 2. Using environment variables only:
-#    XG2G_OWI_BASE=http://192.168.1.100 \
+#    XG2G_E2_HOST=http://192.168.1.100 \
 #    XG2G_EPG_ENABLED=true \
 #    ./xg2g-daemon
 #

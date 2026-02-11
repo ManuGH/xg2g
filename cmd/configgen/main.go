@@ -177,8 +177,8 @@ var openWebIFAliases = map[string]string{
 }
 
 var generatedExampleFallbacks = map[string]any{
-	"openWebIF.baseUrl": "http://127.0.0.1",
-	"bouquets":          []string{},
+	"enigma2.baseUrl": "http://127.0.0.1",
+	"bouquets":        []string{},
 }
 
 func configPathsForEntry(entry config.ConfigEntry) []string {
@@ -200,9 +200,6 @@ func isAliasPath(entry config.ConfigEntry, path string) bool {
 func examplePathsForEntry(entry config.ConfigEntry) []string {
 	if entry.Path == "" {
 		return nil
-	}
-	if alias, ok := openWebIFAliases[entry.Path]; ok {
-		return []string{alias}
 	}
 	return []string{entry.Path}
 }

@@ -103,6 +103,26 @@ func (l *Loader) checkAliasConflicts(src *FileConfig) error {
 				return equalDurationString(cfg.OpenWebIF.MaxBackoff, cfg.Enigma2.MaxBackoff)
 			},
 		},
+		{
+			openKey: "streamPort",
+			e2Key:   "streamPort",
+			equal: func(cfg *FileConfig) bool {
+				if cfg.Enigma2.StreamPort == nil {
+					return false
+				}
+				return cfg.OpenWebIF.StreamPort == *cfg.Enigma2.StreamPort
+			},
+		},
+		{
+			openKey: "useWebIFStreams",
+			e2Key:   "useWebIFStreams",
+			equal: func(cfg *FileConfig) bool {
+				if cfg.OpenWebIF.UseWebIF == nil || cfg.Enigma2.UseWebIF == nil {
+					return false
+				}
+				return *cfg.OpenWebIF.UseWebIF == *cfg.Enigma2.UseWebIF
+			},
+		},
 	}
 
 	for _, pair := range pairs {
@@ -178,6 +198,18 @@ func (l *Loader) checkAliasEnvConflicts(src *FileConfig) error {
 			return aliasConflictError("maxBackoff", "maxBackoff")
 		}
 	}
+	if presence.openWebIF["streamPort"] {
+		if v, ok := envInt("XG2G_E2_STREAM_PORT"); ok && src.OpenWebIF.StreamPort != v {
+			return aliasConflictError("streamPort", "streamPort")
+		}
+	}
+	if presence.openWebIF["useWebIFStreams"] {
+		if v, ok := envBool("XG2G_E2_USE_WEBIF_STREAMS"); ok {
+			if src.OpenWebIF.UseWebIF == nil || *src.OpenWebIF.UseWebIF != v {
+				return aliasConflictError("useWebIFStreams", "useWebIFStreams")
+			}
+		}
+	}
 
 	// YAML enigma2 vs ENV openWebIF
 	if presence.enigma2["baseUrl"] {
@@ -213,6 +245,20 @@ func (l *Loader) checkAliasEnvConflicts(src *FileConfig) error {
 	if presence.enigma2["maxBackoff"] {
 		if d, ok := envDurationMS("XG2G_OWI_MAX_BACKOFF_MS"); ok && !equalDurationEnv(src.Enigma2.MaxBackoff, d) {
 			return aliasConflictError("maxBackoff", "maxBackoff")
+		}
+	}
+	if presence.enigma2["streamPort"] {
+		if v, ok := envInt("XG2G_STREAM_PORT"); ok {
+			if src.Enigma2.StreamPort == nil || *src.Enigma2.StreamPort != v {
+				return aliasConflictError("streamPort", "streamPort")
+			}
+		}
+	}
+	if presence.enigma2["useWebIFStreams"] {
+		if v, ok := envBool("XG2G_USE_WEBIF_STREAMS"); ok {
+			if src.Enigma2.UseWebIF == nil || *src.Enigma2.UseWebIF != v {
+				return aliasConflictError("useWebIFStreams", "useWebIFStreams")
+			}
 		}
 	}
 
@@ -253,6 +299,16 @@ func (l *Loader) checkAliasEnvToEnvConflicts() error {
 	if owi, ok := envDurationMS("XG2G_OWI_MAX_BACKOFF_MS"); ok {
 		if e2, ok := envDuration("XG2G_E2_MAX_BACKOFF"); ok && owi != e2 {
 			return aliasConflictError("maxBackoff", "maxBackoff")
+		}
+	}
+	if owi, ok := envInt("XG2G_STREAM_PORT"); ok {
+		if e2, ok := envInt("XG2G_E2_STREAM_PORT"); ok && owi != e2 {
+			return aliasConflictError("streamPort", "streamPort")
+		}
+	}
+	if owi, ok := envBool("XG2G_USE_WEBIF_STREAMS"); ok {
+		if e2, ok := envBool("XG2G_E2_USE_WEBIF_STREAMS"); ok && owi != e2 {
+			return aliasConflictError("useWebIFStreams", "useWebIFStreams")
 		}
 	}
 
@@ -341,4 +397,23 @@ func envDurationMS(key string) (time.Duration, bool) {
 		return 0, false
 	}
 	return time.Duration(parsed) * time.Millisecond, true
+}
+
+func envBool(key string) (bool, bool) {
+	v, ok := os.LookupEnv(key)
+	if !ok {
+		return false, false
+	}
+	v = strings.TrimSpace(strings.ToLower(v))
+	if v == "" {
+		return false, false
+	}
+	switch v {
+	case "true", "1", "yes":
+		return true, true
+	case "false", "0", "no":
+		return false, true
+	default:
+		return false, false
+	}
 }

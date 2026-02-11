@@ -25,23 +25,22 @@ engine:
 enigma2:
   analyzeDuration: "2000000"
   authMode: inherit
+  backoff: 200ms
+  baseUrl: http://127.0.0.1
   fallbackTo8001: true
+  maxBackoff: 30s
+  password: ""
   preflightTimeout: 10s
   probeSize: 5M
   rateBurst: 0
   rateLimit: 0
   responseHeaderTimeout: 10s
-  tuneTimeout: 10s
-  userAgent: ""
-openWebIF:
-  backoff: 200ms
-  baseUrl: http://127.0.0.1
-  maxBackoff: 30s
-  password: ""
   retries: 2
   streamPort: 8001
   timeout: 10s
+  tuneTimeout: 10s
   useWebIFStreams: true
+  userAgent: ""
   username: ""
 epg:
   days: 14

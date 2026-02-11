@@ -15,7 +15,7 @@ Precedence: **Environment Variables** > **Configuration File** > **Defaults**.
 
 | Variable | Description | Example/Default |
 | :--- | :--- | :--- |
-| `XG2G_OWI_BASE` | Base URL of receiver (required) | `http://192.168.1.50` |
+| `XG2G_E2_HOST` | Base URL of receiver (required) | `http://192.168.1.50` |
 | `XG2G_DATA` | Data directory for cache/logs | `/tmp` |
 | `XG2G_LOG_LEVEL` | Logging verbosity (debug, info, warn, error) | `info` |
 | `XG2G_API_TOKEN` | Primary admin bearer token | - |
@@ -44,10 +44,22 @@ Precedence: **Environment Variables** > **Configuration File** > **Defaults**.
 | `XG2G_E2_PASS` | - | Enigma2 password |
 | `XG2G_E2_TIMEOUT` | `10s` | HTTP timeout |
 | `XG2G_E2_RETRIES` | `2` | Number of retry attempts |
+| `XG2G_E2_BACKOFF` | `200ms` | Initial retry backoff |
 | `XG2G_E2_MAX_BACKOFF` | `30s` | Max retry backoff duration (canonical) |
 | `XG2G_E2_STREAM_PORT` | `8001` | Deprecated direct stream port override (canonical) |
+| `XG2G_E2_USE_WEBIF_STREAMS` | `true` | Prefer `/web/stream.m3u` URL path |
+| `XG2G_E2_RESPONSE_HEADER_TIMEOUT` | `10s` | HTTP response header timeout |
+| `XG2G_E2_TUNE_TIMEOUT` | `10s` | Tune timeout before fallback/error |
+| `XG2G_E2_AUTH_MODE` | `inherit` | Auth behavior (`inherit|none|explicit`) |
+| `XG2G_E2_RATE_LIMIT` | - | Optional per-session rate limit |
+| `XG2G_E2_RATE_BURST` | - | Optional burst for rate limiting |
+| `XG2G_E2_USER_AGENT` | - | Optional User-Agent override |
+| `XG2G_E2_ANALYZE_DURATION` | `2000000` | FFmpeg analyze duration |
+| `XG2G_E2_PROBE_SIZE` | `5M` | FFmpeg probe size |
+| `XG2G_E2_FALLBACK_TO_8001` | `true` | Fallback to legacy port 8001 |
+| `XG2G_E2_PREFLIGHT_TIMEOUT` | `10s` | TS preflight timeout |
 
-Legacy fallback keys (compat only): `XG2G_OWI_MAX_BACKOFF_MS`, `XG2G_STREAM_PORT`.
+Legacy fallback keys (compat only): `XG2G_OWI_BASE`, `XG2G_OWI_USER`, `XG2G_OWI_PASS`, `XG2G_OWI_TIMEOUT_MS`, `XG2G_OWI_RETRIES`, `XG2G_OWI_BACKOFF_MS`, `XG2G_OWI_MAX_BACKOFF_MS`, `XG2G_STREAM_PORT`, `XG2G_USE_WEBIF_STREAMS`.
 
 ### Feature Flags & Safety
 
@@ -63,10 +75,9 @@ Legacy fallback keys (compat only): `XG2G_OWI_MAX_BACKOFF_MS`, `XG2G_STREAM_PORT
 Default location: `config.yaml`. Strict validation is enabled by default.
 
 ```yaml
-openWebIF:
+enigma2:
   baseUrl: "http://192.168.1.50"
   streamPort: 8001
-enigma2:
   authMode: "inherit"
 epg:
   enabled: true
