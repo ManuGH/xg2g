@@ -152,6 +152,10 @@ func enigma2FilePatchFromEnigma2(src Enigma2Config) (enigma2FilePatch, error) {
 		v := *src.UseWebIF
 		patch.UseWebIFStreams = &v
 	}
+	if src.StreamPort != nil {
+		v := *src.StreamPort
+		patch.StreamPort = &v
+	}
 	if src.Timeout != "" {
 		d, err := time.ParseDuration(src.Timeout)
 		if err != nil {

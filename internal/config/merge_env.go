@@ -172,6 +172,8 @@ func (l *Loader) mergeEnvCanonicalEnigma2(cfg *AppConfig) {
 	cfg.Enigma2.ResponseHeaderTimeout = l.envDuration("XG2G_E2_RESPONSE_HEADER_TIMEOUT", cfg.Enigma2.ResponseHeaderTimeout)
 	cfg.Enigma2.Retries = l.envInt("XG2G_E2_RETRIES", cfg.Enigma2.Retries)
 	cfg.Enigma2.Backoff = l.envDuration("XG2G_E2_BACKOFF", cfg.Enigma2.Backoff)
+	cfg.Enigma2.MaxBackoff = l.envDuration("XG2G_E2_MAX_BACKOFF", cfg.Enigma2.MaxBackoff)
+	cfg.Enigma2.StreamPort = l.envInt("XG2G_E2_STREAM_PORT", cfg.Enigma2.StreamPort)
 	cfg.Enigma2.FallbackTo8001 = l.envBool("XG2G_E2_FALLBACK_TO_8001", cfg.Enigma2.FallbackTo8001)
 	cfg.Enigma2.PreflightTimeout = l.envDuration("XG2G_E2_PREFLIGHT_TIMEOUT", cfg.Enigma2.PreflightTimeout)
 }

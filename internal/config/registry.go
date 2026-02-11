@@ -103,8 +103,8 @@ func buildRegistry() (*Registry, error) {
 		{Path: "enigma2.tuneTimeout", Env: "", FieldPath: "Enigma2.TuneTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 10 * time.Second},
 		{Path: "enigma2.retries", Env: "XG2G_OWI_RETRIES", FieldPath: "Enigma2.Retries", Profile: ProfileAdvanced, Status: StatusActive, Default: 2},
 		{Path: "enigma2.backoff", Env: "XG2G_OWI_BACKOFF_MS", FieldPath: "Enigma2.Backoff", Profile: ProfileAdvanced, Status: StatusActive, Default: 200 * time.Millisecond},
-		{Path: "enigma2.maxBackoff", Env: "XG2G_OWI_MAX_BACKOFF_MS", FieldPath: "Enigma2.MaxBackoff", Profile: ProfileAdvanced, Status: StatusActive, Default: 30 * time.Second},
-		{Path: "enigma2.streamPort", Env: "XG2G_STREAM_PORT", FieldPath: "Enigma2.StreamPort", Profile: ProfileAdvanced, Status: StatusDeprecated, Default: 8001},
+		{Path: "enigma2.maxBackoff", Env: "XG2G_E2_MAX_BACKOFF", FieldPath: "Enigma2.MaxBackoff", Profile: ProfileAdvanced, Status: StatusActive, Default: 30 * time.Second},
+		{Path: "enigma2.streamPort", Env: "XG2G_E2_STREAM_PORT", FieldPath: "Enigma2.StreamPort", Profile: ProfileAdvanced, Status: StatusDeprecated, Default: 8001},
 		{Path: "enigma2.useWebIFStreams", Env: "XG2G_USE_WEBIF_STREAMS", FieldPath: "Enigma2.UseWebIFStreams", Profile: ProfileAdvanced, Status: StatusActive, Default: true},
 		{Path: "enigma2.fallbackTo8001", Env: "XG2G_E2_FALLBACK_TO_8001", FieldPath: "Enigma2.FallbackTo8001", Profile: ProfileIntegrator, Status: StatusActive, Default: true},
 		{Path: "enigma2.authMode", Env: "", FieldPath: "Enigma2.AuthMode", Profile: ProfileAdvanced, Status: StatusActive, Default: "inherit"},
@@ -164,6 +164,7 @@ func buildRegistry() (*Registry, error) {
 
 		// --- SECURITY / PROXIES ---
 		{Path: "trustedProxies", Env: "XG2G_TRUSTED_PROXIES", FieldPath: "TrustedProxies", Profile: ProfileAdvanced, Status: StatusActive}, // Fix D: Active now
+		{Path: "network.lan.allow.cidrs", Env: "XG2G_LAN_ALLOW_CIDRS", FieldPath: "Network.LAN.Allow.CIDRs", Profile: ProfileAdvanced, Status: StatusActive},
 		{Path: "network.outbound.enabled", Env: "XG2G_OUTBOUND_ENABLED", FieldPath: "Network.Outbound.Enabled", Profile: ProfileAdvanced, Status: StatusActive, Default: false},
 		{Path: "network.outbound.allow.hosts", Env: "XG2G_OUTBOUND_ALLOW_HOSTS", FieldPath: "Network.Outbound.Allow.Hosts", Profile: ProfileAdvanced, Status: StatusActive},
 		{Path: "network.outbound.allow.cidrs", Env: "XG2G_OUTBOUND_ALLOW_CIDRS", FieldPath: "Network.Outbound.Allow.CIDRs", Profile: ProfileAdvanced, Status: StatusActive},

@@ -36,7 +36,7 @@ func TestMergeFileConfig_UseWebIFPrefersEnigma2Alias(t *testing.T) {
 	}
 }
 
-func TestMergeFileConfig_StreamPortUsesOpenWebIFPath(t *testing.T) {
+func TestMergeFileConfig_StreamPortPrefersEnigma2Alias(t *testing.T) {
 	loader := NewLoader("", "test")
 	cfg := AppConfig{}
 	if err := loader.setDefaults(&cfg); err != nil {
@@ -57,7 +57,7 @@ func TestMergeFileConfig_StreamPortUsesOpenWebIFPath(t *testing.T) {
 		}
 	})
 
-	t.Run("enigma2 streamPort alias currently ignored", func(t *testing.T) {
+	t.Run("enigma2 streamPort overrides openWebIF fallback", func(t *testing.T) {
 		port := 9200
 		src := &FileConfig{
 			Enigma2: Enigma2Config{
@@ -67,8 +67,8 @@ func TestMergeFileConfig_StreamPortUsesOpenWebIFPath(t *testing.T) {
 		if err := loader.mergeFileConfig(&cfg, src); err != nil {
 			t.Fatalf("mergeFileConfig() failed: %v", err)
 		}
-		if cfg.Enigma2.StreamPort != 9100 {
-			t.Fatalf("expected stream port to remain from openWebIF path, got %d", cfg.Enigma2.StreamPort)
+		if cfg.Enigma2.StreamPort != 9200 {
+			t.Fatalf("expected enigma2 stream port to override openWebIF fallback, got %d", cfg.Enigma2.StreamPort)
 		}
 	})
 }
@@ -86,6 +86,8 @@ func TestMergeEnvConfig_CanonicalEnigma2OverridesLegacyOWI(t *testing.T) {
 	unsetEnv(t, "XG2G_E2_RETRIES")
 	unsetEnv(t, "XG2G_OWI_BACKOFF_MS")
 	unsetEnv(t, "XG2G_E2_BACKOFF")
+	unsetEnv(t, "XG2G_STREAM_PORT")
+	unsetEnv(t, "XG2G_E2_STREAM_PORT")
 
 	t.Setenv("XG2G_OWI_BASE", "http://legacy.local")
 	t.Setenv("XG2G_E2_HOST", "http://canonical.local")
@@ -99,6 +101,8 @@ func TestMergeEnvConfig_CanonicalEnigma2OverridesLegacyOWI(t *testing.T) {
 	t.Setenv("XG2G_E2_RETRIES", "9")
 	t.Setenv("XG2G_OWI_BACKOFF_MS", "250")
 	t.Setenv("XG2G_E2_BACKOFF", "700ms")
+	t.Setenv("XG2G_STREAM_PORT", "7001")
+	t.Setenv("XG2G_E2_STREAM_PORT", "7101")
 
 	loader := NewLoader("", "test")
 	cfg := AppConfig{}
@@ -126,9 +130,12 @@ func TestMergeEnvConfig_CanonicalEnigma2OverridesLegacyOWI(t *testing.T) {
 	if cfg.Enigma2.Backoff != 700*time.Millisecond {
 		t.Fatalf("expected canonical backoff 700ms, got %v", cfg.Enigma2.Backoff)
 	}
+	if cfg.Enigma2.StreamPort != 7101 {
+		t.Fatalf("expected canonical streamPort 7101, got %d", cfg.Enigma2.StreamPort)
+	}
 }
 
-func TestMergeEnvConfig_MaxBackoffUsesLegacyOWIEnvKey(t *testing.T) {
+func TestMergeEnvConfig_MaxBackoffPrefersCanonicalEnv(t *testing.T) {
 	unsetEnv(t, "XG2G_OWI_MAX_BACKOFF_MS")
 	unsetEnv(t, "XG2G_E2_MAX_BACKOFF")
 
@@ -143,7 +150,7 @@ func TestMergeEnvConfig_MaxBackoffUsesLegacyOWIEnvKey(t *testing.T) {
 
 	loader.mergeEnvConfig(&cfg)
 
-	if cfg.Enigma2.MaxBackoff != 4*time.Second {
-		t.Fatalf("expected maxBackoff from legacy OWI env key, got %v", cfg.Enigma2.MaxBackoff)
+	if cfg.Enigma2.MaxBackoff != 9*time.Second {
+		t.Fatalf("expected maxBackoff from canonical enigma2 env key, got %v", cfg.Enigma2.MaxBackoff)
 	}
 }
