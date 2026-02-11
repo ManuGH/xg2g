@@ -26,6 +26,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/api"
 	"github.com/ManuGH/xg2g/internal/config"
+	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -35,11 +36,12 @@ func TestAPIServerContract(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	cfg := config.AppConfig{
-		Version:   "test",
-		DataDir:   tmpDir,
-		Bouquet:   "Test",
-		XMLTVPath: "xmltv.xml",
-		APIToken:  "test-token",
+		Version:        "test",
+		DataDir:        tmpDir,
+		Bouquet:        "Test",
+		XMLTVPath:      "xmltv.xml",
+		APIToken:       "test-token",
+		APITokenScopes: []string{string(v3.ScopeV3Read), string(v3.ScopeV3Write), string(v3.ScopeV3Status)},
 		Enigma2: config.Enigma2Settings{
 			BaseURL:    "http://example.com",
 			StreamPort: 8001,
@@ -92,9 +94,9 @@ func TestAPIServerContract(t *testing.T) {
 	})
 
 	t.Run("StatusEndpointContract", func(t *testing.T) {
-		// Contract: /api/v2/system/health returns JSON with system health information
-		req := httptest.NewRequest(http.MethodGet, "/api/v2/system/health", nil)
-		req.Header.Set("X-API-Token", "test-token")
+		// Contract: /api/v3/system/health returns JSON with system health information
+		req := httptest.NewRequest(http.MethodGet, "/api/v3/system/health", nil)
+		req.Header.Set("Authorization", "Bearer test-token")
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
 
@@ -109,7 +111,9 @@ func TestAPIServerContract(t *testing.T) {
 		// Contract: Health response must have system status fields
 		assert.Contains(t, health, "version", "Health must contain version")
 		assert.Contains(t, health, "status", "Health must contain status")
-		assert.Contains(t, health, "uptime_seconds", "Health must contain uptime_seconds")
+		_, hasUptimeCamel := health["uptimeSeconds"]
+		_, hasUptimeSnake := health["uptime_seconds"]
+		assert.True(t, hasUptimeCamel || hasUptimeSnake, "Health must contain uptime field")
 
 		// Contract: version must be string
 		assert.IsType(t, "", health["version"], "version must be string")
@@ -119,7 +123,7 @@ func TestAPIServerContract(t *testing.T) {
 	})
 
 	t.Run("AuthenticationContract", func(t *testing.T) {
-		// Contract: Protected endpoints require X-API-Token header
+		// Contract: Protected v3 endpoints require valid auth token
 		tests := []struct {
 			name           string
 			endpoint       string
@@ -129,24 +133,24 @@ func TestAPIServerContract(t *testing.T) {
 		}{
 			{
 				name:           "no_token",
-				endpoint:       "/api/v2/system/refresh",
-				method:         http.MethodPost,
+				endpoint:       "/api/v3/system/health",
+				method:         http.MethodGet,
 				token:          "",
 				expectedStatus: http.StatusUnauthorized,
 			},
 			{
 				name:           "wrong_token",
-				endpoint:       "/api/v2/system/refresh",
-				method:         http.MethodPost,
+				endpoint:       "/api/v3/system/health",
+				method:         http.MethodGet,
 				token:          "wrong-token",
-				expectedStatus: http.StatusUnauthorized, // API returns 401 for invalid tokens
+				expectedStatus: http.StatusUnauthorized,
 			},
 			{
 				name:           "valid_token",
-				endpoint:       "/api/v2/system/refresh",
-				method:         http.MethodPost,
+				endpoint:       "/api/v3/system/health",
+				method:         http.MethodGet,
 				token:          "test-token",
-				expectedStatus: http.StatusOK, // Will fail due to mock, but auth passes
+				expectedStatus: http.StatusOK,
 			},
 		}
 
@@ -154,16 +158,13 @@ func TestAPIServerContract(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				req := httptest.NewRequest(tt.method, tt.endpoint, nil)
 				if tt.token != "" {
-					req.Header.Set("X-API-Token", tt.token)
+					req.Header.Set("Authorization", "Bearer "+tt.token)
 				}
 				rec := httptest.NewRecorder()
 				handler.ServeHTTP(rec, req)
 
-				// Only check auth status codes (401), ignore functional errors
-				if tt.expectedStatus == http.StatusUnauthorized {
-					assert.Equal(t, tt.expectedStatus, rec.Code,
-						"Authentication contract violated for %s", tt.name)
-				}
+				assert.Equal(t, tt.expectedStatus, rec.Code,
+					"Authentication contract violated for %s", tt.name)
 			})
 		}
 	})
@@ -177,7 +178,7 @@ func TestAPIServerContract(t *testing.T) {
 		requiredHeaders := []string{
 			"X-Content-Type-Options",
 			"X-Frame-Options",
-			"X-XSS-Protection",
+			"Referrer-Policy",
 		}
 
 		for _, header := range requiredHeaders {
@@ -193,22 +194,24 @@ func TestAPIServerContract(t *testing.T) {
 	})
 
 	t.Run("ErrorResponseContract", func(t *testing.T) {
-		// Contract: Error responses are JSON with 'error' field
-		req := httptest.NewRequest(http.MethodPost, "/api/v2/system/refresh", nil)
+		// Contract: Unauthorized responses use RFC7807 problem details
+		req := httptest.NewRequest(http.MethodGet, "/api/v3/system/health", nil)
 		// No auth token - will return error
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
 
-		// API v2 returns JSON error responses
+		// API returns RFC7807 problem+json for auth failures
 		assert.Equal(t, http.StatusUnauthorized, rec.Code, "Missing auth should return 401")
-		assert.Contains(t, rec.Header().Get("Content-Type"), "application/json",
-			"Error responses must be JSON")
+		assert.Contains(t, rec.Header().Get("Content-Type"), "application/problem+json",
+			"Error responses must use RFC7807 content type")
 
 		var errResponse map[string]interface{}
 		err := json.Unmarshal(rec.Body.Bytes(), &errResponse)
 		require.NoError(t, err, "Error response must be valid JSON")
-		assert.Contains(t, errResponse, "error", "Error response must contain 'error' field")
-		assert.Equal(t, "unauthorized", errResponse["error"], "Error field must indicate unauthorized")
+		assert.Equal(t, "UNAUTHORIZED", errResponse["code"], "Problem code must indicate unauthorized")
+		assert.Equal(t, float64(http.StatusUnauthorized), errResponse["status"], "Problem status must match HTTP status")
+		assert.NotEmpty(t, errResponse["type"], "Problem response must include type")
+		assert.NotEmpty(t, errResponse["title"], "Problem response must include title")
 	})
 }
 
@@ -222,10 +225,12 @@ func TestAPIDataFilePathContract(t *testing.T) {
 	require.NoError(t, err)
 
 	cfg := config.AppConfig{
-		Version:   "test",
-		DataDir:   tmpDir,
-		Bouquet:   "Test",
-		XMLTVPath: "xmltv.xml",
+		Version:        "test",
+		DataDir:        tmpDir,
+		Bouquet:        "Test",
+		XMLTVPath:      "xmltv.xml",
+		APIToken:       "test-token",
+		APITokenScopes: []string{string(v3.ScopeV3Read)},
 		Enigma2: config.Enigma2Settings{
 			BaseURL:    "http://example.com",
 			StreamPort: 8001,
@@ -243,6 +248,7 @@ func TestAPIDataFilePathContract(t *testing.T) {
 	t.Run("ValidFileAccess", func(t *testing.T) {
 		// Contract: Files within data dir are accessible via /files/ prefix
 		req := httptest.NewRequest(http.MethodGet, "/files/playlist.m3u", nil)
+		req.RemoteAddr = "127.0.0.1:1234" // LAN guard allows localhost
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
 
@@ -261,6 +267,7 @@ func TestAPIDataFilePathContract(t *testing.T) {
 
 		for _, path := range dangerousPaths {
 			req := httptest.NewRequest(http.MethodGet, path, nil)
+			req.RemoteAddr = "127.0.0.1:1234" // LAN guard allows localhost
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)
 
@@ -278,10 +285,12 @@ func TestAPIVersioningContract(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	cfg := config.AppConfig{
-		Version:   "1.2.3",
-		DataDir:   tmpDir,
-		Bouquet:   "Test",
-		XMLTVPath: "xmltv.xml",
+		Version:        "1.2.3",
+		DataDir:        tmpDir,
+		Bouquet:        "Test",
+		XMLTVPath:      "xmltv.xml",
+		APIToken:       "test-token",
+		APITokenScopes: []string{string(v3.ScopeV3Read)},
 		Enigma2: config.Enigma2Settings{
 			BaseURL:    "http://example.com",
 			StreamPort: 8001,
@@ -296,32 +305,38 @@ func TestAPIVersioningContract(t *testing.T) {
 	require.NoError(t, err)
 	handler := server.Handler()
 
-	t.Run("V2EndpointsExist", func(t *testing.T) {
-		// Contract: V2 API endpoints are available
-		v2Endpoints := []string{
-			"/api/v2/system/health",
-			"/api/v2/dvr/status",
+	t.Run("V3EndpointsExist", func(t *testing.T) {
+		// Contract: Canonical v3 API endpoints are available
+		v3Endpoints := []string{
+			"/api/v3/system/health",
+			"/api/v3/dvr/status",
 		}
 
-		for _, endpoint := range v2Endpoints {
+		for _, endpoint := range v3Endpoints {
 			req := httptest.NewRequest(http.MethodGet, endpoint, nil)
-			req.Header.Set("X-API-Token", "test-token")
+			req.Header.Set("Authorization", "Bearer test-token")
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)
 
 			assert.NotEqual(t, http.StatusNotFound, rec.Code,
-				"V2 endpoint must exist: %s", endpoint)
+				"V3 endpoint must exist: %s", endpoint)
 		}
 	})
 
 	t.Run("LegacyEndpointsRemoved", func(t *testing.T) {
-		// Contract: Legacy /api/* endpoints were removed in favor of /api/v2/*
-		req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+		// Contract: legacy v2 and pre-v2 endpoints are removed
+		req := httptest.NewRequest(http.MethodGet, "/api/v2/system/health", nil)
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
 
 		assert.Equal(t, http.StatusNotFound, rec.Code,
-			"Legacy /api/status endpoint should be removed (use /api/v2/status)")
+			"Legacy v2 endpoint should be removed (use /api/v3/*)")
+
+		reqLegacy := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+		recLegacy := httptest.NewRecorder()
+		handler.ServeHTTP(recLegacy, reqLegacy)
+		assert.Equal(t, http.StatusNotFound, recLegacy.Code,
+			"Legacy /api/status endpoint should be removed")
 	})
 }
 
@@ -334,11 +349,12 @@ func TestAPICircuitBreakerContract(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	cfg := config.AppConfig{
-		Version:   "test",
-		DataDir:   tmpDir,
-		Bouquet:   "Test",
-		XMLTVPath: "xmltv.xml",
-		APIToken:  "test-token",
+		Version:        "test",
+		DataDir:        tmpDir,
+		Bouquet:        "Test",
+		XMLTVPath:      "xmltv.xml",
+		APIToken:       "test-token",
+		APITokenScopes: []string{string(v3.ScopeV3Write)},
 		Enigma2: config.Enigma2Settings{
 			BaseURL:    "http://invalid-backend-that-will-fail.local",
 			StreamPort: 8001,
@@ -367,8 +383,10 @@ func TestAPICircuitBreakerContract(t *testing.T) {
 			default:
 			}
 
-			req := httptest.NewRequest(http.MethodPost, "/api/v2/system/refresh", nil)
-			req.Header.Set("X-API-Token", "test-token")
+			req := httptest.NewRequest(http.MethodPost, "/api/v3/system/refresh", nil)
+			req.Header.Set("Authorization", "Bearer test-token")
+			req.Host = "example.com"
+			req.Header.Set("Origin", "http://example.com") // Pass CSRF to reach business logic
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)
 
