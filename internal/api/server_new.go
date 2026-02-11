@@ -143,34 +143,11 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager, opts ...ServerOption) (*S
 	// Initialize health manager
 	s.healthManager = health.NewManager(cfg.Version)
 
-	// Wire v3 Handler dependencies
-	s.v3Handler.SetDependencies(
-		s.v3Bus,
-		s.v3Store,
-		s.resumeStore,
-		s.v3Scan,
-		s.recordingPathMapper,
-		s.channelManager,
-		s.seriesManager,
-		s.seriesEngine,
-		s.vodManager,
-		s.epgCache,
-		s.healthManager,
-		logSourceWrapper{},
-		s.v3Scan,
-		&dvrSourceWrapper{s},
-		s.channelManager,
-		&dvrSourceWrapper{s},
-		s.recordingsService,
-		s.requestShutdown,
-		s.preflightProvider,
-	)
-
-	// P10: Wired Admission Control (Deliverable #5)
+	// P10: Wire runtime-provided v3 dependencies and admission via a single DI entrypoint.
 	// Initialize with conservative defaults (10 concurrent transcodes, 10 CPU-heavy ops)
 	// In the future this should come from config.
 	adm := admission.NewController(cfg)
-	s.v3Handler.SetAdmission(adm)
+	s.WireV3Runtime(s.v3Bus, s.v3Store, s.resumeStore, s.v3Scan, adm)
 
 	// Initialize HDHomeRun emulation if enabled
 	logger := log.WithComponent("api")

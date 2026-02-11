@@ -6,50 +6,120 @@ package api
 import (
 	"context"
 
+	"github.com/ManuGH/xg2g/internal/channels"
 	"github.com/ManuGH/xg2g/internal/control/admission"
 	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
+	"github.com/ManuGH/xg2g/internal/dvr"
+	"github.com/ManuGH/xg2g/internal/epg"
+	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/library"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
+	"github.com/ManuGH/xg2g/internal/recordings"
 	"github.com/ManuGH/xg2g/internal/verification"
 )
 
-// SetV3Components configures v3 event bus, store, and scan manager.
-func (s *Server) SetV3Components(b bus.Bus, st store.StateStore, rs resume.Store, sm *scan.Manager) {
+type v3DependencySnapshot struct {
+	handler             *v3.Server
+	bus                 bus.Bus
+	store               store.StateStore
+	resume              resume.Store
+	scan                *scan.Manager
+	recordingPathMapper *recordings.PathMapper
+	channelManager      *channels.Manager
+	seriesManager       *dvr.Manager
+	seriesEngine        *dvr.SeriesEngine
+	vodManager          *vod.Manager
+	epgCache            *epg.TV
+	healthManager       *health.Manager
+	recordingsService   recservice.Service
+	requestShutdown     func(context.Context) error
+	preflightProvider   v3.PreflightProvider
+}
+
+func (s *Server) snapshotV3Dependencies() v3DependencySnapshot {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return v3DependencySnapshot{
+		handler:             s.v3Handler,
+		bus:                 s.v3Bus,
+		store:               s.v3Store,
+		resume:              s.resumeStore,
+		scan:                s.v3Scan,
+		recordingPathMapper: s.recordingPathMapper,
+		channelManager:      s.channelManager,
+		seriesManager:       s.seriesManager,
+		seriesEngine:        s.seriesEngine,
+		vodManager:          s.vodManager,
+		epgCache:            s.epgCache,
+		healthManager:       s.healthManager,
+		recordingsService:   s.recordingsService,
+		requestShutdown:     s.requestShutdown,
+		preflightProvider:   s.preflightProvider,
+	}
+}
+
+func (s *Server) syncV3HandlerDependencies() {
+	deps := s.snapshotV3Dependencies()
+	if deps.handler == nil {
+		return
+	}
+
+	deps.handler.SetDependencies(
+		deps.bus,
+		deps.store,
+		deps.resume,
+		deps.scan,
+		deps.recordingPathMapper,
+		deps.channelManager,
+		deps.seriesManager,
+		deps.seriesEngine,
+		deps.vodManager,
+		deps.epgCache,
+		deps.healthManager,
+		logSourceWrapper{},
+		deps.scan,
+		&dvrSourceWrapper{s},
+		deps.channelManager,
+		&dvrSourceWrapper{s},
+		deps.recordingsService,
+		deps.requestShutdown,
+		deps.preflightProvider,
+	)
+}
+
+// WireV3Runtime applies runtime-provided v3 dependencies in one DI call.
+func (s *Server) WireV3Runtime(
+	b bus.Bus,
+	st store.StateStore,
+	rs resume.Store,
+	sm *scan.Manager,
+	adm *admission.Controller,
+) {
 	s.mu.Lock()
 	s.v3Bus = b
 	s.v3Store = st
 	s.resumeStore = rs
 	s.v3Scan = sm
+	handler := s.v3Handler
 	s.mu.Unlock()
 
-	// Update sub-handler dependencies (it maintains its own state)
-	if s.v3Handler != nil {
-		s.v3Handler.SetDependencies(
-			b, st, rs, sm,
-			s.recordingPathMapper,
-			s.channelManager,
-			s.seriesManager,
-			s.seriesEngine,
-			s.vodManager,
-			s.epgCache,
-			s.healthManager,
-			logSourceWrapper{},
-			s.v3Scan,
-			&dvrSourceWrapper{s},
-			s.channelManager,
-			&dvrSourceWrapper{s},
-			s.recordingsService,
-			s.requestShutdown,
-			s.preflightProvider,
-		)
+	s.syncV3HandlerDependencies()
+	if handler != nil && adm != nil {
+		handler.SetAdmission(adm)
 	}
+}
+
+// SetV3Components configures v3 event bus, store, and scan manager.
+func (s *Server) SetV3Components(b bus.Bus, st store.StateStore, rs resume.Store, sm *scan.Manager) {
+	s.WireV3Runtime(b, st, rs, sm, nil)
 }
 
 // SetVerificationStore configures the verification store for drift detection status.
@@ -96,37 +166,13 @@ func (s *Server) SetResolver(r recservice.Resolver) {
 		return
 	}
 	s.recordingsService = recSvc
-	if s.v3Handler != nil {
-		s.v3Handler.SetDependencies(
-			s.v3Bus,
-			s.v3Store,
-			s.resumeStore,
-			s.v3Scan,
-			s.recordingPathMapper,
-			s.channelManager,
-			s.seriesManager,
-			s.seriesEngine,
-			s.vodManager,
-			s.epgCache,
-			s.healthManager,
-			logSourceWrapper{},
-			s.v3Scan,
-			&dvrSourceWrapper{s},
-			s.channelManager,
-			&dvrSourceWrapper{s},
-			s.recordingsService,
-			s.requestShutdown,
-			s.preflightProvider,
-		)
-	}
+	s.syncV3HandlerDependencies()
 }
 
 // SetRecordingsService injects a recordings service into the v3 handler (tests).
 func (s *Server) SetRecordingsService(svc recservice.Service) {
-	if s.v3Handler != nil {
-		s.v3Handler.SetRecordingsService(svc)
-	}
 	s.recordingsService = svc
+	s.syncV3HandlerDependencies()
 }
 
 // SetAdmission sets the controller for admission control.

@@ -348,8 +348,7 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 
 	// 4. Inject into API Server (Shadow Receiving)
 	if m.deps.APIServerSetter != nil {
-		m.deps.APIServerSetter.SetV3Components(v3Bus, v3Store, resumeStore, scanManager)
-		m.deps.APIServerSetter.SetAdmission(adm)
+		m.deps.APIServerSetter.WireV3Runtime(v3Bus, v3Store, resumeStore, scanManager, adm)
 		m.logger.Info().Msg("v3 components and admission gate injected into API server")
 	} else {
 		m.logger.Warn().Msg("API Server Setter not available - shadow intents will not be processed")

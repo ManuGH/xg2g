@@ -63,8 +63,7 @@ type Deps struct {
 
 // V3ComponentSetter defines the interface for injecting v3 components
 type V3ComponentSetter interface {
-	SetV3Components(b bus.Bus, st store.StateStore, rs resume.Store, sm *scan.Manager)
-	SetAdmission(adm *admission.Controller)
+	WireV3Runtime(b bus.Bus, st store.StateStore, rs resume.Store, sm *scan.Manager, adm *admission.Controller)
 	HealthManager() *health.Manager
 }
 
