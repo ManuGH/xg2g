@@ -35,16 +35,18 @@ func TestAPIServerContract(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	cfg := config.AppConfig{
-		Version:    "test",
-		DataDir:    tmpDir,
-		OWIBase:    "http://example.com",
-		Bouquet:    "Test",
-		StreamPort: 8001,
-		XMLTVPath:  "xmltv.xml",
-		APIToken:   "test-token",
-		OWITimeout: 10 * time.Second,
-		OWIRetries: 3,
-		OWIBackoff: 500 * time.Millisecond,
+		Version:   "test",
+		DataDir:   tmpDir,
+		Bouquet:   "Test",
+		XMLTVPath: "xmltv.xml",
+		APIToken:  "test-token",
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    "http://example.com",
+			StreamPort: 8001,
+			Timeout:    10 * time.Second,
+			Retries:    3,
+			Backoff:    500 * time.Millisecond,
+		},
 	}
 
 	cfgMgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
@@ -220,15 +222,17 @@ func TestAPIDataFilePathContract(t *testing.T) {
 	require.NoError(t, err)
 
 	cfg := config.AppConfig{
-		Version:    "test",
-		DataDir:    tmpDir,
-		OWIBase:    "http://example.com",
-		Bouquet:    "Test",
-		StreamPort: 8001,
-		XMLTVPath:  "xmltv.xml",
-		OWITimeout: 10 * time.Second,
-		OWIRetries: 3,
-		OWIBackoff: 500 * time.Millisecond,
+		Version:   "test",
+		DataDir:   tmpDir,
+		Bouquet:   "Test",
+		XMLTVPath: "xmltv.xml",
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    "http://example.com",
+			StreamPort: 8001,
+			Timeout:    10 * time.Second,
+			Retries:    3,
+			Backoff:    500 * time.Millisecond,
+		},
 	}
 
 	cfgMgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
@@ -274,15 +278,17 @@ func TestAPIVersioningContract(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	cfg := config.AppConfig{
-		Version:    "1.2.3",
-		DataDir:    tmpDir,
-		OWIBase:    "http://example.com",
-		Bouquet:    "Test",
-		StreamPort: 8001,
-		XMLTVPath:  "xmltv.xml",
-		OWITimeout: 10 * time.Second,
-		OWIRetries: 3,
-		OWIBackoff: 500 * time.Millisecond,
+		Version:   "1.2.3",
+		DataDir:   tmpDir,
+		Bouquet:   "Test",
+		XMLTVPath: "xmltv.xml",
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    "http://example.com",
+			StreamPort: 8001,
+			Timeout:    10 * time.Second,
+			Retries:    3,
+			Backoff:    500 * time.Millisecond,
+		},
 	}
 
 	cfgMgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
@@ -328,16 +334,18 @@ func TestAPICircuitBreakerContract(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	cfg := config.AppConfig{
-		Version:    "test",
-		DataDir:    tmpDir,
-		OWIBase:    "http://invalid-backend-that-will-fail.local",
-		Bouquet:    "Test",
-		StreamPort: 8001,
-		XMLTVPath:  "xmltv.xml",
-		APIToken:   "test-token",
-		OWITimeout: 1 * time.Second,
-		OWIRetries: 0, // No retries for faster test
-		OWIBackoff: 100 * time.Millisecond,
+		Version:   "test",
+		DataDir:   tmpDir,
+		Bouquet:   "Test",
+		XMLTVPath: "xmltv.xml",
+		APIToken:  "test-token",
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    "http://invalid-backend-that-will-fail.local",
+			StreamPort: 8001,
+			Timeout:    1 * time.Second,
+			Retries:    0, // No retries for faster test
+			Backoff:    100 * time.Millisecond,
+		},
 	}
 
 	cfgMgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
