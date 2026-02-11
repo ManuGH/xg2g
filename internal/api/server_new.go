@@ -125,9 +125,10 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager, opts ...ServerOption) (*S
 		rootCancel()
 		return nil, fmt.Errorf("initialize recordings service: %w", err)
 	}
-	s.recordingsService = recSvc
-
-	s.v3Handler.SetResolver(v4Resolver)
+	s.WireV3Overrides(V3Overrides{
+		Resolver:          v4Resolver,
+		RecordingsService: recSvc,
+	})
 
 	// Initialize Series Engine
 	// Server (s) implements EpgProvider interface via GetEvents method

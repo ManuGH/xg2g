@@ -5,6 +5,7 @@ package api
 
 import (
 	"context"
+	"reflect"
 
 	"github.com/ManuGH/xg2g/internal/channels"
 	"github.com/ManuGH/xg2g/internal/control/admission"
@@ -41,6 +42,14 @@ type v3DependencySnapshot struct {
 	recordingsService   recservice.Service
 	requestShutdown     func(context.Context) error
 	preflightProvider   v3.PreflightProvider
+}
+
+// V3Overrides applies optional test/runtime overrides that are not part of core runtime wiring.
+type V3Overrides struct {
+	VerificationStore verification.Store
+	VODProber         vod.Prober
+	Resolver          recservice.Resolver
+	RecordingsService recservice.Service
 }
 
 func (s *Server) snapshotV3Dependencies() v3DependencySnapshot {
@@ -117,11 +126,57 @@ func (s *Server) WireV3Runtime(
 	}
 }
 
-// SetVerificationStore configures the verification store for drift detection status.
-func (s *Server) SetVerificationStore(st verification.Store) {
-	s.mu.Lock()
-	s.verificationStore = st
-	s.mu.Unlock()
+// WireV3Overrides applies optional v3 override dependencies through one typed entrypoint.
+func (s *Server) WireV3Overrides(overrides V3Overrides) {
+	if !isNilInterface(overrides.VerificationStore) {
+		s.mu.Lock()
+		s.verificationStore = overrides.VerificationStore
+		s.mu.Unlock()
+	}
+
+	s.mu.RLock()
+	handler := s.v3Handler
+	cfg := s.cfg
+	owiClient := s.owiClient
+	resumeStore := s.resumeStore
+	vodManager := s.vodManager
+	s.mu.RUnlock()
+
+	if !isNilInterface(overrides.VODProber) && vodManager != nil {
+		vodManager.SetProber(overrides.VODProber)
+	}
+
+	var resolvedService recservice.Service
+	updatedService := false
+
+	if !isNilInterface(overrides.Resolver) {
+		if handler != nil {
+			handler.SetResolver(overrides.Resolver)
+		}
+		if isNilInterface(overrides.RecordingsService) {
+			owiAdapter := v3.NewOWIAdapter(owiClient)
+			resumeAdapter := v3.NewResumeAdapter(resumeStore)
+			recSvc, err := recservice.NewService(&cfg, vodManager, overrides.Resolver, owiAdapter, resumeAdapter, overrides.Resolver)
+			if err != nil {
+				log.L().Error().Err(err).Msg("failed to re-initialize recordings service")
+			} else {
+				resolvedService = recSvc
+				updatedService = true
+			}
+		}
+	}
+
+	if !isNilInterface(overrides.RecordingsService) {
+		resolvedService = overrides.RecordingsService
+		updatedService = true
+	}
+
+	if updatedService {
+		s.mu.Lock()
+		s.recordingsService = resolvedService
+		s.mu.Unlock()
+		s.syncV3HandlerDependencies()
+	}
 }
 
 // LibraryService returns the underlying library service from v3 handler.
@@ -137,37 +192,17 @@ func (s *Server) VODManager() *vod.Manager {
 	return s.vodManager
 }
 
-// SetVODProber injects a custom prober into the VOD manager for testing.
-func (s *Server) SetVODProber(p vod.Prober) {
-	if s.vodManager != nil {
-		s.vodManager.SetProber(p)
+func isNilInterface(value any) bool {
+	if value == nil {
+		return true
 	}
-}
-
-// SetResolver injects a resolver into the v3 handler (tests).
-func (s *Server) SetResolver(r recservice.Resolver) {
-	if s.v3Handler != nil {
-		s.v3Handler.SetResolver(r)
+	v := reflect.ValueOf(value)
+	switch v.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Ptr, reflect.Slice:
+		return v.IsNil()
+	default:
+		return false
 	}
-	if r == nil {
-		return
-	}
-
-	owiAdapter := v3.NewOWIAdapter(s.owiClient)
-	resumeAdapter := v3.NewResumeAdapter(s.resumeStore)
-	recSvc, err := recservice.NewService(&s.cfg, s.vodManager, r, owiAdapter, resumeAdapter, r)
-	if err != nil {
-		log.L().Error().Err(err).Msg("failed to re-initialize recordings service")
-		return
-	}
-	s.recordingsService = recSvc
-	s.syncV3HandlerDependencies()
-}
-
-// SetRecordingsService injects a recordings service into the v3 handler (tests).
-func (s *Server) SetRecordingsService(svc recservice.Service) {
-	s.recordingsService = svc
-	s.syncV3HandlerDependencies()
 }
 
 type logSourceWrapper struct{}

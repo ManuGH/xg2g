@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	api "github.com/ManuGH/xg2g/internal/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -86,7 +87,7 @@ enigma2:
 			return playback.MediaTruth{}, recservice.ErrNotFound{RecordingID: id}
 		},
 	}
-	container.Server.SetRecordingsService(mockSvc)
+	container.Server.WireV3Overrides(api.V3Overrides{RecordingsService: mockSvc})
 
 	// 4. Request Non-Existent Component
 	// Strict: Test URL matches router param definition /api/v3/vod/{recordingId}
@@ -220,7 +221,7 @@ enigma2:
 
 	// Inject mock into server (replaces real recordingsService)
 	t.Logf("Injecting mock service...")
-	container.Server.SetRecordingsService(mockSvc)
+	container.Server.WireV3Overrides(api.V3Overrides{RecordingsService: mockSvc})
 	t.Logf("Mock service injected")
 
 	handler := container.Server.Handler()
