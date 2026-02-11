@@ -392,7 +392,10 @@ func main() {
 	// Configure proxy (enabled by default in v2.0 for Zero Config experience)
 
 	// Create API handler
-	s := api.New(cfg, configMgr)
+	s, err := api.New(cfg, configMgr)
+	if err != nil {
+		logger.Fatal().Err(err).Msg("failed to initialize API server")
+	}
 	if err := s.SetRootContext(ctx); err != nil {
 		logger.Fatal().Err(err).Msg("failed to set root context")
 	}

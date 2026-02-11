@@ -212,7 +212,7 @@ func TestHandler(t *testing.T) {
 				DeliveryPolicy: "universal",
 			},
 		}
-		s := New(cfg, config.NewManager(""))
+		s := mustNewServer(t, cfg, config.NewManager(""))
 		handler := s.Handler()
 
 		if handler == nil {
@@ -259,7 +259,7 @@ func TestRegisterRoutes_StatusEndpoint(t *testing.T) {
 			DeliveryPolicy: "universal",
 		},
 	}
-	s := New(cfg, config.NewManager(""))
+	s := mustNewServer(t, cfg, config.NewManager(""))
 	s.SetStatus(jobs.Status{
 		Version:       "3.0.0",
 		Channels:      2,
@@ -308,7 +308,7 @@ http://10.10.55.14:18000/1:0:19:1334:3EF:1:C00000:0:0:0:
 			DeliveryPolicy: "universal",
 		},
 	}
-	srv := New(cfg, config.NewManager(""))
+	srv := mustNewServer(t, cfg, config.NewManager(""))
 
 	// Initialize HDHomeRun with PlexForceHLS=false
 	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
@@ -364,7 +364,7 @@ http://10.10.55.14:18000/1:0:19:1334:3EF:1:C00000:0:0:0:
 			DeliveryPolicy: "universal",
 		},
 	}
-	srv := New(cfg, config.NewManager(""))
+	srv := mustNewServer(t, cfg, config.NewManager(""))
 
 	// Initialize HDHomeRun with PlexForceHLS=true
 	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
@@ -419,7 +419,7 @@ http://10.10.55.14:18000/hls/1:0:19:132F:3EF:1:C00000:0:0:0:
 			DeliveryPolicy: "universal",
 		},
 	}
-	srv := New(cfg, config.NewManager(""))
+	srv := mustNewServer(t, cfg, config.NewManager(""))
 
 	// Initialize HDHomeRun with PlexForceHLS=true
 	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()

@@ -113,7 +113,9 @@ func TestAPIRefreshEndpoint(t *testing.T) {
 		EPGEnabled: false, // Disable EPG for faster test
 	}
 
-	apiServer := api.New(cfg, nil)
+	cfgMgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
+	apiServer, err := api.New(cfg, cfgMgr)
+	require.NoError(t, err)
 	handler := apiServer.Handler()
 	testServer := httptest.NewServer(handler)
 	defer testServer.Close()
@@ -297,7 +299,9 @@ func TestConcurrentRefreshRequests(t *testing.T) {
 		EPGEnabled: false,
 	}
 
-	apiServer := api.New(cfg, nil)
+	cfgMgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
+	apiServer, err := api.New(cfg, cfgMgr)
+	require.NoError(t, err)
 	handler := apiServer.Handler()
 	testServer := httptest.NewServer(handler)
 	defer testServer.Close()
@@ -366,7 +370,9 @@ func TestHealthCheckFlow(t *testing.T) {
 		Bouquet:    "Premium",
 	}
 
-	apiServer := api.New(cfg, nil)
+	cfgMgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
+	apiServer, err := api.New(cfg, cfgMgr)
+	require.NoError(t, err)
 	handler := apiServer.Handler()
 	testServer := httptest.NewServer(handler)
 	defer testServer.Close()
@@ -450,7 +456,9 @@ http://example.com/stream`
 		Bouquet:    "Premium",
 	}
 
-	apiServer := api.New(cfg, nil)
+	cfgMgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
+	apiServer, err := api.New(cfg, cfgMgr)
+	require.NoError(t, err)
 	handler := apiServer.Handler()
 	testServer := httptest.NewServer(handler)
 	defer testServer.Close()

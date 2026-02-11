@@ -47,7 +47,9 @@ func TestAPIServerContract(t *testing.T) {
 		OWIBackoff: 500 * time.Millisecond,
 	}
 
-	server := api.New(cfg, nil)
+	cfgMgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
+	server, err := api.New(cfg, cfgMgr)
+	require.NoError(t, err)
 	handler := server.Handler()
 
 	t.Run("HealthEndpointContract", func(t *testing.T) {
@@ -229,7 +231,9 @@ func TestAPIDataFilePathContract(t *testing.T) {
 		OWIBackoff: 500 * time.Millisecond,
 	}
 
-	server := api.New(cfg, nil)
+	cfgMgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
+	server, err := api.New(cfg, cfgMgr)
+	require.NoError(t, err)
 	handler := server.Handler()
 
 	t.Run("ValidFileAccess", func(t *testing.T) {
@@ -281,7 +285,9 @@ func TestAPIVersioningContract(t *testing.T) {
 		OWIBackoff: 500 * time.Millisecond,
 	}
 
-	server := api.New(cfg, nil)
+	cfgMgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
+	server, err := api.New(cfg, cfgMgr)
+	require.NoError(t, err)
 	handler := server.Handler()
 
 	t.Run("V2EndpointsExist", func(t *testing.T) {
@@ -334,7 +340,9 @@ func TestAPICircuitBreakerContract(t *testing.T) {
 		OWIBackoff: 100 * time.Millisecond,
 	}
 
-	server := api.New(cfg, nil)
+	cfgMgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
+	server, err := api.New(cfg, cfgMgr)
+	require.NoError(t, err)
 	handler := server.Handler()
 
 	t.Run("CircuitBreakerTrips", func(t *testing.T) {

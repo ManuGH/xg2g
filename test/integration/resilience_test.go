@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -47,7 +48,9 @@ func TestCircuitBreakerFlow(t *testing.T) {
 		EPGEnabled: false,
 	}
 
-	apiServer := api.New(cfg, nil)
+	cfgMgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
+	apiServer, err := api.New(cfg, cfgMgr)
+	require.NoError(t, err)
 	handler := apiServer.Handler()
 	testServer := httptest.NewServer(handler)
 	defer testServer.Close()
@@ -327,7 +330,9 @@ func TestRateLimitingBehavior(t *testing.T) {
 		EPGEnabled: false,
 	}
 
-	apiServer := api.New(cfg, nil)
+	cfgMgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
+	apiServer, err := api.New(cfg, cfgMgr)
+	require.NoError(t, err)
 	handler := apiServer.Handler()
 	testServer := httptest.NewServer(handler)
 	defer testServer.Close()

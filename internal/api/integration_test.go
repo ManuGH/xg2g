@@ -29,7 +29,7 @@ func TestIntegration_SessionAndPlayback(t *testing.T) {
 		DataDir:        t.TempDir(),
 		ForceHTTPS:     true, // Enable ForceHTTPS to verify Secure cookie
 	}
-	s := New(cfg, config.NewManager(""))
+	s := mustNewServer(t, cfg, config.NewManager(""))
 
 	// Use the router to ensure middleware integration
 	handler := s.Handler()

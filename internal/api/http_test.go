@@ -32,7 +32,7 @@ func TestHandleSystemHealth(t *testing.T) {
 	}))
 	defer mockReceiver.Close()
 
-	s := New(config.AppConfig{
+	s := mustNewServer(t, config.AppConfig{
 		APIToken:       "test-token",
 		APITokenScopes: []string{string(v3.ScopeV3Read)},
 		DataDir:        t.TempDir(),
@@ -74,7 +74,7 @@ func TestHandleRefresh_ErrorDoesNotUpdateLastRun(t *testing.T) {
 			DeliveryPolicy: "universal",
 		},
 	}
-	s := New(cfg, config.NewManager(""))
+	s := mustNewServer(t, cfg, config.NewManager(""))
 	// handler := s.Handler() // Removed unused
 	initialTime := s.status.LastRun
 
@@ -113,7 +113,7 @@ func TestHandleRefresh_SuccessUpdatesLastRun(t *testing.T) {
 		}, nil
 	}
 
-	s := New(config.AppConfig{
+	s := mustNewServer(t, config.AppConfig{
 		Enigma2:        config.Enigma2Settings{StreamPort: 8001, BaseURL: "http://example.com"},
 		APIToken:       "test-token",
 		APITokenScopes: []string{string(v3.ScopeV3Read)},
@@ -155,7 +155,7 @@ func TestHandleRefresh_ConflictOnConcurrent(t *testing.T) {
 			DeliveryPolicy: "universal",
 		},
 	}
-	s := New(cfg, config.NewManager(""))
+	s := mustNewServer(t, cfg, config.NewManager(""))
 
 	// Install a slow refresh function to force overlap
 	startCh := make(chan struct{})
@@ -213,7 +213,7 @@ func TestHandleRefresh_ConflictOnConcurrent(t *testing.T) {
 }
 
 func TestHandleHealth(t *testing.T) {
-	s := New(config.AppConfig{
+	s := mustNewServer(t, config.AppConfig{
 		Enigma2: config.Enigma2Settings{
 			BaseURL: "http://example.com",
 		},
@@ -258,7 +258,7 @@ func TestHandleReady(t *testing.T) {
 			DeliveryPolicy: "universal",
 		},
 	}
-	s := New(cfg, config.NewManager(""))
+	s := mustNewServer(t, cfg, config.NewManager(""))
 	handler := s.Handler()
 
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "/readyz", nil)
@@ -336,7 +336,7 @@ func TestSecureFileHandlerSymlinkPolicy(t *testing.T) {
 			DeliveryPolicy: "universal",
 		},
 	}
-	server := New(cfg, config.NewManager(""))
+	server := mustNewServer(t, cfg, config.NewManager(""))
 	handler := server.Handler()
 
 	tests := []struct {
@@ -381,7 +381,7 @@ func TestSecureFileHandlerSymlinkPolicy(t *testing.T) {
 }
 
 func TestMiddlewareChain(t *testing.T) {
-	server := New(config.AppConfig{
+	server := mustNewServer(t, config.AppConfig{
 		APIToken:       "test-token",
 		APITokenScopes: []string{string(v3.ScopeV3Read)},
 		Streaming: config.StreamingConfig{
@@ -418,7 +418,7 @@ func TestAdvancedPathTraversal(t *testing.T) {
 			DeliveryPolicy: "universal",
 		},
 	}
-	server := New(cfg, config.NewManager(""))
+	server := mustNewServer(t, cfg, config.NewManager(""))
 	handler := server.Handler()
 
 	attacks := []string{
@@ -476,7 +476,7 @@ http://example.com/stream1
 		},
 	}
 
-	server := New(cfg, config.NewManager(""))
+	server := mustNewServer(t, cfg, config.NewManager(""))
 	handler := server.Handler()
 
 	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
@@ -505,7 +505,7 @@ func TestHandleXMLTV_FileTooLarge(t *testing.T) {
 		},
 	}
 
-	server := New(cfg, config.NewManager(""))
+	server := mustNewServer(t, cfg, config.NewManager(""))
 	handler := server.Handler()
 
 	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
@@ -527,7 +527,7 @@ func TestHandleXMLTV_FileNotFound(t *testing.T) {
 		},
 	}
 
-	server := New(cfg, config.NewManager(""))
+	server := mustNewServer(t, cfg, config.NewManager(""))
 	handler := server.Handler()
 
 	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
@@ -572,7 +572,7 @@ http://example.com/stream1
 		},
 	}
 
-	server := New(cfg, config.NewManager(""))
+	server := mustNewServer(t, cfg, config.NewManager(""))
 	handler := server.Handler()
 
 	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
@@ -600,7 +600,7 @@ func TestHandleXMLTV_EmptyPath(t *testing.T) {
 		},
 	}
 
-	server := New(cfg, config.NewManager(""))
+	server := mustNewServer(t, cfg, config.NewManager(""))
 	handler := server.Handler()
 
 	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
@@ -634,7 +634,7 @@ func TestHandleXMLTV_M3UNotFound(t *testing.T) {
 		},
 	}
 
-	server := New(cfg, config.NewManager(""))
+	server := mustNewServer(t, cfg, config.NewManager(""))
 	handler := server.Handler()
 
 	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
@@ -672,7 +672,7 @@ func TestHandleXMLTV_M3UTooLarge(t *testing.T) {
 		},
 	}
 
-	server := New(cfg, config.NewManager(""))
+	server := mustNewServer(t, cfg, config.NewManager(""))
 	handler := server.Handler()
 
 	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
@@ -706,7 +706,7 @@ func TestHandleXMLTV_HEADRequest(t *testing.T) {
 		},
 	}
 
-	server := New(cfg, config.NewManager(""))
+	server := mustNewServer(t, cfg, config.NewManager(""))
 	handler := server.Handler()
 
 	req := httptest.NewRequest(http.MethodHead, "/xmltv.xml", nil)
@@ -735,7 +735,7 @@ func TestHandleRefreshV3(t *testing.T) {
 		},
 	}
 
-	server := New(cfg, config.NewManager(""))
+	server := mustNewServer(t, cfg, config.NewManager(""))
 	handler := server.Handler()
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v3/system/refresh", nil)
@@ -767,7 +767,7 @@ func TestClientDisconnectDuringRefresh(t *testing.T) {
 		},
 	}
 
-	server := New(cfg, config.NewManager(""))
+	server := mustNewServer(t, cfg, config.NewManager(""))
 	// Inject dummy scan manager to avoid panic in handleRefresh (typed nil interface trap)
 	server.SetV3Components(nil, nil, nil, &scan.Manager{})
 

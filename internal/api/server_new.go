@@ -30,7 +30,7 @@ import (
 )
 
 // New creates and initializes a new HTTP API server.
-func New(cfg config.AppConfig, cfgMgr *config.Manager, opts ...ServerOption) *Server {
+func New(cfg config.AppConfig, cfgMgr *config.Manager, opts ...ServerOption) (*Server, error) {
 	// 1. Initialized root context for server lifecycle (MUST be before v3Handler)
 	rootCtx, rootCancel := context.WithCancel(context.Background())
 
@@ -74,7 +74,8 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager, opts ...ServerOption) *Se
 	// Initialize VOD Manager with error handling
 	vodMgr, err := vod.NewManager(infra.NewExecutor(cfg.FFmpeg.Bin, *log.L(), cfg.Timeouts.TranscodeStart, cfg.Timeouts.TranscodeNoProgress), infra.NewProber(cfg.FFmpeg.FFprobeBin), recordings.NewPathMapper(cfg.RecordingPathMappings))
 	if err != nil {
-		log.L().Fatal().Err(err).Msg("failed to initialize VOD manager")
+		rootCancel()
+		return nil, fmt.Errorf("initialize vod manager: %w", err)
 	}
 	s.vodManager = vodMgr
 
@@ -84,7 +85,8 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager, opts ...ServerOption) *Se
 
 	// v3Handler expects a valid root cancel function
 	if cfgMgr == nil {
-		log.L().Fatal().Msg("config.Manager is required for API server initialization")
+		rootCancel()
+		return nil, fmt.Errorf("config manager is required for API server initialization")
 	}
 	s.v3Handler = s.v3Factory(cfg, cfgMgr, s.rootCancel)
 	// Initialize v3Handler with current snapshot to ensure Runtime settings are available immediately
@@ -99,7 +101,8 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager, opts ...ServerOption) *Se
 	}
 	v4Resolver, err := recservice.NewResolver(&cfg, s.vodManager, resolverOpts)
 	if err != nil {
-		log.L().Fatal().Err(err).Msg("failed to initialize recordings resolver")
+		rootCancel()
+		return nil, fmt.Errorf("initialize recordings resolver: %w", err)
 	}
 
 	// Create OpenWebIF client using configured BaseURL and credentials
@@ -119,7 +122,8 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager, opts ...ServerOption) *Se
 	// Note: v4Resolver here is a domain resolver because of the v3.Server.SetResolver signature change
 	recSvc, err := recservice.NewService(&cfg, s.vodManager, v4Resolver, owiAdapter, resumeAdapter, v4Resolver)
 	if err != nil {
-		log.L().Fatal().Err(err).Msg("failed to initialize recordings service")
+		rootCancel()
+		return nil, fmt.Errorf("initialize recordings service: %w", err)
 	}
 	s.recordingsService = recSvc
 
@@ -263,5 +267,5 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager, opts ...ServerOption) *Se
 		return loaded, s.status.LastRun
 	}))
 
-	return s
+	return s, nil
 }
