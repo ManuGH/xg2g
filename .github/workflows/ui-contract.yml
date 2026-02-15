@@ -2,9 +2,34 @@ name: UI Contract Enforcement
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "webui/src/components/**/*.tsx"
+      - "webui/src/components/**/*.module.css"
+      - "webui/src/features/**/*.tsx"
+      - "webui/src/features/**/*.module.css"
+      - "webui/src/**/*.tsx"
+      - "webui/src/**/*.css"
+      - "scripts/check-ui-contract.sh"
+      - ".github/workflows/ui-contract.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "webui/src/components/**/*.tsx"
+      - "webui/src/components/**/*.module.css"
+      - "webui/src/features/**/*.tsx"
+      - "webui/src/features/**/*.module.css"
+      - "webui/src/**/*.tsx"
+      - "webui/src/**/*.css"
+      - "scripts/check-ui-contract.sh"
+      - ".github/workflows/ui-contract.yml"
+
+permissions:
+  contents: read
 
 concurrency:
-  group: repo-${{ github.event.pull_request.number || github.ref }}
+  group: repo-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -15,49 +40,52 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+
+      - name: Resolve changed UI files
+        id: scope
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            changed_files=$(git diff --name-only "origin/${{ github.base_ref }}...${{ github.sha }}" || true)
+          else
+            before="${{ github.event.before }}"
+            if [ "$before" = "0000000000000000000000000000000000000000" ]; then
+              changed_files=$(git show --pretty='' --name-only "${{ github.sha }}" || true)
+            else
+              changed_files=$(git diff --name-only "$before..${{ github.sha }}" || true)
+            fi
+          fi
+
+          mapfile -t scope_files < <(printf '%s\n' "$changed_files" \
+            | grep -E '^webui/src/.*\.(tsx|css)$' \
+            | sed -e 's#^webui/src/##' \
+            | sort -u)
+
+          if [ "${#scope_files[@]}" -eq 0 ]; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "No webui/src *.tsx/*.css changes detected"
+            exit 0
+          fi
+
+          printf '%s\n' "${scope_files[@]}" > /tmp/ui-contract-scope.txt
+          echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          echo "count=${#scope_files[@]}" >> "$GITHUB_OUTPUT"
+          echo "Scoped UI files (${#scope_files[@]}):"
+          cat /tmp/ui-contract-scope.txt
 
       - name: Run UI Contract Gates
+        if: steps.scope.outputs.has_changes == 'true'
         run: |
+          set -euo pipefail
           chmod +x ./scripts/check-ui-contract.sh
-          # Scoped check: only Dashboard + primitives
-          ./scripts/check-ui-contract.sh \
-            components/Dashboard.tsx \
-            components/Dashboard.css \
-            components/ui/Card.tsx \
-            components/ui/Card.css \
-            components/ui/StatusChip.tsx \
-            components/ui/StatusChip.css \
-            components/SystemHealthPanel.tsx \
-            components/SystemHealthPanel.css \
-            components/Navigation.tsx \
-            components/Navigation.css \
-            components/RecordingsList.tsx \
-            components/Recordings.css
+          mapfile -t scope_files < /tmp/ui-contract-scope.txt
+          ./scripts/check-ui-contract.sh "${scope_files[@]}"
         working-directory: ${{ github.workspace }}
 
-      - name: Comment on PR (if failed)
-        if: failure()
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
-        with:
-          script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: `## ❌ UI Contract Gates Failed
-              
-              The automated UI contract enforcement detected violations.
-              
-              **Common violations:**
-              - Hardcoded hex colors (use \`var(--token-name)\`)
-              - Custom \`box-shadow\` (use primitives or \`var(--shadow-*)\`)
-              - Infinite animations outside primitives
-              - Hardcoded gradients
-              
-              **To fix:**
-              1. Run \`./scripts/check-ui-contract.sh\` locally
-              2. Use Card and StatusChip primitives
-              3. Only use design tokens from \`index.css\`
-              
-              See [DESIGN.md](../blob/main/webui/DESIGN.md) for the contract.`
-            })
+      - name: No UI contract scope changes
+        if: steps.scope.outputs.has_changes != 'true'
+        run: echo "No scoped UI files changed; contract gate skipped by condition."
