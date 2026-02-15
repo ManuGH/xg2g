@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"math"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -301,14 +300,6 @@ func (m *Manager) SetResolvedPathIfEmpty(id string, resolved string) bool {
 func (m *Manager) touch(meta *Metadata) {
 	meta.UpdatedAt = time.Now().UnixNano() // Use Nano for higher resolution
 	meta.StateGen++
-}
-
-// touchIfStateChanged updates timestamp and optionally generation
-func (m *Manager) touchIfStateChanged(meta *Metadata, changed bool) {
-	meta.UpdatedAt = time.Now().UnixNano()
-	if changed {
-		meta.StateGen++
-	}
 }
 
 // TriggerProbe initiates an async background probe for a recording.
@@ -700,42 +691,4 @@ func (m *Manager) CancelAll() {
 			log.Error().Err(err).Str("job_id", mon.jobID).Msg("failed to stop monitor")
 		}
 	}
-}
-
-// isValidPath checks for directory traversal and safe roots
-func isValidPath(path string) bool {
-	if path == "" {
-		return false
-	}
-
-	// Prevent directory traversal
-	if strings.Contains(path, "..") {
-		return false
-	}
-
-	// Ensure absolute paths are within allowed roots
-	if filepath.IsAbs(path) {
-		// Define allowed roots (can be configurable)
-		allowedRoots := []string{
-			"/var/lib/xg2g/recordings",
-			"/mnt/storage",
-			"/tmp", // For testing
-		}
-
-		abs, err := filepath.Abs(path)
-		if err != nil {
-			return false
-		}
-
-		for _, root := range allowedRoots {
-			if strings.HasPrefix(abs, root) {
-				return true
-			}
-		}
-		// If not in allowed roots, block
-		return false
-	}
-
-	// Relative paths are allowed (assumed to be within working dir)
-	return true
 }
