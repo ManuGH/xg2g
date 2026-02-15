@@ -39,6 +39,25 @@ jobs:
         env:
           GOTOOLCHAIN: auto
 
+      - name: Setup Node
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: webui/package-lock.json
+
+      - name: Build WebUI assets (embed prereq)
+        run: |
+          set -euo pipefail
+          make ui-build
+
+      - name: Install ffmpeg
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          ffmpeg -version
+
       - name: Run race suite
         run: |
           set -euo pipefail
@@ -150,31 +169,14 @@ jobs:
 
   weekly-governance-deep:
     name: weekly-governance-deep
-    needs: [nightly-race, nightly-integration, weekly-security-deep]
-    if: always()
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * 0'
     runs-on: ubuntu-latest
     timeout-minutes: 75
     steps:
-      - name: Select governance mode
-        id: mode
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          EVENT_SCHEDULE: ${{ github.event.schedule }}
-          WEEKLY_CRON: ${{ env.WEEKLY_CRON }}
-        run: |
-          set -euo pipefail
-          RUN_GOVERNANCE=false
-          if [ "$EVENT_NAME" = "workflow_dispatch" ] || [ "$EVENT_SCHEDULE" = "$WEEKLY_CRON" ]; then
-            RUN_GOVERNANCE=true
-          fi
-          echo "run_governance=$RUN_GOVERNANCE" >> "$GITHUB_OUTPUT"
-
       - name: Checkout
-        if: steps.mode.outputs.run_governance == 'true'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Setup Go
-        if: steps.mode.outputs.run_governance == 'true'
         uses: actions/setup-go@a5f9b05d2d216f63e13859e0d847461041025775
         with:
           go-version-file: go.mod
@@ -185,7 +187,6 @@ jobs:
           GOTOOLCHAIN: auto
 
       - name: Setup Node
-        if: steps.mode.outputs.run_governance == 'true'
         uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238
         with:
           node-version: "22"
@@ -193,51 +194,41 @@ jobs:
           cache-dependency-path: webui/package-lock.json
 
       - name: Run governance deep checks
-        id: governance
-        if: steps.mode.outputs.run_governance == 'true'
-        continue-on-error: true
         run: |
-          set +e
-          set -u -o pipefail
-
-          EXIT=0
+          set -euo pipefail
 
           NEW_JSX=$(find webui/src -type f -name '*.jsx' || true)
           if [ -n "$NEW_JSX" ]; then
             echo "❌ New .jsx files detected:"
             echo "$NEW_JSX"
-            EXIT=1
+            exit 1
           fi
 
           LEGACY_IMPORTS=$(grep -RIn "from ['\"].*\\.\\./client[^-]" webui/src/ 2>/dev/null || true)
           if [ -n "$LEGACY_IMPORTS" ]; then
             echo "❌ Legacy client imports detected:"
             echo "$LEGACY_IMPORTS"
-            EXIT=1
+            exit 1
           fi
 
-          (
-            cd webui
-            npm ci
-            npm run build
-          )
-          BUILD_EXIT=$?
-          if [ "$BUILD_EXIT" -ne 0 ]; then
-            EXIT=1
-          fi
+          cd webui
+          npm ci
+          npm run build
 
-          echo "exit_code=$EXIT" >> "$GITHUB_OUTPUT"
-          exit "$EXIT"
+  deep-summary:
+    name: deep-summary
+    needs: [nightly-race, nightly-integration, weekly-security-deep, weekly-governance-deep]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
 
+    steps:
       - name: Summary (Job / Command / Exit)
-        id: summary
         env:
           RACE_RESULT: ${{ needs.nightly-race.result }}
           INTEGRATION_RESULT: ${{ needs.nightly-integration.result }}
           SECURITY_RESULT: ${{ needs.weekly-security-deep.result }}
-          RUN_GOVERNANCE: ${{ steps.mode.outputs.run_governance }}
-          GOV_OUTCOME: ${{ steps.governance.outcome }}
-          GOV_EXIT: ${{ steps.governance.outputs.exit_code }}
+          GOVERNANCE_RESULT: ${{ needs.weekly-governance-deep.result }}
         run: |
           set -euo pipefail
 
@@ -252,18 +243,7 @@ jobs:
           RACE_EXIT="$(map_exit "$RACE_RESULT")"
           INTEGRATION_EXIT="$(map_exit "$INTEGRATION_RESULT")"
           SECURITY_EXIT="$(map_exit "$SECURITY_RESULT")"
-
-          GOV_RESULT="skipped"
-          GOV_EXIT_DISPLAY="SKIP"
-          if [ "$RUN_GOVERNANCE" = "true" ]; then
-            if [ "$GOV_OUTCOME" = "success" ]; then
-              GOV_RESULT="success"
-              GOV_EXIT_DISPLAY="0"
-            else
-              GOV_RESULT="failure"
-              GOV_EXIT_DISPLAY="${GOV_EXIT:-1}"
-            fi
-          fi
+          GOVERNANCE_EXIT="$(map_exit "$GOVERNANCE_RESULT")"
 
           {
             echo "## Deep Suite Summary"
@@ -273,23 +253,5 @@ jobs:
             echo "| nightly-race | \`go test -race -count=1 ./...\` | $RACE_RESULT | $RACE_EXIT |"
             echo "| nightly-integration | \`go test -count=1 -failfast ./test/integration/... ./test/invariants/...\` | $INTEGRATION_RESULT | $INTEGRATION_EXIT |"
             echo "| weekly-security-deep | \`govulncheck -tags=nogpu ./... && gosec -severity=high ... ./...\` | $SECURITY_RESULT | $SECURITY_EXIT |"
-            echo "| weekly-governance-deep | \`jsx/legacy-import guards + (cd webui && npm ci && npm run build)\` | $GOV_RESULT | $GOV_EXIT_DISPLAY |"
+            echo "| weekly-governance-deep | \`jsx/legacy-import guards + (cd webui && npm ci && npm run build)\` | $GOVERNANCE_RESULT | $GOVERNANCE_EXIT |"
           } >> "$GITHUB_STEP_SUMMARY"
-
-          FAILED=0
-          for RESULT in "$RACE_RESULT" "$INTEGRATION_RESULT" "$SECURITY_RESULT"; do
-            case "$RESULT" in
-              success|skipped) ;;
-              *) FAILED=1 ;;
-            esac
-          done
-
-          if [ "$GOV_RESULT" = "failure" ]; then
-            FAILED=1
-          fi
-
-          echo "failed=$FAILED" >> "$GITHUB_OUTPUT"
-
-      - name: Fail when deep suite contains failures
-        if: steps.summary.outputs.failed == '1'
-        run: exit 1
