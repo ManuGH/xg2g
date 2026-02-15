@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -416,9 +417,12 @@ func TestRateLimitingBehavior(t *testing.T) {
 func TestContextCancellationFlow(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// Setup: Slow server
+	// Setup: Server that blocks until request context is canceled.
+	requestStarted := make(chan struct{})
+	var startedOnce sync.Once
 	slowServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(10 * time.Second) // Very slow
+		startedOnce.Do(func() { close(requestStarted) })
+		<-r.Context().Done()
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer slowServer.Close()
@@ -442,8 +446,16 @@ func TestContextCancellationFlow(t *testing.T) {
 		resultChan <- err
 	}()
 
-	// Cancel after short delay
-	time.Sleep(200 * time.Millisecond)
+	require.Eventually(t, func() bool {
+		select {
+		case <-requestStarted:
+			return true
+		default:
+			return false
+		}
+	}, 2*time.Second, 10*time.Millisecond, "expected refresh request to reach slow server before cancellation")
+
+	// Cancel after request entered blocking path.
 	cancel()
 
 	// Verify: Should return quickly with cancellation error

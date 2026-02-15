@@ -9,6 +9,7 @@ package daemon
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -24,6 +25,30 @@ import (
 // contains is a helper to check if a string contains a substring
 func contains(s, substr string) bool {
 	return strings.Contains(s, substr)
+}
+
+func reserveListenAddr(t *testing.T) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to reserve listen addr: %v", err)
+	}
+	addr := ln.Addr().String()
+	_ = ln.Close()
+	return addr
+}
+
+func waitForListen(addr string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp", addr, 50*time.Millisecond)
+		if err == nil {
+			_ = conn.Close()
+			return nil
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return errors.New("listen timeout")
 }
 
 func TestNewManager_ValidDeps(t *testing.T) {
@@ -150,9 +175,18 @@ func TestManager_Shutdown_TimesOut(t *testing.T) {
 	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
 
 	// Create a handler that blocks on shutdown
-	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		time.Sleep(10 * time.Second) // Block longer than shutdown timeout
-		w.WriteHeader(http.StatusOK)
+	requestStarted := make(chan struct{})
+	releaseHandler := make(chan struct{})
+	handler := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		select {
+		case <-requestStarted:
+		default:
+			close(requestStarted)
+		}
+		select {
+		case <-r.Context().Done():
+		case <-releaseHandler:
+		}
 	})
 
 	deps := Deps{
@@ -162,7 +196,7 @@ func TestManager_Shutdown_TimesOut(t *testing.T) {
 	}
 
 	serverCfg := config.ServerConfig{
-		ListenAddr:      "127.0.0.1:0",
+		ListenAddr:      reserveListenAddr(t),
 		ReadTimeout:     1 * time.Second,
 		WriteTimeout:    1 * time.Second,
 		IdleTimeout:     10 * time.Second,
@@ -184,8 +218,31 @@ func TestManager_Shutdown_TimesOut(t *testing.T) {
 		errChan <- mgr.Start(ctx)
 	}()
 
-	// Give server a moment to start
-	time.Sleep(100 * time.Millisecond)
+	if err := waitForListen(serverCfg.ListenAddr, 2*time.Second); err != nil {
+		t.Fatalf("server did not start listening: %v", err)
+	}
+
+	requestDone := make(chan struct{})
+	go func() {
+		defer close(requestDone)
+		client := &http.Client{
+			Transport: &http.Transport{
+				DisableKeepAlives: true,
+			},
+		}
+		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://"+serverCfg.ListenAddr, nil)
+		resp, err := client.Do(req)
+		if err == nil && resp != nil {
+			_ = resp.Body.Close()
+		}
+	}()
+
+	select {
+	case <-requestStarted:
+		// Request is in-flight; shutdown should now hit timeout path.
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected in-flight request before shutdown")
+	}
 
 	// Trigger shutdown
 	cancel()
@@ -193,11 +250,22 @@ func TestManager_Shutdown_TimesOut(t *testing.T) {
 	// Wait for shutdown to complete (should timeout quickly)
 	select {
 	case err := <-errChan:
-		// Expect shutdown to complete (possibly with timeout error in logs)
-		// We don't fail the test because timeout is handled gracefully
-		_ = err
+		if err == nil {
+			t.Fatal("expected shutdown timeout error, got nil")
+		}
+		if !contains(err.Error(), "shutdown errors") && !contains(err.Error(), "context deadline exceeded") {
+			t.Fatalf("unexpected shutdown error: %v", err)
+		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("Start() did not return after context cancellation")
+	}
+
+	close(releaseHandler)
+
+	select {
+	case <-requestDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("blocked request did not terminate after shutdown")
 	}
 }
 
