@@ -7,12 +7,11 @@
 
 set -e
 
-# Tooling dependency check
-command -v rg >/dev/null 2>&1 || {
-    echo "❌ ERROR: rg (ripgrep) is required but not installed"
-    echo "Install with: apt-get install ripgrep  OR  brew install ripgrep"
-    exit 2
-}
+USE_RG=1
+if ! command -v rg >/dev/null 2>&1; then
+    USE_RG=0
+    echo "⚠️ rg (ripgrep) not found; falling back to grep"
+fi
 
 echo "=== Gate A: Control Layer Store Purity Check ==="
 echo "Scope: internal/control/** only (legacy internal/api excluded)"
@@ -22,9 +21,15 @@ VIOLATIONS_FOUND=0
 
 # Check 1: Import prohibition (primary check - catches 90%)
 echo "[1/2] Checking for forbidden store imports in control layer..."
-STORE_IMPORTS=$(rg -type go --files-with-matches \
-    'internal/domain/session/store' \
-    internal/control/ 2>/dev/null || true)
+if [ "$USE_RG" -eq 1 ]; then
+    STORE_IMPORTS=$(rg -type go --files-with-matches \
+        'internal/domain/session/store' \
+        internal/control/ 2>/dev/null || true)
+else
+    STORE_IMPORTS=$(grep -RIl --include='*.go' \
+        'internal/domain/session/store' \
+        internal/control/ 2>/dev/null || true)
+fi
 
 if [ -n "$STORE_IMPORTS" ]; then
     echo "❌ GATE A FAIL: internal/control cannot import internal/domain/session/store"
@@ -39,9 +44,15 @@ fi
 
 # Check 2: Direct store mutation calls (backup - catches creative bypasses)
 echo "[2/2] Checking for direct store mutation calls..."
-MUTATIONS=$(rg -type go --line-number \
-    '\.(UpdateSession|PutSession|DeleteSession|TryAcquireLease|ReleaseLease)\(' \
-    internal/control/ 2>/dev/null || true)
+if [ "$USE_RG" -eq 1 ]; then
+    MUTATIONS=$(rg -type go --line-number \
+        '\.(UpdateSession|PutSession|DeleteSession|TryAcquireLease|ReleaseLease)\(' \
+        internal/control/ 2>/dev/null || true)
+else
+    MUTATIONS=$(grep -RInE --include='*.go' \
+        '\.(UpdateSession|PutSession|DeleteSession|TryAcquireLease|ReleaseLease)\(' \
+        internal/control/ 2>/dev/null || true)
+fi
 
 if [ -n "$MUTATIONS" ]; then
     echo "❌ GATE A FAIL: internal/control cannot directly mutate stores"
