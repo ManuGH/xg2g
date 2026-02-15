@@ -126,6 +126,16 @@ func (s *Server) WireV3Runtime(
 	}
 }
 
+// SetV3Components is a compatibility wrapper for runtime wiring call sites.
+func (s *Server) SetV3Components(
+	b bus.Bus,
+	st store.StateStore,
+	rs resume.Store,
+	sm *scan.Manager,
+) {
+	s.WireV3Runtime(b, st, rs, sm, nil)
+}
+
 // WireV3Overrides applies optional v3 override dependencies through one typed entrypoint.
 func (s *Server) WireV3Overrides(overrides V3Overrides) {
 	if !isNilInterface(overrides.VerificationStore) {
@@ -177,6 +187,11 @@ func (s *Server) WireV3Overrides(overrides V3Overrides) {
 		s.mu.Unlock()
 		s.syncV3HandlerDependencies()
 	}
+}
+
+// SetVerificationStore is a compatibility wrapper for override wiring call sites.
+func (s *Server) SetVerificationStore(store verification.Store) {
+	s.WireV3Overrides(V3Overrides{VerificationStore: store})
 }
 
 // LibraryService returns the underlying library service from v3 handler.

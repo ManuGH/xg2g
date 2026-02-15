@@ -17,7 +17,6 @@ configStrict: true
 dataDir: /tmp
 engine:
   cpuThresholdScale: 1.5
-  defaultClientCodecs: []
   enabled: true
   gpuLimit: 8
   idleTimeout: 5m
@@ -29,7 +28,7 @@ enigma2:
   authMode: inherit
   backoff: 200ms
   baseUrl: http://127.0.0.1
-  fallbackTo8001: false
+  fallbackTo8001: true
   maxBackoff: 30s
   password: ""
   preflightTimeout: 10s

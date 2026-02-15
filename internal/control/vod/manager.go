@@ -600,10 +600,10 @@ func (m *Manager) StartBuild(ctx context.Context, jobID, metaID, input, workDir,
 		FinalPath: finalPath,
 		Runner:    m.runner,
 		Clock:     RealClock{},
-		OnSucceeded: func(ctx context.Context, jobID string, spec Spec, finalPath string) {
+		OnSucceeded: func(jobID string, spec Spec, finalPath string) {
 			m.markReadyFromBuild(jobID, metaID, spec, finalPath)
 		},
-		OnFailed: func(ctx context.Context, jobID string, spec Spec, finalPath string, reason string) {
+		OnFailed: func(jobID string, spec Spec, finalPath string, reason string) {
 			m.markFailedFromBuild(jobID, metaID, reason)
 		},
 	})

@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/recordings"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/rs/zerolog/log"
 )
 
@@ -24,6 +26,17 @@ const (
 	MaxConcurrentProbes = 4
 	ProbeQueueSize      = 100
 	ProbeTimeout        = 30 * time.Second
+)
+
+var (
+	probeQueueLength = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "vod_probe_queue_length",
+		Help: "Current number of pending probe requests",
+	})
+	probeDropped = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "vod_probe_dropped_total",
+		Help: "Total number of dropped probe requests",
+	})
 )
 
 // StartProberPool initializes the background workers.
