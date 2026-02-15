@@ -19,6 +19,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
+	xlog "github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 )
@@ -343,7 +344,10 @@ func newTestServerConfig(t *testing.T, spy *SpyStore, spyBus *SpyBus, fn func(*c
 	cfg.ConfigStrict = true
 	cfg.EPGEnabled = false
 	cfg.RateLimitEnabled = false
+	cfg.Engine.Enabled = true
 	cfg.Engine.TunerSlots = []int{0}
+	cfg.Limits.MaxSessions = 8
+	cfg.Limits.MaxTranscodes = 8
 
 	_ = os.MkdirAll(cfg.DataDir+"/picons", 0750)
 
@@ -360,6 +364,9 @@ func newTestServerConfig(t *testing.T, spy *SpyStore, spyBus *SpyBus, fn func(*c
 	}
 
 	cfgMgr := config.NewManager(cfg.DataDir + "/config.yaml")
+
+	// Ensure global logger is initialized before concurrent race requests start.
+	xlog.Configure(xlog.Config{Level: "error", Output: io.Discard})
 
 	srv := NewServer(cfg, cfgMgr, nil)
 	var b bus.Bus
@@ -686,7 +693,8 @@ func runRaceTest(t *testing.T, srv testServer, tok testTokens, spy *SpyStore, sp
 		}
 
 		// bucket is "0" because startMs is not set for this test case.
-		expectedKey := ComputeIdemKey(model.IntentTypeStreamStart, "1:0:19:132F:3EF:1:C00000:0:0:0:RACETEST", "auto", "0")
+		// Idempotency key uses the request profile ID ("universal"), not resolved profile name.
+		expectedKey := ComputeIdemKey(model.IntentTypeStreamStart, "1:0:19:132F:3EF:1:C00000:0:0:0:RACETEST", "universal", "0")
 		if gotKey := spy.LastIdemKey(); gotKey == "" {
 			t.Fatalf("[Phase2] expected non-empty idempotency key")
 		} else if gotKey != expectedKey {
