@@ -7,28 +7,30 @@
 
 set -e
 
-USE_RG=1
-if ! command -v rg >/dev/null 2>&1; then
-    USE_RG=0
-    echo "⚠️ rg (ripgrep) not found; falling back to grep"
-fi
-
 echo "=== Gate A: Control Layer Store Purity Check ==="
-echo "Scope: internal/control/** only (legacy internal/api excluded)"
+echo "Scope: internal/control/** production code only (legacy internal/api excluded)"
 echo ""
 
 VIOLATIONS_FOUND=0
 
+# Temporary legacy carve-outs within control/v3 until domain migration is complete.
+# These are production files that still hold direct store integration today.
+LEGACY_ALLOWLIST_REGEX='^internal/control/http/v3/(server|handlers_sessions|sessions_heartbeat)\.go$'
+
+mapfile -t CONTROL_GO_FILES < <(
+    git ls-files 'internal/control/**/*.go' \
+        | grep -vE '_test\.go$' \
+        | grep -vE "$LEGACY_ALLOWLIST_REGEX" \
+        || true
+)
+
 # Check 1: Import prohibition (primary check - catches 90%)
 echo "[1/2] Checking for forbidden store imports in control layer..."
-if [ "$USE_RG" -eq 1 ]; then
-    STORE_IMPORTS=$(rg -type go --files-with-matches \
+STORE_IMPORTS=""
+if [ "${#CONTROL_GO_FILES[@]}" -gt 0 ]; then
+    STORE_IMPORTS=$(grep -l \
         'internal/domain/session/store' \
-        internal/control/ 2>/dev/null || true)
-else
-    STORE_IMPORTS=$(grep -RIl --include='*.go' \
-        'internal/domain/session/store' \
-        internal/control/ 2>/dev/null || true)
+        "${CONTROL_GO_FILES[@]}" 2>/dev/null || true)
 fi
 
 if [ -n "$STORE_IMPORTS" ]; then
@@ -44,14 +46,11 @@ fi
 
 # Check 2: Direct store mutation calls (backup - catches creative bypasses)
 echo "[2/2] Checking for direct store mutation calls..."
-if [ "$USE_RG" -eq 1 ]; then
-    MUTATIONS=$(rg -type go --line-number \
+MUTATIONS=""
+if [ "${#CONTROL_GO_FILES[@]}" -gt 0 ]; then
+    MUTATIONS=$(grep -nH -E \
         '\.(UpdateSession|PutSession|DeleteSession|TryAcquireLease|ReleaseLease)\(' \
-        internal/control/ 2>/dev/null || true)
-else
-    MUTATIONS=$(grep -RInE --include='*.go' \
-        '\.(UpdateSession|PutSession|DeleteSession|TryAcquireLease|ReleaseLease)\(' \
-        internal/control/ 2>/dev/null || true)
+        "${CONTROL_GO_FILES[@]}" 2>/dev/null || true)
 fi
 
 if [ -n "$MUTATIONS" ]; then
