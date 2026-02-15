@@ -1,8 +1,8 @@
 # CODEOWNERS - Code Review Assignment
 # https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
 
-# Global fallback - all files require review by repository owner
-* @ManuGH
+# Solo-maintainer mode: no global fallback to avoid self-review deadlocks.
+# Ownership is declared only for critical paths.
 
 # ===================================================================================================
 # Critical Paths - Require explicit review
