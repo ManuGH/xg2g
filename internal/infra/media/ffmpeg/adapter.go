@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	codecdecision "github.com/ManuGH/xg2g/internal/decision"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/media/ffmpeg/watchdog"
 	"github.com/ManuGH/xg2g/internal/metrics"
@@ -37,26 +38,26 @@ var vaapiEncodersToTest = []string{"h264_vaapi", "hevc_vaapi"}
 
 // LocalAdapter implements ports.MediaPipeline using local exec.Command.
 type LocalAdapter struct {
-	BinPath          string
-	FFprobeBin       string
-	HLSRoot          string
-	AnalyzeDuration  string
-	ProbeSize        string
-	DVRWindow        time.Duration
-	KillTimeout      time.Duration
-	httpClient       *http.Client
-	Logger           zerolog.Logger
-	E2               *enigma2.Client // Dependency for Tuner operations
-	FallbackTo8001   bool
-	PreflightTimeout time.Duration
-	SegmentSeconds   int
-	StartTimeout     time.Duration
-	StallTimeout     time.Duration
-	VaapiDevice        string            // e.g. "/dev/dri/renderD128"; empty = no VAAPI
-	vaapiEncoders      map[string]bool   // per-encoder preflight results ("h264_vaapi" -> true)
-	vaapiDeviceChecked bool              // device-level preflight ran
-	vaapiDeviceErr     error             // device-level preflight error
-	mu               sync.Mutex
+	BinPath            string
+	FFprobeBin         string
+	HLSRoot            string
+	AnalyzeDuration    string
+	ProbeSize          string
+	DVRWindow          time.Duration
+	KillTimeout        time.Duration
+	httpClient         *http.Client
+	Logger             zerolog.Logger
+	E2                 *enigma2.Client // Dependency for Tuner operations
+	FallbackTo8001     bool
+	PreflightTimeout   time.Duration
+	SegmentSeconds     int
+	StartTimeout       time.Duration
+	StallTimeout       time.Duration
+	VaapiDevice        string          // e.g. "/dev/dri/renderD128"; empty = no VAAPI
+	vaapiEncoders      map[string]bool // per-encoder preflight results ("h264_vaapi" -> true)
+	vaapiDeviceChecked bool            // device-level preflight ran
+	vaapiDeviceErr     error           // device-level preflight error
+	mu                 sync.Mutex
 	// activeProcs maps run handles to running commands
 	activeProcs map[ports.RunHandle]*exec.Cmd
 }
@@ -722,16 +723,46 @@ func (a *LocalAdapter) buildArgs(ctx context.Context, spec ports.StreamSpec, inp
 		"-reconnect_on_http_error", "4xx,5xx",
 	)
 
+	useHWPath := spec.Profile.HWAccel == "vaapi"
+	if isPreferHWProfile(spec.Profile.Name) {
+		useHWPath = true
+	}
+
+	hardVAAPIRequest := spec.Profile.HWAccel == "vaapi" && !isPreferHWProfile(spec.Profile.Name)
+	neg := codecdecision.Decide(codecdecision.Input{
+		Profile:        spec.Profile.Name,
+		RequestedCodec: spec.Profile.VideoCodec,
+		RequireHW:      hardVAAPIRequest,
+		Server: codecdecision.ServerCapabilities{
+			HWAccelAvailable:  useHWPath,
+			SupportedHWCodecs: a.supportedHWCodecs(),
+		},
+	})
+	if neg.Path == codecdecision.PathReject && !hardVAAPIRequest {
+		return nil, fmt.Errorf("codec negotiation rejected (profile=%s codec=%s reason=%s)", spec.Profile.Name, spec.Profile.VideoCodec, neg.Reason)
+	}
+	resolvedCodec := neg.OutputCodec
+	if resolvedCodec == "" && hardVAAPIRequest {
+		resolvedCodec = normalizeRequestedCodec(spec.Profile.VideoCodec)
+	}
+	if resolvedCodec == "" {
+		resolvedCodec = "h264"
+	}
+	useVAAPI := neg.Path == codecdecision.PathTranscodeHW
+	if hardVAAPIRequest {
+		useVAAPI = true
+	}
+
 	// VAAPI device init (must come before -i for hwaccel decode).
 	// Fail-closed: two independent checks must pass before VAAPI args are emitted.
-	if spec.Profile.HWAccel == "vaapi" {
+	if useVAAPI {
 		if a.VaapiDevice == "" {
 			return nil, fmt.Errorf("vaapi requested by profile but no vaapi device configured on adapter")
 		}
 		// Resolve the encoder name for per-encoder preflight check
-		reqEncoder := "h264_vaapi"
-		if spec.Profile.VideoCodec == "hevc" {
-			reqEncoder = "hevc_vaapi"
+		reqEncoder, ok := codecToVAAPIEncoder(resolvedCodec)
+		if !ok {
+			return nil, fmt.Errorf("unsupported vaapi codec resolved by decision engine: %s", resolvedCodec)
 		}
 		if !a.VaapiEncoderVerified(reqEncoder) {
 			return nil, fmt.Errorf("vaapi encoder %s not verified by preflight (device=%s, deviceErr=%v)", reqEncoder, a.VaapiDevice, a.vaapiDeviceErr)
@@ -803,10 +834,10 @@ func (a *LocalAdapter) buildArgs(ctx context.Context, spec ports.StreamSpec, inp
 		)
 
 		// Video encoding (two paths: VAAPI GPU or CPU)
-		if spec.Profile.HWAccel == "vaapi" {
-			args = a.buildVaapiVideoArgs(args, spec, gop, segmentDurationSec)
+		if useVAAPI {
+			args = a.buildVaapiVideoArgs(args, spec, resolvedCodec, gop, segmentDurationSec)
 		} else {
-			args = a.buildCPUVideoArgs(args, spec, gop, segmentDurationSec)
+			args = a.buildCPUVideoArgs(args, spec, resolvedCodec, gop, segmentDurationSec)
 		}
 
 		// Audio (same for all paths)
@@ -846,13 +877,13 @@ func (a *LocalAdapter) buildArgs(ctx context.Context, spec ports.StreamSpec, inp
 
 // buildVaapiVideoArgs constructs video encoding arguments for the VAAPI GPU pipeline.
 // Frames are already in GPU memory from -hwaccel vaapi -hwaccel_output_format vaapi.
-func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec, gop, segmentSec int) []string {
+func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec, outputCodec string, gop, segmentSec int) []string {
 	prof := spec.Profile
 	a.Logger.Info().
 		Str("sessionId", spec.SessionID).
 		Str("transcode.mode", "vaapi").
 		Str("vaapi.device", a.VaapiDevice).
-		Str("video.codec", prof.VideoCodec).
+		Str("video.codec", outputCodec).
 		Int("video.maxRateK", prof.VideoMaxRateK).
 		Int("video.bufSizeK", prof.VideoBufSizeK).
 		Bool("deinterlace", prof.Deinterlace).
@@ -865,8 +896,11 @@ func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec,
 
 	// Encoder
 	encoder := "h264_vaapi"
-	if prof.VideoCodec == "hevc" {
+	switch outputCodec {
+	case "hevc":
 		encoder = "hevc_vaapi"
+	case "av1":
+		encoder = "av1_vaapi"
 	}
 	args = append(args, "-c:v", encoder)
 
@@ -900,12 +934,12 @@ func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec,
 // When ProfileSpec is zero-valued (VideoCodec="" + TranscodeVideo=false), applies
 // legacy defaults: libx264 + yadif + ultrafast + CRF 20. This ensures backwards
 // compat for code paths that don't set ProfileSpec yet.
-func (a *LocalAdapter) buildCPUVideoArgs(args []string, spec ports.StreamSpec, gop, segmentSec int) []string {
+func (a *LocalAdapter) buildCPUVideoArgs(args []string, spec ports.StreamSpec, outputCodec string, gop, segmentSec int) []string {
 	prof := spec.Profile
 	// Detect zero-valued profile → apply legacy defaults.
 	// A zero-valued ProfileSpec has VideoCodec="" and TranscodeVideo=false,
 	// which happens when the orchestrator doesn't pass a resolved profile.
-	legacy := prof.VideoCodec == "" && !prof.TranscodeVideo
+	legacy := prof.VideoCodec == "" && !prof.TranscodeVideo && outputCodec == "h264"
 
 	codec := "libx264"
 	preset := "ultrafast" // legacy default
@@ -913,10 +947,12 @@ func (a *LocalAdapter) buildCPUVideoArgs(args []string, spec ports.StreamSpec, g
 	deinterlace := true // legacy default: always deinterlace DVB streams
 
 	if !legacy {
-		if prof.VideoCodec == "hevc" {
+		if outputCodec == "hevc" {
 			codec = "libx265"
-		} else if prof.VideoCodec != "" && prof.VideoCodec != "h264" {
-			codec = prof.VideoCodec
+		} else if outputCodec == "av1" {
+			codec = "libsvtav1"
+		} else if outputCodec != "" && outputCodec != "h264" {
+			codec = outputCodec
 		}
 		if prof.Preset != "" {
 			preset = prof.Preset
@@ -965,6 +1001,52 @@ func (a *LocalAdapter) buildCPUVideoArgs(args []string, spec ports.StreamSpec, g
 		"-profile:v", "main",
 	)
 	return args
+}
+
+func (a *LocalAdapter) supportedHWCodecs() []string {
+	codecs := make([]string, 0, 3)
+	if a.VaapiEncoderVerified("h264_vaapi") {
+		codecs = append(codecs, "h264")
+	}
+	if a.VaapiEncoderVerified("hevc_vaapi") {
+		codecs = append(codecs, "hevc")
+	}
+	if a.VaapiEncoderVerified("av1_vaapi") {
+		codecs = append(codecs, "av1")
+	}
+	return codecs
+}
+
+func isPreferHWProfile(profileName string) bool {
+	p := strings.ToLower(strings.TrimSpace(profileName))
+	return p == "av1_hw" || strings.HasSuffix(p, "_hw") || strings.HasSuffix(p, "_hw_ll")
+}
+
+func codecToVAAPIEncoder(codec string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(codec)) {
+	case "h264":
+		return "h264_vaapi", true
+	case "hevc":
+		return "hevc_vaapi", true
+	case "av1":
+		return "av1_vaapi", true
+	default:
+		return "", false
+	}
+}
+
+func normalizeRequestedCodec(codec string) string {
+	c := strings.ToLower(strings.TrimSpace(codec))
+	switch c {
+	case "", "h264", "avc", "avc1", "libx264", "h264_vaapi":
+		return "h264"
+	case "hevc", "h265", "h.265", "libx265", "hevc_vaapi":
+		return "hevc"
+	case "av1", "av01", "av1_vaapi", "libsvtav1", "libaom-av1":
+		return "av1"
+	default:
+		return c
+	}
 }
 
 func (a *LocalAdapter) detectFPS(ctx context.Context, inputURL string) (int, error) {
