@@ -182,6 +182,7 @@ services:
 
 ### Permissions
 
+- Container user: `xg2g:xg2g` (UID/GID 1000)
 - Container user: `xg2g:xg2g` (UID/GID 10001)
 - `/dev/dri/renderD128`: Group `video` (container user must be member)
 
