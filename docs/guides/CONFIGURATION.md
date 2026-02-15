@@ -58,6 +58,7 @@ This section is generated from `internal/config/registry.go`. Do not edit by han
 | Path | Env | Default | Status | Profile |
 | --- | --- | --- | --- | --- |
 | `engine.cpuThresholdScale` | `XG2G_ENGINE_CPU_SCALE` | `1.5` | Active | Advanced |
+| `engine.defaultClientCodecs` | `XG2G_ENGINE_DEFAULT_CLIENT_CODECS` | - | Active | Advanced |
 | `engine.enabled` | `XG2G_ENGINE_ENABLED` | `true` | Active | Advanced |
 | `engine.gpuLimit` | `XG2G_ENGINE_GPU_LIMIT` | `8` | Active | Advanced |
 | `engine.idleTimeout` | `XG2G_ENGINE_IDLE_TIMEOUT` | `5m` | Active | Advanced |
@@ -75,7 +76,7 @@ Aliases: `openWebIF.*` (compat; prefer `enigma2.*`).
 | `enigma2.authMode` | `XG2G_E2_AUTH_MODE` | `inherit` | Active | Advanced |
 | `enigma2.backoff` | `XG2G_E2_BACKOFF` | `200ms` | Active | Advanced |
 | `enigma2.baseUrl` | `XG2G_E2_HOST` | - | Active | Simple |
-| `enigma2.fallbackTo8001` | `XG2G_E2_FALLBACK_TO_8001` | `true` | Active | Integrator |
+| `enigma2.fallbackTo8001` | `XG2G_E2_FALLBACK_TO_8001` | `false` | Active | Integrator |
 | `enigma2.maxBackoff` | `XG2G_E2_MAX_BACKOFF` | `30s` | Active | Advanced |
 | `enigma2.password` | `XG2G_E2_PASS` | - | Active | Simple |
 | `enigma2.preflightTimeout` | `XG2G_E2_PREFLIGHT_TIMEOUT` | `10s` | Active | Advanced |

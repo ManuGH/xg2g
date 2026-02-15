@@ -41,13 +41,13 @@ enigma2:
   # If true, asks receiver to generate stream URL (handles 17999 transcoding automatically).
   useWebIFStreams: true
 
-# Legacy YAML alias (compat only):
-# openWebIF:
-#   baseUrl: "http://127.0.0.1"
-#   timeout: "10s"
-#   retries: 2
-#   streamPort: 8001
-#   useWebIFStreams: true
+# Legacy YAML alias (compat path still required by schema contract):
+openWebIF:
+  baseUrl: "http://127.0.0.1"
+  timeout: "10s"
+  retries: 2
+  streamPort: 8001
+  useWebIFStreams: true
 # ------------------------------------------------------------------------------
 # Enigma2 Advanced Options [OPTIONAL]
 # ------------------------------------------------------------------------------
@@ -118,6 +118,26 @@ api:
   # API server listen address
   # ENV: XG2G_LISTEN
   listenAddr: ":8088"
+
+# Network Policy Configuration
+network: {}
+  # LAN/VPN client CIDRs allowed for LAN-guarded endpoints.
+  # Leave empty for defaults (RFC1918 + localhost).
+  # ENV: XG2G_LAN_ALLOW_CIDRS
+  # lan:
+  #   allow:
+  #     cidrs: ["10.0.0.0/8", "192.168.0.0/16", "100.64.0.0/10"]
+
+  # Optional outbound HTTP(S) allowlist policy.
+  # ENV: XG2G_OUTBOUND_ENABLED, XG2G_OUTBOUND_ALLOW_*
+  # outbound:
+  #   enabled: false
+  #   allow:
+  #     hosts: ["example.local"]
+  #     cidrs: ["10.10.55.0/24"]
+  #     ports: [80, 443]
+  #     schemes: ["http", "https"]
+
 # Prometheus Metrics Configuration
 metrics:
   # Enable Prometheus metrics endpoint

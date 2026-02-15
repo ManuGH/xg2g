@@ -209,6 +209,12 @@
           "default": 1.5,
           "type": "number"
         },
+        "defaultClientCodecs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "enabled": {
           "default": true,
           "type": "boolean"
@@ -272,7 +278,7 @@
           "type": "string"
         },
         "fallbackTo8001": {
-          "default": true,
+          "default": false,
           "description": "Fallback to direct 8001 stream when StreamRelay (17999) fails preflight",
           "examples": [
             false,
