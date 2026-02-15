@@ -896,9 +896,10 @@ func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec,
 
 	// Encoder
 	encoder := "h264_vaapi"
-	if outputCodec == "hevc" {
+	switch outputCodec {
+	case "hevc":
 		encoder = "hevc_vaapi"
-	} else if outputCodec == "av1" {
+	case "av1":
 		encoder = "av1_vaapi"
 	}
 	args = append(args, "-c:v", encoder)
