@@ -34,6 +34,12 @@ pkg/
 /test_output.txt
 /test_report.txt
 test_*.txt
+*.log
+*_logs.txt
+debug*.txt
+vuln*.txt
+test_output*.txt
+test_results*.txt
 coverage.out
 coverage.html
 output.log
