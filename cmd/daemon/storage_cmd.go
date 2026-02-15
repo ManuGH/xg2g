@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/persistence/sqlite"
 )
 
@@ -71,10 +72,7 @@ func runStorageVerify(args []string) int {
 	}
 
 	if all {
-		dataDir := os.Getenv("XG2G_DATA_DIR")
-		if dataDir == "" {
-			dataDir = os.Getenv("XG2G_DATA") // Backward compatibility fallback
-		}
+		dataDir := config.ResolveDataDirFromEnv()
 		if dataDir == "" {
 			fmt.Fprintln(os.Stderr, "Error: --all requires XG2G_DATA_DIR (or XG2G_DATA) to be set.")
 			return 2
