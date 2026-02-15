@@ -27,7 +27,7 @@ func TestServer_PassesNonNilRootCancelToV3(t *testing.T) {
 		return &v3.Server{}
 	}
 
-	s := New(cfg, cfgMgr, WithV3ServerFactory(factory))
+	s := mustNewServer(t, cfg, cfgMgr, WithV3ServerFactory(factory))
 
 	require.NotNil(t, s.rootCancel, "Server's rootCancel must be initialized")
 	require.NotNil(t, capturedCancel, "v3 server factory must receive a non-nil cancel function")

@@ -35,55 +35,49 @@ func TestJobsRefreshContract(t *testing.T) {
 			{
 				name: "empty_data_dir",
 				config: config.AppConfig{
-					DataDir:    "",
-					OWIBase:    "http://example.com",
-					Bouquet:    "Test",
-					StreamPort: 8001,
+					DataDir: "",
+					Bouquet: "Test",
+					Enigma2: config.Enigma2Settings{BaseURL: "http://example.com", StreamPort: 8001},
 				},
 			},
 			{
 				name: "empty_owi_base",
 				config: config.AppConfig{
-					DataDir:    "/tmp",
-					OWIBase:    "",
-					Bouquet:    "Test",
-					StreamPort: 8001,
+					DataDir: "/tmp",
+					Bouquet: "Test",
+					Enigma2: config.Enigma2Settings{BaseURL: "", StreamPort: 8001},
 				},
 			},
 			{
 				name: "empty_bouquet",
 				config: config.AppConfig{
-					DataDir:    "/tmp",
-					OWIBase:    "http://example.com",
-					Bouquet:    "",
-					StreamPort: 8001,
+					DataDir: "/tmp",
+					Bouquet: "",
+					Enigma2: config.Enigma2Settings{BaseURL: "http://example.com", StreamPort: 8001},
 				},
 			},
 			{
 				name: "invalid_stream_port_zero",
 				config: config.AppConfig{
-					DataDir:    "/tmp",
-					OWIBase:    "http://example.com",
-					Bouquet:    "Test",
-					StreamPort: 0,
+					DataDir: "/tmp",
+					Bouquet: "Test",
+					Enigma2: config.Enigma2Settings{BaseURL: "http://example.com", StreamPort: 0},
 				},
 			},
 			{
 				name: "invalid_stream_port_negative",
 				config: config.AppConfig{
-					DataDir:    "/tmp",
-					OWIBase:    "http://example.com",
-					Bouquet:    "Test",
-					StreamPort: -1,
+					DataDir: "/tmp",
+					Bouquet: "Test",
+					Enigma2: config.Enigma2Settings{BaseURL: "http://example.com", StreamPort: -1},
 				},
 			},
 			{
 				name: "invalid_stream_port_too_high",
 				config: config.AppConfig{
-					DataDir:    "/tmp",
-					OWIBase:    "http://example.com",
-					Bouquet:    "Test",
-					StreamPort: 70000,
+					DataDir: "/tmp",
+					Bouquet: "Test",
+					Enigma2: config.Enigma2Settings{BaseURL: "http://example.com", StreamPort: 70000},
 				},
 			},
 		}
@@ -103,15 +97,17 @@ func TestJobsRefreshContract(t *testing.T) {
 		tmpDir := t.TempDir()
 
 		cfg := config.AppConfig{
-			Version:    "test",
-			DataDir:    tmpDir,
-			OWIBase:    "http://invalid-backend.local",
-			Bouquet:    "Test",
-			StreamPort: 8001,
-			XMLTVPath:  "xmltv.xml",
-			OWITimeout: 1 * time.Second,
-			OWIRetries: 0,
-			OWIBackoff: 100 * time.Millisecond,
+			Version:   "test",
+			DataDir:   tmpDir,
+			Bouquet:   "Test",
+			XMLTVPath: "xmltv.xml",
+			Enigma2: config.Enigma2Settings{
+				BaseURL:    "http://invalid-backend.local",
+				StreamPort: 8001,
+				Timeout:    1 * time.Second,
+				Retries:    0,
+				Backoff:    100 * time.Millisecond,
+			},
 		}
 
 		status, err := jobs.Refresh(ctx, config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault()))
@@ -155,15 +151,17 @@ func TestJobsRefreshContract(t *testing.T) {
 		tmpDir := t.TempDir()
 
 		cfg := config.AppConfig{
-			Version:    "test",
-			DataDir:    tmpDir,
-			OWIBase:    "http://example.com",
-			Bouquet:    "Test",
-			StreamPort: 8001,
-			XMLTVPath:  "xmltv.xml",
-			OWITimeout: 30 * time.Second, // Long timeout
-			OWIRetries: 3,
-			OWIBackoff: 1 * time.Second,
+			Version:   "test",
+			DataDir:   tmpDir,
+			Bouquet:   "Test",
+			XMLTVPath: "xmltv.xml",
+			Enigma2: config.Enigma2Settings{
+				BaseURL:    "http://example.com",
+				StreamPort: 8001,
+				Timeout:    30 * time.Second, // Long timeout
+				Retries:    3,
+				Backoff:    1 * time.Second,
+			},
 		}
 
 		// Create context that cancels immediately
@@ -185,15 +183,17 @@ func TestJobsRefreshContract(t *testing.T) {
 		tmpDir := t.TempDir()
 
 		cfg := config.AppConfig{
-			Version:    "test",
-			DataDir:    tmpDir,
-			OWIBase:    "http://example.com:9999", // Invalid port
-			Bouquet:    "Test",
-			StreamPort: 8001,
-			XMLTVPath:  "xmltv.xml",
-			OWITimeout: 1 * time.Second,
-			OWIRetries: 0,
-			OWIBackoff: 100 * time.Millisecond,
+			Version:   "test",
+			DataDir:   tmpDir,
+			Bouquet:   "Test",
+			XMLTVPath: "xmltv.xml",
+			Enigma2: config.Enigma2Settings{
+				BaseURL:    "http://example.com:9999", // Invalid port
+				StreamPort: 8001,
+				Timeout:    1 * time.Second,
+				Retries:    0,
+				Backoff:    100 * time.Millisecond,
+			},
 		}
 
 		// Set aggressive timeout
@@ -217,18 +217,20 @@ func TestJobsRefreshContract(t *testing.T) {
 		cfgWithEPG := config.AppConfig{
 			Version:           "test",
 			DataDir:           tmpDir,
-			OWIBase:           "http://example.com",
 			Bouquet:           "Test",
-			StreamPort:        8001,
 			XMLTVPath:         "xmltv.xml",
 			EPGEnabled:        true,
 			EPGDays:           3,
 			EPGMaxConcurrency: 5,
 			EPGTimeoutMS:      5000,
 			EPGRetries:        2,
-			OWITimeout:        1 * time.Second,
-			OWIRetries:        0,
-			OWIBackoff:        100 * time.Millisecond,
+			Enigma2: config.Enigma2Settings{
+				BaseURL:    "http://example.com",
+				StreamPort: 8001,
+				Timeout:    1 * time.Second,
+				Retries:    0,
+				Backoff:    100 * time.Millisecond,
+			},
 		}
 
 		ctx := context.Background()
@@ -246,15 +248,17 @@ func TestJobsRefreshContract(t *testing.T) {
 		tmpDir := t.TempDir()
 
 		cfg := config.AppConfig{
-			Version:    "test",
-			DataDir:    tmpDir,
-			OWIBase:    "http://example.com",
-			Bouquet:    "Premium, Favourites, Sports", // Comma-separated
-			StreamPort: 8001,
-			XMLTVPath:  "xmltv.xml",
-			OWITimeout: 1 * time.Second,
-			OWIRetries: 0,
-			OWIBackoff: 100 * time.Millisecond,
+			Version:   "test",
+			DataDir:   tmpDir,
+			Bouquet:   "Premium, Favourites, Sports", // Comma-separated
+			XMLTVPath: "xmltv.xml",
+			Enigma2: config.Enigma2Settings{
+				BaseURL:    "http://example.com",
+				StreamPort: 8001,
+				Timeout:    1 * time.Second,
+				Retries:    0,
+				Backoff:    100 * time.Millisecond,
+			},
 		}
 
 		ctx := context.Background()
@@ -302,43 +306,47 @@ func TestJobsConfigContract(t *testing.T) {
 	t.Run("RequiredFields", func(t *testing.T) {
 		// Contract: Config has required fields
 		cfg := config.AppConfig{
-			Version:    "1.2.3",
-			DataDir:    "/data",
-			OWIBase:    "http://example.com",
-			Bouquet:    "Premium",
-			StreamPort: 8001,
-			OWITimeout: 10 * time.Second,
-			OWIRetries: 3,
-			OWIBackoff: 500 * time.Millisecond,
+			Version: "1.2.3",
+			DataDir: "/data",
+			Bouquet: "Premium",
+			Enigma2: config.Enigma2Settings{
+				BaseURL:    "http://example.com",
+				StreamPort: 8001,
+				Timeout:    10 * time.Second,
+				Retries:    3,
+				Backoff:    500 * time.Millisecond,
+			},
 		}
 
 		assert.NotEmpty(t, cfg.Version)
 		assert.NotEmpty(t, cfg.DataDir)
-		assert.NotEmpty(t, cfg.OWIBase)
+		assert.NotEmpty(t, cfg.Enigma2.BaseURL)
 		assert.NotEmpty(t, cfg.Bouquet)
-		assert.Greater(t, cfg.StreamPort, 0)
-		assert.Greater(t, cfg.OWITimeout, time.Duration(0))
+		assert.Greater(t, cfg.Enigma2.StreamPort, 0)
+		assert.Greater(t, cfg.Enigma2.Timeout, time.Duration(0))
 	})
 
 	t.Run("OptionalAuthFields", func(t *testing.T) {
 		// Contract: Auth fields are optional
 		cfg := config.AppConfig{
-			Version:     "1.2.3",
-			DataDir:     "/data",
-			OWIBase:     "http://example.com",
-			OWIUsername: "user",
-			OWIPassword: "pass",
-			Bouquet:     "Premium",
-			StreamPort:  8001,
-			APIToken:    "secret",
-			OWITimeout:  10 * time.Second,
-			OWIRetries:  3,
-			OWIBackoff:  500 * time.Millisecond,
+			Version:  "1.2.3",
+			DataDir:  "/data",
+			Bouquet:  "Premium",
+			APIToken: "secret",
+			Enigma2: config.Enigma2Settings{
+				BaseURL:    "http://example.com",
+				Username:   "user",
+				Password:   "pass",
+				StreamPort: 8001,
+				Timeout:    10 * time.Second,
+				Retries:    3,
+				Backoff:    500 * time.Millisecond,
+			},
 		}
 
 		// These can be empty or set
-		assert.True(t, cfg.OWIUsername == "" || cfg.OWIUsername != "")
-		assert.True(t, cfg.OWIPassword == "" || cfg.OWIPassword != "")
+		assert.True(t, cfg.Enigma2.Username == "" || cfg.Enigma2.Username != "")
+		assert.True(t, cfg.Enigma2.Password == "" || cfg.Enigma2.Password != "")
 		assert.True(t, cfg.APIToken == "" || cfg.APIToken != "")
 	})
 
@@ -347,17 +355,19 @@ func TestJobsConfigContract(t *testing.T) {
 		cfg := config.AppConfig{
 			Version:           "1.2.3",
 			DataDir:           "/data",
-			OWIBase:           "http://example.com",
 			Bouquet:           "Premium",
-			StreamPort:        8001,
 			EPGEnabled:        true,
 			EPGDays:           7,
 			EPGMaxConcurrency: 5,
 			EPGTimeoutMS:      5000,
 			EPGRetries:        2,
-			OWITimeout:        10 * time.Second,
-			OWIRetries:        3,
-			OWIBackoff:        500 * time.Millisecond,
+			Enigma2: config.Enigma2Settings{
+				BaseURL:    "http://example.com",
+				StreamPort: 8001,
+				Timeout:    10 * time.Second,
+				Retries:    3,
+				Backoff:    500 * time.Millisecond,
+			},
 		}
 
 		if cfg.EPGEnabled {

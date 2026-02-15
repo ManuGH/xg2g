@@ -103,11 +103,13 @@ func TestAPIFast_BasicRefreshFlow(t *testing.T) {
 
 	cfg := config.AppConfig{
 		DataDir:    tmpDir,
-		OWIBase:    mock.URL(),
 		Bouquet:    "Premium",
-		StreamPort: 8001,
 		XMLTVPath:  "xmltv.xml",
 		EPGEnabled: false, // Disable EPG for speed
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    mock.URL(),
+			StreamPort: 8001,
+		},
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

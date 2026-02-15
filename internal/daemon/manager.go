@@ -17,6 +17,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/admission"
+	"github.com/ManuGH/xg2g/internal/core/urlutil"
 	worker "github.com/ManuGH/xg2g/internal/domain/session/manager"
 	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/infra/bus"
@@ -239,7 +240,7 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 		Str("mode", cfg.Engine.Mode).
 		Str("store", cfg.Store.Path).
 		Str("hls_root", cfg.HLS.Root).
-		Str("e2_host", cfg.Enigma2.BaseURL).
+		Str("e2_host", urlutil.SanitizeURL(cfg.Enigma2.BaseURL)).
 		Msg("starting v3 worker (Phase 7A)")
 
 	// 1. Initialize Bus (Shared)
@@ -347,8 +348,7 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 
 	// 4. Inject into API Server (Shadow Receiving)
 	if m.deps.APIServerSetter != nil {
-		m.deps.APIServerSetter.SetV3Components(v3Bus, v3Store, resumeStore, scanManager)
-		m.deps.APIServerSetter.SetAdmission(adm)
+		m.deps.APIServerSetter.WireV3Runtime(v3Bus, v3Store, resumeStore, scanManager, adm)
 		m.logger.Info().Msg("v3 components and admission gate injected into API server")
 	} else {
 		m.logger.Warn().Msg("API Server Setter not available - shadow intents will not be processed")

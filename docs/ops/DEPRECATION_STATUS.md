@@ -11,7 +11,7 @@ operational view used for release planning and enforcement.
 
 | Item | Replacement | Phase | Remove In | Code Usage (non-exhaustive) | Source |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `XG2G_STREAM_PORT` | `enigma2.streamPort` | warn | v3.5.0 | `internal/config/registry.go`, `internal/config/merge.go` | `docs/deprecations.json`, `docs/DEPRECATION_POLICY.md` |
+| `XG2G_STREAM_PORT` | `XG2G_E2_STREAM_PORT` (or `enigma2.streamPort`) | warn | v3.5.0 | `internal/config/registry.go`, `internal/config/merge_env.go` | `docs/deprecations.json`, `docs/DEPRECATION_POLICY.md` |
 
 ### Schema/Protocol Deprecations
 

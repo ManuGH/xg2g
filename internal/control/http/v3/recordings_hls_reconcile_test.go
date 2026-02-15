@@ -134,6 +134,15 @@ func (r *signalRunner) Start(ctx context.Context, spec vod.Spec) (vod.Handle, er
 	return r.delegate.Start(ctx, spec)
 }
 
+func isClosed(ch <-chan struct{}) bool {
+	select {
+	case <-ch:
+		return true
+	default:
+		return false
+	}
+}
+
 func TestGetRecordingHLSPlaylist_FailedPromotesReady(t *testing.T) {
 	serviceRef := "1:0:0:0:0:0:0:0:0:/media/test.ts"
 	recordingID := recservice.EncodeRecordingID(serviceRef)
@@ -148,7 +157,8 @@ func TestGetRecordingHLSPlaylist_FailedPromotesReady(t *testing.T) {
 	// Use successRunner
 	vodMgr, err := vod.NewManager(&successRunner{fsRoot: t.TempDir()}, &noopProber{}, nil)
 	require.NoError(t, err)
-	srv.SetDependencies(nil, nil, nil, nil, nil, nil, nil, nil, vodMgr, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	defer vodMgr.Shutdown()
+	srv.SetDependencies(Dependencies{VODManager: vodMgr})
 
 	cacheDir := filepath.Join(hlsRoot, "recordings", v3recordings.RecordingCacheKey(serviceRef))
 	require.NoError(t, os.MkdirAll(cacheDir, 0750))
@@ -181,11 +191,20 @@ func TestGetRecordingHLSPlaylist_Failed_Reconcile_BuildCallbackPromotesReady(t *
 		},
 	}
 
+	localRoot := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(localRoot, "nfs"), 0750))
+	require.NoError(t, os.WriteFile(filepath.Join(localRoot, "nfs/build.ts"), []byte("dummy"), 0600))
+
+	mapper := recordings.NewPathMapper([]config.RecordingPathMapping{
+		{ReceiverRoot: "/media", LocalRoot: localRoot},
+	})
+
 	srv := NewServer(cfg, nil, nil)
 	// Use successRunner
-	vodMgr, err := vod.NewManager(&successRunner{fsRoot: t.TempDir()}, &noopProber{}, nil)
+	vodMgr, err := vod.NewManager(&successRunner{fsRoot: t.TempDir()}, &noopProber{}, mapper)
 	require.NoError(t, err)
-	srv.SetDependencies(nil, nil, nil, nil, nil, nil, nil, nil, vodMgr, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	defer vodMgr.Shutdown()
+	srv.SetDependencies(Dependencies{VODManager: vodMgr, PathMapper: mapper})
 
 	vodMgr.SeedMetadata(serviceRef, vod.Metadata{
 		State: vod.ArtifactStateFailed,
@@ -199,7 +218,7 @@ func TestGetRecordingHLSPlaylist_Failed_Reconcile_BuildCallbackPromotesReady(t *
 	require.Eventually(t, func() bool {
 		meta, ok := vodMgr.GetMetadata(serviceRef)
 		return ok && meta.State == vod.ArtifactStateReady && meta.PlaylistPath != ""
-	}, 500*time.Millisecond, 10*time.Millisecond)
+	}, 2*time.Second, 10*time.Millisecond)
 
 	cacheDir, err := v3recordings.RecordingCacheDir(cfg.HLS.Root, serviceRef)
 	require.NoError(t, err)
@@ -220,14 +239,19 @@ func TestGetRecordingHLSPlaylist_FailedStampedeTriggersSingleBuild(t *testing.T)
 		started: make(chan struct{}),
 	}
 
+	localRoot := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(localRoot, "nfs"), 0750))
+	require.NoError(t, os.WriteFile(filepath.Join(localRoot, "nfs/test.ts"), []byte("dummy"), 0600))
+
 	mapper := recordings.NewPathMapper([]config.RecordingPathMapping{
-		{ReceiverRoot: "/media", LocalRoot: "/tmp"},
+		{ReceiverRoot: "/media", LocalRoot: localRoot},
 	})
 
 	srv := NewServer(cfg, nil, nil)
 	vodMgr, err := vod.NewManager(runner, &noopProber{}, mapper)
 	require.NoError(t, err)
-	srv.SetDependencies(nil, nil, nil, nil, mapper, nil, nil, nil, vodMgr, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	defer vodMgr.Shutdown()
+	srv.SetDependencies(Dependencies{PathMapper: mapper, VODManager: vodMgr})
 
 	vodMgr.SeedMetadata(serviceRef, vod.Metadata{
 		State: vod.ArtifactStateFailed,
@@ -269,11 +293,20 @@ func TestGetRecordingHLSPlaylist_FailedLatencySLO(t *testing.T) {
 		delegate: &successRunner{fsRoot: t.TempDir()},
 		done:     make(chan struct{}),
 	}
-	vodMgr, err := vod.NewManager(runner, &noopProber{}, nil)
+	localRoot := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(localRoot, "nfs"), 0750))
+	require.NoError(t, os.WriteFile(filepath.Join(localRoot, "nfs/latency.ts"), []byte("dummy"), 0600))
+
+	mapper := recordings.NewPathMapper([]config.RecordingPathMapping{
+		{ReceiverRoot: "/media", LocalRoot: localRoot},
+	})
+
+	vodMgr, err := vod.NewManager(runner, &noopProber{}, mapper)
 	require.NoError(t, err)
+	defer vodMgr.Shutdown()
 
 	srv := NewServer(cfg, nil, nil)
-	srv.SetDependencies(nil, nil, nil, nil, nil, nil, nil, nil, vodMgr, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	srv.SetDependencies(Dependencies{VODManager: vodMgr, PathMapper: mapper})
 
 	vodMgr.SeedMetadata(serviceRef, vod.Metadata{
 		State: vod.ArtifactStateFailed,
@@ -289,16 +322,10 @@ func TestGetRecordingHLSPlaylist_FailedLatencySLO(t *testing.T) {
 	require.Less(t, time.Since(start), 50*time.Millisecond)
 	require.Equal(t, http.StatusServiceUnavailable, rr.Code)
 
-	// Wait for the async build to start/finish to ensure file handles are closed before cleanup
-	select {
-	case <-runner.done:
-		// Async work started and completed IO
-	case <-time.After(200 * time.Millisecond):
-		// If it never started, that's also fine (means no IO happened), but we expect it to start
-		// given the test setup. If this times out, "RemoveAll" might still be safe if no IO happened.
-		// However, knowing the system, it SHOULD start.
-		t.Log("Async build did not start within timeout")
-	}
+	// Wait deterministically for async build start/completion.
+	require.Eventually(t, func() bool {
+		return isClosed(runner.done)
+	}, 2*time.Second, 10*time.Millisecond, "expected async reconcile build to start")
 
 	// Double-check readiness to be absolutely sure all business logic finished.
 	// We wait for a terminal state (READY or FAILED) to ensure the VOD manager
@@ -310,8 +337,6 @@ func TestGetRecordingHLSPlaylist_FailedLatencySLO(t *testing.T) {
 }
 
 func TestGetRecordingHLSPlaylist_OpenFailure_ReconcileReady(t *testing.T) {
-	t.Skip("Skipping flaky async reconciliation test")
-
 	serviceRef := "1:0:0:0:0:0:0:0:0:/media/test.ts"
 	recordingID := recservice.EncodeRecordingID(serviceRef)
 	localRoot := t.TempDir()
@@ -330,10 +355,16 @@ func TestGetRecordingHLSPlaylist_OpenFailure_ReconcileReady(t *testing.T) {
 		{ReceiverRoot: "/media", LocalRoot: localRoot},
 	})
 
+	runner := &signalRunner{
+		delegate: &successRunner{fsRoot: t.TempDir()},
+		done:     make(chan struct{}),
+	}
+
 	srv := NewServer(cfg, nil, nil)
-	vodMgr, err := vod.NewManager(&successRunner{fsRoot: t.TempDir()}, &slowProber{delay: 50 * time.Millisecond}, pathMapper)
+	vodMgr, err := vod.NewManager(runner, &slowProber{delay: 50 * time.Millisecond}, pathMapper)
 	require.NoError(t, err)
-	srv.SetDependencies(nil, nil, nil, nil, nil, nil, nil, nil, vodMgr, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	defer vodMgr.Shutdown()
+	srv.SetDependencies(Dependencies{VODManager: vodMgr, PathMapper: pathMapper})
 
 	cacheDir, err := v3recordings.RecordingCacheDir(cfg.HLS.Root, serviceRef)
 	require.NoError(t, err)
@@ -346,6 +377,22 @@ func TestGetRecordingHLSPlaylist_OpenFailure_ReconcileReady(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v3/recordings/"+recordingID+"/playlist.m3u8", nil)
 	rr := httptest.NewRecorder()
 	srv.GetRecordingHLSPlaylist(rr, req, recordingID)
-	// Open fails (playlist missing), should revert to PREPARING (reconcile triggered)
+	// Open fails (playlist missing), should return PREPARING while reconcile starts.
 	require.Equal(t, http.StatusServiceUnavailable, rr.Code)
+
+	require.Eventually(t, func() bool {
+		return isClosed(runner.done)
+	}, 2*time.Second, 10*time.Millisecond, "expected reconcile build to start")
+
+	require.Eventually(t, func() bool {
+		meta, ok := vodMgr.GetMetadata(serviceRef)
+		return ok && meta.State == vod.ArtifactStateReady && meta.PlaylistPath != ""
+	}, 3*time.Second, 10*time.Millisecond, "expected reconcile to repopulate READY metadata")
+
+	require.Eventually(t, func() bool {
+		req2 := httptest.NewRequest(http.MethodGet, "/api/v3/recordings/"+recordingID+"/playlist.m3u8", nil)
+		rr2 := httptest.NewRecorder()
+		srv.GetRecordingHLSPlaylist(rr2, req2, recordingID)
+		return rr2.Code == http.StatusOK
+	}, 3*time.Second, 20*time.Millisecond, "expected playlist to become available after reconcile")
 }

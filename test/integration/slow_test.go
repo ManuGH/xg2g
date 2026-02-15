@@ -39,11 +39,13 @@ func TestSlow_RefreshWithTimeout(t *testing.T) {
 	defer slowServer.Close()
 
 	cfg := config.AppConfig{
-		DataDir:    tmpDir,
-		OWIBase:    slowServer.URL,
-		StreamPort: 8001,
-		Bouquet:    "Premium",
-		OWITimeout: 2 * time.Second, // Short timeout to fail fast
+		DataDir: tmpDir,
+		Bouquet: "Premium",
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    slowServer.URL,
+			StreamPort: 8001,
+			Timeout:    2 * time.Second, // Short timeout to fail fast
+		},
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -74,10 +76,12 @@ func TestSlow_ContextCancellation(t *testing.T) {
 	defer slowServer.Close()
 
 	cfg := config.AppConfig{
-		DataDir:    tmpDir,
-		OWIBase:    slowServer.URL,
-		StreamPort: 8001,
-		Bouquet:    "Premium",
+		DataDir: tmpDir,
+		Bouquet: "Premium",
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    slowServer.URL,
+			StreamPort: 8001,
+		},
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
@@ -119,10 +123,12 @@ func TestSlow_RecoveryAfterFailure(t *testing.T) {
 	defer recoveryServer.Close()
 
 	cfg := config.AppConfig{
-		DataDir:    tmpDir,
-		OWIBase:    recoveryServer.URL,
-		StreamPort: 8001,
-		Bouquet:    "Premium",
+		DataDir: tmpDir,
+		Bouquet: "Premium",
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    recoveryServer.URL,
+			StreamPort: 8001,
+		},
 	}
 
 	// Phase 1: Server unhealthy

@@ -14,11 +14,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/control/http/v3/middleware"
+	"github.com/ManuGH/xg2g/internal/control/middleware"
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
+	xlog "github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 )
@@ -343,7 +344,10 @@ func newTestServerConfig(t *testing.T, spy *SpyStore, spyBus *SpyBus, fn func(*c
 	cfg.ConfigStrict = true
 	cfg.EPGEnabled = false
 	cfg.RateLimitEnabled = false
+	cfg.Engine.Enabled = true
 	cfg.Engine.TunerSlots = []int{0}
+	cfg.Limits.MaxSessions = 8
+	cfg.Limits.MaxTranscodes = 8
 
 	_ = os.MkdirAll(cfg.DataDir+"/picons", 0750)
 
@@ -361,6 +365,9 @@ func newTestServerConfig(t *testing.T, spy *SpyStore, spyBus *SpyBus, fn func(*c
 
 	cfgMgr := config.NewManager(cfg.DataDir + "/config.yaml")
 
+	// Ensure global logger is initialized before concurrent race requests start.
+	xlog.Configure(xlog.Config{Level: "error", Output: io.Discard})
+
 	srv := NewServer(cfg, cfgMgr, nil)
 	var b bus.Bus
 	if spyBus != nil {
@@ -368,27 +375,11 @@ func newTestServerConfig(t *testing.T, spy *SpyStore, spyBus *SpyBus, fn func(*c
 	} else {
 		b = bus.NewMemoryBus()
 	}
-	srv.SetDependencies(
-		b,
-		spy,
-		resume.NewMemoryStore(),
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-	)
+	srv.SetDependencies(Dependencies{
+		Bus:         b,
+		Store:       spy,
+		ResumeStore: resume.NewMemoryStore(),
+	})
 	srv.SetPreflightCheck(nil)
 
 	// Initialize LAN Guard from config
@@ -612,13 +603,7 @@ func TestLANGuard_PublicEndpoints(t *testing.T) {
 }
 
 func TestRaceSafety_ParallelIntents(t *testing.T) {
-	// Phase 2: Worker Logic (API Leases OFF - Default)
-	// Unskip when PutSessionWithIdempotency is wired into the v3 intent path
-	// and bus publication is idempotent.
-	t.Run("Phase2_Worker_Dedup_PendingIdempotency", func(t *testing.T) {
-		if !v3IdempotencyEnabled {
-			t.Skip("phase 2 idempotency not implemented yet")
-		}
+	t.Run("Phase2_Worker_Dedup", func(t *testing.T) {
 		spy := &SpyStore{}
 		spyBus := &SpyBus{}
 		srv, tok := newTestServerConfig(t, spy, spyBus, nil)
@@ -708,7 +693,8 @@ func runRaceTest(t *testing.T, srv testServer, tok testTokens, spy *SpyStore, sp
 		}
 
 		// bucket is "0" because startMs is not set for this test case.
-		expectedKey := ComputeIdemKey(model.IntentTypeStreamStart, "1:0:19:132F:3EF:1:C00000:0:0:0:RACETEST", "auto", "0")
+		// Idempotency key uses the request profile ID ("universal"), not resolved profile name.
+		expectedKey := ComputeIdemKey(model.IntentTypeStreamStart, "1:0:19:132F:3EF:1:C00000:0:0:0:RACETEST", "universal", "0")
 		if gotKey := spy.LastIdemKey(); gotKey == "" {
 			t.Fatalf("[Phase2] expected non-empty idempotency key")
 		} else if gotKey != expectedKey {

@@ -7,9 +7,9 @@
       "key": "XG2G_STREAM_PORT",
       "target": "enigma2.streamPort",
       "phase": "warn",
-      "replacement": "enigma2.streamPort",
+      "replacement": "XG2G_E2_STREAM_PORT",
       "remove_in": "v3.5.0",
-      "message": "Use YAML config for streaming ports; ENV override will be removed in v3.5 (ADR-00X)"
+      "message": "Use canonical XG2G_E2_STREAM_PORT (or YAML enigma2.streamPort); legacy XG2G_STREAM_PORT will be removed in v3.5 (ADR-00X)"
     }
   ]
 }

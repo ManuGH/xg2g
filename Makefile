@@ -511,6 +511,11 @@ test-race: ## Run tests with race detection
 	@$(GO) test ./... -v -race
 	@echo "✅ Race detection tests passed"
 
+test-v3-idempotency: ## Run v3 idempotency/dedup suite with race detection (required in PR CI)
+	@echo "Running v3 idempotency/dedup race suite..."
+	@$(GO) test -race -count=1 -v ./internal/control/http/v3 -run '^TestRaceSafety_ParallelIntents$$'
+	@echo "✅ v3 idempotency/dedup race suite passed"
+
 test-cover: ## Run tests with coverage reporting
 	@echo "Running tests with coverage..."
 	@mkdir -p $(ARTIFACTS_DIR)
@@ -966,16 +971,16 @@ schema-docs: ## Generate docs/config.md from JSON Schema
 
 schema-validate: ## Validate all YAML config files against JSON Schema
 	@echo "Validating config files against JSON Schema..."
-	@if command -v check-jsonschema >/dev/null 2>&1; then \
-		check-jsonschema --schemafile docs/guides/config.schema.json config.example.yaml; \
-		check-jsonschema --schemafile docs/guides/config.schema.json config.generated.example.yaml; \
-		find internal/config/testdata -name 'valid-*.yaml' -type f -print0 2>/dev/null | xargs -0 -I{} check-jsonschema --schemafile docs/guides/config.schema.json {} || true; \
-		if [ -d examples ]; then find examples -name '*.ya?ml' -type f -print0 | xargs -0 -I{} check-jsonschema --schemafile docs/guides/config.schema.json {} || true; fi; \
-		echo "✓ Schema validation complete"; \
-	else \
-		echo "⚠  check-jsonschema not installed, skipping schema validation"; \
+	@if ! command -v check-jsonschema >/dev/null 2>&1; then \
+		echo "❌ check-jsonschema not installed"; \
 		echo "   Install with: pip install check-jsonschema"; \
+		exit 1; \
 	fi
+	@check-jsonschema --schemafile docs/guides/config.schema.json config.example.yaml
+	@check-jsonschema --schemafile docs/guides/config.schema.json config.generated.example.yaml
+	@find internal/config/testdata -name 'valid-*.yaml' -type f -print0 2>/dev/null | xargs -0 -r -I{} check-jsonschema --schemafile docs/guides/config.schema.json {}
+	@if [ -d examples ]; then find examples -name '*.ya?ml' -type f -print0 | xargs -0 -r -I{} check-jsonschema --schemafile docs/guides/config.schema.json {}; fi
+	@echo "✓ Schema validation complete"
 
 gate-a: ## Gate A: Control Layer Store Purity (ADR-014 Phase 1)
 	@./scripts/verify_gate_a_control_store.sh
@@ -1012,7 +1017,7 @@ quality-gates-online: verify-config verify-docs-compiled verify-generate verify-
 	@echo "Validating quality gates..."
 	@echo "✅ All quality gates passed"
 
-ci-pr: verify-config verify-generate lint test ## Fast, deterministic PR gate (offline-safe core)
+ci-pr: verify-config verify-generate gate-repo-hygiene gate-v3-contract gate-a gate-webui lint-invariants lint schema-validate test-v3-idempotency test ## Enforced PR baseline (guardrails + schema + idempotency/race)
 	@echo "✅ CI PR gate passed"
 
 ci-nightly: quality-gates-online contract-matrix test-race test-fuzz smoke-test ## Deep, expensive gates for nightly/dispatch
