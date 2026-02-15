@@ -30,7 +30,14 @@ jobs:
         run: |
           set -euo pipefail
 
-          RANGE="origin/${{ github.base_ref }}...${{ github.sha }}"
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.sha }}"
+          if git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            RANGE="${BASE_SHA}...${HEAD_SHA}"
+          else
+            git fetch --no-tags --prune --depth=1 origin "${{ github.base_ref }}"
+            RANGE="origin/${{ github.base_ref }}...${HEAD_SHA}"
+          fi
           changed_files="$(git diff --name-only "$RANGE" || true)"
 
           mapfile -t ui_contract_scope < <(
@@ -51,16 +58,38 @@ jobs:
             webui_changed=true
           fi
 
+          webui_build_needed=false
+          if printf '%s\n' "$changed_files" | grep -Eq '^(webui/|api/openapi\.yaml$|internal/api/)'; then
+            webui_build_needed=true
+          fi
+
+          skip_reason=""
+          if [ "${#ui_contract_scope[@]}" -eq 0 ] && [ "${#webui_ts_scope[@]}" -eq 0 ] && [ "$webui_build_needed" = "false" ]; then
+            skip_reason="no_relevant_changes"
+          fi
+
           printf '%s\n' "${ui_contract_scope[@]}" > /tmp/required-gates-ui-contract-scope.txt
           printf '%s\n' "${webui_ts_scope[@]}" > /tmp/required-gates-webui-ts-scope.txt
 
+          echo "range=$RANGE" >> "$GITHUB_OUTPUT"
           echo "ui_contract_count=${#ui_contract_scope[@]}" >> "$GITHUB_OUTPUT"
           echo "webui_ts_count=${#webui_ts_scope[@]}" >> "$GITHUB_OUTPUT"
           echo "webui_changed=$webui_changed" >> "$GITHUB_OUTPUT"
+          echo "webui_build_needed=$webui_build_needed" >> "$GITHUB_OUTPUT"
+          echo "skip_reason=$skip_reason" >> "$GITHUB_OUTPUT"
 
+          echo "Diff range: $RANGE"
           echo "UI contract scoped files: ${#ui_contract_scope[@]}"
           echo "Phase4 TS scoped files: ${#webui_ts_scope[@]}"
           echo "Any webui/* changes: $webui_changed"
+          echo "WebUI build needed: $webui_build_needed"
+          if [ -n "$skip_reason" ]; then
+            echo "skip_reason=$skip_reason"
+          fi
+
+      - name: Scope skip reason
+        if: steps.scope.outputs.skip_reason != ''
+        run: echo "skip_reason=${{ steps.scope.outputs.skip_reason }}"
 
       - name: UI Contract (diff-scoped)
         if: steps.scope.outputs.ui_contract_count != '0'
@@ -79,7 +108,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          RANGE="origin/${{ github.base_ref }}...${{ github.sha }}"
+          RANGE="${{ steps.scope.outputs.range }}"
           NEW_JSX=$(git diff --name-only --diff-filter=A "$RANGE" | grep '\.jsx$' || true)
           if [ -n "$NEW_JSX" ]; then
             echo "ERROR: New .jsx files detected (Phase 4 guardrail)"
@@ -89,7 +118,7 @@ jobs:
           echo "No new .jsx files detected"
 
       - name: Setup Node for Phase4 TypeScript check
-        if: steps.scope.outputs.webui_changed == 'true'
+        if: steps.scope.outputs.webui_build_needed == 'true'
         uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6
         with:
           node-version: "22"
@@ -111,7 +140,7 @@ jobs:
           echo "No legacy client imports in changed TS files"
 
       - name: Phase4 - TypeScript build
-        if: steps.scope.outputs.webui_changed == 'true'
+        if: steps.scope.outputs.webui_build_needed == 'true'
         run: |
           set -euo pipefail
           cd webui
@@ -119,5 +148,5 @@ jobs:
           npm run build
 
       - name: Phase4 (no webui scope)
-        if: steps.scope.outputs.webui_changed != 'true'
+        if: steps.scope.outputs.webui_build_needed != 'true'
         run: echo "No webui/* changes; Phase4 build checks pass by scope."
