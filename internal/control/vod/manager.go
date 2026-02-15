@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"math"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	xlog "github.com/ManuGH/xg2g/internal/log"
 	"github.com/rs/zerolog/log"
 	"golang.org/x/sync/singleflight"
 )
@@ -25,6 +27,8 @@ type Manager struct {
 	sfg        singleflight.Group
 	pathMapper PathMapper
 	started    bool
+	ctx        context.Context
+	cancel     context.CancelFunc
 }
 
 // PathMapper abstracts local path resolution.
@@ -40,14 +44,28 @@ func NewManager(runner Runner, prober Prober, pathMapper PathMapper) (*Manager, 
 		return nil, errors.New("NewManager: prober is nil")
 	}
 
-	return &Manager{
+	ctx, cancel := context.WithCancel(context.Background())
+	m := &Manager{
 		runner:     runner,
 		prober:     prober,
 		pathMapper: pathMapper,
 		jobs:       make(map[string]*BuildMonitor),
 		metadata:   make(map[string]Metadata),
 		probeCh:    make(chan probeRequest, ProbeQueueSize),
-	}, nil
+		ctx:        ctx,
+		cancel:     cancel,
+	}
+
+	// Fix 25: Auto-start probe pool
+	m.StartProberPool(ctx)
+
+	return m, nil
+}
+
+// Shutdown stops the manager and cancels all background contexts.
+func (m *Manager) Shutdown() {
+	m.cancel()
+	m.CancelAll()
 }
 
 // Probe delegates to the infra prober
@@ -90,16 +108,23 @@ func (m *Manager) PruneMetadata(now time.Time, ttl time.Duration, maxEntries int
 	type entry struct {
 		id        string
 		updatedAt int64
+		ttl       bool
 	}
 
 	entries := make([]entry, 0, len(m.metadata))
+	cutoff := now.Add(-ttl).UnixNano()
+	hasTTL := ttl > 0
+
 	for id, meta := range m.metadata {
+		expired := hasTTL && meta.UpdatedAt < cutoff
 		entries = append(entries, entry{
 			id:        id,
 			updatedAt: meta.UpdatedAt,
+			ttl:       expired,
 		})
 	}
 
+	// Single sort: Oldest first
 	sort.Slice(entries, func(i, j int) bool {
 		if entries[i].updatedAt == entries[j].updatedAt {
 			return entries[i].id < entries[j].id
@@ -107,44 +132,32 @@ func (m *Manager) PruneMetadata(now time.Time, ttl time.Duration, maxEntries int
 		return entries[i].updatedAt < entries[j].updatedAt
 	})
 
-	remove := make(map[string]string)
-	if ttl > 0 {
-		cutoff := now.Add(-ttl).UnixNano()
-		for _, e := range entries {
-			if e.updatedAt < cutoff {
-				remove[e.id] = CacheEvictReasonTTL
-			}
-		}
-	}
-
-	remaining := make([]entry, 0, len(entries))
-	for _, e := range entries {
-		if _, marked := remove[e.id]; !marked {
-			remaining = append(remaining, e)
-		}
-	}
-
-	if len(remaining) > maxEntries {
-		overflow := len(remaining) - maxEntries
-		for i := 0; i < overflow; i++ {
-			if _, marked := remove[remaining[i].id]; !marked {
-				remove[remaining[i].id] = CacheEvictReasonMaxEntries
-			}
-		}
-	}
-
 	removedTTL := 0
 	removedMax := 0
-	for id, reason := range remove {
-		if _, ok := m.metadata[id]; ok {
-			delete(m.metadata, id)
-			switch reason {
-			case CacheEvictReasonTTL:
-				removedTTL++
-			case CacheEvictReasonMaxEntries:
-				removedMax++
-			}
+
+	// Count valid (non-TTL) entries to determine overflow
+	validCount := 0
+	for _, e := range entries {
+		if !e.ttl {
+			validCount++
 		}
+	}
+	overflow := 0
+	if validCount > maxEntries {
+		overflow = validCount - maxEntries
+	}
+
+	for _, e := range entries {
+		if e.ttl {
+			delete(m.metadata, e.id)
+			removedTTL++
+		} else if overflow > 0 {
+			// Evict oldest non-TTL items to satisfy maxEntries
+			delete(m.metadata, e.id)
+			removedMax++
+			overflow--
+		}
+		// Else keep (it's one of the newest maxEntries items)
 	}
 
 	return MetadataPruneResult{
@@ -171,8 +184,10 @@ func (m *Manager) SeedMetadata(id string, meta Metadata) {
 func (m *Manager) enqueueProbe(req probeRequest) bool {
 	select {
 	case m.probeCh <- req:
+		probeQueueLength.Set(float64(len(m.probeCh)))
 		return true
 	default:
+		probeDropped.Inc()
 		return false
 	}
 }
@@ -288,6 +303,14 @@ func (m *Manager) touch(meta *Metadata) {
 	meta.StateGen++
 }
 
+// touchIfStateChanged updates timestamp and optionally generation
+func (m *Manager) touchIfStateChanged(meta *Metadata, changed bool) {
+	meta.UpdatedAt = time.Now().UnixNano()
+	if changed {
+		meta.StateGen++
+	}
+}
+
 // TriggerProbe initiates an async background probe for a recording.
 func (m *Manager) TriggerProbe(id string, input string) {
 	m.mu.Lock()
@@ -323,7 +346,7 @@ func (m *Manager) TriggerProbe(id string, input string) {
 	m.touch(&meta)
 	m.metadata[id] = meta
 	capturedGen := meta.StateGen
-	resolvedPath := meta.ResolvedPath
+	resolvedPath := meta.ResolvedPath // Capture under lock
 	m.mu.Unlock()
 
 	// Enqueue background processing
@@ -375,7 +398,7 @@ func (m *Manager) markReadyFromBuild(jobID string, metaID string, spec Spec, fin
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	log.Debug().Str("jobId", jobID).Str("metaId", metaID).Str("finalPath", finalPath).Msg("VOD manager: markReadyFromBuild called")
+	log.Debug().Str(xlog.FieldJobID, jobID).Str(xlog.FieldMetaID, metaID).Str(xlog.FieldFinalPath, finalPath).Msg("VOD manager: markReadyFromBuild called")
 
 	meta := m.metadata[metaID] // zero value if absent; ok
 	oldState := meta.State
@@ -398,7 +421,7 @@ func (m *Manager) markReadyFromBuild(jobID string, metaID string, spec Spec, fin
 	m.touch(&meta)
 	m.metadata[metaID] = meta
 
-	log.Info().Str("jobId", jobID).Str("metaId", metaID).Str("oldState", string(oldState)).Str("newState", string(meta.State)).Str("playlistPath", meta.PlaylistPath).Uint64("stateGen", meta.StateGen).Msg("VOD manager: metadata updated")
+	log.Info().Str(xlog.FieldJobID, jobID).Str(xlog.FieldMetaID, metaID).Str(xlog.FieldOldState, string(oldState)).Str(xlog.FieldNewState, string(meta.State)).Str(xlog.FieldPlaylistPath, meta.PlaylistPath).Uint64("stateGen", meta.StateGen).Msg("VOD manager: metadata updated")
 
 	// Job is finished; remove from jobs map to avoid leaks/stale BUILDING.
 	delete(m.jobs, jobID)
@@ -428,7 +451,7 @@ func (m *Manager) markFailedFromBuild(jobID string, metaID string, reason string
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	log.Debug().Str("jobId", jobID).Str("metaId", metaID).Str("reason", reason).Msg("VOD manager: markFailedFromBuild called")
+	log.Debug().Str(xlog.FieldJobID, jobID).Str(xlog.FieldMetaID, metaID).Str("reason", reason).Msg("VOD manager: markFailedFromBuild called")
 
 	meta := m.metadata[metaID]
 	oldState := meta.State
@@ -437,7 +460,7 @@ func (m *Manager) markFailedFromBuild(jobID string, metaID string, reason string
 	m.touch(&meta)
 	m.metadata[metaID] = meta
 
-	log.Info().Str("jobId", jobID).Str("metaId", metaID).Str("oldState", string(oldState)).Str("newState", string(meta.State)).Str("error", meta.Error).Uint64("stateGen", meta.StateGen).Msg("VOD manager: metadata updated to FAILED")
+	log.Info().Str(xlog.FieldJobID, jobID).Str(xlog.FieldMetaID, metaID).Str(xlog.FieldOldState, string(oldState)).Str(xlog.FieldNewState, string(meta.State)).Str("error", meta.Error).Uint64("stateGen", meta.StateGen).Msg("VOD manager: metadata updated to FAILED")
 
 	delete(m.jobs, jobID)
 	log.Debug().Str("jobId", jobID).Msg("VOD manager: job removed from jobs map")
@@ -516,7 +539,10 @@ func (m *Manager) MarkProbed(id string, resolvedPath string, info *StreamInfo, f
 			meta.AudioCodec = info.Audio.CodecName
 		}
 		if info.Video.Duration > 0 {
-			meta.Duration = int64(math.Round(info.Video.Duration))
+			// Validation: prevent zeroing out or wild regression if existing is valid
+			if meta.Duration == 0 || math.Abs(float64(meta.Duration-int64(info.Video.Duration))) < float64(meta.Duration)*0.5 {
+				meta.Duration = int64(math.Round(info.Video.Duration))
+			}
 		}
 		if info.Video.Width > 0 {
 			meta.Width = info.Video.Width
@@ -559,6 +585,8 @@ func (m *Manager) StartBuild(ctx context.Context, jobID, metaID, input, workDir,
 		return h, nil
 	}
 
+	// StartBuild may receive non-local sources (e.g. callback/mock flows).
+	// Filesystem-boundary validation remains enforced in probe/stat paths.
 	spec := Spec{
 		Input:      input,
 		WorkDir:    workDir,
@@ -572,20 +600,20 @@ func (m *Manager) StartBuild(ctx context.Context, jobID, metaID, input, workDir,
 		FinalPath: finalPath,
 		Runner:    m.runner,
 		Clock:     RealClock{},
-		OnSucceeded: func(jobID string, spec Spec, finalPath string) {
+		OnSucceeded: func(ctx context.Context, jobID string, spec Spec, finalPath string) {
 			m.markReadyFromBuild(jobID, metaID, spec, finalPath)
 		},
-		OnFailed: func(jobID string, spec Spec, finalPath string, reason string) {
+		OnFailed: func(ctx context.Context, jobID string, spec Spec, finalPath string, reason string) {
 			m.markFailedFromBuild(jobID, metaID, reason)
 		},
 	})
 
+	// Capture monitor to return
 	m.jobs[jobID] = mon
 
 	// Run monitor in background
-	// Use a fresh context for the monitor to ensure it continues if the triggering request's context is canceled.
-	// But we use the passed ctx to check for immediate start failure.
-	go mon.Run(context.Background())
+	// Use manager context so we can cancel it on Shutdown
+	go mon.Run(m.ctx)
 
 	return mon, nil
 }
@@ -655,12 +683,59 @@ func (m *Manager) SetProber(p Prober) {
 }
 
 // CancelAll stops all active jobs.
+// CancelAll stops all active jobs.
 func (m *Manager) CancelAll() {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	for id, mon := range m.jobs {
-		_ = mon.StopGracefully()
-		delete(m.jobs, id)
+	// Fix 24: Fix Deadlock in CancelAll
+	// Copy map values to avoid holding lock while calling StopGracefully
+	monitors := make([]*BuildMonitor, 0, len(m.jobs))
+	for _, mon := range m.jobs {
+		monitors = append(monitors, mon)
 	}
+	m.jobs = make(map[string]*BuildMonitor) // Clear while holding lock
+	m.mu.Unlock()
+
+	for _, mon := range monitors {
+		if err := mon.StopGracefully(); err != nil {
+			log.Error().Err(err).Str("job_id", mon.jobID).Msg("failed to stop monitor")
+		}
+	}
+}
+
+// isValidPath checks for directory traversal and safe roots
+func isValidPath(path string) bool {
+	if path == "" {
+		return false
+	}
+
+	// Prevent directory traversal
+	if strings.Contains(path, "..") {
+		return false
+	}
+
+	// Ensure absolute paths are within allowed roots
+	if filepath.IsAbs(path) {
+		// Define allowed roots (can be configurable)
+		allowedRoots := []string{
+			"/var/lib/xg2g/recordings",
+			"/mnt/storage",
+			"/tmp", // For testing
+		}
+
+		abs, err := filepath.Abs(path)
+		if err != nil {
+			return false
+		}
+
+		for _, root := range allowedRoots {
+			if strings.HasPrefix(abs, root) {
+				return true
+			}
+		}
+		// If not in allowed roots, block
+		return false
+	}
+
+	// Relative paths are allowed (assumed to be within working dir)
+	return true
 }
