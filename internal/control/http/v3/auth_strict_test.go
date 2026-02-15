@@ -596,13 +596,7 @@ func TestLANGuard_PublicEndpoints(t *testing.T) {
 }
 
 func TestRaceSafety_ParallelIntents(t *testing.T) {
-	// Phase 2: Worker Logic (API Leases OFF - Default)
-	// Unskip when PutSessionWithIdempotency is wired into the v3 intent path
-	// and bus publication is idempotent.
-	t.Run("Phase2_Worker_Dedup_PendingIdempotency", func(t *testing.T) {
-		if !v3IdempotencyEnabled {
-			t.Skip("phase 2 idempotency not implemented yet")
-		}
+	t.Run("Phase2_Worker_Dedup", func(t *testing.T) {
 		spy := &SpyStore{}
 		spyBus := &SpyBus{}
 		srv, tok := newTestServerConfig(t, spy, spyBus, nil)
