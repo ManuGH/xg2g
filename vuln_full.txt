@@ -1,0 +1,229 @@
+Fetching vulnerabilities from the database...
+
+Checking the code against the vulnerabilities...
+
+The package pattern matched the following 102 root packages:
+  github.com/ManuGH/xg2g/internal/core/profile
+  github.com/ManuGH/xg2g/internal/log
+  github.com/ManuGH/xg2g/internal/metrics
+  github.com/ManuGH/xg2g/internal/resilience
+  github.com/ManuGH/xg2g/internal/openwebif
+  github.com/ManuGH/xg2g/internal/platform/net
+  github.com/ManuGH/xg2g/internal/platform/fs
+  github.com/ManuGH/xg2g/internal/platform/paths
+  github.com/ManuGH/xg2g/internal/validate
+  github.com/ManuGH/xg2g/internal/config
+  github.com/ManuGH/xg2g/cmd/configgen
+  github.com/ManuGH/xg2g/internal/channels
+  github.com/ManuGH/xg2g/internal/control/http/problem
+  github.com/ManuGH/xg2g/internal/control/admission
+  github.com/ManuGH/xg2g/internal/control/auth
+  github.com/ManuGH/xg2g/internal/verification
+  github.com/ManuGH/xg2g/internal/version
+  github.com/ManuGH/xg2g/internal/control/http
+  github.com/ManuGH/xg2g/internal/control/authz
+  github.com/ManuGH/xg2g/internal/control/clientplayback
+  github.com/ManuGH/xg2g/internal/domain/vod
+  github.com/ManuGH/xg2g/internal/recordings
+  github.com/ManuGH/xg2g/internal/control/vod
+  github.com/ManuGH/xg2g/internal/control/http/v3/recordings
+  github.com/ManuGH/xg2g/internal/control/http/v3/recordings/artifacts
+  github.com/ManuGH/xg2g/internal/telemetry
+  github.com/ManuGH/xg2g/internal/control/middleware
+  github.com/ManuGH/xg2g/internal/control/playback
+  github.com/ManuGH/xg2g/internal/domain/session/model
+  github.com/ManuGH/xg2g/internal/epg
+  github.com/ManuGH/xg2g/internal/health
+  github.com/ManuGH/xg2g/internal/m3u
+  github.com/ManuGH/xg2g/internal/media/ffmpeg/watchdog
+  github.com/ManuGH/xg2g/internal/procgroup
+  github.com/ManuGH/xg2g/internal/infra/ffmpeg
+  github.com/ManuGH/xg2g/internal/persistence/sqlite
+  github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2
+  github.com/ManuGH/xg2g/internal/pipeline/scan
+  github.com/ManuGH/xg2g/internal/control/read
+  github.com/ManuGH/xg2g/internal/control/recordings/capabilities
+  github.com/ManuGH/xg2g/internal/domain/recordings/model
+  github.com/ManuGH/xg2g/internal/library
+  github.com/ManuGH/xg2g/internal/control/recordings
+  github.com/ManuGH/xg2g/internal/control/recordings/decision
+  github.com/ManuGH/xg2g/internal/control/vod/preflight
+  github.com/ManuGH/xg2g/internal/domain/session/lifecycle
+  github.com/ManuGH/xg2g/internal/domain/session/store
+  github.com/ManuGH/xg2g/internal/dvr
+  github.com/ManuGH/xg2g/internal/hls
+  github.com/ManuGH/xg2g/internal/playlist
+  github.com/ManuGH/xg2g/internal/jobs
+  github.com/ManuGH/xg2g/internal/pipeline/api
+  github.com/ManuGH/xg2g/internal/pipeline/bus
+  github.com/ManuGH/xg2g/internal/pipeline/hardware
+  github.com/ManuGH/xg2g/internal/pipeline/profiles
+  github.com/ManuGH/xg2g/internal/pipeline/resume
+  github.com/ManuGH/xg2g/internal/control/http/v3
+  github.com/ManuGH/xg2g/internal/hdhr
+  github.com/ManuGH/xg2g/internal/api
+  github.com/ManuGH/xg2g/internal/domain/session/ports
+  github.com/ManuGH/xg2g/internal/domain/session/manager
+  github.com/ManuGH/xg2g/internal/infra/bus
+  github.com/ManuGH/xg2g/internal/infra/media/ffmpeg
+  github.com/ManuGH/xg2g/internal/infra/media/stub
+  github.com/ManuGH/xg2g/internal/infra/platform
+  github.com/ManuGH/xg2g/internal/pipeline/shadow
+  github.com/ManuGH/xg2g/internal/daemon
+  github.com/ManuGH/xg2g/internal/tls
+  github.com/ManuGH/xg2g/internal/verification/checks
+  github.com/ManuGH/xg2g/cmd/daemon
+  github.com/ManuGH/xg2g/cmd/gencert
+  github.com/ManuGH/xg2g/cmd/generate-capability-fixtures
+  github.com/ManuGH/xg2g/cmd/v3probe
+  github.com/ManuGH/xg2g/cmd/validate
+  github.com/ManuGH/xg2g/cmd/xg2g-soak
+  github.com/ManuGH/xg2g/internal/admission
+  github.com/ManuGH/xg2g/internal/api/testutil
+  github.com/ManuGH/xg2g/internal/app/bootstrap
+  github.com/ManuGH/xg2g/internal/auth
+  github.com/ManuGH/xg2g/internal/cache
+  github.com/ManuGH/xg2g/internal/control
+  github.com/ManuGH/xg2g/internal/control/http/v3/middleware
+  github.com/ManuGH/xg2g/internal/control/http/v3/types
+  github.com/ManuGH/xg2g/internal/core/openwebif
+  github.com/ManuGH/xg2g/internal/core/pathutil
+  github.com/ManuGH/xg2g/internal/core/urlutil
+  github.com/ManuGH/xg2g/internal/core/useragent
+  github.com/ManuGH/xg2g/internal/domain/session/manager/testkit
+  github.com/ManuGH/xg2g/internal/fsutil
+  github.com/ManuGH/xg2g/internal/metrics/gpu
+  github.com/ManuGH/xg2g/internal/netutil
+  github.com/ManuGH/xg2g/internal/pipeline
+  github.com/ManuGH/xg2g/internal/pipeline/exec
+  github.com/ManuGH/xg2g/internal/pipeline/lease
+  github.com/ManuGH/xg2g/internal/testutil
+  github.com/ManuGH/xg2g/internal/types
+  github.com/ManuGH/xg2g/test/contract
+  github.com/ManuGH/xg2g/test/contract/p4_1
+  github.com/ManuGH/xg2g/test/helpers
+  github.com/ManuGH/xg2g/test/integration
+  github.com/ManuGH/xg2g/test/invariants
+  github.com/ManuGH/xg2g/tools
+Govulncheck scanned the following 70 modules and the go1.25.5 standard library:
+  github.com/ManuGH/xg2g
+  github.com/apapsch/go-jsonmerge/v2@v2.0.0
+  github.com/beorn7/perks@v1.0.1
+  github.com/cenkalti/backoff/v5@v5.0.3
+  github.com/cespare/xxhash/v2@v2.3.0
+  github.com/davecgh/go-spew@v1.1.1
+  github.com/dgryski/go-rendezvous@v0.0.0-20200823014737-9f7001d12a5f
+  github.com/dustin/go-humanize@v1.0.1
+  github.com/felixge/httpsnoop@v1.0.4
+  github.com/fsnotify/fsnotify@v1.9.0
+  github.com/getkin/kin-openapi@v0.133.0
+  github.com/go-chi/chi/v5@v5.2.3
+  github.com/go-chi/httprate@v0.15.0
+  github.com/go-logr/logr@v1.4.3
+  github.com/go-logr/stdr@v1.2.2
+  github.com/go-openapi/jsonpointer@v0.22.4
+  github.com/go-openapi/swag/jsonname@v0.25.4
+  github.com/google/renameio/v2@v2.0.1
+  github.com/google/uuid@v1.6.0
+  github.com/grpc-ecosystem/grpc-gateway/v2@v2.27.3
+  github.com/josharian/intern@v1.0.0
+  github.com/klauspost/cpuid/v2@v2.3.0
+  github.com/mailru/easyjson@v0.9.1
+  github.com/mattn/go-colorable@v0.1.14
+  github.com/mattn/go-isatty@v0.0.20
+  github.com/mohae/deepcopy@v0.0.0-20170929034955-c48cc78d4826
+  github.com/munnerz/goautoneg@v0.0.0-20191010083416-a7dc8b61c822
+  github.com/oapi-codegen/runtime@v1.1.2
+  github.com/oasdiff/yaml@v0.0.0-20250309154309-f31be36b4037
+  github.com/oasdiff/yaml3@v0.0.0-20250309153720-d2182401db90
+  github.com/perimeterx/marshmallow@v1.1.5
+  github.com/pmezard/go-difflib@v1.0.0
+  github.com/prometheus/client_golang@v1.23.2
+  github.com/prometheus/client_model@v0.6.2
+  github.com/prometheus/common@v0.67.4
+  github.com/prometheus/procfs@v0.19.2
+  github.com/redis/go-redis/v9@v9.17.2
+  github.com/remyoudompheng/bigfft@v0.0.0-20230129092748-24d4a6f8daec
+  github.com/rs/zerolog@v1.34.0
+  github.com/spf13/cobra@v1.7.0
+  github.com/spf13/pflag@v1.0.5
+  github.com/stretchr/testify@v1.11.1
+  github.com/woodsbury/decimal128@v1.4.0
+  github.com/zeebo/xxh3@v1.0.2
+  go.opentelemetry.io/auto/sdk@v1.2.1
+  go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp@v0.64.0
+  go.opentelemetry.io/otel@v1.39.0
+  go.opentelemetry.io/otel/exporters/otlp/otlptrace@v1.39.0
+  go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc@v1.39.0
+  go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp@v1.39.0
+  go.opentelemetry.io/otel/metric@v1.39.0
+  go.opentelemetry.io/otel/sdk@v1.39.0
+  go.opentelemetry.io/otel/trace@v1.39.0
+  go.opentelemetry.io/proto/otlp@v1.9.0
+  go.yaml.in/yaml/v2@v2.4.3
+  golang.org/x/exp@v0.0.0-20260112195511-716be5621a96
+  golang.org/x/net@v0.49.0
+  golang.org/x/sync@v0.19.0
+  golang.org/x/sys@v0.40.0
+  golang.org/x/text@v0.33.0
+  golang.org/x/time@v0.14.0
+  google.golang.org/genproto/googleapis/api@v0.0.0-20251213004720-97cd9d5aeac2
+  google.golang.org/genproto/googleapis/rpc@v0.0.0-20260128011058-8636f8732409
+  google.golang.org/grpc@v1.78.0
+  google.golang.org/protobuf@v1.36.11
+  gopkg.in/yaml.v3@v3.0.1
+  modernc.org/libc@v1.67.7
+  modernc.org/mathutil@v1.7.1
+  modernc.org/memory@v1.11.0
+  modernc.org/sqlite@v1.44.3
+
+=== Symbol Results ===
+
+Vulnerability #1: GO-2026-4341
+    Memory exhaustion in query parameter parsing in net/url
+  More info: https://pkg.go.dev/vuln/GO-2026-4341
+  Standard library
+    Found in: net/url@go1.25.5
+    Fixed in: net/url@go1.25.6
+    Example traces found:
+      #1: internal/control/http/v3/server_gen.go:3111:19: http.ServerInterfaceWrapper.UpdateTimer calls http.HandlerFunc.ServeHTTP, which eventually calls url.ParseQuery
+      #2: internal/control/http/v3/server_gen.go:2986:76: http.ServerInterfaceWrapper.GetTimers calls url.URL.Query
+
+Vulnerability #2: GO-2026-4340
+    Handshake messages may be processed at the incorrect encryption level in
+    crypto/tls
+  More info: https://pkg.go.dev/vuln/GO-2026-4340
+  Standard library
+    Found in: crypto/tls@go1.25.5
+    Fixed in: crypto/tls@go1.25.6
+    Example traces found:
+      #1: internal/control/vod/monitor.go:289:15: vod.BuildMonitor.Stop calls sync.Once.Do, which eventually calls tls.Conn.Handshake
+      #2: internal/daemon/manager.go:222:43: daemon.startMetricsServer calls http.Server.ListenAndServe, which eventually calls tls.Conn.HandshakeContext
+      #3: internal/playlist/m3u.go:63:19: playlist.WriteM3U calls io.Copy, which eventually calls tls.Conn.Read
+      #4: cmd/xg2g-soak/main.go:140:14: xg2g.main calls fmt.Fprintf, which calls tls.Conn.Write
+      #5: internal/cache/redis.go:42:27: cache.NewRedisCache calls redis.NewClient, which eventually calls tls.DialWithDialer
+      #6: test/helpers/request.go:71:36: helpers.DoRequest calls http.Client.Do, which eventually calls tls.Dialer.DialContext
+
+=== Package Results ===
+
+Vulnerability #1: GO-2026-4316
+    Open redirect vulnerability in the RedirectSlashes middleware in
+    github.com/go-chi/chi
+  More info: https://pkg.go.dev/vuln/GO-2026-4316
+  Module: github.com/go-chi/chi/v5
+    Found in: github.com/go-chi/chi/v5@v5.2.3
+    Fixed in: github.com/go-chi/chi/v5@v5.2.4
+
+=== Module Results ===
+
+Vulnerability #1: GO-2026-4342
+    Excessive CPU consumption when building archive index in archive/zip
+  More info: https://pkg.go.dev/vuln/GO-2026-4342
+  Standard library
+    Found in: stdlib@go1.25.5
+    Fixed in: stdlib@go1.25.6
+
+Your code is affected by 2 vulnerabilities from the Go standard library.
+This scan also found 1 vulnerability in packages you import and 1 vulnerability
+in modules you require, but your code doesn't appear to call these
+vulnerabilities.
