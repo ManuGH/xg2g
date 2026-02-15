@@ -120,17 +120,14 @@
   background: var(--bg-hover);
   border-radius: 10px;
   overflow: hidden;
-  /* Subtle inset */
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
 .progressFill {
   height: 100%;
-  background: var(--gradient-action);
+  background: var(--accent-action);
   border-radius: 10px;
   width: var(--xg2g-prog, 0%);
   transition: width var(--motion-slow) linear;
-  box-shadow: 0 0 8px rgba(74, 144, 245, 0.3);
 }
 
 .programNext {
@@ -247,16 +244,14 @@
 }
 
 /* Mobile responsive */
-@media (max-width: 768px) {
+@media (max-width: 968px) {
   .page {
-    padding: 12px;
-    gap: 16px;
+    padding: 16px;
   }
 
   .statusGrid,
   .infoGrid {
     grid-template-columns: 1fr;
-    gap: 12px;
   }
 
   .header {
@@ -264,31 +259,5 @@
     align-items: flex-start;
     gap: 12px;
   }
-
-  .header h2 {
-    font-size: var(--text-h1);
-  }
-
-  .receiverChannel {
-    font-size: var(--text-h3);
-  }
-
-  .programTitle {
-    font-size: var(--text-h3);
-  }
-
-  /* Log table: horizontal scroll on mobile */
-  .logTable th,
-  .logTable td {
-    padding: 8px 10px;
-    font-size: var(--text-xs);
-  }
-
-  .actions {
-    width: 100%;
-  }
-
-  .actions>* {
-    flex: 1;
-  }
 }
+

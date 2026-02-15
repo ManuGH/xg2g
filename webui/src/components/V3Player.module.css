@@ -15,9 +15,6 @@
   left: 0;
   width: 100vw;
   height: 100vh;
-  /* Fallback for older browsers */
-  height: 100dvh;
-  /* iOS 26: follows dynamic toolbar */
   background: var(--bg-overlay);
   z-index: 9999;
   justify-content: center;
@@ -32,9 +29,6 @@
   margin: 0;
   padding: 24px;
   background: var(--bg-overlay);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border-top: 1px solid var(--border-base);
   display: flex;
   gap: 16px;
   z-index: 50;
@@ -132,13 +126,6 @@
   right: 72px;
   z-index: 60;
   width: 300px;
-  background: var(--bg-overlay);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  padding: 12px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-base);
-  box-shadow: var(--shadow-card);
 }
 
 .statsGrid {
@@ -222,7 +209,6 @@
   background: var(--bg-input);
   padding: 12px;
   border-radius: var(--radius-sm);
-  white-space: pre-wrap;
   word-break: break-all;
   max-height: 200px;
   overflow-y: auto;
@@ -230,8 +216,8 @@
 
 .closeButton {
   position: absolute;
-  top: calc(24px + var(--sat));
-  right: calc(24px + var(--sar));
+  top: 24px;
+  right: 24px;
   background: var(--bg-elevated);
   border: 1px solid var(--border-base);
   color: var(--text-primary);
@@ -244,10 +230,7 @@
   cursor: pointer;
   z-index: 200;
   font-size: 18px;
-  transition:
-    background var(--motion-standard) var(--ease-standard),
-    color var(--motion-standard) var(--ease-standard),
-    transform var(--motion-standard) var(--ease-standard);
+  transition: all var(--motion-standard);
 }
 
 .closeButton:hover {
@@ -309,7 +292,7 @@
   -webkit-appearance: none;
   appearance: none;
   background: var(--border-base);
-  border-radius: var(--radius-sm);
+  border-radius: 2px;
   outline: none;
   cursor: pointer;
 }
@@ -319,8 +302,7 @@
   appearance: none;
   width: 14px;
   height: 14px;
-  background: var(--gradient-action);
-  box-shadow: 0 0 8px rgba(74, 144, 245, 0.4);
+  background: var(--accent-action);
   border-radius: 50%;
   cursor: pointer;
   transition: transform var(--motion-standard);
@@ -366,7 +348,7 @@
   -webkit-appearance: none;
   appearance: none;
   background: var(--border-base);
-  border-radius: var(--radius-sm);
+  border-radius: 2px;
   outline: none;
 }
 
@@ -375,8 +357,7 @@
   appearance: none;
   width: 12px;
   height: 12px;
-  background: var(--gradient-action);
-  box-shadow: 0 0 6px rgba(74, 144, 245, 0.4);
+  background: var(--text-secondary);
   border-radius: 50%;
   cursor: pointer;
 }
@@ -393,8 +374,6 @@
 .liveButtonActive {
   background: var(--accent-live);
   color: var(--bg-base);
-  box-shadow: 0 0 8px rgba(255, 68, 68, 0.4);
-  animation: statusPulse 2s infinite;
 }
 
 .resumeOverlay {
@@ -433,120 +412,18 @@
   flex-wrap: wrap;
 }
 
-/* ========================================
-   MOBILE: iOS 26 Optimized Player
-   ======================================== */
+/* Mobile Adjustments */
 @media (max-width: 768px) {
-  .container.overlay {
-    /* iOS 26 Liquid Glass: prevent body scroll bleed */
-    overscroll-behavior: none;
-    -webkit-overflow-scrolling: touch;
-  }
-
   .controlsHeader {
-    padding: 12px;
-    padding-bottom: calc(12px + var(--sab));
-    padding-left: calc(12px + var(--sal));
-    padding-right: calc(12px + var(--sar));
-    opacity: 1;
-    transform: none;
-    gap: 10px;
-    /* Stack controls vertically on narrow screens */
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  /* Touch-visible controls: tap-to-toggle via JS, not hover */
-  .container:hover:not(.userIdle) .controlsHeader,
-  .controlsHeader:focus-within {
+    padding: 16px;
     opacity: 1;
     transform: none;
   }
 
-  .container:not(.userIdle) .controlsHeader {
-    opacity: 1;
-    transform: none;
-  }
-
-  .container:not(.userIdle) .overlayTitle {
-    opacity: 1;
-  }
-
-  /* Remove desktop min-widths */
-  .vodControls {
-    min-width: 0;
-    padding: 10px 14px;
-    gap: 10px;
-  }
-
-  .seekControls {
-    min-width: 0;
-    flex-direction: column;
-    gap: 10px;
-  }
-
-  /* Compact seek: only show ±15s on mobile, hide ±60s/±15m via TSX */
-  .seekButtons {
-    gap: 6px;
-  }
-
-  .seekSliderGroup {
-    min-width: 0;
-    gap: 8px;
-    width: 100%;
-  }
-
-  /* Touch-friendly slider: 44px tap target (Apple HIG) */
-  .vodSlider {
-    height: 6px;
-    padding: 18px 0;
-    margin: -18px 0;
-    background-clip: content-box;
-  }
-
-  .vodSlider::-webkit-slider-thumb {
-    width: 22px;
-    height: 22px;
-  }
-
-  /* Hide volume slider on mobile (hardware buttons) */
-  .volumeControl {
-    display: none;
-  }
-
-  /* Overlay title: respect safe area */
-  .overlayTitle {
-    top: calc(16px + var(--sat));
-    left: calc(16px + var(--sal));
-    font-size: var(--text-h2);
-  }
-
-  /* Close button: larger touch target on mobile */
-  .closeButton {
-    width: 44px;
-    height: 44px;
-    font-size: 20px;
-  }
-
-  /* Stats overlay: full-width on mobile */
   .statsOverlay {
-    right: 12px;
-    left: 12px;
-    top: calc(72px + var(--sat));
-    width: auto;
-  }
-
-  /* Error toast: wider on mobile */
-  .errorToast {
-    min-width: 0;
-    left: 12px;
-    right: 12px;
-    transform: none;
-    bottom: calc(80px + var(--sab));
-  }
-
-  /* Resume overlay: safe area aware */
-  .resumeOverlay {
-    padding: calc(16px + var(--sat)) calc(16px + var(--sar)) calc(16px + var(--sab)) calc(16px + var(--sal));
+    right: 16px;
+    top: 72px;
+    width: calc(100% - 32px);
   }
 }
+

@@ -1,5 +1,9 @@
 /* SeriesManager - scoped styles (CSS Modules) */
 
+.container {
+  /* layout handled by parent */
+}
+
 .header {
   display: flex;
   justify-content: space-between;
@@ -117,14 +121,15 @@
 /* Modal */
 .modalOverlay {
   position: fixed;
-  inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
   background: var(--overlay-backdrop);
   display: grid;
   place-items: center;
   z-index: 1000;
   backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  padding: calc(16px + var(--sat)) calc(16px + var(--sar)) calc(16px + var(--sab)) calc(16px + var(--sal));
 }
 
 .modal {
@@ -227,9 +232,9 @@
 }
 
 .dayButtonActive {
-  background: var(--gradient-action);
+  background: var(--accent-primary);
   color: var(--text-primary);
-  border-color: transparent;
+  border-color: var(--accent-primary);
 }
 
 .dayButton:hover:not(.dayButtonActive) {
@@ -244,3 +249,4 @@
   outline: 2px solid var(--accent-primary);
   outline-offset: 2px;
 }
+

@@ -8,8 +8,7 @@
   padding: 20px;
   max-width: 1400px;
   margin: 0 auto;
-  padding-bottom: 80px;
-  /* Safe area for player */
+  padding-bottom: 80px; /* Safe area for player */
 }
 
 .toolbar {
@@ -65,22 +64,6 @@
   align-items: center;
   gap: 8px;
   font-size: var(--text-sm);
-}
-
-.card {
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-base);
-  border-radius: var(--radius-lg);
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  transition:
-    transform var(--motion-standard) var(--ease-standard),
-    box-shadow var(--motion-standard) var(--ease-standard),
-    border-color var(--motion-standard) var(--ease-standard);
-  /* Glass shimmer top edge */
-  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, transparent 40%);
 }
 
 .crumb {
@@ -179,7 +162,6 @@
   color: var(--text-secondary);
   display: -webkit-box;
   -webkit-line-clamp: 2;
-  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   line-height: 1.5;
@@ -200,7 +182,10 @@
 .recordingCard {
   position: relative;
   overflow: hidden;
-  /* Selection state handled via .selectionIndicator; no additional accent rules needed */
+}
+
+.selected {
+  /* visual selection state handled via indicator; avoid duplicating accent rules here */
 }
 
 .selectionIndicator {
@@ -304,12 +289,8 @@
 }
 
 @media (max-width: 640px) {
-  .container {
-    padding: 12px;
-    padding-bottom: calc(80px + var(--sab));
-  }
-
   .grid {
     grid-template-columns: 1fr;
   }
 }
+

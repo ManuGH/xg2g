@@ -135,26 +135,19 @@
     right: 0;
     height: auto;
     z-index: 1000;
-    /* Floating tab bar effect */
-    padding: 0 8px;
   }
 
   .rail {
     width: 100%;
-    height: calc(60px + var(--sab));
+    height: calc(56px + var(--sab));
     flex-direction: row;
     justify-content: space-around;
     padding: 0 0 var(--sab) 0;
     border-right: none;
-    border-top: none;
-    /* Premium glass morphism */
-    background: rgba(22, 23, 29, 0.82);
-    backdrop-filter: saturate(180%) blur(40px);
-    -webkit-backdrop-filter: saturate(180%) blur(40px);
-    border-radius: 20px 20px 0 0;
-    box-shadow:
-      0 -1px 0 rgba(255, 255, 255, 0.06),
-      0 -8px 32px rgba(0, 0, 0, 0.4);
+    border-top: 1px solid var(--border-base);
+    background: var(--bg-elevated);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
   }
 
   .quickActions,
@@ -173,37 +166,28 @@
     flex: 1;
     height: 56px;
     flex-direction: column;
-    gap: 3px;
+    gap: 2px;
     font-size: 10px;
     background: transparent;
-    transition: color var(--motion-standard) var(--ease-standard);
   }
 
   .icon {
     font-size: 22px;
-    transition: transform var(--motion-micro) var(--ease-spring);
-  }
-
-  /* Active tap: subtle bounce */
-  .item:active .icon {
-    transform: scale(0.85);
   }
 
   .tooltip {
     display: none;
   }
 
-  /* Active state: gradient accent bar */
+  /* Active state on mobile: bottom accent bar */
   .item[aria-current="page"]::before {
-    left: 16px;
-    right: 16px;
+    left: 12px;
+    right: 12px;
     top: auto;
-    bottom: calc(var(--sab) + 2px);
+    bottom: calc(var(--sab) + 4px);
     width: auto;
     height: 3px;
-    border-radius: 3px;
-    background: var(--gradient-action);
-    box-shadow: 0 0 8px rgba(74, 144, 245, 0.4);
+    border-radius: 2px 2px 0 0;
   }
 
   .item[aria-current="page"] {
@@ -211,17 +195,13 @@
     background: transparent;
   }
 
-  .item[aria-current="page"] .icon {
-    filter: drop-shadow(0 0 6px rgba(74, 144, 245, 0.3));
-  }
-
-  /* Label: refined typography */
+  /* Show label on mobile */
   .label {
     display: block !important;
     font-size: 10px;
     font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.4px;
+    letter-spacing: 0.3px;
   }
 }
 
@@ -231,3 +211,4 @@
     display: none;
   }
 }
+

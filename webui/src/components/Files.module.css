@@ -23,7 +23,7 @@
   margin: 0;
   font-size: 20px;
   font-weight: 700;
-  color: var(--text-primary);
+  color: var(--text-color);
 }
 
 .subtle {
@@ -99,7 +99,7 @@
   margin: 0;
   font-size: 16px;
   font-weight: 700;
-  color: var(--text-primary);
+  color: var(--text-color);
 }
 
 .description {
@@ -133,3 +133,4 @@
     grid-column: span 4;
   }
 }
+

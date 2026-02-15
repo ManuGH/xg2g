@@ -1,8 +1,7 @@
 /* App shell - keep global footprint minimal */
 
 .app-container {
-  margin-left: 60px;
-  /* Desktop: account for vertical rail */
+  margin-left: 60px; /* Desktop: account for vertical rail */
   min-height: 100vh;
   padding: 20px;
 }
@@ -65,9 +64,6 @@
 @media (max-width: 768px) {
   .app-container {
     margin-left: 0;
-    padding: 12px;
-    padding-left: calc(12px + var(--sal));
-    padding-right: calc(12px + var(--sar));
-    padding-bottom: calc(72px + var(--sab));
+    padding-bottom: 72px;
   }
 }

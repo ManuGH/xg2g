@@ -23,7 +23,7 @@
   margin: 0;
   font-size: 18px;
   font-weight: 650;
-  color: var(--text-primary);
+  color: var(--text-color);
 }
 
 .alert {
@@ -82,7 +82,7 @@
 
 .row:hover td {
   background: var(--bg-hover);
-  color: var(--text-primary);
+  color: var(--text-color);
 }
 
 .time {
@@ -124,20 +124,10 @@
 @media (max-width: 768px) {
   .tableWrap {
     overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
   }
 
   .table {
-    min-width: 520px;
-  }
-
-  .table th,
-  .table td {
-    padding: 10px 12px;
-    font-size: 12px;
-  }
-
-  .header {
-    padding: 12px;
+    min-width: 720px;
   }
 }
+

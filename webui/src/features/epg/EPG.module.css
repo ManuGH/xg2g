@@ -23,8 +23,6 @@
   top: 0;
   z-index: 50;
   box-shadow: var(--shadow-card);
-  /* Glass gradient edge */
-  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, transparent 100%);
 }
 
 .toolbarLeft h3 {
@@ -246,7 +244,7 @@
   background: var(--bg-hover);
   display: inline-block;
   padding: 2px 8px;
-  border-radius: var(--radius-sm);
+  border-radius: 4px;
   align-self: flex-start;
 }
 
@@ -284,8 +282,6 @@
 .programmeCurrent {
   background: color-mix(in srgb, var(--accent-action) 12%, transparent);
   border-left: 4px solid var(--accent-action);
-  /* Subtle gradient glow */
-  background-image: linear-gradient(90deg, rgba(74, 144, 245, 0.08) 0%, transparent 60%);
 }
 
 .programmeTime {
@@ -355,7 +351,7 @@
 .progressContainer {
   margin-top: 12px;
   background: var(--bg-overlay);
-  border-radius: var(--radius-sm);
+  border-radius: 4px;
   padding: 2px;
 }
 
@@ -457,7 +453,7 @@
 
 .page::-webkit-scrollbar-thumb {
   background: var(--bg-hover);
-  border-radius: var(--radius-sm);
+  border-radius: 4px;
 }
 
 .page::-webkit-scrollbar-thumb:hover {
@@ -492,150 +488,8 @@
 }
 
 .pillActive {
-  background: var(--gradient-action);
+  background: var(--accent-action);
   color: var(--text-primary);
   box-shadow: var(--shadow-accent-action);
-  font-weight: 600;
 }
 
-/* ========================================
-   MOBILE: EPG Touch-Optimized
-   ======================================== */
-@media (max-width: 768px) {
-
-  /* Toolbar: stack vertically */
-  .toolbar {
-    flex-direction: column;
-    align-items: flex-start;
-    padding: 12px 16px;
-    gap: 8px;
-  }
-
-  .toolbarRight {
-    width: 100%;
-    flex-wrap: wrap;
-  }
-
-  .toolbarRight button {
-    flex: 1;
-    min-width: 0;
-    justify-content: center;
-    padding: 10px 12px;
-    min-height: 44px;
-  }
-
-  .toolbarLeft h3 {
-    font-size: 18px;
-  }
-
-  /* Controls: wrap and stretch */
-  .controls {
-    padding: 12px 16px;
-    gap: 12px;
-  }
-
-  .controls label {
-    width: 100%;
-  }
-
-  .controls select {
-    flex: 1;
-    min-width: 0;
-    width: 100%;
-    min-height: 44px;
-  }
-
-  /* Search: full-width stacking */
-  .search {
-    padding: 12px 16px;
-    flex-direction: column;
-    gap: 10px;
-  }
-
-  .searchRight button {
-    width: 100%;
-    padding: 12px 24px;
-    min-height: 44px;
-  }
-
-  /* Cards: tighter spacing */
-  .card {
-    margin: 0 12px 12px;
-    padding: 14px;
-    border-radius: 10px;
-  }
-
-  .card:hover {
-    transform: none;
-  }
-
-  .channel {
-    gap: 12px;
-    margin-bottom: 14px;
-    padding-bottom: 12px;
-  }
-
-  .logo {
-    width: 48px;
-    height: 32px;
-  }
-
-  .channelName {
-    font-size: 15px;
-  }
-
-  /* Programmes: compact */
-  .programmes {
-    gap: 8px;
-  }
-
-  .programme {
-    gap: 12px;
-    padding: 10px 12px;
-  }
-
-  .programmeTime {
-    min-width: 70px;
-    font-size: 13px;
-  }
-
-  .programmeTitle {
-    font-size: 14px;
-  }
-
-  .programmeDesc {
-    font-size: 12px;
-    max-height: 2.4em;
-  }
-
-  /* Pills: horizontal scroll */
-  .pills {
-    overflow-x: auto;
-    flex-wrap: nowrap;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-  }
-
-  .pills::-webkit-scrollbar {
-    display: none;
-  }
-
-  .pill {
-    flex-shrink: 0;
-    padding: 8px 14px;
-    min-height: 44px;
-    display: flex;
-    align-items: center;
-  }
-
-  /* Empty state: less padding */
-  .emptyState {
-    padding: 40px 20px;
-  }
-
-  /* Record button: larger touch target */
-  .recordButton {
-    width: 36px;
-    height: 36px;
-  }
-}
