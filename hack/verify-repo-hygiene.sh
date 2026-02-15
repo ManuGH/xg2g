@@ -7,14 +7,16 @@ fail() { echo "ERROR: $*" >&2; exit 1; }
 
 cd "$ROOT"
 
-# 1) exactly one .git directory (this repo)
-gitdirs="$(find . -name .git -type d -prune 2>/dev/null | sed 's|^\./||' | sort)"
-count="$(printf "%s\n" "$gitdirs" | sed '/^$/d' | wc -l | tr -d ' ')"
+# 1) root git metadata must exist; nested .git metadata is forbidden
+if [[ ! -e .git ]]; then
+  fail "Repo hygiene violation: missing root .git metadata."
+fi
 
-if [[ "$count" -ne 1 ]]; then
-  echo "Found .git directories:" >&2
-  printf "%s\n" "$gitdirs" >&2
-  fail "Repo hygiene violation: expected exactly 1 .git directory, found $count."
+nested_git_meta="$(find . -mindepth 2 \( -type d -name .git -o -type f -name .git \) 2>/dev/null | sed 's|^\./||' | sort)"
+if [[ -n "$nested_git_meta" ]]; then
+  echo "Nested .git metadata found:" >&2
+  printf "%s\n" "$nested_git_meta" >&2
+  fail "Repo hygiene violation: nested .git metadata is not allowed."
 fi
 
 # 2) forbid common drift copies inside repo
@@ -45,6 +47,15 @@ if [[ -n "$forbidden_hits" ]]; then
   echo "Forbidden artifact-like files are committed:" >&2
   printf '%s\n' "$forbidden_hits" >&2
   fail "Repo hygiene violation: remove transient runtime/test/security artifacts from git."
+fi
+
+# 3b) forbid committed local worktree internals
+forbidden_path_re='^\.worktrees($|/)'
+forbidden_path_hits="$(git ls-files | grep -E "$forbidden_path_re" || true)"
+if [[ -n "$forbidden_path_hits" ]]; then
+  echo "Forbidden local workspace paths are committed:" >&2
+  printf '%s\n' "$forbidden_path_hits" >&2
+  fail "Repo hygiene violation: .worktrees is local-only and must never be committed."
 fi
 
 # 4) fail-closed scan for runtime-sensitive patterns in tracked text artifacts
@@ -79,4 +90,4 @@ if [[ "$sensitive_violations" -ne 0 ]]; then
   fail "Repo hygiene violation: sensitive runtime markers detected outside scrubbed fixture allowlist."
 fi
 
-echo "OK: repo hygiene clean (single .git, no drift copies, no artifact leaks)."
+echo "OK: repo hygiene clean (root git metadata, no nested git metadata, no drift copies, no artifact leaks)."
