@@ -30,14 +30,39 @@ jobs:
         run: |
           set -euo pipefail
 
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "ERROR: cannot determine diff range for event=${{ github.event_name }} (requires pull_request context)"
+            exit 1
+          fi
+
           BASE_SHA="${{ github.event.pull_request.base.sha }}"
           HEAD_SHA="${{ github.sha }}"
-          if git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
-            RANGE="${BASE_SHA}...${HEAD_SHA}"
-          else
-            git fetch --no-tags --prune --depth=1 origin "${{ github.base_ref }}"
-            RANGE="origin/${{ github.base_ref }}...${HEAD_SHA}"
+
+          if [ -z "${BASE_SHA}" ] || [ -z "${HEAD_SHA}" ]; then
+            echo "ERROR: cannot determine diff range (missing base/head sha): base='${BASE_SHA}' head='${HEAD_SHA}'"
+            exit 1
           fi
+
+          if ! git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null; then
+            echo "ERROR: cannot determine diff range (head sha not found locally): ${HEAD_SHA}"
+            exit 1
+          fi
+
+          if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            git fetch --no-tags --prune --depth=1 origin "${{ github.base_ref }}"
+          fi
+
+          if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            echo "ERROR: cannot determine diff range (base sha not found after fetch): ${BASE_SHA}"
+            exit 1
+          fi
+
+          if ! git merge-base "${BASE_SHA}" "${HEAD_SHA}" >/dev/null 2>&1; then
+            echo "ERROR: cannot determine diff range (no merge-base): base=${BASE_SHA} head=${HEAD_SHA}"
+            exit 1
+          fi
+
+          RANGE="${BASE_SHA}...${HEAD_SHA}"
           changed_files="$(git diff --name-only "$RANGE" || true)"
 
           mapfile -t ui_contract_scope < <(
