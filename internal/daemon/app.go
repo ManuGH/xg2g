@@ -96,7 +96,10 @@ func (a *App) Run(ctx context.Context) error {
 						Str("signal", a.reloadSignal.String()).
 						Msg("received reload signal, reloading config")
 
-					if err := a.cfgHolder.Reload(context.Background()); err != nil {
+					reloadCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+					err := a.cfgHolder.Reload(reloadCtx)
+					cancel()
+					if err != nil {
 						a.logger.Warn().
 							Err(err).
 							Str("event", "config.reload_failed").
@@ -183,7 +186,9 @@ func (a *App) Run(ctx context.Context) error {
 	g.Go(func() error {
 		err := a.manager.Start(ctx)
 		if err != nil {
-			_ = a.manager.Shutdown(context.Background())
+			shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+			_ = a.manager.Shutdown(shutdownCtx)
+			cancel()
 		}
 		return err
 	})
