@@ -2,7 +2,7 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
-package api
+package legacy
 
 import (
 	"testing"
@@ -18,7 +18,7 @@ func TestParsePiconRefRejectsTraversal(t *testing.T) {
 		"/abs",
 		"%2Fabs",
 		"a/b",
-		`a\b`,
+		`a\\b`,
 		string([]byte{0x00, 0x2e}),
 	}
 

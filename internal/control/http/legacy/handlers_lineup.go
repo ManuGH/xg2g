@@ -1,4 +1,7 @@
-package api
+// Licensed under the PolyForm Noncommercial License 1.0.0
+// Since v2.0.0, this software is restricted to non-commercial use only.
+
+package legacy
 
 import (
 	"encoding/json"
@@ -13,20 +16,19 @@ import (
 	"github.com/ManuGH/xg2g/internal/platform/paths"
 )
 
-// handleLineupJSON handles /lineup.json endpoint for HDHomeRun emulation
-// It reads the M3U playlist and converts it to HDHomeRun lineup format
-func (s *Server) handleLineupJSON(w http.ResponseWriter, r *http.Request) {
+// HandleLineupJSON handles /lineup.json endpoint for HDHomeRun emulation.
+func HandleLineupJSON(w http.ResponseWriter, r *http.Request, runtime Runtime) {
 	logger := log.WithComponentFromContext(r.Context(), "hdhr")
+	cfg := runtime.CurrentConfig()
 
-	// Read the M3U playlist file
-	m3uPath, err := paths.ValidatePlaylistPath(s.cfg.DataDir, s.snap.Runtime.PlaylistFilename)
+	m3uPath, err := paths.ValidatePlaylistPath(cfg.DataDir, runtime.PlaylistFilename())
 	if err != nil {
 		logger.Error().Err(err).Str("event", "lineup.invalid_path").Msg("playlist path rejected")
 		http.Error(w, "Lineup not available", http.StatusInternalServerError)
 		return
 	}
 
-	// #nosec G304 -- m3uPath is validated by dataFilePath and confined to the data directory
+	// #nosec G304 -- m3uPath is validated and confined to the data directory
 	data, err := os.ReadFile(m3uPath)
 	if err != nil {
 		logger.Error().Err(err).Str("path", m3uPath).Msg("failed to read playlist file")
@@ -34,19 +36,14 @@ func (s *Server) handleLineupJSON(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse M3U content to extract channels
 	var lineup []hdhr.LineupEntry
 	lines := strings.Split(string(data), "\n")
 	var currentChannel hdhr.LineupEntry
-	forceHLS := s.hdhr != nil && s.hdhr.PlexForceHLS()
+	forceHLS := runtime.HDHomeRunServer() != nil && runtime.HDHomeRunServer().PlexForceHLS()
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "#EXTINF:") {
-			// Parse channel info from EXTINF line
-			// Format: #EXTINF:-1 tvg-chno="X" tvg-id="sref-..." tvg-name="Channel Name",Display Name
-
-			// Extract tvg-chno (channel number) - Plex uses this for EPG matching with XMLTV
 			if idx := strings.Index(line, `tvg-chno="`); idx != -1 {
 				start := idx + 10
 				if end := strings.Index(line[start:], `"`); end != -1 {
@@ -54,12 +51,10 @@ func (s *Server) handleLineupJSON(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
-			// Extract channel name (after the last comma)
 			if idx := strings.LastIndex(line, ","); idx != -1 {
 				currentChannel.GuideName = strings.TrimSpace(line[idx+1:])
 			}
 		} else if len(line) > 0 && !strings.HasPrefix(line, "#") && currentChannel.GuideName != "" {
-			// This is the stream URL
 			streamURL := line
 			if forceHLS {
 				streamURL = addHLSProxyPrefix(streamURL)
@@ -67,7 +62,7 @@ func (s *Server) handleLineupJSON(w http.ResponseWriter, r *http.Request) {
 
 			currentChannel.URL = streamURL
 			lineup = append(lineup, currentChannel)
-			currentChannel = hdhr.LineupEntry{} // Reset for next channel
+			currentChannel = hdhr.LineupEntry{}
 		}
 	}
 

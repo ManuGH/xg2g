@@ -5,6 +5,8 @@ package api
 
 import (
 	"net/http"
+
+	legacyhttp "github.com/ManuGH/xg2g/internal/control/http/legacy"
 )
 
 func (s *Server) routes() http.Handler {
@@ -17,7 +19,7 @@ func (s *Server) routes() http.Handler {
 	s.registerManualV3Routes(rRead, rWrite)
 	s.registerClientPlaybackRoutes(rRead)
 
-	s.registerLegacyRoutes(r, s.newLANGuard())
+	legacyhttp.RegisterRoutes(r, s.legacyRuntime(), s.newLANGuard())
 
 	return r
 }

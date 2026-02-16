@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
+	legacyhttp "github.com/ManuGH/xg2g/internal/control/http/legacy"
 	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	"github.com/ManuGH/xg2g/internal/hdhr"
 	"github.com/ManuGH/xg2g/internal/jobs"
@@ -137,7 +138,7 @@ http://example.com/stream3
 		req = req.WithContext(context.Background())
 		rr := httptest.NewRecorder()
 
-		s.handleLineupJSON(rr, req)
+		legacyhttp.HandleLineupJSON(rr, req, s.legacyRuntime())
 
 		if rr.Code != http.StatusOK {
 			t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
@@ -183,7 +184,7 @@ http://example.com/stream3
 		req = req.WithContext(context.Background())
 		rr := httptest.NewRecorder()
 
-		s.handleLineupJSON(rr, req)
+		legacyhttp.HandleLineupJSON(rr, req, s.legacyRuntime())
 
 		if rr.Code != http.StatusInternalServerError {
 			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
@@ -324,7 +325,7 @@ http://10.10.55.14:18000/1:0:19:1334:3EF:1:C00000:0:0:0:
 	req.Host = "10.10.55.14:8080"
 	w := httptest.NewRecorder()
 
-	srv.handleLineupJSON(w, req)
+	legacyhttp.HandleLineupJSON(w, req, srv.legacyRuntime())
 
 	// Verify response
 	assert.Equal(t, http.StatusOK, w.Code)
@@ -380,7 +381,7 @@ http://10.10.55.14:18000/1:0:19:1334:3EF:1:C00000:0:0:0:
 	req.Host = "10.10.55.14:8080"
 	w := httptest.NewRecorder()
 
-	srv.handleLineupJSON(w, req)
+	legacyhttp.HandleLineupJSON(w, req, srv.legacyRuntime())
 
 	// Verify response
 	assert.Equal(t, http.StatusOK, w.Code)
@@ -435,7 +436,7 @@ http://10.10.55.14:18000/hls/1:0:19:132F:3EF:1:C00000:0:0:0:
 	req.Host = "10.10.55.14:8080"
 	w := httptest.NewRecorder()
 
-	srv.handleLineupJSON(w, req)
+	legacyhttp.HandleLineupJSON(w, req, srv.legacyRuntime())
 
 	// Verify response
 	assert.Equal(t, http.StatusOK, w.Code)
