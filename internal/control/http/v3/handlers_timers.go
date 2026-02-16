@@ -181,14 +181,8 @@ func (s *Server) AddTimer(w http.ResponseWriter, r *http.Request) {
 	err = client.AddTimer(ctx, realSRef, realBegin, realEnd, req.Name, desc)
 	if err != nil {
 		log.L().Error().Err(err).Str("sref", req.ServiceRef).Msg("failed to add timer")
-
-		status := http.StatusInternalServerError
-		errStr := err.Error()
-		if strings.Contains(errStr, "Konflikt") || strings.Contains(errStr, "Conflict") || strings.Contains(errStr, "overlap") {
-			status = http.StatusConflict
-		}
-
-		writeProblem(w, r, status, "dvr/add_failed", "Add Timer Failed", "ADD_FAILED", err.Error(), nil)
+		status, problemType, title, code := classifyTimerAddError(err)
+		writeProblem(w, r, status, problemType, title, code, err.Error(), nil)
 		return
 	}
 
@@ -264,23 +258,8 @@ func (s *Server) DeleteTimer(w http.ResponseWriter, r *http.Request, timerId str
 	err = client.DeleteTimer(r.Context(), sRef, begin, end)
 	if err != nil {
 		log.L().Error().Err(err).Str("timerId", timerId).Msg("failed to delete timer")
-
-		status := http.StatusBadGateway
-		errCode := "dvr/delete_failed"
-		title := "Delete Failed"
-		errStr := err.Error()
-
-		if strings.Contains(errStr, "not found") || strings.Contains(errStr, "nicht gefunden") || strings.Contains(errStr, "404") {
-			status = http.StatusNotFound
-			errCode = "dvr/not_found"
-			title = "Timer Not Found"
-		} else if strings.Contains(errStr, "connection") || strings.Contains(errStr, "refused") || strings.Contains(errStr, "timeout") {
-			status = http.StatusBadGateway
-			errCode = "dvr/receiver_unreachable"
-			title = "Receiver Unreachable"
-		}
-
-		writeProblem(w, r, status, errCode, title, "DELETE_FAILED", errStr, nil)
+		status, problemType, title, code := classifyTimerDeleteError(err)
+		writeProblem(w, r, status, problemType, title, code, err.Error(), nil)
 		return
 	}
 
@@ -384,12 +363,8 @@ func (s *Server) UpdateTimer(w http.ResponseWriter, r *http.Request, timerId str
 		}
 
 		log.L().Error().Err(err).Str("timerId", timerId).Msg("update failed")
-		status := http.StatusBadGateway
-		errStr := err.Error()
-		if strings.Contains(err.Error(), "Konflikt") || strings.Contains(err.Error(), "Conflict") || strings.Contains(err.Error(), "overlap") {
-			status = http.StatusConflict
-		}
-		writeProblem(w, r, status, "dvr/update_failed", "Update Failed", "UPDATE_FAILED", errStr, nil)
+		status, problemType, title, code := classifyTimerUpdateError(err)
+		writeProblem(w, r, status, problemType, title, code, err.Error(), nil)
 		return
 	}
 
@@ -546,6 +521,55 @@ func (s *Server) GetDvrCapabilities(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func classifyTimerAddError(err error) (status int, problemType, title, code string) {
+	if openwebif.IsTimerConflict(err) {
+		return http.StatusConflict, "dvr/add_failed", "Add Timer Failed", "ADD_FAILED"
+	}
+	if errors.Is(err, openwebif.ErrForbidden) {
+		return http.StatusForbidden, "dvr/forbidden", "Access Forbidden", "FORBIDDEN"
+	}
+	if isReceiverUnavailable(err) {
+		return http.StatusBadGateway, "dvr/receiver_unreachable", "Receiver Unreachable", "RECEIVER_UNREACHABLE"
+	}
+	return http.StatusInternalServerError, "dvr/add_failed", "Add Timer Failed", "ADD_FAILED"
+}
+
+func classifyTimerDeleteError(err error) (status int, problemType, title, code string) {
+	if openwebif.IsTimerNotFound(err) {
+		return http.StatusNotFound, "dvr/not_found", "Timer Not Found", "NOT_FOUND"
+	}
+	if errors.Is(err, openwebif.ErrForbidden) {
+		return http.StatusForbidden, "dvr/forbidden", "Access Forbidden", "FORBIDDEN"
+	}
+	if isReceiverUnavailable(err) {
+		return http.StatusBadGateway, "dvr/receiver_unreachable", "Receiver Unreachable", "RECEIVER_UNREACHABLE"
+	}
+	return http.StatusBadGateway, "dvr/delete_failed", "Delete Failed", "DELETE_FAILED"
+}
+
+func classifyTimerUpdateError(err error) (status int, problemType, title, code string) {
+	if openwebif.IsTimerConflict(err) {
+		return http.StatusConflict, "dvr/update_failed", "Update Failed", "UPDATE_FAILED"
+	}
+	if errors.Is(err, openwebif.ErrForbidden) {
+		return http.StatusForbidden, "dvr/forbidden", "Access Forbidden", "FORBIDDEN"
+	}
+	if openwebif.IsTimerNotFound(err) {
+		return http.StatusNotFound, "dvr/not_found", "Timer Not Found", "NOT_FOUND"
+	}
+	if isReceiverUnavailable(err) {
+		return http.StatusBadGateway, "dvr/receiver_unreachable", "Receiver Unreachable", "RECEIVER_UNREACHABLE"
+	}
+	return http.StatusBadGateway, "dvr/update_failed", "Update Failed", "UPDATE_FAILED"
+}
+
+func isReceiverUnavailable(err error) bool {
+	return errors.Is(err, openwebif.ErrTimeout) ||
+		errors.Is(err, openwebif.ErrUpstreamUnavailable) ||
+		errors.Is(err, openwebif.ErrUpstreamError) ||
+		errors.Is(err, openwebif.ErrUpstreamBadResponse)
 }
 
 // GetTimer implements ServerInterface

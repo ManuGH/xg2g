@@ -164,7 +164,7 @@ func (o *Orchestrator) acquireLeases(
 	o.registerActive(event.SessionID, hbCancel)
 
 	if sessionCtx.Mode == model.ModeLive && o.HeartbeatEvery > 0 {
-		go func() {
+		started := o.goSessionWorker(func() {
 			t := time.NewTicker(o.HeartbeatEvery)
 			defer t.Stop()
 			for {
@@ -190,7 +190,17 @@ func (o *Orchestrator) acquireLeases(
 					}
 				}
 			}
-		}()
+		})
+		if !started {
+			res.HBCancel()
+			res.ReleaseDedup()
+			if res.Slot >= 0 {
+				ctxRel, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+				defer cancel()
+				_ = o.Store.ReleaseLease(ctxRel, res.TunerLease.Key(), res.TunerLease.Owner())
+			}
+			return nil, newReasonError(model.RCancelled, "orchestrator shutting down", nil)
+		}
 	}
 
 	return res, nil
@@ -559,7 +569,9 @@ func (o *Orchestrator) runExecutionLoop(
 	}
 	if o.HLSRoot != "" {
 		// PR-P3-2: Start continuous heartbeat monitor (interim FS polling)
-		go o.startHeartbeatMonitor(hbCtx, e.SessionID)
+		_ = o.goSessionWorker(func() {
+			o.startHeartbeatMonitor(hbCtx, e.SessionID)
+		})
 	}
 
 	playlistReadyResult := false
@@ -587,7 +599,7 @@ func (o *Orchestrator) runExecutionLoop(
 	}
 
 	// Failure Handling
-	stopCtx, stopCancel := context.WithTimeout(context.Background(), o.PipelineStopTimeout)
+	stopCtx, stopCancel := context.WithTimeout(context.WithoutCancel(ctx), o.PipelineStopTimeout)
 	_ = o.Pipeline.Stop(stopCtx, handle)
 	stopCancel()
 
@@ -618,7 +630,7 @@ func (o *Orchestrator) finalizeDeferred(
 	var outcome finalOutcome
 
 	// Use bounded timeout context for finalization instead of Background
-	finalizeCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	finalizeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
 
 	_, err := o.Store.UpdateSession(finalizeCtx, event.SessionID, func(r *model.SessionRecord) error {

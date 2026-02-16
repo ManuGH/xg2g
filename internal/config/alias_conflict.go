@@ -164,47 +164,47 @@ func (l *Loader) checkAliasEnvConflicts(src *FileConfig) error {
 
 	// YAML openWebIF vs ENV enigma2
 	if presence.openWebIF["baseUrl"] {
-		if v, ok := envString("XG2G_E2_HOST"); ok && !equalString(src.OpenWebIF.BaseURL, v) {
+		if v, ok := envStringWithLookup(l.envLookup, "XG2G_E2_HOST"); ok && !equalString(src.OpenWebIF.BaseURL, v) {
 			return aliasConflictError("baseUrl", "baseUrl")
 		}
 	}
 	if presence.openWebIF["username"] {
-		if v, ok := envString("XG2G_E2_USER"); ok && !equalString(src.OpenWebIF.Username, v) {
+		if v, ok := envStringWithLookup(l.envLookup, "XG2G_E2_USER"); ok && !equalString(src.OpenWebIF.Username, v) {
 			return aliasConflictError("username", "username")
 		}
 	}
 	if presence.openWebIF["password"] {
-		if v, ok := envString("XG2G_E2_PASS"); ok && !equalString(src.OpenWebIF.Password, v) {
+		if v, ok := envStringWithLookup(l.envLookup, "XG2G_E2_PASS"); ok && !equalString(src.OpenWebIF.Password, v) {
 			return aliasConflictError("password", "password")
 		}
 	}
 	if presence.openWebIF["timeout"] {
-		if d, ok := envDuration("XG2G_E2_TIMEOUT"); ok && !equalDurationEnv(src.OpenWebIF.Timeout, d) {
+		if d, ok := envDurationWithLookup(l.envLookup, "XG2G_E2_TIMEOUT"); ok && !equalDurationEnv(src.OpenWebIF.Timeout, d) {
 			return aliasConflictError("timeout", "timeout")
 		}
 	}
 	if presence.openWebIF["retries"] {
-		if v, ok := envInt("XG2G_E2_RETRIES"); ok && src.OpenWebIF.Retries != v {
+		if v, ok := envIntWithLookup(l.envLookup, "XG2G_E2_RETRIES"); ok && src.OpenWebIF.Retries != v {
 			return aliasConflictError("retries", "retries")
 		}
 	}
 	if presence.openWebIF["backoff"] {
-		if d, ok := envDuration("XG2G_E2_BACKOFF"); ok && !equalDurationEnv(src.OpenWebIF.Backoff, d) {
+		if d, ok := envDurationWithLookup(l.envLookup, "XG2G_E2_BACKOFF"); ok && !equalDurationEnv(src.OpenWebIF.Backoff, d) {
 			return aliasConflictError("backoff", "backoff")
 		}
 	}
 	if presence.openWebIF["maxBackoff"] {
-		if d, ok := envDuration("XG2G_E2_MAX_BACKOFF"); ok && !equalDurationEnv(src.OpenWebIF.MaxBackoff, d) {
+		if d, ok := envDurationWithLookup(l.envLookup, "XG2G_E2_MAX_BACKOFF"); ok && !equalDurationEnv(src.OpenWebIF.MaxBackoff, d) {
 			return aliasConflictError("maxBackoff", "maxBackoff")
 		}
 	}
 	if presence.openWebIF["streamPort"] {
-		if v, ok := envInt("XG2G_E2_STREAM_PORT"); ok && src.OpenWebIF.StreamPort != v {
+		if v, ok := envIntWithLookup(l.envLookup, "XG2G_E2_STREAM_PORT"); ok && src.OpenWebIF.StreamPort != v {
 			return aliasConflictError("streamPort", "streamPort")
 		}
 	}
 	if presence.openWebIF["useWebIFStreams"] {
-		if v, ok := envBool("XG2G_E2_USE_WEBIF_STREAMS"); ok {
+		if v, ok := envBoolWithLookup(l.envLookup, "XG2G_E2_USE_WEBIF_STREAMS"); ok {
 			if src.OpenWebIF.UseWebIF == nil || *src.OpenWebIF.UseWebIF != v {
 				return aliasConflictError("useWebIFStreams", "useWebIFStreams")
 			}
@@ -213,49 +213,49 @@ func (l *Loader) checkAliasEnvConflicts(src *FileConfig) error {
 
 	// YAML enigma2 vs ENV openWebIF
 	if presence.enigma2["baseUrl"] {
-		if v, ok := envString("XG2G_OWI_BASE"); ok && !equalString(src.Enigma2.BaseURL, v) {
+		if v, ok := envStringWithLookup(l.envLookup, "XG2G_OWI_BASE"); ok && !equalString(src.Enigma2.BaseURL, v) {
 			return aliasConflictError("baseUrl", "baseUrl")
 		}
 	}
 	if presence.enigma2["username"] {
-		if v, ok := envString("XG2G_OWI_USER"); ok && !equalString(src.Enigma2.Username, v) {
+		if v, ok := envStringWithLookup(l.envLookup, "XG2G_OWI_USER"); ok && !equalString(src.Enigma2.Username, v) {
 			return aliasConflictError("username", "username")
 		}
 	}
 	if presence.enigma2["password"] {
-		if v, ok := envString("XG2G_OWI_PASS"); ok && !equalString(src.Enigma2.Password, v) {
+		if v, ok := envStringWithLookup(l.envLookup, "XG2G_OWI_PASS"); ok && !equalString(src.Enigma2.Password, v) {
 			return aliasConflictError("password", "password")
 		}
 	}
 	if presence.enigma2["timeout"] {
-		if d, ok := envDurationMS("XG2G_OWI_TIMEOUT_MS"); ok && !equalDurationEnv(src.Enigma2.Timeout, d) {
+		if d, ok := envDurationMSWithLookup(l.envLookup, "XG2G_OWI_TIMEOUT_MS"); ok && !equalDurationEnv(src.Enigma2.Timeout, d) {
 			return aliasConflictError("timeout", "timeout")
 		}
 	}
 	if presence.enigma2["retries"] {
-		if v, ok := envInt("XG2G_OWI_RETRIES"); ok && src.Enigma2.Retries != v {
+		if v, ok := envIntWithLookup(l.envLookup, "XG2G_OWI_RETRIES"); ok && src.Enigma2.Retries != v {
 			return aliasConflictError("retries", "retries")
 		}
 	}
 	if presence.enigma2["backoff"] {
-		if d, ok := envDurationMS("XG2G_OWI_BACKOFF_MS"); ok && !equalDurationEnv(src.Enigma2.Backoff, d) {
+		if d, ok := envDurationMSWithLookup(l.envLookup, "XG2G_OWI_BACKOFF_MS"); ok && !equalDurationEnv(src.Enigma2.Backoff, d) {
 			return aliasConflictError("backoff", "backoff")
 		}
 	}
 	if presence.enigma2["maxBackoff"] {
-		if d, ok := envDurationMS("XG2G_OWI_MAX_BACKOFF_MS"); ok && !equalDurationEnv(src.Enigma2.MaxBackoff, d) {
+		if d, ok := envDurationMSWithLookup(l.envLookup, "XG2G_OWI_MAX_BACKOFF_MS"); ok && !equalDurationEnv(src.Enigma2.MaxBackoff, d) {
 			return aliasConflictError("maxBackoff", "maxBackoff")
 		}
 	}
 	if presence.enigma2["streamPort"] {
-		if v, ok := envInt("XG2G_STREAM_PORT"); ok {
+		if v, ok := envIntWithLookup(l.envLookup, "XG2G_STREAM_PORT"); ok {
 			if src.Enigma2.StreamPort == nil || *src.Enigma2.StreamPort != v {
 				return aliasConflictError("streamPort", "streamPort")
 			}
 		}
 	}
 	if presence.enigma2["useWebIFStreams"] {
-		if v, ok := envBool("XG2G_USE_WEBIF_STREAMS"); ok {
+		if v, ok := envBoolWithLookup(l.envLookup, "XG2G_USE_WEBIF_STREAMS"); ok {
 			if src.Enigma2.UseWebIF == nil || *src.Enigma2.UseWebIF != v {
 				return aliasConflictError("useWebIFStreams", "useWebIFStreams")
 			}
@@ -266,48 +266,48 @@ func (l *Loader) checkAliasEnvConflicts(src *FileConfig) error {
 }
 
 func (l *Loader) checkAliasEnvToEnvConflicts() error {
-	if owi, ok := envString("XG2G_OWI_BASE"); ok {
-		if e2, ok := envString("XG2G_E2_HOST"); ok && !equalString(owi, e2) {
+	if owi, ok := envStringWithLookup(l.envLookup, "XG2G_OWI_BASE"); ok {
+		if e2, ok := envStringWithLookup(l.envLookup, "XG2G_E2_HOST"); ok && !equalString(owi, e2) {
 			return aliasConflictError("baseUrl", "baseUrl")
 		}
 	}
-	if owi, ok := envString("XG2G_OWI_USER"); ok {
-		if e2, ok := envString("XG2G_E2_USER"); ok && !equalString(owi, e2) {
+	if owi, ok := envStringWithLookup(l.envLookup, "XG2G_OWI_USER"); ok {
+		if e2, ok := envStringWithLookup(l.envLookup, "XG2G_E2_USER"); ok && !equalString(owi, e2) {
 			return aliasConflictError("username", "username")
 		}
 	}
-	if owi, ok := envString("XG2G_OWI_PASS"); ok {
-		if e2, ok := envString("XG2G_E2_PASS"); ok && !equalString(owi, e2) {
+	if owi, ok := envStringWithLookup(l.envLookup, "XG2G_OWI_PASS"); ok {
+		if e2, ok := envStringWithLookup(l.envLookup, "XG2G_E2_PASS"); ok && !equalString(owi, e2) {
 			return aliasConflictError("password", "password")
 		}
 	}
-	if owi, ok := envDurationMS("XG2G_OWI_TIMEOUT_MS"); ok {
-		if e2, ok := envDuration("XG2G_E2_TIMEOUT"); ok && owi != e2 {
+	if owi, ok := envDurationMSWithLookup(l.envLookup, "XG2G_OWI_TIMEOUT_MS"); ok {
+		if e2, ok := envDurationWithLookup(l.envLookup, "XG2G_E2_TIMEOUT"); ok && owi != e2 {
 			return aliasConflictError("timeout", "timeout")
 		}
 	}
-	if owi, ok := envInt("XG2G_OWI_RETRIES"); ok {
-		if e2, ok := envInt("XG2G_E2_RETRIES"); ok && owi != e2 {
+	if owi, ok := envIntWithLookup(l.envLookup, "XG2G_OWI_RETRIES"); ok {
+		if e2, ok := envIntWithLookup(l.envLookup, "XG2G_E2_RETRIES"); ok && owi != e2 {
 			return aliasConflictError("retries", "retries")
 		}
 	}
-	if owi, ok := envDurationMS("XG2G_OWI_BACKOFF_MS"); ok {
-		if e2, ok := envDuration("XG2G_E2_BACKOFF"); ok && owi != e2 {
+	if owi, ok := envDurationMSWithLookup(l.envLookup, "XG2G_OWI_BACKOFF_MS"); ok {
+		if e2, ok := envDurationWithLookup(l.envLookup, "XG2G_E2_BACKOFF"); ok && owi != e2 {
 			return aliasConflictError("backoff", "backoff")
 		}
 	}
-	if owi, ok := envDurationMS("XG2G_OWI_MAX_BACKOFF_MS"); ok {
-		if e2, ok := envDuration("XG2G_E2_MAX_BACKOFF"); ok && owi != e2 {
+	if owi, ok := envDurationMSWithLookup(l.envLookup, "XG2G_OWI_MAX_BACKOFF_MS"); ok {
+		if e2, ok := envDurationWithLookup(l.envLookup, "XG2G_E2_MAX_BACKOFF"); ok && owi != e2 {
 			return aliasConflictError("maxBackoff", "maxBackoff")
 		}
 	}
-	if owi, ok := envInt("XG2G_STREAM_PORT"); ok {
-		if e2, ok := envInt("XG2G_E2_STREAM_PORT"); ok && owi != e2 {
+	if owi, ok := envIntWithLookup(l.envLookup, "XG2G_STREAM_PORT"); ok {
+		if e2, ok := envIntWithLookup(l.envLookup, "XG2G_E2_STREAM_PORT"); ok && owi != e2 {
 			return aliasConflictError("streamPort", "streamPort")
 		}
 	}
-	if owi, ok := envBool("XG2G_USE_WEBIF_STREAMS"); ok {
-		if e2, ok := envBool("XG2G_E2_USE_WEBIF_STREAMS"); ok && owi != e2 {
+	if owi, ok := envBoolWithLookup(l.envLookup, "XG2G_USE_WEBIF_STREAMS"); ok {
+		if e2, ok := envBoolWithLookup(l.envLookup, "XG2G_E2_USE_WEBIF_STREAMS"); ok && owi != e2 {
 			return aliasConflictError("useWebIFStreams", "useWebIFStreams")
 		}
 	}
@@ -339,8 +339,11 @@ func parseDurationString(value string) (time.Duration, bool) {
 	return d, true
 }
 
-func envString(key string) (string, bool) {
-	v, ok := os.LookupEnv(key)
+func envStringWithLookup(lookup envLookupFunc, key string) (string, bool) {
+	if lookup == nil {
+		lookup = os.LookupEnv
+	}
+	v, ok := lookup(key)
 	if !ok {
 		return "", false
 	}
@@ -351,8 +354,11 @@ func envString(key string) (string, bool) {
 	return v, true
 }
 
-func envInt(key string) (int, bool) {
-	v, ok := os.LookupEnv(key)
+func envIntWithLookup(lookup envLookupFunc, key string) (int, bool) {
+	if lookup == nil {
+		lookup = os.LookupEnv
+	}
+	v, ok := lookup(key)
 	if !ok {
 		return 0, false
 	}
@@ -367,8 +373,11 @@ func envInt(key string) (int, bool) {
 	return out, true
 }
 
-func envDuration(key string) (time.Duration, bool) {
-	v, ok := os.LookupEnv(key)
+func envDurationWithLookup(lookup envLookupFunc, key string) (time.Duration, bool) {
+	if lookup == nil {
+		lookup = os.LookupEnv
+	}
+	v, ok := lookup(key)
 	if !ok {
 		return 0, false
 	}
@@ -383,8 +392,11 @@ func envDuration(key string) (time.Duration, bool) {
 	return out, true
 }
 
-func envDurationMS(key string) (time.Duration, bool) {
-	v, ok := os.LookupEnv(key)
+func envDurationMSWithLookup(lookup envLookupFunc, key string) (time.Duration, bool) {
+	if lookup == nil {
+		lookup = os.LookupEnv
+	}
+	v, ok := lookup(key)
 	if !ok {
 		return 0, false
 	}
@@ -399,8 +411,11 @@ func envDurationMS(key string) (time.Duration, bool) {
 	return time.Duration(parsed) * time.Millisecond, true
 }
 
-func envBool(key string) (bool, bool) {
-	v, ok := os.LookupEnv(key)
+func envBoolWithLookup(lookup envLookupFunc, key string) (bool, bool) {
+	if lookup == nil {
+		lookup = os.LookupEnv
+	}
+	v, ok := lookup(key)
 	if !ok {
 		return false, false
 	}

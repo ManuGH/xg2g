@@ -2,12 +2,12 @@ package v3
 
 import (
 	"context"
-	"errors"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/read"
+	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -28,7 +28,7 @@ func TestContract_DeleteTimer(t *testing.T) {
 	t.Run("38_ReceiverUnreachable_502", func(t *testing.T) {
 		mock := &mockOWI{
 			deleteTimerFunc: func(ctx context.Context, sRef string, begin, end int64) error {
-				return errors.New("connection refused")
+				return openwebif.ErrUpstreamUnavailable
 			},
 		}
 		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) ReceiverControl { return mock }}
@@ -45,7 +45,7 @@ func TestContract_DeleteTimer(t *testing.T) {
 	t.Run("39_TimerNotFound_404", func(t *testing.T) {
 		mock := &mockOWI{
 			deleteTimerFunc: func(ctx context.Context, sRef string, begin, end int64) error {
-				return errors.New("timer not found")
+				return openwebif.ErrNotFound
 			},
 		}
 		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) ReceiverControl { return mock }}

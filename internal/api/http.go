@@ -15,16 +15,12 @@ import (
 	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/control/vod"
-	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/dvr"
 	"github.com/ManuGH/xg2g/internal/epg"
 	"github.com/ManuGH/xg2g/internal/hdhr"
 	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/ManuGH/xg2g/internal/openwebif"
-	"github.com/ManuGH/xg2g/internal/pipeline/bus"
-	"github.com/ManuGH/xg2g/internal/pipeline/resume"
-	"github.com/ManuGH/xg2g/internal/pipeline/scan"
 	"github.com/ManuGH/xg2g/internal/recordings"
 	"github.com/ManuGH/xg2g/internal/verification"
 
@@ -64,11 +60,8 @@ type Server struct {
 
 	// v3 Integration
 	v3Handler         *v3.Server
-	v3Bus             bus.Bus
-	v3Store           store.StateStore
+	v3RuntimeDeps     v3.Dependencies
 	verificationStore verification.Store // P8.3: Verification Store
-	resumeStore       resume.Store
-	v3Scan            *scan.Manager
 	recordingsService recservice.Service
 
 	// Recording Playback Path Mapper

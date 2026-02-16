@@ -24,6 +24,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Check non-empty diff
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --prune --depth=1 origin "${{ github.base_ref }}"
+          ./scripts/ci/check-empty-delta.sh "origin/${{ github.base_ref }}"
+
       - name: Resolve PR scopes
         id: scope
         shell: bash

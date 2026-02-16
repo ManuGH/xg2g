@@ -34,10 +34,14 @@ var removedEnvKeys = []RemovedEnvKey{
 	},
 }
 
-func FindActiveRemovedEnvKeys() []RemovedEnvKey {
+func FindActiveRemovedEnvKeysWithLookup(lookup envLookupFunc) []RemovedEnvKey {
+	if lookup == nil {
+		lookup = os.LookupEnv
+	}
+
 	out := make([]RemovedEnvKey, 0, len(removedEnvKeys))
 	for _, k := range removedEnvKeys {
-		if _, ok := os.LookupEnv(k.Key); ok {
+		if _, ok := lookup(k.Key); ok {
 			out = append(out, k)
 		}
 	}
@@ -45,8 +49,12 @@ func FindActiveRemovedEnvKeys() []RemovedEnvKey {
 	return out
 }
 
-func WarnRemovedEnvKeys() {
-	active := FindActiveRemovedEnvKeys()
+func FindActiveRemovedEnvKeys() []RemovedEnvKey {
+	return FindActiveRemovedEnvKeysWithLookup(os.LookupEnv)
+}
+
+func WarnRemovedEnvKeysWithLookup(lookup envLookupFunc) {
+	active := FindActiveRemovedEnvKeysWithLookup(lookup)
 	if len(active) == 0 {
 		return
 	}
@@ -57,4 +65,8 @@ func WarnRemovedEnvKeys() {
 			Str("key", k.Key).
 			Msgf("REMOVED env var is set: %s", k.Message)
 	}
+}
+
+func WarnRemovedEnvKeys() {
+	WarnRemovedEnvKeysWithLookup(os.LookupEnv)
 }

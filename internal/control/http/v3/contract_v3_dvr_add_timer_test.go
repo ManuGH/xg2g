@@ -83,7 +83,7 @@ func TestContract_AddTimer(t *testing.T) {
 	t.Run("25_ReceiverUnreachable_DuplicateCheck_502", func(t *testing.T) {
 		mock := &mockOWI{
 			getTimersFunc: func(ctx context.Context) ([]openwebif.Timer, error) {
-				return nil, errors.New("connection reset by peer")
+				return nil, openwebif.ErrUpstreamUnavailable
 			},
 		}
 		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) ReceiverControl { return mock }}
@@ -122,7 +122,7 @@ func TestContract_AddTimer(t *testing.T) {
 				return nil, nil // No duplicates
 			},
 			addTimerFunc: func(ctx context.Context, sRef string, begin, end int64, name, desc string) error {
-				return errors.New("Konflikt mit anderem Timer")
+				return openwebif.ErrConflict
 			},
 		}
 		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) ReceiverControl { return mock }}
