@@ -112,22 +112,3 @@ func (s *Server) registerCanonicalV3Routes(r chi.Router) {
 	// More specific manual routes remain registered separately.
 	r.Handle(v3.V3BaseURL+"/*", v3Routes)
 }
-
-func (s *Server) newLANGuard() *middleware.LANGuard {
-	lanGuard, err := middleware.NewLANGuard(middleware.LANGuardConfig{
-		AllowedCIDRs:      append([]string(nil), s.cfg.Network.LAN.Allow.CIDRs...),
-		TrustedProxyCIDRs: splitCSVNonEmpty(s.cfg.TrustedProxies),
-	})
-	if err == nil {
-		return lanGuard
-	}
-
-	log.L().Warn().Err(err).Msg("invalid LAN guard CIDR configuration, falling back to defaults")
-	fallback, fallbackErr := middleware.NewLANGuard(middleware.LANGuardConfig{})
-	if fallbackErr != nil {
-		// Should never happen (defaults are static), keep fail-closed semantics.
-		log.L().Error().Err(fallbackErr).Msg("failed to initialize fallback LAN guard")
-		return &middleware.LANGuard{}
-	}
-	return fallback
-}
