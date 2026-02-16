@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/platform/paths"
 	"gopkg.in/yaml.v3"
 )
@@ -24,14 +25,29 @@ type Loader struct {
 	version         string
 	ConsumedEnvKeys map[string]struct{} // Mechanical tracking of consumed keys
 	filePresence    *aliasPresence
+	lookupEnvFn     envLookupFunc
+	listEnvFn       func() []string
 }
 
 // NewLoader creates a new configuration loader
 func NewLoader(configPath, version string) *Loader {
+	return NewLoaderWithEnv(configPath, version, os.LookupEnv, os.Environ)
+}
+
+// NewLoaderWithEnv creates a new configuration loader with an injected environment source.
+func NewLoaderWithEnv(configPath, version string, lookup envLookupFunc, list func() []string) *Loader {
+	if lookup == nil {
+		lookup = os.LookupEnv
+	}
+	if list == nil {
+		list = os.Environ
+	}
 	return &Loader{
 		configPath:      configPath,
 		version:         version,
 		ConsumedEnvKeys: make(map[string]struct{}),
+		lookupEnvFn:     lookup,
+		listEnvFn:       list,
 	}
 }
 
@@ -39,40 +55,52 @@ func NewLoader(configPath, version string) *Loader {
 
 func (l *Loader) envString(key, defaultVal string) string {
 	l.ConsumedEnvKeys[key] = struct{}{}
-	return ParseString(key, defaultVal)
+	return parseStringWithLookup(log.WithComponent("config"), l.envLookup, key, defaultVal)
 }
 
 func (l *Loader) envBool(key string, defaultVal bool) bool {
 	l.ConsumedEnvKeys[key] = struct{}{}
-	return ParseBool(key, defaultVal)
+	return parseBoolWithLookup(log.WithComponent("config"), l.envLookup, key, defaultVal)
 }
 
 func (l *Loader) envInt(key string, defaultVal int) int {
 	l.ConsumedEnvKeys[key] = struct{}{}
-	return ParseInt(key, defaultVal)
+	return parseIntWithLookup(log.WithComponent("config"), l.envLookup, key, defaultVal)
 }
 
 func (l *Loader) envDuration(key string, defaultVal time.Duration) time.Duration {
 	l.ConsumedEnvKeys[key] = struct{}{}
-	return ParseDuration(key, defaultVal)
+	return parseDurationWithLookup(log.WithComponent("config"), l.envLookup, key, defaultVal)
 }
 
 func (l *Loader) envFloat(key string, defaultVal float64) float64 {
 	l.ConsumedEnvKeys[key] = struct{}{}
-	return ParseFloat(key, defaultVal)
+	return parseFloatWithLookup(log.WithComponent("config"), l.envLookup, key, defaultVal)
 }
 
 func (l *Loader) envLookup(key string) (string, bool) {
 	l.ConsumedEnvKeys[key] = struct{}{}
-	return os.LookupEnv(key)
+	if l.lookupEnvFn == nil {
+		return os.LookupEnv(key)
+	}
+	return l.lookupEnvFn(key)
+}
+
+func (l *Loader) envEnviron() []string {
+	if l.listEnvFn == nil {
+		return os.Environ()
+	}
+	return l.listEnvFn()
 }
 
 // Load loads configuration with precedence: ENV > File > Defaults
 // It enforces Strict Validated Order: Parse File (Strict) -> Apply Env -> Validate
 func (l *Loader) Load() (AppConfig, error) {
 	// Pre-Release Guardrail: Fail fast if legacy keys are found
-	CheckLegacyEnv()
-	WarnRemovedEnvKeys()
+	if err := CheckLegacyEnvWithEnviron(l.envEnviron()); err != nil {
+		return AppConfig{}, err
+	}
+	WarnRemovedEnvKeysWithLookup(l.envLookup)
 
 	cfg := AppConfig{}
 
@@ -119,7 +147,7 @@ func (l *Loader) Load() (AppConfig, error) {
 	resolveE2AuthMode(&cfg)
 
 	// 4.6. ADR-00X: Fail-start if deprecated XG2G_STREAM_PROFILE is set
-	if os.Getenv("XG2G_STREAM_PROFILE") != "" {
+	if v, ok := l.envLookup("XG2G_STREAM_PROFILE"); ok && strings.TrimSpace(v) != "" {
 		return cfg, fmt.Errorf("XG2G_STREAM_PROFILE removed. Use XG2G_STREAMING_POLICY=universal (ADR-00X)")
 	}
 
@@ -128,10 +156,15 @@ func (l *Loader) Load() (AppConfig, error) {
 
 	// 6. Resolve HLS Root (Migration & Path Safety)
 	// Must be done after DataDir is finalized
-	hlsRes, err := paths.ResolveHLSRoot(cfg.DataDir,
-		os.Getenv(paths.EnvHLSRoot),
-		os.Getenv(paths.EnvLegacyHLSRoot),
-	)
+	hlsRoot := ""
+	if v, ok := l.envLookup(paths.EnvHLSRoot); ok {
+		hlsRoot = v
+	}
+	legacyHLSRoot := ""
+	if v, ok := l.envLookup(paths.EnvLegacyHLSRoot); ok {
+		legacyHLSRoot = v
+	}
+	hlsRes, err := paths.ResolveHLSRoot(cfg.DataDir, hlsRoot, legacyHLSRoot)
 	if err != nil {
 		return cfg, fmt.Errorf("resolve hls root: %w", err)
 	}
@@ -141,6 +174,10 @@ func (l *Loader) Load() (AppConfig, error) {
 	}
 
 	// 7. Validate final configuration
+	if err := l.ValidateEnvUsage(cfg.ConfigStrict); err != nil {
+		return cfg, err
+	}
+
 	if err := Validate(cfg); err != nil {
 		return cfg, fmt.Errorf("config validation failed: %w", err)
 	}

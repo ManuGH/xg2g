@@ -16,7 +16,6 @@ func TestFeatureFlag_String(t *testing.T) {
 		want string
 	}{
 		{"audio transcoding", FeatureFlagAudioTranscoding, "AUDIO_TRANSCODING"},
-		{"GPU transcode", FeatureFlagGPUTranscode, "GPU_TRANSCODE"},
 		{"EPG", FeatureFlagEPG, "EPG"},
 		{"telemetry", FeatureFlagTelemetry, "TELEMETRY"},
 		{"metrics", FeatureFlagMetrics, "METRICS"},
@@ -38,7 +37,6 @@ func TestFeatureFlag_EnvVarName(t *testing.T) {
 		want string
 	}{
 		{"audio transcoding", FeatureFlagAudioTranscoding, "XG2G_AUDIO_TRANSCODING_ENABLED"},
-		{"GPU transcode", FeatureFlagGPUTranscode, "XG2G_GPU_TRANSCODE_ENABLED"},
 		{"EPG", FeatureFlagEPG, "XG2G_EPG_ENABLED"},
 		{"telemetry", FeatureFlagTelemetry, "XG2G_TELEMETRY_ENABLED"},
 		{"metrics", FeatureFlagMetrics, "XG2G_METRICS_ENABLED"},
@@ -60,7 +58,6 @@ func TestFeatureFlag_IsValid(t *testing.T) {
 		want bool
 	}{
 		{"audio transcoding valid", FeatureFlagAudioTranscoding, true},
-		{"GPU transcode valid", FeatureFlagGPUTranscode, true},
 		{"EPG valid", FeatureFlagEPG, true},
 		{"telemetry valid", FeatureFlagTelemetry, true},
 		{"metrics valid", FeatureFlagMetrics, true},
@@ -81,14 +78,13 @@ func TestFeatureFlag_IsValid(t *testing.T) {
 func TestAllFeatureFlags(t *testing.T) {
 	flags := AllFeatureFlags()
 
-	if len(flags) != 5 {
-		t.Errorf("AllFeatureFlags() returned %d flags, want 5", len(flags))
+	if len(flags) != 4 {
+		t.Errorf("AllFeatureFlags() returned %d flags, want 4", len(flags))
 	}
 
 	// Verify all expected flags are present
 	expected := []FeatureFlag{
 		FeatureFlagAudioTranscoding,
-		FeatureFlagGPUTranscode,
 		FeatureFlagEPG,
 		FeatureFlagTelemetry,
 		FeatureFlagMetrics,

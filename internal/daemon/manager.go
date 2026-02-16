@@ -357,15 +357,28 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 	// 5. Register Health/Readiness Checks (Phase 9-1)
 	m.registerV3Checks(&cfg, e2Client)
 
-	// 6. Run Orchestrator
-	go func() {
-		// Orchestrator.Run returns error on exit
-		if err := orch.Run(ctx); err != nil {
-			if err != context.Canceled {
-				m.logger.Error().Err(err).Msg("v3 worker orchestrator exited unexpected")
-				errChan <- fmt.Errorf("v3 worker: %w", err)
-			}
+	// 6. Run Orchestrator with managed lifecycle (cancel + join on shutdown)
+	workerCtx, workerCancel := context.WithCancel(ctx)
+	workerDone := make(chan error, 1)
+
+	m.RegisterShutdownHook("v3_orchestrator_stop", func(shutdownCtx context.Context) error {
+		workerCancel()
+		select {
+		case <-shutdownCtx.Done():
+			return fmt.Errorf("timeout waiting for v3 orchestrator stop: %w", shutdownCtx.Err())
+		case <-workerDone:
+			return nil
 		}
+	})
+
+	go func() {
+		err := orch.Run(workerCtx)
+		if err != nil && !errors.Is(err, context.Canceled) {
+			m.logger.Error().Err(err).Msg("v3 worker orchestrator exited unexpected")
+			errChan <- fmt.Errorf("v3 worker: %w", err)
+		}
+		workerDone <- err
+		close(workerDone)
 	}()
 
 	return nil

@@ -16,9 +16,6 @@ const (
 	// FeatureFlagAudioTranscoding enables audio transcoding via FFmpeg.
 	FeatureFlagAudioTranscoding FeatureFlag = "AUDIO_TRANSCODING"
 
-	// FeatureFlagGPUTranscode enables GPU-accelerated video transcoding.
-	FeatureFlagGPUTranscode FeatureFlag = "GPU_TRANSCODE"
-
 	// FeatureFlagEPG enables Electronic Program Guide fetching.
 	FeatureFlagEPG FeatureFlag = "EPG"
 
@@ -44,7 +41,7 @@ func (f FeatureFlag) EnvVarName() string {
 // IsValid checks whether the feature flag is defined.
 func (f FeatureFlag) IsValid() bool {
 	switch f {
-	case FeatureFlagAudioTranscoding, FeatureFlagGPUTranscode, FeatureFlagEPG,
+	case FeatureFlagAudioTranscoding, FeatureFlagEPG,
 		FeatureFlagTelemetry, FeatureFlagMetrics:
 		return true
 	default:
@@ -56,7 +53,6 @@ func (f FeatureFlag) IsValid() bool {
 func AllFeatureFlags() []FeatureFlag {
 	return []FeatureFlag{
 		FeatureFlagAudioTranscoding,
-		FeatureFlagGPUTranscode,
 		FeatureFlagEPG,
 		FeatureFlagTelemetry,
 		FeatureFlagMetrics,
