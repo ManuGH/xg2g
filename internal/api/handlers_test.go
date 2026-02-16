@@ -1,7 +1,3 @@
-// Copyright (c) 2025 ManuGH
-// Licensed under the PolyForm Noncommercial License 1.0.0
-// Since v2.0.0, this software is restricted to non-commercial use only.
-
 package api
 
 import (
@@ -11,14 +7,14 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
-	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	"github.com/ManuGH/xg2g/internal/hdhr"
 	"github.com/ManuGH/xg2g/internal/jobs"
-	"github.com/ManuGH/xg2g/internal/resilience"
+	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -27,15 +23,9 @@ import (
 // TestGetConfig tests the GetConfig method.
 func TestGetConfig(t *testing.T) {
 	cfg := config.AppConfig{
-		Bouquet: "test-bouquet",
-		Enigma2: config.Enigma2Settings{
-			Username: "testuser",
-			BaseURL:  "http://example.com",
-		},
-		Streaming: config.StreamingConfig{
-			DeliveryPolicy: "universal",
-		},
-		DataDir: "/tmp/test",
+		Bouquet:     "test-bouquet",
+		OWIUsername: "testuser",
+		DataDir:     "/tmp/test",
 	}
 
 	s := &Server{
@@ -46,24 +36,18 @@ func TestGetConfig(t *testing.T) {
 	if got.Bouquet != cfg.Bouquet {
 		t.Errorf("expected Bouquet %q, got %q", cfg.Bouquet, got.Bouquet)
 	}
-	if got.Enigma2.Username != cfg.Enigma2.Username {
-		t.Errorf("expected Enigma2.Username %q, got %q", cfg.Enigma2.Username, got.Enigma2.Username)
+	if got.OWIUsername != cfg.OWIUsername {
+		t.Errorf("expected OWIUsername %q, got %q", cfg.OWIUsername, got.OWIUsername)
 	}
 	if got.DataDir != cfg.DataDir {
 		t.Errorf("expected DataDir %q, got %q", cfg.DataDir, got.DataDir)
 	}
 }
 
-func runtimePlaylistPath(dir string) string {
-	snap := config.BuildSnapshot(config.AppConfig{DataDir: dir}, config.ReadOSRuntimeEnvOrDefault())
-	return filepath.Join(dir, snap.Runtime.PlaylistFilename)
-}
-
 // TestHandleRefreshInternal tests the HandleRefreshInternal wrapper.
 func TestHandleRefreshInternal(t *testing.T) {
 	// Create a mock refresh function that succeeds immediately
-	mockRefreshFn := func(ctx context.Context, snap config.Snapshot) (*jobs.Status, error) {
-		_ = snap
+	mockRefreshFn := func(ctx context.Context, cfg config.AppConfig, _ *openwebif.StreamDetector) (*jobs.Status, error) {
 		return &jobs.Status{
 			Version:  "test",
 			Channels: 42,
@@ -71,20 +55,10 @@ func TestHandleRefreshInternal(t *testing.T) {
 		}, nil
 	}
 
-	cfg := config.AppConfig{
-		Bouquet: "test",
-		Enigma2: config.Enigma2Settings{
-			BaseURL: "http://example.com",
-		},
-		Streaming: config.StreamingConfig{
-			DeliveryPolicy: "universal",
-		},
-	}
 	s := &Server{
-		cfg:       cfg,
-		snap:      config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault()),
+		cfg:       config.AppConfig{Bouquet: "test"},
 		refreshFn: mockRefreshFn,
-		cb:        resilience.NewCircuitBreaker("test", 3, 5, 60*time.Second, 5*time.Second),
+		cb:        NewCircuitBreaker(3, 5*time.Second),
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/refresh", nil)
@@ -99,7 +73,129 @@ func TestHandleRefreshInternal(t *testing.T) {
 	}
 }
 
-// Obsolete tests for V1 API removed
+// TestHandleRefreshV1Direct tests handleRefreshV1 directly.
+func TestHandleRefreshV1Direct(t *testing.T) {
+	mockRefreshFn := func(ctx context.Context, cfg config.AppConfig, _ *openwebif.StreamDetector) (*jobs.Status, error) {
+		return &jobs.Status{
+			Version:  "test",
+			Channels: 5,
+			LastRun:  time.Now(),
+		}, nil
+	}
+
+	s := &Server{
+		cfg:       config.AppConfig{Bouquet: "test"},
+		refreshFn: mockRefreshFn,
+		cb:        NewCircuitBreaker(3, 5*time.Second),
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/refresh", nil)
+	req = req.WithContext(context.Background())
+	rr := httptest.NewRecorder()
+
+	s.handleRefreshV1(rr, req)
+
+	// Should set X-API-Version header
+	if got := rr.Header().Get("X-API-Version"); got != "1" {
+		t.Errorf("expected X-API-Version header %q, got %q", "1", got)
+	}
+
+	// Should return success
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
+	}
+}
+
+// fakeConfigHolder is a test double for ConfigHolder.
+type fakeConfigHolder struct {
+	cfg       config.AppConfig
+	reloadErr error
+}
+
+func (f *fakeConfigHolder) Get() config.AppConfig {
+	return f.cfg
+}
+
+func (f *fakeConfigHolder) Reload(ctx context.Context) error {
+	return f.reloadErr
+}
+
+// TestHandleConfigReloadV1 tests the config reload endpoint.
+func TestHandleConfigReloadV1(t *testing.T) {
+	t.Run("no_config_holder", func(t *testing.T) {
+		s := &Server{
+			configHolder: nil, // Hot reload not enabled
+		}
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/config/reload", nil)
+		req = req.WithContext(context.Background())
+		rr := httptest.NewRecorder()
+
+		s.handleConfigReloadV1(rr, req)
+
+		if rr.Code != http.StatusServiceUnavailable {
+			t.Errorf("expected status %d, got %d", http.StatusServiceUnavailable, rr.Code)
+		}
+
+		if got := rr.Header().Get("X-API-Version"); got != "1" {
+			t.Errorf("expected X-API-Version header %q, got %q", "1", got)
+		}
+	})
+
+	t.Run("reload_success", func(t *testing.T) {
+		newCfg := config.AppConfig{
+			Bouquet: "updated-bouquet",
+			DataDir: "/tmp/new",
+		}
+		holder := &fakeConfigHolder{
+			cfg:       newCfg,
+			reloadErr: nil,
+		}
+
+		s := &Server{
+			cfg:          config.AppConfig{Bouquet: "old"},
+			configHolder: holder,
+		}
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/config/reload", nil)
+		req = req.WithContext(context.Background())
+		rr := httptest.NewRecorder()
+
+		s.handleConfigReloadV1(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
+		}
+
+		// Verify config was updated
+		got := s.GetConfig()
+		if got.Bouquet != newCfg.Bouquet {
+			t.Errorf("expected config Bouquet %q, got %q", newCfg.Bouquet, got.Bouquet)
+		}
+	})
+
+	t.Run("reload_failure", func(t *testing.T) {
+		holder := &fakeConfigHolder{
+			cfg:       config.AppConfig{},
+			reloadErr: context.DeadlineExceeded,
+		}
+
+		s := &Server{
+			cfg:          config.AppConfig{Bouquet: "old"},
+			configHolder: holder,
+		}
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/config/reload", nil)
+		req = req.WithContext(context.Background())
+		rr := httptest.NewRecorder()
+
+		s.handleConfigReloadV1(rr, req)
+
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
+		}
+	})
+}
 
 // TestHandleLineupJSON tests the HDHomeRun lineup.json endpoint.
 func TestHandleLineupJSON(t *testing.T) {
@@ -117,20 +213,15 @@ http://example.com/stream2
 #EXTINF:-1 tvg-chno="3" tvg-id="sref-3" tvg-name="Channel Three",Channel Three
 http://example.com/stream3
 `
-		m3uPath := runtimePlaylistPath(tmpDir)
+		m3uPath := filepath.Join(tmpDir, "playlist.m3u")
 		if err := os.WriteFile(m3uPath, []byte(m3uContent), 0600); err != nil {
 			t.Fatal(err)
 		}
 
-		cfg := config.AppConfig{
-			DataDir: tmpDir,
-			Streaming: config.StreamingConfig{
-				DeliveryPolicy: "universal",
-			},
-		}
 		s := &Server{
-			cfg:  cfg,
-			snap: config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault()),
+			cfg: config.AppConfig{
+				DataDir: tmpDir,
+			},
 		}
 
 		req := httptest.NewRequest(http.MethodGet, "/lineup.json", nil)
@@ -166,17 +257,12 @@ http://example.com/stream3
 
 	t.Run("missing_playlist", func(t *testing.T) {
 		tmpDir := t.TempDir()
-		// Don't create playlist file
+		// Don't create playlist.m3u
 
-		cfg := config.AppConfig{
-			DataDir: tmpDir,
-			Streaming: config.StreamingConfig{
-				DeliveryPolicy: "universal",
-			},
-		}
 		s := &Server{
-			cfg:  cfg,
-			snap: config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault()),
+			cfg: config.AppConfig{
+				DataDir: tmpDir,
+			},
 		}
 
 		req := httptest.NewRequest(http.MethodGet, "/lineup.json", nil)
@@ -189,6 +275,135 @@ http://example.com/stream3
 			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rr.Code)
 		}
 	})
+}
+
+// TestRespondError tests the structured error response function.
+func TestRespondError(t *testing.T) {
+	t.Run("basic_error", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		req = req.WithContext(context.Background())
+		rr := httptest.NewRecorder()
+
+		RespondError(rr, req, http.StatusBadRequest, ErrInvalidInput)
+
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected status %d, got %d", http.StatusBadRequest, rr.Code)
+		}
+
+		var apiErr APIError
+		if err := json.NewDecoder(rr.Body).Decode(&apiErr); err != nil {
+			t.Fatalf("failed to decode error response: %v", err)
+		}
+
+		if apiErr.Code != "INVALID_INPUT" {
+			t.Errorf("expected code %q, got %q", "INVALID_INPUT", apiErr.Code)
+		}
+		if apiErr.Message != "Invalid input parameters" {
+			t.Errorf("expected message %q, got %q", "Invalid input parameters", apiErr.Message)
+		}
+	})
+
+	t.Run("error_with_details", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		req = req.WithContext(context.Background())
+		rr := httptest.NewRecorder()
+
+		details := map[string]string{"field": "bouquet", "reason": "invalid format"}
+		RespondError(rr, req, http.StatusBadRequest, ErrInvalidInput, details)
+
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected status %d, got %d", http.StatusBadRequest, rr.Code)
+		}
+
+		var apiErr APIError
+		if err := json.NewDecoder(rr.Body).Decode(&apiErr); err != nil {
+			t.Fatalf("failed to decode error response: %v", err)
+		}
+
+		if apiErr.Details == nil {
+			t.Error("expected Details to be set")
+		}
+	})
+}
+
+// TestAPIError_Error tests the Error method of APIError.
+func TestAPIError_Error(t *testing.T) {
+	err := &APIError{
+		Code:    "TEST_ERROR",
+		Message: "This is a test error",
+	}
+
+	if err.Error() != "This is a test error" {
+		t.Errorf("expected Error() %q, got %q", "This is a test error", err.Error())
+	}
+}
+
+// TestSetConfigHolder tests the SetConfigHolder method.
+func TestSetConfigHolder(t *testing.T) {
+	s := &Server{}
+	holder := &fakeConfigHolder{
+		cfg: config.AppConfig{Bouquet: "test"},
+	}
+
+	s.SetConfigHolder(holder)
+
+	if s.configHolder == nil {
+		t.Error("expected configHolder to be set")
+	}
+}
+
+// fakeAuditLogger implements AuditLogger for testing.
+type fakeAuditLogger struct{}
+
+func (f fakeAuditLogger) ConfigReload(actor, result string, details map[string]string)           {}
+func (f fakeAuditLogger) RefreshStart(actor string, bouquets []string)                           {}
+func (f fakeAuditLogger) RefreshComplete(actor string, channels, bouquets int, durationMS int64) {}
+func (f fakeAuditLogger) RefreshError(actor, reason string)                                      {}
+func (f fakeAuditLogger) AuthSuccess(remoteAddr, endpoint string)                                {}
+func (f fakeAuditLogger) AuthFailure(remoteAddr, endpoint, reason string)                        {}
+func (f fakeAuditLogger) AuthMissing(remoteAddr, endpoint string)                                {}
+func (f fakeAuditLogger) RateLimitExceeded(remoteAddr, endpoint string)                          {}
+
+// TestSetAuditLogger tests the SetAuditLogger method.
+func TestSetAuditLogger(t *testing.T) {
+	s := &Server{}
+	logger := fakeAuditLogger{}
+
+	s.SetAuditLogger(logger)
+
+	// Since auditLogger is not exported, we can't directly check it
+	// But we've exercised the code path
+}
+
+// TestHandleStatusV2Placeholder tests the v2 placeholder endpoint.
+func TestHandleStatusV2Placeholder(t *testing.T) {
+	s := &Server{}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/status", nil)
+	req = req.WithContext(context.Background())
+	rr := httptest.NewRecorder()
+
+	s.handleStatusV2Placeholder(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
+	}
+
+	if got := rr.Header().Get("X-API-Version"); got != "2" {
+		t.Errorf("expected X-API-Version header %q, got %q", "2", got)
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if resp["status"] != "preview" {
+		t.Errorf("expected status %q, got %q", "preview", resp["status"])
+	}
+	if resp["message"] != "API v2 is under development" {
+		t.Errorf("expected message %q, got %q", "API v2 is under development", resp["message"])
+	}
 }
 
 // TestHDHomeRunServer tests the HDHomeRunServer getter.
@@ -208,11 +423,8 @@ func TestHandler(t *testing.T) {
 		cfg := config.AppConfig{
 			DataDir: t.TempDir(),
 			Bouquet: "test",
-			Streaming: config.StreamingConfig{
-				DeliveryPolicy: "universal",
-			},
 		}
-		s := mustNewServer(t, cfg, config.NewManager(""))
+		s := New(cfg, nil)
 		handler := s.Handler()
 
 		if handler == nil {
@@ -229,61 +441,233 @@ func TestHandler(t *testing.T) {
 		}
 	})
 
-	// with_audit_logger case removed
+	t.Run("with_audit_logger", func(t *testing.T) {
+		cfg := config.AppConfig{
+			DataDir: t.TempDir(),
+			Bouquet: "test",
+		}
+		s := New(cfg, nil)
+		s.SetAuditLogger(fakeAuditLogger{})
+		handler := s.Handler()
+
+		if handler == nil {
+			t.Fatal("expected handler, got nil")
+		}
+
+		// Test basic endpoint
+		req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
+		}
+	})
 }
 
-// Obsolete tests removed (TestSetConfigHolder, TestSetAuditLogger, TestHandleStatusPlaceholder, TestNewRouter)
-
-// API Routes Tests
-
-func TestRegisterRoutes_StatusEndpoint(t *testing.T) {
-	// Create a mock receiver for health checks
-	mockReceiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer mockReceiver.Close()
-
-	// Create playlist file
-	dataDir := t.TempDir()
-	require.NoError(t, os.WriteFile(runtimePlaylistPath(dataDir), []byte("#EXTM3U"), 0600))
-
+// TestNewRouter tests the NewRouter function.
+func TestNewRouter(t *testing.T) {
 	cfg := config.AppConfig{
-		APIToken:       "test-token",
-		APITokenScopes: []string{string(v3.ScopeV3Read)},
-		Version:        "3.0.0",
-		DataDir:        dataDir,
-		Enigma2: config.Enigma2Settings{
-			BaseURL: mockReceiver.URL,
-		},
-		Streaming: config.StreamingConfig{
-			DeliveryPolicy: "universal",
-		},
+		DataDir: t.TempDir(),
+		Bouquet: "test",
 	}
-	s := mustNewServer(t, cfg, config.NewManager(""))
-	s.SetStatus(jobs.Status{
-		Version:       "3.0.0",
-		Channels:      2,
-		LastRun:       time.Now(),
-		EPGProgrammes: 10,
-	})
 
-	handler := s.Handler()
+	handler := NewRouter(cfg)
+	if handler == nil {
+		t.Fatal("expected handler, got nil")
+	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v3/system/health", nil)
-	req.Header.Set("Authorization", "Bearer test-token")
+	// Test that basic health endpoint works
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rr := httptest.NewRecorder()
-
 	handler.ServeHTTP(rr, req)
 
-	assert.Equal(t, http.StatusOK, rr.Code)
-	assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d", http.StatusOK, rr.Code)
+	}
+}
+
+// TestAuthMiddleware_Standalone tests AuthMiddleware directly (auth disabled, valid, missing, invalid).
+func TestAuthMiddleware_Standalone(t *testing.T) {
+	mockHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("authenticated"))
+	})
+
+	t.Run("auth_disabled_no_env_token", func(t *testing.T) {
+		// Clear any existing token
+		oldToken := os.Getenv("XG2G_API_TOKEN")
+		_ = os.Unsetenv("XG2G_API_TOKEN")
+		defer func() {
+			if oldToken != "" {
+				_ = os.Setenv("XG2G_API_TOKEN", oldToken)
+			}
+		}()
+
+		wrapped := AuthMiddleware(mockHandler)
+		req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
+		req = req.WithContext(context.Background())
+		rr := httptest.NewRecorder()
+
+		wrapped.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected status %d when auth disabled, got %d", http.StatusOK, rr.Code)
+		}
+		if body := rr.Body.String(); body != "authenticated" {
+			t.Errorf("expected body %q, got %q", "authenticated", body)
+		}
+	})
+
+	t.Run("auth_enabled_valid_token", func(t *testing.T) {
+		oldToken := os.Getenv("XG2G_API_TOKEN")
+		_ = os.Setenv("XG2G_API_TOKEN", "secret-test-token")
+		defer func() {
+			if oldToken != "" {
+				_ = os.Setenv("XG2G_API_TOKEN", oldToken)
+			} else {
+				_ = os.Unsetenv("XG2G_API_TOKEN")
+			}
+		}()
+
+		wrapped := AuthMiddleware(mockHandler)
+		req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
+		req.Header.Set("X-API-Token", "secret-test-token")
+		req = req.WithContext(context.Background())
+		rr := httptest.NewRecorder()
+
+		wrapped.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected status %d with valid token, got %d", http.StatusOK, rr.Code)
+		}
+	})
+
+	t.Run("auth_enabled_missing_token", func(t *testing.T) {
+		oldToken := os.Getenv("XG2G_API_TOKEN")
+		_ = os.Setenv("XG2G_API_TOKEN", "secret-test-token")
+		defer func() {
+			if oldToken != "" {
+				_ = os.Setenv("XG2G_API_TOKEN", oldToken)
+			} else {
+				_ = os.Unsetenv("XG2G_API_TOKEN")
+			}
+		}()
+
+		wrapped := AuthMiddleware(mockHandler)
+		req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
+		// No X-API-Token header
+		req = req.WithContext(context.Background())
+		rr := httptest.NewRecorder()
+
+		wrapped.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusUnauthorized {
+			t.Errorf("expected status %d with missing token, got %d", http.StatusUnauthorized, rr.Code)
+		}
+		if !strings.Contains(rr.Body.String(), "Missing API token") {
+			t.Errorf("expected body to contain 'Missing API token', got: %s", rr.Body.String())
+		}
+	})
+
+	t.Run("auth_enabled_invalid_token", func(t *testing.T) {
+		oldToken := os.Getenv("XG2G_API_TOKEN")
+		_ = os.Setenv("XG2G_API_TOKEN", "secret-test-token")
+		defer func() {
+			if oldToken != "" {
+				_ = os.Setenv("XG2G_API_TOKEN", oldToken)
+			} else {
+				_ = os.Unsetenv("XG2G_API_TOKEN")
+			}
+		}()
+
+		wrapped := AuthMiddleware(mockHandler)
+		req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
+		req.Header.Set("X-API-Token", "wrong-token")
+		req = req.WithContext(context.Background())
+		rr := httptest.NewRecorder()
+
+		wrapped.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusForbidden {
+			t.Errorf("expected status %d with invalid token, got %d", http.StatusForbidden, rr.Code)
+		}
+		if !strings.Contains(rr.Body.String(), "Invalid API token") {
+			t.Errorf("expected body to contain 'Invalid API token', got: %s", rr.Body.String())
+		}
+	})
+}
+
+// checkFile Tests
+
+func TestCheckFile_RegularFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "test.txt")
+	require.NoError(t, os.WriteFile(filePath, []byte("test content"), 0600))
+
+	result := checkFile(context.Background(), filePath)
+	assert.True(t, result)
+}
+
+func TestCheckFile_Directory(t *testing.T) {
+	tmpDir := t.TempDir()
+	result := checkFile(context.Background(), tmpDir)
+	assert.False(t, result)
+}
+
+func TestCheckFile_NotExist(t *testing.T) {
+	result := checkFile(context.Background(), "/nonexistent/file.txt")
+	assert.False(t, result)
+}
+
+func TestCheckFile_NoPermission(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "restricted.txt")
+	require.NoError(t, os.WriteFile(filePath, []byte("test"), 0000))
+
+	// Clean up permissions after test
+	t.Cleanup(func() {
+		_ = os.Chmod(filePath, 0600)
+	})
+
+	result := checkFile(context.Background(), filePath)
+	assert.False(t, result)
+}
+
+// V2 Routes Tests
+
+func TestRegisterV2Routes_StatusEndpoint(t *testing.T) {
+	// Enable API_V2 feature flag
+	t.Setenv("XG2G_FEATURE_API_V2", "true")
+
+	cfg := config.AppConfig{
+		DataDir: t.TempDir(),
+		Version: "test-v2",
+	}
+
+	srv := New(cfg, nil)
+	srv.SetStatus(jobs.Status{
+		Version:  "test-v2",
+		Channels: 100,
+		LastRun:  time.Now(),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/status", nil)
+	w := httptest.NewRecorder()
+
+	// The server's routes() method includes registerV2Routes when feature flag is enabled
+	srv.routes().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
+	assert.Equal(t, "2", w.Header().Get("X-API-Version"))
 
 	var resp map[string]interface{}
-	err := json.NewDecoder(rr.Body).Decode(&resp)
+	err := json.NewDecoder(w.Body).Decode(&resp)
 	require.NoError(t, err)
 
-	assert.Equal(t, "ok", resp["status"])
-	assert.Equal(t, "3.0.0", resp["version"])
+	assert.Equal(t, "API v2 is under development", resp["message"])
+	assert.Equal(t, "preview", resp["status"])
 }
 
 // TestHandleLineupJSON_PlexForceHLS_Disabled tests lineup.json returns direct MPEG-TS URLs when PlexForceHLS=false
@@ -298,17 +682,14 @@ http://10.10.55.14:18000/1:0:19:132F:3EF:1:C00000:0:0:0:
 #EXTINF:-1 tvg-chno="2" tvg-id="sref-test2" tvg-name="Test Channel 2",Test Channel 2
 http://10.10.55.14:18000/1:0:19:1334:3EF:1:C00000:0:0:0:
 `
-	m3uPath := runtimePlaylistPath(tempDir)
+	m3uPath := filepath.Join(tempDir, "playlist.m3u")
 	require.NoError(t, os.WriteFile(m3uPath, []byte(m3uContent), 0600))
 
 	// Create server with PlexForceHLS disabled
 	cfg := config.AppConfig{
 		DataDir: tempDir,
-		Streaming: config.StreamingConfig{
-			DeliveryPolicy: "universal",
-		},
 	}
-	srv := mustNewServer(t, cfg, config.NewManager(""))
+	srv := New(cfg, nil)
 
 	// Initialize HDHomeRun with PlexForceHLS=false
 	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
@@ -354,17 +735,14 @@ http://10.10.55.14:18000/1:0:19:132F:3EF:1:C00000:0:0:0:
 #EXTINF:-1 tvg-chno="2" tvg-id="sref-test2" tvg-name="Test Channel 2",Test Channel 2
 http://10.10.55.14:18000/1:0:19:1334:3EF:1:C00000:0:0:0:
 `
-	m3uPath := runtimePlaylistPath(tempDir)
+	m3uPath := filepath.Join(tempDir, "playlist.m3u")
 	require.NoError(t, os.WriteFile(m3uPath, []byte(m3uContent), 0600))
 
 	// Create server with PlexForceHLS enabled
 	cfg := config.AppConfig{
 		DataDir: tempDir,
-		Streaming: config.StreamingConfig{
-			DeliveryPolicy: "universal",
-		},
 	}
-	srv := mustNewServer(t, cfg, config.NewManager(""))
+	srv := New(cfg, nil)
 
 	// Initialize HDHomeRun with PlexForceHLS=true
 	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
@@ -409,17 +787,14 @@ func TestHandleLineupJSON_PlexForceHLS_NoDoublePrefix(t *testing.T) {
 #EXTINF:-1 tvg-chno="1" tvg-id="sref-test" tvg-name="Test Channel",Test Channel
 http://10.10.55.14:18000/hls/1:0:19:132F:3EF:1:C00000:0:0:0:
 `
-	m3uPath := runtimePlaylistPath(tempDir)
+	m3uPath := filepath.Join(tempDir, "playlist.m3u")
 	require.NoError(t, os.WriteFile(m3uPath, []byte(m3uContent), 0600))
 
 	// Create server with PlexForceHLS enabled
 	cfg := config.AppConfig{
 		DataDir: tempDir,
-		Streaming: config.StreamingConfig{
-			DeliveryPolicy: "universal",
-		},
 	}
-	srv := mustNewServer(t, cfg, config.NewManager(""))
+	srv := New(cfg, nil)
 
 	// Initialize HDHomeRun with PlexForceHLS=true
 	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
@@ -448,4 +823,95 @@ http://10.10.55.14:18000/hls/1:0:19:132F:3EF:1:C00000:0:0:0:
 	// Verify URL still has only ONE /hls/ prefix (not /hls/hls/)
 	assert.Equal(t, "http://10.10.55.14:18000/hls/1:0:19:132F:3EF:1:C00000:0:0:0:", lineup[0].URL)
 	assert.NotContains(t, lineup[0].URL, "/hls/hls/")
+}
+
+func TestHandleLineupJSON_H264Rewrite_TrustModel(t *testing.T) {
+	t.Setenv("XG2G_H264_STREAM_REPAIR", "true")
+	t.Setenv("XG2G_PROXY_LISTEN", ":18000")
+
+	writePlaylist := func(t *testing.T, m3uContent string) string {
+		t.Helper()
+		tempDir := t.TempDir()
+		m3uPath := filepath.Join(tempDir, "playlist.m3u")
+		require.NoError(t, os.WriteFile(m3uPath, []byte(m3uContent), 0600))
+		return tempDir
+	}
+
+	t.Run("trusted forwarded host is used", func(t *testing.T) {
+		t.Setenv("XG2G_TRUSTED_PROXIES", "127.0.0.1/32")
+		resetTrustedProxyCacheForTest()
+		t.Cleanup(resetTrustedProxyCacheForTest)
+
+		tempDir := writePlaylist(t, `#EXTM3U
+#EXTINF:-1 tvg-chno="1" tvg-id="sref-test" tvg-name="Test Channel",Test Channel
+http://10.10.55.64:8001/1:0:19:132F:3EF:1:C00000:0:0:0:
+`)
+
+		srv := New(config.AppConfig{DataDir: tempDir}, nil)
+		req := httptest.NewRequest(http.MethodGet, "/lineup.json", nil)
+		req.RemoteAddr = "127.0.0.1:34567"
+		req.Host = "internal.local:8080"
+		req.Header.Set("X-Forwarded-Host", "public.example.net:9443")
+		w := httptest.NewRecorder()
+
+		srv.handleLineupJSON(w, req)
+
+		require.Equal(t, http.StatusOK, w.Code)
+		var lineup []hdhr.LineupEntry
+		require.NoError(t, json.NewDecoder(w.Body).Decode(&lineup))
+		require.Len(t, lineup, 1)
+		assert.Equal(t, "http://public.example.net:18000/1:0:19:132F:3EF:1:C00000:0:0:0:", lineup[0].URL)
+	})
+
+	t.Run("invalid host with invalid public base skips rewrite", func(t *testing.T) {
+		t.Setenv("XG2G_TRUSTED_PROXIES", "")
+		t.Setenv("XG2G_PUBLIC_BASE_URL", "not-a-url")
+		resetTrustedProxyCacheForTest()
+		t.Cleanup(resetTrustedProxyCacheForTest)
+
+		tempDir := writePlaylist(t, `#EXTM3U
+#EXTINF:-1 tvg-chno="1" tvg-id="sref-test" tvg-name="Test Channel",Test Channel
+http://10.10.55.64:8001/1:0:19:132F:3EF:1:C00000:0:0:0:
+`)
+
+		srv := New(config.AppConfig{DataDir: tempDir}, nil)
+		req := httptest.NewRequest(http.MethodGet, "/lineup.json", nil)
+		req.Host = "bad host/@"
+		w := httptest.NewRecorder()
+
+		srv.handleLineupJSON(w, req)
+
+		require.Equal(t, http.StatusOK, w.Code)
+		var lineup []hdhr.LineupEntry
+		require.NoError(t, json.NewDecoder(w.Body).Decode(&lineup))
+		require.Len(t, lineup, 1)
+		assert.Equal(t, "http://10.10.55.64:8001/1:0:19:132F:3EF:1:C00000:0:0:0:", lineup[0].URL)
+	})
+
+	t.Run("scheme mismatch preserves source scheme", func(t *testing.T) {
+		t.Setenv("XG2G_TRUSTED_PROXIES", "127.0.0.1/32")
+		resetTrustedProxyCacheForTest()
+		t.Cleanup(resetTrustedProxyCacheForTest)
+
+		tempDir := writePlaylist(t, `#EXTM3U
+#EXTINF:-1 tvg-chno="1" tvg-id="sref-test" tvg-name="Test Channel",Test Channel
+https://10.10.55.64:8001/1:0:19:132F:3EF:1:C00000:0:0:0:
+`)
+
+		srv := New(config.AppConfig{DataDir: tempDir}, nil)
+		req := httptest.NewRequest(http.MethodGet, "/lineup.json", nil)
+		req.RemoteAddr = "127.0.0.1:34567"
+		req.Host = "internal.local:8080"
+		req.Header.Set("X-Forwarded-Host", "public.example.net:9443")
+		req.Header.Set("X-Forwarded-Proto", "http")
+		w := httptest.NewRecorder()
+
+		srv.handleLineupJSON(w, req)
+
+		require.Equal(t, http.StatusOK, w.Code)
+		var lineup []hdhr.LineupEntry
+		require.NoError(t, json.NewDecoder(w.Body).Decode(&lineup))
+		require.Len(t, lineup, 1)
+		assert.Equal(t, "https://public.example.net:18000/1:0:19:132F:3EF:1:C00000:0:0:0:", lineup[0].URL)
+	})
 }

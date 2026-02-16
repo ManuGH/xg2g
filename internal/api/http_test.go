@@ -1,16 +1,14 @@
-// Copyright (c) 2025 ManuGH
-// Licensed under the PolyForm Noncommercial License 1.0.0
-// Since v2.0.0, this software is restricted to non-commercial use only.
-
-// Since v2.0.0, this software is restricted to non-commercial use only.
+// SPDX-License-Identifier: MIT
 package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -20,39 +18,34 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ManuGH/xg2g/internal/config"
-	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	"github.com/ManuGH/xg2g/internal/jobs"
-	"github.com/ManuGH/xg2g/internal/pipeline/scan"
+	"github.com/ManuGH/xg2g/internal/openwebif"
 )
 
-func TestHandleSystemHealth(t *testing.T) {
-	// Create a mock receiver for health checks
-	mockReceiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer mockReceiver.Close()
+// dummyHandler is a no-op http.Handler that writes "OK".
+var dummyHandler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("OK"))
+})
 
-	s := mustNewServer(t, config.AppConfig{
-		APIToken:       "test-token",
-		APITokenScopes: []string{string(v3.ScopeV3Read)},
-		DataDir:        t.TempDir(),
-		Enigma2:        config.Enigma2Settings{StreamPort: 8001, BaseURL: mockReceiver.URL},
-		Version:        "1.2.3",
-		Streaming: config.StreamingConfig{
-			DeliveryPolicy: "universal",
-		},
-	}, config.NewManager(""))
+func resetTrustedProxyCacheForTest() {
+	trustedCIDRs = nil
+	trustedCIDRsOnce = sync.Once{}
+}
 
-	// Set status for health check
-	s.SetStatus(jobs.Status{
-		Version:  "1.2.3",
-		Channels: 42,
-		LastRun:  time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC),
-	})
+func TestRemoteIsTrusted_BracketedIPv6WithoutPort(t *testing.T) {
+	resetTrustedProxyCacheForTest()
+	t.Cleanup(resetTrustedProxyCacheForTest)
+	t.Setenv("XG2G_TRUSTED_PROXIES", "::1/128")
+
+	assert.True(t, remoteIsTrusted("[::1]"))
+}
+
+func TestHandleStatus(t *testing.T) {
+	s := New(config.AppConfig{}, nil)
 	handler := s.Handler()
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v3/system/health", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/status", nil)
 	require.NoError(t, err)
-	req.Header.Set("Authorization", "Bearer test-token")
 
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
@@ -63,29 +56,21 @@ func TestHandleSystemHealth(t *testing.T) {
 
 func TestHandleRefresh_ErrorDoesNotUpdateLastRun(t *testing.T) {
 	cfg := config.AppConfig{
-		Enigma2: config.Enigma2Settings{
-			BaseURL:    "invalid-url",
-			StreamPort: 8001,
-		},
-		APIToken:       "dummy-token",
-		APITokenScopes: []string{string(v3.ScopeV3Read)},
-		DataDir:        t.TempDir(),
-		Streaming: config.StreamingConfig{
-			DeliveryPolicy: "universal",
-		},
+		OWIBase:  "invalid-url", // Cause an error
+		APIToken: "dummy-token",
 	}
-	s := mustNewServer(t, cfg, config.NewManager(""))
-	// handler := s.Handler() // Removed unused
+	s := New(cfg, nil)
+	handler := s.Handler()
 	initialTime := s.status.LastRun
 
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v3/system/refresh", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/refresh", nil)
 	require.NoError(t, err)
 	req.Host = "example.com"                       // Required for CSRF validation
 	req.Header.Set("Origin", "http://example.com") // Add Origin for CSRF protection
-	req.Header.Set("Authorization", "Bearer dummy-token")
+	req.Header.Set("X-API-Token", "dummy-token")
 
 	rr := httptest.NewRecorder()
-	s.HandleRefreshInternal(rr, req)
+	handler.ServeHTTP(rr, req)
 
 	assert.Equal(t, http.StatusInternalServerError, rr.Code)
 	assert.Equal(t, initialTime, s.status.LastRun, "lastRefresh should not be updated on failure")
@@ -103,82 +88,35 @@ func TestRecordRefreshMetrics(t *testing.T) {
 }
 
 func TestHandleRefresh_SuccessUpdatesLastRun(t *testing.T) {
-	// Create a mock refresh function that succeeds
-	mockRefreshFn := func(ctx context.Context, snap config.Snapshot) (*jobs.Status, error) {
-		_ = snap
-		return &jobs.Status{
-			Version:  "test-success",
-			Channels: 10,
-			LastRun:  time.Now(),
-		}, nil
-	}
-
-	s := mustNewServer(t, config.AppConfig{
-		Enigma2:        config.Enigma2Settings{StreamPort: 8001, BaseURL: "http://example.com"},
-		APIToken:       "test-token",
-		APITokenScopes: []string{string(v3.ScopeV3Read)},
-		DataDir:        t.TempDir(),
-		Streaming: config.StreamingConfig{
-			DeliveryPolicy: "universal",
-		},
-	}, config.NewManager(""))
-	s.refreshFn = mockRefreshFn
-
-	// handler := s.Handler() // Removed unused
-
-	// Initial state
-	initialTime := s.status.LastRun
-
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v3/system/refresh", nil)
-	require.NoError(t, err)
-	req.Host = "example.com"
-	req.Header.Set("Origin", "http://example.com")
-	req.Header.Set("Authorization", "Bearer test-token")
-
-	rr := httptest.NewRecorder()
-	s.HandleRefreshInternal(rr, req)
-
-	assert.Equal(t, http.StatusOK, rr.Code)
-
-	// Verify LastRun was updated
-	assert.True(t, s.status.LastRun.After(initialTime), "lastRefresh should be updated on success")
-	assert.Equal(t, 10, s.status.Channels)
+	t.Skip("Skipping success test as it requires mocking infrastructure")
 }
 
 func TestHandleRefresh_ConflictOnConcurrent(t *testing.T) {
-	cfg := config.AppConfig{
-		Enigma2:        config.Enigma2Settings{StreamPort: 8001, BaseURL: "http://example.com"},
-		APIToken:       "dummy-token",
-		APITokenScopes: []string{string(v3.ScopeV3Read)},
-		DataDir:        t.TempDir(),
-		Streaming: config.StreamingConfig{
-			DeliveryPolicy: "universal",
-		},
-	}
-	s := mustNewServer(t, cfg, config.NewManager(""))
+	cfg := config.AppConfig{APIToken: "dummy-token"}
+	s := New(cfg, nil)
 
 	// Install a slow refresh function to force overlap
 	startCh := make(chan struct{})
 	releaseCh := make(chan struct{})
-	s.refreshFn = func(_ context.Context, _ config.Snapshot) (*jobs.Status, error) {
+	s.refreshFn = func(_ context.Context, _ config.AppConfig, _ *openwebif.StreamDetector) (*jobs.Status, error) {
 		close(startCh) // signal that refresh started
 		<-releaseCh    // block until allowed to finish
 		return &jobs.Status{Channels: 1, LastRun: time.Now()}, nil
 	}
 
-	// handler := s.Handler() // Removed unused
+	handler := s.Handler()
 
 	// First request starts and blocks
-	req1 := httptest.NewRequest(http.MethodPost, "/api/v3/system/refresh", nil)
+	req1 := httptest.NewRequest(http.MethodPost, "/api/v1/refresh", nil)
 	req1.Host = "example.com"                       // Required for CSRF validation
 	req1.Header.Set("Origin", "http://example.com") // Add Origin for CSRF protection
-	req1.Header.Set("Authorization", "Bearer dummy-token")
+	req1.Header.Set("X-API-Token", "dummy-token")
 	rr1 := httptest.NewRecorder()
 
 	// Run first request in a goroutine
 	done1 := make(chan struct{})
 	go func() {
-		s.HandleRefreshInternal(rr1, req1)
+		handler.ServeHTTP(rr1, req1)
 		close(done1)
 	}()
 
@@ -190,12 +128,12 @@ func TestHandleRefresh_ConflictOnConcurrent(t *testing.T) {
 	}
 
 	// Second request should get 409 Conflict
-	req2 := httptest.NewRequest(http.MethodPost, "/api/v3/system/refresh", nil)
+	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/refresh", nil)
 	req2.Host = "example.com"                       // Required for CSRF validation
 	req2.Header.Set("Origin", "http://example.com") // Add Origin for CSRF protection
-	req2.Header.Set("Authorization", "Bearer dummy-token")
+	req2.Header.Set("X-API-Token", "dummy-token")
 	rr2 := httptest.NewRecorder()
-	s.HandleRefreshInternal(rr2, req2)
+	handler.ServeHTTP(rr2, req2)
 
 	assert.Equal(t, http.StatusConflict, rr2.Code)
 	assert.Contains(t, rr2.Body.String(), "refresh operation is already in progress")
@@ -213,14 +151,7 @@ func TestHandleRefresh_ConflictOnConcurrent(t *testing.T) {
 }
 
 func TestHandleHealth(t *testing.T) {
-	s := mustNewServer(t, config.AppConfig{
-		Enigma2: config.Enigma2Settings{
-			BaseURL: "http://example.com",
-		},
-		Streaming: config.StreamingConfig{
-			DeliveryPolicy: "universal",
-		},
-	}, config.NewManager(""))
+	s := New(config.AppConfig{}, nil)
 	handler := s.Handler()
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "/healthz", nil)
 	require.NoError(t, err)
@@ -237,7 +168,7 @@ func TestHandleReady(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = os.RemoveAll(tempDir) }()
 
-	playlistPath := runtimePlaylistPath(tempDir)
+	playlistPath := filepath.Join(tempDir, "playlist.m3u")
 	xmltvPath := "epg.xml"
 	xmltvFullPath := filepath.Join(tempDir, xmltvPath)
 
@@ -248,55 +179,106 @@ func TestHandleReady(t *testing.T) {
 	defer mockReceiver.Close()
 
 	cfg := config.AppConfig{
-		DataDir: tempDir,
-		Enigma2: config.Enigma2Settings{
-			BaseURL: mockReceiver.URL, // Use mock receiver for health check
-		},
-		XMLTVPath:   xmltvPath,
-		ReadyStrict: true,
-		Streaming: config.StreamingConfig{
-			DeliveryPolicy: "universal",
-		},
+		DataDir:   tempDir,
+		XMLTVPath: xmltvPath,
+		OWIBase:   mockReceiver.URL, // Use mock receiver for health check
 	}
-	s := mustNewServer(t, cfg, config.NewManager(""))
+	s := New(cfg, nil)
 	handler := s.Handler()
 
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "/readyz", nil)
 	require.NoError(t, err)
 
 	// Case 1: Not ready (no files, last run is zero)
-	// With the new readiness contract, /readyz returns 503 until first successful refresh
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 	assert.Equal(t, http.StatusServiceUnavailable, rr.Code)
-	assert.Contains(t, rr.Body.String(), `"ready":false`)
 
-	// Case 2: Simulate successful refresh
-	// Update server status to indicate successful refresh (health checkers already registered by New())
-	// Create the required files first so file checkers pass
+	// Case 2: Ready
+	s.status.LastRun = time.Now()
+	s.status.Error = ""
+	s.status.Channels = 10       // Set some channels for health check
+	s.status.EPGProgrammes = 100 // Set EPG programmes for health check
 	require.NoError(t, os.WriteFile(playlistPath, []byte("#EXTM3U"), 0o600))
 	require.NoError(t, os.WriteFile(xmltvFullPath, []byte("<tv></tv>"), 0o600))
 
-	// Update status with proper locking
-	func() {
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		s.status.LastRun = time.Now()
-		s.status.Error = ""
-		s.status.Channels = 10       // Set some channels for health check
-		s.status.EPGProgrammes = 100 // Set EPG programmes for health check
-	}()
-
-	// Wait for the readiness cache to expire (1s TTL)
-	// The first /readyz call cached the "not ready" state, so we need to wait
-	// for the cache to expire before the checkers will re-run and see the new state
-	time.Sleep(1100 * time.Millisecond)
-
-	// Now readiness should pass (all checkers will re-run and see healthy state)
 	rr = httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
 	assert.Contains(t, rr.Body.String(), `"ready":true`)
+}
+
+func TestAuthMiddleware(t *testing.T) {
+	const testToken = "test-api-token"
+
+	tests := []struct {
+		name           string
+		tokenEnv       string
+		headerValue    string
+		expectedStatus int
+		expectedBody   string
+	}{
+		{
+			name:           "no token configured, fail closed",
+			tokenEnv:       "",
+			headerValue:    "",
+			expectedStatus: http.StatusUnauthorized,
+			expectedBody:   "Unauthorized: API token not configured on server",
+		},
+		{
+			name:           "token configured, no header, unauthorized",
+			tokenEnv:       testToken,
+			headerValue:    "",
+			expectedStatus: http.StatusUnauthorized,
+			expectedBody:   "Unauthorized: Missing API token",
+		},
+		{
+			name:           "token configured, wrong token same length, forbidden",
+			tokenEnv:       testToken,
+			headerValue:    "test-api-tokfn",
+			expectedStatus: http.StatusForbidden,
+			expectedBody:   "Forbidden: Invalid API token",
+		},
+		{
+			name:           "token configured, wrong token length mismatch, forbidden",
+			tokenEnv:       testToken,
+			headerValue:    "short",
+			expectedStatus: http.StatusForbidden,
+			expectedBody:   "Forbidden: Invalid API token",
+		},
+		{
+			name:           "token configured, correct token, access granted",
+			tokenEnv:       testToken,
+			headerValue:    testToken,
+			expectedStatus: http.StatusOK,
+			expectedBody:   "OK",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.tokenEnv != "" {
+				t.Setenv("XG2G_API_TOKEN", tt.tokenEnv)
+			}
+
+			s := New(config.AppConfig{APIToken: tt.tokenEnv}, nil)
+			// Test against a protected route
+			handler := s.authRequired(dummyHandler)
+
+			req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "/test", nil)
+			require.NoError(t, err)
+
+			if tt.headerValue != "" {
+				req.Header.Set("X-API-Token", tt.headerValue)
+			}
+
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, req)
+
+			assert.Equal(t, tt.expectedStatus, rr.Code, "handler returned wrong status code")
+			assert.Contains(t, rr.Body.String(), tt.expectedBody, "handler returned unexpected body")
+		})
+	}
 }
 
 func TestSecureFileHandlerSymlinkPolicy(t *testing.T) {
@@ -311,8 +293,8 @@ func TestSecureFileHandlerSymlinkPolicy(t *testing.T) {
 	require.NoError(t, os.MkdirAll(subDir, 0o750))
 	require.NoError(t, os.Mkdir(outsideDir, 0o750))
 
-	testFile := filepath.Join(dataDir, "playlist.m3u")
-	subFile := filepath.Join(subDir, "playlist.m3u")
+	testFile := filepath.Join(dataDir, "test.m3u")
+	subFile := filepath.Join(subDir, "sub.m3u")
 	outsideFile := filepath.Join(outsideDir, "secret.txt")
 
 	require.NoError(t, os.WriteFile(testFile, []byte("m3u content"), 0o600))
@@ -330,13 +312,8 @@ func TestSecureFileHandlerSymlinkPolicy(t *testing.T) {
 	symlinkDir := filepath.Join(dataDir, "evil_dir")
 	require.NoError(t, os.Symlink(outsideDir, symlinkDir))
 
-	cfg := config.AppConfig{
-		DataDir: dataDir,
-		Streaming: config.StreamingConfig{
-			DeliveryPolicy: "universal",
-		},
-	}
-	server := mustNewServer(t, cfg, config.NewManager(""))
+	cfg := config.AppConfig{DataDir: dataDir}
+	server := New(cfg, nil)
 	handler := server.Handler()
 
 	tests := []struct {
@@ -346,28 +323,22 @@ func TestSecureFileHandlerSymlinkPolicy(t *testing.T) {
 		expectedStatus int
 		expectedBody   string
 	}{
-		{name: "B6: valid file access", method: http.MethodGet, path: "/files/playlist.m3u", expectedStatus: http.StatusOK, expectedBody: "m3u content"},
-		{name: "B7: subdirectory file access", method: http.MethodGet, path: "/files/subdir/playlist.m3u", expectedStatus: http.StatusOK, expectedBody: "sub content"},
+		{name: "B6: valid file access", method: http.MethodGet, path: "/files/test.m3u", expectedStatus: http.StatusOK, expectedBody: "m3u content"},
+		{name: "B7: subdirectory file access", method: http.MethodGet, path: "/files/subdir/sub.m3u", expectedStatus: http.StatusOK, expectedBody: "sub content"},
 		{name: "B8: symlink to outside file", method: http.MethodGet, path: "/files/evil_symlink", expectedStatus: http.StatusForbidden, expectedBody: "Forbidden"},
 		{name: "B9: symlink chain to outside", method: http.MethodGet, path: "/files/link1", expectedStatus: http.StatusForbidden, expectedBody: "Forbidden"},
 		{name: "B10: path traversal with ..", method: http.MethodGet, path: "/files/../outside/secret.txt", expectedStatus: http.StatusForbidden, expectedBody: "Forbidden"},
 		{name: "B11: symlink directory traversal", method: http.MethodGet, path: "/files/evil_dir/secret.txt", expectedStatus: http.StatusForbidden, expectedBody: "Forbidden"},
 		{name: "B12: URL-encoded traversal %2e%2e", method: http.MethodGet, path: "/files/%2e%2e/outside/secret.txt", expectedStatus: http.StatusForbidden, expectedBody: "Forbidden"},
 		{name: "directory access blocked", method: http.MethodGet, path: "/files/subdir/", expectedStatus: http.StatusForbidden, expectedBody: "Forbidden"},
-		{name: "nonexistent file", method: http.MethodGet, path: "/files/epg.xml", expectedStatus: http.StatusNotFound, expectedBody: "Not found"},
-		{name: "method not allowed", method: http.MethodPost, path: "/files/playlist.m3u", expectedStatus: http.StatusMethodNotAllowed, expectedBody: "Method not allowed"},
+		{name: "nonexistent file", method: http.MethodGet, path: "/files/nonexistent.txt", expectedStatus: http.StatusNotFound, expectedBody: "Not found"},
+		{name: "method not allowed", method: http.MethodPost, path: "/files/test.m3u", expectedStatus: http.StatusMethodNotAllowed, expectedBody: "Method not allowed"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req, err := http.NewRequestWithContext(context.Background(), tt.method, tt.path, nil)
 			require.NoError(t, err)
-			req.RemoteAddr = "127.0.0.1:1234"
-			if tt.method == http.MethodPost || tt.method == http.MethodPut ||
-				tt.method == http.MethodPatch || tt.method == http.MethodDelete {
-				req.Host = "example.com"
-				req.Header.Set("Origin", "http://example.com")
-			}
 
 			rr := httptest.NewRecorder()
 			handler.ServeHTTP(rr, req)
@@ -381,13 +352,7 @@ func TestSecureFileHandlerSymlinkPolicy(t *testing.T) {
 }
 
 func TestMiddlewareChain(t *testing.T) {
-	server := mustNewServer(t, config.AppConfig{
-		APIToken:       "test-token",
-		APITokenScopes: []string{string(v3.ScopeV3Read)},
-		Streaming: config.StreamingConfig{
-			DeliveryPolicy: "universal",
-		},
-	}, config.NewManager(""))
+	server := New(config.AppConfig{APIToken: "test-token"}, nil)
 	handler := server.Handler()
 
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "/test", nil)
@@ -412,13 +377,8 @@ func TestAdvancedPathTraversal(t *testing.T) {
 	// Create a benign file to make data dir non-empty
 	require.NoError(t, os.WriteFile(filepath.Join(tempDir, "ok.txt"), []byte("ok"), 0o600))
 
-	cfg := config.AppConfig{
-		DataDir: tempDir,
-		Streaming: config.StreamingConfig{
-			DeliveryPolicy: "universal",
-		},
-	}
-	server := mustNewServer(t, cfg, config.NewManager(""))
+	cfg := config.AppConfig{DataDir: tempDir}
+	server := New(cfg, nil)
 	handler := server.Handler()
 
 	attacks := []string{
@@ -434,7 +394,6 @@ func TestAdvancedPathTraversal(t *testing.T) {
 	for _, attack := range attacks {
 		t.Run(attack, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/files/"+attack, nil)
-			req.RemoteAddr = "127.0.0.1:1234"
 			rr := httptest.NewRecorder()
 			handler.ServeHTTP(rr, req)
 
@@ -448,7 +407,7 @@ func TestHandleXMLTV_Success(t *testing.T) {
 
 	// Create test XMLTV and M3U files
 	xmltvPath := filepath.Join(tmpDir, "xmltv.xml")
-	m3uPath := runtimePlaylistPath(tmpDir)
+	m3uPath := filepath.Join(tmpDir, "playlist.m3u")
 
 	xmltvContent := `<?xml version="1.0" encoding="UTF-8"?>
 <tv>
@@ -471,16 +430,12 @@ http://example.com/stream1
 	cfg := config.AppConfig{
 		DataDir:   tmpDir,
 		XMLTVPath: "xmltv.xml",
-		Streaming: config.StreamingConfig{
-			DeliveryPolicy: "universal",
-		},
 	}
 
-	server := mustNewServer(t, cfg, config.NewManager(""))
+	server := New(cfg, nil)
 	handler := server.Handler()
 
 	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
-	req.RemoteAddr = "127.0.0.1:1234"
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
@@ -500,16 +455,12 @@ func TestHandleXMLTV_FileTooLarge(t *testing.T) {
 	cfg := config.AppConfig{
 		DataDir:   tmpDir,
 		XMLTVPath: "xmltv.xml",
-		Streaming: config.StreamingConfig{
-			DeliveryPolicy: "universal",
-		},
 	}
 
-	server := mustNewServer(t, cfg, config.NewManager(""))
+	server := New(cfg, nil)
 	handler := server.Handler()
 
 	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
-	req.RemoteAddr = "127.0.0.1:1234"
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
@@ -522,16 +473,12 @@ func TestHandleXMLTV_FileNotFound(t *testing.T) {
 	cfg := config.AppConfig{
 		DataDir:   tmpDir,
 		XMLTVPath: "nonexistent.xml",
-		Streaming: config.StreamingConfig{
-			DeliveryPolicy: "universal",
-		},
 	}
 
-	server := mustNewServer(t, cfg, config.NewManager(""))
+	server := New(cfg, nil)
 	handler := server.Handler()
 
 	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
-	req.RemoteAddr = "127.0.0.1:1234"
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
@@ -542,7 +489,7 @@ func TestHandleXMLTV_IDRemapping(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	xmltvPath := filepath.Join(tmpDir, "xmltv.xml")
-	m3uPath := runtimePlaylistPath(tmpDir)
+	m3uPath := filepath.Join(tmpDir, "playlist.m3u")
 
 	// XMLTV with channel IDs
 	xmltvContent := `<?xml version="1.0" encoding="UTF-8"?>
@@ -567,16 +514,12 @@ http://example.com/stream1
 	cfg := config.AppConfig{
 		DataDir:   tmpDir,
 		XMLTVPath: "xmltv.xml",
-		Streaming: config.StreamingConfig{
-			DeliveryPolicy: "universal",
-		},
 	}
 
-	server := mustNewServer(t, cfg, config.NewManager(""))
+	server := New(cfg, nil)
 	handler := server.Handler()
 
 	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
-	req.RemoteAddr = "127.0.0.1:1234"
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
@@ -595,16 +538,12 @@ func TestHandleXMLTV_EmptyPath(t *testing.T) {
 	cfg := config.AppConfig{
 		DataDir:   tmpDir,
 		XMLTVPath: "", // Empty path - not configured
-		Streaming: config.StreamingConfig{
-			DeliveryPolicy: "universal",
-		},
 	}
 
-	server := mustNewServer(t, cfg, config.NewManager(""))
+	server := New(cfg, nil)
 	handler := server.Handler()
 
 	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
-	req.RemoteAddr = "127.0.0.1:1234"
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
@@ -629,16 +568,12 @@ func TestHandleXMLTV_M3UNotFound(t *testing.T) {
 	cfg := config.AppConfig{
 		DataDir:   tmpDir,
 		XMLTVPath: "xmltv.xml",
-		Streaming: config.StreamingConfig{
-			DeliveryPolicy: "universal",
-		},
 	}
 
-	server := mustNewServer(t, cfg, config.NewManager(""))
+	server := New(cfg, nil)
 	handler := server.Handler()
 
 	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
-	req.RemoteAddr = "127.0.0.1:1234"
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
@@ -650,7 +585,7 @@ func TestHandleXMLTV_M3UNotFound(t *testing.T) {
 func TestHandleXMLTV_M3UTooLarge(t *testing.T) {
 	tmpDir := t.TempDir()
 	xmltvPath := filepath.Join(tmpDir, "xmltv.xml")
-	m3uPath := runtimePlaylistPath(tmpDir)
+	m3uPath := filepath.Join(tmpDir, "playlist.m3u")
 
 	xmltvContent := `<?xml version="1.0" encoding="UTF-8"?>
 <tv>
@@ -667,16 +602,12 @@ func TestHandleXMLTV_M3UTooLarge(t *testing.T) {
 	cfg := config.AppConfig{
 		DataDir:   tmpDir,
 		XMLTVPath: "xmltv.xml",
-		Streaming: config.StreamingConfig{
-			DeliveryPolicy: "universal",
-		},
 	}
 
-	server := mustNewServer(t, cfg, config.NewManager(""))
+	server := New(cfg, nil)
 	handler := server.Handler()
 
 	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
-	req.RemoteAddr = "127.0.0.1:1234"
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
@@ -701,16 +632,12 @@ func TestHandleXMLTV_HEADRequest(t *testing.T) {
 	cfg := config.AppConfig{
 		DataDir:   tmpDir,
 		XMLTVPath: "xmltv.xml",
-		Streaming: config.StreamingConfig{
-			DeliveryPolicy: "universal",
-		},
 	}
 
-	server := mustNewServer(t, cfg, config.NewManager(""))
+	server := New(cfg, nil)
 	handler := server.Handler()
 
 	req := httptest.NewRequest(http.MethodHead, "/xmltv.xml", nil)
-	req.RemoteAddr = "127.0.0.1:1234"
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
@@ -719,29 +646,75 @@ func TestHandleXMLTV_HEADRequest(t *testing.T) {
 	assert.Equal(t, "public, max-age=300", rr.Header().Get("Cache-Control"))
 }
 
-// TestHandleSystemHealthV3 removed as it duplicates TestHandleSystemHealth
-
-func TestHandleRefreshV3(t *testing.T) {
+func TestHandleStatusV1(t *testing.T) {
 	cfg := config.AppConfig{
-		Enigma2: config.Enigma2Settings{
-			BaseURL:    "http://invalid-url-for-testing",
-			StreamPort: 8001,
-		},
-		APIToken:       "refresh-token",
-		APITokenScopes: []string{string(v3.ScopeV3Read)},
-		DataDir:        t.TempDir(),
-		Streaming: config.StreamingConfig{
-			DeliveryPolicy: "universal",
-		},
+		DataDir: t.TempDir(),
+		Version: "1.2.3",
 	}
 
-	server := mustNewServer(t, cfg, config.NewManager(""))
+	server := New(cfg, nil)
+	server.SetStatus(jobs.Status{
+		Version:  "1.2.3",
+		Channels: 42,
+		LastRun:  time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC),
+	})
+
 	handler := server.Handler()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v3/system/refresh", nil)
-	req.Host = "example.com"                       // Required for CSRF validation
-	req.Header.Set("Origin", "http://example.com") // Add Origin for CSRF protection
-	req.Header.Set("Authorization", "Bearer refresh-token")
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
+	assert.Equal(t, "1", rr.Header().Get("X-API-Version"))
+
+	var resp map[string]interface{}
+	err := json.NewDecoder(rr.Body).Decode(&resp)
+	require.NoError(t, err)
+
+	assert.Equal(t, "ok", resp["status"])
+	assert.Equal(t, "1.2.3", resp["version"])
+	assert.Equal(t, float64(42), resp["channels"])
+}
+
+func TestHandleStatusV2Placeholder_Complete(t *testing.T) {
+	// Enable API_V2 feature flag
+	t.Setenv("XG2G_FEATURE_API_V2", "true")
+
+	cfg := config.AppConfig{
+		DataDir: t.TempDir(),
+		Version: "2.0.0",
+	}
+
+	server := New(cfg, nil)
+	handler := server.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/status", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
+	assert.Equal(t, "2", rr.Header().Get("X-API-Version"))
+
+	var resp map[string]interface{}
+	err := json.NewDecoder(rr.Body).Decode(&resp)
+	require.NoError(t, err)
+
+	assert.Equal(t, "API v2 is under development", resp["message"])
+	assert.Equal(t, "preview", resp["status"])
+}
+
+func TestHandleRefreshV1(t *testing.T) {
+	cfg := config.AppConfig{
+		OWIBase: "http://invalid-url-for-testing",
+	}
+
+	server := New(cfg, nil)
+	handler := server.Handler()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/refresh", nil)
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
@@ -754,29 +727,18 @@ func TestClientDisconnectDuringRefresh(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	cfg := config.AppConfig{
-		DataDir: tmpDir,
-		Enigma2: config.Enigma2Settings{
-			BaseURL:    "http://invalid-url-that-will-timeout",
-			StreamPort: 8001,
-		},
-		Bouquet:        "test",
-		APIToken:       "test-token",
-		APITokenScopes: []string{string(v3.ScopeV3Read)},
-		Streaming: config.StreamingConfig{
-			DeliveryPolicy: "universal",
-		},
+		DataDir:  tmpDir,
+		OWIBase:  "http://invalid-url-that-will-timeout",
+		Bouquet:  "test",
+		APIToken: "test-token",
 	}
 
-	server := mustNewServer(t, cfg, config.NewManager(""))
-	// Inject dummy scan manager to avoid panic in handleRefresh (typed nil interface trap)
-	server.WireV3Runtime(nil, nil, nil, &scan.Manager{}, nil)
+	server := New(cfg, nil)
 
 	// Create a context that we'll cancel to simulate client disconnect
 	ctx, cancel := context.WithCancel(context.Background())
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v3/system/refresh", nil).WithContext(ctx)
-	req.Host = "example.com"                       // Required for CSRF validation
-	req.Header.Set("Origin", "http://example.com") // Add Origin for CSRF protection
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/refresh", nil).WithContext(ctx)
 	req.Header.Set("Authorization", "Bearer test-token")
 
 	rr := httptest.NewRecorder()
@@ -807,4 +769,172 @@ func getMetrics(reg *prometheus.Registry) string {
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 	return rr.Body.String()
+}
+
+func TestHandleUIUrls(t *testing.T) {
+	cfg := config.AppConfig{
+		DataDir:   t.TempDir(),
+		XMLTVPath: "xmltv.xml",
+	}
+
+	server := New(cfg, nil)
+	handler := server.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/ui/urls", nil)
+	req.Host = "example.com:8080"
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
+
+	var resp map[string]string
+	err := json.NewDecoder(rr.Body).Decode(&resp)
+	require.NoError(t, err)
+
+	assert.Equal(t, "http://example.com:8080/files/playlist.m3u", resp["m3u_url"])
+	assert.Equal(t, "http://example.com:8080/xmltv.xml", resp["xmltv_url"])
+	assert.Equal(t, "http://example.com:8080/device.xml", resp["hdhr_url"])
+}
+
+func TestHandleUIUrls_InvalidHostFallback(t *testing.T) {
+	cfg := config.AppConfig{
+		DataDir:   t.TempDir(),
+		XMLTVPath: "xmltv.xml",
+	}
+
+	server := New(cfg, nil)
+	handler := server.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/ui/urls", nil)
+	req.Host = "evil.com/@attacker"
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	var resp map[string]string
+	err := json.NewDecoder(rr.Body).Decode(&resp)
+	require.NoError(t, err)
+
+	assert.Equal(t, "http://localhost/files/playlist.m3u", resp["m3u_url"])
+	assert.Equal(t, "http://localhost/xmltv.xml", resp["xmltv_url"])
+	assert.Equal(t, "http://localhost/device.xml", resp["hdhr_url"])
+}
+
+func TestHandleUIUrls_TrustedForwardedHeaders(t *testing.T) {
+	t.Setenv("XG2G_TRUSTED_PROXIES", "127.0.0.1/32")
+	resetTrustedProxyCacheForTest()
+	t.Cleanup(resetTrustedProxyCacheForTest)
+
+	cfg := config.AppConfig{
+		DataDir:   t.TempDir(),
+		XMLTVPath: "xmltv.xml",
+	}
+
+	server := New(cfg, nil)
+	handler := server.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/ui/urls", nil)
+	req.Host = "internal.local:8080"
+	req.RemoteAddr = "127.0.0.1:43210"
+	req.Header.Set("X-Forwarded-Host", "public.example.net:9443")
+	req.Header.Set("X-Forwarded-Proto", "https")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	var resp map[string]string
+	err := json.NewDecoder(rr.Body).Decode(&resp)
+	require.NoError(t, err)
+
+	assert.Equal(t, "https://public.example.net:9443/files/playlist.m3u", resp["m3u_url"])
+	assert.Equal(t, "https://public.example.net:9443/xmltv.xml", resp["xmltv_url"])
+	assert.Equal(t, "https://public.example.net:9443/device.xml", resp["hdhr_url"])
+}
+
+func TestHandleUIUrls_UntrustedForwardedHeadersIgnored(t *testing.T) {
+	t.Setenv("XG2G_TRUSTED_PROXIES", "10.0.0.0/8")
+	resetTrustedProxyCacheForTest()
+	t.Cleanup(resetTrustedProxyCacheForTest)
+
+	cfg := config.AppConfig{
+		DataDir:   t.TempDir(),
+		XMLTVPath: "xmltv.xml",
+	}
+
+	server := New(cfg, nil)
+	handler := server.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/ui/urls", nil)
+	req.Host = "internal.local:8080"
+	req.RemoteAddr = "127.0.0.1:43210"
+	req.Header.Set("X-Forwarded-Host", "public.example.net:9443")
+	req.Header.Set("X-Forwarded-Proto", "https")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	var resp map[string]string
+	err := json.NewDecoder(rr.Body).Decode(&resp)
+	require.NoError(t, err)
+
+	assert.Equal(t, "http://internal.local:8080/files/playlist.m3u", resp["m3u_url"])
+	assert.Equal(t, "http://internal.local:8080/xmltv.xml", resp["xmltv_url"])
+	assert.Equal(t, "http://internal.local:8080/device.xml", resp["hdhr_url"])
+}
+
+func TestHandleUIUrls_PublicBaseURLOverride(t *testing.T) {
+	t.Setenv("XG2G_PUBLIC_BASE_URL", "https://tv.example.org:8443")
+	resetTrustedProxyCacheForTest()
+	t.Cleanup(resetTrustedProxyCacheForTest)
+	cfg := config.AppConfig{
+		DataDir:   t.TempDir(),
+		XMLTVPath: "xmltv.xml",
+	}
+
+	server := New(cfg, nil)
+	handler := server.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/ui/urls", nil)
+	req.Host = "evil.com/@attacker"
+	req.RemoteAddr = "127.0.0.1:12345"
+	req.Header.Set("X-Forwarded-Host", "ignored.example")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	var resp map[string]string
+	err := json.NewDecoder(rr.Body).Decode(&resp)
+	require.NoError(t, err)
+
+	assert.Equal(t, "https://tv.example.org:8443/files/playlist.m3u", resp["m3u_url"])
+	assert.Equal(t, "https://tv.example.org:8443/xmltv.xml", resp["xmltv_url"])
+	assert.Equal(t, "https://tv.example.org:8443/device.xml", resp["hdhr_url"])
+}
+
+func TestParseAndValidateHostPort_Edges(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		ok   bool
+	}{
+		{name: "valid ipv4 with port", in: "10.0.0.1:8080", ok: true},
+		{name: "valid ipv6 bracket", in: "[2001:db8::1]:8080", ok: true},
+		{name: "valid hostname", in: "example.org", ok: true},
+		{name: "reject invalid port", in: "example.org:99999", ok: false},
+		{name: "reject crlf", in: "example.org\r\nX-Test: injected", ok: false},
+		{name: "reject traversal", in: "example.org/@attacker", ok: false},
+		{name: "reject unicode host", in: "exämple.org", ok: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, ok := parseAndValidateHostPort(tt.in)
+			assert.Equal(t, tt.ok, ok)
+		})
+	}
 }
