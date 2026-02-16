@@ -17,6 +17,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/admission"
+	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	"github.com/ManuGH/xg2g/internal/core/urlutil"
 	worker "github.com/ManuGH/xg2g/internal/domain/session/manager"
 	"github.com/ManuGH/xg2g/internal/health"
@@ -348,7 +349,12 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 
 	// 4. Inject into API Server (Shadow Receiving)
 	if m.deps.APIServerSetter != nil {
-		m.deps.APIServerSetter.WireV3Runtime(v3Bus, v3Store, resumeStore, scanManager, adm)
+		m.deps.APIServerSetter.WireV3Runtime(v3.Dependencies{
+			Bus:         v3Bus,
+			Store:       v3Store,
+			ResumeStore: resumeStore,
+			Scan:        scanManager,
+		}, adm)
 		m.logger.Info().Msg("v3 components and admission gate injected into API server")
 	} else {
 		m.logger.Warn().Msg("API Server Setter not available - shadow intents will not be processed")

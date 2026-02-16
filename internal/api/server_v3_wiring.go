@@ -12,26 +12,19 @@ import (
 	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/control/vod"
-	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/dvr"
 	"github.com/ManuGH/xg2g/internal/epg"
 	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/library"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
-	"github.com/ManuGH/xg2g/internal/pipeline/bus"
-	"github.com/ManuGH/xg2g/internal/pipeline/resume"
-	"github.com/ManuGH/xg2g/internal/pipeline/scan"
 	"github.com/ManuGH/xg2g/internal/recordings"
 	"github.com/ManuGH/xg2g/internal/verification"
 )
 
 type v3DependencySnapshot struct {
 	handler             *v3.Server
-	bus                 bus.Bus
-	store               store.StateStore
-	resume              resume.Store
-	scan                *scan.Manager
+	runtimeDeps         v3.Dependencies
 	recordingPathMapper *recordings.PathMapper
 	channelManager      *channels.Manager
 	seriesManager       *dvr.Manager
@@ -58,10 +51,7 @@ func (s *Server) snapshotV3Dependencies() v3DependencySnapshot {
 
 	return v3DependencySnapshot{
 		handler:             s.v3Handler,
-		bus:                 s.v3Bus,
-		store:               s.v3Store,
-		resume:              s.resumeStore,
-		scan:                s.v3Scan,
+		runtimeDeps:         sanitizeV3RuntimeDependencies(s.v3RuntimeDeps),
 		recordingPathMapper: s.recordingPathMapper,
 		channelManager:      s.channelManager,
 		seriesManager:       s.seriesManager,
@@ -75,17 +65,31 @@ func (s *Server) snapshotV3Dependencies() v3DependencySnapshot {
 	}
 }
 
+func sanitizeV3RuntimeDependencies(deps v3.Dependencies) v3.Dependencies {
+	return v3.Dependencies{
+		Bus:         deps.Bus,
+		Store:       deps.Store,
+		ResumeStore: deps.ResumeStore,
+		Scan:        deps.Scan,
+	}
+}
+
 func (s *Server) syncV3HandlerDependencies() {
 	deps := s.snapshotV3Dependencies()
 	if deps.handler == nil {
 		return
 	}
 
+	var scanSource v3.ScanSource
+	if src, ok := deps.runtimeDeps.Scan.(v3.ScanSource); ok {
+		scanSource = src
+	}
+
 	deps.handler.SetDependencies(v3.Dependencies{
-		Bus:               deps.bus,
-		Store:             deps.store,
-		ResumeStore:       deps.resume,
-		Scan:              deps.scan,
+		Bus:               deps.runtimeDeps.Bus,
+		Store:             deps.runtimeDeps.Store,
+		ResumeStore:       deps.runtimeDeps.ResumeStore,
+		Scan:              deps.runtimeDeps.Scan,
 		PathMapper:        deps.recordingPathMapper,
 		ChannelManager:    deps.channelManager,
 		SeriesManager:     deps.seriesManager,
@@ -94,7 +98,7 @@ func (s *Server) syncV3HandlerDependencies() {
 		EPGCache:          deps.epgCache,
 		HealthManager:     deps.healthManager,
 		LogSource:         logSourceWrapper{},
-		ScanSource:        deps.scan,
+		ScanSource:        scanSource,
 		DVRSource:         &dvrSourceWrapper{s},
 		ServicesSource:    deps.channelManager,
 		TimersSource:      &dvrSourceWrapper{s},
@@ -105,18 +109,9 @@ func (s *Server) syncV3HandlerDependencies() {
 }
 
 // WireV3Runtime applies runtime-provided v3 dependencies in one DI call.
-func (s *Server) WireV3Runtime(
-	b bus.Bus,
-	st store.StateStore,
-	rs resume.Store,
-	sm *scan.Manager,
-	adm *admission.Controller,
-) {
+func (s *Server) WireV3Runtime(runtimeDeps v3.Dependencies, adm *admission.Controller) {
 	s.mu.Lock()
-	s.v3Bus = b
-	s.v3Store = st
-	s.resumeStore = rs
-	s.v3Scan = sm
+	s.v3RuntimeDeps = sanitizeV3RuntimeDependencies(runtimeDeps)
 	handler := s.v3Handler
 	s.mu.Unlock()
 
@@ -124,16 +119,6 @@ func (s *Server) WireV3Runtime(
 	if handler != nil && adm != nil {
 		handler.SetAdmission(adm)
 	}
-}
-
-// SetV3Components is a compatibility wrapper for runtime wiring call sites.
-func (s *Server) SetV3Components(
-	b bus.Bus,
-	st store.StateStore,
-	rs resume.Store,
-	sm *scan.Manager,
-) {
-	s.WireV3Runtime(b, st, rs, sm, nil)
 }
 
 // WireV3Overrides applies optional v3 override dependencies through one typed entrypoint.
@@ -148,7 +133,7 @@ func (s *Server) WireV3Overrides(overrides V3Overrides) {
 	handler := s.v3Handler
 	cfg := s.cfg
 	owiClient := s.owiClient
-	resumeStore := s.resumeStore
+	resumeStore := s.v3RuntimeDeps.ResumeStore
 	vodManager := s.vodManager
 	s.mu.RUnlock()
 

@@ -96,7 +96,7 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager, opts ...ServerOption) (*S
 	// Initialize with conservative defaults (10 concurrent transcodes, 10 CPU-heavy ops)
 	// In the future this should come from config.
 	adm := admission.NewController(cfg)
-	s.WireV3Runtime(s.v3Bus, s.v3Store, s.resumeStore, s.v3Scan, adm)
+	s.WireV3Runtime(s.v3RuntimeDeps, adm)
 
 	s.initHDHR(cfg, cm)
 	s.registerHealthCheckers(cfg)

@@ -769,7 +769,7 @@ func TestClientDisconnectDuringRefresh(t *testing.T) {
 
 	server := mustNewServer(t, cfg, config.NewManager(""))
 	// Inject dummy scan manager to avoid panic in handleRefresh (typed nil interface trap)
-	server.WireV3Runtime(nil, nil, nil, &scan.Manager{}, nil)
+	server.WireV3Runtime(v3.Dependencies{Scan: &scan.Manager{}}, nil)
 
 	// Create a context that we'll cancel to simulate client disconnect
 	ctx, cancel := context.WithCancel(context.Background())

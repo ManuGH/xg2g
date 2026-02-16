@@ -62,7 +62,7 @@ func (s *Server) wireV3Subsystem(cfg config.AppConfig, cfgMgr *config.Manager) e
 	})
 
 	owiAdapter := v3.NewOWIAdapter(s.owiClient)
-	resumeAdapter := v3.NewResumeAdapter(s.resumeStore)
+	resumeAdapter := v3.NewResumeAdapter(s.v3RuntimeDeps.ResumeStore)
 
 	recSvc, err := recservice.NewService(&cfg, s.vodManager, v4Resolver, owiAdapter, resumeAdapter, v4Resolver)
 	if err != nil {

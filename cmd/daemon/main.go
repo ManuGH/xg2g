@@ -23,6 +23,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/api"
 	"github.com/ManuGH/xg2g/internal/config"
+	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	"github.com/ManuGH/xg2g/internal/daemon"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/health"
@@ -449,7 +450,12 @@ func main() {
 	v3Scan := scan.NewManager(v3ScanStore, playlistPath, e2Client)
 
 	// Inject v3 components into API server
-	s.SetV3Components(v3Bus, v3Store, resumeStore, v3Scan)
+	s.WireV3Runtime(v3.Dependencies{
+		Bus:         v3Bus,
+		Store:       v3Store,
+		ResumeStore: resumeStore,
+		Scan:        v3Scan,
+	}, nil)
 
 	// Phase 8: Start Recording Cache Eviction Worker (Background)
 	go s.StartRecordingCacheEvicter(ctx)

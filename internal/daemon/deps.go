@@ -11,6 +11,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/admission"
+	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
@@ -63,7 +64,7 @@ type Deps struct {
 
 // V3ComponentSetter defines the interface for injecting v3 components
 type V3ComponentSetter interface {
-	WireV3Runtime(b bus.Bus, st store.StateStore, rs resume.Store, sm *scan.Manager, adm *admission.Controller)
+	WireV3Runtime(deps v3.Dependencies, adm *admission.Controller)
 	HealthManager() *health.Manager
 }
 
