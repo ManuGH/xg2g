@@ -151,31 +151,34 @@ func (a *LocalAdapter) PreflightVAAPI() error {
 	}
 	encoderList := string(checkOut)
 
-	// 3. Test each encoder with a real 5-frame encode
-	for _, enc := range vaapiEncodersToTest {
-		if !strings.Contains(encoderList, enc) {
-			a.Logger.Info().Str("encoder", enc).Msg("vaapi preflight: encoder not in ffmpeg build, skipping")
-			continue
+		// 3. Test each encoder with a real 5-frame encode
+		for _, enc := range vaapiEncodersToTest {
+			if !strings.Contains(encoderList, enc) {
+				a.Logger.Info().Str("encoder", enc).Msg("vaapi preflight: encoder not in ffmpeg build, skipping")
+				continue
+			}
+			if err := a.testVaapiEncoder(enc); err != nil {
+				a.Logger.Warn().Err(err).Str("encoder", enc).Msg("vaapi preflight: encoder test failed")
+			} else {
+				a.vaapiEncoders[enc] = true
+				a.Logger.Info().Str("encoder", enc).Msg("vaapi preflight: encoder verified")
+			}
 		}
-		if err := a.testVaapiEncoder(enc); err != nil {
-			a.Logger.Warn().Err(err).Str("encoder", enc).Msg("vaapi preflight: encoder test failed")
-		} else {
-			a.vaapiEncoders[enc] = true
-			a.Logger.Info().Str("encoder", enc).Msg("vaapi preflight: encoder verified")
-		}
-	}
 
-	if len(a.vaapiEncoders) == 0 {
+		if len(a.vaapiEncoders) == 0 {
 		a.vaapiDeviceErr = fmt.Errorf("vaapi preflight: no working VAAPI encoders found")
 		a.Logger.Error().Err(a.vaapiDeviceErr).Msg("vaapi preflight: failed")
 		hardware.SetVAAPIPreflightResult(false)
 		return a.vaapiDeviceErr
-	}
+		}
 
-	hardware.SetVAAPIPreflightResult(true)
-	a.Logger.Info().
-		Str("device", a.VaapiDevice).
-		Int("verified_encoders", len(a.vaapiEncoders)).
+		// Publish per-encoder results for higher layers (HTTP/profile selection).
+		hardware.SetVAAPIEncoderPreflight(a.vaapiEncoders)
+
+		hardware.SetVAAPIPreflightResult(true)
+		a.Logger.Info().
+			Str("device", a.VaapiDevice).
+			Int("verified_encoders", len(a.vaapiEncoders)).
 		Msg("vaapi preflight: passed")
 	return nil
 }
