@@ -67,6 +67,14 @@ func (m *Manager) GetStatus() ScanStatus {
 	return m.status
 }
 
+// Close releases the underlying capability store resources.
+func (m *Manager) Close() error {
+	if m == nil || m.store == nil {
+		return nil
+	}
+	return m.store.Close()
+}
+
 // ExtractServiceRef extracts the service reference from a stream URL
 // Robust implementation using net/url
 func ExtractServiceRef(rawURL string) string {

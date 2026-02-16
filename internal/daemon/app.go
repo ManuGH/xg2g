@@ -8,6 +8,7 @@ package daemon
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -187,8 +188,11 @@ func (a *App) Run(ctx context.Context) error {
 		err := a.manager.Start(ctx)
 		if err != nil {
 			shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-			_ = a.manager.Shutdown(shutdownCtx)
+			shutdownErr := a.manager.Shutdown(shutdownCtx)
 			cancel()
+			if shutdownErr != nil {
+				return fmt.Errorf("%w (shutdown: %v)", err, shutdownErr)
+			}
 		}
 		return err
 	})

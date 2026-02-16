@@ -26,23 +26,38 @@ func (s *Server) StartMonitors() {
 // Shutdown performs a graceful shutdown of the server.
 // P9: Safety & Shutdown
 func (s *Server) Shutdown(ctx context.Context) error {
+	if ctx == nil {
+		return fmt.Errorf("shutdown context is nil")
+	}
+
 	log.L().Info().Msg("shutting down server")
 
 	// 1. Cancel root context (signals builds to stop)
-	if s.rootCancel != nil {
-		s.rootCancel()
+	s.mu.RLock()
+	rootCancel := s.rootCancel
+	v3Handler := s.v3Handler
+	vodManager := s.vodManager
+	s.mu.RUnlock()
+	if rootCancel != nil {
+		rootCancel()
 	}
 
-	// 2. Run final VOD cleanup (kill processes)
-	if s.vodManager != nil {
-		s.vodManager.CancelAll()
+	// 2. Stop runtime-owned workers and close resources.
+	var errs []error
+	if v3Handler != nil {
+		if err := v3Handler.Shutdown(ctx); err != nil {
+			errs = append(errs, err)
+		}
+	} else if vodManager != nil {
+		// Fallback for partial initialization paths.
+		if err := vodManager.ShutdownContext(ctx); err != nil {
+			errs = append(errs, err)
+		}
 	}
-	// Legacy cleanupRecordingBuilds removed.
 
-	// 3. Wait for active builds?
-	// We don't have a specific WaitGroup for builds, but cleanup killed the processes.
-	// The build goroutines will exit when they see cmd.Wait() returns/error.
-
+	if len(errs) > 0 {
+		return fmt.Errorf("server shutdown errors: %v", errs)
+	}
 	return nil
 }
 
@@ -58,11 +73,19 @@ func (s *Server) SetRootContext(ctx context.Context) error {
 		return nil
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.rootCancel != nil {
 		s.rootCancel()
 	}
 	s.rootCtx, s.rootCancel = context.WithCancel(ctx)
+	rootCtx := s.rootCtx
+	v3Handler := s.v3Handler
+	s.mu.Unlock()
+
+	if v3Handler != nil {
+		if err := v3Handler.SetRuntimeContext(rootCtx); err != nil {
+			return fmt.Errorf("set v3 runtime context: %w", err)
+		}
+	}
 	return nil
 }
 
