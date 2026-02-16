@@ -6,7 +6,6 @@ package api
 import (
 	"net/http"
 
-	legacyhttp "github.com/ManuGH/xg2g/internal/control/http/legacy"
 	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 )
 
@@ -18,8 +17,6 @@ func (s *Server) routes() http.Handler {
 	s.registerOperatorRoutes(rAuth, rAdmin, rStatus)
 	s.registerCanonicalV3Routes(r)
 	v3.RegisterCompatibilityRoutes(rRead, rWrite, s.v3Handler)
-
-	legacyhttp.RegisterRoutes(r, s.legacyRuntime(), s.newLANGuard())
 
 	return r
 }
