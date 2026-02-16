@@ -6,27 +6,27 @@ package v3
 
 import "net/http"
 
-func registerAuthRoutes(register routeRegistrar, wrapper ServerInterfaceWrapper) {
-	register.add(http.MethodPost, "/auth/session", "CreateSession", wrapper.CreateSession)
+func registerAuthRoutes(register routeRegistrar, handler authRoutes) {
+	register.add(http.MethodPost, "/auth/session", "CreateSession", handler.CreateSession)
 }
 
-func registerDVRRoutes(register routeRegistrar, wrapper ServerInterfaceWrapper) {
-	register.add(http.MethodGet, "/dvr/capabilities", "GetDvrCapabilities", wrapper.GetDvrCapabilities)
-	register.add(http.MethodGet, "/dvr/status", "GetDvrStatus", wrapper.GetDvrStatus)
+func registerDVRRoutes(register routeRegistrar, handler dvrRoutes) {
+	register.add(http.MethodGet, "/dvr/capabilities", "GetDvrCapabilities", handler.GetDvrCapabilities)
+	register.add(http.MethodGet, "/dvr/status", "GetDvrStatus", handler.GetDvrStatus)
 }
 
-func registerEPGRoutes(register routeRegistrar, wrapper ServerInterfaceWrapper) {
-	register.add(http.MethodGet, "/epg", "GetEpg", wrapper.GetEpg)
+func registerEPGRoutes(register routeRegistrar, handler epgRoutes) {
+	register.add(http.MethodGet, "/epg", "GetEpg", handler.GetEpg)
 }
 
-func registerIntentRoutes(register routeRegistrar, wrapper ServerInterfaceWrapper) {
-	register.add(http.MethodPost, "/intents", "CreateIntent", wrapper.CreateIntent)
+func registerIntentRoutes(register routeRegistrar, handler intentRoutes) {
+	register.add(http.MethodPost, "/intents", "CreateIntent", handler.CreateIntent)
 }
 
-func registerLogRoutes(register routeRegistrar, wrapper ServerInterfaceWrapper) {
-	register.add(http.MethodGet, "/logs", "GetLogs", wrapper.GetLogs)
+func registerLogRoutes(register routeRegistrar, handler logRoutes) {
+	register.add(http.MethodGet, "/logs", "GetLogs", handler.GetLogs)
 }
 
-func registerReceiverRoutes(register routeRegistrar, wrapper ServerInterfaceWrapper) {
-	register.add(http.MethodGet, "/receiver/current", "GetReceiverCurrent", wrapper.GetReceiverCurrent)
+func registerReceiverRoutes(register routeRegistrar, handler receiverRoutes) {
+	register.add(http.MethodGet, "/receiver/current", "GetReceiverCurrent", handler.GetReceiverCurrent)
 }

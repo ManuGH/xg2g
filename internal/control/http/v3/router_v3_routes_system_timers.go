@@ -6,22 +6,22 @@ package v3
 
 import "net/http"
 
-func registerSystemRoutes(register routeRegistrar, wrapper ServerInterfaceWrapper) {
-	register.add(http.MethodGet, "/system/config", "GetSystemConfig", wrapper.GetSystemConfig)
-	register.add(http.MethodPut, "/system/config", "PutSystemConfig", wrapper.PutSystemConfig)
-	register.add(http.MethodGet, "/system/health", "GetSystemHealth", wrapper.GetSystemHealth)
-	register.add(http.MethodGet, "/system/healthz", "GetSystemHealthz", wrapper.GetSystemHealthz)
-	register.add(http.MethodGet, "/system/info", "GetSystemInfo", wrapper.GetSystemInfo)
-	register.add(http.MethodPost, "/system/refresh", "PostSystemRefresh", wrapper.PostSystemRefresh)
-	register.add(http.MethodGet, "/system/scan", "GetSystemScanStatus", wrapper.GetSystemScanStatus)
-	register.add(http.MethodPost, "/system/scan", "TriggerSystemScan", wrapper.TriggerSystemScan)
+func registerSystemRoutes(register routeRegistrar, handler systemRoutes) {
+	register.add(http.MethodGet, "/system/config", "GetSystemConfig", handler.GetSystemConfig)
+	register.add(http.MethodPut, "/system/config", "PutSystemConfig", handler.PutSystemConfig)
+	register.add(http.MethodGet, "/system/health", "GetSystemHealth", handler.GetSystemHealth)
+	register.add(http.MethodGet, "/system/healthz", "GetSystemHealthz", handler.GetSystemHealthz)
+	register.add(http.MethodGet, "/system/info", "GetSystemInfo", handler.GetSystemInfo)
+	register.add(http.MethodPost, "/system/refresh", "PostSystemRefresh", handler.PostSystemRefresh)
+	register.add(http.MethodGet, "/system/scan", "GetSystemScanStatus", handler.GetSystemScanStatus)
+	register.add(http.MethodPost, "/system/scan", "TriggerSystemScan", handler.TriggerSystemScan)
 }
 
-func registerTimerRoutes(register routeRegistrar, wrapper ServerInterfaceWrapper) {
-	register.add(http.MethodGet, "/timers", "GetTimers", wrapper.GetTimers)
-	register.add(http.MethodPost, "/timers", "AddTimer", wrapper.AddTimer)
-	register.add(http.MethodPost, "/timers/conflicts:preview", "PreviewConflicts", wrapper.PreviewConflicts)
-	register.add(http.MethodDelete, "/timers/{timerId}", "DeleteTimer", wrapper.DeleteTimer)
-	register.add(http.MethodGet, "/timers/{timerId}", "GetTimer", wrapper.GetTimer)
-	register.add(http.MethodPatch, "/timers/{timerId}", "UpdateTimer", wrapper.UpdateTimer)
+func registerTimerRoutes(register routeRegistrar, handler timerRoutes) {
+	register.add(http.MethodGet, "/timers", "GetTimers", handler.GetTimers)
+	register.add(http.MethodPost, "/timers", "AddTimer", handler.AddTimer)
+	register.add(http.MethodPost, "/timers/conflicts:preview", "PreviewConflicts", handler.PreviewConflicts)
+	register.add(http.MethodDelete, "/timers/{timerId}", "DeleteTimer", handler.DeleteTimer)
+	register.add(http.MethodGet, "/timers/{timerId}", "GetTimer", handler.GetTimer)
+	register.add(http.MethodPatch, "/timers/{timerId}", "UpdateTimer", handler.UpdateTimer)
 }

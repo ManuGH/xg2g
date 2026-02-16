@@ -47,19 +47,19 @@ func NewRouter(si ServerInterface, options RouterOptions) http.Handler {
 	}
 
 	register := routeRegistrar{baseURL: options.BaseURL, router: r}
-	registerAuthRoutes(register, wrapper)
-	registerDVRRoutes(register, wrapper)
-	registerEPGRoutes(register, wrapper)
-	registerIntentRoutes(register, wrapper)
-	registerLogRoutes(register, wrapper)
-	registerReceiverRoutes(register, wrapper)
-	registerRecordingRoutes(register, wrapper)
-	registerSeriesRoutes(register, wrapper)
-	registerServiceRoutes(register, wrapper)
-	registerSessionRoutes(register, wrapper)
-	registerStreamRoutes(register, wrapper)
-	registerSystemRoutes(register, wrapper)
-	registerTimerRoutes(register, wrapper)
+	registerAuthRoutes(register, &wrapper)
+	registerDVRRoutes(register, &wrapper)
+	registerEPGRoutes(register, &wrapper)
+	registerIntentRoutes(register, &wrapper)
+	registerLogRoutes(register, &wrapper)
+	registerReceiverRoutes(register, &wrapper)
+	registerRecordingRoutes(register, &wrapper)
+	registerSeriesRoutes(register, &wrapper)
+	registerServiceRoutes(register, &wrapper)
+	registerSessionRoutes(register, &wrapper)
+	registerStreamRoutes(register, &wrapper)
+	registerSystemRoutes(register, &wrapper)
+	registerTimerRoutes(register, &wrapper)
 
 	return r
 }
