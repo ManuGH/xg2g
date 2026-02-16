@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	controlhttp "github.com/ManuGH/xg2g/internal/control/http"
+	systemhttp "github.com/ManuGH/xg2g/internal/control/http/system"
 	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	"github.com/ManuGH/xg2g/internal/control/middleware"
 	"github.com/ManuGH/xg2g/internal/log"
@@ -65,8 +66,8 @@ func splitCSVNonEmpty(raw string) []string {
 }
 
 func (s *Server) registerPublicRoutes(r chi.Router) {
-	r.Get("/healthz", s.handleHealth)
-	r.Get("/readyz", s.handleReady)
+	r.Get("/healthz", systemhttp.NewHealthHandler(s.healthManager))
+	r.Get("/readyz", systemhttp.NewReadyHandler(s.healthManager))
 
 	r.Handle("/ui/*", http.StripPrefix("/ui", controlhttp.UIHandler(controlhttp.UIConfig{
 		CSP: middleware.DefaultCSP,
@@ -93,7 +94,7 @@ func (s *Server) scopedRouters(r chi.Router) (chi.Router, chi.Router, chi.Router
 func (s *Server) registerOperatorRoutes(rAuth, rAdmin, rStatus chi.Router) {
 	rAdmin.Post("/internal/system/config/reload", http.HandlerFunc(s.handleConfigReload))
 	rStatus.Get(v3.V3BaseURL+"/status", controlhttp.NewStatusHandler(s.verificationStore).ServeHTTP)
-	rAuth.Post("/internal/setup/validate", http.HandlerFunc(s.handleSetupValidate))
+	rAuth.Post("/internal/setup/validate", systemhttp.NewSetupValidateHandler())
 }
 
 func (s *Server) registerCanonicalV3Routes(r chi.Router) {
