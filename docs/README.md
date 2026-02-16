@@ -39,3 +39,4 @@ Legacy documentation and superseded ADRs. Reference only.
 All changes to the documentation MUST be reflected in the
 [SPEC_INDEX.md](decision/SPEC_INDEX.md) and
 adhere to the [PRODUCT_POLICY.md](PRODUCT_POLICY.md).
+Branch protection required checks are enforced in CI for all pull requests.
