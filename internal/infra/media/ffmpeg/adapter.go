@@ -729,7 +729,7 @@ func (a *LocalAdapter) buildArgs(ctx context.Context, spec ports.StreamSpec, inp
 	}
 
 	hardVAAPIRequest := spec.Profile.HWAccel == "vaapi" && !isPreferHWProfile(spec.Profile.Name)
-	neg := codecdecision.Decide(codecdecision.Input{
+	decisionIn := codecdecision.Input{
 		Profile:        spec.Profile.Name,
 		RequestedCodec: spec.Profile.VideoCodec,
 		RequireHW:      hardVAAPIRequest,
@@ -737,7 +737,23 @@ func (a *LocalAdapter) buildArgs(ctx context.Context, spec ports.StreamSpec, inp
 			HWAccelAvailable:  useHWPath,
 			SupportedHWCodecs: a.supportedHWCodecs(),
 		},
-	})
+	}
+	neg := codecdecision.Decide(decisionIn)
+	decisionInSummary := decisionIn.Summary()
+	decisionOutSummary := neg.Summary()
+
+	a.Logger.Info().
+		Str("event", "decision.summary").
+		Str("profile", decisionInSummary.Profile).
+		Str("requested_codec", decisionInSummary.RequestedCodec).
+		Strs("supported_hw_codecs", decisionInSummary.SupportedHWCodecs).
+		Bool("hwaccel_available", decisionInSummary.HWAccelAvailable).
+		Str("path", decisionOutSummary.Path).
+		Str("output_codec", decisionOutSummary.OutputCodec).
+		Bool("use_hwaccel", decisionOutSummary.UseHWAccel).
+		Str("reason", decisionOutSummary.Reason).
+		Msg("decision summary")
+
 	if neg.Path == codecdecision.PathReject && !hardVAAPIRequest {
 		return nil, fmt.Errorf("codec negotiation rejected (profile=%s codec=%s reason=%s)", spec.Profile.Name, spec.Profile.VideoCodec, neg.Reason)
 	}
