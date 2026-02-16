@@ -12,8 +12,6 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
-	"github.com/ManuGH/xg2g/internal/control/admission"
-	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	"github.com/ManuGH/xg2g/internal/core/urlutil"
 	worker "github.com/ManuGH/xg2g/internal/domain/session/manager"
 	sessionports "github.com/ManuGH/xg2g/internal/domain/session/ports"
@@ -48,10 +46,8 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 	}
 
 	m.registerV3StoreCloseHooks(runtimeDeps)
-	adm := m.newAdmissionController(cfg)
 	orch := m.newV3Orchestrator(cfg, runtimeDeps)
 
-	m.wireV3RuntimeIntoAPI(runtimeDeps, adm)
 	m.registerV3Checks(&cfg, runtimeDeps.e2Client)
 	m.launchV3Orchestrator(ctx, errChan, orch)
 
@@ -100,15 +96,6 @@ func (m *manager) registerV3StoreCloseHooks(deps v3WorkerRuntimeDeps) {
 	}
 }
 
-func (m *manager) newAdmissionController(cfg config.AppConfig) *admission.Controller {
-	adm := admission.NewController(cfg)
-	m.logger.Info().
-		Int("max_sessions", cfg.Limits.MaxSessions).
-		Int("max_transcodes", cfg.Limits.MaxTranscodes).
-		Msg("Admission control initialized")
-	return adm
-}
-
 func (m *manager) newV3Orchestrator(cfg config.AppConfig, deps v3WorkerRuntimeDeps) *worker.Orchestrator {
 	host, _ := os.Hostname()
 	workerOwner := fmt.Sprintf("%s-%d-%s", host, os.Getpid(), uuid.New().String())
@@ -142,21 +129,6 @@ func (m *manager) newV3Orchestrator(cfg config.AppConfig, deps v3WorkerRuntimeDe
 	}
 	orch.Pipeline = deps.pipeline
 	return orch
-}
-
-func (m *manager) wireV3RuntimeIntoAPI(deps v3WorkerRuntimeDeps, adm *admission.Controller) {
-	if m.deps.APIServerSetter == nil {
-		m.logger.Warn().Msg("API Server Setter not available - shadow intents will not be processed")
-		return
-	}
-
-	m.deps.APIServerSetter.WireV3Runtime(v3.Dependencies{
-		Bus:         deps.bus,
-		Store:       deps.store,
-		ResumeStore: deps.resumeStore,
-		Scan:        deps.scanManager,
-	}, adm)
-	m.logger.Info().Msg("v3 components and admission gate injected into API server")
 }
 
 func (m *manager) launchV3Orchestrator(ctx context.Context, errChan chan<- error, orch *worker.Orchestrator) {

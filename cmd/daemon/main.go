@@ -454,7 +454,8 @@ func main() {
 
 	mediaPipeline := buildMediaPipeline(cfg, e2Client, logger)
 
-	// Inject v3 components into API server
+	// Composition-root ownership: runtime wiring happens exactly once here.
+	// The daemon worker must not mutate API runtime dependencies later.
 	s.WireV3Runtime(v3.Dependencies{
 		Bus:         v3Bus,
 		Store:       v3Store,

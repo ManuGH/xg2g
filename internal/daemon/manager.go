@@ -315,6 +315,11 @@ func (m *manager) RegisterShutdownHook(name string, hook ShutdownHook) {
 
 // registerV3Checks registers health and readiness checks for V3 components.
 func (m *manager) registerV3Checks(cfg *config.AppConfig, e2Client *enigma2.Client) {
+	if m.deps.APIServerSetter == nil {
+		m.logger.Warn().Msg("API server hooks not available, skipping V3 checks")
+		return
+	}
+
 	hm := m.deps.APIServerSetter.HealthManager()
 	if hm == nil {
 		m.logger.Warn().Msg("HealthManager not available, skipping V3 checks")
