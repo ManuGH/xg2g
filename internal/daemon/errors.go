@@ -23,4 +23,7 @@ var (
 
 	// ErrServerStartFailed is returned when a server fails to start
 	ErrServerStartFailed = errors.New("server failed to start")
+
+	// ErrMissingMediaPipeline is returned when v3 is enabled without a pipeline.
+	ErrMissingMediaPipeline = errors.New("media pipeline is required when engine is enabled")
 )

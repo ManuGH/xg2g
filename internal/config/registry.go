@@ -95,24 +95,24 @@ func buildRegistry() (*Registry, error) {
 		{Path: "bouquets", Env: "XG2G_BOUQUET", FieldPath: "Bouquet", Profile: ProfileSimple, Status: StatusActive},
 
 		// --- ENIGMA2 / OPENWEBIF ---
-		{Path: "enigma2.baseUrl", Env: "XG2G_OWI_BASE", FieldPath: "Enigma2.BaseURL", Profile: ProfileSimple, Status: StatusActive},
-		{Path: "enigma2.username", Env: "XG2G_OWI_USER", FieldPath: "Enigma2.Username", Profile: ProfileSimple, Status: StatusActive},
-		{Path: "enigma2.password", Env: "XG2G_OWI_PASS", FieldPath: "Enigma2.Password", Profile: ProfileSimple, Status: StatusActive},
-		{Path: "enigma2.timeout", Env: "XG2G_OWI_TIMEOUT_MS", FieldPath: "Enigma2.Timeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 10 * time.Second},
-		{Path: "enigma2.responseHeaderTimeout", Env: "", FieldPath: "Enigma2.ResponseHeaderTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 10 * time.Second},
-		{Path: "enigma2.tuneTimeout", Env: "", FieldPath: "Enigma2.TuneTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 10 * time.Second},
-		{Path: "enigma2.retries", Env: "XG2G_OWI_RETRIES", FieldPath: "Enigma2.Retries", Profile: ProfileAdvanced, Status: StatusActive, Default: 2},
-		{Path: "enigma2.backoff", Env: "XG2G_OWI_BACKOFF_MS", FieldPath: "Enigma2.Backoff", Profile: ProfileAdvanced, Status: StatusActive, Default: 200 * time.Millisecond},
-		{Path: "enigma2.maxBackoff", Env: "XG2G_OWI_MAX_BACKOFF_MS", FieldPath: "Enigma2.MaxBackoff", Profile: ProfileAdvanced, Status: StatusActive, Default: 30 * time.Second},
-		{Path: "enigma2.streamPort", Env: "XG2G_STREAM_PORT", FieldPath: "Enigma2.StreamPort", Profile: ProfileAdvanced, Status: StatusDeprecated, Default: 8001},
-		{Path: "enigma2.useWebIFStreams", Env: "XG2G_USE_WEBIF_STREAMS", FieldPath: "Enigma2.UseWebIFStreams", Profile: ProfileAdvanced, Status: StatusActive, Default: true},
+		{Path: "enigma2.baseUrl", Env: "XG2G_E2_HOST", FieldPath: "Enigma2.BaseURL", Profile: ProfileSimple, Status: StatusActive},
+		{Path: "enigma2.username", Env: "XG2G_E2_USER", FieldPath: "Enigma2.Username", Profile: ProfileSimple, Status: StatusActive},
+		{Path: "enigma2.password", Env: "XG2G_E2_PASS", FieldPath: "Enigma2.Password", Profile: ProfileSimple, Status: StatusActive},
+		{Path: "enigma2.timeout", Env: "XG2G_E2_TIMEOUT", FieldPath: "Enigma2.Timeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 10 * time.Second},
+		{Path: "enigma2.responseHeaderTimeout", Env: "XG2G_E2_RESPONSE_HEADER_TIMEOUT", FieldPath: "Enigma2.ResponseHeaderTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 10 * time.Second},
+		{Path: "enigma2.tuneTimeout", Env: "XG2G_E2_TUNE_TIMEOUT", FieldPath: "Enigma2.TuneTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 10 * time.Second},
+		{Path: "enigma2.retries", Env: "XG2G_E2_RETRIES", FieldPath: "Enigma2.Retries", Profile: ProfileAdvanced, Status: StatusActive, Default: 2},
+		{Path: "enigma2.backoff", Env: "XG2G_E2_BACKOFF", FieldPath: "Enigma2.Backoff", Profile: ProfileAdvanced, Status: StatusActive, Default: 200 * time.Millisecond},
+		{Path: "enigma2.maxBackoff", Env: "XG2G_E2_MAX_BACKOFF", FieldPath: "Enigma2.MaxBackoff", Profile: ProfileAdvanced, Status: StatusActive, Default: 30 * time.Second},
+		{Path: "enigma2.streamPort", Env: "XG2G_E2_STREAM_PORT", FieldPath: "Enigma2.StreamPort", Profile: ProfileAdvanced, Status: StatusDeprecated, Default: 8001},
+		{Path: "enigma2.useWebIFStreams", Env: "XG2G_E2_USE_WEBIF_STREAMS", FieldPath: "Enigma2.UseWebIFStreams", Profile: ProfileAdvanced, Status: StatusActive, Default: true},
 		{Path: "enigma2.fallbackTo8001", Env: "XG2G_E2_FALLBACK_TO_8001", FieldPath: "Enigma2.FallbackTo8001", Profile: ProfileIntegrator, Status: StatusActive, Default: true},
-		{Path: "enigma2.authMode", Env: "", FieldPath: "Enigma2.AuthMode", Profile: ProfileAdvanced, Status: StatusActive, Default: "inherit"},
-		{Path: "enigma2.rateLimit", Env: "", FieldPath: "Enigma2.RateLimit", Profile: ProfileAdvanced, Status: StatusActive},
-		{Path: "enigma2.rateBurst", Env: "", FieldPath: "Enigma2.RateBurst", Profile: ProfileAdvanced, Status: StatusActive},
-		{Path: "enigma2.userAgent", Env: "", FieldPath: "Enigma2.UserAgent", Profile: ProfileAdvanced, Status: StatusActive},
-		{Path: "enigma2.analyzeDuration", Env: "", FieldPath: "Enigma2.AnalyzeDuration", Profile: ProfileAdvanced, Status: StatusActive, Default: "2000000"},
-		{Path: "enigma2.probeSize", Env: "", FieldPath: "Enigma2.ProbeSize", Profile: ProfileAdvanced, Status: StatusActive, Default: "5M"},
+		{Path: "enigma2.authMode", Env: "XG2G_E2_AUTH_MODE", FieldPath: "Enigma2.AuthMode", Profile: ProfileAdvanced, Status: StatusActive, Default: "inherit"},
+		{Path: "enigma2.rateLimit", Env: "XG2G_E2_RATE_LIMIT", FieldPath: "Enigma2.RateLimit", Profile: ProfileAdvanced, Status: StatusActive},
+		{Path: "enigma2.rateBurst", Env: "XG2G_E2_RATE_BURST", FieldPath: "Enigma2.RateBurst", Profile: ProfileAdvanced, Status: StatusActive},
+		{Path: "enigma2.userAgent", Env: "XG2G_E2_USER_AGENT", FieldPath: "Enigma2.UserAgent", Profile: ProfileAdvanced, Status: StatusActive},
+		{Path: "enigma2.analyzeDuration", Env: "XG2G_E2_ANALYZE_DURATION", FieldPath: "Enigma2.AnalyzeDuration", Profile: ProfileAdvanced, Status: StatusActive, Default: "2000000"},
+		{Path: "enigma2.probeSize", Env: "XG2G_E2_PROBE_SIZE", FieldPath: "Enigma2.ProbeSize", Profile: ProfileAdvanced, Status: StatusActive, Default: "5M"},
 		{Path: "enigma2.preflightTimeout", Env: "XG2G_E2_PREFLIGHT_TIMEOUT", FieldPath: "Enigma2.PreflightTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 10 * time.Second},
 		// --- API ---
 		{Path: "api.listenAddr", Env: "XG2G_LISTEN", FieldPath: "APIListenAddr", Profile: ProfileSimple, Status: StatusActive, Default: ":8088"},
@@ -154,6 +154,7 @@ func buildRegistry() (*Registry, error) {
 		{Path: "ffmpeg.bin", Env: "XG2G_FFMPEG_BIN", FieldPath: "FFmpeg.Bin", Profile: ProfileAdvanced, Status: StatusActive, Default: "ffmpeg"},
 		{Path: "ffmpeg.ffprobeBin", Env: "XG2G_FFPROBE_BIN", FieldPath: "FFmpeg.FFprobeBin", Profile: ProfileAdvanced, Status: StatusActive},
 		{Path: "ffmpeg.killTimeout", Env: "XG2G_FFMPEG_KILL_TIMEOUT", FieldPath: "FFmpeg.KillTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 5 * time.Second},
+		{Path: "ffmpeg.vaapiDevice", Env: "XG2G_VAAPI_DEVICE", FieldPath: "FFmpeg.VaapiDevice", Profile: ProfileAdvanced, Status: StatusActive, Default: ""},
 
 		// --- TLS ---
 		{Path: "tls.enabled", Env: "XG2G_TLS_ENABLED", FieldPath: "TLSEnabled", Profile: ProfileAdvanced, Status: StatusActive, Default: false},
@@ -163,6 +164,7 @@ func buildRegistry() (*Registry, error) {
 
 		// --- SECURITY / PROXIES ---
 		{Path: "trustedProxies", Env: "XG2G_TRUSTED_PROXIES", FieldPath: "TrustedProxies", Profile: ProfileAdvanced, Status: StatusActive}, // Fix D: Active now
+		{Path: "network.lan.allow.cidrs", Env: "XG2G_LAN_ALLOW_CIDRS", FieldPath: "Network.LAN.Allow.CIDRs", Profile: ProfileAdvanced, Status: StatusActive},
 		{Path: "network.outbound.enabled", Env: "XG2G_OUTBOUND_ENABLED", FieldPath: "Network.Outbound.Enabled", Profile: ProfileAdvanced, Status: StatusActive, Default: false},
 		{Path: "network.outbound.allow.hosts", Env: "XG2G_OUTBOUND_ALLOW_HOSTS", FieldPath: "Network.Outbound.Allow.Hosts", Profile: ProfileAdvanced, Status: StatusActive},
 		{Path: "network.outbound.allow.cidrs", Env: "XG2G_OUTBOUND_ALLOW_CIDRS", FieldPath: "Network.Outbound.Allow.CIDRs", Profile: ProfileAdvanced, Status: StatusActive},

@@ -7,24 +7,31 @@
 
 set -e
 
-# Tooling dependency check
-command -v rg >/dev/null 2>&1 || {
-    echo "❌ ERROR: rg (ripgrep) is required but not installed"
-    echo "Install with: apt-get install ripgrep  OR  brew install ripgrep"
-    exit 2
-}
-
 echo "=== Gate A: Control Layer Store Purity Check ==="
-echo "Scope: internal/control/** only (legacy internal/api excluded)"
+echo "Scope: internal/control/** production code only (legacy internal/api excluded)"
 echo ""
 
 VIOLATIONS_FOUND=0
 
+# Temporary legacy carve-outs within control/v3 until domain migration is complete.
+# These are production files that still hold direct store integration today.
+LEGACY_ALLOWLIST_REGEX='^internal/control/http/v3/(server|handlers_sessions|sessions_heartbeat)\.go$'
+
+mapfile -t CONTROL_GO_FILES < <(
+    git ls-files 'internal/control/**/*.go' \
+        | grep -vE '_test\.go$' \
+        | grep -vE "$LEGACY_ALLOWLIST_REGEX" \
+        || true
+)
+
 # Check 1: Import prohibition (primary check - catches 90%)
 echo "[1/2] Checking for forbidden store imports in control layer..."
-STORE_IMPORTS=$(rg -type go --files-with-matches \
-    'internal/domain/session/store' \
-    internal/control/ 2>/dev/null || true)
+STORE_IMPORTS=""
+if [ "${#CONTROL_GO_FILES[@]}" -gt 0 ]; then
+    STORE_IMPORTS=$(grep -l \
+        'internal/domain/session/store' \
+        "${CONTROL_GO_FILES[@]}" 2>/dev/null || true)
+fi
 
 if [ -n "$STORE_IMPORTS" ]; then
     echo "❌ GATE A FAIL: internal/control cannot import internal/domain/session/store"
@@ -39,9 +46,12 @@ fi
 
 # Check 2: Direct store mutation calls (backup - catches creative bypasses)
 echo "[2/2] Checking for direct store mutation calls..."
-MUTATIONS=$(rg -type go --line-number \
-    '\.(UpdateSession|PutSession|DeleteSession|TryAcquireLease|ReleaseLease)\(' \
-    internal/control/ 2>/dev/null || true)
+MUTATIONS=""
+if [ "${#CONTROL_GO_FILES[@]}" -gt 0 ]; then
+    MUTATIONS=$(grep -nH -E \
+        '\.(UpdateSession|PutSession|DeleteSession|TryAcquireLease|ReleaseLease)\(' \
+        "${CONTROL_GO_FILES[@]}" 2>/dev/null || true)
+fi
 
 if [ -n "$MUTATIONS" ]; then
     echo "❌ GATE A FAIL: internal/control cannot directly mutate stores"

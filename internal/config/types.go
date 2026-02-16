@@ -165,6 +165,7 @@ type RateLimitConfig struct {
 // NetworkFileConfig holds network policy configuration.
 type NetworkFileConfig struct {
 	Outbound OutboundFileConfig `yaml:"outbound,omitempty"`
+	LAN      LANFileConfig      `yaml:"lan,omitempty"`
 }
 
 // OutboundFileConfig controls outbound HTTP(S) access.
@@ -179,6 +180,16 @@ type OutboundAllowlist struct {
 	CIDRs   []string `yaml:"cidrs,omitempty"`
 	Ports   []int    `yaml:"ports,omitempty"`
 	Schemes []string `yaml:"schemes,omitempty"`
+}
+
+// LANFileConfig defines LAN access policy.
+type LANFileConfig struct {
+	Allow LANAllowlist `yaml:"allow,omitempty"`
+}
+
+// LANAllowlist defines LAN CIDR allowlist rules.
+type LANAllowlist struct {
+	CIDRs []string `yaml:"cidrs,omitempty"`
 }
 
 // MetricsConfig holds Prometheus metrics configuration
@@ -447,6 +458,13 @@ type FFmpegConfig struct {
 	Bin         string        `yaml:"bin"`
 	FFprobeBin  string        `yaml:"ffprobeBin,omitempty"`
 	KillTimeout time.Duration `yaml:"killTimeout"`
+	// VaapiDevice is the DRM render node for VAAPI GPU transcoding.
+	// Set to e.g. "/dev/dri/renderD128" (or XG2G_VAAPI_DEVICE env) to enable.
+	// Empty (default) = VAAPI disabled; all transcoding uses CPU (libx264).
+	// When set, a real 5-frame encode preflight runs at startup. Profiles
+	// with HWAccel="vaapi" are only produced when the preflight passes;
+	// otherwise sessions requesting VAAPI will fail-closed.
+	VaapiDevice string `yaml:"vaapiDevice,omitempty"`
 }
 
 // HLSConfig holds HLS output settings
@@ -465,10 +483,16 @@ type StoreConfig struct {
 // NetworkConfig holds outbound network policy.
 type NetworkConfig struct {
 	Outbound OutboundConfig
+	LAN      LANConfig
 }
 
 // OutboundConfig controls outbound HTTP(S) allowlist enforcement.
 type OutboundConfig struct {
 	Enabled bool
 	Allow   OutboundAllowlist
+}
+
+// LANConfig defines runtime LAN access policy.
+type LANConfig struct {
+	Allow LANAllowlist
 }

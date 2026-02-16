@@ -649,7 +649,7 @@ func (c *Client) AddTimer(ctx context.Context, sRef string, begin, end int64, na
 	}
 
 	if !resp.Result {
-		return fmt.Errorf("failed to add timer: %s", resp.Message)
+		return timerOperationError("timers.add", resp.Message)
 	}
 
 	return nil
@@ -675,7 +675,7 @@ func (c *Client) DeleteTimer(ctx context.Context, sRef string, begin, end int64)
 	}
 
 	if !resp.Result {
-		return fmt.Errorf("failed to delete timer: %s", resp.Message)
+		return timerOperationError("timers.delete", resp.Message)
 	}
 
 	return nil
@@ -758,11 +758,8 @@ func (c *Client) UpdateTimer(ctx context.Context, oldSRef string, oldBegin, oldE
 			}
 			if !resp.Result {
 				// Logic Failure (200 OK but Result=false).
-				// Convert to OWIError for classification.
-				return &OWIError{
-					Status: http.StatusOK,
-					Body:   resp.Message,
-				}
+				// Convert to typed timer operation error for classification.
+				return timerOperationError("timers.change", resp.Message)
 			}
 			return nil
 		}
@@ -971,22 +968,11 @@ func (c *Client) isTechnicalError(err error) bool {
 }
 
 func (c *Client) isConflictError(err error) bool {
-	var owiErr *OWIError
-	if errors.As(err, &owiErr) {
-		return c.isConflict(owiErr.Body)
-	}
-	return false
+	return IsTimerConflict(err)
 }
 
 func (c *Client) isConflict(msg string) bool {
-	msg = strings.ToLower(msg)
-	tokens := []string{"conflict", "overlap", "konflikt", "überschneidung"}
-	for _, t := range tokens {
-		if strings.Contains(msg, t) {
-			return true
-		}
-	}
-	return false
+	return timerMessageHasAnyToken(msg, timerConflictTokens)
 }
 
 // buildTimerChangeFlavorA builds parameters for Flavor A (channel + change_*).

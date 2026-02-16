@@ -15,4 +15,4 @@ are deprecated and removed.
 
 | Item | Replacement | Remove In |
 |:---|:---|:---|
-| XG2G_STREAM_PORT | enigma2.streamPort | v3.5.0 |
+| XG2G_STREAM_PORT | XG2G_E2_STREAM_PORT | v3.5.0 |

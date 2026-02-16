@@ -11,6 +11,8 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/admission"
+	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
+	sessionports "github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
@@ -54,17 +56,17 @@ type Deps struct {
 	ProxyOnly bool
 
 	// V3 Components (Injected from main to allow shared state between API and Worker)
-	V3Bus       bus.Bus
-	V3Store     store.StateStore
-	ResumeStore resume.Store
-	ScanManager *scan.Manager
-	E2Client    *enigma2.Client
+	V3Bus         bus.Bus
+	V3Store       store.StateStore
+	ResumeStore   resume.Store
+	ScanManager   *scan.Manager
+	E2Client      *enigma2.Client
+	MediaPipeline sessionports.MediaPipeline
 }
 
 // V3ComponentSetter defines the interface for injecting v3 components
 type V3ComponentSetter interface {
-	SetV3Components(b bus.Bus, st store.StateStore, rs resume.Store, sm *scan.Manager)
-	SetAdmission(adm *admission.Controller)
+	WireV3Runtime(deps v3.Dependencies, adm *admission.Controller)
 	HealthManager() *health.Manager
 }
 
@@ -108,6 +110,7 @@ func (d *Deps) Validate() error {
 	if !d.ProxyOnly && d.APIHandler == nil {
 		return ErrMissingAPIHandler
 	}
+
 	// Config validation is done by config.Loader
 	return nil
 }

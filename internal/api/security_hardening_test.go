@@ -54,6 +54,20 @@ func TestReloadRequiresRestart_Hardening(t *testing.T) {
 			},
 			mustRest: true,
 		},
+		{
+			name: "LANAllowCIDRsChanged",
+			mod: func(c *config.AppConfig) {
+				c.Network.LAN.Allow.CIDRs = []string{"100.64.0.0/10"}
+			},
+			mustRest: true,
+		},
+		{
+			name: "LogLevelHotReload",
+			mod: func(c *config.AppConfig) {
+				c.LogLevel = "debug"
+			},
+			mustRest: false,
+		},
 	}
 
 	for _, tt := range tests {

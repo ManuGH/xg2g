@@ -1,8 +1,10 @@
 package middleware
 
 import (
+	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/ManuGH/xg2g/internal/control/http/problem"
@@ -22,7 +24,17 @@ func CSRFProtection(allowedOrigins []string) func(http.Handler) http.Handler {
 	if len(allowedOrigins) > 0 {
 		originsMap = make(map[string]bool)
 		for _, origin := range allowedOrigins {
-			originsMap[origin] = true
+			trimmed := strings.TrimSpace(origin)
+			if trimmed == "" {
+				continue
+			}
+			if trimmed == "*" {
+				originsMap["*"] = true
+				continue
+			}
+			if normalized, ok := normalizeOrigin(trimmed); ok {
+				originsMap[normalized] = true
+			}
 		}
 	}
 
@@ -59,9 +71,8 @@ func writeCSRFProblem(w http.ResponseWriter, r *http.Request, detail string) {
 // getRequestOrigin extracts the origin from the request headers.
 // It checks Origin header first, then falls back to Referer.
 func getRequestOrigin(r *http.Request) string {
-	origin := r.Header.Get("Origin")
-	if origin != "" {
-		return strings.TrimSuffix(origin, "/")
+	if normalizedOrigin, ok := normalizeOrigin(r.Header.Get("Origin")); ok {
+		return normalizedOrigin
 	}
 
 	referer := r.Header.Get("Referer")
@@ -74,8 +85,16 @@ func getRequestOrigin(r *http.Request) string {
 		return ""
 	}
 
+	if refererURL.Scheme == "" || refererURL.Host == "" {
+		return ""
+	}
+
 	refererOrigin := refererURL.Scheme + "://" + refererURL.Host
-	return strings.TrimSuffix(refererOrigin, "/")
+	normalizedRefererOrigin, ok := normalizeOrigin(refererOrigin)
+	if !ok {
+		return ""
+	}
+	return normalizedRefererOrigin
 }
 
 // isOriginAllowed implements the core CSRF decision logic (Option A).
@@ -127,5 +146,56 @@ func getStrictSameOrigin(r *http.Request) string {
 		return ""
 	}
 
-	return scheme + "://" + host
+	origin, ok := normalizeOrigin(scheme + "://" + host)
+	if !ok {
+		return ""
+	}
+	return origin
+}
+
+func normalizeOrigin(raw string) (string, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", false
+	}
+
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return "", false
+	}
+	if parsed.Scheme == "" || parsed.Host == "" {
+		return "", false
+	}
+
+	scheme := strings.ToLower(parsed.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return "", false
+	}
+
+	host := strings.ToLower(parsed.Hostname())
+	if host == "" || strings.ContainsAny(host, " \t\r\n/@\\") {
+		return "", false
+	}
+
+	port := parsed.Port()
+	if port != "" {
+		portNum, err := strconv.Atoi(port)
+		if err != nil || portNum < 1 || portNum > 65535 {
+			return "", false
+		}
+	}
+
+	if (scheme == "http" && port == "80") || (scheme == "https" && port == "443") {
+		port = ""
+	}
+
+	authority := host
+	if ip := net.ParseIP(host); ip != nil && strings.Contains(host, ":") {
+		authority = "[" + host + "]"
+	}
+	if port != "" {
+		authority = net.JoinHostPort(host, port)
+	}
+
+	return scheme + "://" + authority, true
 }

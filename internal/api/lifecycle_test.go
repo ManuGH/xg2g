@@ -22,7 +22,7 @@ func TestServer_SetRootContext_AfterStart_ReturnsError(t *testing.T) {
 		return &v3.Server{}
 	}
 
-	s := New(cfg, cfgMgr, WithV3ServerFactory(mockFactory))
+	s := mustNewServer(t, cfg, cfgMgr, WithV3ServerFactory(mockFactory))
 
 	// 2. Pre-start: SetRootContext should succeed
 	err := s.SetRootContext(context.Background())

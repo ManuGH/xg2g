@@ -23,6 +23,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/api"
 	"github.com/ManuGH/xg2g/internal/config"
+	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	"github.com/ManuGH/xg2g/internal/daemon"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/health"
@@ -392,7 +393,10 @@ func main() {
 	// Configure proxy (enabled by default in v2.0 for Zero Config experience)
 
 	// Create API handler
-	s := api.New(cfg, configMgr)
+	s, err := api.New(cfg, configMgr)
+	if err != nil {
+		logger.Fatal().Err(err).Msg("failed to initialize API server")
+	}
 	if err := s.SetRootContext(ctx); err != nil {
 		logger.Fatal().Err(err).Msg("failed to set root context")
 	}
@@ -445,8 +449,15 @@ func main() {
 
 	v3Scan := scan.NewManager(v3ScanStore, playlistPath, e2Client)
 
+	mediaPipeline := buildMediaPipeline(cfg, e2Client, logger)
+
 	// Inject v3 components into API server
-	s.SetV3Components(v3Bus, v3Store, resumeStore, v3Scan)
+	s.WireV3Runtime(v3.Dependencies{
+		Bus:         v3Bus,
+		Store:       v3Store,
+		ResumeStore: resumeStore,
+		Scan:        v3Scan,
+	}, nil)
 
 	// Phase 8: Start Recording Cache Eviction Worker (Background)
 	go s.StartRecordingCacheEvicter(ctx)
@@ -551,11 +562,12 @@ func main() {
 		ProxyOnly: false, // Deprecated, always false now
 
 		// Inject Shared V3 Components
-		V3Bus:       v3Bus,
-		V3Store:     v3Store,
-		ResumeStore: resumeStore,
-		ScanManager: v3Scan,
-		E2Client:    e2Client,
+		V3Bus:         v3Bus,
+		V3Store:       v3Store,
+		ResumeStore:   resumeStore,
+		ScanManager:   v3Scan,
+		E2Client:      e2Client,
+		MediaPipeline: mediaPipeline,
 	}
 
 	// Create daemon manager

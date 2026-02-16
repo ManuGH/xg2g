@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	api "github.com/ManuGH/xg2g/internal/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -64,7 +65,7 @@ enigma2:
 			return recservice.PlaybackInfoResult{}, nil
 		},
 	}
-	container.Server.SetResolver(mock)
+	container.Server.WireV3Overrides(api.V3Overrides{Resolver: mock})
 
 	err = container.Start(ctx)
 	require.NoError(t, err)

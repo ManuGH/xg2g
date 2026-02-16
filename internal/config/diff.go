@@ -75,19 +75,11 @@ func (s *ChangeSummary) compareStruct(prefix string, oldVal, nextVal reflect.Val
 	}
 }
 
-var (
-	// hotReloadAllowlist defines the strictly permitted fields for runtime tuning.
-	hotReloadAllowlist = map[string]struct{}{
-		"LogLevel": {},
-	}
-)
-
 func (s *ChangeSummary) recordChange(fieldPath string, r *Registry) {
 	s.ChangedFields = append(s.ChangedFields, fieldPath)
 
 	entry, ok := r.ByField[fieldPath]
-	_, allowed := hotReloadAllowlist[fieldPath]
-	if !ok || !entry.HotReloadable || !allowed {
+	if !ok || !entry.HotReloadable {
 		s.RestartRequired = true
 	}
 }

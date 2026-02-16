@@ -1,38 +1,35 @@
-# ADR-003: Transcoder Infrastructure Migration
+# ADR-003: Legacy Pipeline Exec Adapter Removal
 
-**Status:** Reserved
-**Date:** 2025-01-23
-**Context:** Phase 8/9 hardening
+**Status:** Accepted
+**Date:** 2026-02-16
+**Context:** Sprint 4 (structure cleanup)
 
 ## Decision
 
-This ADR number is **reserved** for documenting the transcoder infrastructure
-migration from the legacy interface to the new `infra/ffmpeg.Executor` interface.
+Remove the unused legacy `internal/pipeline/exec` root package, including
+the incomplete `transcoderAdapter` shim.
 
-## Current State
+## Why
 
-The migration is in progress with a compatibility adapter in place:
-- **Adapter:** `internal/pipeline/exec/transcoderAdapter`
-- **Timeline:** Adapter scheduled for removal by v3.2.0 (Phase 10 cleanup)
-- **Migration Status:** Partial - adapter exists to maintain compatibility
+- The adapter path was not imported by production code.
+- `transcoderAdapter` was intentionally non-functional (`Start/Wait` returned errors),
+  which made it a latent failure path and a maintenance trap.
+- Keeping dead compatibility layers increases coupling noise between API/control
+  and media pipeline responsibilities.
 
-## Rationale
+## Scope
 
-ADR-003 was referenced in code but never formally documented. To maintain
-ADR numbering integrity and governance traceability, this placeholder reserves
-the number until proper documentation can be completed.
+Removed files:
 
-## Technical Debt
+- `internal/pipeline/exec/interfaces.go`
+- `internal/pipeline/exec/real_factory.go`
+- `internal/pipeline/exec/stubs.go`
+- `internal/pipeline/exec/transcoder_adapter.go`
 
-The `transcoderAdapter` shim exists to avoid breaking legacy pipeline code.
-When this adapter is removed in v3.2.0, this ADR should be updated with:
-- Migration strategy and timeline
-- Interface compatibility guarantees
-- Breaking changes and migration guide
-- Rollback plan (if needed)
+`internal/pipeline/exec/enigma2/*` remains and is still used by active code paths.
 
-## References
+## Consequences
 
-- Implementation: `internal/pipeline/exec/transcoder_adapter.go`
-- Deadline: v3.2.0 (Phase 10 cleanup)
-- Related: New executor in `internal/infra/ffmpeg/`
+- Architecture boundary is clearer: active runtime code uses current pipeline/media
+  abstractions only.
+- Dead adapter contract cannot be accidentally revived in future changes.

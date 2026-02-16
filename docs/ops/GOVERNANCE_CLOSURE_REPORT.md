@@ -61,10 +61,10 @@ Runs all gates:
 
 ## Key Documents
 
-- [CONTRACT_INVARIANTS.md](file:///root/xg2g/docs/ops/CONTRACT_INVARIANTS.md)
-- [ADR-014 FileConfig](file:///root/xg2g/docs/arch/ADR_014_FILECONFIG_CURATED_SURFACE.md)
-- [ADR P4-2 Core Semantics](file:///root/xg2g/docs/arch/ADR_PLAYBACK_DECISION_P4_2_CORE_SEMANTICS.md)
-- [GOVERNANCE_BASELINE.json](file:///root/xg2g/testdata/contract/GOVERNANCE_BASELINE.json)
+- [CONTRACT_INVARIANTS.md](CONTRACT_INVARIANTS.md)
+- [ADR-014 FileConfig](../arch/ADR_014_FILECONFIG_CURATED_SURFACE.md)
+- [ADR P4-2 Core Semantics](../arch/ADR_PLAYBACK_DECISION_P4_2_CORE_SEMANTICS.md)
+- [GOVERNANCE_BASELINE.json](../../testdata/contract/GOVERNANCE_BASELINE.json)
 
 ---
 

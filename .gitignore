@@ -34,6 +34,12 @@ pkg/
 /test_output.txt
 /test_report.txt
 test_*.txt
+*.log
+*_logs.txt
+debug*.txt
+vuln*.txt
+test_output*.txt
+test_results*.txt
 coverage.out
 coverage.html
 output.log
@@ -90,6 +96,9 @@ internal/control/http/v3/openapi.yaml
 .vscode/
 .idea/
 .DS_Store
+._*
+.Spotlight-V100/
+.Trashes/
 .cache/
 .codex_patch.diff
 .copilot-instructions.md

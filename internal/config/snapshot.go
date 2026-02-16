@@ -52,9 +52,6 @@ type TranscoderRuntime struct {
 	Channels   int
 	FFmpegPath string
 
-	GPUEnabled    bool
-	TranscoderURL string
-
 	VideoTranscode bool
 	VideoCodec     string
 	VAAPIDevice    string

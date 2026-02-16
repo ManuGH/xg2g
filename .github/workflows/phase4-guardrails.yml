@@ -2,6 +2,18 @@ name: Phase 4 Guardrails
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "webui/**"
+      - "scripts/**"
+      - ".github/workflows/phase4-guardrails.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "webui/**"
+      - "scripts/**"
+      - ".github/workflows/phase4-guardrails.yml"
 
 concurrency:
   group: repo-${{ github.event.pull_request.number || github.ref }}
@@ -17,8 +29,14 @@ jobs:
 
       - name: Check for new JSX files
         run: |
+          set -euo pipefail
           # Get list of new .jsx files in this PR/commit
-          NEW_JSX=$(git diff --name-only --diff-filter=A ${{ github.event.before }}..${{ github.sha }} | grep '\.jsx$' || true)
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            RANGE="origin/${{ github.base_ref }}...${{ github.sha }}"
+          else
+            RANGE="${{ github.event.before }}..${{ github.sha }}"
+          fi
+          NEW_JSX=$(git diff --name-only --diff-filter=A "$RANGE" | grep '\.jsx$' || true)
 
           if [ -n "$NEW_JSX" ]; then
             echo "❌ ERROR: New .jsx files detected (Phase 4 DoD B violation)"
