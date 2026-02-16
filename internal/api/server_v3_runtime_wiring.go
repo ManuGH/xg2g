@@ -5,45 +5,14 @@ package api
 
 import (
 	"context"
-	"reflect"
 
-	"github.com/ManuGH/xg2g/internal/channels"
 	"github.com/ManuGH/xg2g/internal/control/admission"
 	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
-	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/control/vod"
-	"github.com/ManuGH/xg2g/internal/dvr"
-	"github.com/ManuGH/xg2g/internal/epg"
-	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/library"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
-	"github.com/ManuGH/xg2g/internal/recordings"
-	"github.com/ManuGH/xg2g/internal/verification"
 )
-
-type v3DependencySnapshot struct {
-	handler             *v3.Server
-	runtimeDeps         v3.Dependencies
-	recordingPathMapper *recordings.PathMapper
-	channelManager      *channels.Manager
-	seriesManager       *dvr.Manager
-	seriesEngine        *dvr.SeriesEngine
-	vodManager          *vod.Manager
-	epgCache            *epg.TV
-	healthManager       *health.Manager
-	recordingsService   recservice.Service
-	requestShutdown     func(context.Context) error
-	preflightProvider   v3.PreflightProvider
-}
-
-// V3Overrides applies optional test/runtime overrides that are not part of core runtime wiring.
-type V3Overrides struct {
-	VerificationStore verification.Store
-	VODProber         vod.Prober
-	Resolver          recservice.Resolver
-	RecordingsService recservice.Service
-}
 
 func (s *Server) snapshotV3Dependencies() v3DependencySnapshot {
 	s.mu.RLock()
@@ -121,64 +90,6 @@ func (s *Server) WireV3Runtime(runtimeDeps v3.Dependencies, adm *admission.Contr
 	}
 }
 
-// WireV3Overrides applies optional v3 override dependencies through one typed entrypoint.
-func (s *Server) WireV3Overrides(overrides V3Overrides) {
-	if !isNilInterface(overrides.VerificationStore) {
-		s.mu.Lock()
-		s.verificationStore = overrides.VerificationStore
-		s.mu.Unlock()
-	}
-
-	s.mu.RLock()
-	handler := s.v3Handler
-	cfg := s.cfg
-	owiClient := s.owiClient
-	resumeStore := s.v3RuntimeDeps.ResumeStore
-	vodManager := s.vodManager
-	s.mu.RUnlock()
-
-	if !isNilInterface(overrides.VODProber) && vodManager != nil {
-		vodManager.SetProber(overrides.VODProber)
-	}
-
-	var resolvedService recservice.Service
-	updatedService := false
-
-	if !isNilInterface(overrides.Resolver) {
-		if handler != nil {
-			handler.SetResolver(overrides.Resolver)
-		}
-		if isNilInterface(overrides.RecordingsService) {
-			owiAdapter := v3.NewOWIAdapter(owiClient)
-			resumeAdapter := v3.NewResumeAdapter(resumeStore)
-			recSvc, err := recservice.NewService(&cfg, vodManager, overrides.Resolver, owiAdapter, resumeAdapter, overrides.Resolver)
-			if err != nil {
-				log.L().Error().Err(err).Msg("failed to re-initialize recordings service")
-			} else {
-				resolvedService = recSvc
-				updatedService = true
-			}
-		}
-	}
-
-	if !isNilInterface(overrides.RecordingsService) {
-		resolvedService = overrides.RecordingsService
-		updatedService = true
-	}
-
-	if updatedService {
-		s.mu.Lock()
-		s.recordingsService = resolvedService
-		s.mu.Unlock()
-		s.syncV3HandlerDependencies()
-	}
-}
-
-// SetVerificationStore is a compatibility wrapper for override wiring call sites.
-func (s *Server) SetVerificationStore(store verification.Store) {
-	s.WireV3Overrides(V3Overrides{VerificationStore: store})
-}
-
 // LibraryService returns the underlying library service from v3 handler.
 func (s *Server) LibraryService() *library.Service {
 	if s.v3Handler != nil {
@@ -190,19 +101,6 @@ func (s *Server) LibraryService() *library.Service {
 // VODManager returns the underlying VOD manager.
 func (s *Server) VODManager() *vod.Manager {
 	return s.vodManager
-}
-
-func isNilInterface(value any) bool {
-	if value == nil {
-		return true
-	}
-	v := reflect.ValueOf(value)
-	switch v.Kind() {
-	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Ptr, reflect.Slice:
-		return v.IsNil()
-	default:
-		return false
-	}
 }
 
 type logSourceWrapper struct{}
