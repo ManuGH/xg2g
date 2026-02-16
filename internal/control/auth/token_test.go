@@ -45,6 +45,9 @@ func TestAuthorizeToken(t *testing.T) {
 	if AuthorizeToken("secret", "") != false {
 		t.Fatal("AuthorizeToken should reject empty expected token")
 	}
+	if AuthorizeToken("secret", "secret-token") != false {
+		t.Fatal("AuthorizeToken should reject length mismatch")
+	}
 }
 
 func TestAuthorizeRequest(t *testing.T) {
