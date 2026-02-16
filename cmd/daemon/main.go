@@ -449,6 +449,8 @@ func main() {
 
 	v3Scan := scan.NewManager(v3ScanStore, playlistPath, e2Client)
 
+	mediaPipeline := buildMediaPipeline(cfg, e2Client, logger)
+
 	// Inject v3 components into API server
 	s.WireV3Runtime(v3.Dependencies{
 		Bus:         v3Bus,
@@ -560,11 +562,12 @@ func main() {
 		ProxyOnly: false, // Deprecated, always false now
 
 		// Inject Shared V3 Components
-		V3Bus:       v3Bus,
-		V3Store:     v3Store,
-		ResumeStore: resumeStore,
-		ScanManager: v3Scan,
-		E2Client:    e2Client,
+		V3Bus:         v3Bus,
+		V3Store:       v3Store,
+		ResumeStore:   resumeStore,
+		ScanManager:   v3Scan,
+		E2Client:      e2Client,
+		MediaPipeline: mediaPipeline,
 	}
 
 	// Create daemon manager

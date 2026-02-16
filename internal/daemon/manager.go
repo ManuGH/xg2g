@@ -22,8 +22,6 @@ import (
 	worker "github.com/ManuGH/xg2g/internal/domain/session/manager"
 	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/infra/bus"
-	"github.com/ManuGH/xg2g/internal/infra/media/ffmpeg"
-	"github.com/ManuGH/xg2g/internal/infra/media/stub"
 	"github.com/ManuGH/xg2g/internal/infra/platform"
 	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
 	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
@@ -317,35 +315,11 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 		},
 	}
 
-	if cfg.Engine.Mode == "virtual" {
-		orch.Pipeline = stub.NewAdapter()
-	} else {
-		adapter := ffmpeg.NewLocalAdapter(
-			cfg.FFmpeg.Bin,
-			cfg.FFmpeg.FFprobeBin,
-			cfg.HLS.Root,
-			e2Client,
-			m.logger,
-			cfg.Enigma2.AnalyzeDuration,
-			cfg.Enigma2.ProbeSize,
-			cfg.HLS.DVRWindow,
-			cfg.FFmpeg.KillTimeout,
-			cfg.Enigma2.FallbackTo8001,
-			cfg.Enigma2.PreflightTimeout,
-			cfg.HLS.SegmentSeconds,
-			cfg.Timeouts.TranscodeStart,
-			cfg.Timeouts.TranscodeNoProgress,
-			cfg.FFmpeg.VaapiDevice,
-		)
-		// VAAPI preflight (fail-fast at startup if configured but broken)
-		if cfg.FFmpeg.VaapiDevice != "" {
-			if err := adapter.PreflightVAAPI(); err != nil {
-				m.logger.Warn().Err(err).Str("device", cfg.FFmpeg.VaapiDevice).
-					Msg("VAAPI preflight failed; GPU transcoding will be unavailable for sessions requesting it")
-			}
-		}
-		orch.Pipeline = adapter
+	pipeline := m.deps.MediaPipeline
+	if pipeline == nil {
+		return ErrMissingMediaPipeline
 	}
+	orch.Pipeline = pipeline
 
 	// 4. Inject into API Server (Shadow Receiving)
 	if m.deps.APIServerSetter != nil {
