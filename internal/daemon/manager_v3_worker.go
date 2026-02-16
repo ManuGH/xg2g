@@ -93,6 +93,11 @@ func (m *manager) registerV3StoreCloseHooks(deps v3WorkerRuntimeDeps) {
 			return c.Close()
 		})
 	}
+	if deps.scanManager != nil {
+		m.RegisterShutdownHook("scan_store_close", func(ctx context.Context) error {
+			return deps.scanManager.Close()
+		})
+	}
 }
 
 func (m *manager) newAdmissionController(cfg config.AppConfig) *admission.Controller {

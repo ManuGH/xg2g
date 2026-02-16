@@ -3,6 +3,7 @@ package vod
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"sort"
 	"strings"
@@ -23,6 +24,7 @@ type Manager struct {
 	metadata   map[string]Metadata // Cached artifact metadata
 	probeCh    chan probeRequest
 	workerWg   sync.WaitGroup
+	buildWg    sync.WaitGroup
 	sfg        singleflight.Group
 	pathMapper PathMapper
 	started    bool
@@ -55,16 +57,42 @@ func NewManager(runner Runner, prober Prober, pathMapper PathMapper) (*Manager, 
 		cancel:     cancel,
 	}
 
-	// Fix 25: Auto-start probe pool
-	m.StartProberPool(ctx)
-
 	return m, nil
 }
 
 // Shutdown stops the manager and cancels all background contexts.
 func (m *Manager) Shutdown() {
+	if m == nil {
+		return
+	}
 	m.cancel()
 	m.CancelAll()
+	m.workerWg.Wait()
+	m.buildWg.Wait()
+}
+
+// ShutdownContext stops all background work and waits for worker drain or context timeout.
+func (m *Manager) ShutdownContext(ctx context.Context) error {
+	if m == nil {
+		return nil
+	}
+	if ctx == nil {
+		return errors.New("shutdown context is nil")
+	}
+	m.cancel()
+	m.CancelAll()
+
+	var errs []error
+	if err := waitGroupWithContext(ctx, &m.workerWg); err != nil {
+		errs = append(errs, fmt.Errorf("prober workers: %w", err))
+	}
+	if err := waitGroupWithContext(ctx, &m.buildWg); err != nil {
+		errs = append(errs, fmt.Errorf("build workers: %w", err))
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("vod manager shutdown errors: %v", errs)
+	}
+	return nil
 }
 
 // Probe delegates to the infra prober
@@ -604,7 +632,12 @@ func (m *Manager) StartBuild(ctx context.Context, jobID, metaID, input, workDir,
 
 	// Run monitor in background
 	// Use manager context so we can cancel it on Shutdown
-	go mon.Run(m.ctx)
+	runCtx := m.ctx
+	m.buildWg.Add(1)
+	go func() {
+		defer m.buildWg.Done()
+		mon.Run(runCtx)
+	}()
 
 	return mon, nil
 }
@@ -690,5 +723,20 @@ func (m *Manager) CancelAll() {
 		if err := mon.StopGracefully(); err != nil {
 			log.Error().Err(err).Str("job_id", mon.jobID).Msg("failed to stop monitor")
 		}
+	}
+}
+
+func waitGroupWithContext(ctx context.Context, wg *sync.WaitGroup) error {
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }

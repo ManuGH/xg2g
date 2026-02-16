@@ -87,6 +87,8 @@ type Server struct {
 	storageMonitor    *StorageMonitor
 	monitorStarted    bool
 	monitorMu         sync.Mutex
+	runtimeCtx        context.Context
+	runtimeCancel     context.CancelFunc
 
 	// Middlewares (injectable for tests)
 	AuthMiddlewareOverride func(http.Handler) http.Handler
@@ -251,6 +253,58 @@ func (s *Server) SetShutdownHandler(fn func(context.Context) error) {
 	s.requestShutdown = fn
 }
 
+// SetRuntimeContext binds runtime workers to the provided root context.
+func (s *Server) SetRuntimeContext(ctx context.Context) error {
+	if ctx == nil {
+		return fmt.Errorf("runtime context is nil")
+	}
+
+	s.mu.Lock()
+	if s.runtimeCancel != nil {
+		s.runtimeCancel()
+	}
+	s.runtimeCtx, s.runtimeCancel = context.WithCancel(ctx)
+	s.mu.Unlock()
+	return nil
+}
+
+// Shutdown stops v3 background workers and closes owned resources.
+func (s *Server) Shutdown(ctx context.Context) error {
+	if ctx == nil {
+		return fmt.Errorf("shutdown context is nil")
+	}
+
+	s.mu.Lock()
+	runtimeCancel := s.runtimeCancel
+	s.runtimeCancel = nil
+	s.runtimeCtx = nil
+	vodMgr := s.vodManager
+	librarySvc := s.libraryService
+	s.mu.Unlock()
+
+	if runtimeCancel != nil {
+		runtimeCancel()
+	}
+
+	var errs []error
+	if vodMgr != nil {
+		if err := vodMgr.ShutdownContext(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("vod manager shutdown: %w", err))
+		}
+	}
+	if librarySvc != nil {
+		if store := librarySvc.GetStore(); store != nil {
+			if err := store.Close(); err != nil {
+				errs = append(errs, fmt.Errorf("library store close: %w", err))
+			}
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("v3 shutdown errors: %v", errs)
+	}
+	return nil
+}
+
 // authMiddleware is the default authentication middleware.
 func (s *Server) authMiddleware(h http.Handler) http.Handler {
 	if s.AuthMiddlewareOverride != nil {
@@ -383,8 +437,9 @@ func (s *Server) SetDependencies(deps Dependencies) {
 
 	if !isNil(deps.VODManager) {
 		s.vodManager = deps.VODManager
-		// Start the background prober pool (Phase 2 compliance)
-		s.vodManager.StartProberPool(context.Background())
+		if s.runtimeCtx != nil {
+			s.vodManager.StartProberPool(s.runtimeCtx)
+		}
 		// PR3: Initialize Artifacts Resolver
 		s.artifacts = artifacts.New(&s.cfg, deps.VODManager, s.recordingPathMapper)
 	} else {

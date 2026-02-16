@@ -80,6 +80,10 @@ func NewManager(serverCfg config.ServerConfig, deps Deps) (Manager, error) {
 
 // Start starts all configured servers and blocks until context is cancelled.
 func (m *manager) Start(ctx context.Context) error {
+	if ctx == nil {
+		return fmt.Errorf("start context is nil")
+	}
+
 	m.mu.Lock()
 	if m.started {
 		m.mu.Unlock()
@@ -125,8 +129,8 @@ func (m *manager) Start(ctx context.Context) error {
 	select {
 	case err := <-errChan:
 		m.logger.Error().Err(err).Msg("Server error, initiating shutdown")
-		// Use bounded timeout for shutdown instead of Background
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		// Use a detached-but-bounded context so shutdown can complete even if parent is canceled.
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
 		if shutdownErr := m.Shutdown(shutdownCtx); shutdownErr != nil {
 			return fmt.Errorf("%w (shutdown: %v)", err, shutdownErr)
@@ -134,8 +138,8 @@ func (m *manager) Start(ctx context.Context) error {
 		return err
 	case <-ctx.Done():
 		m.logger.Info().Msg("Shutdown signal received")
-		// Use bounded timeout for shutdown instead of Background
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		// Use a detached-but-bounded context so shutdown can complete even if parent is canceled.
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
 		return m.Shutdown(shutdownCtx)
 	}
@@ -223,6 +227,10 @@ func (m *manager) startMetricsServer(_ context.Context, errChan chan<- error) er
 }
 
 func (m *manager) Shutdown(ctx context.Context) error {
+	if ctx == nil {
+		return fmt.Errorf("shutdown context is nil")
+	}
+
 	m.mu.Lock()
 	if m.stopping {
 		m.mu.Unlock()
@@ -237,8 +245,8 @@ func (m *manager) Shutdown(ctx context.Context) error {
 
 	m.logger.Info().Msg("Shutting down daemon manager")
 
-	// Create shutdown context with timeout
-	shutdownCtx, cancel := context.WithTimeout(ctx, m.serverCfg.ShutdownTimeout)
+	// Create a bounded shutdown context independent from caller cancellation.
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), m.serverCfg.ShutdownTimeout)
 	defer cancel()
 
 	var errs []error
