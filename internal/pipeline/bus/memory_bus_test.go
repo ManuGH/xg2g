@@ -7,6 +7,7 @@ package bus
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/prometheus/client_golang/prometheus"
@@ -21,18 +22,35 @@ func getCounterValue(t *testing.T, counter prometheus.Counter) float64 {
 	return metric.GetCounter().GetValue()
 }
 
-func TestMemoryBusDropMetrics(t *testing.T) {
+func TestMemoryBusPublishContextTimeoutIncrementsDropMetrics(t *testing.T) {
 	b := NewMemoryBus()
 	sub, err := b.Subscribe(context.Background(), "topic")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = sub.Close() })
 
-	initial := getCounterValue(t, metrics.BusDropsTotal.WithLabelValues("topic"))
-
-	for i := 0; i < 100; i++ {
-		_ = b.Publish(context.Background(), "topic", "msg")
+	// Fill subscriber channel to capacity so next publish blocks.
+	for i := 0; i < cap(sub.C()); i++ {
+		require.NoError(t, b.Publish(context.Background(), "topic", "msg"))
 	}
 
-	final := getCounterValue(t, metrics.BusDropsTotal.WithLabelValues("topic"))
-	require.Greater(t, final, initial, "expected bus drop counter to increase")
+	initialLegacy := getCounterValue(t, metrics.BusDropsTotal.WithLabelValues("topic"))
+	initialReasoned := getCounterValue(t, metrics.BusDroppedTotal.WithLabelValues("topic", "timeout"))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	err = b.Publish(ctx, "topic", "blocked")
+	require.Error(t, err)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+
+	finalLegacy := getCounterValue(t, metrics.BusDropsTotal.WithLabelValues("topic"))
+	finalReasoned := getCounterValue(t, metrics.BusDroppedTotal.WithLabelValues("topic", "timeout"))
+	require.Greater(t, finalLegacy, initialLegacy, "expected legacy bus drop counter to increase")
+	require.Greater(t, finalReasoned, initialReasoned, "expected reasoned bus drop counter to increase")
+}
+
+func TestMemoryBusPublishRejectsNilContext(t *testing.T) {
+	b := NewMemoryBus()
+	err := b.Publish(nil, "topic", "msg")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "context is nil")
 }

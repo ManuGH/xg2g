@@ -417,7 +417,10 @@ func main() {
 	resumeStore, err := resume.NewStore(cfg.Store.Backend, cfg.Store.Path)
 	if err != nil {
 		logger.Warn().Err(err).Msg("failed to initialize resume store, falling back to memory")
-		resumeStore, _ = resume.NewStore("memory", "")
+		resumeStore, err = resume.NewStore("memory", "")
+		if err != nil {
+			logger.Fatal().Err(err).Msg("failed to initialize fallback resume store")
+		}
 	}
 
 	// Scan Manager & Store
@@ -584,7 +587,8 @@ func main() {
 		shutdownOnce.Do(func() {
 			stop()
 			if ctx == nil {
-				ctx = context.Background()
+				shutdownErr = fmt.Errorf("shutdown context is nil")
+				return
 			}
 			shutdownErr = mgr.Shutdown(ctx)
 		})

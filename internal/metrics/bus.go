@@ -14,12 +14,26 @@ var (
 		Name: "xg2g_bus_drop_total",
 		Help: "Total number of in-memory bus message drops (backpressure)",
 	}, []string{"topic"})
+
+	BusDroppedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "xg2g_bus_dropped_total",
+		Help: "Total number of in-memory bus message drops by topic and reason",
+	}, []string{"topic", "reason"})
 )
 
 // IncBusDrop records a dropped bus message for the given topic.
 func IncBusDrop(topic string) {
+	IncBusDropReason(topic, "full")
+}
+
+// IncBusDropReason records a dropped bus message with a concrete reason.
+func IncBusDropReason(topic, reason string) {
 	if topic == "" {
 		topic = "unknown"
 	}
+	if reason == "" {
+		reason = "unknown"
+	}
 	BusDropsTotal.WithLabelValues(topic).Inc()
+	BusDroppedTotal.WithLabelValues(topic, reason).Inc()
 }

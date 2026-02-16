@@ -6,6 +6,8 @@ package bus
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 
@@ -14,7 +16,8 @@ import (
 )
 
 // MemoryBus is an in-memory pub/sub used for unit tests and local prototyping.
-// It is not durable and provides best-effort delivery.
+// It is not durable and provides at-least-once in-process delivery while
+// publish contexts remain active.
 type MemoryBus struct {
 	mu   sync.RWMutex
 	subs map[string][]chan Message
@@ -28,23 +31,39 @@ func NewMemoryBus() *MemoryBus {
 	return &MemoryBus{subs: make(map[string][]chan Message)}
 }
 
-func (b *MemoryBus) Publish(_ context.Context, topic string, msg Message) error {
+func publishDropReason(err error) string {
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return "timeout"
+	case errors.Is(err, context.Canceled):
+		return "canceled"
+	default:
+		return "context_done"
+	}
+}
+
+func (b *MemoryBus) Publish(ctx context.Context, topic string, msg Message) error {
+	if ctx == nil {
+		return fmt.Errorf("publish context is nil")
+	}
 	b.mu.RLock()
 	chs := append([]chan Message(nil), b.subs[topic]...)
 	b.mu.RUnlock()
 	for _, ch := range chs {
 		select {
 		case ch <- msg:
-		default:
-			// drop on backpressure to avoid producer blockage
-			metrics.IncBusDrop(topic)
+		case <-ctx.Done():
+			reason := publishDropReason(ctx.Err())
+			metrics.IncBusDropReason(topic, reason)
 			count := dropCount.Add(1)
 			if count%dropLogEvery == 0 {
 				log.L().Warn().
 					Str("topic", topic).
+					Str("reason", reason).
 					Uint64("dropped", count).
-					Msg("memory bus dropping messages due to backpressure")
+					Msg("memory bus failed to publish due to context cancellation")
 			}
+			return fmt.Errorf("publish topic %q: %w", topic, ctx.Err())
 		}
 	}
 	return nil
