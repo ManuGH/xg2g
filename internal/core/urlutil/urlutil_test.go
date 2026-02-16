@@ -20,4 +20,3 @@ func TestSanitizeURL_InvalidInputDoesNotLeak(t *testing.T) {
 		t.Fatalf("unexpected sanitized value: %q", got)
 	}
 }
-
