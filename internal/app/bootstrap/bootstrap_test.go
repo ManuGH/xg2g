@@ -21,8 +21,10 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// Container holds the wired service graph.
-// It represents the "Single Source of Truth" for the runtime application structure.
+// This file intentionally stays test-only (bootstrap_test.go).
+// Runtime composition is owned by cmd/daemon; this package is a test harness.
+
+// Container holds the wired test service graph.
 type Container struct {
 	Config        config.AppConfig
 	ConfigManager *config.Manager
@@ -38,8 +40,7 @@ type Container struct {
 // Global state for logger - unavoidable due to zerolog global configuration usage in current codebase
 var loggerOnce sync.Once
 
-// WireServices bootstraps the entire application from a config file (or auto-discovery).
-// This replaces the ad-hoc wiring in cmd/daemon/main.go.
+// WireServices bootstraps a test harness from config for integration-style API tests.
 func WireServices(ctx context.Context, version, commit, buildDate string, explicitConfigPath string) (*Container, error) {
 	// 1. Initial Logger Setup (Safe defaults)
 	// We configure this globally once.

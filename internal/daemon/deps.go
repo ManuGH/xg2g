@@ -10,8 +10,6 @@ import (
 	"net/http"
 
 	"github.com/ManuGH/xg2g/internal/config"
-	"github.com/ManuGH/xg2g/internal/control/admission"
-	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	sessionports "github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/health"
@@ -38,8 +36,9 @@ type Deps struct {
 	// APIHandler is the HTTP handler for the API server
 	APIHandler http.Handler
 
-	// APIServerSetter allows injecting v3 components into the API server
-	APIServerSetter V3ComponentSetter
+	// APIServerSetter provides daemon-visible API hooks (readiness, lifecycle).
+	// Runtime v3 component wiring belongs to the composition root (cmd/daemon).
+	APIServerSetter APIServerHooks
 
 	// ProxyConfig contains proxy server configuration (if enabled)
 	ProxyConfig *ProxyConfig
@@ -64,9 +63,9 @@ type Deps struct {
 	MediaPipeline sessionports.MediaPipeline
 }
 
-// V3ComponentSetter defines the interface for injecting v3 components
-type V3ComponentSetter interface {
-	WireV3Runtime(deps v3.Dependencies, adm *admission.Controller)
+// APIServerHooks exposes only daemon-safe hooks from the API server.
+// Keep this narrow to avoid runtime ownership cycles between daemon and API.
+type APIServerHooks interface {
 	HealthManager() *health.Manager
 }
 
