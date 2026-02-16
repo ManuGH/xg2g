@@ -15,7 +15,7 @@ import (
 )
 
 func TestScopeMiddleware_DenyWriteByDefault(t *testing.T) {
-	s := New(config.AppConfig{
+	s := mustNewServer(t, config.AppConfig{
 		APIToken:       "secret",
 		APITokenScopes: []string{string(v3.ScopeV3Read)},
 		Streaming: config.StreamingConfig{
@@ -37,7 +37,7 @@ func TestScopeMiddleware_DenyWriteByDefault(t *testing.T) {
 }
 
 func TestScopeMiddleware_WriteImpliesRead(t *testing.T) {
-	s := New(config.AppConfig{
+	s := mustNewServer(t, config.AppConfig{
 		APIToken:       "secret",
 		APITokenScopes: []string{string(v3.ScopeV3Write)},
 		Streaming: config.StreamingConfig{
@@ -59,7 +59,7 @@ func TestScopeMiddleware_WriteImpliesRead(t *testing.T) {
 }
 
 func TestScopeMiddleware_TokenList(t *testing.T) {
-	s := New(config.AppConfig{
+	s := mustNewServer(t, config.AppConfig{
 		APITokens: []config.ScopedToken{
 			{Token: "scoped", Scopes: []string{string(v3.ScopeV3Write)}},
 		},
@@ -83,7 +83,7 @@ func TestScopeMiddleware_TokenList(t *testing.T) {
 
 func TestScopeMiddleware_EmptyScopesUnauthorized(t *testing.T) {
 	t.Run("api_token", func(t *testing.T) {
-		s := New(config.AppConfig{
+		s := mustNewServer(t, config.AppConfig{
 			APIToken:       "secret",
 			APITokenScopes: nil,
 			Streaming: config.StreamingConfig{
@@ -105,7 +105,7 @@ func TestScopeMiddleware_EmptyScopesUnauthorized(t *testing.T) {
 	})
 
 	t.Run("token_list", func(t *testing.T) {
-		s := New(config.AppConfig{
+		s := mustNewServer(t, config.AppConfig{
 			APITokens: []config.ScopedToken{
 				{Token: "scoped", Scopes: nil},
 			},

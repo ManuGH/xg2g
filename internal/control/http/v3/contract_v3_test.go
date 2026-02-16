@@ -165,10 +165,13 @@ func newV3TestServerWithAdmission(t *testing.T, hlsRoot string, mode admissionHa
 	vm, err := vod.NewManager(&successRunner{fsRoot: hlsRoot}, &noopProber{}, pm)
 	require.NoError(t, err)
 
-	s.SetDependencies(
-		b, st, rs, nil, pm, nil, nil, nil, vm,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
-	)
+	s.SetDependencies(Dependencies{
+		Bus:         b,
+		Store:       st,
+		ResumeStore: rs,
+		PathMapper:  pm,
+		VODManager:  vm,
+	})
 	// Admission (Slice 2)
 	admCtrl := admission.NewController(cfg)
 	if mode == admissionHarnessUnseeded {

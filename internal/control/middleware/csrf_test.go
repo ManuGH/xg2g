@@ -172,3 +172,42 @@ func TestCSRFProtection_ProblemResponse(t *testing.T) {
 		t.Fatalf("unexpected code: %v", payload["code"])
 	}
 }
+
+func TestCSRFProtection_NormalizesDefaultPortOrigins(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	csrfHandler := CSRFProtection([]string{"https://example.com:443"})(handler)
+
+	req := httptest.NewRequest(http.MethodPost, "/test", nil)
+	req.Host = "example.com"
+	req.Header.Set("Origin", "https://example.com")
+	req.Header.Set("X-Forwarded-Proto", "https")
+
+	w := httptest.NewRecorder()
+	csrfHandler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for normalized default-port origin, got %d", w.Code)
+	}
+}
+
+func TestCSRFProtection_BlocksRelativeReferer(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	csrfHandler := CSRFProtection(nil)(handler)
+
+	req := httptest.NewRequest(http.MethodPost, "/test", nil)
+	req.Host = "example.com"
+	req.Header.Set("Referer", "/relative/path")
+
+	w := httptest.NewRecorder()
+	csrfHandler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for relative referer, got %d", w.Code)
+	}
+}

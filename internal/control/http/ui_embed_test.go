@@ -7,12 +7,13 @@ package http
 import (
 	"io/fs"
 	"os"
+	"strings"
 	"testing"
 )
 
 // TestUIEmbedContract verifies the WebUI embed contract:
-// - dist/index.html exists (entry file) - HARD REQUIREMENT
-// - At least one additional asset file exists - SOFT CHECK
+// - dist/index.html exists and is non-placeholder content
+// - dist/assets contains real built assets (fail-closed)
 //
 // This test fails if WebUI assets are copied to the wrong location
 // or if the embed pattern in ui.go is misconfigured.
@@ -25,7 +26,7 @@ func TestUIEmbedContract(t *testing.T) {
 	}
 
 	// HARD REQUIREMENT: index.html must exist (entry file)
-	indexFile, err := subFS.Open("index.html")
+	indexHTMLRaw, err := fs.ReadFile(subFS, "index.html")
 	if err != nil {
 		// Locally we allow API-only builds/tests without the WebUI bundle.
 		// In CI/release builds we still want to enforce the embed contract.
@@ -35,26 +36,53 @@ func TestUIEmbedContract(t *testing.T) {
 		t.Fatalf("dist/index.html not found in embedded FS: %v\n"+
 			"Ensure 'make ui-build' or CI copies WebUI to internal/control/http/dist/", err)
 	}
-	indexFile.Close()
+	indexHTML := strings.TrimSpace(string(indexHTMLRaw))
+	if indexHTML == "" {
+		t.Fatalf("dist/index.html is empty (placeholder artifact), expected real WebUI build output")
+	}
+	if strings.Contains(strings.ToLower(indexHTML), "ui not built") {
+		t.Fatalf("dist/index.html contains placeholder fallback content, expected real bundled WebUI output")
+	}
 
-	// SOFT CHECK: Verify at least one additional file exists (assets, scripts, etc.)
-	// This catches cases where only index.html was copied but build output was incomplete
+	// HARD REQUIREMENT: dist must contain more than index.html.
 	dirEntries, err := fs.ReadDir(subFS, ".")
 	if err != nil {
 		t.Fatalf("Failed to read dist/ directory: %v", err)
 	}
 	if len(dirEntries) < 2 {
-		t.Logf("⚠️  Warning: Only %d file(s) in dist/ - expected index.html + assets", len(dirEntries))
+		t.Fatalf("dist/ has only %d file(s), expected index.html plus assets", len(dirEntries))
 	}
 
-	// Optional: Check if assets/ exists (Vite default, but not required)
-	if assetsDir, err := subFS.Open("assets"); err == nil {
-		stat, _ := assetsDir.Stat()
-		if stat != nil && stat.IsDir() {
-			t.Logf("✅ assets/ directory found (Vite default structure)")
+	// HARD REQUIREMENT: Vite bundle must include assets/.
+	assetsEntries, err := fs.ReadDir(subFS, "assets")
+	if err != nil {
+		t.Fatalf("dist/assets missing in embedded WebUI bundle: %v", err)
+	}
+	if len(assetsEntries) == 0 {
+		t.Fatalf("dist/assets is empty, expected bundled JS/CSS assets")
+	}
+
+	hasJSAsset := false
+	realAssetFiles := 0
+	for _, entry := range assetsEntries {
+		if entry.IsDir() {
+			continue
 		}
-		assetsDir.Close()
+		name := entry.Name()
+		if name == ".gitkeep" || strings.Contains(name, "placeholder") {
+			continue
+		}
+		realAssetFiles++
+		if strings.HasSuffix(name, ".js") {
+			hasJSAsset = true
+		}
+	}
+	if realAssetFiles == 0 {
+		t.Fatalf("dist/assets contains no real files (only placeholder artifacts)")
+	}
+	if !hasJSAsset {
+		t.Fatalf("dist/assets contains no JS bundle file, expected at least one .js asset")
 	}
 
-	t.Logf("✅ WebUI embed contract verified: index.html present, %d total files", len(dirEntries))
+	t.Logf("✅ WebUI embed contract verified: index.html + %d real asset file(s)", realAssetFiles)
 }

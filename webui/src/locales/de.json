@@ -102,7 +102,18 @@
     "resumeTitle": "Wiedergabe fortsetzen?",
     "resumePrompt": "Ab {{time}} fortsetzen?",
     "resumeAction": "Fortsetzen",
-    "startOver": "Von vorn beginnen"
+    "startOver": "Von vorn beginnen",
+    "dvrMode": "DVR-Modus",
+    "preparing": "Wird vorbereitet...",
+    "timeout": "Zeitüberschreitung",
+    "networkError": "Netzwerkfehler",
+    "serverError": "Serverfehler",
+    "notAvailable": "Nicht verfügbar",
+    "playbackDenied": "Wiedergabe verweigert",
+    "playbackError": "Wiedergabefehler",
+    "streamUrlMissing": "Stream-URL fehlt",
+    "sessionExpired": "Sitzung abgelaufen. Bitte neu starten.",
+    "sessionNotFound": "Sitzung existiert nicht mehr."
   },
   "epg": {
     "pageTitle": "EPG Übersicht ({{count}})",

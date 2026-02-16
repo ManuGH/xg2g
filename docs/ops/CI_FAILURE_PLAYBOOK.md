@@ -10,6 +10,8 @@ Goal: restore green deterministically without weakening guardrails.
 
 Non-required workflows (security scans, UI contracts, etc.) are informational unless explicitly promoted.
 
+Solo-maintainer merge behavior is defined in `SOLO_MAINTAINER_MERGE_POLICY.md`.
+
 ---
 
 ## 0. Triage: classify the failure

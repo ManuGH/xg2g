@@ -82,5 +82,5 @@ Full parity is deferred to a future refactoring task that will:
 
 ## Related Documents
 
-- [CONTRACT_INVARIANTS.md](file:///root/xg2g/docs/ops/CONTRACT_INVARIANTS.md)
-- [CONFIGURATION.md](file:///root/xg2g/docs/guides/CONFIGURATION.md)
+- [CONTRACT_INVARIANTS.md](../ops/CONTRACT_INVARIANTS.md)
+- [CONFIGURATION.md](../guides/CONFIGURATION.md)

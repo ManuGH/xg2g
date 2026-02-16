@@ -2,6 +2,10 @@ name: Lint Invariants
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
 
 concurrency:
   group: repo-${{ github.event.pull_request.number || github.ref }}

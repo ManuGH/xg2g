@@ -4,7 +4,8 @@ api:
   allowedOrigins: []
   listenAddr: :8088
   token: ""
-  tokenScopes: []
+  tokenScopes:
+    - v3:read
   tokens: []
 bouquets: []
 breaker:
@@ -25,14 +26,23 @@ engine:
 enigma2:
   analyzeDuration: "2000000"
   authMode: inherit
+  backoff: 200ms
+  baseUrl: http://127.0.0.1
   fallbackTo8001: true
+  maxBackoff: 30s
+  password: ""
   preflightTimeout: 10s
   probeSize: 5M
   rateBurst: 0
   rateLimit: 0
   responseHeaderTimeout: 10s
+  retries: 2
+  streamPort: 8001
+  timeout: 10s
   tuneTimeout: 10s
+  useWebIFStreams: true
   userAgent: ""
+  username: ""
 openWebIF:
   backoff: 200ms
   baseUrl: http://127.0.0.1
@@ -83,6 +93,9 @@ metrics:
   enabled: false
   listenAddr: ""
 network:
+  lan:
+    allow:
+      cidrs: []
   outbound:
     allow:
       cidrs: []

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/ManuGH/xg2g/internal/log"
 )
@@ -80,7 +81,7 @@ func (l *Loader) CheckDeprecations(cfg *AppConfig) error {
 		source := ""
 
 		// Check ENV
-		if os.Getenv(d.Key) != "" {
+		if v, ok := l.envLookup(d.Key); ok && strings.TrimSpace(v) != "" {
 			active = true
 			source = "ENV: " + d.Key
 		}

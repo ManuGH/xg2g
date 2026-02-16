@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -27,6 +28,8 @@ type Report struct {
 type ScenarioResult struct {
 	Name         string           `json:"name"`
 	Pass         bool             `json:"pass"`
+	Status       string           `json:"status,omitempty"`
+	Reason       string           `json:"reason,omitempty"`
 	Observations map[string]int64 `json:"observations"`
 	Failures     []Failure        `json:"failures"`
 }
@@ -41,9 +44,11 @@ type Failure struct {
 
 // Summary provides the aggregate verdict.
 type Summary struct {
-	PassedScenarios int    `json:"passed_scenarios"`
-	FailedScenarios int    `json:"failed_scenarios"`
-	Verdict         string `json:"verdict"`
+	PassedScenarios        int    `json:"passed_scenarios"`
+	FailedScenarios        int    `json:"failed_scenarios"`
+	SkippedScenarios       int    `json:"skipped_scenarios"`
+	UnimplementedScenarios int    `json:"unimplemented_scenarios"`
+	Verdict                string `json:"verdict"`
 }
 
 // Config holds command-line configurations.
@@ -63,7 +68,15 @@ type Config struct {
 	TunerCountOverride int
 	ChaosRate          float64
 	ArtifactDir        string
+	AllowUnimplemented bool
 }
+
+const (
+	scenarioStatusPass          = "pass"
+	scenarioStatusFail          = "fail"
+	scenarioStatusSkipped       = "skipped"
+	scenarioStatusUnimplemented = "unimplemented"
+)
 
 func main() {
 	cfg := parseFlags()
@@ -122,14 +135,23 @@ func main() {
 	report.DurationSeconds = report.EndedAt.Sub(report.StartedAt).Seconds()
 
 	// Compute summary
-	for _, sr := range report.ScenarioResults {
-		if sr.Pass {
+	for i, sr := range report.ScenarioResults {
+		normalized := normalizeScenarioResult(sr, cfg.AllowUnimplemented)
+		report.ScenarioResults[i] = normalized
+
+		switch normalized.Status {
+		case scenarioStatusPass:
 			report.Summary.PassedScenarios++
-		} else {
+		case scenarioStatusSkipped:
+			report.Summary.SkippedScenarios++
+		case scenarioStatusUnimplemented:
+			report.Summary.UnimplementedScenarios++
+			report.Summary.FailedScenarios++
+		default:
 			report.Summary.FailedScenarios++
 		}
 	}
-	if report.Summary.FailedScenarios == 0 {
+	if report.Summary.FailedScenarios == 0 && report.Summary.UnimplementedScenarios == 0 {
 		report.Summary.Verdict = "PASS"
 	} else {
 		report.Summary.Verdict = "FAIL"
@@ -141,10 +163,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Printf("\nVerdict: %s (%d passed, %d failed)\n",
+	fmt.Printf("\nVerdict: %s (%d passed, %d failed, %d skipped, %d unimplemented)\n",
 		report.Summary.Verdict,
 		report.Summary.PassedScenarios,
-		report.Summary.FailedScenarios)
+		report.Summary.FailedScenarios,
+		report.Summary.SkippedScenarios,
+		report.Summary.UnimplementedScenarios)
 
 	if report.Summary.Verdict != "PASS" {
 		os.Exit(1)
@@ -169,6 +193,7 @@ func parseFlags() Config {
 	flag.IntVar(&cfg.TunerCountOverride, "tuner-count-override", 0, "Override tuner count")
 	flag.Float64Var(&cfg.ChaosRate, "chaos-rate", 0.01, "Chaos events per second")
 	flag.StringVar(&cfg.ArtifactDir, "artifact-dir", "./soak-artifacts", "Output directory")
+	flag.BoolVar(&cfg.AllowUnimplemented, "allow-unimplemented", false, "Treat unimplemented scenarios as skipped instead of failed")
 
 	flag.Parse()
 	return cfg
@@ -232,15 +257,76 @@ func runTunerExhaustion(cfg Config) []ScenarioResult {
 }
 
 func runCPUPressure(cfg Config) []ScenarioResult {
-	// TODO: Implement CPU pressure test
 	return []ScenarioResult{
-		{Name: "cpu_pressure", Pass: true, Observations: map[string]int64{}},
+		unimplementedScenario("cpu_pressure"),
 	}
 }
 
 func runChaosInjection(cfg Config) []ScenarioResult {
-	// TODO: Implement chaos injection
 	return []ScenarioResult{
-		{Name: "chaos_injection", Pass: true, Observations: map[string]int64{}},
+		unimplementedScenario("chaos_injection"),
 	}
+}
+
+func unimplementedScenario(name string) ScenarioResult {
+	return ScenarioResult{
+		Name:         name,
+		Pass:         false,
+		Status:       scenarioStatusUnimplemented,
+		Reason:       "unimplemented",
+		Observations: map[string]int64{},
+		Failures: []Failure{
+			{
+				Time:    time.Now(),
+				RuleID:  "UNIMPLEMENTED",
+				Message: "Scenario is not implemented",
+			},
+		},
+	}
+}
+
+func normalizeScenarioResult(sr ScenarioResult, allowUnimplemented bool) ScenarioResult {
+	status := strings.ToLower(strings.TrimSpace(sr.Status))
+	switch status {
+	case "":
+		if sr.Pass {
+			status = scenarioStatusPass
+		} else {
+			status = scenarioStatusFail
+		}
+	case scenarioStatusPass, scenarioStatusFail, scenarioStatusSkipped, scenarioStatusUnimplemented:
+		// keep as-is
+	default:
+		if sr.Pass {
+			status = scenarioStatusPass
+		} else {
+			status = scenarioStatusFail
+		}
+	}
+
+	if status == scenarioStatusUnimplemented {
+		sr.Pass = false
+		if strings.TrimSpace(sr.Reason) == "" {
+			sr.Reason = "unimplemented"
+		}
+		if allowUnimplemented {
+			status = scenarioStatusSkipped
+		}
+	}
+
+	if status == scenarioStatusSkipped {
+		sr.Pass = false
+		if strings.TrimSpace(sr.Reason) == "" {
+			sr.Reason = "skipped"
+		}
+	}
+	if status == scenarioStatusPass {
+		sr.Pass = true
+	}
+	if status == scenarioStatusFail {
+		sr.Pass = false
+	}
+
+	sr.Status = status
+	return sr
 }

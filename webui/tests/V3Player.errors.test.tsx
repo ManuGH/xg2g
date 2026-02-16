@@ -65,6 +65,160 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
     });
   });
 
+  it('does not retry readiness loop after 410 Gone and enters terminal error state', async () => {
+    let readinessCalls = 0;
+    const mockChannel = { id: 'ch-410', serviceRef: '1:0:1:...' };
+
+    const response = (
+      status: number,
+      body: Record<string, unknown> = {},
+      headers: Record<string, string> = {}
+    ) => ({
+      ok: status >= 200 && status < 300,
+      status,
+      url: 'http://localhost/api/v3/sessions/sess-410',
+      headers: {
+        get: (key: string) => headers[key] ?? headers[key.toLowerCase()] ?? null
+      },
+      json: async () => body,
+      text: async () => JSON.stringify(body)
+    });
+
+    (globalThis.fetch as any).mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('/intents')) {
+        const parsed = init?.body ? JSON.parse(String(init.body)) : {};
+        if (parsed?.type === 'stream.start') {
+          return Promise.resolve(response(200, { sessionId: 'sess-410' }));
+        }
+        return Promise.resolve(response(200, {})); // stream.stop
+      }
+
+      if (url.includes('/sessions/sess-410') && !url.includes('/heartbeat')) {
+        readinessCalls++;
+        return Promise.resolve(
+          response(410, {
+            reason: 'SESSION_GONE',
+            reason_detail: 'recording_deleted',
+            requestId: 'req-410'
+          })
+        );
+      }
+
+      return Promise.resolve(response(200, {}));
+    });
+
+    vi.useFakeTimers();
+    try {
+      render(<V3Player autoStart={true} channel={mockChannel as any} />);
+
+      await act(async () => {
+        await flushMicrotasks();
+        await flushMicrotasks();
+        await vi.advanceTimersByTimeAsync(0);
+        await flushMicrotasks();
+      });
+
+      const alert = screen.getByRole('alert');
+      expect(alert).toHaveTextContent(/player\.sessionFailed/i);
+      expect(readinessCalls).toBe(1);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+        await flushMicrotasks();
+      });
+
+      expect(readinessCalls).toBe(1);
+      expect(screen.getByText(/common\.retry/i)).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('retries readiness loop on 503 and recovers without terminal error state', async () => {
+    let readinessCalls = 0;
+    const mockChannel = { id: 'ch-503', serviceRef: '1:0:1:...' };
+
+    const response = (
+      status: number,
+      body: Record<string, unknown> = {},
+      headers: Record<string, string> = {}
+    ) => ({
+      ok: status >= 200 && status < 300,
+      status,
+      url: 'http://localhost/api/v3/sessions/sess-503',
+      headers: {
+        get: (key: string) => headers[key] ?? headers[key.toLowerCase()] ?? null
+      },
+      json: async () => body,
+      text: async () => JSON.stringify(body)
+    });
+
+    (globalThis.fetch as any).mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('/intents')) {
+        const parsed = init?.body ? JSON.parse(String(init.body)) : {};
+        if (parsed?.type === 'stream.start') {
+          return Promise.resolve(response(200, { sessionId: 'sess-503' }));
+        }
+        return Promise.resolve(response(200, {})); // stream.stop
+      }
+
+      if (url.includes('/sessions/sess-503') && !url.includes('/heartbeat')) {
+        readinessCalls++;
+        if (readinessCalls === 1) {
+          return Promise.resolve(response(503, { detail: 'upstream_warming' }));
+        }
+        return Promise.resolve(
+          response(200, {
+            state: 'READY',
+            playbackUrl: '/live.m3u8',
+            heartbeat_interval: 1
+          })
+        );
+      }
+
+      return Promise.resolve(response(200, {}));
+    });
+
+    vi.useFakeTimers();
+    try {
+      render(<V3Player autoStart={true} channel={mockChannel as any} />);
+
+      await act(async () => {
+        await flushMicrotasks();
+        await flushMicrotasks();
+        await vi.advanceTimersByTimeAsync(0);
+        await flushMicrotasks();
+      });
+
+      expect(readinessCalls).toBe(1);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(499);
+        await flushMicrotasks();
+      });
+      expect(readinessCalls).toBe(1);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+        await flushMicrotasks();
+        await flushMicrotasks();
+      });
+
+      expect(readinessCalls).toBe(2);
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(screen.queryByText(/player\.sessionFailed/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/player\.sessionExpired/i)).not.toBeInTheDocument();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000);
+        await flushMicrotasks();
+      });
+      expect(readinessCalls).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('tears down on 410 GONE (Session Expired) during heartbeat', async () => {
     let heartbeatCount = 0;
 

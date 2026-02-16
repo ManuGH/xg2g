@@ -794,12 +794,12 @@ func TestSlice5_1_Equivalence(t *testing.T) {
 
 	s := NewServer(cfg, nil, nil)
 	s.snap = snap
-	s.SetDependencies(
-		nil, nil, nil, nil, nil, nil, nil, nil, nil,
-		nil, nil, nil,
-		mockScan, mockDvr, mockSvs, mockTs,
-		nil, nil, nil,
-	)
+	s.SetDependencies(Dependencies{
+		ScanSource:     mockScan,
+		DVRSource:      mockDvr,
+		ServicesSource: mockSvs,
+		TimersSource:   mockTs,
+	})
 
 	testCases := []struct {
 		name    string
@@ -936,7 +936,12 @@ http://stream/3
 
 	s := NewServer(cfg, nil, nil)
 	s.snap = snap
-	s.SetDependencies(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, &mockScanSource{}, &mockRecordingStatusProvider{}, mockSvs, mockTs, nil, nil, nil)
+	s.SetDependencies(Dependencies{
+		ScanSource:     &mockScanSource{},
+		DVRSource:      &mockRecordingStatusProvider{},
+		ServicesSource: mockSvs,
+		TimersSource:   mockTs,
+	})
 
 	t.Run("GetServices/Combinatorial", func(t *testing.T) {
 		tests := []struct {

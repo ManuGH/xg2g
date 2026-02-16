@@ -13,7 +13,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -40,14 +42,18 @@ func TestCircuitBreakerFlow(t *testing.T) {
 
 	cfg := config.AppConfig{
 		DataDir:    tmpDir,
-		OWIBase:    failingServer.URL,
-		StreamPort: 8001,
 		Bouquet:    "Premium",
 		APIToken:   "test-token",
 		EPGEnabled: false,
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    failingServer.URL,
+			StreamPort: 8001,
+		},
 	}
 
-	apiServer := api.New(cfg, nil)
+	cfgMgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
+	apiServer, err := api.New(cfg, cfgMgr)
+	require.NoError(t, err)
 	handler := apiServer.Handler()
 	testServer := httptest.NewServer(handler)
 	defer testServer.Close()
@@ -142,12 +148,14 @@ func TestRetryBehavior(t *testing.T) {
 
 	cfg := config.AppConfig{
 		DataDir:    tmpDir,
-		OWIBase:    flappingServer.URL,
-		StreamPort: 8001,
 		Bouquet:    "Premium",
 		EPGEnabled: false,
-		OWIRetries: 3, // Enable retries
-		OWIBackoff: 100 * time.Millisecond,
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    flappingServer.URL,
+			StreamPort: 8001,
+			Retries:    3, // Enable retries
+			Backoff:    100 * time.Millisecond,
+		},
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -207,12 +215,14 @@ func TestGracefulDegradation(t *testing.T) {
 
 	cfg := config.AppConfig{
 		DataDir:           tmpDir,
-		OWIBase:           selectiveServer.URL,
-		StreamPort:        8001,
 		Bouquet:           "Premium",
 		EPGEnabled:        true, // Enable EPG
 		EPGDays:           1,
 		EPGMaxConcurrency: 1,
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    selectiveServer.URL,
+			StreamPort: 8001,
+		},
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -266,10 +276,12 @@ func TestRecoveryAfterFailure(t *testing.T) {
 
 	cfg := config.AppConfig{
 		DataDir:    tmpDir,
-		OWIBase:    recoveryServer.URL,
-		StreamPort: 8001,
 		Bouquet:    "Premium",
 		EPGEnabled: false,
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    recoveryServer.URL,
+			StreamPort: 8001,
+		},
 	}
 
 	// Execute Phase 1: Try while unhealthy
@@ -320,14 +332,18 @@ func TestRateLimitingBehavior(t *testing.T) {
 
 	cfg := config.AppConfig{
 		DataDir:    tmpDir,
-		OWIBase:    mock.URL,
-		StreamPort: 8001,
 		Bouquet:    "Premium",
 		APIToken:   "test-token",
 		EPGEnabled: false,
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    mock.URL,
+			StreamPort: 8001,
+		},
 	}
 
-	apiServer := api.New(cfg, nil)
+	cfgMgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
+	apiServer, err := api.New(cfg, cfgMgr)
+	require.NoError(t, err)
 	handler := apiServer.Handler()
 	testServer := httptest.NewServer(handler)
 	defer testServer.Close()
@@ -401,19 +417,24 @@ func TestRateLimitingBehavior(t *testing.T) {
 func TestContextCancellationFlow(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// Setup: Slow server
+	// Setup: Server that blocks until request context is canceled.
+	requestStarted := make(chan struct{})
+	var startedOnce sync.Once
 	slowServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(10 * time.Second) // Very slow
+		startedOnce.Do(func() { close(requestStarted) })
+		<-r.Context().Done()
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer slowServer.Close()
 
 	cfg := config.AppConfig{
 		DataDir:    tmpDir,
-		OWIBase:    slowServer.URL,
-		StreamPort: 8001,
 		Bouquet:    "Premium",
 		EPGEnabled: false,
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    slowServer.URL,
+			StreamPort: 8001,
+		},
 	}
 
 	// Execute: Start refresh then cancel
@@ -425,8 +446,16 @@ func TestContextCancellationFlow(t *testing.T) {
 		resultChan <- err
 	}()
 
-	// Cancel after short delay
-	time.Sleep(200 * time.Millisecond)
+	require.Eventually(t, func() bool {
+		select {
+		case <-requestStarted:
+			return true
+		default:
+			return false
+		}
+	}, 2*time.Second, 10*time.Millisecond, "expected refresh request to reach slow server before cancellation")
+
+	// Cancel after request entered blocking path.
 	cancel()
 
 	// Verify: Should return quickly with cancellation error

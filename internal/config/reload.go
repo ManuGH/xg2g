@@ -48,7 +48,7 @@ func NewConfigHolder(initial AppConfig, loader *Loader, configPath string) *Conf
 		reloadListeners: make([]chan<- AppConfig, 0),
 		snapListeners:   make([]chan<- *Snapshot, 0),
 	}
-	env, err := ReadOSRuntimeEnv()
+	env, err := readRuntimeEnvForLoader(loader)
 	if err != nil {
 		h.logger.Warn().Err(err).Str("event", "config.env_read_failed").Msg("failed to read runtime environment, using defaults")
 		env = DefaultEnv()
@@ -124,7 +124,7 @@ func (h *ConfigHolder) Reload(_ context.Context) error {
 	}
 
 	// Atomically swap configuration
-	env, err := ReadOSRuntimeEnv()
+	env, err := readRuntimeEnvForLoader(h.loader)
 	if err != nil {
 		h.logger.Warn().Err(err).Str("event", "config.env_read_failed").Msg("failed to read runtime environment, using defaults")
 		env = DefaultEnv()
@@ -146,6 +146,19 @@ func (h *ConfigHolder) Reload(_ context.Context) error {
 		Msg("configuration reloaded successfully")
 
 	return nil
+}
+
+func readRuntimeEnvForLoader(loader *Loader) (Env, error) {
+	if loader == nil || loader.lookupEnvFn == nil {
+		return ReadOSRuntimeEnv()
+	}
+
+	return ReadEnv(func(key string) string {
+		if v, ok := loader.envLookup(key); ok {
+			return v
+		}
+		return ""
+	})
 }
 
 // StartWatcher starts watching the config file for changes.

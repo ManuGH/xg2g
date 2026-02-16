@@ -11,6 +11,7 @@ package helpers
 
 import (
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 
 	"github.com/ManuGH/xg2g/internal/api"
@@ -54,6 +55,9 @@ func NewTestServer(t *testing.T, opts TestServerOptions) *TestServer {
 	t.Helper()
 
 	// Apply defaults
+	if opts.DataDir == "" {
+		opts.DataDir = t.TempDir()
+	}
 	if opts.OWIBase == "" {
 		opts.OWIBase = "http://test.local"
 	}
@@ -74,7 +78,11 @@ func NewTestServer(t *testing.T, opts TestServerOptions) *TestServer {
 		Bouquet:  opts.Bouquet,
 	}
 
-	apiServer := api.New(cfg, nil)
+	cfgMgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
+	apiServer, err := api.New(cfg, cfgMgr)
+	if err != nil {
+		t.Fatalf("failed to initialize API test server: %v", err)
+	}
 	handler := apiServer.Handler()
 	testServer := httptest.NewServer(handler)
 
@@ -90,7 +98,14 @@ func NewTestServer(t *testing.T, opts TestServerOptions) *TestServer {
 func NewTestServerWithConfig(t *testing.T, cfg config.AppConfig) *TestServer {
 	t.Helper()
 
-	apiServer := api.New(cfg, nil)
+	if cfg.DataDir == "" {
+		cfg.DataDir = t.TempDir()
+	}
+	cfgMgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
+	apiServer, err := api.New(cfg, cfgMgr)
+	if err != nil {
+		t.Fatalf("failed to initialize API test server: %v", err)
+	}
 	handler := apiServer.Handler()
 	testServer := httptest.NewServer(handler)
 

@@ -38,26 +38,27 @@ func (s *Server) authMiddlewareImpl(next http.Handler) http.Handler {
 		// For general API, we allow both Header (Bearer) and Cookie (xg2g_session).
 		reqToken, authSource := extractTokenDetailed(r)
 
-		logger := log.FromContext(r.Context()).With().Str("component", "auth").Logger()
+		logger := log.FromContext(r.Context()).With().
+			Str("component", "auth").
+			Str("source", authSource).
+			Str("uri", r.RequestURI).
+			Logger()
 
 		if reqToken != "" {
-			logger.Debug().Str("method", authSource).Msg("authenticated request")
-		}
-
-		if reqToken == "" {
-			logger.Warn().Str("event", "auth.missing_header").Msg("authorization header/cookie missing")
+			logger.Debug().Msg("authenticated request")
+		} else {
+			logger.Warn().
+				Str("event", "auth.missing_token").
+				Msg("authorization token missing from all sources (header, cookie, query)")
 			RespondError(w, r, http.StatusUnauthorized, ErrUnauthorized)
 			return
 		}
 
-		// Security Invariant (P3-Auth): Media endpoints (HLS/Direct Stream) REQUIRE session cookies.
-		// Bearer tokens are for API only. This prevents certain classes of leakage/hotlinking.
+		// Security Invariant (P3-Auth): Media endpoints (HLS/Direct Stream) normally REQUIRE session cookies.
 		if isMediaRequest(r) && !strings.Contains(authSource, "cookie") {
 			logger.Warn().
-				Str("event", "auth.media_forbidden_source").
-				Str("source", authSource).
-				Str("path", r.URL.Path).
-				Msg("media request denied: bearer token not allowed for media (cookie required)")
+				Str("event", "auth.media_no_cookie").
+				Msg("media request attempted without session cookie (bearer not allowed for media)")
 			RespondError(w, r, http.StatusUnauthorized, ErrUnauthorized)
 			return
 		}

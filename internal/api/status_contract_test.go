@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -33,8 +34,9 @@ func TestStatusContract(t *testing.T) {
 	}
 
 	// Initialize minimal API server setup
-	mgr := config.NewManager(cfg.DataDir)
-	s := api.New(cfg, mgr)
+	mgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
+	s, err := api.New(cfg, mgr)
+	require.NoError(t, err)
 	handler := s.Handler()
 
 	t.Run("A: 401 Unauthorized (No Auth)", func(t *testing.T) {

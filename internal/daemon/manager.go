@@ -11,22 +11,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"sync"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
-	"github.com/ManuGH/xg2g/internal/control/admission"
-	"github.com/ManuGH/xg2g/internal/core/urlutil"
-	worker "github.com/ManuGH/xg2g/internal/domain/session/manager"
 	"github.com/ManuGH/xg2g/internal/health"
-	"github.com/ManuGH/xg2g/internal/infra/bus"
-	"github.com/ManuGH/xg2g/internal/infra/media/ffmpeg"
-	"github.com/ManuGH/xg2g/internal/infra/media/stub"
-	"github.com/ManuGH/xg2g/internal/infra/platform"
 	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
-	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
-	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 )
 
@@ -232,6 +222,7 @@ func (m *manager) startMetricsServer(_ context.Context, errChan chan<- error) er
 	return nil
 }
 
+<<<<<<< HEAD
 // startV3Worker initializes v3 Bus, Store, and Orchestrator
 func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error {
 	cfg := m.deps.Config
@@ -372,6 +363,8 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 	return nil
 }
 
+=======
+>>>>>>> codex/rebase-183
 func (m *manager) Shutdown(ctx context.Context) error {
 	m.mu.Lock()
 	if m.stopping {
