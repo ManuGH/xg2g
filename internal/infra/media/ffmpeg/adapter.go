@@ -741,6 +741,13 @@ func (a *LocalAdapter) buildArgs(ctx context.Context, spec ports.StreamSpec, inp
 	neg := codecdecision.Decide(decisionIn)
 	decisionInSummary := decisionIn.Summary()
 	decisionOutSummary := neg.Summary()
+	metrics.RecordDecisionSummary(
+		decisionInSummary.Profile,
+		decisionOutSummary.Path,
+		decisionOutSummary.OutputCodec,
+		decisionOutSummary.UseHWAccel,
+		decisionOutSummary.Reason,
+	)
 
 	a.Logger.Info().
 		Str("event", "decision.summary").
