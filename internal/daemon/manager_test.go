@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/infra/media/stub"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/rs/zerolog"
 	"go.uber.org/goleak"
@@ -113,6 +114,27 @@ func TestNewManager_MissingAPIHandler(t *testing.T) {
 	// Check if error message contains the expected phrase
 	if !contains(err.Error(), "API handler is required") {
 		t.Errorf("NewManager() error = %v, want error containing 'API handler is required'", err)
+	}
+}
+
+func TestNewManager_EngineEnabledRequiresV3OrchestratorFactory(t *testing.T) {
+	deps := Deps{
+		Logger:        log.WithComponent("test"),
+		Config:        config.AppConfig{Engine: config.EngineConfig{Enabled: true}},
+		APIHandler:    http.NotFoundHandler(),
+		MediaPipeline: stub.NewAdapter(),
+	}
+
+	serverCfg := config.ServerConfig{
+		ListenAddr: "127.0.0.1:0",
+	}
+
+	_, err := NewManager(serverCfg, deps)
+	if err == nil {
+		t.Fatal("NewManager() expected error for missing v3 orchestrator factory, got nil")
+	}
+	if !contains(err.Error(), ErrMissingV3OrchestratorFactory.Error()) {
+		t.Errorf("NewManager() error = %v, want error containing %q", err, ErrMissingV3OrchestratorFactory.Error())
 	}
 }
 
