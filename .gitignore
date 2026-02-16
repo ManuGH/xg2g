@@ -96,6 +96,9 @@ internal/control/http/v3/openapi.yaml
 .vscode/
 .idea/
 .DS_Store
+._*
+.Spotlight-V100/
+.Trashes/
 .cache/
 .codex_patch.diff
 .copilot-instructions.md

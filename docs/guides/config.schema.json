@@ -505,9 +505,6 @@
         "EPG": {
           "type": "string"
         },
-        "GPU_TRANSCODE": {
-          "type": "string"
-        },
         "METRICS": {
           "type": "string"
         },

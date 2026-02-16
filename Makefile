@@ -27,7 +27,7 @@ SOURCE_DATE_EPOCH ?= $(shell git log -1 --pretty=%ct 2>/dev/null || date -u +%s)
 export SOURCE_DATE_EPOCH
 export TZ := UTC
 export GOFLAGS := -trimpath -buildvcs=false -mod=vendor
-GOTOOLCHAIN ?= go1.25.6
+GOTOOLCHAIN ?= go1.25.7
 export GOTOOLCHAIN
 GO := go
 
@@ -1000,6 +1000,7 @@ gate-repo-hygiene:
 gate-v3-contract: ## Verify v3 contract hygiene, casing, and shadowing
 	@echo "--- gate-v3-contract ---"
 	@$(GO) test -v ./internal/control/http/v3 -run TestContractHygiene
+	@./scripts/verify-openapi-lint.sh
 	@python3 ./scripts/verify-openapi-no-duplicate-keys.py api/openapi.yaml
 	@python3 ./scripts/lib/openapi_v3_scope.py api/openapi.yaml scripts/openapi-legacy-allowlist.json
 	@./scripts/verify-v3-shadowing.sh
