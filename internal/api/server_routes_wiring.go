@@ -113,29 +113,6 @@ func (s *Server) registerCanonicalV3Routes(r chi.Router) {
 	r.Handle(v3.V3BaseURL+"/*", v3Routes)
 }
 
-func (s *Server) registerManualV3Routes(rRead, rWrite chi.Router) {
-	rRead.Get(v3.V3BaseURL+"/vod/{recordingId}", func(w http.ResponseWriter, r *http.Request) {
-		recordingID := chi.URLParam(r, "recordingId")
-		s.v3Handler.GetRecordingPlaybackInfo(w, r, recordingID)
-	})
-
-	rRead.Head(v3.V3BaseURL+"/recordings/{recordingId}/stream.mp4", func(w http.ResponseWriter, r *http.Request) {
-		recordingID := chi.URLParam(r, "recordingId")
-		s.v3Handler.StreamRecordingDirect(w, r, recordingID)
-	})
-
-	rWrite.Put(v3.V3BaseURL+"/recordings/{recordingId}/resume", s.v3Handler.HandleRecordingResume)
-	rWrite.Options(v3.V3BaseURL+"/recordings/{recordingId}/resume", s.v3Handler.HandleRecordingResumeOptions)
-}
-
-func (s *Server) registerClientPlaybackRoutes(rRead chi.Router) {
-	// Supports DirectPlay decision logic without backend coupling.
-	rRead.Post("/Items/{itemId}/PlaybackInfo", func(w http.ResponseWriter, r *http.Request) {
-		itemID := chi.URLParam(r, "itemId")
-		s.v3Handler.PostItemsPlaybackInfo(w, r, itemID)
-	})
-}
-
 func (s *Server) newLANGuard() *middleware.LANGuard {
 	lanGuard, err := middleware.NewLANGuard(middleware.LANGuardConfig{
 		AllowedCIDRs:      append([]string(nil), s.cfg.Network.LAN.Allow.CIDRs...),

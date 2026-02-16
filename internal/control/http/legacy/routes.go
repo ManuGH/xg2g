@@ -13,6 +13,11 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+const (
+	deprecationPolicyURL = "https://github.com/ManuGH/xg2g/blob/main/docs/DEPRECATION_POLICY.md"
+	sunsetPlanURL        = "https://github.com/ManuGH/xg2g/blob/main/docs/ops/DEPRECATION_SUNSET.md"
+)
+
 // RegisterRoutes wires legacy/versionless endpoints onto the shared router.
 func RegisterRoutes(r chi.Router, runtime Runtime, lanGuard *middleware.LANGuard) {
 	if runtime == nil {
@@ -23,7 +28,7 @@ func RegisterRoutes(r chi.Router, runtime Runtime, lanGuard *middleware.LANGuard
 	}
 
 	r.Group(func(r chi.Router) {
-		r.Use(lanGuard.RequireLAN)
+		r.Use(lanGuard.RequireLAN, legacyDeprecationHeaders)
 
 		if h := runtime.HDHomeRunServer(); h != nil {
 			r.Get("/discover.json", h.HandleDiscover)
@@ -51,15 +56,15 @@ func RegisterRoutes(r chi.Router, runtime Runtime, lanGuard *middleware.LANGuard
 		})
 	})
 
-	r.With(lanGuard.RequireLAN).Get("/logos/{ref}.png", func(w http.ResponseWriter, r *http.Request) {
+	r.With(lanGuard.RequireLAN, legacyDeprecationHeaders).Get("/logos/{ref}.png", func(w http.ResponseWriter, r *http.Request) {
 		HandlePicons(w, r, runtime)
 	})
-	r.With(lanGuard.RequireLAN).Head("/logos/{ref}.png", func(w http.ResponseWriter, r *http.Request) {
+	r.With(lanGuard.RequireLAN, legacyDeprecationHeaders).Head("/logos/{ref}.png", func(w http.ResponseWriter, r *http.Request) {
 		HandlePicons(w, r, runtime)
 	})
 
 	cfg := runtime.CurrentConfig()
-	r.With(lanGuard.RequireLAN).Handle("/files/*", http.StripPrefix("/files/", controlhttp.SecureFileServer(cfg.DataDir, controlhttp.NewPromFileMetrics())))
+	r.With(lanGuard.RequireLAN, legacyDeprecationHeaders).Handle("/files/*", http.StripPrefix("/files/", controlhttp.SecureFileServer(cfg.DataDir, controlhttp.NewPromFileMetrics())))
 }
 
 func servePlaylist(w http.ResponseWriter, r *http.Request, runtime Runtime, withHLSContentType bool) {
@@ -74,4 +79,13 @@ func servePlaylist(w http.ResponseWriter, r *http.Request, runtime Runtime, with
 		w.Header().Set("Content-Type", controlhttp.ContentTypeHLSPlaylist)
 	}
 	http.ServeFile(w, r, playlistPath)
+}
+
+func legacyDeprecationHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Deprecation", "true")
+		w.Header().Add("Link", "<"+deprecationPolicyURL+">; rel=\"deprecation\"")
+		w.Header().Add("Link", "<"+sunsetPlanURL+">; rel=\"sunset\"")
+		next.ServeHTTP(w, r)
+	})
 }
