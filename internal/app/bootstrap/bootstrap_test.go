@@ -13,9 +13,12 @@ import (
 	"github.com/ManuGH/xg2g/internal/api"
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/daemon"
+	sessionstore "github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/health"
+	"github.com/ManuGH/xg2g/internal/infra/media/stub"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
+	pipebus "github.com/ManuGH/xg2g/internal/pipeline/bus"
 	xgtls "github.com/ManuGH/xg2g/internal/tls"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog"
@@ -39,6 +42,19 @@ type Container struct {
 
 // Global state for logger - unavoidable due to zerolog global configuration usage in current codebase
 var loggerOnce sync.Once
+
+type noopV3Orchestrator struct{}
+
+func (noopV3Orchestrator) Run(ctx context.Context) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+type noopV3OrchestratorFactory struct{}
+
+func (noopV3OrchestratorFactory) Build(config.AppConfig, daemon.V3OrchestratorInputs) (daemon.V3Orchestrator, error) {
+	return noopV3Orchestrator{}, nil
+}
 
 // WireServices bootstraps a test harness from config for integration-style API tests.
 func WireServices(ctx context.Context, version, commit, buildDate string, explicitConfigPath string) (*Container, error) {
@@ -151,6 +167,12 @@ func WireServices(ctx context.Context, version, commit, buildDate string, explic
 		APIServerSetter: s,
 		MetricsHandler:  promhttp.Handler(),
 		MetricsAddr:     metricsAddr,
+		V3Bus:           pipebus.NewMemoryBus(),
+		V3Store:         sessionstore.NewMemoryStore(),
+		MediaPipeline:   stub.NewAdapter(),
+
+		// Test harness runtime wiring for engine-enabled configs.
+		V3OrchestratorFactory: noopV3OrchestratorFactory{},
 	}
 
 	mgr, err := daemon.NewManager(serverCfg, deps)

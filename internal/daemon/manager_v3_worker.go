@@ -8,22 +8,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/core/urlutil"
-	worker "github.com/ManuGH/xg2g/internal/domain/session/manager"
 	sessionports "github.com/ManuGH/xg2g/internal/domain/session/ports"
 	sessionstore "github.com/ManuGH/xg2g/internal/domain/session/store"
-	"github.com/ManuGH/xg2g/internal/infra/bus"
-	"github.com/ManuGH/xg2g/internal/infra/platform"
 	pipebus "github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
-	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
-	"github.com/google/uuid"
 )
 
 type v3WorkerRuntimeDeps struct {
@@ -46,7 +39,10 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 	}
 
 	m.registerV3StoreCloseHooks(runtimeDeps)
-	orch := m.newV3Orchestrator(cfg, runtimeDeps)
+	orch, err := m.buildV3Orchestrator(cfg, runtimeDeps)
+	if err != nil {
+		return err
+	}
 
 	m.registerV3Checks(&cfg, runtimeDeps.e2Client)
 	m.launchV3Orchestrator(ctx, errChan, orch)
@@ -96,42 +92,26 @@ func (m *manager) registerV3StoreCloseHooks(deps v3WorkerRuntimeDeps) {
 	}
 }
 
-func (m *manager) newV3Orchestrator(cfg config.AppConfig, deps v3WorkerRuntimeDeps) *worker.Orchestrator {
-	host, _ := os.Hostname()
-	workerOwner := fmt.Sprintf("%s-%d-%s", host, os.Getpid(), uuid.New().String())
-
-	orch := &worker.Orchestrator{
-		Store:               deps.store,
-		Bus:                 bus.NewAdapter(deps.bus),
-		Platform:            platform.NewOSPlatform(),
-		LeaseTTL:            30 * time.Second,
-		HeartbeatEvery:      10 * time.Second,
-		Owner:               workerOwner,
-		TunerSlots:          cfg.Engine.TunerSlots,
-		HLSRoot:             cfg.HLS.Root,
-		PipelineStopTimeout: 5 * time.Second,
-		StartConcurrency:    10,
-		StopConcurrency:     10,
-		Sweeper: worker.SweeperConfig{
-			IdleTimeout:      cfg.Engine.IdleTimeout,
-			Interval:         1 * time.Minute,
-			SessionRetention: 24 * time.Hour,
-		},
-		OutboundPolicy: platformnet.OutboundPolicy{
-			Enabled: cfg.Network.Outbound.Enabled,
-			Allow: platformnet.OutboundAllowlist{
-				Hosts:   append([]string(nil), cfg.Network.Outbound.Allow.Hosts...),
-				CIDRs:   append([]string(nil), cfg.Network.Outbound.Allow.CIDRs...),
-				Ports:   append([]int(nil), cfg.Network.Outbound.Allow.Ports...),
-				Schemes: append([]string(nil), cfg.Network.Outbound.Allow.Schemes...),
-			},
-		},
+func (m *manager) buildV3Orchestrator(cfg config.AppConfig, deps v3WorkerRuntimeDeps) (V3Orchestrator, error) {
+	factory := m.deps.V3OrchestratorFactory
+	if factory == nil {
+		return nil, ErrMissingV3OrchestratorFactory
 	}
-	orch.Pipeline = deps.pipeline
-	return orch
+	orch, err := factory.Build(cfg, V3OrchestratorInputs{
+		Bus:      deps.bus,
+		Store:    deps.store,
+		Pipeline: deps.pipeline,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build v3 orchestrator: %w", err)
+	}
+	if orch == nil {
+		return nil, ErrMissingV3Orchestrator
+	}
+	return orch, nil
 }
 
-func (m *manager) launchV3Orchestrator(ctx context.Context, errChan chan<- error, orch *worker.Orchestrator) {
+func (m *manager) launchV3Orchestrator(ctx context.Context, errChan chan<- error, orch V3Orchestrator) {
 	workerCtx, workerCancel := context.WithCancel(ctx)
 	workerDone := make(chan error, 1)
 

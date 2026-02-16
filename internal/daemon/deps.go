@@ -7,6 +7,7 @@
 package daemon
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/ManuGH/xg2g/internal/config"
@@ -61,12 +62,33 @@ type Deps struct {
 	ScanManager   *scan.Manager
 	E2Client      *enigma2.Client
 	MediaPipeline sessionports.MediaPipeline
+	// V3OrchestratorFactory builds the runtime worker orchestrator.
+	// This keeps daemon package bound to ports, not concrete implementations.
+	V3OrchestratorFactory V3OrchestratorFactory
 }
 
 // APIServerHooks exposes only daemon-safe hooks from the API server.
 // Keep this narrow to avoid runtime ownership cycles between daemon and API.
 type APIServerHooks interface {
 	HealthManager() *health.Manager
+}
+
+// V3Orchestrator is the daemon-side runtime contract for session processing.
+type V3Orchestrator interface {
+	Run(ctx context.Context) error
+}
+
+// V3OrchestratorInputs contains the runtime dependencies needed to build an orchestrator.
+type V3OrchestratorInputs struct {
+	Bus      bus.Bus
+	Store    store.StateStore
+	Pipeline sessionports.MediaPipeline
+}
+
+// V3OrchestratorFactory builds a V3Orchestrator from config + injected ports.
+// Concrete implementations belong in composition root (cmd/daemon).
+type V3OrchestratorFactory interface {
+	Build(cfg config.AppConfig, inputs V3OrchestratorInputs) (V3Orchestrator, error)
 }
 
 // ProxyConfig holds proxy server configuration.
@@ -108,6 +130,14 @@ func (d *Deps) Validate() error {
 	}
 	if !d.ProxyOnly && d.APIHandler == nil {
 		return ErrMissingAPIHandler
+	}
+	if d.Config.Engine.Enabled {
+		if d.MediaPipeline == nil {
+			return ErrMissingMediaPipeline
+		}
+		if d.V3OrchestratorFactory == nil {
+			return ErrMissingV3OrchestratorFactory
+		}
 	}
 
 	// Config validation is done by config.Loader

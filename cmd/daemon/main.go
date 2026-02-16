@@ -573,6 +573,8 @@ func main() {
 		ScanManager:   v3Scan,
 		E2Client:      e2Client,
 		MediaPipeline: mediaPipeline,
+		// DG-04: daemon receives only a factory port; concrete worker wiring stays in composition root.
+		V3OrchestratorFactory: buildV3OrchestratorFactory(),
 	}
 
 	// Create daemon manager
