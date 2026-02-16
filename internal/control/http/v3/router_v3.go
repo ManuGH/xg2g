@@ -20,6 +20,15 @@ type RouterOptions struct {
 	ErrorHandlerFunc func(w http.ResponseWriter, r *http.Request, err error)
 }
 
+type routeRegistrar struct {
+	baseURL string
+	router  chi.Router
+}
+
+func (r routeRegistrar) add(method, path, operationID string, handler http.HandlerFunc) {
+	r.router.Method(method, r.baseURL+path, withScopes(operationID, handler))
+}
+
 // NewRouter registers v3 routes and injects scope policy per operation.
 // This replaces generated routing to keep server_gen.go transport-only.
 func NewRouter(si ServerInterface, options RouterOptions) http.Handler {
@@ -37,61 +46,20 @@ func NewRouter(si ServerInterface, options RouterOptions) http.Handler {
 		ErrorHandlerFunc:   options.ErrorHandlerFunc,
 	}
 
-	register := func(method, path, opID string, handler http.HandlerFunc) {
-		r.Method(method, options.BaseURL+path, withScopes(opID, handler))
-	}
-
-	register(http.MethodPost, "/auth/session", "CreateSession", wrapper.CreateSession)
-	register(http.MethodGet, "/dvr/capabilities", "GetDvrCapabilities", wrapper.GetDvrCapabilities)
-	register(http.MethodGet, "/dvr/status", "GetDvrStatus", wrapper.GetDvrStatus)
-	register(http.MethodGet, "/epg", "GetEpg", wrapper.GetEpg)
-	register(http.MethodPost, "/intents", "CreateIntent", wrapper.CreateIntent)
-	register(http.MethodGet, "/logs", "GetLogs", wrapper.GetLogs)
-	register(http.MethodGet, "/receiver/current", "GetReceiverCurrent", wrapper.GetReceiverCurrent)
-	register(http.MethodGet, "/recordings", "GetRecordings", wrapper.GetRecordings)
-	register(http.MethodDelete, "/recordings/{recordingId}", "DeleteRecording", wrapper.DeleteRecording)
-	register(http.MethodGet, "/recordings/{recordingId}/playlist.m3u8", "GetRecordingHLSPlaylist", wrapper.GetRecordingHLSPlaylist)
-	register(http.MethodHead, "/recordings/{recordingId}/playlist.m3u8", "GetRecordingHLSPlaylistHead", wrapper.GetRecordingHLSPlaylistHead)
-	register(http.MethodGet, "/recordings/{recordingId}/status", "GetRecordingsRecordingIdStatus", wrapper.GetRecordingsRecordingIdStatus)
-	register(http.MethodGet, "/recordings/{recordingId}/stream-info", "GetRecordingPlaybackInfo", wrapper.GetRecordingPlaybackInfo)
-	register(http.MethodPost, "/recordings/{recordingId}/stream-info", "PostRecordingPlaybackInfo", wrapper.PostRecordingPlaybackInfo)
-	register(http.MethodGet, "/recordings/{recordingId}/stream.mp4", "StreamRecordingDirect", wrapper.StreamRecordingDirect)
-	register(http.MethodHead, "/recordings/{recordingId}/stream.mp4", "ProbeRecordingMp4", wrapper.ProbeRecordingMp4)
-	register(http.MethodGet, "/recordings/{recordingId}/timeshift.m3u8", "GetRecordingHLSTimeshift", wrapper.GetRecordingHLSTimeshift)
-	register(http.MethodHead, "/recordings/{recordingId}/timeshift.m3u8", "GetRecordingHLSTimeshiftHead", wrapper.GetRecordingHLSTimeshiftHead)
-	register(http.MethodGet, "/recordings/{recordingId}/{segment}", "GetRecordingHLSCustomSegment", wrapper.GetRecordingHLSCustomSegment)
-	register(http.MethodHead, "/recordings/{recordingId}/{segment}", "GetRecordingHLSCustomSegmentHead", wrapper.GetRecordingHLSCustomSegmentHead)
-	register(http.MethodGet, "/series-rules", "GetSeriesRules", wrapper.GetSeriesRules)
-	register(http.MethodPost, "/series-rules", "CreateSeriesRule", wrapper.CreateSeriesRule)
-	register(http.MethodPost, "/series-rules/run", "RunAllSeriesRules", wrapper.RunAllSeriesRules)
-	register(http.MethodDelete, "/series-rules/{id}", "DeleteSeriesRule", wrapper.DeleteSeriesRule)
-	register(http.MethodPut, "/series-rules/{id}", "UpdateSeriesRule", wrapper.UpdateSeriesRule)
-	register(http.MethodPost, "/series-rules/{id}/run", "RunSeriesRule", wrapper.RunSeriesRule)
-	register(http.MethodGet, "/services", "GetServices", wrapper.GetServices)
-	register(http.MethodGet, "/services/bouquets", "GetServicesBouquets", wrapper.GetServicesBouquets)
-	register(http.MethodPost, "/services/now-next", "PostServicesNowNext", wrapper.PostServicesNowNext)
-	register(http.MethodPost, "/services/{id}/toggle", "PostServicesIdToggle", wrapper.PostServicesIdToggle)
-	register(http.MethodGet, "/sessions", "ListSessions", wrapper.ListSessions)
-	register(http.MethodGet, "/sessions/{sessionID}", "GetSessionState", wrapper.GetSessionState)
-	register(http.MethodGet, "/sessions/{sessionID}/hls/{filename}", "ServeHLS", wrapper.ServeHLS)
-	register(http.MethodHead, "/sessions/{sessionID}/hls/{filename}", "ServeHLSHead", wrapper.ServeHLSHead)
-	register(http.MethodPost, "/sessions/{sessionId}/feedback", "ReportPlaybackFeedback", wrapper.ReportPlaybackFeedback)
-	register(http.MethodGet, "/streams", "GetStreams", wrapper.GetStreams)
-	register(http.MethodDelete, "/streams/{id}", "DeleteStreamsId", wrapper.DeleteStreamsId)
-	register(http.MethodGet, "/system/config", "GetSystemConfig", wrapper.GetSystemConfig)
-	register(http.MethodPut, "/system/config", "PutSystemConfig", wrapper.PutSystemConfig)
-	register(http.MethodGet, "/system/health", "GetSystemHealth", wrapper.GetSystemHealth)
-	register(http.MethodGet, "/system/healthz", "GetSystemHealthz", wrapper.GetSystemHealthz)
-	register(http.MethodGet, "/system/info", "GetSystemInfo", wrapper.GetSystemInfo)
-	register(http.MethodPost, "/system/refresh", "PostSystemRefresh", wrapper.PostSystemRefresh)
-	register(http.MethodGet, "/system/scan", "GetSystemScanStatus", wrapper.GetSystemScanStatus)
-	register(http.MethodPost, "/system/scan", "TriggerSystemScan", wrapper.TriggerSystemScan)
-	register(http.MethodGet, "/timers", "GetTimers", wrapper.GetTimers)
-	register(http.MethodPost, "/timers", "AddTimer", wrapper.AddTimer)
-	register(http.MethodPost, "/timers/conflicts:preview", "PreviewConflicts", wrapper.PreviewConflicts)
-	register(http.MethodDelete, "/timers/{timerId}", "DeleteTimer", wrapper.DeleteTimer)
-	register(http.MethodGet, "/timers/{timerId}", "GetTimer", wrapper.GetTimer)
-	register(http.MethodPatch, "/timers/{timerId}", "UpdateTimer", wrapper.UpdateTimer)
+	register := routeRegistrar{baseURL: options.BaseURL, router: r}
+	registerAuthRoutes(register, wrapper)
+	registerDVRRoutes(register, wrapper)
+	registerEPGRoutes(register, wrapper)
+	registerIntentRoutes(register, wrapper)
+	registerLogRoutes(register, wrapper)
+	registerReceiverRoutes(register, wrapper)
+	registerRecordingRoutes(register, wrapper)
+	registerSeriesRoutes(register, wrapper)
+	registerServiceRoutes(register, wrapper)
+	registerSessionRoutes(register, wrapper)
+	registerStreamRoutes(register, wrapper)
+	registerSystemRoutes(register, wrapper)
+	registerTimerRoutes(register, wrapper)
 
 	return r
 }
