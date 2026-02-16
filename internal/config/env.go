@@ -16,15 +16,24 @@ import (
 	"github.com/rs/zerolog"
 )
 
+type envLookupFunc func(string) (string, bool)
+
 // ParseString reads a string from environment variable or returns default value.
 // It logs the source (environment or default) for observability.
 func ParseString(key, defaultValue string) string {
-	return parseStringWithLogger(log.WithComponent("config"), key, defaultValue)
+	return parseStringWithLookup(log.WithComponent("config"), os.LookupEnv, key, defaultValue)
 }
 
 // parseStringWithLogger reads an environment variable with custom logger.
 func parseStringWithLogger(logger zerolog.Logger, key, defaultValue string) string {
-	if value, exists := os.LookupEnv(key); exists {
+	return parseStringWithLookup(logger, os.LookupEnv, key, defaultValue)
+}
+
+func parseStringWithLookup(logger zerolog.Logger, lookup envLookupFunc, key, defaultValue string) string {
+	if lookup == nil {
+		lookup = os.LookupEnv
+	}
+	if value, exists := lookup(key); exists {
 		lowerKey := strings.ToLower(key)
 		switch {
 		case strings.Contains(lowerKey, "token") || strings.Contains(lowerKey, "password"):
@@ -61,8 +70,20 @@ func parseStringWithLogger(logger zerolog.Logger, key, defaultValue string) stri
 // ParseInt reads an integer from environment variable or returns default value.
 // It validates the input and falls back to default on parse errors.
 func ParseInt(key string, defaultValue int) int {
-	logger := log.WithComponent("config")
-	if v, ok := os.LookupEnv(key); ok {
+	return parseIntWithLookup(log.WithComponent("config"), os.LookupEnv, key, defaultValue)
+}
+
+// ParseDuration reads a duration from environment variable in Go duration format (e.g. "5s").
+// It falls back to default on parse errors or empty variables and logs the choice.
+func ParseDuration(key string, defaultValue time.Duration) time.Duration {
+	return parseDurationWithLookup(log.WithComponent("config"), os.LookupEnv, key, defaultValue)
+}
+
+func parseIntWithLookup(logger zerolog.Logger, lookup envLookupFunc, key string, defaultValue int) int {
+	if lookup == nil {
+		lookup = os.LookupEnv
+	}
+	if v, ok := lookup(key); ok {
 		if v == "" {
 			logger.Debug().
 				Str("key", key).
@@ -94,11 +115,11 @@ func ParseInt(key string, defaultValue int) int {
 	return defaultValue
 }
 
-// ParseDuration reads a duration from environment variable in Go duration format (e.g. "5s").
-// It falls back to default on parse errors or empty variables and logs the choice.
-func ParseDuration(key string, defaultValue time.Duration) time.Duration {
-	logger := log.WithComponent("config")
-	if v, ok := os.LookupEnv(key); ok {
+func parseDurationWithLookup(logger zerolog.Logger, lookup envLookupFunc, key string, defaultValue time.Duration) time.Duration {
+	if lookup == nil {
+		lookup = os.LookupEnv
+	}
+	if v, ok := lookup(key); ok {
 		if v == "" {
 			logger.Debug().
 				Str("key", key).
@@ -133,8 +154,35 @@ func ParseDuration(key string, defaultValue time.Duration) time.Duration {
 // ParseBool reads a boolean from environment variable or returns default value.
 // It accepts "true", "false", "1", "0", "yes", "no" (case-insensitive).
 func ParseBool(key string, defaultValue bool) bool {
-	logger := log.WithComponent("config")
-	if v, ok := os.LookupEnv(key); ok {
+	return parseBoolWithLookup(log.WithComponent("config"), os.LookupEnv, key, defaultValue)
+}
+
+// ReadOSRuntimeEnv reads all runtime environment variables from the current process
+// environment and returns an immutable Env suitable for BuildSnapshot.
+func ReadOSRuntimeEnv() (Env, error) {
+	return ReadEnv(os.Getenv)
+}
+
+// ReadOSRuntimeEnvOrDefault reads the runtime Env from the current process environment.
+// If reading fails, it returns DefaultEnv.
+func ReadOSRuntimeEnvOrDefault() Env {
+	env, err := ReadOSRuntimeEnv()
+	if err != nil {
+		return DefaultEnv()
+	}
+	return env
+}
+
+// ParseFloat reads a float64 from environment variable or returns default value.
+func ParseFloat(key string, defaultValue float64) float64 {
+	return parseFloatWithLookup(log.WithComponent("config"), os.LookupEnv, key, defaultValue)
+}
+
+func parseBoolWithLookup(logger zerolog.Logger, lookup envLookupFunc, key string, defaultValue bool) bool {
+	if lookup == nil {
+		lookup = os.LookupEnv
+	}
+	if v, ok := lookup(key); ok {
 		if v == "" {
 			logger.Debug().
 				Str("key", key).
@@ -176,26 +224,11 @@ func ParseBool(key string, defaultValue bool) bool {
 	return defaultValue
 }
 
-// ReadOSRuntimeEnv reads all runtime environment variables from the current process
-// environment and returns an immutable Env suitable for BuildSnapshot.
-func ReadOSRuntimeEnv() (Env, error) {
-	return ReadEnv(os.Getenv)
-}
-
-// ReadOSRuntimeEnvOrDefault reads the runtime Env from the current process environment.
-// If reading fails, it returns DefaultEnv.
-func ReadOSRuntimeEnvOrDefault() Env {
-	env, err := ReadOSRuntimeEnv()
-	if err != nil {
-		return DefaultEnv()
+func parseFloatWithLookup(logger zerolog.Logger, lookup envLookupFunc, key string, defaultValue float64) float64 {
+	if lookup == nil {
+		lookup = os.LookupEnv
 	}
-	return env
-}
-
-// ParseFloat reads a float64 from environment variable or returns default value.
-func ParseFloat(key string, defaultValue float64) float64 {
-	logger := log.WithComponent("config")
-	if v, ok := os.LookupEnv(key); ok {
+	if v, ok := lookup(key); ok {
 		if v == "" {
 			logger.Debug().
 				Str("key", key).

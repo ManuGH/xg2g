@@ -8,6 +8,7 @@ import (
 var (
 	// Sentinel errors for errors.Is checks at the boundary.
 	ErrNotFound            = errors.New("upstream: resource not found")
+	ErrConflict            = errors.New("upstream: conflict")
 	ErrForbidden           = errors.New("upstream: access forbidden")
 	ErrUpstreamUnavailable = errors.New("upstream: host unreachable or transport failure")
 	ErrUpstreamError       = errors.New("upstream: internal error (5xx)")

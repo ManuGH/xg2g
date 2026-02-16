@@ -55,9 +55,12 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		s.auditLogger.RefreshStart(actor, bouquets)
 	}
 
-	// Create independent context for background job
-	// Use Background() instead of request context to prevent premature cancellation
-	jobCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	// Create independent context for background job, but keep it tied to server lifecycle.
+	baseCtx := s.rootCtx
+	if baseCtx == nil {
+		baseCtx = context.WithoutCancel(r.Context())
+	}
+	jobCtx, cancel := context.WithTimeout(baseCtx, 5*time.Minute)
 	defer cancel()
 
 	// Optional: Monitor client disconnect for logging
