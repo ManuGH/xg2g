@@ -11,22 +11,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"sync"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
-	"github.com/ManuGH/xg2g/internal/control/admission"
-	"github.com/ManuGH/xg2g/internal/core/urlutil"
-	worker "github.com/ManuGH/xg2g/internal/domain/session/manager"
 	"github.com/ManuGH/xg2g/internal/health"
-	"github.com/ManuGH/xg2g/internal/infra/bus"
-	"github.com/ManuGH/xg2g/internal/infra/media/ffmpeg"
-	"github.com/ManuGH/xg2g/internal/infra/media/stub"
-	"github.com/ManuGH/xg2g/internal/infra/platform"
 	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
-	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
-	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 )
 
@@ -227,158 +217,6 @@ func (m *manager) startMetricsServer(_ context.Context, errChan chan<- error) er
 				Msg("Metrics server failed")
 			errChan <- fmt.Errorf("metrics server: %w", err)
 		}
-	}()
-
-	return nil
-}
-
-// startV3Worker initializes v3 Bus, Store, and Orchestrator
-func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error {
-	cfg := m.deps.Config
-	// Use INFO level for visibility during canary
-	m.logger.Info().
-		Str("mode", cfg.Engine.Mode).
-		Str("store", cfg.Store.Path).
-		Str("hls_root", cfg.HLS.Root).
-		Str("e2_host", urlutil.SanitizeURL(cfg.Enigma2.BaseURL)).
-		Msg("starting v3 worker (Phase 7A)")
-
-	// 1. Initialize Bus (Shared)
-	v3Bus := m.deps.V3Bus
-
-	// 2. Initialize Store (Shared)
-	v3Store := m.deps.V3Store
-
-	// Phase 7B-2: Register Shutdown Hook for Store (if needed)
-	if c, ok := v3Store.(interface{ Close() error }); ok {
-		m.RegisterShutdownHook("v3_store_close", func(ctx context.Context) error {
-			return c.Close()
-		})
-	}
-
-	// 2.5 Initialize Resume Store (Shared)
-	resumeStore := m.deps.ResumeStore
-
-	// Register Shutdown Hook for Resume Store
-	if c, ok := resumeStore.(interface{ Close() error }); ok {
-		m.RegisterShutdownHook("resume_store_close", func(ctx context.Context) error {
-			return c.Close()
-		})
-	}
-
-	// 2.6 Initialize E2 Client (Shared)
-	e2Client := m.deps.E2Client
-
-	// 2.7 Initialize Smart Profile Scanner (Shared)
-	scanManager := m.deps.ScanManager
-
-	// 2.8 Initialize Admission Control (Phase 5.2/5.3)
-	// 2.8 Initialize Admission Control (Slice 2)
-	adm := admission.NewController(cfg)
-	m.logger.Info().
-		Int("max_sessions", cfg.Limits.MaxSessions).
-		Int("max_transcodes", cfg.Limits.MaxTranscodes).
-		Msg("Admission control initialized")
-		// CPU load sampler (fail-closed if samples are missing/invalid).
-		// admission.StartCPUSampler(ctx, adm, 0, nil)
-
-	// 3. Initialize Orchestrator
-	// Generate stable worker identity (replacing domain-level OS calls)
-	host, _ := os.Hostname()
-	workerOwner := fmt.Sprintf("%s-%d-%s", host, os.Getpid(), uuid.New().String())
-
-	orch := &worker.Orchestrator{
-		Store:    v3Store,
-		Bus:      bus.NewAdapter(v3Bus),    // Injected Adapter
-		Platform: platform.NewOSPlatform(), // Platform Port
-		// Admission:           adm,                      // Phase 5.2 Gatekeeper (Removed from Orchestrator)
-		LeaseTTL:            30 * time.Second, // Explicit default
-		HeartbeatEvery:      10 * time.Second, // Explicit default
-		Owner:               workerOwner,      // Explicit generation
-		TunerSlots:          cfg.Engine.TunerSlots,
-		HLSRoot:             cfg.HLS.Root,
-		PipelineStopTimeout: 5 * time.Second, // Explicit default (fallback if cfg missing)
-		StartConcurrency:    10,              // Bounded Start concurrency
-		StopConcurrency:     10,              // Bounded Stop concurrency
-		Sweeper: worker.SweeperConfig{
-			IdleTimeout:      cfg.Engine.IdleTimeout,
-			Interval:         1 * time.Minute, // Explicit default
-			SessionRetention: 24 * time.Hour,  // Explicit default
-		},
-		OutboundPolicy: platformnet.OutboundPolicy{
-			Enabled: cfg.Network.Outbound.Enabled,
-			Allow: platformnet.OutboundAllowlist{
-				Hosts:   append([]string(nil), cfg.Network.Outbound.Allow.Hosts...),
-				CIDRs:   append([]string(nil), cfg.Network.Outbound.Allow.CIDRs...),
-				Ports:   append([]int(nil), cfg.Network.Outbound.Allow.Ports...),
-				Schemes: append([]string(nil), cfg.Network.Outbound.Allow.Schemes...),
-			},
-		},
-	}
-
-	if cfg.Engine.Mode == "virtual" {
-		orch.Pipeline = stub.NewAdapter()
-	} else {
-		adapter := ffmpeg.NewLocalAdapter(
-			cfg.FFmpeg.Bin,
-			cfg.FFmpeg.FFprobeBin,
-			cfg.HLS.Root,
-			e2Client,
-			m.logger,
-			cfg.Enigma2.AnalyzeDuration,
-			cfg.Enigma2.ProbeSize,
-			cfg.HLS.DVRWindow,
-			cfg.FFmpeg.KillTimeout,
-			cfg.Enigma2.FallbackTo8001,
-			cfg.Enigma2.PreflightTimeout,
-			cfg.HLS.SegmentSeconds,
-			cfg.Timeouts.TranscodeStart,
-			cfg.Timeouts.TranscodeNoProgress,
-			cfg.FFmpeg.VaapiDevice,
-		)
-		// VAAPI preflight (fail-fast at startup if configured but broken)
-		if cfg.FFmpeg.VaapiDevice != "" {
-			if err := adapter.PreflightVAAPI(); err != nil {
-				m.logger.Warn().Err(err).Str("device", cfg.FFmpeg.VaapiDevice).
-					Msg("VAAPI preflight failed; GPU transcoding will be unavailable for sessions requesting it")
-			}
-		}
-		orch.Pipeline = adapter
-	}
-
-	// 4. Inject into API Server (Shadow Receiving)
-	if m.deps.APIServerSetter != nil {
-		m.deps.APIServerSetter.WireV3Runtime(v3Bus, v3Store, resumeStore, scanManager, adm)
-		m.logger.Info().Msg("v3 components and admission gate injected into API server")
-	} else {
-		m.logger.Warn().Msg("API Server Setter not available - shadow intents will not be processed")
-	}
-
-	// 5. Register Health/Readiness Checks (Phase 9-1)
-	m.registerV3Checks(&cfg, e2Client)
-
-	// 6. Run Orchestrator with managed lifecycle (cancel + join on shutdown)
-	workerCtx, workerCancel := context.WithCancel(ctx)
-	workerDone := make(chan error, 1)
-
-	m.RegisterShutdownHook("v3_orchestrator_stop", func(shutdownCtx context.Context) error {
-		workerCancel()
-		select {
-		case <-shutdownCtx.Done():
-			return fmt.Errorf("timeout waiting for v3 orchestrator stop: %w", shutdownCtx.Err())
-		case <-workerDone:
-			return nil
-		}
-	})
-
-	go func() {
-		err := orch.Run(workerCtx)
-		if err != nil && !errors.Is(err, context.Canceled) {
-			m.logger.Error().Err(err).Msg("v3 worker orchestrator exited unexpected")
-			errChan <- fmt.Errorf("v3 worker: %w", err)
-		}
-		workerDone <- err
-		close(workerDone)
 	}()
 
 	return nil
