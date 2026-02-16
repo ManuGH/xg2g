@@ -37,12 +37,10 @@ func normalizeDecisionPathLabel(path string) string {
 
 func normalizeDecisionCodecLabel(codec string) string {
 	switch strings.ToLower(strings.TrimSpace(codec)) {
-	case "h264", "hevc", "av1", "none":
+	case "h264", "hevc", "av1":
 		return strings.ToLower(strings.TrimSpace(codec))
-	case "":
-		return "none"
 	default:
-		return "other"
+		return "unknown"
 	}
 }
 
@@ -60,6 +58,6 @@ func normalizeDecisionProfileLabel(profile string) string {
 	case "generic", "safari", "safari_dvr", "safari_hevc", "safari_hevc_hw", "safari_hevc_hw_ll", "av1_hw", "av1_required", "llhls", "auto":
 		return strings.ToLower(strings.TrimSpace(profile))
 	default:
-		return "custom"
+		return "unknown"
 	}
 }
