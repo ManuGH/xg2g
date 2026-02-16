@@ -24,11 +24,6 @@ func ParseString(key, defaultValue string) string {
 	return parseStringWithLookup(log.WithComponent("config"), os.LookupEnv, key, defaultValue)
 }
 
-// parseStringWithLogger reads an environment variable with custom logger.
-func parseStringWithLogger(logger zerolog.Logger, key, defaultValue string) string {
-	return parseStringWithLookup(logger, os.LookupEnv, key, defaultValue)
-}
-
 func parseStringWithLookup(logger zerolog.Logger, lookup envLookupFunc, key, defaultValue string) string {
 	if lookup == nil {
 		lookup = os.LookupEnv
