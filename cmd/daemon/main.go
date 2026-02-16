@@ -393,7 +393,8 @@ func main() {
 	// Configure proxy (enabled by default in v2.0 for Zero Config experience)
 
 	// Create API handler
-	s, err := api.New(cfg, configMgr)
+	apiDeps := buildAPIConstructorDeps(cfg, snap, logger)
+	s, err := api.NewWithDeps(cfg, configMgr, apiDeps)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("failed to initialize API server")
 	}
