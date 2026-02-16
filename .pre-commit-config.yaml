@@ -72,6 +72,12 @@ repos:
         language: script
         files: '^(docker-compose.*\.ya?ml|deploy/docker-compose.*\.ya?ml|deploy/k8s-.*\.ya?ml|deploy/kubernetes/.*\.ya?ml)$'
         pass_filenames: false
+      - id: pre-push-sanity
+        name: Pre-push sanity (branch/history/worktree)
+        entry: scripts/pre-push-sanity.sh
+        language: script
+        pass_filenames: false
+        stages: [pre-push]
 
 # Global settings
 default_stages: [pre-commit]
