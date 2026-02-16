@@ -31,7 +31,8 @@ COPY contracts/version_matrix.json ../contracts/version_matrix.json
 RUN npm run build
 
 # Stage 3: Build xg2g application
-FROM golang@sha256:2c7c65601b020ee79db4c1a32ebee0bf3d6b298969ec683e24fcbea29305f10e AS app-builder
+# Keep in sync with go.mod (currently requires Go 1.25.7).
+FROM golang:1.25.7 AS app-builder
 
 WORKDIR /app
 COPY go.mod go.sum ./
@@ -57,9 +58,12 @@ ENV DEBIAN_FRONTEND=noninteractive \
     XG2G_FFPROBE_BIN="/usr/local/bin/ffprobe"
 
 # Install minimal runtime dependencies for FFmpeg and VAAPI
+# Include both Intel (iHD) and AMD/older-Intel (Mesa radeonsi/i965) VA-API drivers
+# so the image works regardless of GPU vendor.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     intel-media-va-driver \
+    mesa-va-drivers \
     libva-drm2 \
     libva2 \
     libx264-164 \

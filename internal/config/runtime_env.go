@@ -20,6 +20,60 @@ type Env struct {
 	Runtime RuntimeSnapshot
 }
 
+var runtimeEnvKeys = []string{
+	"XG2G_PLAYLIST_FILENAME",
+	"XG2G_PUBLIC_URL",
+	"XG2G_X_TVG_URL",
+	"XG2G_USE_PROXY_URLS",
+	"XG2G_PROXY_BASE_URL",
+	"XG2G_USE_HASH_TVGID",
+	"XG2G_FFMPEG_LOGLEVEL",
+	"XG2G_HTTP_MAX_CONNS_PER_HOST",
+	"XG2G_STREAM_BASE",
+	"XG2G_HLS_OUTPUT_DIR",
+	"XG2G_HLS_DVR_SECONDS",
+	"XG2G_SAFARI_DVR_SEGMENT_DURATION",
+	"XG2G_SAFARI_DVR_WINDOW_SIZE",
+	"XG2G_SAFARI_DVR_STARTUP_SEGMENTS",
+	"XG2G_SAFARI_DVR_FFMPEG_PATH",
+	"XG2G_WEB_FFMPEG_PATH",
+	"XG2G_SAFARI_DVR_FORCE_AAC",
+	"XG2G_SAFARI_DVR_AAC_BITRATE",
+	"XG2G_LLHLS_SEGMENT_DURATION",
+	"XG2G_LLHLS_PLAYLIST_SIZE",
+	"XG2G_LLHLS_STARTUP_SEGMENTS",
+	"XG2G_LLHLS_PART_SIZE",
+	"XG2G_LLHLS_FFMPEG_PATH",
+	"XG2G_LLHLS_HEVC_ENABLED",
+	"XG2G_WEB_HEVC_PROFILE_ENABLED",
+	"XG2G_LLHLS_HEVC_BITRATE",
+	"XG2G_WEB_HEVC_BITRATE",
+	"XG2G_LLHLS_HEVC_PEAK",
+	"XG2G_WEB_HEVC_MAXBITRATE",
+	"XG2G_LLHLS_HEVC_ENCODER",
+	"XG2G_WEB_HEVC_ENCODER",
+	"XG2G_LLHLS_HEVC_PROFILE",
+	"XG2G_LLHLS_HEVC_LEVEL",
+	"XG2G_LLHLS_VAAPI_DEVICE",
+	"XG2G_WEB_LL_HLS_PART_DURATION",
+	"XG2G_ENABLE_AUDIO_TRANSCODING",
+	"XG2G_H264_STREAM_REPAIR",
+	"XG2G_VIDEO_TRANSCODE",
+	"XG2G_AUDIO_CHANNELS",
+	"XG2G_AUDIO_CODEC",
+	"XG2G_AUDIO_BITRATE",
+	"XG2G_FFMPEG_BIN",
+	"XG2G_VIDEO_CODEC",
+	"XG2G_VAAPI_DEVICE",
+}
+
+// KnownRuntimeEnvKeys returns all env keys read by ReadEnv.
+func KnownRuntimeEnvKeys() []string {
+	out := make([]string, len(runtimeEnvKeys))
+	copy(out, runtimeEnvKeys)
+	return out
+}
+
 // DefaultEnv returns an Env populated entirely from defaults (no environment values).
 func DefaultEnv() Env {
 	env, _ := ReadEnv(func(string) string { return "" })
@@ -173,9 +227,8 @@ func readTranscoderRuntime(getenv func(string) string) TranscoderRuntime {
 	// Both can be explicitly disabled via ENV.
 	audioEnabled := getBool(getenv, "XG2G_ENABLE_AUDIO_TRANSCODING", true)
 	h264Repair := getBool(getenv, "XG2G_H264_STREAM_REPAIR", false)
-	gpuEnabled := getBool(getenv, "XG2G_GPU_TRANSCODE", false)
 	videoTranscode := getBool(getenv, "XG2G_VIDEO_TRANSCODE", false)
-	enabled := audioEnabled || h264Repair || gpuEnabled || videoTranscode
+	enabled := audioEnabled || h264Repair || videoTranscode
 
 	channels := 2
 	if raw := strings.TrimSpace(getString(getenv, "XG2G_AUDIO_CHANNELS", "")); raw != "" {
@@ -192,8 +245,6 @@ func readTranscoderRuntime(getenv func(string) string) TranscoderRuntime {
 		Bitrate:           getString(getenv, "XG2G_AUDIO_BITRATE", "192k"),
 		Channels:          channels,
 		FFmpegPath:        getString(getenv, "XG2G_FFMPEG_BIN", ""),
-		GPUEnabled:        gpuEnabled,
-		TranscoderURL:     getString(getenv, "XG2G_TRANSCODER_URL", ""),
 		VideoTranscode:    videoTranscode,
 		VideoCodec:        getString(getenv, "XG2G_VIDEO_CODEC", ""),
 		VAAPIDevice:       getString(getenv, "XG2G_VAAPI_DEVICE", ""),

@@ -204,7 +204,7 @@ func (s *Server) PutSystemConfig(w http.ResponseWriter, r *http.Request) {
 
 		go func() {
 			log.L().Info().Msg("configuration updated, triggering graceful shutdown")
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 10*time.Second)
 			defer cancel()
 			if err := s.requestShutdown(ctx); err != nil {
 				log.L().Error().Err(err).Msg("graceful shutdown request failed")

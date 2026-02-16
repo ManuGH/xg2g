@@ -102,7 +102,18 @@
     "resumeTitle": "Resume Playback?",
     "resumePrompt": "Resume from {{time}}?",
     "resumeAction": "Resume",
-    "startOver": "Start Over"
+    "startOver": "Start Over",
+    "dvrMode": "DVR mode",
+    "preparing": "Preparing...",
+    "timeout": "Timeout",
+    "networkError": "Network error",
+    "serverError": "Server error",
+    "notAvailable": "Not available",
+    "playbackDenied": "Playback denied",
+    "playbackError": "Playback error",
+    "streamUrlMissing": "Stream URL missing",
+    "sessionExpired": "Session expired. Please restart.",
+    "sessionNotFound": "Session no longer exists."
   },
   "epg": {
     "pageTitle": "EPG Overview ({{count}})",

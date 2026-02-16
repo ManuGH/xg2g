@@ -1,0 +1,310 @@
+name: CI Deep Scheduled
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 2 * * *" # nightly (UTC)
+    - cron: "0 3 * * 0" # weekly (UTC, Sunday)
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: repo-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GOTOOLCHAIN: auto
+  TZ: UTC
+  NIGHTLY_CRON: "0 2 * * *"
+  WEEKLY_CRON: "0 3 * * 0"
+
+jobs:
+  nightly-race:
+    name: nightly-race
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 2 * * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Setup Go
+        uses: actions/setup-go@a5f9b05d2d216f63e13859e0d847461041025775
+        with:
+          go-version-file: go.mod
+          check-latest: true
+          cache: true
+          cache-dependency-path: go.sum
+        env:
+          GOTOOLCHAIN: auto
+
+      - name: Setup Node
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: webui/package-lock.json
+
+      - name: Build WebUI assets (embed prereq)
+        run: |
+          set -euo pipefail
+          make ui-build
+
+      - name: Install ffmpeg
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          ffmpeg -version
+
+      - name: Run race suite
+        run: |
+          set -euo pipefail
+          go test -race -count=1 ./... 2>&1 | tee nightly-race.log
+
+      - name: Upload race logs on failure
+        if: failure()
+        uses: actions/upload-artifact@47309c993abb98030a35d55ef7ff34b7fa1074b5 # v4.4.3
+        with:
+          name: nightly-race-logs
+          path: nightly-race.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+  nightly-integration:
+    name: nightly-integration
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 2 * * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Setup Go
+        uses: actions/setup-go@a5f9b05d2d216f63e13859e0d847461041025775
+        with:
+          go-version-file: go.mod
+          check-latest: true
+          cache: true
+          cache-dependency-path: go.sum
+        env:
+          GOTOOLCHAIN: auto
+
+      - name: Run integration and invariants (fail-fast)
+        run: |
+          set -euo pipefail
+          go test -count=1 -failfast ./test/integration/... ./test/invariants/... 2>&1 | tee nightly-integration.log
+
+      - name: Upload integration logs on failure
+        if: failure()
+        uses: actions/upload-artifact@47309c993abb98030a35d55ef7ff34b7fa1074b5 # v4.4.3
+        with:
+          name: nightly-integration-logs
+          path: nightly-integration.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+  weekly-security-deep:
+    name: weekly-security-deep
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * 0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Setup Go
+        uses: actions/setup-go@a5f9b05d2d216f63e13859e0d847461041025775
+        with:
+          go-version-file: go.mod
+          check-latest: true
+          cache: true
+          cache-dependency-path: go.sum
+        env:
+          GOTOOLCHAIN: auto
+
+      - name: Install security tools
+        run: |
+          set -euo pipefail
+          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+          go install github.com/securego/gosec/v2/cmd/gosec@v2.22.11
+
+      - name: Run security scanners
+        run: |
+          set +e
+          set -u -o pipefail
+          govulncheck -tags=nogpu -format json ./... > govulncheck.json 2> govulncheck.stderr
+          GOVULN_EXIT=$?
+          gosec \
+            -fmt=sarif \
+            -out=gosec.sarif \
+            -severity=high \
+            -tags=nogpu \
+            -exclude-generated \
+            -exclude-dir=test \
+            -exclude-dir=internal/test \
+            -exclude-dir=internal/api \
+            -exclude-dir=.github \
+            -exclude-dir=vendor \
+            ./... 2> gosec.stderr
+          GOSEC_EXIT=$?
+
+          if [ "$GOVULN_EXIT" -ne 0 ] || [ "$GOSEC_EXIT" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Upload security reports on failure
+        if: failure()
+        uses: actions/upload-artifact@47309c993abb98030a35d55ef7ff34b7fa1074b5 # v4.4.3
+        with:
+          name: weekly-security-reports
+          path: |
+            govulncheck.json
+            govulncheck.stderr
+            gosec.sarif
+            gosec.stderr
+          if-no-files-found: ignore
+          retention-days: 14
+
+  weekly-governance-deep:
+    name: weekly-governance-deep
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * 0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Setup Go
+        uses: actions/setup-go@a5f9b05d2d216f63e13859e0d847461041025775
+        with:
+          go-version-file: go.mod
+          check-latest: true
+          cache: true
+          cache-dependency-path: go.sum
+        env:
+          GOTOOLCHAIN: auto
+
+      - name: Setup Node
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: webui/package-lock.json
+
+      - name: Run governance deep checks
+        run: |
+          set -euo pipefail
+
+          NEW_JSX=$(find webui/src -type f -name '*.jsx' || true)
+          if [ -n "$NEW_JSX" ]; then
+            echo "❌ New .jsx files detected:"
+            echo "$NEW_JSX"
+            exit 1
+          fi
+
+          LEGACY_IMPORTS=$(grep -RIn "from ['\"].*\\.\\./client[^-]" webui/src/ 2>/dev/null || true)
+          if [ -n "$LEGACY_IMPORTS" ]; then
+            echo "❌ Legacy client imports detected:"
+            echo "$LEGACY_IMPORTS"
+            exit 1
+          fi
+
+          cd webui
+          npm ci
+          npm run build
+
+  deep-summary:
+    name: deep-summary
+    needs: [nightly-race, nightly-integration, weekly-security-deep, weekly-governance-deep]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Summary (Job / Command / Exit)
+        env:
+          RACE_RESULT: ${{ needs.nightly-race.result }}
+          INTEGRATION_RESULT: ${{ needs.nightly-integration.result }}
+          SECURITY_RESULT: ${{ needs.weekly-security-deep.result }}
+          GOVERNANCE_RESULT: ${{ needs.weekly-governance-deep.result }}
+        run: |
+          set -euo pipefail
+
+          map_exit() {
+            case "$1" in
+              success) echo "0" ;;
+              skipped) echo "SKIP" ;;
+              *) echo "1" ;;
+            esac
+          }
+
+          RACE_EXIT="$(map_exit "$RACE_RESULT")"
+          INTEGRATION_EXIT="$(map_exit "$INTEGRATION_RESULT")"
+          SECURITY_EXIT="$(map_exit "$SECURITY_RESULT")"
+          GOVERNANCE_EXIT="$(map_exit "$GOVERNANCE_RESULT")"
+
+          {
+            echo "## Deep Suite Summary"
+            echo ""
+            echo "| Job | Command | Result | Exit |"
+            echo "|---|---|---:|---:|"
+            echo "| nightly-race | \`go test -race -count=1 ./...\` | $RACE_RESULT | $RACE_EXIT |"
+            echo "| nightly-integration | \`go test -count=1 -failfast ./test/integration/... ./test/invariants/...\` | $INTEGRATION_RESULT | $INTEGRATION_EXIT |"
+            echo "| weekly-security-deep | \`govulncheck -tags=nogpu ./... && gosec -severity=high ... ./...\` | $SECURITY_RESULT | $SECURITY_EXIT |"
+            echo "| weekly-governance-deep | \`jsx/legacy-import guards + (cd webui && npm ci && npm run build)\` | $GOVERNANCE_RESULT | $GOVERNANCE_EXIT |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deep-alert-on-failure:
+    name: deep-alert-on-failure
+    needs: [nightly-race, nightly-integration, weekly-security-deep, weekly-governance-deep, deep-summary]
+    if: >
+      always() &&
+      github.event_name == 'schedule' &&
+      (
+        needs.nightly-race.result == 'failure' || needs.nightly-race.result == 'cancelled' ||
+        needs.nightly-integration.result == 'failure' || needs.nightly-integration.result == 'cancelled' ||
+        needs.weekly-security-deep.result == 'failure' || needs.weekly-security-deep.result == 'cancelled' ||
+        needs.weekly-governance-deep.result == 'failure' || needs.weekly-governance-deep.result == 'cancelled'
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Create fail alert issue
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        env:
+          RACE_RESULT: ${{ needs.nightly-race.result }}
+          INTEGRATION_RESULT: ${{ needs.nightly-integration.result }}
+          SECURITY_RESULT: ${{ needs.weekly-security-deep.result }}
+          GOVERNANCE_RESULT: ${{ needs.weekly-governance-deep.result }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+            const title = `[CI Deep] Scheduled run failed: ${process.env.GITHUB_RUN_ID}`;
+
+            const body = [
+              "Scheduled deep-suite run failed.",
+              "",
+              `Run: ${runUrl}`,
+              "",
+              "| Job | Result |",
+              "|---|---:|",
+              `| nightly-race | ${process.env.RACE_RESULT} |`,
+              `| nightly-integration | ${process.env.INTEGRATION_RESULT} |`,
+              `| weekly-security-deep | ${process.env.SECURITY_RESULT} |`,
+              `| weekly-governance-deep | ${process.env.GOVERNANCE_RESULT} |`,
+              "",
+              `Commit: \`${process.env.GITHUB_SHA}\``,
+              `Workflow: \`${process.env.GITHUB_WORKFLOW}\``,
+            ].join("\n");
+
+            await github.rest.issues.create({
+              owner,
+              repo,
+              title,
+              body,
+            });

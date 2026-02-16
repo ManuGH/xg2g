@@ -20,13 +20,12 @@ WorkingDirectory=/srv/xg2g
 
 # Load env (explicitly required)
 EnvironmentFile=/etc/xg2g/xg2g.env
-Environment=XG2G_IMAGE=ghcr.io/manugh/xg2g:3.1.7
 
-# Fail-closed: enforce mandatory config (XG2G_E2_HOST or XG2G_OWI_BASE)
+# Fail-closed: enforce mandatory config (canonical XG2G_E2_HOST; legacy fallback XG2G_OWI_BASE)
 # These checks fail cleanly before any containers are touched and reject whitespace-only values.
 ExecStartPre=/bin/sh -eu -c '/usr/bin/docker info >/dev/null'
 ExecStartPre=/bin/sh -eu -c 'test -w /var/lib/xg2g'
-ExecStartPre=/bin/sh -eu -c 'h="${XG2G_E2_HOST:-}"; o="${XG2G_OWI_BASE:-}"; h="$(printf %s "$h" | tr -d "[:space:]")"; o="$(printf %s "$o" | tr -d "[:space:]")"; if [ -z "${h}${o}" ]; then echo "Missing XG2G_E2_HOST or XG2G_OWI_BASE" >&2; exit 1; fi; if [ -n "$h" ] && [ -n "$o" ] && [ "$h" != "$o" ]; then hm="$(printf %s "$h" | sed -E "s#(https?://)[^/@]+@#\\1#")"; om="$(printf %s "$o" | sed -E "s#(https?://)[^/@]+@#\\1#")"; echo "XG2G_E2_HOST and XG2G_OWI_BASE differ (E2_HOST=${hm}, OWI_BASE=${om})" >&2; exit 1; fi'
+ExecStartPre=/bin/sh -eu -c 'h="${XG2G_E2_HOST:-}"; o="${XG2G_OWI_BASE:-}"; h="$(printf %s "$h" | tr -d "[:space:]")"; o="$(printf %s "$o" | tr -d "[:space:]")"; if [ -z "${h}${o}" ]; then echo "Missing XG2G_E2_HOST (legacy fallback: XG2G_OWI_BASE)" >&2; exit 1; fi; if [ -n "$h" ] && [ -n "$o" ] && [ "$h" != "$o" ]; then hm="$(printf %s "$h" | sed -E "s#(https?://)[^/@]+@#\\1#")"; om="$(printf %s "$o" | sed -E "s#(https?://)[^/@]+@#\\1#")"; echo "XG2G_E2_HOST and XG2G_OWI_BASE differ (E2_HOST=${hm}, OWI_BASE=${om})" >&2; exit 1; fi'
 ExecStartPre=/bin/sh -eu -c 't="${XG2G_API_TOKEN:-}"; t="$(printf %s "$t" | tr -d "[:space:]")"; test -n "$t"'
 
 # Fail-closed: ensure compose file is valid before touching containers

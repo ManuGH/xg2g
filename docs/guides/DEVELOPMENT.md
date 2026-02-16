@@ -56,6 +56,12 @@ For local development with Compose, apply the dev override:
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 ```
 
+Optional (VAAPI / Intel+AMD iGPU):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.hwaccel.yml up -d
+```
+
 *Note: This script targets only `xg2g` and `run_dev.sh` processes.*
 
 ### Containerized Testing

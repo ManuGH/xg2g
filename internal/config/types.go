@@ -165,6 +165,7 @@ type RateLimitConfig struct {
 // NetworkFileConfig holds network policy configuration.
 type NetworkFileConfig struct {
 	Outbound OutboundFileConfig `yaml:"outbound,omitempty"`
+	LAN      LANFileConfig      `yaml:"lan,omitempty"`
 }
 
 // OutboundFileConfig controls outbound HTTP(S) access.
@@ -179,6 +180,16 @@ type OutboundAllowlist struct {
 	CIDRs   []string `yaml:"cidrs,omitempty"`
 	Ports   []int    `yaml:"ports,omitempty"`
 	Schemes []string `yaml:"schemes,omitempty"`
+}
+
+// LANFileConfig defines LAN access policy.
+type LANFileConfig struct {
+	Allow LANAllowlist `yaml:"allow,omitempty"`
+}
+
+// LANAllowlist defines LAN CIDR allowlist rules.
+type LANAllowlist struct {
+	CIDRs []string `yaml:"cidrs,omitempty"`
 }
 
 // MetricsConfig holds Prometheus metrics configuration
@@ -472,10 +483,16 @@ type StoreConfig struct {
 // NetworkConfig holds outbound network policy.
 type NetworkConfig struct {
 	Outbound OutboundConfig
+	LAN      LANConfig
 }
 
 // OutboundConfig controls outbound HTTP(S) allowlist enforcement.
 type OutboundConfig struct {
 	Enabled bool
 	Allow   OutboundAllowlist
+}
+
+// LANConfig defines runtime LAN access policy.
+type LANConfig struct {
+	Allow LANAllowlist
 }

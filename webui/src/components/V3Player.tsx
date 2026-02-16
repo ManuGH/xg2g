@@ -123,6 +123,31 @@ async function detectPreferredCodecs(videoEl?: HTMLVideoElement | null): Promise
   return out;
 }
 
+class PlayerError extends Error {
+  details?: unknown;
+
+  constructor(message: string, details?: unknown) {
+    super(message);
+    this.name = 'PlayerError';
+    this.details = details;
+    Object.setPrototypeOf(this, PlayerError.prototype);
+  }
+}
+
+async function readResponseBody(res: Response): Promise<{ json: any | null; text: string | null }> {
+  try {
+    const text = await res.text();
+    if (!text) return { json: null, text: '' };
+    try {
+      return { json: JSON.parse(text), text };
+    } catch {
+      return { json: null, text };
+    }
+  } catch {
+    return { json: null, text: null };
+  }
+}
+
 function V3Player(props: V3PlayerProps) {
   const { t } = useTranslation();
   const { capabilities } = useCapabilities();
@@ -525,14 +550,79 @@ function V3Player(props: V3PlayerProps) {
 
         // Handle Auth failure explicitly
         if (res.status === 401 || res.status === 403) {
-          throw new Error(t('player.authFailed'));
+          throw new PlayerError(t('player.authFailed'), {
+            url: res.url,
+            status: res.status,
+            requestId: res.headers.get('X-Request-ID') || undefined
+          });
         }
 
         if (res.status === 404) {
           await sleep(100); // Fast retry for session creation
           continue;
         }
-        if (!res.ok) throw new Error(t('player.failedToFetchSession'));
+
+        // CTO Contract (Phase 5.3): terminal sessions return 410 Gone with a problem+json body.
+        if (res.status === 410) {
+          const { json, text } = await readResponseBody(res);
+          const requestId =
+            (json && typeof json === 'object' ? (json.requestId as string | undefined) : undefined) ||
+            res.headers.get('X-Request-ID') ||
+            undefined;
+
+          const reason = (json && typeof json === 'object' ? (json.reason ?? json.state ?? json.code) : undefined) as
+            | string
+            | undefined;
+          const reasonDetail =
+            (json && typeof json === 'object' ? (json.reason_detail ?? json.reasonDetail ?? json.detail) : undefined) as
+              | string
+              | undefined;
+
+          const combined = `${reason ?? 'GONE'}${reasonDetail ? `: ${reasonDetail}` : ''}`;
+          const details = {
+            url: res.url,
+            status: res.status,
+            requestId,
+            code: json?.code,
+            title: json?.title,
+            detail: json?.detail,
+            session: json?.session,
+            state: json?.state,
+            reason: json?.reason,
+            reason_detail: json?.reason_detail,
+            body: json ?? text
+          };
+
+          telemetry.emit('ui.error', {
+            status: 410,
+            code: 'SESSION_GONE',
+            reason: reason ?? null,
+            reason_detail: reasonDetail ?? null,
+            requestId
+          });
+
+          if (String(reason).includes('LEASE_BUSY') || String(reasonDetail).includes('LEASE_BUSY')) {
+            throw new PlayerError(t('player.leaseBusy'), details);
+          }
+          throw new PlayerError(`${t('player.sessionFailed')}: ${combined}`, details);
+        }
+
+        if (!res.ok) {
+          const { json, text } = await readResponseBody(res);
+          const requestId =
+            (json && typeof json === 'object' ? (json.requestId as string | undefined) : undefined) ||
+            res.headers.get('X-Request-ID') ||
+            undefined;
+          throw new PlayerError(`${t('player.failedToFetchSession')} (HTTP ${res.status})`, {
+            url: res.url,
+            status: res.status,
+            requestId,
+            code: json?.code,
+            title: json?.title,
+            detail: json?.detail,
+            body: json ?? text
+          });
+        }
 
         const session: V3SessionStatusResponse = await res.json();
         applySessionInfo(session);
@@ -563,14 +653,24 @@ function V3Player(props: V3PlayerProps) {
 
         await sleep(100); // Fast polling for low-latency startup
       } catch (err) {
-        const msg = (err as Error).message || '';
+        const e = err as any;
+        const msg = e?.message || '';
+        const status = e?.details?.status as number | undefined;
         // If it's a terminal, user-facing error, abort immediately
         if (msg === t('player.leaseBusy') || msg.startsWith(t('player.sessionFailed')) || msg === t('player.authFailed')) {
           throw err;
         }
 
+        // Non-retryable client errors (except 404 handled above, and 429 which can be transient).
+        if (typeof status === 'number' && status >= 400 && status < 500 && status !== 404 && status !== 429) {
+          throw err;
+        }
+
         if (i === maxAttempts - 1) {
-          throw new Error(`${t('player.readinessCheckFailed')}: ${(err as Error).message}`);
+          if (err instanceof PlayerError) {
+            throw new PlayerError(`${t('player.readinessCheckFailed')}: ${msg}`, e?.details);
+          }
+          throw new Error(`${t('player.readinessCheckFailed')}: ${msg}`);
         }
         await sleep(500);
       }
@@ -1102,8 +1202,17 @@ function V3Player(props: V3PlayerProps) {
           await sendStopIntent(newSessionId);
         }
         debugError(err);
-        setError((err as Error).message);
-        setErrorDetails((err as Error).stack || null);
+        const e = err as any;
+        setError(e?.message || String(err));
+        if (e?.details) {
+          try {
+            setErrorDetails(typeof e.details === 'string' ? e.details : JSON.stringify(e.details, null, 2));
+          } catch {
+            setErrorDetails(String(e.details));
+          }
+        } else {
+          setErrorDetails(e?.stack || null);
+        }
         setStatus('error');
       }
     } finally {

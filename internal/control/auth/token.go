@@ -71,6 +71,9 @@ func AuthorizeToken(got, expected string) bool {
 	if strings.TrimSpace(expected) == "" || got == "" {
 		return false
 	}
+	if len(got) != len(expected) {
+		return false
+	}
 	return subtle.ConstantTimeCompare([]byte(got), []byte(expected)) == 1
 }
 
