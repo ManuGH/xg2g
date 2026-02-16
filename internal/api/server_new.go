@@ -8,50 +8,36 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/channels"
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/admission"
 	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	"github.com/ManuGH/xg2g/internal/dvr"
 	"github.com/ManuGH/xg2g/internal/jobs"
-	"github.com/ManuGH/xg2g/internal/log"
-	"github.com/ManuGH/xg2g/internal/recordings"
 	"github.com/ManuGH/xg2g/internal/resilience"
 )
 
 // New creates and initializes a new HTTP API server.
 func New(cfg config.AppConfig, cfgMgr *config.Manager, opts ...ServerOption) (*Server, error) {
+	return NewWithDeps(cfg, cfgMgr, ConstructorDeps{}, opts...)
+}
+
+// NewWithDeps creates and initializes a new HTTP API server using externally
+// composed constructor dependencies when provided.
+func NewWithDeps(cfg config.AppConfig, cfgMgr *config.Manager, constructorDeps ConstructorDeps, opts ...ServerOption) (*Server, error) {
 	// 1. Initialized root context for server lifecycle (MUST be before v3Handler)
 	rootCtx, rootCancel := context.WithCancel(context.Background())
 
-	// Initialize channel manager
-	cm := channels.NewManager(cfg.DataDir)
-	if err := cm.Load(); err != nil {
-		log.L().Error().Err(err).Msg("failed to load channel states")
-	}
-
-	// Initialize Series Manager (DVR v2)
-	sm := dvr.NewManager(cfg.DataDir)
-	if err := sm.Load(); err != nil {
-		log.L().Error().Err(err).Msg("failed to load series rules")
-	}
-
-	env, err := config.ReadOSRuntimeEnv()
-	if err != nil {
-		log.L().Warn().Err(err).Msg("failed to read runtime environment, using defaults")
-		env = config.DefaultEnv()
-	}
-	snap := config.BuildSnapshot(cfg, env)
+	deps := resolveConstructorDeps(cfg, constructorDeps)
 
 	s := &Server{
 		cfg:                 cfg,
 		configManager:       cfgMgr,
 		rootCtx:             rootCtx,
 		rootCancel:          rootCancel,
-		snap:                snap,
-		channelManager:      cm,
-		seriesManager:       sm,
-		recordingPathMapper: recordings.NewPathMapper(cfg.RecordingPathMappings),
+		snap:                deps.snapshot,
+		channelManager:      deps.channelManager,
+		seriesManager:       deps.seriesManager,
+		recordingPathMapper: deps.pathMapper,
 		status: jobs.Status{
 			Version: cfg.Version, // Initialize version from config
 		},
@@ -80,7 +66,7 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager, opts ...ServerOption) (*S
 	}
 
 	// Server (s) implements EpgProvider interface via GetEvents method.
-	s.seriesEngine = dvr.NewSeriesEngine(cfg, sm, func() dvr.OWIClient {
+	s.seriesEngine = dvr.NewSeriesEngine(cfg, deps.seriesManager, func() dvr.OWIClient {
 		return s.newSeriesOWIClient(cfg)
 	})
 
@@ -98,7 +84,7 @@ func New(cfg config.AppConfig, cfgMgr *config.Manager, opts ...ServerOption) (*S
 	adm := admission.NewController(cfg)
 	s.WireV3Runtime(s.v3RuntimeDeps, adm)
 
-	s.initHDHR(cfg, cm)
+	s.initHDHR(cfg, deps.channelManager)
 	s.registerHealthCheckers(cfg)
 
 	return s, nil
