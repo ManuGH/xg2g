@@ -5,7 +5,7 @@
 **Status:** Active Reference
 **Audience:** Senior engineers, contributors, code reviewers
 
-**Note:** This is a **10/10 explanation** (complete, precise, actionable). The **architecture itself is 8.2/10** (6 layering exemptions exist, see Section 5 for fixes).
+**Note:** This is a **10/10 explanation** (complete, precise, actionable). The **architecture itself is 10/10** against the criteria in Section 4 (layering enforced with zero exemptions).
 
 ---
 
@@ -694,195 +694,49 @@ A 10/10 architecture satisfies **all** of these criteria:
 
 ---
 
-### Current Score: **8.2/10**
+### Current Score: **10/10**
 
 | Criterion | Status | Score | Gap |
 |-----------|--------|-------|-----|
 | No Naming Doppelwelten | ✅ Fixed (`infra` consolidated) | 1.0 | None |
 | Feature Ownership | ✅ Documented (PACKAGE_LAYOUT.md) | 1.0 | None |
-| Layering Enforced | ⚠️ 6 exemptions (known tech debt) | 0.6 | Fix 6 violations → 1.0 |
+| Layering Enforced | ✅ Enforced (zero exemptions) | 1.0 | None |
 | No Zombie Config | ✅ Validation comprehensive | 1.0 | None |
 | Deterministic Boot | ✅ Bootstrap tests prove it | 1.0 | None |
 | Observability | ✅ Middleware enforces | 1.0 | None |
 | OpenAPI Drift | ✅ Codegen active | 1.0 | None |
-| No Utils Hell | ✅ Tests prevent (core deprecated) | 1.0 | Migrate core → 1.0 |
+| No Utils Hell | ✅ Tests prevent (core deprecated + locked) | 1.0 | None |
 | Fail-Closed Security | ✅ Middleware enforces | 1.0 | None |
-| Tests Prove Invariants | ⚠️ Layering tests have exemptions | 0.6 | Fix 6 violations → 1.0 |
+| Tests Prove Invariants | ✅ Layering tests have zero exemptions | 1.0 | None |
 
-**Gap to 10/10:**
-
-1. Fix 6 layering violations (infra → control/domain) → +0.8
-2. Migrate `internal/core/` packages → +0.0 (already deprecated, not blocking 10/10)
-
-**Total Gap:** 1.8 points (requires fixing 6 tech debt violations)
+**Gap to 10/10:** None.
 
 ---
 
-## 5. Tech Debt: 6 Exemptions – Refactor Plans
+## 5. Layering Exemptions (Resolved) – Notes & History
 
-### Violation Group 1: `infra/{bus,media/*} → domain/session/ports` (3 violations)
+Layering is enforced mechanically by `internal/validate/imports_test.go` with **zero exemptions**.
 
-**Files:**
+Historically, two areas were easy to misclassify during reviews:
 
-1. `internal/infra/bus/adapter.go` → `github.com/ManuGH/xg2g/internal/domain/session/ports`
-2. `internal/infra/media/ffmpeg/adapter.go` → `github.com/ManuGH/xg2g/internal/domain/session/ports`
-3. `internal/infra/media/stub/adapter.go` → `github.com/ManuGH/xg2g/internal/domain/session/ports`
+### Note 1: Infra Implementing Domain Ports Is Allowed
 
-#### Analysis: Is This Actually a Violation?
+`internal/infra/*` MAY import `internal/domain/*/ports` to implement domain-defined interfaces
+(ports-and-adapters / hexagonal architecture). This is dependency inversion: domain owns contracts, infra owns implementations.
 
-**NO.** This is **dependency inversion** (correct pattern).
+### Note 2: Infra Must Not Import Control Types
 
-**Why:**
+`internal/infra/*` MUST NOT import `internal/control/*`.
 
-- Domain defines **ports** (interfaces): `domain/session/ports.CommandRunner`, `ports.EventBus`
-- Infra **implements** these ports: `infra/media/ffmpeg.Adapter` implements `CommandRunner`
-- Dependency direction: domain → ports ← infra (implements)
+Where shared pure data types are needed by both infra and control (e.g., FFmpeg probe/build DTOs), those types live in
+`internal/domain/*` (example: `internal/domain/vod`) so infra can depend on them without importing control.
 
-**This is textbook hexagonal architecture.**
-
-#### Fix: Recategorize as Allowed
-
-**Action:**
-
-1. Update `internal/validate/imports_test.go`: Remove from exemptions
-2. Add explicit rule: "Infra MAY import `domain/*/ports` to implement interfaces"
-3. Update PACKAGE_LAYOUT.md: Document this pattern
-
-**Risk:** Zero (this is correct architecture).
-
-**Test Proof:**
+**Proof (CI gate):**
 
 ```bash
-# After fix: Test passes, no exemption needed
-$ go test ./internal/validate -run TestLayering
-PASS
+$ go test ./internal/validate -run TestLayeringRules
+PASS  # Zero exemptions
 ```
-
----
-
-### Violation Group 2: `infra/ffmpeg/* → control/vod` (3 violations)
-
-**Files:**
-4. `internal/infra/ffmpeg/builder.go` → `github.com/ManuGH/xg2g/internal/control/vod`
-5. `internal/infra/ffmpeg/probe.go` → `github.com/ManuGH/xg2g/internal/control/vod`
-6. `internal/infra/ffmpeg/runner.go` → `github.com/ManuGH/xg2g/internal/control/vod`
-
-#### Analysis: Why Is This Wrong?
-
-**YES, this is a real violation.**
-
-**Why:**
-
-- `infra/ffmpeg/` is a low-level adapter (FFmpeg command builder)
-- `control/vod/` is application logic (VOD lifecycle, probing policy)
-- Infra should not know about control-layer concepts
-
-**Root Cause:**
-`infra/ffmpeg/` imports `control/vod.ProbeResult`, `vod.StreamInfo` (domain types in wrong layer).
-
-#### Fix Plan: Move VOD Types to Domain Layer
-
-**Step 1: Create `internal/domain/vod/` package**
-
-```go
-// internal/domain/vod/types.go
-package vod
-
-type ProbeResult struct {
-    Duration  float64
-    Format    string
-    VideoCodec string
-    AudioCodec string
-}
-
-type StreamInfo struct {
-    Path      string
-    Duration  float64
-    Bitrate   int64
-}
-```
-
-**Step 2: Move `control/vod/types.go → domain/vod/types.go`**
-
-```bash
-mv internal/control/vod/types.go internal/domain/vod/types.go
-```
-
-**Step 3: Update imports in `infra/ffmpeg/*`**
-
-```go
-// Before:
-import "github.com/ManuGH/xg2g/internal/control/vod"
-
-// After:
-import "github.com/ManuGH/xg2g/internal/domain/vod"
-```
-
-**Step 4: Update `control/vod/manager.go`**
-
-```go
-// Before:
-type Manager struct {
-    prober *Prober  // Returns vod.ProbeResult
-}
-
-// After:
-import "github.com/ManuGH/xg2g/internal/domain/vod"
-
-type Manager struct {
-    prober *Prober  // Returns domain/vod.ProbeResult
-}
-```
-
-**Step 5: Remove exemptions from `imports_test.go`**
-
-```go
-// Delete these lines:
-"internal/infra/ffmpeg/builder.go -> github.com/ManuGH/xg2g/internal/control/vod": true,
-"internal/infra/ffmpeg/probe.go -> github.com/ManuGH/xg2g/internal/control/vod": true,
-"internal/infra/ffmpeg/runner.go -> github.com/ManuGH/xg2g/internal/control/vod": true,
-```
-
-#### Risk Assessment
-
-**Low Risk:**
-
-- This is a pure type move (no logic changes)
-- Import paths change, but types remain identical
-- Tests will catch any regressions
-
-**Mitigation:**
-
-1. Run full test suite after refactor: `go test ./...`
-2. Run integration tests: `go test ./internal/api -v`
-3. Manual smoke test: start daemon, play VOD file
-
-#### Test Proof
-
-```bash
-# After refactor:
-$ go test ./internal/validate -run TestLayering
-PASS  # No exemptions, all rules enforced
-
-$ go test ./internal/control/vod -v
-PASS  # VOD manager still works
-
-$ go test ./internal/infra/ffmpeg -v
-PASS  # FFmpeg adapter still works
-```
-
----
-
-### Summary: Refactor Effort Estimate
-
-| Violation Group | Fix | Files Changed | Risk | Effort |
-|-----------------|-----|---------------|------|--------|
-| Group 1 (infra → ports) | Recategorize as allowed | 1 (imports_test.go) | Zero | 5 min |
-| Group 2 (infra → control/vod) | Move types to domain/vod | ~10 files | Low | 30 min |
-
-**Total Effort:** 35 minutes (mechanical refactor).
-
-**Outcome:** 10/10 architecture (all layering rules enforced, no exemptions).
 
 ---
 
@@ -890,10 +744,11 @@ PASS  # FFmpeg adapter still works
 
 ### Missing Pieces for 10/10
 
-| Gap | Action | Owner | Effort |
+None (see Scorecard). Remaining non-blocking cleanup:
+
+| Item | Action | Owner | Effort |
 |-----|--------|-------|--------|
-| 6 layering exemptions | Refactor (see Section 5) | Tech Lead | 35 min |
-| `core/` migration | Incremental (not blocking) | Team | Ongoing |
+| `core/` migration | Incremental (non-blocking) | Team | Ongoing |
 
 ### What 10/10 Enables
 
@@ -901,94 +756,27 @@ PASS  # FFmpeg adapter still works
 2. **Confidence:** Tests prove layering (can't accidentally break architecture)
 3. **Onboarding:** New engineers read ARCHITECTURE.md → know the system
 4. **Refactoring Safety:** Layering tests catch regressions immediately
-5. **Tech Debt Visibility:** Exemptions are tracked (can't hide bad imports)
+5. **Tech Debt Visibility:** Layering violations fail CI (no exemptions)
 
 ---
 
-## 7. Decision: Next Steps (Option A vs B)
+## 7. Decision: Layering Hygiene First (Completed)
 
-### Context
+**Context:** Before building more foundational feature work (e.g. playback decision engine), we enforce a clean layer structure.
 
-We are transitioning from:
-
-- **Deliverable #3.1** (Duration Hardening) → COMPLETE
-- **Deliverable #4** (Playback Decision Engine) → IN PROGRESS
-
-**Question:** Fix tech debt first, or ship Deliverable #4?
-
----
-
-### Option A: Fix Tech Debt First (Recommended)
-
-**Plan:**
-
-1. Refactor Group 1 (5 min) – recategorize as allowed
-2. Refactor Group 2 (30 min) – move VOD types to domain layer
-3. Run full test suite (`go test ./...`)
-4. Commit as hygiene PR: "chore: enforce layering rules (10/10 architecture)"
-5. **Then** proceed to Deliverable #4
-
-**Pros:**
-
-- Clean foundation (no exemptions, all rules enforced)
-- Playback engine can be built on correct layer structure
-- Tests prove architecture (confidence for future work)
-
-**Cons:**
-
-- 35-minute delay before feature work
-
-**Risk:** Zero (mechanical refactor, low risk).
-
----
-
-### Option B: Ship Deliverable #4, Fix Tech Debt Later
-
-**Plan:**
-
-1. Implement Playback Decision Engine in `control/playback/`
-2. **Strict rule:** Engine MUST NOT import `infra/ffmpeg` directly (use `domain/vod` types)
-3. Fix tech debt after Deliverable #4 ships
-
-**Pros:**
-
-- Feature ships faster (no delay)
-
-**Cons:**
-
-- Playback engine built on "wrong" foundation (exemptions still exist)
-- Risk of copying bad patterns (engine imports `control/vod`, which still imports wrong things)
-- Tech debt compounds (harder to fix later)
-
-**Risk:** Medium (if engine imports `control/vod` before refactor, creates new dependency on wrong layer).
-
----
-
-### Recommendation: **Option A** (Fix Tech Debt First)
-
-**Rationale:**
-
-1. **35 minutes is negligible** compared to long-term velocity gains
-2. **Playback engine is foundational** (will be imported by many features). Must be built on correct structure.
-3. **Tests prove correctness** (no exemptions = confidence for future work)
-4. **Team discipline:** Demonstrates we don't tolerate tech debt (even if "small")
-
-**Owner:** Tech Lead (me) will execute refactor today.
+**Status:** Completed. Layering rules are enforced with zero exemptions.
 
 **Acceptance Criteria:**
 
 ```bash
-$ go test ./internal/validate -run TestLayering
+$ go test ./internal/validate -run TestLayeringRules
 PASS  # Zero exemptions
 
 $ go test ./...
 PASS  # All tests green
-
-$ git log -1 --oneline
-chore: enforce layering rules (10/10 architecture)
 ```
 
-**After refactor:** Proceed to Deliverable #4 with clean foundation.
+**Next:** Proceed to Deliverable #4 on a clean foundation.
 
 ---
 
@@ -1019,4 +807,4 @@ chore: enforce layering rules (10/10 architecture)
 
 **End of Document.**
 
-**Next Action:** Execute Option A refactor (35 min), commit hygiene PR, proceed to Deliverable #4.
+**Next Action:** Proceed to Deliverable #4 on a clean foundation.
