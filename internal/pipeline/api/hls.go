@@ -17,10 +17,10 @@ import (
 	"strings"
 	"time"
 
-	xg2ghttp "github.com/ManuGH/xg2g/internal/control/http"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/platform/fs"
+	"github.com/ManuGH/xg2g/internal/platform/httpx"
 )
 
 const hlsPlaylistWaitTimeout = 5 * time.Second
@@ -250,14 +250,14 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, s
 
 	// 5. Set Headers
 	if isPlaylist {
-		w.Header().Set("Content-Type", xg2ghttp.ContentTypeHLSPlaylist)
+		w.Header().Set("Content-Type", httpx.ContentTypeHLSPlaylist)
 		w.Header().Set("Cache-Control", "no-store")
 	} else if isSegment || isLegacySegment {
 		// Set segment headers based on artifact kind (TS vs fMP4)
 		if strings.HasSuffix(filename, ".m4s") {
-			w.Header().Set("Content-Type", xg2ghttp.ContentTypeFMP4Segment)
+			w.Header().Set("Content-Type", httpx.ContentTypeFMP4Segment)
 		} else {
-			w.Header().Set("Content-Type", xg2ghttp.ContentTypeHLSSegment)
+			w.Header().Set("Content-Type", httpx.ContentTypeHLSSegment)
 		}
 		// User Req: "Cache-Control: public, max-age=60"
 		w.Header().Set("Cache-Control", "public, max-age=60")
@@ -265,7 +265,7 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, s
 		// Safari cannot decode gzip-compressed fMP4 segments
 		w.Header().Set("Content-Encoding", "identity")
 	} else if isInit {
-		w.Header().Set("Content-Type", xg2ghttp.ContentTypeFMP4Segment)
+		w.Header().Set("Content-Type", httpx.ContentTypeFMP4Segment)
 		w.Header().Set("Cache-Control", "public, max-age=3600")
 		// CRITICAL: Disable compression for init segment (proxy-safe)
 		w.Header().Set("Content-Encoding", "identity")

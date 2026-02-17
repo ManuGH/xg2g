@@ -6,12 +6,13 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/control/http/problem"
+	"github.com/ManuGH/xg2g/internal/platform/httpx"
 )
 
 const (
-	ContentTypeHLSPlaylist = "application/vnd.apple.mpegurl"
-	ContentTypeHLSSegment  = "video/mp2t"
-	ContentTypeFMP4Segment = "video/mp4"
+	ContentTypeHLSPlaylist = httpx.ContentTypeHLSPlaylist
+	ContentTypeHLSSegment  = httpx.ContentTypeHLSSegment
+	ContentTypeFMP4Segment = httpx.ContentTypeFMP4Segment
 )
 
 // WriteHLSPlaylistHeaders applies deterministic headers for HLS playlists.
