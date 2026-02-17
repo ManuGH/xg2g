@@ -63,8 +63,8 @@ func NewMockServer() *MockServer {
 
 	// Create HTTP server
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/bouquets", mock.handleBouquets)       // Modern endpoint
-	mux.HandleFunc("/api/getallservices", mock.handleBouquets) // Legacy endpoint
+	mux.HandleFunc("/api/bouquets", mock.handleBouquets) // Modern endpoint
+	mux.HandleFunc("/api/getallservices", mock.handleAllServices)
 	mux.HandleFunc("/api/getservices", mock.handleServices)
 	mux.HandleFunc("/api/epgservice", mock.handleEPG)
 	mux.HandleFunc("/api/zap", mock.handleZap)
@@ -176,7 +176,7 @@ func (m *MockServer) SetFailures(endpoint string, count int) {
 	m.failures[endpoint] = count
 }
 
-// handleBouquets handles /api/bouquets and /api/getallservices
+// handleBouquets handles /api/bouquets.
 func (m *MockServer) handleBouquets(w http.ResponseWriter, _ *http.Request) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -211,6 +211,42 @@ func (m *MockServer) handleBouquets(w http.ResponseWriter, _ *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+// handleAllServices handles /api/getallservices.
+func (m *MockServer) handleAllServices(w http.ResponseWriter, r *http.Request) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	bouquetRef := r.URL.Query().Get("sRef")
+	if bouquetRef == "" {
+		http.Error(w, "Missing sRef parameter", http.StatusBadRequest)
+		return
+	}
+
+	services, ok := m.services[bouquetRef]
+	if !ok {
+		if _, bouquetExists := m.bouquets[bouquetRef]; !bouquetExists {
+			http.Error(w, "Bouquet not found", http.StatusNotFound)
+			return
+		}
+		services = [][2]string{}
+	}
+
+	// Flat payload shape expected by /api/getallservices consumers.
+	servicesList := make([]map[string]interface{}, len(services))
+	for i, svc := range services {
+		servicesList[i] = map[string]interface{}{
+			"servicereference": svc[0],
+			"servicename":      svc[1],
+		}
+	}
+
+	resp := map[string]interface{}{
+		"services": servicesList,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
 // handleServices handles /api/getservices
 func (m *MockServer) handleServices(w http.ResponseWriter, r *http.Request) {
 	m.mu.RLock()
@@ -235,8 +271,11 @@ func (m *MockServer) handleServices(w http.ResponseWriter, r *http.Request) {
 
 	services, ok := m.services[bouquetRef]
 	if !ok {
-		http.Error(w, "Bouquet not found", http.StatusNotFound)
-		return
+		if _, bouquetExists := m.bouquets[bouquetRef]; !bouquetExists {
+			http.Error(w, "Bouquet not found", http.StatusNotFound)
+			return
+		}
+		services = [][2]string{}
 	}
 
 	// Build response
