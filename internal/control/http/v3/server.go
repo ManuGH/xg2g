@@ -23,7 +23,6 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/control/admission"
 	"github.com/ManuGH/xg2g/internal/control/vod"
-	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/dvr"
 	"github.com/ManuGH/xg2g/internal/epg"
 	"github.com/ManuGH/xg2g/internal/health"
@@ -49,7 +48,7 @@ type Server struct {
 
 	// Core Components
 	v3Bus               bus.Bus
-	v3Store             store.StateStore
+	v3Store             SessionStateStore
 	resumeStore         resume.Store
 	v3Scan              ChannelScanner
 	owiFactory          receiverControlFactory // Factory for creating OpenWebIF clients (injectable for tests)
@@ -300,7 +299,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		}
 	}
 	if len(errs) > 0 {
-		return fmt.Errorf("v3 shutdown errors: %v", errs)
+		return fmt.Errorf("v3 shutdown errors: %w", errors.Join(errs...))
 	}
 	return nil
 }
@@ -339,7 +338,7 @@ func (s *Server) SetPreflightCheck(fn PreflightProvider) {
 // Dependencies groups runtime services injected into the v3 handler.
 type Dependencies struct {
 	Bus               bus.Bus
-	Store             store.StateStore
+	Store             SessionStateStore
 	ResumeStore       resume.Store
 	Scan              ChannelScanner
 	PathMapper        *recinfra.PathMapper

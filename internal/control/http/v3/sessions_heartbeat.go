@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/log"
 )
 
 // SessionHeartbeat handles POST /api/v3/sessions/{id}/heartbeat (ADR-009)
@@ -21,12 +21,9 @@ func (s *Server) SessionHeartbeat(w http.ResponseWriter, r *http.Request, sessio
 	logger := log.WithComponentFromContext(ctx, "api")
 
 	// Get config snapshot
-	cfg := s.GetConfig()
-
-	// 1. Get session
-	s.mu.RLock()
-	store := s.v3Store
-	s.mu.RUnlock()
+	deps := s.sessionsModuleDeps()
+	cfg := deps.cfg
+	store := deps.store
 
 	if store == nil {
 		RespondError(w, r, http.StatusServiceUnavailable, &APIError{
@@ -67,7 +64,7 @@ func (s *Server) SessionHeartbeat(w http.ResponseWriter, r *http.Request, sessio
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"sessionId":       sessionID,
+			"sessionId":        sessionID,
 			"lease_expires_at": time.Unix(session.LeaseExpiresAtUnix, 0).Format(time.RFC3339),
 			"acknowledged":     true,
 		})
@@ -98,7 +95,7 @@ func (s *Server) SessionHeartbeat(w http.ResponseWriter, r *http.Request, sessio
 	// 5. Return new expiry
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"sessionId":       sessionID,
+		"sessionId":        sessionID,
 		"lease_expires_at": time.Unix(newExpiry, 0).Format(time.RFC3339),
 		"acknowledged":     true,
 	})

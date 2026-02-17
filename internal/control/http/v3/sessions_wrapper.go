@@ -49,9 +49,8 @@ func (s *Server) ServeHLSHead(w http.ResponseWriter, r *http.Request, sessionID 
 // TriggerSystemScan implements POST /api/v3/system/scan
 func (s *Server) TriggerSystemScan(w http.ResponseWriter, r *http.Request) {
 	s.ScopeMiddleware(ScopeV3Admin)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		s.mu.RLock()
-		scanner := s.v3Scan
-		s.mu.RUnlock()
+		deps := s.systemModuleDeps()
+		scanner := deps.channelScanner
 
 		if scanner == nil {
 			RespondError(w, r, http.StatusServiceUnavailable, &APIError{
@@ -73,9 +72,8 @@ func (s *Server) TriggerSystemScan(w http.ResponseWriter, r *http.Request) {
 // GetSystemScanStatus implements GET /api/v3/system/scan
 func (s *Server) GetSystemScanStatus(w http.ResponseWriter, r *http.Request) {
 	s.ScopeMiddleware(ScopeV3Admin)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		s.mu.RLock()
-		ss := s.scanSource
-		s.mu.RUnlock()
+		deps := s.systemModuleDeps()
+		ss := deps.scanSource
 
 		st, err := read.GetScanStatus(r.Context(), ss)
 		if err != nil {

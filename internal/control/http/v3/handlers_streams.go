@@ -21,11 +21,10 @@ import (
 
 // GetStreams implements ServerInterface
 func (s *Server) GetStreams(w http.ResponseWriter, r *http.Request) {
-	s.mu.RLock()
-	store := s.v3Store
-	cfg := s.cfg
-	snap := s.snap
-	s.mu.RUnlock()
+	deps := s.sessionsModuleDeps()
+	store := deps.store
+	cfg := deps.cfg
+	snap := deps.snap
 
 	if store == nil {
 		log.L().Error().Msg("v3 store not initialized")
@@ -150,10 +149,9 @@ func (s *Server) DeleteStreamsId(w http.ResponseWriter, r *http.Request, id stri
 		return
 	}
 
-	s.mu.RLock()
-	bus := s.v3Bus
-	store := s.v3Store
-	s.mu.RUnlock()
+	deps := s.sessionsModuleDeps()
+	bus := deps.bus
+	store := deps.store
 
 	if store == nil || bus == nil {
 		writeProblem(w, r, http.StatusServiceUnavailable, "streams/unavailable", "Control Plane Unavailable", "UNAVAILABLE", "V3 control plane is not enabled", nil)

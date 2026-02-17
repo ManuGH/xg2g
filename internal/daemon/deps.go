@@ -15,9 +15,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
-	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
-	"github.com/ManuGH/xg2g/internal/pipeline/scan"
 	"github.com/ManuGH/xg2g/internal/pipeline/shadow"
 	"github.com/rs/zerolog"
 )
@@ -56,12 +54,14 @@ type Deps struct {
 	ProxyOnly bool
 
 	// V3 Components (Injected from main to allow shared state between API and Worker)
-	V3Bus         bus.Bus
-	V3Store       store.StateStore
-	ResumeStore   resume.Store
-	ScanManager   *scan.Manager
-	E2Client      *enigma2.Client
-	MediaPipeline sessionports.MediaPipeline
+	V3Bus       bus.Bus
+	V3Store     store.StateStore
+	ResumeStore resume.Store
+	ScanManager ScanStoreCloser
+	// ReceiverHealthCheck probes receiver connectivity for health/readiness checks.
+	// Keep the daemon package bound to behavior, not concrete receiver clients.
+	ReceiverHealthCheck func(ctx context.Context) error
+	MediaPipeline       sessionports.MediaPipeline
 	// V3OrchestratorFactory builds the runtime worker orchestrator.
 	// This keeps daemon package bound to ports, not concrete implementations.
 	V3OrchestratorFactory V3OrchestratorFactory
@@ -71,6 +71,12 @@ type Deps struct {
 // Keep this narrow to avoid runtime ownership cycles between daemon and API.
 type APIServerHooks interface {
 	HealthManager() *health.Manager
+}
+
+// ScanStoreCloser is the minimal port required by daemon lifecycle code.
+// Concrete scan implementations belong to composition root wiring.
+type ScanStoreCloser interface {
+	Close() error
 }
 
 // V3Orchestrator is the daemon-side runtime contract for session processing.
@@ -137,6 +143,9 @@ func (d *Deps) Validate() error {
 		}
 		if d.V3OrchestratorFactory == nil {
 			return ErrMissingV3OrchestratorFactory
+		}
+		if d.ReceiverHealthCheck == nil {
+			return ErrMissingReceiverHealthCheck
 		}
 	}
 

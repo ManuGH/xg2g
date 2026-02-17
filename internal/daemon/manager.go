@@ -16,7 +16,6 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/health"
-	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
 	"github.com/rs/zerolog"
 )
 
@@ -314,7 +313,7 @@ func (m *manager) RegisterShutdownHook(name string, hook ShutdownHook) {
 }
 
 // registerV3Checks registers health and readiness checks for V3 components.
-func (m *manager) registerV3Checks(cfg *config.AppConfig, e2Client *enigma2.Client) {
+func (m *manager) registerV3Checks(cfg *config.AppConfig, receiverHealthCheck func(context.Context) error) {
 	if m.deps.APIServerSetter == nil {
 		m.logger.Warn().Msg("API server hooks not available, skipping V3 checks")
 		return
@@ -331,39 +330,16 @@ func (m *manager) registerV3Checks(cfg *config.AppConfig, e2Client *enigma2.Clie
 	hm.RegisterChecker(health.Informational(health.NewWritableDirChecker("v3_hls_root", cfg.HLS.Root)))
 
 	// 2. Connectivity Checks (Upstream/Receiver)
-	// Re-uses the existing network logic but scoped to V3 dependencies.
-	// We can use a ReceiverChecker pointing to E2Host.
+	// Use the injected health check port to keep daemon package decoupled
+	// from concrete receiver client types.
 	hm.RegisterChecker(health.Informational(health.NewNamedReceiverChecker("v3_receiver_connection", func(ctx context.Context) error {
-		if e2Client == nil || e2Client.HTTPClient == nil {
-			return fmt.Errorf("enigma2 client is not available")
+		if receiverHealthCheck == nil {
+			return fmt.Errorf("receiver health check is not available")
 		}
-		if e2Client.BaseURL == "" {
-			return fmt.Errorf("XG2G_V3_E2_HOST is empty")
-		}
-		// Quick connectivity check to E2Host
-		// Use a 2s timeout to avoid blocking readiness probes too long
+		// Keep probe latency bounded for readiness health checks.
 		checkCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
-
-		req, err := http.NewRequestWithContext(checkCtx, http.MethodHead, e2Client.BaseURL, nil)
-		if err != nil {
-			return err
-		}
-		if cfg.Enigma2.UserAgent != "" {
-			req.Header.Set("User-Agent", cfg.Enigma2.UserAgent)
-		}
-		if cfg.Enigma2.Username != "" || cfg.Enigma2.Password != "" {
-			req.SetBasicAuth(cfg.Enigma2.Username, cfg.Enigma2.Password)
-		}
-		resp, err := e2Client.HTTPClient.Do(req)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if resp.StatusCode >= 500 {
-			return fmt.Errorf("receiver returned status %d", resp.StatusCode)
-		}
-		return nil
+		return receiverHealthCheck(checkCtx)
 	})))
 
 }

@@ -18,10 +18,8 @@ import (
 // handleV3HLS serves HLS playlists and segments.
 // Authorization: Requires v3:read scope (enforced by route middleware).
 func (s *Server) handleV3HLS(w http.ResponseWriter, r *http.Request) {
-	// 1. Check v3 availability
-	s.mu.RLock()
-	store := s.v3Store
-	s.mu.RUnlock()
+	deps := s.sessionsModuleDeps()
+	store := deps.store
 
 	if store == nil {
 		RespondError(w, r, http.StatusServiceUnavailable, &APIError{
@@ -36,5 +34,5 @@ func (s *Server) handleV3HLS(w http.ResponseWriter, r *http.Request) {
 	filename := chi.URLParam(r, "filename")
 
 	// 3. Serve via HLS helper
-	v3api.ServeHLS(w, r, store, s.GetConfig().HLS.Root, sessionID, filename)
+	v3api.ServeHLS(w, r, store, deps.cfg.HLS.Root, sessionID, filename)
 }

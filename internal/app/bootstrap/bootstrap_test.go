@@ -170,6 +170,9 @@ func WireServices(ctx context.Context, version, commit, buildDate string, explic
 		V3Bus:           pipebus.NewMemoryBus(),
 		V3Store:         sessionstore.NewMemoryStore(),
 		MediaPipeline:   stub.NewAdapter(),
+		ReceiverHealthCheck: func(context.Context) error {
+			return nil
+		},
 
 		// Test harness runtime wiring for engine-enabled configs.
 		V3OrchestratorFactory: noopV3OrchestratorFactory{},
