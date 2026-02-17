@@ -6,6 +6,7 @@ package dvr
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -157,4 +158,17 @@ func TestSeriesEngine_RunOnce(t *testing.T) {
 	assert.Equal(t, "skipped", reports2[0].Decisions[0].Action)
 
 	mockClient2.AssertExpectations(t)
+}
+
+func TestSeriesEngine_RunOnce_RuleNotFound(t *testing.T) {
+	rm := NewManager(t.TempDir())
+	engine := NewSeriesEngine(config.AppConfig{}, rm, func() OWIClient { return new(MockClient) })
+
+	_, err := engine.RunOnce(context.Background(), "manual", "missing-rule-id")
+	if err == nil {
+		t.Fatal("expected error for missing rule")
+	}
+	if !errors.Is(err, ErrRuleNotFound) {
+		t.Fatalf("expected ErrRuleNotFound, got: %v", err)
+	}
 }

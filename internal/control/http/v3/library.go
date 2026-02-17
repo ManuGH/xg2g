@@ -75,7 +75,7 @@ func (s *Server) GetLibraryRootItems(w http.ResponseWriter, r *http.Request, roo
 		}
 
 		// Check for root not found
-		if err.Error() == "root not found: "+rootId {
+		if errors.Is(err, library.ErrRootNotFound) {
 			RespondError(w, r, http.StatusNotFound, ErrLibraryRootNotFound, nil)
 			return
 		}

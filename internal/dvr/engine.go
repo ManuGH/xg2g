@@ -67,7 +67,7 @@ func (e *SeriesEngine) RunOnce(ctx context.Context, trigger string, ruleID strin
 			if r, ok := e.ruleManager.GetRule(ruleID); ok {
 				rules = []SeriesRule{r}
 			} else {
-				return nil, fmt.Errorf("rule not found: %s", ruleID)
+				return nil, fmt.Errorf("%w: %s", ErrRuleNotFound, ruleID)
 			}
 		} else {
 			rules = e.ruleManager.GetRules()
@@ -268,7 +268,6 @@ func (e *SeriesEngine) processRule(ctx context.Context, client OWIClient, rule S
 						inWindow = true
 					}
 				}
-
 
 				if !inWindow {
 					continue

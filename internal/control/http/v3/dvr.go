@@ -240,7 +240,7 @@ func (s *Server) RunSeriesRule(w http.ResponseWriter, r *http.Request, id string
 
 	reports, err := s.seriesEngine.RunOnce(r.Context(), trigger, id)
 	if err != nil {
-		if err.Error() == "rule not found: "+id {
+		if errors.Is(err, dvr.ErrRuleNotFound) {
 			writeProblem(w, r, http.StatusNotFound, "dvr/not_found", "Rule Not Found", "NOT_FOUND", "The specified rule does not exist", nil)
 			return
 		}

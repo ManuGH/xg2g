@@ -132,7 +132,7 @@ func (m *manager) Start(ctx context.Context) error {
 		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
 		if shutdownErr := m.Shutdown(shutdownCtx); shutdownErr != nil {
-			return fmt.Errorf("%w (shutdown: %v)", err, shutdownErr)
+			return fmt.Errorf("server error and shutdown failure: %w", errors.Join(err, shutdownErr))
 		}
 		return err
 	case <-ctx.Done():
@@ -292,7 +292,7 @@ func (m *manager) Shutdown(ctx context.Context) error {
 		m.logger.Error().
 			Int("error_count", len(errs)).
 			Msg("Shutdown completed with errors")
-		return fmt.Errorf("shutdown errors: %v", errs)
+		return fmt.Errorf("shutdown errors: %w", errors.Join(errs...))
 	}
 
 	m.logger.Info().Msg("Daemon manager stopped cleanly")
