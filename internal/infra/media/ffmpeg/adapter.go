@@ -76,7 +76,7 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 		killTimeout = 5 * time.Second
 	}
 	if segmentSeconds <= 0 {
-		segmentSeconds = 4 // Best Practice 2026 Low Latency default
+		segmentSeconds = 6 // Keep in sync with config registry default (hls.segmentSeconds)
 	}
 	httpClient := &http.Client{
 		Timeout: preflightTimeout,
