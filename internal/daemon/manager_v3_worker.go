@@ -33,6 +33,7 @@ func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error
 	if err != nil {
 		return err
 	}
+	m.registerV3RuntimeCloseHooks()
 
 	orch, err := m.buildV3Orchestrator(cfg, runtimeDeps)
 	if err != nil {

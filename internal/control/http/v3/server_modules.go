@@ -5,14 +5,11 @@
 package v3
 
 import (
-	"context"
-
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/artifacts"
 	"github.com/ManuGH/xg2g/internal/control/read"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/control/vod"
-	"github.com/ManuGH/xg2g/internal/dvr"
 	"github.com/ManuGH/xg2g/internal/epg"
 	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/jobs"
@@ -71,38 +68,6 @@ func (s *Server) recordingsModuleDeps() recordingsModuleDeps {
 		pathMapper:        s.recordingPathMapper,
 		vodManager:        s.vodManager,
 		resumeStore:       s.resumeStore,
-	}
-}
-
-// dvrModuleDeps scopes the dependencies used by DVR and series-rule handlers.
-type dvrModuleDeps struct {
-	seriesManager *dvr.Manager
-	seriesEngine  *dvr.SeriesEngine
-}
-
-func (s *Server) dvrModuleDeps() dvrModuleDeps {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return dvrModuleDeps{
-		seriesManager: s.seriesManager,
-		seriesEngine:  s.seriesEngine,
-	}
-}
-
-// configModuleDeps scopes dependencies used by system config handlers.
-type configModuleDeps struct {
-	cfg             config.AppConfig
-	configManager   *config.Manager
-	requestShutdown func(context.Context) error
-}
-
-func (s *Server) configModuleDeps() configModuleDeps {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return configModuleDeps{
-		cfg:             s.cfg,
-		configManager:   s.configManager,
-		requestShutdown: s.requestShutdown,
 	}
 }
 
