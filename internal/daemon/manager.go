@@ -100,6 +100,9 @@ func (m *manager) Start(ctx context.Context) error {
 
 	// Error channel for server failures
 	errChan := make(chan error, 3)
+	// Register close hooks independent of engine mode so runtime stores are always
+	// cleaned up during shutdown, even when the v3 worker is disabled.
+	m.registerV3RuntimeCloseHooks()
 
 	// Start metrics server if configured (skip in proxy-only mode)
 	if !m.deps.ProxyOnly && m.deps.MetricsHandler != nil {
