@@ -2,6 +2,7 @@ package v3
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -64,12 +65,26 @@ func TestOpenAPIOperationsHaveAllowedTags(t *testing.T) {
 func loadOpenAPISpec(t *testing.T) *openapi3.T {
 	t.Helper()
 
-	_, thisFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("failed to resolve test file path")
+	candidates := []string{
+		filepath.Clean(filepath.Join("api", "openapi.yaml")),
+		filepath.Clean(filepath.Join("..", "..", "..", "..", "api", "openapi.yaml")),
 	}
 
-	specPath := filepath.Clean(filepath.Join(filepath.Dir(thisFile), "..", "..", "..", "..", "api", "openapi.yaml"))
+	if _, thisFile, _, ok := runtime.Caller(0); ok && filepath.IsAbs(thisFile) {
+		candidates = append(candidates, filepath.Clean(filepath.Join(filepath.Dir(thisFile), "..", "..", "..", "..", "api", "openapi.yaml")))
+	}
+
+	specPath := ""
+	for _, candidate := range candidates {
+		if _, err := os.Stat(candidate); err == nil {
+			specPath = candidate
+			break
+		}
+	}
+	if specPath == "" {
+		t.Fatalf("failed to locate openapi spec, tried: %s", strings.Join(candidates, ", "))
+	}
+
 	loader := openapi3.NewLoader()
 	doc, err := loader.LoadFromFile(specPath)
 	if err != nil {
