@@ -40,14 +40,10 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	// 0. Hardening: Limit Request Size (1MB)
 	r.Body = http.MaxBytesReader(w, r.Body, 1048576)
 
-	// Get Config Snapshot for consistent view during request
-	cfg := s.GetConfig()
-
-	// 1. Verify V3 Components Available
-	s.mu.RLock()
-	bus := s.v3Bus
-	store := s.v3Store
-	s.mu.RUnlock()
+	deps := s.sessionsModuleDeps()
+	cfg := deps.cfg
+	bus := deps.bus
+	store := deps.store
 
 	if bus == nil || store == nil {
 		// V3 Worker not running
@@ -140,13 +136,13 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	case model.IntentTypeStreamStart:
 		// Smart Profile Lookup
 		var cap *scan.Capability
-			if s.v3Scan != nil {
-				if c, found := s.v3Scan.GetCapability(req.ServiceRef); found {
-					cap = &c
-				}
+		if deps.v3Scan != nil {
+			if c, found := deps.v3Scan.GetCapability(req.ServiceRef); found {
+				cap = &c
 			}
+		}
 
-			hasGPU := hardware.IsVAAPIReady()
+		hasGPU := hardware.IsVAAPIReady()
 		av1OK := hardware.IsVAAPIEncoderReady("av1_vaapi")
 		hevcOK := hardware.IsVAAPIEncoderReady("hevc_vaapi")
 		h264OK := hardware.IsVAAPIEncoderReady("h264_vaapi")
@@ -221,7 +217,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// 5.1 Admission Control Gate (Slice 2)
-		state := CollectRuntimeState(r.Context(), s.admissionState)
+		state := CollectRuntimeState(r.Context(), deps.admissionState)
 		wantsTranscode := profileSpec.TranscodeVideo // Profile knows if transcode is needed
 
 		decision := s.admission.Check(r.Context(), admission.Request{WantsTranscode: wantsTranscode}, state)

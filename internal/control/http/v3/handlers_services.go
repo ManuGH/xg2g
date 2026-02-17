@@ -19,10 +19,9 @@ import (
 
 // GetServicesBouquets implements ServerInterface
 func (s *Server) GetServicesBouquets(w http.ResponseWriter, r *http.Request) {
-	s.mu.RLock()
-	cfg := s.cfg
-	snap := s.snap
-	s.mu.RUnlock()
+	deps := s.systemModuleDeps()
+	cfg := deps.cfg
+	snap := deps.snap
 
 	// Use Truthful Counting version
 	// Use Truthful Counting version
@@ -75,11 +74,10 @@ func (s *Server) GetServicesBouquets(w http.ResponseWriter, r *http.Request) {
 
 // GetServices implements ServerInterface
 func (s *Server) GetServices(w http.ResponseWriter, r *http.Request, params GetServicesParams) {
-	s.mu.RLock()
-	cfg := s.cfg
-	snap := s.snap
-	src := s.servicesSource
-	s.mu.RUnlock()
+	deps := s.systemModuleDeps()
+	cfg := deps.cfg
+	snap := deps.snap
+	src := deps.servicesSource
 
 	q := read.ServicesQuery{}
 	if params.Bouquet != nil {
@@ -111,8 +109,8 @@ func (s *Server) GetServices(w http.ResponseWriter, r *http.Request, params GetS
 
 			// Enhance with functionality data if scanner is available
 			// Optimization: Check memory-cached capabilities
-			if s.v3Scan != nil {
-				if cap, found := s.v3Scan.GetCapability(item.ServiceRef); found {
+			if deps.channelScanner != nil {
+				if cap, found := deps.channelScanner.GetCapability(item.ServiceRef); found {
 					svc.Resolution = &cap.Resolution
 					svc.Codec = &cap.Codec
 				}
@@ -168,9 +166,8 @@ func (s *Server) PostSystemRefresh(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
-	s.mu.RLock()
-	scan := s.v3Scan
-	s.mu.RUnlock()
+	deps := s.systemModuleDeps()
+	scan := deps.channelScanner
 
 	if isNil(scan) {
 		writeProblem(w, r, http.StatusServiceUnavailable, "system/unavailable", "Subsystem Unavailable", "UNAVAILABLE", "Scanner not enabled", nil)

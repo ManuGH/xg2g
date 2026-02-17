@@ -29,10 +29,8 @@ import (
 // Authorization: Requires v3:admin scope (enforced by route middleware).
 // Supports pagination via query parameters: offset (default 0) and limit (default 100, max 1000).
 func (s *Server) handleV3SessionsDebug(w http.ResponseWriter, r *http.Request) {
-	// 1. Access Store
-	s.mu.RLock()
-	store := s.v3Store
-	s.mu.RUnlock()
+	deps := s.sessionsModuleDeps()
+	store := deps.store
 
 	if store == nil {
 		RespondError(w, r, http.StatusServiceUnavailable, &APIError{
@@ -81,9 +79,8 @@ func (s *Server) handleV3SessionsDebug(w http.ResponseWriter, r *http.Request) {
 // handleV3SessionState returns a single session state.
 // Authorization: Requires v3:read scope (enforced by route middleware).
 func (s *Server) handleV3SessionState(w http.ResponseWriter, r *http.Request) {
-	s.mu.RLock()
-	store := s.v3Store
-	s.mu.RUnlock()
+	deps := s.sessionsModuleDeps()
+	store := deps.store
 
 	if store == nil {
 		RespondError(w, r, http.StatusServiceUnavailable, &APIError{
@@ -186,11 +183,9 @@ func parseUUID(s string) uuid.UUID {
 
 // ReportPlaybackFeedback handles POST /sessions/{sessionId}/feedback
 func (s *Server) ReportPlaybackFeedback(w http.ResponseWriter, r *http.Request, sessionId openapi_types.UUID) {
-	// 1. Verify V3 Available
-	s.mu.RLock()
-	bus := s.v3Bus
-	store := s.v3Store
-	s.mu.RUnlock()
+	deps := s.sessionsModuleDeps()
+	bus := deps.bus
+	store := deps.store
 
 	if bus == nil || store == nil {
 		RespondError(w, r, http.StatusServiceUnavailable, &APIError{
