@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
@@ -40,6 +41,8 @@ const (
 	// maxErrBody caps the amount of response body we read for error reporting (non-200).
 	// We want enough context for stack traces but not unbounded memory usage.
 	maxErrBody = 8 * 1024
+
+	defaultServicesCapTTL = time.Hour
 )
 
 // Client is an OpenWebIF HTTP client for communicating with Enigma2 receivers.
@@ -66,6 +69,10 @@ type Client struct {
 	cache    Cacher
 	cacheTTL time.Duration
 
+	servicesCapMu  sync.RWMutex
+	servicesCaps   map[string]servicesCapability
+	servicesCapTTL time.Duration
+
 	// Rate limiting for receiver protection (v1.7.0+)
 	// Protects the Enigma2 receiver from being overwhelmed by requests
 	receiverLimiter *rate.Limiter
@@ -81,6 +88,11 @@ type Cacher interface {
 	Set(key string, value any, ttl time.Duration)
 	Delete(key string)
 	Clear()
+}
+
+type servicesCapability struct {
+	PreferFlat bool
+	ExpiresAt  time.Time
 }
 
 // Options configures the OpenWebIF client behavior.
@@ -334,6 +346,8 @@ func NewWithPort(base string, streamPort int, opts Options) *Client {
 		streamBaseURL:   strings.TrimSpace(opts.StreamBaseURL),
 		cache:           opts.Cache, // Optional cache (nil = no caching)
 		cacheTTL:        cacheTTL,
+		servicesCaps:    make(map[string]servicesCapability),
+		servicesCapTTL:  defaultServicesCapTTL,
 		receiverLimiter: rate.NewLimiter(receiverRPS, receiverBurst),
 		cb:              resilience.NewCircuitBreaker("openwebif", 5, 10, 60*time.Second, 30*time.Second),
 	}
@@ -461,6 +475,8 @@ type svcPayloadFlat struct {
 	} `json:"services"`
 }
 
+var errServicesSchemaMismatch = errors.New("openwebif: services schema mismatch")
+
 // EPGEvent represents a single programme entry from OpenWebIF EPG API
 type EPGEvent struct {
 	ID                  int    `json:"id"`
@@ -524,22 +540,44 @@ func (c *Client) Services(ctx context.Context, bouquetRef string) ([][2]string, 
 	decorate := func(zc *zerolog.Context) {
 		zc.Str("bouquet_ref", maskedRef)
 	}
-	try := func(urlPath, operation string) ([][2]string, error) {
-		body, err := c.get(ctx, urlPath, operation, decorate)
+	type endpointSpec struct {
+		path       string
+		operation  string
+		preferFlat bool
+	}
+	try := func(ep endpointSpec) ([][2]string, error) {
+		body, err := c.get(ctx, ep.path, ep.operation, decorate)
 		if err != nil {
 			return nil, err
 		}
 
-		// For flat endpoint, decode directly into svcPayloadFlat to preserve subservices
-		if operation == "services.flat" {
+		// Fast schema check: ensure "services" key exists and is not null.
+		var shape struct {
+			Services json.RawMessage `json:"services"`
+		}
+		if err := json.Unmarshal(body, &shape); err != nil {
+			c.loggerFor(ctx).Error().Err(err).
+				Str("event", "openwebif.decode").
+				Str("operation", ep.operation).
+				Str("bouquet_ref", maskedRef).
+				Msg("failed to decode services response shape")
+			return nil, fmt.Errorf("%w: %v", errServicesSchemaMismatch, err)
+		}
+		trimmedServices := strings.TrimSpace(string(shape.Services))
+		if trimmedServices == "" || trimmedServices == "null" {
+			return nil, fmt.Errorf("%w: missing services field", errServicesSchemaMismatch)
+		}
+
+		// Flat endpoint: decode preserving subservices.
+		if ep.preferFlat {
 			var flat svcPayloadFlat
 			if err := json.Unmarshal(body, &flat); err != nil {
 				c.loggerFor(ctx).Error().Err(err).
 					Str("event", "openwebif.decode").
-					Str("operation", operation).
+					Str("operation", ep.operation).
 					Str("bouquet_ref", maskedRef).
 					Msg("failed to decode services response (flat)")
-				return nil, err
+				return nil, fmt.Errorf("%w: %v", errServicesSchemaMismatch, err)
 			}
 			out := make([][2]string, 0, len(flat.Services)*4)
 			for _, s := range flat.Services {
@@ -569,10 +607,10 @@ func (c *Client) Services(ctx context.Context, bouquetRef string) ([][2]string, 
 		if err := json.Unmarshal(body, &p); err != nil {
 			c.loggerFor(ctx).Error().Err(err).
 				Str("event", "openwebif.decode").
-				Str("operation", operation).
+				Str("operation", ep.operation).
 				Str("bouquet_ref", maskedRef).
 				Msg("failed to decode services response")
-			return nil, err
+			return nil, fmt.Errorf("%w: %v", errServicesSchemaMismatch, err)
 		}
 		out := make([][2]string, 0, len(p.Services))
 		for _, s := range p.Services {
@@ -585,24 +623,122 @@ func (c *Client) Services(ctx context.Context, bouquetRef string) ([][2]string, 
 		return out, nil
 	}
 
-	// Try bouquet-specific endpoint (more reliable than getallservices)
-	if out, err := try("/api/getservices?sRef="+url.QueryEscape(bouquetRef), "services.nested"); err == nil && len(out) > 0 {
-		// Cache the result
-		if c.cache != nil {
-			c.cache.Set(cacheKey, out, c.cacheTTL)
-			c.loggerFor(ctx).Debug().Str("event", "cache.set").Str("key", cacheKey).Dur("ttl", c.cacheTTL).Msg("cached result")
-		}
-		c.loggerFor(ctx).Info().Str("event", "openwebif.services").Str("bouquet_ref", maskedRef).Int("count", len(out)).Msg("fetched services via nested endpoint")
-		return out, nil
+	endpoints := []endpointSpec{
+		{
+			path:       "/api/getservices?sRef=" + url.QueryEscape(bouquetRef),
+			operation:  "services.nested",
+			preferFlat: false,
+		},
+		{
+			path:       "/api/getallservices?sRef=" + url.QueryEscape(bouquetRef),
+			operation:  "services.flat",
+			preferFlat: true,
+		},
 	}
-	c.loggerFor(ctx).Warn().Str("event", "openwebif.services").Str("bouquet_ref", maskedRef).Msg("no services found for bouquet")
+	if preferFlat, ok := c.servicesCapabilityGet(); ok && preferFlat {
+		endpoints[0], endpoints[1] = endpoints[1], endpoints[0]
+	}
 
-	// Cache empty result to avoid repeated failed lookups
-	empty := [][2]string{}
-	if c.cache != nil {
-		c.cache.Set(cacheKey, empty, c.cacheTTL)
+	var empty [][2]string
+	var successfulEndpoint string
+
+	for i, ep := range endpoints {
+		out, err := try(ep)
+		if err != nil {
+			if i == 0 && shouldTryServicesFallback(err) {
+				c.loggerFor(ctx).Warn().
+					Err(err).
+					Str("event", "openwebif.services").
+					Str("bouquet_ref", maskedRef).
+					Str("from", ep.operation).
+					Str("to", endpoints[1].operation).
+					Msg("services fetch incompatible, trying fallback endpoint")
+				continue
+			}
+			return nil, err
+		}
+
+		successfulEndpoint = ep.operation
+		c.servicesCapabilitySet(ep.preferFlat)
+		if len(out) > 0 {
+			if c.cache != nil {
+				c.cache.Set(cacheKey, out, c.cacheTTL)
+				c.loggerFor(ctx).Debug().Str("event", "cache.set").Str("key", cacheKey).Dur("ttl", c.cacheTTL).Msg("cached result")
+			}
+			c.loggerFor(ctx).Info().
+				Str("event", "openwebif.services").
+				Str("bouquet_ref", maskedRef).
+				Str("operation", ep.operation).
+				Int("count", len(out)).
+				Msg("fetched services")
+			return out, nil
+		}
+
+		empty = out
+		if i == 0 {
+			continue
+		}
 	}
-	return empty, nil
+
+	// No services found but at least one endpoint returned a compatible payload.
+	if successfulEndpoint != "" {
+		if empty == nil {
+			empty = [][2]string{}
+		}
+		if c.cache != nil {
+			c.cache.Set(cacheKey, empty, c.cacheTTL)
+		}
+		c.loggerFor(ctx).Warn().
+			Str("event", "openwebif.services").
+			Str("bouquet_ref", maskedRef).
+			Str("operation", successfulEndpoint).
+			Msg("no services found for bouquet")
+		return empty, nil
+	}
+
+	return nil, fmt.Errorf("%w: no compatible services endpoint", errServicesSchemaMismatch)
+}
+
+func shouldTryServicesFallback(err error) bool {
+	return errors.Is(err, errServicesSchemaMismatch)
+}
+
+func (c *Client) servicesCapabilityKey() string {
+	return c.host
+}
+
+func (c *Client) servicesCapabilityGet() (bool, bool) {
+	key := c.servicesCapabilityKey()
+	now := time.Now()
+
+	c.servicesCapMu.RLock()
+	cap, ok := c.servicesCaps[key]
+	c.servicesCapMu.RUnlock()
+	if !ok {
+		return false, false
+	}
+	if now.After(cap.ExpiresAt) {
+		c.servicesCapMu.Lock()
+		delete(c.servicesCaps, key)
+		c.servicesCapMu.Unlock()
+		return false, false
+	}
+	return cap.PreferFlat, true
+}
+
+func (c *Client) servicesCapabilitySet(preferFlat bool) {
+	if c.servicesCapTTL <= 0 {
+		return
+	}
+	key := c.servicesCapabilityKey()
+	exp := time.Now().Add(c.servicesCapTTL)
+
+	c.servicesCapMu.Lock()
+	c.servicesCaps[key] = servicesCapability{
+		PreferFlat: preferFlat,
+		ExpiresAt:  exp,
+	}
+	c.servicesCapMu.Unlock()
 }
 
 // GetTimers retrieves the list of timers from the receiver.

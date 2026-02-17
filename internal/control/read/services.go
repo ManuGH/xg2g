@@ -2,7 +2,6 @@ package read
 
 import (
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -286,7 +285,7 @@ func GetServices(cfg config.AppConfig, snap config.Snapshot, source ServicesSour
 		number := ch.Number
 
 		// Extract serviceRef from URL for streaming
-		serviceRef := extractServiceRef(ch.URL, id)
+		serviceRef := ExtractServiceRef(ch.URL, id)
 
 		// Rewrite Logo to use local proxy (avoids mixed content & external reachability issues)
 		if serviceRef != "" {
@@ -310,33 +309,4 @@ func GetServices(cfg config.AppConfig, snap config.Snapshot, source ServicesSour
 	// If we found 0 services (and read was successful), legacy behavior: usually null (if initialized as nil)
 	// We return default EmptyEncodingNull.
 	return ServicesResult{Items: services}, nil
-}
-
-func extractServiceRef(rawURL string, id string) string {
-	serviceRef := ""
-	if rawURL != "" {
-		if u, err := url.Parse(rawURL); err == nil {
-			// Check query params first (e.g. stream.m3u?ref=...)
-			if ref := u.Query().Get("ref"); ref != "" {
-				serviceRef = ref
-			} else {
-				// Fallback to path logic
-				parts := strings.Split(u.Path, "/")
-				if len(parts) > 0 {
-					serviceRef = parts[len(parts)-1]
-				}
-			}
-		} else {
-			// Fallback for non-parseable URLs
-			parts := strings.Split(rawURL, "/")
-			if len(parts) > 0 {
-				serviceRef = parts[len(parts)-1]
-			}
-		}
-	}
-	// Fallback to TvgID if serviceRef not found
-	if serviceRef == "" {
-		serviceRef = id
-	}
-	return serviceRef
 }

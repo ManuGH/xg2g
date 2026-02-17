@@ -89,6 +89,8 @@ func GetStreams(ctx context.Context, cfg config.AppConfig, snap config.Snapshot,
 			continue
 		}
 
+		serviceRef := CanonicalServiceRef(r.ServiceRef)
+
 		// Map State: Domain → Contract
 		// Use the deterministic truth engine (PR-P3-2)
 		lifecycleState := model.DeriveLifecycleState(r, time.Now())
@@ -105,9 +107,9 @@ func GetStreams(ctx context.Context, cfg config.AppConfig, snap config.Snapshot,
 		}
 
 		// Resolve Name
-		name := nameMap[r.ServiceRef]
+		name := nameMap[serviceRef]
 		if name == "" {
-			name = r.ServiceRef // Fallback
+			name = serviceRef // Fallback
 		}
 
 		// Resolve IP (Gated)
@@ -127,7 +129,7 @@ func GetStreams(ctx context.Context, cfg config.AppConfig, snap config.Snapshot,
 		sessions = append(sessions, StreamSession{
 			ID:          r.SessionID,
 			ChannelName: name,
-			ServiceRef:  r.ServiceRef,
+			ServiceRef:  serviceRef,
 			ClientIP:    ip,
 			StartedAt:   startedAt,
 			State:       contractState,

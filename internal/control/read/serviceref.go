@@ -5,6 +5,12 @@ import (
 	"strings"
 )
 
+// CanonicalServiceRef normalizes service references to one stable form.
+func CanonicalServiceRef(ref string) string {
+	ref = strings.TrimSpace(ref)
+	return strings.TrimRight(ref, ":")
+}
+
 // ExtractServiceRef extracts a stable service reference from a stream URL.
 // Contract:
 // 1. If parseable URL:
@@ -48,16 +54,11 @@ func ExtractServiceRef(rawURL string, fallback string) string {
 		}
 	}
 
-	// Sanitize candidate (trim spaces just in case)
-	candidate = strings.TrimSpace(candidate)
-
 	// 3. If empty, use fallback
-	if candidate == "" {
+	if CanonicalServiceRef(candidate) == "" {
 		candidate = fallback
 	}
 
-	// 4. Always trim trailing ":"
-	// Repeatedly? contract just says "trim trailing :". Usually one suffix.
-	// But Enigma2 refs often look like "1:0:1...:"
-	return strings.TrimSuffix(candidate, ":")
+	// 4. Canonicalize to prevent ref drift across consumers.
+	return CanonicalServiceRef(candidate)
 }
