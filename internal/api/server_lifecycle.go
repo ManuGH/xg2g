@@ -5,6 +5,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -56,7 +57,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	}
 
 	if len(errs) > 0 {
-		return fmt.Errorf("server shutdown errors: %v", errs)
+		return fmt.Errorf("server shutdown errors: %w", errors.Join(errs...))
 	}
 	return nil
 }
