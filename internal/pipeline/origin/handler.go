@@ -11,9 +11,9 @@ import (
 	"net/http"
 	"strings"
 
-	xg2ghttp "github.com/ManuGH/xg2g/internal/control/http"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
+	"github.com/ManuGH/xg2g/internal/platform/httpx"
 )
 
 const minimalManifest = "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:10\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-ENDLIST\n"
@@ -52,7 +52,7 @@ func NewHLSOriginHandler(st store.StateStore, downstream http.Handler) http.Hand
 			downstream.ServeHTTP(w, r)
 			return
 		case model.SessionStarting, model.SessionPriming, model.SessionNew:
-			w.Header().Set("Content-Type", xg2ghttp.ContentTypeHLSPlaylist)
+			w.Header().Set("Content-Type", httpx.ContentTypeHLSPlaylist)
 			w.Header().Set("Cache-Control", "no-store")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(minimalManifest))
