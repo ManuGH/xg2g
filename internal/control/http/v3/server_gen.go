@@ -1489,161 +1489,259 @@ func (t *PlaybackOutput) UnmarshalJSON(b []byte) error {
 	return err
 }
 
-// ServerInterface represents all server handlers.
-type ServerInterface interface {
+// Tag-scoped server interfaces keep transport boundaries modular.
+// This avoids a single monolithic method list while preserving a composed ServerInterface.
+
+type AuthServerInterface interface {
+
 	// Create session cookie
 	// (POST /auth/session)
 	CreateSession(w http.ResponseWriter, r *http.Request)
+}
+
+type DVRServerInterface interface {
+
 	// Get DVR capabilities
 	// (GET /dvr/capabilities)
 	GetDvrCapabilities(w http.ResponseWriter, r *http.Request)
+
 	// Get DVR recording status
 	// (GET /dvr/status)
 	GetDvrStatus(w http.ResponseWriter, r *http.Request)
+}
+
+type EPGServerInterface interface {
+
 	// Get EPG data
 	// (GET /epg)
 	GetEpg(w http.ResponseWriter, r *http.Request, params GetEpgParams)
-	// Create stream intent (start or stop session)
-	// (POST /intents)
-	CreateIntent(w http.ResponseWriter, r *http.Request)
-	// Get recent logs
-	// (GET /logs)
-	GetLogs(w http.ResponseWriter, r *http.Request)
+}
+
+type ReceiverServerInterface interface {
+
 	// Get current service and EPG
 	// (GET /receiver/current)
 	GetReceiverCurrent(w http.ResponseWriter, r *http.Request)
+}
+
+type RecordingsServerInterface interface {
+
 	// Browse recordings
 	// (GET /recordings)
 	GetRecordings(w http.ResponseWriter, r *http.Request, params GetRecordingsParams)
+
 	// Delete a recording
 	// (DELETE /recordings/{recordingId})
 	DeleteRecording(w http.ResponseWriter, r *http.Request, recordingId string)
+
 	// Get VOD HLS playlist for a recording
 	// (GET /recordings/{recordingId}/playlist.m3u8)
 	GetRecordingHLSPlaylist(w http.ResponseWriter, r *http.Request, recordingId string)
+
 	// Get VOD HLS playlist metadata (Safari compatibility)
 	// (HEAD /recordings/{recordingId}/playlist.m3u8)
 	GetRecordingHLSPlaylistHead(w http.ResponseWriter, r *http.Request, recordingId string)
+
 	// Get recording build status
 	// (GET /recordings/{recordingId}/status)
 	GetRecordingsRecordingIdStatus(w http.ResponseWriter, r *http.Request, recordingId string)
+
 	// Get playback strategy for a recording (Legacy/Anonymous)
 	// (GET /recordings/{recordingId}/stream-info)
 	GetRecordingPlaybackInfo(w http.ResponseWriter, r *http.Request, recordingId string)
+
 	// Get playback decision with client capabilities (v3.1)
 	// (POST /recordings/{recordingId}/stream-info)
 	PostRecordingPlaybackInfo(w http.ResponseWriter, r *http.Request, recordingId string)
+
 	// Stream recording as MP4 (Direct VOD)
 	// (GET /recordings/{recordingId}/stream.mp4)
 	StreamRecordingDirect(w http.ResponseWriter, r *http.Request, recordingId string)
+
 	// Probe recording availability (Direct VOD)
 	// (HEAD /recordings/{recordingId}/stream.mp4)
 	ProbeRecordingMp4(w http.ResponseWriter, r *http.Request, recordingId string)
+
 	// Get timeshift HLS playlist for a recording
 	// (GET /recordings/{recordingId}/timeshift.m3u8)
 	GetRecordingHLSTimeshift(w http.ResponseWriter, r *http.Request, recordingId string)
+
 	// Get timeshift HLS playlist metadata (Safari compatibility)
 	// (HEAD /recordings/{recordingId}/timeshift.m3u8)
 	GetRecordingHLSTimeshiftHead(w http.ResponseWriter, r *http.Request, recordingId string)
+
 	// Get HLS segment for a recording
 	// (GET /recordings/{recordingId}/{segment})
 	GetRecordingHLSCustomSegment(w http.ResponseWriter, r *http.Request, recordingId string, segment string)
+
 	// Get HLS segment metadata (Safari compatibility)
 	// (HEAD /recordings/{recordingId}/{segment})
 	GetRecordingHLSCustomSegmentHead(w http.ResponseWriter, r *http.Request, recordingId string, segment string)
+}
+
+type SeriesServerInterface interface {
+
 	// List all series recording rules
 	// (GET /series-rules)
 	GetSeriesRules(w http.ResponseWriter, r *http.Request)
+
 	// Create a new series rule
 	// (POST /series-rules)
 	CreateSeriesRule(w http.ResponseWriter, r *http.Request)
+
 	// Run all enabled series rules immediately
 	// (POST /series-rules/run)
 	RunAllSeriesRules(w http.ResponseWriter, r *http.Request, params RunAllSeriesRulesParams)
+
 	// Delete a series rule
 	// (DELETE /series-rules/{id})
 	DeleteSeriesRule(w http.ResponseWriter, r *http.Request, id string)
+
 	// Update an existing series rule
 	// (PUT /series-rules/{id})
 	UpdateSeriesRule(w http.ResponseWriter, r *http.Request, id string)
+
 	// Run a specific series rule immediately
 	// (POST /series-rules/{id}/run)
 	RunSeriesRule(w http.ResponseWriter, r *http.Request, id string, params RunSeriesRuleParams)
+}
+
+type ServicesServerInterface interface {
+
 	// List all services (channels)
 	// (GET /services)
 	GetServices(w http.ResponseWriter, r *http.Request, params GetServicesParams)
+
 	// List all bouquets
 	// (GET /services/bouquets)
 	GetServicesBouquets(w http.ResponseWriter, r *http.Request)
+
 	// Get now/next EPG for a list of services
 	// (POST /services/now-next)
 	PostServicesNowNext(w http.ResponseWriter, r *http.Request)
+
 	// Toggle service enabled state
 	// (POST /services/{id}/toggle)
 	PostServicesIdToggle(w http.ResponseWriter, r *http.Request, id string)
-	// List all sessions (admin only)
-	// (GET /sessions)
-	ListSessions(w http.ResponseWriter, r *http.Request, params ListSessionsParams)
-	// Get session state
-	// (GET /sessions/{sessionID})
-	GetSessionState(w http.ResponseWriter, r *http.Request, sessionID openapi_types.UUID)
-	// Serve HLS playlist or segment
-	// (GET /sessions/{sessionID}/hls/{filename})
-	ServeHLS(w http.ResponseWriter, r *http.Request, sessionID openapi_types.UUID, filename string)
-	// Get HLS content metadata (Safari compatibility)
-	// (HEAD /sessions/{sessionID}/hls/{filename})
-	ServeHLSHead(w http.ResponseWriter, r *http.Request, sessionID openapi_types.UUID, filename string)
-	// Report playback feedback (e.g. valid errors)
-	// (POST /sessions/{sessionId}/feedback)
-	ReportPlaybackFeedback(w http.ResponseWriter, r *http.Request, sessionId openapi_types.UUID)
-	// List active streams
-	// (GET /streams)
-	GetStreams(w http.ResponseWriter, r *http.Request)
-	// Terminate a stream session
-	// (DELETE /streams/{id})
-	DeleteStreamsId(w http.ResponseWriter, r *http.Request, id string)
+}
+
+type SystemServerInterface interface {
+
+	// Get recent logs
+	// (GET /logs)
+	GetLogs(w http.ResponseWriter, r *http.Request)
+
 	// Get system configuration
 	// (GET /system/config)
 	GetSystemConfig(w http.ResponseWriter, r *http.Request)
+
 	// Update system configuration
 	// (PUT /system/config)
 	PutSystemConfig(w http.ResponseWriter, r *http.Request)
+
 	// Get system health
 	// (GET /system/health)
 	GetSystemHealth(w http.ResponseWriter, r *http.Request)
+
 	// Get minimal system health
 	// (GET /system/healthz)
 	GetSystemHealthz(w http.ResponseWriter, r *http.Request)
+
 	// Get comprehensive system information
 	// (GET /system/info)
 	GetSystemInfo(w http.ResponseWriter, r *http.Request)
+
 	// Trigger data refresh (EPG/Channels)
 	// (POST /system/refresh)
 	PostSystemRefresh(w http.ResponseWriter, r *http.Request)
+
 	// Get status of the capability scan
 	// (GET /system/scan)
 	GetSystemScanStatus(w http.ResponseWriter, r *http.Request)
+
 	// Trigger a background scan of all channels for capabilities
 	// (POST /system/scan)
 	TriggerSystemScan(w http.ResponseWriter, r *http.Request)
+}
+
+type StreamsServerInterface interface {
+
+	// Report playback feedback (e.g. valid errors)
+	// (POST /sessions/{sessionId}/feedback)
+	ReportPlaybackFeedback(w http.ResponseWriter, r *http.Request, sessionId openapi_types.UUID)
+
+	// List active streams
+	// (GET /streams)
+	GetStreams(w http.ResponseWriter, r *http.Request)
+
+	// Terminate a stream session
+	// (DELETE /streams/{id})
+	DeleteStreamsId(w http.ResponseWriter, r *http.Request, id string)
+}
+
+type TimersServerInterface interface {
+
 	// List all timers
 	// (GET /timers)
 	GetTimers(w http.ResponseWriter, r *http.Request, params GetTimersParams)
+
 	// Create a timer
 	// (POST /timers)
 	AddTimer(w http.ResponseWriter, r *http.Request)
+
 	// Preview conflicts
 	// (POST /timers/conflicts:preview)
 	PreviewConflicts(w http.ResponseWriter, r *http.Request)
+
 	// Delete timer
 	// (DELETE /timers/{timerId})
 	DeleteTimer(w http.ResponseWriter, r *http.Request, timerId string)
+
 	// Get timer
 	// (GET /timers/{timerId})
 	GetTimer(w http.ResponseWriter, r *http.Request, timerId string)
+
 	// Edit timer
 	// (PATCH /timers/{timerId})
 	UpdateTimer(w http.ResponseWriter, r *http.Request, timerId string)
+}
+
+type V3ServerInterface interface {
+
+	// Create stream intent (start or stop session)
+	// (POST /intents)
+	CreateIntent(w http.ResponseWriter, r *http.Request)
+
+	// List all sessions (admin only)
+	// (GET /sessions)
+	ListSessions(w http.ResponseWriter, r *http.Request, params ListSessionsParams)
+
+	// Get session state
+	// (GET /sessions/{sessionID})
+	GetSessionState(w http.ResponseWriter, r *http.Request, sessionID openapi_types.UUID)
+
+	// Serve HLS playlist or segment
+	// (GET /sessions/{sessionID}/hls/{filename})
+	ServeHLS(w http.ResponseWriter, r *http.Request, sessionID openapi_types.UUID, filename string)
+
+	// Get HLS content metadata (Safari compatibility)
+	// (HEAD /sessions/{sessionID}/hls/{filename})
+	ServeHLSHead(w http.ResponseWriter, r *http.Request, sessionID openapi_types.UUID, filename string)
+}
+
+// ServerInterface represents all server handlers.
+type ServerInterface interface {
+	AuthServerInterface
+	DVRServerInterface
+	EPGServerInterface
+	ReceiverServerInterface
+	RecordingsServerInterface
+	SeriesServerInterface
+	ServicesServerInterface
+	SystemServerInterface
+	StreamsServerInterface
+	TimersServerInterface
+	V3ServerInterface
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -3508,54 +3606,54 @@ var swaggerSpec = []string{
 	"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",
-	"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",
-	"3e71Hr4+/N8AAAD///LeGaum6AAA",
+	"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",
+	"ynuktwUzvHW713v4+vB/AwAA//98zLybmukAAA==",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

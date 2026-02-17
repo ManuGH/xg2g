@@ -1,0 +1,77 @@
+{{define "opSignature"}}
+{{.SummaryAsComment }}
+// ({{.Method}} {{.Path}})
+{{.OperationId}}(w http.ResponseWriter, r *http.Request{{genParamArgs .PathParams}}{{if .RequiresParamObject}}, params {{.OperationId}}Params{{end}})
+{{end}}
+
+// Tag-scoped server interfaces keep transport boundaries modular.
+// This avoids a single monolithic method list while preserving a composed ServerInterface.
+
+type AuthServerInterface interface {
+{{range .}}{{- $op := . -}}{{- range $tag := $op.Spec.Tags}}{{if eq $tag "auth"}}{{template "opSignature" $op}}{{end}}{{end}}{{end}}
+}
+
+type DVRServerInterface interface {
+{{range .}}{{- $op := . -}}{{- range $tag := $op.Spec.Tags}}{{if eq $tag "dvr"}}{{template "opSignature" $op}}{{end}}{{end}}{{end}}
+}
+
+type EPGServerInterface interface {
+{{range .}}{{- $op := . -}}{{- range $tag := $op.Spec.Tags}}{{if eq $tag "epg"}}{{template "opSignature" $op}}{{end}}{{end}}{{end}}
+}
+
+type ReceiverServerInterface interface {
+{{range .}}{{- $op := . -}}{{- range $tag := $op.Spec.Tags}}{{if eq $tag "receiver"}}{{template "opSignature" $op}}{{end}}{{end}}{{end}}
+}
+
+type RecordingsServerInterface interface {
+{{range .}}{{- $op := . -}}{{- range $tag := $op.Spec.Tags}}{{if eq $tag "recordings"}}{{template "opSignature" $op}}{{end}}{{end}}{{end}}
+}
+
+type SeriesServerInterface interface {
+{{range .}}{{- $op := . -}}{{- range $tag := $op.Spec.Tags}}{{if eq $tag "series"}}{{template "opSignature" $op}}{{end}}{{end}}{{end}}
+}
+
+type ServicesServerInterface interface {
+{{range .}}{{- $op := . -}}{{- range $tag := $op.Spec.Tags}}{{if eq $tag "services"}}{{template "opSignature" $op}}{{end}}{{end}}{{end}}
+}
+
+type SystemServerInterface interface {
+{{range .}}{{- $op := . -}}{{- range $tag := $op.Spec.Tags}}{{if eq $tag "system"}}{{template "opSignature" $op}}{{end}}{{end}}{{end}}
+}
+
+type StreamsServerInterface interface {
+{{range .}}{{- $op := . -}}{{- range $tag := $op.Spec.Tags}}{{if eq $tag "streams"}}{{template "opSignature" $op}}{{end}}{{end}}{{end}}
+}
+
+type TimersServerInterface interface {
+{{range .}}{{- $op := . -}}{{- range $tag := $op.Spec.Tags}}{{if eq $tag "timers"}}{{template "opSignature" $op}}{{end}}{{end}}{{end}}
+}
+
+type V3ServerInterface interface {
+{{range .}}{{- $op := . -}}{{- range $tag := $op.Spec.Tags}}{{if eq $tag "v3"}}{{template "opSignature" $op}}{{end}}{{end}}{{end}}
+}
+
+// ServerInterface represents all server handlers.
+type ServerInterface interface {
+	AuthServerInterface
+	DVRServerInterface
+	EPGServerInterface
+	ReceiverServerInterface
+	RecordingsServerInterface
+	SeriesServerInterface
+	ServicesServerInterface
+	SystemServerInterface
+	StreamsServerInterface
+	TimersServerInterface
+	V3ServerInterface
+}
+
+// Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
+
+type Unimplemented struct {}
+ {{range .}}{{.SummaryAsComment }}
+ // ({{.Method}} {{.Path}})
+ func (_ Unimplemented) {{.OperationId}}(w http.ResponseWriter, r *http.Request{{genParamArgs .PathParams}}{{if .RequiresParamObject}}, params {{.OperationId}}Params{{end}}) {
+	w.WriteHeader(http.StatusNotImplemented)
+ }
+ {{end}}

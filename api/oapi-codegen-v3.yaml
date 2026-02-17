@@ -5,5 +5,6 @@ generate:
   embedded-spec: true
 output-options:
   user-templates:
+    chi/chi-interface.tmpl: tools/oapi/templates/chi/chi-interface.tmpl
     chi/chi-middleware.tmpl: tools/oapi/templates/chi/chi-middleware.tmpl
     chi/chi-handler.tmpl: tools/oapi/templates/chi/chi-handler.tmpl
