@@ -279,7 +279,7 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 	a.mu.Unlock()
 
 	// Start watchdog monitor
-	go a.monitorProcess(cmd, stderr, spec.SessionID)
+	go a.monitorProcess(ctx, handle, cmd, stderr, spec.SessionID)
 
 	// Metrics: Record pipeline spawn with cause="admitted" only AFTER successful start.
 	// We use engine="ffmpeg" as per truth.
@@ -287,13 +287,22 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 	return handle, nil
 }
 
-func (a *LocalAdapter) monitorProcess(cmd *exec.Cmd, stderr io.ReadCloser, sessionID string) {
+func (a *LocalAdapter) monitorProcess(parentCtx context.Context, handle ports.RunHandle, cmd *exec.Cmd, stderr io.ReadCloser, sessionID string) {
+	defer func() {
+		a.mu.Lock()
+		delete(a.activeProcs, handle)
+		a.mu.Unlock()
+	}()
+
 	wd := watchdog.New(a.StartTimeout, a.StallTimeout)
 
 	// Forward lines to RingBuffer/Log and Watchdog
 	scanner := bufio.NewScanner(stderr)
 
-	wdCtx, wdCancel := context.WithCancel(context.Background())
+	if parentCtx == nil {
+		parentCtx = context.Background()
+	}
+	wdCtx, wdCancel := context.WithCancel(parentCtx)
 	defer wdCancel()
 
 	wdErrCh := make(chan error, 1)
@@ -307,6 +316,9 @@ func (a *LocalAdapter) monitorProcess(cmd *exec.Cmd, stderr io.ReadCloser, sessi
 
 		// Map back to session metrics if needed, but primarily for stall detection
 
+	}
+	if scanErr := scanner.Err(); scanErr != nil {
+		a.Logger.Warn().Err(scanErr).Str("sessionId", sessionID).Msg("ffmpeg stderr scan error")
 	}
 
 	// Wait for process or watchdog
@@ -354,11 +366,27 @@ func (a *LocalAdapter) Health(ctx context.Context, handle ports.RunHandle) ports
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	_, exists := a.activeProcs[handle]
+	cmd, exists := a.activeProcs[handle]
 	if !exists {
 		return ports.HealthStatus{
 			Healthy:   false,
 			Message:   "process not found",
+			LastCheck: time.Now(),
+		}
+	}
+	if cmd == nil || cmd.Process == nil {
+		delete(a.activeProcs, handle)
+		return ports.HealthStatus{
+			Healthy:   false,
+			Message:   "process unavailable",
+			LastCheck: time.Now(),
+		}
+	}
+	if cmd.ProcessState != nil && cmd.ProcessState.Exited() {
+		delete(a.activeProcs, handle)
+		return ports.HealthStatus{
+			Healthy:   false,
+			Message:   "process exited",
 			LastCheck: time.Now(),
 		}
 	}
