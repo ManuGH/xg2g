@@ -17,6 +17,8 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/channels"
@@ -24,6 +26,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/platform/paths"
 	"github.com/rs/zerolog"
 	"golang.org/x/net/ipv4"
+	"golang.org/x/sync/singleflight"
 )
 
 // Config holds HDHomeRun emulation configuration
@@ -47,6 +50,8 @@ type Server struct {
 	config         Config
 	logger         zerolog.Logger
 	channelManager *channels.Manager
+	lineupCache    lineupCache
+	lineupBuilds   atomic.Int64
 }
 
 // NewServer creates a new HDHomeRun emulation server
@@ -139,6 +144,20 @@ type deviceXMLDevice struct {
 	PresentationURL  string `xml:"presentationURL"`
 }
 
+type lineupSnapshot struct {
+	path    string
+	mtime   time.Time
+	size    int64
+	payload []byte
+	count   int
+}
+
+type lineupCache struct {
+	mu   sync.RWMutex
+	snap lineupSnapshot
+	sf   singleflight.Group
+}
+
 // HandleDiscover handles /discover.json endpoint
 func (s *Server) HandleDiscover(w http.ResponseWriter, r *http.Request) {
 	baseURL := s.config.BaseURL
@@ -207,30 +226,85 @@ func (s *Server) HandleLineup(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 
-	// #nosec G304 -- path is constructed from safe config
-	data, err := os.ReadFile(path)
+	info, err := os.Stat(path)
 	if err != nil {
-		s.logger.Error().Err(err).Msg("failed to read playlist for lineup")
+		s.logger.Error().Err(err).Msg("failed to stat playlist for lineup")
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	// Parse channels
-	allChannels := m3u.Parse(string(data))
-	var lineup []LineupEntry
+	payload, count, err := s.getLineupPayload(path, info.ModTime(), info.Size())
+	if err != nil {
+		s.logger.Error().Err(err).Msg("failed to build lineup payload")
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
 
+	w.Header().Set("Content-Type", "application/json")
+	if _, err := w.Write(payload); err != nil {
+		s.logger.Error().Err(err).Str("endpoint", "/lineup.json").Msg("failed to encode HDHomeRun lineup response")
+		return
+	}
+
+	s.logger.Debug().
+		Str("endpoint", "/lineup.json").
+		Int("channels", count).
+		Msg("HDHomeRun lineup request")
+}
+
+func (s *Server) getLineupPayload(path string, mtime time.Time, size int64) ([]byte, int, error) {
+	if payload, count, ok := s.getLineupCache(path, mtime, size); ok {
+		return payload, count, nil
+	}
+
+	result, err, _ := s.lineupCache.sf.Do(path, func() (any, error) {
+		if payload, count, ok := s.getLineupCache(path, mtime, size); ok {
+			return lineupBuildResult{payload: payload, count: count}, nil
+		}
+
+		payload, count, err := s.buildLineupPayload(path)
+		if err != nil {
+			return nil, err
+		}
+
+		s.setLineupCache(path, mtime, size, payload, count)
+		s.lineupBuilds.Add(1)
+
+		return lineupBuildResult{payload: payload, count: count}, nil
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+
+	built, ok := result.(lineupBuildResult)
+	if !ok {
+		return nil, 0, fmt.Errorf("unexpected lineup build result type: %T", result)
+	}
+	return built.payload, built.count, nil
+}
+
+type lineupBuildResult struct {
+	payload []byte
+	count   int
+}
+
+func (s *Server) buildLineupPayload(path string) ([]byte, int, error) {
+	// #nosec G304 -- path is constructed from safe config
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	allChannels := m3u.Parse(string(data))
+	lineup := make([]LineupEntry, 0, len(allChannels))
 	for _, ch := range allChannels {
-		// Check if channel is enabled
-		// Use TvgID as stable identifier, fallback to Name
 		id := ch.TvgID
 		if id == "" {
 			id = ch.Name
 		}
-
 		if s.channelManager != nil && !s.channelManager.IsEnabled(id) {
 			continue
 		}
-
 		lineup = append(lineup, LineupEntry{
 			GuideNumber: ch.Number,
 			GuideName:   ch.Name,
@@ -238,15 +312,34 @@ func (s *Server) HandleLineup(w http.ResponseWriter, _ *http.Request) {
 		})
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(lineup); err != nil {
-		s.logger.Error().Err(err).Str("endpoint", "/lineup.json").Msg("failed to encode HDHomeRun lineup response")
+	payload, err := json.Marshal(lineup)
+	if err != nil {
+		return nil, 0, err
 	}
+	return payload, len(lineup), nil
+}
 
-	s.logger.Debug().
-		Str("endpoint", "/lineup.json").
-		Int("channels", len(lineup)).
-		Msg("HDHomeRun lineup request")
+func (s *Server) getLineupCache(path string, mtime time.Time, size int64) ([]byte, int, bool) {
+	s.lineupCache.mu.RLock()
+	defer s.lineupCache.mu.RUnlock()
+
+	snap := s.lineupCache.snap
+	if snap.path != path || snap.size != size || !snap.mtime.Equal(mtime) || len(snap.payload) == 0 {
+		return nil, 0, false
+	}
+	return snap.payload, snap.count, true
+}
+
+func (s *Server) setLineupCache(path string, mtime time.Time, size int64, payload []byte, count int) {
+	s.lineupCache.mu.Lock()
+	s.lineupCache.snap = lineupSnapshot{
+		path:    path,
+		mtime:   mtime,
+		size:    size,
+		payload: append([]byte(nil), payload...),
+		count:   count,
+	}
+	s.lineupCache.mu.Unlock()
 }
 
 // HandleLineupPost handles POST /lineup.json (Plex scan)
