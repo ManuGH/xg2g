@@ -571,7 +571,15 @@ func main() {
 		V3Store:       v3Store,
 		ResumeStore:   resumeStore,
 		ScanManager:   v3Scan,
-		E2Client:      e2Client,
+		ReceiverHealthCheck: func(ctx context.Context) error {
+			client := openwebif.NewWithPort(cfg.Enigma2.BaseURL, 0, openwebif.Options{
+				Timeout:  2 * time.Second,
+				Username: cfg.Enigma2.Username,
+				Password: cfg.Enigma2.Password,
+			})
+			_, err := client.About(ctx)
+			return err
+		},
 		MediaPipeline: mediaPipeline,
 		// DG-04: daemon receives only a factory port; concrete worker wiring stays in composition root.
 		V3OrchestratorFactory: buildV3OrchestratorFactory(),

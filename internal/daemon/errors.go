@@ -30,6 +30,9 @@ var (
 	// ErrMissingV3OrchestratorFactory is returned when v3 is enabled without a factory.
 	ErrMissingV3OrchestratorFactory = errors.New("v3 orchestrator factory is required when engine is enabled")
 
+	// ErrMissingReceiverHealthCheck is returned when v3 is enabled without a receiver health check.
+	ErrMissingReceiverHealthCheck = errors.New("receiver health check is required when engine is enabled")
+
 	// ErrMissingV3Orchestrator is returned when factory build returned nil.
 	ErrMissingV3Orchestrator = errors.New("v3 orchestrator factory returned nil orchestrator")
 )

@@ -14,7 +14,6 @@ import (
 	sessionstore "github.com/ManuGH/xg2g/internal/domain/session/store"
 	pipebus "github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
-	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
 )
 
 type v3WorkerRuntimeDeps struct {
@@ -51,7 +50,7 @@ func (m *manager) logV3WorkerStart(cfg config.AppConfig) {
 		Str("mode", cfg.Engine.Mode).
 		Str("store", cfg.Store.Path).
 		Str("hls_root", cfg.HLS.Root).
-		Str("e2_host", platformnet.SanitizeURL(cfg.Enigma2.BaseURL)).
+		Str("e2_host", cfg.Enigma2.BaseURL).
 		Msg("starting v3 worker (Phase 7A)")
 }
 
