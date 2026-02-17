@@ -741,13 +741,6 @@ func (c *Client) servicesCapabilitySet(preferFlat bool) {
 	c.servicesCapMu.Unlock()
 }
 
-func (c *Client) cacheServicesResult(ctx context.Context, cacheKey string, result [][2]string) {
-	if c.cache != nil {
-		c.cache.Set(cacheKey, result, c.cacheTTL)
-		c.loggerFor(ctx).Debug().Str("event", "cache.set").Str("key", cacheKey).Dur("ttl", c.cacheTTL).Msg("cached result")
-	}
-}
-
 // GetTimers retrieves the list of timers from the receiver.
 func (c *Client) GetTimers(ctx context.Context) ([]Timer, error) {
 	// Timers change frequently, so we don't cache them aggressively
