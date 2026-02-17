@@ -137,6 +137,60 @@ func TestStreamURLWebIF(t *testing.T) {
 	}
 }
 
+func TestStreamURLStreamBaseOverride(t *testing.T) {
+	ref := "1:0:19:1334:3EF:1:C00000:0:0:0:"
+	client := NewWithPort("http://receiver.local", 19000, Options{
+		StreamBaseURL: "https://proxy.example:8443",
+	})
+
+	got, err := client.StreamURL(context.Background(), ref, "ignored-name")
+	if err != nil {
+		t.Fatalf("StreamURL returned error: %v", err)
+	}
+
+	parsed, err := url.Parse(got)
+	if err != nil {
+		t.Fatalf("failed to parse URL %q: %v", got, err)
+	}
+
+	if parsed.Scheme != "https" {
+		t.Fatalf("scheme: want %q, got %q", "https", parsed.Scheme)
+	}
+	if parsed.Host != "proxy.example:8443" {
+		t.Fatalf("host: want %q, got %q", "proxy.example:8443", parsed.Host)
+	}
+	if parsed.Path != "/"+ref {
+		t.Fatalf("path: want %q, got %q", "/"+ref, parsed.Path)
+	}
+}
+
+func TestStreamURLInvalidStreamBaseOverrideFallsBack(t *testing.T) {
+	ref := "1:0:19:1334:3EF:1:C00000:0:0:0:"
+	client := NewWithPort("http://receiver.local", 19000, Options{
+		StreamBaseURL: "proxy.example:8443",
+	})
+
+	got, err := client.StreamURL(context.Background(), ref, "ignored-name")
+	if err != nil {
+		t.Fatalf("StreamURL returned error: %v", err)
+	}
+
+	parsed, err := url.Parse(got)
+	if err != nil {
+		t.Fatalf("failed to parse URL %q: %v", got, err)
+	}
+
+	if parsed.Scheme != "http" {
+		t.Fatalf("scheme: want %q, got %q", "http", parsed.Scheme)
+	}
+	if parsed.Host != "receiver.local:19000" {
+		t.Fatalf("host: want %q, got %q", "receiver.local:19000", parsed.Host)
+	}
+	if parsed.Path != "/"+ref {
+		t.Fatalf("path: want %q, got %q", "/"+ref, parsed.Path)
+	}
+}
+
 func TestAbout(t *testing.T) {
 	mock := NewMockServer()
 	defer mock.Close()

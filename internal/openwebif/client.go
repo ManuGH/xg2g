@@ -245,16 +245,6 @@ var (
 	}, []string{"operation"})
 )
 
-// ClientInterface defines the subset used by other packages and tests.
-type ClientInterface interface {
-	Bouquets(ctx context.Context) (map[string]string, error)
-	Services(ctx context.Context, bouquetRef string) ([][2]string, error)
-	StreamURL(ctx context.Context, ref, name string) (string, error)
-	GetCurrent(ctx context.Context) (*CurrentInfo, error)
-	GetStatusInfo(ctx context.Context) (*StatusInfo, error)
-	GetSignal(ctx context.Context) (*SignalInfo, error)
-}
-
 // New creates a new OpenWebIF client with the given options.
 func New(base string) *Client {
 	return NewWithPort(base, 0, Options{})
@@ -565,6 +555,19 @@ func (c *Client) Services(ctx context.Context, bouquetRef string) ([][2]string, 
 		}
 		trimmedServices := strings.TrimSpace(string(shape.Services))
 		if trimmedServices == "" || trimmedServices == "null" {
+			// Legacy receivers may respond to getallservices with only a bouquets payload.
+			// When this happens during fallback, treat it as an empty service list.
+			if ep.preferFlat {
+				var legacyShape struct {
+					Bouquets json.RawMessage `json:"bouquets"`
+				}
+				if err := json.Unmarshal(body, &legacyShape); err == nil {
+					trimmedBouquets := strings.TrimSpace(string(legacyShape.Bouquets))
+					if trimmedBouquets != "" && trimmedBouquets != "null" {
+						return [][2]string{}, nil
+					}
+				}
+			}
 			return nil, fmt.Errorf("%w: missing services field", errServicesSchemaMismatch)
 		}
 
@@ -700,7 +703,7 @@ func (c *Client) Services(ctx context.Context, bouquetRef string) ([][2]string, 
 }
 
 func shouldTryServicesFallback(err error) bool {
-	return errors.Is(err, errServicesSchemaMismatch)
+	return errors.Is(err, errServicesSchemaMismatch) || errors.Is(err, ErrNotFound)
 }
 
 func (c *Client) servicesCapabilityKey() string {
@@ -1257,88 +1260,94 @@ func (c *Client) DetectTimerChange(ctx context.Context) (TimerChangeCap, error) 
 // StreamURL builds a streaming URL for the given service reference.
 // Context is used for smart stream detection and tracing.
 func (c *Client) StreamURL(ctx context.Context, ref, name string) (string, error) {
+	_ = ctx
 
-	// Fallback: Original logic (manual configuration)
-	base := strings.TrimSpace(c.base)
+	parsed, err := parseOpenWebIFBaseURL(c.base)
+	if err != nil {
+		return "", err
+	}
+
+	if c.useWebIFStreams {
+		return buildWebIFStreamURL(parsed, ref, name, c.username, c.password)
+	}
+
+	if u, ok := buildDirectStreamOverrideURL(c.streamBaseURL, ref); ok {
+		return u, nil
+	}
+
+	return buildDirectTSStreamURL(parsed, ref, c.port)
+}
+
+func parseOpenWebIFBaseURL(rawBase string) (*url.URL, error) {
+	base := strings.TrimSpace(rawBase)
 	if base == "" {
-		return "", fmt.Errorf("openwebif base URL is empty")
+		return nil, fmt.Errorf("openwebif base URL is empty")
 	}
 
 	parsed, err := url.Parse(base)
 	if err != nil {
-		return "", fmt.Errorf("parse openwebif base URL %q: %w", base, err)
+		return nil, fmt.Errorf("parse openwebif base URL %q: %w", base, err)
 	}
 
 	if parsed.Scheme == "" {
 		parsed.Scheme = "http"
 	}
+	if parsed.Host == "" {
+		return nil, fmt.Errorf("openwebif base URL %q missing host", base)
+	}
+	return parsed, nil
+}
 
-	host := parsed.Host
-	if host == "" {
-		return "", fmt.Errorf("openwebif base URL %q missing host", base)
+func buildWebIFStreamURL(parsed *url.URL, ref, name, username, password string) (string, error) {
+	hostname := parsed.Hostname()
+	if hostname == "" {
+		return "", fmt.Errorf("openwebif base URL %q missing hostname", parsed.String())
 	}
 
-	if c.useWebIFStreams {
-		// Use WebIF streaming endpoint (works in standby mode)
-		// Format: http://<host>/web/stream.m3u?ref=<service_ref>&name=<channel_name>
-		hostname := parsed.Hostname()
-		if hostname == "" {
-			return "", fmt.Errorf("openwebif base URL %q missing hostname", base)
-		}
-
-		// Use base URL port (typically 80) for WebIF
-		basePort := parsed.Port()
-		if basePort != "" {
-			host = net.JoinHostPort(hostname, basePort)
-		} else {
-			host = hostname
-		}
-
-		u := &url.URL{
-			Scheme:   parsed.Scheme,
-			Host:     host,
-			Path:     "/web/stream.m3u",
-			RawQuery: fmt.Sprintf("ref=%s&name=%s", url.QueryEscape(ref), url.QueryEscape(name)),
-		}
-		if c.username != "" {
-			u.User = url.UserPassword(c.username, c.password)
-		}
-		return u.String(), nil
+	host := hostname
+	if basePort := parsed.Port(); basePort != "" {
+		host = net.JoinHostPort(hostname, basePort)
 	}
 
-	// Use direct TS streaming (works best with IPTV players when receiver is active)
-	// Format: http://<host>:<stream_port>/<service_ref>
-	// This is the direct MPEG-TS stream from the Enigma2 receiver
+	q := url.Values{}
+	q.Set("ref", ref)
+	q.Set("name", name)
 
-	// Check if custom stream base URL is configured (e.g., for nginx proxy).
-	// This overrides the stream host/port, but keeps the service reference path.
-	if streamBase := strings.TrimSpace(c.streamBaseURL); streamBase != "" {
-		streamParsed, err := url.Parse(streamBase)
-		if err == nil && streamParsed.Host != "" {
-			u := &url.URL{
-				Scheme: streamParsed.Scheme,
-				Host:   streamParsed.Host,
-				Path:   "/" + ref,
-			}
-			return u.String(), nil
-		}
+	u := &url.URL{
+		Scheme:   parsed.Scheme,
+		Host:     host,
+		Path:     "/web/stream.m3u",
+		RawQuery: q.Encode(),
+	}
+	if username != "" {
+		u.User = url.UserPassword(username, password)
+	}
+	return u.String(), nil
+}
+
+func buildDirectStreamOverrideURL(rawStreamBase, ref string) (string, bool) {
+	streamBase := strings.TrimSpace(rawStreamBase)
+	if streamBase == "" {
+		return "", false
 	}
 
-	// If base URL already has a port, preserve it
-	// Otherwise, add the stream port
-	_, existingPort, err := net.SplitHostPort(host)
-	if err != nil || existingPort == "" {
-		// No port in base URL, add stream port
-		hostname := parsed.Hostname()
-		if hostname == "" {
-			return "", fmt.Errorf("openwebif base URL %q missing hostname", base)
-		}
+	streamParsed, err := url.Parse(streamBase)
+	if err != nil || streamParsed.Host == "" {
+		return "", false
+	}
 
-		streamPort := c.port
-		if streamPort <= 0 {
-			streamPort = 8001 // Default Enigma2 stream port
-		}
-		host = net.JoinHostPort(hostname, strconv.Itoa(streamPort))
+	u := &url.URL{
+		Scheme: streamParsed.Scheme,
+		Host:   streamParsed.Host,
+		Path:   "/" + ref,
+	}
+	return u.String(), true
+}
+
+func buildDirectTSStreamURL(parsed *url.URL, ref string, streamPort int) (string, error) {
+	host, err := resolveDirectTSHost(parsed, streamPort)
+	if err != nil {
+		return "", err
 	}
 
 	u := &url.URL{
@@ -1346,8 +1355,29 @@ func (c *Client) StreamURL(ctx context.Context, ref, name string) (string, error
 		Host:   host,
 		Path:   "/" + ref,
 	}
-
 	return u.String(), nil
+}
+
+func resolveDirectTSHost(parsed *url.URL, streamPort int) (string, error) {
+	host := parsed.Host
+	if host == "" {
+		return "", fmt.Errorf("openwebif base URL %q missing host", parsed.String())
+	}
+
+	_, existingPort, err := net.SplitHostPort(host)
+	if err == nil && existingPort != "" {
+		return host, nil
+	}
+
+	hostname := parsed.Hostname()
+	if hostname == "" {
+		return "", fmt.Errorf("openwebif base URL %q missing hostname", parsed.String())
+	}
+
+	if streamPort <= 0 {
+		streamPort = defaultStreamPort
+	}
+	return net.JoinHostPort(hostname, strconv.Itoa(streamPort)), nil
 }
 
 // StatusInfo represents the receiver status from /api/statusinfo

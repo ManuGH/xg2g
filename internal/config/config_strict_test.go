@@ -7,6 +7,7 @@
 package config
 
 import (
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -42,6 +43,9 @@ func TestLoad_UnknownKeyFails(t *testing.T) {
 
 	if err == nil {
 		t.Fatal("expected error due to unknown key, got nil")
+	}
+	if !errors.Is(err, ErrUnknownConfigField) {
+		t.Fatalf("expected ErrUnknownConfigField, got: %v", err)
 	}
 
 	// Verify error message contains "unknown field" or similar

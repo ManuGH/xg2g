@@ -6,6 +6,7 @@ package config
 
 import (
 	"bytes"
+	"errors"
 
 	"fmt"
 	"io"
@@ -218,8 +219,9 @@ func (l *Loader) loadFile(path string) (*FileConfig, error) {
 		if err == io.EOF {
 			return &FileConfig{}, nil
 		}
-		if strings.Contains(err.Error(), "field") && strings.Contains(err.Error(), "not found") {
-			return nil, fmt.Errorf("strict config parse error (legacy keys found? see docs/guides/CONFIGURATION.md): %w", err)
+		if isUnknownYAMLFieldError(err) {
+			classified := errors.Join(ErrUnknownConfigField, err)
+			return nil, fmt.Errorf("strict config parse error (legacy keys found? see docs/guides/CONFIGURATION.md): %w", classified)
 		}
 		return nil, fmt.Errorf("strict config parse error: %w", err)
 	}
@@ -230,4 +232,17 @@ func (l *Loader) loadFile(path string) (*FileConfig, error) {
 	}
 
 	return &fileCfg, nil
+}
+
+func isUnknownYAMLFieldError(err error) bool {
+	var typeErr *yaml.TypeError
+	if !errors.As(err, &typeErr) || len(typeErr.Errors) == 0 {
+		return false
+	}
+	for _, detail := range typeErr.Errors {
+		if !strings.Contains(detail, "field ") || !strings.Contains(detail, " not found in type ") {
+			return false
+		}
+	}
+	return true
 }

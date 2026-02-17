@@ -8,6 +8,7 @@ package config
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -522,6 +523,9 @@ unknownField: this-should-be-rejected
 	err = holder.Reload(ctx)
 	if err == nil {
 		t.Fatal("expected Reload() to fail with strict parsing error, got nil")
+	}
+	if !errors.Is(err, ErrUnknownConfigField) {
+		t.Fatalf("expected ErrUnknownConfigField, got: %v", err)
 	}
 
 	// Verify old config is unchanged
