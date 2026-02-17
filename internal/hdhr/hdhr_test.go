@@ -10,6 +10,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"encoding/xml"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -295,6 +296,34 @@ func TestHandleDeviceXML(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDeviceXML_EscapesSpecialChars(t *testing.T) {
+	logger := zerolog.New(os.Stdout)
+	server := NewServer(Config{
+		DeviceID:     "DEV&<>'\"",
+		FriendlyName: "Friendly & < > \" '",
+		ModelName:    "Model & < > \" '",
+		Logger:       logger,
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "http://localhost:8080/device.xml", nil)
+	w := httptest.NewRecorder()
+
+	server.HandleDeviceXML(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "application/xml; charset=utf-8", w.Header().Get("Content-Type"))
+
+	body := w.Body.String()
+	assert.Contains(t, body, "&amp;")
+	assert.Contains(t, body, "&lt;")
+	assert.Contains(t, body, "&gt;")
+
+	var parsed struct {
+		XMLName xml.Name `xml:"root"`
+	}
+	require.NoError(t, xml.Unmarshal(w.Body.Bytes(), &parsed))
 }
 
 func TestServerGetLocalIP(t *testing.T) {

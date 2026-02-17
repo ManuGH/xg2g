@@ -10,6 +10,7 @@ package hdhr
 import (
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"net"
@@ -110,6 +111,32 @@ type LineupEntry struct {
 	GuideNumber string `json:"GuideNumber"`
 	GuideName   string `json:"GuideName"`
 	URL         string `json:"URL"`
+}
+
+type deviceXMLRoot struct {
+	XMLName     xml.Name             `xml:"root"`
+	XMLNS       string               `xml:"xmlns,attr"`
+	SpecVersion deviceXMLSpecVersion `xml:"specVersion"`
+	Device      deviceXMLDevice      `xml:"device"`
+}
+
+type deviceXMLSpecVersion struct {
+	Major int `xml:"major"`
+	Minor int `xml:"minor"`
+}
+
+type deviceXMLDevice struct {
+	DeviceType       string `xml:"deviceType"`
+	FriendlyName     string `xml:"friendlyName"`
+	Manufacturer     string `xml:"manufacturer"`
+	ManufacturerURL  string `xml:"manufacturerURL"`
+	ModelDescription string `xml:"modelDescription"`
+	ModelName        string `xml:"modelName"`
+	ModelNumber      string `xml:"modelNumber"`
+	ModelURL         string `xml:"modelURL"`
+	SerialNumber     string `xml:"serialNumber"`
+	UDN              string `xml:"UDN"`
+	PresentationURL  string `xml:"presentationURL"`
 }
 
 // HandleDiscover handles /discover.json endpoint
@@ -507,36 +534,36 @@ func (s *Server) HandleDeviceXML(w http.ResponseWriter, r *http.Request) {
 		baseURL = fmt.Sprintf("%s://%s", scheme, r.Host)
 	}
 
-	xml := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
-<root xmlns="urn:schemas-upnp-org:device-1-0">
-  <specVersion>
-    <major>1</major>
-    <minor>0</minor>
-  </specVersion>
-  <device>
-    <deviceType>urn:schemas-upnp-org:device:MediaServer:1</deviceType>
-    <friendlyName>%s</friendlyName>
-    <manufacturer>Silicondust</manufacturer>
-    <manufacturerURL>http://www.silicondust.com/</manufacturerURL>
-    <modelDescription>HDHomeRun ATSC Tuner</modelDescription>
-    <modelName>%s</modelName>
-    <modelNumber>%s</modelNumber>
-    <modelURL>http://www.silicondust.com/</modelURL>
-    <serialNumber></serialNumber>
-    <UDN>uuid:%s</UDN>
-    <presentationURL>%s</presentationURL>
-  </device>
-</root>`,
-		s.config.FriendlyName,
-		s.config.ModelName,
-		s.config.ModelName,
-		s.config.DeviceID,
-		baseURL,
-	)
+	doc := deviceXMLRoot{
+		XMLNS: "urn:schemas-upnp-org:device-1-0",
+		SpecVersion: deviceXMLSpecVersion{
+			Major: 1,
+			Minor: 0,
+		},
+		Device: deviceXMLDevice{
+			DeviceType:       "urn:schemas-upnp-org:device:MediaServer:1",
+			FriendlyName:     s.config.FriendlyName,
+			Manufacturer:     "Silicondust",
+			ManufacturerURL:  "http://www.silicondust.com/",
+			ModelDescription: "HDHomeRun ATSC Tuner",
+			ModelName:        s.config.ModelName,
+			ModelNumber:      s.config.ModelName,
+			ModelURL:         "http://www.silicondust.com/",
+			UDN:              "uuid:" + s.config.DeviceID,
+			PresentationURL:  baseURL,
+		},
+	}
 
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
-	if _, err := w.Write([]byte(xml)); err != nil {
+	if _, err := w.Write([]byte(xml.Header)); err != nil {
+		s.logger.Error().Err(err).Str("endpoint", "/device.xml").Msg("failed to write HDHomeRun device XML header")
+		return
+	}
+
+	enc := xml.NewEncoder(w)
+	if err := enc.Encode(doc); err != nil {
 		s.logger.Error().Err(err).Str("endpoint", "/device.xml").Msg("failed to write HDHomeRun device XML response")
+		return
 	}
 
 	s.logger.Debug().
