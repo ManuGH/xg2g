@@ -716,27 +716,23 @@ func (c *Client) servicesCapabilityGet() (bool, bool) {
 
 	c.servicesCapMu.RLock()
 	cap, ok := c.servicesCaps[key]
+	c.servicesCapMu.RUnlock()
 	if ok && now.Before(cap.ExpiresAt) {
-		c.servicesCapMu.RUnlock()
 		return cap.PreferFlat, true
 	}
-	c.servicesCapMu.RUnlock()
-	if !ok {
-		return false, false
-	}
 
-	// Re-check under write lock to avoid deleting a freshly refreshed capability.
+	// Entry is missing or expired. Re-check under write lock to avoid deleting
+	// a freshly refreshed capability.
 	c.servicesCapMu.Lock()
 	defer c.servicesCapMu.Unlock()
 	cap, ok = c.servicesCaps[key]
-	if !ok {
-		return false, false
+	if ok && time.Now().Before(cap.ExpiresAt) {
+		return cap.PreferFlat, true
 	}
-	if time.Now().After(cap.ExpiresAt) {
+	if ok {
 		delete(c.servicesCaps, key)
-		return false, false
 	}
-	return cap.PreferFlat, true
+	return false, false
 }
 
 func (c *Client) servicesCapabilitySet(preferFlat bool) {
