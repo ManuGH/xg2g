@@ -27,7 +27,11 @@ func NewWithDeps(cfg config.AppConfig, cfgMgr *config.Manager, constructorDeps C
 	// 1. Initialized root context for server lifecycle (MUST be before v3Handler)
 	rootCtx, rootCancel := context.WithCancel(context.Background())
 
-	deps := resolveConstructorDeps(cfg, constructorDeps)
+	deps, err := resolveConstructorDeps(cfg, constructorDeps)
+	if err != nil {
+		rootCancel()
+		return nil, err
+	}
 
 	s := &Server{
 		cfg:                 cfg,
