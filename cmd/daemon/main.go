@@ -393,7 +393,10 @@ func main() {
 	// Configure proxy (enabled by default in v2.0 for Zero Config experience)
 
 	// Create API handler
-	apiDeps := buildAPIConstructorDeps(cfg, snap, logger)
+	apiDeps, err := buildAPIConstructorDeps(cfg, snap, logger)
+	if err != nil {
+		logger.Fatal().Err(err).Msg("failed to build API constructor dependencies")
+	}
 	s, err := api.NewWithDeps(cfg, configMgr, apiDeps)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("failed to initialize API server")
@@ -567,10 +570,10 @@ func main() {
 		ProxyOnly: false, // Deprecated, always false now
 
 		// Inject Shared V3 Components
-		V3Bus:         v3Bus,
-		V3Store:       v3Store,
-		ResumeStore:   resumeStore,
-		ScanManager:   v3Scan,
+		V3Bus:       v3Bus,
+		V3Store:     v3Store,
+		ResumeStore: resumeStore,
+		ScanManager: v3Scan,
 		ReceiverHealthCheck: func(ctx context.Context) error {
 			client := openwebif.NewWithPort(cfg.Enigma2.BaseURL, 0, openwebif.Options{
 				Timeout:  2 * time.Second,

@@ -4,6 +4,9 @@
 package api
 
 import (
+	"errors"
+	"fmt"
+
 	"github.com/ManuGH/xg2g/internal/channels"
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/dvr"
@@ -27,12 +30,14 @@ type resolvedConstructorDeps struct {
 	pathMapper     *recordings.PathMapper
 }
 
-func resolveConstructorDeps(cfg config.AppConfig, deps ConstructorDeps) resolvedConstructorDeps {
+func resolveConstructorDeps(cfg config.AppConfig, deps ConstructorDeps) (resolvedConstructorDeps, error) {
+	var loadErrs []error
+
 	channelManager := deps.ChannelManager
 	if channelManager == nil {
 		channelManager = channels.NewManager(cfg.DataDir)
 		if err := channelManager.Load(); err != nil {
-			log.L().Error().Err(err).Msg("failed to load channel states")
+			loadErrs = append(loadErrs, fmt.Errorf("load channel states: %w", err))
 		}
 	}
 
@@ -40,8 +45,11 @@ func resolveConstructorDeps(cfg config.AppConfig, deps ConstructorDeps) resolved
 	if seriesManager == nil {
 		seriesManager = dvr.NewManager(cfg.DataDir)
 		if err := seriesManager.Load(); err != nil {
-			log.L().Error().Err(err).Msg("failed to load series rules")
+			loadErrs = append(loadErrs, fmt.Errorf("load series rules: %w", err))
 		}
+	}
+	if len(loadErrs) > 0 {
+		return resolvedConstructorDeps{}, errors.Join(loadErrs...)
 	}
 
 	snapshot := defaultSnapshot(cfg)
@@ -59,7 +67,7 @@ func resolveConstructorDeps(cfg config.AppConfig, deps ConstructorDeps) resolved
 		seriesManager:  seriesManager,
 		snapshot:       snapshot,
 		pathMapper:     pathMapper,
-	}
+	}, nil
 }
 
 func defaultSnapshot(cfg config.AppConfig) config.Snapshot {
