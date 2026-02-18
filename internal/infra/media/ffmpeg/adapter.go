@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/config"
 	codecdecision "github.com/ManuGH/xg2g/internal/decision"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/media/ffmpeg/watchdog"
@@ -76,7 +77,7 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 		killTimeout = 5 * time.Second
 	}
 	if segmentSeconds <= 0 {
-		segmentSeconds = 6 // Keep in sync with config registry default (hls.segmentSeconds)
+		segmentSeconds = config.DefaultHLSSegmentSeconds
 	}
 	httpClient := &http.Client{
 		Timeout: preflightTimeout,
@@ -151,34 +152,34 @@ func (a *LocalAdapter) PreflightVAAPI() error {
 	}
 	encoderList := string(checkOut)
 
-		// 3. Test each encoder with a real 5-frame encode
-		for _, enc := range vaapiEncodersToTest {
-			if !strings.Contains(encoderList, enc) {
-				a.Logger.Info().Str("encoder", enc).Msg("vaapi preflight: encoder not in ffmpeg build, skipping")
-				continue
-			}
-			if err := a.testVaapiEncoder(enc); err != nil {
-				a.Logger.Warn().Err(err).Str("encoder", enc).Msg("vaapi preflight: encoder test failed")
-			} else {
-				a.vaapiEncoders[enc] = true
-				a.Logger.Info().Str("encoder", enc).Msg("vaapi preflight: encoder verified")
-			}
+	// 3. Test each encoder with a real 5-frame encode
+	for _, enc := range vaapiEncodersToTest {
+		if !strings.Contains(encoderList, enc) {
+			a.Logger.Info().Str("encoder", enc).Msg("vaapi preflight: encoder not in ffmpeg build, skipping")
+			continue
 		}
+		if err := a.testVaapiEncoder(enc); err != nil {
+			a.Logger.Warn().Err(err).Str("encoder", enc).Msg("vaapi preflight: encoder test failed")
+		} else {
+			a.vaapiEncoders[enc] = true
+			a.Logger.Info().Str("encoder", enc).Msg("vaapi preflight: encoder verified")
+		}
+	}
 
-		if len(a.vaapiEncoders) == 0 {
+	if len(a.vaapiEncoders) == 0 {
 		a.vaapiDeviceErr = fmt.Errorf("vaapi preflight: no working VAAPI encoders found")
 		a.Logger.Error().Err(a.vaapiDeviceErr).Msg("vaapi preflight: failed")
 		hardware.SetVAAPIPreflightResult(false)
 		return a.vaapiDeviceErr
-		}
+	}
 
-		// Publish per-encoder results for higher layers (HTTP/profile selection).
-		hardware.SetVAAPIEncoderPreflight(a.vaapiEncoders)
+	// Publish per-encoder results for higher layers (HTTP/profile selection).
+	hardware.SetVAAPIEncoderPreflight(a.vaapiEncoders)
 
-		hardware.SetVAAPIPreflightResult(true)
-		a.Logger.Info().
-			Str("device", a.VaapiDevice).
-			Int("verified_encoders", len(a.vaapiEncoders)).
+	hardware.SetVAAPIPreflightResult(true)
+	a.Logger.Info().
+		Str("device", a.VaapiDevice).
+		Int("verified_encoders", len(a.vaapiEncoders)).
 		Msg("vaapi preflight: passed")
 	return nil
 }
