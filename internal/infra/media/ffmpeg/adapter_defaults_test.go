@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 )
@@ -28,5 +29,5 @@ func TestNewLocalAdapter_DefaultSegmentSecondsMatchesRegistry(t *testing.T) {
 		"",
 	)
 
-	assert.Equal(t, 6, adapter.SegmentSeconds)
+	assert.Equal(t, config.DefaultHLSSegmentSeconds, adapter.SegmentSeconds)
 }
