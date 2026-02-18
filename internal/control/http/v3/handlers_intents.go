@@ -136,8 +136,8 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	case model.IntentTypeStreamStart:
 		// Smart Profile Lookup
 		var cap *scan.Capability
-		if deps.v3Scan != nil {
-			if c, found := deps.v3Scan.GetCapability(req.ServiceRef); found {
+		if deps.channelScanner != nil {
+			if c, found := deps.channelScanner.GetCapability(req.ServiceRef); found {
 				cap = &c
 			}
 		}
@@ -212,7 +212,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		profileSpec := profiles.Resolve(reqProfileID, r.UserAgent(), int(cfg.HLS.DVRWindow.Seconds()), cap, resolveHasGPU, hwaccelMode)
 
 		// 5.0 Preflight Source Check (fail-closed)
-		if s.enforcePreflight(r.Context(), w, r, cfg, req.ServiceRef) {
+		if enforcePreflight(r.Context(), w, r, deps, req.ServiceRef) {
 			return
 		}
 
@@ -220,7 +220,12 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		state := CollectRuntimeState(r.Context(), deps.admissionState)
 		wantsTranscode := profileSpec.TranscodeVideo // Profile knows if transcode is needed
 
-		decision := s.admission.Check(r.Context(), admission.Request{WantsTranscode: wantsTranscode}, state)
+		if deps.admission == nil {
+			writeProblem(w, r, http.StatusServiceUnavailable, "admission/unavailable", "Admission Unavailable", "ADMISSION_UNAVAILABLE", "admission controller unavailable", nil)
+			return
+		}
+
+		decision := deps.admission.Check(r.Context(), admission.Request{WantsTranscode: wantsTranscode}, state)
 		if !decision.Allow {
 			// Record reject metric (Slice 2)
 			if decision.Problem != nil {
