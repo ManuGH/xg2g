@@ -393,7 +393,7 @@ func main() {
 	// Configure proxy (enabled by default in v2.0 for Zero Config experience)
 
 	// Create API handler
-	apiDeps, err := buildAPIConstructorDeps(cfg, snap, logger)
+	apiDeps, err := buildAPIConstructorDeps(cfg, snap)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("failed to build API constructor dependencies")
 	}
