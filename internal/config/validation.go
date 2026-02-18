@@ -238,7 +238,7 @@ func Validate(cfg AppConfig) error {
 			if cfg.HLS.DVRWindow < 10*time.Second {
 				v.AddError("HLS.DVRWindow", "must be >= 10s for low latency", cfg.HLS.DVRWindow)
 			}
-		case 6: // Standard Profile
+		case DefaultHLSSegmentSeconds: // Standard Profile
 			if cfg.HLS.DVRWindow < 1*time.Minute {
 				v.AddError("HLS.DVRWindow", "must be >= 1m for standard profile", cfg.HLS.DVRWindow)
 			}
