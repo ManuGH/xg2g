@@ -13,6 +13,10 @@ fail() {
   exit 1
 }
 
+if ! [[ "${MAX_UNTRACKED}" =~ ^[0-9]+$ ]]; then
+  fail "XG2G_MAX_UNTRACKED must be a non-negative integer (got '${MAX_UNTRACKED}')"
+fi
+
 current_branch="$(git symbolic-ref --quiet --short HEAD || true)"
 if [[ -z "${current_branch}" ]]; then
   fail "detached HEAD is not allowed for normal pushes"
