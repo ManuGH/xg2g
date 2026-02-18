@@ -43,7 +43,7 @@ jobs:
           cache: true
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@45cbd0c69e560cd9e7cd7f8c32362050c9b7ded2
+        uses: github/codeql-action/init@9e907b5e64f6b83e7804b09294d44122997950d6
         with:
           languages: ${{ matrix.language }}
       - name: Build Go (Go Analysis)
@@ -51,7 +51,7 @@ jobs:
         run: go build ./...
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/init@45cbd0c69e560cd9e7cd7f8c32362050c9b7ded2
+        uses: github/codeql-action/init@9e907b5e64f6b83e7804b09294d44122997950d6
         with:
           category: "/language:${{ matrix.language }}"
 
@@ -109,7 +109,7 @@ jobs:
 
       - name: Upload SARIF to code scanning
         if: always()
-        uses: github/codeql-action/init@45cbd0c69e560cd9e7cd7f8c32362050c9b7ded2 # v3
+        uses: github/codeql-action/init@9e907b5e64f6b83e7804b09294d44122997950d6 # v3
         with:
           sarif_file: govulncheck.sarif
           category: govulncheck
@@ -275,7 +275,7 @@ jobs:
 
       - name: Build and push Docker image
         id: build-push
-        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.15.0
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.15.0
         with:
           context: .
           platforms: linux/amd64
@@ -354,7 +354,7 @@ jobs:
       # Scan for Vulnerabilities
       # =============================================
       - name: Scan image with Trivy
-        uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # 0.33.1
+        uses: aquasecurity/trivy-action@c1824fd6edce30d7ab345a9989de00bbd46ef284 # 0.34.0
         with:
           image-ref: ghcr.io/manugh/xg2g@${{ steps.build-push.outputs.digest }}
           format: "sarif"
@@ -362,7 +362,7 @@ jobs:
           trivy-config: .github/security/trivy.yaml
 
       - name: Upload Trivy results to GitHub Security
-        uses: github/codeql-action/init@45cbd0c69e560cd9e7cd7f8c32362050c9b7ded2 # v3
+        uses: github/codeql-action/init@9e907b5e64f6b83e7804b09294d44122997950d6 # v3
         with:
           sarif_file: "trivy-results.sarif"
 
