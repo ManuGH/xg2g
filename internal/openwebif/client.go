@@ -716,14 +716,24 @@ func (c *Client) servicesCapabilityGet() (bool, bool) {
 
 	c.servicesCapMu.RLock()
 	cap, ok := c.servicesCaps[key]
+	if ok && now.Before(cap.ExpiresAt) {
+		c.servicesCapMu.RUnlock()
+		return cap.PreferFlat, true
+	}
 	c.servicesCapMu.RUnlock()
 	if !ok {
 		return false, false
 	}
-	if now.After(cap.ExpiresAt) {
-		c.servicesCapMu.Lock()
+
+	// Re-check under write lock to avoid deleting a freshly refreshed capability.
+	c.servicesCapMu.Lock()
+	defer c.servicesCapMu.Unlock()
+	cap, ok = c.servicesCaps[key]
+	if !ok {
+		return false, false
+	}
+	if time.Now().After(cap.ExpiresAt) {
 		delete(c.servicesCaps, key)
-		c.servicesCapMu.Unlock()
 		return false, false
 	}
 	return cap.PreferFlat, true
@@ -1292,14 +1302,8 @@ func parseOpenWebIFBaseURL(rawBase string) (*url.URL, error) {
 }
 
 func buildWebIFStreamURL(parsed *url.URL, ref, name, username, password string) (string, error) {
-	hostname := parsed.Hostname()
-	if hostname == "" {
+	if parsed.Hostname() == "" {
 		return "", fmt.Errorf("openwebif base URL %q missing hostname", parsed.String())
-	}
-
-	host := hostname
-	if basePort := parsed.Port(); basePort != "" {
-		host = net.JoinHostPort(hostname, basePort)
 	}
 
 	q := url.Values{}
@@ -1308,7 +1312,7 @@ func buildWebIFStreamURL(parsed *url.URL, ref, name, username, password string) 
 
 	u := &url.URL{
 		Scheme:   parsed.Scheme,
-		Host:     host,
+		Host:     parsed.Host,
 		Path:     "/web/stream.m3u",
 		RawQuery: q.Encode(),
 	}

@@ -83,7 +83,14 @@ func TestConnectionHygiene_Invariants(t *testing.T) {
 func TestAdHocGuards_AST(t *testing.T) {
 	fset := token.NewFileSet()
 	pkgs, err := parser.ParseDir(fset, ".", func(fi os.FileInfo) bool {
-		return !strings.HasSuffix(fi.Name(), "_test.go") // Skip tests
+		name := fi.Name()
+		if strings.HasSuffix(name, "_test.go") {
+			return false // Skip tests
+		}
+		if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "._") {
+			return false // Ignore Finder/metadata files from shared volumes
+		}
+		return true
 	}, 0)
 	require.NoError(t, err)
 
