@@ -6,6 +6,7 @@ package v3
 
 import (
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/control/admission"
 	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/artifacts"
 	"github.com/ManuGH/xg2g/internal/control/read"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
@@ -28,7 +29,10 @@ type sessionsModuleDeps struct {
 	resumeStore    resume.Store
 	scanSource     ScanSource
 	epgCache       *epg.TV
-	v3Scan         ChannelScanner
+	channelScanner ChannelScanner
+	preflight      PreflightProvider
+	receiver       receiverControlFactory
+	admission      *admission.Controller
 	admissionState AdmissionState
 }
 
@@ -43,7 +47,10 @@ func (s *Server) sessionsModuleDeps() sessionsModuleDeps {
 		resumeStore:    s.resumeStore,
 		scanSource:     s.scanSource,
 		epgCache:       s.epgCache,
-		v3Scan:         s.v3Scan,
+		channelScanner: s.v3Scan,
+		preflight:      s.preflightProvider,
+		receiver:       s.owi,
+		admission:      s.admission,
 		admissionState: s.admissionState,
 	}
 }

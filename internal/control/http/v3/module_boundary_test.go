@@ -14,12 +14,14 @@ import (
 // snapshots rather than reaching directly into Server runtime fields.
 func TestModuleBoundaries_NoDirectServerStateFieldAccess(t *testing.T) {
 	forbiddenFields := map[string]struct{}{
-		"v3Store":        {},
-		"v3Bus":          {},
-		"resumeStore":    {},
-		"v3Scan":         {},
-		"scanSource":     {},
-		"admissionState": {},
+		"v3Store":           {},
+		"v3Bus":             {},
+		"resumeStore":       {},
+		"v3Scan":            {},
+		"scanSource":        {},
+		"admission":         {},
+		"admissionState":    {},
+		"preflightProvider": {},
 	}
 
 	allowedFiles := map[string]struct{}{
@@ -52,6 +54,7 @@ func TestModuleBoundaries_NoDirectServerStateFieldAccess(t *testing.T) {
 		if parseErr != nil {
 			t.Fatalf("parse %s: %v", name, parseErr)
 		}
+		receiverNames := serverReceiverNames(f)
 
 		ast.Inspect(f, func(n ast.Node) bool {
 			sel, ok := n.(*ast.SelectorExpr)
@@ -59,7 +62,10 @@ func TestModuleBoundaries_NoDirectServerStateFieldAccess(t *testing.T) {
 				return true
 			}
 			recv, ok := sel.X.(*ast.Ident)
-			if !ok || recv.Name != "s" {
+			if !ok {
+				return true
+			}
+			if _, isServerReceiver := receiverNames[recv.Name]; !isServerReceiver {
 				return true
 			}
 			if _, bad := forbiddenFields[sel.Sel.Name]; !bad {
@@ -70,5 +76,36 @@ func TestModuleBoundaries_NoDirectServerStateFieldAccess(t *testing.T) {
 			t.Errorf("%s:%d:%d direct access to s.%s is forbidden; use module deps snapshot", filepath.Base(pos.Filename), pos.Line, pos.Column, sel.Sel.Name)
 			return true
 		})
+	}
+}
+
+func serverReceiverNames(f *ast.File) map[string]struct{} {
+	names := make(map[string]struct{})
+	for _, decl := range f.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Recv == nil || len(fn.Recv.List) != 1 {
+			continue
+		}
+		recv := fn.Recv.List[0]
+		if !isServerType(recv.Type) {
+			continue
+		}
+		for _, n := range recv.Names {
+			if n != nil && n.Name != "" {
+				names[n.Name] = struct{}{}
+			}
+		}
+	}
+	return names
+}
+
+func isServerType(expr ast.Expr) bool {
+	switch t := expr.(type) {
+	case *ast.Ident:
+		return t.Name == "Server"
+	case *ast.StarExpr:
+		return isServerType(t.X)
+	default:
+		return false
 	}
 }
