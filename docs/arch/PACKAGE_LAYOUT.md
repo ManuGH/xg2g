@@ -158,11 +158,9 @@ VOD spans multiple layers:
 
 ## Deprecated Packages
 
-### `internal/core/` - DEPRECATED
+### `internal/core/` - REMOVED
 
-**DO NOT add new code here.**
-
-See [internal/core/README.md](../../internal/core/README.md) for migration plan.
+`internal/core` was removed and must not be recreated.
 
 ### `internal/api/` - LEGACY
 
@@ -216,7 +214,7 @@ Import rules are enforced by:
 - [ ] Does this code belong in the right layer?
 - [ ] Does this introduce a forbidden import?
 - [ ] Is this creating a new "utils" package? (REJECT)
-- [ ] Is this duplicating existing functionality in `core/` or `platform/`?
+- [ ] Is this duplicating existing functionality in `platform/` or domain packages?
 
 ---
 
