@@ -15,6 +15,7 @@ on:
       - "config.example.yaml"
       - "config.generated.example.yaml"
       - "docs/**"
+      - "e2e/**"
       - "internal/**"
       - "Dockerfile"
       - "Dockerfile.*"
@@ -103,6 +104,12 @@ jobs:
 
       - name: Build WebUI assets (required for embed contract)
         run: make ui-build
+
+      - name: Run WebUI unit tests
+        run: |
+          set -euo pipefail
+          cd webui
+          npm run test
 
       - name: Install System Dependencies
         run: |
