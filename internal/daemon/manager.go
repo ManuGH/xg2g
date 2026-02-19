@@ -111,6 +111,9 @@ func (m *manager) Start(ctx context.Context) error {
 		}
 	}
 
+	// Always register store close hooks so resources are released even when the engine is disabled.
+	m.registerV3RuntimeCloseHooks()
+
 	// Phase 7A: Start v3 Worker (if enabled)
 	if m.deps.Config.Engine.Enabled {
 		if err := m.startV3Worker(ctx, errChan); err != nil {

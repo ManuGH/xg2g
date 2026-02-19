@@ -3,6 +3,7 @@ package library
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"path/filepath"
 	"time"
 )
@@ -35,8 +36,14 @@ func (s *Store) GetItem(ctx context.Context, rootID, relPath string) (*Item, err
 		return nil, err
 	}
 
-	item.ModTime, _ = time.Parse(time.RFC3339, modTimeStr)
-	item.ScanTime, _ = time.Parse(time.RFC3339, scanTimeStr)
+	item.ModTime, err = time.Parse(time.RFC3339, modTimeStr)
+	if err != nil {
+		return nil, fmt.Errorf("parse mod_time %q: %w", modTimeStr, err)
+	}
+	item.ScanTime, err = time.Parse(time.RFC3339, scanTimeStr)
+	if err != nil {
+		return nil, fmt.Errorf("parse scan_time %q: %w", scanTimeStr, err)
+	}
 
 	return &item, nil
 }

@@ -18,7 +18,7 @@ import (
 // LeaseExpiryWorker runs a background goroutine that expires sessions
 // whose leases have expired (ADR-009)
 type LeaseExpiryWorker struct {
-	Store  store.StateStore
+	Store  store.SessionExpiryStore
 	Config *config.AppConfig
 }
 
@@ -136,7 +136,7 @@ func (w *LeaseExpiryWorker) expireStaleSessions(ctx context.Context) {
 }
 
 // publishStopEvent publishes a stop event for cleanup
-func publishStopEvent(ctx context.Context, store store.StateStore, sessionID string, reason string) error {
+func publishStopEvent(ctx context.Context, _ store.SessionExpiryStore, sessionID string, reason string) error {
 	// Note: This is a helper - actual implementation may need bus access
 	// For now, just log the intent
 	log.L().Debug().
