@@ -77,12 +77,8 @@ func WireServices(ctx context.Context, version, commit, buildDate string, explic
 		return nil, fmt.Errorf("failed to load configuration: %w", err)
 	}
 
-	// 3. Re-configure Logger with loaded config
-	log.Configure(log.Config{
-		Level:   cfg.LogLevel,
-		Service: cfg.LogService,
-		Version: cfg.Version,
-	})
+	// 3. Keep logger configuration immutable after first setup.
+	// Reconfiguring zerolog globals during tests can race with background log writers.
 
 	// 4. Pre-flight Checks (Fail Fast)
 	if err := health.PerformStartupChecks(ctx, cfg); err != nil {
