@@ -26,7 +26,7 @@
     "react-i18next": "^16.5.4"
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
+    "@eslint/js": "^9.39.2",
     "@hey-api/client-fetch": "^0.13.1",
     "@hey-api/openapi-ts": "^0.92.4",
     "@testing-library/dom": "^10.4.1",
@@ -36,7 +36,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.4",
-    "eslint": "^10.0.0",
+    "eslint": "^9.39.2",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.0",
     "fast-check": "^4.5.3",
