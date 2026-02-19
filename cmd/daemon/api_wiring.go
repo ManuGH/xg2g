@@ -15,6 +15,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/recordings"
 )
 
+//nolint:unused // retained for focused daemon wiring tests.
 func buildAPIConstructorDeps(cfg config.AppConfig, snap config.Snapshot) (api.ConstructorDeps, error) {
 	var loadErrs []error
 

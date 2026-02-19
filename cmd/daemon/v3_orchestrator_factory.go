@@ -18,12 +18,15 @@ import (
 	"github.com/google/uuid"
 )
 
+//nolint:unused // retained for focused daemon wiring tests.
 type v3OrchestratorFactory struct{}
 
+//nolint:unused // retained for focused daemon wiring tests.
 func buildV3OrchestratorFactory() daemon.V3OrchestratorFactory {
 	return v3OrchestratorFactory{}
 }
 
+//nolint:unused // retained for focused daemon wiring tests.
 func (v3OrchestratorFactory) Build(cfg config.AppConfig, inputs daemon.V3OrchestratorInputs) (daemon.V3Orchestrator, error) {
 	if inputs.Bus == nil {
 		return nil, fmt.Errorf("v3 orchestrator input bus is required")

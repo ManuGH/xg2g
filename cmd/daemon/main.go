@@ -27,6 +27,8 @@ var (
 )
 
 // maskURL removes user info from a URL string for safe logging.
+//
+//nolint:unused // retained for CLI helper tests.
 func maskURL(rawURL string) string {
 	parsedURL, err := url.Parse(rawURL)
 	if err != nil {
