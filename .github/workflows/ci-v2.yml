@@ -43,6 +43,20 @@ jobs:
           go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.8.0
           golangci-lint --version
 
+      - name: Run nightly gates
+        run: make ci-nightly
+
+  nightly-doc-lint:
+    name: Nightly Spec/Docs Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TZ: UTC
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
       - name: Setup Node for OpenAPI + Markdown lint
         uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6
         with:
@@ -59,6 +73,3 @@ jobs:
         run: |
           set -euo pipefail
           npx --yes markdownlint-cli2@0.14.0 "docs/**/*.md" ".github/**/*.md" "*.md"
-
-      - name: Run nightly gates
-        run: make ci-nightly
