@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ManuGH/xg2g/internal/control/recordings/decision"
@@ -64,6 +65,7 @@ func TestDecisionGoldens(t *testing.T) {
 	fixtureDir := "../../fixtures/decision" // Assuming running from test/invariants
 	files, err := filepath.Glob(filepath.Join(fixtureDir, "*.json"))
 	require.NoError(t, err)
+	files = filterVisibleFixtures(files)
 	require.NotEmpty(t, files, "No golden fixtures found in %s", fixtureDir)
 
 	ctx := context.Background()
@@ -136,4 +138,16 @@ func TestDecisionGoldens(t *testing.T) {
 			assert.Equal(t, golden.Expected.Protocol, protocol, "Protocol mismatch")
 		})
 	}
+}
+
+func filterVisibleFixtures(files []string) []string {
+	filtered := make([]string, 0, len(files))
+	for _, file := range files {
+		base := filepath.Base(file)
+		if strings.HasPrefix(base, ".") {
+			continue
+		}
+		filtered = append(filtered, file)
+	}
+	return filtered
 }

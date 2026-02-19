@@ -34,7 +34,10 @@ func TestContractMatrix_P4_1(t *testing.T) {
 
 	var caseFiles []string
 	for _, entry := range entries {
-		if strings.HasSuffix(entry.Name(), ".input.json") {
+		if entry.IsDir() {
+			continue
+		}
+		if isCaseFixture(entry.Name()) {
 			caseFiles = append(caseFiles, entry.Name())
 		}
 	}
@@ -92,6 +95,13 @@ func TestContractMatrix_P4_1(t *testing.T) {
 			verifyContractStructure(t, expectedSpec, actualResp)
 		})
 	}
+}
+
+func isCaseFixture(name string) bool {
+	if strings.HasPrefix(name, ".") {
+		return false
+	}
+	return strings.HasSuffix(name, ".input.json")
 }
 
 // stubDecisionResponse returns deterministic stub response for P4-1 contract testing
