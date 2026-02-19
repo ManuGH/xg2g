@@ -76,9 +76,12 @@ type streamRoutes interface {
 	DeleteStreamsId(w http.ResponseWriter, r *http.Request)
 }
 
-type systemRoutes interface {
+type configRoutes interface {
 	GetSystemConfig(w http.ResponseWriter, r *http.Request)
 	PutSystemConfig(w http.ResponseWriter, r *http.Request)
+}
+
+type systemRoutes interface {
 	GetSystemHealth(w http.ResponseWriter, r *http.Request)
 	GetSystemHealthz(w http.ResponseWriter, r *http.Request)
 	GetSystemInfo(w http.ResponseWriter, r *http.Request)

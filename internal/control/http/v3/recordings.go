@@ -23,7 +23,8 @@ import (
 // GetRecordings handles GET /api/v3/recordings
 // Query: ?root=<id>&path=<rel_path>
 func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params GetRecordingsParams) {
-	if s.recordingsService == nil {
+	deps := s.recordingsModuleDeps()
+	if deps.recordingsService == nil {
 		writeProblem(w, r, http.StatusInternalServerError, "system/internal", "Internal Error", "INTERNAL_ERROR", "Recordings service not available", nil)
 		return
 	}
@@ -48,7 +49,7 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 		input.PrincipalID = p.ID
 	}
 
-	listing, err := s.recordingsService.List(r.Context(), input)
+	listing, err := deps.recordingsService.List(r.Context(), input)
 	if err != nil {
 		s.writeRecordingError(w, r, err)
 		return
@@ -133,12 +134,13 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 // GetRecordingsRecordingIdStatus handles GET /api/v3/recordings/{recordingId}/status.
 // GetRecordingsRecordingIdStatus handles GET /status
 func (s *Server) GetRecordingsRecordingIdStatus(w http.ResponseWriter, r *http.Request, recordingId string) {
-	if s.recordingsService == nil {
+	deps := s.recordingsModuleDeps()
+	if deps.recordingsService == nil {
 		writeProblem(w, r, http.StatusInternalServerError, "system/internal", "Internal Error", "INTERNAL_ERROR", "Recordings service not available", nil)
 		return
 	}
 
-	status, err := s.recordingsService.GetStatus(r.Context(), recservice.StatusInput{
+	status, err := deps.recordingsService.GetStatus(r.Context(), recservice.StatusInput{
 		RecordingID: recordingId,
 	})
 	if err != nil {
@@ -170,12 +172,13 @@ func (s *Server) GetRecordingsRecordingIdStatus(w http.ResponseWriter, r *http.R
 
 // DeleteRecording handles DELETE /api/v3/recordings/{recordingId}
 func (s *Server) DeleteRecording(w http.ResponseWriter, r *http.Request, recordingId string) {
-	if s.recordingsService == nil {
+	deps := s.recordingsModuleDeps()
+	if deps.recordingsService == nil {
 		writeProblem(w, r, http.StatusInternalServerError, "system/internal", "Internal Error", "INTERNAL_ERROR", "Recordings service not available", nil)
 		return
 	}
 
-	_, err := s.recordingsService.Delete(r.Context(), recservice.DeleteInput{
+	_, err := deps.recordingsService.Delete(r.Context(), recservice.DeleteInput{
 		RecordingID: recordingId,
 	})
 	if err != nil {
@@ -195,13 +198,14 @@ func (s *Server) ProbeRecordingMp4(w http.ResponseWriter, r *http.Request, recor
 }
 
 func (s *Server) serveRecordingDirect(w http.ResponseWriter, r *http.Request, recordingId string, isHead bool) {
-	if s.recordingsService == nil {
+	deps := s.recordingsModuleDeps()
+	if deps.recordingsService == nil {
 		writeProblem(w, r, http.StatusInternalServerError, "system/internal", "Internal Error", "INTERNAL_ERROR", "Recordings service not available", nil)
 		return
 	}
 
 	// 1. Check readiness and get artifact path
-	res, err := s.recordingsService.Stream(r.Context(), recservice.StreamInput{
+	res, err := deps.recordingsService.Stream(r.Context(), recservice.StreamInput{
 		RecordingID: recordingId,
 	})
 	if err != nil {

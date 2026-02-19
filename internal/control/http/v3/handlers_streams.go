@@ -51,8 +51,8 @@ func (s *Server) GetStreams(w http.ResponseWriter, r *http.Request) {
 
 	// Pre-index programs for faster lookup
 	progMap := make(map[string][]epg.Programme)
-	if snap.App.EPGEnabled && s.epgCache != nil {
-		for _, p := range s.epgCache.Programs {
+	if snap.App.EPGEnabled && deps.epgCache != nil {
+		for _, p := range deps.epgCache.Programs {
 			progMap[p.Channel] = append(progMap[p.Channel], p)
 		}
 	}

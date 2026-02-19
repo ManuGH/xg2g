@@ -6,9 +6,12 @@ package v3
 
 import "net/http"
 
-func registerSystemRoutes(register routeRegistrar, handler systemRoutes) {
+func registerConfigRoutes(register routeRegistrar, handler configRoutes) {
 	register.add(http.MethodGet, "/system/config", "GetSystemConfig", handler.GetSystemConfig)
 	register.add(http.MethodPut, "/system/config", "PutSystemConfig", handler.PutSystemConfig)
+}
+
+func registerSystemRoutes(register routeRegistrar, handler systemRoutes) {
 	register.add(http.MethodGet, "/system/health", "GetSystemHealth", handler.GetSystemHealth)
 	register.add(http.MethodGet, "/system/healthz", "GetSystemHealthz", handler.GetSystemHealthz)
 	register.add(http.MethodGet, "/system/info", "GetSystemInfo", handler.GetSystemInfo)
