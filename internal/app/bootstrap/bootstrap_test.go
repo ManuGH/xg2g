@@ -1,4 +1,4 @@
-package bootstrap
+package bootstrap_test
 
 import (
 	"context"
@@ -94,13 +94,7 @@ func WireServices(ctx context.Context, version, commit, buildDate string, explic
 	cfgHolder := config.NewConfigHolder(cfg, config.NewLoader(configMgrPath, version), configMgrPath)
 
 	// 6. Server Config & TLS
-	serverCfg := config.ParseServerConfig()
-	// Priority: ENV > YAML > Default
-	if strings.TrimSpace(config.ParseString("XG2G_LISTEN", "")) == "" {
-		if strings.TrimSpace(cfg.APIListenAddr) != "" {
-			serverCfg.ListenAddr = cfg.APIListenAddr
-		}
-	}
+	serverCfg := config.ParseServerConfigForApp(cfg)
 	// Bind Interface Override
 	bindHost := strings.TrimSpace(config.ParseString("XG2G_BIND_INTERFACE", ""))
 	if bindHost != "" {
