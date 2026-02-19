@@ -19,6 +19,7 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	l.mergeEnvBouquet(cfg)
 	l.mergeEnvEPG(cfg)
 	l.mergeEnvAPI(cfg)
+	l.mergeEnvServer(cfg)
 	l.mergeEnvMetrics(cfg)
 	l.mergeEnvPicons(cfg)
 	l.mergeEnvTLS(cfg)
@@ -113,6 +114,14 @@ func (l *Loader) mergeEnvAPI(cfg *AppConfig) {
 			cfg.AllowedOrigins = parseCommaSeparated(rawOrigins, nil)
 		}
 	}
+}
+
+func (l *Loader) mergeEnvServer(cfg *AppConfig) {
+	cfg.Server.ReadTimeout = l.envDuration("XG2G_SERVER_READ_TIMEOUT", cfg.Server.ReadTimeout)
+	cfg.Server.WriteTimeout = l.envDuration("XG2G_SERVER_WRITE_TIMEOUT", cfg.Server.WriteTimeout)
+	cfg.Server.IdleTimeout = l.envDuration("XG2G_SERVER_IDLE_TIMEOUT", cfg.Server.IdleTimeout)
+	cfg.Server.MaxHeaderBytes = l.envInt("XG2G_SERVER_MAX_HEADER_BYTES", cfg.Server.MaxHeaderBytes)
+	cfg.Server.ShutdownTimeout = l.envDuration("XG2G_SERVER_SHUTDOWN_TIMEOUT", cfg.Server.ShutdownTimeout)
 }
 
 func (l *Loader) mergeEnvMetrics(cfg *AppConfig) {

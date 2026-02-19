@@ -34,6 +34,7 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 		return err
 	}
 	l.mergeFileAPI(dst, src)
+	l.mergeFileServer(dst, src)
 	l.mergeFileNetwork(dst, src)
 	l.mergeFileMetrics(dst, src)
 	l.mergeFilePicons(dst, src)
@@ -189,6 +190,27 @@ func (l *Loader) mergeFileAPI(dst *AppConfig, src *FileConfig) {
 	}
 	if len(src.API.AllowedOrigins) > 0 {
 		dst.AllowedOrigins = src.API.AllowedOrigins
+	}
+}
+
+func (l *Loader) mergeFileServer(dst *AppConfig, src *FileConfig) {
+	if src.Server == nil {
+		return
+	}
+	if src.Server.ReadTimeout != nil {
+		dst.Server.ReadTimeout = *src.Server.ReadTimeout
+	}
+	if src.Server.WriteTimeout != nil {
+		dst.Server.WriteTimeout = *src.Server.WriteTimeout
+	}
+	if src.Server.IdleTimeout != nil {
+		dst.Server.IdleTimeout = *src.Server.IdleTimeout
+	}
+	if src.Server.MaxHeaderBytes != nil {
+		dst.Server.MaxHeaderBytes = *src.Server.MaxHeaderBytes
+	}
+	if src.Server.ShutdownTimeout != nil {
+		dst.Server.ShutdownTimeout = *src.Server.ShutdownTimeout
 	}
 }
 

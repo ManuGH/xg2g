@@ -55,6 +55,7 @@ func (s *Server) ApplySnapshot(snap *config.Snapshot) {
 	s.cfg = newCfg
 	s.snap = *snap
 	s.status.Version = snap.App.Version
+	s.owiClient = nil // Force rebuild with the new receiver settings.
 
 	// Propagate configuration to v3 handler
 	if s.v3Handler != nil {
