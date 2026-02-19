@@ -204,11 +204,8 @@ func findGoFiles(root string) ([]string, error) {
 		if info.IsDir() {
 			return nil
 		}
-		// Ignore AppleDouble metadata files created on macOS volumes.
-		if strings.HasPrefix(info.Name(), "._") {
-			return nil
-		}
-		if strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") {
+		// Ignore test files and AppleDouble metadata files created on macOS volumes.
+		if strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") && !strings.HasPrefix(info.Name(), "._") {
 			files = append(files, path)
 		}
 		return nil
