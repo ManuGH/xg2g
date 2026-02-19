@@ -21,10 +21,11 @@ import (
 )
 
 var (
-	allowedPublicFiles = map[string]bool{
-		"playlist.m3u": true,
-		"xmltv.xml":    true,
-		"epg.xml":      true,
+	// Only serve paths resolved from this static allowlist, never direct user input.
+	allowedPublicFiles = map[string]string{
+		"playlist.m3u": "playlist.m3u",
+		"xmltv.xml":    "xmltv.xml",
+		"epg.xml":      "epg.xml",
 	}
 	sensitiveFileExtensions = []string{
 		".yaml", ".yml", ".key", ".pem", ".env", ".db", ".json", ".ini", ".conf",
@@ -77,7 +78,8 @@ func validateSecureFileRequest(w http.ResponseWriter, r *http.Request, logger ze
 
 	path := r.URL.Path
 	filename := filepath.Base(path)
-	if !allowedPublicFiles[filename] {
+	safeRelativePath, allowlisted := allowedPublicFiles[filename]
+	if !allowlisted {
 		ext := strings.ToLower(filepath.Ext(filename))
 		if isSensitiveExtension(ext) {
 			logger.Warn().Str("event", "file_req.denied").Str("path", path).Str("reason", "forbidden_extension").Msg("attempted access to sensitive file extension")
@@ -103,7 +105,7 @@ func validateSecureFileRequest(w http.ResponseWriter, r *http.Request, logger ze
 		return "", false
 	}
 
-	return path, true
+	return safeRelativePath, true
 }
 
 func isSensitiveExtension(ext string) bool {
