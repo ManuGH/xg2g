@@ -205,6 +205,16 @@ Aliases: `openWebIF.*` (compat; prefer `enigma2.*`).
 | `trustedProxies` | `XG2G_TRUSTED_PROXIES` | - | Active | Advanced |
 | `version` | `XG2G_VERSION` | - | Active | Simple |
 
+### server
+
+| Path | Env | Default | Status | Profile |
+| --- | --- | --- | --- | --- |
+| `server.idleTimeout` | `XG2G_SERVER_IDLE_TIMEOUT` | `2m` | Active | Advanced |
+| `server.maxHeaderBytes` | `XG2G_SERVER_MAX_HEADER_BYTES` | `1048576` | Active | Advanced |
+| `server.readTimeout` | `XG2G_SERVER_READ_TIMEOUT` | `1m` | Active | Advanced |
+| `server.shutdownTimeout` | `XG2G_SERVER_SHUTDOWN_TIMEOUT` | `15s` | Active | Advanced |
+| `server.writeTimeout` | `XG2G_SERVER_WRITE_TIMEOUT` | `0s` | Active | Advanced |
+
 ### sessions
 
 | Path | Env | Default | Status | Profile |

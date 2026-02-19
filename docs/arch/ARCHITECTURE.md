@@ -455,26 +455,18 @@ pipeline/
 
 ---
 
-### K) Deprecated/Legacy Packages
+### K) Removed Legacy Packages
 
-#### `internal/core/` – **DEPRECATED**
+#### `internal/core/` – **REMOVED**
 
-See [internal/core/README.md](../../internal/core/README.md).
+`internal/core` has been fully removed. Replacements live in explicit packages
+(`internal/platform/*`, `internal/control/*`, `internal/pipeline/*`, and
+feature-local modules).
 
-**Status:** Frozen (no new code allowed).
+**Policy:**
 
-**Migration Plan:**
-
-- `core/useragent/` → `control/http/client/`
-- `core/urlutil/` → `platform/security/`
-- `core/pathutil/` → `platform/fs/security/`
-- `core/profile/` → `pipeline/profiles/`
-- `core/openwebif/` → `enigma2/urlconv/`
-
-**Why Deprecated:**
-
-- "core" is semantically meaningless (became a dumping ground)
-- Violates "screaming architecture" (packages should declare purpose)
+- Do not recreate `internal/core`.
+- Place new code in semantically explicit packages only.
 
 ---
 

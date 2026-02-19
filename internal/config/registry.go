@@ -122,6 +122,11 @@ func buildRegistry() (*Registry, error) {
 		{Path: "enigma2.preflightTimeout", Env: "XG2G_E2_PREFLIGHT_TIMEOUT", FieldPath: "Enigma2.PreflightTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 10 * time.Second},
 		// --- API ---
 		{Path: "api.listenAddr", Env: "XG2G_LISTEN", FieldPath: "APIListenAddr", Profile: ProfileSimple, Status: StatusActive, Default: ":8088"},
+		{Path: "server.readTimeout", Env: "XG2G_SERVER_READ_TIMEOUT", FieldPath: "Server.ReadTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 60 * time.Second},
+		{Path: "server.writeTimeout", Env: "XG2G_SERVER_WRITE_TIMEOUT", FieldPath: "Server.WriteTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 0 * time.Second},
+		{Path: "server.idleTimeout", Env: "XG2G_SERVER_IDLE_TIMEOUT", FieldPath: "Server.IdleTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 120 * time.Second},
+		{Path: "server.maxHeaderBytes", Env: "XG2G_SERVER_MAX_HEADER_BYTES", FieldPath: "Server.MaxHeaderBytes", Profile: ProfileAdvanced, Status: StatusActive, Default: 1 << 20},
+		{Path: "server.shutdownTimeout", Env: "XG2G_SERVER_SHUTDOWN_TIMEOUT", FieldPath: "Server.ShutdownTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 15 * time.Second},
 		{Path: "api.token", Env: "XG2G_API_TOKEN", FieldPath: "APIToken", Profile: ProfileSimple, Status: StatusActive},
 		{Path: "api.tokenScopes", Env: "XG2G_API_TOKEN_SCOPES", FieldPath: "APITokenScopes", Profile: ProfileAdvanced, Status: StatusActive},
 		{Path: "api.tokens", Env: "XG2G_API_TOKENS", FieldPath: "APITokens", Profile: ProfileAdvanced, Status: StatusActive},

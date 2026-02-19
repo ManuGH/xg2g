@@ -21,10 +21,8 @@ operational view used for release planning and enforcement.
 
 ### Packages/Modules
 
-- `internal/core/*` is deprecated (no new code). Still imported by:
-  - `internal/config/snapshot.go`
-  - `internal/config/runtime_env.go`
-  - Policy: `internal/core/README.md`
+- `internal/core/*` is removed.
+  - Enforcement: `internal/validate/imports_test.go` rejects reintroducing `internal/core`.
 - `internal/infrastructure/*` imports are banned (deprecated namespace).
   - Gate: `internal/validate/imports_test.go`
   - Policy: `docs/arch/ARCHITECTURE.md`

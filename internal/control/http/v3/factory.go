@@ -5,7 +5,9 @@
 package v3
 
 import (
+	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/go-chi/chi/v5"
@@ -34,6 +36,10 @@ func newHandlerWithMiddlewares(svc *Server, _ config.AppConfig, extra []Middlewa
 		// server_gen applies wrapper middlewares in declaration order, where the last
 		// middleware becomes outermost. Prepending extras keeps built-in auth outermost.
 		stack = append(extra, stack...)
+	}
+
+	if missing := missingRouteScopePolicies(); len(missing) > 0 {
+		return nil, fmt.Errorf("missing scope policy for operations: %s", strings.Join(missing, ", "))
 	}
 
 	// 2. Create Router with RFC 7807 compliant 404/405 handlers

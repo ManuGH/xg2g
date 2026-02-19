@@ -27,7 +27,7 @@ import (
 )
 
 type IntentHandler struct {
-	Store store.StateStore
+	Store store.IntentStore
 	Bus   bus.Bus
 	// TTL for idempotency key mapping.
 	IdempotencyTTL time.Duration
@@ -214,7 +214,7 @@ func defaultDVRWindowSec() int {
 	return int((45 * time.Minute).Seconds())
 }
 
-func tryAcquireTunerLease(ctx context.Context, st store.StateStore, owner string, slots []int, ttl time.Duration) (store.Lease, bool, error) {
+func tryAcquireTunerLease(ctx context.Context, st store.LeaseStore, owner string, slots []int, ttl time.Duration) (store.Lease, bool, error) {
 	for _, s := range slots {
 		key := lease.LeaseKeyTunerSlot(s)
 		l, got, err := st.TryAcquireLease(ctx, key, owner, ttl)

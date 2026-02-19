@@ -26,7 +26,7 @@ const minimalManifest = "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:10\n#E
 //   - FAILED/CANCELLED/STOPPED: 404
 //   - UNKNOWN: 503
 //   - default (unhandled state): 503
-func NewHLSOriginHandler(st store.StateStore, downstream http.Handler) http.Handler {
+func NewHLSOriginHandler(st store.SessionLookupStore, downstream http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasSuffix(r.URL.Path, ".m3u8") {
 			downstream.ServeHTTP(w, r)

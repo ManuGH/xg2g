@@ -95,23 +95,19 @@ func TestDeprecatedPackages(t *testing.T) {
 
 	violations := []string{}
 
-	// Rule: internal/core is deprecated - fail if new files are added
-	coreFiles, err := findGoFiles(filepath.Join(projectRoot, "internal/core"))
-	if err != nil && !os.IsNotExist(err) {
-		t.Fatalf("Failed to scan internal/core: %v", err)
-	}
-
-	// Baseline: 5 files as of 2026-01-11 (openwebif, pathutil, profile, urlutil, useragent)
-	const coreBaseline = 5
-	if len(coreFiles) > coreBaseline {
+	// Rule: internal/core has been removed; the package must not be reintroduced.
+	corePath := filepath.Join(projectRoot, "internal/core")
+	if _, err := os.Stat(corePath); err == nil {
 		violations = append(violations, fmt.Sprintf(
-			"internal/core is deprecated but has grown: %d files (baseline: %d). DO NOT add new code here.",
-			len(coreFiles), coreBaseline,
+			"internal/core was removed and MUST NOT be recreated: %s",
+			corePath,
 		))
+	} else if !os.IsNotExist(err) {
+		t.Fatalf("Failed to check internal/core: %v", err)
 	}
 
 	if len(violations) > 0 {
-		t.Errorf("Deprecated package violations:\n\n%s\n\nSee internal/core/README.md for migration plan.",
+		t.Errorf("Deprecated package violations:\n\n%s\n\nSee docs/arch/PACKAGE_LAYOUT.md for architecture policy.",
 			strings.Join(violations, "\n"))
 	}
 }

@@ -117,6 +117,12 @@ recording_playback:
   playback_policy: auto
   stable_window: 10s
 recording_roots: {}
+server:
+  idleTimeout: 2m
+  maxHeaderBytes: 1048576
+  readTimeout: 1m
+  shutdownTimeout: 15s
+  writeTimeout: 0s
 sessions:
   expiry_check_interval: 1m
   heartbeat_interval: 30s

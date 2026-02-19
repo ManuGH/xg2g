@@ -881,6 +881,31 @@
     "recording_roots": {
       "type": "object"
     },
+    "server": {
+      "properties": {
+        "idleTimeout": {
+          "default": "2m",
+          "type": "string"
+        },
+        "maxHeaderBytes": {
+          "default": 1048576,
+          "type": "integer"
+        },
+        "readTimeout": {
+          "default": "1m",
+          "type": "string"
+        },
+        "shutdownTimeout": {
+          "default": "15s",
+          "type": "string"
+        },
+        "writeTimeout": {
+          "default": "0s",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "sessions": {
       "properties": {
         "expiry_check_interval": {

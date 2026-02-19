@@ -10,6 +10,17 @@ import (
 	"strings"
 )
 
+// SanitizeURL removes user info and query parameters for safe logging.
+func SanitizeURL(rawURL string) string {
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil {
+		return "invalid-url-redacted"
+	}
+	parsedURL.User = nil
+	parsedURL.RawQuery = ""
+	return parsedURL.String()
+}
+
 // ParseDirectHTTPURL validates if a string is a safe, direct HTTP/HTTPS URL.
 // It enforces:
 //   - Scheme must be "http" or "https"

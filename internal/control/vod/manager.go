@@ -90,7 +90,7 @@ func (m *Manager) ShutdownContext(ctx context.Context) error {
 		errs = append(errs, fmt.Errorf("build workers: %w", err))
 	}
 	if len(errs) > 0 {
-		return fmt.Errorf("vod manager shutdown errors: %v", errs)
+		return fmt.Errorf("vod manager shutdown errors: %w", errors.Join(errs...))
 	}
 	return nil
 }

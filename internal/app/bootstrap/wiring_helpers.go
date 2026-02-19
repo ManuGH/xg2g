@@ -1,32 +1,87 @@
-// Copyright (c) 2025 ManuGH
-// Licensed under the PolyForm Noncommercial License 1.0.0
-// Since v2.0.0, this software is restricted to non-commercial use only.
-
-package main
+package bootstrap
 
 import (
 	"fmt"
 	"os"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/api"
+	"github.com/ManuGH/xg2g/internal/channels"
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/daemon"
 	worker "github.com/ManuGH/xg2g/internal/domain/session/manager"
+	sessionports "github.com/ManuGH/xg2g/internal/domain/session/ports"
+	"github.com/ManuGH/xg2g/internal/dvr"
 	"github.com/ManuGH/xg2g/internal/infra/bus"
+	"github.com/ManuGH/xg2g/internal/infra/media/ffmpeg"
+	"github.com/ManuGH/xg2g/internal/infra/media/stub"
 	"github.com/ManuGH/xg2g/internal/infra/platform"
+	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
 	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
+	"github.com/ManuGH/xg2g/internal/recordings"
 	"github.com/google/uuid"
+	"github.com/rs/zerolog"
 )
 
-//nolint:unused // retained for focused daemon wiring tests.
+func buildAPIConstructorDeps(cfg config.AppConfig, snap config.Snapshot, logger zerolog.Logger) api.ConstructorDeps {
+	channelManager := channels.NewManager(cfg.DataDir)
+	if err := channelManager.Load(); err != nil {
+		logger.Error().Err(err).Msg("failed to load channel states")
+	}
+
+	seriesManager := dvr.NewManager(cfg.DataDir)
+	if err := seriesManager.Load(); err != nil {
+		logger.Error().Err(err).Msg("failed to load series rules")
+	}
+
+	snapshot := snap
+	return api.ConstructorDeps{
+		ChannelManager:      channelManager,
+		SeriesManager:       seriesManager,
+		Snapshot:            &snapshot,
+		RecordingPathMapper: recordings.NewPathMapper(cfg.RecordingPathMappings),
+	}
+}
+
+func buildMediaPipeline(cfg config.AppConfig, e2Client *enigma2.Client, logger zerolog.Logger) sessionports.MediaPipeline {
+	if cfg.Engine.Mode == "virtual" {
+		return stub.NewAdapter()
+	}
+
+	adapter := ffmpeg.NewLocalAdapter(
+		cfg.FFmpeg.Bin,
+		cfg.FFmpeg.FFprobeBin,
+		cfg.HLS.Root,
+		e2Client,
+		logger,
+		cfg.Enigma2.AnalyzeDuration,
+		cfg.Enigma2.ProbeSize,
+		cfg.HLS.DVRWindow,
+		cfg.FFmpeg.KillTimeout,
+		cfg.Enigma2.FallbackTo8001,
+		cfg.Enigma2.PreflightTimeout,
+		cfg.HLS.SegmentSeconds,
+		cfg.Timeouts.TranscodeStart,
+		cfg.Timeouts.TranscodeNoProgress,
+		cfg.FFmpeg.VaapiDevice,
+	)
+
+	if cfg.FFmpeg.VaapiDevice != "" {
+		if err := adapter.PreflightVAAPI(); err != nil {
+			logger.Warn().Err(err).Str("device", cfg.FFmpeg.VaapiDevice).
+				Msg("VAAPI preflight failed; GPU transcoding will be unavailable for sessions requesting it")
+		}
+	}
+
+	return adapter
+}
+
 type v3OrchestratorFactory struct{}
 
-//nolint:unused // retained for focused daemon wiring tests.
 func buildV3OrchestratorFactory() daemon.V3OrchestratorFactory {
 	return v3OrchestratorFactory{}
 }
 
-//nolint:unused // retained for focused daemon wiring tests.
 func (v3OrchestratorFactory) Build(cfg config.AppConfig, inputs daemon.V3OrchestratorInputs) (daemon.V3Orchestrator, error) {
 	if inputs.Bus == nil {
 		return nil, fmt.Errorf("v3 orchestrator input bus is required")

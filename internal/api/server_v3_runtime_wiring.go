@@ -103,6 +103,37 @@ func (s *Server) VODManager() *vod.Manager {
 	return s.vodManager
 }
 
+func (s *Server) receiverClient() *openwebif.Client {
+	s.mu.RLock()
+	cached := s.owiClient
+	cfg := s.cfg
+	snap := s.snap
+	s.mu.RUnlock()
+	if cached != nil {
+		return cached
+	}
+
+	client := openwebif.NewWithPort(cfg.Enigma2.BaseURL, cfg.Enigma2.StreamPort, openwebif.Options{
+		Timeout:               cfg.Enigma2.Timeout,
+		ResponseHeaderTimeout: cfg.Enigma2.ResponseHeaderTimeout,
+		Username:              cfg.Enigma2.Username,
+		Password:              cfg.Enigma2.Password,
+		UseWebIFStreams:       cfg.Enigma2.UseWebIFStreams,
+		StreamBaseURL:         snap.Runtime.OpenWebIF.StreamBaseURL,
+		HTTPMaxConnsPerHost:   snap.Runtime.OpenWebIF.HTTPMaxConnsPerHost,
+	})
+
+	s.mu.Lock()
+	if s.owiClient == nil {
+		s.owiClient = client
+	} else {
+		client = s.owiClient
+	}
+	s.mu.Unlock()
+
+	return client
+}
+
 type logSourceWrapper struct{}
 
 func (l logSourceWrapper) GetRecentLogs() []log.LogEntry {
@@ -114,25 +145,13 @@ type dvrSourceWrapper struct {
 }
 
 func (d *dvrSourceWrapper) GetStatusInfo(ctx context.Context) (*openwebif.StatusInfo, error) {
-	d.s.mu.RLock()
-	cfg := d.s.cfg
-	d.s.mu.RUnlock()
-	client := openwebif.New(cfg.Enigma2.BaseURL)
-	return client.GetStatusInfo(ctx)
+	return d.s.receiverClient().GetStatusInfo(ctx)
 }
 
 func (d *dvrSourceWrapper) DetectTimerChange(ctx context.Context) (openwebif.TimerChangeCap, error) {
-	d.s.mu.RLock()
-	cfg := d.s.cfg
-	d.s.mu.RUnlock()
-	client := openwebif.New(cfg.Enigma2.BaseURL)
-	return client.DetectTimerChange(ctx)
+	return d.s.receiverClient().DetectTimerChange(ctx)
 }
 
 func (d *dvrSourceWrapper) GetTimers(ctx context.Context) ([]openwebif.Timer, error) {
-	d.s.mu.RLock()
-	cfg := d.s.cfg
-	d.s.mu.RUnlock()
-	client := openwebif.New(cfg.Enigma2.BaseURL)
-	return client.GetTimers(ctx)
+	return d.s.receiverClient().GetTimers(ctx)
 }

@@ -7,6 +7,7 @@ package v3
 import (
 	"context"
 	"net/http"
+	"sort"
 
 	"github.com/ManuGH/xg2g/internal/control/authz"
 	"github.com/go-chi/chi/v5"
@@ -21,12 +22,26 @@ type RouterOptions struct {
 }
 
 type routeRegistrar struct {
-	baseURL string
-	router  chi.Router
+	baseURL         string
+	router          chi.Router
+	missingPolicies map[string]struct{}
 }
 
 func (r routeRegistrar) add(method, path, operationID string, handler http.HandlerFunc) {
-	r.router.Method(method, r.baseURL+path, withScopes(operationID, handler))
+	scopes, ok := authz.RequiredScopes(operationID)
+	if !ok {
+		if r.missingPolicies != nil {
+			r.missingPolicies[operationID] = struct{}{}
+		}
+		if r.router != nil {
+			r.router.Method(method, r.baseURL+path, missingScopePolicyHandler(operationID))
+		}
+		return
+	}
+	if r.router == nil {
+		return
+	}
+	r.router.Method(method, r.baseURL+path, withScopes(scopes, handler))
 }
 
 // NewRouter registers v3 routes and injects scope policy per operation.
@@ -47,29 +62,43 @@ func NewRouter(si ServerInterface, options RouterOptions) http.Handler {
 	}
 
 	register := routeRegistrar{baseURL: options.BaseURL, router: r}
-	registerAuthRoutes(register, &wrapper)
-	registerDVRRoutes(register, &wrapper)
-	registerEPGRoutes(register, &wrapper)
-	registerIntentRoutes(register, &wrapper)
-	registerLogRoutes(register, &wrapper)
-	registerReceiverRoutes(register, &wrapper)
-	registerRecordingRoutes(register, &wrapper)
-	registerSeriesRoutes(register, &wrapper)
-	registerServiceRoutes(register, &wrapper)
-	registerSessionRoutes(register, &wrapper)
-	registerStreamRoutes(register, &wrapper)
-	registerSystemRoutes(register, &wrapper)
-	registerTimerRoutes(register, &wrapper)
+	registerAllRoutes(register, &wrapper)
 
 	return r
 }
 
-func withScopes(operationID string, next http.Handler) http.Handler {
-	scopes := authz.MustScopes(operationID)
+func withScopes(scopes []string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), bearerAuthScopesKey, scopes)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func missingScopePolicyHandler(operationID string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeProblem(w, r, http.StatusInternalServerError, "system/misconfigured_authz", "Misconfigured Authorization", "MISCONFIGURED_AUTHZ", "Missing scope policy for operation "+operationID, nil)
+	})
+}
+
+func registerAllRoutes(register routeRegistrar, wrapper *ServerInterfaceWrapper) {
+	registerSessionsModuleRoutes(register, wrapper)
+	registerRecordingsModuleRoutes(register, wrapper)
+	registerDVRModuleRoutes(register, wrapper)
+	registerConfigModuleRoutes(register, wrapper)
+	registerSystemModuleRoutes(register, wrapper)
+}
+
+func missingRouteScopePolicies() []string {
+	missing := make(map[string]struct{})
+	register := routeRegistrar{missingPolicies: missing}
+	registerAllRoutes(register, &ServerInterfaceWrapper{})
+
+	out := make([]string, 0, len(missing))
+	for operationID := range missing {
+		out = append(out, operationID)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func defaultBindErrorHandler(w http.ResponseWriter, r *http.Request, err error) {

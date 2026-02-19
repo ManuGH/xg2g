@@ -75,11 +75,13 @@ func RequiredScopes(operationID string) ([]string, bool) {
 	return cloneScopes(scopes), true
 }
 
-// MustScopes returns required scopes or panics if missing.
+// MustScopes returns required scopes for an operation.
+// Unknown operations resolve to an empty scope list.
+// Deprecated: prefer RequiredScopes + explicit error handling.
 func MustScopes(operationID string) []string {
 	scopes, ok := RequiredScopes(operationID)
 	if !ok {
-		panic("authz: missing scope policy for operation " + operationID)
+		return []string{}
 	}
 	return scopes
 }

@@ -156,9 +156,10 @@ func (s *Service) GetConfigs() []RootConfig {
 	return s.configs
 }
 
-// ErrScanRunning is returned when a scan is already in progress.
-// Per P0+ Gate #2: This triggers a 503 response with Retry-After header.
-var ErrScanRunning = errors.New("scan already running")
-
-// ErrRootNotFound is returned when a requested library root does not exist.
-var ErrRootNotFound = errors.New("root not found")
+var (
+	// ErrRootNotFound signals that a requested library root does not exist.
+	ErrRootNotFound = errors.New("root not found")
+	// ErrScanRunning is returned when a scan is already in progress.
+	// Per P0+ Gate #2: This triggers a 503 response with Retry-After header.
+	ErrScanRunning = errors.New("scan already running")
+)

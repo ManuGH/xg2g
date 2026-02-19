@@ -95,6 +95,23 @@ func Validate(cfg AppConfig) error {
 		v.OneOf("LogLevel", strings.ToLower(cfg.LogLevel), []string{"debug", "info", "warn", "error", "fatal", "panic", "disabled", "trace"})
 	}
 
+	// API server runtime settings
+	if cfg.Server.ReadTimeout < 0 {
+		v.AddError("Server.ReadTimeout", "must be >= 0", cfg.Server.ReadTimeout)
+	}
+	if cfg.Server.WriteTimeout < 0 {
+		v.AddError("Server.WriteTimeout", "must be >= 0", cfg.Server.WriteTimeout)
+	}
+	if cfg.Server.IdleTimeout < 0 {
+		v.AddError("Server.IdleTimeout", "must be >= 0", cfg.Server.IdleTimeout)
+	}
+	if cfg.Server.MaxHeaderBytes < 0 {
+		v.AddError("Server.MaxHeaderBytes", "must be >= 0", cfg.Server.MaxHeaderBytes)
+	}
+	if cfg.Server.ShutdownTimeout != 0 && cfg.Server.ShutdownTimeout < 3*time.Second {
+		v.AddError("Server.ShutdownTimeout", "must be >= 3s", cfg.Server.ShutdownTimeout)
+	}
+
 	// EPG settings (if enabled)
 	if cfg.EPGEnabled {
 		v.Range("EPGDays", cfg.EPGDays, 1, 14)

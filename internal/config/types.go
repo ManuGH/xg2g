@@ -35,6 +35,7 @@ type FileConfig struct {
 	Recording             map[string]string       `yaml:"recording_roots,omitempty"`
 	RecordingPlayback     RecordingPlaybackConfig `yaml:"recording_playback,omitempty"`
 	API                   APIConfig               `yaml:"api"`
+	Server                *ServerFileConfig       `yaml:"server,omitempty"`
 	Network               NetworkFileConfig       `yaml:"network,omitempty"`
 	Metrics               MetricsConfig           `yaml:"metrics,omitempty"`
 	Picons                PiconsConfig            `yaml:"picons,omitempty"`
@@ -153,6 +154,25 @@ type APIConfig struct {
 	AllowedOrigins []string        `yaml:"allowedOrigins,omitempty"`
 }
 
+// ServerFileConfig holds HTTP server runtime settings in YAML.
+// Pointer fields preserve zero-values as explicit operator intent.
+type ServerFileConfig struct {
+	ReadTimeout     *time.Duration `yaml:"readTimeout,omitempty"`
+	WriteTimeout    *time.Duration `yaml:"writeTimeout,omitempty"`
+	IdleTimeout     *time.Duration `yaml:"idleTimeout,omitempty"`
+	MaxHeaderBytes  *int           `yaml:"maxHeaderBytes,omitempty"`
+	ShutdownTimeout *time.Duration `yaml:"shutdownTimeout,omitempty"`
+}
+
+// ServerRuntimeConfig holds HTTP server runtime settings in AppConfig.
+type ServerRuntimeConfig struct {
+	ReadTimeout     time.Duration
+	WriteTimeout    time.Duration
+	IdleTimeout     time.Duration
+	MaxHeaderBytes  int
+	ShutdownTimeout time.Duration
+}
+
 // RateLimitConfig holds rate limiting settings
 type RateLimitConfig struct {
 	Enabled   *bool    `yaml:"enabled,omitempty"`   // Pointer to distinguish from zero value
@@ -266,6 +286,7 @@ type AppConfig struct {
 	APITokens         []ScopedToken
 	apiTokensParseErr error
 	APIListenAddr     string // Optional: API listen address (if set via config.yaml)
+	Server            ServerRuntimeConfig
 	TrustedProxies    string // Comma-separated list of trusted CIDRs
 	MetricsEnabled    bool   // Optional: enable Prometheus metrics server
 	MetricsAddr       string // Optional: metrics listen address (if enabled)

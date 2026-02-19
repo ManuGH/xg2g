@@ -113,7 +113,10 @@ func (s *SqliteStore) Get(ctx context.Context, principalID, recordingID string) 
 	if err != nil {
 		return nil, err
 	}
-	state.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAtStr)
+	state.UpdatedAt, err = time.Parse(time.RFC3339, updatedAtStr)
+	if err != nil {
+		return nil, fmt.Errorf("resume store: invalid updated_at %q: %w", updatedAtStr, err)
+	}
 	return &state, nil
 }
 

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
@@ -26,9 +25,11 @@ func init() {
 }
 
 var statusCmd = &cobra.Command{
-	Use:   "status",
-	Short: "Show system status",
-	Long:  "Show verified system status via authenticated API.",
+	Use:           "status",
+	Short:         "Show system status",
+	Long:          "Show verified system status via authenticated API.",
+	SilenceUsage:  true,
+	SilenceErrors: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// 1. Resolve Token
 		if statusToken == "" {
@@ -54,7 +55,7 @@ var statusCmd = &cobra.Command{
 			} else {
 				fmt.Printf("❌ Failed to reach daemon: %v\n", err)
 			}
-			os.Exit(2)
+			return cliExitError{Code: 2}
 		}
 		defer func() { _ = resp.Body.Close() }()
 
@@ -65,15 +66,23 @@ var statusCmd = &cobra.Command{
 			} else {
 				fmt.Printf("❌ API Error: HTTP %d\n", resp.StatusCode)
 			}
-			os.Exit(2)
+			return cliExitError{Code: 2}
 		}
 
 		// 4. Parse & Display
-		body, _ := io.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			if statusJSON {
+				fmt.Println(`{"error": "read_error"}`)
+			} else {
+				fmt.Printf("❌ Failed to read API response: %v\n", err)
+			}
+			return cliExitError{Code: 2}
+		}
 
 		if statusJSON {
 			fmt.Println(string(body))
-			os.Exit(0)
+			return nil
 		}
 
 		// Pretty Print
@@ -89,7 +98,7 @@ var statusCmd = &cobra.Command{
 		}
 		if err := json.Unmarshal(body, &s); err != nil {
 			fmt.Printf("❌ Invalid JSON from API: %v\n", err)
-			os.Exit(2)
+			return cliExitError{Code: 2}
 		}
 
 		if s.Status == "healthy" {
@@ -109,12 +118,11 @@ var statusCmd = &cobra.Command{
 			for _, m := range s.Drift.Mismatches {
 				fmt.Printf("   - [%s] %s: expected '%s', got '%s'\n", m.Kind, m.Key, m.Expected, m.Actual)
 			}
-			os.Exit(1)
+			return cliExitError{Code: 1}
 		} else if s.Drift != nil {
 			fmt.Printf("   Verification: Clean (Last check: %s)\n", s.Drift.LastCheck.Format(time.RFC822))
 		}
 
-		os.Exit(0)
 		return nil
 	},
 }

@@ -3,10 +3,8 @@ package v3
 import (
 	"bufio"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
-	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime/debug"
 	"strconv"
@@ -191,95 +189,72 @@ func (m *StorageMonitor) Refresh(ctx context.Context, paths []string) {
 	m.mu.Unlock()
 }
 
-// probe performs the actual I/O checks with internal timeouts.
-// NOTE: This uses an in-process best-effort pattern. Goroutines blocked in
-// syscalls (like os.Stat on a hard-stale NFS mount) CANNOT be canceled and will
-// leak until the process exits or the syscall returns. Damage is bounded by
-// the activeLimit concurrency pool.
+const storageProbeScript = `
+p="$1"
+if [ ! -d "$p" ]; then
+	echo "stat_error"
+	exit 0
+fi
+
+if ls "$p" >/dev/null 2>&1; then
+	readable=1
+else
+	readable=0
+fi
+
+tmp="$p/.xg2g_probe_$$"
+if (umask 077 && : > "$tmp") >/dev/null 2>&1; then
+	rm -f "$tmp" >/dev/null 2>&1
+	echo "rw"
+	exit 0
+fi
+
+if [ "$readable" -eq 1 ]; then
+	echo "ro"
+else
+	echo "none"
+fi
+`
+
+// probe performs storage checks in a short-lived helper process.
+// This avoids leaking goroutines in the main process when filesystem syscalls
+// block (for example on stale network mounts).
 func (m *StorageMonitor) probe(ctx context.Context, path string) ProbeResult {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
 	res := ProbeResult{
 		HealthStatus: StorageItemHealthStatusOk,
 		Access:       StorageItemAccessNone,
 	}
 
-	// Pattern: Spawn goroutine for os.Stat (it can hang forever on stale NFS)
-	done := make(chan error, 1)
-	go func() {
-		_, err := os.Stat(path)
-		select {
-		case done <- err:
-		default:
-			// Routine abandoned
-		}
-	}()
-
-	timer := time.NewTimer(2 * time.Second)
-	defer timer.Stop()
-
-	select {
-	case err := <-done:
-		if err != nil {
-			res.HealthStatus = StorageItemHealthStatusError
+	cmd := exec.CommandContext(probeCtx, "/bin/sh", "-c", storageProbeScript, "xg2g-storage-probe", path)
+	out, err := cmd.Output()
+	if err != nil {
+		if probeCtx.Err() == context.DeadlineExceeded {
+			res.HealthStatus = StorageItemHealthStatusTimeout
 			return res
 		}
-	case <-timer.C:
-		res.HealthStatus = StorageItemHealthStatusTimeout
-		return res
-	case <-ctx.Done():
-		res.HealthStatus = StorageItemHealthStatusUnknown
+		if probeCtx.Err() == context.Canceled || ctx.Err() == context.Canceled {
+			res.HealthStatus = StorageItemHealthStatusUnknown
+			return res
+		}
+		res.HealthStatus = StorageItemHealthStatusError
 		return res
 	}
 
-	// Read/Write Probe (Wrapped in timeout guard to prevent goroutine leaks on stale mounts)
-	ioDone := make(chan ProbeResult, 1)
-	go func() {
-		pRes := ProbeResult{
-			HealthStatus: StorageItemHealthStatusOk,
-			Access:       StorageItemAccessNone,
-		}
-
-		// Read Check
-		readable := false
-		if entries, err := os.ReadDir(path); err == nil {
-			readable = true
-			_ = entries
-		}
-
-		// Write Check (Randomized, O_EXCL)
-		writable := false
-		randID := make([]byte, 4)
-		_, _ = rand.Read(randID)
-		tempFile := filepath.Join(path, fmt.Sprintf(".xg2g_probe_%s", hex.EncodeToString(randID)))
-
-		// #nosec G304 - tempFile is randomized and explicitly localized to probe path
-		if f, err := os.OpenFile(tempFile, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0600); err == nil {
-			writable = true
-			_ = f.Close()
-			_ = os.Remove(tempFile)
-		}
-
-		if writable {
-			pRes.Access = StorageItemAccessRw
-		} else if readable {
-			pRes.Access = StorageItemAccessRo
-		}
-		select {
-		case ioDone <- pRes:
-		default:
-		}
-	}()
-
-	ioTimer := time.NewTimer(2 * time.Second)
-	defer ioTimer.Stop()
-
-	select {
-	case pRes := <-ioDone:
-		res.Access = pRes.Access
-	case <-ioTimer.C:
-		// Read/Write probe hung
+	switch strings.TrimSpace(string(out)) {
+	case "rw":
+		res.Access = StorageItemAccessRw
+	case "ro":
+		res.Access = StorageItemAccessRo
+	case "none", "stat_error":
+		res.HealthStatus = StorageItemHealthStatusError
+	default:
 		res.HealthStatus = StorageItemHealthStatusTimeout
-	case <-ctx.Done():
-		res.HealthStatus = StorageItemHealthStatusUnknown
 	}
 
 	return res

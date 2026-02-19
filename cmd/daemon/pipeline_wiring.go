@@ -13,6 +13,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
+//nolint:unused // retained for focused daemon wiring tests.
 func buildMediaPipeline(cfg config.AppConfig, e2Client *enigma2.Client, logger zerolog.Logger) sessionports.MediaPipeline {
 	if cfg.Engine.Mode == "virtual" {
 		return stub.NewAdapter()
