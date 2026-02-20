@@ -13,7 +13,7 @@
         release-check release-build release-tag release-notes \
         dev up down status prod-up prod-down prod-logs check-env \
         restart prod-restart ps prod-ps ui-build codex certs setup build-ffmpeg \
-        docs-render verify-docs-compiled release-prepare release-verify-remote recover verify-runtime
+        docs-render verify-docs-compiled release-prepare release-verify-remote recover verify-runtime repair-metadata
 
 # ===================================================================================================
 # Configuration and Variables
@@ -112,6 +112,7 @@ help: ## Show this help message
 	@echo "  quality-gates-online   Validate online gates (coverage, lint, security)"
 	@echo "  ci-pr             Fast, deterministic PR gate (required checks)"
 	@echo "  ci-nightly        Deep, expensive gates (nightly/dispatch)"
+	@echo "  repair-metadata   Remove macOS metadata from worktree and .git storage"
 	@echo ""
 	@echo "Docker Operations:"
 	@echo "  docker              Build Docker image"
@@ -960,6 +961,9 @@ prod-ps: ## Show production containers
 hooks:
 	@pre-commit install
 	@pre-commit install --hook-type pre-push
+
+repair-metadata: ## Remove macOS metadata from worktree + git storage
+	@bash ./scripts/ops/repair-metadata.sh
 
 
 check-env: ## Check .env configuration
