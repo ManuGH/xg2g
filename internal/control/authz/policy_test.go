@@ -61,6 +61,19 @@ func TestPolicyUnscopedAllowlist(t *testing.T) {
 	}
 }
 
+func TestPolicyScanOperationsRequireAdminScope(t *testing.T) {
+	cases := []string{"GetSystemScanStatus", "TriggerSystemScan"}
+	for _, opID := range cases {
+		scopes, ok := RequiredScopes(opID)
+		if !ok {
+			t.Fatalf("missing scope policy for %s", opID)
+		}
+		if len(scopes) != 1 || scopes[0] != "v3:admin" {
+			t.Fatalf("expected %s to require only v3:admin, got %v", opID, scopes)
+		}
+	}
+}
+
 func loadOpenAPIDoc(t *testing.T) *openapi3.T {
 	t.Helper()
 	loader := openapi3.NewLoader()

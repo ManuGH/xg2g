@@ -5,7 +5,7 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getSystemScanStatus, triggerSystemScan, getSystemConfig } from '../client-ts';
-import type { ScanStatus, AppConfig } from '../client-ts/types.gen';
+import type { ScanStatus, AppConfig } from '../client-ts';
 import Config, { isConfigured } from './Config';
 import { debugError, formatError } from '../utils/logging';
 import { Button } from './ui';

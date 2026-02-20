@@ -9,7 +9,8 @@
     "generate-client": "openapi-ts --input ../api/openapi.yaml --output ./src/client-ts",
     "generate-client:legacy": "openapi --input ../api/openapi.yaml --output ./src/client-legacy --client fetch",
     "design:check": "bash scripts/verify-no-hardcoded-colors.sh && bash scripts/verify-motion-contract.sh && bash scripts/verify-no-window-dialogs.sh && bash scripts/verify-no-btn-classes.sh",
-    "lint": "eslint . && bash ../scripts/ci_gate_webui_logging.sh && npm run design:check",
+    "verify:client-wrapper": "bash scripts/verify-client-wrapper-boundary.sh",
+    "lint": "eslint . && bash ../scripts/ci_gate_webui_logging.sh && npm run design:check && npm run verify:client-wrapper",
     "preview": "vite preview",
     "test": "vitest run",
     "type-check": "tsc --noEmit"

@@ -82,3 +82,21 @@ func TestManager_MarkFailed_InitializeUnknown(t *testing.T) {
 	assert.Equal(t, "startup fail", finalMeta.Error)
 	assert.NotZero(t, finalMeta.UpdatedAt)
 }
+
+func TestManager_ActiveJobIDs_ReturnsSortedSnapshot(t *testing.T) {
+	mgr, err := NewManager(&mockRunner{}, &mockProber{}, nil)
+	require.NoError(t, err)
+
+	mgr.mu.Lock()
+	mgr.jobs["/tmp/recordings/c"] = nil
+	mgr.jobs["/tmp/recordings/a"] = nil
+	mgr.jobs["/tmp/recordings/b"] = nil
+	mgr.mu.Unlock()
+
+	ids := mgr.ActiveJobIDs()
+	require.Equal(t, []string{
+		"/tmp/recordings/a",
+		"/tmp/recordings/b",
+		"/tmp/recordings/c",
+	}, ids)
+}

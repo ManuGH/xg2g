@@ -177,7 +177,24 @@ func (s *Server) StartRecordingCacheEvicter(ctx context.Context) {
 			warnedCadenceMismatch = false
 		}
 
-		res, err := vod.EvictRecordingCache(cfg.HLS.Root, cfg.VODCacheTTL, cfg.VODCacheMaxEntries, vod.RealClock{})
+		s.mu.RLock()
+		vodMgr := s.vodManager
+		s.mu.RUnlock()
+
+		excludedPaths := make(map[string]struct{})
+		if vodMgr != nil {
+			for _, jobID := range vodMgr.ActiveJobIDs() {
+				excludedPaths[jobID] = struct{}{}
+			}
+		}
+
+		res, err := vod.EvictRecordingCacheWithExclusions(
+			cfg.HLS.Root,
+			cfg.VODCacheTTL,
+			cfg.VODCacheMaxEntries,
+			vod.RealClock{},
+			excludedPaths,
+		)
 		if err != nil {
 			log.L().Error().Err(err).Msg("recording cache eviction failed")
 			return
@@ -191,9 +208,6 @@ func (s *Server) StartRecordingCacheEvicter(ctx context.Context) {
 			log.L().Warn().Int("errors", res.Errors).Msg("recording cache eviction completed with errors")
 		}
 
-		s.mu.RLock()
-		vodMgr := s.vodManager
-		s.mu.RUnlock()
 		if vodMgr != nil {
 			pruned := vodMgr.PruneMetadata(time.Now(), cfg.VODCacheTTL, cfg.VODCacheMaxEntries)
 			metrics.AddVODMetadataPruned(metrics.CacheEvictReasonTTL, pruned.RemovedTTL)
@@ -310,6 +324,11 @@ func (s *Server) authMiddleware(h http.Handler) http.Handler {
 		return s.AuthMiddlewareOverride(h)
 	}
 	return s.authMiddlewareImpl(h)
+}
+
+// AuthMiddleware exposes the canonical v3 authentication middleware.
+func (s *Server) AuthMiddleware(h http.Handler) http.Handler {
+	return s.authMiddleware(h)
 }
 
 // UpdateConfig updates the internal configuration snapshot.

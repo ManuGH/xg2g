@@ -21,6 +21,7 @@ Precedence: **Environment Variables** > **Configuration File** > **Defaults**.
 | `XG2G_API_TOKEN` | Primary admin bearer token | - |
 | `XG2G_API_TOKEN_SCOPES`| Scopes for primary token (CSV) | `v3:read,v3:write` |
 | `XG2G_API_TOKENS` | Multi-token JSON list | `[{"token":"...","scopes":...}]` |
+| `XG2G_API_DISABLE_LEGACY_TOKEN_SOURCES` | Disable legacy `X-API-Token` header/cookie auth vectors | `false` |
 
 ### V3 Streaming Engine
 

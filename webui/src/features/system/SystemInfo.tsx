@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { getSystemInfo } from '../../client-ts/sdk.gen';
+import { getSystemInfo } from '../../client-ts';
 import { debugError, formatError } from '../../utils/logging';
 import styles from './SystemInfo.module.css';
 

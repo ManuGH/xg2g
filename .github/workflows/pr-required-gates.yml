@@ -82,7 +82,7 @@ jobs:
 
           mapfile -t webui_ts_scope < <(
             printf '%s\n' "$changed_files" \
-              | grep -E '^webui/src/.*\.(ts|tsx)$' \
+              | grep -E '^webui/(src|tests)/.*\.(ts|tsx)$' \
               | sort -u
           )
 
@@ -158,19 +158,26 @@ jobs:
           cache: "npm"
           cache-dependency-path: webui/package-lock.json
 
-      - name: Phase4 - Legacy client imports (diff-scoped)
+      - name: Phase4 - Wrapper boundary imports (diff-scoped)
         if: steps.scope.outputs.webui_ts_count != '0'
         shell: bash
         run: |
           set -euo pipefail
           mapfile -t ts_files < /tmp/required-gates-webui-ts-scope.txt
-          violations=$(grep -nE "from ['\"].*\.\.\/client[^-]" "${ts_files[@]}" 2>/dev/null || true)
-          if [ -n "$violations" ]; then
-            echo "ERROR: Legacy client imports detected in changed TS files"
-            echo "$violations"
-            exit 1
+          mapfile -t scoped_files < <(
+            printf '%s\n' "${ts_files[@]}" \
+              | sed -e 's#^webui/##' \
+              | grep -E '\.(ts|tsx|js|jsx)$' \
+              | grep -v '^src/client-ts/' \
+              || true
+          )
+
+          if [ "${#scoped_files[@]}" -eq 0 ]; then
+            echo "No scoped files outside src/client-ts/, wrapper boundary check passes by scope."
+            exit 0
           fi
-          echo "No legacy client imports in changed TS files"
+
+          bash webui/scripts/verify-client-wrapper-boundary.sh "${scoped_files[@]}"
 
       - name: Phase4 - TypeScript build
         if: steps.scope.outputs.webui_build_needed == 'true'

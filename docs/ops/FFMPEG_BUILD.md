@@ -109,7 +109,7 @@ Run these commands to verify production readiness:
 
 ```bash
 # Local: Wrapper functionality
-FFMPEG_HOME=/opt/xg2g/ffmpeg ./scripts/ffmpeg-wrapper.sh -version | head -1
+FFMPEG_HOME=/opt/ffmpeg ./scripts/ffmpeg-wrapper.sh -version | head -1
 # Expected: ffmpeg version 7.1.3
 
 # Local: Error handling
@@ -160,7 +160,7 @@ docker run --rm xg2g:3.1.5 sh -c 'echo $XG2G_FFMPEG_BIN'
 ### Build FFmpeg Locally
 
 ```bash
-make setup  # Builds to /opt/xg2g/ffmpeg (or set TARGET_DIR)
+make setup  # Builds to /opt/ffmpeg (or set TARGET_DIR)
 ```
 
 ### Use Wrappers (Recommended)
@@ -168,14 +168,14 @@ make setup  # Builds to /opt/xg2g/ffmpeg (or set TARGET_DIR)
 ```bash
 export XG2G_FFMPEG_BIN=$(pwd)/scripts/ffmpeg-wrapper.sh
 export XG2G_FFPROBE_BIN=$(pwd)/scripts/ffprobe-wrapper.sh
-export FFMPEG_HOME=/opt/xg2g/ffmpeg  # If built to custom location
+export FFMPEG_HOME=/opt/ffmpeg  # If built to custom location
 ```
 
 ### Manual PATH (Alternative)
 
 ```bash
-export PATH=/opt/xg2g/ffmpeg/bin:$PATH
-export LD_LIBRARY_PATH=/opt/xg2g/ffmpeg/lib
+export PATH=/opt/ffmpeg/bin:$PATH
+export LD_LIBRARY_PATH=/opt/ffmpeg/lib
 ```
 
 **Note**: Wrappers are preferred - they scope LD_LIBRARY_PATH and prevent global leakage.

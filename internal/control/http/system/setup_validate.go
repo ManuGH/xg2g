@@ -4,15 +4,20 @@
 package system
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
+	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
 )
 
 type setupValidateRequest struct {
@@ -29,7 +34,7 @@ type setupValidateResponse struct {
 }
 
 // NewSetupValidateHandler validates OpenWebIF connectivity and metadata.
-func NewSetupValidateHandler() http.HandlerFunc {
+func NewSetupValidateHandler(getConfig func() config.AppConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req setupValidateRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -47,6 +52,26 @@ func NewSetupValidateHandler() http.HandlerFunc {
 			req.BaseURL = "http://" + req.BaseURL
 		}
 
+		var cfg config.AppConfig
+		if getConfig != nil {
+			cfg = getConfig()
+		}
+		normalizedBaseURL, err := validateSetupBaseURL(r.Context(), req.BaseURL, cfg)
+		if err != nil {
+			log.L().Warn().
+				Err(err).
+				Str("base_url", safeURLForLog(req.BaseURL)).
+				Msg("validation rejected: setup target not allowed by outbound policy")
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(setupValidateResponse{
+				Valid:   false,
+				Message: "Connection target rejected by outbound policy",
+			})
+			return
+		}
+		req.BaseURL = normalizedBaseURL
+
 		client := openwebif.NewWithPort(req.BaseURL, 0, openwebif.Options{
 			Timeout:  5 * time.Second,
 			Username: req.Username,
@@ -55,7 +80,7 @@ func NewSetupValidateHandler() http.HandlerFunc {
 
 		about, err := client.About(r.Context())
 		if err != nil {
-			log.L().Warn().Err(err).Str("baseUrl", req.BaseURL).Msg("validation failed: connection error")
+			log.L().Warn().Err(err).Str("base_url", safeURLForLog(req.BaseURL)).Msg("validation failed: connection error")
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(setupValidateResponse{
 				Valid:   false,
@@ -83,4 +108,39 @@ func NewSetupValidateHandler() http.HandlerFunc {
 			Bouquets: bouquetsList,
 		})
 	}
+}
+
+func validateSetupBaseURL(ctx context.Context, rawBaseURL string, cfg config.AppConfig) (string, error) {
+	normalized, err := platformnet.ValidateOutboundURL(ctx, rawBaseURL, outboundPolicyFromConfig(cfg))
+	if err != nil {
+		if errors.Is(err, platformnet.ErrOutboundDisabled) {
+			return "", fmt.Errorf("outbound policy disabled: configure network.outbound allowlist for setup validation")
+		}
+		return "", err
+	}
+	return normalized, nil
+}
+
+func outboundPolicyFromConfig(cfg config.AppConfig) platformnet.OutboundPolicy {
+	allow := cfg.Network.Outbound.Allow
+	return platformnet.OutboundPolicy{
+		Enabled: cfg.Network.Outbound.Enabled,
+		Allow: platformnet.OutboundAllowlist{
+			Hosts:   append([]string(nil), allow.Hosts...),
+			CIDRs:   append([]string(nil), allow.CIDRs...),
+			Ports:   append([]int(nil), allow.Ports...),
+			Schemes: append([]string(nil), allow.Schemes...),
+		},
+	}
+}
+
+func safeURLForLog(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Host == "" {
+		return "<invalid-url>"
+	}
+	if u.Scheme == "" {
+		return u.Host
+	}
+	return u.Scheme + "://" + u.Host
 }

@@ -3,7 +3,7 @@
 import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
 import { getServices, getServicesBouquets, getSystemConfig } from '../client-ts';
-import { client } from '../client-ts/client.gen';
+import { setClientAuthToken } from '../client-ts/wrapper';
 import type { AppContextType, AppView } from '../types/app-context';
 import type { Service, Bouquet } from '../client-ts';
 import { debugError, debugLog, formatError } from '../utils/logging';
@@ -48,11 +48,7 @@ export function AppProvider({ children }: AppProviderProps) {
   useCallback(() => {
     const storedToken = getStoredToken();
     if (storedToken) {
-      client.setConfig({
-        headers: {
-          Authorization: `Bearer ${storedToken}`
-        }
-      });
+      setClientAuthToken(storedToken);
     }
   }, [])();
 
@@ -64,11 +60,7 @@ export function AppProvider({ children }: AppProviderProps) {
     } else {
       clearStoredToken();
     }
-    client.setConfig({
-      headers: {
-        Authorization: newToken ? `Bearer ${newToken}` : null
-      }
-    });
+    setClientAuthToken(newToken);
   }, []);
 
   const loadChannels = useCallback(async (bouquetName: string): Promise<void> => {

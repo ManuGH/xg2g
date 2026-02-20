@@ -17,6 +17,11 @@ const (
 	legacyCookieName  = "X-API-Token"
 )
 
+// TokenExtractOptions controls accepted token sources during request parsing.
+type TokenExtractOptions struct {
+	AllowLegacySources bool
+}
+
 // ExtractToken retrieves the API token from the request.
 // It enforces strict parity with the API's extraction logic.
 func ExtractToken(r *http.Request) string {
@@ -31,6 +36,17 @@ func ExtractToken(r *http.Request) string {
 // 3. Header: X-API-Token (Legacy)
 // 4. Cookie: X-API-Token (Legacy, last resort)
 func ExtractTokenDetailed(r *http.Request) (string, string) {
+	return ExtractTokenDetailedWithOptions(r, TokenExtractOptions{
+		AllowLegacySources: true,
+	})
+}
+
+// ExtractTokenDetailedWithOptions retrieves the API token and source with configurable legacy-source handling.
+func ExtractTokenDetailedWithOptions(r *http.Request, opts TokenExtractOptions) (string, string) {
+	if r == nil {
+		return "", ""
+	}
+
 	// 1. Authorization Header
 	if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
 		return strings.TrimSpace(auth[7:]), "Authorization header (Bearer)"
@@ -39,6 +55,10 @@ func ExtractTokenDetailed(r *http.Request) (string, string) {
 	// 2. Cookie
 	if t := ExtractSessionToken(r); t != "" {
 		return t, "xg2g_session cookie"
+	}
+
+	if !opts.AllowLegacySources {
+		return "", ""
 	}
 
 	// 3. Legacy Header

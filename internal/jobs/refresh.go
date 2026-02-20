@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -204,7 +205,7 @@ func Refresh(ctx context.Context, snap config.Snapshot) (*Status, error) {
 			if !validator.IsValid() {
 				logger.Warn().
 					Str("service", name).
-					Str("url", streamURL).
+					Str("url_host", safeURLHost(streamURL)).
 					Str("validation_error", validator.Err().Error()).
 					Msg("stream URL validation failed")
 				metrics.IncStreamURLBuild("validation_failure")
@@ -412,4 +413,12 @@ func Refresh(ctx context.Context, snap config.Snapshot) (*Status, error) {
 		Int("channels", status.Channels).
 		Msg("refresh completed")
 	return status, nil
+}
+
+func safeURLHost(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Host == "" {
+		return "<invalid-url>"
+	}
+	return u.Host
 }

@@ -106,6 +106,7 @@ func (l *Loader) mergeEnvAPI(cfg *AppConfig) {
 	} else {
 		cfg.APITokens = tokens
 	}
+	cfg.APIDisableLegacyTokenSources = l.envBool("XG2G_API_DISABLE_LEGACY_TOKEN_SOURCES", cfg.APIDisableLegacyTokenSources)
 	cfg.APIListenAddr = l.envString("XG2G_LISTEN", cfg.APIListenAddr)
 
 	// CORS: ENV overrides YAML if set

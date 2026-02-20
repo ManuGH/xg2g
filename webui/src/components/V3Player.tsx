@@ -2,8 +2,8 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import Hls from 'hls.js';
 import type { ErrorData, FragLoadedData, ManifestParsedData, LevelLoadedData } from 'hls.js';
-import { createSession, getRecordingPlaybackInfo } from '../client-ts/sdk.gen';
-import { client } from '../client-ts/client.gen';
+import { createSession, getRecordingPlaybackInfo, type PlaybackInfo } from '../client-ts';
+import { getApiBaseUrl, setClientAuthToken } from '../client-ts/wrapper';
 import { telemetry } from '../services/TelemetryService';
 import { resolvePlaybackInfoPolicy } from '../contracts/PolicyEngine';
 import { useCapabilities } from '../hooks/useCapabilities';
@@ -248,7 +248,7 @@ function V3Player(props: V3PlayerProps) {
 
   // Explicitly static/memoized apiBase
   const apiBase = useMemo(() => {
-    return (client.getConfig().baseUrl || '/api/v3').replace(/\/$/, '');
+    return getApiBaseUrl();
   }, []);
 
 
@@ -452,7 +452,7 @@ function V3Player(props: V3PlayerProps) {
 
     const pending = (async () => {
       try {
-        client.setConfig({ headers: token ? { Authorization: `Bearer ${token}` } : {} });
+        setClientAuthToken(token);
         await createSession();
         sessionCookieRef.current.token = token;
       } catch (err) {
@@ -880,7 +880,7 @@ function V3Player(props: V3PlayerProps) {
 
       try {
         const maxMetaRetries = 20;
-        let pInfo: import('../client-ts/types.gen').PlaybackInfo | undefined;
+        let pInfo: PlaybackInfo | undefined;
 
         for (let i = 0; i < maxMetaRetries; i++) {
           if (activeRecordingRef.current !== id) return;
@@ -1702,9 +1702,7 @@ function V3Player(props: V3PlayerProps) {
 
   // Token update effect
   useEffect(() => {
-    if (token) {
-      client.setConfig({ headers: { Authorization: `Bearer ${token}` } });
-    }
+    setClientAuthToken(token);
     sessionCookieRef.current.token = null;
     sessionCookieRef.current.pending = null;
   }, [token]);

@@ -12,7 +12,45 @@ if [[ ! -e .git ]]; then
   fail "Repo hygiene violation: missing root .git metadata."
 fi
 
-nested_git_meta="$(find . -mindepth 2 \( -type d -name .git -o -type f -name .git \) 2>/dev/null | sed 's|^\./||' | sort)"
+# Prefer fd for fast recursive metadata lookup on large/slow worktrees.
+# Fall back to find where fd is unavailable.
+if command -v fd >/dev/null 2>&1; then
+  nested_git_meta="$(
+    {
+      fd -HI --no-ignore -t d '^\.git$' . \
+        -E .worktrees \
+        -E vendor \
+        -E node_modules \
+        -E webui/node_modules
+      fd -HI --no-ignore -t f '^\.git$' . \
+        -E .worktrees \
+        -E vendor \
+        -E node_modules \
+        -E webui/node_modules
+    } 2>/dev/null \
+      | sed 's|^\./||' \
+      | awk '$0 != ".git"' \
+      | sort -u
+  )"
+else
+  nested_git_meta="$(
+    find . \
+      -maxdepth 4 \
+      \( \
+        -path './.git' -o \
+        -path './.worktrees' -o \
+        -path './vendor' -o \
+        -path './node_modules' -o \
+        -path './webui/node_modules' \
+      \) -prune \
+      -o \
+      -mindepth 2 \
+      \( -type d -name .git -o -type f -name .git \) \
+      -print 2>/dev/null \
+      | sed 's|^\./||' \
+      | sort -u
+  )"
+fi
 if [[ -n "$nested_git_meta" ]]; then
   echo "Nested .git metadata found:" >&2
   printf "%s\n" "$nested_git_meta" >&2
@@ -67,11 +105,6 @@ while IFS= read -r file; do
   [[ -z "$file" ]] && continue
   [[ "$file" == vendor/* ]] && continue
   [[ ! -f "$file" ]] && continue
-  grep -Iq . "$file" || continue
-
-  if ! grep -Ein "$sensitive_re" "$file" >/dev/null; then
-    continue
-  fi
 
   if [[ "$file" == testdata/fixtures/* ]]; then
     if grep -q "REDACTED" "$file"; then
@@ -84,7 +117,11 @@ while IFS= read -r file; do
 
   echo "Sensitive marker found in tracked artifact-like file: $file" >&2
   sensitive_violations=1
-done < <(git ls-files '*.txt' '*.log' '*.jsonl' '*.ndjson')
+done < <(
+  git grep -n -I -E "$sensitive_re" -- '*.txt' '*.log' '*.jsonl' '*.ndjson' 2>/dev/null \
+    | cut -d: -f1 \
+    | sort -u
+)
 
 if [[ "$sensitive_violations" -ne 0 ]]; then
   fail "Repo hygiene violation: sensitive runtime markers detected outside scrubbed fixture allowlist."

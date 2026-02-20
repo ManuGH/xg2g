@@ -146,12 +146,13 @@ type ScopedToken struct {
 
 // APIConfig holds API server configuration
 type APIConfig struct {
-	Token          string          `yaml:"token,omitempty"`
-	TokenScopes    []string        `yaml:"tokenScopes,omitempty"`
-	Tokens         []ScopedToken   `yaml:"tokens,omitempty"`
-	ListenAddr     string          `yaml:"listenAddr,omitempty"`
-	RateLimit      RateLimitConfig `yaml:"rateLimit,omitempty"`
-	AllowedOrigins []string        `yaml:"allowedOrigins,omitempty"`
+	Token                     string          `yaml:"token,omitempty"`
+	TokenScopes               []string        `yaml:"tokenScopes,omitempty"`
+	Tokens                    []ScopedToken   `yaml:"tokens,omitempty"`
+	DisableLegacyTokenSources bool            `yaml:"disableLegacyTokenSources,omitempty"`
+	ListenAddr                string          `yaml:"listenAddr,omitempty"`
+	RateLimit                 RateLimitConfig `yaml:"rateLimit,omitempty"`
+	AllowedOrigins            []string        `yaml:"allowedOrigins,omitempty"`
 }
 
 // ServerFileConfig holds HTTP server runtime settings in YAML.
@@ -271,25 +272,28 @@ type BreakerConfig struct {
 
 // AppConfig holds all configuration for the application
 type AppConfig struct {
-	Version           string
-	ConfigVersion     string
-	ConfigStrict      bool
-	DataDir           string
-	LogLevel          string
-	LogService        string
-	Bouquet           string // Comma-separated list of bouquets (empty = all)
-	XMLTVPath         string
-	PiconBase         string
-	FuzzyMax          int
-	APIToken          string // Optional: for securing API endpoints (e.g., /api/v3/*)
-	APITokenScopes    []string
-	APITokens         []ScopedToken
-	apiTokensParseErr error
-	APIListenAddr     string // Optional: API listen address (if set via config.yaml)
-	Server            ServerRuntimeConfig
-	TrustedProxies    string // Comma-separated list of trusted CIDRs
-	MetricsEnabled    bool   // Optional: enable Prometheus metrics server
-	MetricsAddr       string // Optional: metrics listen address (if enabled)
+	Version        string
+	ConfigVersion  string
+	ConfigStrict   bool
+	DataDir        string
+	LogLevel       string
+	LogService     string
+	Bouquet        string // Comma-separated list of bouquets (empty = all)
+	XMLTVPath      string
+	PiconBase      string
+	FuzzyMax       int
+	APIToken       string // Optional: for securing API endpoints (e.g., /api/v3/*)
+	APITokenScopes []string
+	APITokens      []ScopedToken
+	// APIDisableLegacyTokenSources disables legacy auth vectors (X-API-Token header/cookie).
+	// When true, only Authorization Bearer and xg2g_session cookie are accepted.
+	APIDisableLegacyTokenSources bool
+	apiTokensParseErr            error
+	APIListenAddr                string // Optional: API listen address (if set via config.yaml)
+	Server                       ServerRuntimeConfig
+	TrustedProxies               string // Comma-separated list of trusted CIDRs
+	MetricsEnabled               bool   // Optional: enable Prometheus metrics server
+	MetricsAddr                  string // Optional: metrics listen address (if enabled)
 
 	// EPG Configuration
 	EPGEnabled         bool
