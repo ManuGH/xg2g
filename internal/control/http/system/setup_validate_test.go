@@ -43,7 +43,7 @@ func TestValidateSetupBaseURL_AllowlistEnforced(t *testing.T) {
 }
 
 func TestSafeURLForLog_RedactsUserInfoAndQuery(t *testing.T) {
-	got := safeURLForLog("http://user:secret@192.0.2.10:8443/web/about?token=abc")
+	got := safeURLForLog("http://user:secret@192.0.2.10:8443/web/about?probe=abc")
 	if got != "http://192.0.2.10:8443" {
 		t.Fatalf("unexpected log-safe URL: %q", got)
 	}

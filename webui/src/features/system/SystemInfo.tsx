@@ -357,19 +357,30 @@ export function SystemInfo() {
               <span className={styles.ramLabel}> verbraucht</span>
             </div>
             <div className={styles.ramBarContainer}>
-              <div
-                className={[
-                  styles.ramBarFill,
-                  ramLevel === 'critical'
-                    ? styles.ramCritical
-                    : ramLevel === 'warning'
-                      ? styles.ramWarning
-                      : styles.ramNormal
-                ].join(' ')}
-                style={{
-                  width: `${calculateMemoryPercent(info.resource.memoryUsed, info.resource.memoryTotal)}%`
-                }}
-              />
+              <svg
+                width="100%"
+                height="100%"
+                viewBox="0 0 100 10"
+                preserveAspectRatio="none"
+                role="img"
+                aria-label={t('system.usage')}
+              >
+                <rect
+                  x="0"
+                  y="0"
+                  width={calculateMemoryPercent(info.resource.memoryUsed, info.resource.memoryTotal)}
+                  height="10"
+                  rx="5"
+                  ry="5"
+                  fill={
+                    ramLevel === 'critical'
+                      ? 'var(--status-error)'
+                      : ramLevel === 'warning'
+                        ? 'var(--status-warning)'
+                        : 'var(--status-success)'
+                  }
+                />
+              </svg>
             </div>
             <div className={styles.ramStats}>
               <span className={styles.ramStat}>
