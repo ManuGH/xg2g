@@ -51,6 +51,10 @@
           },
           "type": "array"
         },
+        "disableLegacyTokenSources": {
+          "default": false,
+          "type": "boolean"
+        },
         "listenAddr": {
           "default": ":8088",
           "description": "API server listen address (host:port)",

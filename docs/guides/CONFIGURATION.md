@@ -39,6 +39,7 @@ This section is generated from `internal/config/registry.go`. Do not edit by han
 | Path | Env | Default | Status | Profile |
 | --- | --- | --- | --- | --- |
 | `api.allowedOrigins` | `XG2G_ALLOWED_ORIGINS` | - | Active | Advanced |
+| `api.disableLegacyTokenSources` | `XG2G_API_DISABLE_LEGACY_TOKEN_SOURCES` | `false` | Active | Advanced |
 | `api.listenAddr` | `XG2G_LISTEN` | `:8088` | Active | Simple |
 | `api.token` | `XG2G_API_TOKEN` | - | Active | Simple |
 | `api.tokenScopes` | `XG2G_API_TOKEN_SCOPES` | - | Active | Advanced |
