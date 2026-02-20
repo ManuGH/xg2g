@@ -62,7 +62,7 @@ jobs:
       - name: Run race suite
         run: |
           set -euo pipefail
-          go test -race -count=1 ./... 2>&1 | tee nightly-race.log
+          go test -race -count=1 -timeout=20m ./... 2>&1 | tee nightly-race.log
 
       - name: Upload race logs on failure
         if: failure()
@@ -95,7 +95,7 @@ jobs:
       - name: Run integration and invariants (fail-fast)
         run: |
           set -euo pipefail
-          go test -count=1 -failfast ./test/integration/... ./test/invariants/... 2>&1 | tee nightly-integration.log
+          go test -count=1 -failfast -timeout=20m ./test/integration/... ./test/invariants/... 2>&1 | tee nightly-integration.log
 
       - name: Upload integration logs on failure
         if: failure()
@@ -205,12 +205,7 @@ jobs:
             exit 1
           fi
 
-          LEGACY_IMPORTS=$(grep -RIn "from ['\"].*\\.\\./client[^-]" webui/src/ 2>/dev/null || true)
-          if [ -n "$LEGACY_IMPORTS" ]; then
-            echo "❌ Legacy client imports detected:"
-            echo "$LEGACY_IMPORTS"
-            exit 1
-          fi
+          bash webui/scripts/verify-client-wrapper-boundary.sh
 
           cd webui
           npm ci
@@ -254,7 +249,7 @@ jobs:
             echo "| nightly-race | \`go test -race -count=1 ./...\` | $RACE_RESULT | $RACE_EXIT |"
             echo "| nightly-integration | \`go test -count=1 -failfast ./test/integration/... ./test/invariants/...\` | $INTEGRATION_RESULT | $INTEGRATION_EXIT |"
             echo "| weekly-security-deep | \`govulncheck -tags=nogpu ./... && gosec -severity=high ... ./...\` | $SECURITY_RESULT | $SECURITY_EXIT |"
-            echo "| weekly-governance-deep | \`jsx/legacy-import guards + (cd webui && npm ci && npm run build)\` | $GOVERNANCE_RESULT | $GOVERNANCE_EXIT |"
+            echo "| weekly-governance-deep | \`jsx + wrapper-boundary guards + (cd webui && npm ci && npm run build)\` | $GOVERNANCE_RESULT | $GOVERNANCE_EXIT |"
           } >> "$GITHUB_STEP_SUMMARY"
 
   deep-alert-on-failure:

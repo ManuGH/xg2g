@@ -6,8 +6,10 @@ package v3
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 
 	"github.com/ManuGH/xg2g/internal/control/authz"
 	"github.com/go-chi/chi/v5"
@@ -34,7 +36,7 @@ func (r routeRegistrar) add(method, path, operationID string, handler http.Handl
 			r.missingPolicies[operationID] = struct{}{}
 		}
 		if r.router != nil {
-			r.router.Method(method, r.baseURL+path, missingScopePolicyHandler(operationID))
+			panic(fmt.Sprintf("missing scope policy for operation %s", operationID))
 		}
 		return
 	}
@@ -47,6 +49,10 @@ func (r routeRegistrar) add(method, path, operationID string, handler http.Handl
 // NewRouter registers v3 routes and injects scope policy per operation.
 // This replaces generated routing to keep server_gen.go transport-only.
 func NewRouter(si ServerInterface, options RouterOptions) http.Handler {
+	if missing := missingRouteScopePolicies(); len(missing) > 0 {
+		panic("missing scope policy for operations: " + strings.Join(missing, ", "))
+	}
+
 	r := options.BaseRouter
 	if r == nil {
 		r = chi.NewRouter()
@@ -71,12 +77,6 @@ func withScopes(scopes []string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), bearerAuthScopesKey, scopes)
 		next.ServeHTTP(w, r.WithContext(ctx))
-	})
-}
-
-func missingScopePolicyHandler(operationID string) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		writeProblem(w, r, http.StatusInternalServerError, "system/misconfigured_authz", "Misconfigured Authorization", "MISCONFIGURED_AUTHZ", "Missing scope policy for operation "+operationID, nil)
 	})
 }
 

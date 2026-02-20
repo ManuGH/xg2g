@@ -170,6 +170,7 @@ func (l *Loader) mergeFileAPI(dst *AppConfig, src *FileConfig) {
 	if len(src.API.Tokens) > 0 {
 		dst.APITokens = append([]ScopedToken(nil), src.API.Tokens...)
 	}
+	dst.APIDisableLegacyTokenSources = src.API.DisableLegacyTokenSources
 	if src.API.ListenAddr != "" {
 		dst.APIListenAddr = expandEnv(src.API.ListenAddr)
 	}

@@ -5,7 +5,7 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getSystemScanStatus, triggerSystemScan, getSystemConfig } from '../client-ts';
-import type { ScanStatus, AppConfig } from '../client-ts/types.gen';
+import type { ScanStatus, AppConfig } from '../client-ts';
 import Config, { isConfigured } from './Config';
 import { debugError, formatError } from '../utils/logging';
 import { Button } from './ui';
@@ -142,12 +142,24 @@ function Settings() {
               </div>
 
               <div className={styles.progressContainer}>
-                <div
-                  className={styles.progressBar}
-                  style={{
-                    width: `${Math.min(100, Math.max(0, ((scanStatus.scannedChannels || 0) / (scanStatus.totalChannels || 1)) * 100))}%`
-                  }}
-                />
+                <svg
+                  width="100%"
+                  height="100%"
+                  viewBox="0 0 100 6"
+                  preserveAspectRatio="none"
+                  role="img"
+                  aria-label={t('settings.scan.stats.scanned')}
+                >
+                  <rect
+                    x="0"
+                    y="0"
+                    width={Math.min(100, Math.max(0, ((scanStatus.scannedChannels || 0) / (scanStatus.totalChannels || 1)) * 100))}
+                    height="6"
+                    rx="3"
+                    ry="3"
+                    fill="var(--accent-action)"
+                  />
+                </svg>
               </div>
 
               <div className={styles.statsRow}>

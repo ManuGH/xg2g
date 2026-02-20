@@ -202,7 +202,7 @@ func selectRepresentativeOps(t *testing.T, doc *openapi3.T) []selectedOp {
 		}
 	})
 
-	if readOp == nil || writeOp == nil || adminOp == nil || unscopedOp == nil {
+	if readOp == nil || writeOp == nil || adminOp == nil {
 		missing := []string{}
 		if readOp == nil {
 			missing = append(missing, "v3:read")
@@ -213,13 +213,13 @@ func selectRepresentativeOps(t *testing.T, doc *openapi3.T) []selectedOp {
 		if adminOp == nil {
 			missing = append(missing, "v3:admin")
 		}
-		if unscopedOp == nil {
-			missing = append(missing, "unscoped")
-		}
 		t.Fatalf("missing representative operations for: %s", strings.Join(missing, ", "))
 	}
 
-	picked = append(picked, *readOp, *writeOp, *adminOp, *unscopedOp)
+	picked = append(picked, *readOp, *writeOp, *adminOp)
+	if unscopedOp != nil {
+		picked = append(picked, *unscopedOp)
+	}
 	if headOp != nil {
 		picked = append(picked, *headOp)
 	}

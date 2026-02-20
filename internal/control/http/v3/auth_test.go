@@ -247,6 +247,28 @@ func TestAuthMiddleware_ValidXAPIToken(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
+func TestAuthMiddleware_LegacyTokenSourcesDisabled(t *testing.T) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("next handler should not be called")
+	})
+
+	s := &Server{
+		cfg: config.AppConfig{
+			APIToken:                     "secret-token",
+			APITokenScopes:               []string{string(ScopeV3Read)},
+			APIDisableLegacyTokenSources: true,
+		},
+	}
+	handler := s.authMiddleware(next)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("X-API-Token", "secret-token")
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
 func TestCreateSession(t *testing.T) {
 	s := &Server{
 		cfg: config.AppConfig{
@@ -274,6 +296,7 @@ func TestCreateSession(t *testing.T) {
 			assert.Equal(t, "secret", c.Value)
 			assert.True(t, c.HttpOnly)
 			assert.True(t, c.Secure) // ForceHTTPS=true
+			assert.Equal(t, "/api/v3/", c.Path)
 			assert.Equal(t, 24*time.Hour, time.Duration(c.MaxAge)*time.Second)
 		}
 	}

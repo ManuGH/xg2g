@@ -102,6 +102,12 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           check-jsonschema --version
 
+      - name: Verify WebUI wrapper boundary
+        run: |
+          set -euo pipefail
+          cd webui
+          npm run verify:client-wrapper
+
       - name: Build WebUI assets (required for embed contract)
         run: make ui-build
 

@@ -99,9 +99,11 @@ func getRequestOrigin(r *http.Request) string {
 
 // isOriginAllowed implements the core CSRF decision logic (Option A).
 func isOriginAllowed(requestOrigin string, allowedOrigins map[string]bool, r *http.Request) bool {
-	// 1. If explicitly allowed in config (including wildcard)
+	// 1. If explicitly allowed in config.
+	// Wildcard origins are intentionally ignored for CSRF decisions on unsafe
+	// methods because they would trust any cross-site origin.
 	if allowedOrigins != nil {
-		if allowedOrigins["*"] || allowedOrigins[requestOrigin] {
+		if allowedOrigins[requestOrigin] {
 			return true
 		}
 	}
