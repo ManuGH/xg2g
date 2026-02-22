@@ -55,6 +55,7 @@ func (s *Server) ApplySnapshot(snap *config.Snapshot) {
 	s.cfg = newCfg
 	s.snap = *snap
 	s.status.Version = snap.App.Version
+	s.owiClient = nil // Force rebuild with the new receiver settings.
 
 	// Propagate configuration to v3 handler
 	if s.v3Handler != nil {
@@ -101,74 +102,11 @@ func (s *Server) handleConfigReload(w http.ResponseWriter, r *http.Request) {
 }
 
 func reloadRequiresRestart(oldCfg, newCfg config.AppConfig) bool {
-	if oldCfg.DataDir != newCfg.DataDir {
+	// Use the registry-driven diff policy as single source of truth.
+	// If policy metadata cannot be resolved, fail closed and require restart.
+	diff, err := config.Diff(oldCfg, newCfg)
+	if err != nil {
 		return true
 	}
-	if oldCfg.APIListenAddr != newCfg.APIListenAddr {
-		return true
-	}
-	if oldCfg.MetricsEnabled != newCfg.MetricsEnabled || oldCfg.MetricsAddr != newCfg.MetricsAddr {
-		return true
-	}
-	if oldCfg.TLSCert != newCfg.TLSCert || oldCfg.TLSKey != newCfg.TLSKey || oldCfg.ForceHTTPS != newCfg.ForceHTTPS {
-		return true
-	}
-	if oldCfg.Enigma2.BaseURL != newCfg.Enigma2.BaseURL || oldCfg.Enigma2.StreamPort != newCfg.Enigma2.StreamPort || oldCfg.Enigma2.UseWebIFStreams != newCfg.Enigma2.UseWebIFStreams {
-		return true
-	}
-	if oldCfg.TrustedProxies != newCfg.TrustedProxies {
-		return true
-	}
-	if !equalStrings(oldCfg.AllowedOrigins, newCfg.AllowedOrigins) {
-		return true
-	}
-	if oldCfg.RateLimitEnabled != newCfg.RateLimitEnabled ||
-		oldCfg.RateLimitGlobal != newCfg.RateLimitGlobal ||
-		oldCfg.RateLimitBurst != newCfg.RateLimitBurst {
-		return true
-	}
-	if !equalStrings(oldCfg.RateLimitWhitelist, newCfg.RateLimitWhitelist) {
-		return true
-	}
-	// Security: Auth changes require restart to ensure consistent enforcement
-	if oldCfg.APIToken != newCfg.APIToken {
-		return true
-	}
-	if len(oldCfg.APITokens) != len(newCfg.APITokens) || len(oldCfg.APITokenScopes) != len(newCfg.APITokenScopes) {
-		return true
-	}
-	// Deep compare APITokenScopes (slices)
-	for i, v := range oldCfg.APITokenScopes {
-		if v != newCfg.APITokenScopes[i] {
-			return true
-		}
-	}
-	// Deep compare APITokens (slice of structs)
-	for i, oldToken := range oldCfg.APITokens {
-		newToken := newCfg.APITokens[i]
-		if oldToken.Token != newToken.Token {
-			return true
-		}
-		if len(oldToken.Scopes) != len(newToken.Scopes) {
-			return true
-		}
-		for j, s := range oldToken.Scopes {
-			if s != newToken.Scopes[j] {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func equalStrings(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i, v := range a {
-		if b[i] != v {
-			return false
-		}
-	}
-	return true
+	return diff.RestartRequired
 }

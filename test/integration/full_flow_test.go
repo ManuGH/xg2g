@@ -40,13 +40,15 @@ func TestFullRefreshFlow(t *testing.T) {
 	// Setup: Configure jobs
 	cfg := config.AppConfig{
 		DataDir:           tmpDir,
-		OWIBase:           mock.URL(),
 		Bouquet:           "Premium",
-		StreamPort:        8001,
 		XMLTVPath:         "xmltv.xml",
 		EPGEnabled:        true,
 		EPGDays:           1,
 		EPGMaxConcurrency: 2,
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    mock.URL(),
+			StreamPort: 8001,
+		},
 	}
 
 	// Execute: Trigger refresh
@@ -105,15 +107,19 @@ func TestAPIRefreshEndpoint(t *testing.T) {
 	// Setup: API server
 	cfg := config.AppConfig{
 		DataDir:    tmpDir,
-		OWIBase:    mock.URL(),
-		StreamPort: 8001,
 		Bouquet:    "Premium",
 		APIToken:   "test-token",
 		XMLTVPath:  "xmltv.xml",
 		EPGEnabled: false, // Disable EPG for faster test
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    mock.URL(),
+			StreamPort: 8001,
+		},
 	}
 
-	apiServer := api.New(cfg, nil)
+	cfgMgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
+	apiServer, err := api.New(cfg, cfgMgr)
+	require.NoError(t, err)
 	handler := apiServer.Handler()
 	testServer := httptest.NewServer(handler)
 	defer testServer.Close()
@@ -181,10 +187,12 @@ func TestRefreshWithBackendError(t *testing.T) {
 
 	cfg := config.AppConfig{
 		DataDir:    tmpDir,
-		OWIBase:    failingServer.URL,
-		StreamPort: 8001,
 		Bouquet:    "Premium",
 		EPGEnabled: false,
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    failingServer.URL,
+			StreamPort: 8001,
+		},
 	}
 
 	// Execute: Refresh should handle error gracefully
@@ -213,10 +221,12 @@ func TestRefreshWithTimeout(t *testing.T) {
 
 	cfg := config.AppConfig{
 		DataDir:    tmpDir,
-		OWIBase:    slowServer.URL,
-		StreamPort: 8001,
 		Bouquet:    "Premium",
 		EPGEnabled: false,
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    slowServer.URL,
+			StreamPort: 8001,
+		},
 	}
 
 	// Execute: Refresh with very short timeout
@@ -263,10 +273,12 @@ func TestRefreshWithPartialFailure(t *testing.T) {
 
 	cfg := config.AppConfig{
 		DataDir:    tmpDir,
-		OWIBase:    partialFailServer.URL,
-		StreamPort: 8001,
 		Bouquet:    "Premium",
 		EPGEnabled: false,
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    partialFailServer.URL,
+			StreamPort: 8001,
+		},
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -290,14 +302,18 @@ func TestConcurrentRefreshRequests(t *testing.T) {
 
 	cfg := config.AppConfig{
 		DataDir:    tmpDir,
-		OWIBase:    mock.URL(),
-		StreamPort: 8001,
 		Bouquet:    "Premium",
 		APIToken:   "test-token",
 		EPGEnabled: false,
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    mock.URL(),
+			StreamPort: 8001,
+		},
 	}
 
-	apiServer := api.New(cfg, nil)
+	cfgMgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
+	apiServer, err := api.New(cfg, cfgMgr)
+	require.NoError(t, err)
 	handler := apiServer.Handler()
 	testServer := httptest.NewServer(handler)
 	defer testServer.Close()
@@ -360,13 +376,17 @@ func TestHealthCheckFlow(t *testing.T) {
 	defer mock.Close()
 
 	cfg := config.AppConfig{
-		DataDir:    tmpDir,
-		OWIBase:    mock.URL(),
-		StreamPort: 8001,
-		Bouquet:    "Premium",
+		DataDir: tmpDir,
+		Bouquet: "Premium",
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    mock.URL(),
+			StreamPort: 8001,
+		},
 	}
 
-	apiServer := api.New(cfg, nil)
+	cfgMgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
+	apiServer, err := api.New(cfg, cfgMgr)
+	require.NoError(t, err)
 	handler := apiServer.Handler()
 	testServer := httptest.NewServer(handler)
 	defer testServer.Close()
@@ -444,13 +464,17 @@ http://example.com/stream`
 	defer mock.Close()
 
 	cfg := config.AppConfig{
-		DataDir:    tmpDir,
-		OWIBase:    mock.URL(),
-		StreamPort: 8001,
-		Bouquet:    "Premium",
+		DataDir: tmpDir,
+		Bouquet: "Premium",
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    mock.URL(),
+			StreamPort: 8001,
+		},
 	}
 
-	apiServer := api.New(cfg, nil)
+	cfgMgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
+	apiServer, err := api.New(cfg, cfgMgr)
+	require.NoError(t, err)
 	handler := apiServer.Handler()
 	testServer := httptest.NewServer(handler)
 	defer testServer.Close()

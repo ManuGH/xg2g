@@ -1,6 +1,6 @@
-# GPU/CPU- **Verification**: Run `scripts/verify-runtime.sh` after build to ensure
+# GPU/CPU Runtime Contract
 
-  canonical contract compliance.
+**Verification**: Run `scripts/verify-runtime.sh` after build to ensure canonical contract compliance.
 
 **Status**: CANONICAL - Single Source of Truth
 **Last Updated**: 2026-01-08
@@ -104,14 +104,14 @@ Missing wrapper = hard fail.
 docker exec xg2g-prod ls -l /dev/dri/renderD128
 ```
 
-:/dev/dri/renderD128
-
 **Container Runtime**:
 
 ```yaml
 devices:
   - /dev/dri/renderD128:/dev/dri/renderD128
 ```
+
+Repo helper: `docker-compose.hwaccel.yml` mounts `/dev/dri` for VAAPI without editing the production compose.
 
 **Detection Logic**:
 
@@ -151,8 +151,8 @@ services:
     environment:
       - XG2G_CONFIG=/etc/xg2g/config.yaml
       - XG2G_DATA=/var/lib/xg2g
-      - **XG2G_HLS_ROOT**: Must point to `/var/lib/xg2g/hls` (canonical volume
-  mapping target).
+      # Optional override. Default resolves to "$XG2G_DATA/hls" when unset.
+      # - XG2G_HLS_ROOT=/var/lib/xg2g/hls
       # FFmpeg paths already set in image
 
     # Resources (optional, recommended)
@@ -182,6 +182,7 @@ services:
 ### Permissions
 
 - Container user: `xg2g:xg2g` (UID/GID 1000)
+- Container user: `xg2g:xg2g` (UID/GID 10001)
 - `/dev/dri/renderD128`: Group `video` (container user must be member)
 
 ## 5. Verification - Mechanical Checks

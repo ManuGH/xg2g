@@ -245,8 +245,14 @@ func (s *Store) GetItems(ctx context.Context, rootID string, limit, offset int) 
 			return nil, 0, err
 		}
 
-		item.ModTime, _ = time.Parse(time.RFC3339, modTimeStr)
-		item.ScanTime, _ = time.Parse(time.RFC3339, scanTimeStr)
+		item.ModTime, err = time.Parse(time.RFC3339, modTimeStr)
+		if err != nil {
+			return nil, 0, fmt.Errorf("parse mod_time %q for %s: %w", modTimeStr, item.RelPath, err)
+		}
+		item.ScanTime, err = time.Parse(time.RFC3339, scanTimeStr)
+		if err != nil {
+			return nil, 0, fmt.Errorf("parse scan_time %q for %s: %w", scanTimeStr, item.RelPath, err)
+		}
 
 		items = append(items, item)
 	}

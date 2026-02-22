@@ -6,6 +6,7 @@ package library
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -60,7 +61,7 @@ func (s *Service) GetRootItems(ctx context.Context, rootID string, limit, offset
 		return nil, 0, fmt.Errorf("get root: %w", err)
 	}
 	if root == nil {
-		return nil, 0, fmt.Errorf("root not found: %s", rootID)
+		return nil, 0, fmt.Errorf("%w: %s", ErrRootNotFound, rootID)
 	}
 
 	// Check if scan is running
@@ -155,6 +156,10 @@ func (s *Service) GetConfigs() []RootConfig {
 	return s.configs
 }
 
-// ErrScanRunning is returned when a scan is already in progress.
-// Per P0+ Gate #2: This triggers a 503 response with Retry-After header.
-var ErrScanRunning = fmt.Errorf("scan already running")
+var (
+	// ErrRootNotFound signals that a requested library root does not exist.
+	ErrRootNotFound = errors.New("root not found")
+	// ErrScanRunning is returned when a scan is already in progress.
+	// Per P0+ Gate #2: This triggers a 503 response with Retry-After header.
+	ErrScanRunning = errors.New("scan already running")
+)

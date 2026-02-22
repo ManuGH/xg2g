@@ -31,6 +31,8 @@ func (s *Server) HandleRecordingResumeOptions(w http.ResponseWriter, r *http.Req
 func (s *Server) HandleRecordingResume(w http.ResponseWriter, r *http.Request) {
 	// Enable CORS for valid request
 	w.Header().Set("Access-Control-Allow-Origin", "*")
+	deps := s.recordingsModuleDeps()
+	resumeStore := deps.resumeStore
 
 	recordingID := chi.URLParam(r, "recordingId")
 	// Handlers are thin adapters: we treat IDs as opaque and don't decode them here.
@@ -44,7 +46,7 @@ func (s *Server) HandleRecordingResume(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if s.resumeStore == nil {
+	if resumeStore == nil {
 		writeProblem(w, r, http.StatusServiceUnavailable, "system/unavailable", "Subsystem Unavailable", "UNAVAILABLE", "Resume store not available", nil)
 		return
 	}
@@ -81,7 +83,7 @@ func (s *Server) HandleRecordingResume(w http.ResponseWriter, r *http.Request) {
 		Float64("pos", req.Position).
 		Msg("saving resume point")
 
-	if err := s.resumeStore.Put(r.Context(), principal.ID, recordingID, state); err != nil {
+	if err := resumeStore.Put(r.Context(), principal.ID, recordingID, state); err != nil {
 		log.L().Error().Err(err).Msg("failed to save resume point")
 		writeProblem(w, r, http.StatusInternalServerError, "system/save_failed", "Save Failed", "SAVE_FAILED", "Failed to save resume point", nil)
 		return

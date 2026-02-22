@@ -40,14 +40,10 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	// 0. Hardening: Limit Request Size (1MB)
 	r.Body = http.MaxBytesReader(w, r.Body, 1048576)
 
-	// Get Config Snapshot for consistent view during request
-	cfg := s.GetConfig()
-
-	// 1. Verify V3 Components Available
-	s.mu.RLock()
-	bus := s.v3Bus
-	store := s.v3Store
-	s.mu.RUnlock()
+	deps := s.sessionsModuleDeps()
+	cfg := deps.cfg
+	bus := deps.bus
+	store := deps.store
 
 	if bus == nil || store == nil {
 		// V3 Worker not running
@@ -89,24 +85,6 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 			}
 			req.ServiceRef = normalized
 		}
-	}
-
-	// 3. Compute Idempotency Key (Server-Side)
-	var idempotencyKey string
-	if intentType == model.IntentTypeStreamStart {
-		// ADR-00X: Universal Delivery Policy
-		// Profile selection is removed. We enforce "universal".
-		requestedProfile := "universal"
-
-		// Bucket: 0 for Live, StartTime/1000 for VOD
-		bucket := "0"
-		if req.StartMs != nil && *req.StartMs > 0 {
-			// VOD/Catchup bucket (1 second resolution)
-			bucket = fmt.Sprintf("%d", *req.StartMs/1000)
-		}
-
-		// Compute Usage Key
-		idempotencyKey = ComputeIdemKey(model.IntentTypeStreamStart, req.ServiceRef, requestedProfile, bucket)
 	}
 
 	// 4. Generate Session ID (Strong UUID)
@@ -156,17 +134,18 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	// 5. Build & Publish Event
 	switch intentType {
 	case model.IntentTypeStreamStart:
-		// Re-resolve profileSpec to get details (Name, etc)
-		reqProfileID := "universal"
-
 		// Smart Profile Lookup
 		var cap *scan.Capability
-		if s.v3Scan != nil {
-			if c, found := s.v3Scan.GetCapability(req.ServiceRef); found {
+		if deps.channelScanner != nil {
+			if c, found := deps.channelScanner.GetCapability(req.ServiceRef); found {
 				cap = &c
 			}
 		}
+
 		hasGPU := hardware.IsVAAPIReady()
+		av1OK := hardware.IsVAAPIEncoderReady("av1_vaapi")
+		hevcOK := hardware.IsVAAPIEncoderReady("hevc_vaapi")
+		h264OK := hardware.IsVAAPIEncoderReady("h264_vaapi")
 
 		// Parse hwaccel parameter (v3.1+)
 		hwaccelMode := profiles.HWAccelAuto // Default
@@ -199,18 +178,54 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		profileSpec := profiles.Resolve(reqProfileID, r.UserAgent(), int(cfg.HLS.DVRWindow.Seconds()), cap, hasGPU, hwaccelMode)
+		// Resolve Profile ID (Testing override allowed via params).
+		// When profile isn't explicitly specified, honor client codec preferences
+		// (e.g. "av1,hevc,h264") to pick the best output profile.
+		reqProfileID := "universal"
+		if p := normalize.Token(req.Params["profile"]); p != "" {
+			reqProfileID = p
+		} else if picked := pickProfileForCodecs(req.Params["codecs"], av1OK, hevcOK, h264OK, hwaccelMode); picked != "" {
+			reqProfileID = picked
+		}
+
+		// Bucket: 0 for Live, StartTime/1000 for VOD (1 second resolution).
+		bucket := "0"
+		if req.StartMs != nil && *req.StartMs > 0 {
+			bucket = fmt.Sprintf("%d", *req.StartMs/1000)
+		}
+
+		// Compute Idempotency Key (Server-Side) after final profile selection.
+		idempotencyKey := ComputeIdemKey(model.IntentTypeStreamStart, req.ServiceRef, reqProfileID, bucket)
+
+		// Resolve() uses a single hasGPU boolean to decide whether VAAPI is eligible.
+		// For codec-specific profiles (AV1/HEVC/H264), we only pass hasGPU=true when
+		// the corresponding encoder was verified by VAAPI preflight.
+		resolveHasGPU := hasGPU
+		switch reqProfileID {
+		case profiles.ProfileAV1HW:
+			resolveHasGPU = av1OK
+		case profiles.ProfileSafariHEVCHW:
+			resolveHasGPU = hevcOK
+		case profiles.ProfileH264FMP4:
+			resolveHasGPU = h264OK
+		}
+		profileSpec := profiles.Resolve(reqProfileID, r.UserAgent(), int(cfg.HLS.DVRWindow.Seconds()), cap, resolveHasGPU, hwaccelMode)
 
 		// 5.0 Preflight Source Check (fail-closed)
-		if s.enforcePreflight(r.Context(), w, r, cfg, req.ServiceRef) {
+		if enforcePreflight(r.Context(), w, r, deps, req.ServiceRef) {
 			return
 		}
 
 		// 5.1 Admission Control Gate (Slice 2)
-		state := CollectRuntimeState(r.Context(), s.admissionState)
+		state := CollectRuntimeState(r.Context(), deps.admissionState)
 		wantsTranscode := profileSpec.TranscodeVideo // Profile knows if transcode is needed
 
-		decision := s.admission.Check(r.Context(), admission.Request{WantsTranscode: wantsTranscode}, state)
+		if deps.admission == nil {
+			writeProblem(w, r, http.StatusServiceUnavailable, "admission/unavailable", "Admission Unavailable", "ADMISSION_UNAVAILABLE", "admission controller unavailable", nil)
+			return
+		}
+
+		decision := deps.admission.Check(r.Context(), admission.Request{WantsTranscode: wantsTranscode}, state)
 		if !decision.Allow {
 			// Record reject metric (Slice 2)
 			if decision.Problem != nil {
@@ -270,12 +285,6 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 			encoderBackend = "none"
 		}
 
-		// Recalculate bucket for idempotency consistency in this scope
-		bucket := "0"
-		if req.StartMs != nil && *req.StartMs > 0 {
-			bucket = fmt.Sprintf("%d", *req.StartMs/1000)
-		}
-
 		logger.Info().
 			Str("ua", r.UserAgent()).
 			Str("profile", profileSpec.Name).
@@ -305,6 +314,9 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		requestParams := map[string]string{
 			"profile": reqProfileID,
 			"bucket":  bucket,
+		}
+		if raw := req.Params["codecs"]; raw != "" {
+			requestParams["codecs"] = raw
 		}
 		if correlationID != "" {
 			requestParams["correlationId"] = correlationID

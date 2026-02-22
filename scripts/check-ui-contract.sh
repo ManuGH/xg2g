@@ -2,7 +2,7 @@
 # UI Contract Enforcement - Mechanical Gates (Scope-Aware)
 # CTO Contract: These gates must pass before merging UI changes
 
-set -e
+set -euo pipefail
 
 # Script can be called with specific file patterns to check
 # Usage: ./check-ui-contract.sh [file1] [file2] ...
@@ -35,16 +35,30 @@ echo ""
 
 cd "$WEBUI_SRC"
 
-# Helper: build grep include pattern from scope
-build_scope_pattern() {
-  if [ "$IS_SCOPED" = true ]; then
-    for file in "${SCOPE_FILES[@]}"; do
-      echo "--include=$(basename "$file")"
-    done
-  else
-    echo "."  # Full scan
+if [ "$IS_SCOPED" = true ]; then
+  for file in "${SCOPE_FILES[@]}"; do
+    clean_file="${file#webui/src/}"
+
+    if [ ! -f "$clean_file" ]; then
+      echo "❌ FAIL: Scoped file not found: $file"
+      EXIT_CODE=1
+      continue
+    fi
+
+    case "$clean_file" in
+      *.tsx|*.css) ;;
+      *)
+        echo "❌ FAIL: Unsupported scoped file type: $file (expected .tsx or .css)"
+        EXIT_CODE=1
+        ;;
+    esac
+  done
+
+  if [ $EXIT_CODE -ne 0 ]; then
+    echo "❌ Scoped mode input validation failed"
+    exit $EXIT_CODE
   fi
-}
+fi
 
 # Gate 1: Token Compliance (Colors)
 echo "Gate 1: Token Compliance"
@@ -99,9 +113,9 @@ fi
 if [ -z "$V2" ]; then
   echo "✅ PASS: Animation lifecycle compliant"
 else
-  echo "$([ "$IS_SCOPED" = true ] && echo "❌ FAIL" || echo "⚠️  WARNING"): Animation budget exceeded:"
+  echo "❌ FAIL: Animation budget exceeded:"
   echo "$V2"
-  [ "$IS_SCOPED" = true ] && EXIT_CODE=1
+  EXIT_CODE=1
 fi
 echo ""
 
@@ -129,9 +143,9 @@ fi
 if [ -z "$V3" ]; then
   echo "✅ PASS: No custom shadows in feature CSS"
 else
-  echo "$([ "$IS_SCOPED" = true ] && echo "❌ FAIL" || echo "⚠️  WARNING"): Custom shadows found:"
+  echo "❌ FAIL: Custom shadows found:"
   echo "$V3"
-  [ "$IS_SCOPED" = true ] && EXIT_CODE=1
+  EXIT_CODE=1
 fi
 echo ""
 
@@ -160,9 +174,9 @@ fi
 if [ -z "$V4" ]; then
   echo "✅ PASS: No hardcoded gradients in feature CSS"
 else
-  echo "$([ "$IS_SCOPED" = true ] && echo "❌ FAIL" || echo "⚠️  WARNING"): Custom gradients found:"
+  echo "❌ FAIL: Custom gradients found:"
   echo "$V4"
-  [ "$IS_SCOPED" = true ] && EXIT_CODE=1
+  EXIT_CODE=1
 fi
 echo ""
 
@@ -223,10 +237,10 @@ fi
 if [ -z "$V5" ]; then
   echo "✅ PASS: No illegal inline styles"
 else
-  echo "$([ "$IS_SCOPED" = true ] && echo "❌ FAIL" || echo "⚠️  WARNING"): Illegal style={{}} found:"
+  echo "❌ FAIL: Illegal style={{}} found:"
   echo "$V5"
   echo "(Refactored files allow only --xg2g-* or --v3-* variable passthrough)"
-  [ "$IS_SCOPED" = true ] && EXIT_CODE=1
+  EXIT_CODE=1
 fi
 echo ""
 echo ""

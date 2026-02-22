@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
@@ -40,6 +41,8 @@ const (
 	// maxErrBody caps the amount of response body we read for error reporting (non-200).
 	// We want enough context for stack traces but not unbounded memory usage.
 	maxErrBody = 8 * 1024
+
+	defaultServicesCapTTL = time.Hour
 )
 
 // Client is an OpenWebIF HTTP client for communicating with Enigma2 receivers.
@@ -66,6 +69,10 @@ type Client struct {
 	cache    Cacher
 	cacheTTL time.Duration
 
+	servicesCapMu  sync.RWMutex
+	servicesCaps   map[string]servicesCapability
+	servicesCapTTL time.Duration
+
 	// Rate limiting for receiver protection (v1.7.0+)
 	// Protects the Enigma2 receiver from being overwhelmed by requests
 	receiverLimiter *rate.Limiter
@@ -81,6 +88,11 @@ type Cacher interface {
 	Set(key string, value any, ttl time.Duration)
 	Delete(key string)
 	Clear()
+}
+
+type servicesCapability struct {
+	PreferFlat bool
+	ExpiresAt  time.Time
 }
 
 // Options configures the OpenWebIF client behavior.
@@ -233,16 +245,6 @@ var (
 	}, []string{"operation"})
 )
 
-// ClientInterface defines the subset used by other packages and tests.
-type ClientInterface interface {
-	Bouquets(ctx context.Context) (map[string]string, error)
-	Services(ctx context.Context, bouquetRef string) ([][2]string, error)
-	StreamURL(ctx context.Context, ref, name string) (string, error)
-	GetCurrent(ctx context.Context) (*CurrentInfo, error)
-	GetStatusInfo(ctx context.Context) (*StatusInfo, error)
-	GetSignal(ctx context.Context) (*SignalInfo, error)
-}
-
 // New creates a new OpenWebIF client with the given options.
 func New(base string) *Client {
 	return NewWithPort(base, 0, Options{})
@@ -334,6 +336,8 @@ func NewWithPort(base string, streamPort int, opts Options) *Client {
 		streamBaseURL:   strings.TrimSpace(opts.StreamBaseURL),
 		cache:           opts.Cache, // Optional cache (nil = no caching)
 		cacheTTL:        cacheTTL,
+		servicesCaps:    make(map[string]servicesCapability),
+		servicesCapTTL:  defaultServicesCapTTL,
 		receiverLimiter: rate.NewLimiter(receiverRPS, receiverBurst),
 		cb:              resilience.NewCircuitBreaker("openwebif", 5, 10, 60*time.Second, 30*time.Second),
 	}
@@ -461,6 +465,8 @@ type svcPayloadFlat struct {
 	} `json:"services"`
 }
 
+var errServicesSchemaMismatch = errors.New("openwebif: services schema mismatch")
+
 // EPGEvent represents a single programme entry from OpenWebIF EPG API
 type EPGEvent struct {
 	ID                  int    `json:"id"`
@@ -524,22 +530,57 @@ func (c *Client) Services(ctx context.Context, bouquetRef string) ([][2]string, 
 	decorate := func(zc *zerolog.Context) {
 		zc.Str("bouquet_ref", maskedRef)
 	}
-	try := func(urlPath, operation string) ([][2]string, error) {
-		body, err := c.get(ctx, urlPath, operation, decorate)
+	type endpointSpec struct {
+		path       string
+		operation  string
+		preferFlat bool
+	}
+	try := func(ep endpointSpec) ([][2]string, error) {
+		body, err := c.get(ctx, ep.path, ep.operation, decorate)
 		if err != nil {
 			return nil, err
 		}
 
-		// For flat endpoint, decode directly into svcPayloadFlat to preserve subservices
-		if operation == "services.flat" {
+		// Fast schema check: ensure "services" key exists and is not null.
+		var shape struct {
+			Services json.RawMessage `json:"services"`
+		}
+		if err := json.Unmarshal(body, &shape); err != nil {
+			c.loggerFor(ctx).Error().Err(err).
+				Str("event", "openwebif.decode").
+				Str("operation", ep.operation).
+				Str("bouquet_ref", maskedRef).
+				Msg("failed to decode services response shape")
+			return nil, fmt.Errorf("%w: %v", errServicesSchemaMismatch, err)
+		}
+		trimmedServices := strings.TrimSpace(string(shape.Services))
+		if trimmedServices == "" || trimmedServices == "null" {
+			// Legacy receivers may respond to getallservices with only a bouquets payload.
+			// When this happens during fallback, treat it as an empty service list.
+			if ep.preferFlat {
+				var legacyShape struct {
+					Bouquets json.RawMessage `json:"bouquets"`
+				}
+				if err := json.Unmarshal(body, &legacyShape); err == nil {
+					trimmedBouquets := strings.TrimSpace(string(legacyShape.Bouquets))
+					if trimmedBouquets != "" && trimmedBouquets != "null" {
+						return [][2]string{}, nil
+					}
+				}
+			}
+			return nil, fmt.Errorf("%w: missing services field", errServicesSchemaMismatch)
+		}
+
+		// Flat endpoint: decode preserving subservices.
+		if ep.preferFlat {
 			var flat svcPayloadFlat
 			if err := json.Unmarshal(body, &flat); err != nil {
 				c.loggerFor(ctx).Error().Err(err).
 					Str("event", "openwebif.decode").
-					Str("operation", operation).
+					Str("operation", ep.operation).
 					Str("bouquet_ref", maskedRef).
 					Msg("failed to decode services response (flat)")
-				return nil, err
+				return nil, fmt.Errorf("%w: %v", errServicesSchemaMismatch, err)
 			}
 			out := make([][2]string, 0, len(flat.Services)*4)
 			for _, s := range flat.Services {
@@ -569,10 +610,10 @@ func (c *Client) Services(ctx context.Context, bouquetRef string) ([][2]string, 
 		if err := json.Unmarshal(body, &p); err != nil {
 			c.loggerFor(ctx).Error().Err(err).
 				Str("event", "openwebif.decode").
-				Str("operation", operation).
+				Str("operation", ep.operation).
 				Str("bouquet_ref", maskedRef).
 				Msg("failed to decode services response")
-			return nil, err
+			return nil, fmt.Errorf("%w: %v", errServicesSchemaMismatch, err)
 		}
 		out := make([][2]string, 0, len(p.Services))
 		for _, s := range p.Services {
@@ -585,24 +626,128 @@ func (c *Client) Services(ctx context.Context, bouquetRef string) ([][2]string, 
 		return out, nil
 	}
 
-	// Try bouquet-specific endpoint (more reliable than getallservices)
-	if out, err := try("/api/getservices?sRef="+url.QueryEscape(bouquetRef), "services.nested"); err == nil && len(out) > 0 {
-		// Cache the result
-		if c.cache != nil {
-			c.cache.Set(cacheKey, out, c.cacheTTL)
-			c.loggerFor(ctx).Debug().Str("event", "cache.set").Str("key", cacheKey).Dur("ttl", c.cacheTTL).Msg("cached result")
-		}
-		c.loggerFor(ctx).Info().Str("event", "openwebif.services").Str("bouquet_ref", maskedRef).Int("count", len(out)).Msg("fetched services via nested endpoint")
-		return out, nil
+	endpoints := []endpointSpec{
+		{
+			path:       "/api/getservices?sRef=" + url.QueryEscape(bouquetRef),
+			operation:  "services.nested",
+			preferFlat: false,
+		},
+		{
+			path:       "/api/getallservices?sRef=" + url.QueryEscape(bouquetRef),
+			operation:  "services.flat",
+			preferFlat: true,
+		},
 	}
-	c.loggerFor(ctx).Warn().Str("event", "openwebif.services").Str("bouquet_ref", maskedRef).Msg("no services found for bouquet")
+	if preferFlat, ok := c.servicesCapabilityGet(); ok && preferFlat {
+		endpoints[0], endpoints[1] = endpoints[1], endpoints[0]
+	}
 
-	// Cache empty result to avoid repeated failed lookups
-	empty := [][2]string{}
-	if c.cache != nil {
-		c.cache.Set(cacheKey, empty, c.cacheTTL)
+	var empty [][2]string
+	var successfulEndpoint string
+
+	for i, ep := range endpoints {
+		out, err := try(ep)
+		if err != nil {
+			if i == 0 && shouldTryServicesFallback(err) {
+				c.loggerFor(ctx).Warn().
+					Err(err).
+					Str("event", "openwebif.services").
+					Str("bouquet_ref", maskedRef).
+					Str("from", ep.operation).
+					Str("to", endpoints[1].operation).
+					Msg("services fetch incompatible, trying fallback endpoint")
+				continue
+			}
+			return nil, err
+		}
+
+		successfulEndpoint = ep.operation
+		c.servicesCapabilitySet(ep.preferFlat)
+		if len(out) > 0 {
+			if c.cache != nil {
+				c.cache.Set(cacheKey, out, c.cacheTTL)
+				c.loggerFor(ctx).Debug().Str("event", "cache.set").Str("key", cacheKey).Dur("ttl", c.cacheTTL).Msg("cached result")
+			}
+			c.loggerFor(ctx).Info().
+				Str("event", "openwebif.services").
+				Str("bouquet_ref", maskedRef).
+				Str("operation", ep.operation).
+				Int("count", len(out)).
+				Msg("fetched services")
+			return out, nil
+		}
+
+		empty = out
+		if i == 0 {
+			continue
+		}
 	}
-	return empty, nil
+
+	// No services found but at least one endpoint returned a compatible payload.
+	if successfulEndpoint != "" {
+		if empty == nil {
+			empty = [][2]string{}
+		}
+		if c.cache != nil {
+			c.cache.Set(cacheKey, empty, c.cacheTTL)
+		}
+		c.loggerFor(ctx).Warn().
+			Str("event", "openwebif.services").
+			Str("bouquet_ref", maskedRef).
+			Str("operation", successfulEndpoint).
+			Msg("no services found for bouquet")
+		return empty, nil
+	}
+
+	return nil, fmt.Errorf("%w: no compatible services endpoint", errServicesSchemaMismatch)
+}
+
+func shouldTryServicesFallback(err error) bool {
+	return errors.Is(err, errServicesSchemaMismatch) || errors.Is(err, ErrNotFound)
+}
+
+func (c *Client) servicesCapabilityKey() string {
+	return c.host
+}
+
+func (c *Client) servicesCapabilityGet() (bool, bool) {
+	key := c.servicesCapabilityKey()
+	now := time.Now()
+
+	c.servicesCapMu.RLock()
+	cap, ok := c.servicesCaps[key]
+	c.servicesCapMu.RUnlock()
+	if ok && now.Before(cap.ExpiresAt) {
+		return cap.PreferFlat, true
+	}
+
+	// Entry is missing or expired. Re-check under write lock to avoid deleting
+	// a freshly refreshed capability.
+	c.servicesCapMu.Lock()
+	defer c.servicesCapMu.Unlock()
+	cap, ok = c.servicesCaps[key]
+	if ok && time.Now().Before(cap.ExpiresAt) {
+		return cap.PreferFlat, true
+	}
+	if ok {
+		delete(c.servicesCaps, key)
+	}
+	return false, false
+}
+
+func (c *Client) servicesCapabilitySet(preferFlat bool) {
+	if c.servicesCapTTL <= 0 {
+		return
+	}
+	key := c.servicesCapabilityKey()
+	exp := time.Now().Add(c.servicesCapTTL)
+
+	c.servicesCapMu.Lock()
+	c.servicesCaps[key] = servicesCapability{
+		PreferFlat: preferFlat,
+		ExpiresAt:  exp,
+	}
+	c.servicesCapMu.Unlock()
 }
 
 // GetTimers retrieves the list of timers from the receiver.
@@ -649,7 +794,7 @@ func (c *Client) AddTimer(ctx context.Context, sRef string, begin, end int64, na
 	}
 
 	if !resp.Result {
-		return fmt.Errorf("failed to add timer: %s", resp.Message)
+		return timerOperationError("timers.add", resp.Message)
 	}
 
 	return nil
@@ -675,7 +820,7 @@ func (c *Client) DeleteTimer(ctx context.Context, sRef string, begin, end int64)
 	}
 
 	if !resp.Result {
-		return fmt.Errorf("failed to delete timer: %s", resp.Message)
+		return timerOperationError("timers.delete", resp.Message)
 	}
 
 	return nil
@@ -758,11 +903,8 @@ func (c *Client) UpdateTimer(ctx context.Context, oldSRef string, oldBegin, oldE
 			}
 			if !resp.Result {
 				// Logic Failure (200 OK but Result=false).
-				// Convert to OWIError for classification.
-				return &OWIError{
-					Status: http.StatusOK,
-					Body:   resp.Message,
-				}
+				// Convert to typed timer operation error for classification.
+				return timerOperationError("timers.change", resp.Message)
 			}
 			return nil
 		}
@@ -971,22 +1113,11 @@ func (c *Client) isTechnicalError(err error) bool {
 }
 
 func (c *Client) isConflictError(err error) bool {
-	var owiErr *OWIError
-	if errors.As(err, &owiErr) {
-		return c.isConflict(owiErr.Body)
-	}
-	return false
+	return IsTimerConflict(err)
 }
 
 func (c *Client) isConflict(msg string) bool {
-	msg = strings.ToLower(msg)
-	tokens := []string{"conflict", "overlap", "konflikt", "überschneidung"}
-	for _, t := range tokens {
-		if strings.Contains(msg, t) {
-			return true
-		}
-	}
-	return false
+	return timerMessageHasAnyToken(msg, timerConflictTokens)
 }
 
 // buildTimerChangeFlavorA builds parameters for Flavor A (channel + change_*).
@@ -1128,88 +1259,88 @@ func (c *Client) DetectTimerChange(ctx context.Context) (TimerChangeCap, error) 
 // StreamURL builds a streaming URL for the given service reference.
 // Context is used for smart stream detection and tracing.
 func (c *Client) StreamURL(ctx context.Context, ref, name string) (string, error) {
+	_ = ctx
 
-	// Fallback: Original logic (manual configuration)
-	base := strings.TrimSpace(c.base)
+	parsed, err := parseOpenWebIFBaseURL(c.base)
+	if err != nil {
+		return "", err
+	}
+
+	if c.useWebIFStreams {
+		return buildWebIFStreamURL(parsed, ref, name, c.username, c.password)
+	}
+
+	if u, ok := buildDirectStreamOverrideURL(c.streamBaseURL, ref); ok {
+		return u, nil
+	}
+
+	return buildDirectTSStreamURL(parsed, ref, c.port)
+}
+
+func parseOpenWebIFBaseURL(rawBase string) (*url.URL, error) {
+	base := strings.TrimSpace(rawBase)
 	if base == "" {
-		return "", fmt.Errorf("openwebif base URL is empty")
+		return nil, fmt.Errorf("openwebif base URL is empty")
 	}
 
 	parsed, err := url.Parse(base)
 	if err != nil {
-		return "", fmt.Errorf("parse openwebif base URL %q: %w", base, err)
+		return nil, fmt.Errorf("parse openwebif base URL %q: %w", base, err)
 	}
 
 	if parsed.Scheme == "" {
 		parsed.Scheme = "http"
 	}
+	if parsed.Host == "" {
+		return nil, fmt.Errorf("openwebif base URL %q missing host", base)
+	}
+	return parsed, nil
+}
 
-	host := parsed.Host
-	if host == "" {
-		return "", fmt.Errorf("openwebif base URL %q missing host", base)
+func buildWebIFStreamURL(parsed *url.URL, ref, name, username, password string) (string, error) {
+	if parsed.Hostname() == "" {
+		return "", fmt.Errorf("openwebif base URL %q missing hostname", parsed.String())
 	}
 
-	if c.useWebIFStreams {
-		// Use WebIF streaming endpoint (works in standby mode)
-		// Format: http://<host>/web/stream.m3u?ref=<service_ref>&name=<channel_name>
-		hostname := parsed.Hostname()
-		if hostname == "" {
-			return "", fmt.Errorf("openwebif base URL %q missing hostname", base)
-		}
+	q := url.Values{}
+	q.Set("ref", ref)
+	q.Set("name", name)
 
-		// Use base URL port (typically 80) for WebIF
-		basePort := parsed.Port()
-		if basePort != "" {
-			host = net.JoinHostPort(hostname, basePort)
-		} else {
-			host = hostname
-		}
+	u := &url.URL{
+		Scheme:   parsed.Scheme,
+		Host:     parsed.Host,
+		Path:     "/web/stream.m3u",
+		RawQuery: q.Encode(),
+	}
+	if username != "" {
+		u.User = url.UserPassword(username, password)
+	}
+	return u.String(), nil
+}
 
-		u := &url.URL{
-			Scheme:   parsed.Scheme,
-			Host:     host,
-			Path:     "/web/stream.m3u",
-			RawQuery: fmt.Sprintf("ref=%s&name=%s", url.QueryEscape(ref), url.QueryEscape(name)),
-		}
-		if c.username != "" {
-			u.User = url.UserPassword(c.username, c.password)
-		}
-		return u.String(), nil
+func buildDirectStreamOverrideURL(rawStreamBase, ref string) (string, bool) {
+	streamBase := strings.TrimSpace(rawStreamBase)
+	if streamBase == "" {
+		return "", false
 	}
 
-	// Use direct TS streaming (works best with IPTV players when receiver is active)
-	// Format: http://<host>:<stream_port>/<service_ref>
-	// This is the direct MPEG-TS stream from the Enigma2 receiver
-
-	// Check if custom stream base URL is configured (e.g., for nginx proxy).
-	// This overrides the stream host/port, but keeps the service reference path.
-	if streamBase := strings.TrimSpace(c.streamBaseURL); streamBase != "" {
-		streamParsed, err := url.Parse(streamBase)
-		if err == nil && streamParsed.Host != "" {
-			u := &url.URL{
-				Scheme: streamParsed.Scheme,
-				Host:   streamParsed.Host,
-				Path:   "/" + ref,
-			}
-			return u.String(), nil
-		}
+	streamParsed, err := url.Parse(streamBase)
+	if err != nil || streamParsed.Host == "" {
+		return "", false
 	}
 
-	// If base URL already has a port, preserve it
-	// Otherwise, add the stream port
-	_, existingPort, err := net.SplitHostPort(host)
-	if err != nil || existingPort == "" {
-		// No port in base URL, add stream port
-		hostname := parsed.Hostname()
-		if hostname == "" {
-			return "", fmt.Errorf("openwebif base URL %q missing hostname", base)
-		}
+	u := &url.URL{
+		Scheme: streamParsed.Scheme,
+		Host:   streamParsed.Host,
+		Path:   "/" + ref,
+	}
+	return u.String(), true
+}
 
-		streamPort := c.port
-		if streamPort <= 0 {
-			streamPort = 8001 // Default Enigma2 stream port
-		}
-		host = net.JoinHostPort(hostname, strconv.Itoa(streamPort))
+func buildDirectTSStreamURL(parsed *url.URL, ref string, streamPort int) (string, error) {
+	host, err := resolveDirectTSHost(parsed, streamPort)
+	if err != nil {
+		return "", err
 	}
 
 	u := &url.URL{
@@ -1217,8 +1348,29 @@ func (c *Client) StreamURL(ctx context.Context, ref, name string) (string, error
 		Host:   host,
 		Path:   "/" + ref,
 	}
-
 	return u.String(), nil
+}
+
+func resolveDirectTSHost(parsed *url.URL, streamPort int) (string, error) {
+	host := parsed.Host
+	if host == "" {
+		return "", fmt.Errorf("openwebif base URL %q missing host", parsed.String())
+	}
+
+	_, existingPort, err := net.SplitHostPort(host)
+	if err == nil && existingPort != "" {
+		return host, nil
+	}
+
+	hostname := parsed.Hostname()
+	if hostname == "" {
+		return "", fmt.Errorf("openwebif base URL %q missing hostname", parsed.String())
+	}
+
+	if streamPort <= 0 {
+		streamPort = defaultStreamPort
+	}
+	return net.JoinHostPort(hostname, strconv.Itoa(streamPort)), nil
 }
 
 // StatusInfo represents the receiver status from /api/statusinfo

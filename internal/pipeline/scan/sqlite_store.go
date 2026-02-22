@@ -107,7 +107,10 @@ func (s *SqliteStore) Get(serviceRef string) (Capability, bool) {
 		return Capability{}, false
 	}
 	cap.ServiceRef = serviceRef
-	cap.LastScan, _ = time.Parse(time.RFC3339, lastScanStr)
+	cap.LastScan, err = time.Parse(time.RFC3339, lastScanStr)
+	if err != nil {
+		return Capability{}, false
+	}
 	return cap, true
 }
 

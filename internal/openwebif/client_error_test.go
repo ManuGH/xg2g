@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -53,12 +54,8 @@ func TestClientGetServicesTimeout(t *testing.T) {
 	defer s.Close()
 
 	c := newTestClient(s.URL)
-	svcs, err := c.Services(context.Background(), "1:0:0")
-	if err != nil {
-		t.Fatalf("expected graceful fallback, got error: %v", err)
-	}
-	if len(svcs) != 0 {
-		t.Fatalf("expected zero services on timeout, got %d", len(svcs))
+	if _, err := c.Services(context.Background(), "1:0:0"); err == nil {
+		t.Fatal("expected error on transport timeout")
 	}
 }
 
@@ -75,5 +72,90 @@ func TestClientGetServicesBouquetNotFoundSchemaOK(t *testing.T) {
 	}
 	if len(svcs) != 0 {
 		t.Fatalf("expected 0 services, got %d", len(svcs))
+	}
+}
+
+func TestServices_FallbackToFlatOnParseMismatch(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/getservices":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"services":"invalid-shape"}`))
+		case "/api/getallservices":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{
+				"services":[
+					{
+						"servicename":"Container",
+						"servicereference":"1:7:1:0:0:0:0:0:0:0:",
+						"subservices":[
+							{"servicename":"BBC One","servicereference":"1:0:1:100:200:300:0:0:0:0:"}
+						]
+					}
+				]
+			}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer s.Close()
+
+	c := newTestClient(s.URL)
+	svcs, err := c.Services(context.Background(), "1:0:0")
+	if err != nil {
+		t.Fatalf("expected fallback success, got error: %v", err)
+	}
+	if len(svcs) != 1 {
+		t.Fatalf("expected 1 service from flat fallback, got %d", len(svcs))
+	}
+	if svcs[0][0] != "BBC One" {
+		t.Fatalf("unexpected service name %q", svcs[0][0])
+	}
+}
+
+func TestServices_CapabilityCachedPerHost(t *testing.T) {
+	var nestedCalls atomic.Int64
+	var flatCalls atomic.Int64
+
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/getservices":
+			nestedCalls.Add(1)
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"services":"invalid-shape"}`))
+		case "/api/getallservices":
+			flatCalls.Add(1)
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{
+				"services":[
+					{
+						"servicename":"Container",
+						"servicereference":"1:7:1:0:0:0:0:0:0:0:",
+						"subservices":[
+							{"servicename":"BBC One","servicereference":"1:0:1:100:200:300:0:0:0:0:"}
+						]
+					}
+				]
+			}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer s.Close()
+
+	c := newTestClient(s.URL)
+
+	if _, err := c.Services(context.Background(), "1:0:0"); err != nil {
+		t.Fatalf("first services call failed: %v", err)
+	}
+	if _, err := c.Services(context.Background(), "1:0:1"); err != nil {
+		t.Fatalf("second services call failed: %v", err)
+	}
+
+	if got := nestedCalls.Load(); got != 1 {
+		t.Fatalf("expected nested endpoint called once, got %d", got)
+	}
+	if got := flatCalls.Load(); got != 2 {
+		t.Fatalf("expected flat endpoint called twice, got %d", got)
 	}
 }

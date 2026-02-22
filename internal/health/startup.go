@@ -17,6 +17,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/log"
+	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
 	"github.com/rs/zerolog"
 )
 
@@ -89,7 +90,7 @@ func checkTargetedValidations(logger zerolog.Logger, cfg config.AppConfig) error
 		if u.Scheme != "http" && u.Scheme != "https" {
 			return fmt.Errorf("XG2G_OWI_BASE scheme must be http or https, got: %s", u.Scheme)
 		}
-		logger.Info().Str("url", cfg.Enigma2.BaseURL).Msg("✓ OWI Base URL is valid")
+		logger.Info().Str("url", platformnet.SanitizeURL(cfg.Enigma2.BaseURL)).Msg("✓ OWI Base URL is valid")
 	}
 
 	// c. TLS Config (Pair + Readable)

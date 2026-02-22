@@ -51,9 +51,14 @@ type Orchestrator struct {
 	active   map[string]context.CancelFunc
 	startSem chan struct{}
 	stopSem  chan struct{}
+	registry *sessionRegistry
 }
 
-func (o *Orchestrator) Run(ctx context.Context) error {
+func (o *Orchestrator) Run(ctx context.Context) (runErr error) {
+	defer func() {
+		runErr = o.drainSessionWorkers(ctx, runErr)
+	}()
+
 	// Validation: Concurrency limits must be set
 	if o.StartConcurrency <= 0 {
 		return fmt.Errorf("StartConcurrency must be > 0, got %d", o.StartConcurrency)
@@ -83,6 +88,9 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 
 	if o.active == nil {
 		o.active = make(map[string]context.CancelFunc)
+	}
+	if o.registry == nil {
+		o.registry = &sessionRegistry{}
 	}
 
 	// Initialize semaphores for bounded concurrency
@@ -138,11 +146,15 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 	}
 
 	guardFail := make(chan error, 1)
-	go o.maintainGuardLease(ctx, guardKey, guardFail)
+	if !o.goSessionWorker(func() {
+		o.maintainGuardLease(ctx, guardKey, guardFail)
+	}) {
+		return errors.New("failed to start guard lease worker")
+	}
 
 	// Best-effort release on shutdown
 	defer func() {
-		releaseCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 		defer cancel()
 		_ = o.Store.ReleaseLease(releaseCtx, guardKey, o.Owner)
 	}()
@@ -165,7 +177,11 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 	}
 
 	sweeper := &Sweeper{Orch: o, Conf: o.Sweeper}
-	go sweeper.Run(ctx)
+	if !o.goSessionWorker(func() {
+		sweeper.Run(ctx)
+	}) {
+		return errors.New("failed to start sweeper worker")
+	}
 
 	for {
 		select {
@@ -188,12 +204,14 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 				// Acquire semaphore (blocking, cancellable)
 				select {
 				case o.startSem <- struct{}{}:
-					go func(e model.StartSessionEvent) {
+					if !o.goSessionWorker(func() {
 						defer func() { <-o.startSem }()
-						if err := o.handleStart(ctx, e); err != nil {
-							log.L().Error().Err(err).Str("sid", e.SessionID).Str("correlation_id", e.CorrelationID).Msg("session start failed")
+						if err := o.handleStart(ctx, evt); err != nil {
+							log.L().Error().Err(err).Str("sid", evt.SessionID).Str("correlation_id", evt.CorrelationID).Msg("session start failed")
 						}
-					}(evt)
+					}) {
+						<-o.startSem
+					}
 				case <-ctx.Done():
 					return ctx.Err()
 				}
@@ -212,12 +230,14 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 				// Acquire semaphore (blocking, cancellable)
 				select {
 				case o.stopSem <- struct{}{}:
-					go func(e model.StopSessionEvent) {
+					if !o.goSessionWorker(func() {
 						defer func() { <-o.stopSem }()
-						if err := o.handleStop(ctx, e); err != nil {
-							log.L().Error().Err(err).Str("sid", e.SessionID).Str("correlation_id", e.CorrelationID).Msg("session stop failed")
+						if err := o.handleStop(ctx, evt); err != nil {
+							log.L().Error().Err(err).Str("sid", evt.SessionID).Str("correlation_id", evt.CorrelationID).Msg("session stop failed")
 						}
-					}(evt)
+					}) {
+						<-o.stopSem
+					}
 				case <-ctx.Done():
 					return ctx.Err()
 				}
@@ -322,7 +342,7 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 	}
 
 	defer func() {
-		stopBaseCtx := context.Background()
+		stopBaseCtx := context.WithoutCancel(ctx)
 		if correlationID != "" {
 			stopBaseCtx = log.ContextWithCorrelationID(stopBaseCtx, correlationID)
 		}
@@ -494,6 +514,34 @@ func (o *Orchestrator) ForceReleaseLeases(ctx context.Context, sid, ref string, 
 			}
 		}
 	}
+}
+
+func (o *Orchestrator) goSessionWorker(fn func()) bool {
+	if o.registry == nil {
+		o.registry = &sessionRegistry{}
+	}
+	return o.registry.Go(fn)
+}
+
+func (o *Orchestrator) drainSessionWorkers(ctx context.Context, runErr error) error {
+	if o.registry == nil {
+		return runErr
+	}
+	timeout := o.PipelineStopTimeout
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+	drainCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
+	defer cancel()
+
+	if err := o.registry.CloseAndWait(drainCtx); err != nil {
+		if runErr == nil || errors.Is(runErr, context.Canceled) {
+			return err
+		}
+		return fmt.Errorf("%w (worker drain: %v)", runErr, err)
+	}
+
+	return runErr
 }
 
 // reconcileTunerMetrics computes the truth snapshot of tuners in use

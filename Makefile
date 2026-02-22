@@ -13,7 +13,7 @@
         release-check release-build release-tag release-notes \
         dev up down status prod-up prod-down prod-logs check-env \
         restart prod-restart ps prod-ps ui-build codex certs setup build-ffmpeg \
-        docs-render verify-docs-compiled release-prepare release-verify-remote recover verify-runtime
+        docs-render verify-docs-compiled release-prepare release-verify-remote recover verify-runtime repair-metadata
 
 # ===================================================================================================
 # Configuration and Variables
@@ -27,7 +27,7 @@ SOURCE_DATE_EPOCH ?= $(shell git log -1 --pretty=%ct 2>/dev/null || date -u +%s)
 export SOURCE_DATE_EPOCH
 export TZ := UTC
 export GOFLAGS := -trimpath -buildvcs=false -mod=vendor
-GOTOOLCHAIN ?= go1.25.6
+GOTOOLCHAIN ?= go1.25.7
 export GOTOOLCHAIN
 GO := go
 
@@ -49,6 +49,12 @@ PLATFORMS := linux/amd64
 # Coverage thresholds (Locked to Baseline per Governance Policy)
 COVERAGE_THRESHOLD := 43
 EPG_COVERAGE_THRESHOLD := 85
+
+# Test timeout budgets (STAB-002 fail-closed gating)
+GO_TEST_TIMEOUT ?= 10m
+GO_TEST_COVER_TIMEOUT ?= 15m
+GO_TEST_RACE_TIMEOUT ?= 20m
+GO_TEST_IDEMPOTENCY_TIMEOUT ?= 5m
 
 # Tool paths and versions
 GOBIN ?= $(shell $(GO) env GOBIN)
@@ -106,6 +112,7 @@ help: ## Show this help message
 	@echo "  quality-gates-online   Validate online gates (coverage, lint, security)"
 	@echo "  ci-pr             Fast, deterministic PR gate (required checks)"
 	@echo "  ci-nightly        Deep, expensive gates (nightly/dispatch)"
+	@echo "  repair-metadata   Remove macOS metadata from worktree and .git storage"
 	@echo ""
 	@echo "Docker Operations:"
 	@echo "  docker              Build Docker image"
@@ -498,7 +505,7 @@ lint-fix: ## Run golangci-lint with automatic fixes
 
 test: ## Run all unit tests
 	@echo "Running unit tests..."
-	@$(GO) test ./... -v
+	@$(GO) test ./... -v -count=1 -timeout=$(GO_TEST_TIMEOUT)
 	@echo "✅ Unit tests passed"
 
 test-schema: ## Run JSON schema validation tests (requires check-jsonschema)
@@ -508,13 +515,18 @@ test-schema: ## Run JSON schema validation tests (requires check-jsonschema)
 
 test-race: ## Run tests with race detection
 	@echo "Running tests with race detection..."
-	@$(GO) test ./... -v -race
+	@$(GO) test ./... -v -race -count=1 -timeout=$(GO_TEST_RACE_TIMEOUT)
 	@echo "✅ Race detection tests passed"
+
+test-v3-idempotency: ## Run v3 idempotency/dedup suite with race detection (required in PR CI)
+	@echo "Running v3 idempotency/dedup race suite..."
+	@$(GO) test -race -count=1 -v -timeout=$(GO_TEST_IDEMPOTENCY_TIMEOUT) ./internal/control/http/v3 -run '^TestRaceSafety_ParallelIntents$$'
+	@echo "✅ v3 idempotency/dedup race suite passed"
 
 test-cover: ## Run tests with coverage reporting
 	@echo "Running tests with coverage..."
 	@mkdir -p $(ARTIFACTS_DIR)
-	@$(GO) test -covermode=atomic -coverprofile=$(ARTIFACTS_DIR)/coverage.out -coverpkg=./... ./...
+	@$(GO) test -count=1 -timeout=$(GO_TEST_COVER_TIMEOUT) -covermode=atomic -coverprofile=$(ARTIFACTS_DIR)/coverage.out -coverpkg=./... ./...
 	@$(GO) tool cover -html=$(ARTIFACTS_DIR)/coverage.out -o $(ARTIFACTS_DIR)/coverage.html
 	@echo "Coverage report generated: $(ARTIFACTS_DIR)/coverage.html"
 	@$(GO) tool cover -func=$(ARTIFACTS_DIR)/coverage.out | tail -1
@@ -569,7 +581,7 @@ smoke-test: ## Run E2E smoke test (Builds & Runs daemon)
 coverage: ## Generate and view coverage report locally
 	@echo "Generating coverage report..."
 	@mkdir -p $(ARTIFACTS_DIR)
-	@$(GO) test -covermode=atomic -coverprofile=$(ARTIFACTS_DIR)/coverage.out -coverpkg=./... ./...
+	@$(GO) test -count=1 -timeout=$(GO_TEST_COVER_TIMEOUT) -covermode=atomic -coverprofile=$(ARTIFACTS_DIR)/coverage.out -coverpkg=./... ./...
 	@$(GO) tool cover -html=$(ARTIFACTS_DIR)/coverage.out -o $(ARTIFACTS_DIR)/coverage.html
 	@echo "Coverage report generated: $(ARTIFACTS_DIR)/coverage.html"
 	@COVERAGE=$$($(GO) tool cover -func=$(ARTIFACTS_DIR)/coverage.out | grep total | awk '{print $$3}' | sed 's/%//'); \
@@ -585,7 +597,7 @@ coverage: ## Generate and view coverage report locally
 coverage-check: ## Check if coverage meets threshold
 	@echo "Checking coverage threshold..."
 	@mkdir -p $(ARTIFACTS_DIR)
-	@$(GO) test -covermode=atomic -coverprofile=$(ARTIFACTS_DIR)/coverage.out ./...
+	@$(GO) test -count=1 -timeout=$(GO_TEST_COVER_TIMEOUT) -covermode=atomic -coverprofile=$(ARTIFACTS_DIR)/coverage.out ./...
 	@COVERAGE=$$($(GO) tool cover -func=$(ARTIFACTS_DIR)/coverage.out | grep total | awk '{print $$3}' | sed 's/%//'); \
 	THRESHOLD=50; \
 	echo "Current coverage: $$COVERAGE%"; \
@@ -950,6 +962,9 @@ hooks:
 	@pre-commit install
 	@pre-commit install --hook-type pre-push
 
+repair-metadata: ## Remove macOS metadata from worktree + git storage
+	@bash ./scripts/ops/repair-metadata.sh
+
 
 check-env: ## Check .env configuration
 	@./scripts/check_env.sh
@@ -966,16 +981,16 @@ schema-docs: ## Generate docs/config.md from JSON Schema
 
 schema-validate: ## Validate all YAML config files against JSON Schema
 	@echo "Validating config files against JSON Schema..."
-	@if command -v check-jsonschema >/dev/null 2>&1; then \
-		check-jsonschema --schemafile docs/guides/config.schema.json config.example.yaml; \
-		check-jsonschema --schemafile docs/guides/config.schema.json config.generated.example.yaml; \
-		find internal/config/testdata -name 'valid-*.yaml' -type f -print0 2>/dev/null | xargs -0 -I{} check-jsonschema --schemafile docs/guides/config.schema.json {} || true; \
-		if [ -d examples ]; then find examples -name '*.ya?ml' -type f -print0 | xargs -0 -I{} check-jsonschema --schemafile docs/guides/config.schema.json {} || true; fi; \
-		echo "✓ Schema validation complete"; \
-	else \
-		echo "⚠  check-jsonschema not installed, skipping schema validation"; \
+	@if ! command -v check-jsonschema >/dev/null 2>&1; then \
+		echo "❌ check-jsonschema not installed"; \
 		echo "   Install with: pip install check-jsonschema"; \
+		exit 1; \
 	fi
+	@check-jsonschema --schemafile docs/guides/config.schema.json config.example.yaml
+	@check-jsonschema --schemafile docs/guides/config.schema.json config.generated.example.yaml
+	@find internal/config/testdata -name 'valid-*.yaml' -type f -print0 2>/dev/null | xargs -0 -r -I{} check-jsonschema --schemafile docs/guides/config.schema.json {}
+	@if [ -d examples ]; then find examples -name '*.ya?ml' -type f -print0 | xargs -0 -r -I{} check-jsonschema --schemafile docs/guides/config.schema.json {}; fi
+	@echo "✓ Schema validation complete"
 
 gate-a: ## Gate A: Control Layer Store Purity (ADR-014 Phase 1)
 	@./scripts/verify_gate_a_control_store.sh
@@ -995,6 +1010,7 @@ gate-repo-hygiene:
 gate-v3-contract: ## Verify v3 contract hygiene, casing, and shadowing
 	@echo "--- gate-v3-contract ---"
 	@$(GO) test -v ./internal/control/http/v3 -run TestContractHygiene
+	@./scripts/verify-openapi-lint.sh
 	@python3 ./scripts/verify-openapi-no-duplicate-keys.py api/openapi.yaml
 	@python3 ./scripts/lib/openapi_v3_scope.py api/openapi.yaml scripts/openapi-legacy-allowlist.json
 	@./scripts/verify-v3-shadowing.sh
@@ -1004,7 +1020,7 @@ quality-gates: quality-gates-online ## Validate all online quality gates (covera
 
 quality-gates-offline: ## Offline-only gates (no network, no codegen)
 	@echo "Validating offline gates..."
-	@$(GO) test ./...
+	@$(GO) test ./... -count=1 -timeout=$(GO_TEST_TIMEOUT)
 	@$(GO) vet ./...
 	@echo "✅ Offline gates passed"
 
@@ -1012,7 +1028,7 @@ quality-gates-online: verify-config verify-docs-compiled verify-generate verify-
 	@echo "Validating quality gates..."
 	@echo "✅ All quality gates passed"
 
-ci-pr: verify-config verify-generate lint test ## Fast, deterministic PR gate (offline-safe core)
+ci-pr: verify-config verify-generate gate-repo-hygiene gate-v3-contract gate-a gate-webui lint-invariants lint schema-validate test-v3-idempotency test ## Enforced PR baseline (guardrails + schema + idempotency/race)
 	@echo "✅ CI PR gate passed"
 
 ci-nightly: quality-gates-online contract-matrix test-race test-fuzz smoke-test ## Deep, expensive gates for nightly/dispatch
@@ -1034,8 +1050,8 @@ build-ffmpeg: ## Build FFmpeg 7.1.3 with HLS/VAAPI/x264/AAC support
 	@echo "  export XG2G_FFPROBE_BIN=\$$(pwd)/scripts/ffprobe-wrapper.sh"
 	@echo ""
 	@echo "Or set PATH manually:"
-	@echo "  export PATH=/opt/xg2g/ffmpeg/bin:\$$PATH"
-	@echo "  export LD_LIBRARY_PATH=/opt/xg2g/ffmpeg/lib"
+	@echo "  export PATH=/opt/ffmpeg/bin:\$$PATH"
+	@echo "  export LD_LIBRARY_PATH=/opt/ffmpeg/lib"
 
 
 .PHONY: contract-matrix

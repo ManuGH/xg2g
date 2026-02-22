@@ -123,6 +123,10 @@ func TestV3RFC7807Compliance(t *testing.T) {
 		if !strings.HasSuffix(path, ".go") {
 			return nil
 		}
+		name := filepath.Base(path)
+		if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "._") {
+			return nil
+		}
 		if strings.HasSuffix(path, "_test.go") || strings.HasSuffix(path, "_gen.go") {
 			return nil
 		}

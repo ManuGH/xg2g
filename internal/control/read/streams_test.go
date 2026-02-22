@@ -103,6 +103,32 @@ http://host/stream/1:0:1:TEST:REF:
 	assert.Equal(t, "Correct Name", streams[0].ChannelName, "Should resolve name via ServiceRef (URL derived)")
 }
 
+func TestGetStreams_Provider_NameResolution_CanonicalServiceRef(t *testing.T) {
+	m3uContent := `#EXTM3U
+#EXTINF:-1 tvg-id="DIFFERENT_ID",Correct Name
+http://host/stream/1:0:1:TEST:REF:
+`
+
+	tmpDir := t.TempDir()
+	playlistPath := filepath.Join(tmpDir, "test.m3u")
+	err := os.WriteFile(playlistPath, []byte(m3uContent), 0600)
+	require.NoError(t, err)
+
+	cfg := config.AppConfig{DataDir: tmpDir}
+	snap := config.Snapshot{Runtime: config.RuntimeSnapshot{PlaylistFilename: "test.m3u"}}
+
+	sessions := []*model.SessionRecord{
+		{SessionID: "s1", State: model.SessionReady, ServiceRef: " 1:0:1:TEST:REF::  "},
+	}
+	store := &MockStore{Sessions: sessions}
+
+	streams, err := GetStreams(context.Background(), cfg, snap, store, StreamsQuery{})
+	require.NoError(t, err)
+	require.Len(t, streams, 1)
+	assert.Equal(t, "Correct Name", streams[0].ChannelName)
+	assert.Equal(t, "1:0:1:TEST:REF", streams[0].ServiceRef)
+}
+
 func TestGetStreams_Provider_PlaylistOptimization_Test29(t *testing.T) {
 	// Test 29: NameResolution_ParsesPlaylistOnce
 

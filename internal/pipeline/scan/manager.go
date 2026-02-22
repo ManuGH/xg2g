@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -17,6 +18,21 @@ import (
 	"github.com/ManuGH/xg2g/internal/m3u"
 	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
 )
+
+const (
+	backgroundScanTimeout = 30 * time.Minute
+	resolveM3UTimeout     = 2 * time.Second
+)
+
+var resolveM3UHTTPClient = &http.Client{
+	Timeout: resolveM3UTimeout,
+	Transport: &http.Transport{
+		MaxIdleConns:        16,
+		MaxIdleConnsPerHost: 4,
+		IdleConnTimeout:     30 * time.Second,
+		DisableCompression:  true,
+	},
+}
 
 type ScanStatus struct {
 	State           string `json:"state"`
@@ -67,6 +83,14 @@ func (m *Manager) GetStatus() ScanStatus {
 	return m.status
 }
 
+// Close releases the underlying capability store resources.
+func (m *Manager) Close() error {
+	if m == nil || m.store == nil {
+		return nil
+	}
+	return m.store.Close()
+}
+
 // ExtractServiceRef extracts the service reference from a stream URL
 // Robust implementation using net/url
 func ExtractServiceRef(rawURL string) string {
@@ -114,7 +138,7 @@ func (m *Manager) RunBackground() bool {
 
 	go func() {
 		defer m.isScanning.Store(false)
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), backgroundScanTimeout)
 		defer cancel()
 		if err := m.scanInternal(ctx); err != nil {
 			log.L().Error().Err(err).Msg("scan: background scan failed")
@@ -215,7 +239,10 @@ func (m *Manager) scanInternal(ctx context.Context) error {
 		}
 
 		if !resolved {
-			if res, err := resolveStreamURL(ctx, ch.URL); err == nil && res != "" {
+			resCtx, resCancel := context.WithTimeout(ctx, resolveM3UTimeout)
+			res, err := resolveStreamURL(resCtx, ch.URL)
+			resCancel()
+			if err == nil && res != "" {
 				probeURL = res
 			}
 		}
@@ -338,7 +365,7 @@ func resolveStreamURL(ctx context.Context, urlStr string) (string, error) {
 
 	req.Header.Set("Connection", "close")
 	req.Close = true
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := resolveM3UHTTPClient.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -348,7 +375,8 @@ func resolveStreamURL(ctx context.Context, urlStr string) (string, error) {
 		return "", fmt.Errorf("status %d", resp.StatusCode)
 	}
 
-	scanner := bufio.NewScanner(resp.Body)
+	limitedBody := io.LimitReader(resp.Body, 64*1024)
+	scanner := bufio.NewScanner(limitedBody)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line != "" && !strings.HasPrefix(line, "#") {

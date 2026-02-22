@@ -1,0 +1,192 @@
+name: PR Required Gates
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repo-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  required-gates:
+    name: Required Gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+
+      - name: Check non-empty diff
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --prune --depth=1 origin "${{ github.base_ref }}"
+          ./scripts/ci/check-empty-delta.sh "origin/${{ github.base_ref }}"
+
+      - name: Resolve PR scopes
+        id: scope
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "ERROR: cannot determine diff range for event=${{ github.event_name }} (requires pull_request context)"
+            exit 1
+          fi
+
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.sha }}"
+
+          if [ -z "${BASE_SHA}" ] || [ -z "${HEAD_SHA}" ]; then
+            echo "ERROR: cannot determine diff range (missing base/head sha): base='${BASE_SHA}' head='${HEAD_SHA}'"
+            exit 1
+          fi
+
+          if ! git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null; then
+            echo "ERROR: cannot determine diff range (head sha not found locally): ${HEAD_SHA}"
+            exit 1
+          fi
+
+          if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            git fetch --no-tags --prune --depth=1 origin "${{ github.base_ref }}"
+          fi
+
+          if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            echo "ERROR: cannot determine diff range (base sha not found after fetch): ${BASE_SHA}"
+            exit 1
+          fi
+
+          if ! git merge-base "${BASE_SHA}" "${HEAD_SHA}" >/dev/null 2>&1; then
+            echo "ERROR: cannot determine diff range (no merge-base): base=${BASE_SHA} head=${HEAD_SHA}"
+            exit 1
+          fi
+
+          RANGE="${BASE_SHA}...${HEAD_SHA}"
+          changed_files="$(git diff --name-only "$RANGE" || true)"
+
+          mapfile -t ui_contract_scope < <(
+            printf '%s\n' "$changed_files" \
+              | grep -E '^webui/src/.*\.(tsx|css)$' \
+              | sed -e 's#^webui/src/##' \
+              | sort -u
+          )
+
+          mapfile -t webui_ts_scope < <(
+            printf '%s\n' "$changed_files" \
+              | grep -E '^webui/(src|tests)/.*\.(ts|tsx)$' \
+              | sort -u
+          )
+
+          webui_changed=false
+          if printf '%s\n' "$changed_files" | grep -q '^webui/'; then
+            webui_changed=true
+          fi
+
+          webui_build_needed=false
+          if printf '%s\n' "$changed_files" | grep -Eq '^(webui/|api/openapi\.yaml$|internal/api/)'; then
+            webui_build_needed=true
+          fi
+
+          skip_reason=""
+          if [ "${#ui_contract_scope[@]}" -eq 0 ] && [ "${#webui_ts_scope[@]}" -eq 0 ] && [ "$webui_build_needed" = "false" ]; then
+            skip_reason="no_relevant_changes"
+          fi
+
+          printf '%s\n' "${ui_contract_scope[@]}" > /tmp/required-gates-ui-contract-scope.txt
+          printf '%s\n' "${webui_ts_scope[@]}" > /tmp/required-gates-webui-ts-scope.txt
+
+          echo "range=$RANGE" >> "$GITHUB_OUTPUT"
+          echo "ui_contract_count=${#ui_contract_scope[@]}" >> "$GITHUB_OUTPUT"
+          echo "webui_ts_count=${#webui_ts_scope[@]}" >> "$GITHUB_OUTPUT"
+          echo "webui_changed=$webui_changed" >> "$GITHUB_OUTPUT"
+          echo "webui_build_needed=$webui_build_needed" >> "$GITHUB_OUTPUT"
+          echo "skip_reason=$skip_reason" >> "$GITHUB_OUTPUT"
+
+          echo "Diff range: $RANGE"
+          echo "UI contract scoped files: ${#ui_contract_scope[@]}"
+          echo "Phase4 TS scoped files: ${#webui_ts_scope[@]}"
+          echo "Any webui/* changes: $webui_changed"
+          echo "WebUI build needed: $webui_build_needed"
+          if [ -n "$skip_reason" ]; then
+            echo "skip_reason=$skip_reason"
+          fi
+
+      - name: Scope skip reason
+        if: steps.scope.outputs.skip_reason != ''
+        run: echo "skip_reason=${{ steps.scope.outputs.skip_reason }}"
+
+      - name: UI Contract (diff-scoped)
+        if: steps.scope.outputs.ui_contract_count != '0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ./scripts/check-ui-contract.sh
+          mapfile -t scope_files < /tmp/required-gates-ui-contract-scope.txt
+          ./scripts/check-ui-contract.sh "${scope_files[@]}"
+
+      - name: UI Contract (no scope)
+        if: steps.scope.outputs.ui_contract_count == '0'
+        run: echo "No webui/src *.tsx/*.css changes; UI contract gate passes by scope."
+
+      - name: Phase4 - Reject new JSX
+        shell: bash
+        run: |
+          set -euo pipefail
+          RANGE="${{ steps.scope.outputs.range }}"
+          NEW_JSX=$(git diff --name-only --diff-filter=A "$RANGE" | grep '\.jsx$' || true)
+          if [ -n "$NEW_JSX" ]; then
+            echo "ERROR: New .jsx files detected (Phase 4 guardrail)"
+            echo "$NEW_JSX"
+            exit 1
+          fi
+          echo "No new .jsx files detected"
+
+      - name: Setup Node for Phase4 TypeScript check
+        if: steps.scope.outputs.webui_build_needed == 'true'
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: webui/package-lock.json
+
+      - name: Phase4 - Wrapper boundary imports (diff-scoped)
+        if: steps.scope.outputs.webui_ts_count != '0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t ts_files < /tmp/required-gates-webui-ts-scope.txt
+          mapfile -t scoped_files < <(
+            printf '%s\n' "${ts_files[@]}" \
+              | sed -e 's#^webui/##' \
+              | grep -E '\.(ts|tsx|js|jsx)$' \
+              | grep -v '^src/client-ts/' \
+              || true
+          )
+
+          if [ "${#scoped_files[@]}" -eq 0 ]; then
+            echo "No scoped files outside src/client-ts/, wrapper boundary check passes by scope."
+            exit 0
+          fi
+
+          bash webui/scripts/verify-client-wrapper-boundary.sh "${scoped_files[@]}"
+
+      - name: Phase4 - TypeScript build
+        if: steps.scope.outputs.webui_build_needed == 'true'
+        run: |
+          set -euo pipefail
+          cd webui
+          npm ci
+          npm run build
+
+      - name: Phase4 (no webui scope)
+        if: steps.scope.outputs.webui_build_needed != 'true'
+        run: echo "No webui/* changes; Phase4 build checks pass by scope."

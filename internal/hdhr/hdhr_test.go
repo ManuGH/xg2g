@@ -10,12 +10,16 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"encoding/xml"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -207,6 +211,90 @@ func TestHandleLineup(t *testing.T) {
 	assert.Empty(t, response) // Currently returns empty array
 }
 
+func TestLineup_UsesCache_InvalidatesOnMtime(t *testing.T) {
+	logger := zerolog.New(os.Stdout)
+	tmpDir := t.TempDir()
+	playlistPath := filepath.Join(tmpDir, "playlist.m3u")
+
+	writeTestPlaylist(t, playlistPath, []string{
+		`#EXTINF:-1 tvg-id="id1",Channel 1`,
+		`http://127.0.0.1/stream/1`,
+	})
+
+	server := NewServer(Config{
+		Logger:  logger,
+		DataDir: tmpDir,
+	}, nil)
+
+	first := httptest.NewRecorder()
+	server.HandleLineup(first, httptest.NewRequest(http.MethodGet, "/lineup.json", nil))
+	require.Equal(t, http.StatusOK, first.Code)
+	require.EqualValues(t, 1, server.lineupBuilds.Load())
+	require.Len(t, decodeLineup(t, first.Body.Bytes()), 1)
+
+	second := httptest.NewRecorder()
+	server.HandleLineup(second, httptest.NewRequest(http.MethodGet, "/lineup.json", nil))
+	require.Equal(t, http.StatusOK, second.Code)
+	require.EqualValues(t, 1, server.lineupBuilds.Load(), "second request should use cache")
+	require.Len(t, decodeLineup(t, second.Body.Bytes()), 1)
+
+	writeTestPlaylist(t, playlistPath, []string{
+		`#EXTINF:-1 tvg-id="id1",Channel 1`,
+		`http://127.0.0.1/stream/1`,
+		`#EXTINF:-1 tvg-id="id2",Channel 2`,
+		`http://127.0.0.1/stream/2`,
+	})
+	fi, err := os.Stat(playlistPath)
+	require.NoError(t, err)
+	require.NoError(t, os.Chtimes(playlistPath, fi.ModTime().Add(2*time.Second), fi.ModTime().Add(2*time.Second)))
+
+	third := httptest.NewRecorder()
+	server.HandleLineup(third, httptest.NewRequest(http.MethodGet, "/lineup.json", nil))
+	require.Equal(t, http.StatusOK, third.Code)
+	require.EqualValues(t, 2, server.lineupBuilds.Load(), "mtime/size change should invalidate cache")
+	require.Len(t, decodeLineup(t, third.Body.Bytes()), 2)
+}
+
+func TestLineup_CacheSingleflightUnderConcurrency(t *testing.T) {
+	logger := zerolog.New(os.Stdout)
+	tmpDir := t.TempDir()
+	playlistPath := filepath.Join(tmpDir, "playlist.m3u")
+
+	writeTestPlaylist(t, playlistPath, []string{
+		`#EXTINF:-1 tvg-id="id1",Channel 1`,
+		`http://127.0.0.1/stream/1`,
+	})
+
+	server := NewServer(Config{
+		Logger:  logger,
+		DataDir: tmpDir,
+	}, nil)
+
+	const n = 50
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	var failures atomic.Int64
+
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			w := httptest.NewRecorder()
+			server.HandleLineup(w, httptest.NewRequest(http.MethodGet, "/lineup.json", nil))
+			if w.Code != http.StatusOK {
+				failures.Add(1)
+			}
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+
+	require.EqualValues(t, 0, failures.Load())
+	require.EqualValues(t, 1, server.lineupBuilds.Load(), "singleflight should collapse concurrent rebuilds")
+}
+
 func TestHandleLineupPost(t *testing.T) {
 	logger := zerolog.New(os.Stdout)
 	server := NewServer(Config{Logger: logger}, nil)
@@ -297,6 +385,34 @@ func TestHandleDeviceXML(t *testing.T) {
 	}
 }
 
+func TestDeviceXML_EscapesSpecialChars(t *testing.T) {
+	logger := zerolog.New(os.Stdout)
+	server := NewServer(Config{
+		DeviceID:     "DEV&<>'\"",
+		FriendlyName: "Friendly & < > \" '",
+		ModelName:    "Model & < > \" '",
+		Logger:       logger,
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "http://localhost:8080/device.xml", nil)
+	w := httptest.NewRecorder()
+
+	server.HandleDeviceXML(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "application/xml; charset=utf-8", w.Header().Get("Content-Type"))
+
+	body := w.Body.String()
+	assert.Contains(t, body, "&amp;")
+	assert.Contains(t, body, "&lt;")
+	assert.Contains(t, body, "&gt;")
+
+	var parsed struct {
+		XMLName xml.Name `xml:"root"`
+	}
+	require.NoError(t, xml.Unmarshal(w.Body.Bytes(), &parsed))
+}
+
 func TestServerGetLocalIP(t *testing.T) {
 	logger := zerolog.New(os.Stdout)
 	server := NewServer(Config{Logger: logger}, nil)
@@ -311,6 +427,19 @@ func TestServerGetLocalIP(t *testing.T) {
 		parts := strings.Split(ip, ".")
 		assert.Len(t, parts, 4, "IP should have 4 parts")
 	}
+}
+
+func writeTestPlaylist(t *testing.T, path string, lines []string) {
+	t.Helper()
+	content := "#EXTM3U\n" + strings.Join(lines, "\n") + "\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0600))
+}
+
+func decodeLineup(t *testing.T, payload []byte) []LineupEntry {
+	t.Helper()
+	var out []LineupEntry
+	require.NoError(t, json.Unmarshal(payload, &out), fmt.Sprintf("payload=%s", string(payload)))
+	return out
 }
 
 // TestSSDPIntegration tests SSDP functionality with timeout

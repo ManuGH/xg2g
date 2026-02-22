@@ -35,6 +35,7 @@ type FileConfig struct {
 	Recording             map[string]string       `yaml:"recording_roots,omitempty"`
 	RecordingPlayback     RecordingPlaybackConfig `yaml:"recording_playback,omitempty"`
 	API                   APIConfig               `yaml:"api"`
+	Server                *ServerFileConfig       `yaml:"server,omitempty"`
 	Network               NetworkFileConfig       `yaml:"network,omitempty"`
 	Metrics               MetricsConfig           `yaml:"metrics,omitempty"`
 	Picons                PiconsConfig            `yaml:"picons,omitempty"`
@@ -145,12 +146,32 @@ type ScopedToken struct {
 
 // APIConfig holds API server configuration
 type APIConfig struct {
-	Token          string          `yaml:"token,omitempty"`
-	TokenScopes    []string        `yaml:"tokenScopes,omitempty"`
-	Tokens         []ScopedToken   `yaml:"tokens,omitempty"`
-	ListenAddr     string          `yaml:"listenAddr,omitempty"`
-	RateLimit      RateLimitConfig `yaml:"rateLimit,omitempty"`
-	AllowedOrigins []string        `yaml:"allowedOrigins,omitempty"`
+	Token                     string          `yaml:"token,omitempty"`
+	TokenScopes               []string        `yaml:"tokenScopes,omitempty"`
+	Tokens                    []ScopedToken   `yaml:"tokens,omitempty"`
+	DisableLegacyTokenSources bool            `yaml:"disableLegacyTokenSources,omitempty"`
+	ListenAddr                string          `yaml:"listenAddr,omitempty"`
+	RateLimit                 RateLimitConfig `yaml:"rateLimit,omitempty"`
+	AllowedOrigins            []string        `yaml:"allowedOrigins,omitempty"`
+}
+
+// ServerFileConfig holds HTTP server runtime settings in YAML.
+// Pointer fields preserve zero-values as explicit operator intent.
+type ServerFileConfig struct {
+	ReadTimeout     *time.Duration `yaml:"readTimeout,omitempty"`
+	WriteTimeout    *time.Duration `yaml:"writeTimeout,omitempty"`
+	IdleTimeout     *time.Duration `yaml:"idleTimeout,omitempty"`
+	MaxHeaderBytes  *int           `yaml:"maxHeaderBytes,omitempty"`
+	ShutdownTimeout *time.Duration `yaml:"shutdownTimeout,omitempty"`
+}
+
+// ServerRuntimeConfig holds HTTP server runtime settings in AppConfig.
+type ServerRuntimeConfig struct {
+	ReadTimeout     time.Duration
+	WriteTimeout    time.Duration
+	IdleTimeout     time.Duration
+	MaxHeaderBytes  int
+	ShutdownTimeout time.Duration
 }
 
 // RateLimitConfig holds rate limiting settings
@@ -165,6 +186,7 @@ type RateLimitConfig struct {
 // NetworkFileConfig holds network policy configuration.
 type NetworkFileConfig struct {
 	Outbound OutboundFileConfig `yaml:"outbound,omitempty"`
+	LAN      LANFileConfig      `yaml:"lan,omitempty"`
 }
 
 // OutboundFileConfig controls outbound HTTP(S) access.
@@ -179,6 +201,16 @@ type OutboundAllowlist struct {
 	CIDRs   []string `yaml:"cidrs,omitempty"`
 	Ports   []int    `yaml:"ports,omitempty"`
 	Schemes []string `yaml:"schemes,omitempty"`
+}
+
+// LANFileConfig defines LAN access policy.
+type LANFileConfig struct {
+	Allow LANAllowlist `yaml:"allow,omitempty"`
+}
+
+// LANAllowlist defines LAN CIDR allowlist rules.
+type LANAllowlist struct {
+	CIDRs []string `yaml:"cidrs,omitempty"`
 }
 
 // MetricsConfig holds Prometheus metrics configuration
@@ -240,24 +272,28 @@ type BreakerConfig struct {
 
 // AppConfig holds all configuration for the application
 type AppConfig struct {
-	Version           string
-	ConfigVersion     string
-	ConfigStrict      bool
-	DataDir           string
-	LogLevel          string
-	LogService        string
-	Bouquet           string // Comma-separated list of bouquets (empty = all)
-	XMLTVPath         string
-	PiconBase         string
-	FuzzyMax          int
-	APIToken          string // Optional: for securing API endpoints (e.g., /api/v3/*)
-	APITokenScopes    []string
-	APITokens         []ScopedToken
-	apiTokensParseErr error
-	APIListenAddr     string // Optional: API listen address (if set via config.yaml)
-	TrustedProxies    string // Comma-separated list of trusted CIDRs
-	MetricsEnabled    bool   // Optional: enable Prometheus metrics server
-	MetricsAddr       string // Optional: metrics listen address (if enabled)
+	Version        string
+	ConfigVersion  string
+	ConfigStrict   bool
+	DataDir        string
+	LogLevel       string
+	LogService     string
+	Bouquet        string // Comma-separated list of bouquets (empty = all)
+	XMLTVPath      string
+	PiconBase      string
+	FuzzyMax       int
+	APIToken       string // Optional: for securing API endpoints (e.g., /api/v3/*)
+	APITokenScopes []string
+	APITokens      []ScopedToken
+	// APIDisableLegacyTokenSources disables legacy auth vectors (X-API-Token header/cookie).
+	// When true, only Authorization Bearer and xg2g_session cookie are accepted.
+	APIDisableLegacyTokenSources bool
+	apiTokensParseErr            error
+	APIListenAddr                string // Optional: API listen address (if set via config.yaml)
+	Server                       ServerRuntimeConfig
+	TrustedProxies               string // Comma-separated list of trusted CIDRs
+	MetricsEnabled               bool   // Optional: enable Prometheus metrics server
+	MetricsAddr                  string // Optional: metrics listen address (if enabled)
 
 	// EPG Configuration
 	EPGEnabled         bool
@@ -472,10 +508,16 @@ type StoreConfig struct {
 // NetworkConfig holds outbound network policy.
 type NetworkConfig struct {
 	Outbound OutboundConfig
+	LAN      LANConfig
 }
 
 // OutboundConfig controls outbound HTTP(S) allowlist enforcement.
 type OutboundConfig struct {
 	Enabled bool
 	Allow   OutboundAllowlist
+}
+
+// LANConfig defines runtime LAN access policy.
+type LANConfig struct {
+	Allow LANAllowlist
 }

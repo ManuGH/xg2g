@@ -1,8 +1,7 @@
 # GENERATED FILE - DO NOT EDIT. Source: templates/docker-compose.yml.tmpl
 services:
   xg2g:
-    build: .
-    image: ${XG2G_IMAGE:-ghcr.io/manugh/xg2g:3.1.7}
+    image: ghcr.io/manugh/xg2g:3.1.7
     container_name: xg2g
     restart: unless-stopped
     ports:
@@ -20,6 +19,15 @@ services:
       - /var/lib/xg2g:/var/lib/xg2g
       - /media/nfs-recordings:/media/nfs-recordings
       # - ./config.yaml:/var/lib/xg2g/config.yaml:ro
+    # Container hardening (Operator-Grade 2026). Persist only via mounted volumes/tmpfs.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    init: true
     healthcheck:
       test: ["CMD", "xg2g", "healthcheck", "-mode", "live"]
       interval: 10s

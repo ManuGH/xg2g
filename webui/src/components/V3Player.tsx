@@ -2,8 +2,8 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import Hls from 'hls.js';
 import type { ErrorData, FragLoadedData, ManifestParsedData, LevelLoadedData } from 'hls.js';
-import { createSession, getRecordingPlaybackInfo } from '../client-ts/sdk.gen';
-import { client } from '../client-ts/client.gen';
+import { createSession, getRecordingPlaybackInfo, type PlaybackInfo } from '../client-ts';
+import { getApiBaseUrl, setClientAuthToken } from '../client-ts/wrapper';
 import { telemetry } from '../services/TelemetryService';
 import { resolvePlaybackInfoPolicy } from '../contracts/PolicyEngine';
 import { useCapabilities } from '../hooks/useCapabilities';
@@ -39,6 +39,113 @@ interface ApiErrorResponse {
   message?: string;
   requestId?: string;
   details?: unknown;
+}
+
+type PreferredCodec = 'av1' | 'hevc' | 'h264';
+
+let cachedPreferredCodecs: PreferredCodec[] | null = null;
+
+async function detectPreferredCodecs(videoEl?: HTMLVideoElement | null): Promise<PreferredCodec[]> {
+  if (cachedPreferredCodecs) return cachedPreferredCodecs;
+
+  const supports = async (contentType: string): Promise<boolean> => {
+    try {
+      const mc = (navigator as any)?.mediaCapabilities;
+      if (mc?.decodingInfo) {
+        const baseVideo = {
+          contentType,
+          width: 1920,
+          height: 1080,
+          bitrate: 5_000_000,
+          framerate: 30
+        };
+
+        try {
+          const info = await mc.decodingInfo({ type: 'media-source', video: baseVideo });
+          if (info?.supported) return true;
+        } catch {
+          // Some platforms only accept type='file'; try fallback below.
+        }
+
+        try {
+          const info = await mc.decodingInfo({ type: 'file', video: baseVideo });
+          if (info?.supported) return true;
+        } catch {
+          // ignore
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    try {
+      if (typeof MediaSource !== 'undefined' && MediaSource.isTypeSupported(contentType)) return true;
+    } catch {
+      // ignore
+    }
+
+    try {
+      const v = videoEl || (typeof document !== 'undefined' ? document.createElement('video') : null);
+      if (v && v.canPlayType(contentType) !== '') return true;
+    } catch {
+      // ignore
+    }
+
+    return false;
+  };
+
+  const supportsAny = async (contentTypes: string[]): Promise<boolean> => {
+    const results = await Promise.all(contentTypes.map((ct) => supports(ct)));
+    return results.some(Boolean);
+  };
+
+  const av1Types = ['video/mp4; codecs="av01.0.05M.08"'];
+  const hevcTypes = [
+    'video/mp4; codecs="hvc1.1.6.L120.90"',
+    'video/mp4; codecs="hev1.1.6.L120.90"'
+  ];
+  const h264Types = ['video/mp4; codecs="avc1.42E01E"'];
+
+  const out: PreferredCodec[] = [];
+
+  if (await supportsAny(av1Types)) out.push('av1');
+  if (await supportsAny(hevcTypes)) out.push('hevc');
+
+  // Always include H.264 as a safe fallback.
+  // If the platform surprisingly doesn't report support, keep it anyway: server will still fall back if needed.
+  if (out.length === 0) {
+    // Still probe H.264 once, but don't block the fallback list on it.
+    await supportsAny(h264Types);
+  }
+  out.push('h264');
+
+  cachedPreferredCodecs = out;
+  return out;
+}
+
+class PlayerError extends Error {
+  details?: unknown;
+
+  constructor(message: string, details?: unknown) {
+    super(message);
+    this.name = 'PlayerError';
+    this.details = details;
+    Object.setPrototypeOf(this, PlayerError.prototype);
+  }
+}
+
+async function readResponseBody(res: Response): Promise<{ json: any | null; text: string | null }> {
+  try {
+    const text = await res.text();
+    if (!text) return { json: null, text: '' };
+    try {
+      return { json: JSON.parse(text), text };
+    } catch {
+      return { json: null, text };
+    }
+  } catch {
+    return { json: null, text: null };
+  }
 }
 
 function V3Player(props: V3PlayerProps) {
@@ -142,7 +249,7 @@ function V3Player(props: V3PlayerProps) {
 
   // Explicitly static/memoized apiBase
   const apiBase = useMemo(() => {
-    return (client.getConfig().baseUrl || '/api/v3').replace(/\/$/, '');
+    return getApiBaseUrl();
   }, []);
 
 
@@ -346,7 +453,7 @@ function V3Player(props: V3PlayerProps) {
 
     const pending = (async () => {
       try {
-        client.setConfig({ headers: token ? { Authorization: `Bearer ${token}` } : {} });
+        setClientAuthToken(token);
         await createSession();
         sessionCookieRef.current.token = token;
       } catch (err) {
@@ -444,14 +551,79 @@ function V3Player(props: V3PlayerProps) {
 
         // Handle Auth failure explicitly
         if (res.status === 401 || res.status === 403) {
-          throw new Error(t('player.authFailed'));
+          throw new PlayerError(t('player.authFailed'), {
+            url: res.url,
+            status: res.status,
+            requestId: res.headers.get('X-Request-ID') || undefined
+          });
         }
 
         if (res.status === 404) {
           await sleep(100); // Fast retry for session creation
           continue;
         }
-        if (!res.ok) throw new Error(t('player.failedToFetchSession'));
+
+        // CTO Contract (Phase 5.3): terminal sessions return 410 Gone with a problem+json body.
+        if (res.status === 410) {
+          const { json, text } = await readResponseBody(res);
+          const requestId =
+            (json && typeof json === 'object' ? (json.requestId as string | undefined) : undefined) ||
+            res.headers.get('X-Request-ID') ||
+            undefined;
+
+          const reason = (json && typeof json === 'object' ? (json.reason ?? json.state ?? json.code) : undefined) as
+            | string
+            | undefined;
+          const reasonDetail =
+            (json && typeof json === 'object' ? (json.reason_detail ?? json.reasonDetail ?? json.detail) : undefined) as
+              | string
+              | undefined;
+
+          const combined = `${reason ?? 'GONE'}${reasonDetail ? `: ${reasonDetail}` : ''}`;
+          const details = {
+            url: res.url,
+            status: res.status,
+            requestId,
+            code: json?.code,
+            title: json?.title,
+            detail: json?.detail,
+            session: json?.session,
+            state: json?.state,
+            reason: json?.reason,
+            reason_detail: json?.reason_detail,
+            body: json ?? text
+          };
+
+          telemetry.emit('ui.error', {
+            status: 410,
+            code: 'SESSION_GONE',
+            reason: reason ?? null,
+            reason_detail: reasonDetail ?? null,
+            requestId
+          });
+
+          if (String(reason).includes('LEASE_BUSY') || String(reasonDetail).includes('LEASE_BUSY')) {
+            throw new PlayerError(t('player.leaseBusy'), details);
+          }
+          throw new PlayerError(`${t('player.sessionFailed')}: ${combined}`, details);
+        }
+
+        if (!res.ok) {
+          const { json, text } = await readResponseBody(res);
+          const requestId =
+            (json && typeof json === 'object' ? (json.requestId as string | undefined) : undefined) ||
+            res.headers.get('X-Request-ID') ||
+            undefined;
+          throw new PlayerError(`${t('player.failedToFetchSession')} (HTTP ${res.status})`, {
+            url: res.url,
+            status: res.status,
+            requestId,
+            code: json?.code,
+            title: json?.title,
+            detail: json?.detail,
+            body: json ?? text
+          });
+        }
 
         const session: V3SessionStatusResponse = await res.json();
         applySessionInfo(session);
@@ -482,14 +654,24 @@ function V3Player(props: V3PlayerProps) {
 
         await sleep(100); // Fast polling for low-latency startup
       } catch (err) {
-        const msg = (err as Error).message || '';
+        const e = err as any;
+        const msg = e?.message || '';
+        const status = e?.details?.status as number | undefined;
         // If it's a terminal, user-facing error, abort immediately
         if (msg === t('player.leaseBusy') || msg.startsWith(t('player.sessionFailed')) || msg === t('player.authFailed')) {
           throw err;
         }
 
+        // Non-retryable client errors (except 404 handled above, and 429 which can be transient).
+        if (typeof status === 'number' && status >= 400 && status < 500 && status !== 404 && status !== 429) {
+          throw err;
+        }
+
         if (i === maxAttempts - 1) {
-          throw new Error(`${t('player.readinessCheckFailed')}: ${(err as Error).message}`);
+          if (err instanceof PlayerError) {
+            throw new PlayerError(`${t('player.readinessCheckFailed')}: ${msg}`, e?.details);
+          }
+          throw new Error(`${t('player.readinessCheckFailed')}: ${msg}`);
         }
         await sleep(500);
       }
@@ -719,7 +901,7 @@ function V3Player(props: V3PlayerProps) {
 
       try {
         const maxMetaRetries = 20;
-        let pInfo: import('../client-ts/types.gen').PlaybackInfo | undefined;
+        let pInfo: PlaybackInfo | undefined;
 
         for (let i = 0; i < maxMetaRetries; i++) {
           if (activeRecordingRef.current !== id) return;
@@ -921,7 +1103,7 @@ function V3Player(props: V3PlayerProps) {
     } finally {
       if (vodFetchRef.current === abortController) vodFetchRef.current = null;
     }
-  }, [apiBase, authHeaders, client, clearVodFetch, clearVodRetry, playDirectMp4, playHls, resetPlaybackEngine, t, waitForDirectStream, ensureSessionCookie]);
+  }, [apiBase, authHeaders, clearVodFetch, clearVodRetry, playDirectMp4, playHls, resetPlaybackEngine, t, waitForDirectStream, ensureSessionCookie]);
 
   const startStream = useCallback(async (refToUse?: string): Promise<void> => {
     if (startIntentInFlight.current) return;
@@ -977,13 +1159,18 @@ function V3Player(props: V3PlayerProps) {
       try {
         await ensureSessionCookie();
 
+        const preferredCodecs = await detectPreferredCodecs(videoRef.current as unknown as HTMLVideoElement | null);
+
         const res = await fetch(`${apiBase}/intents`, {
           method: 'POST',
           headers: authHeaders(true),
           body: JSON.stringify({
             type: 'stream.start',
 
-            serviceRef: ref
+            serviceRef: ref,
+            params: {
+              codecs: preferredCodecs.join(',')
+            }
           })
         });
 
@@ -1054,8 +1241,17 @@ function V3Player(props: V3PlayerProps) {
           await sendStopIntent(newSessionId);
         }
         debugError(err);
-        setError((err as Error).message);
-        setErrorDetails((err as Error).stack || null);
+        const e = err as any;
+        setError(e?.message || String(err));
+        if (e?.details) {
+          try {
+            setErrorDetails(typeof e.details === 'string' ? e.details : JSON.stringify(e.details, null, 2));
+          } catch {
+            setErrorDetails(String(e.details));
+          }
+        } else {
+          setErrorDetails(e?.stack || null);
+        }
         setStatus('error');
       }
     } finally {
@@ -1595,9 +1791,7 @@ function V3Player(props: V3PlayerProps) {
 
   // Token update effect
   useEffect(() => {
-    if (token) {
-      client.setConfig({ headers: { Authorization: `Bearer ${token}` } });
-    }
+    setClientAuthToken(token);
     sessionCookieRef.current.token = null;
     sessionCookieRef.current.pending = null;
   }, [token]);

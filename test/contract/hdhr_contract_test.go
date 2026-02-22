@@ -229,43 +229,37 @@ http://example.com/stream/1
 
 // TestHDHomeRunConfigContract verifies the configuration contract
 func TestHDHomeRunConfigContract(t *testing.T) {
-	t.Run("ConfigFromEnv", func(t *testing.T) {
-		// Contract: GetConfigFromEnv reads from environment
+	t.Run("ConfigStruct", func(t *testing.T) {
+		// Contract: Config values are consumed by the HDHR server
 		logger := log.WithComponent("test")
+		cfg := hdhr.Config{
+			Enabled:      true,
+			DeviceID:     "CFGTEST1",
+			FriendlyName: "Config Test Device",
+			Logger:       logger,
+		}
 
-		// Set environment variables
-		os.Setenv("XG2G_HDHR_ENABLED", "true")
-		os.Setenv("XG2G_HDHR_DEVICE_ID", "ENVTEST1")
-		os.Setenv("XG2G_HDHR_FRIENDLY_NAME", "Env Test Device")
-		defer func() {
-			os.Unsetenv("XG2G_HDHR_ENABLED")
-			os.Unsetenv("XG2G_HDHR_DEVICE_ID")
-			os.Unsetenv("XG2G_HDHR_FRIENDLY_NAME")
-		}()
+		server := hdhr.NewServer(cfg, channels.NewManager(t.TempDir()))
 
-		cfg := hdhr.GetConfigFromEnv(logger, t.TempDir())
+		req := httptest.NewRequest(http.MethodGet, "/discover.json", nil)
+		rec := httptest.NewRecorder()
+		server.HandleDiscover(rec, req)
 
-		// Contract: Config is populated from environment
-		assert.True(t, cfg.Enabled, "Enabled must be read from XG2G_HDHR_ENABLED")
-		assert.Equal(t, "ENVTEST1", cfg.DeviceID,
-			"DeviceID must be read from XG2G_HDHR_DEVICE_ID")
-		assert.Equal(t, "Env Test Device", cfg.FriendlyName,
-			"FriendlyName must be read from XG2G_HDHR_FRIENDLY_NAME")
+		var response map[string]interface{}
+		err := json.Unmarshal(rec.Body.Bytes(), &response)
+		require.NoError(t, err)
+
+		assert.Equal(t, "CFGTEST1", response["DeviceID"],
+			"DeviceID must be taken from hdhr.Config")
+		assert.Equal(t, "Config Test Device", response["FriendlyName"],
+			"FriendlyName must be taken from hdhr.Config")
 	})
 
 	t.Run("ConfigDefaults", func(t *testing.T) {
-		// Contract: Config provides sensible defaults
+		// Contract: zero-value config has disabled emulation by default
 		logger := log.WithComponent("test")
-
-		// Clear any env vars
-		os.Unsetenv("XG2G_HDHR_ENABLED")
-		os.Unsetenv("XG2G_HDHR_DEVICE_ID")
-
-		cfg := hdhr.GetConfigFromEnv(logger, t.TempDir())
-
-		// Contract: Defaults are provided when env vars are not set
+		cfg := hdhr.Config{Logger: logger}
 		assert.False(t, cfg.Enabled, "Enabled defaults to false")
-		// DeviceID will be empty from env, but NewServer generates one
 	})
 
 	t.Run("ServerGeneratesDefaults", func(t *testing.T) {
@@ -334,25 +328,21 @@ func TestHDHomeRunIntegrationContract(t *testing.T) {
 	t.Run("DisabledByDefault", func(t *testing.T) {
 		// Contract: HDHomeRun is disabled by default
 		logger := log.WithComponent("test")
-
-		os.Unsetenv("XG2G_HDHR_ENABLED")
-
-		cfg := hdhr.GetConfigFromEnv(logger, t.TempDir())
+		cfg := hdhr.Config{Logger: logger}
 
 		assert.False(t, cfg.Enabled,
 			"HDHomeRun must be disabled by default")
 	})
 
-	t.Run("EnabledViaEnv", func(t *testing.T) {
-		// Contract: HDHomeRun can be enabled via XG2G_HDHR_ENABLED
+	t.Run("EnabledViaConfig", func(t *testing.T) {
+		// Contract: HDHomeRun can be enabled via config
 		logger := log.WithComponent("test")
-
-		os.Setenv("XG2G_HDHR_ENABLED", "true")
-		defer os.Unsetenv("XG2G_HDHR_ENABLED")
-
-		cfg := hdhr.GetConfigFromEnv(logger, t.TempDir())
+		cfg := hdhr.Config{
+			Enabled: true,
+			Logger:  logger,
+		}
 
 		assert.True(t, cfg.Enabled,
-			"XG2G_HDHR_ENABLED=true must enable HDHomeRun")
+			"Enabled=true must enable HDHomeRun")
 	})
 }

@@ -23,7 +23,6 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/control/admission"
 	"github.com/ManuGH/xg2g/internal/control/vod"
-	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/dvr"
 	"github.com/ManuGH/xg2g/internal/epg"
 	"github.com/ManuGH/xg2g/internal/health"
@@ -49,7 +48,7 @@ type Server struct {
 
 	// Core Components
 	v3Bus               bus.Bus
-	v3Store             store.StateStore
+	v3Store             SessionStateStore
 	resumeStore         resume.Store
 	v3Scan              ChannelScanner
 	owiFactory          receiverControlFactory // Factory for creating OpenWebIF clients (injectable for tests)
@@ -87,6 +86,8 @@ type Server struct {
 	storageMonitor    *StorageMonitor
 	monitorStarted    bool
 	monitorMu         sync.Mutex
+	runtimeCtx        context.Context
+	runtimeCancel     context.CancelFunc
 
 	// Middlewares (injectable for tests)
 	AuthMiddlewareOverride func(http.Handler) http.Handler
@@ -176,7 +177,24 @@ func (s *Server) StartRecordingCacheEvicter(ctx context.Context) {
 			warnedCadenceMismatch = false
 		}
 
-		res, err := vod.EvictRecordingCache(cfg.HLS.Root, cfg.VODCacheTTL, cfg.VODCacheMaxEntries, vod.RealClock{})
+		s.mu.RLock()
+		vodMgr := s.vodManager
+		s.mu.RUnlock()
+
+		excludedPaths := make(map[string]struct{})
+		if vodMgr != nil {
+			for _, jobID := range vodMgr.ActiveJobIDs() {
+				excludedPaths[jobID] = struct{}{}
+			}
+		}
+
+		res, err := vod.EvictRecordingCacheWithExclusions(
+			cfg.HLS.Root,
+			cfg.VODCacheTTL,
+			cfg.VODCacheMaxEntries,
+			vod.RealClock{},
+			excludedPaths,
+		)
 		if err != nil {
 			log.L().Error().Err(err).Msg("recording cache eviction failed")
 			return
@@ -190,9 +208,6 @@ func (s *Server) StartRecordingCacheEvicter(ctx context.Context) {
 			log.L().Warn().Int("errors", res.Errors).Msg("recording cache eviction completed with errors")
 		}
 
-		s.mu.RLock()
-		vodMgr := s.vodManager
-		s.mu.RUnlock()
 		if vodMgr != nil {
 			pruned := vodMgr.PruneMetadata(time.Now(), cfg.VODCacheTTL, cfg.VODCacheMaxEntries)
 			metrics.AddVODMetadataPruned(metrics.CacheEvictReasonTTL, pruned.RemovedTTL)
@@ -251,12 +266,69 @@ func (s *Server) SetShutdownHandler(fn func(context.Context) error) {
 	s.requestShutdown = fn
 }
 
+// SetRuntimeContext binds runtime workers to the provided root context.
+func (s *Server) SetRuntimeContext(ctx context.Context) error {
+	if ctx == nil {
+		return fmt.Errorf("runtime context is nil")
+	}
+
+	s.mu.Lock()
+	if s.runtimeCancel != nil {
+		s.runtimeCancel()
+	}
+	s.runtimeCtx, s.runtimeCancel = context.WithCancel(ctx)
+	s.mu.Unlock()
+	return nil
+}
+
+// Shutdown stops v3 background workers and closes owned resources.
+func (s *Server) Shutdown(ctx context.Context) error {
+	if ctx == nil {
+		return fmt.Errorf("shutdown context is nil")
+	}
+
+	s.mu.Lock()
+	runtimeCancel := s.runtimeCancel
+	s.runtimeCancel = nil
+	s.runtimeCtx = nil
+	vodMgr := s.vodManager
+	librarySvc := s.libraryService
+	s.mu.Unlock()
+
+	if runtimeCancel != nil {
+		runtimeCancel()
+	}
+
+	var errs []error
+	if vodMgr != nil {
+		if err := vodMgr.ShutdownContext(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("vod manager shutdown: %w", err))
+		}
+	}
+	if librarySvc != nil {
+		if store := librarySvc.GetStore(); store != nil {
+			if err := store.Close(); err != nil {
+				errs = append(errs, fmt.Errorf("library store close: %w", err))
+			}
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("v3 shutdown errors: %w", errors.Join(errs...))
+	}
+	return nil
+}
+
 // authMiddleware is the default authentication middleware.
 func (s *Server) authMiddleware(h http.Handler) http.Handler {
 	if s.AuthMiddlewareOverride != nil {
 		return s.AuthMiddlewareOverride(h)
 	}
 	return s.authMiddlewareImpl(h)
+}
+
+// AuthMiddleware exposes the canonical v3 authentication middleware.
+func (s *Server) AuthMiddleware(h http.Handler) http.Handler {
+	return s.authMiddleware(h)
 }
 
 // UpdateConfig updates the internal configuration snapshot.
@@ -282,153 +354,156 @@ func (s *Server) SetPreflightCheck(fn PreflightProvider) {
 	s.preflightProvider = fn
 }
 
-// SetDependencies injects shared services into the handler.
-func (s *Server) SetDependencies(
-	bus bus.Bus,
-	store store.StateStore,
-	resume resume.Store,
-	scan ChannelScanner,
-	rpm *recinfra.PathMapper,
-	cm *channels.Manager,
-	sm *dvr.Manager,
-	se *dvr.SeriesEngine,
-	vm *vod.Manager,
-	epg *epg.TV,
+// Dependencies groups runtime services injected into the v3 handler.
+type Dependencies struct {
+	Bus               bus.Bus
+	Store             SessionStateStore
+	ResumeStore       resume.Store
+	Scan              ChannelScanner
+	PathMapper        *recinfra.PathMapper
+	ChannelManager    *channels.Manager
+	SeriesManager     *dvr.Manager
+	SeriesEngine      *dvr.SeriesEngine
+	VODManager        *vod.Manager
+	EPGCache          *epg.TV
+	HealthManager     *health.Manager
+	LogSource         interface{ GetRecentLogs() []log.LogEntry }
+	ScanSource        ScanSource
+	DVRSource         RecordingStatusProvider
+	ServicesSource    ServiceStateReader
+	TimersSource      TimerReader
+	RecordingsService recservice.Service
+	RequestShutdown   func(context.Context) error
+	PreflightProvider PreflightProvider
+}
 
-	hm *health.Manager,
-	ls interface{ GetRecentLogs() []log.LogEntry },
-	ss ScanSource,
-	ds RecordingStatusProvider,
-	svs ServiceStateReader,
-	ts TimerReader,
-	recSvc recservice.Service,
-	requestShutdown func(context.Context) error,
-	preflightProvider PreflightProvider,
-) {
+// SetDependencies injects shared services into the handler.
+func (s *Server) SetDependencies(deps Dependencies) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if !isNil(bus) {
-		s.v3Bus = bus
+	if !isNil(deps.Bus) {
+		s.v3Bus = deps.Bus
 	} else {
 		s.v3Bus = nil
 	}
 
-	if !isNil(store) {
-		s.v3Store = store
+	if !isNil(deps.Store) {
+		s.v3Store = deps.Store
 	} else {
 		s.v3Store = nil
 	}
 
-	if !isNil(resume) {
-		s.resumeStore = resume
+	if !isNil(deps.ResumeStore) {
+		s.resumeStore = deps.ResumeStore
 	} else {
 		s.resumeStore = nil
 	}
 
-	if !isNil(scan) {
-		s.v3Scan = scan
+	if !isNil(deps.Scan) {
+		s.v3Scan = deps.Scan
 	} else {
 		s.v3Scan = nil
 	}
 
-	if !isNil(ss) {
-		s.scanSource = ss
+	if !isNil(deps.ScanSource) {
+		s.scanSource = deps.ScanSource
 	} else {
 		s.scanSource = nil
 	}
 
-	if !isNil(ds) {
-		s.dvrSource = ds
+	if !isNil(deps.DVRSource) {
+		s.dvrSource = deps.DVRSource
 	} else {
 		s.dvrSource = nil
 	}
 
-	if !isNil(svs) {
-		s.servicesSource = svs
+	if !isNil(deps.ServicesSource) {
+		s.servicesSource = deps.ServicesSource
 	} else {
 		s.servicesSource = nil
 	}
 
-	if !isNil(ts) {
-		s.timersSource = ts
+	if !isNil(deps.TimersSource) {
+		s.timersSource = deps.TimersSource
 	} else {
 		s.timersSource = nil
 	}
 
-	if !isNil(rpm) {
-		s.recordingPathMapper = rpm
+	if !isNil(deps.PathMapper) {
+		s.recordingPathMapper = deps.PathMapper
 	} else {
 		s.recordingPathMapper = nil
 	}
 
-	if !isNil(cm) {
-		s.channelManager = cm
+	if !isNil(deps.ChannelManager) {
+		s.channelManager = deps.ChannelManager
 	} else {
 		s.channelManager = nil
 	}
 
-	if !isNil(sm) {
-		s.seriesManager = sm
+	if !isNil(deps.SeriesManager) {
+		s.seriesManager = deps.SeriesManager
 	} else {
 		s.seriesManager = nil
 	}
 
-	if !isNil(se) {
-		s.seriesEngine = se
+	if !isNil(deps.SeriesEngine) {
+		s.seriesEngine = deps.SeriesEngine
 	} else {
 		s.seriesEngine = nil
 	}
 
-	if !isNil(vm) {
-		s.vodManager = vm
-		// Start the background prober pool (Phase 2 compliance)
-		s.vodManager.StartProberPool(context.Background())
+	if !isNil(deps.VODManager) {
+		s.vodManager = deps.VODManager
+		if s.runtimeCtx != nil {
+			s.vodManager.StartProberPool(s.runtimeCtx)
+		}
 		// PR3: Initialize Artifacts Resolver
-		s.artifacts = artifacts.New(&s.cfg, vm, s.recordingPathMapper)
+		s.artifacts = artifacts.New(&s.cfg, deps.VODManager, s.recordingPathMapper)
 	} else {
 		s.vodManager = nil
 		s.artifacts = nil
 	}
 
-	if !isNil(epg) {
-		s.epgCache = epg
+	if !isNil(deps.EPGCache) {
+		s.epgCache = deps.EPGCache
 	} else {
 		s.epgCache = nil
 	}
 
-	if !isNil(hm) {
-		s.healthManager = hm
+	if !isNil(deps.HealthManager) {
+		s.healthManager = deps.HealthManager
 	} else {
 		s.healthManager = nil
 	}
 
-	if !isNil(ls) {
-		s.logSource = ls
+	if !isNil(deps.LogSource) {
+		s.logSource = deps.LogSource
 	} else {
 		s.logSource = nil
 	}
 
-	if !isNil(requestShutdown) {
-		s.requestShutdown = requestShutdown
+	if !isNil(deps.RequestShutdown) {
+		s.requestShutdown = deps.RequestShutdown
 	} else {
 		s.requestShutdown = nil
 	}
 
-	if !isNil(preflightProvider) {
-		s.preflightProvider = preflightProvider
+	if !isNil(deps.PreflightProvider) {
+		s.preflightProvider = deps.PreflightProvider
 	} else {
 		s.preflightProvider = nil
 	}
 
-	if !isNil(recSvc) {
-		s.recordingsService = recSvc
+	if !isNil(deps.RecordingsService) {
+		s.recordingsService = deps.RecordingsService
 	} else {
 		s.recordingsService = nil
 	}
 
 	// Initialize Admission State Source (Store-backed)
 	s.admissionState = &storeAdmissionState{
-		store:      store,
+		store:      s.v3Store,
 		tunerCount: len(s.cfg.Engine.TunerSlots),
 	}
 }

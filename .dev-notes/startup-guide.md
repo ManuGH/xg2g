@@ -37,9 +37,13 @@
 ### Option B – Docker Compose direkt (ohne systemd)
 
 ```bash
-docker compose up
+# Lokaler Dev-Run (nutzt .env + ./data)
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 # oder mit rebuild
-docker compose up --build
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+
+# Optional: VAAPI/HW-Accel (Intel/AMD)
+docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.hwaccel.yml up --build
 ```
 
 **Eigenschaften:**
@@ -114,10 +118,10 @@ Ein Build sollte NUR über systemd getestet werden, wenn:
 ./run_dev.sh
 
 # oder nur Backend
-docker compose up
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 
 # oder nur Backend mit rebuild
-docker compose up --build
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 ```
 
 ### Vor Release / System-Test
@@ -165,7 +169,7 @@ ps aux | grep -E 'xg2g|run_dev|make dev' | grep -v grep
 pkill -f run_dev.sh
 pkill -f "make dev"
 pkill -f xg2g
-docker compose down
+docker compose -f docker-compose.yml -f docker-compose.dev.yml down
 systemctl stop xg2g
 ```
 

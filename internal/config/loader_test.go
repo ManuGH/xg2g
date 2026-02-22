@@ -137,6 +137,38 @@ openWebIF:
 	}
 }
 
+func TestENVCanonicalStreamPortUsedWhenSet(t *testing.T) {
+	t.Setenv("XG2G_OWI_BASE", "http://example.com")
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_E2_STREAM_PORT", "7101")
+
+	loader := NewLoader("", "test-version")
+	cfg, err := loader.Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	if cfg.Enigma2.StreamPort != 7101 {
+		t.Errorf("expected canonical stream port: 7101, got %d", cfg.Enigma2.StreamPort)
+	}
+}
+
+func TestENVStreamPortAliasConflictFails(t *testing.T) {
+	t.Setenv("XG2G_OWI_BASE", "http://example.com")
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_STREAM_PORT", "7001")
+	t.Setenv("XG2G_E2_STREAM_PORT", "7101")
+
+	loader := NewLoader("", "test-version")
+	_, err := loader.Load()
+	if err == nil {
+		t.Fatal("expected alias conflict error, got nil")
+	}
+	if !strings.Contains(err.Error(), "openWebIF.streamPort conflicts with enigma2.streamPort") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestPrecedenceOrder(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
@@ -359,6 +391,22 @@ func TestOWIMaxBackoffFromENV(t *testing.T) {
 					tt.description, tt.expectedBackoff, cfg.Enigma2.MaxBackoff)
 			}
 		})
+	}
+}
+
+func TestE2MaxBackoffFromENV(t *testing.T) {
+	t.Setenv("XG2G_OWI_BASE", "http://example.com")
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_E2_MAX_BACKOFF", "9s")
+
+	loader := NewLoader("", "test-version")
+	cfg, err := loader.Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	if cfg.Enigma2.MaxBackoff != 9*time.Second {
+		t.Errorf("expected Enigma2.MaxBackoff=9s from XG2G_E2_MAX_BACKOFF, got %v", cfg.Enigma2.MaxBackoff)
 	}
 }
 

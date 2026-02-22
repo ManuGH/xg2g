@@ -16,8 +16,10 @@ func extractToken(r *http.Request) string {
 	return auth.ExtractToken(r)
 }
 
-func extractTokenDetailed(r *http.Request) (string, string) {
-	return auth.ExtractTokenDetailed(r)
+func extractTokenDetailedWithLegacyPolicy(r *http.Request, allowLegacySources bool) (string, string) {
+	return auth.ExtractTokenDetailedWithOptions(r, auth.TokenExtractOptions{
+		AllowLegacySources: allowLegacySources,
+	})
 }
 
 func extractBearerToken(r *http.Request) string {

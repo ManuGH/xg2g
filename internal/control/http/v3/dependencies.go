@@ -6,9 +6,11 @@ package v3
 
 import (
 	"context"
+	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/vod/preflight"
+	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
 )
@@ -60,3 +62,12 @@ type ReceiverControl interface {
 
 // receiverControlFactory creates a ReceiverControl instance.
 type receiverControlFactory func(cfg config.AppConfig, snap config.Snapshot) ReceiverControl
+
+// SessionStateStore defines the minimal session store contract required by v3 HTTP handlers.
+// Keep this interface narrow so v3 is not coupled to the full persistence surface.
+type SessionStateStore interface {
+	ListSessions(ctx context.Context) ([]*model.SessionRecord, error)
+	GetSession(ctx context.Context, id string) (*model.SessionRecord, error)
+	UpdateSession(ctx context.Context, id string, fn func(*model.SessionRecord) error) (*model.SessionRecord, error)
+	PutSessionWithIdempotency(ctx context.Context, s *model.SessionRecord, idemKey string, ttl time.Duration) (existingID string, exists bool, err error)
+}

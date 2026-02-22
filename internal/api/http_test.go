@@ -32,7 +32,7 @@ func TestHandleSystemHealth(t *testing.T) {
 	}))
 	defer mockReceiver.Close()
 
-	s := New(config.AppConfig{
+	s := mustNewServer(t, config.AppConfig{
 		APIToken:       "test-token",
 		APITokenScopes: []string{string(v3.ScopeV3Read)},
 		DataDir:        t.TempDir(),
@@ -74,7 +74,7 @@ func TestHandleRefresh_ErrorDoesNotUpdateLastRun(t *testing.T) {
 			DeliveryPolicy: "universal",
 		},
 	}
-	s := New(cfg, config.NewManager(""))
+	s := mustNewServer(t, cfg, config.NewManager(""))
 	// handler := s.Handler() // Removed unused
 	initialTime := s.status.LastRun
 
@@ -113,7 +113,7 @@ func TestHandleRefresh_SuccessUpdatesLastRun(t *testing.T) {
 		}, nil
 	}
 
-	s := New(config.AppConfig{
+	s := mustNewServer(t, config.AppConfig{
 		Enigma2:        config.Enigma2Settings{StreamPort: 8001, BaseURL: "http://example.com"},
 		APIToken:       "test-token",
 		APITokenScopes: []string{string(v3.ScopeV3Read)},
@@ -155,7 +155,7 @@ func TestHandleRefresh_ConflictOnConcurrent(t *testing.T) {
 			DeliveryPolicy: "universal",
 		},
 	}
-	s := New(cfg, config.NewManager(""))
+	s := mustNewServer(t, cfg, config.NewManager(""))
 
 	// Install a slow refresh function to force overlap
 	startCh := make(chan struct{})
@@ -213,7 +213,7 @@ func TestHandleRefresh_ConflictOnConcurrent(t *testing.T) {
 }
 
 func TestHandleHealth(t *testing.T) {
-	s := New(config.AppConfig{
+	s := mustNewServer(t, config.AppConfig{
 		Enigma2: config.Enigma2Settings{
 			BaseURL: "http://example.com",
 		},
@@ -258,7 +258,7 @@ func TestHandleReady(t *testing.T) {
 			DeliveryPolicy: "universal",
 		},
 	}
-	s := New(cfg, config.NewManager(""))
+	s := mustNewServer(t, cfg, config.NewManager(""))
 	handler := s.Handler()
 
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "/readyz", nil)
@@ -299,89 +299,43 @@ func TestHandleReady(t *testing.T) {
 	assert.Contains(t, rr.Body.String(), `"ready":true`)
 }
 
-func TestSecureFileHandlerSymlinkPolicy(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "TestSecureFileHandlerSymlinkPolicy*")
-	require.NoError(t, err)
-	defer func() { _ = os.RemoveAll(tempDir) }()
-
-	dataDir := filepath.Join(tempDir, "data")
-	outsideDir := filepath.Join(tempDir, "outside")
-	subDir := filepath.Join(dataDir, "subdir")
-
-	require.NoError(t, os.MkdirAll(subDir, 0o750))
-	require.NoError(t, os.Mkdir(outsideDir, 0o750))
-
-	testFile := filepath.Join(dataDir, "playlist.m3u")
-	subFile := filepath.Join(subDir, "playlist.m3u")
-	outsideFile := filepath.Join(outsideDir, "secret.txt")
-
-	require.NoError(t, os.WriteFile(testFile, []byte("m3u content"), 0o600))
-	require.NoError(t, os.WriteFile(subFile, []byte("sub content"), 0o600))
-	require.NoError(t, os.WriteFile(outsideFile, []byte("secret"), 0o600))
-
-	symlinkPath := filepath.Join(dataDir, "evil_symlink")
-	require.NoError(t, os.Symlink(outsideFile, symlinkPath))
-
-	link1 := filepath.Join(dataDir, "link1")
-	link2 := filepath.Join(dataDir, "link2")
-	require.NoError(t, os.Symlink(link2, link1))
-	require.NoError(t, os.Symlink(outsideFile, link2))
-
-	symlinkDir := filepath.Join(dataDir, "evil_dir")
-	require.NoError(t, os.Symlink(outsideDir, symlinkDir))
-
-	cfg := config.AppConfig{
-		DataDir: dataDir,
+func TestLegacyFilesRoutesRemoved(t *testing.T) {
+	server := mustNewServer(t, config.AppConfig{
+		DataDir: t.TempDir(),
 		Streaming: config.StreamingConfig{
 			DeliveryPolicy: "universal",
 		},
-	}
-	server := New(cfg, config.NewManager(""))
+	}, config.NewManager(""))
 	handler := server.Handler()
 
 	tests := []struct {
-		name           string
-		method         string
-		path           string
-		expectedStatus int
-		expectedBody   string
+		name   string
+		method string
+		path   string
 	}{
-		{name: "B6: valid file access", method: http.MethodGet, path: "/files/playlist.m3u", expectedStatus: http.StatusOK, expectedBody: "m3u content"},
-		{name: "B7: subdirectory file access", method: http.MethodGet, path: "/files/subdir/playlist.m3u", expectedStatus: http.StatusOK, expectedBody: "sub content"},
-		{name: "B8: symlink to outside file", method: http.MethodGet, path: "/files/evil_symlink", expectedStatus: http.StatusForbidden, expectedBody: "Forbidden"},
-		{name: "B9: symlink chain to outside", method: http.MethodGet, path: "/files/link1", expectedStatus: http.StatusForbidden, expectedBody: "Forbidden"},
-		{name: "B10: path traversal with ..", method: http.MethodGet, path: "/files/../outside/secret.txt", expectedStatus: http.StatusForbidden, expectedBody: "Forbidden"},
-		{name: "B11: symlink directory traversal", method: http.MethodGet, path: "/files/evil_dir/secret.txt", expectedStatus: http.StatusForbidden, expectedBody: "Forbidden"},
-		{name: "B12: URL-encoded traversal %2e%2e", method: http.MethodGet, path: "/files/%2e%2e/outside/secret.txt", expectedStatus: http.StatusForbidden, expectedBody: "Forbidden"},
-		{name: "directory access blocked", method: http.MethodGet, path: "/files/subdir/", expectedStatus: http.StatusForbidden, expectedBody: "Forbidden"},
-		{name: "nonexistent file", method: http.MethodGet, path: "/files/epg.xml", expectedStatus: http.StatusNotFound, expectedBody: "Not found"},
-		{name: "method not allowed", method: http.MethodPost, path: "/files/playlist.m3u", expectedStatus: http.StatusMethodNotAllowed, expectedBody: "Method not allowed"},
+		{name: "files endpoint removed", method: http.MethodGet, path: "/files/playlist.m3u"},
+		{name: "files subpath removed", method: http.MethodGet, path: "/files/subdir/playlist.m3u"},
+		{name: "files post removed", method: http.MethodPost, path: "/files/playlist.m3u"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req, err := http.NewRequestWithContext(context.Background(), tt.method, tt.path, nil)
-			require.NoError(t, err)
+			req := httptest.NewRequest(tt.method, tt.path, nil)
 			req.RemoteAddr = "127.0.0.1:1234"
-			if tt.method == http.MethodPost || tt.method == http.MethodPut ||
-				tt.method == http.MethodPatch || tt.method == http.MethodDelete {
+			if tt.method != http.MethodGet && tt.method != http.MethodHead {
 				req.Host = "example.com"
 				req.Header.Set("Origin", "http://example.com")
 			}
 
 			rr := httptest.NewRecorder()
 			handler.ServeHTTP(rr, req)
-
-			assert.Equal(t, tt.expectedStatus, rr.Code, "handler returned wrong status code")
-			if tt.expectedBody != "" {
-				assert.Contains(t, rr.Body.String(), tt.expectedBody, "handler returned unexpected body")
-			}
+			assert.Equal(t, http.StatusNotFound, rr.Code)
 		})
 	}
 }
 
 func TestMiddlewareChain(t *testing.T) {
-	server := New(config.AppConfig{
+	server := mustNewServer(t, config.AppConfig{
 		APIToken:       "test-token",
 		APITokenScopes: []string{string(v3.ScopeV3Read)},
 		Streaming: config.StreamingConfig{
@@ -418,7 +372,7 @@ func TestAdvancedPathTraversal(t *testing.T) {
 			DeliveryPolicy: "universal",
 		},
 	}
-	server := New(cfg, config.NewManager(""))
+	server := mustNewServer(t, cfg, config.NewManager(""))
 	handler := server.Handler()
 
 	attacks := []string{
@@ -438,285 +392,33 @@ func TestAdvancedPathTraversal(t *testing.T) {
 			rr := httptest.NewRecorder()
 			handler.ServeHTTP(rr, req)
 
-			assert.Equal(t, http.StatusForbidden, rr.Code, "expected 403 for attack vector")
+			assert.Equal(t, http.StatusNotFound, rr.Code, "legacy /files route removed")
 		})
 	}
 }
 
-func TestHandleXMLTV_Success(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	// Create test XMLTV and M3U files
-	xmltvPath := filepath.Join(tmpDir, "xmltv.xml")
-	m3uPath := runtimePlaylistPath(tmpDir)
-
-	xmltvContent := `<?xml version="1.0" encoding="UTF-8"?>
-<tv>
-  <channel id="channel1">
-    <display-name>Channel One</display-name>
-  </channel>
-  <programme start="20250101000000" stop="20250101010000" channel="channel1">
-    <title>Test Programme</title>
-  </programme>
-</tv>`
-
-	m3uContent := `#EXTM3U
-#EXTINF:-1 tvg-id="channel1" tvg-chno="1",Channel One
-http://example.com/stream1
-`
-
-	require.NoError(t, os.WriteFile(xmltvPath, []byte(xmltvContent), 0o600))
-	require.NoError(t, os.WriteFile(m3uPath, []byte(m3uContent), 0o600))
-
-	cfg := config.AppConfig{
-		DataDir:   tmpDir,
-		XMLTVPath: "xmltv.xml",
+func TestLegacyXMLTVRoutesRemoved(t *testing.T) {
+	server := mustNewServer(t, config.AppConfig{
+		DataDir: t.TempDir(),
 		Streaming: config.StreamingConfig{
 			DeliveryPolicy: "universal",
 		},
-	}
-
-	server := New(cfg, config.NewManager(""))
+	}, config.NewManager(""))
 	handler := server.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
-	req.RemoteAddr = "127.0.0.1:1234"
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
-
-	assert.Equal(t, http.StatusOK, rr.Code)
-	assert.Equal(t, "application/xml; charset=utf-8", rr.Header().Get("Content-Type"))
-	assert.Contains(t, rr.Body.String(), "Channel One")
-}
-
-func TestHandleXMLTV_FileTooLarge(t *testing.T) {
-	tmpDir := t.TempDir()
-	xmltvPath := filepath.Join(tmpDir, "xmltv.xml")
-
-	// Create a file larger than 50MB limit
-	largeContent := make([]byte, 51*1024*1024)
-	require.NoError(t, os.WriteFile(xmltvPath, largeContent, 0o600))
-
-	cfg := config.AppConfig{
-		DataDir:   tmpDir,
-		XMLTVPath: "xmltv.xml",
-		Streaming: config.StreamingConfig{
-			DeliveryPolicy: "universal",
-		},
+	tests := []string{
+		http.MethodGet,
+		http.MethodHead,
 	}
-
-	server := New(cfg, config.NewManager(""))
-	handler := server.Handler()
-
-	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
-	req.RemoteAddr = "127.0.0.1:1234"
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
-
-	assert.Equal(t, http.StatusRequestEntityTooLarge, rr.Code)
-}
-
-func TestHandleXMLTV_FileNotFound(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	cfg := config.AppConfig{
-		DataDir:   tmpDir,
-		XMLTVPath: "nonexistent.xml",
-		Streaming: config.StreamingConfig{
-			DeliveryPolicy: "universal",
-		},
+	for _, method := range tests {
+		t.Run(method, func(t *testing.T) {
+			req := httptest.NewRequest(method, "/xmltv.xml", nil)
+			req.RemoteAddr = "127.0.0.1:1234"
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, req)
+			assert.Equal(t, http.StatusNotFound, rr.Code)
+		})
 	}
-
-	server := New(cfg, config.NewManager(""))
-	handler := server.Handler()
-
-	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
-	req.RemoteAddr = "127.0.0.1:1234"
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
-
-	assert.Equal(t, http.StatusNotFound, rr.Code)
-}
-
-func TestHandleXMLTV_IDRemapping(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	xmltvPath := filepath.Join(tmpDir, "xmltv.xml")
-	m3uPath := runtimePlaylistPath(tmpDir)
-
-	// XMLTV with channel IDs
-	xmltvContent := `<?xml version="1.0" encoding="UTF-8"?>
-<tv>
-  <channel id="oldID1">
-    <display-name>Channel One</display-name>
-  </channel>
-  <programme start="20250101000000" stop="20250101010000" channel="oldID1">
-    <title>Test Programme</title>
-  </programme>
-</tv>`
-
-	// M3U with tvg-chno mapping
-	m3uContent := `#EXTM3U
-#EXTINF:-1 tvg-id="oldID1" tvg-chno="42",Channel One
-http://example.com/stream1
-`
-
-	require.NoError(t, os.WriteFile(xmltvPath, []byte(xmltvContent), 0o600))
-	require.NoError(t, os.WriteFile(m3uPath, []byte(m3uContent), 0o600))
-
-	cfg := config.AppConfig{
-		DataDir:   tmpDir,
-		XMLTVPath: "xmltv.xml",
-		Streaming: config.StreamingConfig{
-			DeliveryPolicy: "universal",
-		},
-	}
-
-	server := New(cfg, config.NewManager(""))
-	handler := server.Handler()
-
-	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
-	req.RemoteAddr = "127.0.0.1:1234"
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
-
-	assert.Equal(t, http.StatusOK, rr.Code)
-	body := rr.Body.String()
-
-	// Should have remapped oldID1 to 42
-	assert.Contains(t, body, `id="42"`)
-	assert.Contains(t, body, `channel="42"`)
-	assert.NotContains(t, body, `id="oldID1"`)
-}
-
-func TestHandleXMLTV_EmptyPath(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	cfg := config.AppConfig{
-		DataDir:   tmpDir,
-		XMLTVPath: "", // Empty path - not configured
-		Streaming: config.StreamingConfig{
-			DeliveryPolicy: "universal",
-		},
-	}
-
-	server := New(cfg, config.NewManager(""))
-	handler := server.Handler()
-
-	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
-	req.RemoteAddr = "127.0.0.1:1234"
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
-
-	assert.Equal(t, http.StatusNotFound, rr.Code)
-	assert.Contains(t, rr.Body.String(), "XMLTV file not available")
-}
-
-func TestHandleXMLTV_M3UNotFound(t *testing.T) {
-	tmpDir := t.TempDir()
-	xmltvPath := filepath.Join(tmpDir, "xmltv.xml")
-
-	xmltvContent := `<?xml version="1.0" encoding="UTF-8"?>
-<tv>
-  <channel id="channel1">
-    <display-name>Channel One</display-name>
-  </channel>
-</tv>`
-
-	require.NoError(t, os.WriteFile(xmltvPath, []byte(xmltvContent), 0o600))
-	// No M3U file created - should serve raw XMLTV
-
-	cfg := config.AppConfig{
-		DataDir:   tmpDir,
-		XMLTVPath: "xmltv.xml",
-		Streaming: config.StreamingConfig{
-			DeliveryPolicy: "universal",
-		},
-	}
-
-	server := New(cfg, config.NewManager(""))
-	handler := server.Handler()
-
-	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
-	req.RemoteAddr = "127.0.0.1:1234"
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
-
-	assert.Equal(t, http.StatusOK, rr.Code)
-	assert.Equal(t, "application/xml; charset=utf-8", rr.Header().Get("Content-Type"))
-	assert.Contains(t, rr.Body.String(), "channel1") // Original ID preserved
-}
-
-func TestHandleXMLTV_M3UTooLarge(t *testing.T) {
-	tmpDir := t.TempDir()
-	xmltvPath := filepath.Join(tmpDir, "xmltv.xml")
-	m3uPath := runtimePlaylistPath(tmpDir)
-
-	xmltvContent := `<?xml version="1.0" encoding="UTF-8"?>
-<tv>
-  <channel id="channel1">
-    <display-name>Channel One</display-name>
-  </channel>
-</tv>`
-
-	// Create M3U larger than 10MB limit
-	largeM3UContent := make([]byte, 11*1024*1024)
-	require.NoError(t, os.WriteFile(xmltvPath, []byte(xmltvContent), 0o600))
-	require.NoError(t, os.WriteFile(m3uPath, largeM3UContent, 0o600))
-
-	cfg := config.AppConfig{
-		DataDir:   tmpDir,
-		XMLTVPath: "xmltv.xml",
-		Streaming: config.StreamingConfig{
-			DeliveryPolicy: "universal",
-		},
-	}
-
-	server := New(cfg, config.NewManager(""))
-	handler := server.Handler()
-
-	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml", nil)
-	req.RemoteAddr = "127.0.0.1:1234"
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
-
-	assert.Equal(t, http.StatusOK, rr.Code)
-	assert.Equal(t, "application/xml; charset=utf-8", rr.Header().Get("Content-Type"))
-	assert.Contains(t, rr.Body.String(), "channel1") // Original ID preserved
-}
-
-func TestHandleXMLTV_HEADRequest(t *testing.T) {
-	tmpDir := t.TempDir()
-	xmltvPath := filepath.Join(tmpDir, "xmltv.xml")
-
-	xmltvContent := `<?xml version="1.0" encoding="UTF-8"?>
-<tv>
-  <channel id="channel1">
-    <display-name>Channel One</display-name>
-  </channel>
-</tv>`
-
-	require.NoError(t, os.WriteFile(xmltvPath, []byte(xmltvContent), 0o600))
-
-	cfg := config.AppConfig{
-		DataDir:   tmpDir,
-		XMLTVPath: "xmltv.xml",
-		Streaming: config.StreamingConfig{
-			DeliveryPolicy: "universal",
-		},
-	}
-
-	server := New(cfg, config.NewManager(""))
-	handler := server.Handler()
-
-	req := httptest.NewRequest(http.MethodHead, "/xmltv.xml", nil)
-	req.RemoteAddr = "127.0.0.1:1234"
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
-
-	assert.Equal(t, http.StatusOK, rr.Code)
-	assert.Equal(t, "application/xml; charset=utf-8", rr.Header().Get("Content-Type"))
-	assert.Equal(t, "public, max-age=300", rr.Header().Get("Cache-Control"))
 }
 
 // TestHandleSystemHealthV3 removed as it duplicates TestHandleSystemHealth
@@ -735,7 +437,7 @@ func TestHandleRefreshV3(t *testing.T) {
 		},
 	}
 
-	server := New(cfg, config.NewManager(""))
+	server := mustNewServer(t, cfg, config.NewManager(""))
 	handler := server.Handler()
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v3/system/refresh", nil)
@@ -767,9 +469,9 @@ func TestClientDisconnectDuringRefresh(t *testing.T) {
 		},
 	}
 
-	server := New(cfg, config.NewManager(""))
+	server := mustNewServer(t, cfg, config.NewManager(""))
 	// Inject dummy scan manager to avoid panic in handleRefresh (typed nil interface trap)
-	server.SetV3Components(nil, nil, nil, &scan.Manager{})
+	server.WireV3Runtime(v3.Dependencies{Scan: &scan.Manager{}}, nil)
 
 	// Create a context that we'll cancel to simulate client disconnect
 	ctx, cancel := context.WithCancel(context.Background())

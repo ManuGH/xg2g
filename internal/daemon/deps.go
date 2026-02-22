@@ -7,16 +7,15 @@
 package daemon
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/ManuGH/xg2g/internal/config"
-	"github.com/ManuGH/xg2g/internal/control/admission"
+	sessionports "github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
-	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
-	"github.com/ManuGH/xg2g/internal/pipeline/scan"
 	"github.com/ManuGH/xg2g/internal/pipeline/shadow"
 	"github.com/rs/zerolog"
 )
@@ -36,8 +35,9 @@ type Deps struct {
 	// APIHandler is the HTTP handler for the API server
 	APIHandler http.Handler
 
-	// APIServerSetter allows injecting v3 components into the API server
-	APIServerSetter V3ComponentSetter
+	// APIServerSetter provides daemon-visible API hooks (readiness, lifecycle).
+	// Runtime v3 component wiring belongs to the composition root (cmd/daemon).
+	APIServerSetter APIServerHooks
 
 	// ProxyConfig contains proxy server configuration (if enabled)
 	ProxyConfig *ProxyConfig
@@ -57,15 +57,44 @@ type Deps struct {
 	V3Bus       bus.Bus
 	V3Store     store.StateStore
 	ResumeStore resume.Store
-	ScanManager *scan.Manager
-	E2Client    *enigma2.Client
+	ScanManager ScanStoreCloser
+	// ReceiverHealthCheck probes receiver connectivity for health/readiness checks.
+	// Keep the daemon package bound to behavior, not concrete receiver clients.
+	ReceiverHealthCheck func(ctx context.Context) error
+	MediaPipeline       sessionports.MediaPipeline
+	// V3OrchestratorFactory builds the runtime worker orchestrator.
+	// This keeps daemon package bound to ports, not concrete implementations.
+	V3OrchestratorFactory V3OrchestratorFactory
 }
 
-// V3ComponentSetter defines the interface for injecting v3 components
-type V3ComponentSetter interface {
-	SetV3Components(b bus.Bus, st store.StateStore, rs resume.Store, sm *scan.Manager)
-	SetAdmission(adm *admission.Controller)
+// APIServerHooks exposes only daemon-safe hooks from the API server.
+// Keep this narrow to avoid runtime ownership cycles between daemon and API.
+type APIServerHooks interface {
 	HealthManager() *health.Manager
+}
+
+// ScanStoreCloser is the minimal port required by daemon lifecycle code.
+// Concrete scan implementations belong to composition root wiring.
+type ScanStoreCloser interface {
+	Close() error
+}
+
+// V3Orchestrator is the daemon-side runtime contract for session processing.
+type V3Orchestrator interface {
+	Run(ctx context.Context) error
+}
+
+// V3OrchestratorInputs contains the runtime dependencies needed to build an orchestrator.
+type V3OrchestratorInputs struct {
+	Bus      bus.Bus
+	Store    store.StateStore
+	Pipeline sessionports.MediaPipeline
+}
+
+// V3OrchestratorFactory builds a V3Orchestrator from config + injected ports.
+// Concrete implementations belong in composition root (cmd/daemon).
+type V3OrchestratorFactory interface {
+	Build(cfg config.AppConfig, inputs V3OrchestratorInputs) (V3Orchestrator, error)
 }
 
 // ProxyConfig holds proxy server configuration.
@@ -108,6 +137,18 @@ func (d *Deps) Validate() error {
 	if !d.ProxyOnly && d.APIHandler == nil {
 		return ErrMissingAPIHandler
 	}
+	if d.Config.Engine.Enabled {
+		if d.MediaPipeline == nil {
+			return ErrMissingMediaPipeline
+		}
+		if d.V3OrchestratorFactory == nil {
+			return ErrMissingV3OrchestratorFactory
+		}
+		if d.ReceiverHealthCheck == nil {
+			return ErrMissingReceiverHealthCheck
+		}
+	}
+
 	// Config validation is done by config.Loader
 	return nil
 }

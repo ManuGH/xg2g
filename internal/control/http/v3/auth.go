@@ -35,29 +35,37 @@ func (s *Server) authMiddlewareImpl(next http.Handler) http.Handler {
 		}
 
 		// Use unified token extraction
-		// For general API, we allow both Header (Bearer) and Cookie (xg2g_session).
-		reqToken, authSource := extractTokenDetailed(r)
+		// For general API, we allow Header (Bearer) and session cookie.
+		// Legacy X-API-Token vectors are optional behind config flag.
+		allowLegacySources := !cfg.APIDisableLegacyTokenSources
+		reqToken, authSource := extractTokenDetailedWithLegacyPolicy(r, allowLegacySources)
 
-		logger := log.FromContext(r.Context()).With().Str("component", "auth").Logger()
+		logger := log.FromContext(r.Context()).With().
+			Str("component", "auth").
+			Str("source", authSource).
+			Str("uri", r.RequestURI).
+			Logger()
 
 		if reqToken != "" {
-			logger.Debug().Str("method", authSource).Msg("authenticated request")
-		}
-
-		if reqToken == "" {
-			logger.Warn().Str("event", "auth.missing_header").Msg("authorization header/cookie missing")
+			logger.Debug().Msg("authenticated request")
+			if strings.Contains(authSource, "X-API-Token") {
+				logger.Warn().
+					Str("event", "auth.legacy_token_source").
+					Msg("legacy token source accepted; migrate to Authorization Bearer or xg2g_session and set XG2G_API_DISABLE_LEGACY_TOKEN_SOURCES=true")
+			}
+		} else {
+			logger.Warn().
+				Str("event", "auth.missing_token").
+				Msg("authorization token missing from all enabled sources")
 			RespondError(w, r, http.StatusUnauthorized, ErrUnauthorized)
 			return
 		}
 
-		// Security Invariant (P3-Auth): Media endpoints (HLS/Direct Stream) REQUIRE session cookies.
-		// Bearer tokens are for API only. This prevents certain classes of leakage/hotlinking.
+		// Security Invariant (P3-Auth): Media endpoints (HLS/Direct Stream) normally REQUIRE session cookies.
 		if isMediaRequest(r) && !strings.Contains(authSource, "cookie") {
 			logger.Warn().
-				Str("event", "auth.media_forbidden_source").
-				Str("source", authSource).
-				Str("path", r.URL.Path).
-				Msg("media request denied: bearer token not allowed for media (cookie required)")
+				Str("event", "auth.media_no_cookie").
+				Msg("media request attempted without session cookie (bearer not allowed for media)")
 			RespondError(w, r, http.StatusUnauthorized, ErrUnauthorized)
 			return
 		}
@@ -103,7 +111,7 @@ func (s *Server) CreateSession(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     "xg2g_session",
 		Value:    reqToken,
-		Path:     "/",
+		Path:     "/api/v3/",
 		HttpOnly: true,
 		Secure:   r.TLS != nil || forceHTTPS, // auto-detect or force
 		SameSite: http.SameSiteStrictMode,

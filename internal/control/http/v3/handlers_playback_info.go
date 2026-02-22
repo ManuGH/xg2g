@@ -50,10 +50,10 @@ func (s *Server) PostRecordingPlaybackInfo(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handlePlaybackInfo(w http.ResponseWriter, r *http.Request, recordingId string, caps *PlaybackCapabilities, apiVersion string, schemaType string) {
-	// 1. Safety: Service Access
-	s.mu.RLock()
-	svc := s.recordingsService
-	s.mu.RUnlock()
+	deps := s.recordingsModuleDeps()
+	svc := deps.recordingsService
+	cfg := deps.cfg
+	resumeStore := deps.resumeStore
 
 	if svc == nil {
 		writeProblem(w, r, http.StatusServiceUnavailable, "system/unavailable", "Service Unavailable", "UNAVAILABLE", "Recordings service is not initialized", nil)
@@ -109,7 +109,7 @@ func (s *Server) handlePlaybackInfo(w http.ResponseWriter, r *http.Request, reco
 	resolvedCaps := recordings.ResolveCapabilities(r.Context(), principal, apiVersion, reqProfile, headers, clientCaps)
 
 	// CTO Requirement 1: AllowTranscode = ServerConfig && ClientConstraint
-	serverCanTranscode := s.cfg.FFmpeg.Bin != "" && s.cfg.HLS.Root != ""
+	serverCanTranscode := cfg.FFmpeg.Bin != "" && cfg.HLS.Root != ""
 	clientAllowsTranscode := resolvedCaps.AllowTranscode == nil || *resolvedCaps.AllowTranscode
 	allowTranscode := serverCanTranscode && clientAllowsTranscode
 
@@ -153,9 +153,9 @@ func (s *Server) handlePlaybackInfo(w http.ResponseWriter, r *http.Request, reco
 
 	// 7. Resolve Resume State
 	var resumeState *resume.State
-	if s.resumeStore != nil {
+	if resumeStore != nil {
 		if principal != "" {
-			if stored, err := s.resumeStore.Get(r.Context(), principal, recordingId); err == nil {
+			if stored, err := resumeStore.Get(r.Context(), principal, recordingId); err == nil {
 				resumeState = stored
 			}
 		}

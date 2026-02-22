@@ -6,9 +6,25 @@ This repo is developed on macOS (edit + test only) and Linux (test + run). The g
 
 - Never push directly to `main`.
 - Always work on a feature branch: `codex/<feature>` or `<user>/<feature>`.
+- Use one dedicated worktree per thread/feature to avoid branch/path crossover.
 
 ```bash
 git checkout -b codex/<feature>
+```
+
+## Shared SMB Hygiene (Required)
+
+- Run once per clone: `make hooks` (installs `pre-commit` + `pre-push` hooks).
+- The pre-push hook blocks:
+  - direct pushes from `main`
+  - branches not descending from `origin/main` (unrelated-history safety)
+  - AppleDouble/macOS metadata (`._*`, `.DS_Store`, `.Spotlight-V100`, `.Trashes`)
+  - suspiciously large untracked worktree states (default threshold: `200`)
+- Optional threshold override: `XG2G_MAX_UNTRACKED=<n> git push`.
+- Clean SMB metadata if needed:
+
+```bash
+make repair-metadata
 ```
 
 ## Keeping Branches Up to Date (Rebase Standard)

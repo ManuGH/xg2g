@@ -9,11 +9,13 @@ package bus
 
 import (
 	"context"
+	"fmt"
 	"sync"
 )
 
 // MemoryBus is an in-memory pub/sub used for unit tests and local prototyping.
-// It is not durable and provides best-effort delivery.
+// It is not durable and provides at-least-once in-process delivery while
+// publish contexts remain active.
 type MemoryBus struct {
 	mu   sync.RWMutex
 	subs map[string][]chan Message
@@ -23,15 +25,18 @@ func NewMemoryBus() *MemoryBus {
 	return &MemoryBus{subs: make(map[string][]chan Message)}
 }
 
-func (b *MemoryBus) Publish(_ context.Context, topic string, msg Message) error {
+func (b *MemoryBus) Publish(ctx context.Context, topic string, msg Message) error {
+	if ctx == nil {
+		return fmt.Errorf("publish context is nil")
+	}
 	b.mu.RLock()
 	chs := append([]chan Message(nil), b.subs[topic]...)
 	b.mu.RUnlock()
 	for _, ch := range chs {
 		select {
 		case ch <- msg:
-		default:
-			// drop on backpressure to avoid producer blockage
+		case <-ctx.Done():
+			return fmt.Errorf("publish topic %q: %w", topic, ctx.Err())
 		}
 	}
 	return nil

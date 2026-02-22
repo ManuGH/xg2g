@@ -9,6 +9,7 @@ package config
 import (
 	"fmt"
 	"net"
+	"strings"
 	"time"
 )
 
@@ -92,24 +93,60 @@ const (
 	defaultIdleTimeout     = 120 * time.Second
 	defaultMaxHeaderBytes  = 1 << 20 // 1 MB
 	defaultShutdownTimeout = 15 * time.Second
+	fallbackListenAddr     = ":8088"
 )
 
 // ParseServerConfig reads server configuration from environment variables.
 // It returns a ServerConfig with sensible defaults that can be overridden via ENV.
 func ParseServerConfig() ServerConfig {
-	listen := ParseString("XG2G_LISTEN", ":8088")
+	return ParseServerConfigForApp(AppConfig{})
+}
 
-	shutdownTimeout := ParseDuration("XG2G_SERVER_SHUTDOWN_TIMEOUT", defaultShutdownTimeout)
+// ParseServerConfigForApp resolves server config with explicit precedence:
+// ENV > AppConfig (YAML + merged defaults) > Registry default.
+func ParseServerConfigForApp(cfg AppConfig) ServerConfig {
+	base := defaultServerRuntimeConfig()
+	if cfg.Server.ReadTimeout > 0 {
+		base.ReadTimeout = cfg.Server.ReadTimeout
+	}
+	if cfg.Server.WriteTimeout >= 0 {
+		base.WriteTimeout = cfg.Server.WriteTimeout
+	}
+	if cfg.Server.IdleTimeout > 0 {
+		base.IdleTimeout = cfg.Server.IdleTimeout
+	}
+	if cfg.Server.MaxHeaderBytes > 0 {
+		base.MaxHeaderBytes = cfg.Server.MaxHeaderBytes
+	}
+	if cfg.Server.ShutdownTimeout > 0 {
+		base.ShutdownTimeout = cfg.Server.ShutdownTimeout
+	}
+
+	listen := strings.TrimSpace(ParseString("XG2G_LISTEN", ""))
+	if listen == "" {
+		if strings.TrimSpace(cfg.APIListenAddr) != "" {
+			listen = cfg.APIListenAddr
+		} else {
+			listen = defaultAPIListenAddr()
+		}
+	}
+
+	maxHeaderBytes := ParseInt("XG2G_SERVER_MAX_HEADER_BYTES", base.MaxHeaderBytes)
+	if maxHeaderBytes <= 0 {
+		maxHeaderBytes = base.MaxHeaderBytes
+	}
+
+	shutdownTimeout := ParseDuration("XG2G_SERVER_SHUTDOWN_TIMEOUT", base.ShutdownTimeout)
 	if shutdownTimeout < 3*time.Second {
 		shutdownTimeout = 3 * time.Second
 	}
 
 	return ServerConfig{
 		ListenAddr:      listen,
-		ReadTimeout:     ParseDuration("XG2G_SERVER_READ_TIMEOUT", defaultReadTimeout),
-		WriteTimeout:    ParseDuration("XG2G_SERVER_WRITE_TIMEOUT", defaultWriteTimeout),
-		IdleTimeout:     ParseDuration("XG2G_SERVER_IDLE_TIMEOUT", defaultIdleTimeout),
-		MaxHeaderBytes:  ParseInt("XG2G_SERVER_MAX_HEADER_BYTES", defaultMaxHeaderBytes),
+		ReadTimeout:     ParseDuration("XG2G_SERVER_READ_TIMEOUT", base.ReadTimeout),
+		WriteTimeout:    ParseDuration("XG2G_SERVER_WRITE_TIMEOUT", base.WriteTimeout),
+		IdleTimeout:     ParseDuration("XG2G_SERVER_IDLE_TIMEOUT", base.IdleTimeout),
+		MaxHeaderBytes:  maxHeaderBytes,
 		ShutdownTimeout: shutdownTimeout,
 	}
 }
@@ -118,4 +155,57 @@ func ParseServerConfig() ServerConfig {
 // Returns empty string if metrics should be disabled.
 func ParseMetricsAddr() string {
 	return ParseString("XG2G_METRICS_LISTEN", "")
+}
+
+func defaultAPIListenAddr() string {
+	reg, err := GetRegistry()
+	if err == nil {
+		if entry, ok := reg.ByPath["api.listenAddr"]; ok {
+			if v, ok := entry.Default.(string); ok && strings.TrimSpace(v) != "" {
+				return v
+			}
+		}
+	}
+	return fallbackListenAddr
+}
+
+func defaultServerRuntimeConfig() ServerRuntimeConfig {
+	out := ServerRuntimeConfig{
+		ReadTimeout:     defaultReadTimeout,
+		WriteTimeout:    defaultWriteTimeout,
+		IdleTimeout:     defaultIdleTimeout,
+		MaxHeaderBytes:  defaultMaxHeaderBytes,
+		ShutdownTimeout: defaultShutdownTimeout,
+	}
+
+	reg, err := GetRegistry()
+	if err != nil {
+		return out
+	}
+	if entry, ok := reg.ByPath["server.readTimeout"]; ok {
+		if v, ok := entry.Default.(time.Duration); ok && v > 0 {
+			out.ReadTimeout = v
+		}
+	}
+	if entry, ok := reg.ByPath["server.writeTimeout"]; ok {
+		if v, ok := entry.Default.(time.Duration); ok && v >= 0 {
+			out.WriteTimeout = v
+		}
+	}
+	if entry, ok := reg.ByPath["server.idleTimeout"]; ok {
+		if v, ok := entry.Default.(time.Duration); ok && v > 0 {
+			out.IdleTimeout = v
+		}
+	}
+	if entry, ok := reg.ByPath["server.maxHeaderBytes"]; ok {
+		if v, ok := entry.Default.(int); ok && v > 0 {
+			out.MaxHeaderBytes = v
+		}
+	}
+	if entry, ok := reg.ByPath["server.shutdownTimeout"]; ok {
+		if v, ok := entry.Default.(time.Duration); ok && v > 0 {
+			out.ShutdownTimeout = v
+		}
+	}
+	return out
 }

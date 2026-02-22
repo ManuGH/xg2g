@@ -7,6 +7,7 @@
 package http
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -15,7 +16,26 @@ import (
 	"strings"
 
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/rs/zerolog"
 	"golang.org/x/text/unicode/norm"
+)
+
+var (
+	// Only serve paths resolved from this static allowlist, never direct user input.
+	allowedPublicFiles = map[string]string{
+		"playlist.m3u": "playlist.m3u",
+		"xmltv.xml":    "xmltv.xml",
+		"epg.xml":      "epg.xml",
+	}
+	sensitiveFileExtensions = []string{
+		".yaml", ".yml", ".key", ".pem", ".env", ".db", ".json", ".ini", ".conf",
+	}
+)
+
+var (
+	errSecureFileNotFound  = errors.New("secure file not found")
+	errSecurePathEscape    = errors.New("secure path escape")
+	errSecureDirectoryPath = errors.New("secure directory path")
 )
 
 // SecureFileServer creates a handler that serves files from the data directory
@@ -29,185 +49,183 @@ func SecureFileServer(dataDir string, metrics FileMetrics) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		logger := log.WithComponentFromContext(r.Context(), "control.http")
 
-		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			logger.Warn().Str("event", "file_req.denied").Str("path", r.URL.Path).Str("reason", "method_not_allowed").Msg("method not allowed")
-			metrics.Denied("method_not_allowed")
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		path, ok := validateSecureFileRequest(w, r, logger, metrics)
+		if !ok {
 			return
 		}
 
-		path := r.URL.Path
-
-		// 1. Strict Allowlist (Base filenames only)
-		// Only explicit, known safe public files are allowed.
-		allowedFiles := map[string]bool{
-			"playlist.m3u": true,
-			"xmltv.xml":    true,
-			"epg.xml":      true,
-		}
-
-		filename := filepath.Base(path)
-		if !allowedFiles[filename] {
-			// Defense-in-depth: Check for sensitive extensions to log specific reason
-			deniedExts := []string{".yaml", ".yml", ".key", ".pem", ".env", ".db", ".json", ".ini", ".conf"}
-			ext := strings.ToLower(filepath.Ext(filename))
-			isSensitive := false
-			for _, denied := range deniedExts {
-				if ext == denied {
-					isSensitive = true
-					break
-				}
-			}
-
-			if isSensitive {
-				logger.Warn().Str("event", "file_req.denied").Str("path", path).Str("reason", "forbidden_extension").Msg("attempted access to sensitive file extension")
-				metrics.Denied("forbidden_extension") // Metrics
-			} else {
-				logger.Warn().Str("event", "file_req.denied").Str("path", path).Str("reason", "not_allowlisted").Msg("file not in allowlist")
-				metrics.Denied("forbidden_file") // Metrics
-			}
-			http.Error(w, "Forbidden", http.StatusForbidden)
-			return
-		}
-
-		// Enhanced traversal detection including multiple URL-decode passes,
-		// Unicode normalization, mixed-case encodings, and NUL bytes.
-		if isPathTraversal(path) {
-			logger.Warn().Str("event", "file_req.denied").Str("path", r.URL.Path).Str("reason", "path_escape").Msg("detected traversal sequence")
-			metrics.Denied("path_escape")
-			http.Error(w, "Forbidden", http.StatusForbidden)
-			return
-		}
-		if strings.HasSuffix(path, "/") || path == "" {
-			logger.Warn().Str("event", "file_req.denied").Str("path", r.URL.Path).Str("reason", "directory_listing").Msg("directory listing forbidden")
-			metrics.Denied("directory_listing")
-			http.Error(w, "Forbidden", http.StatusForbidden)
-			return
-		}
-
-		absDataDir, err := filepath.Abs(dataDir)
+		realPath, err := resolveSecureFilePath(dataDir, path)
 		if err != nil {
-			logger.Error().Err(err).Str("event", "file_req.internal_error").Msg("could not get absolute data dir")
+			handleSecureFileResolveError(w, path, dataDir, realPath, err, logger, metrics)
+			return
+		}
+
+		if err := serveSecureFileContent(w, r, realPath, path, logger, metrics); err != nil {
+			logger.Error().Err(err).Str("event", "file_req.internal_error").Str("path", realPath).Msg("could not serve file")
 			metrics.Denied("internal_error")
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			return
 		}
-
-		fullPath := filepath.Join(absDataDir, path)
-
-		// Evaluate symlinks and clean the path
-		realPath, err := filepath.EvalSymlinks(fullPath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				logger.Info().Str("event", "file_req.not_found").Str("path", fullPath).Msg("file not found")
-				metrics.Denied("not_found")
-				http.Error(w, "Not found", http.StatusNotFound)
-				return
-			}
-			logger.Error().Err(err).Str("event", "file_req.internal_error").Str("path", fullPath).Msg("could not evaluate symlinks")
-			metrics.Denied("internal_error")
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-
-		// Also evaluate symlinks on the data directory itself to get a consistent base path.
-		realDataDir, err := filepath.EvalSymlinks(absDataDir)
-		if err != nil {
-			logger.Error().Err(err).Str("event", "file_req.internal_error").Msg("could not evaluate symlinks on data dir")
-			metrics.Denied("internal_error")
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-
-		// Security check: ensure the real path is within the real data directory
-		// Use filepath.Rel for robust path containment check (protects against symlink escapes)
-		relPath, err := filepath.Rel(realDataDir, realPath)
-		if err != nil || strings.HasPrefix(relPath, "..") || filepath.IsAbs(relPath) {
-			logger.Warn().
-				Str("event", "file_req.denied").
-				Str("path", path).
-				Str("resolved_path", realPath).
-				Str("data_dir", realDataDir).
-				Str("reason", "path_escape").
-				Msg("path escapes data directory")
-			metrics.Denied("path_escape")
-			http.Error(w, "Forbidden", http.StatusForbidden)
-			return
-		}
-
-		// Security check: ensure we are not serving a directory
-		info, err := os.Stat(realPath)
-		if err != nil {
-			logger.Error().Err(err).Str("event", "file_req.internal_error").Str("path", realPath).Msg("could not stat real path")
-			metrics.Denied("internal_error")
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-		if info.IsDir() {
-			logger.Warn().Str("event", "file_req.denied").Str("path", path).Str("reason", "directory_listing").Msg("resolved path is a directory")
-			metrics.Denied("directory_listing")
-			http.Error(w, "Forbidden", http.StatusForbidden)
-			return
-		}
-
-		// --- ETag Caching Implementation ---
-		// realPath is validated to reside inside the data directory
-		f, err := os.Open(realPath) // #nosec G304
-		if err != nil {
-			logger.Error().Err(err).Str("event", "file_req.internal_error").Str("path", realPath).Msg("could not open real path for serving")
-			metrics.Denied("internal_error")
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-		defer func() {
-			if err := f.Close(); err != nil {
-				logger.Warn().Err(err).Str("path", realPath).Msg("failed to close file")
-			}
-		}()
-
-		// Re-fetch stat info from the opened file handle
-		info, err = f.Stat()
-		if err != nil {
-			logger.Error().Err(err).Str("event", "file_req.internal_error").Str("path", realPath).Msg("could not stat opened file")
-			metrics.Denied("internal_error")
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-
-		// Generate a weak ETag based on file modtime and size.
-		// W/ prefix indicates a weak validator, suitable for content that is semantically
-		// equivalent but not necessarily byte-for-byte identical.
-		etag := fmt.Sprintf(`W/"%x-%x"`, info.ModTime().UnixNano(), info.Size())
-		w.Header().Set("ETag", etag)
-		w.Header().Set("Cache-Control", "public, max-age=3600") // Also set cache-control
-
-		// Check if the client already has the same version of the file.
-		if match := r.Header.Get("If-None-Match"); match != "" {
-			if match == etag {
-				metrics.CacheHit()
-				w.WriteHeader(http.StatusNotModified)
-				return
-			}
-		}
-
-		// All checks passed, serve the file content.
-		// http.ServeContent is preferred over http.ServeFile when we already have an
-		// open file, as it handles Range requests and sets Content-Type,
-		// Content-Length, and Last-Modified headers correctly.
-
-		// Set explicit charset for XML/M3U files to ensure proper UTF-8 handling
-		lowerName := strings.ToLower(info.Name())
-		if strings.HasSuffix(lowerName, ".xml") {
-			w.Header().Set("Content-Type", "application/xml; charset=utf-8")
-		} else if strings.HasSuffix(lowerName, ".m3u") || strings.HasSuffix(lowerName, ".m3u8") {
-			w.Header().Set("Content-Type", "audio/x-mpegurl; charset=utf-8")
-		}
-
-		logger.Info().Str("event", "file_req.allowed").Str("path", path).Msg("serving file")
-		metrics.Allowed()
-		metrics.CacheMiss()
-		http.ServeContent(w, r, info.Name(), info.ModTime(), f)
 	})
+}
+
+func validateSecureFileRequest(w http.ResponseWriter, r *http.Request, logger zerolog.Logger, metrics FileMetrics) (string, bool) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		logger.Warn().Str("event", "file_req.denied").Str("path", r.URL.Path).Str("reason", "method_not_allowed").Msg("method not allowed")
+		metrics.Denied("method_not_allowed")
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return "", false
+	}
+
+	path := r.URL.Path
+	filename := filepath.Base(path)
+	safeRelativePath, allowlisted := allowedPublicFiles[filename]
+	if !allowlisted {
+		ext := strings.ToLower(filepath.Ext(filename))
+		if isSensitiveExtension(ext) {
+			logger.Warn().Str("event", "file_req.denied").Str("path", path).Str("reason", "forbidden_extension").Msg("attempted access to sensitive file extension")
+			metrics.Denied("forbidden_extension")
+		} else {
+			logger.Warn().Str("event", "file_req.denied").Str("path", path).Str("reason", "not_allowlisted").Msg("file not in allowlist")
+			metrics.Denied("forbidden_file")
+		}
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return "", false
+	}
+
+	if isPathTraversal(path) {
+		logger.Warn().Str("event", "file_req.denied").Str("path", r.URL.Path).Str("reason", "path_escape").Msg("detected traversal sequence")
+		metrics.Denied("path_escape")
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return "", false
+	}
+	if strings.HasSuffix(path, "/") || path == "" {
+		logger.Warn().Str("event", "file_req.denied").Str("path", r.URL.Path).Str("reason", "directory_listing").Msg("directory listing forbidden")
+		metrics.Denied("directory_listing")
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return "", false
+	}
+
+	return safeRelativePath, true
+}
+
+func isSensitiveExtension(ext string) bool {
+	for _, denied := range sensitiveFileExtensions {
+		if ext == denied {
+			return true
+		}
+	}
+	return false
+}
+
+func resolveSecureFilePath(dataDir, requestPath string) (string, error) {
+	absDataDir, err := filepath.Abs(dataDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve data dir: %w", err)
+	}
+
+	fullPath := filepath.Join(absDataDir, requestPath)
+	realPath, err := filepath.EvalSymlinks(fullPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fullPath, fmt.Errorf("%w: %s", errSecureFileNotFound, fullPath)
+		}
+		return fullPath, fmt.Errorf("eval symlinks for request path: %w", err)
+	}
+
+	realDataDir, err := filepath.EvalSymlinks(absDataDir)
+	if err != nil {
+		return realPath, fmt.Errorf("eval symlinks for data dir: %w", err)
+	}
+
+	relPath, err := filepath.Rel(realDataDir, realPath)
+	if err != nil || strings.HasPrefix(relPath, "..") || filepath.IsAbs(relPath) {
+		return realPath, fmt.Errorf("%w: %s", errSecurePathEscape, realPath)
+	}
+
+	info, err := os.Stat(realPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return realPath, fmt.Errorf("%w: %s", errSecureFileNotFound, realPath)
+		}
+		return realPath, fmt.Errorf("stat resolved path: %w", err)
+	}
+	if info.IsDir() {
+		return realPath, fmt.Errorf("%w: %s", errSecureDirectoryPath, realPath)
+	}
+
+	return realPath, nil
+}
+
+func handleSecureFileResolveError(w http.ResponseWriter, requestPath, dataDir, resolvedPath string, err error, logger zerolog.Logger, metrics FileMetrics) {
+	switch {
+	case errors.Is(err, errSecureFileNotFound):
+		logger.Info().Str("event", "file_req.not_found").Str("path", resolvedPath).Msg("file not found")
+		metrics.Denied("not_found")
+		http.Error(w, "Not found", http.StatusNotFound)
+	case errors.Is(err, errSecurePathEscape):
+		logger.Warn().
+			Str("event", "file_req.denied").
+			Str("path", requestPath).
+			Str("resolved_path", resolvedPath).
+			Str("data_dir", dataDir).
+			Str("reason", "path_escape").
+			Msg("path escapes data directory")
+		metrics.Denied("path_escape")
+		http.Error(w, "Forbidden", http.StatusForbidden)
+	case errors.Is(err, errSecureDirectoryPath):
+		logger.Warn().Str("event", "file_req.denied").Str("path", requestPath).Str("reason", "directory_listing").Msg("resolved path is a directory")
+		metrics.Denied("directory_listing")
+		http.Error(w, "Forbidden", http.StatusForbidden)
+	default:
+		logger.Error().Err(err).Str("event", "file_req.internal_error").Str("path", resolvedPath).Msg("could not resolve secure path")
+		metrics.Denied("internal_error")
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
+}
+
+func serveSecureFileContent(w http.ResponseWriter, r *http.Request, realPath, requestPath string, logger zerolog.Logger, metrics FileMetrics) error {
+	f, err := os.Open(realPath) // #nosec G304
+	if err != nil {
+		return fmt.Errorf("open resolved path: %w", err)
+	}
+	defer func() {
+		if closeErr := f.Close(); closeErr != nil {
+			logger.Warn().Err(closeErr).Str("path", realPath).Msg("failed to close file")
+		}
+	}()
+
+	info, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("stat opened file: %w", err)
+	}
+
+	etag := fmt.Sprintf(`W/"%x-%x"`, info.ModTime().UnixNano(), info.Size())
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	if match := r.Header.Get("If-None-Match"); match != "" && match == etag {
+		metrics.CacheHit()
+		w.WriteHeader(http.StatusNotModified)
+		return nil
+	}
+
+	setSecureFileContentType(w, info.Name())
+
+	logger.Info().Str("event", "file_req.allowed").Str("path", requestPath).Msg("serving file")
+	metrics.Allowed()
+	metrics.CacheMiss()
+	http.ServeContent(w, r, info.Name(), info.ModTime(), f)
+	return nil
+}
+
+func setSecureFileContentType(w http.ResponseWriter, filename string) {
+	lowerName := strings.ToLower(filename)
+	if strings.HasSuffix(lowerName, ".xml") {
+		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+		return
+	}
+	if strings.HasSuffix(lowerName, ".m3u") || strings.HasSuffix(lowerName, ".m3u8") {
+		w.Header().Set("Content-Type", "audio/x-mpegurl; charset=utf-8")
+	}
 }
 
 // isPathTraversal performs robust checks against path traversal attempts.

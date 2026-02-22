@@ -517,9 +517,18 @@ func scanSession(scanner interface {
 	rec.ExpiresAtUnix = ms2s(expiresAt)
 	rec.LeaseExpiresAtUnix = ms2s(leaseExpires)
 	rec.LastHeartbeatUnix = ms2s(lastHB)
-	rec.LatestSegmentAt = nullStringToTime(latestSeg)
-	rec.LastPlaylistAccessAt = nullStringToTime(lastAccessAt)
-	rec.PlaylistPublishedAt = nullStringToTime(published)
+	rec.LatestSegmentAt, err = nullStringToTime(latestSeg)
+	if err != nil {
+		return nil, fmt.Errorf("parse latest_segment_at for session %s: %w", rec.SessionID, err)
+	}
+	rec.LastPlaylistAccessAt, err = nullStringToTime(lastAccessAt)
+	if err != nil {
+		return nil, fmt.Errorf("parse last_playlist_access_at for session %s: %w", rec.SessionID, err)
+	}
+	rec.PlaylistPublishedAt, err = nullStringToTime(published)
+	if err != nil {
+		return nil, fmt.Errorf("parse playlist_published_at for session %s: %w", rec.SessionID, err)
+	}
 	if reasonDetailCode.Valid {
 		rec.ReasonDetailCode = model.ReasonDetailCode(reasonDetailCode.String)
 	}
@@ -547,10 +556,13 @@ func timeToNullString(t time.Time) sql.NullString {
 	return sql.NullString{String: t.Format(time.RFC3339), Valid: true}
 }
 
-func nullStringToTime(ns sql.NullString) time.Time {
+func nullStringToTime(ns sql.NullString) (time.Time, error) {
 	if !ns.Valid {
-		return time.Time{}
+		return time.Time{}, nil
 	}
-	t, _ := time.Parse(time.RFC3339, ns.String)
-	return t
+	t, err := time.Parse(time.RFC3339, ns.String)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("invalid RFC3339 timestamp %q: %w", ns.String, err)
+	}
+	return t, nil
 }

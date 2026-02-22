@@ -10,12 +10,15 @@ package hdhr
 import (
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/channels"
@@ -23,6 +26,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/platform/paths"
 	"github.com/rs/zerolog"
 	"golang.org/x/net/ipv4"
+	"golang.org/x/sync/singleflight"
 )
 
 // Config holds HDHomeRun emulation configuration
@@ -46,6 +50,8 @@ type Server struct {
 	config         Config
 	logger         zerolog.Logger
 	channelManager *channels.Manager
+	lineupCache    lineupCache
+	lineupBuilds   atomic.Int64
 }
 
 // NewServer creates a new HDHomeRun emulation server
@@ -110,6 +116,46 @@ type LineupEntry struct {
 	GuideNumber string `json:"GuideNumber"`
 	GuideName   string `json:"GuideName"`
 	URL         string `json:"URL"`
+}
+
+type deviceXMLRoot struct {
+	XMLName     xml.Name             `xml:"root"`
+	XMLNS       string               `xml:"xmlns,attr"`
+	SpecVersion deviceXMLSpecVersion `xml:"specVersion"`
+	Device      deviceXMLDevice      `xml:"device"`
+}
+
+type deviceXMLSpecVersion struct {
+	Major int `xml:"major"`
+	Minor int `xml:"minor"`
+}
+
+type deviceXMLDevice struct {
+	DeviceType       string `xml:"deviceType"`
+	FriendlyName     string `xml:"friendlyName"`
+	Manufacturer     string `xml:"manufacturer"`
+	ManufacturerURL  string `xml:"manufacturerURL"`
+	ModelDescription string `xml:"modelDescription"`
+	ModelName        string `xml:"modelName"`
+	ModelNumber      string `xml:"modelNumber"`
+	ModelURL         string `xml:"modelURL"`
+	SerialNumber     string `xml:"serialNumber"`
+	UDN              string `xml:"UDN"`
+	PresentationURL  string `xml:"presentationURL"`
+}
+
+type lineupSnapshot struct {
+	path    string
+	mtime   time.Time
+	size    int64
+	payload []byte
+	count   int
+}
+
+type lineupCache struct {
+	mu   sync.RWMutex
+	snap lineupSnapshot
+	sf   singleflight.Group
 }
 
 // HandleDiscover handles /discover.json endpoint
@@ -180,30 +226,85 @@ func (s *Server) HandleLineup(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 
-	// #nosec G304 -- path is constructed from safe config
-	data, err := os.ReadFile(path)
+	info, err := os.Stat(path)
 	if err != nil {
-		s.logger.Error().Err(err).Msg("failed to read playlist for lineup")
+		s.logger.Error().Err(err).Msg("failed to stat playlist for lineup")
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	// Parse channels
-	allChannels := m3u.Parse(string(data))
-	var lineup []LineupEntry
+	payload, count, err := s.getLineupPayload(path, info.ModTime(), info.Size())
+	if err != nil {
+		s.logger.Error().Err(err).Msg("failed to build lineup payload")
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
 
+	w.Header().Set("Content-Type", "application/json")
+	if _, err := w.Write(payload); err != nil {
+		s.logger.Error().Err(err).Str("endpoint", "/lineup.json").Msg("failed to encode HDHomeRun lineup response")
+		return
+	}
+
+	s.logger.Debug().
+		Str("endpoint", "/lineup.json").
+		Int("channels", count).
+		Msg("HDHomeRun lineup request")
+}
+
+func (s *Server) getLineupPayload(path string, mtime time.Time, size int64) ([]byte, int, error) {
+	if payload, count, ok := s.getLineupCache(path, mtime, size); ok {
+		return payload, count, nil
+	}
+
+	result, err, _ := s.lineupCache.sf.Do(path, func() (any, error) {
+		if payload, count, ok := s.getLineupCache(path, mtime, size); ok {
+			return lineupBuildResult{payload: payload, count: count}, nil
+		}
+
+		payload, count, err := s.buildLineupPayload(path)
+		if err != nil {
+			return nil, err
+		}
+
+		s.setLineupCache(path, mtime, size, payload, count)
+		s.lineupBuilds.Add(1)
+
+		return lineupBuildResult{payload: payload, count: count}, nil
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+
+	built, ok := result.(lineupBuildResult)
+	if !ok {
+		return nil, 0, fmt.Errorf("unexpected lineup build result type: %T", result)
+	}
+	return built.payload, built.count, nil
+}
+
+type lineupBuildResult struct {
+	payload []byte
+	count   int
+}
+
+func (s *Server) buildLineupPayload(path string) ([]byte, int, error) {
+	// #nosec G304 -- path is constructed from safe config
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	allChannels := m3u.Parse(string(data))
+	lineup := make([]LineupEntry, 0, len(allChannels))
 	for _, ch := range allChannels {
-		// Check if channel is enabled
-		// Use TvgID as stable identifier, fallback to Name
 		id := ch.TvgID
 		if id == "" {
 			id = ch.Name
 		}
-
 		if s.channelManager != nil && !s.channelManager.IsEnabled(id) {
 			continue
 		}
-
 		lineup = append(lineup, LineupEntry{
 			GuideNumber: ch.Number,
 			GuideName:   ch.Name,
@@ -211,15 +312,34 @@ func (s *Server) HandleLineup(w http.ResponseWriter, _ *http.Request) {
 		})
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(lineup); err != nil {
-		s.logger.Error().Err(err).Str("endpoint", "/lineup.json").Msg("failed to encode HDHomeRun lineup response")
+	payload, err := json.Marshal(lineup)
+	if err != nil {
+		return nil, 0, err
 	}
+	return payload, len(lineup), nil
+}
 
-	s.logger.Debug().
-		Str("endpoint", "/lineup.json").
-		Int("channels", len(lineup)).
-		Msg("HDHomeRun lineup request")
+func (s *Server) getLineupCache(path string, mtime time.Time, size int64) ([]byte, int, bool) {
+	s.lineupCache.mu.RLock()
+	defer s.lineupCache.mu.RUnlock()
+
+	snap := s.lineupCache.snap
+	if snap.path != path || snap.size != size || !snap.mtime.Equal(mtime) || len(snap.payload) == 0 {
+		return nil, 0, false
+	}
+	return snap.payload, snap.count, true
+}
+
+func (s *Server) setLineupCache(path string, mtime time.Time, size int64, payload []byte, count int) {
+	s.lineupCache.mu.Lock()
+	s.lineupCache.snap = lineupSnapshot{
+		path:    path,
+		mtime:   mtime,
+		size:    size,
+		payload: append([]byte(nil), payload...),
+		count:   count,
+	}
+	s.lineupCache.mu.Unlock()
 }
 
 // HandleLineupPost handles POST /lineup.json (Plex scan)
@@ -507,36 +627,36 @@ func (s *Server) HandleDeviceXML(w http.ResponseWriter, r *http.Request) {
 		baseURL = fmt.Sprintf("%s://%s", scheme, r.Host)
 	}
 
-	xml := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
-<root xmlns="urn:schemas-upnp-org:device-1-0">
-  <specVersion>
-    <major>1</major>
-    <minor>0</minor>
-  </specVersion>
-  <device>
-    <deviceType>urn:schemas-upnp-org:device:MediaServer:1</deviceType>
-    <friendlyName>%s</friendlyName>
-    <manufacturer>Silicondust</manufacturer>
-    <manufacturerURL>http://www.silicondust.com/</manufacturerURL>
-    <modelDescription>HDHomeRun ATSC Tuner</modelDescription>
-    <modelName>%s</modelName>
-    <modelNumber>%s</modelNumber>
-    <modelURL>http://www.silicondust.com/</modelURL>
-    <serialNumber></serialNumber>
-    <UDN>uuid:%s</UDN>
-    <presentationURL>%s</presentationURL>
-  </device>
-</root>`,
-		s.config.FriendlyName,
-		s.config.ModelName,
-		s.config.ModelName,
-		s.config.DeviceID,
-		baseURL,
-	)
+	doc := deviceXMLRoot{
+		XMLNS: "urn:schemas-upnp-org:device-1-0",
+		SpecVersion: deviceXMLSpecVersion{
+			Major: 1,
+			Minor: 0,
+		},
+		Device: deviceXMLDevice{
+			DeviceType:       "urn:schemas-upnp-org:device:MediaServer:1",
+			FriendlyName:     s.config.FriendlyName,
+			Manufacturer:     "Silicondust",
+			ManufacturerURL:  "http://www.silicondust.com/",
+			ModelDescription: "HDHomeRun ATSC Tuner",
+			ModelName:        s.config.ModelName,
+			ModelNumber:      s.config.ModelName,
+			ModelURL:         "http://www.silicondust.com/",
+			UDN:              "uuid:" + s.config.DeviceID,
+			PresentationURL:  baseURL,
+		},
+	}
 
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
-	if _, err := w.Write([]byte(xml)); err != nil {
+	if _, err := w.Write([]byte(xml.Header)); err != nil {
+		s.logger.Error().Err(err).Str("endpoint", "/device.xml").Msg("failed to write HDHomeRun device XML header")
+		return
+	}
+
+	enc := xml.NewEncoder(w)
+	if err := enc.Encode(doc); err != nil {
 		s.logger.Error().Err(err).Str("endpoint", "/device.xml").Msg("failed to write HDHomeRun device XML response")
+		return
 	}
 
 	s.logger.Debug().

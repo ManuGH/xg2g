@@ -72,3 +72,38 @@ func TestExtractServiceRef(t *testing.T) {
 		})
 	}
 }
+
+func TestCanonicalServiceRef(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "already canonical",
+			in:   "1:0:1:ABCD:1:1:0:0:0:0",
+			want: "1:0:1:ABCD:1:1:0:0:0:0",
+		},
+		{
+			name: "single trailing colon",
+			in:   "1:0:1:ABCD:1:1:0:0:0:0:",
+			want: "1:0:1:ABCD:1:1:0:0:0:0",
+		},
+		{
+			name: "double trailing colon",
+			in:   "1:0:1:ABCD:1:1:0:0:0:0::",
+			want: "1:0:1:ABCD:1:1:0:0:0:0",
+		},
+		{
+			name: "whitespace trimmed",
+			in:   "  1:0:1:ABCD:1:1:0:0:0:0:  ",
+			want: "1:0:1:ABCD:1:1:0:0:0:0",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, CanonicalServiceRef(tt.in))
+		})
+	}
+}

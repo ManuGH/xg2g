@@ -1390,6 +1390,8 @@ paths:
     get:
       summary: Get system health
       operationId: getSystemHealth
+      tags:
+        - system
       responses:
         "200":
           description: Health status
@@ -1402,6 +1404,8 @@ paths:
     get:
       summary: Get minimal system health
       operationId: getSystemHealthz
+      tags:
+        - system
       security: []
       responses:
         "200":
@@ -1421,6 +1425,8 @@ paths:
     get:
       summary: Get system configuration
       operationId: getSystemConfig
+      tags:
+        - system
       security:
         - BearerAuth: [v3:admin]
       responses:
@@ -1433,6 +1439,8 @@ paths:
     put:
       summary: Update system configuration
       operationId: putSystemConfig
+      tags:
+        - system
       security:
         - BearerAuth: [v3:admin]
       requestBody:
@@ -1505,6 +1513,8 @@ paths:
     post:
       summary: Trigger data refresh (EPG/Channels)
       operationId: postSystemRefresh
+      tags:
+        - system
       security:
         - BearerAuth: [v3:write]
       responses:
@@ -1606,6 +1616,8 @@ paths:
     get:
       summary: List all services (channels)
       operationId: getServices
+      tags:
+        - services
       parameters:
         - in: query
           name: bouquet
@@ -1626,6 +1638,8 @@ paths:
     post:
       summary: Toggle service enabled state
       operationId: postServicesIdToggle
+      tags:
+        - services
       security:
         - BearerAuth: [v3:write]
       parameters:
@@ -1653,6 +1667,8 @@ paths:
     get:
       summary: List active streams
       operationId: getStreams
+      tags:
+        - streams
       security:
         - BearerAuth: [v3:admin]
       responses:
@@ -1726,6 +1742,8 @@ paths:
     get:
       summary: Get recording build status
       operationId: getRecordingsRecordingIdStatus
+      tags:
+        - recordings
       parameters:
         - in: path
           name: recordingId
@@ -2357,6 +2375,8 @@ paths:
       security:
         - BearerAuth: [v3:write]
       operationId: deleteStreamsId
+      tags:
+        - streams
       parameters:
         - in: path
           name: id
@@ -2398,6 +2418,8 @@ paths:
       security:
         - BearerAuth: [v3:admin]
       operationId: getLogs
+      tags:
+        - system
       responses:
         "200":
           description: Recent log entries
@@ -2546,6 +2568,8 @@ paths:
     post:
       summary: Trigger a background scan of all channels for capabilities
       operationId: TriggerSystemScan
+      tags:
+        - system
       security:
         - BearerAuth: []
       responses:
@@ -2580,6 +2604,8 @@ paths:
     get:
       summary: Get status of the capability scan
       operationId: GetSystemScanStatus
+      tags:
+        - system
       security:
         - BearerAuth: []
       responses:

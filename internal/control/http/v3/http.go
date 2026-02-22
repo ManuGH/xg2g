@@ -16,9 +16,8 @@ import (
 
 // GetSystemHealth implements ServerInterface
 func (s *Server) GetSystemHealth(w http.ResponseWriter, r *http.Request) {
-	s.mu.RLock()
-	hm := s.healthManager
-	s.mu.RUnlock()
+	deps := s.systemModuleDeps()
+	hm := deps.healthManager
 
 	if hm == nil {
 		writeProblem(w, r, http.StatusServiceUnavailable, "system/unavailable", "Subsystem Unavailable", "UNAVAILABLE", "Health manager not initialized", nil)
@@ -77,9 +76,8 @@ func (s *Server) GetSystemHealthz(w http.ResponseWriter, r *http.Request) {
 
 // GetLogs implements ServerInterface
 func (s *Server) GetLogs(w http.ResponseWriter, r *http.Request) {
-	s.mu.RLock()
-	ls := s.logSource
-	s.mu.RUnlock()
+	deps := s.systemModuleDeps()
+	ls := deps.logSource
 	entries, err := read.GetRecentLogs(ls)
 	if err != nil {
 		writeProblem(w, r, http.StatusInternalServerError, "system/internal_error", "Log Read Error", "INTERNAL_ERROR", err.Error(), nil)

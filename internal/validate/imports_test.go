@@ -19,13 +19,6 @@ import (
 func TestLayeringRules(t *testing.T) {
 	projectRoot := findProjectRoot(t)
 
-	// Known tech debt: temporary exemptions (to be removed incrementally)
-	exemptions := map[string]bool{
-		"internal/infra/ffmpeg/builder.go -> github.com/ManuGH/xg2g/internal/control/vod": true,
-		"internal/infra/ffmpeg/probe.go -> github.com/ManuGH/xg2g/internal/control/vod":   true,
-		"internal/infra/ffmpeg/runner.go -> github.com/ManuGH/xg2g/internal/control/vod":  true,
-	}
-
 	violations := []string{}
 
 	// Rule 1: control/http/v3 MUST NOT directly import infra/* (bypasses domain layer)
@@ -90,27 +83,9 @@ func TestLayeringRules(t *testing.T) {
 		"Do not import internal/infrastructure (use internal/infra instead)",
 	)...)
 
-	// Filter out known exemptions
-	filteredViolations := []string{}
-	for _, v := range violations {
-		if !isExempted(exemptions, v) {
-			filteredViolations = append(filteredViolations, v)
-		}
-	}
-
-	if len(filteredViolations) > 0 {
+	if len(violations) > 0 {
 		t.Errorf("Layering violations detected:\n\n%s\n\nSee docs/arch/PACKAGE_LAYOUT.md for policy details.",
-			strings.Join(filteredViolations, "\n"))
-	}
-
-	// Warn about exemptions (not a failure, just visibility)
-	if len(violations) > len(filteredViolations) {
-		t.Logf("⚠️  %d known layering violations are exempted (tech debt):", len(violations)-len(filteredViolations))
-		for _, v := range violations {
-			if isExempted(exemptions, v) {
-				t.Logf("  %s", strings.Split(v, "\n")[0])
-			}
-		}
+			strings.Join(violations, "\n"))
 	}
 }
 
@@ -120,23 +95,19 @@ func TestDeprecatedPackages(t *testing.T) {
 
 	violations := []string{}
 
-	// Rule: internal/core is deprecated - fail if new files are added
-	coreFiles, err := findGoFiles(filepath.Join(projectRoot, "internal/core"))
-	if err != nil && !os.IsNotExist(err) {
-		t.Fatalf("Failed to scan internal/core: %v", err)
-	}
-
-	// Baseline: 5 files as of 2026-01-11 (openwebif, pathutil, profile, urlutil, useragent)
-	const coreBaseline = 5
-	if len(coreFiles) > coreBaseline {
+	// Rule: internal/core has been removed; the package must not be reintroduced.
+	corePath := filepath.Join(projectRoot, "internal/core")
+	if _, err := os.Stat(corePath); err == nil {
 		violations = append(violations, fmt.Sprintf(
-			"internal/core is deprecated but has grown: %d files (baseline: %d). DO NOT add new code here.",
-			len(coreFiles), coreBaseline,
+			"internal/core was removed and MUST NOT be recreated: %s",
+			corePath,
 		))
+	} else if !os.IsNotExist(err) {
+		t.Fatalf("Failed to check internal/core: %v", err)
 	}
 
 	if len(violations) > 0 {
-		t.Errorf("Deprecated package violations:\n\n%s\n\nSee internal/core/README.md for migration plan.",
+		t.Errorf("Deprecated package violations:\n\n%s\n\nSee docs/arch/PACKAGE_LAYOUT.md for architecture policy.",
 			strings.Join(violations, "\n"))
 	}
 }
@@ -220,33 +191,17 @@ func checkForbiddenImportExcept(t *testing.T, projectRoot, sourceDir, forbiddenI
 	return violations
 }
 
-// isExempted checks if a violation is in the known exemption list.
-func isExempted(exemptions map[string]bool, violation string) bool {
-	// Extract file path and import from violation string
-	// Format: "  ❌ <file> imports <import>\n     Reason: <reason>"
-	lines := strings.Split(violation, "\n")
-	if len(lines) == 0 {
-		return false
-	}
-	firstLine := strings.TrimSpace(lines[0])
-	firstLine = strings.TrimPrefix(firstLine, "❌ ")
-	parts := strings.Split(firstLine, " imports ")
-	if len(parts) != 2 {
-		return false
-	}
-	file := strings.TrimSpace(parts[0])
-	imp := strings.TrimSpace(parts[1])
-	key := file + " -> " + imp
-	return exemptions[key]
-}
-
 func findGoFiles(root string) ([]string, error) {
 	var files []string
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
-		if !info.IsDir() && strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") {
+		if info.IsDir() {
+			return nil
+		}
+		// Ignore test files and AppleDouble metadata files created on macOS volumes.
+		if strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") && !strings.HasPrefix(info.Name(), "._") {
 			files = append(files, path)
 		}
 		return nil

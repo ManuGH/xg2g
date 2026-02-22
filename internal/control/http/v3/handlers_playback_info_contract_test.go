@@ -78,7 +78,10 @@ func createTestServer(svc recordings.Service) *v3.Server {
 	s_srv := v3.NewServer(config.AppConfig{}, nil, nil)
 	s_srv.SetRecordingsService(svc)
 	// Inject NOOP dependencies to avoid nil panics in mapping logic
-	s_srv.SetDependencies(nil, nil, new(MockResumeStore), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, svc, nil, nil)
+	s_srv.SetDependencies(v3.Dependencies{
+		ResumeStore:       new(MockResumeStore),
+		RecordingsService: svc,
+	})
 	return s_srv
 }
 

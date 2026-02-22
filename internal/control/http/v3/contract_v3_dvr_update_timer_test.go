@@ -3,7 +3,6 @@ package v3
 import (
 	"bytes"
 	"context"
-	"errors"
 	"net/http/httptest"
 	"testing"
 
@@ -58,7 +57,7 @@ func TestContract_UpdateTimer(t *testing.T) {
 	t.Run("44_ReceiverUnreachable_GetTimers_502", func(t *testing.T) {
 		mock := &mockOWI{
 			getTimersFunc: func(ctx context.Context) ([]openwebif.Timer, error) {
-				return nil, errors.New("timeout")
+				return nil, openwebif.ErrTimeout
 			},
 		}
 		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) ReceiverControl { return mock }}
@@ -112,7 +111,7 @@ func TestContract_UpdateTimer(t *testing.T) {
 			return openwebif.TimerChangeCap{Supported: true}, nil
 		}
 		mock.updateTimerFunc = func(ctx context.Context, oSRef string, oB, oE int64, nSRef string, nB, nE int64, name, desc string, en bool) error {
-			return errors.New("Conflict with event X")
+			return openwebif.ErrConflict
 		}
 		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) ReceiverControl { return mock }}
 
@@ -167,7 +166,7 @@ func TestContract_UpdateTimer(t *testing.T) {
 
 		// Handler calls UpdateTimer unconditionally. logic is inside client.
 		mock.updateTimerFunc = func(ctx context.Context, oSRef string, oB, oE int64, nSRef string, nB, nE int64, name, desc string, en bool) error {
-			return errors.New("Conflict with event X")
+			return openwebif.ErrConflict
 		}
 
 		s := &Server{cfg: cfg, snap: snap, owiFactory: func(cfg config.AppConfig, snap config.Snapshot) ReceiverControl { return mock }}

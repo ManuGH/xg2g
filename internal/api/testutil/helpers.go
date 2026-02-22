@@ -8,7 +8,7 @@ import (
 )
 
 // trustedIPNets is exposed for testing purposes only.
-// In production, this is populated via SetTrustedProxies in the api package.
+// Production request IP trust is enforced via middleware.LANGuard wiring.
 var trustedIPNets []*net.IPNet
 
 // SetTrustedIPNets allows tests to configure trusted IP networks.

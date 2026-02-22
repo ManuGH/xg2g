@@ -29,7 +29,7 @@ func TestIntegration_SessionAndPlayback(t *testing.T) {
 		DataDir:        t.TempDir(),
 		ForceHTTPS:     true, // Enable ForceHTTPS to verify Secure cookie
 	}
-	s := New(cfg, config.NewManager(""))
+	s := mustNewServer(t, cfg, config.NewManager(""))
 
 	// Use the router to ensure middleware integration
 	handler := s.Handler()
@@ -69,7 +69,7 @@ func TestIntegration_SessionAndPlayback(t *testing.T) {
 	assert.True(t, sessionCookie.HttpOnly, "Cookie must be HttpOnly")
 	assert.True(t, sessionCookie.Secure, "Cookie must be Secure (ForceHTTPS=true)")
 	assert.Equal(t, http.SameSiteStrictMode, sessionCookie.SameSite, "Cookie must be SameSite=Strict")
-	assert.Equal(t, "/", sessionCookie.Path, "Cookie path must be root")
+	assert.Equal(t, "/api/v3/", sessionCookie.Path, "Cookie path must be scoped to v3 API")
 
 	// 3. Use cookie for access
 	// We use a valid Base64URL encoded ID ("dGVzdA==" -> "test") that decodes to an

@@ -1,0 +1,22 @@
+[Unit]
+Description=xg2g Runtime Verifier (Repo Truth vs Runtime Truth)
+Wants=network-online.target
+After=network-online.target docker.service xg2g.service
+Requires=docker.service
+
+# Run only when canonical repo layout exists on host.
+ConditionPathIsDirectory=/srv/xg2g
+ConditionPathExists=/srv/xg2g/scripts/verify-runtime.sh
+ConditionPathExists=/srv/xg2g/VERSION
+ConditionPathExists=/srv/xg2g/DIGESTS.lock
+
+[Service]
+Type=oneshot
+WorkingDirectory=/srv/xg2g
+EnvironmentFile=-/etc/xg2g/xg2g.env
+ExecStart=/bin/sh -eu -c '/srv/xg2g/scripts/verify-runtime.sh'
+NoNewPrivileges=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

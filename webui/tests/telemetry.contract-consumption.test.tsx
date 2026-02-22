@@ -3,11 +3,11 @@ import React from 'react';
 import { render, waitFor } from '@testing-library/react';
 import V3Player from '../src/components/V3Player';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import * as sdk from '../src/client-ts/sdk.gen';
+import * as sdk from '../src/client-ts';
 import { telemetry } from '../src/services/TelemetryService';
 
 // Mock SDK
-vi.mock('../src/client-ts/sdk.gen', async () => {
+vi.mock('../src/client-ts', async () => {
   return {
     getRecordingPlaybackInfo: vi.fn(),
     getSessionStatus: vi.fn(),

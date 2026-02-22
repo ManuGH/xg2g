@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/recordings"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/rs/zerolog/log"
 )
 
@@ -26,19 +28,41 @@ const (
 	ProbeTimeout        = 30 * time.Second
 )
 
+var (
+	probeQueueLength = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "vod_probe_queue_length",
+		Help: "Current number of pending probe requests",
+	})
+	probeDropped = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "vod_probe_dropped_total",
+		Help: "Total number of dropped probe requests",
+	})
+)
+
 // StartProberPool initializes the background workers.
 func (m *Manager) StartProberPool(ctx context.Context) {
+	if ctx == nil {
+		log.Warn().Msg("StartProberPool called with nil context; ignoring")
+		return
+	}
+
 	m.mu.Lock()
 	if m.started {
 		m.mu.Unlock()
 		return
 	}
+	if m.cancel != nil {
+		// Replace fallback context with the runtime-rooted context.
+		m.cancel()
+	}
+	m.ctx, m.cancel = context.WithCancel(ctx)
+	workerCtx := m.ctx
 	m.started = true
 	m.mu.Unlock()
 
 	for i := 0; i < MaxConcurrentProbes; i++ {
 		m.workerWg.Add(1)
-		go m.probeWorker(ctx)
+		go m.probeWorker(workerCtx)
 	}
 }
 

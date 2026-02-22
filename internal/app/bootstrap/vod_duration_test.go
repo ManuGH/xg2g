@@ -1,4 +1,4 @@
-package bootstrap
+package bootstrap_test
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	api "github.com/ManuGH/xg2g/internal/api"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/stretchr/testify/assert"
@@ -98,7 +99,7 @@ enigma2:
 				}, nil
 			},
 		}
-		container.Server.SetVODProber(mock)
+		container.Server.WireV3Overrides(api.V3Overrides{VODProber: mock})
 
 		// 2. First Request: Should trigger probe
 		req := httptest.NewRequest("GET", "/api/v3/recordings/"+recordingID+"/stream-info", nil)
@@ -150,7 +151,7 @@ enigma2:
 				return nil, fmt.Errorf("should not be called")
 			},
 		}
-		container.Server.SetVODProber(mock)
+		container.Server.WireV3Overrides(api.V3Overrides{VODProber: mock})
 
 		// Request again: Should use persisted duration from Store
 		req := httptest.NewRequest("GET", "/api/v3/recordings/"+recordingID+"/stream-info", nil)

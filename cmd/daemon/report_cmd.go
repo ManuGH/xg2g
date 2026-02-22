@@ -74,19 +74,36 @@ func buildReportData(port int, token string) map[string]interface{} {
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := client.Do(req)
-	if err == nil && resp.StatusCode == 200 {
-		var status interface{}
-		_ = json.NewDecoder(resp.Body).Decode(&status)
-		report["status"] = status
-		_ = resp.Body.Close()
+	if err != nil {
+		report["status_error"] = fmt.Sprintf("failed to fetch status: %s", err.Error())
 	} else {
-		var msg string
-		if err != nil {
-			msg = err.Error()
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode == http.StatusOK {
+			var status interface{}
+			if decodeErr := json.NewDecoder(resp.Body).Decode(&status); decodeErr != nil {
+				report["status_error"] = fmt.Sprintf("failed to decode status response: %v", decodeErr)
+			} else {
+				report["status"] = status
+			}
 		} else {
-			msg = fmt.Sprintf("HTTP %d", resp.StatusCode)
+			report["status_error"] = fmt.Sprintf("failed to fetch status: HTTP %d", resp.StatusCode)
 		}
-		report["status_error"] = fmt.Sprintf("failed to fetch status: %s", msg)
+	}
+	if _, ok := report["status"]; !ok {
+		var msg string
+		if statusErr, exists := report["status_error"]; exists {
+			msg = fmt.Sprintf("%v", statusErr)
+		}
+		if msg == "" {
+			if err != nil {
+				msg = err.Error()
+			} else if resp != nil {
+				msg = fmt.Sprintf("HTTP %d", resp.StatusCode)
+			} else {
+				msg = "unknown error"
+			}
+		}
+		report["status_error"] = msg
 	}
 
 	// B. Fingerprint (Local)

@@ -301,3 +301,36 @@ func TestBuildArgs_CPUProfileDriven(t *testing.T) {
 	assert.NotContains(t, args, "h264_vaapi")
 	assert.NotContains(t, args, "-vaapi_device")
 }
+
+func TestBuildArgs_AV1HWFallbackWithoutProfileMutation(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
+	)
+	// AV1 not verified, but H264/HEVC are.
+	adapter.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
+
+	spec := ports.StreamSpec{
+		SessionID: "av1-fallback",
+		Mode:      ports.ModeLive,
+		Profile: model.ProfileSpec{
+			Name:           "av1_hw",
+			TranscodeVideo: true,
+			HWAccel:        "vaapi",
+			VideoCodec:     "av1",
+			VideoMaxRateK:  6000,
+			VideoBufSizeK:  12000,
+			AudioBitrateK:  192,
+		},
+		Source: ports.StreamSource{
+			ID:   "http://example.com/stream",
+			Type: ports.SourceURL,
+		},
+	}
+
+	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
+	require.NoError(t, err)
+	assert.Contains(t, args, "hevc_vaapi", "av1_hw should fall back to a verified HW codec")
+	assert.NotContains(t, args, "av1_vaapi", "must not emit av1_vaapi when av1 preflight failed")
+	assert.Equal(t, "av1", spec.Profile.VideoCodec, "adapter must not mutate profile codec semantics")
+}

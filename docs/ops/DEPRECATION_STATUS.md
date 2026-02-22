@@ -11,7 +11,7 @@ operational view used for release planning and enforcement.
 
 | Item | Replacement | Phase | Remove In | Code Usage (non-exhaustive) | Source |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `XG2G_STREAM_PORT` | `enigma2.streamPort` | warn | v3.5.0 | `internal/config/registry.go`, `internal/config/merge.go` | `docs/deprecations.json`, `docs/DEPRECATION_POLICY.md` |
+| `XG2G_STREAM_PORT` | `XG2G_E2_STREAM_PORT` (or `enigma2.streamPort`) | warn | v3.5.0 | `internal/config/registry.go`, `internal/config/merge_env.go` | `docs/deprecations.json`, `docs/DEPRECATION_POLICY.md` |
 
 ### Schema/Protocol Deprecations
 
@@ -21,10 +21,8 @@ operational view used for release planning and enforcement.
 
 ### Packages/Modules
 
-- `internal/core/*` is deprecated (no new code). Still imported by:
-  - `internal/config/snapshot.go`
-  - `internal/config/runtime_env.go`
-  - Policy: `internal/core/README.md`
+- `internal/core/*` is removed.
+  - Enforcement: `internal/validate/imports_test.go` rejects reintroducing `internal/core`.
 - `internal/infrastructure/*` imports are banned (deprecated namespace).
   - Gate: `internal/validate/imports_test.go`
   - Policy: `docs/arch/ARCHITECTURE.md`

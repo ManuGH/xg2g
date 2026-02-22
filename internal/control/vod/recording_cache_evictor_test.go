@@ -88,9 +88,6 @@ func TestEvictRecordingCache_LongSequence(t *testing.T) {
 	require.LessOrEqual(t, countCacheDirs(t, cacheRoot), maxEntries)
 }
 
-// NOTE: Known flaky under high scheduler contention.
-// Observed once during go test ./... after CPU/admission changes.
-// Tracked under issue: "Flaky: TestEvictRecordingCache_Concurrent under concurrent eviction"
 func TestEvictRecordingCache_Concurrent(t *testing.T) {
 	root := t.TempDir()
 	cacheRoot := filepath.Join(root, "recordings")
@@ -101,17 +98,21 @@ func TestEvictRecordingCache_Concurrent(t *testing.T) {
 	maxEntries := 20
 	ttl := 1 * time.Hour
 
+	for i := 0; i < 120; i++ {
+		createCacheDir(t, cacheRoot, fmt.Sprintf("seed-%03d", i), now.Add(-time.Duration(i)*time.Minute))
+	}
+
 	start := make(chan struct{})
 	errs := make(chan error, 1)
 	var wg sync.WaitGroup
 
-	for g := 0; g < 4; g++ {
+	for g := 0; g < 8; g++ {
 		wg.Add(1)
-		go func(g int) {
+		go func() {
 			defer wg.Done()
 			<-start
-			for i := 0; i < 25; i++ {
-				if err := createCacheDirNoFail(cacheRoot, fmt.Sprintf("g%d-%02d", g, i), clock.Now()); err != nil {
+			for i := 0; i < 30; i++ {
+				if _, err := EvictRecordingCache(root, ttl, maxEntries, clock); err != nil {
 					select {
 					case errs <- err:
 					default:
@@ -119,23 +120,8 @@ func TestEvictRecordingCache_Concurrent(t *testing.T) {
 					return
 				}
 			}
-		}(g)
+		}()
 	}
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		<-start
-		for i := 0; i < 10; i++ {
-			if _, err := EvictRecordingCache(root, ttl, maxEntries, clock); err != nil {
-				select {
-				case errs <- err:
-				default:
-				}
-				return
-			}
-		}
-	}()
 
 	close(start)
 	wg.Wait()
@@ -151,6 +137,118 @@ func TestEvictRecordingCache_Concurrent(t *testing.T) {
 	require.LessOrEqual(t, countCacheDirs(t, cacheRoot), maxEntries)
 }
 
+func TestEvictRecordingCache_ConcurrentCreateAndEvict(t *testing.T) {
+	root := t.TempDir()
+	cacheRoot := filepath.Join(root, "recordings")
+	require.NoError(t, os.MkdirAll(cacheRoot, 0750))
+
+	now := time.Date(2026, 9, 10, 11, 12, 13, 0, time.UTC)
+	maxEntries := 25
+
+	for i := 0; i < 80; i++ {
+		createCacheDir(t, cacheRoot, fmt.Sprintf("seed-%03d", i), now.Add(-time.Duration(i)*time.Minute))
+	}
+
+	start := make(chan struct{})
+	errs := make(chan error, 1)
+
+	var creatorsWG sync.WaitGroup
+	for g := 0; g < 4; g++ {
+		creatorID := g
+		creatorsWG.Add(1)
+		go func() {
+			defer creatorsWG.Done()
+			<-start
+			for i := 0; i < 120; i++ {
+				name := fmt.Sprintf("live-%d-%03d", creatorID, i)
+				dir := filepath.Join(cacheRoot, name)
+
+				if err := os.MkdirAll(dir, 0750); err != nil {
+					select {
+					case errs <- fmt.Errorf("creator mkdir %s: %w", name, err):
+					default:
+					}
+					return
+				}
+				if err := os.WriteFile(filepath.Join(dir, "index.m3u8"), []byte("#EXTM3U"), 0600); err != nil && !os.IsNotExist(err) {
+					select {
+					case errs <- fmt.Errorf("creator write %s: %w", name, err):
+					default:
+					}
+					return
+				}
+				if i%20 == 0 {
+					time.Sleep(1 * time.Millisecond)
+				}
+			}
+		}()
+	}
+
+	var evictWG sync.WaitGroup
+	for g := 0; g < 6; g++ {
+		evictWG.Add(1)
+		go func() {
+			defer evictWG.Done()
+			<-start
+			for i := 0; i < 40; i++ {
+				if _, err := EvictRecordingCache(root, 0, maxEntries, RealClock{}); err != nil {
+					select {
+					case errs <- fmt.Errorf("evict run %d: %w", i, err):
+					default:
+					}
+					return
+				}
+			}
+		}()
+	}
+
+	close(start)
+	evictWG.Wait()
+	creatorsWG.Wait()
+
+	select {
+	case err := <-errs:
+		require.NoError(t, err)
+	default:
+	}
+
+	_, err := EvictRecordingCache(root, 0, maxEntries, RealClock{})
+	require.NoError(t, err)
+	require.LessOrEqual(t, countCacheDirs(t, cacheRoot), maxEntries)
+}
+
+func TestEvictRecordingCache_ExcludesActiveBuildDirs(t *testing.T) {
+	root := t.TempDir()
+	cacheRoot := filepath.Join(root, "recordings")
+	require.NoError(t, os.MkdirAll(cacheRoot, 0750))
+
+	now := time.Date(2026, 8, 9, 10, 11, 12, 0, time.UTC)
+	clock := NewMockClock(now)
+
+	activeDir := createCacheDir(t, cacheRoot, "active", now.Add(-4*time.Hour))
+	staleDir := createCacheDir(t, cacheRoot, "stale", now.Add(-3*time.Hour))
+	freshDir := createCacheDir(t, cacheRoot, "fresh", now.Add(-10*time.Minute))
+
+	res, err := EvictRecordingCacheWithExclusions(
+		root,
+		2*time.Hour,
+		1,
+		clock,
+		map[string]struct{}{activeDir: {}},
+	)
+	require.NoError(t, err)
+	require.Equal(t, 1, res.EvictedTTL)
+	require.Equal(t, 0, res.EvictedMaxEntries)
+	require.Equal(t, 1, res.Entries)
+
+	_, err = os.Stat(activeDir)
+	require.NoError(t, err)
+	_, err = os.Stat(staleDir)
+	require.True(t, os.IsNotExist(err))
+	_, err = os.Stat(freshDir)
+	require.NoError(t, err)
+}
+
 func createCacheDir(t *testing.T, cacheRoot, name string, modTime time.Time) string {
 	t.Helper()
 	dir := filepath.Join(cacheRoot, name)
@@ -158,32 +256,6 @@ func createCacheDir(t *testing.T, cacheRoot, name string, modTime time.Time) str
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "index.m3u8"), []byte("#EXTM3U"), 0600))
 	require.NoError(t, os.Chtimes(dir, modTime, modTime))
 	return dir
-}
-
-func createCacheDirNoFail(cacheRoot, name string, modTime time.Time) error {
-	dir := filepath.Join(cacheRoot, name)
-	// Retry loop to handle race with evictor
-	for attempt := 0; attempt < 3; attempt++ {
-		if err := os.MkdirAll(dir, 0750); err != nil {
-			return err
-		}
-		if err := os.WriteFile(filepath.Join(dir, "index.m3u8"), []byte("#EXTM3U"), 0600); err != nil {
-			if os.IsNotExist(err) {
-				// Evictor beat us to it. Retry.
-				continue
-			}
-			return err
-		}
-		// Chtimes might also fail if directory is gone
-		if err := os.Chtimes(dir, modTime, modTime); err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return err
-		}
-		return nil
-	}
-	return fmt.Errorf("failed to create cache dir %s after retries (eviction race)", name)
 }
 
 func countCacheDirs(t *testing.T, cacheRoot string) int {

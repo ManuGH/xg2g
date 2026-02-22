@@ -42,6 +42,12 @@ const (
 	TypeAny    ValueType = "any"
 )
 
+const (
+	// DefaultHLSSegmentSeconds is the standard-profile segment length used
+	// across config defaults and pipeline fallbacks.
+	DefaultHLSSegmentSeconds = 6
+)
+
 // ConfigEntry defines a single configuration option's metadata.
 type ConfigEntry struct {
 	Path          string    // User-facing Path (e.g. "api.listenAddr")
@@ -95,30 +101,36 @@ func buildRegistry() (*Registry, error) {
 		{Path: "bouquets", Env: "XG2G_BOUQUET", FieldPath: "Bouquet", Profile: ProfileSimple, Status: StatusActive},
 
 		// --- ENIGMA2 / OPENWEBIF ---
-		{Path: "enigma2.baseUrl", Env: "XG2G_OWI_BASE", FieldPath: "Enigma2.BaseURL", Profile: ProfileSimple, Status: StatusActive},
-		{Path: "enigma2.username", Env: "XG2G_OWI_USER", FieldPath: "Enigma2.Username", Profile: ProfileSimple, Status: StatusActive},
-		{Path: "enigma2.password", Env: "XG2G_OWI_PASS", FieldPath: "Enigma2.Password", Profile: ProfileSimple, Status: StatusActive},
-		{Path: "enigma2.timeout", Env: "XG2G_OWI_TIMEOUT_MS", FieldPath: "Enigma2.Timeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 10 * time.Second},
-		{Path: "enigma2.responseHeaderTimeout", Env: "", FieldPath: "Enigma2.ResponseHeaderTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 10 * time.Second},
-		{Path: "enigma2.tuneTimeout", Env: "", FieldPath: "Enigma2.TuneTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 10 * time.Second},
-		{Path: "enigma2.retries", Env: "XG2G_OWI_RETRIES", FieldPath: "Enigma2.Retries", Profile: ProfileAdvanced, Status: StatusActive, Default: 2},
-		{Path: "enigma2.backoff", Env: "XG2G_OWI_BACKOFF_MS", FieldPath: "Enigma2.Backoff", Profile: ProfileAdvanced, Status: StatusActive, Default: 200 * time.Millisecond},
-		{Path: "enigma2.maxBackoff", Env: "XG2G_OWI_MAX_BACKOFF_MS", FieldPath: "Enigma2.MaxBackoff", Profile: ProfileAdvanced, Status: StatusActive, Default: 30 * time.Second},
-		{Path: "enigma2.streamPort", Env: "XG2G_STREAM_PORT", FieldPath: "Enigma2.StreamPort", Profile: ProfileAdvanced, Status: StatusDeprecated, Default: 8001},
-		{Path: "enigma2.useWebIFStreams", Env: "XG2G_USE_WEBIF_STREAMS", FieldPath: "Enigma2.UseWebIFStreams", Profile: ProfileAdvanced, Status: StatusActive, Default: true},
+		{Path: "enigma2.baseUrl", Env: "XG2G_E2_HOST", FieldPath: "Enigma2.BaseURL", Profile: ProfileSimple, Status: StatusActive},
+		{Path: "enigma2.username", Env: "XG2G_E2_USER", FieldPath: "Enigma2.Username", Profile: ProfileSimple, Status: StatusActive},
+		{Path: "enigma2.password", Env: "XG2G_E2_PASS", FieldPath: "Enigma2.Password", Profile: ProfileSimple, Status: StatusActive},
+		{Path: "enigma2.timeout", Env: "XG2G_E2_TIMEOUT", FieldPath: "Enigma2.Timeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 10 * time.Second},
+		{Path: "enigma2.responseHeaderTimeout", Env: "XG2G_E2_RESPONSE_HEADER_TIMEOUT", FieldPath: "Enigma2.ResponseHeaderTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 10 * time.Second},
+		{Path: "enigma2.tuneTimeout", Env: "XG2G_E2_TUNE_TIMEOUT", FieldPath: "Enigma2.TuneTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 10 * time.Second},
+		{Path: "enigma2.retries", Env: "XG2G_E2_RETRIES", FieldPath: "Enigma2.Retries", Profile: ProfileAdvanced, Status: StatusActive, Default: 2},
+		{Path: "enigma2.backoff", Env: "XG2G_E2_BACKOFF", FieldPath: "Enigma2.Backoff", Profile: ProfileAdvanced, Status: StatusActive, Default: 200 * time.Millisecond},
+		{Path: "enigma2.maxBackoff", Env: "XG2G_E2_MAX_BACKOFF", FieldPath: "Enigma2.MaxBackoff", Profile: ProfileAdvanced, Status: StatusActive, Default: 30 * time.Second},
+		{Path: "enigma2.streamPort", Env: "XG2G_E2_STREAM_PORT", FieldPath: "Enigma2.StreamPort", Profile: ProfileAdvanced, Status: StatusDeprecated, Default: 8001},
+		{Path: "enigma2.useWebIFStreams", Env: "XG2G_E2_USE_WEBIF_STREAMS", FieldPath: "Enigma2.UseWebIFStreams", Profile: ProfileAdvanced, Status: StatusActive, Default: true},
 		{Path: "enigma2.fallbackTo8001", Env: "XG2G_E2_FALLBACK_TO_8001", FieldPath: "Enigma2.FallbackTo8001", Profile: ProfileIntegrator, Status: StatusActive, Default: true},
-		{Path: "enigma2.authMode", Env: "", FieldPath: "Enigma2.AuthMode", Profile: ProfileAdvanced, Status: StatusActive, Default: "inherit"},
-		{Path: "enigma2.rateLimit", Env: "", FieldPath: "Enigma2.RateLimit", Profile: ProfileAdvanced, Status: StatusActive},
-		{Path: "enigma2.rateBurst", Env: "", FieldPath: "Enigma2.RateBurst", Profile: ProfileAdvanced, Status: StatusActive},
-		{Path: "enigma2.userAgent", Env: "", FieldPath: "Enigma2.UserAgent", Profile: ProfileAdvanced, Status: StatusActive},
-		{Path: "enigma2.analyzeDuration", Env: "", FieldPath: "Enigma2.AnalyzeDuration", Profile: ProfileAdvanced, Status: StatusActive, Default: "2000000"},
-		{Path: "enigma2.probeSize", Env: "", FieldPath: "Enigma2.ProbeSize", Profile: ProfileAdvanced, Status: StatusActive, Default: "5M"},
+		{Path: "enigma2.authMode", Env: "XG2G_E2_AUTH_MODE", FieldPath: "Enigma2.AuthMode", Profile: ProfileAdvanced, Status: StatusActive, Default: "inherit"},
+		{Path: "enigma2.rateLimit", Env: "XG2G_E2_RATE_LIMIT", FieldPath: "Enigma2.RateLimit", Profile: ProfileAdvanced, Status: StatusActive},
+		{Path: "enigma2.rateBurst", Env: "XG2G_E2_RATE_BURST", FieldPath: "Enigma2.RateBurst", Profile: ProfileAdvanced, Status: StatusActive},
+		{Path: "enigma2.userAgent", Env: "XG2G_E2_USER_AGENT", FieldPath: "Enigma2.UserAgent", Profile: ProfileAdvanced, Status: StatusActive},
+		{Path: "enigma2.analyzeDuration", Env: "XG2G_E2_ANALYZE_DURATION", FieldPath: "Enigma2.AnalyzeDuration", Profile: ProfileAdvanced, Status: StatusActive, Default: "2000000"},
+		{Path: "enigma2.probeSize", Env: "XG2G_E2_PROBE_SIZE", FieldPath: "Enigma2.ProbeSize", Profile: ProfileAdvanced, Status: StatusActive, Default: "5M"},
 		{Path: "enigma2.preflightTimeout", Env: "XG2G_E2_PREFLIGHT_TIMEOUT", FieldPath: "Enigma2.PreflightTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 10 * time.Second},
 		// --- API ---
 		{Path: "api.listenAddr", Env: "XG2G_LISTEN", FieldPath: "APIListenAddr", Profile: ProfileSimple, Status: StatusActive, Default: ":8088"},
+		{Path: "server.readTimeout", Env: "XG2G_SERVER_READ_TIMEOUT", FieldPath: "Server.ReadTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 60 * time.Second},
+		{Path: "server.writeTimeout", Env: "XG2G_SERVER_WRITE_TIMEOUT", FieldPath: "Server.WriteTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 0 * time.Second},
+		{Path: "server.idleTimeout", Env: "XG2G_SERVER_IDLE_TIMEOUT", FieldPath: "Server.IdleTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 120 * time.Second},
+		{Path: "server.maxHeaderBytes", Env: "XG2G_SERVER_MAX_HEADER_BYTES", FieldPath: "Server.MaxHeaderBytes", Profile: ProfileAdvanced, Status: StatusActive, Default: 1 << 20},
+		{Path: "server.shutdownTimeout", Env: "XG2G_SERVER_SHUTDOWN_TIMEOUT", FieldPath: "Server.ShutdownTimeout", Profile: ProfileAdvanced, Status: StatusActive, Default: 15 * time.Second},
 		{Path: "api.token", Env: "XG2G_API_TOKEN", FieldPath: "APIToken", Profile: ProfileSimple, Status: StatusActive},
 		{Path: "api.tokenScopes", Env: "XG2G_API_TOKEN_SCOPES", FieldPath: "APITokenScopes", Profile: ProfileAdvanced, Status: StatusActive},
 		{Path: "api.tokens", Env: "XG2G_API_TOKENS", FieldPath: "APITokens", Profile: ProfileAdvanced, Status: StatusActive},
+		{Path: "api.disableLegacyTokenSources", Env: "XG2G_API_DISABLE_LEGACY_TOKEN_SOURCES", FieldPath: "APIDisableLegacyTokenSources", Profile: ProfileAdvanced, Status: StatusActive, Default: false},
 		{Path: "api.allowedOrigins", Env: "XG2G_ALLOWED_ORIGINS", FieldPath: "AllowedOrigins", Profile: ProfileAdvanced, Status: StatusActive},
 
 		// --- EPG ---
@@ -147,8 +159,8 @@ func buildRegistry() (*Registry, error) {
 
 		// --- HLS ---
 		{Path: "hls.root", Env: "XG2G_HLS_ROOT", FieldPath: "HLS.Root", Profile: ProfileAdvanced, Status: StatusActive},
-		{Path: "hls.dvrWindow", Env: "XG2G_HLS_DVR_WINDOW", FieldPath: "HLS.DVRWindow", Profile: ProfileAdvanced, Status: StatusActive, Default: 45 * time.Minute}, // Fix B key
-		{Path: "hls.segmentSeconds", Env: "XG2G_HLS_SEGMENT_SECONDS", FieldPath: "HLS.SegmentSeconds", Profile: ProfileAdvanced, Status: StatusActive, Default: 6}, // Best Practice 2026 Standard Profile (was 4, which failed validation)
+		{Path: "hls.dvrWindow", Env: "XG2G_HLS_DVR_WINDOW", FieldPath: "HLS.DVRWindow", Profile: ProfileAdvanced, Status: StatusActive, Default: 45 * time.Minute},                        // Fix B key
+		{Path: "hls.segmentSeconds", Env: "XG2G_HLS_SEGMENT_SECONDS", FieldPath: "HLS.SegmentSeconds", Profile: ProfileAdvanced, Status: StatusActive, Default: DefaultHLSSegmentSeconds}, // Best Practice 2026 Standard Profile (was 4, which failed validation)
 
 		// --- FFMPEG ---
 		{Path: "ffmpeg.bin", Env: "XG2G_FFMPEG_BIN", FieldPath: "FFmpeg.Bin", Profile: ProfileAdvanced, Status: StatusActive, Default: "ffmpeg"},
@@ -164,6 +176,7 @@ func buildRegistry() (*Registry, error) {
 
 		// --- SECURITY / PROXIES ---
 		{Path: "trustedProxies", Env: "XG2G_TRUSTED_PROXIES", FieldPath: "TrustedProxies", Profile: ProfileAdvanced, Status: StatusActive}, // Fix D: Active now
+		{Path: "network.lan.allow.cidrs", Env: "XG2G_LAN_ALLOW_CIDRS", FieldPath: "Network.LAN.Allow.CIDRs", Profile: ProfileAdvanced, Status: StatusActive},
 		{Path: "network.outbound.enabled", Env: "XG2G_OUTBOUND_ENABLED", FieldPath: "Network.Outbound.Enabled", Profile: ProfileAdvanced, Status: StatusActive, Default: false},
 		{Path: "network.outbound.allow.hosts", Env: "XG2G_OUTBOUND_ALLOW_HOSTS", FieldPath: "Network.Outbound.Allow.Hosts", Profile: ProfileAdvanced, Status: StatusActive},
 		{Path: "network.outbound.allow.cidrs", Env: "XG2G_OUTBOUND_ALLOW_CIDRS", FieldPath: "Network.Outbound.Allow.CIDRs", Profile: ProfileAdvanced, Status: StatusActive},

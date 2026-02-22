@@ -11,21 +11,11 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"sync"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
-	"github.com/ManuGH/xg2g/internal/control/admission"
-	worker "github.com/ManuGH/xg2g/internal/domain/session/manager"
 	"github.com/ManuGH/xg2g/internal/health"
-	"github.com/ManuGH/xg2g/internal/infra/bus"
-	"github.com/ManuGH/xg2g/internal/infra/media/ffmpeg"
-	"github.com/ManuGH/xg2g/internal/infra/media/stub"
-	"github.com/ManuGH/xg2g/internal/infra/platform"
-	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
-	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
-	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 )
 
@@ -89,6 +79,10 @@ func NewManager(serverCfg config.ServerConfig, deps Deps) (Manager, error) {
 
 // Start starts all configured servers and blocks until context is cancelled.
 func (m *manager) Start(ctx context.Context) error {
+	if ctx == nil {
+		return fmt.Errorf("start context is nil")
+	}
+
 	m.mu.Lock()
 	if m.started {
 		m.mu.Unlock()
@@ -106,6 +100,9 @@ func (m *manager) Start(ctx context.Context) error {
 
 	// Error channel for server failures
 	errChan := make(chan error, 3)
+	// Register close hooks independent of engine mode so runtime stores are always
+	// cleaned up during shutdown, even when the v3 worker is disabled.
+	m.registerV3RuntimeCloseHooks()
 
 	// Start metrics server if configured (skip in proxy-only mode)
 	if !m.deps.ProxyOnly && m.deps.MetricsHandler != nil {
@@ -134,17 +131,17 @@ func (m *manager) Start(ctx context.Context) error {
 	select {
 	case err := <-errChan:
 		m.logger.Error().Err(err).Msg("Server error, initiating shutdown")
-		// Use bounded timeout for shutdown instead of Background
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		// Use a detached-but-bounded context so shutdown can complete even if parent is canceled.
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
 		if shutdownErr := m.Shutdown(shutdownCtx); shutdownErr != nil {
-			return fmt.Errorf("%w (shutdown: %v)", err, shutdownErr)
+			return fmt.Errorf("server error and shutdown failure: %w", errors.Join(err, shutdownErr))
 		}
 		return err
 	case <-ctx.Done():
 		m.logger.Info().Msg("Shutdown signal received")
-		// Use bounded timeout for shutdown instead of Background
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		// Use a detached-but-bounded context so shutdown can complete even if parent is canceled.
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
 		return m.Shutdown(shutdownCtx)
 	}
@@ -231,147 +228,11 @@ func (m *manager) startMetricsServer(_ context.Context, errChan chan<- error) er
 	return nil
 }
 
-// startV3Worker initializes v3 Bus, Store, and Orchestrator
-func (m *manager) startV3Worker(ctx context.Context, errChan chan<- error) error {
-	cfg := m.deps.Config
-	// Use INFO level for visibility during canary
-	m.logger.Info().
-		Str("mode", cfg.Engine.Mode).
-		Str("store", cfg.Store.Path).
-		Str("hls_root", cfg.HLS.Root).
-		Str("e2_host", cfg.Enigma2.BaseURL).
-		Msg("starting v3 worker (Phase 7A)")
-
-	// 1. Initialize Bus (Shared)
-	v3Bus := m.deps.V3Bus
-
-	// 2. Initialize Store (Shared)
-	v3Store := m.deps.V3Store
-
-	// Phase 7B-2: Register Shutdown Hook for Store (if needed)
-	if c, ok := v3Store.(interface{ Close() error }); ok {
-		m.RegisterShutdownHook("v3_store_close", func(ctx context.Context) error {
-			return c.Close()
-		})
-	}
-
-	// 2.5 Initialize Resume Store (Shared)
-	resumeStore := m.deps.ResumeStore
-
-	// Register Shutdown Hook for Resume Store
-	if c, ok := resumeStore.(interface{ Close() error }); ok {
-		m.RegisterShutdownHook("resume_store_close", func(ctx context.Context) error {
-			return c.Close()
-		})
-	}
-
-	// 2.6 Initialize E2 Client (Shared)
-	e2Client := m.deps.E2Client
-
-	// 2.7 Initialize Smart Profile Scanner (Shared)
-	scanManager := m.deps.ScanManager
-
-	// 2.8 Initialize Admission Control (Phase 5.2/5.3)
-	// 2.8 Initialize Admission Control (Slice 2)
-	adm := admission.NewController(cfg)
-	m.logger.Info().
-		Int("max_sessions", cfg.Limits.MaxSessions).
-		Int("max_transcodes", cfg.Limits.MaxTranscodes).
-		Msg("Admission control initialized")
-		// CPU load sampler (fail-closed if samples are missing/invalid).
-		// admission.StartCPUSampler(ctx, adm, 0, nil)
-
-	// 3. Initialize Orchestrator
-	// Generate stable worker identity (replacing domain-level OS calls)
-	host, _ := os.Hostname()
-	workerOwner := fmt.Sprintf("%s-%d-%s", host, os.Getpid(), uuid.New().String())
-
-	orch := &worker.Orchestrator{
-		Store:    v3Store,
-		Bus:      bus.NewAdapter(v3Bus),    // Injected Adapter
-		Platform: platform.NewOSPlatform(), // Platform Port
-		// Admission:           adm,                      // Phase 5.2 Gatekeeper (Removed from Orchestrator)
-		LeaseTTL:            30 * time.Second, // Explicit default
-		HeartbeatEvery:      10 * time.Second, // Explicit default
-		Owner:               workerOwner,      // Explicit generation
-		TunerSlots:          cfg.Engine.TunerSlots,
-		HLSRoot:             cfg.HLS.Root,
-		PipelineStopTimeout: 5 * time.Second, // Explicit default (fallback if cfg missing)
-		StartConcurrency:    10,              // Bounded Start concurrency
-		StopConcurrency:     10,              // Bounded Stop concurrency
-		Sweeper: worker.SweeperConfig{
-			IdleTimeout:      cfg.Engine.IdleTimeout,
-			Interval:         1 * time.Minute, // Explicit default
-			SessionRetention: 24 * time.Hour,  // Explicit default
-		},
-		OutboundPolicy: platformnet.OutboundPolicy{
-			Enabled: cfg.Network.Outbound.Enabled,
-			Allow: platformnet.OutboundAllowlist{
-				Hosts:   append([]string(nil), cfg.Network.Outbound.Allow.Hosts...),
-				CIDRs:   append([]string(nil), cfg.Network.Outbound.Allow.CIDRs...),
-				Ports:   append([]int(nil), cfg.Network.Outbound.Allow.Ports...),
-				Schemes: append([]string(nil), cfg.Network.Outbound.Allow.Schemes...),
-			},
-		},
-	}
-
-	if cfg.Engine.Mode == "virtual" {
-		orch.Pipeline = stub.NewAdapter()
-	} else {
-		adapter := ffmpeg.NewLocalAdapter(
-			cfg.FFmpeg.Bin,
-			cfg.FFmpeg.FFprobeBin,
-			cfg.HLS.Root,
-			e2Client,
-			m.logger,
-			cfg.Enigma2.AnalyzeDuration,
-			cfg.Enigma2.ProbeSize,
-			cfg.HLS.DVRWindow,
-			cfg.FFmpeg.KillTimeout,
-			cfg.Enigma2.FallbackTo8001,
-			cfg.Enigma2.PreflightTimeout,
-			cfg.HLS.SegmentSeconds,
-			cfg.Timeouts.TranscodeStart,
-			cfg.Timeouts.TranscodeNoProgress,
-			cfg.FFmpeg.VaapiDevice,
-		)
-		// VAAPI preflight (fail-fast at startup if configured but broken)
-		if cfg.FFmpeg.VaapiDevice != "" {
-			if err := adapter.PreflightVAAPI(); err != nil {
-				m.logger.Warn().Err(err).Str("device", cfg.FFmpeg.VaapiDevice).
-					Msg("VAAPI preflight failed; GPU transcoding will be unavailable for sessions requesting it")
-			}
-		}
-		orch.Pipeline = adapter
-	}
-
-	// 4. Inject into API Server (Shadow Receiving)
-	if m.deps.APIServerSetter != nil {
-		m.deps.APIServerSetter.SetV3Components(v3Bus, v3Store, resumeStore, scanManager)
-		m.deps.APIServerSetter.SetAdmission(adm)
-		m.logger.Info().Msg("v3 components and admission gate injected into API server")
-	} else {
-		m.logger.Warn().Msg("API Server Setter not available - shadow intents will not be processed")
-	}
-
-	// 5. Register Health/Readiness Checks (Phase 9-1)
-	m.registerV3Checks(&cfg, e2Client)
-
-	// 6. Run Orchestrator
-	go func() {
-		// Orchestrator.Run returns error on exit
-		if err := orch.Run(ctx); err != nil {
-			if err != context.Canceled {
-				m.logger.Error().Err(err).Msg("v3 worker orchestrator exited unexpected")
-				errChan <- fmt.Errorf("v3 worker: %w", err)
-			}
-		}
-	}()
-
-	return nil
-}
-
 func (m *manager) Shutdown(ctx context.Context) error {
+	if ctx == nil {
+		return fmt.Errorf("shutdown context is nil")
+	}
+
 	m.mu.Lock()
 	if m.stopping {
 		m.mu.Unlock()
@@ -386,8 +247,8 @@ func (m *manager) Shutdown(ctx context.Context) error {
 
 	m.logger.Info().Msg("Shutting down daemon manager")
 
-	// Create shutdown context with timeout
-	shutdownCtx, cancel := context.WithTimeout(ctx, m.serverCfg.ShutdownTimeout)
+	// Create a bounded shutdown context independent from caller cancellation.
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), m.serverCfg.ShutdownTimeout)
 	defer cancel()
 
 	var errs []error
@@ -434,7 +295,7 @@ func (m *manager) Shutdown(ctx context.Context) error {
 		m.logger.Error().
 			Int("error_count", len(errs)).
 			Msg("Shutdown completed with errors")
-		return fmt.Errorf("shutdown errors: %v", errs)
+		return fmt.Errorf("shutdown errors: %w", errors.Join(errs...))
 	}
 
 	m.logger.Info().Msg("Daemon manager stopped cleanly")
@@ -455,7 +316,12 @@ func (m *manager) RegisterShutdownHook(name string, hook ShutdownHook) {
 }
 
 // registerV3Checks registers health and readiness checks for V3 components.
-func (m *manager) registerV3Checks(cfg *config.AppConfig, e2Client *enigma2.Client) {
+func (m *manager) registerV3Checks(cfg *config.AppConfig, receiverHealthCheck func(context.Context) error) {
+	if m.deps.APIServerSetter == nil {
+		m.logger.Warn().Msg("API server hooks not available, skipping V3 checks")
+		return
+	}
+
 	hm := m.deps.APIServerSetter.HealthManager()
 	if hm == nil {
 		m.logger.Warn().Msg("HealthManager not available, skipping V3 checks")
@@ -467,39 +333,16 @@ func (m *manager) registerV3Checks(cfg *config.AppConfig, e2Client *enigma2.Clie
 	hm.RegisterChecker(health.Informational(health.NewWritableDirChecker("v3_hls_root", cfg.HLS.Root)))
 
 	// 2. Connectivity Checks (Upstream/Receiver)
-	// Re-uses the existing network logic but scoped to V3 dependencies.
-	// We can use a ReceiverChecker pointing to E2Host.
+	// Use the injected health check port to keep daemon package decoupled
+	// from concrete receiver client types.
 	hm.RegisterChecker(health.Informational(health.NewNamedReceiverChecker("v3_receiver_connection", func(ctx context.Context) error {
-		if e2Client == nil || e2Client.HTTPClient == nil {
-			return fmt.Errorf("enigma2 client is not available")
+		if receiverHealthCheck == nil {
+			return fmt.Errorf("receiver health check is not available")
 		}
-		if e2Client.BaseURL == "" {
-			return fmt.Errorf("XG2G_V3_E2_HOST is empty")
-		}
-		// Quick connectivity check to E2Host
-		// Use a 2s timeout to avoid blocking readiness probes too long
+		// Keep probe latency bounded for readiness health checks.
 		checkCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
-
-		req, err := http.NewRequestWithContext(checkCtx, http.MethodHead, e2Client.BaseURL, nil)
-		if err != nil {
-			return err
-		}
-		if cfg.Enigma2.UserAgent != "" {
-			req.Header.Set("User-Agent", cfg.Enigma2.UserAgent)
-		}
-		if cfg.Enigma2.Username != "" || cfg.Enigma2.Password != "" {
-			req.SetBasicAuth(cfg.Enigma2.Username, cfg.Enigma2.Password)
-		}
-		resp, err := e2Client.HTTPClient.Do(req)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if resp.StatusCode >= 500 {
-			return fmt.Errorf("receiver returned status %d", resp.StatusCode)
-		}
-		return nil
+		return receiverHealthCheck(checkCtx)
 	})))
 
 }

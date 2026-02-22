@@ -12,7 +12,7 @@ This document details the critical configuration required for stable streaming f
 
 ### ⚠️ Critical Configuration Rule
 
-> **DO NOT set `XG2G_STREAM_PORT` (Enigma2.StreamPort) individually unless you have a specific reason to bypass the receiver's logic.**
+> **DO NOT set `XG2G_E2_STREAM_PORT` (legacy fallback: `XG2G_STREAM_PORT`) individually unless you have a specific reason to bypass the receiver's logic.**
 
 **Default Behavior (Recommended):**
 
@@ -80,6 +80,6 @@ hls:
 
 ## Summary Checklist
 
-- [ ] `XG2G_STREAM_PORT` is **UNSET** or `0`.
+- [ ] `XG2G_E2_STREAM_PORT` (and legacy `XG2G_STREAM_PORT`) is **UNSET** or `0`.
 - [ ] `XG2G_E2_USER` and `XG2G_E2_PASS` are set.
 - [ ] `XG2G_FFMPEG_BIN` points to a valid binary (or `ffmpeg` is in PATH).

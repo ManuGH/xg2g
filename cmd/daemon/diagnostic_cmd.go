@@ -7,8 +7,10 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/platform/httpx"
 )
 
 func runDiagnosticCLI(args []string) int {
@@ -58,16 +60,20 @@ func printDiagnosticUsage(w io.Writer) {
 
 func triggerV3Refresh(port int, token string) int {
 	url := fmt.Sprintf("http://localhost:%d/api/v3/system/refresh", port)
-	req, _ := http.NewRequest(http.MethodPost, url, nil)
+	req, err := http.NewRequest(http.MethodPost, url, nil)
+	if err != nil {
+		fmt.Printf("FAILED: create request: %v\n", err)
+		return 1
+	}
 
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
-		// Also try X-API-Token for compatibility
-		req.Header.Set("X-API-Token", token)
 	}
 
+	client := httpx.NewClient(5 * time.Second)
+
 	fmt.Printf("Triggering v3 refresh at %s...\n", url)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		fmt.Printf("FAILED: %v\n", err)
 		return 1
@@ -79,7 +85,11 @@ func triggerV3Refresh(port int, token string) int {
 		return 0
 	}
 
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Printf("FAILED: read response body: %v\n", err)
+		return 1
+	}
 	fmt.Printf("FAILED: HTTP %d\nBody: %s\n", resp.StatusCode, string(body))
 	return 1
 }

@@ -25,9 +25,8 @@ import (
 
 // GetSystemConfig implements ServerInterface
 func (s *Server) GetSystemConfig(w http.ResponseWriter, r *http.Request) {
-	s.mu.RLock()
-	cfg := s.cfg
-	s.mu.RUnlock()
+	deps := s.configModuleDeps()
+	cfg := deps.cfg
 
 	info := read.GetConfigInfo(cfg)
 
@@ -78,7 +77,8 @@ func (s *Server) PutSystemConfig(w http.ResponseWriter, r *http.Request) {
 	defer s.configMu.Unlock()
 
 	// 2. Clone: current baseline for modification and diffing.
-	current := s.GetConfig()
+	deps := s.configModuleDeps()
+	current := deps.cfg
 	next := config.Clone(current)
 
 	if req.OpenWebIF != nil {
@@ -151,7 +151,11 @@ func (s *Server) PutSystemConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 4. Persistence
-	if err := s.configManager.Save(&next); err != nil {
+	if deps.configManager == nil {
+		writeProblem(w, r, http.StatusInternalServerError, "system/save_failed", "Save Failed", "SAVE_FAILED", "Configuration manager is not initialized", nil)
+		return
+	}
+	if err := deps.configManager.Save(&next); err != nil {
 		log.L().Error().Err(err).Msg("failed to save configuration")
 		writeProblem(w, r, http.StatusInternalServerError, "system/save_failed", "Save Failed", "SAVE_FAILED", "Failed to save configuration change to disk", nil)
 		return
@@ -204,9 +208,13 @@ func (s *Server) PutSystemConfig(w http.ResponseWriter, r *http.Request) {
 
 		go func() {
 			log.L().Info().Msg("configuration updated, triggering graceful shutdown")
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 10*time.Second)
 			defer cancel()
-			if err := s.requestShutdown(ctx); err != nil {
+			if deps.requestShutdown == nil {
+				log.L().Error().Msg("graceful shutdown request failed: no shutdown handler registered")
+				return
+			}
+			if err := deps.requestShutdown(ctx); err != nil {
 				log.L().Error().Err(err).Msg("graceful shutdown request failed")
 			}
 		}()

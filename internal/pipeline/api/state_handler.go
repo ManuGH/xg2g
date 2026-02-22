@@ -18,7 +18,7 @@ import (
 
 // NewStateHandler returns an http.Handler that serves GET /api/v3/sessions/{id}.
 // The router can be any mux; for MVP we parse the last path element.
-func NewStateHandler(st store.StateStore) http.Handler {
+func NewStateHandler(st store.SessionLookupStore) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -49,7 +49,7 @@ func NewStateHandler(st store.StateStore) http.Handler {
 			Profile:       sess.Profile.Name,
 			State:         out.State,
 			Reason:        out.Reason,
-			ReasonDetail:  out.Detail,
+			ReasonDetail:  string(out.DetailCode),
 			CorrelationID: sess.CorrelationID,
 			UpdatedAtMs:   sess.UpdatedAtUnix * 1000,
 		}

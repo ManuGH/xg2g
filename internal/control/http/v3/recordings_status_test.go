@@ -69,10 +69,10 @@ func newStatusTestServer(t *testing.T) (*Server, *vod.Manager) {
 	recSvc, err := recservice.NewService(&cfg, vodMgr, dummyRes, nil, nil, dummyRes)
 	require.NoError(t, err)
 
-	srv.SetDependencies(
-		nil, nil, nil, nil, nil, nil, nil, nil, vodMgr,
-		nil, nil, nil, nil, nil, nil, nil, recSvc, nil, nil,
-	)
+	srv.SetDependencies(Dependencies{
+		VODManager:        vodMgr,
+		RecordingsService: recSvc,
+	})
 
 	return srv, vodMgr
 }

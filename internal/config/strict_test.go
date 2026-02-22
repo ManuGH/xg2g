@@ -5,6 +5,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,6 +36,9 @@ openWebIF:
 
 	if err == nil {
 		t.Fatal("expected error due to unknown field in strict mode, got nil")
+	}
+	if !errors.Is(err, ErrUnknownConfigField) {
+		t.Fatalf("expected ErrUnknownConfigField, got: %v", err)
 	}
 
 	// Verify error message mentions the unknown field

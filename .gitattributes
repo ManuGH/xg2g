@@ -81,3 +81,11 @@
 docs/ linguist-documentation=true
 scripts/ linguist-vendored=false
 tools/ linguist-vendored=false
+
+# PR Noise reduction
+*.log linguist-generated=true
+*.txt linguist-generated=true
+*.xml linguist-generated=true
+coverage.out linguist-generated=true
+dist/ linguist-generated=true
+node_modules/ linguist-generated=true

@@ -31,6 +31,35 @@ type Lease interface {
 	ExpiresAt() time.Time
 }
 
+// SessionLookupStore exposes read access for a single session.
+type SessionLookupStore interface {
+	GetSession(ctx context.Context, id string) (*model.SessionRecord, error)
+}
+
+// SessionExpiryStore exposes only the operations required by lease-expiry workers.
+type SessionExpiryStore interface {
+	QuerySessions(ctx context.Context, filter SessionFilter) ([]*model.SessionRecord, error)
+	UpdateSession(ctx context.Context, id string, fn func(*model.SessionRecord) error) (*model.SessionRecord, error)
+}
+
+// LeaseStore exposes the lease coordination port.
+type LeaseStore interface {
+	TryAcquireLease(ctx context.Context, key, owner string, ttl time.Duration) (Lease, bool, error)
+	RenewLease(ctx context.Context, key, owner string, ttl time.Duration) (Lease, bool, error)
+	GetLease(ctx context.Context, key string) (Lease, bool, error)
+	ReleaseLease(ctx context.Context, key, owner string) error
+	DeleteAllLeases(ctx context.Context) (int, error)
+}
+
+// IntentStore exposes only the state/idempotency/lease operations required by intent admission.
+type IntentStore interface {
+	SessionLookupStore
+	PutSession(ctx context.Context, s *model.SessionRecord) error
+	PutIdempotency(ctx context.Context, key, sessionID string, ttl time.Duration) error
+	GetIdempotency(ctx context.Context, key string) (sessionID string, ok bool, err error)
+	LeaseStore
+}
+
 // StateStore is the system-of-record for v3 sessions and pipelines.
 //
 // Design intent:
