@@ -576,8 +576,8 @@ function V3Player(props: V3PlayerProps) {
             | undefined;
           const reasonDetail =
             (json && typeof json === 'object' ? (json.reason_detail ?? json.reasonDetail ?? json.detail) : undefined) as
-              | string
-              | undefined;
+            | string
+            | undefined;
 
           const combined = `${reason ?? 'GONE'}${reasonDetail ? `: ${reasonDetail}` : ''}`;
           const details = {
@@ -1208,7 +1208,7 @@ function V3Player(props: V3PlayerProps) {
           try {
             const isJson = res.headers.get('content-type')?.includes('application/json');
             if (isJson) {
-              const apiErr: import('../client-ts/types.gen').ApiError = await res.json();
+              const apiErr: import('../client-ts').ApiError = await res.json();
               if (apiErr.message) errorMsg = apiErr.message;
               if (apiErr.details) errorDetails = typeof apiErr.details === 'string' ? apiErr.details : JSON.stringify(apiErr.details);
             } else {
