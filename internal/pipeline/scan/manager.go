@@ -66,7 +66,7 @@ func NewManager(store CapabilityStore, m3uPath string, e2Client *enigma2.Client)
 		store:      store,
 		m3uPath:    m3uPath,
 		e2Client:   e2Client,
-		ProbeDelay: 100 * time.Millisecond,
+		ProbeDelay: 1000 * time.Millisecond,
 		status: ScanStatus{
 			State: "idle",
 		},
@@ -248,7 +248,7 @@ func (m *Manager) scanInternal(ctx context.Context) error {
 		}
 
 		// Probe with strict timeout (prevent hanging on zombie streams)
-		probeCtx, probeCancel := context.WithTimeout(ctx, 2*time.Second)
+		probeCtx, probeCancel := context.WithTimeout(ctx, 8*time.Second)
 		log.L().Debug().Str("sref", sRef).Msg("scan: probing channel")
 		res, err := infra.Probe(probeCtx, probeURL)
 		probeCancel() // Start fresh context for fallback if needed
@@ -261,7 +261,7 @@ func (m *Manager) scanInternal(ctx context.Context) error {
 			fallbackURL, buildErr := buildFallbackURL(probeURL, sRef)
 			if buildErr == nil {
 				// Use fresh timeout for fallback
-				fbCtx, fbCancel := context.WithTimeout(ctx, 2*time.Second)
+				fbCtx, fbCancel := context.WithTimeout(ctx, 8*time.Second)
 				resFallback, errFallback := infra.Probe(fbCtx, fallbackURL)
 				fbCancel()
 
@@ -280,7 +280,7 @@ func (m *Manager) scanInternal(ctx context.Context) error {
 		// This respects "UseWebIFStreams" scenarios where the user relies on the API endpoint itself.
 		if err != nil {
 			log.L().Warn().Str("sref", sRef).Msg("scan: attempting fallback to original URL (web)")
-			fbCtx, fbCancel := context.WithTimeout(ctx, 2*time.Second)
+			fbCtx, fbCancel := context.WithTimeout(ctx, 8*time.Second)
 			resOrig, errOrig := infra.Probe(fbCtx, ch.URL)
 			fbCancel()
 

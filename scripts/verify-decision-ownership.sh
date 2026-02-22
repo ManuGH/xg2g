@@ -86,9 +86,9 @@ for FILE in $FILES; do
         done <<< "$IMPORT_MATCHES"
     fi
 
-    # Call Check (smell detector, best-effort): decision.Decide( pattern
+    # Call Check (smell detector, best-effort): \bdecision.Decide( pattern
     # Note: normative enforcement is the import rule; this catches aliased imports
-    CALL_MATCHES=$(grep -nE "decision\.Decide\(" "$FILE" 2>/dev/null || true)
+    CALL_MATCHES=$(grep -nE "\bdecision\.Decide\(" "$FILE" 2>/dev/null || true)
     if [ -n "$CALL_MATCHES" ]; then
         while IFS= read -r match; do
             [ -z "$match" ] && continue
