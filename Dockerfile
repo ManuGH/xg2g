@@ -31,7 +31,7 @@ COPY contracts/version_matrix.json ../contracts/version_matrix.json
 RUN npm run build
 
 # Stage 3: Build xg2g application
-FROM golang@sha256:2c7c65601b020ee79db4c1a32ebee0bf3d6b298969ec683e24fcbea29305f10e AS app-builder
+FROM golang:1.25.6-bookworm AS app-builder
 
 WORKDIR /app
 COPY go.mod go.sum ./

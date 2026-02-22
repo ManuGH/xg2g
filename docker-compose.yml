@@ -18,7 +18,7 @@ services:
       - FFMPEG_HOME=/opt/ffmpeg
     volumes:
       - /var/lib/xg2g:/var/lib/xg2g
-      # Optional: Mount a custom config
+      - /media/nfs-recordings:/media/nfs-recordings
       # - ./config.yaml:/var/lib/xg2g/config.yaml:ro
     healthcheck:
       test: ["CMD", "xg2g", "healthcheck", "-mode", "live"]

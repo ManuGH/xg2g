@@ -3,8 +3,10 @@ package ffmpeg
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -34,9 +36,17 @@ func Probe(ctx context.Context, path string) (*vod.StreamInfo, error) {
 // ProbeWithBin executes ffprobe and returns stream info.
 // If binaryPath is empty, it falls back to PATH resolution ("ffprobe").
 func ProbeWithBin(ctx context.Context, binaryPath string, path string) (*vod.StreamInfo, error) {
+	headers := "Connection: close\r\n"
+	if u, err := url.Parse(path); err == nil && u.User != nil {
+		pwd, _ := u.User.Password()
+		auth := u.User.Username() + ":" + pwd
+		headers += "Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte(auth)) + "\r\n"
+	}
+
 	args := []string{
 		"-v", "error",
-		"-headers", "Connection: close\r\n",
+		"-user_agent", "VLC/3.0.21 LibVLC/3.0.21",
+		"-headers", headers,
 		"-print_format", "json",
 		"-show_format",
 		"-show_streams",

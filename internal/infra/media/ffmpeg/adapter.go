@@ -3,6 +3,7 @@ package ffmpeg
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -37,26 +38,26 @@ var vaapiEncodersToTest = []string{"h264_vaapi", "hevc_vaapi"}
 
 // LocalAdapter implements ports.MediaPipeline using local exec.Command.
 type LocalAdapter struct {
-	BinPath          string
-	FFprobeBin       string
-	HLSRoot          string
-	AnalyzeDuration  string
-	ProbeSize        string
-	DVRWindow        time.Duration
-	KillTimeout      time.Duration
-	httpClient       *http.Client
-	Logger           zerolog.Logger
-	E2               *enigma2.Client // Dependency for Tuner operations
-	FallbackTo8001   bool
-	PreflightTimeout time.Duration
-	SegmentSeconds   int
-	StartTimeout     time.Duration
-	StallTimeout     time.Duration
-	VaapiDevice        string            // e.g. "/dev/dri/renderD128"; empty = no VAAPI
-	vaapiEncoders      map[string]bool   // per-encoder preflight results ("h264_vaapi" -> true)
-	vaapiDeviceChecked bool              // device-level preflight ran
-	vaapiDeviceErr     error             // device-level preflight error
-	mu               sync.Mutex
+	BinPath            string
+	FFprobeBin         string
+	HLSRoot            string
+	AnalyzeDuration    string
+	ProbeSize          string
+	DVRWindow          time.Duration
+	KillTimeout        time.Duration
+	httpClient         *http.Client
+	Logger             zerolog.Logger
+	E2                 *enigma2.Client // Dependency for Tuner operations
+	FallbackTo8001     bool
+	PreflightTimeout   time.Duration
+	SegmentSeconds     int
+	StartTimeout       time.Duration
+	StallTimeout       time.Duration
+	VaapiDevice        string          // e.g. "/dev/dri/renderD128"; empty = no VAAPI
+	vaapiEncoders      map[string]bool // per-encoder preflight results ("h264_vaapi" -> true)
+	vaapiDeviceChecked bool            // device-level preflight ran
+	vaapiDeviceErr     error           // device-level preflight error
+	mu                 sync.Mutex
 	// activeProcs maps run handles to running commands
 	activeProcs map[ports.RunHandle]*exec.Cmd
 }
@@ -697,12 +698,24 @@ func (a *LocalAdapter) buildArgs(ctx context.Context, spec ports.StreamSpec, inp
 		if !strings.Contains(fflags, "igndts") {
 			fflags += "+igndts"
 		}
+
+		headers := "Icy-MetaData: 1\r\n"
+		if u, err := url.Parse(inputURL); err == nil && u.User != nil {
+			if pwd, ok := u.User.Password(); ok {
+				auth := u.User.Username() + ":" + pwd
+				headers += "Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte(auth)) + "\r\n"
+			} else {
+				auth := u.User.Username() + ":"
+				headers += "Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte(auth)) + "\r\n"
+			}
+		}
+
 		baseInputArgs = append(baseInputArgs,
 			"-avoid_negative_ts", "make_zero",
 			"-flags2", "+showall+export_mvs",
 			// OpenWebIF compatibility: VLC User-Agent + Icy-MetaData
 			"-user_agent", "VLC/3.0.21 LibVLC/3.0.21",
-			"-headers", "Icy-MetaData: 1\r\n",
+			"-headers", headers,
 		)
 	}
 	baseInputArgs = append([]string{"-fflags", fflags}, baseInputArgs...)

@@ -79,9 +79,11 @@ func (c *Client) ResolveStreamURL(ctx context.Context, sref string) (string, err
 			return "", fmt.Errorf("invalid base URL: %w", err)
 		}
 
-		// Build direct stream URL: http://host:port/SREF
 		u.Host = fmt.Sprintf("%s:%d", u.Hostname(), c.StreamPort)
 		u.Path = "/" + strings.ToUpper(sref)
+		if c.Username != "" {
+			u.User = url.UserPassword(c.Username, c.Password)
+		}
 
 		directURL := u.String()
 		log.Info().Str("direct_url", directURL).Msg("Using direct stream URL (bypassing /web/stream.m3u)")
@@ -121,6 +123,15 @@ webStream:
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if resolved, ok := resolveStreamLine(c.BaseURL, line, sref); ok {
+			// Inject credentials if the URL belongs to the same host
+			if c.Username != "" {
+				if ru, err := url.Parse(resolved); err == nil {
+					if strings.EqualFold(ru.Hostname(), u.Hostname()) {
+						ru.User = url.UserPassword(c.Username, c.Password)
+						resolved = ru.String()
+					}
+				}
+			}
 			log.Info().Str("resolved_url", resolved).Str("sref", sref).Msg("Stream URL resolved")
 			return resolved, nil
 		}

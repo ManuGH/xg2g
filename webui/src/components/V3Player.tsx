@@ -113,6 +113,7 @@ function V3Player(props: V3PlayerProps) {
   const [volume, setVolume] = useState(1); // 0.0 to 1.0
   const [isMuted, setIsMuted] = useState(false);
   const lastNonZeroVolumeRef = useRef<number>(1);
+  const lastDecodedRef = useRef<number>(0);
   const [stats, setStats] = useState<PlayerStats>({
     bandwidth: 0,
     resolution: '-',
@@ -500,14 +501,29 @@ function V3Player(props: V3PlayerProps) {
     if (!hls) return;
     // Handle Auto (-1) or manual level
     const idx = hls.currentLevel === -1 ? 0 : hls.currentLevel; // Fallback to 0 for stats
-    const level = hls.levels[idx];
+    const level = hls.levels ? hls.levels[idx] : undefined;
 
     if (level) {
+      setStats(prev => {
+        let newBandwidth = prev.bandwidth;
+        let newRes = prev.resolution;
+
+        if (level.bitrate) newBandwidth = Math.round(level.bitrate / 1024);
+        if (level.width && level.height) {
+          newRes = `${level.width}x${level.height}`;
+        }
+
+        return {
+          ...prev,
+          bandwidth: newBandwidth,
+          resolution: newRes,
+          levelIndex: hls.currentLevel, // Keep actual -1 for display truth
+        };
+      });
+    } else {
       setStats(prev => ({
         ...prev,
-        bandwidth: Math.round(level.bitrate / 1024),
-        resolution: level.width ? `${level.width}x${level.height}` : '-',
-        levelIndex: hls.currentLevel, // Keep actual -1 for display truth
+        levelIndex: hls.currentLevel,
       }));
     }
   }, []);
@@ -515,6 +531,9 @@ function V3Player(props: V3PlayerProps) {
   const playHls = useCallback((url: string) => {
     const video = videoRef.current;
     if (!video) return;
+
+    lastDecodedRef.current = 0; // Reset native FPS counter on new stream
+
     const canPlayNative = !!video.canPlayType('application/vnd.apple.mpegurl');
     const preferNative = isSafari && canPlayNative;
     if (!preferNative && Hls.isSupported()) {
@@ -627,6 +646,8 @@ function V3Player(props: V3PlayerProps) {
     }
     const video = videoRef.current;
     if (!video) return;
+
+    lastDecodedRef.current = 0; // Reset native FPS counter on new stream
 
     // Reset stats for direct play
     setStats(prev => ({ ...prev, bandwidth: 0, resolution: 'Original (Direct)', fps: 0, levelIndex: -1 }));
@@ -757,7 +778,7 @@ function V3Player(props: V3PlayerProps) {
 
         const resolution = resolvePlaybackInfoPolicy(capabilities, pInfo);
 
-          if (resolution.mode === 'normative') {
+        if (resolution.mode === 'normative') {
           // Type Assertion: We treat the object as strictly normative here.
           // Any access to pInfo.url or decision outputs will now fail compile-time check (if we used the var).
           const normativePInfo = pInfo as unknown as NormativePlaybackInfo;
@@ -994,8 +1015,26 @@ function V3Player(props: V3PlayerProps) {
           }
           return;
         }
+        if (!res.ok) {
+          let errorMsg = `${t('player.apiError')}: ${res.status}`;
+          let errorDetails = null;
+          try {
+            const isJson = res.headers.get('content-type')?.includes('application/json');
+            if (isJson) {
+              const apiErr: import('../client-ts/types.gen').ApiError = await res.json();
+              if (apiErr.message) errorMsg = apiErr.message;
+              if (apiErr.details) errorDetails = typeof apiErr.details === 'string' ? apiErr.details : JSON.stringify(apiErr.details);
+            } else {
+              errorDetails = await res.text();
+            }
+          } catch (e) {
+            debugWarn("Failed to parse error response", e);
+          }
+          const err = new Error(errorMsg);
+          err.stack = errorDetails || undefined;
+          throw err;
+        }
 
-        if (!res.ok) throw new Error(`${t('player.apiError')}: ${res.status}`);
         const data: V3SessionResponse = await res.json();
         newSessionId = data.sessionId;
         if (data.requestId) setTraceId(data.requestId);
@@ -1304,16 +1343,24 @@ function V3Player(props: V3PlayerProps) {
       const v = videoRef.current;
 
       let dropped = 0;
+      let decoded = lastDecodedRef.current;
       // Webkit non-standard extension
       interface WebkitVideoElement extends HTMLVideoElement {
         webkitDroppedFrameCount?: number;
+        webkitDecodedFrameCount?: number;
       }
 
       if (v.getVideoPlaybackQuality) {
-        dropped = v.getVideoPlaybackQuality().droppedVideoFrames;
+        const q = v.getVideoPlaybackQuality();
+        dropped = q.droppedVideoFrames;
+        decoded = q.totalVideoFrames;
       } else if ('webkitDroppedFrameCount' in v) {
         dropped = (v as WebkitVideoElement).webkitDroppedFrameCount || 0;
+        decoded = (v as WebkitVideoElement).webkitDecodedFrameCount || lastDecodedRef.current;
       }
+
+      const currentFps = Math.max(0, decoded - lastDecodedRef.current);
+      lastDecodedRef.current = decoded;
 
       let buffHealth = 0;
       if (v.buffered.length > 0) {
@@ -1346,12 +1393,54 @@ function V3Player(props: V3PlayerProps) {
         if (lat !== null) lat = Math.max(0, lat);
       }
 
-      setStats(prev => ({
-        ...prev,
-        droppedFrames: dropped,
-        bufferHealth: parseFloat(buffHealth.toFixed(1)),
-        latency: lat !== null ? parseFloat(lat.toFixed(2)) : null
-      }));
+      setStats(prev => {
+        let newRes = prev.resolution;
+        let newFps = prev.fps;
+        let newBandwidth = prev.bandwidth;
+        let newSegDur = prev.buffer;
+
+        // Native fallback or update if video dimensions exist
+        if (v.videoWidth && v.videoHeight) {
+          const vidRes = `${v.videoWidth}x${v.videoHeight}`;
+          if (prev.resolution === '-' || prev.resolution === 'Original (Direct)') {
+            newRes = vidRes;
+          } else if (prev.resolution !== vidRes && prev.resolution !== '-') {
+            newRes = vidRes;
+          }
+        }
+
+        if (!hlsRef.current && v.src) {
+          newFps = currentFps;
+        } else if (hlsRef.current) {
+          if (currentFps > 0) {
+            newFps = currentFps;
+          } else if (prev.fps === 0 && hlsRef.current.levels && hlsRef.current.currentLevel >= 0) {
+            const lvl = hlsRef.current.levels[hlsRef.current.currentLevel];
+            if (lvl && lvl.frameRate) newFps = lvl.frameRate;
+          }
+
+          // Aggressively sync bandwidth if zero, desyncs happen on Auto StartLevel
+          if (newBandwidth === 0 && hlsRef.current.levels) {
+            const idx = hlsRef.current.currentLevel === -1 ? 0 : hlsRef.current.currentLevel;
+            const lvl = hlsRef.current.levels[idx];
+            if (lvl && lvl.bitrate) {
+              newBandwidth = Math.round(lvl.bitrate / 1024);
+              if (newRes === '-') newRes = lvl.width ? `${lvl.width}x${lvl.height}` : '-';
+            }
+          }
+        }
+
+        return {
+          ...prev,
+          resolution: newRes,
+          fps: newFps,
+          bandwidth: newBandwidth,
+          buffer: newSegDur,
+          droppedFrames: dropped,
+          bufferHealth: parseFloat(buffHealth.toFixed(1)),
+          latency: lat !== null ? parseFloat(lat.toFixed(2)) : null
+        };
+      });
 
       // Phase 13 Fix: Failsafe state transition
       // If we have data and are playing, but UI says buffering, force it.
@@ -1610,7 +1699,7 @@ function V3Player(props: V3PlayerProps) {
               </div>
               <div className={styles.statsRow}>
                 <span className={styles.statsLabel}>{t('player.bandwidth')}</span>
-                <span className={styles.statsValue}>{stats.bandwidth} kbps</span>
+                <span className={styles.statsValue}>{stats.bandwidth > 0 ? `${stats.bandwidth} kbps` : '-'}</span>
               </div>
               <div className={styles.statsRow}>
                 <span className={styles.statsLabel}>{t('player.bufferHealth')}</span>
@@ -1630,11 +1719,13 @@ function V3Player(props: V3PlayerProps) {
               </div>
               <div className={styles.statsRow}>
                 <span className={styles.statsLabel}>{t('player.hlsLevel')}</span>
-                <span className={styles.statsValue}>{stats.levelIndex === -1 ? 'Auto' : stats.levelIndex}</span>
+                <span className={styles.statsValue}>{
+                  hlsRef.current ? (stats.levelIndex === -1 ? 'Auto' : stats.levelIndex) : 'Native / Direct'
+                }</span>
               </div>
               <div className={styles.statsRow}>
                 <span className={styles.statsLabel}>{t('player.segDuration')}</span>
-                <span className={styles.statsValue}>{stats.buffer}s</span>
+                <span className={styles.statsValue}>{stats.buffer > 0 ? `${stats.buffer}s` : '-'}</span>
               </div>
             </Card.Content>
           </Card>
@@ -1665,18 +1756,18 @@ function V3Player(props: V3PlayerProps) {
 
       {/* Error Toast */}
       {error && (
-          <div className={styles.errorToast} aria-live="polite" role="alert">
-            <div className={styles.errorMain}>
-              <span className={styles.errorText}>⚠ {error}</span>
-              <Button variant="secondary" size="sm" onClick={handleRetry}>{t('common.retry')}</Button>
-            </div>
-            {errorDetails && (
-              <button
-                onClick={() => setShowErrorDetails(!showErrorDetails)}
-                className={styles.errorDetailsButton}
-              >
-                {showErrorDetails ? t('common.hideDetails') : t('common.showDetails')}
-              </button>
+        <div className={styles.errorToast} aria-live="polite" role="alert">
+          <div className={styles.errorMain}>
+            <span className={styles.errorText}>⚠ {error}</span>
+            <Button variant="secondary" size="sm" onClick={handleRetry}>{t('common.retry')}</Button>
+          </div>
+          {errorDetails && (
+            <button
+              onClick={() => setShowErrorDetails(!showErrorDetails)}
+              className={styles.errorDetailsButton}
+            >
+              {showErrorDetails ? t('common.hideDetails') : t('common.showDetails')}
+            </button>
           )}
           {showErrorDetails && errorDetails && (
             <div className={styles.errorDetailsContent}>
