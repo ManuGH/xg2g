@@ -8,7 +8,7 @@ import { useCapabilities } from '../../src/hooks/useCapabilities';
 // Mock SDK
 vi.mock('../../src/client-ts', async () => {
   return {
-    getRecordingPlaybackInfo: vi.fn(),
+    postRecordingPlaybackInfo: vi.fn(),
     getSessionStatus: vi.fn(),
     postSessionHeartbeat: vi.fn(),
   };
@@ -27,35 +27,25 @@ describe('V3Player Contract Enforcement (Fail-Closed)', () => {
   });
 
   it('fails logically when decision exists but selectedOutputUrl is missing', async () => {
-    // VIOLATION: Backend sends decision but forgets mandatory selection
-    // The UI must not conform to this invalid state (e.g. by guessing).
-    (sdk.getRecordingPlaybackInfo as any).mockResolvedValue({
+    (sdk.postRecordingPlaybackInfo as any).mockResolvedValue({
       data: {
+        mode: 'transcode',
         decision: {
           // Missing selectedOutputUrl
-          // Missing mode
-          // But object exists
         },
-        // Legacy fields should be ignored if decision is present (per precedence rules)
         url: '/legacy.m3u8'
       }
     });
 
     render(<V3Player autoStart={true} recordingId="rec-contra-1" />);
 
-    // Expect generic error or specific contract error
     await waitFor(() => {
-      // Matches Policy Engine Violation
-      expect(screen.getByText(/Policy Violation|POLICY_VIOLATION_FAILCLOSED/i)).toBeInTheDocument();
+      expect(screen.getByText(/Backend decision missing selectedOutputUrl|selectedOutputUrl/i)).toBeInTheDocument();
     });
-
-    // Ensure we did NOT try to play the legacy URL
-    // (This is hard to verify without inspecting internal state, 
-    // but the error screen implies we didn't start success path)
   });
 
-  it('ignores decision if null and falls back to legacy (if permitted)', async () => {
-    (sdk.getRecordingPlaybackInfo as any).mockResolvedValue({
+  it('fails when backend returns unsupported legacy mode value', async () => {
+    (sdk.postRecordingPlaybackInfo as any).mockResolvedValue({
       data: {
         decision: null,
         url: '/legacy.m3u8',
@@ -65,13 +55,8 @@ describe('V3Player Contract Enforcement (Fail-Closed)', () => {
 
     render(<V3Player autoStart={true} recordingId="rec-contra-2" />);
 
-    // Should successfully start legacy playback (mocking HLS/Video would be needed to see video, 
-    // but we can check we didn't error)
     await waitFor(() => {
-      // If we don't see error, and we assumed mock implies valid fetch...
-      // Actually V3Player tries to load video.
-      // Let's just check we don't see the contract error.
-      expect(screen.queryByText(/player.playbackError/i)).not.toBeInTheDocument();
+      expect(screen.getByText(/Unsupported backend playback mode: hls|player.playbackError/i)).toBeInTheDocument();
     });
   });
 });

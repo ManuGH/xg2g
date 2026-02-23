@@ -8,7 +8,7 @@ import * as sdk from '../../src/client-ts';
 // Mock SDK
 vi.mock('../../src/client-ts', async () => {
   return {
-    getRecordingPlaybackInfo: vi.fn(),
+    postRecordingPlaybackInfo: vi.fn(),
     getSessionStatus: vi.fn(),
     postSessionHeartbeat: vi.fn(),
   };
@@ -38,7 +38,7 @@ describe('User-Facing Error Matrix (ERROR_MAP.md)', () => {
     },
     // 410 Gone logic is harder to test via initial fetch as fetch failure results in error screen directly.
     // But let's verify it maps to a "Gone" message or similar if implemented, or general error.
-    // The ERROR_MAP.md likely specifies a specific message for 410 on heartbeat, 
+    // The ERROR_MAP.md likely specifies a specific message for 410 on heartbeat,
     // but for initial load 410 usually means "Recording Deleted" or "Session Expired".
     // Let's check generally that it errors.
     {
@@ -62,7 +62,7 @@ describe('User-Facing Error Matrix (ERROR_MAP.md)', () => {
       // In `V3Player.tsx`, catch block: `if (err.status === 409) ...`
 
       // V3Player expects { data, error, response } structure from sdk call
-      (sdk.getRecordingPlaybackInfo as any).mockResolvedValue({
+      (sdk.postRecordingPlaybackInfo as any).mockResolvedValue({
         data: undefined,
         error: error,
         response: {

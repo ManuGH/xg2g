@@ -41,8 +41,8 @@ describe('V3Player Safari Logic', () => {
     vi.restoreAllMocks();
   });
 
-  it('should NOT initialize HLS.js on Safari (Native Playback)', () => {
-    // Simulate Safari
+  it('should initialize HLS.js on Safari when HLS.js support is available', () => {
+    // Simulate Safari UA - no UA-based hard override should force native path.
     userAgentGetter.mockReturnValue('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Safari/605.1.15');
 
     // Mock video element support
@@ -57,8 +57,8 @@ describe('V3Player Safari Logic', () => {
 
     render(<V3Player src="http://example.com/playlist.m3u8" autoStart={true} />);
 
-    // HLS.js should NOT be instantiated
-    expect(Hls).not.toHaveBeenCalled();
+    // Engine selection is capability-driven; with HLS.js available we initialize HLS.js.
+    expect(Hls).toHaveBeenCalled();
   });
 
   it('should initialize HLS.js on Chrome (Non-Safari)', () => {

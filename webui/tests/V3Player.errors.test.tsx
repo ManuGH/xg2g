@@ -8,7 +8,7 @@ vi.mock('../src/client-ts', async () => {
   const actual = await vi.importActual<any>('../src/client-ts');
   return {
     ...actual,
-    getRecordingPlaybackInfo: vi.fn(),
+    postRecordingPlaybackInfo: vi.fn(),
     getSessionStatus: vi.fn(),
     postSessionHeartbeat: vi.fn(),
   };
@@ -19,6 +19,10 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
 
   beforeEach(() => {
     globalThis.fetch = vi.fn();
+    vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockImplementation((type: string) => {
+      if (type.includes('application/vnd.apple.mpegurl')) return 'probably';
+      return '';
+    });
     vi.clearAllMocks();
   });
 
@@ -33,7 +37,7 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
   };
 
   it('handles 409 LEASE_BUSY with Retry-After hint', async () => {
-    (sdk.getRecordingPlaybackInfo as any).mockResolvedValue({
+    (sdk.postRecordingPlaybackInfo as any).mockResolvedValue({
       error: { code: 'LEASE_BUSY' },
       response: {
         status: 409,
@@ -50,7 +54,7 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
   });
 
   it('handles 401/403 Authentication Failure', async () => {
-    (sdk.getRecordingPlaybackInfo as any).mockResolvedValue({
+    (sdk.postRecordingPlaybackInfo as any).mockResolvedValue({
       error: { title: 'Unauthorized' },
       response: {
         status: 401,
@@ -85,6 +89,17 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
     });
 
     (globalThis.fetch as any).mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('/live/stream-info')) {
+        return Promise.resolve(
+          response(200, {
+            mode: 'native_hls',
+            requestId: 'req-live-410',
+            playbackDecisionToken: 'tok-live-410',
+            decision: { selectedOutputUrl: '/live.m3u8' }
+          })
+        );
+      }
+
       if (url.includes('/intents')) {
         const parsed = init?.body ? JSON.parse(String(init.body)) : {};
         if (parsed?.type === 'stream.start') {
@@ -154,6 +169,17 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
     });
 
     (globalThis.fetch as any).mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('/live/stream-info')) {
+        return Promise.resolve(
+          response(200, {
+            mode: 'native_hls',
+            requestId: 'req-live-503',
+            playbackDecisionToken: 'tok-live-503',
+            decision: { selectedOutputUrl: '/live.m3u8' }
+          })
+        );
+      }
+
       if (url.includes('/intents')) {
         const parsed = init?.body ? JSON.parse(String(init.body)) : {};
         if (parsed?.type === 'stream.start') {
@@ -223,6 +249,26 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
     let heartbeatCount = 0;
 
     (globalThis.fetch as any).mockImplementation((url: string) => {
+      if (url.includes('/live/stream-info')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: { get: () => null },
+          text: async () =>
+            JSON.stringify({
+              mode: 'native_hls',
+              requestId: 'req-live-heartbeat',
+              playbackDecisionToken: 'tok-live-heartbeat',
+              decision: { selectedOutputUrl: '/live.m3u8' }
+            }),
+          json: async () => ({
+            mode: 'native_hls',
+            requestId: 'req-live-heartbeat',
+            playbackDecisionToken: 'tok-live-heartbeat',
+            decision: { selectedOutputUrl: '/live.m3u8' }
+          })
+        });
+      }
       if (url.includes('/intents')) return Promise.resolve({ ok: true, status: 200, json: async () => ({ sessionId: 'sess-123' }) });
       if (url.includes('/sessions/sess-123') && !url.includes('/heartbeat')) {
         return Promise.resolve({

@@ -8,9 +8,45 @@ const originalFetch = global.fetch;
 
 describe('V3Player Truth Sealing (UI-INV-PLAYER-001)', () => {
   beforeEach(() => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ sessionId: '123' })
+    const response = (status: number, body: Record<string, unknown> = {}) => ({
+      ok: status >= 200 && status < 300,
+      status,
+      headers: { get: () => null },
+      json: async () => body,
+      text: async () => JSON.stringify(body)
+    });
+
+    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
+      if (url.includes('/live/stream-info')) {
+        return Promise.resolve(
+          response(200, {
+            mode: 'hlsjs',
+            requestId: 'req-live-seal',
+            playbackDecisionToken: 'tok-live-seal',
+            decision: { selectedOutputUrl: '/live.m3u8' }
+          })
+        );
+      }
+
+      if (url.includes('/intents')) {
+        const parsed = init?.body ? JSON.parse(String(init.body)) : {};
+        if (parsed?.type === 'stream.start') {
+          return Promise.resolve(response(202, { sessionId: '123' }));
+        }
+        return Promise.resolve(response(200, {}));
+      }
+
+      if (url.includes('/sessions/123')) {
+        return Promise.resolve(
+          response(410, {
+            reason: 'SESSION_GONE',
+            reason_detail: 'test_stop',
+            requestId: 'req-session-seal'
+          })
+        );
+      }
+
+      return Promise.resolve(response(200, {}));
     }));
   });
 
@@ -45,13 +81,18 @@ describe('V3Player Truth Sealing (UI-INV-PLAYER-001)', () => {
     render(<V3Player autoStart={true} channel={mockChannel} />);
 
     await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('/intents'),
-        expect.objectContaining({
-          method: 'POST',
-          body: expect.stringContaining('1:0:1:ABCD')
-        })
-      );
+      const calls = (global.fetch as any).mock.calls;
+      const streamInfoCall = calls.find((call: any[]) => String(call[0]).includes('/live/stream-info'));
+      const intentsCall = calls.find((call: any[]) => String(call[0]).includes('/intents'));
+
+      expect(streamInfoCall).toBeDefined();
+      expect(streamInfoCall[1]?.method).toBe('POST');
+      expect(String(streamInfoCall[1]?.body)).toContain('1:0:1:ABCD');
+
+      expect(intentsCall).toBeDefined();
+      expect(intentsCall[1]?.method).toBe('POST');
+      expect(String(intentsCall[1]?.body)).toContain('1:0:1:ABCD');
+      expect(String(intentsCall[1]?.body)).toContain('playback_decision_token');
     });
   });
 });
