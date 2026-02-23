@@ -62,12 +62,13 @@ GOPATH_BIN := $(shell $(GO) env GOPATH)/bin
 TOOL_DIR := $(if $(GOBIN),$(GOBIN),$(GOPATH_BIN))
 
 # Locked Tool Versions (Sourced from tools.go / Baseline Policy)
-GOLANGCI_LINT_VERSION := v1.63.4
+GOLANGCI_LINT_VERSION := v2.8.0
 OAPI_CODEGEN_VERSION := v2.5.1
-GOVULNCHECK_VERSION := v1.1.3
+GOVULNCHECK_VERSION := v1.1.4
 SYFT_VERSION := v1.19.0
 GRYPE_VERSION := v0.87.0
 GOSEC_VERSION := v2.22.1
+GOLANGCI_LINT_MODULE := github.com/golangci/golangci-lint/v2/cmd/golangci-lint
 
 # Tool executables
 GOLANGCI_LINT := $(TOOL_DIR)/golangci-lint
@@ -767,7 +768,7 @@ deps-licenses: ## Generate dependency license report
 dev-tools: ## Install all development tools
 	@echo "Installing development tools..."
 	@echo "Installing golangci-lint..."
-	@$(GO) install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+	@$(GO) install $(GOLANGCI_LINT_MODULE)@$(GOLANGCI_LINT_VERSION)
 	@echo "Installing oapi-codegen..."
 	@$(GO) install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@$(OAPI_CODEGEN_VERSION)
 	@echo "Installing govulncheck..."
@@ -782,8 +783,28 @@ dev-tools: ## Install all development tools
 
 check-tools: ## Verify development tools are installed
 	@echo "Checking development tools..."
-	@command -v golangci-lint >/dev/null 2>&1 || (echo "❌ golangci-lint not found" && exit 1)
-	@command -v govulncheck >/dev/null 2>&1 || (echo "❌ govulncheck not found" && exit 1)
+	@if [ ! -x "$(GOLANGCI_LINT)" ]; then \
+		echo "❌ golangci-lint not found at $(GOLANGCI_LINT)"; \
+		echo "Run: make dev-tools"; \
+		exit 1; \
+	fi
+	@actual_golangci=$$($(GOLANGCI_LINT) version 2>/dev/null | sed -nE 's/.*version ([0-9]+\.[0-9]+\.[0-9]+).*/v\1/p' | head -1); \
+	if [ "$$actual_golangci" != "$(GOLANGCI_LINT_VERSION)" ]; then \
+		echo "❌ golangci-lint version mismatch: expected $(GOLANGCI_LINT_VERSION), got $$actual_golangci"; \
+		echo "Run: make dev-tools"; \
+		exit 1; \
+	fi
+	@if [ ! -x "$(GOVULNCHECK)" ]; then \
+		echo "❌ govulncheck not found at $(GOVULNCHECK)"; \
+		echo "Run: make dev-tools"; \
+		exit 1; \
+	fi
+	@actual_govulncheck=$$($(GOVULNCHECK) -version 2>/dev/null | sed -nE 's/.*govulncheck@v?([0-9]+\.[0-9]+\.[0-9]+).*/v\1/p' | head -1); \
+	if [ "$$actual_govulncheck" != "$(GOVULNCHECK_VERSION)" ]; then \
+		echo "❌ govulncheck version mismatch: expected $(GOVULNCHECK_VERSION), got $$actual_govulncheck"; \
+		echo "Run: make dev-tools"; \
+		exit 1; \
+	fi
 	@echo "✅ Essential tools verified"
 
 pre-commit: lint test-race ## Run pre-commit validation checks
