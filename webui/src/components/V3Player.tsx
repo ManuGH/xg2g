@@ -2,10 +2,9 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import Hls from 'hls.js';
 import type { ErrorData, FragLoadedData, ManifestParsedData, LevelLoadedData } from 'hls.js';
-import { createSession, postLivePlaybackInfo, postRecordingPlaybackInfo } from '../client-ts/sdk.gen';
+import { createSession, postRecordingPlaybackInfo } from '../client-ts';
 import { getApiBaseUrl, setClientAuthToken } from '../client-ts/wrapper';
 import { telemetry } from '../services/TelemetryService';
-import type { PlaybackCapabilities, PlaybackInfo } from '../client-ts/types.gen';
 import type {
   V3PlayerProps,
   PlayerStatus,
@@ -876,7 +875,7 @@ function V3Player(props: V3PlayerProps) {
     throw new Error(t('player.timeout'));
   }, [t]);
 
-  const gatherPlaybackCapabilities = useCallback(async (): Promise<PlaybackCapabilities> => {
+  const gatherPlaybackCapabilities = useCallback(async () => {
     const video = videoRef.current as HTMLVideoElement | null;
     const preferredCodecs = await detectPreferredCodecs(video);
 
@@ -957,7 +956,7 @@ function V3Player(props: V3PlayerProps) {
       try {
         const maxMetaRetries = 20;
         const requestCaps = await gatherPlaybackCapabilities();
-        let pInfo: PlaybackInfo | undefined;
+        let pInfo: any | undefined;
 
         for (let i = 0; i < maxMetaRetries; i++) {
           if (activeRecordingRef.current !== id) return;
@@ -1211,14 +1210,18 @@ function V3Player(props: V3PlayerProps) {
         let liveEngine: 'native' | 'hlsjs' = 'hlsjs';
 
         const requestCaps = await gatherPlaybackCapabilities();
-        const { data: liveInfo, error: liveError, response: liveResponse } = await postLivePlaybackInfo({
-          body: {
+        const liveResponse = await fetch(`${apiBase}/live/stream-info`, {
+          method: 'POST',
+          headers: authHeaders(true),
+          body: JSON.stringify({
             serviceRef: ref,
             capabilities: requestCaps
-          }
+          })
         });
+        const { json: liveInfoJson } = await readResponseBody(liveResponse);
+        const liveInfo = liveInfoJson as any;
 
-        if (liveError) {
+        if (!liveResponse.ok) {
           if (liveResponse.status === 401 || liveResponse.status === 403) {
             setStatus('error');
             setError(t('player.authFailed'));

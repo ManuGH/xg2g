@@ -2,12 +2,10 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import V3Player from './V3Player';
 import type { V3PlayerProps } from '../types/v3-player';
-import * as sdk from '../client-ts/sdk.gen';
 
 vi.mock('../client-ts', () => ({
   createSession: vi.fn(),
   postRecordingPlaybackInfo: vi.fn(),
-  postLivePlaybackInfo: vi.fn()
 }));
 
 describe('V3Player ServiceRef Input', () => {
@@ -15,24 +13,34 @@ describe('V3Player ServiceRef Input', () => {
 
   beforeEach(() => {
     originalFetch = globalThis.fetch;
-    (sdk.postLivePlaybackInfo as any).mockResolvedValue({
-      data: {
-        mode: 'hlsjs',
-        requestId: 'live-decision-1',
-        playbackDecisionToken: 'live-token-1',
-        decision: { reasons: ['direct_stream_match'] },
-      },
-      response: {
-        status: 200,
-        headers: new Map()
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/live/stream-info')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: { get: vi.fn().mockReturnValue('application/json') },
+          text: vi.fn().mockResolvedValue(JSON.stringify({
+            mode: 'hlsjs',
+            requestId: 'live-decision-1',
+            playbackDecisionToken: 'live-token-1',
+            decision: { reasons: ['direct_stream_match'] },
+          }))
+        });
       }
-    });
-    const headers = { get: vi.fn().mockReturnValue(null) };
-    (globalThis as any).fetch = vi.fn().mockResolvedValue({
-      status: 409,
-      ok: false,
-      headers,
-      json: vi.fn().mockResolvedValue({ code: 'LEASE_BUSY', requestId: 'test' })
+      if (url.includes('/intents')) {
+        return Promise.resolve({
+          status: 409,
+          ok: false,
+          headers: { get: vi.fn().mockReturnValue(null) },
+          json: vi.fn().mockResolvedValue({ code: 'LEASE_BUSY', requestId: 'test' })
+        });
+      }
+      return Promise.resolve({
+        status: 200,
+        ok: true,
+        headers: { get: vi.fn().mockReturnValue(null) },
+        json: vi.fn().mockResolvedValue({})
+      });
     });
   });
 
@@ -59,7 +67,9 @@ describe('V3Player ServiceRef Input', () => {
       expect(globalThis.fetch).toHaveBeenCalled();
     });
 
-    const [url, options] = (globalThis.fetch as any).mock.calls[0];
+    const intentCall = (globalThis.fetch as any).mock.calls.find((c: any[]) => String(c[0]).includes('/intents'));
+    expect(intentCall).toBeDefined();
+    const [url, options] = intentCall;
     expect(String(url)).toContain('/intents');
     const body = JSON.parse(options.body);
     expect(body.serviceRef).toBe(newRef);
@@ -87,7 +97,9 @@ describe('V3Player ServiceRef Input', () => {
       expect(globalThis.fetch).toHaveBeenCalled();
     });
 
-    const [url, options] = (globalThis.fetch as any).mock.calls[0];
+    const intentCall = (globalThis.fetch as any).mock.calls.find((c: any[]) => String(c[0]).includes('/intents'));
+    expect(intentCall).toBeDefined();
+    const [url, options] = intentCall;
     expect(String(url)).toContain('/intents');
     const body = JSON.parse(options.body);
     expect(body.serviceRef).toBe(newRef);

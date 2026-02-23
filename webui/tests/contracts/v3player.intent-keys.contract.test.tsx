@@ -2,32 +2,26 @@ import React from 'react';
 import { render, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import V3Player from '../../src/components/V3Player';
-import * as sdk from '../../src/client-ts/sdk.gen';
-
-vi.mock('../../src/client-ts/sdk.gen', async () => {
-  const actual = await vi.importActual<any>('../../src/client-ts/sdk.gen');
-  return {
-    ...actual,
-    postLivePlaybackInfo: vi.fn(),
-  };
-});
 
 describe('V3Player Intent Keys Contract', () => {
   const originalFetch = globalThis.fetch;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    (sdk.postLivePlaybackInfo as any).mockResolvedValue({
-      data: {
-        mode: 'hlsjs',
-        requestId: 'req-intent-keys-1',
-        playbackDecisionToken: 'token-intent-keys-1',
-        decision: { reasons: ['direct_stream_match'] },
-      },
-      response: { status: 200, headers: new Map() }
-    });
-
     (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/live/stream-info')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: { get: () => 'application/json' },
+          text: async () => JSON.stringify({
+            mode: 'hlsjs',
+            requestId: 'req-intent-keys-1',
+            playbackDecisionToken: 'token-intent-keys-1',
+            decision: { reasons: ['direct_stream_match'] },
+          })
+        });
+      }
       if (url.includes('/intents')) {
         return Promise.resolve({
           ok: true,
