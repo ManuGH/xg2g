@@ -54,18 +54,15 @@ repos:
         files: ^(internal/config/testdata/|examples/).*\.(ya?ml)$
         exclude: ^deploy/helm/.*/templates/.*\.(yaml|yml)$
 
-  # Go linting (optional, can be slow)
-  - repo: https://github.com/golangci/golangci-lint
-    rev: v1.61.0
-    hooks:
-      - id: golangci-lint
-        name: Lint Go code
-        args: ["run", "--out-format=colored-line-number", "--timeout=3m"]
-        stages: [manual, push]  # Only on push to avoid slowing down commits
-
   # Local hooks
   - repo: local
     hooks:
+      - id: golangci-lint-system
+        name: Lint Go code
+        entry: bash scripts/pre-commit-golangci-lint.sh
+        language: system
+        pass_filenames: false
+        stages: [manual, pre-push] # Only on pre-push to avoid slowing down commits
       - id: validate-healthchecks
         name: Validate healthcheck endpoints
         entry: scripts/validate-healthchecks.sh

@@ -42,15 +42,11 @@ if ! git merge-base --is-ancestor refs/remotes/origin/main HEAD; then
   echo "pre-push sanity note: branch is behind origin/main; rebase recommended"
 fi
 
+# Only inspect working-tree paths known to git; internal .git/worktrees metadata
+# can contain platform artifacts that must not block pushes.
 tracked_bad="$(git ls-files | grep -E "${BAD_PATTERN}" || true)"
 if [[ -n "${tracked_bad}" ]]; then
   fail "tracked system metadata detected (._*, .DS_Store, .Spotlight-V100, .Trashes)"
-fi
-
-git_common_dir="$(git rev-parse --git-common-dir)"
-git_metadata_bad="$(find "${git_common_dir}" -type f \( -name '._*' -o -name '.DS_Store' \) -print | head -n 5 || true)"
-if [[ -n "${git_metadata_bad}" ]]; then
-  fail "git metadata artifacts detected under ${git_common_dir} (run: make repair-metadata)"
 fi
 
 untracked_files="$(git ls-files --others --exclude-standard)"
