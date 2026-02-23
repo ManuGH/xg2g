@@ -8,7 +8,7 @@ import { telemetry } from '../src/services/TelemetryService';
 
 vi.mock('../src/client-ts', async () => {
   return {
-    getRecordingPlaybackInfo: vi.fn(),
+    postRecordingPlaybackInfo: vi.fn(),
     getSessionStatus: vi.fn(),
     postSessionHeartbeat: vi.fn(),
   };
@@ -22,8 +22,9 @@ describe('Telemetry Fail-Closed', () => {
 
   it('emits ui.failclosed when Contract fails', async () => {
     // VIOLATION: Decision present but no selected URL
-    (sdk.getRecordingPlaybackInfo as any).mockResolvedValue({
+    (sdk.postRecordingPlaybackInfo as any).mockResolvedValue({
       data: {
+        mode: 'transcode',
         decision: {
           // Missing selection
         },
@@ -36,7 +37,7 @@ describe('Telemetry Fail-Closed', () => {
 
     await waitFor(() => {
       // Check UI error
-      expect(screen.getByText(/Decision-led|player.playbackError/i)).toBeInTheDocument();
+      expect(screen.getByText(/selectedOutputUrl|player.playbackError/i)).toBeInTheDocument();
 
       // Check Telemetry
       const events = telemetry.getEvents();

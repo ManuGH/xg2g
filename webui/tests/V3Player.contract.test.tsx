@@ -8,7 +8,7 @@ vi.mock('../src/client-ts', async () => {
   const actual = await vi.importActual<any>('../src/client-ts');
   return {
     ...actual,
-    getRecordingPlaybackInfo: vi.fn(),
+    postRecordingPlaybackInfo: vi.fn(),
   };
 });
 
@@ -18,40 +18,37 @@ describe('V3Player Contract Consumption (UI-CON-PLAYER-001)', () => {
   });
 
   it('fails loudly if decision exists but selectedOutputUrl is missing (governance violation)', async () => {
-    // Mock a response that has forbidden 'outputs' but missing 'selectedOutputUrl'
+    // Backend returns a mode, but misses the mandatory explicit selection.
     const mockInfo: any = {
+      mode: 'transcode',
       decision: {
-        mode: 'direct_play',
         outputs: [{ kind: 'file', url: '/forbidden/path.mp4' }]
-        // missing selectedOutputUrl
       },
       requestId: 'req-bad-contract'
     };
 
-    (sdk.getRecordingPlaybackInfo as any).mockResolvedValue({ data: mockInfo });
+    (sdk.postRecordingPlaybackInfo as any).mockResolvedValue({ data: mockInfo });
 
     render(<V3Player autoStart={true} recordingId="rec-1" />);
 
     await waitFor(async () => {
-      // Check for the specific decision-led error message within the error toast
       const errorToast = await screen.findByRole('alert');
-      expect(errorToast.textContent).toContain('Decision-led playback missing explicit selection');
+      expect(errorToast.textContent).toContain('Backend decision missing selectedOutputUrl');
     });
   });
 
   it('prefers normative selectedOutputUrl over legacy url', async () => {
     const mockInfo: any = {
       url: '/legacy/url.m3u8',
-      mode: 'hls',
+      mode: 'hlsjs',
       decision: {
-        mode: 'transcode',
         selectedOutputUrl: '/normative/url.m3u8',
         selectedOutputKind: 'hls'
       },
       requestId: 'req-good-contract'
     };
 
-    (sdk.getRecordingPlaybackInfo as any).mockResolvedValue({ data: mockInfo });
+    (sdk.postRecordingPlaybackInfo as any).mockResolvedValue({ data: mockInfo });
 
     // Mock fetch to capture which URL is probed
     const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({
