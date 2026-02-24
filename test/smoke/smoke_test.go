@@ -137,10 +137,7 @@ func TestSmoke(t *testing.T) {
 	cmd.Env = withEnv(cmd.Env, "XG2G_OWI_BASE", mockAddr)
 	cmd.Env = withEnv(cmd.Env, "XG2G_BOUQUET", "SmokeTest") // Must match mock return
 
-	// Avoid port conflicts
-	cmd.Env = withEnv(cmd.Env, "XG2G_HDHR_ENABLED", "false") // Disable SSDP
-	cmd.Env = withEnv(cmd.Env, "XG2G_PROXY_LISTEN", ":0")    // Random proxy port
-	cmd.Env = withEnv(cmd.Env, "XG2G_PROXY_PORT", "0")       // Fallback
+	// Keep smoke env strict-compatible: no legacy proxy/hdhr keys.
 	cmd.Env = withEnv(cmd.Env, "XG2G_API_TOKEN", "smoke-secret")
 	cmd.Env = withEnv(cmd.Env, "XG2G_API_TOKEN_SCOPES", "*")
 	cmd.Env = withEnv(cmd.Env, "XG2G_METRICS_LISTEN", ":58081") // Metrics port
