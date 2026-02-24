@@ -131,6 +131,7 @@ func TestSmoke(t *testing.T) {
 	cmd.Dir = rootDir
 	cmd.Env = os.Environ()
 	cmd.Env = withEnv(cmd.Env, "XG2G_DATA", dataDir)
+	cmd.Env = withEnv(cmd.Env, "XG2G_STORE_PATH", filepath.Join(dataDir, "store"))
 	cmd.Env = withEnv(cmd.Env, "XG2G_LISTEN", ":58080") // Use non-standard port
 	cmd.Env = withEnv(cmd.Env, "XG2G_LOG_LEVEL", "debug")
 	// Point to Mock OWI
