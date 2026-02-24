@@ -175,9 +175,14 @@ func TestSmoke(t *testing.T) {
 		t.Fatalf("Channel check failed: %v", err)
 	}
 
-	if err := waitForFile(filepath.Join(dataDir, "playlist.m3u"), 20*time.Second); err != nil {
-		t.Fatalf("playlist.m3u not written: %v", err)
+	playlistPath, err := waitForAnyFile([]string{
+		filepath.Join(dataDir, "playlist.m3u8"),
+		filepath.Join(dataDir, "playlist.m3u"),
+	}, 20*time.Second)
+	if err != nil {
+		t.Fatalf("playlist file not written: %v", err)
 	}
+	t.Logf("Playlist file written: %s", filepath.Base(playlistPath))
 	if err := waitForFile(filepath.Join(dataDir, "xmltv.xml"), 20*time.Second); err != nil {
 		t.Fatalf("xmltv.xml not written: %v", err)
 	}
@@ -296,4 +301,18 @@ func waitForFile(path string, timeout time.Duration) error {
 		time.Sleep(50 * time.Millisecond)
 	}
 	return fmt.Errorf("timeout waiting for file: %s", path)
+}
+
+func waitForAnyFile(paths []string, timeout time.Duration) (string, error) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		for _, path := range paths {
+			info, err := os.Stat(path)
+			if err == nil && info.Mode().IsRegular() && info.Size() > 0 {
+				return path, nil
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return "", fmt.Errorf("timeout waiting for files: %s", strings.Join(paths, ", "))
 }
