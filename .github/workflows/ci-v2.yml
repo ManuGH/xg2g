@@ -43,6 +43,13 @@ jobs:
           go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.8.0
           golangci-lint --version
 
+      - name: Install ffmpeg
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          ffmpeg -version
+
       - name: Run nightly gates
         run: make ci-nightly
 
