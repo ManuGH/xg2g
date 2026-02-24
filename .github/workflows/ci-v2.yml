@@ -64,8 +64,12 @@ jobs:
       - name: Install ffmpeg
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          if command -v ffmpeg >/dev/null 2>&1; then
+            echo "ffmpeg already installed on runner"
+          else
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
           ffmpeg -version
 
       - name: Run nightly gates
