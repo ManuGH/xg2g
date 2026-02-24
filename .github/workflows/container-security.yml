@@ -61,7 +61,7 @@ jobs:
           provenance: false
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@c1824fd6edce30d7ab345a9989de00bbd46ef284 # 0.34.0
+        uses: aquasecurity/trivy-action@e368e328979b113139d6f9068e03accaed98a518 # 0.34.1
         with:
           image-ref: xg2g:${{ github.sha }}
           format: "sarif"
@@ -71,14 +71,14 @@ jobs:
           ignore-unfixed: false
 
       - name: Upload Trivy results to GitHub Security
-        uses: github/codeql-action/init@9e907b5e64f6b83e7804b09294d44122997950d6
+        uses: github/codeql-action/init@89a39a4e59826350b863aa6b6252a07ad50cf83e
         if: always()
         with:
           sarif_file: "trivy-results.sarif"
           category: "container-production"
 
       - name: Run Trivy for PR comment
-        uses: aquasecurity/trivy-action@c1824fd6edce30d7ab345a9989de00bbd46ef284 # 0.34.0
+        uses: aquasecurity/trivy-action@e368e328979b113139d6f9068e03accaed98a518 # 0.34.1
         if: github.event_name == 'pull_request'
         with:
           image-ref: xg2g:${{ github.sha }}
@@ -117,7 +117,7 @@ jobs:
             });
 
       - name: Fail on critical/high vulnerabilities
-        uses: aquasecurity/trivy-action@c1824fd6edce30d7ab345a9989de00bbd46ef284 # 0.34.0
+        uses: aquasecurity/trivy-action@e368e328979b113139d6f9068e03accaed98a518 # 0.34.1
         with:
           image-ref: xg2g:${{ github.sha }}
           format: "table"
@@ -151,7 +151,7 @@ jobs:
           provenance: false
 
       - name: Run Trivy config scanner
-        uses: aquasecurity/trivy-action@c1824fd6edce30d7ab345a9989de00bbd46ef284 # 0.34.0
+        uses: aquasecurity/trivy-action@e368e328979b113139d6f9068e03accaed98a518 # 0.34.1
         with:
           image-ref: xg2g:${{ github.sha }}
           scan-type: "config"
@@ -179,7 +179,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # Latest stable
 
       - name: Run Trivy filesystem scanner
-        uses: aquasecurity/trivy-action@c1824fd6edce30d7ab345a9989de00bbd46ef284 # 0.34.0
+        uses: aquasecurity/trivy-action@e368e328979b113139d6f9068e03accaed98a518 # 0.34.1
         with:
           scan-type: "fs"
           scan-ref: "."
@@ -189,7 +189,7 @@ jobs:
           scanners: "secret,misconfig"
 
       - name: Upload filesystem scan to GitHub Security
-        uses: github/codeql-action/init@9e907b5e64f6b83e7804b09294d44122997950d6 # v3.27.9
+        uses: github/codeql-action/init@89a39a4e59826350b863aa6b6252a07ad50cf83e # v3.27.9
         if: always()
         with:
           sarif_file: "trivy-fs-results.sarif"
@@ -221,7 +221,7 @@ jobs:
           provenance: false
 
       - name: Generate SBOM for production image
-        uses: aquasecurity/trivy-action@c1824fd6edce30d7ab345a9989de00bbd46ef284 # 0.34.0
+        uses: aquasecurity/trivy-action@e368e328979b113139d6f9068e03accaed98a518 # 0.34.1
         with:
           image-ref: xg2g:${{ github.sha }}
           format: "cyclonedx"
@@ -259,7 +259,7 @@ jobs:
           retention-days: 90
 
       - name: Scan SBOM for vulnerabilities
-        uses: aquasecurity/trivy-action@c1824fd6edce30d7ab345a9989de00bbd46ef284 # 0.34.0
+        uses: aquasecurity/trivy-action@e368e328979b113139d6f9068e03accaed98a518 # 0.34.1
         with:
           scan-type: "sbom"
           scan-ref: "sbom-production.json"
