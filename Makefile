@@ -702,9 +702,9 @@ security-gosec: ## Run Gosec security scanner
 
 security-vulncheck: ## Run Go vulnerability checker
 	@echo "Ensuring govulncheck is installed..."
-	@command -v $(GOVULNCHECK) >/dev/null 2>&1 || $(GO) install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
+	@[ -x "$(GOVULNCHECK)" ] || GOFLAGS= $(GO) install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
 	@echo "Running Go vulnerability check..."
-	@$(GO) run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
+	@$(GOVULNCHECK) ./...
 	@echo "✅ Go vulnerability check passed"
 
 # ===================================================================================================
