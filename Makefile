@@ -1046,7 +1046,9 @@ build-ffmpeg: ## Build FFmpeg 7.1.3 with HLS/VAAPI/x264/AAC support
 
 .PHONY: contract-matrix
 contract-matrix: ## P4-1: Run contract matrix golden snapshot gate
-	@set -euo pipefail; \
+	@echo "Running contract matrix gate..."
+	@$(GO) test -count=1 -v ./test/contract/p4_1 -run TestContractMatrix_P4_1
+	@echo "✅ Contract matrix gate passed"
 
 gate-decision-proof: ## Phase 4.7: Run Playback Decision Engine Proof System (CTO-Grade)
 	@echo "Running Playback Decision Engine Proof System..."
