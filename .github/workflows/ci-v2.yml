@@ -51,7 +51,15 @@ jobs:
           cache-dependency-path: webui/package-lock.json
 
       - name: Build WebUI assets (required for embed contract)
-        run: make ui-build
+        run: |
+          set -euo pipefail
+          cd webui
+          npm ci
+          npx vite build
+          cd ..
+          rm -rf internal/control/http/dist
+          mkdir -p internal/control/http/dist
+          cp -R webui/dist/. internal/control/http/dist/
 
       - name: Install ffmpeg
         run: |
