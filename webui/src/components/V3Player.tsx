@@ -2094,7 +2094,7 @@ function V3Player(props: V3PlayerProps) {
           )}
           {showErrorDetails && errorDetails && (
             <div className={styles.errorDetailsContent}>
-              {errorDetails}
+              <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{errorDetails}</pre>
               <br />
               {t('common.session')}: {sessionIdRef.current || t('common.notAvailable')}
             </div>

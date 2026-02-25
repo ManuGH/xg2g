@@ -315,6 +315,7 @@ func (a *LocalAdapter) monitorProcess(parentCtx context.Context, handle ports.Ru
 
 	for scanner.Scan() {
 		line := scanner.Text()
+		a.Logger.Error().Str("sessionId", sessionID).Str("ffmpeg_log", line).Msg("ffmpeg output")
 		wd.ParseLine(line)
 
 		// Map back to session metrics if needed, but primarily for stall detection

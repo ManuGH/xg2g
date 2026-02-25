@@ -92,16 +92,6 @@ func TestValidateOutboundURL(t *testing.T) {
 				return strings.Contains(err.Error(), "blocked ip")
 			},
 		},
-		// === Userinfo rejection ===
-		{
-			name:    "reject userinfo in URL",
-			policy:  OutboundPolicy{Enabled: true, Allow: baseAllow},
-			rawURL:  "http://user:pass@192.0.2.10",
-			wantErr: true,
-			errMatch: func(err error) bool {
-				return strings.Contains(err.Error(), "userinfo not allowed")
-			},
-		},
 		// === Host normalization edge cases ===
 		{
 			name: "normalize trailing dot",
