@@ -37,13 +37,13 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Setup Go
-        uses: actions/setup-go@a5f9b05d2d216f63e13859e0d847461041025775 # Latest stable
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # Latest stable
         with:
           go-version-file: go.mod
           cache: true
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@9e907b5e64f6b83e7804b09294d44122997950d6
+        uses: github/codeql-action/init@89a39a4e59826350b863aa6b6252a07ad50cf83e
         with:
           languages: ${{ matrix.language }}
       - name: Build Go (Go Analysis)
@@ -51,7 +51,7 @@ jobs:
         run: go build ./...
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/init@9e907b5e64f6b83e7804b09294d44122997950d6
+        uses: github/codeql-action/init@89a39a4e59826350b863aa6b6252a07ad50cf83e
         with:
           category: "/language:${{ matrix.language }}"
 
@@ -66,7 +66,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # Latest stable
 
       - name: Setup Go
-        uses: actions/setup-go@a5f9b05d2d216f63e13859e0d847461041025775 # Latest stable
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # Latest stable
         with:
           go-version-file: "go.mod"
           check-latest: true
@@ -109,7 +109,7 @@ jobs:
 
       - name: Upload SARIF to code scanning
         if: always()
-        uses: github/codeql-action/init@9e907b5e64f6b83e7804b09294d44122997950d6 # v3
+        uses: github/codeql-action/init@89a39a4e59826350b863aa6b6252a07ad50cf83e # v3
         with:
           sarif_file: govulncheck.sarif
           category: govulncheck
@@ -186,7 +186,7 @@ jobs:
           fetch-depth: 0 # GoReleaser needs full history
 
       - name: Set up Go
-        uses: actions/setup-go@a5f9b05d2d216f63e13859e0d847461041025775 # v6
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
         with:
           go-version-file: go.mod
           check-latest: true
@@ -237,7 +237,7 @@ jobs:
       # Build Binaries with GoReleaser
       # =============================================
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6.4.0
+        uses: goreleaser/goreleaser-action@ec59f474b9834571250b370d4735c50f8e2d1e29 # v7.0.0
         with:
           distribution: goreleaser
           version: latest
@@ -315,7 +315,7 @@ jobs:
       # Generate and Attest SBOM
       # =============================================
       - name: Install Syft
-        uses: anchore/sbom-action/download-syft@28d71544de8eaf1b958d335707167c5f783590ad # v0
+        uses: anchore/sbom-action/download-syft@17ae1740179002c89186b61233e0f892c3118b11 # v0
 
       - name: Generate SBOM
         run: |
@@ -354,7 +354,7 @@ jobs:
       # Scan for Vulnerabilities
       # =============================================
       - name: Scan image with Trivy
-        uses: aquasecurity/trivy-action@c1824fd6edce30d7ab345a9989de00bbd46ef284 # 0.34.0
+        uses: aquasecurity/trivy-action@e368e328979b113139d6f9068e03accaed98a518 # 0.34.1
         with:
           image-ref: ghcr.io/manugh/xg2g@${{ steps.build-push.outputs.digest }}
           format: "sarif"
@@ -362,7 +362,7 @@ jobs:
           trivy-config: .github/security/trivy.yaml
 
       - name: Upload Trivy results to GitHub Security
-        uses: github/codeql-action/init@9e907b5e64f6b83e7804b09294d44122997950d6 # v3
+        uses: github/codeql-action/init@89a39a4e59826350b863aa6b6252a07ad50cf83e # v3
         with:
           sarif_file: "trivy-results.sarif"
 
