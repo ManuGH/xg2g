@@ -288,6 +288,7 @@ type AppConfig struct {
 	APIToken                       string // Optional: for securing API endpoints (e.g., /api/v3/*)
 	APITokenScopes                 []string
 	APITokens                      []ScopedToken
+	APIDisableLegacyTokenSources   bool
 	PlaybackDecisionSecret         string
 	PlaybackDecisionKeyID          string
 	PlaybackDecisionPreviousKeys   []string
