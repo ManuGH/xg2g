@@ -12,6 +12,7 @@ var operationScopes = map[string][]string{
 	"GetDvrStatus":                     {"v3:read"},
 	"GetEpg":                           {"v3:read"},
 	"CreateIntent":                     {"v3:write"},
+	"PostLivePlaybackInfo":             {"v3:read"},
 	"GetLogs":                          {"v3:admin"},
 	"GetReceiverCurrent":               {"v3:read"},
 	"GetRecordings":                    {"v3:read"},

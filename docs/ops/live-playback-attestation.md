@@ -4,11 +4,20 @@
 Live-Playback ist nur mit server-attestierter Entscheidung erlaubt (SSOT, fail-closed, multi-instance sicher).
 
 ## Pflicht-Konfiguration
-Setze einen stabilen Secret über alle Instanzen:
+Setze einen stabilen Secret ueber alle Instanzen:
 
 - YAML: `api.playbackDecisionSecret`
 - ENV: `XG2G_PLAYBACK_DECISION_SECRET`
 - Empfehlung: 32+ Bytes random
+
+Optional (empfohlen fuer Rotation):
+
+- YAML: `api.playbackDecisionKeyId`
+- ENV: `XG2G_PLAYBACK_DECISION_KID`
+- YAML: `api.playbackDecisionPreviousKeys` (Format `kid:secret`)
+- ENV: `XG2G_PLAYBACK_DECISION_PREVIOUS_KEYS` (comma-separated)
+- YAML: `api.playbackDecisionRotationWindow`
+- ENV: `XG2G_PLAYBACK_DECISION_ROTATION_WINDOW`
 
 Beispiel:
 
@@ -22,8 +31,10 @@ Beispiel:
 
 ## Deployment-Check
 1. Secret ist in allen Pods/Instanzen identisch.
-2. Rolling Deploy ohne Secret-Wechsel.
-3. Kein Warnlog wie:
+2. Aktiver `kid` ist ueber alle Instanzen konsistent.
+3. Bei Rotation: alte Keys als `previousKeys` hinterlegen und Window > 0 setzen.
+4. Nach Window-Ende alte Keys entfernen.
+5. Kein Warnlog wie:
    - `api.playbackDecisionSecret is not configured; using ephemeral ...`
 
 ## Smoke-Test (Happy Path)
@@ -44,9 +55,11 @@ Beispiel:
 - Dev: funktioniert mit ephemerem Fallback-Key.
 - Prod (mehrere Instanzen / Rolling): nicht zulaessig (false-deny-Risiko).
 
-## Rotation (optional)
-- Spaeter `kid` + Multi-Key-Verify (current + previous key).
-- Erst dann Zero-Downtime-Key-Rotation aktivieren.
+## Rotation (implementiert)
+- Tokens tragen `kid` im Claims-Payload.
+- Signierung nutzt den aktiven Key (`playbackDecisionSecret` + optional `playbackDecisionKeyId`).
+- Verify akzeptiert aktive + previous keys bis `playbackDecisionRotationWindow` ablaeuft.
+- Nach Ablauf des Windows werden previous keys deterministisch abgelehnt.
 
 ## Deprecation Policy: `playback_decision_id` -> `playback_decision_token`
 Wir behandeln `params.playback_decision_token` als kanonischen Request-Key und `params.playback_decision_id` nur als temporaeren Kompatibilitaets-Alias.

@@ -80,7 +80,25 @@ components:
           type: object
           additionalProperties:
             type: string
-          description: Additional parameters
+          description: |
+            Additional parameters.
+            Live playback attestation keys:
+            - canonical: playback_decision_token
+            - deprecated alias: playback_decision_id (temporary compatibility)
+            Conflict rule:
+            - if both keys are present and values differ, request is rejected with HTTP 400 (code INVALID_INPUT)
+
+    LivePlaybackInfoRequest:
+      type: object
+      required: [serviceRef, capabilities]
+      additionalProperties: false
+      properties:
+        serviceRef:
+          type: string
+          description: Live service reference to evaluate.
+          example: "1:0:1:445D:453:1:C00000:0:0:0:"
+        capabilities:
+          $ref: "#/components/schemas/PlaybackCapabilities"
 
     SessionResponse:
       type: object
@@ -814,11 +832,14 @@ components:
         sessionId:
           type: string
           description: Unique ID for the stream session. Mandatory in P3-1.
+        playbackDecisionToken:
+          type: string
+          description: Signed short-lived attestation token required when submitting live playback_mode to /intents.
         mode:
           $ref: "#/components/schemas/PlaybackInfoMode"
         url:
           type: string
-          description: Relative URL for the selected playback strategy. Optional for deny or decision-led cases.
+          description: Relative URL selected by backend playback decision (manifest or media URL). Optional for deny.
         seekable:
           type: boolean
           description: Whether the stream is seekable. Omitted if unknown. Deprecated in favor of isSeekable.
@@ -841,9 +862,21 @@ components:
           type: integer
           format: int64
           minimum: 1
-          description: Duration in seconds. Omitted if unknown or preparing.
+          description: Deprecated compatibility field. Prefer durationMs. Omitted if unknown or preparing.
+        durationMs:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Authoritative finite duration in milliseconds. Omitted if unknown.
         durationSource:
           $ref: "#/components/schemas/PlaybackInfoDurationSource"
+        durationConfidence:
+          $ref: "#/components/schemas/PlaybackInfoDurationConfidence"
+        durationReasons:
+          type: array
+          description: Machine-readable duration provenance/fallback reasons.
+          items:
+            $ref: "#/components/schemas/PlaybackInfoDurationReason"
         resume:
           $ref: "#/components/schemas/ResumeSummary"
         container:
@@ -863,22 +896,46 @@ components:
 
     PlaybackInfoMode:
       type: string
-      enum: [hls, direct_mp4, deny]
-      description: Selected playback strategy output mode.
+      enum: [native_hls, hlsjs, direct_mp4, transcode, deny]
+      description: Backend-selected playback execution mode.
 
     PlaybackInfoDurationSource:
       type: string
-      enum: [store, cache, probe]
-      description: Source of the reported duration, when durationSeconds is present.
+      enum: [source_metadata, ffprobe, container, heuristic, unknown]
+      description: Source of the reported duration, when durationMs is present.
+
+    PlaybackInfoDurationConfidence:
+      type: string
+      enum: [high, medium, low]
+      description: Confidence of the resolved duration.
+
+    PlaybackInfoDurationReason:
+      type: string
+      enum:
+        - duration_from_source_metadata
+        - duration_from_ffprobe
+        - duration_from_container
+        - duration_from_heuristic
+        - duration_primary_missing
+        - duration_probe_failed
+        - duration_container_missing
+        - duration_inconsistent_clamped
+        - duration_unknown_denied_seek
+        - resume_clamped_to_duration
+      description: Frozen duration reason vocabulary.
 
     PlaybackInfoReason:
       type: string
       enum:
         - directplay_match
-        - transcode_audio
-        - transcode_video
-        - transcode_all
-        - container_mismatch
+        - directstream_match
+        - policy_denies_transcode
+        - container_not_supported_by_client
+        - video_codec_not_supported_by_client
+        - audio_codec_not_supported_by_client
+        - hls_not_supported_by_client
+        - no_compatible_playback_path
+        - decision_ambiguous
         - unknown
       description: Reason for the playback decision.
 
@@ -929,6 +986,13 @@ components:
           type: boolean
           description: Whether client supports HLS playlists
           example: true
+        hlsEngines:
+          type: array
+          items:
+            type: string
+            enum: [native, hlsjs]
+          description: Available HLS playback engines measured by the client runtime.
+          example: ["hlsjs"]
         supportsRange:
           type: boolean
           description: Whether client supports HTTP range requests
@@ -953,8 +1017,6 @@ components:
           constraints,
           reasons,
           trace,
-          selectedOutputUrl,
-          selectedOutputKind,
         ]
       additionalProperties: false
       description: Complete playback decision from backend (P4-1)
@@ -965,12 +1027,14 @@ components:
           description: Playback mode decision
         selectedOutputUrl:
           type: string
-          format: uri
-          description: The explicitly selected playback URL (backend-driven).
+          format: uri-reference
+          nullable: true
+          description: The explicitly selected playback URL (backend-driven). Omitted for deny.
         selectedOutputKind:
           type: string
           enum: [file, hls]
-          description: The explicitly selected playback kind.
+          nullable: true
+          description: The explicitly selected playback kind. Omitted for deny.
         selected:
           type: object
           required: [container, videoCodec, audioCodec]
@@ -2630,6 +2694,11 @@ paths:
   /intents:
     post:
       summary: Create stream intent (start or stop session)
+      description: |
+        For live stream.start requests, playback decision attestation is required when `params.playback_mode` is set.
+        Canonical key is `params.playback_decision_token`.
+        Deprecated alias `params.playback_decision_id` is accepted temporarily for compatibility.
+        If both keys are sent with different values, request is rejected with HTTP 400 (`INVALID_INPUT`).
       operationId: createIntent
       tags:
         - v3
@@ -2680,6 +2749,46 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/APIError"
+
+  /live/stream-info:
+    post:
+      summary: Get live playback decision with client capabilities (SSOT)
+      operationId: postLivePlaybackInfo
+      tags:
+        - v3
+      security:
+        - BearerAuth: [v3:read]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LivePlaybackInfoRequest"
+      responses:
+        "200":
+          description: Live playback decision and info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlaybackInfo"
+        "400":
+          description: Invalid request or capabilities
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemCapabilitiesInvalid"
+        "412":
+          description: Capabilities missing (required for v3.1+)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemCapabilitiesMissing"
+        "422":
+          description: Decision ambiguous
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDecisionAmbiguous"
 
   /sessions:
     get:

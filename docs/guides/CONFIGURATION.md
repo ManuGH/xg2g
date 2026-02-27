@@ -41,6 +41,10 @@ This section is generated from `internal/config/registry.go`. Do not edit by han
 | `api.allowedOrigins` | `XG2G_ALLOWED_ORIGINS` | - | Active | Advanced |
 | `api.disableLegacyTokenSources` | `XG2G_API_DISABLE_LEGACY_TOKEN_SOURCES` | `false` | Active | Advanced |
 | `api.listenAddr` | `XG2G_LISTEN` | `:8088` | Active | Simple |
+| `api.playbackDecisionKeyId` | `XG2G_PLAYBACK_DECISION_KID` | - | Active | Advanced |
+| `api.playbackDecisionPreviousKeys` | `XG2G_PLAYBACK_DECISION_PREVIOUS_KEYS` | - | Active | Advanced |
+| `api.playbackDecisionRotationWindow` | `XG2G_PLAYBACK_DECISION_ROTATION_WINDOW` | `10m` | Active | Advanced |
+| `api.playbackDecisionSecret` | `XG2G_PLAYBACK_DECISION_SECRET` | - | Active | Advanced |
 | `api.token` | `XG2G_API_TOKEN` | - | Active | Simple |
 | `api.tokenScopes` | `XG2G_API_TOKEN_SCOPES` | - | Active | Advanced |
 | `api.tokens` | `XG2G_API_TOKENS` | - | Active | Advanced |

@@ -30,6 +30,10 @@ export GOFLAGS := -trimpath -buildvcs=false -mod=vendor
 GOTOOLCHAIN ?= go1.25.7
 export GOTOOLCHAIN
 GO := go
+PYTHON ?= python3
+PYTHON_TOOLS_VENV := .venv
+PYTHON_TOOLS_BIN := $(PYTHON_TOOLS_VENV)/bin
+PYTHON_TOOLS := $(PYTHON_TOOLS_BIN)/python3
 
 # Build configuration
 BINARY_NAME := xg2g
@@ -97,7 +101,10 @@ help: ## Show this help message
 	@echo "  lint              Run golangci-lint with all checks"
 	@echo "  lint-fix          Run golangci-lint with automatic fixes"
 	@echo "  generate          Generate Go code from OpenAPI spec"
+	@echo "  gen-openapi-hard  Regenerate OpenAPI + normative snapshot + TS client"
 	@echo "  generate-config   Generate config surfaces from registry"
+	@echo "  verify-openapi-hard-mode  Enforce OpenAPI/TS-client drift lock"
+	@echo "  bootstrap-python-tools  Create/update deterministic Python toolchain (.venv)"
 	@echo "  verify-config     Verify generated config surfaces are up-to-date"
 	@echo "  test              Run all unit tests"
 	@echo "  test-schema       Run JSON schema validation tests"
@@ -202,6 +209,14 @@ verify-generate: generate ## Verify that generated code is up-to-date
 	@echo "Verifying generated code..."
 	@git diff --exit-code internal/api/server_gen.go internal/control/http/v3/server_gen.go || (echo "❌ Generated code is out of sync. Run 'make generate' and commit changes." && exit 1)
 	@echo "✅ Generated code is up-to-date"
+
+.PHONY: gen-openapi-hard
+gen-openapi-hard: ## Deterministically regenerate OpenAPI-derived Go + snapshot + TS client artifacts
+	@./scripts/gen-openapi-hard-mode.sh
+
+.PHONY: verify-openapi-hard-mode
+verify-openapi-hard-mode: ## Hard-mode drift lock for OpenAPI + generated TS client artifacts
+	@./scripts/verify-openapi-hard-mode.sh
 
 verify-codegen-transport: ## Verify codegen is transport-only (no scope injection or default http.Error)
 	@./scripts/verify-codegen-transport-only.sh
@@ -346,11 +361,11 @@ verify-hermetic-codegen-internal:
 	@echo "✅ Hermetic code generation verified"
 
 .PHONY: verify-purity
-verify-purity: ## Phase 4.7: Verify UI purity, decision ownership, OpenAPI hygiene + lint
+verify-purity: bootstrap-python-tools ## Phase 4.7: Verify UI purity, decision ownership, OpenAPI hygiene + lint
 	@./scripts/verify-ui-purity.sh
 	@./scripts/verify-decision-ownership.sh
 	@./scripts/verify-openapi-hygiene.sh
-	@python3 ./scripts/verify-openapi-no-duplicate-keys.py api/openapi.yaml
+	@$(PYTHON_TOOLS) ./scripts/verify-openapi-no-duplicate-keys.py api/openapi.yaml
 	@./scripts/ci_gate_adr_case.sh
 	@./scripts/ci_gate_storage_purity.sh
 	@./scripts/verify-openapi-lint.sh
@@ -368,6 +383,10 @@ verify-contract-manifest: ## Phase 6.0: Verify normative contract manifest integ
 verify-openapi-drift: ## Phase 6.0: Verify OpenAPI normative snapshot stability
 	@./scripts/verify-openapi-drift.sh
 	@./scripts/verify-ui-consumption-vs-openapi.sh
+
+.PHONY: verify-playback-key-removal-gate
+verify-playback-key-removal-gate: ## Phase 3 gate: allow playback_decision_id removal only when alias usage is below threshold
+	@./scripts/verify-playback-key-removal-gate.sh
 
 .PHONY: verify-ui-contract-scan
 verify-ui-contract-scan: ## Phase 6.0: Verify UI codebase not violating contract manifest
@@ -710,9 +729,9 @@ security-gosec: ## Run Gosec security scanner
 
 security-vulncheck: ## Run Go vulnerability checker
 	@echo "Ensuring govulncheck is installed..."
-	@command -v $(GOVULNCHECK) >/dev/null 2>&1 || $(GO) install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
+	@[ -x "$(GOVULNCHECK)" ] || GOFLAGS= $(GO) install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
 	@echo "Running Go vulnerability check..."
-	@$(GO) run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
+	@$(GOVULNCHECK) ./...
 	@echo "✅ Go vulnerability check passed"
 
 # ===================================================================================================
@@ -1020,20 +1039,37 @@ gate-a: ## Gate A: Control Layer Store Purity (ADR-014 Phase 1)
 .PHONY: gate-webui
 gate-webui:
 	@./scripts/ci_gate_webui_audit.sh
+	@npm --prefix webui run gate:no-appledouble
+	@npm --prefix webui run gate:no-duration-guessing
+	@npm --prefix webui run gate:no-client-decision-engine
+	@npm --prefix webui run gate:no-ua-sniffing
+	@npm --prefix webui run gate:no-seek-resume-guessing
+	@npm --prefix webui run gate:no-raw-json-fetch
+	@npm --prefix webui run gate:no-raw-error-text
+	@npm --prefix webui run gate:mode-bridge
+	@npm --prefix webui run gate:seekable-contract
+
+.PHONY: webui-gates
+webui-gates: gate-webui
 
 # Gate C: Repository Hygiene (Zero Tolerance for Artifacts)
 .PHONY: gate-repo-hygiene
 gate-repo-hygiene:
 	@./scripts/ci_gate_repo_hygiene.sh
 
+# Deterministic Python toolchain for governance scripts.
+.PHONY: bootstrap-python-tools
+bootstrap-python-tools:
+	@./scripts/bootstrap-python-tools.sh
+
 # Gate V3: OpenAPI v3 Contract Governance (CTO Hardrail)
 .PHONY: gate-v3-contract
-gate-v3-contract: ## Verify v3 contract hygiene, casing, and shadowing
+gate-v3-contract: bootstrap-python-tools ## Verify v3 contract hygiene, casing, and shadowing
 	@echo "--- gate-v3-contract ---"
 	@$(GO) test -v ./internal/control/http/v3 -run TestContractHygiene
 	@./scripts/verify-openapi-lint.sh
-	@python3 ./scripts/verify-openapi-no-duplicate-keys.py api/openapi.yaml
-	@python3 ./scripts/lib/openapi_v3_scope.py api/openapi.yaml scripts/openapi-legacy-allowlist.json
+	@$(PYTHON_TOOLS) ./scripts/verify-openapi-no-duplicate-keys.py api/openapi.yaml
+	@$(PYTHON_TOOLS) ./scripts/lib/openapi_v3_scope.py api/openapi.yaml scripts/openapi-legacy-allowlist.json
 	@./scripts/verify-v3-shadowing.sh
 	@go test -v -count=1 ./internal/control/http/v3 -run "(TestV3_ResponseGolden|TestProblemDetails_Compliance|TestPlaybackInfo_SchemaCompliance)"
 
@@ -1045,11 +1081,11 @@ quality-gates-offline: ## Offline-only gates (no network, no codegen)
 	@$(GO) vet ./...
 	@echo "✅ Offline gates passed"
 
-quality-gates-online: verify-config verify-docs-compiled verify-generate verify-hermetic-codegen gate-repo-hygiene gate-v3-contract gate-a gate-webui lint-invariants lint test-cover security-vulncheck ## Validate all online quality gates
+quality-gates-online: verify-config verify-docs-compiled verify-generate verify-openapi-hard-mode verify-hermetic-codegen gate-repo-hygiene gate-v3-contract gate-a gate-webui lint-invariants lint test-cover security-vulncheck ## Validate all online quality gates
 	@echo "Validating quality gates..."
 	@echo "✅ All quality gates passed"
 
-ci-pr: verify-config verify-generate gate-repo-hygiene gate-v3-contract gate-a gate-webui lint-invariants lint schema-validate test-v3-idempotency test ## Enforced PR baseline (guardrails + schema + idempotency/race)
+ci-pr: verify-config verify-generate verify-openapi-hard-mode gate-repo-hygiene gate-v3-contract gate-a gate-webui lint-invariants lint schema-validate test-v3-idempotency test ## Enforced PR baseline (guardrails + schema + idempotency/race)
 	@echo "✅ CI PR gate passed"
 
 ci-nightly: quality-gates-online contract-matrix test-race test-fuzz smoke-test ## Deep, expensive gates for nightly/dispatch
@@ -1077,7 +1113,9 @@ build-ffmpeg: ## Build FFmpeg 7.1.3 with HLS/VAAPI/x264/AAC support
 
 .PHONY: contract-matrix
 contract-matrix: ## P4-1: Run contract matrix golden snapshot gate
-	@set -euo pipefail; \
+	@echo "Running contract matrix gate..."
+	@$(GO) test -count=1 -v ./test/contract/p4_1 -run TestContractMatrix_P4_1
+	@echo "✅ Contract matrix gate passed"
 
 gate-decision-proof: ## Phase 4.7: Run Playback Decision Engine Proof System (CTO-Grade)
 	@echo "Running Playback Decision Engine Proof System..."

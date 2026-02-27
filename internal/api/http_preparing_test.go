@@ -19,9 +19,10 @@ func (m *MockPreparingServer) GetDvrCapabilities(w http.ResponseWriter, r *http.
 func (m *MockPreparingServer) GetDvrStatus(w http.ResponseWriter, r *http.Request)       {}
 func (m *MockPreparingServer) GetEpg(w http.ResponseWriter, r *http.Request, params v3.GetEpgParams) {
 }
-func (m *MockPreparingServer) CreateIntent(w http.ResponseWriter, r *http.Request)       {}
-func (m *MockPreparingServer) GetLogs(w http.ResponseWriter, r *http.Request)            {}
-func (m *MockPreparingServer) GetReceiverCurrent(w http.ResponseWriter, r *http.Request) {}
+func (m *MockPreparingServer) CreateIntent(w http.ResponseWriter, r *http.Request)         {}
+func (m *MockPreparingServer) PostLivePlaybackInfo(w http.ResponseWriter, r *http.Request) {}
+func (m *MockPreparingServer) GetLogs(w http.ResponseWriter, r *http.Request)              {}
+func (m *MockPreparingServer) GetReceiverCurrent(w http.ResponseWriter, r *http.Request)   {}
 func (m *MockPreparingServer) GetRecordings(w http.ResponseWriter, r *http.Request, params v3.GetRecordingsParams) {
 }
 func (m *MockPreparingServer) DeleteRecording(w http.ResponseWriter, r *http.Request, recordingId string) {

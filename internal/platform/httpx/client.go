@@ -47,4 +47,3 @@ func NewClient(timeout time.Duration) *http.Client {
 		},
 	}
 }
-

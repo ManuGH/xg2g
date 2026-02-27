@@ -1,4 +1,4 @@
-import { putJsonOrThrow } from '../../client-ts/wrapper';
+import { putJsonOrThrow } from '../../lib/clientWrapper';
 
 export interface ResumeState {
   posSeconds: number;

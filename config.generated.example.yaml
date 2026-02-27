@@ -4,6 +4,10 @@ api:
   allowedOrigins: []
   disableLegacyTokenSources: false
   listenAddr: :8088
+  playbackDecisionKeyId: ""
+  playbackDecisionPreviousKeys: []
+  playbackDecisionRotationWindow: 10m
+  playbackDecisionSecret: ""
   token: ""
   tokenScopes:
     - v3:read

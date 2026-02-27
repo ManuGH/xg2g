@@ -1,14 +1,16 @@
 import React from 'react';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import V3Player from '../src/components/V3Player';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach, afterAll } from 'vitest';
 import * as sdk from '../src/client-ts';
+import { suppressExpectedConsoleNoise } from './helpers/consoleNoise';
 
 vi.mock('../src/client-ts', async () => {
   const actual = await vi.importActual<any>('../src/client-ts');
   return {
     ...actual,
     postRecordingPlaybackInfo: vi.fn(),
+    postLivePlaybackInfo: vi.fn(),
     getSessionStatus: vi.fn(),
     postSessionHeartbeat: vi.fn(),
   };
@@ -16,19 +18,50 @@ vi.mock('../src/client-ts', async () => {
 
 describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
   const originalFetch = globalThis.fetch;
+  let restoreConsoleNoise: (() => void) | null = null;
+
+  beforeAll(() => {
+    restoreConsoleNoise = suppressExpectedConsoleNoise({
+      // Expected negative-path diagnostics asserted by this suite.
+      error: [
+        /PlayerError: player\.sessionFailed: SESSION_GONE: recording_deleted/i,
+        /\[V3Player\]\[Heartbeat\] Session expired \(410\)/i
+      ],
+      warn: [
+        /Failed to stop v3 session/i,
+        /Failed to parse URL from \/api\/v3\/intents/i
+      ]
+    });
+  });
 
   beforeEach(() => {
     globalThis.fetch = vi.fn();
-    vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockImplementation((type: string) => {
-      if (type.includes('application/vnd.apple.mpegurl')) return 'probably';
+    vi.clearAllMocks();
+    vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockImplementation((contentType: string) => {
+      if (contentType === 'application/vnd.apple.mpegurl') {
+        return 'probably';
+      }
       return '';
     });
-    vi.clearAllMocks();
+    (sdk.postLivePlaybackInfo as any).mockResolvedValue({
+      data: {
+        mode: 'native_hls',
+        requestId: 'live-decision-errors-1',
+        playbackDecisionToken: 'live-token-errors-1',
+        decision: { reasons: ['direct_stream_match'] },
+      },
+      response: { status: 200, headers: new Map() }
+    });
   });
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
     vi.restoreAllMocks();
+  });
+
+  afterAll(() => {
+    restoreConsoleNoise?.();
+    restoreConsoleNoise = null;
   });
 
   const flushMicrotasks = async () => {
@@ -93,9 +126,9 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
         return Promise.resolve(
           response(200, {
             mode: 'native_hls',
-            requestId: 'req-live-410',
-            playbackDecisionToken: 'tok-live-410',
-            decision: { selectedOutputUrl: '/live.m3u8' }
+            requestId: 'live-decision-errors-410',
+            playbackDecisionToken: 'live-token-errors-410',
+            decision: { reasons: ['direct_stream_match'] }
           })
         );
       }
@@ -173,9 +206,9 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
         return Promise.resolve(
           response(200, {
             mode: 'native_hls',
-            requestId: 'req-live-503',
-            playbackDecisionToken: 'tok-live-503',
-            decision: { selectedOutputUrl: '/live.m3u8' }
+            requestId: 'live-decision-errors-503',
+            playbackDecisionToken: 'live-token-errors-503',
+            decision: { reasons: ['direct_stream_match'] }
           })
         );
       }
@@ -253,22 +286,15 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
         return Promise.resolve({
           ok: true,
           status: 200,
-          headers: { get: () => null },
-          text: async () =>
-            JSON.stringify({
-              mode: 'native_hls',
-              requestId: 'req-live-heartbeat',
-              playbackDecisionToken: 'tok-live-heartbeat',
-              decision: { selectedOutputUrl: '/live.m3u8' }
-            }),
           json: async () => ({
             mode: 'native_hls',
-            requestId: 'req-live-heartbeat',
-            playbackDecisionToken: 'tok-live-heartbeat',
-            decision: { selectedOutputUrl: '/live.m3u8' }
+            requestId: 'live-decision-errors-heartbeat',
+            playbackDecisionToken: 'live-token-errors-heartbeat',
+            decision: { reasons: ['direct_stream_match'] }
           })
         });
       }
+
       if (url.includes('/intents')) return Promise.resolve({ ok: true, status: 200, json: async () => ({ sessionId: 'sess-123' }) });
       if (url.includes('/sessions/sess-123') && !url.includes('/heartbeat')) {
         return Promise.resolve({

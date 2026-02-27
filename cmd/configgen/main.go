@@ -228,6 +228,9 @@ func updateSchemaDefaults(root string, entries []config.ConfigEntry, allowCreate
 	if err != nil {
 		return fmt.Errorf("marshal schema: %w", err)
 	}
+	if len(out) == 0 || out[len(out)-1] != '\n' {
+		out = append(out, '\n')
+	}
 	if err := os.WriteFile(path, out, 0600); err != nil {
 		return fmt.Errorf("write schema: %w", err)
 	}
@@ -554,9 +557,15 @@ func formatDuration(d time.Duration) string {
 		return "0s"
 	}
 	s := d.String()
-	if strings.ContainsAny(s, "hm") {
+	if strings.ContainsAny(s, "hm") && strings.HasSuffix(s, "0s") {
 		s = strings.TrimSuffix(s, "0s")
+	}
+	// Keep minute precision for values like 10m, but drop trailing 0m for exact hours.
+	if strings.HasSuffix(s, "0m") && strings.ContainsRune(s, 'h') {
 		s = strings.TrimSuffix(s, "0m")
+	}
+	if s == "" {
+		return "0s"
 	}
 	return s
 }

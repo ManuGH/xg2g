@@ -5,7 +5,8 @@ import type { V3PlayerProps } from '../types/v3-player';
 
 vi.mock('../client-ts', () => ({
   createSession: vi.fn(),
-  getRecordingPlaybackInfo: vi.fn()
+  postRecordingPlaybackInfo: vi.fn(),
+  postLivePlaybackInfo: vi.fn()
 }));
 
 describe('V3Player Volume Restore', () => {

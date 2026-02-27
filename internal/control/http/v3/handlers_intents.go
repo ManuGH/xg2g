@@ -10,11 +10,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/ManuGH/xg2g/internal/control/admission"
+	"github.com/ManuGH/xg2g/internal/control/auth"
 	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/log"
@@ -178,13 +180,39 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Resolve Profile ID (Testing override allowed via params).
-		// When profile isn't explicitly specified, honor client codec preferences
-		// (e.g. "av1,hevc,h264") to pick the best output profile.
+		// Resolve Profile ID.
+		// SSOT path: when playback_mode is provided by live playback decision endpoint,
+		// backend maps mode -> profile deterministically and ignores client profile hints.
 		reqProfileID := "universal"
-		if p := normalize.Token(req.Params["profile"]); p != "" {
+		requestedPlaybackMode := normalize.Token(req.Params["playback_mode"])
+		if requestedPlaybackMode != "" {
+			playbackDecisionToken, keyLabel, resultLabel, tokenErr := resolvePlaybackDecisionToken(req.Params)
+			if tokenErr != nil {
+				metrics.IncLiveIntentsPlaybackKey(keyLabel, resultLabel)
+				respondIntentFailure(w, r, IntentErrInvalidInput, tokenErr.Error())
+				return
+			}
+			principalID := ""
+			if p := auth.PrincipalFromContext(r.Context()); p != nil {
+				principalID = p.ID
+			}
+			if !s.verifyLivePlaybackDecision(playbackDecisionToken, principalID, req.ServiceRef, requestedPlaybackMode) {
+				metrics.IncLiveIntentsPlaybackKey(keyLabel, "rejected_invalid")
+				respondIntentFailure(w, r, IntentErrInvalidInput, "playback_mode is not attested by /live/stream-info")
+				return
+			}
+			metrics.IncLiveIntentsPlaybackKey(keyLabel, resultLabel)
+			mappedProfile, mapErr := mapPlaybackModeToProfile(requestedPlaybackMode)
+			if mapErr != nil {
+				respondIntentFailure(w, r, IntentErrInvalidInput, mapErr.Error())
+				return
+			}
+			reqProfileID = mappedProfile
+		} else if p := normalize.Token(req.Params["profile"]); p != "" {
+			// Legacy fallback path.
 			reqProfileID = p
 		} else if picked := pickProfileForCodecs(req.Params["codecs"], av1OK, hevcOK, h264OK, hwaccelMode); picked != "" {
+			// Legacy fallback path.
 			reqProfileID = picked
 		}
 
@@ -209,7 +237,12 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		case profiles.ProfileH264FMP4:
 			resolveHasGPU = h264OK
 		}
-		profileSpec := profiles.Resolve(reqProfileID, r.UserAgent(), int(cfg.HLS.DVRWindow.Seconds()), cap, resolveHasGPU, hwaccelMode)
+		profileUserAgent := r.UserAgent()
+		if requestedPlaybackMode != "" {
+			// Explicit playback_mode must not be altered by UA heuristics.
+			profileUserAgent = ""
+		}
+		profileSpec := profiles.Resolve(reqProfileID, profileUserAgent, int(cfg.HLS.DVRWindow.Seconds()), cap, resolveHasGPU, hwaccelMode)
 
 		// 5.0 Preflight Source Check (fail-closed)
 		if enforcePreflight(r.Context(), w, r, deps, req.ServiceRef) {
@@ -438,4 +471,36 @@ func ComputeIdemKey(intentType model.IntentType, ref, profile, bucket string) st
 	payload := fmt.Sprintf("v1:%s:%s:%s:%s", intentType, ref, profile, bucket)
 	hash := sha256.Sum256([]byte(payload))
 	return hex.EncodeToString(hash[:])
+}
+
+func mapPlaybackModeToProfile(mode string) (string, error) {
+	switch mode {
+	case "native_hls", "hlsjs", "direct_mp4":
+		return "high", nil
+	case "transcode":
+		return profiles.ProfileH264FMP4, nil
+	case "deny":
+		return "", fmt.Errorf("playback_mode=deny cannot start a live session")
+	default:
+		return "", fmt.Errorf("unsupported playback_mode: %q", mode)
+	}
+}
+
+func resolvePlaybackDecisionToken(params map[string]string) (token, keyLabel, resultLabel string, err error) {
+	playbackDecisionToken := strings.TrimSpace(params["playback_decision_token"])
+	playbackDecisionID := strings.TrimSpace(params["playback_decision_id"])
+
+	switch {
+	case playbackDecisionToken == "" && playbackDecisionID == "":
+		return "", "none", "rejected_missing", fmt.Errorf("playback_decision_id or playback_decision_token is required when playback_mode is provided")
+	case playbackDecisionToken != "" && playbackDecisionID != "":
+		if playbackDecisionToken != playbackDecisionID {
+			return "", "both", "mismatch", fmt.Errorf("playback_decision_id and playback_decision_token mismatch")
+		}
+		return playbackDecisionToken, "both", "equal", nil
+	case playbackDecisionToken != "":
+		return playbackDecisionToken, "playback_decision_token", "accepted", nil
+	default:
+		return playbackDecisionID, "playback_decision_id", "accepted", nil
+	}
 }

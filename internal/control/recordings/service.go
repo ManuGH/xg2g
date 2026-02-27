@@ -27,8 +27,9 @@ type PlaybackResolution struct {
 	// DurationSec: Authoritative duration in seconds (nil if unknown)
 	DurationSec *int64
 
-	// DurationSource: "store", "probe", "cache" (nil if unknown)
+	// DurationSource: canonical duration provenance (nil if unknown)
 	DurationSource *DurationSource
+	DurationTruth  DurationTruth
 
 	// Codec Truth (nil if unknown)
 	Container  *string
@@ -320,12 +321,18 @@ func (s *service) ResolvePlayback(ctx context.Context, recordingID, profile stri
 	} else if res.MediaInfo.IsMP4FastPathEligible {
 		canSeek = true
 	}
+	if res.DurationTruth.Source != "" {
+		if !res.DurationTruth.HasDuration() || res.DurationTruth.Confidence == DurationTruthConfidenceLow {
+			canSeek = false
+		}
+	}
 
 	return PlaybackResolution{
 		Strategy:       strategy,
 		CanSeek:        canSeek,
 		DurationSec:    res.DurationSeconds, // Pass-through pointer
 		DurationSource: res.DurationSource,  // Pass-through pointer
+		DurationTruth:  res.DurationTruth,
 		Container:      res.Container,
 		VideoCodec:     res.VideoCodec,
 		AudioCodec:     res.AudioCodec,
