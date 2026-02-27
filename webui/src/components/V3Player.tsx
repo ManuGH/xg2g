@@ -18,7 +18,7 @@ import { useResume } from '../features/resume/useResume';
 import { ResumeState } from '../features/resume/api';
 import { Button, Card, StatusChip } from './ui';
 import { assertOkOrProblem, formatProblemMessage, parseProblemResponse } from '../lib/httpProblem';
-import { getApiBaseUrl, setClientAuthToken } from '../client-ts/wrapper';
+import { getApiBaseUrl, setClientAuthToken } from '../lib/clientWrapper';
 import { debugError, debugLog, debugWarn } from '../utils/logging';
 import {
   resolveAvailableLiveEngineFromMode,

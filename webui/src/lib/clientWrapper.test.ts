@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { client } from './client.gen';
-import { isApiError, isProblemDetails, mapApiError, putJsonOrThrow } from './wrapper';
+import { client } from '../client-ts/client.gen';
+import { isApiError, isProblemDetails, mapApiError, putJsonOrThrow } from './clientWrapper';
 
 describe('client-ts wrapper error mapping', () => {
   afterEach(() => {
