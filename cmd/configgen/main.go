@@ -228,6 +228,9 @@ func updateSchemaDefaults(root string, entries []config.ConfigEntry, allowCreate
 	if err != nil {
 		return fmt.Errorf("marshal schema: %w", err)
 	}
+	if len(out) == 0 || out[len(out)-1] != '\n' {
+		out = append(out, '\n')
+	}
 	if err := os.WriteFile(path, out, 0600); err != nil {
 		return fmt.Errorf("write schema: %w", err)
 	}
