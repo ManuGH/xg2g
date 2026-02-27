@@ -76,7 +76,7 @@
           "type": "array"
         },
         "playbackDecisionRotationWindow": {
-          "default": "1",
+          "default": "10m",
           "type": "string"
         },
         "playbackDecisionSecret": {

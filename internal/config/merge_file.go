@@ -172,6 +172,9 @@ func (l *Loader) mergeFileAPI(dst *AppConfig, src *FileConfig) error {
 	if len(src.API.Tokens) > 0 {
 		dst.APITokens = append([]ScopedToken(nil), src.API.Tokens...)
 	}
+	if src.API.DisableLegacyTokenSources != nil {
+		dst.APIDisableLegacyTokenSources = *src.API.DisableLegacyTokenSources
+	}
 	if src.API.PlaybackDecisionSecret != "" {
 		dst.PlaybackDecisionSecret = expandEnv(src.API.PlaybackDecisionSecret)
 	}
