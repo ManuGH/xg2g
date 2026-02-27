@@ -74,6 +74,7 @@ type sessionRoutes interface {
 type streamRoutes interface {
 	GetStreams(w http.ResponseWriter, r *http.Request)
 	DeleteStreamsId(w http.ResponseWriter, r *http.Request)
+	PostLivePlaybackInfo(w http.ResponseWriter, r *http.Request)
 }
 
 type configRoutes interface {

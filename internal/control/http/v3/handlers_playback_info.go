@@ -12,8 +12,12 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/ManuGH/xg2g/internal/control/auth"
+	v3auth "github.com/ManuGH/xg2g/internal/control/http/v3/auth"
 	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/artifacts"
 	"github.com/ManuGH/xg2g/internal/control/playback"
 	"github.com/ManuGH/xg2g/internal/control/recordings"
@@ -21,6 +25,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/recordings/decision"
 	"github.com/ManuGH/xg2g/internal/hls"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/normalize"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 )
 
@@ -49,6 +54,26 @@ func (s *Server) PostRecordingPlaybackInfo(w http.ResponseWriter, r *http.Reques
 	s.handlePlaybackInfo(w, r, recordingId, &caps, "v3.1", "compact")
 }
 
+// PostLivePlaybackInfo implements ServerInterface (Live Stream Info)
+func (s *Server) PostLivePlaybackInfo(w http.ResponseWriter, r *http.Request) {
+	var req PostLivePlaybackInfoJSONRequestBody
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields() // CTO Requirement 3: Strict validation
+	if err := dec.Decode(&req); err != nil {
+		writeProblem(w, r, http.StatusBadRequest, "live/invalid", "Invalid Request", "INVALID_INPUT", "Failed to parse request body: "+err.Error(), nil)
+		return
+	}
+	if req.ServiceRef == "" {
+		writeProblem(w, r, http.StatusBadRequest, "live/invalid", "Invalid Request", "INVALID_INPUT", "serviceRef is required", nil)
+		return
+	}
+
+	// For MVP of PostLivePlaybackInfo, we delegate to handlePlaybackInfo using the serviceRef encoded as RecordingID
+	// The frontend uses the returned PlaybackInfo to check mode and find the playbackDecisionToken.
+	// We inject "recordingId" as encoded service ref so it bypasses normal structural truth and just hits decision engine
+	s.handlePlaybackInfo(w, r, recordings.EncodeRecordingID(req.ServiceRef), (*PlaybackCapabilities)(&req.Capabilities), "v3.1", "live")
+}
+
 func (s *Server) handlePlaybackInfo(w http.ResponseWriter, r *http.Request, recordingId string, caps *PlaybackCapabilities, apiVersion string, schemaType string) {
 	deps := s.recordingsModuleDeps()
 	svc := deps.recordingsService
@@ -67,19 +92,26 @@ func (s *Server) handlePlaybackInfo(w http.ResponseWriter, r *http.Request, reco
 		return
 	}
 
-	// 2a. Get Media Truth (Structural Only)
-	truth, err := svc.GetMediaTruth(r.Context(), recordingId)
-	if err != nil {
-		s.mapPlaybackError(w, r, recordingId, err)
-		return
-	}
+	var truth playback.MediaTruth
+	var err error
 
-	// 2b. Check for Preparing State (Async Probe In Progress)
-	if truth.State == playback.StatePreparing {
-		w.Header().Set("Retry-After", "5")
-		// Use standard "Recordings Preparing" problem
-		writeProblem(w, r, http.StatusServiceUnavailable, "recordings/preparing", "Media is being analyzed", "RECORDING_PREPARING", "Retry shortly.", nil)
-		return
+	// For Live streams, we DO NOT probe for structural truth because they are continuous raw TS streams.
+	if schemaType == "live" {
+		truth = assumeLiveTruth(recordingId)
+	} else {
+		// 2a. Get Media Truth (Structural Only)
+		truth, err = svc.GetMediaTruth(r.Context(), recordingId)
+		if err != nil {
+			s.mapPlaybackError(w, r, recordingId, err)
+			return
+		}
+
+		// 2b. Check for Preparing State (Async Probe In Progress)
+		if truth.State == playback.StatePreparing {
+			w.Header().Set("Retry-After", "5")
+			writeProblem(w, r, http.StatusServiceUnavailable, "recordings/preparing", "Media is being analyzed", "RECORDING_PREPARING", "Retry shortly.", nil)
+			return
+		}
 	}
 
 	// 2b. Resolve Client Capabilities (SSOT)
@@ -162,7 +194,7 @@ func (s *Server) handlePlaybackInfo(w http.ResponseWriter, r *http.Request, reco
 	}
 
 	// 8. Transform to DTO (passing truth directly)
-	dto := s.mapPlaybackInfoV2(r.Context(), recordingId, dec, resumeState, segmentTruth, attemptedTruth, truth)
+	dto := s.mapPlaybackInfoV2(r.Context(), recordingId, dec, resumeState, segmentTruth, attemptedTruth, truth, schemaType, caps)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(dto)
@@ -195,7 +227,7 @@ func (s *Server) mapPlaybackError(w http.ResponseWriter, r *http.Request, id str
 	}
 }
 
-func (s *Server) mapPlaybackInfoV2(ctx context.Context, id string, dec *decision.Decision, rState *resume.State, truth *hls.SegmentTruth, attemptedTruth bool, rawTruth playback.MediaTruth) PlaybackInfo {
+func (s *Server) mapPlaybackInfoV2(ctx context.Context, id string, dec *decision.Decision, rState *resume.State, truth *hls.SegmentTruth, attemptedTruth bool, rawTruth playback.MediaTruth, schemaType string, caps *PlaybackCapabilities) PlaybackInfo {
 	// 1. Mode & URL
 	proto := decision.ProtocolFrom(dec)
 	var mode PlaybackInfoMode
@@ -204,10 +236,18 @@ func (s *Server) mapPlaybackInfoV2(ctx context.Context, id string, dec *decision
 	switch proto {
 	case "mp4":
 		mode = PlaybackInfoModeDirectMp4
-		url = fmt.Sprintf("/api/v3/recordings/%s/stream.mp4", id)
+		if schemaType == "live" {
+			url = fmt.Sprintf("/api/v3/streams/%s", id)
+		} else {
+			url = fmt.Sprintf("/api/v3/recordings/%s/stream.mp4", id)
+		}
 	case "hls":
 		mode = PlaybackInfoModeHls
-		url = fmt.Sprintf("/api/v3/recordings/%s/playlist.m3u8", id)
+		if schemaType == "live" {
+			url = fmt.Sprintf("/api/v3/streams/%s/playlist.m3u8", id)
+		} else {
+			url = fmt.Sprintf("/api/v3/recordings/%s/playlist.m3u8", id)
+		}
 	case "none":
 		// P9-0 Option B: Keep Mode=DirectMp4 for client compatibility, but URL=nil and Decision.Mode=deny
 		mode = PlaybackInfoModeDirectMp4
@@ -295,19 +335,58 @@ func (s *Server) mapPlaybackInfoV2(ctx context.Context, id string, dec *decision
 	audioCodec := rawTruth.AudioCodec
 	// Note: DurationSource is dropped as we move to structural truth (implied "probe" or "truth")
 
+	var pdt *string
+	if schemaType == "live" && dec.Mode != decision.ModeDeny {
+		jwtSecret := s.JWTSecret
+		now := time.Now().Unix()
+		var capHash string
+		if caps != nil {
+			if capBytes, err := json.Marshal(caps); err == nil {
+				var capMap map[string]interface{}
+				if err := json.Unmarshal(capBytes, &capMap); err == nil {
+					if cHash, err := normalize.MapHash(capMap); err == nil {
+						capHash = cHash
+					}
+				}
+			}
+		}
+
+		claims := v3auth.TokenClaims{
+			Iss:     "xg2g",
+			Aud:     "xg2g/v3/intents",
+			Sub:     normalize.ServiceRef(id), // The sub must strictly match the normalized intent payload
+			Jti:     uuid.New().String(),
+			Iat:     now,
+			Nbf:     now,      // Active immediately
+			Exp:     now + 60, // Short strictly bounded TTL (60s) for starting
+			Mode:    string(dec.Mode),
+			CapHash: capHash,
+			TraceID: dec.Trace.RequestID,
+		}
+
+		tokenStr, err := v3auth.GenerateHS256(jwtSecret, claims, "kid-v1")
+		if err != nil {
+			log.L().Error().Err(err).Str("id", id).Msg("failed to generate secure playback token")
+		} else {
+			pdt = &tokenStr
+		}
+	}
+
 	info := PlaybackInfo{
-		Mode:            mode,
-		Url:             finalUrl,
-		DurationSeconds: &durSec,
-		DurationSource:  nil,
-		Container:       &container,
-		VideoCodec:      &videoCodec,
-		AudioCodec:      &audioCodec,
-		Reason:          &mainReason,
-		Decision:        &decDTO,
-		Resume:          resDTO,
-		RequestId:       dec.Trace.RequestID,
-		SessionId:       sessionID,
+		Mode:                  mode,
+		DecisionReason:        (*string)(&primaryStr),
+		Url:                   finalUrl,
+		DurationSeconds:       &durSec,
+		DurationSource:        nil,
+		Container:             &container,
+		VideoCodec:            &videoCodec,
+		AudioCodec:            &audioCodec,
+		Reason:                &mainReason,
+		Decision:              &decDTO,
+		Resume:                resDTO,
+		RequestId:             dec.Trace.RequestID,
+		SessionId:             sessionID,
+		PlaybackDecisionToken: pdt,
 	}
 
 	// 7. Apply Truth (P3-4component)
@@ -399,4 +478,17 @@ func readArtifactContent(a artifacts.ArtifactOK) (string, error) {
 		return string(b), err
 	}
 	return "", fmt.Errorf("empty artifact")
+}
+
+// assumeLiveTruth formalizes the media properties of a live Enigma2 stream.
+// Live streams cannot be predictably probed without delaying playback.
+// They are assumed to be Transport Streams (MP2T) carrying H264/AAC.
+func assumeLiveTruth(recordingId string) playback.MediaTruth {
+	log.L().Debug().Str("recordingId", recordingId).Msg("Bypassing media truth probe for Live schema with deterministic structural truth")
+	return playback.MediaTruth{
+		State:      playback.StateReady,
+		Container:  "mpegts", // Enigma2 feeds are M2TS
+		VideoCodec: "h264",   // DVB Standard Video
+		AudioCodec: "aac",    // DVB Standard Audio
+	}
 }

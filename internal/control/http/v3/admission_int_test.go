@@ -1,7 +1,6 @@
 package v3
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -10,14 +9,12 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/admission"
-	"github.com/ManuGH/xg2g/internal/domain/session/model"
-	"github.com/ManuGH/xg2g/internal/pipeline/api"
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// MockAdmissionState implements AdmissionStateSource for testing
+// MockAdmissionState implements AdmissionState for testing
 type MockAdmissionState struct {
 	Tuners     int
 	Sessions   int
@@ -37,6 +34,8 @@ func (m *MockAdmissionState) Snapshot(ctx context.Context) (admission.RuntimeSta
 }
 
 func TestAdmissionIntegration(t *testing.T) {
+	const testServiceRef = "1:0:1:0:0:0:0:0:0:0:http://example.com/stream"
+
 	// Base Config (Allow everything initially)
 	cfg := config.AppConfig{
 		Engine: config.EngineConfig{
@@ -50,12 +49,12 @@ func TestAdmissionIntegration(t *testing.T) {
 	}
 
 	// Setup Server dependencies
-	bus := bus.NewMemoryBus()
+	memBus := bus.NewMemoryBus()
 	store := &MockStoreForStreams{} // Use existing mock from streams_test
 
 	setupServer := func(state *MockAdmissionState) *Server {
 		s := NewServer(cfg, nil, func() {})
-		s.v3Bus = bus
+		s.v3Bus = memBus
 		s.v3Store = store
 		s.admissionState = state
 		return s
@@ -66,14 +65,9 @@ func TestAdmissionIntegration(t *testing.T) {
 		disabledCfg.Engine.Enabled = false
 		s := setupServer(&MockAdmissionState{})
 		s.cfg = disabledCfg
-		s.admission = admission.NewController(disabledCfg) // Re-init controller with disabled config
+		s.admission = admission.NewController(disabledCfg)
 
-		reqBody := api.IntentRequest{
-			Type:       model.IntentTypeStreamStart,
-			ServiceRef: "1:0:1:0:0:0:0:0:0:0:http://example.com/stream",
-		}
-		body, _ := json.Marshal(reqBody)
-		req := httptest.NewRequest("POST", "/api/v3/intents", bytes.NewReader(body))
+		req := intentReqWithValidJWT(t, testServiceRef, "", "live")
 		w := httptest.NewRecorder()
 
 		s.handleV3Intents(w, req)
@@ -88,7 +82,6 @@ func TestAdmissionIntegration(t *testing.T) {
 	})
 
 	t.Run("Sessions Full -> 503", func(t *testing.T) {
-		// Limit 10, Active 10
 		state := &MockAdmissionState{
 			Tuners:     2,
 			Sessions:   10,
@@ -96,12 +89,7 @@ func TestAdmissionIntegration(t *testing.T) {
 		}
 		s := setupServer(state)
 
-		reqBody := api.IntentRequest{
-			Type:       model.IntentTypeStreamStart,
-			ServiceRef: "1:0:1:0:0:0:0:0:0:0:http://example.com/stream",
-		}
-		body, _ := json.Marshal(reqBody)
-		req := httptest.NewRequest("POST", "/api/v3/intents", bytes.NewReader(body))
+		req := intentReqWithValidJWT(t, testServiceRef, "", "live")
 		w := httptest.NewRecorder()
 
 		s.handleV3Intents(w, req)
@@ -113,7 +101,7 @@ func TestAdmissionIntegration(t *testing.T) {
 		json.NewDecoder(resp.Body).Decode(&pd)
 		require.NotNil(t, pd.Code)
 		assert.Equal(t, admission.CodeSessionsFull, *pd.Code)
-		assert.Equal(t, "5", resp.Header.Get("Retry-After")) // Check override
+		assert.Equal(t, "5", resp.Header.Get("Retry-After"))
 	})
 
 	t.Run("No Tuners -> 503", func(t *testing.T) {
@@ -124,12 +112,7 @@ func TestAdmissionIntegration(t *testing.T) {
 		}
 		s := setupServer(state)
 
-		reqBody := api.IntentRequest{
-			Type:       model.IntentTypeStreamStart,
-			ServiceRef: "1:0:1:0:0:0:0:0:0:0:http://example.com/stream",
-		}
-		body, _ := json.Marshal(reqBody)
-		req := httptest.NewRequest("POST", "/api/v3/intents", bytes.NewReader(body))
+		req := intentReqWithValidJWT(t, testServiceRef, "", "live")
 		w := httptest.NewRecorder()
 
 		s.handleV3Intents(w, req)
@@ -145,16 +128,11 @@ func TestAdmissionIntegration(t *testing.T) {
 
 	t.Run("State Unknown (Fail-Closed) -> 503", func(t *testing.T) {
 		state := &MockAdmissionState{
-			Err: assert.AnError, // Trigger -1 in collector
+			Err: assert.AnError,
 		}
 		s := setupServer(state)
 
-		reqBody := api.IntentRequest{
-			Type:       model.IntentTypeStreamStart,
-			ServiceRef: "1:0:1:0:0:0:0:0:0:0:http://example.com/stream",
-		}
-		body, _ := json.Marshal(reqBody)
-		req := httptest.NewRequest("POST", "/api/v3/intents", bytes.NewReader(body))
+		req := intentReqWithValidJWT(t, testServiceRef, "", "live")
 		w := httptest.NewRecorder()
 
 		s.handleV3Intents(w, req)

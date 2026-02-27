@@ -55,7 +55,7 @@ func TestIntentErrorMapping_ResponseShape(t *testing.T) {
 		require.NoError(t, json.NewDecoder(rr.Body).Decode(&body))
 		require.Equal(t, float64(spec.status), body["status"])
 		require.Equal(t, spec.apiErr.Code, body["code"])
-		require.Equal(t, "error/"+strings.ToLower(spec.apiErr.Code), body["type"])
+		require.Equal(t, "/problems/error/"+strings.ToLower(spec.apiErr.Code), body["type"])
 		require.Equal(t, spec.apiErr.Message, body["title"])
 		require.Equal(t, "details", body["details"])
 

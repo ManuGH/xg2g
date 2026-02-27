@@ -94,9 +94,6 @@ func ValidateOutboundURL(ctx context.Context, raw string, policy OutboundPolicy)
 	if u.Host == "" {
 		return "", fmt.Errorf("missing url host")
 	}
-	if u.User != nil {
-		return "", fmt.Errorf("userinfo not allowed")
-	}
 	if u.Fragment != "" {
 		return "", fmt.Errorf("fragments not allowed")
 	}

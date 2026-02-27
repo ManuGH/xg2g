@@ -21,6 +21,7 @@ var operationScopes = map[string][]string{
 	"GetRecordingsRecordingIdStatus":   {"v3:read"},
 	"GetRecordingPlaybackInfo":         {"v3:read"},
 	"PostRecordingPlaybackInfo":        {"v3:read"},
+	"PostLivePlaybackInfo":             {"v3:read"},
 	"StreamRecordingDirect":            {"v3:read"},
 	"ProbeRecordingMp4":                {"v3:read"},
 	"GetRecordingHLSTimeshift":         {"v3:read"},
@@ -62,8 +63,7 @@ var operationScopes = map[string][]string{
 
 // Operations allowed to be unscoped.
 // Hardened default keeps this empty; entries require explicit security review.
-var unscopedOperations = map[string]struct{}{
-}
+var unscopedOperations = map[string]struct{}{}
 
 // RequiredScopes returns the required scopes for an operation ID.
 func RequiredScopes(operationID string) ([]string, bool) {

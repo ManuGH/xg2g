@@ -629,12 +629,20 @@ func runRaceTest(t *testing.T, srv testServer, tok testTokens, spy *SpyStore, sp
 	for i := 0; i < n; i++ {
 		go func(idx int) {
 			defer wg.Done()
-			// Use same serviceRef to trigger collision
-			body := map[string]any{
-				"type":       "stream.start",
-				"serviceRef": "1:0:19:132F:3EF:1:C00000:0:0:0:RACETEST",
+			// Use same serviceRef to trigger collision, each with valid JWT
+			body := intentBodyWithValidJWT(t, "1:0:19:132F:3EF:1:C00000:0:0:0:RACETEST", "", "live", "")
+			req, err := http.NewRequest(http.MethodPost, srv.url+"/api/v3/intents", bytes.NewReader(body))
+			if err != nil {
+				t.Errorf("new request: %v", err)
+				return
 			}
-			resp := doReq(t, client, http.MethodPost, srv.url+"/api/v3/intents", body, tok.write, "127.0.0.1")
+			req.Header.Set("Authorization", "Bearer "+tok.write)
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := client.Do(req)
+			if err != nil {
+				t.Errorf("do request: %v", err)
+				return
+			}
 			defer func() { _ = resp.Body.Close() }()
 			statuses[idx] = resp.StatusCode
 

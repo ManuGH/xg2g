@@ -11,6 +11,7 @@ export type PlayerStatus =
   | 'ready'
   | 'buffering'
   | 'playing'
+  | 'recovering'
   | 'error'
   | 'stopped'
   | 'paused';

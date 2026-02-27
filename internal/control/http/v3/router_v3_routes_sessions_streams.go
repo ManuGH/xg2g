@@ -17,4 +17,5 @@ func registerSessionRoutes(register routeRegistrar, handler sessionRoutes) {
 func registerStreamRoutes(register routeRegistrar, handler streamRoutes) {
 	register.add(http.MethodGet, "/streams", "GetStreams", handler.GetStreams)
 	register.add(http.MethodDelete, "/streams/{id}", "DeleteStreamsId", handler.DeleteStreamsId)
+	register.add(http.MethodPost, "/live/stream-info", "PostLivePlaybackInfo", handler.PostLivePlaybackInfo)
 }

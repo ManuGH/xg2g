@@ -241,7 +241,7 @@ func TestGetStreams_Contract_Slice53(t *testing.T) {
 			err := json.NewDecoder(resp.Body).Decode(&pd)
 			require.NoError(t, err)
 			assert.Equal(t, 503, pd.Status)
-			assert.Equal(t, "streams/unavailable", pd.Type)
+			assert.Equal(t, "/problems/streams/unavailable", pd.Type)
 			assert.Equal(t, "V3 control plane not enabled", pd.Title)
 		})
 
@@ -265,7 +265,7 @@ func TestGetStreams_Contract_Slice53(t *testing.T) {
 			err := json.NewDecoder(resp.Body).Decode(&pd)
 			require.NoError(t, err)
 			assert.Equal(t, 500, pd.Status)
-			assert.Equal(t, "streams/read_failed", pd.Type)
+			assert.Equal(t, "/problems/streams/read_failed", pd.Type)
 			assert.Equal(t, "Failed to get streams", pd.Title)
 		})
 	})

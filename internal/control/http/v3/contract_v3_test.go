@@ -217,7 +217,8 @@ func (p *noopProber) Probe(ctx context.Context, path string) (*vod.StreamInfo, e
 
 func TestV3Contract_Intents(t *testing.T) {
 	s, st := newV3TestServer(t, t.TempDir())
-	body := readFixture(t, "post_intents_request.json")
+	const svcRef = "1:0:1:445D:453:1:C00000:0:0:0:"
+	body := intentBodyWithValidJWT(t, svcRef, "", "live", "corr-intent-001")
 
 	req := httptest.NewRequest(http.MethodPost, V3BaseURL+"/intents", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer test-token")
@@ -252,7 +253,8 @@ func TestV3Contract_Intents(t *testing.T) {
 
 func TestV3Contract_Intents_AdmissionRejected(t *testing.T) {
 	s, _ := newV3TestServerWithAdmission(t, t.TempDir(), admissionHarnessUnseeded)
-	body := readFixture(t, "post_intents_request.json")
+	const svcRef = "1:0:1:445D:453:1:C00000:0:0:0:"
+	body := intentBodyWithValidJWT(t, svcRef, "", "live", "corr-intent-001")
 
 	req := httptest.NewRequest(http.MethodPost, V3BaseURL+"/intents", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer test-token")
@@ -269,7 +271,7 @@ func TestV3Contract_Intents_AdmissionRejected(t *testing.T) {
 	var got map[string]any
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &got))
 	require.Equal(t, float64(http.StatusServiceUnavailable), got["status"])
-	require.Equal(t, "admission/state-unknown", got["type"])
+	require.Equal(t, "/problems/admission/state-unknown", got["type"])
 	require.Equal(t, "ADMISSION_STATE_UNKNOWN", got["code"])
 
 	reqID, ok := got[problem.JSONKeyRequestID].(string)
@@ -280,7 +282,6 @@ func TestV3Contract_Intents_AdmissionRejected(t *testing.T) {
 func TestV3Contract_IntentLeaseBusy(t *testing.T) {
 	t.Run("phase2_idempotent_replay", func(t *testing.T) {
 		s, st := newV3TestServer(t, t.TempDir())
-		// No legacy API Locking
 
 		_, ok, err := st.TryAcquireLease(context.Background(), lease.LeaseKeyTunerSlot(0), "busy-owner", 5*time.Second)
 		require.NoError(t, err)
@@ -296,9 +297,10 @@ func TestV3Contract_IntentLeaseBusy(t *testing.T) {
 		require.NoError(t, err)
 		defer func() { _ = sub.Close() }()
 
-		body := readFixture(t, "post_intents_request.json")
+		const svcRef = "1:0:1:445D:453:1:C00000:0:0:0:"
 
 		send := func() (*http.Request, *httptest.ResponseRecorder, v3api.IntentResponse) {
+			body := intentBodyWithValidJWT(t, svcRef, "", "live", "corr-intent-001")
 			req := httptest.NewRequest(http.MethodPost, V3BaseURL+"/intents", bytes.NewReader(body))
 			req.Header.Set("Authorization", "Bearer test-token")
 			req.Header.Set("Content-Type", "application/json")
@@ -306,7 +308,13 @@ func TestV3Contract_IntentLeaseBusy(t *testing.T) {
 			NewRouter(s, RouterOptions{
 				BaseURL: V3BaseURL,
 			}).ServeHTTP(rr, req)
-			return req, rr, decodeIntentResponse(t, rr.Body.Bytes())
+
+			// Decode: success → IntentResponse, error → skip
+			var resp v3api.IntentResponse
+			if rr.Code < 400 {
+				resp = decodeIntentResponse(t, rr.Body.Bytes())
+			}
+			return req, rr, resp
 		}
 
 		req1, rr1, resp1 := send()

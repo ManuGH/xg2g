@@ -2,7 +2,7 @@ package preflight
 
 import "net/http"
 
-const preflightProblemPrefix = "urn:xg2g:problem:preflight:"
+const preflightProblemPrefix = "preflight/"
 
 // MapPreflightOutcome returns the HTTP status and RFC7807 problem fields for a given outcome.
 // PreflightOK returns zero values to signal "no problem".

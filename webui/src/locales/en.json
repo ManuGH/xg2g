@@ -84,6 +84,7 @@
       "playing": "Playing",
       "paused": "Paused",
       "error": "Error",
+      "recovering": "Recovering…",
       "stopped": "Stopped"
     },
     "playlistNotReady": "Playlist not ready",
@@ -97,6 +98,7 @@
     "sessionFailed": "Session failed",
     "hlsError": "HLS Error",
     "authFailed": "Authentication failed",
+    "forbidden": "Access denied",
     "recordingNotFound": "Recording was not found (it may have been deleted).",
     "recordingPrepareTimeout": "Recording is taking unusually long to prepare. Please retry.",
     "resumeTitle": "Resume Playback?",
