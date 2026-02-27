@@ -2,10 +2,9 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import Hls from 'hls.js';
 import type { ErrorData, FragLoadedData, ManifestParsedData, LevelLoadedData } from 'hls.js';
-import { createSession, postRecordingPlaybackInfo } from '../client-ts/sdk.gen';
-import { client } from '../client-ts/client.gen';
+import { createSession, postRecordingPlaybackInfo } from '../client-ts';
 import { telemetry } from '../services/TelemetryService';
-import type { PlaybackCapabilities, PlaybackInfo } from '../client-ts/types.gen';
+import type { PlaybackCapabilities, PlaybackInfo } from '../client-ts';
 import type {
   V3PlayerProps,
   PlayerStatus,
@@ -19,6 +18,7 @@ import { useResume } from '../features/resume/useResume';
 import { ResumeState } from '../features/resume/api';
 import { Button, Card, StatusChip } from './ui';
 import { assertOkOrProblem, formatProblemMessage, parseProblemResponse } from '../lib/httpProblem';
+import { getApiBaseUrl, setClientAuthToken } from '../client-ts/wrapper';
 import { debugError, debugLog, debugWarn } from '../utils/logging';
 import {
   resolveAvailableLiveEngineFromMode,
@@ -241,7 +241,7 @@ function V3Player(props: V3PlayerProps) {
 
   // Explicitly static/memoized apiBase
   const apiBase = useMemo(() => {
-    return (client.getConfig().baseUrl || '/api/v3').replace(/\/$/, '');
+    return getApiBaseUrl('/api/v3');
   }, []);
 
 
@@ -456,7 +456,7 @@ function V3Player(props: V3PlayerProps) {
 
     const pending = (async () => {
       try {
-        client.setConfig({ headers: token ? { Authorization: `Bearer ${token}` } : {} });
+        setClientAuthToken(token ?? undefined);
         await createSession();
         sessionCookieRef.current.token = token;
       } catch (err) {
@@ -1856,7 +1856,7 @@ function V3Player(props: V3PlayerProps) {
   // Token update effect
   useEffect(() => {
     if (token) {
-      client.setConfig({ headers: { Authorization: `Bearer ${token}` } });
+      setClientAuthToken(token);
     }
     sessionCookieRef.current.token = null;
     sessionCookieRef.current.pending = null;

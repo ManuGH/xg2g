@@ -1,4 +1,4 @@
-import type { PlaybackInfoMode } from '../client-ts/types.gen';
+import type { PlaybackInfoMode } from '../client-ts';
 
 export const SERVER_PLAYBACK_MODES = [
   'native_hls',

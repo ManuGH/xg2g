@@ -2,9 +2,9 @@ import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi, afterEach } from 'vitest';
 import V3Player from '../../src/components/V3Player';
-import * as sdk from '../../src/client-ts/sdk.gen';
+import * as sdk from '../../src/client-ts';
 
-vi.mock('../../src/client-ts/sdk.gen', async () => {
+vi.mock('../../src/client-ts', async () => {
   return {
     createSession: vi.fn(),
     postRecordingPlaybackInfo: vi.fn(),

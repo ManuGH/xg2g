@@ -1,4 +1,4 @@
-import type { ProblemDetails } from '../client-ts/types.gen';
+import type { ProblemDetails } from '../client-ts';
 
 type JsonRecord = Record<string, unknown>;
 

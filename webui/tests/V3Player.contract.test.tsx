@@ -2,11 +2,11 @@ import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import V3Player from '../src/components/V3Player';
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach, afterAll } from 'vitest';
-import * as sdk from '../src/client-ts/sdk.gen';
+import * as sdk from '../src/client-ts';
 import { suppressExpectedConsoleNoise } from './helpers/consoleNoise';
 
-vi.mock('../src/client-ts/sdk.gen', async () => {
-  const actual = await vi.importActual<any>('../src/client-ts/sdk.gen');
+vi.mock('../src/client-ts', async () => {
+  const actual = await vi.importActual<any>('../src/client-ts');
   return {
     ...actual,
     postRecordingPlaybackInfo: vi.fn(),
