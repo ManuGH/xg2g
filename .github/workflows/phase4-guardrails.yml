@@ -48,22 +48,10 @@ jobs:
           fi
           echo "✅ No new .jsx files"
 
-      - name: Check for legacy client imports
+      - name: Check generated client wrapper boundary
         run: |
-          # Check for imports from src/client/ (not src/client-ts/)
-          # Phase 5: All compatibility layer usage removed
-
-          VIOLATIONS=$(grep -r "from ['\"].*\.\.\/client[^-]" webui/src/ 2>/dev/null || true)
-
-          if [ -n "$VIOLATIONS" ]; then
-            echo "❌ ERROR: Legacy client imports detected (Phase 5 violation)"
-            echo "Files with src/client/ imports:"
-            echo "$VIOLATIONS"
-            echo ""
-            echo "Use src/client-ts/ SDK instead"
-            exit 1
-          fi
-          echo "✅ No legacy client imports (compatibility layer removed)"
+          set -euo pipefail
+          bash webui/scripts/verify-client-wrapper-boundary.sh
 
       - name: TypeScript Check
         run: |

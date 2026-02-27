@@ -32,6 +32,35 @@ func TestExtractToken_IgnoresQueryParams(t *testing.T) {
 	}
 }
 
+func TestExtractTokenDetailedWithOptions_DisablesLegacySources(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "http://example.local/test", nil)
+	r.Header.Set("X-API-Token", "legacy-header-token")
+	r.AddCookie(&http.Cookie{Name: "X-API-Token", Value: "legacy-cookie-token"})
+
+	got, src := ExtractTokenDetailedWithOptions(r, TokenExtractOptions{
+		AllowLegacySources: false,
+	})
+	if got != "" || src != "" {
+		t.Fatalf("expected no token with legacy disabled, got token=%q source=%q", got, src)
+	}
+}
+
+func TestExtractTokenDetailedWithOptions_AllowsSessionCookieWhenLegacyDisabled(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "http://example.local/test", nil)
+	r.AddCookie(&http.Cookie{Name: "xg2g_session", Value: "session-token"})
+	r.Header.Set("X-API-Token", "legacy-header-token")
+
+	got, src := ExtractTokenDetailedWithOptions(r, TokenExtractOptions{
+		AllowLegacySources: false,
+	})
+	if got != "session-token" {
+		t.Fatalf("expected session token, got %q", got)
+	}
+	if src != "xg2g_session cookie" {
+		t.Fatalf("expected session cookie source, got %q", src)
+	}
+}
+
 func TestAuthorizeToken(t *testing.T) {
 	if AuthorizeToken("secret", "secret") != true {
 		t.Fatal("AuthorizeToken should accept exact match")

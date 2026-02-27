@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -17,6 +18,21 @@ import (
 	"github.com/ManuGH/xg2g/internal/m3u"
 	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
 )
+
+const (
+	backgroundScanTimeout = 30 * time.Minute
+	resolveM3UTimeout     = 2 * time.Second
+)
+
+var resolveM3UHTTPClient = &http.Client{
+	Timeout: resolveM3UTimeout,
+	Transport: &http.Transport{
+		MaxIdleConns:        16,
+		MaxIdleConnsPerHost: 4,
+		IdleConnTimeout:     30 * time.Second,
+		DisableCompression:  true,
+	},
+}
 
 type ScanStatus struct {
 	State           string `json:"state"`
@@ -50,7 +66,7 @@ func NewManager(store CapabilityStore, m3uPath string, e2Client *enigma2.Client)
 		store:      store,
 		m3uPath:    m3uPath,
 		e2Client:   e2Client,
-		ProbeDelay: 100 * time.Millisecond,
+		ProbeDelay: 1000 * time.Millisecond,
 		status: ScanStatus{
 			State: "idle",
 		},
@@ -122,7 +138,7 @@ func (m *Manager) RunBackground() bool {
 
 	go func() {
 		defer m.isScanning.Store(false)
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), backgroundScanTimeout)
 		defer cancel()
 		if err := m.scanInternal(ctx); err != nil {
 			log.L().Error().Err(err).Msg("scan: background scan failed")
@@ -223,13 +239,16 @@ func (m *Manager) scanInternal(ctx context.Context) error {
 		}
 
 		if !resolved {
-			if res, err := resolveStreamURL(ctx, ch.URL); err == nil && res != "" {
+			resCtx, resCancel := context.WithTimeout(ctx, resolveM3UTimeout)
+			res, err := resolveStreamURL(resCtx, ch.URL)
+			resCancel()
+			if err == nil && res != "" {
 				probeURL = res
 			}
 		}
 
 		// Probe with strict timeout (prevent hanging on zombie streams)
-		probeCtx, probeCancel := context.WithTimeout(ctx, 2*time.Second)
+		probeCtx, probeCancel := context.WithTimeout(ctx, 8*time.Second)
 		log.L().Debug().Str("sref", sRef).Msg("scan: probing channel")
 		res, err := infra.Probe(probeCtx, probeURL)
 		probeCancel() // Start fresh context for fallback if needed
@@ -242,7 +261,7 @@ func (m *Manager) scanInternal(ctx context.Context) error {
 			fallbackURL, buildErr := buildFallbackURL(probeURL, sRef)
 			if buildErr == nil {
 				// Use fresh timeout for fallback
-				fbCtx, fbCancel := context.WithTimeout(ctx, 2*time.Second)
+				fbCtx, fbCancel := context.WithTimeout(ctx, 8*time.Second)
 				resFallback, errFallback := infra.Probe(fbCtx, fallbackURL)
 				fbCancel()
 
@@ -261,7 +280,7 @@ func (m *Manager) scanInternal(ctx context.Context) error {
 		// This respects "UseWebIFStreams" scenarios where the user relies on the API endpoint itself.
 		if err != nil {
 			log.L().Warn().Str("sref", sRef).Msg("scan: attempting fallback to original URL (web)")
-			fbCtx, fbCancel := context.WithTimeout(ctx, 2*time.Second)
+			fbCtx, fbCancel := context.WithTimeout(ctx, 8*time.Second)
 			resOrig, errOrig := infra.Probe(fbCtx, ch.URL)
 			fbCancel()
 
@@ -346,7 +365,7 @@ func resolveStreamURL(ctx context.Context, urlStr string) (string, error) {
 
 	req.Header.Set("Connection", "close")
 	req.Close = true
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := resolveM3UHTTPClient.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -356,7 +375,8 @@ func resolveStreamURL(ctx context.Context, urlStr string) (string, error) {
 		return "", fmt.Errorf("status %d", resp.StatusCode)
 	}
 
-	scanner := bufio.NewScanner(resp.Body)
+	limitedBody := io.LimitReader(resp.Body, 64*1024)
+	scanner := bufio.NewScanner(limitedBody)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line != "" && !strings.HasPrefix(line, "#") {

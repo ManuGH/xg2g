@@ -34,10 +34,16 @@ if ! git show-ref --verify --quiet refs/remotes/origin/main; then
   fail "origin/main not found locally; run: git fetch origin main"
 fi
 
-if ! git merge-base --is-ancestor refs/remotes/origin/main HEAD; then
-  fail "current branch does not descend from origin/main (possible unrelated history)"
+if ! git merge-base refs/remotes/origin/main HEAD >/dev/null 2>&1; then
+  fail "no merge-base with origin/main (possible unrelated history)"
 fi
 
+if ! git merge-base --is-ancestor refs/remotes/origin/main HEAD; then
+  echo "pre-push sanity note: branch is behind origin/main; rebase recommended"
+fi
+
+# Only inspect working-tree paths known to git; internal .git/worktrees metadata
+# can contain platform artifacts that must not block pushes.
 tracked_bad="$(git ls-files | grep -E "${BAD_PATTERN}" || true)"
 if [[ -n "${tracked_bad}" ]]; then
   fail "tracked system metadata detected (._*, .DS_Store, .Spotlight-V100, .Trashes)"

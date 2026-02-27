@@ -3,6 +3,7 @@ package ffmpeg
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -859,11 +860,23 @@ func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputP
 		if !strings.Contains(fflags, "igndts") {
 			fflags += "+igndts"
 		}
+
+		headers := "Icy-MetaData: 1\r\n"
+		if u, err := url.Parse(inputURL); err == nil && u.User != nil {
+			if pwd, ok := u.User.Password(); ok {
+				auth := u.User.Username() + ":" + pwd
+				headers += "Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte(auth)) + "\r\n"
+			} else {
+				auth := u.User.Username() + ":"
+				headers += "Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte(auth)) + "\r\n"
+			}
+		}
+
 		baseInputArgs = append(baseInputArgs,
 			"-avoid_negative_ts", "make_zero",
 			"-flags2", "+showall+export_mvs",
 			"-user_agent", "VLC/3.0.21 LibVLC/3.0.21",
-			"-headers", "Icy-MetaData: 1\r\n",
+			"-headers", headers,
 		)
 	}
 	baseInputArgs = append([]string{"-fflags", fflags}, baseInputArgs...)

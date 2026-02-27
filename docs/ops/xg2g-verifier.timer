@@ -1,0 +1,13 @@
+# GENERATED FILE - DO NOT EDIT. Source: templates/docs/ops/xg2g-verifier.timer.tmpl
+[Unit]
+Description=Periodic xg2g Runtime Verifier
+
+[Timer]
+OnBootSec=10m
+OnUnitActiveSec=30m
+RandomizedDelaySec=3m
+Persistent=true
+Unit=xg2g-verifier.service
+
+[Install]
+WantedBy=timers.target

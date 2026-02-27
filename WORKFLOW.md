@@ -6,6 +6,7 @@ This repo is developed on macOS (edit + test only) and Linux (test + run). The g
 
 - Never push directly to `main`.
 - Always work on a feature branch: `codex/<feature>` or `<user>/<feature>`.
+- Use one dedicated worktree per thread/feature to avoid branch/path crossover.
 
 ```bash
 git checkout -b codex/<feature>
@@ -23,7 +24,7 @@ git checkout -b codex/<feature>
 - Clean SMB metadata if needed:
 
 ```bash
-find . -name '._*' -type f -delete
+make repair-metadata
 ```
 
 ## Keeping Branches Up to Date (Rebase Standard)

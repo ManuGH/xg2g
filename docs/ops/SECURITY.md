@@ -30,6 +30,17 @@ Browser-based clients (integrations) must use the following flow to obtain acces
    - **Secure**: `true` (If HTTPS is enabled)
 4. **Media Access**: Subsequent requests to `/api/v3/sessions/{id}/hls/*` will include the cookie automatically.
 
+## Legacy Token Migration (X-API-Token)
+
+Legacy `X-API-Token` header/cookie sources are supported only for migration and can be disabled explicitly:
+
+- **Flag**: `XG2G_API_DISABLE_LEGACY_TOKEN_SOURCES=true`
+- **Default**: `false` (legacy sources still accepted during migration)
+- **Recommended rollout**:
+  1. Migrate clients to `Authorization: Bearer <token>` (API) and `xg2g_session` cookie (media).
+  2. Enable `XG2G_API_DISABLE_LEGACY_TOKEN_SOURCES=true`.
+  3. Monitor auth logs for `auth.legacy_token_source` before and during cutover.
+
 ## Admission Control: Fail-Closed Policy
 
 The system implements a "Fail-Closed" policy for resource admission:

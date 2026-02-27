@@ -298,24 +298,17 @@ infra/
 
 **Import Rules:**
 
-- ✅ MAY import `platform/` (OS abstractions)
-- ❌ MUST NOT import `domain/`, `control/`, `api/` (dependency inversion)
+- ✅ MAY import `platform/` (OS abstractions), `domain/*/ports` (interface contracts), and shared pure domain DTOs (currently `domain/vod`)
+- ❌ MUST NOT import `control/` or `api/`
+- ❌ MUST NOT import domain logic packages (e.g., `domain/session/manager`)
 
-**Current Violations (Tech Debt):**
+**Current Status (as of 2026-02-20):**
 
-1. `infra/bus/adapter.go` → `domain/session/ports` ⚠️
-2. `infra/media/ffmpeg/adapter.go` → `domain/session/ports` ⚠️
-3. `infra/media/stub/adapter.go` → `domain/session/ports` ⚠️
-4. `infra/ffmpeg/builder.go` → `control/vod` ⚠️
-5. `infra/ffmpeg/probe.go` → `control/vod` ⚠️
-6. `infra/ffmpeg/runner.go` → `control/vod` ⚠️
-
-**Why These Are Wrong:**
-
-- Violations 1-3: Infra imports domain (correct), but domain defines ports (also correct). **This is actually OK** (implementing interface).
-- Violations 4-6: Infra imports control (wrong layer direction). **This must be fixed.**
-
-(See Section 5 for refactor plan.)
+- ✅ `infra/bus/adapter.go` → `domain/session/ports` (allowed, interface implementation)
+- ✅ `infra/media/ffmpeg/adapter.go` → `domain/session/ports` (allowed, interface implementation)
+- ✅ `infra/media/stub/adapter.go` → `domain/session/ports` (allowed, interface implementation)
+- ✅ `infra/ffmpeg/{builder,probe,runner}.go` now import `domain/vod` (control-layer dependency removed)
+- ✅ No open `infra/*` → `control/*` violations (enforced by `internal/validate/imports_test.go`)
 
 ---
 
@@ -584,20 +577,11 @@ func toDTO(s *session.Session) *types.StreamResponse { ... }
 - Infra is the lowest layer (adapters to external systems)
 - Control is application logic (above infra)
 
-**Current Violations (MUST FIX):**
+**Current Status (resolved on 2026-02-20):**
 
-- `infra/ffmpeg/builder.go` → `control/vod` ❌
-- `infra/ffmpeg/probe.go` → `control/vod` ❌
-- `infra/ffmpeg/runner.go` → `control/vod` ❌
-
-**Why This Is Wrong:**
-
-- FFmpeg (infra) should not know about VOD business logic (control)
-- Creates circular dependency risk (control → infra → control)
-
-**Fix:** Move VOD types out of `control/vod` into `domain/vod` or `library/types`.
-
-(See Section 5 for detailed refactor plan.)
+- ✅ No `infra/*` → `control/*` imports remain.
+- ✅ Shared FFmpeg/VOD types live in `internal/domain/vod`.
+- ✅ Enforcement is mechanical via `go test ./internal/validate -run TestLayeringRules`.
 
 ---
 
@@ -697,7 +681,7 @@ A 10/10 architecture satisfies **all** of these criteria:
 | Deterministic Boot | ✅ Bootstrap tests prove it | 1.0 | None |
 | Observability | ✅ Middleware enforces | 1.0 | None |
 | OpenAPI Drift | ✅ Codegen active | 1.0 | None |
-| No Utils Hell | ✅ Tests prevent (core deprecated + locked) | 1.0 | None |
+| No Utils Hell | ✅ Tests prevent (`internal/core` removed + guardrails) | 1.0 | None |
 | Fail-Closed Security | ✅ Middleware enforces | 1.0 | None |
 | Tests Prove Invariants | ✅ Layering tests have zero exemptions | 1.0 | None |
 
@@ -736,11 +720,7 @@ PASS  # Zero exemptions
 
 ### Missing Pieces for 10/10
 
-None (see Scorecard). Remaining non-blocking cleanup:
-
-| Item | Action | Owner | Effort |
-|-----|--------|-------|--------|
-| `core/` migration | Incremental (non-blocking) | Team | Ongoing |
+None (see Scorecard). `internal/core` is removed and guarded by tests.
 
 ### What 10/10 Enables
 

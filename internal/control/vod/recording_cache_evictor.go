@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -28,10 +29,34 @@ type cacheEntry struct {
 	modTime time.Time
 }
 
+var recordingCacheEvictionLocks sync.Map // map[string]*sync.Mutex
+
 // EvictRecordingCache removes stale recording cache directories under the HLS root.
 // Policy: TTL eviction first, then oldest-first to enforce maxEntries.
 // Oldest is defined by directory modTime (filesystem metadata), not access time.
 func EvictRecordingCache(hlsRoot string, ttl time.Duration, maxEntries int, clock Clock) (CacheEvictionResult, error) {
+	return evictRecordingCache(hlsRoot, ttl, maxEntries, clock, nil)
+}
+
+// EvictRecordingCacheWithExclusions removes stale cache directories while skipping excluded paths.
+// Exclusions are absolute cache directory paths (e.g. active build workdirs).
+func EvictRecordingCacheWithExclusions(
+	hlsRoot string,
+	ttl time.Duration,
+	maxEntries int,
+	clock Clock,
+	excludedPaths map[string]struct{},
+) (CacheEvictionResult, error) {
+	return evictRecordingCache(hlsRoot, ttl, maxEntries, clock, excludedPaths)
+}
+
+func evictRecordingCache(
+	hlsRoot string,
+	ttl time.Duration,
+	maxEntries int,
+	clock Clock,
+	excludedPaths map[string]struct{},
+) (CacheEvictionResult, error) {
 	var res CacheEvictionResult
 
 	if strings.TrimSpace(hlsRoot) == "" {
@@ -45,6 +70,9 @@ func EvictRecordingCache(hlsRoot string, ttl time.Duration, maxEntries int, cloc
 	}
 
 	cacheRoot := filepath.Join(hlsRoot, "recordings")
+	evictionLock(cacheRoot).Lock()
+	defer evictionLock(cacheRoot).Unlock()
+
 	entries, err := os.ReadDir(cacheRoot)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -58,17 +86,22 @@ func EvictRecordingCache(hlsRoot string, ttl time.Duration, maxEntries int, cloc
 		if !entry.IsDir() {
 			continue
 		}
+		dirPath := filepath.Join(cacheRoot, entry.Name())
+		if _, excluded := excludedPaths[dirPath]; excluded {
+			continue
+		}
 		info, infoErr := entry.Info()
-		modTime := time.Time{}
 		if infoErr != nil {
+			if os.IsNotExist(infoErr) {
+				continue
+			}
 			res.Errors++
-		} else {
-			modTime = info.ModTime()
+			continue
 		}
 		dirs = append(dirs, cacheEntry{
 			name:    entry.Name(),
-			path:    filepath.Join(cacheRoot, entry.Name()),
-			modTime: modTime,
+			path:    dirPath,
+			modTime: info.ModTime(),
 		})
 	}
 
@@ -131,4 +164,17 @@ func EvictRecordingCache(hlsRoot string, ttl time.Duration, maxEntries int, cloc
 		res.Entries = 0
 	}
 	return res, nil
+}
+
+func evictionLock(cacheRoot string) *sync.Mutex {
+	key := filepath.Clean(cacheRoot)
+	if key == "." {
+		key = cacheRoot
+	}
+	if existing, ok := recordingCacheEvictionLocks.Load(key); ok {
+		return existing.(*sync.Mutex)
+	}
+	mu := &sync.Mutex{}
+	actual, _ := recordingCacheEvictionLocks.LoadOrStore(key, mu)
+	return actual.(*sync.Mutex)
 }

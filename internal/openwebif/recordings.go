@@ -188,7 +188,11 @@ func (c *Client) GetRecordings(ctx context.Context, dirname string) (*MovieList,
 
 	if !list.Result {
 		// Log warning but proceed, empty dirs might return result=false
-		c.loggerFor(ctx).Warn().Str("dirname", dirname).Str("message", list.Message).Str("body_snippet", string(body)).Msg("movielist result=false")
+		c.loggerFor(ctx).Warn().
+			Str("dirname", dirname).
+			Str("message", list.Message).
+			Int("body_len", len(body)).
+			Msg("movielist result=false")
 	}
 
 	return &list, nil
@@ -215,7 +219,7 @@ func (c *Client) DeleteMovie(ctx context.Context, sRef string) error {
 	if err := json.Unmarshal(body, &resp); err != nil {
 		// Some versions might just return simple JSON or even bool?
 		// Fallback check? usually it matches.
-		c.loggerFor(ctx).Error().Err(err).Str("body", string(body)).Msg("failed to decode moviedelete response")
+		c.loggerFor(ctx).Error().Err(err).Int("body_len", len(body)).Msg("failed to decode moviedelete response")
 		return fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -241,7 +245,7 @@ func (c *Client) GetLocations(ctx context.Context) ([]MovieLocation, error) {
 
 	var resp LocationsResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
-		c.loggerFor(ctx).Error().Err(err).Str("body", string(body)).Msg("failed to decode getlocations response")
+		c.loggerFor(ctx).Error().Err(err).Int("body_len", len(body)).Msg("failed to decode getlocations response")
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 

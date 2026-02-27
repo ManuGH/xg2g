@@ -104,6 +104,8 @@ internal/control/http/v3/openapi.yaml
 .cache/
 .codex_patch.diff
 .copilot-instructions.md
+.worktrees/
+*.log
 
 # TLS certificates
 certs/

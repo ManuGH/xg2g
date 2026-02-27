@@ -23,6 +23,7 @@ import (
 	infra "github.com/ManuGH/xg2g/internal/infra/ffmpeg"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
+	"github.com/ManuGH/xg2g/internal/platform/httpx"
 	"github.com/ManuGH/xg2g/internal/recordings"
 )
 
@@ -125,6 +126,8 @@ func (s *Server) initHDHR(cfg config.AppConfig, cm *channels.Manager) {
 }
 
 func (s *Server) registerHealthCheckers(cfg config.AppConfig) {
+	receiverProbeClient := httpx.NewClient(5 * time.Second)
+
 	playlistName := s.snap.Runtime.PlaylistFilename
 	playlistPath := filepath.Join(cfg.DataDir, playlistName)
 	s.healthManager.RegisterChecker(health.NewFileChecker("playlist", playlistPath))
@@ -148,7 +151,7 @@ func (s *Server) registerHealthCheckers(cfg config.AppConfig) {
 		if err != nil {
 			return err
 		}
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := receiverProbeClient.Do(req)
 		if err != nil {
 			return err
 		}

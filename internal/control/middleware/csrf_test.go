@@ -123,7 +123,7 @@ func TestCSRFProtection_AllowsAllowedOriginEvenWithProxies(t *testing.T) {
 	}
 }
 
-func TestCSRFProtection_AllowsWildcardOriginEvenWithProxies(t *testing.T) {
+func TestCSRFProtection_BlocksWildcardOriginWithProxies(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
@@ -139,8 +139,28 @@ func TestCSRFProtection_AllowsWildcardOriginEvenWithProxies(t *testing.T) {
 	w := httptest.NewRecorder()
 	csrfHandler.ServeHTTP(w, req)
 
+	if w.Code != http.StatusForbidden {
+		t.Errorf("Wildcard origin POST with proxy headers: expected 403, got %d", w.Code)
+	}
+}
+
+func TestCSRFProtection_WildcardStillAllowsStrictSameOrigin(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	allowed := []string{"*"}
+	csrfHandler := CSRFProtection(allowed)(handler)
+
+	req := httptest.NewRequest(http.MethodPost, "/test", nil)
+	req.Host = "example.com"
+	req.Header.Set("Origin", "http://example.com")
+
+	w := httptest.NewRecorder()
+	csrfHandler.ServeHTTP(w, req)
+
 	if w.Code != http.StatusOK {
-		t.Errorf("Wildcard origin POST with proxy headers: expected 200, got %d", w.Code)
+		t.Errorf("Wildcard origin with strict same-origin fallback: expected 200, got %d", w.Code)
 	}
 }
 

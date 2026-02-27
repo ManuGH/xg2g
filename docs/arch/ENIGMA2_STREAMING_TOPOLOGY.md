@@ -172,16 +172,27 @@ Modern Enigma2 receivers with FBC support use **FBC (Flexible Band Concatenation
 
 ### The Stream Request Flow (Middleware Layer)
 
-In setups with decryption middleware (e.g. OSCam-emu), the flow is as follows:
+In setups with decryption middleware (e.g., OSCam-emu StreamRelay), the flow is as follows:
 
 1. **Client** → OpenWebif (Port 80) `/web/stream.m3u?ref=...`
-2. **OpenWebif** → Determines if the stream requires relaying.
-3. **M3U Response** → Returns a URL like `http://IP:17999/{serviceref}`.
-4. **Client** → Port 17999 (Decryption Wrapper).
+2. **OpenWebif** → Determines if the stream requires relaying natively. OpenWebIF is purely the **API/URL-Generator**.
+3. **M3U Response** → Returns a Relay-URL like `http://IP:17999/{serviceref}`.
+4. **Client** → Port 17999 (Decryption Wrapper provided by OSCam-emu).
 5. **Middleware** → Fetches raw stream from `localhost:8001` (Enigma2 Native).
 6. **Enigma2:8001** → Delivers MPEG-TS via Tuner.
+7. **Middleware** → Descrambles the TS and returns it to the Client with `HTTP/1.0 200 OK` and `Server: stream_enigma2`.
 
 **XG2G Integration:** By using `useWebIFStreams: true`, xg2g follows this entire chain automatically, respecting the receiver's choice of port (8001 vs 17999).
+
+#### OSCAM StreamRelay Technical Constraints
+
+When querying streams directly from OSCam-emu (`17999`), several strict networking constraints apply:
+
+- **HTTP Methods:** It strictly requires `GET`. `HEAD` tests on these TS-Endpoints will often return "empty reply" or close the connection, even though `GET` streams perfectly.
+- **Preemptive Authentication:** If Enigma2 is secured, OSCAM often drops the connection instead of sending a `401 Unauthorized` challenge. Clients (like `ffprobe`) must send the `Authorization: Basic ...` header *preemptively*.
+- **User-Agent Filtering:** The middleware drops connections instantly (0 bytes read) if the `User-Agent` is blank or non-standard. Spoofing standard player signatures (e.g., `VLC/3.0.21 LibVLC/3.0.21`) is required for probe tools mapping the stream.
+- **Probe Timeouts:** Tuning and decrypting the stream takes significant time (3-5 seconds). Probe timeouts must be unusually generous (e.g., `8s`), otherwise the receiver kills the pipe before the first decrypted TS packet arrives.
+- **Rate Limiting:** Aggressive channel scanning (e.g., full EPG probing) on port `17999` will DDoS the CAM process, resulting in `Connection refused` for subsequent streams. A delay of at least `1000ms` between consecutive stream requests is necessary to maintain stability.
 
 ---
 

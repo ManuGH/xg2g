@@ -51,8 +51,8 @@ var operationScopes = map[string][]string{
 	"GetSystemHealthz":                 {"v3:read"},
 	"GetSystemInfo":                    {"v3:read"},
 	"PostSystemRefresh":                {"v3:write"},
-	"GetSystemScanStatus":              {},
-	"TriggerSystemScan":                {},
+	"GetSystemScanStatus":              {"v3:admin"},
+	"TriggerSystemScan":                {"v3:admin"},
 	"GetTimers":                        {"v3:read"},
 	"AddTimer":                         {"v3:write"},
 	"PreviewConflicts":                 {"v3:read"},
@@ -61,10 +61,9 @@ var operationScopes = map[string][]string{
 	"UpdateTimer":                      {"v3:write"},
 }
 
-// Operations allowed to be unscoped (e.g., health/scan endpoints).
+// Operations allowed to be unscoped.
+// Hardened default keeps this empty; entries require explicit security review.
 var unscopedOperations = map[string]struct{}{
-	"GetSystemScanStatus": {},
-	"TriggerSystemScan":   {},
 }
 
 // RequiredScopes returns the required scopes for an operation ID.

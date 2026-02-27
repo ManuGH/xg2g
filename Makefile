@@ -13,7 +13,7 @@
         release-check release-build release-tag release-notes \
         dev up down status prod-up prod-down prod-logs check-env \
         restart prod-restart ps prod-ps ui-build codex certs setup build-ffmpeg \
-        docs-render verify-docs-compiled release-prepare release-verify-remote recover verify-runtime
+        docs-render verify-docs-compiled release-prepare release-verify-remote recover verify-runtime repair-metadata
 
 # ===================================================================================================
 # Configuration and Variables
@@ -53,6 +53,12 @@ PLATFORMS := linux/amd64
 # Coverage thresholds (Locked to Baseline per Governance Policy)
 COVERAGE_THRESHOLD := 43
 EPG_COVERAGE_THRESHOLD := 85
+
+# Test timeout budgets (STAB-002 fail-closed gating)
+GO_TEST_TIMEOUT ?= 10m
+GO_TEST_COVER_TIMEOUT ?= 15m
+GO_TEST_RACE_TIMEOUT ?= 20m
+GO_TEST_IDEMPOTENCY_TIMEOUT ?= 5m
 
 # Tool paths and versions
 GOBIN ?= $(shell $(GO) env GOBIN)
@@ -114,6 +120,7 @@ help: ## Show this help message
 	@echo "  quality-gates-online   Validate online gates (coverage, lint, security)"
 	@echo "  ci-pr             Fast, deterministic PR gate (required checks)"
 	@echo "  ci-nightly        Deep, expensive gates (nightly/dispatch)"
+	@echo "  repair-metadata   Remove macOS metadata from worktree and .git storage"
 	@echo ""
 	@echo "Docker Operations:"
 	@echo "  docker              Build Docker image"
@@ -518,7 +525,7 @@ lint-fix: ## Run golangci-lint with automatic fixes
 
 test: ## Run all unit tests
 	@echo "Running unit tests..."
-	@$(GO) test ./... -v
+	@$(GO) test ./... -v -count=1 -timeout=$(GO_TEST_TIMEOUT)
 	@echo "✅ Unit tests passed"
 
 test-schema: ## Run JSON schema validation tests (requires check-jsonschema)
@@ -528,18 +535,18 @@ test-schema: ## Run JSON schema validation tests (requires check-jsonschema)
 
 test-race: ## Run tests with race detection
 	@echo "Running tests with race detection..."
-	@$(GO) test ./... -v -race
+	@$(GO) test ./... -v -race -count=1 -timeout=$(GO_TEST_RACE_TIMEOUT)
 	@echo "✅ Race detection tests passed"
 
 test-v3-idempotency: ## Run v3 idempotency/dedup suite with race detection (required in PR CI)
 	@echo "Running v3 idempotency/dedup race suite..."
-	@$(GO) test -race -count=1 -v ./internal/control/http/v3 -run '^TestRaceSafety_ParallelIntents$$'
+	@$(GO) test -race -count=1 -v -timeout=$(GO_TEST_IDEMPOTENCY_TIMEOUT) ./internal/control/http/v3 -run '^TestRaceSafety_ParallelIntents$$'
 	@echo "✅ v3 idempotency/dedup race suite passed"
 
 test-cover: ## Run tests with coverage reporting
 	@echo "Running tests with coverage..."
 	@mkdir -p $(ARTIFACTS_DIR)
-	@$(GO) test -covermode=atomic -coverprofile=$(ARTIFACTS_DIR)/coverage.out -coverpkg=./... ./...
+	@$(GO) test -count=1 -timeout=$(GO_TEST_COVER_TIMEOUT) -covermode=atomic -coverprofile=$(ARTIFACTS_DIR)/coverage.out -coverpkg=./... ./...
 	@$(GO) tool cover -html=$(ARTIFACTS_DIR)/coverage.out -o $(ARTIFACTS_DIR)/coverage.html
 	@echo "Coverage report generated: $(ARTIFACTS_DIR)/coverage.html"
 	@$(GO) tool cover -func=$(ARTIFACTS_DIR)/coverage.out | tail -1
@@ -594,7 +601,7 @@ smoke-test: ## Run E2E smoke test (Builds & Runs daemon)
 coverage: ## Generate and view coverage report locally
 	@echo "Generating coverage report..."
 	@mkdir -p $(ARTIFACTS_DIR)
-	@$(GO) test -covermode=atomic -coverprofile=$(ARTIFACTS_DIR)/coverage.out -coverpkg=./... ./...
+	@$(GO) test -count=1 -timeout=$(GO_TEST_COVER_TIMEOUT) -covermode=atomic -coverprofile=$(ARTIFACTS_DIR)/coverage.out -coverpkg=./... ./...
 	@$(GO) tool cover -html=$(ARTIFACTS_DIR)/coverage.out -o $(ARTIFACTS_DIR)/coverage.html
 	@echo "Coverage report generated: $(ARTIFACTS_DIR)/coverage.html"
 	@COVERAGE=$$($(GO) tool cover -func=$(ARTIFACTS_DIR)/coverage.out | grep total | awk '{print $$3}' | sed 's/%//'); \
@@ -610,7 +617,7 @@ coverage: ## Generate and view coverage report locally
 coverage-check: ## Check if coverage meets threshold
 	@echo "Checking coverage threshold..."
 	@mkdir -p $(ARTIFACTS_DIR)
-	@$(GO) test -covermode=atomic -coverprofile=$(ARTIFACTS_DIR)/coverage.out ./...
+	@$(GO) test -count=1 -timeout=$(GO_TEST_COVER_TIMEOUT) -covermode=atomic -coverprofile=$(ARTIFACTS_DIR)/coverage.out ./...
 	@COVERAGE=$$($(GO) tool cover -func=$(ARTIFACTS_DIR)/coverage.out | grep total | awk '{print $$3}' | sed 's/%//'); \
 	THRESHOLD=50; \
 	echo "Current coverage: $$COVERAGE%"; \
@@ -995,6 +1002,9 @@ hooks:
 	@pre-commit install
 	@pre-commit install --hook-type pre-push
 
+repair-metadata: ## Remove macOS metadata from worktree + git storage
+	@bash ./scripts/ops/repair-metadata.sh
+
 
 check-env: ## Check .env configuration
 	@./scripts/check_env.sh
@@ -1067,7 +1077,7 @@ quality-gates: quality-gates-online ## Validate all online quality gates (covera
 
 quality-gates-offline: ## Offline-only gates (no network, no codegen)
 	@echo "Validating offline gates..."
-	@$(GO) test ./...
+	@$(GO) test ./... -count=1 -timeout=$(GO_TEST_TIMEOUT)
 	@$(GO) vet ./...
 	@echo "✅ Offline gates passed"
 
@@ -1097,8 +1107,8 @@ build-ffmpeg: ## Build FFmpeg 7.1.3 with HLS/VAAPI/x264/AAC support
 	@echo "  export XG2G_FFPROBE_BIN=\$$(pwd)/scripts/ffprobe-wrapper.sh"
 	@echo ""
 	@echo "Or set PATH manually:"
-	@echo "  export PATH=/opt/xg2g/ffmpeg/bin:\$$PATH"
-	@echo "  export LD_LIBRARY_PATH=/opt/xg2g/ffmpeg/lib"
+	@echo "  export PATH=/opt/ffmpeg/bin:\$$PATH"
+	@echo "  export LD_LIBRARY_PATH=/opt/ffmpeg/lib"
 
 
 .PHONY: contract-matrix

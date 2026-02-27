@@ -111,6 +111,19 @@ func (m *Manager) GetMetadata(id string) (Metadata, bool) {
 	return meta, ok
 }
 
+// ActiveJobIDs returns a snapshot of currently running build job IDs.
+func (m *Manager) ActiveJobIDs() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	ids := make([]string, 0, len(m.jobs))
+	for id := range m.jobs {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
+}
+
 // MetadataPruneResult captures the outcome of a metadata cache prune.
 type MetadataPruneResult struct {
 	RemovedTTL        int

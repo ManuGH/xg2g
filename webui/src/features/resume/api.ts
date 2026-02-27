@@ -1,4 +1,4 @@
-import { client } from '../../client-ts/client.gen';
+import { putJsonOrThrow } from '../../client-ts/wrapper';
 
 export interface ResumeState {
   posSeconds: number;
@@ -14,9 +14,5 @@ export interface SaveResumeRequest {
 
 export const saveResume = async (recordingId: string, data: SaveResumeRequest): Promise<void> => {
   const url = `/recordings/${recordingId}/resume`;
-  await client.put({
-    url,
-    body: data,
-    headers: { 'Content-Type': 'application/json' }
-  });
+  await putJsonOrThrow(url, data);
 };

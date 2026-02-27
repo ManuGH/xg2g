@@ -16,6 +16,7 @@ services:
       - FFMPEG_HOME=/opt/ffmpeg
     volumes:
       - /var/lib/xg2g:/var/lib/xg2g
+      - /media/nfs-recordings:/media/nfs-recordings
       # Optional: Mount a custom config
       # - ./config.yaml:/var/lib/xg2g/config.yaml:ro
     # Container hardening (Operator-Grade 2026). Persist only via mounted volumes/tmpfs.
