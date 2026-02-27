@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, type CSSProperties } from 'react';
 import type { ResumeSummary } from './types';
 import styles from './resume.module.css';
 
@@ -46,6 +46,14 @@ export default function RecordingResumeBar(props: {
     return Math.round(clamp(resume.posSeconds / d, 0, 1) * 100);
   }, [resume.posSeconds, d]);
 
+  const barStyle = useMemo(
+    () =>
+      ({
+        '--xg2g-resume-progress': `${percent}%`,
+      }) as CSSProperties,
+    [percent],
+  );
+
   return (
     <div className={styles.summary}>
       <div className={styles.meta}>
@@ -54,7 +62,7 @@ export default function RecordingResumeBar(props: {
       </div>
       {d > 0 && (
         <div className={styles.bar}>
-          <div className={styles.barFill} style={{ width: `${percent}%` }} />
+          <div className={styles.barFill} style={barStyle} />
         </div>
       )}
     </div>

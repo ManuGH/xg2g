@@ -127,6 +127,7 @@ func (s *Server) verifyLivePlaybackDecision(token, principal, serviceRef, mode s
 	return normalize.Token(claims.Mode) == mode
 }
 
+//nolint:unused // test helper for deterministic signature assertions
 func (s *Server) liveDecisionSignature(encodedPayload string) []byte {
 	_, signingKey, ok := s.resolveLiveDecisionSigner()
 	if !ok {

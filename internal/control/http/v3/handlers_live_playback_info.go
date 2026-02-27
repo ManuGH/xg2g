@@ -119,9 +119,6 @@ func (s *Server) handleLivePlaybackInfo(w http.ResponseWriter, r *http.Request, 
 func mapLivePlaybackInfo(serviceRef string, dec *decision.Decision, caps *PlaybackCapabilities, source decision.Source) PlaybackInfo {
 	proto := decision.ProtocolFrom(dec)
 	mode := derivePlaybackInfoMode(dec, caps, proto)
-	if mode == PlaybackInfoModeDeny {
-		proto = "none"
-	}
 
 	reasonStrings := decision.ReasonsAsStrings(dec, nil)
 	if mode == PlaybackInfoModeDeny && (dec == nil || dec.Mode != decision.ModeDeny) {
