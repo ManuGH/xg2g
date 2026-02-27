@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -65,9 +64,9 @@ func newPreflightIntentServer(t *testing.T, provider preflight.PreflightProvider
 func newIntentRequest(t *testing.T, serviceRef string) *http.Request {
 	t.Helper()
 
-	body := `{"serviceRef":"` + serviceRef + `","correlationId":"corr-preflight-001","params":{}}`
-	req := httptest.NewRequest(http.MethodPost, "/api/v3/intents", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
+	// Build a request with a valid JWT that passes the security gate,
+	// so that preflight tests actually test preflight logic, not auth.
+	req := intentReqWithValidJWT(t, serviceRef, "", "live")
 	return req.WithContext(log.ContextWithRequestID(req.Context(), "req-preflight-001"))
 }
 
@@ -105,7 +104,7 @@ func TestIntentsPreflight_ProblemMapping(t *testing.T) {
 			var body map[string]any
 			require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
 			require.Equal(t, float64(tc.status), body["status"])
-			require.Equal(t, "urn:xg2g:problem:preflight:"+string(tc.outcome), body["type"])
+			require.Equal(t, "/problems/preflight/"+string(tc.outcome), body["type"])
 			require.NotEmpty(t, body["title"])
 			require.NotEmpty(t, body["detail"])
 

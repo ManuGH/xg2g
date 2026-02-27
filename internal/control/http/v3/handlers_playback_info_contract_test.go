@@ -105,7 +105,7 @@ func TestContract_PlaybackInfo_Preparing(t *testing.T) {
 	}
 	err := json.Unmarshal(w.Body.Bytes(), &prob)
 	require.NoError(t, err)
-	assert.Equal(t, "recordings/preparing", prob.Type)
+	assert.Equal(t, "/problems/recordings/preparing", prob.Type)
 }
 
 func TestContract_PlaybackInfo_Forbidden(t *testing.T) {
@@ -123,7 +123,7 @@ func TestContract_PlaybackInfo_Forbidden(t *testing.T) {
 		Type string `json:"type"`
 	}
 	json.Unmarshal(w.Body.Bytes(), &prob)
-	assert.Equal(t, "recordings/forbidden", prob.Type)
+	assert.Equal(t, "/problems/recordings/forbidden", prob.Type)
 }
 
 func TestContract_PlaybackInfo_NotFound(t *testing.T) {
@@ -141,7 +141,7 @@ func TestContract_PlaybackInfo_NotFound(t *testing.T) {
 		Type string `json:"type"`
 	}
 	json.Unmarshal(w.Body.Bytes(), &prob)
-	assert.Equal(t, "recordings/not-found", prob.Type)
+	assert.Equal(t, "/problems/recordings/not-found", prob.Type)
 }
 
 func TestContract_PlaybackInfo_UpstreamError(t *testing.T) {
@@ -159,7 +159,7 @@ func TestContract_PlaybackInfo_UpstreamError(t *testing.T) {
 		Type string `json:"type"`
 	}
 	json.Unmarshal(w.Body.Bytes(), &prob)
-	assert.Equal(t, "recordings/upstream", prob.Type)
+	assert.Equal(t, "/problems/recordings/upstream", prob.Type)
 }
 
 func TestInvariant_SuccessAlwaysSeekable(t *testing.T) {

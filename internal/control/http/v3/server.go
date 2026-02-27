@@ -17,6 +17,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/channels"
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/control/http/v3/auth"
 	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/artifacts"
 	"github.com/ManuGH/xg2g/internal/control/read"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
@@ -45,6 +46,9 @@ type Server struct {
 	snap      config.Snapshot
 	status    jobs.Status
 	startTime time.Time
+
+	// Security
+	JWTSecret []byte // HMAC-SHA256 key for playbackDecisionToken (SSOT)
 
 	// Core Components
 	v3Bus               bus.Bus
@@ -126,6 +130,7 @@ func NewServer(cfg config.AppConfig, cfgMgr *config.Manager, rootCancel context.
 		libraryService: librarySvc,
 		storageMonitor: NewStorageMonitor(),
 		admission:      admission.NewController(cfg),
+		JWTSecret:      auth.DefaultDecisionSecret,
 		// owiFactory defaults to nil (uses newOpenWebIFClient in prod)
 	}
 	s.epgSource = &epgAdapter{s}

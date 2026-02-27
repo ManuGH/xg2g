@@ -84,6 +84,7 @@
       "playing": "Wiedergabe",
       "paused": "Pausiert",
       "error": "Fehler",
+      "recovering": "Wiederherstellung…",
       "stopped": "Gestoppt"
     },
     "playlistNotReady": "Playlist noch nicht bereit",
@@ -97,6 +98,7 @@
     "sessionFailed": "Sitzung fehlgeschlagen",
     "hlsError": "HLS Fehler",
     "authFailed": "Anmeldung fehlgeschlagen",
+    "forbidden": "Zugriff verweigert",
     "recordingNotFound": "Aufnahme nicht gefunden (möglicherweise gelöscht).",
     "recordingPrepareTimeout": "Die Aufnahme benötigt ungewöhnlich lange zur Vorbereitung. Bitte erneut versuchen.",
     "resumeTitle": "Wiedergabe fortsetzen?",

@@ -192,5 +192,5 @@ func TestGetServicesBouquets_FailClosed(t *testing.T) {
 	var prob map[string]interface{}
 	err = json.NewDecoder(resp.Body).Decode(&prob)
 	require.NoError(t, err)
-	assert.Equal(t, "services/read_failed", prob["type"])
+	assert.Equal(t, "/problems/services/read_failed", prob["type"])
 }

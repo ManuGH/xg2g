@@ -83,6 +83,7 @@ func (m *MockPreparingServer) GetTimer(w http.ResponseWriter, r *http.Request, t
 func (m *MockPreparingServer) UpdateTimer(w http.ResponseWriter, r *http.Request, timerId string) {}
 func (m *MockPreparingServer) PostRecordingPlaybackInfo(w http.ResponseWriter, r *http.Request, recordingId string) {
 }
+func (m *MockPreparingServer) PostLivePlaybackInfo(w http.ResponseWriter, r *http.Request) {}
 
 // Optional Extensions (if needed by router)
 func (m *MockPreparingServer) HandleRecordingResume(w http.ResponseWriter, r *http.Request, recordingId string) {

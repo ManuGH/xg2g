@@ -9,6 +9,7 @@ export type TelemetryEventType =
   | 'ui.contract.consumed'
   | 'ui.contract.violation'
   | 'ui.error'
+  | 'ui.auth_error'
   | 'ui.failclosed';
 
 export interface TelemetryEvent {

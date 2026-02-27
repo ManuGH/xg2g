@@ -778,6 +778,11 @@ function V3Player(props: V3PlayerProps) {
       hls.loadSource(url);
       hls.attachMedia(video);
 
+      let mediaRecoveryAttempted = false;
+      let networkRetryCount = 0;
+      const MAX_NETWORK_RETRIES = 6;
+      const NETWORK_BACKOFF_CAP_MS = 30_000;
+
       hls.on(Hls.Events.ERROR, (_event, data: ErrorData) => {
         if (data.fatal) {
           // Report fatal error to backend
@@ -788,10 +793,33 @@ function V3Player(props: V3PlayerProps) {
 
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR:
-              hls.startLoad();
+              if (networkRetryCount < MAX_NETWORK_RETRIES) {
+                const backoffMs = Math.min(1000 * Math.pow(2, networkRetryCount), NETWORK_BACKOFF_CAP_MS);
+                networkRetryCount++;
+                debugWarn(`[V3Player] NETWORK_ERROR recovery attempt ${networkRetryCount}/${MAX_NETWORK_RETRIES}, backoff ${backoffMs}ms`);
+                setStatus('recovering');
+                setTimeout(() => hls.startLoad(), backoffMs);
+              } else {
+                debugError(`[V3Player] NETWORK_ERROR: max retries (${MAX_NETWORK_RETRIES}) exhausted`);
+                hlsRef.current?.destroy();
+                setStatus('error');
+                setError(t('player.networkError'));
+                setErrorDetails(`${data.details} (${MAX_NETWORK_RETRIES} retries exhausted)`);
+              }
               break;
             case Hls.ErrorTypes.MEDIA_ERROR:
-              hls.recoverMediaError();
+              if (!mediaRecoveryAttempted) {
+                mediaRecoveryAttempted = true;
+                debugWarn('[V3Player] MEDIA_ERROR: attempting single recovery');
+                setStatus('recovering');
+                hls.recoverMediaError();
+              } else {
+                debugError('[V3Player] MEDIA_ERROR: recovery already attempted, failing terminally');
+                hlsRef.current?.destroy();
+                setStatus('error');
+                setError(`${t('player.hlsError')}: ${data.type}`);
+                setErrorDetails(`${data.details} (media recovery failed)`);
+              }
               break;
             default:
               hlsRef.current?.destroy();
@@ -800,7 +828,17 @@ function V3Player(props: V3PlayerProps) {
               setErrorDetails(JSON.stringify(data, null, 2));
               break;
           }
+        } else {
+          // Non-fatal: reset network retry counter on successful recovery
+          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+            // Non-fatal network errors indicate partial recovery
+          }
         }
+      });
+
+      // Reset counters when playback resumes successfully
+      hls.on(Hls.Events.FRAG_LOADED, () => {
+        networkRetryCount = 0;
       });
     } else if (canPlayNative && (engine === 'native' || engine === 'auto')) {
       // Native HLS execution path selected by backend or fallback auto.
@@ -924,10 +962,9 @@ function V3Player(props: V3PlayerProps) {
       videoCodecs: Array.from(new Set(preferredCodecs)),
       audioCodecs: Array.from(new Set(audioCodecs)),
       supportsHls: hlsEngines.length > 0,
-      hlsEngines,
       supportsRange: true,
       allowTranscode: true,
-      deviceType: 'browser'
+      deviceType: 'web'
     };
   }, []);
 
@@ -1238,13 +1275,30 @@ function V3Player(props: V3PlayerProps) {
           throw new Error('Backend live decision missing mode');
         }
 
-        liveMode = liveInfo.mode;
+        const beMode = liveInfo.mode;
+        if (beMode === 'hls' || beMode === 'direct_stream') {
+          if (Hls.isSupported()) {
+            liveEngine = 'hlsjs';
+            liveMode = 'hlsjs';
+          } else {
+            liveEngine = 'native';
+            liveMode = 'native_hls';
+          }
+        } else if (beMode === 'transcode') {
+          liveMode = 'transcode';
+          liveEngine = Hls.isSupported() ? 'hlsjs' : 'native';
+        } else if (beMode === 'direct_mp4') {
+          liveMode = 'direct_mp4';
+        } else if (beMode === 'deny') {
+          liveMode = 'deny';
+        }
+
         if (!['native_hls', 'hlsjs', 'direct_mp4', 'transcode', 'deny'].includes(liveMode)) {
           telemetry.emit('ui.failclosed', {
             context: 'V3Player.live.mode.invalid',
-            reason: String(liveMode)
+            reason: String(beMode) || String(liveMode)
           });
-          throw new Error(`Unsupported backend live playback mode: ${liveMode}`);
+          throw new Error(`Unsupported backend live playback mode: ${beMode}`);
         }
 
         if (!liveInfo.requestId) {
@@ -1306,8 +1360,34 @@ function V3Player(props: V3PlayerProps) {
         });
 
         if (res.status === 401 || res.status === 403) {
+          // [RFC7807] Extract structured problem+json for actionable UI messages
+          let errorTitle = res.status === 401 ? t('player.authFailed') : t('player.forbidden');
+          let errorDetail: string | null = null;
+          try {
+            const ct = res.headers.get('content-type') || '';
+            if (ct.includes('application/problem+json') || ct.includes('application/json')) {
+              const problem = await res.json();
+              // RFC7807: title is the human-readable summary, code is machine-readable
+              if (problem.title) errorTitle = problem.title;
+              const detailParts: string[] = [];
+              if (problem.code) detailParts.push(`code=${problem.code}`);
+              if (problem.detail) detailParts.push(problem.detail);
+              if (problem.requestId) detailParts.push(`requestId=${problem.requestId}`);
+              if (detailParts.length > 0) errorDetail = detailParts.join(' · ');
+
+              telemetry.emit('ui.auth_error', {
+                status: res.status,
+                code: problem.code || null,
+                title: problem.title || null,
+                detail: problem.detail || null
+              });
+            }
+          } catch {
+            // Body parse failed – fall through with generic message
+          }
           setStatus('error');
-          setError(t('player.authFailed'));
+          setError(errorTitle);
+          setErrorDetails(errorDetail);
           return;
         }
 

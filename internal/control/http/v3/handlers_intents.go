@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/ManuGH/xg2g/internal/control/admission"
+	"github.com/ManuGH/xg2g/internal/control/http/v3/auth"
 	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/log"
@@ -134,6 +135,68 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	// 5. Build & Publish Event
 	switch intentType {
 	case model.IntentTypeStreamStart:
+		// [SECURITY] Phase 1 - 401/403 Authorization Gate (CTO P-Grade)
+		if req.PlaybackDecisionToken == nil || *req.PlaybackDecisionToken == "" {
+			writeProblem(w, r, http.StatusUnauthorized, "intent/token-missing", "Missing Decision Token", "TOKEN_MISSING", "A valid playbackDecisionToken is required to start a live stream", nil)
+			return
+		}
+
+		jwtSecret := s.JWTSecret
+
+		claims, err := auth.VerifyStrict(*req.PlaybackDecisionToken, jwtSecret, "xg2g/v3/intents", "xg2g")
+		if err != nil {
+			var statusCode int
+			var code, detail string
+			switch err {
+			case auth.ErrTokenMissing, auth.ErrTokenMalformed, auth.ErrInvalidAlg, auth.ErrInvalidSig, auth.ErrTokenExpired, auth.ErrTokenNotActive, auth.ErrMissingIAT, auth.ErrMissingExp, auth.ErrMissingNbf, auth.ErrMismatchIss, auth.ErrMismatchAud:
+				// [401] Token is completely cryptographically invalid or has expired / malformed structural bindings
+				statusCode = http.StatusUnauthorized
+				code = "TOKEN_INVALID"
+				detail = err.Error()
+			default:
+				// [401] Fallback for unexpected JWT library parsing issues
+				statusCode = http.StatusUnauthorized
+				code = "TOKEN_ERROR"
+				detail = "Invalid authorization token"
+			}
+			writeProblem(w, r, statusCode, "intent/unauthorized", "Unauthorized Intent", code, detail, nil)
+			return
+		}
+		// [OBSERVABILITY] Re-attach the Decision Trace ID for telemetry correlation
+		if claims.TraceID != "" {
+			logger = logger.With().Str("traceId", claims.TraceID).Logger()
+		}
+
+		// [SECURITY] Phase 2 - 403 Validation (Token is structurally valid, but does the payload match the request?)
+		normRef := normalize.ServiceRef(req.ServiceRef)
+		normTokenSub := normalize.ServiceRef(claims.Sub)
+		if normRef != normTokenSub {
+			writeProblem(w, r, http.StatusForbidden, "intent/claim-mismatch", "Forbidden Action", "CLAIM_MISMATCH", "Token is not authorized for this service_ref", nil)
+			return
+		}
+
+		if raw := normalize.Token(req.Params["mode"]); raw != "" && raw != claims.Mode {
+			// They requested hlsjs, but the token was generated for direct_stream
+			writeProblem(w, r, http.StatusForbidden, "intent/claim-mismatch", "Forbidden Action", "CLAIM_MISMATCH", "Token is not authorized for this playback mode", nil)
+			return
+		}
+		// Validate Capabilities Hash mismatch
+		// Since Capabilities are passed currently in body or params, we should use the same MapHash function over IntentRequest.
+		var expectedHash string
+		if req.Params != nil {
+			genericMap := make(map[string]interface{})
+			for k, v := range req.Params {
+				genericMap[k] = v
+			}
+			if cHash, err := normalize.MapHash(genericMap); err == nil {
+				expectedHash = cHash
+			}
+		}
+		if claims.CapHash != "" && claims.CapHash != expectedHash {
+			writeProblem(w, r, http.StatusForbidden, "intent/claim-mismatch", "Forbidden Action", "CLAIM_MISMATCH", "Token is not authorized for these playback capabilities", nil)
+			return
+		}
+
 		// Smart Profile Lookup
 		var cap *scan.Capability
 		if deps.channelScanner != nil {

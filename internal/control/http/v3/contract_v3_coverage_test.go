@@ -43,7 +43,7 @@ func TestProblemWrite_Hardening(t *testing.T) {
 	require.NoError(t, err)
 
 	// Invariants: Canonical fields must win
-	assert.Equal(t, "test/type", body["type"])
+	assert.Equal(t, "/problems/test/type", body["type"])
 	assert.Equal(t, "TEST_TITLE", body["title"])
 	assert.Equal(t, "TEST_CODE", body["code"])
 	assert.Equal(t, 400.0, body["status"]) // json.Unmarshal uses float64
@@ -79,7 +79,7 @@ func TestV3Router_Hardening(t *testing.T) {
 		var body map[string]any
 		err := json.Unmarshal(w.Body.Bytes(), &body)
 		require.NoError(t, err)
-		assert.Equal(t, "system/not_found", body["type"])
+		assert.Equal(t, "/problems/system/not_found", body["type"])
 		assert.Equal(t, "Not Found", body["title"])
 		assert.Equal(t, "NOT_FOUND", body["code"])
 		assert.Equal(t, 404.0, body["status"])
@@ -98,7 +98,7 @@ func TestV3Router_Hardening(t *testing.T) {
 		var body map[string]any
 		err := json.Unmarshal(w.Body.Bytes(), &body)
 		require.NoError(t, err)
-		assert.Equal(t, "system/method_not_allowed", body["type"])
+		assert.Equal(t, "/problems/system/method_not_allowed", body["type"])
 		assert.Equal(t, "Method Not Allowed", body["title"])
 		assert.Equal(t, "METHOD_NOT_ALLOWED", body["code"])
 		assert.Equal(t, 405.0, body["status"])

@@ -55,6 +55,9 @@ components:
           type: string
           description: Required for stream.start. Enigma2 service reference (live playback only).
           example: "1:0:1:445D:453:1:C00000:0:0:0:"
+        playbackDecisionToken:
+          type: string
+          description: Required for stream.start. A secure cryptographically bound JWT token verifying the backend decision policy.
 
         hwaccel:
           type: string
@@ -507,7 +510,6 @@ components:
           description: Streaming delivery policy (only 'universal' is supported)
           default: universal
 
-
     VerificationConfig:
       type: object
       properties:
@@ -816,6 +818,9 @@ components:
           description: Unique ID for the stream session. Mandatory in P3-1.
         mode:
           $ref: "#/components/schemas/PlaybackInfoMode"
+        decisionReason:
+          type: string
+          description: Machine-readable constant explaining why this mode was chosen (e.g. 'CAPABILITY_H264_UNSUPPORTED').
         url:
           type: string
           description: Relative URL for the selected playback strategy. Optional for deny or decision-led cases.
@@ -846,6 +851,9 @@ components:
           $ref: "#/components/schemas/PlaybackInfoDurationSource"
         resume:
           $ref: "#/components/schemas/ResumeSummary"
+        playbackDecisionToken:
+          type: string
+          description: Attestation token for live playback intent creation
         container:
           type: string
           description: Truthful container name if known (e.g., ts, mp4, mkv).
@@ -1680,6 +1688,51 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/StreamSession"
+
+  /live/stream-info:
+    post:
+      summary: Get playback decision and token for a live stream
+      operationId: postLivePlaybackInfo
+      tags: [streams]
+      security:
+        - BearerAuth: [v3:read]
+      requestBody:
+        description: Client capabilities and service reference for decision making
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [serviceRef, capabilities]
+              properties:
+                serviceRef:
+                  type: string
+                  description: The Enigma2 service reference
+                capabilities:
+                  $ref: "#/components/schemas/PlaybackCapabilities"
+      responses:
+        "200":
+          description: Playback decision and info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlaybackInfo"
+        "400":
+          description: Invalid capabilities or service reference
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden
+        "503":
+          description: Attestation unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
 
   /recordings:
     get:

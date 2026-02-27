@@ -3,6 +3,7 @@ package problem
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/ManuGH/xg2g/internal/log"
 )
@@ -43,9 +44,15 @@ func Write(w http.ResponseWriter, r *http.Request, status int, problemType, titl
 		reqID = "FALLBACK-TRUTH-MISSING"
 	}
 
-	// 2. Build the response map (RFC 7807 compatible)
+	// 2. Stabilize type as a URI path (RFC 7807 §3.1: type SHOULD be a URI)
+	typeURI := problemType
+	if typeURI != "" && !strings.HasPrefix(typeURI, "/") && !strings.HasPrefix(typeURI, "http") {
+		typeURI = "/problems/" + typeURI
+	}
+
+	// 3. Build the response map (RFC 7807 compatible)
 	res := map[string]any{
-		"type":           problemType,
+		"type":           typeURI,
 		"title":          title,
 		"status":         status,
 		"code":           code,

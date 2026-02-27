@@ -73,7 +73,12 @@ func assertProblemDetails(t *testing.T, resp *http.Response, expectedStatus int,
 	t.Logf("Response: Status=%d Body=%v", resp.StatusCode, pd)
 
 	assert.Equal(t, float64(expectedStatus), pd["status"]) // JSON numbers are float64 in generic map
-	assert.Equal(t, expectedType, pd["type"])
+	// Assert type with /problems/ URI prefix (RFC 7807 §3.1)
+	wantType := expectedType
+	if !strings.HasPrefix(wantType, "/") {
+		wantType = "/problems/" + wantType
+	}
+	assert.Equal(t, wantType, pd["type"])
 	assert.NotEmpty(t, pd["title"])
 }
 
@@ -195,5 +200,5 @@ func TestContract_Global_ProblemDetails(t *testing.T) {
 }
 
 func (s *Phase6MockStore) GetLease(ctx context.Context, key string) (store.Lease, bool, error) {
-return nil, false, nil
+	return nil, false, nil
 }

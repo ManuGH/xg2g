@@ -20,17 +20,29 @@ type ResumeRequest struct {
 
 // HandleRecordingResumeOptions handles OPTIONS /api/v3/recordings/{recordingId}/resume
 func (s *Server) HandleRecordingResumeOptions(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		// No Origin = same-origin request; no CORS headers needed.
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	w.Header().Set("Access-Control-Allow-Origin", origin)
+	w.Header().Set("Access-Control-Allow-Credentials", "true")
 	w.Header().Set("Access-Control-Allow-Methods", "PUT, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Request-ID, X-API-Token, Authorization")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Request-ID, X-API-Token, Authorization, Cookie")
 	w.Header().Set("Access-Control-Max-Age", "86400")
+	w.Header().Set("Vary", "Origin")
 	w.WriteHeader(http.StatusNoContent)
 }
 
 // HandleRecordingResume handles PUT /api/v3/recordings/{recordingId}/resume
 func (s *Server) HandleRecordingResume(w http.ResponseWriter, r *http.Request) {
-	// Enable CORS for valid request
-	w.Header().Set("Access-Control-Allow-Origin", "*")
+	origin := r.Header.Get("Origin")
+	if origin != "" {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
+		w.Header().Set("Vary", "Origin")
+	}
 	deps := s.recordingsModuleDeps()
 	resumeStore := deps.resumeStore
 
