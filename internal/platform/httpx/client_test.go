@@ -60,4 +60,3 @@ func TestNewClient_UsesShortTimeoutAsProvided(t *testing.T) {
 		t.Fatalf("ResponseHeaderTimeout = %v, want %v", transport.ResponseHeaderTimeout, want)
 	}
 }
-

@@ -41,4 +41,3 @@ func TestArchitectureDoc_NoStaleLayeringClaims(t *testing.T) {
 		}
 	}
 }
-
