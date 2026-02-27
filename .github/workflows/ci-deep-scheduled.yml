@@ -31,7 +31,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Setup Go
-        uses: actions/setup-go@a5f9b05d2d216f63e13859e0d847461041025775
+        uses: actions/setup-go@def8c394e3ad351a79bc93815e4a585520fe993b
         with:
           go-version-file: go.mod
           check-latest: true
@@ -66,7 +66,7 @@ jobs:
 
       - name: Upload race logs on failure
         if: failure()
-        uses: actions/upload-artifact@47309c993abb98030a35d55ef7ff34b7fa1074b5 # v4.4.3
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v4.4.3
         with:
           name: nightly-race-logs
           path: nightly-race.log
@@ -83,7 +83,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Setup Go
-        uses: actions/setup-go@a5f9b05d2d216f63e13859e0d847461041025775
+        uses: actions/setup-go@def8c394e3ad351a79bc93815e4a585520fe993b
         with:
           go-version-file: go.mod
           check-latest: true
@@ -99,7 +99,7 @@ jobs:
 
       - name: Upload integration logs on failure
         if: failure()
-        uses: actions/upload-artifact@47309c993abb98030a35d55ef7ff34b7fa1074b5 # v4.4.3
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v4.4.3
         with:
           name: nightly-integration-logs
           path: nightly-integration.log
@@ -116,7 +116,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Setup Go
-        uses: actions/setup-go@a5f9b05d2d216f63e13859e0d847461041025775
+        uses: actions/setup-go@def8c394e3ad351a79bc93815e4a585520fe993b
         with:
           go-version-file: go.mod
           check-latest: true
@@ -157,7 +157,7 @@ jobs:
 
       - name: Upload security reports on failure
         if: failure()
-        uses: actions/upload-artifact@47309c993abb98030a35d55ef7ff34b7fa1074b5 # v4.4.3
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v4.4.3
         with:
           name: weekly-security-reports
           path: |
@@ -178,7 +178,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Setup Go
-        uses: actions/setup-go@a5f9b05d2d216f63e13859e0d847461041025775
+        uses: actions/setup-go@def8c394e3ad351a79bc93815e4a585520fe993b
         with:
           go-version-file: go.mod
           check-latest: true
